@@ -1,0 +1,813 @@
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2 (K=5 when the loaded MTP head is rank-trimmed)
+[tensor-contract] bound 866 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[frspec-trim] per-head trim: 0 extra chain head(s) gathered from their own blocks
+[worker]   loaded "q38": 65 layers, eos=248046, stop=[248046]
+[worker] q38: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false qwen_effort=true gemma_think=false dsv4=false glm5=false ctx=262144 tok="qwen35" instruct=Some("chatml") chat_defaults=None/None
+[route-contract] model="q38" route=hybrid-worker capacity=32 sessions implemented=[capacity,occupancy,progress,fault-ownership,shutdown-ownership,memory-cost,rewrite-qualification,prime-fairness,service-metrics] refused=[]
+[worker] q38: decode wave cap 16; scheduler tick cap 16 (exact-16 tier)
+[prefix-cache] on: budget 52253MB (52252688384 B, derived: 2 x 7941521408 B max entry for model "q38" at served ctx 262144 (from MEMRA_CTX; MEMRA_CTX set), unified memory: the larger of that and 1/2 of allocatable free after the transient reserve, driver headroom 2147483648 B and host tier 0 B, requested 52252688384 B; boot driver free 108263473152 B, post-reserve clamp 104505376768 B), policy plain-LRU (global oldest unleased entry first; leases untouchable), min prefix 64 tokens, immediate partial restore=off (rollback) (transformer-only; hybrid mid-entry + routed-MoE N/A)
+[device-trim] reason=calibration-complete {"device":0,"reclaimed_bytes":2415919104,"still_owned_bytes":19247140608,"pool_reserved_bytes":19428016128,"pool_cached_bytes":180875520,"driver_free_bytes":86102228992,"synchronization_errors":[]}
+[admit-mem] door=OFF open_output_tokens=8192 defer_budget_ms=8000 (admission charges prompt+output, the reclaim flush demotes to the host tier before dropping, and a memory defer past the budget refuses 429 instead of queueing past the client's deadline)
+[kv-vmm] door=OFF (MEMRA_KV_ALLOCATOR unset or pooled: pooled K/V planes)
+[deadline] unified memory (48 SMs, served ctx 262144): streaming TTFT default/max 997311 ms (derived), SSE prefill commit 60000 ms; non-streaming stays 90000 ms. MEMRA_SSE_PREFILL_COMMIT_MS=0 restores the shipped 90 s window
+[admission] request cost: model="q38" ctx=8002 path=spec = 31552 B/token x ctx + 2041MB prefill-workspace + 0MB fixed = 2294MB
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=5539.368 max_chunk_ms=5539.368
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=5268.190 max_chunk_ms=5268.190
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=234.240 max_chunk_ms=234.240
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=72.906 max_chunk_ms=72.906
+[admission] request cost: model="q38" ctx=8107 path=spec = 31552 B/token x ctx + 2043MB prefill-workspace + 332MB fixed = 2631MB
+[admission] request cost: model="q38" ctx=32574 path=spec = 31552 B/token x ctx + 2545MB prefill-workspace + 332MB fixed = 3904MB
+[prime-yield] count=1 remaining=16 chunks=1 wall_ms=5545.375 max_chunk_ms=5545.375
+[prime-yield] count=2 remaining=15 chunks=1 wall_ms=5662.515 max_chunk_ms=5662.515
+[prime-yield] count=3 remaining=14 chunks=1 wall_ms=5830.378 max_chunk_ms=5830.378
+[prime-yield] count=4 remaining=13 chunks=1 wall_ms=5989.311 max_chunk_ms=5989.311
+[prime-yield] count=5 remaining=12 chunks=1 wall_ms=6170.180 max_chunk_ms=6170.180
+[prime-yield] count=6 remaining=11 chunks=1 wall_ms=6333.364 max_chunk_ms=6333.364
+[prime-yield] count=7 remaining=10 chunks=1 wall_ms=6504.596 max_chunk_ms=6504.596
+[prime-yield] count=8 remaining=9 chunks=1 wall_ms=6166.917 max_chunk_ms=6166.917
+[prime-yield] count=9 remaining=8 chunks=1 wall_ms=293.010 max_chunk_ms=293.010
+[prime-yield] count=10 remaining=7 chunks=1 wall_ms=74.302 max_chunk_ms=74.302
+[prime-yield] count=11 remaining=6 chunks=1 wall_ms=73.014 max_chunk_ms=73.014
+[prime-yield] count=12 remaining=5 chunks=1 wall_ms=73.764 max_chunk_ms=73.764
+[prime-yield] count=13 remaining=4 chunks=1 wall_ms=72.226 max_chunk_ms=72.226
+[prime-yield] count=14 remaining=3 chunks=1 wall_ms=73.862 max_chunk_ms=73.862
+[prime-yield] count=15 remaining=2 chunks=1 wall_ms=72.910 max_chunk_ms=72.910
+[prime-yield] count=16 remaining=1 chunks=1 wall_ms=72.955 max_chunk_ms=72.955
+[admission] request cost: model="q38" ctx=32680 path=spec = 31552 B/token x ctx + 2547MB prefill-workspace + 381MB fixed = 3959MB
+[admission] request cost: model="q38" ctx=2825 path=spec = 31552 B/token x ctx + 1323MB prefill-workspace + 381MB fixed = 1793MB
+[admission] request cost: model="q38" ctx=4041 path=spec = 31552 B/token x ctx + 1905MB prefill-workspace + 381MB fixed = 2414MB
+[admission] request cost: model="q38" ctx=22932 path=spec = 31552 B/token x ctx + 2347MB prefill-workspace + 381MB fixed = 3452MB
+[prime-yield] count=1 remaining=12 chunks=1 wall_ms=5557.048 max_chunk_ms=5557.048
+[prime-yield] count=2 remaining=11 chunks=1 wall_ms=5662.326 max_chunk_ms=5662.326
+[prime-yield] count=3 remaining=10 chunks=1 wall_ms=5828.081 max_chunk_ms=5828.081
+[prime-yield] count=4 remaining=9 chunks=1 wall_ms=5990.347 max_chunk_ms=5990.347
+[prime-yield] count=5 remaining=8 chunks=1 wall_ms=6166.750 max_chunk_ms=6166.750
+[prime-yield] count=6 remaining=7 chunks=1 wall_ms=3680.775 max_chunk_ms=3680.775
+[prime-yield] count=7 remaining=6 chunks=1 wall_ms=270.418 max_chunk_ms=270.418
+[prime-yield] count=8 remaining=5 chunks=1 wall_ms=73.083 max_chunk_ms=73.083
+[prime-yield] count=9 remaining=4 chunks=1 wall_ms=73.844 max_chunk_ms=73.844
+[prime-yield] count=10 remaining=3 chunks=1 wall_ms=74.608 max_chunk_ms=74.608
+[prime-yield] count=11 remaining=2 chunks=1 wall_ms=72.222 max_chunk_ms=72.222
+[prime-yield] count=12 remaining=1 chunks=1 wall_ms=72.138 max_chunk_ms=72.138
+[admission] request cost: model="q38" ctx=41978 path=spec = 31552 B/token x ctx + 2737MB prefill-workspace + 381MB fixed = 4443MB
+[prime-yield] count=1 remaining=10 chunks=1 wall_ms=6481.241 max_chunk_ms=6481.241
+[prime-yield] count=2 remaining=9 chunks=1 wall_ms=6589.388 max_chunk_ms=6589.388
+[prime-yield] count=3 remaining=8 chunks=1 wall_ms=6764.011 max_chunk_ms=6764.011
+[prime-yield] count=4 remaining=7 chunks=1 wall_ms=6930.014 max_chunk_ms=6930.014
+[prime-yield] count=5 remaining=6 chunks=1 wall_ms=4625.945 max_chunk_ms=4625.945
+[prime-yield] count=6 remaining=5 chunks=1 wall_ms=327.146 max_chunk_ms=327.146
+[prime-yield] count=7 remaining=4 chunks=1 wall_ms=73.723 max_chunk_ms=73.723
+[prime-yield] count=8 remaining=3 chunks=1 wall_ms=73.736 max_chunk_ms=73.736
+[prime-yield] count=9 remaining=2 chunks=1 wall_ms=72.075 max_chunk_ms=72.075
+[prime-yield] count=10 remaining=1 chunks=1 wall_ms=73.611 max_chunk_ms=73.611
+[admission] request cost: model="q38" ctx=14770 path=spec = 31552 B/token x ctx + 2180MB prefill-workspace + 386MB fixed = 3032MB
+[prime-yield] count=1 remaining=8 chunks=1 wall_ms=5550.143 max_chunk_ms=5550.143
+[prime-yield] count=2 remaining=7 chunks=1 wall_ms=5670.582 max_chunk_ms=5670.582
+[prime-yield] count=3 remaining=6 chunks=1 wall_ms=5838.664 max_chunk_ms=5838.664
+[prime-yield] count=4 remaining=5 chunks=1 wall_ms=3515.999 max_chunk_ms=3515.999
+[prime-yield] count=5 remaining=4 chunks=1 wall_ms=250.691 max_chunk_ms=250.691
+[prime-yield] count=6 remaining=3 chunks=1 wall_ms=73.831 max_chunk_ms=73.831
+[prime-yield] count=7 remaining=2 chunks=1 wall_ms=72.881 max_chunk_ms=72.881
+[prime-yield] count=8 remaining=1 chunks=1 wall_ms=73.769 max_chunk_ms=73.769
+[admission] request cost: model="q38" ctx=25911 path=spec = 31552 B/token x ctx + 2408MB prefill-workspace + 386MB fixed = 3612MB
+[prime-yield] count=1 remaining=6 chunks=1 wall_ms=6130.913 max_chunk_ms=6130.913
+[prime-yield] count=2 remaining=5 chunks=1 wall_ms=6275.584 max_chunk_ms=6275.584
+[prime-yield] count=3 remaining=4 chunks=1 wall_ms=4708.235 max_chunk_ms=4708.235
+[prime-yield] count=4 remaining=3 chunks=1 wall_ms=275.729 max_chunk_ms=275.729
+[prime-yield] count=5 remaining=2 chunks=1 wall_ms=73.817 max_chunk_ms=73.817
+[prime-yield] count=6 remaining=1 chunks=1 wall_ms=72.862 max_chunk_ms=72.862
+[admission] request cost: model="q38" ctx=2332 path=spec = 31552 B/token x ctx + 1086MB prefill-workspace + 386MB fixed = 1546MB
+[admission] request cost: model="q38" ctx=3002 path=spec = 31552 B/token x ctx + 1408MB prefill-workspace + 386MB fixed = 1888MB
+[admission] request cost: model="q38" ctx=22684 path=spec = 31552 B/token x ctx + 2342MB prefill-workspace + 386MB fixed = 3444MB
+[prime-yield] count=1 remaining=12 chunks=1 wall_ms=5554.851 max_chunk_ms=5554.851
+[prime-yield] count=2 remaining=11 chunks=1 wall_ms=5668.717 max_chunk_ms=5668.717
+[prime-yield] count=3 remaining=10 chunks=1 wall_ms=5910.938 max_chunk_ms=5910.938
+[prime-yield] count=4 remaining=9 chunks=1 wall_ms=6091.238 max_chunk_ms=6091.238
+[prime-yield] count=5 remaining=8 chunks=1 wall_ms=6192.319 max_chunk_ms=6192.319
+[prime-yield] count=6 remaining=7 chunks=1 wall_ms=3366.043 max_chunk_ms=3366.043
+[prime-yield] count=7 remaining=6 chunks=1 wall_ms=288.448 max_chunk_ms=288.448
+[prime-yield] count=8 remaining=5 chunks=1 wall_ms=80.846 max_chunk_ms=80.846
+[prime-yield] count=9 remaining=4 chunks=1 wall_ms=73.712 max_chunk_ms=73.712
+[prime-yield] count=10 remaining=3 chunks=1 wall_ms=73.736 max_chunk_ms=73.736
+[prime-yield] count=11 remaining=2 chunks=1 wall_ms=73.062 max_chunk_ms=73.062
+[prime-yield] count=12 remaining=1 chunks=1 wall_ms=72.594 max_chunk_ms=72.594
+[admission] request cost: model="q38" ctx=36592 path=spec = 31552 B/token x ctx + 2627MB prefill-workspace + 386MB fixed = 4167MB
+[prime-yield] count=1 remaining=8 chunks=1 wall_ms=6567.125 max_chunk_ms=6567.125
+[prime-yield] count=2 remaining=7 chunks=1 wall_ms=6638.345 max_chunk_ms=6638.345
+[prime-yield] count=3 remaining=6 chunks=1 wall_ms=6808.955 max_chunk_ms=6808.955
+[prime-yield] count=4 remaining=5 chunks=1 wall_ms=2810.950 max_chunk_ms=2810.950
+[prime-yield] count=5 remaining=4 chunks=1 wall_ms=324.266 max_chunk_ms=324.266
+[prime-yield] count=6 remaining=3 chunks=1 wall_ms=73.072 max_chunk_ms=73.072
+[prime-yield] count=7 remaining=2 chunks=1 wall_ms=74.485 max_chunk_ms=74.485
+[prime-yield] count=8 remaining=1 chunks=1 wall_ms=72.891 max_chunk_ms=72.891
+[admission] request cost: model="q38" ctx=13281 path=spec = 31552 B/token x ctx + 2150MB prefill-workspace + 386MB fixed = 2954MB
+[prime-yield] count=1 remaining=8 chunks=1 wall_ms=5634.934 max_chunk_ms=5634.934
+[prime-yield] count=2 remaining=7 chunks=1 wall_ms=5665.410 max_chunk_ms=5665.410
+[prime-yield] count=3 remaining=6 chunks=1 wall_ms=5834.396 max_chunk_ms=5834.396
+[prime-yield] count=4 remaining=5 chunks=1 wall_ms=1303.048 max_chunk_ms=1303.048
+[prime-yield] count=5 remaining=4 chunks=1 wall_ms=247.168 max_chunk_ms=247.168
+[prime-yield] count=6 remaining=3 chunks=1 wall_ms=73.726 max_chunk_ms=73.726
+[prime-yield] count=7 remaining=2 chunks=1 wall_ms=73.824 max_chunk_ms=73.824
+[prime-yield] count=8 remaining=1 chunks=1 wall_ms=74.525 max_chunk_ms=74.525
+[admission] request cost: model="q38" ctx=19219 path=spec = 31552 B/token x ctx + 2271MB prefill-workspace + 386MB fixed = 3263MB
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=6049.086 max_chunk_ms=6049.086
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=2843.941 max_chunk_ms=2843.941
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=264.849 max_chunk_ms=264.849
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=73.850 max_chunk_ms=73.850
+[admission] request cost: model="q38" ctx=2468 path=spec = 31552 B/token x ctx + 1152MB prefill-workspace + 386MB fixed = 1615MB
+[admission] request cost: model="q38" ctx=3062 path=spec = 31552 B/token x ctx + 1436MB prefill-workspace + 386MB fixed = 1919MB
+[admission] request cost: model="q38" ctx=22298 path=spec = 31552 B/token x ctx + 2334MB prefill-workspace + 386MB fixed = 3424MB
+[prime-yield] count=1 remaining=12 chunks=1 wall_ms=5512.755 max_chunk_ms=5512.755
+[prime-yield] count=2 remaining=11 chunks=1 wall_ms=5666.451 max_chunk_ms=5666.451
+[prime-yield] count=3 remaining=10 chunks=1 wall_ms=5832.601 max_chunk_ms=5832.601
+[prime-yield] count=4 remaining=9 chunks=1 wall_ms=6003.368 max_chunk_ms=6003.368
+[prime-yield] count=5 remaining=8 chunks=1 wall_ms=6171.517 max_chunk_ms=6171.517
+[prime-yield] count=6 remaining=7 chunks=1 wall_ms=2712.748 max_chunk_ms=2712.748
+[prime-yield] count=7 remaining=6 chunks=1 wall_ms=265.741 max_chunk_ms=265.741
+[prime-yield] count=8 remaining=5 chunks=1 wall_ms=72.989 max_chunk_ms=72.989
+[prime-yield] count=9 remaining=4 chunks=1 wall_ms=72.192 max_chunk_ms=72.192
+[prime-yield] count=10 remaining=3 chunks=1 wall_ms=72.726 max_chunk_ms=72.726
+[prime-yield] count=11 remaining=2 chunks=1 wall_ms=73.721 max_chunk_ms=73.721
+[prime-yield] count=12 remaining=1 chunks=1 wall_ms=72.095 max_chunk_ms=72.095
+[admission] request cost: model="q38" ctx=42399 path=spec = 31552 B/token x ctx + 2746MB prefill-workspace + 386MB fixed = 4470MB
+[prime-yield] count=1 remaining=10 chunks=1 wall_ms=6461.599 max_chunk_ms=6461.599
+[prime-yield] count=2 remaining=9 chunks=1 wall_ms=6579.418 max_chunk_ms=6579.418
+[prime-yield] count=3 remaining=8 chunks=1 wall_ms=6740.111 max_chunk_ms=6740.111
+[prime-yield] count=4 remaining=7 chunks=1 wall_ms=6901.991 max_chunk_ms=6901.991
+[prime-yield] count=5 remaining=6 chunks=1 wall_ms=6415.332 max_chunk_ms=6415.332
+[prime-yield] count=6 remaining=5 chunks=1 wall_ms=316.331 max_chunk_ms=316.331
+[prime-yield] count=7 remaining=4 chunks=1 wall_ms=73.841 max_chunk_ms=73.841
+[prime-yield] count=8 remaining=3 chunks=1 wall_ms=72.842 max_chunk_ms=72.842
+[prime-yield] count=9 remaining=2 chunks=1 wall_ms=73.306 max_chunk_ms=73.306
+[prime-yield] count=10 remaining=1 chunks=1 wall_ms=72.989 max_chunk_ms=72.989
+[admission] request cost: model="q38" ctx=17166 path=spec = 31552 B/token x ctx + 2229MB prefill-workspace + 386MB fixed = 3157MB
+[prime-yield] count=1 remaining=10 chunks=1 wall_ms=5560.105 max_chunk_ms=5560.105
+[prime-yield] count=2 remaining=9 chunks=1 wall_ms=5668.204 max_chunk_ms=5668.204
+[prime-yield] count=3 remaining=8 chunks=1 wall_ms=5834.428 max_chunk_ms=5834.428
+[prime-yield] count=4 remaining=7 chunks=1 wall_ms=6000.308 max_chunk_ms=6000.308
+[prime-yield] count=5 remaining=6 chunks=1 wall_ms=1078.316 max_chunk_ms=1078.316
+[prime-yield] count=6 remaining=5 chunks=1 wall_ms=261.948 max_chunk_ms=261.948
+[prime-yield] count=7 remaining=4 chunks=1 wall_ms=73.835 max_chunk_ms=73.835
+[prime-yield] count=8 remaining=3 chunks=1 wall_ms=73.783 max_chunk_ms=73.783
+[prime-yield] count=9 remaining=2 chunks=1 wall_ms=73.792 max_chunk_ms=73.792
+[prime-yield] count=10 remaining=1 chunks=1 wall_ms=72.185 max_chunk_ms=72.185
+[admission] request cost: model="q38" ctx=30371 path=spec = 31552 B/token x ctx + 2500MB prefill-workspace + 386MB fixed = 3844MB
+[prime-yield] count=1 remaining=8 chunks=1 wall_ms=6226.481 max_chunk_ms=6226.481
+[prime-yield] count=2 remaining=7 chunks=1 wall_ms=6363.003 max_chunk_ms=6363.003
+[prime-yield] count=3 remaining=6 chunks=1 wall_ms=6531.312 max_chunk_ms=6531.312
+[prime-yield] count=4 remaining=5 chunks=1 wall_ms=1605.339 max_chunk_ms=1605.339
+[prime-yield] count=5 remaining=4 chunks=1 wall_ms=288.031 max_chunk_ms=288.031
+[prime-yield] count=6 remaining=3 chunks=1 wall_ms=74.093 max_chunk_ms=74.093
+[prime-yield] count=7 remaining=2 chunks=1 wall_ms=74.546 max_chunk_ms=74.546
+[prime-yield] count=8 remaining=1 chunks=1 wall_ms=73.849 max_chunk_ms=73.849
+[admission] request cost: model="q38" ctx=2165 path=spec = 31552 B/token x ctx + 1006MB prefill-workspace + 386MB fixed = 1461MB
+[admission] request cost: model="q38" ctx=4907 path=spec = 31552 B/token x ctx + 1978MB prefill-workspace + 386MB fixed = 2520MB
+[admission] request cost: model="q38" ctx=17503 path=spec = 31552 B/token x ctx + 2236MB prefill-workspace + 386MB fixed = 3175MB
+[prime-yield] count=1 remaining=10 chunks=1 wall_ms=5508.923 max_chunk_ms=5508.923
+[prime-yield] count=2 remaining=9 chunks=1 wall_ms=5667.198 max_chunk_ms=5667.198
+[prime-yield] count=3 remaining=8 chunks=1 wall_ms=5836.350 max_chunk_ms=5836.350
+[prime-yield] count=4 remaining=7 chunks=1 wall_ms=6000.518 max_chunk_ms=6000.518
+[prime-yield] count=5 remaining=6 chunks=1 wall_ms=1531.122 max_chunk_ms=1531.122
+[prime-yield] count=6 remaining=5 chunks=1 wall_ms=257.248 max_chunk_ms=257.248
+[prime-yield] count=7 remaining=4 chunks=1 wall_ms=73.526 max_chunk_ms=73.526
+[prime-yield] count=8 remaining=3 chunks=1 wall_ms=74.011 max_chunk_ms=74.011
+[prime-yield] count=9 remaining=2 chunks=1 wall_ms=74.588 max_chunk_ms=74.588
+[prime-yield] count=10 remaining=1 chunks=1 wall_ms=72.921 max_chunk_ms=72.921
+[admission] request cost: model="q38" ctx=31476 path=spec = 31552 B/token x ctx + 2522MB prefill-workspace + 386MB fixed = 3902MB
+[prime-yield] count=1 remaining=8 chunks=1 wall_ms=6251.750 max_chunk_ms=6251.750
+[prime-yield] count=2 remaining=7 chunks=1 wall_ms=6384.288 max_chunk_ms=6384.288
+[prime-yield] count=3 remaining=6 chunks=1 wall_ms=6552.689 max_chunk_ms=6552.689
+[prime-yield] count=4 remaining=5 chunks=1 wall_ms=2867.241 max_chunk_ms=2867.241
+[prime-yield] count=5 remaining=4 chunks=1 wall_ms=286.130 max_chunk_ms=286.130
+[prime-yield] count=6 remaining=3 chunks=1 wall_ms=74.593 max_chunk_ms=74.593
+[prime-yield] count=7 remaining=2 chunks=1 wall_ms=73.732 max_chunk_ms=73.732
+[prime-yield] count=8 remaining=1 chunks=1 wall_ms=74.283 max_chunk_ms=74.283
+[admission] request cost: model="q38" ctx=10793 path=spec = 31552 B/token x ctx + 2099MB prefill-workspace + 386MB fixed = 2826MB
+[prime-yield] count=1 remaining=6 chunks=1 wall_ms=5534.012 max_chunk_ms=5534.012
+[prime-yield] count=2 remaining=5 chunks=1 wall_ms=5659.207 max_chunk_ms=5659.207
+[prime-yield] count=3 remaining=4 chunks=1 wall_ms=3594.469 max_chunk_ms=3594.469
+[prime-yield] count=4 remaining=3 chunks=1 wall_ms=247.002 max_chunk_ms=247.002
+[prime-yield] count=5 remaining=2 chunks=1 wall_ms=74.574 max_chunk_ms=74.574
+[prime-yield] count=6 remaining=1 chunks=1 wall_ms=72.081 max_chunk_ms=72.081
+[admission] request cost: model="q38" ctx=18324 path=spec = 31552 B/token x ctx + 2253MB prefill-workspace + 386MB fixed = 3218MB
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=5943.021 max_chunk_ms=5943.021
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=5139.614 max_chunk_ms=5139.614
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=256.331 max_chunk_ms=256.331
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=74.237 max_chunk_ms=74.237
+[admission] request cost: model="q38" ctx=5009 path=spec = 31552 B/token x ctx + 1980MB prefill-workspace + 386MB fixed = 2525MB
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=5515.797 max_chunk_ms=5515.797
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=1190.290 max_chunk_ms=1190.290
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=228.831 max_chunk_ms=228.831
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=73.771 max_chunk_ms=73.771
+[admission] request cost: model="q38" ctx=8118 path=spec = 31552 B/token x ctx + 2044MB prefill-workspace + 386MB fixed = 2687MB
+[admission] request cost: model="q38" ctx=12392 path=spec = 31552 B/token x ctx + 2132MB prefill-workspace + 386MB fixed = 2909MB
+[prime-yield] count=1 remaining=7 chunks=1 wall_ms=5504.733 max_chunk_ms=5504.733
+[prime-yield] count=2 remaining=6 chunks=1 wall_ms=5672.279 max_chunk_ms=5672.279
+[prime-yield] count=3 remaining=5 chunks=1 wall_ms=5832.676 max_chunk_ms=5832.676
+[prime-yield] count=4 remaining=4 chunks=1 wall_ms=257.565 max_chunk_ms=257.565
+[prime-yield] count=5 remaining=3 chunks=1 wall_ms=73.071 max_chunk_ms=73.071
+[prime-yield] count=6 remaining=2 chunks=1 wall_ms=74.557 max_chunk_ms=74.557
+[prime-yield] count=7 remaining=1 chunks=1 wall_ms=72.144 max_chunk_ms=72.144
+[admission] request cost: model="q38" ctx=27335 path=spec = 31552 B/token x ctx + 2438MB prefill-workspace + 386MB fixed = 3687MB
+[prime-yield] count=1 remaining=8 chunks=1 wall_ms=6036.583 max_chunk_ms=6036.583
+[prime-yield] count=2 remaining=7 chunks=1 wall_ms=6160.044 max_chunk_ms=6160.044
+[prime-yield] count=3 remaining=6 chunks=1 wall_ms=6331.095 max_chunk_ms=6331.095
+[prime-yield] count=4 remaining=5 chunks=1 wall_ms=4235.704 max_chunk_ms=4235.704
+[prime-yield] count=5 remaining=4 chunks=1 wall_ms=281.595 max_chunk_ms=281.595
+[prime-yield] count=6 remaining=3 chunks=1 wall_ms=74.842 max_chunk_ms=74.842
+[prime-yield] count=7 remaining=2 chunks=1 wall_ms=72.945 max_chunk_ms=72.945
+[prime-yield] count=8 remaining=1 chunks=1 wall_ms=74.549 max_chunk_ms=74.549
+[admission] request cost: model="q38" ctx=13297 path=spec = 31552 B/token x ctx + 2150MB prefill-workspace + 386MB fixed = 2956MB
+[prime-yield] count=1 remaining=8 chunks=1 wall_ms=5523.826 max_chunk_ms=5523.826
+[prime-yield] count=2 remaining=7 chunks=1 wall_ms=5658.999 max_chunk_ms=5658.999
+[prime-yield] count=3 remaining=6 chunks=1 wall_ms=5820.499 max_chunk_ms=5820.499
+[prime-yield] count=4 remaining=5 chunks=1 wall_ms=1425.347 max_chunk_ms=1425.347
+[prime-yield] count=5 remaining=4 chunks=1 wall_ms=250.624 max_chunk_ms=250.624
+[prime-yield] count=6 remaining=3 chunks=1 wall_ms=73.030 max_chunk_ms=73.030
+[prime-yield] count=7 remaining=2 chunks=1 wall_ms=72.961 max_chunk_ms=72.961
+[prime-yield] count=8 remaining=1 chunks=1 wall_ms=72.025 max_chunk_ms=72.025
+[admission] request cost: model="q38" ctx=19094 path=spec = 31552 B/token x ctx + 2269MB prefill-workspace + 386MB fixed = 3258MB
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=6034.271 max_chunk_ms=6034.271
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=2633.302 max_chunk_ms=2633.302
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=265.346 max_chunk_ms=265.346
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=73.960 max_chunk_ms=73.960
+[admission] request cost: model="q38" ctx=2898 path=spec = 31552 B/token x ctx + 1358MB prefill-workspace + 386MB fixed = 1836MB
+[admission] request cost: model="q38" ctx=5297 path=spec = 31552 B/token x ctx + 1986MB prefill-workspace + 386MB fixed = 2540MB
+[admission] request cost: model="q38" ctx=16933 path=spec = 31552 B/token x ctx + 2225MB prefill-workspace + 386MB fixed = 3145MB
+[prime-yield] count=1 remaining=10 chunks=1 wall_ms=5501.852 max_chunk_ms=5501.852
+[prime-yield] count=2 remaining=9 chunks=1 wall_ms=5655.629 max_chunk_ms=5655.629
+[prime-yield] count=3 remaining=8 chunks=1 wall_ms=5833.025 max_chunk_ms=5833.025
+[prime-yield] count=4 remaining=7 chunks=1 wall_ms=6000.512 max_chunk_ms=6000.512
+[prime-yield] count=5 remaining=6 chunks=1 wall_ms=745.080 max_chunk_ms=745.080
+[prime-yield] count=6 remaining=5 chunks=1 wall_ms=258.528 max_chunk_ms=258.528
+[prime-yield] count=7 remaining=4 chunks=1 wall_ms=73.998 max_chunk_ms=73.998
+[prime-yield] count=8 remaining=3 chunks=1 wall_ms=72.006 max_chunk_ms=72.006
+[prime-yield] count=9 remaining=2 chunks=1 wall_ms=71.989 max_chunk_ms=71.989
+[prime-yield] count=10 remaining=1 chunks=1 wall_ms=73.850 max_chunk_ms=73.850
+[admission] request cost: model="q38" ctx=35666 path=spec = 31552 B/token x ctx + 2608MB prefill-workspace + 386MB fixed = 4120MB
+[prime-yield] count=1 remaining=10 chunks=1 wall_ms=6245.575 max_chunk_ms=6245.575
+[prime-yield] count=2 remaining=9 chunks=1 wall_ms=6347.135 max_chunk_ms=6347.135
+[prime-yield] count=3 remaining=8 chunks=1 wall_ms=6520.971 max_chunk_ms=6520.971
+[prime-yield] count=4 remaining=7 chunks=1 wall_ms=6687.310 max_chunk_ms=6687.310
+[prime-yield] count=5 remaining=6 chunks=1 wall_ms=4004.528 max_chunk_ms=4004.528
+[prime-yield] count=6 remaining=5 chunks=1 wall_ms=294.480 max_chunk_ms=294.480
+[prime-yield] count=7 remaining=4 chunks=1 wall_ms=73.136 max_chunk_ms=73.136
+[prime-yield] count=8 remaining=3 chunks=1 wall_ms=73.755 max_chunk_ms=73.755
+[prime-yield] count=9 remaining=2 chunks=1 wall_ms=73.021 max_chunk_ms=73.021
+[prime-yield] count=10 remaining=1 chunks=1 wall_ms=73.779 max_chunk_ms=73.779
+[admission] request cost: model="q38" ctx=1669 path=spec = 31552 B/token x ctx + 769MB prefill-workspace + 386MB fixed = 1208MB
+[admission] request cost: model="q38" ctx=5791 path=spec = 31552 B/token x ctx + 1996MB prefill-workspace + 386MB fixed = 2566MB
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=5586.330 max_chunk_ms=5586.330
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=154.667 max_chunk_ms=154.667
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=234.116 max_chunk_ms=234.116
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=74.778 max_chunk_ms=74.778
+[admission] request cost: model="q38" ctx=3578 path=spec = 31552 B/token x ctx + 1684MB prefill-workspace + 386MB fixed = 2183MB
+[admission] request cost: model="q38" ctx=3970 path=spec = 31552 B/token x ctx + 1871MB prefill-workspace + 386MB fixed = 2383MB
+[admission] request cost: model="q38" ctx=16708 path=spec = 31552 B/token x ctx + 2220MB prefill-workspace + 386MB fixed = 3134MB
+[prime-yield] count=1 remaining=10 chunks=1 wall_ms=5512.943 max_chunk_ms=5512.943
+[prime-yield] count=2 remaining=9 chunks=1 wall_ms=5668.465 max_chunk_ms=5668.465
+[prime-yield] count=3 remaining=8 chunks=1 wall_ms=5831.217 max_chunk_ms=5831.217
+[prime-yield] count=4 remaining=7 chunks=1 wall_ms=5987.376 max_chunk_ms=5987.376
+[prime-yield] count=5 remaining=6 chunks=1 wall_ms=381.390 max_chunk_ms=381.390
+[prime-yield] count=6 remaining=5 chunks=1 wall_ms=257.611 max_chunk_ms=257.611
+[prime-yield] count=7 remaining=4 chunks=1 wall_ms=74.676 max_chunk_ms=74.676
+[prime-yield] count=8 remaining=3 chunks=1 wall_ms=72.887 max_chunk_ms=72.887
+[prime-yield] count=9 remaining=2 chunks=1 wall_ms=73.817 max_chunk_ms=73.817
+[prime-yield] count=10 remaining=1 chunks=1 wall_ms=73.764 max_chunk_ms=73.764
+[admission] request cost: model="q38" ctx=37486 path=spec = 31552 B/token x ctx + 2645MB prefill-workspace + 386MB fixed = 4215MB
+[prime-yield] count=1 remaining=12 chunks=1 wall_ms=6238.180 max_chunk_ms=6238.180
+[prime-yield] count=2 remaining=11 chunks=1 wall_ms=6338.099 max_chunk_ms=6338.099
+[prime-yield] count=3 remaining=10 chunks=1 wall_ms=6517.643 max_chunk_ms=6517.643
+[prime-yield] count=4 remaining=9 chunks=1 wall_ms=6672.639 max_chunk_ms=6672.639
+[prime-yield] count=5 remaining=8 chunks=1 wall_ms=6839.423 max_chunk_ms=6839.423
+[prime-yield] count=6 remaining=7 chunks=1 wall_ms=623.139 max_chunk_ms=623.139
+[prime-yield] count=7 remaining=6 chunks=1 wall_ms=306.558 max_chunk_ms=306.558
+[prime-yield] count=8 remaining=5 chunks=1 wall_ms=73.758 max_chunk_ms=73.758
+[prime-yield] count=9 remaining=4 chunks=1 wall_ms=74.503 max_chunk_ms=74.503
+[prime-yield] count=10 remaining=3 chunks=1 wall_ms=73.053 max_chunk_ms=73.053
+[prime-yield] count=11 remaining=2 chunks=1 wall_ms=73.877 max_chunk_ms=73.877
+[prime-yield] count=12 remaining=1 chunks=1 wall_ms=72.832 max_chunk_ms=72.832
+[admission] request cost: model="q38" ctx=3665 path=spec = 31552 B/token x ctx + 1725MB prefill-workspace + 386MB fixed = 2227MB
+[admission] request cost: model="q38" ctx=7456 path=spec = 31552 B/token x ctx + 2030MB prefill-workspace + 386MB fixed = 2652MB
+[admission] request cost: model="q38" ctx=2432 path=spec = 31552 B/token x ctx + 1134MB prefill-workspace + 386MB fixed = 1598MB
+[admission] request cost: model="q38" ctx=2697 path=spec = 31552 B/token x ctx + 1261MB prefill-workspace + 386MB fixed = 1733MB
+[admission] request cost: model="q38" ctx=20945 path=spec = 31552 B/token x ctx + 2307MB prefill-workspace + 386MB fixed = 3354MB
+[prime-yield] count=1 remaining=12 chunks=1 wall_ms=5510.559 max_chunk_ms=5510.559
+[prime-yield] count=2 remaining=11 chunks=1 wall_ms=5665.115 max_chunk_ms=5665.115
+[prime-yield] count=3 remaining=10 chunks=1 wall_ms=5832.768 max_chunk_ms=5832.768
+[prime-yield] count=4 remaining=9 chunks=1 wall_ms=5997.494 max_chunk_ms=5997.494
+[prime-yield] count=5 remaining=8 chunks=1 wall_ms=6168.546 max_chunk_ms=6168.546
+[prime-yield] count=6 remaining=7 chunks=1 wall_ms=601.895 max_chunk_ms=601.895
+[prime-yield] count=7 remaining=6 chunks=1 wall_ms=261.138 max_chunk_ms=261.138
+[prime-yield] count=8 remaining=5 chunks=1 wall_ms=73.762 max_chunk_ms=73.762
+[prime-yield] count=9 remaining=4 chunks=1 wall_ms=74.487 max_chunk_ms=74.487
+[prime-yield] count=10 remaining=3 chunks=1 wall_ms=74.614 max_chunk_ms=74.614
+[prime-yield] count=11 remaining=2 chunks=1 wall_ms=72.021 max_chunk_ms=72.021
+[prime-yield] count=12 remaining=1 chunks=1 wall_ms=73.729 max_chunk_ms=73.729
+[admission] request cost: model="q38" ctx=31393 path=spec = 31552 B/token x ctx + 2521MB prefill-workspace + 386MB fixed = 3898MB
+[prime-yield] count=1 remaining=6 chunks=1 wall_ms=6388.246 max_chunk_ms=6388.246
+[prime-yield] count=2 remaining=5 chunks=1 wall_ms=6514.484 max_chunk_ms=6514.484
+[prime-yield] count=3 remaining=4 chunks=1 wall_ms=3661.813 max_chunk_ms=3661.813
+[prime-yield] count=4 remaining=3 chunks=1 wall_ms=292.443 max_chunk_ms=292.443
+[prime-yield] count=5 remaining=2 chunks=1 wall_ms=73.545 max_chunk_ms=73.545
+[prime-yield] count=6 remaining=1 chunks=1 wall_ms=72.156 max_chunk_ms=72.156
+[admission] request cost: model="q38" ctx=4377 path=spec = 31552 B/token x ctx + 1967MB prefill-workspace + 386MB fixed = 2492MB
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=5528.950 max_chunk_ms=5528.950
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=326.846 max_chunk_ms=326.846
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=229.896 max_chunk_ms=229.896
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=73.887 max_chunk_ms=73.887
+[admission] request cost: model="q38" ctx=5770 path=spec = 31552 B/token x ctx + 1996MB prefill-workspace + 386MB fixed = 2564MB
+[admission] request cost: model="q38" ctx=3592 path=spec = 31552 B/token x ctx + 1323MB prefill-workspace + 386MB fixed = 1823MB
+[admission] request cost: model="q38" ctx=4808 path=spec = 31552 B/token x ctx + 1905MB prefill-workspace + 386MB fixed = 2444MB
+[admission] request cost: model="q38" ctx=23699 path=spec = 31552 B/token x ctx + 2347MB prefill-workspace + 386MB fixed = 3482MB
+[admission] request cost: model="q38" ctx=42745 path=spec = 31552 B/token x ctx + 2737MB prefill-workspace + 386MB fixed = 4473MB
+[admission] request cost: model="q38" ctx=15537 path=spec = 31552 B/token x ctx + 2180MB prefill-workspace + 387MB fixed = 3058MB
+[admission] request cost: model="q38" ctx=26678 path=spec = 31552 B/token x ctx + 2408MB prefill-workspace + 387MB fixed = 3637MB
+[admission] request cost: model="q38" ctx=3099 path=spec = 31552 B/token x ctx + 1086MB prefill-workspace + 387MB fixed = 1571MB
+[admission] request cost: model="q38" ctx=3769 path=spec = 31552 B/token x ctx + 1408MB prefill-workspace + 387MB fixed = 1914MB
+[admission] request cost: model="q38" ctx=23451 path=spec = 31552 B/token x ctx + 2342MB prefill-workspace + 387MB fixed = 3469MB
+[admission] request cost: model="q38" ctx=37359 path=spec = 31552 B/token x ctx + 2627MB prefill-workspace + 387MB fixed = 4193MB
+[admission] request cost: model="q38" ctx=14048 path=spec = 31552 B/token x ctx + 2150MB prefill-workspace + 387MB fixed = 2980MB
+[admission] request cost: model="q38" ctx=19986 path=spec = 31552 B/token x ctx + 2271MB prefill-workspace + 387MB fixed = 3289MB
+[admission] request cost: model="q38" ctx=3235 path=spec = 31552 B/token x ctx + 1152MB prefill-workspace + 387MB fixed = 1641MB
+[admission] request cost: model="q38" ctx=3829 path=spec = 31552 B/token x ctx + 1436MB prefill-workspace + 387MB fixed = 1944MB
+[admission] request cost: model="q38" ctx=23065 path=spec = 31552 B/token x ctx + 2334MB prefill-workspace + 387MB fixed = 3449MB
+[admission] request cost: model="q38" ctx=43166 path=spec = 31552 B/token x ctx + 2746MB prefill-workspace + 387MB fixed = 4495MB
+[admission] request cost: model="q38" ctx=17933 path=spec = 31552 B/token x ctx + 2229MB prefill-workspace + 388MB fixed = 3183MB
+[admission] request cost: model="q38" ctx=31138 path=spec = 31552 B/token x ctx + 2500MB prefill-workspace + 388MB fixed = 3870MB
+[admission] request cost: model="q38" ctx=2932 path=spec = 31552 B/token x ctx + 1006MB prefill-workspace + 388MB fixed = 1487MB
+[admission] request cost: model="q38" ctx=5674 path=spec = 31552 B/token x ctx + 1978MB prefill-workspace + 388MB fixed = 2545MB
+[admission] request cost: model="q38" ctx=18270 path=spec = 31552 B/token x ctx + 2236MB prefill-workspace + 388MB fixed = 3201MB
+[admission] request cost: model="q38" ctx=32243 path=spec = 31552 B/token x ctx + 2522MB prefill-workspace + 388MB fixed = 3928MB
+[admission] request cost: model="q38" ctx=11560 path=spec = 31552 B/token x ctx + 2099MB prefill-workspace + 388MB fixed = 2851MB
+[admission] request cost: model="q38" ctx=19091 path=spec = 31552 B/token x ctx + 2253MB prefill-workspace + 388MB fixed = 3243MB
+[admission] request cost: model="q38" ctx=5776 path=spec = 31552 B/token x ctx + 1980MB prefill-workspace + 388MB fixed = 2550MB
+[admission] request cost: model="q38" ctx=8885 path=spec = 31552 B/token x ctx + 2044MB prefill-workspace + 388MB fixed = 2712MB
+[admission] request cost: model="q38" ctx=13159 path=spec = 31552 B/token x ctx + 2132MB prefill-workspace + 388MB fixed = 2935MB
+[admission] request cost: model="q38" ctx=28102 path=spec = 31552 B/token x ctx + 2438MB prefill-workspace + 388MB fixed = 3712MB
+[admission] request cost: model="q38" ctx=14064 path=spec = 31552 B/token x ctx + 2150MB prefill-workspace + 388MB fixed = 2982MB
+[admission] request cost: model="q38" ctx=19861 path=spec = 31552 B/token x ctx + 2269MB prefill-workspace + 388MB fixed = 3283MB
+[admission] request cost: model="q38" ctx=3665 path=spec = 31552 B/token x ctx + 1358MB prefill-workspace + 388MB fixed = 1861MB
+[admission] request cost: model="q38" ctx=6064 path=spec = 31552 B/token x ctx + 1986MB prefill-workspace + 388MB fixed = 2565MB
+[admission] request cost: model="q38" ctx=17700 path=spec = 31552 B/token x ctx + 2225MB prefill-workspace + 388MB fixed = 3171MB
+[admission] request cost: model="q38" ctx=36433 path=spec = 31552 B/token x ctx + 2608MB prefill-workspace + 388MB fixed = 4146MB
+[admission] request cost: model="q38" ctx=2436 path=spec = 31552 B/token x ctx + 769MB prefill-workspace + 388MB fixed = 1233MB
+[admission] request cost: model="q38" ctx=6558 path=spec = 31552 B/token x ctx + 1996MB prefill-workspace + 388MB fixed = 2591MB
+[admission] request cost: model="q38" ctx=4345 path=spec = 31552 B/token x ctx + 1684MB prefill-workspace + 388MB fixed = 2209MB
+[admission] request cost: model="q38" ctx=4737 path=spec = 31552 B/token x ctx + 1871MB prefill-workspace + 388MB fixed = 2409MB
+[admission] request cost: model="q38" ctx=17475 path=spec = 31552 B/token x ctx + 2220MB prefill-workspace + 388MB fixed = 3159MB
+[admission] request cost: model="q38" ctx=38253 path=spec = 31552 B/token x ctx + 2645MB prefill-workspace + 388MB fixed = 4240MB
+[admission] request cost: model="q38" ctx=4432 path=spec = 31552 B/token x ctx + 1725MB prefill-workspace + 388MB fixed = 2253MB
+[admission] request cost: model="q38" ctx=8223 path=spec = 31552 B/token x ctx + 2030MB prefill-workspace + 388MB fixed = 2678MB
+[admission] request cost: model="q38" ctx=3199 path=spec = 31552 B/token x ctx + 1134MB prefill-workspace + 388MB fixed = 1623MB
+[admission] request cost: model="q38" ctx=3464 path=spec = 31552 B/token x ctx + 1261MB prefill-workspace + 388MB fixed = 1759MB
+[admission] request cost: model="q38" ctx=21712 path=spec = 31552 B/token x ctx + 2307MB prefill-workspace + 388MB fixed = 3380MB
+[admission] request cost: model="q38" ctx=32160 path=spec = 31552 B/token x ctx + 2521MB prefill-workspace + 388MB fixed = 3923MB
+[admission] request cost: model="q38" ctx=5144 path=spec = 31552 B/token x ctx + 1967MB prefill-workspace + 388MB fixed = 2518MB
+[admission] request cost: model="q38" ctx=6537 path=spec = 31552 B/token x ctx + 1996MB prefill-workspace + 388MB fixed = 2590MB
+[admission] request cost: model="q38" ctx=22932 path=spec = 31552 B/token x ctx + 2347MB prefill-workspace + 388MB fixed = 3459MB
+[admission] request cost: model="q38" ctx=4041 path=plain = 29696 B/token x ctx + 1905MB prefill-workspace + 388MB fixed = 2413MB
+[admission] request cost: model="q38" ctx=2825 path=plain = 29696 B/token x ctx + 1323MB prefill-workspace + 388MB fixed = 1794MB
+[admission] request cost: model="q38" ctx=41978 path=plain = 29696 B/token x ctx + 2737MB prefill-workspace + 388MB fixed = 4372MB
+[admission] request cost: model="q38" ctx=14770 path=spec = 31552 B/token x ctx + 2180MB prefill-workspace + 394MB fixed = 3040MB
+[admission] request cost: model="q38" ctx=3002 path=plain = 29696 B/token x ctx + 1408MB prefill-workspace + 394MB fixed = 1891MB
+[admission] request cost: model="q38" ctx=2332 path=plain = 29696 B/token x ctx + 1086MB prefill-workspace + 394MB fixed = 1550MB
+[admission] request cost: model="q38" ctx=25911 path=plain = 29696 B/token x ctx + 2408MB prefill-workspace + 394MB fixed = 3572MB
+[admission] request cost: model="q38" ctx=22684 path=plain = 29696 B/token x ctx + 2342MB prefill-workspace + 394MB fixed = 3410MB
+[admission] request cost: model="q38" ctx=13281 path=plain = 29696 B/token x ctx + 2150MB prefill-workspace + 394MB fixed = 2938MB
+[admission] request cost: model="q38" ctx=19219 path=plain = 29696 B/token x ctx + 2271MB prefill-workspace + 394MB fixed = 3236MB
+[admission] request cost: model="q38" ctx=36592 path=plain = 29696 B/token x ctx + 2627MB prefill-workspace + 394MB fixed = 4108MB
+[admission] request cost: model="q38" ctx=2468 path=plain = 29696 B/token x ctx + 1152MB prefill-workspace + 394MB fixed = 1619MB
+[admission] request cost: model="q38" ctx=3062 path=spec = 31552 B/token x ctx + 1436MB prefill-workspace + 394MB fixed = 1927MB
+[admission] request cost: model="q38" ctx=22298 path=plain = 29696 B/token x ctx + 2334MB prefill-workspace + 394MB fixed = 3390MB
+[admission] request cost: model="q38" ctx=42399 path=plain = 29696 B/token x ctx + 2746MB prefill-workspace + 394MB fixed = 4399MB
+[admission] request cost: model="q38" ctx=17166 path=plain = 29696 B/token x ctx + 2229MB prefill-workspace + 394MB fixed = 3133MB
+[admission] request cost: model="q38" ctx=30371 path=plain = 29696 B/token x ctx + 2500MB prefill-workspace + 394MB fixed = 3795MB
+[admission] request cost: model="q38" ctx=2165 path=spec = 31552 B/token x ctx + 1006MB prefill-workspace + 394MB fixed = 1469MB
+[admission] request cost: model="q38" ctx=4907 path=plain = 29696 B/token x ctx + 1978MB prefill-workspace + 394MB fixed = 2518MB
+[admission] request cost: model="q38" ctx=17503 path=plain = 29696 B/token x ctx + 2236MB prefill-workspace + 394MB fixed = 3150MB
+[admission] request cost: model="q38" ctx=31476 path=plain = 29696 B/token x ctx + 2522MB prefill-workspace + 394MB fixed = 3851MB
+[admission] request cost: model="q38" ctx=10793 path=plain = 29696 B/token x ctx + 2099MB prefill-workspace + 394MB fixed = 2813MB
+[admission] request cost: model="q38" ctx=8118 path=spec = 31552 B/token x ctx + 2044MB prefill-workspace + 394MB fixed = 2694MB
+[admission] request cost: model="q38" ctx=5009 path=plain = 29696 B/token x ctx + 1980MB prefill-workspace + 394MB fixed = 2523MB
+[admission] request cost: model="q38" ctx=18324 path=plain = 29696 B/token x ctx + 2253MB prefill-workspace + 394MB fixed = 3191MB
+[admission] request cost: model="q38" ctx=12392 path=plain = 29696 B/token x ctx + 2132MB prefill-workspace + 394MB fixed = 2893MB
+[admission] request cost: model="q38" ctx=27335 path=plain = 29696 B/token x ctx + 2438MB prefill-workspace + 394MB fixed = 3643MB
+[admission] request cost: model="q38" ctx=2898 path=plain = 29696 B/token x ctx + 1358MB prefill-workspace + 394MB fixed = 1838MB
+[admission] request cost: model="q38" ctx=13297 path=plain = 29696 B/token x ctx + 2150MB prefill-workspace + 394MB fixed = 2939MB
+[admission] request cost: model="q38" ctx=19094 path=plain = 29696 B/token x ctx + 2269MB prefill-workspace + 394MB fixed = 3230MB
+[admission] request cost: model="q38" ctx=5297 path=spec = 31552 B/token x ctx + 1986MB prefill-workspace + 394MB fixed = 2547MB
+[admission] request cost: model="q38" ctx=1669 path=plain = 29696 B/token x ctx + 769MB prefill-workspace + 394MB fixed = 1212MB
+[admission] request cost: model="q38" ctx=16933 path=plain = 29696 B/token x ctx + 2225MB prefill-workspace + 394MB fixed = 3121MB
+[admission] request cost: model="q38" ctx=35666 path=plain = 29696 B/token x ctx + 2608MB prefill-workspace + 394MB fixed = 4061MB
+[admission] request cost: model="q38" ctx=5791 path=plain = 29696 B/token x ctx + 1996MB prefill-workspace + 394MB fixed = 2562MB
+[admission] request cost: model="q38" ctx=3578 path=spec = 31552 B/token x ctx + 1684MB prefill-workspace + 394MB fixed = 2190MB
+[admission] request cost: model="q38" ctx=3970 path=plain = 29696 B/token x ctx + 1871MB prefill-workspace + 394MB fixed = 2383MB
+[admission] request cost: model="q38" ctx=16708 path=plain = 29696 B/token x ctx + 2220MB prefill-workspace + 394MB fixed = 3110MB
+[admission] request cost: model="q38" ctx=37486 path=plain = 29696 B/token x ctx + 2645MB prefill-workspace + 394MB fixed = 4152MB
+[admission] request cost: model="q38" ctx=3665 path=spec = 31552 B/token x ctx + 1725MB prefill-workspace + 394MB fixed = 2235MB
+[admission] request cost: model="q38" ctx=2432 path=plain = 29696 B/token x ctx + 1134MB prefill-workspace + 394MB fixed = 1600MB
+[admission] request cost: model="q38" ctx=7456 path=plain = 29696 B/token x ctx + 2030MB prefill-workspace + 394MB fixed = 2646MB
+[admission] request cost: model="q38" ctx=2697 path=plain = 29696 B/token x ctx + 1261MB prefill-workspace + 394MB fixed = 1735MB
+[admission] request cost: model="q38" ctx=20945 path=plain = 29696 B/token x ctx + 2307MB prefill-workspace + 394MB fixed = 3323MB
+[admission] request cost: model="q38" ctx=5770 path=spec = 31552 B/token x ctx + 1996MB prefill-workspace + 394MB fixed = 2572MB
+[admission] request cost: model="q38" ctx=4377 path=plain = 29696 B/token x ctx + 1967MB prefill-workspace + 394MB fixed = 2491MB
+[admission] request cost: model="q38" ctx=31393 path=plain = 29696 B/token x ctx + 2521MB prefill-workspace + 394MB fixed = 3847MB
+[admission] request cost: model="q38" ctx=3592 path=spec = 31552 B/token x ctx + 1323MB prefill-workspace + 394MB fixed = 1830MB
+[admission] request cost: model="q38" ctx=4808 path=plain = 29696 B/token x ctx + 1905MB prefill-workspace + 394MB fixed = 2442MB
+[admission] request cost: model="q38" ctx=23699 path=plain = 29696 B/token x ctx + 2347MB prefill-workspace + 394MB fixed = 3445MB
+[admission] request cost: model="q38" ctx=42745 path=plain = 29696 B/token x ctx + 2737MB prefill-workspace + 394MB fixed = 4401MB
+[admission] request cost: model="q38" ctx=15537 path=plain = 29696 B/token x ctx + 2180MB prefill-workspace + 394MB fixed = 3035MB
+[admission] request cost: model="q38" ctx=26678 path=plain = 29696 B/token x ctx + 2408MB prefill-workspace + 394MB fixed = 3594MB
+[admission] request cost: model="q38" ctx=3099 path=plain = 29696 B/token x ctx + 1086MB prefill-workspace + 394MB fixed = 1572MB
+[admission] request cost: model="q38" ctx=3769 path=plain = 29696 B/token x ctx + 1408MB prefill-workspace + 394MB fixed = 1913MB
+[admission] request cost: model="q38" ctx=23451 path=plain = 29696 B/token x ctx + 2342MB prefill-workspace + 394MB fixed = 3433MB
+[admission] request cost: model="q38" ctx=37359 path=plain = 29696 B/token x ctx + 2627MB prefill-workspace + 394MB fixed = 4130MB
+[admission] request cost: model="q38" ctx=14048 path=plain = 29696 B/token x ctx + 2150MB prefill-workspace + 394MB fixed = 2961MB
+[admission] request cost: model="q38" ctx=19986 path=plain = 29696 B/token x ctx + 2271MB prefill-workspace + 394MB fixed = 3259MB
+[admission] request cost: model="q38" ctx=3235 path=plain = 29696 B/token x ctx + 1152MB prefill-workspace + 394MB fixed = 1642MB
+[admission] request cost: model="q38" ctx=3829 path=plain = 29696 B/token x ctx + 1436MB prefill-workspace + 394MB fixed = 1944MB
+[admission] request cost: model="q38" ctx=23065 path=plain = 29696 B/token x ctx + 2334MB prefill-workspace + 394MB fixed = 3413MB
+[admission] request cost: model="q38" ctx=43166 path=plain = 29696 B/token x ctx + 2746MB prefill-workspace + 394MB fixed = 4422MB
+[admission] request cost: model="q38" ctx=17933 path=plain = 29696 B/token x ctx + 2229MB prefill-workspace + 394MB fixed = 3156MB
+[admission] request cost: model="q38" ctx=31138 path=plain = 29696 B/token x ctx + 2500MB prefill-workspace + 394MB fixed = 3818MB
+[admission] request cost: model="q38" ctx=2932 path=plain = 29696 B/token x ctx + 1006MB prefill-workspace + 394MB fixed = 1487MB
+[admission] request cost: model="q38" ctx=5674 path=plain = 29696 B/token x ctx + 1978MB prefill-workspace + 394MB fixed = 2541MB
+[admission] request cost: model="q38" ctx=18270 path=plain = 29696 B/token x ctx + 2236MB prefill-workspace + 394MB fixed = 3173MB
+[admission] request cost: model="q38" ctx=32243 path=plain = 29696 B/token x ctx + 2522MB prefill-workspace + 394MB fixed = 3874MB
+[admission] request cost: model="q38" ctx=11560 path=plain = 29696 B/token x ctx + 2099MB prefill-workspace + 394MB fixed = 2836MB
+[admission] request cost: model="q38" ctx=19091 path=plain = 29696 B/token x ctx + 2253MB prefill-workspace + 394MB fixed = 3214MB
+[admission] request cost: model="q38" ctx=5776 path=plain = 29696 B/token x ctx + 1980MB prefill-workspace + 394MB fixed = 2546MB
+[admission] request cost: model="q38" ctx=8885 path=plain = 29696 B/token x ctx + 2044MB prefill-workspace + 394MB fixed = 2702MB
+[admission] request cost: model="q38" ctx=13159 path=plain = 29696 B/token x ctx + 2132MB prefill-workspace + 394MB fixed = 2916MB
+[admission] request cost: model="q38" ctx=28102 path=plain = 29696 B/token x ctx + 2438MB prefill-workspace + 394MB fixed = 3666MB
+[admission] request cost: model="q38" ctx=14064 path=plain = 29696 B/token x ctx + 2150MB prefill-workspace + 394MB fixed = 2962MB
+[admission] request cost: model="q38" ctx=19861 path=plain = 29696 B/token x ctx + 2269MB prefill-workspace + 394MB fixed = 3252MB
+[admission] request cost: model="q38" ctx=3665 path=plain = 29696 B/token x ctx + 1358MB prefill-workspace + 394MB fixed = 1860MB
+[admission] request cost: model="q38" ctx=6064 path=plain = 29696 B/token x ctx + 1986MB prefill-workspace + 394MB fixed = 2560MB
+[admission] request cost: model="q38" ctx=17700 path=plain = 29696 B/token x ctx + 2225MB prefill-workspace + 394MB fixed = 3144MB
+[admission] request cost: model="q38" ctx=36433 path=plain = 29696 B/token x ctx + 2608MB prefill-workspace + 394MB fixed = 4084MB
+[admission] request cost: model="q38" ctx=2436 path=plain = 29696 B/token x ctx + 769MB prefill-workspace + 394MB fixed = 1235MB
+[admission] request cost: model="q38" ctx=6558 path=plain = 29696 B/token x ctx + 1996MB prefill-workspace + 394MB fixed = 2585MB
+[admission] request cost: model="q38" ctx=4345 path=plain = 29696 B/token x ctx + 1684MB prefill-workspace + 394MB fixed = 2206MB
+[admission] request cost: model="q38" ctx=4737 path=plain = 29696 B/token x ctx + 1871MB prefill-workspace + 394MB fixed = 2406MB
+[admission] request cost: model="q38" ctx=17475 path=plain = 29696 B/token x ctx + 2220MB prefill-workspace + 394MB fixed = 3133MB
+[admission] request cost: model="q38" ctx=38253 path=plain = 29696 B/token x ctx + 2645MB prefill-workspace + 394MB fixed = 4175MB
+[admission] request cost: model="q38" ctx=4432 path=plain = 29696 B/token x ctx + 1725MB prefill-workspace + 394MB fixed = 2251MB
+[admission] request cost: model="q38" ctx=8223 path=plain = 29696 B/token x ctx + 2030MB prefill-workspace + 394MB fixed = 2668MB
+[admission] request cost: model="q38" ctx=3199 path=plain = 29696 B/token x ctx + 1134MB prefill-workspace + 394MB fixed = 1623MB
+[admission] request cost: model="q38" ctx=3464 path=plain = 29696 B/token x ctx + 1261MB prefill-workspace + 394MB fixed = 1758MB
+[admission] request cost: model="q38" ctx=21712 path=plain = 29696 B/token x ctx + 2307MB prefill-workspace + 394MB fixed = 3345MB
+[admission] request cost: model="q38" ctx=32160 path=plain = 29696 B/token x ctx + 2521MB prefill-workspace + 394MB fixed = 3870MB
+[admission] request cost: model="q38" ctx=5144 path=plain = 29696 B/token x ctx + 1967MB prefill-workspace + 394MB fixed = 2514MB
+[admission] request cost: model="q38" ctx=6537 path=plain = 29696 B/token x ctx + 1996MB prefill-workspace + 394MB fixed = 2584MB
+[admission] request cost: model="q38" ctx=2825 path=spec = 31552 B/token x ctx + 1323MB prefill-workspace + 394MB fixed = 1806MB
+[admission] request cost: model="q38" ctx=4041 path=plain = 29696 B/token x ctx + 1905MB prefill-workspace + 394MB fixed = 2419MB
+[admission] request cost: model="q38" ctx=3002 path=plain = 29696 B/token x ctx + 1408MB prefill-workspace + 394MB fixed = 1891MB
+[admission] request cost: model="q38" ctx=2332 path=plain = 29696 B/token x ctx + 1086MB prefill-workspace + 394MB fixed = 1550MB
+[admission] request cost: model="q38" ctx=14770 path=plain = 29696 B/token x ctx + 2180MB prefill-workspace + 394MB fixed = 3013MB
+[admission] request cost: model="q38" ctx=22932 path=plain = 29696 B/token x ctx + 2347MB prefill-workspace + 394MB fixed = 3422MB
+[admission] request cost: model="q38" ctx=25911 path=plain = 29696 B/token x ctx + 2408MB prefill-workspace + 394MB fixed = 3572MB
+[admission] request cost: model="q38" ctx=41978 path=plain = 29696 B/token x ctx + 2737MB prefill-workspace + 394MB fixed = 4378MB
+[admission] request cost: model="q38" ctx=22684 path=plain = 29696 B/token x ctx + 2342MB prefill-workspace + 394MB fixed = 3410MB
+[admission] request cost: model="q38" ctx=2468 path=plain = 29696 B/token x ctx + 1152MB prefill-workspace + 394MB fixed = 1619MB
+[admission] request cost: model="q38" ctx=3062 path=plain = 29696 B/token x ctx + 1436MB prefill-workspace + 394MB fixed = 1921MB
+[admission] request cost: model="q38" ctx=13281 path=plain = 29696 B/token x ctx + 2150MB prefill-workspace + 394MB fixed = 2938MB
+[admission] request cost: model="q38" ctx=19219 path=plain = 29696 B/token x ctx + 2271MB prefill-workspace + 394MB fixed = 3236MB
+[admission] request cost: model="q38" ctx=36592 path=plain = 29696 B/token x ctx + 2627MB prefill-workspace + 394MB fixed = 4108MB
+[admission] request cost: model="q38" ctx=22298 path=plain = 29696 B/token x ctx + 2334MB prefill-workspace + 394MB fixed = 3390MB
+[admission] request cost: model="q38" ctx=42399 path=plain = 29696 B/token x ctx + 2746MB prefill-workspace + 394MB fixed = 4399MB
+[admission] request cost: model="q38" ctx=17166 path=plain = 29696 B/token x ctx + 2229MB prefill-workspace + 394MB fixed = 3133MB
+[admission] request cost: model="q38" ctx=2165 path=plain = 29696 B/token x ctx + 1006MB prefill-workspace + 394MB fixed = 1465MB
+[admission] request cost: model="q38" ctx=30371 path=plain = 29696 B/token x ctx + 2500MB prefill-workspace + 394MB fixed = 3795MB
+[admission] request cost: model="q38" ctx=4907 path=plain = 29696 B/token x ctx + 1978MB prefill-workspace + 394MB fixed = 2518MB
+[admission] request cost: model="q38" ctx=5009 path=plain = 29696 B/token x ctx + 1980MB prefill-workspace + 394MB fixed = 2523MB
+[admission] request cost: model="q38" ctx=10793 path=plain = 29696 B/token x ctx + 2099MB prefill-workspace + 394MB fixed = 2813MB
+[admission] request cost: model="q38" ctx=17503 path=plain = 29696 B/token x ctx + 2236MB prefill-workspace + 394MB fixed = 3150MB
+[admission] request cost: model="q38" ctx=18324 path=plain = 29696 B/token x ctx + 2253MB prefill-workspace + 394MB fixed = 3191MB
+[admission] request cost: model="q38" ctx=31476 path=plain = 29696 B/token x ctx + 2522MB prefill-workspace + 394MB fixed = 3851MB
+[admission] request cost: model="q38" ctx=8118 path=plain = 29696 B/token x ctx + 2044MB prefill-workspace + 394MB fixed = 2679MB
+[admission] request cost: model="q38" ctx=12392 path=plain = 29696 B/token x ctx + 2132MB prefill-workspace + 394MB fixed = 2893MB
+[admission] request cost: model="q38" ctx=27335 path=plain = 29696 B/token x ctx + 2438MB prefill-workspace + 394MB fixed = 3643MB
+[admission] request cost: model="q38" ctx=13297 path=spec = 31552 B/token x ctx + 2150MB prefill-workspace + 394MB fixed = 2963MB
+[admission] request cost: model="q38" ctx=5297 path=plain = 29696 B/token x ctx + 1986MB prefill-workspace + 394MB fixed = 2537MB
+[admission] request cost: model="q38" ctx=1669 path=plain = 29696 B/token x ctx + 769MB prefill-workspace + 394MB fixed = 1212MB
+[admission] request cost: model="q38" ctx=2898 path=plain = 29696 B/token x ctx + 1358MB prefill-workspace + 394MB fixed = 1838MB
+[admission] request cost: model="q38" ctx=5791 path=plain = 29696 B/token x ctx + 1996MB prefill-workspace + 394MB fixed = 2562MB
+[admission] request cost: model="q38" ctx=16933 path=plain = 29696 B/token x ctx + 2225MB prefill-workspace + 394MB fixed = 3121MB
+[admission] request cost: model="q38" ctx=19094 path=plain = 29696 B/token x ctx + 2269MB prefill-workspace + 394MB fixed = 3230MB
+[admission] request cost: model="q38" ctx=35666 path=plain = 29696 B/token x ctx + 2608MB prefill-workspace + 394MB fixed = 4061MB
+[admission] request cost: model="q38" ctx=3578 path=plain = 29696 B/token x ctx + 1684MB prefill-workspace + 394MB fixed = 2184MB
+[admission] request cost: model="q38" ctx=2432 path=spec = 31552 B/token x ctx + 1134MB prefill-workspace + 394MB fixed = 1605MB
+[admission] request cost: model="q38" ctx=7456 path=spec = 31552 B/token x ctx + 2030MB prefill-workspace + 394MB fixed = 2660MB
+[admission] request cost: model="q38" ctx=3665 path=plain = 29696 B/token x ctx + 1725MB prefill-workspace + 394MB fixed = 2228MB
+[admission] request cost: model="q38" ctx=3970 path=plain = 29696 B/token x ctx + 1871MB prefill-workspace + 394MB fixed = 2383MB
+[admission] request cost: model="q38" ctx=2697 path=plain = 29696 B/token x ctx + 1261MB prefill-workspace + 394MB fixed = 1735MB
+[admission] request cost: model="q38" ctx=16708 path=plain = 29696 B/token x ctx + 2220MB prefill-workspace + 394MB fixed = 3110MB
+[admission] request cost: model="q38" ctx=20945 path=plain = 29696 B/token x ctx + 2307MB prefill-workspace + 394MB fixed = 3323MB
+[admission] request cost: model="q38" ctx=37486 path=plain = 29696 B/token x ctx + 2645MB prefill-workspace + 394MB fixed = 4152MB
+[admission] request cost: model="q38" ctx=4377 path=spec = 31552 B/token x ctx + 1967MB prefill-workspace + 394MB fixed = 2499MB
+[admission] request cost: model="q38" ctx=31393 path=spec = 31552 B/token x ctx + 2521MB prefill-workspace + 394MB fixed = 3905MB
+[admission] request cost: model="q38" ctx=5770 path=spec = 31552 B/token x ctx + 1996MB prefill-workspace + 394MB fixed = 2572MB
+[admission] request cost: model="q38" ctx=3592 path=spec = 31552 B/token x ctx + 1323MB prefill-workspace + 394MB fixed = 1830MB
+[admission] request cost: model="q38" ctx=4808 path=plain = 29696 B/token x ctx + 1905MB prefill-workspace + 394MB fixed = 2442MB
+[admission] request cost: model="q38" ctx=3769 path=plain = 29696 B/token x ctx + 1408MB prefill-workspace + 394MB fixed = 1913MB
+[admission] request cost: model="q38" ctx=3099 path=plain = 29696 B/token x ctx + 1086MB prefill-workspace + 394MB fixed = 1572MB
+[admission] request cost: model="q38" ctx=15537 path=plain = 29696 B/token x ctx + 2180MB prefill-workspace + 394MB fixed = 3035MB
+[admission] request cost: model="q38" ctx=23699 path=plain = 29696 B/token x ctx + 2347MB prefill-workspace + 394MB fixed = 3445MB
+[admission] request cost: model="q38" ctx=26678 path=plain = 29696 B/token x ctx + 2408MB prefill-workspace + 394MB fixed = 3594MB
+[admission] request cost: model="q38" ctx=42745 path=plain = 29696 B/token x ctx + 2737MB prefill-workspace + 394MB fixed = 4401MB
+[admission] request cost: model="q38" ctx=23451 path=plain = 29696 B/token x ctx + 2342MB prefill-workspace + 394MB fixed = 3433MB
+[admission] request cost: model="q38" ctx=37359 path=plain = 29696 B/token x ctx + 2627MB prefill-workspace + 394MB fixed = 4130MB
+[admission] request cost: model="q38" ctx=14048 path=plain = 29696 B/token x ctx + 2150MB prefill-workspace + 394MB fixed = 2961MB
+[admission] request cost: model="q38" ctx=19986 path=plain = 29696 B/token x ctx + 2271MB prefill-workspace + 394MB fixed = 3259MB
+[admission] request cost: model="q38" ctx=3235 path=plain = 29696 B/token x ctx + 1152MB prefill-workspace + 394MB fixed = 1642MB
+[admission] request cost: model="q38" ctx=3829 path=plain = 29696 B/token x ctx + 1436MB prefill-workspace + 394MB fixed = 1944MB
+[admission] request cost: model="q38" ctx=23065 path=plain = 29696 B/token x ctx + 2334MB prefill-workspace + 394MB fixed = 3413MB
+[admission] request cost: model="q38" ctx=43166 path=plain = 29696 B/token x ctx + 2746MB prefill-workspace + 394MB fixed = 4422MB
+[admission] request cost: model="q38" ctx=17933 path=plain = 29696 B/token x ctx + 2229MB prefill-workspace + 394MB fixed = 3156MB
+[admission] request cost: model="q38" ctx=31138 path=plain = 29696 B/token x ctx + 2500MB prefill-workspace + 394MB fixed = 3818MB
+[admission] request cost: model="q38" ctx=2932 path=plain = 29696 B/token x ctx + 1006MB prefill-workspace + 394MB fixed = 1487MB
+[admission] request cost: model="q38" ctx=5674 path=plain = 29696 B/token x ctx + 1978MB prefill-workspace + 394MB fixed = 2541MB
+[admission] request cost: model="q38" ctx=18270 path=plain = 29696 B/token x ctx + 2236MB prefill-workspace + 394MB fixed = 3173MB
+[admission] request cost: model="q38" ctx=32243 path=plain = 29696 B/token x ctx + 2522MB prefill-workspace + 394MB fixed = 3874MB
+[admission] request cost: model="q38" ctx=11560 path=plain = 29696 B/token x ctx + 2099MB prefill-workspace + 394MB fixed = 2836MB
+[admission] request cost: model="q38" ctx=19091 path=plain = 29696 B/token x ctx + 2253MB prefill-workspace + 394MB fixed = 3214MB
+[admission] request cost: model="q38" ctx=5776 path=plain = 29696 B/token x ctx + 1980MB prefill-workspace + 394MB fixed = 2546MB
+[admission] request cost: model="q38" ctx=8885 path=plain = 29696 B/token x ctx + 2044MB prefill-workspace + 394MB fixed = 2702MB
+[admission] request cost: model="q38" ctx=13159 path=plain = 29696 B/token x ctx + 2132MB prefill-workspace + 394MB fixed = 2916MB
+[admission] request cost: model="q38" ctx=28102 path=plain = 29696 B/token x ctx + 2438MB prefill-workspace + 394MB fixed = 3666MB
+[admission] request cost: model="q38" ctx=14064 path=plain = 29696 B/token x ctx + 2150MB prefill-workspace + 394MB fixed = 2962MB
+[admission] request cost: model="q38" ctx=19861 path=plain = 29696 B/token x ctx + 2269MB prefill-workspace + 394MB fixed = 3252MB
+[admission] request cost: model="q38" ctx=3665 path=plain = 29696 B/token x ctx + 1358MB prefill-workspace + 394MB fixed = 1860MB
+[admission] request cost: model="q38" ctx=6064 path=plain = 29696 B/token x ctx + 1986MB prefill-workspace + 394MB fixed = 2560MB
+[admission] request cost: model="q38" ctx=17700 path=plain = 29696 B/token x ctx + 2225MB prefill-workspace + 394MB fixed = 3144MB
+[admission] request cost: model="q38" ctx=36433 path=plain = 29696 B/token x ctx + 2608MB prefill-workspace + 394MB fixed = 4084MB
+[admission] request cost: model="q38" ctx=2436 path=plain = 29696 B/token x ctx + 769MB prefill-workspace + 394MB fixed = 1235MB
+[admission] request cost: model="q38" ctx=6558 path=plain = 29696 B/token x ctx + 1996MB prefill-workspace + 394MB fixed = 2585MB
+[admission] request cost: model="q38" ctx=4345 path=plain = 29696 B/token x ctx + 1684MB prefill-workspace + 394MB fixed = 2206MB
+[admission] request cost: model="q38" ctx=4737 path=plain = 29696 B/token x ctx + 1871MB prefill-workspace + 394MB fixed = 2406MB
+[admission] request cost: model="q38" ctx=17475 path=plain = 29696 B/token x ctx + 2220MB prefill-workspace + 394MB fixed = 3133MB
+[admission] request cost: model="q38" ctx=38253 path=plain = 29696 B/token x ctx + 2645MB prefill-workspace + 394MB fixed = 4175MB
+[admission] request cost: model="q38" ctx=4432 path=plain = 29696 B/token x ctx + 1725MB prefill-workspace + 394MB fixed = 2251MB
+[admission] request cost: model="q38" ctx=8223 path=plain = 29696 B/token x ctx + 2030MB prefill-workspace + 394MB fixed = 2668MB
+[admission] request cost: model="q38" ctx=3199 path=plain = 29696 B/token x ctx + 1134MB prefill-workspace + 394MB fixed = 1623MB
+[admission] request cost: model="q38" ctx=3464 path=plain = 29696 B/token x ctx + 1261MB prefill-workspace + 394MB fixed = 1758MB
+[admission] request cost: model="q38" ctx=21712 path=plain = 29696 B/token x ctx + 2307MB prefill-workspace + 394MB fixed = 3345MB
+[admission] request cost: model="q38" ctx=32160 path=plain = 29696 B/token x ctx + 2521MB prefill-workspace + 394MB fixed = 3870MB
+[admission] request cost: model="q38" ctx=5144 path=plain = 29696 B/token x ctx + 1967MB prefill-workspace + 394MB fixed = 2514MB
+[admission] request cost: model="q38" ctx=6537 path=plain = 29696 B/token x ctx + 1996MB prefill-workspace + 394MB fixed = 2584MB
+[admission] request cost: model="q38" ctx=4041 path=spec = 31552 B/token x ctx + 1905MB prefill-workspace + 394MB fixed = 2427MB
+[admission] request cost: model="q38" ctx=2825 path=plain = 29696 B/token x ctx + 1323MB prefill-workspace + 394MB fixed = 1800MB
+[admission] request cost: model="q38" ctx=3002 path=plain = 29696 B/token x ctx + 1408MB prefill-workspace + 394MB fixed = 1891MB
+[admission] request cost: model="q38" ctx=2332 path=plain = 29696 B/token x ctx + 1086MB prefill-workspace + 394MB fixed = 1550MB
+[admission] request cost: model="q38" ctx=2468 path=plain = 29696 B/token x ctx + 1152MB prefill-workspace + 394MB fixed = 1619MB
+[admission] request cost: model="q38" ctx=3062 path=plain = 29696 B/token x ctx + 1436MB prefill-workspace + 394MB fixed = 1921MB
+[admission] request cost: model="q38" ctx=14770 path=plain = 29696 B/token x ctx + 2180MB prefill-workspace + 394MB fixed = 3013MB
+[admission] request cost: model="q38" ctx=13281 path=plain = 29696 B/token x ctx + 2150MB prefill-workspace + 394MB fixed = 2938MB
+[admission] request cost: model="q38" ctx=25911 path=plain = 29696 B/token x ctx + 2408MB prefill-workspace + 394MB fixed = 3572MB
+[admission] request cost: model="q38" ctx=19219 path=plain = 29696 B/token x ctx + 2271MB prefill-workspace + 394MB fixed = 3236MB
+[admission] request cost: model="q38" ctx=22932 path=plain = 29696 B/token x ctx + 2347MB prefill-workspace + 394MB fixed = 3422MB
+[admission] request cost: model="q38" ctx=22684 path=plain = 29696 B/token x ctx + 2342MB prefill-workspace + 394MB fixed = 3410MB
+[admission] request cost: model="q38" ctx=22298 path=plain = 29696 B/token x ctx + 2334MB prefill-workspace + 394MB fixed = 3390MB
+[admission] request cost: model="q38" ctx=36592 path=plain = 29696 B/token x ctx + 2627MB prefill-workspace + 394MB fixed = 4108MB
+[admission] request cost: model="q38" ctx=41978 path=plain = 29696 B/token x ctx + 2737MB prefill-workspace + 406MB fixed = 4390MB
+[admission] request cost: model="q38" ctx=42399 path=plain = 29696 B/token x ctx + 2746MB prefill-workspace + 420MB fixed = 4425MB
+[admission] request cost: model="q38" ctx=17166 path=plain = 29696 B/token x ctx + 2229MB prefill-workspace + 421MB fixed = 3160MB
+[admission] request cost: model="q38" ctx=30371 path=plain = 29696 B/token x ctx + 2500MB prefill-workspace + 421MB fixed = 3822MB
+[admission] request cost: model="q38" ctx=2165 path=plain = 29696 B/token x ctx + 1006MB prefill-workspace + 421MB fixed = 1491MB
+[admission] request cost: model="q38" ctx=4907 path=plain = 29696 B/token x ctx + 1978MB prefill-workspace + 421MB fixed = 2545MB
+[admission] request cost: model="q38" ctx=10793 path=plain = 29696 B/token x ctx + 2099MB prefill-workspace + 421MB fixed = 2840MB
+[admission] request cost: model="q38" ctx=18324 path=plain = 29696 B/token x ctx + 2253MB prefill-workspace + 421MB fixed = 3218MB
+[admission] request cost: model="q38" ctx=17503 path=plain = 29696 B/token x ctx + 2236MB prefill-workspace + 421MB fixed = 3177MB
+[admission] request cost: model="q38" ctx=31476 path=plain = 29696 B/token x ctx + 2522MB prefill-workspace + 421MB fixed = 3878MB
+[admission] request cost: model="q38" ctx=8118 path=plain = 29696 B/token x ctx + 2044MB prefill-workspace + 421MB fixed = 2706MB
+[admission] request cost: model="q38" ctx=2898 path=plain = 29696 B/token x ctx + 1358MB prefill-workspace + 421MB fixed = 1865MB
+[admission] request cost: model="q38" ctx=5297 path=plain = 29696 B/token x ctx + 1986MB prefill-workspace + 421MB fixed = 2564MB
+[admission] request cost: model="q38" ctx=5009 path=plain = 29696 B/token x ctx + 1980MB prefill-workspace + 421MB fixed = 2550MB
+[admission] request cost: model="q38" ctx=12392 path=plain = 29696 B/token x ctx + 2132MB prefill-workspace + 421MB fixed = 2920MB
+[admission] request cost: model="q38" ctx=13297 path=plain = 29696 B/token x ctx + 2150MB prefill-workspace + 421MB fixed = 2966MB
+[admission] request cost: model="q38" ctx=16933 path=plain = 29696 B/token x ctx + 2225MB prefill-workspace + 421MB fixed = 3148MB
+[admission] request cost: model="q38" ctx=19094 path=plain = 29696 B/token x ctx + 2269MB prefill-workspace + 421MB fixed = 3257MB
+[admission] request cost: model="q38" ctx=27335 path=plain = 29696 B/token x ctx + 2438MB prefill-workspace + 421MB fixed = 3670MB
+[admission] request cost: model="q38" ctx=35666 path=plain = 29696 B/token x ctx + 2608MB prefill-workspace + 421MB fixed = 4088MB
+[admission] request cost: model="q38" ctx=1669 path=plain = 29696 B/token x ctx + 769MB prefill-workspace + 421MB fixed = 1239MB
+[admission] request cost: model="q38" ctx=5791 path=plain = 29696 B/token x ctx + 1996MB prefill-workspace + 421MB fixed = 2589MB
+[admission] request cost: model="q38" ctx=3578 path=plain = 29696 B/token x ctx + 1684MB prefill-workspace + 421MB fixed = 2211MB
+[admission] request cost: model="q38" ctx=3970 path=plain = 29696 B/token x ctx + 1871MB prefill-workspace + 421MB fixed = 2410MB
+[admission] request cost: model="q38" ctx=16708 path=plain = 29696 B/token x ctx + 2220MB prefill-workspace + 421MB fixed = 3137MB
+[admission] request cost: model="q38" ctx=37486 path=plain = 29696 B/token x ctx + 2645MB prefill-workspace + 421MB fixed = 4179MB
+[admission] request cost: model="q38" ctx=3665 path=plain = 29696 B/token x ctx + 1725MB prefill-workspace + 421MB fixed = 2255MB
+[admission] request cost: model="q38" ctx=2697 path=plain = 29696 B/token x ctx + 1261MB prefill-workspace + 421MB fixed = 1762MB
+[admission] request cost: model="q38" ctx=2432 path=plain = 29696 B/token x ctx + 1134MB prefill-workspace + 421MB fixed = 1627MB
+[admission] request cost: model="q38" ctx=7456 path=plain = 29696 B/token x ctx + 2030MB prefill-workspace + 421MB fixed = 2673MB
+[admission] request cost: model="q38" ctx=4377 path=plain = 29696 B/token x ctx + 1967MB prefill-workspace + 421MB fixed = 2518MB
+[admission] request cost: model="q38" ctx=5770 path=plain = 29696 B/token x ctx + 1996MB prefill-workspace + 421MB fixed = 2588MB
+[admission] request cost: model="q38" ctx=20945 path=plain = 29696 B/token x ctx + 2307MB prefill-workspace + 421MB fixed = 3349MB
+[admission] request cost: model="q38" ctx=31393 path=plain = 29696 B/token x ctx + 2521MB prefill-workspace + 421MB fixed = 3874MB
+[admission] request cost: model="q38" ctx=4808 path=spec = 31552 B/token x ctx + 1905MB prefill-workspace + 421MB fixed = 2478MB
+[admission] request cost: model="q38" ctx=3592 path=plain = 29696 B/token x ctx + 1323MB prefill-workspace + 421MB fixed = 1850MB
+[admission] request cost: model="q38" ctx=23699 path=plain = 29696 B/token x ctx + 2347MB prefill-workspace + 421MB fixed = 3472MB
+[admission] request cost: model="q38" ctx=42745 path=plain = 29696 B/token x ctx + 2737MB prefill-workspace + 421MB fixed = 4428MB
+[admission] request cost: model="q38" ctx=3099 path=plain = 29696 B/token x ctx + 1086MB prefill-workspace + 421MB fixed = 1599MB
+[admission] request cost: model="q38" ctx=3769 path=plain = 29696 B/token x ctx + 1408MB prefill-workspace + 421MB fixed = 1940MB
+[admission] request cost: model="q38" ctx=3235 path=plain = 29696 B/token x ctx + 1152MB prefill-workspace + 421MB fixed = 1668MB
+[admission] request cost: model="q38" ctx=3829 path=plain = 29696 B/token x ctx + 1436MB prefill-workspace + 421MB fixed = 1971MB
+[admission] request cost: model="q38" ctx=15537 path=plain = 29696 B/token x ctx + 2180MB prefill-workspace + 421MB fixed = 3062MB
+[admission] request cost: model="q38" ctx=14048 path=plain = 29696 B/token x ctx + 2150MB prefill-workspace + 421MB fixed = 2988MB
+[admission] request cost: model="q38" ctx=23451 path=plain = 29696 B/token x ctx + 2342MB prefill-workspace + 421MB fixed = 3459MB
+[admission] request cost: model="q38" ctx=23065 path=plain = 29696 B/token x ctx + 2334MB prefill-workspace + 421MB fixed = 3440MB
+[admission] request cost: model="q38" ctx=26678 path=plain = 29696 B/token x ctx + 2408MB prefill-workspace + 421MB fixed = 3621MB
+[admission] request cost: model="q38" ctx=19986 path=plain = 29696 B/token x ctx + 2271MB prefill-workspace + 421MB fixed = 3286MB
+[admission] request cost: model="q38" ctx=37359 path=plain = 29696 B/token x ctx + 2627MB prefill-workspace + 421MB fixed = 4157MB
+[admission] request cost: model="q38" ctx=43166 path=plain = 29696 B/token x ctx + 2746MB prefill-workspace + 421MB fixed = 4449MB
+[admission] request cost: model="q38" ctx=17933 path=plain = 29696 B/token x ctx + 2229MB prefill-workspace + 421MB fixed = 3183MB
+[admission] request cost: model="q38" ctx=31138 path=plain = 29696 B/token x ctx + 2500MB prefill-workspace + 421MB fixed = 3845MB
+[admission] request cost: model="q38" ctx=2932 path=plain = 29696 B/token x ctx + 1006MB prefill-workspace + 421MB fixed = 1514MB
+[admission] request cost: model="q38" ctx=5674 path=plain = 29696 B/token x ctx + 1978MB prefill-workspace + 421MB fixed = 2567MB
+[admission] request cost: model="q38" ctx=18270 path=plain = 29696 B/token x ctx + 2236MB prefill-workspace + 421MB fixed = 3200MB
+[admission] request cost: model="q38" ctx=32243 path=plain = 29696 B/token x ctx + 2522MB prefill-workspace + 421MB fixed = 3901MB
+[admission] request cost: model="q38" ctx=11560 path=plain = 29696 B/token x ctx + 2099MB prefill-workspace + 421MB fixed = 2863MB
+[admission] request cost: model="q38" ctx=19091 path=plain = 29696 B/token x ctx + 2253MB prefill-workspace + 421MB fixed = 3241MB
+[admission] request cost: model="q38" ctx=5776 path=plain = 29696 B/token x ctx + 1980MB prefill-workspace + 421MB fixed = 2573MB
+[admission] request cost: model="q38" ctx=8885 path=plain = 29696 B/token x ctx + 2044MB prefill-workspace + 421MB fixed = 2729MB
+[admission] request cost: model="q38" ctx=13159 path=plain = 29696 B/token x ctx + 2132MB prefill-workspace + 421MB fixed = 2943MB
+[admission] request cost: model="q38" ctx=28102 path=plain = 29696 B/token x ctx + 2438MB prefill-workspace + 421MB fixed = 3693MB
+[admission] request cost: model="q38" ctx=14064 path=plain = 29696 B/token x ctx + 2150MB prefill-workspace + 421MB fixed = 2988MB
+[admission] request cost: model="q38" ctx=19861 path=plain = 29696 B/token x ctx + 2269MB prefill-workspace + 421MB fixed = 3279MB
+[admission] request cost: model="q38" ctx=3665 path=plain = 29696 B/token x ctx + 1358MB prefill-workspace + 421MB fixed = 1887MB
+[admission] request cost: model="q38" ctx=6064 path=plain = 29696 B/token x ctx + 1986MB prefill-workspace + 421MB fixed = 2587MB
+[admission] request cost: model="q38" ctx=17700 path=plain = 29696 B/token x ctx + 2225MB prefill-workspace + 421MB fixed = 3171MB
+[admission] request cost: model="q38" ctx=36433 path=plain = 29696 B/token x ctx + 2608MB prefill-workspace + 421MB fixed = 4111MB
+[admission] request cost: model="q38" ctx=2436 path=plain = 29696 B/token x ctx + 769MB prefill-workspace + 421MB fixed = 1262MB
+[admission] request cost: model="q38" ctx=6558 path=plain = 29696 B/token x ctx + 1996MB prefill-workspace + 421MB fixed = 2612MB
+[admission] request cost: model="q38" ctx=4345 path=plain = 29696 B/token x ctx + 1684MB prefill-workspace + 421MB fixed = 2233MB
+[admission] request cost: model="q38" ctx=4737 path=plain = 29696 B/token x ctx + 1871MB prefill-workspace + 421MB fixed = 2433MB
+[admission] request cost: model="q38" ctx=17475 path=plain = 29696 B/token x ctx + 2220MB prefill-workspace + 421MB fixed = 3160MB
+[admission] request cost: model="q38" ctx=38253 path=plain = 29696 B/token x ctx + 2645MB prefill-workspace + 421MB fixed = 4202MB
+[admission] request cost: model="q38" ctx=4432 path=plain = 29696 B/token x ctx + 1725MB prefill-workspace + 421MB fixed = 2278MB
+[admission] request cost: model="q38" ctx=3199 path=plain = 29696 B/token x ctx + 1134MB prefill-workspace + 421MB fixed = 1650MB
+[admission] request cost: model="q38" ctx=8223 path=plain = 29696 B/token x ctx + 2030MB prefill-workspace + 421MB fixed = 2695MB
+[admission] request cost: model="q38" ctx=3464 path=plain = 29696 B/token x ctx + 1261MB prefill-workspace + 421MB fixed = 1785MB
+[admission] request cost: model="q38" ctx=21712 path=plain = 29696 B/token x ctx + 2307MB prefill-workspace + 421MB fixed = 3372MB
+[admission] request cost: model="q38" ctx=32160 path=plain = 29696 B/token x ctx + 2521MB prefill-workspace + 421MB fixed = 3896MB
+[admission] request cost: model="q38" ctx=5144 path=plain = 29696 B/token x ctx + 1967MB prefill-workspace + 421MB fixed = 2541MB
+[admission] request cost: model="q38" ctx=6537 path=plain = 29696 B/token x ctx + 1996MB prefill-workspace + 421MB fixed = 2611MB
+[admission] request cost: model="q38" ctx=2825 path=spec = 31552 B/token x ctx + 1323MB prefill-workspace + 421MB fixed = 1833MB
+[admission] request cost: model="q38" ctx=4041 path=plain = 29696 B/token x ctx + 1905MB prefill-workspace + 421MB fixed = 2446MB
+[admission] request cost: model="q38" ctx=3002 path=plain = 29696 B/token x ctx + 1408MB prefill-workspace + 421MB fixed = 1917MB
+[admission] request cost: model="q38" ctx=2332 path=plain = 29696 B/token x ctx + 1086MB prefill-workspace + 421MB fixed = 1576MB
+[admission] request cost: model="q38" ctx=2468 path=plain = 29696 B/token x ctx + 1152MB prefill-workspace + 421MB fixed = 1646MB
+[admission] request cost: model="q38" ctx=14770 path=plain = 29696 B/token x ctx + 2180MB prefill-workspace + 421MB fixed = 3040MB
+[admission] request cost: model="q38" ctx=13281 path=plain = 29696 B/token x ctx + 2150MB prefill-workspace + 421MB fixed = 2965MB
+[admission] request cost: model="q38" ctx=22932 path=plain = 29696 B/token x ctx + 2347MB prefill-workspace + 421MB fixed = 3449MB
+[admission] request cost: model="q38" ctx=25911 path=plain = 29696 B/token x ctx + 2408MB prefill-workspace + 421MB fixed = 3599MB
+[admission] request cost: model="q38" ctx=22684 path=plain = 29696 B/token x ctx + 2342MB prefill-workspace + 421MB fixed = 3437MB
+[admission] request cost: model="q38" ctx=41978 path=plain = 29696 B/token x ctx + 2737MB prefill-workspace + 421MB fixed = 4405MB
+[admission] request cost: model="q38" ctx=3062 path=plain = 29696 B/token x ctx + 1436MB prefill-workspace + 421MB fixed = 1948MB
+[admission] request cost: model="q38" ctx=2165 path=plain = 29696 B/token x ctx + 1006MB prefill-workspace + 421MB fixed = 1491MB
+[admission] request cost: model="q38" ctx=4907 path=plain = 29696 B/token x ctx + 1978MB prefill-workspace + 421MB fixed = 2545MB
+[admission] request cost: model="q38" ctx=5009 path=plain = 29696 B/token x ctx + 1980MB prefill-workspace + 421MB fixed = 2550MB
+[admission] request cost: model="q38" ctx=8118 path=plain = 29696 B/token x ctx + 2044MB prefill-workspace + 421MB fixed = 2706MB
+[admission] request cost: model="q38" ctx=2898 path=plain = 29696 B/token x ctx + 1358MB prefill-workspace + 421MB fixed = 1865MB
+[admission] request cost: model="q38" ctx=5297 path=plain = 29696 B/token x ctx + 1986MB prefill-workspace + 421MB fixed = 2564MB
+[admission] request cost: model="q38" ctx=17166 path=plain = 29696 B/token x ctx + 2229MB prefill-workspace + 421MB fixed = 3160MB
+[admission] request cost: model="q38" ctx=12392 path=plain = 29696 B/token x ctx + 2132MB prefill-workspace + 421MB fixed = 2920MB
+[admission] request cost: model="q38" ctx=10793 path=plain = 29696 B/token x ctx + 2099MB prefill-workspace + 421MB fixed = 2840MB
+[admission] request cost: model="q38" ctx=18324 path=plain = 29696 B/token x ctx + 2253MB prefill-workspace + 421MB fixed = 3218MB
+[admission] request cost: model="q38" ctx=17503 path=plain = 29696 B/token x ctx + 2236MB prefill-workspace + 421MB fixed = 3177MB
+[admission] request cost: model="q38" ctx=13297 path=plain = 29696 B/token x ctx + 2150MB prefill-workspace + 421MB fixed = 2966MB
+[admission] request cost: model="q38" ctx=19219 path=plain = 29696 B/token x ctx + 2271MB prefill-workspace + 421MB fixed = 3263MB
+[admission] request cost: model="q38" ctx=22298 path=plain = 29696 B/token x ctx + 2334MB prefill-workspace + 421MB fixed = 3417MB
+[admission] request cost: model="q38" ctx=27335 path=plain = 29696 B/token x ctx + 2438MB prefill-workspace + 421MB fixed = 3670MB
+[admission] request cost: model="q38" ctx=19094 path=plain = 29696 B/token x ctx + 2269MB prefill-workspace + 421MB fixed = 3257MB
+[admission] request cost: model="q38" ctx=30371 path=plain = 29696 B/token x ctx + 2500MB prefill-workspace + 421MB fixed = 3822MB
+[admission] request cost: model="q38" ctx=36592 path=plain = 29696 B/token x ctx + 2627MB prefill-workspace + 421MB fixed = 4135MB
+[admission] request cost: model="q38" ctx=31476 path=plain = 29696 B/token x ctx + 2522MB prefill-workspace + 421MB fixed = 3878MB
+[admission] request cost: model="q38" ctx=42399 path=plain = 29696 B/token x ctx + 2746MB prefill-workspace + 421MB fixed = 4426MB
+[admission] request cost: model="q38" ctx=16933 path=plain = 29696 B/token x ctx + 2225MB prefill-workspace + 421MB fixed = 3148MB
+[admission] request cost: model="q38" ctx=5791 path=plain = 29696 B/token x ctx + 1996MB prefill-workspace + 421MB fixed = 2589MB
+[admission] request cost: model="q38" ctx=1669 path=plain = 29696 B/token x ctx + 769MB prefill-workspace + 421MB fixed = 1239MB
+[admission] request cost: model="q38" ctx=3578 path=plain = 29696 B/token x ctx + 1684MB prefill-workspace + 421MB fixed = 2211MB
+[admission] request cost: model="q38" ctx=35666 path=plain = 29696 B/token x ctx + 2608MB prefill-workspace + 421MB fixed = 4088MB
+[admission] request cost: model="q38" ctx=3970 path=plain = 29696 B/token x ctx + 1871MB prefill-workspace + 421MB fixed = 2410MB
+[admission] request cost: model="q38" ctx=3665 path=plain = 29696 B/token x ctx + 1725MB prefill-workspace + 421MB fixed = 2255MB
+[admission] request cost: model="q38" ctx=5770 path=plain = 29696 B/token x ctx + 1996MB prefill-workspace + 421MB fixed = 2588MB
+[admission] request cost: model="q38" ctx=4377 path=plain = 29696 B/token x ctx + 1967MB prefill-workspace + 421MB fixed = 2518MB
+[admission] request cost: model="q38" ctx=7456 path=plain = 29696 B/token x ctx + 2030MB prefill-workspace + 421MB fixed = 2673MB
+[admission] request cost: model="q38" ctx=2432 path=plain = 29696 B/token x ctx + 1134MB prefill-workspace + 421MB fixed = 1627MB
+[admission] request cost: model="q38" ctx=2697 path=plain = 29696 B/token x ctx + 1261MB prefill-workspace + 421MB fixed = 1762MB
+[admission] request cost: model="q38" ctx=16708 path=plain = 29696 B/token x ctx + 2220MB prefill-workspace + 421MB fixed = 3137MB
+[admission] request cost: model="q38" ctx=20945 path=plain = 29696 B/token x ctx + 2307MB prefill-workspace + 421MB fixed = 3350MB
+[admission] request cost: model="q38" ctx=37486 path=plain = 29696 B/token x ctx + 2645MB prefill-workspace + 421MB fixed = 4180MB
+[admission] request cost: model="q38" ctx=31393 path=plain = 29696 B/token x ctx + 2521MB prefill-workspace + 421MB fixed = 3874MB
+[admission] request cost: model="q38" ctx=3592 path=spec = 31552 B/token x ctx + 1323MB prefill-workspace + 421MB fixed = 1857MB
+[admission] request cost: model="q38" ctx=4808 path=plain = 29696 B/token x ctx + 1905MB prefill-workspace + 421MB fixed = 2469MB
+[admission] request cost: model="q38" ctx=3769 path=plain = 29696 B/token x ctx + 1408MB prefill-workspace + 421MB fixed = 1940MB
+[admission] request cost: model="q38" ctx=3099 path=plain = 29696 B/token x ctx + 1086MB prefill-workspace + 421MB fixed = 1599MB
+[admission] request cost: model="q38" ctx=15537 path=plain = 29696 B/token x ctx + 2180MB prefill-workspace + 421MB fixed = 3063MB
+[admission] request cost: model="q38" ctx=23699 path=plain = 29696 B/token x ctx + 2347MB prefill-workspace + 421MB fixed = 3472MB
+[admission] request cost: model="q38" ctx=26678 path=plain = 29696 B/token x ctx + 2408MB prefill-workspace + 421MB fixed = 3622MB
+[admission] request cost: model="q38" ctx=42745 path=plain = 29696 B/token x ctx + 2737MB prefill-workspace + 421MB fixed = 4428MB
+[admission] request cost: model="q38" ctx=3829 path=plain = 29696 B/token x ctx + 1436MB prefill-workspace + 421MB fixed = 1971MB
+[admission] request cost: model="q38" ctx=3235 path=plain = 29696 B/token x ctx + 1152MB prefill-workspace + 421MB fixed = 1669MB
+[admission] request cost: model="q38" ctx=5674 path=plain = 29696 B/token x ctx + 1978MB prefill-workspace + 421MB fixed = 2568MB
+[admission] request cost: model="q38" ctx=2932 path=plain = 29696 B/token x ctx + 1006MB prefill-workspace + 421MB fixed = 1514MB
+[admission] request cost: model="q38" ctx=5776 path=plain = 29696 B/token x ctx + 1980MB prefill-workspace + 421MB fixed = 2573MB
+[admission] request cost: model="q38" ctx=8885 path=plain = 29696 B/token x ctx + 2044MB prefill-workspace + 421MB fixed = 2729MB
+[admission] request cost: model="q38" ctx=3665 path=plain = 29696 B/token x ctx + 1358MB prefill-workspace + 421MB fixed = 1887MB
+[admission] request cost: model="q38" ctx=6064 path=plain = 29696 B/token x ctx + 1986MB prefill-workspace + 421MB fixed = 2587MB
+[admission] request cost: model="q38" ctx=14048 path=plain = 29696 B/token x ctx + 2150MB prefill-workspace + 421MB fixed = 2988MB
+[admission] request cost: model="q38" ctx=17933 path=plain = 29696 B/token x ctx + 2229MB prefill-workspace + 421MB fixed = 3183MB
+[admission] request cost: model="q38" ctx=11560 path=plain = 29696 B/token x ctx + 2099MB prefill-workspace + 421MB fixed = 2863MB
+[admission] request cost: model="q38" ctx=18270 path=plain = 29696 B/token x ctx + 2236MB prefill-workspace + 421MB fixed = 3200MB
+[admission] request cost: model="q38" ctx=13159 path=plain = 29696 B/token x ctx + 2132MB prefill-workspace + 421MB fixed = 2943MB
+[admission] request cost: model="q38" ctx=14064 path=plain = 29696 B/token x ctx + 2150MB prefill-workspace + 421MB fixed = 2989MB
+[admission] request cost: model="q38" ctx=19091 path=plain = 29696 B/token x ctx + 2253MB prefill-workspace + 421MB fixed = 3241MB
+[admission] request cost: model="q38" ctx=19986 path=plain = 29696 B/token x ctx + 2271MB prefill-workspace + 421MB fixed = 3286MB
+[admission] request cost: model="q38" ctx=23065 path=plain = 29696 B/token x ctx + 2334MB prefill-workspace + 421MB fixed = 3440MB
+[admission] request cost: model="q38" ctx=23451 path=plain = 29696 B/token x ctx + 2342MB prefill-workspace + 421MB fixed = 3460MB
+[admission] request cost: model="q38" ctx=19861 path=plain = 29696 B/token x ctx + 2269MB prefill-workspace + 421MB fixed = 3279MB
+[admission] request cost: model="q38" ctx=31138 path=plain = 29696 B/token x ctx + 2500MB prefill-workspace + 421MB fixed = 3845MB
+[admission] request cost: model="q38" ctx=37359 path=plain = 29696 B/token x ctx + 2627MB prefill-workspace + 421MB fixed = 4157MB
+[admission] request cost: model="q38" ctx=28102 path=plain = 29696 B/token x ctx + 2438MB prefill-workspace + 421MB fixed = 3693MB
+[admission] request cost: model="q38" ctx=32243 path=plain = 29696 B/token x ctx + 2522MB prefill-workspace + 421MB fixed = 3901MB
+[admission] request cost: model="q38" ctx=43166 path=plain = 29696 B/token x ctx + 2746MB prefill-workspace + 421MB fixed = 4449MB
+[admission] request cost: model="q38" ctx=5144 path=plain = 29696 B/token x ctx + 1967MB prefill-workspace + 421MB fixed = 2541MB
+[admission] request cost: model="q38" ctx=131678 path=spec = 31552 B/token x ctx + 4573MB prefill-workspace + 421MB fixed = 9149MB
+[prime-yield] count=1 remaining=66 chunks=1 wall_ms=5522.563 max_chunk_ms=5522.563
+[prime-yield] count=2 remaining=65 chunks=1 wall_ms=5664.678 max_chunk_ms=5664.678
+[prime-yield] count=3 remaining=64 chunks=1 wall_ms=5833.595 max_chunk_ms=5833.595
+[prime-yield] count=4 remaining=63 chunks=1 wall_ms=5993.787 max_chunk_ms=5993.787
+[prime-yield] count=5 remaining=62 chunks=1 wall_ms=6163.969 max_chunk_ms=6163.969
+[prime-yield] count=6 remaining=61 chunks=1 wall_ms=6335.178 max_chunk_ms=6335.178
+[prime-yield] count=7 remaining=60 chunks=1 wall_ms=6499.761 max_chunk_ms=6499.761
+[prime-yield] count=8 remaining=59 chunks=1 wall_ms=6659.058 max_chunk_ms=6659.058
+[prime-yield] count=9 remaining=58 chunks=1 wall_ms=6833.846 max_chunk_ms=6833.846
+[prime-yield] count=10 remaining=57 chunks=1 wall_ms=6989.410 max_chunk_ms=6989.410
+[prime-yield] count=11 remaining=56 chunks=1 wall_ms=7157.510 max_chunk_ms=7157.510
+[prime-yield] count=12 remaining=55 chunks=1 wall_ms=7318.311 max_chunk_ms=7318.311
+[prime-yield] count=13 remaining=54 chunks=1 wall_ms=7475.000 max_chunk_ms=7475.000
+[prime-yield] count=14 remaining=53 chunks=1 wall_ms=7646.247 max_chunk_ms=7646.247
+[prime-yield] count=15 remaining=52 chunks=1 wall_ms=7810.802 max_chunk_ms=7810.802
+[prime-yield] count=16 remaining=51 chunks=1 wall_ms=7973.846 max_chunk_ms=7973.846
+[prime-yield] count=17 remaining=50 chunks=1 wall_ms=8148.392 max_chunk_ms=8148.392
+[prime-yield] count=18 remaining=49 chunks=1 wall_ms=8311.216 max_chunk_ms=8311.216
+[prime-yield] count=19 remaining=48 chunks=1 wall_ms=8472.997 max_chunk_ms=8472.997
+[prime-yield] count=20 remaining=47 chunks=1 wall_ms=8627.255 max_chunk_ms=8627.255
+[prime-yield] count=21 remaining=46 chunks=1 wall_ms=8788.309 max_chunk_ms=8788.309
+[prime-yield] count=22 remaining=45 chunks=1 wall_ms=8963.815 max_chunk_ms=8963.815
+[prime-yield] count=23 remaining=44 chunks=1 wall_ms=9122.185 max_chunk_ms=9122.185
+[prime-yield] count=24 remaining=43 chunks=1 wall_ms=9289.071 max_chunk_ms=9289.071
+[prime-yield] count=25 remaining=42 chunks=1 wall_ms=9452.142 max_chunk_ms=9452.142
+[prime-yield] count=26 remaining=41 chunks=1 wall_ms=9607.290 max_chunk_ms=9607.290
+[prime-yield] count=27 remaining=40 chunks=1 wall_ms=9774.428 max_chunk_ms=9774.428
+[prime-yield] count=28 remaining=39 chunks=1 wall_ms=9945.897 max_chunk_ms=9945.897
+[prime-yield] count=29 remaining=38 chunks=1 wall_ms=10104.690 max_chunk_ms=10104.690
+[prime-yield] count=30 remaining=37 chunks=1 wall_ms=10276.891 max_chunk_ms=10276.891
+[prime-yield] count=31 remaining=36 chunks=1 wall_ms=10438.447 max_chunk_ms=10438.447
+[prime-yield] count=32 remaining=35 chunks=1 wall_ms=10596.955 max_chunk_ms=10596.955
+[prime-yield] count=33 remaining=34 chunks=1 wall_ms=1386.751 max_chunk_ms=1386.751
+[prime-yield] count=34 remaining=33 chunks=1 wall_ms=497.895 max_chunk_ms=497.895
+[prime-yield] count=35 remaining=32 chunks=1 wall_ms=73.719 max_chunk_ms=73.719
+[prime-yield] count=36 remaining=31 chunks=1 wall_ms=74.544 max_chunk_ms=74.544
+[prime-yield] count=37 remaining=30 chunks=1 wall_ms=72.907 max_chunk_ms=72.907
+[prime-yield] count=38 remaining=29 chunks=1 wall_ms=72.777 max_chunk_ms=72.777
+[prime-yield] count=39 remaining=28 chunks=1 wall_ms=72.088 max_chunk_ms=72.088
+[prime-yield] count=40 remaining=27 chunks=1 wall_ms=73.663 max_chunk_ms=73.663
+[prime-yield] count=41 remaining=26 chunks=1 wall_ms=72.041 max_chunk_ms=72.041
+[prime-yield] count=42 remaining=25 chunks=1 wall_ms=74.575 max_chunk_ms=74.575
+[prime-yield] count=43 remaining=24 chunks=1 wall_ms=73.708 max_chunk_ms=73.708
+[prime-yield] count=44 remaining=23 chunks=1 wall_ms=72.068 max_chunk_ms=72.068
+[prime-yield] count=45 remaining=22 chunks=1 wall_ms=73.705 max_chunk_ms=73.705
+[prime-yield] count=46 remaining=21 chunks=1 wall_ms=72.972 max_chunk_ms=72.972
+[prime-yield] count=47 remaining=20 chunks=1 wall_ms=72.031 max_chunk_ms=72.031
+[prime-yield] count=48 remaining=19 chunks=1 wall_ms=72.857 max_chunk_ms=72.857
+[prime-yield] count=49 remaining=18 chunks=1 wall_ms=71.686 max_chunk_ms=71.686
+[prime-yield] count=50 remaining=17 chunks=1 wall_ms=72.440 max_chunk_ms=72.440
+[prime-yield] count=51 remaining=16 chunks=1 wall_ms=73.605 max_chunk_ms=73.605
+[prime-yield] count=52 remaining=15 chunks=1 wall_ms=72.097 max_chunk_ms=72.097
+[prime-yield] count=53 remaining=14 chunks=1 wall_ms=73.530 max_chunk_ms=73.530
+[prime-yield] count=54 remaining=13 chunks=1 wall_ms=73.811 max_chunk_ms=73.811
+[prime-yield] count=55 remaining=12 chunks=1 wall_ms=74.377 max_chunk_ms=74.377
+[prime-yield] count=56 remaining=11 chunks=1 wall_ms=72.258 max_chunk_ms=72.258
+[prime-yield] count=57 remaining=10 chunks=1 wall_ms=73.602 max_chunk_ms=73.602
+[prime-yield] count=58 remaining=9 chunks=1 wall_ms=72.555 max_chunk_ms=72.555
+[prime-yield] count=59 remaining=8 chunks=1 wall_ms=73.195 max_chunk_ms=73.195
+[prime-yield] count=60 remaining=7 chunks=1 wall_ms=72.987 max_chunk_ms=72.987
+[prime-yield] count=61 remaining=6 chunks=1 wall_ms=73.169 max_chunk_ms=73.169
+[prime-yield] count=62 remaining=5 chunks=1 wall_ms=72.465 max_chunk_ms=72.465
+[prime-yield] count=63 remaining=4 chunks=1 wall_ms=73.638 max_chunk_ms=73.638
+[prime-yield] count=64 remaining=3 chunks=1 wall_ms=72.098 max_chunk_ms=72.098
+[prime-yield] count=65 remaining=2 chunks=1 wall_ms=73.665 max_chunk_ms=73.665
+[prime-yield] count=66 remaining=1 chunks=1 wall_ms=73.713 max_chunk_ms=73.713
+[admission] request cost: model="q38" ctx=132832 path=spec = 31552 B/token x ctx + 4577MB prefill-workspace + 552MB fixed = 9320MB
+[admission] request cost: model="q38" ctx=132793 path=plain = 29696 B/token x ctx + 4576MB prefill-workspace + 554MB fixed = 9074MB
+[admission] request cost: model="q38" ctx=132824 path=plain = 29696 B/token x ctx + 4577MB prefill-workspace + 554MB fixed = 9076MB
+[admission] request cost: model="q38" ctx=132822 path=plain = 29696 B/token x ctx + 4577MB prefill-workspace + 554MB fixed = 9076MB
+[admission] request cost: model="q38" ctx=132827 path=plain = 29696 B/token x ctx + 4577MB prefill-workspace + 610MB fixed = 9131MB
+[admission] request cost: model="q38" ctx=132802 path=plain = 29696 B/token x ctx + 4577MB prefill-workspace + 643MB fixed = 9163MB
+[admission] request cost: model="q38" ctx=132826 path=plain = 29696 B/token x ctx + 4577MB prefill-workspace + 643MB fixed = 9165MB
+[spec-gate] demoted session to batched decode: 8 active >= HIGH=4 (model q38, committed 131745, generated 1)

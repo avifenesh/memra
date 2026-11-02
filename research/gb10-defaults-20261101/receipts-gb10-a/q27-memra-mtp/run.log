@@ -1,0 +1,6 @@
+19:25:26 start q27-memra-mtp base=http://127.0.0.1:8090 model=q38 node=gb10-a
+19:26:47 warm {"size": 8192, "users": 1, "cold_max_s": 10.3, "turn256": [0.5, 0.5]} {"size": 32768, "users": 1, "cold_max_s": 45.25, "turn256": [0.69, 0.69]} 
+20:11:54 cell c1 {"arm": "q27-memra-mtp", "users": 1, "max_tokens": 768, "seed": 1234, "think": 1, "temperature": 1.0, "turns": 48, "tokens": 22738, "wall_s": 1795.0, "aggregate
+20:13:47 cell c4 rc=1
+20:13:47 cell c4 
+20:15:02 as-is mtp arm stopped after c1 (c4 got HTTP 408 from the default 90 s streaming TTFT deadline)
