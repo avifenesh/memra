@@ -141,7 +141,9 @@ default thin-local LTO, the A arm measured above, not cross-crate thin LTO) and
 `tools/qualify-release.py` builds the release binaries in an environment that admits no
 `CARGO_PROFILE_*` variable, so the shipped bytes are fat-LTO, and release qualification is what
 builds and checks them. This keeps CI thin, and the A/B shows that the two profiles produce the same
-results. Hosted times after the override are in
+results. With the override, hosted jobs are back at their old times: `build` takes 18.7 min,
+against 12.0 to 18.0 on `main`; `arch-coverage` 19.3, against 11.6 to 19.5; `server-tests` 15.1,
+against 11.9 to 15.1. The `gates` job passes in 20.5 min. Full table:
 `research/release-profile-20261102/CI-HOSTED.md`.
 
 Adopted. Runtime is neutral or better, no result changes, and the profile is the owner's standard
