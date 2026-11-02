@@ -158,3 +158,19 @@ same OOM class. The same per-forward finish and headroom guard would apply.
   reference `13ec038086e7700a`.
 - `decode-batch-bench`: final `b1760abad7167493`.
 - `run-spec`: final `0127886d38e2ff9c`.
+
+## Rerun on the integrated tree (2026-11-02)
+
+`battery/dspark_pool_cell.py` ran twice on the integrated batch-spec binary (3cd42279ee, the tree
+that lands). Both runs were compared with the step-5 serial and pooled references
+(`dflash-pooled/compare-integrated.txt`). The result is **BYTE-IDENTICAL** on all 15 streams across
+all four runs, with the same cohort sizes and the same VRAM-headroom cap event.
+
+Aggregate tok/s:
+
+| c | serial | step-5 pooled | integrated a | integrated b |
+|---:|---:|---:|---:|---:|
+| 1 | 60.43 | 59.59 | 60.20 | 59.82 |
+| 2 | 60.42 | 69.52 | 69.93 | 68.26 |
+| 4 | 57.47 | 67.01 | 69.17 | 66.72 |
+| 8 | 51.54 | 57.27 | 57.48 | 56.37 |

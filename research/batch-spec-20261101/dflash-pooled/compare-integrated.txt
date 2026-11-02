@@ -1,0 +1,45 @@
+SAME  c1/r0    serial f6be55a2ffed304f pooled f6be55a2ffed304f int-a f6be55a2ffed304f int-b f6be55a2ffed304f 200 tok spec_rounds 96/96/96/96
+SAME  c2/r0    serial 13ea2c6ad641a256 pooled 13ea2c6ad641a256 int-a 13ea2c6ad641a256 int-b 13ea2c6ad641a256 200 tok spec_rounds 95/95/95/95
+SAME  c2/r1    serial d236fcb6e105f2b7 pooled d236fcb6e105f2b7 int-a d236fcb6e105f2b7 int-b d236fcb6e105f2b7 200 tok spec_rounds 95/95/95/95
+SAME  c4/r0    serial e718cfb5861a599d pooled e718cfb5861a599d int-a e718cfb5861a599d int-b e718cfb5861a599d 200 tok spec_rounds 93/93/93/93
+SAME  c4/r1    serial aa3673f764370e91 pooled aa3673f764370e91 int-a aa3673f764370e91 int-b aa3673f764370e91 200 tok spec_rounds 93/93/93/93
+SAME  c4/r2    serial a0b215b1606842d6 pooled a0b215b1606842d6 int-a a0b215b1606842d6 int-b a0b215b1606842d6 200 tok spec_rounds 94/94/94/94
+SAME  c4/r3    serial 4230a26d75b84e66 pooled 4230a26d75b84e66 int-a 4230a26d75b84e66 int-b 4230a26d75b84e66 200 tok spec_rounds 89/89/89/89
+SAME  c8/r0    serial 2d72b99bcfecf30b pooled 2d72b99bcfecf30b int-a 2d72b99bcfecf30b int-b 2d72b99bcfecf30b 200 tok spec_rounds 105/105/105/105
+SAME  c8/r1    serial f3423484ef49022e pooled f3423484ef49022e int-a f3423484ef49022e int-b f3423484ef49022e 200 tok spec_rounds 91/91/91/91
+SAME  c8/r2    serial cdf9b01a26a9caf5 pooled cdf9b01a26a9caf5 int-a cdf9b01a26a9caf5 int-b cdf9b01a26a9caf5 200 tok spec_rounds 96/96/96/96
+SAME  c8/r3    serial d4867f405bff22f7 pooled d4867f405bff22f7 int-a d4867f405bff22f7 int-b d4867f405bff22f7 200 tok spec_rounds 102/102/102/102
+SAME  c8/r4    serial f35fc7070bbd4cb2 pooled f35fc7070bbd4cb2 int-a f35fc7070bbd4cb2 int-b f35fc7070bbd4cb2 200 tok spec_rounds 90/90/90/90
+SAME  c8/r5    serial 1b926159dc42bb4e pooled 1b926159dc42bb4e int-a 1b926159dc42bb4e int-b 1b926159dc42bb4e 200 tok spec_rounds 88/88/88/88
+SAME  c8/r6    serial 47276a848101a401 pooled 47276a848101a401 int-a 47276a848101a401 int-b 47276a848101a401 200 tok spec_rounds 102/102/102/102
+SAME  c8/r7    serial cc749d75a9e54d82 pooled cc749d75a9e54d82 int-a cc749d75a9e54d82 int-b cc749d75a9e54d82 200 tok spec_rounds 92/92/92/92
+c1: serial 60.43 tok/s, pooled 59.59 tok/s, int-a 60.2 tok/s, int-b 59.82 tok/s
+c2: serial 60.42 tok/s, pooled 69.52 tok/s, int-a 69.93 tok/s, int-b 68.26 tok/s
+c4: serial 57.47 tok/s, pooled 67.01 tok/s, int-a 69.17 tok/s, int-b 66.72 tok/s
+c8: serial 51.54 tok/s, pooled 57.27 tok/s, int-a 57.48 tok/s, int-b 56.37 tok/s
+serial: pooled cohort lines 0
+pooled: pooled cohort lines 7
+    [spec-pool] pooled DFlash2 cohort engaged: 2 sessions (model q38)
+    [spec-pool] pooled DFlash2 cohort engaged: 3 sessions (model q38)
+    [spec-pool] pooled DFlash2 cohort engaged: 4 sessions (model q38)
+    [spec-pool] pooled DFlash2 forward capped by VRAM headroom: 761 more MB needed, 623 MB above the transient floor
+    [spec-pool] pooled DFlash2 cohort engaged: 6 sessions (model q38)
+    [spec-pool] pooled DFlash2 cohort engaged: 8 sessions (model q38)
+    [spec-pool] pooled DFlash2 cohort engaged: 7 sessions (model q38)
+int-a: pooled cohort lines 7
+    [spec-pool] pooled DFlash2 cohort engaged: 2 sessions (model q38)
+    [spec-pool] pooled DFlash2 cohort engaged: 3 sessions (model q38)
+    [spec-pool] pooled DFlash2 cohort engaged: 4 sessions (model q38)
+    [spec-pool] pooled DFlash2 forward capped by VRAM headroom: 761 more MB needed, 610 MB above the transient floor
+    [spec-pool] pooled DFlash2 cohort engaged: 6 sessions (model q38)
+    [spec-pool] pooled DFlash2 cohort engaged: 8 sessions (model q38)
+    [spec-pool] pooled DFlash2 cohort engaged: 7 sessions (model q38)
+int-b: pooled cohort lines 7
+    [spec-pool] pooled DFlash2 cohort engaged: 2 sessions (model q38)
+    [spec-pool] pooled DFlash2 cohort engaged: 3 sessions (model q38)
+    [spec-pool] pooled DFlash2 cohort engaged: 4 sessions (model q38)
+    [spec-pool] pooled DFlash2 forward capped by VRAM headroom: 761 more MB needed, 610 MB above the transient floor
+    [spec-pool] pooled DFlash2 cohort engaged: 6 sessions (model q38)
+    [spec-pool] pooled DFlash2 cohort engaged: 8 sessions (model q38)
+    [spec-pool] pooled DFlash2 cohort engaged: 7 sessions (model q38)
+VERDICT: BYTE-IDENTICAL
