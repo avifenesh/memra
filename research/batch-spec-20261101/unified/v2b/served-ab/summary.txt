@@ -1,0 +1,20 @@
+aggregate tok/s
+  c=3: v2a 168.9 / 166.5 / 170.1 (median 168.9); v2b 167.0 / 165.9 / 166.9 (median 166.9); v2b/v2a 0.988x
+  c=4: v2a 201.1 / 193.5 / 195.6 (median 195.6); v2b 196.6 / 194.4 / 193.9 (median 194.4); v2b/v2a 0.994x
+  c=6: v2a 247.6 / 241.4 / 243.3 (median 243.3); v2b 243.0 / 240.0 / 240.9 (median 240.9); v2b/v2a 0.990x
+  c=8: v2a 252.8 / 252.9 / 255.3 (median 252.9); v2b 252.7 / 248.8 / 255.5 (median 252.7); v2b/v2a 0.999x
+median end-to-end s by request class
+  c=3: spec: v2a 2.36, v2b 2.42; riders: v2a 3.05, v2b 3.09
+  c=4: spec: v2a 2.43, v2b 2.46; riders: v2a 3.36, v2b 3.40
+  c=6: spec: v2a 2.73, v2b 2.78; riders: v2a 3.89, v2b 3.96
+  c=8: spec: v2a 2.93, v2b 2.94; riders: v2a 4.42, v2b 4.44; phase-c: v2a 3.33, v2b 3.37
+
+pool cell
+aggregate tok/s
+  c=2: v2a 170.2 / 163.3 / 164.2 (median 164.2); v2b 164.3 / 161.3 / 163.8 (median 163.8); v2b/v2a 0.998x
+  c=4: v2a 181.9 / 172.3 / 171.4 (median 172.3); v2b 174.4 / 171.1 / 172.7 (median 172.7); v2b/v2a 1.002x
+  c=8: v2a 183.6 / 177.6 / 177.3 (median 177.6); v2b 179.0 / 174.3 / 176.9 (median 176.9); v2b/v2a 0.996x
+median end-to-end s by request class
+  c=2: 
+  c=4: 
+  c=8: 

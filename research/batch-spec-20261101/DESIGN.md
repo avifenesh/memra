@@ -31,6 +31,10 @@ vLLM/SGLang with 4-8 users on the same box.
    DFlash2 continuation bursts run in lockstep cohorts, byte-identical to serial at c = 1-8.
    Members are chunked at 16 rows instead of capping vt, and a VRAM headroom guard bounds the
    checkpoints held at once.
+8. **Unified ragged step** (`UNIFIED-STEP.md`). Same-model plain decoding sessions on the
+   device-sampled batched path ride the pooled MTP lockstep, one row per round inside the round's
+   pooled forwards. Each plain stream stays byte-identical to its phase (c) stream. Captured
+   pooled forwards (v2b) are exact, flat on the 5090, and opt-in.
 
 ## Measured so far (RTX 5090 Laptop, q9, depth 2048)
 
