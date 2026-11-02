@@ -55,8 +55,11 @@ Agentic bench (48 turns from 24 coding-agent sessions, thinking on, T=1, 768 max
 |---|---|---|---|---|---|
 | GGUF + masked MTP draft (default K table) | 21.43 | 39.36 | 59.36 | 66.77 | 66.45 |
 | GGUF + DFlash2 drafter, `MEMRA_MTP_SKIP=1` | 12.02 | 39.77 | 59.70 | 66.61 | 68.02 |
+| NVIDIA NVFP4 safetensors + DFlash2, `MEMRA_MTP_SKIP=1` | | 33.50 | 50.90 | 54.90 | 56.54 |
 
-From c4 up the spec gate serves batched plain decode, so the arms converge. No cell returned an
+From c4 up the spec gate serves batched plain decode, so the GGUF arms converge. The DFlash2
+arm serves plain at c1 too, because its multi-turn hits land on plain prefix entries (a fix is in
+review). `MEMRA_SPEC_K_CACHED_LONG_TRIM=2` is flat at every concurrency (21.29 at c1). No cell returned an
 HTTP error, and no `[shed]` line was logged. Cold prefill: 11.3 s at 8,192 tokens, 49.3 s at
 32,768.
 
@@ -66,7 +69,9 @@ at or above 17.0 GiB. A non-streaming request with a 150,413-token prompt answer
 317 s under the derived deadline.
 
 Prefill: the W4A8 NVFP4 MMQ is 61% of an 8,788-token prefill (776.6 tok/s monolithic). The
-opt-in F8F4 route (`MEMRA_MMQ_F8F4=1`) is 15.4% faster here; it changes the activation program,
-so it needs this artifact's acceptance and quality receipts before it is recommended
+opt-in F8F4 route (`MEMRA_MMQ_F8F4=1`) is 15.4% faster here (served cold prefill 43.7 s
+against 49.3 s at 32,768 tokens) and raised served acceptance from 0.672 to 0.702 on the masked
+MTP draft; it changes the activation program, so the quality panel decides whether it becomes the
+GB10 default
 ([research/gb10-tuning-20261102](../../research/gb10-tuning-20261102/)).
 

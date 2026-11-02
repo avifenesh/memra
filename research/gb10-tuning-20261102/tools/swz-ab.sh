@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Runs ON spark-cb33 under the caller's lease: W4A8 MMQ rasterization A/B on GB10.
+# Runs ON gb10-b under the caller's lease: W4A8 MMQ rasterization A/B on GB10.
 #   BIN=~/memra-run/bin-<sha12> GS="0 4 8 16" TOKENS=8192 ROUNDS=2 swz-ab.sh
 # Each round runs every arm in order then in reverse (balanced, both orders); each arm is one
 # process with one warmup and REPS timed monolithic pp-only forwards. Last-row prefill logits are

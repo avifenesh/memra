@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Runs ON spark-cb33 under the caller's lease: GB10 correctness cells for one 121a build.
+# Runs ON gb10-b under the caller's lease: GB10 correctness cells for one 121a build.
 #   BIN=~/memra-run/bin-<sha12> correctness.sh      Log: stdout
 set -u
 BIN=${BIN:?bin}

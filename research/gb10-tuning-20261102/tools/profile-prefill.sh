@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Runs ON spark-cb33 under the caller's sparklock lease: nsys kernel census of one cold prefill.
+# Runs ON gb10-b under the caller's sparklock lease: nsys kernel census of one cold prefill.
 #   BIN=~/memra-run/bin-<sha12> TOKENS=32768 TAG=<name> [MODEL=gguf|nv] [EXTRA="K=V ..."] profile-prefill.sh
 # Writes ~/memra-run/prof/<TAG>.{nsys-rep,kern.csv,log}; prints the top kernels by total time.
 set -u
