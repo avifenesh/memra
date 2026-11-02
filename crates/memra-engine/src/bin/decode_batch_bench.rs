@@ -65,6 +65,22 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .and_then(|v| v.parse().ok())
         .unwrap_or(8);
 
+    // `--pooled-draft 3,3,2,4` (lane/batch-spec step 3): one MTP session per entry, entry =
+    // its draft K (ragged K). Loads the MTP head (MEMRA_MTP_DRAFT for a standalone draft
+    // GGUF). Each session runs a short cold burst on its own synthetic prompt (depth `--ctx` +
+    // 37*i), then `pooled_draft_probe` pins the pooled rows draft bitwise against each
+    // member's serial draft chain and times both. `--temp T` samples the odd members at T
+    // (per-member seeds; `--all-sampled` samples every member), `--top-p P` adds a filter,
+    // `--pen` adds repetition penalties (the eager sampled arm).
+    let pooled_draft: Option<Vec<usize>> = rest
+        .iter()
+        .position(|a| a == "--pooled-draft")
+        .and_then(|i| rest.get(i + 1))
+        .map(|v| v.split(',').filter_map(|s| s.parse().ok()).collect());
+    if let Some(ks) = pooled_draft {
+        return pooled_draft_cell(&path, &rest, &ks, reps);
+    }
+
     // Primary device follows MEMRA_PP_DEVICES[0] when set (ppn-gate's convention): stage 0's
     // engine IS the primary engine, so a mismatch would make BOTH placement orders run stage 0
     // through a non-primary engine and quietly stop testing the `dev == primary && s == 0`
@@ -503,6 +519,64 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             greedy_us * b_n as f64 / 1e3,
             temp_us * b_n as f64 / 1e3
         );
+    }
+    Ok(())
+}
+
+/// `--pooled-draft`: the pooled rows draft exactness and speed cell (see main).
+fn pooled_draft_cell(
+    path: &str,
+    rest: &[String],
+    ks: &[usize],
+    reps: usize,
+) -> Result<(), Box<dyn std::error::Error>> {
+    use memra_engine::spec::SpecSampling;
+    let arg = |name: &str| -> Option<&String> {
+        rest.iter()
+            .position(|a| a == name)
+            .and_then(|i| rest.get(i + 1))
+    };
+    let depth: usize = arg("--ctx").and_then(|v| v.parse().ok()).unwrap_or(512);
+    let temp: f32 = arg("--temp").and_then(|v| v.parse().ok()).unwrap_or(0.0);
+    let top_p: f32 = arg("--top-p").and_then(|v| v.parse().ok()).unwrap_or(1.0);
+    let pen = rest.iter().any(|a| a == "--pen");
+    let all_sampled = rest.iter().any(|a| a == "--all-sampled");
+    let e = Engine::new(0)?;
+    let g = GgufFile::open(path)?;
+    let model = HybridModel::load(&e, &g)?;
+    let vocab = model.cfg.n_vocab.max(64) - 16;
+    let mut sessions = Vec::new();
+    let mut sampling: Vec<Option<SpecSampling>> = Vec::new();
+    for (i, &k) in ks.iter().enumerate() {
+        let d = depth + 37 * i;
+        let prompt: Vec<u32> = (0..d as u32)
+            .map(|j| (55 + i as u32 * 97 + j * 31) % vocab)
+            .collect();
+        let sp = (temp > 0.0 && (all_sampled || i % 2 == 1)).then_some(SpecSampling {
+            temp,
+            seed: 1234 + 7 * i as u64,
+            top_k: 0,
+            top_p,
+            min_p: 0.0,
+            penalty_last_n: if pen { 64 } else { 0 },
+            penalty_repeat: if pen { 1.1 } else { 1.0 },
+            penalty_freq: 0.0,
+            penalty_present: 0.0,
+        });
+        let mut s = model.new_session(&e, d + 512)?;
+        let (out, _, _) =
+            model.generate_spec_session_sampled(&e, &mut s, &prompt, 16, k, sp, None)?;
+        println!(
+            "session {i}: depth {d} k={k} {} cold burst {} tokens",
+            if sp.is_some() { "sampled" } else { "greedy" },
+            out.len()
+        );
+        sampling.push(sp);
+        sessions.push(s);
+    }
+    let refs: Vec<&mut memra_engine::spec::SpecSession> = sessions.iter_mut().collect();
+    for line in model.pooled_draft_probe(&e, refs, ks, &sampling, reps)? {
+        println!("{line}");
     }
     Ok(())
 }
