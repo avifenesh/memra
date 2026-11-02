@@ -86,33 +86,36 @@ fn resolve_nvcc() -> String {
     }
 }
 
-/// The probe's SASS target, same contract as memra-engine's `MEMRA_CUDA_ARCH`
-/// (`src/cuda_arch.rs` there, duplicated for the reason `resolve_nvcc` gives): explicit
-/// `MEMRA_CUDA_ARCH` wins, else `nvidia-smi` compute capability 12.1 (GB10, DGX Spark) builds
-/// 121a and everything else 120a. The probe's kernels are sm_120-family only, so only those two
-/// targets are accepted. Arch-specific SASS loads on one capability, which is why 12.1 cannot
-/// reuse the 120a fatbin.
+/// The probe's SASS target. It reads memra-engine's `MEMRA_CUDA_ARCH` (`src/cuda_arch.rs` there,
+/// duplicated for the reason `resolve_nvcc` gives): `121a` (GB10, DGX Spark), or with the
+/// variable unset an `nvidia-smi` compute capability of 12.1, builds 121a. The probe's kernels
+/// are sm_120-family only, so every other value builds 120a, as the probe always did: a workspace
+/// build for another engine arch (the 100a CI cell) still compiles the probe, and the probe's
+/// startup guard refuses a device that does not match. Arch-specific SASS loads on one
+/// capability, which is why 12.1 cannot reuse the 120a fatbin.
 fn probe_target() -> String {
     println!("cargo:rerun-if-env-changed=MEMRA_CUDA_ARCH");
-    let target = std::env::var("MEMRA_CUDA_ARCH").unwrap_or_else(|_| {
-        let cap = Command::new("nvidia-smi")
-            .args(["--query-gpu=compute_cap", "--format=csv,noheader"])
-            .output()
-            .ok()
-            .filter(|o| o.status.success())
-            .and_then(|o| String::from_utf8(o.stdout).ok())
-            .and_then(|s| s.lines().next().map(|l| l.trim().to_string()));
-        match cap.as_deref() {
-            Some("12.1") => "121a",
-            _ => "120a",
+    let requested = std::env::var("MEMRA_CUDA_ARCH").ok();
+    let gb10 = match requested.as_deref() {
+        Some(arch) => arch == "121a",
+        None => {
+            let cap = Command::new("nvidia-smi")
+                .args(["--query-gpu=compute_cap", "--format=csv,noheader"])
+                .output()
+                .ok()
+                .filter(|o| o.status.success())
+                .and_then(|o| String::from_utf8(o.stdout).ok())
+                .and_then(|s| s.lines().next().map(|l| l.trim().to_string()));
+            cap.as_deref() == Some("12.1")
         }
-        .to_string()
-    });
-    assert!(
-        matches!(target.as_str(), "120a" | "121a"),
-        "memra-probe builds only the sm_120 family: MEMRA_CUDA_ARCH must be 120a or 121a"
-    );
-    target
+    };
+    let target = if gb10 { "121a" } else { "120a" };
+    if let Some(arch) = requested.as_deref().filter(|arch| *arch != target) {
+        println!(
+            "cargo:warning=memra-probe builds only the sm_120 family; MEMRA_CUDA_ARCH={arch} builds its sm_{target} fatbin"
+        );
+    }
+    target.to_string()
 }
 
 fn main() {
