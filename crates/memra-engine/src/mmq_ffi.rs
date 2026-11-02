@@ -2138,11 +2138,20 @@ impl Engine {
         scale: f32,
         rp: bool,
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
-        // MEMRA_MMQ_F8F4=1: the R-B W4A8-FP8 tile (own numeric config; battery-gated seam).
+        // MEMRA_MMQ_F8F4: the R-B W4A8-FP8 tile (own numeric config; battery-gated seam).
         // SM100 compiles this route with the existing plain-E4M3 rollback form; SM120 keeps the
         // faster block-scale identity form. Both consume the same scratch and numeric program.
+        // Default ON only on a unified-memory 120a-family device (GB10), where it measured
+        // +15.4% prefill with served acceptance up and the quality panel in band
+        // (research/gb10-tuning-20261102); every discrete card keeps W4A8. `0`/`1` decide.
         static F8F4: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-        let f8f4 = *F8F4.get_or_init(|| std::env::var("MEMRA_MMQ_F8F4").as_deref() == Ok("1"));
+        let f8f4 = *F8F4.get_or_init(|| {
+            f8f4_route_on(
+                std::env::var("MEMRA_MMQ_F8F4").ok().as_deref(),
+                env!("MEMRA_BUILT_CUDA_ARCH") == "120a"
+                    && crate::unified_memory::is_unified(self.ctx()),
+            )
+        });
         assert!(
             in_f.is_multiple_of(64),
             "MMQ NVFP4 W4A8 requires in_f % 64 == 0, got {in_f}"
@@ -3275,4 +3284,28 @@ pub fn a4_prefill_slots_reset() -> Vec<u64> {
         .iter()
         .map(|c| c.swap(0, std::sync::atomic::Ordering::Relaxed))
         .collect()
+}
+
+/// Whether the prefill MMQ takes the F8F4 route: an explicit `MEMRA_MMQ_F8F4` of `1` or `0`
+/// decides; unset, it follows the device (on for a unified-memory 120a-family device, GB10).
+fn f8f4_route_on(env: Option<&str>, gb10: bool) -> bool {
+    match env {
+        Some("1") => true,
+        Some("0") => false,
+        _ => gb10,
+    }
+}
+
+#[cfg(test)]
+mod f8f4_default_tests {
+    #[test]
+    fn f8f4_defaults_on_only_on_gb10_and_the_flag_decides_everywhere() {
+        use super::f8f4_route_on;
+        assert!(f8f4_route_on(None, true), "GB10 takes F8F4 by default");
+        assert!(!f8f4_route_on(None, false), "discrete cards keep W4A8");
+        assert!(!f8f4_route_on(Some("0"), true), "0 rolls GB10 back to W4A8");
+        assert!(f8f4_route_on(Some("1"), false), "1 opts a discrete card in");
+        assert!(!f8f4_route_on(Some("yes"), false));
+        assert!(f8f4_route_on(Some("yes"), true));
+    }
 }
