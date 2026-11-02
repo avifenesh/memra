@@ -566,24 +566,46 @@ fn admission_wave_projection(
 /// (`choose_spec_k` short-circuits on it and automatic demotion is off, so a pinned server
 /// must not have a second policy quietly overriding its pin), `MEMRA_SPEC_GATE=0` is the
 /// always-spec rollback seam, and `MEMRA_SPEC_RESTORE_LOAD_GUARD=0` is this lane's own seam.
+///
+/// COST-MODEL VERDICT (lane/batch-spec): the SOLO watermark exists because a sampled spec
+/// session could not demote, so one admitted on a quiet box stayed serial under load. Sampled
+/// sessions demote now (`demoted_philox_base`), so where the cost model owns the gate a
+/// sampled restore is admitted exactly when the model would speculate at this demand
+/// (`cost_verdict` = its draft length, 0 = plain); without a verdict the watermark stands.
 fn sampled_restore_load_admits(
     guard_on: bool,
     pin: Option<usize>,
     gate_on: bool,
     thresholds: SpecGateThresholds,
     demand: usize,
+    cost_verdict: Option<usize>,
 ) -> bool {
     if !guard_on || pin.is_some() || !gate_on {
         return true;
     }
+    if let Some(k) = cost_verdict {
+        return k > 0;
+    }
     demand <= sampled_restore_watermark(thresholds)
 }
 
-/// Whether a live DFlash2 row prevents admitting another session through the greedy LOW band.
-/// Key this on `dspark_on`, not the lazily-created engine session: a sampled row must block in
-/// its pre-prime window too. Demotion clears `dspark_on`, so a handed-off plain row is inert.
-fn dspark_blocks_greedy_widening(dspark_on: bool, greedy: bool, constrained: bool) -> bool {
-    dspark_on && (!greedy || constrained)
+/// The cost model's verdict for a sampled restore of `model` at `demand` (see
+/// `sampled_restore_load_admits`), at the cached-long rung a restored prefix serves at.
+fn spec_cost_restore_verdict(model: &str, demand: usize) -> Option<usize> {
+    if !spec_cost_gate_owns(*spec_gate_thresholds()) {
+        return None;
+    }
+    spec_cost_verdict(model, demand, spec_k_table().cached_long.max(1))
+}
+
+/// Whether a live DFlash2 row prevents admitting another session through the greedy LOW band:
+/// a row the tick demotion cannot hand back. Key this on `dspark_on`, not the lazily-created
+/// engine session: such a row must block in its pre-prime window too. Demotion clears
+/// `dspark_on`, so a handed-off plain row is inert. Since lane/batch-spec sampled rows demote
+/// (`demoted_philox_base`), so only constrained rows block; `_greedy` stays in the signature
+/// for the call sites' readability.
+fn dspark_blocks_greedy_widening(dspark_on: bool, _greedy: bool, constrained: bool) -> bool {
+    dspark_on && constrained
 }
 
 /// DFlash2 load admission. LOW-band widening is safe only while automatic demotion owns every
@@ -4309,10 +4331,16 @@ impl SpecMetricState {
             .entry(model.to_string())
             .or_default()
             .merge(&delta);
-        self.windows
+        let window = self
+            .windows
             .entry(model.to_string())
-            .or_insert_with(|| SpecTelemetryWindow::new(self.window_s))
-            .push(delta);
+            .or_insert_with(|| SpecTelemetryWindow::new(self.window_s));
+        window.push(delta);
+        // The cost-model gate reads the model's recent acceptance from here.
+        let recent = window.snapshot_at(Instant::now());
+        if let Some(entry) = spec_cost_registry().lock().unwrap().get_mut(model) {
+            entry.accept = Some(recent);
+        }
     }
 
     fn window_snapshots(&mut self) -> HashMap<String, memra_engine::spec::SpecTelemetry> {
@@ -6733,6 +6761,7 @@ enum SpecKReason {
     CachedLong,
     ColdShort,
     ColdLong,
+    CostModel,
 }
 
 impl SpecKReason {
@@ -6745,6 +6774,7 @@ impl SpecKReason {
             Self::CachedLong => "cached-long",
             Self::ColdShort => "cold-short",
             Self::ColdLong => "cold-long",
+            Self::CostModel => "cost-model",
         }
     }
 }
@@ -6844,7 +6874,180 @@ fn spec_k_table() -> SpecKTable {
     })
 }
 
+/// COST-MODEL SPEC GATE (lane/batch-spec step 4).
+///
+/// The LOW/HIGH band decides "speculate or batch" by concurrency alone, from a 5090 measurement
+/// on a short greedy shape. Pooled verify changed the trade (several sessions now share one
+/// verify forward) and devices differ (GB10 verifies 8 rows for the price of one; a 5090 on a 9B
+/// does not). So the gate prices both options from what the serving box measured:
+///
+/// - the model's [`memra_engine::spec_cost::SpecCostTable`] (verify forward over R rows, plain
+///   batched step over B sessions, per-session round overhead), measured at boot;
+/// - the model's recent per-position acceptance (`SpecMetricState` window), which gives the
+///   expected tokens per round at draft length K: `1 + sum_{j<K} accepted_j / offered_j`.
+///
+/// For N sessions it compares `N * E[tokens | K] / round_ms(N, K)` (verifies pooled in chunks of
+/// at most 16 rows when the model pools, serial otherwise) against `N / plain_step_ms(N)` (plain
+/// steps chunked at the serving batch cap) and picks the best K in `0..=rung` (0 = plain).
+/// No verdict until the model has a table and `SPEC_COST_MIN_ROUNDS` rounds of acceptance.
+#[derive(Clone, Debug)]
+struct SpecCostEntry {
+    table: memra_engine::spec_cost::SpecCostTable,
+    pooled: bool,
+    /// The serving decode wave cap for this model (plain ticks chunk at it).
+    plain_cap: usize,
+    /// Recent acceptance window (set from `SpecMetricState::record`).
+    accept: Option<memra_engine::spec::SpecTelemetry>,
+}
+
+fn spec_cost_registry() -> &'static std::sync::Mutex<HashMap<String, SpecCostEntry>> {
+    static R: std::sync::OnceLock<std::sync::Mutex<HashMap<String, SpecCostEntry>>> =
+        std::sync::OnceLock::new();
+    R.get_or_init(|| std::sync::Mutex::new(HashMap::new()))
+}
+
+/// Acceptance rounds before the cost model trusts the window: at 64 rounds the standard error
+/// of a per-position acceptance rate is at most 0.0625 (sqrt(0.25 / 64)).
+const SPEC_COST_MIN_ROUNDS: u64 = 64;
+
+/// `MEMRA_SPEC_GATE_MODEL=0` restores the LOW/HIGH band everywhere (transition seam for the
+/// band-vs-model A/B).
+fn spec_cost_gate_on() -> bool {
+    static G: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *G.get_or_init(|| std::env::var("MEMRA_SPEC_GATE_MODEL").as_deref() != Ok("0"))
+}
+
+/// The cost model owns the decision unless an explicit band (PP-2 default, LOW/HIGH env) does.
+fn spec_cost_gate_owns(thresholds: SpecGateThresholds) -> bool {
+    spec_cost_gate_on()
+        && !thresholds.pp2_default
+        && !thresholds.low_overridden
+        && !thresholds.high_overridden
+}
+
+/// Expected tokens per round at draft length `k` from a telemetry window, or None when the
+/// window is too short or never offered position `k-1`.
+fn spec_expected_tokens(t: &memra_engine::spec::SpecTelemetry, k: usize) -> Option<f64> {
+    if t.rounds < SPEC_COST_MIN_ROUNDS || k > memra_engine::spec::SPEC_TELEM_POS {
+        return None;
+    }
+    let mut e = 1.0;
+    for j in 0..k {
+        if t.pos_drafted[j] == 0 {
+            return None;
+        }
+        e += t.pos_accepted[j] as f64 / t.pos_drafted[j] as f64;
+    }
+    Some(e)
+}
+
+/// One speculative round's wall for `n` sessions at draft length `k`.
+fn spec_round_ms(
+    t: &memra_engine::spec_cost::SpecCostTable,
+    n: usize,
+    k: usize,
+    pooled: bool,
+) -> f64 {
+    let rows = k + 1;
+    let verify = if pooled && rows <= 16 {
+        let per_chunk = 16 / rows;
+        let (full, rem) = (n / per_chunk, n % per_chunk);
+        full as f64 * t.verify_ms[per_chunk * rows - 1]
+            + if rem > 0 {
+                t.verify_ms[rem * rows - 1]
+            } else {
+                0.0
+            }
+    } else {
+        n as f64 * t.verify_ms[rows.min(16) - 1]
+    };
+    verify + n as f64 * t.round_overhead_ms
+}
+
+/// One plain batched tick for `n` sessions, chunked at the serving batch cap.
+fn spec_plain_ms(t: &memra_engine::spec_cost::SpecCostTable, n: usize, cap: usize) -> f64 {
+    let cap = cap.clamp(1, 16);
+    let (full, rem) = (n / cap, n % cap);
+    full as f64 * t.plain_ms[cap - 1] + if rem > 0 { t.plain_ms[rem - 1] } else { 0.0 }
+}
+
+/// Pure half of the verdict: the best draft length in `0..=rung` for `n` sessions (0 = plain),
+/// with the two predicted aggregate rates for the log.
+fn spec_cost_best_k(entry: &SpecCostEntry, n: usize, rung: usize) -> Option<(usize, f64, f64)> {
+    let accept = entry
+        .accept
+        .as_ref()
+        .filter(|a| a.rounds >= SPEC_COST_MIN_ROUNDS)?;
+    let n = n.max(1);
+    let plain = n as f64 / spec_plain_ms(&entry.table, n, entry.plain_cap);
+    let mut best = (0usize, plain);
+    for k in 1..=rung {
+        let Some(e) = spec_expected_tokens(accept, k) else {
+            break;
+        };
+        let rate = n as f64 * e / spec_round_ms(&entry.table, n, k, entry.pooled);
+        if rate > best.1 {
+            best = (k, rate);
+        }
+    }
+    Some((best.0, best.1, plain))
+}
+
+/// The cost model's draft length for `model` at `n` concurrent sessions (0 = plain), or None
+/// when the model has no table or not enough acceptance history (the band then decides).
+fn spec_cost_verdict(model: &str, n: usize, rung: usize) -> Option<usize> {
+    let reg = spec_cost_registry().lock().unwrap();
+    let entry = reg.get(model)?;
+    let (k, spec_rate, plain_rate) = spec_cost_best_k(entry, n, rung)?;
+    if spec_cost_log_due(model, n, k) {
+        eprintln!(
+            "[spec-cost] model={model:?} n={n} rung={rung} -> K={k} (predicted {:.1} vs plain \
+             {:.1} tok/s; pooled={})",
+            spec_rate * 1e3,
+            plain_rate * 1e3,
+            entry.pooled
+        );
+    }
+    Some(k)
+}
+
+/// One log line per (model, n, verdict) change, never per admission.
+fn spec_cost_log_due(model: &str, n: usize, k: usize) -> bool {
+    static SEEN: std::sync::OnceLock<std::sync::Mutex<HashMap<String, (usize, usize)>>> =
+        std::sync::OnceLock::new();
+    let mut seen = SEEN
+        .get_or_init(|| std::sync::Mutex::new(HashMap::new()))
+        .lock()
+        .unwrap();
+    seen.insert(model.to_string(), (n, k)) != Some((n, k))
+}
+
+/// Tick demotion: whether a live spec session of `model` at draft length `k` should hand its
+/// cache to batched decode with `n_live` sessions live. The cost model when it owns the
+/// decision, the HIGH watermark otherwise.
+fn spec_demote_reason(n_live: usize) -> String {
+    if spec_cost_gate_owns(*spec_gate_thresholds()) {
+        format!(
+            "{n_live} active, cost model prefers plain (or HIGH={} without a model)",
+            spec_gate_high()
+        )
+    } else {
+        format!("{n_live} active >= HIGH={}", spec_gate_high())
+    }
+}
+
+fn spec_demote_due(model: &str, k: usize, n_live: usize) -> bool {
+    if spec_cost_gate_owns(*spec_gate_thresholds())
+        && let Some(best) = spec_cost_verdict(model, n_live, k.max(1))
+    {
+        return best == 0;
+    }
+    n_live >= spec_gate_high()
+}
+
+#[allow(clippy::too_many_arguments)] // allow: the model plus the seven policy inputs of choose_spec_k_with
 fn choose_spec_k(
+    model: &str,
     pin: Option<usize>,
     gate_on: bool,
     thresholds: SpecGateThresholds,
@@ -6853,7 +7056,7 @@ fn choose_spec_k(
     cached_tokens: usize,
     trim_head: bool,
 ) -> SpecKDecision {
-    choose_spec_k_with(
+    let d = choose_spec_k_with(
         spec_k_table(),
         pin,
         gate_on,
@@ -6862,7 +7065,37 @@ fn choose_spec_k(
         prompt_tokens,
         cached_tokens,
         trim_head,
-    )
+    );
+    // COST-MODEL GATE (lane/batch-spec): where the band would decide by concurrency alone, a
+    // calibrated model decides by measured throughput instead (see `spec_cost_verdict`). The
+    // band stays authoritative for operator pins, the PP-2 placement default, explicit
+    // LOW/HIGH overrides and models without a calibration or acceptance history yet.
+    if pin.is_some() || !gate_on || !spec_cost_gate_owns(thresholds) {
+        return d;
+    }
+    let rung = match d.reason {
+        SpecKReason::Concurrency => {
+            choose_spec_k_with(
+                spec_k_table(),
+                None,
+                false,
+                thresholds,
+                projected_active,
+                prompt_tokens,
+                cached_tokens,
+                trim_head,
+            )
+            .k
+        }
+        _ => d.k,
+    };
+    match spec_cost_verdict(model, projected_active, rung) {
+        Some(k) => SpecKDecision {
+            k,
+            reason: SpecKReason::CostModel,
+        },
+        None => d,
+    }
 }
 
 #[allow(clippy::too_many_arguments)] // allow: the table plus the six policy inputs of choose_spec_k
@@ -21374,6 +21607,7 @@ fn host_restore_park_probe(
             spec_gate_on(),
             *spec_gate_thresholds(),
             spec_load_demand(n_active + 1 + n_pending),
+            spec_cost_restore_verdict(&req.model, spec_load_demand(n_active + 1 + n_pending)),
         );
         let refusal = spec_restore_refusal(
             true,
@@ -27654,6 +27888,11 @@ pub fn run(
     // The probe rides the SERVED route per model (lane/graph-launch-guard-sweep-20260831):
     // a dspark-armed model is probed through the dspark session, never the MTP spec arm
     // it has disabled — the receipt names the route it measured.
+    // SPEC COST CALIBRATION (lane/batch-spec): the cost-model gate's per-model tables, measured
+    // on this device before readiness. It runs BEFORE the admission probe so the probe stays
+    // the last thing the process does before serving (it leaves pools, graphs and workspaces
+    // warm the way a first request would; the cost probe's 16 primed caches would not).
+    run_spec_cost_calibration(&engine, &loaded, &dspark_drafts);
     run_boot_calibration(
         &engine,
         &loaded,
@@ -30631,7 +30870,7 @@ pub fn run(
                             && s.generated.len() >= n
                     })
                 });
-                if n_live >= spec_gate_high() || forced {
+                if forced || demote_at.is_none() {
                     #[allow(clippy::needless_range_loop)]
                     // allow: the explicit index loop keeps the offset arithmetic visible and aligned with the device-side indexing
                     for i in 0..active.len() {
@@ -30662,7 +30901,7 @@ pub fn run(
                                 if s.generated.len() < n {
                                     continue;
                                 }
-                            } else if n_live < spec_gate_high() {
+                            } else if !spec_demote_due(&s.model, s.spec_k, n_live) {
                                 continue;
                             }
                             let sess_pos = s.dspark.as_ref().unwrap().pos();
@@ -30717,7 +30956,7 @@ pub fn run(
                             n_demoted += 1;
                             let why = match demote_at {
                                 Some(n) => format!("FORCED at DEMOTE_AT={n} (test door)"),
-                                None => format!("{n_live} active >= HIGH={}", spec_gate_high()),
+                                None => spec_demote_reason(n_live),
                             };
                             eprintln!(
                                 "[spec-gate] demoted dspark session to batched decode: {why} \
@@ -30746,7 +30985,7 @@ pub fn run(
                                 if s.generated.len() < n {
                                     continue;
                                 }
-                            } else if n_live < spec_gate_high() {
+                            } else if !spec_demote_due(&s.model, s.spec_k, n_live) {
                                 continue;
                             }
                             let sess = s.glm5.as_ref().unwrap();
@@ -30798,9 +31037,7 @@ pub fn run(
                                     n_demoted += 1;
                                     let why = match demote_at {
                                         Some(n) => format!("FORCED at DEMOTE_AT={n} (test door)"),
-                                        None => {
-                                            format!("{n_live} active >= HIGH={}", spec_gate_high())
-                                        }
+                                        None => spec_demote_reason(n_live),
                                     };
                                     eprintln!(
                                         "[spec-gate] demoted glm5 session to batched decode: \
@@ -30841,7 +31078,7 @@ pub fn run(
                             if s.generated.len() < n {
                                 continue;
                             }
-                        } else if n_live < spec_gate_high() {
+                        } else if !spec_demote_due(&s.model, s.spec_k, n_live) {
                             continue;
                         }
                         // a session that has not bursted yet has no cache state to hand over
@@ -30925,7 +31162,7 @@ pub fn run(
                         n_demoted += 1;
                         let why = match demote_at {
                             Some(n) => format!("FORCED at DEMOTE_AT={n} (test door)"),
-                            None => format!("{n_live} active >= HIGH={}", spec_gate_high()),
+                            None => spec_demote_reason(n_live),
                         };
                         eprintln!(
                             "[spec-gate] demoted session to batched decode: {why} \
@@ -33956,6 +34193,7 @@ fn admission_request_may_spec(
     }
     let candidate = req.spec_k_replay.unwrap_or_else(|| {
         choose_spec_k(
+            &req.model,
             spec_k_pin(),
             spec_gate_on(),
             *spec_gate_thresholds(),
@@ -35408,6 +35646,7 @@ fn admit(
             reason: SpecKReason::Replay,
         },
         None => choose_spec_k(
+            &req.model,
             spec_k_pin(),
             spec_gate_on(),
             *spec_gate_thresholds(),
@@ -36072,6 +36311,7 @@ fn admit(
             spec_gate_on(),
             *spec_gate_thresholds(),
             load_demand,
+            spec_cost_restore_verdict(&req.model, load_demand),
         );
         if let Some(i) = prefix_pin.as_ref().and_then(|p| px.id_index(p)) {
             let fed_len = reused.as_ref().map_or(0, |e| e.fed.len());
@@ -37554,6 +37794,7 @@ fn admit(
     // is no hit-vs-cold trade to price here.
     let glm5_k = if glm5_capable {
         let decision = choose_spec_k(
+            &req.model,
             spec_k_pin(),
             spec_gate_on(),
             *spec_gate_thresholds(),
@@ -37849,6 +38090,7 @@ fn admit(
     let projected_wave = projected_admission_wave(n_active, n_pending);
     if spec.is_some() && req_spec_k_replay.is_none() {
         spec_k_decision = choose_spec_k(
+            &req.model,
             spec_k_pin(),
             spec_gate_on(),
             *spec_gate_thresholds(),
@@ -42231,6 +42473,73 @@ static SPEC_MAX_PROMPT_ANNOUNCED: std::sync::atomic::AtomicBool =
 /// `MEMRA_ADMIT_CALIBRATE=0` skips the boot probe and keeps the static
 /// `SPEC_SHRINK_RESERVE` transient floor (the pre-lane behavior, which the step37
 /// capacity lane measured 4.6x low on a medium-class deployment).
+/// KV depth the spec cost tables are measured at: the depth of the GB10 receipts
+/// (research/batch-spec-20261101/GB10-CR.md), deep enough that attention is in its serving
+/// class, shallow enough that boot priming 16 sessions stays a few seconds.
+const SPEC_COST_DEPTH: usize = 2048;
+
+/// Measure every MTP-served model's [`memra_engine::spec_cost::SpecCostTable`] and register it
+/// for the cost-model gate (`spec_cost_verdict`). Skipped where the band owns the decision
+/// (operator pin, gate off, PP-2 default, LOW/HIGH overrides, `MEMRA_SPEC_GATE_MODEL=0`) and for
+/// DFlash2-served models (their round is not the MTP round the table prices). Failure is loud
+/// and non-fatal: the model keeps the band.
+fn run_spec_cost_calibration(
+    engine: &Engine,
+    loaded: &HashMap<String, LoadedModel>,
+    dspark_drafts: &HashMap<String, memra_engine::dflash::DflashDraft>,
+) {
+    if !serve_spec_enabled()
+        || spec_k_pin().is_some()
+        || !spec_gate_on()
+        || !spec_cost_gate_owns(*spec_gate_thresholds())
+    {
+        eprintln!("[spec-cost] calibration skipped: the LOW/HIGH band owns the spec gate");
+        return;
+    }
+    for (name, lm) in loaded {
+        if dspark_drafts.contains_key(name) || !mtp_spec_capable(lm) {
+            continue;
+        }
+        let t0 = Instant::now();
+        let result = lm.model.spec_cost_calibrate(engine, SPEC_COST_DEPTH);
+        oom_teardown_fence(engine, loaded);
+        trim_model_device_pools(engine, loaded, "spec-cost-calibration");
+        match result {
+            Ok(table) => {
+                let pooled = lm.model.spec_pool_capable();
+                let plain_cap = decode_chunk_policy(lm, engine).wave_cap;
+                let fmt = |v: &[f64]| {
+                    v.iter()
+                        .map(|x| format!("{x:.1}"))
+                        .collect::<Vec<_>>()
+                        .join(" ")
+                };
+                eprintln!(
+                    "[spec-cost] model={name:?} depth={} pooled={pooled} plain_cap={plain_cap} \
+                     round_overhead={:.2}ms verify_ms[1..16]=[{}] plain_ms[1..16]=[{}] ({:.1}s)",
+                    table.depth,
+                    table.round_overhead_ms,
+                    fmt(&table.verify_ms),
+                    fmt(&table.plain_ms),
+                    t0.elapsed().as_secs_f64()
+                );
+                spec_cost_registry().lock().unwrap().insert(
+                    name.clone(),
+                    SpecCostEntry {
+                        table,
+                        pooled,
+                        plain_cap,
+                        accept: None,
+                    },
+                );
+            }
+            Err(err) => {
+                eprintln!("[spec-cost] calibration FAILED: model={name:?} ({err}); the band serves")
+            }
+        }
+    }
+}
+
 fn admit_calibrate_on() -> bool {
     std::env::var("MEMRA_ADMIT_CALIBRATE").as_deref() != Ok("0")
 }
@@ -42949,6 +43258,95 @@ pub fn spawn(
 
 #[cfg(test)]
 mod tests {
+    fn gb10_entry(accept: [f64; 3]) -> super::SpecCostEntry {
+        // GB10 receipts (research/batch-spec-20261101/GB10-CR.md), owner GGUF 27B, depth 2048.
+        let verify = memra_engine::spec_cost::interpolate_16(&[
+            (1, 75.16),
+            (2, 74.34),
+            (3, 74.46),
+            (4, 75.54),
+            (5, 76.18),
+            (6, 77.28),
+            (8, 80.72),
+            (10, 94.88),
+            (12, 107.81),
+            (14, 121.98),
+            (16, 135.97),
+        ]);
+        let plain =
+            memra_engine::spec_cost::interpolate_16(&[(1, 74.1), (2, 77.2), (4, 81.8), (8, 94.2)]);
+        let mut t = memra_engine::spec::SpecTelemetry {
+            rounds: 1000,
+            ..Default::default()
+        };
+        for (j, a) in accept.iter().enumerate() {
+            t.pos_drafted[j] = 1000;
+            t.pos_accepted[j] = (a * 1000.0) as u64;
+        }
+        super::SpecCostEntry {
+            table: memra_engine::spec_cost::SpecCostTable {
+                depth: 2048,
+                verify_ms: verify,
+                plain_ms: plain,
+                round_overhead_ms: 6.0,
+            },
+            pooled: true,
+            plain_cap: 8,
+            accept: Some(t),
+        }
+    }
+
+    /// The cost model reads expected tokens per round off per-position acceptance and refuses a
+    /// short window or a position it never saw.
+    #[test]
+    fn spec_cost_expected_tokens_come_from_per_position_acceptance() {
+        let e = gb10_entry([0.7, 0.5, 0.35]);
+        let t = e.accept.as_ref().unwrap();
+        assert!((super::spec_expected_tokens(t, 1).unwrap() - 1.7).abs() < 1e-9);
+        assert!((super::spec_expected_tokens(t, 3).unwrap() - 2.55).abs() < 1e-9);
+        assert_eq!(super::spec_expected_tokens(t, 4), None);
+        let mut short = *t;
+        short.rounds = super::SPEC_COST_MIN_ROUNDS - 1;
+        assert_eq!(super::spec_expected_tokens(&short, 1), None);
+    }
+
+    /// Pooled rounds chunk at 16 verify rows; serial rounds pay one verify per session.
+    #[test]
+    fn spec_cost_round_pools_verifies_in_16_row_chunks() {
+        let e = gb10_entry([0.7, 0.5, 0.35]);
+        let t = &e.table;
+        // 4 sessions at K=3: 16 rows, one forward.
+        assert!((super::spec_round_ms(t, 4, 3, true) - (t.verify_ms[15] + 24.0)).abs() < 1e-9);
+        // 5 sessions at K=3: a full chunk plus one 4-row chunk.
+        let five = t.verify_ms[15] + t.verify_ms[3] + 30.0;
+        assert!((super::spec_round_ms(t, 5, 3, true) - five).abs() < 1e-9);
+        assert!(
+            (super::spec_round_ms(t, 4, 3, false) - (4.0 * t.verify_ms[3] + 24.0)).abs() < 1e-9
+        );
+        // plain ticks chunk at the wave cap
+        assert!((super::spec_plain_ms(t, 12, 8) - (t.plain_ms[7] + t.plain_ms[3])).abs() < 1e-9);
+    }
+
+    /// On the GB10 table the model speculates where the band would not (c=3, c=4) and batches
+    /// plain where pooled verifies stop paying (c=16).
+    #[test]
+    fn spec_cost_picks_spec_at_low_concurrency_and_plain_at_high_on_gb10() {
+        let e = gb10_entry([0.7, 0.5, 0.35]);
+        for n in [1usize, 2, 3, 4] {
+            let (k, spec, plain) = super::spec_cost_best_k(&e, n, 3).unwrap();
+            assert!(
+                k > 0 && spec > plain,
+                "n={n}: k={k} spec={spec} plain={plain}"
+            );
+        }
+        let (k, _, _) = super::spec_cost_best_k(&e, 16, 3).unwrap();
+        assert_eq!(k, 0, "16 sessions batch plain on GB10 at this acceptance");
+        // No acceptance history: no verdict, the band decides.
+        let mut cold = gb10_entry([0.7, 0.5, 0.35]);
+        cold.accept = None;
+        assert_eq!(super::spec_cost_best_k(&cold, 4, 3), None);
+    }
+
     /// lane/batch-spec: sampled spec sessions are demotable; only constrained ones stay.
     #[test]
     fn sampled_spec_sessions_are_demotable_and_constrained_are_not() {
@@ -45957,12 +46355,13 @@ mod tests {
         // The measured c16 shape end-to-end: burst head at LOW=2 must land K=0 under the
         // wave projection where the live-only reading admitted it to spec.
         let thresholds = resolve_spec_gate_thresholds(false, None, None);
-        let legacy_head = choose_spec_k(None, true, thresholds, 1, 4860, 4096, false);
+        let legacy_head = choose_spec_k("", None, true, thresholds, 1, 4860, 4096, false);
         assert_ne!(
             legacy_head.k, 0,
             "live-only reading admitted the burst head"
         );
         let wave_head = choose_spec_k(
+            "",
             None,
             true,
             thresholds,
@@ -46225,19 +46624,60 @@ mod tests {
         let single = resolve_spec_gate_thresholds(false, None, None);
         // SOLO admits (demand 1 = this request and nothing else owed an answer); 2 refuses,
         // and 2 is where the measured loss already is (0.669x at c2).
-        assert!(sampled_restore_load_admits(true, None, true, single, 1));
-        assert!(!sampled_restore_load_admits(true, None, true, single, 2));
-        assert!(!sampled_restore_load_admits(true, None, true, single, 16));
+        assert!(sampled_restore_load_admits(
+            true, None, true, single, 1, None
+        ));
+        assert!(!sampled_restore_load_admits(
+            true, None, true, single, 2, None
+        ));
+        assert!(!sampled_restore_load_admits(
+            true, None, true, single, 16, None
+        ));
         // Its own rollback seam.
-        assert!(sampled_restore_load_admits(false, None, true, single, 16));
+        assert!(sampled_restore_load_admits(
+            false, None, true, single, 16, None
+        ));
         // An operator pin owns the whole spec policy (choose_spec_k short-circuits on it and
         // automatic demotion is off): a pinned server must not have a second policy quietly
         // overriding the pin, which is also what keeps the diagnostic MEMRA_SPEC_K=3 arm
         // measuring what it has always measured.
-        assert!(sampled_restore_load_admits(true, Some(3), true, single, 16));
-        assert!(sampled_restore_load_admits(true, Some(0), true, single, 16));
+        assert!(sampled_restore_load_admits(
+            true,
+            Some(3),
+            true,
+            single,
+            16,
+            None
+        ));
+        assert!(sampled_restore_load_admits(
+            true,
+            Some(0),
+            true,
+            single,
+            16,
+            None
+        ));
+        // A cost-model verdict replaces the SOLO watermark (sampled rows demote now).
+        assert!(sampled_restore_load_admits(
+            true,
+            None,
+            true,
+            single,
+            16,
+            Some(2)
+        ));
+        assert!(!sampled_restore_load_admits(
+            true,
+            None,
+            true,
+            single,
+            1,
+            Some(0)
+        ));
         // MEMRA_SPEC_GATE=0 is always-spec on every placement; the guard rides that seam too.
-        assert!(sampled_restore_load_admits(true, None, false, single, 16));
+        assert!(sampled_restore_load_admits(
+            true, None, false, single, 16, None
+        ));
     }
 
     #[test]
@@ -46253,7 +46693,9 @@ mod tests {
         // is the bound, exactly as it is for MTP's sampled admission.
         assert!(super::dspark_load_admits(true, true, None, 2, 2, 1, true));
         assert!(!super::dspark_load_admits(true, true, None, 3, 2, 2, true));
-        assert!(super::dspark_blocks_greedy_widening(true, false, false));
+        // Sampled rows demote since lane/batch-spec: only a constrained row blocks.
+        assert!(!super::dspark_blocks_greedy_widening(true, false, false));
+        assert!(super::dspark_blocks_greedy_widening(true, false, true));
         assert!(super::dspark_blocks_greedy_widening(true, true, true));
         assert!(!super::dspark_blocks_greedy_widening(true, true, false));
         assert!(!super::dspark_blocks_greedy_widening(false, false, false));
@@ -47228,7 +47670,7 @@ mod tests {
     fn spec_k_operator_pin_wins_over_every_policy_row() {
         let pp2 = resolve_spec_gate_thresholds(true, None, None);
         assert_eq!(
-            choose_spec_k(Some(5), true, pp2, 8, 16, 0, false),
+            choose_spec_k("", Some(5), true, pp2, 8, 16, 0, false),
             SpecKDecision {
                 k: 5,
                 reason: SpecKReason::OperatorPin
@@ -47236,7 +47678,7 @@ mod tests {
         );
         let single = resolve_spec_gate_thresholds(false, None, None);
         assert_eq!(
-            choose_spec_k(Some(0), true, single, 1, 8192, 8192, false),
+            choose_spec_k("", Some(0), true, single, 1, 8192, 8192, false),
             SpecKDecision {
                 k: 0,
                 reason: SpecKReason::OperatorPin
@@ -47248,7 +47690,7 @@ mod tests {
     fn spec_k_policy_maps_placement_and_concurrency_to_plain() {
         let pp2 = resolve_spec_gate_thresholds(true, None, None);
         assert_eq!(
-            choose_spec_k(None, true, pp2, 1, 28, 0, false),
+            choose_spec_k("", None, true, pp2, 1, 28, 0, false),
             SpecKDecision {
                 k: 0,
                 reason: SpecKReason::Placement
@@ -47257,7 +47699,7 @@ mod tests {
 
         let single = resolve_spec_gate_thresholds(false, None, None);
         assert_eq!(
-            choose_spec_k(None, true, single, 3, 28, 0, false),
+            choose_spec_k("", None, true, single, 3, 28, 0, false),
             SpecKDecision {
                 k: 0,
                 reason: SpecKReason::Concurrency
@@ -47268,14 +47710,14 @@ mod tests {
         // c=1 may speculate; the next arrival is K=0.
         let pp2_c1 = resolve_spec_gate_thresholds(true, Some(1), Some(2));
         assert_eq!(
-            choose_spec_k(None, true, pp2_c1, 1, 28, 0, false),
+            choose_spec_k("", None, true, pp2_c1, 1, 28, 0, false),
             SpecKDecision {
                 k: SPEC_K_COLD_SHORT,
                 reason: SpecKReason::ColdShort
             },
         );
         assert_eq!(
-            choose_spec_k(None, true, pp2_c1, 2, 28, 0, false),
+            choose_spec_k("", None, true, pp2_c1, 2, 28, 0, false),
             SpecKDecision {
                 k: 0,
                 reason: SpecKReason::Concurrency
@@ -47386,6 +47828,7 @@ mod tests {
         // (research/orndecode-20260822 — K=5 350.8 tok/s vs ~273 at k=2 on ornith15).
         assert_eq!(
             choose_spec_k(
+                "",
                 None,
                 true,
                 resolve_spec_gate_thresholds(false, None, None),
@@ -47402,6 +47845,7 @@ mod tests {
         let single = resolve_spec_gate_thresholds(false, None, None);
         assert_eq!(
             choose_spec_k(
+                "",
                 None,
                 true,
                 single,
@@ -47417,6 +47861,7 @@ mod tests {
         );
         assert_eq!(
             choose_spec_k(
+                "",
                 None,
                 true,
                 single,
@@ -47432,6 +47877,7 @@ mod tests {
         );
         assert_eq!(
             choose_spec_k(
+                "",
                 None,
                 true,
                 single,
@@ -47449,6 +47895,7 @@ mod tests {
         // ignored, while the prompt/cache table remains active.
         assert_eq!(
             choose_spec_k(
+                "",
                 None,
                 false,
                 resolve_spec_gate_thresholds(true, None, None),
