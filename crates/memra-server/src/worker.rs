@@ -31402,14 +31402,31 @@ pub fn run(
                     }
                 }
                 let mut riders_of: HashMap<String, Vec<usize>> = HashMap::new();
+                // A model with a decoding plain session that cannot ride (constrained,
+                // host-sampled, vision, fork) takes no riders this tick: the lockstep advances
+                // riders once per round, and the session left in phase (c) would get one token
+                // per (now longer) tick. Measured on the q9 mixed cell at c=8 (two such rows
+                // beside four riders): 0.94x aggregate with riders, the tail set by the rows
+                // left behind.
+                let mut left_behind: std::collections::HashSet<String> =
+                    std::collections::HashSet::new();
                 for (i, s) in active.iter().enumerate() {
-                    if unified_step_on()
-                        && !finished.contains(&i)
-                        && plain_rider_candidate(s, &loaded[&s.model], &eager_decode)
-                    {
+                    if finished.contains(&i) {
+                        continue;
+                    }
+                    if plain_rider_candidate(s, &loaded[&s.model], &eager_decode) {
                         riders_of.entry(s.model.clone()).or_default().push(i);
+                    } else if s.spec.is_none()
+                        && s.gspec_k == 0
+                        && !s.dspark_on
+                        && !s.glm5_on
+                        && s.prefill_done
+                        && s.cache.is_some()
+                    {
+                        left_behind.insert(s.model.clone());
                     }
                 }
+                riders_of.retain(|m, _| !left_behind.contains(m));
                 // A cohort of two or more, or one MTP member carrying riders.
                 cohorts.retain(|(m, d, v)| {
                     v.len() >= 2 || (!*d && !v.is_empty() && riders_of.contains_key(m))
@@ -41118,13 +41135,6 @@ fn spec_pool_candidate(s: &Session, lm: &LoadedModel) -> bool {
         && lm.model.spec_pool_capable()
 }
 
-/// `MEMRA_UNIFIED_STEP=0` keeps every plain session in phase (c), the v1 tick (rollback seam
-/// of the lane/batch-spec v2 unified step).
-fn unified_step_on() -> bool {
-    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| std::env::var("MEMRA_UNIFIED_STEP").as_deref() != Ok("0"))
-}
-
 /// A plain decoding session that may ride this tick's pooled MTP cohort of its model (the
 /// lane/batch-spec v2 unified step): one that phase (c) would serve through the batched step
 /// with a device sample, unconstrained (no grammar mask), with no vision input and no fork,
@@ -41163,15 +41173,60 @@ struct RiderLedger {
 /// (emit the previous step's token, stop battery), then the row's step and, on its result,
 /// exactly the batched tick's bookkeeping (`last_logits`, `device_next`, `fed`), or its error
 /// arm.
+/// RIDERS PRICED BY THE COST MODEL (lane/batch-spec v2). A plain rider joins a pooled forward
+/// only while each row it adds costs the forward no more than that row costs the plain
+/// batched step it would otherwise ride: `verify_ms[R+1] - verify_ms[R] <= marginal plain row`
+/// at this tick's rider count (a lone rider pays a whole plain step). Measured on the serving
+/// box (`SpecCostTable`): the 5090 on q9 caps forwards near 8 rows (above it a verify row
+/// costs what a plain row does, and the mixed cell measured 0.93x per forward at 8 -> 16
+/// rows); GB10 keeps its flat 1..8-row verify for riders and stops where the b16 tier starts
+/// charging ~7 ms a row. Without a table (the LOW/HIGH band owns the gate) no rider joins: the
+/// q9 mixed cell under a forced band mix measured 0.94x at c=8 with riders capped at 8 rows,
+/// the cost of advancing riders at round cadence beside spec rows the band, not a measurement,
+/// put there. Returns the cap for every spec-row count 0..=16.
+fn rider_forward_caps(model: &str, riders: usize) -> Vec<usize> {
+    let reg = spec_cost_registry().lock().unwrap();
+    let Some(t) = reg.get(model).map(|e| &e.table) else {
+        return (0..=16).collect();
+    };
+    let plain_marginal = if riders <= 1 {
+        t.plain_ms[0]
+    } else {
+        (t.plain_ms[riders.min(16) - 1] - t.plain_ms[0]) / (riders.min(16) - 1) as f64
+    };
+    (0..=16usize)
+        .map(|spec_rows| {
+            let mut total = spec_rows;
+            while total < 16
+                && total - spec_rows < riders
+                && (if total == 0 {
+                    t.verify_ms[0]
+                } else {
+                    t.verify_ms[total] - t.verify_ms[total - 1]
+                }) <= plain_marginal
+            {
+                total += 1;
+            }
+            total
+        })
+        .collect()
+}
+
 struct PlainRiderSet<'s, 'l> {
     loaded: &'l HashMap<String, LoadedModel>,
     rows: Vec<(usize, &'s mut Session)>,
     live: Vec<bool>,
     feeding: Vec<Option<u32>>,
     ledger: &'l mut RiderLedger,
+    /// `forward_rows_cap` per spec-row count (index 0..=16), from `rider_forward_caps`.
+    caps: Vec<usize>,
 }
 
 impl memra_engine::spec::PooledPlainRiders for PlainRiderSet<'_, '_> {
+    fn forward_rows_cap(&self, spec_rows: usize) -> usize {
+        self.caps.get(spec_rows).copied().unwrap_or(spec_rows)
+    }
+
     fn round_begin(&mut self) -> Vec<memra_engine::spec::PlainRiderRow> {
         let mut out = Vec::new();
         for (k, (i, s)) in self.rows.iter_mut().enumerate() {
@@ -41271,7 +41326,8 @@ fn step_spec_pooled(
     ledger: &mut RiderLedger,
     spec_metrics: &mut SpecMetricState,
 ) -> Vec<(usize, SpecStepResult)> {
-    let lm = &loaded[&active[cohort[0]].model];
+    let model_name = active[cohort[0]].model.clone();
+    let lm = &loaded[&model_name];
     let mut members: Vec<(usize, &mut Session)> = Vec::new();
     let mut rider_rows: Vec<(usize, &mut Session)> = Vec::new();
     for (i, s) in active.iter_mut().enumerate() {
@@ -41288,6 +41344,7 @@ fn step_spec_pooled(
         live: vec![true; n_riders],
         feeding: vec![None; n_riders],
         ledger,
+        caps: rider_forward_caps(&model_name, n_riders),
     });
     let mut results: Vec<(usize, SpecStepResult)> = Vec::new();
     // Preambles, each exactly as the serial step runs it.
@@ -44016,6 +44073,84 @@ mod tests {
             super::spec_cost_best_k(&few, 4, 3).map(|v| v.0),
             super::spec_cost_best_k(&gb10_entry([0.7, 0.5, 0.35]), 4, 3).map(|v| v.0)
         );
+    }
+
+    /// Riders priced by the cost model: on the 5090 q9 table a forward stops near 8 rows; on
+    /// the GB10 27B table riders fill the flat 1..8-row region and stop before the b16 tier.
+    #[test]
+    fn rider_caps_follow_the_device_cost_table() {
+        let put = |name: &str, verify: Vec<f64>, plain: Vec<f64>| {
+            super::spec_cost_registry().lock().unwrap().insert(
+                name.into(),
+                super::SpecCostEntry {
+                    table: memra_engine::spec_cost::SpecCostTable {
+                        depth: 2048,
+                        verify_ms: verify,
+                        plain_ms: plain,
+                        round_overhead_ms: 3.0,
+                        pooled_overhead_ms: None,
+                    },
+                    pooled: true,
+                    plain_cap: 16,
+                    accept: None,
+                    realized: HashMap::new(),
+                },
+            );
+        };
+        // 5090 q9 boot table (gate-ab-5090b).
+        put(
+            "cap-5090",
+            vec![
+                9.0, 9.6, 10.0, 11.2, 12.4, 13.5, 14.9, 16.4, 18.8, 21.2, 23.6, 26.0, 27.9, 29.8,
+                31.7, 33.6,
+            ],
+            vec![
+                9.5, 10.4, 11.6, 12.9, 14.3, 15.7, 17.1, 18.4, 20.6, 22.7, 24.9, 27.0, 29.2, 31.3,
+                33.5, 35.6,
+            ],
+        );
+        let caps = super::rider_forward_caps("cap-5090", 6);
+        assert!(
+            caps[8] <= 8,
+            "5090: a full 8-row spec forward takes no riders ({})",
+            caps[8]
+        );
+        assert!(
+            caps[4] > 4 && caps[4] <= 8,
+            "5090: riders fill up to ~8 rows ({})",
+            caps[4]
+        );
+        // GB10 27B (GB10-CR.md).
+        let gv = memra_engine::spec_cost::interpolate_16(&[
+            (1, 75.16),
+            (2, 74.34),
+            (3, 74.46),
+            (4, 75.54),
+            (5, 76.18),
+            (6, 77.28),
+            (8, 80.72),
+            (10, 94.88),
+            (12, 107.81),
+            (14, 121.98),
+            (16, 135.97),
+        ]);
+        let gp = memra_engine::spec_cost::interpolate_16(&[
+            (1, 74.1),
+            (2, 77.2),
+            (4, 81.8),
+            (8, 94.2),
+            (16, 160.0),
+        ]);
+        put("cap-gb10", gv, gp);
+        let caps = super::rider_forward_caps("cap-gb10", 8);
+        assert_eq!(caps[4], 8, "GB10: riders fill the flat region to 8 rows");
+        assert!(
+            caps[8] <= 9,
+            "GB10: the b16 tier is not worth a rider row ({})",
+            caps[8]
+        );
+        // No table: no riders.
+        assert_eq!(super::rider_forward_caps("cap-unknown", 4)[2], 2);
     }
 
     /// lane/batch-spec: sampled spec sessions are demotable; only constrained ones stay.

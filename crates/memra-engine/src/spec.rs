@@ -2797,6 +2797,10 @@ pub trait PooledPlainRiders {
     fn caches(&mut self, ids: &[usize]) -> Vec<&mut Cache>;
     /// Rider `id`'s step for this round.
     fn round_end(&mut self, id: usize, step: PlainRiderStep);
+    /// The most rows a pooled forward carrying `spec_rows` speculative rows may reach once
+    /// riders fill it (the serving cost model's verdict; the driver also caps it at the exact
+    /// tier's width).
+    fn forward_rows_cap(&self, spec_rows: usize) -> usize;
 }
 
 /// One dspark round's slice of a pooled verify (`dspark_verify_pooled`): its cache (with the
@@ -9074,7 +9078,11 @@ impl HybridModel {
                 }
                 let members: Vec<usize> = (j..end).filter(|&m| preps[m].is_some()).collect();
                 // Riders take the forward's free rows.
-                let take = rider_rows_cap.saturating_sub(rows).min(rider_q.len());
+                let cap = match riders.as_ref() {
+                    Some(r) => rider_rows_cap.min(r.forward_rows_cap(rows)),
+                    None => 0,
+                };
+                let take = cap.saturating_sub(rows).min(rider_q.len());
                 let chunk_riders: Vec<PlainRiderRow> = rider_q.drain(..take).collect();
                 if members.len() + chunk_riders.len() >= 2 {
                     let embd_dev = bursts[j..end]
