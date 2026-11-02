@@ -1081,17 +1081,20 @@ first-token deadline only when the deployment pairs `MEMRA_STREAM_TTFT_MS_MAX` w
 `MEMRA_SSE_PREFILL_COMMIT_MS`. If the first generated token has not arrived at the commit
 threshold, Memra commits the SSE response and its existing 5 s comment keepalive starts.
 Comments are transport liveness, not model output, and first-token measurements must ignore
-them. The original TTFT deadline continues to run. Admission has a separate hard deadline
-at the same commit threshold: if capacity has not admitted the request by then, a retryable
-pre-header 408 explains the admission budget and bills zero. Extending TTFT therefore does
-not extend silent queue waiting.
+them. The original TTFT deadline continues to run, and it covers queue waiting too: a stream
+still waiting for admission at the commit threshold commits the same way and stays queued
+under keepalives, as vLLM and SGLang keep a queued stream open. The queue shed compares its
+wait estimate with the whole first-token deadline, and a refusal after the commit arrives as
+a dialect-native error event under HTTP 200 (until 2026-11-02 a stream still queued at the
+commit got a pre-header 408, and the queue shed judged its estimate against the commit: the
+leading explanation for the uncaptured HTTP 429 of the first Spark c32 agentic cell).
 
 | | non-streaming | streaming (`stream: true`) |
 |---|---|---|
 | what the deadline bounds | the COMPLETE response | **time to first token only** |
 | infeasible before it starts | refused at admission: `400` `nonstream_deadline_infeasible` | never gated |
 | miss with SOME tokens produced | OpenAI-dialect surfaces: **`200` partial, BILLED** (`deadline_partial`, `finish_reason: "error"`); `/v1/messages` + `/v1/responses`: `408`, discarded | cannot happen — the parameter is spent at the first token |
-| miss with ZERO tokens produced | `408`, generation cancelled, **not billed** | at <=90 s: `408` pre-header; after an extended stream committed: dialect-native timeout error event under HTTP 200. Both cancel and bill zero |
+| miss with ZERO tokens produced | `408`, generation cancelled, **not billed** | at <=90 s: `408` pre-header; after an extended stream committed (queued or prefilling): dialect-native timeout error event under HTTP 200. Both cancel and bill zero |
 | after the first token | — | the parameter is **spent**; the stream runs to completion |
 
 A missed deadline that delivered NOTHING carries a message naming the effective budget

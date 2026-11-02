@@ -484,6 +484,14 @@ async fn authenticate_inference_before_body(
             return shape_inference_early_response(&path, response).await;
         }
         Err(tokio::sync::TryAcquireError::NoPermits) => {
+            eprintln!(
+                "[shed] body_admission_busy path={path} pool={}",
+                if body_requires_admission(&req) {
+                    "large"
+                } else {
+                    "small"
+                }
+            );
             let response = retry_contract_response(
                 error_response_coded(
                     StatusCode::TOO_MANY_REQUESTS,
@@ -2618,10 +2626,17 @@ pub(crate) struct RequestDeadline {
 
 impl RequestDeadline {
     pub(crate) fn preheader(self, stream: bool) -> Self {
+        self.preheader_with(stream, sse_prefill_commit_ms())
+    }
+
+    /// Pure half of [`Self::preheader`]: the window before headers commit, given the
+    /// configured SSE prefill commit. Only an extended stream (first-token deadline past the
+    /// shipped pre-header window, with a commit) differs from the whole deadline.
+    fn preheader_with(self, stream: bool, commit_ms: Option<u64>) -> Self {
         if !stream || self.ms <= TIMEOUT_MS_MAX {
             return self;
         }
-        let Some(commit_ms) = sse_prefill_commit_ms() else {
+        let Some(commit_ms) = commit_ms else {
             return self;
         };
         let ms = self.ms.min(commit_ms);
@@ -2630,6 +2645,7 @@ impl RequestDeadline {
             ms,
         }
     }
+
     pub(crate) fn starting_now(ms: u64) -> Self {
         Self {
             at: tokio::time::Instant::now() + std::time::Duration::from_millis(ms),
@@ -3167,6 +3183,10 @@ fn reserve_pending_admit_on(
                     .into_response(),
                 Some(est_wait_s),
             );
+            eprintln!(
+                "[shed] shed_queue lane={} backlog={backlog} bound={bound} est_wait_s={est_wait_s}",
+                lane.as_str()
+            );
             return Err((resp, "shed_queue"));
         }
         let remaining_ms = deadline.remaining().as_millis() as u64;
@@ -3196,6 +3216,11 @@ fn reserve_pending_admit_on(
                 )
                     .into_response(),
                 Some(est_wait_s),
+            );
+            eprintln!(
+                "[shed] shed_deadline lane={} backlog={backlog} remaining_slots={} est_wait_s={est_wait_s} window_ms={remaining_ms}",
+                lane.as_str(),
+                rl.remaining
             );
             return Err((resp, "shed_deadline"));
         }
@@ -3228,6 +3253,11 @@ fn reserve_pending_admit_on(
                 )
                     .into_response(),
                 Some(est_wait_s),
+            );
+            eprintln!(
+                "[shed] shed_queue_wait lane={} backlog={backlog} remaining_slots={} est_wait_s={est_wait_s} ceiling_s={ceiling_s}",
+                lane.as_str(),
+                rl.remaining
             );
             return Err((resp, "shed_queue_wait"));
         }
@@ -3287,6 +3317,11 @@ fn reserve_route_admit(
     let cap = route.capacity();
     let bound = max_queue_depth(cap);
     let shed = |msg: String, est_wait_s: u64, code: &'static str| {
+        eprintln!(
+            "[shed] {code} lane={} route={:?} est_wait_s={est_wait_s}",
+            lane.as_str(),
+            route.name()
+        );
         let resp = retry_contract_response(
             (
                 StatusCode::TOO_MANY_REQUESTS,
@@ -8666,13 +8701,72 @@ async fn yield_metrics(State(st): State<AppState>, headers: HeaderMap) -> Respon
 async fn peek_admission(
     mut rx: worker::EventReceiver,
 ) -> Result<worker::EventReceiver, (Response, &'static str)> {
-    match rx.recv().await {
+    let first = rx.recv().await;
+    admission_outcome(first, rx)
+}
+
+/// Why a request left the admission wait without being admitted.
+pub(crate) enum AdmissionMiss {
+    /// The worker refused it before admission: answered as a normal HTTP error.
+    Refused(Response, &'static str),
+    /// The admission window closed first; dropping the receiver cancels the request.
+    Deadline,
+}
+
+/// QUEUED EXTENDED STREAMS (GB10 c32 HTTP 429, 2026-11-02). Wait for admission inside
+/// [`RequestDeadline::preheader`]. An extended stream still queued when that window closes is
+/// not refused: its receiver comes back unpeeked and [`peek_first_token`] commits headers at
+/// once and keeps waiting, under SSE keepalives and the original first-token deadline, for
+/// admission and prefill alike, the way vLLM and SGLang keep a queued stream open. A refusal
+/// that arrives after that commit reaches the client as an SSE error chunk. Before this, the
+/// queue wait of an extended stream was bounded by the 60 s commit on a unified-memory device,
+/// and the hybrid queue shed estimated a whole request's decode against that window: the
+/// leading explanation for the HTTP 429 of the first Spark c32 agentic cell (32 session slots
+/// configured, no worker refusal logged, the 429 body not captured).
+#[allow(clippy::result_large_err)] // allow: the refusal carries the HTTP response, the same contract as peek_admission
+pub(crate) async fn await_admission(
+    rx: worker::EventReceiver,
+    deadline: RequestDeadline,
+    stream: bool,
+) -> Result<worker::EventReceiver, AdmissionMiss> {
+    await_admission_with(rx, deadline, stream, sse_prefill_commit_ms()).await
+}
+
+/// [`await_admission`] with the SSE prefill commit passed in (the live value is a OnceLock).
+#[allow(clippy::result_large_err)] // allow: the refusal carries the HTTP response, the same contract as peek_admission
+async fn await_admission_with(
+    mut rx: worker::EventReceiver,
+    deadline: RequestDeadline,
+    stream: bool,
+    commit_ms: Option<u64>,
+) -> Result<worker::EventReceiver, AdmissionMiss> {
+    let window = deadline.preheader_with(stream, commit_ms);
+    match tokio::time::timeout_at(window.at, rx.recv()).await {
+        Ok(first) => admission_outcome(first, rx)
+            .map_err(|(response, code)| AdmissionMiss::Refused(response, code)),
+        // An extended stream: the window was its commit, not its deadline.
+        Err(_) if window.ms < deadline.ms => Ok(rx),
+        Err(_) => Err(AdmissionMiss::Deadline),
+    }
+}
+
+#[allow(clippy::result_large_err)] // allow: the refusal carries the HTTP response, the same contract as peek_admission
+fn admission_outcome(
+    first: Option<Event>,
+    rx: worker::EventReceiver,
+) -> Result<worker::EventReceiver, (Response, &'static str)> {
+    match first {
         // Any pre-admission failure — a shed, a rejected allocation, a load fault — is
         // answered as a normal HTTP error with its own class instead of being smuggled into a
         // stream. Classification is the producer's (worker::EngineError), so this no longer
         // string-matches a "shed:" prefix that only ever existed as an in-band sentinel.
         Some(Event::Error(e)) => {
             let error_code = engine_error_code(e.class);
+            // One line per refusal, so a client-side 429/503 always has its server-side cause.
+            eprintln!(
+                "[admission] refused before admission: code={error_code} message={:?}",
+                e.message
+            );
             Err((engine_error_response(&e), error_code))
         }
         first => {
@@ -10824,8 +10918,7 @@ async fn completions_with_admission(
     }
     // BACKPRESSURE (lane/deadline-billing): shed at submission — never after — when the
     // queue is at its bound or the estimated wait cannot fit the request's deadline.
-    let mut pending_admit = match reserve_pending_admit(&st, lane, &rl, deadline.preheader(stream))
-    {
+    let mut pending_admit = match reserve_pending_admit(&st, lane, &rl, deadline) {
         Ok(guard) => guard,
         Err((resp, outcome)) => {
             return ledger_unbilled(receipt, rl.attach(resp), outcome, outcome, &env.id);
@@ -10855,13 +10948,12 @@ async fn completions_with_admission(
     // DEADLINE: the admission wait counts against timeout_ms (a queued request that can
     // no longer answer in time is a miss). Dropping rx on a miss IS the cancel — the
     // worker prunes closed-channel requests still queued at the next tick.
-    let rx = match tokio::time::timeout_at(deadline.preheader(stream).at, peek_admission(rx)).await
-    {
-        Ok(Ok(rx)) => rx,
-        Ok(Err((resp, error_code))) => {
+    let rx = match await_admission(rx, deadline, stream).await {
+        Ok(rx) => rx,
+        Err(AdmissionMiss::Refused(resp, error_code)) => {
             return ledger_rejected(receipt, rl.attach(resp), error_code, &env.id);
         }
-        Err(_) => {
+        Err(AdmissionMiss::Deadline) => {
             return ledger_unbilled(
                 receipt,
                 rl.attach(admission_deadline_response(deadline, stream)),
@@ -11525,8 +11617,7 @@ async fn chat_completions_with_admission(
     }
     // BACKPRESSURE (lane/deadline-billing): shed at submission — never after — when the
     // queue is at its bound or the estimated wait cannot fit the request's deadline.
-    let mut pending_admit = match reserve_pending_admit(&st, lane, &rl, deadline.preheader(stream))
-    {
+    let mut pending_admit = match reserve_pending_admit(&st, lane, &rl, deadline) {
         Ok(guard) => guard,
         Err((resp, outcome)) => {
             return ledger_unbilled(receipt, rl.attach(resp), outcome, outcome, &env.id);
@@ -11620,13 +11711,12 @@ async fn chat_completions_with_admission(
         }
     }
     // DEADLINE: the admission wait counts against timeout_ms — see `completions`.
-    let rx = match tokio::time::timeout_at(deadline.preheader(stream).at, peek_admission(rx)).await
-    {
-        Ok(Ok(rx)) => rx,
-        Ok(Err((resp, error_code))) => {
+    let rx = match await_admission(rx, deadline, stream).await {
+        Ok(rx) => rx,
+        Err(AdmissionMiss::Refused(resp, error_code)) => {
             return ledger_rejected(receipt, rl.attach(resp), error_code, &env.id);
         }
-        Err(_) => {
+        Err(AdmissionMiss::Deadline) => {
             return ledger_unbilled(
                 receipt,
                 rl.attach(admission_deadline_response(deadline, stream)),
@@ -19292,6 +19382,145 @@ default_reasoning_effort = "always"
         );
     }
 
+    /// GB10 c32 HTTP 429 (2026-11-02): an extended stream still queued at its SSE prefill
+    /// commit is not refused. Its receiver comes back unpeeked at the commit; the first-token
+    /// bridge commits headers at once and delivers the admission and the first token that arrive
+    /// later. A discrete-card stream (no extended deadline) still misses at its window, and a
+    /// refusal before the commit is still an HTTP refusal.
+    #[tokio::test(start_paused = true)]
+    async fn an_extended_stream_queued_past_its_commit_keeps_waiting_for_admission() {
+        let commit = Some(60_000);
+        let deadline = RequestDeadline::starting_now(997_311);
+        let started = tokio::time::Instant::now();
+        let (tx, rx) = worker::event_channel();
+        let rx = await_admission_with(rx, deadline, true, commit)
+            .await
+            .map_err(|_| ())
+            .expect("a queued extended stream must keep waiting past its commit");
+        assert_eq!(
+            started.elapsed(),
+            std::time::Duration::from_millis(60_000),
+            "the admission wait hands over exactly at the commit"
+        );
+        let mut committed = peek_first_token_with_commit(
+            rx,
+            deadline,
+            Some(std::time::Duration::from_millis(60_000)),
+        )
+        .await
+        .expect("the bridge commits headers for a stream still queued");
+        assert!(
+            started.elapsed() < std::time::Duration::from_millis(60_010),
+            "headers commit at the commit, not at admission"
+        );
+        // Admission 70 s in, inside the 997 s first-token deadline.
+        tokio::time::sleep(std::time::Duration::from_secs(10)).await;
+        tx.send(Event::PromptUsage {
+            n_prompt: 30_000,
+            n_cached: 29_000,
+        })
+        .unwrap();
+        tx.send(Event::Token {
+            id: 7,
+            text: "x".into(),
+        })
+        .unwrap();
+        assert!(matches!(
+            committed.recv().await,
+            Some(Event::PromptUsage {
+                n_prompt: 30_000,
+                n_cached: 29_000
+            })
+        ));
+        assert!(matches!(
+            committed.recv().await,
+            Some(Event::Token { id: 7, .. })
+        ));
+
+        // A 90 s stream has no extended deadline: its window is the deadline, as before.
+        let (_tx, rx) = worker::event_channel();
+        let short = RequestDeadline::starting_now(TIMEOUT_MS_MAX);
+        assert!(matches!(
+            await_admission_with(rx, short, true, commit).await,
+            Err(AdmissionMiss::Deadline)
+        ));
+        // Non-streaming never commits early.
+        let (_tx, rx) = worker::event_channel();
+        assert!(matches!(
+            await_admission_with(rx, RequestDeadline::starting_now(120_000), false, commit).await,
+            Err(AdmissionMiss::Deadline)
+        ));
+        // A refusal before the commit stays a normal HTTP refusal.
+        let (tx, rx) = worker::event_channel();
+        tx.send(Event::Error(worker::EngineError::rate_limit("lane full")))
+            .unwrap();
+        match await_admission_with(rx, deadline, true, commit).await {
+            Err(AdmissionMiss::Refused(resp, code)) => {
+                assert_eq!(code, "rate_limit_exceeded");
+                assert_eq!(resp.status(), StatusCode::TOO_MANY_REQUESTS);
+            }
+            _ => panic!("a pre-commit refusal must be an HTTP refusal"),
+        }
+    }
+
+    /// GB10 c32 HTTP 429 (2026-11-02): the hybrid queue shed judges an extended stream's wait
+    /// estimate against its whole first-token deadline, not the 60 s commit. The cell's numbers:
+    /// a ~387-token mean reply at a 250 ms step estimates ~97 s for one queued request, which
+    /// the commit window refused and the 997 s GB10 deadline absorbs.
+    #[test]
+    fn an_extended_stream_is_not_shed_against_its_commit_window() {
+        let lanes_counters = own_admit_counters();
+        let st = fake_worker_state();
+        let lane = lanes::Lane::Interactive;
+        let cap = lane_cap(lane);
+        {
+            let mut m = st.metrics.lock().unwrap();
+            m.completed = 10;
+            m.tokens_out = 3_870;
+            m.step_p50_ms = 250.0;
+        }
+        let counter = &lanes_counters.lanes[lane.idx()];
+        let prev = counter.swap(1, std::sync::atomic::Ordering::AcqRel); // one request queued
+        let _restore = CounterRestore(counter, prev);
+        let rl = RateLimit {
+            limit: cap,
+            remaining: cap.saturating_sub(2),
+            reset_s: 0,
+            route: None,
+        };
+        let deadline = RequestDeadline::starting_now(997_311);
+        let (_, outcome) = reserve_own(
+            lanes_counters,
+            &st,
+            lane,
+            &rl,
+            deadline.preheader_with(true, Some(60_000)),
+        )
+        .map(|_| ())
+        .expect_err("the commit window cannot absorb a ~97 s estimate");
+        assert_eq!(outcome, "shed_deadline");
+        let admitted = reserve_own(lanes_counters, &st, lane, &rl, deadline);
+        assert!(
+            admitted.is_ok(),
+            "the whole first-token deadline absorbs the estimate"
+        );
+        drop(admitted);
+        // Every ingress hands the queue the whole deadline.
+        for (file, src) in [
+            ("lib.rs", include_str!("lib.rs")),
+            ("surfaces.rs", include_str!("surfaces.rs")),
+        ] {
+            let production = src.split("\nmod tests {").next().unwrap();
+            let squashed = production.split_whitespace().collect::<Vec<_>>().join(" ");
+            assert!(
+                !squashed.contains("reserve_pending_admit(st, lane, &rl, deadline.preheader(")
+                    && !squashed
+                        .contains("reserve_pending_admit(&st, lane, &rl, deadline.preheader("),
+                "{file}: an ingress judges the queue against the pre-header window"
+            );
+        }
+    }
+
     #[test]
     fn an_extended_streaming_ceiling_requires_an_effective_prefill_commit() {
         assert!(validate_stream_prefill_config_values(None, None).is_ok());
@@ -19490,7 +19719,7 @@ default_reasoning_effort = "always"
                     .await
                     .unwrap();
                 // Withhold the worker's admission event on every public dialect. The
-                // extended 300s TTFT must still refuse this queue within its 100ms budget.
+                // extended 300s TTFT commits at its 100ms commit and keeps the request queued.
                 use tower::ServiceExt;
                 for (path, payload) in [
                     ("/v1/completions", json!({"model":"m","prompt":"t","stream":true,"max_tokens":16})),
@@ -19530,16 +19759,40 @@ default_reasoning_effort = "always"
                             .header("content-type", "application/json")
                             .body(axum::body::Body::from(payload.to_string())).unwrap()))
                         .await.expect("admission must expire before the proxy ceiling").unwrap();
-                    assert_eq!(response.status(), StatusCode::REQUEST_TIMEOUT, "{path}");
-                    let body = body_value(response).await;
-                    assert!(body["error"]["message"].as_str().unwrap().contains("pre-header budget"), "{path}: {body}");
                     let Cmd::Generate(req) = cmd_rx.try_recv().expect("request reached admission") else { panic!("unexpected command") };
-                    assert!(req.tx.is_closed(), "{path}: queued work must be cancelled");
+                    if req.grammar.is_some() {
+                        // A constrained stream never commits before its schema compiles, and
+                        // this fake worker never compiles one: a pre-header 408, as before.
+                        assert_eq!(response.status(), StatusCode::REQUEST_TIMEOUT, "{path}");
+                        let body = body_value(response).await;
+                        assert!(body["error"]["message"].as_str().unwrap().contains("pre-header budget"), "{path}: {body}");
+                        assert!(req.tx.is_closed(), "{path}: queued work must be cancelled");
+                        assert!(mock.events().contains(&MeterEvent::Unbilled {
+                            outcome: "deadline_exceeded", status: 408, code: "deadline_exceeded".into(),
+                        }));
+                    } else {
+                        // Since 2026-11-02 a queued stream commits at its 100 ms commit and
+                        // stays queued under keepalives inside its 300 s first-token deadline
+                        // (it used to be refused with a pre-header 408).
+                        if response.status() != StatusCode::OK {
+                            let status = response.status();
+                            panic!("{path}: {status} {}", body_value(response).await);
+                        }
+                        assert!(
+                            response.headers()[axum::http::header::CONTENT_TYPE]
+                                .to_str()
+                                .unwrap()
+                                .starts_with("text/event-stream"),
+                            "{path}: a committed stream answers SSE"
+                        );
+                        assert!(!req.tx.is_closed(), "{path}: the committed stream keeps its queued work");
+                        drop(response);
+                        tokio::time::timeout(std::time::Duration::from_secs(1), req.tx.closed())
+                            .await
+                            .unwrap_or_else(|_| panic!("{path}: dropping the committed stream must cancel the queued work"));
+                    }
                     worker::release_pending_admit();
                     worker::release_admission_reservation(req.lane);
-                    assert!(mock.events().contains(&MeterEvent::Unbilled {
-                        outcome: "deadline_exceeded", status: 408, code: "deadline_exceeded".into(),
-                    }));
                 }
             });
     }
