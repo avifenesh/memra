@@ -1,0 +1,30 @@
+RUN_EXIT=0
+
+
+pp-only rep 0: 11.3159s = 776.6 tok/s
+pp-only MEDIAN: 8788 tok in 11.3159s = 776.6 tok/s (pp8788, 1 reps)
+kernels=24 total_gpu_s=22.65
+ 60.9%  13.794s n=   800 avg_us=  17242.9 void mul_mat_q_nvfp4_w4a8<(int)128, (int)128, (int)1, (bool)0, (bool)1>(const char *, const char *, const int 
+  6.9%   1.564s n=    32 avg_us=  48872.5 fa_prefill_bf16kv_pp
+  5.2%   1.184s n=   800 avg_us=   1480.0 quantize_mmq_q8_1_d4_kernel(const float *, void *, long, long, long, int)
+  4.3%   0.970s n=   128 avg_us=   7581.4 silu_mul_f32
+  2.6%   0.586s n=    96 avg_us=   6108.7 gdn_chunk_state_mma
+  2.5%   0.570s n=   256 avg_us=   2228.0 add_f32
+  2.1%   0.484s n=   322 avg_us=   1504.3 rms_norm_f32_v2
+  2.1%   0.478s n=    96 avg_us=   4977.1 gdn_chunk_solve32_f32
+  2.1%   0.467s n=    96 avg_us=   4861.9 gdn_chunk_output_mma
+  1.9%   0.437s n=   192 avg_us=   2278.3 qmatvec_nvfp4_dp4a_rp
+  1.9%   0.421s n=    96 avg_us=   4386.7 ssm_conv1d_gdn_f32
+  1.7%   0.394s n=   192 avg_us=   2053.4 l2_norm_f32
+  1.6%   0.354s n=    96 avg_us=   3688.1 gdn_chunk_attn_f32
+  1.2%   0.263s n=    96 avg_us=   2734.7 gated_rmsnorm_f32
+  1.1%   0.244s n=   194 avg_us=   1259.6 quantize_q8_1
+  0.6%   0.142s n=   160 avg_us=    885.4 f32_to_bf16_bulk
+  0.5%   0.115s n=    32 avg_us=   3581.4 q_gate_split_f32
+  0.4%   0.086s n=    32 avg_us=   2691.0 mul_f32
+  0.3%   0.061s n=   128 avg_us=    475.8 sigmoid_f32
+  0.1%   0.019s n=    64 avg_us=    303.4 rope_neox_f32
+  0.0%   0.011s n=     2 avg_us=   5312.4 qmatvec_q5_K_mmvq_il
+  0.0%   0.005s n=    96 avg_us=     48.0 gdn_chunk_cumgate_f32
+  0.0%   0.002s n=     2 avg_us=    995.0 embed_gather_u32_t
+  0.0%   0.002s n=    96 avg_us=     17.0 gdn_glog_f32
