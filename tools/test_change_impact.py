@@ -115,8 +115,9 @@ TABLE = [
      set(), set(), MAIN, None),
     ("crate symlink reaches everything", [change("crates/memra-engine/src/alias.rs", old="000000", new="120000")],
      cells(*((s, ALL) for s in ci.UNKNOWN_SCOPES)), set(), MAIN, None),
-    ("serve-smoke helper is the gate", [change("tools/q35-cold-mixed-gate.py"), change("tools/validation_plan.py")],
+    ("serve-smoke helper is the gate", [change("tools/q35-cold-mixed-gate.py")],
      cells(("gate", ALL)), set(), MAIN, None),
+    ("CI input census is CPU tooling", [change("tools/validation_plan.py")], set(), set(), MAIN, None),
     ("unregistered workspace crate reaches everything", [change("crates/memra-newthing/src/lib.rs")],
      cells(*((s, ALL) for s in ci.UNKNOWN_SCOPES)), set(), MAIN, None),
 ]

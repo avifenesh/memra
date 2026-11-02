@@ -460,17 +460,23 @@ def crate_inputs_at(repo, ref, paths):
     if not any(not p.startswith(("crates/", "research/release-qualification/")) for p in paths):
         return {}, None
     sys.path.insert(0, str(Path(__file__).resolve().parent))
+    # The census and the literal check are unioned: tools/validation_plan.py is CI tooling
+    # (class cpu), so a change to it must not be able to hide a literal include from the gate.
+    literal = literal_inputs(repo, ref, paths)
     try:
         import validation_plan as vp
         tree = vp.Tree(repo, ref)
         _, owners = vp.workspace(tree)
-        return vp.included_inputs(tree, owners), owners
+        inputs = {k: set(v) for k, v in vp.included_inputs(tree, owners).items()}
+        for path, packages in literal.items():
+            inputs.setdefault(path, set()).update(packages)
+        return inputs, owners
     except (ImportError, subprocess.SubprocessError, OSError, ValueError, KeyError):
         # vp.Refused is a ValueError.
         # The census cannot answer (typically: the running tools and the head tree differ).
         # Fall back to the literal check: a non-crate path is an input when a non-comment
         # line under crates/ spells it. Includes are literal paths in this repo.
-        return literal_inputs(repo, ref, paths), None
+        return literal, None
 
 
 def literal_inputs(repo, ref, paths):
