@@ -1085,7 +1085,8 @@ them. The original TTFT deadline continues to run, and it covers queue waiting t
 still waiting for admission at the commit threshold commits the same way and stays queued
 under keepalives, as vLLM and SGLang keep a queued stream open. The queue shed compares its
 wait estimate with the whole first-token deadline, and a refusal after the commit arrives as
-a dialect-native error event under HTTP 200 (until 2026-11-02 a stream still queued at the
+a dialect-native error event under HTTP 200. Streams with `n` > 1 have no committed bridge and
+keep the pre-header bound for queue and prefill alike (until 2026-11-02 a stream still queued at the
 commit got a pre-header 408, and the queue shed judged its estimate against the commit: the
 leading explanation for the uncaptured HTTP 429 of the first Spark c32 agentic cell).
 
@@ -2747,7 +2748,7 @@ Discrete cards (RTX 5090, RTX PRO 6000, H100, B200) read none of them. Arithmeti
 | free memory for sizing (admission's effective free, prefix-cache boot free, MoE residency) | `cuMemGetInfo` free | the larger of `cuMemGetInfo` free and `/proc/meminfo` MemAvailable | `cuMemGetInfo` leaves out reclaimable page cache, which after a load holds the checkpoint ([NVIDIA DGX Spark known issues](https://docs.nvidia.com/dgx/dgx-spark/known-issues.html)) |
 | `MEMRA_PREFIX_CACHE_MB` | 2 full-context entries, clamped to boot free minus 1.5 GiB | the larger of 2 entries and half of (boot free minus 1.5 GiB, the 2 GiB driver headroom and any host KV tier) | 2 entries (15.9 GB for Qwen3.8-27B at 262,144 tokens) held ~20 of a 48-prompt agentic set; every turn re-primed 14k-42k tokens. Half of ~70 GB is 34,048 MiB, the 32,768 MB the first Spark run set by hand |
 | `MEMRA_STREAM_TTFT_MS_MAX` | 90,000 ms | one full served context at 4118 tok/s x SMs / 188 / 4, at least 90,000 ms: 997,311 ms on GB10 at 262,144 tokens | four 14k-42k-token prompts prefilling together missed 90 s on the first Spark run and answered 408 |
-| `MEMRA_SSE_PREFILL_COMMIT_MS` | off | 60,000 ms beside the derived deadline | headers and keepalives start inside the shipped 90 s window, so a fronting proxy still sees them; admission keeps its hard deadline at the commit |
+| `MEMRA_SSE_PREFILL_COMMIT_MS` | off | 60,000 ms beside the derived deadline | headers and keepalives start inside the shipped 90 s window, so a fronting proxy still sees them; a stream still queued there keeps waiting under the keepalive until its first-token deadline |
 | non-streaming `timeout_ms` default/max | 90,000 ms | the streaming value above plus 8192 open output tokens (admission's open-output charge) at 4 tok/s: 3,045,311 ms on GB10 at 262,144 tokens | a non-streaming deadline bounds the whole response and cannot send headers early; 90 s cannot hold one 131k prompt or four concurrent 32k prompts at GB10's measured prefill (32,768 cold tokens in 45.2 s), and vLLM and SGLang have no such deadline. 4 tok/s floors the measured per-stream decode under concurrent prefill (agentic c4, 4.59 tok/s median) |
 
 Reviewed and unchanged on unified memory, with the reason:
