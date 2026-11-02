@@ -11,6 +11,7 @@
 | run those CPU-crate tests | 1/1 | 4.8 (4.8) | 5.5 (5.5) | +13.6% | 2590 | 2592 |
 | run the engine lib tests | 1/1 | 5.4 (5.4) | 5.7 (5.7) | +4.4% | 825 | 821 |
 | `cpu_native_check` bin, incremental | 1/1 | 1.2 (1.2) | 4.7 (4.7) | +300.8% | 174 | 258 |
+| `--workspace --bins` (CI full-mode build, INSTALLATION.md), from the server-built state | 1/1 | 318.1 (318.1) | 2140.5 (2140.5) | +572.8% | 513 | 1233 |
 
 memra-server binary bytes: default [74713920], fat LTO [62011040] (-17.0%)
 max coretemp during builds: 102 C
@@ -25,9 +26,15 @@ max coretemp during builds: 102 C
 | streamed TTFT p95 ms | 59.44, 59.61, 60.72 | 60.79, 61.63, 61.07 | +2.4% |
 | short request E2E p50 ms | 101.34, 102.35, 102.85 | 102.09, 103.07, 102.91 | +0.5% |
 | greedy 512-token stream wall s (median of 3) | 3.046, 3.084, 3.19 | 3.064, 3.089, 3.293 | +0.2% |
+| tokenize-only rounds: /v1/tokenize median ms (60/round) | 254.49, 256.81, 260.44 | 240.84, 240.55, 238.9 | -6.3% |
+| tokenize-only rounds: server CPU ms per tokenize (10 ms clock ticks) | 250.0, 250.0, 260.0 | 240.0, 240.0, 235.0 | -4.0% |
+| tokenize-only rounds: boot to /health 200 (s) | 7.754, 4.307, 4.34 | 4.131, 4.118, 4.473 | -4.8% |
+
+Boot includes model load; the first round of each campaign (A) ran on a colder page cache.
 
 ## Correctness
 
+- cpu_native_check: 51 lines per arm, differing lines: ['[memra-cpu-profile]'] (timing profile only)
 - tokenize_ids_sha256: 1 distinct value(s) across both arms and all rounds: ['28237cad8122be22d93c152adcce9380145a2e3b430187cbd476f6f74ea05967']
 - greedy_sha256: 1 distinct value(s) across both arms and all rounds: ['7daadd12a1d5999ee608e4d623f47b57b124f75e47585ccc53d71ff011be2f46']
 - sampled_sha256: 1 distinct value(s) across both arms and all rounds: ['ab0756da5563c65145777ff93cd4248aa099786e464f31e4bce836fda24b01e1']

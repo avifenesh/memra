@@ -34,7 +34,7 @@ Q6_K/4096: expected=1972.00830078 actual=1972.00463867 abs=3.662e-3 rel=1.857e-6
 IQ3_S/4096: expected=2217.38330078 actual=2217.38500977 abs=1.709e-3 rel=7.707e-7
 IQ4_XS/4096: expected=4139.16601562 actual=4139.15722656 abs=8.789e-3 rel=2.123e-6
 NVFP4/4096: expected=19.18429756 actual=19.18442345 abs=1.259e-4 rel=6.562e-6
-[memra-cpu] RAM headroom cap: requested=16.00 GiB available=33.06 GiB reserve=4.00 GiB effective=16.00 GiB
+[memra-cpu] RAM headroom cap: requested=16.00 GiB available=50.05 GiB reserve=4.00 GiB effective=16.00 GiB
 [memra-cpu] normal-RAM expert cache: 16.00 GiB policy=lru io=buffered
 file-backed pipelined-read MoE identity (cold + warm): PASS
 detached prefetch (annex promote + bit-identity): PASS
@@ -48,4 +48,4 @@ multi-row raw + exact accumulate == one-job program (NVFP4, 3 experts, non-power
 ABI v2 symbols, production MoE, and non-finite/subnormal checks: PASS
 memra native CPU quant check: ALL GREEN
 [memra-cpu-cache] hits=12 misses=15 hit_rate=44.44% read_GB=0.000 resident_GB=0.000
-[memra-cpu-profile] calls=46 prepare=0.000171s io=0.000070s insert=0.000006s compute=0.005649s read_projections=12 read_GB=0.000 stage_entry=0.000524s stage_cached=0.001616s stage_missing=0.000739s stage_accum=0.000526s prefetch_projections=3 prefetch_GB=0.000
+[memra-cpu-profile] calls=46 prepare=0.000233s io=0.000287s insert=0.000009s compute=0.009298s read_projections=12 read_GB=0.000 stage_entry=0.000623s stage_cached=0.002332s stage_missing=0.001625s stage_accum=0.001647s prefetch_projections=3 prefetch_GB=0.000

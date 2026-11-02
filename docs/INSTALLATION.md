@@ -65,9 +65,9 @@ export PATH="$PWD/target/release:$PATH"
 
 The release profile links with fat LTO and one codegen unit, so every binary gets its own
 whole-program optimization pass, and `cargo build --release` builds every binary in the workspace.
-For the server alone, run `cargo build --release -p memra-server`. Cold, that took about 8.5
-minutes at two jobs on the RTX 5090 Laptop rig (2026-11-02,
-[measurements](decisions/RELEASE-PROFILE.md)).
+For the server alone, run `cargo build --release -p memra-server`. On the RTX 5090 Laptop rig at
+two jobs (2026-11-02, [measurements](decisions/RELEASE-PROFILE.md)), a cold server build took
+about 8.5 minutes, and linking every workspace binary on top of that took another 36 minutes.
 
 The source build detects B200 compute capability 10.0 and selects `sm_100a`. The explicit form is
 useful for cross-building or for making the target visible in a build receipt:

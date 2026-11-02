@@ -770,3 +770,21 @@ prototype is retired with source and evidence preserved. Partial sets interrupte
 by other GPU tests were excluded and retried in full. No DFlash measurements enter
 this MTP comparison. [Protocol, audit and raw data](../research/mtp-learned-depth-20260920/RESULTS.md)
 and [decision](decisions/MTP-LEARNED-DEPTH-20260920.md).
+
+## Release profile: fat LTO on the host paths (2026-11-02, RTX 5090 Laptop)
+
+The workspace release profile moved from Cargo's defaults (16 codegen units, thin-local LTO) to
+opt-level 3, fat LTO and one codegen unit. The A/B used the same source, Qwen3.5-9B NVFP4 MTP GGUF
+and the `balanced` platform profile, with serving rounds interleaved ABBAAB (three per arm).
+
+- `/v1/tokenize` on a 165,525-token chat (template + BPE + JSON): 256.8 to 240.6 ms median
+  (-6.3%; 60 calls per round), with server CPU per call 250 to 240 ms.
+- Flat: short cached-prompt TTFT p50 58.1 vs 58.3 ms, short-request E2E p50 102.4 vs 102.9 ms, and
+  greedy 512-token stream 3.08 vs 3.09 s.
+- Byte-identical between arms: tokenizer ids, greedy and seeded sampled streams, fatbins and device
+  ELFs.
+- `memra-server` is 17% smaller (74.7 to 62.0 MB).
+
+Build cost and raw rows are in [the decision record](decisions/RELEASE-PROFILE.md) and
+[research/release-profile-20261102/](../research/release-profile-20261102/LANE.md).
+

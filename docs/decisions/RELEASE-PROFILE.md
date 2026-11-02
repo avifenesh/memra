@@ -67,6 +67,7 @@ directory. Medians with every run listed.
 | run those CPU-crate tests | 1/1 | 4.8 (4.8) | 5.5 (5.5) | +13.6% | 2590 | 2592 |
 | run the engine lib tests | 1/1 | 5.4 (5.4) | 5.7 (5.7) | +4.4% | 825 | 821 |
 | `cpu_native_check` bin, incremental | 1/1 | 1.2 (1.2) | 4.7 (4.7) | +300.8% | 174 | 258 |
+| `--workspace --bins` (CI full-mode build, INSTALLATION.md), from the server-built state | 1/1 | 318.1 (318.1) | 2140.5 (2140.5) | +572.8% | 513 | 1233 |
 
 memra-server binary bytes: default [74713920], fat LTO [62011040] (-17.0%)
 max coretemp during builds: 102 C
@@ -81,9 +82,15 @@ max coretemp during builds: 102 C
 | streamed TTFT p95 ms | 59.44, 59.61, 60.72 | 60.79, 61.63, 61.07 | +2.4% |
 | short request E2E p50 ms | 101.34, 102.35, 102.85 | 102.09, 103.07, 102.91 | +0.5% |
 | greedy 512-token stream wall s (median of 3) | 3.046, 3.084, 3.19 | 3.064, 3.089, 3.293 | +0.2% |
+| tokenize-only rounds: /v1/tokenize median ms (60/round) | 254.49, 256.81, 260.44 | 240.84, 240.55, 238.9 | -6.3% |
+| tokenize-only rounds: server CPU ms per tokenize (10 ms clock ticks) | 250.0, 250.0, 260.0 | 240.0, 240.0, 235.0 | -4.0% |
+| tokenize-only rounds: boot to /health 200 (s) | 7.754, 4.307, 4.34 | 4.131, 4.118, 4.473 | -4.8% |
+
+Boot includes model load; the first round of each campaign (A) ran on a colder page cache.
 
 ### Correctness
 
+- cpu_native_check: 51 lines per arm, differing lines: ['[memra-cpu-profile]'] (timing profile only)
 - tokenize_ids_sha256: 1 distinct value(s) across both arms and all rounds: ['28237cad8122be22d93c152adcce9380145a2e3b430187cbd476f6f74ea05967']
 - greedy_sha256: 1 distinct value(s) across both arms and all rounds: ['7daadd12a1d5999ee608e4d623f47b57b124f75e47585ccc53d71ff011be2f46']
 - sampled_sha256: 1 distinct value(s) across both arms and all rounds: ['ab0756da5563c65145777ff93cd4248aa099786e464f31e4bce836fda24b01e1']
@@ -93,21 +100,50 @@ max coretemp during builds: 102 C
 
 ## Decision
 
-The served paths on the 5090 are flat: boot, tokenize, TTFT and decode moved by amounts inside
-round-to-round noise. Every correctness surface is byte-identical. The binary is 17% smaller. Cold
-builds are flat at two jobs. The cost is the link: every binary now runs a whole-program
-optimization, so a rebuild after a one-line server edit takes about 2.8 times as long, and the cost
-grows with the number of binaries a command builds.
+Serving on the 5090: TTFT, short-request E2E and greedy decode are flat, moving by less than the
+spread between rounds. Tokenization is faster: in the 60-call rounds, the 165,525-token
+`/v1/tokenize` median drops 6.3% (server CPU per call drops 4.0%), and the fat-LTO arm is faster
+in all three interleaved pairs. The 20-call rounds were too noisy to show that difference (-1.3%).
+Boot is about 5% faster, but that rests on three rounds per arm with a cold-cache first round. The
+decode worker spins while the GPU works, so decode measures GPU-bound wall time and does not
+isolate host work. Every correctness surface is byte-identical. The server binary is 17% smaller.
 
-That cost was weighed against the owner's standard and accepted: runtime is neutral-to-better with
-no correctness change, which is the bar for adopting the standard profile.
+Build cost is the link. Each binary now gets its own whole-program optimization, so the cost
+scales with how many binaries a command links. Measured at two jobs:
 
-`.cargo/config.toml` keeps `jobs = 6`. It caps concurrent rustc processes; at the measured fat-LTO
-peak of about 3.1 GB per rustc, six concurrent links fit the rig's memory. The rig's own builds run
-at two jobs under the shared build lock regardless (`CARGO_BUILD_JOBS=2`), and release
-qualification passes `--jobs` explicitly.
+| command | default | fat LTO |
+|---|---|---|
+| cold `-p memra-server` | 499 s | 508 s (flat) |
+| relink after touching the server | 61 s | 169 s (2.8x) |
+| relink after touching the engine | 132 s | 203 s (1.5x) |
+| the qualified gate binaries | 103 s | 184 s (1.8x) |
+| `--workspace --bins` | 318 s | 2,141 s (6.7x) |
 
-Rejected: keeping Cargo's default release profile (it is not the owner's standard, and it buys
-nothing at run time that was measured here). Not tried: a separate fast-link profile for
-development loops; it would build binaries that differ from the qualified ones, and nobody asked
-for it.
+The last row is the CI full-mode build command, and the `cargo build --release` that
+`docs/INSTALLATION.md` shows. The installation guide now names `-p memra-server` for a server-only
+build.
+
+Hosted CI (GitHub `ubuntu-24.04` runners, `ci.yml` full mode, first run of this change against
+the four latest successful scheduled runs on `main`): `build` (every binary) took 59.6 min, against
+12.0 to 18.0; `arch-coverage (100a)` took 45.6 min, against 11.6 to 19.5; `server-tests` took 20.0
+min, against 11.9 to 15.1. That `build` time sits just under the job's 60-minute timeout. Jobs that
+do not link release binaries (clippy, boundary, portable-suites, publish-dryrun) did not move. The
+first run also started from a Rust cache built under the old profile, so dependency crates
+recompiled; the binary links dominate either way, as the `--workspace --bins` row shows. Hosted CI
+time is the open cost of this change. The ways to close it are a longer timeout, or a CI-only
+profile override for compile-and-test jobs; the second would leave the fat-LTO bytes to release
+qualification. Both are workflow changes and belong in their own lane.
+
+Adopted. Runtime is neutral or better, no result changes, and the profile is the owner's standard
+for Rust repos. The build cost is recorded here so it is not rediscovered.
+
+`.cargo/config.toml` keeps `jobs = 6`. The setting caps concurrent rustc processes. Measured fat-LTO
+peaks: 3.1 GB for one rustc linking `memra-server`, 1.2 GB per rustc across the workspace binaries.
+Six concurrent links therefore fit both the rig and a 16 GB hosted runner. The rig's own builds run
+at two jobs under the shared build lock (`CARGO_BUILD_JOBS=2`), and release qualification passes
+`--jobs` explicitly. Nothing measured here argues for a different number.
+
+Rejected: keeping Cargo's default release profile. It is not the owner's standard, and it is
+slower on the one host path that moved (tokenization). Not built: a separate fast-link profile for
+development loops. It would produce binaries that differ from the qualified ones, and that is a
+separate decision for the owner.
