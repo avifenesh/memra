@@ -5,7 +5,7 @@
 | **Role** | Measured with Qwen3.8-27B; no model has a support record here yet |
 | **Build** | `sm_121a`, auto-detected from GB10 compute capability 12.1; build from source on the GB10 host (aarch64, no prebuilt) |
 | **Best fit** | Qwen3.8-27B NVFP4+Q5_K GGUF with its masked MTP draft, the derived unified-memory defaults, no flags |
-| **Start with** | Qwen3.8-27B, the first candidate to measure here |
+| **Start with** | Qwen3.8-27B NVFP4+Q5_K GGUF with its masked MTP draft (measured below) |
 
 GB10 is a 120a-family target: the same sources, kernels and arch-keyed defaults as the RTX 5090
 and RTX PRO 6000 builds, compiled to its own SASS, because sm_120a SASS does not load on 12.1
@@ -44,7 +44,8 @@ allowed growth ([SERVING.md](../SERVING.md#unified-memory-devices-gb10-dgx-spark
 
 ## Measured (2026-11-02, one GB10, `121a` built on the device from `b014549cb9`)
 
-Correctness: kernel-check ALL GREEN (92 cells, 22 skipped for models not on the device);
+Correctness: kernel-check ALL GREEN (92 cells; 22 skipped for models not on the device, every
+NVFP4 GEMM/MMVQ cell among them, so the 27B's NVFP4 path is covered end to end below);
 `run-gen` argmax MATCH 4/4 on the GGUF and 4/4 on NVIDIA's NVFP4 safetensors; `run-spec`
 K=1..8 self-consistency PASS ([receipt](../../research/gb10-tuning-20261102/correctness-gb10-b014549cb9.log)).
 
@@ -58,20 +59,20 @@ Agentic bench (48 turns from 24 coding-agent sessions, thinking on, T=1, 768 max
 | NVIDIA NVFP4 safetensors + DFlash2, `MEMRA_MTP_SKIP=1` | | 33.50 | 50.90 | 54.90 | 56.54 |
 
 From c4 up the spec gate serves batched plain decode, so the GGUF arms converge. The DFlash2
-arm serves plain at c1 too, because its multi-turn hits land on plain prefix entries (a fix is in
-review). `MEMRA_SPEC_K_CACHED_LONG_TRIM=2` is flat at every concurrency (21.29 at c1). No cell returned an
+arm serves plain at c1 too, because its multi-turn hits land on plain prefix entries (fix in memra#1031). `MEMRA_SPEC_K_CACHED_LONG_TRIM=2` is flat at every concurrency (21.29 at c1). No cell returned an
 HTTP error, and no `[shed]` line was logged. Cold prefill: 11.3 s at 8,192 tokens, 49.3 s at
 32,768.
 
 Long context: the 264-task quality panel (one 131,550-token session, then 164 HumanEval and 100
 GSM8K tasks on it, 8 concurrent) scored 158/164 and 98/100 on the GGUF arm; MemAvailable stayed
-at or above 17.0 GiB. A non-streaming request with a 150,413-token prompt answered HTTP 200 in
-317 s under the derived deadline.
+at or above 17.0 GiB (the bench's own 3 GiB MemAvailable watchdog never fired). A non-streaming
+request with a 150,413-token prompt answered HTTP 200 in 317 s under the derived deadline (GGUF
+DFlash2 boot with the MTP head loaded; 5 output tokens, so it tests the prefill allowance only).
 
 Prefill: the W4A8 NVFP4 MMQ is 61% of an 8,788-token prefill (776.6 tok/s monolithic). The
-opt-in F8F4 route (`MEMRA_MMQ_F8F4=1`) is 15.4% faster here (served cold prefill 43.7 s
-against 49.3 s at 32,768 tokens) and raised served acceptance from 0.672 to 0.702 on the masked
-MTP draft; it changes the activation program, so the quality panel decides whether it becomes the
+opt-in F8F4 route (`MEMRA_MMQ_F8F4=1`) is 15.4% faster in the monolithic `run-gen` prefill and
+takes 11.4% less served cold-prefill time (43.7 s against 49.3 s at 32,768 tokens); one
+greedy acceptance run per arm on three prompts read 0.702 against 0.672 (one prompt down 0.7 points); it changes the activation program, so the quality panel decides whether it becomes the
 GB10 default
 ([research/gb10-tuning-20261102](../../research/gb10-tuning-20261102/)).
 

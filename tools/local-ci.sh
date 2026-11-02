@@ -938,6 +938,13 @@ if [ "$PAIR_SKIPS" -gt 0 ]; then
     echo "local-ci: SKIP $PAIR_SKIPS pair-only GPU test(s) on this rig (need 2 CUDA devices):"
     grep '^SKIP\[2 CUDA devices\]: pair-only test ' "$LIB_LOG" | sed 's/^/    /'
 fi
+# Every other protocol skip (an absent artifact such as MIMO_PINNED_SOURCE_ROOT) is named too, so
+# a gate that skipped is never read as a gate that ran.
+OTHER_SKIPS=$(grep '^SKIP\[' "$LIB_LOG" | grep -vc '^SKIP\[2 CUDA devices\]: pair-only test ' || true)
+if [ "$OTHER_SKIPS" -gt 0 ]; then
+    echo "local-ci: SKIP $OTHER_SKIPS GPU test(s) for an absent artifact:"
+    grep '^SKIP\[' "$LIB_LOG" | grep -v '^SKIP\[2 CUDA devices\]: pair-only test ' | sed 's/^/    /'
+fi
 rm -f "$LIB_LOG"
 if [ "$LIB_RC" -ne 0 ]; then
     echo "local-ci: memra-engine GPU-only lib tests FAILED"; exit 1

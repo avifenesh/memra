@@ -8778,9 +8778,10 @@ fn admission_outcome(
         // string-matches a "shed:" prefix that only ever existed as an in-band sentinel.
         Some(Event::Error(e)) => {
             let error_code = engine_error_code(e.class);
-            // One line per refusal, so a client-side 429/503 always has its server-side cause.
+            // One line per pre-admission error (refusal or fault), so a client-side 4xx/5xx always has
+            // its server-side cause.
             eprintln!(
-                "[admission] refused before admission: code={error_code} message={:?}",
+                "[admission] error before admission: code={error_code} message={:?}",
                 e.message
             );
             Err((engine_error_response(&e), error_code))
@@ -8857,7 +8858,7 @@ async fn forward_prefill_until_first_delivery(
                         // After the commit a refusal or fault reaches the client as an SSE
                         // error event; log it like the pre-commit refusals.
                         eprintln!(
-                            "[admission] refused after the SSE commit: code={} message={:?}",
+                            "[admission] error after the SSE commit: code={} message={:?}",
                             engine_error_code(e.class),
                             e.message
                         );
