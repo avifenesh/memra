@@ -201,6 +201,7 @@ pub mod progress;
 pub mod qwen4exp_gpu;
 pub mod round_stream;
 pub mod spec;
+pub mod spec_cost;
 /// Per-burst spec-round phase attribution (`MEMRA_SPEC_TRACE`; glm5 alias honored) —
 /// the draft/verify/accept/rollback/maintenance split every spec family owns, with
 /// caller-tagged emit lines so banked receipts keep their grep shape. No CUDA deps
