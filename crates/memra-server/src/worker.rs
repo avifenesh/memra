@@ -7426,13 +7426,6 @@ fn device_is_unified(engine: &Engine) -> bool {
 /// cache's allowed growth (budget minus resident) as committed, so overload queues or refuses
 /// instead of running the host out of memory. Discrete cards book nothing here (their separate
 /// pending-seed booking is unchanged).
-/// `MEMRA_UNIFIED_PREFIX_BOOKING=0` turns the unified-memory growth booking off (the insert
-/// guard stays). A/B seam for the GB10 c32 and quality-panel cells; read once.
-fn unified_prefix_booking_armed() -> bool {
-    static ARMED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ARMED.get_or_init(|| std::env::var("MEMRA_UNIFIED_PREFIX_BOOKING").as_deref() != Ok("0"))
-}
-
 fn unified_prefix_growth_booking(unified: bool, budget: usize, resident: usize) -> usize {
     if unified {
         budget.saturating_sub(resident)
@@ -29124,7 +29117,7 @@ pub fn run(
                 // On unified memory the cache's whole allowed growth is booked (it covers any
                 // pending seed, which can only grow the cache inside that budget).
                 let unified_growth = unified_prefix_growth_booking(
-                    device_is_unified(&engine) && unified_prefix_booking_armed(),
+                    device_is_unified(&engine),
                     prefix_cache_budget_bytes(),
                     px.total_bytes,
                 );
