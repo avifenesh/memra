@@ -282,3 +282,40 @@ The binary built from this tree (`unified/v2b/final/binaries.sha256`) ran the mi
 at its defaults (unified step on, graphs off), and with `MEMRA_UNIFIED_STEP=0`. Both runs are
 21/21 identical to the v1 reference (`unified/v2b/final/compare-mixed-cell.txt`). The default
 run logs the unified cohorts and no graph capture. The seam run logs neither.
+
+
+## Riders priced by the cost model; the seam is gone (2026-11-02)
+
+v2a shipped with c=8 at 0.94x on the 5090. That cannot be a global default, so the rider decision
+now lives in the cost model (`rider_forward_caps`, worker.rs). A rider joins a pooled forward only
+while each row it adds costs the forward no more than the marginal plain-step row at this tick's
+rider count (a lone rider pays a whole plain step), measured from the serving box's
+`SpecCostTable`.
+
+| device | where riders stop |
+|---|---|
+| 5090, q9 | about 8 rows; above that a verify row costs what a plain row does |
+| GB10, 27B | at 8 rows, where the b16 tier starts charging about 7 ms a row |
+| no table (the band owns the gate) | no riders |
+
+`MEMRA_UNIFIED_STEP` is deleted (FLAGS.md row removed): the decision now has a measured basis, so
+the seam has no reason to stay.
+
+Why no table means no riders, measured on the q9 mixed cell (band forced to LOW=2/HIGH=16,
+`battery/mixed_cell.py`, aggregate tok/s, `cap2-*` and `iso-*` boots):
+
+- **c=8 with riders capped at 8 rows:** 283.2 / 276.3 / 282.7 / 275.3 / 279.0, against the
+  3cd42279ee binary's 308.6 / 286.6 / 309.9 / 291.4 / 291.9 (about 0.94x).
+- **c=8 with the epilogue refactor alone:** 304.8 / 289.6, at parity.
+- **c=8 with no riders whenever a decoding plain row must stay in phase (c):** still lost. The loss
+  is riders advancing at round cadence beside spec rows the band put there, not the forward's
+  width.
+- **c=3 and c=4:** riders gain, 1.07-1.10x and 1.00-1.05x.
+
+So riders are a cost-model decision. Under the default cost-model gate on the 5090, the model keeps
+c>=4 plain and no cohort forms. On GB10, the agentic receipts measure the cost-model arm with
+riders priced from its table.
+
+**Mixed-cell stream note.** c6/r1 is admitted to spec or plain depending on arrival timing, and
+it differs between boots of the reference binary itself (int2 vs int1/int3). So it is not a byte
+gate. All other streams match across every boot.
