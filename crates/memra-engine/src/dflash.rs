@@ -6035,15 +6035,46 @@ impl crate::hybrid::HybridModel {
         burst_target: usize,
         request_room: usize,
         eos: &[u32],
-        mut on_commit: Option<crate::glm_spec::CommitHook<'_>>,
+        on_commit: Option<crate::glm_spec::CommitHook<'_>>,
     ) -> Result<(Vec<u32>, usize, usize), Box<dyn std::error::Error>> {
-        use crate::cache::DflashTapSink;
+        let mut burst =
+            self.dspark_burst_begin(e, draft, sess, burst_target, request_room, eos, on_commit)?;
+        // Slice 3/4c SERVE ENGAGEMENT: see `dspark_burst_vg_engage`. The guard spans the burst:
+        // the slab stash is live verify -> commit inside each round, and the worker drives
+        // bursts from one scheduler thread, so sessions interleave at burst boundaries only
+        // (or, in a pooled cohort, inside ONE driver that holds this same guard).
+        let mut vg_guard = self.dspark_vgraphs.lock().unwrap();
+        self.dspark_burst_vg_engage(e, sess, &burst, &mut vg_guard)?;
+        let vgraphs: &mut Option<crate::spec::DsparkVerifyGraphs> = &mut vg_guard;
+        while burst.live(sess) {
+            let Some(mut prep) =
+                self.dspark_round_prepare(e, draft, sess, &burst, vgraphs, false)?
+            else {
+                break;
+            };
+            let verified = self.dspark_round_verify(e, sess, &burst, &mut prep, vgraphs)?;
+            self.dspark_round_finish(e, draft, sess, &mut burst, prep, verified, vgraphs)?;
+        }
+        self.dspark_burst_end(e, burst)
+    }
+
+    /// The burst prologue: the fixed per-burst inputs every round reads (harvest convention,
+    /// verify-window policy, sampling arms, resident embed) and the burst's running totals.
+    #[allow(clippy::too_many_arguments)] // allow: the serial burst's own arity
+    fn dspark_burst_begin<'m, 'h>(
+        &'m self,
+        e: &Engine,
+        draft: &DflashDraft,
+        sess: &DsparkSpecSession,
+        burst_target: usize,
+        request_room: usize,
+        eos: &[u32],
+        on_commit: Option<crate::glm_spec::CommitHook<'h>>,
+    ) -> Result<DsparkBurst<'m, 'h>, Box<dyn std::error::Error>> {
         let trace_first = sess.rounds == 0;
         if trace_first {
             trace_allocation_phase(e, "first-burst-before")?;
         }
-        // sse-cadence flush cursor: everything in out[..flushed] has been handed to on_commit.
-        let mut flushed = 0usize;
         let n_embd = self.cfg.n_embd as usize;
         let c = &draft.cfg;
         let b = c.block_size;
@@ -6081,9 +6112,7 @@ impl crate::hybrid::HybridModel {
         let sp_gp: Option<crate::spec::SpecSampling> =
             sess.sampling.filter(|s| s.greedy_penalized());
         let pen_on = sp_on.as_ref().is_some_and(|s| s.pen_on()) || sp_gp.is_some();
-        let mut out: Vec<u32> = Vec::with_capacity(burst_target + b);
-        let mut drafted = 0usize;
-        let mut accepted_n = 0usize;
+        let out: Vec<u32> = Vec::with_capacity(burst_target + b);
         // Engine-bundle slice 2 — identical to the bin arm: deferred chain readback under
         // the stash arm with a resident embed table (ladder policy only).
         let defer_rb = !vt_policy.is_confidence();
@@ -6096,522 +6125,695 @@ impl crate::hybrid::HybridModel {
                     .get_or_init(|| e.upload_u8(&self.embd.raw).expect("embed table upload")),
             )
         };
-        // Slice 3/4c SERVE ENGAGEMENT (graphs-serve lane; DSF-ROUNDCOST §9.3 -> §10): the
-        // verify-graph pool lives on the MODEL (`dspark_vgraphs`, one per process) and its
-        // keys — (segment, vt) and (vt, rung, hi) — carry NOTHING session-scoped, so ANY
-        // session whose round matches a key replays the same capture (this is the
-        // cache-reuse-pool the old bin-arm-only note asked for). Sharing is sound because
-        // every per-session-varying address the captured bodies touch is indirect:
-        // conv/ssm state and the ckpt stash resolve through the per-verify refreshed
-        // pointer table (refresh_tables + copy_indirect_src_f32 — the slice-3
-        // parity/lifetime law; a baked address is the known 12/12-divergence class), kv
-        // bases through fa_table, residual/pos/tap through ctx-owned staging rewritten
-        // every round; per-row t_kv derives in-kernel from pos_seq, and the per-round
-        // host bookkeeping (parity swap, len bump) runs on THIS session's cache. The
-        // guard spans the burst: the slab stash is live verify -> commit inside each
-        // round, and the worker drives bursts from one scheduler thread
-        // (step_dspark_spec), so sessions interleave at burst boundaries only.
-        // DEFAULT ON on the serve route since the v0.103 train (owner-ratified
-        // 2026-08-22, §10 re-gate at flip): MEMRA_DSPARK_VERIFY_GRAPH=0 is the
-        // kill-switch that keeps this None — the eager walk, byte-identical (the
-        // kill-switch arm of the serve battery). The bin arm keeps its own opt-in.
-        let mut vg_guard = self.dspark_vgraphs.lock().unwrap();
-        if vg_guard.is_none() && embd_gpu.is_some() && crate::spec::dspark_verify_graph_serve_on() {
-            *vg_guard = crate::spec::DsparkVerifyGraphs::new(e, &sess.cache, vt_cap, n_embd)?;
-            if vg_guard.is_some() {
+        Ok(DsparkBurst {
+            trace_first,
+            n_embd,
+            n_taps,
+            n_vocab,
+            nd,
+            r0,
+            vt_cap,
+            adapt,
+            vt_policy,
+            sp_on,
+            sp_gp,
+            pen_on,
+            embd_qt,
+            embd_rb,
+            embd_gpu,
+            burst_target,
+            request_room,
+            eos: eos.to_vec(),
+            out,
+            // sse-cadence flush cursor: everything in out[..flushed] has been handed to
+            // on_commit.
+            flushed: 0,
+            drafted: 0,
+            accepted_n: 0,
+            on_commit,
+        })
+    }
+
+    /// Slice 3/4c SERVE ENGAGEMENT (graphs-serve lane; DSF-ROUNDCOST §9.3 -> §10): the
+    /// verify-graph pool lives on the MODEL (`dspark_vgraphs`, one per process) and its
+    /// keys — (segment, vt) and (vt, rung, hi) — carry NOTHING session-scoped, so ANY
+    /// session whose round matches a key replays the same capture (this is the
+    /// cache-reuse-pool the old bin-arm-only note asked for). Sharing is sound because
+    /// every per-session-varying address the captured bodies touch is indirect:
+    /// conv/ssm state and the ckpt stash resolve through the per-verify refreshed
+    /// pointer table (refresh_tables + copy_indirect_src_f32 — the slice-3
+    /// parity/lifetime law; a baked address is the known 12/12-divergence class), kv
+    /// bases through fa_table, residual/pos/tap through ctx-owned staging rewritten
+    /// every round; per-row t_kv derives in-kernel from pos_seq, and the per-round
+    /// host bookkeeping (parity swap, len bump) runs on THIS session's cache.
+    /// DEFAULT ON on the serve route since the v0.103 train (owner-ratified
+    /// 2026-08-22, §10 re-gate at flip): MEMRA_DSPARK_VERIFY_GRAPH=0 is the
+    /// kill-switch that keeps this None — the eager walk, byte-identical (the
+    /// kill-switch arm of the serve battery). The bin arm keeps its own opt-in.
+    fn dspark_burst_vg_engage(
+        &self,
+        e: &Engine,
+        sess: &DsparkSpecSession,
+        burst: &DsparkBurst<'_, '_>,
+        vg: &mut Option<crate::spec::DsparkVerifyGraphs>,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        if vg.is_none() && burst.embd_gpu.is_some() && crate::spec::dspark_verify_graph_serve_on() {
+            *vg = crate::spec::DsparkVerifyGraphs::new(e, &sess.cache, burst.vt_cap, burst.n_embd)?;
+            if vg.is_some() {
                 // Engagement receipt (the §8 dead-arm lesson): prove the door is LIVE on
                 // the serve surface — S6b banked the tip server carrying zero door strings.
-                eprintln!("[dspark-vg] serve pool ENGAGED (vt_cap={vt_cap})");
+                eprintln!("[dspark-vg] serve pool ENGAGED (vt_cap={})", burst.vt_cap);
             }
         }
-        let vgraphs: &mut Option<crate::spec::DsparkVerifyGraphs> = &mut vg_guard;
-        'outer: while out.len() < burst_target && !sess.done {
-            let start = sess.cache.pos;
-            if start + nd + 1 > sess.max_ctx {
-                sess.done = true;
-                break;
-            }
-            sess.rounds += 1;
-            let mut vt = sess.vt;
-            // ---- draft: block = [last, MASK x b-1] (identical to the bin arm) ----
-            // RAII: a `?` exit restores the pre-scope value instead of latching exact
-            // ON engine-wide across every later request (hermes finding, fixed
-            // 2026-08-23 — this burst had several `?`s between the manual true/false).
-            let exact_scope = e.exact_scope(true);
-            let mut block: Vec<u32> = vec![c.mask_token_id; b];
-            block[0] = sess.last;
-            let noise = e.htod(&self.embd.try_gather(n_embd, &block)?)?;
-            let pos_block: Vec<i32> = ((start as i32)..(start + b) as i32).collect();
-            let dh = draft.forward_round(e, &mut sess.dkv, &noise, &pos_block)?;
-            // Harvest: logits over rows r0..r0+nd (see the bin arm / the postmortem).
-            let mut rows = e.uninit(nd * n_embd)?;
-            {
-                let dv = e.view(&dh, b * n_embd);
-                let src = dv.slice(r0 * n_embd..(r0 + nd) * n_embd);
-                e.copy_view_into(&mut rows, 0, &src, nd * n_embd)?;
-            }
-            // TRIMMED DRAFT HEAD (lane/dflash2-head-trim, 2026-08-25): DFlash2 family
-            // only — the selector consumes (value, candidate-id) pairs, so a d2t remap
-            // after top-k restores true ids; the markov/chain arms argmax dl columns
-            // into token ids DIRECTLY and must keep the full head. Reuses the FR-Spec
-            // self-trim the load path builds on the MTP struct (MEMRA_FRSPEC_TRIM):
-            // gathered rows of the target's own head, zero requant. Verify stays
-            // full-vocab, so the trim moves draft acceptance only, never output.
-            let trim = if draft.dflash2.is_some() {
-                self.mtp
-                    .as_ref()
-                    .filter(|m| m.d2t_from_target_head)
-                    .and_then(|m| m.shared_head_head.as_ref().zip(m.d2t.as_ref()))
-                    // MEMRA_MTP_SKIP stub: the same target-head trimmed rows, parked in
-                    // `dflash_trim` because the embedded MTP block was skipped (hybrid.rs;
-                    // rows are target-head by construction; the loader refuses otherwise).
-                    .or_else(|| self.dflash_trim.as_ref().map(|t| (&t.head, &t.d2t)))
-                    .filter(|(_, d2t)| !d2t.is_empty())
-            } else {
-                None
-            };
-            let (dl_head, dl_vocab) = match trim {
-                Some((head, d2t)) => (head, d2t.len()),
-                None => (&self.output, n_vocab),
-            };
-            let trim_d2t = trim.map(|(_, d2t)| d2t.as_slice());
-            let mut dl = e.matmul(dl_head, &rows, nd)?;
-            // Family/sampling-keyed proposal — identical to the bin arm (see there for
-            // the program law: sampled records the true q, DFlash2 rides the selector,
-            // the markov/plain greedy chain keeps the slice-2 deferral). Confidence
-            // policy: stash markov prev-token embeddings d2d during the chain, one host
-            // readback after — identical to the bin arm.
-            let want_conf_emb = vt_policy.is_confidence()
-                && draft.confidence.as_ref().is_some_and(|ch| ch.with_markov);
-            let mut conf_emb: Option<CudaSlice<f32>> = match (&draft.markov, want_conf_emb) {
-                (Some(mk), true) => Some(e.uninit(nd * mk.rank)?),
-                (None, true) => unreachable!(
-                    "with_markov confidence head without a markov table — the loader forbids it"
-                ),
-                _ => None,
-            };
-            let mut cand: Vec<u32> = Vec::with_capacity(nd + 1);
-            let mut prop: Option<DsparkDraftSample> = None;
-            let mut chain_dev: Option<CudaSlice<u32>> = None;
-            // Slice 2: arm choice read before the chain readback (see the bin arm; the
-            // serve arm has no CKPT_GATE oracle — the bin arm carries it).
-            let ckpt_on = std::env::var("MEMRA_DSPARK_CKPT").as_deref() != Ok("0");
-            let mut deferred = false;
-            if let Some(sp) = sp_on.as_ref() {
-                // SAMPLED proposal (family-keyed; identical to the bin arm).
-                let (tail, ds) = draft.dspark_propose_sampled(
-                    e,
-                    &mut dl,
-                    &rows,
-                    nd,
-                    dl_vocab,
-                    sess.last,
-                    sp,
-                    &mut sess.sctr,
-                    &mut sess.uctr,
-                    conf_emb.as_mut(),
-                    trim_d2t,
-                )?;
-                drop(exact_scope);
-                cand.push(sess.last);
-                cand.extend_from_slice(&tail);
-                prop = Some(ds);
-            } else if draft.dflash2.is_some() {
-                // DFlash2: candidate path selector replaces the markov chain
-                // (identical to the bin arm).
-                let path = draft
-                    .dflash2_propose_greedy(e, &dl, &rows, nd, dl_vocab, sess.last, trim_d2t)?;
-                drop(exact_scope);
-                cand.push(sess.last);
-                cand.extend_from_slice(&path);
-            } else {
-                let mut chain_d = e.stream().alloc_zeros::<u32>(nd + 1)?;
-                if let Some(mk) = &draft.markov {
-                    e.set_u32_one(&mut chain_d, sess.last)?;
-                    for k in 0..nd {
-                        let mut f = e.uninit(mk.rank)?;
-                        e.gather_row_bf16(&mk.w1_bf16, &chain_d, k, &mut f, mk.rank)?;
-                        if let Some(ce) = conf_emb.as_mut() {
-                            let fv = e.view(&f, mk.rank);
-                            e.copy_view_into(ce, k * mk.rank, &fv, mk.rank)?;
-                        }
-                        let bias = e.matmul(&mk.w2, &f, 1)?;
-                        e.add_row_inplace(&mut dl, &bias, n_vocab, k * n_vocab)?;
-                        e.argmax_token_device_col(&dl, k, n_vocab, &mut chain_d, k + 1)?;
-                    }
-                } else {
-                    if want_conf_emb {
-                        // chain_d[0] must carry the anchor — slot 0's prev token.
-                        e.set_u32_one(&mut chain_d, sess.last)?;
-                    }
-                    for i in 0..nd {
-                        if let (Some(ce), Some(mk)) = (conf_emb.as_mut(), &draft.markov) {
-                            let mut f = e.uninit(mk.rank)?;
-                            e.gather_row_bf16(&mk.w1_bf16, &chain_d, i, &mut f, mk.rank)?;
-                            let fv = e.view(&f, mk.rank);
-                            e.copy_view_into(ce, i * mk.rank, &fv, mk.rank)?;
-                        }
-                        e.argmax_token_device_col(&dl, i, n_vocab, &mut chain_d, i + 1)?;
-                    }
-                }
-                drop(exact_scope);
-                // The deferred (device-chain, argmax-only) verify has no logits to penalise.
-                deferred = embd_gpu.is_some() && ckpt_on && sp_gp.is_none();
-                chain_dev = Some(chain_d);
-            }
-            // ---- H4 confidence window: size THIS round's verify from the head ----
-            if vt_policy.is_confidence() {
-                let ch = draft.confidence.as_ref().expect("asserted at burst entry");
-                let (rows_h, emb_h) = match conf_emb.as_ref() {
-                    Some(ce) => {
-                        let (a, b2) = e.dtoh_pair(&rows, ce)?;
-                        (a, Some(b2))
-                    }
-                    None => (e.dtoh(&rows)?, None),
-                };
-                let rank = draft.markov.as_ref().map(|m| m.rank).unwrap_or(0);
-                let mut raws = Vec::with_capacity(nd);
-                for k in 0..nd {
-                    let hrow = &rows_h[k * n_embd..(k + 1) * n_embd];
-                    let emb = emb_h.as_ref().map(|eh| &eh[k * rank..(k + 1) * rank]);
-                    raws.push(ch.raw_score(hrow, emb));
-                }
-                vt = vt_policy
-                    .size_window(&raws, vt_cap)
-                    .expect("confidence policies always size the window");
-            }
-            // Non-deferred greedy chain readback (the sampled and DFlash2 proposals
-            // built `cand` at the walk; deferred rounds build it after the merged
-            // readback — bytes identical, chain_d written before either sync).
-            if let Some(chain_d) = chain_dev.as_ref()
-                && !deferred
-            {
-                let chain = e.dtoh_u32(chain_d)?;
-                cand.push(sess.last);
-                cand.extend_from_slice(&chain[1..]);
-            }
+        Ok(())
+    }
 
-            // ---- snapshot, then verify t=vt (ckpt stash default; oracle arms kept) ----
-            // Slice 1: batched snap (see DsparkSnapBatch) with the legacy per-layer
-            // snapshot as the kill-switch / non-uniform fallback.
-            let mut snap_legacy: Option<crate::cache::CacheSnapshot> = None;
-            if !sess.snapb_off && sess.snapb.is_none() {
-                sess.snapb = DsparkSnapBatch::new(e, &sess.cache)?;
-                sess.snapb_off = sess.snapb.is_none();
-            } else if let Some(sb) = sess.snapb.as_mut() {
-                sb.refresh(e, &sess.cache)?;
-            }
-            let snap: &crate::cache::CacheSnapshot = match sess.snapb.as_ref() {
-                Some(sb) => &sb.snap,
-                None => {
-                    snap_legacy = Some(sess.cache.snapshot(e)?);
-                    snap_legacy.as_ref().unwrap()
-                }
-            };
-            let _ = &snap_legacy;
-            // Slice 3: the tap-sink buffer is persistent per vt in the graphs ctx
-            // (captured segments bake its address — a per-round alloc here would make
-            // every session's replayed tap copies write freed memory); fully rewritten
-            // by every verify, so pool ownership changes no bytes.
-            let tap_buf = match vgraphs.as_mut().and_then(|g| g.tap_bufs.remove(&vt)) {
-                Some(buf) => buf,
-                None => e.uninit(vt * n_taps * n_embd)?,
-            };
-            sess.cache.dflash_taps = Some(DflashTapSink {
-                layer_ids: c.target_layer_ids.clone(),
-                buf: tap_buf,
-                hidden: n_embd,
-                t: vt,
-                base: 0,
-                origin: 0,
-            });
-            // Composition guard (sampled admission × model-owned pool, this train's
-            // cross-product): the slab flag is a per-round statement, but only the
-            // graphs-aware verify (`_am_ckpt_dev`) clears it. Serve sessions MIX arms
-            // within one process-lifetime pool — a SAMPLED round rides the raw-logits
-            // twins (no graphs param) and must not inherit `round_slab=true` from a
-            // previous greedy session's captured round, or its commit is steered at
-            // slabs the round never wrote. Clear at the round boundary; the deferred
-            // arm re-derives it inside the verify. (The bin arm has the same shape but
-            // fixes its sampling mode per process, so no mixed rounds exist there.)
-            if let Some(g) = vgraphs.as_mut() {
-                g.round_slab = false;
-            }
-            // The whole fallible verify window runs inside a closure so the Err path
-            // can return the sink buffer to the ctx pool before propagating — the
-            // serve-surface twin of the EOS-orphan lesson: a mid-verify error
-            // propagates OUT of the burst, the request dies, the session's cache is
-            // dropped — but the PROCESS (and the pool, with the tap-buffer address
-            // baked into its captures) lives on. Recover the ctx-owned buffer before
-            // the error escapes, or the next session's replayed tap copies write
-            // freed memory. The bin arm has no such path (a gate-binary error ends
-            // the process).
-            #[allow(clippy::type_complexity)] // allow: one-shot composite type; naming it would hide the shape that matters at the call site
-            let verify_out = (|| -> Result<
-                (
-                    Vec<u32>,
-                    Option<CudaSlice<f32>>,
-                    Option<crate::spec::DsparkVerifyCkpt>,
-                ),
-                Box<dyn std::error::Error>,
-            > {
-                if sp_on.is_some() || sp_gp.is_some() {
-                    // SAMPLED: raw verify logits for the rejection walk (bin-arm twin).
-                    if ckpt_on {
-                        let (tl, vck) = self.dspark_verify_t_logits_ckpt(
-                            e,
-                            &cand[..vt],
-                            start,
-                            &mut sess.cache,
-                        )?;
-                        Ok((Vec::new(), Some(tl), Some(vck)))
-                    } else {
-                        Ok((
-                            Vec::new(),
-                            Some(self.dspark_verify_t_logits(
-                                e,
-                                &cand[..vt],
-                                start,
-                                &mut sess.cache,
-                            )?),
-                            None,
-                        ))
+    /// One round up to the verify boundary: the room guard, the draft block forward, the
+    /// family/sampling-keyed proposal, the verify-window size, the snapshot and the armed
+    /// tap sink. `None` = the round does not fit the session's context (the session is now
+    /// done; nothing ran). `local_taps` gives the round its own tap buffer instead of the
+    /// model pool's per-vt one (a pooled cohort holds several rounds' sinks at once; the
+    /// buffer is fully rewritten by the verify, so the choice moves no byte).
+    fn dspark_round_prepare(
+        &self,
+        e: &Engine,
+        draft: &DflashDraft,
+        sess: &mut DsparkSpecSession,
+        burst: &DsparkBurst<'_, '_>,
+        vgraphs: &mut Option<crate::spec::DsparkVerifyGraphs>,
+        local_taps: bool,
+    ) -> Result<Option<DsparkRoundPrep>, Box<dyn std::error::Error>> {
+        use crate::cache::DflashTapSink;
+        let (n_embd, nd, r0, n_vocab) = (burst.n_embd, burst.nd, burst.r0, burst.n_vocab);
+        let c = &draft.cfg;
+        let b = c.block_size;
+        let vt_policy = burst.vt_policy;
+        let start = sess.cache.pos;
+        if start + nd + 1 > sess.max_ctx {
+            sess.done = true;
+            return Ok(None);
+        }
+        sess.rounds += 1;
+        let mut vt = sess.vt;
+        // ---- draft: block = [last, MASK x b-1] (identical to the bin arm) ----
+        // RAII: a `?` exit restores the pre-scope value instead of latching exact
+        // ON engine-wide across every later request (hermes finding, fixed
+        // 2026-08-23 — this burst had several `?`s between the manual true/false).
+        let exact_scope = e.exact_scope(true);
+        let mut block: Vec<u32> = vec![c.mask_token_id; b];
+        block[0] = sess.last;
+        let noise = e.htod(&self.embd.try_gather(n_embd, &block)?)?;
+        let pos_block: Vec<i32> = ((start as i32)..(start + b) as i32).collect();
+        let dh = draft.forward_round(e, &mut sess.dkv, &noise, &pos_block)?;
+        // Harvest: logits over rows r0..r0+nd (see the bin arm / the postmortem).
+        let mut rows = e.uninit(nd * n_embd)?;
+        {
+            let dv = e.view(&dh, b * n_embd);
+            let src = dv.slice(r0 * n_embd..(r0 + nd) * n_embd);
+            e.copy_view_into(&mut rows, 0, &src, nd * n_embd)?;
+        }
+        // TRIMMED DRAFT HEAD (lane/dflash2-head-trim, 2026-08-25): DFlash2 family
+        // only — the selector consumes (value, candidate-id) pairs, so a d2t remap
+        // after top-k restores true ids; the markov/chain arms argmax dl columns
+        // into token ids DIRECTLY and must keep the full head. Reuses the FR-Spec
+        // self-trim the load path builds on the MTP struct (MEMRA_FRSPEC_TRIM):
+        // gathered rows of the target's own head, zero requant. Verify stays
+        // full-vocab, so the trim moves draft acceptance only, never output.
+        let trim = if draft.dflash2.is_some() {
+            self.mtp
+                .as_ref()
+                .filter(|m| m.d2t_from_target_head)
+                .and_then(|m| m.shared_head_head.as_ref().zip(m.d2t.as_ref()))
+                // MEMRA_MTP_SKIP stub: the same target-head trimmed rows, parked in
+                // `dflash_trim` because the embedded MTP block was skipped (hybrid.rs;
+                // rows are target-head by construction; the loader refuses otherwise).
+                .or_else(|| self.dflash_trim.as_ref().map(|t| (&t.head, &t.d2t)))
+                .filter(|(_, d2t)| !d2t.is_empty())
+        } else {
+            None
+        };
+        let (dl_head, dl_vocab) = match trim {
+            Some((head, d2t)) => (head, d2t.len()),
+            None => (&self.output, n_vocab),
+        };
+        let trim_d2t = trim.map(|(_, d2t)| d2t.as_slice());
+        let mut dl = e.matmul(dl_head, &rows, nd)?;
+        // Family/sampling-keyed proposal — identical to the bin arm (see there for
+        // the program law: sampled records the true q, DFlash2 rides the selector,
+        // the markov/plain greedy chain keeps the slice-2 deferral). Confidence
+        // policy: stash markov prev-token embeddings d2d during the chain, one host
+        // readback after — identical to the bin arm.
+        let want_conf_emb =
+            vt_policy.is_confidence() && draft.confidence.as_ref().is_some_and(|ch| ch.with_markov);
+        let mut conf_emb: Option<CudaSlice<f32>> = match (&draft.markov, want_conf_emb) {
+            (Some(mk), true) => Some(e.uninit(nd * mk.rank)?),
+            (None, true) => unreachable!(
+                "with_markov confidence head without a markov table — the loader forbids it"
+            ),
+            _ => None,
+        };
+        let mut cand: Vec<u32> = Vec::with_capacity(nd + 1);
+        let mut prop: Option<DsparkDraftSample> = None;
+        let mut chain_dev: Option<CudaSlice<u32>> = None;
+        // Slice 2: arm choice read before the chain readback (see the bin arm; the
+        // serve arm has no CKPT_GATE oracle — the bin arm carries it).
+        let ckpt_on = std::env::var("MEMRA_DSPARK_CKPT").as_deref() != Ok("0");
+        let mut deferred = false;
+        if let Some(sp) = burst.sp_on.as_ref() {
+            // SAMPLED proposal (family-keyed; identical to the bin arm).
+            let (tail, ds) = draft.dspark_propose_sampled(
+                e,
+                &mut dl,
+                &rows,
+                nd,
+                dl_vocab,
+                sess.last,
+                sp,
+                &mut sess.sctr,
+                &mut sess.uctr,
+                conf_emb.as_mut(),
+                trim_d2t,
+            )?;
+            drop(exact_scope);
+            cand.push(sess.last);
+            cand.extend_from_slice(&tail);
+            prop = Some(ds);
+        } else if draft.dflash2.is_some() {
+            // DFlash2: candidate path selector replaces the markov chain
+            // (identical to the bin arm).
+            let path =
+                draft.dflash2_propose_greedy(e, &dl, &rows, nd, dl_vocab, sess.last, trim_d2t)?;
+            drop(exact_scope);
+            cand.push(sess.last);
+            cand.extend_from_slice(&path);
+        } else {
+            let mut chain_d = e.stream().alloc_zeros::<u32>(nd + 1)?;
+            if let Some(mk) = &draft.markov {
+                e.set_u32_one(&mut chain_d, sess.last)?;
+                for k in 0..nd {
+                    let mut f = e.uninit(mk.rank)?;
+                    e.gather_row_bf16(&mk.w1_bf16, &chain_d, k, &mut f, mk.rank)?;
+                    if let Some(ce) = conf_emb.as_mut() {
+                        let fv = e.view(&f, mk.rank);
+                        e.copy_view_into(ce, k * mk.rank, &fv, mk.rank)?;
                     }
-                } else if deferred {
-                    // Slice 2: device-token verify + ONE merged readback (see the bin arm).
-                    let chain_d = chain_dev.as_ref().expect("deferred implies greedy chain");
-                    let g = embd_gpu.expect("deferred implies resident embed");
-                    let (am_d, vck) = self.dspark_verify_t_am_ckpt_dev(
+                    let bias = e.matmul(&mk.w2, &f, 1)?;
+                    e.add_row_inplace(&mut dl, &bias, n_vocab, k * n_vocab)?;
+                    e.argmax_token_device_col(&dl, k, n_vocab, &mut chain_d, k + 1)?;
+                }
+            } else {
+                if want_conf_emb {
+                    // chain_d[0] must carry the anchor — slot 0's prev token.
+                    e.set_u32_one(&mut chain_d, sess.last)?;
+                }
+                for i in 0..nd {
+                    if let (Some(ce), Some(mk)) = (conf_emb.as_mut(), &draft.markov) {
+                        let mut f = e.uninit(mk.rank)?;
+                        e.gather_row_bf16(&mk.w1_bf16, &chain_d, i, &mut f, mk.rank)?;
+                        let fv = e.view(&f, mk.rank);
+                        e.copy_view_into(ce, i * mk.rank, &fv, mk.rank)?;
+                    }
+                    e.argmax_token_device_col(&dl, i, n_vocab, &mut chain_d, i + 1)?;
+                }
+            }
+            drop(exact_scope);
+            // The deferred (device-chain, argmax-only) verify has no logits to penalise.
+            deferred = burst.embd_gpu.is_some() && ckpt_on && burst.sp_gp.is_none();
+            chain_dev = Some(chain_d);
+        }
+        // ---- H4 confidence window: size THIS round's verify from the head ----
+        if vt_policy.is_confidence() {
+            let ch = draft.confidence.as_ref().expect("asserted at burst entry");
+            let (rows_h, emb_h) = match conf_emb.as_ref() {
+                Some(ce) => {
+                    let (a, b2) = e.dtoh_pair(&rows, ce)?;
+                    (a, Some(b2))
+                }
+                None => (e.dtoh(&rows)?, None),
+            };
+            let rank = draft.markov.as_ref().map(|m| m.rank).unwrap_or(0);
+            let mut raws = Vec::with_capacity(nd);
+            for k in 0..nd {
+                let hrow = &rows_h[k * n_embd..(k + 1) * n_embd];
+                let emb = emb_h.as_ref().map(|eh| &eh[k * rank..(k + 1) * rank]);
+                raws.push(ch.raw_score(hrow, emb));
+            }
+            vt = vt_policy
+                .size_window(&raws, burst.vt_cap)
+                .expect("confidence policies always size the window");
+        }
+        // Non-deferred greedy chain readback (the sampled and DFlash2 proposals
+        // built `cand` at the walk; deferred rounds build it after the merged
+        // readback — bytes identical, chain_d written before either sync).
+        if let Some(chain_d) = chain_dev.as_ref()
+            && !deferred
+        {
+            let chain = e.dtoh_u32(chain_d)?;
+            cand.push(sess.last);
+            cand.extend_from_slice(&chain[1..]);
+        }
+
+        // ---- snapshot, then verify t=vt (ckpt stash default; oracle arms kept) ----
+        // Slice 1: batched snap (see DsparkSnapBatch) with the legacy per-layer
+        // snapshot as the kill-switch / non-uniform fallback.
+        let mut snap_legacy: Option<crate::cache::CacheSnapshot> = None;
+        if !sess.snapb_off && sess.snapb.is_none() {
+            sess.snapb = DsparkSnapBatch::new(e, &sess.cache)?;
+            sess.snapb_off = sess.snapb.is_none();
+        } else if let Some(sb) = sess.snapb.as_mut() {
+            sb.refresh(e, &sess.cache)?;
+        }
+        if sess.snapb.is_none() {
+            snap_legacy = Some(sess.cache.snapshot(e)?);
+        }
+        // Slice 3: the tap-sink buffer is persistent per vt in the graphs ctx
+        // (captured segments bake its address — a per-round alloc here would make
+        // every session's replayed tap copies write freed memory); fully rewritten
+        // by every verify, so pool ownership changes no bytes. A pooled cohort's rounds
+        // (`local_taps`) hold several sinks at once, so each owns its buffer; they never
+        // take the deferred graphed verify, the only arm that bakes the address.
+        debug_assert!(
+            !(local_taps && deferred),
+            "a round-owned tap buffer cannot ride the captured verify graphs"
+        );
+        let pool_buf = if local_taps {
+            None
+        } else {
+            vgraphs.as_mut().and_then(|g| g.tap_bufs.remove(&vt))
+        };
+        let tap_buf = match pool_buf {
+            Some(buf) => buf,
+            None => e.uninit(vt * burst.n_taps * n_embd)?,
+        };
+        sess.cache.dflash_taps = Some(DflashTapSink {
+            layer_ids: c.target_layer_ids.clone(),
+            buf: tap_buf,
+            hidden: n_embd,
+            t: vt,
+            base: 0,
+            origin: 0,
+        });
+        // Composition guard (sampled admission × model-owned pool, this train's
+        // cross-product): the slab flag is a per-round statement, but only the
+        // graphs-aware verify (`_am_ckpt_dev`) clears it. Serve sessions MIX arms
+        // within one process-lifetime pool — a SAMPLED round rides the raw-logits
+        // twins (no graphs param) and must not inherit `round_slab=true` from a
+        // previous greedy session's captured round, or its commit is steered at
+        // slabs the round never wrote. Clear at the round boundary; the deferred
+        // arm re-derives it inside the verify. (The bin arm has the same shape but
+        // fixes its sampling mode per process, so no mixed rounds exist there.)
+        if let Some(g) = vgraphs.as_mut() {
+            g.round_slab = false;
+        }
+        Ok(Some(DsparkRoundPrep {
+            start,
+            vt,
+            cand,
+            prop,
+            chain_dev,
+            deferred,
+            ckpt_on,
+            dl,
+            snap_legacy,
+            local_taps,
+        }))
+    }
+
+    /// The round's per-session verify (the serial path): the armed sink collects the
+    /// drafter taps, and the stash checkpoint the commit reads is filled.
+    fn dspark_round_verify(
+        &self,
+        e: &Engine,
+        sess: &mut DsparkSpecSession,
+        burst: &DsparkBurst<'_, '_>,
+        prep: &mut DsparkRoundPrep,
+        vgraphs: &mut Option<crate::spec::DsparkVerifyGraphs>,
+    ) -> Result<DsparkVerified, Box<dyn std::error::Error>> {
+        let (start, vt, ckpt_on) = (prep.start, prep.vt, prep.ckpt_on);
+        // The whole fallible verify window runs inside a closure so the Err path
+        // can return the sink buffer to the ctx pool before propagating — the
+        // serve-surface twin of the EOS-orphan lesson: a mid-verify error
+        // propagates OUT of the burst, the request dies, the session's cache is
+        // dropped — but the PROCESS (and the pool, with the tap-buffer address
+        // baked into its captures) lives on. Recover the ctx-owned buffer before
+        // the error escapes, or the next session's replayed tap copies write
+        // freed memory. The bin arm has no such path (a gate-binary error ends
+        // the process).
+        let verify_out = (|| -> Result<DsparkVerified, Box<dyn std::error::Error>> {
+            if burst.sp_on.is_some() || burst.sp_gp.is_some() {
+                // SAMPLED: raw verify logits for the rejection walk (bin-arm twin).
+                if ckpt_on {
+                    let (tl, vck) = self.dspark_verify_t_logits_ckpt(
                         e,
-                        chain_d,
-                        vt,
+                        &prep.cand[..vt],
                         start,
                         &mut sess.cache,
-                        (g, embd_qt, embd_rb),
-                        vgraphs.as_mut(),
                     )?;
-                    let ch = e.stream().clone_dtoh(chain_d)?;
-                    let am = e.stream().clone_dtoh(&am_d)?;
-                    e.stream().synchronize()?;
-                    cand.push(sess.last);
-                    cand.extend_from_slice(&ch[1..]);
-                    Ok((am, None, Some(vck)))
-                } else if ckpt_on {
-                    let (vam, vck) =
-                        self.dspark_verify_t_am_ckpt(e, &cand[..vt], start, &mut sess.cache)?;
-                    Ok((vam, None, Some(vck)))
+                    Ok((Vec::new(), Some(tl), Some(vck)))
                 } else {
                     Ok((
-                        self.dspark_verify_t_am(e, &cand[..vt], start, &mut sess.cache)?,
-                        None,
+                        Vec::new(),
+                        Some(self.dspark_verify_t_logits(
+                            e,
+                            &prep.cand[..vt],
+                            start,
+                            &mut sess.cache,
+                        )?),
                         None,
                     ))
                 }
-            })();
-            let (vam, tl, vck) = match verify_out {
-                Ok(v) => v,
-                Err(err) => {
-                    if let Some(taps) = sess.cache.dflash_taps.take()
-                        && let Some(g) = vgraphs.as_mut()
-                    {
-                        g.tap_bufs.insert(vt, taps.buf);
-                    }
-                    return Err(err);
-                }
-            };
-            let taps = sess.cache.dflash_taps.take().unwrap();
-            // Return the tap buffer to the ctx pool IMMEDIATELY — an EOS/budget break
-            // between accept and ingest must never orphan an address the captured graphs
-            // bake (the bin arm's lesson, and it holds doubly here: the pool outlives
-            // the SESSION, not just the round). Ingest reads it borrowed.
-            let tap_local: Option<CudaSlice<f32>> = match vgraphs.as_mut() {
-                Some(g) => {
-                    g.tap_bufs.insert(vt, taps.buf);
-                    None
-                }
-                None => Some(taps.buf),
-            };
-            let tap_ref: &CudaSlice<f32> = match &tap_local {
-                Some(b) => b,
-                None => &vgraphs.as_ref().expect("ctx present above").tap_bufs[&vt],
-            };
-
-            // ---- accept ----
-            // Penalized-sampled: anchor joins the window before the walk (committed this
-            // round via the out.push below); accepted drafts extend it after — identical
-            // to the bin arm.
-            if pen_on {
-                sess.pen_hist.push(sess.last);
-            }
-            let (m, next) = match (sp_on.as_ref(), tl.as_ref()) {
-                (Some(sp), Some(tl)) => {
-                    let w0 = sess
-                        .pen_hist
-                        .len()
-                        .saturating_sub(sp.penalty_last_n.min(crate::spec::PEN_WINDOW_MAX));
-                    dspark_accept_sampled(
-                        e,
-                        tl,
-                        &cand,
-                        vt,
-                        n_vocab,
-                        &dl,
-                        prop.as_ref()
-                            .expect("sampled round without a proposal record"),
-                        sp,
-                        &sess.pen_hist[w0..],
-                        &mut sess.sctr,
-                        &mut sess.uctr,
-                    )?
-                }
-                (None, Some(tl)) => {
-                    let sp = sp_gp
-                        .as_ref()
-                        .expect("logits verify without sampling is the greedy-penalised arm");
-                    let w0 = sess
-                        .pen_hist
-                        .len()
-                        .saturating_sub(sp.penalty_last_n.min(crate::spec::PEN_WINDOW_MAX));
-                    dspark_accept_greedy_penalized(
-                        e,
-                        tl,
-                        &cand,
-                        vt,
-                        n_vocab,
-                        sp,
-                        &sess.pen_hist[w0..],
-                    )?
-                }
-                _ => {
-                    let m = dspark_accept_prefix(&cand, &vam, vt);
-                    (m, vam[m])
-                }
-            };
-            drafted += vt - 1;
-            accepted_n += m;
-            // keep = the rows this round adds to the PUBLIC stream. Without eos that is
-            // the anchor + all accepted drafts (m+1). With eos it is the anchor + drafts
-            // UP TO AND INCLUDING eos: the walk may accept real tokens past eos (they are
-            // the model's own continuation), but emission stops at eos, and a parked
-            // session whose cache holds rows past the public stream can never resume —
-            // the park gate `pos() == fed` would refuse every eos-terminated stream
-            // (measured: 7/8 turns on the mtreuse gate, overshoot 1-6 rows). Truncating
-            // the commit at eos uses the SAME prefix-commit machinery as a mid-round
-            // rejection, so the hybrid (GDN) state is exact by the same argument.
-            // Emitted bytes are untouched — this only changes post-eos cache state.
-            let mut keep = m + 1;
-            let mut terminal = false;
-            if eos.contains(&sess.last) {
-                terminal = true;
-                keep = 1;
+            } else if prep.deferred {
+                // Slice 2: device-token verify + ONE merged readback (see the bin arm).
+                let chain_d = prep
+                    .chain_dev
+                    .as_ref()
+                    .expect("deferred implies greedy chain");
+                let g = burst.embd_gpu.expect("deferred implies resident embed");
+                let (am_d, vck) = self.dspark_verify_t_am_ckpt_dev(
+                    e,
+                    chain_d,
+                    vt,
+                    start,
+                    &mut sess.cache,
+                    (g, burst.embd_qt, burst.embd_rb),
+                    vgraphs.as_mut(),
+                )?;
+                let ch = e.stream().clone_dtoh(chain_d)?;
+                let am = e.stream().clone_dtoh(&am_d)?;
+                e.stream().synchronize()?;
+                prep.cand.push(sess.last);
+                prep.cand.extend_from_slice(&ch[1..]);
+                Ok((am, None, Some(vck)))
+            } else if ckpt_on {
+                let (vam, vck) =
+                    self.dspark_verify_t_am_ckpt(e, &prep.cand[..vt], start, &mut sess.cache)?;
+                Ok((vam, None, Some(vck)))
             } else {
-                for (j, &dt) in cand[1..=m].iter().enumerate() {
-                    if eos.contains(&dt) {
-                        terminal = true;
-                        keep = j + 2; // anchor + drafts through eos
-                        break;
-                    }
+                Ok((
+                    self.dspark_verify_t_am(e, &prep.cand[..vt], start, &mut sess.cache)?,
+                    None,
+                    None,
+                ))
+            }
+        })();
+        match verify_out {
+            Ok(v) => Ok(v),
+            Err(err) => {
+                if let Some(taps) = sess.cache.dflash_taps.take()
+                    && !prep.local_taps
+                    && let Some(g) = vgraphs.as_mut()
+                {
+                    g.tap_bufs.insert(vt, taps.buf);
                 }
-            }
-            // The request's max_tokens boundary is also a commit boundary, not merely an
-            // output slice. It is NOT the scheduler's smaller per-tick burst quantum: accepted
-            // surplus crossing that quantum stays public and the session remains live. Only at
-            // the true request boundary do we keep the publishable prefix so cache.pos == fed at
-            // retire and mark the session terminal until a non-empty next-turn suffix resumes
-            // it. This uses the same prefix-commit machinery as EOS/rejection and makes
-            // max-token sessions safe to park instead of permanently cold (Hermes
-            // `f22a180d1638b95a`).
-            let (bounded_keep, budget_terminal) =
-                dspark_commit_limit(keep, out.len(), request_room);
-            keep = bounded_keep;
-            terminal |= budget_terminal;
-            out.push(sess.last);
-            out.extend_from_slice(&cand[1..keep]);
-            sess.done = terminal;
-            if pen_on {
-                // Only the PUBLIC drafts feed the penalty window — tokens accepted past
-                // eos never reach the stream, and a resumed session must not penalize
-                // ghosts (the parked pen_hist seeds the resume's window).
-                sess.pen_hist.extend_from_slice(&cand[1..keep]);
-            }
-
-            // ---- commit/rollback (stash arm default; replay oracle kept) ----
-            // Slice 3: rounds whose linear column stash lives in the graphs ctx's slabs
-            // commit through the slab twin (same semantics, slab-addressed sources) —
-            // identical to the bin arm's dispatch.
-            let slab_commit = vgraphs.as_ref().map(|g| g.round_slab).unwrap_or(false);
-            if keep < vt {
-                if slab_commit {
-                    self.dspark_commit_prefix_slab(
-                        e,
-                        &mut sess.cache,
-                        snap,
-                        vgraphs.as_ref().expect("slab_commit implies ctx"),
-                        keep,
-                    )?;
-                } else if let Some(vck) = vck.as_ref() {
-                    self.dspark_commit_prefix(e, &mut sess.cache, snap, vck, keep)?;
-                } else {
-                    crate::pp::restore_cache_checkpoint(e, self, None, &mut sess.cache, snap)?;
-                    debug_assert_eq!(sess.cache.pos, start, "rollback landed off the round start");
-                    let ram = self.dspark_verify_t_am(e, &cand[..keep], start, &mut sess.cache)?;
-                    if sp_on.is_none() {
-                        // greedy-only oracle; the sampled arm replays to rebuild state.
-                        debug_assert_eq!(
-                            &ram[..],
-                            &vam[..keep],
-                            "prefix replay must reproduce the verify argmaxes"
-                        );
-                    }
-                }
-            }
-
-            // ---- ingest the kept rows' ctx features into the draft KV ----
-            {
-                let tv = e.view(tap_ref, vt * n_taps * n_embd);
-                let keep_view = tv.slice(0..keep * n_taps * n_embd);
-                let mut kept = e.uninit(keep * n_taps * n_embd)?;
-                e.copy_view_into(&mut kept, 0, &keep_view, keep * n_taps * n_embd)?;
-                let f = draft.ctx_features(e, &kept, keep)?;
-                let pos_k: Vec<i32> =
-                    ((sess.ctx_len as i32)..(sess.ctx_len + keep) as i32).collect();
-                draft.ingest_ctx(e, &mut sess.dkv, &f, &pos_k, keep)?;
-                sess.ctx_len += keep;
-            }
-            // ROUND CADENCE (memra#249 lever 22b). Every fallible step of this round has
-            // now succeeded — the trunk commit/rollback and the draft-KV ingest both ran —
-            // so the round's tokens are final and can be published before the burst ends.
-            // Placed before the `done` break so a terminal round flushes too.
-            if let Some(cb) = on_commit.as_mut() {
-                cb(&out[flushed..]);
-                flushed = out.len();
-            }
-            if sess.done {
-                // EOS or the public budget landed this round: cache, draft KV and ctx_len are
-                // all clamped to the public stream (park shape); `next` is beyond the terminal
-                // boundary and must not become the anchor of a resumed session.
-                break 'outer;
-            }
-            sess.last = next;
-            // Ladder update only — the confidence policies recompute vt from the
-            // head every round, post-draft pre-verify; their carry just keeps
-            // observability (sess.vt = the last confidence-sized window).
-            if vt_policy.is_confidence() {
-                sess.vt = vt;
-            } else if adapt {
-                sess.vt = (m + 2).clamp(3, vt_cap);
+                Err(err)
             }
         }
+    }
+
+    /// The round after its verify: accept walk, eos/budget clamp, commit/rollback, drafter KV
+    /// ingest of the kept rows' taps, round-cadence flush, the ladder update.
+    #[allow(clippy::too_many_arguments)] // allow: the round's parts plus the shared pool
+    fn dspark_round_finish(
+        &self,
+        e: &Engine,
+        draft: &DflashDraft,
+        sess: &mut DsparkSpecSession,
+        burst: &mut DsparkBurst<'_, '_>,
+        prep: DsparkRoundPrep,
+        verified: DsparkVerified,
+        vgraphs: &mut Option<crate::spec::DsparkVerifyGraphs>,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let (n_embd, n_taps, n_vocab) = (burst.n_embd, burst.n_taps, burst.n_vocab);
+        let DsparkRoundPrep {
+            start,
+            vt,
+            cand,
+            prop,
+            dl,
+            snap_legacy,
+            local_taps,
+            ..
+        } = prep;
+        let (vam, tl, vck) = verified;
+        let taps = sess.cache.dflash_taps.take().unwrap();
+        // Return the tap buffer to the ctx pool IMMEDIATELY — an EOS/budget break
+        // between accept and ingest must never orphan an address the captured graphs
+        // bake (the bin arm's lesson, and it holds doubly here: the pool outlives
+        // the SESSION, not just the round). Ingest reads it borrowed.
+        let tap_local: Option<CudaSlice<f32>> = match vgraphs.as_mut() {
+            Some(g) if !local_taps => {
+                g.tap_bufs.insert(vt, taps.buf);
+                None
+            }
+            _ => Some(taps.buf),
+        };
+        let tap_ref: &CudaSlice<f32> = match &tap_local {
+            Some(b) => b,
+            None => &vgraphs.as_ref().expect("ctx present above").tap_bufs[&vt],
+        };
+        let snap: &crate::cache::CacheSnapshot = match sess.snapb.as_ref() {
+            Some(sb) => &sb.snap,
+            None => snap_legacy
+                .as_ref()
+                .expect("a round without a batched snap took the legacy snapshot"),
+        };
+
+        // ---- accept ----
+        // Penalized-sampled: anchor joins the window before the walk (committed this
+        // round via the out.push below); accepted drafts extend it after — identical
+        // to the bin arm.
+        if burst.pen_on {
+            sess.pen_hist.push(sess.last);
+        }
+        let (m, next) = match (burst.sp_on.as_ref(), tl.as_ref()) {
+            (Some(sp), Some(tl)) => {
+                let w0 = sess
+                    .pen_hist
+                    .len()
+                    .saturating_sub(sp.penalty_last_n.min(crate::spec::PEN_WINDOW_MAX));
+                dspark_accept_sampled(
+                    e,
+                    tl,
+                    &cand,
+                    vt,
+                    n_vocab,
+                    &dl,
+                    prop.as_ref()
+                        .expect("sampled round without a proposal record"),
+                    sp,
+                    &sess.pen_hist[w0..],
+                    &mut sess.sctr,
+                    &mut sess.uctr,
+                )?
+            }
+            (None, Some(tl)) => {
+                let sp = burst
+                    .sp_gp
+                    .as_ref()
+                    .expect("logits verify without sampling is the greedy-penalised arm");
+                let w0 = sess
+                    .pen_hist
+                    .len()
+                    .saturating_sub(sp.penalty_last_n.min(crate::spec::PEN_WINDOW_MAX));
+                dspark_accept_greedy_penalized(e, tl, &cand, vt, n_vocab, sp, &sess.pen_hist[w0..])?
+            }
+            _ => {
+                let m = dspark_accept_prefix(&cand, &vam, vt);
+                (m, vam[m])
+            }
+        };
+        burst.drafted += vt - 1;
+        burst.accepted_n += m;
+        // keep = the rows this round adds to the PUBLIC stream. Without eos that is
+        // the anchor + all accepted drafts (m+1). With eos it is the anchor + drafts
+        // UP TO AND INCLUDING eos: the walk may accept real tokens past eos (they are
+        // the model's own continuation), but emission stops at eos, and a parked
+        // session whose cache holds rows past the public stream can never resume —
+        // the park gate `pos() == fed` would refuse every eos-terminated stream
+        // (measured: 7/8 turns on the mtreuse gate, overshoot 1-6 rows). Truncating
+        // the commit at eos uses the SAME prefix-commit machinery as a mid-round
+        // rejection, so the hybrid (GDN) state is exact by the same argument.
+        // Emitted bytes are untouched — this only changes post-eos cache state.
+        let mut keep = m + 1;
+        let mut terminal = false;
+        if burst.eos.contains(&sess.last) {
+            terminal = true;
+            keep = 1;
+        } else {
+            for (j, &dt) in cand[1..=m].iter().enumerate() {
+                if burst.eos.contains(&dt) {
+                    terminal = true;
+                    keep = j + 2; // anchor + drafts through eos
+                    break;
+                }
+            }
+        }
+        // The request's max_tokens boundary is also a commit boundary, not merely an
+        // output slice. It is NOT the scheduler's smaller per-tick burst quantum: accepted
+        // surplus crossing that quantum stays public and the session remains live. Only at
+        // the true request boundary do we keep the publishable prefix so cache.pos == fed at
+        // retire and mark the session terminal until a non-empty next-turn suffix resumes
+        // it. This uses the same prefix-commit machinery as EOS/rejection and makes
+        // max-token sessions safe to park instead of permanently cold (Hermes
+        // `f22a180d1638b95a`).
+        let (bounded_keep, budget_terminal) =
+            dspark_commit_limit(keep, burst.out.len(), burst.request_room);
+        keep = bounded_keep;
+        terminal |= budget_terminal;
+        burst.out.push(sess.last);
+        burst.out.extend_from_slice(&cand[1..keep]);
+        sess.done = terminal;
+        if burst.pen_on {
+            // Only the PUBLIC drafts feed the penalty window — tokens accepted past
+            // eos never reach the stream, and a resumed session must not penalize
+            // ghosts (the parked pen_hist seeds the resume's window).
+            sess.pen_hist.extend_from_slice(&cand[1..keep]);
+        }
+
+        // ---- commit/rollback (stash arm default; replay oracle kept) ----
+        // Slice 3: rounds whose linear column stash lives in the graphs ctx's slabs
+        // commit through the slab twin (same semantics, slab-addressed sources) —
+        // identical to the bin arm's dispatch.
+        let slab_commit = vgraphs.as_ref().map(|g| g.round_slab).unwrap_or(false);
+        if keep < vt {
+            if slab_commit {
+                self.dspark_commit_prefix_slab(
+                    e,
+                    &mut sess.cache,
+                    snap,
+                    vgraphs.as_ref().expect("slab_commit implies ctx"),
+                    keep,
+                )?;
+            } else if let Some(vck) = vck.as_ref() {
+                self.dspark_commit_prefix(e, &mut sess.cache, snap, vck, keep)?;
+            } else {
+                crate::pp::restore_cache_checkpoint(e, self, None, &mut sess.cache, snap)?;
+                debug_assert_eq!(sess.cache.pos, start, "rollback landed off the round start");
+                let ram = self.dspark_verify_t_am(e, &cand[..keep], start, &mut sess.cache)?;
+                if burst.sp_on.is_none() {
+                    // greedy-only oracle; the sampled arm replays to rebuild state.
+                    debug_assert_eq!(
+                        &ram[..],
+                        &vam[..keep],
+                        "prefix replay must reproduce the verify argmaxes"
+                    );
+                }
+            }
+        }
+
+        // ---- ingest the kept rows' ctx features into the draft KV ----
+        {
+            let tv = e.view(tap_ref, vt * n_taps * n_embd);
+            let keep_view = tv.slice(0..keep * n_taps * n_embd);
+            let mut kept = e.uninit(keep * n_taps * n_embd)?;
+            e.copy_view_into(&mut kept, 0, &keep_view, keep * n_taps * n_embd)?;
+            let f = draft.ctx_features(e, &kept, keep)?;
+            let pos_k: Vec<i32> = ((sess.ctx_len as i32)..(sess.ctx_len + keep) as i32).collect();
+            draft.ingest_ctx(e, &mut sess.dkv, &f, &pos_k, keep)?;
+            sess.ctx_len += keep;
+        }
+        // ROUND CADENCE (memra#249 lever 22b). Every fallible step of this round has
+        // now succeeded — the trunk commit/rollback and the draft-KV ingest both ran —
+        // so the round's tokens are final and can be published before the burst ends.
+        // Placed before the `done` return so a terminal round flushes too.
+        if let Some(cb) = burst.on_commit.as_mut() {
+            cb(&burst.out[burst.flushed..]);
+            burst.flushed = burst.out.len();
+        }
+        if sess.done {
+            // EOS or the public budget landed this round: cache, draft KV and ctx_len are
+            // all clamped to the public stream (park shape); `next` is beyond the terminal
+            // boundary and must not become the anchor of a resumed session.
+            return Ok(());
+        }
+        sess.last = next;
+        // Ladder update only — the confidence policies recompute vt from the
+        // head every round, post-draft pre-verify; their carry just keeps
+        // observability (sess.vt = the last confidence-sized window).
+        if burst.vt_policy.is_confidence() {
+            sess.vt = vt;
+        } else if burst.adapt {
+            sess.vt = (m + 2).clamp(3, burst.vt_cap);
+        }
+        Ok(())
+    }
+
+    /// The burst tail: the cadence invariant and the first-burst allocation trace.
+    fn dspark_burst_end(
+        &self,
+        e: &Engine,
+        burst: DsparkBurst<'_, '_>,
+    ) -> Result<(Vec<u32>, usize, usize), Box<dyn std::error::Error>> {
         debug_assert!(
-            on_commit.is_none() || flushed == out.len(),
+            burst.on_commit.is_none() || burst.flushed == burst.out.len(),
             "every committed token must have been handed to on_commit"
         );
-        if trace_first {
+        if burst.trace_first {
             trace_allocation_phase(e, "first-burst-after")?;
         }
-        Ok((out, drafted, accepted_n))
+        Ok((burst.out, burst.drafted, burst.accepted_n))
     }
 }
+
+/// One dspark serving burst in flight (`dspark_burst_begin`): the prologue's fixed inputs,
+/// the committed tokens so far and the round-cadence hook. The serial burst and a pooled
+/// cohort drive the same rounds through it.
+struct DsparkBurst<'m, 'h> {
+    trace_first: bool,
+    n_embd: usize,
+    n_taps: usize,
+    n_vocab: usize,
+    nd: usize,
+    r0: usize,
+    vt_cap: usize,
+    adapt: bool,
+    vt_policy: DsparkVtPolicy,
+    sp_on: Option<crate::spec::SpecSampling>,
+    sp_gp: Option<crate::spec::SpecSampling>,
+    pen_on: bool,
+    embd_qt: i32,
+    embd_rb: usize,
+    embd_gpu: Option<&'m CudaSlice<u8>>,
+    burst_target: usize,
+    request_room: usize,
+    eos: Vec<u32>,
+    out: Vec<u32>,
+    flushed: usize,
+    drafted: usize,
+    accepted_n: usize,
+    on_commit: Option<crate::glm_spec::CommitHook<'h>>,
+}
+
+impl DsparkBurst<'_, '_> {
+    /// The serial loop's condition: room left in this burst and the session not terminal.
+    fn live(&self, sess: &DsparkSpecSession) -> bool {
+        self.out.len() < self.burst_target && !sess.done
+    }
+}
+
+/// One dspark round paused at its verify boundary (`dspark_round_prepare`).
+struct DsparkRoundPrep {
+    start: usize,
+    vt: usize,
+    /// `[anchor, drafts...]`; the verify rows are `cand[..vt]` (a deferred round builds it
+    /// at the verify's merged readback).
+    cand: Vec<u32>,
+    prop: Option<DsparkDraftSample>,
+    chain_dev: Option<CudaSlice<u32>>,
+    deferred: bool,
+    ckpt_on: bool,
+    dl: CudaSlice<f32>,
+    snap_legacy: Option<crate::cache::CacheSnapshot>,
+    local_taps: bool,
+}
+
+/// A dspark verify's outputs: per-row argmaxes (greedy arms), raw `[vt, n_vocab]` logits
+/// (logits arms) and the stash checkpoint the partial-accept commit reads.
+type DsparkVerified = (
+    Vec<u32>,
+    Option<CudaSlice<f32>>,
+    Option<crate::spec::DsparkVerifyCkpt>,
+);
 
 // ================= Harvest-convention gate (CPU; DSPARK-POSTMORTEM-20260820.md) =========
 // The parity oracle is row-count-agnostic (it reproduces the markov MODULE on whatever
