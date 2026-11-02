@@ -2751,6 +2751,10 @@ pub(crate) struct PooledVerifySeg<'a> {
     pub(crate) ckpt: Option<&'a mut VerifyCkpt>,
 }
 
+/// A pooled verify's `[R, n_vocab]` logits and `[R, n_embd]` hidden stack (the
+/// `decode_step_t_core_stream` output pair, rows in session order).
+pub(crate) type PooledVerifyOut = (CudaSlice<f32>, CudaSlice<f32>);
+
 /// Row positions of a pooled verify, host and device copies.
 pub(crate) struct PooledPos<'a> {
     host: &'a [i32],
@@ -3559,6 +3563,177 @@ struct VerifyBoundaryTicket {
 static ROUND_PROF: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
 static ROUND_MS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 static ROUND_N: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// Loop-invariant inputs of the MTP spec round loop in `generate_spec_inner2`, fixed by the
+/// burst setup and read by every round's gate, prepare and finish.
+#[derive(Clone, Copy)]
+struct SpecRoundCfg<'a> {
+    k: usize,
+    max_new: usize,
+    n_vocab: usize,
+    d_vocab: usize,
+    n_embd: usize,
+    mtp: &'a MtpHead,
+    embd_dev: Option<(&'a CudaSlice<u8>, i32, usize)>,
+    d2t_dev: Option<&'a CudaSlice<u32>>,
+    sp: SpecSampling,
+    sp_temp: f32,
+    sp_seed: u64,
+    sampled: bool,
+    pen_on: bool,
+    spec_replay: bool,
+    refresh: bool,
+    session_mode: bool,
+    p_min: f32,
+    pmin0: bool,
+    adapt: bool,
+    adapt_floor_env: Option<usize>,
+    adapt_floor: usize,
+    floor_ctx: usize,
+    k_cap: usize,
+    dmask_on: bool,
+    dmask_words: usize,
+    s_key: SampledGraphKey,
+    pure_temp: bool,
+    s_capturable: bool,
+    stream_active: bool,
+    vg_t_cap: usize,
+    pp_split: bool,
+    budget_room: Option<usize>,
+    sess_telem: Option<&'a SpecTelemetryCounters>,
+    debug_spec: bool,
+    spec_stats: bool,
+    anatomy_on: bool,
+    phase_on: bool,
+    phase_sync: bool,
+}
+
+impl SpecRoundCfg<'_> {
+    /// Adaptive-K floor at committed depth `pos` (see `floor_ctx` in the burst setup).
+    fn floor_at(&self, pos: usize) -> usize {
+        if self.adapt_floor_env.is_some() || pos < self.floor_ctx {
+            self.adapt_floor
+        } else if self.adapt_floor >= 4 {
+            1
+        } else {
+            self.adapt_floor
+        }
+    }
+}
+
+/// Everything the MTP spec round loop carries across rounds and across the verify boundary.
+/// One serial round is `spec_round_gate` -> `spec_round_prepare` -> the target verify ->
+/// `spec_round_finish`; a caller holding several of these can pause each at the verify.
+struct SpecRoundState<'a, 'c> {
+    cfg: SpecRoundCfg<'a>,
+    cache: &'a mut Cache,
+    scratch: &'a mut MtpScratch,
+    constraint: Option<&'a mut (dyn SpecConstraint + 'c)>,
+    sess_clamp_slot: Option<&'a mut Option<(usize, usize, usize)>>,
+    vg_guard: Option<std::sync::MutexGuard<'a, Option<DsparkVerifyGraphs>>>,
+    dctx: DraftGraphCtx,
+    out: Vec<u32>,
+    flushed: usize,
+    round: usize,
+    total_drafted: usize,
+    total_accepted: usize,
+    sctr: u32,
+    uctr: u32,
+    pen_hist: Vec<u32>,
+    pen_hist_d: Option<CudaSlice<u32>>,
+    last_token: u32,
+    last_pred: u32,
+    pending: Option<u32>,
+    last_col_logits: Option<CudaSlice<f32>>,
+    last_col_stats: Option<(f32, f32, f32)>,
+    init_logits_host: Option<Vec<f32>>,
+    h_seed_buf: CudaSlice<f32>,
+    fill_prev: CudaSlice<f32>,
+    preds_d: CudaSlice<u32>,
+    snap: crate::cache::CacheSnapshot,
+    kc: usize,
+    q_full_buf: Option<CudaSlice<f32>>,
+    draft_logits: Vec<CudaSlice<f32>>,
+    draft_stats: Vec<(f32, f32, f32)>,
+    perturb_buf: Option<CudaSlice<f32>>,
+    sample_tok: CudaSlice<u32>,
+    col_buf: Option<CudaSlice<f32>>,
+    pcol_buf: Option<CudaSlice<f32>>,
+    st_drafted: Vec<usize>,
+    st_accepted: Vec<usize>,
+    st_len_hist: Vec<usize>,
+    st_full: usize,
+    dm_clone_ns: u128,
+    dm_rounds: usize,
+    dm_cuts: usize,
+    dm_cut_tokens: usize,
+    ph_draft: f64,
+    ph_verify: f64,
+    ph_rest: f64,
+    ph_wait: f64,
+    ph_commit: f64,
+    ph_t: std::time::Instant,
+    graph_guard_noted: bool,
+}
+
+/// A round's entry gate: the graph-launch headroom snapshot and the round profiler's mark.
+struct SpecRoundGate {
+    graph_round_ok: bool,
+    round_t0: Option<std::time::Instant>,
+}
+
+/// What `spec_round_prepare` hands the verify and `spec_round_finish`.
+struct SpecRoundPrep {
+    verify_tokens: Vec<u32>,
+    pos: usize,
+    ckpt: Option<VerifyCkpt>,
+    /// The verify may join a cross-session pooled verify: no verify-graph pool serves this
+    /// round, no ROUND-STREAM, no PP split.
+    #[allow(dead_code)]
+    // allow: read by the lockstep pooled-verify phase, not the serial driver
+    poolable: bool,
+    graph_round_ok: bool,
+    round_t0: Option<std::time::Instant>,
+    draft: Vec<u32>,
+    draft_idx: Vec<u32>,
+    k_round: usize,
+    base: usize,
+}
+
+/// What a finished round tells the driver.
+struct SpecRoundOutcome {
+    /// on_commit's continue-verdict (admission yield): false ends the burst here.
+    keep_going: bool,
+}
+
+/// Phase-timer mark (MEMRA_SPEC_PHASE): adds the wall since the last mark to `acc`.
+fn ph_mark(ph_t: &mut std::time::Instant, acc: &mut f64, on: bool) {
+    if on {
+        let now = std::time::Instant::now();
+        *acc += (now - *ph_t).as_secs_f64();
+        *ph_t = now;
+    }
+}
+
+// sse-cadence: hand the caller every not-yet-flushed token (disjoint in-order slices
+// concatenating to the full `out`). Called after the prime's first token and after each
+// round commit — emission timing only, token bytes untouched. The slice may be EMPTY
+// (poll-only boundary: zero-round folds commit nothing new); returns the caller's
+// continue-verdict (admission yield, 2026-08-06) — false ends the burst at this round.
+#[allow(clippy::type_complexity)] // allow: one-shot composite type; naming it would hide the shape that matters at the call site
+fn flush_commit(
+    cb: &mut Option<&mut dyn FnMut(&[u32]) -> bool>,
+    out: &[u32],
+    flushed: &mut usize,
+) -> bool {
+    if let Some(f) = cb.as_mut() {
+        let keep = f(&out[*flushed..]);
+        *flushed = out.len();
+        keep
+    } else {
+        true
+    }
+}
 
 fn validate_tp_kv_snapshot_shape(
     tp_kv: &[Option<crate::tp::ResidentTpKvCache>],
@@ -7089,7 +7264,7 @@ impl HybridModel {
         e: &Engine,
         segs: &mut [PooledVerifySeg<'_>],
         embd_dev: Option<(&CudaSlice<u8>, i32, usize)>,
-    ) -> Result<Option<(CudaSlice<f32>, CudaSlice<f32>)>, Box<dyn std::error::Error>> {
+    ) -> Result<Option<PooledVerifyOut>, Box<dyn std::error::Error>> {
         let cfg = &self.cfg;
         let n_embd = cfg.n_embd as usize;
         let eps = cfg.rms_eps;
@@ -7196,7 +7371,7 @@ impl HybridModel {
             .iter_mut()
             .zip(tokens)
             .map(|(c, t)| PooledVerifySeg {
-                cache: &mut **c,
+                cache: c,
                 tokens: t,
                 ckpt: None,
             })
@@ -12648,8 +12823,8 @@ impl HybridModel {
             );
         }
         let mut out: Vec<u32> = Vec::with_capacity(max_new);
-        let mut total_drafted = 0usize;
-        let mut total_accepted = 0usize;
+        let total_drafted = 0usize;
+        let total_accepted = 0usize;
 
         // --- SAMPLER FIRST (lane/sampled-spec-quality, 2026-08-19) ---
         // The sampler config, the session's Philox counters and the penalty window are parsed
@@ -12670,7 +12845,7 @@ impl HybridModel {
         // across generate_spec_session calls); one-shot callers start at (0,0). Read through
         // sess_tail — `sess` was take()n into it above, so sess.as_ref() here is always None.
         let mut sctr: u32 = sess_tail.as_ref().map(|(_, _, _, s, _)| **s).unwrap_or(0);
-        let mut uctr: u32 = sess_tail.as_ref().map(|(_, _, _, _, u)| **u).unwrap_or(0);
+        let uctr: u32 = sess_tail.as_ref().map(|(_, _, _, _, u)| **u).unwrap_or(0);
         // Penalties (v2.1): applied to COPIES of q rows and p columns symmetrically (exactness
         // for the penalized+filtered target). History = generated tokens, host-tracked window.
         let pen_on = sampled
@@ -12719,7 +12894,7 @@ impl HybridModel {
                     .map_err(|e2| format!("constraint: {e2}"))?;
             }
         }
-        let mut last_token = if let Some(ready) = prepared.as_ref() {
+        let last_token = if let Some(ready) = prepared.as_ref() {
             ready.boundary
         } else if let Some(b) = carried_pending {
             b
@@ -12761,25 +12936,6 @@ impl HybridModel {
             // overhang so the chain's first append lands at slot base (== committed.len()).
             scratch.set_len(e, base)?;
         }
-        // sse-cadence: hand the caller every not-yet-flushed token (disjoint in-order slices
-        // concatenating to the full `out`). Called after the prime's first token and after each
-        // round commit — emission timing only, token bytes untouched. The slice may be EMPTY
-        // (poll-only boundary: zero-round folds commit nothing new); returns the caller's
-        // continue-verdict (admission yield, 2026-08-06) — false ends the burst at this round.
-        #[allow(clippy::type_complexity)] // allow: one-shot composite type; naming it would hide the shape that matters at the call site
-        fn flush_commit(
-            cb: &mut Option<&mut dyn FnMut(&[u32]) -> bool>,
-            out: &[u32],
-            flushed: &mut usize,
-        ) -> bool {
-            if let Some(f) = cb.as_mut() {
-                let keep = f(&out[*flushed..]);
-                *flushed = out.len();
-                keep
-            } else {
-                true
-            }
-        }
         keep_going = flush_commit(&mut on_commit, &out, &mut flushed);
         // INVARIANT at loop top: `last_token` is the most-recently-committed/emitted token, its
         // KV+recur state IS in `cache` (cache.pos = position right AFTER last_token), `last_pred`
@@ -12798,16 +12954,16 @@ impl HybridModel {
         } else {
             None
         };
-        let mut q_full_buf: Option<CudaSlice<f32>> = None;
+        let q_full_buf: Option<CudaSlice<f32>> = None;
         // host Philox4x32-10 accept-test uniforms: module fn `host_u01` (shared with the
         // dspark sampled-admission walk); byte-identical to the closure it replaces.
-        let mut draft_logits: Vec<CudaSlice<f32>> = Vec::new(); // retained head logits (q), per slot
-        let mut draft_stats: Vec<(f32, f32, f32)> = Vec::new(); // (row_max, th_e, z_e) per slot
-        let mut perturb_buf: Option<CudaSlice<f32>> = None; // gumbel scratch (max(n_vocab,d_vocab))
-        let mut sample_tok = e.alloc_u32_zeroed(1)?; // residual/bonus sample out
-        let mut col_buf: Option<CudaSlice<f32>> = None; // materialized verify column
-        let mut pen_hist_d: Option<CudaSlice<u32>> = None;
-        let mut pcol_buf: Option<CudaSlice<f32>> = None; // penalized p-column scratch
+        let draft_logits: Vec<CudaSlice<f32>> = Vec::new(); // retained head logits (q), per slot
+        let draft_stats: Vec<(f32, f32, f32)> = Vec::new(); // (row_max, th_e, z_e) per slot
+        let perturb_buf: Option<CudaSlice<f32>> = None; // gumbel scratch (max(n_vocab,d_vocab))
+        let sample_tok = e.alloc_u32_zeroed(1)?; // residual/bonus sample out
+        let col_buf: Option<CudaSlice<f32>> = None; // materialized verify column
+        let pen_hist_d: Option<CudaSlice<u32>> = None;
+        let pcol_buf: Option<CudaSlice<f32>> = None; // penalized p-column scratch
         // MEMRA_SPEC_SETUP_TRACE=1 (diagnostics): per-call wall decomposition of the burst
         // SETUP + TAIL segments (the round loop's internals are MEMRA_SPEC_PHASE's job) —
         // built to pin the serve per-burst fixed cost (research/spec-serving-20260801).
@@ -12947,7 +13103,7 @@ impl HybridModel {
             e.clone_dtod(lh)?
         };
         let t_init = t_ent.elapsed();
-        let mut last_col_stats: Option<(f32, f32, f32)> = None;
+        let last_col_stats: Option<(f32, f32, f32)> = None;
         // PERSISTENT h_seed buffer (allocated BEFORE any graph capture so no captured scratch can
         // alias it): every path that updates the round seed copies INTO it — no per-round allocs,
         // stable pointer for the graph-draft round-start copy.
@@ -12961,7 +13117,7 @@ impl HybridModel {
         // row is last_token's own (h_seed0). The chain step-0 seed under the pairing default =
         // hidden of the row BEFORE last_token = the prompt's last row at round 0 (h_seed_buf
         // overwritten below).
-        let mut fill_prev = match prepared.as_mut() {
+        let fill_prev = match prepared.as_mut() {
             Some(p) => p
                 .fill_prev
                 .take()
@@ -12985,7 +13141,7 @@ impl HybridModel {
             }
         }
         // Persistent device prediction slots for the accept walk (max k+1 verify columns).
-        let mut preds_d = match prepared.as_mut() {
+        let preds_d = match prepared.as_mut() {
             Some(p) => p.preds.take().ok_or("MTP prepared predictions consumed")?,
             None => e.alloc_u32_zeroed(k + 2)?,
         };
@@ -12996,10 +13152,10 @@ impl HybridModel {
         // accepted/drafted where the chain stopped at p-min and the sub-threshold token is
         // discarded uncounted — per-slot decay + chain-length mix are the extra dimensions.
         let spec_stats = std::env::var("MEMRA_SPEC_STATS").is_ok();
-        let mut st_drafted = vec![0usize; k];
-        let mut st_accepted = vec![0usize; k];
-        let mut st_len_hist = vec![0usize; k + 1];
-        let mut st_full = 0usize;
+        let st_drafted = vec![0usize; k];
+        let st_accepted = vec![0usize; k];
+        let st_len_hist = vec![0usize; k + 1];
+        let st_full = 0usize;
         // P-MIN CONFIDENCE GATE (MEMRA_SPEC_PMIN, the serve script's --spec-draft-p-min mechanism):
         // stop the draft chain early when the head's softmax confidence (its row max, which for
         // a greedy pick is the pick's probability) drops below p_min. Hoisted above the loop:
@@ -13248,7 +13404,7 @@ impl HybridModel {
         };
 
         let t_fill = t_ent.elapsed();
-        let mut round = 0usize;
+        let round = 0usize;
         // ADAPTIVE DRAFT LENGTH (MEMRA_SPEC_ADAPT=1, opt-in — the gemma_spec accepted-run law,
         // ported 2026-08-01): next round's draft depth = last round's accepted run + 1, clamped
         // to [floor(pos), k_cap] — a miss shrinks the next draft to the miss point + 1,
@@ -13296,15 +13452,6 @@ impl HybridModel {
             .ok()
             .and_then(|v| v.parse().ok())
             .unwrap_or(1024);
-        let floor_at = |pos: usize| -> usize {
-            if adapt_floor_env.is_some() || pos < floor_ctx {
-                adapt_floor
-            } else if adapt_floor >= 4 {
-                1
-            } else {
-                adapt_floor
-            }
-        };
         // cap: MEMRA_SPEC_CAPMAX (gemma semantics, default 7). Binds only under adapt — the
         // fixed-K default path is untouched by this whole block.
         let cap_max: usize = std::env::var("MEMRA_SPEC_CAPMAX")
@@ -13312,9 +13459,9 @@ impl HybridModel {
             .and_then(|v| v.parse().ok())
             .unwrap_or(7);
         let k_cap = k.min(cap_max).max(1);
-        let mut kc = k_cap;
+        let kc = k_cap;
         // Persistent snapshot buffers are allocated once and refreshed in place.
-        let mut snap = cache.snapshot(e)?;
+        let snap = cache.snapshot(e)?;
         // BONUS FOLD (2026-07-04): after a FULL accept the bonus token is NOT committed with a
         // separate T=1 trunk pass (a full weight read per round). It stays PENDING and rides as
         // column 0 of the NEXT round's verify batch. Under predecessor pairing the next chain
@@ -13324,7 +13471,7 @@ impl HybridModel {
         // DRAFT QUALITY can shift, which the acceptance numbers arbitrate.
         // bonus emitted but not yet committed to cache. A carried pending (see SpecSession::
         // pending_tok) enters round 0 directly — the burst boundary becomes a plain round edge.
-        let mut pending: Option<u32> = carried_pending;
+        let pending: Option<u32> = carried_pending;
         // MEMRA_SPEC_PHASE=1: per-round wall decomposition (draft / verify / accept+commit) —
         // no tracing, no extra syncs (each phase is naturally sync-bounded: draft readbacks,
         // the verify accept readback). Printed once at loop end via spec-stats.
@@ -13341,21 +13488,14 @@ impl HybridModel {
         let phase_sync = std::env::var("MEMRA_SPEC_PHASE_SYNC").as_deref() == Ok("1");
         // DRAFT-MASK receipt (lane/draft-mask): speculative-clone wall + rounds, printed with
         // spec-stats. The clone is the one cost the design adds per round — measured, not assumed.
-        let (mut dm_clone_ns, mut dm_rounds) = (0u128, 0usize);
+        let (dm_clone_ns, dm_rounds) = (0u128, 0usize);
         // grammar-truncation counters: how many rounds the verify-side cut fired and how many
         // already-verified tokens it threw away. THIS is the quantity draft masking targets.
-        let (mut dm_cuts, mut dm_cut_tokens) = (0usize, 0usize);
-        let (mut ph_draft, mut ph_verify, mut ph_rest) = (0f64, 0f64, 0f64);
-        let mut ph_wait = 0f64;
-        let mut ph_commit = 0f64;
-        let mut ph_t = std::time::Instant::now();
-        let mut ph_mark = |acc: &mut f64, on: bool| {
-            if on {
-                let now = std::time::Instant::now();
-                *acc += (now - ph_t).as_secs_f64();
-                ph_t = now;
-            }
-        };
+        let (dm_cuts, dm_cut_tokens) = (0usize, 0usize);
+        let (ph_draft, ph_verify, ph_rest) = (0f64, 0f64, 0f64);
+        let ph_wait = 0f64;
+        let ph_commit = 0f64;
+        let ph_t = std::time::Instant::now();
         // MTP-ROUTE VERIFY GRAPHS (`MEMRA_SPEC_VERIFY_GRAPH`, see the flag doc): the
         // model-owned capture pool, locked for the whole burst exactly as the dspark serve
         // arm holds it — the slab stash is live verify -> commit inside a round, and the
@@ -13383,7 +13523,7 @@ impl HybridModel {
         {
             eprintln!("[spec-vg] MTP verify-graph pool declined ({reason}); eager verify walk");
         }
-        let mut vg_guard = if vg_armed && !stream_active && vg_refusal.is_none() {
+        let vg_guard = if vg_armed && !stream_active && vg_refusal.is_none() {
             let mut g = self.dspark_vgraphs.lock().unwrap();
             if g.is_none() {
                 // Size by the WIDEST verify this run can present, which is k+1 and NOT
@@ -13416,54 +13556,132 @@ impl HybridModel {
             .and_then(|g| g.as_ref())
             .map(|g| g.t_capacity())
             .unwrap_or(0);
-        let mut graph_guard_noted = false;
-        while keep_going && out.len() < max_new {
-            // CONTEXT-EDGE GUARD (memra#659): a round writes the verify window (the pending
-            // token plus up to k_this drafts) at rows cache.pos.., and a sampled tail commits
-            // its bonus one row past that. A round that cannot land inside the cache ends the
-            // burst here, at a round boundary, before anything of the round runs (the same exit
-            // as the admission yield); the worker's `committed + k + 3 >= cache_max_ctx` check
-            // then finishes the request ContextFull. Without it a request whose budget spans its
-            // whole cap (max_tokens omitted) wrote its last round past the cache: the
-            // out-of-bounds KV row poisoned later verifies and the deferred draft-KV fill
-            // asserted. The glm5 route's guard has the same form.
-            if cache.pos + (if adapt { kc } else { k }) + 2 > cache.max_ctx {
+        let graph_guard_noted = false;
+        let mut rs = SpecRoundState {
+            cfg: SpecRoundCfg {
+                k,
+                max_new,
+                n_vocab,
+                d_vocab,
+                n_embd,
+                mtp,
+                embd_dev,
+                d2t_dev: d2t_dev.as_ref(),
+                sp,
+                sp_temp,
+                sp_seed,
+                sampled,
+                pen_on,
+                spec_replay,
+                refresh,
+                session_mode,
+                p_min,
+                pmin0,
+                adapt,
+                adapt_floor_env,
+                adapt_floor,
+                floor_ctx,
+                k_cap,
+                dmask_on,
+                dmask_words,
+                s_key,
+                pure_temp,
+                s_capturable,
+                stream_active,
+                vg_t_cap,
+                pp_split: crate::pp::pp_cuts(self.layers.len()).is_some(),
+                budget_room,
+                sess_telem,
+                debug_spec,
+                spec_stats,
+                anatomy_on,
+                phase_on,
+                phase_sync,
+            },
+            cache,
+            scratch,
+            constraint,
+            sess_clamp_slot,
+            vg_guard,
+            dctx,
+            out,
+            flushed,
+            round,
+            total_drafted,
+            total_accepted,
+            sctr,
+            uctr,
+            pen_hist,
+            pen_hist_d,
+            last_token,
+            last_pred,
+            pending,
+            last_col_logits,
+            last_col_stats,
+            init_logits_host,
+            h_seed_buf,
+            fill_prev,
+            preds_d,
+            snap,
+            kc,
+            q_full_buf,
+            draft_logits,
+            draft_stats,
+            perturb_buf,
+            sample_tok,
+            col_buf,
+            pcol_buf,
+            st_drafted,
+            st_accepted,
+            st_len_hist,
+            st_full,
+            dm_clone_ns,
+            dm_rounds,
+            dm_cuts,
+            dm_cut_tokens,
+            ph_draft,
+            ph_verify,
+            ph_rest,
+            ph_wait,
+            ph_commit,
+            ph_t,
+            graph_guard_noted,
+        };
+        while keep_going && rs.out.len() < max_new {
+            let Some(gate) = self.spec_round_gate(e, &mut rs) else {
                 break;
-            }
-            // GRAPH-LAUNCH HEADROOM GUARD (see GRAPH_LAUNCH_MIN_FREE): below the floor,
-            // every captured-graph arm in this round yields to its byte-identical eager
-            // twin instead of feeding cuGraphLaunch a card it segfaults on.
-            let graph_round_ok = graph_launch_headroom_ok(e);
-            if !graph_round_ok && !graph_guard_noted {
-                graph_guard_noted = true;
-                eprintln!(
-                    "[spec] graph replay suspended: driver free below the {}MB launch floor \
-                     (eager arms serve; cuGraphLaunch segfaults into an exhausted card)",
-                    GRAPH_LAUNCH_MIN_FREE / (1 << 20)
-                );
-            }
-            // MEMRA_SPEC_ROUND_PROF=1: wall of the WHOLE round against the pieces we already
-            // instrument. Needed because the parts do not add up: the draft step measures 1.27 ms
-            // ([spec-anatomy] glue 92 / attn 280 / ffn 222 / head 670 us) and the t=2 verify walk
-            // 25.6 ms ([tcol-prof] attn 10.1 + ffn 15.3), yet a K=1 round takes 177 ms on the
-            // step37 TP2 stack. This prints where the other ~150 ms lives.
-            let round_prof = ROUND_PROF
-                .get_or_init(|| std::env::var("MEMRA_SPEC_ROUND_PROF").as_deref() == Ok("1"));
-            let round_t0 = round_prof.then(std::time::Instant::now);
+            };
             // ROUND-STREAM BURST: from round 1 (pending guaranteed by every non-replay arm),
             // issue M rounds with zero readbacks, then drain the ring + reconcile mirrors.
             if let (true, Some(sg), Some(ptrs)) = (
                 stream_active
-                    && round >= 1
-                    && pending.is_some()
-                    && graph_round_ok
+                    && rs.round >= 1
+                    && rs.pending.is_some()
+                    && gate.graph_round_ok
                     // memra#659: M rounds of up to k+1 rows each, plus the tail's row, must
                     // land inside the cache; otherwise this round takes the eager arm, whose
                     // own guard above bounds one round.
-                    && cache.pos + m_rounds * t_v_s < cache.max_ctx,
+                    && rs.cache.pos + m_rounds * t_v_s < rs.cache.max_ctx,
                 &stream_graph,
                 &stream_ptrs,
             ) {
+                let SpecRoundState {
+                    cache,
+                    scratch,
+                    dctx,
+                    out,
+                    flushed,
+                    round,
+                    total_drafted,
+                    total_accepted,
+                    last_token,
+                    pending,
+                    h_seed_buf,
+                    fill_prev,
+                    preds_d,
+                    snap,
+                    ..
+                } = &mut rs;
                 if debug_spec {
                     static ONCE: std::sync::Once = std::sync::Once::new();
                     ONCE.call_once(|| {
@@ -13475,11 +13693,11 @@ impl HybridModel {
                 e.set_u32_one(&mut ring_d, 0)?; // ring count = 0 (writes element 0)
                 for _mi in 0..m_rounds {
                     e.i32_copy_add(&pos_ctr, &mut pos_start_d, 0)?;
-                    cache.snapshot_into(e, &mut snap)?; // device D2Ds, stream-ordered
+                    cache.snapshot_into(e, snap)?; // device D2Ds, stream-ordered
                     e.i32_copy_add(&pos_ctr, &mut scratch.kv.len_d, 0)?; // draft-KV rollback
                     e.i32_copy_add(&pos_ctr, &mut dctx.g_pos, 1)?; // rope pos = pos + base
                     e.u32_copy(&pend_d, &mut dctx.g_tok)?;
-                    e.copy_into(&mut dctx.g_seed, 0, &h_seed_buf, n_embd)?;
+                    e.copy_into(&mut dctx.g_seed, 0, h_seed_buf, n_embd)?;
                     sg.launch()?;
                     e.spec_assemble_verify(
                         &g_tokp2k,
@@ -13497,7 +13715,7 @@ impl HybridModel {
                         e,
                         &dummy,
                         0,
-                        &mut *cache,
+                        cache,
                         embd_dev,
                         Some(&mut ck),
                         Some((&vtok_d, &pos_ctr)),
@@ -13505,26 +13723,18 @@ impl HybridModel {
                         None,
                     )?;
                     for j in 0..t_v_s {
-                        e.argmax_token_device_col(&tl_d, j, n_vocab, &mut preds_d, j)?;
+                        e.argmax_token_device_col(&tl_d, j, n_vocab, preds_d, j)?;
                     }
                     e.spec_accept_greedy_dc(
-                        &preds_d,
+                        preds_d,
                         &vtok_d,
                         &last_pred_d,
                         &brk_d,
                         &mut stream_acc,
                     )?;
-                    e.spec_seed_gather(&vx, &fill_prev, &stream_acc, &mut h_seed_buf, 1, n_embd)?;
-                    e.copy_into(&mut fill_prev, 0, &h_seed_buf, n_embd)?;
-                    self.commit_verified_prefix_stream(
-                        e,
-                        &mut *cache,
-                        &snap,
-                        &ck,
-                        &stream_acc,
-                        1,
-                        t_v_s,
-                    )?;
+                    e.spec_seed_gather(&vx, fill_prev, &stream_acc, h_seed_buf, 1, n_embd)?;
+                    e.copy_into(fill_prev, 0, h_seed_buf, n_embd)?;
+                    self.commit_verified_prefix_stream(e, cache, snap, &ck, &stream_acc, 1, t_v_s)?;
                     e.spec_rollback_stream(
                         ptrs,
                         &pos_start_d,
@@ -13550,711 +13760,21 @@ impl HybridModel {
                 }
                 cache.pos = pos_h;
                 scratch.kv.len = pos_h;
-                pending = Some(ring_h[cnt]); // last drained token = the live bonus
-                last_token = ring_h[cnt];
-                total_drafted += k * m_rounds; // upper bound (p-min breaks uncounted)
-                total_accepted += cnt.saturating_sub(m_rounds);
+                *pending = Some(ring_h[cnt]); // last drained token = the live bonus
+                *last_token = ring_h[cnt];
+                *total_drafted += k * m_rounds; // upper bound (p-min breaks uncounted)
+                *total_accepted += cnt.saturating_sub(m_rounds);
                 if let Some(t) = sess_telem {
                     // totals only — the burst's per-round accept counts stayed on device
                     // (that is the point of the round-stream arm). pos_* untouched.
                     t.record_totals(m_rounds, k * m_rounds, cnt.saturating_sub(m_rounds));
                 }
-                round += m_rounds;
+                *round += m_rounds;
                 // sse-cadence: the drained ring is committed — flush it at burst-drain cadence.
-                keep_going = flush_commit(&mut on_commit, &out, &mut flushed);
+                keep_going = flush_commit(&mut on_commit, out, flushed);
                 continue;
             }
-            let pos = cache.pos; // #tokens committed (EXCLUDES a pending bonus)
-            cache.snapshot_into(e, &mut snap)?; // §C: snapshot BEFORE draft+verify
-            ph_mark(&mut ph_rest, phase_on);
-
-            // --- 1. DRAFT k tokens with the NextN head (autoregressive, T=1 each) ---
-            // p-min semantics (both paths): stop the chain early when the head's confidence
-            // (its softmax MAX: for a greedy pick the pick's own probability) drops below p_min.
-            // The statistic never depends on a sampled draw (memra#673): the just-drafted token
-            // is DISCARDED, but its scratch append stands (identical to the eager chain's
-            // ordering). j==0 drafts unless PMIN0 arms a zero-draft round over a pending bonus.
-            let base0 = if pending.is_some() { 1usize } else { 0usize };
-            // fixed draft length by default; MEMRA_SPEC_ADAPT=1 drafts at last round's
-            // accepted run + 1 (the gemma law — see the setup block above the loop).
-            let k_this = if adapt { kc } else { k };
-            let mut draft: Vec<u32> = Vec::with_capacity(k);
-            let mut draft_idx: Vec<u32> = Vec::with_capacity(k); // trimmed-vocab ids (== draft when untrimmed)
-            {
-                // Round-start draft-KV sync (BOTH paths). Persistent: truncate/align to the committed
-                // history — slots 0..P hold entries for the tokens before last_token@P (P = pos +
-                // base0 - 1); this single set_len IS the draft-side rollback (drops last round's
-                // rejected drafts and p-min extras via the len mechanism).
-                scratch.set_len(e, pos + base0 - 1)?;
-                // dcw door: a captured chain appends k_this device-counter rows (plus the
-                // pseudo-seed replay) with no host intervention; any ring rebase those appends
-                // could need happens HERE, host-side, before the replays. The eager arm keeps
-                // its own per-step prepare, so this is graph-path-only work.
-                if step35_draft_dcw_on()
-                    && (dctx.graph.is_some()
-                        || dctx.graph_s.is_some()
-                        || dctx.chain.is_some()
-                        || dctx.chain_s.is_some())
-                {
-                    scratch.ensure_dcw_headroom(e, k_this + 2)?;
-                }
-                if pen_on {
-                    // PEN_WINDOW_MAX also bounds the per-round upload and the O(n_hist^2)
-                    // device dedup: the serve window is already PEN_WINDOW_MAX, and this
-                    // defensive min also bounds non-server callers.
-                    let win = sp.penalty_last_n.min(PEN_WINDOW_MAX);
-                    let w0 = pen_hist.len().saturating_sub(win);
-                    pen_hist_d = Some(e.htod_u32_v(&pen_hist[w0..])?);
-                }
-                if sampled {
-                    draft_logits.clear();
-                    draft_stats.clear();
-                }
-                // DRAFT-SIDE GRAMMAR MASK: clone the committed grammar state ONCE per round; each
-                // position's mask is computed on that clone and advanced by the PROPOSED token. The
-                // real state moves only on emission (verify's job), so the emitted stream is
-                // unchanged — the mask only removes tokens the verify would have truncated anyway.
-                let mut dmask_live = dmask_on;
-                if dmask_live {
-                    let t_c = std::time::Instant::now();
-                    constraint
-                        .as_deref_mut()
-                        .unwrap()
-                        .draft_begin()
-                        .map_err(|e2| format!("constraint: {e2}"))?;
-                    dm_clone_ns += t_c.elapsed().as_nanos();
-                    dm_rounds += 1;
-                }
-                if let (false, Some(cg)) = (sampled || pen_on || !graph_round_ok, &dctx.chain) {
-                    // GREEDY CHAIN GRAPH (lane/step37-draft-graph-serving-20260830): the
-                    // eager multi-head chain's EXACT launch order — step j rewinds head
-                    // (j % heads)'s plane to the committed length and replays rows 0..=j —
-                    // with each row's whole head-forward as ONE graph launch. The chain
-                    // POLICY (head choice, prefix length, stored-seed feed) is host-side,
-                    // identical to `mtp_chain_forward_dev`, so graph-vs-eager drafts are
-                    // bit-identical by construction (same launcher, same bucket — the dcw
-                    // parity contract). Interior rows launch the head-less graph: their
-                    // logits are dead in the eager chain too, so the consumed bytes match.
-                    let heads_n = self.mtp_head_count();
-                    let committed = pos + base0 - 1;
-                    let mut chain_tokens: Vec<u32> = vec![last_token];
-                    let mut chain_seed_bufs: Vec<CudaSlice<f32>> = vec![e.clone_dtod(&h_seed_buf)?];
-                    for j in 0..k_this {
-                        let index = mtp_chain_head_index(j, heads_n);
-                        if debug_spec {
-                            eprintln!(
-                                "[mtp-chain-step] round={round} j={j} head={index} \
-                                 replay_rows={} arm=graph",
-                                chain_tokens.len(),
-                            );
-                        }
-                        scratch.set_plane_len(e, index, committed)?;
-                        e.set_i32_one(&mut dctx.g_pos, (committed + 1) as i32)?;
-                        for row in 0..=j {
-                            e.set_u32_one(&mut dctx.g_tok, chain_tokens[row])?;
-                            e.copy_into(&mut dctx.g_seed, 0, &chain_seed_bufs[row], n_embd)?;
-                            if row < j {
-                                cg.interior[index].launch()?;
-                            } else {
-                                // per-position mask upload before the LAST row only — the
-                                // eager chain applies the mask on is_last exactly the same.
-                                if dmask_live
-                                    && !upload_draft_mask(
-                                        e,
-                                        constraint.as_deref_mut().unwrap(),
-                                        &mut dctx.g_dmask,
-                                        mtp.d2t.as_ref(),
-                                        d_vocab,
-                                        dmask_words,
-                                    )?
-                                {
-                                    e.htod_u32_into(
-                                        &mut dctx.g_dmask,
-                                        &vec![u32::MAX; dmask_words],
-                                    )?;
-                                    dmask_live = false;
-                                }
-                                cg.last[index].launch()?;
-                            }
-                            // host mirror (len_d advanced in-graph by the dcw append)
-                            scratch.plane_mut(index).0.len += 1;
-                        }
-                        let idx = e.dtoh_u32_one(&dctx.g_tok)?;
-                        // #87 SENTINEL TRAP (see the single-head graph arm below).
-                        if (idx as usize) >= d_vocab {
-                            let seed_h = e.dtoh(&dctx.g_seed)?;
-                            let seed_nan = seed_h.iter().filter(|v| v.is_nan()).count();
-                            return Err(format!(
-                                "draft(chain-graph) argmax sentinel 0x{idx:08x} >= d_vocab \
-                             {d_vocab} at round {round} j={j} head={index} pos={pos}: \
-                             head-out NaN {seed_nan}/{n_embd} — refusing to dereference \
-                             the embed row (#87 trap)"
-                            )
-                            .into());
-                        }
-                        // multi-head MTP forbids a trimmed head (validated at entry), so the
-                        // draft index IS the target id; keep the map for uniformity.
-                        let d = match &mtp.d2t {
-                            Some(map) => map[idx as usize],
-                            None => idx,
-                        };
-                        let draft_p = if p_min > 0.0 {
-                            Some(e.dtoh(&dctx.g_p)?[0])
-                        } else {
-                            None
-                        };
-                        if let Some(p) = draft_p
-                            && spec_stops_at(p, j, p_min, pmin0 && base0 == 1)
-                        {
-                            break;
-                        }
-                        draft.push(d);
-                        chain_tokens.push(d);
-                        // step j's h_nextn: the last-row graph self-fed it into g_seed —
-                        // snapshot it as the chain history seed for row j+1 (stream-ordered
-                        // after the launch, exactly the eager chain's chain_seeds push).
-                        chain_seed_bufs.push(e.clone_dtod(&dctx.g_seed)?);
-                        // speculative grammar advance (see the single-head graph arm).
-                        if dmask_live
-                            && !constraint
-                                .as_deref_mut()
-                                .unwrap()
-                                .draft_advance(d)
-                                .map_err(|e2| format!("constraint: {e2}"))?
-                        {
-                            e.htod_u32_into(&mut dctx.g_dmask, &vec![u32::MAX; dmask_words])?;
-                            break;
-                        }
-                    }
-                } else if let (true, Some(cg)) = (
-                    sampled && s_capturable && dctx.s_key == Some(s_key) && graph_round_ok,
-                    &dctx.chain_s,
-                ) {
-                    if skey_probe() {
-                        eprintln!(
-                            "[skey] chain=graph_chain_s round={round} capturable={} top_k={} \
-                             top_p={} min_p={} s_key_parked={:?}",
-                            s_capturable as u8, sp.top_k, sp.top_p, sp.min_p, dctx.s_key,
-                        );
-                    }
-                    // SAMPLED CHAIN GRAPH: the greedy chain arm's launch order with the
-                    // sampled last-row graphs — in-graph counter bump + (filtered) gumbel
-                    // draw + argmax; q retained per step into q_slots exactly like the
-                    // single-head sampled graph arm. Counter continuity: g_ctr host-seeded
-                    // to sctr-1 once per ROUND; each step's last-row graph bumps it BEFORE
-                    // the perturb, so step j consumes counter sctr+j — the eager Philox
-                    // stream (interior rows never draw, never bump).
-                    let heads_n = self.mtp_head_count();
-                    let committed = pos + base0 - 1;
-                    let filtered_stats_in_graph = s_key.filtered();
-                    let mut chain_tokens: Vec<u32> = vec![last_token];
-                    let mut chain_seed_bufs: Vec<CudaSlice<f32>> = vec![e.clone_dtod(&h_seed_buf)?];
-                    e.set_u32_one(&mut dctx.g_ctr, sctr.wrapping_sub(1))?;
-                    for j in 0..k_this {
-                        let index = mtp_chain_head_index(j, heads_n);
-                        if debug_spec {
-                            eprintln!(
-                                "[mtp-chain-step] round={round} j={j} head={index} \
-                                 replay_rows={} arm=graph_s",
-                                chain_tokens.len(),
-                            );
-                        }
-                        scratch.set_plane_len(e, index, committed)?;
-                        e.set_i32_one(&mut dctx.g_pos, (committed + 1) as i32)?;
-                        for row in 0..=j {
-                            e.set_u32_one(&mut dctx.g_tok, chain_tokens[row])?;
-                            e.copy_into(&mut dctx.g_seed, 0, &chain_seed_bufs[row], n_embd)?;
-                            if row < j {
-                                cg.interior[index].launch()?;
-                            } else {
-                                cg.last[index].launch()?;
-                            }
-                            scratch.plane_mut(index).0.len += 1;
-                        }
-                        sctr += 1; // mirrors the in-graph g_ctr bump (eager parity:
-                        // counts the p-min-discarded token too)
-                        // q retention: ONE async D2D of the persistent head-logits buffer
-                        // into this round's slot j (stream-ordered after the replay).
-                        e.copy_into(&mut dctx.q_slots[j], 0, &dctx.g_q, d_vocab)?;
-                        // FILTERED capture: read the in-graph filter_stats scalars back per
-                        // replay instead of a second full-vocab filter_stats per slot post-
-                        // chain — bit-exact (the values the in-graph perturb consumed) and
-                        // measured worth ~5% of vendor-default serving tok/s at K=3. Before
-                        // the p-min break so the discarded slot's stats land too.
-                        if filtered_stats_in_graph {
-                            draft_stats.push((
-                                e.dtoh(&dctx.g_mx)?[0],
-                                e.dtoh(&dctx.g_th)?[0],
-                                e.dtoh(&dctx.g_z)?[0],
-                            ));
-                        }
-                        let idx = e.dtoh_u32_one(&dctx.g_tok)?;
-                        // #87 SENTINEL TRAP (see the single-head graph arms).
-                        if (idx as usize) >= d_vocab {
-                            let seed_h = e.dtoh(&dctx.g_seed)?;
-                            let seed_nan = seed_h.iter().filter(|v| v.is_nan()).count();
-                            return Err(format!(
-                                "draft(chain-graph-sampled) argmax sentinel 0x{idx:08x} >= \
-                             d_vocab {d_vocab} at round {round} j={j} head={index} pos={pos}: \
-                             head-out NaN {seed_nan}/{n_embd} — refusing to dereference the \
-                             embed row (#87 trap)"
-                            )
-                            .into());
-                        }
-                        let d = match &mtp.d2t {
-                            Some(map) => map[idx as usize],
-                            None => idx,
-                        };
-                        draft_idx.push(idx);
-                        if p_min > 0.0 {
-                            let p = e.dtoh(&dctx.g_p)?[0];
-                            if spec_stops_at(p, j, p_min, pmin0 && base0 == 1) {
-                                break;
-                            }
-                        }
-                        draft.push(d);
-                        chain_tokens.push(d);
-                        chain_seed_bufs.push(e.clone_dtod(&dctx.g_seed)?);
-                    }
-                    // PURE-TEMP accept path: stats per used slot recomputed from the RETAINED
-                    // q with the SAME filter_stats program the eager arm runs (deployment-
-                    // keyed coop/plain choice, same input bits). The FILTERED graph read its
-                    // stats back per replay above.
-                    if !filtered_stats_in_graph {
-                        for j in 0..draft.len().max(draft_idx.len()) {
-                            let rows0 = e.htod_i32(&[0])?;
-                            let (mut th_d, mut z_d, mut mx_d) =
-                                (e.zeros(1)?, e.zeros(1)?, e.zeros(1)?);
-                            e.filter_stats(
-                                &dctx.q_slots[j],
-                                d_vocab,
-                                &rows0,
-                                &mut th_d,
-                                &mut z_d,
-                                &mut mx_d,
-                                d_vocab,
-                                1,
-                                sp_temp,
-                                sp.top_k,
-                                sp.top_p,
-                                sp.min_p,
-                            )?;
-                            draft_stats.push((
-                                e.dtoh(&mx_d)?[0],
-                                e.dtoh(&th_d)?[0],
-                                e.dtoh(&z_d)?[0],
-                            ));
-                        }
-                    }
-                } else if let (false, Some(gr)) =
-                    (sampled || pen_on || !graph_round_ok, &dctx.graph)
-                {
-                    // GRAPH DRAFT: one dispatch per drafted token. The chain feeds itself on-device
-                    // (in-graph argmax -> tok_d -> next replay's embed; h_nextn -> h_seed_d; pos_d
-                    // inc'd in-graph); the host only reads 4B token (+4B p) and decides the break.
-                    e.set_i32_one(&mut dctx.g_pos, (pos + base0) as i32)?;
-                    e.set_u32_one(&mut dctx.g_tok, last_token)?;
-                    e.copy_into(&mut dctx.g_seed, 0, &h_seed_buf, n_embd)?;
-                    for j in 0..k_this {
-                        // per-position mask upload (contents only — the graph's baked pointer is
-                        // dctx.g_dmask). All-ones once masking goes dead mid-chain, so the captured
-                        // mask node degrades to a no-op ban instead of needing a second graph.
-                        if dmask_live
-                            && !upload_draft_mask(
-                                e,
-                                constraint.as_deref_mut().unwrap(),
-                                &mut dctx.g_dmask,
-                                mtp.d2t.as_ref(),
-                                d_vocab,
-                                dmask_words,
-                            )?
-                        {
-                            // no draft-vocab row is grammar-legal here (a trimmed FR-Spec head can
-                            // genuinely miss the legal set): neutralize the captured mask node and
-                            // finish the chain UNMASKED — exactly pre-lane behaviour, never worse.
-                            e.htod_u32_into(&mut dctx.g_dmask, &vec![u32::MAX; dmask_words])?;
-                            dmask_live = false;
-                        }
-                        gr.launch()?;
-                        scratch.kv.len += 1; // host mirror (len_d advanced in-graph)
-                        let idx = e.dtoh_u32_one(&dctx.g_tok)?;
-                        // #87 SENTINEL TRAP: an all-NaN head-logits row leaves the device argmax's
-                        // init sentinel (0x7FFFFFFF) in g_tok — feeding it onward dereferences
-                        // embed_row(sentinel) = table + ~4.6TB (never mapped) inside the NEXT graph
-                        // replay's embed node, and the MMU fault kills the CUDA context for the
-                        // whole process (research/pp2spec-crash-20260807: 3 coredumps, byte-exact
-                        // VA arithmetic). Refuse loudly instead; the diagnostics name the first-NaN
-                        // buffer (g_seed = the verify-side handoff vs head-side compute).
-                        if (idx as usize) >= d_vocab {
-                            // g_seed is SELF-FED (the replay writes h_nextn back into it), so it
-                            // reads as the head's OUTPUT at j; h_seed_buf is the round's INPUT
-                            // seed, untouched since the round-start copy — the pair discriminates
-                            // "seed arrived poisoned" from "head forward produced NaN".
-                            let seed_h = e.dtoh(&dctx.g_seed)?;
-                            let seed_nan = seed_h.iter().filter(|v| v.is_nan()).count();
-                            let in_h = e.dtoh(&h_seed_buf)?;
-                            let in_nan = in_h.iter().filter(|v| v.is_nan()).count();
-                            return Err(format!(
-                                "draft(graph) argmax sentinel 0x{idx:08x} >= d_vocab {d_vocab} at \
-                             round {round} j={j} pos={pos}: head-out NaN {seed_nan}/{n_embd}, \
-                             round-input-seed NaN {in_nan}/{n_embd} — refusing to dereference \
-                             the embed row (#87 trap)"
-                            )
-                            .into());
-                        }
-                        // trimmed draft vocab -> target token id (identity when no d2t map)
-                        let d = match &mtp.d2t {
-                            Some(map) => map[idx as usize],
-                            None => idx,
-                        };
-                        let draft_p = if p_min > 0.0 {
-                            Some(e.dtoh(&dctx.g_p)?[0])
-                        } else {
-                            None
-                        };
-                        if let Some(p) = draft_p
-                            && spec_stops_at(p, j, p_min, pmin0 && base0 == 1)
-                        {
-                            break;
-                        }
-                        draft.push(d);
-                        // with a trimmed head the NEXT embed must read the TARGET id, not the draft
-                        // index the argmax wrote — patch the persistent token buffer (4B htod).
-                        if d != idx {
-                            e.set_u32_one(&mut dctx.g_tok, d)?;
-                        }
-                        // advance the SPECULATIVE state with the proposal; a dead chain drops to
-                        // unmasked drafting for the remaining positions (verify still arbitrates).
-                        // speculative advance; a chain the grammar can no longer follow (EOS
-                        // proposed) ends here. The captured mask node always runs, so a dead chain
-                        // leaves the buffer NEUTRAL (all-ones = ban nothing) before it exits.
-                        if dmask_live
-                            && !constraint
-                                .as_deref_mut()
-                                .unwrap()
-                                .draft_advance(d)
-                                .map_err(|e2| format!("constraint: {e2}"))?
-                        {
-                            e.htod_u32_into(&mut dctx.g_dmask, &vec![u32::MAX; dmask_words])?;
-                            break;
-                        }
-                    }
-                // REGIME RE-TEST (lane/graph-s-key-exactness-20260819, widened by
-                // lane/step37-draft-graph-serving-20260830): the sampled graph is legal ONLY
-                // in the regime it was captured in. The condition used to read
-                // `(sampled, &dctx.graph_s)` and trusted `s_key` to have dropped anything
-                // else — which it could not, because the key omitted the filters. Both
-                // halves are enforced: the key drops a stale graph, and this site refuses to
-                // launch one whose key differs or whose regime is uncapturable (penalties).
-                } else if let (true, Some(gr)) = (
-                    sampled && s_capturable && dctx.s_key == Some(s_key) && graph_round_ok,
-                    &dctx.graph_s,
-                ) {
-                    if skey_probe() {
-                        eprintln!(
-                            "[skey] chain=graph_s round={round} pure_temp={} capturable={} \
-                             top_k={} top_p={} min_p={} s_key_parked={:?}",
-                            pure_temp as u8,
-                            s_capturable as u8,
-                            sp.top_k,
-                            sp.top_p,
-                            sp.min_p,
-                            dctx.s_key,
-                        );
-                    }
-                    // SAMPLED GRAPH DRAFT: one replay per drafted token — head forward + gumbel +
-                    // argmax in ONE dispatch; the host reads 4B token (+4B p), D2Ds q into slot j,
-                    // and decides the break. Event-counter continuity: g_ctr is host-seeded to
-                    // sctr-1 ONCE per round (outside the graph); the in-graph bump runs BEFORE the
-                    // perturb, so replay j consumes counter sctr+j — exactly the eager arm's Philox
-                    // stream. Host sctr advances in lockstep (computed, no readback needed).
-                    e.set_i32_one(&mut dctx.g_pos, (pos + base0) as i32)?;
-                    e.set_u32_one(&mut dctx.g_tok, last_token)?;
-                    e.copy_into(&mut dctx.g_seed, 0, &h_seed_buf, n_embd)?;
-                    e.set_u32_one(&mut dctx.g_ctr, sctr.wrapping_sub(1))?;
-                    let filtered_stats_in_graph = s_key.filtered();
-                    for j in 0..k_this {
-                        gr.launch()?;
-                        scratch.kv.len += 1; // host mirror (len_d advanced in-graph)
-                        sctr += 1; // mirrors the in-graph g_ctr bump (eager parity:
-                        // counts the p-min-discarded token too)
-                        // q retention: ONE async D2D of the persistent head-logits buffer into this
-                        // round's slot j (stream-ordered after the replay, before the next one).
-                        e.copy_into(&mut dctx.q_slots[j], 0, &dctx.g_q, d_vocab)?;
-                        // FILTERED capture: the replay's own filter_stats node already computed
-                        // (th, z, mx) — read the three scalars back instead of paying a SECOND
-                        // full-vocab filter_stats per slot post-chain (measured ~5% of vendor-
-                        // default serving tok/s at K=3). Bit-exact by construction: these are
-                        // the very values the in-graph perturb consumed. Read BEFORE the p-min
-                        // break so the discarded slot's stats land too (accept-path indexing).
-                        if filtered_stats_in_graph {
-                            draft_stats.push((
-                                e.dtoh(&dctx.g_mx)?[0],
-                                e.dtoh(&dctx.g_th)?[0],
-                                e.dtoh(&dctx.g_z)?[0],
-                            ));
-                        }
-                        let idx = e.dtoh_u32_one(&dctx.g_tok)?;
-                        // #87 SENTINEL TRAP (see the greedy graph arm above).
-                        if (idx as usize) >= d_vocab {
-                            let seed_h = e.dtoh(&dctx.g_seed)?;
-                            let seed_nan = seed_h.iter().filter(|v| v.is_nan()).count();
-                            return Err(format!(
-                                "draft(graph-sampled) argmax sentinel 0x{idx:08x} >= d_vocab \
-                             {d_vocab} at round {round} j={j} pos={pos}: round-seed NaN \
-                             {seed_nan}/{n_embd} — refusing to dereference the embed row \
-                             (#87 trap)"
-                            )
-                            .into());
-                        }
-                        let d = match &mtp.d2t {
-                            Some(map) => map[idx as usize],
-                            None => idx,
-                        };
-                        draft_idx.push(idx);
-                        if p_min > 0.0 {
-                            let p = e.dtoh(&dctx.g_p)?[0];
-                            if spec_stops_at(p, j, p_min, pmin0 && base0 == 1) {
-                                break;
-                            }
-                        }
-                        draft.push(d);
-                        // trimmed head: the NEXT embed must read the TARGET id (see the greedy arm).
-                        if d != idx {
-                            e.set_u32_one(&mut dctx.g_tok, d)?;
-                        }
-                    }
-                    // PURE-TEMP accept path: fill draft_stats per used slot post-chain (the
-                    // stats degenerate to th=0 / full-Z; one filter_stats launch per slot).
-                    // The FILTERED graph read its stats back per replay above.
-                    if !filtered_stats_in_graph {
-                        for j in 0..draft.len().max(draft_idx.len()) {
-                            let rows0 = e.htod_i32(&[0])?;
-                            let (mut th_d, mut z_d, mut mx_d) =
-                                (e.zeros(1)?, e.zeros(1)?, e.zeros(1)?);
-                            e.filter_stats(
-                                &dctx.q_slots[j],
-                                d_vocab,
-                                &rows0,
-                                &mut th_d,
-                                &mut z_d,
-                                &mut mx_d,
-                                d_vocab,
-                                1,
-                                sp_temp,
-                                sp.top_k,
-                                sp.top_p,
-                                sp.min_p,
-                            )?;
-                            draft_stats.push((
-                                e.dtoh(&mx_d)?[0],
-                                e.dtoh(&th_d)?[0],
-                                e.dtoh(&z_d)?[0],
-                            ));
-                        }
-                    }
-                } else {
-                    if skey_probe() && sampled {
-                        eprintln!(
-                            "[skey] chain=eager round={round} pure_temp={} top_k={} \
-                             top_p={} min_p={} s_key_parked={:?}",
-                            pure_temp as u8, sp.top_k, sp.top_p, sp.min_p, dctx.s_key,
-                        );
-                    }
-                    // EAGER DRAFT (fallback: MoE head/trunk, huge k, MEMRA_SPEC_NOGRAPH, capture fail).
-                    let chain_heads = !self.mtp_extra.is_empty();
-                    let mut e_tok = last_token;
-                    let mut d_seed = e.clone_dtod(&h_seed_buf)?;
-                    let mut chain_tokens = if chain_heads {
-                        vec![last_token]
-                    } else {
-                        Vec::new()
-                    };
-                    let mut chain_seeds = if chain_heads {
-                        vec![e.clone_dtod(&h_seed_buf)?]
-                    } else {
-                        Vec::new()
-                    };
-                    for j in 0..k_this {
-                        // GPU-ARGMAX DRAFT (2026-07-03): device logits + device argmax + 4-byte token
-                        // read instead of the ~600KB full-vocab dtoh + host argmax per draft token.
-                        let mtp_pos = pos + base0 + j;
-                        // draft-side grammar mask (eager twin of the graph arm's in-graph node).
-                        // A position with no legal draft-vocab row drops to unmasked drafting for
-                        // the rest of the chain (pre-lane behaviour; verify still arbitrates).
-                        if dmask_live {
-                            dmask_live = upload_draft_mask(
-                                e,
-                                constraint.as_deref_mut().unwrap(),
-                                &mut dctx.g_dmask,
-                                mtp.d2t.as_ref(),
-                                d_vocab,
-                                dmask_words,
-                            )?;
-                        }
-                        let mask = if dmask_live {
-                            Some((&dctx.g_dmask, dmask_words))
-                        } else {
-                            None
-                        };
-                        let (dl_d, h_nextn) = if chain_heads {
-                            if debug_spec {
-                                eprintln!(
-                                    "[mtp-chain-step] round={round} j={j} head={} replay_rows={}",
-                                    mtp_chain_head_index(j, self.mtp_head_count()),
-                                    chain_tokens.len(),
-                                );
-                            }
-                            self.mtp_chain_forward_dev(
-                                e,
-                                &chain_tokens,
-                                &chain_seeds,
-                                &mut *scratch,
-                                pos + base0 - 1,
-                                embd_dev,
-                                mask,
-                            )?
-                        } else {
-                            self.mtp_head_forward_dev(
-                                e,
-                                mtp,
-                                e_tok,
-                                &d_seed,
-                                &mut *scratch,
-                                mtp_pos,
-                                embd_dev,
-                                mask,
-                            )?
-                        };
-                        let tok_d = if sampled {
-                            // FILTERED Gumbel-max: stats -> masked perturb -> argmax = one draw from
-                            // the filtered softmax (filters off => th=0, exact v1 semantics).
-                            if perturb_buf.is_none() {
-                                perturb_buf = Some(e.zeros(d_vocab.max(n_vocab))?);
-                            }
-                            let mut q_row = e.clone_dtod(&dl_d)?; // retained q (penalized when on)
-                            if pen_on {
-                                let h = pen_hist_d.as_ref().unwrap();
-                                let nh = h.len();
-                                e.penalize_logits(
-                                    &mut q_row,
-                                    h,
-                                    nh,
-                                    sp.penalty_repeat,
-                                    sp.penalty_freq,
-                                    sp.penalty_present,
-                                    d_vocab,
-                                )?;
-                            }
-                            let rows0 = e.htod_i32(&[0])?;
-                            let (mut th_d, mut z_d, mut mx_d) =
-                                (e.zeros(1)?, e.zeros(1)?, e.zeros(1)?);
-                            e.filter_stats(
-                                &q_row, d_vocab, &rows0, &mut th_d, &mut z_d, &mut mx_d, d_vocab,
-                                1, sp_temp, sp.top_k, sp.top_p, sp.min_p,
-                            )?;
-                            let (th, z, mx) =
-                                (e.dtoh(&th_d)?[0], e.dtoh(&z_d)?[0], e.dtoh(&mx_d)?[0]);
-                            let pb = perturb_buf.as_mut().unwrap();
-                            e.gumbel_perturb_filtered(
-                                &q_row, pb, d_vocab, sp_seed, sctr, sp_temp, mx, th,
-                            )?;
-                            sctr += 1;
-                            draft_logits.push(q_row);
-                            draft_stats.push((mx, th, z));
-                            e.argmax_token_device(pb, d_vocab)?
-                        } else {
-                            e.argmax_token_device(&dl_d, d_vocab)?
-                        };
-                        let idx = e.dtoh_u32_one(&tok_d)?;
-                        // #87 SENTINEL TRAP (eager twin — see the graph arm). Extra diagnostics
-                        // here because the eager chain's operands are all readable: dl_d (the head
-                        // logits row) and d_seed (this step's h_seed) name the first-NaN buffer.
-                        if (idx as usize) >= d_vocab {
-                            let dl_h = e.dtoh(&dl_d)?;
-                            let dl_nan = dl_h.iter().filter(|v| v.is_nan()).count();
-                            let seed_h = if chain_heads {
-                                e.dtoh(chain_seeds.last().unwrap())?
-                            } else {
-                                e.dtoh(&d_seed)?
-                            };
-                            let seed_nan = seed_h.iter().filter(|v| v.is_nan()).count();
-                            return Err(format!(
-                                "draft(eager) argmax sentinel 0x{idx:08x} >= d_vocab {d_vocab} at \
-                             round {round} j={j} pos={pos}: head-logits NaN {dl_nan}/{d_vocab}, \
-                             step-seed NaN {seed_nan}/{n_embd} — refusing to dereference the \
-                             embed row (#87 trap)"
-                            )
-                            .into());
-                        }
-                        let d = match &mtp.d2t {
-                            Some(map) => map[idx as usize],
-                            None => idx,
-                        };
-                        if sampled {
-                            draft_idx.push(idx);
-                        }
-                        // p-min statistic: greedy = the pick's probability (== the row max);
-                        // sampled = the row max, draw-independent (memra#673).
-                        let draft_p = if p_min > 0.0 {
-                            let p_d = if sampled {
-                                e.max_prob_device(&dl_d, d_vocab)?
-                            } else {
-                                e.prob_of_token_device(&dl_d, &tok_d, d_vocab)?
-                            };
-                            Some(e.dtoh(&p_d)?[0])
-                        } else {
-                            None
-                        };
-                        if let Some(p) = draft_p
-                            && spec_stops_at(p, j, p_min, pmin0 && base0 == 1)
-                        {
-                            break;
-                        }
-                        draft.push(d);
-                        if chain_heads {
-                            chain_tokens.push(d);
-                            chain_seeds.push(h_nextn);
-                        } else {
-                            e_tok = d;
-                            d_seed = h_nextn;
-                        }
-                        // speculative advance; a chain the grammar can no longer follow (EOS
-                        // proposed) ends here — the prefix already proposed still rides verify.
-                        if dmask_live
-                            && !constraint
-                                .as_deref_mut()
-                                .unwrap()
-                                .draft_advance(d)
-                                .map_err(|e2| format!("constraint: {e2}"))?
-                        {
-                            break;
-                        }
-                    }
-                }
-            }
-            let k_round = draft.len();
-
-            ph_mark(&mut ph_draft, phase_on);
-            // --- 2. VERIFY: one batched target forward. With a pending bonus, it rides as col 0
-            //         (committing its KV/recur inside the SAME weight read); drafts follow. ---
-            let verify_tokens: Vec<u32> = match pending {
-                Some(b) => {
-                    let mut v = Vec::with_capacity(k_round + 1);
-                    v.push(b);
-                    v.extend_from_slice(&draft);
-                    v
-                }
-                None => draft.clone(),
-            };
-            let base = if pending.is_some() { 1 } else { 0 };
-            // ckpt (REPLAY-FREE partial accept): retain per-layer state-rebuild inputs alongside
-            // the verify. Pure buffer keep-alives + dtod clones — kernel work is unchanged.
-            let mut ckpt = if spec_replay {
-                None
-            } else {
-                Some(VerifyCkpt::new(self.layers.len()))
-            };
+            let mut prep = self.spec_round_prepare(e, &mut rs, gate)?;
             let (tlogits_d, vx) = {
                 // The serial verify every non-fork round takes — the MTP route's
                 // verify-graph door. The pool is None unless MEMRA_SPEC_VERIFY_GRAPH armed
@@ -14264,10 +13784,10 @@ impl HybridModel {
                 // round declines the pool exactly like an over-cap round and rides the
                 // byte-identical eager walk — the `[spec]` suspension line above
                 // already named the round.
-                let vg_round = if verify_tokens.len() <= vg_t_cap && graph_round_ok {
-                    vg_guard.as_mut().and_then(|g| g.as_mut())
+                let vg_round = if prep.verify_tokens.len() <= vg_t_cap && prep.graph_round_ok {
+                    rs.vg_guard.as_mut().and_then(|g| g.as_mut())
                 } else {
-                    if let Some(g) = vg_guard.as_mut().and_then(|g| g.as_mut()) {
+                    if let Some(g) = rs.vg_guard.as_mut().and_then(|g| g.as_mut()) {
                         // The commit reads this flag to pick its arm; a round that declines
                         // the pool must not inherit a stale `true` from the round before it.
                         g.round_slab = false;
@@ -14276,830 +13796,50 @@ impl HybridModel {
                 };
                 self.decode_step_t_core_vg(
                     e,
-                    &verify_tokens,
-                    pos,
-                    &mut *cache,
+                    &prep.verify_tokens,
+                    prep.pos,
+                    &mut *rs.cache,
                     embd_dev,
-                    ckpt.as_mut(),
+                    prep.ckpt.as_mut(),
                     vg_round,
                 )?
             };
-
-            if phase_sync {
-                e.stream().synchronize()?;
-            }
-            ph_mark(&mut ph_verify, phase_on);
-            // --- 3. GREEDY ACCEPT (walk prefix, stop at first mismatch) ---
-            // DEVICE-ARGMAX ACCEPT: argmax every verify column ON DEVICE (same 2-pass kernels +
-            // smallest-index tie-break as host argmax, argmax_gate-validated) and read back ONE
-            // [T] u32 — replaces the T x n_vocab f32 dtoh + T host argmaxes per round.
-            // t_pred[j] = target's greedy prediction for the slot after draft[j-1] (j>=1) or after
-            // last_token (j==0). With a pending bonus, col 0 IS the prediction after last_token
-            // (== the bonus), so every index shifts by `base` and last_pred is unused.
-            let t_v = verify_tokens.len();
-            let mut preds: Vec<u32> = Vec::new();
-            if !sampled {
-                for j in 0..t_v {
-                    e.argmax_token_device_col(&tlogits_d, j, n_vocab, &mut preds_d, j)?;
-                }
-                preds = e.dtoh_u32(&preds_d)?; // <- the verify-GPU wait lands here
-                // #87 SENTINEL TRAP, verify side: a sentinel pred becomes the round's bonus =
-                // next round's last_token = the next chain's embed lookup. Catch it at the
-                // source with the column named — an all-NaN VERIFY column implicates the
-                // stage-split trunk (decode_step_t_core_ppn), not the draft head.
-                if let Some(bad) = preds[..t_v].iter().position(|&p| (p as usize) >= n_vocab) {
-                    let col = &tlogits_d.slice(bad * n_vocab..(bad + 1) * n_vocab);
-                    let mut probe = e.zeros(n_vocab)?;
-                    e.copy_view_into(&mut probe, 0, col, n_vocab)?;
-                    let col_h = e.dtoh(&probe)?;
-                    let col_nan = col_h.iter().filter(|v| v.is_nan()).count();
-                    return Err(format!(
-                        "verify argmax sentinel 0x{:08x} >= n_vocab {n_vocab} at round {round} \
-                         col {bad}/{t_v} pos={pos}: verify-logits col NaN {col_nan}/{n_vocab} \
-                         — the verify TRUNK produced a poisoned column (#87 trap). Run \
-                         MEMRA_SPEC_NAN_SCAN=1 to name the layer that creates it (=2 to split \
-                         that layer into attention and routed MoE). NOT the draft head, and NOT \
-                         the PP stage split this message used to name: pp_cuts() returns None \
-                         without MEMRA_PP_STAGES, so decode_step_t_core_ppn never runs unless \
-                         that variable is set.",
-                        preds[bad]
-                    )
-                    .into());
-                }
-            }
-            ph_mark(&mut ph_wait, phase_on);
-            let t_pred = |j: usize| -> u32 {
-                if j == 0 && base == 0 {
-                    last_pred
-                } else {
-                    // GREEDY-ONLY: `preds` is filled under `if !sampled` above. The debug print
-                    // used to call this from the sampled arm and panicked the worker; it now goes
-                    // through `debug_t_pred0`. Keep the strict index here — in the greedy walk an
-                    // out-of-range pred is a real bug, not something to paper over.
-                    debug_assert!(
-                        !sampled,
-                        "t_pred is greedy-only: `preds` is empty in the sampled arm"
-                    );
-                    preds[base + j - 1]
-                }
-            };
-            let (n_acc, bonus) = if !sampled {
-                let mut n_acc = 0usize;
-                #[allow(clippy::needless_range_loop)]
-                // allow: the explicit index loop keeps the offset arithmetic visible and aligned with the device-side indexing
-                for j in 0..k_round {
-                    if t_pred(j) == draft[j] {
-                        n_acc += 1;
-                    } else {
-                        break;
-                    }
-                }
-                // bonus = target's own token at the first non-accepted slot. n_acc in 0..=k; t_pred
-                // is defined for j in 0..=k (j==0 -> last_logits, j>=1 -> col j-1, last col = k-1).
-                (n_acc, t_pred(n_acc))
-            } else {
-                // --- SAMPLED ACCEPT (rejection sampling): u_j < p_j(x_j)/q_j(x_j) walk ---
-                if col_buf.is_none() {
-                    col_buf = Some(e.zeros(n_vocab)?);
-                }
-                // FILTERED p_j: per-verify-col stats (one batched filter_stats call), then the
-                // filtered gather. j==0&&base==0 reads last_col (its own stats row appended).
-                let mut pj = vec![0f32; k_round.max(1)];
-                let mut col_stats: Vec<(f32, f32, f32)> = Vec::new(); // (max, th, z) per verify col used
-                if k_round > 0 {
-                    let mut ids: Vec<u32> = Vec::new();
-                    let mut rows: Vec<i32> = Vec::new();
-                    #[allow(clippy::needless_range_loop)]
-                    // allow: the explicit index loop keeps the offset arithmetic visible and aligned with the device-side indexing
-                    for j in 0..k_round {
-                        if j > 0 || base == 1 {
-                            ids.push(draft[j]);
-                            rows.push((base + j) as i32 - 1);
-                        }
-                    }
-                    if !ids.is_empty() {
-                        let nr = rows.len();
-                        // penalties: materialize the used columns into one contiguous penalized
-                        // buffer (rows remapped 0..nr) so stats+gathers see the penalized p.
-                        // penalties: materialize used columns contiguously, penalize all rows in
-                        // one launch, and point stats+gathers at the penalized buffer (rows 0..nr).
-                        let p_rows: Vec<i32> = if pen_on {
-                            (0..nr as i32).collect()
-                        } else {
-                            rows.clone()
-                        };
-                        if pen_on {
-                            if pcol_buf.as_ref().map(|b| b.len()).unwrap_or(0) < nr * n_vocab {
-                                pcol_buf = Some(e.zeros(nr * n_vocab)?);
-                            }
-                            let pc = pcol_buf.as_mut().unwrap();
-                            for (i2, &r) in rows.iter().enumerate() {
-                                let c = r as usize;
-                                e.copy_view_into(
-                                    pc,
-                                    i2 * n_vocab,
-                                    &tlogits_d.slice(c * n_vocab..(c + 1) * n_vocab),
-                                    n_vocab,
-                                )?;
-                            }
-                            let h = pen_hist_d.as_ref().unwrap();
-                            let nh = h.len();
-                            e.penalize_logits_rows(
-                                pc,
-                                h,
-                                nh,
-                                sp.penalty_repeat,
-                                sp.penalty_freq,
-                                sp.penalty_present,
-                                n_vocab,
-                                nr,
-                            )?;
-                        }
-                        let p_src: &CudaSlice<f32> = if pen_on {
-                            pcol_buf.as_ref().unwrap()
-                        } else {
-                            &tlogits_d
-                        };
-                        let rowsd = e.htod_i32(&p_rows)?;
-                        let (mut th_d, mut z_d, mut mx_d) =
-                            (e.zeros(nr)?, e.zeros(nr)?, e.zeros(nr)?);
-                        e.filter_stats(
-                            p_src, n_vocab, &rowsd, &mut th_d, &mut z_d, &mut mx_d, n_vocab, nr,
-                            sp_temp, sp.top_k, sp.top_p, sp.min_p,
-                        )?;
-                        let idsd = e.htod_u32_v(&ids)?;
-                        let mut outd = e.zeros(nr)?;
-                        e.softmax_gather_filtered(
-                            p_src, n_vocab, &idsd, &rowsd, &th_d, &z_d, &mut outd, n_vocab, nr,
-                            sp_temp,
-                        )?;
-                        let outv = e.dtoh(&outd)?;
-                        let (thv, zv, mxv) = (e.dtoh(&th_d)?, e.dtoh(&z_d)?, e.dtoh(&mx_d)?);
-                        let mut oi = 0usize;
-                        #[allow(clippy::needless_range_loop)]
-                        // allow: the explicit index loop keeps the offset arithmetic visible and aligned with the device-side indexing
-                        for j in 0..k_round {
-                            if j > 0 || base == 1 {
-                                pj[j] = outv[oi];
-                                oi += 1;
-                            }
-                        }
-                        col_stats = (0..nr).map(|i| (mxv[i], thv[i], zv[i])).collect();
-                    }
-                    if base == 0 {
-                        let lc: &CudaSlice<f32> = if pen_on {
-                            if col_buf.is_none() {
-                                col_buf = Some(e.zeros(n_vocab)?);
-                            }
-                            let cb = col_buf.as_mut().unwrap();
-                            e.copy_into(
-                                cb,
-                                0,
-                                last_col_logits
-                                    .as_ref()
-                                    .expect("sampled: last_col_logits unset"),
-                                n_vocab,
-                            )?;
-                            let h = pen_hist_d.as_ref().unwrap();
-                            let nh = h.len();
-                            e.penalize_logits(
-                                cb,
-                                h,
-                                nh,
-                                sp.penalty_repeat,
-                                sp.penalty_freq,
-                                sp.penalty_present,
-                                n_vocab,
-                            )?;
-                            col_buf.as_ref().unwrap()
-                        } else {
-                            last_col_logits
-                                .as_ref()
-                                .expect("sampled: last_col_logits unset")
-                        };
-                        let rows0 = e.htod_i32(&[0])?;
-                        let (mut th_d, mut z_d, mut mx_d) = (e.zeros(1)?, e.zeros(1)?, e.zeros(1)?);
-                        e.filter_stats(
-                            lc, n_vocab, &rows0, &mut th_d, &mut z_d, &mut mx_d, n_vocab, 1,
-                            sp_temp, sp.top_k, sp.top_p, sp.min_p,
-                        )?;
-                        let idsd = e.htod_u32_v(&[draft[0]])?;
-                        let mut outd = e.zeros(1)?;
-                        e.softmax_gather_filtered(
-                            lc, n_vocab, &idsd, &rows0, &th_d, &z_d, &mut outd, n_vocab, 1, sp_temp,
-                        )?;
-                        pj[0] = e.dtoh(&outd)?[0];
-                        last_col_stats =
-                            Some((e.dtoh(&mx_d)?[0], e.dtoh(&th_d)?[0], e.dtoh(&z_d)?[0]));
-                    }
-                }
-                // q source: the graph arms (single-head AND chain) retained the head logits
-                // in the persistent q_slots; the eager arm in per-round draft_logits clones.
-                // Same raw-logit values either way. FILTERED q_j: stats from draft_stats
-                // (eager pushes in-chain; the graph arms compute them post-replay from the
-                // retained q with the same filter_stats program — bit-identical to the
-                // in-graph stats that shaped the draw, keeping ONE accept path).
-                let q_bufs: &[CudaSlice<f32>] = if dctx.graph_s.is_some() || dctx.chain_s.is_some()
-                {
-                    &dctx.q_slots
-                } else {
-                    &draft_logits
-                };
-                let mut n_acc = 0usize;
-                for j in 0..k_round {
-                    let (qmx, qth, qz) = draft_stats[j];
-                    let idsd = e.htod_u32_v(&[draft_idx[j]])?;
-                    let rowsd = e.htod_i32(&[0])?;
-                    let thd = e.htod(&[qth])?;
-                    let zd = e.htod(&[qz])?;
-                    let _ = qmx;
-                    let mut outd = e.zeros(1)?;
-                    e.softmax_gather_filtered(
-                        &q_bufs[j], d_vocab, &idsd, &rowsd, &thd, &zd, &mut outd, d_vocab, 1,
-                        sp_temp,
-                    )?;
-                    let qj = e.dtoh(&outd)?[0];
-                    let u = host_u01(sp_seed, uctr);
-                    uctr += 1;
-                    let accept = (u as f64) * (qj as f64) < pj[j] as f64;
-                    // SKEY PROBE: q == 0 for the token the draft actually proposed is the
-                    // exactness signature (see `skey_probe`). Impossible when the draft was
-                    // drawn from the same filtered distribution the verify reconstructs here;
-                    // `u * 0 < p` makes it an UNCONDITIONAL accept whenever p > 0.
-                    if skey_probe() && qj == 0.0 {
-                        eprintln!(
-                            "[skey] EXACTNESS q=0 round={round} j={j} draft_tok={} \
-                             draft_idx={} p={:e} u={u} accepted={} th_z={:?}",
-                            draft[j], draft_idx[j], pj[j], accept as u8, draft_stats[j],
-                        );
-                    }
-                    if accept {
-                        n_acc += 1;
-                    } else {
-                        break;
-                    }
-                }
-                let bonus = if n_acc == k_round {
-                    // FULL ACCEPT: bonus ~ FILTERED softmax at the last verify column.
-                    let col = base + k_round - 1;
-                    let cb = col_buf.as_mut().unwrap();
-                    e.copy_view_into(
-                        cb,
-                        0,
-                        &tlogits_d.slice(col * n_vocab..(col + 1) * n_vocab),
-                        n_vocab,
-                    )?;
-                    if pen_on {
-                        let h = pen_hist_d.as_ref().unwrap();
-                        let nh = h.len();
-                        e.penalize_logits(
-                            cb,
-                            h,
-                            nh,
-                            sp.penalty_repeat,
-                            sp.penalty_freq,
-                            sp.penalty_present,
-                            n_vocab,
-                        )?;
-                    }
-                    if perturb_buf.is_none() {
-                        perturb_buf = Some(e.zeros(d_vocab.max(n_vocab))?);
-                    }
-                    // STATS MUST COME FROM THIS COLUMN (bug fix 2026-08-05, lane/sampler-
-                    // truncation-fix; receipts research/sampfix-20260805/). The old code reused
-                    // `col_stats.last()` here, which is ALWAYS the wrong row: the gathered set
-                    // covers verify columns 0..=(base+k_round-2) (rows pushed as base+j-1), while
-                    // the full-accept bonus samples column base+k_round-1 — exactly ONE PAST the
-                    // last gathered column, in both base arms. `th` is a threshold in e-units of
-                    // its OWN row's max, so feeding a neighbour's (row_max, th) into
-                    // gumbel_perturb_filtered mis-scales every e0 = exp((x-row_max)/T). When the
-                    // donor column's peak is higher by more than T*ln(1/th), EVERY id fails
-                    // `e0 >= th`, the whole perturbed row becomes -3.4e38, and the 2-pass argmax
-                    // falls through to its smallest-index tie-break => token id 0 ("!") spliced
-                    // mid-word. Fragility is ordered by how large th is: min_p pins th = min_p
-                    // (0.05 => trigger at delta > 2.4 at T=0.8, fires constantly), top_p's
-                    // mass-boundary th is smaller, top_k's k-th-largest th smaller still — which
-                    // is why the head-to-head matrix saw min_p and top_p corrupt while top_k-only
-                    // stayed clean. The pure-temp default regime is immune (th == 0 masks nothing,
-                    // and row_max is unused once nothing is masked), so this fix is a byte-level
-                    // no-op for the untruncated serve default. One extra one-block filter_stats
-                    // per full-accept round is the whole cost.
-                    let (mx, th) = {
-                        let rows0 = e.htod_i32(&[0])?;
-                        let (mut th_d, mut z_d, mut mx_d) = (e.zeros(1)?, e.zeros(1)?, e.zeros(1)?);
-                        let cb0 = col_buf.as_ref().unwrap();
-                        e.filter_stats(
-                            cb0, n_vocab, &rows0, &mut th_d, &mut z_d, &mut mx_d, n_vocab, 1,
-                            sp_temp, sp.top_k, sp.top_p, sp.min_p,
-                        )?;
-                        (e.dtoh(&mx_d)?[0], e.dtoh(&th_d)?[0])
-                    };
-                    let pb = perturb_buf.as_mut().unwrap();
-                    let cb2 = col_buf.as_ref().unwrap();
-                    e.gumbel_perturb_filtered(cb2, pb, n_vocab, sp_seed, sctr, sp_temp, mx, th)?;
-                    sctr += 1;
-                    let td = e.argmax_token_device(pb, n_vocab)?;
-                    e.dtoh_u32_one(&td)?
-                } else {
-                    // REJECT at n_acc: bonus ~ norm(max(0, softmax_T(p) - softmax_T(q))).
-                    let cb = col_buf.as_mut().unwrap();
-                    if n_acc > 0 || base == 1 {
-                        let col = base + n_acc - 1;
-                        e.copy_view_into(
-                            cb,
-                            0,
-                            &tlogits_d.slice(col * n_vocab..(col + 1) * n_vocab),
-                            n_vocab,
-                        )?;
-                    } else {
-                        let lc = last_col_logits.as_ref().unwrap();
-                        e.copy_into(cb, 0, lc, n_vocab)?;
-                    }
-                    if pen_on {
-                        let h = pen_hist_d.as_ref().unwrap();
-                        let nh = h.len();
-                        e.penalize_logits(
-                            cb,
-                            h,
-                            nh,
-                            sp.penalty_repeat,
-                            sp.penalty_freq,
-                            sp.penalty_present,
-                            n_vocab,
-                        )?;
-                    }
-                    let cb2 = col_buf.as_ref().unwrap();
-                    let sc = sctr;
-                    sctr += 1;
-                    // p-stats for the reject column: from col_stats when the col was gathered,
-                    // else (j==0&&base==0) from last_col_stats.
-                    let p_stats = if n_acc > 0 || base == 1 {
-                        // col index within the gathered set == number of gathered cols before n_acc
-                        let gi = if base == 1 { n_acc } else { n_acc - 1 };
-                        col_stats.get(gi).copied().unwrap_or({
-                            (0.0, 0.0, 1.0) // unreachable: gathered cols always cover the reject slot
-                        })
-                    } else {
-                        last_col_stats.expect("sampled: last_col_stats unset at reject")
-                    };
-                    let q_stats = draft_stats[n_acc];
-                    if let Some(map) = &d2t_dev {
-                        if q_full_buf.is_none() {
-                            q_full_buf = Some(e.zeros(n_vocab)?);
-                        }
-                        let qf = q_full_buf.as_mut().unwrap();
-                        e.scatter_trim_logits(&q_bufs[n_acc], map, qf, d_vocab, n_vocab)?;
-                        let qf2 = q_full_buf.as_ref().unwrap();
-                        e.residual_sample_filtered(
-                            cb2,
-                            Some(qf2),
-                            n_vocab,
-                            sp_temp,
-                            sp_seed,
-                            sc,
-                            p_stats,
-                            q_stats,
-                            &mut sample_tok,
-                        )?;
-                    } else {
-                        e.residual_sample_filtered(
-                            cb2,
-                            Some(&q_bufs[n_acc]),
-                            n_vocab,
-                            sp_temp,
-                            sp_seed,
-                            sc,
-                            p_stats,
-                            q_stats,
-                            &mut sample_tok,
-                        )?;
-                    }
-                    e.dtoh_u32(&sample_tok)?[0]
-                };
-                (
-                    n_acc,
-                    guard_vocab_token(
-                        bonus,
-                        n_vocab,
-                        &format!("sampled verify bonus at round {round} pos={pos} n_acc={n_acc}"),
-                    )?,
-                )
-            };
-            // --- 3b. GRAMMAR TRUNCATION (constrained spec, 2026-08-03): the grammar is
-            // an extra rejection rule AFTER the exactness verify (the batched-verify-twins
-            // ordering). Walk the accepted drafts through the grammar in commit order; the
-            // first illegal token truncates acceptance at its slot, and that slot's emission
-            // is recomputed as the MASKED argmax of the target's own verify column — token-
-            // identical to constrained plain greedy decode (an unmasked argmax that is
-            // grammar-legal IS the masked argmax: masking only removes competitors). The
-            // column D2H (~1MB) is paid only when a cut fires — the tight-grammar cost,
-            // measured in acceptance numbers, never hidden.
-            let (n_acc, bonus) = match constraint.as_deref_mut() {
-                None => (n_acc, bonus),
-                Some(c) => {
-                    fn ce(e2: String) -> Box<dyn std::error::Error> {
-                        format!("constraint: {e2}").into()
-                    }
-                    let mut na = n_acc;
-                    let mut cut = false;
-                    for (j, &d) in draft.iter().enumerate().take(n_acc) {
-                        if c.is_allowed(d).map_err(ce)? {
-                            c.consume(d).map_err(ce)?;
-                        } else {
-                            na = j;
-                            cut = true;
-                            dm_cut_tokens += n_acc - j;
-                            break;
-                        }
-                    }
-                    if cut {
-                        dm_cuts += 1;
-                    }
-                    let mut bo = bonus;
-                    if cut || !c.is_allowed(bo).map_err(ce)? {
-                        let mut row = if na == 0 && base == 0 {
-                            init_logits_host
-                                .clone()
-                                .ok_or("constraint: init logits missing (round-0 cut)")?
-                        } else {
-                            e.dtoh_view(
-                                &tlogits_d.slice((base + na - 1) * n_vocab..(base + na) * n_vocab),
-                            )?
-                        };
-                        c.mask_logits(&mut row).map_err(ce)?;
-                        bo = argmax(&row) as u32;
-                    }
-                    c.consume(bo).map_err(ce)?;
-                    (na, bo)
-                }
-            };
-            // --- 3c. BUDGET CLAMP (MEMRA_SPEC_BUDGET_CLAMP, WP-B day 43, DAY43.md 1.1): a greedy,
-            // unconstrained session round that would commit accepted drafts past the request's
-            // budget is truncated at the budget exactly like the grammar truncation above: the
-            // bonus is the verify's own argmax at that column (the accepted draft there), and the
-            // round commits through the ordinary partial-accept path. The public stream is
-            // unchanged; the parked `committed` then equals it. `budget_room` None: today's.
-            let (n_acc, bonus) = match (
-                budget_room,
-                stream_active || sampled || constraint.is_some(),
-            ) {
-                (Some(room_total), false) => {
-                    match budget_clamp_slot(room_total.saturating_sub(out.len()), n_acc, base) {
-                        Some(na) => {
-                            if let Some(slot) = sess_clamp_slot.as_deref_mut() {
-                                *slot = Some((na, n_acc, room_total.saturating_sub(out.len())));
-                            }
-                            (na, draft[na])
-                        }
-                        None => (n_acc, bonus),
-                    }
-                }
-                _ => (n_acc, bonus),
-            };
-            total_drafted += k_round;
-            total_accepted += n_acc;
-            if let Some(t) = sess_telem {
-                // Greedy, rejection-sampling, and grammar truncation all converge here after
-                // the accept decision is already on host. Fixed-size relaxed atomics only.
-                t.record_round(k_round, n_acc);
-            }
-            if spec_stats {
-                st_len_hist[k_round] += 1;
-                #[allow(clippy::needless_range_loop)]
-                // allow: the explicit index loop keeps the offset arithmetic visible and aligned with the device-side indexing
-                for j in 0..k_round {
-                    st_drafted[j] += 1;
-                }
-                #[allow(clippy::needless_range_loop)]
-                // allow: the explicit index loop keeps the offset arithmetic visible and aligned with the device-side indexing
-                for j in 0..n_acc {
-                    st_accepted[j] += 1;
-                }
-                if n_acc == k_round {
-                    st_full += 1;
-                }
-            }
-
-            if debug_spec {
-                eprintln!(
-                    "[R{round}] pos={pos} out_len={} last_tok={last_token} draft={draft:?} n_acc={n_acc} bonus={bonus} t_pred0={}",
-                    out.len(),
-                    // NOT `t_pred(0)`: `preds` is filled only under `if !sampled` above, so on a
-                    // sampled request round >= 1 (base == 1) indexed an EMPTY vector and PANICKED
-                    // the GPU worker thread — a debug flag that killed the exact regime you would
-                    // set it to investigate. See `debug_t_pred0`.
-                    debug_t_pred0(sampled, base, last_pred, &preds)
-                );
-            }
-
-            // --- 4. COMMIT: draft[0..n_acc] then bonus (n_acc + 1 tokens) ---
-            let commit_started = std::time::Instant::now();
-            // SESSION MODE: every accepted column is already in the CACHE — `out` must carry all
-            // of them (overshoot past max_new included) or `committed` under-counts the cache rows
-            // and the next turn's continuation seeds one token off (gate-caught 2026-07-05). The
-            // single-shot path keeps the cap (its caller truncates + drops the cache anyway).
-            #[allow(clippy::needless_range_loop)]
-            // allow: the explicit index loop keeps the offset arithmetic visible and aligned with the device-side indexing
-            for j in 0..n_acc {
-                if !session_mode && out.len() >= max_new {
-                    break;
-                }
-                out.push(draft[j]);
-            }
-            if pen_on {
-                pen_hist.extend_from_slice(&draft[0..n_acc]);
-                pen_hist.push(bonus);
-            }
-            let bonus_emitted = session_mode || out.len() < max_new;
-            if bonus_emitted {
-                out.push(bonus);
-            }
-            last_token = bonus;
-
-            // --- 5. ROLLBACK + advance (§C) ---
-            if n_acc == k_round && !spec_replay {
-                // FULL ACCEPT, BONUS FOLD: all verify columns (pending? + drafts) are committed in
-                // cache; the NEW bonus stays PENDING for the next round's verify batch — NO extra
-                // T=1 trunk pass. The next draft chain seeds from the MTP block's h_nextn at the
-                // bonus position: one MTP-block pass (~1/33 trunk cost) replaces the trunk read.
-                // last_pred is dead in the pending path (t_pred reads verify col 0).
-                //
-                // PERSISTENT DRAFT KV, full-accept fill: the chain covered last_token +
-                // draft[0..k_round-2] as INPUTS (slots P..P'-2); draft[k_round-1] (slot P'-1) was
-                // only ever an output, so its entry is MISSING. Fill it from vh_seed — its EXACT
-                // trunk hidden (the last verify column). set_len first: a p-min break may have
-                // left one extra chain append at that slot. Partial accepts need NO fill (the
-                // chain already covered every accepted position; round-start set_len truncates).
-                self.restore_step_tp_kv_verified_prefix(e, &mut *cache, &snap, t_v, false)?;
-                let mut vh_seed = e.zeros(n_embd)?;
-                e.copy_view_into(
-                    &mut vh_seed,
-                    0,
-                    &vx.slice((t_v - 1) * n_embd..t_v * n_embd),
-                    n_embd,
-                )?;
-                if refresh {
-                    // TRUE-HIDDEN REFRESH (2026-07-03, the HANDOVER-listed acceptance lever):
-                    // overwrite ALL committed positions' scratch entries with K/V from their EXACT
-                    // verify hiddens — the reference engine's mtp_update fills from true hiddens;
-                    // the full stack (vx) is already resident from the verify. Replaces both the
-                    // chain-approximate entries AND the old last-token-only fill. Acceptance-only
-                    // (draft attention quality); exactness stays the verify's job.
-                    scratch.set_len(e, pos)?;
-                    // PREDECESSOR pairing: row i gets vx[i-1]; row 0 the carried fill_prev
-                    // (hidden of the last committed row before this verify batch).
-                    let mut vxs = e.zeros(t_v * n_embd)?;
-                    e.copy_into(&mut vxs, 0, &fill_prev, n_embd)?;
-                    if t_v > 1 {
-                        e.copy_view_into(
-                            &mut vxs,
-                            n_embd,
-                            &vx.slice(0..(t_v - 1) * n_embd),
-                            (t_v - 1) * n_embd,
-                        )?;
-                    }
-                    self.mtp_kv_fill_all(e, &verify_tokens, &vxs, pos, &mut *scratch, embd_dev)?;
-                } else {
-                    scratch.set_len(e, pos + base + k_round - 1)?;
-                    // predecessor of the last draft = verify col t_v-2 (or fill_prev at t_v==1)
-                    let mut hp = e.zeros(n_embd)?;
-                    if t_v >= 2 {
-                        e.copy_view_into(
-                            &mut hp,
-                            0,
-                            &vx.slice((t_v - 2) * n_embd..(t_v - 1) * n_embd),
-                            n_embd,
-                        )?;
-                    } else {
-                        e.copy_into(&mut hp, 0, &fill_prev, n_embd)?;
-                    }
-                    self.mtp_kv_fill_all(
-                        e,
-                        &[draft[k_round - 1]],
-                        &hp,
-                        pos + base + k_round - 1,
-                        &mut *scratch,
-                        embd_dev,
-                    )?;
-                }
-                // REFERENCE SEEDING: no pseudo pass — the next chain's step 0 IS the
-                // reference's (id_last, h_prev) draft row; it appends the bonus's scratch
-                // entry itself. Seed = TRUE hidden of the bonus's predecessor (last verify
-                // col). Saves one MTP-block pass per round on top of the pairing fix.
-                e.copy_into(&mut h_seed_buf, 0, &vh_seed, n_embd)?;
-                e.copy_into(&mut fill_prev, 0, &vh_seed, n_embd)?;
-                pending = Some(bonus);
-                if debug_spec {
-                    eprintln!("  -> FULL ACCEPT (bonus pending, prev-h seed)");
-                }
-            } else if !spec_replay && base + n_acc >= 1 {
-                // PARTIAL ACCEPT, REPLAY-FREE (2026-07-03 — the profiled #1 long-ctx spec cost):
-                // the verify's first j = base+n_acc columns ARE the committed sequence, computed
-                // bit-identically to eager (decode-exact contract) — so KEEP them: KV truncates to
-                // pos+j, recurrent state rebuilds from the VerifyCkpt (same-kernel gdn prefix
-                // re-run / pure state-clone restore), and the bonus stays PENDING exactly like the
-                // full-accept path — the legacy duplicate trunk replay is gone. The next chain
-                // seeds from the MTP pseudo-hidden of the bonus, whose seed = the TRUE verify
-                // hidden of its predecessor (col j-1) — same one-hop pseudo structure as full
-                // accept (never compounds: the next verify recomputes true hiddens for all
-                // committed columns).
-                let j = base + n_acc;
-                // VERIFY-GRAPH SLAB COMMIT: when the captured trunk ran, the linear layers'
-                // column stash was written into the graphs ctx's persistent slabs as in-graph
-                // memcpy nodes, NOT into the per-column VerifyCkpt the cols arm reads — so the
-                // commit must take the slab twin (same semantics, slab-addressed sources). The
-                // ctx states which of the two this round produced via `round_slab`; trusting the
-                // flag rather than the env keeps a round that fell back to the eager walk (a
-                // capture that declined, a t the pool never captured) on the cols arm.
-                let slab_commit = vg_guard
-                    .as_ref()
-                    .and_then(|g| g.as_ref())
-                    .map(|g| g.round_slab)
-                    .unwrap_or(false);
-                if slab_commit {
-                    self.dspark_commit_prefix_slab(
-                        e,
-                        &mut *cache,
-                        &snap,
-                        vg_guard
-                            .as_ref()
-                            .and_then(|g| g.as_ref())
-                            .expect("slab_commit implies a graphs ctx"),
-                        j,
-                    )?;
-                } else {
-                    self.commit_verified_prefix(e, &mut *cache, &snap, ckpt.as_ref().unwrap(), j)?;
-                }
-                let mut seed = e.zeros(n_embd)?;
-                e.copy_view_into(
-                    &mut seed,
-                    0,
-                    &vx.slice((j - 1) * n_embd..j * n_embd),
-                    n_embd,
-                )?;
-                // Draft scratch: TRUE-HIDDEN REFRESH of the committed prefix (see the full-accept
-                // branch); without it the chain entries stand and only the tail truncates. Either
-                // way len ends at pos+j so the pseudo append lands at the bonus's slot pos+j
-                // (persistent mode), rope pos+j+1 (chain convention).
-                if refresh {
-                    scratch.set_len(e, pos)?;
-                    let mut vxs = e.zeros(j * n_embd)?;
-                    e.copy_into(&mut vxs, 0, &fill_prev, n_embd)?;
-                    if j > 1 {
-                        e.copy_view_into(
-                            &mut vxs,
-                            n_embd,
-                            &vx.slice(0..(j - 1) * n_embd),
-                            (j - 1) * n_embd,
-                        )?;
-                    }
-                    self.mtp_kv_fill_all(
-                        e,
-                        &verify_tokens[0..j],
-                        &vxs,
-                        pos,
-                        &mut *scratch,
-                        embd_dev,
-                    )?;
-                } else {
-                    scratch.set_len(e, pos + j)?;
-                }
-                // REFERENCE SEEDING (see the full-accept branch): seed = TRUE hidden of the
-                // bonus's predecessor (verify col j-1); no pseudo pass.
-                e.copy_into(&mut h_seed_buf, 0, &seed, n_embd)?;
-                e.copy_into(&mut fill_prev, 0, &seed, n_embd)?;
-                pending = Some(bonus);
-                if debug_spec {
-                    eprintln!("  -> PARTIAL(replay-free j={j}, bonus pending, prev-h seed)");
-                }
-            } else if !spec_replay {
-                // ZERO ROUND FOLD (2026-07-10, verify-cost target #3): base+n_acc == 0 — a
-                // pending-less round where nothing was accepted (PMIN0 zero-draft chains after a
-                // replay/commit, or plain 0-accept rounds at round 0). The old path replayed
-                // [bonus] through a FULL m=1 trunk+head forward (the 489us full-vocab head pass
-                // measured at ~0.75/round on PMIN0 configs). Instead: restore the pre-round
-                // snapshot and let the bonus ride the NEXT round's verify as col 0 — the existing
-                // base=1 pending machinery, bit-identical by the decode-exact verify contract.
-                // Seed: the bonus's predecessor is the last COMMITTED token, whose hidden
-                // fill_prev already carries (same seeding as the 1-token-replay case it replaces).
-                cache.rollback(e, &snap, 0)?;
-                scratch.set_len(e, pos)?;
-                e.copy_into(&mut h_seed_buf, 0, &fill_prev, n_embd)?;
-                pending = Some(bonus);
-                if debug_spec {
-                    eprintln!("  -> ZERO-ROUND FOLD (bonus pending, fill_prev seed)");
-                }
-            } else {
-                // PARTIAL ACCEPT, LEGACY REPLAY (seam MEMRA_SPEC_REPLAY=1 — or j==0: nothing of
-                // this round survives, only possible before the first pending exists, ~round 0):
-                // restore EVERYTHING to the pre-round snapshot (KV truncate to pos + recur
-                // restore), then replay the committed prefix pending? ++ draft[0..n_acc] ++
-                // [bonus] as ONE batched T forward — single weight read, bit-identical to greedy
-                // (the verify-all-columns path is the same math). Commits the bonus with a TRUE
-                // trunk hidden.
-                cache.rollback(e, &snap, 0)?; // accept_len=0: KV len = pos, recur = snapshot
-                let mut replay: Vec<u32> = Vec::with_capacity(base + n_acc + 1);
-                if let Some(b) = pending.take() {
-                    replay.push(b);
-                }
-                replay.extend_from_slice(&draft[0..n_acc]);
-                replay.push(bonus);
-                // Full-stack forward (decode_step_t_core = decode_step_t_h_emb_dev's body):
-                // Predecessor pairing seeds from the PREDECESSOR row (col len-2) — the same-row path takes the
-                // last col exactly as before (byte-identical to the old _h_emb_dev call).
-                let (rl_d, rx) = if self.batched_serving_numeric_class() {
-                    let mut logits = Vec::with_capacity(replay.len() * n_vocab);
-                    let mut hidden = e.uninit(replay.len() * n_embd)?;
-                    for (row, &token) in replay.iter().enumerate() {
-                        let (row_logits, row_hidden) =
-                            self.spec_target_step_h(e, token, &mut *cache)?;
-                        logits.extend_from_slice(&row_logits);
-                        e.dtod_copy_into(&row_hidden, &mut hidden, row * n_embd)?;
-                    }
-                    (e.htod(&logits)?, hidden)
-                } else {
-                    self.decode_step_t_core(e, &replay, pos, &mut *cache, embd_dev, None)?
-                };
-                // last_pred = argmax of the LAST column's logits (predicts the token after `bonus`)
-                // — device argmax + one 4-byte read instead of the full-vocab column dtoh.
-                e.argmax_token_device_col(&rl_d, replay.len() - 1, n_vocab, &mut preds_d, 0)?;
-                last_pred = guard_vocab_token(
-                    e.dtoh_u32(&preds_d)?[0],
-                    n_vocab,
-                    &format!("replay last_pred at round {round} pos={pos}"),
-                )?;
-                if sampled {
-                    let lr0 = replay.len();
-                    let lc = last_col_logits
-                        .as_mut()
-                        .expect("sampled: last_col_logits unset");
-                    e.copy_view_into(
-                        lc,
-                        0,
-                        &rl_d.slice((lr0 - 1) * n_vocab..lr0 * n_vocab),
-                        n_vocab,
-                    )?;
-                }
-                let lr = replay.len();
-                if lr >= 2 {
-                    e.copy_view_into(
-                        &mut h_seed_buf,
-                        0,
-                        &rx.slice((lr - 2) * n_embd..(lr - 1) * n_embd),
-                        n_embd,
-                    )?;
-                } else {
-                    // 1-token replay (round-0 miss): the bonus's predecessor is the OLD
-                    // last_token, whose own-row hidden fill_prev still holds.
-                    e.copy_into(&mut h_seed_buf, 0, &fill_prev, n_embd)?;
-                }
-                // the bonus is COMMITTED here — it becomes the last committed row.
-                let mut rh_last = e.zeros(n_embd)?;
-                e.copy_view_into(
-                    &mut rh_last,
-                    0,
-                    &rx.slice((lr - 1) * n_embd..lr * n_embd),
-                    n_embd,
-                )?;
-                e.copy_into(&mut fill_prev, 0, &rh_last, n_embd)?;
-                if debug_spec {
-                    eprintln!("  -> PARTIAL(replay={replay:?}), next_pred={last_pred}");
-                }
-            }
-            if anatomy_on {
-                // Commit/rollback is normally asynchronous on the primary/head stream. Bound it
-                // only for this diagnostic so it does not disappear into the following draft's
-                // first token readback.
-                e.stream().synchronize()?;
-                ph_commit += commit_started.elapsed().as_secs_f64();
-            }
-            // adaptive-K update (host math, zero syncs): next round drafts accepted-run + 1,
-            // clamped to [floor(pos), k_cap]. cache.pos is post-rollback here (the round's
-            // final position — the floor's position key reads the committed depth). Burst
-            // rounds (`continue` above) draft the captured fixed depth and skip this, exactly
-            // like gemma's burst arm.
-            if adapt {
-                let fl_now = floor_at(cache.pos);
-                kc = (n_acc + 1).clamp(fl_now.min(k_cap), k_cap);
-            }
-            ph_mark(&mut ph_rest, phase_on);
-            if let Some(t0) = round_t0 {
-                let ms = t0.elapsed().as_secs_f64() * 1e3;
-                ROUND_MS.fetch_add((ms * 1e3) as u64, std::sync::atomic::Ordering::Relaxed);
-                let n = ROUND_N.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
-                if n.is_multiple_of(32) {
-                    eprintln!(
-                        "[spec-round] rounds={n} avg round wall={:.2} ms (emitted={} drafted so far)",
-                        ROUND_MS.load(std::sync::atomic::Ordering::Relaxed) as f64 / 1e3 / n as f64,
-                        out.len()
-                    );
-                }
-            }
-            round += 1;
-            // sse-cadence: this round's accepted drafts + bonus are committed (out is
-            // append-only past step 4) — flush at round cadence.
-            keep_going = flush_commit(&mut on_commit, &out, &mut flushed);
+            keep_going = self
+                .spec_round_finish(e, &mut rs, prep, tlogits_d, vx, &mut on_commit)?
+                .keep_going;
         }
+        let SpecRoundState {
+            cache,
+            scratch,
+            constraint,
+            dctx,
+            mut out,
+            mut flushed,
+            mut pending,
+            mut sctr,
+            uctr,
+            pen_hist,
+            last_pred,
+            last_col_logits,
+            fill_prev,
+            total_drafted,
+            total_accepted,
+            round,
+            st_drafted,
+            st_accepted,
+            st_len_hist,
+            st_full,
+            dm_clone_ns,
+            dm_rounds,
+            dm_cuts,
+            dm_cut_tokens,
+            ph_draft,
+            ph_verify,
+            ph_rest,
+            ph_wait,
+            ph_commit,
+            ..
+        } = rs;
         // sse-cadence: nothing below appends to `out`; flush any remainder (defensive).
         // (verdict ignored — the burst is over either way; the session tail runs unchanged.)
         let _ = flush_commit(&mut on_commit, &out, &mut flushed);
@@ -15317,6 +14057,1717 @@ impl HybridModel {
         }
         out.truncate(max_new);
         Ok((out, total_drafted, total_accepted))
+    }
+
+    /// Entry gate of one MTP spec round (`generate_spec_inner2`), before anything of the round
+    /// runs. None ends the burst at this round boundary.
+    fn spec_round_gate(
+        &self,
+        e: &Engine,
+        rs: &mut SpecRoundState<'_, '_>,
+    ) -> Option<SpecRoundGate> {
+        let SpecRoundCfg { k, adapt, .. } = rs.cfg;
+        // CONTEXT-EDGE GUARD (memra#659): a round writes the verify window (the pending
+        // token plus up to k_this drafts) at rows cache.pos.., and a sampled tail commits
+        // its bonus one row past that. A round that cannot land inside the cache ends the
+        // burst here, at a round boundary, before anything of the round runs (the same exit
+        // as the admission yield); the worker's `committed + k + 3 >= cache_max_ctx` check
+        // then finishes the request ContextFull. Without it a request whose budget spans its
+        // whole cap (max_tokens omitted) wrote its last round past the cache: the
+        // out-of-bounds KV row poisoned later verifies and the deferred draft-KV fill
+        // asserted. The glm5 route's guard has the same form.
+        if rs.cache.pos + (if adapt { rs.kc } else { k }) + 2 > rs.cache.max_ctx {
+            return None;
+        }
+        // GRAPH-LAUNCH HEADROOM GUARD (see GRAPH_LAUNCH_MIN_FREE): below the floor,
+        // every captured-graph arm in this round yields to its byte-identical eager
+        // twin instead of feeding cuGraphLaunch a card it segfaults on.
+        let graph_round_ok = graph_launch_headroom_ok(e);
+        if !graph_round_ok && !rs.graph_guard_noted {
+            rs.graph_guard_noted = true;
+            eprintln!(
+                "[spec] graph replay suspended: driver free below the {}MB launch floor \
+                 (eager arms serve; cuGraphLaunch segfaults into an exhausted card)",
+                GRAPH_LAUNCH_MIN_FREE / (1 << 20)
+            );
+        }
+        // MEMRA_SPEC_ROUND_PROF=1: wall of the WHOLE round against the pieces we already
+        // instrument. Needed because the parts do not add up: the draft step measures 1.27 ms
+        // ([spec-anatomy] glue 92 / attn 280 / ffn 222 / head 670 us) and the t=2 verify walk
+        // 25.6 ms ([tcol-prof] attn 10.1 + ffn 15.3), yet a K=1 round takes 177 ms on the
+        // step37 TP2 stack. This prints where the other ~150 ms lives.
+        let round_prof =
+            ROUND_PROF.get_or_init(|| std::env::var("MEMRA_SPEC_ROUND_PROF").as_deref() == Ok("1"));
+        let round_t0 = round_prof.then(std::time::Instant::now);
+        Some(SpecRoundGate {
+            graph_round_ok,
+            round_t0,
+        })
+    }
+
+    /// One MTP spec round up to the target verify: the pre-round snapshot, the draft chain
+    /// (pending carry, adaptive K, the p-min cut, the draft-side grammar mask) and the verify
+    /// batch with its replay-free checkpoint, in the serial round's exact device order.
+    fn spec_round_prepare(
+        &self,
+        e: &Engine,
+        rs: &mut SpecRoundState<'_, '_>,
+        gate: SpecRoundGate,
+    ) -> Result<SpecRoundPrep, Box<dyn std::error::Error>> {
+        let SpecRoundCfg {
+            k,
+            n_embd,
+            d_vocab,
+            n_vocab,
+            mtp,
+            embd_dev,
+            sp,
+            sp_temp,
+            sp_seed,
+            sampled,
+            pen_on,
+            spec_replay,
+            p_min,
+            pmin0,
+            adapt,
+            dmask_on,
+            dmask_words,
+            s_key,
+            pure_temp,
+            s_capturable,
+            stream_active,
+            vg_t_cap,
+            pp_split,
+            debug_spec,
+            phase_on,
+            ..
+        } = rs.cfg;
+        let SpecRoundGate {
+            graph_round_ok,
+            round_t0,
+        } = gate;
+        let SpecRoundState {
+            cache,
+            scratch,
+            constraint,
+            dctx,
+            round,
+            sctr,
+            pen_hist,
+            pen_hist_d,
+            last_token,
+            pending,
+            h_seed_buf,
+            snap,
+            kc,
+            draft_logits,
+            draft_stats,
+            perturb_buf,
+            dm_clone_ns,
+            dm_rounds,
+            ph_draft,
+            ph_rest,
+            ph_t,
+            ..
+        } = rs;
+        let cache: &mut Cache = cache;
+        let scratch: &mut MtpScratch = scratch;
+        let pos = cache.pos; // #tokens committed (EXCLUDES a pending bonus)
+        cache.snapshot_into(e, snap)?; // §C: snapshot BEFORE draft+verify
+        ph_mark(ph_t, ph_rest, phase_on);
+
+        // --- 1. DRAFT k tokens with the NextN head (autoregressive, T=1 each) ---
+        // p-min semantics (both paths): stop the chain early when the head's confidence
+        // (its softmax MAX: for a greedy pick the pick's own probability) drops below p_min.
+        // The statistic never depends on a sampled draw (memra#673): the just-drafted token
+        // is DISCARDED, but its scratch append stands (identical to the eager chain's
+        // ordering). j==0 drafts unless PMIN0 arms a zero-draft round over a pending bonus.
+        let base0 = if pending.is_some() { 1usize } else { 0usize };
+        // fixed draft length by default; MEMRA_SPEC_ADAPT=1 drafts at last round's
+        // accepted run + 1 (the gemma law — see the setup block above the loop).
+        let k_this = if adapt { *kc } else { k };
+        let mut draft: Vec<u32> = Vec::with_capacity(k);
+        let mut draft_idx: Vec<u32> = Vec::with_capacity(k); // trimmed-vocab ids (== draft when untrimmed)
+        {
+            // Round-start draft-KV sync (BOTH paths). Persistent: truncate/align to the committed
+            // history — slots 0..P hold entries for the tokens before last_token@P (P = pos +
+            // base0 - 1); this single set_len IS the draft-side rollback (drops last round's
+            // rejected drafts and p-min extras via the len mechanism).
+            scratch.set_len(e, pos + base0 - 1)?;
+            // dcw door: a captured chain appends k_this device-counter rows (plus the
+            // pseudo-seed replay) with no host intervention; any ring rebase those appends
+            // could need happens HERE, host-side, before the replays. The eager arm keeps
+            // its own per-step prepare, so this is graph-path-only work.
+            if step35_draft_dcw_on()
+                && (dctx.graph.is_some()
+                    || dctx.graph_s.is_some()
+                    || dctx.chain.is_some()
+                    || dctx.chain_s.is_some())
+            {
+                scratch.ensure_dcw_headroom(e, k_this + 2)?;
+            }
+            if pen_on {
+                // PEN_WINDOW_MAX also bounds the per-round upload and the O(n_hist^2)
+                // device dedup: the serve window is already PEN_WINDOW_MAX, and this
+                // defensive min also bounds non-server callers.
+                let win = sp.penalty_last_n.min(PEN_WINDOW_MAX);
+                let w0 = pen_hist.len().saturating_sub(win);
+                *pen_hist_d = Some(e.htod_u32_v(&pen_hist[w0..])?);
+            }
+            if sampled {
+                draft_logits.clear();
+                draft_stats.clear();
+            }
+            // DRAFT-SIDE GRAMMAR MASK: clone the committed grammar state ONCE per round; each
+            // position's mask is computed on that clone and advanced by the PROPOSED token. The
+            // real state moves only on emission (verify's job), so the emitted stream is
+            // unchanged — the mask only removes tokens the verify would have truncated anyway.
+            let mut dmask_live = dmask_on;
+            if dmask_live {
+                let t_c = std::time::Instant::now();
+                constraint
+                    .as_deref_mut()
+                    .unwrap()
+                    .draft_begin()
+                    .map_err(|e2| format!("constraint: {e2}"))?;
+                *dm_clone_ns += t_c.elapsed().as_nanos();
+                *dm_rounds += 1;
+            }
+            if let (false, Some(cg)) = (sampled || pen_on || !graph_round_ok, &dctx.chain) {
+                // GREEDY CHAIN GRAPH (lane/step37-draft-graph-serving-20260830): the
+                // eager multi-head chain's EXACT launch order — step j rewinds head
+                // (j % heads)'s plane to the committed length and replays rows 0..=j —
+                // with each row's whole head-forward as ONE graph launch. The chain
+                // POLICY (head choice, prefix length, stored-seed feed) is host-side,
+                // identical to `mtp_chain_forward_dev`, so graph-vs-eager drafts are
+                // bit-identical by construction (same launcher, same bucket — the dcw
+                // parity contract). Interior rows launch the head-less graph: their
+                // logits are dead in the eager chain too, so the consumed bytes match.
+                let heads_n = self.mtp_head_count();
+                let committed = pos + base0 - 1;
+                let mut chain_tokens: Vec<u32> = vec![*last_token];
+                let mut chain_seed_bufs: Vec<CudaSlice<f32>> = vec![e.clone_dtod(h_seed_buf)?];
+                for j in 0..k_this {
+                    let index = mtp_chain_head_index(j, heads_n);
+                    if debug_spec {
+                        eprintln!(
+                            "[mtp-chain-step] round={round} j={j} head={index} \
+                             replay_rows={} arm=graph",
+                            chain_tokens.len(),
+                        );
+                    }
+                    scratch.set_plane_len(e, index, committed)?;
+                    e.set_i32_one(&mut dctx.g_pos, (committed + 1) as i32)?;
+                    for row in 0..=j {
+                        e.set_u32_one(&mut dctx.g_tok, chain_tokens[row])?;
+                        e.copy_into(&mut dctx.g_seed, 0, &chain_seed_bufs[row], n_embd)?;
+                        if row < j {
+                            cg.interior[index].launch()?;
+                        } else {
+                            // per-position mask upload before the LAST row only — the
+                            // eager chain applies the mask on is_last exactly the same.
+                            if dmask_live
+                                && !upload_draft_mask(
+                                    e,
+                                    constraint.as_deref_mut().unwrap(),
+                                    &mut dctx.g_dmask,
+                                    mtp.d2t.as_ref(),
+                                    d_vocab,
+                                    dmask_words,
+                                )?
+                            {
+                                e.htod_u32_into(&mut dctx.g_dmask, &vec![u32::MAX; dmask_words])?;
+                                dmask_live = false;
+                            }
+                            cg.last[index].launch()?;
+                        }
+                        // host mirror (len_d advanced in-graph by the dcw append)
+                        scratch.plane_mut(index).0.len += 1;
+                    }
+                    let idx = e.dtoh_u32_one(&dctx.g_tok)?;
+                    // #87 SENTINEL TRAP (see the single-head graph arm below).
+                    if (idx as usize) >= d_vocab {
+                        let seed_h = e.dtoh(&dctx.g_seed)?;
+                        let seed_nan = seed_h.iter().filter(|v| v.is_nan()).count();
+                        return Err(format!(
+                            "draft(chain-graph) argmax sentinel 0x{idx:08x} >= d_vocab \
+                         {d_vocab} at round {round} j={j} head={index} pos={pos}: \
+                         head-out NaN {seed_nan}/{n_embd} — refusing to dereference \
+                         the embed row (#87 trap)"
+                        )
+                        .into());
+                    }
+                    // multi-head MTP forbids a trimmed head (validated at entry), so the
+                    // draft index IS the target id; keep the map for uniformity.
+                    let d = match &mtp.d2t {
+                        Some(map) => map[idx as usize],
+                        None => idx,
+                    };
+                    let draft_p = if p_min > 0.0 {
+                        Some(e.dtoh(&dctx.g_p)?[0])
+                    } else {
+                        None
+                    };
+                    if let Some(p) = draft_p
+                        && spec_stops_at(p, j, p_min, pmin0 && base0 == 1)
+                    {
+                        break;
+                    }
+                    draft.push(d);
+                    chain_tokens.push(d);
+                    // step j's h_nextn: the last-row graph self-fed it into g_seed —
+                    // snapshot it as the chain history seed for row j+1 (stream-ordered
+                    // after the launch, exactly the eager chain's chain_seeds push).
+                    chain_seed_bufs.push(e.clone_dtod(&dctx.g_seed)?);
+                    // speculative grammar advance (see the single-head graph arm).
+                    if dmask_live
+                        && !constraint
+                            .as_deref_mut()
+                            .unwrap()
+                            .draft_advance(d)
+                            .map_err(|e2| format!("constraint: {e2}"))?
+                    {
+                        e.htod_u32_into(&mut dctx.g_dmask, &vec![u32::MAX; dmask_words])?;
+                        break;
+                    }
+                }
+            } else if let (true, Some(cg)) = (
+                sampled && s_capturable && dctx.s_key == Some(s_key) && graph_round_ok,
+                &dctx.chain_s,
+            ) {
+                if skey_probe() {
+                    eprintln!(
+                        "[skey] chain=graph_chain_s round={round} capturable={} top_k={} \
+                         top_p={} min_p={} s_key_parked={:?}",
+                        s_capturable as u8, sp.top_k, sp.top_p, sp.min_p, dctx.s_key,
+                    );
+                }
+                // SAMPLED CHAIN GRAPH: the greedy chain arm's launch order with the
+                // sampled last-row graphs — in-graph counter bump + (filtered) gumbel
+                // draw + argmax; q retained per step into q_slots exactly like the
+                // single-head sampled graph arm. Counter continuity: g_ctr host-seeded
+                // to sctr-1 once per ROUND; each step's last-row graph bumps it BEFORE
+                // the perturb, so step j consumes counter sctr+j — the eager Philox
+                // stream (interior rows never draw, never bump).
+                let heads_n = self.mtp_head_count();
+                let committed = pos + base0 - 1;
+                let filtered_stats_in_graph = s_key.filtered();
+                let mut chain_tokens: Vec<u32> = vec![*last_token];
+                let mut chain_seed_bufs: Vec<CudaSlice<f32>> = vec![e.clone_dtod(h_seed_buf)?];
+                e.set_u32_one(&mut dctx.g_ctr, sctr.wrapping_sub(1))?;
+                for j in 0..k_this {
+                    let index = mtp_chain_head_index(j, heads_n);
+                    if debug_spec {
+                        eprintln!(
+                            "[mtp-chain-step] round={round} j={j} head={index} \
+                             replay_rows={} arm=graph_s",
+                            chain_tokens.len(),
+                        );
+                    }
+                    scratch.set_plane_len(e, index, committed)?;
+                    e.set_i32_one(&mut dctx.g_pos, (committed + 1) as i32)?;
+                    for row in 0..=j {
+                        e.set_u32_one(&mut dctx.g_tok, chain_tokens[row])?;
+                        e.copy_into(&mut dctx.g_seed, 0, &chain_seed_bufs[row], n_embd)?;
+                        if row < j {
+                            cg.interior[index].launch()?;
+                        } else {
+                            cg.last[index].launch()?;
+                        }
+                        scratch.plane_mut(index).0.len += 1;
+                    }
+                    *sctr += 1; // mirrors the in-graph g_ctr bump (eager parity:
+                    // counts the p-min-discarded token too)
+                    // q retention: ONE async D2D of the persistent head-logits buffer
+                    // into this round's slot j (stream-ordered after the replay).
+                    e.copy_into(&mut dctx.q_slots[j], 0, &dctx.g_q, d_vocab)?;
+                    // FILTERED capture: read the in-graph filter_stats scalars back per
+                    // replay instead of a second full-vocab filter_stats per slot post-
+                    // chain — bit-exact (the values the in-graph perturb consumed) and
+                    // measured worth ~5% of vendor-default serving tok/s at K=3. Before
+                    // the p-min break so the discarded slot's stats land too.
+                    if filtered_stats_in_graph {
+                        draft_stats.push((
+                            e.dtoh(&dctx.g_mx)?[0],
+                            e.dtoh(&dctx.g_th)?[0],
+                            e.dtoh(&dctx.g_z)?[0],
+                        ));
+                    }
+                    let idx = e.dtoh_u32_one(&dctx.g_tok)?;
+                    // #87 SENTINEL TRAP (see the single-head graph arms).
+                    if (idx as usize) >= d_vocab {
+                        let seed_h = e.dtoh(&dctx.g_seed)?;
+                        let seed_nan = seed_h.iter().filter(|v| v.is_nan()).count();
+                        return Err(format!(
+                            "draft(chain-graph-sampled) argmax sentinel 0x{idx:08x} >= \
+                         d_vocab {d_vocab} at round {round} j={j} head={index} pos={pos}: \
+                         head-out NaN {seed_nan}/{n_embd} — refusing to dereference the \
+                         embed row (#87 trap)"
+                        )
+                        .into());
+                    }
+                    let d = match &mtp.d2t {
+                        Some(map) => map[idx as usize],
+                        None => idx,
+                    };
+                    draft_idx.push(idx);
+                    if p_min > 0.0 {
+                        let p = e.dtoh(&dctx.g_p)?[0];
+                        if spec_stops_at(p, j, p_min, pmin0 && base0 == 1) {
+                            break;
+                        }
+                    }
+                    draft.push(d);
+                    chain_tokens.push(d);
+                    chain_seed_bufs.push(e.clone_dtod(&dctx.g_seed)?);
+                }
+                // PURE-TEMP accept path: stats per used slot recomputed from the RETAINED
+                // q with the SAME filter_stats program the eager arm runs (deployment-
+                // keyed coop/plain choice, same input bits). The FILTERED graph read its
+                // stats back per replay above.
+                if !filtered_stats_in_graph {
+                    for j in 0..draft.len().max(draft_idx.len()) {
+                        let rows0 = e.htod_i32(&[0])?;
+                        let (mut th_d, mut z_d, mut mx_d) = (e.zeros(1)?, e.zeros(1)?, e.zeros(1)?);
+                        e.filter_stats(
+                            &dctx.q_slots[j],
+                            d_vocab,
+                            &rows0,
+                            &mut th_d,
+                            &mut z_d,
+                            &mut mx_d,
+                            d_vocab,
+                            1,
+                            sp_temp,
+                            sp.top_k,
+                            sp.top_p,
+                            sp.min_p,
+                        )?;
+                        draft_stats.push((e.dtoh(&mx_d)?[0], e.dtoh(&th_d)?[0], e.dtoh(&z_d)?[0]));
+                    }
+                }
+            } else if let (false, Some(gr)) = (sampled || pen_on || !graph_round_ok, &dctx.graph) {
+                // GRAPH DRAFT: one dispatch per drafted token. The chain feeds itself on-device
+                // (in-graph argmax -> tok_d -> next replay's embed; h_nextn -> h_seed_d; pos_d
+                // inc'd in-graph); the host only reads 4B token (+4B p) and decides the break.
+                e.set_i32_one(&mut dctx.g_pos, (pos + base0) as i32)?;
+                e.set_u32_one(&mut dctx.g_tok, *last_token)?;
+                e.copy_into(&mut dctx.g_seed, 0, h_seed_buf, n_embd)?;
+                for j in 0..k_this {
+                    // per-position mask upload (contents only — the graph's baked pointer is
+                    // dctx.g_dmask). All-ones once masking goes dead mid-chain, so the captured
+                    // mask node degrades to a no-op ban instead of needing a second graph.
+                    if dmask_live
+                        && !upload_draft_mask(
+                            e,
+                            constraint.as_deref_mut().unwrap(),
+                            &mut dctx.g_dmask,
+                            mtp.d2t.as_ref(),
+                            d_vocab,
+                            dmask_words,
+                        )?
+                    {
+                        // no draft-vocab row is grammar-legal here (a trimmed FR-Spec head can
+                        // genuinely miss the legal set): neutralize the captured mask node and
+                        // finish the chain UNMASKED — exactly pre-lane behaviour, never worse.
+                        e.htod_u32_into(&mut dctx.g_dmask, &vec![u32::MAX; dmask_words])?;
+                        dmask_live = false;
+                    }
+                    gr.launch()?;
+                    scratch.kv.len += 1; // host mirror (len_d advanced in-graph)
+                    let idx = e.dtoh_u32_one(&dctx.g_tok)?;
+                    // #87 SENTINEL TRAP: an all-NaN head-logits row leaves the device argmax's
+                    // init sentinel (0x7FFFFFFF) in g_tok — feeding it onward dereferences
+                    // embed_row(sentinel) = table + ~4.6TB (never mapped) inside the NEXT graph
+                    // replay's embed node, and the MMU fault kills the CUDA context for the
+                    // whole process (research/pp2spec-crash-20260807: 3 coredumps, byte-exact
+                    // VA arithmetic). Refuse loudly instead; the diagnostics name the first-NaN
+                    // buffer (g_seed = the verify-side handoff vs head-side compute).
+                    if (idx as usize) >= d_vocab {
+                        // g_seed is SELF-FED (the replay writes h_nextn back into it), so it
+                        // reads as the head's OUTPUT at j; h_seed_buf is the round's INPUT
+                        // seed, untouched since the round-start copy — the pair discriminates
+                        // "seed arrived poisoned" from "head forward produced NaN".
+                        let seed_h = e.dtoh(&dctx.g_seed)?;
+                        let seed_nan = seed_h.iter().filter(|v| v.is_nan()).count();
+                        let in_h = e.dtoh(h_seed_buf)?;
+                        let in_nan = in_h.iter().filter(|v| v.is_nan()).count();
+                        return Err(format!(
+                            "draft(graph) argmax sentinel 0x{idx:08x} >= d_vocab {d_vocab} at \
+                         round {round} j={j} pos={pos}: head-out NaN {seed_nan}/{n_embd}, \
+                         round-input-seed NaN {in_nan}/{n_embd} — refusing to dereference \
+                         the embed row (#87 trap)"
+                        )
+                        .into());
+                    }
+                    // trimmed draft vocab -> target token id (identity when no d2t map)
+                    let d = match &mtp.d2t {
+                        Some(map) => map[idx as usize],
+                        None => idx,
+                    };
+                    let draft_p = if p_min > 0.0 {
+                        Some(e.dtoh(&dctx.g_p)?[0])
+                    } else {
+                        None
+                    };
+                    if let Some(p) = draft_p
+                        && spec_stops_at(p, j, p_min, pmin0 && base0 == 1)
+                    {
+                        break;
+                    }
+                    draft.push(d);
+                    // with a trimmed head the NEXT embed must read the TARGET id, not the draft
+                    // index the argmax wrote — patch the persistent token buffer (4B htod).
+                    if d != idx {
+                        e.set_u32_one(&mut dctx.g_tok, d)?;
+                    }
+                    // advance the SPECULATIVE state with the proposal; a dead chain drops to
+                    // unmasked drafting for the remaining positions (verify still arbitrates).
+                    // speculative advance; a chain the grammar can no longer follow (EOS
+                    // proposed) ends here. The captured mask node always runs, so a dead chain
+                    // leaves the buffer NEUTRAL (all-ones = ban nothing) before it exits.
+                    if dmask_live
+                        && !constraint
+                            .as_deref_mut()
+                            .unwrap()
+                            .draft_advance(d)
+                            .map_err(|e2| format!("constraint: {e2}"))?
+                    {
+                        e.htod_u32_into(&mut dctx.g_dmask, &vec![u32::MAX; dmask_words])?;
+                        break;
+                    }
+                }
+            // REGIME RE-TEST (lane/graph-s-key-exactness-20260819, widened by
+            // lane/step37-draft-graph-serving-20260830): the sampled graph is legal ONLY
+            // in the regime it was captured in. The condition used to read
+            // `(sampled, &dctx.graph_s)` and trusted `s_key` to have dropped anything
+            // else — which it could not, because the key omitted the filters. Both
+            // halves are enforced: the key drops a stale graph, and this site refuses to
+            // launch one whose key differs or whose regime is uncapturable (penalties).
+            } else if let (true, Some(gr)) = (
+                sampled && s_capturable && dctx.s_key == Some(s_key) && graph_round_ok,
+                &dctx.graph_s,
+            ) {
+                if skey_probe() {
+                    eprintln!(
+                        "[skey] chain=graph_s round={round} pure_temp={} capturable={} \
+                         top_k={} top_p={} min_p={} s_key_parked={:?}",
+                        pure_temp as u8,
+                        s_capturable as u8,
+                        sp.top_k,
+                        sp.top_p,
+                        sp.min_p,
+                        dctx.s_key,
+                    );
+                }
+                // SAMPLED GRAPH DRAFT: one replay per drafted token — head forward + gumbel +
+                // argmax in ONE dispatch; the host reads 4B token (+4B p), D2Ds q into slot j,
+                // and decides the break. Event-counter continuity: g_ctr is host-seeded to
+                // sctr-1 ONCE per round (outside the graph); the in-graph bump runs BEFORE the
+                // perturb, so replay j consumes counter sctr+j — exactly the eager arm's Philox
+                // stream. Host sctr advances in lockstep (computed, no readback needed).
+                e.set_i32_one(&mut dctx.g_pos, (pos + base0) as i32)?;
+                e.set_u32_one(&mut dctx.g_tok, *last_token)?;
+                e.copy_into(&mut dctx.g_seed, 0, h_seed_buf, n_embd)?;
+                e.set_u32_one(&mut dctx.g_ctr, sctr.wrapping_sub(1))?;
+                let filtered_stats_in_graph = s_key.filtered();
+                for j in 0..k_this {
+                    gr.launch()?;
+                    scratch.kv.len += 1; // host mirror (len_d advanced in-graph)
+                    *sctr += 1; // mirrors the in-graph g_ctr bump (eager parity:
+                    // counts the p-min-discarded token too)
+                    // q retention: ONE async D2D of the persistent head-logits buffer into this
+                    // round's slot j (stream-ordered after the replay, before the next one).
+                    e.copy_into(&mut dctx.q_slots[j], 0, &dctx.g_q, d_vocab)?;
+                    // FILTERED capture: the replay's own filter_stats node already computed
+                    // (th, z, mx) — read the three scalars back instead of paying a SECOND
+                    // full-vocab filter_stats per slot post-chain (measured ~5% of vendor-
+                    // default serving tok/s at K=3). Bit-exact by construction: these are
+                    // the very values the in-graph perturb consumed. Read BEFORE the p-min
+                    // break so the discarded slot's stats land too (accept-path indexing).
+                    if filtered_stats_in_graph {
+                        draft_stats.push((
+                            e.dtoh(&dctx.g_mx)?[0],
+                            e.dtoh(&dctx.g_th)?[0],
+                            e.dtoh(&dctx.g_z)?[0],
+                        ));
+                    }
+                    let idx = e.dtoh_u32_one(&dctx.g_tok)?;
+                    // #87 SENTINEL TRAP (see the greedy graph arm above).
+                    if (idx as usize) >= d_vocab {
+                        let seed_h = e.dtoh(&dctx.g_seed)?;
+                        let seed_nan = seed_h.iter().filter(|v| v.is_nan()).count();
+                        return Err(format!(
+                            "draft(graph-sampled) argmax sentinel 0x{idx:08x} >= d_vocab \
+                         {d_vocab} at round {round} j={j} pos={pos}: round-seed NaN \
+                         {seed_nan}/{n_embd} — refusing to dereference the embed row \
+                         (#87 trap)"
+                        )
+                        .into());
+                    }
+                    let d = match &mtp.d2t {
+                        Some(map) => map[idx as usize],
+                        None => idx,
+                    };
+                    draft_idx.push(idx);
+                    if p_min > 0.0 {
+                        let p = e.dtoh(&dctx.g_p)?[0];
+                        if spec_stops_at(p, j, p_min, pmin0 && base0 == 1) {
+                            break;
+                        }
+                    }
+                    draft.push(d);
+                    // trimmed head: the NEXT embed must read the TARGET id (see the greedy arm).
+                    if d != idx {
+                        e.set_u32_one(&mut dctx.g_tok, d)?;
+                    }
+                }
+                // PURE-TEMP accept path: fill draft_stats per used slot post-chain (the
+                // stats degenerate to th=0 / full-Z; one filter_stats launch per slot).
+                // The FILTERED graph read its stats back per replay above.
+                if !filtered_stats_in_graph {
+                    for j in 0..draft.len().max(draft_idx.len()) {
+                        let rows0 = e.htod_i32(&[0])?;
+                        let (mut th_d, mut z_d, mut mx_d) = (e.zeros(1)?, e.zeros(1)?, e.zeros(1)?);
+                        e.filter_stats(
+                            &dctx.q_slots[j],
+                            d_vocab,
+                            &rows0,
+                            &mut th_d,
+                            &mut z_d,
+                            &mut mx_d,
+                            d_vocab,
+                            1,
+                            sp_temp,
+                            sp.top_k,
+                            sp.top_p,
+                            sp.min_p,
+                        )?;
+                        draft_stats.push((e.dtoh(&mx_d)?[0], e.dtoh(&th_d)?[0], e.dtoh(&z_d)?[0]));
+                    }
+                }
+            } else {
+                if skey_probe() && sampled {
+                    eprintln!(
+                        "[skey] chain=eager round={round} pure_temp={} top_k={} \
+                         top_p={} min_p={} s_key_parked={:?}",
+                        pure_temp as u8, sp.top_k, sp.top_p, sp.min_p, dctx.s_key,
+                    );
+                }
+                // EAGER DRAFT (fallback: MoE head/trunk, huge k, MEMRA_SPEC_NOGRAPH, capture fail).
+                let chain_heads = !self.mtp_extra.is_empty();
+                let mut e_tok = *last_token;
+                let mut d_seed = e.clone_dtod(h_seed_buf)?;
+                let mut chain_tokens = if chain_heads {
+                    vec![*last_token]
+                } else {
+                    Vec::new()
+                };
+                let mut chain_seeds = if chain_heads {
+                    vec![e.clone_dtod(h_seed_buf)?]
+                } else {
+                    Vec::new()
+                };
+                for j in 0..k_this {
+                    // GPU-ARGMAX DRAFT (2026-07-03): device logits + device argmax + 4-byte token
+                    // read instead of the ~600KB full-vocab dtoh + host argmax per draft token.
+                    let mtp_pos = pos + base0 + j;
+                    // draft-side grammar mask (eager twin of the graph arm's in-graph node).
+                    // A position with no legal draft-vocab row drops to unmasked drafting for
+                    // the rest of the chain (pre-lane behaviour; verify still arbitrates).
+                    if dmask_live {
+                        dmask_live = upload_draft_mask(
+                            e,
+                            constraint.as_deref_mut().unwrap(),
+                            &mut dctx.g_dmask,
+                            mtp.d2t.as_ref(),
+                            d_vocab,
+                            dmask_words,
+                        )?;
+                    }
+                    let mask = if dmask_live {
+                        Some((&dctx.g_dmask, dmask_words))
+                    } else {
+                        None
+                    };
+                    let (dl_d, h_nextn) = if chain_heads {
+                        if debug_spec {
+                            eprintln!(
+                                "[mtp-chain-step] round={round} j={j} head={} replay_rows={}",
+                                mtp_chain_head_index(j, self.mtp_head_count()),
+                                chain_tokens.len(),
+                            );
+                        }
+                        self.mtp_chain_forward_dev(
+                            e,
+                            &chain_tokens,
+                            &chain_seeds,
+                            &mut *scratch,
+                            pos + base0 - 1,
+                            embd_dev,
+                            mask,
+                        )?
+                    } else {
+                        self.mtp_head_forward_dev(
+                            e,
+                            mtp,
+                            e_tok,
+                            &d_seed,
+                            &mut *scratch,
+                            mtp_pos,
+                            embd_dev,
+                            mask,
+                        )?
+                    };
+                    let tok_d = if sampled {
+                        // FILTERED Gumbel-max: stats -> masked perturb -> argmax = one draw from
+                        // the filtered softmax (filters off => th=0, exact v1 semantics).
+                        if perturb_buf.is_none() {
+                            *perturb_buf = Some(e.zeros(d_vocab.max(n_vocab))?);
+                        }
+                        let mut q_row = e.clone_dtod(&dl_d)?; // retained q (penalized when on)
+                        if pen_on {
+                            let h = pen_hist_d.as_ref().unwrap();
+                            let nh = h.len();
+                            e.penalize_logits(
+                                &mut q_row,
+                                h,
+                                nh,
+                                sp.penalty_repeat,
+                                sp.penalty_freq,
+                                sp.penalty_present,
+                                d_vocab,
+                            )?;
+                        }
+                        let rows0 = e.htod_i32(&[0])?;
+                        let (mut th_d, mut z_d, mut mx_d) = (e.zeros(1)?, e.zeros(1)?, e.zeros(1)?);
+                        e.filter_stats(
+                            &q_row, d_vocab, &rows0, &mut th_d, &mut z_d, &mut mx_d, d_vocab, 1,
+                            sp_temp, sp.top_k, sp.top_p, sp.min_p,
+                        )?;
+                        let (th, z, mx) = (e.dtoh(&th_d)?[0], e.dtoh(&z_d)?[0], e.dtoh(&mx_d)?[0]);
+                        let pb = perturb_buf.as_mut().unwrap();
+                        e.gumbel_perturb_filtered(
+                            &q_row, pb, d_vocab, sp_seed, *sctr, sp_temp, mx, th,
+                        )?;
+                        *sctr += 1;
+                        draft_logits.push(q_row);
+                        draft_stats.push((mx, th, z));
+                        e.argmax_token_device(pb, d_vocab)?
+                    } else {
+                        e.argmax_token_device(&dl_d, d_vocab)?
+                    };
+                    let idx = e.dtoh_u32_one(&tok_d)?;
+                    // #87 SENTINEL TRAP (eager twin — see the graph arm). Extra diagnostics
+                    // here because the eager chain's operands are all readable: dl_d (the head
+                    // logits row) and d_seed (this step's h_seed) name the first-NaN buffer.
+                    if (idx as usize) >= d_vocab {
+                        let dl_h = e.dtoh(&dl_d)?;
+                        let dl_nan = dl_h.iter().filter(|v| v.is_nan()).count();
+                        let seed_h = if chain_heads {
+                            e.dtoh(chain_seeds.last().unwrap())?
+                        } else {
+                            e.dtoh(&d_seed)?
+                        };
+                        let seed_nan = seed_h.iter().filter(|v| v.is_nan()).count();
+                        return Err(format!(
+                            "draft(eager) argmax sentinel 0x{idx:08x} >= d_vocab {d_vocab} at \
+                         round {round} j={j} pos={pos}: head-logits NaN {dl_nan}/{d_vocab}, \
+                         step-seed NaN {seed_nan}/{n_embd} — refusing to dereference the \
+                         embed row (#87 trap)"
+                        )
+                        .into());
+                    }
+                    let d = match &mtp.d2t {
+                        Some(map) => map[idx as usize],
+                        None => idx,
+                    };
+                    if sampled {
+                        draft_idx.push(idx);
+                    }
+                    // p-min statistic: greedy = the pick's probability (== the row max);
+                    // sampled = the row max, draw-independent (memra#673).
+                    let draft_p = if p_min > 0.0 {
+                        let p_d = if sampled {
+                            e.max_prob_device(&dl_d, d_vocab)?
+                        } else {
+                            e.prob_of_token_device(&dl_d, &tok_d, d_vocab)?
+                        };
+                        Some(e.dtoh(&p_d)?[0])
+                    } else {
+                        None
+                    };
+                    if let Some(p) = draft_p
+                        && spec_stops_at(p, j, p_min, pmin0 && base0 == 1)
+                    {
+                        break;
+                    }
+                    draft.push(d);
+                    if chain_heads {
+                        chain_tokens.push(d);
+                        chain_seeds.push(h_nextn);
+                    } else {
+                        e_tok = d;
+                        d_seed = h_nextn;
+                    }
+                    // speculative advance; a chain the grammar can no longer follow (EOS
+                    // proposed) ends here — the prefix already proposed still rides verify.
+                    if dmask_live
+                        && !constraint
+                            .as_deref_mut()
+                            .unwrap()
+                            .draft_advance(d)
+                            .map_err(|e2| format!("constraint: {e2}"))?
+                    {
+                        break;
+                    }
+                }
+            }
+        }
+        let k_round = draft.len();
+
+        ph_mark(ph_t, ph_draft, phase_on);
+        // --- 2. VERIFY: one batched target forward. With a pending bonus, it rides as col 0
+        //         (committing its KV/recur inside the SAME weight read); drafts follow. ---
+        let verify_tokens: Vec<u32> = match *pending {
+            Some(b) => {
+                let mut v = Vec::with_capacity(k_round + 1);
+                v.push(b);
+                v.extend_from_slice(&draft);
+                v
+            }
+            None => draft.clone(),
+        };
+        let base = if pending.is_some() { 1 } else { 0 };
+        // ckpt (REPLAY-FREE partial accept): retain per-layer state-rebuild inputs alongside
+        // the verify. Pure buffer keep-alives + dtod clones — kernel work is unchanged.
+        let ckpt = if spec_replay {
+            None
+        } else {
+            Some(VerifyCkpt::new(self.layers.len()))
+        };
+        let poolable =
+            !(verify_tokens.len() <= vg_t_cap && graph_round_ok) && !stream_active && !pp_split;
+        Ok(SpecRoundPrep {
+            verify_tokens,
+            pos,
+            ckpt,
+            poolable,
+            graph_round_ok,
+            round_t0,
+            draft,
+            draft_idx,
+            k_round,
+            base,
+        })
+    }
+
+    /// One MTP spec round after the target verify (`tlogits_d`/`vx` = its logits and hiddens
+    /// over `prep.verify_tokens`): the greedy or rejection-sampling accept walk, grammar
+    /// truncation, budget clamp, telemetry, the commit and draft-KV refresh, the pending stash,
+    /// adaptive K and the round-cadence flush.
+    #[allow(clippy::type_complexity)] // allow: one-shot composite type; naming it would hide the shape that matters at the call site
+    fn spec_round_finish(
+        &self,
+        e: &Engine,
+        rs: &mut SpecRoundState<'_, '_>,
+        prep: SpecRoundPrep,
+        tlogits_d: CudaSlice<f32>,
+        vx: CudaSlice<f32>,
+        on_commit: &mut Option<&mut dyn FnMut(&[u32]) -> bool>,
+    ) -> Result<SpecRoundOutcome, Box<dyn std::error::Error>> {
+        let cfg = rs.cfg;
+        let SpecRoundCfg {
+            max_new,
+            n_vocab,
+            d_vocab,
+            n_embd,
+            embd_dev,
+            d2t_dev,
+            sp,
+            sp_temp,
+            sp_seed,
+            sampled,
+            pen_on,
+            spec_replay,
+            refresh,
+            session_mode,
+            adapt,
+            k_cap,
+            stream_active,
+            budget_room,
+            sess_telem,
+            debug_spec,
+            spec_stats,
+            anatomy_on,
+            phase_on,
+            phase_sync,
+            ..
+        } = cfg;
+        let SpecRoundPrep {
+            verify_tokens,
+            pos,
+            ckpt,
+            draft,
+            draft_idx,
+            k_round,
+            base,
+            round_t0,
+            ..
+        } = prep;
+        let SpecRoundState {
+            cache,
+            scratch,
+            constraint,
+            sess_clamp_slot,
+            vg_guard,
+            dctx,
+            out,
+            flushed,
+            round,
+            total_drafted,
+            total_accepted,
+            sctr,
+            uctr,
+            pen_hist,
+            pen_hist_d,
+            last_token,
+            last_pred,
+            pending,
+            last_col_logits,
+            last_col_stats,
+            init_logits_host,
+            h_seed_buf,
+            fill_prev,
+            preds_d,
+            snap,
+            kc,
+            q_full_buf,
+            draft_logits,
+            draft_stats,
+            perturb_buf,
+            sample_tok,
+            col_buf,
+            pcol_buf,
+            st_drafted,
+            st_accepted,
+            st_len_hist,
+            st_full,
+            dm_cuts,
+            dm_cut_tokens,
+            ph_verify,
+            ph_wait,
+            ph_rest,
+            ph_commit,
+            ph_t,
+            ..
+        } = rs;
+        let cache: &mut Cache = cache;
+        let scratch: &mut MtpScratch = scratch;
+        if phase_sync {
+            e.stream().synchronize()?;
+        }
+        ph_mark(ph_t, ph_verify, phase_on);
+        // --- 3. GREEDY ACCEPT (walk prefix, stop at first mismatch) ---
+        // DEVICE-ARGMAX ACCEPT: argmax every verify column ON DEVICE (same 2-pass kernels +
+        // smallest-index tie-break as host argmax, argmax_gate-validated) and read back ONE
+        // [T] u32 — replaces the T x n_vocab f32 dtoh + T host argmaxes per round.
+        // t_pred[j] = target's greedy prediction for the slot after draft[j-1] (j>=1) or after
+        // last_token (j==0). With a pending bonus, col 0 IS the prediction after last_token
+        // (== the bonus), so every index shifts by `base` and last_pred is unused.
+        let t_v = verify_tokens.len();
+        let mut preds: Vec<u32> = Vec::new();
+        if !sampled {
+            for j in 0..t_v {
+                e.argmax_token_device_col(&tlogits_d, j, n_vocab, preds_d, j)?;
+            }
+            preds = e.dtoh_u32(preds_d)?; // <- the verify-GPU wait lands here
+            // #87 SENTINEL TRAP, verify side: a sentinel pred becomes the round's bonus =
+            // next round's last_token = the next chain's embed lookup. Catch it at the
+            // source with the column named — an all-NaN VERIFY column implicates the
+            // stage-split trunk (decode_step_t_core_ppn), not the draft head.
+            if let Some(bad) = preds[..t_v].iter().position(|&p| (p as usize) >= n_vocab) {
+                let col = &tlogits_d.slice(bad * n_vocab..(bad + 1) * n_vocab);
+                let mut probe = e.zeros(n_vocab)?;
+                e.copy_view_into(&mut probe, 0, col, n_vocab)?;
+                let col_h = e.dtoh(&probe)?;
+                let col_nan = col_h.iter().filter(|v| v.is_nan()).count();
+                return Err(format!(
+                    "verify argmax sentinel 0x{:08x} >= n_vocab {n_vocab} at round {round} \
+                     col {bad}/{t_v} pos={pos}: verify-logits col NaN {col_nan}/{n_vocab} \
+                     — the verify TRUNK produced a poisoned column (#87 trap). Run \
+                     MEMRA_SPEC_NAN_SCAN=1 to name the layer that creates it (=2 to split \
+                     that layer into attention and routed MoE). NOT the draft head, and NOT \
+                     the PP stage split this message used to name: pp_cuts() returns None \
+                     without MEMRA_PP_STAGES, so decode_step_t_core_ppn never runs unless \
+                     that variable is set.",
+                    preds[bad]
+                )
+                .into());
+            }
+        }
+        ph_mark(ph_t, ph_wait, phase_on);
+        let t_pred = |j: usize| -> u32 {
+            if j == 0 && base == 0 {
+                *last_pred
+            } else {
+                // GREEDY-ONLY: `preds` is filled under `if !sampled` above. The debug print
+                // used to call this from the sampled arm and panicked the worker; it now goes
+                // through `debug_t_pred0`. Keep the strict index here — in the greedy walk an
+                // out-of-range pred is a real bug, not something to paper over.
+                debug_assert!(
+                    !sampled,
+                    "t_pred is greedy-only: `preds` is empty in the sampled arm"
+                );
+                preds[base + j - 1]
+            }
+        };
+        let (n_acc, bonus) = if !sampled {
+            let mut n_acc = 0usize;
+            #[allow(clippy::needless_range_loop)]
+            // allow: the explicit index loop keeps the offset arithmetic visible and aligned with the device-side indexing
+            for j in 0..k_round {
+                if t_pred(j) == draft[j] {
+                    n_acc += 1;
+                } else {
+                    break;
+                }
+            }
+            // bonus = target's own token at the first non-accepted slot. n_acc in 0..=k; t_pred
+            // is defined for j in 0..=k (j==0 -> last_logits, j>=1 -> col j-1, last col = k-1).
+            (n_acc, t_pred(n_acc))
+        } else {
+            // --- SAMPLED ACCEPT (rejection sampling): u_j < p_j(x_j)/q_j(x_j) walk ---
+            if col_buf.is_none() {
+                *col_buf = Some(e.zeros(n_vocab)?);
+            }
+            // FILTERED p_j: per-verify-col stats (one batched filter_stats call), then the
+            // filtered gather. j==0&&base==0 reads last_col (its own stats row appended).
+            let mut pj = vec![0f32; k_round.max(1)];
+            let mut col_stats: Vec<(f32, f32, f32)> = Vec::new(); // (max, th, z) per verify col used
+            if k_round > 0 {
+                let mut ids: Vec<u32> = Vec::new();
+                let mut rows: Vec<i32> = Vec::new();
+                #[allow(clippy::needless_range_loop)]
+                // allow: the explicit index loop keeps the offset arithmetic visible and aligned with the device-side indexing
+                for j in 0..k_round {
+                    if j > 0 || base == 1 {
+                        ids.push(draft[j]);
+                        rows.push((base + j) as i32 - 1);
+                    }
+                }
+                if !ids.is_empty() {
+                    let nr = rows.len();
+                    // penalties: materialize the used columns into one contiguous penalized
+                    // buffer (rows remapped 0..nr) so stats+gathers see the penalized p.
+                    // penalties: materialize used columns contiguously, penalize all rows in
+                    // one launch, and point stats+gathers at the penalized buffer (rows 0..nr).
+                    let p_rows: Vec<i32> = if pen_on {
+                        (0..nr as i32).collect()
+                    } else {
+                        rows.clone()
+                    };
+                    if pen_on {
+                        if pcol_buf.as_ref().map(|b| b.len()).unwrap_or(0) < nr * n_vocab {
+                            *pcol_buf = Some(e.zeros(nr * n_vocab)?);
+                        }
+                        let pc = pcol_buf.as_mut().unwrap();
+                        for (i2, &r) in rows.iter().enumerate() {
+                            let c = r as usize;
+                            e.copy_view_into(
+                                pc,
+                                i2 * n_vocab,
+                                &tlogits_d.slice(c * n_vocab..(c + 1) * n_vocab),
+                                n_vocab,
+                            )?;
+                        }
+                        let h = pen_hist_d.as_ref().unwrap();
+                        let nh = h.len();
+                        e.penalize_logits_rows(
+                            pc,
+                            h,
+                            nh,
+                            sp.penalty_repeat,
+                            sp.penalty_freq,
+                            sp.penalty_present,
+                            n_vocab,
+                            nr,
+                        )?;
+                    }
+                    let p_src: &CudaSlice<f32> = if pen_on {
+                        pcol_buf.as_ref().unwrap()
+                    } else {
+                        &tlogits_d
+                    };
+                    let rowsd = e.htod_i32(&p_rows)?;
+                    let (mut th_d, mut z_d, mut mx_d) = (e.zeros(nr)?, e.zeros(nr)?, e.zeros(nr)?);
+                    e.filter_stats(
+                        p_src, n_vocab, &rowsd, &mut th_d, &mut z_d, &mut mx_d, n_vocab, nr,
+                        sp_temp, sp.top_k, sp.top_p, sp.min_p,
+                    )?;
+                    let idsd = e.htod_u32_v(&ids)?;
+                    let mut outd = e.zeros(nr)?;
+                    e.softmax_gather_filtered(
+                        p_src, n_vocab, &idsd, &rowsd, &th_d, &z_d, &mut outd, n_vocab, nr, sp_temp,
+                    )?;
+                    let outv = e.dtoh(&outd)?;
+                    let (thv, zv, mxv) = (e.dtoh(&th_d)?, e.dtoh(&z_d)?, e.dtoh(&mx_d)?);
+                    let mut oi = 0usize;
+                    #[allow(clippy::needless_range_loop)]
+                    // allow: the explicit index loop keeps the offset arithmetic visible and aligned with the device-side indexing
+                    for j in 0..k_round {
+                        if j > 0 || base == 1 {
+                            pj[j] = outv[oi];
+                            oi += 1;
+                        }
+                    }
+                    col_stats = (0..nr).map(|i| (mxv[i], thv[i], zv[i])).collect();
+                }
+                if base == 0 {
+                    let lc: &CudaSlice<f32> = if pen_on {
+                        if col_buf.is_none() {
+                            *col_buf = Some(e.zeros(n_vocab)?);
+                        }
+                        let cb = col_buf.as_mut().unwrap();
+                        e.copy_into(
+                            cb,
+                            0,
+                            last_col_logits
+                                .as_ref()
+                                .expect("sampled: last_col_logits unset"),
+                            n_vocab,
+                        )?;
+                        let h = pen_hist_d.as_ref().unwrap();
+                        let nh = h.len();
+                        e.penalize_logits(
+                            cb,
+                            h,
+                            nh,
+                            sp.penalty_repeat,
+                            sp.penalty_freq,
+                            sp.penalty_present,
+                            n_vocab,
+                        )?;
+                        col_buf.as_ref().unwrap()
+                    } else {
+                        last_col_logits
+                            .as_ref()
+                            .expect("sampled: last_col_logits unset")
+                    };
+                    let rows0 = e.htod_i32(&[0])?;
+                    let (mut th_d, mut z_d, mut mx_d) = (e.zeros(1)?, e.zeros(1)?, e.zeros(1)?);
+                    e.filter_stats(
+                        lc, n_vocab, &rows0, &mut th_d, &mut z_d, &mut mx_d, n_vocab, 1, sp_temp,
+                        sp.top_k, sp.top_p, sp.min_p,
+                    )?;
+                    let idsd = e.htod_u32_v(&[draft[0]])?;
+                    let mut outd = e.zeros(1)?;
+                    e.softmax_gather_filtered(
+                        lc, n_vocab, &idsd, &rows0, &th_d, &z_d, &mut outd, n_vocab, 1, sp_temp,
+                    )?;
+                    pj[0] = e.dtoh(&outd)?[0];
+                    *last_col_stats =
+                        Some((e.dtoh(&mx_d)?[0], e.dtoh(&th_d)?[0], e.dtoh(&z_d)?[0]));
+                }
+            }
+            // q source: the graph arms (single-head AND chain) retained the head logits
+            // in the persistent q_slots; the eager arm in per-round draft_logits clones.
+            // Same raw-logit values either way. FILTERED q_j: stats from draft_stats
+            // (eager pushes in-chain; the graph arms compute them post-replay from the
+            // retained q with the same filter_stats program — bit-identical to the
+            // in-graph stats that shaped the draw, keeping ONE accept path).
+            let q_bufs: &[CudaSlice<f32>] = if dctx.graph_s.is_some() || dctx.chain_s.is_some() {
+                &dctx.q_slots
+            } else {
+                draft_logits
+            };
+            let mut n_acc = 0usize;
+            for j in 0..k_round {
+                let (qmx, qth, qz) = draft_stats[j];
+                let idsd = e.htod_u32_v(&[draft_idx[j]])?;
+                let rowsd = e.htod_i32(&[0])?;
+                let thd = e.htod(&[qth])?;
+                let zd = e.htod(&[qz])?;
+                let _ = qmx;
+                let mut outd = e.zeros(1)?;
+                e.softmax_gather_filtered(
+                    &q_bufs[j], d_vocab, &idsd, &rowsd, &thd, &zd, &mut outd, d_vocab, 1, sp_temp,
+                )?;
+                let qj = e.dtoh(&outd)?[0];
+                let u = host_u01(sp_seed, *uctr);
+                *uctr += 1;
+                let accept = (u as f64) * (qj as f64) < pj[j] as f64;
+                // SKEY PROBE: q == 0 for the token the draft actually proposed is the
+                // exactness signature (see `skey_probe`). Impossible when the draft was
+                // drawn from the same filtered distribution the verify reconstructs here;
+                // `u * 0 < p` makes it an UNCONDITIONAL accept whenever p > 0.
+                if skey_probe() && qj == 0.0 {
+                    eprintln!(
+                        "[skey] EXACTNESS q=0 round={round} j={j} draft_tok={} \
+                         draft_idx={} p={:e} u={u} accepted={} th_z={:?}",
+                        draft[j], draft_idx[j], pj[j], accept as u8, draft_stats[j],
+                    );
+                }
+                if accept {
+                    n_acc += 1;
+                } else {
+                    break;
+                }
+            }
+            let bonus = if n_acc == k_round {
+                // FULL ACCEPT: bonus ~ FILTERED softmax at the last verify column.
+                let col = base + k_round - 1;
+                let cb = col_buf.as_mut().unwrap();
+                e.copy_view_into(
+                    cb,
+                    0,
+                    &tlogits_d.slice(col * n_vocab..(col + 1) * n_vocab),
+                    n_vocab,
+                )?;
+                if pen_on {
+                    let h = pen_hist_d.as_ref().unwrap();
+                    let nh = h.len();
+                    e.penalize_logits(
+                        cb,
+                        h,
+                        nh,
+                        sp.penalty_repeat,
+                        sp.penalty_freq,
+                        sp.penalty_present,
+                        n_vocab,
+                    )?;
+                }
+                if perturb_buf.is_none() {
+                    *perturb_buf = Some(e.zeros(d_vocab.max(n_vocab))?);
+                }
+                // STATS MUST COME FROM THIS COLUMN (bug fix 2026-08-05, lane/sampler-
+                // truncation-fix; receipts research/sampfix-20260805/). The old code reused
+                // `col_stats.last()` here, which is ALWAYS the wrong row: the gathered set
+                // covers verify columns 0..=(base+k_round-2) (rows pushed as base+j-1), while
+                // the full-accept bonus samples column base+k_round-1 — exactly ONE PAST the
+                // last gathered column, in both base arms. `th` is a threshold in e-units of
+                // its OWN row's max, so feeding a neighbour's (row_max, th) into
+                // gumbel_perturb_filtered mis-scales every e0 = exp((x-row_max)/T). When the
+                // donor column's peak is higher by more than T*ln(1/th), EVERY id fails
+                // `e0 >= th`, the whole perturbed row becomes -3.4e38, and the 2-pass argmax
+                // falls through to its smallest-index tie-break => token id 0 ("!") spliced
+                // mid-word. Fragility is ordered by how large th is: min_p pins th = min_p
+                // (0.05 => trigger at delta > 2.4 at T=0.8, fires constantly), top_p's
+                // mass-boundary th is smaller, top_k's k-th-largest th smaller still — which
+                // is why the head-to-head matrix saw min_p and top_p corrupt while top_k-only
+                // stayed clean. The pure-temp default regime is immune (th == 0 masks nothing,
+                // and row_max is unused once nothing is masked), so this fix is a byte-level
+                // no-op for the untruncated serve default. One extra one-block filter_stats
+                // per full-accept round is the whole cost.
+                let (mx, th) = {
+                    let rows0 = e.htod_i32(&[0])?;
+                    let (mut th_d, mut z_d, mut mx_d) = (e.zeros(1)?, e.zeros(1)?, e.zeros(1)?);
+                    let cb0 = col_buf.as_ref().unwrap();
+                    e.filter_stats(
+                        cb0, n_vocab, &rows0, &mut th_d, &mut z_d, &mut mx_d, n_vocab, 1, sp_temp,
+                        sp.top_k, sp.top_p, sp.min_p,
+                    )?;
+                    (e.dtoh(&mx_d)?[0], e.dtoh(&th_d)?[0])
+                };
+                let pb = perturb_buf.as_mut().unwrap();
+                let cb2 = col_buf.as_ref().unwrap();
+                e.gumbel_perturb_filtered(cb2, pb, n_vocab, sp_seed, *sctr, sp_temp, mx, th)?;
+                *sctr += 1;
+                let td = e.argmax_token_device(pb, n_vocab)?;
+                e.dtoh_u32_one(&td)?
+            } else {
+                // REJECT at n_acc: bonus ~ norm(max(0, softmax_T(p) - softmax_T(q))).
+                let cb = col_buf.as_mut().unwrap();
+                if n_acc > 0 || base == 1 {
+                    let col = base + n_acc - 1;
+                    e.copy_view_into(
+                        cb,
+                        0,
+                        &tlogits_d.slice(col * n_vocab..(col + 1) * n_vocab),
+                        n_vocab,
+                    )?;
+                } else {
+                    let lc = last_col_logits.as_ref().unwrap();
+                    e.copy_into(cb, 0, lc, n_vocab)?;
+                }
+                if pen_on {
+                    let h = pen_hist_d.as_ref().unwrap();
+                    let nh = h.len();
+                    e.penalize_logits(
+                        cb,
+                        h,
+                        nh,
+                        sp.penalty_repeat,
+                        sp.penalty_freq,
+                        sp.penalty_present,
+                        n_vocab,
+                    )?;
+                }
+                let cb2 = col_buf.as_ref().unwrap();
+                let sc = *sctr;
+                *sctr += 1;
+                // p-stats for the reject column: from col_stats when the col was gathered,
+                // else (j==0&&base==0) from last_col_stats.
+                let p_stats = if n_acc > 0 || base == 1 {
+                    // col index within the gathered set == number of gathered cols before n_acc
+                    let gi = if base == 1 { n_acc } else { n_acc - 1 };
+                    col_stats.get(gi).copied().unwrap_or({
+                        (0.0, 0.0, 1.0) // unreachable: gathered cols always cover the reject slot
+                    })
+                } else {
+                    last_col_stats.expect("sampled: last_col_stats unset at reject")
+                };
+                let q_stats = draft_stats[n_acc];
+                if let Some(map) = &d2t_dev {
+                    if q_full_buf.is_none() {
+                        *q_full_buf = Some(e.zeros(n_vocab)?);
+                    }
+                    let qf = q_full_buf.as_mut().unwrap();
+                    e.scatter_trim_logits(&q_bufs[n_acc], map, qf, d_vocab, n_vocab)?;
+                    let qf2 = q_full_buf.as_ref().unwrap();
+                    e.residual_sample_filtered(
+                        cb2,
+                        Some(qf2),
+                        n_vocab,
+                        sp_temp,
+                        sp_seed,
+                        sc,
+                        p_stats,
+                        q_stats,
+                        sample_tok,
+                    )?;
+                } else {
+                    e.residual_sample_filtered(
+                        cb2,
+                        Some(&q_bufs[n_acc]),
+                        n_vocab,
+                        sp_temp,
+                        sp_seed,
+                        sc,
+                        p_stats,
+                        q_stats,
+                        sample_tok,
+                    )?;
+                }
+                e.dtoh_u32(sample_tok)?[0]
+            };
+            (
+                n_acc,
+                guard_vocab_token(
+                    bonus,
+                    n_vocab,
+                    &format!("sampled verify bonus at round {round} pos={pos} n_acc={n_acc}"),
+                )?,
+            )
+        };
+        // --- 3b. GRAMMAR TRUNCATION (constrained spec, 2026-08-03): the grammar is
+        // an extra rejection rule AFTER the exactness verify (the batched-verify-twins
+        // ordering). Walk the accepted drafts through the grammar in commit order; the
+        // first illegal token truncates acceptance at its slot, and that slot's emission
+        // is recomputed as the MASKED argmax of the target's own verify column — token-
+        // identical to constrained plain greedy decode (an unmasked argmax that is
+        // grammar-legal IS the masked argmax: masking only removes competitors). The
+        // column D2H (~1MB) is paid only when a cut fires — the tight-grammar cost,
+        // measured in acceptance numbers, never hidden.
+        let (n_acc, bonus) = match constraint.as_deref_mut() {
+            None => (n_acc, bonus),
+            Some(c) => {
+                fn ce(e2: String) -> Box<dyn std::error::Error> {
+                    format!("constraint: {e2}").into()
+                }
+                let mut na = n_acc;
+                let mut cut = false;
+                for (j, &d) in draft.iter().enumerate().take(n_acc) {
+                    if c.is_allowed(d).map_err(ce)? {
+                        c.consume(d).map_err(ce)?;
+                    } else {
+                        na = j;
+                        cut = true;
+                        *dm_cut_tokens += n_acc - j;
+                        break;
+                    }
+                }
+                if cut {
+                    *dm_cuts += 1;
+                }
+                let mut bo = bonus;
+                if cut || !c.is_allowed(bo).map_err(ce)? {
+                    let mut row = if na == 0 && base == 0 {
+                        init_logits_host
+                            .clone()
+                            .ok_or("constraint: init logits missing (round-0 cut)")?
+                    } else {
+                        e.dtoh_view(
+                            &tlogits_d.slice((base + na - 1) * n_vocab..(base + na) * n_vocab),
+                        )?
+                    };
+                    c.mask_logits(&mut row).map_err(ce)?;
+                    bo = argmax(&row) as u32;
+                }
+                c.consume(bo).map_err(ce)?;
+                (na, bo)
+            }
+        };
+        // --- 3c. BUDGET CLAMP (MEMRA_SPEC_BUDGET_CLAMP, WP-B day 43, DAY43.md 1.1): a greedy,
+        // unconstrained session round that would commit accepted drafts past the request's
+        // budget is truncated at the budget exactly like the grammar truncation above: the
+        // bonus is the verify's own argmax at that column (the accepted draft there), and the
+        // round commits through the ordinary partial-accept path. The public stream is
+        // unchanged; the parked `committed` then equals it. `budget_room` None: today's.
+        let (n_acc, bonus) = match (
+            budget_room,
+            stream_active || sampled || constraint.is_some(),
+        ) {
+            (Some(room_total), false) => {
+                match budget_clamp_slot(room_total.saturating_sub(out.len()), n_acc, base) {
+                    Some(na) => {
+                        if let Some(slot) = sess_clamp_slot.as_deref_mut() {
+                            *slot = Some((na, n_acc, room_total.saturating_sub(out.len())));
+                        }
+                        (na, draft[na])
+                    }
+                    None => (n_acc, bonus),
+                }
+            }
+            _ => (n_acc, bonus),
+        };
+        *total_drafted += k_round;
+        *total_accepted += n_acc;
+        if let Some(t) = sess_telem {
+            // Greedy, rejection-sampling, and grammar truncation all converge here after
+            // the accept decision is already on host. Fixed-size relaxed atomics only.
+            t.record_round(k_round, n_acc);
+        }
+        if spec_stats {
+            st_len_hist[k_round] += 1;
+            #[allow(clippy::needless_range_loop)]
+            // allow: the explicit index loop keeps the offset arithmetic visible and aligned with the device-side indexing
+            for j in 0..k_round {
+                st_drafted[j] += 1;
+            }
+            #[allow(clippy::needless_range_loop)]
+            // allow: the explicit index loop keeps the offset arithmetic visible and aligned with the device-side indexing
+            for j in 0..n_acc {
+                st_accepted[j] += 1;
+            }
+            if n_acc == k_round {
+                *st_full += 1;
+            }
+        }
+
+        if debug_spec {
+            eprintln!(
+                "[R{round}] pos={pos} out_len={} last_tok={last_token} draft={draft:?} n_acc={n_acc} bonus={bonus} t_pred0={}",
+                out.len(),
+                // NOT `t_pred(0)`: `preds` is filled only under `if !sampled` above, so on a
+                // sampled request round >= 1 (base == 1) indexed an EMPTY vector and PANICKED
+                // the GPU worker thread — a debug flag that killed the exact regime you would
+                // set it to investigate. See `debug_t_pred0`.
+                debug_t_pred0(sampled, base, *last_pred, &preds)
+            );
+        }
+
+        // --- 4. COMMIT: draft[0..n_acc] then bonus (n_acc + 1 tokens) ---
+        let commit_started = std::time::Instant::now();
+        // SESSION MODE: every accepted column is already in the CACHE — `out` must carry all
+        // of them (overshoot past max_new included) or `committed` under-counts the cache rows
+        // and the next turn's continuation seeds one token off (gate-caught 2026-07-05). The
+        // single-shot path keeps the cap (its caller truncates + drops the cache anyway).
+        #[allow(clippy::needless_range_loop)]
+        // allow: the explicit index loop keeps the offset arithmetic visible and aligned with the device-side indexing
+        for j in 0..n_acc {
+            if !session_mode && out.len() >= max_new {
+                break;
+            }
+            out.push(draft[j]);
+        }
+        if pen_on {
+            pen_hist.extend_from_slice(&draft[0..n_acc]);
+            pen_hist.push(bonus);
+        }
+        let bonus_emitted = session_mode || out.len() < max_new;
+        if bonus_emitted {
+            out.push(bonus);
+        }
+        *last_token = bonus;
+
+        // --- 5. ROLLBACK + advance (§C) ---
+        if n_acc == k_round && !spec_replay {
+            // FULL ACCEPT, BONUS FOLD: all verify columns (pending? + drafts) are committed in
+            // cache; the NEW bonus stays PENDING for the next round's verify batch — NO extra
+            // T=1 trunk pass. The next draft chain seeds from the MTP block's h_nextn at the
+            // bonus position: one MTP-block pass (~1/33 trunk cost) replaces the trunk read.
+            // last_pred is dead in the pending path (t_pred reads verify col 0).
+            //
+            // PERSISTENT DRAFT KV, full-accept fill: the chain covered last_token +
+            // draft[0..k_round-2] as INPUTS (slots P..P'-2); draft[k_round-1] (slot P'-1) was
+            // only ever an output, so its entry is MISSING. Fill it from vh_seed — its EXACT
+            // trunk hidden (the last verify column). set_len first: a p-min break may have
+            // left one extra chain append at that slot. Partial accepts need NO fill (the
+            // chain already covered every accepted position; round-start set_len truncates).
+            self.restore_step_tp_kv_verified_prefix(e, &mut *cache, snap, t_v, false)?;
+            let mut vh_seed = e.zeros(n_embd)?;
+            e.copy_view_into(
+                &mut vh_seed,
+                0,
+                &vx.slice((t_v - 1) * n_embd..t_v * n_embd),
+                n_embd,
+            )?;
+            if refresh {
+                // TRUE-HIDDEN REFRESH (2026-07-03, the HANDOVER-listed acceptance lever):
+                // overwrite ALL committed positions' scratch entries with K/V from their EXACT
+                // verify hiddens — the reference engine's mtp_update fills from true hiddens;
+                // the full stack (vx) is already resident from the verify. Replaces both the
+                // chain-approximate entries AND the old last-token-only fill. Acceptance-only
+                // (draft attention quality); exactness stays the verify's job.
+                scratch.set_len(e, pos)?;
+                // PREDECESSOR pairing: row i gets vx[i-1]; row 0 the carried fill_prev
+                // (hidden of the last committed row before this verify batch).
+                let mut vxs = e.zeros(t_v * n_embd)?;
+                e.copy_into(&mut vxs, 0, fill_prev, n_embd)?;
+                if t_v > 1 {
+                    e.copy_view_into(
+                        &mut vxs,
+                        n_embd,
+                        &vx.slice(0..(t_v - 1) * n_embd),
+                        (t_v - 1) * n_embd,
+                    )?;
+                }
+                self.mtp_kv_fill_all(e, &verify_tokens, &vxs, pos, &mut *scratch, embd_dev)?;
+            } else {
+                scratch.set_len(e, pos + base + k_round - 1)?;
+                // predecessor of the last draft = verify col t_v-2 (or fill_prev at t_v==1)
+                let mut hp = e.zeros(n_embd)?;
+                if t_v >= 2 {
+                    e.copy_view_into(
+                        &mut hp,
+                        0,
+                        &vx.slice((t_v - 2) * n_embd..(t_v - 1) * n_embd),
+                        n_embd,
+                    )?;
+                } else {
+                    e.copy_into(&mut hp, 0, fill_prev, n_embd)?;
+                }
+                self.mtp_kv_fill_all(
+                    e,
+                    &[draft[k_round - 1]],
+                    &hp,
+                    pos + base + k_round - 1,
+                    &mut *scratch,
+                    embd_dev,
+                )?;
+            }
+            // REFERENCE SEEDING: no pseudo pass — the next chain's step 0 IS the
+            // reference's (id_last, h_prev) draft row; it appends the bonus's scratch
+            // entry itself. Seed = TRUE hidden of the bonus's predecessor (last verify
+            // col). Saves one MTP-block pass per round on top of the pairing fix.
+            e.copy_into(h_seed_buf, 0, &vh_seed, n_embd)?;
+            e.copy_into(fill_prev, 0, &vh_seed, n_embd)?;
+            *pending = Some(bonus);
+            if debug_spec {
+                eprintln!("  -> FULL ACCEPT (bonus pending, prev-h seed)");
+            }
+        } else if !spec_replay && base + n_acc >= 1 {
+            // PARTIAL ACCEPT, REPLAY-FREE (2026-07-03 — the profiled #1 long-ctx spec cost):
+            // the verify's first j = base+n_acc columns ARE the committed sequence, computed
+            // bit-identically to eager (decode-exact contract) — so KEEP them: KV truncates to
+            // pos+j, recurrent state rebuilds from the VerifyCkpt (same-kernel gdn prefix
+            // re-run / pure state-clone restore), and the bonus stays PENDING exactly like the
+            // full-accept path — the legacy duplicate trunk replay is gone. The next chain
+            // seeds from the MTP pseudo-hidden of the bonus, whose seed = the TRUE verify
+            // hidden of its predecessor (col j-1) — same one-hop pseudo structure as full
+            // accept (never compounds: the next verify recomputes true hiddens for all
+            // committed columns).
+            let j = base + n_acc;
+            // VERIFY-GRAPH SLAB COMMIT: when the captured trunk ran, the linear layers'
+            // column stash was written into the graphs ctx's persistent slabs as in-graph
+            // memcpy nodes, NOT into the per-column VerifyCkpt the cols arm reads — so the
+            // commit must take the slab twin (same semantics, slab-addressed sources). The
+            // ctx states which of the two this round produced via `round_slab`; trusting the
+            // flag rather than the env keeps a round that fell back to the eager walk (a
+            // capture that declined, a t the pool never captured) on the cols arm.
+            let slab_commit = vg_guard
+                .as_ref()
+                .and_then(|g| g.as_ref())
+                .map(|g| g.round_slab)
+                .unwrap_or(false);
+            if slab_commit {
+                self.dspark_commit_prefix_slab(
+                    e,
+                    &mut *cache,
+                    snap,
+                    vg_guard
+                        .as_ref()
+                        .and_then(|g| g.as_ref())
+                        .expect("slab_commit implies a graphs ctx"),
+                    j,
+                )?;
+            } else {
+                self.commit_verified_prefix(e, &mut *cache, snap, ckpt.as_ref().unwrap(), j)?;
+            }
+            let mut seed = e.zeros(n_embd)?;
+            e.copy_view_into(
+                &mut seed,
+                0,
+                &vx.slice((j - 1) * n_embd..j * n_embd),
+                n_embd,
+            )?;
+            // Draft scratch: TRUE-HIDDEN REFRESH of the committed prefix (see the full-accept
+            // branch); without it the chain entries stand and only the tail truncates. Either
+            // way len ends at pos+j so the pseudo append lands at the bonus's slot pos+j
+            // (persistent mode), rope pos+j+1 (chain convention).
+            if refresh {
+                scratch.set_len(e, pos)?;
+                let mut vxs = e.zeros(j * n_embd)?;
+                e.copy_into(&mut vxs, 0, fill_prev, n_embd)?;
+                if j > 1 {
+                    e.copy_view_into(
+                        &mut vxs,
+                        n_embd,
+                        &vx.slice(0..(j - 1) * n_embd),
+                        (j - 1) * n_embd,
+                    )?;
+                }
+                self.mtp_kv_fill_all(e, &verify_tokens[0..j], &vxs, pos, &mut *scratch, embd_dev)?;
+            } else {
+                scratch.set_len(e, pos + j)?;
+            }
+            // REFERENCE SEEDING (see the full-accept branch): seed = TRUE hidden of the
+            // bonus's predecessor (verify col j-1); no pseudo pass.
+            e.copy_into(h_seed_buf, 0, &seed, n_embd)?;
+            e.copy_into(fill_prev, 0, &seed, n_embd)?;
+            *pending = Some(bonus);
+            if debug_spec {
+                eprintln!("  -> PARTIAL(replay-free j={j}, bonus pending, prev-h seed)");
+            }
+        } else if !spec_replay {
+            // ZERO ROUND FOLD (2026-07-10, verify-cost target #3): base+n_acc == 0 — a
+            // pending-less round where nothing was accepted (PMIN0 zero-draft chains after a
+            // replay/commit, or plain 0-accept rounds at round 0). The old path replayed
+            // [bonus] through a FULL m=1 trunk+head forward (the 489us full-vocab head pass
+            // measured at ~0.75/round on PMIN0 configs). Instead: restore the pre-round
+            // snapshot and let the bonus ride the NEXT round's verify as col 0 — the existing
+            // base=1 pending machinery, bit-identical by the decode-exact verify contract.
+            // Seed: the bonus's predecessor is the last COMMITTED token, whose hidden
+            // fill_prev already carries (same seeding as the 1-token-replay case it replaces).
+            cache.rollback(e, snap, 0)?;
+            scratch.set_len(e, pos)?;
+            e.copy_into(h_seed_buf, 0, fill_prev, n_embd)?;
+            *pending = Some(bonus);
+            if debug_spec {
+                eprintln!("  -> ZERO-ROUND FOLD (bonus pending, fill_prev seed)");
+            }
+        } else {
+            // PARTIAL ACCEPT, LEGACY REPLAY (seam MEMRA_SPEC_REPLAY=1 — or j==0: nothing of
+            // this round survives, only possible before the first pending exists, ~round 0):
+            // restore EVERYTHING to the pre-round snapshot (KV truncate to pos + recur
+            // restore), then replay the committed prefix pending? ++ draft[0..n_acc] ++
+            // [bonus] as ONE batched T forward — single weight read, bit-identical to greedy
+            // (the verify-all-columns path is the same math). Commits the bonus with a TRUE
+            // trunk hidden.
+            cache.rollback(e, snap, 0)?; // accept_len=0: KV len = pos, recur = snapshot
+            let mut replay: Vec<u32> = Vec::with_capacity(base + n_acc + 1);
+            if let Some(b) = pending.take() {
+                replay.push(b);
+            }
+            replay.extend_from_slice(&draft[0..n_acc]);
+            replay.push(bonus);
+            // Full-stack forward (decode_step_t_core = decode_step_t_h_emb_dev's body):
+            // Predecessor pairing seeds from the PREDECESSOR row (col len-2) — the same-row path takes the
+            // last col exactly as before (byte-identical to the old _h_emb_dev call).
+            let (rl_d, rx) = if self.batched_serving_numeric_class() {
+                let mut logits = Vec::with_capacity(replay.len() * n_vocab);
+                let mut hidden = e.uninit(replay.len() * n_embd)?;
+                for (row, &token) in replay.iter().enumerate() {
+                    let (row_logits, row_hidden) =
+                        self.spec_target_step_h(e, token, &mut *cache)?;
+                    logits.extend_from_slice(&row_logits);
+                    e.dtod_copy_into(&row_hidden, &mut hidden, row * n_embd)?;
+                }
+                (e.htod(&logits)?, hidden)
+            } else {
+                self.decode_step_t_core(e, &replay, pos, &mut *cache, embd_dev, None)?
+            };
+            // last_pred = argmax of the LAST column's logits (predicts the token after `bonus`)
+            // — device argmax + one 4-byte read instead of the full-vocab column dtoh.
+            e.argmax_token_device_col(&rl_d, replay.len() - 1, n_vocab, preds_d, 0)?;
+            *last_pred = guard_vocab_token(
+                e.dtoh_u32(preds_d)?[0],
+                n_vocab,
+                &format!("replay last_pred at round {round} pos={pos}"),
+            )?;
+            if sampled {
+                let lr0 = replay.len();
+                let lc = last_col_logits
+                    .as_mut()
+                    .expect("sampled: last_col_logits unset");
+                e.copy_view_into(
+                    lc,
+                    0,
+                    &rl_d.slice((lr0 - 1) * n_vocab..lr0 * n_vocab),
+                    n_vocab,
+                )?;
+            }
+            let lr = replay.len();
+            if lr >= 2 {
+                e.copy_view_into(
+                    h_seed_buf,
+                    0,
+                    &rx.slice((lr - 2) * n_embd..(lr - 1) * n_embd),
+                    n_embd,
+                )?;
+            } else {
+                // 1-token replay (round-0 miss): the bonus's predecessor is the OLD
+                // last_token, whose own-row hidden fill_prev still holds.
+                e.copy_into(h_seed_buf, 0, fill_prev, n_embd)?;
+            }
+            // the bonus is COMMITTED here — it becomes the last committed row.
+            let mut rh_last = e.zeros(n_embd)?;
+            e.copy_view_into(
+                &mut rh_last,
+                0,
+                &rx.slice((lr - 1) * n_embd..lr * n_embd),
+                n_embd,
+            )?;
+            e.copy_into(fill_prev, 0, &rh_last, n_embd)?;
+            if debug_spec {
+                eprintln!("  -> PARTIAL(replay={replay:?}), next_pred={last_pred}");
+            }
+        }
+        if anatomy_on {
+            // Commit/rollback is normally asynchronous on the primary/head stream. Bound it
+            // only for this diagnostic so it does not disappear into the following draft's
+            // first token readback.
+            e.stream().synchronize()?;
+            *ph_commit += commit_started.elapsed().as_secs_f64();
+        }
+        // adaptive-K update (host math, zero syncs): next round drafts accepted-run + 1,
+        // clamped to [floor(pos), k_cap]. cache.pos is post-rollback here (the round's
+        // final position — the floor's position key reads the committed depth). Burst
+        // rounds (`continue` above) draft the captured fixed depth and skip this, exactly
+        // like gemma's burst arm.
+        if adapt {
+            let fl_now = cfg.floor_at(cache.pos);
+            *kc = (n_acc + 1).clamp(fl_now.min(k_cap), k_cap);
+        }
+        ph_mark(ph_t, ph_rest, phase_on);
+        if let Some(t0) = round_t0 {
+            let ms = t0.elapsed().as_secs_f64() * 1e3;
+            ROUND_MS.fetch_add((ms * 1e3) as u64, std::sync::atomic::Ordering::Relaxed);
+            let n = ROUND_N.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
+            if n.is_multiple_of(32) {
+                eprintln!(
+                    "[spec-round] rounds={n} avg round wall={:.2} ms (emitted={} drafted so far)",
+                    ROUND_MS.load(std::sync::atomic::Ordering::Relaxed) as f64 / 1e3 / n as f64,
+                    out.len()
+                );
+            }
+        }
+        *round += 1;
+        // sse-cadence: this round's accepted drafts + bonus are committed (out is
+        // append-only past step 4) — flush at round cadence.
+        let keep_going = flush_commit(on_commit, out, flushed);
+        Ok(SpecRoundOutcome { keep_going })
     }
 
     /// Anchor-bounded DSpark target extraction. The trunk sees the exact generated token tape;
@@ -16499,24 +16950,31 @@ mod ctx_edge_659_census {
     fn the_qwen_round_loop_opens_with_the_room_guard() {
         let src = include_str!("spec.rs");
         let body = &src[..src.find("mod ctx_edge_659_census").unwrap()];
-        assert_eq!(
-            body.matches("while keep_going && out.len() < max_new {")
-                .count(),
-            1,
-            "one round loop"
-        );
-        let tail = after(body, "while keep_going && out.len() < max_new {");
+        let head = "while keep_going && rs.out.len() < max_new {";
+        assert_eq!(body.matches(head).count(), 1, "one round loop");
+        // The loop's first statement is the round gate, and a refused gate ends the burst.
+        let tail = after(body, head);
         assert_eq!(
             first_code_line(tail),
-            "if cache.pos + (if adapt { kc } else { k }) + 2 > cache.max_ctx {"
+            "let Some(gate) = self.spec_round_gate(e, &mut rs) else {"
         );
-        let guard = &tail[tail.find("if cache.pos + (if adapt").unwrap()..];
-        assert_eq!(first_code_line(after(guard, "> cache.max_ctx {")), "break;");
+        assert_eq!(first_code_line(after(tail, "else {")), "break;");
+        // The gate's first check is the room guard, and it refuses the round.
+        let gate = after(body, "    fn spec_round_gate(");
+        let gate = &gate[..gate.find("\n    }\n").unwrap()];
+        let guard = "if rs.cache.pos + (if adapt { rs.kc } else { k }) + 2 > rs.cache.max_ctx {";
+        let g = gate.find(guard).expect("the room guard");
+        assert!(
+            !gate[..g].contains("\n        if "),
+            "the room guard is the gate's first check"
+        );
+        assert_eq!(
+            first_code_line(after(&gate[g..], "> rs.cache.max_ctx {")),
+            "return None;"
+        );
         // The stream arm's choice carries its M-round bound.
-        assert!(tail.contains("&& cache.pos + m_rounds * t_v_s < cache.max_ctx,"));
-        let stream = tail
-            .find("&& cache.pos + m_rounds * t_v_s < cache.max_ctx,")
-            .unwrap();
+        let bound = "&& rs.cache.pos + m_rounds * t_v_s < rs.cache.max_ctx,";
+        let stream = tail.find(bound).expect("the stream arm's bound");
         let engaged = tail.find("ROUND-STREAM burst engaged").unwrap();
         assert!(stream < engaged, "the bound is part of the arm's condition");
     }
