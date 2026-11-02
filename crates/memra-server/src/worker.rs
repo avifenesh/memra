@@ -971,6 +971,38 @@ fn dspark_hit_is_restorable(entry_toks: usize, prompt_toks: usize, entry_has_tai
     )
 }
 
+/// RESTORABLE-HIT PREFERENCE (GB10 agentic c1, 2026-11-02). The longest prefix entry a DFlash
+/// request finds is often a PLAIN one (no draft tail): a turn served plain, a `max_tokens=1`
+/// prime, any request the cache-preferred veto sent down the plain path. Taking it forces the
+/// veto again, the turn goes plain and publishes another plain entry, so a multi-turn session
+/// never speculates again (GB10 GGUF DFlash2 c1: 28 `cache-preferred` vetoes, 3 DSPARK restores,
+/// 12.0 tok/s against 21.4 on the MTP route). A shorter entry that carries the drafter's tail
+/// and covers the prompt as a restorable prefix re-arms the drafter instead; the price is the
+/// extra suffix to prime (`plain_len - restorable_len` tokens). Prefer it when the route admits
+/// a DFlash request on that hit and the decode budget repays that extra prefill by the same
+/// ratio the cold-prime veto uses (`dspark_cold_prime_repays_prefill`). Returns whether to swap.
+fn dspark_prefer_restorable_hit(
+    plain_len: usize,
+    restorable_len: usize,
+    decode_budget: usize,
+    route_admits_restorable: bool,
+) -> bool {
+    route_admits_restorable
+        && restorable_len < plain_len
+        && dspark_cold_prime_repays_prefill_tokens(plain_len - restorable_len, decode_budget)
+}
+
+/// The cold-prime repayment ratio applied to an arbitrary prefill length (no cache floor: the
+/// extra suffix of a restorable hit is always real prefill).
+fn dspark_cold_prime_repays_prefill_tokens(prefill_tokens: usize, decode_budget: usize) -> bool {
+    let div = std::env::var("MEMRA_DSPARK_COLD_DECODE_RATIO_DIV")
+        .ok()
+        .and_then(|v| v.parse::<usize>().ok())
+        .filter(|v| *v > 0)
+        .unwrap_or(DSPARK_COLD_DECODE_RATIO_DIV);
+    decode_budget >= prefill_tokens / div
+}
+
 /// Pure form so both arms are unit-testable without the process-wide env latch.
 fn dspark_hit_is_restorable_with(
     entry_toks: usize,
@@ -9122,6 +9154,30 @@ impl PrefixCache {
             if n >= PREFIX_CACHE_MIN_TOKENS
                 && n <= prompt.len()
                 && prompt[..n] == e.toks[..]
+                && best.is_none_or(|(_, bn)| n > bn)
+            {
+                best = Some((i, n));
+            }
+        }
+        best.map(|(i, _)| i)
+    }
+
+    /// [`Self::lookup`] restricted to entries `keep` accepts: the longest such entry whose token
+    /// key exactly prefixes `prompt` (same floor, same pool scoping).
+    fn lookup_where(
+        &self,
+        key: &PoolKey,
+        prompt: &[u32],
+        keep: impl Fn(&PrefixEntry) -> bool,
+    ) -> Option<usize> {
+        let pool = self.entries.get(key)?;
+        let mut best: Option<(usize, usize)> = None;
+        for (i, e) in pool.iter().enumerate() {
+            let n = e.toks.len();
+            if n >= PREFIX_CACHE_MIN_TOKENS
+                && n <= prompt.len()
+                && prompt[..n] == e.toks[..]
+                && keep(e)
                 && best.is_none_or(|(_, bn)| n > bn)
             {
                 best = Some((i, n));
@@ -35397,7 +35453,7 @@ fn admit(
     // beside the hit itself so the probe gate can distinguish "a hit the conversion will
     // consume" from "a hit that would cost the restore for nothing" (strict-prefix hits — the
     // multi-turn shape — convert never, so they must not buy the carrier).
-    let dspark_restorable_hit = dspark_prefix_restore_on()
+    let mut dspark_restorable_hit = dspark_prefix_restore_on()
         && consumable_hit
             .map(|i| {
                 let en = &px.entries[&pool_key][i];
@@ -35431,6 +35487,45 @@ fn admit(
         // Only under the partial door: a shut fleet keeps the veto's shipped shape exactly.
         hit_restorable: dspark_restorable_hit && dspark_partial_restore_on(),
     };
+    // RESTORABLE-HIT PREFERENCE (`dspark_prefer_restorable_hit`): a longer plain hit must not
+    // shadow a shorter entry that can re-arm the drafter. Under the partial door only, and only
+    // when the route would admit DFlash on that restorable hit, so every other route, a shut
+    // fleet and the plain path keep the longest-hit choice byte for byte.
+    let mut cold_prefix_inputs = cold_prefix_inputs;
+    if dspark_prefix_restore_on()
+        && dspark_partial_restore_on()
+        && !dspark_restorable_hit
+        && admission_restore.is_none()
+        && host_promote_pin.is_none()
+        && let Some(plain_i) = consumable_hit
+    {
+        let plain_len = px.entries[&pool_key][plain_i].toks.len();
+        let alt = px.lookup_where(&pool_key, &prompt, |e| {
+            dspark_hit_is_restorable(e.toks.len(), prompt.len(), e.dspark_draft.is_some())
+        });
+        if let Some(alt_i) = alt {
+            let alt_len = px.entries[&pool_key][alt_i].toks.len();
+            let with_alt = DsparkColdPrefixAdmission {
+                hit_restorable: true,
+                ..cold_prefix_inputs
+            };
+            if dspark_prefer_restorable_hit(
+                plain_len,
+                alt_len,
+                budget,
+                dspark_prefers_cold_over_prefix(with_alt),
+            ) {
+                eprintln!(
+                    "[dspark] restorable-preferred: prompt={} decode_budget={budget} plain hit                      {plain_len} -> restorable hit {alt_len} (draft tail; {} suffix tokens to                      prime)",
+                    prompt.len(),
+                    prompt.len() - alt_len,
+                );
+                consumable_hit = Some(alt_i);
+                dspark_restorable_hit = true;
+                cold_prefix_inputs = with_alt;
+            }
+        }
+    }
     let dspark_prefers_cold = dspark_prefers_cold_over_prefix(cold_prefix_inputs);
     // The receipt names the veto ONLY when the veto is what flipped the route. Guarding it on
     // `dspark_draft_ready` alone attributed every other decline — wrong sampling shape, load,
@@ -46353,12 +46448,87 @@ mod tests {
         // whole-entry condition lives BEFORE the probe pays for the carrier.
         let src = include_str!("worker.rs");
         let site = src
-            .find("let dspark_restorable_hit = ")
+            .find("let mut dspark_restorable_hit = ")
             .expect("the computation site exists");
         assert!(
             src[site..site + 400].contains("dspark_hit_is_restorable("),
             "dspark_restorable_hit must be computed via dspark_hit_is_restorable"
         );
+    }
+
+    /// GB10 agentic c1 (2026-11-02): a longer plain prefix entry no longer shadows a shorter
+    /// entry that can re-arm the DFlash drafter. `lookup` returns the longest full prefix, the
+    /// plain one; `lookup_where` with the restorable predicate returns the drafter-carrying one,
+    /// and the swap is taken only when the route admits DFlash on it and the decode budget repays
+    /// the extra suffix prefill.
+    #[test]
+    fn a_dflash_request_prefers_a_restorable_hit_over_a_longer_plain_one() {
+        use super::{PREFIX_ENTRY_LAYOUT_VERSION, PrefixCache, PrefixEntry};
+        let entry = |k: &super::PoolKey, n: u32| PrefixEntry {
+            _tier_charge: None,
+            layout_version: PREFIX_ENTRY_LAYOUT_VERSION,
+            dspark_draft: None,
+            pool_key: k.clone(),
+            toks: (0..n).collect(),
+            kv: Vec::new(),
+            conv: Vec::new(),
+            ssm: Vec::new(),
+            latent: Vec::new(),
+            tp: None,
+            pos: 0,
+            last_logits: vec![0.0],
+            draft: None,
+            last_h: Vec::new(),
+            bytes: 10,
+            last_use: std::time::Instant::now(),
+            id: 0,
+            pins: 0,
+        };
+        let k = (String::from("q38"), String::new());
+        let mut px = PrefixCache::default();
+        // The turn-N boundary entry (stands in for the one carrying the draft tail) and the
+        // longer plain entry a max_tokens=1 prime published for turn N+1.
+        px.insert_with_budget(&k, entry(&k, 17_408), "t", 1_000);
+        px.insert_with_budget(&k, entry(&k, 31_392), "t", 1_000);
+        let prompt: Vec<u32> = (0..31_411).collect();
+        let plain = px.lookup(&k, &prompt).expect("a hit");
+        assert_eq!(
+            px.entries[&k][plain].toks.len(),
+            31_392,
+            "lookup takes the longest"
+        );
+        let restorable = px
+            .lookup_where(&k, &prompt, |e| e.toks.len() == 17_408)
+            .expect("the restorable entry");
+        assert_eq!(px.entries[&k][restorable].toks.len(), 17_408);
+        assert!(px.lookup_where(&k, &prompt, |_| false).is_none());
+        // The measured shape: 768 decode tokens repay a 14k-token suffix at the 1/8 ratio
+        // (14,003 / 8 = 1,750 > 768 would not; here the suffix is 31,392 - 17,408 = 13,984).
+        assert!(!super::dspark_prefer_restorable_hit(
+            31_392, 17_408, 768, true
+        ));
+        assert!(super::dspark_prefer_restorable_hit(
+            31_392, 17_408, 1_748, true
+        ));
+        // A typical agentic turn: a few hundred tokens of tool output past the boundary.
+        assert!(super::dspark_prefer_restorable_hit(
+            10_728, 10_208, 768, true
+        ));
+        // Never when the route would not take DFlash anyway, and never for a longer entry.
+        assert!(!super::dspark_prefer_restorable_hit(
+            10_728, 10_208, 768, false
+        ));
+        assert!(!super::dspark_prefer_restorable_hit(
+            10_208, 10_208, 768, true
+        ));
+        // The admission site swaps through both helpers.
+        let src = include_str!("worker.rs");
+        let production = &src[..src.find("\nmod tests {").unwrap()];
+        let squashed = production.split_whitespace().collect::<Vec<_>>().join(" ");
+        assert!(squashed.contains(
+            "let alt = px.lookup_where(&pool_key, &prompt, |e| { dspark_hit_is_restorable("
+        ));
+        assert!(squashed.contains("if dspark_prefer_restorable_hit( plain_len, alt_len, budget, dspark_prefers_cold_over_prefix(with_alt), ) {"));
     }
 
     #[test]
