@@ -1,0 +1,750 @@
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2 (K=5 when the loaded MTP head is rank-trimmed)
+[tensor-contract] bound 1199 semantic tensors (pack qwen35, HfSafetensors, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[worker]   loaded "q38": 65 layers, eos=248046, stop=[248046, 248044]
+[worker] q38: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false qwen_effort=true gemma_think=false dsv4=false glm5=false ctx=262144 tok="qwen35" instruct=Some("chatml") chat_defaults=None/None
+[route-contract] model="q38" route=hybrid-worker capacity=32 sessions implemented=[capacity,occupancy,progress,fault-ownership,shutdown-ownership,memory-cost,rewrite-qualification,prime-fairness,service-metrics] refused=[]
+[worker] q38: decode wave cap 16; scheduler tick cap 16 (exact-16 tier)
+[prefix-cache] on: budget 15883MB (15883042816 B, derived: 2 x 7941521408 B max entry for model "q38" at served ctx 262144 (from MEMRA_CTX; MEMRA_CTX set), requested 15883042816 B; boot driver free 76067741696 B, post-reserve clamp 74457128960 B), policy plain-LRU (global oldest unleased entry first; leases untouchable), min prefix 64 tokens, immediate partial restore=off (rollback) (transformer-only; hybrid mid-entry + routed-MoE N/A)
+[device-trim] reason=calibration-complete {"device":0,"reclaimed_bytes":2348810240,"still_owned_bytes":22943977232,"pool_reserved_bytes":23186112512,"pool_cached_bytes":242135280,"driver_free_bytes":70127284224,"synchronization_errors":[]}
+[admit-mem] door=OFF open_output_tokens=8192 defer_budget_ms=8000 (admission charges prompt+output, the reclaim flush demotes to the host tier before dropping, and a memory defer past the budget refuses 429 instead of queueing past the client's deadline)
+[kv-vmm] door=OFF (MEMRA_KV_ALLOCATOR unset or pooled: pooled K/V planes)
+[admission] request cost: model="q38" ctx=2825 path=spec = 31552 B/token x ctx + 1323MB prefill-workspace + 0MB fixed = 1412MB
+[admission] request cost: model="q38" ctx=4041 path=spec = 31552 B/token x ctx + 1905MB prefill-workspace + 309MB fixed = 2342MB
+[admission] request cost: model="q38" ctx=22932 path=spec = 31552 B/token x ctx + 2347MB prefill-workspace + 309MB fixed = 3380MB
+[prime-yield] count=1 remaining=13 chunks=1 wall_ms=325.329 max_chunk_ms=325.329
+[prime-yield] count=2 remaining=12 chunks=1 wall_ms=5042.311 max_chunk_ms=5042.311
+[prime-yield] count=3 remaining=11 chunks=1 wall_ms=5150.316 max_chunk_ms=5150.316
+[prime-yield] count=4 remaining=10 chunks=1 wall_ms=5314.363 max_chunk_ms=5314.363
+[prime-yield] count=5 remaining=9 chunks=1 wall_ms=5488.636 max_chunk_ms=5488.636
+[admission] request cost: model="q38" ctx=8000 path=spec = 31552 B/token x ctx + 2041MB prefill-workspace + 354MB fixed = 2648MB
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=4979.140 max_chunk_ms=4979.140
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=4792.847 max_chunk_ms=4792.847
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=265.044 max_chunk_ms=265.044
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=73.227 max_chunk_ms=73.227
+[admission] request cost: model="q38" ctx=82 path=spec = 31552 B/token x ctx + 7MB prefill-workspace + 354MB fixed = 364MB
+[admission] request cost: model="q38" ctx=8048 path=spec = 31552 B/token x ctx + 2041MB prefill-workspace + 354MB fixed = 2649MB
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=4973.681 max_chunk_ms=4973.681
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=4783.109 max_chunk_ms=4783.109
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=253.184 max_chunk_ms=253.184
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=73.988 max_chunk_ms=73.988
+[admission] request cost: model="q38" ctx=8259 path=spec = 31552 B/token x ctx + 2047MB prefill-workspace + 354MB fixed = 2662MB
+[prime-yield] count=1 remaining=5 chunks=1 wall_ms=5006.001 max_chunk_ms=5006.001
+[prime-yield] count=2 remaining=4 chunks=1 wall_ms=5128.841 max_chunk_ms=5128.841
+[prime-yield] count=3 remaining=3 chunks=1 wall_ms=261.889 max_chunk_ms=261.889
+[prime-yield] count=4 remaining=2 chunks=1 wall_ms=72.452 max_chunk_ms=72.452
+[prime-yield] count=5 remaining=1 chunks=1 wall_ms=72.311 max_chunk_ms=72.311
+[admission] request cost: model="q38" ctx=7985 path=spec = 31552 B/token x ctx + 2041MB prefill-workspace + 354MB fixed = 2648MB
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=5001.674 max_chunk_ms=5001.674
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=4794.801 max_chunk_ms=4794.801
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=268.220 max_chunk_ms=268.220
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=74.212 max_chunk_ms=74.212
+[admission] request cost: model="q38" ctx=8002 path=spec = 31552 B/token x ctx + 2041MB prefill-workspace + 354MB fixed = 2648MB
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=5006.476 max_chunk_ms=5006.476
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=4790.263 max_chunk_ms=4790.263
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=258.818 max_chunk_ms=258.818
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=74.278 max_chunk_ms=74.278
+[admission] request cost: model="q38" ctx=8107 path=spec = 31552 B/token x ctx + 2043MB prefill-workspace + 354MB fixed = 2654MB
+[admission] request cost: model="q38" ctx=32574 path=spec = 31552 B/token x ctx + 2545MB prefill-workspace + 354MB fixed = 3927MB
+[prime-yield] count=1 remaining=16 chunks=1 wall_ms=5038.902 max_chunk_ms=5038.902
+[prime-yield] count=2 remaining=15 chunks=1 wall_ms=5151.218 max_chunk_ms=5151.218
+[prime-yield] count=3 remaining=14 chunks=1 wall_ms=5323.314 max_chunk_ms=5323.314
+[prime-yield] count=4 remaining=13 chunks=1 wall_ms=5493.815 max_chunk_ms=5493.815
+[prime-yield] count=5 remaining=12 chunks=1 wall_ms=5655.297 max_chunk_ms=5655.297
+[prime-yield] count=6 remaining=11 chunks=1 wall_ms=5829.420 max_chunk_ms=5829.420
+[prime-yield] count=7 remaining=10 chunks=1 wall_ms=5997.323 max_chunk_ms=5997.323
+[prime-yield] count=8 remaining=9 chunks=1 wall_ms=5701.569 max_chunk_ms=5701.569
+[prime-yield] count=9 remaining=8 chunks=1 wall_ms=311.972 max_chunk_ms=311.972
+[prime-yield] count=10 remaining=7 chunks=1 wall_ms=73.304 max_chunk_ms=73.304
+[prime-yield] count=11 remaining=6 chunks=1 wall_ms=71.625 max_chunk_ms=71.625
+[prime-yield] count=12 remaining=5 chunks=1 wall_ms=73.454 max_chunk_ms=73.454
+[prime-yield] count=13 remaining=4 chunks=1 wall_ms=71.924 max_chunk_ms=71.924
+[prime-yield] count=14 remaining=3 chunks=1 wall_ms=73.072 max_chunk_ms=73.072
+[prime-yield] count=15 remaining=2 chunks=1 wall_ms=71.676 max_chunk_ms=71.676
+[prime-yield] count=16 remaining=1 chunks=1 wall_ms=70.799 max_chunk_ms=70.799
+[admission] request cost: model="q38" ctx=32680 path=spec = 31552 B/token x ctx + 2547MB prefill-workspace + 384MB fixed = 3962MB
+[admission] request cost: model="q38" ctx=2825 path=spec = 31552 B/token x ctx + 1323MB prefill-workspace + 384MB fixed = 1796MB
+[admission] request cost: model="q38" ctx=4041 path=spec = 31552 B/token x ctx + 1905MB prefill-workspace + 384MB fixed = 2417MB
+[admission] request cost: model="q38" ctx=22932 path=spec = 31552 B/token x ctx + 2347MB prefill-workspace + 384MB fixed = 3455MB
+[prime-yield] count=1 remaining=13 chunks=1 wall_ms=324.587 max_chunk_ms=324.587
+[prime-yield] count=2 remaining=12 chunks=1 wall_ms=5060.486 max_chunk_ms=5060.486
+[prime-yield] count=3 remaining=11 chunks=1 wall_ms=5177.435 max_chunk_ms=5177.435
+[prime-yield] count=4 remaining=10 chunks=1 wall_ms=5344.612 max_chunk_ms=5344.612
+[prime-yield] count=5 remaining=9 chunks=1 wall_ms=5507.270 max_chunk_ms=5507.270
+[prime-yield] count=6 remaining=8 chunks=1 wall_ms=5671.870 max_chunk_ms=5671.870
+[prime-yield] count=7 remaining=7 chunks=1 wall_ms=3061.290 max_chunk_ms=3061.290
+[prime-yield] count=8 remaining=6 chunks=1 wall_ms=286.466 max_chunk_ms=286.466
+[prime-yield] count=9 remaining=5 chunks=1 wall_ms=74.197 max_chunk_ms=74.197
+[prime-yield] count=10 remaining=4 chunks=1 wall_ms=73.189 max_chunk_ms=73.189
+[prime-yield] count=11 remaining=3 chunks=1 wall_ms=73.210 max_chunk_ms=73.210
+[prime-yield] count=12 remaining=2 chunks=1 wall_ms=73.111 max_chunk_ms=73.111
+[prime-yield] count=13 remaining=1 chunks=1 wall_ms=71.646 max_chunk_ms=71.646
+[admission] request cost: model="q38" ctx=41978 path=spec = 31552 B/token x ctx + 2737MB prefill-workspace + 384MB fixed = 4446MB
+[prime-yield] count=1 remaining=10 chunks=1 wall_ms=5956.959 max_chunk_ms=5956.959
+[prime-yield] count=2 remaining=9 chunks=1 wall_ms=6105.603 max_chunk_ms=6105.603
+[prime-yield] count=3 remaining=8 chunks=1 wall_ms=6259.153 max_chunk_ms=6259.153
+[prime-yield] count=4 remaining=7 chunks=1 wall_ms=6422.843 max_chunk_ms=6422.843
+[prime-yield] count=5 remaining=6 chunks=1 wall_ms=4301.839 max_chunk_ms=4301.839
+[prime-yield] count=6 remaining=5 chunks=1 wall_ms=332.873 max_chunk_ms=332.873
+[prime-yield] count=7 remaining=4 chunks=1 wall_ms=72.504 max_chunk_ms=72.504
+[prime-yield] count=8 remaining=3 chunks=1 wall_ms=72.605 max_chunk_ms=72.605
+[prime-yield] count=9 remaining=2 chunks=1 wall_ms=71.606 max_chunk_ms=71.606
+[prime-yield] count=10 remaining=1 chunks=1 wall_ms=71.673 max_chunk_ms=71.673
+[admission] request cost: model="q38" ctx=14770 path=spec = 31552 B/token x ctx + 2180MB prefill-workspace + 384MB fixed = 3030MB
+[prime-yield] count=1 remaining=8 chunks=1 wall_ms=5023.949 max_chunk_ms=5023.949
+[prime-yield] count=2 remaining=7 chunks=1 wall_ms=5176.683 max_chunk_ms=5176.683
+[prime-yield] count=3 remaining=6 chunks=1 wall_ms=5347.472 max_chunk_ms=5347.472
+[prime-yield] count=4 remaining=5 chunks=1 wall_ms=2895.480 max_chunk_ms=2895.480
+[prime-yield] count=5 remaining=4 chunks=1 wall_ms=270.585 max_chunk_ms=270.585
+[prime-yield] count=6 remaining=3 chunks=1 wall_ms=72.497 max_chunk_ms=72.497
+[prime-yield] count=7 remaining=2 chunks=1 wall_ms=71.681 max_chunk_ms=71.681
+[prime-yield] count=8 remaining=1 chunks=1 wall_ms=72.430 max_chunk_ms=72.430
+[admission] request cost: model="q38" ctx=25911 path=spec = 31552 B/token x ctx + 2408MB prefill-workspace + 384MB fixed = 3610MB
+[prime-yield] count=1 remaining=14 chunks=1 wall_ms=5041.517 max_chunk_ms=5041.517
+[prime-yield] count=2 remaining=13 chunks=1 wall_ms=5171.283 max_chunk_ms=5171.283
+[prime-yield] count=3 remaining=12 chunks=1 wall_ms=5344.204 max_chunk_ms=5344.204
+[prime-yield] count=4 remaining=11 chunks=1 wall_ms=5509.428 max_chunk_ms=5509.428
+[prime-yield] count=5 remaining=10 chunks=1 wall_ms=5683.332 max_chunk_ms=5683.332
+[prime-yield] count=6 remaining=9 chunks=1 wall_ms=5846.832 max_chunk_ms=5846.832
+[prime-yield] count=7 remaining=8 chunks=1 wall_ms=1475.349 max_chunk_ms=1475.349
+[prime-yield] count=8 remaining=7 chunks=1 wall_ms=292.883 max_chunk_ms=292.883
+[prime-yield] count=9 remaining=6 chunks=1 wall_ms=72.659 max_chunk_ms=72.659
+[prime-yield] count=10 remaining=5 chunks=1 wall_ms=71.631 max_chunk_ms=71.631
+[prime-yield] count=11 remaining=4 chunks=1 wall_ms=73.368 max_chunk_ms=73.368
+[prime-yield] count=12 remaining=3 chunks=1 wall_ms=72.175 max_chunk_ms=72.175
+[prime-yield] count=13 remaining=2 chunks=1 wall_ms=72.893 max_chunk_ms=72.893
+[prime-yield] count=14 remaining=1 chunks=1 wall_ms=72.478 max_chunk_ms=72.478
+[admission] request cost: model="q38" ctx=2332 path=spec = 31552 B/token x ctx + 1086MB prefill-workspace + 384MB fixed = 1544MB
+[admission] request cost: model="q38" ctx=3002 path=spec = 31552 B/token x ctx + 1408MB prefill-workspace + 384MB fixed = 1886MB
+[admission] request cost: model="q38" ctx=22684 path=spec = 31552 B/token x ctx + 2342MB prefill-workspace + 384MB fixed = 3442MB
+[prime-yield] count=1 remaining=12 chunks=1 wall_ms=5014.983 max_chunk_ms=5014.983
+[prime-yield] count=2 remaining=11 chunks=1 wall_ms=5168.895 max_chunk_ms=5168.895
+[prime-yield] count=3 remaining=10 chunks=1 wall_ms=5343.186 max_chunk_ms=5343.186
+[prime-yield] count=4 remaining=9 chunks=1 wall_ms=5505.854 max_chunk_ms=5505.854
+[prime-yield] count=5 remaining=8 chunks=1 wall_ms=5675.448 max_chunk_ms=5675.448
+[prime-yield] count=6 remaining=7 chunks=1 wall_ms=2668.847 max_chunk_ms=2668.847
+[prime-yield] count=7 remaining=6 chunks=1 wall_ms=285.295 max_chunk_ms=285.295
+[prime-yield] count=8 remaining=5 chunks=1 wall_ms=72.599 max_chunk_ms=72.599
+[prime-yield] count=9 remaining=4 chunks=1 wall_ms=72.528 max_chunk_ms=72.528
+[prime-yield] count=10 remaining=3 chunks=1 wall_ms=72.691 max_chunk_ms=72.691
+[prime-yield] count=11 remaining=2 chunks=1 wall_ms=71.697 max_chunk_ms=71.697
+[prime-yield] count=12 remaining=1 chunks=1 wall_ms=72.546 max_chunk_ms=72.546
+[admission] request cost: model="q38" ctx=36592 path=spec = 31552 B/token x ctx + 2627MB prefill-workspace + 384MB fixed = 4166MB
+[prime-yield] count=1 remaining=18 chunks=1 wall_ms=5023.817 max_chunk_ms=5023.817
+[prime-yield] count=2 remaining=17 chunks=1 wall_ms=5172.520 max_chunk_ms=5172.520
+[prime-yield] count=3 remaining=16 chunks=1 wall_ms=5344.394 max_chunk_ms=5344.394
+[prime-yield] count=4 remaining=15 chunks=1 wall_ms=5512.876 max_chunk_ms=5512.876
+[prime-yield] count=5 remaining=14 chunks=1 wall_ms=5678.282 max_chunk_ms=5678.282
+[prime-yield] count=6 remaining=13 chunks=1 wall_ms=5846.258 max_chunk_ms=5846.258
+[prime-yield] count=7 remaining=12 chunks=1 wall_ms=6015.794 max_chunk_ms=6015.794
+[prime-yield] count=8 remaining=11 chunks=1 wall_ms=6180.372 max_chunk_ms=6180.372
+[prime-yield] count=9 remaining=10 chunks=1 wall_ms=5338.199 max_chunk_ms=5338.199
+[prime-yield] count=10 remaining=9 chunks=1 wall_ms=321.627 max_chunk_ms=321.627
+[prime-yield] count=11 remaining=8 chunks=1 wall_ms=74.257 max_chunk_ms=74.257
+[prime-yield] count=12 remaining=7 chunks=1 wall_ms=72.537 max_chunk_ms=72.537
+[prime-yield] count=13 remaining=6 chunks=1 wall_ms=70.959 max_chunk_ms=70.959
+[prime-yield] count=14 remaining=5 chunks=1 wall_ms=72.494 max_chunk_ms=72.494
+[prime-yield] count=15 remaining=4 chunks=1 wall_ms=70.813 max_chunk_ms=70.813
+[prime-yield] count=16 remaining=3 chunks=1 wall_ms=73.361 max_chunk_ms=73.361
+[prime-yield] count=17 remaining=2 chunks=1 wall_ms=72.450 max_chunk_ms=72.450
+[prime-yield] count=18 remaining=1 chunks=1 wall_ms=72.501 max_chunk_ms=72.501
+[admission] request cost: model="q38" ctx=13281 path=spec = 31552 B/token x ctx + 2150MB prefill-workspace + 384MB fixed = 2953MB
+[prime-yield] count=1 remaining=8 chunks=1 wall_ms=5017.893 max_chunk_ms=5017.893
+[prime-yield] count=2 remaining=7 chunks=1 wall_ms=5176.179 max_chunk_ms=5176.179
+[prime-yield] count=3 remaining=6 chunks=1 wall_ms=5337.508 max_chunk_ms=5337.508
+[prime-yield] count=4 remaining=5 chunks=1 wall_ms=858.346 max_chunk_ms=858.346
+[prime-yield] count=5 remaining=4 chunks=1 wall_ms=267.330 max_chunk_ms=267.330
+[prime-yield] count=6 remaining=3 chunks=1 wall_ms=72.740 max_chunk_ms=72.740
+[prime-yield] count=7 remaining=2 chunks=1 wall_ms=74.220 max_chunk_ms=74.220
+[prime-yield] count=8 remaining=1 chunks=1 wall_ms=72.406 max_chunk_ms=72.406
+[admission] request cost: model="q38" ctx=19219 path=spec = 31552 B/token x ctx + 2271MB prefill-workspace + 384MB fixed = 3262MB
+[prime-yield] count=1 remaining=10 chunks=1 wall_ms=5015.043 max_chunk_ms=5015.043
+[prime-yield] count=2 remaining=9 chunks=1 wall_ms=5183.015 max_chunk_ms=5183.015
+[prime-yield] count=3 remaining=8 chunks=1 wall_ms=5345.503 max_chunk_ms=5345.503
+[prime-yield] count=4 remaining=7 chunks=1 wall_ms=5513.903 max_chunk_ms=5513.903
+[prime-yield] count=5 remaining=6 chunks=1 wall_ms=3479.978 max_chunk_ms=3479.978
+[prime-yield] count=6 remaining=5 chunks=1 wall_ms=279.586 max_chunk_ms=279.586
+[prime-yield] count=7 remaining=4 chunks=1 wall_ms=73.311 max_chunk_ms=73.311
+[prime-yield] count=8 remaining=3 chunks=1 wall_ms=72.525 max_chunk_ms=72.525
+[prime-yield] count=9 remaining=2 chunks=1 wall_ms=72.320 max_chunk_ms=72.320
+[prime-yield] count=10 remaining=1 chunks=1 wall_ms=72.504 max_chunk_ms=72.504
+[admission] request cost: model="q38" ctx=2468 path=spec = 31552 B/token x ctx + 1152MB prefill-workspace + 384MB fixed = 1613MB
+[admission] request cost: model="q38" ctx=3062 path=spec = 31552 B/token x ctx + 1436MB prefill-workspace + 384MB fixed = 1917MB
+[admission] request cost: model="q38" ctx=22298 path=spec = 31552 B/token x ctx + 2334MB prefill-workspace + 384MB fixed = 3422MB
+[prime-yield] count=1 remaining=12 chunks=1 wall_ms=5025.593 max_chunk_ms=5025.593
+[prime-yield] count=2 remaining=11 chunks=1 wall_ms=5180.495 max_chunk_ms=5180.495
+[prime-yield] count=3 remaining=10 chunks=1 wall_ms=5350.825 max_chunk_ms=5350.825
+[prime-yield] count=4 remaining=9 chunks=1 wall_ms=5521.693 max_chunk_ms=5521.693
+[prime-yield] count=5 remaining=8 chunks=1 wall_ms=5683.549 max_chunk_ms=5683.549
+[prime-yield] count=6 remaining=7 chunks=1 wall_ms=2156.635 max_chunk_ms=2156.635
+[prime-yield] count=7 remaining=6 chunks=1 wall_ms=286.317 max_chunk_ms=286.317
+[prime-yield] count=8 remaining=5 chunks=1 wall_ms=72.624 max_chunk_ms=72.624
+[prime-yield] count=9 remaining=4 chunks=1 wall_ms=72.565 max_chunk_ms=72.565
+[prime-yield] count=10 remaining=3 chunks=1 wall_ms=71.800 max_chunk_ms=71.800
+[prime-yield] count=11 remaining=2 chunks=1 wall_ms=71.679 max_chunk_ms=71.679
+[prime-yield] count=12 remaining=1 chunks=1 wall_ms=72.525 max_chunk_ms=72.525
+[admission] request cost: model="q38" ctx=42399 path=spec = 31552 B/token x ctx + 2746MB prefill-workspace + 384MB fixed = 4468MB
+[prime-yield] count=1 remaining=22 chunks=1 wall_ms=5027.672 max_chunk_ms=5027.672
+[prime-yield] count=2 remaining=21 chunks=1 wall_ms=5177.371 max_chunk_ms=5177.371
+[prime-yield] count=3 remaining=20 chunks=1 wall_ms=5354.169 max_chunk_ms=5354.169
+[prime-yield] count=4 remaining=19 chunks=1 wall_ms=5510.810 max_chunk_ms=5510.810
+[prime-yield] count=5 remaining=18 chunks=1 wall_ms=5683.159 max_chunk_ms=5683.159
+[prime-yield] count=6 remaining=17 chunks=1 wall_ms=5851.218 max_chunk_ms=5851.218
+[prime-yield] count=7 remaining=16 chunks=1 wall_ms=6016.053 max_chunk_ms=6016.053
+[prime-yield] count=8 remaining=15 chunks=1 wall_ms=6184.702 max_chunk_ms=6184.702
+[prime-yield] count=9 remaining=14 chunks=1 wall_ms=6348.626 max_chunk_ms=6348.626
+[prime-yield] count=10 remaining=13 chunks=1 wall_ms=6510.226 max_chunk_ms=6510.226
+[prime-yield] count=11 remaining=12 chunks=1 wall_ms=1841.994 max_chunk_ms=1841.994
+[prime-yield] count=12 remaining=11 chunks=1 wall_ms=327.953 max_chunk_ms=327.953
+[prime-yield] count=13 remaining=10 chunks=1 wall_ms=74.398 max_chunk_ms=74.398
+[prime-yield] count=14 remaining=9 chunks=1 wall_ms=72.657 max_chunk_ms=72.657
+[prime-yield] count=15 remaining=8 chunks=1 wall_ms=71.607 max_chunk_ms=71.607
+[prime-yield] count=16 remaining=7 chunks=1 wall_ms=71.673 max_chunk_ms=71.673
+[prime-yield] count=17 remaining=6 chunks=1 wall_ms=71.679 max_chunk_ms=71.679
+[prime-yield] count=18 remaining=5 chunks=1 wall_ms=73.272 max_chunk_ms=73.272
+[prime-yield] count=19 remaining=4 chunks=1 wall_ms=72.560 max_chunk_ms=72.560
+[prime-yield] count=20 remaining=3 chunks=1 wall_ms=72.599 max_chunk_ms=72.599
+[prime-yield] count=21 remaining=2 chunks=1 wall_ms=70.884 max_chunk_ms=70.884
+[prime-yield] count=22 remaining=1 chunks=1 wall_ms=73.374 max_chunk_ms=73.374
+[admission] request cost: model="q38" ctx=17166 path=spec = 31552 B/token x ctx + 2229MB prefill-workspace + 386MB fixed = 3157MB
+[prime-yield] count=1 remaining=10 chunks=1 wall_ms=5018.123 max_chunk_ms=5018.123
+[prime-yield] count=2 remaining=9 chunks=1 wall_ms=5176.327 max_chunk_ms=5176.327
+[prime-yield] count=3 remaining=8 chunks=1 wall_ms=5341.269 max_chunk_ms=5341.269
+[prime-yield] count=4 remaining=7 chunks=1 wall_ms=5512.782 max_chunk_ms=5512.782
+[prime-yield] count=5 remaining=6 chunks=1 wall_ms=662.602 max_chunk_ms=662.602
+[prime-yield] count=6 remaining=5 chunks=1 wall_ms=280.356 max_chunk_ms=280.356
+[prime-yield] count=7 remaining=4 chunks=1 wall_ms=74.319 max_chunk_ms=74.319
+[prime-yield] count=8 remaining=3 chunks=1 wall_ms=71.609 max_chunk_ms=71.609
+[prime-yield] count=9 remaining=2 chunks=1 wall_ms=71.705 max_chunk_ms=71.705
+[prime-yield] count=10 remaining=1 chunks=1 wall_ms=72.510 max_chunk_ms=72.510
+[admission] request cost: model="q38" ctx=30371 path=spec = 31552 B/token x ctx + 2500MB prefill-workspace + 386MB fixed = 3844MB
+[prime-yield] count=1 remaining=16 chunks=1 wall_ms=5029.230 max_chunk_ms=5029.230
+[prime-yield] count=2 remaining=15 chunks=1 wall_ms=5184.120 max_chunk_ms=5184.120
+[prime-yield] count=3 remaining=14 chunks=1 wall_ms=5346.985 max_chunk_ms=5346.985
+[prime-yield] count=4 remaining=13 chunks=1 wall_ms=5513.326 max_chunk_ms=5513.326
+[prime-yield] count=5 remaining=12 chunks=1 wall_ms=5673.172 max_chunk_ms=5673.172
+[prime-yield] count=6 remaining=11 chunks=1 wall_ms=5850.063 max_chunk_ms=5850.063
+[prime-yield] count=7 remaining=10 chunks=1 wall_ms=6014.202 max_chunk_ms=6014.202
+[prime-yield] count=8 remaining=9 chunks=1 wall_ms=2117.679 max_chunk_ms=2117.679
+[prime-yield] count=9 remaining=8 chunks=1 wall_ms=305.085 max_chunk_ms=305.085
+[prime-yield] count=10 remaining=7 chunks=1 wall_ms=72.630 max_chunk_ms=72.630
+[prime-yield] count=11 remaining=6 chunks=1 wall_ms=71.655 max_chunk_ms=71.655
+[prime-yield] count=12 remaining=5 chunks=1 wall_ms=72.563 max_chunk_ms=72.563
+[prime-yield] count=13 remaining=4 chunks=1 wall_ms=71.594 max_chunk_ms=71.594
+[prime-yield] count=14 remaining=3 chunks=1 wall_ms=72.517 max_chunk_ms=72.517
+[prime-yield] count=15 remaining=2 chunks=1 wall_ms=72.465 max_chunk_ms=72.465
+[prime-yield] count=16 remaining=1 chunks=1 wall_ms=72.473 max_chunk_ms=72.473
+[admission] request cost: model="q38" ctx=2165 path=spec = 31552 B/token x ctx + 1006MB prefill-workspace + 386MB fixed = 1461MB
+[admission] request cost: model="q38" ctx=4907 path=spec = 31552 B/token x ctx + 1978MB prefill-workspace + 386MB fixed = 2520MB
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=5019.678 max_chunk_ms=5019.678
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=608.576 max_chunk_ms=608.576
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=253.798 max_chunk_ms=253.798
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=72.522 max_chunk_ms=72.522
+[admission] request cost: model="q38" ctx=17503 path=spec = 31552 B/token x ctx + 2236MB prefill-workspace + 386MB fixed = 3175MB
+[prime-yield] count=1 remaining=10 chunks=1 wall_ms=5022.854 max_chunk_ms=5022.854
+[prime-yield] count=2 remaining=9 chunks=1 wall_ms=5178.755 max_chunk_ms=5178.755
+[prime-yield] count=3 remaining=8 chunks=1 wall_ms=5355.662 max_chunk_ms=5355.662
+[prime-yield] count=4 remaining=7 chunks=1 wall_ms=5513.396 max_chunk_ms=5513.396
+[prime-yield] count=5 remaining=6 chunks=1 wall_ms=1032.792 max_chunk_ms=1032.792
+[prime-yield] count=6 remaining=5 chunks=1 wall_ms=276.096 max_chunk_ms=276.096
+[prime-yield] count=7 remaining=4 chunks=1 wall_ms=73.559 max_chunk_ms=73.559
+[prime-yield] count=8 remaining=3 chunks=1 wall_ms=71.623 max_chunk_ms=71.623
+[prime-yield] count=9 remaining=2 chunks=1 wall_ms=71.642 max_chunk_ms=71.642
+[prime-yield] count=10 remaining=1 chunks=1 wall_ms=73.307 max_chunk_ms=73.307
+[admission] request cost: model="q38" ctx=31476 path=spec = 31552 B/token x ctx + 2522MB prefill-workspace + 386MB fixed = 3902MB
+[prime-yield] count=1 remaining=16 chunks=1 wall_ms=5023.720 max_chunk_ms=5023.720
+[prime-yield] count=2 remaining=15 chunks=1 wall_ms=5179.535 max_chunk_ms=5179.535
+[prime-yield] count=3 remaining=14 chunks=1 wall_ms=5350.076 max_chunk_ms=5350.076
+[prime-yield] count=4 remaining=13 chunks=1 wall_ms=5514.123 max_chunk_ms=5514.123
+[prime-yield] count=5 remaining=12 chunks=1 wall_ms=5684.344 max_chunk_ms=5684.344
+[prime-yield] count=6 remaining=11 chunks=1 wall_ms=5845.572 max_chunk_ms=5845.572
+[prime-yield] count=7 remaining=10 chunks=1 wall_ms=6012.565 max_chunk_ms=6012.565
+[prime-yield] count=8 remaining=9 chunks=1 wall_ms=3764.303 max_chunk_ms=3764.303
+[prime-yield] count=9 remaining=8 chunks=1 wall_ms=303.539 max_chunk_ms=303.539
+[prime-yield] count=10 remaining=7 chunks=1 wall_ms=74.333 max_chunk_ms=74.333
+[prime-yield] count=11 remaining=6 chunks=1 wall_ms=71.630 max_chunk_ms=71.630
+[prime-yield] count=12 remaining=5 chunks=1 wall_ms=70.728 max_chunk_ms=70.728
+[prime-yield] count=13 remaining=4 chunks=1 wall_ms=73.292 max_chunk_ms=73.292
+[prime-yield] count=14 remaining=3 chunks=1 wall_ms=71.585 max_chunk_ms=71.585
+[prime-yield] count=15 remaining=2 chunks=1 wall_ms=73.358 max_chunk_ms=73.358
+[prime-yield] count=16 remaining=1 chunks=1 wall_ms=72.144 max_chunk_ms=72.144
+[admission] request cost: model="q38" ctx=10793 path=spec = 31552 B/token x ctx + 2099MB prefill-workspace + 386MB fixed = 2826MB
+[prime-yield] count=1 remaining=6 chunks=1 wall_ms=5023.253 max_chunk_ms=5023.253
+[prime-yield] count=2 remaining=5 chunks=1 wall_ms=5180.085 max_chunk_ms=5180.085
+[prime-yield] count=3 remaining=4 chunks=1 wall_ms=2932.599 max_chunk_ms=2932.599
+[prime-yield] count=4 remaining=3 chunks=1 wall_ms=265.357 max_chunk_ms=265.357
+[prime-yield] count=5 remaining=2 chunks=1 wall_ms=72.329 max_chunk_ms=72.329
+[prime-yield] count=6 remaining=1 chunks=1 wall_ms=72.733 max_chunk_ms=72.733
+[admission] request cost: model="q38" ctx=18324 path=spec = 31552 B/token x ctx + 2253MB prefill-workspace + 386MB fixed = 3218MB
+[prime-yield] count=1 remaining=10 chunks=1 wall_ms=5022.812 max_chunk_ms=5022.812
+[prime-yield] count=2 remaining=9 chunks=1 wall_ms=5184.550 max_chunk_ms=5184.550
+[prime-yield] count=3 remaining=8 chunks=1 wall_ms=5345.441 max_chunk_ms=5345.441
+[prime-yield] count=4 remaining=7 chunks=1 wall_ms=5508.243 max_chunk_ms=5508.243
+[prime-yield] count=5 remaining=6 chunks=1 wall_ms=2268.045 max_chunk_ms=2268.045
+[prime-yield] count=6 remaining=5 chunks=1 wall_ms=275.754 max_chunk_ms=275.754
+[prime-yield] count=7 remaining=4 chunks=1 wall_ms=72.555 max_chunk_ms=72.555
+[prime-yield] count=8 remaining=3 chunks=1 wall_ms=74.144 max_chunk_ms=74.144
+[prime-yield] count=9 remaining=2 chunks=1 wall_ms=71.561 max_chunk_ms=71.561
+[prime-yield] count=10 remaining=1 chunks=1 wall_ms=72.495 max_chunk_ms=72.495
+[admission] request cost: model="q38" ctx=5009 path=spec = 31552 B/token x ctx + 1980MB prefill-workspace + 386MB fixed = 2525MB
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=5018.998 max_chunk_ms=5018.998
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=768.821 max_chunk_ms=768.821
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=250.276 max_chunk_ms=250.276
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=71.886 max_chunk_ms=71.886
+[admission] request cost: model="q38" ctx=8118 path=spec = 31552 B/token x ctx + 2044MB prefill-workspace + 386MB fixed = 2687MB
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=5017.430 max_chunk_ms=5017.430
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=4674.505 max_chunk_ms=4674.505
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=259.082 max_chunk_ms=259.082
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=73.543 max_chunk_ms=73.543
+[admission] request cost: model="q38" ctx=12392 path=spec = 31552 B/token x ctx + 2132MB prefill-workspace + 386MB fixed = 2909MB
+[prime-yield] count=1 remaining=6 chunks=1 wall_ms=5022.147 max_chunk_ms=5022.147
+[prime-yield] count=2 remaining=5 chunks=1 wall_ms=5179.126 max_chunk_ms=5179.126
+[prime-yield] count=3 remaining=4 chunks=1 wall_ms=5000.090 max_chunk_ms=5000.090
+[prime-yield] count=4 remaining=3 chunks=1 wall_ms=269.611 max_chunk_ms=269.611
+[prime-yield] count=5 remaining=2 chunks=1 wall_ms=72.494 max_chunk_ms=72.494
+[prime-yield] count=6 remaining=1 chunks=1 wall_ms=72.373 max_chunk_ms=72.373
+[admission] request cost: model="q38" ctx=27335 path=spec = 31552 B/token x ctx + 2438MB prefill-workspace + 386MB fixed = 3687MB
+[prime-yield] count=1 remaining=14 chunks=1 wall_ms=5032.613 max_chunk_ms=5032.613
+[prime-yield] count=2 remaining=13 chunks=1 wall_ms=5178.540 max_chunk_ms=5178.540
+[prime-yield] count=3 remaining=12 chunks=1 wall_ms=5347.513 max_chunk_ms=5347.513
+[prime-yield] count=4 remaining=11 chunks=1 wall_ms=5509.382 max_chunk_ms=5509.382
+[prime-yield] count=5 remaining=10 chunks=1 wall_ms=5678.446 max_chunk_ms=5678.446
+[prime-yield] count=6 remaining=9 chunks=1 wall_ms=5850.754 max_chunk_ms=5850.754
+[prime-yield] count=7 remaining=8 chunks=1 wall_ms=3520.515 max_chunk_ms=3520.515
+[prime-yield] count=8 remaining=7 chunks=1 wall_ms=298.516 max_chunk_ms=298.516
+[prime-yield] count=9 remaining=6 chunks=1 wall_ms=73.379 max_chunk_ms=73.379
+[prime-yield] count=10 remaining=5 chunks=1 wall_ms=71.647 max_chunk_ms=71.647
+[prime-yield] count=11 remaining=4 chunks=1 wall_ms=73.328 max_chunk_ms=73.328
+[prime-yield] count=12 remaining=3 chunks=1 wall_ms=73.289 max_chunk_ms=73.289
+[prime-yield] count=13 remaining=2 chunks=1 wall_ms=72.531 max_chunk_ms=72.531
+[prime-yield] count=14 remaining=1 chunks=1 wall_ms=72.657 max_chunk_ms=72.657
+[admission] request cost: model="q38" ctx=13297 path=spec = 31552 B/token x ctx + 2150MB prefill-workspace + 386MB fixed = 2956MB
+[prime-yield] count=1 remaining=8 chunks=1 wall_ms=5016.062 max_chunk_ms=5016.062
+[prime-yield] count=2 remaining=7 chunks=1 wall_ms=5174.618 max_chunk_ms=5174.618
+[prime-yield] count=3 remaining=6 chunks=1 wall_ms=5343.604 max_chunk_ms=5343.604
+[prime-yield] count=4 remaining=5 chunks=1 wall_ms=940.132 max_chunk_ms=940.132
+[prime-yield] count=5 remaining=4 chunks=1 wall_ms=267.891 max_chunk_ms=267.891
+[prime-yield] count=6 remaining=3 chunks=1 wall_ms=73.355 max_chunk_ms=73.355
+[prime-yield] count=7 remaining=2 chunks=1 wall_ms=71.708 max_chunk_ms=71.708
+[prime-yield] count=8 remaining=1 chunks=1 wall_ms=73.386 max_chunk_ms=73.386
+[admission] request cost: model="q38" ctx=19094 path=spec = 31552 B/token x ctx + 2269MB prefill-workspace + 386MB fixed = 3258MB
+[prime-yield] count=1 remaining=10 chunks=1 wall_ms=5025.026 max_chunk_ms=5025.026
+[prime-yield] count=2 remaining=9 chunks=1 wall_ms=5185.033 max_chunk_ms=5185.033
+[prime-yield] count=3 remaining=8 chunks=1 wall_ms=5349.304 max_chunk_ms=5349.304
+[prime-yield] count=4 remaining=7 chunks=1 wall_ms=5517.521 max_chunk_ms=5517.521
+[prime-yield] count=5 remaining=6 chunks=1 wall_ms=3297.261 max_chunk_ms=3297.261
+[prime-yield] count=6 remaining=5 chunks=1 wall_ms=280.740 max_chunk_ms=280.740
+[prime-yield] count=7 remaining=4 chunks=1 wall_ms=74.470 max_chunk_ms=74.470
+[prime-yield] count=8 remaining=3 chunks=1 wall_ms=73.472 max_chunk_ms=73.472
+[prime-yield] count=9 remaining=2 chunks=1 wall_ms=73.419 max_chunk_ms=73.419
+[prime-yield] count=10 remaining=1 chunks=1 wall_ms=73.312 max_chunk_ms=73.312
+[admission] request cost: model="q38" ctx=2898 path=spec = 31552 B/token x ctx + 1358MB prefill-workspace + 386MB fixed = 1836MB
+[admission] request cost: model="q38" ctx=5297 path=spec = 31552 B/token x ctx + 1986MB prefill-workspace + 386MB fixed = 2540MB
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=5024.044 max_chunk_ms=5024.044
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=1090.622 max_chunk_ms=1090.622
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=252.519 max_chunk_ms=252.519
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=72.846 max_chunk_ms=72.846
+[admission] request cost: model="q38" ctx=16933 path=spec = 31552 B/token x ctx + 2225MB prefill-workspace + 386MB fixed = 3145MB
+[prime-yield] count=1 remaining=10 chunks=1 wall_ms=5032.913 max_chunk_ms=5032.913
+[prime-yield] count=2 remaining=9 chunks=1 wall_ms=5178.487 max_chunk_ms=5178.487
+[prime-yield] count=3 remaining=8 chunks=1 wall_ms=5387.627 max_chunk_ms=5387.627
+[prime-yield] count=4 remaining=7 chunks=1 wall_ms=5585.984 max_chunk_ms=5585.984
+[prime-yield] count=5 remaining=6 chunks=1 wall_ms=337.418 max_chunk_ms=337.418
+[prime-yield] count=6 remaining=5 chunks=1 wall_ms=294.937 max_chunk_ms=294.937
+[prime-yield] count=7 remaining=4 chunks=1 wall_ms=72.483 max_chunk_ms=72.483
+[prime-yield] count=8 remaining=3 chunks=1 wall_ms=72.610 max_chunk_ms=72.610
+[prime-yield] count=9 remaining=2 chunks=1 wall_ms=72.089 max_chunk_ms=72.089
+[prime-yield] count=10 remaining=1 chunks=1 wall_ms=72.928 max_chunk_ms=72.928
+[admission] request cost: model="q38" ctx=35666 path=spec = 31552 B/token x ctx + 2608MB prefill-workspace + 386MB fixed = 4120MB
+[prime-yield] count=1 remaining=18 chunks=1 wall_ms=5086.504 max_chunk_ms=5086.504
+[prime-yield] count=2 remaining=17 chunks=1 wall_ms=5178.181 max_chunk_ms=5178.181
+[prime-yield] count=3 remaining=16 chunks=1 wall_ms=5355.327 max_chunk_ms=5355.327
+[prime-yield] count=4 remaining=15 chunks=1 wall_ms=5594.554 max_chunk_ms=5594.554
+[prime-yield] count=5 remaining=14 chunks=1 wall_ms=5754.687 max_chunk_ms=5754.687
+[prime-yield] count=6 remaining=13 chunks=1 wall_ms=5859.080 max_chunk_ms=5859.080
+[prime-yield] count=7 remaining=12 chunks=1 wall_ms=6082.398 max_chunk_ms=6082.398
+[prime-yield] count=8 remaining=11 chunks=1 wall_ms=6258.712 max_chunk_ms=6258.712
+[prime-yield] count=9 remaining=10 chunks=1 wall_ms=3987.912 max_chunk_ms=3987.912
+[prime-yield] count=10 remaining=9 chunks=1 wall_ms=312.124 max_chunk_ms=312.124
+[prime-yield] count=11 remaining=8 chunks=1 wall_ms=73.584 max_chunk_ms=73.584
+[prime-yield] count=12 remaining=7 chunks=1 wall_ms=72.514 max_chunk_ms=72.514
+[prime-yield] count=13 remaining=6 chunks=1 wall_ms=71.679 max_chunk_ms=71.679
+[prime-yield] count=14 remaining=5 chunks=1 wall_ms=72.595 max_chunk_ms=72.595
+[prime-yield] count=15 remaining=4 chunks=1 wall_ms=73.467 max_chunk_ms=73.467
+[prime-yield] count=16 remaining=3 chunks=1 wall_ms=71.702 max_chunk_ms=71.702
+[prime-yield] count=17 remaining=2 chunks=1 wall_ms=73.299 max_chunk_ms=73.299
+[prime-yield] count=18 remaining=1 chunks=1 wall_ms=71.587 max_chunk_ms=71.587
+[admission] request cost: model="q38" ctx=1669 path=spec = 31552 B/token x ctx + 769MB prefill-workspace + 386MB fixed = 1208MB
+[admission] request cost: model="q38" ctx=5791 path=spec = 31552 B/token x ctx + 1996MB prefill-workspace + 386MB fixed = 2566MB
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=5064.194 max_chunk_ms=5064.194
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=1803.796 max_chunk_ms=1803.796
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=269.923 max_chunk_ms=269.923
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=71.710 max_chunk_ms=71.710
+[admission] request cost: model="q38" ctx=3578 path=spec = 31552 B/token x ctx + 1684MB prefill-workspace + 386MB fixed = 2183MB
+[admission] request cost: model="q38" ctx=3970 path=spec = 31552 B/token x ctx + 1871MB prefill-workspace + 386MB fixed = 2383MB
+[admission] request cost: model="q38" ctx=16708 path=spec = 31552 B/token x ctx + 2220MB prefill-workspace + 386MB fixed = 3134MB
+[prime-yield] count=1 remaining=9 chunks=1 wall_ms=5021.281 max_chunk_ms=5021.281
+[prime-yield] count=2 remaining=8 chunks=1 wall_ms=5174.032 max_chunk_ms=5174.032
+[prime-yield] count=3 remaining=7 chunks=1 wall_ms=5339.858 max_chunk_ms=5339.858
+[prime-yield] count=4 remaining=6 chunks=1 wall_ms=5492.739 max_chunk_ms=5492.739
+[prime-yield] count=5 remaining=5 chunks=1 wall_ms=276.588 max_chunk_ms=276.588
+[prime-yield] count=6 remaining=4 chunks=1 wall_ms=73.343 max_chunk_ms=73.343
+[prime-yield] count=7 remaining=3 chunks=1 wall_ms=71.611 max_chunk_ms=71.611
+[prime-yield] count=8 remaining=2 chunks=1 wall_ms=70.808 max_chunk_ms=70.808
+[prime-yield] count=9 remaining=1 chunks=1 wall_ms=72.483 max_chunk_ms=72.483
+[admission] request cost: model="q38" ctx=37486 path=spec = 31552 B/token x ctx + 2645MB prefill-workspace + 386MB fixed = 4215MB
+[prime-yield] count=1 remaining=20 chunks=1 wall_ms=5020.722 max_chunk_ms=5020.722
+[prime-yield] count=2 remaining=19 chunks=1 wall_ms=5174.898 max_chunk_ms=5174.898
+[prime-yield] count=3 remaining=18 chunks=1 wall_ms=5337.270 max_chunk_ms=5337.270
+[prime-yield] count=4 remaining=17 chunks=1 wall_ms=5506.372 max_chunk_ms=5506.372
+[prime-yield] count=5 remaining=16 chunks=1 wall_ms=5673.303 max_chunk_ms=5673.303
+[prime-yield] count=6 remaining=15 chunks=1 wall_ms=5837.451 max_chunk_ms=5837.451
+[prime-yield] count=7 remaining=14 chunks=1 wall_ms=6007.067 max_chunk_ms=6007.067
+[prime-yield] count=8 remaining=13 chunks=1 wall_ms=6176.293 max_chunk_ms=6176.293
+[prime-yield] count=9 remaining=12 chunks=1 wall_ms=6334.519 max_chunk_ms=6334.519
+[prime-yield] count=10 remaining=11 chunks=1 wall_ms=438.626 max_chunk_ms=438.626
+[prime-yield] count=11 remaining=10 chunks=1 wall_ms=321.720 max_chunk_ms=321.720
+[prime-yield] count=12 remaining=9 chunks=1 wall_ms=74.373 max_chunk_ms=74.373
+[prime-yield] count=13 remaining=8 chunks=1 wall_ms=73.391 max_chunk_ms=73.391
+[prime-yield] count=14 remaining=7 chunks=1 wall_ms=70.762 max_chunk_ms=70.762
+[prime-yield] count=15 remaining=6 chunks=1 wall_ms=72.612 max_chunk_ms=72.612
+[prime-yield] count=16 remaining=5 chunks=1 wall_ms=72.062 max_chunk_ms=72.062
+[prime-yield] count=17 remaining=4 chunks=1 wall_ms=72.942 max_chunk_ms=72.942
+[prime-yield] count=18 remaining=3 chunks=1 wall_ms=72.473 max_chunk_ms=72.473
+[prime-yield] count=19 remaining=2 chunks=1 wall_ms=72.537 max_chunk_ms=72.537
+[prime-yield] count=20 remaining=1 chunks=1 wall_ms=71.558 max_chunk_ms=71.558
+[admission] request cost: model="q38" ctx=3665 path=spec = 31552 B/token x ctx + 1725MB prefill-workspace + 386MB fixed = 2227MB
+[admission] request cost: model="q38" ctx=7456 path=spec = 31552 B/token x ctx + 2030MB prefill-workspace + 386MB fixed = 2652MB
+[admission] request cost: model="q38" ctx=2432 path=spec = 31552 B/token x ctx + 1134MB prefill-workspace + 386MB fixed = 1598MB
+[admission] request cost: model="q38" ctx=2697 path=spec = 31552 B/token x ctx + 1261MB prefill-workspace + 386MB fixed = 1733MB
+[admission] request cost: model="q38" ctx=20945 path=spec = 31552 B/token x ctx + 2307MB prefill-workspace + 386MB fixed = 3354MB
+[prime-yield] count=1 remaining=12 chunks=1 wall_ms=5018.812 max_chunk_ms=5018.812
+[prime-yield] count=2 remaining=11 chunks=1 wall_ms=5169.577 max_chunk_ms=5169.577
+[prime-yield] count=3 remaining=10 chunks=1 wall_ms=5337.685 max_chunk_ms=5337.685
+[prime-yield] count=4 remaining=9 chunks=1 wall_ms=5506.617 max_chunk_ms=5506.617
+[prime-yield] count=5 remaining=8 chunks=1 wall_ms=5674.241 max_chunk_ms=5674.241
+[prime-yield] count=6 remaining=7 chunks=1 wall_ms=221.288 max_chunk_ms=221.288
+[prime-yield] count=7 remaining=6 chunks=1 wall_ms=282.497 max_chunk_ms=282.497
+[prime-yield] count=8 remaining=5 chunks=1 wall_ms=73.452 max_chunk_ms=73.452
+[prime-yield] count=9 remaining=4 chunks=1 wall_ms=72.468 max_chunk_ms=72.468
+[prime-yield] count=10 remaining=3 chunks=1 wall_ms=72.485 max_chunk_ms=72.485
+[prime-yield] count=11 remaining=2 chunks=1 wall_ms=73.254 max_chunk_ms=73.254
+[prime-yield] count=12 remaining=1 chunks=1 wall_ms=72.199 max_chunk_ms=72.199
+[admission] request cost: model="q38" ctx=31393 path=spec = 31552 B/token x ctx + 2521MB prefill-workspace + 386MB fixed = 3898MB
+[prime-yield] count=1 remaining=16 chunks=1 wall_ms=5027.568 max_chunk_ms=5027.568
+[prime-yield] count=2 remaining=15 chunks=1 wall_ms=5177.069 max_chunk_ms=5177.069
+[prime-yield] count=3 remaining=14 chunks=1 wall_ms=5333.409 max_chunk_ms=5333.409
+[prime-yield] count=4 remaining=13 chunks=1 wall_ms=5508.072 max_chunk_ms=5508.072
+[prime-yield] count=5 remaining=12 chunks=1 wall_ms=5680.563 max_chunk_ms=5680.563
+[prime-yield] count=6 remaining=11 chunks=1 wall_ms=5847.709 max_chunk_ms=5847.709
+[prime-yield] count=7 remaining=10 chunks=1 wall_ms=6002.780 max_chunk_ms=6002.780
+[prime-yield] count=8 remaining=9 chunks=1 wall_ms=3589.804 max_chunk_ms=3589.804
+[prime-yield] count=9 remaining=8 chunks=1 wall_ms=303.522 max_chunk_ms=303.522
+[prime-yield] count=10 remaining=7 chunks=1 wall_ms=73.359 max_chunk_ms=73.359
+[prime-yield] count=11 remaining=6 chunks=1 wall_ms=73.304 max_chunk_ms=73.304
+[prime-yield] count=12 remaining=5 chunks=1 wall_ms=70.792 max_chunk_ms=70.792
+[prime-yield] count=13 remaining=4 chunks=1 wall_ms=72.551 max_chunk_ms=72.551
+[prime-yield] count=14 remaining=3 chunks=1 wall_ms=71.644 max_chunk_ms=71.644
+[prime-yield] count=15 remaining=2 chunks=1 wall_ms=72.495 max_chunk_ms=72.495
+[prime-yield] count=16 remaining=1 chunks=1 wall_ms=72.344 max_chunk_ms=72.344
+[admission] request cost: model="q38" ctx=4377 path=spec = 31552 B/token x ctx + 1967MB prefill-workspace + 386MB fixed = 2492MB
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=5009.160 max_chunk_ms=5009.160
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=179.541 max_chunk_ms=179.541
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=248.823 max_chunk_ms=248.823
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=74.183 max_chunk_ms=74.183
+[admission] request cost: model="q38" ctx=5770 path=spec = 31552 B/token x ctx + 1996MB prefill-workspace + 386MB fixed = 2564MB
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=5005.370 max_chunk_ms=5005.370
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=1898.884 max_chunk_ms=1898.884
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=256.082 max_chunk_ms=256.082
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=73.103 max_chunk_ms=73.103
+[admission] request cost: model="q38" ctx=3592 path=spec = 31552 B/token x ctx + 1323MB prefill-workspace + 386MB fixed = 1823MB
+[admission] request cost: model="q38" ctx=4808 path=spec = 31552 B/token x ctx + 1905MB prefill-workspace + 386MB fixed = 2444MB
+[admission] request cost: model="q38" ctx=23699 path=spec = 31552 B/token x ctx + 2347MB prefill-workspace + 386MB fixed = 3482MB
+[admission] request cost: model="q38" ctx=42745 path=spec = 31552 B/token x ctx + 2737MB prefill-workspace + 386MB fixed = 4473MB
+[prime-yield] count=1 remaining=10 chunks=1 wall_ms=5945.755 max_chunk_ms=5945.755
+[prime-yield] count=2 remaining=9 chunks=1 wall_ms=6098.622 max_chunk_ms=6098.622
+[prime-yield] count=3 remaining=8 chunks=1 wall_ms=6261.649 max_chunk_ms=6261.649
+[prime-yield] count=4 remaining=7 chunks=1 wall_ms=6434.169 max_chunk_ms=6434.169
+[prime-yield] count=5 remaining=6 chunks=1 wall_ms=4304.702 max_chunk_ms=4304.702
+[prime-yield] count=6 remaining=5 chunks=1 wall_ms=328.020 max_chunk_ms=328.020
+[prime-yield] count=7 remaining=4 chunks=1 wall_ms=72.659 max_chunk_ms=72.659
+[prime-yield] count=8 remaining=3 chunks=1 wall_ms=71.577 max_chunk_ms=71.577
+[prime-yield] count=9 remaining=2 chunks=1 wall_ms=73.514 max_chunk_ms=73.514
+[prime-yield] count=10 remaining=1 chunks=1 wall_ms=71.614 max_chunk_ms=71.614
+[admission] request cost: model="q38" ctx=15537 path=spec = 31552 B/token x ctx + 2180MB prefill-workspace + 387MB fixed = 3058MB
+[prime-yield] count=1 remaining=8 chunks=1 wall_ms=5057.276 max_chunk_ms=5057.276
+[prime-yield] count=2 remaining=7 chunks=1 wall_ms=5170.178 max_chunk_ms=5170.178
+[prime-yield] count=3 remaining=6 chunks=1 wall_ms=5350.765 max_chunk_ms=5350.765
+[prime-yield] count=4 remaining=5 chunks=1 wall_ms=2899.291 max_chunk_ms=2899.291
+[prime-yield] count=5 remaining=4 chunks=1 wall_ms=270.931 max_chunk_ms=270.931
+[prime-yield] count=6 remaining=3 chunks=1 wall_ms=73.386 max_chunk_ms=73.386
+[prime-yield] count=7 remaining=2 chunks=1 wall_ms=73.359 max_chunk_ms=73.359
+[prime-yield] count=8 remaining=1 chunks=1 wall_ms=73.902 max_chunk_ms=73.902
+[admission] request cost: model="q38" ctx=26678 path=spec = 31552 B/token x ctx + 2408MB prefill-workspace + 387MB fixed = 3637MB
+[prime-yield] count=1 remaining=6 chunks=1 wall_ms=5628.979 max_chunk_ms=5628.979
+[prime-yield] count=2 remaining=5 chunks=1 wall_ms=5770.977 max_chunk_ms=5770.977
+[prime-yield] count=3 remaining=4 chunks=1 wall_ms=4291.111 max_chunk_ms=4291.111
+[prime-yield] count=4 remaining=3 chunks=1 wall_ms=295.138 max_chunk_ms=295.138
+[prime-yield] count=5 remaining=2 chunks=1 wall_ms=73.496 max_chunk_ms=73.496
+[prime-yield] count=6 remaining=1 chunks=1 wall_ms=71.666 max_chunk_ms=71.666
+[admission] request cost: model="q38" ctx=3099 path=spec = 31552 B/token x ctx + 1086MB prefill-workspace + 387MB fixed = 1571MB
+[admission] request cost: model="q38" ctx=3769 path=spec = 31552 B/token x ctx + 1408MB prefill-workspace + 387MB fixed = 1914MB
+[admission] request cost: model="q38" ctx=23451 path=spec = 31552 B/token x ctx + 2342MB prefill-workspace + 387MB fixed = 3469MB
+[prime-yield] count=1 remaining=12 chunks=1 wall_ms=5017.880 max_chunk_ms=5017.880
+[prime-yield] count=2 remaining=11 chunks=1 wall_ms=5177.373 max_chunk_ms=5177.373
+[prime-yield] count=3 remaining=10 chunks=1 wall_ms=5344.459 max_chunk_ms=5344.459
+[prime-yield] count=4 remaining=9 chunks=1 wall_ms=5519.015 max_chunk_ms=5519.015
+[prime-yield] count=5 remaining=8 chunks=1 wall_ms=5679.024 max_chunk_ms=5679.024
+[prime-yield] count=6 remaining=7 chunks=1 wall_ms=2693.060 max_chunk_ms=2693.060
+[prime-yield] count=7 remaining=6 chunks=1 wall_ms=283.909 max_chunk_ms=283.909
+[prime-yield] count=8 remaining=5 chunks=1 wall_ms=72.468 max_chunk_ms=72.468
+[prime-yield] count=9 remaining=4 chunks=1 wall_ms=71.698 max_chunk_ms=71.698
+[prime-yield] count=10 remaining=3 chunks=1 wall_ms=71.609 max_chunk_ms=71.609
+[prime-yield] count=11 remaining=2 chunks=1 wall_ms=70.850 max_chunk_ms=70.850
+[prime-yield] count=12 remaining=1 chunks=1 wall_ms=73.305 max_chunk_ms=73.305
+[admission] request cost: model="q38" ctx=37359 path=spec = 31552 B/token x ctx + 2627MB prefill-workspace + 387MB fixed = 4193MB
+[prime-yield] count=1 remaining=8 chunks=1 wall_ms=5974.083 max_chunk_ms=5974.083
+[prime-yield] count=2 remaining=7 chunks=1 wall_ms=6086.483 max_chunk_ms=6086.483
+[prime-yield] count=3 remaining=6 chunks=1 wall_ms=6250.812 max_chunk_ms=6250.812
+[prime-yield] count=4 remaining=5 chunks=1 wall_ms=2569.085 max_chunk_ms=2569.085
+[prime-yield] count=5 remaining=4 chunks=1 wall_ms=327.115 max_chunk_ms=327.115
+[prime-yield] count=6 remaining=3 chunks=1 wall_ms=72.436 max_chunk_ms=72.436
+[prime-yield] count=7 remaining=2 chunks=1 wall_ms=74.102 max_chunk_ms=74.102
+[prime-yield] count=8 remaining=1 chunks=1 wall_ms=72.170 max_chunk_ms=72.170
+[admission] request cost: model="q38" ctx=14048 path=spec = 31552 B/token x ctx + 2150MB prefill-workspace + 387MB fixed = 2980MB
+[prime-yield] count=1 remaining=8 chunks=1 wall_ms=5062.738 max_chunk_ms=5062.738
+[prime-yield] count=2 remaining=7 chunks=1 wall_ms=5175.677 max_chunk_ms=5175.677
+[prime-yield] count=3 remaining=6 chunks=1 wall_ms=5346.993 max_chunk_ms=5346.993
+[prime-yield] count=4 remaining=5 chunks=1 wall_ms=862.896 max_chunk_ms=862.896
+[prime-yield] count=5 remaining=4 chunks=1 wall_ms=267.074 max_chunk_ms=267.074
+[prime-yield] count=6 remaining=3 chunks=1 wall_ms=72.060 max_chunk_ms=72.060
+[prime-yield] count=7 remaining=2 chunks=1 wall_ms=74.048 max_chunk_ms=74.048
+[prime-yield] count=8 remaining=1 chunks=1 wall_ms=73.185 max_chunk_ms=73.185
+[admission] request cost: model="q38" ctx=19986 path=spec = 31552 B/token x ctx + 2271MB prefill-workspace + 387MB fixed = 3289MB
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=5548.187 max_chunk_ms=5548.187
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=2629.399 max_chunk_ms=2629.399
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=282.394 max_chunk_ms=282.394
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=72.722 max_chunk_ms=72.722
+[admission] request cost: model="q38" ctx=3235 path=spec = 31552 B/token x ctx + 1152MB prefill-workspace + 387MB fixed = 1641MB
+[admission] request cost: model="q38" ctx=3829 path=spec = 31552 B/token x ctx + 1436MB prefill-workspace + 387MB fixed = 1944MB
+[admission] request cost: model="q38" ctx=23065 path=spec = 31552 B/token x ctx + 2334MB prefill-workspace + 387MB fixed = 3449MB
+[prime-yield] count=1 remaining=12 chunks=1 wall_ms=5025.960 max_chunk_ms=5025.960
+[prime-yield] count=2 remaining=11 chunks=1 wall_ms=5172.338 max_chunk_ms=5172.338
+[prime-yield] count=3 remaining=10 chunks=1 wall_ms=5342.051 max_chunk_ms=5342.051
+[prime-yield] count=4 remaining=9 chunks=1 wall_ms=5507.470 max_chunk_ms=5507.470
+[prime-yield] count=5 remaining=8 chunks=1 wall_ms=5677.205 max_chunk_ms=5677.205
+[prime-yield] count=6 remaining=7 chunks=1 wall_ms=2157.166 max_chunk_ms=2157.166
+[prime-yield] count=7 remaining=6 chunks=1 wall_ms=287.658 max_chunk_ms=287.658
+[prime-yield] count=8 remaining=5 chunks=1 wall_ms=73.883 max_chunk_ms=73.883
+[prime-yield] count=9 remaining=4 chunks=1 wall_ms=73.507 max_chunk_ms=73.507
+[prime-yield] count=10 remaining=3 chunks=1 wall_ms=72.396 max_chunk_ms=72.396
+[prime-yield] count=11 remaining=2 chunks=1 wall_ms=72.633 max_chunk_ms=72.633
+[prime-yield] count=12 remaining=1 chunks=1 wall_ms=72.511 max_chunk_ms=72.511
+[admission] request cost: model="q38" ctx=43166 path=spec = 31552 B/token x ctx + 2746MB prefill-workspace + 387MB fixed = 4495MB
+[prime-yield] count=1 remaining=10 chunks=1 wall_ms=5938.827 max_chunk_ms=5938.827
+[prime-yield] count=2 remaining=9 chunks=1 wall_ms=6063.274 max_chunk_ms=6063.274
+[prime-yield] count=3 remaining=8 chunks=1 wall_ms=6226.651 max_chunk_ms=6226.651
+[prime-yield] count=4 remaining=7 chunks=1 wall_ms=6395.518 max_chunk_ms=6395.518
+[prime-yield] count=5 remaining=6 chunks=1 wall_ms=5950.665 max_chunk_ms=5950.665
+[prime-yield] count=6 remaining=5 chunks=1 wall_ms=339.248 max_chunk_ms=339.248
+[prime-yield] count=7 remaining=4 chunks=1 wall_ms=73.368 max_chunk_ms=73.368
+[prime-yield] count=8 remaining=3 chunks=1 wall_ms=72.390 max_chunk_ms=72.390
+[prime-yield] count=9 remaining=2 chunks=1 wall_ms=73.382 max_chunk_ms=73.382
+[prime-yield] count=10 remaining=1 chunks=1 wall_ms=73.191 max_chunk_ms=73.191
+[admission] request cost: model="q38" ctx=17933 path=spec = 31552 B/token x ctx + 2229MB prefill-workspace + 388MB fixed = 3183MB
+[prime-yield] count=1 remaining=10 chunks=1 wall_ms=5054.394 max_chunk_ms=5054.394
+[prime-yield] count=2 remaining=9 chunks=1 wall_ms=5163.838 max_chunk_ms=5163.838
+[prime-yield] count=3 remaining=8 chunks=1 wall_ms=5328.889 max_chunk_ms=5328.889
+[prime-yield] count=4 remaining=7 chunks=1 wall_ms=5499.535 max_chunk_ms=5499.535
+[prime-yield] count=5 remaining=6 chunks=1 wall_ms=656.949 max_chunk_ms=656.949
+[prime-yield] count=6 remaining=5 chunks=1 wall_ms=281.775 max_chunk_ms=281.775
+[prime-yield] count=7 remaining=4 chunks=1 wall_ms=73.343 max_chunk_ms=73.343
+[prime-yield] count=8 remaining=3 chunks=1 wall_ms=73.089 max_chunk_ms=73.089
+[prime-yield] count=9 remaining=2 chunks=1 wall_ms=71.589 max_chunk_ms=71.589
+[prime-yield] count=10 remaining=1 chunks=1 wall_ms=71.611 max_chunk_ms=71.611
+[admission] request cost: model="q38" ctx=31138 path=spec = 31552 B/token x ctx + 2500MB prefill-workspace + 388MB fixed = 3870MB
+[prime-yield] count=1 remaining=8 chunks=1 wall_ms=5722.443 max_chunk_ms=5722.443
+[prime-yield] count=2 remaining=7 chunks=1 wall_ms=5846.653 max_chunk_ms=5846.653
+[prime-yield] count=3 remaining=6 chunks=1 wall_ms=6017.095 max_chunk_ms=6017.095
+[prime-yield] count=4 remaining=5 chunks=1 wall_ms=1473.386 max_chunk_ms=1473.386
+[prime-yield] count=5 remaining=4 chunks=1 wall_ms=303.225 max_chunk_ms=303.225
+[prime-yield] count=6 remaining=3 chunks=1 wall_ms=72.089 max_chunk_ms=72.089
+[prime-yield] count=7 remaining=2 chunks=1 wall_ms=73.345 max_chunk_ms=73.345
+[prime-yield] count=8 remaining=1 chunks=1 wall_ms=72.409 max_chunk_ms=72.409
+[admission] request cost: model="q38" ctx=2932 path=spec = 31552 B/token x ctx + 1006MB prefill-workspace + 388MB fixed = 1487MB
+[admission] request cost: model="q38" ctx=5674 path=spec = 31552 B/token x ctx + 1978MB prefill-workspace + 388MB fixed = 2545MB
+[admission] request cost: model="q38" ctx=18270 path=spec = 31552 B/token x ctx + 2236MB prefill-workspace + 388MB fixed = 3201MB
+[prime-yield] count=1 remaining=10 chunks=1 wall_ms=5017.943 max_chunk_ms=5017.943
+[prime-yield] count=2 remaining=9 chunks=1 wall_ms=5178.597 max_chunk_ms=5178.597
+[prime-yield] count=3 remaining=8 chunks=1 wall_ms=5344.754 max_chunk_ms=5344.754
+[prime-yield] count=4 remaining=7 chunks=1 wall_ms=5504.717 max_chunk_ms=5504.717
+[prime-yield] count=5 remaining=6 chunks=1 wall_ms=1028.675 max_chunk_ms=1028.675
+[prime-yield] count=6 remaining=5 chunks=1 wall_ms=275.595 max_chunk_ms=275.595
+[prime-yield] count=7 remaining=4 chunks=1 wall_ms=72.521 max_chunk_ms=72.521
+[prime-yield] count=8 remaining=3 chunks=1 wall_ms=74.280 max_chunk_ms=74.280
+[prime-yield] count=9 remaining=2 chunks=1 wall_ms=72.979 max_chunk_ms=72.979
+[prime-yield] count=10 remaining=1 chunks=1 wall_ms=72.919 max_chunk_ms=72.919
+[admission] request cost: model="q38" ctx=32243 path=spec = 31552 B/token x ctx + 2522MB prefill-workspace + 388MB fixed = 3928MB
+[prime-yield] count=1 remaining=8 chunks=1 wall_ms=5716.139 max_chunk_ms=5716.139
+[prime-yield] count=2 remaining=7 chunks=1 wall_ms=5867.395 max_chunk_ms=5867.395
+[prime-yield] count=3 remaining=6 chunks=1 wall_ms=6037.808 max_chunk_ms=6037.808
+[prime-yield] count=4 remaining=5 chunks=1 wall_ms=2653.941 max_chunk_ms=2653.941
+[prime-yield] count=5 remaining=4 chunks=1 wall_ms=302.098 max_chunk_ms=302.098
+[prime-yield] count=6 remaining=3 chunks=1 wall_ms=73.440 max_chunk_ms=73.440
+[prime-yield] count=7 remaining=2 chunks=1 wall_ms=73.341 max_chunk_ms=73.341
+[prime-yield] count=8 remaining=1 chunks=1 wall_ms=71.635 max_chunk_ms=71.635
+[admission] request cost: model="q38" ctx=11560 path=spec = 31552 B/token x ctx + 2099MB prefill-workspace + 388MB fixed = 2851MB
+[prime-yield] count=1 remaining=6 chunks=1 wall_ms=5021.505 max_chunk_ms=5021.505
+[prime-yield] count=2 remaining=5 chunks=1 wall_ms=5176.128 max_chunk_ms=5176.128
+[prime-yield] count=3 remaining=4 chunks=1 wall_ms=2924.675 max_chunk_ms=2924.675
+[prime-yield] count=4 remaining=3 chunks=1 wall_ms=265.608 max_chunk_ms=265.608
+[prime-yield] count=5 remaining=2 chunks=1 wall_ms=72.019 max_chunk_ms=72.019
+[prime-yield] count=6 remaining=1 chunks=1 wall_ms=73.292 max_chunk_ms=73.292
+[admission] request cost: model="q38" ctx=19091 path=spec = 31552 B/token x ctx + 2253MB prefill-workspace + 388MB fixed = 3243MB
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=5441.019 max_chunk_ms=5441.019
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=4725.869 max_chunk_ms=4725.869
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=277.908 max_chunk_ms=277.908
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=72.467 max_chunk_ms=72.467
+[admission] request cost: model="q38" ctx=5776 path=spec = 31552 B/token x ctx + 1980MB prefill-workspace + 388MB fixed = 2550MB
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=5012.912 max_chunk_ms=5012.912
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=765.822 max_chunk_ms=765.822
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=250.126 max_chunk_ms=250.126
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=74.079 max_chunk_ms=74.079
+[admission] request cost: model="q38" ctx=8885 path=spec = 31552 B/token x ctx + 2044MB prefill-workspace + 388MB fixed = 2712MB
+[admission] request cost: model="q38" ctx=13159 path=spec = 31552 B/token x ctx + 2132MB prefill-workspace + 388MB fixed = 2935MB
+[prime-yield] count=1 remaining=6 chunks=1 wall_ms=5014.804 max_chunk_ms=5014.804
+[prime-yield] count=2 remaining=5 chunks=1 wall_ms=5166.098 max_chunk_ms=5166.098
+[prime-yield] count=3 remaining=4 chunks=1 wall_ms=4995.461 max_chunk_ms=4995.461
+[prime-yield] count=4 remaining=3 chunks=1 wall_ms=267.490 max_chunk_ms=267.490
+[prime-yield] count=5 remaining=2 chunks=1 wall_ms=72.435 max_chunk_ms=72.435
+[prime-yield] count=6 remaining=1 chunks=1 wall_ms=71.614 max_chunk_ms=71.614
+[admission] request cost: model="q38" ctx=28102 path=spec = 31552 B/token x ctx + 2438MB prefill-workspace + 388MB fixed = 3712MB
+[prime-yield] count=1 remaining=8 chunks=1 wall_ms=5505.515 max_chunk_ms=5505.515
+[prime-yield] count=2 remaining=7 chunks=1 wall_ms=5655.414 max_chunk_ms=5655.414
+[prime-yield] count=3 remaining=6 chunks=1 wall_ms=5829.983 max_chunk_ms=5829.983
+[prime-yield] count=4 remaining=5 chunks=1 wall_ms=3907.225 max_chunk_ms=3907.225
+[prime-yield] count=5 remaining=4 chunks=1 wall_ms=299.142 max_chunk_ms=299.142
+[prime-yield] count=6 remaining=3 chunks=1 wall_ms=72.532 max_chunk_ms=72.532
+[prime-yield] count=7 remaining=2 chunks=1 wall_ms=73.623 max_chunk_ms=73.623
+[prime-yield] count=8 remaining=1 chunks=1 wall_ms=72.433 max_chunk_ms=72.433
+[admission] request cost: model="q38" ctx=14064 path=spec = 31552 B/token x ctx + 2150MB prefill-workspace + 388MB fixed = 2982MB
+[prime-yield] count=1 remaining=8 chunks=1 wall_ms=5008.777 max_chunk_ms=5008.777
+[prime-yield] count=2 remaining=7 chunks=1 wall_ms=5168.696 max_chunk_ms=5168.696
+[prime-yield] count=3 remaining=6 chunks=1 wall_ms=5337.637 max_chunk_ms=5337.637
+[prime-yield] count=4 remaining=5 chunks=1 wall_ms=935.423 max_chunk_ms=935.423
+[prime-yield] count=5 remaining=4 chunks=1 wall_ms=267.191 max_chunk_ms=267.191
+[prime-yield] count=6 remaining=3 chunks=1 wall_ms=73.444 max_chunk_ms=73.444
+[prime-yield] count=7 remaining=2 chunks=1 wall_ms=72.510 max_chunk_ms=72.510
+[prime-yield] count=8 remaining=1 chunks=1 wall_ms=72.473 max_chunk_ms=72.473
+[admission] request cost: model="q38" ctx=19861 path=spec = 31552 B/token x ctx + 2269MB prefill-workspace + 388MB fixed = 3283MB
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=5544.205 max_chunk_ms=5544.205
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=2436.625 max_chunk_ms=2436.625
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=280.147 max_chunk_ms=280.147
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=72.272 max_chunk_ms=72.272
+[admission] request cost: model="q38" ctx=3665 path=spec = 31552 B/token x ctx + 1358MB prefill-workspace + 388MB fixed = 1861MB
+[admission] request cost: model="q38" ctx=6064 path=spec = 31552 B/token x ctx + 1986MB prefill-workspace + 388MB fixed = 2565MB
+[admission] request cost: model="q38" ctx=17700 path=spec = 31552 B/token x ctx + 2225MB prefill-workspace + 388MB fixed = 3171MB
+[prime-yield] count=1 remaining=10 chunks=1 wall_ms=5019.559 max_chunk_ms=5019.559
+[prime-yield] count=2 remaining=9 chunks=1 wall_ms=5177.053 max_chunk_ms=5177.053
+[prime-yield] count=3 remaining=8 chunks=1 wall_ms=5328.783 max_chunk_ms=5328.783
+[prime-yield] count=4 remaining=7 chunks=1 wall_ms=5507.349 max_chunk_ms=5507.349
+[prime-yield] count=5 remaining=6 chunks=1 wall_ms=336.411 max_chunk_ms=336.411
+[prime-yield] count=6 remaining=5 chunks=1 wall_ms=276.360 max_chunk_ms=276.360
+[prime-yield] count=7 remaining=4 chunks=1 wall_ms=73.401 max_chunk_ms=73.401
+[prime-yield] count=8 remaining=3 chunks=1 wall_ms=71.662 max_chunk_ms=71.662
+[prime-yield] count=9 remaining=2 chunks=1 wall_ms=70.729 max_chunk_ms=70.729
+[prime-yield] count=10 remaining=1 chunks=1 wall_ms=72.503 max_chunk_ms=72.503
+[admission] request cost: model="q38" ctx=36433 path=spec = 31552 B/token x ctx + 2608MB prefill-workspace + 388MB fixed = 4146MB
+[prime-yield] count=1 remaining=10 chunks=1 wall_ms=5691.048 max_chunk_ms=5691.048
+[prime-yield] count=2 remaining=9 chunks=1 wall_ms=5843.275 max_chunk_ms=5843.275
+[prime-yield] count=3 remaining=8 chunks=1 wall_ms=6014.634 max_chunk_ms=6014.634
+[prime-yield] count=4 remaining=7 chunks=1 wall_ms=6179.337 max_chunk_ms=6179.337
+[prime-yield] count=5 remaining=6 chunks=1 wall_ms=3690.160 max_chunk_ms=3690.160
+[prime-yield] count=6 remaining=5 chunks=1 wall_ms=311.349 max_chunk_ms=311.349
+[prime-yield] count=7 remaining=4 chunks=1 wall_ms=72.765 max_chunk_ms=72.765
+[prime-yield] count=8 remaining=3 chunks=1 wall_ms=72.160 max_chunk_ms=72.160
+[prime-yield] count=9 remaining=2 chunks=1 wall_ms=71.518 max_chunk_ms=71.518
+[prime-yield] count=10 remaining=1 chunks=1 wall_ms=72.308 max_chunk_ms=72.308
+[admission] request cost: model="q38" ctx=2436 path=spec = 31552 B/token x ctx + 769MB prefill-workspace + 388MB fixed = 1233MB
+[admission] request cost: model="q38" ctx=6558 path=spec = 31552 B/token x ctx + 1996MB prefill-workspace + 388MB fixed = 2591MB
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=5066.697 max_chunk_ms=5066.697
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=156.374 max_chunk_ms=156.374
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=251.648 max_chunk_ms=251.648
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=73.587 max_chunk_ms=73.587
+[admission] request cost: model="q38" ctx=4345 path=spec = 31552 B/token x ctx + 1684MB prefill-workspace + 388MB fixed = 2209MB
+[admission] request cost: model="q38" ctx=4737 path=spec = 31552 B/token x ctx + 1871MB prefill-workspace + 388MB fixed = 2409MB
+[admission] request cost: model="q38" ctx=17475 path=spec = 31552 B/token x ctx + 2220MB prefill-workspace + 388MB fixed = 3159MB
+[prime-yield] count=1 remaining=9 chunks=1 wall_ms=5009.221 max_chunk_ms=5009.221
+[prime-yield] count=2 remaining=8 chunks=1 wall_ms=5171.222 max_chunk_ms=5171.222
+[prime-yield] count=3 remaining=7 chunks=1 wall_ms=5333.920 max_chunk_ms=5333.920
+[prime-yield] count=4 remaining=6 chunks=1 wall_ms=5486.350 max_chunk_ms=5486.350
+[prime-yield] count=5 remaining=5 chunks=1 wall_ms=291.823 max_chunk_ms=291.823
+[prime-yield] count=6 remaining=4 chunks=1 wall_ms=74.076 max_chunk_ms=74.076
+[prime-yield] count=7 remaining=3 chunks=1 wall_ms=73.299 max_chunk_ms=73.299
+[prime-yield] count=8 remaining=2 chunks=1 wall_ms=72.692 max_chunk_ms=72.692
+[prime-yield] count=9 remaining=1 chunks=1 wall_ms=73.128 max_chunk_ms=73.128
+[admission] request cost: model="q38" ctx=38253 path=spec = 31552 B/token x ctx + 2645MB prefill-workspace + 388MB fixed = 4240MB
+[prime-yield] count=1 remaining=12 chunks=1 wall_ms=5674.215 max_chunk_ms=5674.215
+[prime-yield] count=2 remaining=11 chunks=1 wall_ms=5826.926 max_chunk_ms=5826.926
+[prime-yield] count=3 remaining=10 chunks=1 wall_ms=6004.141 max_chunk_ms=6004.141
+[prime-yield] count=4 remaining=9 chunks=1 wall_ms=6157.160 max_chunk_ms=6157.160
+[prime-yield] count=5 remaining=8 chunks=1 wall_ms=6324.215 max_chunk_ms=6324.215
+[prime-yield] count=6 remaining=7 chunks=1 wall_ms=572.523 max_chunk_ms=572.523
+[prime-yield] count=7 remaining=6 chunks=1 wall_ms=324.052 max_chunk_ms=324.052
+[prime-yield] count=8 remaining=5 chunks=1 wall_ms=72.465 max_chunk_ms=72.465
+[prime-yield] count=9 remaining=4 chunks=1 wall_ms=73.304 max_chunk_ms=73.304
+[prime-yield] count=10 remaining=3 chunks=1 wall_ms=73.348 max_chunk_ms=73.348
+[prime-yield] count=11 remaining=2 chunks=1 wall_ms=71.565 max_chunk_ms=71.565
+[prime-yield] count=12 remaining=1 chunks=1 wall_ms=73.280 max_chunk_ms=73.280
+[admission] request cost: model="q38" ctx=4432 path=spec = 31552 B/token x ctx + 1725MB prefill-workspace + 388MB fixed = 2253MB
+[admission] request cost: model="q38" ctx=8223 path=spec = 31552 B/token x ctx + 2030MB prefill-workspace + 388MB fixed = 2678MB
+[admission] request cost: model="q38" ctx=3199 path=spec = 31552 B/token x ctx + 1134MB prefill-workspace + 388MB fixed = 1623MB
+[admission] request cost: model="q38" ctx=3464 path=spec = 31552 B/token x ctx + 1261MB prefill-workspace + 388MB fixed = 1759MB
+[admission] request cost: model="q38" ctx=21712 path=spec = 31552 B/token x ctx + 2307MB prefill-workspace + 388MB fixed = 3380MB
+[prime-yield] count=1 remaining=12 chunks=1 wall_ms=5011.759 max_chunk_ms=5011.759
+[prime-yield] count=2 remaining=11 chunks=1 wall_ms=5175.324 max_chunk_ms=5175.324
+[prime-yield] count=3 remaining=10 chunks=1 wall_ms=5336.060 max_chunk_ms=5336.060
+[prime-yield] count=4 remaining=9 chunks=1 wall_ms=5504.380 max_chunk_ms=5504.380
+[prime-yield] count=5 remaining=8 chunks=1 wall_ms=5670.556 max_chunk_ms=5670.556
+[prime-yield] count=6 remaining=7 chunks=1 wall_ms=233.908 max_chunk_ms=233.908
+[prime-yield] count=7 remaining=6 chunks=1 wall_ms=304.274 max_chunk_ms=304.274
+[prime-yield] count=8 remaining=5 chunks=1 wall_ms=73.348 max_chunk_ms=73.348
+[prime-yield] count=9 remaining=4 chunks=1 wall_ms=71.581 max_chunk_ms=71.581
+[prime-yield] count=10 remaining=3 chunks=1 wall_ms=71.576 max_chunk_ms=71.576
+[prime-yield] count=11 remaining=2 chunks=1 wall_ms=72.443 max_chunk_ms=72.443
+[prime-yield] count=12 remaining=1 chunks=1 wall_ms=71.626 max_chunk_ms=71.626
+[admission] request cost: model="q38" ctx=32160 path=spec = 31552 B/token x ctx + 2521MB prefill-workspace + 388MB fixed = 3923MB
+[prime-yield] count=1 remaining=6 chunks=1 wall_ms=5838.962 max_chunk_ms=5838.962
+[prime-yield] count=2 remaining=5 chunks=1 wall_ms=6008.878 max_chunk_ms=6008.878
+[prime-yield] count=3 remaining=4 chunks=1 wall_ms=3386.393 max_chunk_ms=3386.393
+[prime-yield] count=4 remaining=3 chunks=1 wall_ms=320.423 max_chunk_ms=320.423
+[prime-yield] count=5 remaining=2 chunks=1 wall_ms=73.426 max_chunk_ms=73.426
+[prime-yield] count=6 remaining=1 chunks=1 wall_ms=74.011 max_chunk_ms=74.011
+[admission] request cost: model="q38" ctx=5144 path=spec = 31552 B/token x ctx + 1967MB prefill-workspace + 388MB fixed = 2518MB
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=5003.291 max_chunk_ms=5003.291
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=179.022 max_chunk_ms=179.022
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=250.440 max_chunk_ms=250.440
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=72.306 max_chunk_ms=72.306
+[admission] request cost: model="q38" ctx=6537 path=spec = 31552 B/token x ctx + 1996MB prefill-workspace + 388MB fixed = 2590MB
+[admission] request cost: model="q38" ctx=4041 path=spec = 31552 B/token x ctx + 1905MB prefill-workspace + 388MB fixed = 2421MB
+[admission] request cost: model="q38" ctx=2825 path=plain = 29696 B/token x ctx + 1323MB prefill-workspace + 388MB fixed = 1794MB
+[admission] request cost: model="q38" ctx=22932 path=plain = 29696 B/token x ctx + 2347MB prefill-workspace + 388MB fixed = 3416MB
+[admission] request cost: model="q38" ctx=41978 path=plain = 29696 B/token x ctx + 2737MB prefill-workspace + 388MB fixed = 4372MB
+[admission] request cost: model="q38" ctx=14770 path=plain = 29696 B/token x ctx + 2180MB prefill-workspace + 388MB fixed = 3007MB
+[admission] request cost: model="q38" ctx=25911 path=plain = 29696 B/token x ctx + 2408MB prefill-workspace + 388MB fixed = 3566MB
+[admission] request cost: model="q38" ctx=2332 path=plain = 29696 B/token x ctx + 1086MB prefill-workspace + 388MB fixed = 1544MB
+[admission] request cost: model="q38" ctx=3002 path=plain = 29696 B/token x ctx + 1408MB prefill-workspace + 388MB fixed = 1885MB
+[admission] request cost: model="q38" ctx=4041 path=spec = 31552 B/token x ctx + 1905MB prefill-workspace + 388MB fixed = 2421MB
+[admission] request cost: model="q38" ctx=2825 path=plain = 29696 B/token x ctx + 1323MB prefill-workspace + 388MB fixed = 1794MB
+[admission] request cost: model="q38" ctx=2332 path=plain = 29696 B/token x ctx + 1086MB prefill-workspace + 388MB fixed = 1544MB
+[admission] request cost: model="q38" ctx=14770 path=plain = 29696 B/token x ctx + 2180MB prefill-workspace + 388MB fixed = 3007MB
+[admission] request cost: model="q38" ctx=3002 path=plain = 29696 B/token x ctx + 1408MB prefill-workspace + 388MB fixed = 1885MB
+[admission] request cost: model="q38" ctx=41978 path=plain = 29696 B/token x ctx + 2737MB prefill-workspace + 388MB fixed = 4372MB
+[admission] request cost: model="q38" ctx=25911 path=plain = 29696 B/token x ctx + 2408MB prefill-workspace + 388MB fixed = 3566MB
+[admission] request cost: model="q38" ctx=22932 path=plain = 29696 B/token x ctx + 2347MB prefill-workspace + 388MB fixed = 3416MB
+[admission] request cost: model="q38" ctx=13281 path=plain = 29696 B/token x ctx + 2150MB prefill-workspace + 388MB fixed = 2932MB
+[admission] request cost: model="q38" ctx=22684 path=plain = 29696 B/token x ctx + 2342MB prefill-workspace + 388MB fixed = 3404MB
+[admission] request cost: model="q38" ctx=19219 path=plain = 29696 B/token x ctx + 2271MB prefill-workspace + 388MB fixed = 3230MB
+[admission] request cost: model="q38" ctx=36592 path=plain = 29696 B/token x ctx + 2627MB prefill-workspace + 388MB fixed = 4102MB
+[admission] request cost: model="q38" ctx=2468 path=plain = 29696 B/token x ctx + 1152MB prefill-workspace + 405MB fixed = 1630MB
