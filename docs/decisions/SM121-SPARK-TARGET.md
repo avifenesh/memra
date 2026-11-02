@@ -52,13 +52,16 @@ instruction; their policy family equals their target, so kernel selection is unc
 Unit tests pin the capability-to-target map, the family map and the guard
 (`cuda_arch::tests`).
 
-Not yet proved, owed by the first GB10 run:
+Proved on a GB10 (2026-11-02, `121a` built on the device's aarch64 CUDA 13.0 toolkit from
+`b014549cb9`): every module loads; kernel-check ALL GREEN, `run-gen` argmax MATCH on 8/8 prompts
+(GGUF and NVIDIA safetensors), `run-spec` K=1..8 PASS
+(`research/gb10-tuning-20261102/correctness-gb10-b014549cb9.log`). Memory sizing on unified
+memory reads the allocatable pool and is measured in `docs/rigs/dgx-spark.md`.
 
-- The `121a` binary loads every module on a GB10 and passes `kernel-check`, `run-gen` argmax and
-  `run-spec` K=1..8 there, built on the GB10 host's own toolkit (aarch64).
+Still open:
+
 - The 120a-keyed defaults (`gdn_mma_default_on`, `serve_devpenalty`, the NVFP4/FP8 MMQ paths)
-  were measured on RTX 5090 and RTX PRO 6000 only. GB10 has 48 SMs, unified LPDDR5x memory and
-  far lower memory bandwidth; each default it inherits is a one-rig extrapolation until a GB10
-  A/B confirms or re-keys it on the device.
-- Memory sizing on unified memory: VRAM budgets read `cuMemGetInfo`, which on GB10 reports the
-  shared system pool.
+  were measured on RTX 5090 and RTX PRO 6000. On GB10 the first tuning round re-measured the
+  prefill MMQ: grouped rasterization is flat (deleted) and the opt-in F8F4 route is 15.4% faster,
+  pending its acceptance receipt. Every other inherited default stays a one-rig extrapolation
+  until a GB10 A/B confirms or re-keys it on the device.
