@@ -3495,7 +3495,16 @@ impl HfConfig {
                     // bundled in the trunk shards; the text trunk never needs it. An incomplete
                     // vision_config leaves it unset (a bundled tower then refuses at bind as
                     // undeclared tensors) instead of refusing the text model.
-                    cfg.qwen35_vision = geometry.ok();
+                    cfg.qwen35_vision = match geometry {
+                        Ok(g) => Some(g),
+                        Err(why) => {
+                            eprintln!(
+                                "[config] qwen3_5 vision tower geometry unavailable ({why}); a tower \
+                                 bundled in the trunk shards will refuse at bind as undeclared tensors"
+                            );
+                            None
+                        }
+                    };
                 }
             }
             if vision_type.as_deref() == Some("glm5_next_vision") {

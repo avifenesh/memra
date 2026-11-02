@@ -53,7 +53,8 @@ Unit tests pin the capability-to-target map, the family map and the guard
 (`cuda_arch::tests`).
 
 Proved on a GB10 (2026-11-02, `121a` built on the device's aarch64 CUDA 13.0 toolkit from
-`b014549cb9`): every module loads; kernel-check ALL GREEN, `run-gen` argmax MATCH on 8/8 prompts
+`b014549cb9`): every module loads; kernel-check ALL GREEN on the cells it could run (its NVFP4
+GEMM/MMVQ cells skipped for missing models, so the 27B NVFP4 path is covered end to end), `run-gen` argmax MATCH on 8/8 prompts
 (GGUF and NVIDIA safetensors), `run-spec` K=1..8 PASS
 (`research/gb10-tuning-20261102/correctness-gb10-b014549cb9.log`). Memory sizing on unified
 memory reads the allocatable pool and is measured in `docs/rigs/dgx-spark.md`.
