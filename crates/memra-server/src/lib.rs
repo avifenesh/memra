@@ -8735,9 +8735,10 @@ pub(crate) enum AdmissionMiss {
 /// admission and prefill alike, the way vLLM and SGLang keep a queued stream open. A refusal
 /// that arrives after that commit reaches the client as an SSE error chunk. Before this, the
 /// queue wait of an extended stream was bounded by the 60 s commit on a unified-memory device,
-/// and the hybrid queue shed estimated a whole request's decode against that window: the
-/// leading explanation for the HTTP 429 of the first Spark c32 agentic cell (32 session slots
-/// configured, no worker refusal logged, the 429 body not captured).
+/// and the hybrid queue shed estimated a whole request's decode against that window,
+/// one candidate for the HTTP 429 of the first Spark c32 agentic cell (32 session slots
+/// configured, no worker refusal logged, the 429 body not captured; the rerun at this build
+/// served c32 with no 429 and no shed line).
 #[allow(clippy::result_large_err)] // allow: the refusal carries the HTTP response, the same contract as peek_admission
 pub(crate) async fn await_admission(
     rx: worker::EventReceiver,
