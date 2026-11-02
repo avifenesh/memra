@@ -43,7 +43,9 @@ whether that reaches it.
   `debug-assertions = false`, `overflow-checks = false`, `panic = "unwind"`. The workspace has no
   cdylib or staticlib crate, so no crate needs an `lto` override.
 - **Profiles that inherit it:** `bench` inherits `release`, and `cargo test --release` builds with
-  the release profile, so CI's `cargo test --release` jobs now build fat-LTO test binaries.
+  the release profile. Hosted CI is the exception: `ci.yml` and `ci-public.yml` set
+  `CARGO_PROFILE_RELEASE_LTO=false` and `CARGO_PROFILE_RELEASE_CODEGEN_UNITS=16`, so CI compiles
+  and tests with Cargo's default release optimization (see Decision).
 - **Release qualification: reached, as by any `Cargo.toml` change.** `Cargo.toml` is a tracked
   release input and the binaries' bytes change, so existing qualification records do not cover the
   new binaries; the next tag needs a native qualification run on the new bytes. The
@@ -130,9 +132,17 @@ min, against 11.9 to 15.1. That `build` time sits just under the job's 60-minute
 do not link release binaries (clippy, boundary, portable-suites, publish-dryrun) did not move. The
 first run also started from a Rust cache built under the old profile, so dependency crates
 recompiled; the binary links dominate either way, as the `--workspace --bins` row shows. Hosted CI
-time is the open cost of this change. The ways to close it are a longer timeout, or a CI-only
-profile override for compile-and-test jobs; the second would leave the fat-LTO bytes to release
-qualification. Both are workflow changes and belong in their own lane.
+time was the open cost of this change.
+
+CI override (owner decision, 2026-11-02): the hosted compile and test jobs build with Cargo's
+default release optimization. Both CI workflows set `CARGO_PROFILE_RELEASE_LTO=false` (Cargo's
+default thin-local LTO, the A arm measured above, not cross-crate thin LTO) and
+`CARGO_PROFILE_RELEASE_CODEGEN_UNITS=16` at workflow level. Fat LTO stays the release profile:
+`tools/qualify-release.py` builds the release binaries in an environment that admits no
+`CARGO_PROFILE_*` variable, so the shipped bytes are fat-LTO, and release qualification is what
+builds and checks them. This keeps CI thin, and the A/B shows that the two profiles produce the same
+results. Hosted times after the override are in
+`research/release-profile-20261102/CI-HOSTED.md`.
 
 Adopted. Runtime is neutral or better, no result changes, and the profile is the owner's standard
 for Rust repos. The build cost is recorded here so it is not rediscovered.

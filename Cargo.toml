@@ -41,8 +41,10 @@ memra-net-guard = { path = "crates/memra-net-guard", version = "=0.138.0" }
 # rustc-compiled code only: build.rs compiles the CUDA kernels with nvcc (fixed -O3, the
 # profile is never read) and links them as fatbins and static archives, so device code is
 # byte-identical across profiles; build scripts and proc-macros keep Cargo's build-override
-# defaults. Cost: a serial whole-program link per binary. Measured A/B against the default
-# profile on the RTX 5090 rig: docs/decisions/RELEASE-PROFILE.md.
+# defaults. Cost: a serial whole-program link per binary, so hosted CI overrides it back to
+# Cargo's default (CARGO_PROFILE_RELEASE_* in ci.yml and ci-public.yml); release
+# qualification builds these bytes. Measured A/B against the default profile on the RTX
+# 5090 rig: docs/decisions/RELEASE-PROFILE.md.
 [profile.release]
 opt-level = 3
 lto = "fat"
