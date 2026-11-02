@@ -642,6 +642,8 @@ pub(crate) async fn respond(
             )
         }
     };
+    // n > 1 streams have no committed-prefill bridge: their whole wait (queue and prefill) stays
+    // inside the pre-header window, so the queue shed judges against that window too.
     let mut pending =
         match crate::reserve_pending_choices(st, lane, &reading, deadline.preheader(stream), count)
         {

@@ -2414,7 +2414,7 @@ pub(crate) fn stream_ttft_ms_max() -> u64 {
 
 // ---- unified-memory streaming deadline (GB10 / DGX Spark, 2026-11-01) --------------------------
 //
-// The shipped 90 s first-token window was sized on discrete fleet cards behind a fronting proxy's
+// The shipped 90 s first-token window was sized for discrete cards behind a proxy's
 // response-header timeout. On the first Spark run (Qwen3.8-27B NVFP4, 262,144 context, agentic
 // c4 cell) four 14k-42k-token prompts prefilling together missed it and answered HTTP 408, a
 // request the device would have served. vLLM and SGLang have no such deadline. On a unified-memory
@@ -2425,8 +2425,8 @@ pub(crate) fn stream_ttft_ms_max() -> u64 {
 // 188 SMs, `docs/PERFORMANCE.md` pro6000wk), scaled by the device's SM count (both are sm_12x
 // Blackwell with the same per-SM tensor rate, and prefill is compute-bound), shared by the four
 // concurrent prefills of the cell that failed. GB10 (48 SMs): 4118 x 48 / 188 / 4 = 262.9 tok/s
-// per prefill, so a full 262,144-token context gets 997 s. The deadline bounds billing only:
-// admission has its own hard deadline at the commit, and engine stalls have the health watchdog.
+// per prefill, so a full 262,144-token context gets 997 s. The deadline bounds the whole wait for
+// the first token, queueing included (`await_admission`); engine stalls have the health watchdog.
 // `research/gb10-defaults-20261101/derive.py` computes these numbers.
 
 /// The pp512 prefill rate of the 27B NVFP4 class on an RTX PRO 6000 (`pro6000wk`, N=5).
@@ -2435,8 +2435,8 @@ const UNIFIED_TTFT_REF_PREFILL_TOK_S: u64 = 4118;
 const UNIFIED_TTFT_REF_SMS: u64 = 188;
 /// Concurrent long prefills sharing the device in the cell that missed the 90 s window.
 const UNIFIED_TTFT_CONCURRENT_PREFILLS: u64 = 4;
-/// SSE prefill commit paired with the derived deadline: the value fronting deployments already
-/// arm with an extended ceiling (darklanes #565), inside the shipped 90 s pre-header window.
+/// SSE prefill commit paired with the derived deadline: headers and keepalives start 60 s in,
+/// inside the shipped 90 s pre-header window a proxy in front of the server may enforce.
 pub(crate) const UNIFIED_SSE_PREFILL_COMMIT_MS: u64 = 60_000;
 // The commit has to fit inside the pre-header window it fronts.
 const _: () = assert!(UNIFIED_SSE_PREFILL_COMMIT_MS < TIMEOUT_MS_MAX);
@@ -2496,7 +2496,7 @@ fn unified_stream_ttft_default() -> Option<u64> {
 // ---- unified-memory non-streaming deadline (GB10 / DGX Spark, 2026-11-01) ----------------------
 //
 // A non-streaming deadline bounds the WHOLE response: no headers or keepalive can go out before it
-// completes, so on a discrete fleet card it stays at the shipped 90 s (a fronting proxy's response
+// completes, so on a discrete card it stays at the shipped 90 s (a fronting proxy's response
 // timeout). On a unified-memory device the same 90 s refuses work the device would serve: one
 // 131k-token prompt, or four concurrent 32k prompts, cannot prefill inside it at GB10's measured
 // rate (32,768 cold tokens in 45.2 s alone). vLLM and SGLang have no such deadline. The derived
@@ -3066,6 +3066,10 @@ fn reserve_pending_choices(
     loop {
         let queued = lane_counter.load(std::sync::atomic::Ordering::Acquire);
         let Some(next) = queued.checked_add(choices).filter(|&n| n <= bound) else {
+            eprintln!(
+                "[shed] shed_queue lane={} choices={choices} queued={queued} bound={bound}",
+                lane.as_str()
+            );
             return Err((
                 error_response_coded(
                     StatusCode::TOO_MANY_REQUESTS,
@@ -3103,6 +3107,10 @@ fn reserve_pending_choices(
             None
         };
         if let Some(outcome) = outcome {
+            eprintln!(
+                "[shed] {outcome} lane={} choices={choices} queued={queued} est_wait_s={estimate}",
+                lane.as_str()
+            );
             return Err((retry_contract_response((StatusCode::TOO_MANY_REQUESTS,
                 Json(error_body("choice group cannot enter within its queue/deadline budget; not billed",
                     "rate_limit_error", None, Some(outcome)))).into_response(), Some(estimate)), outcome));
@@ -3598,6 +3606,10 @@ fn acquire_request_slot(
         }
         Err(n_tenant) => {
             let n_inflight = st.inflight[lane.idx()].load(std::sync::atomic::Ordering::SeqCst);
+            eprintln!(
+                "[shed] rate_limit_exceeded lane={} tenant_inflight={n_tenant} tenant_cap={tenant_cap:?}",
+                lane.as_str()
+            );
             let rl = reading(n_inflight, n_tenant, route);
             let error =
                 worker::EngineError::rate_limit("api key concurrent request limit reached; retry");
@@ -4864,16 +4876,19 @@ fn try_vision_preprocess_with(
     }
     match semaphore.try_acquire() {
         Ok(permit) => Ok(Some(permit)),
-        Err(tokio::sync::TryAcquireError::NoPermits) => Err(retry_contract_response(
-            error_response_coded(
-                StatusCode::TOO_MANY_REQUESTS,
-                "vision preprocessing is busy",
-                "rate_limit_error",
-                Some("messages"),
-                Some("vision_preprocess_busy"),
-            ),
-            Some(BODY_ADMISSION_RETRY_AFTER_S),
-        )),
+        Err(tokio::sync::TryAcquireError::NoPermits) => Err({
+            eprintln!("[shed] vision_preprocess_busy");
+            retry_contract_response(
+                error_response_coded(
+                    StatusCode::TOO_MANY_REQUESTS,
+                    "vision preprocessing is busy",
+                    "rate_limit_error",
+                    Some("messages"),
+                    Some("vision_preprocess_busy"),
+                ),
+                Some(BODY_ADMISSION_RETRY_AFTER_S),
+            )
+        }),
         Err(tokio::sync::TryAcquireError::Closed) => Err(error_response_coded(
             StatusCode::SERVICE_UNAVAILABLE,
             "vision preprocessing is unavailable",
@@ -8837,6 +8852,15 @@ async fn forward_prefill_until_first_delivery(
                         ev,
                         Event::Token { .. } | Event::Done { .. } | Event::Error(_)
                     );
+                    if let Event::Error(e) = &ev {
+                        // After the commit a refusal or fault reaches the client as an SSE
+                        // error event; log it like the pre-commit refusals.
+                        eprintln!(
+                            "[admission] refused after the SSE commit: code={} message={:?}",
+                            engine_error_code(e.class),
+                            e.message
+                        );
+                    }
                     if tx2.send(ev).is_err() {
                         break;
                     }
@@ -19449,6 +19473,29 @@ default_reasoning_effort = "always"
         assert!(matches!(
             await_admission_with(rx, RequestDeadline::starting_now(120_000), false, commit).await,
             Err(AdmissionMiss::Deadline)
+        ));
+        // A refusal after the commit reaches the committed stream as its error event.
+        let (tx, rx) = worker::event_channel();
+        let deadline = RequestDeadline::starting_now(997_311);
+        let rx = await_admission_with(rx, deadline, true, commit)
+            .await
+            .map_err(|_| ())
+            .expect("still queued at the commit");
+        let mut committed = peek_first_token_with_commit(
+            rx,
+            deadline,
+            Some(std::time::Duration::from_millis(60_000)),
+        )
+        .await
+        .expect("the bridge commits headers");
+        tx.send(Event::Error(worker::EngineError::rate_limit("lane full")))
+            .unwrap();
+        assert!(matches!(
+            committed.recv().await,
+            Some(Event::Error(worker::EngineError {
+                class: worker::ErrClass::RateLimit,
+                ..
+            }))
         ));
         // A refusal before the commit stays a normal HTTP refusal.
         let (tx, rx) = worker::event_channel();
