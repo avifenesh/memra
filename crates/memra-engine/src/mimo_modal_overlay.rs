@@ -167,7 +167,10 @@ mod tests {
         use memra_gguf::source::SafetensorsSource;
         use memra_reference::mimo_modal_overlay::{AUDIO_TOKEN_ID, IMAGE_TOKEN_ID, VIDEO_TOKEN_ID};
 
-        let root = std::env::var("MIMO_PINNED_SOURCE_ROOT")?;
+        let Ok(root) = std::env::var("MIMO_PINNED_SOURCE_ROOT") else {
+            eprintln!("SKIP[MIMO_PINNED_SOURCE_ROOT]: pinned MiMo source gate not run");
+            return Ok(());
+        };
         let source = Arc::new(SafetensorsSource::open(Path::new(&root))?);
         let cards = [Engine::new(0)?, Engine::new(1)?];
         let text = MiMoTextWeights::load([&cards[0], &cards[1]], source)?;

@@ -96,3 +96,10 @@ memra-tokenizer	hf_tests::staged_checkpoints_resolve_their_own_pretokenizer	crat
 memra-tokenizer	parity_with_llama_tokenize	crates/memra-tokenizer/tests/llama_parity.rs	SKIP[{bin}]: llama-tokenize parity not run (set MEMRA_LLAMA_TOKENIZE)
 memra-tokenizer	parity_with_llama_tokenize	crates/memra-tokenizer/tests/llama_parity.rs	SKIP[{model}]: llama-tokenize parity not run (set MEMRA_TEST_MODEL)
 memra-tokenizer	round_trip	crates/memra-tokenizer/tests/llama_parity.rs	SKIP[{model}]: tokenizer assertions on the real GGUF not run
+memra-engine	mimo_audio_codec_layer::tests::pinned_one_layer_gpu_parity_gate	crates/memra-engine/src/mimo_audio_codec_layer.rs	SKIP[MIMO_PINNED_SOURCE_ROOT]: pinned MiMo source gate not run
+memra-engine	mimo_audio_codec_layer::tests::pinned_encoder_stack_gpu_source_gate	crates/memra-engine/src/mimo_audio_codec_layer.rs	SKIP[MIMO_PINNED_SOURCE_ROOT]: pinned MiMo source gate not run
+memra-engine	mimo_audio_codec_layer::tests::pinned_post_stack_downsample_gpu_source_gate	crates/memra-engine/src/mimo_audio_codec_layer.rs	SKIP[MIMO_PINNED_SOURCE_ROOT]: pinned MiMo source gate not run
+memra-engine	mimo_audio_codec_rvq::tests::pinned_twenty_depth_gpu_source_gate	crates/memra-engine/src/mimo_audio_codec_rvq.rs	SKIP[MIMO_PINNED_SOURCE_ROOT]: pinned MiMo source gate not run
+memra-engine	mimo_audio_codec_rvq::tests::pinned_one_codebook_gpu_source_gate	crates/memra-engine/src/mimo_audio_codec_rvq.rs	SKIP[MIMO_PINNED_SOURCE_ROOT]: pinned MiMo source gate not run
+memra-engine	mimo_compressed_text_forward::tests::source_modal_chunk_runs_text_kv_and_preserves_text_token_bits	crates/memra-engine/src/mimo_compressed_text_forward.rs	SKIP[MIMO_PINNED_SOURCE_ROOT]: pinned MiMo source gate not run
+memra-engine	mimo_modal_overlay::tests::pinned_modal_upload_matches_bound_source_rows	crates/memra-engine/src/mimo_modal_overlay.rs	SKIP[MIMO_PINNED_SOURCE_ROOT]: pinned MiMo source gate not run
