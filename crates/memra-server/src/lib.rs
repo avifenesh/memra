@@ -2430,6 +2430,8 @@ const UNIFIED_TTFT_CONCURRENT_PREFILLS: u64 = 4;
 /// SSE prefill commit paired with the derived deadline: the value fronting deployments already
 /// arm with an extended ceiling (darklanes #565), inside the shipped 90 s pre-header window.
 pub(crate) const UNIFIED_SSE_PREFILL_COMMIT_MS: u64 = 60_000;
+// The commit has to fit inside the pre-header window it fronts.
+const _: () = assert!(UNIFIED_SSE_PREFILL_COMMIT_MS < TIMEOUT_MS_MAX);
 
 /// The unified-memory streaming TTFT deadline for `max_served_ctx` tokens on `sm_count` SMs:
 /// the time to prefill one full served context at the reference rate scaled to this device and
@@ -19317,8 +19319,8 @@ default_reasoning_effort = "always"
         assert_eq!(unified_stream_ttft_ms(0, 0), TIMEOUT_MS_MAX);
         // An unreadable SM count (0) reads as one SM: longer, never a division by zero.
         assert!(unified_stream_ttft_ms(262_144, 0) > unified_stream_ttft_ms(262_144, 48));
-        // The derived window exceeds 90 s, so it needs its commit, and the commit fits inside.
-        assert!(UNIFIED_SSE_PREFILL_COMMIT_MS < TIMEOUT_MS_MAX);
+        // The derived window exceeds 90 s, so it needs its commit (which fits inside the
+        // window: a const assert at its definition).
         assert!(
             validate_stream_prefill_config_values(
                 Some(unified_stream_ttft_ms(262_144, 48)),
