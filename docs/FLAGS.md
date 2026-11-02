@@ -1019,7 +1019,6 @@ These exist because correctness discipline needs a same-binary oracle. Each is a
 | `MEMRA_PRIME_SLABS=0` | per-call transient allocations instead of the resident per-device prime slab pool (the eager prime's trunk transients; per-device keyed since lane/pp-leverb) | `hybrid_forward.rs` |
 | `MEMRA_LOCKSTEP_GROUPED` | Hy3 multi-stream lockstep decode, MoE layers: `1` = force grouped (all m rows through `moe_ffn_lockstep`, resident experts amortize weight reads; CPU-assigned experts keep per-row companion calls), `0` = per-row, unset = AUTO grouped from m>=3 (M2 gate 2026-07-23: m=2 6.17 base vs 5.85 grouped; m=3 6.31 grouped) | `decode.rs` |
 | `MEMRA_PP_PIPE` | W4A8 NVFP4 prefill MMQ smem schedule (CUDA-side `getenv`, `cu/mmq_nvfp4_w4a8.cu` — predates and is UNRELATED to the ppN `MEMRA_PP_*` family): `1` = cp.async multi-stage pipeline, DEFAULT since 2026-07-09, bit-identical (data movement only); `0` = the unpipelined tile. The `2` arm (w4a8v2 2-CTA/SM occupancy mode, net flat) was removed 2026-09-05 | 2026-07-09 |
-| `MEMRA_MMQ_SWIZZLE` | **unset = row-major block order, decide-by: 2026-11-16.** W4A8 NVFP4 prefill MMQ block rasterization (CUDA-side `getenv`, `cu/mmq_nvfp4_w4a8.cu`): `G` > 1 makes consecutive blocks walk G token tiles of one weight tile before the next, so the blocks resident at once share a few weight and token tiles in L2 instead of streaming the whole weight matrix once per token tile. Bit-identical by construction (only the block-to-tile map moves). Tuning seam for bandwidth-poor devices (GB10, 273 GB/s); a win becomes a device-keyed default with its A/B receipt, a loss deletes the seam |
 
 ## 4. Diagnostics & test config
 
@@ -1641,6 +1640,20 @@ boundary. A gate that arms the M1 tensor-core or half2 down tail keeps precedenc
 (the TP/EP bench pins that program). Rollback is `git revert`; the gate setter
 `set_dsv4_moe_m1_stream_for_gate(false)` runs the sktail reference arm in one loaded model for
 the component test and the DSpark gate's historical arm.
+
+## Removed doors, 2026-11-02 (GB10 W4A8 prefill rasterization, flat)
+
+`MEMRA_MMQ_SWIZZLE` (grouped block rasterization of the W4A8 NVFP4 prefill MMQ, G token tiles per
+weight tile) is deleted. Hypothesis: on GB10 (273 GB/s LPDDR5x) the weight-tile-fastest launch
+order streams every projection once per 128-token tile and bounds prefill. Measured flat, so the
+MMQ is not DRAM-bound there and the order stays row-major.
+
+- GB10 (DGX Spark, 121a), Qwen3.8-27B NVFP4+Q5_K GGUF, pp8788 monolithic, one balanced round in
+  both orders, 3 reps per arm: G=0 775.6/774.6, G=4 778.4/777.7, G=8 777.7/777.1, G=16
+  773.8/773.2 tok/s (spread 0.7%).
+- RTX 5090 Laptop, same prompt: G=8 1150/1154/1121 against G=0 1209/1131/1126 (thermal drift).
+- Last-row prefill logits byte-identical across arms on both cards, as the construction requires.
+- Receipts: `research/gb10-tuning-20261102/` (`swz-ab-gb10-8k.log`, `swz-ab-5090-g8.log`).
 
 ## Removed doors, 2026-09-28 (memra#886, glm5 B200 door hygiene: superseded and neutral MoE-rows doors)
 

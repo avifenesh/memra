@@ -742,3 +742,4 @@ support-source-doc-copy-inputs-20261003 | 97 exact source/docs omissions repaire
 | thin-public-ci-1002-20261004 | Fresh depth-one Git/event replay PASS408.819s with historical object absent, pinned old callers and trust/guard controls. Production unchanged; current hosted/review pending, no native qualification. | [LANE.md](thin-public-ci-1002-20261004/LANE.md) |
 
 | release-profile-20261102 | Fat LTO + one codegen unit vs Cargo defaults on the RTX 5090 rig: tokenize -6.3%, other serving cells flat; tokenizer ids, greedy and seeded streams, fatbins and device ELFs byte-identical; binary -17%; cold server build flat, relinks 1.5-2.8x, `--workspace --bins` 6.7x. Adopted. | [LANE.md](release-profile-20261102/LANE.md) |
+| gb10-tuning-20261102 | GB10 prefill census (W4A8 MMQ 61%, element-wise kernels ~3x the laptop 5090 per call); grouped MMQ rasterization flat (773-778 tok/s, deleted); F8F4 route +15.4% prefill on GB10, not adopted pending its acceptance receipt. |

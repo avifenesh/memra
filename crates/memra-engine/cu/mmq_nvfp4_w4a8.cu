@@ -711,8 +711,7 @@ static __global__ void mul_mat_q_nvfp4_w4a8(
         const char * __restrict__ x, const char * __restrict__ x_sc,
         const int * __restrict__ y, float * __restrict__ dst,
         const int nrows_x, const int ncols_dst, const int stride_row_x, const int ncols_y,
-        const int stride_col_dst, const int blocks_per_ne00, const float out_scale,
-        const int swz_group) {
+        const int stride_col_dst, const int blocks_per_ne00, const float out_scale) {
     constexpr int nwarps = mmq_y / 16;
     constexpr int warp_size = MMQ_WARP_SIZE;
 
@@ -725,24 +724,8 @@ static __global__ void mul_mat_q_nvfp4_w4a8(
     }
     __syncthreads();
 
-    int jt = blockIdx.y; // n-token tile
-    int it = blockIdx.x; // out-row tile
-    if (swz_group > 1) {
-        // Grouped rasterization (MEMRA_MMQ_SWIZZLE): consecutive blocks walk `swz_group` token
-        // tiles of one weight tile before the next weight tile, so the blocks resident at once
-        // share a few weight tiles and a few token tiles in L2 instead of streaming the whole
-        // weight matrix once per token tile. Only the block-to-tile map changes; every tile is
-        // computed by the same code, so the output is bit-identical.
-        const int n_w   = gridDim.x;                       // out-row (weight) tiles
-        const int n_t   = gridDim.y;                       // token tiles
-        const int pid   = blockIdx.y * n_w + blockIdx.x;
-        const int per_g = swz_group * n_w;
-        const int first = (pid / per_g) * swz_group;
-        const int gsz   = min(n_t - first, swz_group);
-        const int in_g  = pid % per_g;
-        jt = first + in_g % gsz;
-        it = in_g / gsz;
-    }
+    const int jt = blockIdx.y; // n-token tile
+    const int it = blockIdx.x; // out-row tile
 
     const int col_diff = ncols_dst;
     const int offset_y   = (jt * mmq_x) * (sizeof(block_q8_1_mmq) / sizeof(int));
@@ -840,18 +823,6 @@ static size_t mmq_nvfp4_w4a8_nbytes_shared(int pmode, int mmq_x, int mmq_y) {
 // (0/6.3M mismatches at T=512), measured pp1845 27B +4.7% / 9B +5.6% on the rig, 1.135x kernel.
 // 0 = plain tile loads. The mode-2 2-CTA/SM occupancy experiment (w4a8v2, net flat) was removed
 // 2026-09-05 with the door sweep.
-// MEMRA_MMQ_SWIZZLE=<G>: grouped block rasterization of the W4A8 prefill GEMM, G token tiles per
-// weight tile (unset, 0 or 1 = the row-major order). Tuning seam for bandwidth-poor devices (GB10).
-static int mmq_w4a8_swizzle() {
-    static const int g = [] {
-        const char * v = std::getenv("MEMRA_MMQ_SWIZZLE");
-        if (v == nullptr) { return 0; }
-        const int n = std::atoi(v);
-        return n > 1 ? n : 0;
-    }();
-    return g;
-}
-
 static int mmq_w4a8_pipe_mode() {
     static const int mode = [] {
         const char * v = std::getenv("MEMRA_PP_PIPE");
@@ -898,7 +869,6 @@ int memra_mmq_nvfp4_w4a8(const void * W_nvfp4_blocks, const float * act_f32, flo
     const int ncols_y         = n_tokens;
 
     const int pmode = mmq_w4a8_pipe_mode();
-    const int swz = mmq_w4a8_swizzle();
     const int mmq_y_run = MMQ_Y;
 
     const int nty = (out_f    + mmq_y_run - 1) / mmq_y_run;
@@ -918,7 +888,7 @@ int memra_mmq_nvfp4_w4a8(const void * W_nvfp4_blocks, const float * act_f32, flo
                              cudaFuncAttributeMaxDynamicSharedMemorySize, smem);                         \
         mul_mat_q_nvfp4_w4a8<MMQ_X, Y, PM, NC, RP><<<grid, block, smem, st>>>(                           \
             W, W_sc, y_q, y, out_f, n_tokens, stride_row_x, ncols_y, stride_col_dst, blocks_per_ne00,    \
-            out_scale, swz);                                                                                  \
+            out_scale);                                                                                  \
     } while (0)
     #define MEMRA_W4A8_LAUNCH4(Y, PM) do {                                                                \
         if (rp) {                                                                                        \
