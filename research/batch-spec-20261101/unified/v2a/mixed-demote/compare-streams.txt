@@ -1,0 +1,31 @@
+SAME  c3/r0  serial-ref 700aad208f067d60 intb 700aad208f067d60 intc 700aad208f067d60 v2a 700aad208f067d60 200 tok
+DIFF  c3/r1  serial-ref 1506c0963fc82283 intb 1506c0963fc82283 intc c894531ce8230645 v2a 1506c0963fc82283 200 tok
+SAME  c3/r2  serial-ref f1ad07bd362c5d6e intb f1ad07bd362c5d6e intc f1ad07bd362c5d6e v2a f1ad07bd362c5d6e 200 tok
+SAME  c4/r0  serial-ref d86bd6e99ff4b481 intb d86bd6e99ff4b481 intc d86bd6e99ff4b481 v2a d86bd6e99ff4b481 200 tok
+SAME  c4/r1  serial-ref dec3da8c700e367e intb dec3da8c700e367e intc dec3da8c700e367e v2a dec3da8c700e367e 200 tok
+SAME  c4/r2  serial-ref d62d36d8b95cd6e5 intb d62d36d8b95cd6e5 intc d62d36d8b95cd6e5 v2a d62d36d8b95cd6e5 200 tok
+SAME  c4/r3  serial-ref cd5dd5d687c281e1 intb cd5dd5d687c281e1 intc cd5dd5d687c281e1 v2a cd5dd5d687c281e1 200 tok
+SAME  c6/r0  serial-ref 039b2a7482bb0199 intb 039b2a7482bb0199 intc 039b2a7482bb0199 v2a 039b2a7482bb0199 200 tok
+SAME  c6/r1  serial-ref 7fc156f1560fbdd6 intb 7fc156f1560fbdd6 intc 7fc156f1560fbdd6 v2a 7fc156f1560fbdd6 200 tok
+SAME  c6/r2  serial-ref 8e1384182750310c intb 8e1384182750310c intc 8e1384182750310c v2a 8e1384182750310c 200 tok
+SAME  c6/r3  serial-ref 0a23c2dda650d2eb intb 0a23c2dda650d2eb intc 0a23c2dda650d2eb v2a 0a23c2dda650d2eb 200 tok
+SAME  c6/r4  serial-ref e0a59211e3dc264f intb e0a59211e3dc264f intc e0a59211e3dc264f v2a e0a59211e3dc264f 200 tok
+SAME  c6/r5  serial-ref 7848641d25b520dc intb 7848641d25b520dc intc 7848641d25b520dc v2a 7848641d25b520dc 200 tok
+SAME  c8/r0  serial-ref 9f22d2da4de8242b intb 9f22d2da4de8242b intc 9f22d2da4de8242b v2a 9f22d2da4de8242b 200 tok
+DIFF  c8/r1  serial-ref 4c2325b5536518ff intb 4c2325b5536518ff intc 4c2325b5536518ff v2a f2ec216583bc87fa 200 tok
+SAME  c8/r2  serial-ref 1398f2ca0eb4a77b intb 1398f2ca0eb4a77b intc 1398f2ca0eb4a77b v2a 1398f2ca0eb4a77b 200 tok
+SAME  c8/r3  serial-ref 598c136bb5d5ad67 intb 598c136bb5d5ad67 intc 598c136bb5d5ad67 v2a 598c136bb5d5ad67 200 tok
+SAME  c8/r4  serial-ref 94e16a539afb9b0d intb 94e16a539afb9b0d intc 94e16a539afb9b0d v2a 94e16a539afb9b0d 200 tok
+SAME  c8/r5  serial-ref eea0ca7f3e0cb304 intb eea0ca7f3e0cb304 intc eea0ca7f3e0cb304 v2a eea0ca7f3e0cb304 200 tok
+SAME  c8/r6  serial-ref 7d534371227d3951 intb 7d534371227d3951 intc 7d534371227d3951 v2a 7d534371227d3951 200 tok
+SAME  c8/r7  serial-ref a00dae417fe88975 intb a00dae417fe88975 intc a00dae417fe88975 v2a a00dae417fe88975 61 tok
+c2: serial-ref None tok/s, intb None intc None v2a None
+c4: serial-ref 266.63 tok/s, intb 271.46 intc 267.28 v2a 260.32
+c8: serial-ref 323.22 tok/s, intb 340.18 intc 317.11 v2a 318.53
+intb: 0 [spec-pool] lines
+intc: 0 [spec-pool] lines
+v2a: 3 [spec-pool] lines
+    [spec-pool] pooled MTP cohort engaged: 1 sessions (model q9)
+    [spec-pool] unified step engaged: 1 spec + 1 plain sessions (model q9)
+    [spec-pool] unified step engaged: 1 spec + 2 plain sessions (model q9)
+VERDICT: STREAMS DIFFER

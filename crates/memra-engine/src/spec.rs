@@ -2764,6 +2764,39 @@ pub(crate) struct PooledVerifySeg<'a> {
     pub(crate) cache: &'a mut Cache,
     pub(crate) tokens: &'a [u32],
     pub(crate) ckpt: Option<&'a mut VerifyCkpt>,
+    /// Embed these rows through the host gather even when the forward has a resident device
+    /// table: a plain decode row (v2 unified step) keeps the plain batched step's own embed.
+    pub(crate) host_embed: bool,
+}
+
+/// One plain decoding row riding a pooled MTP cohort's lockstep forwards (lane/batch-spec v2,
+/// the unified ragged step): rider `id` (the rider set's own index), the token its emission
+/// step just returned for feeding, and the device-sample meta the batched plain step would
+/// give the row (`None` = the row comes back as host logits, as the plain step returns it).
+pub struct PlainRiderRow {
+    pub id: usize,
+    pub token: u32,
+    pub samp: Option<crate::decode_batch::DevSamp>,
+}
+
+/// One rider's step result: the batched plain step's `(logits row, device draw)` for the row
+/// (an empty row for a lean device-sampled row), or the step's error text.
+pub type PlainRiderStep = Result<(Vec<f32>, Option<u32>), String>;
+
+/// The plain decoding sessions that ride a pooled MTP cohort (lane/batch-spec v2). Per
+/// lockstep round the driver asks for the riders still in the lockstep (`round_begin` runs
+/// each one's emission step: the previous step's token is emitted and the stop battery runs),
+/// steps their rows inside the round's pooled forwards (one-row segments, bitwise the plain
+/// batched step's rows) or, for rows no forward has room for, through the plain batched step
+/// itself, samples them with the plain step's epilogue, and hands each result back.
+pub trait PooledPlainRiders {
+    /// The riders that continue this round, after their emission step. A rider absent from
+    /// the list has left the lockstep.
+    fn round_begin(&mut self) -> Vec<PlainRiderRow>;
+    /// The caches of riders `ids`, in that order.
+    fn caches(&mut self, ids: &[usize]) -> Vec<&mut Cache>;
+    /// Rider `id`'s step for this round.
+    fn round_end(&mut self, id: usize, step: PlainRiderStep);
 }
 
 /// One dspark round's slice of a pooled verify (`dspark_verify_pooled`): its cache (with the
@@ -2794,6 +2827,18 @@ pub struct PooledBurstReq<'a> {
     pub sampling: Option<SpecSampling>,
     pub on_commit: Option<PooledCommitHook<'a>>,
 }
+
+/// `unified_step_probe`'s follow-up step bits: (spec sessions, plain sessions).
+type ProbeFollow = (Vec<Vec<u32>>, Vec<Vec<u32>>);
+
+/// `unified_step_probe`'s candidate forward: logits stack, hidden stack, the plain rows and
+/// their draws.
+type ProbeUnified = (
+    CudaSlice<f32>,
+    CudaSlice<f32>,
+    Vec<Vec<f32>>,
+    Vec<Option<u32>>,
+);
 
 /// One member's drafted round as `pooled_draft_probe` reads it back: named fields, each a
 /// bit-exact word list (f32 values as their bits).
@@ -7491,6 +7536,18 @@ impl HybridModel {
             Some((g, qt, rb)) => e.embed_gather_device_t(g, &toks, n_embd, qt, rb)?,
             None => e.htod(&self.embd.try_gather(n_embd, &toks)?)?,
         };
+        if embd_dev.is_some() {
+            // Plain rows keep the plain batched step's host gather.
+            let mut r0 = 0usize;
+            for s in segs.iter() {
+                let ts = s.tokens.len();
+                if s.host_embed {
+                    let h = e.htod(&self.embd.try_gather(n_embd, s.tokens)?)?;
+                    e.copy_into(&mut x, r0 * n_embd, &h, ts * n_embd)?;
+                }
+                r0 += ts;
+            }
+        }
         for il in 0..self.layers.len() {
             x = match &self.layers[il].mixer {
                 Mixer::Linear(_) => self.pooled_linear_layer(e, il, &x, r_total, segs)?,
@@ -7576,6 +7633,7 @@ impl HybridModel {
                     cache: &mut *s.cache,
                     tokens: s.tokens,
                     ckpt: ck.as_mut(),
+                    host_embed: false,
                 })
                 .collect();
             // The dspark verify embeds its host tokens through the host gather
@@ -7635,6 +7693,341 @@ impl HybridModel {
             && std::env::var("MEMRA_SPEC_VERIFY_ROWWISE").as_deref() != Ok("1")
     }
 
+    /// Exactness and speed probe of the unified ragged step (`decode-batch-bench --unified`).
+    /// `spec` sessions verify `spec_toks[i]` rows each; `plain` sessions take one token each
+    /// with the device-sample meta `plain_samp[i]`. Reference: each spec session's own verify
+    /// (`decode_step_t_core_vg`, the resident embed table as the serving round has it) and the
+    /// serving plain step over the plain sessions (`decode_step_batch_sampled_lean_masked`,
+    /// lean). Candidate: ONE pooled forward over the spec segments and the plain one-row
+    /// segments, the plain rows sampled by the batched step's epilogue, exactly as
+    /// `generate_spec_sessions_unified` runs a round. Compared bitwise: the spec logits and
+    /// hidden rows, the plain rows' drawn tokens, their returned rows and parked pristine
+    /// logits, and a follow-up step per session that reads the state each path wrote. Then
+    /// times both arms from the same restored states. Returns report lines.
+    #[allow(clippy::too_many_arguments)]
+    pub fn unified_step_probe(
+        &self,
+        e: &Engine,
+        mut spec: Vec<&mut Cache>,
+        spec_toks: &[Vec<u32>],
+        mut plain: Vec<&mut Cache>,
+        plain_toks: &[u32],
+        plain_samp: &[Option<crate::decode_batch::DevSamp>],
+        reps: usize,
+    ) -> Result<Vec<String>, Box<dyn std::error::Error>> {
+        assert_eq!(spec.len(), spec_toks.len());
+        assert_eq!(plain.len(), plain_toks.len());
+        assert_eq!(plain.len(), plain_samp.len());
+        let mut lines = Vec::new();
+        let n_vocab = self.output.out_features();
+        let n_embd = self.cfg.n_embd as usize;
+        let vocab_lim = self.cfg.n_vocab.max(64) - 16;
+        let (embd_qt, embd_rb) = self.embd.qt_and_row_bytes(n_embd);
+        let embd_gpu = if spec_host_embd() {
+            None
+        } else {
+            Some(
+                self.embd_gpu
+                    .get_or_init(|| e.upload_u8(&self.embd.raw).expect("embed table upload")),
+            )
+        };
+        let embd_dev = embd_gpu.map(|g| (g, embd_qt, embd_rb));
+        let spec_snaps: Vec<_> = spec
+            .iter()
+            .map(|c| c.snapshot(e))
+            .collect::<Result<_, _>>()?;
+        let plain_snaps: Vec<_> = plain
+            .iter()
+            .map(|c| c.snapshot(e))
+            .collect::<Result<_, _>>()?;
+        let restore = |spec: &mut Vec<&mut Cache>,
+                       plain: &mut Vec<&mut Cache>|
+         -> Result<(), Box<dyn std::error::Error>> {
+            for (c, s) in spec.iter_mut().zip(&spec_snaps) {
+                c.rollback(e, s, 0)?;
+            }
+            for (c, s) in plain.iter_mut().zip(&plain_snaps) {
+                c.rollback(e, s, 0)?;
+                c.last_logits_dev = None;
+            }
+            Ok(())
+        };
+        let bits = |v: Vec<f32>| v.into_iter().map(f32::to_bits).collect::<Vec<u32>>();
+        // Follow-ups: every session takes one more plain-program token over the written state.
+        let follow = |spec: &mut Vec<&mut Cache>,
+                      plain: &mut Vec<&mut Cache>|
+         -> Result<ProbeFollow, Box<dyn std::error::Error>> {
+            let mut fs = Vec::new();
+            for (i, c) in spec.iter_mut().enumerate() {
+                let p = c.pos;
+                let l = self.decode_step_t(e, &[(4242 + i as u32 * 7) % vocab_lim], p, c)?;
+                fs.push(bits(l));
+            }
+            let toks: Vec<u32> = (0..plain.len() as u32)
+                .map(|i| (999 + i * 13) % vocab_lim)
+                .collect();
+            let fp = if plain.is_empty() {
+                Vec::new()
+            } else {
+                let mut refs: Vec<&mut Cache> = plain.iter_mut().map(|c| &mut **c).collect();
+                self.decode_step_batch(e, &toks, &mut refs)?
+                    .into_iter()
+                    .map(bits)
+                    .collect()
+            };
+            Ok((fs, fp))
+        };
+        let parked =
+            |plain: &Vec<&mut Cache>| -> Result<Vec<Vec<u32>>, Box<dyn std::error::Error>> {
+                plain
+                    .iter()
+                    .map(|c| match c.last_logits_dev.as_ref() {
+                        Some(d) => Ok(bits(e.dtoh(d)?[..n_vocab].to_vec())),
+                        None => Ok(Vec::new()),
+                    })
+                    .collect()
+            };
+        // ---- reference: per-session verifies (the verify's exact scope, as `--pooled` runs
+        // them) + the serving plain step (no outer scope, as phase (c) runs it) ----
+        let mut ref_spec: Vec<(Vec<u32>, Vec<u32>)> = Vec::new();
+        {
+            let _exact = e.exact_scope(true);
+            for (c, t) in spec.iter_mut().zip(spec_toks) {
+                let p = c.pos;
+                let (l, x) = self.decode_step_t_core_vg(e, t, p, c, embd_dev, None, None)?;
+                ref_spec.push((bits(e.dtoh(&l)?), bits(e.dtoh(&x)?)));
+            }
+        }
+        let ref_plain = if plain.is_empty() {
+            (Vec::new(), Vec::new())
+        } else {
+            let mut refs: Vec<&mut Cache> = plain.iter_mut().map(|c| &mut **c).collect();
+            self.decode_step_batch_sampled_lean_masked(
+                e,
+                plain_toks,
+                &mut refs,
+                plain_samp,
+                &[],
+                true,
+            )?
+        };
+        let ref_parked = parked(&plain)?;
+        let ref_follow = follow(&mut spec, &mut plain)?;
+        restore(&mut spec, &mut plain)?;
+
+        // ---- candidate: one unified forward ----
+        let ones: Vec<[u32; 1]> = plain_toks.iter().map(|&t| [t]).collect();
+        let unified = |spec: &mut Vec<&mut Cache>,
+                       plain: &mut Vec<&mut Cache>|
+         -> Result<Option<ProbeUnified>, Box<dyn std::error::Error>> {
+            let pooled = {
+                let mut segs: Vec<PooledVerifySeg<'_>> = Vec::new();
+                for (c, t) in spec.iter_mut().zip(spec_toks) {
+                    segs.push(PooledVerifySeg {
+                        cache: c,
+                        tokens: t,
+                        ckpt: None,
+                        host_embed: false,
+                    });
+                }
+                for (c, t) in plain.iter_mut().zip(&ones) {
+                    segs.push(PooledVerifySeg {
+                        cache: c,
+                        tokens: t,
+                        ckpt: None,
+                        host_embed: true,
+                    });
+                }
+                self.verify_pooled_dev(e, &mut segs, embd_dev)?
+            };
+            let Some((logits, x)) = pooled else {
+                return Ok(None);
+            };
+            let r0: usize = spec_toks.iter().map(Vec::len).sum();
+            let (rows, next) = if plain.is_empty() {
+                (Vec::new(), Vec::new())
+            } else {
+                let rows: Vec<PlainRiderRow> = plain_toks
+                    .iter()
+                    .zip(plain_samp)
+                    .enumerate()
+                    .map(|(id, (&token, samp))| PlainRiderRow {
+                        id,
+                        token,
+                        samp: samp.clone(),
+                    })
+                    .collect();
+                let mut refs: Vec<&mut Cache> = plain.iter_mut().map(|c| &mut **c).collect();
+                self.rider_sample_rows(e, &mut refs, &rows, &logits, r0)?
+            };
+            Ok(Some((logits, x, rows, next)))
+        };
+        let Some((logits, x, rows, next)) = unified(&mut spec, &mut plain)? else {
+            lines.push("UNIFIED: NOT POOLABLE (shape refused)".into());
+            return Ok(lines);
+        };
+        let (lh, xh) = (bits(e.dtoh(&logits)?), bits(e.dtoh(&x)?));
+        let parked_u = parked(&plain)?;
+        let follow_u = follow(&mut spec, &mut plain)?;
+        let mut mism = 0usize;
+        let mut r0 = 0usize;
+        for (i, t) in spec_toks.iter().enumerate() {
+            let n = t.len();
+            let lrow = &lh[r0 * n_vocab..(r0 + n) * n_vocab];
+            let xrow = &xh[r0 * n_embd..(r0 + n) * n_embd];
+            let (ok_l, ok_x, ok_f) = (
+                lrow == ref_spec[i].0.as_slice(),
+                xrow == ref_spec[i].1.as_slice(),
+                follow_u.0[i] == ref_follow.0[i],
+            );
+            if !(ok_l && ok_x && ok_f) {
+                mism += 1;
+                lines.push(format!(
+                    "  spec {i} (T={n}): logits {} hidden {} follow-up {}",
+                    if ok_l { "eq" } else { "DIFFER" },
+                    if ok_x { "eq" } else { "DIFFER" },
+                    if ok_f { "eq" } else { "DIFFER" }
+                ));
+            }
+            r0 += n;
+        }
+        let plain_lh = &lh[r0 * n_vocab..];
+        for i in 0..plain.len() {
+            let row_ref = &ref_plain.0[i];
+            let ok_tok = next[i] == ref_plain.1[i];
+            let ok_row = rows[i] == *row_ref;
+            let ok_park = parked_u[i] == ref_parked[i];
+            // The pooled row itself against the plain step's pristine row (parked or host).
+            let pristine_ref: Vec<u32> = if row_ref.is_empty() {
+                ref_parked[i].clone()
+            } else {
+                bits(row_ref.clone())
+            };
+            let ok_logits = plain_lh[i * n_vocab..(i + 1) * n_vocab] == pristine_ref[..];
+            let ok_f = follow_u.1[i] == ref_follow.1[i];
+            if !(ok_tok && ok_row && ok_park && ok_logits && ok_f) {
+                mism += 1;
+                lines.push(format!(
+                    "  plain {i}: token {:?} vs {:?}, row {}, parked {}, logits {}, follow-up {}",
+                    next[i],
+                    ref_plain.1[i],
+                    if ok_row { "eq" } else { "DIFFER" },
+                    if ok_park { "eq" } else { "DIFFER" },
+                    if ok_logits { "eq" } else { "DIFFER" },
+                    if ok_f { "eq" } else { "DIFFER" }
+                ));
+            }
+        }
+        let shape: Vec<usize> = spec_toks.iter().map(Vec::len).collect();
+        lines.push(format!(
+            "UNIFIED spec {shape:?} + plain {} (R={}): {} (spec logits+hidden rows, plain draws \
+             {:?}, plain rows, parked logits, follow-up steps)",
+            plain.len(),
+            r0 + plain.len(),
+            if mism == 0 {
+                "BITWISE EQUAL".to_string()
+            } else {
+                format!("MISMATCH in {mism} sessions")
+            },
+            next
+        ));
+        drop((logits, x, rows));
+        restore(&mut spec, &mut plain)?;
+
+        // ---- timing, same restored states ----
+        let mut serial_ms = Vec::new();
+        let mut v1_ms = Vec::new();
+        let mut unified_ms = Vec::new();
+        let plain_step = |plain: &mut Vec<&mut Cache>| -> Result<(), Box<dyn std::error::Error>> {
+            if !plain.is_empty() {
+                let mut refs: Vec<&mut Cache> = plain.iter_mut().map(|c| &mut **c).collect();
+                let _ = self.decode_step_batch_sampled_lean_masked(
+                    e,
+                    plain_toks,
+                    &mut refs,
+                    plain_samp,
+                    &[],
+                    true,
+                )?;
+            }
+            Ok(())
+        };
+        for rep in 0..=reps {
+            // v1 serving shape: the spec rows' own pooled forward (per-session below two
+            // segments) and the plain batched step.
+            restore(&mut spec, &mut plain)?;
+            let t0 = std::time::Instant::now();
+            if spec.len() >= 2 {
+                let mut segs: Vec<PooledVerifySeg<'_>> = spec
+                    .iter_mut()
+                    .zip(spec_toks)
+                    .map(|(c, t)| PooledVerifySeg {
+                        cache: c,
+                        tokens: t,
+                        ckpt: None,
+                        host_embed: false,
+                    })
+                    .collect();
+                let (l, _) = self
+                    .verify_pooled_dev(e, &mut segs, embd_dev)?
+                    .ok_or("spec shape refused")?;
+                let am = e.argmax_token_device(&l, n_vocab)?;
+                let _ = e.dtoh_u32_one(&am)?;
+            } else {
+                let _exact = e.exact_scope(true);
+                for (c, t) in spec.iter_mut().zip(spec_toks) {
+                    let p = c.pos;
+                    let (l, _) = self.decode_step_t_core_vg(e, t, p, c, embd_dev, None, None)?;
+                    let am = e.argmax_token_device(&l, n_vocab)?;
+                    let _ = e.dtoh_u32_one(&am)?;
+                }
+            }
+            plain_step(&mut plain)?;
+            let v_ms = t0.elapsed().as_secs_f64() * 1e3;
+            restore(&mut spec, &mut plain)?;
+            let t0 = std::time::Instant::now();
+            {
+                let _exact = e.exact_scope(true);
+                for (c, t) in spec.iter_mut().zip(spec_toks) {
+                    let p = c.pos;
+                    let (l, _) = self.decode_step_t_core_vg(e, t, p, c, embd_dev, None, None)?;
+                    let am = e.argmax_token_device(&l, n_vocab)?;
+                    let _ = e.dtoh_u32_one(&am)?;
+                }
+            }
+            plain_step(&mut plain)?;
+            let s_ms = t0.elapsed().as_secs_f64() * 1e3;
+            restore(&mut spec, &mut plain)?;
+            let t0 = std::time::Instant::now();
+            let (l, _, _, _) = unified(&mut spec, &mut plain)?.ok_or("shape refused")?;
+            let am = e.argmax_token_device(&l, n_vocab)?;
+            let _ = e.dtoh_u32_one(&am)?;
+            let u_ms = t0.elapsed().as_secs_f64() * 1e3;
+            if rep > 0 {
+                serial_ms.push(s_ms);
+                v1_ms.push(v_ms);
+                unified_ms.push(u_ms);
+            }
+        }
+        restore(&mut spec, &mut plain)?;
+        let med = |v: &mut Vec<f64>| {
+            v.sort_by(|a, b| a.partial_cmp(b).unwrap());
+            v[v.len() / 2]
+        };
+        if !serial_ms.is_empty() {
+            let (sm, vm, um) = (med(&mut serial_ms), med(&mut v1_ms), med(&mut unified_ms));
+            lines.push(format!(
+                "UNIFIED-TIME spec {shape:?} + plain {}: per-session verifies + plain step \
+                 {sm:.3} ms, pooled spec forward + plain step {vm:.3} ms, unified forward \
+                 {um:.3} ms ({:.2}x / {:.2}x, median of {reps})",
+                plain.len(),
+                sm / um,
+                vm / um
+            ));
+        }
+        Ok(lines)
+    }
+
     /// Public pooled verify without checkpoints (benches and gates): sessions' caches and
     /// their verify rows. `Ok(None)` = not poolable, nothing mutated.
     pub fn verify_pooled(
@@ -7651,6 +8044,7 @@ impl HybridModel {
                 cache: c,
                 tokens: t,
                 ckpt: None,
+                host_embed: false,
             })
             .collect();
         Ok(self.verify_pooled_dev(e, &mut segs, None)?.map(|(l, _)| l))
@@ -7672,6 +8066,96 @@ impl HybridModel {
             && self.cfg.m3.is_none()
             && !spec_stream()
             && !spec_verify_graph_env().unwrap_or_else(|| self.vgraph_family_default())
+    }
+
+    /// Whether this model's plain decode rows may ride a pooled MTP cohort's forwards (the
+    /// lane/batch-spec v2 unified step). The pooled walk's family (`spec_pool_capable`) with a
+    /// dense FFN, and a serving plain step that is the generic batched trunk at every chunk
+    /// width: the qualified batched rewrite, no hyper trunk, no fixed-solo B=1 fusion arm, no
+    /// width-cap measurement door (B above 8 outside the exact tier is another numeric class)
+    /// and the full-precision diagnostic off. `decode-batch-bench --pooled-plain` and
+    /// `--unified` pin that trunk's rows bitwise against one-row pooled segments.
+    pub fn plain_rider_capable(&self) -> bool {
+        self.spec_pool_capable()
+            && self.hyper.is_none()
+            && self.rewrite_allowed(memra_gguf::execution_manifest::RewriteSurface::DecodeBatch)
+            && crate::plan_backend::decode_batch_program(&self.plan)
+                == crate::plan_backend::DecodeBatchProgram::Generic
+            && !Self::b1_fast_on()
+            && Self::decode_batch_cap() <= 8
+            && !crate::model::full_prec_enabled()
+            && self
+                .layers
+                .iter()
+                .all(|l| matches!(l.ffn, crate::hybrid::Ffn::Dense { .. }))
+    }
+
+    /// Rows a pooled forward may carry once plain riders join it: 16 where every matmul has
+    /// the exact b16 class (the plain step's own exact16 tier), else the plain step's 8.
+    fn rider_forward_rows(&self) -> usize {
+        if self.decode_batch_exact16_ok() {
+            16
+        } else {
+            8
+        }
+    }
+
+    /// The plain riders' rows of a pooled forward's logits stack (rows `r0..r0+n`), sampled
+    /// by the plain batched step's epilogue (lean, like the serving tick).
+    #[allow(clippy::type_complexity)] // allow: the batched step's own (rows, next) result shape
+    fn rider_sample_rows(
+        &self,
+        e: &Engine,
+        caches: &mut [&mut Cache],
+        rows: &[PlainRiderRow],
+        logits: &CudaSlice<f32>,
+        r0: usize,
+    ) -> Result<(Vec<Vec<f32>>, Vec<Option<u32>>), Box<dyn std::error::Error>> {
+        let n_vocab = self.output.out_features();
+        let n = rows.len();
+        let mut l = e.uninit(n * n_vocab)?;
+        e.dtod_copy_view(&logits.slice(r0 * n_vocab..(r0 + n) * n_vocab), &mut l)?;
+        let samp: Vec<Option<crate::decode_batch::DevSamp>> =
+            rows.iter().map(|r| r.samp.clone()).collect();
+        self.decode_batch_sample_logits(e, caches, &samp, true, l, n)
+    }
+
+    /// Riders no pooled forward of this round took: the serving plain batched step itself, in
+    /// chunks of its exact width.
+    fn rider_plain_step(
+        &self,
+        e: &Engine,
+        riders: &mut dyn PooledPlainRiders,
+        rows: Vec<PlainRiderRow>,
+    ) {
+        let cap = if self.decode_batch_exact16_ok() {
+            16
+        } else {
+            Self::decode_batch_cap()
+        };
+        for chunk in rows.chunks(cap.max(1)) {
+            let ids: Vec<usize> = chunk.iter().map(|r| r.id).collect();
+            let toks: Vec<u32> = chunk.iter().map(|r| r.token).collect();
+            let samp: Vec<Option<crate::decode_batch::DevSamp>> =
+                chunk.iter().map(|r| r.samp.clone()).collect();
+            let r = {
+                let mut caches = riders.caches(&ids);
+                self.decode_step_batch_sampled_lean_masked(e, &toks, &mut caches, &samp, &[], true)
+            };
+            match r {
+                Ok((rows, next)) => {
+                    for ((id, row), nx) in ids.into_iter().zip(rows).zip(next) {
+                        riders.round_end(id, Ok((row, nx)));
+                    }
+                }
+                Err(err) => {
+                    let msg = err.to_string();
+                    for id in ids {
+                        riders.round_end(id, Err(msg.clone()));
+                    }
+                }
+            }
+        }
     }
 
     /// One lockstep member's round tail: its verify (the pooled split when the chunk pooled,
@@ -7737,7 +8221,32 @@ impl HybridModel {
         e: &Engine,
         reqs: Vec<PooledBurstReq<'a>>,
     ) -> Vec<PooledBurstResult> {
+        self.generate_spec_sessions_unified(e, reqs, None)
+    }
+
+    /// THE UNIFIED RAGGED STEP (lane/batch-spec v2): `generate_spec_sessions_pooled` with the
+    /// same-model plain decoding sessions riding the lockstep. Each round, after the members'
+    /// drafts, every rider still in the lockstep runs its emission step (`round_begin`) and
+    /// contributes one row, its next input token, as a one-row segment of the round's pooled
+    /// forwards: riders fill each forward's free rows (up to `rider_forward_rows`), embed through
+    /// the plain step's host gather, and sample with the plain batched step's epilogue on their
+    /// rows of the logits stack (`decode_batch_sample_logits`). A one-row pooled segment is
+    /// bitwise the plain batched step's row (`decode-batch-bench --pooled-plain`, `--unified`),
+    /// so a rider's stream is its plain stream. Riders no forward has room for, or whose
+    /// forward did not pool, step through the plain batched step itself. A forward with
+    /// riders pools even with one member, so a lone spec session can carry riders.
+    pub fn generate_spec_sessions_unified<'a>(
+        &self,
+        e: &Engine,
+        reqs: Vec<PooledBurstReq<'a>>,
+        mut riders: Option<&mut dyn PooledPlainRiders>,
+    ) -> Vec<PooledBurstResult> {
         let n = reqs.len();
+        let rider_rows_cap = if riders.is_some() && self.plain_rider_capable() {
+            self.rider_forward_rows()
+        } else {
+            0
+        };
         let mut outcomes: Vec<Option<PooledBurstResult>> = (0..n).map(|_| None).collect();
         // The wrapper's draft-graph eligibility and event-tracking scope, once for the cohort
         // (every member shares the model and its k bound).
@@ -7894,6 +8403,11 @@ impl HybridModel {
             if preps.iter().all(Option::is_none) {
                 break;
             }
+            // Plain riders: this round's rows, after each rider's emission step.
+            let mut rider_q: std::collections::VecDeque<PlainRiderRow> = match riders.as_mut() {
+                Some(r) => r.round_begin().into(),
+                None => std::collections::VecDeque::new(),
+            };
             // Verify: chunks of consecutive pool-ready rounds, at most 16 rows each.
             let mut verified: Vec<Option<PooledVerifyOut>> = (0..n).map(|_| None).collect();
             let mut failed: Vec<Option<String>> = (0..n).map(|_| None).collect();
@@ -7929,13 +8443,24 @@ impl HybridModel {
                     end += 1;
                 }
                 let members: Vec<usize> = (j..end).filter(|&m| preps[m].is_some()).collect();
-                if members.len() >= 2 {
+                // Riders take the forward's free rows.
+                let take = rider_rows_cap.saturating_sub(rows).min(rider_q.len());
+                let chunk_riders: Vec<PlainRiderRow> = rider_q.drain(..take).collect();
+                if members.len() + chunk_riders.len() >= 2 {
                     let embd_dev = bursts[j..end]
                         .iter()
                         .flatten()
                         .next()
                         .and_then(|b| b.rs.cfg.embd_dev);
-                    let mut segs: Vec<PooledVerifySeg<'_>> = Vec::with_capacity(members.len());
+                    let rider_ids: Vec<usize> = chunk_riders.iter().map(|r| r.id).collect();
+                    let rider_toks: Vec<[u32; 1]> =
+                        chunk_riders.iter().map(|r| [r.token]).collect();
+                    let mut rcaches: Vec<&mut Cache> = match riders.as_mut() {
+                        Some(r) if !rider_ids.is_empty() => r.caches(&rider_ids),
+                        _ => Vec::new(),
+                    };
+                    let mut segs: Vec<PooledVerifySeg<'_>> =
+                        Vec::with_capacity(members.len() + rcaches.len());
                     for ((p, b), m) in preps[j..end]
                         .iter_mut()
                         .zip(bursts[j..end].iter_mut())
@@ -7949,6 +8474,15 @@ impl HybridModel {
                             cache: &mut *b.rs.cache,
                             tokens: &p.verify_tokens,
                             ckpt: p.ckpt.as_mut(),
+                            host_embed: false,
+                        });
+                    }
+                    for (c, t) in rcaches.iter_mut().zip(&rider_toks) {
+                        segs.push(PooledVerifySeg {
+                            cache: c,
+                            tokens: t,
+                            ckpt: None,
+                            host_embed: true,
                         });
                     }
                     match self.verify_pooled_dev(e, &mut segs, embd_dev) {
@@ -7979,16 +8513,55 @@ impl HybridModel {
                                 }
                                 r0 += t;
                             }
+                            if !chunk_riders.is_empty() {
+                                let sampled = self.rider_sample_rows(
+                                    e,
+                                    &mut rcaches,
+                                    &chunk_riders,
+                                    &logits,
+                                    r0,
+                                );
+                                drop(rcaches);
+                                let r = riders.as_mut().expect("riders took rows");
+                                match sampled {
+                                    Ok((rows, next)) => {
+                                        for ((id, row), nx) in
+                                            rider_ids.iter().copied().zip(rows).zip(next)
+                                        {
+                                            r.round_end(id, Ok((row, nx)));
+                                        }
+                                    }
+                                    Err(err) => {
+                                        for &id in &rider_ids {
+                                            r.round_end(id, Err(err.to_string()));
+                                        }
+                                    }
+                                }
+                            }
                         }
                         // Not poolable after all (a row outside the attention window): the
-                        // members verify serially below, nothing was mutated.
-                        Ok(None) => {}
+                        // members verify serially below and the riders take the plain step,
+                        // nothing was mutated.
+                        Ok(None) => {
+                            drop(segs);
+                            drop(rcaches);
+                            rider_q.extend(chunk_riders);
+                        }
                         Err(err) => {
+                            drop(segs);
+                            drop(rcaches);
                             for &m in &members {
                                 failed[m] = Some(format!("pooled verify: {err}"));
                             }
+                            if let Some(r) = riders.as_mut() {
+                                for &id in &rider_ids {
+                                    r.round_end(id, Err(format!("pooled verify: {err}")));
+                                }
+                            }
                         }
                     }
+                } else {
+                    rider_q.extend(chunk_riders);
                 }
                 // This chunk's rounds finish now (pooled split, or serial verify when the
                 // chunk did not pool), before the next chunk's verify allocates.
@@ -8002,6 +8575,12 @@ impl HybridModel {
             }
             // Every prepared round finished inside the chunk walk above.
             debug_assert!(preps.iter().all(Option::is_none));
+            // Riders no pooled forward took this round: the plain batched step itself.
+            if !rider_q.is_empty()
+                && let Some(r) = riders.as_mut()
+            {
+                self.rider_plain_step(e, &mut **r, rider_q.into());
+            }
         }
         if graph_draft && was_tracking {
             unsafe {

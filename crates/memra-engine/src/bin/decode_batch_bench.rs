@@ -213,6 +213,97 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
 
+    // `--unified 4,3 --plain 6 [--kinds gtfp]` (lane/batch-spec v2, the unified ragged step):
+    // spec sessions (entry = verify rows T_i) and plain sessions (one token each) at their own
+    // depths (`--ctx` + 37*i). Plain metas cycle through `--kinds`: g greedy, t T=0.8, f T=0.7
+    // + top_k 40 + top_p 0.9, p T=0.8 + repeat/frequency/presence penalties, h host-sampled
+    // (no device meta). `unified_step_probe` pins ONE pooled forward over all of them, the plain
+    // rows sampled by the batched step's epilogue, bitwise against per-session verifies plus
+    // the serving plain step, then times both.
+    let unified: Option<Vec<usize>> = rest
+        .iter()
+        .position(|a| a == "--unified")
+        .and_then(|i| rest.get(i + 1))
+        .map(|v| v.split(',').filter_map(|s| s.parse().ok()).collect());
+    if let Some(ts) = unified {
+        let n_plain: usize = rest
+            .iter()
+            .position(|a| a == "--plain")
+            .and_then(|i| rest.get(i + 1))
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(4);
+        let kinds: Vec<char> = rest
+            .iter()
+            .position(|a| a == "--kinds")
+            .and_then(|i| rest.get(i + 1))
+            .map(|v| v.chars().collect())
+            .unwrap_or_else(|| "gtfp".chars().collect());
+        let depth: usize = rest
+            .iter()
+            .position(|a| a == "--ctx")
+            .and_then(|i| rest.get(i + 1))
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(512);
+        let vocab = model.cfg.n_vocab.max(64) - 16;
+        let mut spec_caches: Vec<Cache> = Vec::new();
+        let mut spec_toks: Vec<Vec<u32>> = Vec::new();
+        let mut plain_caches: Vec<Cache> = Vec::new();
+        for i in 0..ts.len() + n_plain {
+            let d = depth + 37 * i;
+            let prompt: Vec<u32> = (0..d as u32)
+                .map(|j| (55 + i as u32 * 97 + j * 31) % vocab)
+                .collect();
+            let mut c = new_cache(&e, &model.cfg, d + 64)?;
+            let _ = model.prime_cache(&e, &prompt, &mut c, 0)?;
+            if i < ts.len() {
+                spec_toks.push(
+                    (0..ts[i] as u32)
+                        .map(|j| (977 + i as u32 * 61 + j * 131) % vocab)
+                        .collect(),
+                );
+                spec_caches.push(c);
+            } else {
+                plain_caches.push(c);
+            }
+        }
+        let plain_toks: Vec<u32> = (0..n_plain as u32)
+            .map(|i| (4242 + i * 7) % vocab)
+            .collect();
+        let plain_samp: Vec<Option<DevSamp>> = (0..n_plain)
+            .map(|i| {
+                let (seed, ctr) = (1234 + 17 * i as u64, 40 + i as u32);
+                match kinds[i % kinds.len()] {
+                    't' => Some(DevSamp::new(0.8, seed, ctr, 0, 1.0, 0.0)),
+                    'f' => Some(DevSamp::new(0.7, seed, ctr, 40, 0.9, 0.0)),
+                    'p' => {
+                        let counts: Vec<(u32, u32)> = (0..24u32)
+                            .map(|j| ((55 + j * 31) % vocab, 1 + j % 3))
+                            .collect();
+                        let pen =
+                            memra_engine::decode_batch::DevPenalty::try_new(1.1, 0.2, 0.5, counts)
+                                .expect("unique positive counts");
+                        Some(DevSamp::new(0.8, seed, ctr, 0, 1.0, 0.0).with_penalty(pen))
+                    }
+                    'h' => None,
+                    _ => Some(DevSamp::new(0.0, 0, 0, 0, 1.0, 0.0)),
+                }
+            })
+            .collect();
+        let lines = model.unified_step_probe(
+            &e,
+            spec_caches.iter_mut().collect(),
+            &spec_toks,
+            plain_caches.iter_mut().collect(),
+            &plain_toks,
+            &plain_samp,
+            reps,
+        )?;
+        for l in lines {
+            println!("{l}");
+        }
+        return Ok(());
+    }
+
     // `--pooled 4,4,4,4` (lane/batch-spec): one session per entry, entry = its verify rows T_i,
     // each primed to its own depth (`--ctx` + 37*i). Pins the pooled cross-session verify
     // BITWISE against the per-session verify funnel (every logit row, plus one follow-up

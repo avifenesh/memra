@@ -1,0 +1,105 @@
+### decode-batch-bench --unified 4,4 --plain 4 --ctx 512
+[tensor-contract] bound 668 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[q8rp] split-plane decode mirrors built: 92 tensors
+loaded qwen35 (32 layers); steps=128 reps=5 batches=[1, 2, 4, 8] primary_dev=0
+[fa-pool] grow #0 dev=0 o_len 0 -> 147456 ml_len 0 -> 576 (retired kept, zero=false)
+[fa-pool] grow #1 dev=0 o_len 147456 -> 294912 ml_len 576 -> 1152 (retired kept, zero=false)
+[device-penalty] sparse sampled rows=1 unique-counts=24 execution=one-ragged-launch raw-logits=preserved
+[fa-pool] grow #2 dev=0 o_len 294912 -> 589824 ml_len 1152 -> 2304 (retired kept, zero=false)
+UNIFIED spec [4, 4] + plain 4 (R=12): BITWISE EQUAL (spec logits+hidden rows, plain draws [Some(342), Some(69), Some(362), Some(89)], plain rows, parked logits, follow-up steps)
+UNIFIED-TIME spec [4, 4] + plain 4: per-session verifies + plain step 29.601 ms, unified forward 24.246 ms, 1.22x (median of 5)
+rc=0
+### decode-batch-bench --unified 4,4 --plain 4 --ctx 2048
+[tensor-contract] bound 668 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[q8rp] split-plane decode mirrors built: 92 tensors
+loaded qwen35 (32 layers); steps=128 reps=5 batches=[1, 2, 4, 8] primary_dev=0
+[fa-pool] grow #0 dev=0 o_len 0 -> 540672 ml_len 0 -> 2112 (retired kept, zero=false)
+[fa-pool] grow #1 dev=0 o_len 540672 -> 1081344 ml_len 2112 -> 4224 (retired kept, zero=false)
+[device-penalty] sparse sampled rows=1 unique-counts=24 execution=one-ragged-launch raw-logits=preserved
+[fa-pool] grow #2 dev=0 o_len 1081344 -> 2162688 ml_len 4224 -> 8448 (retired kept, zero=false)
+UNIFIED spec [4, 4] + plain 4 (R=12): BITWISE EQUAL (spec logits+hidden rows, plain draws [Some(1020), Some(72532), Some(362), Some(89)], plain rows, parked logits, follow-up steps)
+UNIFIED-TIME spec [4, 4] + plain 4: per-session verifies + plain step 31.815 ms, unified forward 26.231 ms, 1.21x (median of 5)
+rc=0
+### decode-batch-bench --unified 4,4 --plain 8 --kinds gtfph --ctx 2048
+[tensor-contract] bound 668 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[q8rp] split-plane decode mirrors built: 92 tensors
+loaded qwen35 (32 layers); steps=128 reps=5 batches=[1, 2, 4, 8] primary_dev=0
+[fa-pool] grow #0 dev=0 o_len 0 -> 540672 ml_len 0 -> 2112 (retired kept, zero=false)
+[fa-pool] grow #1 dev=0 o_len 540672 -> 1245184 ml_len 2112 -> 4864 (retired kept, zero=false)
+[device-penalty] sparse sampled rows=1 unique-counts=24 execution=one-ragged-launch raw-logits=preserved
+[fa-pool] grow #2 dev=0 o_len 1245184 -> 2490368 ml_len 4864 -> 9728 (retired kept, zero=false)
+UNIFIED spec [4, 4] + plain 8 (R=16): BITWISE EQUAL (spec logits+hidden rows, plain draws [Some(1020), Some(72532), Some(362), Some(89), None, Some(248046), Some(17120), Some(1894)], plain rows, parked logits, follow-up steps)
+UNIFIED-TIME spec [4, 4] + plain 8: per-session verifies + plain step 35.555 ms, unified forward 32.658 ms, 1.09x (median of 5)
+rc=0
+### decode-batch-bench --unified 4 --plain 12 --ctx 2048
+[tensor-contract] bound 668 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[q8rp] split-plane decode mirrors built: 92 tensors
+loaded qwen35 (32 layers); steps=128 reps=5 batches=[1, 2, 4, 8] primary_dev=0
+[fa-pool] grow #0 dev=0 o_len 0 -> 540672 ml_len 0 -> 2112 (retired kept, zero=false)
+[fa-pool] grow #1 dev=0 o_len 540672 -> 1916928 ml_len 2112 -> 7488 (retired kept, zero=false)
+[device-penalty] sparse sampled rows=3 unique-counts=72 execution=one-ragged-launch raw-logits=preserved
+[fa-pool] grow #2 dev=0 o_len 1916928 -> 3833856 ml_len 7488 -> 14976 (retired kept, zero=false)
+UNIFIED spec [4] + plain 12 (R=16): BITWISE EQUAL (spec logits+hidden rows, plain draws [Some(428), Some(72532), Some(362), Some(89), Some(28106), Some(27070), Some(248046), Some(1894), Some(59), Some(1047), Some(355), Some(7511)], plain rows, parked logits, follow-up steps)
+UNIFIED-TIME spec [4] + plain 12: per-session verifies + plain step 35.755 ms, unified forward 33.542 ms, 1.07x (median of 5)
+rc=0
+### decode-batch-bench --unified 3,2 --plain 6 --kinds gtfph --ctx 40
+[tensor-contract] bound 668 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[q8rp] split-plane decode mirrors built: 92 tensors
+loaded qwen35 (32 layers); steps=128 reps=5 batches=[1, 2, 4, 8] primary_dev=0
+[fa-pool] grow #0 dev=0 o_len 0 -> 4096 ml_len 0 -> 16 (retired kept, zero=false)
+[fa-pool] grow #1 dev=0 o_len 4096 -> 933888 ml_len 16 -> 3648 (retired kept, zero=false)
+[device-penalty] sparse sampled rows=1 unique-counts=24 execution=one-ragged-launch raw-logits=preserved
+UNIFIED spec [3, 2] + plain 6 (R=11): BITWISE EQUAL (spec logits+hidden rows, plain draws [Some(263), Some(69), Some(362), Some(89), None, Some(13)], plain rows, parked logits, follow-up steps)
+UNIFIED-TIME spec [3, 2] + plain 6: per-session verifies + plain step 31.772 ms, unified forward 25.711 ms, 1.24x (median of 5)
+rc=0
+### decode-batch-bench --unified 2,2,2,2 --plain 8 --ctx 200
+[tensor-contract] bound 668 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[q8rp] split-plane decode mirrors built: 92 tensors
+loaded qwen35 (32 layers); steps=128 reps=5 batches=[1, 2, 4, 8] primary_dev=0
+[fa-pool] grow #0 dev=0 o_len 0 -> 212992 ml_len 0 -> 832 (retired kept, zero=false)
+[fa-pool] grow #1 dev=0 o_len 212992 -> 425984 ml_len 832 -> 1664 (retired kept, zero=false)
+[device-penalty] sparse sampled rows=2 unique-counts=48 execution=one-ragged-launch raw-logits=preserved
+[fa-pool] grow #2 dev=0 o_len 425984 -> 3354624 ml_len 1664 -> 13104 (retired kept, zero=false)
+UNIFIED spec [2, 2, 2, 2] + plain 8 (R=16): BITWISE EQUAL (spec logits+hidden rows, plain draws [Some(342), Some(72532), Some(362), Some(89), Some(722), Some(14081), Some(220), Some(1894)], plain rows, parked logits, follow-up steps)
+UNIFIED-TIME spec [2, 2, 2, 2] + plain 8: per-session verifies + plain step 49.208 ms, unified forward 31.882 ms, 1.54x (median of 5)
+rc=0
+### decode-batch-bench --unified 1 --plain 1 --ctx 2048
+[tensor-contract] bound 668 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[q8rp] split-plane decode mirrors built: 92 tensors
+loaded qwen35 (32 layers); steps=128 reps=5 batches=[1, 2, 4, 8] primary_dev=0
+[fa-pool] grow #0 dev=0 o_len 0 -> 135168 ml_len 0 -> 528 (retired kept, zero=false)
+[fa-pool] grow #1 dev=0 o_len 135168 -> 270336 ml_len 528 -> 1056 (retired kept, zero=false)
+UNIFIED spec [1] + plain 1 (R=2): BITWISE EQUAL (spec logits+hidden rows, plain draws [Some(428)], plain rows, parked logits, follow-up steps)
+UNIFIED-TIME spec [1] + plain 1: per-session verifies + plain step 15.416 ms, unified forward 9.012 ms, 1.71x (median of 5)
+rc=0
+### decode-batch-bench --unified 8 --plain 8 --kinds p --ctx 2048
+[tensor-contract] bound 668 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[q8rp] split-plane decode mirrors built: 92 tensors
+loaded qwen35 (32 layers); steps=128 reps=5 batches=[1, 2, 4, 8] primary_dev=0
+[fa-pool] grow #0 dev=0 o_len 0 -> 1081344 ml_len 0 -> 4224 (retired kept, zero=false)
+[fa-pool] grow #1 dev=0 o_len 1081344 -> 2162688 ml_len 4224 -> 8448 (retired kept, zero=false)
+[device-penalty] sparse sampled rows=8 unique-counts=192 execution=one-ragged-launch raw-logits=preserved
+[fa-pool] grow #2 dev=0 o_len 2162688 -> 4325376 ml_len 8448 -> 16896 (retired kept, zero=false)
+UNIFIED spec [8] + plain 8 (R=16): BITWISE EQUAL (spec logits+hidden rows, plain draws [Some(51061), Some(72532), Some(625), Some(89), Some(528), Some(27070), Some(17120), Some(1894)], plain rows, parked logits, follow-up steps)
+UNIFIED-TIME spec [8] + plain 8: per-session verifies + plain step 31.568 ms, unified forward 34.042 ms, 0.93x (median of 5)
+rc=0
+### decode-batch-bench --unified 4,4,4 --plain 4 --kinds tf --ctx 2048
+[tensor-contract] bound 668 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[q8rp] split-plane decode mirrors built: 92 tensors
+loaded qwen35 (32 layers); steps=128 reps=5 batches=[1, 2, 4, 8] primary_dev=0
+[fa-pool] grow #0 dev=0 o_len 0 -> 540672 ml_len 0 -> 2112 (retired kept, zero=false)
+[fa-pool] grow #1 dev=0 o_len 540672 -> 1081344 ml_len 2112 -> 4224 (retired kept, zero=false)
+[fa-pool] grow #2 dev=0 o_len 1081344 -> 2359296 ml_len 4224 -> 9216 (retired kept, zero=false)
+UNIFIED spec [4, 4, 4] + plain 4 (R=16): BITWISE EQUAL (spec logits+hidden rows, plain draws [Some(51061), Some(248046), Some(362), Some(62)], plain rows, parked logits, follow-up steps)
+UNIFIED-TIME spec [4, 4, 4] + plain 4: per-session verifies + plain step 43.714 ms, unified forward 33.981 ms, 1.29x (median of 5)
+rc=0
+### decode-batch-bench --unified 2 --plain 3 --kinds ttt --ctx 2048
+[tensor-contract] bound 668 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[q8rp] split-plane decode mirrors built: 92 tensors
+loaded qwen35 (32 layers); steps=128 reps=5 batches=[1, 2, 4, 8] primary_dev=0
+[fa-pool] grow #0 dev=0 o_len 0 -> 270336 ml_len 0 -> 1056 (retired kept, zero=false)
+[fa-pool] grow #1 dev=0 o_len 270336 -> 540672 ml_len 1056 -> 2112 (retired kept, zero=false)
+[fa-pool] grow #2 dev=0 o_len 540672 -> 1081344 ml_len 2112 -> 4224 (retired kept, zero=false)
+UNIFIED spec [2] + plain 3 (R=5): BITWISE EQUAL (spec logits+hidden rows, plain draws [Some(51061), Some(72532), Some(625)], plain rows, parked logits, follow-up steps)
+UNIFIED-TIME spec [2] + plain 3: per-session verifies + plain step 19.566 ms, unified forward 12.532 ms, 1.56x (median of 5)
+rc=0

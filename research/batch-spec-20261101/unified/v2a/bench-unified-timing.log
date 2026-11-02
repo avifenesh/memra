@@ -1,0 +1,31 @@
+### --unified 4,4 --plain 2 --ctx 256
+UNIFIED spec [4, 4] + plain 2 (R=10): BITWISE EQUAL (spec logits+hidden rows, plain draws [Some(342), Some(69)], plain rows, parked logits, follow-up steps)
+UNIFIED-TIME spec [4, 4] + plain 2: per-session verifies + plain step 28.028 ms, pooled spec forward + plain step 22.802 ms, unified forward 20.798 ms (1.35x / 1.10x, median of 9)
+### --unified 4,4 --plain 4 --ctx 256
+UNIFIED spec [4, 4] + plain 4 (R=12): BITWISE EQUAL (spec logits+hidden rows, plain draws [Some(342), Some(69), Some(362), Some(89)], plain rows, parked logits, follow-up steps)
+UNIFIED-TIME spec [4, 4] + plain 4: per-session verifies + plain step 30.338 ms, pooled spec forward + plain step 24.438 ms, unified forward 24.605 ms (1.23x / 0.99x, median of 9)
+### --unified 4,4 --plain 6 --ctx 256
+UNIFIED spec [4, 4] + plain 6 (R=14): BITWISE EQUAL (spec logits+hidden rows, plain draws [Some(342), Some(69), Some(362), Some(89), Some(362), Some(27070)], plain rows, parked logits, follow-up steps)
+UNIFIED-TIME spec [4, 4] + plain 6: per-session verifies + plain step 32.425 ms, pooled spec forward + plain step 26.772 ms, unified forward 28.163 ms (1.15x / 0.95x, median of 9)
+### --unified 4,4 --plain 8 --ctx 256
+UNIFIED spec [4, 4] + plain 8 (R=16): BITWISE EQUAL (spec logits+hidden rows, plain draws [Some(342), Some(69), Some(362), Some(89), Some(362), Some(27070), Some(623), Some(1894)], plain rows, parked logits, follow-up steps)
+UNIFIED-TIME spec [4, 4] + plain 8: per-session verifies + plain step 34.957 ms, pooled spec forward + plain step 28.959 ms, unified forward 30.980 ms (1.13x / 0.93x, median of 9)
+### --unified 4 --plain 1 --ctx 256
+UNIFIED spec [4] + plain 1 (R=5): BITWISE EQUAL (spec logits+hidden rows, plain draws [Some(315)], plain rows, parked logits, follow-up steps)
+UNIFIED-TIME spec [4] + plain 1: per-session verifies + plain step 17.328 ms, pooled spec forward + plain step 17.248 ms, unified forward 10.878 ms (1.59x / 1.59x, median of 9)
+### --unified 4 --plain 3 --ctx 256
+UNIFIED spec [4] + plain 3 (R=7): BITWISE EQUAL (spec logits+hidden rows, plain draws [Some(315), Some(69), Some(271)], plain rows, parked logits, follow-up steps)
+UNIFIED-TIME spec [4] + plain 3: per-session verifies + plain step 19.505 ms, pooled spec forward + plain step 19.521 ms, unified forward 13.899 ms (1.40x / 1.40x, median of 9)
+### --unified 4 --plain 4 --ctx 256
+UNIFIED spec [4] + plain 4 (R=8): BITWISE EQUAL (spec logits+hidden rows, plain draws [Some(315), Some(69), Some(271), Some(89)], plain rows, parked logits, follow-up steps)
+UNIFIED-TIME spec [4] + plain 4: per-session verifies + plain step 21.010 ms, pooled spec forward + plain step 21.007 ms, unified forward 15.931 ms (1.32x / 1.32x, median of 9)
+### --unified 3,3 --plain 4 --ctx 256
+UNIFIED spec [3, 3] + plain 4 (R=10): BITWISE EQUAL (spec logits+hidden rows, plain draws [Some(342), Some(69), Some(362), Some(89)], plain rows, parked logits, follow-up steps)
+UNIFIED-TIME spec [3, 3] + plain 4: per-session verifies + plain step 28.884 ms, pooled spec forward + plain step 22.702 ms, unified forward 22.108 ms (1.31x / 1.03x, median of 9)
+### --unified 4,4,4 --plain 4 --ctx 256
+UNIFIED spec [4, 4, 4] + plain 4 (R=16): BITWISE EQUAL (spec logits+hidden rows, plain draws [Some(428), Some(248046), Some(362), Some(89)], plain rows, parked logits, follow-up steps)
+UNIFIED-TIME spec [4, 4, 4] + plain 4: per-session verifies + plain step 39.298 ms, pooled spec forward + plain step 32.465 ms, unified forward 31.300 ms (1.26x / 1.04x, median of 9)
+### --unified 2,2 --plain 4 --ctx 256
+UNIFIED spec [2, 2] + plain 4 (R=8): BITWISE EQUAL (spec logits+hidden rows, plain draws [Some(342), Some(69), Some(362), Some(89)], plain rows, parked logits, follow-up steps)
+UNIFIED-TIME spec [2, 2] + plain 4: per-session verifies + plain step 28.149 ms, pooled spec forward + plain step 21.187 ms, unified forward 16.027 ms (1.76x / 1.32x, median of 9)
+done
