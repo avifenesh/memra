@@ -1,0 +1,157 @@
+[server] build: memra-0.138.0-23a53378346a (id: source-tree, git: 8b9ebdf03211)
+[server] starting; models config = [("q38", "/data/ai-ml/models/q38-gguf/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf", None)]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[worker-affinity] off (MEMRA_WORKER_CPUSET / MEMRA_WORKER_AFFINITY unset or =0)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal after 3 consecutive misses (MEMRA_GPU_PROBE_MISSES), fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[spec-gate] policy disabled by MEMRA_SPEC_GATE=0: always-spec
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2 (K=5 when the loaded MTP head is rank-trimmed)
+[worker] loading model "q38" <- /data/ai-ml/models/q38-gguf/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf
+[tensor-contract] bound 866 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[mtp-skip] MEMRA_MTP_SKIP=1: skipping 1 embedded MTP/NextN block(s) blk.64..=blk.64 (~227 MiB of weights not loaded); MTP spec decode is unavailable for this model (dspark/DFlash2 drafting keeps its trimmed head via the MEMRA_FRSPEC_TRIM stub)
+[worker]   loaded "q38": 65 layers, eos=248046, stop=[248046]
+[worker] q38: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false qwen_effort=true gemma_think=false dsv4=false glm5=false ctx=262144 tok="qwen35" instruct=Some("chatml") chat_defaults=None/None
+[route-contract] model="q38" route=hybrid-worker capacity=8 sessions implemented=[capacity,occupancy,progress,fault-ownership,shutdown-ownership,memory-cost,rewrite-qualification,prime-fairness,service-metrics] refused=[]
+[worker] q38: decode wave cap 16; scheduler tick cap 16 (exact-16 tier)
+[dspark] precision=q4 (MEMRA_DFLASH_PREC unset)
+[dspark] harvest=dflash (checkpoint census dflash2=true strategy_dspark=false, MEMRA_DSPARK_HARVEST unset)
+[dspark] verify-window=Ladder (accept-rate head ABSENT -> ladder, MEMRA_DSPARK_VT unset)
+[worker] q38: DSPARK SPEC route armed (drafter attached (/data/ai-ml/models/q38-dflash2); greedy+sampled [T>0 rejection verify, sampled penalties included; greedy penalties verified by penalised argmax (MEMRA_DSPARK_GREEDY_PENALTY=1)]/unconstrained/text-only; greedy LOW-wave admission + HIGH demotion, sampled solo admission; MTP spec DISABLED for this model — refuse-on-ambiguity; MEMRA_DSPARK_SPEC unset = off)
+[dspark] q38: DFlash2 draft head FULL target vocab (external_mtp_d2t_ignored=false; set MEMRA_FRSPEC_TRIM=<ranks.txt> to trim)
+[prefix-cache] on: budget 557MB (557056000 B, derived: 2 x 278528000 B max entry for model "q38" at served ctx 4096 (from MEMRA_CTX; MEMRA_CTX set), requested 557056000 B; boot driver free 9282125824 B, post-reserve clamp 7671513088 B), policy plain-LRU (global oldest unleased entry first; leases untouchable), min prefix 64 tokens, immediate partial restore=off (rollback) (transformer-only; hybrid mid-entry + routed-MoE N/A)
+[admission] "q38": dspark owns the spec program: spec coefficient = plain (no MTP scratch term); the draft plane is charged per session, 169MB at a 30k cap (ring on: constant above two windows)
+[admission] "q38": plain 29696 B/token, spec 29696 B/token; fixed residual learns from effective-free deltas
+[prime-walk] model="q38" route=dspark supported=false yield_door=true [gdn_dspark_compatible=true mtp_head_loaded=false no_hyper_connections=true no_pipeline_cuts=true]
+[dspark-vg] serve pool ENGAGED (vt_cap=8)
+[topk-shards] engaged: rows=7 cols=248320 k=16 shards=16 (MEMRA_TOPK_SHARDS=1)
+[fa-pool] grow #0 dev=0 o_len 0 -> 3194880 ml_len 0 -> 12480 (retired kept, zero=false)
+[dflash-kv-ring] compact keep_from=2064 kept=2056 phys_rows=4120
+[device-trim] reason=calibration-complete {"device":0,"reclaimed_bytes":1811939328,"still_owned_bytes":19321828224,"pool_reserved_bytes":19428016128,"pool_cached_bytes":106187904,"driver_free_bytes":5073141760,"synchronization_errors":[]}
+[admit-cal] post-probe pool trim: released 1728MB cached back to the driver
+[admit-cal] boot calibration done: model="q38" route=dspark transient floor 1608MB (static was 1536MB; measured 1608MB; probe kv charge 119MB, draft-state 0MB, drafted 68 accepted 46; [dev0 peak-mapped 20256MB rest-mapped 18528MB charged 119MB -> 1608MB]; 4.5s)
+[admit-mem] door=OFF open_output_tokens=8192 defer_budget_ms=8000 (admission charges prompt+output, the reclaim flush demotes to the host tier before dropping, and a memory defer past the budget refuses 429 instead of queueing past the client's deadline)
+[kv-vmm] door=OFF (MEMRA_KV_ALLOCATOR unset or pooled: pooled K/V planes)
+[server] worker ready; serving models: ["q38"]
+[server] listening on http://127.0.0.1:8361
+[meter] admit id=chatcmpl-392198e12c8cb0588dfc88eb633dcfbb tenant=default lane=interactive model="q38"
+[admission] per-session draft-state charge: model="q38" +13MB (DFlash draft plane at this cap)
+[admission] request cost: model="q38" ctx=302 path=spec = 29696 B/token x ctx + 18MB prefill-workspace + 0MB fixed = 27MB
+[spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=38 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[dspark-acc] ctx=38 burst=17/44 cum=17/44=0.386
+[dspark-acc] ctx=72 burst=18/38 cum=35/82=0.427
+[dspark-acc] ctx=104 burst=20/37 cum=55/119=0.462
+[dspark-acc] ctx=138 burst=18/39 cum=73/158=0.462
+[dspark-acc] ctx=172 burst=16/38 cum=89/196=0.454
+[dspark-acc] ctx=204 burst=15/39 cum=104/235=0.443
+[dspark-acc] ctx=236 burst=1/4 cum=105/239=0.439
+[meter] admit id=chatcmpl-3efde9cc9c7c0d057617ed720327d4ee tenant=default lane=interactive model="q38"
+[worker] dspark-reuse MISS: 1 parked, best text overlap 22B                              of 172B prompt; serving COLD (model q38)
+[spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=38 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-9bae199e986eef85565dc42782f7190a tenant=default lane=interactive model="q38"
+[dspark-acc] ctx=38 burst=18/42 cum=18/42=0.429
+[admission] per-session draft-state charge: model="q38" +13MB (DFlash draft plane at this cap)
+[admission] request cost: model="q38" ctx=303 path=spec = 29696 B/token x ctx + 19MB prefill-workspace + 0MB fixed = 28MB
+[spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=39 cached=0 lcp=0 active=2 wave=2 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="q38" 308MB (observed 316MB at ctx 247 path=plain)
+[dspark-acc] ctx=72 burst=19/40 cum=37/82=0.451
+[dspark-acc] ctx=106 burst=17/35 cum=54/117=0.462
+[dspark-acc] ctx=138 burst=17/38 cum=71/155=0.458
+[dspark-acc] ctx=171 burst=16/38 cum=87/193=0.451
+[dspark-acc] ctx=203 burst=17/36 cum=104/229=0.454
+[dspark-acc] ctx=235 burst=2/5 cum=106/234=0.453
+[meter] admit id=chatcmpl-297287da05827a2d2f26e696ed284e93 tenant=default lane=interactive model="q38"
+[admission] per-session draft-state charge: model="q38" +13MB (DFlash draft plane at this cap)
+[admission] request cost: model="q38" ctx=302 path=spec = 29696 B/token x ctx + 18MB prefill-workspace + 308MB fixed = 336MB
+[worker] plain-affinity: declined (no checkpoint retained; 1 parked, 38 prompt tokens; model q38)
+[worker] dspark-reuse MISS: 2 parked, best text overlap 22B                              of 172B prompt; serving COLD (model q38)
+[spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=38 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-1923ff08ad66709f9f9868cbb3aa4012 tenant=default lane=interactive model="q38"
+[meter] admit id=chatcmpl-9cae9fdc32971bbc7aca6fb28dec0498 tenant=default lane=interactive model="q38"
+[meter] admit id=chatcmpl-682145918421a293577c001ce28d6e74 tenant=default lane=interactive model="q38"
+[dspark-acc] ctx=38 burst=18/42 cum=18/42=0.429
+[admission] per-session draft-state charge: model="q38" +13MB (DFlash draft plane at this cap)
+[admission] request cost: model="q38" ctx=303 path=spec = 29696 B/token x ctx + 19MB prefill-workspace + 308MB fixed = 336MB
+[worker] plain-affinity: declined (no checkpoint retained; 1 parked, 39 prompt tokens; model q38)
+[spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=39 cached=0 lcp=0 active=2 wave=4 placement=single-or-non-pp2
+[admission] per-session draft-state charge: model="q38" +13MB (DFlash draft plane at this cap)
+[admission] request cost: model="q38" ctx=301 path=spec = 29696 B/token x ctx + 18MB prefill-workspace + 308MB fixed = 335MB
+[worker] plain-affinity: declined (no checkpoint retained; 1 parked, 37 prompt tokens; model q38)
+[spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=37 cached=0 lcp=0 active=3 wave=4 placement=single-or-non-pp2
+[admission] per-session draft-state charge: model="q38" +13MB (DFlash draft plane at this cap)
+[admission] request cost: model="q38" ctx=303 path=spec = 29696 B/token x ctx + 19MB prefill-workspace + 308MB fixed = 336MB
+[worker] plain-affinity: declined (no checkpoint retained; 1 parked, 39 prompt tokens; model q38)
+[spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=39 cached=0 lcp=0 active=4 wave=4 placement=single-or-non-pp2
+[dspark-acc] ctx=72 burst=20/39 cum=38/81=0.469
+[prime-batch] B=3 tokens=115 carried=0 partial=0 in 179.4ms
+[device-penalty] sparse sampled rows=1 unique-counts=33 execution=one-ragged-launch raw-logits=preserved
+[dspark-acc] ctx=106 burst=18/34 cum=56/115=0.487
+[dspark-acc] ctx=138 burst=17/40 cum=73/155=0.471
+[dspark-acc] ctx=171 burst=18/35 cum=91/190=0.479
+[dspark-acc] ctx=204 burst=16/40 cum=107/230=0.465
+[dspark-acc] ctx=237 burst=2/2 cum=109/232=0.470
+[sampler-order] model=q38 radix=0 comparison=1
+[meter] admit id=chatcmpl-b1429cd28aa85b263c26ef4e069c23b3 tenant=default lane=interactive model="q38"
+[admission] per-session draft-state charge: model="q38" +13MB (DFlash draft plane at this cap)
+[admission] request cost: model="q38" ctx=302 path=spec = 29696 B/token x ctx + 18MB prefill-workspace + 308MB fixed = 336MB
+[admit-trim] dev0 driver_free_bytes=1782710272 floor_bytes=2147483648 reclaimed_bytes=335544320 still_owned_bytes=20918763984 pool_reserved_bytes=22380806144 driver_free_after=2118254592 before prime
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 38 prompt tokens; model q38)
+[worker] dspark-reuse MISS: 2 parked, best text overlap 22B                              of 172B prompt; serving COLD (model q38)
+[spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=38 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-196fa3cfa10694654f3117b2b0bd50ef tenant=default lane=interactive model="q38"
+[meter] admit id=chatcmpl-03ade879a170422e54a92ea2e0160380 tenant=default lane=interactive model="q38"
+[meter] admit id=chatcmpl-9b23e1004de300eabe003ef3d7d16953 tenant=default lane=interactive model="q38"
+[dspark-acc] ctx=38 burst=14/45 cum=14/45=0.311
+[admission] per-session draft-state charge: model="q38" +13MB (DFlash draft plane at this cap)
+[admission] request cost: model="q38" ctx=303 path=spec = 29696 B/token x ctx + 19MB prefill-workspace + 308MB fixed = 336MB
+[admit-trim] dev0 driver_free_bytes=1950482432 floor_bytes=2147483648 reclaimed_bytes=167772160 still_owned_bytes=21401712804 pool_reserved_bytes=22380806144 driver_free_after=2118254592 before prime
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 39 prompt tokens; model q38)
+[spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=39 cached=0 lcp=0 active=2 wave=4 placement=single-or-non-pp2
+[admission] per-session draft-state charge: model="q38" +13MB (DFlash draft plane at this cap)
+[admission] request cost: model="q38" ctx=301 path=spec = 29696 B/token x ctx + 18MB prefill-workspace + 308MB fixed = 335MB
+[admit-trim] dev0 driver_free_bytes=2118254592 floor_bytes=2147483648 reclaimed_bytes=0 still_owned_bytes=21717394616 pool_reserved_bytes=22380806144 driver_free_after=2118254592 before prime
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 37 prompt tokens; model q38)
+[spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=37 cached=0 lcp=0 active=3 wave=4 placement=single-or-non-pp2
+[admission] per-session draft-state charge: model="q38" +13MB (DFlash draft plane at this cap)
+[admission] request cost: model="q38" ctx=303 path=spec = 29696 B/token x ctx + 19MB prefill-workspace + 308MB fixed = 336MB
+[admit-trim] dev0 driver_free_bytes=2118254592 floor_bytes=2147483648 reclaimed_bytes=0 still_owned_bytes=22033013324 pool_reserved_bytes=22380806144 driver_free_after=2118254592 before prime
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 39 prompt tokens; model q38)
+[spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=39 cached=0 lcp=0 active=4 wave=4 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-0f618bd2f54331a1ce02f5b3abcbfedf tenant=default lane=interactive model="q38"
+[meter] admit id=chatcmpl-64a79276f7aaca56fa018c375d9673df tenant=default lane=interactive model="q38"
+[dspark-acc] ctx=70 burst=21/34 cum=35/79=0.443
+[meter] admit id=chatcmpl-4fb70ab4963780ffd47108b2f765ed9f tenant=default lane=interactive model="q38"
+[prime-batch] B=3 tokens=115 carried=0 partial=0 in 183.5ms
+[admission] per-session draft-state charge: model="q38" +13MB (DFlash draft plane at this cap)
+[admission] request cost: model="q38" ctx=302 path=spec = 29696 B/token x ctx + 18MB prefill-workspace + 308MB fixed = 336MB
+[admit-oom] reclaim-on-defer: evicted 0 prefix entries + 0 plain + 0 spec + 1 dspark parked sessions (global LRU); effective free 1805MB -> 2288MB
+[admit-trim] dev0 driver_free_bytes=1137508352 floor_bytes=2147483648 reclaimed_bytes=1006632960 still_owned_bytes=21867732876 pool_reserved_bytes=22011707392 driver_free_after=2144141312 before prime
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 38 prompt tokens; model q38)
+[spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=38 cached=0 lcp=0 active=5 wave=7 placement=single-or-non-pp2
+[admission] per-session draft-state charge: model="q38" +13MB (DFlash draft plane at this cap)
+[admission] request cost: model="q38" ctx=301 path=spec = 29696 B/token x ctx + 18MB prefill-workspace + 308MB fixed = 335MB
+[admit-oom] reclaim-on-defer: evicted 0 prefix entries + 0 plain + 0 spec + 1 dspark parked sessions (global LRU); effective free 1972MB -> 2455MB
+[admit-trim] dev0 driver_free_bytes=1909260288 floor_bytes=2147483648 reclaimed_bytes=234881024 still_owned_bytes=21700434316 pool_reserved_bytes=22011707392 driver_free_after=2144141312 before prime
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 37 prompt tokens; model q38)
+[spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=37 cached=0 lcp=0 active=6 wave=7 placement=single-or-non-pp2
+[admission] per-session draft-state charge: model="q38" +13MB (DFlash draft plane at this cap)
+[admission] request cost: model="q38" ctx=302 path=spec = 29696 B/token x ctx + 18MB prefill-workspace + 308MB fixed = 336MB
+[admit-trim] dev0 driver_free_bytes=2077032448 floor_bytes=2147483648 reclaimed_bytes=0 still_owned_bytes=22016053024 pool_reserved_bytes=22078816256 driver_free_after=2077032448 before prime
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 38 prompt tokens; model q38)
+[spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=38 cached=0 lcp=0 active=7 wave=7 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-7326f1e6402436670374020528c42c7f tenant=default lane=interactive model="q38"
+[dspark-acc] ctx=104 burst=13/42 cum=48/121=0.397
+[prime-batch] B=3 tokens=113 carried=0 partial=0 in 176.1ms
+[admission] per-session draft-state charge: model="q38" +13MB (DFlash draft plane at this cap)
+[admission] request cost: model="q38" ctx=301 path=spec = 29696 B/token x ctx + 18MB prefill-workspace + 308MB fixed = 335MB
+[admit-trim] dev0 driver_free_bytes=1514274816 floor_bytes=2147483648 reclaimed_bytes=603979776 still_owned_bytes=22333689844 pool_reserved_bytes=22380806144 driver_free_after=2118254592 before prime
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 37 prompt tokens; model q38)
+[spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=37 cached=0 lcp=0 active=8 wave=8 placement=single-or-non-pp2
+[dspark-acc] ctx=136 burst=14/44 cum=62/165=0.376
+[dspark-acc] ctx=170 burst=17/38 cum=79/203=0.389
+[dspark-acc] ctx=202 burst=15/41 cum=94/244=0.385
+[dspark-acc] ctx=235 burst=2/5 cum=96/249=0.386
+[sampler-order] model=q38 radix=0 comparison=1
+[sampler-order] model=q38 radix=0 comparison=1
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting
+[server] GPU worker shutdown complete

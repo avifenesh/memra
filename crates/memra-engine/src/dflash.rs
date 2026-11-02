@@ -6753,6 +6753,282 @@ impl crate::hybrid::HybridModel {
         }
         Ok((burst.out, burst.drafted, burst.accepted_n))
     }
+
+    /// LOCKSTEP POOLED DSPARK BURSTS (lane/batch-spec step 5), the DFlash2 twin of
+    /// `generate_spec_sessions_pooled`. Runs one continuation burst for every request, round
+    /// by round: each session's round runs `dspark_round_prepare` exactly as its serial burst
+    /// would, then the round's verifies run as pooled forwards over consecutive sessions, at
+    /// most 16 rows each (`dspark_verify_pooled`: bitwise the per-session forward, taps and
+    /// stash checkpoint included), each forward's rounds finished (`dspark_round_finish`)
+    /// before the next forward runs. A session leaves the lockstep when its own loop condition
+    /// ends. Every session-visible computation is its own, so each output is the serial
+    /// burst's.
+    ///
+    /// Memory: admission charges one round's transients, and a round's stash checkpoint is
+    /// most of them (every linear layer's state per verify column). A pooled forward holds its
+    /// members' checkpoints together, so a member joins only while the extra fits the device
+    /// headroom above the transient floor (`pooled_verify_headroom`); the rest verify
+    /// serially, which is the same bytes.
+    ///
+    /// The model's verify-graph pool is ONE mutex a burst holds for its whole run, so the
+    /// cohort holds it once for all members. Pooled rounds own their tap buffers
+    /// (`local_taps`); only the deferred greedy-chain arm replays captured graphs, and a
+    /// DFlash2 drafter never takes it, so a non-DFlash2 drafter runs every burst serially.
+    ///
+    /// Outcomes come back in request order. An error in one session's round ends only that
+    /// session; a pooled verify error ends every session of that forward.
+    pub fn dspark_spec_sessions_pooled<'a>(
+        &self,
+        e: &Engine,
+        draft: &DflashDraft,
+        reqs: Vec<DsparkPooledReq<'a>>,
+    ) -> Vec<crate::spec::PooledBurstResult> {
+        if draft.dflash2.is_none() || !self.dspark_pool_capable() {
+            return reqs
+                .into_iter()
+                .map(|r| {
+                    let mut hook = r.on_commit;
+                    let on_commit: Option<crate::glm_spec::CommitHook<'_>> = match hook.as_mut() {
+                        Some(h) => Some(&mut **h),
+                        None => None,
+                    };
+                    self.dspark_spec_session_burst_inner(
+                        e,
+                        draft,
+                        r.sess,
+                        r.burst_target,
+                        r.request_room,
+                        r.eos,
+                        on_commit,
+                    )
+                })
+                .collect();
+        }
+        let n = reqs.len();
+        let mut outcomes: Vec<Option<crate::spec::PooledBurstResult>> =
+            (0..n).map(|_| None).collect();
+        let mut hooks: Vec<Option<DsparkPooledHook<'a>>> = Vec::with_capacity(n);
+        let mut sessions: Vec<&'a mut DsparkSpecSession> = Vec::with_capacity(n);
+        let mut args: Vec<(usize, usize, &'a [u32])> = Vec::with_capacity(n);
+        for r in reqs {
+            hooks.push(r.on_commit);
+            sessions.push(r.sess);
+            args.push((r.burst_target, r.request_room, r.eos));
+        }
+        let mut vg_guard = self.dspark_vgraphs.lock().unwrap();
+        let vg: &mut Option<crate::spec::DsparkVerifyGraphs> = &mut vg_guard;
+        let mut bursts: Vec<Option<DsparkBurst<'_, '_>>> = Vec::with_capacity(n);
+        for (j, (((bt, rr, eos), hook), sess)) in args
+            .into_iter()
+            .zip(hooks.iter_mut())
+            .zip(sessions.iter())
+            .enumerate()
+        {
+            let on_commit: Option<crate::glm_spec::CommitHook<'_>> = match hook {
+                Some(h) => Some(&mut **h),
+                None => None,
+            };
+            let begun = self
+                .dspark_burst_begin(e, draft, sess, bt, rr, eos, on_commit)
+                .and_then(|b| self.dspark_burst_vg_engage(e, sess, &b, vg).map(|()| b));
+            match begun {
+                Ok(b) => bursts.push(Some(b)),
+                Err(err) => {
+                    outcomes[j] = Some(Err(err));
+                    bursts.push(None);
+                }
+            }
+        }
+        loop {
+            // Prepare every live session (its own loop condition first).
+            let mut preps: Vec<Option<DsparkRoundPrep>> = (0..n).map(|_| None).collect();
+            for j in 0..n {
+                let Some(b) = bursts[j].as_mut() else {
+                    continue;
+                };
+                let sess = &mut *sessions[j];
+                let prep = if b.live(sess) {
+                    self.dspark_round_prepare(e, draft, sess, b, vg, true)
+                } else {
+                    Ok(None)
+                };
+                match prep {
+                    Ok(Some(p)) => preps[j] = Some(p),
+                    Ok(None) => {
+                        let b = bursts[j].take().unwrap();
+                        outcomes[j] = Some(self.dspark_burst_end(e, b));
+                    }
+                    Err(err) => {
+                        sess.cache.dflash_taps = None;
+                        bursts[j] = None;
+                        outcomes[j] = Some(Err(err));
+                    }
+                }
+            }
+            if preps.iter().all(Option::is_none) {
+                break;
+            }
+            // Verify, then finish, one forward at a time: a pooled forward over consecutive
+            // pool-ready rounds (at most 16 rows), or one round's serial verify. Finishing a
+            // forward's rounds before the next forward runs bounds the live verify checkpoints
+            // (each round's per-column GDN state copies, ~1 GB per round on a 27B) to one
+            // forward's members, where a serial burst holds one round's.
+            let col_bytes = self.dspark_verify_ckpt_col_bytes();
+            let n_vocab = self.output.out_features();
+            let mut j = 0;
+            while j < n {
+                if preps[j].is_none() {
+                    j += 1;
+                    continue;
+                }
+                // The forward's members: consecutive non-deferred rounds while the rows fit 16
+                // and the memory the pooled forward needs beyond one serial round (the other
+                // members' checkpoints and logits rows) fits the device headroom left above
+                // the admission's one-round transient floor.
+                let mut members: Vec<usize> = vec![j];
+                if !preps[j].as_ref().unwrap().deferred {
+                    let headroom = crate::spec::pooled_verify_headroom(e);
+                    let need = |p: &DsparkRoundPrep| {
+                        (if p.ckpt_on { (p.vt - 1) * col_bytes } else { 0 })
+                            + 2 * p.vt * n_vocab * std::mem::size_of::<f32>()
+                    };
+                    let first = preps[j].as_ref().unwrap();
+                    let (mut rows, mut sum, mut max) = (first.vt, need(first), need(first));
+                    let mut m = j + 1;
+                    while m < n {
+                        let Some(p) = preps[m].as_ref() else {
+                            m += 1;
+                            continue;
+                        };
+                        if p.deferred || rows + p.vt > 16 {
+                            break;
+                        }
+                        let (s2, x2) = (sum + need(p), max.max(need(p)));
+                        if s2 - x2 > headroom {
+                            static NOTED: std::sync::Once = std::sync::Once::new();
+                            NOTED.call_once(|| {
+                                eprintln!(
+                                    "[spec-pool] pooled DFlash2 forward capped by VRAM headroom: \
+                                     {} more MB needed, {} MB above the transient floor",
+                                    (s2 - x2) >> 20,
+                                    headroom >> 20
+                                )
+                            });
+                            break;
+                        }
+                        (rows, sum, max) = (rows + p.vt, s2, x2);
+                        members.push(m);
+                        m += 1;
+                    }
+                }
+                let mut verified: Vec<Option<DsparkVerified>> = (0..n).map(|_| None).collect();
+                let mut failed: Vec<Option<String>> = (0..n).map(|_| None).collect();
+                if members.len() >= 2 {
+                    let pooled = {
+                        let mut segs: Vec<crate::spec::DsparkPooledSeg<'_>> =
+                            Vec::with_capacity(members.len());
+                        for (m, sess) in sessions.iter_mut().enumerate() {
+                            if let Some(p) = preps[m].as_ref().filter(|_| members.contains(&m)) {
+                                segs.push(crate::spec::DsparkPooledSeg {
+                                    cache: &mut sess.cache,
+                                    tokens: &p.cand[..p.vt],
+                                    ckpt: p.ckpt_on,
+                                });
+                            }
+                        }
+                        self.dspark_verify_pooled(e, &mut segs)
+                    };
+                    match pooled {
+                        Ok(Some(outs)) => {
+                            for (&m, (logits, vck)) in members.iter().zip(outs) {
+                                let b = bursts[m].as_ref().expect("prepared rounds are live");
+                                let vt = preps[m].as_ref().unwrap().vt;
+                                // The serial verify's own read of the forward: raw logits for
+                                // the logits arms, else its per-row device argmax walk.
+                                let v = if b.logits_verify() {
+                                    Ok((Vec::new(), Some(logits), vck))
+                                } else {
+                                    dspark_rows_argmax(e, &logits, vt, n_vocab)
+                                        .map(|am| (am, None, vck))
+                                };
+                                match v {
+                                    Ok(v) => verified[m] = Some(v),
+                                    Err(err) => failed[m] = Some(err.to_string()),
+                                }
+                            }
+                        }
+                        // Not poolable after all (a row outside the attention window): the
+                        // members verify serially below, nothing was mutated.
+                        Ok(None) => {}
+                        Err(err) => {
+                            for &m in &members {
+                                failed[m] = Some(format!("pooled dspark verify: {err}"));
+                            }
+                        }
+                    }
+                }
+                // Finish this forward's rounds, serial verify for rounds the pool did not take.
+                for &m in &members {
+                    let mut prep = preps[m].take().expect("members are prepared rounds");
+                    let sess = &mut *sessions[m];
+                    if let Some(msg) = failed[m].take() {
+                        sess.cache.dflash_taps = None;
+                        bursts[m] = None;
+                        outcomes[m] = Some(Err(msg.into()));
+                        continue;
+                    }
+                    let b = bursts[m]
+                        .as_mut()
+                        .expect("prepared rounds have a live burst");
+                    let v = match verified[m].take() {
+                        Some(v) => Ok(v),
+                        None => self.dspark_round_verify(e, sess, b, &mut prep, vg),
+                    };
+                    let r =
+                        v.and_then(|v| self.dspark_round_finish(e, draft, sess, b, prep, v, vg));
+                    if let Err(err) = r {
+                        sess.cache.dflash_taps = None;
+                        bursts[m] = None;
+                        outcomes[m] = Some(Err(err));
+                    }
+                }
+                j = members.last().unwrap() + 1;
+            }
+        }
+        outcomes
+            .into_iter()
+            .map(|o| o.expect("every pooled dspark burst reaches an outcome"))
+            .collect()
+    }
+}
+
+/// The per-row device argmax walk and readback `dspark_verify_t_am_ckpt` runs over its own
+/// forward's logits, here over one session's rows of a pooled forward.
+fn dspark_rows_argmax(
+    e: &Engine,
+    logits: &CudaSlice<f32>,
+    t: usize,
+    n_vocab: usize,
+) -> Result<Vec<u32>, Box<dyn std::error::Error>> {
+    let mut am_d = e.stream().alloc_zeros::<u32>(t)?;
+    for r in 0..t {
+        e.argmax_token_device_col(logits, r, n_vocab, &mut am_d, r)?;
+    }
+    e.dtoh_u32(&am_d)
+}
+
+/// A pooled dspark burst's round-cadence hook, owned by its request.
+pub type DsparkPooledHook<'a> = Box<dyn FnMut(&[u32]) + 'a>;
+
+/// One session's continuation burst in a pooled dspark cohort
+/// (`HybridModel::dspark_spec_sessions_pooled`): the serial `dspark_spec_session_burst`
+/// arguments.
+pub struct DsparkPooledReq<'a> {
+    pub sess: &'a mut DsparkSpecSession,
+    pub burst_target: usize,
+    pub request_room: usize,
+    pub eos: &'a [u32],
+    pub on_commit: Option<DsparkPooledHook<'a>>,
 }
 
 /// One dspark serving burst in flight (`dspark_burst_begin`): the prologue's fixed inputs,
@@ -6788,6 +7064,12 @@ impl DsparkBurst<'_, '_> {
     /// The serial loop's condition: room left in this burst and the session not terminal.
     fn live(&self, sess: &DsparkSpecSession) -> bool {
         self.out.len() < self.burst_target && !sess.done
+    }
+
+    /// Whether this round's verify reads raw logits (the sampled and greedy-penalised arms)
+    /// rather than per-row argmaxes.
+    fn logits_verify(&self) -> bool {
+        self.sp_on.is_some() || self.sp_gp.is_some()
     }
 }
 

@@ -20,11 +20,17 @@ vLLM/SGLang with 4-8 users on the same box.
    - Attention: per-row KV pointers through the seqs twins, one launch per split rung.
    - `decode-batch-bench --pooled` pins it bitwise against per-session verify. The check covers
      both the logit rows and a follow-up step that reads the written state.
-4. **Pooled verify in the serving round** (`POOLED-ROUND.md`). Same-model MTP continuation
-   bursts run in lockstep and each round's verifies share one target forward.
+4. **Pooled verify in the serving round** (`ROUND-SPLIT.md`, `POOLED-ROUND.md`). Same-model MTP
+   continuation bursts run in lockstep and each round's verifies share one target forward.
 5. **Pooled MTP draft** (`BATCHED-DRAFT.md`). In the lockstep cohort, draft step j is one NextN
    head forward over the members still drafting (`spec_round_draft_pooled`), bitwise equal to
    each member's serial draft chain.
+6. **Cost-model gate** (`COST-GATE.md`).
+7. **Pooled DFlash2 serving round** (`DFLASH-POOLED.md`). The dspark burst is split into
+   begin/prepare/verify/finish/end. The pooled walk fills each session's drafter tap rows, and
+   DFlash2 continuation bursts run in lockstep cohorts, byte-identical to serial at c = 1-8.
+   Members are chunked at 16 rows instead of capping vt, and a VRAM headroom guard bounds the
+   checkpoints held at once.
 
 ## Measured so far (RTX 5090 Laptop, q9, depth 2048)
 
@@ -77,7 +83,8 @@ Then, in order:
   LOW/HIGH bands. In the same A/B, relax the sampled admission laws (SOLO sampled restore, the
   "one non-demotable dspark row" block). They are being relaxed together with pooling because
   their measured c2 loss is the serial-verify cost that pooling removes.
-- **DFlash2 port**: the same core, plus a batched drafter block forward, with vt capped at
-  16/B.
+- **DFlash2 port**: the pooled verify landed (`DFLASH-POOLED.md`). Still open: the batched
+  drafter block forward. A 16/B vt cap was rejected, because it would make a sampled stream
+  depend on cohort size.
 - **v2**: plain rows join the ragged step as T=1 with no draft, giving one step per tick like
   vLLM/SGLang. Also a fused rows-by-seqs FA kernel and graph capture keyed on R.

@@ -1,0 +1,235 @@
+[server] build: memra-0.138.0-c58e9b01ad9f (id: source-tree, git: 45412721a38a)
+[server] starting; models config = [("q38", "/data/ai-ml/models/q38-gguf/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf", None)]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[worker-affinity] off (MEMRA_WORKER_CPUSET / MEMRA_WORKER_AFFINITY unset or =0)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal after 3 consecutive misses (MEMRA_GPU_PROBE_MISSES), fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[spec-gate] policy placement=single-or-non-pp2 LOW=8 HIGH=16 source=env-resolved spec-admission=on
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2 (K=5 when the loaded MTP head is rank-trimmed)
+[worker] loading model "q38" <- /data/ai-ml/models/q38-gguf/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf
+[tensor-contract] bound 866 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[mtp-skip] MEMRA_MTP_SKIP=1: skipping 1 embedded MTP/NextN block(s) blk.64..=blk.64 (~227 MiB of weights not loaded); MTP spec decode is unavailable for this model (dspark/DFlash2 drafting keeps its trimmed head via the MEMRA_FRSPEC_TRIM stub)
+[worker]   loaded "q38": 65 layers, eos=248046, stop=[248046]
+[worker] q38: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false qwen_effort=true gemma_think=false dsv4=false glm5=false ctx=262144 tok="qwen35" instruct=Some("chatml") chat_defaults=None/None
+[route-contract] model="q38" route=hybrid-worker capacity=8 sessions implemented=[capacity,occupancy,progress,fault-ownership,shutdown-ownership,memory-cost,rewrite-qualification,prime-fairness,service-metrics] refused=[]
+[worker] q38: decode wave cap 16; scheduler tick cap 16 (exact-16 tier)
+[dspark] precision=q4 (MEMRA_DFLASH_PREC unset)
+[dspark] harvest=dflash (checkpoint census dflash2=true strategy_dspark=false, MEMRA_DSPARK_HARVEST unset)
+[dspark] verify-window=Ladder (accept-rate head ABSENT -> ladder, MEMRA_DSPARK_VT unset)
+[worker] q38: DSPARK SPEC route armed (drafter attached (/data/ai-ml/models/q38-dflash2); greedy+sampled [T>0 rejection verify, sampled penalties included; greedy penalties verified by penalised argmax (MEMRA_DSPARK_GREEDY_PENALTY=1)]/unconstrained/text-only; greedy LOW-wave admission + HIGH demotion, sampled solo admission; MTP spec DISABLED for this model — refuse-on-ambiguity; MEMRA_DSPARK_SPEC unset = off)
+[dspark] q38: DFlash2 draft head FULL target vocab (external_mtp_d2t_ignored=false; set MEMRA_FRSPEC_TRIM=<ranks.txt> to trim)
+[prefix-cache] on: budget 557MB (557056000 B, derived: 2 x 278528000 B max entry for model "q38" at served ctx 4096 (from MEMRA_CTX; MEMRA_CTX set), requested 557056000 B; boot driver free 9282125824 B, post-reserve clamp 7671513088 B), policy plain-LRU (global oldest unleased entry first; leases untouchable), min prefix 64 tokens, immediate partial restore=off (rollback) (transformer-only; hybrid mid-entry + routed-MoE N/A)
+[admission] "q38": dspark owns the spec program: spec coefficient = plain (no MTP scratch term); the draft plane is charged per session, 169MB at a 30k cap (ring on: constant above two windows)
+[admission] "q38": plain 29696 B/token, spec 29696 B/token; fixed residual learns from effective-free deltas
+[prime-walk] model="q38" route=dspark supported=false yield_door=true [gdn_dspark_compatible=true mtp_head_loaded=false no_hyper_connections=true no_pipeline_cuts=true]
+[dspark-vg] serve pool ENGAGED (vt_cap=8)
+[topk-shards] engaged: rows=7 cols=248320 k=16 shards=16 (MEMRA_TOPK_SHARDS=1)
+[fa-pool] grow #0 dev=0 o_len 0 -> 3194880 ml_len 0 -> 12480 (retired kept, zero=false)
+[dflash-kv-ring] compact keep_from=2064 kept=2056 phys_rows=4120
+[device-trim] reason=calibration-complete {"device":0,"reclaimed_bytes":1811939328,"still_owned_bytes":19321828224,"pool_reserved_bytes":19428016128,"pool_cached_bytes":106187904,"driver_free_bytes":5073141760,"synchronization_errors":[]}
+[admit-cal] post-probe pool trim: released 1728MB cached back to the driver
+[admit-cal] boot calibration done: model="q38" route=dspark transient floor 1608MB (static was 1536MB; measured 1608MB; probe kv charge 119MB, draft-state 0MB, drafted 68 accepted 46; [dev0 peak-mapped 20256MB rest-mapped 18528MB charged 119MB -> 1608MB]; 6.3s)
+[admit-mem] door=OFF open_output_tokens=8192 defer_budget_ms=8000 (admission charges prompt+output, the reclaim flush demotes to the host tier before dropping, and a memory defer past the budget refuses 429 instead of queueing past the client's deadline)
+[kv-vmm] door=OFF (MEMRA_KV_ALLOCATOR unset or pooled: pooled K/V planes)
+[server] worker ready; serving models: ["q38"]
+[server] listening on http://127.0.0.1:8361
+[meter] admit id=chatcmpl-87c00e86e1eb6db73e5417d7f2b1cfb5 tenant=default lane=interactive model="q38"
+[admission] per-session draft-state charge: model="q38" +13MB (DFlash draft plane at this cap)
+[admission] request cost: model="q38" ctx=302 path=spec = 29696 B/token x ctx + 18MB prefill-workspace + 0MB fixed = 27MB
+[spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=38 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[dspark-acc] ctx=38 burst=17/44 cum=17/44=0.386
+[dspark-acc] ctx=72 burst=18/38 cum=35/82=0.427
+[dspark-acc] ctx=104 burst=20/37 cum=55/119=0.462
+[dspark-acc] ctx=138 burst=18/39 cum=73/158=0.462
+[dspark-acc] ctx=172 burst=16/38 cum=89/196=0.454
+[dspark-acc] ctx=204 burst=15/39 cum=104/235=0.443
+[dspark-acc] ctx=236 burst=1/4 cum=105/239=0.439
+[meter] admit id=chatcmpl-476706f37e17a375104d650e81b149e3 tenant=default lane=interactive model="q38"
+[worker] dspark-reuse MISS: 1 parked, best text overlap 22B                              of 172B prompt; serving COLD (model q38)
+[spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=38 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-45061f6532cbe3db6f93df70a53c77e2 tenant=default lane=interactive model="q38"
+[dspark-acc] ctx=38 burst=18/42 cum=18/42=0.429
+[admission] per-session draft-state charge: model="q38" +13MB (DFlash draft plane at this cap)
+[admission] request cost: model="q38" ctx=303 path=spec = 29696 B/token x ctx + 19MB prefill-workspace + 0MB fixed = 28MB
+[worker] dspark-reuse MISS: 1 parked, best text overlap 22B                              of 178B prompt; serving COLD (model q38)
+[spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=39 cached=0 lcp=0 active=2 wave=2 placement=single-or-non-pp2
+[dspark-acc] ctx=72 burst=19/40 cum=37/82=0.451
+[dspark-acc] ctx=39 burst=17/44 cum=17/44=0.386
+[dspark-acc] ctx=106 burst=17/35 cum=54/117=0.462
+[dspark-acc] ctx=73 burst=18/36 cum=35/80=0.438
+[dspark-acc] ctx=138 burst=17/38 cum=71/155=0.458
+[dspark-acc] ctx=105 burst=18/38 cum=53/118=0.449
+[dspark-acc] ctx=171 burst=16/38 cum=87/193=0.451
+[dspark-acc] ctx=138 burst=17/38 cum=70/156=0.449
+[dspark-acc] ctx=203 burst=17/36 cum=104/229=0.454
+[dspark-acc] ctx=171 burst=17/37 cum=87/193=0.451
+[dspark-acc] ctx=235 burst=2/5 cum=106/234=0.453
+[dspark-acc] ctx=203 burst=17/36 cum=104/229=0.454
+[dspark-acc] ctx=235 burst=1/7 cum=105/236=0.445
+[meter] admit id=chatcmpl-cd2d16ba91877a2cb341c068e4ae8b9a tenant=default lane=interactive model="q38"
+[admission] per-session draft-state charge: model="q38" +13MB (DFlash draft plane at this cap)
+[admission] request cost: model="q38" ctx=302 path=spec = 29696 B/token x ctx + 18MB prefill-workspace + 0MB fixed = 27MB
+[worker] dspark-reuse MISS: 2 parked, best text overlap 22B                              of 172B prompt; serving COLD (model q38)
+[spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=38 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-937d71a30f05eb647af53ba1bdb52ceb tenant=default lane=interactive model="q38"
+[meter] admit id=chatcmpl-bef3efc5e39d0ba540c9e07a7d481642 tenant=default lane=interactive model="q38"
+[dspark-acc] ctx=38 burst=18/42 cum=18/42=0.429
+[admission] per-session draft-state charge: model="q38" +13MB (DFlash draft plane at this cap)
+[admission] request cost: model="q38" ctx=303 path=spec = 29696 B/token x ctx + 19MB prefill-workspace + 0MB fixed = 28MB
+[worker] dspark-reuse MISS: 2 parked, best text overlap 22B                              of 178B prompt; serving COLD (model q38)
+[spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=39 cached=0 lcp=0 active=2 wave=3 placement=single-or-non-pp2
+[admission] per-session draft-state charge: model="q38" +13MB (DFlash draft plane at this cap)
+[admission] request cost: model="q38" ctx=301 path=spec = 29696 B/token x ctx + 18MB prefill-workspace + 0MB fixed = 27MB
+[worker] dspark-reuse MISS: 2 parked, best text overlap 22B                              of 169B prompt; serving COLD (model q38)
+[spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=37 cached=0 lcp=0 active=3 wave=3 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-e9abc7b216afde2126a13676d015d546 tenant=default lane=interactive model="q38"
+[dspark-acc] ctx=72 burst=20/39 cum=38/81=0.469
+[dspark-acc] ctx=39 burst=18/44 cum=18/44=0.409
+[dspark-acc] ctx=37 burst=13/47 cum=13/47=0.277
+[admission] per-session draft-state charge: model="q38" +13MB (DFlash draft plane at this cap)
+[admission] request cost: model="q38" ctx=303 path=spec = 29696 B/token x ctx + 19MB prefill-workspace + 0MB fixed = 28MB
+[admit-trim] dev0 driver_free_bytes=1614938112 floor_bytes=2147483648 reclaimed_bytes=503316480 still_owned_bytes=21735383396 pool_reserved_bytes=22380806144 driver_free_after=2118254592 before prime
+[worker] dspark-reuse MISS: 2 parked, best text overlap 22B                              of 169B prompt; serving COLD (model q38)
+[spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=39 cached=0 lcp=0 active=4 wave=4 placement=single-or-non-pp2
+[dspark-acc] ctx=106 burst=18/34 cum=56/115=0.487
+[dspark-acc] ctx=72 burst=20/36 cum=38/80=0.475
+[dspark-acc] ctx=69 burst=19/37 cum=32/84=0.381
+[dspark-acc] ctx=39 burst=20/41 cum=20/41=0.488
+[dspark-acc] ctx=138 burst=17/40 cum=73/155=0.471
+[dspark-acc] ctx=106 burst=16/39 cum=54/119=0.454
+[dspark-acc] ctx=102 burst=16/39 cum=48/123=0.390
+[dspark-acc] ctx=72 burst=20/32 cum=40/73=0.548
+[dspark-acc] ctx=171 burst=18/35 cum=91/190=0.479
+[dspark-acc] ctx=138 burst=19/37 cum=73/156=0.468
+[dspark-acc] ctx=134 burst=17/37 cum=65/160=0.406
+[dspark-acc] ctx=104 burst=17/37 cum=57/110=0.518
+[dspark-acc] ctx=204 burst=16/40 cum=107/230=0.465
+[dspark-acc] ctx=171 burst=18/39 cum=91/195=0.467
+[dspark-acc] ctx=166 burst=20/37 cum=85/197=0.431
+[dspark-acc] ctx=136 burst=16/38 cum=73/148=0.493
+[dspark-acc] ctx=237 burst=2/2 cum=109/232=0.470
+[dspark-acc] ctx=205 burst=15/40 cum=106/235=0.451
+[dspark-acc] ctx=200 burst=18/35 cum=103/232=0.444
+[dspark-acc] ctx=168 burst=17/36 cum=90/184=0.489
+[dspark-acc] ctx=237 burst=1/2 cum=107/237=0.451
+[dspark-acc] ctx=232 burst=5/7 cum=108/239=0.452
+[dspark-acc] ctx=200 burst=18/38 cum=108/222=0.486
+[dspark-acc] ctx=233 burst=6/8 cum=114/230=0.496
+[meter] admit id=chatcmpl-fee566131f3a34fc7eafce794b6d3134 tenant=default lane=interactive model="q38"
+[admission] per-session draft-state charge: model="q38" +13MB (DFlash draft plane at this cap)
+[admission] request cost: model="q38" ctx=302 path=spec = 29696 B/token x ctx + 18MB prefill-workspace + 0MB fixed = 27MB
+[admit-trim] dev0 driver_free_bytes=1145176064 floor_bytes=2147483648 reclaimed_bytes=973078528 still_owned_bytes=20287235368 pool_reserved_bytes=22380806144 driver_free_after=2118254592 before prime
+[worker] dspark-reuse MISS: 2 parked, best text overlap 22B                              of 172B prompt; serving COLD (model q38)
+[spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=38 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-41a182549b83601927220b8d784d4fdc tenant=default lane=interactive model="q38"
+[meter] admit id=chatcmpl-398a58ca700e5dba3d8e4b97d1372518 tenant=default lane=interactive model="q38"
+[meter] admit id=chatcmpl-9c8f2e04875cd41dd17cbba5e51d3776 tenant=default lane=interactive model="q38"
+[dspark-acc] ctx=38 burst=14/45 cum=14/45=0.311
+[admission] per-session draft-state charge: model="q38" +13MB (DFlash draft plane at this cap)
+[admission] request cost: model="q38" ctx=303 path=spec = 29696 B/token x ctx + 19MB prefill-workspace + 0MB fixed = 28MB
+[admit-trim] dev0 driver_free_bytes=2118254592 floor_bytes=2147483648 reclaimed_bytes=0 still_owned_bytes=20770178428 pool_reserved_bytes=22380806144 driver_free_after=2118254592 before prime
+[worker] dspark-reuse MISS: 2 parked, best text overlap 22B                              of 178B prompt; serving COLD (model q38)
+[spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=39 cached=0 lcp=0 active=2 wave=4 placement=single-or-non-pp2
+[admission] per-session draft-state charge: model="q38" +13MB (DFlash draft plane at this cap)
+[admission] request cost: model="q38" ctx=301 path=spec = 29696 B/token x ctx + 18MB prefill-workspace + 0MB fixed = 27MB
+[admit-trim] dev0 driver_free_bytes=2118254592 floor_bytes=2147483648 reclaimed_bytes=0 still_owned_bytes=20770178428 pool_reserved_bytes=22380806144 driver_free_after=2118254592 before prime
+[worker] dspark-reuse MISS: 2 parked, best text overlap 22B                              of 169B prompt; serving COLD (model q38)
+[spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=37 cached=0 lcp=0 active=3 wave=4 placement=single-or-non-pp2
+[admission] per-session draft-state charge: model="q38" +13MB (DFlash draft plane at this cap)
+[admission] request cost: model="q38" ctx=303 path=spec = 29696 B/token x ctx + 19MB prefill-workspace + 0MB fixed = 28MB
+[admit-trim] dev0 driver_free_bytes=2118254592 floor_bytes=2147483648 reclaimed_bytes=0 still_owned_bytes=20770178428 pool_reserved_bytes=22380806144 driver_free_after=2118254592 before prime
+[worker] dspark-reuse MISS: 2 parked, best text overlap 22B                              of 169B prompt; serving COLD (model q38)
+[spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=39 cached=0 lcp=0 active=4 wave=4 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-47a2fc9302a702e6e53359392949d55e tenant=default lane=interactive model="q38"
+[meter] admit id=chatcmpl-3a6b603b58394f35e0fd38f72988c4cb tenant=default lane=interactive model="q38"
+[dspark-acc] ctx=70 burst=21/34 cum=35/79=0.443
+[meter] admit id=chatcmpl-583dfd7ae1dbf112d83d27859547b7df tenant=default lane=interactive model="q38"
+[meter] admit id=chatcmpl-fccfbad0e81823aa565c781ba1419cf4 tenant=default lane=interactive model="q38"
+[dspark-acc] ctx=39 burst=20/41 cum=20/41=0.488
+[dspark-acc] ctx=37 burst=14/46 cum=14/46=0.304
+[dspark-acc] ctx=39 burst=16/42 cum=16/42=0.381
+[admission] per-session draft-state charge: model="q38" +13MB (DFlash draft plane at this cap)
+[admission] request cost: model="q38" ctx=302 path=spec = 29696 B/token x ctx + 18MB prefill-workspace + 0MB fixed = 27MB
+[admit-trim] dev0 driver_free_bytes=1145176064 floor_bytes=2147483648 reclaimed_bytes=973078528 still_owned_bytes=22219103160 pool_reserved_bytes=22380806144 driver_free_after=2118254592 before prime
+[worker] dspark-reuse MISS: 2 parked, best text overlap 22B                              of 175B prompt; serving COLD (model q38)
+[spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=38 cached=0 lcp=0 active=5 wave=8 placement=single-or-non-pp2
+[admission] per-session draft-state charge: model="q38" +13MB (DFlash draft plane at this cap)
+[admission] request cost: model="q38" ctx=301 path=spec = 29696 B/token x ctx + 18MB prefill-workspace + 0MB fixed = 27MB
+[admit-trim] dev0 driver_free_bytes=2118254592 floor_bytes=2147483648 reclaimed_bytes=0 still_owned_bytes=22219103160 pool_reserved_bytes=22380806144 driver_free_after=2118254592 before prime
+[worker] dspark-reuse MISS: 2 parked, best text overlap 22B                              of 166B prompt; serving COLD (model q38)
+[spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=37 cached=0 lcp=0 active=6 wave=8 placement=single-or-non-pp2
+[admission] per-session draft-state charge: model="q38" +13MB (DFlash draft plane at this cap)
+[admission] request cost: model="q38" ctx=302 path=spec = 29696 B/token x ctx + 18MB prefill-workspace + 0MB fixed = 27MB
+[admit-trim] dev0 driver_free_bytes=2118254592 floor_bytes=2147483648 reclaimed_bytes=0 still_owned_bytes=22219103160 pool_reserved_bytes=22380806144 driver_free_after=2118254592 before prime
+[worker] dspark-reuse MISS: 2 parked, best text overlap 22B                              of 170B prompt; serving COLD (model q38)
+[spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=38 cached=0 lcp=0 active=7 wave=8 placement=single-or-non-pp2
+[admission] per-session draft-state charge: model="q38" +13MB (DFlash draft plane at this cap)
+[admission] request cost: model="q38" ctx=301 path=spec = 29696 B/token x ctx + 18MB prefill-workspace + 0MB fixed = 27MB
+[admit-trim] dev0 driver_free_bytes=2118254592 floor_bytes=2147483648 reclaimed_bytes=0 still_owned_bytes=22219103160 pool_reserved_bytes=22380806144 driver_free_after=2118254592 before prime
+[worker] dspark-reuse MISS: 2 parked, best text overlap 22B                              of 174B prompt; serving COLD (model q38)
+[spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=37 cached=0 lcp=0 active=8 wave=8 placement=single-or-non-pp2
+[dspark-acc] ctx=104 burst=13/42 cum=48/121=0.397
+[dspark-acc] ctx=73 burst=17/40 cum=37/81=0.457
+[dspark-acc] ctx=69 burst=19/37 cum=33/83=0.398
+[dspark-acc] ctx=71 burst=18/41 cum=34/83=0.410
+[dspark-acc] ctx=38 burst=18/41 cum=18/41=0.439
+[dspark-acc] ctx=37 burst=18/42 cum=18/42=0.429
+[admit-oom] step OOM parked session back to queue (model q38, retry 1/3, 8 active) [dev0 free 36MB pool-res 23328MB pool-used 22571MB]: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+[admit-oom] step OOM parked session back to queue (model q38, retry 1/3, 8 active) [dev0 free 36MB pool-res 23328MB pool-used 23031MB]: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+[admit-oom] step-OOM reclaim: parked reuse=0 spec=0 dspark=2 dropped; prefix cache evicted 0 entries (0MB) 0MB -> 0MB (oom tick streak 1)
+[device-trim] reason=oom-teardown {"device":0,"reclaimed_bytes":1946157056,"still_owned_bytes":22218874104,"pool_reserved_bytes":22515023872,"pool_cached_bytes":296149768,"driver_free_bytes":1984036864,"synchronization_errors":[]}
+[admit-oom] step-OOM teardown complete: 2 session(s) dropped behind a device fence; pool trim released 1856MB across 1 device(s)
+[admission] request cost: model="q38" ctx=302 path=plain = 29696 B/token x ctx + 18MB prefill-workspace + 0MB fixed = 27MB
+[admit-trim] dev0 driver_free_bytes=1984036864 floor_bytes=2147483648 reclaimed_bytes=0 still_owned_bytes=22218874104 pool_reserved_bytes=22515023872 driver_free_after=1984036864 before prime
+[spec-k] model="q38" tenant="" K=0 source=oom-replay prompt=38 cached=0 lcp=0 active=7 wave=8 placement=single-or-non-pp2
+[admission] request cost: model="q38" ctx=301 path=plain = 29696 B/token x ctx + 18MB prefill-workspace + 0MB fixed = 27MB
+[admit-trim] dev0 driver_free_bytes=1984036864 floor_bytes=2147483648 reclaimed_bytes=0 still_owned_bytes=22218874104 pool_reserved_bytes=22515023872 driver_free_after=1984036864 before prime
+[spec-k] model="q38" tenant="" K=0 source=oom-replay prompt=37 cached=0 lcp=0 active=8 wave=8 placement=single-or-non-pp2
+[dspark-acc] ctx=136 burst=14/44 cum=62/165=0.376
+[dspark-acc] ctx=106 burst=18/34 cum=55/115=0.478
+[dspark-acc] ctx=102 burst=16/39 cum=49/122=0.402
+[dspark-acc] ctx=104 burst=17/35 cum=51/118=0.432
+[dspark-acc] ctx=70 burst=16/37 cum=34/78=0.436
+[dspark-acc] ctx=70 burst=16/37 cum=34/79=0.430
+[dspark-acc] ctx=38 burst=14/46 cum=14/46=0.304
+[dspark-acc] ctx=37 burst=20/41 cum=20/41=0.488
+[dspark-acc] ctx=170 burst=17/38 cum=79/203=0.389
+[dspark-acc] ctx=138 burst=17/37 cum=72/152=0.474
+[dspark-acc] ctx=134 burst=16/39 cum=65/161=0.404
+[dspark-acc] ctx=136 burst=17/38 cum=68/156=0.436
+[dspark-acc] ctx=102 burst=20/34 cum=54/112=0.482
+[dspark-acc] ctx=102 burst=18/35 cum=52/114=0.456
+[dspark-acc] ctx=70 burst=16/36 cum=30/82=0.366
+[dspark-acc] ctx=72 burst=16/40 cum=36/81=0.444
+[dspark-acc] ctx=202 burst=15/41 cum=94/244=0.385
+[dspark-acc] ctx=170 burst=18/36 cum=90/188=0.479
+[dspark-acc] ctx=166 burst=18/36 cum=83/197=0.421
+[dspark-acc] ctx=170 burst=12/45 cum=80/201=0.398
+[dspark-acc] ctx=135 burst=16/43 cum=70/155=0.452
+[dspark-acc] ctx=134 burst=15/39 cum=67/153=0.438
+[dspark-acc] ctx=102 burst=17/39 cum=47/121=0.388
+[dspark-acc] ctx=104 burst=20/35 cum=56/116=0.483
+[dspark-acc] ctx=235 burst=2/5 cum=96/249=0.386
+[dspark-acc] ctx=202 burst=19/35 cum=109/223=0.489
+[dspark-acc] ctx=199 burst=19/36 cum=102/233=0.438
+[dspark-acc] ctx=203 burst=17/36 cum=97/237=0.409
+[dspark-acc] ctx=169 burst=16/39 cum=86/194=0.443
+[dspark-acc] ctx=166 burst=23/33 cum=90/186=0.484
+[dspark-acc] ctx=135 burst=15/39 cum=62/160=0.388
+[dspark-acc] ctx=137 burst=19/35 cum=75/151=0.497
+[dspark-acc] ctx=236 burst=0/7 cum=109/230=0.474
+[dspark-acc] ctx=232 burst=4/7 cum=106/240=0.442
+[dspark-acc] ctx=235 burst=3/7 cum=100/244=0.410
+[dspark-acc] ctx=201 burst=21/33 cum=107/227=0.471
+[dspark-acc] ctx=200 burst=20/37 cum=110/223=0.493
+[dspark-acc] ctx=168 burst=16/39 cum=78/199=0.392
+[dspark-acc] ctx=170 burst=17/39 cum=92/190=0.484
+[dspark-acc] ctx=233 burst=5/5 cum=112/232=0.483
+[dspark-acc] ctx=233 burst=2/6 cum=112/229=0.489
+[dspark-acc] ctx=201 burst=19/35 cum=97/234=0.415
+[dspark-acc] ctx=204 burst=16/39 cum=108/229=0.472
+[dspark-acc] ctx=233 burst=1/8 cum=98/242=0.405
+[dspark-acc] ctx=236 burst=1/2 cum=109/231=0.472
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting
+[server] GPU worker shutdown complete

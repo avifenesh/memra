@@ -131,13 +131,42 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // each primed to its own depth (`--ctx` + 37*i). Pins the pooled cross-session verify
     // BITWISE against the per-session verify funnel (every logit row, plus one follow-up
     // T=1 step per session that reads the state both paths wrote), then times pooled vs the
-    // serial sum of per-session verifies.
+    // serial sum of per-session verifies. `--taps 5,19,33` also arms a DFlash drafter tap sink
+    // (those layers) on every session, as the dspark round does, and pins the pooled tap rows
+    // bitwise against the per-session walk's.
     let pooled: Option<Vec<usize>> = rest
         .iter()
         .position(|a| a == "--pooled")
         .and_then(|i| rest.get(i + 1))
         .map(|v| v.split(',').filter_map(|s| s.parse().ok()).collect());
+    let taps: Option<Vec<usize>> = rest
+        .iter()
+        .position(|a| a == "--taps")
+        .and_then(|i| rest.get(i + 1))
+        .map(|v| v.split(',').filter_map(|s| s.parse().ok()).collect());
     if let Some(ts) = pooled {
+        let n_embd = model.cfg.n_embd as usize;
+        // Arms a zeroed tap sink sized for `t` verify rows (unwritten rows stay zero, so a
+        // missing pooled write cannot compare equal to the per-session walk's data).
+        let arm = |c: &mut Cache, t: usize| -> Result<(), Box<dyn std::error::Error>> {
+            if let Some(ids) = &taps {
+                c.dflash_taps = Some(memra_engine::cache::DflashTapSink {
+                    layer_ids: ids.clone(),
+                    buf: e.zeros(t * ids.len() * n_embd)?,
+                    hidden: n_embd,
+                    t,
+                    base: 0,
+                    origin: 0,
+                });
+            }
+            Ok(())
+        };
+        let take = |c: &mut Cache| -> Result<Option<Vec<f32>>, Box<dyn std::error::Error>> {
+            match c.dflash_taps.take() {
+                Some(tp) => Ok(Some(e.dtoh(&tp.buf)?)),
+                None => Ok(None),
+            }
+        };
         let depth: usize = rest
             .iter()
             .position(|a| a == "--ctx")
@@ -174,15 +203,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // Reference: per-session verify, then one follow-up step.
         let mut ref_rows: Vec<Vec<f32>> = Vec::new();
         let mut ref_follow: Vec<Vec<f32>> = Vec::new();
+        let mut ref_taps: Vec<Option<Vec<f32>>> = Vec::new();
         for i in 0..ts.len() {
             caches[i].rollback(&e, &snaps[i], 0)?;
+            arm(&mut caches[i], ts[i])?;
             let (l, _) =
                 model.decode_step_t_h_emb_dev(&e, &toks[i], pos0s[i], &mut caches[i], None)?;
             ref_rows.push(e.dtoh(&l)?);
+            ref_taps.push(take(&mut caches[i])?);
             ref_follow.push(follow(&mut caches[i], i)?);
         }
         for i in 0..ts.len() {
             caches[i].rollback(&e, &snaps[i], 0)?;
+            arm(&mut caches[i], ts[i])?;
         }
         let tok_refs: Vec<&[u32]> = toks.iter().map(|v| v.as_slice()).collect();
         let pooled_logits = {
@@ -195,7 +228,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         };
         let pl = e.dtoh(&pl)?;
         let (mut row_mismatch, mut follow_mismatch, mut r0) = (0usize, 0usize, 0usize);
+        let mut tap_mismatch = 0usize;
         for i in 0..ts.len() {
+            let pooled_taps = take(&mut caches[i])?;
+            if pooled_taps != ref_taps[i] {
+                tap_mismatch += 1;
+                println!("  session {i}: drafter tap rows DIFFER");
+            }
             let n = ts[i] * n_vocab;
             if pl[r0 * n_vocab..r0 * n_vocab + n] != ref_rows[i][..n] {
                 row_mismatch += 1;
@@ -227,12 +266,24 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             },
             ts.len()
         );
+        if let Some(ids) = &taps {
+            println!(
+                "POOLED-TAPS {ts:?} layers={ids:?}: tap rows {}",
+                if tap_mismatch == 0 {
+                    "BITWISE EQUAL"
+                } else {
+                    "MISMATCH"
+                }
+            );
+        }
         // Timing: serial per-session verifies vs one pooled verify, same restored states.
         let mut serial: Vec<f64> = Vec::new();
         let mut pooled_ms: Vec<f64> = Vec::new();
+        // With `--taps` both arms write the armed sinks, as the dspark round does.
         for rep in 0..=reps {
             for i in 0..ts.len() {
                 caches[i].rollback(&e, &snaps[i], 0)?;
+                arm(&mut caches[i], ts[i])?;
             }
             let t0 = std::time::Instant::now();
             for i in 0..ts.len() {
@@ -244,6 +295,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let s_ms = t0.elapsed().as_secs_f64() * 1e3;
             for i in 0..ts.len() {
                 caches[i].rollback(&e, &snaps[i], 0)?;
+                arm(&mut caches[i], ts[i])?;
             }
             let t0 = std::time::Instant::now();
             let l = {

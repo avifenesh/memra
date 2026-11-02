@@ -1,0 +1,38 @@
+SAME  c1/r0    serial f6be55a2ffed304f serial-rerun f6be55a2ffed304f pooled f6be55a2ffed304f pooled-rerun f6be55a2ffed304f 200 tok spec_rounds 96/96/96/96
+SAME  c2/r0    serial 13ea2c6ad641a256 serial-rerun 13ea2c6ad641a256 pooled 13ea2c6ad641a256 pooled-rerun 13ea2c6ad641a256 200 tok spec_rounds 95/95/95/95
+SAME  c2/r1    serial d236fcb6e105f2b7 serial-rerun d236fcb6e105f2b7 pooled d236fcb6e105f2b7 pooled-rerun d236fcb6e105f2b7 200 tok spec_rounds 95/95/95/95
+SAME  c4/r0    serial e718cfb5861a599d serial-rerun e718cfb5861a599d pooled e718cfb5861a599d pooled-rerun e718cfb5861a599d 200 tok spec_rounds 93/93/93/93
+SAME  c4/r1    serial aa3673f764370e91 serial-rerun aa3673f764370e91 pooled aa3673f764370e91 pooled-rerun aa3673f764370e91 200 tok spec_rounds 93/93/93/93
+SAME  c4/r2    serial a0b215b1606842d6 serial-rerun a0b215b1606842d6 pooled a0b215b1606842d6 pooled-rerun a0b215b1606842d6 200 tok spec_rounds 94/94/94/94
+SAME  c4/r3    serial 4230a26d75b84e66 serial-rerun 4230a26d75b84e66 pooled 4230a26d75b84e66 pooled-rerun 4230a26d75b84e66 200 tok spec_rounds 89/89/89/89
+SAME  c8/r0    serial 2d72b99bcfecf30b serial-rerun 2d72b99bcfecf30b pooled 2d72b99bcfecf30b pooled-rerun 2d72b99bcfecf30b 200 tok spec_rounds 105/105/105/105
+SAME  c8/r1    serial f3423484ef49022e serial-rerun f3423484ef49022e pooled f3423484ef49022e pooled-rerun f3423484ef49022e 200 tok spec_rounds 91/91/91/91
+SAME  c8/r2    serial cdf9b01a26a9caf5 serial-rerun cdf9b01a26a9caf5 pooled cdf9b01a26a9caf5 pooled-rerun cdf9b01a26a9caf5 200 tok spec_rounds 96/96/96/96
+SAME  c8/r3    serial d4867f405bff22f7 serial-rerun d4867f405bff22f7 pooled d4867f405bff22f7 pooled-rerun d4867f405bff22f7 200 tok spec_rounds 102/102/102/102
+SAME  c8/r4    serial f35fc7070bbd4cb2 serial-rerun f35fc7070bbd4cb2 pooled f35fc7070bbd4cb2 pooled-rerun f35fc7070bbd4cb2 200 tok spec_rounds 90/90/90/90
+SAME  c8/r5    serial 1b926159dc42bb4e serial-rerun 1b926159dc42bb4e pooled 1b926159dc42bb4e pooled-rerun 1b926159dc42bb4e 200 tok spec_rounds 88/88/88/88
+SAME  c8/r6    serial 47276a848101a401 serial-rerun 47276a848101a401 pooled 47276a848101a401 pooled-rerun 47276a848101a401 200 tok spec_rounds 102/102/102/102
+SAME  c8/r7    serial cc749d75a9e54d82 serial-rerun cc749d75a9e54d82 pooled cc749d75a9e54d82 pooled-rerun cc749d75a9e54d82 200 tok spec_rounds 92/92/92/92
+c1: serial 60.43 tok/s, serial-rerun 59.66 tok/s, pooled 59.59 tok/s, pooled-rerun 59.83 tok/s
+c2: serial 60.42 tok/s, serial-rerun 60.07 tok/s, pooled 69.52 tok/s, pooled-rerun 69.61 tok/s
+c4: serial 57.47 tok/s, serial-rerun 58.72 tok/s, pooled 67.01 tok/s, pooled-rerun 67.54 tok/s
+c8: serial 51.54 tok/s, serial-rerun 52.97 tok/s, pooled 57.27 tok/s, pooled-rerun 57.6 tok/s
+serial: pooled cohort lines 0
+serial-rerun: pooled cohort lines 0
+pooled: pooled cohort lines 7
+    [spec-pool] pooled DFlash2 cohort engaged: 2 sessions (model q38)
+    [spec-pool] pooled DFlash2 cohort engaged: 3 sessions (model q38)
+    [spec-pool] pooled DFlash2 cohort engaged: 4 sessions (model q38)
+    [spec-pool] pooled DFlash2 forward capped by VRAM headroom: 761 more MB needed, 623 MB above the transient floor
+    [spec-pool] pooled DFlash2 cohort engaged: 6 sessions (model q38)
+    [spec-pool] pooled DFlash2 cohort engaged: 8 sessions (model q38)
+    [spec-pool] pooled DFlash2 cohort engaged: 7 sessions (model q38)
+pooled-rerun: pooled cohort lines 7
+    [spec-pool] pooled DFlash2 cohort engaged: 2 sessions (model q38)
+    [spec-pool] pooled DFlash2 cohort engaged: 3 sessions (model q38)
+    [spec-pool] pooled DFlash2 cohort engaged: 4 sessions (model q38)
+    [spec-pool] pooled DFlash2 forward capped by VRAM headroom: 761 more MB needed, 623 MB above the transient floor
+    [spec-pool] pooled DFlash2 cohort engaged: 6 sessions (model q38)
+    [spec-pool] pooled DFlash2 cohort engaged: 8 sessions (model q38)
+    [spec-pool] pooled DFlash2 cohort engaged: 7 sessions (model q38)
+VERDICT: BYTE-IDENTICAL
