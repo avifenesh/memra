@@ -20,6 +20,11 @@ vLLM/SGLang with 4-8 users on the same box.
    - Attention: per-row KV pointers through the seqs twins, one launch per split rung.
    - `decode-batch-bench --pooled` pins it bitwise against per-session verify. The check covers
      both the logit rows and a follow-up step that reads the written state.
+4. **Pooled verify in the serving round** (`POOLED-ROUND.md`). Same-model MTP continuation
+   bursts run in lockstep and each round's verifies share one target forward.
+5. **Pooled MTP draft** (`BATCHED-DRAFT.md`). In the lockstep cohort, draft step j is one NextN
+   head forward over the members still drafting (`spec_round_draft_pooled`), bitwise equal to
+   each member's serial draft chain.
 
 ## Measured so far (RTX 5090 Laptop, q9, depth 2048)
 
@@ -67,8 +72,7 @@ when the drafts are bit-equal.
 
 Then, in order:
 
-- **Batched MTP draft**: lockstep draft steps across sessions, so the MTP layer and head are read
-  once per step.
+- **Batched MTP draft**: landed (item 5 above, `BATCHED-DRAFT.md`).
 - **Cost-model gate**: pick K_i per tick from C(R), acceptance EMAs and draft cost, replacing the
   LOW/HIGH bands. In the same A/B, relax the sampled admission laws (SOLO sampled restore, the
   "one non-demotable dspark row" block). They are being relaxed together with pooling because

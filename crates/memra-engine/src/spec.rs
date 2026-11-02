@@ -2772,6 +2772,10 @@ pub struct PooledBurstReq<'a> {
     pub on_commit: Option<PooledCommitHook<'a>>,
 }
 
+/// One member's drafted round as `pooled_draft_probe` reads it back: named fields, each a
+/// bit-exact word list (f32 values as their bits).
+type DraftProbeFields = Vec<(String, Vec<u32>)>;
+
 /// Row positions of a pooled verify, host and device copies.
 pub(crate) struct PooledPos<'a> {
     host: &'a [i32],
@@ -3715,6 +3719,40 @@ struct SpecRoundPrep {
     draft_idx: Vec<u32>,
     k_round: usize,
     base: usize,
+}
+
+/// One round's draft between `spec_round_draft_begin` and `spec_round_draft_end`: the round's
+/// committed depth, pending-carry offset and K, and the chain the serial or pooled draft wrote.
+#[derive(Clone)]
+struct SpecDraftRound {
+    pos: usize,
+    base0: usize,
+    k_this: usize,
+    dmask_live: bool,
+    graph_round_ok: bool,
+    round_t0: Option<std::time::Instant>,
+    draft: Vec<u32>,
+    draft_idx: Vec<u32>,
+}
+
+/// The serial draft arm of a round that `spec_round_draft_pooled` mirrors: its post-head
+/// tail runs that arm's kernels on the member's own logits row.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum PooledDraftArm {
+    /// The single-head greedy draft graph (`dctx.graph`).
+    GraphGreedy,
+    /// The single-head sampled draft graph (`dctx.graph_s`), pure-temp or filtered.
+    GraphSampled,
+    /// The eager single-head chain: greedy, sampled, penalized.
+    Eager,
+}
+
+/// One session's round in a pooled rows draft: its round state, its draft-round record from
+/// `spec_round_draft_begin`, and the serial arm it mirrors.
+struct PooledDraftMember<'r, 'a, 'c> {
+    rs: &'r mut SpecRoundState<'a, 'c>,
+    dr: &'r mut SpecDraftRound,
+    arm: PooledDraftArm,
 }
 
 /// What a finished round tells the driver.
@@ -7487,8 +7525,11 @@ impl HybridModel {
 
     /// LOCKSTEP POOLED MTP BURSTS (lane/batch-spec). Runs one continuation burst (empty
     /// suffix, no prime split, no grammar) for every request, round by round: each session's
-    /// round runs `spec_round_gate` and `spec_round_prepare` exactly as its serial burst
-    /// would, then the round's verifies run as pooled forwards over chunks of at most 16 rows
+    /// round runs `spec_round_gate` and `spec_round_draft_begin` exactly as its serial burst
+    /// would; the rounds whose serial draft arm the rows draft mirrors draft together
+    /// (`spec_round_draft_pooled`, one head forward per draft step over the members still
+    /// drafting, bitwise equal to each member's serial chain), the rest draft serially; then
+    /// the round's verifies run as pooled forwards over chunks of at most 16 rows
     /// (`verify_pooled_dev`, bitwise equal to per-session verify), then each session's
     /// `spec_round_finish`. A session leaves the lockstep when its own loop condition ends;
     /// its tail runs at once. Per-session outputs are therefore the serial burst's outputs:
@@ -7571,8 +7612,8 @@ impl HybridModel {
             }
         }
         loop {
-            // Gate + prepare every live session (its own loop condition first).
-            let mut preps: Vec<Option<SpecRoundPrep>> = (0..n).map(|_| None).collect();
+            // Gate + draft-begin every live session (its own loop condition first).
+            let mut drs: Vec<Option<SpecDraftRound>> = (0..n).map(|_| None).collect();
             for j in 0..n {
                 let Some(b) = bursts[j].as_mut() else {
                     continue;
@@ -7587,13 +7628,75 @@ impl HybridModel {
                     outcomes[j] = Some(self.spec_burst_end(e, b));
                     continue;
                 };
-                match self.spec_round_prepare(e, &mut b.rs, gate) {
-                    Ok(p) => preps[j] = Some(p),
+                match self.spec_round_draft_begin(e, &mut b.rs, gate) {
+                    Ok(d) => drs[j] = Some(d),
                     Err(err) => {
                         bursts[j] = None;
                         outcomes[j] = Some(Err(err));
                     }
                 }
+            }
+            // Draft: the rounds the rows draft mirrors draft together (chunks of 16 rows),
+            // the rest run their serial chain.
+            let arms: Vec<Option<PooledDraftArm>> = (0..n)
+                .map(|j| match (&bursts[j], &drs[j]) {
+                    (Some(b), Some(d)) => self.pooled_draft_arm(e, &b.rs, d),
+                    _ => None,
+                })
+                .collect();
+            let rows_draft = arms.iter().flatten().count() >= 2;
+            let mut draft_err: Vec<Option<Box<dyn std::error::Error>>> =
+                (0..n).map(|_| None).collect();
+            if rows_draft {
+                let (ids, mut members): (Vec<usize>, Vec<PooledDraftMember<'_, '_, '_>>) = bursts
+                    .iter_mut()
+                    .zip(drs.iter_mut())
+                    .zip(&arms)
+                    .enumerate()
+                    .filter_map(|(j, ((b, d), arm))| match (b, d, arm) {
+                        (Some(b), Some(d), Some(arm)) => Some((
+                            j,
+                            PooledDraftMember {
+                                rs: &mut b.rs,
+                                dr: d,
+                                arm: *arm,
+                            },
+                        )),
+                        _ => None,
+                    })
+                    .unzip();
+                for (ids, chunk) in ids.chunks(16).zip(members.chunks_mut(16)) {
+                    for (&j, r) in ids.iter().zip(self.spec_round_draft_pooled(e, chunk)) {
+                        if let Err(err) = r {
+                            draft_err[j] = Some(err);
+                        }
+                    }
+                }
+            }
+            for j in 0..n {
+                let (Some(b), Some(d)) = (bursts[j].as_mut(), drs[j].as_mut()) else {
+                    continue;
+                };
+                if !(rows_draft && arms[j].is_some())
+                    && let Err(err) = self.spec_round_draft_serial(e, &mut b.rs, d)
+                {
+                    draft_err[j] = Some(err);
+                }
+            }
+            let mut preps: Vec<Option<SpecRoundPrep>> = (0..n).map(|_| None).collect();
+            for j in 0..n {
+                let Some(d) = drs[j].take() else {
+                    continue;
+                };
+                if let Some(err) = draft_err[j].take() {
+                    bursts[j] = None;
+                    outcomes[j] = Some(Err(err));
+                    continue;
+                }
+                let b = bursts[j]
+                    .as_mut()
+                    .expect("a drafted round has a live burst");
+                preps[j] = Some(self.spec_round_draft_end(&mut b.rs, d));
             }
             if preps.iter().all(Option::is_none) {
                 break;
@@ -7732,6 +7835,340 @@ impl HybridModel {
             .into_iter()
             .map(|o| o.expect("every pooled burst reaches an outcome"))
             .collect()
+    }
+
+    /// Exactness and speed probe of the pooled rows draft (`decode-batch-bench --pooled-draft`).
+    /// Opens one continuation burst per session (`ks[i]`, `sampling[i]`), runs each member's
+    /// first round draft twice from the same state, once through its serial chain
+    /// (`spec_round_draft_serial`, the captured graphs when the session has them) and once
+    /// through `spec_round_draft_pooled`, and compares, per member: draft tokens and trimmed
+    /// ids, filter stats, retained q rows, the Philox counter, the draft-KV length (host and
+    /// device), the draft-KV bytes the round wrote, and a follow-up eager head step that
+    /// attends over them. It also pins the rows head forward's logits and carriers against
+    /// per-session eager steps from the round-start state, then times the two drafts.
+    /// Returns report lines; the sessions are left mid-burst (bench use only).
+    pub fn pooled_draft_probe(
+        &self,
+        e: &Engine,
+        sessions: Vec<&mut SpecSession>,
+        ks: &[usize],
+        sampling: &[Option<SpecSampling>],
+        reps: usize,
+    ) -> Result<Vec<String>, Box<dyn std::error::Error>> {
+        let n = sessions.len();
+        assert!(n == ks.len() && n == sampling.len() && (1..=16).contains(&n));
+        let k_max = ks.iter().copied().max().unwrap_or(1);
+        let graph_draft = std::env::var("MEMRA_SPEC_NOGRAPH").is_err()
+            && !spec_host_embd()
+            && self.mtp_graph_capturable()
+            && k_max + 2 < 96
+            && !crate::model::full_prec_enabled();
+        let was_tracking = e.ctx().is_event_tracking();
+        if graph_draft && was_tracking {
+            unsafe {
+                e.ctx().disable_event_tracking();
+            }
+        }
+        let r = self.pooled_draft_probe_inner(e, sessions, ks, sampling, reps, graph_draft);
+        if graph_draft && was_tracking {
+            unsafe {
+                e.ctx().enable_event_tracking();
+            }
+        }
+        r
+    }
+
+    fn pooled_draft_probe_inner(
+        &self,
+        e: &Engine,
+        sessions: Vec<&mut SpecSession>,
+        ks: &[usize],
+        sampling: &[Option<SpecSampling>],
+        reps: usize,
+        graph_draft: bool,
+    ) -> Result<Vec<String>, Box<dyn std::error::Error>> {
+        let n = sessions.len();
+        let mut lines = Vec::new();
+        let mut stores: Vec<SpecBurstStore> = (0..n).map(|_| SpecBurstStore::default()).collect();
+        let mut bursts: Vec<SpecBurst<'_, '_, '_>> = Vec::with_capacity(n);
+        for (i, (sess, store)) in sessions.into_iter().zip(stores.iter_mut()).enumerate() {
+            bursts.push(self.spec_burst_begin(
+                e,
+                &[],
+                64,
+                ks[i],
+                graph_draft,
+                Some(sess),
+                sampling[i],
+                None,
+                None,
+                None,
+                store,
+            )?);
+        }
+        let mut dr0: Vec<SpecDraftRound> = Vec::with_capacity(n);
+        let mut arms: Vec<PooledDraftArm> = Vec::with_capacity(n);
+        for b in bursts.iter_mut() {
+            let gate = self
+                .spec_round_gate(e, &mut b.rs)
+                .ok_or("probe: the round gate closed the burst")?;
+            let d = self.spec_round_draft_begin(e, &mut b.rs, gate)?;
+            let arm = self
+                .pooled_draft_arm(e, &b.rs, &d)
+                .ok_or("probe: a member's draft arm does not pool")?;
+            dr0.push(d);
+            arms.push(arm);
+        }
+        let sctr0: Vec<u32> = bursts.iter().map(|b| b.rs.sctr).collect();
+        let len0: Vec<usize> = bursts.iter().map(|b| b.rs.scratch.kv.len).collect();
+        let restore =
+            |b: &mut SpecBurst<'_, '_, '_>, i: usize| -> Result<(), Box<dyn std::error::Error>> {
+                b.rs.sctr = sctr0[i];
+                b.rs.scratch.set_len(e, len0[i])?;
+                b.rs.draft_logits.clear();
+                b.rs.draft_stats.clear();
+                Ok(())
+            };
+        // Read one member's drafted round back, run the follow-up step, restore the round start.
+        let read = |b: &mut SpecBurst<'_, '_, '_>,
+                    d: &SpecDraftRound,
+                    arm: PooledDraftArm,
+                    i: usize|
+         -> Result<DraftProbeFields, Box<dyn std::error::Error>> {
+            let bits = |v: Vec<f32>| v.into_iter().map(f32::to_bits).collect::<Vec<u32>>();
+            let mut out: DraftProbeFields = Vec::new();
+            out.push(("tokens".into(), d.draft.clone()));
+            out.push(("draft ids".into(), d.draft_idx.clone()));
+            let st: Vec<u32> =
+                b.rs.draft_stats
+                    .iter()
+                    .flat_map(|&(a, b2, c)| [a.to_bits(), b2.to_bits(), c.to_bits()])
+                    .collect();
+            out.push(("filter stats".into(), st));
+            let steps = b.rs.scratch.kv.len - len0[i];
+            let d_vocab = b.rs.cfg.d_vocab;
+            let mut q: Vec<u32> = Vec::new();
+            if arm == PooledDraftArm::GraphSampled {
+                for slot in b.rs.dctx.q_slots.iter().take(steps) {
+                    q.extend(bits(e.dtoh(slot)?[..d_vocab].to_vec()));
+                }
+            } else {
+                for row in &b.rs.draft_logits {
+                    q.extend(bits(e.dtoh(row)?[..d_vocab].to_vec()));
+                }
+            }
+            out.push(("q rows".into(), q));
+            out.push(("philox counter".into(), vec![b.rs.sctr]));
+            let kv = &b.rs.scratch.kv;
+            out.push((
+                "draft-KV len host/device".into(),
+                vec![kv.len as u32, e.dtoh_i32_one(&kv.len_d)? as u32],
+            ));
+            let (a, z) = (len0[i], kv.len);
+            let kb = e.dtoh_u8_view(&kv.k.slice(a * kv.k_tok_bytes..z * kv.k_tok_bytes))?;
+            let vb = e.dtoh_u8_view(&kv.v.slice(a * kv.v_tok_bytes..z * kv.v_tok_bytes))?;
+            out.push((
+                "draft-KV bytes".into(),
+                kb.into_iter().chain(vb).map(u32::from).collect(),
+            ));
+            let SpecRoundCfg { mtp, embd_dev, .. } = b.rs.cfg;
+            let (fl, fh) = self.mtp_head_forward_dev(
+                e,
+                mtp,
+                b.rs.last_token,
+                &b.rs.h_seed_buf,
+                &mut *b.rs.scratch,
+                d.pos + d.base0 + steps,
+                embd_dev,
+                None,
+            )?;
+            out.push(("follow-up logits".into(), bits(e.dtoh(&fl)?)));
+            out.push(("follow-up carrier".into(), bits(e.dtoh(&fh)?)));
+            out.push(("steps".into(), vec![steps as u32]));
+            restore(b, i)?;
+            Ok(out)
+        };
+
+        // 1. Rows head forward vs per-session eager steps, first step of the round.
+        let mut eager_rows: Vec<(Vec<f32>, Vec<f32>, Vec<u8>)> = Vec::new();
+        for (i, b) in bursts.iter_mut().enumerate() {
+            let SpecRoundCfg { mtp, embd_dev, .. } = b.rs.cfg;
+            let (l, h) = self.mtp_head_forward_dev(
+                e,
+                mtp,
+                b.rs.last_token,
+                &b.rs.h_seed_buf,
+                &mut *b.rs.scratch,
+                dr0[i].pos + dr0[i].base0,
+                embd_dev,
+                None,
+            )?;
+            let kv = &b.rs.scratch.kv;
+            let kb = e.dtoh_u8_view(
+                &kv.k
+                    .slice(len0[i] * kv.k_tok_bytes..kv.len * kv.k_tok_bytes),
+            )?;
+            eager_rows.push((e.dtoh(&l)?, e.dtoh(&h)?, kb));
+            restore(b, i)?;
+        }
+        {
+            let SpecRoundCfg {
+                n_embd,
+                d_vocab,
+                mtp,
+                embd_dev,
+                ..
+            } = bursts[0].rs.cfg;
+            let mut seeds = e.uninit(n * n_embd)?;
+            for (i, b) in bursts.iter().enumerate() {
+                e.copy_into(&mut seeds, i * n_embd, &b.rs.h_seed_buf, n_embd)?;
+            }
+            let toks: Vec<u32> = bursts.iter().map(|b| b.rs.last_token).collect();
+            let pos: Vec<i32> = dr0.iter().map(|d| (d.pos + d.base0) as i32).collect();
+            let mut scr: Vec<&mut MtpScratch> =
+                bursts.iter_mut().map(|b| &mut *b.rs.scratch).collect();
+            let (l, h) =
+                self.mtp_head_forward_rows(e, mtp, &toks, &seeds, &pos, &mut scr, embd_dev)?;
+            drop(scr);
+            let (l, h) = (e.dtoh(&l)?, e.dtoh(&h)?);
+            let mut bad = Vec::new();
+            for (i, b) in bursts.iter_mut().enumerate() {
+                let kv = &b.rs.scratch.kv;
+                let kb = e.dtoh_u8_view(
+                    &kv.k
+                        .slice(len0[i] * kv.k_tok_bytes..kv.len * kv.k_tok_bytes),
+                )?;
+                let lr = &l[i * d_vocab..(i + 1) * d_vocab];
+                let hr = &h[i * n_embd..(i + 1) * n_embd];
+                let same = |a: &[f32], z: &[f32]| {
+                    a.len() == z.len() && a.iter().zip(z).all(|(x, y)| x.to_bits() == y.to_bits())
+                };
+                if !same(lr, &eager_rows[i].0[..d_vocab]) {
+                    bad.push(format!("row {i} logits"));
+                }
+                if !same(hr, &eager_rows[i].1) {
+                    bad.push(format!("row {i} carrier"));
+                }
+                if kb != eager_rows[i].2 {
+                    bad.push(format!("row {i} KV row"));
+                }
+                restore(b, i)?;
+            }
+            lines.push(format!(
+                "ROWS-STEP b={n}: logits rows, carriers and KV rows vs per-session eager steps: {}",
+                if bad.is_empty() {
+                    "BITWISE EQUAL".to_string()
+                } else {
+                    format!("MISMATCH {bad:?}")
+                }
+            ));
+        }
+
+        // 2. Whole round draft: serial chain vs pooled rows draft.
+        let mut serial: Vec<DraftProbeFields> = Vec::new();
+        for (i, b) in bursts.iter_mut().enumerate() {
+            let mut d = dr0[i].clone();
+            self.spec_round_draft_serial(e, &mut b.rs, &mut d)?;
+            serial.push(read(b, &d, arms[i], i)?);
+        }
+        let mut drs: Vec<SpecDraftRound> = dr0.clone();
+        {
+            let mut members: Vec<PooledDraftMember<'_, '_, '_>> = bursts
+                .iter_mut()
+                .zip(drs.iter_mut())
+                .zip(&arms)
+                .map(|((b, d), &arm)| PooledDraftMember {
+                    rs: &mut b.rs,
+                    dr: d,
+                    arm,
+                })
+                .collect();
+            for r in self.spec_round_draft_pooled(e, &mut members) {
+                r?;
+            }
+        }
+        let mut all_ok = true;
+        for (i, b) in bursts.iter_mut().enumerate() {
+            let pooled = read(b, &drs[i], arms[i], i)?;
+            let diff: Vec<&str> = serial[i]
+                .iter()
+                .zip(&pooled)
+                .filter(|(s, p)| s.1 != p.1)
+                .map(|(s, _)| s.0.as_str())
+                .collect();
+            all_ok &= diff.is_empty();
+            let steps = serial[i].last().map(|s| s.1[0]).unwrap_or(0);
+            lines.push(format!(
+                "  member {i}: arm={:?} k_this={} head steps={steps} drafted={} sctr {}->{}: {}",
+                arms[i],
+                dr0[i].k_this,
+                drs[i].draft.len(),
+                sctr0[i],
+                serial[i][4].1[0],
+                if diff.is_empty() {
+                    "BITWISE EQUAL".to_string()
+                } else {
+                    format!("MISMATCH {diff:?}")
+                }
+            ));
+        }
+        lines.push(format!(
+            "ROUND-DRAFT n={n} ks={ks:?}: tokens, ids, stats, q rows, counters, draft-KV, \
+             follow-up: {}",
+            if all_ok { "BITWISE EQUAL" } else { "MISMATCH" }
+        ));
+
+        // 3. Timing: the serial chains of every member vs one pooled rows draft.
+        let (mut ts, mut tp) = (Vec::new(), Vec::new());
+        for rep in 0..=reps {
+            let t0 = std::time::Instant::now();
+            for (i, b) in bursts.iter_mut().enumerate() {
+                let mut d = dr0[i].clone();
+                self.spec_round_draft_serial(e, &mut b.rs, &mut d)?;
+            }
+            e.stream().synchronize()?;
+            let s_ms = t0.elapsed().as_secs_f64() * 1e3;
+            for (i, b) in bursts.iter_mut().enumerate() {
+                restore(b, i)?;
+            }
+            let mut drs: Vec<SpecDraftRound> = dr0.clone();
+            let t0 = std::time::Instant::now();
+            {
+                let mut members: Vec<PooledDraftMember<'_, '_, '_>> = bursts
+                    .iter_mut()
+                    .zip(drs.iter_mut())
+                    .zip(&arms)
+                    .map(|((b, d), &arm)| PooledDraftMember {
+                        rs: &mut b.rs,
+                        dr: d,
+                        arm,
+                    })
+                    .collect();
+                for r in self.spec_round_draft_pooled(e, &mut members) {
+                    r?;
+                }
+            }
+            e.stream().synchronize()?;
+            let p_ms = t0.elapsed().as_secs_f64() * 1e3;
+            for (i, b) in bursts.iter_mut().enumerate() {
+                restore(b, i)?;
+            }
+            if rep > 0 {
+                ts.push(s_ms);
+                tp.push(p_ms);
+            }
+        }
+        if !ts.is_empty() {
+            ts.sort_by(|a, b| a.total_cmp(b));
+            tp.sort_by(|a, b| a.total_cmp(b));
+            let (sm, pm) = (ts[ts.len() / 2], tp[tp.len() / 2]);
+            lines.push(format!(
+                "DRAFT-TIME n={n} ks={ks:?}: serial {sm:.3} ms, pooled {pm:.3} ms, {:.2}x \
+                 (median of {reps})",
+                sm / pm
+            ));
+        }
+        Ok(lines)
     }
 
     /// The pooled walk's LINEAR layer: `qwen35_tparallel_linear_layer`'s packed arm at m=R,
@@ -14620,31 +15057,27 @@ impl HybridModel {
         rs: &mut SpecRoundState<'_, '_>,
         gate: SpecRoundGate,
     ) -> Result<SpecRoundPrep, Box<dyn std::error::Error>> {
+        let mut dr = self.spec_round_draft_begin(e, rs, gate)?;
+        self.spec_round_draft_serial(e, rs, &mut dr)?;
+        Ok(self.spec_round_draft_end(rs, dr))
+    }
+
+    /// The draft-free head of `spec_round_prepare`: the pre-round snapshot, the round's K, the
+    /// draft-KV sync to the committed history, the penalty window upload and the draft-mask
+    /// clone. The serial draft chain and the pooled rows draft both start from its result.
+    fn spec_round_draft_begin(
+        &self,
+        e: &Engine,
+        rs: &mut SpecRoundState<'_, '_>,
+        gate: SpecRoundGate,
+    ) -> Result<SpecDraftRound, Box<dyn std::error::Error>> {
         let SpecRoundCfg {
             k,
-            n_embd,
-            d_vocab,
-            n_vocab,
-            mtp,
-            embd_dev,
             sp,
-            sp_temp,
-            sp_seed,
             sampled,
             pen_on,
-            spec_replay,
-            p_min,
-            pmin0,
             adapt,
             dmask_on,
-            dmask_words,
-            s_key,
-            pure_temp,
-            s_capturable,
-            stream_active,
-            vg_t_cap,
-            pp_split,
-            debug_spec,
             phase_on,
             ..
         } = rs.cfg;
@@ -14657,21 +15090,15 @@ impl HybridModel {
             scratch,
             constraint,
             dctx,
-            round,
-            sctr,
             pen_hist,
             pen_hist_d,
-            last_token,
             pending,
-            h_seed_buf,
             snap,
             kc,
             draft_logits,
             draft_stats,
-            perturb_buf,
             dm_clone_ns,
             dm_rounds,
-            ph_draft,
             ph_rest,
             ph_t,
             ..
@@ -14692,644 +15119,737 @@ impl HybridModel {
         // fixed draft length by default; MEMRA_SPEC_ADAPT=1 drafts at last round's
         // accepted run + 1 (the gemma law — see the setup block above the loop).
         let k_this = if adapt { *kc } else { k };
-        let mut draft: Vec<u32> = Vec::with_capacity(k);
-        let mut draft_idx: Vec<u32> = Vec::with_capacity(k); // trimmed-vocab ids (== draft when untrimmed)
+        let draft: Vec<u32> = Vec::with_capacity(k);
+        let draft_idx: Vec<u32> = Vec::with_capacity(k); // trimmed-vocab ids (== draft when untrimmed)
+        // Round-start draft-KV sync (BOTH paths). Persistent: truncate/align to the committed
+        // history — slots 0..P hold entries for the tokens before last_token@P (P = pos +
+        // base0 - 1); this single set_len IS the draft-side rollback (drops last round's
+        // rejected drafts and p-min extras via the len mechanism).
+        scratch.set_len(e, pos + base0 - 1)?;
+        // dcw door: a captured chain appends k_this device-counter rows (plus the
+        // pseudo-seed replay) with no host intervention; any ring rebase those appends
+        // could need happens HERE, host-side, before the replays. The eager arm keeps
+        // its own per-step prepare, so this is graph-path-only work.
+        if step35_draft_dcw_on()
+            && (dctx.graph.is_some()
+                || dctx.graph_s.is_some()
+                || dctx.chain.is_some()
+                || dctx.chain_s.is_some())
         {
-            // Round-start draft-KV sync (BOTH paths). Persistent: truncate/align to the committed
-            // history — slots 0..P hold entries for the tokens before last_token@P (P = pos +
-            // base0 - 1); this single set_len IS the draft-side rollback (drops last round's
-            // rejected drafts and p-min extras via the len mechanism).
-            scratch.set_len(e, pos + base0 - 1)?;
-            // dcw door: a captured chain appends k_this device-counter rows (plus the
-            // pseudo-seed replay) with no host intervention; any ring rebase those appends
-            // could need happens HERE, host-side, before the replays. The eager arm keeps
-            // its own per-step prepare, so this is graph-path-only work.
-            if step35_draft_dcw_on()
-                && (dctx.graph.is_some()
-                    || dctx.graph_s.is_some()
-                    || dctx.chain.is_some()
-                    || dctx.chain_s.is_some())
-            {
-                scratch.ensure_dcw_headroom(e, k_this + 2)?;
-            }
-            if pen_on {
-                // PEN_WINDOW_MAX also bounds the per-round upload and the O(n_hist^2)
-                // device dedup: the serve window is already PEN_WINDOW_MAX, and this
-                // defensive min also bounds non-server callers.
-                let win = sp.penalty_last_n.min(PEN_WINDOW_MAX);
-                let w0 = pen_hist.len().saturating_sub(win);
-                *pen_hist_d = Some(e.htod_u32_v(&pen_hist[w0..])?);
-            }
-            if sampled {
-                draft_logits.clear();
-                draft_stats.clear();
-            }
-            // DRAFT-SIDE GRAMMAR MASK: clone the committed grammar state ONCE per round; each
-            // position's mask is computed on that clone and advanced by the PROPOSED token. The
-            // real state moves only on emission (verify's job), so the emitted stream is
-            // unchanged — the mask only removes tokens the verify would have truncated anyway.
-            let mut dmask_live = dmask_on;
-            if dmask_live {
-                let t_c = std::time::Instant::now();
-                constraint
-                    .as_deref_mut()
-                    .unwrap()
-                    .draft_begin()
-                    .map_err(|e2| format!("constraint: {e2}"))?;
-                *dm_clone_ns += t_c.elapsed().as_nanos();
-                *dm_rounds += 1;
-            }
-            if let (false, Some(cg)) = (sampled || pen_on || !graph_round_ok, &dctx.chain) {
-                // GREEDY CHAIN GRAPH (lane/step37-draft-graph-serving-20260830): the
-                // eager multi-head chain's EXACT launch order — step j rewinds head
-                // (j % heads)'s plane to the committed length and replays rows 0..=j —
-                // with each row's whole head-forward as ONE graph launch. The chain
-                // POLICY (head choice, prefix length, stored-seed feed) is host-side,
-                // identical to `mtp_chain_forward_dev`, so graph-vs-eager drafts are
-                // bit-identical by construction (same launcher, same bucket — the dcw
-                // parity contract). Interior rows launch the head-less graph: their
-                // logits are dead in the eager chain too, so the consumed bytes match.
-                let heads_n = self.mtp_head_count();
-                let committed = pos + base0 - 1;
-                let mut chain_tokens: Vec<u32> = vec![*last_token];
-                let mut chain_seed_bufs: Vec<CudaSlice<f32>> = vec![e.clone_dtod(h_seed_buf)?];
-                for j in 0..k_this {
-                    let index = mtp_chain_head_index(j, heads_n);
-                    if debug_spec {
-                        eprintln!(
-                            "[mtp-chain-step] round={round} j={j} head={index} \
-                             replay_rows={} arm=graph",
-                            chain_tokens.len(),
-                        );
-                    }
-                    scratch.set_plane_len(e, index, committed)?;
-                    e.set_i32_one(&mut dctx.g_pos, (committed + 1) as i32)?;
-                    for row in 0..=j {
-                        e.set_u32_one(&mut dctx.g_tok, chain_tokens[row])?;
-                        e.copy_into(&mut dctx.g_seed, 0, &chain_seed_bufs[row], n_embd)?;
-                        if row < j {
-                            cg.interior[index].launch()?;
-                        } else {
-                            // per-position mask upload before the LAST row only — the
-                            // eager chain applies the mask on is_last exactly the same.
-                            if dmask_live
-                                && !upload_draft_mask(
-                                    e,
-                                    constraint.as_deref_mut().unwrap(),
-                                    &mut dctx.g_dmask,
-                                    mtp.d2t.as_ref(),
-                                    d_vocab,
-                                    dmask_words,
-                                )?
-                            {
-                                e.htod_u32_into(&mut dctx.g_dmask, &vec![u32::MAX; dmask_words])?;
-                                dmask_live = false;
-                            }
-                            cg.last[index].launch()?;
-                        }
-                        // host mirror (len_d advanced in-graph by the dcw append)
-                        scratch.plane_mut(index).0.len += 1;
-                    }
-                    let idx = e.dtoh_u32_one(&dctx.g_tok)?;
-                    // #87 SENTINEL TRAP (see the single-head graph arm below).
-                    if (idx as usize) >= d_vocab {
-                        let seed_h = e.dtoh(&dctx.g_seed)?;
-                        let seed_nan = seed_h.iter().filter(|v| v.is_nan()).count();
-                        return Err(format!(
-                            "draft(chain-graph) argmax sentinel 0x{idx:08x} >= d_vocab \
-                         {d_vocab} at round {round} j={j} head={index} pos={pos}: \
-                         head-out NaN {seed_nan}/{n_embd} — refusing to dereference \
-                         the embed row (#87 trap)"
-                        )
-                        .into());
-                    }
-                    // multi-head MTP forbids a trimmed head (validated at entry), so the
-                    // draft index IS the target id; keep the map for uniformity.
-                    let d = match &mtp.d2t {
-                        Some(map) => map[idx as usize],
-                        None => idx,
-                    };
-                    let draft_p = if p_min > 0.0 {
-                        Some(e.dtoh(&dctx.g_p)?[0])
-                    } else {
-                        None
-                    };
-                    if let Some(p) = draft_p
-                        && spec_stops_at(p, j, p_min, pmin0 && base0 == 1)
-                    {
-                        break;
-                    }
-                    draft.push(d);
-                    chain_tokens.push(d);
-                    // step j's h_nextn: the last-row graph self-fed it into g_seed —
-                    // snapshot it as the chain history seed for row j+1 (stream-ordered
-                    // after the launch, exactly the eager chain's chain_seeds push).
-                    chain_seed_bufs.push(e.clone_dtod(&dctx.g_seed)?);
-                    // speculative grammar advance (see the single-head graph arm).
-                    if dmask_live
-                        && !constraint
-                            .as_deref_mut()
-                            .unwrap()
-                            .draft_advance(d)
-                            .map_err(|e2| format!("constraint: {e2}"))?
-                    {
-                        e.htod_u32_into(&mut dctx.g_dmask, &vec![u32::MAX; dmask_words])?;
-                        break;
-                    }
-                }
-            } else if let (true, Some(cg)) = (
-                sampled && s_capturable && dctx.s_key == Some(s_key) && graph_round_ok,
-                &dctx.chain_s,
-            ) {
-                if skey_probe() {
+            scratch.ensure_dcw_headroom(e, k_this + 2)?;
+        }
+        if pen_on {
+            // PEN_WINDOW_MAX also bounds the per-round upload and the O(n_hist^2)
+            // device dedup: the serve window is already PEN_WINDOW_MAX, and this
+            // defensive min also bounds non-server callers.
+            let win = sp.penalty_last_n.min(PEN_WINDOW_MAX);
+            let w0 = pen_hist.len().saturating_sub(win);
+            *pen_hist_d = Some(e.htod_u32_v(&pen_hist[w0..])?);
+        }
+        if sampled {
+            draft_logits.clear();
+            draft_stats.clear();
+        }
+        // DRAFT-SIDE GRAMMAR MASK: clone the committed grammar state ONCE per round; each
+        // position's mask is computed on that clone and advanced by the PROPOSED token. The
+        // real state moves only on emission (verify's job), so the emitted stream is
+        // unchanged — the mask only removes tokens the verify would have truncated anyway.
+        let dmask_live = dmask_on;
+        if dmask_live {
+            let t_c = std::time::Instant::now();
+            constraint
+                .as_deref_mut()
+                .unwrap()
+                .draft_begin()
+                .map_err(|e2| format!("constraint: {e2}"))?;
+            *dm_clone_ns += t_c.elapsed().as_nanos();
+            *dm_rounds += 1;
+        }
+        Ok(SpecDraftRound {
+            pos,
+            base0,
+            k_this,
+            dmask_live,
+            graph_round_ok,
+            round_t0,
+            draft,
+            draft_idx,
+        })
+    }
+
+    /// The serial draft chain of one round: the captured chain or single-head graphs, or the
+    /// eager chain, exactly as the session's own round runs it.
+    fn spec_round_draft_serial(
+        &self,
+        e: &Engine,
+        rs: &mut SpecRoundState<'_, '_>,
+        dr: &mut SpecDraftRound,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let SpecRoundCfg {
+            n_embd,
+            d_vocab,
+            n_vocab,
+            mtp,
+            embd_dev,
+            sp,
+            sp_temp,
+            sp_seed,
+            sampled,
+            pen_on,
+            p_min,
+            pmin0,
+            dmask_words,
+            s_key,
+            pure_temp,
+            s_capturable,
+            debug_spec,
+            ..
+        } = rs.cfg;
+        let SpecRoundState {
+            scratch,
+            constraint,
+            dctx,
+            round,
+            sctr,
+            pen_hist_d,
+            last_token,
+            h_seed_buf,
+            draft_logits,
+            draft_stats,
+            perturb_buf,
+            ..
+        } = rs;
+        let scratch: &mut MtpScratch = scratch;
+        let SpecDraftRound {
+            pos,
+            base0,
+            k_this,
+            graph_round_ok,
+            ..
+        } = *dr;
+        let mut dmask_live = dr.dmask_live;
+        let mut draft = std::mem::take(&mut dr.draft);
+        let mut draft_idx = std::mem::take(&mut dr.draft_idx);
+        if let (false, Some(cg)) = (sampled || pen_on || !graph_round_ok, &dctx.chain) {
+            // GREEDY CHAIN GRAPH (lane/step37-draft-graph-serving-20260830): the
+            // eager multi-head chain's EXACT launch order — step j rewinds head
+            // (j % heads)'s plane to the committed length and replays rows 0..=j —
+            // with each row's whole head-forward as ONE graph launch. The chain
+            // POLICY (head choice, prefix length, stored-seed feed) is host-side,
+            // identical to `mtp_chain_forward_dev`, so graph-vs-eager drafts are
+            // bit-identical by construction (same launcher, same bucket — the dcw
+            // parity contract). Interior rows launch the head-less graph: their
+            // logits are dead in the eager chain too, so the consumed bytes match.
+            let heads_n = self.mtp_head_count();
+            let committed = pos + base0 - 1;
+            let mut chain_tokens: Vec<u32> = vec![*last_token];
+            let mut chain_seed_bufs: Vec<CudaSlice<f32>> = vec![e.clone_dtod(h_seed_buf)?];
+            for j in 0..k_this {
+                let index = mtp_chain_head_index(j, heads_n);
+                if debug_spec {
                     eprintln!(
-                        "[skey] chain=graph_chain_s round={round} capturable={} top_k={} \
-                         top_p={} min_p={} s_key_parked={:?}",
-                        s_capturable as u8, sp.top_k, sp.top_p, sp.min_p, dctx.s_key,
+                        "[mtp-chain-step] round={round} j={j} head={index} \
+                         replay_rows={} arm=graph",
+                        chain_tokens.len(),
                     );
                 }
-                // SAMPLED CHAIN GRAPH: the greedy chain arm's launch order with the
-                // sampled last-row graphs — in-graph counter bump + (filtered) gumbel
-                // draw + argmax; q retained per step into q_slots exactly like the
-                // single-head sampled graph arm. Counter continuity: g_ctr host-seeded
-                // to sctr-1 once per ROUND; each step's last-row graph bumps it BEFORE
-                // the perturb, so step j consumes counter sctr+j — the eager Philox
-                // stream (interior rows never draw, never bump).
-                let heads_n = self.mtp_head_count();
-                let committed = pos + base0 - 1;
-                let filtered_stats_in_graph = s_key.filtered();
-                let mut chain_tokens: Vec<u32> = vec![*last_token];
-                let mut chain_seed_bufs: Vec<CudaSlice<f32>> = vec![e.clone_dtod(h_seed_buf)?];
-                e.set_u32_one(&mut dctx.g_ctr, sctr.wrapping_sub(1))?;
-                for j in 0..k_this {
-                    let index = mtp_chain_head_index(j, heads_n);
-                    if debug_spec {
-                        eprintln!(
-                            "[mtp-chain-step] round={round} j={j} head={index} \
-                             replay_rows={} arm=graph_s",
-                            chain_tokens.len(),
-                        );
-                    }
-                    scratch.set_plane_len(e, index, committed)?;
-                    e.set_i32_one(&mut dctx.g_pos, (committed + 1) as i32)?;
-                    for row in 0..=j {
-                        e.set_u32_one(&mut dctx.g_tok, chain_tokens[row])?;
-                        e.copy_into(&mut dctx.g_seed, 0, &chain_seed_bufs[row], n_embd)?;
-                        if row < j {
-                            cg.interior[index].launch()?;
-                        } else {
-                            cg.last[index].launch()?;
-                        }
-                        scratch.plane_mut(index).0.len += 1;
-                    }
-                    *sctr += 1; // mirrors the in-graph g_ctr bump (eager parity:
-                    // counts the p-min-discarded token too)
-                    // q retention: ONE async D2D of the persistent head-logits buffer
-                    // into this round's slot j (stream-ordered after the replay).
-                    e.copy_into(&mut dctx.q_slots[j], 0, &dctx.g_q, d_vocab)?;
-                    // FILTERED capture: read the in-graph filter_stats scalars back per
-                    // replay instead of a second full-vocab filter_stats per slot post-
-                    // chain — bit-exact (the values the in-graph perturb consumed) and
-                    // measured worth ~5% of vendor-default serving tok/s at K=3. Before
-                    // the p-min break so the discarded slot's stats land too.
-                    if filtered_stats_in_graph {
-                        draft_stats.push((
-                            e.dtoh(&dctx.g_mx)?[0],
-                            e.dtoh(&dctx.g_th)?[0],
-                            e.dtoh(&dctx.g_z)?[0],
-                        ));
-                    }
-                    let idx = e.dtoh_u32_one(&dctx.g_tok)?;
-                    // #87 SENTINEL TRAP (see the single-head graph arms).
-                    if (idx as usize) >= d_vocab {
-                        let seed_h = e.dtoh(&dctx.g_seed)?;
-                        let seed_nan = seed_h.iter().filter(|v| v.is_nan()).count();
-                        return Err(format!(
-                            "draft(chain-graph-sampled) argmax sentinel 0x{idx:08x} >= \
-                         d_vocab {d_vocab} at round {round} j={j} head={index} pos={pos}: \
-                         head-out NaN {seed_nan}/{n_embd} — refusing to dereference the \
-                         embed row (#87 trap)"
-                        )
-                        .into());
-                    }
-                    let d = match &mtp.d2t {
-                        Some(map) => map[idx as usize],
-                        None => idx,
-                    };
-                    draft_idx.push(idx);
-                    if p_min > 0.0 {
-                        let p = e.dtoh(&dctx.g_p)?[0];
-                        if spec_stops_at(p, j, p_min, pmin0 && base0 == 1) {
-                            break;
-                        }
-                    }
-                    draft.push(d);
-                    chain_tokens.push(d);
-                    chain_seed_bufs.push(e.clone_dtod(&dctx.g_seed)?);
-                }
-                // PURE-TEMP accept path: stats per used slot recomputed from the RETAINED
-                // q with the SAME filter_stats program the eager arm runs (deployment-
-                // keyed coop/plain choice, same input bits). The FILTERED graph read its
-                // stats back per replay above.
-                if !filtered_stats_in_graph {
-                    for j in 0..draft.len().max(draft_idx.len()) {
-                        let rows0 = e.htod_i32(&[0])?;
-                        let (mut th_d, mut z_d, mut mx_d) = (e.zeros(1)?, e.zeros(1)?, e.zeros(1)?);
-                        e.filter_stats(
-                            &dctx.q_slots[j],
-                            d_vocab,
-                            &rows0,
-                            &mut th_d,
-                            &mut z_d,
-                            &mut mx_d,
-                            d_vocab,
-                            1,
-                            sp_temp,
-                            sp.top_k,
-                            sp.top_p,
-                            sp.min_p,
-                        )?;
-                        draft_stats.push((e.dtoh(&mx_d)?[0], e.dtoh(&th_d)?[0], e.dtoh(&z_d)?[0]));
-                    }
-                }
-            } else if let (false, Some(gr)) = (sampled || pen_on || !graph_round_ok, &dctx.graph) {
-                // GRAPH DRAFT: one dispatch per drafted token. The chain feeds itself on-device
-                // (in-graph argmax -> tok_d -> next replay's embed; h_nextn -> h_seed_d; pos_d
-                // inc'd in-graph); the host only reads 4B token (+4B p) and decides the break.
-                e.set_i32_one(&mut dctx.g_pos, (pos + base0) as i32)?;
-                e.set_u32_one(&mut dctx.g_tok, *last_token)?;
-                e.copy_into(&mut dctx.g_seed, 0, h_seed_buf, n_embd)?;
-                for j in 0..k_this {
-                    // per-position mask upload (contents only — the graph's baked pointer is
-                    // dctx.g_dmask). All-ones once masking goes dead mid-chain, so the captured
-                    // mask node degrades to a no-op ban instead of needing a second graph.
-                    if dmask_live
-                        && !upload_draft_mask(
-                            e,
-                            constraint.as_deref_mut().unwrap(),
-                            &mut dctx.g_dmask,
-                            mtp.d2t.as_ref(),
-                            d_vocab,
-                            dmask_words,
-                        )?
-                    {
-                        // no draft-vocab row is grammar-legal here (a trimmed FR-Spec head can
-                        // genuinely miss the legal set): neutralize the captured mask node and
-                        // finish the chain UNMASKED — exactly pre-lane behaviour, never worse.
-                        e.htod_u32_into(&mut dctx.g_dmask, &vec![u32::MAX; dmask_words])?;
-                        dmask_live = false;
-                    }
-                    gr.launch()?;
-                    scratch.kv.len += 1; // host mirror (len_d advanced in-graph)
-                    let idx = e.dtoh_u32_one(&dctx.g_tok)?;
-                    // #87 SENTINEL TRAP: an all-NaN head-logits row leaves the device argmax's
-                    // init sentinel (0x7FFFFFFF) in g_tok — feeding it onward dereferences
-                    // embed_row(sentinel) = table + ~4.6TB (never mapped) inside the NEXT graph
-                    // replay's embed node, and the MMU fault kills the CUDA context for the
-                    // whole process (research/pp2spec-crash-20260807: 3 coredumps, byte-exact
-                    // VA arithmetic). Refuse loudly instead; the diagnostics name the first-NaN
-                    // buffer (g_seed = the verify-side handoff vs head-side compute).
-                    if (idx as usize) >= d_vocab {
-                        // g_seed is SELF-FED (the replay writes h_nextn back into it), so it
-                        // reads as the head's OUTPUT at j; h_seed_buf is the round's INPUT
-                        // seed, untouched since the round-start copy — the pair discriminates
-                        // "seed arrived poisoned" from "head forward produced NaN".
-                        let seed_h = e.dtoh(&dctx.g_seed)?;
-                        let seed_nan = seed_h.iter().filter(|v| v.is_nan()).count();
-                        let in_h = e.dtoh(h_seed_buf)?;
-                        let in_nan = in_h.iter().filter(|v| v.is_nan()).count();
-                        return Err(format!(
-                            "draft(graph) argmax sentinel 0x{idx:08x} >= d_vocab {d_vocab} at \
-                         round {round} j={j} pos={pos}: head-out NaN {seed_nan}/{n_embd}, \
-                         round-input-seed NaN {in_nan}/{n_embd} — refusing to dereference \
-                         the embed row (#87 trap)"
-                        )
-                        .into());
-                    }
-                    // trimmed draft vocab -> target token id (identity when no d2t map)
-                    let d = match &mtp.d2t {
-                        Some(map) => map[idx as usize],
-                        None => idx,
-                    };
-                    let draft_p = if p_min > 0.0 {
-                        Some(e.dtoh(&dctx.g_p)?[0])
+                scratch.set_plane_len(e, index, committed)?;
+                e.set_i32_one(&mut dctx.g_pos, (committed + 1) as i32)?;
+                for row in 0..=j {
+                    e.set_u32_one(&mut dctx.g_tok, chain_tokens[row])?;
+                    e.copy_into(&mut dctx.g_seed, 0, &chain_seed_bufs[row], n_embd)?;
+                    if row < j {
+                        cg.interior[index].launch()?;
                     } else {
-                        None
-                    };
-                    if let Some(p) = draft_p
-                        && spec_stops_at(p, j, p_min, pmin0 && base0 == 1)
-                    {
-                        break;
+                        // per-position mask upload before the LAST row only — the
+                        // eager chain applies the mask on is_last exactly the same.
+                        if dmask_live
+                            && !upload_draft_mask(
+                                e,
+                                constraint.as_deref_mut().unwrap(),
+                                &mut dctx.g_dmask,
+                                mtp.d2t.as_ref(),
+                                d_vocab,
+                                dmask_words,
+                            )?
+                        {
+                            e.htod_u32_into(&mut dctx.g_dmask, &vec![u32::MAX; dmask_words])?;
+                            dmask_live = false;
+                        }
+                        cg.last[index].launch()?;
                     }
-                    draft.push(d);
-                    // with a trimmed head the NEXT embed must read the TARGET id, not the draft
-                    // index the argmax wrote — patch the persistent token buffer (4B htod).
-                    if d != idx {
-                        e.set_u32_one(&mut dctx.g_tok, d)?;
+                    // host mirror (len_d advanced in-graph by the dcw append)
+                    scratch.plane_mut(index).0.len += 1;
+                }
+                let idx = e.dtoh_u32_one(&dctx.g_tok)?;
+                // #87 SENTINEL TRAP (see the single-head graph arm below).
+                if (idx as usize) >= d_vocab {
+                    let seed_h = e.dtoh(&dctx.g_seed)?;
+                    let seed_nan = seed_h.iter().filter(|v| v.is_nan()).count();
+                    return Err(format!(
+                        "draft(chain-graph) argmax sentinel 0x{idx:08x} >= d_vocab \
+                     {d_vocab} at round {round} j={j} head={index} pos={pos}: \
+                     head-out NaN {seed_nan}/{n_embd} — refusing to dereference \
+                     the embed row (#87 trap)"
+                    )
+                    .into());
+                }
+                // multi-head MTP forbids a trimmed head (validated at entry), so the
+                // draft index IS the target id; keep the map for uniformity.
+                let d = match &mtp.d2t {
+                    Some(map) => map[idx as usize],
+                    None => idx,
+                };
+                let draft_p = if p_min > 0.0 {
+                    Some(e.dtoh(&dctx.g_p)?[0])
+                } else {
+                    None
+                };
+                if let Some(p) = draft_p
+                    && spec_stops_at(p, j, p_min, pmin0 && base0 == 1)
+                {
+                    break;
+                }
+                draft.push(d);
+                chain_tokens.push(d);
+                // step j's h_nextn: the last-row graph self-fed it into g_seed —
+                // snapshot it as the chain history seed for row j+1 (stream-ordered
+                // after the launch, exactly the eager chain's chain_seeds push).
+                chain_seed_bufs.push(e.clone_dtod(&dctx.g_seed)?);
+                // speculative grammar advance (see the single-head graph arm).
+                if dmask_live
+                    && !constraint
+                        .as_deref_mut()
+                        .unwrap()
+                        .draft_advance(d)
+                        .map_err(|e2| format!("constraint: {e2}"))?
+                {
+                    e.htod_u32_into(&mut dctx.g_dmask, &vec![u32::MAX; dmask_words])?;
+                    break;
+                }
+            }
+        } else if let (true, Some(cg)) = (
+            sampled && s_capturable && dctx.s_key == Some(s_key) && graph_round_ok,
+            &dctx.chain_s,
+        ) {
+            if skey_probe() {
+                eprintln!(
+                    "[skey] chain=graph_chain_s round={round} capturable={} top_k={} \
+                     top_p={} min_p={} s_key_parked={:?}",
+                    s_capturable as u8, sp.top_k, sp.top_p, sp.min_p, dctx.s_key,
+                );
+            }
+            // SAMPLED CHAIN GRAPH: the greedy chain arm's launch order with the
+            // sampled last-row graphs — in-graph counter bump + (filtered) gumbel
+            // draw + argmax; q retained per step into q_slots exactly like the
+            // single-head sampled graph arm. Counter continuity: g_ctr host-seeded
+            // to sctr-1 once per ROUND; each step's last-row graph bumps it BEFORE
+            // the perturb, so step j consumes counter sctr+j — the eager Philox
+            // stream (interior rows never draw, never bump).
+            let heads_n = self.mtp_head_count();
+            let committed = pos + base0 - 1;
+            let filtered_stats_in_graph = s_key.filtered();
+            let mut chain_tokens: Vec<u32> = vec![*last_token];
+            let mut chain_seed_bufs: Vec<CudaSlice<f32>> = vec![e.clone_dtod(h_seed_buf)?];
+            e.set_u32_one(&mut dctx.g_ctr, sctr.wrapping_sub(1))?;
+            for j in 0..k_this {
+                let index = mtp_chain_head_index(j, heads_n);
+                if debug_spec {
+                    eprintln!(
+                        "[mtp-chain-step] round={round} j={j} head={index} \
+                         replay_rows={} arm=graph_s",
+                        chain_tokens.len(),
+                    );
+                }
+                scratch.set_plane_len(e, index, committed)?;
+                e.set_i32_one(&mut dctx.g_pos, (committed + 1) as i32)?;
+                for row in 0..=j {
+                    e.set_u32_one(&mut dctx.g_tok, chain_tokens[row])?;
+                    e.copy_into(&mut dctx.g_seed, 0, &chain_seed_bufs[row], n_embd)?;
+                    if row < j {
+                        cg.interior[index].launch()?;
+                    } else {
+                        cg.last[index].launch()?;
                     }
-                    // advance the SPECULATIVE state with the proposal; a dead chain drops to
-                    // unmasked drafting for the remaining positions (verify still arbitrates).
-                    // speculative advance; a chain the grammar can no longer follow (EOS
-                    // proposed) ends here. The captured mask node always runs, so a dead chain
-                    // leaves the buffer NEUTRAL (all-ones = ban nothing) before it exits.
-                    if dmask_live
-                        && !constraint
-                            .as_deref_mut()
-                            .unwrap()
-                            .draft_advance(d)
-                            .map_err(|e2| format!("constraint: {e2}"))?
-                    {
-                        e.htod_u32_into(&mut dctx.g_dmask, &vec![u32::MAX; dmask_words])?;
+                    scratch.plane_mut(index).0.len += 1;
+                }
+                *sctr += 1; // mirrors the in-graph g_ctr bump (eager parity:
+                // counts the p-min-discarded token too)
+                // q retention: ONE async D2D of the persistent head-logits buffer
+                // into this round's slot j (stream-ordered after the replay).
+                e.copy_into(&mut dctx.q_slots[j], 0, &dctx.g_q, d_vocab)?;
+                // FILTERED capture: read the in-graph filter_stats scalars back per
+                // replay instead of a second full-vocab filter_stats per slot post-
+                // chain — bit-exact (the values the in-graph perturb consumed) and
+                // measured worth ~5% of vendor-default serving tok/s at K=3. Before
+                // the p-min break so the discarded slot's stats land too.
+                if filtered_stats_in_graph {
+                    draft_stats.push((
+                        e.dtoh(&dctx.g_mx)?[0],
+                        e.dtoh(&dctx.g_th)?[0],
+                        e.dtoh(&dctx.g_z)?[0],
+                    ));
+                }
+                let idx = e.dtoh_u32_one(&dctx.g_tok)?;
+                // #87 SENTINEL TRAP (see the single-head graph arms).
+                if (idx as usize) >= d_vocab {
+                    let seed_h = e.dtoh(&dctx.g_seed)?;
+                    let seed_nan = seed_h.iter().filter(|v| v.is_nan()).count();
+                    return Err(format!(
+                        "draft(chain-graph-sampled) argmax sentinel 0x{idx:08x} >= \
+                     d_vocab {d_vocab} at round {round} j={j} head={index} pos={pos}: \
+                     head-out NaN {seed_nan}/{n_embd} — refusing to dereference the \
+                     embed row (#87 trap)"
+                    )
+                    .into());
+                }
+                let d = match &mtp.d2t {
+                    Some(map) => map[idx as usize],
+                    None => idx,
+                };
+                draft_idx.push(idx);
+                if p_min > 0.0 {
+                    let p = e.dtoh(&dctx.g_p)?[0];
+                    if spec_stops_at(p, j, p_min, pmin0 && base0 == 1) {
                         break;
                     }
                 }
-            // REGIME RE-TEST (lane/graph-s-key-exactness-20260819, widened by
-            // lane/step37-draft-graph-serving-20260830): the sampled graph is legal ONLY
-            // in the regime it was captured in. The condition used to read
-            // `(sampled, &dctx.graph_s)` and trusted `s_key` to have dropped anything
-            // else — which it could not, because the key omitted the filters. Both
-            // halves are enforced: the key drops a stale graph, and this site refuses to
-            // launch one whose key differs or whose regime is uncapturable (penalties).
-            } else if let (true, Some(gr)) = (
-                sampled && s_capturable && dctx.s_key == Some(s_key) && graph_round_ok,
-                &dctx.graph_s,
-            ) {
-                if skey_probe() {
-                    eprintln!(
-                        "[skey] chain=graph_s round={round} pure_temp={} capturable={} \
-                         top_k={} top_p={} min_p={} s_key_parked={:?}",
-                        pure_temp as u8,
-                        s_capturable as u8,
+                draft.push(d);
+                chain_tokens.push(d);
+                chain_seed_bufs.push(e.clone_dtod(&dctx.g_seed)?);
+            }
+            // PURE-TEMP accept path: stats per used slot recomputed from the RETAINED
+            // q with the SAME filter_stats program the eager arm runs (deployment-
+            // keyed coop/plain choice, same input bits). The FILTERED graph read its
+            // stats back per replay above.
+            if !filtered_stats_in_graph {
+                for j in 0..draft.len().max(draft_idx.len()) {
+                    let rows0 = e.htod_i32(&[0])?;
+                    let (mut th_d, mut z_d, mut mx_d) = (e.zeros(1)?, e.zeros(1)?, e.zeros(1)?);
+                    e.filter_stats(
+                        &dctx.q_slots[j],
+                        d_vocab,
+                        &rows0,
+                        &mut th_d,
+                        &mut z_d,
+                        &mut mx_d,
+                        d_vocab,
+                        1,
+                        sp_temp,
                         sp.top_k,
                         sp.top_p,
                         sp.min_p,
-                        dctx.s_key,
-                    );
+                    )?;
+                    draft_stats.push((e.dtoh(&mx_d)?[0], e.dtoh(&th_d)?[0], e.dtoh(&z_d)?[0]));
                 }
-                // SAMPLED GRAPH DRAFT: one replay per drafted token — head forward + gumbel +
-                // argmax in ONE dispatch; the host reads 4B token (+4B p), D2Ds q into slot j,
-                // and decides the break. Event-counter continuity: g_ctr is host-seeded to
-                // sctr-1 ONCE per round (outside the graph); the in-graph bump runs BEFORE the
-                // perturb, so replay j consumes counter sctr+j — exactly the eager arm's Philox
-                // stream. Host sctr advances in lockstep (computed, no readback needed).
-                e.set_i32_one(&mut dctx.g_pos, (pos + base0) as i32)?;
-                e.set_u32_one(&mut dctx.g_tok, *last_token)?;
-                e.copy_into(&mut dctx.g_seed, 0, h_seed_buf, n_embd)?;
-                e.set_u32_one(&mut dctx.g_ctr, sctr.wrapping_sub(1))?;
-                let filtered_stats_in_graph = s_key.filtered();
-                for j in 0..k_this {
-                    gr.launch()?;
-                    scratch.kv.len += 1; // host mirror (len_d advanced in-graph)
-                    *sctr += 1; // mirrors the in-graph g_ctr bump (eager parity:
-                    // counts the p-min-discarded token too)
-                    // q retention: ONE async D2D of the persistent head-logits buffer into this
-                    // round's slot j (stream-ordered after the replay, before the next one).
-                    e.copy_into(&mut dctx.q_slots[j], 0, &dctx.g_q, d_vocab)?;
-                    // FILTERED capture: the replay's own filter_stats node already computed
-                    // (th, z, mx) — read the three scalars back instead of paying a SECOND
-                    // full-vocab filter_stats per slot post-chain (measured ~5% of vendor-
-                    // default serving tok/s at K=3). Bit-exact by construction: these are
-                    // the very values the in-graph perturb consumed. Read BEFORE the p-min
-                    // break so the discarded slot's stats land too (accept-path indexing).
-                    if filtered_stats_in_graph {
-                        draft_stats.push((
-                            e.dtoh(&dctx.g_mx)?[0],
-                            e.dtoh(&dctx.g_th)?[0],
-                            e.dtoh(&dctx.g_z)?[0],
-                        ));
-                    }
-                    let idx = e.dtoh_u32_one(&dctx.g_tok)?;
-                    // #87 SENTINEL TRAP (see the greedy graph arm above).
-                    if (idx as usize) >= d_vocab {
-                        let seed_h = e.dtoh(&dctx.g_seed)?;
-                        let seed_nan = seed_h.iter().filter(|v| v.is_nan()).count();
-                        return Err(format!(
-                            "draft(graph-sampled) argmax sentinel 0x{idx:08x} >= d_vocab \
-                         {d_vocab} at round {round} j={j} pos={pos}: round-seed NaN \
-                         {seed_nan}/{n_embd} — refusing to dereference the embed row \
-                         (#87 trap)"
-                        )
-                        .into());
-                    }
-                    let d = match &mtp.d2t {
-                        Some(map) => map[idx as usize],
-                        None => idx,
-                    };
-                    draft_idx.push(idx);
-                    if p_min > 0.0 {
-                        let p = e.dtoh(&dctx.g_p)?[0];
-                        if spec_stops_at(p, j, p_min, pmin0 && base0 == 1) {
-                            break;
-                        }
-                    }
-                    draft.push(d);
-                    // trimmed head: the NEXT embed must read the TARGET id (see the greedy arm).
-                    if d != idx {
-                        e.set_u32_one(&mut dctx.g_tok, d)?;
+            }
+        } else if let (false, Some(gr)) = (sampled || pen_on || !graph_round_ok, &dctx.graph) {
+            // GRAPH DRAFT: one dispatch per drafted token. The chain feeds itself on-device
+            // (in-graph argmax -> tok_d -> next replay's embed; h_nextn -> h_seed_d; pos_d
+            // inc'd in-graph); the host only reads 4B token (+4B p) and decides the break.
+            e.set_i32_one(&mut dctx.g_pos, (pos + base0) as i32)?;
+            e.set_u32_one(&mut dctx.g_tok, *last_token)?;
+            e.copy_into(&mut dctx.g_seed, 0, h_seed_buf, n_embd)?;
+            for j in 0..k_this {
+                // per-position mask upload (contents only — the graph's baked pointer is
+                // dctx.g_dmask). All-ones once masking goes dead mid-chain, so the captured
+                // mask node degrades to a no-op ban instead of needing a second graph.
+                if dmask_live
+                    && !upload_draft_mask(
+                        e,
+                        constraint.as_deref_mut().unwrap(),
+                        &mut dctx.g_dmask,
+                        mtp.d2t.as_ref(),
+                        d_vocab,
+                        dmask_words,
+                    )?
+                {
+                    // no draft-vocab row is grammar-legal here (a trimmed FR-Spec head can
+                    // genuinely miss the legal set): neutralize the captured mask node and
+                    // finish the chain UNMASKED — exactly pre-lane behaviour, never worse.
+                    e.htod_u32_into(&mut dctx.g_dmask, &vec![u32::MAX; dmask_words])?;
+                    dmask_live = false;
+                }
+                gr.launch()?;
+                scratch.kv.len += 1; // host mirror (len_d advanced in-graph)
+                let idx = e.dtoh_u32_one(&dctx.g_tok)?;
+                // #87 SENTINEL TRAP: an all-NaN head-logits row leaves the device argmax's
+                // init sentinel (0x7FFFFFFF) in g_tok — feeding it onward dereferences
+                // embed_row(sentinel) = table + ~4.6TB (never mapped) inside the NEXT graph
+                // replay's embed node, and the MMU fault kills the CUDA context for the
+                // whole process (research/pp2spec-crash-20260807: 3 coredumps, byte-exact
+                // VA arithmetic). Refuse loudly instead; the diagnostics name the first-NaN
+                // buffer (g_seed = the verify-side handoff vs head-side compute).
+                if (idx as usize) >= d_vocab {
+                    // g_seed is SELF-FED (the replay writes h_nextn back into it), so it
+                    // reads as the head's OUTPUT at j; h_seed_buf is the round's INPUT
+                    // seed, untouched since the round-start copy — the pair discriminates
+                    // "seed arrived poisoned" from "head forward produced NaN".
+                    let seed_h = e.dtoh(&dctx.g_seed)?;
+                    let seed_nan = seed_h.iter().filter(|v| v.is_nan()).count();
+                    let in_h = e.dtoh(h_seed_buf)?;
+                    let in_nan = in_h.iter().filter(|v| v.is_nan()).count();
+                    return Err(format!(
+                        "draft(graph) argmax sentinel 0x{idx:08x} >= d_vocab {d_vocab} at \
+                     round {round} j={j} pos={pos}: head-out NaN {seed_nan}/{n_embd}, \
+                     round-input-seed NaN {in_nan}/{n_embd} — refusing to dereference \
+                     the embed row (#87 trap)"
+                    )
+                    .into());
+                }
+                // trimmed draft vocab -> target token id (identity when no d2t map)
+                let d = match &mtp.d2t {
+                    Some(map) => map[idx as usize],
+                    None => idx,
+                };
+                let draft_p = if p_min > 0.0 {
+                    Some(e.dtoh(&dctx.g_p)?[0])
+                } else {
+                    None
+                };
+                if let Some(p) = draft_p
+                    && spec_stops_at(p, j, p_min, pmin0 && base0 == 1)
+                {
+                    break;
+                }
+                draft.push(d);
+                // with a trimmed head the NEXT embed must read the TARGET id, not the draft
+                // index the argmax wrote — patch the persistent token buffer (4B htod).
+                if d != idx {
+                    e.set_u32_one(&mut dctx.g_tok, d)?;
+                }
+                // advance the SPECULATIVE state with the proposal; a dead chain drops to
+                // unmasked drafting for the remaining positions (verify still arbitrates).
+                // speculative advance; a chain the grammar can no longer follow (EOS
+                // proposed) ends here. The captured mask node always runs, so a dead chain
+                // leaves the buffer NEUTRAL (all-ones = ban nothing) before it exits.
+                if dmask_live
+                    && !constraint
+                        .as_deref_mut()
+                        .unwrap()
+                        .draft_advance(d)
+                        .map_err(|e2| format!("constraint: {e2}"))?
+                {
+                    e.htod_u32_into(&mut dctx.g_dmask, &vec![u32::MAX; dmask_words])?;
+                    break;
+                }
+            }
+        // REGIME RE-TEST (lane/graph-s-key-exactness-20260819, widened by
+        // lane/step37-draft-graph-serving-20260830): the sampled graph is legal ONLY
+        // in the regime it was captured in. The condition used to read
+        // `(sampled, &dctx.graph_s)` and trusted `s_key` to have dropped anything
+        // else — which it could not, because the key omitted the filters. Both
+        // halves are enforced: the key drops a stale graph, and this site refuses to
+        // launch one whose key differs or whose regime is uncapturable (penalties).
+        } else if let (true, Some(gr)) = (
+            sampled && s_capturable && dctx.s_key == Some(s_key) && graph_round_ok,
+            &dctx.graph_s,
+        ) {
+            if skey_probe() {
+                eprintln!(
+                    "[skey] chain=graph_s round={round} pure_temp={} capturable={} \
+                     top_k={} top_p={} min_p={} s_key_parked={:?}",
+                    pure_temp as u8, s_capturable as u8, sp.top_k, sp.top_p, sp.min_p, dctx.s_key,
+                );
+            }
+            // SAMPLED GRAPH DRAFT: one replay per drafted token — head forward + gumbel +
+            // argmax in ONE dispatch; the host reads 4B token (+4B p), D2Ds q into slot j,
+            // and decides the break. Event-counter continuity: g_ctr is host-seeded to
+            // sctr-1 ONCE per round (outside the graph); the in-graph bump runs BEFORE the
+            // perturb, so replay j consumes counter sctr+j — exactly the eager arm's Philox
+            // stream. Host sctr advances in lockstep (computed, no readback needed).
+            e.set_i32_one(&mut dctx.g_pos, (pos + base0) as i32)?;
+            e.set_u32_one(&mut dctx.g_tok, *last_token)?;
+            e.copy_into(&mut dctx.g_seed, 0, h_seed_buf, n_embd)?;
+            e.set_u32_one(&mut dctx.g_ctr, sctr.wrapping_sub(1))?;
+            let filtered_stats_in_graph = s_key.filtered();
+            for j in 0..k_this {
+                gr.launch()?;
+                scratch.kv.len += 1; // host mirror (len_d advanced in-graph)
+                *sctr += 1; // mirrors the in-graph g_ctr bump (eager parity:
+                // counts the p-min-discarded token too)
+                // q retention: ONE async D2D of the persistent head-logits buffer into this
+                // round's slot j (stream-ordered after the replay, before the next one).
+                e.copy_into(&mut dctx.q_slots[j], 0, &dctx.g_q, d_vocab)?;
+                // FILTERED capture: the replay's own filter_stats node already computed
+                // (th, z, mx) — read the three scalars back instead of paying a SECOND
+                // full-vocab filter_stats per slot post-chain (measured ~5% of vendor-
+                // default serving tok/s at K=3). Bit-exact by construction: these are
+                // the very values the in-graph perturb consumed. Read BEFORE the p-min
+                // break so the discarded slot's stats land too (accept-path indexing).
+                if filtered_stats_in_graph {
+                    draft_stats.push((
+                        e.dtoh(&dctx.g_mx)?[0],
+                        e.dtoh(&dctx.g_th)?[0],
+                        e.dtoh(&dctx.g_z)?[0],
+                    ));
+                }
+                let idx = e.dtoh_u32_one(&dctx.g_tok)?;
+                // #87 SENTINEL TRAP (see the greedy graph arm above).
+                if (idx as usize) >= d_vocab {
+                    let seed_h = e.dtoh(&dctx.g_seed)?;
+                    let seed_nan = seed_h.iter().filter(|v| v.is_nan()).count();
+                    return Err(format!(
+                        "draft(graph-sampled) argmax sentinel 0x{idx:08x} >= d_vocab \
+                     {d_vocab} at round {round} j={j} pos={pos}: round-seed NaN \
+                     {seed_nan}/{n_embd} — refusing to dereference the embed row \
+                     (#87 trap)"
+                    )
+                    .into());
+                }
+                let d = match &mtp.d2t {
+                    Some(map) => map[idx as usize],
+                    None => idx,
+                };
+                draft_idx.push(idx);
+                if p_min > 0.0 {
+                    let p = e.dtoh(&dctx.g_p)?[0];
+                    if spec_stops_at(p, j, p_min, pmin0 && base0 == 1) {
+                        break;
                     }
                 }
-                // PURE-TEMP accept path: fill draft_stats per used slot post-chain (the
-                // stats degenerate to th=0 / full-Z; one filter_stats launch per slot).
-                // The FILTERED graph read its stats back per replay above.
-                if !filtered_stats_in_graph {
-                    for j in 0..draft.len().max(draft_idx.len()) {
-                        let rows0 = e.htod_i32(&[0])?;
-                        let (mut th_d, mut z_d, mut mx_d) = (e.zeros(1)?, e.zeros(1)?, e.zeros(1)?);
-                        e.filter_stats(
-                            &dctx.q_slots[j],
-                            d_vocab,
-                            &rows0,
-                            &mut th_d,
-                            &mut z_d,
-                            &mut mx_d,
-                            d_vocab,
-                            1,
-                            sp_temp,
-                            sp.top_k,
-                            sp.top_p,
-                            sp.min_p,
-                        )?;
-                        draft_stats.push((e.dtoh(&mx_d)?[0], e.dtoh(&th_d)?[0], e.dtoh(&z_d)?[0]));
-                    }
+                draft.push(d);
+                // trimmed head: the NEXT embed must read the TARGET id (see the greedy arm).
+                if d != idx {
+                    e.set_u32_one(&mut dctx.g_tok, d)?;
                 }
+            }
+            // PURE-TEMP accept path: fill draft_stats per used slot post-chain (the
+            // stats degenerate to th=0 / full-Z; one filter_stats launch per slot).
+            // The FILTERED graph read its stats back per replay above.
+            if !filtered_stats_in_graph {
+                for j in 0..draft.len().max(draft_idx.len()) {
+                    let rows0 = e.htod_i32(&[0])?;
+                    let (mut th_d, mut z_d, mut mx_d) = (e.zeros(1)?, e.zeros(1)?, e.zeros(1)?);
+                    e.filter_stats(
+                        &dctx.q_slots[j],
+                        d_vocab,
+                        &rows0,
+                        &mut th_d,
+                        &mut z_d,
+                        &mut mx_d,
+                        d_vocab,
+                        1,
+                        sp_temp,
+                        sp.top_k,
+                        sp.top_p,
+                        sp.min_p,
+                    )?;
+                    draft_stats.push((e.dtoh(&mx_d)?[0], e.dtoh(&th_d)?[0], e.dtoh(&z_d)?[0]));
+                }
+            }
+        } else {
+            if skey_probe() && sampled {
+                eprintln!(
+                    "[skey] chain=eager round={round} pure_temp={} top_k={} \
+                     top_p={} min_p={} s_key_parked={:?}",
+                    pure_temp as u8, sp.top_k, sp.top_p, sp.min_p, dctx.s_key,
+                );
+            }
+            // EAGER DRAFT (fallback: MoE head/trunk, huge k, MEMRA_SPEC_NOGRAPH, capture fail).
+            let chain_heads = !self.mtp_extra.is_empty();
+            let mut e_tok = *last_token;
+            let mut d_seed = e.clone_dtod(h_seed_buf)?;
+            let mut chain_tokens = if chain_heads {
+                vec![*last_token]
             } else {
-                if skey_probe() && sampled {
-                    eprintln!(
-                        "[skey] chain=eager round={round} pure_temp={} top_k={} \
-                         top_p={} min_p={} s_key_parked={:?}",
-                        pure_temp as u8, sp.top_k, sp.top_p, sp.min_p, dctx.s_key,
-                    );
+                Vec::new()
+            };
+            let mut chain_seeds = if chain_heads {
+                vec![e.clone_dtod(h_seed_buf)?]
+            } else {
+                Vec::new()
+            };
+            for j in 0..k_this {
+                // GPU-ARGMAX DRAFT (2026-07-03): device logits + device argmax + 4-byte token
+                // read instead of the ~600KB full-vocab dtoh + host argmax per draft token.
+                let mtp_pos = pos + base0 + j;
+                // draft-side grammar mask (eager twin of the graph arm's in-graph node).
+                // A position with no legal draft-vocab row drops to unmasked drafting for
+                // the rest of the chain (pre-lane behaviour; verify still arbitrates).
+                if dmask_live {
+                    dmask_live = upload_draft_mask(
+                        e,
+                        constraint.as_deref_mut().unwrap(),
+                        &mut dctx.g_dmask,
+                        mtp.d2t.as_ref(),
+                        d_vocab,
+                        dmask_words,
+                    )?;
                 }
-                // EAGER DRAFT (fallback: MoE head/trunk, huge k, MEMRA_SPEC_NOGRAPH, capture fail).
-                let chain_heads = !self.mtp_extra.is_empty();
-                let mut e_tok = *last_token;
-                let mut d_seed = e.clone_dtod(h_seed_buf)?;
-                let mut chain_tokens = if chain_heads {
-                    vec![*last_token]
+                let mask = if dmask_live {
+                    Some((&dctx.g_dmask, dmask_words))
                 } else {
-                    Vec::new()
+                    None
                 };
-                let mut chain_seeds = if chain_heads {
-                    vec![e.clone_dtod(h_seed_buf)?]
+                let (dl_d, h_nextn) = if chain_heads {
+                    if debug_spec {
+                        eprintln!(
+                            "[mtp-chain-step] round={round} j={j} head={} replay_rows={}",
+                            mtp_chain_head_index(j, self.mtp_head_count()),
+                            chain_tokens.len(),
+                        );
+                    }
+                    self.mtp_chain_forward_dev(
+                        e,
+                        &chain_tokens,
+                        &chain_seeds,
+                        &mut *scratch,
+                        pos + base0 - 1,
+                        embd_dev,
+                        mask,
+                    )?
                 } else {
-                    Vec::new()
+                    self.mtp_head_forward_dev(
+                        e,
+                        mtp,
+                        e_tok,
+                        &d_seed,
+                        &mut *scratch,
+                        mtp_pos,
+                        embd_dev,
+                        mask,
+                    )?
                 };
-                for j in 0..k_this {
-                    // GPU-ARGMAX DRAFT (2026-07-03): device logits + device argmax + 4-byte token
-                    // read instead of the ~600KB full-vocab dtoh + host argmax per draft token.
-                    let mtp_pos = pos + base0 + j;
-                    // draft-side grammar mask (eager twin of the graph arm's in-graph node).
-                    // A position with no legal draft-vocab row drops to unmasked drafting for
-                    // the rest of the chain (pre-lane behaviour; verify still arbitrates).
-                    if dmask_live {
-                        dmask_live = upload_draft_mask(
-                            e,
-                            constraint.as_deref_mut().unwrap(),
-                            &mut dctx.g_dmask,
-                            mtp.d2t.as_ref(),
+                let tok_d = if sampled {
+                    // FILTERED Gumbel-max: stats -> masked perturb -> argmax = one draw from
+                    // the filtered softmax (filters off => th=0, exact v1 semantics).
+                    if perturb_buf.is_none() {
+                        *perturb_buf = Some(e.zeros(d_vocab.max(n_vocab))?);
+                    }
+                    let mut q_row = e.clone_dtod(&dl_d)?; // retained q (penalized when on)
+                    if pen_on {
+                        let h = pen_hist_d.as_ref().unwrap();
+                        let nh = h.len();
+                        e.penalize_logits(
+                            &mut q_row,
+                            h,
+                            nh,
+                            sp.penalty_repeat,
+                            sp.penalty_freq,
+                            sp.penalty_present,
                             d_vocab,
-                            dmask_words,
                         )?;
                     }
-                    let mask = if dmask_live {
-                        Some((&dctx.g_dmask, dmask_words))
+                    let rows0 = e.htod_i32(&[0])?;
+                    let (mut th_d, mut z_d, mut mx_d) = (e.zeros(1)?, e.zeros(1)?, e.zeros(1)?);
+                    e.filter_stats(
+                        &q_row, d_vocab, &rows0, &mut th_d, &mut z_d, &mut mx_d, d_vocab, 1,
+                        sp_temp, sp.top_k, sp.top_p, sp.min_p,
+                    )?;
+                    let (th, z, mx) = (e.dtoh(&th_d)?[0], e.dtoh(&z_d)?[0], e.dtoh(&mx_d)?[0]);
+                    let pb = perturb_buf.as_mut().unwrap();
+                    e.gumbel_perturb_filtered(
+                        &q_row, pb, d_vocab, sp_seed, *sctr, sp_temp, mx, th,
+                    )?;
+                    *sctr += 1;
+                    draft_logits.push(q_row);
+                    draft_stats.push((mx, th, z));
+                    e.argmax_token_device(pb, d_vocab)?
+                } else {
+                    e.argmax_token_device(&dl_d, d_vocab)?
+                };
+                let idx = e.dtoh_u32_one(&tok_d)?;
+                // #87 SENTINEL TRAP (eager twin — see the graph arm). Extra diagnostics
+                // here because the eager chain's operands are all readable: dl_d (the head
+                // logits row) and d_seed (this step's h_seed) name the first-NaN buffer.
+                if (idx as usize) >= d_vocab {
+                    let dl_h = e.dtoh(&dl_d)?;
+                    let dl_nan = dl_h.iter().filter(|v| v.is_nan()).count();
+                    let seed_h = if chain_heads {
+                        e.dtoh(chain_seeds.last().unwrap())?
                     } else {
-                        None
+                        e.dtoh(&d_seed)?
                     };
-                    let (dl_d, h_nextn) = if chain_heads {
-                        if debug_spec {
-                            eprintln!(
-                                "[mtp-chain-step] round={round} j={j} head={} replay_rows={}",
-                                mtp_chain_head_index(j, self.mtp_head_count()),
-                                chain_tokens.len(),
-                            );
-                        }
-                        self.mtp_chain_forward_dev(
-                            e,
-                            &chain_tokens,
-                            &chain_seeds,
-                            &mut *scratch,
-                            pos + base0 - 1,
-                            embd_dev,
-                            mask,
-                        )?
+                    let seed_nan = seed_h.iter().filter(|v| v.is_nan()).count();
+                    return Err(format!(
+                        "draft(eager) argmax sentinel 0x{idx:08x} >= d_vocab {d_vocab} at \
+                     round {round} j={j} pos={pos}: head-logits NaN {dl_nan}/{d_vocab}, \
+                     step-seed NaN {seed_nan}/{n_embd} — refusing to dereference the \
+                     embed row (#87 trap)"
+                    )
+                    .into());
+                }
+                let d = match &mtp.d2t {
+                    Some(map) => map[idx as usize],
+                    None => idx,
+                };
+                if sampled {
+                    draft_idx.push(idx);
+                }
+                // p-min statistic: greedy = the pick's probability (== the row max);
+                // sampled = the row max, draw-independent (memra#673).
+                let draft_p = if p_min > 0.0 {
+                    let p_d = if sampled {
+                        e.max_prob_device(&dl_d, d_vocab)?
                     } else {
-                        self.mtp_head_forward_dev(
-                            e,
-                            mtp,
-                            e_tok,
-                            &d_seed,
-                            &mut *scratch,
-                            mtp_pos,
-                            embd_dev,
-                            mask,
-                        )?
+                        e.prob_of_token_device(&dl_d, &tok_d, d_vocab)?
                     };
-                    let tok_d = if sampled {
-                        // FILTERED Gumbel-max: stats -> masked perturb -> argmax = one draw from
-                        // the filtered softmax (filters off => th=0, exact v1 semantics).
-                        if perturb_buf.is_none() {
-                            *perturb_buf = Some(e.zeros(d_vocab.max(n_vocab))?);
-                        }
-                        let mut q_row = e.clone_dtod(&dl_d)?; // retained q (penalized when on)
-                        if pen_on {
-                            let h = pen_hist_d.as_ref().unwrap();
-                            let nh = h.len();
-                            e.penalize_logits(
-                                &mut q_row,
-                                h,
-                                nh,
-                                sp.penalty_repeat,
-                                sp.penalty_freq,
-                                sp.penalty_present,
-                                d_vocab,
-                            )?;
-                        }
-                        let rows0 = e.htod_i32(&[0])?;
-                        let (mut th_d, mut z_d, mut mx_d) = (e.zeros(1)?, e.zeros(1)?, e.zeros(1)?);
-                        e.filter_stats(
-                            &q_row, d_vocab, &rows0, &mut th_d, &mut z_d, &mut mx_d, d_vocab, 1,
-                            sp_temp, sp.top_k, sp.top_p, sp.min_p,
-                        )?;
-                        let (th, z, mx) = (e.dtoh(&th_d)?[0], e.dtoh(&z_d)?[0], e.dtoh(&mx_d)?[0]);
-                        let pb = perturb_buf.as_mut().unwrap();
-                        e.gumbel_perturb_filtered(
-                            &q_row, pb, d_vocab, sp_seed, *sctr, sp_temp, mx, th,
-                        )?;
-                        *sctr += 1;
-                        draft_logits.push(q_row);
-                        draft_stats.push((mx, th, z));
-                        e.argmax_token_device(pb, d_vocab)?
-                    } else {
-                        e.argmax_token_device(&dl_d, d_vocab)?
-                    };
-                    let idx = e.dtoh_u32_one(&tok_d)?;
-                    // #87 SENTINEL TRAP (eager twin — see the graph arm). Extra diagnostics
-                    // here because the eager chain's operands are all readable: dl_d (the head
-                    // logits row) and d_seed (this step's h_seed) name the first-NaN buffer.
-                    if (idx as usize) >= d_vocab {
-                        let dl_h = e.dtoh(&dl_d)?;
-                        let dl_nan = dl_h.iter().filter(|v| v.is_nan()).count();
-                        let seed_h = if chain_heads {
-                            e.dtoh(chain_seeds.last().unwrap())?
-                        } else {
-                            e.dtoh(&d_seed)?
-                        };
-                        let seed_nan = seed_h.iter().filter(|v| v.is_nan()).count();
-                        return Err(format!(
-                            "draft(eager) argmax sentinel 0x{idx:08x} >= d_vocab {d_vocab} at \
-                         round {round} j={j} pos={pos}: head-logits NaN {dl_nan}/{d_vocab}, \
-                         step-seed NaN {seed_nan}/{n_embd} — refusing to dereference the \
-                         embed row (#87 trap)"
-                        )
-                        .into());
-                    }
-                    let d = match &mtp.d2t {
-                        Some(map) => map[idx as usize],
-                        None => idx,
-                    };
-                    if sampled {
-                        draft_idx.push(idx);
-                    }
-                    // p-min statistic: greedy = the pick's probability (== the row max);
-                    // sampled = the row max, draw-independent (memra#673).
-                    let draft_p = if p_min > 0.0 {
-                        let p_d = if sampled {
-                            e.max_prob_device(&dl_d, d_vocab)?
-                        } else {
-                            e.prob_of_token_device(&dl_d, &tok_d, d_vocab)?
-                        };
-                        Some(e.dtoh(&p_d)?[0])
-                    } else {
-                        None
-                    };
-                    if let Some(p) = draft_p
-                        && spec_stops_at(p, j, p_min, pmin0 && base0 == 1)
-                    {
-                        break;
-                    }
-                    draft.push(d);
-                    if chain_heads {
-                        chain_tokens.push(d);
-                        chain_seeds.push(h_nextn);
-                    } else {
-                        e_tok = d;
-                        d_seed = h_nextn;
-                    }
-                    // speculative advance; a chain the grammar can no longer follow (EOS
-                    // proposed) ends here — the prefix already proposed still rides verify.
-                    if dmask_live
-                        && !constraint
-                            .as_deref_mut()
-                            .unwrap()
-                            .draft_advance(d)
-                            .map_err(|e2| format!("constraint: {e2}"))?
-                    {
-                        break;
-                    }
+                    Some(e.dtoh(&p_d)?[0])
+                } else {
+                    None
+                };
+                if let Some(p) = draft_p
+                    && spec_stops_at(p, j, p_min, pmin0 && base0 == 1)
+                {
+                    break;
+                }
+                draft.push(d);
+                if chain_heads {
+                    chain_tokens.push(d);
+                    chain_seeds.push(h_nextn);
+                } else {
+                    e_tok = d;
+                    d_seed = h_nextn;
+                }
+                // speculative advance; a chain the grammar can no longer follow (EOS
+                // proposed) ends here — the prefix already proposed still rides verify.
+                if dmask_live
+                    && !constraint
+                        .as_deref_mut()
+                        .unwrap()
+                        .draft_advance(d)
+                        .map_err(|e2| format!("constraint: {e2}"))?
+                {
+                    break;
                 }
             }
         }
+        dr.dmask_live = dmask_live;
+        dr.draft = draft;
+        dr.draft_idx = draft_idx;
+        Ok(())
+    }
+
+    /// The post-draft tail of `spec_round_prepare`: the verify tokens (a pending bonus rides as
+    /// column 0 ahead of the drafts) and the replay-free checkpoint.
+    fn spec_round_draft_end(
+        &self,
+        rs: &mut SpecRoundState<'_, '_>,
+        dr: SpecDraftRound,
+    ) -> SpecRoundPrep {
+        let SpecRoundCfg {
+            spec_replay,
+            stream_active,
+            vg_t_cap,
+            pp_split,
+            phase_on,
+            ..
+        } = rs.cfg;
+        let SpecRoundState {
+            pending,
+            ph_draft,
+            ph_t,
+            ..
+        } = rs;
+        let SpecDraftRound {
+            pos,
+            graph_round_ok,
+            round_t0,
+            draft,
+            draft_idx,
+            ..
+        } = dr;
         let k_round = draft.len();
 
         ph_mark(ph_t, ph_draft, phase_on);
@@ -15354,7 +15874,7 @@ impl HybridModel {
         };
         let poolable =
             !(verify_tokens.len() <= vg_t_cap && graph_round_ok) && !stream_active && !pp_split;
-        Ok(SpecRoundPrep {
+        SpecRoundPrep {
             verify_tokens,
             pos,
             ckpt,
@@ -15365,7 +15885,709 @@ impl HybridModel {
             draft_idx,
             k_round,
             base,
-        })
+        }
+    }
+
+    /// The serial draft arm a round would take, when the pooled rows draft can run it instead
+    /// (`spec_round_draft_pooled`). `None` keeps the round on `spec_round_draft_serial`: a
+    /// multi-head chain, a draft-side grammar mask, or a head the rows forward does not mirror
+    /// (`mtp_rows_draft_capable`).
+    fn pooled_draft_arm(
+        &self,
+        e: &Engine,
+        rs: &SpecRoundState<'_, '_>,
+        dr: &SpecDraftRound,
+    ) -> Option<PooledDraftArm> {
+        let c = rs.cfg;
+        if !self.mtp_extra.is_empty()
+            || rs.dctx.chain.is_some()
+            || rs.dctx.chain_s.is_some()
+            || c.dmask_on
+            || dr.dmask_live
+            || rs.scratch.plane_count() != 1
+            || rs.scratch.kv.ring.is_some()
+            || !self.mtp_rows_draft_capable(e, c.mtp)
+        {
+            return None;
+        }
+        // The serial arm order of `spec_round_draft_serial` (the chain arms are excluded above).
+        if !(c.sampled || c.pen_on || !dr.graph_round_ok) && rs.dctx.graph.is_some() {
+            return Some(PooledDraftArm::GraphGreedy);
+        }
+        if c.sampled
+            && c.s_capturable
+            && rs.dctx.s_key == Some(c.s_key)
+            && dr.graph_round_ok
+            && rs.dctx.graph_s.is_some()
+        {
+            return Some(PooledDraftArm::GraphSampled);
+        }
+        Some(PooledDraftArm::Eager)
+    }
+
+    /// Whether `mtp_head_forward_rows` mirrors this head's serial step: the single-head
+    /// full-attention NextN block with a dense FFN, no step35 geometry, gate or AWQ scale, and
+    /// every projection on the exact small-m matvec tier, whose rows at m=2..16 are the m=1
+    /// decode program bit for bit (the verify==decode identity the pooled verify rests on).
+    fn mtp_rows_draft_capable(&self, e: &Engine, mtp: &MtpHead) -> bool {
+        use crate::model::GpuTensor;
+        let tier = |w: &GpuTensor| match w {
+            GpuTensor::Quant { qtype, .. } => e.batched_supports(*qtype) && e.mmvq_supports(*qtype),
+            _ => false,
+        };
+        let attn_ok = match &mtp.mixer {
+            Mixer::Full(fa) => {
+                fa.wo_pqs.is_none()
+                    && fa.attn_gate.is_none()
+                    && tier(&fa.wq)
+                    && tier(&fa.wk)
+                    && tier(&fa.wv)
+                    && tier(&fa.wo)
+            }
+            _ => false,
+        };
+        let ffn_ok = match &mtp.ffn {
+            crate::hybrid::Ffn::Dense {
+                ffn_gate,
+                ffn_up,
+                ffn_down,
+                ffn_down_pqs,
+            } => ffn_down_pqs.is_none() && tier(ffn_gate) && tier(ffn_up) && tier(ffn_down),
+            crate::hybrid::Ffn::Moe(_) => false,
+        };
+        let head = mtp.shared_head_head.as_ref().unwrap_or(&self.output);
+        std::env::var("MEMRA_FAST").as_deref() != Ok("0")
+            && std::env::var("MEMRA_NO_BATCHED").is_err()
+            && Engine::b8_enabled()
+            && self.cfg.m3.is_none()
+            && mtp.step35.is_none()
+            && attn_ok
+            && ffn_ok
+            && tier(&mtp.eh_proj)
+            && tier(head)
+            && mtp.geom.as_ref().is_none_or(|g| tier(&g.out_up))
+    }
+
+    /// The NextN head forward over `b` draft rows of DIFFERENT sessions in one pass: the op
+    /// chain of `mtp_head_forward_dev_at` / `mtp_head_forward_cap` at m=b. Row-wise kernels and
+    /// the exact small-m matvec tier read the shared weights once for all rows; the attention
+    /// core (the device-counter append and `fa_decode_dc`) runs per row on that row's own draft
+    /// scratch with the serial launcher and bucket, so each session attends over its own KV.
+    /// Advances each row's draft-KV length (device counter and host mirror) by one, as a serial
+    /// step does. Returns the `[b, d_vocab]` head logits and the `[b, n_embd]` chain carriers.
+    /// Caller: `mtp_rows_draft_capable(mtp)`, b <= 16, single flat plane per scratch.
+    #[allow(clippy::too_many_arguments)] // allow: one argument per per-row input of the step
+    fn mtp_head_forward_rows(
+        &self,
+        e: &Engine,
+        mtp: &MtpHead,
+        toks: &[u32],
+        seeds: &CudaSlice<f32>,
+        pos: &[i32],
+        scratches: &mut [&mut MtpScratch],
+        embd_dev: Option<(&CudaSlice<u8>, i32, usize)>,
+    ) -> Result<(CudaSlice<f32>, CudaSlice<f32>), Box<dyn std::error::Error>> {
+        let b = toks.len();
+        assert!(
+            b == pos.len() && b == scratches.len() && (1..=16).contains(&b),
+            "rows draft: one token, position and scratch per row, 1..=16 rows"
+        );
+        let Mixer::Full(fa) = &mtp.mixer else {
+            return Err("rows draft: the MTP block is not full attention".into());
+        };
+        let cfg = &self.cfg;
+        let n_embd = cfg.n_embd as usize;
+        let di = mtp.geom.as_ref().map(|g| g.d_inner).unwrap_or(n_embd);
+        let eps = cfg.rms_eps;
+        // b = 16 rides the exact tier only inside the verify scope; below 16 it changes nothing.
+        let _exact = e.exact_scope(true);
+        let pos_d = e.htod_i32(pos)?;
+
+        // ops A/1/2/3: embed, the two input norms, per-row [e_norm ; h_norm].
+        let e_emb = match embd_dev {
+            Some((g, qt, rb)) => e.embed_gather_device_t(g, toks, n_embd, qt, rb)?,
+            None => e.htod(&self.embd.try_gather(n_embd, toks)?)?,
+        };
+        let mut e_norm = e.zeros(b * n_embd)?;
+        e.rms_norm(&e_emb, mtp.enorm.float_data(), &mut e_norm, n_embd, b, eps)?;
+        let mut h_norm = e.zeros(b * n_embd)?;
+        e.rms_norm(seeds, mtp.hnorm.float_data(), &mut h_norm, n_embd, b, eps)?;
+        let mut concat = e.zeros(b * 2 * n_embd)?;
+        for i in 0..b {
+            e.copy_view_into(
+                &mut concat,
+                i * 2 * n_embd,
+                &e_norm.slice(i * n_embd..(i + 1) * n_embd),
+                n_embd,
+            )?;
+            e.copy_view_into(
+                &mut concat,
+                i * 2 * n_embd + n_embd,
+                &h_norm.slice(i * n_embd..(i + 1) * n_embd),
+                n_embd,
+            )?;
+        }
+        // ops 4/5: eh_proj + attn_norm.
+        let inp_sa = e.matmul(&mtp.eh_proj, &concat, b)?;
+        let mut a_norm = e.zeros(b * di)?;
+        e.rms_norm(&inp_sa, mtp.attn_norm.float_data(), &mut a_norm, di, b, eps)?;
+
+        // op 6: `mtp_full_attn_dc` at m=b.
+        let mtp_il = cfg.n_layer.saturating_sub(cfg.nextn_predict_layers);
+        let geometry = cfg.full_attention_geometry_at(mtp_il);
+        let geom = mtp.geom.as_ref();
+        let n_head = geom.map(|g| g.n_head).unwrap_or(geometry.n_head as usize);
+        let n_head_kv = geom
+            .map(|g| g.n_head_kv)
+            .unwrap_or(geometry.n_head_kv as usize);
+        let head_dim = geometry.head_dim_k as usize;
+        let scale = geometry.attention_scale();
+        let (qf, k, v) =
+            if e.uses_q8_1_fast(&fa.wq) && e.uses_q8_1_fast(&fa.wk) && e.uses_q8_1_fast(&fa.wv) {
+                let (hq, hd) = e.quantize_q8_1(&a_norm, b, di)?;
+                (
+                    e.matmul_pre(&fa.wq, &hq, &hd, &a_norm, b)?,
+                    e.matmul_pre(&fa.wk, &hq, &hd, &a_norm, b)?,
+                    e.matmul_pre(&fa.wv, &hq, &hd, &a_norm, b)?,
+                )
+            } else {
+                (
+                    e.matmul(&fa.wq, &a_norm, b)?,
+                    e.matmul(&fa.wk, &a_norm, b)?,
+                    e.matmul(&fa.wv, &a_norm, b)?,
+                )
+            };
+        let qd = n_head * head_dim;
+        let kd = k.len() / b;
+        let vd = v.len() / b;
+        let gated = geometry.attention_gate == memra_gguf::config::AttentionGateKind::FusedQ;
+        let (q, gate) = if gated {
+            let mut q = e.zeros(b * qd)?;
+            let mut gate = e.zeros(b * qd)?;
+            e.q_gate_split(&qf, &mut q, &mut gate, head_dim, n_head, b)?;
+            (q, Some(gate))
+        } else {
+            (qf, None)
+        };
+        let mut q_n = e.zeros(b * qd)?;
+        e.rms_norm_opt(&q, fa.q_norm_w(), &mut q_n, head_dim, n_head * b, eps)?;
+        let mut k_n = e.zeros(b * n_head_kv * head_dim)?;
+        e.rms_norm_opt(&k, fa.k_norm_w(), &mut k_n, head_dim, n_head_kv * b, eps)?;
+        let rope_dims = geometry.n_rot as usize;
+        e.rope_neox(
+            &mut q_n,
+            &pos_d,
+            head_dim,
+            rope_dims,
+            n_head,
+            b,
+            geometry.rope_base,
+            1.0,
+        )?;
+        e.rope_neox(
+            &mut k_n,
+            &pos_d,
+            head_dim,
+            rope_dims,
+            n_head_kv,
+            b,
+            geometry.rope_base,
+            1.0,
+        )?;
+        let mut attn = e.zeros(b * qd)?;
+        for (i, scratch) in scratches.iter_mut().enumerate() {
+            let mut q_i = e.uninit(qd)?;
+            e.dtod_copy_view(&q_n.slice(i * qd..(i + 1) * qd), &mut q_i)?;
+            let mut k_i = e.uninit(kd)?;
+            e.dtod_copy_view(&k_n.slice(i * kd..(i + 1) * kd), &mut k_i)?;
+            let mut v_i = e.uninit(vd)?;
+            e.dtod_copy_view(&v.slice(i * vd..(i + 1) * vd), &mut v_i)?;
+            let bucket_max = scratch.plane(0).1;
+            let kv = scratch.plane_mut(0).0;
+            e.append_kv_quantized_dc(
+                &k_i,
+                &v_i,
+                &mut kv.k,
+                &mut kv.v,
+                &kv.len_d,
+                kv.kv_dim_k,
+                kv.kv_dim_v,
+                kv.k_tok_bytes,
+                kv.v_tok_bytes,
+                false,
+            )?;
+            e.inc_seqlen(&mut kv.len_d)?;
+            let k_view = e.view_u8(&kv.k, kv.k.len());
+            let v_view = e.view_u8(&kv.v, kv.v.len());
+            let (ktb, vtb) = (kv.k_tok_bytes, kv.v_tok_bytes);
+            let mut attn_i = e.zeros(qd)?;
+            e.fa_decode_dc(
+                &q_i,
+                &k_view,
+                &v_view,
+                &mut attn_i,
+                head_dim,
+                n_head,
+                n_head_kv,
+                &kv.len_d,
+                bucket_max,
+                scale,
+                ktb,
+                vtb,
+                false,
+            )?;
+            e.copy_into(&mut attn, i * qd, &attn_i, qd)?;
+            // host mirror of the device-counter append (both serial draft arms do the same)
+            kv.len += 1;
+        }
+        let attn_g = match &gate {
+            Some(gate) => {
+                let mut gsig = e.zeros(b * qd)?;
+                e.sigmoid(gate, &mut gsig, b * qd)?;
+                let mut ag = e.zeros(b * qd)?;
+                e.mul(&attn, &gsig, &mut ag, b * qd)?;
+                ag
+            }
+            None => attn,
+        };
+        let attn_out = e.matmul(&fa.wo, &attn_g, b)?;
+
+        // ops 7/8/9: residual, pre-FFN norm, dense FFN.
+        let mut x1 = e.zeros(b * di)?;
+        e.add(&inp_sa, &attn_out, &mut x1, b * di)?;
+        let mut z = e.zeros(b * di)?;
+        e.rms_norm(&x1, mtp.post_attn_norm.float_data(), &mut z, di, b, eps)?;
+        let crate::hybrid::Ffn::Dense {
+            ffn_gate,
+            ffn_up,
+            ffn_down,
+            ..
+        } = &mtp.ffn
+        else {
+            return Err("rows draft: the MTP block FFN is not dense".into());
+        };
+        let n_ff = ffn_gate.out_features();
+        let (g_out, u_out) = if e.uses_q8_1_fast(ffn_gate) && e.uses_q8_1_fast(ffn_up) {
+            let (zq, zd) = e.quantize_q8_1(&z, b, di)?;
+            (
+                e.matmul_pre(ffn_gate, &zq, &zd, &z, b)?,
+                e.matmul_pre(ffn_up, &zq, &zd, &z, b)?,
+            )
+        } else {
+            (e.matmul(ffn_gate, &z, b)?, e.matmul(ffn_up, &z, b)?)
+        };
+        let mut act = e.zeros(b * n_ff)?;
+        Self::ffn_act_lim(
+            e,
+            &self.cfg,
+            &g_out,
+            &u_out,
+            1.0,
+            1.0,
+            mtp.step35
+                .as_ref()
+                .and_then(|s| s.clamp_shexp)
+                .map(SwigluClamp::Post),
+            &mut act,
+            b * n_ff,
+        )?;
+        let ffn_out = e.matmul(ffn_down, &act, b)?;
+
+        // ops 10/10.5/11/12: carrier, student up-projection, head norm, head.
+        let mut h_inner = e.zeros(b * di)?;
+        e.add(&x1, &ffn_out, &mut h_inner, b * di)?;
+        let h_nextn = match mtp.geom.as_ref() {
+            Some(g) => e.matmul(&g.out_up, &h_inner, b)?,
+            None => h_inner,
+        };
+        let final_norm = mtp.shared_head_norm.as_ref().unwrap_or(&self.output_norm);
+        let mut final_h = e.zeros(b * n_embd)?;
+        e.rms_norm(
+            &h_nextn,
+            final_norm.float_data(),
+            &mut final_h,
+            n_embd,
+            b,
+            eps,
+        )?;
+        let head = mtp.shared_head_head.as_ref().unwrap_or(&self.output);
+        let logits = e.matmul(head, &final_h, b)?;
+        Ok((logits, if spec_hpost() { final_h } else { h_nextn }))
+    }
+
+    /// One round's drafts for several sessions at once (lane/batch-spec step 3). Draft step j
+    /// runs ONE NextN head forward over the rows of the members still drafting at step j
+    /// (`mtp_head_forward_rows`), so the head's weights stream once per step instead of once per
+    /// session. Ragged K: a member leaves after its own `k_this`, at its p-min stop, or on its
+    /// own sentinel error. Each member's tail runs the kernels of its serial arm
+    /// (`PooledDraftArm`) on its own logits row and its own draft context: the same draft tokens,
+    /// q rows, filter stats, Philox counter, p-min decisions and draft-KV rows as its serial
+    /// draft, bit for bit. Returns one result per member; a failed shared forward fails every
+    /// member still drafting at that step. At most 16 members.
+    fn spec_round_draft_pooled(
+        &self,
+        e: &Engine,
+        members: &mut [PooledDraftMember<'_, '_, '_>],
+    ) -> Vec<Result<(), Box<dyn std::error::Error>>> {
+        let n = members.len();
+        assert!((1..=16).contains(&n), "pooled draft: 1..=16 members");
+        // Engagement receipt, once per member count (the dead-arm lesson).
+        static SEEN: AtomicU64 = AtomicU64::new(0);
+        let bit = 1u64 << n;
+        if SEEN.fetch_or(bit, Ordering::Relaxed) & bit == 0 {
+            let arms: Vec<PooledDraftArm> = members.iter().map(|m| m.arm).collect();
+            eprintln!("[spec-pool] pooled rows draft engaged: {n} members (arms {arms:?})");
+        }
+        let mut res: Vec<Result<(), Box<dyn std::error::Error>>> = (0..n).map(|_| Ok(())).collect();
+        let SpecRoundCfg {
+            n_embd,
+            mtp,
+            embd_dev,
+            ..
+        } = members[0].rs.cfg;
+        // Round setup of the serial arms that runs before their first step: the sampled
+        // graph seeds its device Philox counter from the session's once per round.
+        for m in members.iter_mut() {
+            if m.arm == PooledDraftArm::GraphSampled
+                && let Err(err) = e.set_u32_one(&mut m.rs.dctx.g_ctr, m.rs.sctr.wrapping_sub(1))
+            {
+                return (0..n)
+                    .map(|_| Err(format!("pooled draft setup: {err}").into()))
+                    .collect();
+            }
+        }
+        let mut live: Vec<bool> = vec![true; n];
+        let mut toks: Vec<u32> = members.iter().map(|m| m.rs.last_token).collect();
+        let mut prev: Option<(CudaSlice<f32>, Vec<usize>)> = None;
+        for j in 0.. {
+            let rows: Vec<usize> = (0..n)
+                .filter(|&i| live[i] && j < members[i].dr.k_this)
+                .collect();
+            if rows.is_empty() {
+                break;
+            }
+            let step =
+                (|| -> Result<(CudaSlice<f32>, CudaSlice<f32>), Box<dyn std::error::Error>> {
+                    // The rows' chain carriers: the round seed at j=0, else last step's carriers.
+                    let seeds = match prev.take() {
+                        Some((h, order)) if order == rows => h,
+                        Some((h, order)) => {
+                            let mut s = e.uninit(rows.len() * n_embd)?;
+                            for (r, i) in rows.iter().enumerate() {
+                                let at = order
+                                    .iter()
+                                    .position(|o| o == i)
+                                    .expect("row drafted last step");
+                                e.copy_view_into(
+                                    &mut s,
+                                    r * n_embd,
+                                    &h.slice(at * n_embd..(at + 1) * n_embd),
+                                    n_embd,
+                                )?;
+                            }
+                            s
+                        }
+                        None => {
+                            let mut s = e.uninit(rows.len() * n_embd)?;
+                            for (r, &i) in rows.iter().enumerate() {
+                                e.copy_into(&mut s, r * n_embd, &members[i].rs.h_seed_buf, n_embd)?;
+                            }
+                            s
+                        }
+                    };
+                    let step_toks: Vec<u32> = rows.iter().map(|&i| toks[i]).collect();
+                    let pos: Vec<i32> = rows
+                        .iter()
+                        .map(|&i| (members[i].dr.pos + members[i].dr.base0 + j) as i32)
+                        .collect();
+                    let mut scratches: Vec<&mut MtpScratch> = members
+                        .iter_mut()
+                        .enumerate()
+                        .filter(|(i, _)| rows.contains(i))
+                        .map(|(_, m)| &mut *m.rs.scratch)
+                        .collect();
+                    self.mtp_head_forward_rows(
+                        e,
+                        mtp,
+                        &step_toks,
+                        &seeds,
+                        &pos,
+                        &mut scratches,
+                        embd_dev,
+                    )
+                })();
+            let (logits, carriers) = match step {
+                Ok(v) => v,
+                Err(err) => {
+                    let msg = err.to_string();
+                    for &i in &rows {
+                        res[i] = Err(format!("pooled draft step {j}: {msg}").into());
+                        live[i] = false;
+                    }
+                    break;
+                }
+            };
+            for (r, &i) in rows.iter().enumerate() {
+                match self.pooled_draft_tail(e, &mut members[i], j, &logits, r) {
+                    Ok(Some(d)) => toks[i] = d,
+                    Ok(None) => live[i] = false,
+                    Err(err) => {
+                        res[i] = Err(err);
+                        live[i] = false;
+                    }
+                }
+            }
+            prev = Some((carriers, rows));
+        }
+        // PURE-TEMP sampled graph: stats per used slot post-chain, the serial arm's program.
+        for (i, m) in members.iter_mut().enumerate() {
+            if res[i].is_ok()
+                && m.arm == PooledDraftArm::GraphSampled
+                && !m.rs.cfg.s_key.filtered()
+                && let Err(err) = Self::pooled_draft_post_stats(e, m)
+            {
+                res[i] = Err(err);
+            }
+        }
+        res
+    }
+
+    /// The serial graph-sampled arm's post-chain stats for the pure-temp capture (one
+    /// `filter_stats` per used q slot).
+    fn pooled_draft_post_stats(
+        e: &Engine,
+        m: &mut PooledDraftMember<'_, '_, '_>,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let SpecRoundCfg {
+            d_vocab,
+            sp,
+            sp_temp,
+            ..
+        } = m.rs.cfg;
+        for j in 0..m.dr.draft.len().max(m.dr.draft_idx.len()) {
+            let rows0 = e.htod_i32(&[0])?;
+            let (mut th_d, mut z_d, mut mx_d) = (e.zeros(1)?, e.zeros(1)?, e.zeros(1)?);
+            e.filter_stats(
+                &m.rs.dctx.q_slots[j],
+                d_vocab,
+                &rows0,
+                &mut th_d,
+                &mut z_d,
+                &mut mx_d,
+                d_vocab,
+                1,
+                sp_temp,
+                sp.top_k,
+                sp.top_p,
+                sp.min_p,
+            )?;
+            m.rs.draft_stats
+                .push((e.dtoh(&mx_d)?[0], e.dtoh(&th_d)?[0], e.dtoh(&z_d)?[0]));
+        }
+        Ok(())
+    }
+
+    /// One member's step-j tail over its row `r` of the pooled head logits: the post-head
+    /// kernels and host bookkeeping of its serial arm. `Some(d)` = the member drafted target
+    /// token `d` and continues; `None` = its p-min stop (the step's KV append stands, as in
+    /// the serial chain).
+    fn pooled_draft_tail(
+        &self,
+        e: &Engine,
+        m: &mut PooledDraftMember<'_, '_, '_>,
+        j: usize,
+        logits: &CudaSlice<f32>,
+        r: usize,
+    ) -> Result<Option<u32>, Box<dyn std::error::Error>> {
+        let SpecRoundCfg {
+            d_vocab,
+            n_vocab,
+            mtp,
+            sp,
+            sp_temp,
+            sp_seed,
+            sampled,
+            pen_on,
+            p_min,
+            pmin0,
+            s_key,
+            ..
+        } = m.rs.cfg;
+        let SpecRoundState {
+            dctx,
+            round,
+            sctr,
+            pen_hist_d,
+            draft_logits,
+            draft_stats,
+            perturb_buf,
+            ..
+        } = &mut *m.rs;
+        let SpecDraftRound {
+            pos,
+            base0,
+            ref mut draft,
+            ref mut draft_idx,
+            ..
+        } = *m.dr;
+        let mut row = e.uninit(d_vocab)?;
+        e.dtod_copy_view(&logits.slice(r * d_vocab..(r + 1) * d_vocab), &mut row)?;
+        let stop = |p: f32| spec_stops_at(p, j, p_min, pmin0 && base0 == 1);
+        let sentinel = |idx: u32, arm: &str| -> Box<dyn std::error::Error> {
+            format!(
+                "draft(pooled-{arm}) argmax sentinel 0x{idx:08x} >= d_vocab {d_vocab} at round \
+                 {round} j={j} pos={pos}: refusing to dereference the embed row (#87 trap)"
+            )
+            .into()
+        };
+        let map = |idx: u32| match &mtp.d2t {
+            Some(map) => map[idx as usize],
+            None => idx,
+        };
+        match m.arm {
+            // `mtp_head_forward_cap`'s greedy tail: in-graph argmax (+ the pick's probability).
+            PooledDraftArm::GraphGreedy => {
+                e.argmax_token_device_into(&row, &mut dctx.g_tok, d_vocab)?;
+                if p_min > 0.0 {
+                    e.prob_of_token_device_into(&row, &dctx.g_tok, &mut dctx.g_p, d_vocab)?;
+                }
+                let idx = e.dtoh_u32_one(&dctx.g_tok)?;
+                if (idx as usize) >= d_vocab {
+                    return Err(sentinel(idx, "graph"));
+                }
+                let d = map(idx);
+                if p_min > 0.0 && stop(e.dtoh(&dctx.g_p)?[0]) {
+                    return Ok(None);
+                }
+                draft.push(d);
+                Ok(Some(d))
+            }
+            // `mtp_head_forward_cap`'s sampled tail: q retention, device counter bump,
+            // (filtered) gumbel draw, argmax (+ the raw row max).
+            PooledDraftArm::GraphSampled => {
+                let filtered = s_key.filtered();
+                e.copy_into(&mut dctx.q_slots[j], 0, &row, d_vocab)?;
+                e.sctr_inc(&mut dctx.g_ctr)?;
+                if filtered {
+                    e.filter_stats(
+                        &row,
+                        d_vocab,
+                        &dctx.g_rows0,
+                        &mut dctx.g_th,
+                        &mut dctx.g_z,
+                        &mut dctx.g_mx,
+                        d_vocab,
+                        1,
+                        sp_temp,
+                        sp.top_k,
+                        sp.top_p,
+                        sp.min_p,
+                    )?;
+                    e.gumbel_perturb_filtered_ctr(
+                        &row,
+                        &mut dctx.g_perturb,
+                        d_vocab,
+                        sp_seed,
+                        &dctx.g_ctr,
+                        sp_temp,
+                        &dctx.g_mx,
+                        &dctx.g_th,
+                    )?;
+                } else {
+                    e.gumbel_perturb_ctr(
+                        &row,
+                        &mut dctx.g_perturb,
+                        d_vocab,
+                        sp_seed,
+                        &dctx.g_ctr,
+                        sp_temp,
+                    )?;
+                }
+                e.argmax_token_device_into(&dctx.g_perturb, &mut dctx.g_tok, d_vocab)?;
+                if p_min > 0.0 {
+                    e.max_prob_device_into(&row, &mut dctx.g_p, d_vocab)?;
+                }
+                *sctr += 1;
+                if filtered {
+                    draft_stats.push((
+                        e.dtoh(&dctx.g_mx)?[0],
+                        e.dtoh(&dctx.g_th)?[0],
+                        e.dtoh(&dctx.g_z)?[0],
+                    ));
+                }
+                let idx = e.dtoh_u32_one(&dctx.g_tok)?;
+                if (idx as usize) >= d_vocab {
+                    return Err(sentinel(idx, "graph-sampled"));
+                }
+                let d = map(idx);
+                draft_idx.push(idx);
+                if p_min > 0.0 && stop(e.dtoh(&dctx.g_p)?[0]) {
+                    return Ok(None);
+                }
+                draft.push(d);
+                Ok(Some(d))
+            }
+            // The eager chain's tail (greedy, sampled, penalized).
+            PooledDraftArm::Eager => {
+                let dl_d = row;
+                let tok_d = if sampled {
+                    if perturb_buf.is_none() {
+                        *perturb_buf = Some(e.zeros(d_vocab.max(n_vocab))?);
+                    }
+                    let mut q_row = e.clone_dtod(&dl_d)?;
+                    if pen_on {
+                        let h = pen_hist_d.as_ref().unwrap();
+                        let nh = h.len();
+                        e.penalize_logits(
+                            &mut q_row,
+                            h,
+                            nh,
+                            sp.penalty_repeat,
+                            sp.penalty_freq,
+                            sp.penalty_present,
+                            d_vocab,
+                        )?;
+                    }
+                    let rows0 = e.htod_i32(&[0])?;
+                    let (mut th_d, mut z_d, mut mx_d) = (e.zeros(1)?, e.zeros(1)?, e.zeros(1)?);
+                    e.filter_stats(
+                        &q_row, d_vocab, &rows0, &mut th_d, &mut z_d, &mut mx_d, d_vocab, 1,
+                        sp_temp, sp.top_k, sp.top_p, sp.min_p,
+                    )?;
+                    let (th, z, mx) = (e.dtoh(&th_d)?[0], e.dtoh(&z_d)?[0], e.dtoh(&mx_d)?[0]);
+                    let pb = perturb_buf.as_mut().unwrap();
+                    e.gumbel_perturb_filtered(
+                        &q_row, pb, d_vocab, sp_seed, *sctr, sp_temp, mx, th,
+                    )?;
+                    *sctr += 1;
+                    draft_logits.push(q_row);
+                    draft_stats.push((mx, th, z));
+                    e.argmax_token_device(pb, d_vocab)?
+                } else {
+                    e.argmax_token_device(&dl_d, d_vocab)?
+                };
+                let idx = e.dtoh_u32_one(&tok_d)?;
+                if (idx as usize) >= d_vocab {
+                    return Err(sentinel(idx, "eager"));
+                }
+                let d = map(idx);
+                if sampled {
+                    draft_idx.push(idx);
+                }
+                if p_min > 0.0 {
+                    let p_d = if sampled {
+                        e.max_prob_device(&dl_d, d_vocab)?
+                    } else {
+                        e.prob_of_token_device(&dl_d, &tok_d, d_vocab)?
+                    };
+                    if stop(e.dtoh(&p_d)?[0]) {
+                        return Ok(None);
+                    }
+                }
+                draft.push(d);
+                Ok(Some(d))
+            }
+        }
     }
 
     /// One MTP spec round after the target verify (`tlogits_d`/`vx` = its logits and hiddens
