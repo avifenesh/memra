@@ -3,7 +3,6 @@
 [![ci](https://github.com/avifenesh/memra/actions/workflows/ci.yml/badge.svg)](https://github.com/avifenesh/memra/actions/workflows/ci.yml)
 [![License: FSL-1.1-ALv2](https://img.shields.io/badge/license-FSL--1.1--ALv2-blue.svg)](LICENSE)
 [![release](https://img.shields.io/github/v/release/avifenesh/memra)](https://github.com/avifenesh/memra/releases/latest)
-[![LinkedIn](https://img.shields.io/badge/LinkedIn-tiyuvta-0A66C2?logo=linkedin)](https://www.linkedin.com/company/tiyuvta)
 
 Rust + CUDA LLM inference engine for Blackwell (Tuned specifically on RTX PRO 6000, RTX 5090, B200): OpenAI-compatible (+converse and ant) serving, per-model X hardware exactness gates. NVFP4/mixed (fp8 hybrid, 4o6, etc - correctness, performance, hardware specific adapted) main quant support.
 
@@ -15,16 +14,11 @@ criteria, plus maintenance required by existing commitments. Choose the runtime 
 the question; results need no automatic Memra port. Existing qualification rules apply.
 
 [Install](docs/INSTALLATION.md) · [Models](docs/MODELS.md) ·
-[Serving](docs/SERVING.md) · [Performance](docs/PERFORMANCE.md) ·
-[Hosted API](https://inference.tiyuvta.ai/model?c=github-memra-readme)
+[Serving](docs/SERVING.md) · [Performance](docs/PERFORMANCE.md)
 
-> memra is the research engine of the [tiyuvta](https://tiyuvta.ai) lab: kernels, quantization
-> arithmetic, speculative decoding and serving written from scratch for Blackwell, with exactness
-> gates and receipts for every published number.
-> The lab's hosted API ([inference](https://inference.tiyuvta.ai/model?c=gh-mem-red-infe)) and its
-> deployments ([services](https://tiyuvta.ai/services?c=gh-mem-red-serv)) serve open models
-> **tuned on your workload** on an open serving stack the lab operates; memra's findings feed that
-> tuning. The hosted API is OpenAI-compatible.
+> memra is my research engine: kernels, quantization arithmetic, speculative decoding and
+> serving written from scratch for Blackwell, with exactness gates and receipts for every
+> published number.
 
 ## Quick start
 
@@ -42,7 +36,7 @@ Start a server with a supported public checkpoint. The first run downloads and c
 through the `hf` CLI (`pip install -U 'huggingface_hub[cli]'`):
 
 ```bash
-MEMRA_MODELS="q38=hf:tiyuvta/Qwen3.8-27B-NVFP4-MTP-GGUF:Q5K-mtp" \
+MEMRA_MODELS="q38=hf:Avifenesh/Qwen3.8-27B-NVFP4-MTP-GGUF:Q5K-mtp" \
 memra-server
 ```
 
@@ -219,4 +213,4 @@ it is first made available. Earlier revisions and package releases remain under 
 that accompanied them. Third-party components retain their own terms; see
 [THIRD-PARTY.md](crates/memra-engine/THIRD-PARTY.md).
 
-Built by [Avi Fenesh](https://github.com/avifenesh) at [tiyuvta](https://tiyuvta.ai).
+Built by [Avi Fenesh](https://github.com/avifenesh).

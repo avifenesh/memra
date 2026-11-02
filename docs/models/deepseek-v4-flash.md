@@ -15,7 +15,7 @@
 ## Current served program
 
 memra-server naked on 2x RTX PRO 6000 Blackwell, NVFP4 checkpoint
-`tiyuvta/DeepSeek-V4-Flash-0731-NVFP4@bafd09f8`. Since 2026-09-25 (memra #710) the two-card load
+`Avifenesh/DeepSeek-V4-Flash-0731-NVFP4@bafd09f8`. Since 2026-09-25 (memra #710) the two-card load
 is TP/EP:
 - every layer sits on both cards;
 - experts are split by id;

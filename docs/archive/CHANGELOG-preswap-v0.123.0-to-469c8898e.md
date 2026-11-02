@@ -12,7 +12,7 @@ file is the record, generated with the same script against the archive bundle:
     bash tools/changelog.sh v0.123.0 469c8898e   # run inside memra-FINAL-preswap-all-refs.bundle
 
 Archive bundle: rig `~/repo-backups-20260901/memra-FINAL-preswap-all-refs.bundle`, and R2
-bucket `tiyuvta-capture` prefix `repo-bundles/20260901/`. The bundle carries
+capture bucket prefix `repo-bundles/20260901/`. The bundle carries
 `refs/tags/v0.123.0` (tag object 4826ab9bb, peels to bc0952fe5) and `refs/heads/main` at
 469c8898e among 373 refs. The 38 files that differ between 469c8898e and the snapshot root are
 the provider-mention purge re-applied to research raw files (42 insertions, 42 deletions, no

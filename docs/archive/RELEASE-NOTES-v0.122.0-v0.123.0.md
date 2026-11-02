@@ -4,7 +4,7 @@ Public change record for the two tags. The repository history was rebuilt from a
 snapshot on 2026-09-01 (zero-history swap), and the old repository's GitHub Releases page did not
 survive it, so these notes, which used to live in the README, are kept here byte for byte.
 The old history is preserved in the archive bundle `memra-FINAL-preswap-all-refs.bundle`
-(rig `~/repo-backups-20260901/`, and R2 bucket `tiyuvta-capture` under `repo-bundles/20260901/`);
+(rig `~/repo-backups-20260901/`, and the R2 capture bucket under `repo-bundles/20260901/`);
 it carries `refs/tags/v0.123.0` and the old main tip `469c8898e`. crates.io is continuous:
 `memra-engine 0.123.0` was published 2026-09-01T04:59Z from old-history commit `bc0952fe5`,
 which is tag `v0.123.0`.
