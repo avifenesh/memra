@@ -1,0 +1,7 @@
+/home/evidence-user/.local/state/evidence-campaign-20261002/receipts/manager/package-identity-979/current-source-011a7709-preparation/prepared-current-source/final-target/release/deps/equivalent-353038ae03d6b7c3.d: /home/evidence-user/.local/state/evidence-campaign-20261002/receipts/manager/package-identity-979/current-source-011a7709-preparation/prepared-current-source/package/vendor/equivalent-1.0.2/src/lib.rs
+
+/home/evidence-user/.local/state/evidence-campaign-20261002/receipts/manager/package-identity-979/current-source-011a7709-preparation/prepared-current-source/final-target/release/deps/libequivalent-353038ae03d6b7c3.rlib: /home/evidence-user/.local/state/evidence-campaign-20261002/receipts/manager/package-identity-979/current-source-011a7709-preparation/prepared-current-source/package/vendor/equivalent-1.0.2/src/lib.rs
+
+/home/evidence-user/.local/state/evidence-campaign-20261002/receipts/manager/package-identity-979/current-source-011a7709-preparation/prepared-current-source/final-target/release/deps/libequivalent-353038ae03d6b7c3.rmeta: /home/evidence-user/.local/state/evidence-campaign-20261002/receipts/manager/package-identity-979/current-source-011a7709-preparation/prepared-current-source/package/vendor/equivalent-1.0.2/src/lib.rs
+
+/home/evidence-user/.local/state/evidence-campaign-20261002/receipts/manager/package-identity-979/current-source-011a7709-preparation/prepared-current-source/package/vendor/equivalent-1.0.2/src/lib.rs:

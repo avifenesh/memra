@@ -1,0 +1,7 @@
+/home/evidence-user/.local/state/evidence-campaign-20261002/receipts/manager/package-identity-979/current-source-011a7709-preparation/prepared-current-source/final-target/release/deps/crypto_common-1d72cc614dff521f.d: /home/evidence-user/.local/state/evidence-campaign-20261002/receipts/manager/package-identity-979/current-source-011a7709-preparation/prepared-current-source/package/vendor/crypto-common-0.1.7/src/lib.rs
+
+/home/evidence-user/.local/state/evidence-campaign-20261002/receipts/manager/package-identity-979/current-source-011a7709-preparation/prepared-current-source/final-target/release/deps/libcrypto_common-1d72cc614dff521f.rlib: /home/evidence-user/.local/state/evidence-campaign-20261002/receipts/manager/package-identity-979/current-source-011a7709-preparation/prepared-current-source/package/vendor/crypto-common-0.1.7/src/lib.rs
+
+/home/evidence-user/.local/state/evidence-campaign-20261002/receipts/manager/package-identity-979/current-source-011a7709-preparation/prepared-current-source/final-target/release/deps/libcrypto_common-1d72cc614dff521f.rmeta: /home/evidence-user/.local/state/evidence-campaign-20261002/receipts/manager/package-identity-979/current-source-011a7709-preparation/prepared-current-source/package/vendor/crypto-common-0.1.7/src/lib.rs
+
+/home/evidence-user/.local/state/evidence-campaign-20261002/receipts/manager/package-identity-979/current-source-011a7709-preparation/prepared-current-source/package/vendor/crypto-common-0.1.7/src/lib.rs:

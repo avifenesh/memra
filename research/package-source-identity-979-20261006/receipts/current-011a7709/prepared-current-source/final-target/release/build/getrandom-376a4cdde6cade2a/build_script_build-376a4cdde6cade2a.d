@@ -1,0 +1,5 @@
+/home/evidence-user/.local/state/evidence-campaign-20261002/receipts/manager/package-identity-979/current-source-011a7709-preparation/prepared-current-source/final-target/release/build/getrandom-376a4cdde6cade2a/build_script_build-376a4cdde6cade2a.d: /home/evidence-user/.local/state/evidence-campaign-20261002/receipts/manager/package-identity-979/current-source-011a7709-preparation/prepared-current-source/package/vendor/getrandom-0.3.4/build.rs
+
+/home/evidence-user/.local/state/evidence-campaign-20261002/receipts/manager/package-identity-979/current-source-011a7709-preparation/prepared-current-source/final-target/release/build/getrandom-376a4cdde6cade2a/build_script_build-376a4cdde6cade2a: /home/evidence-user/.local/state/evidence-campaign-20261002/receipts/manager/package-identity-979/current-source-011a7709-preparation/prepared-current-source/package/vendor/getrandom-0.3.4/build.rs
+
+/home/evidence-user/.local/state/evidence-campaign-20261002/receipts/manager/package-identity-979/current-source-011a7709-preparation/prepared-current-source/package/vendor/getrandom-0.3.4/build.rs:

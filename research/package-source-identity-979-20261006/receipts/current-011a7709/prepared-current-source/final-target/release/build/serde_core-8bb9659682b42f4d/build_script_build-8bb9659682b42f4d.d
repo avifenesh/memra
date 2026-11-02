@@ -1,0 +1,5 @@
+/home/evidence-user/.local/state/evidence-campaign-20261002/receipts/manager/package-identity-979/current-source-011a7709-preparation/prepared-current-source/final-target/release/build/serde_core-8bb9659682b42f4d/build_script_build-8bb9659682b42f4d.d: /home/evidence-user/.local/state/evidence-campaign-20261002/receipts/manager/package-identity-979/current-source-011a7709-preparation/prepared-current-source/package/vendor/serde_core-1.0.228/build.rs
+
+/home/evidence-user/.local/state/evidence-campaign-20261002/receipts/manager/package-identity-979/current-source-011a7709-preparation/prepared-current-source/final-target/release/build/serde_core-8bb9659682b42f4d/build_script_build-8bb9659682b42f4d: /home/evidence-user/.local/state/evidence-campaign-20261002/receipts/manager/package-identity-979/current-source-011a7709-preparation/prepared-current-source/package/vendor/serde_core-1.0.228/build.rs
+
+/home/evidence-user/.local/state/evidence-campaign-20261002/receipts/manager/package-identity-979/current-source-011a7709-preparation/prepared-current-source/package/vendor/serde_core-1.0.228/build.rs:

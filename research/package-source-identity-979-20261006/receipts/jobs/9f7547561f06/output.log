@@ -1,0 +1,27 @@
+Running as unit: memra-rig-job-9f7547561f06.service; invocation ID: 28b4fdd5693347109f7160689c374892
+Running as unit: memra-rig-job-011-source-capture-source-archives.service; invocation ID: 1c1e91928b404a47b6c78f645ba90c95
+{"source": "011a7709b1d2f2c1fa81a9f4e3bf4e1030a68b6c", "archives": 13, "native_verified": false}
+          Finished with result: success
+Main processes terminated with: code=exited, status=0/SUCCESS
+               Service runtime: 5.270s
+             CPU time consumed: 5.447s
+                   Memory peak: 260.7M (swap: 0B)
+Running as unit: memra-rig-job-011-source-materialize-current-source.service; invocation ID: b9519703a9a3464c95f4e009709697ee
+{"source": "011a7709b1d2f2c1fa81a9f4e3bf4e1030a68b6c", "resolved_packages": 216, "normal_source_metadata": true, "capsule_ready": false, "qualified": false}
+          Finished with result: success
+Main processes terminated with: code=exited, status=0/SUCCESS
+               Service runtime: 5.925s
+             CPU time consumed: 4.748s
+                   Memory peak: 883M (swap: 0B)
+Running as unit: memra-rig-job-011-source-prepare-current-registry-corpus.service; invocation ID: bbb16408f4a6411c81aad9830c99a12a
+{"source": "011a7709b1d2f2c1fa81a9f4e3bf4e1030a68b6c", "members": 14, "input_owners": 748, "rust_source_owners": 586, "corpus_sha256": "0f645a3431b718f60c91b723775abed88e353c47d5bce9995901224176b5ffb0", "candidate_attached": false, "qualified": false}
+          Finished with result: success
+Main processes terminated with: code=exited, status=0/SUCCESS
+               Service runtime: 2.780s
+             CPU time consumed: 2.832s
+                   Memory peak: 236M (swap: 0B)
+          Finished with result: success
+Main processes terminated with: code=exited, status=0/SUCCESS
+               Service runtime: 14.172s
+             CPU time consumed: 349ms
+                   Memory peak: 56.2M (swap: 0B)

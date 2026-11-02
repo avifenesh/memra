@@ -1,0 +1,7 @@
+/home/evidence-user/.local/state/evidence-campaign-20261002/receipts/manager/package-identity-979/current-source-011a7709-preparation/prepared-current-source/final-target/release/deps/scopeguard-aa72c2bbda57661d.d: /home/evidence-user/.local/state/evidence-campaign-20261002/receipts/manager/package-identity-979/current-source-011a7709-preparation/prepared-current-source/package/vendor/scopeguard-1.2.0/src/lib.rs
+
+/home/evidence-user/.local/state/evidence-campaign-20261002/receipts/manager/package-identity-979/current-source-011a7709-preparation/prepared-current-source/final-target/release/deps/libscopeguard-aa72c2bbda57661d.rlib: /home/evidence-user/.local/state/evidence-campaign-20261002/receipts/manager/package-identity-979/current-source-011a7709-preparation/prepared-current-source/package/vendor/scopeguard-1.2.0/src/lib.rs
+
+/home/evidence-user/.local/state/evidence-campaign-20261002/receipts/manager/package-identity-979/current-source-011a7709-preparation/prepared-current-source/final-target/release/deps/libscopeguard-aa72c2bbda57661d.rmeta: /home/evidence-user/.local/state/evidence-campaign-20261002/receipts/manager/package-identity-979/current-source-011a7709-preparation/prepared-current-source/package/vendor/scopeguard-1.2.0/src/lib.rs
+
+/home/evidence-user/.local/state/evidence-campaign-20261002/receipts/manager/package-identity-979/current-source-011a7709-preparation/prepared-current-source/package/vendor/scopeguard-1.2.0/src/lib.rs:

@@ -1,0 +1,9 @@
+execve("/home/evidence-user/.local/state/evidence-campaign-20261002/receipts/manager/package-identity-979/current-source-011a7709-preparation/prepared-current-source/final-target/release/build/libc-f2388ec34d863461/build-script-build", ["/home/evidence-user/.local/state/evidence-campaign-20261002/receipts/manager/package-identity-979/current-source-011a7709-preparation/prepared-current-source/final-target/release/build/libc-f2388ec34d863461/build-script-build"], 0x7374500078a0 /* 112 vars */) = 0
+clone3({flags=CLONE_VM|CLONE_VFORK|CLONE_CLEAR_SIGHAND, exit_signal=SIGCHLD, stack=0x7106f3ba1000, stack_size=0x9000}, 88) = 769763
+wait4(769763, [{WIFEXITED(s) && WEXITSTATUS(s) == 0}], 0, NULL) = 769763
+--- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=769763, si_uid=1000, si_status=0, si_utime=3 /* 0.03 s */, si_stime=0} ---
+clone3({flags=CLONE_VM|CLONE_VFORK|CLONE_CLEAR_SIGHAND, exit_signal=SIGCHLD, stack=0x7106f3ba1000, stack_size=0x9000}, 88) = 769768
+waitid(P_PID, 769768, NULL, WEXITED, NULL) = 0
+--- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=769768, si_uid=1000, si_status=127, si_utime=0, si_stime=0} ---
+exit_group(0)                           = ?
++++ exited with 0 +++

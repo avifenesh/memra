@@ -1,0 +1,7 @@
+clone3({flags=CLONE_VM|CLONE_FS|CLONE_FILES|CLONE_SIGHAND|CLONE_THREAD|CLONE_SYSVSEM|CLONE_SETTLS|CLONE_PARENT_SETTID|CLONE_CHILD_CLEARTID, child_tid=0x7ad9c09ffce8, parent_tid=0x7ad9c09ff990, exit_signal=0, stack=0x7ad9c07ff000, stack_size=0x1fc300, tls=0x7ad9c09ff6c0} => {parent_tid=[832809]}, 88) = 832809
+tgkill(832803, 832807, SIGUSR1)         = 0
+clone3({flags=CLONE_VM|CLONE_FS|CLONE_FILES|CLONE_SIGHAND|CLONE_THREAD|CLONE_SYSVSEM|CLONE_SETTLS|CLONE_PARENT_SETTID|CLONE_CHILD_CLEARTID, child_tid=0x7ad9c17ffce8, parent_tid=0x7ad9c17ff990, exit_signal=0, stack=0x7ad9c15ff000, stack_size=0x1fc300, tls=0x7ad9c17ff6c0} => {parent_tid=[832810]}, 88) = 832810
+clone3({flags=CLONE_VM|CLONE_FS|CLONE_FILES|CLONE_SIGHAND|CLONE_THREAD|CLONE_SYSVSEM|CLONE_SETTLS|CLONE_PARENT_SETTID|CLONE_CHILD_CLEARTID, child_tid=0x7ad9c09ffce8, parent_tid=0x7ad9c09ff990, exit_signal=0, stack=0x7ad9c07ff000, stack_size=0x1fc300, tls=0x7ad9c09ff6c0} => {parent_tid=[832811]}, 88) = 832811
+tgkill(832803, 832810, SIGUSR1)         = 0
+exit(0)                                 = ?
++++ exited with 0 +++

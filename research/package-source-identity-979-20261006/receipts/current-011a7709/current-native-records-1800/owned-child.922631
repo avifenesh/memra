@@ -1,0 +1,7 @@
+execve("/bin/sh", ["sh", "-c", "--", "\"$CICC_PATH/cicc\" --c++17 --static-host-stub --device-hidden-visibility --gnu_version=150200 --display_error_number --orig_src_file_name \"cu/f16_prefill.cu\" --orig_src_path_name \"/home/evidence-user/.local/state/evidence-campaign-20261002/receipts/manager/package-identity-979/current-source-011a7709-preparation/prepared-current-source/package/vendor/memra-engine-0.138.0/cu/f16_prefill.cu\" --allow_managed --relaxed_constexpr   -arch compute_120a -m64 --no-version-ident -ftz=0 -prec_div=1 -prec_sqrt=1 -fmad=1 --include_file_name \"tmpxft_000e13dc_00000000-3_f16_prefill.fatbin.c\" -tused --module_id_file_name \"/tmp/tmpxft_000e13dc_00000000-4_f16_prefill.module_id\" --gen_c_file_name \"/tmp/tmpxft_000e13dc_00000000-6_f16_prefill.cudafe1.c\" --stub_file_name \"/tmp/tmpxft_000e13dc_00000000-6_f16_prefill.cudafe1.stub.c\" --gen_device_file_name \"/tmp/tmpxft_000e13dc_00000000-6_f16_prefill.cudafe1.gpu\"  \"/tmp/tmpxft_000e13dc_00000000-7_f16_prefill.cpp1.ii\" -o \"/tmp/tmpxft_000e13dc_00000000-6_f16_prefill.ptx\""], 0x6506f8195440 /* 125 vars */) = 0
+vfork()                                 = 922633
+wait4(-1, [{WIFEXITED(s) && WEXITSTATUS(s) == 0}], 0, NULL) = 922633
+--- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=922633, si_uid=1000, si_status=0, si_utime=84 /* 0.84 s */, si_stime=5 /* 0.05 s */} ---
+wait4(-1, 0x7ffd7a1626bc, WNOHANG, NULL) = -1 ECHILD (No child processes)
+exit_group(0)                           = ?
++++ exited with 0 +++

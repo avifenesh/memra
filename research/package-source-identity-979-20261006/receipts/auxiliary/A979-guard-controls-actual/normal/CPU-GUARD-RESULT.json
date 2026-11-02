@@ -1,0 +1,26 @@
+{
+  "owned_broker_cgroup": "/user.slice/user-1000.slice/user@1000.service/app.slice/memra-rig-job-d8328e406d94.service",
+  "command": [
+    "/usr/bin/python3",
+    "-I",
+    "-B",
+    "-c",
+    "pass"
+  ],
+  "CPU_ceiling_seconds": 4.0,
+  "wall_deadline_seconds": 3.0,
+  "sample_seconds": 0.05,
+  "quota_cores": 4.0,
+  "CPU_from_before_preflight_through_teardown_seconds": 0.009574,
+  "wall_from_before_preflight_through_teardown_seconds": 0.00909572304226458,
+  "CPU_ceiling_observed": false,
+  "cleanup_CPU_reserve_seconds": 1.6,
+  "work_CPU_stop_seconds": 2.4,
+  "CPU_overshoot_seconds": 0,
+  "reason": "child-exit",
+  "child_exit": 0,
+  "owned_cleanup": [],
+  "failure": null,
+  "native_success": true,
+  "model_or_GPU_qualification": false
+}

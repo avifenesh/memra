@@ -1,0 +1,7 @@
+execve("/bin/sh", ["sh", "-c", "--", "cudafe++ --c++17 --static-host-stub --device-hidden-visibility --gnu_version=150200 --display_error_number --orig_src_file_name \"cu/mimo_qkv_gather.cu\" --orig_src_path_name \"/home/evidence-user/.local/state/evidence-campaign-20261002/receipts/manager/package-identity-979/current-source-011a7709-preparation/prepared-current-source/package/vendor/memra-engine-0.138.0/cu/mimo_qkv_gather.cu\" --allow_managed --relaxed_constexpr  --m64 --parse_templates --gen_c_file_name \"/tmp/tmpxft_000e2e24_00000000-6_mimo_qkv_gather.cudafe1.cpp\" --stub_file_name \"tmpxft_000e2e24_00000000-6_mimo_qkv_gather.cudafe1.stub.c\" --gen_module_id_file --module_id_file_name \"/tmp/tmpxft_000e2e24_00000000-4_mimo_qkv_gather.module_id\" \"/tmp/tmpxft_000e2e24_00000000-5_mimo_qkv_gather.cpp4.ii\" "], 0x5d744f468da0 /* 125 vars */) = 0
+vfork()                                 = 929341
+wait4(-1, [{WIFEXITED(s) && WEXITSTATUS(s) == 0}], 0, NULL) = 929341
+--- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=929341, si_uid=1000, si_status=0, si_utime=10 /* 0.10 s */, si_stime=1 /* 0.01 s */} ---
+wait4(-1, 0x7ffda6a9487c, WNOHANG, NULL) = -1 ECHILD (No child processes)
+exit_group(0)                           = ?
++++ exited with 0 +++

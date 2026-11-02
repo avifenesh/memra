@@ -1,0 +1,7 @@
+execve("/bin/sh", ["sh", "-c", "--", "cudafe++ --c++17 --static-host-stub --device-hidden-visibility --gnu_version=150200 --display_error_number --orig_src_file_name \"cu/mimo_audio_codec_rvq.cu\" --orig_src_path_name \"/home/evidence-user/.local/state/evidence-campaign-20261002/receipts/manager/package-identity-979/current-source-011a7709-preparation/prepared-current-source/package/vendor/memra-engine-0.138.0/cu/mimo_audio_codec_rvq.cu\" --allow_managed --relaxed_constexpr  --m64 --parse_templates --gen_c_file_name \"/tmp/tmpxft_000e3388_00000000-6_mimo_audio_codec_rvq.cudafe1.cpp\" --stub_file_name \"tmpxft_000e3388_00000000-6_mimo_audio_codec_rvq.cudafe1.stub.c\" --gen_module_id_file --module_id_file_name \"/tmp/tmpxft_000e3388_00000000-4_mimo_audio_codec_rvq.module_id\" \"/tmp/tmpxft_000e3388_00000000-5_mimo_audio_codec_rvq.cpp4.ii\" "], 0x592d23326340 /* 125 vars */) = 0
+vfork()                                 = 930705
+wait4(-1, [{WIFEXITED(s) && WEXITSTATUS(s) == 0}], 0, NULL) = 930705
+--- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=930705, si_uid=1000, si_status=0, si_utime=9 /* 0.09 s */, si_stime=2 /* 0.02 s */} ---
+wait4(-1, 0x7ffc396ff87c, WNOHANG, NULL) = -1 ECHILD (No child processes)
+exit_group(0)                           = ?
++++ exited with 0 +++

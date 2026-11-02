@@ -1,0 +1,1782 @@
+
+thread 'main' (2405045) panicked at src/tools/cargo/src/cargo/core/resolver/features.rs:325:13:
+did not find features for (PackageId { name: "proc-macro2", version: "1.0.106", source: "registry `crates-io`" }, NormalOrDev) within activated_features:
+[
+    (
+        PackageId {
+            name: "matchit",
+            version: "0.7.3",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "async-trait",
+            version: "0.1.89",
+            source: "registry `crates-io`",
+        },
+        HostDep,
+    ),
+    (
+        PackageId {
+            name: "hashbrown",
+            version: "0.17.1",
+            source: "registry `crates-io`",
+        },
+        HostDep,
+    ),
+    (
+        PackageId {
+            name: "byteorder-lite",
+            version: "0.1.0",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "httparse",
+            version: "1.10.1",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "digest",
+            version: "0.10.7",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "icu_properties",
+            version: "2.3.0",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "zmij",
+            version: "1.0.21",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "bitflags",
+            version: "2.13.1",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "icu_properties_data",
+            version: "2.3.0",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "cc",
+            version: "1.5.1",
+            source: "registry `crates-io`",
+        },
+        HostDep,
+    ),
+    (
+        PackageId {
+            name: "crypto-common",
+            version: "0.1.7",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "mime",
+            version: "0.3.17",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "slab",
+            version: "0.4.12",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "bytes",
+            version: "1.12.0",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "jobserver",
+            version: "0.1.35",
+            source: "registry `crates-io`",
+        },
+        HostDep,
+    ),
+    (
+        PackageId {
+            name: "winnow",
+            version: "0.7.15",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "llguidance",
+            version: "1.7.6",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "cpufeatures",
+            version: "0.2.17",
+            source: "registry `crates-io`",
+        },
+        HostDep,
+    ),
+    (
+        PackageId {
+            name: "log",
+            version: "0.4.33",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "futures-channel",
+            version: "0.3.32",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "toml_datetime",
+            version: "0.6.11",
+            source: "registry `crates-io`",
+        },
+        HostDep,
+    ),
+    (
+        PackageId {
+            name: "tower-layer",
+            version: "0.3.3",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "simd-adler32",
+            version: "0.3.10",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "memra-kv",
+            version: "0.138.0",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "memra-sampling",
+            version: "0.138.0",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "generic-array",
+            version: "0.14.7",
+            source: "registry `crates-io`",
+        },
+        HostDep,
+    ),
+    (
+        PackageId {
+            name: "idna",
+            version: "1.1.0",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "zune-jpeg",
+            version: "0.5.15",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "toktrie",
+            version: "1.7.6",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "ryu",
+            version: "1.0.23",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "toml_edit",
+            version: "0.22.27",
+            source: "registry `crates-io`",
+        },
+        HostDep,
+    ),
+    (
+        PackageId {
+            name: "zeroize",
+            version: "1.9.0",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "serde_path_to_error",
+            version: "0.1.20",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "getrandom",
+            version: "0.3.4",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "memra-tier",
+            version: "0.138.0",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "try-lock",
+            version: "0.2.5",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "futures-core",
+            version: "0.3.34",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "fdeflate",
+            version: "0.3.7",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "typenum",
+            version: "1.20.1",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "generic-array",
+            version: "0.14.7",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "memra-reference",
+            version: "0.138.0",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "crypto-common",
+            version: "0.1.7",
+            source: "registry `crates-io`",
+        },
+        HostDep,
+    ),
+    (
+        PackageId {
+            name: "equivalent",
+            version: "1.0.2",
+            source: "registry `crates-io`",
+        },
+        HostDep,
+    ),
+    (
+        PackageId {
+            name: "rustls-platform-verifier",
+            version: "0.7.1",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "indexmap",
+            version: "2.14.0",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "fluent-uri",
+            version: "0.3.2",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "ref-cast-impl",
+            version: "1.0.26",
+            source: "registry `crates-io`",
+        },
+        HostDep,
+    ),
+    (
+        PackageId {
+            name: "tokio",
+            version: "1.52.3",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "bytemuck_derive",
+            version: "1.11.0",
+            source: "registry `crates-io`",
+        },
+        HostDep,
+    ),
+    (
+        PackageId {
+            name: "unicode-normalization-alignments",
+            version: "0.1.12",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "async-stream",
+            version: "0.3.6",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "cfg-if",
+            version: "1.0.4",
+            source: "registry `crates-io`",
+        },
+        HostDep,
+    ),
+    (
+        PackageId {
+            name: "rustls-pki-types",
+            version: "1.15.1",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "stable_deref_trait",
+            version: "1.2.1",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "atomic-waker",
+            version: "1.1.2",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "autocfg",
+            version: "1.5.1",
+            source: "registry `crates-io`",
+        },
+        HostDep,
+    ),
+    (
+        PackageId {
+            name: "memra-gguf",
+            version: "0.138.0",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "gif",
+            version: "0.14.2",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "memra-lanes",
+            version: "0.138.0",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "h2",
+            version: "0.4.19",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "toml_edit",
+            version: "0.22.27",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "cfg-if",
+            version: "1.0.4",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "toml_write",
+            version: "0.1.2",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "utf8_iter",
+            version: "1.0.4",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "crossbeam-utils",
+            version: "0.8.22",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "form_urlencoded",
+            version: "1.2.2",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "equivalent",
+            version: "1.0.2",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "tokio-util",
+            version: "0.7.19",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "either",
+            version: "1.17.0",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "parking_lot_core",
+            version: "0.9.12",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "zune-core",
+            version: "0.5.3",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "once_cell",
+            version: "1.21.4",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "http-body-util",
+            version: "0.1.3",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "sha2",
+            version: "0.10.9",
+            source: "registry `crates-io`",
+        },
+        HostDep,
+    ),
+    (
+        PackageId {
+            name: "sync_wrapper",
+            version: "1.0.2",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "want",
+            version: "0.3.1",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "errno",
+            version: "0.3.14",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "displaydoc",
+            version: "0.2.7",
+            source: "registry `crates-io`",
+        },
+        HostDep,
+    ),
+    (
+        PackageId {
+            name: "hyper",
+            version: "1.10.1",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "libc",
+            version: "0.2.186",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "httpdate",
+            version: "1.0.3",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "percent-encoding",
+            version: "2.3.2",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "aho-corasick",
+            version: "1.1.4",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "quote",
+            version: "1.0.46",
+            source: "registry `crates-io`",
+        },
+        HostDep,
+    ),
+    (
+        PackageId {
+            name: "proc-macro2",
+            version: "1.0.106",
+            source: "registry `crates-io`",
+        },
+        HostDep,
+    ),
+    (
+        PackageId {
+            name: "memra-server",
+            version: "0.138.0",
+            source: "/home/evidence-user/.local/state/evidence-campaign-20261002/receipts/manager/package-identity-979/final-joint-preparation/prepared-current-source/package",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "async-stream-impl",
+            version: "0.3.6",
+            source: "registry `crates-io`",
+        },
+        HostDep,
+    ),
+    (
+        PackageId {
+            name: "regex-syntax",
+            version: "0.8.11",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "flate2",
+            version: "1.1.9",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "memmap2",
+            version: "0.9.11",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "serde",
+            version: "1.0.228",
+            source: "registry `crates-io`",
+        },
+        HostDep,
+    ),
+    (
+        PackageId {
+            name: "memra-tokenizer",
+            version: "0.138.0",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "serde_json",
+            version: "1.0.150",
+            source: "registry `crates-io`",
+        },
+        HostDep,
+    ),
+    (
+        PackageId {
+            name: "block-buffer",
+            version: "0.10.4",
+            source: "registry `crates-io`",
+        },
+        HostDep,
+    ),
+    (
+        PackageId {
+            name: "reqwest",
+            version: "0.13.5",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "syn",
+            version: "2.0.118",
+            source: "registry `crates-io`",
+        },
+        HostDep,
+    ),
+    (
+        PackageId {
+            name: "http-body",
+            version: "1.0.1",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "fs_extra",
+            version: "1.3.0",
+            source: "registry `crates-io`",
+        },
+        HostDep,
+    ),
+    (
+        PackageId {
+            name: "tokio-rustls",
+            version: "0.26.5",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "idna_adapter",
+            version: "1.2.2",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "icu_collections",
+            version: "2.3.0",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "zerovec-derive",
+            version: "0.11.6",
+            source: "registry `crates-io`",
+        },
+        HostDep,
+    ),
+    (
+        PackageId {
+            name: "icu_locale_core",
+            version: "2.3.0",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "memra-validate",
+            version: "0.138.0",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "tower-http",
+            version: "0.6.11",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "icu_normalizer",
+            version: "2.3.0",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "serde_urlencoded",
+            version: "0.7.1",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "lock_api",
+            version: "0.4.14",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "libc",
+            version: "0.2.186",
+            source: "registry `crates-io`",
+        },
+        HostDep,
+    ),
+    (
+        PackageId {
+            name: "rayon-core",
+            version: "1.13.0",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "base64",
+            version: "0.23.1",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "toml",
+            version: "0.8.23",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "tracing-core",
+            version: "0.1.36",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "futures-sink",
+            version: "0.3.34",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "futures-util",
+            version: "0.3.34",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "subtle",
+            version: "2.6.1",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "crossbeam-deque",
+            version: "0.8.7",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "zmij",
+            version: "1.0.21",
+            source: "registry `crates-io`",
+        },
+        HostDep,
+    ),
+    (
+        PackageId {
+            name: "cudarc",
+            version: "0.19.8",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "yoke-derive",
+            version: "0.8.3",
+            source: "registry `crates-io`",
+        },
+        HostDep,
+    ),
+    (
+        PackageId {
+            name: "memchr",
+            version: "2.8.2",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "parking_lot",
+            version: "0.12.5",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "rustls-webpki",
+            version: "0.103.15",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "signal-hook-registry",
+            version: "1.4.8",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "syn",
+            version: "3.0.3",
+            source: "registry `crates-io`",
+        },
+        HostDep,
+    ),
+    (
+        PackageId {
+            name: "rustversion",
+            version: "1.0.22",
+            source: "registry `crates-io`",
+        },
+        HostDep,
+    ),
+    (
+        PackageId {
+            name: "sha2",
+            version: "0.10.9",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "tokio-macros",
+            version: "2.7.0",
+            source: "registry `crates-io`",
+        },
+        HostDep,
+    ),
+    (
+        PackageId {
+            name: "serde_derive",
+            version: "1.0.228",
+            source: "registry `crates-io`",
+        },
+        HostDep,
+    ),
+    (
+        PackageId {
+            name: "rayon",
+            version: "1.12.0",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "weezl",
+            version: "0.1.12",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "digest",
+            version: "0.10.7",
+            source: "registry `crates-io`",
+        },
+        HostDep,
+    ),
+    (
+        PackageId {
+            name: "tracing",
+            version: "0.1.44",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "itoa",
+            version: "1.0.18",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "zerocopy",
+            version: "0.8.55",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "axum",
+            version: "0.7.9",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "toml",
+            version: "0.8.23",
+            source: "registry `crates-io`",
+        },
+        HostDep,
+    ),
+    (
+        PackageId {
+            name: "futures-task",
+            version: "0.3.34",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "adler2",
+            version: "2.0.1",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "toml_write",
+            version: "0.1.2",
+            source: "registry `crates-io`",
+        },
+        HostDep,
+    ),
+    (
+        PackageId {
+            name: "untrusted",
+            version: "0.9.0",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "potential_utf",
+            version: "0.1.6",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "moxcms",
+            version: "0.8.1",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "ipnet",
+            version: "2.12.2",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "pin-project-lite",
+            version: "0.2.17",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "icu_provider",
+            version: "2.3.1",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "mio",
+            version: "1.2.1",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "zerovec",
+            version: "0.11.8",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "anyhow",
+            version: "1.0.104",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "serde_core",
+            version: "1.0.228",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "serde_core",
+            version: "1.0.228",
+            source: "registry `crates-io`",
+        },
+        HostDep,
+    ),
+    (
+        PackageId {
+            name: "icu_normalizer_data",
+            version: "2.3.0",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "http",
+            version: "1.4.2",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "shlex",
+            version: "2.0.1",
+            source: "registry `crates-io`",
+        },
+        HostDep,
+    ),
+    (
+        PackageId {
+            name: "hyper-rustls",
+            version: "0.27.10",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "zerotrie",
+            version: "0.2.5",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "writeable",
+            version: "0.6.4",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "ahash",
+            version: "0.8.12",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "ref-cast",
+            version: "1.0.26",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "bytemuck",
+            version: "1.25.2",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "zerofrom",
+            version: "0.1.8",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "smallvec",
+            version: "1.15.2",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "yoke",
+            version: "0.8.3",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "block-buffer",
+            version: "0.10.4",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "cmake",
+            version: "0.1.58",
+            source: "registry `crates-io`",
+        },
+        HostDep,
+    ),
+    (
+        PackageId {
+            name: "memra-runtime",
+            version: "0.138.0",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "miniz_oxide",
+            version: "0.8.9",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "version_check",
+            version: "0.9.5",
+            source: "registry `crates-io`",
+        },
+        HostDep,
+    ),
+    (
+        PackageId {
+            name: "crossbeam-epoch",
+            version: "0.9.20",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "fnv",
+            version: "1.0.7",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "referencing",
+            version: "0.29.1",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "hyper-util",
+            version: "0.1.20",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "image",
+            version: "0.25.10",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "serde_json",
+            version: "1.0.150",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "num-traits",
+            version: "0.2.19",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "cpufeatures",
+            version: "0.2.17",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "itoa",
+            version: "1.0.18",
+            source: "registry `crates-io`",
+        },
+        HostDep,
+    ),
+    (
+        PackageId {
+            name: "base64",
+            version: "0.22.1",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "memchr",
+            version: "2.8.2",
+            source: "registry `crates-io`",
+        },
+        HostDep,
+    ),
+    (
+        PackageId {
+            name: "image-webp",
+            version: "0.2.4",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "scopeguard",
+            version: "1.2.0",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "serde_spanned",
+            version: "0.6.9",
+            source: "registry `crates-io`",
+        },
+        HostDep,
+    ),
+    (
+        PackageId {
+            name: "socket2",
+            version: "0.6.4",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "base64",
+            version: "0.22.1",
+            source: "registry `crates-io`",
+        },
+        HostDep,
+    ),
+    (
+        PackageId {
+            name: "pxfm",
+            version: "0.1.30",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "winnow",
+            version: "0.7.15",
+            source: "registry `crates-io`",
+        },
+        HostDep,
+    ),
+    (
+        PackageId {
+            name: "rustls",
+            version: "0.23.45",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "rustls-native-certs",
+            version: "0.8.4",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "openssl-probe",
+            version: "0.2.1",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "crc32fast",
+            version: "1.5.0",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "EVIDENCE_DEP_VENDOR_002-lc-rs",
+            version: "1.18.1",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "libloading",
+            version: "0.9.0",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "color_quant",
+            version: "1.1.0",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "memra-engine",
+            version: "0.138.0",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "find-msvc-tools",
+            version: "0.1.14",
+            source: "registry `crates-io`",
+        },
+        HostDep,
+    ),
+    (
+        PackageId {
+            name: "hashbrown",
+            version: "0.17.1",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "dunce",
+            version: "1.0.5",
+            source: "registry `crates-io`",
+        },
+        HostDep,
+    ),
+    (
+        PackageId {
+            name: "pkg-config",
+            version: "0.3.34",
+            source: "registry `crates-io`",
+        },
+        HostDep,
+    ),
+    (
+        PackageId {
+            name: "synstructure",
+            version: "0.14.0",
+            source: "registry `crates-io`",
+        },
+        HostDep,
+    ),
+    (
+        PackageId {
+            name: "zerofrom-derive",
+            version: "0.1.8",
+            source: "registry `crates-io`",
+        },
+        HostDep,
+    ),
+    (
+        PackageId {
+            name: "borrow-or-share",
+            version: "0.2.4",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "litemap",
+            version: "0.8.3",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "toml_datetime",
+            version: "0.6.11",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "tinystr",
+            version: "0.8.4",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "png",
+            version: "0.18.1",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "strum_macros",
+            version: "0.28.0",
+            source: "registry `crates-io`",
+        },
+        HostDep,
+    ),
+    (
+        PackageId {
+            name: "heck",
+            version: "0.5.0",
+            source: "registry `crates-io`",
+        },
+        HostDep,
+    ),
+    (
+        PackageId {
+            name: "serde",
+            version: "1.0.228",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "axum-core",
+            version: "0.4.5",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "strum",
+            version: "0.28.0",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "tower-service",
+            version: "0.3.3",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "url",
+            version: "2.5.8",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "serde_spanned",
+            version: "0.6.9",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "tower",
+            version: "0.5.3",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "unicode-ident",
+            version: "1.0.24",
+            source: "registry `crates-io`",
+        },
+        HostDep,
+    ),
+    (
+        PackageId {
+            name: "quick-error",
+            version: "2.0.1",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "typenum",
+            version: "1.20.1",
+            source: "registry `crates-io`",
+        },
+        HostDep,
+    ),
+    (
+        PackageId {
+            name: "EVIDENCE_DEP_VENDOR_002-lc-sys",
+            version: "0.45.0",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "derivre",
+            version: "0.3.12",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+    (
+        PackageId {
+            name: "indexmap",
+            version: "2.14.0",
+            source: "registry `crates-io`",
+        },
+        HostDep,
+    ),
+    (
+        PackageId {
+            name: "memra-net-guard",
+            version: "0.138.0",
+            source: "registry `crates-io`",
+        },
+        NormalOrDev,
+    ),
+]
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace

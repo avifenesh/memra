@@ -9,14 +9,22 @@
       "note": "All crate-local sources are package inputs. Toolchain/environment changes require full validation."
     },
     "crates/memra-server/build.rs": {
-      "sha256": "50e5bf1f4ea5b8606f4c856461f749e6a4f3afd109c2d7818684af0bb7ea86c9",
+      "sha256": "665b12df4f59b27dca47e1ebf901c916a0c835d1ddc4d29c879823f5472d7221",
       "package": "memra-server",
       "generated_env": [],
-      "external_inputs": [],
+      "external_inputs": [
+        "Cargo.toml",
+        "Cargo.lock",
+        "crates/*.rs",
+        "crates/*.toml",
+        "crates/*.cu",
+        "crates/*.cuh",
+        "crates/*.h"
+      ],
       "note": "All crate-local sources are package inputs. Toolchain/environment changes require full validation."
     },
     "crates/memra-engine/build.rs": {
-      "sha256": "180121b171874735788cf45eddedd2ab82f284990db2d8f0774a640369fb5836",
+      "sha256": "8a5121ed84630879a9327ff88eb4b7e94d16825615e3eaf1702906f105a16cd3",
       "package": "memra-engine",
       "generated_env": [
         "MEMRA_ENGINE_FATBIN",
@@ -31,7 +39,10 @@
         "MEMRA_TIER_RECEIPT_FATBIN"
       ],
       "external_inputs": [
-        "docs/FLAGS.md"
+        "docs/FLAGS.md",
+        "Cargo.toml",
+        "crates/*/Cargo.toml",
+        "crates/*/src/*.rs"
       ],
       "note": "All crate-local sources are package inputs. Toolchain/environment changes require full validation."
     }

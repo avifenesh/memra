@@ -1,0 +1,6 @@
+execve("/home/evidence-user/.local/state/evidence-campaign-20261002/receipts/manager/package-identity-979/current-source-011a7709-preparation/prepared-current-source/package/build-support/package_source_rustc.py", ["/home/evidence-user/.local/state/evidence-campaign-20261002/receipts/manager/package-identity-979/current-source-011a7709-preparation/prepared-current-source/package/build-support/package_source_rustc.py", "/home/evidence-user/.rustup/toolchains/1.97.1-x86_64-unknown-linux-gnu/bin/rustc", "--cfg=anyhow_build_probe", "--edition=2018", "--crate-name=anyhow", "--crate-type=lib", "--cap-lints=allow", "--emit=dep-info,metadata", "--out-dir", "/home/evidence-user/.local/state/evidence-campaign-20261002/receipts/manager/package-identity-979/current-source-011a7709-preparation/prepared-current-source/final-target/release/build/anyhow-7902de729c796b67/out/probe", "src/nightly.rs", "--target", "x86_64-unknown-linux-gnu"], 0x5e564e91f6d0 /* 112 vars */) = 0
+vfork()                                 = 834722
+wait4(834722, [{WIFEXITED(s) && WEXITSTATUS(s) == 1}], 0, NULL) = 834722
+--- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=834722, si_uid=1000, si_status=1, si_utime=0, si_stime=1 /* 0.01 s */} ---
+exit_group(1)                           = ?
++++ exited with 1 +++

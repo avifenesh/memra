@@ -1,0 +1,21 @@
+Running as unit: memra-rig-job-290e340ca043.service; invocation ID: 43170439b3cf4a93a71a26cb80b499b9
+Traceback (most recent call last):
+  File "/home/evidence-user/.local/state/evidence-campaign-20261002/receipts/manager/package-identity-979/current-011a7709-consumer-phases/post_build.py", line 235, in <module>
+    if __name__=='__main__':main()
+                            ~~~~^^
+  File "/home/evidence-user/.local/state/evidence-campaign-20261002/receipts/manager/package-identity-979/current-011a7709-consumer-phases/post_build.py", line 214, in main
+    native,records,entry,r,m,cap=gate(args.build_approval)
+                                 ~~~~^^^^^^^^^^^^^^^^^^^^^
+  File "/home/evidence-user/.local/state/evidence-campaign-20261002/receipts/manager/package-identity-979/current-011a7709-consumer-phases/post_build.py", line 31, in gate
+    cap=m.package_capsule(entry);assert cap['source_seal']==PINS['source_seal'] and native['source']!='dc31381046bf7293fc03bf45bc7d68cb0cc48d97' and PREP.name!='current-main-5d-standard-1800'
+  File "/home/evidence-user/.local/state/evidence-campaign-20261002/receipts/manager/package-identity-979/current-source-011a7709-preparation/prepared-current-source/package/build-support/package_source_identity.py", line 576, in package_capsule
+    require(inventory(root / name) == packages[key]['files'], 'fresh package source/mode/membership differs: ' + key)
+    ~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/evidence-user/.local/state/evidence-campaign-20261002/receipts/manager/package-identity-979/current-source-011a7709-preparation/prepared-current-source/package/build-support/package_source_identity.py", line 33, in require
+    raise Refused(reason)
+source_io.Refused: fresh package source/mode/membership differs: memra-server@0.138.0:path-source
+          Finished with result: exit-code
+Main processes terminated with: code=exited, status=1/FAILURE
+               Service runtime: 2.383s
+             CPU time consumed: 2.762s
+                   Memory peak: 68M (swap: 0B)

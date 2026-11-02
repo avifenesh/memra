@@ -1,0 +1,7 @@
+execve("/bin/sh", ["sh", "-c", "--", "ptxas -arch=sm_120a -m64  \"/tmp/tmpxft_000d955f_00000000-6_qmatvec.ptx\"  -o \"/tmp/tmpxft_000d955f_00000000-8_qmatvec.cubin\" "], 0x55a8d71dfb80 /* 125 vars */) = 0
+vfork()                                 = 894662
+wait4(-1, [{WIFEXITED(s) && WEXITSTATUS(s) == 0}], 0, NULL) = 894662
+--- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=894662, si_uid=1000, si_status=0, si_utime=1149 /* 11.49 s */, si_stime=22 /* 0.22 s */} ---
+wait4(-1, 0x7ffc74fc12dc, WNOHANG, NULL) = -1 ECHILD (No child processes)
+exit_group(0)                           = ?
++++ exited with 0 +++

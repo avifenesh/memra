@@ -1,0 +1,14 @@
+Running as unit: memra-rig-job-c59352389033.service; invocation ID: b25cfa06fc354806b63a14c41615b09f
+Traceback (most recent call last):
+  File "/home/evidence-user/.local/state/evidence-campaign-20261002/receipts/A-package-flag-registry-1000/selective-handoff-root979-v3/run-self-output-control.py", line 114, in <module>
+    if __name__=='__main__':main()
+                            ~~~~^^
+  File "/home/evidence-user/.local/state/evidence-campaign-20261002/receipts/A-package-flag-registry-1000/selective-handoff-root979-v3/run-self-output-control.py", line 62, in main
+    baseline_result=run('old-baseline',[str(wrapper),*baseline],context['CARGO_MANIFEST_DIR'],context);assert baseline_result.returncode==0
+                                                                                                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError
+          Finished with result: exit-code
+Main processes terminated with: code=exited, status=1/FAILURE
+               Service runtime: 6.427s
+             CPU time consumed: 6.524s
+                   Memory peak: 634M (swap: 0B)

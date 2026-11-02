@@ -1,0 +1,13 @@
+Traceback (most recent call last):
+  File "/home/evidence-user/.local/state/evidence-campaign-20261002/receipts/A-package-flag-registry-1000/native-cpu-guard-v1/cpu_guard.py", line 125, in <module>
+    if __name__=='__main__':main()
+                            ~~~~^^
+  File "/home/evidence-user/.local/state/evidence-campaign-20261002/receipts/A-package-flag-registry-1000/native-cpu-guard-v1/cpu_guard.py", line 124, in main
+    sys.exit(run(command,args.records.absolute(),args.CPU_seconds,args.wall_seconds,args.teardown_seconds))
+             ~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/evidence-user/.local/state/evidence-campaign-20261002/receipts/A-package-flag-registry-1000/native-cpu-guard-v1/cpu_guard.py", line 73, in run
+    group=OwnedCgroup(os.environ.get('MEMRA_RIG_JOB',''));baseline=group.usage();start=time.monotonic();limit_usec=int(CPU_seconds*1_000_000)
+  File "/home/evidence-user/.local/state/evidence-campaign-20261002/receipts/A-package-flag-registry-1000/native-cpu-guard-v1/cpu_guard.py", line 11, in __init__
+    self.relative=rows[0][3:];assert self.relative.split('/')[-1]=='memra-rig-job-'+job+'.service','caller is not the exact admitted broker service'
+                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: caller is not the exact admitted broker service

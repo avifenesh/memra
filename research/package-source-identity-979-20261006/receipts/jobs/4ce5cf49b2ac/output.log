@@ -1,0 +1,14 @@
+Running as unit: memra-rig-job-4ce5cf49b2ac.service; invocation ID: aba6ef70dd4a4e1ca3a7cd01dd00e3c2
+Traceback (most recent call last):
+  File "/home/evidence-user/.local/state/evidence-campaign-20261002/receipts/A-package-flag-registry-1000/producer-context-unfinished-suffix-v6/run_suffix.py", line 84, in <module>
+    if __name__=='__main__':main()
+                            ~~~~^^
+  File "/home/evidence-user/.local/state/evidence-campaign-20261002/receipts/A-package-flag-registry-1000/producer-context-unfinished-suffix-v6/run_suffix.py", line 74, in main
+    else:raise AssertionError('old foreign consumer dependency unexpectedly accepted')
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: old foreign consumer dependency unexpectedly accepted
+          Finished with result: exit-code
+Main processes terminated with: code=exited, status=1/FAILURE
+               Service runtime: 5.154s
+             CPU time consumed: 3.853s
+                   Memory peak: 618.7M (swap: 0B)

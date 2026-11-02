@@ -1,0 +1,7 @@
+execve("/bin/sh", ["sh", "-c", "--", "\"$CICC_PATH/cicc\" --c++17 --static-host-stub --device-hidden-visibility --gnu_version=150200 --display_error_number --orig_src_file_name \"cu/moe_router.cu\" --orig_src_path_name \"/home/evidence-user/.local/state/evidence-campaign-20261002/receipts/manager/package-identity-979/current-source-011a7709-preparation/prepared-current-source/package/vendor/memra-engine-0.138.0/cu/moe_router.cu\" --allow_managed   -arch compute_120a -m64 --no-version-ident -ftz=0 -prec_div=1 -prec_sqrt=1 -fmad=1 --include_file_name \"tmpxft_000db453_00000000-3_moe_router.fatbin.c\" -tused --gen_module_id_file --module_id_file_name \"/tmp/tmpxft_000db453_00000000-4_moe_router.module_id\" --gen_c_file_name \"/tmp/tmpxft_000db453_00000000-6_moe_router.cudafe1.c\" --stub_file_name \"/tmp/tmpxft_000db453_00000000-6_moe_router.cudafe1.stub.c\" --gen_device_file_name \"/tmp/tmpxft_000db453_00000000-6_moe_router.cudafe1.gpu\"  \"/tmp/tmpxft_000db453_00000000-7_moe_router.cpp1.ii\" -o \"/tmp/tmpxft_000db453_00000000-6_moe_router.ptx\""], 0x55a6cc9a4da0 /* 125 vars */) = 0
+vfork()                                 = 898172
+wait4(-1, [{WIFEXITED(s) && WEXITSTATUS(s) == 0}], 0, NULL) = 898172
+--- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=898172, si_uid=1000, si_status=0, si_utime=41 /* 0.41 s */, si_stime=4 /* 0.04 s */} ---
+wait4(-1, 0x7ffcefbba7ac, WNOHANG, NULL) = -1 ECHILD (No child processes)
+exit_group(0)                           = ?
++++ exited with 0 +++

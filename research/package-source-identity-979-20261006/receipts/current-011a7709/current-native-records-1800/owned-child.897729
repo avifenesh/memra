@@ -1,0 +1,6 @@
+execve("/home/evidence-user/.local/state/evidence-campaign-20261002/receipts/manager/package-identity-979/current-source-011a7709-preparation/prepared-current-source/final-target/release/build/memra-server-d6647e75845aca4d/build-script-build", ["/home/evidence-user/.local/state/evidence-campaign-20261002/receipts/manager/package-identity-979/current-source-011a7709-preparation/prepared-current-source/final-target/release/build/memra-server-d6647e75845aca4d/build-script-build"], 0x73745000e800 /* 110 vars */) = 0
+clone3({flags=CLONE_VM|CLONE_VFORK|CLONE_CLEAR_SIGHAND, exit_signal=SIGCHLD, stack=0x726166968000, stack_size=0x9000}, 88) = 897730
+wait4(897730, [{WIFEXITED(s) && WEXITSTATUS(s) == 0}], 0, NULL) = 897730
+--- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=897730, si_uid=1000, si_status=0, si_utime=191 /* 1.91 s */, si_stime=67 /* 0.67 s */} ---
+exit_group(0)                           = ?
++++ exited with 0 +++

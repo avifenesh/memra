@@ -1,0 +1,6 @@
+execve("/home/evidence-user/.local/state/evidence-campaign-20261002/receipts/manager/package-identity-979/current-source-011a7709-preparation/prepared-current-source/package/build-support/package_source_rustc.py", ["/home/evidence-user/.local/state/evidence-campaign-20261002/receipts/manager/package-identity-979/current-source-011a7709-preparation/prepared-current-source/package/build-support/package_source_rustc.py", "/home/evidence-user/.rustup/toolchains/1.97.1-x86_64-unknown-linux-gnu/bin/rustc", "-vV"], 0x556254d1ea50 /* 69 vars */) = 0
+clone3({flags=CLONE_VM|CLONE_VFORK|CLONE_CLEAR_SIGHAND, exit_signal=SIGCHLD, stack=0x70bb91aa0000, stack_size=0x9000}, 88) = 761712
+wait4(761712, [{WIFEXITED(s) && WEXITSTATUS(s) == 0}], 0, NULL) = 761712
+--- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=761712, si_uid=1000, si_status=0, si_utime=0, si_stime=1 /* 0.01 s */} ---
+exit_group(0)                           = ?
++++ exited with 0 +++

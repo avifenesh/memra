@@ -1,0 +1,17 @@
+Running as unit: memra-rig-job-a6d6dc4cdbba.service; invocation ID: 160751ff44a84b47b1eed3c1b14b8ac3
+Traceback (most recent call last):
+  File "/home/evidence-user/.local/state/evidence-campaign-20261002/receipts/A-package-flag-registry-1000/current335e-product-event-mapping-v2/post_build.py", line 231, in <module>
+    if __name__=='__main__':main()
+                            ~~~~^^
+  File "/home/evidence-user/.local/state/evidence-campaign-20261002/receipts/A-package-flag-registry-1000/current335e-product-event-mapping-v2/post_build.py", line 212, in main
+    assert args.prefix_approval is not None and args.prefix_approval.is_absolute();inspect(args,native,records,entry,r,m,cap);return
+                                                                                   ~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/evidence-user/.local/state/evidence-campaign-20261002/receipts/A-package-flag-registry-1000/current335e-product-event-mapping-v2/post_build.py", line 123, in inspect
+    assert len(matches)==1,(r.val(args_,'--crate-name'),raw_sources[0],len(matches))
+           ^^^^^^^^^^^^^^^
+AssertionError: ('build_script_build', '/home/evidence-user/.local/state/evidence-campaign-20261002/receipts/manager/package-identity-979/current-main-335e-context-standard-1800/prepared-current-source/package/vendor/generic-array-0.14.7/build.rs', 0)
+          Finished with result: exit-code
+Main processes terminated with: code=exited, status=1/FAILURE
+               Service runtime: 3.729s
+             CPU time consumed: 3.798s
+                   Memory peak: 158.1M (swap: 0B)

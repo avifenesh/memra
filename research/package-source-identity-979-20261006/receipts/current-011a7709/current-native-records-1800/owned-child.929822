@@ -1,0 +1,7 @@
+execve("/bin/sh", ["sh", "-c", "--", "ptxas -arch=sm_120a -m64  \"/tmp/tmpxft_000e2fc9_00000000-6_mimo_vision_block.ptx\"  -o \"/tmp/tmpxft_000e2fc9_00000000-8_mimo_vision_block.cubin\" "], 0x55d2a113b2e0 /* 125 vars */) = 0
+vfork()                                 = 929823
+wait4(-1, [{WIFEXITED(s) && WEXITSTATUS(s) == 0}], 0, NULL) = 929823
+--- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=929823, si_uid=1000, si_status=0, si_utime=1 /* 0.01 s */, si_stime=1 /* 0.01 s */} ---
+wait4(-1, 0x7ffecafa943c, WNOHANG, NULL) = -1 ECHILD (No child processes)
+exit_group(0)                           = ?
++++ exited with 0 +++

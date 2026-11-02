@@ -1,0 +1,11 @@
+clone3({flags=CLONE_VM|CLONE_FS|CLONE_FILES|CLONE_SIGHAND|CLONE_THREAD|CLONE_SYSVSEM|CLONE_SETTLS|CLONE_PARENT_SETTID|CLONE_CHILD_CLEARTID, child_tid=0x71ae11fffce8, parent_tid=0x71ae11fff990, exit_signal=0, stack=0x71ae11dff000, stack_size=0x1fc300, tls=0x71ae11fff6c0} => {parent_tid=[863099]}, 88) = 863099
+clone3({flags=CLONE_VM|CLONE_FS|CLONE_FILES|CLONE_SIGHAND|CLONE_THREAD|CLONE_SYSVSEM|CLONE_SETTLS|CLONE_PARENT_SETTID|CLONE_CHILD_CLEARTID, child_tid=0x71ae11fffce8, parent_tid=0x71ae11fff990, exit_signal=0, stack=0x71ae11dff000, stack_size=0x1fc300, tls=0x71ae11fff6c0} => {parent_tid=[863109]}, 88) = 863109
+clone3({flags=CLONE_VM|CLONE_FS|CLONE_FILES|CLONE_SIGHAND|CLONE_THREAD|CLONE_SYSVSEM|CLONE_SETTLS|CLONE_PARENT_SETTID|CLONE_CHILD_CLEARTID, child_tid=0x71ae11fffce8, parent_tid=0x71ae11fff990, exit_signal=0, stack=0x71ae11dff000, stack_size=0x1fc300, tls=0x71ae11fff6c0} => {parent_tid=[863113]}, 88) = 863113
+tgkill(863086, 863097, SIGUSR1)         = 0
+clone3({flags=CLONE_VM|CLONE_FS|CLONE_FILES|CLONE_SIGHAND|CLONE_THREAD|CLONE_SYSVSEM|CLONE_SETTLS|CLONE_PARENT_SETTID|CLONE_CHILD_CLEARTID, child_tid=0x71ae12dffce8, parent_tid=0x71ae12dff990, exit_signal=0, stack=0x71ae12bff000, stack_size=0x1fc300, tls=0x71ae12dff6c0} => {parent_tid=[863116]}, 88) = 863116
+clone3({flags=CLONE_VM|CLONE_FS|CLONE_FILES|CLONE_SIGHAND|CLONE_THREAD|CLONE_SYSVSEM|CLONE_SETTLS|CLONE_PARENT_SETTID|CLONE_CHILD_CLEARTID, child_tid=0x71ae1157fce8, parent_tid=0x71ae1157f990, exit_signal=0, stack=0x71ae1137f000, stack_size=0x1fc300, tls=0x71ae1157f6c0} => {parent_tid=[863117]}, 88) = 863117
+clone3({flags=CLONE_VM|CLONE_FS|CLONE_FILES|CLONE_SIGHAND|CLONE_THREAD|CLONE_SYSVSEM|CLONE_SETTLS|CLONE_PARENT_SETTID|CLONE_CHILD_CLEARTID, child_tid=0x71ae11fffce8, parent_tid=0x71ae11fff990, exit_signal=0, stack=0x71ae11dff000, stack_size=0x1fc300, tls=0x71ae11fff6c0} => {parent_tid=[863143]}, 88) = 863143
+clone3({flags=CLONE_VM|CLONE_FS|CLONE_FILES|CLONE_SIGHAND|CLONE_THREAD|CLONE_SYSVSEM|CLONE_SETTLS|CLONE_PARENT_SETTID|CLONE_CHILD_CLEARTID, child_tid=0x71ae1157fce8, parent_tid=0x71ae1157f990, exit_signal=0, stack=0x71ae1137f000, stack_size=0x1fc300, tls=0x71ae1157f6c0} => {parent_tid=[863147]}, 88) = 863147
+tgkill(863086, 863116, SIGUSR1)         = 0
+exit(0)                                 = ?
++++ exited with 0 +++

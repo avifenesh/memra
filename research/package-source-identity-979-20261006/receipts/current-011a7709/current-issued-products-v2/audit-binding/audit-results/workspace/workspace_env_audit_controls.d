@@ -1,0 +1,9 @@
+/home/evidence-user/.local/state/evidence-campaign-20261002/receipts/manager/package-identity-979/current-source-011a7709-preparation/current-issued-products-v2/audit-binding/audit-results/workspace/workspace_env_audit_controls.d: /home/evidence-user/projects/evidence-source-worktree-979/crates/memra-engine/src/env_audit.rs /home/evidence-user/.local/state/evidence-campaign-20261002/receipts/manager/package-identity-979/current-source-011a7709-preparation/prepared-current-source/final-target/release/build/memra-engine-788f6a603b2fbba1/out/memra_env_registry.rs
+
+/home/evidence-user/.local/state/evidence-campaign-20261002/receipts/manager/package-identity-979/current-source-011a7709-preparation/current-issued-products-v2/audit-binding/audit-results/workspace/workspace_env_audit_controls: /home/evidence-user/projects/evidence-source-worktree-979/crates/memra-engine/src/env_audit.rs /home/evidence-user/.local/state/evidence-campaign-20261002/receipts/manager/package-identity-979/current-source-011a7709-preparation/prepared-current-source/final-target/release/build/memra-engine-788f6a603b2fbba1/out/memra_env_registry.rs
+
+/home/evidence-user/projects/evidence-source-worktree-979/crates/memra-engine/src/env_audit.rs:
+/home/evidence-user/.local/state/evidence-campaign-20261002/receipts/manager/package-identity-979/current-source-011a7709-preparation/prepared-current-source/final-target/release/build/memra-engine-788f6a603b2fbba1/out/memra_env_registry.rs:
+
+# env-dep:CARGO_MANIFEST_DIR=/home/evidence-user/projects/evidence-source-worktree-979/crates/memra-engine
+# env-dep:OUT_DIR=/home/evidence-user/.local/state/evidence-campaign-20261002/receipts/manager/package-identity-979/current-source-011a7709-preparation/prepared-current-source/final-target/release/build/memra-engine-788f6a603b2fbba1/out

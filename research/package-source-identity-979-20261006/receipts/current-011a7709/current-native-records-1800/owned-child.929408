@@ -1,0 +1,7 @@
+execve("/bin/sh", ["sh", "-c", "--", "gcc -std=c++17 -D__CUDA_ARCH_LIST__=1200 -E -x c++ -D__CUDACC__ -D__NVCC__ -D__CUDACC_RELAXED_CONSTEXPR__  -O3 \"-I/usr/local/cuda-13.1/bin/../targets/x86_64-linux/include\"   \"-isystem\" \"/usr/local/cuda-13.1/bin/../targets/x86_64-linux/include/cccl\"    -D__CUDACC_VER_MAJOR__=13 -D__CUDACC_VER_MINOR__=1 -D__CUDACC_VER_BUILD__=115 -D__CUDA_API_VER_MAJOR__=13 -D__CUDA_API_VER_MINOR__=1 -D__NVCC_DIAG_PRAGMA_SUPPORT__=1 -D__CUDACC_DEVICE_ATOMIC_BUILTINS__=1 -include \"cuda_runtime.h\" -m64 \"cu/mimo_sink_attn.cu\" -o \"/tmp/tmpxft_000e2e7c_00000000-5_mimo_sink_attn.cpp4.ii\" "], 0x6104fedcc320 /* 125 vars */) = 0
+vfork()                                 = 929409
+wait4(-1, [{WIFEXITED(s) && WEXITSTATUS(s) == 0}], 0, NULL) = 929409
+--- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=929409, si_uid=1000, si_status=0, si_utime=0, si_stime=0} ---
+wait4(-1, 0x7ffd495b9eec, WNOHANG, NULL) = -1 ECHILD (No child processes)
+exit_group(0)                           = ?
++++ exited with 0 +++

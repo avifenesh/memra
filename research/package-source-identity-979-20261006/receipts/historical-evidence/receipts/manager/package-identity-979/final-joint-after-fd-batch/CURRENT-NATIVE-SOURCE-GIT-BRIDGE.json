@@ -1,0 +1,304 @@
+{
+  "base": "4951db56acd22a196a6e9484e3a2bdcf8da59d76",
+  "head": "5565c2dfb1794279f1e488b9dc366bcaf81ab899",
+  "native_source_rows": [
+    {
+      "path": "crates/memra-engine/cu/cutlass_fp4_sm120.cu",
+      "mode": "100644",
+      "blob": "2db206e740e90cb78a97bdb317ba5b3663bc9a7c"
+    },
+    {
+      "path": "crates/memra-engine/cu/dsv4_dense_census.cuh",
+      "mode": "100644",
+      "blob": "65c84ee66e61c4b917eb0eafaef71095c40fcfbd"
+    },
+    {
+      "path": "crates/memra-engine/cu/dsv4_dense_cutlass.cu",
+      "mode": "100644",
+      "blob": "8d7d44145d369eab4ea485397c8984e334628ec8"
+    },
+    {
+      "path": "crates/memra-engine/cu/dsv4_dense_m1_exact_tail.cuh",
+      "mode": "100644",
+      "blob": "f3dfb41e26c0d15b4dbf40e34bee09a4497a444e"
+    },
+    {
+      "path": "crates/memra-engine/cu/dsv4_dense_tile.cuh",
+      "mode": "100644",
+      "blob": "b3befd302a012dc48ed3b580d4f2cebb064eab53"
+    },
+    {
+      "path": "crates/memra-engine/cu/dsv4_gpu.cu",
+      "mode": "100644",
+      "blob": "08a33e598122f466c2f89580028b30be12dcc69e"
+    },
+    {
+      "path": "crates/memra-engine/cu/dsv4_replay_control.cuh",
+      "mode": "100644",
+      "blob": "7b47d5d1b1b518978888b27fcc7a3478def40e90"
+    },
+    {
+      "path": "crates/memra-engine/cu/dsv4_sampler.cu",
+      "mode": "100644",
+      "blob": "5b34d3d7587a555bcf3bd24b935c7a0293cbbfac"
+    },
+    {
+      "path": "crates/memra-engine/cu/f16_prefill.cu",
+      "mode": "100644",
+      "blob": "f7e3fa7ab5c8654e693cd216e34d138ee9f611e9"
+    },
+    {
+      "path": "crates/memra-engine/cu/fa3_prefill.cu",
+      "mode": "100644",
+      "blob": "518571a3211f4db13a620fd29e02e9b01b674789"
+    },
+    {
+      "path": "crates/memra-engine/cu/fattn_vendor.cu",
+      "mode": "100644",
+      "blob": "34ef60fdd179b5aba7a1eb3832a1de4a52871281"
+    },
+    {
+      "path": "crates/memra-engine/cu/flash_attn.cu",
+      "mode": "100644",
+      "blob": "33e0c5c4970c417b75a66d7f341bd83b65a604aa"
+    },
+    {
+      "path": "crates/memra-engine/cu/fp8_blk_dequant.cu",
+      "mode": "100644",
+      "blob": "c7fad41af388db598bd13335f6530b5161165f0f"
+    },
+    {
+      "path": "crates/memra-engine/cu/fp8_prefill.cu",
+      "mode": "100644",
+      "blob": "26f49c256c83b50d66993ad42e3a5ccb21f7e20d"
+    },
+    {
+      "path": "crates/memra-engine/cu/hybrid.cu",
+      "mode": "100644",
+      "blob": "e23006d910acb2f753bdbaa669e63cd13c752ce9"
+    },
+    {
+      "path": "crates/memra-engine/cu/kda.cu",
+      "mode": "100644",
+      "blob": "a06eb6f7753d1d2115bba1f8875bccc5a131133c"
+    },
+    {
+      "path": "crates/memra-engine/cu/kernels.cu",
+      "mode": "100644",
+      "blob": "fa02b67770aaca4443373d507d81961131c05016"
+    },
+    {
+      "path": "crates/memra-engine/cu/memra_pdl_chain.cuh",
+      "mode": "100644",
+      "blob": "bcc49d3d1e529d82ee1328b206e198dc99bff8b9"
+    },
+    {
+      "path": "crates/memra-engine/cu/mimo_audio_attn.cu",
+      "mode": "100644",
+      "blob": "aae289e6caea27aca6d29c93286c23e13e0f776b"
+    },
+    {
+      "path": "crates/memra-engine/cu/mimo_audio_codec_frontend.cu",
+      "mode": "100644",
+      "blob": "54b4ff168597a681c35222ad2b3053122e1181f2"
+    },
+    {
+      "path": "crates/memra-engine/cu/mimo_audio_codec_layer.cu",
+      "mode": "100644",
+      "blob": "f53504dc8cd1d630884c4d3d275086b1ceb4dbd3"
+    },
+    {
+      "path": "crates/memra-engine/cu/mimo_audio_codec_rvq.cu",
+      "mode": "100644",
+      "blob": "21718a2a6b44a0588c782d1184d0eb5b37a3aa5b"
+    },
+    {
+      "path": "crates/memra-engine/cu/mimo_audio_embed.cu",
+      "mode": "100644",
+      "blob": "4e5bbcf1342db8083d94929f2c00426e64a0bdae"
+    },
+    {
+      "path": "crates/memra-engine/cu/mimo_audio_patch_forward.cu",
+      "mode": "100644",
+      "blob": "962ffb7a7c7ad19a8833c8284f62d8fbca0abf0e"
+    },
+    {
+      "path": "crates/memra-engine/cu/mimo_kv_nvfp4.cu",
+      "mode": "100644",
+      "blob": "088e40712468be46f95eb497fb910ee3fec0a259"
+    },
+    {
+      "path": "crates/memra-engine/cu/mimo_mixed_attn.cu",
+      "mode": "100644",
+      "blob": "4496d650c4325280c812fa7411b05f6ae1d29f55"
+    },
+    {
+      "path": "crates/memra-engine/cu/mimo_qkv_gather.cu",
+      "mode": "100644",
+      "blob": "4bc8668fbb9467857bfc645cd4dec63ac43104a6"
+    },
+    {
+      "path": "crates/memra-engine/cu/mimo_sink_attn.cu",
+      "mode": "100644",
+      "blob": "ddec5d32d726524789d7a68c870ab0cb537610a3"
+    },
+    {
+      "path": "crates/memra-engine/cu/mimo_swa_ring_attn.cu",
+      "mode": "100644",
+      "blob": "31fa16933bff8bf3c5172c83ae255115b05eec58"
+    },
+    {
+      "path": "crates/memra-engine/cu/mimo_text_chunk_attn.cu",
+      "mode": "100644",
+      "blob": "4abbd6eb01d1b0ed3ddee005bfcfb10f46579c90"
+    },
+    {
+      "path": "crates/memra-engine/cu/mimo_vision_attn.cu",
+      "mode": "100644",
+      "blob": "94662f2151a2eceff832d963bd4513c4138b6c78"
+    },
+    {
+      "path": "crates/memra-engine/cu/mimo_vision_block.cu",
+      "mode": "100644",
+      "blob": "dc2a81b71c0f55b7f4c13c2c0e739b16ee2f67a5"
+    },
+    {
+      "path": "crates/memra-engine/cu/mimo_vision_rope.cu",
+      "mode": "100644",
+      "blob": "68e3cff3379d371a2f30ac1155a0d35c9e6ffbb7"
+    },
+    {
+      "path": "crates/memra-engine/cu/mla_attn.cu",
+      "mode": "100644",
+      "blob": "e581d9877cb85a0e1cb1e07c7a31359be5b43799"
+    },
+    {
+      "path": "crates/memra-engine/cu/mma_tile.cuh",
+      "mode": "100644",
+      "blob": "48360c96d0315423e0b0714766c33a3a846f73be"
+    },
+    {
+      "path": "crates/memra-engine/cu/mmq_common.cuh",
+      "mode": "100644",
+      "blob": "0f89524b5fab3c3dcdcb44b907075ee7b17d83ea"
+    },
+    {
+      "path": "crates/memra-engine/cu/mmq_fp4.cu",
+      "mode": "100644",
+      "blob": "7ceea4c2a22a30a69cbb0d73cc7c3330288a7251"
+    },
+    {
+      "path": "crates/memra-engine/cu/mmq_fp4_stub.cu",
+      "mode": "100644",
+      "blob": "541ba3a03f72af0b6edb69eebdb93996b2a39fcd"
+    },
+    {
+      "path": "crates/memra-engine/cu/mmq_fp8_blk.cu",
+      "mode": "100644",
+      "blob": "a9f007eb6133b59a378fff55e033fd5b7385bf2f"
+    },
+    {
+      "path": "crates/memra-engine/cu/mmq_fp8_blk_stub.cu",
+      "mode": "100644",
+      "blob": "05cc6e1592b65216bfaa26ea4c0e7f230dbc8347"
+    },
+    {
+      "path": "crates/memra-engine/cu/mmq_iq_experts.cu",
+      "mode": "100644",
+      "blob": "1eb5116559ed02545a97678b7913e6a50f000984"
+    },
+    {
+      "path": "crates/memra-engine/cu/mmq_mma_i8.cuh",
+      "mode": "100644",
+      "blob": "d2a9d62f6cd1f9ad59771f7e8d8271d2709cac49"
+    },
+    {
+      "path": "crates/memra-engine/cu/mmq_nvfp4_f8f4.cu",
+      "mode": "100644",
+      "blob": "7e19e42e7b7a74d3785d8c90846a888be9eb174c"
+    },
+    {
+      "path": "crates/memra-engine/cu/mmq_nvfp4_w4a8.cu",
+      "mode": "100644",
+      "blob": "a8c436315580cf519065d9684f95da4c70899561"
+    },
+    {
+      "path": "crates/memra-engine/cu/mmq_nvfp4_w4a8_stub.cu",
+      "mode": "100644",
+      "blob": "6a6ab53dbd8afc74d6ffd996c102e38d73a1fc9d"
+    },
+    {
+      "path": "crates/memra-engine/cu/mmq_q45k.cu",
+      "mode": "100644",
+      "blob": "5ef50f0cf12ad6738cede2343c679c73a367b3b2"
+    },
+    {
+      "path": "crates/memra-engine/cu/mmq_q4_0.cu",
+      "mode": "100644",
+      "blob": "37a710c8008682bbfbc37591bf9fbe86a5fa7422"
+    },
+    {
+      "path": "crates/memra-engine/cu/mmq_q8_0.cu",
+      "mode": "100644",
+      "blob": "d560f9fe8aa5f6b25c2755e94e7bb601a1c1d82c"
+    },
+    {
+      "path": "crates/memra-engine/cu/mmq_q8_0_f32acc.cu",
+      "mode": "100644",
+      "blob": "c65659035d6ee367aa84ee1b0ce641ec19a8f88c"
+    },
+    {
+      "path": "crates/memra-engine/cu/moe_f16_grouped.cu",
+      "mode": "100644",
+      "blob": "80f27ccf11aea111687d527630ad784d86c3c0f7"
+    },
+    {
+      "path": "crates/memra-engine/cu/moe_kq_prims.cuh",
+      "mode": "100644",
+      "blob": "7c771eda529653e320e3b285db71fbe5c1b6b707"
+    },
+    {
+      "path": "crates/memra-engine/cu/moe_router.cu",
+      "mode": "100644",
+      "blob": "0ce8e1c228e7f34ffa887b1cb09b9191cdd1c80a"
+    },
+    {
+      "path": "crates/memra-engine/cu/qmatvec.cu",
+      "mode": "100644",
+      "blob": "ad9eb9e0a2919dcbf40b9cf9bdb8a7b2d2a2c325"
+    },
+    {
+      "path": "crates/memra-engine/cu/qmatvec_gemm.cu",
+      "mode": "100644",
+      "blob": "c3c7f093027dfb162951094a02e698b762aacb96"
+    },
+    {
+      "path": "crates/memra-engine/cu/sm100_blockscale_layout.cuh",
+      "mode": "100644",
+      "blob": "b374d0e8b418a8bb392b88c032742259e9f8b38d"
+    },
+    {
+      "path": "crates/memra-engine/cu/spec_sample.cu",
+      "mode": "100644",
+      "blob": "8fbcb3853406172e1cca602eab527470fa324b9f"
+    },
+    {
+      "path": "crates/memra-engine/cu/tier_receipt.cu",
+      "mode": "100644",
+      "blob": "9ba7f6b50fe1ff1f14c5e26159130aa914b24cb9"
+    },
+    {
+      "path": "crates/memra-engine/cu/tp_ar.cu",
+      "mode": "100644",
+      "blob": "e06ff4ecc86b5c0f0eb2587d6cfb0ec1fbd8900c"
+    },
+    {
+      "path": "crates/memra-engine/cu/wgmma_common.cuh",
+      "mode": "100644",
+      "blob": "8bdda9773f387d14202150d8d944a38c6d5b69ed"
+    }
+  ],
+  "byte_and_mode_equal": true,
+  "build_recipe_still_separate": true,
+  "native_executed": false
+}

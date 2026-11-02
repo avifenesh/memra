@@ -1,0 +1,35 @@
+{
+  "cases": [
+    {
+      "case": "clock-before-preflight",
+      "elapsed": 0.1500827979762107,
+      "work_budget": 0.14999999990686774
+    },
+    {
+      "case": "trickle-body-wall",
+      "elapsed": 0.15015891892835498
+    },
+    {
+      "case": "two-TERM-KILL-join-cleanups-in-total",
+      "elapsed": 0.35617313999682665,
+      "lock_proofs": 4
+    },
+    {
+      "case": "primary-error-preserved-with-cleanup-notes",
+      "primary": "synthetic primary body failure",
+      "notes": [
+        "owned cleanup failed: [{\"stage\": \"lock-before-teardown\", \"error\": \"RuntimeError: synthetic cleanup lock-proof failure\"}, {\"stage\": \"lock-after-teardown\", \"error\": \"RuntimeError: synthetic cleanup lock-proof failure\"}]"
+      ]
+    },
+    {
+      "case": "exited-leader-live-owned-descendant",
+      "old_missing_retirement_reproduced": true,
+      "new_descendant_retired": true,
+      "anchored_signals_before_reap": true
+    }
+  ],
+  "helpers_sha256": "10b76ca09f4ec51caf20c21237eb8d506f86357fc173cf072ef2f9840cf00a8f",
+  "runner_sha256": "05ebe7f41d17f92b3e634d137bf3dabef3ff27a7282f17f8b75e9b36c6e63bc6",
+  "GPU_or_model_or_artifact_hash_or_audit_invoked": false,
+  "qualified": false
+}

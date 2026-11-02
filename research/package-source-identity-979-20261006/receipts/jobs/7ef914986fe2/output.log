@@ -1,0 +1,14 @@
+Running as unit: memra-rig-job-7ef914986fe2.service; invocation ID: f713152f373845b4998e60f272223274
+Traceback (most recent call last):
+  File "/home/evidence-user/.local/state/evidence-campaign-20261002/receipts/A-package-flag-registry-1000/producer-context-unfinished-suffix-v5/run_suffix.py", line 98, in <module>
+    if __name__=='__main__':main()
+                            ~~~~^^
+  File "/home/evidence-user/.local/state/evidence-campaign-20261002/receipts/A-package-flag-registry-1000/producer-context-unfinished-suffix-v5/run_suffix.py", line 66, in main
+    wrong=copy.deepcopy(event);other=next(k for k,rel in cap['roots'].items() if k!=unit['owner'] and (entry/rel/sources[0]).is_file());wrong['package_id']=cap['snapshot']['bindings'][other]['cargo_package_id'];wrong['manifest_path']=str(entry/cap['roots'][other]/'Cargo.toml');wrong['target']['src_path']=str(entry/cap['roots'][other]/sources[0])
+                                     ~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+StopIteration
+          Finished with result: exit-code
+Main processes terminated with: code=exited, status=1/FAILURE
+               Service runtime: 6.827s
+             CPU time consumed: 5.175s
+                   Memory peak: 707M (swap: 0B)

@@ -1,0 +1,16 @@
+Running as unit: memra-rig-job-2c39bb2fdff9.service; invocation ID: b4c2683312c74195a050f76d51ffffa6
+/home/evidence-user/.local/state/evidence-campaign-20261002/receipts/manager/package-identity-979/final-joint-preparation/current-rust-role-paths/INPUT-PINS.json: OK
+/home/evidence-user/.local/state/evidence-campaign-20261002/receipts/manager/package-identity-979/final-joint-preparation/current-rust-role-paths/observe-rustc.py: OK
+/home/evidence-user/.local/state/evidence-campaign-20261002/receipts/manager/package-identity-979/final-joint-preparation/current-rust-role-paths/witness.py: OK
+Traceback (most recent call last):
+  File "/home/evidence-user/.local/state/evidence-campaign-20261002/receipts/manager/package-identity-979/final-joint-preparation/current-rust-role-paths/witness.py", line 28, in <module>
+    result=subprocess.run(command,cwd=entry,env=env,capture_output=True,timeout=110);(R/'cargo.jsonl').write_bytes(result.stdout);(R/'cargo.stderr').write_bytes(result.stderr);m.require(result.returncode==0,'current Rust role preparation failed')
+                                                                                                                                                                                ~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/evidence-user/projects/evidence-source-worktree-979/tools/package_source_identity.py", line 33, in require
+    raise Refused(reason)
+source_io.Refused: current Rust role preparation failed
+          Finished with result: exit-code
+Main processes terminated with: code=exited, status=1/FAILURE
+               Service runtime: 935ms
+             CPU time consumed: 1.263s
+                   Memory peak: 82.1M (swap: 0B)

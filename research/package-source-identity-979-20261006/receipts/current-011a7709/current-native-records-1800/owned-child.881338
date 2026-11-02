@@ -1,0 +1,139 @@
+execve("/home/evidence-user/.local/state/evidence-campaign-20261002/receipts/manager/package-identity-979/current-source-011a7709-preparation/prepared-current-source/final-target/release/build/memra-engine-cec346975e4e013a/build-script-build", ["/home/evidence-user/.local/state/evidence-campaign-20261002/receipts/manager/package-identity-979/current-source-011a7709-preparation/prepared-current-source/final-target/release/build/memra-engine-cec346975e4e013a/build-script-build"], 0x73744800be70 /* 110 vars */) = 0
+clone(child_stack=NULL, flags=CLONE_CHILD_CLEARTID|CLONE_CHILD_SETTID|SIGCHLD, child_tidptr=0x70daed616a90) = 881354
+clone3({flags=CLONE_VM|CLONE_FS|CLONE_FILES|CLONE_SIGHAND|CLONE_THREAD|CLONE_SYSVSEM|CLONE_SETTLS|CLONE_PARENT_SETTID|CLONE_CHILD_CLEARTID, child_tid=0x70daed1ffce8, parent_tid=0x70daed1ff990, exit_signal=0, stack=0x70daecfff000, stack_size=0x1fff00, tls=0x70daed1ff6c0} => {parent_tid=[881356]}, 88) = 881356
+clone3({flags=CLONE_VM|CLONE_FS|CLONE_FILES|CLONE_SIGHAND|CLONE_THREAD|CLONE_SYSVSEM|CLONE_SETTLS|CLONE_PARENT_SETTID|CLONE_CHILD_CLEARTID, child_tid=0x70daecffece8, parent_tid=0x70daecffe990, exit_signal=0, stack=0x70daecdfe000, stack_size=0x1fff00, tls=0x70daecffe6c0} => {parent_tid=[881357]}, 88) = 881357
+wait4(881354, [{WIFEXITED(s) && WEXITSTATUS(s) == 0}], 0, NULL) = 881354
+clone3({flags=CLONE_VM|CLONE_VFORK|CLONE_CLEAR_SIGHAND, exit_signal=SIGCHLD, stack=0x70daed65d000, stack_size=0x9000}, 88) = 883297
+wait4(883297, [{WIFEXITED(s) && WEXITSTATUS(s) == 0}], 0, NULL) = 883297
+--- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=883297, si_uid=1000, si_status=0, si_utime=0, si_stime=1 /* 0.01 s */} ---
+clone3({flags=CLONE_VM|CLONE_VFORK|CLONE_CLEAR_SIGHAND, exit_signal=SIGCHLD, stack=0x70daed65d000, stack_size=0x9000}, 88) = 886317
+wait4(886317, [{WIFEXITED(s) && WEXITSTATUS(s) == 0}], 0, NULL) = 886317
+--- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=886317, si_uid=1000, si_status=0, si_utime=0, si_stime=1 /* 0.01 s */} ---
+clone3({flags=CLONE_VM|CLONE_VFORK|CLONE_CLEAR_SIGHAND, exit_signal=SIGCHLD, stack=0x70daed65d000, stack_size=0x9000}, 88) = 889945
+wait4(889945, [{WIFEXITED(s) && WEXITSTATUS(s) == 0}], 0, NULL) = 889945
+--- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=889945, si_uid=1000, si_status=0, si_utime=0, si_stime=1 /* 0.01 s */} ---
+clone3({flags=CLONE_VM|CLONE_VFORK|CLONE_CLEAR_SIGHAND, exit_signal=SIGCHLD, stack=0x70daed65d000, stack_size=0x9000}, 88) = 890207
+wait4(890207, [{WIFEXITED(s) && WEXITSTATUS(s) == 0}], 0, NULL) = 890207
+--- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=890207, si_uid=1000, si_status=0, si_utime=0, si_stime=1 /* 0.01 s */} ---
+clone3({flags=CLONE_VM|CLONE_VFORK|CLONE_CLEAR_SIGHAND, exit_signal=SIGCHLD, stack=0x70daed65d000, stack_size=0x9000}, 88) = 896393
+wait4(896393, [{WIFEXITED(s) && WEXITSTATUS(s) == 0}], 0, NULL) = 896393
+--- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=896393, si_uid=1000, si_status=0, si_utime=0, si_stime=1 /* 0.01 s */} ---
+clone3({flags=CLONE_VM|CLONE_VFORK|CLONE_CLEAR_SIGHAND, exit_signal=SIGCHLD, stack=0x70daed65d000, stack_size=0x9000}, 88) = 897839
+wait4(897839, [{WIFEXITED(s) && WEXITSTATUS(s) == 0}], 0, NULL) = 897839
+--- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=897839, si_uid=1000, si_status=0, si_utime=0, si_stime=1 /* 0.01 s */} ---
+clone3({flags=CLONE_VM|CLONE_VFORK|CLONE_CLEAR_SIGHAND, exit_signal=SIGCHLD, stack=0x70daed65d000, stack_size=0x9000}, 88) = 898131
+wait4(898131, [{WIFEXITED(s) && WEXITSTATUS(s) == 0}], 0, NULL) = 898131
+--- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=898131, si_uid=1000, si_status=0, si_utime=0, si_stime=1 /* 0.01 s */} ---
+clone3({flags=CLONE_VM|CLONE_VFORK|CLONE_CLEAR_SIGHAND, exit_signal=SIGCHLD, stack=0x70daed65d000, stack_size=0x9000}, 88) = 898224
+wait4(898224, [{WIFEXITED(s) && WEXITSTATUS(s) == 0}], 0, NULL) = 898224
+--- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=898224, si_uid=1000, si_status=0, si_utime=0, si_stime=1 /* 0.01 s */} ---
+clone3({flags=CLONE_VM|CLONE_VFORK|CLONE_CLEAR_SIGHAND, exit_signal=SIGCHLD, stack=0x70daed65d000, stack_size=0x9000}, 88) = 898392
+wait4(898392, [{WIFEXITED(s) && WEXITSTATUS(s) == 0}], 0, NULL) = 898392
+--- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=898392, si_uid=1000, si_status=0, si_utime=0, si_stime=1 /* 0.01 s */} ---
+clone3({flags=CLONE_VM|CLONE_VFORK|CLONE_CLEAR_SIGHAND, exit_signal=SIGCHLD, stack=0x70daed65d000, stack_size=0x9000}, 88) = 898435
+wait4(898435, [{WIFEXITED(s) && WEXITSTATUS(s) == 0}], 0, NULL) = 898435
+--- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=898435, si_uid=1000, si_status=0, si_utime=0, si_stime=1 /* 0.01 s */} ---
+clone3({flags=CLONE_VM|CLONE_VFORK|CLONE_CLEAR_SIGHAND, exit_signal=SIGCHLD, stack=0x70daed65d000, stack_size=0x9000}, 88) = 920145
+wait4(920145, [{WIFEXITED(s) && WEXITSTATUS(s) == 0}], 0, NULL) = 920145
+--- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=920145, si_uid=1000, si_status=0, si_utime=0, si_stime=1 /* 0.01 s */} ---
+clone3({flags=CLONE_VM|CLONE_VFORK|CLONE_CLEAR_SIGHAND, exit_signal=SIGCHLD, stack=0x70daed65d000, stack_size=0x9000}, 88) = 920521
+wait4(920521, [{WIFEXITED(s) && WEXITSTATUS(s) == 0}], 0, NULL) = 920521
+--- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=920521, si_uid=1000, si_status=0, si_utime=0, si_stime=1 /* 0.01 s */} ---
+clone3({flags=CLONE_VM|CLONE_VFORK|CLONE_CLEAR_SIGHAND, exit_signal=SIGCHLD, stack=0x70daed65d000, stack_size=0x9000}, 88) = 920762
+wait4(920762, [{WIFEXITED(s) && WEXITSTATUS(s) == 0}], 0, NULL) = 920762
+--- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=920762, si_uid=1000, si_status=0, si_utime=0, si_stime=1 /* 0.01 s */} ---
+clone3({flags=CLONE_VM|CLONE_VFORK|CLONE_CLEAR_SIGHAND, exit_signal=SIGCHLD, stack=0x70daed65d000, stack_size=0x9000}, 88) = 921429
+wait4(921429, [{WIFEXITED(s) && WEXITSTATUS(s) == 0}], 0, NULL) = 921429
+--- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=921429, si_uid=1000, si_status=0, si_utime=0, si_stime=1 /* 0.01 s */} ---
+clone3({flags=CLONE_VM|CLONE_VFORK|CLONE_CLEAR_SIGHAND, exit_signal=SIGCHLD, stack=0x70daed65d000, stack_size=0x9000}, 88) = 921767
+wait4(921767, [{WIFEXITED(s) && WEXITSTATUS(s) == 0}], 0, NULL) = 921767
+--- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=921767, si_uid=1000, si_status=0, si_utime=0, si_stime=1 /* 0.01 s */} ---
+clone3({flags=CLONE_VM|CLONE_VFORK|CLONE_CLEAR_SIGHAND, exit_signal=SIGCHLD, stack=0x70daed65d000, stack_size=0x9000}, 88) = 921906
+wait4(921906, [{WIFEXITED(s) && WEXITSTATUS(s) == 0}], 0, NULL) = 921906
+--- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=921906, si_uid=1000, si_status=0, si_utime=0, si_stime=1 /* 0.01 s */} ---
+clone3({flags=CLONE_VM|CLONE_VFORK|CLONE_CLEAR_SIGHAND, exit_signal=SIGCHLD, stack=0x70daed65d000, stack_size=0x9000}, 88) = 922470
+wait4(922470, [{WIFEXITED(s) && WEXITSTATUS(s) == 0}], 0, NULL) = 922470
+--- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=922470, si_uid=1000, si_status=0, si_utime=0, si_stime=1 /* 0.01 s */} ---
+clone3({flags=CLONE_VM|CLONE_VFORK|CLONE_CLEAR_SIGHAND, exit_signal=SIGCHLD, stack=0x70daed65d000, stack_size=0x9000}, 88) = 922588
+wait4(922588, [{WIFEXITED(s) && WEXITSTATUS(s) == 0}], 0, NULL) = 922588
+--- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=922588, si_uid=1000, si_status=0, si_utime=0, si_stime=1 /* 0.01 s */} ---
+clone3({flags=CLONE_VM|CLONE_VFORK|CLONE_CLEAR_SIGHAND, exit_signal=SIGCHLD, stack=0x70daed65d000, stack_size=0x9000}, 88) = 922766
+wait4(922766, [{WIFEXITED(s) && WEXITSTATUS(s) == 0}], 0, NULL) = 922766
+--- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=922766, si_uid=1000, si_status=0, si_utime=0, si_stime=1 /* 0.01 s */} ---
+clone3({flags=CLONE_VM|CLONE_VFORK|CLONE_CLEAR_SIGHAND, exit_signal=SIGCHLD, stack=0x70daed65d000, stack_size=0x9000}, 88) = 922853
+wait4(922853, [{WIFEXITED(s) && WEXITSTATUS(s) == 0}], 0, NULL) = 922853
+--- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=922853, si_uid=1000, si_status=0, si_utime=0, si_stime=1 /* 0.01 s */} ---
+clone3({flags=CLONE_VM|CLONE_VFORK|CLONE_CLEAR_SIGHAND, exit_signal=SIGCHLD, stack=0x70daed65d000, stack_size=0x9000}, 88) = 922928
+wait4(922928, [{WIFEXITED(s) && WEXITSTATUS(s) == 0}], 0, NULL) = 922928
+--- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=922928, si_uid=1000, si_status=0, si_utime=0, si_stime=1 /* 0.01 s */} ---
+clone3({flags=CLONE_VM|CLONE_VFORK|CLONE_CLEAR_SIGHAND, exit_signal=SIGCHLD, stack=0x70daed65d000, stack_size=0x9000}, 88) = 923747
+wait4(923747, [{WIFEXITED(s) && WEXITSTATUS(s) == 0}], 0, NULL) = 923747
+--- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=923747, si_uid=1000, si_status=0, si_utime=0, si_stime=1 /* 0.01 s */} ---
+clone3({flags=CLONE_VM|CLONE_VFORK|CLONE_CLEAR_SIGHAND, exit_signal=SIGCHLD, stack=0x70daed65d000, stack_size=0x9000}, 88) = 923858
+wait4(923858, [{WIFEXITED(s) && WEXITSTATUS(s) == 0}], 0, NULL) = 923858
+--- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=923858, si_uid=1000, si_status=0, si_utime=0, si_stime=1 /* 0.01 s */} ---
+clone3({flags=CLONE_VM|CLONE_VFORK|CLONE_CLEAR_SIGHAND, exit_signal=SIGCHLD, stack=0x70daed65d000, stack_size=0x9000}, 88) = 924124
+wait4(924124, [{WIFEXITED(s) && WEXITSTATUS(s) == 0}], 0, NULL) = 924124
+--- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=924124, si_uid=1000, si_status=0, si_utime=0, si_stime=1 /* 0.01 s */} ---
+clone3({flags=CLONE_VM|CLONE_VFORK|CLONE_CLEAR_SIGHAND, exit_signal=SIGCHLD, stack=0x70daed65d000, stack_size=0x9000}, 88) = 924416
+wait4(924416, [{WIFEXITED(s) && WEXITSTATUS(s) == 0}], 0, NULL) = 924416
+--- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=924416, si_uid=1000, si_status=0, si_utime=0, si_stime=1 /* 0.01 s */} ---
+clone3({flags=CLONE_VM|CLONE_VFORK|CLONE_CLEAR_SIGHAND, exit_signal=SIGCHLD, stack=0x70daed65d000, stack_size=0x9000}, 88) = 924895
+wait4(924895, [{WIFEXITED(s) && WEXITSTATUS(s) == 0}], 0, NULL) = 924895
+--- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=924895, si_uid=1000, si_status=0, si_utime=0, si_stime=1 /* 0.01 s */} ---
+clone3({flags=CLONE_VM|CLONE_VFORK|CLONE_CLEAR_SIGHAND, exit_signal=SIGCHLD, stack=0x70daed65d000, stack_size=0x9000}, 88) = 929255
+wait4(929255, [{WIFEXITED(s) && WEXITSTATUS(s) == 0}], 0, NULL) = 929255
+--- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=929255, si_uid=1000, si_status=0, si_utime=0, si_stime=1 /* 0.01 s */} ---
+clone3({flags=CLONE_VM|CLONE_VFORK|CLONE_CLEAR_SIGHAND, exit_signal=SIGCHLD, stack=0x70daed65d000, stack_size=0x9000}, 88) = 929316
+wait4(929316, [{WIFEXITED(s) && WEXITSTATUS(s) == 0}], 0, NULL) = 929316
+--- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=929316, si_uid=1000, si_status=0, si_utime=0, si_stime=1 /* 0.01 s */} ---
+clone3({flags=CLONE_VM|CLONE_VFORK|CLONE_CLEAR_SIGHAND, exit_signal=SIGCHLD, stack=0x70daed65d000, stack_size=0x9000}, 88) = 929404
+wait4(929404, [{WIFEXITED(s) && WEXITSTATUS(s) == 0}], 0, NULL) = 929404
+--- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=929404, si_uid=1000, si_status=0, si_utime=0, si_stime=1 /* 0.01 s */} ---
+clone3({flags=CLONE_VM|CLONE_VFORK|CLONE_CLEAR_SIGHAND, exit_signal=SIGCHLD, stack=0x70daed65d000, stack_size=0x9000}, 88) = 929450
+wait4(929450, [{WIFEXITED(s) && WEXITSTATUS(s) == 0}], 0, NULL) = 929450
+--- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=929450, si_uid=1000, si_status=0, si_utime=0, si_stime=1 /* 0.01 s */} ---
+clone3({flags=CLONE_VM|CLONE_VFORK|CLONE_CLEAR_SIGHAND, exit_signal=SIGCHLD, stack=0x70daed65d000, stack_size=0x9000}, 88) = 929540
+wait4(929540, [{WIFEXITED(s) && WEXITSTATUS(s) == 0}], 0, NULL) = 929540
+--- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=929540, si_uid=1000, si_status=0, si_utime=0, si_stime=1 /* 0.01 s */} ---
+clone3({flags=CLONE_VM|CLONE_VFORK|CLONE_CLEAR_SIGHAND, exit_signal=SIGCHLD, stack=0x70daed65d000, stack_size=0x9000}, 88) = 929628
+wait4(929628, [{WIFEXITED(s) && WEXITSTATUS(s) == 0}], 0, NULL) = 929628
+--- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=929628, si_uid=1000, si_status=0, si_utime=0, si_stime=1 /* 0.01 s */} ---
+clone3({flags=CLONE_VM|CLONE_VFORK|CLONE_CLEAR_SIGHAND, exit_signal=SIGCHLD, stack=0x70daed65d000, stack_size=0x9000}, 88) = 929737
+wait4(929737, [{WIFEXITED(s) && WEXITSTATUS(s) == 0}], 0, NULL) = 929737
+--- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=929737, si_uid=1000, si_status=0, si_utime=0, si_stime=1 /* 0.01 s */} ---
+clone3({flags=CLONE_VM|CLONE_VFORK|CLONE_CLEAR_SIGHAND, exit_signal=SIGCHLD, stack=0x70daed65d000, stack_size=0x9000}, 88) = 929840
+wait4(929840, [{WIFEXITED(s) && WEXITSTATUS(s) == 0}], 0, NULL) = 929840
+--- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=929840, si_uid=1000, si_status=0, si_utime=0, si_stime=1 /* 0.01 s */} ---
+clone3({flags=CLONE_VM|CLONE_VFORK|CLONE_CLEAR_SIGHAND, exit_signal=SIGCHLD, stack=0x70daed65d000, stack_size=0x9000}, 88) = 930010
+wait4(930010, [{WIFEXITED(s) && WEXITSTATUS(s) == 0}], 0, NULL) = 930010
+--- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=930010, si_uid=1000, si_status=0, si_utime=0, si_stime=1 /* 0.01 s */} ---
+clone3({flags=CLONE_VM|CLONE_VFORK|CLONE_CLEAR_SIGHAND, exit_signal=SIGCHLD, stack=0x70daed65d000, stack_size=0x9000}, 88) = 930176
+wait4(930176, [{WIFEXITED(s) && WEXITSTATUS(s) == 0}], 0, NULL) = 930176
+--- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=930176, si_uid=1000, si_status=0, si_utime=0, si_stime=1 /* 0.01 s */} ---
+clone3({flags=CLONE_VM|CLONE_VFORK|CLONE_CLEAR_SIGHAND, exit_signal=SIGCHLD, stack=0x70daed65d000, stack_size=0x9000}, 88) = 930262
+wait4(930262, [{WIFEXITED(s) && WEXITSTATUS(s) == 0}], 0, NULL) = 930262
+--- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=930262, si_uid=1000, si_status=0, si_utime=0, si_stime=1 /* 0.01 s */} ---
+clone3({flags=CLONE_VM|CLONE_VFORK|CLONE_CLEAR_SIGHAND, exit_signal=SIGCHLD, stack=0x70daed65d000, stack_size=0x9000}, 88) = 930337
+wait4(930337, [{WIFEXITED(s) && WEXITSTATUS(s) == 0}], 0, NULL) = 930337
+--- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=930337, si_uid=1000, si_status=0, si_utime=0, si_stime=1 /* 0.01 s */} ---
+clone3({flags=CLONE_VM|CLONE_VFORK|CLONE_CLEAR_SIGHAND, exit_signal=SIGCHLD, stack=0x70daed65d000, stack_size=0x9000}, 88) = 930404
+wait4(930404, [{WIFEXITED(s) && WEXITSTATUS(s) == 0}], 0, NULL) = 930404
+--- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=930404, si_uid=1000, si_status=0, si_utime=0, si_stime=1 /* 0.01 s */} ---
+clone3({flags=CLONE_VM|CLONE_VFORK|CLONE_CLEAR_SIGHAND, exit_signal=SIGCHLD, stack=0x70daed65d000, stack_size=0x9000}, 88) = 930480
+wait4(930480, [{WIFEXITED(s) && WEXITSTATUS(s) == 0}], 0, NULL) = 930480
+--- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=930480, si_uid=1000, si_status=0, si_utime=0, si_stime=1 /* 0.01 s */} ---
+clone3({flags=CLONE_VM|CLONE_VFORK|CLONE_CLEAR_SIGHAND, exit_signal=SIGCHLD, stack=0x70daed65d000, stack_size=0x9000}, 88) = 930591
+wait4(930591, [{WIFEXITED(s) && WEXITSTATUS(s) == 0}], 0, NULL) = 930591
+--- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=930591, si_uid=1000, si_status=0, si_utime=0, si_stime=1 /* 0.01 s */} ---
+clone3({flags=CLONE_VM|CLONE_VFORK|CLONE_CLEAR_SIGHAND, exit_signal=SIGCHLD, stack=0x70daed65d000, stack_size=0x9000}, 88) = 930696
+wait4(930696, [{WIFEXITED(s) && WEXITSTATUS(s) == 0}], 0, NULL) = 930696
+--- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=930696, si_uid=1000, si_status=0, si_utime=0, si_stime=1 /* 0.01 s */} ---
+clone3({flags=CLONE_VM|CLONE_VFORK|CLONE_CLEAR_SIGHAND, exit_signal=SIGCHLD, stack=0x70daed65d000, stack_size=0x9000}, 88) = 930761
+wait4(930761, [{WIFEXITED(s) && WEXITSTATUS(s) == 0}], 0, NULL) = 930761
+--- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=930761, si_uid=1000, si_status=0, si_utime=0, si_stime=1 /* 0.01 s */} ---
+clone3({flags=CLONE_VM|CLONE_VFORK|CLONE_CLEAR_SIGHAND, exit_signal=SIGCHLD, stack=0x70daed65d000, stack_size=0x9000}, 88) = 930833
+wait4(930833, [{WIFEXITED(s) && WEXITSTATUS(s) == 0}], 0, NULL) = 930833
+--- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=930833, si_uid=1000, si_status=0, si_utime=1 /* 0.01 s */, si_stime=5 /* 0.05 s */} ---
+exit_group(0)                           = ?
++++ exited with 0 +++

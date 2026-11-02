@@ -1,0 +1,14 @@
+Running as unit: memra-rig-job-805080297faf.service; invocation ID: 27e61dc32ca742f798d77e5fb56d3d27
+Traceback (most recent call last):
+  File "/home/evidence-user/.local/state/evidence-campaign-20261002/receipts/A-package-flag-registry-1000/producer-context-contract-v4/run_contract_control.py", line 77, in <module>
+    if __name__=='__main__':main()
+                            ~~~~^^
+  File "/home/evidence-user/.local/state/evidence-campaign-20261002/receipts/A-package-flag-registry-1000/producer-context-contract-v4/run_contract_control.py", line 57, in main
+    else:raise AssertionError('outside sealed package source accepted')
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: outside sealed package source accepted
+          Finished with result: exit-code
+Main processes terminated with: code=exited, status=1/FAILURE
+               Service runtime: 4.693s
+             CPU time consumed: 4.335s
+                   Memory peak: 258M (swap: 0B)

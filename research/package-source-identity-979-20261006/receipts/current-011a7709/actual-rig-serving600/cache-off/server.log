@@ -1,0 +1,118 @@
+[server] build: memra-0.138.0-ad1eeb171bca (id: package-source-v1, git: unknown)
+[env-audit] warning: 1 MEMRA_* name(s) in the environment that nothing in this build reads and docs/FLAGS.md does not list: MEMRA_RIG_LOCK_FD. Left alone: launchers and gate scripts own names outside the engine's families.
+[server] OpenRouter metadata loaded: 1 model(s), sha256 6b32975e329589404d76f7ba8884b91d870de3454eb1fcf42590fcba623bbd1c from /home/evidence-user/.local/state/evidence-campaign-20261002/receipts/A-package-flag-registry-1000/rig-acceptance-design/models.toml
+[server] starting; models config = [("package-probe", "/evidence/model-store/ornith15-9b/gguf/Ornith-1.5-9B-NVFP4-Q5K-mtp.gguf", None)]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[worker-affinity] off (MEMRA_WORKER_CPUSET / MEMRA_WORKER_AFFINITY unset or =0)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal after 3 consecutive misses (MEMRA_GPU_PROBE_MISSES), fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2 (K=5 when the loaded MTP head is rank-trimmed)
+[worker] loading model "package-probe" <- /evidence/model-store/ornith15-9b/gguf/Ornith-1.5-9B-NVFP4-Q5K-mtp.gguf
+[tensor-contract] bound 442 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[mtp-draft] loading external MTP draft: /evidence/model-store/ornith15-9b/gguf/mtp-Ornith-1.5-9B-NVFP4-frspec-sxc32768.gguf
+[mtp-draft] external draft head: blk.32, source=output.weight, head_vocab=32768 (trimmed, d2t map)
+[frspec-trim] per-head trim: 0 extra chain head(s) gathered from their own blocks
+[worker]   loaded "package-probe": 33 layers, eos=248046, stop=[248046]
+[worker] package-probe: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false qwen_effort=false gemma_think=false dsv4=false glm5=false ctx=262144 tok="qwen35" instruct=Some("chatml") chat_defaults=None/None
+[route-contract] model="package-probe" route=hybrid-worker capacity=64 sessions implemented=[capacity,occupancy,progress,fault-ownership,shutdown-ownership,memory-cost,rewrite-qualification,prime-fairness,service-metrics] refused=[]
+[worker] package-probe: decode wave cap 16; scheduler tick cap 16 (exact-16 tier)
+[admission] "package-probe": plain 14848 B/token, spec 16704 B/token; fixed residual learns from effective-free deltas
+[prime-walk] model="package-probe" route=mtp supported=true yield_door=true [gdn_dspark_compatible=true mtp_head_loaded=true no_hyper_connections=true no_pipeline_cuts=true]
+[fa-pool] grow #0 dev=0 o_len 0 -> 266240 ml_len 0 -> 1040 (retired kept, zero=false)
+[func] CAPTURE-TIME kernel lookup (not warmed): embed_gather_u32
+[func] CAPTURE-TIME kernel lookup (not warmed): qmatvec_q4_K_mmvq
+[func] CAPTURE-TIME kernel lookup (not warmed): qmatvec_q6_K_mmvq
+[func] CAPTURE-TIME kernel lookup (not warmed): inc_i32
+[fa-pool] grow #1 dev=0 o_len 266240 -> 532480 ml_len 1040 -> 2080 (retired kept, zero=false)
+[func] CAPTURE-TIME kernel lookup (not warmed): fa_decode_vec_q_v4_deep_dc
+[func] CAPTURE-TIME kernel lookup (not warmed): fa_decode_combine_f32
+[func] CAPTURE-TIME kernel lookup (not warmed): memra_sctr_inc
+[func] CAPTURE-TIME kernel lookup (not warmed): gumbel_perturb_filtered_ctr_f32
+[spec] draft-session state high-water: 37MB (max of parked delta 37MB and capture-time pool peak 5MB; charged per spec admission and gating future captures)
+[fa-pool] grow #2 dev=0 o_len 532480 -> 1064960 ml_len 2080 -> 4160 (retired kept, zero=false)
+[fa-pool] grow #3 dev=0 o_len 1064960 -> 2129920 ml_len 4160 -> 8320 (retired kept, zero=false)
+[device-trim] reason=calibration-complete {"device":0,"reclaimed_bytes":1442840576,"still_owned_bytes":6728204160,"pool_reserved_bytes":6845104128,"pool_cached_bytes":116899968,"driver_free_bytes":17905025024,"synchronization_errors":[]}
+[admit-cal] post-probe pool trim: released 1376MB cached back to the driver
+[admit-cal] boot calibration done: model="package-probe" route=mtp transient floor 1536MB (static was 1536MB; measured 1270MB; probe kv charge 67MB, draft-state 37MB, drafted 75 accepted 41; [dev0 peak-mapped 7904MB rest-mapped 6528MB charged 105MB -> 1270MB]; 1.5s)
+[admit-mem] door=OFF open_output_tokens=8192 defer_budget_ms=8000 (admission charges prompt+output, the reclaim flush demotes to the host tier before dropping, and a memory defer past the budget refuses 429 instead of queueing past the client's deadline)
+[kv-vmm] door=OFF (MEMRA_KV_ALLOCATOR unset or pooled: pooled K/V planes)
+[server] worker ready; serving models: ["package-probe"]
+[server] listening on http://127.0.0.1:18579
+[meter] admit id=chatcmpl-925d32e584659981e5ef19b576c659fe tenant=default lane=interactive model="package-probe"
+[admission] per-session draft-state charge: model="package-probe" +40MB (measured capture high-water)
+[admission] request cost: model="package-probe" ctx=444 path=spec = 16704 B/token x ctx + 114MB prefill-workspace + 0MB fixed = 121MB
+[spec-k] model="package-probe" tenant="" K=3 source=cold-short prompt=316 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="package-probe" 104MB (observed 110MB at ctx 388 path=spec)
+[spec-acc] ctx=316 burst=14/54 cum=14/54=0.259
+[prefix-cache] WARNING: first prefix insert is larger than the entire byte budget; this shape cannot produce cross-request hits. Subsequent refusals remain visible in prefix_cache_skips_budget
+[prefix-cache] insert refused: entry 57518080 exceeds budget 0 (spec-boundary, model package-probe)
+[spec-acc] ctx=349 burst=17/39 cum=31/93=0.333
+[meter] admit id=chatcmpl-1ca41184daa40941fd13f852b5cdb04c tenant=default lane=interactive model="package-probe"
+[admission] per-session draft-state charge: model="package-probe" +40MB (measured capture high-water)
+[admission] request cost: model="package-probe" ctx=471 path=spec = 16704 B/token x ctx + 124MB prefill-workspace + 104MB fixed = 235MB
+[worker] spec-affinity: grew parked session 388 -> 471 rows (request-owned need)
+[worker] spec-affinity: rewound to 288 of 343 prompt tokens (fingerprint; priming 55 suffix; model package-probe)
+[spec-k] model="package-probe" tenant="" K=3 source=cold-short prompt=343 cached=288 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[spec-acc] ctx=55 burst=19/42 cum=19/42=0.452
+[spec-acc] ctx=89 burst=19/33 cum=38/75=0.507
+[meter] admit id=chatcmpl-cdb5b1ae2d99335d0eef6eadaf93790e tenant=default lane=interactive model="package-probe"
+[admission] per-session draft-state charge: model="package-probe" +40MB (measured capture high-water)
+[admission] request cost: model="package-probe" ctx=498 path=spec = 16704 B/token x ctx + 133MB prefill-workspace + 104MB fixed = 245MB
+[worker] spec-affinity: grew parked session 471 -> 498 rows (request-owned need)
+[worker] spec-affinity: rewound to 320 of 370 prompt tokens (fingerprint; priming 50 suffix; model package-probe)
+[spec-k] model="package-probe" tenant="" K=3 source=cold-short prompt=370 cached=320 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[spec-acc] ctx=50 burst=18/39 cum=18/39=0.462
+[spec-acc] ctx=82 burst=12/57 cum=30/96=0.312
+[meter] admit id=chatcmpl-5801dc69f7ca234c55936c173c9d312e tenant=default lane=interactive model="package-probe"
+[admission] per-session draft-state charge: model="package-probe" +40MB (measured capture high-water)
+[admission] request cost: model="package-probe" ctx=525 path=spec = 16704 B/token x ctx + 143MB prefill-workspace + 104MB fixed = 256MB
+[worker] spec-affinity: grew parked session 498 -> 525 rows (request-owned need)
+[worker] spec-affinity: rewound to 352 of 397 prompt tokens (fingerprint; priming 45 suffix; model package-probe)
+[spec-k] model="package-probe" tenant="" K=3 source=cold-short prompt=397 cached=352 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[spec-acc] ctx=45 burst=15/48 cum=15/48=0.312
+[spec-acc] ctx=77 burst=18/42 cum=33/90=0.367
+[meter] admit id=chatcmpl-909e8d706e8f5944a220098cf6317535 tenant=default lane=interactive model="package-probe"
+[admission] per-session draft-state charge: model="package-probe" +40MB (measured capture high-water)
+[admission] request cost: model="package-probe" ctx=552 path=spec = 16704 B/token x ctx + 153MB prefill-workspace + 104MB fixed = 266MB
+[worker] spec-affinity: declined (history diverged at 395 of checkpoint 397; 1 parked, 424 prompt tokens; model package-probe)
+[spec-k] model="package-probe" tenant="" K=3 source=cold-short prompt=424 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="package-probe" 104MB (observed 112MB at ctx 496 path=spec)
+[spec-acc] ctx=424 burst=12/57 cum=12/57=0.211
+[prefix-cache] insert refused: entry 59121664 exceeds budget 0 (spec-boundary, model package-probe)
+[spec-acc] ctx=456 burst=19/42 cum=31/99=0.313
+[meter] admit id=chatcmpl-883db77be0ace0406d0cb0319cec94b1 tenant=default lane=interactive model="package-probe"
+[admission] per-session draft-state charge: model="package-probe" +40MB (measured capture high-water)
+[admission] request cost: model="package-probe" ctx=579 path=spec = 16704 B/token x ctx + 163MB prefill-workspace + 104MB fixed = 276MB
+[worker] spec-affinity: grew parked session 496 -> 579 rows (request-owned need)
+[worker] spec-affinity: rewound to 384 of 451 prompt tokens (fingerprint; priming 67 suffix; model package-probe)
+[spec-k] model="package-probe" tenant="" K=3 source=cold-short prompt=451 cached=384 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[spec-acc] ctx=67 burst=17/45 cum=17/45=0.378
+[spec-acc] ctx=100 burst=14/48 cum=31/93=0.333
+[meter] admit id=chatcmpl-4ef19effc2faf217fd8cb588e8ba464c tenant=default lane=interactive model="package-probe"
+[admission] per-session draft-state charge: model="package-probe" +40MB (measured capture high-water)
+[admission] request cost: model="package-probe" ctx=606 path=spec = 16704 B/token x ctx + 172MB prefill-workspace + 104MB fixed = 286MB
+[worker] spec-affinity: grew parked session 579 -> 606 rows (request-owned need)
+[worker] spec-affinity: rewound to 416 of 478 prompt tokens (fingerprint; priming 62 suffix; model package-probe)
+[spec-k] model="package-probe" tenant="" K=3 source=cold-short prompt=478 cached=416 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[spec-acc] ctx=62 burst=15/48 cum=15/48=0.312
+[spec-acc] ctx=94 burst=15/48 cum=30/96=0.312
+[meter] admit id=chatcmpl-3c9cdd7dea5b5ae9b031ac9aeb493564 tenant=default lane=interactive model="package-probe"
+[admission] per-session draft-state charge: model="package-probe" +40MB (measured capture high-water)
+[admission] request cost: model="package-probe" ctx=633 path=spec = 16704 B/token x ctx + 182MB prefill-workspace + 104MB fixed = 297MB
+[worker] spec-affinity: grew parked session 606 -> 633 rows (request-owned need)
+[worker] spec-affinity: rewound to 448 of 505 prompt tokens (fingerprint; priming 57 suffix; model package-probe)
+[spec-k] model="package-probe" tenant="" K=3 source=cold-short prompt=505 cached=448 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[spec-acc] ctx=57 burst=18/42 cum=18/42=0.429
+[spec-acc] ctx=90 burst=14/48 cum=32/90=0.356
+[meter] admit id=chatcmpl-a96f6092fd0589b4dad5a4e589a65929 tenant=default lane=interactive model="package-probe"
+[admission] per-session draft-state charge: model="package-probe" +40MB (measured capture high-water)
+[admission] request cost: model="package-probe" ctx=444 path=spec = 16704 B/token x ctx + 114MB prefill-workspace + 104MB fixed = 225MB
+[worker] spec-affinity: declined (history diverged at 314 of checkpoint 397; 2 parked, 316 prompt tokens; model package-probe)
+[spec-k] model="package-probe" tenant="" K=3 source=cold-short prompt=316 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[spec-acc] ctx=316 burst=15/51 cum=15/51=0.294
+[prefix-cache] insert refused: entry 57518080 exceeds budget 0 (spec-boundary, model package-probe)
+[spec-acc] ctx=349 burst=15/45 cum=30/96=0.312
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting
+[server] GPU worker shutdown complete

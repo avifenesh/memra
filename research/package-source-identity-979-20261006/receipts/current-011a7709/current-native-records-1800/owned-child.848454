@@ -1,0 +1,7 @@
+clone3({flags=CLONE_VM|CLONE_FS|CLONE_FILES|CLONE_SIGHAND|CLONE_THREAD|CLONE_SYSVSEM|CLONE_SETTLS|CLONE_PARENT_SETTID|CLONE_CHILD_CLEARTID, child_tid=0x7511bb3ffce8, parent_tid=0x7511bb3ff990, exit_signal=0, stack=0x7511bb1ff000, stack_size=0x1fc300, tls=0x7511bb3ff6c0} => {parent_tid=[848457]}, 88) = 848457
+tgkill(848414, 848453, SIGUSR1)         = 0
+clone3({flags=CLONE_VM|CLONE_FS|CLONE_FILES|CLONE_SIGHAND|CLONE_THREAD|CLONE_SYSVSEM|CLONE_SETTLS|CLONE_PARENT_SETTID|CLONE_CHILD_CLEARTID, child_tid=0x7511bc1ffce8, parent_tid=0x7511bc1ff990, exit_signal=0, stack=0x7511bbfff000, stack_size=0x1fc300, tls=0x7511bc1ff6c0} => {parent_tid=[848463]}, 88) = 848463
+clone3({flags=CLONE_VM|CLONE_FS|CLONE_FILES|CLONE_SIGHAND|CLONE_THREAD|CLONE_SYSVSEM|CLONE_SETTLS|CLONE_PARENT_SETTID|CLONE_CHILD_CLEARTID, child_tid=0x7511bb3ffce8, parent_tid=0x7511bb3ff990, exit_signal=0, stack=0x7511bb1ff000, stack_size=0x1fc300, tls=0x7511bb3ff6c0} => {parent_tid=[848464]}, 88) = 848464
+tgkill(848414, 848463, SIGUSR1)         = 0
+exit(0)                                 = ?
++++ exited with 0 +++

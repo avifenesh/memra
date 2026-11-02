@@ -1,0 +1,7 @@
+execve("/bin/sh", ["sh", "-c", "--", "fatbinary -64 --cicc-cmdline=\"-ftz=0 -prec_div=1 -prec_sqrt=1 -fmad=1 \" \"--image3=kind=elf,sm=120a,file=/tmp/tmpxft_000e2e24_00000000-8_mimo_qkv_gather.cubin\" --embedded-fatbin=\"/tmp/tmpxft_000e2e24_00000000-3_mimo_qkv_gather.fatbin.c\" "], 0x5d744f468da0 /* 125 vars */) = 0
+vfork()                                 = 929373
+wait4(-1, [{WIFEXITED(s) && WEXITSTATUS(s) == 0}], 0, NULL) = 929373
+--- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=929373, si_uid=1000, si_status=0, si_utime=0, si_stime=0} ---
+wait4(-1, 0x7ffcae044c9c, WNOHANG, NULL) = -1 ECHILD (No child processes)
+exit_group(0)                           = ?
++++ exited with 0 +++

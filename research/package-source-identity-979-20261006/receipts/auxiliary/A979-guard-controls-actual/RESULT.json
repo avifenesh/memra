@@ -1,0 +1,64 @@
+{
+  "guard_sha256": "6f9b0c87374d2d8be9a58cc5f994770a2e3ac21d12cdd3ff26eaabcddb6c7fac",
+  "actual_owned_CPU_wall_normal_detached_controls": [
+    {
+      "case": "normal",
+      "exit": 0,
+      "reason": "child-exit",
+      "CPU_seconds": 0.009574,
+      "wall_seconds": 0.00909572304226458,
+      "owned_cleanup": [],
+      "samecgroup_sibling_untouched": true
+    },
+    {
+      "case": "cpu",
+      "exit": 124,
+      "reason": "CPU-ceiling-cleanup-reserve",
+      "CPU_seconds": 2.446391,
+      "wall_seconds": 2.4787577390670776,
+      "owned_cleanup": [
+        {
+          "pid_observed": 2530187,
+          "signal": "SIGKILL",
+          "pidfd_generation_pinned": true
+        }
+      ],
+      "samecgroup_sibling_untouched": true
+    },
+    {
+      "case": "wall",
+      "exit": 124,
+      "reason": "wall-deadline",
+      "CPU_seconds": 0.011831,
+      "wall_seconds": 0.3028622099664062,
+      "owned_cleanup": [
+        {
+          "pid_observed": 2530269,
+          "signal": "SIGKILL",
+          "pidfd_generation_pinned": true
+        }
+      ],
+      "samecgroup_sibling_untouched": true
+    },
+    {
+      "case": "leader-exit-detached",
+      "exit": 0,
+      "reason": "child-exit",
+      "CPU_seconds": 0.011764,
+      "wall_seconds": 0.061201964039355516,
+      "owned_cleanup": [
+        {
+          "pid_observed": 2530285,
+          "signal": "SIGKILL",
+          "pidfd_generation_pinned": true
+        }
+      ],
+      "samecgroup_sibling_untouched": true
+    }
+  ],
+  "wrong_job_refused_before_spawn_or_signal": true,
+  "samecgroup_sibling_untouched": true,
+  "numeric_process_group_signals": false,
+  "native_orGPU_executed": false,
+  "qualified": false
+}

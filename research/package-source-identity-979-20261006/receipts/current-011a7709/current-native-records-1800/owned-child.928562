@@ -1,0 +1,9 @@
+execve("/usr/bin/gcc", ["gcc", "-std=c++17", "-D__CUDA_ARCH__=1200", "-D__CUDA_ARCH_FEAT_SM120_ALL", "-D__CUDA_ARCH_SPECIFIC__=1200", "-D__CUDA_ARCH_FAMILY_SPECIFIC__=1200", "-D__CUDA_ARCH_LIST__=1200", "-c", "-x", "c++", "-DCUDA_DOUBLE_MATH_FUNCTIONS", "-O3", "-Wno-psabi", "-I/usr/local/cuda-13.1/bin/../targets/x86_64-linux/include", "-isystem", "/usr/local/cuda-13.1/bin/../targets/x86_64-linux/include/cccl", "-m64", "/tmp/tmpxft_000e1cdf_00000000-6_dsv4_gpu.cudafe1.cpp", "-o", "/home/evidence-user/.local/state/evidence-campaign-20261002/receipts/manager/package-identity-979/current-source-011a7709-preparation/prepared-current-source/final-target/release/build/memra-engine-788f6a603b2fbba1/out/dsv4_gpu.o"], 0x566f2d331bc8 /* 125 vars */) = 0
+clone3({flags=CLONE_VM|CLONE_VFORK|CLONE_CLEAR_SIGHAND, exit_signal=SIGCHLD, stack=0x76848aa23000, stack_size=0x9000}, 88) = 928563
+wait4(928563, [{WIFEXITED(s) && WEXITSTATUS(s) == 0}], 0, NULL) = 928563
+--- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=928563, si_uid=1000, si_status=0, si_utime=582 /* 5.82 s */, si_stime=17 /* 0.17 s */} ---
+clone3({flags=CLONE_VM|CLONE_VFORK|CLONE_CLEAR_SIGHAND, exit_signal=SIGCHLD, stack=0x76848aa23000, stack_size=0x9000}, 88) = 929248
+wait4(929248, [{WIFEXITED(s) && WEXITSTATUS(s) == 0}], 0, NULL) = 929248
+--- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=929248, si_uid=1000, si_status=0, si_utime=10 /* 0.10 s */, si_stime=0} ---
+exit_group(0)                           = ?
++++ exited with 0 +++

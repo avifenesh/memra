@@ -1,0 +1,7 @@
+execve("/bin/sh", ["sh", "-c", "--", "ptxas -arch=sm_120a -m64  --fmad false \"/tmp/tmpxft_000e3388_00000000-6_mimo_audio_codec_rvq.ptx\"  -o \"/tmp/tmpxft_000e3388_00000000-8_mimo_audio_codec_rvq.cubin\" "], 0x592d23326340 /* 125 vars */) = 0
+vfork()                                 = 930747
+wait4(-1, [{WIFEXITED(s) && WEXITSTATUS(s) == 0}], 0, NULL) = 930747
+--- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=930747, si_uid=1000, si_status=0, si_utime=2 /* 0.02 s */, si_stime=0} ---
+wait4(-1, 0x7ffdf21dc50c, WNOHANG, NULL) = -1 ECHILD (No child processes)
+exit_group(0)                           = ?
++++ exited with 0 +++
