@@ -4691,6 +4691,57 @@ impl HybridModel {
         ph_last: &mut std::time::Instant,
         pending_out: Option<&mut Option<PendingBatchStep>>,
     ) -> Result<(Vec<Vec<f32>>, Vec<Option<u32>>), Box<dyn std::error::Error>> {
+        let n_vocab = self.output.out_features();
+        let staged = self.decode_batch_sample_stage(
+            e,
+            caches,
+            samp,
+            masks,
+            lean,
+            logits,
+            b_n,
+            pending_out.is_some(),
+        )?;
+        if let Some(slot) = pending_out {
+            for c in caches.iter_mut() {
+                c.pos += 1;
+            }
+            ph_mark(e, 11, ph_last)?;
+            let done = e.stream().record_event(None)?;
+            *slot = Some(PendingBatchStep::new(
+                staged.logits,
+                staged.pristine,
+                staged.device_tokens,
+                samp.iter().take(b_n).map(Option::is_some).collect(),
+                n_vocab,
+                lean,
+                done,
+                e.copy_stream.clone(),
+            ));
+            return Ok((Vec::new(), vec![None; b_n]));
+        }
+        let rows = self.decode_batch_sample_rows(e, caches, samp, masks, lean, &staged, b_n)?;
+        for c in caches.iter_mut() {
+            c.pos += 1;
+        }
+        ph_mark(e, 11, ph_last)?;
+        Ok((rows, staged.next))
+    }
+
+    /// The epilogue's device half: pristine parks, penalties, masks and the device draws
+    /// (with the `[B]` token readback unless `pending`).
+    #[allow(clippy::too_many_arguments)]
+    fn decode_batch_sample_stage(
+        &self,
+        e: &Engine,
+        caches: &mut [&mut Cache],
+        samp: &[Option<DevSamp>],
+        masks: &[Option<(&CudaSlice<u32>, usize)>],
+        lean: bool,
+        logits: CudaSlice<f32>,
+        b_n: usize,
+        pending: bool,
+    ) -> Result<SampledStack, Box<dyn std::error::Error>> {
         // Grammar masks and penalties both mutate the sampling copy. Preserve each affected
         // row's PRISTINE logits first: continuation/reuse consumers must never inherit a mask
         // or get penalized twice after restore.
@@ -4802,7 +4853,6 @@ impl HybridModel {
 
         // Device-side sampling for requested rows (see the method doc). Enqueued before the
         // big logits D2H so the tiny [B] token readback rides the same sync.
-        let pending = pending_out.is_some();
         let mut next: Vec<Option<u32>> = vec![None; b_n];
         let mut device_tokens: Option<CudaSlice<u32>> = None;
         if samp.iter().take(b_n).any(|s| s.is_some()) {
@@ -4903,26 +4953,31 @@ impl HybridModel {
             }
             device_tokens = Some(toks);
         }
+        Ok(SampledStack {
+            logits,
+            pristine,
+            next,
+            device_tokens,
+        })
+    }
 
-        if let Some(slot) = pending_out {
-            for c in caches.iter_mut() {
-                c.pos += 1;
-            }
-            ph_mark(e, 11, ph_last)?;
-            let done = e.stream().record_event(None)?;
-            *slot = Some(PendingBatchStep::new(
-                logits,
-                pristine,
-                device_tokens,
-                samp.iter().take(b_n).map(Option::is_some).collect(),
-                n_vocab,
-                lean,
-                done,
-                e.copy_stream.clone(),
-            ));
-            return Ok((Vec::new(), vec![None; b_n]));
-        }
-
+    /// The epilogue's host half: lean rows park on device, the others come back as host rows
+    /// (masked non-lean rows return their pristine copy).
+    #[allow(clippy::too_many_arguments)] // allow: the epilogue's own inputs plus the staged stack
+    fn decode_batch_sample_rows(
+        &self,
+        e: &Engine,
+        caches: &mut [&mut Cache],
+        samp: &[Option<DevSamp>],
+        masks: &[Option<(&CudaSlice<u32>, usize)>],
+        lean: bool,
+        staged: &SampledStack,
+        b_n: usize,
+    ) -> Result<Vec<Vec<f32>>, Box<dyn std::error::Error>> {
+        let n_vocab = self.output.out_features();
+        let SampledStack {
+            logits, pristine, ..
+        } = staged;
         let lean_any = lean && samp.iter().take(b_n).any(|s| s.is_some());
         let rows: Vec<Vec<f32>> = if lean_any {
             // LEAN: park device-sampled rows on-device (per-cache buffer, dtod); D2H only
@@ -4961,7 +5016,7 @@ impl HybridModel {
                 })
                 .collect::<Result<_, _>>()?
         } else {
-            let host = e.dtoh(&logits)?;
+            let host = e.dtoh(logits)?;
             (0..b_n)
                 .map(|bi| {
                     // grammar-masked non-lean rows return the PRISTINE copy (the in-place ban
@@ -4973,12 +5028,17 @@ impl HybridModel {
                 })
                 .collect::<Result<_, _>>()?
         };
-        for c in caches.iter_mut() {
-            c.pos += 1;
-        }
-        ph_mark(e, 11, ph_last)?;
-        Ok((rows, next))
+        Ok(rows)
     }
+}
+
+/// `decode_batch_sample_stage`'s output: the (penalized, masked) logits stack, the pristine
+/// copies of mutated non-lean rows, the host-read device draws, and the device token buffer.
+struct SampledStack {
+    logits: CudaSlice<f32>,
+    pristine: Vec<Option<CudaSlice<f32>>>,
+    next: Vec<Option<u32>>,
+    device_tokens: Option<CudaSlice<u32>>,
 }
 
 fn b1_fast_plan_eligible(plan: &memra_gguf::model_plan::ModelPlan) -> bool {
