@@ -316,19 +316,18 @@ pub(crate) async fn admit_translated(
     }
     // BACKPRESSURE (lane/deadline-billing): shed at submission — never after — when the
     // queue is at its bound or the estimated wait cannot fit the request's deadline.
-    let mut pending_admit =
-        match crate::reserve_pending_admit(st, lane, &rl, deadline.preheader(stream)) {
-            Ok(guard) => guard,
-            Err((resp, outcome)) => {
-                return Err(crate::ledger_unbilled(
-                    receipt,
-                    rl.attach(resp),
-                    outcome,
-                    outcome,
-                    &env.id,
-                ));
-            }
-        };
+    let mut pending_admit = match crate::reserve_pending_admit(st, lane, &rl, deadline) {
+        Ok(guard) => guard,
+        Err((resp, outcome)) => {
+            return Err(crate::ledger_unbilled(
+                receipt,
+                rl.attach(resp),
+                outcome,
+                outcome,
+                &env.id,
+            ));
+        }
+    };
     // Vision phase 2 (hermes decode-bomb finding, fixed 2026-08-23): canvases expand only after
     // budget and slot admission priced the header-planned pad runs. The process-wide memory
     // permit moves into the worker request and survives streaming until completion/cancellation.
@@ -413,11 +412,9 @@ pub(crate) async fn admit_translated(
     }
     // DEADLINE: the admission wait counts against timeout_ms; dropping rx on a miss IS
     // the cancel (the worker prunes closed-channel requests at the next tick).
-    let rx = match tokio::time::timeout_at(deadline.preheader(stream).at, crate::peek_admission(rx))
-        .await
-    {
-        Ok(Ok(rx)) => rx,
-        Ok(Err((resp, error_code))) => {
+    let rx = match crate::await_admission(rx, deadline, stream).await {
+        Ok(rx) => rx,
+        Err(crate::AdmissionMiss::Refused(resp, error_code)) => {
             return Err(crate::ledger_rejected(
                 receipt,
                 rl.attach(resp),
@@ -425,7 +422,7 @@ pub(crate) async fn admit_translated(
                 &env.id,
             ));
         }
-        Err(_) => {
+        Err(crate::AdmissionMiss::Deadline) => {
             return Err(crate::ledger_unbilled(
                 receipt,
                 rl.attach(crate::admission_deadline_response(deadline, stream)),
