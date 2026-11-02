@@ -1,0 +1,163 @@
+{
+ "runs": {
+  "band": {
+   "1": [
+    198.73,
+    185.58,
+    191.8
+   ],
+   "2": [
+    255.32,
+    234.04,
+    232.62
+   ],
+   "4": [
+    346.59,
+    323.81,
+    310.41
+   ],
+   "8": [
+    452.28,
+    401.28,
+    405.08
+   ]
+  },
+  "model": {
+   "1": [
+    197.65,
+    184.77,
+    189.34
+   ],
+   "2": [
+    247.32,
+    249.9,
+    246.44
+   ],
+   "4": [
+    303.03,
+    286.61,
+    292.95
+   ],
+   "8": [
+    421.73,
+    414.28,
+    405.24
+   ]
+  }
+ },
+ "median": {
+  "band": {
+   "1": 191.8,
+   "2": 234.04,
+   "4": 323.81,
+   "8": 405.08
+  },
+  "model": {
+   "1": 189.34,
+   "2": 247.32,
+   "4": 292.95,
+   "8": 414.28
+  }
+ },
+ "lines": {
+  "band-r0": [
+   "[spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on",
+   "[spec-cost] calibration skipped: the LOW/HIGH band owns the spec gate",
+   "[spec-pool] pooled MTP cohort engaged: 2 sessions (model q9)",
+   "[spec-pool] pooled rows draft engaged: 2 members (arms [GraphGreedy, GraphSampled])"
+  ],
+  "model-r0": [
+   "[spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on",
+   "[spec-pool] pooled rows draft engaged: 4 members (arms [GraphGreedy, GraphGreedy, GraphGreedy, GraphGreedy])",
+   "[spec-pool] pooled rows draft engaged: 3 members (arms [GraphGreedy, GraphGreedy, GraphGreedy])",
+   "[spec-pool] pooled rows draft engaged: 2 members (arms [GraphGreedy, GraphGreedy])",
+   "[spec-cost] model=\"q9\" depth=2048 pooled=true plain_cap=16 round_overhead=2.13ms pooled_overhead=Some((4, 0.617484972222222)) verify_ms[1..16]=[8.5 9.8 10.7 11.9 13.1 14.3 15.8 17.2 19.7 22.1 24.5 27.0 28.6 30.2 31.8 33.3] plain_ms[1..16]=[9.4 10.1 11.1 12.2 13.6 15.0 16.4 17.8 19.8 21.9 24.0 26.0 28.1 30.2 32.2 34.3] (14.2s)",
+   "[spec-cost] model=\"q9\" realized n=1 K=3: 228.2 tok/s (now priced from serving)",
+   "[spec-cost] model=\"q9\" n=1 rung=3 -> K=3 (predicted 220.7 vs plain 106.7 tok/s; pooled=true)",
+   "[spec-cost] model=\"q9\" n=2 rung=3 -> K=2 (predicted 297.5 vs plain 198.7 tok/s; pooled=true)",
+   "[spec-pool] pooled MTP cohort engaged: 2 sessions (model q9)",
+   "[spec-cost] model=\"q9\" realized n=2 K=2: 237.8 tok/s (now priced from serving)",
+   "[spec-cost] model=\"q9\" n=4 rung=3 -> K=1 (predicted 361.1 vs plain 327.7 tok/s; pooled=true)",
+   "[spec-pool] pooled MTP cohort engaged: 4 sessions (model q9)",
+   "[spec-cost] model=\"q9\" realized n=4 K=1: 297.2 tok/s (now priced from serving)",
+   "[spec-cost] model=\"q9\" n=4 rung=1 -> K=0 (predicted 327.7 vs plain 327.7 tok/s; pooled=true)",
+   "[spec-gate] demoted session to batched decode: 4 active, cost model prefers plain (or HIGH=4 without a model) (model q9, committed 134, generated 97, sampled, plain draws from philox event 109)",
+   "[spec-gate] demoted session to batched decode: 4 active, cost model prefers plain (or HIGH=4 without a model) (model q9, committed 133, generated 100, greedy)",
+   "[spec-gate] demoted session to batched decode: 4 active, cost model prefers plain (or HIGH=4 without a model) (model q9, committed 139, generated 97, greedy)",
+   "[spec-gate] demoted session to batched decode: 4 active, cost model prefers plain (or HIGH=4 without a model) (model q9, committed 138, generated 97, sampled, plain draws from philox event 111)",
+   "[spec-cost] model=\"q9\" realized n=4 K=0: 361.9 tok/s (now priced from serving)",
+   "[spec-cost] model=\"q9\" n=5 rung=3 -> K=0 (predicted 388.4 vs plain 388.4 tok/s; pooled=true)",
+   "[spec-cost] model=\"q9\" n=7 rung=3 -> K=0 (predicted 451.4 vs plain 451.4 tok/s; pooled=true)",
+   "[spec-cost] model=\"q9\" n=8 rung=3 -> K=0 (predicted 475.5 vs plain 475.5 tok/s; pooled=true)",
+   "[spec-cost] model=\"q9\" realized n=8 K=0: 419.9 tok/s (now priced from serving)",
+   "[spec-cost] model=\"q9\" realized n=7 K=0: 434.2 tok/s (now priced from serving)"
+  ],
+  "model-r1": [
+   "[spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on",
+   "[spec-pool] pooled rows draft engaged: 4 members (arms [GraphGreedy, GraphGreedy, GraphGreedy, GraphGreedy])",
+   "[spec-pool] pooled rows draft engaged: 3 members (arms [GraphGreedy, GraphGreedy, GraphGreedy])",
+   "[spec-pool] pooled rows draft engaged: 2 members (arms [GraphGreedy, GraphGreedy])",
+   "[spec-cost] model=\"q9\" depth=2048 pooled=true plain_cap=16 round_overhead=3.23ms pooled_overhead=Some((4, 0.8941836250000001)) verify_ms[1..16]=[9.0 9.5 10.0 11.2 12.3 13.4 14.9 16.4 18.8 21.1 23.5 25.8 27.5 29.1 30.8 32.4] plain_ms[1..16]=[9.7 10.3 11.6 13.0 14.3 15.5 16.8 18.1 20.3 22.5 24.8 27.0 29.2 31.4 33.6 35.9] (14.8s)",
+   "[spec-cost] model=\"q9\" realized n=1 K=3: 199.0 tok/s (now priced from serving)",
+   "[spec-cost] model=\"q9\" n=1 rung=3 -> K=3 (predicted 200.2 vs plain 103.1 tok/s; pooled=true)",
+   "[spec-cost] model=\"q9\" n=2 rung=3 -> K=2 (predicted 275.3 vs plain 193.7 tok/s; pooled=true)",
+   "[spec-pool] pooled MTP cohort engaged: 2 sessions (model q9)",
+   "[spec-cost] model=\"q9\" realized n=2 K=2: 260.3 tok/s (now priced from serving)",
+   "[spec-cost] model=\"q9\" n=4 rung=3 -> K=1 (predicted 386.9 vs plain 308.3 tok/s; pooled=true)",
+   "[spec-pool] pooled MTP cohort engaged: 4 sessions (model q9)",
+   "[spec-cost] model=\"q9\" realized n=4 K=1: 283.2 tok/s (now priced from serving)",
+   "[spec-cost] model=\"q9\" n=4 rung=1 -> K=0 (predicted 308.3 vs plain 308.3 tok/s; pooled=true)",
+   "[spec-gate] demoted session to batched decode: 4 active, cost model prefers plain (or HIGH=4 without a model) (model q9, committed 132, generated 99, greedy)",
+   "[spec-gate] demoted session to batched decode: 4 active, cost model prefers plain (or HIGH=4 without a model) (model q9, committed 135, generated 98, sampled, plain draws from philox event 105)",
+   "[spec-gate] demoted session to batched decode: 4 active, cost model prefers plain (or HIGH=4 without a model) (model q9, committed 139, generated 98, sampled, plain draws from philox event 113)",
+   "[spec-gate] demoted session to batched decode: 4 active, cost model prefers plain (or HIGH=4 without a model) (model q9, committed 142, generated 100, greedy)",
+   "[spec-cost] model=\"q9\" realized n=4 K=0: 332.3 tok/s (now priced from serving)",
+   "[spec-cost] model=\"q9\" n=6 rung=3 -> K=0 (predicted 409.3 vs plain 409.3 tok/s; pooled=true)",
+   "[spec-cost] model=\"q9\" n=8 rung=3 -> K=0 (predicted 468.5 vs plain 468.5 tok/s; pooled=true)",
+   "[spec-cost] model=\"q9\" realized n=8 K=0: 396.9 tok/s (now priced from serving)",
+   "[spec-cost] model=\"q9\" realized n=7 K=0: 440.2 tok/s (now priced from serving)"
+  ],
+  "band-r1": [
+   "[spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on",
+   "[spec-cost] calibration skipped: the LOW/HIGH band owns the spec gate",
+   "[spec-pool] pooled MTP cohort engaged: 2 sessions (model q9)",
+   "[spec-pool] pooled rows draft engaged: 2 members (arms [GraphGreedy, GraphSampled])",
+   "[spec-gate] demoted session to batched decode: 8 active >= HIGH=4 (model q9, committed 38, generated 1, sampled, plain draws from philox event 2)"
+  ],
+  "band-r2": [
+   "[spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on",
+   "[spec-cost] calibration skipped: the LOW/HIGH band owns the spec gate",
+   "[spec-pool] pooled MTP cohort engaged: 2 sessions (model q9)",
+   "[spec-pool] pooled rows draft engaged: 2 members (arms [GraphGreedy, GraphSampled])"
+  ],
+  "model-r2": [
+   "[spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on",
+   "[spec-pool] pooled rows draft engaged: 4 members (arms [GraphGreedy, GraphGreedy, GraphGreedy, GraphGreedy])",
+   "[spec-pool] pooled rows draft engaged: 3 members (arms [GraphGreedy, GraphGreedy, GraphGreedy])",
+   "[spec-pool] pooled rows draft engaged: 2 members (arms [GraphGreedy, GraphGreedy])",
+   "[spec-cost] model=\"q9\" depth=2048 pooled=true plain_cap=16 round_overhead=3.37ms pooled_overhead=Some((4, 0.8523037986111124)) verify_ms[1..16]=[9.3 9.8 10.2 11.3 12.4 13.5 15.1 16.6 19.0 21.3 23.7 26.0 27.7 29.4 31.1 32.8] plain_ms[1..16]=[9.7 10.5 11.7 12.9 14.2 15.5 16.8 18.1 20.3 22.5 24.7 26.9 29.1 31.2 33.4 35.6] (15.0s)",
+   "[spec-cost] model=\"q9\" realized n=1 K=3: 191.7 tok/s (now priced from serving)",
+   "[spec-cost] model=\"q9\" n=1 rung=3 -> K=3 (predicted 185.8 vs plain 102.9 tok/s; pooled=true)",
+   "[spec-cost] model=\"q9\" n=2 rung=3 -> K=2 (predicted 269.1 vs plain 189.6 tok/s; pooled=true)",
+   "[spec-pool] pooled MTP cohort engaged: 2 sessions (model q9)",
+   "[spec-cost] model=\"q9\" realized n=2 K=2: 250.2 tok/s (now priced from serving)",
+   "[spec-cost] model=\"q9\" n=4 rung=3 -> K=1 (predicted 381.8 vs plain 309.4 tok/s; pooled=true)",
+   "[spec-pool] pooled MTP cohort engaged: 4 sessions (model q9)",
+   "[spec-cost] model=\"q9\" realized n=4 K=1: 289.9 tok/s (now priced from serving)",
+   "[spec-cost] model=\"q9\" n=4 rung=1 -> K=0 (predicted 309.4 vs plain 309.4 tok/s; pooled=true)",
+   "[spec-gate] demoted session to batched decode: 4 active, cost model prefers plain (or HIGH=4 without a model) (model q9, committed 134, generated 97, sampled, plain draws from philox event 105)",
+   "[spec-gate] demoted session to batched decode: 4 active, cost model prefers plain (or HIGH=4 without a model) (model q9, committed 139, generated 98, sampled, plain draws from philox event 113)",
+   "[spec-gate] demoted session to batched decode: 4 active, cost model prefers plain (or HIGH=4 without a model) (model q9, committed 133, generated 100, greedy)",
+   "[spec-gate] demoted session to batched decode: 4 active, cost model prefers plain (or HIGH=4 without a model) (model q9, committed 141, generated 99, greedy)",
+   "[spec-cost] model=\"q9\" realized n=4 K=0: 347.7 tok/s (now priced from serving)",
+   "[spec-cost] model=\"q9\" n=1 rung=3 -> K=3 (predicted 193.3 vs plain 111.1 tok/s; pooled=true)",
+   "[spec-cost] model=\"q9\" n=3 rung=3 -> K=2 (predicted 312.1 vs plain 275.8 tok/s; pooled=true)",
+   "[spec-cost] model=\"q9\" n=7 rung=3 -> K=0 (predicted 448.6 vs plain 448.6 tok/s; pooled=true)",
+   "[spec-cost] model=\"q9\" n=1 rung=1 -> K=1 (predicted 145.4 vs plain 111.1 tok/s; pooled=true)",
+   "[spec-cost] model=\"q9\" n=8 rung=3 -> K=0 (predicted 475.9 vs plain 475.9 tok/s; pooled=true)",
+   "[spec-gate] demoted session to batched decode: 8 active, cost model prefers plain (or HIGH=4 without a model) (model q9, committed 43, generated 1, greedy)",
+   "[spec-cost] model=\"q9\" realized n=8 K=0: 417.6 tok/s (now priced from serving)",
+   "[spec-cost] model=\"q9\" realized n=7 K=0: 435.7 tok/s (now priced from serving)"
+  ]
+ }
+}

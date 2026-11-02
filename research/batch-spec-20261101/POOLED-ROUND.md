@@ -75,3 +75,19 @@ The gain is +11-13%.
 `memra-server` sha256 prefixes: pooled `13ec038086e7700a`, round-split reference
 `559b914819a7ffa4`. The committed tree differs from the measured pooled binary only by two
 clippy type aliases (`PooledCommitHook`, `PooledBurstResult`).
+
+## Follow-ups (2026-11-02)
+
+- **Chunked finish.** The lockstep driver finishes each chunk's rounds before the next chunk's
+  verify (`pooled_finish_member`). A round never holds more than one chunk's verify outputs and
+  checkpoints. On a dense 27B that is about 1 GB per session-round. The DFlash2 port hit the same
+  OOM at c=8 and needed the same fix.
+- **Prime bursts end at the first round.** A session priming its prompt is not a cohort candidate,
+  so its first 32-token burst ran serially. On q9 at c=4 that was four serial bursts before any
+  pooled round. When a same-model spec peer is live (`spec_pool_peer`), a prime burst now emits
+  one token and the session joins the next tick's cohort.
+  - Greedy streams do not change.
+  - For a sampled request under concurrency it moves one boundary draw, the same class as an
+    admission-yield burst end.
+  - A lone session keeps its full first burst.
+- **Token accounting.** Cohort members now count their tokens; see COST-GATE.md.

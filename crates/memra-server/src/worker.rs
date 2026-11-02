@@ -6898,6 +6898,58 @@ struct SpecCostEntry {
     plain_cap: usize,
     /// Recent acceptance window (set from `SpecMetricState::record`).
     accept: Option<memra_engine::spec::SpecTelemetry>,
+    /// REALIZED aggregate tok/s per (sessions, K; K=0 = plain) from steady serving ticks
+    /// (`spec_cost_observe`): (EMA, samples). The tables price a fixed depth and an engine-only
+    /// burst; serving adds emission, admission and whatever depth the traffic has, so a realized
+    /// rate replaces its prediction once it has `SPEC_COST_REALIZED_MIN` samples, and corrects
+    /// the predictions at other concurrencies in proportion.
+    realized: HashMap<(usize, usize), (f64, u32)>,
+}
+
+/// Samples before a realized rate replaces its prediction.
+const SPEC_COST_REALIZED_MIN: u32 = 3;
+
+impl SpecCostEntry {
+    /// The aggregate tok/s to price (n, k) at: the realized EMA when it has enough samples,
+    /// else `predict(n, k)` scaled by the realized/predicted ratio of the closest observation of
+    /// the same kind (plain for k = 0, any draft length for k > 0), preferring the same n, then
+    /// the same k at the nearest n, then any draft length at the nearest n. 1.0 when none.
+    fn priced(&self, n: usize, k: usize, predict: impl Fn(usize, usize) -> f64) -> f64 {
+        let predicted = predict(n, k);
+        let ok = |c: &u32| *c >= SPEC_COST_REALIZED_MIN;
+        if let Some(&(r, c)) = self.realized.get(&(n, k))
+            && ok(&c)
+        {
+            return r;
+        }
+        let same_kind = |kk: usize| (kk == 0) == (k == 0);
+        let rank = |m: usize, kk: usize| -> (u8, usize) {
+            let tier = if m == n {
+                0
+            } else if kk == k {
+                1
+            } else {
+                2
+            };
+            (tier, m.abs_diff(n))
+        };
+        let best = self
+            .realized
+            .iter()
+            .filter(|((m, kk), (_, c))| ok(c) && same_kind(*kk) && (*m, *kk) != (n, k))
+            .min_by_key(|((m, kk), _)| rank(*m, *kk));
+        match best {
+            Some(((m, kk), (r, _))) => {
+                let p = predict(*m, *kk);
+                if p > 0.0 {
+                    predicted * r / p
+                } else {
+                    predicted
+                }
+            }
+            None => predicted,
+        }
+    }
 }
 
 fn spec_cost_registry() -> &'static std::sync::Mutex<HashMap<String, SpecCostEntry>> {
@@ -6961,7 +7013,12 @@ fn spec_round_ms(
     } else {
         n as f64 * t.verify_ms[rows.min(16) - 1]
     };
-    verify + n as f64 * t.round_overhead_ms
+    let overhead = if pooled {
+        t.overhead_at(n)
+    } else {
+        t.round_overhead_ms
+    };
+    verify + n as f64 * overhead
 }
 
 /// One plain batched tick for `n` sessions, chunked at the serving batch cap.
@@ -6979,13 +7036,22 @@ fn spec_cost_best_k(entry: &SpecCostEntry, n: usize, rung: usize) -> Option<(usi
         .as_ref()
         .filter(|a| a.rounds >= SPEC_COST_MIN_ROUNDS)?;
     let n = n.max(1);
-    let plain = n as f64 / spec_plain_ms(&entry.table, n, entry.plain_cap);
+    let rate_at = |m: usize, k: usize| -> f64 {
+        if k == 0 {
+            return m as f64 / spec_plain_ms(&entry.table, m, entry.plain_cap) * 1e3;
+        }
+        match spec_expected_tokens(accept, k) {
+            Some(e) => m as f64 * e / spec_round_ms(&entry.table, m, k, entry.pooled) * 1e3,
+            None => 0.0,
+        }
+    };
+    let plain = entry.priced(n, 0, rate_at);
     let mut best = (0usize, plain);
     for k in 1..=rung {
-        let Some(e) = spec_expected_tokens(accept, k) else {
+        if spec_expected_tokens(accept, k).is_none() {
             break;
-        };
-        let rate = n as f64 * e / spec_round_ms(&entry.table, n, k, entry.pooled);
+        }
+        let rate = entry.priced(n, k, rate_at);
         if rate > best.1 {
             best = (k, rate);
         }
@@ -7003,12 +7069,69 @@ fn spec_cost_verdict(model: &str, n: usize, rung: usize) -> Option<usize> {
         eprintln!(
             "[spec-cost] model={model:?} n={n} rung={rung} -> K={k} (predicted {:.1} vs plain \
              {:.1} tok/s; pooled={})",
-            spec_rate * 1e3,
-            plain_rate * 1e3,
-            entry.pooled
+            spec_rate, plain_rate, entry.pooled
         );
     }
     Some(k)
+}
+
+/// Fold one realized aggregate-rate sample for `model` at (n sessions, K; 0 = plain).
+fn spec_cost_observe(model: &str, n: usize, k: usize, tok_per_s: f64) {
+    if !tok_per_s.is_finite() || tok_per_s <= 0.0 {
+        return;
+    }
+    let mut reg = spec_cost_registry().lock().unwrap();
+    if let Some(entry) = reg.get_mut(model) {
+        let slot = entry.realized.entry((n, k)).or_insert((tok_per_s, 0));
+        // EMA weight 0.3: a few ticks follow a regime change, single ticks do not swing it.
+        slot.0 = if slot.1 == 0 {
+            tok_per_s
+        } else {
+            0.7 * slot.0 + 0.3 * tok_per_s
+        };
+        slot.1 = slot.1.saturating_add(1);
+        if slot.1 == SPEC_COST_REALIZED_MIN {
+            eprintln!(
+                "[spec-cost] model={model:?} realized n={n} K={k}: {:.1} tok/s (now priced from \
+                 serving)",
+                slot.0
+            );
+        }
+    }
+}
+
+/// The steady serving regime a tick ended in, for realized-rate sampling: every live session
+/// on one model, all plain decoding (K=0) or all on the MTP spec path at one K.
+fn spec_cost_tick_regime(active: &[Session], finished: &[usize]) -> Option<(String, usize, usize)> {
+    let live: Vec<&Session> = active
+        .iter()
+        .enumerate()
+        .filter(|(i, _)| !finished.contains(i))
+        .map(|(_, s)| s)
+        .collect();
+    let first = live.first()?;
+    if live.iter().any(|s| {
+        s.model != first.model
+            || !s.prefill_done
+            || !s.prefill_queue.is_empty()
+            || s.dspark_on
+            || s.glm5_on
+            || s.gspec_k > 0
+    }) {
+        return None;
+    }
+    let k = if first.spec.is_some() {
+        first.spec_k
+    } else {
+        0
+    };
+    if live
+        .iter()
+        .any(|s| s.spec.is_some() != (k > 0) || (k > 0 && s.spec_k != k))
+    {
+        return None;
+    }
+    Some((first.model.clone(), live.len(), k))
 }
 
 /// One log line per (model, n, verdict) change, never per admission.
@@ -25680,6 +25803,10 @@ struct Session {
     /// `demoted_philox_base`, so its plain draws continue on the spec session's unused event
     /// counters instead of reusing gumbel noise the spec prefix already consumed.
     philox_base: u32,
+    /// Another live MTP spec session of the same model exists this tick (set at the top of
+    /// phase (a)): a prime burst then ends after one token so the session joins the pooled
+    /// cohort at once (`spec_burst_pre`).
+    spec_pool_peer: bool,
     /// Default-OFF GLM TP-2 plain sampler, owned by this request. Decode retains
     /// its root-stream logits in cache.last_logits_dev until the next sample.
     glm5_device_sampler: Option<memra_engine::glm5_tp_sampler::Glm5TpDeviceSampler>,
@@ -27925,6 +28052,8 @@ pub fn run(
     let mut n_admitted = 0u64;
     let mut n_completed = 0u64;
     let mut n_tokens_out = 0u64;
+    // The previous tick's steady regime for the cost gate's realized-rate samples.
+    let mut cost_tick_prev: Option<((String, usize, usize), Instant, u64)> = None;
     let mut n_prompt_in = 0u64;
     let mut n_cached_in = 0u64;
     let mut n_session_defers = 0u64;
@@ -30564,6 +30693,22 @@ pub fn run(
         //        decode_step_batch over survivors in chunks of <= 8.
         let batching = serve_batching();
         let mut finished: Vec<usize> = Vec::new();
+        // REALIZED-RATE SAMPLE (lane/batch-spec cost gate): the previous tick and this one
+        // starting in the same steady regime give one aggregate tok/s sample for it (the
+        // tokens the previous tick emitted over its wall).
+        {
+            let regime = spec_cost_tick_regime(&active, &finished);
+            let now = Instant::now();
+            if let (Some(cur), Some((prev, at, tok_at))) =
+                (regime.as_ref(), cost_tick_prev.as_ref())
+                && cur == prev
+                && n_tokens_out > *tok_at
+            {
+                let secs = now.duration_since(*at).as_secs_f64();
+                spec_cost_observe(&cur.0, cur.1, cur.2, (n_tokens_out - tok_at) as f64 / secs);
+            }
+            cost_tick_prev = regime.map(|r| (r, now, n_tokens_out));
+        }
         // STEP-OOM PARK (lane/admit-oom): requests parked out of a step-time CUDA OOM this
         // tick. Drained onto the FRONT of the admission queue after the retire sweep — the
         // retire is what frees the VRAM their re-admit needs, and front-insertion keeps them
@@ -31217,7 +31362,16 @@ pub fn run(
             // same-model DFlash2 (dspark) sessions, run their bursts in lockstep with shared
             // verify forwards per round. Their results feed the per-session handling below
             // exactly as a serial step's would.
-            let mut pooled_steps: HashMap<usize, (SpecStepResult, f32)> = HashMap::new();
+            for i in 0..active.len() {
+                let me = &active[i];
+                let peer = me.spec.is_some()
+                    && active.iter().enumerate().any(|(j, o)| {
+                        j != i && !finished.contains(&j) && o.spec.is_some() && o.model == me.model
+                    });
+                active[i].spec_pool_peer = peer;
+            }
+            // (result, cohort wall ms, the member's generated length before the cohort ran)
+            let mut pooled_steps: HashMap<usize, (SpecStepResult, f32, usize)> = HashMap::new();
             {
                 // (model, dspark cohort?, members)
                 let mut cohorts: Vec<(String, bool, Vec<usize>)> = Vec::new();
@@ -31255,6 +31409,10 @@ pub fn run(
                             active[cohort[0]].model
                         );
                     }
+                    let gen_before: HashMap<usize, usize> = cohort
+                        .iter()
+                        .map(|&i| (i, active[i].generated.len()))
+                        .collect();
                     let started = Instant::now();
                     let ids: Vec<String> = cohort
                         .iter()
@@ -31287,14 +31445,15 @@ pub fn run(
                     match guarded {
                         Ok(()) => {
                             for (i, r) in out {
-                                pooled_steps.insert(i, (r, ms));
+                                pooled_steps.insert(i, (r, ms, gen_before[&i]));
                             }
                         }
                         // A fault inside the cohort leaves every member's device state as the
                         // unwound frames left it: each member gets the quoted fault.
                         Err(err) => {
                             for &i in &cohort {
-                                pooled_steps.insert(i, (Err(err.to_string().into()), ms));
+                                pooled_steps
+                                    .insert(i, (Err(err.to_string().into()), ms, gen_before[&i]));
                             }
                         }
                     }
@@ -31309,13 +31468,18 @@ pub fn run(
                 active[i].prime_service.peer_quantum =
                     memra_engine::prime_walker::prime_yield_enabled()
                         && active.iter().any(|s| s.prime_service.pending);
-                let generated_before = active[i].generated.len();
+                // A pooled cohort member already ran this tick: its progress counts from the
+                // length it had before the cohort (token metrics, lane accounting, the cost
+                // gate's realized-rate samples all read the delta).
+                let generated_before = pooled_steps
+                    .get(&i)
+                    .map_or(active[i].generated.len(), |(_, _, g)| *g);
                 let lane = active[i].lane;
                 let step_started = Instant::now();
                 let trace_before = t_spec.map(|phase_start| {
                     (
                         phase_start.elapsed().as_secs_f32() * 1000.0,
-                        active[i].generated.len(),
+                        generated_before,
                         active[i].spec_rounds,
                         active[i].spec_drafted,
                         active[i].spec_accepted,
@@ -31335,8 +31499,8 @@ pub fn run(
                 let (fault_id, fault_route) =
                     (active[i].request_id.clone(), fault_route(&active[i]));
                 let pooled_step = pooled_steps.remove(&i);
-                let pooled_ms = pooled_step.as_ref().map(|(_, ms)| *ms);
-                let step_result = if let Some((r, _)) = pooled_step {
+                let pooled_ms = pooled_step.as_ref().map(|(_, ms, _)| *ms);
+                let step_result = if let Some((r, _, _)) = pooled_step {
                     r
                 } else {
                     guard_request(&engine, &fault_id, &fault_route, "spec step", || {
@@ -38301,6 +38465,7 @@ fn admit(
         last_logits: seed_logits,
         device_next: None,
         philox_base: 0,
+        spec_pool_peer: false,
         glm5_device_sampler: None,
         gspec: None,
         gspec_k,
@@ -40470,6 +40635,19 @@ fn spec_burst_pre(
         s.prefill_queue.iter().copied().collect()
     } else {
         s.prefill_queue.drain(..).collect()
+    };
+    // PRIME BURSTS END AT THE FIRST ROUND (lane/batch-spec): a session priming its prompt is
+    // not a pooled-cohort candidate, so its whole first burst ran serially in phase (a), one
+    // session after another, before any of them reached a pooled round (q9 on a 5090, a c=4
+    // wave: four serial 32-token first bursts). Where the model pools, the prime burst emits
+    // one token and the session joins the next tick's cohort. Only with a same-model spec peer
+    // live (`spec_pool_peer`, set per tick): a lone session keeps its full first burst, so a
+    // single-stream sampled request draws the same stream as before. Burst size is
+    // content-neutral for greedy; for sampled it moves one boundary draw.
+    let burst_target = if !suffix.is_empty() && s.spec_pool_peer && lm.model.spec_pool_capable() {
+        burst_target.min(1)
+    } else {
+        burst_target
     };
     if suffix.is_empty() && spec.next_pred.is_none() && spec.pending_tok.is_none() {
         // nothing primed and nothing to prime — shouldn't happen (admit rejects empty prompts)
@@ -42736,9 +42914,11 @@ fn run_spec_cost_calibration(
                 };
                 eprintln!(
                     "[spec-cost] model={name:?} depth={} pooled={pooled} plain_cap={plain_cap} \
-                     round_overhead={:.2}ms verify_ms[1..16]=[{}] plain_ms[1..16]=[{}] ({:.1}s)",
+                     round_overhead={:.2}ms pooled_overhead={:?} verify_ms[1..16]=[{}] \
+                     plain_ms[1..16]=[{}] ({:.1}s)",
                     table.depth,
                     table.round_overhead_ms,
+                    table.pooled_overhead_ms,
                     fmt(&table.verify_ms),
                     fmt(&table.plain_ms),
                     t0.elapsed().as_secs_f64()
@@ -42750,6 +42930,7 @@ fn run_spec_cost_calibration(
                         pooled,
                         plain_cap,
                         accept: None,
+                        realized: HashMap::new(),
                     },
                 );
             }
@@ -43509,10 +43690,12 @@ mod tests {
                 verify_ms: verify,
                 plain_ms: plain,
                 round_overhead_ms: 6.0,
+                pooled_overhead_ms: None,
             },
             pooled: true,
             plain_cap: 8,
             accept: Some(t),
+            realized: HashMap::new(),
         }
     }
 
@@ -43565,6 +43748,36 @@ mod tests {
         let mut cold = gb10_entry([0.7, 0.5, 0.35]);
         cold.accept = None;
         assert_eq!(super::spec_cost_best_k(&cold, 4, 3), None);
+    }
+
+    /// Realized rates replace predictions once sampled, and correct the predictions at other
+    /// concurrencies for the same K (the 5090 q9 c=4 miss: predicted pooled K=1 above plain,
+    /// realized 0.78x).
+    #[test]
+    fn spec_cost_realized_rates_override_and_correct_predictions() {
+        let mut e = gb10_entry([0.7, 0.5, 0.35]);
+        let (k_pred, _, _) = super::spec_cost_best_k(&e, 4, 3).unwrap();
+        assert!(k_pred > 0, "the tables alone speculate at n=4");
+        // Realized at n=4: every spec K far below plain.
+        for k in 1..=3 {
+            e.realized
+                .insert((4, k), (20.0, super::SPEC_COST_REALIZED_MIN));
+        }
+        e.realized
+            .insert((4, 0), (50.0, super::SPEC_COST_REALIZED_MIN));
+        let (k, rate, plain) = super::spec_cost_best_k(&e, 4, 3).unwrap();
+        assert_eq!((k, rate, plain), (0, 50.0, 50.0));
+        // n=3 has no samples: its predictions scale by the n=4 realized/predicted ratios.
+        let (k3, _, _) = super::spec_cost_best_k(&e, 3, 3).unwrap();
+        assert_eq!(k3, 0);
+        // Too few samples change nothing.
+        let mut few = gb10_entry([0.7, 0.5, 0.35]);
+        few.realized
+            .insert((4, 1), (1.0, super::SPEC_COST_REALIZED_MIN - 1));
+        assert_eq!(
+            super::spec_cost_best_k(&few, 4, 3).map(|v| v.0),
+            super::spec_cost_best_k(&gb10_entry([0.7, 0.5, 0.35]), 4, 3).map(|v| v.0)
+        );
     }
 
     /// lane/batch-spec: sampled spec sessions are demotable; only constrained ones stay.

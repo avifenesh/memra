@@ -97,20 +97,25 @@ def boot(arm, rep):
     return out, lines
 
 
-results = {"band": {c: [] for c in CS}, "model": {c: [] for c in CS}}
-logs = {}
-for rep in range(a.reps):
-    order = ["band", "model"] if rep % 2 == 0 else ["model", "band"]
-    for arm in order:
-        out, lines = boot(arm, rep)
-        for c in CS:
-            results[arm][c].append(round(out[c], 2))
-        logs[f"{arm}-r{rep}"] = lines[:60]
-        print(arm, rep, {c: round(out[c], 1) for c in CS}, flush=True)
-summary = {"runs": results, "median": {arm: {c: statistics.median(v) for c, v in d.items()}
-                                       for arm, d in results.items()}, "lines": logs}
-with open(os.path.join(a.out, "summary.json"), "w") as f:
-    json.dump(summary, f, indent=1)
-for c in CS:
-    b, m = summary["median"]["band"][c], summary["median"]["model"][c]
-    print(f"c={c}: band {b:.1f}  model {m:.1f}  ({m / b:.2f}x)")
+def main():
+    results = {"band": {c: [] for c in CS}, "model": {c: [] for c in CS}}
+    logs = {}
+    for rep in range(a.reps):
+        order = ["band", "model"] if rep % 2 == 0 else ["model", "band"]
+        for arm in order:
+            out, lines = boot(arm, rep)
+            for c in CS:
+                results[arm][c].append(round(out[c], 2))
+            logs[f"{arm}-r{rep}"] = lines[:60]
+            print(arm, rep, {c: round(out[c], 1) for c in CS}, flush=True)
+    summary = {"runs": results, "median": {arm: {c: statistics.median(v) for c, v in d.items()}
+                                           for arm, d in results.items()}, "lines": logs}
+    with open(os.path.join(a.out, "summary.json"), "w") as f:
+        json.dump(summary, f, indent=1)
+    for c in CS:
+        b, m = summary["median"]["band"][c], summary["median"]["model"][c]
+        print(f"c={c}: band {b:.1f}  model {m:.1f}  ({m / b:.2f}x)")
+
+
+if __name__ == "__main__":
+    main()
