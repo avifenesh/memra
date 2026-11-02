@@ -35,3 +35,15 @@ memra-runtime = { path = "crates/memra-runtime", version = "=0.138.0" }
 memra-engine = { path = "crates/memra-engine", version = "=0.138.0" }
 memra-reference = { path = "crates/memra-reference", version = "=0.138.0" }
 memra-net-guard = { path = "crates/memra-net-guard", version = "=0.138.0" }
+
+# Release profile: opt-level 3, fat LTO, one codegen unit (the owner's standard for Rust
+# repos). The `bench` profile inherits it, and so does `cargo test --release`. It reaches
+# rustc-compiled code only: build.rs compiles the CUDA kernels with nvcc (fixed -O3, the
+# profile is never read) and links them as fatbins and static archives, so device code is
+# byte-identical across profiles; build scripts and proc-macros keep Cargo's build-override
+# defaults. Cost: a serial whole-program link per binary. Measured A/B against the default
+# profile on the RTX 5090 rig: docs/decisions/RELEASE-PROFILE.md.
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1

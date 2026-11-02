@@ -1,0 +1,22 @@
+In Large Language Model (LLM) inference, the **KV Cache** (Key-Value Cache) is a critical mechanism that stores the intermediate Key ($K$) and Value ($V$) matrices generated during the autoregressive decoding process. As the model generates tokens sequentially, the KV cache grows linearly with the number of generated tokens.
+
+A **Paged KV Cache** is an optimization technique designed to address the memory fragmentation and inefficiency inherent in traditional contiguous memory allocation for these caches. It decouples the logical view of the cache from its physical memory layout, allowing for significant memory savings and better utilization of GPU memory.
+
+Below is a detailed technical explanation of how a paged KV cache works, covering the problem it solves, the core architecture, the allocation logic, and the retrieval mechanism.
+
+---
+
+### 1. The Problem: Contiguous Memory Inefficiency
+
+In a standard implementation, the KV cache for a single request (sequence) is allocated as a single, contiguous block of memory in VRAM.
+- **Logical View**: The cache is seen as a sequence of blocks $B_0, B_1, B_2, \dots, B_{N-1}$, where each block corresponds to a specific layer or a specific token step.
+- **Physical Reality**: To support variable sequence lengths and dynamic batching, the system must pre-allocate a large contiguous buffer. If a request generates 100 tokens but the maximum possible sequence length is 2000, the system reserves memory for 2000 tokens regardless of actual usage.
+- **Fragmentation**: When multiple requests with different lengths are batched together, their contiguous blocks cannot be easily packed tightly. This leads to "internal fragmentation" (wasted space within allocated blocks) and "external fragmentation" (unused gaps between blocks that are too small to be reused).
+
+### 2. The Solution: Paged Attention Architecture
+
+The Paged KV Cache, popularized by systems like **vLLM**, treats the KV cache as a collection of non-contiguous **pages** (or blocks) rather than a single contiguous array.
+
+#### Core Concepts
+1.  **Block Table**: A logical mapping structure (usually a CPU-side array) that maps a logical sequence ID to the physical locations of its constituent blocks.
+2.  **Blocks**: Fixed-size chunks of memory (e.g., 16 tokens per block). Each block contains the $K$ and $V$ tensors for a

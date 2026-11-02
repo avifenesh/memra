@@ -1,0 +1,45 @@
+flock /home/avifenesh/.cache/memra-rig-build.lock nice -n 15 /usr/bin/time -v cargo test --no-run --release --locked --config profile.release.lto="fat" --config profile.release.codegen-units=1 --config profile.release.opt-level=3 -p memra-engine --lib
+   Compiling proc-macro2 v1.0.106
+   Compiling quote v1.0.46
+   Compiling crc32fast v1.5.0
+   Compiling flate2 v1.1.9
+   Compiling cudarc v0.19.8
+   Compiling syn v2.0.118
+   Compiling serde_derive v1.0.228
+   Compiling serde v1.0.228
+   Compiling memra-gguf v0.138.0 (/home/avifenesh/.cache/memra-relprofile/wt/crates/memra-gguf)
+   Compiling png v0.18.1
+   Compiling memra-tokenizer v0.138.0 (/home/avifenesh/.cache/memra-relprofile/wt/crates/memra-tokenizer)
+   Compiling memra-tier v0.138.0 (/home/avifenesh/.cache/memra-relprofile/wt/crates/memra-tier)
+   Compiling bytemuck v1.25.2
+warning: memra-engine@0.138.0: nvcc from $CUDA_HOME: /usr/local/cuda/bin/nvcc
+   Compiling image v0.25.10
+   Compiling memra-kv v0.138.0 (/home/avifenesh/.cache/memra-relprofile/wt/crates/memra-kv)
+   Compiling memra-reference v0.138.0 (/home/avifenesh/.cache/memra-relprofile/wt/crates/memra-reference)
+   Compiling memra-runtime v0.138.0 (/home/avifenesh/.cache/memra-relprofile/wt/crates/memra-runtime)
+   Compiling memra-engine v0.138.0 (/home/avifenesh/.cache/memra-relprofile/wt/crates/memra-engine)
+    Finished `release` profile [optimized] target(s) in 2m 11s
+  Executable unittests src/lib.rs (/home/avifenesh/.cache/memra-relprofile/target-B/release/deps/memra_engine-b525329c60939511)
+	Command being timed: "cargo test --no-run --release --locked --config profile.release.lto="fat" --config profile.release.codegen-units=1 --config profile.release.opt-level=3 -p memra-engine --lib"
+	User time (seconds): 151.20
+	System time (seconds): 5.70
+	Percent of CPU this job got: 119%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 2:11.08
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 2356064
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 823
+	Minor (reclaiming a frame) page faults: 2242523
+	Voluntary context switches: 5182
+	Involuntary context switches: 4078
+	Swaps: 0
+	File system inputs: 549736
+	File system outputs: 502616
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 0

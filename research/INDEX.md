@@ -740,3 +740,5 @@ support-source-doc-copy-inputs-20261003 | 97 exact source/docs omissions repaire
 | mtp-wrapper-triggers-997-20261004 | Four path entries select both shared wrapper files in both MTP workflows. Existing 39 CPU controls and seven retained-data workflow blocks verified. No qualification promotion. | [LANE.md](mtp-wrapper-triggers-997-20261004/LANE.md) |
 
 | thin-public-ci-1002-20261004 | Fresh depth-one Git/event replay PASS408.819s with historical object absent, pinned old callers and trust/guard controls. Production unchanged; current hosted/review pending, no native qualification. | [LANE.md](thin-public-ci-1002-20261004/LANE.md) |
+
+| release-profile-20261102 | Fat LTO + one codegen unit vs Cargo defaults on the RTX 5090 rig: serving host paths flat, tokenizer ids, greedy and seeded streams byte-identical, fatbins identical, binary -17%, cold build flat, incremental relinks 1.5-2.8x. Adopted. | [LANE.md](release-profile-20261102/LANE.md) |

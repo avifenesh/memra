@@ -1,0 +1,50 @@
+flock /home/avifenesh/.cache/memra-rig-build.lock nice -n 15 /usr/bin/time -v cargo test --no-run --release --locked --config profile.release.lto="fat" --config profile.release.codegen-units=1 --config profile.release.opt-level=3 -p memra-reference -p memra-sampling -p memra-tokenizer -p memra-gguf -p memra-validate --lib
+   Compiling serde_core v1.0.228
+   Compiling serde_json v1.0.150
+   Compiling cfg-if v1.0.4
+   Compiling serde v1.0.228
+   Compiling memchr v2.8.2
+   Compiling libc v0.2.186
+   Compiling zmij v1.0.21
+   Compiling itoa v1.0.18
+   Compiling sha2 v0.10.9
+   Compiling memmap2 v0.9.11
+   Compiling smallvec v1.15.2
+   Compiling unicode-normalization-alignments v0.1.12
+   Compiling memra-gguf v0.138.0 (/home/avifenesh/.cache/memra-relprofile/wt/crates/memra-gguf)
+   Compiling aho-corasick v1.1.4
+   Compiling regex-syntax v0.8.11
+   Compiling memra-tokenizer v0.138.0 (/home/avifenesh/.cache/memra-relprofile/wt/crates/memra-tokenizer)
+   Compiling libloading v0.9.0
+   Compiling memra-reference v0.138.0 (/home/avifenesh/.cache/memra-relprofile/wt/crates/memra-reference)
+   Compiling memra-sampling v0.138.0 (/home/avifenesh/.cache/memra-relprofile/wt/crates/memra-sampling)
+   Compiling memra-validate v0.138.0 (/home/avifenesh/.cache/memra-relprofile/wt/crates/memra-validate)
+    Finished `release` profile [optimized] target(s) in 1m 05s
+  Executable unittests src/lib.rs (/home/avifenesh/.cache/memra-relprofile/target-B/release/deps/memra_gguf-dbe3570911155bed)
+  Executable unittests src/lib.rs (/home/avifenesh/.cache/memra-relprofile/target-B/release/deps/memra_reference-4a3b82febf53763a)
+  Executable unittests src/lib.rs (/home/avifenesh/.cache/memra-relprofile/target-B/release/deps/memra_sampling-a297d499c29c6725)
+  Executable unittests src/lib.rs (/home/avifenesh/.cache/memra-relprofile/target-B/release/deps/memra_tokenizer-7c020ff13fdc673a)
+  Executable unittests src/lib.rs (/home/avifenesh/.cache/memra-relprofile/target-B/release/deps/memra_validate-1b28eb9d10ef9d58)
+	Command being timed: "cargo test --no-run --release --locked --config profile.release.lto="fat" --config profile.release.codegen-units=1 --config profile.release.opt-level=3 -p memra-reference -p memra-sampling -p memra-tokenizer -p memra-gguf -p memra-validate --lib"
+	User time (seconds): 125.07
+	System time (seconds): 4.40
+	Percent of CPU this job got: 197%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 1:05.68
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 1026092
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 1667
+	Minor (reclaiming a frame) page faults: 1500789
+	Voluntary context switches: 5728
+	Involuntary context switches: 2412
+	Swaps: 0
+	File system inputs: 278832
+	File system outputs: 385656
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 0

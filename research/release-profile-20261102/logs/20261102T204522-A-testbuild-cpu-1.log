@@ -1,0 +1,42 @@
+flock /home/avifenesh/.cache/memra-rig-build.lock nice -n 15 /usr/bin/time -v cargo test --no-run --release --locked -p memra-reference -p memra-sampling -p memra-tokenizer -p memra-gguf -p memra-validate --lib
+   Compiling serde_core v1.0.228
+   Compiling serde_json v1.0.150
+   Compiling serde v1.0.228
+   Compiling memchr v2.8.2
+   Compiling smallvec v1.15.2
+   Compiling unicode-normalization-alignments v0.1.12
+   Compiling memra-gguf v0.138.0 (/home/avifenesh/.cache/memra-relprofile/wt/crates/memra-gguf)
+   Compiling aho-corasick v1.1.4
+   Compiling memra-tokenizer v0.138.0 (/home/avifenesh/.cache/memra-relprofile/wt/crates/memra-tokenizer)
+   Compiling memra-reference v0.138.0 (/home/avifenesh/.cache/memra-relprofile/wt/crates/memra-reference)
+   Compiling memra-validate v0.138.0 (/home/avifenesh/.cache/memra-relprofile/wt/crates/memra-validate)
+   Compiling memra-sampling v0.138.0 (/home/avifenesh/.cache/memra-relprofile/wt/crates/memra-sampling)
+    Finished `release` profile [optimized] target(s) in 1m 01s
+  Executable unittests src/lib.rs (/home/avifenesh/.cache/memra-relprofile/target-A/release/deps/memra_gguf-dd1315d82866e917)
+  Executable unittests src/lib.rs (/home/avifenesh/.cache/memra-relprofile/target-A/release/deps/memra_reference-11e5938780403f65)
+  Executable unittests src/lib.rs (/home/avifenesh/.cache/memra-relprofile/target-A/release/deps/memra_sampling-4a69eca81adf47db)
+  Executable unittests src/lib.rs (/home/avifenesh/.cache/memra-relprofile/target-A/release/deps/memra_tokenizer-b575cf7a955c4fe5)
+  Executable unittests src/lib.rs (/home/avifenesh/.cache/memra-relprofile/target-A/release/deps/memra_validate-4d056a3a3438c309)
+	Command being timed: "cargo test --no-run --release --locked -p memra-reference -p memra-sampling -p memra-tokenizer -p memra-gguf -p memra-validate --lib"
+	User time (seconds): 117.79
+	System time (seconds): 4.33
+	Percent of CPU this job got: 199%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 1:01.35
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 713528
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 1172
+	Minor (reclaiming a frame) page faults: 1365598
+	Voluntary context switches: 9467
+	Involuntary context switches: 4174
+	Swaps: 0
+	File system inputs: 208096
+	File system outputs: 225576
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 0

@@ -1,0 +1,5 @@
+flock /home/avifenesh/.cache/memra-rig-build.lock nice -n 15 /usr/bin/time -v cargo build --release --locked --config profile.release.lto="fat" --config profile.release.codegen-units=1 --config profile.release.opt-level=3 --workspace --bins
+warning: memra-engine@0.138.0: nvcc from $CUDA_HOME: /usr/local/cuda/bin/nvcc
+   Compiling memra-probe v0.0.0 (/home/avifenesh/.cache/memra-relprofile/wt/crates/memra-probe)
+   Compiling memra-cli v0.138.0 (/home/avifenesh/.cache/memra-relprofile/wt/crates/memra-cli)
+   Compiling memra-engine v0.138.0 (/home/avifenesh/.cache/memra-relprofile/wt/crates/memra-engine)

@@ -1,0 +1,12 @@
+A **Paged KV Cache** is a memory management strategy specifically designed to overcome the fragmentation and memory inefficiency inherent in traditional contiguous allocation methods for Large Language Model (LLM) inference. It is the core component enabling **Continuous Batching** and **GPU Virtualization** in modern inference servers (such as those running vLLM, TGI, or SGLang).
+
+Below is a detailed technical explanation of its architecture, operation, and benefits.
+
+---
+
+### 1. The Problem: Contiguous Memory Allocation
+
+In traditional LLM inference, the Key-Value (KV) cache for a sequence is stored as a single, contiguous block of memory in GPU VRAM.
+- **Structure**: For a sequence of length $L$ with hidden size $H$, the KV cache requires $2 \times L \times H \times \text{bytes}$ space.
+- **Fragmentation**: When a request finishes and its sequence is evicted, its memory block is marked as free. However, if new requests arrive with lengths that don't perfectly fit the remaining gaps between existing blocks, the system cannot allocate them.
+- **Consequence**: This leads to severe **internal fragmentation** (wasted space) and **external fragmentation** (no
