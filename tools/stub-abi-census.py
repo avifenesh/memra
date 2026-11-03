@@ -4,9 +4,9 @@
 WHY THIS EXISTS
 ---------------
 crates/memra-engine/build.rs substitutes fail-closed stub translation units for three real
-ones on the non-sm_120a arches (see the `compile_src` chain):
+ones on the arches other than sm_120a and sm_100a (see the `compile_src` chain):
 
-    cu/mmq_fp4.cu          -> cu/mmq_fp4_stub.cu          (cuda_arch != 120a)
+    cu/mmq_fp4.cu          -> cu/mmq_fp4_stub.cu          (cuda_arch not in 120a/100a)
     cu/mmq_nvfp4_w4a8.cu   -> cu/mmq_nvfp4_w4a8_stub.cu   (portable: 89, 90a)
     cu/mmq_fp8_blk.cu      -> cu/mmq_fp8_blk_stub.cu      (portable: 89, 90a)
 
