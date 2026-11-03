@@ -124,8 +124,9 @@ qualifies. A rebase changes the inputs and needs a new record.
 
 A record qualifies the tag battery, `tools/release-battery.sh`, and that battery covers the
 qwen35 class only, and within it two checkpoints (owner, 2026-11-03). The verifier expects
-exactly one kernel cell plus one calibrated argmax cell (with its batched-prime arm) and one
-greedy K=1..8 spec cell per `tools/release-roster.tsv` row. The roster has two rows, both
+exactly one kernel cell plus two calibrated argmax cells (the eager cell with its batched-prime
+arm and the served batch cell, see [Argmax cells](#argmax-cells)) and one greedy K=1..8 spec
+cell per `tools/release-roster.tsv` row. The roster has two rows, both
 NVFP4+Q5_K MTP GGUFs: Ornith-1.5-35B-A3B (`own`, `qwen35_moe`) and Qwen3.8-27B (`vendor`,
 `qwen35`). The kernel cell takes the first roster file present as its model argument; its
 required Step manifest holds synthetic kernel and PP-schedule cells, not a Step model run.
@@ -144,6 +145,33 @@ A record carries no served-path evidence either: the battery never starts `memra
 the serving gates (serve-smoke, spec-on-cache-hit, accept-gate, health-fault and the rest) run
 only in `tools/local-ci.sh` and in scoped-battery cells.
 [Releasing](RELEASING.md#the-gate-on-the-rig-before-tagging) states the same scope for the tag.
+
+## Argmax cells
+
+Each roster model has two calibrated argmax cells. Both run `tools/argmax-margin-gate.sh` with
+the same prompt, window, prefill reference (`forward_last` at each window position), per-model
+flip budget and margin rule: every prefill/decode argmax flip must sit at a top-2 margin the
+config spread covers. They differ in the program on the decode side.
+
+| Cell (`runs.tsv` kind / receipt) | Decode side | Extra requirement |
+|---|---|---|
+| `argmax` / `argmax-margin` | `decode_step`, the eager program (`decode_step_h`) | the batched serving prime: only `prime=MATCH`, `FLIP-NEARTIE` or `SKIP:tokenwise-served` |
+| `argmax-batch` / `argmax-margin-batch` | the served batched decode program at B=1 (`--decode batch`) | every window step's device-sampled token equals the host argmax of its row: only `served=MATCH` |
+
+The second cell exists because serving decodes every model its scheduler batches through
+`decode_step_batch_sampled_lean_masked` at every width, B=1 included (the B=1 fast path is an
+opt-in seam), and that body carries a decode-config FP-composition gap against `decode_step_h`.
+The eager cell alone can therefore pass while a change to the batched body or its epilogue moves
+served tokens. The batch cell makes the server's own call for one unconstrained greedy row: one
+token, a planned cache, the greedy device sample, no grammar mask, lean logits read back from the
+cache's device park. The battery unsets `MEMRA_SERVE_B1FAST` for it so it runs the default served
+program. A gate run that ignored `--decode` prints no `SERVED-SUMMARY` line and cannot pass.
+
+Both cells are required for every roster model: the checker refuses a record that lacks either
+or reports anything but the accepted classes. The batch cell gates models the server decodes
+through its batched scheduler, which covers the current roster. A model the server decodes
+through the eager per-session body has no served batched program; the eager cell gates the
+program that serves it.
 
 ## Development and publication
 

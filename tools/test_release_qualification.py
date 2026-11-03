@@ -120,6 +120,8 @@ class Fixture:
             self.cell("argmax", name, "SUMMARY flips=0 bad=0\n  PRIME-SUMMARY prime=MATCH\n"
                       "  PASS: CPU MOCK calibrated verdict\n")
             self.cell("spec", name, spec)
+            self.cell("argmax-batch", name, "SUMMARY flips=0 bad=0\n  SERVED-SUMMARY served=MATCH\n"
+                      "  PASS: CPU MOCK calibrated verdict\n")
         self.refresh()
 
     def git(self, *args):
@@ -327,7 +329,9 @@ class QualificationTests(unittest.TestCase):
 
     def test_missing_failed_duplicated_cells_and_skip_ceiling(self):
         for mutation in ("missing", "failed", "duplicate", "single-k", "skip-budget",
-                         "no-prime", "prime-structured", "prime-skip-gate-off"):
+                         "no-prime", "prime-structured", "prime-skip-gate-off",
+                         "no-served", "served-mismatch", "served-skip", "no-batch-cell",
+                         "batch-cell-reads-as-eager"):
             original = copy.deepcopy(self.f.run)
             original_files = {cell["log"]["path"]: (self.f.out / cell["log"]["path"]).read_bytes() for cell in original["cells"]}
             with self.subTest(mutation=mutation):
@@ -340,6 +344,20 @@ class QualificationTests(unittest.TestCase):
                     prime = {"no-prime": "", "prime-structured": "  PRIME-SUMMARY prime=MISMATCH-STRUCTURED\n",
                              "prime-skip-gate-off": "  PRIME-SUMMARY prime=SKIP:gate-off\n"}[mutation]
                     p.write_text(p.read_text().replace("  PRIME-SUMMARY prime=MATCH\n", prime))
+                    cell["log"] = self.f.ref(cell["log"]["path"])
+                elif mutation == "no-batch-cell":
+                    # The served-batch cell is required per roster model, like argmax and spec.
+                    self.f.run["cells"].pop(3)
+                elif mutation.startswith(("no-served", "served-", "batch-cell-")):
+                    cell = self.f.run["cells"][3]; p = self.f.out / cell["log"]["path"]
+                    self.assertEqual(cell["kind"], "argmax-batch")
+                    served = {"no-served": "",
+                              "served-mismatch": "  SERVED-SUMMARY served=MISMATCH\n",
+                              "served-skip": "  SERVED-SUMMARY served=MATCH\nargmax-margin-gate: SKIP (x)\n",
+                              # The eager cell's log under the batch kind: a gate run that
+                              # ignored --decode cannot qualify the served program.
+                              "batch-cell-reads-as-eager": "  PRIME-SUMMARY prime=MATCH\n"}[mutation]
+                    p.write_text(p.read_text().replace("  SERVED-SUMMARY served=MATCH\n", served))
                     cell["log"] = self.f.ref(cell["log"]["path"])
                 else:
                     index = 2 if mutation == "single-k" else 0
