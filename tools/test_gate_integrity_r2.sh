@@ -32,12 +32,12 @@ SCRATCH=$(mktemp -d "${TMPDIR:-/tmp}/gate-integrity-r2-XXXXXX")
 trap 'rm -rf "$SCRATCH"; rm -f "$VERDICTS"' EXIT
 
 # A-9: 5 · A-16: 6 teeth/control + 7 wiring · A-10: 4 lock-gate + 5 prime-split
-# + 2 comparator-evidence = 29 (was 40 before the A-1/A-2 arms left with validate-h100.sh,
-# 2026-09-02). It is an EQUALITY, not a floor: this constant has already caught
+# + 3 comparator-evidence = 30 (was 40 before the A-1/A-2 arms left with validate-h100.sh,
+# 2026-09-02; 29 -> 30 with the named-seam-refusal arm, 2026-11-03). It is an EQUALITY, not a floor: this constant has already caught
 # three of its own miscounts (19 vs 23 in test_check_flags; 24 then 38 here) and it is what turns
 # an arm that silently stops running — a `bad` branch replacing four assertions with one, a
 # `continue` added to a loop — into a red run instead of a smaller green one.
-EXPECTED_ASSERTIONS=29
+EXPECTED_ASSERTIONS=30
 
 ok()   { printf 'ok   %s\n' "$1"; printf 'PASS %s\n' "$1" >> "$VERDICTS"; }
 bad()  { printf 'FAIL %s\n' "$1" >&2; printf 'FAIL %s\n' "$1" >> "$VERDICTS"; }
@@ -188,6 +188,12 @@ fi
 # And the two lock-taking gates must reach the success branch only through the comparator's words.
 assert_has "A-10: prime-batch canary requires the comparator's own verdict" \
     "$(cat "$SRC/step35-prime-batch-gate.sh")" 'NOT-LIVE'
+# The success branch keys on the seam's NAMED refusal. The comparator's `N FAIL(s)` tally used
+# to be enough, and once the B=1 refusal moved to the cross-request entry, every unrelated
+# prime_cache_batch error (OOM, a host-bounce refusal, a CUDA fault) printed that tally too.
+assert_has "A-10: prime-batch canary passes only on the seam's named refusal" \
+    "$(grep -v '^[[:space:]]*#' "$SRC/step35-prime-batch-gate.sh" | grep -B3 'CANARY OK')" \
+    'batched prime REFUSED (rollback seam)'
 # The needle is the VLOG read, not the message: the pre-fix file already CONTAINS that FAIL
 # string (it is the verdict block's own line) — it just never looked at it from the canary. An
 # assertion that matches the pre-fix file too is exactly the constant-true shape being fixed.
