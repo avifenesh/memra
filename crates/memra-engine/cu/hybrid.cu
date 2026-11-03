@@ -5,6 +5,21 @@
 #include <cuda_fp16.h>
 #include <cuda_bf16.h>
 
+// GDN STATE BF16 research arm (batch-spec 2026-11-03, MEMRA_GDN_STATE_BF16=1, default OFF): the
+// recurrent GDN state is STORED as bf16 (round-to-nearest-even) in the first half of each fp32
+// state buffer, element index unchanged; every state load converts to fp32 and the scans compute
+// in fp32. Halves the state bytes each scan streams. Buffers keep their fp32 size (no capacity
+// change), so snapshot/rollback/prefix copies stay byte copies of the same slots.
+__device__ int memra_gdn_state_bf16 = 0;
+__device__ __forceinline__ float gdn_ld(const float* base, size_t idx) {
+    return memra_gdn_state_bf16 ? __bfloat162float(((const __nv_bfloat16*)base)[idx]) : base[idx];
+}
+__device__ __forceinline__ void gdn_sv(float* base, size_t idx, float v) {
+    if (memra_gdn_state_bf16) ((__nv_bfloat16*)base)[idx] = __float2bfloat16(v);
+    else base[idx] = v;
+}
+extern "C" __global__ void gdn_state_bf16_set(int on) { memra_gdn_state_bf16 = on; }
+
 __device__ __forceinline__ float silu(float x) { return x / (1.0f + expf(-x)); }
 
 // All-reduce sum via XOR butterfly: EVERY lane ends with the 32-lane sum in
@@ -345,10 +360,10 @@ __device__ void gdn_scan_kernel(
     if (col >= S_v) return;
     constexpr int rows_per_lane = S_v / WARP;
 
-    const float* st = state_in + ((size_t)h * S_v + col) * S_v;  // row `col` contiguous
+    const size_t st_off = ((size_t)h * S_v + col) * S_v;  // row `col` contiguous
     float s_shard[rows_per_lane];
     #pragma unroll
-    for (int r = 0; r < rows_per_lane; r++) s_shard[r] = st[r * WARP + lane];
+    for (int r = 0; r < rows_per_lane; r++) s_shard[r] = gdn_ld(state_in, st_off + r * WARP + lane);
 
     for (int t = 0; t < T; t++) {
         const float* q_t = q + ((size_t)t * H + h) * S_v;
@@ -381,9 +396,9 @@ __device__ void gdn_scan_kernel(
         if (lane == 0) o[((size_t)t * H + h) * S_v + col] = attn_col * scale;
     }
     // write state back
-    float* so = state_out + ((size_t)h * S_v + col) * S_v;
+    const size_t so_off = ((size_t)h * S_v + col) * S_v;
     #pragma unroll
-    for (int r = 0; r < rows_per_lane; r++) so[r * WARP + lane] = s_shard[r];
+    for (int r = 0; r < rows_per_lane; r++) gdn_sv(state_out, so_off + r * WARP + lane, s_shard[r]);
 }
 
 extern "C" __global__ void gdn_scan_s128(
@@ -769,7 +784,7 @@ extern "C" __global__ void gdn_chunk_state_f32(
     const int tid = threadIdx.x;
     for (int idx = tid; idx < COLS * GDN_D; idx += 256) {
         int cl2 = idx / GDN_D, i = idx % GDN_D;
-        Ms[cl2][i] = state_in[((size_t)h * GDN_D + col0 + cl2) * GDN_D + i];
+        Ms[cl2][i] = gdn_ld(state_in, ((size_t)h * GDN_D + col0 + cl2) * GDN_D + i);
     }
     __syncthreads();
     const int NC = (T + C - 1) / C;
@@ -858,7 +873,7 @@ extern "C" __global__ void gdn_chunk_state_f32(
     }
     for (int idx = tid; idx < COLS * GDN_D; idx += 256) {
         int cl2 = idx / GDN_D, i = idx % GDN_D;
-        state_out[((size_t)h * GDN_D + col0 + cl2) * GDN_D + i] = Ms[cl2][i];
+        gdn_sv(state_out, ((size_t)h * GDN_D + col0 + cl2) * GDN_D + i, Ms[cl2][i]);
     }
 }
 
@@ -1496,6 +1511,54 @@ extern "C" __global__ void gdn_scan_s128_b(
                              state_ins[b], state_outs[b], o + row, H, 1, scale);
 }
 
+// BANDWIDTH PROBE for the bf16-state research arm (batch-spec 2026-11-03): gdn_scan_s128_b's
+// T=1 program with the recurrent state stored as bf16 (load -> fp32 math -> store bf16). Used
+// only by gdn-state-bench to time the state traffic at half the bytes; no serving path calls it.
+extern "C" __global__ void gdn_scan_s128_b_bf16st(
+        const float* q, const float* k, const float* v, const float* g, const float* beta,
+        const __nv_bfloat16* const* state_ins, __nv_bfloat16* const* state_outs,
+        float* o, int H, float scale) {
+    constexpr int S_v = 128, WARP = 32, rows_per_lane = S_v / WARP;
+    const int b = blockIdx.y;
+    const size_t row = (size_t)b * H * 128;
+    const size_t sc = (size_t)b * H;
+    const int h = blockIdx.x;
+    const int lane = threadIdx.x;
+    const int col = blockIdx.z * blockDim.y + threadIdx.y;
+    if (col >= S_v) return;
+    const __nv_bfloat16* st = state_ins[b] + ((size_t)h * S_v + col) * S_v;
+    float s_shard[rows_per_lane];
+    #pragma unroll
+    for (int r = 0; r < rows_per_lane; r++) s_shard[r] = __bfloat162float(st[r * WARP + lane]);
+    const float* q_t = q + row + (size_t)h * S_v;
+    const float* k_t = k + row + (size_t)h * S_v;
+    const float* v_t = v + row + (size_t)h * S_v;
+    float g_val = expf(g[sc + h]);
+    float beta_val = beta[sc + h];
+    float k_reg[rows_per_lane], q_reg[rows_per_lane];
+    #pragma unroll
+    for (int r = 0; r < rows_per_lane; r++) {
+        int i = r * WARP + lane;
+        k_reg[r] = k_t[i]; q_reg[r] = q_t[i];
+    }
+    float kv_shard = 0.0f;
+    #pragma unroll
+    for (int r = 0; r < rows_per_lane; r++) kv_shard += s_shard[r] * k_reg[r];
+    float kv_col = warp_reduce_sum<WARP>(kv_shard);
+    float delta_col = (v_t[col] - g_val * kv_col) * beta_val;
+    float attn_partial = 0.0f;
+    #pragma unroll
+    for (int r = 0; r < rows_per_lane; r++) {
+        s_shard[r] = g_val * s_shard[r] + k_reg[r] * delta_col;
+        attn_partial += s_shard[r] * q_reg[r];
+    }
+    float attn_col = warp_sum_down<WARP>(attn_partial);
+    if (lane == 0) o[row + (size_t)h * S_v + col] = attn_col * scale;
+    __nv_bfloat16* so = state_outs[b] + ((size_t)h * S_v + col) * S_v;
+    #pragma unroll
+    for (int r = 0; r < rows_per_lane; r++) so[r * WARP + lane] = __float2bfloat16(s_shard[r]);
+}
+
 // ---- PACKED T-ROW twins (lane/dspark-gdn-packed, 2026-09-08) ----
 // The batched-class spec verify ran the three per-row state kernels once PER DRAFT ROW (48
 // layers x vt rows x 3 launches per round; measured 2026-09-07 on the 5090: verify 14.1 ms at
@@ -1557,10 +1620,10 @@ __device__ void gdn_scan_kernel_snap(
     if (col >= S_v) return;
     constexpr int rows_per_lane = S_v / WARP;
 
-    const float* st = state_in + ((size_t)h * S_v + col) * S_v;
+    const size_t st_off = ((size_t)h * S_v + col) * S_v;
     float s_shard[rows_per_lane];
     #pragma unroll
-    for (int r = 0; r < rows_per_lane; r++) s_shard[r] = st[r * WARP + lane];
+    for (int r = 0; r < rows_per_lane; r++) s_shard[r] = gdn_ld(state_in, st_off + r * WARP + lane);
 
     for (int t = 0; t < T; t++) {
         const float* q_t = q + ((size_t)t * H + h) * S_v;
@@ -1589,14 +1652,15 @@ __device__ void gdn_scan_kernel_snap(
         float attn_col = warp_sum_down<WARP>(attn_partial);
         if (lane == 0) o[((size_t)t * H + h) * S_v + col] = attn_col * scale;
         if (snap != nullptr && t + 1 < T) {
-            float* sr = snap + (size_t)t * H * S_v * S_v + ((size_t)h * S_v + col) * S_v;
+            float* sr_base = snap + (size_t)t * H * S_v * S_v;
+            const size_t sr_off = ((size_t)h * S_v + col) * S_v;
             #pragma unroll
-            for (int r = 0; r < rows_per_lane; r++) sr[r * WARP + lane] = s_shard[r];
+            for (int r = 0; r < rows_per_lane; r++) gdn_sv(sr_base, sr_off + r * WARP + lane, s_shard[r]);
         }
     }
-    float* so = state_out + ((size_t)h * S_v + col) * S_v;
+    const size_t so_off = ((size_t)h * S_v + col) * S_v;
     #pragma unroll
-    for (int r = 0; r < rows_per_lane; r++) so[r * WARP + lane] = s_shard[r];
+    for (int r = 0; r < rows_per_lane; r++) gdn_sv(state_out, so_off + r * WARP + lane, s_shard[r]);
 }
 
 extern "C" __global__ void gdn_scan_s128_tsnap(
@@ -1838,7 +1902,7 @@ gdn_k4_body(const __nv_bfloat16* __restrict__ kb16, const float* __restrict__ gc
         for (int l = 0; l < 4; l++) {
             int col = mh * 16 + fr + ((l < 2) ? 0 : 8);
             int i = nq * 32 + t4 * 8 + fc + (l & 1);
-            Macc[t4].x[l] = state_in[((size_t)h * D + col0 + col) * D + i];
+            Macc[t4].x[l] = gdn_ld(state_in, ((size_t)h * D + col0 + col) * D + i);
         }
 
     const int NC = (T + C - 1) / C;
@@ -1952,7 +2016,7 @@ gdn_k4_body(const __nv_bfloat16* __restrict__ kb16, const float* __restrict__ gc
         for (int l = 0; l < 4; l++) {
             int col = mh * 16 + fr + ((l < 2) ? 0 : 8);
             int i = nq * 32 + t4 * 8 + fc + (l & 1);
-            state_out[((size_t)h * D + col0 + col) * D + i] = Macc[t4].x[l];
+            gdn_sv(state_out, ((size_t)h * D + col0 + col) * D + i, Macc[t4].x[l]);
         }
 }
 
@@ -2413,10 +2477,10 @@ gdn_k45_wgmma_body(const __nv_bfloat16* __restrict__ kb16, const float* __restri
         int cll = warp * 16 + fr;
         int il = fc + n8 * 8;
         bool re0 = cll < 32, re1 = cll + 8 < 32;
-        Macc[q + 0] = re0 ? state_in[((size_t)h * D + col0 + cll) * D + ih + il + 0] : 0.0f;
-        Macc[q + 1] = re0 ? state_in[((size_t)h * D + col0 + cll) * D + ih + il + 1] : 0.0f;
-        Macc[q + 2] = re1 ? state_in[((size_t)h * D + col0 + cll + 8) * D + ih + il + 0] : 0.0f;
-        Macc[q + 3] = re1 ? state_in[((size_t)h * D + col0 + cll + 8) * D + ih + il + 1] : 0.0f;
+        Macc[q + 0] = re0 ? gdn_ld(state_in, ((size_t)h * D + col0 + cll) * D + ih + il + 0) : 0.0f;
+        Macc[q + 1] = re0 ? gdn_ld(state_in, ((size_t)h * D + col0 + cll) * D + ih + il + 1) : 0.0f;
+        Macc[q + 2] = re1 ? gdn_ld(state_in, ((size_t)h * D + col0 + cll + 8) * D + ih + il + 0) : 0.0f;
+        Macc[q + 3] = re1 ? gdn_ld(state_in, ((size_t)h * D + col0 + cll + 8) * D + ih + il + 1) : 0.0f;
     }
 
     const int NC = (T + C - 1) / C;
@@ -2602,12 +2666,12 @@ gdn_k45_wgmma_body(const __nv_bfloat16* __restrict__ kb16, const float* __restri
         int cll = warp * 16 + fr;
         int il = fc + n8 * 8;
         if (cll < 32) {
-            state_out[((size_t)h * D + col0 + cll) * D + ih + il + 0] = Macc[q + 0];
-            state_out[((size_t)h * D + col0 + cll) * D + ih + il + 1] = Macc[q + 1];
+            gdn_sv(state_out, ((size_t)h * D + col0 + cll) * D + ih + il + 0, Macc[q + 0]);
+            gdn_sv(state_out, ((size_t)h * D + col0 + cll) * D + ih + il + 1, Macc[q + 1]);
         }
         if (cll + 8 < 32) {
-            state_out[((size_t)h * D + col0 + cll + 8) * D + ih + il + 0] = Macc[q + 2];
-            state_out[((size_t)h * D + col0 + cll + 8) * D + ih + il + 1] = Macc[q + 3];
+            gdn_sv(state_out, ((size_t)h * D + col0 + cll + 8) * D + ih + il + 0, Macc[q + 2]);
+            gdn_sv(state_out, ((size_t)h * D + col0 + cll + 8) * D + ih + il + 1, Macc[q + 3]);
         }
     }
 #endif  // MEMRA_K45_REAL
