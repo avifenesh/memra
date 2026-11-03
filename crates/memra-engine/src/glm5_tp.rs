@@ -2036,8 +2036,8 @@ pub(crate) fn replicate_layer_glue(
     Ok(out)
 }
 
-/// `MEMRA_GLM5_TP_SYMMETRIC=1` (lane/tp-symmetric-20260906, default OFF in code; the served
-/// TP-2 launcher arms it, docs/FLAGS.md): at load, replicate every TP layer's glue to the peers
+/// `MEMRA_GLM5_TP_SYMMETRIC=1` (lane/tp-symmetric-20260906, default OFF in code; the darklanes
+/// TP-2 launcher sets it, docs/FLAGS.md): at load, replicate every TP layer's glue to the peers
 /// and shard the KDA `wo` by input columns (row-parallel); at decode, route the walk through
 /// the symmetric path (`hyper_range_decode_ws_sym`: `kda_tp_partials_sym`,
 /// `mla_tp_attn_cached_sym` and `moe_ffn_glm5_tp_split_sym`, each ending in a one-shot
@@ -2093,8 +2093,8 @@ impl Glm5TpSplitExps {
 
 /// `MEMRA_TP_AR_1STAGE=1` (lane/tp-ar-1stage-20260906, default OFF in code): the walk's two
 /// REDUCE sites take the one-shot all-reduce (`memra_tp_ar_1stage`) instead of a return-to-root
-/// hop. The symmetric walk the served TP-2 launcher arms runs only with it on
-/// ([`Glm5TpRt::ar_1stage_available`]), so it stays (docs/FLAGS.md).
+/// hop. The darklanes TP-2 launcher sets it, and the symmetric walk runs only with it on
+/// ([`Glm5TpRt::ar_1stage_available`]); keeping it is the owner's call (docs/FLAGS.md).
 ///
 /// WHY. A reduce done as a push plus a fold costs 4 kernel launches and 8 cross-context CUDA event
 /// operations, which measured 20-26 us for 16 KB on a pair whose fabric moves 956 GB/s: host
@@ -2107,8 +2107,9 @@ pub fn tp_ar_1stage_on() -> bool {
 }
 
 /// `MEMRA_GLM5_TP_EXPERT_SPLIT=1` (lane/tp-expert-split-20260906, default OFF in code): shard
-/// every expert across the TP ranks instead of assigning whole experts. The symmetric walk the
-/// served TP-2 launcher arms runs only with it on, so it stays (docs/FLAGS.md).
+/// every expert across the TP ranks instead of assigning whole experts. The darklanes TP-2
+/// launcher sets it, and the symmetric walk runs only with it on; keeping it is the owner's
+/// call (docs/FLAGS.md).
 ///
 /// NOT byte-identical, and the split is where: `gate`/`up` are row splits, so every output
 /// element stays one full-K dot over the same bytes and that half is bit-identical, as is the
