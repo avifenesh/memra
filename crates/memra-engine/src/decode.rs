@@ -43,12 +43,6 @@ pub struct GraphSession {
     qt: i32,
     row_bytes: usize,
     n_vocab: usize,
-    /// GRAMMAR MASK (constrained decoding, 2026-08-03): packed llguidance bitset the
-    /// captured graph reads (mask_logits_f32 between lm_head and the in-graph argmax).
-    /// STABLE POINTER — baked at capture, carried across recaptures; the caller uploads
-    /// fresh contents (upload_mask) before every step. None = no mask node captured.
-    mask_dev: Option<CudaSlice<u32>>,
-    mask_words: usize,
 }
 
 impl GraphSession {
@@ -96,29 +90,6 @@ impl GraphSession {
             kvl.len += 1;
         }
         e.dtoh_u32_one(&self.gs.token_d)
-    }
-
-    /// GRAMMAR MASK upload (constrained graph sessions): fresh packed-bitset contents into
-    /// the STABLE buffer the captured graph reads — call before every step(). The word
-    /// count is a capture-time kernel arg (constant per model: the tokenizer vocab is
-    /// fixed), so the length must match the capture exactly.
-    pub fn upload_mask(
-        &mut self,
-        e: &Engine,
-        words: &[u32],
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        let Some(d) = self.mask_dev.as_mut() else {
-            return Err("upload_mask: session captured without a mask node".into());
-        };
-        if words.len() != self.mask_words {
-            return Err(format!(
-                "upload_mask: {} words != captured {}",
-                words.len(),
-                self.mask_words
-            )
-            .into());
-        }
-        e.htod_u32_into(d, words)
     }
 
     /// Profiling decomposition of step() (graph-session-gate MEMRA_GS_PROF): the three
@@ -1781,7 +1752,7 @@ impl HybridModel {
     }
 
     /// Guards every device-counter walk shares (`decode_step_dc` and the capture body
-    /// `decode_step_dc_cap_masked`, whose graph records the same chain): no hyper trunk, a usable
+    /// `decode_step_dc_cap`, whose graph records the same chain): no hyper trunk, a usable
     /// cache, no E4B (no dc step exists), and the PP door fails closed. The dc walk is
     /// `for (il, layer) in self.layers.iter().enumerate()` on one stream with no stage split, so a
     /// sharded cross-device placement would peer-read every remote layer's weights per step
@@ -1920,48 +1891,14 @@ impl HybridModel {
         n_vocab: usize,
         bucket_max: usize,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        self.refuse_hyper("decode_step_dc_cap")?;
-        self.decode_step_dc_cap_masked(
-            e,
-            token_d,
-            pos_d,
-            embd_gpu,
-            embd_qt,
-            embd_row_bytes,
-            cache,
-            n_vocab,
-            bucket_max,
-            None,
-        )
-    }
-
-    /// `decode_step_dc_cap` + GRAMMAR MASK (constrained decoding): with `mask =
-    /// Some((buf, words))`, mask_logits_f32 bans the packed bitset's unset ids IN the
-    /// captured graph — a stable-pointer read between lm_head and the in-graph argmax
-    /// (the KV-pointer pattern: contents change per step, address is baked). `None` is
-    /// bit-for-bit the unmasked capture.
-    #[allow(clippy::too_many_arguments)]
-    pub fn decode_step_dc_cap_masked(
-        &self,
-        e: &Engine,
-        token_d: &mut CudaSlice<u32>,
-        pos_d: &mut CudaSlice<i32>,
-        embd_gpu: &CudaSlice<u8>,
-        embd_qt: i32,
-        embd_row_bytes: usize,
-        cache: &mut Cache,
-        n_vocab: usize,
-        bucket_max: usize,
-        mask: Option<(&CudaSlice<u32>, usize)>,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        self.dc_walk_guards("decode_step_dc_cap_masked", cache)?;
+        self.dc_walk_guards("decode_step_dc_cap", cache)?;
         // The capture records the generic qwen-class stack below. Gemma has a dc twin
         // (`gemma4_decode_step_dc`) but no captured one, so a gemma session that primed through
         // `decode_step_dc` would capture the wrong program over gemma weights (the argmax-INIT
         // passthrough `decode_step_dc` names). Refuse instead of recording it.
         if self.uses_gemma_program() {
             return Err(
-                "decode_step_dc_cap_masked: the gemma program has no captured device-counter \
+                "decode_step_dc_cap: the gemma program has no captured device-counter \
                  step; decode through decode_step_dc (gemma4_decode_step_dc) instead"
                     .into(),
             );
@@ -2011,12 +1948,7 @@ impl HybridModel {
 
         let mut hn = e.uninit(n_embd)?;
         e.rms_norm(&x, self.output_norm.float_data(), &mut hn, n_embd, 1, eps)?;
-        let mut logits = e.matmul(&self.output, &hn, 1)?;
-        // GRAMMAR MASK: ban before the argmax reads the row (masked argmax == host
-        // masked-argmax — -FLT_MAX is the argmax kernels' init sentinel).
-        if let Some((m, words)) = mask {
-            e.mask_logits_col(&mut logits, m, 0, n_vocab, words)?;
-        }
+        let logits = e.matmul(&self.output, &hn, 1)?;
         // argmax into the PERSISTENT token_d (next step's embed reads it) — same buffer pointer baked
         // at capture, written each replay, so the token id never round-trips to host in steady state.
         e.argmax_token_device_into(&logits, token_d, n_vocab)?;
@@ -2292,65 +2224,7 @@ impl HybridModel {
             next_in = e.dtoh_u32_one(&nt)?;
         }
         e.set_u32_one(&mut gs.token_d, next_in)?;
-        self.graph_session_capture(
-            e, cache, gs, embd_gpu, max_new, qt, row_bytes, n_vocab, None, 0,
-        )
-    }
-
-    /// GraphSession over an ALREADY-PRIMED cache (round 35): keeps the chunked-prefill
-    /// TTFT. graph_session_new's token-wise re-prime made solo long-prompt promotion a
-    /// net ~3x END-TO-END LOSS (measured live: 871-tok prompt + 400 gen = 6.4s vs ~2.2s
-    /// eager). Device counters sync from host state; capture recipe unchanged.
-    /// Requires event tracking OFF (engine default; MEMRA_EVT=1 callers must not use this
-    /// — the primed cache's buffers would carry events, illegal inside capture).
-    pub fn graph_session_from_cache(
-        &self,
-        e: &Engine,
-        cache: Cache,
-        first_token: u32,
-        max_new: usize,
-    ) -> Result<(GraphSession, u32), Box<dyn std::error::Error>> {
-        self.graph_session_from_cache_masked(e, cache, first_token, max_new, None)
-    }
-
-    /// `graph_session_from_cache` + GRAMMAR MASK (constrained decoding, 2026-08-03):
-    /// `mask_init = Some(packed bitset)` allocates the session's stable mask buffer
-    /// (tracking is OFF here — capture-legal), seeds it with the FIRST step's mask, and
-    /// captures mask_logits_f32 into the graphed step. The caller re-uploads contents
-    /// per step via `GraphSession::upload_mask` — same stable-pointer discipline as the
-    /// KV len_d counters. `None` = the unmasked session, byte-identical.
-    pub fn graph_session_from_cache_masked(
-        &self,
-        e: &Engine,
-        mut cache: Cache,
-        first_token: u32,
-        max_new: usize,
-        mask_init: Option<&[u32]>,
-    ) -> Result<(GraphSession, u32), Box<dyn std::error::Error>> {
-        cache.ensure_usable("graph_session_from_cache")?;
-        if e.ctx().is_event_tracking() {
-            return Err(
-                "graph_session_from_cache requires event tracking OFF (MEMRA_EVT unset)".into(),
-            );
-        }
-        let n_embd = self.cfg.n_embd as usize;
-        let (qt, row_bytes) = self.embd.qt_and_row_bytes(n_embd);
-        let n_vocab = self.output.out_features();
-        let embd_gpu = e.upload_u8(&self.embd.raw)?;
-        let mut gs = GraphDecodeState::new(e)?;
-        gs.pos_d = e.htod_i32(&[cache.pos as i32])?;
-        gs.token_d = e.stream().clone_htod(&[first_token])?;
-        for kvl in cache.kv.iter_mut().flatten() {
-            e.set_i32_one(&mut kvl.len_d, kvl.len as i32)?;
-        }
-        let mask_dev = match mask_init {
-            Some(w) => Some(e.htod_u32_v(w)?),
-            None => None,
-        };
-        let mask_words = mask_init.map(|w| w.len()).unwrap_or(0);
-        self.graph_session_capture(
-            e, cache, gs, embd_gpu, max_new, qt, row_bytes, n_vocab, mask_dev, mask_words,
-        )
+        self.graph_session_capture(e, cache, gs, embd_gpu, max_new, qt, row_bytes, n_vocab)
     }
 
     /// Eager fa kernel-class fingerprint at a given t_kv: the fa_vec pick plus the
@@ -2409,32 +2283,6 @@ impl HybridModel {
         ),
         Box<dyn std::error::Error>,
     > {
-        self.graph_capture_segment_masked(
-            e, cache, gs, embd_gpu, qt, row_bytes, n_vocab, final_max, None,
-        )
-    }
-
-    /// `graph_capture_segment` + optional in-graph grammar mask (see decode_step_dc_cap_masked).
-    #[allow(clippy::too_many_arguments)]
-    pub(crate) fn graph_capture_segment_masked(
-        &self,
-        e: &Engine,
-        cache: &mut Cache,
-        gs: &mut GraphDecodeState,
-        embd_gpu: &CudaSlice<u8>,
-        qt: i32,
-        row_bytes: usize,
-        n_vocab: usize,
-        final_max: usize,
-        mask: Option<(&CudaSlice<u32>, usize)>,
-    ) -> Result<
-        (
-            cudarc::driver::CudaGraph,
-            Vec<crate::graph_update::FaMain>,
-            usize,
-        ),
-        Box<dyn std::error::Error>,
-    > {
         let t0 = cache.pos + 1;
         let seg_end = self.fa_segment_end(e, t0, final_max);
         let bucket_max = seg_end;
@@ -2452,9 +2300,8 @@ impl HybridModel {
             let pos_d: &mut CudaSlice<i32> = pos_d;
             let cache_ref = &mut *cache;
             e.capture_graph(|e| {
-                self.decode_step_dc_cap_masked(
+                self.decode_step_dc_cap(
                     e, token_d, pos_d, embd_gpu, qt, row_bytes, cache_ref, n_vocab, bucket_max,
-                    mask,
                 )
             })?
         };
@@ -2492,14 +2339,12 @@ impl HybridModel {
     }
 
     /// Session recapture at a kernel-class boundary (called by GraphSession::step).
-    /// The mask node (when present) re-bakes the SAME stable buffer — contents carry over.
     pub(crate) fn graph_session_recapture(
         &self,
         e: &Engine,
         sess: &mut GraphSession,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        let mask = sess.mask_dev.take();
-        let (graph, plan, seg_end) = self.graph_capture_segment_masked(
+        let (graph, plan, seg_end) = self.graph_capture_segment(
             e,
             &mut sess.cache,
             &mut sess.gs,
@@ -2508,9 +2353,7 @@ impl HybridModel {
             sess.row_bytes,
             sess.n_vocab,
             sess.bucket_max,
-            mask.as_ref().map(|d| (d, sess.mask_words)),
         )?;
-        sess.mask_dev = mask;
         sess.graph = graph;
         sess.plan = plan;
         sess.seg_end = seg_end;
@@ -2529,21 +2372,11 @@ impl HybridModel {
         qt: i32,
         row_bytes: usize,
         n_vocab: usize,
-        mask_dev: Option<CudaSlice<u32>>,
-        mask_words: usize,
     ) -> Result<(GraphSession, u32), Box<dyn std::error::Error>> {
         let embd_gpu = embd_gpu_owned;
         let bucket_max = cache.pos + max_new + 1;
-        let (graph, plan, seg_end) = self.graph_capture_segment_masked(
-            e,
-            &mut cache,
-            &mut gs,
-            &embd_gpu,
-            qt,
-            row_bytes,
-            n_vocab,
-            bucket_max,
-            mask_dev.as_ref().map(|d| (d, mask_words)),
+        let (graph, plan, seg_end) = self.graph_capture_segment(
+            e, &mut cache, &mut gs, &embd_gpu, qt, row_bytes, n_vocab, bucket_max,
         )?;
         let first = e.dtoh_u32_one(&gs.token_d)?;
         Ok((
@@ -2558,8 +2391,6 @@ impl HybridModel {
                 qt,
                 row_bytes,
                 n_vocab,
-                mask_dev,
-                mask_words,
             },
             first,
         ))

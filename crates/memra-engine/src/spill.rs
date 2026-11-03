@@ -101,9 +101,9 @@ pub fn disk_tier_enabled() -> bool {
 }
 
 /// Shared load-time spill context (SPILLING-PLAN §2 step 4). Built ONCE per model load when the
-/// disk tier is on, then handed by `&mut` to each `HostExps::load` so all layers/projections share
-/// ONE file mmap PER SHARD and draw down a single running pinned-RAM budget. Greedy in load order:
-/// pin until `pinned_remaining` is exhausted, then spill every later expert to `Mmap`.
+/// disk tier is on, then handed by `&mut` to each `HostExps::load_tiered` so all layers/projections
+/// share ONE file mmap PER SHARD and draw down a single running pinned-RAM budget. Greedy in load
+/// order: pin until `pinned_remaining` is exhausted, then spill every later expert to `Mmap`.
 pub struct SpillCtx {
     /// One `MAP_SHARED` mmap per physical GGUF shard, shared (`Arc`) across every spilled expert
     /// block that lives in that shard. Index = `TensorInfo::shard`. Single-file models have len 1.
