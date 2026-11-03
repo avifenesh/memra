@@ -7023,7 +7023,7 @@ fn spec_round_ms(
 
 /// One plain batched tick for `n` sessions, chunked at the serving batch cap.
 fn spec_plain_ms(t: &memra_engine::spec_cost::SpecCostTable, n: usize, cap: usize) -> f64 {
-    let cap = cap.clamp(1, 16);
+    let cap = cap.clamp(1, t.plain_ms.len());
     let (full, rem) = (n / cap, n % cap);
     full as f64 * t.plain_ms[cap - 1] + if rem > 0 { t.plain_ms[rem - 1] } else { 0.0 }
 }
@@ -27241,6 +27241,8 @@ pub fn run(
                 " (dual PP2)"
             } else if policy.stages > 1 {
                 " (PP3/PP4 wavefront, experimental)"
+            } else if policy.wave_cap > 16 {
+                " (exact-32 tier)"
             } else if policy.wave_cap > 8 {
                 " (exact-16 tier)"
             } else {
@@ -40481,8 +40483,15 @@ fn chunk_cap_for(lm: &LoadedModel) -> usize {
     {
         return usize::clamp(c, 1, 32);
     }
+    // b32 tier (batch-spec 2026-11-03): an exact-16 model also takes 17..32-row waves in the
+    // unsplit `decode_step_batch` (its decode-wide scope), so a 32-session tick streams the
+    // weights once. The PP entries keep the 16-row tier.
     if lm.model.decode_batch_exact16_ok() {
-        16
+        if memra_engine::pp::pp_cuts(lm.model.layers.len()).is_none() {
+            32
+        } else {
+            16
+        }
     } else {
         8
     }
@@ -43212,13 +43221,15 @@ fn run_spec_cost_calibration(
             continue;
         }
         let t0 = Instant::now();
-        let result = lm.model.spec_cost_calibrate(engine, SPEC_COST_DEPTH);
+        let plain_cap = decode_chunk_policy(lm, engine).wave_cap;
+        let result = lm
+            .model
+            .spec_cost_calibrate(engine, SPEC_COST_DEPTH, plain_cap);
         oom_teardown_fence(engine, loaded);
         trim_model_device_pools(engine, loaded, "spec-cost-calibration");
         match result {
             Ok(table) => {
                 let pooled = lm.model.spec_pool_capable();
-                let plain_cap = decode_chunk_policy(lm, engine).wave_cap;
                 let fmt = |v: &[f64]| {
                     v.iter()
                         .map(|x| format!("{x:.1}"))
@@ -43228,7 +43239,7 @@ fn run_spec_cost_calibration(
                 eprintln!(
                     "[spec-cost] model={name:?} depth={} pooled={pooled} plain_cap={plain_cap} \
                      round_overhead={:.2}ms pooled_overhead={:?} verify_ms[1..16]=[{}] \
-                     plain_ms[1..16]=[{}] ({:.1}s)",
+                     plain_ms[1..]=[{}] ({:.1}s)",
                     table.depth,
                     table.round_overhead_ms,
                     table.pooled_overhead_ms,
