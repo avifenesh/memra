@@ -55,3 +55,20 @@ Per-user median gen tok/s is in `cells.jsonl`. For the model arm it was 23.5 / 1
 4. **Why pooled verify gains less here than at depth 2048.** At these depths a verify row's attention cost grows with context. GB10-CR.md measured 4x4 pooled verify at 208 ms at depth 16k, against 146 ms at 2k. The flat 1-8-row region of the depth-2048 table does not hold at agentic depths, and the realized-rate pricing is what keeps the gate honest about that.
 5. **`MEMRA_POOLED_GRAPH`: deleted.** Graph replay is flat on GB10, as on the 5090: 28.3 vs 28.8, 39.5 vs 38.4, 60.3 vs 60.4, 66.7 vs 67.1. The forward is device-bound on both cards, so launch overhead is not the cost. The door and the graph code are removed. UNIFIED-STEP.md keeps the v2b receipts as the record of the negative result.
 6. **Rider caps** stay as priced: GB10 caps at the 8-row flat region, the 5090 near 8, and no riders without a table. On this workload the gate rarely creates mixed ticks, so riders are not a GB10 throughput lever.
+
+## Validation run, and the fix it forced (05:14-05:54)
+
+The model arm ran again on a fresh boot, with the c=1 cell left out to stay inside the box's slot: warm-up, then c=2 and c=4. The base arm's rerun was skipped to keep the slot under an hour.
+
+| c | model, first run (after c=1) | model, validation (no c=1) | base | band |
+|---:|---:|---:|---:|---:|
+| 2 | 28.8 | **23.4** | 23.5 | 23.5 |
+| 4 | 38.4 | 39.9 | 39.9 | 39.9 |
+
+The validation boot had no acceptance history when c=2 started (`validation-model/server-lines.txt`). It had no verdict, so the band decided, and the band served the c=2 cell plain. That is the band arm's own 23.5 tok/s. The sessions never speculated, so the history never filled, and the gate never took over.
+
+In the first run, the c=1 cell built the history, and the gate then ran c=2 as pooled spec (28.8 tok/s).
+
+The 1.23x at c=2 is real once the gate has history. A fresh boot facing concurrency first never got there. The fix (`spec_cost_verdict`): a calibrated model with no acceptance history now speculates at its rung whenever every session's verify rows fit one pooled forward (n * (rung + 1) <= 16). The history then fills within a few rounds, and the realized rates take over.
+
+This fix is unit-tested but has no GB10 receipt yet: the box went back to the #1025 queue at 05:55.
