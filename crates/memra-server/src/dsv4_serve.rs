@@ -841,11 +841,37 @@ impl MemoryProbe for LiveProbe<'_, '_> {
     }
 }
 
+/// The served act-quant contract for an artifact's encoding revision (the config
+/// `dspark_*` census the tokenizer already performed). 0731-class ships the reference
+/// kernel law => RefFp8Round. The preview ships clamp-only, and the matrix request
+/// program, the only one a serving process loads, implements RefFp8Round alone
+/// (`Dsv4Gpu::validate_matrix_program`): ClampOnly is reachable only through the
+/// reference program a class gate arms, so a preview artifact REFUSES here by name,
+/// before the weights load, instead of failing after them with the generic
+/// matrix-program error. An undetectable revision REFUSES: a numeric contract is never
+/// guessed (lane-2/3 law).
+fn served_act_quant(
+    name: &str,
+    encoding: Option<chat::Dsv4Encoding>,
+) -> Result<ActQuantVariant, String> {
+    match encoding {
+        Some(chat::Dsv4Encoding::V0731) => Ok(ActQuantVariant::RefFp8Round),
+        Some(chat::Dsv4Encoding::Preview) => Err(format!(
+            "dsv4 model {name:?}: the preview encoding (deepseek_v4_preview, clamp-only \
+             act-quant) is gate-only: the served matrix program implements the 0731 \
+             RefFp8Round contract only, and the clamp-only arm runs only under the \
+             reference program a class gate arms; serve a 0731-class artifact"
+        )),
+        None => Err(format!(
+            "dsv4 model {name:?}: encoding revision undetectable from config.json \
+             dspark_* census: cannot key the act-quant contract (REF vs clamp-only); \
+             refusing to guess"
+        )),
+    }
+}
+
 /// Load the 2-card dsv4 stack. The serving numeric contract is keyed on the
-/// artifact's OWN encoding revision (the config `dspark_*` census the tokenizer
-/// already performed): 0731-class ships the reference kernel law => RefFp8Round;
-/// the nvidia preview ships clamp-only => ClampOnly; an undetectable revision
-/// REFUSES — a numeric contract is never guessed (lane-2/3 law).
+/// artifact's OWN encoding revision ([`served_act_quant`]).
 pub fn load(name: &str, dir: &Path, tok: Arc<Tokenizer>) -> Result<Dsv4Model, String> {
     let devices: Vec<usize> = match std::env::var("MEMRA_DSV4_DEVICES") {
         Err(_) => vec![0, 1],
@@ -858,17 +884,7 @@ pub fn load(name: &str, dir: &Path, tok: Arc<Tokenizer>) -> Result<Dsv4Model, St
             })
             .collect::<Result<_, _>>()?,
     };
-    let variant = match tok.dsv4_encoding() {
-        Some(chat::Dsv4Encoding::V0731) => ActQuantVariant::RefFp8Round,
-        Some(chat::Dsv4Encoding::Preview) => ActQuantVariant::ClampOnly,
-        None => {
-            return Err(format!(
-                "dsv4 model {name:?}: encoding revision undetectable from config.json \
-                 dspark_* census — cannot key the act-quant contract (REF vs clamp-only); \
-                 refusing to guess"
-            ));
-        }
-    };
+    let variant = served_act_quant(name, tok.dsv4_encoding())?;
     let model_ctx = dsv4_declared_context(dir)?;
     let max_seq = crate::worker::resolve_env_ctx(model_ctx).map_err(|e| {
         format!("dsv4 model {name:?}: {e} (config.json declares {model_ctx} positions)")
@@ -3322,6 +3338,31 @@ mod dsv4_dir_probe_tests {
             r#"{"model_type":"qwen3","base_model":"deepseek_v4","num_hidden_layers":2}"#
         ));
         assert!(!probe("broken", r#"{"model_type": "deepseek_v4""#));
+    }
+}
+
+#[cfg(test)]
+mod act_quant_tests {
+    use super::served_act_quant;
+    use memra_gguf::dsv4_forward::ActQuantVariant;
+    use memra_tokenizer::chat::Dsv4Encoding;
+
+    /// The served matrix program implements RefFp8Round only: a 0731 artifact keys it, a
+    /// preview artifact refuses by name at load (clamp-only is gate-only), and an
+    /// undetectable revision refuses rather than guess.
+    #[test]
+    fn preview_encoding_refuses_at_load_as_gate_only() {
+        assert_eq!(
+            served_act_quant("m", Some(Dsv4Encoding::V0731)),
+            Ok(ActQuantVariant::RefFp8Round)
+        );
+        let err = served_act_quant("m", Some(Dsv4Encoding::Preview)).unwrap_err();
+        assert!(
+            err.contains("preview encoding") && err.contains("gate-only"),
+            "{err}"
+        );
+        let err = served_act_quant("m", None).unwrap_err();
+        assert!(err.contains("undetectable"), "{err}");
     }
 }
 

@@ -22,6 +22,10 @@ is TP/EP:
 - attention is split by head (exact attention TP2);
 - the DSpark drafter's experts are split the same way.
 
+The served program implements the 0731 encoding's activation quantization (RefFp8Round) only.
+A preview-encoding checkpoint (`deepseek_v4_preview`, clamp-only) is gate-only: memra-server
+refuses it at load by name, before the weights load.
+
 Plain requests replay each step on full-token CUDA graphs, with the device sampler.
 `MEMRA_DSV4_TOPOLOGY=pp` is the PP-2 rollback (decision:
 [DSV4-TPEP-DEFAULT](../decisions/DSV4-TPEP-DEFAULT.md)). All rows: 256 max tokens, one boot per
