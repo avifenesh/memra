@@ -1400,9 +1400,10 @@ pub struct DecodeState {
     /// prefill and verification. Never crosses into the scalar expert program.
     matrix_step: Option<Box<MatrixStep>>,
     pub caches: Vec<LayerCache>,
-    /// Replicated rank-1 semantic cache for the gate-only all-layer TP/EP
-    /// topology.  The walk is not admitted until both rank cache planes are
-    /// consumed by the same-layer executor.
+    /// Rank 1's cache plane under the TP/EP placement (the served default): one
+    /// [`LayerCache`] per trunk layer on stage 1, next to rank 0's plane in `caches`.
+    /// The same-layer executor writes and reads both planes; a position-split store keeps
+    /// half of each layer's blocks here. `None` under the PP-2 rollback.
     tp_ep_caches: Option<Vec<LayerCache>>,
     pub pos: usize,
     /// Token capacity of this session's cache allocation. This is independently planned
