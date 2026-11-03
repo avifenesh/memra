@@ -1586,6 +1586,24 @@ pub fn model_numeric_claim_verdict(
 }
 
 #[cfg(test)]
+mod fa3_force_tests {
+    use super::fa3_force_verdict;
+
+    #[test]
+    fn only_a_forced_fa3_on_a_non_hopper_build_refuses() {
+        fa3_force_verdict(Some("1"), true).expect("sm_90a carries the kernel");
+        for v in [None, Some("0"), Some("2"), Some("")] {
+            fa3_force_verdict(v, false).expect("not the force arm");
+        }
+        let err = fa3_force_verdict(Some("1"), false).unwrap_err();
+        assert!(
+            err.contains("MEMRA_FA3=1") && err.contains("sm_90a"),
+            "{err}"
+        );
+    }
+}
+
+#[cfg(test)]
 mod fa_ladder_engine_tests {
     use super::fa_ladder_engine_verdict;
 
@@ -2347,6 +2365,22 @@ pub(crate) fn fa_split_keys(t_kv: usize, n_head_kv: usize) -> usize {
 /// ordinal 0. `Engine::new` refuses a later engine whose card has a different SM count
 /// (`fa_ladder_engine_verdict`), so no engine runs another card's ladder.
 static FA_SM_COUNT: std::sync::OnceLock<i32> = std::sync::OnceLock::new();
+
+/// `MEMRA_FA3=1` forces the FA3 wgmma prefill, which only an sm_90a build carries: build.rs
+/// compiles fa3_prefill.cu as a stub (rc 3) on every other arch. The prefill switch refuses it,
+/// but only at the first fresh causal hd256 prefill, which in a serving worker is a request.
+/// `Engine::new` runs this once so a server refuses at boot. Pure over the value and the build.
+pub(crate) fn fa3_force_verdict(value: Option<&str>, hopper_build: bool) -> Result<(), String> {
+    if value != Some("1") || hopper_build {
+        return Ok(());
+    }
+    Err(format!(
+        "MEMRA_FA3=1 forces the FA3 wgmma prefill, which only an sm_90a build contains; this is \
+         an sm_{} build, where fa3_prefill.cu is a stub. Unset MEMRA_FA3: the default path \
+         serves this arch.",
+        env!("MEMRA_BUILT_CUDA_ARCH")
+    ))
+}
 
 /// An engine may join the process only on a card whose SM count is the one the FA split ladder
 /// was fixed at (`FA_SM_COUNT`). Otherwise it would run another card's ladder, a different FA
@@ -4427,6 +4461,11 @@ impl Engine {
                 .unwrap_or(82)
         };
         fa_ladder_engine_verdict(ordinal, sm_count, *FA_SM_COUNT.get_or_init(|| sm_count))?;
+        // A force flag this build cannot honor stops the boot, not the first long prompt.
+        fa3_force_verdict(
+            std::env::var("MEMRA_FA3").ok().as_deref(),
+            cfg!(memra_hopper_mma),
+        )?;
         // Default async-pool RELEASE_THRESHOLD is 0: freed blocks return to the OS at every
         // sync, so cuMemAllocAsync NODES inside captured graphs re-map memory on EVERY
         // cuGraphLaunch (measured 226us/launch on the gemma graph door, 2026-07-23 osrt).
@@ -29323,14 +29362,12 @@ impl Engine {
                 // The force arm consults the arch: build.rs compiles fa3_prefill.cu as a stub
                 // (rc 3) on every arch but 90a, and portable builds already returned to naive
                 // SDPA above. Refuse at the switch, not after the bf16 stage mid-request.
+                // Engine::new refuses the same value at construction (fa3_force_verdict), so a
+                // server stops at boot; this assert covers an env changed after that.
                 Ok("1") => {
-                    assert!(
-                        cfg!(memra_hopper_mma),
-                        "MEMRA_FA3=1 forces the FA3 wgmma prefill, which only an sm_90a build \
-                         contains; this is an sm_{} build, where fa3_prefill.cu is a stub. Unset \
-                         MEMRA_FA3 — the default path serves this arch.",
-                        env!("MEMRA_BUILT_CUDA_ARCH")
-                    );
+                    if let Err(why) = fa3_force_verdict(Some("1"), cfg!(memra_hopper_mma)) {
+                        panic!("{why}");
+                    }
                     true
                 }
                 _ => cfg!(memra_hopper_mma),
