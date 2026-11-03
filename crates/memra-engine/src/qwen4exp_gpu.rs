@@ -1804,8 +1804,12 @@ fn sel_gufuse_on() -> bool {
 /// grouped launch per projection via the gufuse tok_map. Every per-(row,token) fma
 /// chain is the t == 1 program VERBATIM => rows stay BIT-IDENTICAL to per-token
 /// launches (asserted by the bf16-matvec oracle's mt mode and the verify-bit gate);
-/// only weight-read counts and launch counts drop. Engages ONLY at 2 <= t <= 12 exact
-/// chunks (plain decode and prefill untouched). Default ON with the mtp-spec lane's
+/// only weight-read counts and launch counts drop. The arms key on the ROW COUNT, not on
+/// the verify state: the trunk dense mats and hc stages take the mt kernels on every
+/// 2 <= t <= 12 trunk forward, so a short prompt prefill or a 2-12 row `prefill_extend`
+/// tail chunk runs them too (bit-identical per row, so its output does not move), and the
+/// merged MoE columns follow the same switch wherever the MoE runs grouped rows. Plain
+/// t == 1 decode is untouched. Default ON with the mtp-spec lane's
 /// receipts (spec/MTP-SPEC.md: verify-bit-gate bit-identity + interleaved spec A/B);
 /// OFF twin = the per-token grid path, `--ab-seam vmt`.
 pub const VERIFY_MT_DEFAULT: bool = true;
