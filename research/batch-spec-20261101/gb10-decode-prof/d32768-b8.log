@@ -1,0 +1,19 @@
+[tensor-contract] bound 866 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+loaded qwen35 (64 layers); steps=16 reps=3 batches=[1, 2, 4, 8] primary_dev=0
+[fa-pool] grow #0 dev=0 o_len 0 -> 12632064 ml_len 0 -> 49344 (retired kept, zero=false)
+CHUNKSWEEP seqs=8 chunk=8: aggregate 52.1 tok/s (153.56 ms/tick, median of 3)
+TOKFP seqs=8 chunk=8 [95d831b8582c8638 1b76b1d140e1c961 91ece9d0278a5a39 b918f1512e26533c 7210f48acab4a825 e8ab5f2233db47aa 0fac7c7537f4468c 8e7f88521b7d0868]
+[batch-phase] total 9831.7 ms (sync-bounded; shares rank, not walltime)
+  4230.4 ms  43.0%  attn per-seq: fa_decode
+  3047.2 ms  31.0%  ffn (add/norm/gate/up/act/down)
+   730.4 ms   7.4%  gdn batched projections
+   725.6 ms   7.4%  gdn state ops (conv/prep/scan)
+   415.7 ms   4.2%  gdn out (gated norm+proj)
+   320.0 ms   3.3%  lm_head (norm+matmul)
+   232.8 ms   2.4%  attn batched pre (norm/qkv/rope)
+   106.1 ms   1.1%  attn post (gate+o-proj)
+    10.4 ms   0.1%  attn per-seq: kv append
+    10.0 ms   0.1%  logits D2H + host split
+     3.0 ms   0.0%  setup(ptrs+embed H2D)
+     0.0 ms   0.0%  attn per-seq: q/a dtod copies
+
