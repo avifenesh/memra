@@ -6952,7 +6952,7 @@ impl HybridModel {
     /// B=1. The older verify walk used its own mirrored dispatch and can flip near-tie argmaxes.
     ///
     /// Two arms, one numeric class:
-    /// - DENSE GDN (`DenseMlp`, t<=16): `qwen35_verify_tparallel` — the weight ops (norms,
+    /// - GDN, dense or MoE FFN, t<=16: `qwen35_verify_tparallel` — the weight ops (norms,
     ///   projections, FFN) hoist to m=T through the exact-tier batched kernels whose per-row
     ///   program IS the m=1 program (`matmul_pre == fused2 per (tensor,row); _bN mmvq per-row
     ///   == m=1` — decode_batch.rs v2 note), while the state ops (conv ring, gdn scan, KV
@@ -6961,7 +6961,7 @@ impl HybridModel {
     ///   program its isolated serving step would). One weight read per layer per round
     ///   instead of T — this is what makes MTP profitable in the exact class (the per-row
     ///   walk measured verify(K+1) ~= (K+1) plain steps: 69 -> 44 tok/s served, 2026-08-15).
-    /// - MoE / t>16 / `MEMRA_SPEC_VERIFY_ROWWISE=1`: the per-row replay of the authoritative
+    /// - t>16 or `MEMRA_SPEC_VERIFY_ROWWISE=1`: the per-row replay of the authoritative
     ///   serving layer body, preserving single-session autoregressive cache order (the
     ///   correctness reference; also the rollback seam for the t-parallel arm).
     ///
