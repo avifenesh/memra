@@ -668,7 +668,8 @@ pub struct Glm5VisionConfig {
 #[derive(Debug, Clone)]
 pub struct Step35Config {
     /// Per-layer query-head count — `step35.attention.head_count` is an ARRAY (45 items: 64 on
-    /// full-attn layers, 96 on SWA layers). len == n_layer_total (the MTP GGUF carries 48).
+    /// full-attn layers, 96 on SWA layers). len == n_layer, the GGUF block_count (the MTP GGUF
+    /// carries 48).
     pub head_count: Vec<u32>,
     /// Per-layer KV-head count (`attention.head_count_kv`, uniform 8 on 3.7 — kept as an array
     /// because the key IS an array in the artifact and a future sibling may vary it).
@@ -1291,7 +1292,6 @@ pub struct ModelConfig {
     pub geometry: Option<ArchGeometryTable>,
     // multi-token-predict / NextN
     pub nextn_predict_layers: u32,
-    pub n_layer_total: u32, // includes appended MTP layers
     /// The source's sliding-window key, carried VERBATIM for families whose plan does not
     /// consume it. Every family that serves a window parses it into its own sub-config
     /// (gemma4/step35/dsv4); a config that carries one and lands in a pack with no window
@@ -1767,7 +1767,6 @@ impl ModelConfig {
             glm5: None, // safetensors-first arch: no GGUF artifact exists (bring-up lane)
             geometry,
             nextn_predict_layers: nextn,
-            n_layer_total: n_layer + nextn,
         }
     }
 
@@ -2598,7 +2597,6 @@ impl ModelConfig {
             // `nextn` above equals that expression for every arch EXCEPT deepseek_v4, where the
             // key is vestigial and the depth derives from compress_ratios (0731 trap).
             nextn_predict_layers: nextn,
-            n_layer_total: c.num_hidden_layers + nextn,
         }
     }
 
@@ -4489,7 +4487,6 @@ pub(crate) mod hf_tests {
         let config = pinned_mimo_config();
         assert_eq!(config.arch, Arch::MiMoV2);
         assert_eq!(config.n_layer, 48);
-        assert_eq!(config.n_layer_total, 48);
         assert_eq!(config.nextn_predict_layers, 0);
         assert_eq!(config.head_dim_k, 192);
         assert_eq!(config.head_dim_v, 128);
@@ -5677,7 +5674,6 @@ pub(crate) mod hf_tests {
         let mc = ModelConfig::from_hf(&HfConfig::parse(&dsv4_config_json(3)));
         assert_eq!(mc.nextn_predict_layers, 3, "derived, NOT the vestigial 1");
         assert_eq!(mc.n_layer, 46);
-        assert_eq!(mc.n_layer_total, 46);
         assert_eq!(mc.dsv4.as_ref().unwrap().compress_ratios.len(), 46);
     }
 
@@ -5722,7 +5718,6 @@ pub(crate) mod hf_tests {
         // 45 trunk layers + 1 NextN (HF config convention includes the appended MTP block).
         assert_eq!(mc.nextn_predict_layers, 1);
         assert_eq!(mc.n_layer, 46);
-        assert_eq!(mc.n_layer_total, 46);
         assert_eq!(mc.n_embd, 4096);
         assert_eq!(mc.n_vocab, 154880);
         assert_eq!(mc.context_length, 1048576);
