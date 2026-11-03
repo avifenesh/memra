@@ -1033,9 +1033,6 @@ These exist because correctness discipline needs a same-binary oracle. Each is a
 | `MEMRA_F16OUT=0` | separate epilogue launches instead of the fused fp16-operand `_f16out` twins (silu_mul / gated_rmsnorm / sig_mul) on the f16 prefill lane. Engages only at t>=16 with `MEMRA_PP_F16`-class mirrors live; auto-off under verify-exact. Bit-identical class (the twins emit the cvt kernel's exact halves) | task #17 (`hybrid_forward.rs f16out_on()`) |
 | `MEMRA_FA_EMIT=0` | f32 Q/K/V operands into prefill FA instead of the bf16 emit-straight-from-norm staging (t>=16; island/vision primes keep f32 regardless — the emit path has no island consumer) | `hybrid_forward.rs` emit gate |
 | `MEMRA_FA_BF16KV=0` | in-kernel scalar K/V staging in the hd128/hd256 prefill FA instead of pre-converted bf16 mirrors — BIT-IDENTICAL (same `__float2bfloat16` values into the same mma); the pre-convert turned the 67%-of-stalls scalar staging into int4 vector copies | default-on 2026-07-26 (`lib.rs fa_prefill`) |
-| `MEMRA_FAW_P1=0` | SWA windowed prefill FA back to the g4/o2 arms (P1 = per-head Br=64 stamp with the FA2 schedule + boundary/interior mask split; FP order preserved → bit-identical, gated) | P1 default-on 2026-07-22 engine study (`lib.rs fa_prefill_w`) |
-| `MEMRA_FAW_G4=0` | per-head SWA stamp instead of the MQA 4-heads/CTA staged-K/V-sharing twin (n_head_kv==1, n_head%4==0 class; per-(head,row) FP chain identical → bit-identical, gated) | `lib.rs` |
-| `MEMRA_FAW_O2=0` | single-CTA/SM smem layout instead of the occupancy-2 shared-K/V-buffer twin (~36.5 KB smem, 2 CTA/SM — the llama hd256 mechanism). Bit-identical | `lib.rs` |
 | `MEMRA_GEMMA_CSR=0` | duplicate expert weight-streams at gemma spec verify (t<=10) instead of the owner-scan CSR dedup — the gemma twin of `MEMRA_MOE_CSR` (§4); `MEMRA_MOE_CSR=2`'s byte-compare debug mode does not exist here | `hybrid_forward.rs` |
 | `MEMRA_GEMMA_MOE_FAST=0` | gemma MoE decode/verify (t below the prime floor) back to SLRU dispatch instead of the resident dev-slab fused gate_up-GELU + down8 FMA chain (verify rides the EXACT decode kernel chain per token — dispatch-parity law) | `hybrid_forward.rs` |
 | `MEMRA_GEMMA_MOE_PAIRS=0` | per-expert loop for gemma real prefill (t >= prime floor) instead of pair-batched launches — the gemma twin of `MEMRA_MOE_PAIRS` | `hybrid_forward.rs` |
@@ -1705,6 +1702,24 @@ deleted and the conversion is on wherever `MEMRA_DSPARK_PREFIX_RESTORE` and
 - GB10 GGUF DFlash2 agentic cell, one run each, off/on: c1 12.04 -> 14.47 (+20%), c2..c32 inside
   run noise. RTX 5090: the veto never fires on its shape, so the door is inert there.
 - Receipts: `research/dflash-restorable-hit-20261103/`.
+
+## Removed doors, 2026-11-03 (the windowed-prefill P1 rollback seams: P1 has been the default since 2026-07-22)
+
+`MEMRA_FAW_P1=0`, `MEMRA_FAW_G4=0` and `MEMRA_FAW_O2=0` were the rollback seams of the hd256
+sliding-window prefill (`fa_prefill_w`, gemma-class SWA layers past the window). P1, the
+per-head Br=64 stamp with the FA2 schedule (`fa_prefill_w_bf16_p1`, and its head-pair twin
+under the f16 P/V door), became the default in the 2026-07-22 engine study, bit-identical to the
+arms it replaced. Below P1, `G4=0` and `O2=0` chose among those older arms: the MQA four-heads
+per CTA twin (`fa_prefill_w_bf16_g4`), its occupancy-2 layout (`fa_prefill_w_bf16_g4o2`) and the
+per-head bf16-staged stamp (`fa_prefill_w_bf16_pp`, the only user of
+`fa_prefill_bf16_pp_body`). All three ran only when `MEMRA_FAW_P1=0` was set, no launcher or gate
+in the tree sets any of the three names, and the door rule deletes a winner's rollback seam once
+the default has served two weeks unused. Deleted with the three env reads, the G4 and O2 dispatch
+in `fa_prefill_w_arm` (`crates/memra-engine/src/lib.rs`), the three kernels and the body template
+only they reached. `fa_prefill_w_arm` now takes P1 (or its head-pair twin) off the f32 arms, and
+the f32 floor (`MEMRA_FA_FLOOR`) and f32 stage (`MEMRA_FAW_STAGE=f32`, also the kernel_check
+bit-identity reference) keep their stamps. Git history is the archive. Ledger:
+`VERDICT:faw-p1-rollback-seams-removed` (darklanes `agent-knowledge/gpu/verdicts-ledger.md`).
 
 ## Removed doors, 2026-11-03 (the step decode-attention unroll-8 and head-split twins: receipted negative)
 
