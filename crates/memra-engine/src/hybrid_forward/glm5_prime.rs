@@ -96,7 +96,7 @@ impl Glm5TrunkPrime {
         );
         let fence = crate::pp::pp_cuts(m.layers.len());
         let pipeline = ranges.len() > 1
-            && b200_prime_v2_on()
+            && hyper_prime_v2_on()
             && !crate::pp::pp2_streams_off()
             && crate::pp::prime_pipe_on()
             && fence.as_ref().is_some_and(|f| f.len() == 3);
