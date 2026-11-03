@@ -58,8 +58,11 @@ Compiled only under `MEMRA_DSV4_CUTLASS`, and only for sm_120a: `build.rs` refus
 any other `MEMRA_CUDA_ARCH`. The dispatch declares the entry WEAK, so without the
 archive the scalar kernel runs untouched. Gate-armed only (`arm_dense_cutlass_for_gate`); there
 is no env read and no serving caller. Numeric class NEW: mma fragment registers per 128-k block,
-never bit-equal to the shipped 128-leaf smem tree. Drift rows plus the paired accuracy control
-are owed before default.
+never bit-equal to the shipped 128-leaf smem tree. The drift rows and the paired accuracy
+control are banked in darklanes `research/dsv4f-dense-perrow-20260910/` (LANE.md sections
+42-44): 21 of 448 top-1 changes, accuracy within noise on both suites. The served end-to-end row
+on the merged code is still owed, and so is the owner's call on the build default
+(`docs/FLAGS.md`, build-time table).
 
 | Symbol | Purpose | Types | Architecture | Door | Binding |
 | --- | --- | --- | --- | --- | --- |
