@@ -1429,33 +1429,6 @@ impl DecodeState {
         }
         bytes
     }
-    /// Extra routed-EP scratch on each physical stage, including the opposite
-    /// stage's dispatch workspace. Verifier scratch is in `VerifyState::bytes`.
-    pub fn ep_device_scratch_bytes(&self) -> Vec<u64> {
-        let mut bytes = vec![0; self.cache_bytes.len()];
-        if let Some(work) = &self.ws {
-            for (owner, ws) in work.iter().enumerate() {
-                if let Some(ep) = &ws.ep {
-                    bytes[owner] += ep.owner_bytes;
-                    bytes[1 - owner] += ep.peer_bytes;
-                }
-            }
-        }
-        bytes
-    }
-
-    /// Additional device scratch for active C4 gather, separate from semantic
-    /// cache capacity. Batched scratch is already charged in `VerifyState::bytes`.
-    pub fn c4_device_scratch_bytes(&self) -> Vec<u64> {
-        self.ws.as_ref().map_or_else(
-            || vec![0; self.cache_bytes.len()],
-            |work| {
-                work.iter()
-                    .map(|w| w.c4_gather.as_ref().map_or(0, C4Gather::bytes))
-                    .collect()
-            },
-        )
-    }
 }
 
 /// Number of persistent compressed rows admitted for one session. Decode allocation
@@ -2207,12 +2180,6 @@ pub fn dsv4_phase_report(tag: &str, rounds: u64, plain_us: f64) {
     });
 }
 
-/// Drop everything accumulated so far (used to keep the plain arm's brackets out of the
-/// drafted arm's table).
-pub fn dsv4_phase_reset() {
-    DSV4_PHASES.with(|p| *p.borrow_mut() = Dsv4PhaseAcc::default());
-}
-
 macro_rules! dp {
     ($slice:expr, $stream:expr) => {{ $slice.device_ptr($stream).0 as *const c_void }};
 }
@@ -2352,10 +2319,6 @@ impl Dsv4Gpu {
 
     pub fn clear_index_topk_radix_for_gate(&self) {
         self.set_index_topk_radix_for_gate(false);
-    }
-
-    pub fn index_topk_radix_for_gate(&self) -> bool {
-        DSV4_INDEX_TOPK_RADIX.load(Ordering::Acquire)
     }
 
     /// Successful CUDA enqueues through the gate-only radix selector.
@@ -2599,17 +2562,6 @@ impl Dsv4Gpu {
         crate::moe_f16g_m1_tc_on()
     }
 
-    pub fn clear_grouped_m1_tc_for_gate(&self) {
-        for stage in &self.stages {
-            stage
-                .gpu
-                .stream()
-                .synchronize()
-                .expect("drain grouped m1-tc reset");
-        }
-        crate::clear_moe_f16g_m1_tc_for_gate();
-    }
-
     /// Gate seam for the FP8 wo_a grouped launch. The grouped launch replaces
     /// the eight t=1 per-group launches with one while retaining the same
     /// per-output accumulation/reduction body. Default ON; `false` selects the
@@ -2654,10 +2606,6 @@ impl Dsv4Gpu {
         crate::dsv4_c4::set_host_copy_elision_for_gate(enabled)
     }
 
-    pub fn c4_host_copy_elision_for_gate(&self) -> bool {
-        crate::dsv4_c4::host_copy_elision_enabled()
-    }
-
     pub fn matrix_moe_enabled(&self) -> bool {
         self.matrix_moe
     }
@@ -2699,10 +2647,6 @@ impl Dsv4Gpu {
     /// request currently refuses before allocating the PP loader.
     pub fn set_tp_ep_topology_for_gate(enabled: bool) -> bool {
         dsv4_topology::set_tp_ep_for_gate(enabled)
-    }
-
-    pub fn tp_ep_topology_for_gate() -> bool {
-        dsv4_topology::tp_ep_for_gate()
     }
 
     pub fn set_attention_tp_for_gate(enabled: bool) -> bool {
@@ -2993,33 +2937,6 @@ impl Dsv4Gpu {
                 return Err(format!("matrix program switch drain: {err}"));
             }
         }
-        Ok(previous)
-    }
-
-    /// Exclusive one-load gate seam. Persistent graph support must include this
-    /// arm in its executable key before it can reuse graphs across this setter.
-    pub fn set_indexer_score_for_gate(&mut self, arm: Dsv4IndexerScore) -> Res<Dsv4IndexerScore> {
-        if !matches!(self.decode_path, DecodePath::Device { host_math: false }) || !self.chains_f32
-        {
-            return Err("indexer gate requires device f32x path".into());
-        }
-        if self.model.cfg().index_n_heads != 64 || self.model.cfg().index_head_dim != 128 {
-            return Err("tiled indexer requires 64 heads of width 128".into());
-        }
-        for stage in &self.stages {
-            stage
-                .gpu
-                .ctx
-                .bind_to_thread()
-                .map_err(e("bind indexer gate stage"))?;
-            stage
-                .gpu
-                .stream()
-                .synchronize()
-                .map_err(e("drain indexer gate stage"))?;
-        }
-        let previous = self.indexer_score;
-        self.indexer_score = arm;
         Ok(previous)
     }
 
