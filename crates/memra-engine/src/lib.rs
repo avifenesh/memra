@@ -2029,6 +2029,8 @@ pub struct Engine {
     /// 17..32-row exact tick, inside its verify-exact scope. Widens the batched tier to the
     /// b32 class (`small_m_tier_max` 32). Never set by verify or prime paths.
     decode_wide: std::sync::atomic::AtomicBool,
+    /// Tensor-core b32 tier selected (see `mmvq_tc_on`).
+    tc_b32: std::sync::atomic::AtomicBool,
     capture_keep: Mutex<Vec<Box<dyn std::any::Any + Send>>>,
     /// EDGE-1 §C.2: dedicated H2D copy stream for async prefetch (event-synced to the compute stream).
     pub copy_stream: Arc<CudaStream>,
@@ -3867,6 +3869,7 @@ impl Engine {
             capture_keep_on: std::sync::atomic::AtomicBool::new(false),
             verify_exact: std::sync::atomic::AtomicBool::new(false),
             decode_wide: std::sync::atomic::AtomicBool::new(false),
+            tc_b32: std::sync::atomic::AtomicBool::new(false),
             capture_keep: Mutex::new(Vec::new()),
             argmax_partials: Mutex::new(None),
             prime_deqw_ws: Mutex::new(None),
@@ -4846,6 +4849,24 @@ impl Engine {
     }
     pub(crate) fn verify_exact_on(&self) -> bool {
         self.verify_exact.load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    /// Exact tensor-core b32 tier (batch-spec 2026-11-03): the 17..32-row NVFP4 singles and
+    /// group door run `nvfp4_mmvq_tc` (bit-identical to the dp4a tier). Chosen per box at boot
+    /// by the server's wave probe (`set_tc_b32`); MEMRA_MMVQ_TC=0/1 forces it either way.
+    pub fn mmvq_tc_on(&self) -> bool {
+        static FORCE: std::sync::OnceLock<Option<bool>> = std::sync::OnceLock::new();
+        let force = *FORCE.get_or_init(|| match std::env::var("MEMRA_MMVQ_TC").as_deref() {
+            Ok("1") => Some(true),
+            Ok("0") => Some(false),
+            _ => None,
+        });
+        force.unwrap_or_else(|| self.tc_b32.load(std::sync::atomic::Ordering::Relaxed))
+    }
+
+    /// Select the tensor-core b32 tier (the boot probe's decision; see `mmvq_tc_on`).
+    pub fn set_tc_b32(&self, on: bool) {
+        self.tc_b32.store(on, std::sync::atomic::Ordering::Relaxed);
     }
 
     /// Widest m the group3/group4 doors take: 16, or 32 inside the decode-wide scope.
@@ -19074,9 +19095,13 @@ impl Engine {
             8 => "qmatvec_nvfp4_mmvq_group4_b8_rp",
             // column split (8-column slices per 8-row block, L2-shared weights; bit-identical)
             16 => "qmatvec_nvfp4_mmvq_group4_b16_rp",
+            32 if self.mmvq_tc_on() && parts.iter().all(|p| p.1 % 16 == 0) => {
+                "qmatvec_nvfp4_mmvq_group4_b32_tc"
+            }
             32 => "qmatvec_nvfp4_mmvq_group4_b32_rpcs8",
             _ => return Ok(None),
         };
+        let tc_group = kname.ends_with("_tc");
         // b32: four 8-column slices per 8-row block.
         let col_splits: u32 = if mcols == 32 { 4 } else { 1 };
         // Engagement receipt PER DOOR (dead-arm lesson): one shared Once here suppressed
@@ -19100,14 +19125,22 @@ impl Engine {
         // 3-tensor callers: n3=0 means no block ever resolves to the fourth range — W3/y3
         // are never dereferenced; a 1-element dummy keeps the launch ABI without aliasing y0.
         let mut y3 = self.alloc_uninit::<f32>(if three { 1 } else { m * parts[3].1 })?;
-        let cfg = LaunchConfig {
-            grid_dim: (
-                (total as u32 + rows_per_block - 1) / rows_per_block * col_splits,
-                1,
-                1,
-            ),
-            block_dim: (32, ROWS_PER_BLOCK, 1),
-            shared_mem_bytes: 0,
+        let cfg = if tc_group {
+            LaunchConfig {
+                grid_dim: ((total as u32).div_ceil(16), 1, 1),
+                block_dim: (32, 8, 1),
+                shared_mem_bytes: 0,
+            }
+        } else {
+            LaunchConfig {
+                grid_dim: (
+                    (total as u32 + rows_per_block - 1) / rows_per_block * col_splits,
+                    1,
+                    1,
+                ),
+                block_dim: (32, ROWS_PER_BLOCK, 1),
+                shared_mem_bytes: 0,
+            }
         };
         let (inf, mi) = (in_f as i32, m as i32);
         let (n0, n1, n2) = (parts[0].1 as i32, parts[1].1 as i32, parts[2].1 as i32);
@@ -23910,6 +23943,36 @@ impl Engine {
             Some(v) if !rp || v.contains("rp") => v,
             _ => self.batched_variant(m, in_f, out_f, qtype, mcols, rp),
         };
+        // EXACT TENSOR-CORE tier (batch-spec 2026-11-03, MEMRA_MMVQ_TC=1 A/B seam): int8
+        // mma.sync computes the per-half integer dot products, the float epilogue replays the
+        // dp4a chain -> bit-identical (kernel `nvfp4_mmvq_tc`).
+        if mcols == 32 && qtype == QT_NVFP4 && rp && self.mmvq_tc_on() {
+            let f = self.func("qmatvec_nvfp4_mmvq_b32_tc");
+            let mut y = self.alloc_uninit::<f32>(m * out_f)?;
+            let cfg = LaunchConfig {
+                grid_dim: ((out_f as u32).div_ceil(16), 1, 1),
+                block_dim: (32, 8, 1),
+                shared_mem_bytes: 0,
+            };
+            let (inf, outf, mi, rb) = (in_f as i32, out_f as i32, m as i32, row_bytes as i64);
+            let __s_b = self.gpu.stream();
+            let mut b = __s_b.launch_builder(&f);
+            b.arg(bytes)
+                .arg(aq)
+                .arg(ad)
+                .arg(&mut y)
+                .arg(&inf)
+                .arg(&outf)
+                .arg(&mi)
+                .arg(&rb);
+            unsafe {
+                b.launch(cfg)?;
+            }
+            if scale != 1.0 {
+                self.scale_inplace(&mut y, scale, m * out_f)?;
+            }
+            return Ok(y);
+        }
         // b32 tier: NVFP4 split-plane with the smem scale plane rides the native one-pass
         // rpcs8 kernel (four 8-column blocks per 8-row block). Every other class runs as
         // 16-column halves through its b16 kernel: each column's chain is the same program,
