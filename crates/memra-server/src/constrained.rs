@@ -907,6 +907,12 @@ impl<'a> SpecGrammar<'a> {
         }
         Ok(self.cur.as_ref().unwrap())
     }
+    /// Packed 32-bit bitset words of the committed state's allowed set (test probe: the draft
+    /// chain must never move the real matcher).
+    #[cfg(test)]
+    fn mask_words(&mut self) -> Result<Vec<u32>, String> {
+        Ok(self.cur_mask()?.as_slice().to_vec())
+    }
 }
 
 impl memra_engine::spec::SpecConstraint for SpecGrammar<'_> {
@@ -914,9 +920,6 @@ impl memra_engine::spec::SpecConstraint for SpecGrammar<'_> {
         let mask = self.cur_mask()?;
         apply_mask(mask, logits);
         Ok(())
-    }
-    fn mask_words(&mut self) -> Result<Vec<u32>, String> {
-        Ok(self.cur_mask()?.as_slice().to_vec())
     }
     fn is_allowed(&mut self, tok: u32) -> Result<bool, String> {
         let mask = self.cur_mask()?;
@@ -1483,7 +1486,7 @@ mod tests {
             "a second '{{' must be masked at draft pos 1"
         );
         // (d) the real (committed) state is still at position 0 — its own mask is unchanged.
-        let real: Vec<u32> = SpecConstraint::mask_words(&mut g).unwrap();
+        let real: Vec<u32> = g.mask_words().unwrap();
         assert_eq!(
             real, w0,
             "real matcher moved during a draft chain (byte-identity break)"
@@ -1495,7 +1498,7 @@ mod tests {
             "illegal draft token must end the chain, not error"
         );
         // and the real state STILL has not moved.
-        let real2: Vec<u32> = SpecConstraint::mask_words(&mut g).unwrap();
+        let real2: Vec<u32> = g.mask_words().unwrap();
         assert_eq!(
             real2, w0,
             "real matcher moved after a dead speculative chain"

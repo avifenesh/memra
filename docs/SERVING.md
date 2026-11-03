@@ -136,14 +136,14 @@ resident heads retain the existing graph default. See [the capture receipt](../r
   Receipts: `research/specplace-20260808/`, `research/kpolicy-20260808/`.
 - **Spec engages on prefix-cache hits** (v0.93.0, lane/spec-on-cache-hit — whole-entry
   restores only; **SAMPLED hits included since lane/sampled-hit-spec 2026-08-19**). A spec
-  session's boundary capture publishes its prefix entry with the MTP
-  draft plane and boundary hidden alongside the trunk KV (`PREFIX_ENTRY_LAYOUT_VERSION` 2;
-  plane + hidden bytes counted in the entry budget). On an unconstrained, spec-eligible
-  WHOLE-entry hit the worker re-arms a warm spec session instead of downgrading:
-  qwen/MTP via `spec_session_from_restored` (restored trunk + draft plane + entry anchor;
-  the engine feeds any prompt suffix itself, mirroring prefill_tick's program arms), gemma
-  via `gemma_spec_session_from_restored` (drafter seed regenerated from a non-empty suffix
-  feed; full-cover gemma hits stay plain by design). `spec_restore_refusal` refuses
+  session's boundary capture publishes its prefix entry with the MTP draft plane and
+  boundary hidden alongside the trunk KV (`PREFIX_ENTRY_LAYOUT_VERSION` 2; plane + hidden
+  bytes counted in the entry budget). On an unconstrained, spec-eligible WHOLE-entry hit the
+  worker re-arms a warm spec session instead of downgrading: qwen/MTP via
+  `spec_session_from_restored_ready` or `_deferred` (restored trunk + draft plane + entry
+  anchor; the engine feeds any prompt suffix itself, mirroring prefill_tick's program arms),
+  gemma via `gemma_spec_session_from_restored` (drafter seed regenerated from a non-empty
+  suffix feed; full-cover gemma hits stay plain by design). `spec_restore_refusal` refuses
   `entry_pos != fed_len`, so a partial restore can never route into a spec session — the
   mid-entry-restore hazard class the lcprestore rollback recorded stays closed. Every
   non-convertible shape (no draft plane, constrained, partial hit, conversion decline)
