@@ -10198,7 +10198,7 @@ impl HybridModel {
         let wk_b = Self::mla_split_operand(&mla.wk_b, "attn_k_b", il);
         let wv_b = Self::mla_split_operand(&mla.wv_b, "attn_v_b", il);
 
-        // MEMRA_MLA_TC_PREFILL door (default OFF; flag read per call — the rollback seam).
+        // MEMRA_MLA_TC_PREFILL door (default ON; `=0` is the rollback seam, read per call).
         // Engagement conditions, every one load-bearing:
         //   * a gathered selection exists — the door serves the DSA arm only; the dense
         //     absorbed arm (GLM-5.2, no indexer) keeps the f32 kernel it was gated on;
