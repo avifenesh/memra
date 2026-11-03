@@ -967,6 +967,26 @@ fn hyper_pipe_decline_once(reason: &str) {
     }
 }
 
+/// Why the pipelined mHC prime (`MEMRA_HYPER_PRIME_V2` arm 2) must not run over this tap sink,
+/// or `None`. A device-staged prime sink (`MEMRA_GLM5_DRAFT_TAPS_DEVICE`, doc on
+/// `glm_spec::glm5_draft_taps_device_on`) is a chunk-sized ring that the serial range loop
+/// hands to `glm5_taps_range_begin`/`_done`. Arm 2 calls neither and writes each stage-chunk at
+/// an ABSOLUTE base, so from the second range on `glm5_hc_tap_slot` slices past the ring and
+/// `slice_mut` panics the worker, and the ring's ingest can tear the drafter ctx KV. The pair
+/// is refused by name, before any chunk runs, until both defects are fixed and gated.
+pub(crate) fn hyper_pipe_tap_refusal(
+    sink: Option<&crate::cache::HcTapSink>,
+) -> Option<&'static str> {
+    let s = sink?;
+    (s.device_stage || s.ingest_state.is_some()).then_some(
+        "MEMRA_GLM5_DRAFT_TAPS_DEVICE=1 does not compose with the MEMRA_HYPER_PRIME_V2 arm-2 \
+         pipelined prime: arm 2 never hands a range to glm5_taps_range_begin/done and writes \
+         absolute bases past the chunk-sized device tap ring (a slice_mut panic from the second \
+         range on), and the ring's ingest can tear the drafter ctx KV; unset one of the two \
+         doors",
+    )
+}
+
 pub fn hyper_prime_v2_on() -> bool {
     std::env::var("MEMRA_HYPER_PRIME_V2").as_deref() == Ok("1")
 }
@@ -2353,6 +2373,10 @@ impl HybridModel {
                         "a vision embedding overlay is present: the splice is a stage-0 \
                          embedding-intake transform whose gate ran on the serial ppN body",
                     );
+                } else if let Some(why) = hyper_pipe_tap_refusal(cache.hc_taps.as_ref()) {
+                    // both doors armed and both would engage on this prime: refuse by name
+                    // before any chunk runs, instead of the worker panic arm 2 hits
+                    return Err(why.into());
                 } else {
                     // The DFlash2 hc tap sink used to refuse here, and that refusal was the
                     // whole product-route cost: on the pair at 256,756 tokens the SPEC route
@@ -32530,5 +32554,31 @@ impl HybridModel {
             started.elapsed().as_secs_f64() * 1e3
         );
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod hyper_pipe_tap_tests {
+    use super::hyper_pipe_tap_refusal;
+    use crate::cache::HcTapSink;
+
+    // The device-staged drafter prime sink and the pipelined arm-2 prime do not compose (a
+    // slice_mut panic from the second range on): the arm-2 branch must refuse that sink by name
+    // and keep serving every other sink.
+    #[test]
+    fn arm2_prime_refuses_the_device_staged_tap_ring() {
+        assert_eq!(hyper_pipe_tap_refusal(None), None);
+        let host = HcTapSink::new(vec![3, 7], 4, 16);
+        assert_eq!(hyper_pipe_tap_refusal(Some(&host)), None);
+        let suffix = HcTapSink::new_at(vec![3, 7], 4, 16, 64);
+        assert_eq!(hyper_pipe_tap_refusal(Some(&suffix)), None);
+        let ring = HcTapSink::new_device_staged_at(vec![3, 7], 4, 8, 0);
+        let why = hyper_pipe_tap_refusal(Some(&ring)).expect("device ring must refuse");
+        assert!(
+            why.contains("MEMRA_GLM5_DRAFT_TAPS_DEVICE") && why.contains("MEMRA_HYPER_PRIME_V2")
+        );
+        let mut consumer = HcTapSink::new(vec![3, 7], 4, 16);
+        consumer.ingest_state = Some(Box::new(()));
+        assert!(hyper_pipe_tap_refusal(Some(&consumer)).is_some());
     }
 }
