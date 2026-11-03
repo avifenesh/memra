@@ -5913,7 +5913,16 @@ impl HybridModel {
         // PIPELINED PP PRIME. PP-2 retains its independently-qualified two-stage schedule;
         // PP-3/4 require the explicit MEMRA_PP_WAVE=1 persistent-stage wavefront. The serial
         // split stays reachable through MEMRA_PRIME_PIPE=0 and is the exactness oracle.
-        if crate::pp::prime_pipe_on() && crate::pp::prime_pp_on() && !crate::pp::pp2_streams_off() {
+        // Gemma never enters: both pipelined bodies embed without the sqrt(n_embd) scale and
+        // walk `prime_layers` (the serial residual), not `prime_layers_gemma`, so a gemma
+        // prompt of 2+ ranges would prime through the wrong program with no error. Gemma
+        // takes the serial loop below, the same program `prime_chunk` gives its single-range
+        // primes (its ppN arm excludes gemma for the same reason).
+        if !self.uses_gemma_program()
+            && crate::pp::prime_pipe_on()
+            && crate::pp::prime_pp_on()
+            && !crate::pp::pp2_streams_off()
+        {
             if let Some(fence) = crate::pp::pp_cuts(self.layers.len()).filter(|f| f.len() == 3) {
                 // No lift without this family's stage-0 intake seam and substituted-token
                 // bit-identity gate; copying the glm5 overlay fix here is the memra #21 trap.
