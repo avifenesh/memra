@@ -721,9 +721,10 @@ pub fn glm5_graph_recapture_on() -> bool {
 /// norms, splits, rope: no position-derived launch geometry) close a run's graph piece, an
 /// eager middle (append, k-pool selection, attention, decompress, `wo`) runs on the stage's
 /// workspace, and the layer's second half (hc post + FFN) opens the next graph piece of the
-/// same run. Needs `MEMRA_MLA_SEG_WS=1` (the PRE outputs live in the session's segment
-/// workspace); without it the plan is the KDA-only plan. Read per call. Default OFF pending
-/// its model-scale row.
+/// same run. Needs the MLA segment workspace (`MEMRA_MLA_SEG_WS`: the PRE outputs live in the
+/// session's segment workspace); without it the plan is the KDA-only plan. Read per call.
+/// Default ON on sm_100a builds through the B200 posture (where `MEMRA_MLA_SEG_WS` also defaults
+/// ON), OFF elsewhere; `=1` / `=0` override, `=0` is the rollback.
 pub fn glm5_graph_mla_on() -> bool {
     b200_posture_door_from(
         std::env::var("MEMRA_GLM5_GRAPH_MLA").ok().as_deref(),
