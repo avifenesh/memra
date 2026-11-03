@@ -35,23 +35,6 @@ fn validate_step_expert_activation_limit(limit: Option<f32>) -> Result<(), Strin
     Ok(())
 }
 
-/// Host-canonical Step routed-expert SwiGLU operation.
-///
-/// Step's final routed layers clamp the linear arm symmetrically and the SiLU arm only above.
-/// Keeping this scalar order explicit also defines the device-host-exact CUDA gate.
-/// Raw stream-ordered device copy for capture-safe cross-context seams (cudarc's slice-use
-/// tracking creates capture-illegal dependencies there). Pointers must be pre-cached with
-/// their owners' streams; bytes flow identically to the tracked copy.
-/// MEMRA_OPROJ_DIRECT=1 (o-proj direct join, default OFF until gated): peer ranks write
-/// their fused O partial OVER P2P into a root-resident buffer (UVA kernel stores), and the
-/// model engine adds the two partials itself — the root stream leaves the join entirely
-/// (no peer pull copy, no root add, no second event hop, no final 16KB ownership copy).
-/// Reduction order and kernel programs are unchanged, so the row is BIT-IDENTICAL.
-/// MEMRA_MOE_DIRECT=1 (moe direct join, default OFF until gated): the o-proj direct-join
-/// recipe on the expert combine — peer ranks' accumulators live root-side (the axpy twin
-/// register-accumulates and stores ONCE, so the P2P cost is a single 16KB store pass), and
-/// the model engine adds the two shard rows itself. Operand order matches root's add:
-/// BIT-IDENTICAL.
 /// MEMRA_ROUTES_PRESTAGE=1 (default OFF until gated): stage the shared layer input to
 /// every rank and quantize it BEFORE the router runs — neither depends on the selection,
 /// so the rank streams' pull+quantize overlaps dev0's router gemv+topk instead of chaining
@@ -62,10 +45,6 @@ pub(crate) fn routes_prestage_on() -> bool {
     *ON.get_or_init(|| std::env::var("MEMRA_ROUTES_PRESTAGE").as_deref() == Ok("1"))
 }
 
-/// MEMRA_LEN_MIRROR_LAZY=1 (default OFF until gated): skip redundant per-layer 4B len
-/// htods — the local device mirror is unread in TP decode, and under FUSE_ROPE_APPEND the
-/// fused append's atomicInc owns the rank counters. Every one of those tiny copies is a
-/// compute->copy engine turnaround in the middle of the layer stream.
 /// MEMRA_OPROJ_TAIL=1 (default OFF until gated): the o-proj direct-join add is DEFERRED —
 /// the finish arm keeps its waits, stores the two partial pointers here, and the residual
 /// add_rms_norm consumer composes mixed = a0+a1 in-register (join_add_rms_norm, verbatim
@@ -151,40 +130,25 @@ pub(crate) fn set_oproj_tail(v: (u64, u64)) {
     OPROJ_TAIL_PENDING.with(|c| c.set(Some(v)));
 }
 
+/// MEMRA_LEN_MIRROR_LAZY=1 (default OFF until gated): skip redundant per-layer 4B len
+/// htods — the local device mirror is unread in TP decode, and under FUSE_ROPE_APPEND the
+/// fused append's atomicInc owns the rank counters. Every one of those tiny copies is a
+/// compute->copy engine turnaround in the middle of the layer stream.
 pub(crate) fn len_mirror_lazy_on() -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *ON.get_or_init(|| std::env::var("MEMRA_LEN_MIRROR_LAZY").as_deref() == Ok("1"))
 }
 
+/// MEMRA_MOE_DIRECT=1 (moe direct join, default OFF until gated): the o-proj direct-join
+/// recipe on the expert combine — peer ranks' accumulators live root-side (the axpy twin
+/// register-accumulates and stores ONCE, so the P2P cost is a single 16KB store pass), and
+/// the model engine adds the two shard rows itself. Operand order matches root's add:
+/// BIT-IDENTICAL.
 pub(crate) fn moe_direct_on() -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *ON.get_or_init(|| std::env::var("MEMRA_MOE_DIRECT").as_deref() == Ok("1"))
 }
 
-/// MEMRA_SEL_MIRROR=1: the per-rank routed-selection pull runs as ONE `moe_sel_w_mirror`
-/// launch instead of two 32-byte D2D copies, and when every consuming rank shares e's device
-/// the intermediate e-context staging pair is skipped entirely (the caller's sel/route_w rows
-/// are process-persistent, so the ranks read them directly). Bit-identical: same bytes, one
-/// fewer hop. Refused under the graph door, whose captured copies need the fixed staging
-/// addresses. Default OFF until receipted.
-/// MEMRA_SPEC_FA2=1 (the DSpark verify lesson): the verify walk defers each column's
-/// ATTENTION CORE — the dcw arm appends the column's K/V and stashes its post-rope q and
-/// gate rows, then ONE fa_decode_vec_q_v3_dcw_rows per rank attends every stashed row
-/// (each row runs its own t=1 dcw program, bit-identical per row), the per-row combine
-/// writes the gated rows, and the o_proj join runs on the TCOL slabs.
-/// ROW-TABLE RESTAGE (`MEMRA_ROWS_TAB_RESTAGE`, DEFAULT ON since this lane).
-///
-/// ON: `decode_v2_rope_fa_rows` builds the 6-word-per-row pointer table from the caller's
-/// freshly-read live cache pointers and stages it into a persistent per-rank slab before
-/// every launch. OFF (`=0`): the retired process-lifetime `rows_tabs` memo, keyed by a hash
-/// of (k pointer, base pointer, layer, t) that could not see the V or LEN pointers the
-/// entry also carried, and that nothing invalidated when a session's KV cache was dropped.
-///
-/// Default ON because the OFF arm is a proven use-after-free, not a slower correct path:
-/// on step37-flash with MEMRA_FUSE_ROPE_APPEND=1 it made speculative decoding unservable
-/// (whole non-finite verify rows, then CUDA_ERROR_ILLEGAL_ADDRESS). ON is value-neutral on
-/// every fresh lookup by construction: identical bytes reach the same kernels. Rollback
-/// seam: `MEMRA_ROWS_TAB_RESTAGE=0`.
 /// The 6-word-per-row launch table `{k, v, len, base, ctr, back}` the fused rope/append/fa
 /// kernels dereference. Pure so it can be tested: the words come from the caller's live
 /// per-row `[k, v, len, base]` pointers, `ctr` is this rank's counter slab (one shared cell
@@ -230,6 +194,19 @@ pub(crate) fn retired_rows_tab_key(kp: u64, bp: u64, il: usize, t: usize) -> u64
         .wrapping_add(1 << 63)
 }
 
+/// ROW-TABLE RESTAGE (`MEMRA_ROWS_TAB_RESTAGE`, DEFAULT ON since this lane).
+///
+/// ON: `decode_v2_rope_fa_rows` builds the 6-word-per-row pointer table from the caller's
+/// freshly-read live cache pointers and stages it into a persistent per-rank slab before
+/// every launch. OFF (`=0`): the retired process-lifetime `rows_tabs` memo, keyed by a hash
+/// of (k pointer, base pointer, layer, t) that could not see the V or LEN pointers the
+/// entry also carried, and that nothing invalidated when a session's KV cache was dropped.
+///
+/// Default ON because the OFF arm is a proven use-after-free, not a slower correct path:
+/// on step37-flash with MEMRA_FUSE_ROPE_APPEND=1 it made speculative decoding unservable
+/// (whole non-finite verify rows, then CUDA_ERROR_ILLEGAL_ADDRESS). ON is value-neutral on
+/// every fresh lookup by construction: identical bytes reach the same kernels. Rollback
+/// seam: `MEMRA_ROWS_TAB_RESTAGE=0`.
 pub(crate) fn rows_tab_restage_on() -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *ON.get_or_init(|| std::env::var("MEMRA_ROWS_TAB_RESTAGE").as_deref() != Ok("0"))
@@ -253,6 +230,12 @@ pub(crate) static ROWS_TAB_ENGAGED: std::sync::atomic::AtomicU64 =
 pub(crate) static ROWS_TAB_STALE: std::sync::atomic::AtomicU64 =
     std::sync::atomic::AtomicU64::new(0);
 
+/// MEMRA_SPEC_FA2 (the DSpark verify lesson; unset = the step37 family default, `=1` forces,
+/// `=0` kills): the verify walk defers each column's
+/// ATTENTION CORE — the dcw arm appends the column's K/V and stashes its post-rope q and
+/// gate rows, then ONE fa_decode_vec_q_v3_dcw_rows per rank attends every stashed row
+/// (each row runs its own t=1 dcw program, bit-identical per row), the per-row combine
+/// writes the gated rows, and the o_proj join runs on the TCOL slabs.
 pub(crate) fn spec_fa2_on() -> bool {
     static ENV: std::sync::OnceLock<Option<bool>> = std::sync::OnceLock::new();
     crate::step37_door(&ENV, "MEMRA_SPEC_FA2")
@@ -276,11 +259,22 @@ pub(crate) fn take_spec_fa2_stashed() -> bool {
     SPEC_FA2_STASHED.with(|x| x.replace(false))
 }
 
+/// MEMRA_SEL_MIRROR=1: the per-rank routed-selection pull runs as ONE `moe_sel_w_mirror`
+/// launch instead of two 32-byte D2D copies, and when every consuming rank shares e's device
+/// the intermediate e-context staging pair is skipped entirely (the caller's sel/route_w rows
+/// are process-persistent, so the ranks read them directly). Bit-identical: same bytes, one
+/// fewer hop. Refused under the graph door, whose captured copies need the fixed staging
+/// addresses. Default OFF until receipted.
 pub(crate) fn sel_mirror_on() -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *ON.get_or_init(|| std::env::var("MEMRA_SEL_MIRROR").as_deref() == Ok("1"))
 }
 
+/// MEMRA_OPROJ_DIRECT=1 (o-proj direct join, default OFF until gated): peer ranks write
+/// their fused O partial OVER P2P into a root-resident buffer (UVA kernel stores), and the
+/// model engine adds the two partials itself — the root stream leaves the join entirely
+/// (no peer pull copy, no root add, no second event hop, no final 16KB ownership copy).
+/// Reduction order and kernel programs are unchanged, so the row is BIT-IDENTICAL.
 pub(crate) fn oproj_direct_on() -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *ON.get_or_init(|| std::env::var("MEMRA_OPROJ_DIRECT").as_deref() == Ok("1"))
@@ -410,6 +404,9 @@ pub(crate) fn sel_down8_source() -> (bool, &'static str) {
     *ON.get_or_init(|| door_default_on("MEMRA_NVFP4_SEL_DOWN8"))
 }
 
+/// Raw stream-ordered device copy for capture-safe cross-context seams (cudarc's slice-use
+/// tracking creates capture-illegal dependencies there). Pointers must be pre-cached with
+/// their owners' streams; bytes flow identically to the tracked copy.
 pub(crate) fn raw_copy_bytes(
     dst: u64,
     src: u64,
@@ -440,6 +437,10 @@ pub(crate) fn raw_copy_bytes(
     }
 }
 
+/// Host-canonical Step routed-expert SwiGLU operation.
+///
+/// Step's final routed layers clamp the linear arm symmetrically and the SiLU arm only above.
+/// Keeping this scalar order explicit also defines the device-host-exact CUDA gate.
 pub fn step_expert_activation_host(gate: f32, up: f32, limit: Option<f32>) -> f32 {
     let silu = gate / (1.0 + (-gate).exp());
     match limit {
