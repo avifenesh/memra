@@ -3591,7 +3591,8 @@ fn indexer_select_rows(
 }
 
 /// Render row selections as the dense [t, t_kv] u8 mask the smem-bounded masked kernel
-/// consumes — byte-identical to the historical `indexer_mask_rows` output.
+/// consumes: 1 on the whole visible prefix of a `full` row, otherwise 1 on every position
+/// of each selected complete block and on the incomplete tail up to `visible`, 0 elsewhere.
 fn rowsel_to_mask(sels: &[RowSel], block_size: usize, t_kv: usize) -> Vec<u8> {
     let t = sels.len();
     let mut mask = vec![0u8; t * t_kv];
