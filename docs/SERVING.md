@@ -1850,9 +1850,10 @@ paused (`docs/models/deepseek-v4-flash.md`).
   that leaves mid-defer is dropped and counted `cancelled`. Every decision prints
   `[admit-mem] id= model= route=dsv4-thread verdict= capacity= spec= need= ceiling= host_need=
   short= waited_ms= reclaimed= retry_after_s=`, and boot prints the calibrated `fixed_plain`,
-  `fixed_spec`, `ceiling` and `defer_budget_ms`. Limits: forward-time scratch and the
-  monolithic-prime scratch (chunk 0, or a prompt within one chunk) are not charged, so a driver
-  OOM there still answers 503 `overloaded`; the ceiling is effective free at boot, so a co-tenant
+  `fixed_spec`, `ceiling` and `defer_budget_ms`. Limits: forward-time scratch is not
+  charged, so a driver OOM there still answers 503 `overloaded` (every served prompt primes
+  chunked, and `MEMRA_DSV4_PREFILL_CHUNK=0` refuses boot, so no monolithic-prime scratch is
+  reached); the ceiling is effective free at boot, so a co-tenant
   that arrives later reads as a defer rather than a never-fits; the gather terms are summed across
   widths, an upper bound.
 
