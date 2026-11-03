@@ -4464,6 +4464,7 @@ impl HybridModel {
         // session engagement line prints it as `src=<sha16>`.
         let mut frspec_src_sha16: Option<String> =
             mtp_skip_trim_d2t.as_ref().map(|(_, s)| s.clone());
+        crate::pp::refuse_invalid_fence(n_trunk)?;
         if let Some(fence) = crate::pp::pp_cuts(n_trunk) {
             let pipeline = crate::plan_backend::PIPELINE
                 .trunk_capabilities(&plan)
