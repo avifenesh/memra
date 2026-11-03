@@ -40,7 +40,6 @@ memra-engine	all_reduce_matches_the_host_sum_bitwise	crates/memra-engine/tests/t
 memra-engine	all_reduce_without_the_peer_push_diverges	crates/memra-engine/tests/tp_ar_gpu.rs	SKIP[2 CUDA devices]: multi-GPU test not run
 memra-engine	batched_drafter_gather_matches_per_draft_bitwise	crates/memra-engine/tests/spec_batched_gather_gpu.rs	SKIP[CUDA device]: GPU test not run
 memra-engine	bf16_absorb_planes_match_the_f32_wp_kernels_bitwise	crates/memra-engine/tests/mla_absorb_bf16_gpu.rs	SKIP[CUDA device]: GPU test not run
-memra-engine	broadcast_and_all_gather_move_bytes_exactly	crates/memra-engine/tests/tp_ar_gpu.rs	SKIP[2 CUDA devices]: multi-GPU test not run
 memra-engine	dsv4_graph::tests::replay_rust_partial_submission_and_capture_cleanup	crates/memra-engine/src/dsv4_graph.rs	SKIP[2 CUDA devices]: pair-only test {test} not run, found {found}
 memra-engine	e4m3_fused_six_is_bit_identical_to_six_separate_launches	crates/memra-engine/tests/kda_fused6_e4m3_gpu.rs	SKIP[CUDA device]: GPU test not run
 memra-engine	engine_tower_matches_banked_upstream_fixture	crates/memra-engine/tests/glm5_vision_gpu.rs	SKIP[fixture {fixture}]: regenerable fixture not present; run gen_upstream_fixture.py
