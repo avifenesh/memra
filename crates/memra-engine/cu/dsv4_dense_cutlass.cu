@@ -1,10 +1,13 @@
 // DSV4 dense projections on tensor cores (memra #472).
 //
 // Replaces the scalar per-output-row GEMV for the prefill's m = DSV4_TMAX
-// transactions. Compiled only under MEMRA_CUTLASS; when it is not built, or when
-// a shape is not admitted, the caller keeps the scalar kernel and nothing here
-// runs. There is no environment variable and no door: this is either the code or
-// it is deleted (owner ruling 2026-09-10).
+// transactions. Compiled only under the MEMRA_DSV4_CUTLASS build switch, and only
+// for sm_120a: build.rs refuses the switch on any other MEMRA_CUDA_ARCH. When it is
+// not built, or when a shape is not admitted, the caller keeps the scalar kernel
+// and nothing here runs. No runtime environment variable reads it: once linked it
+// is the code, and only the gate seam below disarms it. The build switch is its one
+// door, default off; the owner ruling of 2026-09-10 is that this is either the code
+// or it is deleted (docs/FLAGS.md, build-time table).
 //
 // WHY THIS SHAPE, in one paragraph, because the design took five passes to find:
 // the dense family is 40.6% of a served prefill and is bound by INSTRUCTION
