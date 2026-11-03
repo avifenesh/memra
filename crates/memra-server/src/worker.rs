@@ -27793,7 +27793,7 @@ pub fn run(
     // Decode-site subset (lane/gemma-batched; extended lane/glm53-batched-decode): eager_only
     // MINUS the models whose batched decode arm is live (dense gemma4 — DEFAULT ON since the
     // 2026-08-16 owner flip, MEMRA_GEMMA4_BATCH=0 is the eager kill switch; mHC hyper trunks —
-    // DEFAULT OFF, MEMRA_HYPER_BATCH=1 is the opt-in until serving-box receipts land).
+    // DEFAULT ON since 2026-08-31, MEMRA_HYPER_BATCH=0 is the eager rollback).
     // Consumed ONLY by the two decode scheduling sites below; all other eager-only exclusions
     // keep the full set.
     let eager_decode: std::collections::HashSet<String> = loaded
@@ -27845,10 +27845,10 @@ pub fn run(
             .is_some_and(|lm| memra_engine::plan_backend::decode_batch_unconverted(&lm.model.plan))
         {
             eprintln!(
-                "[worker] {n}: BATCHED DECODE (mHC hyper arm, opt-in via MEMRA_HYPER_BATCH=1; \
-                   unset/0 = eager per-session rollback): batched decode chunks, serial ticks \
-                   only (no dual waves); {prefill}, no prime batching (eager-only for every \
-                   non-decode entry point)"
+                "[worker] {n}: BATCHED DECODE (mHC hyper arm, default-on; \
+                   MEMRA_HYPER_BATCH=0 = eager per-session rollback): batched decode chunks, \
+                   serial ticks only (no dual waves); {prefill}, no prime batching (eager-only \
+                   for every non-decode entry point)"
             );
         } else {
             eprintln!(
@@ -40749,8 +40749,8 @@ fn gemma4_batched_decode_model(lm: &LoadedModel) -> bool {
 /// BATCHED-DECODE carve-out for mHC (HyperConnections) trunks (lane/glm53-batched-decode,
 /// 2026-08-28): the engine's `decode_step_batch_hyper` walk — batched hc glue + MoE, per-
 /// session mixers, decode-exact seams, gate `glm5-hyper-batch-gate` — serves these sessions
-/// in batched chunks. OPT-IN (`MEMRA_HYPER_BATCH=1`, default OFF) until serving-box receipts
-/// land; the kill switch returns every session to the eager per-session decode. Like the
+/// in batched chunks. DEFAULT ON since 2026-08-31 (the hbatch-battery box receipts);
+/// `MEMRA_HYPER_BATCH=0` returns every session to the eager per-session decode. Like the
 /// gemma4 carve-out, ONLY the two decode scheduling sites consume this: prime batching,
 /// graph promotion, and every speculative entry point stay eager-only for this topology.
 fn hyper_batched_decode_model(lm: &LoadedModel) -> bool {
