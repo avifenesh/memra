@@ -149,7 +149,6 @@ pub(crate) fn eligible(
         && std::env::var("MEMRA_PRIME_DEQW_DB").as_deref() != Ok("0")
         && std::env::var("MEMRA_NOFA").is_err()
         && std::env::var("MEMRA_PRIME_APPEND_LOOP").is_err()
-        && std::env::var("MEMRA_PRIME_SEG").as_deref() != Ok("1")
         && std::env::var("MEMRA_PRIME_SLABS").as_deref() != Ok("0")
         && std::env::var("MEMRA_PRIME_ANATOMY").as_deref() != Ok("1")
 }

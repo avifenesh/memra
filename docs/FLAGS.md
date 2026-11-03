@@ -1310,7 +1310,6 @@ These exist because correctness discipline needs a same-binary oracle. Each is a
 | `MEMRA_Q40_MR=1\|2` | q4_0 m=1 / fused-t=1 rows-per-thread override | default mr1 at the plain m=1 site; the fused-t=1 site defaults per-model (`FUSED_MR1_DEFAULT`: dense gemma mr1, MoE mr2) — env wins both (`lib.rs`) |
 | `MEMRA_BVAR=<variant>` | force the batched-variant pick for the WHOLE process across qtypes — the sm_90a re-tune sweeps this seam empirically (auto heuristics were tuned on sm_120). A measurement seam, decide-by: 2026-11-17 (no date at landing; set 2026-11-03, 14 days out). It is the only thing that reaches the variants the auto pick never selects: NVFP4 `b2_pf`, `b8_pf`, `b8_r2`, `b2`/`b4_pfr2`, `b4_rpsc`, `b8_rp`, `b8_rpr2`, and the k-quant `b4_r2w8` twins, which lost on every measured sm_120 cell (`batched_variant` in `lib.rs`). By the date, an sm_90a re-tune row that moves one of them into the auto pick keeps it; the rest go, and the seam then forces only variants the auto pick reaches | layout stays safe: a forced variant applies only when its layout matches the weight, rp variants on rp bytes and the rest on GGUF-layout bytes; a mismatch takes the auto pick (`lib.rs`) |
 | `MEMRA_RMS_BLOCK=<n>` | force the rms-norm kernel block size (default = the per-model `RMS_BLOCK_DEFAULT`) | tune seam (`lib.rs rms_block()`) |
-| `MEMRA_PRIME_SEG=1` | core-split segmented prime experiment (engages only with f16fuse live, full-range walk, non-step35) | open hypothesis — the S-prep/S-attn fusion; the core-split machinery underneath is byte-identical and stays (`hybrid_forward.rs`) |
 | `MEMRA_SPEC_VERIFY_ROWWISE=1` | force Qwen35-class spec verify onto the per-row correctness reference (T full weight reads per layer) instead of the t-parallel arm | t-parallel is the default for the qwen35 batched-serving numeric class at t<=16 — Qwen35 dense AND Qwen35Moe since 2026-08-20 (lane/draftcost-moe; rowwise on the 35B-A3B measured ~5.6 ms/drafted token, the (K+1)-plain-steps wall). Non-class archs and t>16 take rowwise anyway; ROWWISE=1 stays the exactness oracle/rollback seam (`spec.rs`) |
 
 ### The DFlash draft-head block (`memra-engine/src/dflash.rs`; gemma-gate cell AND the shared drafter behind the `MEMRA_DSPARK_SPEC` serve route)
@@ -1695,6 +1694,22 @@ deleted and the conversion is on wherever `MEMRA_DSPARK_PREFIX_RESTORE` and
 - GB10 GGUF DFlash2 agentic cell, one run each, off/on: c1 12.04 -> 14.47 (+20%), c2..c32 inside
   run noise. RTX 5090: the veto never fires on its shape, so the door is inert there.
 - Receipts: `research/dflash-restorable-hit-20261103/`.
+
+## Removed doors, 2026-11-03 (the segmented prime capture, `MEMRA_PRIME_SEG=1`)
+
+`MEMRA_PRIME_SEG=1` captured the qwen-class prime's per-layer glue as CUDA graphs: an S-mid
+segment ([residual add + post-attn norm] after a core-split mixer whose out-GEMM wrote into a
+`mixed` slab) and an S-glue segment ([down add + next layer's attn norm]), replayed once per layer
+per prime call. The 2026-07-26 interleaved A/B read NET -0.7% to neutral: one cuGraphLaunch costs
+about what the two kernel submissions it replaces do, and the earlier "+0.9%" was cross-run clock
+drift. The row kept it as an open hypothesis for larger S-prep/S-attn segments with no decide-by;
+a neutral receipt deletes the door, and the larger-segment hypothesis is a different program that
+was never built. Deleted with its env read in `prime_layers`, its exclusion in
+`qwen_prime_graph::supported`, the core-split capture arm, the S-glue capture arm, and the
+`seg_glue` / `seg_mid` / `seg_t` / `mixed` prime-slab fields. The core-split helpers
+(`full_attn_prime_core_inner`, `linear_attn_prime_core_pad_inner`) keep their other callers. No
+kernel or `docs/KERNELS.md` row goes with it. Git history is the archive. Ledger:
+`VERDICT:prime-seg-door-removed` (darklanes `agent-knowledge/gpu/verdicts-ledger.md`).
 
 ## Removed doors, 2026-11-03 (the step TP shared expert on rank 1, `MEMRA_SHEXP_DEV1`)
 
