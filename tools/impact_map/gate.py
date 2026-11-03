@@ -123,9 +123,10 @@ class Refiner:
             result.update({"class": "tests", "perf": False, "why": "only test items changed"})
             return result
         for c, e in rep["cells"].items():
-            slot = self.cells.setdefault(c, {"why": set(), "effects": set()})
+            slot = self.cells.setdefault(c, {"why": set(), "effects": set(), "linked": False})
             slot["why"].update(e["why"])
             slot["effects"].update(e["effects"])
+            slot["linked"] |= e.get("linked", True)
         self.effects |= rep["effects"]
         self.kernel |= rep["kernel"]
         unplaced = sorted({it.get("source", "?") for it in changed if it.get("source") not in PLACED})

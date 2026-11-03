@@ -77,6 +77,7 @@ The wide share is mostly real sharing, not missing labels. The server, the token
   - `memory`: the device memory qualification;
   - `policy`: serve-smoke;
   - CUDA or FFI: kernel-check.
+- An item in a crate outside `memra-engine`'s link closure (`memra-server`, `memra-lanes`) has one effect, `served`, whatever its labels say. No battery binary links it, so it cannot change a kernel, a `run-gen` argmax, a `run-spec` result or the perf A/B. It needs serve-smoke, on one device per family: that code has no device-specific path of its own. The closure comes from the workspace manifests (`tools/change_impact.py` `link_closure`).
 - The plan picks one model per reached family and device from `models.json`, preferring the owner's own models. Reached cells that no available model covers are listed, never dropped.
 
 **When the map is older than the base.** The commit that adds a new call carries its own reach into that push. A later edit of the callee alone would not. So before narrowing anything, the query scans what changed between the map commit and the base. Every item changed or added there contributes its identifiers. A changed item named by one of them takes the cells of that new or changed caller as well.
@@ -90,7 +91,7 @@ A change that only removes an edge leaves the map wider than the truth, never na
 
 ## The ledger
 
-`ledger.json` keeps one row per (model, route, device, test): its latest receipt, preferring one that still holds. The row records the commit and receipt path, the cell fingerprint at that commit, and whether the fingerprint equals the map commit's.
+`ledger.json` keeps one row per (model, route, device, test): its latest receipt, preferring one that still holds. The row records the commit and receipt path, the cell fingerprint at that commit, and whether the fingerprint equals the map commit's. A test that runs a `memra-engine` binary (kernel-check, `run-gen` argmax, `run-spec`, the perf A/B) is fingerprinted over the crates that binary links, so a `memra-server` change leaves it standing. `ledger.py refresh` re-fingerprints the rows in place when that rule changes.
 
 The seed is mechanical. Records come from three sources, in order of trust:
 
@@ -132,7 +133,7 @@ For each program file of class kernel, numeric or serving that is not flagged fo
 - its tested commit is an ancestor of the candidate;
 - the record still verifies against its own commit;
 - it is the newest such record for its target and device class;
-- the change impact from that commit to the candidate reaches no cell of the record's target in a scope the record's kinds cover.
+- the change impact from that commit to the candidate needs none of the record's kinds on its target. A server-only change since a battery record needs serve-smoke, so the battery record still holds.
 
 That change impact is judged with the push base's rules and map. A rules or map edit inside the pushed range therefore cannot relax it. A perf record also needs the push base to be equivalent to the record's base on that target.
 

@@ -193,6 +193,52 @@ class CellGate(unittest.TestCase):
         self.f.record(code, ["serving"])
         self.assertIn("CELL-QUALIFIED", self.f.push())
 
+    def workspace(self):
+        """Cargo manifests like the real tree's: memra-server depends on memra-engine, never the reverse."""
+        self.f.write("Cargo.toml", '[workspace]\nresolver = "2"\nmembers = ["crates/memra-engine", "crates/memra-server"]\n'
+                     '[workspace.dependencies]\nmemra-engine = { path = "crates/memra-engine" }\n')
+        self.f.write("crates/memra-engine/Cargo.toml", '[package]\nname = "memra-engine"\n')
+        self.f.write("crates/memra-server/Cargo.toml", '[package]\nname = "memra-server"\n'
+                     '[dependencies]\nmemra-engine = { workspace = true }\n')
+        self.f.commit("workspace manifests")
+        self.f.base = self.f.head()
+
+    def test_server_only_change_needs_serve_smoke_not_the_battery(self):
+        # no battery binary links memra-server: its change cannot move a battery or perf result
+        self.workspace()
+        self.f.write("crates/memra-server/src/worker.rs", "pub fn step() { let _ = 9; }\n")
+        code = self.f.commit("server change")
+        with self.assertRaisesRegex(q.GateError, r"sm_120a \[serving\] needs serving evidence"):
+            self.f.push()
+        self.f.record(code, ["serving"])
+        out = self.f.push()
+        self.assertIn("CELL-QUALIFIED", out)
+        self.assertIn("outside the battery binaries", out)
+
+    def test_battery_record_survives_a_later_server_only_change(self):
+        self.workspace()
+        self.f.write("crates/memra-engine/cu/qmatvec.cu", "__global__ void k() { int x = 8; }\n")
+        measured = self.f.commit("kernel")
+        self.f.record(measured, ["battery", "perf"])
+        self.f.write("crates/memra-server/src/worker.rs", "pub fn step() { let _ = 10; }\n")
+        head = self.f.commit("server change")
+        self.f.record(head, ["serving"])
+        out = self.f.push()
+        self.assertIn("still proves battery,perf on sm_120a", out)
+        self.assertIn("CELL-QUALIFIED", out)
+
+    def test_server_default_keyed_on_a_card_needs_serve_smoke_from_that_card(self):
+        self.workspace()
+        self.f.write("crates/memra-server/src/worker.rs",
+                     'pub fn step(n: &str) { if n.contains("RTX PRO 6000 Blackwell") { vmm(); } }\n')
+        code = self.f.commit("PRO 6000 serving default")
+        self.f.record(code, ["serving"])
+        with self.assertRaisesRegex(q.GateError, r"defaults keyed on rtxpro6000\] needs serving evidence from rtxpro6000"):
+            self.f.push()
+        pro = {**DEVICE, "name": "NVIDIA RTX PRO 6000 Blackwell Server Edition"}
+        self.f.record(code, ["serving"], device_class="rtxpro6000", device=pro)
+        self.assertIn("CELL-QUALIFIED", self.f.push())
+
     def test_evidence_for_other_inputs_is_not_admitted(self):
         self.f.write("crates/memra-engine/cu/qmatvec.cu", "__global__ void k() { int x = 3; }\n")
         old = self.f.commit("kernel v1")

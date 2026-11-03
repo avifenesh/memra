@@ -30,6 +30,9 @@
 #   perf                                 -> interleaved A/B against the push base
 #   gate                                 -> all three: a gate change runs the changed gate
 #   defaults naming a card               -> battery + perf from that card's device class
+# The battery and the perf A/B run memra-engine binaries. A path outside memra-engine's link
+# closure (memra-server, memra-lanes: read from the workspace manifests, not listed here) cannot
+# move their results, so its correctness cells need serve-smoke only and it gets no perf cell.
 #
 # Which rules apply: the push base's rules (the rules in force), so a change cannot relax
 # its own requirements. A target new in the head gets the head's row with push_gate forced

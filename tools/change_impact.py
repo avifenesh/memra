@@ -41,6 +41,16 @@ UNNARROWED = ("build", "gate", UNKNOWN)
 ZERO = "0" * 40
 PUBLICATION = "research/release-qualification/"
 # Weakest to strongest; a path read by several crates takes the strongest class.
+# The release battery's binaries (kernel-check, run-gen, run-spec, argmax-margin-probe, tok-parity:
+# tools/cell_evidence.py BINARIES) are memra-engine targets, and the perf A/B times run-gen. A change
+# can move a battery or perf result only when it changes code linked into memra-engine: the package
+# and its workspace dependencies. memra-server sits above the engine (it depends on the engine, never
+# the reverse), so a server-only change leaves every battery binary as it was; serve-smoke is the one
+# test that runs that code.
+BATTERY_PACKAGE = "memra-engine"
+# Files a crate compiles. The literal crate-input census reads only these, outside test targets.
+CODE_SUFFIXES = (".rs", ".cu", ".cuh", ".h", ".c", ".cc", ".cpp")
+TEST_TARGET = re.compile(r"^crates/[^/]+/(tests|benches|examples)/")
 STRENGTH = ("docs", "research", "tests", "comment", "diagnostic", "cpu", "gate", "serving",
             "numeric", "defaults", "build", "kernel", "perf", UNKNOWN)
 
@@ -207,11 +217,15 @@ def _template(value, match, path):
     return value.format(**fields)
 
 
-def classify_file(change, rules, arch, *, owners=None, crate_inputs=None):
-    """One path -> {class, targets, perf, defaults, pack, route, why}."""
+def classify_file(change, rules, arch, *, owners=None, crate_inputs=None, linked=None):
+    """One path -> {class, targets, perf, defaults, pack, route, why, linked}.
+
+    linked: the workspace packages linked into the battery binaries (link_closure); None means
+    unknown, and every path then counts as linked. A path is linked unless it belongs to, or is
+    read only by, packages outside that set."""
     path = change.path
     result = {"path": path, "class": UNKNOWN, "targets": None, "perf": False, "defaults": False,
-              "devices": [], "pack": None, "route": None, "why": "no rule matches this path"}
+              "devices": [], "pack": None, "route": None, "why": "no rule matches this path", "linked": True}
     if path.startswith(PUBLICATION) or path == "research/INDEX.md":
         return {**result, "class": "research", "why": "qualification metadata (excluded from source inputs)"}
     package = _package_of(path, owners)
@@ -225,14 +239,20 @@ def classify_file(change, rules, arch, *, owners=None, crate_inputs=None):
     perf_packages = set(packages.get("perf_packages", ()))
     if any(p.startswith("<") for p in consumers):
         return {**result, "why": next(p for p in consumers if p.startswith("<")).strip("<>")}
-    if consumers:
-        kind = max((packages.get(p, UNKNOWN) for p in consumers), key=STRENGTH.index)
-        result.update({"class": kind, "why": "read by crate " + ", ".join(sorted(consumers)),
-                       "perf": bool(consumers & perf_packages) and kind in PROGRAM})
+    consumer_kind = max((packages.get(p, UNKNOWN) for p in consumers), key=STRENGTH.index) if consumers else None
+    # A path both read by a crate and matched by a rule takes the stronger class: Cargo.lock is
+    # hashed by memra-server's build id, and it is still a build input of every crate.
+    if consumers and not (rule is not None and STRENGTH.index(rule["class"]) > STRENGTH.index(consumer_kind)):
+        result.update({"class": consumer_kind, "why": "read by crate " + ", ".join(sorted(consumers)),
+                       "perf": bool(consumers & perf_packages) and consumer_kind in PROGRAM,
+                       "linked": linked is None or bool(consumers & linked)})
     elif rule is not None:
         result.update({"class": rule["class"], "why": rule.get("why", rule["pattern"]),
                        "pack": _template(rule.get("pack"), match, path),
-                       "route": _template(rule.get("route"), match, path)})
+                       "route": _template(rule.get("route"), match, path),
+                       "linked": linked is None or package is None or package in linked})
+        if consumers:
+            result["why"] += " (also read by crate " + ", ".join(sorted(consumers)) + ")"
         if "perf" in rule:
             result["perf"] = bool(rule["perf"])
         else:
@@ -251,7 +271,8 @@ def classify_file(change, rules, arch, *, owners=None, crate_inputs=None):
             result["why"] = f"workspace package {package} has no class in {RULES_PATH}"
         else:
             result.update({"class": kind, "why": f"{package} default ({kind})",
-                           "perf": package in perf_packages and kind in PROGRAM})
+                           "perf": package in perf_packages and kind in PROGRAM,
+                           "linked": linked is None or package in linked})
     if result["class"] in (*PROGRAM, "gate") and change.old_mode == change.new_mode != "000000":
         lines = [l for l in (*change.added, *change.removed)]
         if path.endswith(rules["_comment_suffixes"]) and (change.added or change.removed) and all(map(_comment_line, lines)):
@@ -266,6 +287,58 @@ def classify_file(change, rules, arch, *, owners=None, crate_inputs=None):
             result["devices"] = sorted(name for name, row in rules.get("device", {}).items()
                                        if any(row["name"].lower() in l.lower() for l in keyed))
     return result
+
+
+def link_closure(read, root=BATTERY_PACKAGE):
+    """Workspace packages linked into `root`'s binaries: root and every path dependency reached
+    through [dependencies] and [build-dependencies] (target-specific tables and [patch] path
+    crates included; dev-dependencies link only into tests). read(path) -> text or None.
+    Returns package names and their directory names, or None when a manifest cannot be read
+    (the caller then counts every path as linked)."""
+    import posixpath
+    try:
+        ws = tomllib.loads(read("Cargo.toml") or "")
+    except tomllib.TOMLDecodeError:
+        return None
+    ws_deps = ws.get("workspace", {}).get("dependencies", {})
+    manifests = {}
+
+    def load(d):
+        if d not in manifests:
+            text = read(f"{d}/Cargo.toml")
+            try:
+                manifests[d] = None if text is None else tomllib.loads(text)
+            except tomllib.TOMLDecodeError:
+                manifests[d] = None
+        return manifests[d]
+
+    members = ws.get("workspace", {}).get("members", [])
+    root_dir = next((m for m in members if (load(m) or {}).get("package", {}).get("name") == root), None)
+    if root_dir is None:
+        return None
+    todo = [root_dir] + [posixpath.normpath(spec["path"]) for patch in ws.get("patch", {}).values()
+                         for spec in patch.values() if isinstance(spec, dict) and spec.get("path")]
+    seen, names = set(), set()
+    while todo:
+        d = todo.pop()
+        if d in seen:
+            continue
+        seen.add(d)
+        manifest = load(d)
+        if manifest is None:
+            return None
+        names.update({manifest.get("package", {}).get("name"), PurePosixPath(d).name} - {None})
+        tables = [manifest.get(k, {}) for k in ("dependencies", "build-dependencies", "build_dependencies")]
+        for spec in manifest.get("target", {}).values():
+            tables += [spec.get(k, {}) for k in ("dependencies", "build-dependencies", "build_dependencies")]
+        for table in tables:
+            for name, spec in table.items():
+                base = d
+                if isinstance(spec, dict) and spec.get("workspace"):
+                    spec, base = ws_deps.get(name), ""
+                if isinstance(spec, dict) and spec.get("path"):
+                    todo.append(posixpath.normpath(posixpath.join(base, spec["path"])))
+    return names
 
 
 def _input_match(path, pattern):
@@ -298,13 +371,17 @@ def parse_trailers(messages, arch):
     return declared, reasons, missing
 
 
-def classify(changes, rules, arch, *, owners=None, crate_inputs=None, declared=None, refiner=None):
+def classify(changes, rules, arch, *, owners=None, crate_inputs=None, declared=None, refiner=None, linked=None):
     """Changes -> impact: the cells, the per-file classes and what stayed uncovered.
 
     refiner (tools/impact_map/gate.py) narrows a Rust/CUDA program file from the items the diff
     changed: token-identical edits reach nothing, and build targets shrink to the devices the
-    changed items' map reach includes. Path rules decide first; the map only narrows."""
-    files = [classify_file(c, rules, arch, owners=owners, crate_inputs=crate_inputs) for c in changes]
+    changed items' map reach includes. Path rules decide first; the map only narrows.
+
+    linked: the packages linked into the battery binaries (link_closure). A cell records whether
+    any of its paths is linked; requirements() asks for the battery and the perf A/B only then."""
+    files = [classify_file(c, rules, arch, owners=owners, crate_inputs=crate_inputs, linked=linked)
+             for c in changes]
     if refiner is not None and refiner.active():
         files = [refiner.file(f) for f in files]
     covered = {name for name, pack in rules.get("pack", {}).items() if pack.get("roster")}
@@ -326,15 +403,21 @@ def classify(changes, rules, arch, *, owners=None, crate_inputs=None, declared=N
             for fam in item["uncovered_families"]:
                 uncovered.setdefault(fam, []).append(item["path"])
             continue
+        item_linked = kind == UNKNOWN or item.get("linked", True)
+        # the perf A/B times run-gen, which links none of this path's code
+        perf = item["perf"] and item_linked
         scopes = UNKNOWN_SCOPES if kind == UNKNOWN else (kind,)
-        scopes = set(scopes) | ({"defaults"} if item["defaults"] else set()) | ({"perf"} if item["perf"] else set())
+        scopes = set(scopes) | ({"defaults"} if item["defaults"] else set()) | ({"perf"} if perf else set())
         for target in targets:
             for scope in scopes:
                 cell = cells.setdefault((target, scope), {"paths": [], "packs": set(), "routes": set(),
-                                                          "devices": set()})
+                                                          "devices": {}, "linked": False})
                 cell["paths"].append(item["path"])
+                cell["linked"] |= item_linked
                 if scope == "defaults":
-                    cell["devices"].update(d for d in item["devices"] if device_target(rules, arch, d) == target)
+                    for d in item["devices"]:
+                        if device_target(rules, arch, d) == target:
+                            cell["devices"][d] = cell["devices"].get(d, False) or item_linked
                 if item["pack"]:
                     cell["packs"].add(item["pack"])
                 if item["route"]:
@@ -345,7 +428,8 @@ def classify(changes, rules, arch, *, owners=None, crate_inputs=None, declared=N
         ordered.append({"target": target, "name": target_name(rules, target), "scope": scope,
                         "push_gate": push_gated(rules, target), "paths": sorted(set(cell["paths"])),
                         "packs": sorted(cell["packs"]), "routes": sorted(cell["routes"]),
-                        "devices": sorted(cell["devices"])})
+                        "devices": sorted(cell["devices"]), "battery_linked": cell["linked"],
+                        "unlinked_devices": sorted(d for d, v in cell["devices"].items() if not v)})
     return {"schema": SCHEMA, "targets": list(arch.accepted), "cells": ordered,
             "files": files, "uncovered": {k: sorted(v) for k, v in sorted(uncovered.items())},
             "declared_targets": None if declared is None else sorted(declared)}
@@ -354,23 +438,32 @@ def classify(changes, rules, arch, *, owners=None, crate_inputs=None, declared=N
 def requirements(impact):
     """Cells -> what evidence each target needs: {target: {"kinds": set, "cells": [...]}}.
 
-    battery: any correctness scope; serving adds serve-smoke; perf adds the A/B; a gate change
-    needs all three (the changed gate itself must run). `devices` lists device classes a
-    card-keyed default names; each needs its own battery + perf."""
+    A correctness cell needs the battery when its change is linked into the battery binaries
+    (battery_linked); a cell whose paths all sit outside them (memra-server, memra-lanes) needs
+    serve-smoke instead, the one test that runs that code. serving adds serve-smoke; perf adds the
+    A/B, which times run-gen and so applies to linked cells only; a gate change needs all three
+    (the changed gate itself must run). `devices` lists device classes a card-keyed default names;
+    `device_kinds` says what each needs from that card itself."""
     needs = {}
     for cell in impact["cells"]:
         entry = needs.setdefault(cell["target"], {"name": cell["name"], "push_gate": cell["push_gate"],
-                                                  "kinds": set(), "cells": [], "devices": set()})
+                                                  "kinds": set(), "cells": [], "devices": set(),
+                                                  "device_kinds": {}})
         entry["cells"].append(cell["scope"])
+        linked = cell.get("battery_linked", True)
         if cell["scope"] in CORRECTNESS:
-            entry["kinds"].add("battery")
+            entry["kinds"].add("battery" if linked else "serving")
         if cell["scope"] == "serving":
             entry["kinds"].add("serving")
-        if cell["scope"] == "perf":
+        if cell["scope"] == "perf" and linked:
             entry["kinds"].add("perf")
         if cell["scope"] == "gate":
             entry["kinds"].update(("battery", "serving", "perf"))
-        entry["devices"].update(cell.get("devices", ()))
+        unlinked = set(cell.get("unlinked_devices", ()))
+        for device in cell.get("devices", ()):
+            entry["devices"].add(device)
+            entry["device_kinds"].setdefault(device, set()).update(
+                {"serving"} if device in unlinked else {"battery", "perf"})
     return needs
 
 
@@ -387,6 +480,8 @@ def render(impact):
             extra.append("routes=" + ",".join(cell["routes"]))
         if cell.get("devices"):
             extra.append("devices=" + ",".join(cell["devices"]))
+        if not cell.get("battery_linked", True):
+            extra.append("outside the battery binaries")
         sample = ", ".join(cell["paths"][:3]) + (f" (+{len(cell['paths']) - 3})" if len(cell["paths"]) > 3 else "")
         lines.append(f"  cell {cell['name']}:{cell['scope']:<8} [{gate}] {' '.join(extra)} <- {sample}")
     for pack, paths in impact["uncovered"].items():
@@ -506,11 +601,15 @@ def literal_inputs(repo, ref, paths):
     inputs = {}
     for line in result.stdout.decode(errors="replace").splitlines():
         _, source, _, text = line.split(":", 3)
-        if _comment_line(text):
+        # only sources a crate compiles, outside its test targets: a path named in a fixture, a
+        # manifest comment or a test script is not compiled in (a README listed in a model's
+        # artifact lock, AGENTS.md cited by a battery test)
+        if _comment_line(text) or not source.endswith(CODE_SUFFIXES) or TEST_TARGET.match(source):
             continue
+        quoted = "".join(re.findall(r'"((?:[^"\\]|\\.)*)"', text))
         package = _package_of(source, None)
         for path in wanted:
-            if path in text:
+            if path in quoted:
                 inputs.setdefault(path, set()).add(package or "<unowned>")
     return inputs
 
@@ -565,6 +664,19 @@ def validate_rules(rules, arch):
     return rules
 
 
+def battery_linked(repo, base, head):
+    """Packages linked into the battery binaries at the base or the head (a change that adds a
+    link changes a manifest, which is a build input anyway). None when either side cannot say."""
+    sides = [head] + ([base] if _git(repo, "cat-file", "-t", base, check=False).stdout.strip() == b"commit" else [])
+    out = set()
+    for ref in sides:
+        names = link_closure(lambda p, ref=ref: read_blob(repo, ref, p))
+        if names is None:
+            return None
+        out |= names
+    return out
+
+
 def impact_between(repo, base, head, rules_text=None, use_map=True, map_ref=None, map_data=None):
     """map_ref pins the impact map to a commit (default: the base's, as for the rules); map_data
     is an explicit map for what-if replays and is never taken from the environment."""
@@ -580,7 +692,8 @@ def impact_between(repo, base, head, rules_text=None, use_map=True, map_ref=None
             refiner = impact_gate.Refiner(repo, base, head, rules, arch, map_ref=map_ref, map_data=map_data)
         except impact_gate.MapError as error:
             raise ImpactError(str(error)) from error
-    impact = classify(changes, rules, arch, owners=owners, crate_inputs=inputs, declared=declared, refiner=refiner)
+    impact = classify(changes, rules, arch, owners=owners, crate_inputs=inputs, declared=declared, refiner=refiner,
+                      linked=battery_linked(repo, base, head))
     impact["declared_reasons"] = reasons
     impact["base"], impact["head"] = base, head
     impact["map"] = refiner.report() if refiner is not None else None

@@ -4,9 +4,13 @@
 A ledger record is one measured cell: (model, family, route, device, test) at a commit, with
 its receipt path. It still holds at HEAD when the cell's FINGERPRINT is unchanged: the sha of
 (item id, token hash) over every item whose map reach includes (family, route, device). Any
-token change on the cell's path moves the fingerprint; a change elsewhere does not.
+token change on the cell's path moves the fingerprint; a change elsewhere does not. A test that
+runs a memra-engine binary (delta.ENGINE_TESTS: kernel-check, run-gen argmax, run-spec, the
+run-gen perf A/B) is fingerprinted over the crates linked into that binary only, so a
+memra-server change leaves those records standing.
 
     python3 tools/impact_map/ledger.py seed --raw RAW.jsonl --out docs/impact-map/ledger.json
+    python3 tools/impact_map/ledger.py refresh               # re-fingerprint ledger.json in place
     python3 tools/impact_map/ledger.py status [--ref HEAD]      # which records still hold
 
 Seed sources, strongest first: qualification records (research/release-qualification/*/
@@ -104,17 +108,10 @@ def seed(repo, raw_path, out_path, map_path, models_path):
         if r["_cell"]:
             cells_needed.add(r["_cell"])
         by_commit[r["commit"]].append(r)
-    head_fp = delta.cell_fingerprints(m, scanner.hashes(head), cells_needed)
     print(f"ledger: {len(recs)} candidate records over {len(by_commit)} commits", file=sys.stderr)
-    for n, (c, rs) in enumerate(sorted(by_commit.items())):
-        if n % 200 == 0:
-            print(f"  {n}/{len(by_commit)} commits", file=sys.stderr)
-        cells = {r["_cell"] for r in rs if r["_cell"]}
-        fps = delta.cell_fingerprints(m, scanner.hashes(c), cells) if cells else {}
-        for r in rs:
-            cell = r.pop("_cell")
-            r["fingerprint"] = fps.get(cell) if cell else None
-            r["holds_at_map_commit"] = (fps.get(cell) == head_fp.get(cell)) if cell else None
+    fingerprint_records(repo, m, scanner, by_commit, head)
+    for r in recs:
+        r.pop("_cell", None)
     # keep, per (model, route, device, test): the latest measured commit (the "last measured" the
     # delta starts from) and every record that still holds; the full harvest stays reproducible
     # from research/ with tools/impact_map/ledger.py seed
@@ -134,6 +131,50 @@ def seed(repo, raw_path, out_path, map_path, models_path):
     print(f"ledger: {len(out['records'])} records, {held} still hold at {head[:12]}")
 
 
+def fingerprint_records(repo, m, scanner, by_commit, head):
+    """Set r["fingerprint"] (at r's commit) and r["holds_at_map_commit"] for records grouped by
+    commit, each carrying its cell in r["_cell"]. ENGINE_TESTS use the linked-crates fingerprint."""
+    linked = delta.battery_linked(repo, head, head)
+
+    def fps_at(commit, cells):
+        if not cells:
+            return {}, {}
+        hashes = scanner.hashes(commit)
+        return delta.cell_fingerprints(m, hashes, cells), delta.cell_fingerprints(m, hashes, cells, linked=linked)
+
+    def pick(r, fps):
+        return (fps[1] if r["test"] in delta.ENGINE_TESTS else fps[0]).get(r["_cell"])
+
+    head_fps = fps_at(head, {r["_cell"] for rs in by_commit.values() for r in rs if r["_cell"]})
+    for n, (c, rs) in enumerate(sorted(by_commit.items())):
+        if n % 200 == 0:
+            print(f"  {n}/{len(by_commit)} commits", file=sys.stderr)
+        fps = fps_at(c, {r["_cell"] for r in rs if r["_cell"]})
+        for r in rs:
+            r["fingerprint"] = pick(r, fps) if r["_cell"] else None
+            r["holds_at_map_commit"] = (r["fingerprint"] == pick(r, head_fps)) if r["_cell"] else None
+
+
+def refresh(repo, path, map_path):
+    """Re-fingerprint every record of an existing ledger at its own commit (after a fingerprint
+    rule changes), without the raw harvest."""
+    m = delta.Map(json.loads(Path(map_path).read_text()))
+    data = json.loads(Path(path).read_text())
+    head = m.data["source_commit"]
+    by_commit = collections.defaultdict(list)
+    for r in data["records"]:
+        cell = (r["family"], route_of(r["route"], m), r["device"])
+        r["_cell"] = cell if r["family"] in m.vocab["families"] and cell[1] else None
+        by_commit[r["commit"]].append(r)
+    fingerprint_records(repo, m, TreeScanner(repo), by_commit, head)
+    for r in data["records"]:
+        r.pop("_cell", None)
+    data["map_commit"] = head
+    Path(path).write_text(json.dumps(data, indent=0, sort_keys=True) + "\n")
+    held = sum(1 for r in data["records"] if r.get("holds_at_map_commit"))
+    print(f"ledger: {len(data['records'])} records, {held} still hold at {head[:12]}")
+
+
 def rank(r):
     return {"record": 3, "explicit": 2, "added-upper-bound": 1}[r["confidence"]]
 
@@ -147,11 +188,14 @@ def status(repo, ref):
     m = delta.Map(delta.load_json_at(repo, ref, delta.MAP_PATH))
     scanner = TreeScanner(repo)
     recs = [r for r in data["records"] if r.get("fingerprint")]
-    now = delta.cell_fingerprints(m, scanner.hashes(ref), {(r["family"], r["route"], r["device"]) for r in recs})
+    cells = {(r["family"], r["route"], r["device"]) for r in recs}
+    hashes = scanner.hashes(ref)
+    now = delta.cell_fingerprints(m, hashes, cells)
+    now_engine = delta.cell_fingerprints(m, hashes, cells, linked=delta.battery_linked(repo, ref, ref))
     latest = {}
     for r in recs:
         cell = (r["family"], r["route"], r["device"])
-        ok = r["fingerprint"] == now.get(cell)
+        ok = r["fingerprint"] == (now_engine if r["test"] in delta.ENGINE_TESTS else now).get(cell)
         k = (r["model"], r["route"], r["device"], r["test"])
         if ok or k not in latest:
             latest[k] = (ok, r)
@@ -168,12 +212,18 @@ def main(argv=None):
     p.add_argument("--map", required=True)
     p.add_argument("--models")
     p.add_argument("--out", required=True)
+    p = sub.add_parser("refresh")
+    p.add_argument("--repo", type=Path, default=HERE.parent.parent)
+    p.add_argument("--ledger", default=LEDGER)
+    p.add_argument("--map", default=delta.MAP_PATH)
     p = sub.add_parser("status")
     p.add_argument("--repo", type=Path, default=HERE.parent.parent)
     p.add_argument("--ref", default="HEAD")
     a = ap.parse_args(argv)
     if a.cmd == "seed":
         seed(a.repo, a.raw, a.out, a.map, a.models)
+    elif a.cmd == "refresh":
+        refresh(a.repo, a.ledger, a.map)
     else:
         status(a.repo, a.ref)
     return 0

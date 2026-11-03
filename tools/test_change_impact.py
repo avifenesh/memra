@@ -206,6 +206,70 @@ class ClassifierTable(unittest.TestCase):
         self.assertTrue(mixed["cells"])
 
 
+class LinkClosure(unittest.TestCase):
+    """Evidence follows the binaries a test runs: the battery and the perf A/B run memra-engine
+    binaries, so code outside memra-engine's link closure needs serve-smoke instead."""
+
+    def setUp(self):
+        self.rules = ci.load_rules(RULES_TEXT, MAIN)
+        self.linked = ci.link_closure(lambda p: (ROOT / p).read_text() if (ROOT / p).exists() else None)
+
+    def needs(self, changes, **kw):
+        impact = ci.classify(changes, self.rules, MAIN, linked=self.linked, **kw)
+        return {t: (n["kinds"], n["device_kinds"]) for t, n in ci.requirements(impact).items()}
+
+    def test_closure_of_this_tree(self):
+        self.assertIn("memra-engine", self.linked)
+        self.assertIn("memra-tokenizer", self.linked)
+        for outside in ("memra-server", "memra-lanes", "memra-cli", "memra-probe"):
+            self.assertNotIn(outside, self.linked)
+
+    def test_server_change_needs_serve_smoke_only(self):
+        needs = self.needs([change("crates/memra-server/src/worker.rs")])
+        self.assertEqual(needs, {t: ({"serving"}, {}) for t in ALL})
+
+    def test_engine_change_still_needs_the_battery(self):
+        needs = self.needs([change("crates/memra-engine/src/decode.rs")])
+        self.assertEqual(needs, {t: ({"battery", "perf"}, {}) for t in ALL})
+
+    def test_tier_is_linked_even_though_its_class_is_serving(self):
+        needs = self.needs([change("crates/memra-tier/src/lib.rs")])
+        self.assertEqual(needs["120a"][0], {"battery", "serving", "perf"})
+
+    def test_server_default_keyed_on_a_card(self):
+        line = ('    if name.contains("RTX 5090") { depth = 4 }',)
+        needs = self.needs([change("crates/memra-server/src/worker.rs", line)])
+        self.assertEqual(needs["120a"], ({"serving"}, {"rtx5090": {"serving"}}))
+
+    def test_unknown_closure_counts_everything_linked(self):
+        impact = ci.classify([change("crates/memra-server/src/worker.rs")], self.rules, MAIN, linked=None)
+        self.assertIn("battery", ci.requirements(impact)["120a"]["kinds"])
+
+    def test_a_lock_file_a_server_reads_is_still_a_build_input(self):
+        # memra-server hashes Cargo.lock into its build id; the lock still versions every crate
+        needs = self.needs([change("Cargo.lock")], crate_inputs={"Cargo.lock": {"memra-server"}})
+        self.assertEqual(needs["120a"][0], {"battery", "perf"})
+
+    def test_literal_census_reads_compiled_strings_only(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            run = lambda *a: subprocess.run(["git", "-C", tmp, *a], check=True, capture_output=True)
+            run("init", "-q")
+            files = {"crates/memra-gguf/src/model_packs/w/fixtures/source.lock.json": '{"path": "README.md"}\n',
+                     "crates/memra-tier/tests/battery/test_collector.py": "# lock names (AGENTS.md)\nx = 'AGENTS.md'\n",
+                     "crates/memra-server/Cargo.toml": "# built by .github/workflows/release.yml\n",
+                     "crates/memra-engine/src/doc.rs": "/// see docs/KERNELS.md\n// docs/TESTING.md\nfn f() {}\n",
+                     "crates/memra-engine/build.rs": 'let flags = manifest.join("../../docs/FLAGS.md");\n',
+                     "crates/memra-engine/tests/t.rs": 'let _ = include_str!("../../../docs/MODELS.md");\n'}
+            for path, text in files.items():
+                Path(tmp, path).parent.mkdir(parents=True, exist_ok=True)
+                Path(tmp, path).write_text(text)
+            run("add", "."); run("-c", "user.name=f", "-c", "user.email=f@x", "commit", "-qm", "a")
+            wanted = ["README.md", "AGENTS.md", ".github/workflows/release.yml", "docs/KERNELS.md",
+                      "docs/TESTING.md", "docs/FLAGS.md", "docs/MODELS.md"]
+            self.assertEqual(ci.literal_inputs(tmp, "HEAD", wanted), {"docs/FLAGS.md": {"memra-engine"}})
+
+
 class DiffParse(unittest.TestCase):
     def test_header_lookalike_content_is_still_content(self):
         import tempfile
