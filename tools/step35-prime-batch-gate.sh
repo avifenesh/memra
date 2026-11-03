@@ -104,18 +104,29 @@ if [ "$CANARY" = 1 ]; then
         echo "  'The lock was busy' is not 'the rollback broke exactness'. Re-run when free."
         exit 1
     fi
-    # The comparator's own verdict words. prime_batch_gate.rs emits `MISMATCH` per diverging
-    # sequence, `batched-prime liveness: ... NOT-LIVE` when the step35 batch or its PP split
-    # did not run, and `prime-batch-gate: <n> FAIL(s)` as its final error.
-    if [ -s "$CMP" ] && grep -Eq 'prime-batch-gate: [0-9]+ FAIL\(s\)|MISMATCH|batched-prime liveness:.*NOT-LIVE' "$CMP"; then
-        echo "step35-prime-batch-gate: CANARY OK (rollback broke exact+live as required:" \
-             "$(grep -Eom1 'prime-batch-gate: [0-9]+ FAIL\(s\)|MISMATCH|NOT-LIVE' "$CMP"))"
+    # The comparator's own verdict words. The seam's contract is ONE named refusal at the
+    # cross-request entry, and prime_batch_gate.rs prints `batched prime REFUSED (rollback
+    # seam)` only for that refusal; every other prime_cache_batch error (OOM, a host-bounce or
+    # continuation refusal, a CUDA fault) stays a hard error with no verdict line.
+    if [ -s "$CMP" ] && grep -q 'batched prime REFUSED (rollback seam)' "$CMP"; then
+        echo "step35-prime-batch-gate: CANARY OK (the rollback seam restored its named refusal:" \
+             "$(grep -om1 'batched prime REFUSED (rollback seam)' "$CMP"))"
         exit 0
     fi
+    # The batched prime RAN with the seam set: the seam no longer restores its refusal. A
+    # comparator verdict here (`MISMATCH` per diverging sequence, `batched-prime liveness: ...
+    # NOT-LIVE`, the final `prime-batch-gate: <n> FAIL(s)` tally) is a seam defect, not teeth.
+    if [ -s "$CMP" ] && grep -Eq 'prime-batch-gate: [0-9]+ FAIL\(s\)|MISMATCH|batched-prime liveness:.*NOT-LIVE' "$CMP"; then
+        echo "step35-prime-batch-gate: CANARY FAILED (MEMRA_STEP35_PRIME_BATCH=0 did not refuse;"
+        echo "  the batched prime ran and the comparator read:" \
+             "$(grep -Eom1 'prime-batch-gate: [0-9]+ FAIL\(s\)|MISMATCH|NOT-LIVE' "$CMP"))"
+        exit 1
+    fi
     echo "step35-prime-batch-gate: CANARY INCONCLUSIVE — rc=$RC but the comparator printed no"
-    echo "  MISMATCH, no NOT-LIVE liveness verdict, and no 'N FAIL(s)' tally. The run died"
-    echo "  BEFORE asserting anything (missing model, refusal at load, usage error), so this"
-    echo "  says nothing about whether the naked arm has teeth. Comparator output: $CMP"
+    echo "  rollback-seam refusal and no comparator verdict. The run died BEFORE the seam could"
+    echo "  answer (missing model, refusal at load, usage error, an unrelated prime_cache_batch"
+    echo "  error), so this says nothing about whether the naked arm has teeth. Comparator"
+    echo "  output: $CMP"
     exit 1
 fi
 
