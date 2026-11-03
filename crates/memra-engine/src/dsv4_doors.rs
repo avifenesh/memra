@@ -64,7 +64,8 @@
 //! gate does:
 //!
 //! 1. `Dsv4Program`, a description of a running program, with the two constants
-//!    that matter: `SERVED_PROGRAM` (what a customer request takes today) and
+//!    that matter: `SERVED_PROGRAM` (what a customer request takes today on the DSpark
+//!    posture; the naked default loads no drafter, see its doc) and
 //!    `TUNED_BENCH_PROGRAM` (what every DSV4 gate binary pins). Since the flip
 //!    they differ on topology and gate-only arms, no longer on expert program.
 //! 2. The door policy functions themselves. `Dsv4Gpu::load` calls exactly these,
@@ -219,6 +220,17 @@ pub struct Dsv4Program {
 /// What a customer request runs today: TP/EP with exact attention TP2 (the two-card default
 /// since memra #710, 2026-09-25; PP-2 is the `MEMRA_DSV4_TOPOLOGY=pp` rollback), the MATRIX
 /// expert program, DSpark resident, chunked prefill, and no gate-only arms.
+///
+/// THIS IS THE DSPARK SERVING POSTURE (`MEMRA_DSV4_DRAFTER=dspark`), NOT THE NAKED DEFAULT.
+/// `MEMRA_DSV4_DRAFTER` is unset by default, so a naked TP/EP boot loads no drafter
+/// (`Dsv4Gpu::door_program` reports `drafter_resident: false`), and every door whose resolver
+/// reads `drafter_resident` can differ there. Today that is one door: replay cadence, which
+/// `resolve_replay_cadence` engages on the drafter-less TP/EP plain route (the server arms
+/// full-token replay on its plain requests). So `inert_default_on_doors`,
+/// `doors_without_evidence_in_either_direction` and `served_disposition` describe THIS
+/// posture: their "inert on the served path" for replay cadence is not a removal argument for
+/// a door the naked default engages. The load receipt (`door_receipt_lines`) resolves against
+/// the program the process loaded, so a boot line describes that process.
 ///
 /// `matrix_moe` was false until 2026-09-11. The owner flipped it on the memra
 /// #461 class verdict (NEW numeric class, 4.464% top-1 drift on the whole tape
@@ -416,7 +428,10 @@ pub fn disposition_on(
 /// served path, so the default buys nothing, AND measured below the instrument
 /// floor of the pair they were qualified on, so the number that justified the
 /// default is not one that pair can resolve. Strictly stronger than either fact
-/// alone, and a cleaner argument for removal than "we do not use it".
+/// alone, and a cleaner argument for removal than "we do not use it". "Inert" is
+/// on the DSpark posture ([`SERVED_PROGRAM`]): a door listed here that engages on
+/// the naked drafter-less TP/EP default (replay cadence does) needs its own
+/// measurement on that route before the removal argument holds.
 pub fn doors_without_evidence_in_either_direction(
     rows: &[DoorRow],
     facts: &ProgramFacts,
@@ -746,8 +761,10 @@ pub fn declaration_violations(rows: &[DoorRow]) -> Vec<DoorViolation> {
 }
 
 /// The doors whose declared default is ON and which do not engage on the served
-/// program. This is the number memra #454 is about; it is THREE since the PP-2
-/// norm port, and the gate pins it so it cannot grow silently.
+/// program. This is the number memra #454 is about; it is ONE since the PP-2
+/// norm port, and the gate pins it so it cannot grow silently. Scope: the served
+/// program here is the DSpark posture (see [`SERVED_PROGRAM`]); the one door on this
+/// list, replay cadence, engages on the naked drafter-less TP/EP default.
 pub fn inert_default_on_doors(rows: &[DoorRow]) -> Vec<&'static str> {
     rows.iter()
         .filter(|row| row.declared_default == DeclaredDefault::On)
