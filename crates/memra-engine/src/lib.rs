@@ -942,7 +942,6 @@ pub mod dsv4_attention_tp;
 mod dsv4_c4;
 pub mod dsv4_doors;
 mod dsv4_ep;
-mod dsv4_ep_graph;
 pub use dsv4_doors::{
     arm_reference_expert_program_for_gate, disarm_reference_expert_program_for_gate,
 };
