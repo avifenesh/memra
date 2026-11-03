@@ -2249,11 +2249,12 @@ pub struct Engine {
     /// SECOND CONSUMER (2026-09-02): `MEMRA_GLM5_W8` reuses this SAME cache for the glm5_next
     /// KDA/MLA decode trunk — independent door, same building block, same key shape.
     w8_mirrors: Mutex<std::collections::HashMap<(u64, u32, u32), CudaSlice<u8>>>,
-    /// Per-`in_f` q8_1 activation scratch for those mirrors (allocating per call would cost
-    /// more than the door saves).
+    /// q8_1 activation scratch for those mirrors (allocating per call would cost more than
+    /// the door saves), keyed by `(in_f, rows)`: the entry holds at least `rows` rows of
+    /// `in_f`, so a t=1 caller and a t-wide caller never share an undersized buffer.
     #[allow(clippy::type_complexity)]
     // allow: one-shot composite type; naming it would hide the shape that matters at the call site
-    w8_act: Mutex<std::collections::HashMap<usize, (CudaSlice<i8>, CudaSlice<f32>)>>,
+    w8_act: Mutex<std::collections::HashMap<(usize, usize), (CudaSlice<i8>, CudaSlice<f32>)>>,
     /// Exact retained expert-block lengths collected after model load. Mixed-layout models use
     /// this inventory to preallocate fixed-address size classes instead of sizing every slot to
     /// the single largest block. The cache still owns every address for its full lifetime.
@@ -23694,7 +23695,7 @@ impl Engine {
         }
         // ONE activation quantize for all six projections. The unfused W8 path runs this once
         // per projection on the same `x` — six identical launches per layer.
-        let akey = in_f * 64 + t.min(32);
+        let akey = (in_f, t.min(32));
         if pre_q8.is_none() {
             let mut act = self.w8_act.lock().map_err(|_| "w8 act map is poisoned")?;
             if let std::collections::hash_map::Entry::Vacant(slot) = act.entry(akey) {
@@ -26255,7 +26256,7 @@ impl Engine {
         }
         let nblk = in_f / 32;
         // The t-wide activation scratch is keyed by (in_f, t-cap) so a wider walk regrows it.
-        let akey = in_f * 64 + t.min(32);
+        let akey = (in_f, t.min(32));
         {
             let mut act = self.w8_act.lock().map_err(|_| "w8 act map is poisoned")?;
             if let std::collections::hash_map::Entry::Vacant(slot) = act.entry(akey) {
@@ -26395,12 +26396,12 @@ impl Engine {
         let nblk = in_f / 32;
         {
             let mut act = self.w8_act.lock().map_err(|_| "w8 act map is poisoned")?;
-            if !act.contains_key(&in_f) {
+            if !act.contains_key(&(in_f, 1)) {
                 let aq = self.alloc_uninit::<i8>(in_f)?;
                 let ad = self.alloc_uninit::<f32>(nblk)?;
-                act.insert(in_f, (aq, ad));
+                act.insert((in_f, 1), (aq, ad));
             }
-            let (aq, ad) = act.get_mut(&in_f).expect("just inserted");
+            let (aq, ad) = act.get_mut(&(in_f, 1)).expect("just inserted");
             self.quantize_q8_1_into(x, 1, in_f, aq, ad)?;
         }
         let mirrors = self
@@ -26409,7 +26410,7 @@ impl Engine {
             .map_err(|_| "w8 mirror map is poisoned")?;
         let act = self.w8_act.lock().map_err(|_| "w8 act map is poisoned")?;
         let mirror = mirrors.get(&key).expect("built above");
-        let (aq, ad) = act.get(&in_f).expect("built above");
+        let (aq, ad) = act.get(&(in_f, 1)).expect("built above");
         // MEMRA_B200_GEMV_V2 (lane/b200-gemv-hbm-20260902 round 3). THIS is the t=1 decode
         // kernel in the posture we actually serve: the bf16 arms further up
         // `matvec_bf16_rows_into` are unreachable once MEMRA_GLM5_W8 reroutes here, which is
@@ -26660,12 +26661,12 @@ impl Engine {
         let nblk = in_f / 32;
         {
             let mut act = self.w8_act.lock().map_err(|_| "w8 act map is poisoned")?;
-            if !act.contains_key(&in_f) {
+            if !act.contains_key(&(in_f, 1)) {
                 let aq = self.alloc_uninit::<i8>(in_f)?;
                 let ad = self.alloc_uninit::<f32>(nblk)?;
-                act.insert(in_f, (aq, ad));
+                act.insert((in_f, 1), (aq, ad));
             }
-            let (aq, ad) = act.get_mut(&in_f).expect("just inserted");
+            let (aq, ad) = act.get_mut(&(in_f, 1)).expect("just inserted");
             self.quantize_q8_1_into(x, 1, in_f, aq, ad)?;
         }
         let mirrors = self
@@ -26674,7 +26675,7 @@ impl Engine {
             .map_err(|_| "w8 mirror map is poisoned")?;
         let act = self.w8_act.lock().map_err(|_| "w8 act map is poisoned")?;
         let mirror = mirrors.get(&key).expect("built above");
-        let (aq, ad) = act.get(&in_f).expect("built above");
+        let (aq, ad) = act.get(&(in_f, 1)).expect("built above");
         self.qmatvec_mmvq_into(
             mirror,
             aq,
