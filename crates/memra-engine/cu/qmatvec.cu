@@ -7726,14 +7726,6 @@ extern "C" __global__ void moe_gate_up_gelu8_dev_q8(
     }
 }
 
-// gemma4 R3: fold the per-expert OUTPUT scale into the routing weights on device:
-// w[i] *= s[sel[i]] (post-renorm — associative with the down accumulate's w*dot).
-extern "C" __global__ void moe_w_exscale(float* __restrict__ w, const int* __restrict__ sel,
-                                         const float* __restrict__ s, int n) {
-    int i = blockIdx.x * blockDim.x + threadIdx.x;
-    if (i < n) w[i] *= s[sel[i]];
-}
-
 extern "C" __global__ void moe_down8_fma_dev_q8(
         const unsigned long long* __restrict__ table, const int* __restrict__ sel,
         const float* __restrict__ w,
@@ -11018,46 +11010,6 @@ extern "C" __global__ void qmatvec_nvfp4_q8_ep_paired_slots(
     }
 }
 
-// Multi-token twin of the fixed-slot gate/up kernel. One CTA owns one canonical token/slot row
-// instead of serially walking every pair. Dots and reductions are unchanged; only independent
-// pair rows execute concurrently. Non-owner CTAs return before reading expert weights.
-extern "C" __global__ void qmatvec_nvfp4_bf16_ep_dual_pairs(
-        const unsigned char* __restrict__ Wg, const unsigned char* __restrict__ Wu,
-        const int* __restrict__ sel, const unsigned short* __restrict__ x,
-        float* __restrict__ yg, float* __restrict__ yu,
-        int in_f, int out_f, int n_pairs, int top_k,
-        int owner_start, int owner_end, long row_bytes, long expert_stride) {
-    int o2 = blockIdx.x;
-    int pair = blockIdx.y;
-    if (o2 >= 2 * out_f || pair >= n_pairs) return;
-    const int global_expert = sel[pair];
-    if (global_expert < owner_start || global_expert >= owner_end) return;
-    const unsigned char* bank = o2 < out_f ? Wg : Wu;
-    float* y = o2 < out_f ? yg : yu;
-    int o = o2 < out_f ? o2 : o2 - out_f;
-    const int expert = global_expert - owner_start;
-    const int token = pair / top_k;
-    const unsigned char* wrow =
-        bank + (long)expert * expert_stride + (long)o * row_bytes;
-    const unsigned short* xrow = x + (size_t)token * (size_t)in_f;
-    float acc = 0.0f;
-    for (int i = threadIdx.x; i < in_f; i += blockDim.x) {
-        float xv = __uint_as_float((unsigned)xrow[i] << 16);
-        acc += deq_nvfp4(wrow, i) * xv;
-    }
-    __shared__ float s[32];
-    for (int off = 16; off > 0; off >>= 1)
-        acc += __shfl_down_sync(0xffffffff, acc, off);
-    if ((threadIdx.x & 31) == 0) s[threadIdx.x >> 5] = acc;
-    __syncthreads();
-    if (threadIdx.x < 32) {
-        float v = threadIdx.x < (blockDim.x + 31) / 32 ? s[threadIdx.x] : 0.0f;
-        for (int off = 16; off > 0; off >>= 1)
-            v += __shfl_down_sync(0xffffffff, v, off);
-        if (threadIdx.x == 0) y[(size_t)pair * out_f + o] = v;
-    }
-}
-
 // Adjacent-row multi-token twin. One CTA owns one canonical token/slot row and two output rows;
 // non-owner CTAs return before reading expert weights.
 extern "C" __global__ void qmatvec_nvfp4_bf16_ep_quad_pairs(
@@ -11289,91 +11241,6 @@ extern "C" __global__ void qmatvec_nvfp4_bf16_ep_down_pairs(
     }
 }
 
-// W4A16 selected-expert down + owner-local weighted combine. Every down input row is already
-// BF16-rounded by the host-expf SwiGLU kernel. Each dot replays qmatvec_f32's 256-thread reduction;
-// the owner then accumulates its selected slots in their original route order. The final EP join
-// adds owner rows in rank order, so this is a separately gated numeric class rather than a
-// bit-identity claim against the single-device slot chain.
-extern "C" __global__ void qmatvec_nvfp4_bf16_sel_down_fma(
-        const unsigned char* __restrict__ Wbank, const int* __restrict__ sel,
-        const unsigned short* __restrict__ x, const float* __restrict__ route_w,
-        const float* __restrict__ macros_down, float* __restrict__ dst,
-        int in_f, int out_f, int n_sel, long row_bytes, long expert_stride) {
-    int o = blockIdx.x;
-    if (o >= out_f) return;
-    __shared__ float s[32];
-    float chain = 0.0f;
-    for (int j = 0; j < n_sel; ++j) {
-        const int expert = sel[j];
-        const unsigned char* wrow =
-            Wbank + (long)expert * expert_stride + (long)o * row_bytes;
-        const unsigned short* xrow = x + (size_t)j * (size_t)in_f;
-        float acc = 0.0f;
-        for (int i = threadIdx.x; i < in_f; i += blockDim.x) {
-            float xv = __uint_as_float((unsigned)xrow[i] << 16);
-            acc += deq_nvfp4(wrow, i) * xv;
-        }
-        for (int off = 16; off > 0; off >>= 1)
-            acc += __shfl_down_sync(0xffffffff, acc, off);
-        if ((threadIdx.x & 31) == 0) s[threadIdx.x >> 5] = acc;
-        __syncthreads();
-        if (threadIdx.x < 32) {
-            float v = threadIdx.x < (blockDim.x + 31) / 32 ? s[threadIdx.x] : 0.0f;
-            for (int off = 16; off > 0; off >>= 1)
-                v += __shfl_down_sync(0xffffffff, v, off);
-            if (threadIdx.x == 0) {
-                const float scaled = __fmul_rn(macros_down[expert], v);
-                chain = __fadd_rn(chain, __fmul_rn(route_w[j], scaled));
-            }
-        }
-        __syncthreads();
-    }
-    if (threadIdx.x == 0) dst[o] = chain;
-}
-
-// Device-routed t=1 owner-local combine. The fixed top-k slot order is identical to the
-// host-partitioned owner list after skipping non-owned slots, so the existing rank-order join keeps
-// the same numerical program without a CPU route partition.
-extern "C" __global__ void qmatvec_nvfp4_bf16_ep_down_fma(
-        const unsigned char* __restrict__ Wbank, const int* __restrict__ sel,
-        const unsigned short* __restrict__ x, const float* __restrict__ route_w,
-        const float* __restrict__ macros_down, float* __restrict__ dst,
-        int in_f, int out_f, int n_pairs, int owner_start, int owner_end,
-        long row_bytes, long expert_stride) {
-    int o = blockIdx.x;
-    if (o >= out_f) return;
-    __shared__ float s[32];
-    float chain = 0.0f;
-    for (int pair = 0; pair < n_pairs; ++pair) {
-        const int global_expert = sel[pair];
-        if (global_expert < owner_start || global_expert >= owner_end) continue;
-        const int expert = global_expert - owner_start;
-        const unsigned char* wrow =
-            Wbank + (long)expert * expert_stride + (long)o * row_bytes;
-        const unsigned short* xrow = x + (size_t)pair * (size_t)in_f;
-        float acc = 0.0f;
-        for (int i = threadIdx.x; i < in_f; i += blockDim.x) {
-            float xv = __uint_as_float((unsigned)xrow[i] << 16);
-            acc += deq_nvfp4(wrow, i) * xv;
-        }
-        for (int off = 16; off > 0; off >>= 1)
-            acc += __shfl_down_sync(0xffffffff, acc, off);
-        if ((threadIdx.x & 31) == 0) s[threadIdx.x >> 5] = acc;
-        __syncthreads();
-        if (threadIdx.x < 32) {
-            float v = threadIdx.x < (blockDim.x + 31) / 32 ? s[threadIdx.x] : 0.0f;
-            for (int off = 16; off > 0; off >>= 1)
-                v += __shfl_down_sync(0xffffffff, v, off);
-            if (threadIdx.x == 0) {
-                const float scaled = __fmul_rn(macros_down[expert], v);
-                chain = __fadd_rn(chain, __fmul_rn(route_w[pair], scaled));
-            }
-        }
-        __syncthreads();
-    }
-    if (threadIdx.x == 0) dst[o] = chain;
-}
-
 // Optional A8 fixed-slot down rows. Exactly one rank owns each global expert and writes that
 // pair's root-resident row; the root applies route weights later in canonical token/slot order.
 extern "C" __global__ void qmatvec_nvfp4_q8_ep_down_slots(
@@ -11427,77 +11294,6 @@ extern "C" __global__ void qmatvec_nvfp4_q8_ep_down_slots(
         }
         __syncthreads();
     }
-}
-
-// Optional A8 t=1 down + owner-local weighted combine. The dot body matches the established
-// interleaved-NVFP4 q8_1 kernel; route accumulation remains slot-ordered within each owner.
-extern "C" __global__ void qmatvec_nvfp4_q8_ep_down_fma(
-        const unsigned char* __restrict__ Wbank, const int* __restrict__ sel,
-        const signed char* __restrict__ aq, const float* __restrict__ ad,
-        const float* __restrict__ route_w, const float* __restrict__ macros_down,
-        float* __restrict__ dst,
-        int in_f, int out_f, int n_pairs, int owner_start, int owner_end,
-        long row_bytes, long expert_stride) {
-    int o = blockIdx.x;
-    if (o >= out_f) return;
-    int tid = threadIdx.x;
-    int nsb = in_f >> 5;
-    __shared__ float s[32];
-    float chain = 0.0f;
-    for (int pair = 0; pair < n_pairs; ++pair) {
-        const int global_expert = sel[pair];
-        if (global_expert < owner_start || global_expert >= owner_end) continue;
-        const int expert = global_expert - owner_start;
-        const unsigned char* wrow =
-            Wbank + (long)expert * expert_stride + (long)o * row_bytes;
-        const signed char* arow = aq + (size_t)pair * (size_t)in_f;
-        const float* adrow = ad + (size_t)pair * (size_t)nsb;
-        float acc = 0.0f;
-        for (int g = tid; g < nsb; g += blockDim.x) {
-            int sblk = g >> 1;
-            int which_half = g & 1;
-            const unsigned char* b = wrow + (long)sblk * 36;
-            const unsigned char* d_bytes = b;
-            const unsigned char* qs = b + 4;
-            int s0 = which_half * 2;
-            const int4* aq16 = (const int4*)(arow + (size_t)g * 32);
-            int4 a01 = aq16[0], a23 = aq16[1];
-            int aq4[8] = {a01.x, a01.y, a01.z, a01.w, a23.x, a23.y, a23.z, a23.w};
-            float partial = 0.0f;
-            #pragma unroll
-            for (int sl = 0; sl < 2; ++sl) {
-                int sub = s0 + sl;
-                const unsigned char* qss = qs + sub * 8;
-                int q4a = get_int_b4(qss);
-                int q4b = get_int_b4(qss + 4);
-                int2 va = get_int_from_table_16_d(q4a, kvalues_mxfp4_d);
-                int2 vb = get_int_from_table_16_d(q4b, kvalues_mxfp4_d);
-                int base = sl * 4;
-                int sumi = 0;
-                sumi = dp4a(va.x, aq4[base + 0], sumi);
-                sumi = dp4a(vb.x, aq4[base + 1], sumi);
-                sumi = dp4a(va.y, aq4[base + 2], sumi);
-                sumi = dp4a(vb.y, aq4[base + 3], sumi);
-                partial += ue4m3_to_f32_d(d_bytes[sub]) * (float)sumi;
-            }
-            acc += adrow[g] * partial;
-        }
-        for (int off = 16; off > 0; off >>= 1)
-            acc += __shfl_down_sync(0xffffffff, acc, off);
-        if ((tid & 31) == 0) s[tid >> 5] = acc;
-        __syncthreads();
-        if (tid < 32) {
-            float v = tid < (blockDim.x + 31) / 32 ? s[tid] : 0.0f;
-            for (int off = 16; off > 0; off >>= 1)
-                v += __shfl_down_sync(0xffffffff, v, off);
-            if (tid == 0) {
-                const float scaled = __fmul_rn(macros_down[expert], v);
-                chain = __fadd_rn(chain, __fmul_rn(route_w[pair], scaled));
-            }
-        }
-        __syncthreads();
-    }
-    if (tid == 0) dst[o] = chain;
 }
 
 // ═══ SLOT-MAJOR row layout (QT_NVFP4_V2) and the readers that consume it ═══════════════════
@@ -13052,24 +12848,6 @@ extern "C" __global__ void matvec_bf16_dual(
         for (int off = 16; off > 0; off >>= 1) v += __shfl_down_sync(0xffffffff, v, off);
         if (threadIdx.x == 0) y[row] = v;
     }
-}
-
-// Row-offset twin of axpy_rows_seq_md_f32 (spec verify t-column combine): accumulate rows
-// [row0, row0+n_rows) of a taller partial slab — the exact sequential per-pair FP chain of
-// the base kernel over that window, so a column's combine over its own 8 pairs is bit-equal
-// to its t=1 combine.
-extern "C" __global__ void axpy_rows_seq_md_off_f32(
-        const float* __restrict__ x, const float* __restrict__ w,
-        const float* __restrict__ md, const int* __restrict__ sel, float* __restrict__ y,
-        int width, int n_rows, int row0) {
-    int i = blockIdx.x * blockDim.x + threadIdx.x;
-    if (i >= width) return;
-    float acc = 0.0f;
-    for (int p = 0; p < n_rows; p++) {
-        int pp = row0 + p;
-        acc += w[pp] * md[sel[pp]] * x[(size_t)pp * width + i];
-    }
-    y[i] = acc;
 }
 
 extern "C" __global__ void qk_norm_rope_f32(
