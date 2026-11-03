@@ -187,6 +187,8 @@ jobs:
           python3 tools/test_release_qualification.py
           python3 tools/test_change_impact.py
           python3 tools/test_cell_gate.py
+          python3 tools/impact_map/test_delta.py
+          python3 tools/impact_map/test_gate.py
           python3 tools/test_daily_regression.py
           python3 tools/test_release_inputs.py
           python3 -m unittest tools.test_check_hardware_gate
