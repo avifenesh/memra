@@ -786,6 +786,44 @@ fn outer_rows(ne: &[u64]) -> (usize, usize) {
     (outer, inner.max(1))
 }
 
+/// The byte range `(off, keep)` of every quantized row that K slice `cols` of an `inner`-column
+/// row keeps. Alignment is counted in BLOCKS: `row_bytes = in_f / block * type_size` is linear in
+/// `in_f`, so a byte-offset test passes a boundary that cuts a block (Q8_0 at in_f 96: 48 columns
+/// is 1.5 blocks and still 51 whole bytes). Raw checkpoint e4m3 is one byte per column; every
+/// other block size comes from the one table `tp_expert_split` reads, and an unknown qtype refuses.
+fn k_slice_bytes(
+    qtype: i32,
+    row_bytes: usize,
+    inner: usize,
+    cols: &Range<usize>,
+) -> Result<(usize, usize), String> {
+    let take = cols.end - cols.start;
+    let block = if qtype == crate::QT_F8_E4M3 {
+        1
+    } else {
+        crate::tp_expert_split::qtype_block(qtype).ok_or_else(|| {
+            format!(
+                "glm5-tp shard cols: qtype {qtype} has no known block size, so a K slice \
+                 cannot be proven to land on a block boundary"
+            )
+        })? as usize
+    };
+    if !cols.start.is_multiple_of(block) || !take.is_multiple_of(block) {
+        return Err(format!(
+            "glm5-tp shard cols: {cols:?} of {inner} does not land on a block boundary \
+             (qtype {qtype} block {block})"
+        ));
+    }
+    if !(cols.start * row_bytes).is_multiple_of(inner) || !(take * row_bytes).is_multiple_of(inner)
+    {
+        return Err(format!(
+            "glm5-tp shard cols: row_bytes {row_bytes} of {inner} columns does not match \
+             qtype {qtype} block {block}"
+        ));
+    }
+    Ok((cols.start * row_bytes / inner, take * row_bytes / inner))
+}
+
 /// K-SLICE of a 2D projection: keep input columns `cols` of every out row. The row-parallel
 /// counterpart of [`shard_rows`], and the shape a TP `wo` needs.
 ///
@@ -877,19 +915,7 @@ fn shard_cols(
             if cols.end > inner {
                 return Err(format!("shard cols {cols:?} exceed inner axis {inner}").into());
             }
-            // Block alignment, counted in BLOCKS: `row_bytes = in_f / block * type_size` is
-            // linear in `in_f`, so a byte-offset test passes a boundary that cuts a block.
-            if !(cols.start * row_bytes).is_multiple_of(inner)
-                || !(take * row_bytes).is_multiple_of(inner)
-            {
-                return Err(format!(
-                    "glm5-tp shard cols: {cols:?} of {inner} does not land on a block boundary \
-                     (row_bytes {row_bytes})"
-                )
-                .into());
-            }
-            let off = cols.start * row_bytes / inner;
-            let keep = take * row_bytes / inner;
+            let (off, keep) = k_slice_bytes(*qtype, *row_bytes, inner, &cols)?;
             let host = src_engine.dtoh_u8(bytes)?;
             let mut out = Vec::with_capacity(outer * keep);
             for r in 0..outer {
@@ -2248,6 +2274,32 @@ pub struct Glm5TpPrefixShards {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The red arm `tp_expert_split` carries, on the `wo` K slice: Q8_0 at in_f 96 (row_bytes
+    /// 102) halves into 48 columns, 1.5 blocks, that still divide into 51 whole bytes. A
+    /// byte-divisibility test passes that cut; the block count refuses it.
+    #[test]
+    fn k_slice_counts_blocks_not_bytes() {
+        let q8 = crate::QT_Q8_0;
+        assert!(k_slice_bytes(q8, 102, 96, &(0..48)).is_err());
+        assert!(k_slice_bytes(q8, 102, 96, &(48..96)).is_err());
+        // halves of 4096 are whole blocks: 4096 / 32 * 34 = 4352 bytes per row
+        assert_eq!(
+            k_slice_bytes(q8, 4352, 4096, &(2048..4096)),
+            Ok((2176, 2176))
+        );
+        // raw checkpoint e4m3 is one byte per column, bf16 two
+        assert_eq!(
+            k_slice_bytes(crate::QT_F8_E4M3, 96, 96, &(48..96)),
+            Ok((48, 48))
+        );
+        assert_eq!(
+            k_slice_bytes(crate::QT_BF16, 192, 96, &(48..96)),
+            Ok((96, 96))
+        );
+        // a code with no known block size refuses instead of guessing
+        assert!(k_slice_bytes(crate::QT_NVFP4_MODELOPT, 64, 128, &(0..64)).is_err());
+    }
 
     #[test]
     fn parse_is_literal_and_fail_closed() {
