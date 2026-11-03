@@ -14060,10 +14060,14 @@ impl HybridModel {
                     .into());
                 }
             }
-            eprintln!(
-                "[mtp-chain] heads={} policy=step-modulo prefix-replay kv=per-head",
-                self.mtp_head_count()
-            );
+            // Once per process: this runs every burst, and a serving session runs thousands.
+            static ANNOUNCED: std::sync::Once = std::sync::Once::new();
+            ANNOUNCED.call_once(|| {
+                eprintln!(
+                    "[mtp-chain] heads={} policy=step-modulo prefix-replay kv=per-head",
+                    self.mtp_head_count()
+                )
+            });
         }
         let n_embd = self.cfg.n_embd as usize;
         // SESSION MODE: reuse the live cache/scratch, prime only the suffix. `base` = tokens
@@ -15617,7 +15621,9 @@ impl HybridModel {
                 (total_accepted + round) as f64 / round.max(1) as f64
             );
         }
-        if constraint.is_some() {
+        // Per burst, so behind the stats gate; the worker prints its own per-request
+        // `[draft-mask]` receipt.
+        if spec_stats && constraint.is_some() {
             eprintln!(
                 "[draft-mask] mask_rounds={dm_rounds} clone_total={:.3}ms \
                  clone_per_round={:.4}ms gram_cuts={dm_cuts}/{round} cut_tokens={dm_cut_tokens}",
