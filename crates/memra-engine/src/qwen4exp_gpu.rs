@@ -2222,7 +2222,8 @@ pub fn set_idx_cache(on: bool) {
 /// allocate that state at all), so there is no alternative to compare against.
 /// The -7.4% is a READ-PATTERN artifact, not the cost of quantization: the score loop reloads
 /// the fp16 K block scale once per element (`PROFILE-C0.md` section 2). The scale-hoisted twin
-/// that targeted it (`kvhoist`) was deleted with no perf receipt (docs/FLAGS.md "Removed doors").
+/// that targeted it (`kvhoist`) read positive only in a contended cell and was deleted for want
+/// of an exclusive rerun (docs/FLAGS.md "Removed doors").
 /// Receipts: research/qwen4exp-bringup-20260829/kvq/ + box ~/realgate/kvq.
 pub const KV_QUANT_DEFAULT: bool = true;
 static KV_QUANT: std::sync::atomic::AtomicBool =
