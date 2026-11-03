@@ -88,3 +88,32 @@ The Flash-Next mechanism (more prefix-cache blocks) does not apply to this cell.
 - **Quality:** in band. HumanEval 160/164 and GSM8K 97/100 against 158/97. Answers stay coherent at T=0 and T=1. Greedy streams diverge on long answers, as expected from a rounding change.
 - **Speed:** the batched GDN scan halves at the part's bandwidth ceiling: 22.7 -> 11.5 ms per step at 16 sessions, 45.3 -> 23.0 at 32. That projects to -6.4% to -9.0% per decode tick at c16/c32 on GB10, with nothing in this cell coming from prefix-cache capacity.
 - **To claim it:** a real bf16-resident state. That means the bf16 state class in every GDN state kernel (decode, batched, verify with snapshots, chunked prime, tensor-core chunk state), the snapshot and rollback copies, the prefix-cache entries and the admission byte accounting, then a clean served A/B. Not built; the default stays fp32.
+
+## The real bf16-stored state (c3356b88b3)
+
+`MEMRA_GDN_STATE_BF16=1` now **stores** the state as bf16: `gdn_ld`/`gdn_sv` in `cu/hybrid.cu`, the first half of each fp32 state buffer, element index unchanged. That covers every state load and store:
+
+- the decode, batched and verify scans with their snapshot rings;
+- the chunked prime state;
+- the tensor-core chunk-state kernels (k4 / k45 wgmma).
+
+The scans still compute in fp32. Buffers keep their fp32 size, so snapshot, rollback and prefix copies stay byte copies.
+
+Identity (`gdn-state-bf16-storage/ab.txt`), 16 sessions, depth 2048, greedy fingerprints:
+
+| arm | fingerprint | equal to |
+|---|---|---|
+| flag off | ffd722c3ca34 | the fp32 batch-spec build (bit-identical) |
+| flag on | 73fe26285da0 | the rounding emulation (bit-identical) |
+
+The stored arm therefore runs the exact numerics the quality panel graded (160/164, 97/100) and the coherence probe read. Only the bytes changed.
+
+Decode step, same binary, flag off/on:
+
+| cell | off (ms/tick) | on (ms/tick) | change | tokens |
+|---|---|---|---:|---|
+| 32 sessions, depth 2048, 3+3 | 247.18, 247.46, 247.44 | 227.93, 225.26, 225.38 | **-8.9%** (129.3 -> 142.0 tok/s) | arm-consistent (ea8db325 / 86d41c9f) |
+| 16 sessions, depth 12288, 1+1 | 173.48 | 162.07 | **-6.6%** (92.2 -> 98.7 tok/s) | arm-consistent |
+| 16 sessions, depth 2048, 1+1 | 127.70 | 116.93 | -8.4% | ffd722c3 / 73fe2628 |
+
+These match the bandwidth projection above (-6.4% to -9.0%). This branch sits on batch-spec 8e271ade80, before the tensor-core b32 tier, so its numbers are measured against the dp4a b32 tier.
