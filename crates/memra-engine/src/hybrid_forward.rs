@@ -143,6 +143,12 @@ fn step_tp_prefill_enabled() -> Result<bool, String> {
     parse_step_tp_prefill(std::env::var("MEMRA_STEP_TP_PREFILL").ok().as_deref())
 }
 
+/// The refusal `prime_cache_batch` returns for a step35 cross-request batch while
+/// `MEMRA_STEP35_PRIME_BATCH=0`. The pbatch35c canary reads exactly this refusal as its verdict,
+/// so the text is shared with `prime-batch-gate` rather than matched loosely there.
+pub const STEP35_PRIME_BATCH_SEAM_REFUSAL: &str =
+    "step35 batched prime is disabled (MEMRA_STEP35_PRIME_BATCH=0)";
+
 /// The named refusal of a single-session Step prime when `MEMRA_STEP_TP_PREFILL=1` sends it to
 /// the walk but no full-attention layer carries the rank-local Step TP placement the walk's
 /// prefill arm needs.
@@ -8698,7 +8704,7 @@ impl HybridModel {
             // `prime_cache_overlaid` calls the same core at B=1 and must keep working: that
             // single prime is the fallback the seam restores.
             if !Self::step35_prime_batch_on() {
-                return Err("step35 batched prime is disabled (MEMRA_STEP35_PRIME_BATCH=0)".into());
+                return Err(STEP35_PRIME_BATCH_SEAM_REFUSAL.into());
             }
             // The cross-request driver hands whole requests (no chunk loop of its own), so each
             // sequence's request-absolute end IS its base plus its prompt length — the value
