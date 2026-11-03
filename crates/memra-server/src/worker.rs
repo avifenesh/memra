@@ -28613,10 +28613,18 @@ pub fn run(
             "chunked prefill"
         };
         if eager_decode.contains(n) {
-            let class = loaded
-                .get(n)
-                .filter(|lm| memra_engine::plan_backend::decode_batch_unconverted(&lm.model.plan))
-                .map_or("gemma4 class", |_| "hyper-connections residual");
+            let class = loaded.get(n).map_or("gemma4 class", |lm| {
+                if memra_engine::plan_backend::decode_batch_unconverted(&lm.model.plan) {
+                    "hyper-connections residual"
+                } else if memra_engine::plan_backend::decode_batch_program(&lm.model.plan)
+                    == memra_engine::plan_backend::DecodeBatchProgram::Gemma
+                    || lm.model.is_gemma4_e4b()
+                {
+                    "gemma4 class"
+                } else {
+                    "plan operations without a batched decode arm"
+                }
+            });
             eprintln!(
                 "[worker] {n}: EAGER-ONLY serving ({class} — no batched decode arm): \
                    per-session eager decode, {prefill}, no prime batching"
@@ -42058,6 +42066,16 @@ fn eager_only_model(lm: &LoadedModel) -> bool {
         // `engine_error` after one token. The converted paths — forward, forward_last,
         // prime_cache, decode_step — are exactly the ones the eager-only class uses.
         || memra_engine::plan_backend::decode_batch_unconverted(&lm.model.plan)
+        // NO BATCHED ARM AT ALL: a serial-residual plan with an operation the generic batched
+        // body does not implement (glm_dsa's LatentMlaAttention) panicked in
+        // `decode_batch_layers` (`mla_path_unimplemented`) on every decode chunk, because
+        // `chunk_cap_for` only narrows such a plan to width 1. The manifest is an AND over the
+        // plan, so the same capability read that sets the width also routes the session to the
+        // eager body (`decode_step_h`), which carries the MLA arm.
+        || !memra_engine::plan_backend::DECODE_BATCH
+            .trunk_capabilities(&lm.model.plan)
+            .batch
+            .supported
 }
 
 /// MONOLITHIC-PRIME class (memra#535 P1a, lane/exec-p1a-gemma-prime): must this model's prime
