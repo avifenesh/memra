@@ -200,6 +200,28 @@ nsys at B=16, depth 12288 (`gb10-lever3/fa-kern.csv`): attention takes 42.4 ms p
 
 The kernel is still held to three blocks per SM by its 28.5 KB of smem: Q, the padded K tile and a 32 x 256 bf16 V tile. The next exact attention lever is to keep V raw (6 KB) in smem and dequantize at use, which would allow five blocks per SM. Every warp of the GQA group would then dequantize the whole tile, about 6x the B3-phase instructions, so it needs its own measurement. A smaller tile changes the online-softmax order, so it is not exact.
 
+### Raw-V attention in smem: not adopted (2026-11-03, evening)
+
+`fa_decode_vec_q_seqs_v4_rawv`, built on a research branch and A/B'd behind a temporary `MEMRA_FA_RAWV` seam, now deleted. It kept the V tile as raw q5_1 bytes in smem (6 KB instead of the 16 KB bf16 tile) and dequantized each element at use, with the staging expression verbatim. Smem fell from 28.5 to 18.3 KB per block. It was bit-identical: kernel-check `fa_decode_seqs_v4 vs per-seq loop` bitdiff=0 at B=4/8, and tokens were identical in every run (`gb10-rawv/`).
+
+| cell | deep walk (ms/tick) | raw V (ms/tick) | change |
+|---|---|---|---:|
+| 16 sessions, depth 12288, 3 + 3 | 173.75, 173.80, 173.69 | 176.52, 176.42, 176.59 | +1.6% |
+| 8 sessions, depth 32768, 1 + 1 | 137.46 | 141.22 | +2.7% |
+
+Two things cancel the occupancy gain. Every warp of the GQA group now dequantizes the whole tile, and the kernel was register-limited at 4 blocks per SM anyway, so lifting the smem limit bought at most one block. The code was deleted; the deep walk stays.
+
+### Tensor-core GEMM tier for 16..32-row ticks: research arm, negative
+
+The cheapest tensor-core prototype skips the exact scope for 16..32-row ticks, so the matmuls take the existing tensor-core GEMM tier (MMQ / F8F4). This was branch `research/decode-tc`, behind `MEMRA_DECODE_TC=1`, default off. Measured on the RTX 5090 with Qwen3.5-9B at depth 2048, 3 + 3 interleaved (`rig5090-tc/`):
+
+| sessions | dp4a exact tier (ms/tick) | tensor-core GEMM tier (ms/tick) | sessions with identical 48-token streams |
+|---:|---|---|---:|
+| 16 | 27.40, 28.23, 30.00 | 73.98, 73.61, 81.87 | 9 / 16 (greedy) |
+| 32 | 66.37, 66.57, 66.57 | 91.07, 90.69, 92.90 | 18 / 32 (greedy), 8 / 32 (sampled) |
+
+Each arm is deterministic run to run. The prefill GEMM tier is 1.4-2.7x slower at these widths, and it diverges by construction. A real tensor-core decode matmul is a new kernel. One exact design exists: run only the integer per-16-element dot products on `mma.sync` s8 (integer sums are order-independent), and keep the float epilogue (`ws0*s0 + ws1*s1`, `acc += adg*partial`, the warp butterfly) in the dp4a kernel's order. That would make it bit-identical. It saves only the dp4a issue slots of a latency-bound kernel, so its value is unclear. Not built.
+
 ## Every cell, per part (`gb10-decode-prof/parts.txt`, `battery/kern_parts.py`)
 
 ms per decode step, effective GB/s in parentheses. Bytes: matmuls 15.7 GB of weights per forward; attention B x depth x 29.7 KB of KV; GDN B x 302 MB of fp32 state read plus write. Gap = tick minus the kernel sum.
