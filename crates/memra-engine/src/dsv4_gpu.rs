@@ -1,5 +1,5 @@
-//! DeepSeek-V4-Flash GPU trunk forward (lane 4): 2-card layer-split placement,
-//! correctness bring-up gated against the lane-2/3 CPU oracle fixtures.
+//! DeepSeek-V4-Flash GPU trunk forward: the two-card engine `dsv4_serve` loads. It was
+//! brought up (lane 4) as a layer split gated against the lane-2/3 CPU oracle fixtures.
 //!
 //! Plan of record: wt-dsv4-loader research/dsv4-flash-loader-20260818/RECEIPTS.md
 //! "Lane 4" (placement math, quant rungs, threshold derivation — banked BEFORE this
@@ -15,11 +15,15 @@
 //! dedicated f32/f64 kernels or on the host. bf16 enters ONLY at the activation inputs
 //! of the non-island GEMMs (cuBLASLt bf16, f32 accumulate).
 //!
-//! Multi-GPU: PP layer split plus the matrix expert-ID EP pair. PP boundaries and EP
-//! contribution/commit work retain explicit peer/event ordering.
+//! Multi-GPU: the served default (memra #710) is all-layer TP/EP: every trunk layer on both
+//! ranks, the matrix expert-ID EP pair and exact head-parallel attention TP2
+//! (`dsv4_attention_tp`), with eligible plain requests replaying full-token graphs
+//! (`dsv4_graph`). The PP-2 layer split (`MEMRA_DSV4_TOPOLOGY=pp`) is the rollback program;
+//! the host-math decode path (`MEMRA_DSV4_DECODE_PATH`) and the reference expert executor
+//! are oracle arms. PP boundaries and EP contribution/commit work keep explicit peer/event
+//! ordering.
 //!
-//! This module is not a general serving path: all decode and performance claims
-//! require the corresponding pinned gate receipt.
+//! Decode and performance claims still require the corresponding pinned gate receipt.
 
 use std::collections::BTreeMap;
 use std::ops::Range;
