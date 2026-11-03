@@ -253,7 +253,7 @@ pub fn glm5_verify_batch_on() -> bool {
 ///
 /// DEFAULT OFF DELIBERATELY, and the flip is blocked on two named defects that a review of
 /// the ON default found. Both are properties of the device-staged ring, so neither can bite
-/// while this is unset. FIRST, the `MEMRA_B200_PRIME_V2` arm-2 branch
+/// while this is unset. FIRST, the `MEMRA_HYPER_PRIME_V2` arm-2 branch
 /// (`prime_cache_hyper_pp2_pipelined`) never calls
 /// `glm5_taps_range_begin`/`glm5_taps_range_done`, and hands each stage-chunk an ABSOLUTE
 /// base, so from the second range on `glm5_hc_tap_slot` slices past the `sink.t * h` slot
