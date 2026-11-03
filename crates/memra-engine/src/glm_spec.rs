@@ -1787,6 +1787,16 @@ impl HybridModel {
         Ok((logits, collapsed))
     }
 
+    /// The verify rows' token embeddings: the host gather + upload.
+    pub(crate) fn glm5_rows_embed(
+        &self,
+        e: &Engine,
+        tokens: &[u32],
+        n_embd: usize,
+    ) -> Res<CudaSlice<f32>> {
+        e.htod(&self.embd.try_gather(n_embd, tokens)?)
+    }
+
     /// ppN twin of the verify walk (lane/glm5-ppn-verify, 2026-08-30), mirroring
     /// `decode_step_batch_hyper_ppn` (decode_batch.rs): the t=K+1 rows walk as N stage
     /// subgraphs — per-stage engine, per-stage pos_rows uploads, ONE `[t, streams, n_embd]`
@@ -1804,17 +1814,6 @@ impl HybridModel {
     /// for consumption from the caller's streams after this returns.
     #[allow(clippy::too_many_arguments)]
     // allow: the parameter list mirrors its decode twin's stage-walk contract
-    /// The verify rows' token embeddings: the host gather + upload.
-    pub(crate) fn glm5_rows_embed(
-        &self,
-        e: &Engine,
-        tokens: &[u32],
-        n_embd: usize,
-    ) -> Res<CudaSlice<f32>> {
-        e.htod(&self.embd.try_gather(n_embd, tokens)?)
-    }
-
-    #[allow(clippy::too_many_arguments)]
     fn glm5_verify_rows_ppn(
         &self,
         e: &Engine,
@@ -4241,14 +4240,14 @@ impl HybridModel {
     }
 }
 
+/// A sampled draft: the drawn rank id and its filter statistics `(mx, th, z)`.
+type SampledDraw = (u32, (f32, f32, f32));
+
 /// One filtered Gumbel draw from a draft-head logit row through the session's device Philox
 /// stream — the sampled route's PROPOSAL. Returns the drawn RANK id and the row's filtered
 /// stats `(row_max, threshold_e, renorm_mass)`, which the accept walk's q gather and the
 /// rejection residual both reuse (the q side must be the distribution the draft was actually
 /// drawn from, or rejection sampling is not exact for the filtered target).
-/// A sampled draft: the drawn rank id and its filter statistics `(mx, th, z)`.
-type SampledDraw = (u32, (f32, f32, f32));
-
 fn glm5_sampled_draft(
     e: &Engine,
     dl: &CudaSlice<f32>,
