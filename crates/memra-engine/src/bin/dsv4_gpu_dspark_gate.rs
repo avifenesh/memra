@@ -639,26 +639,23 @@ fn main() {
     let stream_taken = memra_engine::dsv4_moe_m1_stream_dispatches() - stream_before;
     let fused_taken = memra_engine::dsv4_moe_fused_dispatches() - fused_before;
     let stream_on = memra_engine::dsv4_moe_m1_stream_on();
-    let fused_on = memra_engine::dsv4_moe_fused_on();
     println!(
         "arm P (plain device greedy): {} tokens t={:.0}s | m1 stream {} dispatches {} | \
-         fused MoE {} dispatches {}",
+         fused MoE dispatches {}",
         plain.len(),
         t0.elapsed().as_secs_f64(),
         if stream_on { "ON" } else { "OFF" },
         stream_taken,
-        if fused_on { "ON" } else { "OFF" },
         fused_taken
     );
-    // The pair only replaces the visitor, so a stream-OFF (reference) arm takes neither. Under
-    // TP/EP a one-token step takes the pair's partition form over the rank's experts (memra
-    // #710), so a TP/EP plain arm claims fused dispatches too.
-    let fused_expected = fused_on && stream_on;
+    // The fused pair is the code (no door). It only replaces the visitor, so a stream-OFF
+    // (reference) arm takes neither. Under TP/EP a one-token step takes the pair's partition
+    // form over the rank's experts (memra #710), so a TP/EP plain arm claims fused dispatches too.
+    let fused_expected = stream_on;
     if fused_expected == (fused_taken == 0) {
         fails.push(format!(
-            "FUSED MOE ENGAGEMENT: fused {} stream {} but the plain arm took {fused_taken} \
-             fused dispatches",
-            if fused_on { "ON" } else { "OFF" },
+            "FUSED MOE ENGAGEMENT: stream {} but the plain arm took {fused_taken} fused \
+             dispatches",
             if stream_on { "ON" } else { "OFF" }
         ));
     }
@@ -724,12 +721,11 @@ fn main() {
         "arm DB mrow stream {} dispatches {mrow_taken} | fused MoE dispatches {db_fused_taken}",
         if stream_on { "ON" } else { "OFF" }
     );
-    let db_fused_expected = tp_ep && fused_on && stream_on;
+    let db_fused_expected = tp_ep && stream_on;
     if db_fused_expected == (db_fused_taken == 0) {
         fails.push(format!(
-            "FUSED MOE ENGAGEMENT (batched): fused {} stream {} on {} but the batched arm took \
+            "FUSED MOE ENGAGEMENT (batched): stream {} on {} but the batched arm took \
              {db_fused_taken} fused dispatches",
-            if fused_on { "ON" } else { "OFF" },
             if stream_on { "ON" } else { "OFF" },
             if tp_ep { "TP/EP" } else { "PP" }
         ));
