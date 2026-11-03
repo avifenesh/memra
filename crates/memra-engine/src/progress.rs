@@ -413,7 +413,7 @@ mod tests {
         );
     }
 
-    /// WIRING GATE for the cancellation point, the odometer gate's twin: the three sequential walks
+    /// WIRING GATE for the cancellation point, the odometer gate's twin: the four sequential walks
     /// must ask `prime_cancel_point` at their chunk boundary, in comment-stripped source. Bound from
     /// below (walks get added); the pipelined walks are deliberately absent (see the module note).
     #[test]
@@ -427,7 +427,7 @@ mod tests {
             .join("\n");
         let calls = code.matches("crate::progress::prime_cancel_point(").count();
         assert!(
-            calls >= 3,
+            calls >= 4,
             "the sequential prime walks must ask the cancellation point at their chunk boundary \
              (memra#536); found {calls} live call sites in hybrid_forward.rs"
         );
