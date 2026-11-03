@@ -2855,8 +2855,8 @@ impl HybridModel {
         // 2026-09-04, `=0` disarms, read PER CALL): replay this stage's captured KDA-layer runs
         // instead of issuing them. Every
         // refusal shape returns None and falls through to the eager walk below, byte-identically
-        // — see crates/memra-engine/src/glm5_decode_graph.rs for what is captured and why the
-        // MLA/DSA layers are not.
+        // — see crates/memra-engine/src/glm5_decode_graph.rs for what is captured, including the
+        // MLA halves (default ON on 100a builds).
         if crate::glm5_decode_graph_on() && self.glm5_decode_graph_ready(e, cache, lo, hi) {
             return self.hyper_range_decode_graphed(e, topology, x, lo, hi, pos_d, pos, cache);
         }

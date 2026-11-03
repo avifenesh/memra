@@ -20,9 +20,16 @@
 //!   3. the MLA/DSA layers' host-derived launch geometry (`let slot = layer.len` at
 //!      `HybridModel::mla_attn_cached_pre_wo`, and the kpool `n_pools`/`select_k`/`width`
 //!      derived from it) plus the synchronizing 4-byte `len_d` mirror store. NOT moved in this
-//!      lane — so MLA/DSA layers stay EAGER and are the reason the capture is per-run rather
-//!      than whole-token. See `research/b200-glm5-graph-20260902/LANE.md` for the file:line
-//!      inventory and what a device-counter (`_dc`) kpool arm would need.
+//!      lane, which is why MLA/DSA layers broke the capture into per-run graphs rather than
+//!      one whole-token graph. See `research/b200-glm5-graph-20260902/LANE.md` for the
+//!      file:line inventory and what a device-counter (`_dc`) kpool arm would need.
+//!
+//! MLA LAYERS SINCE (see `plan_runs`). With `MEMRA_GLM5_GRAPH_MLA` and `MEMRA_MLA_SEG_WS`
+//! (both default ON on `100a` builds through `b200_posture_door_from`, OFF elsewhere) an MLA
+//! layer joins its run in HALVES: the attention-site hc pre + norm + PRE segment close a
+//! graph piece, the position-dependent middle runs eager, and hc post + the FFN half open the
+//! next piece. With the halves door off, MLA/DSA layers stay eager and break the runs. The
+//! KDA pieces are below.
 //!
 //! WHAT IS CAPTURED. Per pipeline stage, the maximal CONTIGUOUS runs of KDA-mixer layers
 //! inside that stage's `[lo, hi)` range: hc pre/post glue, the KDA mixer (projections, conv
