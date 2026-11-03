@@ -123,16 +123,19 @@ qualifies. A rebase changes the inputs and needs a new record.
 ## What a record covers
 
 A record qualifies the tag battery, `tools/release-battery.sh`, and that battery covers the
-qwen35 class only (owner, 2026-11-03). The verifier expects exactly one kernel cell plus one
-calibrated argmax cell (with its batched-prime arm) and one greedy K=1..8 spec cell per
-`tools/release-roster.tsv` row. The roster has two rows, both NVFP4+Q5_K MTP GGUFs:
-Ornith-1.5-35B-A3B (`own`, `qwen35_moe`) and Qwen3.8-27B (`vendor`, `qwen35`). The kernel
-cell runs on the first roster file present; its required Step manifest holds synthetic kernel
-and PP-schedule cells, not a Step model run.
+qwen35 class only, and within it two checkpoints (owner, 2026-11-03). The verifier expects
+exactly one kernel cell plus one calibrated argmax cell (with its batched-prime arm) and one
+greedy K=1..8 spec cell per `tools/release-roster.tsv` row. The roster has two rows, both
+NVFP4+Q5_K MTP GGUFs: Ornith-1.5-35B-A3B (`own`, `qwen35_moe`) and Qwen3.8-27B (`vendor`,
+`qwen35`). The kernel cell takes the first roster file present as its model argument; its
+required Step manifest holds synthetic kernel and PP-schedule cells, not a Step model run.
+kernel-check also runs real-weight oracle cells on the GGUFs in the bound `oracle_directory`
+(`MEMRA_KC_MODELS_DIR`). Those are kernel-level evidence only; apart from the required
+`DUAL-BATCHED-AUX` cell (Qwen3.5-9B NVFP4 oracle) they may skip within the 11-skip ceiling.
 
-A record is therefore no model evidence for any other pack (`gemma4_dense`, `gemma4_moe`,
-`step35`, `glm5_next`, `glm_dsa`, `deepseek_v4`, `hy3` and the rest) or for a weight format
-the two roster files do not carry. Those families get their evidence from their own family
+A record is therefore no model evidence for any other qwen35-class checkpoint, for any other
+pack (`gemma4_dense`, `gemma4_moe`, `step35`, `glm5_next`, `glm_dsa`, `deepseek_v4`, `hy3` and
+the rest) or for a weight format the two roster files do not carry. Those families get their evidence from their own family
 gates (the pack's gate manifest, the scoped battery's cells on each family a change reaches,
 `step-pro` for Step-3.7) and from the daily per-device regression run, which is owner policy
 and has no tracked runner in this repo yet. [Releasing](RELEASING.md#the-gate-on-the-rig-before-tagging)
