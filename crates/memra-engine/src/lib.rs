@@ -30179,6 +30179,14 @@ impl Engine {
         width: usize,
         scale: f32,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        // Same refusal as `fa_prefill_w_pre`: a bf16-MMA kernel on pre-converted operands with
+        // no f32 fallback. The glm5 caller already gates MEMRA_MLA_TC_PREFILL on
+        // portable_mma_gated(); this covers every other caller (tests, gates, a future arm).
+        if portable_mma_gated() {
+            return Err(
+                "mla_attn_gathered_tc: bf16-MMA prefill is gated off on this portable build".into(),
+            );
+        }
         if kv_rank != 512 {
             return Err(format!(
                 "mla_attn_gathered_tc is stamped at kv_rank 512 (the glm5_next latent width); \
