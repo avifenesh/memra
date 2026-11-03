@@ -143,6 +143,14 @@ fn step_tp_prefill_enabled() -> Result<bool, String> {
     parse_step_tp_prefill(std::env::var("MEMRA_STEP_TP_PREFILL").ok().as_deref())
 }
 
+/// The named refusal of a single-session Step prime when `MEMRA_STEP_TP_PREFILL=1` sends it to
+/// the walk but no full-attention layer carries the rank-local Step TP placement the walk's
+/// prefill arm needs.
+pub const STEP_TP_PREFILL_NO_PLACEMENT_REFUSAL: &str = "MEMRA_STEP_TP_PREFILL=1 needs a \
+     rank-local Step TP attention placement (MEMRA_STEP_TP with native P2P), and this model \
+     has none: the walk without it primes at ~57.5 ms/token, so every fresh prompt past ~1500 \
+     tokens would miss the 90 s first-token deadline. Unset the door or add the placement";
+
 fn validate_step_prime_batch_modes(tp_prefill: bool, grouped_prefill: bool) -> Result<(), String> {
     if grouped_prefill && !tp_prefill {
         return Err("MEMRA_STEP_EP_GROUPED_PREFILL=1 requires MEMRA_STEP_TP_PREFILL=1".into());
@@ -5726,13 +5734,19 @@ impl HybridModel {
         // MEMRA_STEP_TP_PREFILL=1 declines this entry: the rank-local prefill arm it opens lives
         // in the walk (`step35_attn_prime`), and the batched core below refuses the door as a
         // cross-request mode, so taking this entry would refuse the per-session prime too.
-        if overlay.is_none()
+        // The walk only engages that arm on layers that carry a rank-local Step TP placement.
+        // Without one it is the plain serial walk at ~57.5 ms/token, the dead rollback the
+        // server refuses for MEMRA_STEP_GEMM_PRIME=0, so the door refuses by name instead.
+        let gemm_entry = overlay.is_none()
             && (cache.pos == 0 || step_gemm_prime_suffix_on())
             && t >= PRIME_MIN_T
             && crate::step_gemm_prime_on()
-            && self.uses_sliding_gated_moe_program()
-            && !step_tp_prefill_enabled()?
-        {
+            && self.uses_sliding_gated_moe_program();
+        let tp_prefill = gemm_entry && step_tp_prefill_enabled()?;
+        if tp_prefill && !self.has_rank_local_step_tp_attention() {
+            return Err(STEP_TP_PREFILL_NO_PLACEMENT_REFUSAL.into());
+        }
+        if gemm_entry && !tp_prefill {
             let n_embd = self.cfg.n_embd as usize;
             let base = cache.pos;
             let width = crate::cache::PRIME_CHUNK_MAX_TOKENS;
