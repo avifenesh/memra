@@ -30429,9 +30429,10 @@ impl Engine {
             n_splits as i32,
         );
         let (ktb, vtb) = (k_tok_bytes as i64, v_tok_bytes as i64);
-        // The vec kernel holds head_dim/32 register accumulators (FA_DEC_MAX_DPL=8 -> head_dim<=256).
-        // All shipped models use head_dim=256; fall back to scalar for anything wider rather than
-        // silently truncating the accumulator.
+        // The vec kernel holds head_dim/32 register accumulators (FA_DEC_MAX_DPL=8 -> head_dim<=256),
+        // and its DPL16 twin takes head_dim 512 (the gemma4 globals). hd128 and hd256 models ride
+        // the vec family; anything wider than 512 or not a multiple of 32 falls back to scalar
+        // rather than silently truncating the accumulator.
         let fa_vec = fa_vec && head_dim <= 512 && head_dim.is_multiple_of(32);
         // hd-512 vec crossover (MEMRA_FA512_MIN, default 512): the DPL16 twin wins at depth
         // (82.5 -> vec at 1736) but the scalar's more-blocks latency hiding wins at tiny t_kv
