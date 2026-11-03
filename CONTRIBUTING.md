@@ -153,7 +153,7 @@ useful even if you never touch the code:
 | `memra-sampling` | Host sampler + device Philox sampling behind one trait |
 | `memra-validate` | Gate harness: tolerance policy, deterministic vectors, N-median runner |
 | `memra-server` | OpenAI-compatible HTTP server (axum): batched decode, prefill batching, KV reuse |
-| `memra-probe` | Standalone hardware microbenches |
+| `memra-probe` | Unpublished Phase-0 dev spike (`publish = false`): one hand-written kernel built to an sm_120a fatbin, launched through cudarc on a CC 12.0 card |
 
 - [`ARCHITECTURE.md`](ARCHITECTURE.md): hard hardware constraints and the sm_120a feasibility ledger.
 - [`docs/DRAFT-REGIME.md`](docs/DRAFT-REGIME.md): the standard drafter pipeline (own-gen ranks → byte-verbatim extraction → trim/quantize, adopt on e2e only). Any PR touching drafts, trims, or acceptance follows it: its three laws were each violated at measured cost before being written down.
