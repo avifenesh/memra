@@ -813,8 +813,6 @@ fn hyper_decode_ws_on() -> bool {
         && std::env::var("MEMRA_HC_DECODE_WS").as_deref() == Ok("1")
 }
 
-/// Engagement counter for the workspace walk — the receipt the gate and any box A/B arm
-/// must show (engagement lines are receipts, never inferred).
 /// Symmetric TP walk engagements (`MEMRA_GLM5_TP_SYMMETRIC`; gate non-vacuity, box receipt).
 pub static GLM5_TP_SYM_DISPATCHES: std::sync::atomic::AtomicU64 =
     std::sync::atomic::AtomicU64::new(0);
@@ -833,6 +831,8 @@ pub(crate) enum SymMixed<'a> {
 /// afterwards but never silently the first time.
 pub static GLM5_TP_SYM_DECLINED: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(false);
+/// Engagement counter for the workspace walk — the receipt the gate and any box A/B arm
+/// must show (engagement lines are receipts, never inferred).
 pub static HC_DECODE_WS_DISPATCHES: std::sync::atomic::AtomicU64 =
     std::sync::atomic::AtomicU64::new(0);
 
@@ -872,53 +872,6 @@ fn mla_tc_prefill_enabled() -> bool {
         .unwrap_or(true)
 }
 
-/// `MEMRA_HYPER_PRIME_V2` — the mHC PRIME schedule door (lane/b200-prefill-roofline-20260902,
-/// **default OFF**; named `MEMRA_HYPER_PRIME_V2` until 2026-11-03). It is host-side scheduling,
-/// so it is not build-gated like the B200 kernel doors: it runs on any build, and its receipts
-/// are from a B200 pair (the per-hardware law: another rig owes its own A/B before a default
-/// moves there). The old name refuses at server boot (env audit). It arms two changes to the
-/// HyperConnections prime and nothing else; decode, spec, batch and every non-hyper trunk are
-/// untouched by construction (the only two call sites are `hyper_prime_ranges` and
-/// `prime_cache_hyper`'s pp branch).
-///
-/// WHY, measured. `prime_chunk_tokens` applies the `PRIME_PIPE_MICROBATCHES = 8` geometry
-/// whenever a PP-2 stage fence exists, so a 4096-token glm5 prime splits into EIGHT calls. That
-/// geometry belongs to [`HybridModel::prime_cache_pp2_pipelined`], the SERIAL trunk's
-/// microbatched PP-2 prime — the hyper walk has never called it, so glm5 pays the split and
-/// collects none of the overlap. The split is not free: every one of the 288 experts is hit at
-/// any width past a few hundred tokens, so a MoE layer reads its WHOLE 4.08 GB slab once per
-/// CALL. Eight calls read 1,369.8 GB where one reads 171.2 GB; the HBM floor rises 21.4 ->
-/// 171.2 ms, the 4k prime crosses from compute-bound to memory-bound (854 -> 107 FLOP/B against
-/// a B200 ridge of 275), and pairs-per-expert falls 113.8 -> 14.2, under the grouped GEMM's
-/// `MEMRA_F16G_SK_CROSS` 64-row tile crossover. The 41.9k prime, whose chunk clamps at
-/// `PRIME_CHUNK_MAX_TOKENS` instead, runs 3.3x more efficient per FLOP on the same binary
-/// (87.0 vs 26.6 TFLOP/s) — the same fact from the other side. Arithmetic:
-/// `research/b200-prefill-roofline-20260902/roofline.py`.
-///
-/// ARM 1 (schedule): `hyper_prime_ranges` takes the natural chunk
-/// (`PRIME_CHUNK_MAX_TOKENS`, the same clamp the 41.9k prime already gets) instead of the
-/// microbatch geometry. An explicit `MEMRA_PRIME_CHUNK` stays authoritative and turns this arm
-/// off for that call, so the operator override is never overridden.
-/// ARM 2 (pipeline): with two or more chunks the ppN prime runs
-/// [`HybridModel::prime_cache_hyper_pp2_pipelined`] — stage 0 of chunk k+1 on device 0 while
-/// stage 1 of chunk k runs on device 1, on two scoped host threads over disjoint per-stage
-/// caches. Two threads are REQUIRED, not a style choice: the grouped MoE prefill's sigmoid
-/// host-oracle drains the stage stream once per layer, so two CUDA streams on one host thread
-/// serialize however the calls are ordered (the same finding `prime_cache_pp2_pipelined`
-/// records for the serial trunk).
-///
-/// NUMERIC CLASS. Arm 1 is NOT bit-identical and no chunk-size change on this trunk ever was:
-/// `Engine::linear` — the cuBLASLt f32 mixes GEMM in `hyper::pre` — is not m-invariant, the
-/// arms diverge at ROW 0 where no cross-token state can reach, and `hyper_prime_ranges`' own
-/// header documents the near-tie. The bar is the calibrated band
-/// `tests/glm5_chunked_prime_gpu.rs` already holds the chunked prime to (relative maxdiff
-/// <= 2e-5, five orders below the 1.813e0 signature of a real chunk-invariance defect) plus
-/// argmax equality. Arm 2 IS bit-identical by construction: same ranges, same per-chunk
-/// program, same operand bytes — only which host thread issues a stage and when changes.
-///
-/// Read PER CALL (the `MEMRA_MLA_TC_PREFILL` rollback-seam precedent): `glm5-prime-v2-gate`
-/// flips both arms inside one process, and a latched flag would make the second arm a copy of
-/// the first.
 /// Where `hyper_range_prime` finds the DFlash2 hc tap sink for the walk it is running.
 ///
 /// The serial walks read it from the cache, exactly as before. The PIPELINED prime cannot:
@@ -983,19 +936,66 @@ pub(crate) fn hyper_pipe_tap_refusal(
     )
 }
 
+/// `MEMRA_HYPER_PRIME_V2` — the mHC PRIME schedule door (lane/b200-prefill-roofline-20260902,
+/// **default OFF**; named `MEMRA_HYPER_PRIME_V2` until 2026-11-03). It is host-side scheduling,
+/// so it is not build-gated like the B200 kernel doors: it runs on any build, and its receipts
+/// are from a B200 pair (the per-hardware law: another rig owes its own A/B before a default
+/// moves there). The old name refuses at server boot (env audit). It arms two changes to the
+/// HyperConnections prime and nothing else; decode, spec, batch and every non-hyper trunk are
+/// untouched by construction (the only two call sites are `hyper_prime_ranges` and
+/// `prime_cache_hyper`'s pp branch).
+///
+/// WHY, measured. `prime_chunk_tokens` applies the `PRIME_PIPE_MICROBATCHES = 8` geometry
+/// whenever a PP-2 stage fence exists, so a 4096-token glm5 prime splits into EIGHT calls. That
+/// geometry belongs to [`HybridModel::prime_cache_pp2_pipelined`], the SERIAL trunk's
+/// microbatched PP-2 prime — the hyper walk has never called it, so glm5 pays the split and
+/// collects none of the overlap. The split is not free: every one of the 288 experts is hit at
+/// any width past a few hundred tokens, so a MoE layer reads its WHOLE 4.08 GB slab once per
+/// CALL. Eight calls read 1,369.8 GB where one reads 171.2 GB; the HBM floor rises 21.4 ->
+/// 171.2 ms, the 4k prime crosses from compute-bound to memory-bound (854 -> 107 FLOP/B against
+/// a B200 ridge of 275), and pairs-per-expert falls 113.8 -> 14.2, under the grouped GEMM's
+/// `MEMRA_F16G_SK_CROSS` 64-row tile crossover. The 41.9k prime, whose chunk clamps at
+/// `PRIME_CHUNK_MAX_TOKENS` instead, runs 3.3x more efficient per FLOP on the same binary
+/// (87.0 vs 26.6 TFLOP/s) — the same fact from the other side. Arithmetic:
+/// `research/b200-prefill-roofline-20260902/roofline.py`.
+///
+/// ARM 1 (schedule): `hyper_prime_ranges` takes the natural chunk
+/// (`PRIME_CHUNK_MAX_TOKENS`, the same clamp the 41.9k prime already gets) instead of the
+/// microbatch geometry. An explicit `MEMRA_PRIME_CHUNK` stays authoritative and turns this arm
+/// off for that call, so the operator override is never overridden.
+/// ARM 2 (pipeline): with two or more chunks the ppN prime runs
+/// [`HybridModel::prime_cache_hyper_pp2_pipelined`] — stage 0 of chunk k+1 on device 0 while
+/// stage 1 of chunk k runs on device 1, on two scoped host threads over disjoint per-stage
+/// caches. Two threads are REQUIRED, not a style choice: the grouped MoE prefill's sigmoid
+/// host-oracle drains the stage stream once per layer, so two CUDA streams on one host thread
+/// serialize however the calls are ordered (the same finding `prime_cache_pp2_pipelined`
+/// records for the serial trunk).
+///
+/// NUMERIC CLASS. Arm 1 is NOT bit-identical and no chunk-size change on this trunk ever was:
+/// `Engine::linear` — the cuBLASLt f32 mixes GEMM in `hyper::pre` — is not m-invariant, the
+/// arms diverge at ROW 0 where no cross-token state can reach, and `hyper_prime_ranges`' own
+/// header documents the near-tie. The bar is the calibrated band
+/// `tests/glm5_chunked_prime_gpu.rs` already holds the chunked prime to (relative maxdiff
+/// <= 2e-5, five orders below the 1.813e0 signature of a real chunk-invariance defect) plus
+/// argmax equality. Arm 2 IS bit-identical by construction: same ranges, same per-chunk
+/// program, same operand bytes — only which host thread issues a stage and when changes.
+///
+/// Read PER CALL (the `MEMRA_MLA_TC_PREFILL` rollback-seam precedent): `glm5-prime-v2-gate`
+/// flips both arms inside one process, and a latched flag would make the second arm a copy of
+/// the first.
 pub fn hyper_prime_v2_on() -> bool {
     std::env::var("MEMRA_HYPER_PRIME_V2").as_deref() == Ok("1")
 }
 
-/// Chunks primed through the pipelined mHC PP-2 walk. The engagement receipt arm 2's
-/// non-vacuity assertion reads: bit identity between two walks that both ran SERIALLY is
-/// vacuous, so the gate requires this to advance.
 /// Prime calls whose schedule was decided by `MEMRA_HYPER_PRIME_V2` arm 1 (the natural chunk).
 /// The engagement counter the gate reads: an armed door that changed no schedule is the exact
 /// failure this lane was written to catch, so "the flag was set" is never the receipt.
 pub static HYPER_PRIME_NATURAL_SCHEDULES: std::sync::atomic::AtomicU64 =
     std::sync::atomic::AtomicU64::new(0);
 
+/// Chunks primed through the pipelined mHC PP-2 walk. The engagement receipt arm 2's
+/// non-vacuity assertion reads: bit identity between two walks that both ran SERIALLY is
+/// vacuous, so the gate requires this to advance.
 pub static HYPER_PRIME_PIPELINED_CHUNKS: std::sync::atomic::AtomicU64 =
     std::sync::atomic::AtomicU64::new(0);
 
@@ -1135,8 +1135,6 @@ fn moe_dev_enabled() -> bool {
     })
 }
 
-/// Device sigmoid top-k is the default for Step-3.7 / M3 / Hy3 / GLM-DSA. `MEMRA_SIG_ROUTER=0` restores
-/// the full-logit DtoH plus `moe_route_sigmoid_host` oracle without changing expert dispatch.
 /// Where the verify-rows MoE pair's routed selection lives for one layer-call
 /// (lane/glm5-moe-loc door D). `Host` is the shipped arm: the router's pinned readback gave the
 /// host `sel`/`w`, and the host builds the pointer/scale tables. `Dev` is door D's arm: the
@@ -1148,6 +1146,8 @@ enum VrowsSel<'a> {
     Dev(&'a CudaSlice<i32>, &'a CudaSlice<f32>),
 }
 
+/// Device sigmoid top-k is the default for Step-3.7 / M3 / Hy3 / GLM-DSA. `MEMRA_SIG_ROUTER=0` restores
+/// the full-logit DtoH plus `moe_route_sigmoid_host` oracle without changing expert dispatch.
 pub(crate) fn sigmoid_router_enabled() -> bool {
     static E: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *E.get_or_init(|| {
@@ -1645,10 +1645,6 @@ fn hyper_prime_ranges_natural(t: usize, gdn_grid: bool, ring_on: bool) -> Vec<(u
     ranges
 }
 
-/// The largest number of token rows any ONE mHC prime call carries under
-/// [`hyper_prime_ranges`]. Every per-call transient in the walk — the `t*streams*hidden` stream
-/// state, the MLA query planes, and the DSA indexer's `t * n_pools` score plane — is
-/// proportional to this, so it is the single number a capacity assertion needs.
 /// Admission workspace shape of the NON-hyper prime (memra#144): the GDN / dense-MoE trunk
 /// (ornith, qwen-hybrid) and the step-TP trunk (step-3.7). `prime_layers` keeps its trunk
 /// transients in the retained prime slab pool sized by the CALL's row count
@@ -1699,6 +1695,10 @@ impl PrimeWorkspaceShape {
     }
 }
 
+/// The largest number of token rows any ONE mHC prime call carries under
+/// [`hyper_prime_ranges`]. Every per-call transient in the walk — the `t*streams*hidden` stream
+/// state, the MLA query planes, and the DSA indexer's `t * n_pools` score plane — is
+/// proportional to this, so it is the single number a capacity assertion needs.
 pub fn hyper_prime_call_rows(t: usize, n_layers: usize, gdn_grid: bool, ring_on: bool) -> usize {
     hyper_prime_ranges(t, n_layers, gdn_grid, ring_on)
         .iter()
@@ -2481,30 +2481,6 @@ impl HybridModel {
         Ok((logits, h_seed, hiddens))
     }
 
-    /// Publish this model's prefill-workspace coefficients to admission
-    /// (lane/glm5-gpf-workspace, 2026-08-30). `None` for every non-hyper trunk — the server's
-    /// admission arithmetic is then byte-identical to the pre-lane behavior for that family.
-    ///
-    /// Term-by-term, each anchored on a named allocation of the hyper prime walk (glm5 numbers
-    /// in parentheses; the full attribution table is the lane doc's §1):
-    ///   * stream state, double-buffered at `hyper::post`, PLUS the ppN boundary tx/rx pair of
-    ///     the same `[t, streams, hidden]` payload: `4 * S * H * 4` (256 KiB/token);
-    ///   * pre/norm transients (`hyper::pre` y + `rms_norm` h/z + ffn_out): `4 * H * 4`
-    ///     (64 KiB/token);
-    ///   * prime-tail hidden/norm pair (`collapse` + output-norm stack): `2 * H * 4`
-    ///     (32 KiB/token);
-    ///   * grouped-MoE prefill staging (`moe_ffn_grouped_prefill_sigmoid`): the f16 CSR
-    ///     activations `U*2H`, three f32 partial planes `3*U*4F` (gate/up/act), the f16 down
-    ///     mirror `U*2F`, the CSR-order down output + pair-order permute `2*U*4H`, and the
-    ///     scatter target `4H` — `U*(10H + 14F) + 4H` (560 KiB/token);
-    ///   * MLA query/attention planes: `heads * (qk_head_dim + v_head_dim) * 4`
-    ///     (128 KiB/token) and the k-pool idx plane `(topk/P + 1) * 4` (~2 KiB/token).
-    ///
-    /// Validation against truth: at GLM-5.3-Flash geometry the sum is ~0.92 MiB per call
-    /// token, against the 262k cell's MEASURED retained slope of ~0.8 MiB/token/card
-    /// (vramwatch.csv: +6.3 GiB across the 8,072-token prime) — the formula sits above the
-    /// measurement, never below it. The ctx-coupled score plane and the prompt-long hiddens
-    /// stack are separate coefficients on the shape; see [`HyperPrimeWorkspaceShape`].
     /// memra#144: the workspace shape of the non-hyper prime; `None` on the hyper trunk,
     /// which publishes `hyper_prime_workspace_shape` instead. Mirrors `prime_layers`'
     /// `n_ff_max` rule (the widest dense FFN, never below `n_embd`).
@@ -2547,6 +2523,30 @@ impl HybridModel {
         })
     }
 
+    /// Publish this model's prefill-workspace coefficients to admission
+    /// (lane/glm5-gpf-workspace, 2026-08-30). `None` for every non-hyper trunk — the server's
+    /// admission arithmetic is then byte-identical to the pre-lane behavior for that family.
+    ///
+    /// Term-by-term, each anchored on a named allocation of the hyper prime walk (glm5 numbers
+    /// in parentheses; the full attribution table is the lane doc's §1):
+    ///   * stream state, double-buffered at `hyper::post`, PLUS the ppN boundary tx/rx pair of
+    ///     the same `[t, streams, hidden]` payload: `4 * S * H * 4` (256 KiB/token);
+    ///   * pre/norm transients (`hyper::pre` y + `rms_norm` h/z + ffn_out): `4 * H * 4`
+    ///     (64 KiB/token);
+    ///   * prime-tail hidden/norm pair (`collapse` + output-norm stack): `2 * H * 4`
+    ///     (32 KiB/token);
+    ///   * grouped-MoE prefill staging (`moe_ffn_grouped_prefill_sigmoid`): the f16 CSR
+    ///     activations `U*2H`, three f32 partial planes `3*U*4F` (gate/up/act), the f16 down
+    ///     mirror `U*2F`, the CSR-order down output + pair-order permute `2*U*4H`, and the
+    ///     scatter target `4H` — `U*(10H + 14F) + 4H` (560 KiB/token);
+    ///   * MLA query/attention planes: `heads * (qk_head_dim + v_head_dim) * 4`
+    ///     (128 KiB/token) and the k-pool idx plane `(topk/P + 1) * 4` (~2 KiB/token).
+    ///
+    /// Validation against truth: at GLM-5.3-Flash geometry the sum is ~0.92 MiB per call
+    /// token, against the 262k cell's MEASURED retained slope of ~0.8 MiB/token/card
+    /// (vramwatch.csv: +6.3 GiB across the 8,072-token prime) — the formula sits above the
+    /// measurement, never below it. The ctx-coupled score plane and the prompt-long hiddens
+    /// stack are separate coefficients on the shape; see [`HyperPrimeWorkspaceShape`].
     pub fn hyper_prime_workspace_shape(&self) -> Option<HyperPrimeWorkspaceShape> {
         let topology = self.hyper.as_ref()?;
         let h = self.cfg.n_embd as usize;
