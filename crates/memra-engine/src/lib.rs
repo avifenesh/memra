@@ -1216,13 +1216,76 @@ pub const FA_VEC_MIN_TKV: usize = 96;
 /// measured on the qwen geometry (nkv=2); gemma4 SWA layers run nkv=8 = 4x the vec grid,
 /// which moves the crossover — sweep per model, adopt per the battery.
 pub fn fa_vec_min_tkv() -> usize {
-    static V: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
-    *V.get_or_init(|| {
+    *FA_VEC_MIN_LATCH.get_or_init(|| {
         std::env::var("MEMRA_FA_VEC_MIN")
             .ok()
             .and_then(|v| v.parse().ok())
             .unwrap_or_else(|| FA_VEC_MIN_DEFAULT.load(std::sync::atomic::Ordering::Relaxed))
     })
+}
+static FA_VEC_MIN_LATCH: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
+
+/// Load-time guard for the per-model kernel defaults that are still process globals: their
+/// readers latch the value in a OnceLock at first dispatch, so a model that loads after another
+/// model's first dispatch cannot apply its own default and would run a program its
+/// qualification never saw. Returns the refusal when `latched` holds a value other than the one
+/// this model would latch alone: its env override when that parses, else `default`.
+fn latched_default_conflict<T>(
+    knob: &str,
+    latched: Option<T>,
+    env_value: Option<&str>,
+    default: T,
+    why: &str,
+) -> Option<String>
+where
+    T: Copy + PartialEq + std::fmt::Debug + std::str::FromStr,
+{
+    let latched = latched?;
+    let want = env_value.and_then(|v| v.parse().ok()).unwrap_or(default);
+    (latched != want).then(|| {
+        format!(
+            "{knob}: this model needs {want:?} ({why}), but the process already latched \
+             {latched:?} at an earlier model's first dispatch. Per-model kernel defaults are \
+             process globals until the per-model numeric profile lands; load this model in its \
+             own process, or before any other model runs"
+        )
+    })
+}
+
+#[cfg(test)]
+mod latched_default_tests {
+    use super::latched_default_conflict;
+
+    #[test]
+    fn a_load_refuses_a_latched_kernel_default_it_cannot_apply() {
+        // nothing latched yet: the load's store still takes effect, no refusal
+        assert!(latched_default_conflict("K", None::<usize>, None, 0, "why").is_none());
+        // the NaN case: a gqa>8 load needs 0 after another model latched usize::MAX
+        let msg = latched_default_conflict("MEMRA_FA_V4_MAX", Some(usize::MAX), None, 0, "gqa 16")
+            .expect("a gqa>8 load after a v4 latch must refuse");
+        assert!(
+            msg.contains("MEMRA_FA_V4_MAX") && msg.contains("gqa 16"),
+            "{msg}"
+        );
+        // the latch agrees with this model's default: no refusal
+        assert!(latched_default_conflict("K", Some(1024u32), None, 1024, "why").is_none());
+        // an env override that parses is what this model would latch alone, on either side
+        assert!(latched_default_conflict("K", Some(256u32), Some("256"), 1024, "why").is_none());
+        assert!(latched_default_conflict("K", Some(1024u32), Some("256"), 1024, "why").is_some());
+        // an override that does not parse falls back to the default, as the latch itself does
+        assert!(latched_default_conflict("K", Some(256u32), Some("x"), 1024, "why").is_some());
+    }
+}
+
+/// [`latched_default_conflict`] for the fa-vec crossover (`fa_vec_min_tkv`).
+pub(crate) fn fa_vec_min_default_conflict(default: usize, why: &str) -> Option<String> {
+    latched_default_conflict(
+        "MEMRA_FA_VEC_MIN",
+        FA_VEC_MIN_LATCH.get().copied(),
+        std::env::var("MEMRA_FA_VEC_MIN").ok().as_deref(),
+        default,
+        why,
+    )
 }
 
 /// f16-P/V class (DEFAULT since 2026-07-23 stamp v4; MEMRA_FA_F16PV=0 = f32-class rollback):
@@ -1852,13 +1915,24 @@ mod sigmoid_topk_dispatch_tests {
 }
 
 pub(crate) fn rms_block() -> u32 {
-    static V: std::sync::OnceLock<u32> = std::sync::OnceLock::new();
-    *V.get_or_init(|| {
+    *RMS_BLOCK_LATCH.get_or_init(|| {
         std::env::var("MEMRA_RMS_BLOCK")
             .ok()
             .and_then(|v| v.parse().ok())
             .unwrap_or_else(|| RMS_BLOCK_DEFAULT.load(std::sync::atomic::Ordering::Relaxed))
     })
+}
+static RMS_BLOCK_LATCH: std::sync::OnceLock<u32> = std::sync::OnceLock::new();
+
+/// [`latched_default_conflict`] for the rms_norm block size (`rms_block`).
+pub(crate) fn rms_block_default_conflict(default: u32, why: &str) -> Option<String> {
+    latched_default_conflict(
+        "MEMRA_RMS_BLOCK",
+        RMS_BLOCK_LATCH.get().copied(),
+        std::env::var("MEMRA_RMS_BLOCK").ok().as_deref(),
+        default,
+        why,
+    )
 }
 
 pub(crate) fn fa_split_keys(t_kv: usize, n_head_kv: usize) -> usize {
@@ -2396,14 +2470,27 @@ pub fn fa_v4_at_pub(t_kv: usize) -> bool {
     fa_v4_at(t_kv)
 }
 fn fa_v4_at(t_kv: usize) -> bool {
-    static M: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
-    let mx = *M.get_or_init(|| {
+    let mx = *FA_V4_MAX_LATCH.get_or_init(|| {
         std::env::var("MEMRA_FA_V4_MAX")
             .ok()
             .and_then(|v| v.parse().ok())
             .unwrap_or_else(|| FA_V4_MAX_DEFAULT.load(std::sync::atomic::Ordering::Relaxed))
     });
     t_kv < mx
+}
+static FA_V4_MAX_LATCH: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
+
+/// [`latched_default_conflict`] for the v4 decode threshold (`fa_v4_at`). The case it exists
+/// for: a gqa>8 model whose load stores 0 after another model latched `usize::MAX`, which sends
+/// it to the v4 kernels past their q-array capacity and decodes all-NaN logits.
+pub(crate) fn fa_v4_max_default_conflict(default: usize, why: &str) -> Option<String> {
+    latched_default_conflict(
+        "MEMRA_FA_V4_MAX",
+        FA_V4_MAX_LATCH.get().copied(),
+        std::env::var("MEMRA_FA_V4_MAX").ok().as_deref(),
+        default,
+        why,
+    )
 }
 // The deep v4 twins (fa_decode_vec_q_v4_deep / _deep_dc, lane fa-decode-deep 2026-08-02) run
 // the v4 program verbatim with a de-conflicted smem layout and L2 prefetch; they are the only
