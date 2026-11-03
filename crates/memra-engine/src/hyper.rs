@@ -313,11 +313,11 @@ pub static HC_FUSED_PRE_DISPATCHES: std::sync::atomic::AtomicU64 =
 pub static HC_FUSED_PRE_V2_DISPATCHES: std::sync::atomic::AtomicU64 =
     std::sync::atomic::AtomicU64::new(0);
 
-/// The three states of `MEMRA_HC_FUSED_PRE` (default OFF): the unfused three-kernel chain,
-/// the `=1` fused kernel (`memra_dsv4_hc_pre_fused`, lane/glm5-decode-diet 2026-08-31), or
-/// the `=2` fused kernel (`memra_dsv4_hc_pre_fused_v2`, lane/b200-sinkhorn-fusion-20260902 —
-/// same stages, warp-scoped Sinkhorn sync). Any other value (unset, `0`, or unrecognized)
-/// stays `Off`, the existing "read per call" rollback-seam contract.
+/// The three states of `MEMRA_HC_FUSED_PRE`: the unfused three-kernel chain, the `=1` fused
+/// kernel (`memra_dsv4_hc_pre_fused`, lane/glm5-decode-diet 2026-08-31), or the `=2` fused
+/// kernel (`memra_dsv4_hc_pre_fused_v2`, lane/b200-sinkhorn-fusion-20260902 — same stages,
+/// warp-scoped Sinkhorn sync). Unset or unrecognized follows the build arch (`V2` on an
+/// sm_100a build, `Off` elsewhere); `0` forces `Off`. See [`hc_fused_pre_arm_from`].
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum HcFusedPreArm {
     Off,
@@ -325,8 +325,9 @@ pub enum HcFusedPreArm {
     V2,
 }
 
-/// `MEMRA_HC_FUSED_PRE` (default OFF, both `1` and `2` opt in): the three-kernel site
-/// pre-chain (rowsq_scale + Sinkhorn + collapse) runs as ONE launch per site — bit-identical
+/// `MEMRA_HC_FUSED_PRE` (unset = `V2` on an sm_100a build and the unfused chain elsewhere;
+/// `1`/`2` pick an arm, `0` forces the unfused chain): the three-kernel site pre-chain
+/// (rowsq_scale + Sinkhorn + collapse) runs as ONE launch per site — bit-identical
 /// to the unfused chain by construction in both arms (verbatim bodies, asserted bytewise in
 /// `hc_fused_pre_gpu.rs` for `=1` and by `hc-fused-gate` for `=1` vs `=2`). Read PER CALL
 /// (the `MEMRA_MOE_FUSED_EPI` rollback-seam precedent), so arms can alternate inside one
