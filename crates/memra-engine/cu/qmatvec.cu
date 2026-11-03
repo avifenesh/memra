@@ -14,8 +14,8 @@
 // PDL entry (same contract as kernels.cu): cudaGridDependencySynchronize() orders this
 // kernel's loads after the producer's writes while the grid launch overlaps the producer's
 // drain. ONLY kernels carrying this macro may be launched with
-// CU_LAUNCH_ATTRIBUTE_PROGRAMMATIC_STREAM_SERIALIZATION. sm_90+ only.
-#if !defined(MEMRA_PORTABLE_CUDA) && defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 900
+// CU_LAUNCH_ATTRIBUTE_PROGRAMMATIC_STREAM_SERIALIZATION. sm_90+ only, portable 90a included.
+#if defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 900
 #define MEMRA_PDL_ENTRY() cudaGridDependencySynchronize()
 #else
 #define MEMRA_PDL_ENTRY()
