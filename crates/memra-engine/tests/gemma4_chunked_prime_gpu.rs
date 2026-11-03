@@ -17,6 +17,9 @@
 //!   3. chunked prime then `decode_step` vs a full recompute of the longer prompt — the decode
 //!      reads what the chunks wrote (KV planes, SWA ring position, positions).
 //!
+//! A pair-only arm holds the PP-2 load to the same truth: a multi-range prime on a two-stage
+//! fence must stay on the gemma program instead of the generic pipelined PP-2 schedule.
+//!
 //! THE FIXTURE CARRIES BOTH GEMMA ATTENTION CLASSES: one sliding-window layer (hd 256, local
 //! rope, window SHORTER than the prompt so the mask is live) and one global layer (hd 512,
 //! rope_freqs-scaled rope) — gemma4's own alternation at the head dims the kernels are stamped
@@ -537,4 +540,75 @@ fn an_internally_chunked_gemma_prime_matches_the_monolithic_prime() {
             );
         }
     }
+}
+
+/// Closes the PP door when the PP-2 arm ends, panics included, so the single-device arms that
+/// share this process load unsplit again.
+struct Pp2Door;
+
+impl Pp2Door {
+    /// SAFETY: the caller holds `gpu_guard`, so no other test thread is reading the environment.
+    fn open() -> Self {
+        unsafe {
+            std::env::set_var("MEMRA_PP_STAGES", "2");
+            std::env::set_var("MEMRA_PP_DEVICES", "0,1");
+        }
+        Pp2Door
+    }
+}
+
+impl Drop for Pp2Door {
+    fn drop(&mut self) {
+        // SAFETY: still under the caller's `gpu_guard`.
+        unsafe {
+            std::env::remove_var("MEMRA_PP_STAGES");
+            std::env::remove_var("MEMRA_PP_DEVICES");
+        }
+    }
+}
+
+/// THE PP-2 SPLIT. A gemma model loaded on a two-stage fence must prime a prompt of several
+/// ranges through the gemma layer program. The PP-2 pipelined schedule walks `prime_layers`
+/// (the serial residual, embed without the sqrt(n_embd) scale), so it is not a gemma program;
+/// a multi-range gemma prime that reached it returned wrong logits with no error. Truth arm
+/// against the reference executor, on the stage-owned serving cache.
+#[test]
+#[ignore = "needs 2 CUDA devices — run under flock /tmp/memra-gpu.lock"]
+fn a_pp2_multi_range_gemma_prime_matches_the_reference_executor() {
+    let _gpu = gpu_guard();
+    force_true_f32();
+    if Engine::new(1).is_err() {
+        eprintln!("SKIP[2 CUDA devices]: PP-2 gemma multi-range prime not run");
+        return;
+    }
+    let _door = Pp2Door::open();
+    set_prime_chunk("32");
+    let h = Harness::new();
+    let n_layers = h.model.cfg.n_layer as usize;
+    assert_eq!(
+        memra_engine::pp::pp_cuts(n_layers),
+        Some(vec![0, 1, 2]),
+        "the PP-2 door must be open over the two-layer fixture"
+    );
+    let prompt = 200usize;
+    let ranges = memra_engine::hybrid_forward::prime_chunk_ranges(prompt, n_layers, false);
+    assert!(
+        ranges.len() >= 2,
+        "the arm must schedule several ranges, got {ranges:?}"
+    );
+    let vocab = VOCAB as usize;
+    let ids = tokens(prompt, 0x6E44_4000 ^ prompt as u64);
+    let want = h.reference_logits(&ids);
+    let last = &want[(prompt - 1) * vocab..prompt * vocab];
+    let mut cache = memra_engine::pp::new_cache_planned(&h.engine, &h.model.cfg, &h.plan, MAX_CTX)
+        .expect("stage-owned cache for the mini gemma4 model");
+    let (got, _seed, _hiddens) = h
+        .model
+        .prime_cache(&h.engine, &ids, &mut cache, 0)
+        .expect("PP-2 multi-range gemma prime");
+    check_truth(
+        &format!("T={prompt} PP-2 chunk=32 vs reference"),
+        &got,
+        last,
+    );
 }
