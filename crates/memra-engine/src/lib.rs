@@ -8812,62 +8812,6 @@ impl Engine {
         Ok(())
     }
 
-    /// Capture-safe twin of `nvfp4_ep_stage_inputs`: the three sources are persistent raw
-    /// device addresses owned by the root engine. Destinations remain rank-local typed slices.
-    #[allow(clippy::too_many_arguments)]
-    pub fn nvfp4_ep_stage_inputs_raw(
-        &self,
-        input_src: u64,
-        sel_src: u64,
-        w_src: u64,
-        input_bf16_dst: &mut CudaSlice<u8>,
-        sel_dst: &mut CudaSlice<i32>,
-        w_dst: &mut CudaSlice<f32>,
-        input_values: usize,
-        pairs: usize,
-        copy_weights: bool,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        if input_src == 0
-            || sel_src == 0
-            || w_src == 0
-            || input_values == 0
-            || pairs == 0
-            || input_bf16_dst.len() < 2 * input_values
-            || sel_dst.len() < pairs
-            || w_dst.len() < pairs
-        {
-            return Err(format!(
-                "W4A16 EP raw stage geometry input={input_src:#x} sel={sel_src:#x} \
-                 weights={w_src:#x} input_bf16={} sel_dst={} weights_dst={} \
-                 active={input_values} pairs={pairs}",
-                input_bf16_dst.len(),
-                sel_dst.len(),
-                w_dst.len(),
-            )
-            .into());
-        }
-        let f = self.func("nvfp4_ep_stage_inputs");
-        let n = input_values.max(pairs);
-        let cfg = LaunchConfig::for_num_elems(n as u32);
-        let (input_values, pairs, copy_weights) =
-            (input_values as i32, pairs as i32, i32::from(copy_weights));
-        let __s_b = self.gpu.stream();
-        let mut b = __s_b.launch_builder(&f);
-        b.arg(&input_src)
-            .arg(&sel_src)
-            .arg(&w_src)
-            .arg(input_bf16_dst)
-            .arg(sel_dst)
-            .arg(w_dst)
-            .arg(&input_values)
-            .arg(&pairs)
-            .arg(&copy_weights);
-        unsafe {
-            b.launch(cfg)?;
-        }
-        Ok(())
-    }
-
     #[allow(clippy::too_many_arguments)] // allow: the parameter list mirrors the kernel/FFI/call contract; bundling into a struct is a refactor, not a lint fix
     pub fn moe_router_sigmoid_topk_into(
         &self,
@@ -11018,27 +10962,6 @@ impl Engine {
         Ok(())
     }
 
-    /// counter += v (device-slot append advance; the +1 twin is `inc_seqlen`).
-    pub fn i32_add_k(
-        &self,
-        d: &mut CudaSlice<i32>,
-        v: i32,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        let f = self.func("i32_add_k");
-        let cfg = LaunchConfig {
-            grid_dim: (1, 1, 1),
-            block_dim: (32, 1, 1),
-            shared_mem_bytes: 0,
-        };
-        let __s_b = self.gpu.stream();
-        let mut b = __s_b.launch_builder(&f);
-        b.arg(d).arg(&v);
-        unsafe {
-            b.launch(cfg)?;
-        }
-        Ok(())
-    }
-
     /// pos rows from a device counter: dst[i] = ctr[0] + i (verify-stream rope positions).
     /// `dst[0..n) = base + i` with NO host-to-device copy: the base lands through the async
     /// `i32_set_k` launch and `i32_iota_from` walks from it (`MEMRA_GLM5_SPEC_DEV_IO`).
@@ -12175,29 +12098,6 @@ impl Engine {
         Ok(())
     }
 
-    /// out[t, :] += sum_j w[t*n_used+j] * y[t*n_used+j, :], the j-sum sequential per thread —
-    /// a pinned per-token reduction order, never atomics (the grouped prime's scatter).
-    pub fn moe_pairs_weighted_scatter(
-        &self,
-        y: &CudaSlice<f32>,
-        w: &CudaSlice<f32>,
-        out: &mut CudaSlice<f32>,
-        ncols: usize,
-        n_used: usize,
-        t: usize,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        let f = self.func("moe_pairs_weighted_scatter_f32");
-        let cfg = LaunchConfig::for_num_elems((t * ncols) as u32);
-        let (nc, nu, ti) = (ncols as i32, n_used as i32, t as i32);
-        let __s_b = self.gpu.stream();
-        let mut b = __s_b.launch_builder(&f);
-        b.arg(y).arg(w).arg(&mut *out).arg(&nc).arg(&nu).arg(&ti);
-        unsafe {
-            b.launch(cfg)?;
-        }
-        Ok(())
-    }
-
     // ======== A2 GROUPED MoE PREFILL KERNELS ========
 
     /// Gather m_e rows from src[T, ncols] into dst[m_e, ncols] using index array idx[m_e].
@@ -12759,57 +12659,6 @@ impl Engine {
         Ok(y)
     }
 
-    /// NVFP4 dp4a matvec over PRE-QUANTIZED q8_1 activations, writing a caller-provided output.
-    /// Same kernel and math as `qmatvec_nvfp4_fast` (which quantizes internally and allocates
-    /// its output); this entry exists so a routed-expert program can quantize one activation
-    /// ONCE and reuse it across every expert's gate/up, feed `silu_mul_scaled_q8_1`'s q8_1
-    /// straight into down, and keep persistent output workspaces — zero per-expert allocations.
-    #[allow(clippy::too_many_arguments)]
-    pub fn qmatvec_nvfp4_fast_prequant_into(
-        &self,
-        w: &CudaSlice<u8>,
-        aq: &CudaSlice<i8>,
-        ad: &CudaSlice<f32>,
-        y: &mut CudaSlice<f32>,
-        m: usize,
-        in_f: usize,
-        out_f: usize,
-        row_bytes: usize,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        assert!(
-            in_f.is_multiple_of(64),
-            "NVFP4 dp4a requires in_f % 64 == 0, got {in_f}"
-        );
-        if y.len() < m * out_f {
-            return Err(format!(
-                "NVFP4 prequant output {} is shorter than {m}x{out_f}",
-                y.len()
-            )
-            .into());
-        }
-        let f = self.func("qmatvec_nvfp4_dp4a");
-        let cfg = LaunchConfig {
-            grid_dim: (out_f as u32, m as u32, 1),
-            block_dim: (128, 1, 1),
-            shared_mem_bytes: 0,
-        };
-        let (inf, outf, mi, rb) = (in_f as i32, out_f as i32, m as i32, row_bytes as i64);
-        let __s_b = self.gpu.stream();
-        let mut b = __s_b.launch_builder(&f);
-        b.arg(w)
-            .arg(aq)
-            .arg(ad)
-            .arg(y)
-            .arg(&inf)
-            .arg(&outf)
-            .arg(&mi)
-            .arg(&rb);
-        unsafe {
-            b.launch(cfg)?;
-        }
-        Ok(())
-    }
-
     /// Fused QKV F32 matvec (one launch for all three rank-local projections; see the kernel
     /// doc for the numeric-class note). Requires `in_f % 4 == 0`.
     #[allow(clippy::too_many_arguments)]
@@ -12960,11 +12809,12 @@ impl Engine {
         Ok(())
     }
 
-    /// Selected-experts batched twin of `qmatvec_nvfp4_fast_prequant_into`: one launch covers
-    /// every selected expert, weights indexed `sel[t] * expert_stride` into a contiguous
-    /// per-rank bank, activations advancing `act_row_stride`/`ad_row_stride` elements per
-    /// selection (0 for a shared input). Per (expert, row) bit-identical to the per-expert
-    /// kernel — the batching only removes host launch latency.
+    /// Selected-experts batched twin of `qmatvec_nvfp4_fast` over pre-quantized q8_1
+    /// activations: one launch covers every selected expert, weights indexed
+    /// `sel[t] * expert_stride` into a contiguous per-rank bank, activations advancing
+    /// `act_row_stride`/`ad_row_stride` elements per selection (0 for a shared input). Per
+    /// (expert, row) bit-identical to the per-expert kernel — the batching only removes host
+    /// launch latency.
     ///
     /// `slot_major` names the LAYOUT OF THE BYTES AT `bank` and is REQUIRED, never defaulted:
     /// true routes the `_sel_v2` reader (slot g's 16 qs bytes at `g*16`, scale tail at
@@ -14101,74 +13951,6 @@ impl Engine {
         self.gpu.stream().memcpy_dtoh(&d.slice(0..n), host)?;
         self.gpu.stream().synchronize()?;
         Ok(())
-    }
-    /// f32 twin of [`Self::dtoh_u8_into_pinned`] (lane/spec-route-depth-20260902): D2H the
-    /// first `n` floats of `d` into a pinned CACHEABLE host buffer, synchronized before
-    /// returning (the caller CPU-reads the rows right after).
-    #[track_caller]
-    pub fn dtoh_f32_into_pinned(
-        &self,
-        d: &CudaSlice<f32>,
-        dst: &mut PinnedHostBuf,
-        n: usize,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        crate::dtoh_trace_hit(d.len() * 4);
-        if n > d.len() || n * std::mem::size_of::<f32>() > dst.len() {
-            return Err(format!(
-                "dtoh_f32_into_pinned range {n} floats exceeds src {} or pinned dst {} bytes",
-                d.len(),
-                dst.len(),
-            )
-            .into());
-        }
-        if n == 0 {
-            return Ok(());
-        }
-        // SAFETY: the pinned buffer is page-aligned (malloc_host) and holds >= n f32s.
-        let host: &mut [f32] = unsafe {
-            std::slice::from_raw_parts_mut(dst.as_mut_slice().as_mut_ptr() as *mut f32, n)
-        };
-        self.gpu.stream().memcpy_dtoh(&d.slice(0..n), host)?;
-        self.gpu.stream().synchronize()?;
-        Ok(())
-    }
-
-    /// ASYNC H2D of the first `n` floats of a pinned host buffer into a fresh device slice
-    /// (lane/spec-route-depth-20260902: the chunked drafter prime's tap upload). Queued on
-    /// the worker stream and NOT synchronized: the copy is DMA from page-locked memory, and
-    /// every consumer is stream-ordered behind it. CONTRACT: the caller must not write
-    /// `src` again until the stream has passed this copy (synchronize, or a later blocking
-    /// readback on the same stream) — the chunked prime synchronizes at the end of each
-    /// chunk's ingest before it refills the staging buffer.
-    pub fn htod_f32_from_pinned_async(
-        &self,
-        src: &PinnedHostBuf,
-        n: usize,
-    ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
-        if n * std::mem::size_of::<f32>() > src.len() {
-            return Err(format!(
-                "htod_f32_from_pinned_async range {n} floats exceeds pinned src {} bytes",
-                src.len(),
-            )
-            .into());
-        }
-        let mut d = self.uninit(n)?;
-        if n == 0 {
-            return Ok(d);
-        }
-        // SAFETY: page-aligned pinned allocation with >= n f32s (checked above).
-        let host: &[f32] =
-            unsafe { std::slice::from_raw_parts(src.as_slice().as_ptr() as *const f32, n) };
-        let stream = self.gpu.stream();
-        let s: &CudaStream = &stream;
-        {
-            let (pd, _guard) = d.device_ptr_mut(s);
-            // SAFETY: `pd` is a live device allocation of n f32s on this stream; `host` is
-            // page-locked memory the caller keeps alive and unmodified until the stream
-            // passes the copy (the documented contract).
-            unsafe { cudarc::driver::result::memcpy_htod_async(pd, host, s.cu_stream())? };
-        }
-        Ok(d)
     }
 
     /// 2D device-to-device copy (`cuMemcpy2DAsync`): `height` rows of `width_floats` floats
@@ -15311,47 +15093,6 @@ impl Engine {
         self.alloc_uninit::<i32>(n)
     }
 
-    /// RMSNorm: x[ncols,nrows] row-major, weight[ncols] -> dst. One block/row, 256 threads.
-    /// gemma4: 3 rms_norms of the SAME input in one launch (one reduction, three weights).
-    /// Per-output bit-identical to three rms_norm calls (verbatim reduction/scale chain).
-    #[allow(clippy::too_many_arguments)]
-    pub fn rms_norm3(
-        &self,
-        x: &CudaSlice<f32>,
-        w0: &CudaSlice<f32>,
-        w1: &CudaSlice<f32>,
-        w2: &CudaSlice<f32>,
-        d0: &mut CudaSlice<f32>,
-        d1: &mut CudaSlice<f32>,
-        d2: &mut CudaSlice<f32>,
-        ncols: usize,
-        nrows: usize,
-        eps: f32,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        let f = self.func("rms_norm3_f32");
-        let cfg = LaunchConfig {
-            grid_dim: (nrows as u32, 1, 1),
-            block_dim: (rms_block(), 1, 1),
-            shared_mem_bytes: 0,
-        };
-        let (nc, e) = (ncols as i32, eps);
-        let __s_b = self.gpu.stream();
-        let mut b = __s_b.launch_builder(&f);
-        b.arg(x)
-            .arg(w0)
-            .arg(w1)
-            .arg(w2)
-            .arg(d0)
-            .arg(d1)
-            .arg(d2)
-            .arg(&nc)
-            .arg(&e);
-        unsafe {
-            b.launch(cfg)?;
-        }
-        Ok(())
-    }
-
     /// gemma4 fused q/k/v head norms (one launch, per-row rms_norm_f32-verbatim).
     #[allow(clippy::too_many_arguments)]
     /// True when the warp-per-row qkv norm would engage for (rows, ncols) — the emit lane
@@ -16136,29 +15877,6 @@ impl Engine {
         let __s_b = self.gpu.stream();
         let mut lb = __s_b.launch_builder(&f);
         lb.arg(x).arg(&mut *dst).arg(&ni);
-        unsafe {
-            lb.launch(cfg)?;
-        }
-        Ok(())
-    }
-
-    /// In-place row softmax over [nrows, ncols] (bidirectional vision attention).
-    pub fn row_softmax(
-        &self,
-        x: &mut CudaSlice<f32>,
-        ncols: usize,
-        nrows: usize,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        let f = self.func("row_softmax_f32");
-        let nc = ncols as i32;
-        let cfg = LaunchConfig {
-            grid_dim: (nrows as u32, 1, 1),
-            block_dim: (256, 1, 1),
-            shared_mem_bytes: 0,
-        };
-        let __s_b = self.gpu.stream();
-        let mut lb = __s_b.launch_builder(&f);
-        lb.arg(&mut *x).arg(&nc);
         unsafe {
             lb.launch(cfg)?;
         }
@@ -17655,41 +17373,9 @@ impl Engine {
         Ok(())
     }
 
-    pub fn add_q8_1(
-        &self,
-        a: &CudaSlice<f32>,
-        b: &CudaSlice<f32>,
-        res: &mut CudaSlice<f32>,
-        ncols: usize,
-        nrows: usize,
-    ) -> Result<(CudaSlice<i8>, CudaSlice<f32>), Box<dyn std::error::Error>> {
-        debug_assert!(ncols.is_multiple_of(128));
-        let mut out_q = self.alloc_uninit::<i8>(nrows * ncols)?;
-        let mut out_d = self.alloc_uninit::<f32>(nrows * (ncols / 32))?;
-        let f = self.func("add_q8_1_f32");
-        let cfg = LaunchConfig {
-            grid_dim: (nrows as u32, 1, 1),
-            block_dim: (rms_block(), 1, 1),
-            shared_mem_bytes: 0,
-        };
-        let nc = ncols as i32;
-        let __s_b2 = self.gpu.stream();
-        let mut b2 = __s_b2.launch_builder(&f);
-        b2.arg(a)
-            .arg(b)
-            .arg(&mut *res)
-            .arg(&mut out_q)
-            .arg(&mut out_d)
-            .arg(&nc);
-        unsafe {
-            b2.launch(cfg)?;
-        }
-        Ok((out_q, out_d))
-    }
-
     /// E4B FFN-tail exit fusion (glue wave 5): resid = b + rms(a, wa) emitted f32 + q8_1 pair
-    /// in ONE launch — replaces rms_norm(a,wa->sn) + add_q8_1(sn,b). Same rms_block() config
-    /// as both parents (bit-identity: identical reduction + quad-walk quantize).
+    /// in ONE launch — replaces rms_norm(a,wa->sn) followed by an add + q8_1 quantize of (sn,b).
+    /// Same rms_block() config as rms_norm (identical reduction + quad-walk quantize).
     #[allow(clippy::too_many_arguments)] // allow: the parameter list mirrors the kernel/FFI/call contract; bundling into a struct is a refactor, not a lint fix
     pub fn rms_pre_add_q8_1(
         &self,
