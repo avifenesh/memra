@@ -27,6 +27,23 @@ published and are the only endpoint for — is REQUIRED: the battery refuses the
 its GGUF is absent from the rig rather than reporting it skipped.** A `vendor` model is
 required when present and needs an explicit `--allow-missing-vendor` when not.
 
+**The tag battery covers the qwen35 class only** (owner, 2026-11-03). The roster has two
+rows, both NVFP4+Q5_K MTP GGUFs: Ornith-1.5-35B-A3B (`own`, `qwen35moe` architecture, the
+`qwen35_moe` pack) and Qwen3.8-27B (`vendor`, `qwen35`). `tools/release_qualification.py`
+binds the expected cells to exactly those rows: one kernel cell plus one argmax and one spec
+cell per row. kernel-check runs once, on the first roster file present; its required
+`kernel-check-step35.cells` are synthetic Step kernel and PP-schedule cells, not a Step model
+run. A tag PASS therefore carries no model evidence for `gemma4_dense`, `gemma4_moe`,
+`step35`, `glm5_next`, `glm_dsa`, `deepseek_v4`, `hy3` or any other pack, nor for weight
+formats those two files do not carry (block FP8, Q4_0 and IQ4_XS among them). Their
+evidence comes from their own family gates: the pack's gate manifest (`memra model verify`),
+the scoped battery's `run-gen` and `run-spec` cells on each family a change reaches
+([AGENTS.md](../AGENTS.md#match-validation-to-the-changed-behavior)), and the `step-pro`
+hardware gate for Step-3.7 on RTX PRO 6000
+([Testing](TESTING.md#target-aware-release-evidence)). Between changes they are re-run by the
+daily per-device regression run, which is owner policy and has no tracked runner in this repo
+yet. Do not read a tag receipt as a claim about a family the roster does not name.
+
 The battery clears `MEMRA_KC_FAST` and `MEMRA_KC_ONLY`, requires the cells in
 `tools/kernel-check-27b.cells` and `tools/kernel-check-step35.cells`, and checks the final
 kernel cell/skip summary against the named results. The receipt reports executed and required
