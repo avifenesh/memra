@@ -2742,11 +2742,11 @@ impl DflashDraft {
             // full non-causal attention: every block query sees all ctx+b keys.
             let mut attn = e.uninit(b * nh * hd)?;
             let scale = 1.0f32 / (hd as f32).sqrt();
-            // NAIVE SDPA for first light: fa_prefill's NON-CAUSAL arm with T != T_kv is
-            // BROKEN (attn maxdiff 0.34 vs the torch oracle; q/k inputs bit-close — no
-            // existing caller exercises that shape class, jsonl 2026-07-13). The 16 x
-            // (ctx+16) block attention is tiny; the fa arm returns behind this seam once
-            // its kernel is fixed + parity-gated.
+            // NAIVE SDPA: fa_prefill's NON-CAUSAL arm with T != T_kv is BROKEN (attn
+            // maxdiff 0.34 vs the torch oracle; q/k inputs bit-close — no existing caller
+            // exercises that shape class, jsonl 2026-07-13). The 16 x (ctx+16) block
+            // attention is tiny. An fa arm returns only with a fixed kernel and its parity
+            // receipt (FLAGS.md, removed doors 2026-11-03).
             if self.dflash2.is_some() && c.layer_sliding[li] {
                 // DFlash2 non-causal symmetric window (config is_causal=false, all
                 // layers sliding). The kernel masks only keys OLDER than
@@ -2770,8 +2770,6 @@ impl DflashDraft {
                     c,
                     0,
                 )?;
-            } else if std::env::var("MEMRA_DFLASH_FA").is_ok() {
-                e.fa_prefill(&q, &k, &v, &mut attn, hd, nh, nkv, b, ctx + b, scale, false)?;
             } else {
                 e.sdpa_naive(&q, &k, &v, &mut attn, hd, nh, nkv, b, ctx + b, scale, false)?;
             }
@@ -3330,20 +3328,6 @@ impl DflashDraft {
                     scale,
                     c,
                     floor_phys,
-                )?;
-            } else if std::env::var("MEMRA_DFLASH_FA").is_ok() {
-                e.fa_prefill(
-                    &q,
-                    &kv.k[li],
-                    &kv.v[li],
-                    &mut attn,
-                    hd,
-                    nh,
-                    nkv,
-                    b,
-                    ctx_phys + b,
-                    scale,
-                    false,
                 )?;
             } else {
                 e.sdpa_naive(
