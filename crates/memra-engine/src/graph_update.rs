@@ -250,7 +250,6 @@ pub fn fa_plan(
             | "fa_decode_vec_q_v4_deep_dc"
             | "fa_decode_vec_q_v3_dc"
             | "fa_decode_vec_q_v2_dc"
-            | "fa_decode_vec_q_dc"
             | "fa_decode_vec_q_dpl16_dc" => {
                 mains.push((
                     i,
