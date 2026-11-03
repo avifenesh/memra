@@ -6588,6 +6588,22 @@ fn dspark_spec_boot_conflict(
     None
 }
 
+/// Boot verdict for the drafter routes (gemma spec, dspark, glm5 spec) under
+/// `MEMRA_SERVE_BATCH=0`. Those routes run only from the batched scheduler's spec dispatch.
+/// The unbatched loop steps every session through `step_session`, which has no route arm and
+/// no cache for a route session (admission leaves it None for the route's first tick), so every
+/// routed request faulted. The pair was never co-gated, so it refuses at boot by name.
+fn drafter_route_batching_conflict(batching: bool, armed: &[&str]) -> Option<String> {
+    if batching || armed.is_empty() {
+        return None;
+    }
+    Some(format!(
+        "MEMRA_SERVE_BATCH=0 with the {} route armed: drafter routes run only under batched \
+         scheduling; unset MEMRA_SERVE_BATCH or disarm the route",
+        armed.join(" and ")
+    ))
+}
+
 /// Boot verdict for the glm5 TP-2 walk on a serving worker (MEMRA_GLM5_TP,
 /// lane/glm5-tp-serve-20260907). PURE (env values in, verdict out) so the tooth below
 /// exercises every arm without a worker spawn; the caller panics on `Err` and prints the
@@ -27920,6 +27936,19 @@ pub fn run(
         if dspark_drafts.is_empty() {
             panic!("MEMRA_DSPARK_SPEC=1 but no qwen-hybrid (non-gemma) model is loaded");
         }
+    }
+    let mut armed_routes: Vec<&str> = Vec::new();
+    if !gemma_drafts.is_empty() {
+        armed_routes.push("gemma spec (MEMRA_GEMMA4_SPEC)");
+    }
+    if !dspark_drafts.is_empty() {
+        armed_routes.push("dspark (MEMRA_DSPARK_SPEC=1)");
+    }
+    if loaded.values().any(glm5_spec_capable) {
+        armed_routes.push("glm5 spec (MEMRA_GLM5_SPEC=1)");
+    }
+    if let Some(msg) = drafter_route_batching_conflict(serve_batching(), &armed_routes) {
+        panic!("{msg}");
     }
     // MEMRA_MTP_SKIP serving policy (mtp-skip lane 2026-08-30; refuse-loud contract 2026-08-31,
     // hermes finding baf261e2bfdae118). The loader already refused the contradictory
@@ -66847,7 +66876,28 @@ mod resume_sampler_door_tests {
 
 #[cfg(test)]
 mod dspark_boot_conflict_tests {
-    use super::dspark_spec_boot_conflict;
+    use super::{drafter_route_batching_conflict, dspark_spec_boot_conflict};
+
+    /// `MEMRA_SERVE_BATCH=0` beside an armed drafter route used to boot, then fault every
+    /// routed request in `step_session` (no route arm, no cache). It refuses by name now.
+    #[test]
+    fn unbatched_serving_refuses_an_armed_drafter_route() {
+        assert!(drafter_route_batching_conflict(true, &["dspark (MEMRA_DSPARK_SPEC=1)"]).is_none());
+        assert!(drafter_route_batching_conflict(false, &[]).is_none());
+        let msg = drafter_route_batching_conflict(
+            false,
+            &[
+                "gemma spec (MEMRA_GEMMA4_SPEC)",
+                "glm5 spec (MEMRA_GLM5_SPEC=1)",
+            ],
+        )
+        .expect("an armed route under MEMRA_SERVE_BATCH=0 must refuse");
+        assert!(msg.contains("MEMRA_SERVE_BATCH=0"), "{msg}");
+        assert!(
+            msg.contains("MEMRA_GEMMA4_SPEC") && msg.contains("MEMRA_GLM5_SPEC"),
+            "{msg}"
+        );
+    }
 
     #[test]
     fn refuse_list_covers_step_tp_and_ep() {
