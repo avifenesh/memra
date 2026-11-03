@@ -159,6 +159,14 @@ Since 2026-11-03 the script also reads `getenv` lines in the CUDA/C sources (eve
 hole; it is catalogued in §4. The census went 887 → 894 names; the other six CUDA-side names
 were already catalogued. `tools/test_check_flags.sh` gates the CUDA pass (cause 3).
 
+The same day the script began reading the CPU expert companion: the sources
+`tools/build_cpu_expert_companion.sh` compiles (today `tools/memra_cpu_experts.cpp`, the library
+the engine dlopens through `MEMRA_CPU_EXPERT_LIB`). The hand audit covered that file and the
+script did not, so a new companion door could pass the pre-push hook with no row. Its 11
+`MEMRA_CPU_EXPERT_*` reads were all catalogued already; the census went 894 → 905 names. A build
+script that names a missing source, or none, is refused. `tools/test_check_flags.sh` gates the
+pass (cause 4).
+
 ---
 
 ## 1. Runtime parameters
