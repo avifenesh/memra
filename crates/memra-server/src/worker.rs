@@ -41255,15 +41255,12 @@ fn dedup_interactive_prefixes(
     advanced
 }
 
-/// One scheduler tick for one session. Returns Ok(true) if still running, Ok(false) if retired.
-/// Decomposes `generate_with`'s loop body into a single per-session step (same semantics):
-///   - prefill phase: consume ONE prompt token via decode_step, accept it into the sampler.
-///   - decode phase: sample from last_logits, accept, stream the token, check EOS/stop/ctx, then
-///     run ONE decode_step to produce the next logits.
-///     One prefill tick for a session under a token budget. Returns tokens consumed.
-///     Same chunking laws as step_session's prefill phase (PRIME_MIN_T floor, tail handling). The
-///     tail-handling half of that claim was FALSE until 2026-08-13 — this site's merge was a no-op
-///     while both sibling sites' worked; see the tail-merge comment inside.
+/// One prefill tick for a session under a token budget. Returns tokens consumed. It primes
+/// budget-sized chunks through `prime_cache` (a model with no chunked prime takes the whole
+/// queued prompt in one call) and reaches tokenwise `decode_step` only on its fallback branch.
+/// Same chunking laws as step_session's prefill phase (PRIME_MIN_T floor, tail handling). The
+/// tail-handling half of that claim was FALSE until 2026-08-13 — this site's merge was a no-op
+/// while both sibling sites' worked; see the tail-merge comment inside.
 #[allow(clippy::too_many_arguments)] // allow: the parameter list mirrors the kernel/FFI/call contract; bundling into a struct is a refactor, not a lint fix
 fn prefill_tick(
     engine: &Engine,
@@ -43616,6 +43613,11 @@ fn step_spec_pooled(
     results
 }
 
+/// One scheduler step for one session. Returns Ok(true) if still running, Ok(false) if retired.
+///   - prefill phase: prime the queued prompt in chunked `prime_cache` calls of up to
+///     `PREFILL_TICK_T` tokens; a tail below `PRIME_MIN_T` takes tokenwise `decode_step`.
+///   - decode phase: sample from last_logits, accept, stream the token, check EOS/stop/ctx, then
+///     produce the next logits.
 fn step_session(
     engine: &Engine,
     loaded: &HashMap<String, LoadedModel>,
