@@ -3830,7 +3830,7 @@ pub fn hc_pre_sink_reg_from(v: Option<&str>, built_arch: &str) -> bool {
 /// overlapped with the other warps' combine) instead of `_v3`. Same arithmetic in the same
 /// order, bit-identical by construction (gate `tests/hc_pre_v4_gpu.rs`); the launcher refuses
 /// shapes the register schedule does not fit (40025) and the caller then runs v3 unchanged.
-/// Default OFF until its model-scale row (new-flags law).
+/// Default ON on sm_100a builds, OFF elsewhere ([`hc_pre_v4_on_from`]); `=0` is the rollback.
 pub fn hc_pre_v4_on() -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *ON.get_or_init(|| {
