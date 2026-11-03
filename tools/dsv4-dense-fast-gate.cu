@@ -176,7 +176,7 @@ static void gated_case(int rank,int na,int k,int m){
 }
 int main(int argc,char** argv){try{
     api(memra_dsv4_hc_dot_split_set_for_gate(0));
-    insist(memra_dsv4_hc_dot_split_slices_for_gate()==0,"HC split control override");
+    insist(memra_dsv4_hc_dot_split_slices()==0,"HC split control override");
     bool reverse=false,timing=true;std::string dir;
     for(int i=1;i<argc;++i){std::string a=argv[i];if(a=="--reverse")reverse=true;else if(a=="--check-only")timing=false;else if(dir.empty())dir=a;else throw std::runtime_error("usage: component [operand-dir] [--reverse] [--check-only]");}
     int devices=0;ck(cudaGetDeviceCount(&devices));insist(devices==2,"two GPUs");

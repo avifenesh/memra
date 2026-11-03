@@ -597,7 +597,7 @@ extern "C" int memra_dsv4_hc_dot_split_set_for_gate(int slices) {
     dsv4_hc_dot_split_slices = slices;
     return 0;
 }
-extern "C" int memra_dsv4_hc_dot_split_slices_for_gate() {
+extern "C" int memra_dsv4_hc_dot_split_slices() {
     return dsv4_hc_dot_split_slices;
 }
 template<int S>

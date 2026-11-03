@@ -177,7 +177,7 @@ static void admission(){
 int main(int argc, char** argv) try {
     // This gate measures exact-tail, not the newer dense-fast implementation.
     api(memra_dsv4_hc_dot_split_set_for_gate(0));
-    insist(memra_dsv4_hc_dot_split_slices_for_gate()==0,"HC split control override");
+    insist(memra_dsv4_hc_dot_split_slices()==0,"HC split control override");
     api(memra_dsv4_dense_fast_set_for_gate(0));
     insist(memra_dsv4_dense_fast_enabled_for_gate()==0,"dense-fast control override");
     if(argc==2 && !strcmp(argv[1],"--check-controls")) {

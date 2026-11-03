@@ -47,7 +47,7 @@ pub use crate::dsv4_graph::Dsv4LayerCapture;
 use crate::dsv4_topology::{self, Dsv4Placement, Dsv4TopologyPlan};
 
 unsafe extern "C" {
-    fn memra_dsv4_hc_dot_split_slices_for_gate() -> i32;
+    fn memra_dsv4_hc_dot_split_slices() -> i32;
     fn memra_dsv4_hc_dot_split(
         x: *const f32,
         w: *const f32,
@@ -4315,9 +4315,9 @@ impl Dsv4Gpu {
         me.validate_matrix_program()?;
         if ep_requested {
             if topology.is_tp_ep() {
-                me.enable_tp_ep_local_banks_for_gate()?;
+                me.enable_tp_ep_local_banks()?;
             } else {
-                me.enable_ep_pair_for_gate()?;
+                me.enable_ep_pair()?;
             }
         }
         me.validate_matrix_program()?;
@@ -4481,7 +4481,7 @@ impl Dsv4Gpu {
     /// Load-time residency transition and one-load gate seam. Existing decode
     /// states/graphs must be discarded before calling. The normal EP entry is
     /// MEMRA_DSV4_EP=pair, resolved once by the loader.
-    fn enable_tp_ep_local_banks_for_gate(&mut self) -> Res<()> {
+    fn enable_tp_ep_local_banks(&mut self) -> Res<()> {
         if self.ep_enabled {
             return Ok(());
         }
@@ -4587,9 +4587,9 @@ impl Dsv4Gpu {
         Ok(())
     }
 
-    pub fn enable_ep_pair_for_gate(&mut self) -> Res<()> {
+    pub fn enable_ep_pair(&mut self) -> Res<()> {
         if self.topology.is_tp_ep() {
-            return self.enable_tp_ep_local_banks_for_gate();
+            return self.enable_tp_ep_local_banks();
         }
         if self.ep_enabled {
             return Ok(());
@@ -10060,7 +10060,7 @@ impl Dsv4Gpu {
         if self.dots_f32
             && rows == 24
             && w == 16384
-            && unsafe { memra_dsv4_hc_dot_split_slices_for_gate() } != 0
+            && unsafe { memra_dsv4_hc_dot_split_slices() } != 0
         {
             unsafe {
                 ck(
@@ -16414,7 +16414,7 @@ impl Dsv4Gpu {
         host_math: bool,
     ) -> Res<()> {
         let stream = st.gpu.stream();
-        let slices = unsafe { memra_dsv4_hc_dot_split_slices_for_gate() };
+        let slices = unsafe { memra_dsv4_hc_dot_split_slices() };
         if self.small_kernel_diet
             && !host_math
             && self.dots_f32
@@ -16522,7 +16522,7 @@ impl Dsv4Gpu {
         if self.dots_f32
             && rows == 24
             && w == 16384
-            && unsafe { memra_dsv4_hc_dot_split_slices_for_gate() } != 0
+            && unsafe { memra_dsv4_hc_dot_split_slices() } != 0
         {
             unsafe {
                 ck(

@@ -65,7 +65,7 @@ static void check_rc(int rc, const char* what) {
 // before any CUDA call/timing, so the control's measured envelope is unchanged.
 static void pin_control_policy() {
     check_rc(::memra_dsv4_hc_dot_split_set_for_gate(0), "HC split control OFF");
-    if (::memra_dsv4_hc_dot_split_slices_for_gate() != 0) {
+    if (::memra_dsv4_hc_dot_split_slices() != 0) {
         std::fprintf(stderr, "HC split control override did not hold\n");
         std::exit(2);
     }
