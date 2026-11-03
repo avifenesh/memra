@@ -1,0 +1,9 @@
+07:24:44 start q27-memra-gguf-dflash-gb10-b-rh base=http://127.0.0.1:8091 model=q38 node=gb10-b
+07:26:06 warm {"size": 8192, "users": 1, "cold_max_s": 11.52, "turn256": [0.57, 0.57]} {"size": 32768, "users": 1, "cold_max_s": 49.78, "turn256": [0.72, 0.72]} 
+08:04:25 cell c1 {"arm": "q27-memra-gguf-dflash-gb10-b-rh", "users": 1, "max_tokens": 768, "seed": 1234, "think": 1, "temperature": 1.0, "turns": 48, "tokens": 19373, "wall_s": 16
+08:12:29 cell c4 {"arm": "q27-memra-gguf-dflash-gb10-b-rh", "users": 4, "max_tokens": 768, "seed": 1234, "think": 1, "temperature": 1.0, "turns": 48, "tokens": 18599, "wall_s": 47
+08:17:56 cell c8 {"arm": "q27-memra-gguf-dflash-gb10-b-rh", "users": 8, "max_tokens": 768, "seed": 1234, "think": 1, "temperature": 1.0, "turns": 48, "tokens": 18683, "wall_s": 31
+08:22:51 cell c16 {"arm": "q27-memra-gguf-dflash-gb10-b-rh", "users": 16, "max_tokens": 768, "seed": 1234, "think": 1, "temperature": 1.0, "turns": 48, "tokens": 18599, "wall_s": 2
+08:27:42 cell c32 {"arm": "q27-memra-gguf-dflash-gb10-b-rh", "users": 32, "max_tokens": 768, "seed": 1234, "think": 1, "temperature": 1.0, "turns": 48, "tokens": 18599, "wall_s": 2
+MemAvailable min 28.33 GiB, median 57.57 GiB over 3759 s
+08:27:42 end
