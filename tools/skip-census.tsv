@@ -66,7 +66,6 @@ memra-engine	one_shot_all_reduce_matches_the_host_sum_bitwise	crates/memra-engin
 memra-engine	one_shot_into_matches_the_in_place_form_bitwise	crates/memra-engine/tests/tp_ar_gpu.rs	SKIP[2 CUDA devices]: multi-GPU test not run
 memra-engine	perturbing_the_bias_moves_the_selection	crates/memra-engine/tests/router_fused_gpu.rs	SKIP[CUDA device]: GPU test not run
 memra-engine	perturbing_the_norm_weight_moves_the_fused_output	crates/memra-engine/tests/hc_pre_norm_fuse_gpu.rs	SKIP[CUDA device]: GPU test not run
-memra-engine	q8_narrow_f32in_matches_quantize_then_mmvq_bitwise	crates/memra-engine/tests/q8_narrow_f32in_gpu.rs	SKIP[CUDA device]: GPU test not run
 memra-engine	spill_pread::tests::unaligned_direct_read_without_window_is_refused	crates/memra-engine/src/spill_pread.rs	SKIP[O_DIRECT-enforcing filesystem]: unaligned-offset red control not run
 memra-gguf	config::minimax_tests::minimax_name_mapping_against_index	crates/memra-gguf/src/config.rs	SKIP[{MINIMAX_DIR}]: MiniMax name mapping against the index not run
 memra-gguf	config::minimax_tests::parse_minimax_m3_vl	crates/memra-gguf/src/config.rs	SKIP[{MINIMAX_DIR}]: MiniMax-M3-VL config parse not run
