@@ -3621,7 +3621,8 @@ pub fn topk_shards_dispatches() -> u64 {
     TOPK_SHARDS_DISPATCHES.load(std::sync::atomic::Ordering::Relaxed)
 }
 
-/// `MEMRA_TOPK_WARP=1` (lane/draft-topk-warp-20260905, default OFF, decide-by 2026-09-19):
+/// `MEMRA_TOPK_WARP=1` (lane/draft-topk-warp-20260905, default OFF, decide-by 2026-11-17 on
+/// the `topkab` cells its FLAGS.md row names; box receipts +1.12% and +4.4% on the PP-2 pair):
 /// `topk_rows` runs the warp-merged exact twin pair (`topk_rows_wshard_k{8,16,32}_f32` +
 /// `topk_rows_wshard_merge_f32`: register lane lists at a compile-time k with an unrolled
 /// insertion, shuffle-argmax merges inside each block and across the shards) instead of the
