@@ -8513,8 +8513,8 @@ impl Engine {
         Ok((sel_idx, sel_w))
     }
 
-    /// gemma4 twin: per-expert output scale folded into the topk renorm write (replaces the
-    /// separate moe_w_exscale launch; value chain identical: (w/ws) * s[sel]).
+    /// gemma4 twin: per-expert output scale folded into the topk renorm write (replaced the
+    /// separate moe_w_exscale launch, since deleted; value chain identical: (w/ws) * s[sel]).
     pub fn moe_router_topk_scaled(
         &self,
         logits: &CudaSlice<f32>,
@@ -11191,26 +11191,6 @@ impl Engine {
         Ok(())
     }
 
-    /// gemma4 R3 device fold: w[i] *= s[sel[i]] over the router's [n] (sel, w) pair.
-    pub fn moe_w_exscale(
-        &self,
-        w: &mut CudaSlice<f32>,
-        sel: &CudaSlice<i32>,
-        s: &CudaSlice<f32>,
-        n: usize,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        let f = self.func("moe_w_exscale");
-        let cfg = LaunchConfig::for_num_elems(n as u32);
-        let ni = n as i32;
-        let __s_b = self.gpu.stream();
-        let mut b = __s_b.launch_builder(&f);
-        b.arg(w).arg(sel).arg(s).arg(&ni);
-        unsafe {
-            b.launch(cfg)?;
-        }
-        Ok(())
-    }
-
     /// Down-projection macro fold: w[i] *= macros[2*n_expert + sel[i]] on the device router
     /// weights (one launch per MoE layer, only for macro-carrying artifacts — see MoeWeights).
     pub fn moe_w_scale_by_expert(
@@ -13830,197 +13810,6 @@ impl Engine {
         Ok(())
     }
 
-    /// W4A16 selected-expert down projection plus owner-local route combine. The destination may
-    /// reside in the model engine's peer-accessible root pool.
-    #[allow(clippy::too_many_arguments)]
-    pub fn qmatvec_nvfp4_bf16_sel_down_fma_into(
-        &self,
-        bank: &CudaSlice<u8>,
-        sel: &CudaSlice<i32>,
-        activation_bf16: &CudaSlice<u8>,
-        route_weights: &CudaSlice<f32>,
-        macros_down: &CudaSlice<f32>,
-        dst: &mut cudarc::driver::CudaViewMut<f32>,
-        n_sel: usize,
-        in_f: usize,
-        out_f: usize,
-        row_bytes: usize,
-        expert_stride: usize,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        if !in_f.is_multiple_of(64)
-            || sel.len() < n_sel
-            || route_weights.len() < n_sel
-            || activation_bf16.len() < 2 * n_sel * in_f
-            || dst.len() < out_f
-        {
-            return Err(format!(
-                "W4A16 NVFP4 down selected geometry sel={} act={} weights={} dst={} \
-                 n_sel={n_sel} in={in_f} out={out_f}",
-                sel.len(),
-                activation_bf16.len(),
-                route_weights.len(),
-                dst.len(),
-            )
-            .into());
-        }
-        let f = self.func("qmatvec_nvfp4_bf16_sel_down_fma");
-        let cfg = LaunchConfig {
-            grid_dim: (out_f as u32, 1, 1),
-            block_dim: (256, 1, 1),
-            shared_mem_bytes: 0,
-        };
-        let (inf, outf, ns) = (in_f as i32, out_f as i32, n_sel as i32);
-        let (rb, es) = (row_bytes as i64, expert_stride as i64);
-        let __s_b = self.gpu.stream();
-        let mut b = __s_b.launch_builder(&f);
-        b.arg(bank)
-            .arg(sel)
-            .arg(activation_bf16)
-            .arg(route_weights)
-            .arg(macros_down)
-            .arg(dst)
-            .arg(&inf)
-            .arg(&outf)
-            .arg(&ns)
-            .arg(&rb)
-            .arg(&es);
-        unsafe {
-            b.launch(cfg)?;
-        }
-        Ok(())
-    }
-
-    /// Device-routed t=1 W4A16 down projection plus owner-local weighted combine.
-    #[allow(clippy::too_many_arguments)]
-    pub fn qmatvec_nvfp4_bf16_ep_down_fma_into(
-        &self,
-        bank: &CudaSlice<u8>,
-        sel: &CudaSlice<i32>,
-        activation_bf16: &CudaSlice<u8>,
-        route_weights: &CudaSlice<f32>,
-        macros_down: &CudaSlice<f32>,
-        dst: &mut cudarc::driver::CudaViewMut<f32>,
-        n_pairs: usize,
-        in_f: usize,
-        out_f: usize,
-        owner_start: usize,
-        owner_end: usize,
-        row_bytes: usize,
-        expert_stride: usize,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        if owner_start >= owner_end
-            || !in_f.is_multiple_of(64)
-            || sel.len() < n_pairs
-            || route_weights.len() < n_pairs
-            || activation_bf16.len() < 2 * n_pairs * in_f
-            || dst.len() < out_f
-        {
-            return Err(format!(
-                "W4A16 device EP down-FMA geometry sel={} act={} weights={} dst={} \
-                 pairs={n_pairs} in={in_f} out={out_f} owner={owner_start}..{owner_end}",
-                sel.len(),
-                activation_bf16.len(),
-                route_weights.len(),
-                dst.len(),
-            )
-            .into());
-        }
-        let f = self.func("qmatvec_nvfp4_bf16_ep_down_fma");
-        let cfg = LaunchConfig {
-            grid_dim: (out_f as u32, 1, 1),
-            block_dim: (256, 1, 1),
-            shared_mem_bytes: 0,
-        };
-        let (inf, outf, np) = (in_f as i32, out_f as i32, n_pairs as i32);
-        let (os, oe) = (owner_start as i32, owner_end as i32);
-        let (rb, es) = (row_bytes as i64, expert_stride as i64);
-        let __s_b = self.gpu.stream();
-        let mut b = __s_b.launch_builder(&f);
-        b.arg(bank)
-            .arg(sel)
-            .arg(activation_bf16)
-            .arg(route_weights)
-            .arg(macros_down)
-            .arg(dst)
-            .arg(&inf)
-            .arg(&outf)
-            .arg(&np)
-            .arg(&os)
-            .arg(&oe)
-            .arg(&rb)
-            .arg(&es);
-        unsafe {
-            b.launch(cfg)?;
-        }
-        Ok(())
-    }
-
-    /// Capture-safe twin of `qmatvec_nvfp4_bf16_ep_down_fma_into`. The destination is one
-    /// rank-owned row inside a persistent root-device slab.
-    #[allow(clippy::too_many_arguments)]
-    pub fn qmatvec_nvfp4_bf16_ep_down_fma_raw(
-        &self,
-        bank: &CudaSlice<u8>,
-        sel: &CudaSlice<i32>,
-        activation_bf16: &CudaSlice<u8>,
-        route_weights: &CudaSlice<f32>,
-        macros_down: &CudaSlice<f32>,
-        dst_raw: u64,
-        n_pairs: usize,
-        in_f: usize,
-        out_f: usize,
-        owner_start: usize,
-        owner_end: usize,
-        row_bytes: usize,
-        expert_stride: usize,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        if dst_raw == 0
-            || owner_start >= owner_end
-            || !in_f.is_multiple_of(64)
-            || sel.len() < n_pairs
-            || route_weights.len() < n_pairs
-            || activation_bf16.len() < 2 * n_pairs * in_f
-        {
-            return Err(format!(
-                "W4A16 device EP raw down-FMA geometry sel={} act={} weights={} \
-                 dst={dst_raw:#x} pairs={n_pairs} in={in_f} out={out_f} \
-                 owner={owner_start}..{owner_end}",
-                sel.len(),
-                activation_bf16.len(),
-                route_weights.len(),
-            )
-            .into());
-        }
-        let f = self.func("qmatvec_nvfp4_bf16_ep_down_fma");
-        let cfg = LaunchConfig {
-            grid_dim: (out_f as u32, 1, 1),
-            block_dim: (256, 1, 1),
-            shared_mem_bytes: 0,
-        };
-        let (inf, outf, np) = (in_f as i32, out_f as i32, n_pairs as i32);
-        let (os, oe) = (owner_start as i32, owner_end as i32);
-        let (rb, es) = (row_bytes as i64, expert_stride as i64);
-        let __s_b = self.gpu.stream();
-        let mut b = __s_b.launch_builder(&f);
-        b.arg(bank)
-            .arg(sel)
-            .arg(activation_bf16)
-            .arg(route_weights)
-            .arg(macros_down)
-            .arg(&dst_raw)
-            .arg(&inf)
-            .arg(&outf)
-            .arg(&np)
-            .arg(&os)
-            .arg(&oe)
-            .arg(&rb)
-            .arg(&es);
-        unsafe {
-            b.launch(cfg)?;
-        }
-        Ok(())
-    }
-
     /// Optional A8 fixed-slot down rows. Each owner rank writes its selected pair rows directly
     /// into the root slot slab; the root applies route weights in canonical token/slot order.
     #[allow(clippy::too_many_arguments)]
@@ -14073,75 +13862,6 @@ impl Engine {
             .arg(sel)
             .arg(aq)
             .arg(ad)
-            .arg(macros_down)
-            .arg(&dst_raw)
-            .arg(&inf)
-            .arg(&outf)
-            .arg(&np)
-            .arg(&os)
-            .arg(&oe)
-            .arg(&rb)
-            .arg(&es);
-        unsafe {
-            b.launch(cfg)?;
-        }
-        Ok(())
-    }
-
-    /// Historical A8 t=1 down + owner-local route combine into a persistent root row.
-    #[allow(clippy::too_many_arguments)]
-    pub fn qmatvec_nvfp4_q8_ep_down_fma_raw(
-        &self,
-        bank: &CudaSlice<u8>,
-        sel: &CudaSlice<i32>,
-        aq: &CudaSlice<i8>,
-        ad: &CudaSlice<f32>,
-        route_weights: &CudaSlice<f32>,
-        macros_down: &CudaSlice<f32>,
-        dst_raw: u64,
-        n_pairs: usize,
-        in_f: usize,
-        out_f: usize,
-        owner_start: usize,
-        owner_end: usize,
-        row_bytes: usize,
-        expert_stride: usize,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        if dst_raw == 0
-            || owner_start >= owner_end
-            || !in_f.is_multiple_of(64)
-            || sel.len() < n_pairs
-            || aq.len() < n_pairs * in_f
-            || ad.len() < n_pairs * (in_f / 32)
-            || route_weights.len() < n_pairs
-        {
-            return Err(format!(
-                "W4A8 device EP raw down-FMA geometry sel={} aq={} ad={} weights={} \
-                 dst={dst_raw:#x} pairs={n_pairs} in={in_f} out={out_f} \
-                 owner={owner_start}..{owner_end}",
-                sel.len(),
-                aq.len(),
-                ad.len(),
-                route_weights.len(),
-            )
-            .into());
-        }
-        let f = self.func("qmatvec_nvfp4_q8_ep_down_fma");
-        let cfg = LaunchConfig {
-            grid_dim: (out_f as u32, 1, 1),
-            block_dim: (256, 1, 1),
-            shared_mem_bytes: 0,
-        };
-        let (inf, outf, np) = (in_f as i32, out_f as i32, n_pairs as i32);
-        let (os, oe) = (owner_start as i32, owner_end as i32);
-        let (rb, es) = (row_bytes as i64, expert_stride as i64);
-        let __s_b = self.gpu.stream();
-        let mut b = __s_b.launch_builder(&f);
-        b.arg(bank)
-            .arg(sel)
-            .arg(aq)
-            .arg(ad)
-            .arg(route_weights)
             .arg(macros_down)
             .arg(&dst_raw)
             .arg(&inf)
@@ -26056,55 +25776,6 @@ impl Engine {
         let __s_b = self.gpu.stream();
         let mut b = __s_b.launch_builder(&f);
         b.arg(x).arg(w).arg(y).arg(&wi).arg(&sl).arg(&tk);
-        unsafe {
-            b.launch(cfg)?;
-        }
-        Ok(())
-    }
-
-    /// Row-offset twin of `axpy_rows_seq_md_into` (spec verify t-column combine): the
-    /// accumulation runs over rows [row0, row0+n_rows) of a taller partial slab — the
-    /// exact sequential FP chain of the base kernel over that window.
-    #[allow(clippy::too_many_arguments)]
-    pub fn axpy_rows_seq_md_off_into(
-        &self,
-        x: &CudaSlice<f32>,
-        w_route: &CudaSlice<f32>,
-        md: &CudaSlice<f32>,
-        sel: &CudaSlice<i32>,
-        y: &mut CudaSlice<f32>,
-        width: usize,
-        n_rows: usize,
-        row0: usize,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        if x.len() < (row0 + n_rows) * width
-            || w_route.len() < row0 + n_rows
-            || sel.len() < row0 + n_rows
-            || y.len() < width
-        {
-            return Err(format!(
-                "axpy_rows_seq_md_off geometry x={} w={} sel={} y={} width={width} \
-                 rows={n_rows} row0={row0}",
-                x.len(),
-                w_route.len(),
-                sel.len(),
-                y.len()
-            )
-            .into());
-        }
-        let f = self.func("axpy_rows_seq_md_off_f32");
-        let cfg = LaunchConfig::for_num_elems(width as u32);
-        let (wi, nr, r0) = (width as i32, n_rows as i32, row0 as i32);
-        let __s_b = self.gpu.stream();
-        let mut b = __s_b.launch_builder(&f);
-        b.arg(x)
-            .arg(w_route)
-            .arg(md)
-            .arg(sel)
-            .arg(y)
-            .arg(&wi)
-            .arg(&nr)
-            .arg(&r0);
         unsafe {
             b.launch(cfg)?;
         }
