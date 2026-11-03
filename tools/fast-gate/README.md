@@ -35,7 +35,10 @@ Unknown paths, index-masked inputs, ignored build inputs and broad legacy no-gat
 rows cannot establish independence. They expand the plan. Changed research data
 can be an `include_str!` fixture; a changed gate is also an input. MiMo text,
 vision, audio, MTP and serving requirements stay explicit even though the legacy
-probe registry does not cover all of them.
+probe registry does not cover all of them. The registered probes load only the
+gemma4_dense, gemma4_moe, qwen35, qwen35_moe and step35 packs; every other automatic
+pack, and FP8_BLOCK checkpoints, print as REQUIRED lines (`unprobed-model-packs`).
+`test_plan.py` fails when a pack is added without a probe or a line.
 
 Native selection is **shadow-only**. An expanded plan stops before compilation
 unless `--probes` explicitly requests named development diagnostics. At the

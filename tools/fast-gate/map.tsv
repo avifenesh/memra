@@ -15,7 +15,10 @@
 #   col 4  tier-1 spec probes (csv of ids from models.tsv), or -
 #
 # Scope union rule: none < synthetic < csv < all. Unmatched engine/runtime paths fall through
-# to the DEFAULT row at the bottom (conservative: full kernel-check + one probe per model class).
+# to the DEFAULT row at the bottom: full kernel-check plus the gemma4 and qwen35-class
+# representatives. That is not one probe per model class. The registered probes load only the
+# gemma4_dense, gemma4_moe, qwen35, qwen35_moe and step35 packs, so the plan names every other
+# pack's own gates as REQUIRED lines (dependencies.json `unprobed-model-packs`).
 #
 # The mapping encodes the dispatch structure: which kernels serve which model classes.
 # Model classes (see models.tsv): g12/g31 = gemma4 dense Q4_0; e4b shares those quant kernels
@@ -144,5 +147,6 @@
 ^(docs/|research/|agent-knowledge/|probe/|\.github/|tools/)	none	-	-
 ^[^/]*\.(md|svg|png|txt|json|lock)$	none	-	-
 # --- DEFAULT (first column literally "DEFAULT"): applied ONLY to files no row above
-# matched — it never escalates a file that already has a scoped plan. Conservative. ---
+# matched — it never escalates a file that already has a scoped plan. It reaches the gemma4
+# and qwen35 classes only; see the header for the packs no probe loads. ---
 DEFAULT	all	g12,q9,q35,gwstress	q35spec
