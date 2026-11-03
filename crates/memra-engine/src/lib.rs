@@ -22194,8 +22194,6 @@ impl Engine {
         Ok(Some((y, scale)))
     }
 
-    /// True if `qtype` has a warp-per-row MMVQ decode kernel AND MEMRA_MMVQ is set. Only the 4
-    /// daily-hot dtypes (Q8_0, Q4_K, Q6_K, NVFP4) — others keep the _dp4a matvec (oracle/fallback).
     /// Would [`Engine::matmul`] take the t=1 mmvq fast path for `w` (quantize the activation
     /// to q8_1, then `qmatvec_mmvq`)? The quantize-once-share seam asks this BEFORE quantizing a
     /// row it means to share, so a weight on another path never costs a stray quantize.
@@ -22260,6 +22258,9 @@ impl Engine {
         Ok(Some(y))
     }
 
+    /// True if `qtype` takes the warp-per-row MMVQ decode kernels: Q8_0, Q4_K, Q5_K, Q6_K, NVFP4
+    /// and Q4_0 unless `MEMRA_MMVQ=0` (then they keep the _dp4a matvec class), and F8-E4M3
+    /// always. Every other qtype keeps the _dp4a matvec (oracle/fallback).
     pub fn mmvq_supports(&self, qtype: i32) -> bool {
         // DEFAULT ON since 2026-07-08 (MEMRA_MMVQ=0 reverts to the _dp4a matvec class).
         // QT_F8_E4M3 is exempt from the MEMRA_MMVQ=0 escape: the e4m3 mmvq family is that dtype's
