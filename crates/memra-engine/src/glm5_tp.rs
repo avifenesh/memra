@@ -850,10 +850,18 @@ fn shard_cols(
             f16,
             a4,
             #[cfg(memra_cutlass)]
-                cutlass: _,
+            cutlass,
         } => {
             if *rp || fp8.is_some() || rp4.is_some() || blk.is_some() || f16.is_some() {
                 return Err("glm5-tp shard cols: a mirror layout is unwired for K slices".into());
+            }
+            // Same refusal as `shard_rows`: dropping the operand would move this tensor alone off
+            // the CUTLASS prefill program.
+            #[cfg(memra_cutlass)]
+            if cutlass.is_some() {
+                return Err(
+                    "glm5-tp shard cols: cutlass prefill operand unwired for K slices".into(),
+                );
             }
             if a4.is_some() {
                 return Err(
