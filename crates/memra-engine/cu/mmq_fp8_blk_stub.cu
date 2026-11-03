@@ -29,9 +29,8 @@ extern "C" int memra_mmq_fp8_blk(
     return 2904;
 }
 
-extern "C" int memra_fp8_blk_count_nan(const void *, size_t, unsigned int *, void *) {
-    return 2905;
-}
+// memra_fp8_blk_count_nan is not mirrored here: it is a byte scan with no MMA, defined in
+// fp8_blk_dequant.cu on every arch. Its old refusal (2905) failed every block-FP8 load on 89/90a.
 
 // Stage 1 of the reusable grouped API (mmq_fp8_blk.cu:714). The real body launches
 // quantize_mmq_e4m3_d128_kernel; there is no portable equivalent, so this refuses.

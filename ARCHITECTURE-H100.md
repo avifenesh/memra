@@ -2691,3 +2691,15 @@ the producer. The macro is now keyed on `__CUDA_ARCH__ >= 900` alone, as the cha
 already was. sm_120a and sm_100a compile the same code as before; sm_89 has no PDL and still
 compiles the wait out. No H100 cell was re-measured for this change: kernel-check, decode-dc
 and graph-decode on Hopper are the gates that prove it.
+
+**Block-128 FP8 checkpoints load on 90a (2026-11-03).** `memra_fp8_blk_count_nan` lived in
+`mmq_fp8_blk.cu`, which build.rs replaces with a refusing stub on every arch but 120a and 100a.
+The stub returned 2905, `fp8_blk_nan_count` turned that into an error, and the default-ON
+native residency arm (`MEMRA_ST_E4M3`) reached it at load, so every block-128 FP8 safetensors
+checkpoint failed to load on 90a and 89 instead of declining to the Q8_0 floor. The scan is a
+byte count with no MMA and now lives in `fp8_blk_dequant.cu`, which every arch builds. The
+per-block MMQ prefill tile stays 120a/100a only: `try_fp8_blk_mmq` now gates on the tile being
+built rather than on `portable_mma_gated()` (false on 90a), so 90a prefill takes the
+dequant-per-call Q8_0 floor and decode the portable `qmatvec_e4m3_blk_mmvq` GEMV. A resident
+native block-E4M3 expert bank still needs the tile and is refused at load with that cause. No
+H100 cell was run: a block-128 FP8 checkpoint load plus `run-gen` on Hopper is the gate.
