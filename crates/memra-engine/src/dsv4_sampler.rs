@@ -1,4 +1,6 @@
-//! Plain DSV4 device sampling. CPU radix remains the oracle and default.
+//! Plain DSV4 device sampling. CPU radix remains the oracle; the plain default is device on
+//! TP/EP (the served placement) and host on PP-2 (`Dsv4Gpu::plain_sampler`), and
+//! `MEMRA_DSV4_SAMPLER` overrides either.
 use crate::dsv4_gpu::{Dsv4PenaltyCfg, Dsv4SampleCfg, dsv4_pos_uniform};
 use cudarc::driver::{CudaSlice, CudaStream, DevicePtr, DevicePtrMut};
 use std::sync::Arc;
