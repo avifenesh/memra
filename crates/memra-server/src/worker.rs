@@ -2088,7 +2088,14 @@ pub fn prompt_source_bytes(req: &Request) -> usize {
             .len()
             .saturating_mul(std::mem::size_of::<u32>());
     }
-    let mut total = req.prompt_text.len();
+    // Every render takes chat_turns ahead of prompt_text, so with turns present prompt_text is
+    // not a source: it holds the template string a chat_turns render published (the worker's
+    // prepare or the budget render), and counting it would double the source on the next check.
+    let mut total = if req.chat_turns.is_empty() {
+        req.prompt_text.len()
+    } else {
+        0
+    };
     for turn in &req.chat_turns {
         total = total.saturating_add(turn.role.len());
         total = total.saturating_add(turn.content.len());

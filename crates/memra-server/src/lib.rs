@@ -10237,8 +10237,18 @@ fn render_prompt_ids(
     tokenizer: Option<&Tokenizer>,
     add_generation_prompt: bool,
 ) -> Result<Vec<u32>, String> {
+    render_prompt(request, tokenizer, add_generation_prompt).map(|(prompt, _)| prompt)
+}
+
+/// `render_prompt_ids` plus the rendered template string when the `chat_turns` arm ran: the
+/// string the worker's own `chat_turns` render publishes into `prompt_text`.
+fn render_prompt(
+    request: &Request,
+    tokenizer: Option<&Tokenizer>,
+    add_generation_prompt: bool,
+) -> Result<(Vec<u32>, Option<String>), String> {
     let prompt = if !request.prompt_ids.is_empty() {
-        request.prompt_ids.clone()
+        (request.prompt_ids.clone(), None)
     } else if !request.chat_turns.is_empty() {
         let tokenizer = tokenizer.ok_or("reservation tokenizer is unavailable")?;
         // The SHARED fast-path predicate (worker::plain_chat_render_path) — this is the
@@ -10273,17 +10283,17 @@ fn render_prompt_ids(
                 )
                 .map_err(|err| format!("chat template: {err}"))?
         };
-        tokenizer.encode(&rendered, true)
+        (tokenizer.encode(&rendered, true), Some(rendered))
     } else if request.chat {
         let tokenizer = tokenizer.ok_or("reservation tokenizer is unavailable")?;
         let rendered = tokenizer.apply_chat_template(
             &[("user", request.prompt_text.as_str())],
             add_generation_prompt,
         );
-        tokenizer.encode(&rendered, true)
+        (tokenizer.encode(&rendered, true), None)
     } else {
         let tokenizer = tokenizer.ok_or("reservation tokenizer is unavailable")?;
-        tokenizer.encode(&request.prompt_text, true)
+        (tokenizer.encode(&request.prompt_text, true), None)
     };
     Ok(prompt)
 }
@@ -10301,7 +10311,7 @@ fn prepare_budget_prompt(
         if let Some(trace) = request.ttft.as_ref() {
             trace.mark_tokenize_start();
         }
-        let mut prompt = render_prompt_ids(request, tokenizer, true)?;
+        let (mut prompt, rendered_chat) = render_prompt(request, tokenizer, true)?;
         if prompt.is_empty() {
             return Err("empty prompt after tokenization".into());
         }
@@ -10320,6 +10330,12 @@ fn prepare_budget_prompt(
                 }
                 let prompt_tokens = prompt.len();
                 request.prepared_prompt = Some(prompt);
+                // Publish the rendered chat string as the worker's chat_turns render does: the
+                // reuse pools' TEXT extension tier keys on prompt_text, and the worker skips
+                // that render, and its publish, once prepared_prompt is set.
+                if let Some(rendered) = rendered_chat {
+                    request.prompt_text = rendered;
+                }
                 prompt_tokens
             }
             None => prompt.len(),
@@ -25054,6 +25070,38 @@ temperature = 0.6
         sealed.push(tok.eos_id());
         assert_eq!(capture.prepared_prompt.as_deref(), Some(sealed.as_slice()));
         assert_eq!(billed, sealed.len());
+    }
+
+    /// The worker's chat_turns render publishes its template string into `prompt_text`, which
+    /// the TEXT reuse tier keys on. On a metered deployment the budget render serves in its
+    /// place, so it publishes the same string, and the source-limit check that runs again on
+    /// every worker consideration does not count that published string as a second source.
+    #[test]
+    fn budget_render_publishes_the_rendered_chat_text() {
+        let (st, tokenizer) = token_api_fixture();
+        let (tx, _rx) = worker::event_channel();
+        let mut plan = build_chat_request(
+            serde_json::from_value(json!({"model":"m", "messages":[
+                {"role":"system", "content":"Be concise."},
+                {"role":"user", "content":"Weather in Paris?"}
+            ]}))
+            .unwrap(),
+            st.caps.get("m"),
+            tx,
+            lanes::Lane::Interactive,
+            None,
+        )
+        .unwrap();
+        assert!(plan.request.prompt_text.is_empty());
+        let source = worker::prompt_source_bytes(&plan.request);
+        prepare_budget_prompt(&mut plan.request, Some(&tokenizer)).unwrap();
+        assert!(plan.request.prompt_text.contains("Weather in Paris?"));
+        assert_eq!(
+            tokenizer.encode(&plan.request.prompt_text, true),
+            plan.request.prepared_prompt.clone().unwrap(),
+            "the published string is the one the served ids encode"
+        );
+        assert_eq!(worker::prompt_source_bytes(&plan.request), source);
     }
 
     /// Budget admission runs before `decode_pending_vision` fills a chat's image units, so a
