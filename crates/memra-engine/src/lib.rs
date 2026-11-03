@@ -15537,7 +15537,9 @@ impl Engine {
         Ok(())
     }
 
-    /// gemma4: add + rms_norm3 with outputs 0/2 emitted q8_1 (zsh + moe_in) and 1 f32 (router).
+    /// gemma4: res = a+b, then the three rms_norms of res sharing one scale, with outputs 0/2
+    /// emitted q8_1 (zsh + moe_in, `quantize_q8_1`'s per-32-block arithmetic) and 1 in f32
+    /// (router).
     #[allow(clippy::too_many_arguments)]
     #[allow(clippy::type_complexity)] // allow: one-shot composite type; naming it would hide the shape that matters at the call site
     pub fn add_rms_norm3_q8z(
