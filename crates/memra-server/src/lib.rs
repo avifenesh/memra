@@ -6805,7 +6805,8 @@ fn validate_model_path(path: &str) -> Result<(), String> {
 }
 
 /// MEMRA_MODELS="name=/path.gguf[+/draft.gguf],name2=hf:owner/repo,name3=/hf_ckpt_dir".
-/// Falls back to the BASE-4 test pair. `+<draft.gguf>` after a model path attaches that
+/// Unset falls back to the BASE-4 test pair; a set value with a malformed entry or no entry
+/// refuses to start. `+<draft.gguf>` after a model path attaches that
 /// model's regime draft (docs/DRAFT-REGIME.md) — per model, not the global MEMRA_MTP_DRAFT
 /// env, so a multi-model server gives each model its own draft. Both parts accept hf: specs.
 /// A model path may also be an HF safetensors checkpoint DIRECTORY (serve-st lane,
@@ -6865,16 +6866,21 @@ fn parse_models_config() -> Vec<(String, String, Option<String>)> {
                 });
                 out.push((name.trim().to_string(), mpath, dpath));
             } else {
+                // Skipping it served the remaining entries, or with none left the BASE-4
+                // default pair below, under a config that named something else.
                 eprintln!(
-                    "[server] WARN: bad MEMRA_MODELS entry {entry:?} (want name=/path[+/draft]); skipping"
+                    "[server] FATAL: bad MEMRA_MODELS entry {entry:?} (want name=/path[+/draft])"
                 );
+                std::process::exit(1);
             }
         }
-        if !out.is_empty() {
-            return out;
+        if out.is_empty() {
+            eprintln!("[server] FATAL: MEMRA_MODELS is set but names no model");
+            std::process::exit(1);
         }
+        return out;
     }
-    // Default: the BASE-4 test pair (main=27B, judge=9B).
+    // Unset: the BASE-4 test pair (main=27B, judge=9B).
     vec![
         (
             "main".into(),
