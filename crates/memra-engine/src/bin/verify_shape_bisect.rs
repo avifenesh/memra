@@ -10,6 +10,10 @@
 //! The T=1 and T=2 runs capture every trunk layer's residual row. The first nonzero layer names
 //! the operation whose batch-width dispatch breaks speculative exactness.
 //!
+//! step35 (the sliding-gated MoE program) is unsupported and refused at load. Its served verify
+//! is `step35_verify_batch_layers`, entered from `verify_layers`; the per-layer walk this bisect
+//! reads (`decode_step_t_aux2`) has no twin of it and refuses that arch.
+//!
 //! Usage:
 //!   MEMRA_PROMPT_TOKENS='1 2 3' verify-shape-bisect <model> <prefix...> -- <probe> [watch...]
 
@@ -32,9 +36,7 @@ fn decode_b1(
     token: u32,
     cache: &mut memra_engine::cache::Cache,
 ) -> Result<Vec<f32>, Box<dyn std::error::Error>> {
-    let batched_class = model.uses_sliding_gated_moe_program()
-        || memra_engine::plan_backend::gdn_dspark_compatible(&model.plan);
-    if batched_class {
+    if memra_engine::plan_backend::gdn_dspark_compatible(&model.plan) {
         let mut caches = [cache];
         Ok(model.decode_step_batch(e, &[token], &mut caches)?.remove(0))
     } else {
@@ -118,6 +120,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         (None, Some(source)) => HybridModel::load_from_source_without_mtp(&e, source.as_ref())?,
         _ => unreachable!(),
     };
+    if model.uses_sliding_gated_moe_program() {
+        return Err(
+            "verify-shape-bisect does not support step35: its served verify is \
+                    step35_verify_batch_layers, and decode_step_t_aux2 has no twin of it"
+                .into(),
+        );
+    }
 
     let prompt = if let Ok(raw) = std::env::var("MEMRA_PROMPT_TOKENS") {
         parse_ids(&raw)?
