@@ -332,11 +332,12 @@ impl HybridModel {
                     len,
                     self.layers.len(),
                     self.gdn_prime_grid_on(),
+                    self.swa_ring_on(),
                 )
             },
         );
-        let fill_chunk = if crate::cache::swa_ring_on() {
-            crate::hybrid_forward::prime_chunk_tokens(tp, self.layers.len())
+        let fill_chunk = if self.swa_ring_on() {
+            crate::hybrid_forward::prime_chunk_tokens(tp, self.layers.len(), true)
         } else {
             std::env::var("MEMRA_PRIME_CHUNK")
                 .ok()

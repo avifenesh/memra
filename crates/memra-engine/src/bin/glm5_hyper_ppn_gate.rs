@@ -631,8 +631,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // arm 2 then holds the CHUNKED ppN prime (per-chunk transients bounded, the 262k-cell
     // fix) to bit-identity with the chunked unsplit prime, hiddens stack included. Assert the
     // split really happened, or a chunked invocation would silently gate the monolithic body.
-    let prime_calls =
-        memra_engine::hybrid_forward::hyper_prime_ranges(p, n_layers, m.gdn_prime_grid_on()).len();
+    let prime_calls = memra_engine::hybrid_forward::hyper_prime_ranges(
+        p,
+        n_layers,
+        m.gdn_prime_grid_on(),
+        m.swa_ring_on(),
+    )
+    .len();
     println!(
         "prime schedule: {prime_calls} call(s) for P={p} (MEMRA_PRIME_CHUNK={:?})",
         std::env::var("MEMRA_PRIME_CHUNK").ok()

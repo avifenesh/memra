@@ -176,9 +176,10 @@ fn the_admission_workspace_charge_is_chunk_bounded() {
         kpool_score_pool: 4,
         n_layers: 45,
         gdn_grid: false,
+        swa_ring: false,
     };
-    let rows_16k = hyper_prime_call_rows(16_384, 45, false);
-    let rows_262k = hyper_prime_call_rows(262_144, 45, false);
+    let rows_16k = hyper_prime_call_rows(16_384, 45, false, false);
+    let rows_262k = hyper_prime_call_rows(262_144, 45, false, false);
     assert!(
         rows_16k <= 4096 + 16 && rows_262k <= 4096 + 16,
         "the naked schedule bounds every call at one chunk (+ tail merge): got {rows_16k} / {rows_262k}"

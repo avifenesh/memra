@@ -5226,6 +5226,7 @@ impl DflashTapPrime {
                     hi - lo,
                     model.layers.len(),
                     model.gdn_prime_grid_on(),
+                    model.swa_ring_on(),
                 )
                 .into_iter()
                 .map(move |(start, end)| (lo + start, lo + end))

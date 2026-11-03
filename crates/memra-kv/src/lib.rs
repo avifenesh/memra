@@ -122,7 +122,8 @@ pub fn wkv_on() -> bool {
 /// 2026-08-27: the ring frees 16.4 GB on card0 at the natural 262144 context with identical
 /// throughput and ids, and the W8 doors OOM there without it). `MEMRA_SWA_RING=1` forces ON,
 /// `=0` is the kill switch either way. The default is process-wide once a step37-class model
-/// loads, so allocation and admission ask [`swa_ring_on_for_plan`], never this alone.
+/// loads, so allocation, admission and the engine's prime schedule ask
+/// [`swa_ring_on_for_plan`], never this alone.
 static SWA_RING_DEFAULT: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 pub fn set_swa_ring_default(on: bool) {
@@ -151,8 +152,9 @@ pub fn swa_ring_on_for_plan(plan: &ModelPlan) -> bool {
             == memra_gguf::execution_manifest::DecodeBatchProgram::SlidingGatedMoe
 }
 
-/// With the SWA-ring door open, `prime_chunk_tokens` caps every legal chunk at this bound. The
-/// ring carries one whole maximum-size prime chunk in addition to the reader's window.
+/// For a plan with the SWA ring ([`swa_ring_on_for_plan`]), `prime_chunk_tokens` caps every
+/// legal chunk at this bound. The ring carries one whole maximum-size prime chunk in addition
+/// to the reader's window.
 pub const PRIME_CHUNK_MAX_TOKENS: usize = 4096;
 const SWA_VIEW_ALIGNMENT_ROWS: usize = 32;
 

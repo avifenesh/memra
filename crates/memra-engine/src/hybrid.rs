@@ -4186,6 +4186,13 @@ impl HybridModel {
         self.decode_batch_program() == crate::plan_backend::DecodeBatchProgram::SlidingGatedMoe
     }
 
+    /// Does THIS model take ring-backed SWA planes (`cache::swa_ring_on_for_plan`)? The cache,
+    /// admission and the prime schedule (`hybrid_forward::prime_chunk_tokens`) all ask this,
+    /// not the process default a co-loaded step37 model arms.
+    pub fn swa_ring_on(&self) -> bool {
+        crate::cache::swa_ring_on_for_plan(&self.plan)
+    }
+
     pub fn has_plan_operation(&self, operation: memra_gguf::model_plan::OperationKind) -> bool {
         self.plan.trunk_operations().contains(&operation)
     }
