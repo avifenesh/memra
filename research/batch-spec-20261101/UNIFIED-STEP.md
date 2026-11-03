@@ -319,3 +319,7 @@ riders priced from its table.
 **Mixed-cell stream note.** c6/r1 is admitted to spec or plain depending on arrival timing, and
 it differs between boots of the reference binary itself (int2 vs int1/int3). So it is not a byte
 gate. All other streams match across every boot.
+
+## v2b removed (2026-11-03)
+
+The GB10 agentic receipts (GB10-AGENTIC.md) put captured pooled forwards at 28.3 / 39.5 / 60.3 / 66.7 tok/s against eager's 28.8 / 38.4 / 60.4 / 67.1 at c = 2 / 4 / 8 / 16: flat, as on the 5090. The forward is device-bound on both cards, so `MEMRA_POOLED_GRAPH` and the graph code are deleted, as their FLAGS row said a flat GB10 result would do. The v2b receipts above remain as the record.

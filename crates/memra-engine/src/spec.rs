@@ -2844,9 +2844,6 @@ type ProbeUnified = (
     Vec<Option<u32>>,
 );
 
-/// `ProbeUnified` plus each spec segment's checkpoint column bits (graph-vs-eager pins).
-type ProbeUnifiedCk = (ProbeUnified, Vec<Vec<u32>>);
-
 /// One member's drafted round as `pooled_draft_probe` reads it back: named fields, each a
 /// bit-exact word list (f32 values as their bits).
 type DraftProbeFields = Vec<(String, Vec<u32>)>;
@@ -2855,189 +2852,6 @@ type DraftProbeFields = Vec<(String, Vec<u32>)>;
 pub(crate) struct PooledPos<'a> {
     host: &'a [i32],
     dev: &'a CudaSlice<i32>,
-}
-
-/// What a captured pooled body reads in place of the eager walk's per-forward uploads and
-/// transients (`PooledGraphs`): the persistent pointer tables, the snapshot slabs and the rung
-/// its attention launches are sized at. `None` in the layer bodies = the eager walk.
-pub(crate) struct PooledGraphIo<'a> {
-    gdn_tbl: &'a CudaSlice<u64>,
-    lin_pos: &'a std::collections::HashMap<usize, usize>,
-    n_lin: usize,
-    fa_tbl: &'a CudaSlice<u64>,
-    fa_pos: &'a std::collections::HashMap<usize, usize>,
-    rung: usize,
-    snaps: &'a mut [Vec<(CudaSlice<f32>, CudaSlice<f32>)>],
-}
-
-/// Rows and segments a captured pooled forward can carry (the pooled walk's own bound).
-const POOLED_GRAPH_ROWS: usize = 16;
-
-/// Capture ceiling of the pooled-forward graph pool: the dspark pool's stated default
-/// (`dspark_vg_cap`) and its policy. At the ceiling the pool freezes: existing keys replay,
-/// new shapes run the eager walk, which gives the same bytes.
-const POOLED_GRAPH_MAX: usize = 256;
-
-/// How a pooled forward may use the graph pool (`verify_pooled_walk`).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum PooledGraphArm {
-    /// The eager walk, always.
-    Eager,
-    /// Replay the shape's graph, capturing it on its second sighting (the first eager walk
-    /// of a shape loads its kernels and a one-off shape never pays a capture).
-    Auto,
-    /// Replay, capturing on first sighting (benches).
-    Capture,
-}
-
-/// `MEMRA_POOLED_GRAPH=1` replays captured pooled forwards (default off: flat on the 5090,
-/// `UNIFIED-STEP.md`; the GB10 receipt decides).
-pub(crate) fn pooled_graph_on() -> bool {
-    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| std::env::var("MEMRA_POOLED_GRAPH").as_deref() == Ok("1"))
-}
-
-/// A captured pooled forward's shape: each segment's row count and whether it keeps a
-/// checkpoint (stack order), and the attention rung every row sits under.
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub(crate) struct PooledGraphKey {
-    segs: Vec<(u8, bool)>,
-    rung: usize,
-}
-
-/// CAPTURED POOLED FORWARDS (lane/batch-spec v2b). One graph per row structure
-/// (`PooledGraphKey`), replayed for every forward of that shape whatever sessions it carries:
-/// everything session-scoped the captured body reads is device data at a baked address,
-/// refreshed before each replay.
-/// - input residual (`x_in`) and row positions (`pos`), rows in stack order;
-/// - per segment and linear layer, the `[conv, ssm, alt]` state pointers (`gdn_tbl`);
-/// - per full-attention layer and row, the `(k, v)` cache pointers (`fa_tbl`);
-/// - per segment slot and linear layer, the checkpoint snapshot slabs the scans write.
-///
-/// The caller then does what captured host code cannot redo: the parity swaps, the KV and
-/// `pos` bumps and the checkpoint column copies (from the slabs, the eager walk's own copies).
-/// The body refuses shapes it cannot express: a row below the fa vec floor, rows on two split
-/// rungs, drafter taps.
-pub(crate) struct PooledGraphs {
-    n_vocab: usize,
-    lin: Vec<usize>,
-    lin_pos: std::collections::HashMap<usize, usize>,
-    fa: Vec<usize>,
-    fa_pos: std::collections::HashMap<usize, usize>,
-    conv_words: usize,
-    ssm_words: usize,
-    x_in: CudaSlice<f32>,
-    pos: CudaSlice<i32>,
-    gdn_tbl: CudaSlice<u64>,
-    gdn_host: Vec<u64>,
-    fa_tbl: CudaSlice<u64>,
-    fa_host: Vec<u64>,
-    logits_out: CudaSlice<f32>,
-    h_out: CudaSlice<f32>,
-    /// `[segment slot][linear layer]` (conv, ssm) snapshot slabs, `slab_rows[slot]` rows each.
-    snaps: Vec<Vec<(CudaSlice<f32>, CudaSlice<f32>)>>,
-    slab_rows: Vec<usize>,
-    graphs: std::collections::HashMap<PooledGraphKey, DsparkSegGraph>,
-    seen: std::collections::HashMap<PooledGraphKey, u32>,
-    replays: u64,
-}
-
-impl PooledGraphs {
-    fn new(
-        model: &crate::hybrid::HybridModel,
-        e: &Engine,
-    ) -> Result<Self, Box<dyn std::error::Error>> {
-        let n_embd = model.cfg.n_embd as usize;
-        let n_vocab = model.output.out_features();
-        let mut lin = Vec::new();
-        let mut fa = Vec::new();
-        let (mut conv_words, mut ssm_words) = (0usize, 0usize);
-        for (il, l) in model.layers.iter().enumerate() {
-            match &l.mixer {
-                Mixer::Linear(la) => {
-                    let g = la.geometry;
-                    let d_state = g.key_head_dim as usize;
-                    let conv_dim = d_state * g.key_heads as usize * 2
-                        + g.value_head_dim as usize * g.value_heads as usize;
-                    conv_words = conv_dim * (g.conv_kernel as usize - 1);
-                    ssm_words = d_state * d_state * g.value_heads as usize;
-                    lin.push(il);
-                }
-                Mixer::Full(_) => fa.push(il),
-                _ => return Err("pooled graphs: a mixer the pooled walk does not run".into()),
-            }
-        }
-        let lin_pos = lin.iter().enumerate().map(|(k, &il)| (il, k)).collect();
-        let fa_pos = fa.iter().enumerate().map(|(k, &il)| (il, k)).collect();
-        let r = POOLED_GRAPH_ROWS;
-        Ok(Self {
-            n_vocab,
-            conv_words,
-            ssm_words,
-            x_in: e.zeros(r * n_embd)?,
-            pos: e.htod_i32(&vec![0i32; r])?,
-            gdn_tbl: e.htod_u64(&vec![0u64; r * lin.len() * 3])?,
-            gdn_host: vec![0u64; r * lin.len() * 3],
-            fa_tbl: e.htod_u64(&vec![0u64; fa.len().max(1) * 2 * r])?,
-            fa_host: vec![0u64; fa.len().max(1) * 2 * r],
-            logits_out: e.zeros(r * n_vocab)?,
-            h_out: e.zeros(r * n_embd)?,
-            snaps: (0..r).map(|_| Vec::new()).collect(),
-            slab_rows: vec![0; r],
-            graphs: std::collections::HashMap::new(),
-            seen: std::collections::HashMap::new(),
-            replays: 0,
-            lin,
-            lin_pos,
-            fa,
-            fa_pos,
-        })
-    }
-
-    /// Bytes the slabs must grow by for `key` (0 when they already fit).
-    fn slab_growth_bytes(&self, key: &PooledGraphKey) -> usize {
-        key.segs
-            .iter()
-            .enumerate()
-            .filter(|(_, (_, snap))| *snap)
-            .map(|(si, &(ts, _))| {
-                (ts as usize - 1).saturating_sub(self.slab_rows[si])
-                    * (self.conv_words + self.ssm_words)
-                    * self.lin.len()
-                    * std::mem::size_of::<f32>()
-            })
-            .sum()
-    }
-
-    /// Grow the snapshot slabs to fit `key`. Captured bodies bake slab addresses, so a growth
-    /// drops every graph (they recapture on their next sightings).
-    fn grow_slabs(
-        &mut self,
-        e: &Engine,
-        key: &PooledGraphKey,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        let mut grown = false;
-        for (si, &(ts, snap)) in key.segs.iter().enumerate() {
-            let need = if snap { ts as usize - 1 } else { 0 };
-            if need <= self.slab_rows[si] {
-                continue;
-            }
-            let mut v = Vec::with_capacity(self.lin.len());
-            for _ in 0..self.lin.len() {
-                v.push((
-                    e.zeros(need * self.conv_words)?,
-                    e.zeros(need * self.ssm_words)?,
-                ));
-            }
-            self.snaps[si] = v;
-            self.slab_rows[si] = need;
-            grown = true;
-        }
-        if grown {
-            self.graphs.clear();
-        }
-        Ok(())
-    }
 }
 
 pub(crate) struct VerifyCkpt {
@@ -3156,11 +2970,6 @@ pub(crate) struct FaLayerArgs<'a> {
 // `HybridModel::dspark_vgraphs` behind a Mutex and every touch happens on the engine's
 // single decode-stream thread.
 unsafe impl Send for DsparkVerifyGraphs {}
-
-// SAFETY: as for `DsparkVerifyGraphs`: the graphs' driver handles are context-scoped, the pool
-// lives in `HybridModel::pooled_graphs` behind a Mutex and every touch happens on the engine's
-// decode-stream thread.
-unsafe impl Send for PooledGraphs {}
 
 impl DsparkVerifyGraphs {
     /// Live capture count (segment + full graphs) — the denominator of
@@ -7666,24 +7475,6 @@ impl HybridModel {
         segs: &mut [PooledVerifySeg<'_>],
         embd_dev: Option<(&CudaSlice<u8>, i32, usize)>,
     ) -> Result<Option<PooledVerifyOut>, Box<dyn std::error::Error>> {
-        let arm = if pooled_graph_on() {
-            PooledGraphArm::Auto
-        } else {
-            PooledGraphArm::Eager
-        };
-        self.verify_pooled_walk(e, segs, embd_dev, arm)
-    }
-
-    /// `verify_pooled_dev` with an explicit graph arm: a shape the graph pool can express
-    /// replays its captured forward (`pooled_graph_forward`), bitwise the eager walk; every
-    /// other shape, and every forward the pool declines, runs the eager walk.
-    pub(crate) fn verify_pooled_walk(
-        &self,
-        e: &Engine,
-        segs: &mut [PooledVerifySeg<'_>],
-        embd_dev: Option<(&CudaSlice<u8>, i32, usize)>,
-        arm: PooledGraphArm,
-    ) -> Result<Option<PooledVerifyOut>, Box<dyn std::error::Error>> {
         let cfg = &self.cfg;
         let n_embd = cfg.n_embd as usize;
         let eps = cfg.rms_eps;
@@ -7744,6 +7535,7 @@ impl HybridModel {
             .iter()
             .flat_map(|s| (0..s.tokens.len()).map(move |r| (s.cache.pos + r) as i32))
             .collect();
+        let pos_d = e.htod_i32(&pos_host)?;
         let mut x = match embd_dev {
             Some((g, qt, rb)) => e.embed_gather_device_t(g, &toks, n_embd, qt, rb)?,
             None => e.htod(&self.embd.try_gather(n_embd, &toks)?)?,
@@ -7760,22 +7552,15 @@ impl HybridModel {
                 r0 += ts;
             }
         }
-        if arm != PooledGraphArm::Eager
-            && let Some(key) = self.pooled_graph_key(segs)
-            && let Some(out) = self.pooled_graph_forward(e, segs, &x, &pos_host, key, arm)?
-        {
-            return Ok(Some(out));
-        }
-        let pos_d = e.htod_i32(&pos_host)?;
         for il in 0..self.layers.len() {
             x = match &self.layers[il].mixer {
-                Mixer::Linear(_) => self.pooled_linear_layer(e, il, &x, r_total, segs, None)?,
+                Mixer::Linear(_) => self.pooled_linear_layer(e, il, &x, r_total, segs)?,
                 _ => {
                     let pos = PooledPos {
                         host: &pos_host,
                         dev: &pos_d,
                     };
-                    self.pooled_fa_layer(e, il, &x, r_total, &pos, segs, None)?
+                    self.pooled_fa_layer(e, il, &x, r_total, &pos, segs)?
                 }
             };
             self.pooled_dflash_taps(e, il, &x, segs)?;
@@ -7794,295 +7579,6 @@ impl HybridModel {
             s.cache.pos += s.tokens.len();
         }
         Ok(Some((logits, if spec_hpost() { hn } else { x })))
-    }
-
-    /// The graph pool's key for this forward, or `None` when one captured body cannot express
-    /// it: drafter taps, more than `POOLED_GRAPH_ROWS` segments, or attention rows that are not
-    /// all on the seqs arm on one split step (the rung is the next power of two of the largest
-    /// T_kv, at least 256, on that same step: grid and partial sizing only).
-    fn pooled_graph_key(&self, segs: &[PooledVerifySeg<'_>]) -> Option<PooledGraphKey> {
-        if segs.len() > POOLED_GRAPH_ROWS
-            || segs
-                .iter()
-                .any(|s| s.cache.dflash_taps.is_some() || s.tokens.len() > 255)
-        {
-            return None;
-        }
-        let cfg = &self.cfg;
-        let fa0 =
-            (0..self.layers.len()).find(|&il| matches!(self.layers[il].mixer, Mixer::Full(_)));
-        let rung = match fa0 {
-            None => 0,
-            Some(il) => {
-                let head_dim_global = cfg.head_dim_k as usize;
-                let nkv = cfg.n_head_kv as usize;
-                let mut sp: Option<usize> = None;
-                let mut t_max = 0usize;
-                for s in segs {
-                    let len = s.cache.kv[il].as_ref()?.len;
-                    for r in 0..s.tokens.len() {
-                        let tk = len + r + 1;
-                        if !crate::fa_seqs_eligible(tk, head_dim_global) {
-                            return None;
-                        }
-                        let k = crate::fa_split_keys(tk, nkv);
-                        if *sp.get_or_insert(k) != k {
-                            return None;
-                        }
-                        t_max = t_max.max(tk);
-                    }
-                }
-                let rung = t_max.next_power_of_two().max(256);
-                if Some(crate::fa_split_keys(rung, nkv)) != sp {
-                    return None;
-                }
-                rung
-            }
-        };
-        Some(PooledGraphKey {
-            segs: segs
-                .iter()
-                .map(|s| {
-                    let ts = s.tokens.len();
-                    (ts as u8, s.ckpt.is_some() && ts >= 2)
-                })
-                .collect(),
-            rung,
-        })
-    }
-
-    /// One pooled forward through the graph pool (lane/batch-spec v2b): refresh the residual,
-    /// positions and pointer tables at their baked addresses, capture the shape when the arm
-    /// says so (headroom checked first; a capture writes nothing), replay, then do the host
-    /// bookkeeping the eager walk does inline: per segment the parity swap of every linear
-    /// layer (odd row count), the KV len bump of every attention layer, the checkpoint columns
-    /// copied out of the slabs and the `pos` bump. `Ok(None)` = the pool declined (not yet
-    /// captured, frozen, no headroom); nothing was written and the caller walks eagerly.
-    fn pooled_graph_forward(
-        &self,
-        e: &Engine,
-        segs: &mut [PooledVerifySeg<'_>],
-        x: &CudaSlice<f32>,
-        pos_host: &[i32],
-        key: PooledGraphKey,
-        arm: PooledGraphArm,
-    ) -> Result<Option<PooledVerifyOut>, Box<dyn std::error::Error>> {
-        use cudarc::driver::DevicePtr;
-        let n_embd = self.cfg.n_embd as usize;
-        let eps = self.cfg.rms_eps;
-        let r_total: usize = segs.iter().map(|s| s.tokens.len()).sum();
-        let mut guard = self.pooled_graphs.lock().unwrap_or_else(|p| p.into_inner());
-        if guard.is_none() {
-            *guard = Some(PooledGraphs::new(self, e)?);
-        }
-        let pg = guard.as_mut().expect("pool built above");
-        let n_vocab = pg.n_vocab;
-        let have = pg.graphs.contains_key(&key);
-        if !have {
-            let seen = pg.seen.entry(key.clone()).or_insert(0);
-            if *seen == u32::MAX {
-                return Ok(None); // a capture of this shape failed: it stays eager
-            }
-            *seen = seen.saturating_add(1).min(u32::MAX - 1);
-            if (arm == PooledGraphArm::Auto && *seen < 2) || pg.graphs.len() >= POOLED_GRAPH_MAX {
-                return Ok(None);
-            }
-            // Appetite: the slab growth plus the body's widest transients (the logits stack,
-            // a layer's FFN and projection activations).
-            let n_ff = self
-                .layers
-                .iter()
-                .filter_map(|l| match &l.ffn {
-                    crate::hybrid::Ffn::Dense { ffn_gate, .. } => Some(ffn_gate.out_features()),
-                    _ => None,
-                })
-                .max()
-                .unwrap_or(0);
-            let need = pg.slab_growth_bytes(&key)
-                + r_total * (n_vocab + 4 * n_ff + 16 * n_embd) * std::mem::size_of::<f32>();
-            if let Some(reason) = capture_headroom_refusal(e, need) {
-                static ONCE: std::sync::Once = std::sync::Once::new();
-                ONCE.call_once(|| eprintln!("[spec-pool] pooled forward graph declined: {reason}"));
-                return Ok(None);
-            }
-        }
-        if !graph_launch_headroom_ok(e) {
-            return Ok(None);
-        }
-        // Refresh the device data the body reads.
-        e.copy_into(&mut pg.x_in, 0, x, r_total * n_embd)?;
-        e.htod_i32_into(&mut pg.pos, pos_host)?;
-        {
-            let st = &e.gpu.stream();
-            let n_lin = pg.lin.len();
-            let mut z = 0usize;
-            for (si, s) in segs.iter().enumerate() {
-                for (k, &il) in pg.lin.iter().enumerate() {
-                    let rl = s.cache.recur[il]
-                        .as_ref()
-                        .ok_or("pooled graph: linear layer has no recurrent state")?;
-                    let (pc, _g0) = rl.conv_state.device_ptr(st);
-                    let (p0, _g1) = rl.ssm_state.device_ptr(st);
-                    let (p1, _g2) = rl.ssm_state_alt.device_ptr(st);
-                    let o = (si * n_lin + k) * 3;
-                    pg.gdn_host[o..o + 3].copy_from_slice(&[pc, p0, p1]);
-                }
-                for r in 0..s.tokens.len() {
-                    for (kf, &il) in pg.fa.iter().enumerate() {
-                        let kvl = s.cache.kv[il].as_ref().ok_or("pooled graph: missing kv")?;
-                        let (pk, _g0) = kvl.k.device_ptr(st);
-                        let (pv, _g1) = kvl.v.device_ptr(st);
-                        let o = kf * 2 * POOLED_GRAPH_ROWS + 2 * (z + r);
-                        pg.fa_host[o] = pk;
-                        pg.fa_host[o + 1] = pv;
-                    }
-                }
-                z += s.tokens.len();
-            }
-        }
-        e.htod_u64_into(&pg.gdn_host, &mut pg.gdn_tbl)?;
-        e.htod_u64_into(&pg.fa_host, &mut pg.fa_tbl)?;
-        if !have {
-            if pg.slab_growth_bytes(&key) > 0 {
-                // Live graphs bake the old slab addresses: drain the stream before they go.
-                e.stream().synchronize()?;
-                pg.grow_slabs(e, &key)?;
-            }
-            let rung = key.rung;
-            let (graph, keeper) = {
-                let PooledGraphs {
-                    x_in,
-                    pos,
-                    gdn_tbl,
-                    fa_tbl,
-                    lin_pos,
-                    fa_pos,
-                    lin,
-                    snaps,
-                    logits_out,
-                    h_out,
-                    ..
-                } = &mut *pg;
-                let n_lin = lin.len();
-                let segs_ref = &mut *segs;
-                let res = e.capture_graph_retained_nowarm(|e| {
-                    let mut io = PooledGraphIo {
-                        gdn_tbl,
-                        lin_pos,
-                        n_lin,
-                        fa_tbl,
-                        fa_pos,
-                        rung,
-                        snaps: &mut snaps[..],
-                    };
-                    let pp = PooledPos {
-                        host: pos_host,
-                        dev: pos,
-                    };
-                    let mut xc: Option<CudaSlice<f32>> = None;
-                    for il in 0..self.layers.len() {
-                        let xr: &CudaSlice<f32> = xc.as_ref().unwrap_or(x_in);
-                        let nx = match &self.layers[il].mixer {
-                            Mixer::Linear(_) => self.pooled_linear_layer(
-                                e,
-                                il,
-                                xr,
-                                r_total,
-                                segs_ref,
-                                Some(&mut io),
-                            )?,
-                            _ => self.pooled_fa_layer(
-                                e,
-                                il,
-                                xr,
-                                r_total,
-                                &pp,
-                                segs_ref,
-                                Some(&mut io),
-                            )?,
-                        };
-                        xc = Some(nx);
-                    }
-                    let xl = xc.ok_or("pooled graph: no layers")?;
-                    let mut hn = vbuf(e, r_total * n_embd)?;
-                    e.rms_norm(
-                        &xl,
-                        self.output_norm.float_data(),
-                        &mut hn,
-                        n_embd,
-                        r_total,
-                        eps,
-                    )?;
-                    let logits = e.matmul(&self.output, &hn, r_total)?;
-                    e.copy_into(logits_out, 0, &logits, r_total * n_vocab)?;
-                    let h = if spec_hpost() { &hn } else { &xl };
-                    e.copy_into(h_out, 0, h, r_total * n_embd)?;
-                    Ok(())
-                });
-                match res {
-                    Ok(v) => v,
-                    Err(err) => {
-                        static ONCE: std::sync::Once = std::sync::Once::new();
-                        ONCE.call_once(|| {
-                            eprintln!("[spec-pool] pooled forward graph capture failed: {err}")
-                        });
-                        // A failed capture executed nothing; freeze the key on the eager walk.
-                        pg.seen.insert(key, u32::MAX);
-                        return Ok(None);
-                    }
-                }
-            };
-            pg.graphs.insert(
-                key.clone(),
-                DsparkSegGraph {
-                    graph,
-                    _keeper: keeper,
-                },
-            );
-            let n = pg.graphs.len();
-            if n.is_power_of_two() {
-                eprintln!(
-                    "[spec-pool] pooled forward graphs: {n} captured (latest segs {:?}, rung {})",
-                    key.segs, key.rung
-                );
-            }
-        }
-        pg.graphs[&key].graph.launch()?;
-        pg.replays += 1;
-        // Host bookkeeping of the replayed body, in the eager walk's end state.
-        let (cw, sw) = (pg.conv_words, pg.ssm_words);
-        for (si, s) in segs.iter_mut().enumerate() {
-            let ts = s.tokens.len();
-            for (k, &il) in pg.lin.iter().enumerate() {
-                if let Some(ck) = s.ckpt.as_deref_mut()
-                    && ts >= 2
-                {
-                    let (ct, st) = &pg.snaps[si][k];
-                    let mut states = Vec::with_capacity(ts - 1);
-                    for r in 0..ts - 1 {
-                        let mut c = e.uninit(cw)?;
-                        e.dtod_copy_view(&ct.slice(r * cw..(r + 1) * cw), &mut c)?;
-                        let mut sst = e.uninit(sw)?;
-                        e.dtod_copy_view(&st.slice(r * sw..(r + 1) * sw), &mut sst)?;
-                        states.push((c, sst));
-                    }
-                    ck.cols[il] = Some(states);
-                }
-                if ts % 2 == 1 {
-                    let rl = s.cache.recur[il].as_mut().unwrap();
-                    std::mem::swap(&mut rl.ssm_state, &mut rl.ssm_state_alt);
-                }
-            }
-            for &il in &pg.fa {
-                s.cache.kv[il].as_mut().unwrap().len += ts;
-            }
-            s.cache.pos += ts;
-        }
-        let mut logits = e.uninit(r_total * n_vocab)?;
-        e.dtod_copy_view(&pg.logits_out.slice(0..r_total * n_vocab), &mut logits)?;
-        let mut h = e.uninit(r_total * n_embd)?;
-        e.dtod_copy_view(&pg.h_out.slice(0..r_total * n_embd), &mut h)?;
-        Ok(Some((logits, h)))
     }
 
     /// The pooled walk's drafter-tap write after layer `il`: each session's rows of the
@@ -8325,24 +7821,16 @@ impl HybridModel {
 
         // ---- candidate: one unified forward ----
         let ones: Vec<[u32; 1]> = plain_toks.iter().map(|&t| [t]).collect();
-        // Spec segments of two or more rows keep a checkpoint, as the serving round's do (the
-        // graph arm writes them through its snapshot slabs). Returns the checkpoint bits too.
         let unified = |spec: &mut Vec<&mut Cache>,
-                       plain: &mut Vec<&mut Cache>,
-                       arm: PooledGraphArm,
-                       read_ck: bool|
-         -> Result<Option<ProbeUnifiedCk>, Box<dyn std::error::Error>> {
-            let mut cks: Vec<Option<VerifyCkpt>> = spec_toks
-                .iter()
-                .map(|t| (t.len() >= 2).then(|| VerifyCkpt::new(self.layers.len())))
-                .collect();
+                       plain: &mut Vec<&mut Cache>|
+         -> Result<Option<ProbeUnified>, Box<dyn std::error::Error>> {
             let pooled = {
                 let mut segs: Vec<PooledVerifySeg<'_>> = Vec::new();
-                for ((c, t), ck) in spec.iter_mut().zip(spec_toks).zip(cks.iter_mut()) {
+                for (c, t) in spec.iter_mut().zip(spec_toks) {
                     segs.push(PooledVerifySeg {
                         cache: c,
                         tokens: t,
-                        ckpt: ck.as_mut(),
+                        ckpt: None,
                         host_embed: false,
                     });
                 }
@@ -8354,24 +7842,11 @@ impl HybridModel {
                         host_embed: true,
                     });
                 }
-                self.verify_pooled_walk(e, &mut segs, embd_dev, arm)?
+                self.verify_pooled_dev(e, &mut segs, embd_dev)?
             };
             let Some((logits, x)) = pooled else {
                 return Ok(None);
             };
-            let mut ck_bits: Vec<Vec<u32>> = Vec::new();
-            for ck in cks.iter().filter(|_| read_ck) {
-                let mut v = Vec::new();
-                if let Some(ck) = ck {
-                    for cols in ck.cols.iter().flatten() {
-                        for (c, st) in cols {
-                            v.extend(e.dtoh(c)?.into_iter().map(f32::to_bits));
-                            v.extend(e.dtoh(st)?.into_iter().map(f32::to_bits));
-                        }
-                    }
-                }
-                ck_bits.push(v);
-            }
             let r0: usize = spec_toks.iter().map(Vec::len).sum();
             let (rows, next) = if plain.is_empty() {
                 (Vec::new(), Vec::new())
@@ -8389,11 +7864,9 @@ impl HybridModel {
                 let mut refs: Vec<&mut Cache> = plain.iter_mut().map(|c| &mut **c).collect();
                 self.rider_sample_rows(e, &mut refs, &rows, &logits, r0)?
             };
-            Ok(Some(((logits, x, rows, next), ck_bits)))
+            Ok(Some((logits, x, rows, next)))
         };
-        let Some(((logits, x, rows, next), ck_eager)) =
-            unified(&mut spec, &mut plain, PooledGraphArm::Eager, true)?
-        else {
+        let Some((logits, x, rows, next)) = unified(&mut spec, &mut plain)? else {
             lines.push("UNIFIED: NOT POOLABLE (shape refused)".into());
             return Ok(lines);
         };
@@ -8462,51 +7935,13 @@ impl HybridModel {
             },
             next
         ));
-        // ---- v2b: the captured forward against the eager walk, twice (the capture's first
-        // launch, then a pure replay from the restored states) ----
-        let eager_bits = (lh.clone(), xh.clone(), rows.clone(), next.clone(), ck_eager);
-        let eager_after = (parked_u.clone(), follow_u.clone());
         drop((logits, x, rows));
-        let mut graph_ok = true;
-        let mut graph_ran = false;
-        for pass in ["capture+launch", "replay"] {
-            restore(&mut spec, &mut plain)?;
-            let Some(((gl, gx, grows, gnext), gck)) =
-                unified(&mut spec, &mut plain, PooledGraphArm::Capture, true)?
-            else {
-                lines.push("UNIFIED-GRAPH: NOT POOLABLE".into());
-                break;
-            };
-            let g_bits = (bits(e.dtoh(&gl)?), bits(e.dtoh(&gx)?), grows, gnext, gck);
-            let g_after = (parked(&plain)?, follow(&mut spec, &mut plain)?);
-            let replays = self
-                .pooled_graphs
-                .lock()
-                .unwrap_or_else(|p| p.into_inner())
-                .as_ref()
-                .map_or(0, |g| g.replays);
-            graph_ran |= replays > 0;
-            let same = g_bits == eager_bits && g_after == eager_after;
-            graph_ok &= same;
-            lines.push(format!(
-                "UNIFIED-GRAPH {pass} spec {shape:?} + plain {}: {} vs the eager walk (logits, \
-                 hidden, plain draws+rows, checkpoint columns, parked logits, follow-ups; pool \
-                 replays so far {replays})",
-                plain.len(),
-                if same { "BITWISE EQUAL" } else { "MISMATCH" }
-            ));
-        }
-        if !graph_ran {
-            lines.push("UNIFIED-GRAPH: the pool declined the shape (eager both times)".into());
-        }
-        let _ = graph_ok;
         restore(&mut spec, &mut plain)?;
 
         // ---- timing, same restored states ----
         let mut serial_ms = Vec::new();
         let mut v1_ms = Vec::new();
         let mut unified_ms = Vec::new();
-        let mut graph_ms = Vec::new();
         let plain_step = |plain: &mut Vec<&mut Cache>| -> Result<(), Box<dyn std::error::Error>> {
             if !plain.is_empty() {
                 let mut refs: Vec<&mut Cache> = plain.iter_mut().map(|c| &mut **c).collect();
@@ -8526,78 +7961,56 @@ impl HybridModel {
             // segments) and the plain batched step.
             restore(&mut spec, &mut plain)?;
             let t0 = std::time::Instant::now();
-            let mut cks: Vec<Option<VerifyCkpt>> = spec_toks
-                .iter()
-                .map(|t| (t.len() >= 2).then(|| VerifyCkpt::new(self.layers.len())))
-                .collect();
             if spec.len() >= 2 {
                 let mut segs: Vec<PooledVerifySeg<'_>> = spec
                     .iter_mut()
                     .zip(spec_toks)
-                    .zip(cks.iter_mut())
-                    .map(|((c, t), ck)| PooledVerifySeg {
+                    .map(|(c, t)| PooledVerifySeg {
                         cache: c,
                         tokens: t,
-                        ckpt: ck.as_mut(),
+                        ckpt: None,
                         host_embed: false,
                     })
                     .collect();
                 let (l, _) = self
-                    .verify_pooled_walk(e, &mut segs, embd_dev, PooledGraphArm::Eager)?
+                    .verify_pooled_dev(e, &mut segs, embd_dev)?
                     .ok_or("spec shape refused")?;
                 let am = e.argmax_token_device(&l, n_vocab)?;
                 let _ = e.dtoh_u32_one(&am)?;
             } else {
                 let _exact = e.exact_scope(true);
-                for ((c, t), ck) in spec.iter_mut().zip(spec_toks).zip(cks.iter_mut()) {
+                for (c, t) in spec.iter_mut().zip(spec_toks) {
                     let p = c.pos;
-                    let (l, _) =
-                        self.decode_step_t_core_vg(e, t, p, c, embd_dev, ck.as_mut(), None)?;
+                    let (l, _) = self.decode_step_t_core_vg(e, t, p, c, embd_dev, None, None)?;
                     let am = e.argmax_token_device(&l, n_vocab)?;
                     let _ = e.dtoh_u32_one(&am)?;
                 }
             }
             plain_step(&mut plain)?;
             let v_ms = t0.elapsed().as_secs_f64() * 1e3;
-            drop(cks);
-            let mut cks: Vec<Option<VerifyCkpt>> = spec_toks
-                .iter()
-                .map(|t| (t.len() >= 2).then(|| VerifyCkpt::new(self.layers.len())))
-                .collect();
             restore(&mut spec, &mut plain)?;
             let t0 = std::time::Instant::now();
             {
                 let _exact = e.exact_scope(true);
-                for ((c, t), ck) in spec.iter_mut().zip(spec_toks).zip(cks.iter_mut()) {
+                for (c, t) in spec.iter_mut().zip(spec_toks) {
                     let p = c.pos;
-                    let (l, _) =
-                        self.decode_step_t_core_vg(e, t, p, c, embd_dev, ck.as_mut(), None)?;
+                    let (l, _) = self.decode_step_t_core_vg(e, t, p, c, embd_dev, None, None)?;
                     let am = e.argmax_token_device(&l, n_vocab)?;
                     let _ = e.dtoh_u32_one(&am)?;
                 }
             }
             plain_step(&mut plain)?;
             let s_ms = t0.elapsed().as_secs_f64() * 1e3;
-            drop(cks);
             restore(&mut spec, &mut plain)?;
             let t0 = std::time::Instant::now();
-            let ((l, _, _, _), _) = unified(&mut spec, &mut plain, PooledGraphArm::Eager, false)?
-                .ok_or("shape refused")?;
+            let (l, _, _, _) = unified(&mut spec, &mut plain)?.ok_or("shape refused")?;
             let am = e.argmax_token_device(&l, n_vocab)?;
             let _ = e.dtoh_u32_one(&am)?;
             let u_ms = t0.elapsed().as_secs_f64() * 1e3;
-            restore(&mut spec, &mut plain)?;
-            let t0 = std::time::Instant::now();
-            let ((l, _, _, _), _) = unified(&mut spec, &mut plain, PooledGraphArm::Capture, false)?
-                .ok_or("shape refused")?;
-            let am = e.argmax_token_device(&l, n_vocab)?;
-            let _ = e.dtoh_u32_one(&am)?;
-            let g_ms = t0.elapsed().as_secs_f64() * 1e3;
             if rep > 0 {
                 serial_ms.push(s_ms);
                 v1_ms.push(v_ms);
                 unified_ms.push(u_ms);
-                graph_ms.push(g_ms);
             }
         }
         restore(&mut spec, &mut plain)?;
@@ -8615,50 +8028,7 @@ impl HybridModel {
                 sm / um,
                 vm / um
             ));
-            let _ = med(&mut graph_ms);
         }
-        // Graph vs eager on their own: ABBA order, 4 x reps pairs, each from the restored
-        // states (the shape is already captured above).
-        let mut ea: Vec<f64> = Vec::new();
-        let mut gr: Vec<f64> = Vec::new();
-        for rep in 0..(4 * reps).max(8) {
-            for g in if rep % 2 == 0 {
-                [false, true]
-            } else {
-                [true, false]
-            } {
-                restore(&mut spec, &mut plain)?;
-                let arm = if g {
-                    PooledGraphArm::Capture
-                } else {
-                    PooledGraphArm::Eager
-                };
-                let t0 = std::time::Instant::now();
-                let ((l, _, _, _), _) =
-                    unified(&mut spec, &mut plain, arm, false)?.ok_or("shape refused")?;
-                let am = e.argmax_token_device(&l, n_vocab)?;
-                let _ = e.dtoh_u32_one(&am)?;
-                let ms = t0.elapsed().as_secs_f64() * 1e3;
-                if g {
-                    gr.push(ms);
-                } else {
-                    ea.push(ms);
-                }
-            }
-        }
-        restore(&mut spec, &mut plain)?;
-        let n = ea.len();
-        let (em, gm) = (med(&mut ea), med(&mut gr));
-        lines.push(format!(
-            "UNIFIED-GRAPH-TIME spec {shape:?} + plain {}: eager walk {em:.3} ms (p10 {:.3} p90 \
-             {:.3}), graph replay {gm:.3} ms (p10 {:.3} p90 {:.3}), {:.3}x (medians of {n}, ABBA)",
-            plain.len(),
-            ea[n / 10],
-            ea[n * 9 / 10],
-            gr[n / 10],
-            gr[n * 9 / 10],
-            em / gm
-        ));
         Ok(lines)
     }
 
@@ -9574,7 +8944,6 @@ impl HybridModel {
         x: &CudaSlice<f32>,
         t: usize,
         segs: &mut [PooledVerifySeg<'_>],
-        mut gm: Option<&mut PooledGraphIo<'_>>,
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
         use cudarc::driver::DevicePtr;
         let cfg = &self.cfg;
@@ -9626,39 +8995,23 @@ impl HybridModel {
         let mut beta_b = e.uninit(t * num_v)?;
         let mut g_log = e.uninit(t * num_v)?;
         let mut o_all = e.uninit(t * value_dim)?;
-        // Per-session [conv, ssm, alt] tables: built once for this layer (eager), or the
-        // persistent table's slices (graph mode, refreshed before each replay).
+        // Per-session [conv, ssm, alt] tables, built once for this layer.
         let mut tables = Vec::with_capacity(segs.len());
-        if gm.is_none() {
-            for s in segs.iter() {
-                let rl = s.cache.recur[il]
-                    .as_ref()
-                    .ok_or("pooled verify: linear layer has no recurrent state")?;
-                let st = &e.gpu.stream();
-                let (pc, _g0) = rl.conv_state.device_ptr(st);
-                let (p0, _g1) = rl.ssm_state.device_ptr(st);
-                let (p1, _g2) = rl.ssm_state_alt.device_ptr(st);
-                tables.push(e.htod_u64(&[pc, p0, p1])?);
-            }
+        for s in segs.iter() {
+            let rl = s.cache.recur[il]
+                .as_ref()
+                .ok_or("pooled verify: linear layer has no recurrent state")?;
+            let st = &e.gpu.stream();
+            let (pc, _g0) = rl.conv_state.device_ptr(st);
+            let (p0, _g1) = rl.ssm_state.device_ptr(st);
+            let (p1, _g2) = rl.ssm_state_alt.device_ptr(st);
+            tables.push(e.htod_u64(&[pc, p0, p1])?);
         }
-        let graph_tbl = gm.as_ref().map(|g| (g.gdn_tbl, g.n_lin, g.lin_pos[&il]));
-        let table = |si: usize| match graph_tbl {
-            Some((tb, n_lin, k)) => {
-                let o = (si * n_lin + k) * 3;
-                tb.slice(o..o + 3)
-            }
-            None => tables[si].slice(0..3),
-        };
-        let snap_on: Vec<bool> = segs
-            .iter()
-            .map(|s| s.ckpt.is_some() && s.tokens.len() >= 2)
-            .collect();
-        // Eager: this layer's own snapshot buffers. Graph mode: the segment slot's slabs.
         let mut snaps: Vec<Option<(CudaSlice<f32>, CudaSlice<f32>)>> = Vec::new();
         let mut r0 = 0usize;
         for (si, s) in segs.iter().enumerate() {
             let ts = s.tokens.len();
-            let mut snap = if snap_on[si] && gm.is_none() {
+            let mut snap = if s.ckpt.is_some() && ts >= 2 {
                 Some((
                     e.uninit((ts - 1) * conv_words)?,
                     e.uninit((ts - 1) * ssm_words)?,
@@ -9666,17 +9019,13 @@ impl HybridModel {
             } else {
                 None
             };
-            let conv_snap: Option<&mut CudaSlice<f32>> = match gm.as_mut() {
-                Some(g) if snap_on[si] => Some(&mut g.snaps[si][g.lin_pos[&il]].0),
-                _ => snap.as_mut().map(|(c, _)| c),
-            };
             let mut co = conv_outs.slice_mut(r0 * conv_dim..(r0 + ts) * conv_dim);
             e.ssm_conv1d_fused_decode_tloop_rows(
                 &qkv_mixed.slice(r0 * conv_dim..(r0 + ts) * conv_dim),
-                &table(si),
+                &tables[si].slice(0..3),
                 la.ssm_conv1d.float_data(),
                 &mut co,
-                conv_snap,
+                snap.as_mut().map(|(c, _)| c),
                 conv_dim,
                 d_conv,
                 ts,
@@ -9712,29 +9061,19 @@ impl HybridModel {
                 r0 * num_v..(r0 + ts) * num_v,
             );
             let mut o_rows = o_all.slice_mut(vr.clone());
-            let ssm_snap: Option<&mut CudaSlice<f32>> = match gm.as_mut() {
-                Some(g) if snap_on[si] => Some(&mut g.snaps[si][g.lin_pos[&il]].1),
-                _ => snaps[si].as_mut().map(|(_, sst)| sst),
-            };
             e.gdn_scan_s128_tsnap_rows(
                 &q_l2.slice(vr.clone()),
                 &k_l2.slice(vr.clone()),
                 &v_gd.slice(vr.clone()),
                 &g_log.slice(hr.clone()),
                 &beta_b.slice(hr),
-                &table(si),
+                &tables[si].slice(0..3),
                 &mut o_rows,
                 num_v,
                 ts,
                 gdn_scale,
-                ssm_snap,
+                snaps[si].as_mut().map(|(_, sst)| sst),
             )?;
-            // Graph mode: the replay caller copies the checkpoint columns out of the slabs and
-            // does the parity swap (captured host code does not re-run).
-            if gm.is_some() {
-                r0 += ts;
-                continue;
-            }
             if let (Some(ck), Some((ct, st))) = (s.ckpt.as_deref_mut(), snaps[si].as_ref()) {
                 let mut states = Vec::with_capacity(ts - 1);
                 for r in 0..ts - 1 {
@@ -9781,7 +9120,6 @@ impl HybridModel {
 
     /// The pooled walk's FULL-ATTENTION layer: `qwen35_tparallel_fa_layer`'s seqs arm at m=R,
     /// each row's KV pointer pair naming its own session's cache.
-    #[allow(clippy::too_many_arguments)] // allow: the eager walk's inputs plus the graph io
     fn pooled_fa_layer(
         &self,
         e: &Engine,
@@ -9790,7 +9128,6 @@ impl HybridModel {
         t: usize,
         pos: &PooledPos<'_>,
         segs: &mut [PooledVerifySeg<'_>],
-        gm: Option<&mut PooledGraphIo<'_>>,
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
         use cudarc::driver::DevicePtr;
         let cfg = &self.cfg;
@@ -9866,23 +9203,20 @@ impl HybridModel {
                     (kvl.kv_dim_k, kvl.kv_dim_v, kvl.k_tok_bytes, kvl.v_tok_bytes);
             }
         }
-        // Graph mode reads the persistent per-row table (refreshed before each replay) and
-        // leaves the host len bump to the replay caller.
-        let graph = gm.map(|g| (g.fa_tbl, g.fa_pos[&il] * 2 * POOLED_GRAPH_ROWS, g.rung));
-        let tbl_own = match graph {
-            Some(_) => None,
-            None => Some(e.htod_u64(&tbl)?),
-        };
-        let tbl_d: cudarc::driver::CudaView<u64> = match (graph, tbl_own.as_ref()) {
-            (Some((tb, off, _)), _) => tb.slice(off..off + 2 * t),
-            (None, Some(own)) => own.slice(0..2 * t),
-            (None, None) => unreachable!("eager walk built its table"),
-        };
-        e.append_kv_quantized_seqs(&k_n, &v, &tbl_d, pos.dev, t, kdk, kdv, ktb, vtb)?;
-        if graph.is_none() {
-            for s in segs.iter_mut() {
-                s.cache.kv[il].as_mut().unwrap().len += s.tokens.len();
-            }
+        let tbl_d = e.htod_u64(&tbl)?;
+        e.append_kv_quantized_seqs(
+            &k_n,
+            &v,
+            &tbl_d.slice(0..2 * t),
+            pos.dev,
+            t,
+            kdk,
+            kdv,
+            ktb,
+            vtb,
+        )?;
+        for s in segs.iter_mut() {
+            s.cache.kv[il].as_mut().unwrap().len += s.tokens.len();
         }
         let mut attn = e.uninit(t * q_dim)?;
         // Rows on the seqs arm: one launch per maximal run on the same fa split rung (one rung
@@ -9893,26 +9227,7 @@ impl HybridModel {
         let head_dim_global = cfg.head_dim_k as usize;
         let elig = |tk: usize| crate::fa_seqs_eligible(tk, head_dim_global);
         let sp_of = |tk: usize| crate::fa_split_keys(tk, cfg.n_head_kv as usize);
-        if let Some((_, _, rung)) = graph {
-            // One launch over every row, sized at the rung (stride and grid only: the per-row
-            // T_kv derives in-kernel from the positions). The body refuses what one launch
-            // cannot express, so the fallback is never captured.
-            let sp = sp_of(rung);
-            if t_kv_rows
-                .iter()
-                .any(|&tk| !elig(tk) || sp_of(tk) != sp || tk > rung)
-            {
-                return Err(format!(
-                    "pooled graph: layer {il} rows do not all sit on rung {rung}'s split step"
-                )
-                .into());
-            }
-            e.fa_decode_batch_seqs_v4(
-                &q_n, &tbl_d, pos.dev, &mut attn, head_dim, n_head, n_head_kv, t, rung, scale, sp,
-                ktb, vtb,
-            )?;
-        }
-        let mut a = if graph.is_some() { t } else { 0usize };
+        let mut a = 0usize;
         while a < t {
             if !elig(t_kv_rows[a]) {
                 let t_kv = t_kv_rows[a];
@@ -9950,8 +9265,19 @@ impl HybridModel {
             let t_kv_max = *t_kv_rows[a..b].iter().max().unwrap();
             if n == t {
                 e.fa_decode_batch_seqs_v4(
-                    &q_n, &tbl_d, pos.dev, &mut attn, head_dim, n_head, n_head_kv, t, t_kv_max,
-                    scale, sp, ktb, vtb,
+                    &q_n,
+                    &tbl_d.slice(0..2 * t),
+                    pos.dev,
+                    &mut attn,
+                    head_dim,
+                    n_head,
+                    n_head_kv,
+                    t,
+                    t_kv_max,
+                    scale,
+                    sp,
+                    ktb,
+                    vtb,
                 )?;
             } else {
                 let mut q_run = e.uninit(n * q_dim)?;
