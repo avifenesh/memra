@@ -5640,6 +5640,8 @@ impl HybridModel {
     /// The verify funnel every verify forward reaches. `vtok_dev` (engine-bundle slice 2):
     /// device verify tokens for the EMBED only — it changes nothing else (host pos iota,
     /// host-len KV appends); `tokens` then only sizes buffers (a dummy slice).
+    /// The `_stream` suffix is historical: the round-stream pack it once took left with
+    /// `MEMRA_SPEC_STREAM` (2026-11-03), and the census tests below pin this name.
     #[allow(clippy::too_many_arguments)]
     fn decode_step_t_core_stream(
         &self,
