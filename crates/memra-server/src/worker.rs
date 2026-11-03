@@ -6759,6 +6759,34 @@ fn drafter_route_batching_conflict(batching: bool, armed: &[&str]) -> Option<Str
     ))
 }
 
+/// The drafter routes an operator armed EXPLICITLY, read from the environment alone, so
+/// `run` can refuse them beside `MEMRA_SERVE_BATCH=0` before any weight loads (the post-load
+/// check pays the full trunk and drafter loads first). Each test is the one its route's own
+/// read applies: `MEMRA_DSPARK_SPEC=1`, an explicit `MEMRA_GEMMA4_SPEC` depth K >= 1, and
+/// `MEMRA_GLM5_SPEC=1`. Arms that depend on what loads (the gemma default-on under
+/// `MEMRA_DRAFT` alone, which only a dense gemma4 model takes, and glm5 capability) stay with
+/// the post-load check.
+fn explicit_drafter_route_arms(
+    dspark_spec: Option<&str>,
+    gemma4_spec: Option<&str>,
+    glm5_spec: Option<&str>,
+) -> Vec<&'static str> {
+    let mut armed = Vec::new();
+    if dspark_spec == Some("1") {
+        armed.push("dspark (MEMRA_DSPARK_SPEC=1)");
+    }
+    if gemma4_spec
+        .and_then(|v| v.parse::<usize>().ok())
+        .is_some_and(|k| k > 0)
+    {
+        armed.push("gemma spec (MEMRA_GEMMA4_SPEC)");
+    }
+    if glm5_spec == Some("1") {
+        armed.push("glm5 spec (MEMRA_GLM5_SPEC=1)");
+    }
+    armed
+}
+
 /// Boot verdict for the glm5 TP-2 walk on a serving worker (MEMRA_GLM5_TP,
 /// lane/glm5-tp-serve-20260907). PURE (env values in, verdict out) so the tooth below
 /// exercises every arm without a worker spawn; the caller panics on `Err` and prints the
@@ -27619,6 +27647,20 @@ pub fn run(
     if let Some(msg) = removed_bank_v2_doors_refusal(
         std::env::var("MEMRA_NVFP4_BANK_V2").ok().as_deref(),
         std::env::var("MEMRA_SEL_DOWN8").ok().as_deref(),
+    ) {
+        let _ = ready_tx.send(Err(msg));
+        return;
+    }
+    // DRAFTER ROUTES UNDER MEMRA_SERVE_BATCH=0, the env-only half: an explicitly armed route
+    // refuses here in milliseconds instead of after the trunk and drafter loads. The post-load
+    // check beside the drafter attach still covers the arms that depend on what loaded.
+    if let Some(msg) = drafter_route_batching_conflict(
+        serve_batching(),
+        &explicit_drafter_route_arms(
+            std::env::var("MEMRA_DSPARK_SPEC").ok().as_deref(),
+            std::env::var("MEMRA_GEMMA4_SPEC").ok().as_deref(),
+            std::env::var("MEMRA_GLM5_SPEC").ok().as_deref(),
+        ),
     ) {
         let _ = ready_tx.send(Err(msg));
         return;
@@ -68217,7 +68259,9 @@ mod resume_sampler_door_tests {
 
 #[cfg(test)]
 mod dspark_boot_conflict_tests {
-    use super::{drafter_route_batching_conflict, dspark_spec_boot_conflict};
+    use super::{
+        drafter_route_batching_conflict, dspark_spec_boot_conflict, explicit_drafter_route_arms,
+    };
 
     /// `MEMRA_SERVE_BATCH=0` beside an armed drafter route used to boot, then fault every
     /// routed request in `step_session` (no route arm, no cache). It refuses by name now.
@@ -68237,6 +68281,52 @@ mod dspark_boot_conflict_tests {
         assert!(
             msg.contains("MEMRA_GEMMA4_SPEC") && msg.contains("MEMRA_GLM5_SPEC"),
             "{msg}"
+        );
+    }
+
+    /// The env-only half: an explicit drafter-route arm is known before any weight loads, so
+    /// `run` refuses it beside `MEMRA_SERVE_BATCH=0` ahead of the load loop. Arms that depend
+    /// on what loads (gemma default-on under MEMRA_DRAFT alone) are not read here.
+    #[test]
+    fn explicit_drafter_route_arms_refuse_before_the_weights_load() {
+        assert!(explicit_drafter_route_arms(None, None, None).is_empty());
+        for (dspark, gemma, glm5) in [
+            (Some("0"), Some("0"), Some("0")),
+            (Some(""), Some("auto"), Some("true")),
+        ] {
+            assert!(
+                explicit_drafter_route_arms(dspark, gemma, glm5).is_empty(),
+                "{dspark:?} {gemma:?} {glm5:?} arms no route"
+            );
+        }
+        assert_eq!(
+            explicit_drafter_route_arms(Some("1"), Some("5"), Some("1")),
+            [
+                "dspark (MEMRA_DSPARK_SPEC=1)",
+                "gemma spec (MEMRA_GEMMA4_SPEC)",
+                "glm5 spec (MEMRA_GLM5_SPEC=1)",
+            ]
+        );
+        let msg = drafter_route_batching_conflict(
+            false,
+            &explicit_drafter_route_arms(None, Some("3"), None),
+        )
+        .expect("an explicit gemma depth under MEMRA_SERVE_BATCH=0 must refuse");
+        assert!(msg.contains("MEMRA_GEMMA4_SPEC"), "{msg}");
+        // The refusal sits before the first model load in `run`.
+        let src = include_str!("worker.rs");
+        let run = src.find("pub fn run(").expect("run exists");
+        let early = run
+            + src[run..]
+                .find("&explicit_drafter_route_arms(")
+                .expect("run reads the explicit arms");
+        let first_load = run
+            + src[run..]
+                .find("for (name, path, draft) in &models {")
+                .expect("run's load loop");
+        assert!(
+            early < first_load,
+            "the env-only refusal must precede the load loop"
         );
     }
 
