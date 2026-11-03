@@ -1475,7 +1475,7 @@ pub fn mmq_residual_k() -> i32 {
 /// reverts): routes Q8_0 dense
 /// projections (m>=16) through the vendored int8-MMA MMQ (cu/mmq_q8_0.cu) instead of the hand-rolled
 /// `qmatvec_gemm_q8_0` tiling GEMM. Its own numeric config (MMA f32 reduction order != the tiling
-/// GEMM's) — gated with the full exactness battery. Default OFF until the battery is green.
+/// GEMM's) — gated with the full exactness battery, which promoted it (see below).
 pub fn mmq_q8_enabled() -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     // Promotion battery (2026-07-09): argmax MATCH on 35B p1/p2/p3 + 9B p2/p3 (p4-16k OOMs
@@ -1573,10 +1573,10 @@ impl Engine {
             {
                 (mmq_w4a8_enabled() || mmq_opt_in) && w.in_features().is_multiple_of(256)
             }
-            // Q8_0 dense projections (35B attn/ssm/shexp): opt-in only (MEMRA_PP_Q8MMQ=1), its own
-            // numeric config vs qmatvec_gemm_q8_0. in_f % 256 == 0: MMQ_ITER_K=256 loads 8-block
-            // groups, so a non-multiple row would read a garbage weight tail (fp16 d bytes can be
-            // NaN-pattern, and NaN * 0-padded-activation = NaN — the 26B ffn_down lesson).
+            // Q8_0 dense projections (35B attn/ssm/shexp): default ON, MEMRA_PP_Q8MMQ=0 reverts;
+            // its own numeric config vs qmatvec_gemm_q8_0. in_f % 256 == 0: MMQ_ITER_K=256 loads
+            // 8-block groups, so a non-multiple row would read a garbage weight tail (fp16 d bytes
+            // can be NaN-pattern, and NaN * 0-padded-activation = NaN — the 26B ffn_down lesson).
             GpuTensor::Quant { qtype, .. } if *qtype == crate::QT_Q8_0 => {
                 mmq_q8_enabled() && w.in_features().is_multiple_of(256)
             }
