@@ -22576,7 +22576,8 @@ impl Engine {
         {
             mr = 1;
         }
-        // MEMRA_NVFP4_ROW_ILP (lane/glm5-nvfp4-row-ilp-20260904, default OFF): the `_ilp` twins
+        // MEMRA_NVFP4_ROW_ILP (lane/glm5-nvfp4-row-ilp-20260904, default ON on sm_100a builds,
+        // OFF elsewhere): the `_ilp` twins
         // of the two split-plane NVFP4 trunk kernels, same grid, same per-row program.
         let nv_ilp = qtype == QT_NVFP4 && rp && nvfp4_row_ilp_on();
         if nv_ilp
