@@ -4960,20 +4960,6 @@ impl HybridModel {
         // block still means "external draft", while a hole inside a declared chain is malformed.
         let external_mtp_requested =
             load_mtp && std::env::var("MEMRA_MTP_DRAFT").is_ok_and(|path| !path.is_empty());
-        let trim_mtp_requested = load_mtp
-            && !crate::model::full_prec_enabled()
-            && std::env::var("MEMRA_FRSPEC_TRIM").is_ok_and(|path| !path.is_empty());
-        // The `trim_mtp_requested => 1` branch is gone, and both lanes wanted it gone:
-        // (a) since the per-head trim (2026-08-27) every loaded head gathers its OWN block's
-        //     trimmed rows, so a trim no longer costs the chain — MEMRA_MTP_HEADS is the only
-        //     chain-width knob; and
-        // (b) a model with no trained NextN block (nextn_predict_layers == 0) can never satisfy
-        //     a trim request, and forcing head_count = 1 made a GLOBAL MEMRA_FRSPEC_TRIM fatal
-        //     for every co-loaded plain model ("ModelPlan has no embedded MTP block") — e.g. an
-        //     embedding model beside a spec'd chat model.
-        // With the branch removed a headless model simply takes nextn_predict_layers = 0 and
-        // loads plain, which is (b)'s fix by construction.
-        let _ = trim_mtp_requested;
         // MEMRA_GLM5_MTP (default OFF): glm5_next's NextN block loads only when asked. The
         // artifact carries the full MTP layer (a MoE block the size of a trunk layer — 288
         // routed experts), and until 2026-08-30 the `nextn.*` glue names had no glm5_next
