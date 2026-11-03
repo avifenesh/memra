@@ -1525,7 +1525,7 @@ reported separately when complete.
 |---|---|---|
 | `MEMRA_CUDA_ARCH` | 120a | build arch: `90a` = the Hopper lane (wgmma/TMA kernels compile; portable-PTX correctness path rides along) |
 | `MEMRA_FA_SPLIT` | ctx-adaptive ladder | fixed FA-decode split size; ladder re-swept on 132-SM H100 round 35 — holds (sp32 +0.35% = noise) |
-| `MEMRA_EVT` | off | `1` re-enables cudarc cross-stream event tracking (blocks graph capture-over-primed-cache: `graph_session_from_cache` refuses) |
+| `MEMRA_EVT` | off | `1` re-enables cudarc cross-stream event tracking (blocks CUDA graph capture over buffers that carry events: the glm5 decode graph refuses) |
 
 ### Refuted on this lane (mechanism in ARCHITECTURE-H100.md; no flag shipped)
 

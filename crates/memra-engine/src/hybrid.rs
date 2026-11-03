@@ -4166,22 +4166,6 @@ impl HybridModel {
         Ok(out)
     }
 
-    /// One engine backed by the default memory pool that owns Step TP allocations on `device`.
-    pub fn step_tp_rank_engine(&self, device: usize) -> Option<&Engine> {
-        self.layers.iter().find_map(|weights| {
-            let Mixer::Full(attention) = &weights.mixer else {
-                return None;
-            };
-            let tp = attention.step_tp_qkv.as_ref()?;
-            let rank = tp
-                .runtime
-                .devices()
-                .iter()
-                .position(|&rank| rank == device)?;
-            tp.runtime.rank_engine(rank)
-        })
-    }
-
     pub(crate) fn step_tp_runtime_for_layer(
         &self,
         layer: usize,
@@ -4218,10 +4202,6 @@ impl HybridModel {
     /// not the process default a co-loaded step37 model arms.
     pub fn swa_ring_on(&self) -> bool {
         crate::cache::swa_ring_on_for_plan(&self.plan)
-    }
-
-    pub fn has_plan_operation(&self, operation: memra_gguf::model_plan::OperationKind) -> bool {
-        self.plan.trunk_operations().contains(&operation)
     }
 
     /// Load a hybrid (qwen35) model from GGUF. Thin byte-identical wrapper over `load_from_source`.

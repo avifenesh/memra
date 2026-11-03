@@ -804,15 +804,6 @@ impl GpuTensor {
     pub fn out_features(&self) -> usize {
         self.ne()[1] as usize
     }
-    /// Per-tensor post-matmul macro-scale (NVFP4 carries scale != 1.0; all others -> 1.0, a no-op).
-    /// Used by the fused SwiGLU epilogue to fold the gate/up scale into one kernel.
-    pub fn scale(&self) -> f32 {
-        match self {
-            GpuTensor::Quant { scale, .. } => *scale,
-            GpuTensor::Float { .. } | GpuTensor::FloatBf16 { .. } => 1.0,
-        }
-    }
-
     /// CUDA device ordinal this tensor resides on.
     pub fn ordinal(&self) -> usize {
         match self {
@@ -822,14 +813,9 @@ impl GpuTensor {
         }
     }
 
-    /// Load a tensor, keeping quant types packed and float types as f32. (GGUF entry point —
-    /// thin wrapper over the source-agnostic `load_from_source`; behavior is unchanged.)
-    pub fn load(e: &Engine, g: &GgufFile, name: &str) -> Result<Self, Box<dyn std::error::Error>> {
-        Self::load_from_source(e, &GgufSource(g), name)
-    }
-
-    /// Source-agnostic load: works from any `TensorSource` (GGUF or safetensors). The engine's
-    /// forward graph only ever asks for ggml-style names; the source maps them to its own layout.
+    /// Load a tensor, keeping quant types packed and float types as f32. Source-agnostic: works
+    /// from any `TensorSource` (GGUF or safetensors). The engine's forward graph only ever asks
+    /// for ggml-style names; the source maps them to its own layout.
     ///
     /// RESIDENCY CENSUS (lane/fp8-decode-v1, 2026-08-05): the wrapper tallies what each 2D
     /// matmul weight ACTUALLY became — resident qtype + resident bytes — so the FP8-ST decode
@@ -1564,9 +1550,6 @@ pub struct EmbedHost {
     pub n_embd: usize,
 }
 impl EmbedHost {
-    pub fn from_gguf(g: &GgufFile, name: &str) -> Self {
-        Self::from_source(&GgufSource(g), name)
-    }
     pub fn from_source(src: &dyn TensorSource, name: &str) -> Self {
         let v = src
             .find(name)
@@ -1807,9 +1790,10 @@ pub type TensorMap = HashMap<String, GpuTensor>;
 /// ne = [in_f, out_f, n_expert]; the expert axis (ne[2]) is the slowest/highest-stride axis, so
 /// expert `e` occupies the CONTIGUOUS byte block `bytes[e*expert_stride .. (e+1)*expert_stride]`.
 ///
-/// THE 3D FIX: GpuTensor::load computes `row_bytes = raw.len()/ne[1]`, which for a stacked 3D
-/// tensor ignores the 256-expert axis and is 256x too large (gate_exps -> 430080 instead of 1680).
-/// load() here uses `row_bytes = raw.len() / (out_f * n_expert)` (= 1680 gate/up, 544 down).
+/// THE 3D FIX: GpuTensor's 2D loader computes `row_bytes = raw.len()/ne[1]`, which for a stacked
+/// 3D tensor ignores the 256-expert axis and is 256x too large (gate_exps -> 430080 instead of
+/// 1680). The stacked loaders here use `row_bytes = raw.len() / (out_f * n_expert)` (= 1680
+/// gate/up, 544 down).
 /// Host byte storage for the expert blocks. Default = a pageable `Vec<u8>` (current behavior). Under
 /// MEMRA_MOE_PINNED (auto-on when MEMRA_MOE_CACHE is set), the bytes live in CUDA pinned host memory so
 /// the miss-path `memcpy_htod` is a true DMA, not a pageable bounce copy (MOE-SLRU-PLAN §C.1).
@@ -1986,9 +1970,10 @@ pub(crate) enum ExpertSource<'a> {
 /// ne = [in_f, out_f, n_expert]; the expert axis (ne[2]) is the slowest/highest-stride axis, so
 /// expert `e` occupies the CONTIGUOUS byte block `bytes[e*expert_stride .. (e+1)*expert_stride]`.
 ///
-/// THE 3D FIX: GpuTensor::load computes `row_bytes = raw.len()/ne[1]`, which for a stacked 3D
-/// tensor ignores the 256-expert axis and is 256x too large (gate_exps -> 430080 instead of 1680).
-/// load() here uses `row_bytes = raw.len() / (out_f * n_expert)` (= 1680 gate/up, 544 down).
+/// THE 3D FIX: GpuTensor's 2D loader computes `row_bytes = raw.len()/ne[1]`, which for a stacked
+/// 3D tensor ignores the 256-expert axis and is 256x too large (gate_exps -> 430080 instead of
+/// 1680). The stacked loaders here use `row_bytes = raw.len() / (out_f * n_expert)` (= 1680
+/// gate/up, 544 down).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ExpertLayout {
     pub offset: usize,
@@ -2103,13 +2088,6 @@ pub struct HostExpertFp8BlockScales {
 }
 
 impl HostExps {
-    /// Load a stacked 3D expert tensor, keeping its quant bytes on the HOST. `e` supplies the CUDA
-    /// context for the optional pinned allocation (§C.1). Default storage is pageable `Vec<u8>`
-    /// (identical to the prior behavior); pinned is chosen when MEMRA_MOE_PINNED or MEMRA_MOE_CACHE is set.
-    pub fn load(e: &Engine, g: &GgufFile, name: &str) -> Result<Self, Box<dyn std::error::Error>> {
-        Self::load_stacked_from_source(e, &GgufSource(g), name)
-    }
-
     /// Load a STACKED 3D expert tensor (`ne=[in_f,out_f,n_expert]`) from any source. GGUF stores the
     /// experts this way; the source returns the same mmap bytes (`GgufSource::find` == `tensor_data`),
     /// so the GGUF path is byte-identical to the prior direct-`GgufFile` loader. (Safetensors stores N

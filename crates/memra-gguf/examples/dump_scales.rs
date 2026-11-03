@@ -1,7 +1,7 @@
-//! Throwaway: dump every "*.scale" / "*.input_scale" scalar tensor value, grouped by the
-//! weight tensor's quant type. Finds which dtypes carry a per-tensor macro-scale that memra
-//! currently applies ONLY for NVFP4 (model.rs GpuTensor::load). If Q4_K/Q5_K scales != 1.0,
-//! the hybrid forward drops them -> wrong logits.
+//! Throwaway: dump every "*.scale" / "*.input_scale" scalar tensor value, grouped by the weight
+//! tensor's quant type. Finds which dtypes carry a per-tensor macro-scale that memra currently
+//! applies ONLY for NVFP4 (model.rs GpuTensor::load_from_source). If Q4_K/Q5_K scales != 1.0, the
+//! hybrid forward drops them -> wrong logits.
 use memra_gguf::GgufFile;
 
 fn main() {
