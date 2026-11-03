@@ -23,7 +23,8 @@ def git(repo, *a):
 
 
 def gate_cells(repo, base, head, use_map, map_data=None):
-    """The push gate's (target, scope) cells for the diff, with or without the map."""
+    """The push gate's (target, scope) cells for the diff, with or without the map, and the
+    evidence kinds each push-gated target needs."""
     sys.path.insert(0, str(HERE.parent))
     import change_impact as ci
     try:
@@ -34,10 +35,13 @@ def gate_cells(repo, base, head, use_map, map_data=None):
                 rules += f'\n[target."{t}"]\nname = "sm_{t}"\npush_gate = true\n'
         impact, _, _ = ci.impact_between(repo, base, head, rules, use_map=use_map, map_data=map_data if use_map else None)
     except ci.ImpactError as error:
-        return f"REFUSED: {error}"
+        return f"REFUSED: {error}", "REFUSED"
     cells = sorted({f"{c['name']}:{c['scope']}" for c in impact["cells"]})
     unc = sorted(impact.get("uncovered", {}))
-    return ", ".join(cells) + (f" (uncovered: {', '.join(unc)})" if unc else "") if cells or unc else "none"
+    needs = [f"{n['name']}: {'+'.join(sorted(n['kinds'] | set().union(*n['device_kinds'].values())))}"
+             for _, n in sorted(ci.requirements(impact).items()) if n["push_gate"]]
+    text = ", ".join(cells) + (f" (uncovered: {', '.join(unc)})" if unc else "") if cells or unc else "none"
+    return text, "; ".join(needs) or "none"
 
 
 def row(repo, label, base, head, m, models, dev_target=None, pushed=None):
@@ -52,8 +56,10 @@ def row(repo, label, base, head, m, models, dev_target=None, pushed=None):
             runs.append(f"{dev}: {model.split('/')[-1]} [{','.join(v['routes'])}] {'+'.join(v['tests'])}")
     unc = sorted({(u["family"], u["device"]) for u in pl["uncovered"]})
     fams = s["families"]
+    rules_only, with_map = gate_cells(repo, base, head, False), gate_cells(repo, base, head, True, m)
     return {"label": label, "files": files, "items": changed, "cells": s["cells"],
-            "gate_rules_only": gate_cells(repo, base, head, False), "gate_with_map": gate_cells(repo, base, head, True, m),
+            "gate_rules_only": rules_only[0], "gate_with_map": with_map[0],
+            "push_rules_only": rules_only[1], "push_with_map": with_map[1],
             "families": "*" if len(fams) == len(m["vocab"]["families"]) else ",".join(fams) or "-",
             "devices": ",".join(s["devices"]) or "-", "effects": ",".join(s["effects"]) or "-",
             "kernel": s["kernel"], "doors": ",".join(rep.get("doors", [])), "runs": runs,
@@ -95,12 +101,12 @@ def main():
     if a.json:
         print(json.dumps(rows, indent=1))
         return
-    print("| diff | files | changed items | gate cells, path rules only (#1030) | gate cells with the map | reached families | devices | effects | push runs the plan picks | daily (families per device) | reached cells no measured model covers |")
-    print("|---|---|---|---|---|---|---|---|---|---|---|")
+    print("| diff | files | changed items | gate cells, path rules only | gate cells with the map | push evidence, path rules only | push evidence with the map | reached families | devices | effects | push runs the plan picks | daily (families per device) | reached cells no measured model covers |")
+    print("|---|---|---|---|---|---|---|---|---|---|---|---|---|")
     for r in rows:
         runs = "<br>".join(r["runs"]) or "none"
         eff = r["effects"] + (" +kernel" if r["kernel"] else "") + (f" doors:{r['doors']}" if r["doors"] else "")
-        print(f"| {r['label']} | {r['files']} | {r['items']} | {r['gate_rules_only']} | {r['gate_with_map']} | {r['families']} | {r['devices']} | {eff} | {runs} | {r['daily'] or '-'} | {r['uncovered']} |")
+        print(f"| {r['label']} | {r['files']} | {r['items']} | {r['gate_rules_only']} | {r['gate_with_map']} | {r['push_rules_only']} | {r['push_with_map']} | {r['families']} | {r['devices']} | {eff} | {runs} | {r['daily'] or '-'} | {r['uncovered']} |")
 
 
 if __name__ == "__main__":

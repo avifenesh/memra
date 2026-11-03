@@ -16,6 +16,9 @@ For a diff base..head:
    file the map does not know reaches every cell. Removed items take their base reach.
 3. Effects of the changed items pick the test kinds (numeric -> argmax and route gates, speed ->
    perf A/B, memory -> device memory qualification, policy -> serve-smoke, CUDA/FFI -> kernel-check).
+   An item in a crate the battery binaries do not link (memra-server, memra-lanes: they sit above
+   the engine) cannot move a kernel-check, run-gen, run-spec or perf result; its effect is
+   `served` and it needs serve-smoke only, on one device, since that code has no device path.
 
 Why a map built at an older commit stays safe: a change that makes a new caller reach an item
 changes that caller, and the caller already carries its own reach. A change that only removes
@@ -52,7 +55,12 @@ EFFECT_TESTS = {
     "policy": ("serve-smoke",),
     "observability": (),
     "none": (),
+    # code outside the battery binaries' link closure: serve-smoke is the one test that runs it
+    "served": ("serve-smoke",),
 }
+# tests that run memra-engine binaries (the battery and the run-gen perf A/B): their result can move
+# only with code linked into memra-engine, so their ledger fingerprint covers linked items only
+ENGINE_TESTS = frozenset(("kernel-check", "run-gen-argmax", "run-spec", "perf-ab"))
 ROUTE_TESTS = {
     "mtp": ("run-spec",),
     "dflash": ("run-spec",),
@@ -77,6 +85,27 @@ ROUTE_TESTS = {
 
 class DeltaError(ValueError):
     pass
+
+
+def crate_dir(path):
+    m = re.match(r"crates/([^/]+)/", path)
+    return m.group(1) if m else None
+
+
+def battery_linked(repo, base, head):
+    """Crates linked into the battery binaries at base or head (tools/change_impact.py
+    link_closure), or None when the manifests cannot say: every item then counts as linked."""
+    try:
+        sys.path.insert(0, str(HERE.parent))
+        import change_impact as ci
+        return ci.battery_linked(repo, base, head)
+    except Exception:  # noqa: BLE001 - unknown means linked, which only widens
+        return None
+
+
+def is_linked(path, linked):
+    d = crate_dir(path)
+    return linked is None or d is None or d in linked
 
 
 def git(repo, *args, check=True, inp=None):
@@ -294,16 +323,18 @@ def delta(repo, base, head, *, map_ref=None, paths=None, map_data=None, map_obj=
         m = Map(data)
     names = [n for n in changed_paths(repo, base, head) if paths is None or n in paths]
     drift, arch_moved = ({}, False) if whatif else map_drift(repo, m, base)
+    linked = battery_linked(repo, base, head)
     report = {"schema": SCHEMA, "base": base, "head": head, "map_commit": m.data.get("source_commit"),
               "files": [], "cells": {}, "effects": set(), "kernel": False, "arch_moved": arch_moved,
               "map_stale_base": drift is None}
     cells = {}
 
-    def add(cellset, why, effects):
+    def add(cellset, why, effects, item_linked=True):
         for c in cellset:
-            e = cells.setdefault(c, {"why": set(), "effects": set()})
+            e = cells.setdefault(c, {"why": set(), "effects": set(), "linked": False})
             e["why"].add(why)
             e["effects"].update(effects)
+            e["linked"] |= item_linked
 
     all_eff = {"numeric", "speed", "memory", "policy"}
     for path in names:
@@ -367,14 +398,20 @@ def delta(repo, base, head, *, map_ref=None, paths=None, map_data=None, map_obj=
                         src += "+drift"
             if path.startswith(CU_PREFIX + "cu/") or path.endswith("_ffi.rs"):
                 report["kernel"] = True
-            entry["items"].append({"item": i, "change": kind, "source": src, "cells": len(cs), "effects": sorted(eff)})
-            add(cs, i, eff)
+            item_linked = is_linked(path, linked)
+            if not item_linked and eff - {"observability", "none"}:
+                eff = {"served"}
+            entry["items"].append({"item": i, "change": kind, "source": src, "cells": len(cs), "effects": sorted(eff),
+                                   "linked": item_linked})
+            add(cs, i, eff, item_linked)
             report["effects"] |= eff
         report["files"].append(entry)
     report["cells"] = cells
     report["doors"] = sorted(m.doors_hit)
     if fingerprints and cells:
-        report["fingerprints"] = cell_fingerprints(m, tree_hashes(repo, head), set(cells))
+        hashes = tree_hashes(repo, head)
+        report["fingerprints"] = cell_fingerprints(m, hashes, set(cells))
+        report["fingerprints_engine"] = cell_fingerprints(m, hashes, set(cells), linked=linked)
     return report
 
 
@@ -388,21 +425,25 @@ def tests_for(cells_report):
             kinds.update(EFFECT_TESTS.get(eff, ()))
         if "numeric" in e["effects"]:
             kinds.update(ROUTE_TESTS.get(r, ()))
-        if kernel and d != "cpu":
+        if kernel and d != "cpu" and e.get("linked", True):
             kinds.add("kernel-check")
         if kinds:
             out[(f, r, d)] = sorted(kinds)
     return out
 
 
-def cell_fingerprints(m, item_hashes, cells):
+def cell_fingerprints(m, item_hashes, cells, linked=None):
     """Fingerprint of each cell: a digest over (item id, token hash) of every item whose map reach
-    includes the cell, computed through the map's distinct reach sets so it stays cheap."""
+    includes the cell, computed through the map's distinct reach sets so it stays cheap. With
+    `linked` (crate directory names), only items in those crates count: the fingerprint of a test
+    that runs a memra-engine binary (ENGINE_TESTS), which no other crate's code can move."""
     set_digest, set_cells = {}, {}
     by_set = {}
     for i, it in m.items.items():
         if set(it["e"]) <= {"observability", "none"}:
             continue  # verified output-neutral items do not invalidate a measurement
+        if linked is not None and not is_linked(it["f"], linked):
+            continue
         by_set.setdefault((it["r"], it.get("x")), []).append(i)
     for idx, ids in by_set.items():
         set_digest[idx] = fingerprint(item_hashes, ids)
@@ -458,6 +499,20 @@ def plan(repo, ref, report, models=None, ledger=None, device_target=None, push_g
     needs = tests_for(report)
     proven_keys = {(r["model"], r["route"], r["device"], r["test"], r.get("fingerprint")) for r in ledger.get("records", [])}
     fps = report.get("fingerprints", {})
+    fps_engine = report.get("fingerprints_engine", fps)
+    prefer = {d: i for i, d in enumerate(DEVICE_PREFERENCE)}
+    # a cell reached only by code outside the battery binaries runs no device-specific code of its
+    # own: one device proves it. Fold its tests onto the family's cheapest device with a model.
+    free = {}
+    for c in list(needs):
+        f, r, d = c
+        if d != "cpu" and not report["cells"].get(c, {}).get("linked", True):
+            free.setdefault((f, r), {})[d] = needs.pop(c)
+    for (f, r), per_dev in free.items():
+        with_model = [d for d in per_dev if any(d in mm.get("devices", []) for mm in models.get("families", {}).get(f, []))]
+        keep = min(with_model or list(per_dev), key=lambda d: (prefer.get(d, 99), d))
+        kinds = set(needs.get((f, r, keep), ())).union(*per_dev.values())
+        needs[(f, r, keep)] = sorted(kinds)
     by_fd = {}
     cpu = set()
     for (fam, route, dev), kinds in needs.items():
@@ -469,7 +524,6 @@ def plan(repo, ref, report, models=None, ledger=None, device_target=None, push_g
     # target), preferring the cheapest window; everything else reached goes to that device's DAILY run
     tier_of = {}
     if device_target is not None:
-        prefer = {d: i for i, d in enumerate(DEVICE_PREFERENCE)}
         by_ft = {}
         for (fam, dev) in by_fd:
             fams_models = [mm for mm in models.get("families", {}).get(fam, []) if dev in mm.get("devices", [])]
@@ -500,7 +554,7 @@ def plan(repo, ref, report, models=None, ledger=None, device_target=None, push_g
             slot = runs.setdefault(dev, {}).setdefault(best["id"], {"family": fam, "routes": set(), "tests": set()})
             for r in got:
                 for t in routes[r]:
-                    fp = fps.get((fam, r, dev))
+                    fp = (fps_engine if t in ENGINE_TESTS else fps).get((fam, r, dev))
                     if fp and (best["id"], r, dev, t, fp) in proven_keys:
                         proven.append({"model": best["id"], "route": r, "device": dev, "test": t})
                         continue

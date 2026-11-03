@@ -45,7 +45,21 @@ only for the `120a` target, `wgmma_common.cuh` only for `90a`. Rules that need n
 - comment-only edits of `.rs`/`.cu` files: every changed line is a `//` comment. Blank
   lines and a `//` line ending in a backslash count as code;
 - a non-crate path counts as a crate input when the CI include census
-  (`tools/validation_plan.py`) says a crate reads it, so `docs/FLAGS.md` is `numeric`.
+  (`tools/validation_plan.py`) says a crate reads it, so `docs/FLAGS.md` is `numeric`. The
+  literal fallback counts a path only inside a string literal of a compiled source, outside
+  `tests/`, `benches/` and `examples/`: a README named in a model's artifact lock is not an
+  input. A path a crate reads that a rule also matches takes the stronger class, so
+  `Cargo.lock` stays `build` although `memra-server` hashes it into its build id.
+
+Evidence follows the binaries a test runs. The battery (`kernel-check`, `run-gen`, `run-spec`,
+`argmax-margin-probe`, `tok-parity`) and the perf A/B (`run-gen`) are `memra-engine` targets.
+`tools/change_impact.py` reads the workspace manifests at the base and the head and takes
+`memra-engine`'s link closure: the engine and every path dependency it links. `memra-server`
+and `memra-lanes` sit above the engine (the server depends on the engine, never the reverse),
+so a change confined to them leaves every battery binary as it was. Its cells need
+`tools/serve-smoke.sh`, the one test that runs that code, and no perf A/B. A crate inside the
+closure keeps the battery whatever its class: `memra-tier` is `serving`, but the engine links
+it. When the manifests cannot be read, every path counts as linked.
 
 A change inside `model_packs/<pack>/` reaches only that pack. When the device battery runs
 none of the pack's models, the gate names it **UNCOVERED**: the pack's own gate is the
@@ -96,7 +110,7 @@ A record measured at an older commit still proves its kinds on its target when f
 
 - its tested commit is an ancestor of the candidate;
 - it verifies against its own commit;
-- the change impact from that commit to the candidate reaches no cell of that target in the scopes those kinds cover;
+- the change impact from that commit to the candidate needs none of those kinds on that target (a server-only change since a battery record needs serve-smoke, so the battery still holds);
 - for `perf`, the push base is also equivalent to the record's base on that target.
 
 That change impact is judged by the push base's rules and map, and only the newest such record per target and device class is re-judged.
@@ -109,9 +123,10 @@ Evidence per target (`tools/cell_evidence.py`):
 |---|---|
 | `kernel`, `build`, `numeric`, `defaults` | device battery: `kernel-check`, calibrated `run-gen` argmax and `run-spec` K=1..8 on the device roster |
 | `serving` | the battery plus `tools/serve-smoke.sh` |
-| `perf` | `run-gen` decode A/B against the push base, A B B A A B for every roster model |
+| any of the above, every path outside the battery binaries' link closure | `tools/serve-smoke.sh` only |
+| `perf` | `run-gen` decode A/B against the push base, A B B A A B for every roster model; none for paths outside the closure |
 | `gate` | all three: a changed gate has to run |
-| `defaults` on a line naming a card | battery and perf from that card's device class |
+| `defaults` on a line naming a card | battery and perf from that card's device class; serve-smoke from it when the line sits outside the closure |
 
 A device counts for the target its compute capability maps to: the RTX 5090 and the RTX
 PRO 6000 both count for `sm_120a`. A default keyed on a card name (`RTX PRO 6000`,

@@ -381,9 +381,6 @@ def _is_ancestor(repo, a, b):
     return subprocess.run(["git", "-C", str(repo), "merge-base", "--is-ancestor", a, b]).returncode == 0
 
 
-KIND_SCOPES = {"battery": set(ci.CORRECTNESS), "serving": {"serving", "gate"}, "perf": {"perf", "gate"}}
-
-
 _IMPACT_CACHE = {}
 
 
@@ -422,7 +419,10 @@ def still_proven(repo, record, root, candidate, rules, arch, push_base, log=prin
         log(f"  record {root}: older commit, not admitted: {error}")
         return None
     reached = {c["scope"] for c in impact["cells"] if c["target"] == target}
-    held = {k for k in kinds if not (KIND_SCOPES.get(k, set()) & reached)}
+    # what the changes since would need on this target is what they invalidate: a server-only
+    # change since a battery record asks for serve-smoke, so the battery still holds
+    need = ci.requirements(impact).get(target, {})
+    held = set(kinds) - need.get("kinds", set()) - set().union(*need.get("device_kinds", {}).values())
     if "perf" in held and own_base != push_base:
         try:
             base_impact = _impact_pinned(repo, own_base, push_base, push_base)
@@ -473,7 +473,7 @@ def gate(repo, base, oid, log=print):
             missing.append(f"{need['name']} [{cells}] needs {'+'.join(lack)} evidence from one of: "
                            f"{', '.join(devices_for(rules, arch, target)) or 'no registered device'}")
         for device in sorted(need["devices"]):
-            lack = sorted({"battery", "perf"} - by_device.get(device, set()))
+            lack = sorted(need["device_kinds"].get(device, {"battery", "perf"}) - by_device.get(device, set()))
             if lack:
                 missing.append(f"{need['name']} [defaults keyed on {device}] needs {'+'.join(lack)} "
                                f"evidence from {device} itself")

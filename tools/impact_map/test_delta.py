@@ -251,5 +251,63 @@ class ScannerTest(unittest.TestCase):
         self.assertEqual(recs, {"live": False, "t": True})
 
 
+
+SERVER = "crates/memra-server/src/api.rs"
+SERVER_V1 = "pub fn route(x: u32) -> u32 {\n    x + 1\n}\n"
+MANIFESTS = {
+    "Cargo.toml": '[workspace]\nmembers = ["crates/memra-engine", "crates/memra-server"]\n',
+    "crates/memra-engine/Cargo.toml": '[package]\nname = "memra-engine"\n',
+    "crates/memra-server/Cargo.toml": '[package]\nname = "memra-server"\n[dependencies]\nmemra-engine = { path = "../memra-engine" }\n',
+}
+
+
+class ServerSideTest(unittest.TestCase):
+    """memra-server sits above the engine: no battery binary links it, so its change needs
+    serve-smoke on one device, and engine-test fingerprints do not move."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.repo = Path(self.tmp.name)
+        run(self.repo, "init", "-q")
+        self.base = commit(self.repo, {ENGINE: RUST_V1, KERNEL: CU_V1, SERVER: SERVER_V1, **MANIFESTS}, "base")
+        m = build_map(self.repo, self.base)
+        for i, (h, a, b, test, kind, lh, _) in delta.scan(SERVER, SERVER_V1).items():
+            if kind != "outside":
+                m["items"][i] = {"f": SERVER, "a": a, "b": b, "h": h, "l": lh, "k": kind, "r": 0,
+                                 "e": ["memory", "numeric", "policy", "speed"], "s": "test"}
+        self.map = m
+        models = {"families": {"qwen35": [{"id": "qwen/qwen3.8-27b", "devices": ["rtx5090"], "routes": ["plain", "mtp"], "class": "vendor"}],
+                               "deepseek_v4": [{"id": "deepseek-v4", "devices": ["rtxpro6000"], "routes": ["plain", "mtp"], "class": "vendor"}]}}
+        self.base = commit(self.repo, {delta.MAP_PATH: json.dumps(m), delta.MODELS_PATH: json.dumps(models)}, "map")
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_server_change_needs_serve_smoke_on_one_device_per_family(self):
+        head = commit(self.repo, {SERVER: SERVER_V1.replace("x + 1", "x + 2")}, "server")
+        rep = delta.delta(self.repo, self.base, head)
+        self.assertEqual(rep["effects"], {"served"})
+        self.assertEqual({tuple(k) for k in delta.tests_for(rep).values()}, {("serve-smoke",)})
+        pl = delta.plan(self.repo, self.base, rep)
+        self.assertEqual(pl["runs"], {"rtx5090": {"qwen/qwen3.8-27b": {"family": "qwen35", "routes": ["mtp", "plain"], "tests": ["serve-smoke"]}},
+                                      "rtxpro6000": {"deepseek-v4": {"family": "deepseek_v4", "routes": ["mtp", "plain"], "tests": ["serve-smoke"]}}})
+
+    def test_engine_change_still_needs_the_battery_tests(self):
+        head = commit(self.repo, {ENGINE: RUST_V1.replace("x + 1", "x + 2")}, "engine")
+        rep = delta.delta(self.repo, self.base, head)
+        self.assertIn("run-gen-argmax", delta.tests_for(rep)[("qwen35", "plain", "rtx5090")])
+
+    def test_server_change_moves_only_the_serving_fingerprint(self):
+        m = delta.Map(self.map)
+        sc = ledger.TreeScanner(self.repo)
+        cell = ("qwen35", "plain", "rtx5090")
+        linked = delta.battery_linked(self.repo, self.base, self.base)
+        self.assertEqual(linked, {"memra-engine"})
+        head = commit(self.repo, {SERVER: SERVER_V1.replace("x + 1", "x + 3")}, "server")
+        before, after = sc.hashes(self.base), sc.hashes(head)
+        self.assertNotEqual(delta.cell_fingerprints(m, before, {cell})[cell], delta.cell_fingerprints(m, after, {cell})[cell])
+        self.assertEqual(delta.cell_fingerprints(m, before, {cell}, linked=linked)[cell],
+                         delta.cell_fingerprints(m, after, {cell}, linked=linked)[cell])
+
 if __name__ == "__main__":
     unittest.main()
