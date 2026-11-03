@@ -8,12 +8,17 @@
 //! `tokio` mpsc Sender back which the worker uses to stream tokens (and a final Done) to that one
 //! request.
 //!
-//! SCHEDULER LOOP: the worker holds a `Vec<Session>` of active generations. Each iteration it
-//! round-robin steps EVERY active session by exactly ONE `decode_step` (one token of prefill OR
-//! one decode token), samples, checks stop, streams the token text back on that session's channel,
-//! and retires finished sessions. Queued admits fill empty slots up to `MAX_ACTIVE`. This is the
-//! interleave: a long generation and a freshly-admitted one make forward progress in the same loop,
-//! so the second produces tokens before the first finishes (not serialized end-to-end).
+//! SCHEDULER LOOP: the worker holds a `Vec<Session>` of active generations. Each tick it primes
+//! every still-prefilling session in chunks under a per-tick token budget (`prefill_tick`:
+//! `PREFILL_TICK_T`, 1024 tokens, or `SOLO_PREFILL_TICK_T`, 8192, for a lone fresh interactive
+//! request; a model with no chunked prime takes its whole prompt in one call), steps the
+//! decoding sessions together in batched decode chunks, samples, checks stop, streams the token
+//! text back on each session's channel, and retires finished sessions. Queued admits fill the
+//! interactive lane up to `MEMRA_MAX_SESSIONS` (default 64; `route_contract::interactive_cap`).
+//! This is the interleave: a long generation and a freshly-admitted one make forward progress in
+//! the same loop, so the second produces tokens before the first finishes (not serialized
+//! end-to-end). `MEMRA_SERVE_BATCH=0` keeps the legacy round-robin loop, one `decode_step` per
+//! session per iteration, capped at `MAX_ACTIVE`.
 
 mod device_memory;
 mod host_glm;
