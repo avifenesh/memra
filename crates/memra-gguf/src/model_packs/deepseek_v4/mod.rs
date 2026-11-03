@@ -10,6 +10,10 @@ pub static PACK: ModelPack = ModelPack {
     family: "deepseek_v4",
     output_head: OutputHeadContract::SeparateHead,
     tensor_consumption: TensorConsumption::Report,
+    // `deepseek_v4_preview` names the preview encoding, whose clamp-only act-quant is
+    // GATE-ONLY: memra-server serves the matrix program, which implements the 0731
+    // RefFp8Round contract alone, and refuses a preview artifact at load by name
+    // (`dsv4_serve::served_act_quant`). The alias stays for inspect and the class gates.
     aliases: &["deepseek_v4", "deepseek-v4", "deepseek_v4_preview"],
     config_layout: ConfigLayout::Flat,
     tokenizer_sources: &[TokenizerSource::TokenizerJson],
