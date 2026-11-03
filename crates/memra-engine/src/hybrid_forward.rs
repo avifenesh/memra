@@ -12189,8 +12189,9 @@ impl HybridModel {
         )
     }
 
-    /// Decode-path twin with a PRE-QUANTIZED z (from add_rms_norm_zq8): threads (zq, zd) into the
-    /// t=1 dev arm so the per-layer standalone quantize_q8_1 launch folds away. Identical bytes
+    /// Decode-path twin with a PRE-QUANTIZED z (the caller's quantize_q8_1, or a fused norm such
+    /// as rms_norm_zq8_f32): threads (zq, zd) into the t=1 dev arm so the per-layer standalone
+    /// quantize_q8_1 launch folds away. Identical bytes
     /// (the fused kernel reproduces quantize_q8_1 exactly); every other path ignores the pair.
     pub fn moe_ffn_il_zq8(
         &self,
