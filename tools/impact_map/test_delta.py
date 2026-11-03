@@ -255,8 +255,9 @@ class ScannerTest(unittest.TestCase):
 SERVER = "crates/memra-server/src/api.rs"
 SERVER_V1 = "pub fn route(x: u32) -> u32 {\n    x + 1\n}\n"
 MANIFESTS = {
-    "Cargo.toml": '[workspace]\nmembers = ["crates/memra-engine", "crates/memra-server"]\n',
+    "Cargo.toml": '[workspace]\nmembers = ["crates/memra-engine", "crates/memra-server", "crates/memra-tokenizer"]\n',
     "crates/memra-engine/Cargo.toml": '[package]\nname = "memra-engine"\n',
+    "crates/memra-tokenizer/Cargo.toml": '[package]\nname = "memra-tokenizer"\n',
     "crates/memra-server/Cargo.toml": '[package]\nname = "memra-server"\n[dependencies]\nmemra-engine = { path = "../memra-engine" }\n',
 }
 
@@ -297,12 +298,29 @@ class ServerSideTest(unittest.TestCase):
         rep = delta.delta(self.repo, self.base, head)
         self.assertIn("run-gen-argmax", delta.tests_for(rep)[("qwen35", "plain", "rtx5090")])
 
+    def test_ledger_refresh_and_status_keep_engine_records_across_a_server_change(self):
+        import contextlib, io
+        ledger_path = self.repo / delta.LEDGER_PATH
+        recs = [{"model": "qwen/qwen3.8-27b", "family": "qwen35", "route": "plain", "device": "rtx5090", "test": t,
+                 "commit": self.base, "date": "2026-11-03", "confidence": "record", "source": "fixture"}
+                for t in ("run-gen-argmax", "serve-smoke")]
+        ledger_path.write_text(json.dumps({"schema": ledger.SCHEMA, "records": recs}))
+        map_path = self.repo / delta.MAP_PATH
+        ledger.refresh(self.repo, ledger_path, map_path)
+        commit(self.repo, {delta.LEDGER_PATH: ledger_path.read_text()}, "ledger")
+        head = commit(self.repo, {SERVER: SERVER_V1.replace("x + 1", "x + 4")}, "server")
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            ledger.status(self.repo, head)
+        lines = {l.split()[4]: l.split()[0] for l in out.getvalue().splitlines()}
+        self.assertEqual(lines, {"run-gen-argmax": "HOLDS", "serve-smoke": "stale"})
+
     def test_server_change_moves_only_the_serving_fingerprint(self):
         m = delta.Map(self.map)
         sc = ledger.TreeScanner(self.repo)
         cell = ("qwen35", "plain", "rtx5090")
         linked = delta.battery_linked(self.repo, self.base, self.base)
-        self.assertEqual(linked, {"memra-engine"})
+        self.assertEqual(linked, {"memra-engine", "memra-tokenizer"})
         head = commit(self.repo, {SERVER: SERVER_V1.replace("x + 1", "x + 3")}, "server")
         before, after = sc.hashes(self.base), sc.hashes(head)
         self.assertNotEqual(delta.cell_fingerprints(m, before, {cell})[cell], delta.cell_fingerprints(m, after, {cell})[cell])

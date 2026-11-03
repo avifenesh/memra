@@ -51,19 +51,29 @@ only for the `120a` target, `wgmma_common.cuh` only for `90a`. Rules that need n
   classifier carries a port of the generator, pinned to the generator's source hash; when
   `generate_env_registry` changes, the shortcut is off until the port is re-checked. The
   literal fallback counts a path only inside a string literal of a compiled source, outside
-  `tests/`, `benches/` and `examples/`: a README named in a model's artifact lock is not an
-  input. A path a crate reads that a rule also matches takes the stronger class, so
-  `Cargo.lock` stays `build` although `memra-server` hashes it into its build id.
+  `tests/`, `benches/` and `examples/` (and in crate manifests): a README named in a model's
+  artifact lock is not an input. A path a crate reads that a rule also matches needs both
+  answers: `Cargo.lock` is `build` and, since `memra-server` hashes it into its build id, also
+  serve-smoke.
 
-Evidence follows the binaries a test runs. The battery (`kernel-check`, `run-gen`, `run-spec`,
-`argmax-margin-probe`, `tok-parity`) and the perf A/B (`run-gen`) are `memra-engine` targets.
-`tools/change_impact.py` reads the workspace manifests at the base and the head and takes
-`memra-engine`'s link closure: the engine and every path dependency it links. `memra-server`
-and `memra-lanes` sit above the engine (the server depends on the engine, never the reverse),
-so a change confined to them leaves every battery binary as it was. Its cells need
-`tools/serve-smoke.sh`, the one test that runs that code, and no perf A/B. A crate inside the
-closure keeps the battery whatever its class: `memra-tier` is `serving`, but the engine links
-it. When the manifests cannot be read, every path counts as linked.
+Evidence follows the binaries a test runs. The battery (`kernel-check`, `run-gen`, `run-spec`
+and `argmax-margin-probe` from `memra-engine`, `tok-parity` from `memra-tokenizer`) and the
+perf A/B (`run-gen`) link only those packages and their dependencies.
+`tools/change_impact.py` reads the workspace manifests at the base and the head and takes that
+link closure. `memra-server` and `memra-lanes` sit above the engine (the server depends on the
+engine, never the reverse), so a change to their code leaves every battery binary as it was.
+Its cells need `tools/serve-smoke.sh`, the one test that runs that code, and no perf A/B; a
+cell that mixes linked and unlinked paths needs both. Exceptions that keep the battery:
+
+- a crate inside the closure, whatever its class: `memra-tier` is `serving`, but the engine
+  links it;
+- a server file another crate inside the closure includes;
+- the manifest of any package the evidence build selects (`memra-engine`, `memra-server`,
+  `memra-tokenizer` and their dependencies): `cell_evidence.py` builds them in one cargo call,
+  which unifies dependency features, so a server feature edit can change the battery
+  binaries.
+
+When the manifests cannot be read, every path counts as linked.
 
 A change inside `model_packs/<pack>/` reaches only that pack. When the device battery runs
 none of the pack's models, the gate names it **UNCOVERED**: the pack's own gate is the

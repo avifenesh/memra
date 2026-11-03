@@ -195,9 +195,10 @@ class CellGate(unittest.TestCase):
 
     def workspace(self):
         """Cargo manifests like the real tree's: memra-server depends on memra-engine, never the reverse."""
-        self.f.write("Cargo.toml", '[workspace]\nresolver = "2"\nmembers = ["crates/memra-engine", "crates/memra-server"]\n'
-                     '[workspace.dependencies]\nmemra-engine = { path = "crates/memra-engine" }\n')
+        self.f.write("Cargo.toml", '[workspace]\nresolver = "2"\nmembers = ["crates/memra-engine", "crates/memra-server", '
+                     '"crates/memra-tokenizer"]\n[workspace.dependencies]\nmemra-engine = { path = "crates/memra-engine" }\n')
         self.f.write("crates/memra-engine/Cargo.toml", '[package]\nname = "memra-engine"\n')
+        self.f.write("crates/memra-tokenizer/Cargo.toml", '[package]\nname = "memra-tokenizer"\n')
         self.f.write("crates/memra-server/Cargo.toml", '[package]\nname = "memra-server"\n'
                      '[dependencies]\nmemra-engine = { workspace = true }\n')
         self.f.commit("workspace manifests")

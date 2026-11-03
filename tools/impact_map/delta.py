@@ -92,15 +92,22 @@ def crate_dir(path):
     return m.group(1) if m else None
 
 
+_LINKED = {}
+
+
 def battery_linked(repo, base, head):
     """Crates linked into the battery binaries at base or head (tools/change_impact.py
     link_closure), or None when the manifests cannot say: every item then counts as linked."""
-    try:
-        sys.path.insert(0, str(HERE.parent))
-        import change_impact as ci
-        return ci.battery_linked(repo, base, head)
-    except Exception:  # noqa: BLE001 - unknown means linked, which only widens
-        return None
+    key = (str(repo), base, head)
+    if key not in _LINKED:
+        try:
+            if str(HERE.parent) not in sys.path:
+                sys.path.insert(0, str(HERE.parent))
+            import change_impact as ci
+            _LINKED[key] = ci.battery_linked(repo, base, head)[0]
+        except Exception:  # noqa: BLE001 - unknown means linked, which only widens
+            _LINKED[key] = None
+    return _LINKED[key]
 
 
 def is_linked(path, linked):
@@ -501,14 +508,16 @@ def plan(repo, ref, report, models=None, ledger=None, device_target=None, push_g
     fps = report.get("fingerprints", {})
     fps_engine = report.get("fingerprints_engine", fps)
     prefer = {d: i for i, d in enumerate(DEVICE_PREFERENCE)}
-    # a cell reached only by code outside the battery binaries runs no device-specific code of its
-    # own: one device proves it. Fold its tests onto the family's cheapest device with a model.
+    # a cell reached only by code outside the battery binaries runs no CUDA of its own: one device
+    # per build target proves it (a card-keyed default there is the gate's defaults rule). Fold its
+    # tests onto the family's cheapest device with a model, per target.
     free = {}
     for c in list(needs):
         f, r, d = c
         if d != "cpu" and not report["cells"].get(c, {}).get("linked", True):
-            free.setdefault((f, r), {})[d] = needs.pop(c)
-    for (f, r), per_dev in free.items():
+            t = device_target.get(d, d) if device_target is not None else None
+            free.setdefault((f, r, t), {})[d] = needs.pop(c)
+    for (f, r, _t), per_dev in free.items():
         with_model = [d for d in per_dev if any(d in mm.get("devices", []) for mm in models.get("families", {}).get(f, []))]
         keep = min(with_model or list(per_dev), key=lambda d: (prefer.get(d, 99), d))
         kinds = set(needs.get((f, r, keep), ())).union(*per_dev.values())

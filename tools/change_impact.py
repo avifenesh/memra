@@ -42,13 +42,17 @@ UNNARROWED = ("build", "gate", UNKNOWN)
 ZERO = "0" * 40
 PUBLICATION = "research/release-qualification/"
 # Weakest to strongest; a path read by several crates takes the strongest class.
-# The release battery's binaries (kernel-check, run-gen, run-spec, argmax-margin-probe, tok-parity:
-# tools/cell_evidence.py BINARIES) are memra-engine targets, and the perf A/B times run-gen. A change
-# can move a battery or perf result only when it changes code linked into memra-engine: the package
-# and its workspace dependencies. memra-server sits above the engine (it depends on the engine, never
-# the reverse), so a server-only change leaves every battery binary as it was; serve-smoke is the one
-# test that runs that code.
-BATTERY_PACKAGE = "memra-engine"
+# The release battery's binaries (tools/cell_evidence.py BINARIES: kernel-check, run-gen, run-spec
+# and argmax-margin-probe are memra-engine targets, tok-parity a memra-tokenizer one) and the perf
+# A/B (run-gen) can move only with code linked into those packages: the packages and their
+# workspace dependencies. memra-server sits above the engine (it depends on the engine, never the
+# reverse), so a change to its code leaves every battery binary as it was; serve-smoke is the one
+# test that runs that code. Its manifest is different: see EVIDENCE_BUILD_PACKAGES.
+BATTERY_PACKAGES = ("memra-engine", "memra-tokenizer")
+# Packages the evidence build (tools/cell_evidence.py BUILD_COMMAND) selects in one cargo call.
+# Cargo unifies dependency features across them, so every manifest of a package in their
+# closure shapes the battery binaries, even where the package's code is not linked into them.
+EVIDENCE_BUILD_PACKAGES = ("memra-engine", "memra-server", "memra-tokenizer")
 # Files a crate compiles. The literal crate-input census reads only these, outside test targets.
 CODE_SUFFIXES = (".rs", ".cu", ".cuh", ".h", ".c", ".cc", ".cpp")
 TEST_TARGET = re.compile(r"^crates/[^/]+/(tests|benches|examples)/")
@@ -218,15 +222,19 @@ def _template(value, match, path):
     return value.format(**fields)
 
 
-def classify_file(change, rules, arch, *, owners=None, crate_inputs=None, linked=None, same_registry=False):
-    """One path -> {class, targets, perf, defaults, pack, route, why, linked}.
+def classify_file(change, rules, arch, *, owners=None, crate_inputs=None, linked=None, built=None,
+                  same_registry=False):
+    """One path -> {class, targets, perf, defaults, pack, route, why, linked, extra}.
 
     linked: the workspace packages linked into the battery binaries (link_closure); None means
     unknown, and every path then counts as linked. A path is linked unless it belongs to, or is
-    read only by, packages outside that set."""
+    read only by, packages outside that set. built: the evidence build's packages; a manifest of
+    one of them is a linked build input. extra: further (class, linked) answers the path also
+    needs, when a rule and the crates reading it disagree (the cells take the union)."""
     path = change.path
     result = {"path": path, "class": UNKNOWN, "targets": None, "perf": False, "defaults": False,
-              "devices": [], "pack": None, "route": None, "why": "no rule matches this path", "linked": True}
+              "devices": [], "pack": None, "route": None, "why": "no rule matches this path", "linked": True,
+              "extra": []}
     if path.startswith(PUBLICATION) or path == "research/INDEX.md":
         return {**result, "class": "research", "why": "qualification metadata (excluded from source inputs)"}
     if path == FLAGS_MD and same_registry and change.old_mode == change.new_mode == "100644":
@@ -235,27 +243,39 @@ def classify_file(change, rules, arch, *, owners=None, crate_inputs=None, linked
     if "120000" in (change.old_mode, change.new_mode) and (package is not None or not path.startswith(("research/", "docs/"))):
         return {**result, "why": "symlink: its target is a source input the diff does not show"}
     consumers = set()
-    if package is None and crate_inputs:
+    if crate_inputs:
         consumers = set().union(*(pkgs for pattern, pkgs in crate_inputs.items() if _input_match(path, pattern)))
+    # a crate's own file read by another crate (include!/include_str! across crates): linked when
+    # any reader is; its class stays its own package's
+    cross = consumers - {package} if package is not None else set()
+    if package is not None:
+        consumers = set()
     rule, match = _match_rule(rules, path)
     packages = rules.get("package", {})
     perf_packages = set(packages.get("perf_packages", ()))
     if any(p.startswith("<") for p in consumers):
         return {**result, "why": next(p for p in consumers if p.startswith("<")).strip("<>")}
     consumer_kind = max((packages.get(p, UNKNOWN) for p in consumers), key=STRENGTH.index) if consumers else None
-    # A path both read by a crate and matched by a rule takes the stronger class: Cargo.lock is
-    # hashed by memra-server's build id, and it is still a build input of every crate.
-    if consumers and not (rule is not None and STRENGTH.index(rule["class"]) > STRENGTH.index(consumer_kind)):
-        result.update({"class": consumer_kind, "why": "read by crate " + ", ".join(sorted(consumers)),
+    consumer_answer = {"class": consumer_kind, "why": "read by crate " + ", ".join(sorted(consumers)),
                        "perf": bool(consumers & perf_packages) and consumer_kind in PROGRAM,
-                       "linked": linked is None or bool(consumers & linked)})
+                       "linked": linked is None or bool(consumers & linked)} if consumers else None
+    own_linked = linked is None or package is None or package in linked or bool(cross & linked)
+    # A path both read by a crate and matched by a rule needs both answers: Cargo.lock is hashed
+    # by memra-server's build id (serve-smoke) and is a build input of every crate (battery); a gate
+    # file a server read would still be the gate. The stronger class leads, the other is extra.
+    if consumers and not (rule is not None and STRENGTH.index(rule["class"]) > STRENGTH.index(consumer_kind)):
+        result.update(consumer_answer)
+        if rule is not None and rule["class"] not in NO_CELL:
+            result["extra"].append({"class": rule["class"], "linked": own_linked, "why": rule.get("why", rule["pattern"])})
     elif rule is not None:
         result.update({"class": rule["class"], "why": rule.get("why", rule["pattern"]),
                        "pack": _template(rule.get("pack"), match, path),
                        "route": _template(rule.get("route"), match, path),
-                       "linked": linked is None or package is None or package in linked})
+                       "linked": own_linked})
         if consumers:
             result["why"] += " (also read by crate " + ", ".join(sorted(consumers)) + ")"
+            if consumer_kind not in NO_CELL:
+                result["extra"].append({k: consumer_answer[k] for k in ("class", "linked", "why")})
         if "perf" in rule:
             result["perf"] = bool(rule["perf"])
         else:
@@ -275,7 +295,14 @@ def classify_file(change, rules, arch, *, owners=None, crate_inputs=None, linked
         else:
             result.update({"class": kind, "why": f"{package} default ({kind})",
                            "perf": package in perf_packages and kind in PROGRAM,
-                           "linked": linked is None or package in linked})
+                           "linked": own_linked})
+    manifest = re.fullmatch(r"crates/([^/]+)/Cargo\.toml", path)
+    if manifest and (built is None or manifest.group(1) in built or package in built):
+        # its dependency features unify into the one cargo call that builds the battery binaries
+        if STRENGTH.index(result["class"]) < STRENGTH.index("build"):
+            result.update({"class": "build", "why": result["why"] + "; a manifest of the evidence build: its features "
+                           "unify into the battery binaries"})
+        result.update({"linked": True, "perf": True})
     if result["class"] in (*PROGRAM, "gate") and change.old_mode == change.new_mode != "000000":
         lines = [l for l in (*change.added, *change.removed)]
         if path.endswith(rules["_comment_suffixes"]) and (change.added or change.removed) and all(map(_comment_line, lines)):
@@ -292,7 +319,7 @@ def classify_file(change, rules, arch, *, owners=None, crate_inputs=None, linked
     return result
 
 
-def link_closure(read, root=BATTERY_PACKAGE):
+def link_closure(read, roots=BATTERY_PACKAGES):
     """Workspace packages linked into `root`'s binaries: root and every path dependency reached
     through [dependencies] and [build-dependencies] (target-specific tables and [patch] path
     crates included; dev-dependencies link only into tests). read(path) -> text or None.
@@ -316,11 +343,16 @@ def link_closure(read, root=BATTERY_PACKAGE):
         return manifests[d]
 
     members = ws.get("workspace", {}).get("members", [])
-    root_dir = next((m for m in members if (load(m) or {}).get("package", {}).get("name") == root), None)
-    if root_dir is None:
-        return None
-    todo = [root_dir] + [posixpath.normpath(spec["path"]) for patch in ws.get("patch", {}).values()
-                         for spec in patch.values() if isinstance(spec, dict) and spec.get("path")]
+    if isinstance(roots, str):
+        roots = (roots,)
+    root_dirs = []
+    for root in roots:
+        found = next((m for m in members if (load(m) or {}).get("package", {}).get("name") == root), None)
+        if found is None:
+            return None
+        root_dirs.append(found)
+    todo = root_dirs + [posixpath.normpath(spec["path"]) for patch in ws.get("patch", {}).values()
+                        for spec in patch.values() if isinstance(spec, dict) and spec.get("path")]
     seen, names = set(), set()
     while todo:
         d = todo.pop()
@@ -355,9 +387,61 @@ REGISTRY_GENERATOR_SHA = "18bf048eb85d32519550"
 _RUST_WS = set("\t\n\x0b\x0c\r \x85\xa0\u1680\u2028\u2029\u202f\u205f\u3000") | {chr(c) for c in range(0x2000, 0x200B)}
 
 
+def _generator_span(build_rs):
+    found = list(re.finditer(r"^fn generate_env_registry\(.*?^\}$", build_rs or "", re.M | re.S))
+    return found[0] if len(found) == 1 else None
+
+
 def registry_generator_sha(build_rs):
-    match = re.search(r"^fn generate_env_registry\(.*?^\}$", build_rs or "", re.M | re.S)
+    match = _generator_span(build_rs)
     return hashlib.sha256(match.group(0).encode()).hexdigest()[:20] if match else None
+
+
+_READER = re.compile(r"join\(|include(_str|_bytes)?!|read_to_string|read\(|File::open|Path::new|PathBuf::from|"
+                     r"rerun-if-changed|fs::|OpenOptions")
+
+
+def flags_readers_ok(repo, head, build_rs):
+    """FLAGS.md reaches the compiled program only through the pinned generator: build.rs names it
+    (and writes the registry) nowhere else, main still calls it, and every other code line that
+    builds a path to FLAGS.md sits in a test item or a test target."""
+    span = _generator_span(build_rs)
+    if span is None:
+        return False
+    rest = build_rs[:span.start()] + build_rs[span.end():]
+    if not re.search(r"^\s*generate_env_registry\(&out\);", rest, re.M):
+        return False
+    for line in rest.splitlines():
+        if not _comment_line(line) and not line.strip().startswith("///") and (
+                "FLAGS.md" in line or "memra_env_registry.rs" in line):
+            return False
+    out = _git(repo, "grep", "-n", "-I", "-B3", "-F", "FLAGS.md", head, "--", "crates", check=False)
+    if out.returncode not in (0, 1):
+        return False
+    window, hits = {}, []
+    for raw in out.stdout.decode(errors="replace").splitlines():
+        m = re.match(r"[^:]+:(.+?)([:-])(\d+)[:-](.*)$", raw)
+        if not m:
+            continue
+        source, sep, num, text = m.group(1), m.group(2), int(m.group(3)), m.group(4)
+        window[(source, num)] = text
+        if sep == ":":
+            hits.append((source, num, text))
+    from impact_map import delta as _delta
+    scanned = {}
+    for source, num, text in hits:
+        if source == BUILD_RS or TEST_TARGET.match(source) or not source.endswith((".rs", "/Cargo.toml")):
+            continue
+        if _comment_line(text) or text.strip().startswith(("///", "#")) or '"' not in text:
+            continue
+        context = "\n".join(window.get((source, n), "") for n in range(num - 3, num + 1))
+        if not _READER.search(context):
+            continue  # a message naming the file, not a read
+        if source not in scanned:
+            scanned[source] = _delta.scan(source, read_blob(repo, head, source, strict=False))
+        if not any(v[3] and v[4] != "outside" and v[1] <= num <= v[2] for v in scanned[source].values()):
+            return False
+    return True
 
 
 def flags_registry(text):
@@ -435,11 +519,13 @@ def flags_registry(text):
 
 
 def same_flags_registry(repo, base, head):
-    """True when FLAGS.md changed but the registry build.rs compiles from it did not."""
-    build_rs = read_blob(repo, head, BUILD_RS)
-    if registry_generator_sha(build_rs) != REGISTRY_GENERATOR_SHA:
+    """True when FLAGS.md changed but the registry build.rs compiles from it did not, and nothing
+    else compiled reads FLAGS.md."""
+    build_rs = read_blob(repo, head, BUILD_RS, strict=False)
+    if registry_generator_sha(build_rs) != REGISTRY_GENERATOR_SHA or not flags_readers_ok(repo, head, build_rs):
         return False
-    old, new = read_blob(repo, base, FLAGS_MD), read_blob(repo, head, FLAGS_MD)
+    # a non-UTF-8 FLAGS.md makes the generator fall back to an empty registry: never the same
+    old, new = read_blob(repo, base, FLAGS_MD, strict=False), read_blob(repo, head, FLAGS_MD, strict=False)
     return old is not None and new is not None and flags_registry(old) == flags_registry(new)
 
 
@@ -474,7 +560,7 @@ def parse_trailers(messages, arch):
 
 
 def classify(changes, rules, arch, *, owners=None, crate_inputs=None, declared=None, refiner=None, linked=None,
-             same_registry=False):
+             built=None, same_registry=False):
     """Changes -> impact: the cells, the per-file classes and what stayed uncovered.
 
     refiner (tools/impact_map/gate.py) narrows a Rust/CUDA program file from the items the diff
@@ -483,7 +569,7 @@ def classify(changes, rules, arch, *, owners=None, crate_inputs=None, declared=N
 
     linked: the packages linked into the battery binaries (link_closure). A cell records whether
     any of its paths is linked; requirements() asks for the battery and the perf A/B only then."""
-    files = [classify_file(c, rules, arch, owners=owners, crate_inputs=crate_inputs, linked=linked,
+    files = [classify_file(c, rules, arch, owners=owners, crate_inputs=crate_inputs, linked=linked, built=built,
                            same_registry=same_registry) for c in changes]
     if refiner is not None and refiner.active():
         files = [refiner.file(f) for f in files]
@@ -510,17 +596,24 @@ def classify(changes, rules, arch, *, owners=None, crate_inputs=None, declared=N
         # the perf A/B times run-gen, which links none of this path's code
         perf = item["perf"] and item_linked
         scopes = UNKNOWN_SCOPES if kind == UNKNOWN else (kind,)
-        scopes = set(scopes) | ({"defaults"} if item["defaults"] else set()) | ({"perf"} if perf else set())
+        answers = [(s, item_linked) for s in scopes]
+        answers += [("defaults", item_linked)] if item["defaults"] else []
+        answers += [("perf", True)] if perf else []
+        for extra in item.get("extra", ()):
+            if extra["class"] not in NO_CELL:
+                answers += [(s, extra["class"] == UNKNOWN or extra["linked"])
+                            for s in (UNKNOWN_SCOPES if extra["class"] == UNKNOWN else (extra["class"],))]
         for target in targets:
-            for scope in scopes:
+            for scope, is_linked in answers:
                 cell = cells.setdefault((target, scope), {"paths": [], "packs": set(), "routes": set(),
-                                                          "devices": {}, "linked": False})
+                                                          "devices": {}, "linked": False, "unlinked": False})
                 cell["paths"].append(item["path"])
-                cell["linked"] |= item_linked
+                cell["linked" if is_linked else "unlinked"] = True
                 if scope == "defaults":
                     for d in item["devices"]:
                         if device_target(rules, arch, d) == target:
-                            cell["devices"][d] = cell["devices"].get(d, False) or item_linked
+                            flags = cell["devices"].setdefault(d, set())
+                            flags.add(is_linked)
                 if item["pack"]:
                     cell["packs"].add(item["pack"])
                 if item["route"]:
@@ -532,7 +625,9 @@ def classify(changes, rules, arch, *, owners=None, crate_inputs=None, declared=N
                         "push_gate": push_gated(rules, target), "paths": sorted(set(cell["paths"])),
                         "packs": sorted(cell["packs"]), "routes": sorted(cell["routes"]),
                         "devices": sorted(cell["devices"]), "battery_linked": cell["linked"],
-                        "unlinked_devices": sorted(d for d, v in cell["devices"].items() if not v)})
+                        "outside_battery": cell["unlinked"],
+                        "linked_devices": sorted(d for d, v in cell["devices"].items() if True in v),
+                        "unlinked_devices": sorted(d for d, v in cell["devices"].items() if False in v)})
     return {"schema": SCHEMA, "targets": list(arch.accepted), "cells": ordered,
             "files": files, "uncovered": {k: sorted(v) for k, v in sorted(uncovered.items())},
             "declared_targets": None if declared is None else sorted(declared)}
@@ -554,19 +649,27 @@ def requirements(impact):
                                                   "device_kinds": {}})
         entry["cells"].append(cell["scope"])
         linked = cell.get("battery_linked", True)
+        outside = cell.get("outside_battery", False)
         if cell["scope"] in CORRECTNESS:
-            entry["kinds"].add("battery" if linked else "serving")
+            if linked:
+                entry["kinds"].add("battery")
+            if outside:
+                entry["kinds"].add("serving")
         if cell["scope"] == "serving":
             entry["kinds"].add("serving")
         if cell["scope"] == "perf" and linked:
             entry["kinds"].add("perf")
         if cell["scope"] == "gate":
             entry["kinds"].update(("battery", "serving", "perf"))
-        unlinked = set(cell.get("unlinked_devices", ()))
+        linked_devices = set(cell.get("linked_devices", cell.get("devices", ())))
+        unlinked_devices = set(cell.get("unlinked_devices", ()))
         for device in cell.get("devices", ()):
             entry["devices"].add(device)
-            entry["device_kinds"].setdefault(device, set()).update(
-                {"serving"} if device in unlinked else {"battery", "perf"})
+            kinds = entry["device_kinds"].setdefault(device, set())
+            if device in linked_devices:
+                kinds.update(("battery", "perf"))
+            if device in unlinked_devices:
+                kinds.add("serving")
     return needs
 
 
@@ -585,6 +688,8 @@ def render(impact):
             extra.append("devices=" + ",".join(cell["devices"]))
         if not cell.get("battery_linked", True):
             extra.append("outside the battery binaries")
+        elif cell.get("outside_battery"):
+            extra.append("partly outside the battery binaries")
         sample = ", ".join(cell["paths"][:3]) + (f" (+{len(cell['paths']) - 3})" if len(cell["paths"]) > 3 else "")
         lines.append(f"  cell {cell['name']}:{cell['scope']:<8} [{gate}] {' '.join(extra)} <- {sample}")
     for pack, paths in impact["uncovered"].items():
@@ -608,9 +713,17 @@ def _git(repo, *args, check=True):
     return result
 
 
-def read_blob(repo, ref, path):
+def read_blob(repo, ref, path, strict=True):
+    """Text of path at ref, or None when absent. Non-UTF-8 text refuses (strict) or is None."""
     result = _git(repo, "show", f"{ref}:{path}", check=False)
-    return result.stdout.decode() if result.returncode == 0 else None
+    if result.returncode != 0:
+        return None
+    try:
+        return result.stdout.decode()
+    except UnicodeDecodeError as error:
+        if strict:
+            raise ImpactError(f"{path} at {str(ref)[:12]} is not UTF-8: {error}") from error
+        return None
 
 
 def arch_table_at(repo, ref):
@@ -668,9 +781,11 @@ def diff_changes(repo, base, head, suffixes=(".rs", ".cu", ".cuh", ".h", ".c", "
             for p in sorted(modes)]
 
 
-def crate_inputs_at(repo, ref, paths):
-    """Non-crate paths a crate reads (include_str!, build-script inputs), via the CI census."""
-    if not any(not p.startswith(("crates/", "research/release-qualification/")) for p in paths):
+def crate_inputs_at(repo, ref, paths, force=False):
+    """Paths a crate reads beyond its own sources (include_str!, build-script inputs, another
+    crate's files), via the CI census. force: also for a crate-only diff (a path outside the
+    battery binaries' closure, whose readers decide whether it is linked)."""
+    if not force and not any(not p.startswith(("crates/", "research/release-qualification/")) for p in paths):
         return {}, None
     sys.path.insert(0, str(Path(__file__).resolve().parent))
     # The census and the literal check are unioned: tools/validation_plan.py is CI tooling
@@ -704,10 +819,12 @@ def literal_inputs(repo, ref, paths):
     inputs = {}
     for line in result.stdout.decode(errors="replace").splitlines():
         _, source, _, text = line.split(":", 3)
-        # only sources a crate compiles, outside its test targets: a path named in a fixture, a
-        # manifest comment or a test script is not compiled in (a README listed in a model's
-        # artifact lock, AGENTS.md cited by a battery test)
-        if _comment_line(text) or not source.endswith(CODE_SUFFIXES) or TEST_TARGET.match(source):
+        # only sources a crate compiles and its manifest ([[bin]] path, build), outside its test
+        # targets: a path named in a fixture, a manifest comment or a test script is not compiled
+        # in (a README listed in a model's artifact lock, AGENTS.md cited by a battery test)
+        manifest = source.endswith("/Cargo.toml")
+        if (_comment_line(text) or (manifest and text.lstrip().startswith("#"))
+                or not (source.endswith(CODE_SUFFIXES) or manifest) or TEST_TARGET.match(source)):
             continue
         quoted = "".join(re.findall(r'"((?:[^"\\]|\\.)*)"', text))
         package = _package_of(source, None)
@@ -768,16 +885,19 @@ def validate_rules(rules, arch):
 
 
 def battery_linked(repo, base, head):
-    """Packages linked into the battery binaries at the base or the head (a change that adds a
-    link changes a manifest, which is a build input anyway). None when either side cannot say."""
+    """(linked, built): packages linked into the battery binaries, and packages in the evidence
+    build's closure, each over the base and the head (a change that adds a link changes a
+    manifest, which is a build input anyway). None for either when a side cannot say."""
     sides = [head] + ([base] if _git(repo, "cat-file", "-t", base, check=False).stdout.strip() == b"commit" else [])
-    out = set()
+    linked, built = set(), set()
     for ref in sides:
-        names = link_closure(lambda p, ref=ref: read_blob(repo, ref, p))
-        if names is None:
-            return None
-        out |= names
-    return out
+        read = lambda p, ref=ref: read_blob(repo, ref, p, strict=False)
+        a, b = link_closure(read, BATTERY_PACKAGES), link_closure(read, EVIDENCE_BUILD_PACKAGES)
+        if a is None or b is None:
+            return None, None
+        linked |= a
+        built |= b
+    return linked, built
 
 
 def impact_between(repo, base, head, rules_text=None, use_map=True, map_ref=None, map_data=None):
@@ -786,7 +906,9 @@ def impact_between(repo, base, head, rules_text=None, use_map=True, map_ref=None
     arch = arch_table_at(repo, head)
     rules = load_rules(rules_text, arch) if rules_text is not None else rules_in_force(repo, base, head, arch)
     changes = diff_changes(repo, base, head)
-    inputs, owners = crate_inputs_at(repo, head, [c.path for c in changes])
+    linked, built = battery_linked(repo, base, head)
+    outside = [c.path for c in changes if linked is not None and _package_of(c.path, None) not in (None, *linked)]
+    inputs, owners = crate_inputs_at(repo, head, [c.path for c in changes], force=bool(outside))
     declared, reasons, _ = parse_trailers(range_messages(repo, base, head), arch)
     refiner = None
     if use_map:
@@ -797,7 +919,7 @@ def impact_between(repo, base, head, rules_text=None, use_map=True, map_ref=None
             raise ImpactError(str(error)) from error
     same_registry = any(c.path == FLAGS_MD for c in changes) and same_flags_registry(repo, base, head)
     impact = classify(changes, rules, arch, owners=owners, crate_inputs=inputs, declared=declared, refiner=refiner,
-                      linked=battery_linked(repo, base, head), same_registry=same_registry)
+                      linked=linked, built=built, same_registry=same_registry)
     impact["declared_reasons"] = reasons
     impact["base"], impact["head"] = base, head
     impact["map"] = refiner.report() if refiner is not None else None
