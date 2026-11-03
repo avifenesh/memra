@@ -10,8 +10,11 @@
 //
 // NUMERICS: the f16-mirror class (campaign A / battery-adopted): dequanted weight values
 // round to f16, f32 accumulate. NOT byte-identical to the MMQ path — argmax + spec gates
-// arbitrate, per-model, like every numeric-class promotion. Experimental door
-// MEMRA_MOE_F16G=1 until gated.
+// arbitrate, per-model, like every numeric-class promotion. DEFAULT ON every arch since
+// 2026-08-02: MEMRA_MOE_F16G unset = mode 2, the single-kernel grouped GEMM on the engine
+// stream. `1` is the cublasGemmGroupedBatchedEx lane above, `3` AUTO-KQUANT, and `0` turns
+// the lane off (the rollback). The gemma-MoE (gelu) site stays off unless the variable is set
+// to a non-zero mode (lib.rs `moe_f16g_mode` / `moe_f16g_gemma_on`, docs/FLAGS.md).
 //
 // Column-major mapping (derivation in the round-46 ledger): per group g,
 //   C(m=out_f, n=m_e, k=in_f), opA=T opB=N,
