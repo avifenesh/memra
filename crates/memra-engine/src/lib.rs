@@ -1173,16 +1173,6 @@ pub(crate) fn wgmma_gemm_enabled() -> bool {
     *V.get_or_init(|| std::env::var("MEMRA_WGMMA").as_deref() == Ok("1"))
 }
 
-/// TUNE SEAM: keys per FA-decode split (`MEMRA_FA_SPLIT` forces a fixed size; default 64). Smaller
-/// splits raise grid.y so grid = n_head_kv * n_splits fills the 82 SMs at short/mid ctx (vec path
-/// launches only n_head_kv=8 CTAs per split). Swept clock-locked 2026-07-03 (graph tg128): 32 beat
-/// 64 at ctx 128/512 (+0.5/+1.2%) and lost at 2048 (-3%) — BUT the adaptive 32/64 default BROKE the
-/// MTP spec-decode exact-match gate (run-spec K=1/2 self-consistency FAIL with 32; PASS with 64):
-/// the split count changes the combine's FP summation order, and the spec verify's batched forward
-/// only argmax-matches single-step decode under the 64-split order on real prompts. Spec exactness
-/// (the bigger lever) outranks a <=1.2% decode win -> default stays FIXED 64; sweeps use the env.
-/// Takes t_kv so eager, _dc capture, and fa_geom_eager stay signature-compatible for future
-/// adaptive retries (any retry MUST pass run-spec self-consistency first).
 /// Minimum t_kv for the warp-per-token vec FA path (below it the scalar path's 4x-more-blocks
 /// hides latency better — measured crossover, see `fa_decode`). Shared by fa_decode / fa_decode_dc /
 /// fa_geom_eager / fa_decode_rows-eligibility (spec verify) so the kernel pick NEVER diverges
@@ -2205,6 +2195,15 @@ pub(crate) fn rms_block_default_conflict(default: u32, why: &str) -> Option<Stri
     )
 }
 
+/// Keys per FA-decode split. `MEMRA_FA_SPLIT` (a multiple of 8, at least 8) forces one size at
+/// every context. Unset, the split follows a ctx-adaptive, SM-aware ladder (the receipts are in the
+/// rung comments below): on parts with at least 128 SMs, 16 up to t_kv 2048 (`MEMRA_FA_SP_SHORT`
+/// overrides that rung), 64 up to 16384 and 128 beyond; on smaller parts, 8 up to 512 for
+/// n_head_kv <= 4 and 32 up to 8192 otherwise, then 64 up to 16384 and 128 beyond. The gemma seam
+/// (`FA_SP_GEMMA` with `MEMRA_FA_SP16=1`) takes 16 / 64 / 128 at 8192 / 16384. The split changes
+/// the combine's FP summation order, so every ladder change is a numeric-class change that
+/// kernel-check and run-spec K=1..8 arbitrate. Takes t_kv so eager decode, `_dc` capture and
+/// `fa_geom_eager` share one signature.
 pub(crate) fn fa_split_keys(t_kv: usize, n_head_kv: usize) -> usize {
     static S: std::sync::OnceLock<Option<usize>> = std::sync::OnceLock::new();
     if let Some(forced) = *S.get_or_init(|| {
