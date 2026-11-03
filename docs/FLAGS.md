@@ -1592,7 +1592,7 @@ the engine reads to be a declared door or an exempt non-door with a reason).
 
 | door | merged | merged gain (pooled fwd / rev) | declared default | on the served program | disposition | why |
 |---|---|---:|---|---|---|---|
-| replay cadence | #374 | +1.007107% / +1.074545% | ON | **no serving caller** | reclassify as a gate input | full-token replay is armed per request by a gate binary only; no serving or eager request arms it, on any program |
+| replay cadence | #374 | +1.007107% / +1.074545% | ON | off on the DSpark posture (`SERVED_PROGRAM`); **ON on the naked drafter-less TP/EP plain route** | port admission or redeclare | since memra #710 the served TP/EP route arms full-token replay on its plain requests (`dsv4_serve`), so the naked default engages it; a drafter-resident route sends those requests to DSpark. Until #710 only a gate binary armed it |
 | dense exact-tail transport | #374 | +0.459578% / +0.397451% | ON | ON, `m == 1` only | engaged | generic dense entry, but the control scope suppresses it for every `m > 1`, so prefill chunks never use it |
 | dense-fast | #404 | +1.618979% / +1.609496% composed | ON | ON, `m == 1` only | engaged | same `m == 1` scope as the dense tail |
 | HC dot split S16 | #418 | +2.701174% / +2.591532% | ON | ON | engaged | gates on `dots_f32 && rows == 24 && w == 16384`, no topology term |
@@ -1613,8 +1613,9 @@ the engine reads to be a declared door or an exempt non-door with a reason).
 - **Follows the matrix verdict**: EMPTY since memra #482. Both rows that sat here, graph split-K and
   split-K-fast, were DELETED with that flip rather than answered by it, because their precondition is
   a post-load gate call no serving process makes. The ledger entry below is where they went.
-- **Reclassify as a gate input** (replay cadence). Its own row above says no automatic arming for
-  serving; no program decision can create a caller.
+- **Reclassify as a gate input**: EMPTY since memra #710. Replay cadence sat here while only a gate
+  binary armed full-token replay; the served TP/EP route now arms it on plain requests, so its
+  disposition is port admission or redeclare (row above).
 
 The permanence claim is keyed to the PROGRAM fact, not hard-coded per door:
 `permanence_is_keyed_to_the_program_fact_not_to_the_door` flips `tp_ep_can_serve` and requires the
@@ -1635,7 +1636,10 @@ it is the honest scope of what we know, pinned by
 
 ONE door is BOTH inert on the served path and below that floor, so there is no evidence for its
 default in either direction: **replay cadence**. That is a stronger case for removal than either
-fact alone. It was four rows before 2026-09-11: split-K-fast left by DELETION with memra #482, and
+fact alone. SCOPE (2026-11-03): "the served path" here is the registry's `SERVED_PROGRAM`, the
+DSpark posture (`MEMRA_DSV4_DRAFTER=dspark`). The naked default loads no drafter, and replay cadence
+ENGAGES there, so the removal case holds for the DSpark posture only; removing the door from the
+naked default needs its own measurement on the plain route. It was four rows before 2026-09-11: split-K-fast left by DELETION with memra #482, and
 norm-fuse and norm-fuse2 left by being PORTED and then MEASURED, which is the outcome the floor
 complaint was asking for and the answer it gave was no.
 
