@@ -4999,6 +4999,9 @@ fn main() -> Res<()> {
                     // arm ran last — a silent arm flip, which is the failure this lane has
                     // already been bitten by once (the golden pin, PROFILE-10 §4).
                     let seam_entry = memra_engine::qwen4exp_gpu::seam_state(seam);
+                    // a three-valued seam (`idxq`, `longatt`) has no bool: its arm is saved by
+                    // name, or the run would carry on from whichever arm ran last
+                    let seam_entry_value = memra_engine::qwen4exp_gpu::seam_value(seam);
                     let warm = 2usize; // arming a seam can pay a one-time rebuild; never timed.
                     let mut med: [Vec<f64>; 2] = [Vec::new(), Vec::new()];
                     let mut all: [Vec<f64>; 2] = [Vec::new(), Vec::new()];
@@ -5181,6 +5184,17 @@ fn main() -> Res<()> {
                             "# ladder-ab-restore\tseam={seam}\tarm={}\n",
                             if was { "on" } else { "off" }
                         );
+                        receipt.push_str(&line);
+                        std::fs::write(&receipt_path, &receipt)?;
+                        print!("{line}");
+                    } else if let Some(was) = seam_entry_value {
+                        if !memra_engine::qwen4exp_gpu::set_seam(seam, true, Some(was)) {
+                            return Err(format!(
+                                "--ladder-ab-seam {seam}: restoring the entry arm {was:?} refused"
+                            )
+                            .into());
+                        }
+                        let line = format!("# ladder-ab-restore\tseam={seam}\tarm={was}\n");
                         receipt.push_str(&line);
                         std::fs::write(&receipt_path, &receipt)?;
                         print!("{line}");
