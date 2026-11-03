@@ -5315,19 +5315,19 @@ impl HybridModel {
         // silently attend OUTSIDE the window once the persistent scratch passes 512 rows.
         // Returning Err (not a panic) is what the capture sites already handle by degrading to
         // the eager chain (`mtp_head_forward_dev` -> `mtp_step35_attn`).
-        if let Some(g) = mtp.step35.as_ref() {
-            if !self.step35_dcw_eligible(g, scratch.plane(scratch_index).1) {
-                return Err(format!(
-                    "step35 has no captured draft chain (fa_decode_dc cannot express the MTP \
-                        block's SWA view offset; the windowed dcw capture needs \
-                        MEMRA_STEP35_DRAFT_DCW armed [default ON, =0 disarms] and the v3-vec \
-                        class live at bucket=min(window {}, scratch cap {})) - the eager draft \
-                        chain serves this shape",
-                    g.window,
-                    scratch.plane(scratch_index).1,
-                )
-                .into());
-            }
+        if let Some(g) = mtp.step35.as_ref()
+            && !self.step35_dcw_eligible(g, scratch.plane(scratch_index).1)
+        {
+            return Err(format!(
+                "step35 has no captured draft chain (fa_decode_dc cannot express the MTP \
+                    block's SWA view offset; the windowed dcw capture needs \
+                    MEMRA_STEP35_DRAFT_DCW armed [default ON, =0 disarms] and the v3-vec \
+                    class live at bucket=min(window {}, scratch cap {})) - the eager draft \
+                    chain serves this shape",
+                g.window,
+                scratch.plane(scratch_index).1,
+            )
+            .into());
         }
         // student inner width (see mtp_head_forward_dev) — interface dims stay n_embd.
         let di = mtp.geom.as_ref().map(|g| g.d_inner).unwrap_or(n_embd);
