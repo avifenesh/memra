@@ -1219,6 +1219,9 @@ struct SourceData {
     revision: String,
     dialect: CheckpointDialect,
     config: ModelConfig,
+    /// What the artifact lock's `config_sha256` hashes: the artifact's own `config.json` bytes
+    /// for a safetensors directory or a pinned HF revision, [`normalized_config_bytes`] for a
+    /// GGUF or Hy3-repack source.
     config_bytes: Vec<u8>,
     tensors: Vec<TensorCensusRecord>,
     shards: Vec<String>,
@@ -1426,13 +1429,23 @@ fn load_config_only(source: &str) -> Result<ModelConfig, Box<dyn std::error::Err
     Ok(ModelConfig::from_hf(&HfConfig::try_parse(&config)?))
 }
 
+/// `config_bytes` for a GGUF or Hy3-repack source, whose lock hashes its config as normalized,
+/// not as a file: the `ModelConfig`'s pretty `Debug` text. That text is bound to the code as well
+/// as the artifact. Adding, removing or renaming a `ModelConfig` field (the `n_layer_total` removal
+/// included) changes it, so re-inspecting the same bytes writes a new `config_sha256` and so a
+/// new artifact lock, and rewrite receipts bound to the old lock are stale against it. A stable
+/// field serialization would make the hash artifact-only; it is not built.
+fn normalized_config_bytes(config: &ModelConfig) -> Vec<u8> {
+    format!("{config:#?}").into_bytes()
+}
+
 fn load_local(path: &Path) -> Result<SourceData, Box<dyn std::error::Error>> {
     if path.is_file() {
         let gguf = GgufFile::open(path)?;
         let tokenizer = inspect_gguf_tokenizer(&gguf);
         let config = ModelConfig::from_gguf(&gguf);
         let tensors = census_from_gguf(&gguf).tensors;
-        let config_bytes = format!("{config:#?}").into_bytes();
+        let config_bytes = normalized_config_bytes(&config);
         return Ok(SourceData {
             label: path.display().to_string(),
             revision: "local".to_string(),
@@ -1457,7 +1470,7 @@ fn load_local(path: &Path) -> Result<SourceData, Box<dyn std::error::Error>> {
             label: path.display().to_string(),
             revision: "local-repack".to_string(),
             dialect: census.dialect,
-            config_bytes: format!("{config:#?}").into_bytes(),
+            config_bytes: normalized_config_bytes(&config),
             config,
             tensors: census.tensors,
             shards: vec!["manifest.json".to_string()],
