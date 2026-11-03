@@ -1114,37 +1114,6 @@ impl GroupedParallelPlan {
     }
 }
 
-/// Validate the live Step PP request before the loader allocates CUDA state. Checkpoint tensor
-/// census is deliberately a separate loader gate: topology legality must remain testable without
-/// opening model files, while serving requires both gates.
-pub fn validate_step_pp_request(cfg: &ModelConfig) -> Result<Option<ParallelPlan>, TopologyError> {
-    let pp = match std::env::var("MEMRA_PP_STAGES") {
-        Err(_) => return Ok(None),
-        Ok(value) if value.is_empty() || value == "0" || value == "1" => return Ok(None),
-        Ok(value) => value.parse::<usize>().map_err(|_| {
-            TopologyError::new(format!("MEMRA_PP_STAGES={value} is not a positive integer"))
-        })?,
-    };
-    let devices = selected_pp_devices(pp)?;
-    let hardware = detect_uniform_hardware(&devices)?;
-    let contract = ModelParallelContract::from_model(cfg)?;
-    let trunk_layers = contract.trunk_layers;
-    let plan = contract.plan(TopologyRequest {
-        pipeline: pp,
-        tensor: 1,
-        expert_parallel: false,
-        available_devices: devices.len(),
-        hardware,
-    })?;
-    let fence = crate::pp::pp_cuts(trunk_layers).ok_or_else(|| {
-        TopologyError::new(format!(
-            "Step PP={pp} has no valid runtime stage fence over {trunk_layers} trunk layers"
-        ))
-    })?;
-    let plan = apply_stage_fence(plan, &fence)?;
-    Ok(Some(plan))
-}
-
 /// Prove that every routed layer in the structural contract exposes native stacked block-128
 /// E4M3 expert banks. Converted and per-tensor artifacts do not inherit this backend.
 pub fn validate_fp8_expert_checkpoint(
@@ -1344,65 +1313,6 @@ pub fn validate_step_nvfp4_checkpoint(
     contract: &ModelParallelContract,
 ) -> Result<usize, TopologyError> {
     validate_nvfp4_expert_checkpoint(src, contract)
-}
-
-fn apply_stage_fence(
-    mut plan: ParallelPlan,
-    fence: &[usize],
-) -> Result<ParallelPlan, TopologyError> {
-    let expected = plan.request.pipeline + 1;
-    if fence.len() != expected
-        || fence.first() != Some(&0)
-        || fence.last() != Some(&plan.contract.trunk_layers)
-        || fence.windows(2).any(|window| window[0] >= window[1])
-        || fence[1..fence.len() - 1]
-            .iter()
-            .any(|boundary| !plan.contract.partition_boundaries.contains(boundary))
-    {
-        return Err(TopologyError::new(format!(
-            "invalid PP fence {fence:?} for {} stages over {} trunk layers",
-            plan.request.pipeline, plan.contract.trunk_layers
-        )));
-    }
-    plan.stage_ranges = fence
-        .windows(2)
-        .map(|window| window[0]..window[1])
-        .collect();
-    Ok(plan)
-}
-
-fn selected_pp_devices(pp: usize) -> Result<Vec<usize>, TopologyError> {
-    let raw = std::env::var("MEMRA_PP_DEVICES").map_err(|_| {
-        TopologyError::new(format!(
-            "Step PP={pp} requires explicit MEMRA_PP_DEVICES with one distinct CUDA ordinal per \
-             stage; same-device diagnostics do not qualify the multi-card product"
-        ))
-    })?;
-    let devices: Result<Vec<usize>, _> = raw
-        .split(',')
-        .map(|part| part.trim().parse::<usize>())
-        .collect();
-    let devices = devices.map_err(|_| {
-        TopologyError::new(format!(
-            "MEMRA_PP_DEVICES={raw:?} is not a comma-separated CUDA ordinal list"
-        ))
-    })?;
-    if devices.len() != pp {
-        return Err(TopologyError::new(format!(
-            "MEMRA_PP_DEVICES lists {} devices but MEMRA_PP_STAGES={pp}",
-            devices.len()
-        )));
-    }
-    let mut unique = devices.clone();
-    unique.sort_unstable();
-    unique.dedup();
-    if unique.len() != devices.len() {
-        return Err(TopologyError::new(format!(
-            "Step PP={pp} requires {pp} distinct devices; MEMRA_PP_DEVICES={raw:?} repeats an \
-             ordinal"
-        )));
-    }
-    Ok(devices)
 }
 
 pub(crate) fn detect_uniform_hardware(devices: &[usize]) -> Result<HardwareTarget, TopologyError> {
@@ -1900,24 +1810,6 @@ mod tests {
         assert_eq!(plan.world_size, 3);
         assert_eq!(plan.stage_ranges, vec![0..15, 15..30, 30..45]);
         assert_eq!(plan.mtp_owner_stage, Some(2));
-    }
-
-    #[test]
-    fn step_pp_marker_uses_the_runtime_stage_fence() {
-        let plan = step37_contract().plan(request(3, 1, false)).unwrap();
-        let plan = apply_stage_fence(plan, &[0, 10, 28, 45]).unwrap();
-        assert_eq!(plan.stage_ranges, vec![0..10, 10..28, 28..45]);
-    }
-
-    #[test]
-    fn stage_fence_must_use_model_plan_partition_boundaries() {
-        let mut contract = step37_contract();
-        contract
-            .partition_boundaries
-            .retain(|&boundary| boundary != 10);
-        let plan = contract.plan(request(3, 1, false)).unwrap();
-        let error = apply_stage_fence(plan, &[0, 10, 28, 45]).unwrap_err();
-        assert!(error.to_string().contains("invalid PP fence"));
     }
 
     #[test]
