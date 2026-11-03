@@ -10246,27 +10246,17 @@ impl HybridModel {
             let mixer_fast = self.mixer_in_q8_1_fast(e, &layer.mixer);
             let norm_fused = std::env::var("MEMRA_NO_FUSE_NORMQ").is_err() && mixer_fast;
             // BATCHED EPILOGUE RE-FUSE (lane/vt-fixes fix 2, 2026-08-03): when the norm is
-            // dispatch-fused AND every consumer of `h` reads only its q8_1 form (Full mixer:
-            // projections only; Linear mixer: the batched arm — the per-column fallback needs
-            // f32 h), emit the attn-input norm DIRECTLY as q8_1 via `rms_norm_q8_1` at nrows=t
-            // (row-indexed kernel — the T-row launch is the per-row m=1 program, kernel-check
-            // pins bit-identity vs rms_norm_decode -> quantize_q8_1). Kills the standalone
-            // quantize launch(es) + the f32 h HBM round-trip that decode never pays.
-            // step35 (Full mixer) is the third case that needs f32 `h`: its verify arm is a
-            // per-ROW replay of the eager decode mixer, whose `pre_q` contract is a single row —
-            // a T-row q8_1 pair cannot be handed to it, and re-deriving per-row q8_1 from the f32
-            // rows is exactly the dispatch being mirrored. Keep step35 on the unfused arm.
-            let lin_q8_only = match &layer.mixer {
-                Mixer::Linear(la) => {
-                    (t >= 3 || (t == 2 && spec_m2())) && e.uses_q8_1_fast(&la.ssm_out)
-                }
-                Mixer::Full(_) if self.sliding_gated_moe_batch_program() => false,
-                _ => true,
-            };
+            // dispatch-fused, every consumer of `h` in this walk (the Full mixer's projections)
+            // reads only its q8_1 form, so emit the attn-input norm DIRECTLY as q8_1 via
+            // `rms_norm_q8_1` at nrows=t (row-indexed kernel — the T-row launch is the per-row
+            // m=1 program, kernel-check pins bit-identity vs rms_norm_decode -> quantize_q8_1).
+            // Kills the standalone quantize launch(es) + the f32 h HBM round-trip that decode
+            // never pays. GatedDeltaNet and step35 layers never reach this walk: the function
+            // head returns them into their own batch walks.
             // NOTE decode.rs's take()-first lesson: take the pending pair BEFORE branching so
             // a non-fused layer still performs the residual add.
             let taken = pending.take();
-            let (h, h_q8) = if norm_fused && lin_q8_only {
+            let (h, h_q8) = if norm_fused {
                 let pair = match taken {
                     // fused add + attn_norm + q8_1: ONE launch resolves the carried residual
                     // AND emits this layer's mixer input pre-quantized. res -> x2 (= new x).
@@ -10317,72 +10307,10 @@ impl HybridModel {
                 )?,
                 Mixer::Mla(_) => crate::hybrid::mla_path_unimplemented("speculative verify"),
                 Mixer::Kda(_) => crate::hybrid::kda_path_unimplemented("speculative verify"),
-                Mixer::Linear(la) => {
-                    // BATCHED linear verify (2026-07-03, the MTP-profit lever): one T-token pass —
-                    // batched projections (weight read ONCE, hits the m=2-4 weight-resident matvec),
-                    // carried-state conv (ssm_conv1d_tm_state), GDN prep on the prefill kernels, and
-                    // ONE gdn_scan whose internal sequential t-loop is the SAME recurrence as T
-                    // chained T=1 steps (bit-identical). Falls back to the sequential per-column
-                    // chain when T < d_conv-1 (conv ring update needs T >= pad) — or when ANY
-                    // projection is off the q8_1 fast path: matmul_decode_exact would route a Float
-                    // tensor to cuBLAS at m=t (different FP accumulation than eager's per-token
-                    // GEMV), so mixed-dtype layers stay on the eager-identical per-column chain.
-                    // MEMRA_SPEC_M2 (lane/spec-m2): the t==2 batch rides the same arm — the conv
-                    // wrapper handles t<pad with a pure-copy ring rebuild; see spec_m2() header.
-                    if (t >= 3 || (t == 2 && spec_m2()))
-                        && mixer_fast
-                        && e.uses_q8_1_fast(&la.ssm_out)
-                    {
-                        let want = ckpt.is_some();
-                        let (out, stash) =
-                            self.linear_attn_verify_t(e, la, &h, h_q8_ref, t, cache, il, want)?;
-                        if let (Some(ck), Some(st)) = (ckpt.as_deref_mut(), stash) {
-                            ck.gdn[il] = Some(st);
-                        }
-                        out
-                    } else {
-                        let mut out = vbuf(e, t * n_embd)?; // every col written by copy_into
-                        let mut col_states: Option<Vec<(CudaSlice<f32>, CudaSlice<f32>)>> =
-                            if ckpt.is_some() && t >= 2 {
-                                Some(Vec::with_capacity(t - 1))
-                            } else {
-                                None
-                            };
-                        for col in 0..t {
-                            let mut h_col = vbuf(e, n_embd)?; // fully written by copy_view_into
-                            let src = h.slice(col * n_embd..(col + 1) * n_embd);
-                            e.copy_view_into(&mut h_col, 0, &src, n_embd)?;
-                            let m_col = self.linear_attn_decode(e, la, &h_col, cache, il)?;
-                            e.copy_into(&mut out, col * n_embd, &m_col, n_embd)?;
-                            // REPLAY-FREE ckpt: clone the chain's ACTUAL state after this column
-                            // (pure dtod — cannot change any computed value). Last column skipped:
-                            // rebuild targets are j <= t-1 columns.
-                            if let Some(cs) = col_states.as_mut()
-                                && col + 1 < t
-                            {
-                                let rl = cache.recur[il].as_ref().unwrap();
-                                cs.push((
-                                    e.clone_dtod(&rl.conv_state)?,
-                                    e.clone_dtod(&rl.ssm_state)?,
-                                ));
-                            }
-                        }
-                        if let (Some(ck), Some(cs)) = (ckpt.as_deref_mut(), col_states) {
-                            // ReplaySSM-assessment instrumentation (2026-07-30): the
-                            // per-column clones are the only true state snapshots left in
-                            // the verify (the batched path stashes INPUTS and replays).
-                            if std::env::var("MEMRA_SPEC_STATS").as_deref() == Ok("1") {
-                                static ONCE: std::sync::Once = std::sync::Once::new();
-                                let bytes: usize =
-                                    cs.iter().map(|(c, s)| (c.len() + s.len()) * 4).sum();
-                                ONCE.call_once(|| eprintln!(
-                                    "[verify-ckpt] per-column layer il={il}: {} clones, {:.2} MB/layer/round",
-                                    cs.len(), bytes as f64 / 1e6));
-                            }
-                            ck.cols[il] = Some(cs);
-                        }
-                        out
-                    }
+                Mixer::Linear(_) => {
+                    return Err("GatedDeltaNet layers verify through \
+                                qwen35_verify_batch_layers, not the generic walk"
+                        .into());
                 }
             };
             if spec_nan_scan_level() >= 2 {
@@ -11237,10 +11165,10 @@ impl HybridModel {
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
         let n_embd = self.cfg.n_embd as usize;
         // The fused (h-less) attn-norm arm hands `h` as a zero-length placeholder. This arm needs
-        // the f32 rows, so the caller must not take that lever for step35 — enforced at the call
-        // site by the sliding-gated-MoE `Mixer::Full(_) => false` arm of
-        // `lin_q8_only` in `decode_step_t_core_stream`, and asserted here so a future caller
-        // cannot regress it into silently reading an empty buffer.
+        // the f32 rows, so the caller must not take that lever for step35. The one caller,
+        // `decode_step_t_aux2`, always norms to f32 (`verify_layers` returns step35 into its
+        // batch walk before the generic loop); asserted here so a future caller cannot regress
+        // it into silently reading an empty buffer.
         assert_eq!(
             h.len(),
             t * n_embd,
