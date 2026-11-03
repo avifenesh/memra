@@ -2375,7 +2375,7 @@ impl HybridModel {
             }
             let mut hiddens = e.uninit(t * n_embd)?;
             let mut last: Option<(Vec<f32>, CudaSlice<f32>)> = None;
-            for &(start, end) in &ranges {
+            for (chunk_idx, &(start, end)) in ranges.iter().enumerate() {
                 let ov = overlay.and_then(|o| o.window(start, end - start));
                 self.glm5_taps_range_begin(cache, start);
                 let (l, hs, x) = self.prime_cache_hyper_ppn(
@@ -2394,6 +2394,9 @@ impl HybridModel {
                 // so the device finished it. Stamp the odometer /health reads, so a BUSY
                 // worker mid-long-prefill is never mistaken for a wedged one.
                 crate::progress::note_prime_rows(end - start);
+                // CANCELLATION POINT (memra#536): each range is a whole serial stage walk that
+                // returned host logits, so no stage work is in flight here; see progress.rs.
+                crate::progress::prime_cancel_point(chunk_idx, end, t)?;
             }
             let (logits, h_seed) =
                 last.expect("hyper_prime_ranges never returns an empty schedule");
