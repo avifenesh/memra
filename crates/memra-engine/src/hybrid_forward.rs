@@ -21420,7 +21420,8 @@ impl HybridModel {
         let n_expert = moe.expert_count as usize;
         let n_used = moe.expert_used_count as usize;
         let n_ff_exp = moe.expert_ff_length as usize;
-        // step35 per-layer SwiGLU clamp; None on every other arch / unclamped layer.
+        // Routed-expert SwiGLU clamp: step35 POST on its clamped layers, glm5_next PRE on every
+        // layer; None elsewhere. `ffn_act_lim` handles both forms.
         let lim_exp = cfg.clamp_exp_at(il as u32);
 
         // 1. ROUTER: exactly the same m-invariant sigmoid selector as the sequential path
