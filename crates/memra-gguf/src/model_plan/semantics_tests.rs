@@ -431,6 +431,29 @@ fn supported_dense_programs_are_unchanged() {
 }
 
 #[test]
+fn hf_glm_dsa_without_mla_metadata_has_no_pack() {
+    // The HF path maps glm_moe_dsa to Arch::GlmDsa but carries no MLA block, so the glm_dsa
+    // pack must not compile a full-attention plan for it.
+    let cfg = config(
+        "glm_moe_dsa",
+        r#""num_experts":4,"num_experts_per_tok":2,"moe_intermediate_size":8"#,
+    );
+    assert_eq!(cfg.arch, crate::config::Arch::GlmDsa);
+    assert!(cfg.mla.is_none());
+    assert!(for_config(&cfg).is_none());
+    assert!(matches!(
+        compile_for_load(&cfg),
+        Err(PlanCompileError::NoMatchingModelPack { .. })
+    ));
+    assert!(matches!(
+        crate::model_packs::by_alias("glm_dsa")
+            .unwrap()
+            .compile_plan(&cfg),
+        Err(PlanCompileError::ModelPackMismatch { .. })
+    ));
+}
+
+#[test]
 fn established_olmoe_and_minimax_programs_keep_explicit_packs() {
     for (family, extra, expected_activation) in [
         (
