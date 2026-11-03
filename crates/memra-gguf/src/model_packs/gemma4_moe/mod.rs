@@ -7,7 +7,10 @@ pub static PACK: ModelPack = ModelPack {
     tensor_consumption: TensorConsumption::Report,
     aliases: &["gemma4_moe", "gemma4_a4b", "gemma4-26b-a4b"],
     config_layout: ConfigLayout::FlatOrTextConfig,
-    tokenizer_sources: &[TokenizerSource::TokenizerJson],
+    tokenizer_sources: &[
+        TokenizerSource::TokenizerJson,
+        TokenizerSource::GgufMetadata,
+    ],
     template: TemplateContract::ArtifactRequired,
     support: Some(NativeSupport::NativeReference),
     gates: &[
