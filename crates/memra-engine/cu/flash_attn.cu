@@ -6457,13 +6457,11 @@ static __device__ __forceinline__ void fa_dec_v3_qquant(
 
 // The shared per-warp v3 split walk (called by ALL THREE twins => per-(row,split)
 // bit identity by construction, the same contract as fa_dec_v2_walk).
-// MEMRA_FA_UNROLL=8: B1's per-key K load sits INSIDE the sequential j loop, so at unroll 4
-// only four loads are ever in flight and the rest of the tile pays full memory latency per
-// key. nsys on the turn8-context decode: 23us for a 16-key split, 84.2us for a 68-key split
-// = ~1.3us PER KEY against ~136 B of K per key per head — latency, not bandwidth. The loads
-// across j are independent (only tile_max's fmaxf chain and my_score's predicated write cross
-// iterations, and unrolling preserves both orders), so a wider unroll is BIT-IDENTICAL and
-// just deepens the memory pipeline. Templated so both factors coexist and the door picks.
+// B1_UNROLL: B1's per-key K load sits INSIDE the sequential j loop, so at unroll 4 only four
+// loads are ever in flight. nsys on the turn8-context decode read ~1.3us PER KEY (23us for a
+// 16-key split, 84.2us for a 68-key split) — latency, not bandwidth. The loads across j are
+// independent, so a wider unroll is BIT-IDENTICAL; unroll 8 (the removed MEMRA_FA_UNROLL door,
+// docs/FLAGS.md "Removed doors") measured -2.2%, so every caller takes 4.
 #define fa_dec_v3_walk(...) fa_dec_v3_walk_u<4>(__VA_ARGS__)
 // PHASE PROFILE (PROF=true, MEMRA_FA_PROF=1). ncu cannot run in this container
 // (ERR_NVGPUCTRPERM, and /sys/module/nvidia is not exposed so it cannot be enabled from inside),
@@ -9631,75 +9629,6 @@ extern "C" __global__ void fa_decode_vec_q_v3_dcw(
     if (lane == 0) { partM[head * n_splits + split] = m_i; partL[head * n_splits + split] = l_i; }
 }
 
-extern "C" __global__ void fa_decode_vec_q_v3_dcw_hs2(
-        const float* __restrict__ Q,
-        const uint8_t* __restrict__ K,
-        const uint8_t* __restrict__ V,
-        float* __restrict__ partO,
-        float* __restrict__ partM,
-        float* __restrict__ partL,
-        int head_dim, int n_head, int n_head_kv, const int* __restrict__ len_dev,
-        const int* __restrict__ base_dev, int window,
-        float scale, int n_splits, int split_keys,
-        long k_tok_bytes, long v_tok_bytes)
-{
-    const int len   = len_dev[0];
-    const int base  = base_dev ? base_dev[0] : 0;
-    const int lstart = (window > 0 && len > window) ? (len - window) : 0;
-    const int T_kv  = len - lstart;
-    const uint8_t* Kv = K + (size_t)(lstart - base) * k_tok_bytes;
-    const uint8_t* Vv = V + (size_t)(lstart - base) * v_tok_bytes;
-
-    // HEAD-GROUP SPLIT (MEMRA_FA_HSPLIT=2): this rank has only n_head_kv=4 KV heads, so the
-    // base grid is 4 x n_splits — ~16% occupancy, and the clock64 profile puts 59-63% of the
-    // walk in B1's K loads, i.e. memory latency with too few warps resident to hide it. Here
-    // blockIdx.x carries (kv_head, half): each block owns HALF the gqa heads and stages its own
-    // sV copy of the same keys, doubling the grid at the cost of duplicating Phase A's dequant.
-    // Each (head, split) runs the identical program over the identical keys in the identical
-    // order, so every partial is BIT-IDENTICAL — only the hosting block changes.
-    const int kv_head = blockIdx.x >> 1;
-    const int half    = blockIdx.x & 1;
-    const int split   = blockIdx.y;
-    if (kv_head >= n_head_kv || split >= n_splits) return;
-    const int gqa_all = n_head / n_head_kv;
-    const int gqa     = gqa_all >> 1;            // heads per block (launcher enforces gqa_all%2==0)
-    const int wy      = threadIdx.y;
-    const int lane    = threadIdx.x;
-    if (wy >= gqa) return;
-    const int head    = kv_head * gqa_all + half * gqa + wy;
-    const int dpl     = head_dim >> 5;
-
-    const int ns_eff = max(1, (T_kv + split_keys - 1) / split_keys);
-    const int per  = (T_kv + ns_eff - 1) / ns_eff;
-    const int t_lo = split * per;
-    const int t_hi = (split < ns_eff) ? min(T_kv, t_lo + per) : t_lo;
-
-    int qq[8]; float dQ;
-    fa_dec_v3_qquant(Q, (size_t)head * head_dim, scale, dpl, lane, qq, dQ);
-
-    float m_i = NEG_INF, l_i = 0.0f;
-    float acc[FA_DEC_MAX_DPL];
-    #pragma unroll
-    for (int i = 0; i < FA_DEC_MAX_DPL; ++i) acc[i] = 0.0f;
-
-    extern __shared__ __nv_bfloat16 ssh_v3_dcw_hs2[];
-    __nv_bfloat16* sV = ssh_v3_dcw_hs2;
-    const int bt  = wy * WARP_SZ + lane;
-    const int bsz = WARP_SZ * gqa;
-    const int kblk0 = (kv_head * head_dim) >> 5;
-    fa_dec_v3_walk(Kv, Vv, sV, bt, bsz, qq, dQ, dpl, lane, head_dim,
-                   t_lo, t_hi, kblk0, k_tok_bytes, v_tok_bytes, m_i, l_i, acc);
-
-    #pragma unroll
-    for (int i = 0; i < FA_DEC_MAX_DPL; ++i) {
-        if (i < dpl) {
-            int d = (lane << 1) + ((i >> 1) << 6) + (i & 1);
-            partO[((size_t)head * n_splits + split) * head_dim + d] = acc[i];
-        }
-    }
-    if (lane == 0) { partM[head * n_splits + split] = m_i; partL[head * n_splits + split] = l_i; }
-}
-
 extern "C" __global__ void fa_decode_vec_q_v3_dcw_prof(
         const float* __restrict__ Q,
         const uint8_t* __restrict__ K,
@@ -9749,66 +9678,6 @@ extern "C" __global__ void fa_decode_vec_q_v3_dcw_prof(
     const int kblk0 = (kv_head * head_dim) >> 5;
     fa_dec_v3_walk_u<4, false, false, true>(Kv, Vv, sV, bt, bsz, qq, dQ, dpl, lane, head_dim,
                    t_lo, t_hi, kblk0, k_tok_bytes, v_tok_bytes, m_i, l_i, acc, prof);
-
-    #pragma unroll
-    for (int i = 0; i < FA_DEC_MAX_DPL; ++i) {
-        if (i < dpl) {
-            int d = (lane << 1) + ((i >> 1) << 6) + (i & 1);
-            partO[((size_t)head * n_splits + split) * head_dim + d] = acc[i];
-        }
-    }
-    if (lane == 0) { partM[head * n_splits + split] = m_i; partL[head * n_splits + split] = l_i; }
-}
-
-extern "C" __global__ void fa_decode_vec_q_v3_dcw_u8(
-        const float* __restrict__ Q,
-        const uint8_t* __restrict__ K,
-        const uint8_t* __restrict__ V,
-        float* __restrict__ partO,
-        float* __restrict__ partM,
-        float* __restrict__ partL,
-        int head_dim, int n_head, int n_head_kv, const int* __restrict__ len_dev,
-        const int* __restrict__ base_dev, int window,
-        float scale, int n_splits, int split_keys,
-        long k_tok_bytes, long v_tok_bytes)
-{
-    const int len   = len_dev[0];
-    const int base  = base_dev ? base_dev[0] : 0;
-    const int lstart = (window > 0 && len > window) ? (len - window) : 0;
-    const int T_kv  = len - lstart;
-    const uint8_t* Kv = K + (size_t)(lstart - base) * k_tok_bytes;
-    const uint8_t* Vv = V + (size_t)(lstart - base) * v_tok_bytes;
-
-    const int kv_head = blockIdx.x;
-    const int split   = blockIdx.y;
-    if (kv_head >= n_head_kv || split >= n_splits) return;
-    const int gqa     = n_head / n_head_kv;
-    const int wy      = threadIdx.y;
-    const int lane    = threadIdx.x;
-    if (wy >= gqa) return;
-    const int head    = kv_head * gqa + wy;
-    const int dpl     = head_dim >> 5;
-
-    const int ns_eff = max(1, (T_kv + split_keys - 1) / split_keys);
-    const int per  = (T_kv + ns_eff - 1) / ns_eff;
-    const int t_lo = split * per;
-    const int t_hi = (split < ns_eff) ? min(T_kv, t_lo + per) : t_lo;
-
-    int qq[8]; float dQ;
-    fa_dec_v3_qquant(Q, (size_t)head * head_dim, scale, dpl, lane, qq, dQ);
-
-    float m_i = NEG_INF, l_i = 0.0f;
-    float acc[FA_DEC_MAX_DPL];
-    #pragma unroll
-    for (int i = 0; i < FA_DEC_MAX_DPL; ++i) acc[i] = 0.0f;
-
-    extern __shared__ __nv_bfloat16 ssh_v3_dcw_u8[];
-    __nv_bfloat16* sV = ssh_v3_dcw_u8;
-    const int bt  = wy * WARP_SZ + lane;
-    const int bsz = WARP_SZ * gqa;
-    const int kblk0 = (kv_head * head_dim) >> 5;
-    fa_dec_v3_walk_u<8>(Kv, Vv, sV, bt, bsz, qq, dQ, dpl, lane, head_dim,
-                   t_lo, t_hi, kblk0, k_tok_bytes, v_tok_bytes, m_i, l_i, acc);
 
     #pragma unroll
     for (int i = 0; i < FA_DEC_MAX_DPL; ++i) {

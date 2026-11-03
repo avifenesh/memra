@@ -33787,9 +33787,6 @@ impl Engine {
         let (ski, win) = (sp as i32, window as i32);
         let gqa = (n_head / n_head_kv).max(1) as u32;
         let smem = (32 * head_dim * 2) as u32; // sV bf16 [FA_DEC_TILE=32][hd] (v3 uses sV only)
-        // MEMRA_FA_UNROLL=8: the B1-unroll-8 twin (deeper K load pipeline, bit-identical —
-        // see fa_dec_v3_walk_u). Same launch geometry.
-        static U8: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
         // MEMRA_FA_PROF=1: clock64() phase profile of the decode-attention walk. ncu is
         // permission-blocked in this container and the module params are not exposed, so this
         // is how the ~1.18us/key gets localised. Diagnostic only (extra atomics per block);
@@ -33798,29 +33795,14 @@ impl Engine {
         let fprof = *FPROF.get_or_init(|| std::env::var("MEMRA_FA_PROF").as_deref() == Ok("1"));
         static PROF_BUF: std::sync::Mutex<Option<(usize, CudaSlice<u64>)>> =
             std::sync::Mutex::new(None);
-        // MEMRA_FA_HSPLIT=2: split each kv_head's gqa warp group across TWO blocks (2x grid,
-        // duplicated Phase A staging) — bit-identical per (head, split). Tests whether B1's
-        // 59-63% cycle share is occupancy-starved latency (grid is only n_head_kv x n_splits).
-        static HS: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-        let hs2 = *HS.get_or_init(|| std::env::var("MEMRA_FA_HSPLIT").as_deref() == Ok("2"))
-            && (n_head / n_head_kv).is_multiple_of(2)
-            && (n_head / n_head_kv) >= 2;
         let f = if fprof {
             self.func("fa_decode_vec_q_v3_dcw_prof")
-        } else if hs2 {
-            self.func("fa_decode_vec_q_v3_dcw_hs2")
-        } else if *U8.get_or_init(|| std::env::var("MEMRA_FA_UNROLL").as_deref() == Ok("8")) {
-            self.func("fa_decode_vec_q_v3_dcw_u8")
         } else {
             self.func("fa_decode_vec_q_v3_dcw")
         };
         let cfg = LaunchConfig {
-            grid_dim: if hs2 {
-                ((2 * n_head_kv) as u32, n_splits as u32, 1)
-            } else {
-                (n_head_kv as u32, n_splits as u32, 1)
-            },
-            block_dim: if hs2 { (32, gqa / 2, 1) } else { (32, gqa, 1) },
+            grid_dim: (n_head_kv as u32, n_splits as u32, 1),
+            block_dim: (32, gqa, 1),
             shared_mem_bytes: smem,
         };
         let null: u64 = 0;
