@@ -7164,9 +7164,9 @@ impl HybridModel {
         // 35B-A3B class: rowwise verify ~= 5.6 ms per drafted token (one full trunk step
         // each) — the same (K+1)-plain-steps wall the dense admission fixed on 2026-08-15.
         // Rollback seam unchanged: MEMRA_SPEC_VERIFY_ROWWISE=1.
-        let rowwise = std::env::var("MEMRA_SPEC_VERIFY_ROWWISE").as_deref() == Ok("1")
-            || !self.batched_serving_numeric_class()
-            || t > 16;
+        // The one caller, `verify_layers`, routes here only for the GatedDeltaNet class.
+        debug_assert!(self.batched_serving_numeric_class());
+        let rowwise = std::env::var("MEMRA_SPEC_VERIFY_ROWWISE").as_deref() == Ok("1") || t > 16;
         if rowwise {
             if stream.is_some() {
                 // rowwise replays per row with host cache.pos — irreconcilable with a
