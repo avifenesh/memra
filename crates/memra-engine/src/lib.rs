@@ -24130,22 +24130,6 @@ impl Engine {
         )
     }
 
-    /// Back-compat NVFP4-only batched raw launcher (used by older gates). Delegates to the generic one.
-    #[allow(clippy::too_many_arguments)] // allow: the parameter list mirrors the kernel/FFI/call contract; bundling into a struct is a refactor, not a lint fix
-    pub fn qmatvec_nvfp4_batched_raw(
-        &self,
-        bytes: &CudaSlice<u8>,
-        x: &CudaSlice<f32>,
-        m: usize,
-        in_f: usize,
-        out_f: usize,
-        row_bytes: usize,
-        mcols: usize,
-        rp: bool,
-    ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
-        self.qmatvec_batched_raw(bytes, x, m, in_f, out_f, QT_NVFP4, row_bytes, mcols, rp)
-    }
-
     /// Stage-C FP4 gate (MEMRA_FP4): if `w` is an NVFP4 weight with in_f%64==0, run the native mxf4
     /// block-scale GEMM and apply the per-tensor macro-scale, returning Some(y). Else None (caller
     /// falls through to the int8 GEMM / dp4a). Strict opt-in over the proven int8 path; m>=16 only.
@@ -24504,43 +24488,6 @@ impl Engine {
             v2: false,
         });
         F8f4ActGroupGuard { engine: self }
-    }
-
-    /// Cross-request grouped matmul (task #13): run ONE projection group over the
-    /// CONCATENATION of several sequences' activations (m = sum of per-seq rows — the
-    /// GEMM-batch win vLLM gets from continuous batching), then split each output back
-    /// into per-seq buffers. Zero view plumbing: gather/scatter are stream-ordered D2D
-    /// copies (~us at prime sizes). NUMERIC CONFIG NOTE: a GEMM at m=sum tiles K
-    /// differently than per-seq GEMMs — argmax-gated like every prefill GEMM change.
-    pub fn matmul_group_multi(
-        &self,
-        ws: &[&crate::model::GpuTensor],
-        xs: &[&CudaSlice<f32>],
-        ms: &[usize],
-    ) -> Result<Vec<Vec<CudaSlice<f32>>>, Box<dyn std::error::Error>> {
-        assert_eq!(xs.len(), ms.len());
-        let in_f = ws[0].in_features();
-        let total: usize = ms.iter().sum();
-        let mut xcat = self.uninit(total * in_f)?;
-        let mut off = 0usize;
-        for (x, &m) in xs.iter().zip(ms) {
-            self.copy_into(&mut xcat, off * in_f, x, m * in_f)?;
-            off += m;
-        }
-        let ys = self.matmul_group(ws, &xcat, total)?;
-        let mut out: Vec<Vec<CudaSlice<f32>>> = (0..xs.len()).map(|_| Vec::new()).collect();
-        for (w, y) in ws.iter().zip(ys) {
-            let out_f = w.out_features();
-            let mut off = 0usize;
-            for (s, &m) in ms.iter().enumerate() {
-                let mut ys_s = self.uninit(m * out_f)?;
-                let src = y.slice(off * out_f..(off + m) * out_f);
-                self.gpu.stream().memcpy_dtod(&src, &mut ys_s)?;
-                out[s].push(ys_s);
-                off += m;
-            }
-        }
-        Ok(out)
     }
 
     /// True if `w`'s qtype has a batched tensor-core GEMM kernel (the prefill T>1 root fix).
@@ -27198,54 +27145,6 @@ impl Engine {
         Ok(())
     }
 
-    /// Dual bf16 matvec: gate/up (same shape) from one shared input in one launch. Per row
-    /// bit-identical to two `matvec_bf16` launches. Returns (gate, up).
-    #[allow(dead_code)] // allow: base form of the matvec_bf16_dual_* family; kept as the reference entry point
-    pub(crate) fn matvec_bf16_dual(
-        &self,
-        wg: &CudaSlice<u8>,
-        wu: &CudaSlice<u8>,
-        x: &CudaSlice<f32>,
-        in_f: usize,
-        out_f: usize,
-    ) -> Result<(CudaSlice<f32>, CudaSlice<f32>), Box<dyn std::error::Error>> {
-        if wg.len() != in_f * out_f * 2
-            || wu.len() != in_f * out_f * 2
-            || x.len() < in_f
-            || !in_f.is_multiple_of(8)
-        {
-            return Err(format!(
-                "matvec_bf16_dual geometry wg={} wu={} x={} in={in_f} out={out_f}",
-                wg.len(),
-                wu.len(),
-                x.len()
-            )
-            .into());
-        }
-        let mut yg = self.alloc_uninit::<f32>(out_f)?;
-        let mut yu = self.alloc_uninit::<f32>(out_f)?;
-        let f = self.func("matvec_bf16_dual");
-        let cfg = LaunchConfig {
-            grid_dim: ((2 * out_f) as u32, 1, 1),
-            block_dim: (mmv_block(), 1, 1),
-            shared_mem_bytes: 0,
-        };
-        let (ini, outi) = (in_f as i32, out_f as i32);
-        let __s_b = self.gpu.stream();
-        let mut b = __s_b.launch_builder(&f);
-        b.arg(wg)
-            .arg(wu)
-            .arg(x)
-            .arg(&mut yg)
-            .arg(&mut yu)
-            .arg(&ini)
-            .arg(&outi);
-        unsafe {
-            b.launch(cfg)?;
-        }
-        Ok((yg, yu))
-    }
-
     #[allow(clippy::too_many_arguments)]
     #[allow(clippy::manual_is_multiple_of)] // allow: divisor is runtime-derived; the modulo form keeps a zero divisor loud (a panic), where is_multiple_of would return false silently
     fn linear_bf16_chunked_inner(
@@ -29408,18 +29307,8 @@ impl Engine {
         Ok(y)
     }
 
-    /// bf16 bytes -> f16 bytes, n elements (the f16-P/V door's V re-encode on the emit lane).
-    pub fn bf16_to_f16(
-        &self,
-        xb: &CudaSlice<u8>,
-        n: usize,
-    ) -> Result<CudaSlice<u8>, Box<dyn std::error::Error>> {
-        let mut y = self.alloc_uninit::<u8>(n * 2)?;
-        self.bf16_to_f16_into(xb, n, &mut y)?;
-        Ok(y)
-    }
-
-    /// Same conversion into a caller-owned (pooled) buffer; `y.len() >= n*2`.
+    /// bf16 -> f16 conversion of `n` elements into a caller-owned (pooled) buffer;
+    /// `y.len() >= n*2`.
     pub fn bf16_to_f16_into(
         &self,
         xb: &CudaSlice<u8>,
@@ -29428,7 +29317,7 @@ impl Engine {
     ) -> Result<(), Box<dyn std::error::Error>> {
         assert!(
             n.is_multiple_of(2),
-            "bf16_to_f16 requires n % 2 == 0, got {n}"
+            "bf16_to_f16_into requires n % 2 == 0, got {n}"
         );
         assert!(y.len() >= n * 2);
         let f = self.func("bf16_to_f16_flat");
@@ -33045,113 +32934,9 @@ impl Engine {
         result
     }
 
-    /// gdn_scan variant where state_in/out are CudaViews (resident SSM state, in-place per step).
-    #[allow(clippy::too_many_arguments)] // allow: the parameter list mirrors the kernel/FFI/call contract; bundling into a struct is a refactor, not a lint fix
-    pub fn gdn_scan_s128_view(
-        &self,
-        q: &CudaSlice<f32>,
-        k: &CudaSlice<f32>,
-        v: &CudaSlice<f32>,
-        g: &CudaSlice<f32>,
-        beta: &CudaSlice<f32>,
-        state_in: &cudarc::driver::CudaView<f32>,
-        state_out: &mut cudarc::driver::CudaViewMut<f32>,
-        o: &mut CudaSlice<f32>,
-        n_head: usize,
-        t: usize,
-        scale: f32,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        let f = self.func("gdn_scan_s128");
-        const S_V: u32 = 128;
-        const WARP: u32 = 32;
-        const COLS: u32 = 4;
-        let cfg = LaunchConfig {
-            grid_dim: (n_head as u32, 1, S_V / COLS),
-            block_dim: (WARP, COLS, 1),
-            shared_mem_bytes: 0,
-        };
-        let (h, ti) = (n_head as i32, t as i32);
-        let __s_b = self.gpu.stream();
-        let mut b = __s_b.launch_builder(&f);
-        b.arg(q)
-            .arg(k)
-            .arg(v)
-            .arg(g)
-            .arg(beta)
-            .arg(state_in)
-            .arg(state_out)
-            .arg(o)
-            .arg(&h)
-            .arg(&ti)
-            .arg(&scale);
-        unsafe {
-            b.launch(cfg)?;
-        }
-        Ok(())
-    }
-
     /// conv1d where the input is a CudaView (resident conv state assembled in place).
     #[allow(clippy::too_many_arguments)]
     // allow: the parameter list mirrors the kernel/FFI/call contract; bundling into a struct is a refactor, not a lint fix
-    #[allow(clippy::manual_div_ceil)] // allow: explicit (n + k - 1) / k is the load-bearing sizing form, kept textually identical to the kernel-side math
-    pub fn ssm_conv1d_view(
-        &self,
-        x: &cudarc::driver::CudaView<f32>,
-        w: &CudaSlice<f32>,
-        y: &mut CudaSlice<f32>,
-        conv_dim: usize,
-        t: usize,
-        d_conv: usize,
-        silu: bool,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        let f = self.func("ssm_conv1d_silu_f32");
-        // grid.x = channel, grid.y = T-tiles (block 256 strides over T) — parallel over both axes.
-        let cfg = LaunchConfig {
-            grid_dim: (conv_dim as u32, ((t as u32 + 255) / 256).max(1), 1),
-            block_dim: (256, 1, 1),
-            shared_mem_bytes: 0,
-        };
-        let (cd, ti, dc, s) = (conv_dim as i32, t as i32, d_conv as i32, silu as i32);
-        let __s_b = self.gpu.stream();
-        let mut b = __s_b.launch_builder(&f);
-        b.arg(x).arg(w).arg(y).arg(&cd).arg(&ti).arg(&dc).arg(&s);
-        unsafe {
-            b.launch(cfg)?;
-        }
-        Ok(())
-    }
-
-    /// Depthwise causal conv1d + optional SiLU.
-    /// x:[conv_dim, T+d_conv-1] channel-major (first d_conv-1 cols = carried state),
-    /// w:[d_conv, conv_dim] kernel-major, y:[conv_dim, T] channel-major.
-    /// FUSED prefill conv (token-major input, zero left-state): replaces
-    /// transpose + zeros + conv_left_pad + ssm_conv1d with ONE launch reading the matmul output
-    /// directly. Output channel-major [conv_dim, T], SiLU applied. BIT-IDENTICAL accumulation.
-    #[allow(clippy::manual_div_ceil)] // allow: explicit (n + k - 1) / k is the load-bearing sizing form, kept textually identical to the kernel-side math
-    pub fn ssm_conv1d_tm(
-        &self,
-        qkv_tm: &CudaSlice<f32>,
-        w: &CudaSlice<f32>,
-        y: &mut CudaSlice<f32>,
-        conv_dim: usize,
-        t: usize,
-        d_conv: usize,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        let f = self.func("ssm_conv1d_tm_f32");
-        let cfg = LaunchConfig {
-            grid_dim: (((conv_dim + 255) / 256) as u32, t as u32, 1),
-            block_dim: (256, 1, 1),
-            shared_mem_bytes: 0,
-        };
-        let (cd, ti, dc) = (conv_dim as i32, t as i32, d_conv as i32);
-        let __s_b = self.gpu.stream();
-        let mut b = __s_b.launch_builder(&f);
-        b.arg(qkv_tm).arg(w).arg(y).arg(&cd).arg(&ti).arg(&dc);
-        unsafe {
-            b.launch(cfg)?;
-        }
-        Ok(())
-    }
 
     /// BATCHED verify conv (T>1, carried state): window reads the resident conv ring for
     /// negative rows; separate ring-update launch afterwards. BIT-IDENTICAL per value to the
@@ -34681,12 +34466,6 @@ impl Engine {
         let (p, _g) = x.device_ptr(&s);
         p
     }
-    pub fn addr_f32_mut(&self, x: &mut CudaSlice<f32>) -> u64 {
-        use cudarc::driver::DevicePtrMut;
-        let s = self.gpu.stream();
-        let (p, _g) = x.device_ptr_mut(&s);
-        p
-    }
     pub fn addr_f32v(&self, x: &cudarc::driver::CudaView<f32>) -> u64 {
         use cudarc::driver::DevicePtr;
         let s = self.gpu.stream();
@@ -35576,79 +35355,6 @@ impl Engine {
         Ok(())
     }
 
-    /// f16out twin of `gated_rmsnorm` (task #17): epilogue also emits the fp16 operand for
-    /// the ssm_out GEMM. Bit-identical class (same floats + the cvt kernel's __float2half).
-    #[allow(clippy::too_many_arguments)] // allow: the parameter list mirrors the kernel/FFI/call contract; bundling into a struct is a refactor, not a lint fix
-    pub fn gated_rmsnorm_f16out(
-        &self,
-        o: &CudaSlice<f32>,
-        w: &CudaSlice<f32>,
-        z: &CudaSlice<f32>,
-        dst: &mut CudaSlice<f32>,
-        dst16: &mut CudaSlice<u8>,
-        ncols: usize,
-        nrows: usize,
-        eps: f32,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        let f = self.func("gated_rmsnorm_f16out_f32");
-        // block_dim MUST match gated_rmsnorm's (128): the reduction tree order pins the scale
-        let cfg = LaunchConfig {
-            grid_dim: (nrows as u32, 1, 1),
-            block_dim: (128, 1, 1),
-            shared_mem_bytes: 0,
-        };
-        let (nc, e) = (ncols as i32, eps);
-        let __s_b = self.gpu.stream();
-        let mut b = __s_b.launch_builder(&f);
-        b.arg(o).arg(w).arg(z).arg(dst).arg(dst16).arg(&nc).arg(&e);
-        unsafe {
-            b.launch(cfg)?;
-        }
-        Ok(())
-    }
-
-    /// add+RMSNorm emitting the f32 normed row AND its q8_1 quantization in one launch (the MoE
-    /// layer input: z feeds the router matmul as f32, the expert dp4a as q8_1). BIT-IDENTICAL to
-    /// add_rms_norm + quantize_q8_1. Returns (q, d) alongside the caller-provided res/z buffers.
-    #[allow(clippy::too_many_arguments)]
-    pub fn add_rms_norm_zq8(
-        &self,
-        a: &CudaSlice<f32>,
-        b_in: &CudaSlice<f32>,
-        w: &CudaSlice<f32>,
-        res: &mut CudaSlice<f32>,
-        z: &mut CudaSlice<f32>,
-        ncols: usize,
-        nrows: usize,
-        eps: f32,
-    ) -> Result<(CudaSlice<i8>, CudaSlice<f32>), Box<dyn std::error::Error>> {
-        assert!(ncols.is_multiple_of(32));
-        let mut q = self.alloc_uninit::<i8>(nrows * ncols)?;
-        let mut d = self.alloc_uninit::<f32>(nrows * (ncols / 32))?;
-        let f = self.func("add_rms_norm_zq8");
-        let cfg = LaunchConfig {
-            grid_dim: (nrows as u32, 1, 1),
-            block_dim: (1024, 1, 1),
-            shared_mem_bytes: 0,
-        };
-        let (nc, ep) = (ncols as i32, eps);
-        let __s_b = self.gpu.stream();
-        let mut b = __s_b.launch_builder(&f);
-        b.arg(a)
-            .arg(b_in)
-            .arg(w)
-            .arg(res)
-            .arg(z)
-            .arg(&mut q)
-            .arg(&mut d)
-            .arg(&nc)
-            .arg(&ep);
-        unsafe {
-            b.launch(cfg)?;
-        }
-        Ok((q, d))
-    }
-
     /// gated RMSNorm emitting q8_1 directly (fused quantize epilogue) — the ssm_out matvec input.
     /// BIT-IDENTICAL bytes to gated_rmsnorm + quantize_q8_1 (ncols % 32 == 0; blocks never straddle
     /// rows). Saves one launch per linear-attn layer (36/token on the 9B).
@@ -35743,48 +35449,6 @@ impl Engine {
         Ok((out_q, out_d))
     }
 
-    /// transpose [rows,cols] row-major -> [cols,rows] row-major.
-    pub fn transpose(
-        &self,
-        inp: &CudaSlice<f32>,
-        rows: usize,
-        cols: usize,
-    ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
-        let f = self.func("transpose_f32");
-        let mut out = self.zeros(rows * cols)?;
-        let cfg = LaunchConfig::for_num_elems((rows * cols) as u32);
-        let (r, c) = (rows as i32, cols as i32);
-        let __s_b = self.gpu.stream();
-        let mut b = __s_b.launch_builder(&f);
-        b.arg(inp).arg(&mut out).arg(&r).arg(&c);
-        unsafe {
-            b.launch(cfg)?;
-        }
-        Ok(out)
-    }
-
-    /// repeat-interleave heads: in[head_dim,n_in,T] -> out[head_dim,n_out,T].
-    pub fn repeat_heads(
-        &self,
-        inp: &CudaSlice<f32>,
-        out: &mut CudaSlice<f32>,
-        head_dim: usize,
-        n_in: usize,
-        n_out: usize,
-        t: usize,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        let f = self.func("repeat_heads_f32");
-        let cfg = LaunchConfig::for_num_elems((head_dim * n_out * t) as u32);
-        let (hd, ni, no, ti) = (head_dim as i32, n_in as i32, n_out as i32, t as i32);
-        let __s_b = self.gpu.stream();
-        let mut b = __s_b.launch_builder(&f);
-        b.arg(inp).arg(out).arg(&hd).arg(&ni).arg(&no).arg(&ti);
-        unsafe {
-            b.launch(cfg)?;
-        }
-        Ok(())
-    }
-
     /// q|gate split (on-device). qf:[T, n_head*2*head_dim] -> q_out,gate_out:[head_dim,n_head,T].
     /// Replaces the dtoh->host-double-loop->htod in full_attn / full_attn_decode.
     ///
@@ -35869,28 +35533,6 @@ impl Engine {
         Ok(())
     }
 
-    /// conv left zero-pad (prefill from zero state). src:[conv_dim,T] -> dst:[conv_dim,T+pad],
-    /// cols 0..pad = 0, cols pad..pad+T = src. `dst` MUST be pre-zeroed. No dtoh/host-loop/htod.
-    pub fn conv_left_pad(
-        &self,
-        src: &CudaSlice<f32>,
-        dst: &mut CudaSlice<f32>,
-        conv_dim: usize,
-        t: usize,
-        pad: usize,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        let f = self.func("conv_left_pad_f32");
-        let cfg = LaunchConfig::for_num_elems((conv_dim * t) as u32);
-        let (cd, ti, p) = (conv_dim as i32, t as i32, pad as i32);
-        let __s_b = self.gpu.stream();
-        let mut b = __s_b.launch_builder(&f);
-        b.arg(src).arg(dst).arg(&cd).arg(&ti).arg(&p);
-        unsafe {
-            b.launch(cfg)?;
-        }
-        Ok(())
-    }
-
     /// conv-state assemble + ring roll (decode T=1). conv_state:[conv_dim,pad] (resident),
     /// qkv_col:[conv_dim] -> conv_in:[conv_dim,pad+1]; AND rolls conv_state (keep last pad cols).
     /// Replaces the dtoh->host-conv-ring-assemble->ring-update->htod in linear_attn_decode.
@@ -35943,19 +35585,6 @@ impl Engine {
             b.launch(cfg)?;
         }
         Ok(())
-    }
-
-    /// Copy a contiguous range [start, start+len) out of src into a fresh slice (device→device via host).
-    /// Used for qkv split views. Small/rare; not perf-critical in Stage 1.
-    pub fn slice_range(
-        &self,
-        src: &CudaSlice<f32>,
-        start: usize,
-        len: usize,
-    ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
-        let host = self.gpu.stream().clone_dtoh(src)?;
-        self.gpu.stream().synchronize()?;
-        self.htod(&host[start..start + len])
     }
 }
 
