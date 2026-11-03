@@ -22708,7 +22708,10 @@ impl HybridModel {
         static EMIT: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
         // Island primes take the mask-capable naive kernel below; keep the operands f32
         // (the bf16 FA emit path has no island consumer). Text-only keeps emit unchanged.
+        // The portable lane keeps them f32 too: its FA entries fall back to naive SDPA, and
+        // the bf16 `_pre` stamps have no such fallback.
         let emit = island.is_none()
+            && !crate::portable_mma_gated()
             && t >= 16
             && crate::Engine::qkvnorm_w_on_prefill(nh * t + 2 * nkv * t, hd)
             && *EMIT.get_or_init(|| {
@@ -22837,10 +22840,11 @@ impl HybridModel {
             let k_view = e.view_u8(&kvl.k, t_kv * k_tok_bytes);
             let v_view = e.view_u8(&kvl.v, t_kv * v_tok_bytes);
             let w = if swa && t_kv > win { win } else { 0 };
-            if std::env::var("MEMRA_NOFA").is_err() {
+            if std::env::var("MEMRA_NOFA").is_err() && !crate::portable_mma_gated() {
                 // FA-speed twin (dequant-once bf16 workspace + the bf16 FA kernels the fresh
                 // path uses). `qb` is the emitted bf16 query when the emit path ran, else a
-                // one-off conversion of the f32 q (same __float2bfloat16).
+                // one-off conversion of the f32 q (same __float2bfloat16). The portable lane
+                // takes the naive view kernels below, like `fa_prefill_view` does there.
                 let q_bf16: CudaSlice<u8>;
                 let qb_ref: &CudaSlice<u8> = if emit {
                     &qb

@@ -29211,6 +29211,13 @@ impl Engine {
         window: usize,
         v_f16: bool,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        // The portable lane serves naive SDPA (`fa_prefill_w`'s gate); this bf16-MMA stamp takes
+        // pre-converted operands and has no f32 fallback, so it refuses rather than run there.
+        if portable_mma_gated() {
+            return Err(
+                "fa_prefill_w_pre: bf16-MMA prefill is gated off on this portable build".into(),
+            );
+        }
         const BLOCK_Q: usize = 64;
         const BK: usize = 32;
         debug_assert_eq!(head_dim, 256);
@@ -29679,6 +29686,12 @@ impl Engine {
         causal: bool,
         v_f16: bool,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        // Same refusal as `fa_prefill_w_pre`: no f32 fallback for pre-converted operands.
+        if portable_mma_gated() {
+            return Err(
+                "fa_prefill_hd512_pre: bf16-MMA prefill is gated off on this portable build".into(),
+            );
+        }
         debug_assert_eq!(head_dim, 512);
         const SP_M: usize = 16;
         const BKS: usize = 32;
