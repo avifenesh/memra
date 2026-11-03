@@ -2126,6 +2126,22 @@ fanout to avoid churn. Gates: `research/pc-iso-20260802/` (same-salt hit, cross-
 directions, default-namespace blindness; the integrate-cache intersection gate re-run
 unmodified as the no-salt regression).
 
+**Spec-pool resumes compare samplers (lane/session-resume-sampler-predicate, 2026-08-20):** a
+parked whole spec session's committed state is sampler-shaped beyond its draft graph: its penalty
+window, its Philox stream position and its draft plane. A resume whose request sampler differs
+from the identity that shaped the parked session is refused on all three probe tiers (exact token
+prefix, text prefix, session affinity) and on the DSpark pool, and the request serves cold spec.
+The refusal names the field: `[worker] spec-reuse REFUSED: parked session's sampler differs on
+<field>; serving COLD spec ...`, and `dspark-reuse REFUSED` on the DSpark pool. Admitted resumes
+log `[sampler=equivalent]`. `seed` is carried but not compared. The only parked state that bakes
+it, the sampled draft graph, is already re-keyed on it (`SampledGraphKey`), and an omitted seed
+draws fresh per-request entropy, so comparing it would refuse every seed-omitting sampled
+conversation for no soundness gain (pinned by `seed_alone_does_not_refuse` in memra-sampling and
+`seed_alone_still_rekeys_the_draft_graph` in memra-engine). `/metrics` counts the refusals as
+`spec_pool_sampler_refusals`, a subset of `spec_pool_misses`; it answers whether real traffic
+changes sampler mid-session. Receipts: darklanes
+`research/spec-cache-20260818/SESSION-RESUME-PREDICATE.md`.
+
 **Accounting:** every response shape carries OpenAI-schema usage with the worker-truth split —
 `usage.prompt_tokens`, `completion_tokens`, `total_tokens`, and
 `prompt_tokens_details.cached_tokens` (tokens resumed from ANY cache tier: continuation pool,

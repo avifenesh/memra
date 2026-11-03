@@ -1713,7 +1713,9 @@ sets it, and a winner's seam goes once the default has served two weeks unused. 
 env read (`spec_resume_sampler_predicate_on`), the door argument of
 `spec_resume_sampler_verdict`, the `[sampler=unchecked]` log arm and the door-shut test.
 `legacy_admits` stays as test-only teeth in memra-sampling, the server's verdict test and
-`dsv4_moe_program_class_gate`. No kernel. Git history is the archive. Ledger:
+`dsv4_moe_program_class_gate`. The live predicate (the refusal line, why `seed` is not
+compared, `spec_pool_sampler_refusals`) is documented in `docs/SERVING.md` under Prompt
+caching. No kernel. Git history is the archive. Ledger:
 `VERDICT:spec-resume-sampler-seam-removed` (darklanes `agent-knowledge/gpu/verdicts-ledger.md`).
 
 ## Removed doors, 2026-11-03 (the per-burst SSE emission seam: a winner's unused rollback)
