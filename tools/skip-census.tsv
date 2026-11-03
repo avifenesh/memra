@@ -44,7 +44,6 @@ memra-engine	dsv4_graph::tests::replay_rust_partial_submission_and_capture_clean
 memra-engine	e4m3_fused_six_is_bit_identical_to_six_separate_launches	crates/memra-engine/tests/kda_fused6_e4m3_gpu.rs	SKIP[CUDA device]: GPU test not run
 memra-engine	engine_tower_matches_banked_upstream_fixture	crates/memra-engine/tests/glm5_vision_gpu.rs	SKIP[fixture {fixture}]: regenerable fixture not present; run gen_upstream_fixture.py
 memra-engine	fused_epilogue_is_bitwise_the_two_launch_pair	crates/memra-engine/tests/hc_pre_norm_fuse_gpu.rs	SKIP[CUDA device]: GPU test not run
-memra-engine	fused_router_is_bitwise_the_two_launch_pair	crates/memra-engine/tests/router_fused_gpu.rs	SKIP[CUDA device]: GPU test not run
 memra-engine	gemv_f32_rows_matches_cublas_deterministic_and_m_identical	crates/memra-engine/tests/f32_gemv_rows_gpu.rs	SKIP[CUDA device]: GPU test not run
 memra-engine	gpu_kda_gate_beta_matches_gate_then_sigmoid_bitwise	crates/memra-engine/tests/kda_small_folds_gpu.rs	SKIP[CUDA device]: GPU test not run
 memra-engine	gpu_l2_norm_pair_matches_two_launches_bitwise	crates/memra-engine/tests/kda_small_folds_gpu.rs	SKIP[CUDA device]: GPU test not run
@@ -64,7 +63,6 @@ memra-engine	model_memory::native_tests::glm_indexed_mla_kda_state_materializati
 memra-engine	model_memory::native_tests::glm_peer_admission_materialization_trim_and_refill	crates/memra-engine/src/model_memory.rs	SKIP[2 CUDA devices]: pair-only test {test} not run, found {found}
 memra-engine	one_shot_all_reduce_matches_the_host_sum_bitwise	crates/memra-engine/tests/tp_ar_gpu.rs	SKIP[2 CUDA devices]: multi-GPU test not run
 memra-engine	one_shot_into_matches_the_in_place_form_bitwise	crates/memra-engine/tests/tp_ar_gpu.rs	SKIP[2 CUDA devices]: multi-GPU test not run
-memra-engine	perturbing_the_bias_moves_the_selection	crates/memra-engine/tests/router_fused_gpu.rs	SKIP[CUDA device]: GPU test not run
 memra-engine	perturbing_the_norm_weight_moves_the_fused_output	crates/memra-engine/tests/hc_pre_norm_fuse_gpu.rs	SKIP[CUDA device]: GPU test not run
 memra-engine	spill_pread::tests::unaligned_direct_read_without_window_is_refused	crates/memra-engine/src/spill_pread.rs	SKIP[O_DIRECT-enforcing filesystem]: unaligned-offset red control not run
 memra-gguf	config::minimax_tests::minimax_name_mapping_against_index	crates/memra-gguf/src/config.rs	SKIP[{MINIMAX_DIR}]: MiniMax name mapping against the index not run
