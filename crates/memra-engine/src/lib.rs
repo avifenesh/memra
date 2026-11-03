@@ -2464,9 +2464,10 @@ pub(crate) fn fa_part_zero_on() -> bool {
 
 /// t_kv-conditional v4 pick (gemma depth lesson 2026-07-10: v4's key-per-lane pipeline starves
 /// at the 1024-window with short splits — the v3 arm measured depth plain 158.0 vs 156.7).
-/// Threshold MEMRA_FA_V4_MAX (default usize::MAX = unchanged behavior; gemma sets 1024 at load
-/// via FA_V4_MAX_DEFAULT). Applied at EVERY dispatch site (eager, rows, rows_w, dc) so verify
-/// stays kernel-family-identical to decode at the same t_kv.
+/// Threshold MEMRA_FA_V4_MAX (default usize::MAX = unchanged behavior; the loader stores 0 via
+/// FA_V4_MAX_DEFAULT for gqa > 8 plans). Applied at EVERY dispatch site (eager, rows, rows_w, dc)
+/// so verify stays kernel-family-identical to decode at the same t_kv; `fa_decode_rows` groups
+/// its rows by this pick.
 /// Per-model deep-ctx smem floor default (MEMRA_FA_SMEM_TKV env overrides): gemma pushes it
 /// above the 1024 window so the windowed decode + verify rows share the REGISTER family.
 pub static FA_SMEM_TKV_DEFAULT: std::sync::atomic::AtomicUsize =
@@ -31362,25 +31363,34 @@ impl Engine {
         // executes the exact per-row program eager ran. Rungs land once per doubling, so this
         // is 1 launch in the common case and 2 on a crossing round. hd512 keeps one group (its
         // sp override is t_kv-independent by construction).
-        let mut groups: Vec<(usize, usize, usize)> = Vec::new(); // (row0, t_g, sp_g)
-        if head_dim == 512 || fa_split_keys(base_len + 1, n_head_kv) == sp {
-            groups.push((0, t, sp));
+        // The v4/v3 family joins the group key for the same reason: eager decode picks it per row
+        // from fa_v4_at(t_kv_r), so a finite MEMRA_FA_V4_MAX inside the batch splits the group
+        // there instead of running the early rows under the last row's family.
+        // Deep-ctx smem twin for the VERIFY rows (2026-07-05): same threshold + rationale as
+        // fa_decode's dispatch — at 40k the register path's GQA L2-reuse premise is dead and the
+        // verify multiplies the 4x DRAM re-read by T rows. Bit-identical per (row,token,split).
+        let v4_row = |r: usize| fa_v4_at(base_len + r + 1) && head_dim == 256;
+        let mut groups: Vec<(usize, usize, usize, bool)> = Vec::new(); // (row0, t_g, sp_g, v4_g)
+        if head_dim == 512
+            || (fa_split_keys(base_len + 1, n_head_kv) == sp && v4_row(0) == v4_row(t - 1))
+        {
+            groups.push((0, t, sp, v4_row(t - 1)));
         } else {
             let mut r0 = 0usize;
             while r0 < t {
                 let sp_g = fa_split_keys(base_len + r0 + 1, n_head_kv);
+                let v4_g = v4_row(r0);
                 let mut r1 = r0 + 1;
-                while r1 < t && fa_split_keys(base_len + r1 + 1, n_head_kv) == sp_g {
+                while r1 < t
+                    && fa_split_keys(base_len + r1 + 1, n_head_kv) == sp_g
+                    && v4_row(r1) == v4_g
+                {
                     r1 += 1;
                 }
-                groups.push((r0, r1 - r0, sp_g));
+                groups.push((r0, r1 - r0, sp_g, v4_g));
                 r0 = r1;
             }
         }
-        // Deep-ctx smem twin for the VERIFY rows (2026-07-05): same threshold + rationale as
-        // fa_decode's dispatch — at 40k the register path's GQA L2-reuse premise is dead and the
-        // verify multiplies the 4x DRAM re-read by T rows. Bit-identical per (row,token,split).
-        let v4 = fa_v4_at(base_len + t) && head_dim == 256;
         let v3 = fa_v3_active(head_dim);
         // kv_shared twin RETIRED (2026-07-11 depth run-gen gate): the wv:=wk premise fails
         // POST-cache — cached K is k-normed+roped, cached V is not; the twin fed roped keys
@@ -31409,66 +31419,71 @@ impl Engine {
             && sp <= 32
             && n_head / n_head_kv.max(1) <= 16
             && *TB512.get_or_init(|| std::env::var("MEMRA_FA_TB512").as_deref() != Ok("0"));
-        let fname = if tb512 {
-            "fa_decode_vec_q_rows_v4_512_tb"
-        } else if i2 {
-            "fa_decode_vec_q_rows_dpl16_i2"
-        } else if head_dim == 512 {
-            "fa_decode_vec_q_rows_dpl16"
-        }
-        // gemma globals (parity law)
-        else if v4 {
-            "fa_decode_vec_q_rows_v4"
-        } else if v3 {
-            "fa_decode_vec_q_rows_v3"
-        } else {
-            "fa_decode_vec_q_rows_v2"
-        };
-        let f = if head_dim == 512 {
-            self.fa_func(fname, head_dim)
-        } else if g {
-            // FP8-WINDOWED: hd256 rows over an e4m3 cache — kf8vf8 module, SAME symbol
-            // choice as decode's kvmod dispatch (parity law: excluding v4 here paired
-            // g-module rows against decode's g-module v4 — different programs, short-VG
-            // maxdiff 2.0 / spec stream 0/128, 2026-07-12). rows_v4 is format-aware
-            // since fda9790.
-            // hd128 (qwen fp8-KV) lands on the base/register rows via fname — the
-            // dq macros are format-aware.
-            self.func_g(fname)
-        } else {
-            self.func(fname)
-        };
-        let shmem = if tb512 {
-            // fa_v4_smem_512 (q 9KB gqa<=16 + k tile 18KB) + sV 32*512 (e4m3 module halves it)
-            let gk = Self::gkv_on();
-            let sh =
-                (8192 + 1024 + 32 * 512 + 32 * 64 + 32 * head_dim * if gk { 1 } else { 2 }) as u32;
-            use cudarc::driver::sys::CUfunction_attribute_enum as A;
-            f.set_attribute(
-                A::CU_FUNC_ATTRIBUTE_MAX_DYNAMIC_SHARED_SIZE_BYTES,
-                sh as i32,
-            )?;
-            sh
-        } else {
-            // v4: fa_v4_smem (11.5KB) + sV; v3 stages sV only; the v2 twin stages sK+sV.
-            let sh = (if v4 {
-                11520 + 32 * head_dim * if g { 1 } else { 2 }
+        // Kernel and dynamic smem for one group's v4/v3 family (single group in the common case).
+        let kernel_for = |v4: bool| -> Result<(CudaFunction, u32), Box<dyn std::error::Error>> {
+            let fname = if tb512 {
+                "fa_decode_vec_q_rows_v4_512_tb"
+            } else if i2 {
+                "fa_decode_vec_q_rows_dpl16_i2"
+            } else if head_dim == 512 {
+                "fa_decode_vec_q_rows_dpl16"
+            }
+            // gemma globals (parity law)
+            else if v4 {
+                "fa_decode_vec_q_rows_v4"
             } else if v3 {
-                32 * head_dim * 2
+                "fa_decode_vec_q_rows_v3"
             } else {
-                2 * 32 * head_dim * 2
-            }) as u32;
-            use cudarc::driver::sys::CUfunction_attribute_enum as A;
-            f.set_attribute(
-                A::CU_FUNC_ATTRIBUTE_MAX_DYNAMIC_SHARED_SIZE_BYTES,
-                sh as i32,
-            )?;
-            sh
+                "fa_decode_vec_q_rows_v2"
+            };
+            let f = if head_dim == 512 {
+                self.fa_func(fname, head_dim)
+            } else if g {
+                // FP8-WINDOWED: hd256 rows over an e4m3 cache — kf8vf8 module, SAME symbol
+                // choice as decode's kvmod dispatch (parity law: excluding v4 here paired
+                // g-module rows against decode's g-module v4 — different programs, short-VG
+                // maxdiff 2.0 / spec stream 0/128, 2026-07-12). rows_v4 is format-aware
+                // since fda9790.
+                // hd128 (qwen fp8-KV) lands on the base/register rows via fname — the
+                // dq macros are format-aware.
+                self.func_g(fname)
+            } else {
+                self.func(fname)
+            };
+            let shmem = if tb512 {
+                // fa_v4_smem_512 (q 9KB gqa<=16 + k tile 18KB) + sV 32*512 (e4m3 module halves it)
+                let gk = Self::gkv_on();
+                let sh = (8192 + 1024 + 32 * 512 + 32 * 64 + 32 * head_dim * if gk { 1 } else { 2 })
+                    as u32;
+                use cudarc::driver::sys::CUfunction_attribute_enum as A;
+                f.set_attribute(
+                    A::CU_FUNC_ATTRIBUTE_MAX_DYNAMIC_SHARED_SIZE_BYTES,
+                    sh as i32,
+                )?;
+                sh
+            } else {
+                // v4: fa_v4_smem (11.5KB) + sV; v3 stages sV only; the v2 twin stages sK+sV.
+                let sh = (if v4 {
+                    11520 + 32 * head_dim * if g { 1 } else { 2 }
+                } else if v3 {
+                    32 * head_dim * 2
+                } else {
+                    2 * 32 * head_dim * 2
+                }) as u32;
+                use cudarc::driver::sys::CUfunction_attribute_enum as A;
+                f.set_attribute(
+                    A::CU_FUNC_ATTRIBUTE_MAX_DYNAMIC_SHARED_SIZE_BYTES,
+                    sh as i32,
+                )?;
+                sh
+            };
+            Ok((f, shmem))
         };
         // Per-GROUP launches (single group in the common case — identical to the pre-fix
         // single launch there): each group gets its own partials (the rows kernel indexes
         // partials by its LOCAL grid.z row) and q/o row-offset views.
-        for &(r0, t_g, sp_g) in &groups {
+        for &(r0, t_g, sp_g, v4_g) in &groups {
+            let (f, shmem) = kernel_for(v4_g)?;
             let n_splits_g = (base_len + r0 + t_g).div_ceil(sp_g);
             let (nspm, spk) = (n_splits_g as i32, sp_g as i32);
             let base_i = (base_len + r0) as i32;
