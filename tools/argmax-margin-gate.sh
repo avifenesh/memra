@@ -3,8 +3,8 @@
 # Self-gating (`kind=cmd` in tools/fast-gate/models.tsv): exit 0 = PASS.
 #
 #   tools/argmax-margin-gate.sh [<model.gguf|hf_dir>] [--prompt <file>] [--window N]
-#                              [--max-flips N] [--margin-floor F] [--canary]
-#                              [--logdir DIR]
+#                              [--max-flips N] [--margin-floor F] [--decode eager|batch]
+#                              [--canary] [--logdir DIR]
 #
 # Raw logs land in $MEMRA_GATE_LOGDIR (default $TMPDIR/memra-argmax-margin-gate), NOT in the
 # tracked research dir — this runs every battery. Use --logdir research/<lane>/ to keep one.
@@ -57,6 +57,21 @@
 # prime_cache, so this line is the battery's only prime-vs-tokenwise check. The canary also
 # injects a MISMATCH-STRUCTURED line and requires the prime reader to reject it.
 #
+# THE SERVED BATCHED DECODE CELL (--decode batch). The default cell's decode side is
+# `decode_step` (decode_step_h), the eager program. Serving decodes every model its scheduler
+# batches through decode_step_batch_sampled_lean_masked at every width, B=1 included, and that
+# body carries a decode-config FP-composition gap against decode_step_h. So the default cell can
+# stay green while a change to the batched body or its epilogue moves served tokens. With
+# --decode batch the probe makes the server's own call for one unconstrained greedy row (greedy
+# device sample, lean logits read from the cache's device park) at every prompt position. The
+# table, the prefill reference, the flip budget and the margin rules are the default cell's.
+# Instead of the PRIME-GATE line (the default cell owns the prime) the probe prints one
+# `SERVED-ARGMAX: rows=N device_mismatch=M` line: M counts window steps whose device-sampled
+# token differs from the host argmax of the same served row. M > 0, or a missing or malformed
+# line, FAILS: a probe that ignores --decode runs the eager program and prints no such line. The
+# canary also injects an M=1 line and requires the served reader to reject it. The wrapper
+# prints `SERVED-SUMMARY served=<MATCH|MISMATCH>`.
+#
 # TEETH: --canary INJECTS A BREAK rather than relabelling an expectation (the trap documented
 # in tools/chunk-invariance-gate.sh's header, learned the hard way on lane/chunkinv-flip).
 # It runs the real probe, then FAULT-INJECTS into a copy of the measured table one row of the
@@ -83,10 +98,12 @@ PROMPT=research/e2e/prompts/board-2048.txt
 WINDOW=12
 MAX_FLIPS=""    # unset = model-calibrated default (resolved after MODEL below)
 MARGIN_FLOOR=""      # optional: reject any flip whose margin exceeds this (off by default)
+DECODE=eager         # decode side of the table: eager (decode_step) or batch (the served program)
 CANARY=0
+PRIME=""; SERVED=""
 while [ $# -gt 0 ]; do
     case "$1" in
-        --prompt|--window|--max-flips|--margin-floor|--logdir)
+        --prompt|--window|--max-flips|--margin-floor|--decode|--logdir)
             [ $# -ge 2 ] && [[ "$2" != --* ]] || { echo "FAIL: $1 requires a value"; exit 2; } ;;
     esac
     case "$1" in
@@ -94,12 +111,14 @@ while [ $# -gt 0 ]; do
         --window)       WINDOW="$2"; shift 2 ;;
         --max-flips)    MAX_FLIPS="$2"; shift 2 ;;
         --margin-floor) MARGIN_FLOOR="$2"; shift 2 ;;
+        --decode)       DECODE="$2"; shift 2 ;;
         --logdir)       MEMRA_GATE_LOGDIR="$2"; shift 2 ;;
         --canary)       CANARY=1; shift ;;
         *)              echo "unknown arg: $1" >&2; exit 2 ;;
     esac
 done
 [[ "$WINDOW" =~ ^[1-9][0-9]*$ ]] || { echo "FAIL: window must be a positive integer"; exit 2; }
+case "$DECODE" in eager|batch) ;; *) echo "FAIL: --decode takes eager or batch"; exit 2 ;; esac
 if [ "$EXPLICIT_MODEL" = 1 ] && [ ! -f "$MODEL" ] && [ ! -d "$MODEL" ]; then
     echo "FAIL: requested model does not exist: $MODEL"; exit 1
 fi
@@ -176,7 +195,7 @@ fi
 # (and committed the canary's .injected scratch table once already). Point --logdir at the
 # lane dir when you want a receipt to keep. Same convention as chunk-invariance-gate.sh.
 D="${MEMRA_GATE_LOGDIR:-${TMPDIR:-/tmp}/memra-argmax-margin-gate}"; mkdir -p "$D"
-LOG="$D/gate-$(basename "${MODEL%.gguf}")-$(basename "${PROMPT%.txt}")$([ $CANARY = 1 ] && echo .canary).log"
+LOG="$D/gate-$(basename "${MODEL%.gguf}")-$(basename "${PROMPT%.txt}")$([ "$DECODE" = batch ] && echo .batch)$([ $CANARY = 1 ] && echo .canary).log"
 # The printed raw-log path is relative to MEMRA_GATE_LOG_ROOT when the log lies under it: the
 # release battery sets it to its evidence dir, so banked evidence names no user or mount.
 LOG_SHOWN="$LOG"
@@ -184,10 +203,12 @@ if [ -n "${MEMRA_GATE_LOG_ROOT:-}" ]; then
     case "$LOG" in "${MEMRA_GATE_LOG_ROOT%/}"/*) LOG_SHOWN="${LOG#"${MEMRA_GATE_LOG_ROOT%/}"/}" ;; esac
 fi
 
-echo "argmax-margin-gate: model=$(basename "$MODEL") prompt=$(basename "$PROMPT") window=$WINDOW canary=$CANARY"
+echo "argmax-margin-gate: model=$(basename "$MODEL") prompt=$(basename "$PROMPT") window=$WINDOW decode=$DECODE canary=$CANARY"
 echo "  flip budget: $MAX_FLIPS (row: $BUDGET_ROW)"
+PROBE_ARGS=("$MODEL" "$PROMPT" "$WINDOW")
+[ "$DECODE" = eager ] || PROBE_ARGS+=(--decode "$DECODE")
 # Raw log FIRST, parse second (never let a pipe swallow the failure text).
-"$PROBE" "$MODEL" "$PROMPT" "$WINDOW" > "$LOG" 2>&1
+"$PROBE" "${PROBE_ARGS[@]}" > "$LOG" 2>&1
 rc=$?
 if [ $rc -ne 0 ]; then
     # A VRAM shortage says nothing about argmax margins. On a shared rig another lane can hold
@@ -239,13 +260,37 @@ prime_judge() {
             else print "MALFORMED"
         }' "$1"
 }
-PRIME=$(prime_judge "$LOG")
-case "$PRIME" in
-    MISSING|MALFORMED)
-        echo "  FAIL: probe PRIME-GATE line is $PRIME (the batched-prime arm did not report)"
-        echo "  raw: $LOG"
-        exit 1 ;;
-esac
+# The served-batch line (--decode batch): exactly one, with the measured window. Prints MATCH,
+# MISMATCH (a device-sampled token differs from the host argmax of its row), MISSING or MALFORMED.
+served_judge() {
+    awk -v rows="$WINDOW" '
+        /^SERVED-ARGMAX: / { n++; line = $0 }
+        END {
+            if (n != 1) { print "MISSING"; exit }
+            if (line !~ /^SERVED-ARGMAX: rows=[0-9]+ device_mismatch=[0-9]+$/) { print "MALFORMED"; exit }
+            split(line, f, "[ =]")
+            if (f[3] + 0 != rows + 0) { print "MALFORMED"; exit }
+            print (f[5] + 0 == 0 ? "MATCH" : "MISMATCH")
+        }' "$1"
+}
+if [ "$DECODE" = batch ]; then
+    SERVED=$(served_judge "$LOG")
+    case "$SERVED" in
+        MISSING|MALFORMED)
+            echo "  FAIL: probe SERVED-ARGMAX line is $SERVED (the served batch arm did not report;"
+            echo "        a probe that ignores --decode runs the eager program)"
+            echo "  raw: $LOG_SHOWN"
+            exit 1 ;;
+    esac
+else
+    PRIME=$(prime_judge "$LOG")
+    case "$PRIME" in
+        MISSING|MALFORMED)
+            echo "  FAIL: probe PRIME-GATE line is $PRIME (the batched-prime arm did not report)"
+            echo "  raw: $LOG_SHOWN"
+            exit 1 ;;
+    esac
+fi
 
 # The canary appends ONE synthetic row of the defect class to the table the comparator parses:
 # a flip at margin 5.0 against a config delta of 0.1. No near-tie explanation is available for
@@ -258,11 +303,18 @@ if [ $CANARY = 1 ]; then
         9999 111111 5.0000 222222 5.0000 0.1000 "NO <-- FLIP" >> "$PARSE"
     echo "  [canary] injected a WIDE-margin flip (pos 9999, margin 5.0000, delta 0.1000)"
     echo "           — a disagreement the config spread cannot explain; must be rejected"
-    grep -v '^PRIME-GATE: ' "$LOG" > "$LOG.prime-injected"
-    echo "PRIME-GATE: class=MISMATCH-STRUCTURED bp_argmax=1 tw_argmax=2 tw_margin=5.0e0 bp_margin=5.0e0 maxdiff=9.0e1" \
-        >> "$LOG.prime-injected"
-    CANARY_PRIME=$(prime_judge "$LOG.prime-injected")
-    echo "  [canary] injected a MISMATCH-STRUCTURED batched-prime line; the reader saw: $CANARY_PRIME"
+    if [ "$DECODE" = batch ]; then
+        grep -v '^SERVED-ARGMAX: ' "$LOG" > "$LOG.served-injected"
+        echo "SERVED-ARGMAX: rows=$WINDOW device_mismatch=1" >> "$LOG.served-injected"
+        CANARY_SERVED=$(served_judge "$LOG.served-injected")
+        echo "  [canary] injected a served-token mismatch line; the reader saw: $CANARY_SERVED"
+    else
+        grep -v '^PRIME-GATE: ' "$LOG" > "$LOG.prime-injected"
+        echo "PRIME-GATE: class=MISMATCH-STRUCTURED bp_argmax=1 tw_argmax=2 tw_margin=5.0e0 bp_margin=5.0e0 maxdiff=9.0e1" \
+            >> "$LOG.prime-injected"
+        CANARY_PRIME=$(prime_judge "$LOG.prime-injected")
+        echo "  [canary] injected a MISMATCH-STRUCTURED batched-prime line; the reader saw: $CANARY_PRIME"
+    fi
 fi
 
 # Parse the per-position table: pos prefill_top1 margin_p decode_top1 margin_d delta agree...
@@ -284,17 +336,32 @@ verdict=$(awk -v floor="${MARGIN_FLOOR:-}" -v maxflips="$MAX_FLIPS" '
         printf "SUMMARY flips=%d bad=%d\n", flips+0, bad+0
     }' "$PARSE")
 echo "$verdict" | sed 's/^/  /'
-echo "  PRIME-SUMMARY prime=$PRIME"
-grep -m1 '^PRIME-GATE: ' "$LOG" | sed 's/^/    /'
+if [ "$DECODE" = batch ]; then
+    echo "  SERVED-SUMMARY served=$SERVED"
+    grep -m1 '^SERVED-ARGMAX: ' "$LOG" | sed 's/^/    /'
+else
+    echo "  PRIME-SUMMARY prime=$PRIME"
+    grep -m1 '^PRIME-GATE: ' "$LOG" | sed 's/^/    /'
+fi
 
 bad=$(echo "$verdict" | awk '/^SUMMARY/ {print $3}' | cut -d= -f2)
-if [ $CANARY = 1 ] && [ "${CANARY_PRIME:-}" != MISMATCH-STRUCTURED ]; then
+if [ $CANARY = 1 ] && [ "$DECODE" = eager ] && [ "${CANARY_PRIME:-}" != MISMATCH-STRUCTURED ]; then
     echo "  CANARY FAIL: the injected MISMATCH-STRUCTURED prime line was read as ${CANARY_PRIME:-nothing};"
     echo "               the batched-prime reader has no teeth."
     exit 1
 fi
+if [ $CANARY = 1 ] && [ "$DECODE" = batch ] && [ "${CANARY_SERVED:-}" != MISMATCH ]; then
+    echo "  CANARY FAIL: the injected served-token mismatch line was read as ${CANARY_SERVED:-nothing};"
+    echo "               the served-batch reader has no teeth."
+    exit 1
+fi
 if [ $CANARY = 0 ] && [ "$PRIME" = MISMATCH-STRUCTURED ]; then
     echo "  FAIL: the batched serving prime (prime_cache) diverges structurally from the tokenwise reference"
+    echo "  raw: $LOG_SHOWN"
+    exit 1
+fi
+if [ $CANARY = 0 ] && [ "$SERVED" = MISMATCH ]; then
+    echo "  FAIL: the served batch program's device-sampled token differs from the host argmax of its own row"
     echo "  raw: $LOG_SHOWN"
     exit 1
 fi
