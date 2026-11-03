@@ -421,6 +421,11 @@ fn main() {
     // Called from Rust via FFI (mmq_ffi.rs), dispatched behind MEMRA_MMQ=1.
     // Two translation units: mmq_fp4.cu (Blackwell mxf4nvf4 W4A4) and mmq_q45k.cu
     // (Q4_K/Q5_K int8-MMA W4A8, sm_75+ portable). Both archived into one libmemra_mmq.a.
+    //
+    // Every archive linked with `rustc-link-lib=static` is bundled into the rlib. Each one
+    // goes into this list, and MEMRA_MMQ_ARCHIVE_HASH (emitted after the last of them) hashes
+    // all of their bytes; see the comment there.
+    let mut bundled_archives: Vec<PathBuf> = Vec::new();
     {
         let mut objs: Vec<PathBuf> = Vec::new();
         // TUNE SEAM: MEMRA_MMQ_X_Q45K=64 rebuilds the k-quant MMQ with a 64-token tile
@@ -736,18 +741,7 @@ fn main() {
             .status()
             .expect("spawn ar (mmq)");
         assert!(status.success(), "ar failed for {}", lib.display());
-        // The archive is BUNDLED into the rlib, and a .cu-only edit changes no rustc input: with
-        // RUSTC_WRAPPER=sccache (the rig default) the cached rlib came back carrying the previous
-        // archive while every timestamp under target/ looked fresh (2026-09-06: three rig timing
-        // rounds and one gate ran a kernel two edits old). Hashing the archive into a rustc env
-        // makes the kernel bytes a rustc input, so any kernel change forces a real compile.
-        {
-            use std::hash::Hasher;
-            let bytes = std::fs::read(&lib).expect("read libmemra_mmq.a for the archive hash");
-            let mut h = std::collections::hash_map::DefaultHasher::new();
-            h.write(&bytes);
-            println!("cargo:rustc-env=MEMRA_MMQ_ARCHIVE_HASH={:016x}", h.finish());
-        }
+        bundled_archives.push(lib);
         // rustc-link-lib (NOT rustc-link-arg): link-arg applies only to THIS package's own
         // binaries, so downstream crates (memra-server) failed to link the MMQ symbols. link-lib
         // metadata propagates through the dependency graph; +whole-archive keeps the CUDART
@@ -830,7 +824,27 @@ fn main() {
         println!("cargo:rustc-link-lib=static:+whole-archive=memra_dsv4_cutlass");
         println!("cargo:rustc-link-lib=dylib=cudart");
         println!("cargo:rustc-link-lib=dylib=stdc++");
-        let _ = &lib;
+        bundled_archives.push(lib);
+    }
+
+    // A bundled archive goes INTO the rlib, and a .cu-only edit changes no rustc input: with
+    // RUSTC_WRAPPER=sccache (the rig default) the cached rlib came back carrying the previous
+    // archive while every timestamp under target/ looked fresh (2026-09-06: three rig timing
+    // rounds and one gate ran a kernel two edits old). Hashing the archives into a rustc env
+    // makes the kernel bytes a rustc input, so any kernel change forces a real compile. Every
+    // bundled archive is hashed, in link order: libmemra_dsv4_cutlass.a is linked the same way
+    // as libmemra_mmq.a. A build without MEMRA_DSV4_CUTLASS hashes libmemra_mmq.a alone and
+    // keeps its earlier value. The MEMRA_CUTLASS archive below is a link-arg of this package's
+    // own binaries, not bundled, so it is not an rlib input.
+    {
+        use std::hash::Hasher;
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        for archive in &bundled_archives {
+            let bytes = std::fs::read(archive)
+                .unwrap_or_else(|e| panic!("read {} for the archive hash: {e}", archive.display()));
+            h.write(&bytes);
+        }
+        println!("cargo:rustc-env=MEMRA_MMQ_ARCHIVE_HASH={:016x}", h.finish());
     }
 
     // ---- CUTLASS sm_120a NVFP4 GEMM: a STATIC LIB (7th artifact, different kind), NOT a fatbin ----
