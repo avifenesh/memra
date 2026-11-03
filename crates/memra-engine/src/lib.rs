@@ -29089,8 +29089,8 @@ impl Engine {
                 q, k, v, o, head_dim, n_head, n_head_kv, t, t_kv, scale, causal,
             );
         }
-        // FA3 v10 arm (task #20, OPT-IN MEMRA_FA3=1 — harness-proven 883us vs the shipped
-        // kernel's 993us at T=2048): TMA-swizzled wgmma FA, fresh causal hd256 only.
+        // FA3 v10 arm (task #20, default ON under memra_hopper_mma — harness-proven 883us vs
+        // the shipped kernel's 993us at T=2048): TMA-swizzled wgmma FA, fresh causal hd256 only.
         // NEW NUMERIC CONFIG (GDN-mma precedent): online softmax / bf16-P class — the
         // run-gen argmax + greedy-stream batteries arbitrate; not bit-paired.
         // PROMOTED default-ON hopper (2026-07-27): 3-seed 2048-prime -> 128-decode
