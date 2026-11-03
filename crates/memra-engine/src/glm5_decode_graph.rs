@@ -317,20 +317,6 @@ fn capturable_runs(
 /// door's signature, self-check and phase bookkeeping stay per run.
 fn plan_runs(m: &HybridModel, lo: usize, hi: usize) -> Vec<RunSpec> {
     let halves = crate::glm5_graph_mla_on() && Engine::mla_seg_ws_on();
-    let mid = halves && crate::glm5_graph_mla_mid_on();
-    let mid_ok = |il: usize| match m.mla_mid_live_ok(il) {
-        Ok(()) => true,
-        Err(why) => {
-            static ONCE: std::sync::Once = std::sync::Once::new();
-            ONCE.call_once(|| {
-                eprintln!(
-                    "[glm5-decode-graph] MLA middle stays eager (MEMRA_GLM5_GRAPH_MLA_MID=1 \
-                     refused, first layer {il}): {why}"
-                )
-            });
-            false
-        }
-    };
     if !halves {
         return capturable_runs(
             lo,
@@ -379,12 +365,8 @@ fn plan_runs(m: &HybridModel, lo: usize, hi: usize) -> Vec<RunSpec> {
         } else if mla {
             start.get_or_insert(il);
             segs.push(WsSeg::MlaPre(il));
-            if mid && mid_ok(il) {
-                segs.push(WsSeg::MlaMid(il));
-            } else {
-                pieces.push(PieceSpec::Graph(std::mem::take(&mut segs)));
-                pieces.push(PieceSpec::Middle(il));
-            }
+            pieces.push(PieceSpec::Graph(std::mem::take(&mut segs)));
+            pieces.push(PieceSpec::Middle(il));
             segs.push(WsSeg::MlaFfn(il));
         } else {
             close(il, &mut start, &mut pieces, &mut segs, &mut runs);
@@ -1578,34 +1560,13 @@ impl HybridModel {
             })
             .sum();
         crate::GLM5_DECODE_GRAPH_MLA_HALVES.fetch_add(halves as u64, Ordering::Relaxed);
-        let mids: usize = stage
-            .runs
-            .iter()
-            .map(|r| {
-                r.pieces
-                    .iter()
-                    .map(|p| match p {
-                        RunPiece::Graph { segs, .. } => segs
-                            .iter()
-                            .filter(|sg| matches!(sg, WsSeg::MlaMid(_)))
-                            .count(),
-                        RunPiece::Middle(_) => 0,
-                    })
-                    .sum::<usize>()
-            })
-            .sum();
-        crate::GLM5_DECODE_GRAPH_MLA_MIDS.fetch_add(mids as u64, Ordering::Relaxed);
         let line = format!(
             "engaged dev={dev} stage=[{lo}, {hi}) runs={} captured_layers={} mla_halves={halves} \
-             mla_mids={mids} recapture={recapture} free={} (2 ping-pong phases each; {})",
+             recapture={recapture} free={} (2 ping-pong phases each; {})",
             stage.runs.len(),
             stage.runs.iter().map(|r| r.hi - r.lo).sum::<usize>(),
             free_mb(e),
-            if mids > 0 && halves == 0 {
-                "MLA layers captured whole (live-twin middles), MEMRA_GLM5_GRAPH_MLA_MID=1"
-            } else if mids > 0 {
-                "MLA layers captured whole where the middle has live twins, in halves elsewhere"
-            } else if halves > 0 {
+            if halves > 0 {
                 "MLA layers captured in halves around an eager middle, MEMRA_GLM5_GRAPH_MLA=1"
             } else {
                 "MLA/DSA layers stay eager"
@@ -2338,7 +2299,6 @@ impl HybridModel {
                 step(e, &ctx, "mla_middle", r)?;
             }
         }
-        let mids: Vec<usize>;
         {
             let pool = self.glm5_graph_pool(cache);
             let st = pool
@@ -2348,39 +2308,11 @@ impl HybridModel {
                 .expect("checked above");
             let ri = ri_of(st, a, b);
             st.runs[ri].phase ^= 1;
-            mids = st.runs[ri]
-                .pieces
-                .iter()
-                .flat_map(|p| match p {
-                    RunPiece::Graph { segs, .. } => segs
-                        .iter()
-                        .filter_map(|sg| match sg {
-                            WsSeg::MlaMid(il) => Some(*il),
-                            _ => None,
-                        })
-                        .collect::<Vec<_>>(),
-                    RunPiece::Middle(_) => Vec::new(),
-                })
-                .collect();
         }
         // The eager walk swaps `ssm_state`/`ssm_state_alt` once per KDA layer per step
         // (`kda::kda_cached`). The replay wrote the alternate buffer exactly as the eager step
         // would have; mirror the host swap so the NEXT phase's graph, a fallback to eager, a
         // prime, and any snapshot all see the pointers they expect.
-        // A captured middle appended its row and (every `pool` tokens) built a pool key on the
-        // device; the host bookkeeping the eager middle does in `mla_attn_cached_pre_wo` lands
-        // here. `len_d` was advanced inside the graph.
-        for il in mids {
-            let l = cache.latent[il]
-                .as_mut()
-                .expect("MlaMid planned on a latent layer");
-            l.len += 1;
-            if let Mixer::Mla(mla) = &self.layers[il].mixer
-                && let Some(ix) = mla.index.as_ref()
-            {
-                l.index_pools_ready = l.len / ix.geom.pool;
-            }
-        }
         for il in a..b {
             if let Some(rl) = cache.recur[il].as_mut() {
                 std::mem::swap(&mut rl.ssm_state, &mut rl.ssm_state_alt);
