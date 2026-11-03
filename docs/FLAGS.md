@@ -148,8 +148,8 @@ are fixed: the script now discovers every `crates/*/src` and resolves
 `const NAME: &str = "MEMRA_…"` bindings that are actually passed to an env call, with
 `tools/test_check_flags.sh` gating one regression case per cause in CI. The automated census
 went 494 → 501 literal names on that change; the seven it newly sees
-(`MEMRA_ALLOW_UNKNOWN_PRETOKENIZER`, `MEMRA_INVALID_PINNED_FRAC_TEST_CHILD`, `MEMRA_FATBIN`,
-`MEMRA_FP8_FOLD`, `MEMRA_MOE_MMAP_ADVICE`, `MEMRA_NV_W4`, `MEMRA_ST_TEST_DIR`) were all
+(`MEMRA_ALLOW_UNKNOWN_PRETOKENIZER`, `MEMRA_INVALID_PINNED_FRAC_TEST_CHILD`, `MEMRA_FATBIN`, the
+since-removed `MEMRA_FP8_FOLD`, `MEMRA_MOE_MMAP_ADVICE`, `MEMRA_NV_W4`, `MEMRA_ST_TEST_DIR`) were all
 already catalogued here, so the gate stayed green — but it stayed green for the wrong reason
 before, and the 546 hand count has not been re-run against the widened instrument.
 
