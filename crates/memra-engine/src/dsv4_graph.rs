@@ -1,5 +1,8 @@
-//! Full-layer capture instrument. Replay is gate-only and requires the caller to
-//! own the stable workspace/scalar sources captured by the graph.
+//! DSV4 CUDA graphs. `ReplayPair` is the served full-token replay: `dsv4_serve::arm_replay`
+//! arms it for every eligible TP/EP plain request (memra #710), and a refused arm leaves the
+//! request on the eager step, the same numeric program. `RowsReplay` replays the B-row
+//! decode steps. `Dsv4LayerCapture` is the gate-only full-layer capture instrument. Every
+//! replay requires the caller to own the stable workspace/scalar sources the graph captured.
 use cudarc::driver::{CudaGraph, CudaStream, sys};
 use std::{collections::BTreeMap, sync::Arc};
 
