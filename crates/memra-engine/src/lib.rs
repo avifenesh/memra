@@ -23759,6 +23759,16 @@ impl Engine {
                 waves >= 2.0
             };
             if use_r2 { "r2" } else { "base" }
+        } else if mcols == 16 {
+            // b16 (batch-spec 2026-11-03): rpsc when the scale plane fits smem, else the r1 rp
+            // schedule. Only the rp/rpsc b16 twins are compiled; the GGUF layout stays base.
+            if rp && sc_ok {
+                "rpsc"
+            } else if rp {
+                "rp"
+            } else {
+                "base"
+            }
         } else if mcols == 8 {
             // b8 AUTO (2026-07-06 m-small latency arc, rtx6000 DRAM-cold rp msweep m=5/6/8 all five
             // 27B shapes): rpsc — the rpr2w8 schedule with the warp's scale rows prestaged to
@@ -23871,7 +23881,13 @@ impl Engine {
         // per-shape perf variants (r2/pf/...) do not apply at this width. rp is a LAYOUT,
         // not a perf variant: it must survive (base kernel on split-plane bytes = NaN).
         let variant = if mcols == 16 {
-            if rp { "rp" } else { "base" }
+            if !rp {
+                "base"
+            } else if variant == "rpsc" {
+                "rpsc"
+            } else {
+                "rp"
+            }
         } else {
             variant
         };

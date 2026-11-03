@@ -2776,6 +2776,16 @@ extern "C" __global__ void qmatvec_nvfp4_mmvq_b8_rpsc(
         int in_f, int out_f, int m, long row_bytes) {
     nvfp4_mmvq_batched_rp_sc<8, 2>(W, aq, ad, y, in_f, out_f, m, row_bytes);
 }
+// mcols=16 rpsc twin (batch-spec 2026-11-03, GB10 plain decode profile): the b16 tier ran the
+// r1 rp schedule only, so each warp re-read all 16 activation columns per weight row. The SAME
+// rpsc body at MCOLS=16 (two rows per warp, scale rows prestaged to smem) halves the activation
+// reloads per weight row. Per (token,row) chain unchanged -> BIT-IDENTICAL to b16_rp.
+extern "C" __global__ void qmatvec_nvfp4_mmvq_b16_rpsc(
+        const unsigned char* __restrict__ W, const signed char* __restrict__ aq,
+        const float* __restrict__ ad, float* __restrict__ y,
+        int in_f, int out_f, int m, long row_bytes) {
+    nvfp4_mmvq_batched_rp_sc<16, 2>(W, aq, ad, y, in_f, out_f, m, row_bytes);
+}
 
 // ---- EXACT-WIDTH b5/b6/b7 twins (lane/vt-fixes fix 1, 2026-08-03). The T=5..7 verify tier
 // used to ride the MCOLS=8 kernels: acc[WROWS][8] is statically allocated at ANY m, so an

@@ -5941,6 +5941,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     (6, 8),
                     (7, 8),
                     (8, 8),
+                    (12, 16),
+                    (16, 16),
                 ] {
                     let x: Vec<f32> = (0..mm * in_f).map(|i| pr(i + 161) * 0.1).collect();
                     let xd = e.htod(&x)?;
