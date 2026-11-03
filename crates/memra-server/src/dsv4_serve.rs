@@ -454,8 +454,9 @@ impl Dsv4Model {
 /// The DEFAULT moved from 0 (monolithic) to the kernel width for the same
 /// reason plus a harder one: the matrix expert program is the loaded default now
 /// and it REFUSES a zero chunk, so leaving this at 0 would mean the default
-/// server configuration refusing to boot. `0` stays selectable and stays the
-/// monolithic rollback, and it is still refused in combination with matrix.
+/// server configuration refusing to boot. `0` still parses here, and `load`
+/// refuses it: the served route keeps no monolithic arm, so the monolithic prime
+/// is reachable only from the reference executor's gates.
 fn resolve_prefill_chunk(raw: Option<&str>, max_seq: usize) -> Result<usize, String> {
     let chunk = match raw {
         None => DSV4_BATCH_WIDTH_MAX.min(max_seq),
@@ -886,11 +887,19 @@ pub fn load(name: &str, dir: &Path, tok: Arc<Tokenizer>) -> Result<Dsv4Model, St
     .map_err(|e| format!("dsv4 model {name:?}: {e}"))?;
     let prefill_chunk_raw = configured_env_text("MEMRA_DSV4_PREFILL_CHUNK")?;
     let prefill_chunk = resolve_prefill_chunk(prefill_chunk_raw.as_deref(), max_seq)?;
+    // Every serve driver here primes chunked with `m.prefill_chunk` (cold, restored and spec
+    // alike) and the route keeps no monolithic arm, so a zero chunk has no program to run. The
+    // module refuses it itself, before any weight loads and whichever expert program loads.
+    if prefill_chunk == 0 {
+        return Err(
+            "MEMRA_DSV4_PREFILL_CHUNK=0 is not servable: the dsv4 route primes every \
+             prompt chunked and keeps no monolithic arm (the monolithic prime is \
+             reachable only from the reference executor's gates)"
+                .into(),
+        );
+    }
     let c4_host_raw = configured_env_text("MEMRA_DSV4_C4_HOST_MB")?;
     let c4_host_bytes = resolve_c4_host_bytes(c4_host_raw.as_deref())?;
-    if c4_host_bytes > 0 && prefill_chunk == 0 {
-        return Err("MEMRA_DSV4_C4_HOST_MB requires nonzero MEMRA_DSV4_PREFILL_CHUNK".into());
-    }
     let topology_raw = configured_env_text("MEMRA_DSV4_TOPOLOGY")?;
     let placement = resolve_topology(topology_raw.as_deref())?;
     let gpu = Dsv4Gpu::load_placed(dir, &devices, variant, max_seq, placement).map_err(|e| {
@@ -914,9 +923,6 @@ pub fn load(name: &str, dir: &Path, tok: Arc<Tokenizer>) -> Result<Dsv4Model, St
         },
         gpu.plain_sampler(),
     );
-    if gpu.matrix_moe_enabled() && prefill_chunk == 0 {
-        return Err("experimental matrix program requires nonzero MEMRA_DSV4_PREFILL_CHUNK".into());
-    }
     if c4_host_bytes > 0 {
         if !gpu.matrix_moe_enabled() {
             return Err(
@@ -931,8 +937,8 @@ pub fn load(name: &str, dir: &Path, tok: Arc<Tokenizer>) -> Result<Dsv4Model, St
     let eos = tok.eos_id();
     eprintln!(
         "[dsv4-serve] {name}: loaded on devices {devices:?}, contract {variant:?}, \
-         max_seq {max_seq}, drafter {}, parked-host-cache {}, chunked-prefill {}, \
-         active-C4-host-budget {c4_host_bytes} bytes (0=OFF; separate from parked cache)",
+         max_seq {max_seq}, drafter {}, parked-host-cache {}, chunked-prefill {prefill_chunk} \
+         tokens, active-C4-host-budget {c4_host_bytes} bytes (0=OFF; separate from parked cache)",
         if spec {
             "RESIDENT (spec route armed)"
         } else {
@@ -942,11 +948,6 @@ pub fn load(name: &str, dir: &Path, tok: Arc<Tokenizer>) -> Result<Dsv4Model, St
             "OFF (MEMRA_DSV4_KV_HOST_MB=0)".to_string()
         } else {
             format!("{host_cache_mb} MiB")
-        },
-        if prefill_chunk == 0 {
-            "OFF (MEMRA_DSV4_PREFILL_CHUNK=0)".to_string()
-        } else {
-            format!("{prefill_chunk} tokens")
         },
     );
     let pipelined = gpu.pipelined_steps_supported();
@@ -4177,6 +4178,25 @@ mod prefill_chunk_flag_tests {
         assert!(resolve_prefill_chunk(Some("-1"), 1_048_576).is_err());
         assert!(resolve_prefill_chunk(Some("banana"), 1_048_576).is_err());
         assert!(resolve_prefill_chunk(Some("65"), 64).is_err());
+    }
+
+    /// Every serve driver primes chunked with `m.prefill_chunk`, so `load` refuses a zero chunk
+    /// itself: before the weights load, with no expert-program condition on it.
+    #[test]
+    fn load_refuses_a_zero_chunk_before_the_weights_load() {
+        let src = include_str!("dsv4_serve.rs");
+        let resolved = src
+            .find("let prefill_chunk = resolve_prefill_chunk(")
+            .expect("load resolves the chunk");
+        let weights = resolved
+            + src[resolved..]
+                .find("Dsv4Gpu::load_placed(")
+                .expect("load loads the weights");
+        assert!(
+            src[resolved..weights].contains("if prefill_chunk == 0 {\n        return Err("),
+            "the zero-chunk refusal must precede the weight load"
+        );
+        assert!(!src.contains(concat!("matrix_moe_enabled() && ", "prefill_chunk == 0")));
     }
 }
 
