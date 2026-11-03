@@ -28996,11 +28996,17 @@ impl Engine {
             && t == t_kv
             && match std::env::var("MEMRA_FA3").as_deref() {
                 Ok("0") => false,
-                // The force arm consults the arch now: the bf16 stage below calls
-                // f32_to_bf16_into -> func("f32_to_bf16_bulk"), which cu/hybrid.cu:1623 omits on
-                // a portable build. Refuse at the switch, not at the lookup.
+                // The force arm consults the arch: build.rs compiles fa3_prefill.cu as a stub
+                // (rc 3) on every arch but 90a, and portable builds already returned to naive
+                // SDPA above. Refuse at the switch, not after the bf16 stage mid-request.
                 Ok("1") => {
-                    refuse_portable_force("MEMRA_FA3=1", "the sm_90a fa3/bf16 kernels");
+                    assert!(
+                        cfg!(memra_hopper_mma),
+                        "MEMRA_FA3=1 forces the FA3 wgmma prefill, which only an sm_90a build \
+                         contains; this is an sm_{} build, where fa3_prefill.cu is a stub. Unset \
+                         MEMRA_FA3 — the default path serves this arch.",
+                        env!("MEMRA_BUILT_CUDA_ARCH")
+                    );
                     true
                 }
                 _ => cfg!(memra_hopper_mma),
