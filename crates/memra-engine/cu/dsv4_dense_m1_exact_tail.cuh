@@ -651,9 +651,10 @@ template<int S> static int dsv4_hc_dot_split_launch(const float* x, const float*
     float* partial, float* y, int m, cudaStream_t stream) {
     memra_chain_launch(dsv4_hc_dot_split_partial_kernel<S>,dim3(24 * S, m), 128, 0, stream)(x, w, partial);
     cudaError_t err = cudaGetLastError();
-    if (err != cudaSuccess) return (int)err;
+    if (err != cudaSuccess) return 10000 + (int)err;
     memra_chain_launch(dsv4_hc_dot_split_reduce_kernel<S>,m, 32, 0, stream)(partial, y);
-    return (int)cudaGetLastError();
+    err = cudaGetLastError();
+    return err != cudaSuccess ? 10000 + (int)err : 0;
 }
 // `m` token rows of x [m][k] into y [m][n]; partial holds m * 24 * slices floats.
 extern "C" int memra_dsv4_hc_dot_split(const float* x, const float* w,
@@ -686,5 +687,6 @@ extern "C" int memra_dsv4_hc_dot_split_partial(const float* x, const float* w,
         case 32: memra_chain_launch(dsv4_hc_dot_split_partial_kernel<32>,grid, 128, 0, stream)(x, w, partial); break;
         default: return 40075;
     }
-    return (int)cudaGetLastError();
+    const cudaError_t err = cudaGetLastError();
+    return err != cudaSuccess ? 10000 + (int)err : 0;
 }
