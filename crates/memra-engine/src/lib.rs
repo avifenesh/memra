@@ -2025,6 +2025,10 @@ pub struct Engine {
     /// class (the parity law). The t=16 dflash verify tripped the GEMM threshold — 770us/
     /// matmul (54% of the round) AND a different FP order than decode (issue-10 landmine).
     verify_exact: std::sync::atomic::AtomicBool,
+    /// Decode-wide scope (batch-spec 2026-11-03): set only by `decode_step_batch` for a
+    /// 17..32-row exact tick, inside its verify-exact scope. Widens the batched tier to the
+    /// b32 class (`small_m_tier_max` 32). Never set by verify or prime paths.
+    decode_wide: std::sync::atomic::AtomicBool,
     capture_keep: Mutex<Vec<Box<dyn std::any::Any + Send>>>,
     /// EDGE-1 §C.2: dedicated H2D copy stream for async prefetch (event-synced to the compute stream).
     pub copy_stream: Arc<CudaStream>,
@@ -2242,7 +2246,7 @@ fn fa_v3_active(head_dim: usize) -> bool {
 
 /// BATCHED-TICK increment 2 (2026-08-01): true iff a row at this t_kv would take the v4
 /// eager arm in `fa_decode_kvmod`'s dispatch — the exact precondition for the z-batched
-/// `fa_decode_vec_q_seqs_v4` twin to reproduce its per-seq program bit-identically.
+/// `fa_decode_vec_q_seqs_v4_deep` twin to reproduce its per-seq program bit-identically.
 /// Mirrors the kvmod predicates: vec on + above the vec floor + hd256 + inside the v4
 /// window. Callers must ALSO group rows on one
 /// `fa_split_keys` rung (the rows-twins' straddle law) before batching.
@@ -3862,6 +3866,7 @@ impl Engine {
             copy_stream,
             capture_keep_on: std::sync::atomic::AtomicBool::new(false),
             verify_exact: std::sync::atomic::AtomicBool::new(false),
+            decode_wide: std::sync::atomic::AtomicBool::new(false),
             capture_keep: Mutex::new(Vec::new()),
             argmax_partials: Mutex::new(None),
             prime_deqw_ws: Mutex::new(None),
@@ -4843,6 +4848,21 @@ impl Engine {
         self.verify_exact.load(std::sync::atomic::Ordering::Relaxed)
     }
 
+    /// Widest m the group3/group4 doors take: 16, or 32 inside the decode-wide scope.
+    pub(crate) fn group_tier_max(&self) -> usize {
+        if self.decode_wide.load(std::sync::atomic::Ordering::Relaxed) {
+            32
+        } else {
+            16
+        }
+    }
+
+    /// Set or clear the decode-wide (b32) scope; see the `decode_wide` field.
+    pub fn set_decode_wide(&self, on: bool) {
+        self.decode_wide
+            .store(on, std::sync::atomic::Ordering::Relaxed);
+    }
+
     /// Upper bound of the batched small-`m` matvec tier in the general-purpose entries
     /// (`matmul`, `matmul_pre`). That tier is the decode/verify class (the `_b2/_b4/_b8/_b16`
     /// mmvq twins). Outside the verify-exact scope it stops one row short of `PRIME_MIN_T`: a
@@ -4859,7 +4879,11 @@ impl Engine {
         // `batched_mcols` saturates at 16, so 16 is the hard stop whatever the prime floor
         // becomes; the prime-floor term only ever lowers it (revuto finding on #614).
         if self.verify_exact_on() {
-            16
+            if self.decode_wide.load(std::sync::atomic::Ordering::Relaxed) {
+                32
+            } else {
+                16
+            }
         } else {
             crate::hybrid_forward::PRIME_MIN_T.saturating_sub(1).min(16)
         }
@@ -19005,7 +19029,7 @@ impl Engine {
     ) -> Result<Option<Vec<CudaSlice<f32>>>, Box<dyn std::error::Error>> {
         use crate::model::GpuTensor;
         if !on
-            || !(2..=16).contains(&m)
+            || !(2..=self.group_tier_max()).contains(&m)
             || std::env::var("MEMRA_NO_BATCHED").is_ok()
             || (m > 4 && !Self::b8_enabled())
             || !self.mmvq_supports(QT_NVFP4)
@@ -19048,9 +19072,13 @@ impl Engine {
             6 => "qmatvec_nvfp4_mmvq_group4_b6_rp",
             7 => "qmatvec_nvfp4_mmvq_group4_b7_rp",
             8 => "qmatvec_nvfp4_mmvq_group4_b8_rp",
+            // column split (8-column slices per 8-row block, L2-shared weights; bit-identical)
             16 => "qmatvec_nvfp4_mmvq_group4_b16_rp",
+            32 => "qmatvec_nvfp4_mmvq_group4_b32_rpcs8",
             _ => return Ok(None),
         };
+        // b32: four 8-column slices per 8-row block.
+        let col_splits: u32 = if mcols == 32 { 4 } else { 1 };
         // Engagement receipt PER DOOR (dead-arm lesson): one shared Once here suppressed
         // the second door's print on the slice-D battery — key the once-set by tag.
         if std::env::var("MEMRA_DEBUG").is_ok() {
@@ -19073,7 +19101,11 @@ impl Engine {
         // are never dereferenced; a 1-element dummy keeps the launch ABI without aliasing y0.
         let mut y3 = self.alloc_uninit::<f32>(if three { 1 } else { m * parts[3].1 })?;
         let cfg = LaunchConfig {
-            grid_dim: ((total as u32 + rows_per_block - 1) / rows_per_block, 1, 1),
+            grid_dim: (
+                (total as u32 + rows_per_block - 1) / rows_per_block * col_splits,
+                1,
+                1,
+            ),
             block_dim: (32, ROWS_PER_BLOCK, 1),
             shared_mem_bytes: 0,
         };
@@ -19458,7 +19490,7 @@ impl Engine {
         }
         // m = 9..=16 (lane/orndecode2): the exact-16 tier's trio width rides the GROUP3
         // door — same family and bit-identity law as the fused4 delegate above.
-        if (9..=16).contains(&m) {
+        if (9..=self.group_tier_max()).contains(&m) {
             return Ok(
                 match self.matmul_decode_exact_group3_pre([w0, w1, w2], aq, ad, m)? {
                     Some(mut ys) => {
@@ -19843,7 +19875,7 @@ impl Engine {
         // at 8; this width class rides the GROUP4 door instead — nvfp4_mmvq_batched_rp<16,_>
         // body, the SAME family as the b16_rp singles the tier would otherwise launch four
         // times, bit-identical per (tensor,token,row) incl. the fused write-side scale.
-        if (9..=16).contains(&m) {
+        if (9..=self.group_tier_max()).contains(&m) {
             return Ok(
                 match self.matmul_decode_exact_group4_pre([w0, w1, w2, w3], aq, ad, m)? {
                     Some(mut ys) => {
@@ -23563,8 +23595,12 @@ impl Engine {
             4
         } else if m <= 8 {
             8
-        } else {
+        } else if m <= 16 {
             16
+        } else {
+            // b32 tier (batch-spec 2026-11-03): reached only inside the decode-wide scope
+            // (`small_m_tier_max` == 32), i.e. a 17..32-row decode tick.
+            32
         }
     }
 
@@ -23874,6 +23910,72 @@ impl Engine {
             Some(v) if !rp || v.contains("rp") => v,
             _ => self.batched_variant(m, in_f, out_f, qtype, mcols, rp),
         };
+        // b32 tier: NVFP4 split-plane with the smem scale plane rides the native one-pass
+        // rpcs8 kernel (four 8-column blocks per 8-row block). Every other class runs as
+        // 16-column halves through its b16 kernel: each column's chain is the same program,
+        // so the result is bit-identical; only the weight is streamed twice.
+        if mcols == 32 {
+            let sc_ok = qtype == QT_NVFP4 && rp && in_f.is_multiple_of(256) && in_f / 64 <= 272;
+            if sc_ok {
+                let f = self.func("qmatvec_nvfp4_mmvq_b32_rpcs8");
+                let mut y = self.alloc_uninit::<f32>(m * out_f)?;
+                // 4 blocks per 8-row block -> grid = ceil(out_f / 2)
+                let cfg = LaunchConfig {
+                    grid_dim: ((out_f as u32).div_ceil(ROWS_PER_BLOCK / 2), 1, 1),
+                    block_dim: (32, ROWS_PER_BLOCK, 1),
+                    shared_mem_bytes: 0,
+                };
+                let (inf, outf, mi, rb) = (in_f as i32, out_f as i32, m as i32, row_bytes as i64);
+                let __s_b = self.gpu.stream();
+                let mut b = __s_b.launch_builder(&f);
+                b.arg(bytes)
+                    .arg(aq)
+                    .arg(ad)
+                    .arg(&mut y)
+                    .arg(&inf)
+                    .arg(&outf)
+                    .arg(&mi)
+                    .arg(&rb);
+                unsafe {
+                    b.launch(cfg)?;
+                }
+                if scale != 1.0 {
+                    self.scale_inplace(&mut y, scale, m * out_f)?;
+                }
+                return Ok(y);
+            }
+            let nsb = in_f / 32;
+            let mut y = self.alloc_uninit::<f32>(m * out_f)?;
+            let mut c0 = 0usize;
+            while c0 < m {
+                let mm = (m - c0).min(16);
+                let mut aq_c = self.alloc_uninit::<i8>(mm * in_f)?;
+                self.gpu
+                    .stream()
+                    .memcpy_dtod(&aq.slice(c0 * in_f..(c0 + mm) * in_f), &mut aq_c)?;
+                let mut ad_c = self.alloc_uninit::<f32>(mm * nsb)?;
+                self.gpu
+                    .stream()
+                    .memcpy_dtod(&ad.slice(c0 * nsb..(c0 + mm) * nsb), &mut ad_c)?;
+                let y_c = self.qmatvec_mmvq_batched(
+                    bytes,
+                    &aq_c,
+                    &ad_c,
+                    mm,
+                    in_f,
+                    out_f,
+                    qtype,
+                    row_bytes,
+                    Self::batched_mcols(mm),
+                    scale,
+                    rp,
+                )?;
+                let mut view = y.slice_mut(c0 * out_f..(c0 + mm) * out_f);
+                self.gpu.stream().memcpy_dtod(&y_c, &mut view)?;
+                c0 += mm;
+            }
+            return Ok(y);
+        }
         let base_name = Self::batched_kernel_name(qtype, mcols).ok_or_else(|| {
             format!("qmatvec_mmvq_batched: no kernel for qtype {qtype} mcols {mcols}")
         })?;
@@ -30640,9 +30742,10 @@ impl Engine {
         let (nspm, spk) = (n_splits_max as i32, split_keys as i32);
         let (ktb, vtb) = (k_tok_bytes as i64, v_tok_bytes as i64);
         let gqa = (n_head / n_head_kv).max(1) as u32;
-        let f = self.func("fa_decode_vec_q_seqs_v4");
-        // fa_v4_smem (11520B) + sV bf16 tile — the v4 eager arm's sizing on the default module.
-        let shmem = (11520 + 32 * head_dim * 2) as u32;
+        // The deep twin (fa_v4_deep_walk: padded K-tile rows + tile+2 L2 prefetch, the eager
+        // B=1 arm's walk) on the default module: fa_v4_deep_smem (12160B) + sV bf16 tile.
+        let f = self.func("fa_decode_vec_q_seqs_v4_deep");
+        let shmem = (12160 + 32 * head_dim * 2) as u32;
         use cudarc::driver::sys::CUfunction_attribute_enum as A;
         f.set_attribute(
             A::CU_FUNC_ATTRIBUTE_MAX_DYNAMIC_SHARED_SIZE_BYTES,

@@ -2353,9 +2353,9 @@ __device__ __forceinline__ void nvfp4_mmvq_batched_group4_rp(
         float* __restrict__ y0, float* __restrict__ y1,
         float* __restrict__ y2, float* __restrict__ y3,
         int in_f, int n0, int n1, int n2, int n3, int m,
-        float s0, float s1, float s2, float s3) {
+        float s0, float s1, float s2, float s3, int bx) {
     const int WROWS = 2;
-    int o0 = (blockIdx.x * MEMRA_MMVQ_ROWS + threadIdx.y) * WROWS;
+    int o0 = (bx * MEMRA_MMVQ_ROWS + threadIdx.y) * WROWS;
     const unsigned char* W;
     float* y;
     float ys;
@@ -2447,7 +2447,7 @@ extern "C" __global__ void qmatvec_nvfp4_mmvq_group4_b##MC##_rp( \
         int in_f, int n0, int n1, int n2, int n3, int m, \
         float s0, float s1, float s2, float s3) { \
     nvfp4_mmvq_batched_group4_rp<MC>(W0, W1, W2, W3, aq, ad, y0, y1, y2, y3, \
-                                     in_f, n0, n1, n2, n3, m, s0, s1, s2, s3); \
+                                     in_f, n0, n1, n2, n3, m, s0, s1, s2, s3, blockIdx.x); \
 }
 MEMRA_GROUP4_WRAP(2)
 MEMRA_GROUP4_WRAP(4)
@@ -2455,10 +2455,46 @@ MEMRA_GROUP4_WRAP(5)
 MEMRA_GROUP4_WRAP(6)
 MEMRA_GROUP4_WRAP(7)
 MEMRA_GROUP4_WRAP(8)
-// MCOLS=16 (lane/orndecode2): the exact-16 decode tier's quartet/trio width. acc[2][16]
-// per warp-row pair — measured before promoted, same bit-identity law as every MCOLS.
 MEMRA_GROUP4_WRAP(16)
 #undef MEMRA_GROUP4_WRAP
+// group4 COLUMN SPLIT (batch-spec 2026-11-03): the b32 quartet as four 8-column slices (GB10,
+// 32 sessions at depth 2048: tick 249.2 ms; two 16-column halves measured 258.6 ms), the NS
+// blocks of one row-block adjacent in launch order (the rpcs8 singles' L2-reuse schedule). Each
+// (tensor, token, row) runs the group4<MC> body's chain -> bit-identical to group4_b16_rp.
+template<int MC, int NS>
+__device__ __forceinline__ void nvfp4_mmvq_group4_csplit(
+        const unsigned char* __restrict__ W0, const unsigned char* __restrict__ W1,
+        const unsigned char* __restrict__ W2, const unsigned char* __restrict__ W3,
+        const signed char* __restrict__ aq, const float* __restrict__ ad,
+        float* __restrict__ y0, float* __restrict__ y1,
+        float* __restrict__ y2, float* __restrict__ y3,
+        int in_f, int n0, int n1, int n2, int n3, int m,
+        float s0, float s1, float s2, float s3) {
+    const int split = (int)blockIdx.x % NS;
+    const int c0 = split * MC;
+    const int mm = min(MC, m - c0);
+    if (mm <= 0) return;
+    const size_t nsb = (size_t)(in_f >> 5);
+    nvfp4_mmvq_batched_group4_rp<MC>(W0, W1, W2, W3, aq + (size_t)c0 * in_f, ad + c0 * nsb,
+                                    y0 + (size_t)c0 * n0, y1 + (size_t)c0 * n1,
+                                    y2 + (size_t)c0 * n2, y3 + (size_t)c0 * n3,
+                                    in_f, n0, n1, n2, n3, mm, s0, s1, s2, s3,
+                                    (int)blockIdx.x / NS);
+}
+#define MEMRA_GROUP4_CS_WRAP(NAME, MC, NS) \
+extern "C" __global__ void qmatvec_nvfp4_mmvq_group4_b32_##NAME( \
+        const unsigned char* __restrict__ W0, const unsigned char* __restrict__ W1, \
+        const unsigned char* __restrict__ W2, const unsigned char* __restrict__ W3, \
+        const signed char* __restrict__ aq, const float* __restrict__ ad, \
+        float* __restrict__ y0, float* __restrict__ y1, \
+        float* __restrict__ y2, float* __restrict__ y3, \
+        int in_f, int n0, int n1, int n2, int n3, int m, \
+        float s0, float s1, float s2, float s3) { \
+    nvfp4_mmvq_group4_csplit<MC, NS>(W0, W1, W2, W3, aq, ad, y0, y1, y2, y3, \
+                                 in_f, n0, n1, n2, n3, m, s0, s1, s2, s3); \
+}
+MEMRA_GROUP4_CS_WRAP(rpcs8, 8, 4)
+#undef MEMRA_GROUP4_CS_WRAP
 
 // ---- DUAL gate+up BATCHED twins (lane/verify-economics, 2026-08-02). The verify-tier FFN pair
 // (gate, up) shares ONE activation and one shape; as two sequential batched launches the two
@@ -2785,6 +2821,135 @@ extern "C" __global__ void qmatvec_nvfp4_mmvq_b16_rpsc(
         const float* __restrict__ ad, float* __restrict__ y,
         int in_f, int out_f, int m, long row_bytes) {
     nvfp4_mmvq_batched_rp_sc<16, 2>(W, aq, ad, y, in_f, out_f, m, row_bytes);
+}
+// ---- b32 COLUMN SPLIT (batch-spec 2026-11-03, GB10 plain-decode lever 2). Block b computes
+// row-block b / NS (8 weight rows: 4 warps x 2 rows, the rpsc schedule with the warp's scale rows
+// prestaged to smem) for the columns [(b % NS) * MC, +MC). The NS blocks of one row-block are
+// adjacent in launch order, so the repeat weight reads hit L2 instead of DRAM. Lane l walks
+// g = l, l+32, ... with the same 16B quant half, smem scale word, dp4a order, adg factor and
+// warp_reduce_sum as every batched rp variant; the column count never enters a column's chain
+// -> BIT-IDENTICAL per (token,row) to per-m MMVQ. Measured (GB10, mmvq-b16-bench, 31 tensors of
+// blk.0-3, m=32): 4 x 8 columns 9.94 ms, 2 x 16 columns 19.30 ms. At m=16 the same split
+// (2 x 8) beat rpsc in the bench (5.66 vs 6.47 ms) but was flat in the decode step (FFN-sized
+// singles, 268 vs 264 us/launch) and was not kept; nor were next-quant register prefetch
+// (8.62), four rows per warp (7.12) or cp.async activation staging in smem (8.51)
+// (research/batch-spec-20261101/GB10-PLAIN-DECODE.md).
+template<int MCOLS>
+__device__ __forceinline__ void nvfp4_mmvq_rpsc_at(
+        const unsigned char* __restrict__ W, const signed char* __restrict__ aq,
+        const float* __restrict__ ad, float* __restrict__ y,
+        int in_f, int out_f, int m, int bx) {
+    const int WROWS = 2;
+    int o0 = (bx * MEMRA_MMVQ_ROWS + threadIdx.y) * WROWS;
+    if (o0 >= out_f) return;
+    int nrow = min(WROWS, out_f - o0);
+    int lane = threadIdx.x;
+    int nsb = in_f >> 5;
+    int nsb64 = in_f >> 6;
+    const unsigned char* qplane = W;
+    const unsigned char* splane = W + (size_t)out_f * nsb64 * 32;
+    const unsigned char* rowq0 = qplane + (size_t)o0 * nsb64 * 32;
+    const unsigned char* rows0 = splane + (size_t)o0 * nsb64 * 4;
+    __shared__ __align__(16) int ssc[MEMRA_MMVQ_ROWS][WROWS][RP_MAX_NSB64];
+    int n4 = nsb64 >> 2;
+    #pragma unroll
+    for (int r = 0; r < WROWS; r++) {
+        if (r >= nrow) break;
+        const int4* src = (const int4*)(rows0 + (size_t)r * nsb64 * 4);
+        int4* dst = (int4*)&ssc[threadIdx.y][r][0];
+        for (int i = lane; i < n4; i += 32) dst[i] = src[i];
+    }
+    __syncwarp();
+    float acc[WROWS][MCOLS];
+    #pragma unroll
+    for (int r = 0; r < WROWS; r++)
+        #pragma unroll
+        for (int c = 0; c < MCOLS; c++) acc[r][c] = 0.0f;
+    for (int g = lane; g < nsb; g += 32) {
+        int sblk = g >> 1;
+        int s0 = (g & 1) * 2;
+        int2 wv[WROWS][2][2];
+        float wscale[WROWS][2];
+        // all rows' quant halves issued before any decode (two loads in flight per lane).
+        int4 qc[WROWS];
+        #pragma unroll
+        for (int r = 0; r < WROWS; r++) {
+            if (r >= nrow) break;
+            qc[r] = *(const int4*)(rowq0 + (size_t)r * nsb64 * 32 + (size_t)g * 16);
+        }
+        #pragma unroll
+        for (int r = 0; r < WROWS; r++) {
+            if (r >= nrow) break;
+            int4 qw = qc[r];
+            int cscw = ssc[threadIdx.y][r][sblk];
+            wv[r][0][0] = get_int_from_table_16_d(qw.x, kvalues_mxfp4_d);
+            wv[r][0][1] = get_int_from_table_16_d(qw.y, kvalues_mxfp4_d);
+            wv[r][1][0] = get_int_from_table_16_d(qw.z, kvalues_mxfp4_d);
+            wv[r][1][1] = get_int_from_table_16_d(qw.w, kvalues_mxfp4_d);
+            wscale[r][0] = ue4m3_to_f32_d((unsigned char)((cscw >> (8 *  s0     )) & 0xFF));
+            wscale[r][1] = ue4m3_to_f32_d((unsigned char)((cscw >> (8 * (s0 + 1))) & 0xFF));
+        }
+        #pragma unroll
+        for (int c = 0; c < MCOLS; c++) {
+            if (c >= m) break;
+            const signed char* arow = aq + (size_t)c * in_f;
+            const int4* aq16 = (const int4*)(arow + (size_t)g * 32);
+            int4 a01 = aq16[0];
+            int4 a23 = aq16[1];
+            int aq4[8] = { a01.x, a01.y, a01.z, a01.w, a23.x, a23.y, a23.z, a23.w };
+            float adg = ad[(size_t)c * nsb + g];
+            #pragma unroll
+            for (int r = 0; r < WROWS; r++) {
+                if (r >= nrow) break;
+                float partial = 0.0f;
+                #pragma unroll
+                for (int sl = 0; sl < 2; sl++) {
+                    int base = sl * 4;
+                    int2 va = wv[r][sl][0], vb = wv[r][sl][1];
+                    int sumi = 0;
+                    sumi = dp4a(va.x, aq4[base + 0], sumi);
+                    sumi = dp4a(vb.x, aq4[base + 1], sumi);
+                    sumi = dp4a(va.y, aq4[base + 2], sumi);
+                    sumi = dp4a(vb.y, aq4[base + 3], sumi);
+                    partial += wscale[r][sl] * (float)sumi;
+                }
+                acc[r][c] += adg * partial;
+            }
+        }
+    }
+    #pragma unroll
+    for (int r = 0; r < WROWS; r++) {
+        if (r >= nrow) break;
+        #pragma unroll
+        for (int c = 0; c < MCOLS; c++) {
+            if (c >= m) break;
+            float a = warp_reduce_sum(acc[r][c]);
+            if (lane == 0) y[(size_t)c * out_f + o0 + r] = a;
+        }
+    }
+}
+template<int MC, int NS>
+__device__ __forceinline__ void nvfp4_mmvq_csplit(
+        const unsigned char* __restrict__ W, const signed char* __restrict__ aq,
+        const float* __restrict__ ad, float* __restrict__ y,
+        int in_f, int out_f, int m) {
+    const int split = (int)blockIdx.x % NS;
+    const int rb = (int)blockIdx.x / NS;
+    const int c0 = split * MC;
+    const int mm = min(MC, m - c0);
+    if (mm <= 0) return;
+    const int nsb = in_f >> 5;
+    nvfp4_mmvq_rpsc_at<MC>(W, aq + (size_t)c0 * in_f, ad + (size_t)c0 * nsb,
+                           y + (size_t)c0 * out_f, in_f, out_f, mm, rb);
+}
+// b32 tier (batch-spec 2026-11-03, GB10 plain-decode lever 2): 32 columns as four 8-column
+// blocks per 8-row block, so a 32-session decode tick streams each weight from DRAM once.
+// Same per-column chain as every batched rp variant -> bit-identical per (token,row).
+extern "C" __global__ void qmatvec_nvfp4_mmvq_b32_rpcs8(
+        const unsigned char* __restrict__ W, const signed char* __restrict__ aq,
+        const float* __restrict__ ad, float* __restrict__ y,
+        int in_f, int out_f, int m, long row_bytes) {
+    nvfp4_mmvq_csplit<8, 4>(W, aq, ad, y, in_f, out_f, m);
 }
 
 // ---- EXACT-WIDTH b5/b6/b7 twins (lane/vt-fixes fix 1, 2026-08-03). The T=5..7 verify tier

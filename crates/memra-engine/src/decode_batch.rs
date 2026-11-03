@@ -1383,7 +1383,12 @@ impl HybridModel {
         // B=12/16, s32+s160, 5090 receipts research/batched-tick-inc3-20260801). Without
         // the exact tier, B>cap stays refused; the env door (MEMRA_DECODE_BATCH_CAP) keeps
         // its old meaning as the non-exact measurement probe.
-        let exact16 = b_n > 8 && b_n <= 16 && self.decode_batch_exact16_ok();
+        // EXACT-32 (batch-spec 2026-11-03): 17..32 rows ride the b32 class under the same
+        // verify-exact scope plus the decode-wide flag (`Engine::set_decode_wide`). The NVFP4
+        // split-plane singles and group4 stream each weight once (rpcs8, four 8-column blocks
+        // per row-block); every other class runs as bit-identical 16-column halves.
+        let exact16 = b_n > 8 && b_n <= 32 && self.decode_batch_exact16_ok();
+        let wide = exact16 && b_n > 16;
         assert!(
             b_n <= cap || exact16,
             "decode_step_batch: B={b_n} > cap {cap} with no exact tier — refused. Either \
@@ -1403,6 +1408,18 @@ impl HybridModel {
         let _exact_scope = ExactScope(e, exact16);
         if exact16 {
             e.set_verify_exact(true);
+        }
+        struct WideScope<'a>(&'a Engine, bool);
+        impl Drop for WideScope<'_> {
+            fn drop(&mut self) {
+                if self.1 {
+                    self.0.set_decode_wide(false);
+                }
+            }
+        }
+        let _wide_scope = WideScope(e, wide);
+        if wide {
+            e.set_decode_wide(true);
         }
         // gemma4: NO batched arm at any B (per-layer SWA/global geometry, hd-512 MQA globals,
         // weightless V-norm, softcapped head — none of it in the generic body below). This was

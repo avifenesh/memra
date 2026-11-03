@@ -5635,10 +5635,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let mut ran_any = false;
         for (tag, ws) in &mut quartets {
             let scaled = *tag != "scale=1";
-            for mm in [1usize, 2, 5, 8, 9, 12, 16] {
+            for mm in [1usize, 2, 5, 8, 9, 12, 16, 24, 32] {
                 if scaled && mm > 1 {
                     continue;
                 }
+                // 17..32 rows: the group door's b32 width exists only inside the decode-wide
+                // scope (`decode_step_batch` sets it for a 17..32-row exact tick).
+                e.set_decode_wide(mm > 16);
                 let x: Vec<f32> = (0..mm * in_f).map(|i| pr(i + 173) * 0.1).collect();
                 let xd = e.htod(&x)?;
                 let (aq, ad) = e.quantize_q8_1(&xd, mm, in_f)?;
@@ -5684,7 +5687,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             w.out_features(),
                             *qtype,
                             *row_bytes,
-                            16,
+                            if mm > 16 { 32 } else { 16 },
                             *scale,
                             *rp,
                         )?)?
@@ -5711,6 +5714,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
         }
+        e.set_decode_wide(false);
         if ran_any {
             cells.record(cell);
         } else {
@@ -5943,6 +5947,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     (8, 8),
                     (12, 16),
                     (16, 16),
+                    (24, 32),
+                    (32, 32),
                 ] {
                     let x: Vec<f32> = (0..mm * in_f).map(|i| pr(i + 161) * 0.1).collect();
                     let xd = e.htod(&x)?;
@@ -6868,7 +6874,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         // --- BATCHED-TICK increment 2: z-batched SEQS decode (append + FA) vs the per-seq
         // loop: BYTE identity. The seqs append twin must write bit-identical cache bytes to
-        // B per-seq append calls, and fa_decode_vec_q_seqs_v4 + combine_seqs must reproduce
+        // B per-seq append calls, and fa_decode_vec_q_seqs_v4_deep + combine_seqs must reproduce
         // the per-seq eager v4 (fa_decode) program exactly — same in-kernel split partition
         // (ONE-PARTITION LAW at the shared rung), same walk, same combine order. Depths mix
         // uneven sequences crossing split boundaries within one fa_split_keys rung.

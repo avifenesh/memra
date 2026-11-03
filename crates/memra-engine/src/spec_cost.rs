@@ -8,8 +8,8 @@
 //!
 //! - `verify_ms[R-1]`: one target verify forward over R rows of one session (R = 1..=16), the
 //!   t-parallel walk every pooled and serial MTP verify runs;
-//! - `plain_ms[B-1]`: one plain batched decode step over B sessions (B = 1..=16), the serving
-//!   tick's lean device-sampled step;
+//! - `plain_ms[B-1]`: one plain batched decode step over B sessions (B = 1..=P, P the model's
+//!   plain wave cap: 16, or 32 on the b32 tier), the serving tick's lean device-sampled step;
 //! - `round_overhead_ms`: what a speculative round costs a session beyond its verify forward
 //!   (drafting, accept walk, commit, host syncs), from a real session burst.
 //!
@@ -29,7 +29,7 @@ pub struct SpecCostTable {
     pub depth: usize,
     /// Verify forward ms for R = 1..=16 rows (index R-1).
     pub verify_ms: Vec<f64>,
-    /// Plain batched decode step ms for B = 1..=16 sessions (index B-1).
+    /// Plain batched decode step ms for B = 1..=P sessions (index B-1), P = the plain wave cap.
     pub plain_ms: Vec<f64>,
     /// Per-session, per-round speculative cost beyond the verify forward (one session).
     pub round_overhead_ms: f64,
@@ -59,12 +59,17 @@ pub const POOLED_OVERHEAD_COHORT: usize = 4;
 
 /// Rows and batch widths measured directly; the rest interpolate.
 const VERIFY_POINTS: [usize; 8] = [1, 2, 3, 4, 6, 8, 12, 16];
-const PLAIN_POINTS: [usize; 5] = [1, 2, 4, 8, 16];
+const PLAIN_POINTS: [usize; 6] = [1, 2, 4, 8, 16, 32];
 const REPS: usize = 3;
 
 /// Fill `1..=16` from measured `(x, ms)` points by linear interpolation.
 pub fn interpolate_16(points: &[(usize, f64)]) -> Vec<f64> {
-    (1..=16usize)
+    interpolate_n(points, 16)
+}
+
+/// Fill `1..=n` from measured `(x, ms)` points by linear interpolation.
+pub fn interpolate_n(points: &[(usize, f64)], n: usize) -> Vec<f64> {
+    (1..=n)
         .map(|x| {
             if let Some(&(_, v)) = points.iter().find(|(px, _)| *px == x) {
                 return v;
@@ -94,7 +99,14 @@ impl HybridModel {
         &self,
         e: &Engine,
         depth: usize,
+        plain_cap: usize,
     ) -> Result<SpecCostTable, Box<dyn std::error::Error>> {
+        let plain_cap = plain_cap.clamp(1, 32);
+        let plain_points: Vec<usize> = PLAIN_POINTS
+            .iter()
+            .copied()
+            .filter(|&b| b <= plain_cap.max(16))
+            .collect();
         let vocab = (self.cfg.n_vocab as usize).max(64) - 16;
         let n_vocab = self.cfg.n_vocab as usize;
         let prompt = |salt: u32| -> Vec<u32> {
@@ -131,7 +143,7 @@ impl HybridModel {
         // ---- plain batched decode over B sessions ----
         let mut plain = Vec::new();
         {
-            let b_max = *PLAIN_POINTS.last().unwrap();
+            let b_max = *plain_points.last().unwrap();
             let mut caches: Vec<Cache> = Vec::with_capacity(b_max);
             for i in 0..b_max {
                 let mut c = crate::pp::new_cache(e, &self.cfg, depth + 32)?;
@@ -142,7 +154,7 @@ impl HybridModel {
                 .iter()
                 .map(|c| c.snapshot(e))
                 .collect::<Result<Vec<_>, _>>()?;
-            for &b in &PLAIN_POINTS {
+            for &b in &plain_points {
                 let toks: Vec<u32> = (0..b as u32)
                     .map(|j| (4242 + j * 7) % vocab as u32)
                     .collect();
@@ -166,7 +178,7 @@ impl HybridModel {
             }
         }
         let verify_ms = interpolate_16(&verify);
-        let plain_ms = interpolate_16(&plain);
+        let plain_ms = interpolate_n(&plain, plain_cap.max(16));
         // ---- per-round overhead beyond the verify, from a real session burst ----
         let k = 3usize;
         let mut sess = self.new_session(e, depth + 160)?;
