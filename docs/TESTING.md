@@ -506,17 +506,28 @@ run-gen's prefill-vs-decode argmax assert calibrated against the **top-2 margin 
 position**, because a near-tie flip and a real cache bug are the same red until you measure the
 margin (see `research/q8-argmax-20260806/`). Flags:
 `tools/argmax-margin-gate.sh [<model.gguf|hf_dir>] [--prompt f] [--window N] [--max-flips N]
-[--margin-floor F] [--canary] [--logdir D]`. **Effective `--window` default is 12**, not the 24
+[--margin-floor F] [--decode eager|batch] [--canary] [--logdir D]`. **Effective `--window` default is 12**, not the 24
 the probe binary advertises in its own usage line: the wrapper always passes its own
 `WINDOW=12`. Worth knowing, since window width *is* this gate's
 coverage. Automatic dispatch is limited to `decode.rs`, `forward.rs`, `hybrid_forward.rs`, and
-the gate's own wrapper/probe implementation; `--probes amargin,amarginc` remains the clean-tree
-or deliberate explicit invocation.
+the gate's own wrapper/probe implementation (`amarginb` / `amarginbc` add `decode_batch.rs`);
+`--probes amargin,amarginc` remains the clean-tree or deliberate explicit invocation.
 
 HF directories use the native `SafetensorsSource` loader and their HF tokenizer; GGUF inputs
-retain the GGUF loader and tokenizer. This gate compares batched prefill with tokenwise
-**serial decode** on the same prompt positions, not the server's batched or speculative
-paths, and supplies no performance result. It also runs the **batched serving prime**
+retain the GGUF loader and tokenizer. By default (`--decode eager`) this gate compares batched
+prefill with tokenwise **serial decode** (`decode_step`) on the same prompt positions, not the
+server's batched or speculative paths, and supplies no performance result. `amarginb` /
+`amarginbc` (2026-11-03, owner decision) run it with `--decode batch`: the decode side becomes
+the **served batched decode program at B=1**, the server's own
+`decode_step_batch_sampled_lean_masked` call for one unconstrained greedy row (greedy device
+sample, lean logits read from the cache's device park), stepped over the whole prompt. Serving
+runs that body at every width, B=1 included, and it carries a decode-config FP-composition gap
+against `decode_step_h`, so the default arm cannot see a change to the batched body or its
+epilogue. Same prefill reference, flip budget and margin rules; instead of the prime line the
+probe prints `SERVED-ARGMAX: rows=N device_mismatch=M`, the wrapper prints
+`SERVED-SUMMARY served=<MATCH|MISMATCH>`, and `M > 0` or a missing or malformed line fails (a
+probe that ignores `--decode` prints no such line). The canary also injects an `M=1` line. The
+release battery runs both arms per roster model. The default arm also runs the **batched serving prime**
 (`prime_cache`, what seeds generation) once over the whole prompt and judges its last-position
 logits against the tokenwise reference with `forward::prime_gate_verdict`, the same cell as
 run-gen's gap #46 arm: the probe prints one `PRIME-GATE:` line, the wrapper prints
