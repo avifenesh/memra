@@ -2431,13 +2431,16 @@ fn longatt_mode() -> LongAttMode {
         _ => LongAttMode::Auto,
     }
 }
-pub fn set_longatt(mode: &str) {
+/// `auto`, `force`/`1` or `off`/`0`. Returns false (applying nothing) on any other value.
+pub fn set_longatt(mode: &str) -> bool {
     let v = match mode {
+        "auto" => 0,
         "force" | "1" => 1,
         "off" | "0" => 2,
-        _ => 0,
+        _ => return false,
     };
     LONGATT_MODE.store(v, std::sync::atomic::Ordering::Relaxed);
+    true
 }
 
 // ------------------------------------------------------------ TP2 MoE expert placement
@@ -3002,7 +3005,15 @@ fn seam_dispatch(name: &str, on: bool, value: Option<&str>, apply: bool) -> bool
         // COST INSTRUMENT, no rewind (see VERIFY_FUSED_DEFAULT): a spec loop with this
         // armed refuses at the first `verify_rewind`. Timing probes only.
         "vfuse" => seam!(set_verify_fused(on)),
-        "longatt" => seam!(set_longatt(if on { "force" } else { "off" })),
+        // Three-valued: bare `longatt` forces, `longatt=0` forbids, `longatt=auto` restores the
+        // default; any other value returns false, like `selgroup`.
+        "longatt" => {
+            if apply {
+                set_longatt(value.unwrap_or(if on { "force" } else { "off" }))
+            } else {
+                true
+            }
+        }
         "idxdev" => seam!(set_idx_dev(on)),
         "idxsel" => seam!(set_idx_sel(on)),
         "plecache" => seam!(set_ple_cache(on)),
@@ -20697,6 +20708,27 @@ mod sel_group_tests {
         assert!(set_seam("idxq", true, None));
         assert_eq!(idxq_mode_name(), "q8");
         assert!(set_idxq(entry));
+    }
+
+    /// `longatt=auto` must arm AUTO: the seam used to read any value but `0` as FORCE. A value
+    /// outside the three arms refuses and applies nothing.
+    #[test]
+    fn longatt_value_selects_its_arm() {
+        let _g = SEAM.lock().unwrap();
+        assert!(set_seam("longatt", true, Some("auto")));
+        assert!(longatt_mode() == LongAttMode::Auto);
+        assert!(set_seam("longatt", true, None));
+        assert!(longatt_mode() == LongAttMode::Force);
+        assert!(set_seam("longatt", false, Some("0")));
+        assert!(longatt_mode() == LongAttMode::Off);
+        for bad in ["Auto", "on", "2", ""] {
+            assert!(
+                !set_seam("longatt", true, Some(bad)),
+                "{bad:?} was accepted"
+            );
+            assert!(longatt_mode() == LongAttMode::Off, "{bad:?} mutated state");
+        }
+        assert!(set_longatt("auto"));
     }
 }
 
