@@ -7240,10 +7240,11 @@ impl Engine {
         Ok(())
     }
 
-    /// Access the shared MoE residency cache (EDGE-1 §B), building it on first use under
-    /// MEMRA_MOE_CACHE. The closure runs while the lock is held — keep it to lookup/admit/issue, not
-    /// the GEMM. `max_block_bytes` sizes the slots (largest of gate/up/down). Returns the closure's
-    /// result. If MEMRA_MOE_CACHE is unset this is never called (the caller checks the env first).
+    /// Access the shared MoE residency cache (EDGE-1 §B), building it on first use. The closure
+    /// runs while the lock is held — keep it to lookup/admit/issue, not the GEMM.
+    /// `max_block_bytes` sizes the slots (largest of gate/up/down). Returns the closure's result.
+    /// The cache is ON unless `MEMRA_MOE_CACHE=0` (the stage-every-token rollback); the MoE
+    /// forward checks [`Engine::moe_cache_enabled`] before calling this.
     pub fn with_moe_cache<R>(
         &self,
         max_block_bytes: usize,
@@ -7332,7 +7333,8 @@ impl Engine {
         self.moe_cache_layout.lock().unwrap().clone()
     }
 
-    /// True if the MoE residency cache is enabled (MEMRA_MOE_CACHE set).
+    /// True unless `MEMRA_MOE_CACHE=0`: the MoE residency cache is ON by default since
+    /// 2026-07-08 and `=0` is the rollback (`moe_cache.rs` header).
     pub fn moe_cache_enabled() -> bool {
         std::env::var("MEMRA_MOE_CACHE").as_deref() != Ok("0")
     }
