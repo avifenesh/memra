@@ -7,6 +7,10 @@ import subprocess
 import tempfile
 import unittest
 
+PRIME_MATCH = ("PRIME-GATE: class=MATCH bp_argmax=7 tw_argmax=7 tw_margin=1.5e0 "
+               "bp_margin=1.25e0 maxdiff=3.0e-2")
+ROWS = "10 1 1.0000 1 1.0000 0.1000 yes\n11 2 1.0000 2 1.0000 0.1000 yes"
+
 
 class GateTest(unittest.TestCase):
     def setUp(self):
@@ -25,7 +29,9 @@ class GateTest(unittest.TestCase):
         self.hf = self.root / "hf-model"
         self.hf.mkdir()
 
-    def run_gate(self, output, model=None, extra=(), env=None):
+    def run_gate(self, output, model=None, extra=(), env=None, prime=PRIME_MATCH):
+        if prime is not None:
+            output = output + "\n" + prime if output else prime
         self.probe.write_text("#!/bin/sh\nprintf '%s\\n' '" + output + "'\n")
         self.probe.chmod(0o700)
         return subprocess.run(["bash", str(self.gate), str(model or self.gguf),
@@ -61,6 +67,38 @@ class GateTest(unittest.TestCase):
                     self.assertNotEqual(r.returncode, 0, r.stdout)
                     self.assertIn("probe table", r.stdout)
 
+    def test_structured_batched_prime_fails(self):
+        prime = PRIME_MATCH.replace("class=MATCH", "class=MISMATCH-STRUCTURED")
+        r = self.run_gate(ROWS, prime=prime)
+        self.assertNotEqual(r.returncode, 0, r.stdout)
+        self.assertIn("PRIME-SUMMARY prime=MISMATCH-STRUCTURED", r.stdout)
+        self.assertIn("batched serving prime (prime_cache) diverges structurally", r.stdout)
+
+    def test_neartie_prime_flip_and_named_skip_pass_and_are_reported(self):
+        for prime, summary in (
+            (PRIME_MATCH.replace("class=MATCH", "class=FLIP-NEARTIE"), "prime=FLIP-NEARTIE"),
+            ("PRIME-GATE: SKIP reason=tokenwise-served", "prime=SKIP:tokenwise-served"),
+        ):
+            with self.subTest(prime=prime):
+                r = self.run_gate(ROWS, prime=prime)
+                self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+                self.assertIn("PRIME-SUMMARY " + summary, r.stdout)
+
+    def test_missing_or_malformed_prime_line_fails_even_with_canary(self):
+        for prime, word in ((None, "MISSING"), (PRIME_MATCH + "\n" + PRIME_MATCH, "MISSING"),
+                            ("PRIME-GATE: class=MAYBE x=1", "MALFORMED"),
+                            ("PRIME-GATE: SKIP", "MALFORMED")):
+            for extra in ((), ("--canary",)):
+                with self.subTest(prime=prime, extra=extra):
+                    r = self.run_gate(ROWS, extra=extra, prime=prime)
+                    self.assertNotEqual(r.returncode, 0, r.stdout)
+                    self.assertIn("PRIME-GATE line is " + word, r.stdout)
+
+    def test_canary_injects_a_structured_prime_line(self):
+        r = self.run_gate(ROWS, extra=("--canary",))
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("the reader saw: MISMATCH-STRUCTURED", r.stdout)
+
     def test_wide_margin_flip_fails(self):
         r = self.run_gate("10 1 5.0 2 5.0 0.1 NO\n11 2 1.0 2 1.0 0.1 yes")
         self.assertNotEqual(r.returncode, 0)
@@ -83,7 +121,7 @@ class GateTest(unittest.TestCase):
         long_prompt.write_text("A long prompt fixture.\n")
 
         def gate(model, prompt, flips, window=12, extra=()):
-            self.probe.write_text("#!/bin/sh\nprintf '%s\\n' '" + table(flips, window) + "'\n")
+            self.probe.write_text("#!/bin/sh\nprintf '%s\\n' '" + table(flips, window) + "\n" + PRIME_MATCH + "'\n")
             self.probe.chmod(0o700)
             return subprocess.run(["bash", str(self.gate), str(model), "--prompt", str(prompt),
                 "--window", str(window), "--logdir", str(self.root / "logs"), *extra],

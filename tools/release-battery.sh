@@ -282,14 +282,26 @@ while IFS=$'\t' read -r class id path _ || [ -n "${class:-}" ]; do
   if [ -n "$EVIDENCE_DIR" ]; then
     argmax_evidence=(--logdir "$EVIDENCE_DIR/argmax-$EVIDENCE_SEQ")
   fi
+  # The gate also judges the BATCHED SERVING PRIME (prime_cache vs tokenwise, the calibrated
+  # prime_gate_verdict). This battery runs it and not run-gen, and run-spec primes reference
+  # and candidate through the same prime_cache, so this is the only prime-vs-tokenwise check
+  # a release gets. Its two env seams are unset so the arm runs the default program, and only
+  # MATCH, a calibrated near-tie flip, or the skip whose served first token comes from the
+  # tokenwise loop the table already gates (frozen CPU experts) may pass.
   rc=0
-  OUT=$(MEMRA_GATE_LOG_ROOT="$EVIDENCE_DIR" "$HERE/argmax-margin-gate.sh" "$path" "${argmax_evidence[@]}" 2>&1) || rc=$?
+  OUT=$(unset MEMRA_PRIME_GATE MEMRA_PRIME_TOKENWISE
+      MEMRA_GATE_LOG_ROOT="$EVIDENCE_DIR" "$HERE/argmax-margin-gate.sh" "$path" "${argmax_evidence[@]}" 2>&1) || rc=$?
   save_evidence argmax "$id" "$rc"
-  if [ "$rc" -eq 0 ] && printf '%s' "$OUT" | grep -q "^  PASS:"; then
-    note "$id  argmax-margin  PASS  $(printf '%s' "$OUT" | grep -m1 -o 'SUMMARY flips=[0-9]* bad=[0-9]*')"
+  PRIME=$(printf '%s\n' "$OUT" | grep -m1 -o 'PRIME-SUMMARY prime=[A-Za-z:-]*' | cut -d= -f2)
+  case "$PRIME" in MATCH|FLIP-NEARTIE|SKIP:tokenwise-served) PRIME_OK=1 ;; *) PRIME_OK=0 ;; esac
+  if [ "$rc" -eq 0 ] && printf '%s' "$OUT" | grep -q "^  PASS:" && [ "$PRIME_OK" = 1 ]; then
+    note "$id  argmax-margin  PASS  $(printf '%s' "$OUT" | grep -m1 -o 'SUMMARY flips=[0-9]* bad=[0-9]*') prime=$PRIME"
+  elif [ "$rc" -eq 0 ] && printf '%s' "$OUT" | grep -q "^  PASS:"; then
+    note "$id  argmax-margin  FAIL  batched-prime arm reported prime=${PRIME:-<none>}, which a release does not accept"
+    FAILED=1
   else
-    if printf '%s' "$OUT" | grep -q "SKIP"; then
-      note "$id  argmax-margin  REFUSED   gate skipped itself: $(printf '%s' "$OUT" | grep -m1 -o 'SKIP.*')"
+    if printf '%s' "$OUT" | grep -q "^argmax-margin-gate: SKIP"; then
+      note "$id  argmax-margin  REFUSED   gate skipped itself: $(printf '%s' "$OUT" | grep -m1 -o '^argmax-margin-gate: SKIP.*' | cut -d' ' -f2-)"
     else
       note "$id  argmax-margin  FAIL  $(printf '%s' "$OUT" | tail -1)"
     fi
