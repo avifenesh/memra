@@ -35413,8 +35413,8 @@ impl Engine {
     }
 }
 
-/// `MEMRA_F32_GEMV_KERNEL=1` (lane/f32-gemv-rows-20260905, default OFF pending its model-scale
-/// row): the f32-resident `linear` at the decode/verify tier (m <= 16) takes the native
+/// `MEMRA_F32_GEMV_KERNEL` (lane/f32-gemv-rows-20260905; default ON on sm_100a builds through
+/// the B200 posture, OFF elsewhere; `=0` is the rollback): the f32-resident `linear` at the decode/verify tier (m <= 16) takes the native
 /// `gemv_f32_rows` kernel (one block per (row, token), fixed reduction tree) instead of cuBLASLt,
 /// whose m=1 path is a `dot_kernel` + `reduce_1Block_kernel` PAIR: two launches and ~9 us of host
 /// latency each, 33 pairs per token on the eager MLA layers (the DSA indexer's `wk`,
