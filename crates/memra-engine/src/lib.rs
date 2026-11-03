@@ -30744,8 +30744,18 @@ impl Engine {
         let gqa = (n_head / n_head_kv).max(1) as u32;
         // The deep twin (fa_v4_deep_walk: padded K-tile rows + tile+2 L2 prefetch, the eager
         // B=1 arm's walk) on the default module: fa_v4_deep_smem (12160B) + sV bf16 tile.
-        let f = self.func("fa_decode_vec_q_seqs_v4_deep");
-        let shmem = (12160 + 32 * head_dim * 2) as u32;
+        // MEMRA_FA_RAWV=1 (research A/B seam): the raw-V twin, V kept as q5_1 bytes in smem.
+        let rawv = std::env::var("MEMRA_FA_RAWV").as_deref() == Ok("1");
+        let f = self.func(if rawv {
+            "fa_decode_vec_q_seqs_v4_rawv"
+        } else {
+            "fa_decode_vec_q_seqs_v4_deep"
+        });
+        let shmem = if rawv {
+            (12160 + 32 * 8 * 24) as u32
+        } else {
+            (12160 + 32 * head_dim * 2) as u32
+        };
         use cudarc::driver::sys::CUfunction_attribute_enum as A;
         f.set_attribute(
             A::CU_FUNC_ATTRIBUTE_MAX_DYNAMIC_SHARED_SIZE_BYTES,

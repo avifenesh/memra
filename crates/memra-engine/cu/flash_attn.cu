@@ -7703,6 +7703,161 @@ extern "C" __global__ void fa_decode_vec_q_seqs_v4_deep(
     }
 }
 
+// RAW-V SEQS twin (batch-spec 2026-11-03, research): fa_decode_vec_q_seqs_v4_deep with the V tile
+// kept as raw q5_1 bytes in smem (6 KB instead of the 16 KB bf16 tile) and dequantized at use in
+// B3. Each element is the staging expression verbatim, __float2bfloat16(d * (float)q5 + m), read
+// back through __bfloat162float, so the B3 operands, products and accumulation order are the
+// deep walk's -> bit-identical partials. Smem drops 28.5 -> 18.3 KB per block, lifting the
+// smem block limit from 3 to 5 per SM; every warp of the GQA group now dequantizes the tile.
+// Default KV module only (q8_0 K / q5_1 V, hd256); other KV modules compile a stub.
+#if MEMRA_KV_VFMT != 2 && MEMRA_KV_KFMT != 1
+static __device__ __forceinline__ void fa_v4_rawv_walk(
+        const uint8_t* __restrict__ K, const uint8_t* __restrict__ V,
+        fa_v4_deep_smem* __restrict__ sm, uint8_t* __restrict__ sVr,
+        int t_lo, int t_hi, int gqa, int wy, int lane,
+        int kblk0, long k_tok_bytes, long v_tok_bytes,
+        float& m_i, float& l_i, float* __restrict__ acc)
+{
+    constexpr int dpl = 8;
+    constexpr int VROW = 8 * 24;            // one key's raw q5_1 slice for this kv_head
+    const int bt  = wy * WARP_SZ + lane;
+    const int bsz = WARP_SZ * gqa;
+    fa_deep_prefetch_tile(K, V, t_lo, t_hi, kblk0, k_tok_bytes, v_tok_bytes, bt, bsz);
+    fa_deep_prefetch_tile(K, V, t_lo + FA_DEC_TILE, t_hi, kblk0, k_tok_bytes, v_tok_bytes, bt, bsz);
+    // this lane's fixed element pair inside a block (paired-B3 map: e = 2*lane + 64*i2)
+    const int e2 = (lane & 15) << 1;
+    const int qoff = 8 + ((e2 < 16) ? e2 : e2 - 16);
+    const int hib = lane >> 4;              // block parity: blocks hib, hib+2, hib+4, hib+6
+    for (int t0 = t_lo; t0 < t_hi; t0 += FA_DEC_TILE) {
+        const int nt = min(FA_DEC_TILE, t_hi - t0);
+        // stage raw V: nt keys x 192 B, 16 B granules (rows are 16 B aligned)
+        for (int b = bt; b < nt * (VROW / 16); b += bsz) {
+            const int j = b / (VROW / 16), g = b - j * (VROW / 16);
+            const int4* src = (const int4*)(V + (size_t)(t0 + j) * v_tok_bytes
+                                              + (size_t)kblk0 * 24) + g;
+            ((int4*)(sVr + (size_t)j * VROW))[g] = *src;
+        }
+        fa_v4_deep_stage_k(K, t0, nt, bt, bsz, kblk0, k_tok_bytes, sm);
+        fa_deep_prefetch_tile(K, V, t0 + 2 * FA_DEC_TILE, t_hi, kblk0,
+                              k_tok_bytes, v_tok_bytes, bt, bsz);
+        __syncthreads();
+
+        float my_score = NEG_INF;
+        if (lane < nt) {
+            float s = 0.0f;
+            #pragma unroll
+            for (int c = 0; c < 8; c++) {
+                int sumi = 0;
+                #pragma unroll
+                for (int w = 0; w < 8; w++)
+                    sumi = __dp4a(sm->k_ints[lane][c * 8 + w], sm->q_ints[wy][c * 8 + w], sumi);
+                s = __fmaf_rn(__fmul_rn(sm->k_d[lane][c], sm->q_d[wy][c]), (float)sumi, s);
+            }
+            my_score = s;
+        }
+        float tile_max = m_i;
+        {
+            float v = my_score;
+            #pragma unroll
+            for (int off = 16; off > 0; off >>= 1)
+                v = fmaxf(v, __shfl_xor_sync(0xffffffffu, v, off));
+            tile_max = fmaxf(tile_max, v);
+        }
+        const float m_new = tile_max;
+        const float alpha = (m_i == NEG_INF) ? 0.0f : exp2f((m_i - m_new) * LOG2E);
+        const float p_lane = (lane < nt) ? exp2f((my_score - m_new) * LOG2E) : 0.0f;
+        l_i = l_i * alpha + warp_reduce_sum(p_lane);
+        #pragma unroll
+        for (int i = 0; i < dpl; ++i) acc[i] *= alpha;
+        m_i = m_new;
+
+        #pragma unroll 4
+        for (int j = 0; j < nt; ++j) {
+            const float p = __shfl_sync(0xffffffffu, p_lane, j);
+            const uint8_t* row = sVr + (size_t)j * VROW;
+            #pragma unroll
+            for (int i2 = 0; i2 < dpl / 2; ++i2) {
+                const uint8_t* blk = row + (hib + 2 * i2) * 24;
+                uint32_t wdm = *(const uint32_t*)blk;
+                const float d = __half2float(__ushort_as_half((unsigned short)(wdm & 0xFFFFu)));
+                const float m = __half2float(__ushort_as_half((unsigned short)(wdm >> 16)));
+                const uint32_t qh = *(const uint32_t*)(blk + 4);
+                const uint32_t q2 = *(const uint16_t*)(blk + qoff);
+                const int n0 = (int)(q2 & 0xFFu), n1 = (int)(q2 >> 8);
+                const int lo0 = (e2 < 16) ? (n0 & 0x0F) : (n0 >> 4);
+                const int lo1 = (e2 < 16) ? (n1 & 0x0F) : (n1 >> 4);
+                const int q50 = lo0 | (int)(((qh >> e2) & 1u) << 4);
+                const int q51 = lo1 | (int)(((qh >> (e2 + 1)) & 1u) << 4);
+                const __nv_bfloat16 v0 = __float2bfloat16(d * (float)q50 + m);
+                const __nv_bfloat16 v1 = __float2bfloat16(d * (float)q51 + m);
+                acc[2 * i2]     += p * __bfloat162float(v0);
+                acc[2 * i2 + 1] += p * __bfloat162float(v1);
+            }
+        }
+        __syncthreads();
+    }
+}
+#endif
+
+extern "C" __global__ void fa_decode_vec_q_seqs_v4_rawv(
+        const float* __restrict__ Q,
+        const unsigned long long* __restrict__ kv_ptrs,
+        const int* __restrict__ pos_seq,
+        float* __restrict__ partO, float* __restrict__ partM, float* __restrict__ partL,
+        int head_dim, int n_head, int n_head_kv,
+        float scale, int n_splits_max, int split_keys,
+        long k_tok_bytes, long v_tok_bytes)
+{
+#if MEMRA_KV_VFMT != 2 && MEMRA_KV_KFMT != 1
+    const int z       = blockIdx.z;
+    const uint8_t* K  = (const uint8_t*)kv_ptrs[2 * z];
+    const uint8_t* V  = (const uint8_t*)kv_ptrs[2 * z + 1];
+    const int T_kv    = pos_seq[z] + 1;
+    const int kv_head = blockIdx.x;
+    const int split   = blockIdx.y;
+    if (kv_head >= n_head_kv || split >= n_splits_max) return;
+    const int gqa  = n_head / n_head_kv;
+    const int wy   = threadIdx.y;
+    const int lane = threadIdx.x;
+    if (wy >= gqa) return;
+    const int head = kv_head * gqa + wy;
+    const int dpl  = head_dim >> 5;
+
+    const int ns_eff = max(1, (T_kv + split_keys - 1) / split_keys);
+    const int per  = (T_kv + ns_eff - 1) / ns_eff;
+    const int t_lo = split * per;
+    const int t_hi = (split < ns_eff) ? min(T_kv, t_lo + per) : t_lo;
+
+    extern __shared__ unsigned char sm_raw_v4rv[];
+    fa_v4_deep_smem* sm = (fa_v4_deep_smem*)sm_raw_v4rv;
+    uint8_t* sVr = sm_raw_v4rv + sizeof(fa_v4_deep_smem);
+
+    fa_v4_deep_stage_q(Q, ((size_t)z * n_head + head) * head_dim, scale, lane, wy, sm);
+    __syncthreads();
+
+    float m_i = NEG_INF, l_i = 0.0f;
+    float acc[FA_DEC_MAX_DPL];
+    #pragma unroll
+    for (int i = 0; i < FA_DEC_MAX_DPL; ++i) acc[i] = 0.0f;
+    const int kblk0 = (kv_head * head_dim) >> 5;
+
+    fa_v4_rawv_walk(K, V, sm, sVr, t_lo, t_hi, gqa, wy, lane,
+                    kblk0, k_tok_bytes, v_tok_bytes, m_i, l_i, acc);
+
+    #pragma unroll
+    for (int i = 0; i < FA_DEC_MAX_DPL; ++i) {
+        if (i < dpl) {
+            int d = (lane << 1) + ((i >> 1) << 6) + (i & 1);
+            partO[(((size_t)z * n_head + head) * n_splits_max + split) * head_dim + d] = acc[i];
+        }
+    }
+    if (lane == 0) {
+        partM[((size_t)z * n_head + head) * n_splits_max + split] = m_i;
+        partL[((size_t)z * n_head + head) * n_splits_max + split] = l_i;
+    }
+#endif
+}
+
 // SEQS combine: grid = (n_head, B). Sequence z merges its OWN n_splits_z (the same
 // ceil(T_kv_z/split_keys) formula the seqs kernel used) in the SAME ascending-split order
 // as fa_decode_combine_f32 — identical values, identical fmax/sum order; only the partial
