@@ -88,9 +88,9 @@ The path rules answer per file. `docs/impact-map/map.json` answers per item. It 
   - the file's targets are intersected with the targets of the devices those items reach;
   - `perf` is dropped when no changed item has a speed effect;
   - a `numeric` file whose items reach only families that no battery roster model belongs to is reported UNCOVERED for those families.
-- **Otherwise** (an item the map cannot place): the path rule's answer stands.
+- **Otherwise** (an item the map cannot place, tokens outside every item, a map older than the base whose later commits changed callers or the arch table): the path rule's answer stands, or gains those callers' cells.
 
-The map in force is the push base's, like the rules. `change_impact.py` and `cell_evidence.py need` also print the run plan. That is one model per reached family and device, with the routes and tests its cells need, chosen from `docs/impact-map/models.json`. Reached cells no model on hand covers are listed. `--no-map` gives the path-rule answer alone.
+The map in force is the push base's, like the rules. The map and its code (`docs/impact-map/map.json`, `annotations.json`, `tools/impact_map/`) are gate-class, and a push that leaves an unloadable map is refused. `change_impact.py` and `cell_evidence.py need` also print the run plan. That is one model per reached family and device, with the routes and tests its cells need, chosen from `docs/impact-map/models.json`. Reached cells no model on hand covers are listed. `--no-map` gives the path-rule answer alone.
 
 A record measured at an older commit still proves its kinds on its target when four things hold:
 
@@ -98,6 +98,8 @@ A record measured at an older commit still proves its kinds on its target when f
 - it verifies against its own commit;
 - the change impact from that commit to the candidate reaches no cell of that target in the scopes those kinds cover;
 - for `perf`, the push base is also equivalent to the record's base on that target.
+
+That change impact is judged by the push base's rules and map, and only the newest such record per target and device class is re-judged.
 
 So a record banked for one push keeps covering later pushes until a change reaches its target.
 

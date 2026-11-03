@@ -346,9 +346,10 @@ def main():
     exact = {x["item"] for x in ann.get("exact_items", [])}
     sets, items = {}, {}
     for i, r in nodes.items():
-        if offline(i) or r["kind"] in ("use",):
+        # `<outside>` (tokens outside every item) is never placed: a change there keeps the path rule
+        if offline(i) or r["kind"] in ("use", "outside"):
             continue
-        m = reach.get(i, 0) | change_extra.get(i, 0)
+        m = reach.get(i, 0)
         src = "propagated"
         if not m:
             fd = file_defaults.get(r["file"])
@@ -374,8 +375,13 @@ def main():
             eff = {"numeric", "speed", "memory", "policy"}
         if m not in sets:
             sets[m] = len(sets)
-        items[i] = {"f": r["file"], "a": r["line_start"], "b": r["line_end"], "h": r["hash"], "k": r["kind"],
-                    "r": sets[m], "e": sorted(eff), "s": src}
+        items[i] = {"f": r["file"], "a": r["line_start"], "b": r["line_end"], "h": r["hash"], "l": r.get("lhash"),
+                    "k": r["kind"], "r": sets[m], "e": sorted(eff), "s": src}
+        x = change_extra.get(i, 0) & ~m
+        if x:  # writer of process-global state: its change also reaches every reader of that state
+            if x not in sets:
+                sets[x] = len(sets)
+            items[i]["x"] = sets[x]
     reach_sets = [None] * len(sets)
     for m, idx in sets.items():
         reach_sets[idx] = V.summarize(m)
@@ -386,8 +392,12 @@ def main():
                                                        "door", "effects", "claim", "verdict")})
     stats["items"] = len(items)
     stats["reach_sets"] = len(sets)
+    # the commit whose code the map describes: the last commit that changed a compiled input, so a
+    # branch that only adds the map (or docs) keeps naming a commit that stays an ancestor of main
+    source = subprocess.run(["git", "-C", REPO, "log", "-1", "--format=%H", "--", "crates", "Cargo.toml", "Cargo.lock",
+                             "rust-toolchain.toml"], capture_output=True, text=True).stdout.strip()
     data = {"schema": "memra-impact-map-v1",
-            "source_commit": subprocess.run(["git", "-C", REPO, "rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip(),
+            "source_commit": source,
             "annotated_at": ann.get("annotated_at"),
             "vocab": {"families": V.families, "routes": V.routes, "devices": V.devices},
             "reach_sets": reach_sets, "items": items, "regions": regions_out, "stats": dict(stats)}

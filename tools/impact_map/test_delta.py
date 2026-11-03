@@ -74,9 +74,11 @@ def build_map(repo, ref):
     reach_of = {"shared": 1, "forward": 1, "only_dsv4": 2, "k_add": 3}
     for path in (ENGINE, KERNEL):
         text = delta.blob(repo, ref, path)
-        for i, (h, a, b, test, kind) in delta.scan(path, text).items():
+        for i, (h, a, b, test, kind, lh, _) in delta.scan(path, text).items():
             name = i.split("::")[-1]
-            items[i] = {"f": path, "a": a, "b": b, "h": h, "k": kind, "r": reach_of.get(name, 0),
+            if kind == "outside":
+                continue  # the generator never places tokens outside items
+            items[i] = {"f": path, "a": a, "b": b, "h": h, "l": lh, "k": kind, "r": reach_of.get(name, 0),
                         "e": ["numeric", "speed"], "s": "test"}
     regions = [
         {"file": ENGINE, "a": 6, "b": 8, "kind": "family", "families": ["qwen35"], "routes": ["*"], "devices": ["*"],

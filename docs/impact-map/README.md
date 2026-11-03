@@ -39,7 +39,7 @@ The annotations come from a bounded multi-agent pass. Agents only add what the s
 
 A script checks every claim against the tree: its quote must appear on the cited line. Claims that narrow reach (that exclude a family, route, device, or every default launch) were then checked by independent skeptic agents told to refute them, with "uncertain" counting as refuted. A refuted claim is widened back to every cell. The asymmetry is deliberate: a wrong exclusion lets a regression ship, while a wrong inclusion only costs a run.
 
-## What the first build measured (map commit 5ba8a3b11a)
+## What the first build measured (code of 372a4cf284, main at 5ba8a3b11a)
 
 | step | result |
 |---|---|
@@ -59,9 +59,18 @@ The wide share is mostly real sharing, not missing labels. The server, the token
 
 `python3 tools/impact_map/delta.py --base origin/main --head HEAD` prints the reached cells and the run plan. `change_impact.py` and `cell_evidence.py need` print the same plan under the target cells.
 
-- Each changed Rust or CUDA file is scanned at the base and at the head. An item has changed when its token hash moved. A file in which no item's hash moved reaches no cell.
-- A changed item the map knows takes the item's reach. When the item is unchanged since the map was built (its base hash equals the map's hash), the touched lines are matched against the item's regions. A change entirely inside narrowing arms then takes only those arms' cells. The first line of a region (usually the branch condition) never narrows, because a changed condition moves every arm.
-- An item the map does not know (new or renamed) takes the union of its file's items. An unknown file reaches every cell.
+- Each changed Rust or CUDA file is scanned at the base and at the head. An item has changed when its token hash moved. Every token outside an item counts too: inner attributes, `mod x;` and its cfg, extern-block headers, file-scope CUDA constants, and anything the scanners do not place. Those tokens form one synthetic `<outside>` item that the map never contains. A file in which nothing moved reaches no cell.
+- An item counts as test-only only when every side that has it is a test item. A production item moved into `#[cfg(test)]` is a production change.
+- A changed item the map knows takes the item's reach.
+  - Its touched lines are matched against the item's regions only when its base copy is laid out exactly as at the map commit: same token hash, same token-line layout, same start line.
+  - A change entirely inside narrowing arms then takes only those arms' cells.
+  - The first line of a region (usually the branch condition) never narrows, because a changed condition moves every arm.
+  - An item that writes process-global state keeps its readers' reach in every case.
+- These items keep the path rule's answer in the gate:
+  - an item the map does not know (new, renamed, or an added item whose id the map had before);
+  - an item the map places nowhere by default (behind a build-time door);
+  - `<outside>`;
+  - a file under `cu/` the scanner does not read.
 - Effects select tests:
   - `numeric`: calibrated `run-gen` argmax, plus `run-spec` K=1..8 for speculative routes;
   - `speed`: the interleaved perf A/B;
@@ -70,7 +79,14 @@ The wide share is mostly real sharing, not missing labels. The server, the token
   - CUDA or FFI: kernel-check.
 - The plan picks one model per reached family and device from `models.json`, preferring the owner's own models. Reached cells that no available model covers are listed, never dropped.
 
-**Why a map built at an older commit stays safe.** For a change to make an item reachable from new code, it must change the caller. The changed caller carries its own reach into the result. A change that only removes an edge leaves the map wider than the truth, never narrower. The exceptions are edges the static graph cannot see: string-keyed or env-selected dispatch, which `annotations.json` records as dynamic edges and the generator adds back as unconditional edges.
+**When the map is older than the base.** The commit that adds a new call carries its own reach into that push. A later edit of the callee alone would not. So before narrowing anything, the query scans what changed between the map commit and the base. Every item changed or added there contributes its identifiers. A changed item named by one of them takes the cells of that new or changed caller as well.
+
+Narrowing stops in two cases:
+
+- **The arch table moved** (`build.rs`, `cuda_arch.rs`, the toolchain or the root manifest) since the map: device narrowing stops.
+- **The map's commit is not an ancestor of the base:** nothing narrows.
+
+A change that only removes an edge leaves the map wider than the truth, never narrower. Edges the static graph cannot see (string-keyed or env-selected dispatch) are recorded in `annotations.json` as dynamic edges, which the generator adds as unconditional edges.
 
 ## The ledger
 
@@ -93,22 +109,32 @@ At the map commit no seeded row still holds. Two reasons cover it:
 
 ## In the push gate
 
-The map in force is the push base's, like the rules, so a change cannot narrow its own requirements. Only the change that introduces the map uses the head's. For each program file of class kernel, numeric or serving that is not flagged for device-keyed defaults:
+The map in force is the push base's, like the rules, so a change cannot narrow its own requirements. Only the change that introduces the map uses the head's.
 
-- **Token-identical edit:** the file is reclassified `comment` and reaches no cell.
+Safety rules:
+
+- A push that changes `map.json` must leave a loadable map, or the gate refuses it.
+- A base map that cannot be loaded leaves the path rules alone in force.
+- `map.json`, `annotations.json` and the non-test code under `tools/impact_map/` are gate-class: a change to them needs the full evidence a rules change needs.
+- No environment variable replaces the map. What-if replays (`history.py`) pass a map explicitly and are never a push decision.
+
+For each program file of class kernel, numeric or serving that is not flagged for device-keyed defaults:
+
+- **Token-identical edit:** the file is reclassified `comment` and reaches no cell. An edit only to test items makes it `tests`.
 - **Every changed item placed by the map:**
-  - the file's build targets are intersected with the targets of the devices those items reach;
+  - the file's build targets are intersected with the targets of the devices those items reach (not when the arch table moved since the map);
   - the perf cell is dropped when no changed item has a speed effect;
   - a numeric file whose items reach only families that no battery roster model belongs to is reported UNCOVERED for those families, as #1030 already did for pack-local changes. The battery cannot see such a change; those families' own gates are the evidence.
 - **Otherwise:** the path rule's answer stands.
 
-**Delta against the last measured commit.** `cell_evidence.py` admits a record measured at an older commit when three things hold:
+**Delta against the last measured commit.** `cell_evidence.py` admits a record measured at an older commit when four things hold:
 
 - its tested commit is an ancestor of the candidate;
 - the record still verifies against its own commit;
+- it is the newest such record for its target and device class;
 - the change impact from that commit to the candidate reaches no cell of the record's target in a scope the record's kinds cover.
 
-A perf record also needs the push base to be equivalent to the record's base on that target.
+That change impact is judged with the push base's rules and map. A rules or map edit inside the pushed range therefore cannot relax it. A perf record also needs the push base to be equivalent to the record's base on that target.
 
 ## Refreshing
 

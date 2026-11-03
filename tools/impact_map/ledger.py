@@ -66,24 +66,6 @@ class TreeScanner:
         return h
 
 
-def cell_items(m):
-    """(family, route, device) -> item ids whose reach includes it (inverted map)."""
-    inv = collections.defaultdict(list)
-    set_cells = {}
-    for i, it in m.items.items():
-        idx = it["r"]
-        if idx not in set_cells:
-            set_cells[idx] = m.cells_of_set(idx)
-        for c in set_cells[idx]:
-            inv[c].append(i)
-    return inv
-
-
-def fingerprints(m, hashes, cells, inv=None):
-    inv = inv or cell_items(m)
-    return {c: delta.fingerprint(hashes, inv.get(c, ())) for c in cells}
-
-
 def seed(repo, raw_path, out_path, map_path, models_path):
     m = delta.Map(json.loads(Path(map_path).read_text()))
     models = json.loads(Path(models_path).read_text()) if models_path and Path(models_path).exists() else {"families": {}}

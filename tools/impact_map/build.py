@@ -70,7 +70,9 @@ def main():
     run([sys.executable, HERE / "buildrs_capture.py"], env)
     run([sys.executable, HERE / "cu_liveness.py"], env)
     run([sys.executable, HERE / "build_graph.py"], env)
-    run([sys.executable, HERE / "assemble.py", REPO / "docs/impact-map/annotations.json", a.out], env)
+    observed = REPO / "docs/impact-map/observed.json"  # kernel traces: executed kernels keep their cells
+    run([sys.executable, HERE / "assemble.py", REPO / "docs/impact-map/annotations.json", a.out,
+         *([observed] if observed.exists() else [])], env)
     print(f"wrote {a.out}")
 
 

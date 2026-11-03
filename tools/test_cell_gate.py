@@ -224,6 +224,20 @@ class CellGate(unittest.TestCase):
         with self.assertRaisesRegex(q.GateError, "missing evidence"):
             self.f.push()
 
+    def test_older_record_is_judged_by_the_push_bases_rules(self):
+        # a rules edit inside the pushed range cannot relax what an older record is judged by
+        rules = (self.f.repo / "tools/change-impact.toml").read_text()
+        relaxed = rules.replace("[[rule]]\n", "[[rule]]\npattern = '^crates/memra-engine/src/'\nclass = \"docs\"\n"
+                                "why = \"relaxed inside the pushed range\"\n\n[[rule]]\n", 1)
+        self.f.write("tools/change-impact.toml", relaxed)
+        self.f.write("crates/memra-engine/cu/qmatvec.cu", "__global__ void k() { int x = 7; }\n")
+        measured = self.f.commit("kernel and relaxed rules")
+        self.f.record(measured, ["battery", "serving", "perf"])
+        self.f.write("crates/memra-engine/src/lib.rs", "pub fn f() { let _ = 3; }\n")
+        self.f.commit("engine numeric change, never measured")
+        with self.assertRaisesRegex(q.GateError, "missing evidence"):
+            self.f.push()
+
     def test_tampered_record_is_not_admitted(self):
         self.f.write("crates/memra-engine/cu/qmatvec.cu", "__global__ void k() { int x = 5; }\n")
         code = self.f.commit("kernel")

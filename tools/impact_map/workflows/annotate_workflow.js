@@ -126,7 +126,7 @@ const deviceTable = devices ? compact({ device_predicates: devices.device_predic
 phase('Annotate')
 const annotated = await parallel(SLICES.map(s => () => agent(`${COMMON}
 
-YOUR SLICE: ${s.id} — ${s.title}. Its exact file ranges are in ${H}/slices/${s.id}/files.txt; read facts.tsv, hints.tsv and candidates.json there first, then read the code (targeted reads by line range; files can be tens of thousands of lines).
+YOUR SLICE: ${s.id}: ${s.title}. Its exact file ranges are in ${H}/slices/${s.id}/files.txt; read facts.tsv, hints.tsv and candidates.json there first, then read the code (targeted reads by line range; files can be tens of thousands of lines).
 
 SHARED TABLES FROM THE SCOUT PHASE (authoritative vocabulary and family/route/device truth; use them to turn a predicate into sets):
 FAMILY TABLE: ${packTable}
