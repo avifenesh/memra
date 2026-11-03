@@ -24,6 +24,10 @@ sys.dont_write_bytecode = True
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[1]
+# A REQUIRED line comes from a dependency node, so it prints for every change that reaches the
+# node, whatever pack the change touches. Say so where the lines are read.
+REQUIRED_NOTE = ("REQUIRED lines are static per dependency node, not filtered by the packs the "
+                 "change reaches; run the ones it reaches and give the reason for each one left out.")
 
 
 def git(repo, *args):
@@ -186,6 +190,8 @@ def summary(plan):
         print("  EXPAND: " + why)
     for gate in plan["required_unregistered"]:
         print("  REQUIRED, not covered by legacy probes: " + gate)
+    if plan["required_unregistered"]:
+        print("  NOTE: " + REQUIRED_NOTE)
     if "validation" in plan:
         scoped = plan["validation"]
         print("  CPU CI components: " + (", ".join(k for k, v in scoped["jobs"].items() if v) or "none"))
