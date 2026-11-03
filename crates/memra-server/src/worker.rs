@@ -236,6 +236,14 @@ fn prefill_tick_take(q: usize, budget: usize, eager_mono: bool, bound_rem: Optio
     take
 }
 
+/// W1 (two-programs inventory, 2026-08-13): a capture boundary closer than `PRIME_MIN_T`
+/// ahead and still inside the queued prompt vetoes the prime branch, which would walk the
+/// prompt tokens before it through `decode_step`. The prefill tick drops such a boundary
+/// instead: the session loses that capture and keeps one prime program.
+fn sub_floor_capture_boundary(b: usize, fed: usize, queued: usize) -> bool {
+    b > fed && b - fed < memra_engine::hybrid_forward::PRIME_MIN_T && b < fed + queued
+}
+
 fn interactive_prime_batch_take(queued: usize, budget: usize, max_t: usize) -> Option<usize> {
     let take = queued.min(budget).min(max_t);
     (take >= memra_engine::hybrid_forward::PRIME_MIN_T.max(2)).then_some(take)
@@ -40915,16 +40923,40 @@ fn prefill_tick(
     // (`ckpt_at`). Taking the MIN keeps both captures landing on their exact fed boundary; the
     // same session rarely carries both, but when it does the earlier boundary is honored first
     // and the later one next tick.
-    // OPEN DEFECT (two-programs inventory W1, 2026-08-13): when a boundary sits CLOSER than
-    // PRIME_MIN_T ahead, the `bound_rem.is_none_or(..)` term below vetoes the whole prime branch
-    // and the remaining PROMPT tokens go through `decode_step` one at a time — a different
-    // numeric program for the same bytes (see the tail-merge comment below). An older note here
-    // called that residual "unreachable at the current PREFILL_TICK_T"; that claim covered only
-    // the tick-budget tail, which is now genuinely merged, and never covered this boundary door.
-    // Correct remedy is to DROP the sub-floor boundary capture (lose a cache seed, keep one
-    // program) rather than degrade to tokenwise; it is not done here because clearing
-    // snapshot_at/ckpt_at interacts with the post-prime capture below. Tracked separately.
+    // SUB-FLOOR BOUNDARY (two-programs inventory W1, 2026-08-13): a boundary CLOSER than
+    // PRIME_MIN_T ahead would make the `bound_rem.is_none_or(..)` term below veto the whole
+    // prime branch, and the PROMPT tokens before it would go through `decode_step` one at a
+    // time, a different numeric program for the same bytes. Admission can arm one there (a
+    // restored prefix ending just short of the checkpoint, two boundaries within the floor),
+    // and so can a tick budget under 2 x PRIME_MIN_T. When that boundary is the only veto, drop
+    // it: the session loses that capture (the post-prime capture checks below see None) and
+    // keeps one program. A boundary at the prompt end is not a stop and is kept.
     let fed_len = s.fed.len();
+    let prime_open = s.glm5_plain_prime.is_none()
+        && !confidence_trace_enabled()
+        && q >= memra_engine::hybrid_forward::PRIME_MIN_T.max(2)
+        && budget >= memra_engine::hybrid_forward::PRIME_MIN_T
+        && !(eager_mono && carried && !suffix_prime);
+    if prime_open {
+        for (kind, slot) in [
+            ("lcp-split", &mut s.snapshot_at),
+            ("checkpoint", &mut s.ckpt_at),
+            ("seed", &mut s.seed_at),
+        ] {
+            if let Some(b) = *slot
+                && sub_floor_capture_boundary(b, fed_len, q)
+            {
+                *slot = None;
+                eprintln!(
+                    "[prefill] {kind} boundary {b} sits {} < {} tokens past fed {fed_len}; \
+                     capture dropped so the prompt keeps the prime program (model {})",
+                    b - fed_len,
+                    memra_engine::hybrid_forward::PRIME_MIN_T,
+                    s.model
+                );
+            }
+        }
+    }
     // `seed_at` is the third boundary of the same class (memra#602): the grid-aligned
     // prompt-end seed stops the prime on the grid exactly like the LCP split does.
     let bound_rem = [s.snapshot_at, s.ckpt_at, s.seed_at]
@@ -40934,11 +40966,7 @@ fn prefill_tick(
         .map(|b| b - fed_len)
         .min();
     if s.glm5_plain_prime.is_some()
-        || (!confidence_trace_enabled()
-            && q >= memra_engine::hybrid_forward::PRIME_MIN_T.max(2)
-            && budget >= memra_engine::hybrid_forward::PRIME_MIN_T
-            && !(eager_mono && carried && !suffix_prime)
-            && bound_rem.is_none_or(|r| r >= memra_engine::hybrid_forward::PRIME_MIN_T))
+        || (prime_open && bound_rem.is_none_or(|r| r >= memra_engine::hybrid_forward::PRIME_MIN_T))
     {
         let take = s.glm5_plain_prime.as_ref().map_or_else(
             || prefill_tick_take(q, budget, eager_mono, bound_rem),
@@ -48748,6 +48776,36 @@ mod tests {
                 "boundary r={r} produced sub-floor chunk take={take}"
             );
         }
+    }
+
+    /// W1: a boundary 1..PRIME_MIN_T-1 tokens ahead and inside the queued prompt is the one the
+    /// prefill tick drops, since keeping it vetoes the prime branch and walks the tokens
+    /// before it through decode_step. A floor-distant boundary, one at the prompt end, and one
+    /// behind fed all stay.
+    #[test]
+    fn only_a_sub_floor_boundary_inside_the_prompt_is_dropped() {
+        const FLOOR: usize = memra_engine::hybrid_forward::PRIME_MIN_T;
+        let fed = 1000;
+        let q = 200;
+        for r in 1..FLOOR {
+            assert!(super::sub_floor_capture_boundary(fed + r, fed, q), "r={r}");
+        }
+        assert!(!super::sub_floor_capture_boundary(fed + FLOOR, fed, q));
+        assert!(!super::sub_floor_capture_boundary(fed, fed, q));
+        assert!(!super::sub_floor_capture_boundary(fed - 1, fed, q));
+        // At the prompt end it is not a stop: a short remainder rides its own path anyway.
+        assert!(!super::sub_floor_capture_boundary(fed + 10, fed, 10));
+        assert!(!super::sub_floor_capture_boundary(fed + 12, fed, 10));
+        // A tick budget under 2 x FLOOR leaves a sub-floor gap to a boundary in (budget, 2 x
+        // FLOOR); the next tick drops it instead of walking the gap tokenwise.
+        let budget = FLOOR + 2;
+        let r = 2 * FLOOR - 2;
+        let take = prefill_tick_take(q, budget, false, Some(r));
+        assert!(super::sub_floor_capture_boundary(
+            fed + r,
+            fed + take,
+            q - take
+        ));
     }
 
     #[test]
