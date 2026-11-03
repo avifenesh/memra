@@ -85,6 +85,9 @@ impl TopologyRequest {
 /// Stage groups make odd physical card counts useful without pretending PP is TP. For example,
 /// three cards can run a TP1 dense-prefix stage followed by a TP2/EP2 MoE stage. The layer range is
 /// explicit because memory-balanced Step placement is not necessarily an equal layer split.
+/// Test-only: no runtime path builds a grouped plan yet; the planner and its tests are the
+/// contract a placement consumer would start from.
+#[cfg(test)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StageGroupRequest {
     pub layers: Range<usize>,
@@ -92,6 +95,7 @@ pub struct StageGroupRequest {
     pub expert_parallel: bool,
 }
 
+#[cfg(test)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GroupedTopologyRequest {
     pub stages: Vec<StageGroupRequest>,
@@ -871,7 +875,9 @@ impl ModelParallelContract {
     /// This is the placement contract for arbitrary 1-8 card counts. It validates only the layers
     /// assigned to each group, so a TP1 dense-prefix stage can coexist with a TP2/TP4/TP8 MoE
     /// stage. Logical ranks are contiguous per stage; physical-device binding is a separate
-    /// runtime concern and must preserve each group's rank order.
+    /// runtime concern and must preserve each group's rank order. Test-only (see
+    /// [`StageGroupRequest`]).
+    #[cfg(test)]
     pub fn plan_grouped(
         &self,
         request: GroupedTopologyRequest,
@@ -989,6 +995,9 @@ pub struct ParallelPlan {
 }
 
 impl ParallelPlan {
+    // The feature-range accessors below are the tests' view of the planner's splits; the
+    // runtime slices through the head ranges directly.
+    #[cfg(test)]
     pub fn global_rank(&self, pipeline_rank: usize, tensor_rank: usize) -> Option<usize> {
         if pipeline_rank >= self.request.pipeline || tensor_rank >= self.request.tensor {
             return None;
@@ -1013,6 +1022,7 @@ impl ParallelPlan {
     }
 
     /// Column-parallel Q output range and the matching row-parallel O input range.
+    #[cfg(test)]
     pub fn query_feature_range(&self, layer: usize, tensor_rank: usize) -> Option<Range<usize>> {
         let heads = self.query_head_range(layer, tensor_rank)?;
         Some(heads.start * self.contract.head_dim..heads.end * self.contract.head_dim)
@@ -1020,12 +1030,14 @@ impl ParallelPlan {
 
     /// Column-parallel K/V output range. Step-3.7 has eight KV heads, so TP2 and TP4 partition
     /// them exactly; no KV-head replication is part of this registered contract.
+    #[cfg(test)]
     pub fn kv_feature_range(&self, layer: usize, tensor_rank: usize) -> Option<Range<usize>> {
         let heads = self.kv_head_range(layer, tensor_rank)?;
         Some(heads.start * self.contract.head_dim..heads.end * self.contract.head_dim)
     }
 
     /// Column-parallel dense gate/up output range and matching row-parallel down input range.
+    #[cfg(test)]
     pub fn dense_ffn_range(&self, tensor_rank: usize) -> Option<Range<usize>> {
         split_range(
             self.contract.dense_ffn_size,
@@ -1034,12 +1046,14 @@ impl ParallelPlan {
         )
     }
 
+    #[cfg(test)]
     pub fn routed_expert_range(&self, tensor_rank: usize) -> Option<Range<usize>> {
         self.request
             .expert_parallel
             .then(|| split_range(self.contract.expert_count, self.request.tensor, tensor_rank))?
     }
 
+    #[cfg(test)]
     pub fn routed_expert_ffn_range(&self, tensor_rank: usize) -> Option<Range<usize>> {
         (!self.request.expert_parallel).then(|| {
             split_range(
@@ -1051,6 +1065,7 @@ impl ParallelPlan {
     }
 }
 
+#[cfg(test)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StageRankGroup {
     pub stage: usize,
@@ -1061,6 +1076,7 @@ pub struct StageRankGroup {
     pub shared_expert_replicated: bool,
 }
 
+#[cfg(test)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GroupedParallelPlan {
     pub contract: ModelParallelContract,
@@ -1070,6 +1086,7 @@ pub struct GroupedParallelPlan {
     pub mtp_owner_stage: Option<usize>,
 }
 
+#[cfg(test)]
 impl GroupedParallelPlan {
     pub fn group_for_layer(&self, layer: usize) -> Option<&StageRankGroup> {
         self.rank_groups
@@ -1357,6 +1374,7 @@ fn require_divisible(label: &str, value: usize, parts: usize) -> Result<(), Topo
     Ok(())
 }
 
+#[cfg(test)]
 fn require_fp8_block_shard(label: &str, value: usize, parts: usize) -> Result<(), TopologyError> {
     require_divisible(label, value, parts)?;
     let local = value / parts;
@@ -1369,6 +1387,7 @@ fn require_fp8_block_shard(label: &str, value: usize, parts: usize) -> Result<()
     Ok(())
 }
 
+#[cfg(test)]
 fn validate_group_geometry(
     contract: &ModelParallelContract,
     stage: usize,
@@ -1424,6 +1443,7 @@ fn validate_group_geometry(
     Ok(())
 }
 
+#[cfg(test)]
 fn expected_layer_stage(
     layer: usize,
     stages: &[StageGroupRequest],
