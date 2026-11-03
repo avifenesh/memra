@@ -842,6 +842,18 @@ impl Dsv4IndexerScore {
     }
 }
 
+/// `MEMRA_DSV4_DRAFTER`: `true` loads the checkpoint's DSpark drafter. A misspelt value refuses
+/// by name instead of loading trunk-only and serving the dflash route plain.
+fn resolve_drafter(value: Option<&str>) -> Res<bool> {
+    match value {
+        None | Some("") | Some("off") => Ok(false),
+        Some("dspark") => Ok(true),
+        Some(other) => Err(format!(
+            "MEMRA_DSV4_DRAFTER '{other}' unknown (unset | off | dspark)"
+        )),
+    }
+}
+
 fn resolve_prefill_moe(value: Option<&str>) -> Res<bool> {
     match value {
         None | Some("") | Some("reference") => Ok(false),
@@ -3637,6 +3649,12 @@ impl Dsv4Gpu {
             Some("pair") => true,
             Some(other) => return Err(format!("MEMRA_DSV4_EP '{other}' unknown (off | pair)")),
         };
+        let drafter_env = match std::env::var("MEMRA_DSV4_DRAFTER") {
+            Ok(value) => Some(value),
+            Err(std::env::VarError::NotPresent) => None,
+            Err(err) => return Err(format!("MEMRA_DSV4_DRAFTER: {err}")),
+        };
+        let drafter_dspark = resolve_drafter(drafter_env.as_deref())?;
         let model = Dsv4Model::open(dir)?;
         let d = model.cfg().clone();
         let mc = model.mc.clone();
@@ -3671,10 +3689,7 @@ impl Dsv4Gpu {
         } else {
             None
         };
-        if topology.is_tp_ep()
-            && std::env::var("MEMRA_DSV4_DRAFTER").as_deref() == Ok("dspark")
-            && model.has("mtp.0.e_proj.weight")
-        {
+        if topology.is_tp_ep() && drafter_dspark && model.has("mtp.0.e_proj.weight") {
             return Err("DSV4 TP/EP all-layer topology refuses the NextN MTP block".into());
         }
         if topology.is_tp_ep() && (!matrix_moe || !ep_requested) {
@@ -3701,9 +3716,7 @@ impl Dsv4Gpu {
         // Reserve its config-derived block count before choosing the cut. One base-layer
         // charge per block is conservative for the MXFP4 blocks and stable across mints;
         // main_proj/markov auxiliaries fit inside that overestimate.
-        let dspark_tail_reserve = if std::env::var("MEMRA_DSV4_DRAFTER").as_deref() == Ok("dspark")
-            && !model.has("mtp.0.e_proj.weight")
-        {
+        let dspark_tail_reserve = if drafter_dspark && !model.has("mtp.0.e_proj.weight") {
             let cfg = memra_gguf::dsv4_dspark::DsparkConfig::load(dir, &model)?;
             cfg.n_blocks as u64 * 3_875_000_000u64
         } else {
@@ -4269,7 +4282,7 @@ impl Dsv4Gpu {
             };
             me.mtp = Some(mtp);
         } else if nextn > 0 && !has_mtp {
-            if std::env::var("MEMRA_DSV4_DRAFTER").as_deref() == Ok("dspark") {
+            if drafter_dspark {
                 // iteration 3: the DSpark drafter, whole module on the LAST stage
                 // (tap layers 40/41/42 + shared head locality — VRAM plan in the
                 // iteration-3 receipts). Census pins + NextN refusal ride the CPU
@@ -25249,8 +25262,21 @@ mod index_topk_radix_tests {
 #[cfg(test)]
 mod dense_arm_default_tests {
     use super::{
-        Dsv4IndexerScore, resolve_dense_arm, resolve_dspark_fused_moe, resolve_prefill_moe,
+        Dsv4IndexerScore, resolve_dense_arm, resolve_drafter, resolve_dspark_fused_moe,
+        resolve_prefill_moe,
     };
+
+    #[test]
+    fn drafter_refuses_unknown_values_by_name() {
+        for raw in [None, Some(""), Some("off")] {
+            assert_eq!(resolve_drafter(raw), Ok(false));
+        }
+        assert_eq!(resolve_drafter(Some("dspark")), Ok(true));
+        for raw in ["1", "DSpark", "dspark ", "on", "mtp"] {
+            let err = resolve_drafter(Some(raw)).expect_err(raw);
+            assert!(err.contains("MEMRA_DSV4_DRAFTER"), "{err}");
+        }
+    }
 
     #[test]
     fn grouped_prefill_requires_literal_opt_in() {
