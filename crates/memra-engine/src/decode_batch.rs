@@ -2511,10 +2511,11 @@ impl HybridModel {
     /// recurrent states and different kpool index planes — each row carries its own
     /// single-position buffer and its own cache, which is what the gate's staggered-depth
     /// arm pins. One token per session per tick (pure decode); there is no mixed
-    /// prefill/decode shape at this entry by construction. Width: B <= 8, the per-row
-    /// exactness tier — there is NO exact16 tier here (`decode_batch_exact16_ok` refuses
-    /// the Mla/Kda mixers), and the MoE router's fixed per-row program is only the decode
-    /// arm below PRIME_MIN_T; wider concurrency is the scheduler's job to chunk.
+    /// prefill/decode shape at this entry by construction. Width: B <= `hyper_batch_cap()`
+    /// (= PRIME_MIN_T - 1 = 15, see its doc for the knee) — there is NO exact16 tier here
+    /// (`decode_batch_exact16_ok` refuses the Mla/Kda mixers), and the MoE router's fixed
+    /// per-row program is only the decode arm below PRIME_MIN_T; wider concurrency is the
+    /// scheduler's job to chunk.
     ///
     /// EXACTNESS BAR AND GATE: row b of a B-row tick is BIT-IDENTICAL (full logits, every
     /// step) to session b decoding alone through `decode_step_hyper`, including B=1 — one
