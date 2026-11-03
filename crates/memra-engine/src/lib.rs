@@ -938,6 +938,10 @@ pub static GLM5_DECODE_GRAPH_MLA_MIDS: std::sync::atomic::AtomicU64 =
 /// Stages torn down and rebuilt by the armed re-capture path (`MEMRA_GLM5_GRAPH_RECAPTURE`).
 pub static GLM5_DECODE_GRAPH_RECAPTURES: std::sync::atomic::AtomicU64 =
     std::sync::atomic::AtomicU64::new(0);
+/// Captures the fault door refused after their body was recorded
+/// (`MEMRA_GLM5_GRAPH_CAPTURE_FAULT`): the refused-capture gate arm's non-vacuity receipt.
+pub static GLM5_DECODE_GRAPH_FAULTS: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(0);
 
 /// True while a glm5 decode-graph CAPTURE is open on this process. Two engine pools must not
 /// hand a captured graph a buffer they will later re-issue to eager work: a replay would
