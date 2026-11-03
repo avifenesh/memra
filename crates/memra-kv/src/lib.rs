@@ -120,10 +120,9 @@ pub fn wkv_on() -> bool {
 
 /// Step35 SWA ring. Default OFF unless the loader arms the step37 serving default (owner flip
 /// 2026-08-27: the ring frees 16.4 GB on card0 at the natural 262144 context with identical
-/// throughput and ids, and the W8 doors OOM there without it). Architecture-scoped by its call
-/// sites: Gemma4's row-0-addressed window kernels cannot consume a rebased ring view, which is
-/// why the default arms per loaded family rather than globally. `MEMRA_SWA_RING=1` forces ON,
-/// `=0` is the kill switch either way.
+/// throughput and ids, and the W8 doors OOM there without it). `MEMRA_SWA_RING=1` forces ON,
+/// `=0` is the kill switch either way. The default is process-wide once a step37-class model
+/// loads, so allocation and admission ask [`swa_ring_on_for_plan`], never this alone.
 static SWA_RING_DEFAULT: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 pub fn set_swa_ring_default(on: bool) {
@@ -140,6 +139,16 @@ pub fn swa_ring_on() -> bool {
         Some(forced) => forced,
         None => SWA_RING_DEFAULT.load(std::sync::atomic::Ordering::Relaxed),
     }
+}
+
+/// Does a cache for `plan` take ring-backed SWA planes? The ring is the Step35
+/// (SlidingGatedMoe) reader contract. Gemma4's row-0-addressed window kernels and every other
+/// sliding-window family address their planes absolutely, so they keep flat planes even when a
+/// co-loaded step37 model armed the process default or `MEMRA_SWA_RING=1` is set.
+pub fn swa_ring_on_for_plan(plan: &ModelPlan) -> bool {
+    swa_ring_on()
+        && memra_gguf::execution_manifest::decode_batch_program(plan)
+            == memra_gguf::execution_manifest::DecodeBatchProgram::SlidingGatedMoe
 }
 
 /// With the SWA-ring door open, `prime_chunk_tokens` caps every legal chunk at this bound. The
@@ -2542,7 +2551,7 @@ pub fn cache_ring_bytes_per_token_for_plan(
         lo <= hi && hi <= total,
         "cache plan layer range out of bounds"
     );
-    if !swa_ring_on() {
+    if !swa_ring_on_for_plan(plan) {
         return 0;
     }
     let shared = cfg.gemma4.as_ref().map(|g| g.shared_kv_layers).unwrap_or(0);
@@ -2573,7 +2582,7 @@ pub fn cache_ring_row_cap(cfg: &ModelConfig) -> usize {
 }
 
 pub fn cache_ring_row_cap_for_plan(plan: &memra_gguf::model_plan::ModelPlan) -> usize {
-    if !swa_ring_on() {
+    if !swa_ring_on_for_plan(plan) {
         return 0;
     }
     plan.layers
@@ -3084,6 +3093,7 @@ impl Cache {
         let mut latent = Vec::with_capacity(n);
         let head_dim_k = cfg.head_dim_k as usize;
         let head_dim_v = cfg.head_dim_v as usize;
+        let ring_on = swa_ring_on_for_plan(plan);
         for il in 0..cfg.n_layer {
             // stage-owned allocation (pp2): the device that runs this layer allocates it.
             let e = pick(il as usize);
@@ -3130,7 +3140,7 @@ impl Cache {
                             StatePlan::SlidingKvCache { window, .. } => Some(window),
                             _ => None,
                         });
-                    let ring = if swa_ring_on() {
+                    let ring = if ring_on {
                         planned_window.map(|window| {
                             let window = window as usize;
                             KvRing::new(swa_ring_rows(window, max_ctx), window)
@@ -3866,6 +3876,73 @@ mod swa_ring_tests {
             5151 * 1088 + 8,
             "the Step35 session plane allocates ring rows plus the existing tail pad",
         );
+    }
+
+    /// A step37-class load arms the ring default for the whole process. A co-loaded Gemma4
+    /// plan owns SlidingKvCache layers too, but its window kernels address rows from 0, so
+    /// admission and allocation must keep it on flat planes; only the SlidingGatedMoe plan
+    /// takes the ring.
+    #[test]
+    fn armed_ring_default_reaches_only_the_sliding_gated_moe_plan() {
+        use super::{
+            cache_ring_bytes_per_token_for_plan, cache_ring_row_cap_for_plan, set_swa_ring_default,
+            swa_ring_on, swa_ring_on_for_plan,
+        };
+        use memra_gguf::config::{HfConfig, ModelConfig};
+        use memra_gguf::model_plan::{ModelPlan, StatePlan};
+
+        let gemma = ModelConfig::from_hf(&HfConfig::parse(
+            r#"{"model_type":"gemma4","text_config":{"model_type":"gemma4_text",
+            "num_hidden_layers":4,"hidden_size":64,"num_attention_heads":2,
+            "num_key_value_heads":1,"num_global_key_value_heads":1,"head_dim":32,
+            "global_head_dim":64,"intermediate_size":128,"vocab_size":64,
+            "max_position_embeddings":8192,"rms_norm_eps":0.000001,
+            "sliding_window":512,"final_logit_softcapping":30,
+            "layer_types":["sliding_attention","full_attention","sliding_attention","full_attention"],
+            "rope_parameters":{"full_attention":{"rope_theta":1000000,
+            "partial_rotary_factor":0.25},"sliding_attention":{"rope_theta":10000}}}}"#,
+        ));
+        let step = ModelConfig::from_hf(&HfConfig::parse(
+            r#"{"model_type":"step3p5","num_hidden_layers":3,"hidden_size":16,
+            "intermediate_size":32,"num_attention_heads":2,"num_attention_groups":1,
+            "head_dim":8,"vocab_size":64,"max_position_embeddings":2048,
+            "moe_num_experts":6,"moe_top_k":2,"moe_intermediate_size":12,
+            "share_expert_dim":12,"moe_layers_enum":"1,2","moe_router_activation":"sigmoid",
+            "layer_types":["full_attention","sliding_attention","sliding_attention"],
+            "rope_theta":[5000000,10000,10000],"partial_rotary_factors":[0.5,1,1],
+            "sliding_window":512,
+            "attention_other_setting":{"num_attention_heads":4,"num_attention_groups":1},
+            "swiglu_limits":[0,0,0],"swiglu_limits_shared":[0,0,0]}"#,
+        ));
+        let gemma_plan = ModelPlan::compile(&gemma).unwrap();
+        let step_plan = ModelPlan::compile(&step).unwrap();
+        for plan in [&gemma_plan, &step_plan] {
+            assert!(
+                plan.layers
+                    .iter()
+                    .any(|layer| matches!(layer.state, StatePlan::SlidingKvCache { .. })),
+                "both plans own sliding-window KV layers"
+            );
+        }
+
+        set_swa_ring_default(true);
+        let gemma_ring_on = swa_ring_on_for_plan(&gemma_plan);
+        let gemma_row_cap = cache_ring_row_cap_for_plan(&gemma_plan);
+        let gemma_ring_bytes =
+            cache_ring_bytes_per_token_for_plan(&gemma, &gemma_plan, 0, gemma_plan.layers.len());
+        let step_ring_on = swa_ring_on_for_plan(&step_plan);
+        let step_row_cap = cache_ring_row_cap_for_plan(&step_plan);
+        // `MEMRA_SWA_RING=0` in the environment keeps the ring off for every plan.
+        let process_ring_on = swa_ring_on();
+        set_swa_ring_default(false);
+
+        assert!(!gemma_ring_on);
+        assert_eq!(gemma_row_cap, 0);
+        assert_eq!(gemma_ring_bytes, 0);
+        assert_eq!(step_ring_on, process_ring_on);
+        if process_ring_on {
+            assert_eq!(step_row_cap, swa_ring_rows(512, usize::MAX));
+        }
     }
 
     /// REGRESSION, the SWA-ring MTP lap (2026-08-28) — BOTH steps, which took three attempts to
