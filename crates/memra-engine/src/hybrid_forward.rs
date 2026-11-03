@@ -8949,31 +8949,12 @@ impl HybridModel {
             total,
             eps,
         )?;
-        // batched lm_head (nsys round-26: B sequential m=1 matvecs re-read the 600MB
-        // lm_head weight B times — 2.2ms at B=6): gather the B last rows and run ONE
-        // m=B GEMM (f16 lane; falls back to the per-seq matvec when no mirror). The
-        // f16-vs-mmvq logits delta is the prefill GEMM numeric class — prime_batch_gate's
-        // argmax battery arbitrates, same as every other prefill GEMM change.
-        let mut hcat = e.uninit(b * n_embd)?;
-        for s in 0..b {
-            let last0 = (offs[s] + ts[s] - 1) * n_embd;
-            e.copy_view_into(
-                &mut hcat,
-                s * n_embd,
-                &hn.slice(last0..last0 + n_embd),
-                n_embd,
-            )?;
-        }
-        let logits_cat = if b >= 2 {
-            e.try_f16_gemm(&self.output, &hcat, b)?
-        } else {
-            None
-        };
-        let logits_host: Option<Vec<f32>> = match &logits_cat {
-            Some(lc) => Some(e.dtoh(lc)?),
-            None => None,
-        };
-        let n_vocab = self.output.out_features();
+        // lm_head per sequence at m=1, the head `prime_chunk_epilogue` runs for a solo prime
+        // (ONE numeric program per request). A batched m=B f16 GEMM over the B last rows saved
+        // B-1 reads of the head weight (nsys round-26: 2.2 ms at B=6), but it engaged only where
+        // an f16 mirror exists (Hopper, capacity-admitted PRO 6000 class), so a cold prompt's
+        // first-token logits depended on whether a peer was co-batched; `prime-batch-exact-gate`
+        // compares the two bitwise.
         let mut hidden_all = if crate::spec::spec_hpost() {
             split(e, &hn, n_embd)?
         } else {
@@ -8988,14 +8969,9 @@ impl HybridModel {
             } else {
                 e.copy_view_into(&mut h_seed, 0, &hn.slice(last0..last0 + n_embd), n_embd)?;
             }
-            let logits = match &logits_host {
-                Some(lh) => lh[s * n_vocab..(s + 1) * n_vocab].to_vec(),
-                None => {
-                    let mut hlast = e.uninit(n_embd)?;
-                    e.copy_view_into(&mut hlast, 0, &hn.slice(last0..last0 + n_embd), n_embd)?;
-                    e.dtoh(&e.matmul(&self.output, &hlast, 1)?)?
-                }
-            };
+            let mut hlast = e.uninit(n_embd)?;
+            e.copy_view_into(&mut hlast, 0, &hn.slice(last0..last0 + n_embd), n_embd)?;
+            let logits = e.dtoh(&e.matmul(&self.output, &hlast, 1)?)?;
             caches[s].pos += ts[s];
             out.push((logits, h_seed, hidden_all.remove(0)));
         }
