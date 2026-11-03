@@ -2938,16 +2938,6 @@ extern "C" __global__ void gated_rmsnorm_f16out_vl(gdnprepvl_t v, const float* _
 // sm_90a only (wgmma); the dispatch is env+cfg gated so other arches never call it.
 #include "wgmma_common.cuh"
 
-// P masked bf16 mirror: out[j][j2] = j2 <= j ? bf16(p) : 0   (layout [nc][h][C][C])
-extern "C" __global__ void gdn_p_bf16_masked(const float* __restrict__ p,
-                                             __nv_bfloat16* __restrict__ out,
-                                             int C, long long n) {
-    long long i = (long long)blockIdx.x * blockDim.x + threadIdx.x;
-    if (i >= n) return;
-    int j2 = (int)(i % C), j = (int)((i / C) % C);
-    out[i] = (j2 <= j) ? __float2bfloat16(p[i]) : __float2bfloat16(0.0f);
-}
-
 __device__ __forceinline__ void
 gdn_k45_wgmma_body(const __nv_bfloat16* __restrict__ kb16, const float* __restrict__ gcum,
                    const float* __restrict__ beta,
@@ -3208,7 +3198,7 @@ gdn_k45_wgmma_vl(gdnvl_t v, gdnwvl_t wq, float scale, int H, int C, int hk) {
 
 // K2 wgmma (MEMRA_GDN_WGMMA path): A[j,i] = b_i e^{gj-gi} (k_j.k_i) for i<j and
 // Pb16[j,i] = b_i e^{gj-gi} (q_j.k_i) for i<=j (zero elsewhere — the k45 staging
-// contract, replacing gdn_p_bf16_masked). Two 32x32x128 GEMMs per (chunk, head);
+// contract, replacing the deleted gdn_p_bf16_masked pass). Two 32x32x128 GEMMs per (chunk, head);
 // canonical A and B layouts coincide, so ONE staged k tile serves as A of k.k^T and
 // B of both. Operands ride cp.async straight from the kb16/qb16 mirrors.
 __device__ __forceinline__ void
