@@ -41143,8 +41143,9 @@ fn advance_sample_emit(
     (true, Some(next))
 }
 
-/// Token-driven twin of `advance_sample_emit` for the graph path: the token was produced
-/// by the DEVICE argmax (greedy), so there is no sampling — accept, emit, stop battery.
+/// Token-driven twin of `advance_sample_emit` for the device-chained step
+/// (`step_session_async_chain`): the token came off the DEVICE (an argmax, or the chain's
+/// seeded device draw), so the host does not sample it again — accept, emit, stop battery.
 /// Returns (continue?, ()).
 fn advance_token_emit(
     loaded: &HashMap<String, LoadedModel>,
