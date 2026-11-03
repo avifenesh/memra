@@ -624,6 +624,12 @@ fn main() {
                     mmq_src
                 };
             println!("cargo:rerun-if-changed={compile_src}");
+            if mmq_src == "cu/mmq_fp8_blk.cu" {
+                // The unit this build compiled for the block-128 FP8 kernels (the real file or
+                // its fail-closed stub). `fp8_ffi::fp8_blk_kernels_built` keys every block-128
+                // arm on the arch; its unit test checks that key against this build fact.
+                println!("cargo:rustc-env=MEMRA_FP8_BLK_UNIT={compile_src}");
+            }
             let stem = mmq_src
                 .split('/')
                 .next_back()
