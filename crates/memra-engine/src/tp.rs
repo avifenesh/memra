@@ -1223,6 +1223,7 @@ impl E4m3ExpertBank<'_> {
         Ok(())
     }
 
+    #[cfg(test)]
     pub fn expert(&self, expert: usize) -> Result<E4m3BlockMatrix<'_>, String> {
         if expert >= self.expert_count {
             return Err(format!("expert {expert} outside 0..{}", self.expert_count));
@@ -1325,12 +1326,6 @@ pub struct ResidentBf16ColumnParallel {
     out_features: usize,
     in_features: usize,
     canonical_chunk_rows: Option<usize>,
-}
-
-pub struct ResidentBf16RowParallel {
-    ranks: Vec<ResidentBf16Rank>,
-    out_features: usize,
-    in_features: usize,
 }
 
 pub struct ResidentStepBf16RowParallel {
@@ -1638,14 +1633,6 @@ pub struct PreparedPeerWeightedRouteCombine {
 }
 
 impl PreparedPeerWeightedRouteCombine {
-    pub fn tokens(&self) -> usize {
-        self.tokens
-    }
-
-    pub fn pairs(&self) -> usize {
-        self.pairs
-    }
-
     pub fn owner_pair_counts(&self) -> Vec<usize> {
         self.owners.iter().map(|owner| owner.active_pairs).collect()
     }
@@ -3054,13 +3041,6 @@ impl TpE4m3HostBounce {
         })
     }
 
-    pub fn upload_bf16_column_parallel(
-        &self,
-        matrix: Bf16Matrix<'_>,
-    ) -> Result<ResidentBf16ColumnParallel, Box<dyn std::error::Error>> {
-        self.upload_bf16_column_parallel_inner(matrix, None, false)
-    }
-
     /// Step-3.7 column projection with one numerical program across TP1/TP2/TP4/TP8.
     pub fn upload_step_bf16_column_parallel(
         &self,
@@ -3830,66 +3810,6 @@ impl TpE4m3HostBounce {
             outputs.push(engine.dtoh(&rows.ranks[rank])?);
         }
         Ok(outputs)
-    }
-
-    #[allow(clippy::manual_is_multiple_of)] // allow: divisor is runtime-derived; the modulo form keeps a zero divisor loud (a panic), where is_multiple_of would return false silently
-    pub fn upload_bf16_row_parallel(
-        &self,
-        matrix: Bf16Matrix<'_>,
-    ) -> Result<ResidentBf16RowParallel, Box<dyn std::error::Error>> {
-        matrix.validate()?;
-        let tp = self.ranks.len();
-        if matrix.in_features % tp != 0 {
-            return Err(format!(
-                "BF16 row-parallel in_features {} is not divisible by TP={tp}",
-                matrix.in_features
-            )
-            .into());
-        }
-        let mut ranks = Vec::with_capacity(tp);
-        for (rank, engine) in self.ranks.iter().enumerate() {
-            let shard = bf16_row_shard(matrix, tp, rank)?;
-            ranks.push(upload_bf16_rank(
-                engine,
-                Bf16Matrix {
-                    bytes: &shard,
-                    out_features: matrix.out_features,
-                    in_features: matrix.in_features / tp,
-                },
-                false,
-            )?);
-        }
-        Ok(ResidentBf16RowParallel {
-            ranks,
-            out_features: matrix.out_features,
-            in_features: matrix.in_features,
-        })
-    }
-
-    pub fn bf16_row_parallel_resident(
-        &self,
-        matrix: &ResidentBf16RowParallel,
-        activations: &[f32],
-        tokens: usize,
-    ) -> Result<RowParallelResult, Box<dyn std::error::Error>> {
-        validate_resident_bf16_ranks(&self.ranks, &matrix.ranks)?;
-        validate_activations(activations, tokens, matrix.in_features)?;
-        let tp = self.ranks.len();
-        let mut reduced = vec![0.0f32; tokens * matrix.out_features];
-        let mut rank_partials = Vec::with_capacity(tp);
-        for (rank, (engine, shard)) in self.ranks.iter().zip(&matrix.ranks).enumerate() {
-            let local_activations =
-                activation_shard(activations, tokens, matrix.in_features, tp, rank);
-            let partial = run_resident_bf16_rank(engine, shard, &local_activations, tokens, None)?;
-            for (sum, value) in reduced.iter_mut().zip(&partial) {
-                *sum += value;
-            }
-            rank_partials.push(partial);
-        }
-        Ok(RowParallelResult {
-            reduced,
-            rank_partials,
-        })
     }
 
     /// Step-3.7 row projection split into the same eight global K blocks for TP1/TP2/TP4/TP8.
@@ -9132,24 +9052,6 @@ fn bf16_column_shard(
     })
 }
 
-#[allow(clippy::manual_is_multiple_of)] // allow: divisor is runtime-derived; the modulo form keeps a zero divisor loud (a panic), where is_multiple_of would return false silently
-fn bf16_row_shard(matrix: Bf16Matrix<'_>, tp: usize, rank: usize) -> Result<Vec<u8>, String> {
-    matrix.validate()?;
-    if tp == 0 || rank >= tp || matrix.in_features % tp != 0 {
-        return Err(format!(
-            "invalid BF16 row shard in={} TP={tp} rank={rank}",
-            matrix.in_features
-        ));
-    }
-    let local_in = matrix.in_features / tp;
-    let mut bytes = Vec::with_capacity(matrix.out_features * local_in * 2);
-    for row in 0..matrix.out_features {
-        let start = (row * matrix.in_features + rank * local_in) * 2;
-        bytes.extend_from_slice(&matrix.bytes[start..start + local_in * 2]);
-    }
-    Ok(bytes)
-}
-
 fn bf16_row_block(
     matrix: Bf16Matrix<'_>,
     col_start: usize,
@@ -9927,10 +9829,6 @@ impl Nvfp4DeviceRoutesWorkspace {
     }
     pub(crate) fn in_stage_mut(&mut self) -> Option<&mut crate::CudaSlice<f32>> {
         self.in_stage_e.as_mut()
-    }
-    #[allow(dead_code)] // allow: accessor twin of in_stage_mut; kept for the workspace API symmetry
-    pub(crate) fn out_stage_mut(&mut self) -> Option<&mut crate::CudaSlice<f32>> {
-        self.out_stage_e.as_mut()
     }
     /// Arm the e-context stages + router staging pair when absent (token-graph entry).
     pub(crate) fn arm_stages(
@@ -10783,85 +10681,6 @@ impl TpE4m3HostBounce {
         }
         apply_macro(&mut reduced, macros[expert]);
         Ok(reduced)
-    }
-
-    /// Upload whole experts per owning rank (NVFP4 expert-parallel: the layout the clamped tail
-    /// layers require — clamp semantics do not distribute across a tensor shard). Each owned
-    /// expert keeps its full gate/up/down as one repacked block buffer on its owner.
-    #[allow(clippy::manual_is_multiple_of)] // allow: divisor is runtime-derived; the modulo form keeps a zero divisor loud (a panic), where is_multiple_of would return false silently
-    pub fn upload_expert_parallel_nvfp4(
-        &self,
-        gate: Nvfp4ExpertBank<'_>,
-        up: Nvfp4ExpertBank<'_>,
-        down: Nvfp4ExpertBank<'_>,
-    ) -> Result<ResidentNvfp4ExpertParallel, Box<dyn std::error::Error>> {
-        gate.validate()?;
-        up.validate()?;
-        down.validate()?;
-        if gate.expert_count != up.expert_count || gate.expert_count != down.expert_count {
-            return Err("NVFP4 EP gate/up/down expert counts differ".into());
-        }
-        if gate.in_features != up.in_features || gate.out_features != up.out_features {
-            return Err("NVFP4 EP gate/up dimensions differ".into());
-        }
-        if down.in_features != gate.out_features || down.out_features != gate.in_features {
-            return Err(format!(
-                "NVFP4 EP down {}x{} does not invert gate/up {}x{}",
-                down.out_features, down.in_features, gate.out_features, gate.in_features
-            )
-            .into());
-        }
-        let world = self.ranks.len();
-        if gate.expert_count % world != 0 {
-            return Err(format!(
-                "NVFP4 EP expert count {} is not divisible by {world} ranks",
-                gate.expert_count
-            )
-            .into());
-        }
-        let experts_per_rank = gate.expert_count / world;
-        let mut ranks = Vec::with_capacity(world);
-        for (rank_index, engine) in self.ranks.iter().enumerate() {
-            let _main = engine.gpu.enter_main()?;
-            let expert_range = rank_index * experts_per_rank..(rank_index + 1) * experts_per_rank;
-            let mut gate_host = Vec::new();
-            let mut up_host = Vec::new();
-            let mut down_host = Vec::new();
-            for expert in expert_range.clone() {
-                gate_host.extend_from_slice(&nvfp4_repack_matrix(gate.expert(expert)?));
-                up_host.extend_from_slice(&nvfp4_repack_matrix(up.expert(expert)?));
-                down_host.extend_from_slice(&nvfp4_repack_matrix(down.expert(expert)?));
-            }
-            let gate_expert_bytes = gate_host.len() / experts_per_rank;
-            let up_expert_bytes = up_host.len() / experts_per_rank;
-            if gate_expert_bytes != up_expert_bytes {
-                return Err("NVFP4 EP gate/up packed expert bytes differ".into());
-            }
-            let down_expert_bytes = down_host.len() / experts_per_rank;
-            ranks.push(ResidentNvfp4EpRank {
-                gate: engine.htod_bytes(&gate_host)?,
-                up: engine.htod_bytes(&up_host)?,
-                down: engine.htod_bytes(&down_host)?,
-                gate_expert_bytes,
-                down_expert_bytes,
-                macros_gate: engine.htod(&gate.macros[expert_range.clone()])?,
-                macros_up: engine.htod(&up.macros[expert_range.clone()])?,
-                macros_down: engine.htod(&down.macros[expert_range.clone()])?,
-                expert_range,
-            });
-        }
-        Ok(ResidentNvfp4ExpertParallel {
-            ranks,
-            macros_gate: gate.macros.to_vec(),
-            macros_up: up.macros.to_vec(),
-            macros_down: down.macros.to_vec(),
-            expert_count: gate.expert_count,
-            input_width: gate.in_features,
-            expert_width: gate.out_features,
-            gate_row_bytes: nvfp4_row_bytes(gate.in_features),
-            down_row_bytes: nvfp4_row_bytes(down.in_features),
-            device_workspace: std::sync::Mutex::new(None),
-        })
     }
 
     /// Upload an already-normalized NVFP4 expert bank.
@@ -15047,18 +14866,6 @@ mod tests {
     }
 
     #[test]
-    fn bf16_row_shard_preserves_each_input_column_window() {
-        let bytes = bf16_matrix_bytes(3, 4);
-        let matrix = Bf16Matrix {
-            bytes: &bytes,
-            out_features: 3,
-            in_features: 4,
-        };
-        let shard = bf16_row_shard(matrix, 2, 1).unwrap();
-        assert_eq!(decode_u16(&shard), vec![2, 3, 6, 7, 10, 11]);
-    }
-
-    #[test]
     fn bf16_row_block_preserves_global_column_order() {
         let bytes = bf16_matrix_bytes(3, 8);
         let matrix = Bf16Matrix {
@@ -15451,9 +15258,6 @@ pub struct TokenGraphBuilder {
     /// Nodes every NEXT section must depend on (the frontier): one node for serial flow,
     /// several while a parallel group is open.
     frontier: Vec<cudarc::driver::sys::CUgraphNode>,
-    /// Detached sections: forked from the frontier at issue time, joined ONLY by the next
-    /// non-group section (they never gate a parallel group merge — the SH1 shape).
-    pending_detached: Vec<cudarc::driver::sys::CUgraphNode>,
     /// Open parallel group: sections issued under the same group id fork from the SAME
     /// predecessor set and merge into the frontier together when the group closes.
     group: Option<(
@@ -15478,7 +15282,6 @@ impl TokenGraphBuilder {
             parent,
             children: Vec::new(),
             frontier: Vec::new(),
-            pending_detached: Vec::new(),
             group: None,
         })
     }
@@ -15487,14 +15290,11 @@ impl TokenGraphBuilder {
         &mut self,
         graph: cudarc::driver::CudaGraph,
         parallel_group: Option<u32>,
-        detached: bool,
-        absorb: bool,
         ctx: cudarc::driver::sys::CUcontext,
     ) -> Result<(), Box<dyn std::error::Error>> {
         use cudarc::driver::sys;
         // Resolve the dependency set: serial sections depend on the current frontier; a
-        // parallel-group section depends on the frontier AS OF the group opening; a
-        // DETACHED section forks like a group member but joins only the next serial section.
+        // parallel-group section depends on the frontier AS OF the group opening.
         let deps: Vec<sys::CUgraphNode> = match (&mut self.group, parallel_group) {
             (Some((open, base, _)), Some(group)) if *open == group => base.clone(),
             (state, Some(group)) => {
@@ -15506,19 +15306,11 @@ impl TokenGraphBuilder {
                 *state = Some((group, base.clone(), Vec::new()));
                 base
             }
-            (state, None) if detached => match state.as_ref() {
-                Some((_, base, _)) => base.clone(),
-                None => self.frontier.clone(),
-            },
             (state, None) => {
                 if let Some((_, _, members)) = state.take() {
                     self.frontier = members;
                 }
-                let mut deps = self.frontier.clone();
-                if absorb {
-                    deps.append(&mut self.pending_detached);
-                }
-                deps
+                self.frontier.clone()
             }
         };
         let mut node: sys::CUgraphNode = std::ptr::null_mut();
@@ -15538,9 +15330,8 @@ impl TokenGraphBuilder {
         if r != sys::CUresult::CUDA_SUCCESS {
             return Err(format!("token graph child: {r:?}").into());
         }
-        match (&mut self.group, parallel_group, detached) {
-            (_, None, true) => self.pending_detached.push(node),
-            (Some((_, _, members)), Some(_), _) => members.push(node),
+        match (&mut self.group, parallel_group) {
+            (Some((_, _, members)), Some(_)) => members.push(node),
             _ => self.frontier = vec![node],
         }
         self.children.push(TokenGraphChild { graph, node, ctx });
@@ -15873,36 +15664,6 @@ pub fn graph_section<F>(
 where
     F: FnMut() -> Result<(), Box<dyn std::error::Error>>,
 {
-    graph_section_opts(engine, parallel_group, false, false, f)
-}
-
-/// Serial section that ALSO joins every pending detached section (the SH1 consumer shape).
-pub fn graph_section_absorbing<F>(engine: &Engine, f: F) -> Result<(), Box<dyn std::error::Error>>
-where
-    F: FnMut() -> Result<(), Box<dyn std::error::Error>>,
-{
-    graph_section_opts(engine, None, false, true, f)
-}
-
-/// `graph_section` with the DETACHED shape: forks from the current frontier (or the open
-/// group base) and is joined only by the next serial section — never gates a group merge.
-pub fn graph_section_detached<F>(engine: &Engine, f: F) -> Result<(), Box<dyn std::error::Error>>
-where
-    F: FnMut() -> Result<(), Box<dyn std::error::Error>>,
-{
-    graph_section_opts(engine, None, true, false, f)
-}
-
-pub fn graph_section_opts<F>(
-    engine: &Engine,
-    parallel_group: Option<u32>,
-    detached: bool,
-    absorb: bool,
-    f: F,
-) -> Result<(), Box<dyn std::error::Error>>
-where
-    F: FnMut() -> Result<(), Box<dyn std::error::Error>>,
-{
     let building = token_graph_building();
     if !building {
         let mut f = f;
@@ -15925,6 +15686,6 @@ where
         cell.borrow_mut()
             .as_mut()
             .expect("builder checked above")
-            .push_child(child, parallel_group, detached, absorb, ctx)
+            .push_child(child, parallel_group, ctx)
     })
 }
