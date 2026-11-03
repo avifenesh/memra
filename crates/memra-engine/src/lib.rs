@@ -3902,7 +3902,7 @@ impl Engine {
                 })?;
             }
             engine.gpu.stream().synchronize()?;
-            eprintln!("[gdn-state] bf16-rounded GDN state stores (MEMRA_GDN_STATE_BF16=1)");
+            eprintln!("[gdn-state] bf16-stored GDN state (MEMRA_GDN_STATE_BF16=1)");
         }
         Ok(engine)
     }
