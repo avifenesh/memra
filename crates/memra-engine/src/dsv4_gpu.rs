@@ -2643,12 +2643,15 @@ impl Dsv4Gpu {
         self.plain_sampler
     }
 
-    /// Gate-only topology admission.  Must be set before `load`; an armed
-    /// request currently refuses before allocating the PP loader.
+    /// Gate placement selector, read by [`Self::load`] before it places the model: armed, the
+    /// load takes TP/EP (`Dsv4Placement::TpEp`), PP-2 otherwise. Serving passes its placement
+    /// to [`Self::load_placed`] and never reads it.
     pub fn set_tp_ep_topology_for_gate(enabled: bool) -> bool {
         dsv4_topology::set_tp_ep_for_gate(enabled)
     }
 
+    /// Gate selector for attention TP2 under [`Self::load`]; it requires the TP/EP selector
+    /// above. Serving passes its placement to [`Self::load_placed`] and never reads it.
     pub fn set_attention_tp_for_gate(enabled: bool) -> bool {
         dsv4_attention_tp::set_for_gate(enabled)
     }
