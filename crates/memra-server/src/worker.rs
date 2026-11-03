@@ -7376,6 +7376,8 @@ fn spec_gate_pp2_placement() -> bool {
     exactly_two_stages && memra_engine::pp::pp_sharded_cross_device()
 }
 
+/// Frozen at the first read, so that read must follow the model loads: `MEMRA_PARALLEL=auto`
+/// sets the PP env that `spec_gate_pp2_placement` reads during load.
 fn spec_gate_thresholds() -> &'static SpecGateThresholds {
     static T: std::sync::OnceLock<SpecGateThresholds> = std::sync::OnceLock::new();
     T.get_or_init(|| {
@@ -27978,7 +27980,6 @@ pub fn run(
         "[worker] Engine ready (device={device}, MEMRA_FAST={})",
         fast
     );
-    log_spec_gate_policy();
 
     let (constraint_result_tx, constraint_result_rx) =
         std::sync::mpsc::channel::<crate::constrained::ConstraintCompileResult>();
@@ -28329,6 +28330,9 @@ pub fn run(
         );
         order.push(name.clone());
     }
+    // After every load: MEMRA_PARALLEL=auto writes MEMRA_PP_STAGES/MEMRA_PP_DEVICES inside the
+    // load, and this first read freezes the placement-keyed spec-gate thresholds.
+    log_spec_gate_policy();
     // Template capability probe (serve-tools lane): same substring laws the renderer uses.
     // + /v1/models metadata (serve-tail lane): context length from the model config,
     // tokenizer family from the pre-tokenizer name, instruct family from the template's
@@ -49687,6 +49691,28 @@ mod tests {
     fn spec_gate_defaults_follow_placement() {
         assert_eq!(spec_gate_defaults(false), (2, 4));
         assert_eq!(spec_gate_defaults(true), (0, 1));
+    }
+
+    /// The boot policy line is the first read that freezes the spec-gate thresholds, so it
+    /// must run after the model loads: `MEMRA_PARALLEL=auto` writes `MEMRA_PP_STAGES` inside
+    /// the load, and a pre-load read froze an auto PP-2 placement at the single-card 2/4.
+    #[test]
+    fn spec_gate_policy_freezes_after_the_model_loads() {
+        let src = include_str!("worker.rs");
+        let run = src.find("\npub fn run(").expect("the worker run fn");
+        let body = &src[run..run + src[run..].find("\n}\n").expect("run's end")];
+        let last_load = body
+            .rfind("HybridModel::load(")
+            .max(body.rfind("HybridModel::load_from_source("))
+            .expect("run loads models");
+        let policy = body
+            .find("log_spec_gate_policy();")
+            .expect("run logs the spec-gate policy");
+        assert!(
+            policy > last_load,
+            "the spec-gate policy read precedes a model load"
+        );
+        assert_eq!(body.matches("log_spec_gate_policy();").count(), 1);
     }
 
     /// TOOTH for the wave-admission K mismatch (hermes 48ad6c1b66bb2fa6 class): the K
