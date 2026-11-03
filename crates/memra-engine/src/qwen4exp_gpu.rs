@@ -18036,10 +18036,14 @@ impl Qwen4ExpGpu {
 }
 
 impl Qwen4ExpGpu {
-    /// One TP2 decode step (t == 1, eager issue — decode graphs stay off in TP2; the
-    /// joins are the schedule). Prefill stays single-card; the first call migrates the
-    /// state (one-way latch). Requires the bf16-trunk + fused-gate seams ON (replicated
-    /// compute must be deterministic-kernel-only).
+    /// One TP2 decode step (t == 1; the joins are the schedule). With the decode-graph and
+    /// step-workspace seams on (both default ON) each rank runs per-layer SEGMENT GRAPHS for
+    /// the capturable segments, the single-card StepGraphs pattern: the first TP2 step runs
+    /// fully eager to park every slot, the next captures each segment lazily, and later steps
+    /// replay them; the rest of the step issues eagerly. With either seam off every step
+    /// issues eagerly. Prefill stays
+    /// single-card; the first call migrates the state (one-way latch). Requires the
+    /// bf16-trunk + fused-gate seams ON (replicated compute must be deterministic-kernel-only).
     pub fn decode_step_tp2(
         &self,
         e0: &Engine,
