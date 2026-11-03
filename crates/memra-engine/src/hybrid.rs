@@ -2103,7 +2103,7 @@ fn build_dev_exps(
     // (`moe_resident_fp8_e4m3`). The stacked loader (`load_fp8_stacked_native_with_policy`) owns
     // the arch decision and refuses a native bank on builds without the tile, for every
     // residency branch, so none reaches here.
-    debug_assert!(fp8_host.is_none() || crate::fp8_ffi::fp8_blk_mmq_built());
+    debug_assert!(fp8_host.is_none() || crate::fp8_ffi::fp8_blk_kernels_built());
     use cudarc::driver::DevicePtr;
     let n_expert = gate.n_expert;
     let (g, u) = (
