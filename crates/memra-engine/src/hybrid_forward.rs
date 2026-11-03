@@ -27,26 +27,15 @@ pub struct PrimeSlabs {
     pub xb: CudaSlice<f32>,
     pub h16: CudaSlice<u8>,
     pub z16: CudaSlice<u8>,
-    /// piecewise boundary slabs (increment 2): GEMM outputs land here so the
-    /// downstream captured segments see fixed addresses.
+    /// piecewise boundary slabs (increment 2): GEMM outputs land here at fixed, retained
+    /// addresses instead of a fresh allocation per call.
     pub gate: CudaSlice<f32>, // t * n_ff_max
     pub up: CudaSlice<f32>,      // t * n_ff_max
     pub ffn_out: CudaSlice<f32>, // t * n_embd
-    /// piecewise increment 3: per-layer S-glue segment graphs (down-add + next
-    /// attn-norm, ALL-slab IO, zero in-graph allocations -> keeperless capture is
-    /// clean). Baked at this t_cap; replay only when t == t_cap. seg_glue[il] fires
-    /// between layer il and il+1 (ping-pong parity is deterministic per il).
-    pub seg_glue: Vec<Option<cudarc::driver::CudaGraph>>,
-    /// increment 5 (core-split edition): the mixer out-GEMM writes _into_ `mixed`
-    /// directly (no staging copy — the increment-4 copy route was refuted), making
-    /// S-mid [add + post-norm] all-slab and capturable.
-    pub mixed: CudaSlice<f32>,
-    pub seg_mid: Vec<Option<cudarc::driver::CudaGraph>>,
-    pub seg_t: usize,
 }
 
-// Split prime ranges cannot enter the full-range segment-graph arm, and every slab access
-// is serialized by its device mutex after binding that device's CUDA context on the thread.
+// Every slab access is serialized by its device mutex after binding that device's CUDA
+// context on the thread.
 unsafe impl Send for PrimeSlabs {}
 
 /// Shared-expert gate+up at t==1: NVFP4 fused2 (the ornith15/qwen35moe NVFP4 mints keep
@@ -1648,7 +1637,7 @@ fn hyper_prime_ranges_natural(t: usize, gdn_grid: bool, ring_on: bool) -> Vec<(u
 /// Admission workspace shape of the NON-hyper prime (memra#144): the GDN / dense-MoE trunk
 /// (ornith, qwen-hybrid) and the step-TP trunk (step-3.7). `prime_layers` keeps its trunk
 /// transients in the retained prime slab pool sized by the CALL's row count
-/// (`prime_slabs_get`): seven f32 `[t, n_embd]` planes (h, x1, z, xa, xb, ffn_out, mixed),
+/// (`prime_slabs_get`): six f32 `[t, n_embd]` planes (h, x1, z, xa, xb, ffn_out),
 /// two f16 mirrors (h16, z16), three f32 `[t, n_ff_max]` planes (act, gate, up), plus the
 /// per-call f16 activation (`a16`), the f16 pre-norm operand, and the `x`/`hn` copies the
 /// tail takes. The whole-prompt `hiddens` stack (`[t, n_embd]` f32) lives for the prime.
@@ -2066,7 +2055,7 @@ impl HybridModel {
     /// each prime_layers stage and accumulates wall time per stage class, printed after
     /// every prime_layers call (cumulative across chunks/reps). The per-stage syncs
     /// serialize launch/execute overlap, so the summed total exceeds the naked prime wall —
-    /// attribution ratios only, never a measured default run. Non-seg serial arm only.
+    /// attribution ratios only, never a measured default run.
     fn prime_anatomy_on() -> bool {
         static E: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
         *E.get_or_init(|| std::env::var("MEMRA_PRIME_ANATOMY").as_deref() == Ok("1"))
@@ -2481,10 +2470,10 @@ impl HybridModel {
             .unwrap_or(h)
             .max(h);
         let f32b = std::mem::size_of::<f32>();
-        // slab planes: 7 f32 + 2 f16 on n_embd, 3 f32 on n_ff; per-call extras: a16 (f16 ff),
+        // slab planes: 6 f32 + 2 f16 on n_embd, 3 f32 on n_ff; per-call extras: a16 (f16 ff),
         // the f16 pre-norm operand (n_embd), and the x / hn copies (2 f32 n_embd).
         let mut call_row_bytes =
-            (7 + 2) * h * f32b + (2 + 1) * h * 2 + 3 * n_ff_max * f32b + n_ff_max * 2;
+            (6 + 2) * h * f32b + (2 + 1) * h * 2 + 3 * n_ff_max * f32b + n_ff_max * 2;
         // Routed-expert staging per row (the grouped f16 GEMM path in `moe_ffn_inner`): the
         // gathered inputs, three projection planes with f16 mirrors, the down output and
         // the scatter/partial planes, all sized by the USED expert count and the expert FFN
@@ -6648,8 +6637,7 @@ impl HybridModel {
                 + s.xb.len()
                 + s.gate.len()
                 + s.up.len()
-                + s.ffn_out.len()
-                + s.mixed.len();
+                + s.ffn_out.len();
             f32s * 4 + s.h16.len() + s.z16.len()
         })
     }
@@ -6683,10 +6671,6 @@ impl HybridModel {
                     gate: e.uninit(t * n_ff_max)?,
                     up: e.uninit(t * n_ff_max)?,
                     ffn_out: e.uninit(t * n_embd)?,
-                    seg_glue: Vec::new(),
-                    mixed: e.uninit(t * n_embd)?,
-                    seg_mid: Vec::new(),
-                    seg_t: 0,
                 })),
             );
         }
@@ -6829,9 +6813,7 @@ impl HybridModel {
     ///     kernel-check-pinned `add_rms_norm == add then rms_norm` identity, the same law
     ///     the decode split rests on (`prime-split-gate` arbitrates end-to-end);
     ///   - prime slabs are PER-DEVICE (`prime_slabs_get` keys on the engine ordinal), so
-    ///     each stage walks through its own resident transients;
-    ///   - the S-glue/S-mid capture path requires the FULL range (its lookahead fuses
-    ///     `self.layers[il+1]` unconditionally) — `use_seg` gains `lo == 0 && hi == n_layers`.
+    ///     each stage walks through its own resident transients.
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn prime_layers(
         &self,
@@ -6894,14 +6876,6 @@ impl HybridModel {
             &mut CudaSlice<f32>,
             Option<SlabRefs>,
         );
-        #[allow(clippy::type_complexity)]
-        // allow: one-shot composite type; naming it would hide the shape that matters at the call site
-        let mut seg: Option<(
-            &mut Vec<Option<cudarc::driver::CudaGraph>>,
-            &mut Vec<Option<cudarc::driver::CudaGraph>>,
-            &mut CudaSlice<f32>,
-            &mut usize,
-        )> = None;
         let mut x_own2;
         match slab_guard.as_mut() {
             Some(g) => {
@@ -6919,15 +6893,10 @@ impl HybridModel {
                     gate,
                     up,
                     ffn_out,
-                    seg_glue,
-                    mixed,
-                    seg_mid,
-                    seg_t,
                     ..
                 } = slabs;
                 x_cur = xa;
                 x_nxt = xb;
-                seg = Some((seg_glue, seg_mid, mixed, seg_t));
                 sl = Some((h, x1, z, act, h16, z16, gate, up, ffn_out));
             }
             None => {
@@ -6992,48 +6961,8 @@ impl HybridModel {
                 sl_fo = &mut alloc_fo;
             }
         }
-        // piecewise increment 3: layer-0 norm hoisted; the per-layer tail fuses
-        // [down-add + NEXT layer's attn-norm] into one captured S-glue segment
-        // (all-slab IO, zero in-graph allocations). Capture happens lazily on the
-        // first prime at this t (capture does not execute -> launch right after).
-        let n_layers = self.layers.len();
-        // OPT-IN (2026-07-26 interleaved verdict): 2-kernel segments measured NET
-        // -0.7%-to-neutral under the interleaved A/B protocol — one cuGraphLaunch costs
-        // about what two kernel submissions do. The earlier "+0.9%" was cross-run clock
-        // drift (the repo's interleaved-A/B law exists for exactly this). Larger segments
-        // (S-prep/S-attn, 7-9 kernels) remain the open hypothesis; the core-split
-        // machinery stays (byte-identical) as their foundation.
-        // step35 is excluded: the core-split path calls `full_attn_prime_core_inner`, which is
-        // the GENERIC attn core (uniform n_head, rope_dim_count, no window, no head-wise gate).
-        // step35 rides its own mixer through the normal per-layer arm below.
-        let use_seg = f16fuse
-            && seg.is_some()
-            && !self.uses_sliding_gated_moe_program()
-            && lo == 0
-            && hi == n_layers
-            && std::env::var("MEMRA_PRIME_SEG").as_deref() == Ok("1")
-            // GRAPH-LAUNCH HEADROOM GUARD (see spec::GRAPH_LAUNCH_MIN_FREE): below the
-            // driver-free floor this prime call takes the eager fused else-arm (the
-            // byte-identical twin the opt-in was gated against) instead of replaying
-            // the S-mid/S-glue segment graphs into an exhausted card. Probe runs only
-            // when the opt-in flag is armed (short-circuit order).
-            && {
-                let ok = crate::spec::graph_launch_headroom_ok(e);
-                if !ok {
-                    static NOTED: std::sync::Once = std::sync::Once::new();
-                    NOTED.call_once(|| crate::spec::graph_replay_suspended_note("prime-seg"));
-                }
-                ok
-            };
-        if let Some((sg, sm, _, st)) = seg.as_mut()
-            && **st != t
-        {
-            sg.clear();
-            sg.extend((0..n_layers).map(|_| None));
-            sm.clear();
-            sm.extend((0..n_layers).map(|_| None));
-            **st = t;
-        }
+        // Layer-`lo` norm hoisted; the per-layer tail fuses [down-add + NEXT layer's
+        // attn-norm] into one launch (`add_rms_norm_f16out`).
         {
             let layer_lo = &self.layers[lo];
             if f16fuse {
@@ -7086,152 +7015,90 @@ impl HybridModel {
             let resid_on = !f16fuse
                 && Engine::prime_resid_on()
                 && crate::qwen_prime_graph::current().is_none();
-            if use_seg {
-                // core-split path: projections -> _inner core -> out-GEMM INTO the mixed
-                // slab (no copies) -> S-mid segment [add + post-norm] as one graph launch.
-                let (pre, pre16, w_out) = match &layer.mixer {
-                    Mixer::Full(fa) => {
-                        let g3 =
-                            e.matmul_group_prefill_xh(&[&fa.wq, &fa.wk, &fa.wv], h, hx16, t)?;
-                        let (pre, pre16) =
-                            self.full_attn_prime_core_inner(e, fa, g3, pos_d, t, cache, il, false)?;
-                        (pre, pre16, &fa.wo)
-                    }
-                    Mixer::Mla(_) => crate::hybrid::mla_path_unimplemented("core-split prime"),
-                    Mixer::Kda(_) => {
-                        crate::hybrid::kda_path_unimplemented("core-split captured prime")
-                    }
-                    Mixer::Linear(la) => {
-                        let ws = [&la.wqkv, &la.wqkv_gate, &la.ssm_beta, &la.ssm_alpha];
-                        let g4 = e.matmul_group_prefill_xh(&ws, h, hx16, t)?;
-                        let (pre, pre16) = self.linear_attn_prime_core_pad_inner(
-                            e, la, g4, t, cache, il, None, false,
-                        )?;
-                        (pre, pre16, &la.ssm_out)
-                    }
-                };
-                {
-                    let (_, sm, mslab, _) = seg.as_mut().unwrap();
-                    let pre_n = pre.len() / t;
-                    // Build the f16 operand only for a weight the f16 GEMM can take.
-                    let f16_used = if Engine::f16_mirror_prefill(w_out) {
-                        let xh_pre = match pre16 {
-                            Some(x) => x,
-                            None => e.f16_act(&pre, t * pre_n)?,
-                        };
-                        e.try_f16_gemm_pre_into_prefill(w_out, &xh_pre, t, mslab)?
-                    } else {
-                        false
-                    };
-                    if !f16_used {
-                        let y = e.matmul_prefill(w_out, &pre, t)?;
-                        e.copy_into(mslab, 0, &y, t * n_embd)?;
-                    }
-                    if sm[il].is_none() {
-                        use cudarc::driver::sys::{CUgraphInstantiate_flags, CUstreamCaptureMode};
-                        let w_post = layer.post_attn_norm.float_data();
-                        e.stream().synchronize()?;
-                        e.stream()
-                            .begin_capture(CUstreamCaptureMode::CU_STREAM_CAPTURE_MODE_RELAXED)?;
-                        let r = (|| -> Result<(), Box<dyn std::error::Error>> {
-                            e.add(x_cur, mslab, x1, t * n_embd)?;
-                            e.rms_norm_f16out(x1, w_post, z, z16, n_embd, t, eps)?;
-                            Ok(())
-                        })();
-                        let g = e.stream().end_capture(
-                            CUgraphInstantiate_flags::CUDA_GRAPH_INSTANTIATE_FLAG_AUTO_FREE_ON_LAUNCH);
-                        r?;
-                        sm[il] = Some(g?.ok_or("S-mid capture produced no graph")?);
-                    }
-                    sm[il].as_ref().unwrap().launch()?;
-                }
-            } else {
-                let mixer_resid_armed =
-                    resid_on && matches!(layer.mixer, Mixer::Full(_) | Mixer::Linear(_));
-                if mixer_resid_armed {
-                    e.gemm_resid_request(x_cur, n_embd, t);
-                }
-                let mixed = match &layer.mixer {
-                    Mixer::Full(fa) => {
-                        let y =
-                            self.full_attn_prime(e, fa, h, hx16, pos_d, t, cache, il, seq_end)?;
-                        anat_mark!(0);
-                        y
-                    }
-                    Mixer::Linear(la) => {
-                        let y = self.linear_attn_prime(e, la, h, hx16, t, cache, il)?;
-                        anat_mark!(1);
-                        y
-                    }
-                    Mixer::Mla(mla) => self.mla_attn_cached(e, mla, h, pos_d, t, il, cache)?,
-                    Mixer::Kda(la) => {
-                        let y = crate::kda::kda_prime_cached(e, la, h, t, eps, cache, il)?;
-                        anat_mark!(1);
-                        y
-                    }
-                };
-                // `mixed` holds x_cur + the mixer output when the projection took the residual
-                let mixer_resid = mixer_resid_armed && e.gemm_resid_take();
-                if f16fuse {
-                    // round 28: residual+norm in ONE kernel (add_rms_norm precedent,
-                    // bit-identical) — the standalone add pass disappears.
-                    e.add_rms_norm_f16out(
-                        x_cur,
-                        &mixed,
-                        layer.post_attn_norm.float_data(),
-                        x1,
-                        z,
-                        z16,
-                        n_embd,
-                        t,
-                        eps,
-                    )?;
-                } else {
-                    // The residual add and the post-attention norm in one kernel; when the dense
-                    // FFN's gate and up both take the F8F4 v2 tile, that kernel also writes their
-                    // shared activation scratch (the quantize-once scope adopts it). Same values.
-                    let w_post = layer.post_attn_norm.float_data();
-                    let quant = Engine::add_rms_norm_f8f4v2_ok(n_embd)
-                        && match &layer.ffn {
-                            crate::hybrid::Ffn::Dense {
-                                ffn_gate, ffn_up, ..
-                            } => e.f8f4_v2_direct(ffn_gate, t) && e.f8f4_v2_direct(ffn_up, t),
-                            _ => false,
-                        };
-                    if !Self::prime_norm_fuse_on() {
-                        e.f8f4_seed_clear();
-                        if !mixer_resid {
-                            e.add(x_cur, &mixed, x1, t * n_embd)?;
-                            e.rms_norm(x1, w_post, z, n_embd, t, eps)?;
-                        } else {
-                            e.rms_norm(&mixed, w_post, z, n_embd, t, eps)?;
-                        }
-                    } else if quant {
-                        // No f32 norm output: its only readers here are gate and up, and both
-                        // take the seeded scratch.
-                        let key = e.addr_f32(z);
-                        if !mixer_resid {
-                            e.add_rms_norm_f8f4v2(
-                                x_cur, &mixed, w_post, x1, None, key, false, n_embd, t, eps,
-                            )?;
-                        } else {
-                            e.rms_norm_f8f4v2(&mixed, w_post, None, key, false, n_embd, t, eps)?;
-                        }
-                        z_written = false;
-                    } else {
-                        e.f8f4_seed_clear();
-                        if !mixer_resid {
-                            e.add_rms_norm(x_cur, &mixed, w_post, x1, z, n_embd, t, eps)?;
-                        } else {
-                            e.rms_norm(&mixed, w_post, z, n_embd, t, eps)?;
-                        }
-                    }
-                }
-                if mixer_resid {
-                    x1_mixed = Some(mixed);
-                }
-                anat_mark!(4);
+            let mixer_resid_armed =
+                resid_on && matches!(layer.mixer, Mixer::Full(_) | Mixer::Linear(_));
+            if mixer_resid_armed {
+                e.gemm_resid_request(x_cur, n_embd, t);
             }
+            let mixed = match &layer.mixer {
+                Mixer::Full(fa) => {
+                    let y = self.full_attn_prime(e, fa, h, hx16, pos_d, t, cache, il, seq_end)?;
+                    anat_mark!(0);
+                    y
+                }
+                Mixer::Linear(la) => {
+                    let y = self.linear_attn_prime(e, la, h, hx16, t, cache, il)?;
+                    anat_mark!(1);
+                    y
+                }
+                Mixer::Mla(mla) => self.mla_attn_cached(e, mla, h, pos_d, t, il, cache)?,
+                Mixer::Kda(la) => {
+                    let y = crate::kda::kda_prime_cached(e, la, h, t, eps, cache, il)?;
+                    anat_mark!(1);
+                    y
+                }
+            };
+            // `mixed` holds x_cur + the mixer output when the projection took the residual
+            let mixer_resid = mixer_resid_armed && e.gemm_resid_take();
+            if f16fuse {
+                // round 28: residual+norm in ONE kernel (add_rms_norm precedent,
+                // bit-identical) — the standalone add pass disappears.
+                e.add_rms_norm_f16out(
+                    x_cur,
+                    &mixed,
+                    layer.post_attn_norm.float_data(),
+                    x1,
+                    z,
+                    z16,
+                    n_embd,
+                    t,
+                    eps,
+                )?;
+            } else {
+                // The residual add and the post-attention norm in one kernel; when the dense
+                // FFN's gate and up both take the F8F4 v2 tile, that kernel also writes their
+                // shared activation scratch (the quantize-once scope adopts it). Same values.
+                let w_post = layer.post_attn_norm.float_data();
+                let quant = Engine::add_rms_norm_f8f4v2_ok(n_embd)
+                    && match &layer.ffn {
+                        crate::hybrid::Ffn::Dense {
+                            ffn_gate, ffn_up, ..
+                        } => e.f8f4_v2_direct(ffn_gate, t) && e.f8f4_v2_direct(ffn_up, t),
+                        _ => false,
+                    };
+                if !Self::prime_norm_fuse_on() {
+                    e.f8f4_seed_clear();
+                    if !mixer_resid {
+                        e.add(x_cur, &mixed, x1, t * n_embd)?;
+                        e.rms_norm(x1, w_post, z, n_embd, t, eps)?;
+                    } else {
+                        e.rms_norm(&mixed, w_post, z, n_embd, t, eps)?;
+                    }
+                } else if quant {
+                    // No f32 norm output: its only readers here are gate and up, and both
+                    // take the seeded scratch.
+                    let key = e.addr_f32(z);
+                    if !mixer_resid {
+                        e.add_rms_norm_f8f4v2(
+                            x_cur, &mixed, w_post, x1, None, key, false, n_embd, t, eps,
+                        )?;
+                    } else {
+                        e.rms_norm_f8f4v2(&mixed, w_post, None, key, false, n_embd, t, eps)?;
+                    }
+                    z_written = false;
+                } else {
+                    e.f8f4_seed_clear();
+                    if !mixer_resid {
+                        e.add_rms_norm(x_cur, &mixed, w_post, x1, z, n_embd, t, eps)?;
+                    } else {
+                        e.rms_norm(&mixed, w_post, z, n_embd, t, eps)?;
+                    }
+                }
+            }
+            if mixer_resid {
+                x1_mixed = Some(mixed);
+            }
+            anat_mark!(4);
             // the post-attention residual: x1, or the mixer output that already holds it
             let x1: &CudaSlice<f32> = match x1_mixed.as_ref() {
                 Some(m) => m,
@@ -7259,7 +7126,7 @@ impl HybridModel {
                         && ffn_down_pqs.is_none()
                         && e.f8f4_ffn_fused_ok(ffn_gate, ffn_up, ffn_down, t)
                     {
-                        if resid_on && !use_seg {
+                        if resid_on {
                             e.matmul_prefill_ffn_f8f4v2(
                                 ffn_gate,
                                 ffn_up,
@@ -7277,11 +7144,7 @@ impl HybridModel {
                                 ffn_gate, ffn_up, ffn_down, z, z_written, t, None,
                             )?
                             .ok_or("matmul_prefill_ffn_f8f4v2: no output")?;
-                        if use_seg {
-                            e.copy_into(sl_fo, 0, &y, t * n_embd)?;
-                        } else {
-                            fo_owned = Some(y);
-                        }
+                        fo_owned = Some(y);
                         break 'dense;
                     }
                     let n_ff = ffn_gate.out_features();
@@ -7327,11 +7190,7 @@ impl HybridModel {
                         && e.f8f4_prefill_direct(ffn_down, t);
                     if fuse_down {
                         let y = e.matmul_prefill_silu_f8f4(ffn_down, gate_src, up_src, t)?;
-                        if use_seg {
-                            e.copy_into(sl_fo, 0, &y, t * n_embd)?;
-                        } else {
-                            fo_owned = Some(y);
-                        }
+                        fo_owned = Some(y);
                     } else {
                         let act16 = if Self::f16out_on(e, t)
                             && self.cfg.m3.is_none()
@@ -7385,11 +7244,7 @@ impl HybridModel {
                             let y = e.matmul_prefill(ffn_down, &*act, t)?;
                             // The captured S-glue segment reads the slab's fixed address; the eager
                             // tail reads the GEMM output where it already is.
-                            if use_seg {
-                                e.copy_into(sl_fo, 0, &y, t * n_embd)?;
-                            } else {
-                                fo_owned = Some(y);
-                            }
+                            fo_owned = Some(y);
                         }
                     }
                 }
@@ -7402,28 +7257,7 @@ impl HybridModel {
             if let (crate::hybrid::Ffn::Dense { .. }, true) = (&layer.ffn, anat) {
                 anat_mark!(3);
             }
-            if use_seg && il + 1 < hi {
-                // S-glue segment: [add + next attn-norm(+f16out)] — one cuGraphLaunch
-                let w_next = self.layers[il + 1].attn_norm.float_data();
-                let (sg, _, _, _) = seg.as_mut().unwrap();
-                if sg[il].is_none() {
-                    use cudarc::driver::sys::{CUgraphInstantiate_flags, CUstreamCaptureMode};
-                    e.stream().synchronize()?;
-                    e.stream()
-                        .begin_capture(CUstreamCaptureMode::CU_STREAM_CAPTURE_MODE_RELAXED)?;
-                    let r = (|| -> Result<(), Box<dyn std::error::Error>> {
-                        e.add(x1, sl_fo, x_nxt, t * n_embd)?;
-                        e.rms_norm_f16out(x_nxt, w_next, h, h16, n_embd, t, eps)?;
-                        Ok(())
-                    })();
-                    let g = e.stream().end_capture(
-                        CUgraphInstantiate_flags::CUDA_GRAPH_INSTANTIATE_FLAG_AUTO_FREE_ON_LAUNCH,
-                    );
-                    r?;
-                    sg[il] = Some(g?.ok_or("S-glue capture produced no graph")?);
-                }
-                sg[il].as_ref().unwrap().launch()?;
-            } else if down_resid {
+            if down_resid {
                 // x_nxt already holds x1 + the FFN output: only the next layer's attention norm
                 // (the values add_rms_norm(x1, fo, ..) gives for that sum, kernel-check
                 // ADD-RMS-NORM-E4M3V2's norm-only arm)
