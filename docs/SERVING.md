@@ -225,7 +225,7 @@ resident heads retain the existing graph default. See [the capture receipt](../r
     The state itself is gated by a round-trip cell: a full-cover hit on a republished entry
     reproduces its publisher's own continuation byte-for-byte.
   Gates: `tools/spec-on-cache-hit-gate.sh` (in the tier-2 battery, `tools/local-ci.sh`; the
-  tag battery `tools/release-battery.sh` does not run it) — hit-engage +
+  tag battery `tools/release-battery.sh` does not run it): hit-engage +
   byte-identity vs the spec-off replay on both models, the sampled cells (engagement,
   per-seed identity vs cold, acceptance parity, suffix reproducibility, a plane-less
   refusal that names itself, penalized sampled hits, the boundary-draw sites and their
