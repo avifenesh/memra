@@ -18,7 +18,9 @@
 # to the DEFAULT row at the bottom: full kernel-check plus the gemma4 and qwen35-class
 # representatives. That is not one probe per model class. The registered probes load only the
 # gemma4_dense, gemma4_moe, qwen35, qwen35_moe and step35 packs, so the plan names every other
-# pack's own gates as REQUIRED lines (dependencies.json `unprobed-model-packs`).
+# pack's own gates as REQUIRED lines (dependencies.json `unprobed-model-packs`). Those lines are
+# static: they print for every engine, model-plan, build or harness change, not only for the
+# packs the change reaches (README.md says why).
 #
 # The mapping encodes the dispatch structure: which kernels serve which model classes.
 # Model classes (see models.tsv): g12/g31 = gemma4 dense Q4_0; e4b shares those quant kernels

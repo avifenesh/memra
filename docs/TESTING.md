@@ -389,7 +389,9 @@ dispatch structure: which kernels serve which model classes. Every matching row 
 to the plan (union); an unmatched path falls back to the `DEFAULT` plan (full kernel-check plus
 the gemma4 and qwen35-class representatives) and prints a warning (add a row when that happens).
 No registered probe loads the other model packs; the plan names their own gates as `REQUIRED`
-lines.
+lines. That list is static, not filtered by the packs a change reaches
+([`tools/fast-gate/README.md`](../tools/fast-gate/README.md) says why): run the ones the change
+reaches and give the reason for each one left out.
 
 kernel-check gained two loud diagnostics seams for this (see the `kc_model` header in
 `crates/memra-engine/src/bin/kernel_check.rs`):
