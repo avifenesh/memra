@@ -1,4 +1,8 @@
-//! Gate-only geometry for DSV4 head-parallel attention with an exact output join.
+//! Geometry for DSV4 head-parallel attention (attention TP2) with an exact output join.
+//!
+//! `Dsv4Gpu::load_placed` builds it for every `Dsv4Placement::TpEp { attention_tp: true }`
+//! load, the served two-card default since memra #710. Only [`set_for_gate`] is gate-only: it
+//! is how a gate that calls `Dsv4Gpu::load` selects this placement.
 //!
 //! KV latent, compressor and indexer state stay replicated. Each rank owns whole heads and
 //! whole wo_a groups, so its Q_b rows, attention and wo_a group outputs are the one-card
@@ -12,7 +16,8 @@ pub const ATTENTION_TP_NUMERIC_CLASS: &str = "dsv4_attention_head_split_row_gath
 
 static ENABLED_FOR_GATE: AtomicBool = AtomicBool::new(false);
 
-/// Before-load diagnostic control only. Existing model instances never change program.
+/// Before-load gate placement control only; serving never reads it. Existing model instances
+/// never change program.
 pub fn set_for_gate(enabled: bool) -> bool {
     ENABLED_FOR_GATE.swap(enabled, Ordering::AcqRel)
 }
