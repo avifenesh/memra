@@ -260,6 +260,9 @@ fn main() {
     let nvcc = resolve_nvcc();
     println!("cargo:rerun-if-env-changed=MEMRA_CUDA_ARCH");
     println!("cargo:rerun-if-env-changed=MEMRA_CUTLASS");
+    // Declared unconditionally: printed only inside its block, setting it after a build
+    // without it did not rerun this script, and the archive was silently left out.
+    println!("cargo:rerun-if-env-changed=MEMRA_DSV4_CUTLASS");
     println!("cargo:rustc-check-cfg=cfg(memra_portable_cuda)");
     println!("cargo:rustc-check-cfg=cfg(memra_hopper_mma)");
     println!("cargo:rustc-check-cfg=cfg(memra_sm100_tcgen05)");
@@ -781,7 +784,6 @@ fn main() {
     //
     // -fmad=false to match cu/dsv4_gpu.cu, because this family's numerics are the point.
     if std::env::var("MEMRA_DSV4_CUTLASS").is_ok() {
-        println!("cargo:rerun-if-env-changed=MEMRA_DSV4_CUTLASS");
         let dense_src = "cu/dsv4_dense_cutlass.cu";
         println!("cargo:rerun-if-changed={dense_src}");
         let root = std::env::var("MEMRA_CUTLASS_ROOT")
