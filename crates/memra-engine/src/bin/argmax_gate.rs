@@ -1,5 +1,6 @@
-//! CUDA-GRAPH-PLAN Phase 1 gate: device argmax_logits_f32_to_u32 must be BIT-IDENTICAL to the
-//! host argmax (smallest-index tie-break) over real decode logits. Runs N greedy steps, compares
+//! CUDA-GRAPH-PLAN Phase 1 gate: the device argmax (`Engine::argmax_token_device`, the 2-pass
+//! argmax_partial_f32 + argmax_final_f32 kernels) must be BIT-IDENTICAL to the host argmax
+//! (smallest-index tie-break) over real decode logits. Runs N greedy steps, compares
 //! the device token id to the host argmax token id every step. Any mismatch = FAIL.
 use memra_engine::Engine;
 use memra_engine::forward::argmax;
