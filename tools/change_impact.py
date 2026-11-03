@@ -298,9 +298,15 @@ def parse_trailers(messages, arch):
     return declared, reasons, missing
 
 
-def classify(changes, rules, arch, *, owners=None, crate_inputs=None, declared=None):
-    """Changes -> impact: the cells, the per-file classes and what stayed uncovered."""
+def classify(changes, rules, arch, *, owners=None, crate_inputs=None, declared=None, refiner=None):
+    """Changes -> impact: the cells, the per-file classes and what stayed uncovered.
+
+    refiner (tools/impact_map/gate.py) narrows a Rust/CUDA program file from the items the diff
+    changed: token-identical edits reach nothing, and build targets shrink to the devices the
+    changed items' map reach includes. Path rules decide first; the map only narrows."""
     files = [classify_file(c, rules, arch, owners=owners, crate_inputs=crate_inputs) for c in changes]
+    if refiner is not None and refiner.active():
+        files = [refiner.file(f) for f in files]
     covered = {name for name, pack in rules.get("pack", {}).items() if pack.get("roster")}
     cells, uncovered = {}, {}
     for item in files:
@@ -313,6 +319,12 @@ def classify(changes, rules, arch, *, owners=None, crate_inputs=None, declared=N
             continue
         if kind == "numeric" and item["pack"] and item["pack"] not in covered:
             uncovered.setdefault(item["pack"], []).append(item["path"])
+            continue
+        if kind in PROGRAM and item.get("uncovered_families"):
+            # the map places every changed item on families no battery model belongs to: the
+            # battery cannot see the change; those families' own gates are the evidence
+            for fam in item["uncovered_families"]:
+                uncovered.setdefault(fam, []).append(item["path"])
             continue
         scopes = UNKNOWN_SCOPES if kind == UNKNOWN else (kind,)
         scopes = set(scopes) | ({"defaults"} if item["defaults"] else set()) | ({"perf"} if item["perf"] else set())
@@ -382,6 +394,9 @@ def render(impact):
                      f"its pack gate is the evidence ({len(paths)} path(s), e.g. {paths[0]})")
     if impact["declared_targets"] is not None:
         lines.append("  narrowed by Impact-Targets: " + ", ".join(impact["declared_targets"]))
+    if impact.get("map"):
+        from impact_map import gate as impact_gate
+        lines.extend(impact_gate.render_plan(impact["map"]))
     return "\n".join(lines)
 
 
@@ -551,15 +566,20 @@ def validate_rules(rules, arch):
     return rules
 
 
-def impact_between(repo, base, head, rules_text=None):
+def impact_between(repo, base, head, rules_text=None, use_map=True):
     arch = arch_table_at(repo, head)
     rules = load_rules(rules_text, arch) if rules_text is not None else rules_in_force(repo, base, head, arch)
     changes = diff_changes(repo, base, head)
     inputs, owners = crate_inputs_at(repo, head, [c.path for c in changes])
     declared, reasons, _ = parse_trailers(range_messages(repo, base, head), arch)
-    impact = classify(changes, rules, arch, owners=owners, crate_inputs=inputs, declared=declared)
+    refiner = None
+    if use_map:
+        from impact_map import gate as impact_gate
+        refiner = impact_gate.Refiner(repo, base, head, rules, arch)
+    impact = classify(changes, rules, arch, owners=owners, crate_inputs=inputs, declared=declared, refiner=refiner)
     impact["declared_reasons"] = reasons
     impact["base"], impact["head"] = base, head
+    impact["map"] = refiner.report() if refiner is not None else None
     return impact, rules, arch
 
 
@@ -570,11 +590,12 @@ def main():
     parser.add_argument("--head", default="HEAD")
     parser.add_argument("--json", action="store_true")
     parser.add_argument("--rules", type=Path, help="what-if: classify with this rules file instead of the head's")
+    parser.add_argument("--no-map", action="store_true", help="path rules only (ignore docs/impact-map/map.json)")
     args = parser.parse_args()
     try:
         base = _git(args.repo, "merge-base", args.base, args.head).stdout.decode().strip()
         impact, _, _ = impact_between(args.repo, base, args.head,
-                                      args.rules.read_text() if args.rules else None)
+                                      args.rules.read_text() if args.rules else None, use_map=not args.no_map)
     except ImpactError as error:
         print(f"change impact: REFUSED: {error}", file=sys.stderr)
         return 1

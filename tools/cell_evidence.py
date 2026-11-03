@@ -352,6 +352,11 @@ def proven_cells(repo, candidate, rules, arch, log=print, push_base=None):
         try:
             record = json.loads(git(repo, "show", f"{candidate}:{path}"))
             if record.get("inputs_sha256") != candidate_inputs:
+                held = still_proven(repo, record, root, candidate, rules, arch, push_base, log)
+                if held:
+                    target, kinds = held
+                    proven.setdefault(target, set()).update(kinds)
+                    by_device.setdefault(record["device"]["class"], set()).update(kinds)
                 continue
             target, kinds = verify_record(record, TreeEvidence(repo, candidate, root), repo, candidate,
                                           rules, arch, candidate_inputs, push_base)
@@ -363,6 +368,50 @@ def proven_cells(repo, candidate, rules, arch, log=print, push_base=None):
         log(f"  record {root}: {ci.target_name(rules, target)} {','.join(sorted(kinds))} "
             f"on {record['device']['class']}")
     return proven, by_device
+
+
+def _is_ancestor(repo, a, b):
+    return subprocess.run(["git", "-C", str(repo), "merge-base", "--is-ancestor", a, b]).returncode == 0
+
+
+KIND_SCOPES = {"battery": set(ci.CORRECTNESS), "serving": {"serving", "gate"}, "perf": {"perf", "gate"}}
+
+
+def still_proven(repo, record, root, candidate, rules, arch, push_base, log=print):
+    """A record measured an older commit. It still proves a kind on its target when no change from
+    its tested commit to the candidate reaches that target in a scope the kind covers (change
+    impact with the impact map: delta against the last measured commit). Perf also needs the push
+    base to be equivalent to the record's base on that target. -> (target, kinds) or None."""
+    import release_qualification as q
+    tested = record.get("tested_commit")
+    if not (isinstance(tested, str) and COMMIT.fullmatch(tested)):
+        return None
+    if git(repo, "cat-file", "-t", tested, check=False).strip() != b"commit" or not _is_ancestor(repo, tested, candidate):
+        return None
+    try:
+        own_base = (record.get("kinds", {}).get("perf") or {}).get("base_commit")
+        target, kinds = verify_record(record, TreeEvidence(repo, candidate, root), repo, tested, rules, arch,
+                                      inputs_digest(repo, tested), own_base)
+        impact, _, _ = ci.impact_between(repo, tested, candidate)
+    except (EvidenceError, q.GateError, ci.ImpactError, KeyError, TypeError, ValueError, subprocess.SubprocessError) as error:
+        log(f"  record {root}: older commit, not admitted: {error}")
+        return None
+    reached = {c["scope"] for c in impact["cells"] if c["target"] == target}
+    held = {k for k in kinds if not (KIND_SCOPES.get(k, set()) & reached)}
+    if "perf" in held and own_base != push_base:
+        try:
+            base_impact, _, _ = ci.impact_between(repo, own_base, push_base)
+            if any(c["target"] == target for c in base_impact["cells"]):
+                held.discard("perf")
+        except (ci.ImpactError, subprocess.SubprocessError):
+            held.discard("perf")
+    if not held:
+        log(f"  record {root} ({tested[:12]}): changes since reach {ci.target_name(rules, target)} "
+            f"[{','.join(sorted(reached))}]: re-measure")
+        return None
+    log(f"  record {root} ({tested[:12]}): still proves {','.join(sorted(held))} on {ci.target_name(rules, target)}: "
+        f"no change since reaches it in those scopes")
+    return target, held
 
 
 # ------------------------------------------------------------------------------ gate

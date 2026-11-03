@@ -202,6 +202,28 @@ class CellGate(unittest.TestCase):
         with self.assertRaisesRegex(q.GateError, "missing evidence"):
             self.f.push()
 
+    def test_older_record_still_proves_when_no_change_since_reaches_its_target(self):
+        # delta against the last measured commit: a later change gated to other targets (the
+        # fail-closed stub reaches only 90a and 89) leaves the sm_120a record valid
+        self.f.write("crates/memra-engine/cu/qmatvec.cu", "__global__ void k() { int x = 5; }\n")
+        measured = self.f.commit("kernel")
+        self.f.record(measured, ["battery", "perf"])
+        self.f.write("crates/memra-engine/cu/mmq_fp4_stub.cu", "__global__ void stub() { __trap(); }\n")
+        self.f.write("README.md", "# fixture, reworded\n")
+        self.f.commit("stub and docs")
+        out = self.f.push()
+        self.assertIn("still proves battery,perf on sm_120a", out)
+        self.assertIn("CELL-QUALIFIED", out)
+
+    def test_older_record_is_stale_once_a_change_reaches_its_target(self):
+        self.f.write("crates/memra-engine/cu/qmatvec.cu", "__global__ void k() { int x = 6; }\n")
+        measured = self.f.commit("kernel")
+        self.f.record(measured, ["battery", "perf"])
+        self.f.write("crates/memra-engine/src/lib.rs", "pub fn f() { let _ = 2; }\n")
+        self.f.commit("engine numeric change")
+        with self.assertRaisesRegex(q.GateError, "missing evidence"):
+            self.f.push()
+
     def test_tampered_record_is_not_admitted(self):
         self.f.write("crates/memra-engine/cu/qmatvec.cu", "__global__ void k() { int x = 5; }\n")
         code = self.f.commit("kernel")

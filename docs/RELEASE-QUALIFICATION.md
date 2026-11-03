@@ -72,6 +72,35 @@ commits are ignored), and each one needs a reason. It never narrows `build`, `ga
 unknown files. The gate prints the reasons. The daily regression still runs every
 device, so a wrong declaration fails there.
 
+### The impact map
+
+The path rules answer per file. `docs/impact-map/map.json` answers per item. It holds:
+
+- every Rust and CUDA item with its comment-free token hash;
+- each item's reach: the (family, route, device) cells that can execute it;
+- each item's effect kinds;
+- the predicate regions that narrow reach inside a function.
+
+[`docs/impact-map/README.md`](impact-map/README.md) says how it is built and checked. For a Rust or CUDA program file of class `kernel`, `numeric` or `serving` that is not flagged for device-keyed defaults, the gate refines the path rule's answer from the items the diff changed:
+
+- **No item's token hash moved** (comment, doc-comment or format-only edit): the file reaches no cell.
+- **Every changed item is placed by the map:**
+  - the file's targets are intersected with the targets of the devices those items reach;
+  - `perf` is dropped when no changed item has a speed effect;
+  - a `numeric` file whose items reach only families that no battery roster model belongs to is reported UNCOVERED for those families.
+- **Otherwise** (an item the map cannot place): the path rule's answer stands.
+
+The map in force is the push base's, like the rules. `change_impact.py` and `cell_evidence.py need` also print the run plan. That is one model per reached family and device, with the routes and tests its cells need, chosen from `docs/impact-map/models.json`. Reached cells no model on hand covers are listed. `--no-map` gives the path-rule answer alone.
+
+A record measured at an older commit still proves its kinds on its target when four things hold:
+
+- its tested commit is an ancestor of the candidate;
+- it verifies against its own commit;
+- the change impact from that commit to the candidate reaches no cell of that target in the scopes those kinds cover;
+- for `perf`, the push base is also equivalent to the record's base on that target.
+
+So a record banked for one push keeps covering later pushes until a change reaches its target.
+
 Evidence per target (`tools/cell_evidence.py`):
 
 | cell scope | evidence |
