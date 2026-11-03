@@ -488,31 +488,13 @@ pub fn dsa_score_rp() -> i32 {
 pub static MLA_DSA_SELECT_DISPATCHES: std::sync::atomic::AtomicU64 =
     std::sync::atomic::AtomicU64::new(0);
 
-/// `MEMRA_B200_DSA_SELECT` (DEFAULT ON on sm_100a builds, see [`mla_dsa_select_on_from`]; `=0` is
-/// the rollback seam, read per call), compile-time gated
-/// to sm_100a builds exactly like its two siblings, so a 120a/90a/89 build sees no behaviour
-/// change from a var it cannot engage.
-///
-/// WHAT IT REPLACES. `memra_mla_kpool_select_kernel` grids `t_q` blocks, so plain decode runs it
-/// on ONE CTA -- 0.68% of a 148-SM die -- sweeping `n_pools` up to ten times (8 MSB-first radix
-/// passes, an optional unique-resolution scan, then the membership count and the emit). It is
-/// depth-LINEAR in `n_pools = t_kv / pool` and it is what the `MEMRA_B200_DSA_DECODE` lane's
-/// scorer fix stopped hiding.
-///
-/// THE CLASS IS EXACT, not banded, and that is a construction rather than a hope. The emitted
-/// plane is a pure function of ONE 64-bit number: the `select_k`-th smallest order key
-/// `(desc32(score) << 32) | pool_index`. That key is a strictly decreasing injection composed
-/// with a unique index, so keys are DISTINCT and "the k-th smallest" is unambiguous; reproducing
-/// it bit-for-bit reproduces the selection bit-for-bit. The parallel pipeline computes the same
-/// key and runs the same `key(p) <= thr` test, so this is a launch-geometry change with an exact
-/// answer. `dsa-select-gate` asserts the `idx` plane byte-identical to the shipped kernel and
-/// carries a RED ARM that must fail first.
-/// `MEMRA_KPOOL_SELECT_V2=1` (lane/kpool-select-v2-20260906, default OFF, decide-by 2026-09-20):
-/// the single-CTA k-pool selector runs the v2 body (warp-aggregated histogram
-/// atomics, warp-scan rank walk and emit prefix; the same key, ranks and emit order). Output
-/// bit-identical by construction; gate `tests/mla_kpool_select_v2_gpu.rs`. Read per call. Below
-/// the multi-CTA door's floor this is the selector every long-context decode step runs (trace
-/// 2026-09-05 at 245k tokens: 174 us per launch at 61,323 pools, 15% of the token).
+/// `MEMRA_KPOOL_SELECT_V2=1` (lane/kpool-select-v2-20260906, default OFF, decide-by 2026-11-17,
+/// re-filed with its box receipts; see the FLAGS.md row): the single-CTA k-pool selector runs
+/// the v2 body (warp-aggregated histogram atomics, warp-scan rank walk and emit prefix; the same
+/// key, ranks and emit order). Output bit-identical by construction; gate
+/// `tests/mla_kpool_select_v2_gpu.rs`. Read per call. Below the multi-CTA door's floor this is
+/// the selector every long-context decode step runs (trace 2026-09-05 at 245k tokens: 174 us per
+/// launch at 61,323 pools, 15% of the token).
 pub(crate) fn mla_kpool_select_v2_on() -> bool {
     std::env::var("MEMRA_KPOOL_SELECT_V2").as_deref() == Ok("1")
 }
@@ -536,6 +518,25 @@ fn kpool_select_v2_announce(twin: &str, t_q: usize, n_pools: usize) {
     }
 }
 
+/// `MEMRA_B200_DSA_SELECT` (DEFAULT ON on sm_100a builds, see [`mla_dsa_select_on_from`]; `=0` is
+/// the rollback seam, read per call), compile-time gated
+/// to sm_100a builds exactly like its two siblings, so a 120a/90a/89 build sees no behaviour
+/// change from a var it cannot engage.
+///
+/// WHAT IT REPLACES. `memra_mla_kpool_select_kernel` grids `t_q` blocks, so plain decode runs it
+/// on ONE CTA -- 0.68% of a 148-SM die -- sweeping `n_pools` up to ten times (8 MSB-first radix
+/// passes, an optional unique-resolution scan, then the membership count and the emit). It is
+/// depth-LINEAR in `n_pools = t_kv / pool` and it is what the `MEMRA_B200_DSA_DECODE` lane's
+/// scorer fix stopped hiding.
+///
+/// THE CLASS IS EXACT, not banded, and that is a construction rather than a hope. The emitted
+/// plane is a pure function of ONE 64-bit number: the `select_k`-th smallest order key
+/// `(desc32(score) << 32) | pool_index`. That key is a strictly decreasing injection composed
+/// with a unique index, so keys are DISTINCT and "the k-th smallest" is unambiguous; reproducing
+/// it bit-for-bit reproduces the selection bit-for-bit. The parallel pipeline computes the same
+/// key and runs the same `key(p) <= thr` test, so this is a launch-geometry change with an exact
+/// answer. `dsa-select-gate` asserts the `idx` plane byte-identical to the shipped kernel and
+/// carries a RED ARM that must fail first.
 fn mla_dsa_select_on() -> bool {
     cfg!(memra_sm100_tcgen05)
         && mla_dsa_select_on_from(std::env::var("MEMRA_B200_DSA_SELECT").ok().as_deref())

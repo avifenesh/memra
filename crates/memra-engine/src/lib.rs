@@ -3555,7 +3555,8 @@ pub fn topk_warp_dispatches() -> u64 {
     TOPK_WARP_DISPATCHES.load(std::sync::atomic::Ordering::Relaxed)
 }
 
-/// `MEMRA_E4M3_BATCH_R2=1` (lane/e4m3-batch-r2-20260905, default OFF, decide-by 2026-09-19):
+/// `MEMRA_E4M3_BATCH_R2=1` (lane/e4m3-batch-r2-20260905, default OFF, decide-by 2026-11-17,
+/// re-filed with its box rows; see the FLAGS.md row):
 /// the batched F8-E4M3 matvec tier at mcols 2, 4, 8 (`qmatvec_e4m3_mmvq_b{2,4,8}`, the verify
 /// walk's KDA six at t = K+1) runs the `_r2` twins, two output rows per warp sharing one
 /// activation load and one int8 -> f32 conversion per (column, k). Same weight decode, same
@@ -3574,7 +3575,8 @@ pub fn e4m3_batch_r2_dispatches() -> u64 {
     E4M3_BATCH_R2_DISPATCHES.load(std::sync::atomic::Ordering::Relaxed)
 }
 
-/// `MEMRA_Q80_BATCH_R2=1` (lane/q80-batch-r2-20260905, default OFF, decide-by 2026-09-19): the
+/// `MEMRA_Q80_BATCH_R2=1` (lane/q80-batch-r2-20260905, default OFF, decide-by 2026-11-17,
+/// re-filed with its box rows; see the FLAGS.md row): the
 /// batched Q8_0 matvec tier at mcols 2, 4, 8 (`qmatvec_q8_0_mmvq_b{2,4,8}` and their `_rp`
 /// split-plane twins: the MLA/DSA projections at t = K+1 in the verify walk) runs the `_r2`
 /// twins, two output rows per warp sharing one activation load per (column, k32 block). Same
