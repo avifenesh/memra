@@ -291,7 +291,7 @@ static DSV4_DENSE_WO_A_GROUPED_DISPATCHES: AtomicU64 = AtomicU64::new(0);
 static DSV4_INDEX_TOPK_RADIX: AtomicBool = AtomicBool::new(false);
 static DSV4_INDEX_TOPK_RADIX_DISPATCHES: AtomicU64 = AtomicU64::new(0);
 
-/// Numeric class of the gate-only replicated TP/EP expert partial join.
+/// Numeric class of the TP/EP expert partial join (the served two-card default, memra #710).
 pub const TP_EP_RANK_ORDER_NUMERIC_CLASS: &str = crate::dsv4_ep::TP_EP_RANK_ORDER_NUMERIC_CLASS;
 
 #[inline]
