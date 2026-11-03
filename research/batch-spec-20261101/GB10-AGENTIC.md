@@ -104,7 +104,7 @@ The remaining gap to vLLM at c >= 16 is the dp4a decode matmul, which is latency
 
 ## Exact tensor-core b32 tier, served (2026-11-03, 20:54-21:29)
 
-A fresh boot at 0e914ccf4c. The boot wave probe measured two 16-row waves at 275.6 ms, one 32-row wave at 265.3 ms on dp4a and 232.4 ms on the tensor-core tier, so it chose wave cap 32 with the tensor-core b32 tier on (`gb10-agentic/tc-b32/`).
+A fresh boot of the server built at 35897adf14 (the same code tree as 0e914ccf4c). The boot wave probe measured two 16-row waves at 275.6 ms, one 32-row wave at 265.3 ms on dp4a and 232.4 ms on the tensor-core tier, so it chose wave cap 32 with the tensor-core b32 tier on (`gb10-agentic/tc-b32/`).
 
 | c | before the levers | lever 3 (dp4a b32) | fp32 base, c1..c32 sequence | **tensor-core b32** | vLLM |
 |---:|---:|---:|---:|---:|---:|
