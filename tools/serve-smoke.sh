@@ -5,7 +5,8 @@
 # the SERVING level, not just the kernel gates).
 #
 # Usage: tools/serve-smoke.sh [model.gguf [draft.gguf]]
-# Defaults to the E4B QAT pair (fast load). Exits nonzero on any failed check.
+# Defaults to the Qwen3.5-9B NVFP4 MTP model and its own-trim regime draft (see MODEL and
+# DRAFT below). Exits nonzero on any failed check.
 set -uo pipefail
 cd "$(dirname "$0")/.."
 
