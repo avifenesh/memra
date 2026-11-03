@@ -22316,8 +22316,9 @@ impl HybridModel {
         crate::debug_assert_tensor_stream_device(ones, &e.stream(), "gemma4_attn_prime.ones");
 
         // quantize-once window: q/k/v share `h` — the MMQ D4 activation quantizes once
-        // (h stays borrowed across the triple, so the cache key can't go stale).
-        e.mmq_act_begin();
+        // (h stays borrowed across the triple, so the cache key can't go stale). The window
+        // closes after v0, before any other activation can reach the cache.
+        let act_window = e.mmq_act_begin();
         let q0 = e.matmul(&fa.wq, h, t)?; // [t, nh*hd]
         if il == 0 && std::env::var("MEMRA_G4_PRIME_TRACE").as_deref() == Ok("1") {
             let v = e.dtoh(&q0)?;
@@ -22336,6 +22337,7 @@ impl HybridModel {
         } else {
             e.clone_dtod(&k0)?
         };
+        drop(act_window);
         if il == 0 && std::env::var("MEMRA_G4_PRIME_TRACE").as_deref() == Ok("1") {
             for (tag, buf) in [("k0", &k0), ("v0", &v0)] {
                 let v = e.dtoh(buf)?;
@@ -23459,8 +23461,9 @@ impl HybridModel {
                 match fused {
                     Some(p) => p,
                     None => {
-                        // quantize-once window: gate/up share `zsh` (borrowed across the pair).
-                        e.mmq_act_begin();
+                        // quantize-once window: gate/up share `zsh` (borrowed across the pair);
+                        // it closes at the end of this arm.
+                        let _act_window = e.mmq_act_begin();
                         (e.matmul(ffn_gate, &zsh, t)?, e.matmul(ffn_up, &zsh, t)?)
                     }
                 }
