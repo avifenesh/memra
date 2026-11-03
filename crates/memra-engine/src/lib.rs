@@ -567,25 +567,10 @@ pub fn dsv4_moe_m1_stream_dispatches() -> u64 {
 
 /// DSV4 fused one-token MoE (memra #17 lane, `research/dsv4f-bringup-20260923/moe-fused/`).
 /// Two launches replace the grouped chain's 16 on the plain one-token step when the checks
-/// are deferred to the step-end fault word, bit-identical to that chain. Like the stream
-/// visitor above it is the code, not a door: there is no environment read, and the gate
-/// override runs the unfused chain in one loaded model.
-static DSV4_MOE_FUSED_OVERRIDE: AtomicI8 = AtomicI8::new(-1);
-
-pub fn dsv4_moe_fused_on() -> bool {
-    DSV4_MOE_FUSED_OVERRIDE.load(Ordering::Acquire) != 0
-}
-
-pub fn set_dsv4_moe_fused_for_gate(enabled: bool) -> bool {
-    let previous = dsv4_moe_fused_on();
-    DSV4_MOE_FUSED_OVERRIDE.store(enabled as i8, Ordering::Release);
-    previous
-}
-
-pub fn clear_dsv4_moe_fused_for_gate() {
-    DSV4_MOE_FUSED_OVERRIDE.store(-1, Ordering::Release);
-}
-
+/// are deferred to the step-end fault word, bit-identical to that chain. It is the code, not
+/// a door: there is no environment read and no override. The fused-vs-chain identity is
+/// pinned by the `dsv4_grouped` CUDA unit tests, which run both programs directly.
+///
 /// Snapshot of the CUDA-side successful enqueue receipt for both fused MoE launchers.
 pub fn dsv4_moe_fused_dispatches() -> u64 {
     unsafe { dsv4_ffi::memra_dsv4_moe_fused_dispatches() }
