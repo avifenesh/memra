@@ -96,7 +96,8 @@ pub fn tp_kv_rank_allocation_shape(
 }
 
 /// FP8-GLOBALS switch (MEMRA_GEMMA_GKV, default ON): gemma global (hd512) layers keep
-/// their KV in e4m3 — the dequant-latency arc (HANDOVER). Windowed layers stay q8_0/q5_1.
+/// their KV in e4m3 — the dequant-latency arc (HANDOVER). Windowed layers follow
+/// MEMRA_GEMMA_WKV ([`wkv_on`]: e4m3 unless MEMRA_DRAFT is set, else q8_0/q5_1).
 pub fn gkv_on() -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *ON.get_or_init(|| {
