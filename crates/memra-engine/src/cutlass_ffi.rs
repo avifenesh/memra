@@ -231,24 +231,6 @@ impl crate::Engine {
         Ok((b_packed, sfb_sw))
     }
 
-    /// Quantize an activation [m,k] f32 to the CUTLASS A operand: plain packed e2m1 [m,k/2] + swizzled
-    /// SFA. Uses the same NVFP4 quantizer the smoke test proved correct (CUTLASS dtype ctors), so the
-    /// bytes are exactly what the GEMM decodes. Per-prefill (per-token amax). Returns (a_packed, sfa_sw).
-    pub fn quantize_fp4_act_cutlass(
-        &self,
-        x: &CudaSlice<f32>,
-        m: usize,
-        k: usize,
-    ) -> Result<(CudaSlice<u8>, CudaSlice<u8>), Box<dyn std::error::Error>> {
-        let mut a_packed = self.alloc_u8(m * k / 2)?;
-        let mut sfa_linear = self.alloc_u8(m * (k / 16))?;
-        self.cutlass_nvfp4_quant_ref(x, &mut a_packed, &mut sfa_linear, m, k)?;
-        let sfa_bytes = self.cutlass_sfa_size(m, k);
-        let mut sfa_sw = self.alloc_u8(sfa_bytes)?;
-        self.cutlass_repack_sfa(&sfa_linear, &mut sfa_sw, m, k)?;
-        Ok((a_packed, sfa_sw))
-    }
-
     /// High-level CUTLASS NVFP4 GEMM for the dispatch seam: given the repacked weight (b_packed,
     /// sfb_swizzled), quantize the activation to CUTLASS layout, run the GEMM with alpha=scale folded
     /// into the epilogue (replaces the post-matmul scale_inplace), and return y [m,n] f32 RowMajor.

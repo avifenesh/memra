@@ -4334,11 +4334,6 @@ use memra_gguf::model_packs::qwen35::activation::PROGRAM_SLOTS;
 /// reverting any one call site and watching the number drop.
 pub static A4_PREFILL_LAUNCHES: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
-/// Read the calibrated-A4 launch counter.
-pub fn a4_prefill_launches() -> u64 {
-    A4_PREFILL_LAUNCHES.load(std::sync::atomic::Ordering::Relaxed)
-}
-
 /// Reset the calibrated-A4 launch counter and return its previous value.
 pub fn a4_prefill_launches_reset() -> u64 {
     A4_PREFILL_LAUNCHES.swap(0, std::sync::atomic::Ordering::Relaxed)
@@ -4401,13 +4396,6 @@ pub const A4_CLIP_STRIDE: usize = 8;
 pub const A4_STATS_STRIDE: usize = 72;
 
 static A4_STATS: std::sync::Mutex<Option<CudaSlice<u64>>> = std::sync::Mutex::new(None);
-
-/// True when a recalibration pass is collecting operand statistics. While armed, `matmul_prefill`
-/// accumulates the operand and then takes the ORDINARY W4A8 path, so the statistics describe the
-/// activations the SERVED arithmetic produces rather than A4-perturbed ones.
-pub fn a4_stats_armed() -> bool {
-    A4_STATS.lock().unwrap().is_some()
-}
 
 /// The recalibration buffer, for the Engine methods that arm and drain it.
 pub fn a4_stats_buffer() -> &'static std::sync::Mutex<Option<CudaSlice<u64>>> {
