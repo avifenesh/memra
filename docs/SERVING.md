@@ -1800,7 +1800,8 @@ known from its path) and the full registry again before the ready handoff. Each 
 `[route-contract] model= route= capacity= implemented=[..] refused=[..]` line per route; the
 DSv4 line today refuses rewrite-qualification (#449) and prime-fairness (#535), each with its
 issue, and implements occupancy, progress and service-metrics (#500, #501) and memory-cost (#503)
-as below. `RouteRegistry::capacity_for(model)` is the number the admission cap mirror reads (#501).
+as below. The route contract's capacity is the number the admission cap mirror reads (#501): the
+worker registers the route's `RouteLoad` with it (`route_telemetry::register`).
 
 **A dedicated route owns its health, its admission and its memory door (#500, #501, #503,
 2026-09-22).** The DSv4 thread is the only dedicated route today. These are the code halves with
