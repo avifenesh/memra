@@ -2679,3 +2679,15 @@ request (sm_120a engine replay: logits bitdiff 248319, greedy text diverging at 
 `research/decode-exact-641-20260923/RESULTS.md`). The +5.7% / +2.8% / +0.7% batched-prime wins
 recorded above are given up. No H100 cell was re-measured for this removal; a varlen twin over
 the dequantized cache view is the way back, with its own bit-identity gate.
+
+**PDL entry wait restored on 90a (2026-11-03).** `MEMRA_PDL_ENTRY` in `kernels.cu`,
+`qmatvec.cu` and `flash_attn.cu` was keyed on `!MEMRA_PORTABLE_CUDA && __CUDA_ARCH__ >= 900`.
+build.rs defines `MEMRA_PORTABLE_CUDA` for 90a as well as 89, so the 90a build compiled the
+`cudaGridDependencySynchronize()` out while `launch_pdl` / `launch_pdl_flash` still set the
+programmatic stream serialization attribute (`MEMRA_PDL` is default ON with no arch check). A
+dependent grid could then start before its producer's stores were visible, and after a DSv4
+chain kernel (`memra_pdl_chain.cuh` issues `launch_dependents` at entry) it could run beside
+the producer. The macro is now keyed on `__CUDA_ARCH__ >= 900` alone, as the chain header
+already was. sm_120a and sm_100a compile the same code as before; sm_89 has no PDL and still
+compiles the wait out. No H100 cell was re-measured for this change: kernel-check, decode-dc
+and graph-decode on Hopper are the gates that prove it.
