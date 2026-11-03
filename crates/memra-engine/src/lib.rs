@@ -25045,6 +25045,8 @@ impl Engine {
         xh: &CudaSlice<u8>,
         m: usize,
     ) -> Result<Vec<CudaSlice<f32>>, Box<dyn std::error::Error>> {
+        // Quantize-once window over the siblings (see `matmul_group`).
+        let _act_window = self.mmq_act_begin();
         let mut out = Vec::with_capacity(ws.len());
         let in_f = ws[0].in_features();
         for w in ws {
@@ -25153,6 +25155,8 @@ impl Engine {
         {
             return self.matmul_group(ws, x, m);
         }
+        // Quantize-once window over the siblings (see `matmul_group`).
+        let _act_window = self.mmq_act_begin();
         let mut out = Vec::with_capacity(ws.len());
         for w in ws {
             out.push(self.matmul_prefill(w, x, m)?);
@@ -25167,6 +25171,13 @@ impl Engine {
         m: usize,
     ) -> Result<Vec<CudaSlice<f32>>, Box<dyn std::error::Error>> {
         use crate::model::GpuTensor;
+        // QUANTIZE-ONCE WINDOW over the siblings: every member reads the same `x`, borrowed for
+        // the whole call, so its address cannot be recycled inside the window, and Q4_0 MMQ
+        // members with the same in_f quantize the D4 activation once (`mmq_act_begin`). Before
+        // the window had a close (a4a5ad4e53) these groups got that sharing by accident, from
+        // the slot surviving between calls; the window keeps it by construction and nowhere
+        // else. The quantize is deterministic, so output bytes are the same either way.
+        let _act_window = self.mmq_act_begin();
         let mut out = Vec::with_capacity(ws.len());
         let any_mirror = ws
             .iter()
