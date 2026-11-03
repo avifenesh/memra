@@ -332,7 +332,8 @@ fn charge_local_copy() {
 /// repetitions of the same greedy walk diverged — because every per-slot expert row is a
 /// fresh stream-ordered allocation on the peer whose async free was enqueued on the PEER
 /// stream while the ROOT stream's pull was still reading it. The step seam banks the same
-/// hazard as a keepalive comment (`tp.rs:7831-7834`). And note the more valuable half of
+/// hazard as a keepalive comment (`remote_down_keepalive` in `tp.rs`
+/// `run_routed_experts_native_device`). And note the more valuable half of
 /// that gate run: arm X2 (peer-pull composed with the EP dispatch diet) PASSED EVERY BAR on
 /// the same broken build — a VACUOUS GREEN; the undieted arm is the one that can see it,
 /// which is why both arms are gated and why the sequential walk is not retired.
@@ -392,12 +393,13 @@ impl<'a> Hop<'a> {
     /// THE DESIGN DELTA vs the step seam, stated because it is the whole point of this lane.
     /// `tp.rs`'s native-P2P pull sites fence the producer with a host
     /// `engine.stream().synchronize()` — see the "PRODUCER FENCE (2026-08-20 flake fix)"
-    /// comments at `tp.rs:3543` and `tp.rs:2636`. That is correct and it is also a full
-    /// stream drain, i.e. it keeps the exact cost class this lane exists to delete: a
-    /// native-P2P arm built that way still pays one host sync per hop and would read as
-    /// "native P2P did not help". This link instead uses the `pp.rs` `BoundarySlot` ordering
-    /// contract (`ev_tx.record(s_tx)` then `s_rx.wait(&ev_tx)`, `pp.rs:2647`/`pp.rs:2678`),
-    /// which the hy3 PP-4 qualification closed at 50/50 fresh processes and 200/200 runtime
+    /// comments in `tp.rs` (`bf16_column_parallel_resident_device_shards`,
+    /// `gather_native_column_shards_device` and the other sites that carry that tag). That is
+    /// correct and it is also a full stream drain, i.e. it keeps the exact cost class this lane
+    /// exists to delete: a native-P2P arm built that way still pays one host sync per hop and
+    /// would read as "native P2P did not help". This link instead uses the `pp.rs`
+    /// `BoundarySlot` ordering contract (`ev_tx.record(s_tx)` then `s_rx.wait(&ev_tx)`, in
+    /// `tx_slot_path` / `rx_slot_path`), which the hy3 PP-4 qualification closed at 50/50 fresh processes and 200/200 runtime
     /// probes with zero byte mismatch on this exact card class — and which the tp2 lane
     /// already cherry-picked onto this line (`tp2-20260831/LANE.md` stage 1). So: PULL
     /// direction from `tp.rs`, EVENT ordering from `pp.rs`, host syncs from neither.
