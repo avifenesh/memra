@@ -117,3 +117,24 @@ Decode step, same binary, flag off/on:
 | 16 sessions, depth 2048, 1+1 | 127.70 | 116.93 | -8.4% | ffd722c3 / 73fe2628 |
 
 These match the bandwidth projection above (-6.4% to -9.0%). This branch sits on batch-spec 8e271ade80, before the tensor-core b32 tier, so its numbers are measured against the dp4a b32 tier.
+
+## Clean served A/B (2026-11-03 21:58 -> 2026-11-04 00:02)
+
+The same binary (`bin-gdnbf16`, c3356b88b3, built on batch-spec 8e271ade80, so without the tensor-core b32 tier), two fresh boots one after the other. Flag off, then flag on (`[gdn-state] bf16-stored GDN state` in the boot log). The agentic cell ran c1..c32 on each, with nothing sent to the server before its cells. One run each (`gdn-state-bf16-storage/served-off/`, `served-on/`).
+
+| c | fp32 state | bf16-stored state | change |
+|---:|---:|---:|---:|
+| 1 | 22.34 | 23.05 | +3.2% |
+| 2 | 29.02 | 23.80 | -18.0% |
+| 4 | 37.64 | 39.91 | +6.0% |
+| 8 | 62.59 | 60.22 | -3.8% |
+| 16 | 76.82 | 77.90 | +1.4% |
+| 32 | 79.23 | 80.60 | +1.7% |
+
+Draft acceptance over the whole run is the same: 0.494 (off) vs 0.497 (on). Both boots served plain at every n=8 verdict.
+
+The c=2 drop is the cost gate, not the state. With bf16 state the plain step is cheaper, so at n=2 the pooled-spec and plain predictions sit at break-even. The on-arm gate switched between K=0 and K=3 sixteen times, where the off arm mostly stayed on K=2..4. The c=8 difference is within single-run noise for this cell.
+
+At c16/c32 the served gain is +1.4% / +1.7%, against -6.6% / -8.9% per decode tick in the bench. The agentic cell's ticks are mixed-width and carry prime and admission work, which the GDN state does not touch.
+
+**Verdict for the owner.** bf16-stored GDN state is quality-neutral on the panel (160/164, 97/100). It cuts the decode tick 6.6-8.9% at 16-32 sessions and moves the served cell by -18% to +6% depending on c, single runs. It stays opt-in; the default is fp32.
