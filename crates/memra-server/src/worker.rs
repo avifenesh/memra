@@ -322,17 +322,6 @@ fn concat_prime_pp_eligibility(
     !pp_open || !streams_enabled || !cross_device
 }
 
-/// Prefix-split qualification follows the selected canonical layers, including mixed dense/MoE
-/// plans, rather than a whole-model family flag.
-fn routed_moe_prefix_split(plan: &memra_gguf::model_plan::ModelPlan) -> bool {
-    plan.layers.iter().any(|layer| {
-        matches!(
-            layer.mlp,
-            memra_gguf::model_plan::MlpPlan::Moe(ref moe) if moe.expert_count > 0
-        )
-    })
-}
-
 /// Can a spec-eligible prefix-cache hit re-arm a SpecSession from the restored carrier
 /// (lane/spec-on-cache-hit; SAMPLED arm lane/sampled-hit-spec 2026-08-19)? Pure decision
 /// half of the conversion at the admit probe. `None` = convert; `Some(reason)` = serve the
@@ -340,8 +329,8 @@ fn routed_moe_prefix_split(plan: &memra_gguf::model_plan::ModelPlan) -> bool {
 /// scope stayed invisible in production (0 restores AND 0 declines in the v0.93.0 DE deploy
 /// window looked identical to a mechanism that was never reached).
 ///   - the entry must carry a draft plane (spec-published entries only);
-///   - WHOLE-entry hits only (`entry_pos == fed_len`) — a (default-off) partial restore
-///     carries fewer trunk rows than the plane and stays on the plain path;
+///   - WHOLE-entry hits only (`entry_pos == fed_len`) — a mid-entry hit carries fewer
+///     trunk rows than the plane and stays on the plain path;
 ///   - a full-cover hit (empty suffix — the pure identical-repeat shape) additionally
 ///     needs the entry's boundary hidden AND logits;
 ///   - GREEDY **and SAMPLED** (v2). Every converted shape becomes an empty-suffix
@@ -785,10 +774,9 @@ struct DsparkColdPrefixAdmission {
     ///
     /// The caller sets this from `px.lookup` — a whole-entry FULL PREFIX of the prompt at or
     /// above `PREFIX_CACHE_MIN_TOKENS` — resolved once and reused by the restore, so the
-    /// decision and the restore cannot disagree. The only other way to consume a hit is the
-    /// mid-entry partial restore, which is default-OFF and refused outright on the hybrid/GDN
-    /// trunk `gdn_dspark_compatible` selects, so on this route a full-prefix entry is the whole
-    /// set.
+    /// decision and the restore cannot disagree. The plain path has no other way to consume a
+    /// hit (its mid-entry partial restore was deleted on a NO-GO receipt), so on this route a
+    /// full-prefix entry is the whole set.
     ///
     /// Review chased this predicate down three granularities, and the two rejected forms are
     /// recorded because each looked right: `prefix_on` alone (cache merely CONFIGURED — a
@@ -1038,8 +1026,9 @@ fn should_probe_prefix_cache(
 /// WHY IT CAN WORK: the suffix does NOT ride `decode_step`. A pool resume already primes a
 /// suffix into a restored dspark session (`dspark_resume = Some((sess, fed, suffix))`), so the
 /// path is shipped and gated; this reuses it with a cache carrier instead of a pool entry.
-/// That is what separates it from `MEMRA_PREFIX_PARTIAL_RESTORE` (NO-GO, research/
-/// lcprestore-20260813), whose suffix went through T=1 `decode_step` and byte-diverged.
+/// That is what separates it from the deleted plain partial restore (NO-GO, research/
+/// lcprestore-20260813; docs/FLAGS.md "Removed doors"), whose suffix went through T=1
+/// `decode_step` and byte-diverged.
 ///
 /// Its restored-vs-cold byte-identity gate (memra#1031, `tools/dspark-cold-drafter-gate.py`)
 /// is green on GB10, the RTX 5090 and the RTX PRO 6000 Max-Q. It defaults on with the other
@@ -6503,17 +6492,6 @@ fn carried_suffix_primes(hyper_trunk: bool, flag_on: bool) -> bool {
     hyper_trunk && flag_on
 }
 
-/// Immediate LCP-boundary restore. **Default OFF**: the lane that built this mechanism
-/// (`research/lcprestore-20260813/`, merged 6249b0096) returned NO-GO — restored K/V state hashes
-/// MATCH at splits 64/512/2048/4374, yet generated output BYTE-DIVERGES from a genuinely-cold
-/// request at splits 512 and 2048, and the cause was never established. Shipping the disproven
-/// path as the default was an integration mistake; it stays off until `cx-eosclass` root-causes
-/// the restored-state divergence class. `=1` arms it for measurement only.
-fn partial_prefix_restore_enabled() -> bool {
-    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ENABLED.get_or_init(|| std::env::var("MEMRA_PREFIX_PARTIAL_RESTORE").as_deref() == Ok("1"))
-}
-
 /// Expensive split-state evidence: D2H-hash every restored K/V byte and len mirror. Diagnostics
 /// only; production pays no copy or synchronization unless explicitly armed.
 fn prefix_split_trace_enabled() -> bool {
@@ -9635,64 +9613,6 @@ struct PrefixEntry {
     /// index until the last participating session retires.
     pins: usize,
     _tier_charge: Option<memra_engine::cache::tiered::hostprefix::ResidentCharge>,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum PartialPrefixDecision {
-    Restore,
-    RefuseNoSuffix,
-    RefuseRoutedMoe,
-    RefuseRecurrentMidEntry,
-    RefuseLatentMidEntry,
-}
-
-impl PartialPrefixDecision {
-    fn refusal(self) -> Option<&'static str> {
-        match self {
-            Self::Restore => None,
-            Self::RefuseNoSuffix => Some(
-                "request ends at the split and the longer entry has no logits for that boundary",
-            ),
-            Self::RefuseRoutedMoe => Some(
-                "routed-MoE mid-entry split is unqualified (Q35-A3B class stays on cold/snapshot fallback)",
-            ),
-            Self::RefuseRecurrentMidEntry => Some(
-                "hybrid conv/SSM state exists only at the entry endpoint and cannot be truncated",
-            ),
-            Self::RefuseLatentMidEntry => Some(
-                "latent (MLA/DSA) planes restore whole-entry only: an interior boundary's index \
-                 tail ring is unrecoverable and the suffix would re-prime through a different \
-                 numeric program",
-            ),
-        }
-    }
-}
-
-/// Decide only the NEW mid-entry path. Whole-entry lookup remains unchanged and already restores
-/// recurrent state exactly at its captured endpoint. For an actual mid-entry split, recurrent
-/// state, latent planes, and routed-MoE are fail-closed until their own boundary exactness
-/// receipts exist. The latent arm exists in its own right (not just via glm5's recurrent
-/// layers): an all-MLA pack (glm_dsa class) has `entry_has_recurrent == false` and must not
-/// slide through that gap when `MEMRA_PREFIX_PARTIAL_RESTORE=1` is armed.
-fn partial_prefix_decision(
-    entry_has_recurrent: bool,
-    entry_has_latent: bool,
-    routed_moe: bool,
-    lcp: usize,
-    entry_pos: usize,
-    prompt_len: usize,
-) -> PartialPrefixDecision {
-    if lcp >= prompt_len {
-        PartialPrefixDecision::RefuseNoSuffix
-    } else if routed_moe {
-        PartialPrefixDecision::RefuseRoutedMoe
-    } else if entry_has_recurrent && lcp != entry_pos {
-        PartialPrefixDecision::RefuseRecurrentMidEntry
-    } else if entry_has_latent && lcp != entry_pos {
-        PartialPrefixDecision::RefuseLatentMidEntry
-    } else {
-        PartialPrefixDecision::Restore
-    }
 }
 
 /// Device-independent half of restore preflight. This is deliberately one atomic check so the
@@ -24724,135 +24644,9 @@ fn prefix_entry_roundtrip_digest(
     Ok(format!("{VERIFY_PROGRAM_SPLIT_V3}:{:x}", hasher.finalize()))
 }
 
-/// Same digest over the actual freshly-restored Cache. Device `len_d` mirrors are read and must
-/// equal the split before a digest can be reported.
-fn prefix_cache_state_digest(
-    engine: &Engine,
-    cache: &Cache,
-    at: usize,
-) -> Result<String, Box<dyn std::error::Error>> {
-    if cache.pos != at {
-        return Err(format!("cache digest pos {} != split {at}", cache.pos).into());
-    }
-    let mut hasher = Sha256::new();
-    hasher.update(b"memra-prefix-split-state-v2");
-    digest_usize(&mut hasher, at);
-    digest_usize(&mut hasher, cache.kv.len());
-    for il in 0..cache.kv.len() {
-        digest_usize(&mut hasher, il);
-        match &cache.kv[il] {
-            Some(plane) => {
-                if plane.len != at {
-                    return Err(
-                        format!("cache digest layer {il} len {} != split {at}", plane.len,).into(),
-                    );
-                }
-                let len_d = engine.dtoh_i32(&plane.len_d)?;
-                if len_d.as_slice() != [at as i32] {
-                    return Err(
-                        format!("cache digest layer {il} len_d {len_d:?} != [{at}]",).into(),
-                    );
-                }
-                hasher.update([1]);
-                digest_usize(&mut hasher, plane.k_tok_bytes);
-                digest_usize(&mut hasher, plane.v_tok_bytes);
-                let kb = at
-                    .checked_mul(plane.k_tok_bytes)
-                    .ok_or("cache digest K byte count overflow")?;
-                let vb = at
-                    .checked_mul(plane.v_tok_bytes)
-                    .ok_or("cache digest V byte count overflow")?;
-                let k = engine.dtoh_u8_view(&plane.k.slice(0..kb))?;
-                let v = engine.dtoh_u8_view(&plane.v.slice(0..vb))?;
-                digest_usize(&mut hasher, k.len());
-                hasher.update(&k);
-                digest_usize(&mut hasher, v.len());
-                hasher.update(&v);
-            }
-            None => hasher.update([0]),
-        }
-        match &cache.recur[il] {
-            Some(recur) => {
-                hasher.update([1]);
-                digest_f32_plane(&mut hasher, &engine.dtoh(&recur.conv_state)?);
-                digest_f32_plane(&mut hasher, &engine.dtoh(&recur.ssm_state)?);
-            }
-            None => hasher.update([0]),
-        }
-        // The latent twin of the entry-side digest: hash the LOGICAL windows a snapshot carries
-        // (rows [0..len*width), keys [0..ready*d), the live tail), so a correctly restored cache
-        // digests byte-identically to its source entry. A layer left at len 0 (MTP, recorded
-        // absent at capture) digests as absent, matching the entry's None slot.
-        match &cache.latent[il] {
-            Some(layer) if layer.len > 0 => {
-                if layer.len != at {
-                    return Err(format!(
-                        "cache digest latent {il} len {} != split {at}",
-                        layer.len,
-                    )
-                    .into());
-                }
-                let len_d = engine.dtoh_i32(&layer.len_d)?;
-                if len_d.as_slice() != [at as i32] {
-                    return Err(
-                        format!("cache digest latent {il} len_d {len_d:?} != [{at}]",).into(),
-                    );
-                }
-                hasher.update([1]);
-                digest_usize(&mut hasher, layer.width);
-                digest_usize(&mut hasher, layer.len);
-                let rows = engine.dtoh_view(&layer.rows.slice(0..layer.len * layer.width))?;
-                digest_f32_plane(&mut hasher, &rows);
-                digest_usize(&mut hasher, layer.index_width);
-                digest_usize(&mut hasher, layer.index_pool);
-                digest_usize(&mut hasher, layer.index_pools_ready);
-                if layer.index_width > 0 && layer.index_pools_ready > 0 {
-                    let d = layer.index_width / 2;
-                    let keys = layer
-                        .index_pool_keys
-                        .as_ref()
-                        .ok_or_else(|| format!("cache digest latent {il} has no key plane"))?;
-                    hasher.update([1]);
-                    let keys = engine.dtoh_view(&keys.slice(0..layer.index_pools_ready * d))?;
-                    digest_f32_plane(&mut hasher, &keys);
-                } else {
-                    hasher.update([0]);
-                }
-                let tail_rows = if layer.index_width > 0 && layer.index_pool > 0 {
-                    layer.len - layer.index_pools_ready * layer.index_pool
-                } else {
-                    0
-                };
-                if tail_rows > 0 {
-                    let ring = layer.index_ring_rows.unwrap_or(0);
-                    let phys = memra_engine::cache::index_plane_physical_row(
-                        ring,
-                        layer.index_pool,
-                        layer.index_pools_ready * layer.index_pool,
-                    );
-                    let plane = layer
-                        .index_rows
-                        .as_ref()
-                        .ok_or_else(|| format!("cache digest latent {il} has no index plane"))?;
-                    hasher.update([1]);
-                    let tail =
-                        engine.dtoh_view(&plane.slice(
-                            phys * layer.index_width..(phys + tail_rows) * layer.index_width,
-                        ))?;
-                    digest_f32_plane(&mut hasher, &tail);
-                } else {
-                    hasher.update([0]);
-                }
-            }
-            _ => hasher.update([0]),
-        }
-    }
-    Ok(format!("{:x}", hasher.finalize()))
-}
-
 /// KVPROBE (lane/gemma-restore-exactness-20260819): digest the FIRST `at` rows of a LIVE
-/// cache, with `at <= cache.pos` allowed. `prefix_cache_state_digest` refuses `at != pos`,
-/// which makes it unable to answer the one question that matters here: are the KV bytes a
+/// cache, with `at <= cache.pos` allowed. A whole-cache digest that refuses `at != pos` cannot
+/// answer the one question that matters here: are the KV bytes a
 /// COLD 1048-row prime writes for rows [0..932) the same bytes a 932-row prime wrote (and
 /// therefore published, and therefore restored)? Diagnostics only; costs nothing unless
 /// MEMRA_KVPROBE_AT is set.
@@ -24875,9 +24669,8 @@ fn kvprobe_layers() -> bool {
     *L.get_or_init(|| std::env::var("MEMRA_KVPROBE_LAYERS").as_deref() == Ok("1"))
 }
 
-/// Whole-state digest over rows [0..at) of a live cache. Same byte-for-byte content as
-/// `prefix_cache_state_digest` when at == cache.pos, but a distinct domain tag so the two
-/// can never be confused in a log.
+/// Whole-state digest over rows [0..at) of a live cache, under its own domain tag so it can
+/// never be confused in a log with the prefix split trace's entry digests.
 #[allow(clippy::type_complexity)] // allow: one-shot composite type; naming it would hide the shape that matters at the call site
 fn kv_prefix_digest(
     engine: &Engine,
@@ -25031,22 +24824,6 @@ fn trace_prefix_entry_state(
                 entry.pos,
             );
         }
-        Err(err) => {
-            eprintln!("[prefix-cache-split-state] ERROR role={role} why={why} split={at}: {err}",)
-        }
-    }
-}
-
-fn trace_prefix_cache_state(engine: &Engine, cache: &Cache, at: usize, role: &str, why: &str) {
-    if !prefix_split_trace_enabled() {
-        return;
-    }
-    match prefix_cache_state_digest(engine, cache, at) {
-        Ok(state) => eprintln!(
-            "[prefix-cache-split-state] role={role} why={why} split={at} cache_pos={} \
-             state_sha256={state} boundary_logits_sha256=n/a-not-consumed",
-            cache.pos,
-        ),
         Err(err) => {
             eprintln!("[prefix-cache-split-state] ERROR role={role} why={why} split={at}: {err}",)
         }
@@ -28551,15 +28328,10 @@ pub fn run(
         };
         eprintln!(
             "[prefix-cache] on: budget {:.0}MB ({budget_provenance}), policy plain-LRU (global \
-             oldest unleased entry first; leases untouchable), min prefix {} tokens, immediate \
-             partial restore={} (transformer-only; hybrid mid-entry + routed-MoE N/A)",
+             oldest unleased entry first; leases untouchable), min prefix {} tokens, \
+             whole-entry restores only",
             budget_bytes as f64 / 1e6,
             PREFIX_CACHE_MIN_TOKENS,
-            if partial_prefix_restore_enabled() {
-                "on"
-            } else {
-                "off (rollback)"
-            },
         );
     } else if serve_batching()
         && matches!(prefix_budget, PrefixCacheBudget::Derived { bytes: 0, .. })
@@ -36616,11 +36388,11 @@ fn admit(
     //
     // WHY NOT `policy_lcp > 0`, which stood here for one round: `best_lcp` is the longest
     // common prefix against ANY pool entry with NO floor, so a 5-token overlap satisfied it
-    // while nothing consumable existed. The only other way to consume a hit is the mid-entry
-    // partial restore, which is default-OFF and, when armed, refused outright on the
-    // hybrid/GDN trunk `gdn_dspark_compatible` selects — so for this route a full-prefix entry
-    // is the whole set. Third and final granularity of the defect review chased across three
-    // rounds: the veto must never fire without a hit to take the cold prime's place.
+    // while nothing consumable existed. The plain path has no other way to consume a hit (its
+    // mid-entry partial restore was deleted on a NO-GO receipt), so for this route a
+    // full-prefix entry is the whole set. Third and final granularity of the defect review
+    // chased across three rounds: the veto must never fire without a hit to take the cold
+    // prime's place.
     let mut consumable_hit = if let Some(plan) = admission_restore {
         px.id_index(&plan.pin)
     } else if prefix_on {
@@ -36994,131 +36766,9 @@ fn admit(
             }
         }
 
-        let mut best_lcp = None;
-        if reused.is_none() {
-            best_lcp = px.best_lcp_entry(&pool_key, &prompt);
-            if partial_prefix_restore_enabled()
-                && best_lcp.is_some_and(|(_, lcp)| lcp >= PREFIX_CACHE_MIN_TOKENS)
-            {
-                let (i, lcp) = best_lcp.unwrap();
-                let (decision, source_len) = {
-                    let e = &px.entries[&pool_key][i];
-                    let has_recurrent =
-                        e.conv.iter().any(Option::is_some) || e.ssm.iter().any(Option::is_some);
-                    let has_latent = e.latent.iter().any(Option::is_some);
-                    let routed_moe = routed_moe_prefix_split(&lm.model.plan);
-                    (
-                        partial_prefix_decision(
-                            has_recurrent,
-                            has_latent,
-                            routed_moe,
-                            lcp,
-                            e.pos,
-                            prompt.len(),
-                        ),
-                        e.toks.len(),
-                    )
-                };
-                if let Some(reason) = decision.refusal() {
-                    eprintln!(
-                        "[prefix-cache] partial restore REFUSED: split {lcp} of source \
-                         {source_len}, prompt {} (model {}{}): {reason}; cold/snapshot fallback",
-                        prompt.len(),
-                        req.model,
-                        ns_suffix(&pool_key.1),
-                    );
-                } else {
-                    let restored = {
-                        let e = &px.entries[&pool_key][i];
-                        trace_prefix_entry_state(engine, e, lcp, "source", "immediate-partial");
-                        match vmm_build_cache(
-                            vmm_scope(engine, lm, ctx_cap, prompt.len(), 0),
-                            || {
-                                memra_engine::pp::new_cache_planned(
-                                    engine,
-                                    &lm.model.cfg,
-                                    &lm.model.plan,
-                                    ctx_cap,
-                                )
-                            },
-                        ) {
-                            Ok(mut c) => match prefix_restore_at(
-                                engine,
-                                &mut c,
-                                e,
-                                &pool_key,
-                                lcp,
-                                Some(&lm.model),
-                            ) {
-                                Ok(()) => {
-                                    trace_prefix_cache_state(
-                                        engine,
-                                        &c,
-                                        lcp,
-                                        "restored",
-                                        "immediate-partial",
-                                    );
-                                    Ok(ReuseEntry {
-                                        fed: e.toks[..lcp].to_vec(),
-                                        cache: c,
-                                        // A supported partial hit always has a non-empty suffix,
-                                        // so the endpoint logits are recomputed by suffix prime.
-                                        last_logits: Vec::new(),
-                                        cap: ctx_cap,
-                                        ckpt: None,
-                                        affinity: None,
-                                        fingerprint: Vec::new(),
-                                        parked_at: Instant::now(),
-                                        id: next_parked_id(),
-                                        settled: false,
-                                    })
-                                }
-                                Err(err) => Err(format!("partial restore failed: {err}")),
-                            },
-                            Err(err) => Err(format!("session cache alloc failed: {err}")),
-                        }
-                    };
-                    match restored {
-                        Ok(entry) => {
-                            prefix_pin = px.pin(&pool_key, i);
-                            debug_assert!(
-                                prefix_pin.is_some(),
-                                "partial lookup entry vanished before pin",
-                            );
-                            px.hits += 1;
-                            px.hit_tokens += lcp as u64;
-                            px.record_lcp(lcp);
-                            prefix_hit = true;
-                            eprintln!(
-                                "[prefix-cache] partial hit: {lcp} of {} prompt tokens from \
-                                 source {source_len} (model {}{}) — priming suffix {} only",
-                                prompt.len(),
-                                req.model,
-                                ns_suffix(&pool_key.1),
-                                prompt.len() - lcp,
-                            );
-                            reused = Some(entry);
-                        }
-                        Err(msg) => {
-                            if msg.starts_with("session cache alloc failed") {
-                                let n = px.evict_all();
-                                eprintln!(
-                                    "[prefix-cache] {msg}; evicted {n} entries, \
-                                     cold/snapshot fallback",
-                                );
-                            } else {
-                                eprintln!("[prefix-cache] {msg}; cold/snapshot fallback");
-                            }
-                        }
-                    }
-                }
-            }
-        }
         if reused.is_none() {
             px.misses += 1;
-            let l = best_lcp
-                .map(|(_, lcp)| lcp)
-                .unwrap_or_else(|| px.best_lcp(&pool_key, &prompt));
+            let l = px.best_lcp(&pool_key, &prompt);
             px.record_lcp(l); // histogram: best available LCP on a miss
             prefix_miss_lcp = Some(l);
             // Captures land ON the prime grid (grid_align_boundary): the entry then restores
@@ -37211,8 +36861,8 @@ fn admit(
     // machinery (suffix prime + fill anchored on the entry's boundary hidden).
     // Constraints, verified against the receipts rather than assumed:
     //   * WHOLE-entry hits only — the restore already happened at exactly e.pos through
-    //     the shipping path; mid-entry trunk restores stay behind
-    //     MEMRA_PREFIX_PARTIAL_RESTORE (lcprestore NO-GO / splitiso two-programs class).
+    //     the shipping path; the plain mid-entry trunk restore was deleted on its NO-GO
+    //     receipt (lcprestore / splitiso two-programs class).
     //   * every converted shape becomes an empty-suffix continuation — the engine feeds any
     //     prompt suffix itself through the plain path's exact program selection (the r3
     //     identity finding, research/spec-cache-20260818: handing the suffix to the burst
@@ -45800,17 +45450,15 @@ mod tests {
         Event, async_chain_devsample, cached_hit_needs_first_token, carried_prime_batch_eligible,
         emit_spec_token_events, interactive_prefill_budget, interactive_prime_batch_take,
         legacy_async_chain_width, prefill_tick_take, record_output_progress, record_output_tokens,
-        routed_moe_prefix_split, solo_widen_fresh, spec_visible_prefix, stop_token_reason,
-        summarize_confidence, utf8_delta,
+        solo_widen_fresh, spec_visible_prefix, stop_token_reason, summarize_confidence, utf8_delta,
     };
     use super::{HashMap, METER_TENANT_CAP, meter_account, meter_cached_credit};
     use super::{
         HostPrefixCache, HostPrefixEntry, PREFIX_CACHE_MIN_TOKENS, PREFIX_ENTRY_LAYOUT_VERSION,
-        PREFIX_REFUSAL_REANNOUNCE_EVERY, PartialPrefixDecision, PoolKey, PrefixCache, PrefixEntry,
-        PrefixFanoutCandidate, PrefixFanoutGroup, PrefixRefusalAnnouncer, PrefixRefusalShape,
-        host_promote_candidate, partial_prefix_decision, prefix_fanout_groups,
-        prefix_insert_refused_leased, prefix_insert_refused_oversize, retire_prefix_pin,
-        stable_boundary_arm, validate_prefix_plane_shape,
+        PREFIX_REFUSAL_REANNOUNCE_EVERY, PoolKey, PrefixCache, PrefixEntry, PrefixFanoutCandidate,
+        PrefixFanoutGroup, PrefixRefusalAnnouncer, PrefixRefusalShape, host_promote_candidate,
+        prefix_fanout_groups, prefix_insert_refused_leased, prefix_insert_refused_oversize,
+        retire_prefix_pin, stable_boundary_arm, validate_prefix_plane_shape,
     };
     use super::{KV_FLEX_GRANT, KvFlex, kv_flex_effective_budget, prefix_cache_budget_bytes};
     use super::{MAX_EVENT_QUEUE_EVENTS, event_channel};
@@ -48367,7 +48015,6 @@ mod tests {
             "num_attention_heads":8,"num_key_value_heads":2,"head_dim":32,
             "intermediate_size":512,"vocab_size":1024,"max_position_embeddings":2048}"#,
         );
-        assert!(!routed_moe_prefix_split(&qwen3));
         let llama = config(
             r#"{"model_type":"llama","num_hidden_layers":2,"hidden_size":256,
             "num_attention_heads":8,"num_key_value_heads":2,"head_dim":32,
@@ -48401,7 +48048,6 @@ mod tests {
             "max_position_embeddings":2048,"sliding_window":128,
             "layer_types":["sliding_attention","full_attention"]}"#,
         );
-        assert!(routed_moe_prefix_split(&qwen_next_moe));
         assert!(!carried_prime_batch_eligible(&qwen_next_moe));
         assert!(!carried_prime_batch_eligible(&gemma_swa));
     }
@@ -52268,35 +51914,6 @@ mod tests {
         );
     }
 
-    /// Whole-entry only for latent-bearing entries, in its own right: an all-MLA pack has
-    /// `entry_has_recurrent == false`, so without the latent arm an armed
-    /// MEMRA_PREFIX_PARTIAL_RESTORE would slice latent rows mid-entry while the index tail
-    /// ring for that interior boundary is unrecoverable.
-    #[test]
-    fn a_latent_entry_refuses_a_mid_entry_split_even_without_recurrent_state() {
-        use super::{PartialPrefixDecision, partial_prefix_decision};
-        // Mid-entry split on a latent-only entry: refused by the latent arm.
-        assert_eq!(
-            partial_prefix_decision(false, true, false, 100, 200, 300),
-            PartialPrefixDecision::RefuseLatentMidEntry,
-        );
-        // The split AT the endpoint is not a mid-entry split; the suffix primes ahead.
-        assert_eq!(
-            partial_prefix_decision(false, true, false, 200, 200, 300),
-            PartialPrefixDecision::Restore,
-        );
-        // The recurrent arm keeps precedence for hybrid entries (glm5: both are true).
-        assert_eq!(
-            partial_prefix_decision(true, true, false, 100, 200, 300),
-            PartialPrefixDecision::RefuseRecurrentMidEntry,
-        );
-        // Non-latent entries decide exactly as before.
-        assert_eq!(
-            partial_prefix_decision(false, false, false, 100, 200, 300),
-            PartialPrefixDecision::Restore,
-        );
-    }
-
     #[test]
     fn dspark_exact_transition_touch_refreshes_recency_without_cached_token_credit() {
         let k = key("");
@@ -54096,33 +53713,6 @@ mod tests {
         assert!(
             corrupt_len != pos && !(corrupt_len == 0 && pos > 0),
             "a partially-filled layer is neither absent nor valid and must still Err",
-        );
-    }
-
-    #[test]
-    fn immediate_partial_restore_support_matrix_is_fail_closed() {
-        assert_eq!(
-            partial_prefix_decision(false, false, false, 96, 160, 128),
-            PartialPrefixDecision::Restore,
-            "transformer-only mid-entry splits are the supported first arm",
-        );
-        assert_eq!(
-            partial_prefix_decision(true, false, false, 96, 160, 128),
-            PartialPrefixDecision::RefuseRecurrentMidEntry,
-        );
-        assert_eq!(
-            partial_prefix_decision(true, false, false, 160, 160, 192),
-            PartialPrefixDecision::Restore,
-            "recurrent state is exact at its captured endpoint",
-        );
-        assert_eq!(
-            partial_prefix_decision(false, false, true, 96, 160, 128),
-            PartialPrefixDecision::RefuseRoutedMoe,
-        );
-        assert_eq!(
-            partial_prefix_decision(false, false, false, 128, 160, 128),
-            PartialPrefixDecision::RefuseNoSuffix,
-            "a truncated entry does not carry logits for an interior endpoint",
         );
     }
 
@@ -64321,12 +63911,12 @@ mod tests {
         let live = &worker[..worker.find("mod tests").expect("the test module exists")];
         assert_eq!(
             live.matches("memra_engine::pp::new_cache_planned(").count(),
-            7
+            6
         );
-        // Six wrapped sites plus the helper's own definition.
-        assert_eq!(live.matches("vmm_build_cache(").count(), 7);
-        // Eight sites (six caches, the spec closure, the spec grow) plus the definition.
-        assert_eq!(live.matches("vmm_scope(").count(), 9);
+        // Five wrapped sites plus the helper's own definition.
+        assert_eq!(live.matches("vmm_build_cache(").count(), 6);
+        // Seven sites (five caches, the spec closure, the spec grow) plus the definition.
+        assert_eq!(live.matches("vmm_scope(").count(), 8);
         let compact = live
             .find("fn compact_parked_plain_cache(")
             .expect("the park compaction");
