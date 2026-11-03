@@ -1686,7 +1686,8 @@ parity receipt followed. The door had no decide-by date and never served. Delete
 env reads and both dispatch arms. `fa_prefill` keeps its other callers, so no kernel and no
 `docs/KERNELS.md` row goes with it. The block attention stays on `sdpa_naive`; DFlash2 sliding
 layers keep `d2_windowed_attn`. An fa arm returns only with a fixed kernel and its parity
-receipt. Git history is the archive. The matching darklanes verdicts-ledger line is still owed.
+receipt. Git history is the archive. Ledger: `VERDICT:dflash-fa-door-removed` (darklanes
+`agent-knowledge/gpu/verdicts-ledger.md`).
 
 ## Removed doors, 2026-11-02 (GB10 unified-memory prefix booking seam, booking kept)
 
