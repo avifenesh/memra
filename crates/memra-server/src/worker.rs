@@ -28555,6 +28555,12 @@ pub fn run(
         .map(|(n, _)| n.clone())
         .collect();
     for n in &eager_only {
+        // Dense gemma plans with the chunked-prime receipt prime in tick-budget chunks.
+        let prefill = if loaded.get(n).is_some_and(monolithic_prime_model) {
+            "monolithic prefill"
+        } else {
+            "chunked prefill"
+        };
         if eager_decode.contains(n) {
             let class = loaded
                 .get(n)
@@ -28562,8 +28568,7 @@ pub fn run(
                 .map_or("gemma4 class", |_| "hyper-connections residual");
             eprintln!(
                 "[worker] {n}: EAGER-ONLY serving ({class} — no batched decode arm): \
-                   per-session eager decode, monolithic prefill, no graph promotion, \
-                   no prime batching"
+                   per-session eager decode, {prefill}, no prime batching"
             );
         } else if loaded
             .get(n)
@@ -28572,15 +28577,14 @@ pub fn run(
             eprintln!(
                 "[worker] {n}: BATCHED DECODE (mHC hyper arm, opt-in via MEMRA_HYPER_BATCH=1; \
                    unset/0 = eager per-session rollback): batched decode chunks, serial ticks \
-                   only (no dual waves); monolithic prefill, no graph promotion, no prime \
-                   batching (eager-only for every non-decode entry point)"
+                   only (no dual waves); {prefill}, no prime batching (eager-only for every \
+                   non-decode entry point)"
             );
         } else {
             eprintln!(
                 "[worker] {n}: BATCHED DECODE (gemma4 dense arm, default-on; \
                    MEMRA_GEMMA4_BATCH=0 = eager kill switch): batched decode chunks; \
-                   monolithic prefill, no graph promotion, no prime batching \
-                   (eager-only for every non-decode entry point)"
+                   {prefill}, no prime batching (eager-only for every non-decode entry point)"
             );
         }
     }
