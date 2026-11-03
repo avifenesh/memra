@@ -13230,6 +13230,24 @@ impl HybridModel {
             Self::trace_sigmoid_router_logits(e, il, t, n_expert, n_used, &logits, m, sigmoid)?;
             return Self::moe_ffn_sigmoid_dev(e, m, z, zq8, &logits, t, cfg, il, sigmoid);
         }
+        // A native block-E4M3 expert bank has two consumers, both above: Step EP/TP and the
+        // resident sigmoid route. Every route below dispatches expert matvecs by qtype with no
+        // block-scale operand and no QT_F8_E4M3_BLK arm (`deq` decodes it as zero), so it would
+        // compute this layer's routed experts as zeros. Refuse instead.
+        if m.gate_exps.qtype == crate::QT_F8_E4M3_BLK
+            || m.up_exps.qtype == crate::QT_F8_E4M3_BLK
+            || m.down_exps.qtype == crate::QT_F8_E4M3_BLK
+        {
+            return Err(format!(
+                "layer {il}: native block-E4M3 expert bank reached a MoE route without a \
+                 block-E4M3 arm. It runs only through Step EP/TP or the resident sigmoid route \
+                 (sigmoid_resident_dev_eligible: a sliding-gated sigmoid-router layer whose bank \
+                 is resident on this device, the device router and slab doors on, no MoE \
+                 observation env, at most 8 experts per token). MEMRA_ST_E4M3=0 loads the Q8_0 \
+                 diagnostic"
+            )
+            .into());
+        }
         // GROUPED MoE PREFILL, sigmoid-router class (glm5_next), MEMRA_MOE_GROUPED_PREFILL
         // default ON since 2026-08-29 (owner-accepted flip; =0 rollback seam; receipts on the
         // flag helper). The prefill-gap attribution (research/glm53-flash-bringup-20260827/
