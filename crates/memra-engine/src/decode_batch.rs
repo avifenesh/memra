@@ -2453,8 +2453,8 @@ impl HybridModel {
             Ok("0") => false,
             Err(_) | Ok("1") => true,
             Ok(v) => panic!(
-                "MEMRA_HYPER_BATCH={v:?} is not a recognized value (want unset/0 = eager \
-                 per-session decode, 1 = batched mHC decode chunks) — refusing to guess a \
+                "MEMRA_HYPER_BATCH={v:?} is not a recognized value (want unset/1 = batched \
+                 mHC decode chunks, 0 = eager per-session decode) — refusing to guess a \
                  serving path"
             ),
         })
