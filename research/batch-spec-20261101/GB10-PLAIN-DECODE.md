@@ -98,6 +98,81 @@ The GB10 runs spread by 0.2%. The 5090 ran hot (79-82 C, SM clock 1590-1912 MHz,
 4. **GDN state traffic is at the ceiling** from B=8 up. The only lever is a narrower state dtype, which is a numeric change.
 5. **Host gaps are 2-18 ms per tick** (under 5%). Not the plateau.
 
+## The three exact levers, measured (2026-11-03, afternoon)
+
+Every arm below keeps the per-(token, row) chain. Each was gated by kernel-check (`RP BATCHED`, `FUSED4`, `fa_decode_seqs_v4 vs per-seq loop`: bit-bad=0 on every cell) and by the decode token fingerprints (`TOKFP`: all 16 or 32 sessions x 48 steps identical between arms).
+
+### Lever 1: activation staging and next-weight prefetch in the 16-row kernel: not adopted
+
+`mmvq-b16-bench` streams every NVFP4 2D tensor of blocks 0-3 (31 tensors, 856 MB) through the batched dispatch at m=16, one launch per tensor, and hashes every output bit (`gb10-lever1/sweep.txt`, 3 rounds; m=12 in `sweep-m12.txt`).
+
+| schedule (m=16) | ms per pass | GB/s | output hash |
+|---|---:|---:|---|
+| rp (before today) | 8.86-8.99 | 96 | same |
+| rpsc (adopted this morning) | 6.43-6.48 | 133 | same |
+| rpsc + next-quant register prefetch | 8.53-8.63 | 100 | same |
+| rpsc + cp.async smem activation staging, double-buffered | 8.41-8.57 | 101 | same |
+| rpsc, four rows per warp | 7.11-7.13 | 120 | same |
+| column split 2 x 8 (rpcs8) | 5.65-5.67 | 151 | same |
+| column split 4 x 4 | 6.49-6.81 | 126 | same |
+
+The two asked-for variants lose. The prefetch costs registers that cut residency, and the smem staging adds two block barriers per 32-group step at three blocks per SM. The column split won the bench, so it went to the decode step:
+
+| B=16, depth 2048, 3 + 2 + 2 runs interleaved (`gb10-lever1/e2e-ab.txt`) | ms/tick |
+|---|---:|
+| rpsc (base) | 129.31, 129.59, 129.21 |
+| rpcs8 singles, 16-wide group4 | 130.46, 130.76 |
+| rpcs8 singles, split group4 | 133.59, 133.56 |
+
+It is flat to negative in the real step. nsys (`gb10-lever1/nsys-*`) shows why: the decode step's singles are the FFN-sized tensors, where rpcs8 runs 268 us per launch against rpsc's 264. Its bench win came from the small tensors, which in the step ride the group4 door. Nothing from lever 1 is kept, and its kernels were deleted.
+
+### Lever 2: the 32-row tier: adopted
+
+- **Kernels.** `qmatvec_nvfp4_mmvq_b32_rpcs8` and `qmatvec_nvfp4_mmvq_group4_b32_rpcs8` give 32 columns as four 8-column blocks per 8-row weight block, adjacent in launch order so the repeat weight reads hit L2. Every other qtype at 17..32 rows runs as two bit-identical 16-column halves (here, the Q5_K output head).
+- **Scope.** `decode_step_batch` admits 17..32 rows for exact-16 models and sets a decode-wide scope (`Engine::set_decode_wide`). Only inside that scope do `small_m_tier_max` and the group doors widen to 32. Verify and prime never see it, and the PP entries keep 16.
+- **Server.** `chunk_cap_for` returns 32 for exact-16 models without a PP split. The spec cost table now measures plain steps up to the wave cap (plain points 1, 2, 4, 8, 16, 32), and `spec_plain_ms` prices up to 32. Pooled verify stays at 16 rows (below).
+
+m=32 bench (`gb10-lever2/bench-m32.txt`): the 4 x 8 split takes 9.94-10.00 ms per pass. The 2 x 16 split takes 19.30.
+
+Decode step at 32 sessions, one wave of 32 against two waves of 16 on the same binary (`gb10-lever2/ab.txt`, order c16 c32 c32 c16 c16 c32):
+
+| depth | two 16-row waves (ms/tick) | one 32-row wave (ms/tick) | median change | tokens |
+|---|---|---|---:|---|
+| 2048 | 259.15, 259.02, 259.50 | 249.17, 249.21, 254.84 | **-3.8%** (123.5 -> 128.4 tok/s) | identical |
+| 12288 (1 + 1) | 353.72 | 343.24 | **-3.0%** (90.5 -> 93.2 tok/s) | identical |
+
+Schedule choice in the same step (`gb10-lever2/schedules-ab.txt`): 4 x 8 singles plus 4 x 8 group4 took 249.2 ms, and 2 x 16 singles took 367.7. 4 x 8 singles plus 2 x 16 group4 took 258.6 ms (in `ab.txt`'s first, killed run). nsys at 32 rows (`gb10-lever2/b32-kern.csv`): singles take 475 us per launch, against 2 x 264 for two b16 launches. group4 takes 612 us, against 2 x 276. The Q5_K head runs twice (2 x 6.5 ms).
+
+The win is small: the dp4a kernel is latency-bound at every width, so a second column block per weight row costs nearly as much as the first, even when its weight reads hit L2.
+
+Two follow-ups on the 32-row tick were measured and are not kept (`gb10-lever2/followups-ab.txt`, 32 sessions at depth 2048, 3 runs per arm interleaved, tokens identical):
+
+| arm | ms/tick |
+|---|---|
+| kept: Q5_K head as two b16 launches, group4 4 x 8 | 247.49, 247.64, 247.65 |
+| Q5_K head as one 2 x 16 column-split launch, group4 4 x 8 | 253.21, 253.45, 252.97 |
+| Q5_K split, group4 as two 16-column b16 launches | 251.80, 251.93, 251.95 |
+
+The column-split head costs 5.6 ms per tick against two plain launches. Group4 halves recover 1.3 ms of that, but only on top of the losing head. Both were deleted.
+
+### Lever 3: attention loads in flight at the current tile: adopted
+
+The batched tick's attention (`fa_decode_vec_q_seqs_v4`) ran the plain v4 tile walk: K-tile rows at a 64-word stride, which is a 32-way bank conflict on the score-phase operand read, and a stage -> sync -> compute -> sync loop with no load of the next tile in flight. The B=1 eager arm had run the deep walk (`fa_v4_deep_walk`) since 2026-08-02. That walk keeps the same tile, values and accumulation order, pads the K rows (4 words per row, 1 per scale row), and prefetches tile+2's K/V lines into L2 during the current tile.
+
+`fa_decode_vec_q_seqs_v4_deep` puts the seqs frame (z = sequence, per-seq pointer table, per-seq split partition) around that walk, and replaces `fa_decode_vec_q_seqs_v4`. Each sequence now runs exactly its eager program. kernel-check `fa_decode_seqs_v4 vs per-seq loop` is bitdiff=0 at B=4 (depths 96/128/257/511) and B=8.
+
+A = the lever-2 build, B = the same plus the deep seqs twin (`gb10-lever3/ab.txt`):
+
+| cell | before (ms/tick) | after (ms/tick) | median change | tokens |
+|---|---|---|---:|---|
+| B=16, depth 12288, 3 + 3 (old new new old old new) | 178.50, 176.59, 176.57 | 173.38, 173.85, 173.62 | **-1.7%** (90.6 -> 92.2 tok/s) | identical |
+| B=8, depth 32768, 1 + 1 | 152.02 | 137.46 | **-9.6%** (52.6 -> 58.2 tok/s) | identical |
+| B=32, depth 12288, 1 + 1 | 342.30 | 337.37 | **-1.4%** (93.5 -> 94.9 tok/s) | identical |
+
+nsys at B=16, depth 12288 (`gb10-lever3/fa-kern.csv`): attention takes 42.4 ms per step, down from 45.6 (138 GB/s, 59% of the part's ceiling); the combine stays at 6.0. The gain grows with depth because the prefetch covers more tiles per split.
+
+The kernel is still held to three blocks per SM by its 28.5 KB of smem: Q, the padded K tile and a 32 x 256 bf16 V tile. The next exact attention lever is to keep V raw (6 KB) in smem and dequantize at use, which would allow five blocks per SM. Every warp of the GQA group would then dequantize the whole tile, about 6x the B3-phase instructions, so it needs its own measurement. A smaller tile changes the online-softmax order, so it is not exact.
+
 ## Every cell, per part (`gb10-decode-prof/parts.txt`, `battery/kern_parts.py`)
 
 ms per decode step, effective GB/s in parentheses. Bytes: matmuls 15.7 GB of weights per forward; attention B x depth x 29.7 KB of KV; GDN B x 302 MB of fp32 state read plus write. Gap = tick minus the kernel sum.

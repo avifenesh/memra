@@ -82,3 +82,22 @@ One boot of the model arm at 1e30f67c69, warm-up and then the c=2 cell only, no 
 The gate now engages without history. Each first verdict at n=1 and n=2 reads `exploring: no acceptance history yet` and speculates at its rung. After that the realized rates price every verdict (16 priced verdicts at n=2, from 22.4 vs 22.4 up to 66.7 vs 25.4). Most verdicts land close to break-even, so the gate switches between K=0 and K=2..5 inside the cell.
 
 The fresh boot gains 1.05x over base, against 1.23x when the c=1 cell has filled the history first. The gap is the cost of building history on this cell's own turns.
+
+## Plain-decode levers, served (2026-11-03, 12:56-15:06)
+
+The same agentic cell at c = 8, 16 and 32 only, one boot per build: model arm, warm-up then the three cells. The boot log reads `decode wave cap 32; scheduler tick cap 32 (exact-32 tier)`. The spec cost table now covers plain steps 1..32 (`plain_ms[16]` = 148.3 ms, `plain_ms[32]` = 268.4 ms at depth 2048). The gate served plain at every n >= 8.
+
+| c | before the levers (00:23 run, b16 rp) | + b16 rpsc + 32-row tier (`lever2/`) | + batched-tick FA deep walk (`lever3/`) | vLLM |
+|---:|---:|---:|---:|---:|
+| 8 | 60.4 | 62.5 | 61.8 | 96.7 |
+| 16 | 67.1 | **76.0** | 75.8 | 121.4 |
+| 32 | 67.8 | **79.1** | 79.0 | 135.5 |
+
+Aggregate generated tok/s, one run per build. Binaries: lever 2 at bfbf46e486, lever 3 at 58398a2a18.
+
+- c=16 gains 13%, from the b16 rpsc schedule.
+- c=32 gains 17%, from rpsc plus the one-wave 32-row tick.
+- c=8 rides the b8 tier and is unchanged within run noise.
+- The FA deep walk is flat here. It pays at long depth (-9.6% at depth 32768, 8 sessions); this cell's median turn is about 11k tokens, where the bench measured -1.7%.
+
+The remaining gap to vLLM at c >= 16 is the dp4a decode matmul, which is latency-bound at every width, and attention at about 59% of bandwidth. GB10-PLAIN-DECODE.md has the per-kernel numbers.
