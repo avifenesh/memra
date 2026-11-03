@@ -26148,11 +26148,12 @@ impl Engine {
             t as i32,
         );
         let __s_b = self.gpu.stream();
-        // One runtime-T program for every live width. The compile-time 2/4/8 twins are
-        // retained in the fatbin as research controls, but dispatching them by the current
-        // batch width changes kernels inside a request when peers arrive or retire. That is
-        // a load-history numeric-program switch, and their pre-twin TOKFP receipts did not
-        // qualify it (Hermes `64fa2b55baf0d887`).
+        // One runtime-T program for every live width. The compile-time 2/4/8 twins (faster:
+        // this kernel's runtime-t loop spills its accumulators) were deleted unlaunched on
+        // 2026-11-03, because dispatching them by the current batch width changes kernels
+        // inside a request when peers arrive or retire. That is a load-history numeric-program
+        // switch, and their pre-twin TOKFP receipts did not qualify it (Hermes
+        // `64fa2b55baf0d887`).
         let f = self.func("matvec_bf16_qkvg_tcol");
         let mut b = __s_b.launch_builder(&f);
         b.arg(wq)
@@ -26305,8 +26306,8 @@ impl Engine {
             )
             .into());
         }
-        // Keep one runtime-T program at every live width. Compile-time twins remain research
-        // controls only; selecting them from the changing batch width switches programs
+        // Keep one runtime-T program at every live width. The compile-time twins were deleted
+        // unlaunched: selecting them from the changing batch width switches programs
         // mid-request.
         let cfg = LaunchConfig {
             grid_dim: (out_f as u32, 1, 1),
