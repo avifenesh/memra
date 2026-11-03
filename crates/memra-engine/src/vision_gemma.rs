@@ -198,13 +198,6 @@ pub fn gemma_decode_data_uri(uri: &str) -> Result<Vec<u8>, String> {
         .map_err(|e| format!("base64 decode: {e}"))
 }
 
-/// Prep a data-URI image into a GemmaVisionUnit (decode + smart-resize + patchify).
-pub fn gemma_prep_data_uri(uri: &str) -> Result<GemmaVisionUnit, String> {
-    let bytes = gemma_decode_data_uri(uri)?;
-    let (patches, gw, gh) = gemma_prep_image(&bytes).map_err(|e| e.to_string())?;
-    Ok(GemmaVisionUnit { patches, gw, gh })
-}
-
 /// PRE-DECODE admission (hermes decode-bomb finding, fixed 2026-08-23 — same law as
 /// `vision_pre::plan_image_bytes`): header dims -> decode-budget check -> target grid.
 /// Returns `(gw, gh)` so `n_soft` (thus the pad run and the request's token price) is
