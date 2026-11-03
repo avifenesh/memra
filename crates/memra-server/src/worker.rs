@@ -8378,6 +8378,7 @@ fn pp_boundary_slot_token_cap(
         context_cap,
         n_trunk,
         model.gdn_prime_grid_on(),
+        model.swa_ring_on(),
     )
     .into_iter()
     .map(|(start, end)| end.saturating_sub(start))
@@ -31395,9 +31396,7 @@ pub fn run(
                             && req.step_images.is_empty()
                             && !gemma_drafts.contains_key(&model_key)
                             && model.hyper.is_none()
-                            && !(memra_engine::cache::swa_ring_on()
-                                && memra_engine::plan_backend::decode_batch_program(&model.plan)
-                                    == memra_engine::plan_backend::DecodeBatchProgram::SlidingGatedMoe);
+                            && !memra_engine::cache::swa_ring_on_for_plan(&model.plan);
                         let restored = can_plan
                             .then(|| {
                                 px.admission_restore_rows(
@@ -37058,9 +37057,7 @@ fn request_reuse_on(vision_req: bool, capture_req: bool) -> bool {
 /// MEMRA_SWA_RING=1 Step35 sessions are excluded from the prefix cache (flat-history snapshots
 /// and restores are excluded).
 fn ring_prefix_excluded(plan: &memra_gguf::model_plan::ModelPlan) -> bool {
-    memra_engine::cache::swa_ring_on()
-        && memra_engine::plan_backend::decode_batch_program(plan)
-            == memra_engine::plan_backend::DecodeBatchProgram::SlidingGatedMoe
+    memra_engine::cache::swa_ring_on_for_plan(plan)
 }
 
 fn request_prefix_on(reuse_on: bool, plan: &memra_gguf::model_plan::ModelPlan) -> bool {
@@ -48189,6 +48186,7 @@ mod tests {
             kpool_score_pool: P,
             n_layers: N_TRUNK,
             gdn_grid: false,
+            swa_ring: false,
         };
         let latent_per_token = LATENT_LAYERS * (W * 4 + DH * 4 / P);
         let cost = AdmissionCostModel {
@@ -53762,6 +53760,7 @@ mod tests {
                         call_row_bytes: 345_000,
                         prompt_row_bytes: 8192,
                         n_layers: 40,
+                        swa_ring: false,
                     }),
                     transient_floor: Some(1536 << 20),
                     pp_activation_bytes: [0; 4],
@@ -53784,6 +53783,7 @@ mod tests {
                         call_row_bytes: 250_000,
                         prompt_row_bytes: 12_288,
                         n_layers: 32,
+                        swa_ring: true,
                     }),
                     transient_floor: None,
                     pp_activation_bytes: [0; 4],
@@ -53924,6 +53924,7 @@ mod tests {
                 call_row_bytes: 345_000,
                 prompt_row_bytes: 8192,
                 n_layers: 40,
+                swa_ring: false,
             }),
             transient_floor: Some(1536 << 20),
             pp_activation_bytes: [0; 4],
@@ -54862,6 +54863,7 @@ mod tests {
             call_row_bytes: 42 * 2048 + 14 * 2048,
             prompt_row_bytes: 4 * 2048,
             n_layers: 41,
+            swa_ring: false,
         };
         let cost =
             |prime: Option<memra_engine::hybrid_forward::PrimeWorkspaceShape>| AdmissionCostModel {
@@ -67275,6 +67277,7 @@ mod tests {
             call_row_bytes: 400_000,
             prompt_row_bytes: 20_480,
             n_layers: 64,
+            swa_ring: false,
         };
         let o = |rows, unstarted_walker, cooperative| super::PrimeOwed {
             rows,

@@ -61,7 +61,7 @@ fn mla_layers(glm5: &Glm5NextConfig, n_trunk: usize) -> usize {
 /// (the per-call row count) are the ones a split can bound; the score plane is the one that is
 /// ALSO proportional to the context, which is what makes a monolithic call quadratic.
 fn per_call_transient_bytes(cfg: &ModelConfig, glm5: &Glm5NextConfig, ctx: usize) -> u128 {
-    let rows = hyper_prime_call_rows(ctx, cfg.n_layer as usize, false) as u128;
+    let rows = hyper_prime_call_rows(ctx, cfg.n_layer as usize, false, false) as u128;
     let n_embd = cfg.n_embd as u128;
     let streams = glm5.hc_mult as u128;
     let nh = cfg.n_head as u128;
@@ -115,7 +115,7 @@ fn the_mhc_prime_schedule_covers_the_prompt_exactly() {
     let (cfg, _) = glm5_config();
     let n_layers = cfg.n_layer as usize;
     for &ctx in LADDER.iter().chain([999_983usize, 1_048_577].iter()) {
-        let ranges = hyper_prime_ranges(ctx, n_layers, false);
+        let ranges = hyper_prime_ranges(ctx, n_layers, false, false);
         assert!(!ranges.is_empty(), "ctx {ctx}: empty prime schedule");
         assert_eq!(
             ranges[0].0, 0,
@@ -163,7 +163,7 @@ fn the_mhc_prime_carries_a_bounded_number_of_rows_at_every_context() {
         999_983, // prime number, no relationship to any chunk size
     ];
     for &ctx in LADDER.iter().chain(awkward.iter()) {
-        let rows = hyper_prime_call_rows(ctx, n_layers, false);
+        let rows = hyper_prime_call_rows(ctx, n_layers, false, false);
         assert!(
             rows <= BOUND,
             "ctx {ctx}: one mHC prime call carries {rows} token rows, above the absolute bound \
@@ -286,8 +286,8 @@ fn report_the_per_call_prime_transient_ladder() {
     let n_layers = cfg.n_layer as usize;
     println!("ctx | prime calls | rows/call | per-call transient | whole-prime stack | peak");
     for &ctx in &LADDER {
-        let ranges = hyper_prime_ranges(ctx, n_layers, false);
-        let rows = hyper_prime_call_rows(ctx, n_layers, false);
+        let ranges = hyper_prime_ranges(ctx, n_layers, false, false);
+        let rows = hyper_prime_call_rows(ctx, n_layers, false, false);
         println!(
             "{ctx:>9} | {:>11} | {rows:>9} | {:>15.3} GB | {:>14.3} GB | {:>6.3} GB",
             ranges.len(),

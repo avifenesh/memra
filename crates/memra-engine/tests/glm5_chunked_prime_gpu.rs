@@ -398,17 +398,17 @@ fn the_gate_prompt_really_is_split_into_several_prime_calls() {
     let _gpu = gpu_guard();
     let n_layers = mini_config().n_layer as usize;
     set_prime_chunk("32");
-    let ranges = hyper_prime_ranges(200, n_layers, false);
+    let ranges = hyper_prime_ranges(200, n_layers, false, false);
     assert!(
         ranges.len() >= 4,
         "the chunked arm must make several prime calls, got {ranges:?}"
     );
     // 32 + the tail-merge term: `fixed_prime_chunk_ranges` folds a remainder shorter than
     // PRIME_MIN_T into the call before it rather than emitting a call too short to batch.
-    assert!(hyper_prime_call_rows(200, n_layers, false) <= 32 + 16);
+    assert!(hyper_prime_call_rows(200, n_layers, false, false) <= 32 + 16);
     set_prime_chunk("0");
     assert_eq!(
-        hyper_prime_ranges(200, n_layers, false),
+        hyper_prime_ranges(200, n_layers, false, false),
         vec![(0, 200)],
         "MEMRA_PRIME_CHUNK=0 must restore the monolithic walk — it is the rollback seam"
     );
