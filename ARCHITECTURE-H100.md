@@ -2692,7 +2692,8 @@ already was. sm_120a and sm_100a compile the same code as before; sm_89 has no P
 compiles the wait out. No H100 cell was re-measured for this change: kernel-check, decode-dc
 and graph-decode on Hopper are the gates that prove it.
 
-**Block-128 FP8 checkpoints load on 90a (2026-11-03).** `memra_fp8_blk_count_nan` lived in
+**Dense block-128 FP8 checkpoints load on 90a; MoE block-FP8 stays unsupported (2026-11-03).**
+`memra_fp8_blk_count_nan` lived in
 `mmq_fp8_blk.cu`, which build.rs replaces with a refusing stub on every arch but 120a and 100a.
 The stub returned 2905, `fp8_blk_nan_count` turned that into an error, and the default-ON
 native residency arm (`MEMRA_ST_E4M3`) reached it at load, so every block-128 FP8 safetensors
@@ -2700,6 +2701,11 @@ checkpoint failed to load on 90a and 89 instead of declining to the Q8_0 floor. 
 byte count with no MMA and now lives in `fp8_blk_dequant.cu`, which every arch builds. The
 per-block MMQ prefill tile stays 120a/100a only: `try_fp8_blk_mmq` now gates on the tile being
 built rather than on `portable_mma_gated()` (false on 90a), so 90a prefill takes the
-dequant-per-call Q8_0 floor and decode the portable `qmatvec_e4m3_blk_mmvq` GEMV. A resident
-native block-E4M3 expert bank still needs the tile and is refused at load with that cause. No
-H100 cell was run: a block-128 FP8 checkpoint load plus `run-gen` on Hopper is the gate.
+dequant-per-call Q8_0 floor and decode the portable `qmatvec_e4m3_blk_mmvq` GEMV. That covers
+dense projections only. A stacked block-128 FP8 MoE expert bank (Step-3.7 FP8, for example) has
+no route on 89/90a: the resident arm, Step EP and Step TP all run the per-block MMQ tile. The
+stacked loader (`load_fp8_stacked_native_with_policy`) therefore refuses the native bank on
+those builds before any residency decision, so spill, `MEMRA_MOE_RESIDENT=0` and the Step EP/TP
+host-bank path cannot pass load and fail on the stub later. The refusal names `MEMRA_ST_E4M3=0`,
+which loads a Q8_0 re-encode: a diagnostic representation, not support. No H100 cell was run: a
+dense block-128 FP8 checkpoint load plus `run-gen` on Hopper is the gate.

@@ -2309,10 +2309,17 @@ impl HostExps {
         }))
     }
 
+    /// The one residency decision for a stacked block-128 E4M3 expert bank. `native_enabled` is
+    /// `MEMRA_ST_E4M3`; `native_tile_built` is whether this build carries the per-block FP8 MMQ
+    /// tile (`fp8_blk_mmq_built`), which every native-bank consumer needs: the resident MoE arm,
+    /// Step EP and Step TP all run `qmatvec_mmq_fp8_blk*`. Without the tile the native bank is
+    /// refused here, for every residency branch, before any upload; the Q8_0 rollback stays
+    /// reachable as a diagnostic on every arch.
     fn load_fp8_stacked_native_with_policy(
         src: &dyn TensorSource,
         name: &str,
         native_enabled: bool,
+        native_tile_built: bool,
     ) -> Result<Option<Self>, Box<dyn std::error::Error>> {
         let Some(f8) = src.find_fp8_stacked_native(name) else {
             return Ok(None);
@@ -2371,6 +2378,17 @@ impl HostExps {
                 macros: None,
                 fp8_blk: None,
             }));
+        }
+        if !native_tile_built {
+            return Err(format!(
+                "{name}: block-128 FP8 MoE expert banks are unsupported on this sm_{} build. \
+                 Every native block-E4M3 expert route (resident, Step EP, Step TP) runs the \
+                 per-block FP8 MMQ tile, which only sm_120a and sm_100a builds contain. \
+                 MEMRA_ST_E4M3=0 loads a Q8_0 re-encode instead: a diagnostic representation, \
+                 not the checkpoint's program",
+                env!("MEMRA_BUILT_CUDA_ARCH")
+            )
+            .into());
         }
 
         assert_eq!(
@@ -2438,6 +2456,7 @@ impl HostExps {
             src,
             name,
             crate::fp8_ffi::st_e4m3_blk_enabled(),
+            crate::fp8_ffi::fp8_blk_mmq_built(),
         )? {
             return Ok(exps);
         }
@@ -3650,6 +3669,7 @@ mod tests {
             &source,
             "blk.0.ffn_gate_exps.weight",
             true,
+            true,
         )
         .unwrap()
         .unwrap();
@@ -3690,11 +3710,57 @@ mod tests {
             &source,
             "blk.0.ffn_gate_exps.weight",
             true,
+            true,
         ) {
             Ok(_) => panic!("non-finite E4M3 code was accepted"),
             Err(err) => err,
         };
         assert!(err.to_string().contains("non-finite E4M3"));
+        std::fs::remove_file(path).ok();
+    }
+
+    /// A build without the per-block FP8 MMQ tile (sm_89, sm_90a) has no route that runs a native
+    /// block-E4M3 expert bank, so the loader refuses it whatever the residency later decides, and
+    /// names the Q8_0 diagnostic. That diagnostic (`MEMRA_ST_E4M3=0`) still loads on such builds.
+    #[test]
+    fn stacked_fp8_experts_refuse_native_bank_without_the_tile() {
+        let path =
+            std::env::temp_dir().join(format!("memra-stacked-fp8-notile-{}", std::process::id()));
+        let len = 2 * 2 * 32;
+        let file_bytes: Vec<u8> = (0..len).map(|i| (i % 127) as u8).collect();
+        std::fs::write(&path, &file_bytes).unwrap();
+        let file = std::sync::Arc::new(std::fs::File::open(&path).unwrap());
+        let map = std::sync::Arc::new(unsafe { memmap2::Mmap::map(file.as_ref()).unwrap() });
+        let source = StackedFp8Source {
+            file,
+            map,
+            offset: 0,
+            len,
+            scales: vec![0.5, 0.25],
+        };
+
+        let err = match HostExps::load_fp8_stacked_native_with_policy(
+            &source,
+            "blk.0.ffn_gate_exps.weight",
+            true,
+            false,
+        ) {
+            Ok(_) => panic!("native block-E4M3 bank was accepted without the MMQ tile"),
+            Err(err) => err.to_string(),
+        };
+        assert!(err.contains("unsupported"), "{err}");
+        assert!(err.contains("MEMRA_ST_E4M3=0"), "{err}");
+
+        let q8 = HostExps::load_fp8_stacked_native_with_policy(
+            &source,
+            "blk.0.ffn_gate_exps.weight",
+            false,
+            false,
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(q8.qtype, crate::QT_Q8_0);
+        assert!(q8.fp8_blk.is_none());
         std::fs::remove_file(path).ok();
     }
 
