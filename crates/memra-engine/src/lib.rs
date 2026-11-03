@@ -35471,7 +35471,7 @@ mod target_dispatch_tests {
     }
 }
 
-/// The memra-kv device seam (Phase D): the cache's 7 ops delegate to the engine's
+/// The memra-kv device seam (Phase D): the cache's device ops delegate to the engine's
 /// inherent methods (inherent methods win name resolution, so no recursion).
 impl memra_kv::KvDev for Engine {
     fn alloc_vmm_u8(&self, n: usize) -> Result<memra_kv::KvPlane, Box<dyn std::error::Error>> {
