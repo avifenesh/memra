@@ -153,6 +153,12 @@ went 494 → 501 literal names on that change; the seven it newly sees
 already catalogued here, so the gate stayed green — but it stayed green for the wrong reason
 before, and the 546 hand count has not been re-run against the widened instrument.
 
+Since 2026-11-03 the script also reads `getenv` lines in the CUDA/C sources (every
+`crates/*/cu` dir plus the runtime dirs), which the hand audit covered and the script did not.
+`MEMRA_MIMO_SPLIT_STAGE_TIMING` (`cu/mimo_mixed_attn.cu`) had landed with no row through that
+hole; it is catalogued in §4. The census went 887 → 894 names; the other six CUDA-side names
+were already catalogued. `tools/test_check_flags.sh` gates the CUDA pass (cause 3).
+
 ---
 
 ## 1. Runtime parameters
@@ -1130,6 +1136,7 @@ These exist because correctness discipline needs a same-binary oracle. Each is a
 | `MEMRA_KC_FAST=1` / `MEMRA_KC_ONLY=a,b,...` | kernel-check dev-loop scoping (fast-gate tier 0, 2026-08-02): `FAST` skips ALL weight-oracle sections (synthetic arms only, ~2s vs ~4.5min); `ONLY` runs sections whose name contains a csv term. Every skip prints LOUD; the full battery (no env) still gates merges/tags — see docs/TESTING.md |
 | `MEMRA_MMQ_SK_FORM=sk\|tile` | pin the stream-k or xy-tile numerical form for measurement/rollback, bypassing the device-keyed default |
 | `MEMRA_PRIME_TOK_PER_MS` | dark-prefill chunk estimator: prime rate (tok/ms, default 8.0) used to size within-SLO-headroom prefill chunks in the x-lane QoS tick |
+| `MEMRA_MIMO_SPLIT_STAGE_TIMING=1` | off by default; read in `cu/mimo_mixed_attn.cu` by the MiMo mixed-KV global attention dispatch (`MiMoMixedAttentionWorkspace`), and only on calls at `seq == kMaxSeq` (1048576). Exactly `1` records CUDA events around the tile, two reduce and normalize launches, synchronizes, and prints one `mimo_split_stage_ms` stderr line per call with the program name and four stage times. The kernels and their output are unchanged; the event sync serializes the stream, so the line is a stage breakdown, not a throughput number. Diagnostic of the attention programs that still exist. |
 
 ### Diagnostics backfill (2026-08-19 audit — all internal, none are operator knobs)
 
