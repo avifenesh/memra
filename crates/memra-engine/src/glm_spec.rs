@@ -2558,7 +2558,7 @@ impl HybridModel {
         // fleet-fatal full-cover panic).
         //
         // Everything this session restores was written on the CALLER's stream, in the
-        // worker's admission path: the trunk planes by `prefix_restore_at`, and the DFlash2
+        // worker's admission path: the trunk planes by `prefix_restore`, and the DFlash2
         // drafter ctx KV by `DflashKv::from_tail` (worker.rs, the "glm5 spec restore, half 1
         // of 2" block — a fresh allocation plus per-layer `memset_zeros_view` +
         // `copy_range_into`). The draft phase of round 1 then READS that KV through
