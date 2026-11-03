@@ -714,7 +714,7 @@ extern "C" __global__ void moe_router_topk_scaled_f32(
     if (tid == 0) {
         float ws = fmaxf(s_wsum, 6.103515625e-5f);   // F16 smallest normal, clamp before divide
         for (int j = 0; j < n_used; ++j) {
-            // gemma4 R3 fold: (w / ws) * ex_scale[sel] — the deleted moe_w_exscale chain verbatim.
+            // gemma4 R3 fold: (w / ws) * ex_scale[sel] — renorm first, then the expert scale.
             sel_w[(size_t)row * n_used + j] = sel_w[(size_t)row * n_used + j] / ws
                 * ex_scale[sel_idx[(size_t)row * n_used + j]];
         }

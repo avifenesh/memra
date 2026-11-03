@@ -3294,31 +3294,6 @@ extern "C" __global__ void scale_rows_f32(
     }
 }
 
-// moe_pairs_weighted_scatter_f32: out[t, :] += sum_j w[t*n_used + j] * y[t*n_used + j, :],
-// with the j-sum SEQUENTIAL inside each thread — a fixed per-token reduction order (slot 0..7),
-// never atomics, so the grouped prime stays run-deterministic like every other reduction whose
-// order this repo pins. y is PAIR-ID order (token-major slots); one thread owns one (t, col).
-// Grid: for_num_elems(t*ncols).
-extern "C" __global__ void moe_pairs_weighted_scatter_f32(
-    const float* __restrict__ y,  // [t*n_used, ncols] pair-id order
-    const float* __restrict__ w,  // [t*n_used] route weight (down macro pre-folded host-side)
-    float*       __restrict__ out, // [t, ncols] accumulated in place
-    int ncols, int n_used, int t)
-{
-    int i = blockIdx.x * blockDim.x + threadIdx.x;
-    int total = t * ncols;
-    if (i < total) {
-        int tok = i / ncols;
-        int col = i % ncols;
-        float acc = out[i];
-        for (int j = 0; j < n_used; j++) {
-            int p = tok * n_used + j;
-            acc += w[p] * y[(size_t)p * ncols + col];
-        }
-        out[i] = acc;
-    }
-}
-
 // moe_prime_join_scatter_f32 (2026-08-28): fuses the grouped prime's tail — cross-rank join,
 // CSR->pair permute, route weighting, and token scatter — into ONE pass.
 // Was: rows_permute (a full [n_pairs, ncols] read+write), then add(y0,y1), then a weighted
