@@ -45,8 +45,9 @@ impl HardwareTarget {
     }
 
     /// The card class by device name; `tier_transfer::PinnedKind::for_device` keys the pinned
-    /// destination default on the same names (WP-A day 14).
-    pub(crate) fn from_device_name(name: &str) -> Result<Self, TopologyError> {
+    /// destination default on the same names (WP-A day 14), and the server's device-penalty
+    /// default (`serve_devpenalty_from`) keys its card on it.
+    pub fn from_device_name(name: &str) -> Result<Self, TopologyError> {
         if name.contains("RTX PRO 6000") && name.contains("Blackwell") {
             return Ok(Self::RtxPro6000Blackwell);
         }
