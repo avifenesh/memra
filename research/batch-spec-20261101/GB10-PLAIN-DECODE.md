@@ -238,6 +238,45 @@ So the arm was narrowed to 17..32-row waves only and served through the agentic 
 
 Served, it is flat: the cell's waves are rarely full 32-row waves, and the arm also gives up bit-identity. The research branch was not kept. A real tensor-core decode matmul is a new kernel. One exact design exists: run only the integer per-16-element dot products on `mma.sync` s8 (integer sums are order-independent), and keep the float epilogue (`ws0*s0 + ws1*s1`, `acc += adg*partial`, the warp butterfly) in the dp4a kernel's order. That would make it bit-identical. It saves only the dp4a issue slots of a latency-bound kernel, so its value is unclear. Not built.
 
+### Exact tensor-core decode matmul for the 32-row tier: adopted, decided per box at boot (2026-11-03, night)
+
+The dp4a batched chain per (row, column) splits into an integer part and a float part:
+
+- **integer:** S_sl, the integer sum of the 16 int8 products of each scale half;
+- **float:** per lane l over g = l, l+32, ...: `partial = ws0*S_0; partial += ws1*S_1; acc_l += adg*partial`, then the 32-lane xor butterfly, with lane 0's value written.
+
+Integer sums do not depend on order. So `nvfp4_mmvq_tc` computes every S_sl with int8 `mma.sync` m16n8k16 (k16 is one scale half) and replays the float part in the same order:
+
+- each warp carries the chains of virtual lanes w, w+8, w+16, w+24;
+- the butterfly's first two levels fold in registers in lane w's own operand order;
+- the last three levels replay from shared memory.
+
+Kernels: `qmatvec_nvfp4_mmvq_b32_tc` (singles) and `qmatvec_nvfp4_mmvq_group4_b32_tc` (the group door; every out_f % 16 == 0). It is bit-identical on the first build:
+
+- kernel-check with the tier forced on: `RP BATCHED m=24/32 mcols=32` bit-bad=0 on 6/6 cells, and `FUSED4 m=24/32` bit-bad=0 (GB10 and 5090);
+- the bench output hash matches the dp4a tier;
+- decode token fingerprints are identical in every A/B run.
+
+Singles bench (`mmvq-b16-bench`, 31 tensors of blk.0-3, GB10; `gb10-tc/bench.txt`):
+
+| m | dp4a tier (ms per pass) | tensor-core tier (ms per pass) |
+|---:|---:|---:|
+| 12 | 5.41 | 6.93 |
+| 16 | 6.50 | 7.09 |
+| 24 | 7.86 | 7.62 |
+| 32 | 9.93 | 8.17 |
+
+At 16 rows it loses in the step too: 128.3 vs 149.1 ms/tick (`gb10-tc/ab-b16.txt`). The b16 tier stays dp4a, and the tensor-core kernel serves only the b32 tier.
+
+Decode step at 32 sessions, depth 2048, the same binary with `MEMRA_MMVQ_TC=0/1`, order dp4a tc tc dp4a dp4a tc (`gb10-tc/ab.txt`, `rig5090-tc2/ab.txt`):
+
+| box | dp4a (ms/tick) | tensor-core (ms/tick) | median change | tokens |
+|---|---|---|---:|---|
+| GB10, 27B | 247.53, 247.52, 247.49 | 213.46, 213.44, 213.64 | **-13.8%** (129.3 -> 149.9 tok/s) | identical |
+| RTX 5090, 9B | 54.60, 58.39, 60.16 | 51.70, 53.03, 55.11 | **-9.2%** (5090 throttling; tc faster in every adjacent pair) | identical |
+
+Adoption: the boot wave probe now times three arms (two 16-row waves; one 32-row wave on dp4a; one on the tensor-core tier). It selects the tensor-core tier (`Engine::set_tc_b32`) only when that single wave is the fastest. `MEMRA_MMVQ_TC=0/1` forces it either way.
+
 ## Every cell, per part (`gb10-decode-prof/parts.txt`, `battery/kern_parts.py`)
 
 ms per decode step, effective GB/s in parentheses. Bytes: matmuls 15.7 GB of weights per forward; attention B x depth x 29.7 KB of KV; GDN B x 302 MB of fp32 state read plus write. Gap = tick minus the kernel sum.

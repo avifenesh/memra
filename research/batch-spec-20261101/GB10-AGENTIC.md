@@ -101,3 +101,15 @@ Aggregate generated tok/s, one run per build. Binaries: lever 2 at bfbf46e486, l
 - The FA deep walk is flat here. It pays at long depth (-9.6% at depth 32768, 8 sessions); this cell's median turn is about 11k tokens, where the bench measured -1.7%.
 
 The remaining gap to vLLM at c >= 16 is the dp4a decode matmul, which is latency-bound at every width, and attention at about 59% of bandwidth. GB10-PLAIN-DECODE.md has the per-kernel numbers.
+
+## Exact tensor-core b32 tier, served (2026-11-03, 20:54-21:29)
+
+A fresh boot at 0e914ccf4c. The boot wave probe measured two 16-row waves at 275.6 ms, one 32-row wave at 265.3 ms on dp4a and 232.4 ms on the tensor-core tier, so it chose wave cap 32 with the tensor-core b32 tier on (`gb10-agentic/tc-b32/`).
+
+| c | before the levers | lever 3 (dp4a b32) | fp32 base, c1..c32 sequence | **tensor-core b32** | vLLM |
+|---:|---:|---:|---:|---:|---:|
+| 8 | 60.4 | 61.8 | 62.3 | 62.4 | 96.7 |
+| 16 | 67.1 | 75.8 | 76.0 | 75.8 | 121.4 |
+| 32 | 67.8 | 79.0 | 78.6 | **83.6** | 135.5 |
+
+c=32 gains 5.8% over the dp4a b32 tier. c=8 and c=16 do not move, as designed: the tensor-core tier serves only 17..32-row waves, and it is bit-identical anyway.
