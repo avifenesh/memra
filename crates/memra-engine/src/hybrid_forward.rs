@@ -16788,14 +16788,6 @@ impl HybridModel {
         Ok(Some(out))
     }
 
-    /// Step 3 of the MoE body — SHARED EXPERT (ALWAYS-ON, no routing) on the SAME z —
-    /// qwen35moe only. OLMoE and most vanilla MoE have NO shared expert (the shexp tensors
-    /// are absent / `None`); skip it then. gate_inp_shexp is OPTIONAL: qwen35moe gates the
-    /// shared expert (sigmoid(gate_inp) x sh); MiniMax-M3 (DeepSeek-V3 class) has NO shexp
-    /// gate — the shared expert adds directly. (Extracted verbatim from the sequential body
-    /// so the glm5 EP-2 walk adds the ROOT-owned shared expert through the identical
-    /// program.)
-    #[allow(clippy::too_many_arguments)] // allow: the walk's operand set plus the routing
     /// The TP-SPLIT GROUPED PRIME (`MEMRA_GLM5_TP_SPLIT_GROUPED_PRIME`, default OFF): the EP
     /// grouped prime's per-rank program run by BOTH ranks over ALL routed pairs against the
     /// split slabs (gate/up row halves, down column halves, pointer tables minted at arm time),
@@ -17180,6 +17172,14 @@ impl HybridModel {
         }
         Ok(Some(out))
     }
+
+    /// Step 3 of the MoE body — SHARED EXPERT (ALWAYS-ON, no routing) on the SAME z —
+    /// qwen35moe only. OLMoE and most vanilla MoE have NO shared expert (the shexp tensors
+    /// are absent / `None`); skip it then. gate_inp_shexp is OPTIONAL: qwen35moe gates the
+    /// shared expert (sigmoid(gate_inp) x sh); MiniMax-M3 (DeepSeek-V3 class) has NO shexp
+    /// gate — the shared expert adds directly. (Extracted verbatim from the sequential body
+    /// so the glm5 EP-2 walk adds the ROOT-owned shared expert through the identical
+    /// program.)
     #[allow(clippy::too_many_arguments)]
     fn moe_shexp_add(
         e: &Engine,
@@ -18203,10 +18203,6 @@ impl HybridModel {
         e.qmatvec_mmq_fp8_blk_view(&weight, &scale, x, m, exps.in_f, exps.out_f)
     }
 
-    /// LAUNCH-STRUCTURE STAGE 3: the ZERO-DtoH fully-resident MoE FFN. Caller guarantees the
-    /// layer's device pointer row exists (checked under the cache lock). Router top-k runs on
-    /// device; sel/w are consumed by the `_dev` matvec twins directly; NOTHING crosses PCIe.
-    /// Same numerics as the fused-router + gdec chain (kernel-level bit-identity, see the
     /// MoE PREFILL PAIR-BATCH: host routing (sel/w like the sequential path), then 5 launches
     /// TOTAL per layer (quantize z, gate-pairs, up-pairs, silu, act-quantize, down-pairs,
     /// scatter) regardless of T or expert count. Bit-identity class: per (pair,row) dot =
@@ -18631,8 +18627,11 @@ impl HybridModel {
         Ok(moe_out)
     }
 
+    /// LAUNCH-STRUCTURE STAGE 3: the ZERO-DtoH fully-resident MoE FFN. Caller guarantees the
+    /// layer's device pointer row exists (checked under the cache lock). Router top-k runs on
+    /// device; sel/w are consumed by the `_dev` matvec twins directly; NOTHING crosses PCIe.
+    /// Same numerics as the fused-router + gdec chain (kernel-level bit-identity, see the
     /// kernel headers); the shared-expert epilogue is byte-identical to moe_ffn_sequential's.
-    #[allow(clippy::too_many_arguments)]
     #[allow(clippy::too_many_arguments)]
     fn moe_ffn_dev(
         e: &Engine,
@@ -19043,16 +19042,6 @@ impl HybridModel {
         Ok(moe_out)
     }
 
-    /// STAGE-2 GROUPED DECODE (2026-07-04): run ONE token's whole routed-expert FFN in TWO
-    /// launches when every one of its 3*n_used blocks is ALREADY cache-resident. Returns
-    /// Ok(true) if the grouped path ran (caller skips the sequential loop for this token);
-    /// Ok(false) on ANY miss (caller falls through — the sequential loop stages/admits as
-    /// before, so the NEXT occurrence takes the grouped path). Pointer safety: cache slots are
-    /// fixed-address for the engine's lifetime and the pure-HIT path performs no admission, so
-    /// the collected raw pointers cannot move between collection and launch (single-threaded
-    /// decode; the lock is held only for collection, launches are stream-ordered after any
-    /// prior same-stream staging writes).
-    #[allow(clippy::too_many_arguments)]
     /// q8 twin of moe_gdec_token (dp4a arc): same residency check + 2-launch shape; the fused
     /// kernels consume the pre-quantized z-row and re-quantize act per slot batch.
     #[allow(clippy::too_many_arguments)]
@@ -20014,6 +20003,15 @@ impl HybridModel {
         Ok(Some(moe_out))
     }
 
+    /// STAGE-2 GROUPED DECODE (2026-07-04): run ONE token's whole routed-expert FFN in TWO
+    /// launches when every one of its 3*n_used blocks is ALREADY cache-resident. Returns
+    /// Ok(true) if the grouped path ran (caller skips the sequential loop for this token);
+    /// Ok(false) on ANY miss (caller falls through — the sequential loop stages/admits as
+    /// before, so the NEXT occurrence takes the grouped path). Pointer safety: cache slots are
+    /// fixed-address for the engine's lifetime and the pure-HIT path performs no admission, so
+    /// the collected raw pointers cannot move between collection and launch (single-threaded
+    /// decode; the lock is held only for collection, launches are stream-ordered after any
+    /// prior same-stream staging writes).
     #[allow(clippy::too_many_arguments)] // allow: the parameter list mirrors the kernel/FFI/call contract; bundling into a struct is a refactor, not a lint fix
     fn moe_gdec_token(
         e: &Engine,
@@ -22440,11 +22438,6 @@ impl HybridModel {
         Ok(())
     }
 
-    /// gemma4 attention (R5 geometry, R7 weightless V-norm on the RAW K projection, R9 dual rope).
-    /// `cache`: Some => PRIME mode — append the T post-rope K / normed V rows into the quantized
-    /// KV cache (same per-row quantize math as the decode append) and advance len. Fresh-prompt
-    /// only (v0): attends within `tokens` via the f32 sdpa.
-    #[allow(clippy::too_many_arguments)]
     /// ONE-PROGRAM seam (lane/gemma-restore-exactness-20260819, DEFAULT OFF): route dense
     /// gemma SWA prefill attention through the WINDOWED arm at every prompt length instead of
     /// switching program at `t > sliding_window`. The door is the measured cause of the
@@ -22458,6 +22451,10 @@ impl HybridModel {
         *ON.get_or_init(|| std::env::var("MEMRA_GEMMA_FA_ONE_PROGRAM").as_deref() == Ok("1"))
     }
 
+    /// gemma4 attention (R5 geometry, R7 weightless V-norm on the RAW K projection, R9 dual rope).
+    /// `cache`: Some => PRIME mode — append the T post-rope K / normed V rows into the quantized
+    /// KV cache (same per-row quantize math as the decode append) and advance len. Fresh-prompt
+    /// only (v0): attends within `tokens` via the f32 sdpa.
     #[allow(clippy::too_many_arguments)] // allow: the parameter list mirrors the kernel/FFI/call contract; bundling into a struct is a refactor, not a lint fix
     fn gemma4_attn_prime(
         &self,
@@ -25790,8 +25787,6 @@ impl HybridModel {
         Ok((vam, hn))
     }
 
-    /// Verify trunk core: returns (UN-softcapped logits device [t, n_vocab], post-output_norm
-    /// hidden stack [t, n_embd]); appends KV rows + advances cache.pos.
     /// DFlash tap write (dflash lane): copy the post-layer residual rows of `x` into the
     /// armed sink at the tap slot for `il` (row-major [t, n_taps*hidden]). Per-row D2D
     /// copies — t <= block_size on verify; prime pays t*n_taps once per prompt (dedicated
@@ -25840,6 +25835,8 @@ impl HybridModel {
         Ok(())
     }
 
+    /// Verify trunk core: returns (UN-softcapped logits device [t, n_vocab], post-output_norm
+    /// hidden stack [t, n_embd]); appends KV rows + advances cache.pos.
     fn gemma4_verify_trunk(
         &self,
         e: &Engine,
@@ -28129,13 +28126,6 @@ impl HybridModel {
         Ok(output)
     }
 
-    /// v2 rank-local decode attention (MEMRA_STEP_TP_DECODE_V2): the same kernels, operand
-    /// values, and canonical reduction order as `step35_tp_decode_attn_resident_inner`,
-    /// restructured onto a persistent per-runtime workspace with evented cross-stream ordering.
-    /// Per layer per token this path performs exactly one cuMemAlloc (the returned e-context
-    /// output row), no host round-trip, and no host stream synchronize — the phase timers
-    /// measured v1 spending 81% of its 1550us/layer wall on those three classes.
-    #[allow(clippy::too_many_arguments)]
     /// T-COLUMN verify precompute for layer `il`: weight-amortized QKV(+gate) over the T
     /// verify columns into the ws slabs (per-column rope/append/fa run later through the
     /// unmodified t=1 program via the col-select door). Ok(false) when the layer is not on
@@ -28824,6 +28814,13 @@ impl HybridModel {
         )
     }
 
+    /// v2 rank-local decode attention (MEMRA_STEP_TP_DECODE_V2): the same kernels, operand
+    /// values, and canonical reduction order as `step35_tp_decode_attn_resident_inner`,
+    /// restructured onto a persistent per-runtime workspace with evented cross-stream ordering.
+    /// Per layer per token this path performs exactly one cuMemAlloc (the returned e-context
+    /// output row), no host round-trip, and no host stream synchronize — the phase timers
+    /// measured v1 spending 81% of its 1550us/layer wall on those three classes.
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn step35_tp_decode_attn_resident_v2(
         &self,
         e: &Engine,
