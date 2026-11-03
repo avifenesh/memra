@@ -141,6 +141,36 @@ check "cause2: &'static str + module-qualified + var_os all resolve" 1 \
     "$(fixture memra-engine "$STATIC_READ")"
 
 # ---------------------------------------------------------------------------
+# cause 3: a CUDA-side read. Kernel TUs call getenv too, and a .rs-only census let
+# MEMRA_MIMO_SPLIT_STAGE_TIMING (cu/mimo_mixed_attn.cu) land with no docs/FLAGS.md row.
+# ---------------------------------------------------------------------------
+CUDA_READ='extern "C" int fixture_door() {
+    const char* v = std::getenv("MEMRA_FIXTURE_CUDA_DOOR");
+    return v != nullptr;
+}'
+
+cuda_fixture() {
+    # cuda_fixture <file name under crates/memra-engine/cu> <documented flag or empty>
+    local file=$1 documented=${2:-} root
+    root=$(fixture memra-engine "" "$documented")
+    mkdir -p "$root/crates/memra-engine/cu"
+    printf '%s\n' "$CUDA_READ" > "$root/crates/memra-engine/cu/$file"
+    printf '%s' "$root"
+}
+
+check "cause3: a getenv in a .cu kernel TU is CAUGHT" 1 \
+    "MEMRA_FIXTURE_CUDA_DOOR" \
+    "$(cuda_fixture door.cu)"
+
+check "cause3: a getenv in a .cuh header is CAUGHT" 1 \
+    "MEMRA_FIXTURE_CUDA_DOOR" \
+    "$(cuda_fixture door.cuh)"
+
+check "cause3: the same CUDA read passes once documented" 0 \
+    "no uncovered runtime names" \
+    "$(cuda_fixture door.cu MEMRA_FIXTURE_CUDA_DOOR)"
+
+# ---------------------------------------------------------------------------
 # Negative space. Widening detection must not start inventing flags, or the gate
 # becomes noise and gets bypassed — the failure mode the boundary policy documents.
 # ---------------------------------------------------------------------------
@@ -339,7 +369,9 @@ uncovered=$(printf '%s\n' "$live_out" \
     | sed -n '/^check-flags: uncovered runtime names/,/^check-flags: [^ ]/p' \
     | rg -o 'MEMRA_[A-Z0-9_]+' || true)
 
-for want in MEMRA_ALLOW_UNKNOWN_PRETOKENIZER MEMRA_FATBIN MEMRA_MOE_MMAP_ADVICE; do
+# MEMRA_MIMO_SPLIT_STAGE_TIMING is read only in cu/mimo_mixed_attn.cu: the CUDA-side pass.
+for want in MEMRA_ALLOW_UNKNOWN_PRETOKENIZER MEMRA_FATBIN MEMRA_MOE_MMAP_ADVICE \
+    MEMRA_MIMO_SPLIT_STAGE_TIMING; do
     # Feed the captured census directly. Under this script's `pipefail`,
     # `printf ... | rg -q` can invert a successful early match when `rg` closes the large
     # census pipe and `printf` exits on SIGPIPE. Which flag passes then depends on pipe-buffer
@@ -418,10 +450,11 @@ fi
 #
 # 8 original `check` cases + 4 grandfather-retirement arms + 3 flags x 3 live assertions
 # + census size + gate-green + baseline-still-absent = 24; + 9 row-shape arms and the live
-# row-shape arm (memra#127, 2026-09-27) = 34.
+# row-shape arm (memra#127, 2026-09-27) = 34; + 3 CUDA-read arms and a fourth live flag
+# (MEMRA_MIMO_SPLIT_STAGE_TIMING, 3 assertions) on 2026-11-03 = 40.
 # (This constant caught its own first draft: it was written 23 and the run refused at 19. It
 # went 19 -> 24 on 2026-08-23 when the grandfather list was deleted.)
-EXPECTED_ASSERTIONS=34
+EXPECTED_ASSERTIONS=40
 total=$((pass + fail))
 printf '\ntest_check_flags: %d passed, %d failed (%d assertions, expected %d)\n' \
     "$pass" "$fail" "$total" "$EXPECTED_ASSERTIONS"
