@@ -110,7 +110,8 @@ pub enum TpTransport {
     /// The difference from `peer-pull` is direction, and it is the whole point. A pull is a
     /// consumer-side read, so the reading rank cannot start until the producing rank has
     /// finished: at ~90 joins per token that keeps the two cards single-file, which is why
-    /// peer-pull measured WORSE than the host bounce rather than better. A push is issued on
+    /// removing every host leg bought peer-pull only +16% over the host bounce on the 2x B200
+    /// pair (16.48 -> 19.11 tok/s) and left TP-2 about 3x slower than PP-2. A push is issued on
     /// the producer's own stream, so each rank hands its bytes over and carries on, and the
     /// consumer's stream is ordered after by the same publication event. Movement only: every
     /// hop this transport serves is a fan-out, a gather or a concat, so the arm is
