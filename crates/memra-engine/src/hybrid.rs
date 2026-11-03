@@ -4305,11 +4305,7 @@ impl HybridModel {
         let spec_mmq_key =
             std::env::var("MEMRA_DRAFT").is_ok() && std::env::var("MEMRA_MMQ_SK").is_err();
         let numeric = crate::ModelNumericDefaults::for_model(
-            if cfg.n_head_kv > 0 {
-                cfg.n_head / cfg.n_head_kv
-            } else {
-                0
-            },
+            cfg.n_head.checked_div(cfg.n_head_kv).unwrap_or(0),
             gemma_program.then_some(gemma_real_moe),
             cfg.arch.is_glm5_next() && env!("MEMRA_BUILT_CUDA_ARCH") == "100a",
             sliding_gated_moe_program,
