@@ -178,6 +178,79 @@ pub fn bf16_tc_dispatches() -> u64 {
     BF16_TC_DISPATCHES.load(std::sync::atomic::Ordering::Relaxed)
 }
 
+/// One weight's fp16 dequant mirror (`GpuTensor::Quant::f16`) together with its charge against
+/// the owning engine's mirror budget (`MEMRA_PP_F16_BUDGET_MB`). Dropping the mirror refunds the
+/// charge, so an unloaded or reloaded model gives its budget back and the next load on that
+/// device sees the same headroom a fresh process would. Derefs to the device slice, so every
+/// reader keeps taking `&CudaSlice<u8>`.
+pub struct F16Mirror {
+    slice: CudaSlice<u8>,
+    charge: Option<(std::sync::Arc<std::sync::atomic::AtomicUsize>, usize)>,
+}
+
+impl F16Mirror {
+    /// A mirror whose `bytes` are charged to `ledger` until it drops.
+    pub fn charged(
+        slice: CudaSlice<u8>,
+        ledger: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+        bytes: usize,
+    ) -> Self {
+        Self {
+            slice,
+            charge: Some((ledger, bytes)),
+        }
+    }
+}
+
+impl std::ops::Deref for F16Mirror {
+    type Target = CudaSlice<u8>;
+    fn deref(&self) -> &CudaSlice<u8> {
+        &self.slice
+    }
+}
+
+impl std::ops::DerefMut for F16Mirror {
+    fn deref_mut(&mut self) -> &mut CudaSlice<u8> {
+        &mut self.slice
+    }
+}
+
+impl Drop for F16Mirror {
+    fn drop(&mut self) {
+        if let Some((ledger, bytes)) = self.charge.take() {
+            ledger.fetch_sub(bytes, std::sync::atomic::Ordering::Relaxed);
+        }
+    }
+}
+
+/// `MEMRA_PP_F16_BUDGET_MB` in bytes (default 32 GiB), the cap on ONE engine's (one device's)
+/// resident f16 mirrors. The env is read once; the spend is per engine.
+fn f16_mirror_budget_bytes() -> usize {
+    static BUDGET: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
+    *BUDGET.get_or_init(|| {
+        std::env::var("MEMRA_PP_F16_BUDGET_MB")
+            .ok()
+            .and_then(|v| v.parse::<usize>().ok())
+            .unwrap_or(32768)
+            << 20
+    })
+}
+
+/// The budget law over one engine's ledger: charge `bytes` when they fit and return true, else
+/// leave the ledger as it was and return false. Pure over the atomic, so the tooth needs no GPU.
+pub fn f16_mirror_try_charge(
+    spent: &std::sync::atomic::AtomicUsize,
+    bytes: usize,
+    budget: usize,
+) -> bool {
+    use std::sync::atomic::Ordering;
+    if spent.fetch_add(bytes, Ordering::Relaxed) + bytes > budget {
+        spent.fetch_sub(bytes, Ordering::Relaxed);
+        return false;
+    }
+    true
+}
+
 /// Resident scratch (fp8_ffi::Fp8Scratch pattern): fp16 activation (grown to the largest m*k
 /// seen) + the cuBLASLt workspace. Single GPU worker; the Mutex guards lazy build/grow only.
 pub struct F16Scratch {
@@ -792,34 +865,50 @@ impl crate::Engine {
             return Ok(());
         }
         // Budget (layer-order prefix, MEMRA_PP_FP8_BUDGET_MB pattern): default 32GB — the whole
-        // 9B mirror on an 80GB box; smaller rigs set MEMRA_PP_F16_BUDGET_MB down.
-        use std::sync::atomic::{AtomicUsize, Ordering};
-        static SPENT: AtomicUsize = AtomicUsize::new(0);
-        static BUDGET: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
-        let budget = *BUDGET.get_or_init(|| {
-            std::env::var("MEMRA_PP_F16_BUDGET_MB")
-                .ok()
-                .and_then(|v| v.parse::<usize>().ok())
-                .unwrap_or(32768)
-                << 20
-        });
+        // 9B mirror on an 80GB box; smaller rigs set MEMRA_PP_F16_BUDGET_MB down. The spend is
+        // THIS engine's (one device's), refunded when a mirror drops: a process-global counter
+        // charged every card of a PP split and every model of a roster against one budget in
+        // load order and never refunded an unload, so which tensors got mirrors (and so which
+        // prefill numeric class they ran) depended on load history, silently.
+        let budget = f16_mirror_budget_bytes();
         let sz = out_f * in_f * 2;
-        if SPENT.fetch_add(sz, Ordering::Relaxed) + sz > budget {
-            SPENT.fetch_sub(sz, Ordering::Relaxed);
+        if !f16_mirror_try_charge(&self.f16_mirror_spent, sz, budget) {
+            use std::sync::atomic::Ordering;
+            if !self.f16_mirror_skip_announced.swap(true, Ordering::Relaxed) {
+                eprintln!(
+                    "[f16-mirror] budget reached on device {}: {} MiB of {} MiB \
+                     (MEMRA_PP_F16_BUDGET_MB) already mirrored, so this {out_f}x{in_f} weight \
+                     and every later one that does not fit prefill on their quantized class \
+                     instead of the f16 lane",
+                    self.gpu.ctx.ordinal(),
+                    self.f16_mirror_spent.load(Ordering::Relaxed) >> 20,
+                    budget >> 20
+                );
+            }
             return Ok(());
         }
-        let mirror = if q6k {
-            self.build_q6k_f16_raw(bytes, in_f, out_f)?
-        } else if q4k {
-            self.build_q4k_f16_raw(bytes, in_f, out_f)?
-        } else if q5k {
-            self.build_q5k_f16_raw(bytes, in_f, out_f)?
-        } else if q4 {
-            self.build_q4_f16_raw(bytes, in_f, out_f)?
-        } else {
-            self.build_q8_f16_raw(bytes, in_f, out_f)?
+        let refund = |e: Box<dyn std::error::Error>| {
+            self.f16_mirror_spent
+                .fetch_sub(sz, std::sync::atomic::Ordering::Relaxed);
+            e
         };
-        *f16 = Some(mirror);
+        let mirror = if q6k {
+            self.build_q6k_f16_raw(bytes, in_f, out_f)
+        } else if q4k {
+            self.build_q4k_f16_raw(bytes, in_f, out_f)
+        } else if q5k {
+            self.build_q5k_f16_raw(bytes, in_f, out_f)
+        } else if q4 {
+            self.build_q4_f16_raw(bytes, in_f, out_f)
+        } else {
+            self.build_q8_f16_raw(bytes, in_f, out_f)
+        }
+        .map_err(refund)?;
+        *f16 = Some(F16Mirror::charged(
+            mirror,
+            std::sync::Arc::clone(&self.f16_mirror_spent),
+            sz,
+        ));
         Ok(())
     }
 
@@ -942,5 +1031,27 @@ impl crate::Engine {
             return Err(format!("memra_q6_K_dequant_f16 rc={rc}").into());
         }
         Ok(dst)
+    }
+}
+
+#[cfg(test)]
+mod f16_mirror_budget_tests {
+    use super::f16_mirror_try_charge;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    /// One ledger per engine: a charge that does not fit leaves the ledger untouched, a refund
+    /// (a dropped mirror) gives the room back, and a second engine's ledger is independent.
+    #[test]
+    fn charge_fits_or_leaves_the_ledger_and_refunds_restore_room() {
+        let dev0 = AtomicUsize::new(0);
+        assert!(f16_mirror_try_charge(&dev0, 60, 100));
+        assert!(!f16_mirror_try_charge(&dev0, 60, 100));
+        assert_eq!(dev0.load(Ordering::Relaxed), 60);
+        assert!(f16_mirror_try_charge(&dev0, 40, 100));
+        assert!(!f16_mirror_try_charge(&dev0, 1, 100));
+        dev0.fetch_sub(60, Ordering::Relaxed); // the first mirror dropped
+        assert!(f16_mirror_try_charge(&dev0, 60, 100));
+        let dev1 = AtomicUsize::new(0);
+        assert!(f16_mirror_try_charge(&dev1, 100, 100));
     }
 }
