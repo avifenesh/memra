@@ -62,18 +62,10 @@ pub(crate) fn routes_prestage_on() -> bool {
     *ON.get_or_init(|| std::env::var("MEMRA_ROUTES_PRESTAGE").as_deref() == Ok("1"))
 }
 
-/// MEMRA_FENCE_MEMOPS=1 (default OFF until gated): the moe direct join's two event
-/// fences become cuStreamWriteValue32/cuStreamWaitValue32 doorbells — hardware stream
-/// memops with lower signal->wake latency than cross-device cuStreamWaitEvent. Ordering:
-/// PCIe posted writes from one device arrive in order, so rank1's accumulator stores are
-/// visible before its flag write lands; e's GEQ wait then covers them. Falls back to
-/// events when the device rejects stream memops. Scheduling-only: BIT-IDENTICAL values.
 /// MEMRA_LEN_MIRROR_LAZY=1 (default OFF until gated): skip redundant per-layer 4B len
 /// htods — the local device mirror is unread in TP decode, and under FUSE_ROPE_APPEND the
 /// fused append's atomicInc owns the rank counters. Every one of those tiny copies is a
 /// compute->copy engine turnaround in the middle of the layer stream.
-/// MEMRA_RANK0_MERGE=1 (default OFF until gated): same-device rank0 rides e's stream via
-/// the runtime redirect — see decode_step_h.
 /// MEMRA_OPROJ_TAIL=1 (default OFF until gated): the o-proj direct-join add is DEFERRED —
 /// the finish arm keeps its waits, stores the two partial pointers here, and the residual
 /// add_rms_norm consumer composes mixed = a0+a1 in-register (join_add_rms_norm, verbatim
@@ -159,19 +151,9 @@ pub(crate) fn set_oproj_tail(v: (u64, u64)) {
     OPROJ_TAIL_PENDING.with(|c| c.set(Some(v)));
 }
 
-pub(crate) fn rank0_merge_on() -> bool {
-    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| std::env::var("MEMRA_RANK0_MERGE").as_deref() == Ok("1"))
-}
-
 pub(crate) fn len_mirror_lazy_on() -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *ON.get_or_init(|| std::env::var("MEMRA_LEN_MIRROR_LAZY").as_deref() == Ok("1"))
-}
-
-pub(crate) fn fence_memops_on() -> bool {
-    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| std::env::var("MEMRA_FENCE_MEMOPS").as_deref() == Ok("1"))
 }
 
 pub(crate) fn moe_direct_on() -> bool {
@@ -9896,11 +9878,6 @@ pub struct Nvfp4DeviceRoutesWorkspace {
     /// Peer-router door state: rank1's sel/route_w were computed locally in prestage;
     /// the routed run skips rank1's sel pull. Reset per call.
     rank1_routed: bool,
-    /// Doorbell fences (MEMRA_FENCE_MEMOPS): raw cuMemAlloc'd [rank1_flag, root_flag]
-    /// u32 pair in ROOT memory (async-pool memory is memop-INELIGIBLE — receipted
-    /// CUDA_ERROR_INVALID_VALUE) + the host-side monotonic ticket. 0 = unarmed.
-    fence_flags_raw: u64,
-    fence_ticket: u32,
     /// Prestage input fence, recorded on e after the input's producer.
     ev_input: Option<(CudaEvent, usize)>,
     /// Graph-door staging: persistent e-context input row + output row (fixed addresses the
@@ -12088,8 +12065,6 @@ impl TpE4m3HostBounce {
                 prestaged: false,
                 rank1_routed: false,
                 ev_input: None,
-                fence_flags_raw: 0,
-                fence_ticket: 0,
                 gate_out,
                 up_out,
                 act_q,
@@ -13747,45 +13722,6 @@ impl TpE4m3HostBounce {
             let _main = engine.gpu.enter_main()?;
             workspace.ev_rank[rank_index].record(&engine.stream())?;
         }
-        // Doorbell fences (MEMRA_FENCE_MEMOPS=1): rank1 + root ring their flags; e waits
-        // the tickets instead of the two events. Arm lazily; 0-len = unsupported.
-        let memops = fence_memops_on() && moe_direct_on() && self.ranks.len() == 2;
-        let mut ticket = 0u32;
-        if memops {
-            use cudarc::driver::sys;
-            if workspace.fence_flags_raw == 0 {
-                let root = &self.ranks[0];
-                let _main = root.gpu.enter_main()?;
-                let mut ptr: sys::CUdeviceptr = 0;
-                let r = unsafe { sys::cuMemAlloc_v2(&mut ptr, 8) };
-                if r != sys::CUresult::CUDA_SUCCESS {
-                    return Err(format!("fence flag alloc: {r:?}").into());
-                }
-                let r = unsafe { sys::cuMemsetD8_v2(ptr, 0, 8) };
-                if r != sys::CUresult::CUDA_SUCCESS {
-                    return Err(format!("fence flag memset: {r:?}").into());
-                }
-                workspace.fence_flags_raw = ptr as u64;
-            }
-            workspace.fence_ticket = workspace.fence_ticket.wrapping_add(1).max(1);
-            ticket = workspace.fence_ticket;
-            let base = workspace.fence_flags_raw;
-            {
-                let root = &self.ranks[0];
-                let _main = root.gpu.enter_main()?;
-                let r = unsafe {
-                    sys::cuStreamWriteValue32_v2(
-                        root.stream().cu_stream() as sys::CUstream,
-                        (base + 4) as sys::CUdeviceptr,
-                        ticket,
-                        0,
-                    )
-                };
-                if r != sys::CUresult::CUDA_SUCCESS {
-                    return Err(format!("fence write root: {r:?}").into());
-                }
-            }
-        }
         // PREJOIN hook: rank work is fully issued (dev1 running); independent e-stream
         // kernels queued here execute while the peer rank drains its sweep.
         pre_join()?;
@@ -13798,42 +13734,23 @@ impl TpE4m3HostBounce {
             // e-context row (NOT an alias of ws state — the reverted zero-copy handoff's
             // hazard class does not apply).
             let _main = e.gpu.enter_main()?;
-            if memops {
-                use cudarc::driver::sys;
-                let base = workspace.fence_flags_raw;
-                let r = unsafe {
-                    sys::cuStreamWaitValue32_v2(
-                        e.stream().cu_stream() as sys::CUstream,
-                        (base + 4) as sys::CUdeviceptr,
-                        ticket,
-                        sys::CUstreamWaitValue_flags::CU_STREAM_WAIT_VALUE_GEQ as u32,
-                    )
-                };
-                if r != sys::CUresult::CUDA_SUCCESS {
-                    return Err(format!("fence wait: {r:?}").into());
-                }
-                for ev in workspace.ev_rank.iter().skip(1) {
-                    e.stream().wait(ev)?;
-                }
-            } else {
-                {
-                    let root = &self.ranks[0];
-                    let _rmain = root.gpu.enter_main()?;
-                    workspace
-                        .ev_done
-                        .as_ref()
-                        .expect("device routes done event")
-                        .record(&root.stream())?;
-                }
-                e.stream().wait(
-                    workspace
-                        .ev_done
-                        .as_ref()
-                        .expect("device routes done event"),
-                )?;
-                for ev in workspace.ev_rank.iter().skip(1) {
-                    e.stream().wait(ev)?;
-                }
+            {
+                let root = &self.ranks[0];
+                let _rmain = root.gpu.enter_main()?;
+                workspace
+                    .ev_done
+                    .as_ref()
+                    .expect("device routes done event")
+                    .record(&root.stream())?;
+            }
+            e.stream().wait(
+                workspace
+                    .ev_done
+                    .as_ref()
+                    .expect("device routes done event"),
+            )?;
+            for ev in workspace.ev_rank.iter().skip(1) {
+                e.stream().wait(ev)?;
             }
             let mut output = e.uninit(experts.input_width)?;
             if let Some((sh_raw, scale_raw)) = post_add {

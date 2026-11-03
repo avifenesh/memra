@@ -1797,6 +1797,31 @@ again: first-miss admit, the program every other dispatch already ran. The door 
 with a receipt on both rigs. Git history is the archive. Ledger:
 `VERDICT:moe-cold-bypass-door-removed` (darklanes `agent-knowledge/gpu/verdicts-ledger.md`).
 
+## Removed doors, 2026-11-03 (the step TP `MEMRA_RANK0_MERGE` and `MEMRA_FENCE_MEMOPS`: negative and flat)
+
+Two default-OFF scheduling doors of the step37 2-card TP stack, both bit-identical by
+construction and both already receipted in their rows, which kept them anyway. A negative or flat
+receipt deletes the door. Neither is armed by a launcher.
+
+- `MEMRA_RANK0_MERGE=1`: same-device rank 0 rode the model engine's stream through a runtime
+  redirect, turning every e<->rank0 event hop into program order. **RECEIPTED NEGATIVE (-2.7)**:
+  dev0's two-stream concurrency is real, and the routes prestage rides exactly that seam.
+  Deleted: the env read (`tp::rank0_merge_on`), both redirect scopes in `decode_step_h` and
+  `decode_step_chain`, and the redirect machinery only they reached in `memra-runtime`
+  (`rank0_redirect_scope`, `set_rank0_redirect`, `Rank0RedirectGuard`, the thread-local and its
+  `enter_main` arm). Ledger: `VERDICT:rank0-merge-door-removed`.
+- `MEMRA_FENCE_MEMOPS=1`: the moe direct join's two event fences became
+  `cuStreamWriteValue32` / `cuStreamWaitValue32` doorbells. **RECEIPTED FLAT on PCIe**; stream
+  memops are rejected on peer memory over PCIe P2P and on async-pool allocations. The row kept
+  it "for NVLink-class fabrics", a fabric nobody measured it on. Deleted: the env read
+  (`tp::fence_memops_on`), the doorbell arm of the device-routes join (the event pair is the
+  only join), and the `fence_flags_raw` / `fence_ticket` workspace fields. An NVLink doorbell
+  arm returns only with an NVLink receipt. Ledger: `VERDICT:fence-memops-door-removed`.
+
+Both ledger lines go in darklanes `agent-knowledge/gpu/verdicts-ledger.md`. Git history is the
+archive. The `MEMRA_FENCE_RANK1` row of the 2026-09-05 door sweep below still says
+`MEMRA_FENCE_MEMOPS` stayed; this entry supersedes that.
+
 ## Removed doors, 2026-11-03 (`MEMRA_SHEXP_SWIGLU_ZQ8` and `MEMRA_HC_PRE_NORM_FUSE`: decide-by passed with no row)
 
 Two lane/launch-collapse-20260906 doors on the glm5 B200 decode, both bit-identical by
@@ -2658,8 +2683,6 @@ ones — filed under their own heading so a flag audit scanning the live section
 | `MEMRA_ASYNC_CHAIN` | 0 | `K>=2` enables the eager device-chained chunk (`decode_step_chain`). `run-gen` uses it directly. The server arm is deliberately narrower and still **default OFF**: it engages only with `MEMRA_SERVE_BATCH=0`, no speculative/grammar/penalty path, and a plan accepted by `device_chain_plan_eligible`; every other shape takes the unchanged single-token fallback. Eligibility is plan/runtime-derived: standard residual, no Gemma/E4B, HyperConnections or pipeline cut, and only Full/Linear mixers. MLA and KDA remain fail-closed. Every eligible legacy session keeps the chain path as round-robin width changes, so sampled requests cannot switch mid-stream from generated-length-indexed device draws to a host RNG whose draw counter did not advance. An EOS, stop-string, or disconnect inside a submitted chunk marks its overshot cache tainted, so neither prefix nor whole-session affinity reuse can publish the hidden suffix. Clean max-token chunks keep cache/fed lengths aligned and remain parkable. Greedy writes tail argmax into resident `token_d`; sampled decode performs `filter_stats` -> `gumbel_perturb_filtered_col` -> argmax inside the same chain, with a per-step counter, so neither mode host-syncs between tokens. When `MEMRA_HEAD_SPLIT=1`, sampled decode draws from the split path's materialized concatenated row through `head_split_sample_device`; it no longer drops to the plain head. `0` is the rollback seam for both callers. Dense 9B on the local RTX 5090 measured 120.40 -> 131.90 sampled tok/s (**+9.55%**) at K=8 across five fresh boots per arm in A/B, B/A order; every chain row beat every control. Greedy identity, two-seed solo/c2 identity, stop-taint, and disconnect recovery were green. The 27B dense twin passed those semantic gates but measured 44.70 -> 45.98 tok/s (**+2.86%**), below the 3% retention bar. The benefit is model-specific, not a generic dense default. The older +0.6 tok/s at K=8 (K=16 flat; battery v18 12/12) remains a greedy `run-gen` receipt, not a serving claim. The global server arm stays off; the HY3/MoE PRO 6000 endpoint cell was not run before that program closed, so there is no HY3 chain-performance claim. |
 | `MEMRA_LEN_MIRROR_LAZY` | off | Strict `0`/`1`: skip the ~3x45 per-token 4-byte IN-STREAM len htods — the LOCAL device mirror is unread in TP decode, and under `MEMRA_FUSE_ROPE_APPEND` the fused append's atomicInc owns the rank counters (the commit re-set is the same value on every fully-accepted greedy token; rollback paths keep absolute sets). CAVEAT: must drop — or spec must own its mirrors — when MTP partial-accept lands. +1.1 (67.9 -> 69.0); battery v20 12/12. Default OFF; serving env pins it on. |
 | `MEMRA_DEV1_ROUTER` | off | Strict `0`/`1`: rank1 routes LOCALLY from its own z copy via per-layer router replicas (gate_inp f32 + exp_probs_b + active mask, one-time P2P upload) — deterministic kernels on identical input bits produce bit-equal sel/w, so rank1's sweep starts without waiting the root's router+broadcast. Rides the prestage hook. +0.6 (69.1 -> 69.7); battery v21. Default OFF; serving env pins it on. |
-| `MEMRA_FENCE_MEMOPS` | off | RECEIPTED FLAT on PCIe: doorbell (cuStreamWriteValue32) for the root->e join hop. Stream memops are REJECTED on peer memory over PCIe P2P and on async-pool allocations (both CUDA_ERROR_INVALID_VALUE; the flag rides raw cuMemAlloc). Kept for NVLink-class fabrics. |
-| `MEMRA_RANK0_MERGE` | off | RECEIPTED NEGATIVE (-2.7): same-device rank0 riding e's stream via the runtime redirect (legal — same primary context). dev0's two-stream concurrency is real; prestage rides exactly that seam. |
 | `MEMRA_SHEXP_DEV1` | off | RECEIPTED NEGATIVE (~-5, structural): the shared expert on rank1 extends the join critical path — dev1's idle window sits BEFORE z exists, so dev0's peer-drain slot (used by `MEMRA_SHEXP_OVERLAP`) is the only shexp slot. Per-layer replica machinery kept. |
 | `MEMRA_SEL_DOWN8` | **REMOVED 2026-08-29** | NVFP4 routed DOWN sweep + route-weight combine in one launch, one warp per slot. REMOVED with `MEMRA_NVFP4_BANK_V2` (see that row): the fused kernels read only the v2 banks, so the door could not exist without the layout whose ON arm changed generated text in serving. Its prior +5.5% turn8 receipt was measured on the v2 stack and dies with it. (The EP2 twin `qmatvec_nvfp4_dp4a_sel_v2_down8_ep` went with `MEMRA_STEP_NVFP4_EP2` on 2026-09-05.) Setting `MEMRA_SEL_DOWN8=1` now refuses server boot (`removed_bank_v2_doors_refusal`, worker.rs). Receipts: bisect `research/step37-reasoning-effort-20260829`, removal `research/step37-bankv2-removal-20260829`. |
 | `MEMRA_FA_COMBINE_S` | off | Strict `1`: split-combine twin that stages `partM`/`partL` into dynamic shared memory once, cooperatively, instead of having EVERY thread walk them from global twice (the first pass is an `n_splits`-deep DEPENDENT load chain per thread — 11.4us per layer for a few hundred flops). Same `s`-ascending order for the max, the `l` sum and the `o` sum: BIT-IDENTICAL (tape EXACT). +0.9% at turn8 (75.84/76.12 vs 75.26/75.30, two boots per arm, no overlap). Default OFF for naked runs, decide-by: 2026-11-17. A bit-identical arm with a positive receipt is a promotion candidate, not a launcher setting: the darklanes step37 launcher pins it on, but no launcher or gate in this repo sets it, and that pin is not a decision. Missing gate: the battery on a 2-card pair plus a three-boot interleaved A/B. A pass by the date makes it the naked default (the door goes); no battery by the date deletes the door and its twin kernel `fa_decode_combine_gate_f32_s`. |
