@@ -26202,35 +26202,6 @@ impl Engine {
         Ok(())
     }
 
-    /// `matvec_bf16_into` with a RAW u64 output pointer (UVA — the dev1-shexp down row
-    /// lands root-resident over P2P). Same kernel, same per-row program: bit-identical.
-    pub fn matvec_bf16_raw_out(
-        &self,
-        w: &CudaSlice<u8>,
-        x: &CudaSlice<f32>,
-        y_raw: u64,
-        in_f: usize,
-        out_f: usize,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        if w.len() != in_f * out_f * 2 || x.len() < in_f || !in_f.is_multiple_of(8) || y_raw == 0 {
-            return Err("matvec_bf16_raw_out geometry".into());
-        }
-        let f = self.func("matvec_bf16_f32acc");
-        let cfg = LaunchConfig {
-            grid_dim: (out_f as u32, 1, 1),
-            block_dim: (mmv_block(), 1, 1),
-            shared_mem_bytes: 0,
-        };
-        let ini = in_f as i32;
-        let __s_b = self.gpu.stream();
-        let mut b = __s_b.launch_builder(&f);
-        b.arg(w).arg(x).arg(&y_raw).arg(&ini);
-        unsafe {
-            b.launch(cfg)?;
-        }
-        Ok(())
-    }
-
     /// MOE TAIL FUSION M1: dst = (a + b) + sh*scale[0] in one launch (sh/scale as RAW
     /// UVA pointers so the caller passes persistent-static rows without holding locks).
     /// Exact per-element sequence of the split add + add_scaled_rows pair.
