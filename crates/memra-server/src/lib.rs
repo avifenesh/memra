@@ -6149,7 +6149,7 @@ enum MeteringWiring {
 }
 
 /// Deployment wiring for a custom binary. `serve_main` is exactly
-/// `serve_with(ServerWiring::reference())`; a deployment-owned binary substitutes
+/// `serve_with(ServerWiring::stock())`; a deployment-owned binary substitutes
 /// its own metering and hooks the runtime handles it needs.
 pub struct ServerWiring {
     metering: MeteringWiring,
