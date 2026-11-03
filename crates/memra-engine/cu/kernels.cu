@@ -18,56 +18,12 @@
 #define MEMRA_PDL_ENTRY()
 #endif
 
-// ---- GPU-resident greedy argmax over logits[n_vocab] -> token_out[0] (u32). ----
-// CUDA-GRAPH-PLAN Phase 1: removes the per-step dtoh(logits)+synchronize host barrier (the hard
-// graph-capture blocker). Single CTA, 256 threads. Tie-break = SMALLEST index wins, bit-identical
-// to the host argmax (forward.rs `if v > bv` strictly-greater keeps the first max). Each thread
-// scans a strided slice keeping (best_val,best_id); reduce keeps the lower id on equal value.
-// SUPERSEDED for the live path by the parallel 2-pass kernels below (argmax_partial_f32 +
-// argmax_final_f32): one 256-thread block scanning 248K logits on ONE SM is HBM-starved (~448us/
-// token, ncu clock-locked). Kept as the bit-exact single-CTA reference (same tie-break contract).
-extern "C" __global__ void argmax_logits_f32_to_u32(
-        const float* __restrict__ logits, uint32_t* __restrict__ token_out, int n_vocab) {
-    int tid = threadIdx.x;
-    float best_v = -3.402823466e38f;   // -FLT_MAX (matches f32::NEG_INFINITY seed)
-    int   best_i = 0x7fffffff;
-    for (int i = tid; i < n_vocab; i += blockDim.x) {
-        float v = logits[i];
-        // strictly-greater takes the new value; on a tie keep the smaller index.
-        if (v > best_v || (v == best_v && i < best_i)) { best_v = v; best_i = i; }
-    }
-    // warp butterfly reduce: max value, smallest index on tie.
-    #pragma unroll
-    for (int off = 16; off > 0; off >>= 1) {
-        float ov = __shfl_xor_sync(0xffffffff, best_v, off);
-        int   oi = __shfl_xor_sync(0xffffffff, best_i, off);
-        if (ov > best_v || (ov == best_v && oi < best_i)) { best_v = ov; best_i = oi; }
-    }
-    __shared__ float sv[32];
-    __shared__ int   si[32];
-    int warp = tid >> 5, lane = tid & 31;
-    if (lane == 0) { sv[warp] = best_v; si[warp] = best_i; }
-    __syncthreads();
-    if (warp == 0) {
-        int nwarps = (blockDim.x + 31) >> 5;
-        best_v = (lane < nwarps) ? sv[lane] : -3.402823466e38f;
-        best_i = (lane < nwarps) ? si[lane] : 0x7fffffff;
-        #pragma unroll
-        for (int off = 16; off > 0; off >>= 1) {
-            float ov = __shfl_xor_sync(0xffffffff, best_v, off);
-            int   oi = __shfl_xor_sync(0xffffffff, best_i, off);
-            if (ov > best_v || (ov == best_v && oi < best_i)) { best_v = ov; best_i = oi; }
-        }
-        if (lane == 0) token_out[0] = (uint32_t)best_i;
-    }
-}
-
-// ---- PARALLEL argmax (2-pass, multi-CTA). RANK1 LEVER: the single-CTA argmax above scans the full
+// ---- PARALLEL argmax (2-pass, multi-CTA). RANK1 LEVER: a single-CTA argmax scanned the full
 // 248320-vocab logits with ONE 256-thread block on ONE SM — memory-starved, ~426us/token. This pair
 // fans the scan across NB blocks so HBM is saturated, then a 1-block final reduce picks the winner.
-// BIT-IDENTICAL to the single-CTA kernel and to host `argmax` (forward.rs `v>bv`): strictly-greater
-// takes the new value, ties keep the SMALLEST index. Pass 1 -> (part_v[NB], part_i[NB]); pass 2
-// reduces those NB partials into token_out[0]. Both passes are plain launches (graph-capturable).
+// BIT-IDENTICAL to host `argmax` (forward.rs `v>bv`): strictly-greater takes the new value, ties
+// keep the SMALLEST index. Pass 1 -> (part_v[NB], part_i[NB]); pass 2 reduces those NB partials
+// into token_out[0]. Both passes are plain launches (graph-capturable).
 //
 // Greedy-token softmax probability, pass 1: partial sums of exp(logit - max) where max =
 // logits[tok] (tok = the argmax token, already on device). p(tok) = 1 / sum. Feeds the
