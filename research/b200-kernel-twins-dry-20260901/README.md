@@ -51,7 +51,10 @@ fallback, because unmeasured hardware behavior does not default on.
   positions.
 - `bash research/b200-kernel-twins-dry-20260901/check-nvfp4.sh`: PASS. W4A4 exports all four
   `memra_mmq_nvfp4*` symbols and contains `UTCOMMA.4X`, `UTCCP`, `UTCBAR`, and TMEM
-  allocate/deallocate SASS. W4A8 exports its ABI and contains `IMMA.16816.S8.S8`.
+  allocate/deallocate SASS. W4A8 exports its ABI and contains `IMMA.16816.S8.S8`. Since
+  2026-11-03 the uncalled `memra_mmq_nvfp4` and `memra_mmq_nvfp4_ex` entries are deleted, so the
+  script checks the two W4A4 symbols that remain, `memra_mmq_nvfp4_ex2` and
+  `memra_mmq_nvfp4_act_bytes`.
 - W4A4 production-kernel static resources: 55 registers, 10,260 bytes shared memory, zero local
   memory (`cuobjdump --dump-resource-usage`).
 - `bash research/b200-kernel-twins-dry-20260901/check-fp8.sh`: PASS. The dense ABI contains
