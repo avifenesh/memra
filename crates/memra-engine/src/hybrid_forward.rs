@@ -16447,16 +16447,6 @@ impl HybridModel {
         }
 
         crate::glm5_tp::GLM5_EP_DIET_DISPATCHES.fetch_add(1, Ordering::Relaxed);
-        for r in 1..ranks {
-            crate::glm5_tp::GLM5_EP_DIET_FANOUT_UPLOADS_AVOIDED.fetch_add(
-                if per_rank[r] > 0 {
-                    (t - 1) as u64
-                } else {
-                    t as u64
-                },
-                Ordering::Relaxed,
-            );
-        }
         static EP_DIET_MARKED: std::sync::atomic::AtomicBool =
             std::sync::atomic::AtomicBool::new(false);
         if !EP_DIET_MARKED.swap(true, Ordering::Relaxed) {

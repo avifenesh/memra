@@ -339,33 +339,6 @@ impl Glm5TpRt {
         Ok(vec![a, b])
     }
 
-    /// The out-of-place one-shot (`ArLink::all_reduce_1stage_into`): no staging copies. Same
-    /// availability contract as `ar_1stage`; Ok(false) when the one-shot cannot serve.
-    pub fn ar_1stage_into(
-        &self,
-        root: &Engine,
-        inputs: &[&CudaSlice<f32>],
-        outs: &mut [&mut CudaSlice<f32>],
-        n: usize,
-    ) -> Result<bool, Box<dyn std::error::Error>> {
-        if !self.ar_1stage_available() {
-            return Ok(false);
-        }
-        let engines: Vec<&Engine> = std::iter::once(root).chain(self.peers.iter()).collect();
-        let mut guard = self
-            .ar
-            .lock()
-            .map_err(|_| "glm5-tp one-shot all-reduce: the link mutex is poisoned")?;
-        if guard.is_none() {
-            *guard = Some(crate::tp_ar::ArLink::new(&engines)?);
-        }
-        guard
-            .as_mut()
-            .expect("built above")
-            .all_reduce_1stage_into(&engines, inputs, outs, n)?;
-        Ok(true)
-    }
-
     /// The one-shot fused with the hc post-branch (see `ArLink::all_reduce_1stage_hcpost`).
     #[allow(clippy::too_many_arguments)] // allow: the reduce's operands plus the post-branch's
     pub fn ar_1stage_hcpost(
@@ -1087,12 +1060,6 @@ pub struct Glm5TpKda {
     pub n_embd: usize,
 }
 
-impl Glm5TpKda {
-    pub fn ranks(&self) -> usize {
-        self.peers.len() + 1
-    }
-}
-
 static KDA_MARKED: AtomicBool = AtomicBool::new(false);
 
 /// Shard one loaded KDA layer: returns the ROOT shard (heads/ranks, wo out-rows
@@ -1725,18 +1692,6 @@ pub static GLM5_EP_DIET_PEER_ROUNDTRIPS_AVOIDED: AtomicU64 = AtomicU64::new(0);
 /// Snapshot of [`GLM5_EP_DIET_PEER_ROUNDTRIPS_AVOIDED`].
 pub fn glm5_ep_diet_peer_roundtrips_avoided() -> u64 {
     GLM5_EP_DIET_PEER_ROUNDTRIPS_AVOIDED.load(Ordering::Relaxed)
-}
-
-/// Per-token peer z uploads the dieted walk avoided: `t-1` per (fanned layer-call, peer
-/// rank) (one bulk [t, n_embd] upload replaces t per-token uploads) plus `t` per (layer-call,
-/// rank) whose routing never touched that rank's experts (the fan-out is skipped entirely —
-/// the placement-map multiplier: single-rank layer-calls move ZERO activation bytes off
-/// root).
-pub static GLM5_EP_DIET_FANOUT_UPLOADS_AVOIDED: AtomicU64 = AtomicU64::new(0);
-
-/// Snapshot of [`GLM5_EP_DIET_FANOUT_UPLOADS_AVOIDED`].
-pub fn glm5_ep_diet_fanout_uploads_avoided() -> u64 {
-    GLM5_EP_DIET_FANOUT_UPLOADS_AVOIDED.load(Ordering::Relaxed)
 }
 
 /// Layer-calls that took the per-rank grouped-GEMM EP prime (`MEMRA_GLM5_EP_GROUPED_PRIME`).
