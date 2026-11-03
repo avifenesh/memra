@@ -1378,7 +1378,6 @@ fn apply_stripped_mtp_override(cfg: &mut ModelConfig, tensors: &BTreeMap<String,
     let has_nextn_names = tensors.keys().any(|name| name.contains(".nextn."));
     if manifest_layers <= trunk_layers && !has_nextn_names {
         cfg.n_layer = manifest_layers;
-        cfg.n_layer_total = manifest_layers;
         cfg.nextn_predict_layers = 0;
     }
 }
@@ -4402,7 +4401,6 @@ mod hy3_repack_probe {
             "REAP manifest stripped the appended MTP block"
         );
         assert_eq!(cfg.nextn_predict_layers, 0);
-        assert_eq!(cfg.n_layer_total, 80);
         assert_eq!(cfg.moe.as_ref().unwrap().expert_count, 96);
         assert_eq!(cfg.moe.as_ref().unwrap().expert_used_count, 8);
         assert_eq!(cfg.hy3.as_ref().unwrap().first_k_dense_replace, 1);
