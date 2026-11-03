@@ -1541,8 +1541,6 @@ fn dsv4_encoding_from_config(dir: &std::path::Path) -> Result<Option<chat::Dsv4E
     }
 }
 
-/// True when an HF `pre_tokenizer` object is byte-level BPE: type == "ByteLevel", or a
-/// "Sequence" whose pretokenizers include a ByteLevel step (the common Split+ByteLevel combo).
 /// Collect the regexes of every `Split` step in an HF `pre_tokenizer`, in serialization order.
 /// A `Sequence` is walked depth-first; non-`Split` steps (ByteLevel, Digits, …) contribute
 /// nothing. `{"pattern": {"String": …}}` is not a regex and is skipped.
@@ -1591,6 +1589,8 @@ fn pre_from_split_regexes(regexes: &[String]) -> Option<&'static str> {
     }
 }
 
+/// True when an HF `pre_tokenizer` object is byte-level BPE: type == "ByteLevel", or a
+/// "Sequence" whose pretokenizers include a ByteLevel step (the common Split+ByteLevel combo).
 fn pre_tokenizer_is_byte_level(pt: &json::Value) -> bool {
     match pt.get("type").and_then(|v| v.as_str()) {
         Some("ByteLevel") => true,
