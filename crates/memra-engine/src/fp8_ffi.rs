@@ -316,6 +316,15 @@ mod b200_dry_policy_tests {
 static FP8_MMQ_NAN_OK: std::sync::Mutex<Option<std::collections::HashMap<u64, bool>>> =
     std::sync::Mutex::new(None);
 
+/// The per-block FP8 MMQ tile exists only in sm_120a and sm_100a builds: build.rs swaps
+/// `cu/mmq_fp8_blk_stub.cu` in on every other arch, and its launchers refuse with 2904/2906/2907.
+/// On sm_90a `portable_mma_gated()` is false, so it cannot be the gate here: a native-resident
+/// block-128 tensor would reach the stub on its first prefill instead of the dequant floor.
+pub(crate) const fn fp8_blk_mmq_built() -> bool {
+    crate::konst_eq(env!("MEMRA_BUILT_CUDA_ARCH"), "120a")
+        || crate::konst_eq(env!("MEMRA_BUILT_CUDA_ARCH"), "100a")
+}
+
 impl crate::Engine {
     /// PER-BLOCK FP8 MMQ prefill GEMM for a weight carrying a block-128 fp8 operand:
     /// y[m,out] = x[m,in] @ (e4m3 W)^T with each [128x128] weight block scaled by its own f32.
@@ -331,7 +340,7 @@ impl crate::Engine {
         // Entry counter BEFORE the env gate: a ledger of all zeros is otherwise ambiguous between
         // "the flag was not seen" and "no prefill GEMM ever reached this hook".
         FP8_MMQ_ENTRIES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        if crate::portable_mma_gated() {
+        if !fp8_blk_mmq_built() {
             FP8_MMQ_GATE_OFF.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             return Ok(None);
         }
