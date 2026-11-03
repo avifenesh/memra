@@ -1591,7 +1591,31 @@ pub(crate) fn b200_bf16_gemv_lt_on() -> bool {
 /// globally. Every door keeps a per-flag env override: `=1` forces ON for any family, `=0` is
 /// the kill switch — the rollback seam the FLAGS rows name. Per-process: a process that loads a
 /// step37-class model arms the defaults for its lifetime.
+///
+/// CO-LOAD AUDIT (2026-11-03, every `step37_door` call site). Per-process arming is harmless
+/// where the call site already answers for one family:
+/// - plan-gated at the call site: `MEMRA_SPEC_VERIFY_EAGER`, `MEMRA_SPEC_VERIFY_TCOL`,
+///   `MEMRA_SPEC_HEAD_ROWS`, `MEMRA_TCOL_FFN`, `MEMRA_SPEC_FA2` (the spec verify walk refuses
+///   any plan but SlidingGatedMoe) and `MEMRA_STEP_GEMM_PRIME` (the prime arm checks the
+///   program; the MoE arm needs the step TP NVFP4 bank);
+/// - step-TP-only by construction: the `MEMRA_STEP_TP_W8` arms in `tp.rs`, which only step
+///   loaders build;
+/// - plan-scoped at load: `MEMRA_SWA_RING` (`cache::swa_ring_on_for_plan`) and
+///   `MEMRA_MTP_HEAD_NVFP4` ([`step37_door_for_plan`]).
+///
+/// The W8 HYBRID half is the one door a plan cannot scope: `MEMRA_STEP_TP_W8` +
+/// `MEMRA_W8_HYBRID` route bf16 GEMVs to q8_0 mirrors inside generic Engine paths
+/// (`matvec_bf16_into`, `matvec_bf16_rows_into`, the rows-exact `matmul` guard, the KDA fused
+/// projection), which see a weight and no model. A co-loaded family would run a substituted
+/// weight program there, so [`admit_step37_coload`] refuses the co-load while that half rides
+/// the family default. `MEMRA_Q8T_WONCE` is reached only through the q8 mirrors and the step
+/// TP q8 kernels, and its weight-once twins keep the per-column float program, so it needs no
+/// guard of its own.
 static STEP37_SERVING_DEFAULTS: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+/// A model whose plan is NOT SlidingGatedMoe loaded in this process ([`admit_step37_coload`]).
+static OTHER_FAMILY_LOADED: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(false);
 
 pub fn arm_step37_serving_defaults() {
@@ -1607,28 +1631,133 @@ pub(crate) fn step37_defaults_armed() -> bool {
     STEP37_SERVING_DEFAULTS.load(std::sync::atomic::Ordering::Relaxed)
 }
 
+/// A step37 door's cached env value: `Some(true)` for `=1`, `Some(false)` for `=0`, `None`
+/// otherwise (the family default applies).
+fn step37_door_env(cell: &'static std::sync::OnceLock<Option<bool>>, name: &str) -> Option<bool> {
+    *cell.get_or_init(|| match std::env::var(name).ok().as_deref() {
+        Some("1") => Some(true),
+        Some("0") => Some(false),
+        _ => None,
+    })
+}
+
 /// Tri-state door: `=1` ON, `=0` OFF, unset = the family default (ON once a step37-class model
 /// armed it, OFF otherwise). The env parse is cached; the family default is read live because
 /// arming happens at model load, possibly after another door's first read.
 pub(crate) fn step37_door(cell: &'static std::sync::OnceLock<Option<bool>>, name: &str) -> bool {
-    match *cell.get_or_init(|| match std::env::var(name).ok().as_deref() {
-        Some("1") => Some(true),
-        Some("0") => Some(false),
-        _ => None,
-    }) {
-        Some(forced) => forced,
-        None => step37_defaults_armed(),
-    }
+    step37_door_env(cell, name).unwrap_or_else(step37_defaults_armed)
 }
 
+/// [`step37_door`] for a call site that knows the model: unset = the family default only for a
+/// SlidingGatedMoe plan, so a model loaded after a step37 load does not inherit it.
+pub(crate) fn step37_door_for_plan(
+    cell: &'static std::sync::OnceLock<Option<bool>>,
+    name: &str,
+    sliding_gated_moe: bool,
+) -> bool {
+    step37_door_env(cell, name).unwrap_or_else(|| sliding_gated_moe && step37_defaults_armed())
+}
+
+static W8_HYBRID_ENV: std::sync::OnceLock<Option<bool>> = std::sync::OnceLock::new();
+static STEP_TP_W8_ENV: std::sync::OnceLock<Option<bool>> = std::sync::OnceLock::new();
+
 pub(crate) fn w8_hybrid_on() -> bool {
-    static ENV: std::sync::OnceLock<Option<bool>> = std::sync::OnceLock::new();
-    step37_door(&ENV, "MEMRA_W8_HYBRID")
+    step37_door(&W8_HYBRID_ENV, "MEMRA_W8_HYBRID")
 }
 
 pub(crate) fn step_tp_w8_on() -> bool {
-    static ENV: std::sync::OnceLock<Option<bool>> = std::sync::OnceLock::new();
-    step37_door(&ENV, "MEMRA_STEP_TP_W8")
+    step37_door(&STEP_TP_W8_ENV, "MEMRA_STEP_TP_W8")
+}
+
+/// Does arming the step37 defaults turn the generic-path W8 hybrid half on for a model that
+/// would not run it otherwise? The half needs both doors, so it does exactly when neither is
+/// pinned `0` and at least one rides the family default.
+fn step37_w8_hybrid_reaches_other_families(w8: Option<bool>, hybrid: Option<bool>) -> bool {
+    w8 != Some(false) && hybrid != Some(false) && (w8.is_none() || hybrid.is_none())
+}
+
+/// The co-load decision, pure for tests: `Some(reason)` refuses this load.
+fn step37_coload_refusal(
+    sliding_gated_moe: bool,
+    w8_hybrid_reaches: bool,
+    step37_armed: bool,
+    other_family_loaded: bool,
+) -> Option<&'static str> {
+    if !w8_hybrid_reaches {
+        return None;
+    }
+    if sliding_gated_moe && other_family_loaded {
+        Some("a model of another family is already loaded in this process")
+    } else if !sliding_gated_moe && step37_armed {
+        Some("a SlidingGatedMoe (step37) model already armed the step37 serving defaults")
+    } else {
+        None
+    }
+}
+
+/// Load-time guard, called for every plan before the step37 arming point. The W8 hybrid half
+/// routes inside generic Engine GEMVs that see no plan (see the co-load audit above), so a
+/// SlidingGatedMoe model and another family cannot share a process while that half rides the
+/// family default: the other family would run q8_0 mirrors in place of its bf16 weights.
+/// Pinning `MEMRA_W8_HYBRID=0` keeps every family on its bf16 program; pinning
+/// `MEMRA_STEP_TP_W8=1 MEMRA_W8_HYBRID=1` runs the mirrors for every family by choice.
+pub(crate) fn admit_step37_coload(sliding_gated_moe: bool) -> Result<(), String> {
+    use std::sync::atomic::Ordering::Relaxed;
+    let reaches = step37_w8_hybrid_reaches_other_families(
+        step37_door_env(&STEP_TP_W8_ENV, "MEMRA_STEP_TP_W8"),
+        step37_door_env(&W8_HYBRID_ENV, "MEMRA_W8_HYBRID"),
+    );
+    if let Some(reason) = step37_coload_refusal(
+        sliding_gated_moe,
+        reaches,
+        step37_defaults_armed(),
+        OTHER_FAMILY_LOADED.load(Relaxed),
+    ) {
+        return Err(format!(
+            "step37 co-load refused: {reason}. The step37 serving defaults are process-wide and \
+             their W8 hybrid half routes bf16 GEMVs to q8_0 mirrors inside generic engine paths, \
+             so the other family would run a substituted weight program. Serve the families in \
+             separate processes, or pin MEMRA_W8_HYBRID=0 (every family keeps its bf16 GEMVs) \
+             or MEMRA_STEP_TP_W8=1 MEMRA_W8_HYBRID=1 (every family takes the mirrors)."
+        ));
+    }
+    if !sliding_gated_moe {
+        OTHER_FAMILY_LOADED.store(true, Relaxed);
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod step37_coload_tests {
+    use super::{step37_coload_refusal, step37_w8_hybrid_reaches_other_families as reaches};
+
+    #[test]
+    fn w8_hybrid_reaches_other_families_only_through_the_family_default() {
+        // Unset doors ride the family default: arming turns the generic half on.
+        assert!(reaches(None, None));
+        assert!(reaches(Some(true), None));
+        assert!(reaches(None, Some(true)));
+        // Both pinned on: the operator chose the half for every family.
+        assert!(!reaches(Some(true), Some(true)));
+        // Either pinned off: the half is off for every family.
+        for other in [None, Some(true), Some(false)] {
+            assert!(!reaches(Some(false), other));
+            assert!(!reaches(other, Some(false)));
+        }
+    }
+
+    #[test]
+    fn a_mixed_coload_is_refused_in_either_load_order() {
+        // step37 first, then another family.
+        assert!(step37_coload_refusal(false, true, true, false).is_some());
+        // another family first, then step37.
+        assert!(step37_coload_refusal(true, true, false, true).is_some());
+        // Same-family processes and pinned doors load.
+        assert!(step37_coload_refusal(true, true, true, false).is_none());
+        assert!(step37_coload_refusal(false, true, false, true).is_none());
+        assert!(step37_coload_refusal(false, false, true, true).is_none());
+        assert!(step37_coload_refusal(true, false, true, true).is_none());
+    }
 }
 
 /// MEMRA_GLM5_W8=1 (default OFF, unset/0 = bf16): q8_0 mirror of the bf16-resident glm5_next
