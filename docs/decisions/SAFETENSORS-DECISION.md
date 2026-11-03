@@ -343,7 +343,7 @@ Arch dispatch from `config["architectures"][0]`:
 | `rope_sections` | `rope_parameters.mrope_section` | `[11,11,10]` (interleaved MRoPE) | | |
 | `full_attention_interval` | `full_attention_interval` | direct (0 if non-hybrid) | 4 | 4 |
 | `nextn_predict_layers` | `mtp_num_hidden_layers` | direct | 1 | 1 |
-| `n_layer_total` | — | `n_layer + nextn_predict_layers` | 33 | 33 |
+| `n_layer_total` (field removed 2026-11-03: nothing read it) | — | `n_layer + nextn_predict_layers` | 33 | 33 |
 
 `head_dim` MUST be read explicitly: `n_embd/n_head` = 256 for 9b only by coincidence; for 4b it's
 `2560/16=160` which is WRONG. (`q_proj` out=4096 ... note attn_output_gate doubling lives in the
