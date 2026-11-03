@@ -2087,16 +2087,10 @@ fn build_dev_exps(
         return Ok(None);
     }
     // A resident block-E4M3 bank runs only through the per-block FP8 MMQ tile
-    // (`moe_resident_fp8_e4m3`), which other arches build as a refusing stub. Refuse here, before
-    // the upload, with the real cause rather than at the first MoE call.
-    if fp8_host.is_some() && !crate::fp8_ffi::fp8_blk_mmq_built() {
-        return Err(format!(
-            "resident native block-E4M3 expert bank (layer {il}) needs the per-block FP8 MMQ \
-             tile, which this sm_{} build does not contain (sm_120a and sm_100a only)",
-            env!("MEMRA_BUILT_CUDA_ARCH")
-        )
-        .into());
-    }
+    // (`moe_resident_fp8_e4m3`). The stacked loader (`load_fp8_stacked_native_with_policy`) owns
+    // the arch decision and refuses a native bank on builds without the tile, for every
+    // residency branch, so none reaches here.
+    debug_assert!(fp8_host.is_none() || crate::fp8_ffi::fp8_blk_mmq_built());
     use cudarc::driver::DevicePtr;
     let n_expert = gate.n_expert;
     let (g, u) = (
