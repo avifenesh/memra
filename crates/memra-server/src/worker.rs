@@ -42289,10 +42289,11 @@ fn advance_token_emit(
 /// The card class comes from the worker device's name through
 /// `memra_engine::parallel::HardwareTarget::from_device_name`, the rule the parallel planner
 /// and the pinned-host default key on. The build arch is not the key: a `120a` build also
-/// runs the RTX PRO 6000 and GB10, which carry no receipt for this pair.
+/// runs GB10, which carries no receipt for this pair.
 ///
 /// Qualified, default ON:
-/// - `Arch::Qwen35` on the RTX 5090 card class. `research/devpenalty-qwen35-20260909/`, one
+/// - `Arch::Qwen35` (Qwen3.8-27B is this class) on the RTX 5090 card class.
+///   `research/devpenalty-qwen35-20260909/`, one
 ///   RTX 5090 (575 W, driver 580.95.05), interleaved OFF/ON, three boots per arm, five reps,
 ///   the vendor NON-THINKING shape (`presence_penalty 1.5`, `top_k 20`): aggregate decode
 ///   109.6 -> 527.2 tok/s at c=4 (+381.0%) and 115.5 -> 758.0 at c=8 (+556.3%), c=1
@@ -42300,11 +42301,15 @@ fn advance_token_emit(
 ///   with no penalty never enter this path in either arm) and greedy output is
 ///   byte-identical across all six boots in both penalty shapes.
 ///
-/// Still off by default, and deliberately: `Arch::Qwen3Moe` on RTX PRO 6000 has an even
-/// larger measured win (`research/pro-device-penalty-sampling-20260824/`, darklanes verdict
-/// `q38-devpenalty-flip`) but that fleet pins the flag explicitly, so its default change is
-/// a separate lane with its own launcher smoke. `Arch::Qwen35` on RTX PRO 6000 or GB10 has no
-/// receipt and stays off until one lands.
+/// - `Arch::Qwen35` on the RTX PRO 6000 Blackwell card class. Qwen3.8-27B, vendor non-thinking
+///   shape: Server Edition plain c1/c16 46.49 -> 68.66 / 94.95 -> 300.93 tok/s
+///   (`research/pro-device-penalty-sampling-20260824/`, darklanes verdict `q38-devpenalty-flip`);
+///   Workstation Edition aggregate c8 155.16 -> 294.05 tok/s, six interleaved boots (darklanes
+///   `research/qorn-md-single-card-20260910/DEVPENALTY-RESULTS.md`).
+///
+/// Off by default: every other (model class, card class) pair, GB10 included. Ornith
+/// (`Arch::Qwen35Moe`) on the PRO 6000 Server Edition has a measured win in the same receipt
+/// but no default of its own yet.
 fn serve_devpenalty_from(v: Option<&str>, device_name: &str, arch: &Arch) -> bool {
     use memra_engine::parallel::HardwareTarget;
     match v.map(str::trim) {
@@ -42314,7 +42319,7 @@ fn serve_devpenalty_from(v: Option<&str>, device_name: &str, arch: &Arch) -> boo
             matches!(arch, Arch::Qwen35)
                 && matches!(
                     HardwareTarget::from_device_name(device_name),
-                    Ok(HardwareTarget::Rtx5090)
+                    Ok(HardwareTarget::Rtx5090 | HardwareTarget::RtxPro6000Blackwell)
                 )
         }
     }
@@ -42478,19 +42483,22 @@ mod serve_devpenalty_default_tests {
     use memra_gguf::config::Arch;
 
     const RTX5090: &str = "NVIDIA GeForce RTX 5090";
-    /// Cards a `120a` build also runs (or another build serves) with no Qwen3.5 receipt.
-    const UNQUALIFIED_CARDS: [&str; 6] = [
+    /// Cards with a Qwen3.5-class receipt besides the 5090.
+    const PRO6000: [&str; 2] = [
         "NVIDIA RTX PRO 6000 Blackwell Workstation Edition",
         "NVIDIA RTX PRO 6000 Blackwell Server Edition",
-        "NVIDIA GB10",
-        "NVIDIA B200",
-        "NVIDIA H100 80GB HBM3",
-        "",
     ];
+    /// Cards a `120a` build also runs (or another build serves) with no Qwen3.5 receipt.
+    const UNQUALIFIED_CARDS: [&str; 4] =
+        ["NVIDIA GB10", "NVIDIA B200", "NVIDIA H100 80GB HBM3", ""];
 
     #[test]
     fn unset_follows_the_qualified_pair() {
         assert!(door(None, RTX5090, &Arch::Qwen35));
+        for card in PRO6000 {
+            assert!(door(None, card, &Arch::Qwen35), "{card:?}");
+            assert!(!door(None, card, &Arch::Qwen35Moe), "{card:?}");
+        }
         // qualified model class, unqualified card
         for card in UNQUALIFIED_CARDS {
             assert!(!door(None, card, &Arch::Qwen35), "{card:?}");
