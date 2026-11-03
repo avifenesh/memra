@@ -33741,6 +33741,98 @@ impl Engine {
         Ok(())
     }
 
+    /// gdn-state-bench (bf16-state research arm): median ms of one batched T=1 GDN scan over
+    /// `b_n` sessions x `n_head` heads, state fp32 (`gdn_scan_s128_b`) or bf16
+    /// (`gdn_scan_s128_b_bf16st`), each session's state a separate allocation (DRAM-cold).
+    pub fn gdn_state_scan_bench(
+        &self,
+        n_head: usize,
+        b_n: usize,
+        bf16: bool,
+        layers: usize,
+        iters: usize,
+    ) -> Result<f64, Box<dyn std::error::Error>> {
+        use cudarc::driver::DevicePtr;
+        let st_len = n_head * 128 * 128;
+        let es = self.gpu.stream();
+        let act = |n: usize| -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
+            let v: Vec<f32> = (0..n)
+                .map(|i| ((i * 2654435761usize) % 1000) as f32 / 5000.0 - 0.1)
+                .collect();
+            self.htod(&v)
+        };
+        let (q, k, v) = (
+            act(b_n * n_head * 128)?,
+            act(b_n * n_head * 128)?,
+            act(b_n * n_head * 128)?,
+        );
+        let g = act(b_n * n_head)?;
+        let beta = act(b_n * n_head)?;
+        let mut o = self.alloc_uninit::<f32>(b_n * n_head * 128)?;
+        // one state set per layer so a pass streams layers x b_n states like a decode step
+        let mut states32: Vec<CudaSlice<f32>> = Vec::new();
+        let mut states16: Vec<CudaSlice<u16>> = Vec::new();
+        let mut tables: Vec<CudaSlice<u64>> = Vec::new();
+        for _ in 0..layers {
+            let mut ptrs: Vec<u64> = Vec::with_capacity(b_n);
+            for _ in 0..b_n {
+                if bf16 {
+                    let s16 = es.alloc_zeros::<u16>(st_len)?;
+                    ptrs.push(s16.device_ptr(&es).0);
+                    states16.push(s16);
+                } else {
+                    let s32 = es.alloc_zeros::<f32>(st_len)?;
+                    ptrs.push(s32.device_ptr(&es).0);
+                    states32.push(s32);
+                }
+            }
+            tables.push(self.htod_u64(&ptrs)?);
+        }
+        let f = self.func(if bf16 {
+            "gdn_scan_s128_b_bf16st"
+        } else {
+            "gdn_scan_s128_b"
+        });
+        let cfg = LaunchConfig {
+            grid_dim: (n_head as u32, b_n as u32, 128 / 4),
+            block_dim: (32, 4, 1),
+            shared_mem_bytes: 0,
+        };
+        let h = n_head as i32;
+        let scale = 0.088f32;
+        let mut pass = || -> Result<(), Box<dyn std::error::Error>> {
+            for t in &tables {
+                let tv = t.slice(0..b_n);
+                let mut b = es.launch_builder(&f);
+                b.arg(&q)
+                    .arg(&k)
+                    .arg(&v)
+                    .arg(&g)
+                    .arg(&beta)
+                    .arg(&tv)
+                    .arg(&tv)
+                    .arg(&mut o)
+                    .arg(&h)
+                    .arg(&scale);
+                unsafe {
+                    b.launch(cfg)?;
+                }
+            }
+            Ok(())
+        };
+        pass()?;
+        es.synchronize()?;
+        let mut ms = Vec::with_capacity(iters);
+        for _ in 0..iters {
+            let t0 = std::time::Instant::now();
+            pass()?;
+            es.synchronize()?;
+            ms.push(t0.elapsed().as_secs_f64() * 1e3);
+        }
+        ms.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        Ok(ms[ms.len() / 2])
+    }
+
     /// VIEW twins of the three GDN decode state wrappers (lane/verify-launchslim): identical
     /// launches, row args as views into the caller's packed [T, ...] buffers — the t-parallel
     /// verify's per-row loop passes slices instead of paying an arithmetic-free dtod per row
