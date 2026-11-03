@@ -18252,48 +18252,21 @@ impl HybridModel {
         let mut moe_out = e.uninit(t * n_embd)?; // scatter fully overwrites per (token,col)
         e.moe_pairs_scatter(&y_down, &pw, &toff, &tids, &mut moe_out, t, n_embd)?;
 
-        // SHARED EXPERT epilogue — same as the other paths.
+        // SHARED EXPERT epilogue at prefill width. The only caller enters with
+        // t > MOE_DEV_MAX_T and a softmax router (no step35, M3 or Hy3), so the plain batched
+        // matmuls are the whole program here.
         // gate_inp_shexp is OPTIONAL: qwen35moe gates the shared expert (sigmoid(gate_inp) x sh);
-        // MiniMax-M3 (DeepSeek-V3 class) has NO shexp gate — the shared expert adds directly.
+        // a model without the gate tensor adds the shared expert directly.
         if let (Some(gate_shexp), Some(up_shexp), Some(down_shexp)) =
             (&m.gate_shexp, &m.up_shexp, &m.down_shexp)
         {
             let n_ff_sh = gate_shexp.out_features();
-            // These decode-exact forms are required by the new Step resident arm. Keep the
-            // established grouped shared-expert program for every other architecture: widening
-            // this to Gemma changed its speculative acceptance despite green argmax gates.
-            let step_exact = true;
-            let verify_t = step_exact && t > 1 && t < PRIME_MIN_T;
-            let (sg_gate, sg_up) = if step_exact && t == 1 {
-                shexp_gate_up_t1(e, gate_shexp, up_shexp, z, None)?
-            } else if verify_t {
-                let mut fused = None;
-                if crate::spec::spec_fused_t()
-                    && (2..=4).contains(&t)
-                    && e.uses_q8_1_fast(gate_shexp)
-                    && e.uses_q8_1_fast(up_shexp)
-                {
-                    let (zq, zd) = e.quantize_q8_1(z, t, n_embd)?;
-                    fused = e.matmul_q8_fused2_t(gate_shexp, up_shexp, &zq, &zd, t)?;
-                }
-                match fused {
-                    Some(pair) => pair,
-                    None => (
-                        e.matmul_decode_exact(gate_shexp, z, t)?,
-                        e.matmul_decode_exact(up_shexp, z, t)?,
-                    ),
-                }
-            } else {
-                (e.matmul(gate_shexp, z, t)?, e.matmul(up_shexp, z, t)?)
-            };
+            let sg_gate = e.matmul(gate_shexp, z, t)?;
+            let sg_up = e.matmul(up_shexp, z, t)?;
             let mut sa = e.uninit(t * n_ff_sh)?;
             e.silu_mul(&sg_gate, &sg_up, &mut sa, t * n_ff_sh)?;
-            let sh = if verify_t {
-                e.matmul_decode_exact(down_shexp, &sa, t)?
-            } else {
-                e.matmul(down_shexp, &sa, t)?
-            };
-            // shexp gate: qwen35moe sigmoid-gates; M3 has no gate tensor -> weight 1.0.
+            let sh = e.matmul(down_shexp, &sa, t)?;
+            // shexp gate: qwen35moe sigmoid-gates; no gate tensor -> weight 1.0.
             // m-INVARIANT fused sigmoid-dot under router_prefill_exact (serve isolation,
             // lane/concat-prime-exact) — every shexp-gate arm shares the same form so a
             // dispatch choice cannot change bits.
