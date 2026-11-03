@@ -2036,10 +2036,14 @@ pub(crate) fn replicate_layer_glue(
     Ok(out)
 }
 
-/// `MEMRA_GLM5_TP_SYMMETRIC=1` (lane/tp-symmetric-20260906, default OFF, decide-by 2026-09-20):
-/// replicate every TP layer's glue to the peers at arm time so a symmetric walk can run it there.
-/// This flag arms the LOADER half only; the walk half lands behind the same name once its gate
-/// is green, and until then the replicated glue is resident and unread.
+/// `MEMRA_GLM5_TP_SYMMETRIC=1` (lane/tp-symmetric-20260906, default OFF in code; the served
+/// TP-2 launcher arms it, docs/FLAGS.md): at load, replicate every TP layer's glue to the peers
+/// and shard the KDA `wo` by input columns (row-parallel); at decode, route the walk through
+/// the symmetric path (`hyper_range_decode_ws_sym`: `kda_tp_partials_sym`,
+/// `mla_tp_attn_cached_sym` and `moe_ffn_glm5_tp_split_sym`, each ending in a one-shot
+/// all-reduce). The walk needs
+/// `MEMRA_GLM5_TP_EXPERT_SPLIT` and a real two-device group with `MEMRA_TP_AR_1STAGE`;
+/// without them it declines loudly to the root-orchestrated walk.
 pub fn glm5_tp_symmetric_on() -> bool {
     std::env::var("MEMRA_GLM5_TP_SYMMETRIC").as_deref() == Ok("1")
 }
