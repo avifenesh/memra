@@ -19,45 +19,12 @@ use cudarc::driver::CudaSlice;
 use memra_gguf::config::SwigluClamp;
 use std::sync::atomic::{AtomicU64, Ordering};
 
+/// A request's spec sampler. `None` means greedy everywhere in the spec API (temperature 0,
+/// no truncation filter, identity penalties), so the serving path never takes its sampler
+/// from the process environment. The bin entry points read the CLI sampler once through
+/// [`SpecSampling::from_cli_env`] and pass it explicitly.
 fn resolve_spec_sampling(sampling: Option<SpecSampling>) -> SpecSampling {
-    sampling.unwrap_or_else(|| SpecSampling {
-        temp: std::env::var("MEMRA_SPEC_TEMP")
-            .ok()
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(0.0),
-        seed: std::env::var("MEMRA_SEED")
-            .ok()
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(42),
-        top_k: std::env::var("MEMRA_TOP_K")
-            .ok()
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(0),
-        top_p: std::env::var("MEMRA_TOP_P")
-            .ok()
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(1.0),
-        min_p: std::env::var("MEMRA_MIN_P")
-            .ok()
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(0.0),
-        penalty_last_n: std::env::var("MEMRA_PENALTY_LAST_N")
-            .ok()
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(0),
-        penalty_repeat: std::env::var("MEMRA_PENALTY_REPEAT")
-            .ok()
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(1.0),
-        penalty_freq: std::env::var("MEMRA_PENALTY_FREQ")
-            .ok()
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(0.0),
-        penalty_present: std::env::var("MEMRA_PENALTY_PRESENT")
-            .ok()
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(0.0),
-    })
+    sampling.unwrap_or(SpecSampling::GREEDY)
 }
 
 /// Parse the documented `MEMRA_SPEC_REPLAY=1` rollback seam.
@@ -1212,6 +1179,45 @@ pub struct SpecSampling {
 }
 
 impl SpecSampling {
+    /// Greedy: temperature 0, no truncation filter, identity penalties. The seed is the CLI
+    /// default and is never consumed at temperature 0.
+    pub const GREEDY: SpecSampling = SpecSampling {
+        temp: 0.0,
+        seed: 42,
+        top_k: 0,
+        top_p: 1.0,
+        min_p: 0.0,
+        penalty_last_n: 0,
+        penalty_repeat: 1.0,
+        penalty_freq: 0.0,
+        penalty_present: 0.0,
+    };
+
+    /// The CLI sampler: `MEMRA_SPEC_TEMP`, `MEMRA_SEED`, `MEMRA_TOP_K`, `MEMRA_TOP_P`,
+    /// `MEMRA_MIN_P` and `MEMRA_PENALTY_*`, each unset or unparsable field at its
+    /// [`Self::GREEDY`] value. Only the bin entry points `generate_spec` and
+    /// `generate_spec_session` read it. The serving API takes each request's sampler
+    /// explicitly, so a value left in a server's environment cannot sample a greedy request.
+    pub fn from_cli_env() -> SpecSampling {
+        // Each read stays a literal `env::var("MEMRA_*")` call: tools/check-flags.sh finds
+        // runtime reads by that form.
+        fn or<T: std::str::FromStr>(v: Result<String, std::env::VarError>, unset: T) -> T {
+            v.ok().and_then(|v| v.parse().ok()).unwrap_or(unset)
+        }
+        let g = SpecSampling::GREEDY;
+        SpecSampling {
+            temp: or(std::env::var("MEMRA_SPEC_TEMP"), g.temp),
+            seed: or(std::env::var("MEMRA_SEED"), g.seed),
+            top_k: or(std::env::var("MEMRA_TOP_K"), g.top_k),
+            top_p: or(std::env::var("MEMRA_TOP_P"), g.top_p),
+            min_p: or(std::env::var("MEMRA_MIN_P"), g.min_p),
+            penalty_last_n: or(std::env::var("MEMRA_PENALTY_LAST_N"), g.penalty_last_n),
+            penalty_repeat: or(std::env::var("MEMRA_PENALTY_REPEAT"), g.penalty_repeat),
+            penalty_freq: or(std::env::var("MEMRA_PENALTY_FREQ"), g.penalty_freq),
+            penalty_present: or(std::env::var("MEMRA_PENALTY_PRESENT"), g.penalty_present),
+        }
+    }
+
     /// Non-identity penalties requested — THE `pen_on` predicate (one definition; the
     /// same group-off rule `SamplerIdentity::of` canonicalizes: a window with neutral
     /// coefficients is penalties-absent). Both spec routes and the dspark accept walk
@@ -1229,6 +1235,32 @@ impl SpecSampling {
     /// which is what the plain host sampler computes for it, token by token.
     pub fn greedy_penalized(&self) -> bool {
         self.temp <= 0.0 && self.pen_on()
+    }
+}
+
+#[cfg(test)]
+mod spec_sampling_tests {
+    use super::{SpecSampling, resolve_spec_sampling};
+
+    /// The serving API passes `None` for a greedy request. A CLI sampler left in the
+    /// process environment must not turn that request into a sampled one; only the bin
+    /// entry points read it, through `from_cli_env`.
+    #[test]
+    fn a_greedy_request_ignores_the_cli_sampler_env() {
+        // SAFETY: no other test reads these variables; restored immediately below.
+        unsafe {
+            std::env::set_var("MEMRA_SPEC_TEMP", "0.7");
+            std::env::set_var("MEMRA_TOP_K", "20");
+        }
+        let served = resolve_spec_sampling(None);
+        let cli = SpecSampling::from_cli_env();
+        unsafe {
+            std::env::remove_var("MEMRA_SPEC_TEMP");
+            std::env::remove_var("MEMRA_TOP_K");
+        }
+        assert_eq!(served, SpecSampling::GREEDY);
+        assert_eq!(cli.temp, 0.7);
+        assert_eq!(cli.top_k, 20);
     }
 }
 
@@ -12818,7 +12850,8 @@ impl HybridModel {
 
     /// One spec-decode turn on a live session. `suffix` = the NEW tokens only (turn N+1's user
     /// message rendered through the chat template continuation). Returns (new tokens emitted,
-    /// drafted, accepted); session.committed grows by suffix + emitted.
+    /// drafted, accepted); session.committed grows by suffix + emitted. A bin entry point: the
+    /// sampler is the CLI env's (`SpecSampling::from_cli_env`).
     pub fn generate_spec_session(
         &self,
         e: &Engine,
@@ -12827,11 +12860,13 @@ impl HybridModel {
         max_new: usize,
         k: usize,
     ) -> Result<(Vec<u32>, usize, usize), Box<dyn std::error::Error>> {
-        self.generate_spec_session_sampled(e, sess, suffix, max_new, k, None, None)
+        let sampling = Some(SpecSampling::from_cli_env());
+        self.generate_spec_session_sampled(e, sess, suffix, max_new, k, sampling, None)
     }
 
     /// Serve-path sampled spec: routes the burst through the rejection-sampling verify with
-    /// per-SESSION Philox continuity (sess.sctr/uctr). None = env-driven (CLI) or greedy.
+    /// per-SESSION Philox continuity (sess.sctr/uctr). None = greedy; the environment is
+    /// never read here.
     /// Filters (top-k/p/min-p) apply SYMMETRICALLY to draft q and verify p — distribution-exact
     /// for the filtered target (feat/filtered-spec).
     ///
@@ -13045,9 +13080,12 @@ impl HybridModel {
             && self.mtp_graph_capturable()
             && k + 2 < 96
             && !crate::model::full_prec_enabled();
+        // A bin entry point: the sampler is the CLI env's.
+        let sampling = Some(SpecSampling::from_cli_env());
         if !graph_draft {
-            return self
-                .generate_spec_inner2(e, prompt, max_new, k, false, None, None, None, None, None);
+            return self.generate_spec_inner2(
+                e, prompt, max_new, k, false, None, sampling, None, None, None,
+            );
         }
         let was_tracking = e.ctx().is_event_tracking();
         if was_tracking {
@@ -13055,8 +13093,9 @@ impl HybridModel {
                 e.ctx().disable_event_tracking();
             }
         }
-        let r =
-            self.generate_spec_inner2(e, prompt, max_new, k, true, None, None, None, None, None);
+        let r = self.generate_spec_inner2(
+            e, prompt, max_new, k, true, None, sampling, None, None, None,
+        );
         if was_tracking {
             unsafe {
                 e.ctx().enable_event_tracking();
