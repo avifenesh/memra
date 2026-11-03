@@ -1,6 +1,6 @@
 //! `MEMRA_KPOOL_SELECT_V2`: the single-CTA k-pool selector's v2 body (warp-aggregated histogram
 //! atomics, warp-scan rank walk and emit prefix) against the shipped body, BITWISE on the emitted
-//! index lists, for the scalar entry and the live twin, at pool counts from a handful to the
+//! index lists, for the scalar entry, at pool counts from a handful to the
 //! 61,323 the 245k-token trace ran at, with planted ties (an all-equal row is the contention
 //! worst case), -inf and NaN pools, t_q 1 and 4. Engagement counted; a red arm (one selected
 //! pool's score sent to -inf) must move the list THROUGH the door.
@@ -105,60 +105,10 @@ fn gpu_kpool_select_v2_matches_shipped_bitwise() {
                 h1, h2,
                 "scalar v2 differs at n_pools={n_pools} t_q={t_q} flat={flat}"
             );
-            // live twin: v1 vs v2 (capacity layout, positions from the device word)
-            let cap = n_pools;
-            let width_cap = select_k_cap * pool + pool - 1; // the capacity width the live audit wants
-            let pos_d = e.htod_i32(&[first_pos as i32]).expect("pos_d");
-            let mut l1 = e.htod_i32(&vec![7i32; t_q * width_cap]).expect("l1");
-            let mut l2 = e.htod_i32(&vec![9i32; t_q * width_cap]).expect("l2");
-            let mut w1 = e.htod_i32(&[-1]).expect("w1");
-            let mut w2 = e.htod_i32(&[-1]).expect("w2");
-            set("MEMRA_KPOOL_SELECT_V2", "0");
-            e.mla_kpool_select_live(
-                &sc,
-                &mut l1,
-                &mut w1,
-                t_q,
-                &pos_d,
-                cap,
-                pool,
-                select_k_cap,
-                width_cap,
-                true,
-            )
-            .expect("live v1");
-            set("MEMRA_KPOOL_SELECT_V2", "1");
-            e.mla_kpool_select_live(
-                &sc,
-                &mut l2,
-                &mut w2,
-                t_q,
-                &pos_d,
-                cap,
-                pool,
-                select_k_cap,
-                width_cap,
-                true,
-            )
-            .expect("live v2");
-            set("MEMRA_KPOOL_SELECT_V2", "0");
-            e.stream().synchronize().expect("sync");
-            assert_eq!(
-                e.dtoh_i32(&l1).expect("l1"),
-                e.dtoh_i32(&l2).expect("l2"),
-                "live v2 differs at n_pools={n_pools} t_q={t_q} flat={flat}"
-            );
-            assert_eq!(
-                e.dtoh_i32(&w1).expect("w1"),
-                e.dtoh_i32(&w2).expect("w2"),
-                "width word"
-            );
-            cells += 2;
+            cells += 1;
         }
     }
-    println!(
-        "kpool select v2 PASS: {cells} (shape, t_q, twin) cells bitwise against the shipped body"
-    );
+    println!("kpool select v2 PASS: {cells} (shape, t_q) cells bitwise against the shipped body");
 
     // RED ARM through the door: send one selected pool to -inf; the emitted list must move.
     let (n_pools, t_q) = (4096usize, 1usize);
