@@ -1598,8 +1598,9 @@ extern "C" __global__ void add_scale_rms_norm_f32(const float* __restrict__ a, c
     for (int i = tid; i < ncols; i += blockDim.x) dr[i] = rr[i] * scale * w[i];
 }
 
-// ---- gemma4: residual add + the THREE attn_out norms in one launch (add then rms_norm3,
-// per-element chains verbatim). ----
+// ---- gemma4: residual add + the THREE attn_out norms in one launch. Per row: res = a + b
+// (stored), s = rsqrtf(sum(res^2) / ncols + eps) from one strided sum and a two-level warp
+// shuffle reduction, then d_k[i] = (res[i] * s) * w_k[i] for k = 0, 1, 2. ----
 extern "C" __global__ void add_rms_norm3_f32(const float* __restrict__ a, const float* __restrict__ b,
                                              const float* __restrict__ w0, const float* __restrict__ w1,
                                              const float* __restrict__ w2,
@@ -1782,7 +1783,10 @@ extern "C" __global__ void rms_pre_add_scale_rms_norm_q8_1(
 
 // ---- gemma4: residual add + the three attn_out norms with TWO outputs emitted q8_1
 // (zsh -> the quantized gate/up pair input; moe_in -> the quantized expert input) and the
-// router input f32. Chains: add + rms_norm3 + quantize_q8_1 verbatim per element. ----
+// router input f32. Per row: res = a + b and s exactly as add_rms_norm3_f32 computes them;
+// out1[i] = (res[i] * s) * w1[i] in f32; outputs 0 and 2 quantize v = (res[i] * s) * w_k[i]
+// with quantize_q8_1's per-32-block arithmetic (amax over the block, d = amax / 127,
+// id = d > 0 ? 1 / d : 0, q = __float2int_rn(v * id)), one warp per four blocks. ----
 extern "C" __global__ void add_rms_norm3_q8z_f32(const float* __restrict__ a, const float* __restrict__ b,
                                                  const float* __restrict__ w0, const float* __restrict__ w1,
                                                  const float* __restrict__ w2,
