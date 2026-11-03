@@ -33298,15 +33298,16 @@ impl Engine {
         // Per-(row, head) combine+gate: the t=1 combine over t*n_head stacked heads —
         // row r head h reads its own partial bank; splits past a row's ns_eff carry
         // (-inf, 0) partials the NEG_INF guard no-ops bit-exactly.
-        let fc = {
-            static CS: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-            if *CS.get_or_init(|| std::env::var("MEMRA_FA_COMBINE_S").as_deref() == Ok("1")) {
-                self.func("fa_decode_combine_gate_f32_s")
-            } else {
-                self.func("fa_decode_combine_gate_f32")
-            }
+        // One cached read picks the kernel AND sizes its smem, as in `fa_decode_dcw`: the _s
+        // twin launched with 0 dynamic smem would read shared memory out of bounds.
+        static CS: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+        let combine_shared =
+            *CS.get_or_init(|| std::env::var("MEMRA_FA_COMBINE_S").as_deref() == Ok("1"));
+        let fc = if combine_shared {
+            self.func("fa_decode_combine_gate_f32_s")
+        } else {
+            self.func("fa_decode_combine_gate_f32")
         };
-        let combine_shared = std::env::var("MEMRA_FA_COMBINE_S").as_deref() == Ok("1");
         let nht = (t * n_head) as i32;
         let cfg2 = LaunchConfig {
             grid_dim: ((t * n_head) as u32, 1, 1),
