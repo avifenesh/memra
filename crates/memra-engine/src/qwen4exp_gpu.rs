@@ -2369,13 +2369,17 @@ fn idxq_mode() -> IdxQMode {
         _ => IdxQMode::F32,
     }
 }
-pub fn set_idxq(mode: &str) {
+/// `q8`/`1`, `bf16`, or `f32`/`0` (the rollback). Returns false (applying nothing) on any
+/// other value, so `idxq=Q8` fails the seam check instead of measuring the f32 rollback.
+pub fn set_idxq(mode: &str) -> bool {
     let v = match mode {
         "q8" | "1" => 1,
         "bf16" => 2,
-        _ => 0,
+        "f32" | "0" => 0,
+        _ => return false,
     };
     IDXQ_MODE.store(v, std::sync::atomic::Ordering::Relaxed);
+    true
 }
 
 /// The live indexer raw-key cache precision, for RECEIPT HEADERS (see `kv_quant_is_on`).
@@ -3010,8 +3014,14 @@ fn seam_dispatch(name: &str, on: bool, value: Option<&str>, apply: bool) -> bool
         "kvhoist" => seam!(set_kv_hoist(on)),
         "poolT" => seam!(set_pool_t(on)),
         // Three-valued: `idxq=q8`, `idxq=bf16`, `idxq=0`/`idxq=f32` (rollback);
-        // bare `idxq` arms the q8 target.
-        "idxq" => seam!(set_idxq(value.unwrap_or("q8"))),
+        // bare `idxq` arms the q8 target. Any other value returns false, like `selgroup`.
+        "idxq" => {
+            if apply {
+                set_idxq(value.unwrap_or("q8"))
+            } else {
+                true
+            }
+        }
         // SHAPE-valued (see set_sel_group): bare `selgroup` = both families AUTO,
         // `selgroup=dn:4:1+gu:16:2` pins the A/B ladder's arms, `selgroup=0` rolls back.
         // A malformed spec must not read as "seam applied": it returns false here so the
@@ -3043,7 +3053,7 @@ pub fn apply_env_seams() {
             None => (part, true),
         };
         if !set_seam(name, on, part.split_once('=').map(|(_, v)| v)) {
-            eprintln!("MEMRA_Q4E_SEAMS: unknown seam {name:?} ignored");
+            eprintln!("MEMRA_Q4E_SEAMS: unknown seam or bad value {part:?} ignored");
         }
     }
 }
@@ -20668,6 +20678,25 @@ mod sel_group_tests {
         // Listed name and dispatch arm agree (the drift `seam_names` cannot detect alone).
         assert!(seam_names().contains(&"selgroup"));
         assert!(seam_exists("selgroup"));
+    }
+
+    /// `idxq` takes only its three named arms. A misspelt value must refuse and leave the
+    /// precision where it was, not measure the f32 rollback under a quantized arm's name.
+    #[test]
+    fn idxq_refuses_values_outside_its_arms() {
+        let _g = SEAM.lock().unwrap();
+        let entry = idxq_mode_name();
+        assert!(set_seam("idxq", true, Some("bf16")));
+        assert_eq!(idxq_mode_name(), "bf16");
+        for bad in ["Q8", "bf-16", "fp32", "2", ""] {
+            assert!(!set_seam("idxq", true, Some(bad)), "{bad:?} was accepted");
+            assert_eq!(idxq_mode_name(), "bf16", "{bad:?} mutated state");
+        }
+        assert!(set_seam("idxq", false, Some("0")));
+        assert_eq!(idxq_mode_name(), "f32");
+        assert!(set_seam("idxq", true, None));
+        assert_eq!(idxq_mode_name(), "q8");
+        assert!(set_idxq(entry));
     }
 }
 

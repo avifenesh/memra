@@ -2058,7 +2058,7 @@ fn main() -> Res<()> {
                         // fresh alloc below, which is exactly per arm per rep.
                         "kvq" => memra_engine::qwen4exp_gpu::set_kv_quant(arm_on),
                         "idxq" => {
-                            memra_engine::qwen4exp_gpu::set_idxq(if arm_on { "q8" } else { "f32" })
+                            memra_engine::qwen4exp_gpu::set_idxq(if arm_on { "q8" } else { "f32" });
                         }
                         "tp2" => {} // routed at the decode call, not a global seam
                         _ => memra_engine::qwen4exp_gpu::set_moe_sel_path(arm_on),
@@ -2195,7 +2195,9 @@ fn main() -> Res<()> {
                     // under opposite settings, so the per-step re-sets are no-ops for
                     // them (the state carries its format) — exactly the instrument.
                     "kvq" => memra_engine::qwen4exp_gpu::set_kv_quant(on),
-                    "idxq" => memra_engine::qwen4exp_gpu::set_idxq(if on { "q8" } else { "f32" }),
+                    "idxq" => {
+                        memra_engine::qwen4exp_gpu::set_idxq(if on { "q8" } else { "f32" });
+                    }
                     other => return Err(format!("--seam-gate: seam {other} unsupported").into()),
                 }
                 Ok(())
@@ -3965,7 +3967,9 @@ fn main() -> Res<()> {
             }
             // Per-STATE latched: takes effect at the fresh per-arm allocs below.
             "kvq" => memra_engine::qwen4exp_gpu::set_kv_quant(on),
-            "idxq" => memra_engine::qwen4exp_gpu::set_idxq(if on { "q8" } else { "f32" }),
+            "idxq" => {
+                memra_engine::qwen4exp_gpu::set_idxq(if on { "q8" } else { "f32" });
+            }
             _ => memra_engine::qwen4exp_gpu::set_router_dev(on),
         };
         for &k in &ks {
