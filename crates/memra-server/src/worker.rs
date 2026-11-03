@@ -644,6 +644,26 @@ fn dspark_blocks_greedy_widening(dspark_on: bool, _greedy: bool, constrained: bo
     dspark_on && constrained
 }
 
+/// K FLOOR FOR RESUMED SPEC CARRIERS (2026-08-25, found by the sampled ladder at c=4):
+/// the late-wave K re-read (PR #37 finding, 2026-08-24) can only move K DOWN, so a
+/// restored/resumed SpecSession that arrived with K>=1 can land here at K=0 — and a
+/// Session holding `spec: Some(..)` with `spec_k == 0` walks straight into the engine's
+/// `assert!(k >= 1)` and kills the GPU worker (observed: `[spec-k] K=0 source=concurrency
+/// wave=4` followed by `PANIC ... k must be >= 1`, every session on the box dead). Clamp
+/// to K=1: the narrowest legal burst. Greedy carriers demote to plain at the very next
+/// gate sweep anyway (the wave that forced K=0 is over HIGH); sampled carriers cannot
+/// demote (session-owned philox) and run narrow until the wave passes — strictly cheaper
+/// than the crash and no wider than the policy feared.
+fn resumed_carrier_spec_k_floor(has_carrier: bool, k: usize) -> (usize, bool) {
+    if has_carrier && k == 0 {
+        (1, true)
+    } else if has_carrier {
+        (k, false)
+    } else {
+        (0, false)
+    }
+}
+
 /// DFlash2 load admission. LOW-band widening is safe only while automatic demotion owns every
 /// live DFlash2 row. A positive operator K pin disables automatic demotion and falls back to
 /// solo; K=0 or an unpinned LOW=0 policy pins plain. Gate-off sessions stay solo. A live
@@ -666,26 +686,6 @@ fn dspark_blocks_greedy_widening(dspark_on: bool, _greedy: bool, constrained: bo
 ///     what the 2026-08-25 DE flip measured live: watchdog + one customer = plain.
 ///
 /// `MEMRA_DSPARK_SAMPLED_WAVE=0` is this lane's rollback seam (restores the solo law).
-/// K FLOOR FOR RESUMED SPEC CARRIERS (2026-08-25, found by the sampled ladder at c=4):
-/// the late-wave K re-read (PR #37 finding, 2026-08-24) can only move K DOWN, so a
-/// restored/resumed SpecSession that arrived with K>=1 can land here at K=0 — and a
-/// Session holding `spec: Some(..)` with `spec_k == 0` walks straight into the engine's
-/// `assert!(k >= 1)` and kills the GPU worker (observed: `[spec-k] K=0 source=concurrency
-/// wave=4` followed by `PANIC ... k must be >= 1`, every session on the box dead). Clamp
-/// to K=1: the narrowest legal burst. Greedy carriers demote to plain at the very next
-/// gate sweep anyway (the wave that forced K=0 is over HIGH); sampled carriers cannot
-/// demote (session-owned philox) and run narrow until the wave passes — strictly cheaper
-/// than the crash and no wider than the policy feared.
-fn resumed_carrier_spec_k_floor(has_carrier: bool, k: usize) -> (usize, bool) {
-    if has_carrier && k == 0 {
-        (1, true)
-    } else if has_carrier {
-        (k, false)
-    } else {
-        (0, false)
-    }
-}
-
 fn dspark_load_admits(
     greedy: bool,
     gate_on: bool,
@@ -1008,12 +1008,6 @@ fn should_probe_prefix_cache(
     prefix_on && !has_prior_reuse && (!dspark_prefers_cold || dspark_restorable_hit)
 }
 
-/// Can this hit actually feed the dspark conversion? Tail present AND whole-entry cover — the
-/// same conditions the conversion checks after the restore has already been paid for
-/// (`full_cover` + `entry_tail_present`), evaluated here BEFORE the probe so a hit that cannot
-/// convert never buys the carrier. A strict-prefix hit (entry shorter than the prompt) fails
-/// this on purpose: the multi-turn shape keeps its pre-lane behavior — `dspark_prefers_cold`
-/// suppresses the probe and the request cold-primes with zero restore cost.
 /// MEMRA_DSPARK_PARTIAL_RESTORE (device default, see `DSPARK_RESTORE_DEVICE_DEFAULT`;
 /// lane/dspark-partial-restore 2026-09-05). Let a STRICT-PREFIX prefix-cache hit re-arm a dspark session: restore the
 /// carrier's trunk planes and draft tail at `entry_toks`, then prime only
@@ -1074,6 +1068,14 @@ fn dspark_boundary_capture_on() -> bool {
     *ON.get_or_init(|| dspark_door_env("MEMRA_DSPARK_BOUNDARY_CAPTURE"))
 }
 
+/// Can this hit actually feed the dspark conversion? Tail present AND whole-entry cover — the
+/// same conditions the conversion checks after the restore has already been paid for
+/// (`full_cover` + `entry_tail_present`), evaluated here BEFORE the probe so a hit that cannot
+/// convert never buys the carrier. A strict-prefix hit (entry shorter than the prompt) fails
+/// this on purpose: the multi-turn shape keeps its pre-lane behavior — `dspark_prefers_cold`
+/// suppresses the probe and the request cold-primes with zero restore cost. Only with
+/// `MEMRA_DSPARK_PARTIAL_RESTORE` armed does a strict-prefix hit qualify, and then only when
+/// its suffix is at least `PRIME_MIN_T` rows and the carrier ends on the GDN prime grid.
 fn dspark_hit_is_restorable(entry_toks: usize, prompt_toks: usize, entry_has_tail: bool) -> bool {
     dspark_hit_is_restorable_with(
         entry_toks,
@@ -3583,15 +3585,6 @@ const FP_WINDOW: usize = 8;
 /// conversation); nominating on it would cross-link unrelated conversations into one session.
 const FP_MIN_SEGMENTS: usize = 3;
 
-/// ROLLBACK SEAM (flags doctrine: the winner is the default; this exists to *disable* it).
-/// `MEMRA_AFFINITY=0` makes the affinity probe decline every candidate, so admit falls back to
-/// the pre-lane behavior: prefix probes only, cold full prime on a rewritten history.
-///
-/// This is not a tuning knob — it is the exactness A/B arm. The byte-identity gate
-/// (`research/session-affinity-20260805/`) runs the SAME conversation twice, once resuming and
-/// once with `MEMRA_AFFINITY=0`, and requires identical per-turn `text_sha`. Disabling the pool
-/// outright (`MEMRA_REUSE_POOL=0`) would be a different comparison: it also drops the
-/// token/text-prefix resumes, so a divergence could not be attributed to affinity.
 /// The plain pool's grid rewind (DAY41 1.1): restore the entry to its checkpoint in place (the
 /// affinity path's restore), truncate `fed` to it and carry the checkpoint's logits. `None` (the
 /// entry dropped, the request primes cold) when there is no checkpoint, the ring lapped it, the
@@ -3817,13 +3810,6 @@ fn grid_rewind_spec(
     }
 }
 
-/// MEMRA_RESUME_GRID_REWIND (default unset = OFF; WP-B day 41, O11, a measurement door): a pool
-/// resume that exactly extends a parked session's committed tokens rewinds it to the entry's grid
-/// checkpoint and re-primes from there, instead of resuming on the parked state (which holds the
-/// previous turn's DECODED rows, the near-tie residual `docs/SERVING.md` names). By the grid law a
-/// prime split on the grid is bit-identical to the monolithic prime, so the rewound resume is
-/// cold-identical. Armed, every session also arms its checkpoint (`plain_checkpoint_boundary`),
-/// not only a nominatable prompt. Unset, nothing reads it.
 /// MEMRA_SPEC_BUDGET_CLAMP (default unset, WP-B day 43, OWED O13): `1` makes the Qwen MTP
 /// session route truncate a round that would commit accepted drafts past the request's budget
 /// (`memra_engine::spec::budget_clamp_slot`), so a parked spec session equals the public stream
@@ -3872,6 +3858,13 @@ fn resume_exact_fault_settle() -> bool {
 /// The settle's idle grace (DAY44 1.2 (c)): a zero-gap next turn finds no settle in flight.
 const EXACT_SETTLE_GRACE: Duration = Duration::from_millis(100);
 
+/// MEMRA_RESUME_GRID_REWIND (default unset = OFF; WP-B day 41, O11, a measurement door): a pool
+/// resume that exactly extends a parked session's committed tokens rewinds it to the entry's grid
+/// checkpoint and re-primes from there, instead of resuming on the parked state (which holds the
+/// previous turn's DECODED rows, the near-tie residual `docs/SERVING.md` names). By the grid law a
+/// prime split on the grid is bit-identical to the monolithic prime, so the rewound resume is
+/// cold-identical. Armed, every session also arms its checkpoint (`plain_checkpoint_boundary`),
+/// not only a nominatable prompt. Unset, nothing reads it.
 fn resume_grid_rewind_on() -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *ON.get_or_init(|| {
@@ -3887,6 +3880,15 @@ fn resume_grid_rewind_on() -> bool {
     })
 }
 
+/// ROLLBACK SEAM (flags doctrine: the winner is the default; this exists to *disable* it).
+/// `MEMRA_AFFINITY=0` makes the affinity probe decline every candidate, so admit falls back to
+/// the pre-lane behavior: prefix probes only, cold full prime on a rewritten history.
+///
+/// This is not a tuning knob — it is the exactness A/B arm. The byte-identity gate
+/// (`research/session-affinity-20260805/`) runs the SAME conversation twice, once resuming and
+/// once with `MEMRA_AFFINITY=0`, and requires identical per-turn `text_sha`. Disabling the pool
+/// outright (`MEMRA_REUSE_POOL=0`) would be a different comparison: it also drops the
+/// token/text-prefix resumes, so a divergence could not be attributed to affinity.
 fn affinity_enabled() -> bool {
     if memra_engine::pp::pp_host_bounce_active() {
         // Plain-affinity checkpoints call Cache::snapshot through the primary Engine. Hybrid
@@ -5209,16 +5211,6 @@ impl PrefixRefusalAnnouncer {
     }
 }
 
-/// MEMRA_KV_HOST_MB (lane/kv-host-spill-20260830): pinned-host spill tier for the prefix
-/// cache, in binary MiB. Default 0 = OFF BY DESIGN: the tier is unmeasured on serving
-/// hardware until its pod battery lands (tick-stall, identity, stress, 8-turn cache twin),
-/// and unmeasured behavior does not default on. With MEMRA_KV_HOST_MB=0 the serving path is
-/// byte-identical to today by construction: nothing is ever demoted or promoted.
-///
-/// CO-TENANCY: multiple memra stacks will share one host (fleet direction 2026-08-30), so the
-/// operator sets an explicit per-stack budget; the MemAvailable x 0.6 boot clamp below is a
-/// backstop against a fat-fingered value (the 2026-08-17 swap-storm law), NEVER the sizing
-/// mechanism. Pinned RAM is not reclaimable by the kernel once allocated.
 // Unqualified GLM host images remain opt-in; device-prefix support is independent.
 fn glm5_tp_kv_host_on() -> bool {
     std::env::var("MEMRA_GLM5_TP_KV_HOST").as_deref() == Ok("1")
@@ -5948,6 +5940,16 @@ fn host_staging_lengths<'a>(
     need.into_iter().collect()
 }
 
+/// MEMRA_KV_HOST_MB (lane/kv-host-spill-20260830): pinned-host spill tier for the prefix
+/// cache, in binary MiB. Default 0 = OFF BY DESIGN: the tier is unmeasured on serving
+/// hardware until its pod battery lands (tick-stall, identity, stress, 8-turn cache twin),
+/// and unmeasured behavior does not default on. With MEMRA_KV_HOST_MB=0 the serving path is
+/// byte-identical to today by construction: nothing is ever demoted or promoted.
+///
+/// CO-TENANCY: multiple memra stacks will share one host (fleet direction 2026-08-30), so the
+/// operator sets an explicit per-stack budget; the MemAvailable x 0.6 boot clamp in this
+/// reader is a backstop against a fat-fingered value (the 2026-08-17 swap-storm law), NEVER the
+/// sizing mechanism. Pinned RAM is not reclaimable by the kernel once allocated.
 fn kv_host_budget_bytes() -> usize {
     static B: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
     *B.get_or_init(|| {
@@ -6389,14 +6391,9 @@ impl KvFlex {
     }
 }
 
-/// `MEMRA_PREFIX_LATENT=1` arms latent (MLA/DSA) plane capture + restore in prefix entries
-/// (lane/glm5-prefix-latent, 2026-08-30; docs/FLAGS.md row). DEFAULT OFF BY DESIGN: the failure
-/// class this mechanism replaces was a fluent wrong answer behind a truthful-looking
-/// `cached_tokens` counter, so it ships dark until the box battery banks restored-vs-cold byte
-/// identity on real hardware. OFF is bit-exact the parent lane's guard (capture refuses,
-/// restore refuses, plain-affinity declines); unsetting the flag is the rollback seam.
-/// `MEMRA_GLM5_TP_PREFIX=1` (lane/glm5-tp-prefix, 2026-09-07, default OFF, decide-by
-/// 2026-09-21) arms per-rank capture + restore of glm5 TP-2 sessions in prefix entries: every
+/// `MEMRA_GLM5_TP_PREFIX=1` (lane/glm5-tp-prefix, 2026-09-07; OFF in code, armed `=1` by the 1M
+/// TP-2 launcher since the v0.132.0 promotion, docs/FLAGS.md row) arms per-rank capture +
+/// restore of glm5 TP-2 sessions in prefix entries: every
 /// rank's KDA shard and every peer's latent plane ride the entry on their own devices. With it
 /// off a TP-class cache refuses capture and restore by name (a root-only entry would restore
 /// rank 0 and leave rank 1 at zero state: the same silent-fabrication class the latent gate
@@ -6451,6 +6448,12 @@ fn unsupported_prefix_tp_restore(
     None
 }
 
+/// `MEMRA_PREFIX_LATENT=1` arms latent (MLA/DSA) plane capture + restore in prefix entries
+/// (lane/glm5-prefix-latent, 2026-08-30; docs/FLAGS.md row). DEFAULT OFF BY DESIGN: the failure
+/// class this mechanism replaces was a fluent wrong answer behind a truthful-looking
+/// `cached_tokens` counter, so it ships dark until the box battery banks restored-vs-cold byte
+/// identity on real hardware. OFF is bit-exact the parent lane's guard (capture refuses,
+/// restore refuses, plain-affinity declines); unsetting the flag is the rollback seam.
 fn prefix_latent_planes_on() -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *ON.get_or_init(|| std::env::var("MEMRA_PREFIX_LATENT").as_deref() == Ok("1"))
@@ -9112,9 +9115,6 @@ fn step_oom_retries() -> u32 {
     })
 }
 
-/// Is this error a CUDA out-of-memory? Quoted, never inferred (the evidence-discipline law):
-/// the match is on the driver's own error text, so a non-OOM step failure can never be
-/// silently retried as if it were a capacity blip.
 /// The client-facing sentence for an engine fault, by class (memra#143). Stable text: SDKs
 /// and dashboards match on `error.code` (`overloaded` / `engine_error`), and the words here
 /// are the only ones a customer should ever see for a fault whose real description is a
@@ -9133,6 +9133,9 @@ pub(crate) fn engine_client_message(class: ErrClass) -> &'static str {
     }
 }
 
+/// Is this error a CUDA out-of-memory? Quoted, never inferred (the evidence-discipline law):
+/// the match is on the driver's own error text, so a non-OOM step failure can never be
+/// silently retried as if it were a capacity blip.
 fn is_cuda_oom(err: &str) -> bool {
     err.contains("CUDA_ERROR_OUT_OF_MEMORY") || err.contains("out of memory")
 }
@@ -9436,22 +9439,6 @@ fn maybe_inject_fault(cache_ns: &str, request_id: &str) {
 const STEP_OOM_FAULT_MSG: &str =
     "CUDA_ERROR_OUT_OF_MEMORY (synthetic: MEMRA_STEP_OOM_FAULT diagnostic door)";
 
-/// MEMRA_STEP_OOM_FAULT (diagnostic fault door, default absent/0 = OFF): how many phase-(a)
-/// session steps to fail with [`STEP_OOM_FAULT_MSG`] instead of running. THE REASON IT
-/// EXISTS (battery-20260831 tenancy-gates T2, darklanes
-/// `research/kv-fastband-20260830/battery-20260831/tenancy-gates/RESULTS.md`): the step-OOM
-/// PARK branch is unreachable from outside the process: four independent refusal layers
-/// (the KV-capacity 429, the `[admit-oom]` VRAM defer, the TTFT deadline on queued
-/// requests, and the boot-time pool reservation that makes a later ballast invisible) catch
-/// every external pressure shape first, so the branch whose multi-active form was
-/// fleet-fatal before lane/step37-vram-admission had NO executable gate (the
-/// loud-failures / executed-failure-path laws). This is the same posture as
-/// `MEMRA_KV_HOST_FAULT`: the injection forges ONLY the error; the park-vs-honest-error
-/// match, the teardown fence, `park_requeue`, and the retry budget all run un-doctored
-/// production logic. `1` proves the park branch (fresh session parks, requeues, re-primes,
-/// answers 200); a value above `MEMRA_STEP_OOM_RETRIES` walks the same session into the
-/// bounded-retry honest error. Malformed values are OFF with a loud warning. NEVER set on
-/// a serving box.
 /// Where the door may fire (WP-B day 49 addendum D). `Any`: the next step at any of the three
 /// injection points (a plain `<n>`, today's door). `BatchMulti`: only the plain dispatch's
 /// batched decode chunk, and only a chunk carrying at least two sessions (`batch:<n>`).
@@ -9472,6 +9459,22 @@ fn parse_step_oom_fault(raw: &str) -> Option<(StepOomFaultSite, u32)> {
     }
 }
 
+/// MEMRA_STEP_OOM_FAULT (diagnostic fault door, default absent/0 = OFF): how many phase-(a)
+/// session steps to fail with [`STEP_OOM_FAULT_MSG`] instead of running. THE REASON IT
+/// EXISTS (battery-20260831 tenancy-gates T2, darklanes
+/// `research/kv-fastband-20260830/battery-20260831/tenancy-gates/RESULTS.md`): the step-OOM
+/// PARK branch is unreachable from outside the process: four independent refusal layers
+/// (the KV-capacity 429, the `[admit-oom]` VRAM defer, the TTFT deadline on queued
+/// requests, and the boot-time pool reservation that makes a later ballast invisible) catch
+/// every external pressure shape first, so the branch whose multi-active form was
+/// fleet-fatal before lane/step37-vram-admission had NO executable gate (the
+/// loud-failures / executed-failure-path laws). This is the same posture as
+/// `MEMRA_KV_HOST_FAULT`: the injection forges ONLY the error; the park-vs-honest-error
+/// match, the teardown fence, `park_requeue`, and the retry budget all run un-doctored
+/// production logic. `1` proves the park branch (fresh session parks, requeues, re-primes,
+/// answers 200); a value above `MEMRA_STEP_OOM_RETRIES` walks the same session into the
+/// bounded-retry honest error. Malformed values are OFF with a loud warning. NEVER set on
+/// a serving box.
 fn step_oom_fault_state() -> &'static (StepOomFaultSite, std::sync::atomic::AtomicU32) {
     static R: std::sync::OnceLock<(StepOomFaultSite, std::sync::atomic::AtomicU32)> =
         std::sync::OnceLock::new();
