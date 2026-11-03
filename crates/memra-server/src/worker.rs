@@ -40524,14 +40524,19 @@ fn measured_wave_cap(lm: &LoadedModel, engine: &Engine, cap: usize) -> usize {
     } else {
         let t0 = std::time::Instant::now();
         let probe = lm.model.decode_wave_probe(engine, SPEC_COST_DEPTH);
-        let c = match &probe {
-            Ok((two, one)) if one < two => 32,
-            _ => 16,
+        // the tensor-core b32 tier is kept only when its single wave is the fastest arm
+        let (c, tc) = match &probe {
+            Ok((two, one, one_tc)) if one_tc < one && one_tc < two => (32, true),
+            Ok((two, one, _)) if one < two => (32, false),
+            _ => (16, false),
         };
+        engine.set_tc_b32(tc);
         match probe {
-            Ok((two, one)) => eprintln!(
+            Ok((two, one, one_tc)) => eprintln!(
                 "[wave-probe] 32 sessions at depth {SPEC_COST_DEPTH}: two 16-row waves {two:.1} ms, \
-                 one 32-row wave {one:.1} ms -> wave cap {c} ({:.1}s)",
+                 one 32-row wave {one:.1} ms (tensor-core tier {one_tc:.1} ms) -> wave cap {c}, \
+                 tensor-core b32 {} ({:.1}s)",
+                if tc { "on" } else { "off" },
                 t0.elapsed().as_secs_f64()
             ),
             Err(err) => eprintln!("[wave-probe] failed ({err}); wave cap 16"),

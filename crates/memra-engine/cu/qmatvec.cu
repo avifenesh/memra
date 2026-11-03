@@ -2945,6 +2945,159 @@ __device__ __forceinline__ void nvfp4_mmvq_csplit(
 // b32 tier (batch-spec 2026-11-03, GB10 plain-decode lever 2): 32 columns as four 8-column
 // blocks per 8-row block, so a 32-session decode tick streams each weight from DRAM once.
 // Same per-column chain as every batched rp variant -> bit-identical per (token,row).
+// ---- EXACT TENSOR-CORE b32 tier (batch-spec 2026-11-03). Measured on GB10 (mmvq-b16-bench,
+// 31 tensors of blk.0-3): m=32 8.17 ms against the 4 x 8 dp4a split's 9.94; at m=16 it lost
+// (7.09 vs rpsc 6.50; decode step 149.1 vs 128.3 ms/tick), so only the b32 tier carries it. The dp4a batched chain per
+// (row, column) is: for each lane l, for g = l, l+32, ...: S_sl = sum of the 16 int8 products of
+// half sl (integer), partial = ws0*S_0 then partial += ws1*S_1, acc_l += adg*partial; then the
+// xor butterfly over the 32 lanes, lane 0's value written. The integer sums are order-free, so
+// int8 mma.sync m16n8k16 computes every S_sl exactly (k16 = one scale half), and the float
+// epilogue below replays the same operations in the same order: the per-lane chains are carried
+// per "virtual lane" l, and the butterfly is replayed from shared memory. -> BIT-IDENTICAL to
+// every batched rp variant and to per-m MMVQ.
+// Block: 8 warps, one 16-row tile, NT 8-column tiles. Warp w carries the chains of l = w, w+16
+// (combined into the butterfly's first level, v'_w = v_w + v_{w+16}) and l = w+8, w+24.
+// A fragment (rows gq, gq+8; k-int t) holds the thread's int of [va.x, vb.x, va.y, vb.y], the
+// dp4a operand order: k 0-3 <- decode(qx).x, 4-7 <- decode(qy).x, 8-11 <- decode(qx).y,
+// 12-15 <- decode(qy).y (half 1: qz/qw); B holds activation int t of the half, column gq.
+__device__ __forceinline__ void tc_mma_s8(int (&d)[4], int a0, int a1, int b0) {
+    asm volatile("mma.sync.aligned.m16n8k16.row.col.s32.s8.s8.s32 {%0,%1,%2,%3}, {%4,%5}, {%6}, {%0,%1,%2,%3};"
+        : "+r"(d[0]), "+r"(d[1]), "+r"(d[2]), "+r"(d[3])
+        : "r"(a0), "r"(a1), "r"(b0));
+}
+template<int NT>
+__device__ __forceinline__ void nvfp4_mmvq_tc(
+        const unsigned char* __restrict__ W, const signed char* __restrict__ aq,
+        const float* __restrict__ ad, float* __restrict__ y,
+        int in_f, int out_f, int m, int r0, float ys) {
+    constexpr int NC = NT * 8;
+    const int lane = threadIdx.x, w = threadIdx.y;
+    const int gq = lane >> 2, t = lane & 3;
+    const int nsb = in_f >> 5, nsb64 = in_f >> 6;
+    const unsigned char* qplane = W;
+    const unsigned char* splane = W + (size_t)out_f * nsb64 * 32;
+    const int ra = r0 + gq, rb = r0 + gq + 8;
+    const bool oka = ra < out_f, okb = rb < out_f;
+    __shared__ float red[8][16][NC + 1];
+    // warp w carries the chains of l = w, w+8, w+16, w+24 and folds the butterfly's first two
+    // levels in registers: v''_w = (v_w + v_(w+16)) + (v_(w+8) + v_(w+24)), lane w's own order.
+    float acc[4][NT][4];
+    #pragma unroll
+    for (int u = 0; u < 4; u++)
+        #pragma unroll
+        for (int j = 0; j < NT; j++)
+            #pragma unroll
+            for (int e = 0; e < 4; e++) acc[u][j][e] = 0.0f;
+    #pragma unroll
+    for (int u = 0; u < 4; u++) {
+        const int l = w + 8 * u;
+        for (int g = l; g < nsb; g += 32) {
+            int4 qa = make_int4(0, 0, 0, 0), qb = make_int4(0, 0, 0, 0);
+            int sa = 0, sb = 0;
+            if (oka) {
+                qa = *(const int4*)(qplane + (size_t)ra * nsb64 * 32 + (size_t)g * 16);
+                sa = *(const int*)(splane + (size_t)ra * nsb64 * 4 + (size_t)(g >> 1) * 4);
+            }
+            if (okb) {
+                qb = *(const int4*)(qplane + (size_t)rb * nsb64 * 32 + (size_t)g * 16);
+                sb = *(const int*)(splane + (size_t)rb * nsb64 * 4 + (size_t)(g >> 1) * 4);
+            }
+            const int s0 = (g & 1) * 2;
+            const int2 da0 = get_int_from_table_16_d((t & 1) ? qa.y : qa.x, kvalues_mxfp4_d);
+            const int2 da1 = get_int_from_table_16_d((t & 1) ? qa.w : qa.z, kvalues_mxfp4_d);
+            const int2 db0 = get_int_from_table_16_d((t & 1) ? qb.y : qb.x, kvalues_mxfp4_d);
+            const int2 db1 = get_int_from_table_16_d((t & 1) ? qb.w : qb.z, kvalues_mxfp4_d);
+            const int A0a = (t & 2) ? da0.y : da0.x, A1a = (t & 2) ? da1.y : da1.x;
+            const int A0b = (t & 2) ? db0.y : db0.x, A1b = (t & 2) ? db1.y : db1.x;
+            const float wsa0 = ue4m3_to_f32_d((unsigned char)((sa >> (8 *  s0     )) & 0xFF));
+            const float wsa1 = ue4m3_to_f32_d((unsigned char)((sa >> (8 * (s0 + 1))) & 0xFF));
+            const float wsb0 = ue4m3_to_f32_d((unsigned char)((sb >> (8 *  s0     )) & 0xFF));
+            const float wsb1 = ue4m3_to_f32_d((unsigned char)((sb >> (8 * (s0 + 1))) & 0xFF));
+            #pragma unroll
+            for (int j = 0; j < NT; j++) {
+                const int bcol = j * 8 + gq;
+                int b0 = 0, b1 = 0;
+                if (bcol < m) {
+                    const int* ar = (const int*)(aq + (size_t)bcol * in_f + (size_t)g * 32);
+                    b0 = ar[t];
+                    b1 = ar[4 + t];
+                }
+                int S0[4] = {0, 0, 0, 0}, S1[4] = {0, 0, 0, 0};
+                tc_mma_s8(S0, A0a, A0b, b0);
+                tc_mma_s8(S1, A1a, A1b, b1);
+                const int c0 = j * 8 + 2 * t;
+                const float adg0 = (c0 < m) ? ad[(size_t)c0 * nsb + g] : 0.0f;
+                const float adg1 = (c0 + 1 < m) ? ad[(size_t)(c0 + 1) * nsb + g] : 0.0f;
+                #pragma unroll
+                for (int e = 0; e < 4; e++) {
+                    const float ws0 = (e < 2) ? wsa0 : wsb0;
+                    const float ws1 = (e < 2) ? wsa1 : wsb1;
+                    const float adg = (e & 1) ? adg1 : adg0;
+                    float partial = 0.0f;
+                    partial += ws0 * (float)S0[e];
+                    partial += ws1 * (float)S1[e];
+                    acc[u][j][e] += adg * partial;
+                }
+            }
+        }
+    }
+    #pragma unroll
+    for (int j = 0; j < NT; j++)
+        #pragma unroll
+        for (int e = 0; e < 4; e++) {
+            const int row = gq + ((e >> 1) << 3);
+            const int col = j * 8 + 2 * t + (e & 1);
+            const float v1a = acc[0][j][e] + acc[2][j][e];   // lane w:   v_w + v_(w+16)
+            const float v1b = acc[1][j][e] + acc[3][j][e];   // lane w+8: v_(w+8) + v_(w+24)
+            red[w][row][col] = v1a + v1b;                    // lane w, level off 8
+        }
+    __syncthreads();
+    // butterfly levels off 4, 2, 1 on the 8 distinct values; lane 0's value is written.
+    const int tid = w * 32 + lane;
+    for (int cell = tid; cell < 16 * NC; cell += 256) {
+        const int row = cell / NC, col = cell - row * NC;
+        if (col >= m || r0 + row >= out_f) continue;
+        float v[8];
+        #pragma unroll
+        for (int i = 0; i < 8; i++) v[i] = red[i][row][col];
+        #pragma unroll
+        for (int off = 4; off > 0; off >>= 1) {
+            float nv[8];
+            #pragma unroll
+            for (int i = 0; i < 8; i++) nv[i] = v[i] + v[i ^ off];
+            #pragma unroll
+            for (int i = 0; i < 8; i++) v[i] = nv[i];
+        }
+        // ys == 1.0 writes the reduced value unscaled, exactly as group4's write-side scale.
+        y[(size_t)col * out_f + r0 + row] = (ys == 1.0f) ? v[0] : v[0] * ys;
+    }
+}
+extern "C" __global__ void __launch_bounds__(256) qmatvec_nvfp4_mmvq_b32_tc(
+        const unsigned char* __restrict__ W, const signed char* __restrict__ aq,
+        const float* __restrict__ ad, float* __restrict__ y,
+        int in_f, int out_f, int m, long row_bytes) {
+    nvfp4_mmvq_tc<4>(W, aq, ad, y, in_f, out_f, m, (int)blockIdx.x * 16, 1.0f);
+}
+// group4/group3 twin of the b32 tensor-core tier: blocks map onto the concatenated row space of up
+// to four tensors sharing one activation (host gate: every out_f % 16 == 0, so a 16-row tile never
+// straddles two tensors); the tensor's macro-scale ys is applied at the write as group4 does.
+extern "C" __global__ void __launch_bounds__(256) qmatvec_nvfp4_mmvq_group4_b32_tc(
+        const unsigned char* __restrict__ W0, const unsigned char* __restrict__ W1,
+        const unsigned char* __restrict__ W2, const unsigned char* __restrict__ W3,
+        const signed char* __restrict__ aq, const float* __restrict__ ad,
+        float* __restrict__ y0, float* __restrict__ y1,
+        float* __restrict__ y2, float* __restrict__ y3,
+        int in_f, int n0, int n1, int n2, int n3, int m,
+        float s0, float s1, float s2, float s3) {
+    int r = (int)blockIdx.x * 16;
+    if (r < n0) { nvfp4_mmvq_tc<4>(W0, aq, ad, y0, in_f, n0, m, r, s0); return; }
+    r -= n0;
+    if (r < n1) { nvfp4_mmvq_tc<4>(W1, aq, ad, y1, in_f, n1, m, r, s1); return; }
+    r -= n1;
+    if (r < n2) { nvfp4_mmvq_tc<4>(W2, aq, ad, y2, in_f, n2, m, r, s2); return; }
+    r -= n2;
+    if (r < n3) { nvfp4_mmvq_tc<4>(W3, aq, ad, y3, in_f, n3, m, r, s3); return; }
+}
 extern "C" __global__ void qmatvec_nvfp4_mmvq_b32_rpcs8(
         const unsigned char* __restrict__ W, const signed char* __restrict__ aq,
         const float* __restrict__ ad, float* __restrict__ y,
