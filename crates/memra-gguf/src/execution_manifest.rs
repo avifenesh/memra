@@ -621,7 +621,8 @@ pub const DECODE_GRAPH: KernelManifest =
 /// law): `SharedSparseIndex` — the ladders' fixture plan carries `SparseIndex` and the refusal
 /// named only that, so admitting the shared variant too would be claiming coverage nothing ran; if
 /// a real artifact needs it the load refuses BY NAME, which is the visible outcome we want.
-/// `GatedDeltaNet` (qwen35/step35 recurrent mixers have no PP ladder), `CompressedMlaAttention`
+/// `GatedDeltaNet` (the qwen35/qwen35_moe/qwen4_exp recurrent mixers have no PP ladder; step35
+/// has no GDN layers), `CompressedMlaAttention`
 /// (the dsv4 class), `SoftmaxRouter`, `GemmaResidual`/`GemmaParallelMoeResidual` (gemma keeps its
 /// separately gated PP2 program, grandfathered in `hybrid.rs` by fence length), `LogitsSoftcap`.
 /// A family that wants stage splitting brings its own ladder; being architecturally adjacent to
