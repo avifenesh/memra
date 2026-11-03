@@ -1,5 +1,10 @@
 //! Exact-byte KV coordination, extending the existing native payload owner via KvBacking.
-//! CPU-tested only; no server path is enabled here.
+//!
+//! What the server installs: `hostprefix` (the shared host-tier governor, resident charges and
+//! identity slots) and the re-exported `memra_tier` contracts (`BudgetGovernor`, `TierBudget`,
+//! leases and digests), which the host prefix tier uses when `MEMRA_KV_HOST_MB > 0`; the
+//! `kv-tier-gate` binaries also read `materializer`'s native geometry. What has no serving caller:
+//! `Hierarchy`, `ActiveEpoch`, `scheduler`, `policy` and `integration` are CPU-tested scaffolding.
 pub mod hostprefix;
 pub mod integration;
 pub mod materializer;
