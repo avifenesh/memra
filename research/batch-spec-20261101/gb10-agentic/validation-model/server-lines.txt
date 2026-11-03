@@ -1,0 +1,5 @@
+[spec-cost] model="q38" depth=2048 pooled=true plain_cap=16 round_overhead=13.25ms pooled_overhead=Some((4, 3.5209973589743555)) verify_ms[1..16]=[75.9 74.4 74.6 75.8 76.8 77.8 79.2 80.7 87.4 94.1 100.8 107.5 114.8 122.1 129.5 136.8] plain_ms[1..16]=[74.4 78.3 82.0 85.7 90.3 95.0 99.7 104.4 113.3 122.2 131.1 140.0 149.0 157.9 166.8 175.7] (77.0s)
+[spec-cost] model="q38" realized n=2 K=0: 25.9 tok/s (now priced from serving)
+[spec-cost] model="q38" realized n=1 K=0: 12.2 tok/s (now priced from serving)
+[spec-cost] model="q38" realized n=4 K=0: 42.1 tok/s (now priced from serving)
+[spec-cost] model="q38" realized n=3 K=0: 34.7 tok/s (now priced from serving)

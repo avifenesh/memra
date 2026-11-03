@@ -7064,8 +7064,26 @@ fn spec_cost_best_k(entry: &SpecCostEntry, n: usize, rung: usize) -> Option<(usi
 fn spec_cost_verdict(model: &str, n: usize, rung: usize) -> Option<usize> {
     let reg = spec_cost_registry().lock().unwrap();
     let entry = reg.get(model)?;
-    let (k, spec_rate, plain_rate) = spec_cost_best_k(entry, n, rung)?;
-    if spec_cost_log_due(model, n, k) {
+    let Some((k, spec_rate, plain_rate)) = spec_cost_best_k(entry, n, rung) else {
+        // EXPLORE WITHOUT ACCEPTANCE HISTORY. The verdict needs the model's acceptance, and
+        // acceptance only comes from speculative rounds; with no verdict the band decides,
+        // and the band served the GB10 agentic c=2 cell plain from a fresh boot (23.4 tok/s,
+        // the band arm's own number) where the gate with history ran pooled spec (28.8). So a
+        // calibrated model with no history speculates at its rung whenever every session's
+        // verify rows fit one pooled forward (n * (rung + 1) <= 16): the history fills within
+        // a few rounds and the realized rates take over from there.
+        if rung > 0 && n * (rung + 1) <= 16 {
+            if spec_cost_log_due(model, n, rung, rung) {
+                eprintln!(
+                    "[spec-cost] model={model:?} n={n} rung={rung} -> K={rung} (exploring: no \
+                     acceptance history yet)"
+                );
+            }
+            return Some(rung);
+        }
+        return None;
+    };
+    if spec_cost_log_due(model, n, rung, k) {
         eprintln!(
             "[spec-cost] model={model:?} n={n} rung={rung} -> K={k} (predicted {:.1} vs plain \
              {:.1} tok/s; pooled={})",
@@ -7134,15 +7152,15 @@ fn spec_cost_tick_regime(active: &[Session], finished: &[usize]) -> Option<(Stri
     Some((first.model.clone(), live.len(), k))
 }
 
-/// One log line per (model, n, verdict) change, never per admission.
-fn spec_cost_log_due(model: &str, n: usize, k: usize) -> bool {
-    static SEEN: std::sync::OnceLock<std::sync::Mutex<HashMap<String, (usize, usize)>>> =
-        std::sync::OnceLock::new();
+/// One log line per (model, n, rung) verdict change, never per admission.
+fn spec_cost_log_due(model: &str, n: usize, rung: usize, k: usize) -> bool {
+    type Seen = HashMap<(String, usize, usize), usize>;
+    static SEEN: std::sync::OnceLock<std::sync::Mutex<Seen>> = std::sync::OnceLock::new();
     let mut seen = SEEN
         .get_or_init(|| std::sync::Mutex::new(HashMap::new()))
         .lock()
         .unwrap();
-    seen.insert(model.to_string(), (n, k)) != Some((n, k))
+    seen.insert((model.to_string(), n, rung), k) != Some(k)
 }
 
 /// Tick demotion: whether a live spec session of `model` at draft length `k` should hand its
@@ -44151,6 +44169,22 @@ mod tests {
         );
         // No table: no riders.
         assert_eq!(super::rider_forward_caps("cap-unknown", 4)[2], 2);
+    }
+
+    /// A calibrated model with no acceptance history explores speculation while every
+    /// session's verify rows fit one pooled forward, and leaves wider loads to the band.
+    #[test]
+    fn spec_cost_explores_without_acceptance_history() {
+        let mut e = gb10_entry([0.7, 0.5, 0.35]);
+        e.accept = None;
+        super::spec_cost_registry()
+            .lock()
+            .unwrap()
+            .insert("explore-model".into(), e);
+        assert_eq!(super::spec_cost_verdict("explore-model", 2, 3), Some(3));
+        assert_eq!(super::spec_cost_verdict("explore-model", 4, 3), Some(3));
+        assert_eq!(super::spec_cost_verdict("explore-model", 5, 3), None);
+        assert_eq!(super::spec_cost_verdict("explore-model", 2, 0), None);
     }
 
     /// lane/batch-spec: sampled spec sessions are demotable; only constrained ones stay.
