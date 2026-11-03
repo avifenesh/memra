@@ -45,7 +45,11 @@ only for the `120a` target, `wgmma_common.cuh` only for `90a`. Rules that need n
 - comment-only edits of `.rs`/`.cu` files: every changed line is a `//` comment. Blank
   lines and a `//` line ending in a backslash count as code;
 - a non-crate path counts as a crate input when the CI include census
-  (`tools/validation_plan.py`) says a crate reads it, so `docs/FLAGS.md` is `numeric`. The
+  (`tools/validation_plan.py`) says a crate reads it, so `docs/FLAGS.md` is `numeric`. FLAGS.md
+  reaches the engine only through the env registry `build.rs` generates from it (legal names,
+  prefixes, retired doors), so an edit that leaves that registry as it was is `docs`. The
+  classifier carries a port of the generator, pinned to the generator's source hash; when
+  `generate_env_registry` changes, the shortcut is off until the port is re-checked. The
   literal fallback counts a path only inside a string literal of a compiled source, outside
   `tests/`, `benches/` and `examples/`: a README named in a model's artifact lock is not an
   input. A path a crate reads that a rule also matches takes the stronger class, so

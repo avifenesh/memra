@@ -270,6 +270,73 @@ class LinkClosure(unittest.TestCase):
             self.assertEqual(ci.literal_inputs(tmp, "HEAD", wanted), {"docs/FLAGS.md": {"memra-engine"}})
 
 
+FLAGS_FIXTURE = """## Fixture doors
+
+| `MEMRA_FX_LIVE` | on | a live row |
+| `MEMRA_FX_GONE` | **REMOVED 2026-11-01** | marked in its row |
+| `MEMRA_FX_FAM_*` | | a prefix row |
+
+### Removed fixture doors
+
+- `MEMRA_FX_OLD`: deleted with its kernel
+  and `MEMRA_FX_CONT` on a continuation line
+
+  `MEMRA_FX_AFTER_BLANK` after a blank line is not in the ledger
+- `MEMRA_FX_LIVE` is still defined above, so it stays legal
+"""
+
+
+class FlagsRegistry(unittest.TestCase):
+    """docs/FLAGS.md reaches the engine only through the env registry build.rs generates."""
+
+    def test_port_matches_the_generator_on_a_fixture(self):
+        # expected values come from running the real build.rs generator on this text
+        legal, prefixes, retired = ci.flags_registry(FLAGS_FIXTURE)
+        self.assertEqual(legal, ["MEMRA_FX_LIVE"])
+        self.assertEqual(prefixes, ["MEMRA_FX_FAM_"])
+        self.assertEqual(retired, [("MEMRA_FX_CONT", "Removed fixture doors"),
+                                   ("MEMRA_FX_GONE", "row marked REMOVED 2026-11-01"),
+                                   ("MEMRA_FX_OLD", "Removed fixture doors")])
+
+    def test_the_pinned_generator_is_this_trees(self):
+        self.assertEqual(ci.registry_generator_sha((ROOT / ci.BUILD_RS).read_text()), ci.REGISTRY_GENERATOR_SHA,
+                         "build.rs generate_env_registry changed: re-verify flags_registry against it, then re-pin")
+
+    def run_repo(self, tmp, flags_v2, build_rs_v2=None):
+        run = lambda *a: subprocess.run(["git", "-C", tmp, *a], check=True, capture_output=True)
+        run("init", "-q")
+        build_rs = (ROOT / ci.BUILD_RS).read_text()
+        for path, text in {ci.BUILD_RS: build_rs, ci.FLAGS_MD: FLAGS_FIXTURE}.items():
+            Path(tmp, path).parent.mkdir(parents=True, exist_ok=True)
+            Path(tmp, path).write_text(text)
+        run("add", "."); run("-c", "user.name=f", "-c", "user.email=f@x", "commit", "-qm", "a")
+        Path(tmp, ci.FLAGS_MD).write_text(flags_v2)
+        if build_rs_v2 is not None:
+            Path(tmp, ci.BUILD_RS).write_text(build_rs_v2)
+        run("add", "."); run("-c", "user.name=f", "-c", "user.email=f@x", "commit", "-qm", "b")
+        return ci.same_flags_registry(tmp, "HEAD~1", "HEAD")
+
+    def test_prose_edit_is_docs_and_a_new_name_is_not(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertTrue(self.run_repo(tmp, FLAGS_FIXTURE.replace("a live row", "the live row, reworded")))
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertFalse(self.run_repo(tmp, FLAGS_FIXTURE + "| `MEMRA_FX_NEW` | off | new |\n"))
+        with tempfile.TemporaryDirectory() as tmp:  # a blank line moves a name out of the ledger
+            self.assertFalse(self.run_repo(tmp, FLAGS_FIXTURE.replace("kernel\n  and", "kernel\n\n  and")))
+        rules = ci.load_rules(RULES_TEXT, MAIN)
+        result = ci.classify_file(change(ci.FLAGS_MD), rules, MAIN, crate_inputs={ci.FLAGS_MD: {"memra-engine"}},
+                                  same_registry=True)
+        self.assertEqual(result["class"], "docs")
+
+    def test_a_changed_generator_turns_the_shortcut_off(self):
+        import tempfile
+        build_rs = (ROOT / ci.BUILD_RS).read_text().replace("fn generate_env_registry(out: &Path) {",
+                                                           "fn generate_env_registry(out: &Path) {\n    let _ = 1;", 1)
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertFalse(self.run_repo(tmp, FLAGS_FIXTURE.replace("a live row", "reworded"), build_rs))
+
+
 class DiffParse(unittest.TestCase):
     def test_header_lookalike_content_is_still_content(self):
         import tempfile
