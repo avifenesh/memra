@@ -1733,8 +1733,9 @@ impl SafetensorsSource {
     /// [E, out, ff] as single 3D BF16 stacks (transformers fused-MoE layout, gate rows first);
     /// the engine asks per-expert 2D `blk.{trunk+k}.ffn_{gate,up,down}_exps.{e}.weight`.
     /// Row-major means every slice is contiguous: expert block e, then gate = first ff rows,
-    /// up = last ff rows. Slices retain BF16 when the checkpoint contract requires it; otherwise
-    /// the generic large-matmul loader law may re-encode them to Q8_0.
+    /// up = last ff rows. Slices retain BF16 when the checkpoint contract requires it or when
+    /// the row length is not a Q8_0 block multiple; otherwise the generic large-matmul loader
+    /// law may re-encode them to Q8_0.
     fn mtp_fused_expert_slice(&self, ggml_name: &str) -> Option<TensorView<'_>> {
         if self.cfg.nextn_predict_layers == 0 {
             return None;
@@ -1779,7 +1780,10 @@ impl SafetensorsSource {
         };
         let start = (e * block + row0 * in_f) * 2; // BF16 = 2 bytes
         let slice = &bytes[start..start + rows * in_f * 2];
-        if self.preserves_source_dtype(&hf) {
+        // Q8_0 blocks are 32 elements and the encoder walks the flat slice, so a row length
+        // that is not a block multiple would produce blocks that straddle rows (the engine
+        // reads in_f / 32 blocks per row). Such a slice keeps its BF16 view.
+        if self.preserves_source_dtype(&hf) || !in_f.is_multiple_of(32) {
             return Some(TensorView {
                 bytes: Cow::Borrowed(slice),
                 ggml_type: GgmlType::BF16,
@@ -4024,6 +4028,56 @@ mod tests {
             let head = src.find("output.weight").expect("lm_head must resolve");
             assert_eq!(head.ggml_type, want, "hidden {hidden}");
             assert_eq!(head.ne, vec![hidden as u64, vocab as u64]);
+            std::fs::remove_dir_all(&dir).ok();
+        }
+    }
+
+    /// The MTP fused-expert slice re-encodes to Q8_0 only when its ROW length is a block
+    /// multiple. Both cases slice 2 rows, so the slice's total count (96 or 128) is a multiple
+    /// of 32 either way; at in_f 48 a total-count guard would emit blocks that straddle rows.
+    #[test]
+    fn mtp_expert_slice_reencode_is_keyed_on_row_length() {
+        let (experts, out) = (2usize, 4usize);
+        for (in_f, want) in [(64usize, GgmlType::Q8_0), (48, GgmlType::BF16)] {
+            let rows = out / 2;
+            assert!((rows * in_f).is_multiple_of(32));
+            let dir = std::env::temp_dir().join(format!(
+                "memra_mtp_slice_reencode_{in_f}_{}",
+                std::process::id()
+            ));
+            std::fs::create_dir_all(&dir).unwrap();
+            let payload: Vec<u8> = (0..experts * out * in_f)
+                .flat_map(|i| ((((i % 251) as f32).to_bits() >> 16) as u16).to_le_bytes())
+                .collect();
+            let header = format!(
+                r#"{{"mtp.layers.0.mlp.experts.gate_up_proj":{{"dtype":"BF16","shape":[{experts},{out},{in_f}],"data_offsets":[0,{}]}}}}"#,
+                payload.len()
+            );
+            let mut file = Vec::with_capacity(8 + header.len() + payload.len());
+            file.extend_from_slice(&(header.len() as u64).to_le_bytes());
+            file.extend_from_slice(header.as_bytes());
+            file.extend_from_slice(&payload);
+            std::fs::write(dir.join("model.safetensors"), file).unwrap();
+            std::fs::write(
+                dir.join("config.json"),
+                r#"{"model_type":"qwen3","num_hidden_layers":1,"hidden_size":256,
+                "num_attention_heads":2,"num_key_value_heads":1,"head_dim":128,
+                "intermediate_size":256,"vocab_size":512,"max_position_embeddings":512,
+                "num_nextn_predict_layers":1}"#,
+            )
+            .unwrap();
+
+            let src = SafetensorsSource::open(&dir).unwrap();
+            // blk.1 is the appended MTP block; expert 1's gate rows are the slice under test.
+            let gate = src
+                .find("blk.1.ffn_gate_exps.1.weight")
+                .expect("MTP expert gate slice must resolve");
+            assert_eq!(gate.ggml_type, want, "in_f {in_f}");
+            assert_eq!(gate.ne, vec![in_f as u64, rows as u64]);
+            if want == GgmlType::BF16 {
+                let start = out * in_f * 2;
+                assert_eq!(&gate.bytes[..], &payload[start..start + rows * in_f * 2]);
+            }
             std::fs::remove_dir_all(&dir).ok();
         }
     }
