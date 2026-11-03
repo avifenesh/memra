@@ -9542,7 +9542,8 @@ impl Engine {
                 moe_vrows_ilp_refuse("down", qt);
                 false
             };
-        if ilp {
+        // Counted only where the `_ilp` kernel launches: the tmaj grid has no ILP form.
+        if ilp && !tmaj {
             MOE_VROWS_ILP_DISPATCHES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         }
         let (f, cfg) = if tmaj {
