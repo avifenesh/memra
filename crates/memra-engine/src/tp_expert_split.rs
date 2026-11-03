@@ -96,10 +96,6 @@ fn refuse_unsplittable(h: &HostExps, what: &str) -> Result<(), Box<dyn std::erro
     Ok(())
 }
 
-/// ROW split of a `[in_f, out_f, n_expert]` projection (`gate`, `up`): rank `r` takes out-rows
-/// `[r*out_f/ranks, (r+1)*out_f/ranks)` of every expert. Contiguous inside each expert, so this
-/// is a byte range and nothing is rewritten. BIT-IDENTICAL: each kept row is the row the
-/// unsharded bank holds, and every output element remains one full-K dot.
 /// Runs `f(expert, its slab)` over a pre-sized `[n_expert * stride]` buffer, fanned out over the
 /// host's cores (one contiguous run of experts per worker). The sharder is load-time wall on the
 /// pair: both halves of a 171 GB bank pass through here once per boot, and the column split is
@@ -136,6 +132,10 @@ where
     });
 }
 
+/// ROW split of a `[in_f, out_f, n_expert]` projection (`gate`, `up`): rank `r` takes out-rows
+/// `[r*out_f/ranks, (r+1)*out_f/ranks)` of every expert. Contiguous inside each expert, so this
+/// is a byte range and nothing is rewritten. BIT-IDENTICAL: each kept row is the row the
+/// unsharded bank holds, and every output element remains one full-K dot.
 pub fn split_rows(
     h: &HostExps,
     ranks: usize,
