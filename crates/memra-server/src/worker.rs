@@ -4908,9 +4908,9 @@ fn plain_ckpt_nominatable(prompt: &[u32], is_control: &dyn Fn(u32) -> bool) -> b
 // trunk KV + the MTP draft plane + the boundary hidden (prefix_insert_from_spec_boundary)
 // — greedy and sampled sessions alike, since a prime is sampler-independent; a whole-entry
 // hit on an unconstrained spec-eligible request re-arms a SpecSession from the restored
-// carrier (spec_session_from_restored — the engine feeds any prompt suffix through the
-// plain path's exact program), in BOTH sampling regimes. Hits that cannot re-arm (no draft
-// plane, constrained, sampled-with-active-penalties, partial) serve on the plain path and
+// carrier (spec_session_from_restored_ready/_deferred — the engine feeds any prompt suffix
+// through the plain path's exact program), in BOTH sampling regimes. Hits that cannot re-arm
+// (no draft plane, constrained, sampled-with-active-penalties, partial) serve on the plain path and
 // the downgrade line names which. The spec tier additionally keeps its own continuation
 // pool for extend/affinity shapes. Legacy round-robin mode (MEMRA_SERVE_BATCH=0) bypasses
 // the prefix cache entirely.
@@ -37851,7 +37851,7 @@ fn admit(
 
     // SPEC x CONSTRAINED (constrained-full, 2026-08-03): greedy constrained sessions ride
     // spec bursts — the grammar truncates acceptance AFTER the exactness verify and forces
-    // the masked argmax at the cut slot (generate_spec_session_constrained). Sampled
+    // the masked argmax at the cut slot (generate_spec_session_constrained_prime_split). Sampled
     // constrained and the MEMRA_CONSTRAIN_HOST oracle keep plain decode.
     // The request-conditioned K policy owns the placement/concurrency decision: K=0 takes
     // plain decode, while positive K remains subject to the correctness eligibility checks.
