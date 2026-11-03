@@ -426,7 +426,7 @@ def still_proven(repo, record, root, candidate, rules, arch, push_base, log=prin
     if "perf" in held and own_base != push_base:
         try:
             base_impact = _impact_pinned(repo, own_base, push_base, push_base)
-            if any(c["target"] == target for c in base_impact["cells"]):
+            if "perf" in ci.requirements(base_impact).get(target, {}).get("kinds", set()):
                 held.discard("perf")
         except (EvidenceError, ci.ImpactError, KeyError, TypeError, ValueError, OSError, subprocess.SubprocessError):
             held.discard("perf")

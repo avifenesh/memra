@@ -77,7 +77,7 @@ The wide share is mostly real sharing, not missing labels. The server, the token
   - `memory`: the device memory qualification;
   - `policy`: serve-smoke;
   - CUDA or FFI: kernel-check.
-- An item in a crate outside `memra-engine`'s link closure (`memra-server`, `memra-lanes`) has one effect, `served`, whatever its labels say. No battery binary links it, so it cannot change a kernel, a `run-gen` argmax, a `run-spec` result or the perf A/B. It needs serve-smoke, on one device per family: that code has no device-specific path of its own. The closure comes from the workspace manifests (`tools/change_impact.py` `link_closure`).
+- An item in a crate outside `memra-engine`'s link closure (`memra-server`, `memra-lanes`) has one effect, `served`, whatever its labels say. No battery binary links it, so it cannot change a kernel, a `run-gen` argmax, a `run-spec` result or the perf A/B. It needs serve-smoke, on one device per family and build target: that code runs no CUDA of its own, and a card-keyed default in it is the gate's `defaults` rule. The closure comes from the workspace manifests (`tools/change_impact.py` `link_closure`).
 - The plan picks one model per reached family and device from `models.json`, preferring the owner's own models. Reached cells that no available model covers are listed, never dropped.
 
 **When the map is older than the base.** The commit that adds a new call carries its own reach into that push. A later edit of the callee alone would not. So before narrowing anything, the query scans what changed between the map commit and the base. Every item changed or added there contributes its identifiers. A changed item named by one of them takes the cells of that new or changed caller as well.
