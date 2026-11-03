@@ -591,7 +591,12 @@ fn a_pp2_multi_range_gemma_prime_matches_the_reference_executor() {
         "the PP-2 door must be open over the two-layer fixture"
     );
     let prompt = 200usize;
-    let ranges = memra_engine::hybrid_forward::prime_chunk_ranges(prompt, n_layers, false);
+    let ranges = memra_engine::hybrid_forward::prime_chunk_ranges(
+        prompt,
+        n_layers,
+        false,
+        h.model.swa_ring_on(),
+    );
     assert!(
         ranges.len() >= 2,
         "the arm must schedule several ranges, got {ranges:?}"
