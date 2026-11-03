@@ -975,8 +975,9 @@ mod tests {
     /// The count memra #454 reports, pinned. Making a door reachable, or
     /// changing its declared default to match reality, or deleting it, all move
     /// this number, and all three are decisions that must be written down. It
-    /// moved from six to three when the PP-2 norm port took the three norm doors
-    /// off the TP/EP-only list: this assertion is the record of that decision.
+    /// moved from six to four at the matrix flip, and from four to one when the
+    /// PP-2 norm port took the three norm doors off the TP/EP-only list: this
+    /// assertion is the record of those decisions.
     #[test]
     fn one_default_on_door_is_inert_on_the_served_path() {
         // Six before 2026-09-11. The matrix flip removed the two split-K rows
