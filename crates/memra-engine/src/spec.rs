@@ -197,8 +197,10 @@ fn flatten_dspark_rows<T>(
 /// the verify's job either way; acceptance arbitrates. OnceLock: read once, hot-loop safe.
 /// `MEMRA_SPEC_HEAD_ROWS=1` — batch the verify tail's LM head over its t columns instead of running
 /// it at m=1 once per column. See the call site in `decode_step_t_core_stream` for why the batched
-/// form is the same per-row arithmetic (the bf16/q8 rows twins, not cuBLASLt) and what it costs
-/// today: the head is re-streamed t times per verify pass. Default off until the byte tape says so.
+/// form is the same per-row arithmetic (the bf16/q8 rows twins, not cuBLASLt) and what the
+/// per-column loop costs: the head is re-streamed t times per verify pass. Tri-state
+/// (`step37_door`): default ON once the step37 serving defaults are armed (owner flip
+/// 2026-08-27), OFF otherwise; `=1` forces it on, `=0` kills it.
 pub(crate) fn head_rows_on() -> bool {
     static ENV: std::sync::OnceLock<Option<bool>> = std::sync::OnceLock::new();
     crate::step37_door(&ENV, "MEMRA_SPEC_HEAD_ROWS")
@@ -5772,9 +5774,9 @@ impl HybridModel {
             //
             // rms_norm is row-wise, so norm(t) is per-row identical to t x norm(1) by construction.
             //
-            // DEFAULT OFF for exactly one turn of the crank: "bit-identical by two documented
-            // claims" is still an argument. The greedy byte tape decides, and the door flips only
-            // once the tape is a receipt.
+            // Default ON when the step37 serving defaults are armed (owner flip 2026-08-27, the
+            // step37-serving-defaults row in docs/FLAGS.md); `=0` kills it and the per-column
+            // loop below runs.
             if head_rows_on() {
                 e.rms_norm(&x, self.output_norm.float_data(), &mut hn, n_embd, t, eps)?;
                 let logits = e.matmul(&self.output, &hn, t)?;
