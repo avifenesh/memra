@@ -2266,8 +2266,9 @@ extern "C" int memra_dsv4_ep_merge_slots(float* local, const float* peer,
     return 0;
 }
 
-// Preserve the original C interfaces and their process-env behavior for existing
-// callers. Both share the explicit launcher, so launch geometry cannot drift.
+// Preserve the original C interfaces for existing callers: both pin the block-tree
+// reduction (reduce_arm 0) and share the explicit launcher, so launch geometry
+// cannot drift.
 extern "C" int memra_dsv4_fp4_gemm_sel(const void* a_codes, const float* a_scales,
                                        const void* w_base, const void* sc_base,
                                        const float* s2, const int* sel, int proj,
