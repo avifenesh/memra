@@ -250,6 +250,13 @@ def scan(path, src):
             i = close + 1
             continue
         i += 1
+    # tokens outside every function and type (file-scope constexpr and __constant__ data, launch
+    # bounds split from their function by a directive, operator overloads, anything unparsed) form
+    # one synthetic item the map never contains, so a change there is never invisible
+    covered = {id(x) for it in items if "toks" in it for x in it["toks"]}
+    outside = [x for x in toks if x[0] != "pp" and id(x) not in covered]
+    items.append(dict(kind="outside", name="<outside>", line_start=1, line_end=toks[-1][2] if toks else 1,
+                      toks=outside, ns=[]))
     out = []
     seen = {}
     for it in items:
@@ -264,13 +271,16 @@ def scan(path, src):
             out.append(rec)
             continue
         tk = it.pop("toks")
-        q = "::".join([x for x in it.get("ns", []) if x] + [it["name"]])
+        q = "<outside>" if it["kind"] == "outside" else "::".join([x for x in it.get("ns", []) if x] + [it["name"]])
         c = seen.get(q, 0) + 1
         seen[q] = c
         qid = q if c == 1 else f"{q}#{c}"
-        h = hashlib.sha256("\x00".join(x[1] for x in tk if x[0] != "pp").encode()).hexdigest()[:20]
+        body = [x for x in tk if x[0] != "pp"]
+        h = hashlib.sha256("\x00".join(x[1] for x in body).encode("utf-8", "surrogatepass")).hexdigest()[:20]
+        lh = hashlib.sha256("\x00".join(f"{x[2] - it['line_start']}:{x[1]}" for x in body)
+                            .encode("utf-8", "surrogatepass")).hexdigest()[:20]
         rec = dict(id=f"{path}::{qid}", file=path, kind=it["kind"], name=it["name"], qual=q,
-                   line_start=it["line_start"], line_end=it["line_end"], hash=h,
+                   line_start=it["line_start"], line_end=it["line_end"], hash=h, lhash=lh,
                    idents=sorted({x[1] for x in tk if x[0] == "id"}))
         for key in ("quals", "extern_c", "launches", "template"):
             if key in it:

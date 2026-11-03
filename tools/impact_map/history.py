@@ -22,7 +22,7 @@ def git(repo, *a):
     return subprocess.run(["git", "-C", str(repo), *a], capture_output=True, text=True).stdout.strip()
 
 
-def gate_cells(repo, base, head, use_map):
+def gate_cells(repo, base, head, use_map, map_data=None):
     """The push gate's (target, scope) cells for the diff, with or without the map."""
     sys.path.insert(0, str(HERE.parent))
     import change_impact as ci
@@ -32,7 +32,7 @@ def gate_cells(repo, base, head, use_map):
         for t in arch.accepted:  # a target new in the head gets a push-gated row, as rules_in_force does
             if f'[target."{t}"]' not in rules:
                 rules += f'\n[target."{t}"]\nname = "sm_{t}"\npush_gate = true\n'
-        impact, _, _ = ci.impact_between(repo, base, head, rules, use_map=use_map)
+        impact, _, _ = ci.impact_between(repo, base, head, rules, use_map=use_map, map_data=map_data if use_map else None)
     except ci.ImpactError as error:
         return f"REFUSED: {error}"
     cells = sorted({f"{c['name']}:{c['scope']}" for c in impact["cells"]})
@@ -41,7 +41,7 @@ def gate_cells(repo, base, head, use_map):
 
 
 def row(repo, label, base, head, m, models, dev_target=None, pushed=None):
-    rep = delta.delta(repo, base, head, map_data=m)
+    rep = delta.delta(repo, base, head, map_data=m, whatif=True)
     s = delta.summarize(rep)
     pl = delta.plan(repo, base, rep, models=models, ledger={"records": []}, device_target=dev_target, push_gated=pushed)
     changed = sum(1 for f in rep["files"] for it in f.get("items", []) if it.get("change") not in ("test-only",))
@@ -53,7 +53,7 @@ def row(repo, label, base, head, m, models, dev_target=None, pushed=None):
     unc = sorted({(u["family"], u["device"]) for u in pl["uncovered"]})
     fams = s["families"]
     return {"label": label, "files": files, "items": changed, "cells": s["cells"],
-            "gate_rules_only": gate_cells(repo, base, head, False), "gate_with_map": gate_cells(repo, base, head, True),
+            "gate_rules_only": gate_cells(repo, base, head, False), "gate_with_map": gate_cells(repo, base, head, True, m),
             "families": "*" if len(fams) == len(m["vocab"]["families"]) else ",".join(fams) or "-",
             "devices": ",".join(s["devices"]) or "-", "effects": ",".join(s["effects"]) or "-",
             "kernel": s["kernel"], "doors": ",".join(rep.get("doors", [])), "runs": runs,
@@ -80,9 +80,6 @@ def main():
     rules = ci.load_rules((HERE.parent / "change-impact.toml").read_text(), arch)
     dev_target = g.device_targets(rules, arch)
     pushed = {t for t, r in rules.get("target", {}).items() if r.get("push_gate")}
-    import os
-    os.environ["MEMRA_IMPACT_MAP_FILE"] = str(Path(a.map).resolve())
-    os.environ["MEMRA_IMPACT_MODELS_FILE"] = str(Path(a.models).resolve())
     rows = []
     listing = git(a.repo, "log", f"-{a.main}", "--first-parent", "--format=%H %s", a.main_ref).splitlines() if a.main else []
     if a.commits:

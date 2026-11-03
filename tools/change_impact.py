@@ -498,10 +498,9 @@ def literal_inputs(repo, ref, paths):
     wanted = sorted({p for p in paths if not p.startswith(("crates/", PUBLICATION))})
     if not wanted:
         return {}
-    args = ["grep", "-n", "-F", "-I"]
-    for path in wanted:
-        args += ["-e", path]
-    result = _git(repo, *args, ref, "--", "crates", check=False)
+    # the patterns go through stdin: one -e per path overflows the argument list on long ranges
+    result = subprocess.run(["git", "-C", str(repo), "-c", "core.quotePath=false", "grep", "-n", "-F", "-I", "-f", "-",
+                             ref, "--", "crates"], input="\n".join(wanted).encode(), capture_output=True)
     if result.returncode not in (0, 1):
         return {"**": {"<literal input census failed>"}}
     inputs = {}
@@ -566,7 +565,9 @@ def validate_rules(rules, arch):
     return rules
 
 
-def impact_between(repo, base, head, rules_text=None, use_map=True):
+def impact_between(repo, base, head, rules_text=None, use_map=True, map_ref=None, map_data=None):
+    """map_ref pins the impact map to a commit (default: the base's, as for the rules); map_data
+    is an explicit map for what-if replays and is never taken from the environment."""
     arch = arch_table_at(repo, head)
     rules = load_rules(rules_text, arch) if rules_text is not None else rules_in_force(repo, base, head, arch)
     changes = diff_changes(repo, base, head)
@@ -575,7 +576,10 @@ def impact_between(repo, base, head, rules_text=None, use_map=True):
     refiner = None
     if use_map:
         from impact_map import gate as impact_gate
-        refiner = impact_gate.Refiner(repo, base, head, rules, arch)
+        try:
+            refiner = impact_gate.Refiner(repo, base, head, rules, arch, map_ref=map_ref, map_data=map_data)
+        except impact_gate.MapError as error:
+            raise ImpactError(str(error)) from error
     impact = classify(changes, rules, arch, owners=owners, crate_inputs=inputs, declared=declared, refiner=refiner)
     impact["declared_reasons"] = reasons
     impact["base"], impact["head"] = base, head

@@ -32,7 +32,7 @@ def lex(src):
     """Tokens: k in {id, lt, str, chr, num, p}. Comments are dropped."""
     out = []
     i, n, line = 0, len(src), 1
-    if src.startswith("#!") and not src.startswith("#!["):
+    if src.startswith("#!") and not re.match(r"#!\s*\[", src):
         while i < n and src[i] != "\n":
             i += 1
     while i < n:
@@ -256,19 +256,30 @@ def norm_hash(toks):
     return h.hexdigest()[:20]
 
 
+def layout_hash(toks, base_line):
+    """Token stream plus each token's line relative to the item start: equal only when the item's
+    lines are where the map recorded them (region narrowing uses line ranges)."""
+    h = hashlib.sha256()
+    for t in toks:
+        h.update(f"{t.line - base_line}:".encode())
+        h.update(t.t.encode("utf-8", "surrogatepass"))
+        h.update(b"\x00")
+    return h.hexdigest()[:20]
+
+
 def cfg_of(attrs):
     cfgs = []
     test = False
     for a in attrs:
-        txt = "".join(t.t if t.k != "id" else " " + t.t + " " for t in a)
-        txt = re.sub(r"\s+", " ", txt).strip()
-        if re.match(r"# \[ ?(test|tokio :: test|rstest)\b", txt.replace("  ", " ")) or txt.startswith("#[ test") or re.search(r"\[\s*(test|tokio\s*::\s*test)\s*\]", txt):
+        compact = re.sub(r"\s+", "", "".join(t.t for t in a))
+        if re.fullmatch(r"#\[(test|tokio::test|rstest)(\(.*\))?\]", compact):
             test = True
-        m = re.search(r"cfg\s*\((.*)\)\s*\]$", txt)
-        if m and "cfg_attr" not in txt:
-            c = re.sub(r"\s+", "", m.group(1))
+        m = re.fullmatch(r"#\[cfg\((.*)\)\]", compact)
+        if m:
+            c = m.group(1)
             cfgs.append(c)
-            if c == "test" or c.startswith("all(test") or c.startswith("any(test"):
+            # test-only: cfg(test) or cfg(all(test, ..)); cfg(any(test, ..)) also builds in production
+            if c == "test" or c.startswith("all(test,") or c == "all(test)":
                 test = True
     return cfgs, test
 
@@ -298,6 +309,8 @@ def scan(path, src):
                     e = match_close(toks, j)
                     if not inner:
                         attrs.append(toks[i:e + 1])
+                    elif not attrs:
+                        start = e + 1  # an inner attribute belongs to the module, not the next item
                     i = e + 1
                 else:
                     break
@@ -488,6 +501,13 @@ def scan(path, src):
             i = k + 1
 
     walk(0, len(toks), base_mods, "mod", False, [])
+    # every token outside an item (inner attributes, `mod x;` with its cfg, extern-block headers and
+    # attributes, inline-mod attributes, anything the item walk does not place) goes into one
+    # synthetic item the map never contains, so a change there is never invisible
+    covered = {id(t) for it in items for t in it["toks"]}
+    outside = [t for t in toks if id(t) not in covered]
+    items.append(dict(kind="outside", name="<outside>", mods=[], container=None, line_start=1,
+                      line_end=toks[-1].line if toks else 1, cfg=[], test=False, toks=outside))
     # stable ids
     seen = {}
     out = []
@@ -500,9 +520,12 @@ def scan(path, src):
         tk = it.pop("toks")
         idents = sorted({t.t for t in tk if t.k == "id"})
         strings = sorted({t.t for t in tk if t.k == "str" and len(t.t) < 200})
+        if it["kind"] == "outside":
+            qual = "<outside>"
         rec = dict(id=f"{path}::{qual}", file=path, qual=qual, kind=it["kind"], name=it["name"],
                    line_start=it["line_start"], line_end=it["line_end"], cfg=it["cfg"], test=it["test"],
-                   hash=norm_hash(tk), ntok=len(tk), container=it.get("container"))
+                   hash=norm_hash(tk), lhash=layout_hash(tk, it["line_start"]), ntok=len(tk),
+                   container=it.get("container"))
         if it.get("body_line"):
             rec["body_line"] = it["body_line"]
         rec["idents"] = idents

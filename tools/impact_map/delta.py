@@ -96,22 +96,35 @@ def load_json_at(repo, ref, path):
     return None if text is None else json.loads(text)
 
 
+SCANNED = (".rs",)
+CU_SCANNED = (".cu", ".cuh", ".h")
+# inputs whose change since the map moves per-arch liveness or cfg flags for every item
+ARCH_INPUTS = re.compile(r"^crates/memra-engine/(build\.rs|src/cuda_arch\.rs)$")
+
+
+def scannable(path):
+    return path.endswith(SCANNED) or (path.startswith(CU_PREFIX + "cu/") and path.endswith(CU_SCANNED))
+
+
 def scan(path, text):
-    """Items of one file keyed by stable id: {id: (hash, line_start, line_end)}."""
+    """Items of one file keyed by stable id: {id: (hash, line_start, line_end, test, kind, lhash, idents)}.
+    The synthetic `<outside>` item holds every token outside an item, so no edit is invisible."""
     if text is None:
         return {}
     if path.endswith(".rs"):
         recs = rust_items.scan(path, text)
-    elif path.endswith((".cu", ".cuh", ".h")) and path.startswith(CU_PREFIX):
+    elif path.endswith(CU_SCANNED) and path.startswith(CU_PREFIX):
         recs = []
         for r in cu_items.scan(path[len(CU_PREFIX):], text):
             if r["kind"] == "pp":
-                r = dict(r, hash=hashlib.sha256(r["text"].encode()).hexdigest()[:20])
+                h = hashlib.sha256(r["text"].encode("utf-8", "surrogatepass")).hexdigest()[:20]
+                r = dict(r, hash=h, lhash=h)
             r["id"] = CU_PREFIX + r["id"]
             recs.append(r)
     else:
         return {}
-    return {r["id"]: (r["hash"], r["line_start"], r["line_end"], r.get("test", False), r["kind"]) for r in recs}
+    return {r["id"]: (r["hash"], r["line_start"], r["line_end"], r.get("test", False), r["kind"],
+                      r.get("lhash"), frozenset(r.get("idents", ()))) for r in recs}
 
 
 def changed_lines(repo, base, head, path):
@@ -124,31 +137,50 @@ def changed_lines(repo, base, head, path):
     return lines
 
 
+def changed_paths(repo, base, head):
+    out = git(repo, "diff", "--name-only", "-z", "--no-renames", base, head).decode("utf-8", "surrogateescape")
+    return [n for n in out.split("\0") if n]
+
+
 class Map:
     def __init__(self, data):
         if data.get("schema") != "memra-impact-map-v1":
             raise DeltaError(f"unknown map schema {data.get('schema')}")
+        for key in ("items", "reach_sets", "vocab", "source_commit"):
+            if key not in data:
+                raise DeltaError(f"impact map is missing {key}")
         self.data = data
         self.items = data["items"]
         self.sets = data["reach_sets"]
         self.vocab = data["vocab"]
         self.by_file = {}
+        self._set_cells = {}
         for i, it in self.items.items():
             self.by_file.setdefault(it["f"], []).append(i)
+            if not (0 <= it["r"] < len(self.sets)):
+                raise DeltaError(f"impact map item {i} names reach set {it['r']}")
         self.doors_hit = set()
         self.regions = {}
         for rg in data.get("regions", []):
             self.regions.setdefault(rg["file"], []).append(rg)
 
     def cells_of_set(self, idx):
-        s = self.sets[idx]
-        if s == "*":
-            return {(f, r, d) for f in self.vocab["families"] for r in self.vocab["routes"] for d in self.vocab["devices"]}
-        return {(f, r, d) for f, routes in s.items() for r, devs in routes.items() for d in devs}
+        if idx not in self._set_cells:
+            s = self.sets[idx]
+            if s == "*":
+                self._set_cells[idx] = frozenset(self.cells_of_set_all())
+            else:
+                self._set_cells[idx] = frozenset((f, r, d) for f, routes in s.items() for r, devs in routes.items() for d in devs)
+        return set(self._set_cells[idx])
 
     def item_cells(self, item_id):
         it = self.items.get(item_id)
-        return None if it is None else self.cells_of_set(it["r"])
+        if it is None:
+            return None
+        out = self.cells_of_set(it["r"])
+        if it.get("x") is not None:  # a writer of process-global state: its change reaches every reader
+            out |= self.cells_of_set(it["x"])
+        return out
 
     def file_cells(self, path):
         ids = self.by_file.get(path)
@@ -172,13 +204,16 @@ class Map:
             return set()
 
         def pick(vals, universe):
-            return list(universe) if not vals or "*" in vals else [x for x in vals if x in universe]
+            if not vals or "*" in vals or any(x not in universe for x in vals):
+                return list(universe)  # an unknown label widens, as in assemble.py
+            return list(vals)
         return {(f, r, d) for f in pick(rg.get("families"), v["families"]) for r in pick(rg.get("routes"), v["routes"])
                 for d in pick(rg.get("devices"), v["devices"])}
 
     def narrowed(self, item_id, lines):
-        """Cells for a change at `lines` (base numbering, valid at the map commit) inside an item.
-        Narrows only when every touched line sits in a labelled non-'none' region of this item."""
+        """Cells for a change at `lines` (base numbering) inside an item whose base layout equals the
+        map's (same token layout hash and start line), so the map's region lines are this tree's.
+        Narrows only when every touched line sits strictly inside a labelled non-'none' region."""
         it = self.items[item_id]
         full = self.item_cells(item_id)
         regs = [rg for rg in self.regions.get(it["f"], []) if rg.get("kind") != "none"
@@ -198,22 +233,70 @@ class Map:
             if best.get("door") and best["door"].get("default_reached") is False:
                 self.doors_hit.add(best["door"].get("env", "?"))
             out |= self.region_cells(best)
+        if it.get("x") is not None:
+            out |= self.cells_of_set(it["x"])
         return out & full, True
 
 
-def delta(repo, base, head, *, map_ref=None, paths=None, map_data=None, fingerprints=False):
-    """The cells base..head can reach. map_ref defaults to base (the rules in force)."""
-    map_ref = map_ref or base
-    data = map_data if map_data is not None else load_json_at(repo, map_ref, MAP_PATH)
-    if data is None and map_ref == base:
-        data = load_json_at(repo, head, MAP_PATH)  # the change that introduces the map
-    if data is None:
-        raise DeltaError(f"no {MAP_PATH} at {map_ref} or {head}")
-    m = Map(data)
-    names = git(repo, "diff", "--name-only", "--no-renames", base, head).decode().split("\n")
-    names = [n for n in names if n and (paths is None or n in paths)]
-    report = {"schema": SCHEMA, "base": base, "head": head, "map_commit": data.get("source_commit"),
-              "files": [], "cells": {}, "effects": set(), "kernel": False}
+_DRIFT = {}
+
+
+def map_drift(repo, m, base):
+    key = (str(repo), id(m), base)
+    if key not in _DRIFT:
+        _DRIFT[key] = _map_drift(repo, m, base)
+    return _DRIFT[key]
+
+
+def _map_drift(repo, m, base):
+    """What changed between the map commit and the base: the identifiers of every changed or added
+    item (a new caller of an item the map placed before it existed), and whether the arch table
+    moved. -> (idents -> cells they add, arch_moved)."""
+    mc = m.data.get("source_commit")
+    if not mc or git(repo, "cat-file", "-t", mc, check=False).strip() != b"commit":
+        return None, True  # the map's commit is unknown here: nothing narrows
+    if mc == base:
+        return {}, False
+    if subprocess.run(["git", "-C", str(repo), "merge-base", "--is-ancestor", mc, base]).returncode != 0:
+        return None, True  # the map is not an ancestor of the base: nothing narrows
+    callers = {}
+    arch_moved = False
+    for path in changed_paths(repo, mc, base):
+        if ARCH_INPUTS.match(path) or path in ("Cargo.toml", "rust-toolchain.toml"):
+            arch_moved = True
+        if not scannable(path):
+            continue
+        a = scan(path, blob(repo, mc, path))
+        b = scan(path, blob(repo, base, path))
+        for i, v in b.items():
+            if i in a and a[i][0] == v[0]:
+                continue
+            cs = m.item_cells(i) if i in m.items else (m.file_cells(path) or m.cells_of_set_all())
+            for ident in v[6]:
+                callers.setdefault(ident, set()).update(cs)
+    return callers, arch_moved
+
+
+def delta(repo, base, head, *, map_ref=None, paths=None, map_data=None, map_obj=None, fingerprints=False,
+          whatif=False):
+    """The cells base..head can reach. map_ref defaults to base (the rules in force). whatif applies
+    a map to a diff it was not built before (history replays): it skips the ancestry and drift check
+    the push gate needs, so it answers "what would this map pick", not a push decision."""
+    if map_obj is not None:
+        m = map_obj
+    else:
+        map_ref = map_ref or base
+        data = map_data if map_data is not None else load_json_at(repo, map_ref, MAP_PATH)
+        if data is None and map_ref == base:
+            data = load_json_at(repo, head, MAP_PATH)  # the change that introduces the map
+        if data is None:
+            raise DeltaError(f"no {MAP_PATH} at {map_ref} or {head}")
+        m = Map(data)
+    names = [n for n in changed_paths(repo, base, head) if paths is None or n in paths]
+    drift, arch_moved = ({}, False) if whatif else map_drift(repo, m, base)
+    report = {"schema": SCHEMA, "base": base, "head": head, "map_commit": m.data.get("source_commit"),
+              "files": [], "cells": {}, "effects": set(), "kernel": False, "arch_moved": arch_moved,
+              "map_stale_base": drift is None}
     cells = {}
 
     def add(cellset, why, effects):
@@ -222,41 +305,66 @@ def delta(repo, base, head, *, map_ref=None, paths=None, map_data=None, fingerpr
             e["why"].add(why)
             e["effects"].update(effects)
 
+    all_eff = {"numeric", "speed", "memory", "policy"}
     for path in names:
-        if not (path.endswith(".rs") or (path.startswith(CU_PREFIX + "cu/"))):
+        program = path.endswith(".rs") or path.startswith(CU_PREFIX + "cu/")
+        if not program:
             report["files"].append({"path": path, "mode": "not-program"})
+            continue
+        if not scannable(path):
+            # a file under cu/ the scanner does not read (.inl, .hpp, binary): nothing to place
+            report["files"].append({"path": path, "mode": "unscannable"})
+            add(m.cells_of_set_all(), path, all_eff)
+            report["kernel"] = True
+            report["effects"] |= all_eff
             continue
         b = scan(path, blob(repo, base, path))
         h = scan(path, blob(repo, head, path))
         touched = changed_lines(repo, base, head, path)
         entry = {"path": path, "items": []}
-        ids = set(b) | set(h)
-        for i in sorted(ids):
+        for i in sorted(set(b) | set(h)):
             bh, hh = b.get(i), h.get(i)
             if bh and hh and bh[0] == hh[0]:
                 continue
-            rec = hh or bh
-            if rec[3]:
+            # test-only only when every present side is a test item (a production item moved into
+            # cfg(test) is a production removal)
+            if (not bh or bh[3]) and (not hh or hh[3]):
                 entry["items"].append({"item": i, "change": "test-only"})
                 continue
             kind = "modified" if bh and hh else ("added" if hh else "removed")
-            known = i in m.items
+            # an added item is new code even if its id is old; `<outside>` is never placed
+            known = i in m.items and kind != "added" and not i.endswith("::<outside>")
+            narrowed = False
             if known:
-                at_map = m.items[i]["h"] == (bh[0] if bh else None)
+                mi = m.items[i]
+                at_map = (drift is not None and mi["h"] == (bh[0] if bh else None)
+                          and mi.get("l") is not None and mi.get("l") == (bh[5] if bh else None) and mi["a"] == bh[1])
                 lines = {ln for ln in touched if bh and bh[1] <= ln <= bh[2]} if at_map else set()
                 if at_map and kind == "modified":
                     cs, narrowed = m.narrowed(i, lines)
                 else:
-                    cs, narrowed = m.item_cells(i), False
-                eff = set(m.items[i]["e"])
+                    cs = m.item_cells(i)
+                eff = set(mi["e"])
                 src = "map-region" if narrowed else "map-item"
+                if not cs:
+                    src = "map-empty"  # placed nowhere by default (a build-time door): not narrowed
+                    cs = m.file_cells(path) or m.cells_of_set_all()
+                    eff = all_eff
             else:
                 cs = m.file_cells(path)
                 src = "map-file" if cs is not None else "unknown-file"
                 if cs is None:
                     cs = m.cells_of_set_all()
-                eff = {"numeric", "speed", "memory", "policy"}
-                narrowed = False
+                eff = all_eff
+            if drift is None:
+                src = "map-not-ancestor"
+                cs = m.cells_of_set_all()
+            else:
+                name = i.split("::")[-1].split("#")[0]
+                if name in drift:  # a caller added or changed since the map was built
+                    cs = cs | drift[name]
+                    if src in ("map-item", "map-region"):
+                        src += "+drift"
             if path.startswith(CU_PREFIX + "cu/") or path.endswith("_ffi.rs"):
                 report["kernel"] = True
             entry["items"].append({"item": i, "change": kind, "source": src, "cells": len(cs), "effects": sorted(eff)})
@@ -295,14 +403,17 @@ def cell_fingerprints(m, item_hashes, cells):
     for i, it in m.items.items():
         if set(it["e"]) <= {"observability", "none"}:
             continue  # verified output-neutral items do not invalidate a measurement
-        by_set.setdefault(it["r"], []).append(i)
+        by_set.setdefault((it["r"], it.get("x")), []).append(i)
     for idx, ids in by_set.items():
         set_digest[idx] = fingerprint(item_hashes, ids)
-        set_cells[idx] = m.cells_of_set(idx)
+        cs = m.cells_of_set(idx[0])
+        if idx[1] is not None:
+            cs |= m.cells_of_set(idx[1])
+        set_cells[idx] = cs
     out = {}
     for c in cells:
         h = hashlib.sha256()
-        for idx in sorted(set_digest):
+        for idx in sorted(set_digest, key=lambda k: (k[0], -1 if k[1] is None else k[1])):
             if c in set_cells[idx]:
                 h.update(f"{idx}:{set_digest[idx]}\n".encode())
         out[c] = h.hexdigest()[:24]

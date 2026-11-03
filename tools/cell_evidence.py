@@ -347,26 +347,33 @@ def proven_cells(repo, candidate, rules, arch, log=print, push_base=None):
     import release_qualification as q
     candidate_inputs = inputs_digest(repo, candidate)
     proven, by_device = proven_full_records(repo, candidate, rules, arch, log)
+    stale = {}  # (target, device class) -> the newest older-commit record: only it is re-judged
     for path in records_in_tree(repo, candidate):
         root = path.rsplit("/", 1)[0]
         try:
             record = json.loads(git(repo, "show", f"{candidate}:{path}"))
             if record.get("inputs_sha256") != candidate_inputs:
-                held = still_proven(repo, record, root, candidate, rules, arch, push_base, log)
-                if held:
-                    target, kinds = held
-                    proven.setdefault(target, set()).update(kinds)
-                    by_device.setdefault(record["device"]["class"], set()).update(kinds)
+                key = (record.get("target"), (record.get("device") or {}).get("class"))
+                when = git(repo, "show", "-s", "--format=%ct", str(record.get("tested_commit")), check=False).strip()
+                when = int(when) if when.isdigit() else -1
+                if key not in stale or when > stale[key][0]:
+                    stale[key] = (when, record, root)
                 continue
             target, kinds = verify_record(record, TreeEvidence(repo, candidate, root), repo, candidate,
                                           rules, arch, candidate_inputs, push_base)
-        except (EvidenceError, q.GateError, KeyError, TypeError, ValueError, subprocess.SubprocessError) as error:
+        except (EvidenceError, q.GateError, KeyError, TypeError, ValueError, OSError, subprocess.SubprocessError) as error:
             log(f"  record {root}: not admitted: {error}")
             continue
         proven.setdefault(target, set()).update(kinds)
         by_device.setdefault(record["device"]["class"], set()).update(kinds)
         log(f"  record {root}: {ci.target_name(rules, target)} {','.join(sorted(kinds))} "
             f"on {record['device']['class']}")
+    for _, record, root in stale.values():
+        held = still_proven(repo, record, root, candidate, rules, arch, push_base, log)
+        if held:
+            target, kinds = held
+            proven.setdefault(target, set()).update(kinds)
+            by_device.setdefault(record["device"]["class"], set()).update(kinds)
     return proven, by_device
 
 
@@ -377,14 +384,31 @@ def _is_ancestor(repo, a, b):
 KIND_SCOPES = {"battery": set(ci.CORRECTNESS), "serving": {"serving", "gate"}, "perf": {"perf", "gate"}}
 
 
+_IMPACT_CACHE = {}
+
+
+def _impact_pinned(repo, a, b, push_base):
+    """change impact a..b judged by the PUSH BASE's rules and map, never a's or b's own: a record's
+    tested commit can sit inside the pushed range, where a rules or map edit would otherwise relax
+    the requirements it is judged by."""
+    key = (a, b, push_base)
+    if key not in _IMPACT_CACHE:
+        rules_text = ci.read_blob(repo, push_base, ci.RULES_PATH)
+        if rules_text is None:
+            raise EvidenceError(f"the push base {str(push_base)[:12]} has no {ci.RULES_PATH}")
+        _IMPACT_CACHE[key] = ci.impact_between(repo, a, b, rules_text, map_ref=push_base)[0]
+    return _IMPACT_CACHE[key]
+
+
 def still_proven(repo, record, root, candidate, rules, arch, push_base, log=print):
     """A record measured an older commit. It still proves a kind on its target when no change from
     its tested commit to the candidate reaches that target in a scope the kind covers (change
-    impact with the impact map: delta against the last measured commit). Perf also needs the push
-    base to be equivalent to the record's base on that target. -> (target, kinds) or None."""
+    impact with the impact map, both pinned to the push base: delta against the last measured
+    commit). Perf also needs the push base to be equivalent to the record's base on that target.
+    -> (target, kinds) or None."""
     import release_qualification as q
     tested = record.get("tested_commit")
-    if not (isinstance(tested, str) and COMMIT.fullmatch(tested)):
+    if not (isinstance(tested, str) and COMMIT.fullmatch(tested)) or not push_base or set(push_base) == {"0"}:
         return None
     if git(repo, "cat-file", "-t", tested, check=False).strip() != b"commit" or not _is_ancestor(repo, tested, candidate):
         return None
@@ -392,18 +416,19 @@ def still_proven(repo, record, root, candidate, rules, arch, push_base, log=prin
         own_base = (record.get("kinds", {}).get("perf") or {}).get("base_commit")
         target, kinds = verify_record(record, TreeEvidence(repo, candidate, root), repo, tested, rules, arch,
                                       inputs_digest(repo, tested), own_base)
-        impact, _, _ = ci.impact_between(repo, tested, candidate)
-    except (EvidenceError, q.GateError, ci.ImpactError, KeyError, TypeError, ValueError, subprocess.SubprocessError) as error:
+        impact = _impact_pinned(repo, tested, candidate, push_base)
+    except (EvidenceError, q.GateError, ci.ImpactError, KeyError, TypeError, ValueError, OSError,
+            subprocess.SubprocessError) as error:
         log(f"  record {root}: older commit, not admitted: {error}")
         return None
     reached = {c["scope"] for c in impact["cells"] if c["target"] == target}
     held = {k for k in kinds if not (KIND_SCOPES.get(k, set()) & reached)}
     if "perf" in held and own_base != push_base:
         try:
-            base_impact, _, _ = ci.impact_between(repo, own_base, push_base)
+            base_impact = _impact_pinned(repo, own_base, push_base, push_base)
             if any(c["target"] == target for c in base_impact["cells"]):
                 held.discard("perf")
-        except (ci.ImpactError, subprocess.SubprocessError):
+        except (EvidenceError, ci.ImpactError, KeyError, TypeError, ValueError, OSError, subprocess.SubprocessError):
             held.discard("perf")
     if not held:
         log(f"  record {root} ({tested[:12]}): changes since reach {ci.target_name(rules, target)} "

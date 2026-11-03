@@ -168,9 +168,9 @@ why = "qualification metadata namespace (excluded from source inputs)"
 
 # --- the gate itself: a change to what is required needs the battery it requires -----
 [[rule]]
-pattern = '^tools/(change-impact\.toml|change_impact\.py|cell_evidence\.py|qualify-release\.py|release_qualification\.py|release_inputs\.py|release_input_view\.py|check_hardware_gate\.py|release-battery\.sh|release-coverage\.py|release-roster\.tsv|argmax-margin-gate\.sh|serve-smoke\.sh|cache-meter-gate\.py|q35-cold-mixed-gate\.py|port-guard\.sh|chunk-invariance-gate\.sh|qualify-model-device-memory\.py|resolve-physical-gpu\.py|kernel-check-[a-z0-9]+\.cells|hooks/pre-push)$'
+pattern = '^tools/(change-impact\.toml|change_impact\.py|cell_evidence\.py|qualify-release\.py|release_qualification\.py|release_inputs\.py|release_input_view\.py|check_hardware_gate\.py|release-battery\.sh|release-coverage\.py|release-roster\.tsv|argmax-margin-gate\.sh|serve-smoke\.sh|cache-meter-gate\.py|q35-cold-mixed-gate\.py|port-guard\.sh|chunk-invariance-gate\.sh|qualify-model-device-memory\.py|resolve-physical-gpu\.py|kernel-check-[a-z0-9]+\.cells|hooks/pre-push)$|^tools/impact_map/(?!test_)[a-z_]+\.py$|^docs/impact-map/(map|annotations)\.json$'
 class = "gate"
-why = "qualification battery, its helpers and coverage, the impact rules or the gate code"
+why = "qualification battery, its helpers and coverage, the impact rules, the impact map and its code, or the gate code"
 
 [[rule]]
 pattern = '^crates/memra-engine/src/bin/(kernel_check|run_gen|run_spec|argmax_margin_probe|tok_parity)\.rs$'
@@ -338,6 +338,6 @@ why = "registry data read by CPU census tools"
 # file reach the device-keyed defaults scope, which is performance-relevant.
 [content]
 # A device-key line that names a card (`name` of a [device] row) requires that device class.
-device_key = '''BUILT_CUDA_(ARCH|TARGET)|MEMRA_CUDA_ARCH|cuda_arch|compute_cap|memra_hopper_mma|"(120a|121a|100a|90a|89)"|__CUDA_ARCH__|multiProcessorCount|sm_count|total_?mem|vram|RTX PRO 6000|RTX 5090|GB10|B200|H100|card_class|device_name'''
+device_key = '''BUILT_CUDA_(ARCH|TARGET)|MEMRA_CUDA_ARCH|cuda_arch|compute_cap|memra_hopper_mma|memra_cutlass|memra_portable_cuda|memra_sm100_tcgen05|MEMRA_PORTABLE_CUDA|MEMRA_HOPPER_MMA|"(120a|121a|100a|90a|89)"|__CUDA_ARCH__|multiProcessorCount|sm_count|total_?mem|vram|RTX PRO 6000|RTX 5090|GB10|B200|H100|card_class|device_name'''
 # File kinds whose comment-only edits compile to the same program.
 comment_only_suffixes = [".rs", ".cu", ".cuh", ".h", ".c", ".cc", ".cpp"]
