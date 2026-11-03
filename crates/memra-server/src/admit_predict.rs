@@ -600,25 +600,6 @@ impl RequestCharge {
     }
 }
 
-/// The flat-geometry specialization of [`kv_hat_ring`] (ring_bytes_per_token = 0, ring_rows = 0).
-/// Bit-identical to legacy kv_hat.
-#[allow(dead_code)]
-pub(crate) fn kv_hat(
-    prompt_tokens: u64,
-    predicted_completion: u64,
-    bytes_per_token: u64,
-    fixed_bytes: u64,
-) -> u64 {
-    kv_hat_ring(
-        prompt_tokens,
-        predicted_completion,
-        bytes_per_token,
-        0,
-        0,
-        fixed_bytes,
-    )
-}
-
 /// G6 (shadow half): the Retry-After an enforcing reject would send: the earliest
 /// predicted in-flight completion, from each session's own shadow book (predicted
 /// total minus generated so far) at the current p50 step latency. Clamped to the shed
@@ -752,6 +733,25 @@ pub(crate) const ENFORCED_KV_REJECT_MESSAGE: &str = "this request's context does
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The flat-geometry specialization of [`kv_hat_ring`] (ring_bytes_per_token = 0,
+    /// ring_rows = 0): the legacy kv_hat formula, kept as the oracle the ring tests compare
+    /// against. Production sizes through `kv_hat_ring`.
+    fn kv_hat(
+        prompt_tokens: u64,
+        predicted_completion: u64,
+        bytes_per_token: u64,
+        fixed_bytes: u64,
+    ) -> u64 {
+        kv_hat_ring(
+            prompt_tokens,
+            predicted_completion,
+            bytes_per_token,
+            0,
+            0,
+            fixed_bytes,
+        )
+    }
 
     /// First-token deadline arithmetic (lane/bench-debts-20260901, competitive-bench
     /// debt 3). The bench shape as concrete rows: at the 2,000 tok/s floor, a 60k-token
