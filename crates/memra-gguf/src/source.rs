@@ -2963,8 +2963,12 @@ impl TensorSource for SafetensorsSource {
                         && info.shape.iter().product::<u64>() >= 1_000_000
                     {
                         let ne = info.ne();
-                        if (bytes.len() / 2) % 32 == 0 {
-                            let n_el = bytes.len() / 2;
+                        // The encoders walk the flat plane in blocks, so the ROW length must be
+                        // a multiple of the block or blocks straddle rows (the engine reads
+                        // in_f / block blocks per row). A total-count check passes for
+                        // 2880 x 201088 although 2880 % 256 != 0.
+                        let in_f = info.shape[1] as usize;
+                        if in_f.is_multiple_of(32) {
                             // lm_head -> Q5_K (parity with the GGUF mint's head class): on the
                             // 248,320-token Qwen3.8 vocab the Q8_0 fallback reads 1.27 GB/token
                             // vs Q5_K's 833 MB — measured ~+2 ms/token on the head. Q5_K needs
@@ -2974,7 +2978,7 @@ impl TensorSource for SafetensorsSource {
                             // bytes as the single-threaded pass. The GLM-5.3-Flash head
                             // (154,880 x 4096 BF16) took 156 s of every boot on one core
                             // (2x B200 pair, 2026-09-07, `[load-trace] blk.0 output-head`).
-                            if ggml_name == "output.weight" && n_el.is_multiple_of(256) {
+                            if ggml_name == "output.weight" && in_f.is_multiple_of(256) {
                                 let out =
                                     par_encode_bf16(bytes, 256, crate::nvfp4_repack::f32_to_q5_k);
                                 return Some(TensorView {
@@ -3004,10 +3008,10 @@ impl TensorSource for SafetensorsSource {
                             let (out_f, in_f) = (info.shape[0] as usize, info.shape[1] as usize);
                             if let Some(scales) = f8_scales(sinfo, sbytes, out_f, in_f) {
                                 let ne = info.ne();
+                                // Row length, not the total: Q8_0 blocks must not straddle rows.
                                 assert!(
-                                    bytes.len() % 32 == 0,
-                                    "F8 tensor {hf} len {} not 32-aligned",
-                                    bytes.len()
+                                    in_f.is_multiple_of(32),
+                                    "F8 tensor {hf} row length {in_f} not 32-aligned"
                                 );
                                 let data = f8_deq_f32(bytes, out_f, in_f, &scales);
                                 let out = crate::nvfp4_repack::f32_to_q8_0(&data);
@@ -3974,6 +3978,54 @@ mod tests {
         assert_eq!(v_b.bytes.as_ref(), f32_le(&want_v).as_slice());
 
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// The BF16 head re-encode picks its block format from the ROW length. Each case's total
+    /// element count is a multiple of 256, so a total-count guard would emit Q5_K (or Q8_0)
+    /// blocks that straddle rows.
+    #[test]
+    fn bf16_head_reencode_is_keyed_on_row_length() {
+        let vocab = 512usize;
+        for (hidden, want) in [
+            (3072usize, GgmlType::Q5_K),
+            (2880, GgmlType::Q8_0),
+            (2888, GgmlType::BF16),
+        ] {
+            assert!((vocab * hidden).is_multiple_of(256) && vocab * hidden >= 1_000_000);
+            let dir = std::env::temp_dir().join(format!(
+                "memra_head_reencode_{hidden}_{}",
+                std::process::id()
+            ));
+            std::fs::create_dir_all(&dir).unwrap();
+            let payload: Vec<u8> = (0..vocab * hidden)
+                .flat_map(|i| ((((i % 251) as f32).to_bits() >> 16) as u16).to_le_bytes())
+                .collect();
+            let header = format!(
+                r#"{{"lm_head.weight":{{"dtype":"BF16","shape":[{vocab},{hidden}],"data_offsets":[0,{}]}}}}"#,
+                payload.len()
+            );
+            let mut file = Vec::with_capacity(8 + header.len() + payload.len());
+            file.extend_from_slice(&(header.len() as u64).to_le_bytes());
+            file.extend_from_slice(header.as_bytes());
+            file.extend_from_slice(&payload);
+            std::fs::write(dir.join("model.safetensors"), file).unwrap();
+            std::fs::write(
+                dir.join("config.json"),
+                format!(
+                    r#"{{"model_type":"qwen3","num_hidden_layers":1,"hidden_size":{hidden},
+                    "num_attention_heads":2,"num_key_value_heads":1,"head_dim":128,
+                    "intermediate_size":256,"vocab_size":{vocab},
+                    "max_position_embeddings":512}}"#
+                ),
+            )
+            .unwrap();
+
+            let src = SafetensorsSource::open(&dir).unwrap();
+            let head = src.find("output.weight").expect("lm_head must resolve");
+            assert_eq!(head.ggml_type, want, "hidden {hidden}");
+            assert_eq!(head.ne, vec![hidden as u64, vocab as u64]);
+            std::fs::remove_dir_all(&dir).ok();
+        }
     }
 
     #[test]
