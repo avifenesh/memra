@@ -687,8 +687,9 @@ impl MoeSlotCache {
     /// layer's. The 35B-A3B keeps its 256 experts HOST-resident, so the GPU has ~20+ GB free at
     /// decode — empirically a 256-slot cache thrashes (~2-7% hit) while a few-thousand-slot cache
     /// reaches ~85%+ steady-state. So the DEFAULT auto-sizes N to fill `MEMRA_MOE_VRAM_FRAC` (default
-    /// 0.85) of free VRAM, clamped to [256, ~hot-set]. `MEMRA_MOE_SLOTS` forces N; a forced N
-    /// above the hard ceiling or below the eight-slot floor is clamped and the line says so.
+    /// 0.85) of free VRAM, capped at the hard ceiling (`hard_slot_bytes`: `MEMRA_MOE_HARD_VRAM_FRAC`
+    /// of free VRAM less two slots) and floored at eight slots. `MEMRA_MOE_SLOTS` forces N; a
+    /// forced N above the hard ceiling or below the eight-slot floor is clamped and the line says so.
     pub fn new(e: &Engine, max_block_bytes: usize) -> Result<Self, Box<dyn std::error::Error>> {
         Self::build(e, max_block_bytes, None)
     }
