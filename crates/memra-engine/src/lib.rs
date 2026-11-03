@@ -24587,7 +24587,7 @@ impl Engine {
     }
 
     /// True if `w`'s qtype has a batched tensor-core GEMM kernel (the prefill T>1 root fix).
-    /// Only the 4 daily-hot dtypes: Q8_0, Q4_K, Q6_K, NVFP4. NVFP4 needs in_f % 64 == 0.
+    /// Q8_0, Q4_K, Q5_K, Q6_K, Q4_0 and NVFP4; NVFP4 needs in_f % 64 == 0.
     /// DEFAULT-ON (2026-06-28): measured pp512 9B-NVFP4 = 1413 tok/s WITH this GEMM vs 298 with the
     /// dp4a fallback (4.7x) AND MORE accurate (prefill logit maxdiff 0.159 vs dp4a 0.55, both argmax
     /// MATCH). The int8 tensor-core GEMM is unconditional (its historical MEMRA_GEMM opt-in gate
