@@ -15,9 +15,13 @@
 //! banked oracle in this lane already pins. Width is `streams * hidden` at the residual-stream
 //! stages and `hidden` at the branch stages.
 //!
-//! Off by default and, when off, costs one `OnceLock` read per call — no allocation, no
-//! device work, and no arm selection changes anywhere (unlike the MoE traces, which move
-//! `observation_mode`). Turning it on cannot change what the model computes.
+//! Off by default and, when off, costs one `OnceLock` read per call — no allocation and no
+//! device work. Turning it on DOES move the program path: the trace forces the host route
+//! readback in place of the device-table MoE arms (`vrows_t1_dev`, `vrows_dev` in
+//! `hybrid_forward.rs`) and turns the glm5 decode graph off (`glm5_decode_graph.rs` refuses
+//! capture while a host-visible observer is armed). Those arms are claimed bit-identical, so
+//! the tokens should not move, but a bisect under `MEMRA_HYPER_TRACE` does not exercise the
+//! default arms or their timing.
 
 use std::fmt::Write as _;
 use std::fs::File;
