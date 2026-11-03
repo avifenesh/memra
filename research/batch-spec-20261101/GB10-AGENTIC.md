@@ -71,4 +71,14 @@ In the first run, the c=1 cell built the history, and the gate then ran c=2 as p
 
 The 1.23x at c=2 is real once the gate has history. A fresh boot facing concurrency first never got there. The fix (`spec_cost_verdict`): a calibrated model with no acceptance history now speculates at its rung whenever every session's verify rows fit one pooled forward (n * (rung + 1) <= 16). The history then fills within a few rounds, and the realized rates take over.
 
-This fix is unit-tested but has no GB10 receipt yet: the box went back to the #1025 queue at 05:55.
+## Fresh-boot c=2 with the exploration fix (08:34-09:04, 2026-11-03)
+
+One boot of the model arm at 1e30f67c69, warm-up and then the c=2 cell only, no c=1 before it (`gb10-agentic/validation-explore/`).
+
+| c | model, fresh boot with exploration | model, after c=1 | base | band |
+|---:|---:|---:|---:|---:|
+| 2 | **24.7** (20161 tokens, 816.7 s) | 28.8 | 23.5 | 23.5 |
+
+The gate now engages without history. Each first verdict at n=1 and n=2 reads `exploring: no acceptance history yet` and speculates at its rung. After that the realized rates price every verdict (16 priced verdicts at n=2, from 22.4 vs 22.4 up to 66.7 vs 25.4). Most verdicts land close to break-even, so the gate switches between K=0 and K=2..5 inside the cell.
+
+The fresh boot gains 1.05x over base, against 1.23x when the c=1 cell has filled the history first. The gap is the cost of building history on this cell's own turns.

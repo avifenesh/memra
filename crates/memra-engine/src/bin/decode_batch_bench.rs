@@ -582,6 +582,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // starts print identical lines iff the greedy streams are identical — the
         // door-on/door-off identity gate for batched-walk changes.
         let mut fps: Vec<u64> = vec![0xcbf29ce484222325; n_seqs];
+        // The decode loop is the profiled range (`nsys --capture-range=cudaProfilerApi`): the
+        // primes above stay out of the kernel summary.
+        unsafe {
+            cudarc::driver::sys::cuProfilerStart().result()?;
+        }
         for rep in 0..=reps {
             let t0 = std::time::Instant::now();
             for step in 0..steps {
@@ -622,6 +627,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             if rep > 0 {
                 rates.push((n_seqs * steps) as f64 / dt);
             }
+        }
+        unsafe {
+            cudarc::driver::sys::cuProfilerStop().result()?;
         }
         rates.sort_by(|a, b| a.partial_cmp(b).unwrap());
         let agg = rates[rates.len() / 2];

@@ -1,0 +1,474 @@
+[spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2 (K=5 when the loaded MTP head is rank-trimmed)
+[spec] draft-session state high-water: 34MB (max of parked delta 34MB and capture-time pool peak 2MB; charged per spec admission and gating future captures)
+[spec-pool] pooled rows draft engaged: 4 members (arms [GraphGreedy, GraphGreedy, GraphGreedy, GraphGreedy])
+[spec-pool] pooled rows draft engaged: 2 members (arms [GraphGreedy, GraphGreedy])
+[spec-cost] model="q38" depth=2048 pooled=true plain_cap=16 round_overhead=13.91ms pooled_overhead=Some((4, 0.8059616770833387)) verify_ms[1..16]=[75.7 74.7 75.0 76.0 76.8 77.6 79.3 81.0 87.8 94.5 101.2 107.9 115.1 122.2 129.3 136.5] plain_ms[1..16]=[74.9 78.7 82.4 86.2 90.8 95.3 99.9 104.4 113.2 122.0 130.8 139.6 148.4 157.2 166.0 174.9] (70.3s)
+[spec-cost] model="q38" n=1 rung=3 -> K=3 (exploring: no acceptance history yet)
+[spec-k] model="q38" tenant="6411568c74c558e7843d5e96ae3b1d8456ec4b1589bd44f2724d4ac85ae3efb6" K=3 source=cost-model prompt=7922 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[spec-acc] ctx=7923 burst=10/12 cum=10/12=0.833
+[spec-cost] model="q38" n=1 rung=2 -> K=2 (exploring: no acceptance history yet)
+[spec-cost] model="q38" n=1 rung=5 -> K=5 (exploring: no acceptance history yet)
+[spec-k] model="q38" tenant="6411568c74c558e7843d5e96ae3b1d8456ec4b1589bd44f2724d4ac85ae3efb6" K=5 source=cost-model prompt=8027 cached=7904 lcp=7904 active=1 wave=1 placement=single-or-non-pp2
+[spec-acc] ctx=123 burst=15/15 cum=15/15=1.000
+[spec-k] model="q38" tenant="7d1b14075c3c6709b4c502ed728dd4a9ccb8c56bd1588d0812fea66620f91611" K=3 source=cost-model prompt=32494 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[spec-acc] ctx=32495 burst=10/15 cum=10/15=0.667
+[spec-k] model="q38" tenant="7d1b14075c3c6709b4c502ed728dd4a9ccb8c56bd1588d0812fea66620f91611" K=5 source=cost-model prompt=32600 cached=32448 lcp=32448 active=1 wave=1 placement=single-or-non-pp2
+[spec-acc] ctx=152 burst=15/15 cum=15/15=1.000
+[spec-cost] model="q38" n=2 rung=3 -> K=3 (exploring: no acceptance history yet)
+[spec-k] model="q38" tenant="" K=3 source=cost-model prompt=3976 cached=0 lcp=0 active=1 wave=2 placement=single-or-non-pp2
+[spec-k] model="q38" tenant="" K=3 source=cost-model prompt=2760 cached=0 lcp=2759 active=1 wave=1 placement=single-or-non-pp2
+[spec-k] model="q38" tenant="" K=3 source=cost-model prompt=22867 cached=0 lcp=282 active=1 wave=1 placement=single-or-non-pp2
+[spec-k] model="q38" tenant="" K=3 source=cost-model prompt=41913 cached=0 lcp=282 active=2 wave=2 placement=single-or-non-pp2
+[spec-k] model="q38" tenant="" K=3 source=cost-model prompt=14705 cached=0 lcp=308 active=2 wave=2 placement=single-or-non-pp2
+[spec-cost] model="q38" n=2 rung=2 -> K=2 (exploring: no acceptance history yet)
+[spec-cost] model="q38" n=2 rung=5 -> K=5 (exploring: no acceptance history yet)
+[spec-k] model="q38" tenant="" K=5 source=cost-model prompt=25846 cached=14688 lcp=14688 active=1 wave=2 placement=single-or-non-pp2
+[spec-k] model="q38" tenant="" K=3 source=cost-model prompt=2267 cached=0 lcp=282 active=2 wave=2 placement=single-or-non-pp2
+[spec-k] model="q38" tenant="" K=5 source=cost-model prompt=2937 cached=2240 lcp=2240 active=2 wave=2 placement=single-or-non-pp2
+[spec-k] model="q38" tenant="" K=3 source=cost-model prompt=22619 cached=0 lcp=310 active=2 wave=2 placement=single-or-non-pp2
+[spec-k] model="q38" tenant="" K=3 source=cost-model prompt=36527 cached=0 lcp=310 active=2 wave=2 placement=single-or-non-pp2
+[spec-k] model="q38" tenant="" K=3 source=cost-model prompt=13216 cached=0 lcp=311 active=2 wave=2 placement=single-or-non-pp2
+[spec-k] model="q38" tenant="" K=5 source=cost-model prompt=19154 cached=13184 lcp=13184 active=1 wave=1 placement=single-or-non-pp2
+[spec-k] model="q38" tenant="" K=3 source=cost-model prompt=2403 cached=0 lcp=282 active=2 wave=2 placement=single-or-non-pp2
+[spec-k] model="q38" tenant="" K=5 source=cost-model prompt=2997 cached=2368 lcp=2368 active=2 wave=2 placement=single-or-non-pp2
+[spec-k] model="q38" tenant="" K=3 source=cost-model prompt=22233 cached=0 lcp=310 active=2 wave=2 placement=single-or-non-pp2
+[spec-k] model="q38" tenant="" K=3 source=cost-model prompt=42334 cached=0 lcp=310 active=2 wave=2 placement=single-or-non-pp2
+[spec-k] model="q38" tenant="" K=3 source=cost-model prompt=17101 cached=0 lcp=311 active=2 wave=2 placement=single-or-non-pp2
+[spec-k] model="q38" tenant="" K=5 source=cost-model prompt=30306 cached=17056 lcp=17056 active=1 wave=2 placement=single-or-non-pp2
+[spec-k] model="q38" tenant="" K=3 source=cost-model prompt=2100 cached=0 lcp=282 active=2 wave=2 placement=single-or-non-pp2
+[spec-k] model="q38" tenant="" K=5 source=cost-model prompt=4842 cached=2080 lcp=2080 active=2 wave=2 placement=single-or-non-pp2
+[spec-k] model="q38" tenant="" K=3 source=cost-model prompt=17438 cached=0 lcp=311 active=2 wave=2 placement=single-or-non-pp2
+[spec-k] model="q38" tenant="" K=3 source=cost-model prompt=31411 cached=0 lcp=311 active=2 wave=2 placement=single-or-non-pp2
+[spec-k] model="q38" tenant="" K=3 source=cost-model prompt=10728 cached=0 lcp=318 active=2 wave=2 placement=single-or-non-pp2
+[spec-k] model="q38" tenant="" K=5 source=cost-model prompt=18259 cached=10688 lcp=10688 active=2 wave=2 placement=single-or-non-pp2
+[spec-k] model="q38" tenant="" K=3 source=cost-model prompt=4944 cached=0 lcp=324 active=1 wave=1 placement=single-or-non-pp2
+[spec-k] model="q38" tenant="" K=3 source=cost-model prompt=8053 cached=0 lcp=324 active=2 wave=2 placement=single-or-non-pp2
+[spec-k] model="q38" tenant="" K=3 source=cost-model prompt=12327 cached=0 lcp=310 active=1 wave=1 placement=single-or-non-pp2
+[spec-k] model="q38" tenant="" K=3 source=cost-model prompt=27270 cached=0 lcp=310 active=2 wave=2 placement=single-or-non-pp2
+[spec-k] model="q38" tenant="" K=3 source=cost-model prompt=13232 cached=0 lcp=311 active=2 wave=2 placement=single-or-non-pp2
+[spec-k] model="q38" tenant="" K=3 source=cost-model prompt=19029 cached=0 lcp=311 active=2 wave=2 placement=single-or-non-pp2
+[spec-k] model="q38" tenant="" K=3 source=cost-model prompt=2833 cached=0 lcp=353 active=2 wave=2 placement=single-or-non-pp2
+[spec-k] model="q38" tenant="" K=5 source=cost-model prompt=5232 cached=2816 lcp=2816 active=2 wave=2 placement=single-or-non-pp2
+[spec-k] model="q38" tenant="" K=3 source=cost-model prompt=16868 cached=0 lcp=310 active=2 wave=2 placement=single-or-non-pp2
+[spec-k] model="q38" tenant="" K=3 source=cost-model prompt=35601 cached=0 lcp=310 active=2 wave=2 placement=single-or-non-pp2
+[spec-k] model="q38" tenant="" K=3 source=cost-model prompt=1604 cached=0 lcp=284 active=2 wave=2 placement=single-or-non-pp2
+[spec-k] model="q38" tenant="" K=5 source=cost-model prompt=5726 cached=1568 lcp=1568 active=2 wave=2 placement=single-or-non-pp2
+[spec-k] model="q38" tenant="" K=3 source=cost-model prompt=3513 cached=0 lcp=334 active=2 wave=2 placement=single-or-non-pp2
+[spec-k] model="q38" tenant="" K=5 source=cost-model prompt=3905 cached=3488 lcp=3488 active=2 wave=2 placement=single-or-non-pp2
+[spec-k] model="q38" tenant="" K=3 source=cost-model prompt=16643 cached=0 lcp=322 active=2 wave=2 placement=single-or-non-pp2
+[spec-k] model="q38" tenant="" K=3 source=cost-model prompt=37421 cached=0 lcp=322 active=2 wave=2 placement=single-or-non-pp2
+[spec-k] model="q38" tenant="" K=3 source=cost-model prompt=3600 cached=0 lcp=97 active=2 wave=2 placement=single-or-non-pp2
+[spec-k] model="q38" tenant="" K=5 source=cost-model prompt=7391 cached=3584 lcp=3584 active=2 wave=2 placement=single-or-non-pp2
+[spec-k] model="q38" tenant="" K=3 source=cost-model prompt=2367 cached=0 lcp=138 active=2 wave=2 placement=single-or-non-pp2
+[spec-k] model="q38" tenant="" K=5 source=cost-model prompt=2632 cached=2336 lcp=2336 active=2 wave=2 placement=single-or-non-pp2
+[spec-k] model="q38" tenant="" K=3 source=cost-model prompt=20880 cached=0 lcp=318 active=2 wave=2 placement=single-or-non-pp2
+[spec-k] model="q38" tenant="" K=5 source=cost-model prompt=31328 cached=20864 lcp=20864 active=1 wave=2 placement=single-or-non-pp2
+[spec-k] model="q38" tenant="" K=3 source=cost-model prompt=4312 cached=0 lcp=424 active=2 wave=2 placement=single-or-non-pp2
+[spec-k] model="q38" tenant="" K=5 source=cost-model prompt=5705 cached=4288 lcp=4288 active=1 wave=1 placement=single-or-non-pp2
+[spec-k] model="q38" tenant="" K=5 source=cost-model prompt=2760 cached=2720 lcp=2759 active=1 wave=2 placement=single-or-non-pp2
+[spec-k] model="q38" tenant="" K=5 source=cost-model prompt=3976 cached=3936 lcp=3936 active=2 wave=2 placement=single-or-non-pp2
+[spec-acc] ctx=41 burst=24/40 cum=24/40=0.600
+[spec-pool] pooled MTP cohort engaged: 2 sessions (model q38)
+[spec-acc] ctx=74 burst=27/30 cum=51/70=0.729
+[spec-acc] ctx=41 burst=24/45 cum=24/45=0.533
+[spec-acc] ctx=108 burst=26/30 cum=77/100=0.770
+[spec-acc] ctx=75 burst=25/35 cum=49/80=0.613
+[spec-acc] ctx=108 burst=2/5 cum=51/85=0.600
+[spec-k] model="q38" tenant="" K=5 source=cost-model prompt=22867 cached=22848 lcp=22866 active=2 wave=2 placement=single-or-non-pp2
+[spec-acc] ctx=112 burst=26/40 cum=77/125=0.616
+[spec-acc] ctx=147 burst=22/45 cum=99/170=0.582
+[spec-acc] ctx=20 burst=21/55 cum=21/55=0.382
+[spec-cost] model="q38" n=2 rung=5 -> K=3 (predicted 66.7 vs plain 25.4 tok/s; pooled=true)
+[spec-acc] ctx=179 burst=20/55 cum=119/225=0.529
+[spec-acc] ctx=53 burst=27/45 cum=48/100=0.480
+[spec-cost] model="q38" realized n=2 K=5: 37.0 tok/s (now priced from serving)
+[spec-acc] ctx=211 burst=23/60 cum=142/285=0.498
+[spec-acc] ctx=90 burst=17/70 cum=65/170=0.382
+[spec-acc] ctx=247 burst=0/5 cum=142/290=0.490
+[spec-k] model="q38" tenant="" K=3 source=cost-model prompt=41913 cached=41888 lcp=41888 active=2 wave=2 placement=single-or-non-pp2
+[spec-acc] ctx=249 burst=23/40 cum=165/330=0.500
+[spec-acc] ctx=281 burst=24/35 cum=189/365=0.518
+[spec-acc] ctx=26 burst=22/33 cum=22/33=0.667
+[spec-acc] ctx=313 burst=20/70 cum=209/435=0.480
+[spec-acc] ctx=60 burst=17/45 cum=39/78=0.500
+[spec-acc] ctx=348 burst=26/35 cum=235/470=0.500
+[spec-acc] ctx=93 burst=21/30 cum=60/108=0.556
+[spec-acc] ctx=382 burst=23/50 cum=258/520=0.496
+[spec-acc] ctx=125 burst=17/42 cum=77/150=0.513
+[spec-acc] ctx=416 burst=25/30 cum=283/550=0.515
+[spec-acc] ctx=157 burst=16/45 cum=93/195=0.477
+[spec-acc] ctx=448 burst=22/45 cum=305/595=0.513
+[spec-acc] ctx=189 burst=18/42 cum=111/237=0.468
+[spec-acc] ctx=480 burst=22/45 cum=327/640=0.511
+[spec-acc] ctx=222 burst=19/36 cum=130/273=0.476
+[spec-acc] ctx=512 burst=21/55 cum=348/695=0.501
+[spec-acc] ctx=254 burst=16/48 cum=146/321=0.455
+[spec-acc] ctx=545 burst=23/45 cum=371/740=0.501
+[spec-acc] ctx=287 burst=19/36 cum=165/357=0.462
+[spec-acc] ctx=578 burst=19/70 cum=390/810=0.481
+[spec-acc] ctx=319 burst=21/33 cum=186/390=0.477
+[spec-acc] ctx=612 burst=17/70 cum=407/880=0.463
+[spec-acc] ctx=352 burst=18/42 cum=204/432=0.472
+[spec-acc] ctx=644 burst=16/75 cum=423/955=0.443
+[spec-acc] ctx=385 burst=20/42 cum=224/474=0.473
+[spec-acc] ctx=676 burst=17/75 cum=440/1030=0.427
+[spec-acc] ctx=420 burst=20/39 cum=244/513=0.476
+[spec-acc] ctx=709 burst=21/65 cum=461/1095=0.421
+[spec-acc] ctx=454 burst=17/42 cum=261/555=0.470
+[spec-acc] ctx=744 burst=22/45 cum=483/1140=0.424
+[spec-acc] ctx=486 burst=20/39 cum=281/594=0.473
+[spec-acc] ctx=776 burst=20/60 cum=503/1200=0.419
+[spec-acc] ctx=520 burst=22/30 cum=303/624=0.486
+[spec-acc] ctx=553 burst=2/3 cum=305/627=0.486
+[spec-k] model="q38" tenant="" K=3 source=cost-model prompt=14705 cached=14688 lcp=14704 active=2 wave=2 placement=single-or-non-pp2
+[spec-acc] ctx=557 burst=17/42 cum=322/669=0.481
+[spec-acc] ctx=589 burst=18/42 cum=340/711=0.478
+[spec-acc] ctx=18 burst=19/39 cum=19/39=0.487
+[spec-acc] ctx=622 burst=19/39 cum=359/750=0.479
+[spec-acc] ctx=51 burst=19/39 cum=38/78=0.487
+[spec-acc] ctx=655 burst=17/42 cum=376/792=0.475
+[spec-acc] ctx=84 burst=23/27 cum=61/105=0.581
+[spec-cost] model="q38" realized n=2 K=3: 25.5 tok/s (now priced from serving)
+[spec-acc] ctx=687 burst=18/42 cum=394/834=0.472
+[spec-acc] ctx=117 burst=23/30 cum=84/135=0.622
+[spec-acc] ctx=720 burst=20/33 cum=414/867=0.478
+[spec-acc] ctx=151 burst=18/45 cum=102/180=0.567
+[spec-acc] ctx=752 burst=1/3 cum=415/870=0.477
+[spec-cost] model="q38" n=2 rung=2 -> K=0 (predicted 25.4 vs plain 25.4 tok/s; pooled=true)
+[spec-restore-guard] sampled restore REFUSED: demand 2 > SOLO watermark 1 (band LOW=2 HIGH=4; projected active=2, queued=0, http in-flight Some(2)) — hit serves PLAIN (model q38); MEMRA_SPEC_RESTORE_LOAD_GUARD=0 disables
+[spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=25846 cached=25824 lcp=25824 active=2 wave=2 placement=single-or-non-pp2
+[spec-acc] ctx=755 burst=17/48 cum=432/918=0.471
+[spec-pool] pooled MTP cohort engaged: 1 sessions (model q38)
+[spec-pool] unified step engaged: 1 spec + 1 plain sessions (model q38)
+[spec-acc] ctx=789 burst=2/6 cum=434/924=0.470
+[spec-restore-guard] sampled restore REFUSED: demand 2 > SOLO watermark 1 (band LOW=2 HIGH=4; projected active=2, queued=0, http in-flight Some(2)) — hit serves PLAIN (model q38); MEMRA_SPEC_RESTORE_LOAD_GUARD=0 disables
+[spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=2267 cached=2240 lcp=2266 active=2 wave=2 placement=single-or-non-pp2
+[spec-cost] model="q38" realized n=2 K=0: 24.2 tok/s (now priced from serving)
+[spec-restore-guard] sampled restore REFUSED: demand 2 > SOLO watermark 1 (band LOW=2 HIGH=4; projected active=2, queued=0, http in-flight Some(2)) — hit serves PLAIN (model q38); MEMRA_SPEC_RESTORE_LOAD_GUARD=0 disables
+[spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=2937 cached=2912 lcp=2912 active=2 wave=2 placement=single-or-non-pp2
+[spec-restore-guard] sampled restore REFUSED: demand 2 > SOLO watermark 1 (band LOW=2 HIGH=4; projected active=2, queued=0, http in-flight Some(2)) — hit serves PLAIN (model q38); MEMRA_SPEC_RESTORE_LOAD_GUARD=0 disables
+[spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=22619 cached=22592 lcp=22618 active=2 wave=2 placement=single-or-non-pp2
+[spec-cost] model="q38" n=2 rung=2 -> K=2 (predicted 23.6 vs plain 22.7 tok/s; pooled=true)
+[spec-cost] model="q38" n=2 rung=5 -> K=5 (predicted 37.0 vs plain 22.7 tok/s; pooled=true)
+[spec-k] model="q38" tenant="" K=5 source=cost-model prompt=36527 cached=36480 lcp=36480 active=2 wave=2 placement=single-or-non-pp2
+[spec-acc] ctx=47 burst=22/45 cum=22/45=0.489
+[spec-acc] ctx=79 burst=19/65 cum=41/110=0.373
+[spec-acc] ctx=112 burst=2/10 cum=43/120=0.358
+[spec-k] model="q38" tenant="" K=5 source=cost-model prompt=13216 cached=13184 lcp=13215 active=2 wave=2 placement=single-or-non-pp2
+[spec-acc] ctx=117 burst=23/50 cum=66/170=0.388
+[spec-acc] ctx=151 burst=19/60 cum=85/230=0.370
+[spec-acc] ctx=33 burst=23/50 cum=23/50=0.460
+[spec-acc] ctx=183 burst=17/70 cum=102/300=0.340
+[spec-acc] ctx=67 burst=24/50 cum=47/100=0.470
+[spec-acc] ctx=215 burst=23/40 cum=125/340=0.368
+[spec-acc] ctx=102 burst=19/60 cum=66/160=0.412
+[spec-acc] ctx=247 burst=23/60 cum=148/400=0.370
+[spec-acc] ctx=134 burst=22/45 cum=88/205=0.429
+[spec-acc] ctx=283 burst=26/40 cum=174/440=0.395
+[spec-acc] ctx=166 burst=18/65 cum=106/270=0.393
+[spec-acc] ctx=318 burst=26/40 cum=200/480=0.417
+[spec-acc] ctx=198 burst=20/65 cum=126/335=0.376
+[spec-cost] model="q38" n=2 rung=5 -> K=3 (predicted 25.8 vs plain 22.7 tok/s; pooled=true)
+[spec-acc] ctx=353 burst=22/55 cum=222/535=0.415
+[spec-acc] ctx=232 burst=24/45 cum=150/380=0.395
+[spec-acc] ctx=387 burst=25/50 cum=247/585=0.422
+[spec-acc] ctx=266 burst=20/60 cum=170/440=0.386
+[spec-acc] ctx=299 burst=5/5 cum=175/445=0.393
+[spec-k] model="q38" tenant="" K=3 source=cost-model prompt=19154 cached=19136 lcp=19136 active=2 wave=2 placement=single-or-non-pp2
+[spec-acc] ctx=306 burst=27/45 cum=202/490=0.412
+[spec-acc] ctx=343 burst=23/55 cum=225/545=0.413
+[spec-acc] ctx=19 burst=17/42 cum=17/42=0.405
+[spec-acc] ctx=378 burst=23/40 cum=248/585=0.424
+[spec-acc] ctx=51 burst=20/33 cum=37/75=0.493
+[spec-acc] ctx=410 burst=21/50 cum=269/635=0.424
+[spec-acc] ctx=83 burst=21/36 cum=58/111=0.523
+[spec-acc] ctx=442 burst=20/55 cum=289/690=0.419
+[spec-acc] ctx=117 burst=21/30 cum=79/141=0.560
+[spec-acc] ctx=474 burst=21/50 cum=310/740=0.419
+[spec-acc] ctx=149 burst=19/36 cum=98/177=0.554
+[spec-acc] ctx=506 burst=16/80 cum=326/820=0.398
+[spec-acc] ctx=181 burst=19/39 cum=117/216=0.542
+[spec-acc] ctx=214 burst=3/3 cum=120/219=0.548
+[spec-k] model="q38" tenant="" K=3 source=cost-model prompt=2403 cached=2368 lcp=2402 active=2 wave=2 placement=single-or-non-pp2
+[spec-acc] ctx=219 burst=21/30 cum=141/249=0.566
+[spec-acc] ctx=251 burst=17/45 cum=158/294=0.537
+[spec-acc] ctx=36 burst=24/30 cum=24/30=0.800
+[spec-acc] ctx=71 burst=3/3 cum=27/33=0.818
+[spec-k] model="q38" tenant="" K=3 source=cost-model prompt=2997 cached=2976 lcp=2976 active=2 wave=2 placement=single-or-non-pp2
+[spec-acc] ctx=76 burst=18/39 cum=45/72=0.625
+[spec-acc] ctx=108 burst=25/27 cum=70/99=0.707
+[spec-acc] ctx=22 burst=21/33 cum=21/33=0.636
+[spec-acc] ctx=143 burst=17/42 cum=87/141=0.617
+[spec-acc] ctx=55 burst=20/39 cum=41/72=0.569
+[spec-acc] ctx=89 burst=3/3 cum=44/75=0.587
+[spec-k] model="q38" tenant="" K=3 source=cost-model prompt=22233 cached=22208 lcp=22232 active=2 wave=2 placement=single-or-non-pp2
+[spec-acc] ctx=94 burst=21/33 cum=65/108=0.602
+[spec-acc] ctx=127 burst=21/39 cum=86/147=0.585
+[spec-acc] ctx=26 burst=21/36 cum=21/36=0.583
+[spec-acc] ctx=162 burst=23/27 cum=109/174=0.626
+[spec-acc] ctx=60 burst=20/33 cum=41/69=0.594
+[spec-acc] ctx=195 burst=23/27 cum=132/201=0.657
+[spec-acc] ctx=92 burst=21/30 cum=62/99=0.626
+[spec-acc] ctx=228 burst=20/36 cum=152/237=0.641
+[spec-acc] ctx=124 burst=18/42 cum=80/141=0.567
+[spec-acc] ctx=261 burst=20/33 cum=172/270=0.637
+[spec-acc] ctx=157 burst=23/24 cum=103/165=0.624
+[spec-acc] ctx=293 burst=23/27 cum=195/297=0.657
+[spec-acc] ctx=189 burst=20/33 cum=123/198=0.621
+[spec-acc] ctx=326 burst=13/54 cum=208/351=0.593
+[spec-acc] ctx=221 burst=24/30 cum=147/228=0.645
+[spec-acc] ctx=256 burst=3/3 cum=150/231=0.649
+[spec-k] model="q38" tenant="" K=3 source=cost-model prompt=42334 cached=42304 lcp=42304 active=2 wave=2 placement=single-or-non-pp2
+[spec-acc] ctx=261 burst=25/27 cum=175/258=0.678
+[spec-acc] ctx=296 burst=20/36 cum=195/294=0.663
+[spec-acc] ctx=31 burst=19/42 cum=19/42=0.452
+[spec-acc] ctx=329 burst=21/36 cum=216/330=0.655
+[spec-acc] ctx=65 burst=20/36 cum=39/78=0.500
+[spec-acc] ctx=363 burst=22/27 cum=238/357=0.667
+[spec-acc] ctx=98 burst=17/42 cum=56/120=0.467
+[spec-acc] ctx=395 burst=19/45 cum=257/402=0.639
+[spec-acc] ctx=130 burst=20/33 cum=76/153=0.497
+[spec-acc] ctx=162 burst=3/3 cum=79/156=0.506
+[spec-k] model="q38" tenant="" K=3 source=cost-model prompt=17101 cached=17056 lcp=17100 active=2 wave=2 placement=single-or-non-pp2
+[spec-acc] ctx=167 burst=20/39 cum=99/195=0.508
+[spec-acc] ctx=201 burst=18/45 cum=117/240=0.487
+[spec-acc] ctx=46 burst=21/33 cum=21/33=0.636
+[spec-acc] ctx=235 burst=19/36 cum=136/276=0.493
+[spec-acc] ctx=79 burst=18/39 cum=39/72=0.542
+[spec-acc] ctx=267 burst=16/54 cum=152/330=0.461
+[spec-acc] ctx=111 burst=20/33 cum=59/105=0.562
+[spec-acc] ctx=302 burst=16/45 cum=168/375=0.448
+[spec-acc] ctx=143 burst=21/39 cum=80/144=0.556
+[spec-acc] ctx=334 burst=19/36 cum=187/411=0.455
+[spec-acc] ctx=178 burst=20/33 cum=100/177=0.565
+[spec-acc] ctx=366 burst=22/33 cum=209/444=0.471
+[spec-acc] ctx=210 burst=23/30 cum=123/207=0.594
+[spec-acc] ctx=400 burst=20/39 cum=229/483=0.474
+[spec-acc] ctx=244 burst=21/30 cum=144/237=0.608
+[spec-acc] ctx=434 burst=18/45 cum=247/528=0.468
+[spec-acc] ctx=276 burst=16/45 cum=160/282=0.567
+[spec-acc] ctx=468 burst=18/39 cum=265/567=0.467
+[spec-acc] ctx=308 burst=18/42 cum=178/324=0.549
+[spec-acc] ctx=500 burst=18/42 cum=283/609=0.465
+[spec-acc] ctx=341 burst=19/45 cum=197/369=0.534
+[spec-acc] ctx=533 burst=20/42 cum=303/651=0.465
+[spec-acc] ctx=376 burst=20/36 cum=217/405=0.536
+[spec-acc] ctx=568 burst=19/36 cum=322/687=0.469
+[spec-acc] ctx=409 burst=20/33 cum=237/438=0.541
+[spec-acc] ctx=600 burst=21/36 cum=343/723=0.474
+[spec-acc] ctx=441 burst=21/33 cum=258/471=0.548
+[spec-acc] ctx=634 burst=21/39 cum=364/762=0.478
+[spec-acc] ctx=474 burst=18/39 cum=276/510=0.541
+[spec-acc] ctx=669 burst=23/24 cum=387/786=0.492
+[spec-acc] ctx=506 burst=17/45 cum=293/555=0.528
+[spec-acc] ctx=701 burst=24/27 cum=411/813=0.506
+[spec-acc] ctx=539 burst=20/39 cum=313/594=0.527
+[spec-acc] ctx=735 burst=23/24 cum=434/837=0.519
+[spec-acc] ctx=573 burst=19/36 cum=332/630=0.527
+[spec-acc] ctx=767 burst=23/24 cum=457/861=0.531
+[spec-acc] ctx=605 burst=18/39 cum=350/669=0.523
+[spec-acc] ctx=637 burst=2/3 cum=352/672=0.524
+[spec-k] model="q38" tenant="" K=3 source=cost-model prompt=30306 cached=30272 lcp=30272 active=2 wave=2 placement=single-or-non-pp2
+[spec-acc] ctx=641 burst=21/30 cum=373/702=0.531
+[spec-acc] ctx=673 burst=20/42 cum=393/744=0.528
+[spec-acc] ctx=35 burst=16/48 cum=16/48=0.333
+[spec-acc] ctx=708 burst=19/45 cum=412/789=0.522
+[spec-acc] ctx=68 burst=19/39 cum=35/87=0.402
+[spec-acc] ctx=743 burst=19/39 cum=431/828=0.521
+[spec-acc] ctx=101 burst=23/30 cum=58/117=0.496
+[spec-acc] ctx=776 burst=17/42 cum=448/870=0.515
+[spec-acc] ctx=135 burst=20/33 cum=78/150=0.520
+[spec-acc] ctx=808 burst=2/6 cum=450/876=0.514
+[spec-acc] ctx=167 burst=20/39 cum=98/189=0.519
+[spec-acc] ctx=201 burst=3/3 cum=101/192=0.526
+[spec-k] model="q38" tenant="" K=3 source=cost-model prompt=2100 cached=2080 lcp=2099 active=2 wave=2 placement=single-or-non-pp2
+[spec-acc] ctx=206 burst=20/39 cum=121/231=0.524
+[spec-acc] ctx=240 burst=21/30 cum=142/261=0.544
+[spec-acc] ctx=21 burst=20/33 cum=20/33=0.606
+[spec-acc] ctx=272 burst=15/48 cum=157/309=0.508
+[spec-acc] ctx=53 burst=21/39 cum=41/72=0.569
+[spec-acc] ctx=304 burst=20/33 cum=177/342=0.518
+[spec-acc] ctx=88 burst=25/27 cum=66/99=0.667
+[spec-acc] ctx=336 burst=21/33 cum=198/375=0.528
+[spec-acc] ctx=123 burst=23/27 cum=89/126=0.706
+[spec-acc] ctx=369 burst=20/36 cum=218/411=0.530
+[spec-acc] ctx=156 burst=21/36 cum=110/162=0.679
+[spec-acc] ctx=402 burst=19/42 cum=237/453=0.523
+[spec-acc] ctx=190 burst=19/36 cum=129/198=0.652
+[spec-acc] ctx=436 burst=19/39 cum=256/492=0.520
+[spec-acc] ctx=222 burst=19/36 cum=148/234=0.632
+[spec-acc] ctx=469 burst=18/39 cum=274/531=0.516
+[spec-acc] ctx=254 burst=19/39 cum=167/273=0.612
+[spec-acc] ctx=501 burst=16/45 cum=290/576=0.503
+[spec-acc] ctx=287 burst=23/30 cum=190/303=0.627
+[spec-acc] ctx=533 burst=13/54 cum=303/630=0.481
+[spec-acc] ctx=321 burst=19/36 cum=209/339=0.617
+[spec-acc] ctx=565 burst=20/39 cum=323/669=0.483
+[spec-acc] ctx=353 burst=24/24 cum=233/363=0.642
+[spec-acc] ctx=599 burst=21/39 cum=344/708=0.486
+[spec-acc] ctx=386 burst=20/39 cum=253/402=0.629
+[spec-acc] ctx=634 burst=20/39 cum=364/747=0.487
+[spec-acc] ctx=420 burst=20/36 cum=273/438=0.623
+[spec-acc] ctx=668 burst=21/39 cum=385/786=0.490
+[spec-acc] ctx=453 burst=20/36 cum=293/474=0.618
+[spec-acc] ctx=703 burst=1/3 cum=386/789=0.489
+[spec-k] model="q38" tenant="" K=3 source=cost-model prompt=4842 cached=4800 lcp=4800 active=2 wave=2 placement=single-or-non-pp2
+[spec-acc] ctx=706 burst=18/42 cum=404/831=0.486
+[spec-acc] ctx=739 burst=18/42 cum=422/873=0.483
+[spec-acc] ctx=43 burst=17/42 cum=17/42=0.405
+[spec-acc] ctx=772 burst=17/45 cum=439/918=0.478
+[spec-acc] ctx=75 burst=18/42 cum=35/84=0.417
+[spec-acc] ctx=108 burst=1/3 cum=36/87=0.414
+[spec-k] model="q38" tenant="" K=3 source=cost-model prompt=17438 cached=17408 lcp=17437 active=2 wave=2 placement=single-or-non-pp2
+[spec-acc] ctx=111 burst=19/39 cum=55/126=0.437
+[spec-acc] ctx=144 burst=21/39 cum=76/165=0.461
+[spec-acc] ctx=31 burst=21/36 cum=21/36=0.583
+[spec-acc] ctx=179 burst=22/30 cum=98/195=0.503
+[spec-acc] ctx=65 burst=22/33 cum=43/69=0.623
+[spec-acc] ctx=212 burst=24/30 cum=122/225=0.542
+[spec-acc] ctx=99 burst=23/33 cum=66/102=0.647
+[spec-acc] ctx=247 burst=23/30 cum=145/255=0.569
+[spec-acc] ctx=134 burst=21/30 cum=87/132=0.659
+[spec-acc] ctx=281 burst=3/3 cum=148/258=0.574
+[spec-k] model="q38" tenant="" K=3 source=cost-model prompt=31411 cached=31392 lcp=31392 active=2 wave=2 placement=single-or-non-pp2
+[spec-acc] ctx=286 burst=24/27 cum=172/285=0.604
+[spec-acc] ctx=320 burst=22/27 cum=194/312=0.622
+[spec-acc] ctx=20 burst=16/45 cum=16/45=0.356
+[spec-acc] ctx=352 burst=21/36 cum=215/348=0.618
+[spec-acc] ctx=52 burst=18/39 cum=34/84=0.405
+[spec-acc] ctx=386 burst=24/27 cum=239/375=0.637
+[spec-acc] ctx=84 burst=16/48 cum=50/132=0.379
+[spec-acc] ctx=420 burst=18/39 cum=257/414=0.621
+[spec-acc] ctx=117 burst=20/33 cum=70/165=0.424
+[spec-acc] ctx=452 burst=15/51 cum=272/465=0.585
+[spec-acc] ctx=149 burst=18/42 cum=88/207=0.425
+[spec-acc] ctx=485 burst=21/30 cum=293/495=0.592
+[spec-acc] ctx=182 burst=16/48 cum=104/255=0.408
+[spec-acc] ctx=215 burst=0/3 cum=104/258=0.403
+[spec-k] model="q38" tenant="" K=3 source=cost-model prompt=10728 cached=10688 lcp=10727 active=2 wave=2 placement=single-or-non-pp2
+[spec-acc] ctx=217 burst=21/30 cum=125/288=0.434
+[spec-acc] ctx=249 burst=20/36 cum=145/324=0.448
+[spec-acc] ctx=41 burst=18/45 cum=18/45=0.400
+[spec-acc] ctx=282 burst=18/39 cum=163/363=0.449
+[spec-acc] ctx=75 burst=21/33 cum=39/78=0.500
+[spec-acc] ctx=314 burst=16/45 cum=179/408=0.439
+[spec-acc] ctx=108 burst=21/30 cum=60/108=0.556
+[spec-acc] ctx=346 burst=22/36 cum=201/444=0.453
+[spec-acc] ctx=140 burst=23/27 cum=83/135=0.615
+[spec-acc] ctx=381 burst=21/39 cum=222/483=0.460
+[spec-acc] ctx=173 burst=23/27 cum=106/162=0.654
+[spec-acc] ctx=416 burst=15/48 cum=237/531=0.446
+[spec-acc] ctx=206 burst=21/33 cum=127/195=0.651
+[spec-acc] ctx=448 burst=18/39 cum=255/570=0.447
+[spec-acc] ctx=239 burst=23/27 cum=150/222=0.676
+[spec-acc] ctx=480 burst=15/48 cum=270/618=0.437
+[spec-acc] ctx=272 burst=18/39 cum=168/261=0.644
+[spec-acc] ctx=512 burst=2/3 cum=272/621=0.438
+[spec-k] model="q38" tenant="" K=3 source=cost-model prompt=18259 cached=18240 lcp=18240 active=2 wave=2 placement=single-or-non-pp2
+[spec-acc] ctx=516 burst=20/39 cum=292/660=0.442
+[spec-acc] ctx=550 burst=18/42 cum=310/702=0.442
+[spec-acc] ctx=20 burst=18/42 cum=18/42=0.429
+[spec-acc] ctx=583 burst=18/39 cum=328/741=0.443
+[spec-acc] ctx=53 burst=22/27 cum=40/69=0.580
+[spec-acc] ctx=615 burst=19/39 cum=347/780=0.445
+[spec-acc] ctx=85 burst=19/36 cum=59/105=0.562
+[spec-acc] ctx=648 burst=18/48 cum=365/828=0.441
+[spec-acc] ctx=117 burst=23/33 cum=82/138=0.594
+[spec-acc] ctx=683 burst=19/39 cum=384/867=0.443
+[spec-acc] ctx=152 burst=22/27 cum=104/165=0.630
+[spec-acc] ctx=716 burst=15/51 cum=399/918=0.435
+[spec-acc] ctx=184 burst=17/42 cum=121/207=0.585
+[spec-acc] ctx=749 burst=23/30 cum=422/948=0.445
+[spec-acc] ctx=216 burst=13/60 cum=134/267=0.502
+[spec-acc] ctx=783 burst=2/3 cum=424/951=0.446
+[spec-acc] ctx=250 burst=16/45 cum=150/312=0.481
+[spec-acc] ctx=282 burst=0/3 cum=150/315=0.476
+[spec-cost] model="q38" n=2 rung=2 -> K=0 (predicted 22.7 vs plain 22.7 tok/s; pooled=true)
+[spec-restore-guard] sampled restore REFUSED: demand 2 > SOLO watermark 1 (band LOW=2 HIGH=4; projected active=2, queued=0, http in-flight Some(2)) — hit serves PLAIN (model q38); MEMRA_SPEC_RESTORE_LOAD_GUARD=0 disables
+[spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=4944 cached=4928 lcp=4943 active=2 wave=2 placement=single-or-non-pp2
+[spec-acc] ctx=284 burst=16/48 cum=166/363=0.457
+[spec-acc] ctx=317 burst=19/39 cum=185/402=0.460
+[spec-acc] ctx=350 burst=19/36 cum=204/438=0.466
+[spec-acc] ctx=382 burst=18/42 cum=222/480=0.463
+[spec-acc] ctx=415 burst=19/42 cum=241/522=0.462
+[spec-acc] ctx=449 burst=19/42 cum=260/564=0.461
+[spec-acc] ctx=483 burst=21/36 cum=281/600=0.468
+[spec-acc] ctx=517 burst=19/39 cum=300/639=0.469
+[spec-acc] ctx=550 burst=16/51 cum=316/690=0.458
+[spec-acc] ctx=584 burst=13/54 cum=329/744=0.442
+[spec-acc] ctx=616 burst=19/39 cum=348/783=0.444
+[spec-acc] ctx=649 burst=19/39 cum=367/822=0.446
+[spec-acc] ctx=682 burst=21/33 cum=388/855=0.454
+[spec-acc] ctx=715 burst=20/33 cum=408/888=0.459
+[spec-acc] ctx=747 burst=21/33 cum=429/921=0.466
+[spec-acc] ctx=780 burst=6/6 cum=435/927=0.469
+[spec-cost] model="q38" n=2 rung=2 -> K=2 (predicted 23.3 vs plain 22.7 tok/s; pooled=true)
+[spec-k] model="q38" tenant="" K=3 source=cost-model prompt=8053 cached=8032 lcp=8032 active=2 wave=2 placement=single-or-non-pp2
+[spec-acc] ctx=21 burst=19/42 cum=19/42=0.452
+[spec-acc] ctx=55 burst=22/33 cum=41/75=0.547
+[spec-acc] ctx=89 burst=21/36 cum=62/111=0.559
+[spec-acc] ctx=123 burst=21/30 cum=83/141=0.589
+[spec-acc] ctx=155 burst=21/33 cum=104/174=0.598
+[spec-acc] ctx=188 burst=20/36 cum=124/210=0.590
+[spec-acc] ctx=221 burst=23/30 cum=147/240=0.613
+[spec-k] model="q38" tenant="" K=3 source=cost-model prompt=12327 cached=12288 lcp=12326 active=2 wave=2 placement=single-or-non-pp2
+[spec-acc] ctx=39 burst=23/30 cum=23/30=0.767
+[spec-acc] ctx=73 burst=23/33 cum=46/63=0.730
+[spec-acc] ctx=108 burst=20/33 cum=66/96=0.688
+[spec-acc] ctx=140 burst=21/39 cum=87/135=0.644
+[spec-cost] model="q38" n=2 rung=2 -> K=0 (predicted 22.7 vs plain 22.7 tok/s; pooled=true)
+[spec-restore-guard] sampled restore REFUSED: demand 2 > SOLO watermark 1 (band LOW=2 HIGH=4; projected active=2, queued=0, http in-flight Some(2)) — hit serves PLAIN (model q38); MEMRA_SPEC_RESTORE_LOAD_GUARD=0 disables
+[spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=27270 cached=27232 lcp=27232 active=2 wave=2 placement=single-or-non-pp2
+[spec-restore-guard] sampled restore REFUSED: demand 2 > SOLO watermark 1 (band LOW=2 HIGH=4; projected active=2, queued=0, http in-flight Some(2)) — hit serves PLAIN (model q38); MEMRA_SPEC_RESTORE_LOAD_GUARD=0 disables
+[spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=13232 cached=13216 lcp=13231 active=2 wave=2 placement=single-or-non-pp2
+[spec-restore-guard] sampled restore REFUSED: demand 2 > SOLO watermark 1 (band LOW=2 HIGH=4; projected active=2, queued=0, http in-flight Some(2)) — hit serves PLAIN (model q38); MEMRA_SPEC_RESTORE_LOAD_GUARD=0 disables
+[spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=19029 cached=19008 lcp=19008 active=2 wave=2 placement=single-or-non-pp2
+[spec-restore-guard] sampled restore REFUSED: demand 2 > SOLO watermark 1 (band LOW=2 HIGH=4; projected active=2, queued=0, http in-flight Some(2)) — hit serves PLAIN (model q38); MEMRA_SPEC_RESTORE_LOAD_GUARD=0 disables
+[spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=2833 cached=2816 lcp=2832 active=2 wave=2 placement=single-or-non-pp2
+[spec-restore-guard] sampled restore REFUSED: demand 2 > SOLO watermark 1 (band LOW=2 HIGH=4; projected active=2, queued=0, http in-flight Some(2)) — hit serves PLAIN (model q38); MEMRA_SPEC_RESTORE_LOAD_GUARD=0 disables
+[spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=5232 cached=5216 lcp=5216 active=2 wave=2 placement=single-or-non-pp2
+[spec-restore-guard] sampled restore REFUSED: demand 2 > SOLO watermark 1 (band LOW=2 HIGH=4; projected active=2, queued=0, http in-flight Some(2)) — hit serves PLAIN (model q38); MEMRA_SPEC_RESTORE_LOAD_GUARD=0 disables
+[spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=16868 cached=16832 lcp=16867 active=2 wave=2 placement=single-or-non-pp2
+[spec-restore-guard] sampled restore REFUSED: demand 2 > SOLO watermark 1 (band LOW=2 HIGH=4; projected active=2, queued=0, http in-flight Some(2)) — hit serves PLAIN (model q38); MEMRA_SPEC_RESTORE_LOAD_GUARD=0 disables
+[spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=35601 cached=35584 lcp=35584 active=2 wave=2 placement=single-or-non-pp2
+[spec-cost] model="q38" n=2 rung=2 -> K=2 (predicted 22.4 vs plain 22.4 tok/s; pooled=true)
+[spec-k] model="q38" tenant="" K=3 source=cost-model prompt=1604 cached=1568 lcp=1603 active=2 wave=2 placement=single-or-non-pp2
+[spec-acc] ctx=36 burst=17/42 cum=17/42=0.405
+[spec-acc] ctx=68 burst=21/39 cum=38/81=0.469
+[spec-acc] ctx=103 burst=24/30 cum=62/111=0.559
+[spec-acc] ctx=138 burst=23/27 cum=85/138=0.616
+[spec-acc] ctx=171 burst=25/27 cum=110/165=0.667
+[spec-acc] ctx=206 burst=23/33 cum=133/198=0.672
+[spec-acc] ctx=241 burst=23/27 cum=156/225=0.693
+[spec-acc] ctx=274 burst=25/27 cum=181/252=0.718
+[spec-acc] ctx=309 burst=23/33 cum=204/285=0.716
+[spec-cost] model="q38" n=2 rung=2 -> K=0 (predicted 22.4 vs plain 22.4 tok/s; pooled=true)
+[spec-restore-guard] sampled restore REFUSED: demand 2 > SOLO watermark 1 (band LOW=2 HIGH=4; projected active=2, queued=0, http in-flight Some(2)) — hit serves PLAIN (model q38); MEMRA_SPEC_RESTORE_LOAD_GUARD=0 disables
+[spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=5726 cached=5696 lcp=5696 active=2 wave=2 placement=single-or-non-pp2
+[spec-restore-guard] sampled restore REFUSED: demand 2 > SOLO watermark 1 (band LOW=2 HIGH=4; projected active=2, queued=0, http in-flight Some(2)) — hit serves PLAIN (model q38); MEMRA_SPEC_RESTORE_LOAD_GUARD=0 disables
+[spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=3513 cached=3488 lcp=3512 active=2 wave=2 placement=single-or-non-pp2
+[spec-restore-guard] sampled restore REFUSED: demand 2 > SOLO watermark 1 (band LOW=2 HIGH=4; projected active=2, queued=0, http in-flight Some(2)) — hit serves PLAIN (model q38); MEMRA_SPEC_RESTORE_LOAD_GUARD=0 disables
+[spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=3905 cached=3872 lcp=3872 active=2 wave=2 placement=single-or-non-pp2
+[spec-cost] model="q38" n=2 rung=3 -> K=0 (predicted 25.8 vs plain 25.8 tok/s; pooled=true)
+[spec-k] model="q38" tenant="" K=0 source=cost-model prompt=16643 cached=16608 lcp=16642 active=2 wave=2 placement=single-or-non-pp2
+[spec-cost] model="q38" n=2 rung=3 -> K=3 (predicted 25.2 vs plain 24.9 tok/s; pooled=true)
+[spec-restore-guard] sampled restore REFUSED: demand 2 > SOLO watermark 1 (band LOW=2 HIGH=4; projected active=2, queued=0, http in-flight Some(2)) — hit serves PLAIN (model q38); MEMRA_SPEC_RESTORE_LOAD_GUARD=0 disables
+[spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=37421 cached=37376 lcp=37376 active=2 wave=2 placement=single-or-non-pp2
+[spec-restore-guard] sampled restore REFUSED: demand 2 > SOLO watermark 1 (band LOW=2 HIGH=4; projected active=2, queued=0, http in-flight Some(2)) — hit serves PLAIN (model q38); MEMRA_SPEC_RESTORE_LOAD_GUARD=0 disables
+[spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=3600 cached=3584 lcp=3599 active=2 wave=2 placement=single-or-non-pp2
+[spec-restore-guard] sampled restore REFUSED: demand 2 > SOLO watermark 1 (band LOW=2 HIGH=4; projected active=2, queued=0, http in-flight Some(2)) — hit serves PLAIN (model q38); MEMRA_SPEC_RESTORE_LOAD_GUARD=0 disables
+[spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=7391 cached=7360 lcp=7360 active=2 wave=2 placement=single-or-non-pp2
+[spec-restore-guard] sampled restore REFUSED: demand 2 > SOLO watermark 1 (band LOW=2 HIGH=4; projected active=2, queued=0, http in-flight Some(2)) — hit serves PLAIN (model q38); MEMRA_SPEC_RESTORE_LOAD_GUARD=0 disables
+[spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=2367 cached=2336 lcp=2366 active=2 wave=2 placement=single-or-non-pp2
+[spec-cost] model="q38" n=2 rung=3 -> K=0 (predicted 25.5 vs plain 25.5 tok/s; pooled=true)
+[spec-k] model="q38" tenant="" K=0 source=cost-model prompt=2632 cached=2592 lcp=2592 active=2 wave=2 placement=single-or-non-pp2
+[spec-k] model="q38" tenant="" K=0 source=cost-model prompt=20880 cached=20864 lcp=20879 active=2 wave=2 placement=single-or-non-pp2
+[spec-cost] model="q38" n=2 rung=3 -> K=3 (predicted 25.2 vs plain 24.7 tok/s; pooled=true)
+[spec-restore-guard] sampled restore REFUSED: demand 2 > SOLO watermark 1 (band LOW=2 HIGH=4; projected active=2, queued=0, http in-flight Some(2)) — hit serves PLAIN (model q38); MEMRA_SPEC_RESTORE_LOAD_GUARD=0 disables
+[spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=31328 cached=31296 lcp=31296 active=2 wave=2 placement=single-or-non-pp2
+[spec-restore-guard] sampled restore REFUSED: demand 2 > SOLO watermark 1 (band LOW=2 HIGH=4; projected active=2, queued=0, http in-flight Some(2)) — hit serves PLAIN (model q38); MEMRA_SPEC_RESTORE_LOAD_GUARD=0 disables
+[spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=4312 cached=4288 lcp=4311 active=2 wave=2 placement=single-or-non-pp2
+[spec-restore-guard] sampled restore REFUSED: demand 2 > SOLO watermark 1 (band LOW=2 HIGH=4; projected active=2, queued=0, http in-flight Some(2)) — hit serves PLAIN (model q38); MEMRA_SPEC_RESTORE_LOAD_GUARD=0 disables
+[spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=5705 cached=5664 lcp=5664 active=2 wave=2 placement=single-or-non-pp2
+[spec-cost] model="q38" realized n=1 K=0: 13.3 tok/s (now priced from serving)
