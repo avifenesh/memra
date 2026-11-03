@@ -13706,10 +13706,12 @@ impl HybridModel {
         let moe_q8 = uniform_experts && moe_q8_enabled_for_model(cfg, m);
         // Experimental secondary backend: complete experts already resident in the SLRU stay on
         // CUDA; any expert missing one or more projections runs from the original host GGUF bytes
-        // through llama.cpp CPU quant dots. Small-t only keeps decode and speculative verification
-        // in the same numeric/dispatch class; real prefill remains on the established GPU path and
-        // seeds the residency cache. An explicit library path is the build/runtime gate, so naked
-        // commands and CI have no llama.cpp or OpenMP dependency.
+        // through memra's CPU-expert companion (`tools/memra_cpu_experts.cpp`, the v2 C ABI in
+        // cpu_experts.rs: its own decoders and AVX2/AVX-VNNI dots, no external inference runtime).
+        // Small-t only keeps decode and speculative verification in the same numeric/dispatch
+        // class; real prefill remains on the established GPU path and seeds the residency cache.
+        // An explicit library path is the build/runtime gate, so naked commands and CI have no
+        // companion or OpenMP dependency.
         let cpu_expert_requested = crate::cpu_experts::configured();
         if cpu_expert_requested && (cfg.hy3.is_none() || cfg.m3.is_some()) {
             return Err(std::io::Error::other(
@@ -13718,7 +13720,7 @@ impl HybridModel {
             .into());
         }
         let cpu_hybrid = cpu_expert_requested && t < PRIME_MIN_T && m.dev_exps.is_none();
-        // A dynamic SLRU changes which complete experts run on CUDA versus llama.cpp CPU dots.
+        // A dynamic SLRU changes which complete experts run on CUDA versus the CPU companion.
         // Those backends are each deterministic but are different numeric configurations, so a
         // later prefill eviction can change greedy output. Freeze after the first real prefill;
         // decode/spec reads the fixed resident set, while later prefill misses use transient GPU
