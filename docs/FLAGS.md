@@ -2063,9 +2063,12 @@ per-layer slot and its `[dsv4-matrix-ep-graph]` refusal line), the per-layer slo
 `VerifyState` and the slot parameter threaded through `block_verify_dev`,
 `post_attention_moe_verify_dev` and `moe_verify_dev`. The eager matrix-EP walk is the only
 program, as it was on every run. No kernel goes with it: `memra_dsv4_ep_merge_slots` keeps its eager
-callers, so `docs/KERNELS.md` is unchanged. The standalone CUDA topology probe
-`tools/dsv4-ep-graph-gate.cu` never linked the engine and stays. A graph arm returns only with a
-receipt. Git history is the archive. Ledger: `VERDICT:dsv4-matrix-ep-graph-door-removed` (darklanes
+callers, so `docs/KERNELS.md` is unchanged. The standalone two-device fork/join probe
+`tools/dsv4-ep-graph-gate.cu` goes too: it tested the explicit multi-device graph (P2P copy nodes
+and cross-device event edges in one graph) that only this arm built. The served TP/EP replays
+stream-capture one graph per rank (`dsv4_graph::ReplayPair`, `RowsReplay`), so no live DSV4 arm
+uses that mechanism.
+A graph arm returns only with a receipt. Git history is the archive. Ledger: `VERDICT:dsv4-matrix-ep-graph-door-removed` (darklanes
 `agent-knowledge/gpu/verdicts-ledger.md`).
 
 ## Removed doors, 2026-11-03 (the DFlash drafter `fa_prefill` block attention)
