@@ -4196,6 +4196,13 @@ impl HybridModel {
         Some(tp.runtime.as_ref())
     }
 
+    /// Does any trunk layer carry a rank-local Step TP attention placement? That is what the
+    /// walk's rank-local prefill arm (`MEMRA_STEP_TP_PREFILL=1`, `step35_attn_prime`) runs on;
+    /// a model without one would prime through the plain serial walk instead.
+    pub fn has_rank_local_step_tp_attention(&self) -> bool {
+        (0..self.layers.len()).any(|layer| self.step_tp_runtime_for_layer(layer).is_some())
+    }
+
     pub fn decode_batch_program(&self) -> crate::plan_backend::DecodeBatchProgram {
         crate::plan_backend::decode_batch_program(&self.plan)
     }
