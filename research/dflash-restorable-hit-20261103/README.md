@@ -22,6 +22,18 @@ cold-prime ratio (`[dspark] restorable-preferred` line). Motivation: GB10 GGUF D
   arm): the small prefix cache and short sessions keep the drafter-carrying entries the longest
   hits. The spread is T=1 sampling noise on a path both binaries run identically.
 
-## GB10
+## GB10 (2026-11-03, `gb10/`, build `3718972d38`)
 
-Pending: GGUF DFlash2 c1 to c32 on the new build, against `research/gb10-tuning-20261102/serving/`.
+GGUF DFlash2 c1 to c32: 12.01 / 39.72 / 59.60 / 66.55 / 67.26 tok/s, the same as the base build
+(12.02 / 39.77 / 59.70 / 66.61 / 68.02). The new branch fired 0 times. The reason is upstream of
+it: there is no draft-tail entry for it to prefer. The bench primes every body with
+`max_tokens=1`, those primes are served plain (a 1-token decode never repays a cold DFlash
+prime), and they publish plain `lcp-split` entries; the measured turns then hit those and the
+cache-preferred veto serves them plain too, publishing more plain entries. `dspark-boundary`
+(tail-carrying) entries exist only for the few short prompts that cold-primed DFlash.
+
+Verdict: the preference is correct but inert on this traffic shape. The fix that matters is the
+other half: a plain-served prime of a DFlash-armed model has to publish a draft tail (keep the
+drafter's tap features during the plain prime, `DflashDraft::ingest_ctx`, then `export_tail`),
+which costs tap state of about 100 KB per prompt token on the 27B and needs its own exactness
+gate. Not done in this PR.
