@@ -36563,17 +36563,24 @@ fn glm5_clamp_spec_k(k: usize) -> usize {
 /// greedy verification and the depth does not move it.) The peak is 6 and it is +14.1% over the
 /// table's 3, so the glm5 route takes 6 where the shared table says cold-short.
 ///
-/// SCOPE. Only the cold-short branch, only this route. The cached-long branch (K=2, or 5 with a
-/// rank-trimmed head) is a different shape with its own receipts and is untouched; so is every
-/// other model's use of the shared table. The operator pin `MEMRA_SPEC_K` still overrides, and
-/// is the rollback seam. The verify knee still clamps afterwards.
+/// SCOPE. Only the cold-short branch, only this route, only `100a` builds (the B200 class the
+/// ladder ran on): any other build keeps the shared table's answer until its own ladder lands
+/// (none on RTX PRO 6000 yet). The cached-long branch (K=2, or 5 with a rank-trimmed head) is a
+/// different shape with its own receipts and is untouched; so is every other model's use of the
+/// shared table. The operator pin `MEMRA_SPEC_K` still overrides, and is the rollback seam. The
+/// verify knee still clamps afterwards.
 const GLM5_SPEC_K_COLD_SHORT: usize = 6;
 
 /// Print-once latch for the depth line above.
 static GLM5_SPEC_K_DEEPENED: std::sync::Once = std::sync::Once::new();
 
 fn glm5_spec_k_cold_short(k: usize, reason: SpecKReason) -> usize {
-    if matches!(reason, SpecKReason::ColdShort) {
+    glm5_spec_k_cold_short_on(memra_engine::BUILT_CUDA_ARCH, k, reason)
+}
+
+/// [`glm5_spec_k_cold_short`] against a named build arch, so the tests drive every build.
+fn glm5_spec_k_cold_short_on(built_arch: &str, k: usize, reason: SpecKReason) -> usize {
+    if built_arch == "100a" && matches!(reason, SpecKReason::ColdShort) {
         GLM5_SPEC_K_COLD_SHORT
     } else {
         k
@@ -52222,17 +52229,25 @@ mod tests {
     fn glm5_cold_short_depth_is_the_measured_peak_and_scoped_to_that_branch() {
         use super::{
             GLM5_SPEC_K_COLD_SHORT, SPEC_K_CACHED_LONG, SPEC_K_CACHED_LONG_TRIM, SPEC_K_COLD_LONG,
-            SPEC_K_COLD_SHORT, SpecKReason, glm5_spec_k_cold_short,
+            SPEC_K_COLD_SHORT, SpecKReason, glm5_spec_k_cold_short_on,
         };
         // the ladder's peak, and it must actually differ from the shared table or the
         // change is a no-op dressed as a decision
         assert_eq!(GLM5_SPEC_K_COLD_SHORT, 6);
         assert_ne!(GLM5_SPEC_K_COLD_SHORT, SPEC_K_COLD_SHORT);
         assert_eq!(
-            glm5_spec_k_cold_short(SPEC_K_COLD_SHORT, SpecKReason::ColdShort),
+            glm5_spec_k_cold_short_on("100a", SPEC_K_COLD_SHORT, SpecKReason::ColdShort),
             6,
-            "a cold-short request takes the glm5 depth"
+            "a cold-short request on the B200 build takes the glm5 depth"
         );
+        // the ladder is the B200 pair's: every other build keeps the shared table's depth
+        for built in ["120a", "121a", "90a", "89"] {
+            assert_eq!(
+                glm5_spec_k_cold_short_on(built, SPEC_K_COLD_SHORT, SpecKReason::ColdShort),
+                SPEC_K_COLD_SHORT,
+                "{built} has no glm5 cold-short ladder"
+            );
+        }
         // every other branch keeps the shared table's answer, including an operator pin
         for (k, reason) in [
             (SPEC_K_COLD_LONG, SpecKReason::ColdLong),
@@ -52244,7 +52259,7 @@ mod tests {
             (4, SpecKReason::Replay),
         ] {
             assert_eq!(
-                glm5_spec_k_cold_short(k, reason),
+                glm5_spec_k_cold_short_on("100a", k, reason),
                 k,
                 "{reason:?} must keep its own depth"
             );
