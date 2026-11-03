@@ -43,7 +43,9 @@
 //! ALLOCATIONS INSIDE THE RECORDED RUN become graph memory nodes (the per-layer temporaries drop
 //! before the run ends); the one-shot's stage buffers are pre-sized before the first capture so
 //! nothing allocated inside outlives it. If a capture or instantiate refuses, the state latches
-//! EAGER for the session and says so once; the walk stays byte-identical.
+//! EAGER for the session and says so once; the walk stays byte-identical because the KDA planes'
+//! ping-pong roles are put back first (a refusal inside phase 0, or between the phases, leaves
+//! the layers it passed swapped an odd number of times).
 use crate::Engine;
 use crate::glm5_decode_graph::{CapCtx, capture_error, step};
 use crate::hybrid::{HybridModel, Mixer};
@@ -170,6 +172,65 @@ fn seg_layer(sg: Seg) -> usize {
     match sg {
         Seg::Kda(il) | Seg::MlaPre(il) | Seg::MlaFfn(il) => il,
     }
+}
+
+/// The ping-pong ROLE of every per-rank KDA plane in `[lo, hi)`: the device pointer each rank's
+/// `ssm_state` holds, per layer. A capture body runs the HOST swap of `kda_tp_partials_sym` and
+/// executes nothing, so a capture refused partway (or at end/instantiate after phase 0) leaves
+/// the layers it passed swapped an odd number of times; `restore_ssm_roles` puts them back.
+fn ssm_roles(
+    e: &Engine,
+    rt: &crate::glm5_tp::Glm5TpRt,
+    cache: &Cache,
+    lo: usize,
+    hi: usize,
+) -> Res<Vec<(usize, Vec<u64>)>> {
+    use cudarc::driver::DevicePtr;
+    let mut out = Vec::new();
+    for il in lo..hi.min(cache.glm5_tp_recur.len()) {
+        let Some(planes) = cache.glm5_tp_recur[il].as_ref() else {
+            continue;
+        };
+        let mut ptrs = Vec::with_capacity(planes.len());
+        for (r, pl) in planes.iter().enumerate() {
+            let dev = if r == 0 { e } else { &rt.peers[r - 1] };
+            let _m = dev.gpu.enter_main()?;
+            let st = dev.stream();
+            let (p, _g) = pl.ssm_state.device_ptr(&st);
+            ptrs.push(p);
+        }
+        out.push((il, ptrs));
+    }
+    Ok(out)
+}
+
+/// Swap back every plane whose `ssm_state` no longer holds the pointer `ssm_roles` saw. The
+/// bytes need no restore: a capture records and never executes.
+fn restore_ssm_roles(
+    e: &Engine,
+    rt: &crate::glm5_tp::Glm5TpRt,
+    cache: &mut Cache,
+    roles: &[(usize, Vec<u64>)],
+) -> Res<()> {
+    use cudarc::driver::DevicePtr;
+    for (il, ptrs) in roles {
+        let planes = cache.glm5_tp_recur[*il]
+            .as_mut()
+            .ok_or_else(|| format!("layer {il}: TP recur planes vanished during capture"))?;
+        for (r, (pl, want)) in planes.iter_mut().zip(ptrs).enumerate() {
+            let dev = if r == 0 { e } else { &rt.peers[r - 1] };
+            let _m = dev.gpu.enter_main()?;
+            let p = {
+                let st = dev.stream();
+                let (p, _g) = pl.ssm_state.device_ptr(&st);
+                p
+            };
+            if p != *want {
+                std::mem::swap(&mut pl.ssm_state, &mut pl.ssm_state_alt);
+            }
+        }
+    }
+    Ok(())
 }
 
 /// Two simultaneous stream captures, one per rank, of one body that issues to both.
@@ -447,6 +508,7 @@ fn walk_token(
     }
     // the pieces are recorded on first use, both phases back to back
     if st.pieces.is_empty() {
+        let roles = ssm_roles(e, rt, cache, lo, hi)?;
         let runs = group_runs(items);
         let n = runs.len();
         let mut pieces: Vec<Piece> = Vec::with_capacity(items.len());
@@ -540,6 +602,8 @@ fn walk_token(
                         match cap {
                             Ok(g) => phases.push(g),
                             Err(err) => {
+                                // the eager walk reads the planes next: undo the odd swaps first
+                                restore_ssm_roles(e, rt, cache, &roles)?;
                                 eprintln!(
                                     "[glm5-tp-sym-graph] capture refused for run [{a}, {b}) phase {phase}: {err}; \
                                      this session's symmetric walk stays EAGER (byte-identical)"
