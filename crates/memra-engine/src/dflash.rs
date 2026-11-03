@@ -655,21 +655,14 @@ pub enum DsparkHarvest {
 }
 
 impl DsparkHarvest {
-    /// The served resolution: explicit `MEMRA_DSPARK_HARVEST={dflash|dspark}` wins
-    /// (unknown values REFUSE loudly — a typo silently reverting the convention would
-    /// re-open the postmortem's misalignment); UNSET defers to the CHECKPOINT's own
-    /// training-strategy census — the owner-ratified default flip (2026-08-20, after
-    /// B1 confirmed H1 interleaved ×5 on serving-class hardware: accept 1.38→2.41
-    /// agentic / 1.53→3.66 math, E2E ALL EXACT both arms). Strategy-keyed, not
-    /// env-keyed, per the B0 plan: a DSPARK-strategy export harvests shifted
-    /// (all-rows), a mask-fill export keeps the historical dflash arm byte-identical.
-    pub fn resolve(cfg: &DflashCfg) -> Self {
-        Self::resolve_value(
-            std::env::var("MEMRA_DSPARK_HARVEST").ok().as_deref(),
-            cfg.strategy_dspark,
-        )
-    }
-
+    /// The non-DFlash2 resolution [`Self::for_draft`] serves: explicit
+    /// `MEMRA_DSPARK_HARVEST={dflash|dspark}` wins (unknown values REFUSE loudly — a typo
+    /// silently reverting the convention would re-open the postmortem's misalignment); UNSET
+    /// defers to the CHECKPOINT's own training-strategy census — the owner-ratified default
+    /// flip (2026-08-20, after B1 confirmed H1 interleaved ×5 on serving-class hardware:
+    /// accept 1.38→2.41 agentic / 1.53→3.66 math, E2E ALL EXACT both arms). Strategy-keyed,
+    /// not env-keyed, per the B0 plan: a DSPARK-strategy export harvests shifted (all-rows),
+    /// a mask-fill export keeps the historical dflash arm byte-identical.
     pub fn resolve_value(v: Option<&str>, strategy_dspark: bool) -> Self {
         match v {
             None | Some("") => {
@@ -685,7 +678,7 @@ impl DsparkHarvest {
 
     /// ENV-ONLY parser (no checkpoint census): unset = `Dflash`, the historical arm.
     /// Kept for the explicit-value path of [`Self::resolve_value`] and the seam tests;
-    /// round arms resolve through [`Self::resolve`] so the default stays strategy-keyed.
+    /// round arms resolve through [`Self::for_draft`] so the default stays strategy-keyed.
     pub fn from_env_value(v: Option<&str>) -> Self {
         match v {
             None | Some("") | Some("dflash") => DsparkHarvest::Dflash,
@@ -708,6 +701,8 @@ impl DsparkHarvest {
     /// - Every other checkpoint rides [`Self::resolve_value`]: explicit env wins (typos
     ///   refuse loudly), unset defers to the checkpoint's own training-strategy census
     ///   (the owner-ratified 2026-08-20 default flip).
+    ///
+    /// This is the served resolution: every round arm calls it.
     pub fn for_draft(draft: &DflashDraft) -> Self {
         Self::for_family_value(
             draft.dflash2.is_some(),
