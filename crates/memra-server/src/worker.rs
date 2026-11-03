@@ -4551,11 +4551,11 @@ fn plain_ckpt_nominatable(prompt: &[u32], is_control: &dyn Fn(u32) -> bool) -> b
 // prefix, and are REUSABLE (a hit deep-copies the entry into the new session's cache — one
 // marketplace system prompt serves any number of sessions, unlike the move-out pool).
 //
-// SPLIT LAW: full-attention K/V planes are context-linear token rows, so a transformer-only
-// entry can be copied through an arbitrary LCP boundary and the current request primes only its
-// suffix. Hybrid models (qwen35-class GDN) carry recurrent conv/ssm state that cannot roll back
-// to an arbitrary shorter prefix; routed-MoE mid-entry reuse is also unqualified after the
-// coldfix/fencealias history. Those classes refuse observably and retain boundary learning:
+// SPLIT LAW: a hit restores a WHOLE entry, never a prefix of one. Full-attention K/V rows are
+// context-linear, but the deleted mid-entry restore fed its suffix through a second numeric
+// program and byte-diverged from cold (NO-GO, `research/lcprestore-20260813/`), and hybrid
+// models (qwen35-class GDN) carry recurrent conv/ssm state that cannot roll back to a shorter
+// prefix at all. Every class therefore learns its boundaries:
 //   - SEED: a cold session's full prompt is inserted at prefill-done (before any decode).
 //   - LCP SPLIT (the learning step): a cold miss whose prompt shares >= PREFIX_CACHE_MIN_TOKENS
 //     tokens with an existing entry splits its own prime at the longest-common-prefix point,
@@ -9754,10 +9754,10 @@ impl PrefixEntry {
 
 /// Device-independent half of restore preflight. This is deliberately one atomic check so the
 /// corruption gate can exercise every range/layout/version class without constructing CUDA state.
+/// A restore copies the whole entry, so the copy is the entry's own `entry_pos` rows.
 #[allow(clippy::too_many_arguments)]
 fn validate_prefix_plane_shape(
     entry_pos: usize,
-    restore_len: usize,
     src_len: usize,
     src_k_tok_bytes: usize,
     src_v_tok_bytes: usize,
@@ -9790,19 +9790,14 @@ fn validate_prefix_plane_shape(
             expected_v.max(1),
         ));
     }
-    let copy_k = restore_len
-        .checked_mul(dst_k_tok_bytes)
-        .ok_or_else(|| "restore K byte count overflow".to_string())?;
-    let copy_v = restore_len
-        .checked_mul(dst_v_tok_bytes)
-        .ok_or_else(|| "restore V byte count overflow".to_string())?;
-    if dst_k_bytes < copy_k || dst_v_bytes < copy_v {
+    // The layouts match (checked above), so the copy is exactly the source's byte count.
+    if dst_k_bytes < expected_k || dst_v_bytes < expected_v {
         return Err(format!(
-            "destination planes too small: K {dst_k_bytes} < {copy_k}, \
-             V {dst_v_bytes} < {copy_v}",
+            "destination planes too small: K {dst_k_bytes} < {expected_k}, \
+             V {dst_v_bytes} < {expected_v}",
         ));
     }
-    Ok((copy_k, copy_v))
+    Ok((expected_k, expected_v))
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -10915,7 +10910,7 @@ fn retire_prefix_pin(px: &mut PrefixCache, prefix_pin: &mut Option<PrefixPin>) {
 // are already q8_0 K / q5_1 V at rest: no requantization anywhere); a later probe that
 // misses the device pool but exactly matches a host entry re-materializes a NORMAL device
 // `PrefixEntry` (alloc_u8 + htod_u8_into), inserts it pinned, and serves through the existing
-// `prefix_restore_at`. Byte-lossless by construction, and `MEMRA_KV_HOST_MB=0` (the default)
+// `prefix_restore`. Byte-lossless by construction, and `MEMRA_KV_HOST_MB=0` (the default)
 // is byte-identical to today because nothing ever reaches the tier.
 //
 // SWA-ring exclusions remain upstream. GLM images are opt-in and process-lifetime;
@@ -22530,7 +22525,7 @@ fn host_restore_park_probe(
     };
     {
         let e = &px.entries[&pool_key][i];
-        if let Err(err) = prefix_restore_validate(&cache, e, &pool_key, e.pos, Some(&lm.model)) {
+        if let Err(err) = prefix_restore_validate(&cache, e, &pool_key, Some(&lm.model)) {
             return refuse(format!("validation failed: {err}"));
         }
     }
@@ -24087,7 +24082,7 @@ fn host_handoff_import_step(imp: &mut HostHandoffImport, hpx: &mut HostPrefixCac
 /// full-attention K/V, copied per token) and `recur` (conv/ssm, copied whole at the endpoint).
 /// A model whose `ModelPlan` declares `StatePlan::LatentKvCache` keeps its FULL-ATTENTION
 /// history in a THIRD plane, `cache.latent`, which `prefix_snapshot` never captured and
-/// `prefix_restore_at` never restored, and neither function so much as mentions it, so nothing
+/// `prefix_restore` never restored, and neither function so much as mentions it, so nothing
 /// failed.
 ///
 /// THE MEASURED CONSEQUENCE (glm5_next, 34 KDA + 11 MLA/DSA layers). Every MLA layer's
@@ -24513,19 +24508,16 @@ fn finish_planned_dflash_conversion(
     Ok(())
 }
 
-/// Deep-copy the first `restore_len` tokens of an entry INTO a freshly allocated session cache:
-/// K/V bytes at [0..restore_len), per-layer len + device mirror, and pos. Recurrent state is
-/// copied only at the entry's captured endpoint; a mid-entry recurrent split fails closed.
-/// The ssm ping-pong spare and last_logits_dev stay as allocated (scratch — overwritten before
-/// any read). All identity/shape/bounds checks precede the first device copy.
 /// Every identity, shape and bounds check of a prefix restore, with no device copy (WP-A day 21
-/// split it out of `prefix_restore_at` so the off-tick route runs exactly the OFF checks before
-/// it submits; the statements are the OFF path's, unchanged).
+/// split it out of `prefix_restore` so the off-tick route runs exactly the OFF checks before it
+/// submits; the statements are the OFF path's, unchanged). A restore is always WHOLE-entry, at
+/// the entry's captured endpoint `e.pos`: the plain mid-entry restore was deleted on its NO-GO
+/// receipt, so no caller can name an interior boundary. That boundary was never restorable for
+/// TP shards, recurrent state or a latent index tail anyway; each exists only at the endpoint.
 fn prefix_restore_validate(
     cache: &Cache,
     e: &PrefixEntry,
     expected_key: &PoolKey,
-    restore_len: usize,
     model: Option<&HybridModel>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     if cache.has_swa_ring() {
@@ -24535,14 +24527,6 @@ fn prefix_restore_validate(
     if let Some(why) = unsupported_prefix_tp_restore(tp_model, glm5_tp_prefix_on(), e.tp.is_some())
     {
         return Err(why.into());
-    }
-    if e.tp.is_some() && restore_len != e.pos {
-        return Err(format!(
-            "TP mid-entry prefix restore refused at {restore_len} of {}: rank shards exist only \
-             at the captured endpoint",
-            e.pos,
-        )
-        .into());
     }
     // Defence in depth for the capture-side gate in `prefix_snapshot`: an entry that does not
     // carry latent planes (minted before the flag flip, or by the spec-boundary publisher) must
@@ -24581,17 +24565,13 @@ fn prefix_restore_validate(
         )
         .into());
     }
-    if restore_len == 0 || restore_len > e.pos {
-        return Err(format!(
-            "prefix restore boundary {restore_len} outside entry [1,{}]",
-            e.pos,
-        )
-        .into());
+    if e.pos == 0 {
+        return Err("prefix entry holds no tokens".into());
     }
-    if restore_len > cache.max_ctx {
+    if e.pos > cache.max_ctx {
         return Err(format!(
-            "prefix restore boundary {restore_len} exceeds cache capacity {}",
-            cache.max_ctx,
+            "prefix entry pos {} exceeds cache capacity {}",
+            e.pos, cache.max_ctx,
         )
         .into());
     }
@@ -24619,25 +24599,7 @@ fn prefix_restore_validate(
         )
         .into());
     }
-    let has_recurrent = e.carries_recurrent();
-    if has_recurrent && restore_len != e.pos {
-        return Err(format!(
-            "hybrid mid-entry prefix restore refused at {restore_len} of {}: recurrent state \
-             exists only at the captured endpoint",
-            e.pos,
-        )
-        .into());
-    }
-    if entry_has_latent && restore_len != e.pos {
-        return Err(format!(
-            "latent mid-entry prefix restore refused at {restore_len} of {}: the index tail \
-             ring for an interior boundary is unrecoverable (rows below the built pools are \
-             overwritten by design)",
-            e.pos,
-        )
-        .into());
-    }
-    if restore_len == e.pos && e.last_logits.is_empty() {
+    if e.last_logits.is_empty() {
         return Err("whole-entry prefix restore has no boundary logits".into());
     }
 
@@ -24648,7 +24610,6 @@ fn prefix_restore_validate(
             (Some(dst), Some(src)) => {
                 validate_prefix_plane_shape(
                     e.pos,
-                    restore_len,
                     src.len,
                     src.k_tok_bytes,
                     src.v_tok_bytes,
@@ -24698,18 +24659,17 @@ fn prefix_restore_validate(
     Ok(())
 }
 
-/// Design B1: a restore's KV copies (`[0, restore_len * tok_bytes)` of each plane), its length
-/// sets and its recurrent copies as ONE launch. A range too long for its source or destination
-/// fails the request with a named error before any device write. Guards as in
-/// [`prefix_snapshot_batch`].
+/// Design B1: a restore's KV copies (`[0, e.pos * tok_bytes)` of each plane), its length sets and
+/// its recurrent copies as ONE launch. A range too long for its source or destination fails the
+/// request with a named error before any device write. Guards as in [`prefix_snapshot_batch`].
 fn prefix_restore_batch(
     engine: &Engine,
     cache: &mut Cache,
     e: &PrefixEntry,
-    restore_len: usize,
 ) -> Result<(), Box<dyn std::error::Error>> {
     use cudarc::driver::{DevicePtr, DevicePtrMut};
     let st = engine.stream();
+    let restore_len = e.pos;
     let len_value = i32::try_from(restore_len).map_err(|_| "prefix restore length exceeds i32")?;
     let mut kv_views = Vec::new();
     let mut lens = Vec::new();
@@ -24791,22 +24751,26 @@ fn prefix_restore_batch(
     Ok(())
 }
 
-fn prefix_restore_at(
+/// Deep-copy a WHOLE entry INTO a freshly allocated session cache: K/V bytes at [0..e.pos),
+/// per-layer len + device mirror, recurrent state, latent planes, TP shards and pos. Every
+/// identity/shape/bounds check (`prefix_restore_validate`) precedes the first device copy. The
+/// ssm ping-pong spare and last_logits_dev stay as allocated (scratch — overwritten before any
+/// read).
+fn prefix_restore(
     engine: &Engine,
     cache: &mut Cache,
     e: &PrefixEntry,
     expected_key: &PoolKey,
-    restore_len: usize,
     model: Option<&HybridModel>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    prefix_restore_validate(cache, e, expected_key, restore_len, model)?;
+    prefix_restore_validate(cache, e, expected_key, model)?;
     let max_ctx = cache.max_ctx;
     // Design B1 (DAY59 section 7): the KV copies, the length sets and the recurrent copies in one
     // launch, checked before any device write.
-    prefix_copy_timed(1, || prefix_restore_batch(engine, cache, e, restore_len))?;
+    prefix_copy_timed(1, || prefix_restore_batch(engine, cache, e))?;
     for il in 0..cache.kv.len() {
         if let (Some(dst), Some(_)) = (cache.kv[il].as_mut(), &e.kv[il]) {
-            dst.len = restore_len;
+            dst.len = e.pos;
         }
         if let (Some(dst), Some(src)) = (cache.latent[il].as_mut(), &e.latent[il]) {
             dst.restore_plane(engine, src, max_ctx)
@@ -24820,18 +24784,8 @@ fn prefix_restore_at(
             .glm5_tp_prefix_restore(engine, cache, shards)
             .map_err(|err| format!("prefix entry TP shards: {err}"))?;
     }
-    cache.pos = restore_len;
+    cache.pos = e.pos;
     Ok(())
-}
-
-fn prefix_restore(
-    engine: &Engine,
-    cache: &mut Cache,
-    e: &PrefixEntry,
-    expected_key: &PoolKey,
-    model: Option<&HybridModel>,
-) -> Result<(), Box<dyn std::error::Error>> {
-    prefix_restore_at(engine, cache, e, expected_key, e.pos, model)
 }
 
 fn digest_usize(hasher: &mut Sha256, value: usize) {
@@ -37073,10 +37027,9 @@ fn admit(
 
     // CROSS-REQUEST PREFIX CACHE probe (2026-08-02; module doc at PrefixCache). Only when the
     // continuation pool missed, the session won't go spec, and batched scheduling is live.
-    // A whole-entry hit deep-copies the longest matching entry into a fresh session cache. On a
-    // miss, an eligible mid-entry LCP immediately restores its context-linear K/V rows and primes
-    // only the suffix. Recurrent and routed-MoE mid-entry splits fail closed to the old boundary-
-    // snapshot learning path; cold long prompts arm the seed insert.
+    // A whole-entry hit deep-copies the longest matching entry into a fresh session cache. A miss
+    // primes cold: a long LCP with cached traffic arms the boundary snapshot (the learning path),
+    // and cold long prompts arm the seed insert.
     let mut prefix_hit = false;
     let mut prefix_pin = None;
     let mut snapshot_at: Option<usize> = None;
@@ -54623,26 +54576,31 @@ mod tests {
     #[test]
     fn prefix_restore_plane_preflight_rejects_corrupt_layouts_before_copy() {
         assert_eq!(
-            validate_prefix_plane_shape(128, 96, 128, 16, 16, 2048, 2048, 16, 16, 4096, 4096),
-            Ok((1536, 1536)),
+            validate_prefix_plane_shape(128, 128, 16, 16, 2048, 2048, 16, 16, 4096, 4096),
+            Ok((2048, 2048)),
         );
         assert!(
-            validate_prefix_plane_shape(128, 96, 127, 16, 16, 2032, 2032, 16, 16, 4096, 4096)
+            validate_prefix_plane_shape(128, 127, 16, 16, 2032, 2032, 16, 16, 4096, 4096)
                 .unwrap_err()
                 .contains("source len"),
         );
         assert!(
-            validate_prefix_plane_shape(128, 96, 128, 8, 16, 1024, 2048, 16, 16, 4096, 4096)
+            validate_prefix_plane_shape(128, 128, 8, 16, 1024, 2048, 16, 16, 4096, 4096)
                 .unwrap_err()
                 .contains("KV layout"),
         );
         assert!(
-            validate_prefix_plane_shape(128, 96, 128, 16, 16, 2047, 2048, 16, 16, 4096, 4096)
+            validate_prefix_plane_shape(128, 128, 16, 16, 2047, 2048, 16, 16, 4096, 4096)
                 .unwrap_err()
                 .contains("truncated/corrupt"),
         );
         assert!(
-            validate_prefix_plane_shape(128, 96, 128, 16, 16, 2048, 2048, 16, 16, 1024, 4096)
+            validate_prefix_plane_shape(128, 128, 16, 16, 2048, 2048, 16, 16, 1024, 4096)
+                .unwrap_err()
+                .contains("destination planes too small"),
+        );
+        assert!(
+            validate_prefix_plane_shape(128, 128, 16, 16, 2048, 2048, 16, 16, 4096, 2047)
                 .unwrap_err()
                 .contains("destination planes too small"),
         );
@@ -56606,7 +56564,7 @@ mod tests {
         let probe = body.find("fn host_restore_park_probe(").unwrap();
         let probe_body = &body[probe..probe + body[probe..].find("\n}\n").unwrap()];
         let validate = probe_body
-            .find("prefix_restore_validate(&cache, e, &pool_key, e.pos, Some(&lm.model))")
+            .find("prefix_restore_validate(&cache, e, &pool_key, Some(&lm.model))")
             .unwrap();
         let pin = probe_body.find("px.pin(&pool_key, i)").unwrap();
         let submit = probe_body
@@ -58311,11 +58269,11 @@ mod tests {
             pos.windows(2).all(|w| w[0] < w[1]),
             "the snapshot allocates, then batches, then takes the TP shards"
         );
-        let restore = body("fn prefix_restore_at(");
+        let restore = body("fn prefix_restore(");
         let order = [
             "prefix_restore_validate(",
-            "prefix_copy_timed(1, || prefix_restore_batch(engine, cache, e, restore_len))",
-            "dst.len = restore_len;",
+            "prefix_copy_timed(1, || prefix_restore_batch(engine, cache, e))",
+            "dst.len = e.pos;",
             ".glm5_tp_prefix_restore(",
         ];
         let pos: Vec<usize> = order.iter().map(|n| at(&restore, &squash(n))).collect();
@@ -58337,7 +58295,7 @@ mod tests {
         }
         for f in [
             "fn prefix_snapshot(",
-            "fn prefix_restore_at(",
+            "fn prefix_restore(",
             "fn prefix_snapshot_batch(",
             "fn prefix_restore_batch(",
         ] {
