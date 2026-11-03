@@ -2485,7 +2485,7 @@ impl CudaTransfers {
     /// installed by `install_consumer_wait` at the settle, before the request is re-admitted);
     /// `restore_landed` answers the landing, and the caller's `ready` is the landing plus the
     /// installed wait. Requires the copy stream; under `new` the class does not exist
-    /// (`Unsupported`): the on-tick program is the caller's own `prefix_restore_at`.
+    /// (`Unsupported`): the on-tick program is the caller's own `prefix_restore`.
     pub fn submit_d2d_restore(
         &mut self,
         ops: Vec<D2dRestore<'_>>,
