@@ -10880,9 +10880,9 @@ impl HybridModel {
     /// window is the cold session's window. It comes back if `MEMRA_SPEC_PEN_SESSION=0`.)
     ///
     /// NOT the rolled-back partial-restore hazard: the caller restores at exactly the
-    /// entry's captured endpoint (`e.pos`) through the shipping whole-entry path;
-    /// mid-entry (`at < e.pos`) trunk restores stay behind MEMRA_PREFIX_PARTIAL_RESTORE
-    /// and are never routed here.
+    /// entry's captured endpoint (`e.pos`) through the shipping whole-entry path; the plain
+    /// mid-entry (`at < e.pos`) trunk restore was deleted on its NO-GO receipt, and no
+    /// mid-entry restore is routed here.
     ///
     /// Failure contract: `Err((Some(cache), why))` before any trunk mutation — the
     /// worker rebuilds the plain carrier and the hit serves plain, byte-unchanged.
