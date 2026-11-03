@@ -51,12 +51,15 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::Instant;
 
-/// Cheap boot-time probe; the engine loader re-validates every field strictly.
+/// Cheap boot-time probe; the engine loader re-validates every field strictly. It resolves the
+/// effective `model_type` (text_config over top level, then `architectures[0]`) and maps it the
+/// way `Dsv4Model::open` does, so a config that only mentions `deepseek_v4` elsewhere (a base
+/// model name, a nested field) loads through `HybridModel` rather than a refusing dsv4 thread.
 pub fn is_dsv4_dir(dir: &Path) -> bool {
-    match std::fs::read_to_string(dir.join("config.json")) {
-        Ok(s) => s.contains("\"model_type\"") && s.contains("\"deepseek_v4\""),
-        Err(_) => false,
-    }
+    std::fs::read_to_string(dir.join("config.json"))
+        .ok()
+        .and_then(|s| memra_gguf::config::HfConfig::try_parse(&s).ok())
+        .is_some_and(|cfg| memra_gguf::config::Arch::from_hf_model_type(&cfg.model_type).is_dsv4())
 }
 
 /// What a checkpoint's `config.json` says about its context, as three distinct facts rather than
@@ -3373,6 +3376,41 @@ mod lane_watch_tests {
             board.slots[0].phase.load(Ordering::Relaxed),
             LanePhase::Queue as u8
         );
+    }
+}
+
+#[cfg(test)]
+mod dsv4_dir_probe_tests {
+    use super::is_dsv4_dir;
+
+    fn probe(name: &str, config: &str) -> bool {
+        let dir =
+            std::env::temp_dir().join(format!("memra-dsv4-probe-{name}-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("config.json"), config).unwrap();
+        let routed = is_dsv4_dir(&dir);
+        std::fs::remove_dir_all(&dir).unwrap();
+        routed
+    }
+
+    /// The probe routes on the effective model_type the loader maps, not on the text
+    /// `deepseek_v4` anywhere in config.json: a distill naming its base checkpoint used to
+    /// reach the dsv4 thread, which refuses any non-dsv4 arch, and failed to boot.
+    #[test]
+    fn only_a_deepseek_v4_model_type_routes_to_the_dsv4_thread() {
+        assert!(probe(
+            "v4",
+            r#"{"model_type":"deepseek_v4","num_hidden_layers":2}"#
+        ));
+        assert!(probe(
+            "nested",
+            r#"{"model_type":"wrapper","text_config":{"model_type":"deepseek_v4"}}"#
+        ));
+        assert!(!probe(
+            "distill",
+            r#"{"model_type":"qwen3","base_model":"deepseek_v4","num_hidden_layers":2}"#
+        ));
+        assert!(!probe("broken", r#"{"model_type": "deepseek_v4""#));
     }
 }
 
