@@ -676,7 +676,7 @@ else:
                                '--plan', str(plan_file), '--repo', str(repo), '--out', str(execution_file)], ok=False)
             self.assertIn('dsv4_sample_prepare does not open with MEMRA_PDL_CHAIN_ENTRY()', refused)
             cuda_restored = commit_file(cuda_path, cuda_original)
-            header_path = 'crates/memra-engine/cu/dsv4_replay_control.cuh'
+            header_path = 'crates/memra-engine/cu/dsv4_dense_census.cuh'
             header = commit_file(header_path, (repo / header_path).read_text() + '\n// header guard fixture\n')
             header_plan = planned(routed('pull_request', event(cuda_restored, header)), header)
             self.assertEqual(header_plan.get('ci_mode'), 'thin', header_plan['reason'])
