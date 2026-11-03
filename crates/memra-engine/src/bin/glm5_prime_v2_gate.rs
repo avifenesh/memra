@@ -1,5 +1,6 @@
-//! `glm5-prime-v2-gate`: the acceptance gate for `MEMRA_B200_PRIME_V2`, the B200 mHC PRIME
-//! schedule door (lane/b200-prefill-roofline-20260902).
+//! `glm5-prime-v2-gate`: the acceptance gate for `MEMRA_HYPER_PRIME_V2` (named
+//! `MEMRA_B200_PRIME_V2` until 2026-11-03), the arch-independent mHC PRIME schedule door first
+//! measured on a B200 pair (lane/b200-prefill-roofline-20260902).
 //!
 //! WHY THE DOOR EXISTS, in one paragraph so this file stands alone. `prime_chunk_tokens`
 //! applies the `PRIME_PIPE_MICROBATCHES = 8` geometry whenever a PP-2 stage fence exists, so a
@@ -549,7 +550,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // the assert stays exactly as it is, as the check that the pin worked.
     clear_env("MEMRA_PP_SPLITS");
     clear_env("MEMRA_PP_SPLIT");
-    set_env("MEMRA_B200_PRIME_V2", "0");
+    set_env("MEMRA_HYPER_PRIME_V2", "0");
     clear_env("MEMRA_PRIME_CHUNK");
     clear_env("MEMRA_PRIME_PIPE");
 
@@ -637,7 +638,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let ids = tokens(t1, 0x5EED_0001);
         let max_ctx = t1 + 16;
 
-        set_env("MEMRA_B200_PRIME_V2", "0");
+        set_env("MEMRA_HYPER_PRIME_V2", "0");
         let gpf_before = MOE_GROUPED_PREFILL_DISPATCHES.load(Ordering::Relaxed);
         let shipped_ranges = hyper_prime_ranges(t1, LAYERS, m.gdn_prime_grid_on(), m.swa_ring_on());
         let (ref_logits, ref_stack) = prime_once(&e, &m, &plan, &ids, max_ctx)?;
@@ -645,13 +646,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // RED `schedule`: leave the door shut for the "on" walk too, so the schedules match and
         // the non-vacuity assertion below MUST fire.
         if red != "schedule" {
-            set_env("MEMRA_B200_PRIME_V2", "1");
+            set_env("MEMRA_HYPER_PRIME_V2", "1");
         }
         let nat_before = HYPER_PRIME_NATURAL_SCHEDULES.load(Ordering::Relaxed);
         let door_ranges = hyper_prime_ranges(t1, LAYERS, m.gdn_prime_grid_on(), m.swa_ring_on());
         let (got_logits, got_stack) = prime_once(&e, &m, &plan, &ids, max_ctx)?;
         let nat = HYPER_PRIME_NATURAL_SCHEDULES.load(Ordering::Relaxed) - nat_before;
-        set_env("MEMRA_B200_PRIME_V2", "0");
+        set_env("MEMRA_HYPER_PRIME_V2", "0");
 
         println!(
             "arm 1 SCHEDULE  t={t1}: shipped {} chunks {:?} -> door {} chunks {:?} \
@@ -722,7 +723,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // The honest bar is therefore RELATIVE: the door's schedule change must not move the
         // stack MORE than a schedule change the product already ships. Logits keep an absolute
         // band and argmax keeps an absolute equality — those are what a caller sees.
-        set_env("MEMRA_B200_PRIME_V2", "0");
+        set_env("MEMRA_HYPER_PRIME_V2", "0");
         set_env("MEMRA_PRIME_CHUNK", &(t1 / 2).to_string());
         let ctrl_ranges = hyper_prime_ranges(t1, LAYERS, m.gdn_prime_grid_on(), m.swa_ring_on());
         let (ctrl_logits, ctrl_stack) = prime_once(&e, &m, &plan, &ids, max_ctx)?;
@@ -768,7 +769,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let max_ctx = t2 + 16;
         // Both walks take the door AND an explicit chunk, so the ranges are byte-identical and
         // the ONLY axis under test is the two-host-thread overlap.
-        set_env("MEMRA_B200_PRIME_V2", "1");
+        set_env("MEMRA_HYPER_PRIME_V2", "1");
         set_env("MEMRA_PRIME_CHUNK", &chunk2.to_string());
         let ranges = hyper_prime_ranges(t2, LAYERS, m.gdn_prime_grid_on(), m.swa_ring_on());
         assert!(
@@ -793,7 +794,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let pipe_chunks = HYPER_PRIME_PIPELINED_CHUNKS.load(Ordering::Relaxed) - pipe_before;
         clear_env("MEMRA_PRIME_PIPE");
         clear_env("MEMRA_PRIME_CHUNK");
-        set_env("MEMRA_B200_PRIME_V2", "0");
+        set_env("MEMRA_HYPER_PRIME_V2", "0");
 
         let bad_logits = bit_mismatches(&got_logits, &ref_logits);
         let bad_stack = bit_mismatches(&got_stack, &ref_stack);
@@ -848,7 +849,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // different host threads at different chunk bases, which is the whole hazard. A sink
         // tapping only one stage's layers would pass while proving nothing.
         let taps: Vec<usize> = vec![fence[1] - 1, fence[2] - 1];
-        set_env("MEMRA_B200_PRIME_V2", "1");
+        set_env("MEMRA_HYPER_PRIME_V2", "1");
         set_env("MEMRA_PRIME_CHUNK", &chunk2.to_string());
 
         set_env("MEMRA_PRIME_PIPE", "0");
@@ -865,14 +866,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let (got_logits, got_taps) = prime_once_tapped(&e, &m, &plan, &ids, max_ctx, &taps)?;
         let pipelined = HYPER_PRIME_PIPELINED_CHUNKS.load(Ordering::Relaxed) - before;
         clear_env("MEMRA_PRIME_CHUNK");
-        set_env("MEMRA_B200_PRIME_V2", "0");
+        set_env("MEMRA_HYPER_PRIME_V2", "0");
 
         let ranges = {
-            set_env("MEMRA_B200_PRIME_V2", "1");
+            set_env("MEMRA_HYPER_PRIME_V2", "1");
             set_env("MEMRA_PRIME_CHUNK", &chunk2.to_string());
             let r = hyper_prime_ranges(t2, LAYERS, m.gdn_prime_grid_on(), m.swa_ring_on());
             clear_env("MEMRA_PRIME_CHUNK");
-            set_env("MEMRA_B200_PRIME_V2", "0");
+            set_env("MEMRA_HYPER_PRIME_V2", "0");
             r
         };
         let bad_logits = bit_mismatches(&got_logits, &ref_logits);

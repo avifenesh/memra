@@ -876,8 +876,11 @@ fn mla_tc_prefill_enabled() -> bool {
         .unwrap_or(true)
 }
 
-/// `MEMRA_B200_PRIME_V2` — the B200 (sm_100a) mHC PRIME schedule door
-/// (lane/b200-prefill-roofline-20260902, **default OFF**). It arms two changes to the
+/// `MEMRA_HYPER_PRIME_V2` — the mHC PRIME schedule door (lane/b200-prefill-roofline-20260902,
+/// **default OFF**; named `MEMRA_HYPER_PRIME_V2` until 2026-11-03). It is host-side scheduling,
+/// so it is not build-gated like the B200 kernel doors: it runs on any build, and its receipts
+/// are from a B200 pair (the per-hardware law: another rig owes its own A/B before a default
+/// moves there). The old name refuses at server boot (env audit). It arms two changes to the
 /// HyperConnections prime and nothing else; decode, spec, batch and every non-hyper trunk are
 /// untouched by construction (the only two call sites are `hyper_prime_ranges` and
 /// `prime_cache_hyper`'s pp branch).
@@ -959,19 +962,19 @@ fn hyper_pipe_decline_once(reason: &str) {
     if !DECLINED.swap(true, std::sync::atomic::Ordering::Relaxed) {
         eprintln!(
             "[hyper-prime-pipe] DECLINED: {reason} -> the serial per-chunk stage walk serves \
-             this prime (MEMRA_B200_PRIME_V2 arm 1 is unaffected; logged once per process)"
+             this prime (MEMRA_HYPER_PRIME_V2 arm 1 is unaffected; logged once per process)"
         );
     }
 }
 
-pub fn b200_prime_v2_on() -> bool {
-    std::env::var("MEMRA_B200_PRIME_V2").as_deref() == Ok("1")
+pub fn hyper_prime_v2_on() -> bool {
+    std::env::var("MEMRA_HYPER_PRIME_V2").as_deref() == Ok("1")
 }
 
 /// Chunks primed through the pipelined mHC PP-2 walk. The engagement receipt arm 2's
 /// non-vacuity assertion reads: bit identity between two walks that both ran SERIALLY is
 /// vacuous, so the gate requires this to advance.
-/// Prime calls whose schedule was decided by `MEMRA_B200_PRIME_V2` arm 1 (the natural chunk).
+/// Prime calls whose schedule was decided by `MEMRA_HYPER_PRIME_V2` arm 1 (the natural chunk).
 /// The engagement counter the gate reads: an armed door that changed no schedule is the exact
 /// failure this lane was written to catch, so "the flag was set" is never the receipt.
 pub static HYPER_PRIME_NATURAL_SCHEDULES: std::sync::atomic::AtomicU64 =
@@ -1582,13 +1585,13 @@ pub fn hyper_prime_ranges(
     gdn_grid: bool,
     ring_on: bool,
 ) -> Vec<(usize, usize)> {
-    // DOOR `MEMRA_B200_PRIME_V2` arm 1 (default OFF; see the door's header for the arithmetic
+    // DOOR `MEMRA_HYPER_PRIME_V2` arm 1 (default OFF; see the door's header for the arithmetic
     // and the numeric class). The delegation above inherits `PRIME_PIPE_MICROBATCHES` from a
     // pipeline this walk does not run; under the door the mHC prime takes the NATURAL chunk
     // instead. An explicit `MEMRA_PRIME_CHUNK` is still authoritative -- the operator override
     // must not be overridden by a door, and `prime_chunk_tokens` already honors it, so the
     // door simply stands aside rather than re-deciding.
-    if b200_prime_v2_on() && std::env::var_os("MEMRA_PRIME_CHUNK").is_none() {
+    if hyper_prime_v2_on() && std::env::var_os("MEMRA_PRIME_CHUNK").is_none() {
         return hyper_prime_ranges_natural(t, gdn_grid, ring_on);
     }
     prime_chunk_ranges(t, n_layers, gdn_grid, ring_on)
@@ -1616,7 +1619,7 @@ fn hyper_prime_ranges_natural(t: usize, gdn_grid: bool, ring_on: bool) -> Vec<(u
     if !SAID.swap(true, std::sync::atomic::Ordering::Relaxed) {
         eprintln!(
             "[prime-v2] arm1 engaged t={t} chunk={} chunks={} widths={:?} (natural chunk \
-             replaces the PRIME_PIPE_MICROBATCHES geometry; MEMRA_B200_PRIME_V2, logged once \
+             replaces the PRIME_PIPE_MICROBATCHES geometry; MEMRA_HYPER_PRIME_V2, logged once \
              per process)",
             crate::cache::PRIME_CHUNK_MAX_TOKENS,
             ranges.len(),
@@ -2338,11 +2341,11 @@ impl HybridModel {
                 self.glm5_taps_range_done(e, cache, 0, t)?;
                 return Ok(out);
             }
-            // DOOR `MEMRA_B200_PRIME_V2` arm 2 (default OFF): overlap stage 0 of chunk k+1 with
+            // DOOR `MEMRA_HYPER_PRIME_V2` arm 2 (default OFF): overlap stage 0 of chunk k+1 with
             // stage 1 of chunk k. Every conjunct is load-bearing and every decline is named --
             // an arm that quietly did not run is the failure mode this lane's own roofline was
             // written to catch.
-            if b200_prime_v2_on() && !crate::pp::pp2_streams_off() && fence.len() == 3 {
+            if hyper_prime_v2_on() && !crate::pp::pp2_streams_off() && fence.len() == 3 {
                 if !crate::pp::prime_pipe_on() {
                     hyper_pipe_decline_once("MEMRA_PRIME_PIPE=0 (the operator rollback seam)");
                 } else if overlay.is_some() {
@@ -4657,7 +4660,7 @@ impl HybridModel {
         }
     }
 
-    /// DOOR `MEMRA_B200_PRIME_V2` arm 2: the PIPELINED mHC PP-2 prime. Stage 0 of chunk k+1
+    /// DOOR `MEMRA_HYPER_PRIME_V2` arm 2: the PIPELINED mHC PP-2 prime. Stage 0 of chunk k+1
     /// runs on device 0 while stage 1 of chunk k runs on device 1, over disjoint per-stage
     /// caches ([`PrimeCacheStages`]), on two scoped host threads.
     ///
@@ -4734,7 +4737,7 @@ impl HybridModel {
             eprintln!(
                 "[prime-v2] arm2 pipelined stages=2 chunks={} overlap={} t={t} devices={:?} \
                  taps={} (stage 0 of chunk k+1 overlaps stage 1 of chunk k on two host \
-                 threads; MEMRA_B200_PRIME_V2, logged once per process)",
+                 threads; MEMRA_HYPER_PRIME_V2, logged once per process)",
                 ranges.len(),
                 ranges.len().saturating_sub(1),
                 (0..2)
@@ -19937,7 +19940,7 @@ impl HybridModel {
                  cublasGemmGroupedBatchedEx issues on cuBLAS-internal streams unordered with \
                  ours, and on this walk's 283-group shape that race silently destroyed the \
                  trunk and killed the worker (2026-09-02 boot D, research/glm5-b200-20260902/ \
-                 box/prefill/). Use MEMRA_MOE_F16G=2 (the default) or the MEMRA_B200_PRIME_V2 \
+                 box/prefill/). Use MEMRA_MOE_F16G=2 (the default) or the MEMRA_HYPER_PRIME_V2 \
                  dequant-once arm",
                 t,
                 il,
