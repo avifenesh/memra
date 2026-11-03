@@ -1469,8 +1469,9 @@ pub(crate) fn b200_gemv_v2_on() -> bool {
 /// 2026-09-04, OFF elsewhere, `=0`/`=1` override): the W8-posture q8_0 row
 /// walk (`qmatvec_q8_0_mmvq_rp_v2` at t=1 and the fused `qmatvec_kda6_q8f32_rp_v2`) takes its
 /// `_ilp` twin, the same per-row program with four blocks' loads per lane issued ahead of the
-/// dp4a chains. Read PER CALL (a live rollback seam). Why and receipts: the kernel header in
-/// cu/qmatvec.cu and docs/FLAGS.md.
+/// dp4a chains. Read PER CALL (a live rollback seam). A sub-arm of `MEMRA_B200_GEMV_V2`: both
+/// v2 kernels it twins are dispatched only under `b200_gemv_v2_on()`, so without that door the
+/// default never engages. Why and receipts: the kernel header in cu/qmatvec.cu and docs/FLAGS.md.
 pub(crate) fn q8_row_ilp_on() -> bool {
     q8_row_ilp_on_from(
         std::env::var("MEMRA_Q8_ROW_ILP").ok().as_deref(),
