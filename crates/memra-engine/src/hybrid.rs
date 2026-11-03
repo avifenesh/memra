@@ -5,6 +5,7 @@
 use crate::Engine;
 use crate::model::{EmbedHost, GpuTensor, HostExps};
 use cudarc::driver::CudaSlice;
+use memra_gguf::checkpoint_binding::CheckpointBinding;
 use memra_gguf::config::{ModelConfig, SwigluClamp};
 use memra_gguf::model_plan::{AttentionPlan, MlpPlan, TensorPresence};
 use memra_gguf::source::{GgufSource, TensorSource};
@@ -236,12 +237,15 @@ impl StepParallelRuntimeRegistry {
 }
 
 impl ResidentPlan {
+    /// `binding` is the checkpoint binding the loader bound; a GGUF source may omit it because its
+    /// header carries the expert/trunk split, every other source sizes its trunk from it.
     fn from_layout(
         src: &dyn TensorSource,
+        binding: Option<&CheckpointBinding>,
         primary_device: usize,
         layer_devices: Vec<usize>,
         pp: bool,
-    ) -> Self {
+    ) -> Result<Self, String> {
         let mut layer_counts = HashMap::new();
         for &device in &layer_devices {
             *layer_counts.entry(device).or_default() += 1;
@@ -261,9 +265,20 @@ impl ResidentPlan {
                     (None, 0)
                 }
             }
-            None => (None, 0),
+            // A safetensors or manifest source has no header with the split. Its binding names
+            // the routed experts, and the source sizes every other tensor after its own load
+            // conversion (a BF16 matmul lands as Q8_0, a norm as f32), so the trunk is charged
+            // at the bytes it occupies on the device, not on disk.
+            None => {
+                let binding = binding.ok_or(
+                    "the resident-expert budget of a non-GGUF source reserves its trunk from the \
+                     checkpoint binding, and none was passed",
+                )?;
+                let trunk = binding.trunk_resident_bytes(src, crate::model::float_upload());
+                (None, usize::try_from(trunk).unwrap_or(usize::MAX))
+            }
         };
-        Self {
+        Ok(Self {
             primary_device,
             layer_devices,
             layer_counts,
@@ -271,29 +286,47 @@ impl ResidentPlan {
             trunk_bytes,
             decisions: HashMap::new(),
             pp,
-        }
+        })
     }
 
-    pub(crate) fn unsharded(e: &Engine, src: &dyn TensorSource, cfg: &ModelConfig) -> Self {
+    pub(crate) fn unsharded(
+        e: &Engine,
+        src: &dyn TensorSource,
+        binding: Option<&CheckpointBinding>,
+        cfg: &ModelConfig,
+    ) -> Result<Self, String> {
         let device = e.ctx().ordinal();
-        Self::from_layout(src, device, vec![device; cfg.n_layer as usize], false)
+        Self::from_layout(
+            src,
+            binding,
+            device,
+            vec![device; cfg.n_layer as usize],
+            false,
+        )
     }
 
     pub(crate) fn pp(
         e: &Engine,
         src: &dyn TensorSource,
+        binding: &CheckpointBinding,
         cfg: &ModelConfig,
         n_trunk: usize,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         let primary = e.ctx().ordinal();
         let Some(_fence) = crate::pp::pp_cuts(n_trunk) else {
-            return Ok(Self::unsharded(e, src, cfg));
+            return Ok(Self::unsharded(e, src, Some(binding), cfg)?);
         };
         let mut layer_devices = vec![primary; cfg.n_layer as usize];
         for (il, device) in layer_devices.iter_mut().take(n_trunk).enumerate() {
             *device = crate::pp::layer_engine(e, n_trunk, il)?.ctx().ordinal();
         }
-        Ok(Self::from_layout(src, primary, layer_devices, true))
+        Ok(Self::from_layout(
+            src,
+            Some(binding),
+            primary,
+            layer_devices,
+            true,
+        )?)
     }
 
     /// Distributed expert layers no longer consume the owning stage's local expert slab. Remove
@@ -2052,14 +2085,15 @@ fn build_step_tp_qkv(
 /// RESIDENT-IF-FITS (2026-08-02, research/residency-cap-20260802/): the bank is resident when
 /// its EXACT byte total (summed from the GGUF header — UD-quants make per-layer bytes
 /// non-uniform, Ornith-35B blk.0 is +7% over the mean, so first-layer x n_layer misprojects)
-/// plus the file's non-expert bytes plus a measured headroom reserve fits free VRAM. The old
-/// default (0.80 x free vs first-layer x n_layer) reserved 20% of the card (4.8GB on 24GB)
-/// and spilled the Ornith-35B bank that fits — a priced -33% decode / -54% prefill. Measured
-/// need beside the weights at board shape is ~1.7GB (CUDA ctx + KV + workspace); reserve
-/// default 2.0GB, machine-specific override `MEMRA_MOE_RESIDENT_HEADROOM_GB` (VRAM-budget
-/// class). `MEMRA_MOE_RESIDENT_GB` stays the absolute expert-budget override;
-/// MEMRA_MOE_RESIDENT=0 forces the SLRU path. Fits => every subsequent layer on that device
-/// uploads too.
+/// plus the checkpoint's non-expert bytes (a GGUF header's, or a safetensors census sized at
+/// its device format, `ResidentPlan::from_layout`) plus a measured headroom reserve fits free
+/// VRAM. The old default (0.80 x free vs first-layer x n_layer) reserved 20% of the card
+/// (4.8GB on 24GB) and spilled the Ornith-35B bank that fits — a priced -33% decode / -54%
+/// prefill. Measured need beside the weights at board shape is ~1.7GB (CUDA ctx + KV +
+/// workspace); reserve default 2.0GB, machine-specific override
+/// `MEMRA_MOE_RESIDENT_HEADROOM_GB` (VRAM-budget class). `MEMRA_MOE_RESIDENT_GB` stays the
+/// absolute expert-budget override; MEMRA_MOE_RESIDENT=0 forces the SLRU path. Fits => every
+/// subsequent layer on that device uploads too.
 fn build_dev_exps(
     e: &Engine,
     resident: &mut ResidentPlan,
@@ -3782,7 +3816,7 @@ impl MtpHead {
             }
         );
 
-        let mut resident = ResidentPlan::unsharded(e, &src, &dcfg);
+        let mut resident = ResidentPlan::unsharded(e, &src, None, &dcfg)?;
         let mut step_runtimes = StepParallelRuntimeRegistry::default();
         Ok(MtpHead {
             enorm: load_t(e, &src, &p("nextn.enorm.weight"))?,
@@ -4688,7 +4722,7 @@ impl HybridModel {
                 .map_err(std::io::Error::other)?,
         )?;
         load_mark("output-head", 0);
-        let mut resident = ResidentPlan::pp(e, src, &cfg, n_trunk)?;
+        let mut resident = ResidentPlan::pp(e, src, &binding, &cfg, n_trunk)?;
         resident.exclude_distributed_expert_layers(
             step_parallel
                 .ep_specs
@@ -6774,6 +6808,47 @@ mod residency_tests {
         let bytes = residency_bytes_by_device(tensors, &[0, 0, 0, 0], 0);
         assert_eq!(bytes.experts.get(&0), Some(&100));
         assert_eq!(bytes.experts.len(), 1);
+    }
+
+    /// A non-GGUF source reserves its trunk from the checkpoint binding. Over a GGUF-dialect census
+    /// that is byte-for-byte the GGUF header rule; without a binding the plan refuses rather than
+    /// reserving nothing (the old zero-trunk budget that let a safetensors MoE over-commit).
+    #[test]
+    fn non_gguf_sources_reserve_their_trunk_from_the_binding() {
+        use memra_gguf::source::{GgufSource, TensorCensus, TensorSource, TensorView};
+        struct Headerless<'g>(GgufSource<'g>);
+        impl TensorSource for Headerless<'_> {
+            fn config(&self) -> memra_gguf::config::ModelConfig {
+                self.0.config()
+            }
+            fn tensor_census(&self) -> Result<TensorCensus, String> {
+                self.0.tensor_census()
+            }
+            fn find(&self, name: &str) -> Option<TensorView<'_>> {
+                self.0.find(name)
+            }
+        }
+        let path =
+            std::env::temp_dir().join(format!("memra-resident-trunk-{}.gguf", std::process::id()));
+        memra_gguf::micro_gguf::write_glm_dsa_micro(&path, 0x5_05F5).unwrap();
+        let g = memra_gguf::GgufFile::open(&path).unwrap();
+        std::fs::remove_file(&path).ok();
+        let gguf = GgufSource(&g);
+        let (cfg, plan) = memra_gguf::model_packs::compile_for_source(&gguf).unwrap();
+        let binding = memra_gguf::checkpoint_binding::bind_source(&gguf, &cfg, &plan).unwrap();
+        let layers = vec![0; cfg.n_layer as usize];
+        let header = ResidentPlan::from_layout(&gguf, None, 0, layers.clone(), false).unwrap();
+        let headerless = Headerless(GgufSource(&g));
+        let census =
+            ResidentPlan::from_layout(&headerless, Some(&binding), 0, layers.clone(), false)
+                .unwrap();
+        assert!(header.trunk_bytes > 0);
+        assert_eq!(census.trunk_bytes, header.trunk_bytes);
+        assert!(census.exact_expert_bytes.is_none());
+        let refused = ResidentPlan::from_layout(&headerless, None, 0, layers, false)
+            .err()
+            .expect("a non-GGUF source without its binding must refuse");
+        assert!(refused.contains("checkpoint binding"), "{refused}");
     }
 
     #[test]
