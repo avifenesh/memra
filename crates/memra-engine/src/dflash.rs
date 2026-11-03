@@ -826,7 +826,7 @@ pub fn dspark_accept_prefix(cand: &[u32], vam: &[u32], vt: usize) -> usize {
 /// ladder climb.
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum DsparkVtPolicy {
-    /// The shipped reactive ladder: `vt = (m+2).clamp(3, vt_cap)` per round
+    /// The shipped reactive ladder: `vt = ladder_vt(m, vt_cap)` per round
     /// (`MEMRA_DFLASH_ADAPT=0` pins vt at `vt_cap` = the fixed-window arm).
     Ladder,
     /// `MEMRA_DSPARK_VT=confidence`: per-round window from cumprod survival of the
@@ -982,6 +982,15 @@ pub fn dspark_slot_confidence_vt(raws: &[f32], tau: f32, vt_cap: usize) -> usize
         kept += 1;
     }
     (1 + kept).clamp(2, vt_cap.max(2))
+}
+
+/// The reactive ladder's next verify width (the MTP accepted+1 recipe): one row past
+/// this round's `m` accepted drafts plus the anchor, floored at 3 and capped at
+/// `vt_cap`. The floor never rises above the cap: `vt_cap` is 2 under
+/// `MEMRA_DFLASH_VERIFY_T=2` or a one-draft block, and `Ord::clamp` panics when its
+/// lower bound exceeds its upper bound.
+pub fn ladder_vt(m: usize, vt_cap: usize) -> usize {
+    (m + 2).clamp(vt_cap.min(3), vt_cap)
 }
 
 // ================= SAMPLED ADMISSION (T>0) — lane/dspark-sampled-admission-20260820 =====
@@ -3688,7 +3697,7 @@ impl crate::hybrid::HybridModel {
             .unwrap_or(8)
             .clamp(2, b);
         // adaptive verify width (MEMRA_DFLASH_ADAPT!=0, MTP accepted+1 recipe): next round
-        // verifies one past this round's accepted run, clamped [3, cap].
+        // verifies one past this round's accepted run (`ladder_vt`, clamped [min(3, cap), cap]).
         let adapt = std::env::var("MEMRA_DFLASH_ADAPT").as_deref() != Ok("0");
         let mut vt = vt_cap;
         let mut attempted = 0usize;
@@ -3815,7 +3824,7 @@ impl crate::hybrid::HybridModel {
             }
             last = next;
             if adapt {
-                vt = (m + 2).clamp(3, vt_cap);
+                vt = ladder_vt(m, vt_cap);
             }
         }
         drop(exact_scope);
@@ -4600,7 +4609,7 @@ impl crate::hybrid::HybridModel {
             // Ladder update only — under the confidence policies vt is recomputed
             // from the head every round, post-draft pre-verify.
             if !vt_policy.is_confidence() && adapt {
-                vt = (m + 2).clamp(3, vt_cap);
+                vt = ladder_vt(m, vt_cap);
             }
         }
         if stats {
@@ -6753,7 +6762,7 @@ impl crate::hybrid::HybridModel {
         if burst.vt_policy.is_confidence() {
             sess.vt = vt;
         } else if burst.adapt {
-            sess.vt = (m + 2).clamp(3, burst.vt_cap);
+            sess.vt = ladder_vt(m, burst.vt_cap);
         }
         Ok(())
     }
@@ -8541,7 +8550,9 @@ mod dflash_tap_oracle_tests {
 
 #[cfg(test)]
 mod dspark_vt_tests {
-    use super::{ConfidenceHead, DsparkVtPolicy, dspark_confidence_vt, dspark_slot_confidence_vt};
+    use super::{
+        ConfidenceHead, DsparkVtPolicy, dspark_confidence_vt, dspark_slot_confidence_vt, ladder_vt,
+    };
 
     /// Pre-sigmoid logit for a target probability: sigmoid(logit(p)) == p.
     fn logit(p: f32) -> f32 {
@@ -8640,6 +8651,19 @@ mod dspark_vt_tests {
         // No scores (defensive): floor.
         assert_eq!(dspark_confidence_vt(&[], 0.5, 8), 2);
         assert_eq!(dspark_slot_confidence_vt(&[], 0.5, 8), 2);
+    }
+
+    #[test]
+    fn ladder_vt_floor_never_exceeds_a_two_row_cap() {
+        // accepted+1 inside [3, cap] at the usual caps.
+        assert_eq!(ladder_vt(0, 8), 3, "floor");
+        assert_eq!(ladder_vt(3, 8), 5, "one past the accepted run");
+        assert_eq!(ladder_vt(7, 8), 8, "cap");
+        assert_eq!(ladder_vt(0, 3), 3);
+        // MEMRA_DFLASH_VERIFY_T=2 (FLAGS.md: clamp 2..block) or a one-draft block gives
+        // vt_cap = 2; the ladder pins there instead of panicking in Ord::clamp.
+        assert_eq!(ladder_vt(0, 2), 2);
+        assert_eq!(ladder_vt(1, 2), 2);
     }
 
     #[test]
