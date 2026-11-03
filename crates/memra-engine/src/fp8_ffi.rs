@@ -320,14 +320,14 @@ mod b200_dry_policy_tests {
         );
     }
 
-    /// The block-128 FP8 load cell for every build, GPU-free: the arch key every block-128 arm
-    /// reads (`fp8_blk_kernels_built`) must agree with the unit build.rs actually compiled for
-    /// `cu/mmq_fp8_blk.cu`, and on a stub build (sm_89, sm_90a) native residency stays off, so a
-    /// block-128 checkpoint takes the Q8_0 floor instead of failing its load on the stub's NaN
-    /// scan. The docs-only type-check build compiles no CUDA and exports no unit.
+    /// The block-128 FP8 build key, GPU-free: the arch key the per-block MMQ arms read
+    /// (`fp8_blk_kernels_built`: `try_fp8_blk_mmq` and the native stacked expert banks) must
+    /// agree with the unit build.rs actually compiled for `cu/mmq_fp8_blk.cu`. Dense block-128
+    /// residency does not depend on it (its NaN scan and decode kernel build on every arch). The
+    /// docs-only type-check build compiles no CUDA and exports no unit.
     #[test]
     fn block128_fp8_arms_follow_the_compiled_kernel_unit() {
-        use super::{fp8_blk_kernels_built, st_e4m3_blk_enabled};
+        use super::fp8_blk_kernels_built;
         if let Some(unit) = option_env!("MEMRA_FP8_BLK_UNIT") {
             assert_eq!(
                 fp8_blk_kernels_built(),
@@ -335,12 +335,6 @@ mod b200_dry_policy_tests {
                 "build.rs compiled {unit} on {}, but fp8_blk_kernels_built() says {}",
                 env!("MEMRA_BUILT_CUDA_ARCH"),
                 fp8_blk_kernels_built()
-            );
-        }
-        if !fp8_blk_kernels_built() {
-            assert!(
-                !st_e4m3_blk_enabled(),
-                "block-128 FP8 residency must stay off on a build without its kernels"
             );
         }
     }
