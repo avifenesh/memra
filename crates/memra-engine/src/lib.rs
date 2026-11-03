@@ -32753,8 +32753,9 @@ impl Engine {
     }
 
     /// FUSED prefill conv + GDN repack: token-major qkv -> q_g/k_g/v_g in ONE launch (no conv_out
-    /// materialization, no qkv_to_gdn_repack pass). BIT-IDENTICAL values; scatter matches
-    /// qkv_to_gdn_repack's modulo head-repeat mapping exactly.
+    /// materialization, no separate repack pass). Historical: it was BIT-IDENTICAL to the unfused
+    /// conv + qkv_to_gdn_repack pair, scatter included (the modulo head-repeat mapping), when it
+    /// landed; qkv_to_gdn_repack was deleted with the MEMRA_SPEC_STREAM verify walk (2026-11-03).
     #[allow(clippy::too_many_arguments)]
     #[allow(clippy::manual_div_ceil)] // allow: explicit (n + k - 1) / k is the load-bearing sizing form, kept textually identical to the kernel-side math
     pub fn ssm_conv1d_gdn(
@@ -33760,7 +33761,9 @@ impl Engine {
     /// task #18 conv-fuse: carried-ring conv + SiLU + GDN repack in ONE pass (the
     /// conv_out intermediate and its transposed re-read disappear — 11.8ms of the
     /// T=2048 prime). Ring update stays the separate follow-up launch (pad-aware).
-    /// BIT-IDENTICAL values to ssm_conv1d_tm_state_pad + qkv_to_gdn_repack.
+    /// Historical: it was BIT-IDENTICAL to the unfused ssm_conv1d_tm_state_pad +
+    /// qkv_to_gdn_repack pair when it landed. That pair was deleted with its last caller,
+    /// the MEMRA_SPEC_STREAM verify walk (2026-11-03), so no live program checks the claim.
     #[allow(clippy::too_many_arguments)]
     #[allow(clippy::manual_div_ceil)]
     // allow: explicit (n + k - 1) / k is the load-bearing sizing form, kept textually identical to the kernel-side math
