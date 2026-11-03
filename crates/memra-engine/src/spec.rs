@@ -721,7 +721,7 @@ pub(crate) fn graph_replay_suspended_note(route: &str) {
 /// at the round's first and last t_kv — both eligibility gates are intervals in t_kv),
 /// the qwen35 t-parallel verify's per-row KV-append + fa-decode loop collapses into the
 /// z-batched serving twins: ONE `append_quantize_kv_q8_0_q5_1_seqs` + ONE
-/// `fa_decode_vec_q_seqs_v4` + ONE combine per full-attention layer, replacing
+/// `fa_decode_vec_q_seqs_v4_deep` + ONE combine per full-attention layer, replacing
 /// T x (4 dtod row copies + append + 3 memsets + main + combine) launches. Bytes are
 /// pinned by the batched-tick increment-2 kernel-check (seqs-vs-per-seq-loop bit
 /// identity: per-row T_kv derives in-kernel from pos_seq[z]; splits >= ns_eff write the
