@@ -66438,7 +66438,7 @@ mod tests {
         let worker = squash(include_str!("worker.rs"));
         let live = &worker[..worker.find("mod tests").expect("the test module exists")];
         assert!(live.contains(
-            "let pending_seed_uncapped = if admit_memory_cfg.armed { pending_seed_bytes(&active) } else { 0 }; let pending_seed = if admit_memory_cfg.armed { seed_booking_cap( pending_seed_uncapped, prefix_cache_budget_bytes(), px.total_bytes, ) } else { 0 };"
+            "let pending_seed_uncapped = if admit_memory_cfg.armed { pending_seed_bytes(&active) } else { 0 }; let pending_seed = if admit_memory_cfg.armed { seed_booking_cap( pending_seed_uncapped, kv_flex_effective_budget(), px.total_bytes, ) } else { 0 };"
         ));
         assert!(live.contains("let pending_booked = pending_prime.saturating_add(pending_seed);"));
         assert!(live.contains(
