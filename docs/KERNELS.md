@@ -228,7 +228,7 @@ Facts worth knowing before "cleaning up":
 Legend: FFI binding "fatbin/by-name" = loaded from module by kernel name string;
 "extern in <file>" = Rust `unsafe extern "C"` declaration.
 
-### cu/kernels.cu — 133 symbols (measured `grep -c 'extern "C" __global__'` on 2026-11-03, after `add_q8_1_f32`, `i32_add_k`, `rms_norm3_f32`, `row_softmax_f32` and `add_rms_norm_zq8` left that day with no caller; it was 142 just before, and the heading had drifted to 135 by annotation. Earlier annotations: lane/f32-gemv-rows-20260905 +1: `gemv_f32_rows`; lane/hc-mixes-gemv-20260905 +1: `hc_mixes_gemv_f32`; lane/b200-q8-fuse-20260902 +1: `rms_norm_zq8_f32`; prior recount 2026-09-02, 132, includes the TP verified-prefix batched-copy lane) (fatbin `MEMRA_ENGINE_FATBIN`)
+### cu/kernels.cu — 131 symbols (recount 2026-11-03 of the `extern "C" __global__` definitions: 142 before the 2026-11-03 door sweep, minus `pack_tok_p` and `tok_map_u32` with `MEMRA_SPEC_STREAM`; the header's earlier 135 was stale. Lineage: lane/f32-gemv-rows-20260905 +1: `gemv_f32_rows`; lane/hc-mixes-gemv-20260905 +1: `hc_mixes_gemv_f32`; lane/b200-q8-fuse-20260902 +1: `rms_norm_zq8_f32`; prior recount 2026-09-02, 132, includes the TP verified-prefix batched-copy lane) (fatbin `MEMRA_ENGINE_FATBIN`)
 
 Header: "Stage-1 kernels: correctness-first, all f32, no tensor cores" (kernels.cu:1).
 
@@ -290,7 +290,7 @@ Header: "Stage-1 kernels: correctness-first, all f32, no tensor cores" (kernels.
 | `hc_diet_stage1_mt_f32` | hc-diet MT stage 1: down/inject weight rows read ONCE, tokens iterated inside with INLINE (x*inv)*nw normalization — per-(row,token) fma chain the stage-1 program VERBATIM => BIT-IDENTICAL to the token-grid stage 1; t<=12 | bf16-w/f32 | — | qwen4exp_gpu read gate at verify chunks (set_verify_mt); oracle `gate_hc_diet_kernels` mt mode | fatbin/by-name |
 | `hc_diet_stage3_mt_f32` | hc-diet MT stage 3: up rows read once, ALL T low_act rows resident in smem, per-token lane chains + the stage-3 epilogue with inv[t,s] — BIT-IDENTICAL to the token-grid stage 3 | bf16-w/f32 | — | qwen4exp_gpu read gate at verify chunks (set_verify_mt); oracle `gate_hc_diet_kernels` mt mode | fatbin/by-name |
 
-### cu/hybrid.cu — 72 symbols (measured `grep -c 'extern "C" __global__'` on 2026-11-03, after `transpose_f32`, `repeat_heads_f32`, `conv_left_pad_f32`, `ssm_conv1d_tm_f32`, `moe_pairs_weighted_scatter_f32` and `swiglu_preclamped_mul_scaled_q8_1_f32` left that day; it was 79 just before, against a heading of 67) (fatbin `MEMRA_HYBRID_FATBIN`)
+### cu/hybrid.cu — 67 symbols (recount 2026-11-03 of the `extern "C" __global__` definitions: 79 before the 2026-11-03 door sweep, minus `gdn_scan_s128_dc`, `qkv_to_gdn_repack_f32`, `ssm_conv1d_tm_state_f32`, `ssm_conv_ring_rebuild_f32` and `ssm_conv_ring_rebuild_f32_dc` with `MEMRA_SPEC_STREAM`, and `swiglu_preclamped_mul_scaled_q8_1_f32` with `MEMRA_SHEXP_SWIGLU_ZQ8`) (fatbin `MEMRA_HYBRID_FATBIN`)
 
 Header: "Qwen3.5/3.6 hybrid linear-attention: depthwise causal conv1d + SiLU, Gated
 DeltaNet scan; all f32" (hybrid.cu:1-3).
@@ -403,7 +403,7 @@ Header: "fused MoE router… bit-identical to host path" (moe_router.cu:1-4).
 | `nvfp4_ep_stage_inputs`, `moe_sel_w_mirror` | one-launch peer-read input BF16 staging and grid-capable route-id/weight mirroring for automatic EP | MEMRA_PARALLEL_EP_DEVICE_ROUTER; MEMRA_PARALLEL_EP_Q8_ACT |
 | `silu_mul_scaled_host_expf_{bf16,q8}_ep_slots` | owner-range SwiGLU using the frozen host-expf transcription; exact BF16 or optional q8_1 emission | MEMRA_PARALLEL_EP_DEVICE_ROUTER; MEMRA_PARALLEL_EP_Q8_ACT |
 
-### cu/spec_sample.cu — 30 symbols (fatbin `MEMRA_SAMPLE_FATBIN`)
+### cu/spec_sample.cu — 28 symbols (2026-11-03: `spec_assemble_verify` and `pos_iota_i32` left with `MEMRA_SPEC_STREAM`) (fatbin `MEMRA_SAMPLE_FATBIN`)
 
 Header: "Sampled speculative decoding — device sampling primitives; Philox4x32-10
 counter-based" (spec_sample.cu:1-5).
