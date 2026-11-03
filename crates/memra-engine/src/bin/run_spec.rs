@@ -419,7 +419,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if std::env::var("MEMRA_PRINT_TEXT").as_deref() == Ok("1") {
         let tok = match &g {
             Some(g) => memra_tokenizer::Tokenizer::from_gguf(g)?,
-            None => memra_tokenizer::Tokenizer::from_hf_dir(std::path::Path::new(&path))
+            None => memra_tokenizer::Tokenizer::from_hf_dir(&tok_dir)
                 .map_err(|err| format!("HF tokenizer init failed: {err}"))?,
         };
         println!("--- generated text ---\n{}\n--- end ---", tok.decode(&gold));
@@ -530,7 +530,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         if sampled && std::env::var("MEMRA_PRINT_TEXT").as_deref() == Ok("1") {
             let tok = match &g {
                 Some(g) => memra_tokenizer::Tokenizer::from_gguf(g)?,
-                None => memra_tokenizer::Tokenizer::from_hf_dir(std::path::Path::new(&path))
+                None => memra_tokenizer::Tokenizer::from_hf_dir(&tok_dir)
                     .map_err(|err| format!("HF tokenizer init failed: {err}"))?,
             };
             println!(
