@@ -5630,11 +5630,6 @@ impl crate::hybrid::HybridModel {
         Ok(sess)
     }
 
-    /// One scheduler burst: dspark rounds until >= `burst_target` tokens are committed,
-    /// EOS lands, or the ctx cap is reached. `request_room` is the request's remaining
-    /// public budget, which may be larger than the per-tick scheduler quantum. Returns
-    /// (tokens, drafted, accepted) for this burst — mid-request quantum overshoot stays
-    /// public, while only the true request boundary clamps the committed cache prefix.
     /// ADMISSION DEBT of this model's verify-graph pool, in bytes (lane/
     /// hermes-perf-fixes, 2026-08-23): the projected remaining growth the serve admission
     /// gate must reserve so sessions admitted while the pool is cold do not overcommit VRAM
@@ -5688,28 +5683,6 @@ impl crate::hybrid::HybridModel {
             .unwrap_or(0)
     }
 
-    /// MULTI-TURN RESUME (lane/dflash2-session-reuse, 2026-08-25): continue a parked
-    /// dspark session with the next turn's suffix — the dspark twin of the MTP pool
-    /// resume. Trunk rows for the committed stream are already resident in `cache` and
-    /// their ctx features in `dkv`, so turn N+1 primes ONLY its delta instead of
-    /// re-priming the whole conversation (the route previously served every turn cold —
-    /// a full-prompt prime whose cost grows with the conversation).
-    ///
-    /// EXACTNESS. The suffix prime is the same session-continuation `prime_cache` the
-    /// serve path uses for split prompts and LCP restores (chunk N+1 attends chunk N's
-    /// resident KV); the tap sink collects the suffix rows prompt-relative and the dkv
-    /// ingest lands them at their absolute positions, exactly as the burst's per-round
-    /// keep-ingest does. The boundary token re-derives as the cold prime does: greedy
-    /// argmax of the suffix's last row, or the request's filtered draw through the
-    /// SESSION's own Philox stream (`sctr` continues — the frspec session-continuity
-    /// law), penalized over the session+suffix window. A resumed stream is therefore
-    /// byte-identical to the stream a cold prime of the full concatenation produces —
-    /// the verify arbitrates every committed token either way.
-    ///
-    /// EOS in the committed history is fine (a finished turn parks with EOS committed;
-    /// the new user turn continues past it) — `done` resets here. Callers must pass a
-    /// NON-EMPTY suffix for a `done` session (an empty-suffix continuation of a finished
-    /// stream would re-emit from a terminal state); the worker's probe enforces it.
     /// Re-arm a dspark session from a RESTORED trunk cache plus a published draft tail —
     /// the long-answer half of lane/dspark-draft-plane-20260827.
     ///
@@ -5836,6 +5809,28 @@ impl crate::hybrid::HybridModel {
         })
     }
 
+    /// MULTI-TURN RESUME (lane/dflash2-session-reuse, 2026-08-25): continue a parked
+    /// dspark session with the next turn's suffix — the dspark twin of the MTP pool
+    /// resume. Trunk rows for the committed stream are already resident in `cache` and
+    /// their ctx features in `dkv`, so turn N+1 primes ONLY its delta instead of
+    /// re-priming the whole conversation (the route previously served every turn cold —
+    /// a full-prompt prime whose cost grows with the conversation).
+    ///
+    /// EXACTNESS. The suffix prime is the same session-continuation `prime_cache` the
+    /// serve path uses for split prompts and LCP restores (chunk N+1 attends chunk N's
+    /// resident KV); the tap sink collects the suffix rows prompt-relative and the dkv
+    /// ingest lands them at their absolute positions, exactly as the burst's per-round
+    /// keep-ingest does. The boundary token re-derives as the cold prime does: greedy
+    /// argmax of the suffix's last row, or the request's filtered draw through the
+    /// SESSION's own Philox stream (`sctr` continues — the frspec session-continuity
+    /// law), penalized over the session+suffix window. A resumed stream is therefore
+    /// byte-identical to the stream a cold prime of the full concatenation produces —
+    /// the verify arbitrates every committed token either way.
+    ///
+    /// EOS in the committed history is fine (a finished turn parks with EOS committed;
+    /// the new user turn continues past it) — `done` resets here. Callers must pass a
+    /// NON-EMPTY suffix for a `done` session (an empty-suffix continuation of a finished
+    /// stream would re-emit from a terminal state); the worker's probe enforces it.
     pub fn dspark_spec_session_resume(
         &self,
         e: &Engine,
@@ -5972,6 +5967,11 @@ impl crate::hybrid::HybridModel {
         Ok(())
     }
 
+    /// One scheduler burst: dspark rounds until >= `burst_target` tokens are committed,
+    /// EOS lands, or the ctx cap is reached. `request_room` is the request's remaining
+    /// public budget, which may be larger than the per-tick scheduler quantum. Returns
+    /// (tokens, drafted, accepted) for this burst — mid-request quantum overshoot stays
+    /// public, while only the true request boundary clamps the committed cache prefix.
     pub fn dspark_spec_session_burst(
         &self,
         e: &Engine,

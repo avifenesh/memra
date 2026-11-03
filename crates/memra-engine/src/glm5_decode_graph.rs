@@ -132,12 +132,6 @@ fn capture_fault_from(v: Option<&str>) -> Result<Option<(usize, usize)>, String>
     Ok(Some((run, phase)))
 }
 
-/// One captured contiguous KDA-layer run, in both recurrent-state ping-pong phases.
-///
-/// FIELD ORDER IS LOAD-BEARING. Rust drops fields in declaration order, so `graphs` (which
-/// destroys the instantiated execs) must be declared BEFORE `_keeper` (which frees the buffers
-/// those execs baked). Freeing first and destroying second is a use-after-free inside the driver.
-/// The same reasoning orders `StageGraphs`: `runs` before `x_io`/`ws`/`f16`.
 /// One piece of a captured run: a graph over a segment plan (two ping-pong phases), or the
 /// eager middle of a split MLA layer (`hyper_mla_mid_post_ws`: append, k-pool selection,
 /// attention, decompress, `wo`) that runs between two graph pieces on the stage's own workspace
@@ -165,6 +159,12 @@ struct RunSpec {
     pieces: Vec<PieceSpec>,
 }
 
+/// One captured contiguous KDA-layer run, in both recurrent-state ping-pong phases.
+///
+/// FIELD ORDER IS LOAD-BEARING. Rust drops fields in declaration order, so `graphs` (which
+/// destroys the instantiated execs) must be declared BEFORE `_keeper` (which frees the buffers
+/// those execs baked). Freeing first and destroying second is a use-after-free inside the driver.
+/// The same reasoning orders `StageGraphs`: `runs` before `x_io`/`ws`/`f16`.
 struct RunGraph {
     lo: usize,
     hi: usize,
@@ -262,8 +262,6 @@ struct StageGraphs {
     launched_since_sync: bool,
 }
 
-/// The `(conv, ssm, ssm_alt)` device pointers of one layer's recurrent state, or `None` when the
-/// layer has no recurrent slot.
 /// The buffers a stage's graphs bake, carried across a re-capture unchanged. Splitting them out
 /// is what lets a rebuild destroy ONLY the graphs.
 struct StageBufs {
@@ -313,8 +311,6 @@ fn capturable_runs(
     runs
 }
 
-/// Maximal contiguous runs of KDA-mixer layers inside `[lo, hi)`. A TP-sharded KDA layer is not
-/// on this path at all, so it breaks a run rather than joining one.
 /// The run plan of a stage. Without `MEMRA_GLM5_GRAPH_MLA` (or without the segment
 /// workspace seam it needs) this is exactly `capturable_runs` over the KDA layers, one graph
 /// piece per run. With it, an MLA layer no longer breaks a run: its attention-site hc pre +
@@ -383,7 +379,10 @@ fn plan_runs(m: &HybridModel, lo: usize, hi: usize) -> Vec<RunSpec> {
     runs
 }
 
-/// The layer spans of the stage's runs (what the replay loop walks between eager gaps).
+/// The layer spans of the stage's runs (what the replay loop walks between eager gaps): the
+/// maximal contiguous runs of KDA-mixer layers inside `[lo, hi)`, which MLA layers join when
+/// the halves door is on (`plan_runs`). A TP-sharded KDA layer is not on this path at all, so
+/// it breaks a run rather than joining one.
 fn kda_runs(m: &HybridModel, lo: usize, hi: usize) -> Vec<(usize, usize)> {
     plan_runs(m, lo, hi).iter().map(|r| (r.lo, r.hi)).collect()
 }
@@ -401,6 +400,8 @@ struct LayerSig {
     p_hi: u64,
 }
 
+/// The `(conv, ssm, ssm_alt)` device pointers of one layer's recurrent state, or `None` when the
+/// layer has no recurrent slot.
 fn recur_sig(e: &Engine, cache: &Cache, il: usize) -> Option<LayerSig> {
     use cudarc::driver::DevicePtr;
     let rl = cache.recur.get(il)?.as_ref()?;
