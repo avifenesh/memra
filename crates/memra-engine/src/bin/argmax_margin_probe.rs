@@ -22,6 +22,14 @@
 //!   * agreement rate across all sampled positions (a near-tie class predicts ~1 flip in many;
 //!     a broken kernel predicts systematic disagreement).
 //!
+//! It also runs the BATCHED SERVING PRIME (`prime_cache`, the program that seeds generation in
+//! `generate` and serving) once over the whole prompt and judges its last-position logits
+//! against the tokenwise reference with the calibrated `forward::prime_gate_verdict`, printing
+//! one `PRIME-GATE:` line. run-gen carries the same cell (its gap #46 arm), but the release
+//! battery runs this probe and not run-gen, and run-spec primes both its reference and its
+//! candidate through `prime_cache`, so without this line a prime-only regression passed the
+//! whole battery.
+//!
 //! usage: argmax-margin-probe <model.gguf|hf_dir> <prompt-file> [window=24]
 //! env: engine knobs (MEMRA_FA_SPLIT, MEMRA_Q80_G2, MEMRA_FAST, ...) steer the arm under test.
 
@@ -45,6 +53,43 @@ fn top2(l: &[f32]) -> (usize, f32, usize, f32) {
         }
     }
     (i1, v1, i2, v2)
+}
+
+/// Why the batched-prime arm does not run, if it does not: the same conditions run-gen's gap #46
+/// cell uses. `tokenwise-served` is the only skip under which the served first token still
+/// comes from a program this probe gates (the tokenwise loop of the table above).
+fn prime_gate_skip_reason(
+    t: usize,
+    tokenwise_forced: bool,
+    gate_off: bool,
+    frozen_cpu_experts: bool,
+) -> Option<&'static str> {
+    if t < memra_engine::hybrid_forward::PRIME_MIN_T {
+        Some("short-prompt")
+    } else if tokenwise_forced {
+        Some("tokenwise-forced")
+    } else if gate_off {
+        Some("gate-off")
+    } else if frozen_cpu_experts {
+        Some("tokenwise-served")
+    } else {
+        None
+    }
+}
+
+/// The one `PRIME-GATE:` line the gate script parses. Ten significant digits, like the table.
+fn prime_gate_row(v: &memra_engine::forward::PrimeGateVerdict) -> String {
+    use memra_engine::forward::PrimeGateClass;
+    let class = match v.class {
+        PrimeGateClass::Match => "MATCH",
+        PrimeGateClass::NearTieFlip => "FLIP-NEARTIE",
+        PrimeGateClass::Structured => "MISMATCH-STRUCTURED",
+    };
+    format!(
+        "PRIME-GATE: class={class} bp_argmax={} tw_argmax={} tw_margin={:.9e} bp_margin={:.9e} \
+         maxdiff={:.9e}",
+        v.bp_argmax, v.tw_argmax, v.tw_margin, v.bp_margin, v.maxdiff
+    )
 }
 
 fn validate_placement(
@@ -144,6 +189,25 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     for i in (t - window)..t {
         pre_at.push(model.forward_last(&e, &prompt[..=i])?);
     }
+
+    // --- config C: the batched serving prime (`prime_cache`) over the whole prompt, judged
+    //     against the tokenwise logits at the last position (see the module doc). The decode
+    //     cache is dropped first so the prime's cache does not double the KV footprint.
+    drop(cache);
+    let prime_line = match prime_gate_skip_reason(
+        t,
+        std::env::var("MEMRA_PRIME_TOKENWISE").is_ok(),
+        std::env::var("MEMRA_PRIME_GATE").as_deref() == Ok("0"),
+        e.frozen_cpu_experts_prefer_tokenwise_prime(),
+    ) {
+        Some(reason) => format!("PRIME-GATE: SKIP reason={reason}"),
+        None => {
+            let mut pc = new_model_cache(&e, &model.cfg, t + 8)?;
+            let (l_bp, _, _) = model.prime_cache(&e, &prompt, &mut pc, 0)?;
+            let tokenwise = dec_at.last().expect("window >= 1 rows of decode logits");
+            prime_gate_row(&memra_engine::forward::prime_gate_verdict(tokenwise, &l_bp))
+        }
+    };
 
     // --- per-position comparison ---
     println!(
@@ -288,15 +352,59 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
              margin (structurally safe at this position)"
         }
     );
+    println!("{prime_line}");
     // REPORTER ONLY: the gate (tools/argmax-margin-gate.sh) parses the table above and
-    // owns the exit code — a probe-side exit would double-fail ahead of the comparator
+    // the PRIME-GATE line, and owns the exit code — a probe-side exit would double-fail ahead of the comparator
     // and break the canary's inject-then-parse flow.
     Ok(())
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{measurement_row, validate_placement};
+    use super::{measurement_row, prime_gate_row, prime_gate_skip_reason, validate_placement};
+    use memra_engine::forward::{PrimeGateClass, PrimeGateVerdict};
+
+    #[test]
+    fn prime_arm_runs_on_the_battery_shape_and_names_every_skip() {
+        assert_eq!(prime_gate_skip_reason(2048, false, false, false), None);
+        assert_eq!(
+            prime_gate_skip_reason(8, false, false, false),
+            Some("short-prompt")
+        );
+        assert_eq!(
+            prime_gate_skip_reason(2048, true, false, false),
+            Some("tokenwise-forced")
+        );
+        assert_eq!(
+            prime_gate_skip_reason(2048, false, true, false),
+            Some("gate-off")
+        );
+        assert_eq!(
+            prime_gate_skip_reason(2048, false, false, true),
+            Some("tokenwise-served")
+        );
+    }
+
+    #[test]
+    fn prime_row_names_the_class_the_gate_parses() {
+        let mut v = PrimeGateVerdict {
+            tw_argmax: 7,
+            bp_argmax: 7,
+            tw_margin: 1.5,
+            bp_margin: 1.25,
+            maxdiff: 0.03,
+            class: PrimeGateClass::Match,
+        };
+        let row = prime_gate_row(&v);
+        assert!(
+            row.starts_with("PRIME-GATE: class=MATCH bp_argmax=7 tw_argmax=7 "),
+            "{row}"
+        );
+        v.class = PrimeGateClass::NearTieFlip;
+        assert!(prime_gate_row(&v).starts_with("PRIME-GATE: class=FLIP-NEARTIE "));
+        v.class = PrimeGateClass::Structured;
+        assert!(prime_gate_row(&v).starts_with("PRIME-GATE: class=MISMATCH-STRUCTURED "));
+    }
 
     #[test]
     fn unsupported_sharded_prefill_is_rejected() {

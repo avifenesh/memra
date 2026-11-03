@@ -52,7 +52,11 @@ Note what the battery does NOT run: raw `run-gen`. Its prefill-vs-decode argmax 
 documented landmine (`tools/argmax-margin-gate.sh:12-47`, and
 `research/q8-argmax-20260806/VERDICT.md`) — batched prefill and the tokenwise decode loop are two
 legitimate arithmetics, so a near-tie position flips between them legitimately.
-`tools/argmax-margin-gate.sh` judges each flip against the prompt's own distribution instead.
+`tools/argmax-margin-gate.sh` judges each flip against the prompt's own distribution instead,
+and also judges the batched serving prime (`prime_cache`) against the tokenwise reference with
+run-gen's calibrated `prime_gate_verdict`: run-spec primes reference and candidate through the
+same `prime_cache`, so without that arm a prime-only regression passed the whole battery. The
+battery accepts only `prime=MATCH`, `FLIP-NEARTIE` or `SKIP:tokenwise-served`.
 On 2026-08-28 the first roster run used raw `run-gen` and was about to file a defect against
 our own model on a position whose prefill top-2 margin was 0.0256 against a config spread of
 0.5540; the calibrated gate returns `flips=0 bad=0 PASS` on the same model.

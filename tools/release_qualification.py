@@ -19,6 +19,8 @@ ROOT = Path(__file__).resolve().parents[1]
 PUBLICATION = "research/release-qualification/"
 POINTER = PUBLICATION + "current.json"
 BINARIES = ("kernel-check", "run-gen", "run-spec", "argmax-margin-probe", "memra-server", "tok-parity")
+# Batched-prime classes an argmax cell may report (tools/argmax-margin-gate.sh PRIME-SUMMARY).
+ARGMAX_PRIME_PASS = ("MATCH", "FLIP-NEARTIE", "SKIP:tokenwise-served")
 MANIFESTS = ("tools/kernel-check-27b.cells", "tools/kernel-check-step35.cells")
 SHA = re.compile(r"[0-9a-f]{64}\Z")
 COMMIT = re.compile(r"[0-9a-f]{40}\Z")
@@ -410,9 +412,15 @@ def cell_verdicts(run, evidence, repo, head):
         elif cell["kind"] == "spec":
             verdict = coverage.spec_coverage(lines)
         else:
+            # The batched serving prime (prime_cache vs tokenwise) rides the same cell: one
+            # PRIME-SUMMARY line, and only the classes tools/release-battery.sh accepts.
+            prime = [line for line in lines if line.startswith("PRIME-SUMMARY prime=")]
+            prime_ok = len(prime) == 1 and prime[0].split("=", 1)[1] in ARGMAX_PRIME_PASS
             require(sum(line.startswith("PASS:") for line in lines) == 1
                     and any(re.search(r"SUMMARY flips=\d+ bad=0\b", line) for line in lines)
-                    and not any("SKIP" in line or line.startswith("FAIL") for line in lines),
+                    and prime_ok
+                    and not any(("SKIP" in line and not line.startswith(("PRIME-SUMMARY", "PRIME-GATE:")))
+                                or line.startswith("FAIL") for line in lines),
                     "argmax cell did not pass its calibrated gate")
             verdict = "calibrated argmax PASS"
         verdicts.append({"kind": key[0], "model": key[1], "verdict": verdict})
