@@ -18874,7 +18874,9 @@ impl Engine {
         }
         // Prefill GEMM root fix: if T>1 and the dtype has a GEMM kernel, batch via tensor cores
         // (reuses the already-quantized aq/ad — no extra quantize). m=1 falls through to dp4a.
-        if m >= 16 && self.gemm_supports(w) && !self.verify_exact_on() {
+        // Same out_f >= 128 floor as `matmul` (its GEMM_MIN_OUT_F): a small-out_f tensor takes
+        // the same program through either entry.
+        if m >= 16 && w.out_features() >= 128 && self.gemm_supports(w) && !self.verify_exact_on() {
             return self.qmatvec_gemm(w, aq, ad, m);
         }
         // THE SEVENTH ARM. Every raw-f32 arm above is guarded by `x_raw_ok`; this one — the
