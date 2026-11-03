@@ -28223,18 +28223,29 @@ pub fn run(
             "chunked prefill"
         };
         if eager_decode.contains(n) {
-            let class = loaded.get(n).map_or("gemma4 class", |lm| {
-                if memra_engine::plan_backend::decode_batch_unconverted(&lm.model.plan) {
-                    "hyper-connections residual"
-                } else if memra_engine::plan_backend::decode_batch_program(&lm.model.plan)
-                    == memra_engine::plan_backend::DecodeBatchProgram::Gemma
-                    || lm.model.is_gemma4_e4b()
-                {
-                    "gemma4 class"
-                } else {
-                    "plan operations without a batched decode arm"
-                }
-            });
+            let class = loaded.get(n).map_or_else(
+                || "gemma4 class".to_string(),
+                |lm| {
+                    if memra_engine::plan_backend::decode_batch_unconverted(&lm.model.plan) {
+                        "hyper-connections residual".to_string()
+                    } else if memra_engine::plan_backend::decode_batch_program(&lm.model.plan)
+                        == memra_engine::plan_backend::DecodeBatchProgram::Gemma
+                        || lm.model.is_gemma4_e4b()
+                    {
+                        "gemma4 class".to_string()
+                    } else {
+                        // Name the operations, so the class is visible per family at boot:
+                        // glm_dsa reads LatentMlaAttention, MiniMax-M3 SwiGluOaiActivation.
+                        format!(
+                            "plan operations without a batched decode arm: {:?}",
+                            memra_engine::plan_backend::DECODE_BATCH
+                                .trunk_capabilities(&lm.model.plan)
+                                .batch
+                                .blockers
+                        )
+                    }
+                },
+            );
             eprintln!(
                 "[worker] {n}: EAGER-ONLY serving ({class} — no batched decode arm): \
                    per-session eager decode, {prefill}, no prime batching"
@@ -41358,7 +41369,14 @@ fn eager_only_model(lm: &LoadedModel) -> bool {
         // `decode_batch_layers` (`mla_path_unimplemented`) on every decode chunk, because
         // `chunk_cap_for` only narrows such a plan to width 1. The manifest is an AND over the
         // plan, so the same capability read that sets the width also routes the session to the
-        // eager body (`decode_step_h`), which carries the MLA arm.
+        // eager body (`decode_step_h`), which carries the MLA arm. MiniMax-M3 joins the class
+        // by the same read (SwiGluOaiActivation has no decode-batch surface): the batched body
+        // asserts on any of its dense FFN layers ("M3 swigluoai FFN not yet batched"), while
+        // `ffn_swiglu_decode` carries the swigluoai arm. Membership is the whole eager-only
+        // class (monolithic prime, tokenwise carried suffixes, no prefix snapshot), not a
+        // decode-only carve-out: the batched prime, graph capture and snapshot paths carry no
+        // receipt for either family (glm_dsa is NativeReference, MiniMax-M3 has no support
+        // state), so neither is moved onto them without a serve receipt.
         || !memra_engine::plan_backend::DECODE_BATCH
             .trunk_capabilities(&lm.model.plan)
             .batch
