@@ -2838,6 +2838,21 @@ impl HybridModel {
         }
     }
 
+    /// The qwen dc door's plan predicate, shared by `generate` and `generate_with`. Every route
+    /// inside that door (`decode_step_dc`, the `graph_decode_loop` capture) walks the serial
+    /// residual over Full and Linear mixers only: step35 refuses in `full_attn_decode_dc_inner`,
+    /// a hyper trunk refuses in `refuse_hyper`, and an MLA layer panics
+    /// (`mla_path_unimplemented`). Those plans take the host-logits loop instead, whose
+    /// `decode_step_h` serves all three.
+    fn qwen_dc_plan_ok(&self) -> bool {
+        !self.uses_sliding_gated_moe_program()
+            && self.hyper.is_none()
+            && self
+                .layers
+                .iter()
+                .all(|layer| matches!(layer.mixer, Mixer::Full(_) | Mixer::Linear(_)))
+    }
+
     /// Greedy generation: prime with prompt tokens (decode them in sequence to build state),
     /// then generate `max_new` tokens. Returns the generated token ids. (Back-compat: greedy,
     /// no EOS/stop — used by the decode==prefill validation gate. New code uses `generate_with`.)
@@ -2959,7 +2974,7 @@ impl HybridModel {
             *QWEN_DC2.get_or_init(|| std::env::var("MEMRA_QWEN_DC").as_deref() != Ok("0"));
         if qwen_dc
             && max_new > 0
-            && !self.uses_sliding_gated_moe_program()
+            && self.qwen_dc_plan_ok()
             && let Some(embd_gpu) = self.embd_gpu_try(e)
         {
             let n_vocab = self.output.out_features();
@@ -3291,7 +3306,7 @@ impl HybridModel {
             && sampler.is_greedy()
             && sampler.penalty_last_n() == 0
             && budget > 0
-            && !self.uses_sliding_gated_moe_program()
+            && self.qwen_dc_plan_ok()
             && let Some(embd_gpu) = self.embd_gpu_try(e)
         {
             let n_vocab = self.output.out_features();
