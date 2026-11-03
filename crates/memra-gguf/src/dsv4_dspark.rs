@@ -39,45 +39,61 @@ pub struct DsparkConfig {
 }
 
 impl DsparkConfig {
-    pub fn load(model_dir: &Path, model: &Dsv4Model) -> Self {
-        let txt = std::fs::read_to_string(model_dir.join("config.json")).expect("config.json");
+    /// Refusals are named errors, not panics: the serving loader propagates them like
+    /// every other load refusal.
+    pub fn load(model_dir: &Path, model: &Dsv4Model) -> Result<Self, String> {
+        let path = model_dir.join("config.json");
+        let txt = std::fs::read_to_string(&path)
+            .map_err(|err| format!("dspark: read {}: {err}", path.display()))?;
         let j = JsonObj::parse(&txt);
-        let req = |k: &str| -> u64 {
+        let req = |k: &str| -> Result<u64, String> {
             j.u64(k)
-                .unwrap_or_else(|| panic!("config.json missing required dspark key {k}"))
+                .ok_or_else(|| format!("dspark: config.json missing required key {k}"))
         };
         let targets: Vec<usize> = j
             .u64_array("dspark_target_layer_ids")
-            .unwrap_or_else(|| panic!("config.json missing dspark_target_layer_ids"))
+            .ok_or("dspark: config.json missing required key dspark_target_layer_ids")?
             .into_iter()
             .map(|x| x as usize)
             .collect();
         let cfg = DsparkConfig {
-            block_size: req("dspark_block_size") as usize,
-            noise_token_id: req("dspark_noise_token_id") as u32,
+            block_size: req("dspark_block_size")? as usize,
+            noise_token_id: req("dspark_noise_token_id")? as u32,
             target_layer_ids: targets,
-            markov_rank: req("dspark_markov_rank") as usize,
+            markov_rank: req("dspark_markov_rank")? as usize,
             n_blocks: model.mc.nextn_predict_layers as usize,
         };
         // census pins (DSPARK-SEMANTICS §0/§1); refuse on drift
-        assert_eq!(cfg.block_size, 5, "dspark_block_size != census pin");
-        assert_eq!(
-            cfg.noise_token_id, 128799,
-            "dspark_noise_token_id != census pin"
-        );
-        assert_eq!(
-            cfg.target_layer_ids,
-            vec![40, 41, 42],
-            "target_layer_ids != census pin"
-        );
-        assert_eq!(cfg.markov_rank, 256, "dspark_markov_rank != census pin");
-        assert_eq!(cfg.n_blocks, 3, "drafter block count != derived 3");
+        fn pin<T: PartialEq + std::fmt::Debug>(
+            name: &str,
+            got: &T,
+            want: &T,
+        ) -> Result<(), String> {
+            if got == want {
+                Ok(())
+            } else {
+                Err(format!(
+                    "dspark: {name} = {got:?} drifts from the census pin {want:?}; refuse"
+                ))
+            }
+        }
+        pin("dspark_block_size", &cfg.block_size, &5)?;
+        pin("dspark_noise_token_id", &cfg.noise_token_id, &128799)?;
+        pin(
+            "dspark_target_layer_ids",
+            &cfg.target_layer_ids,
+            &vec![40, 41, 42],
+        )?;
+        pin("dspark_markov_rank", &cfg.markov_rank, &256)?;
+        pin("drafter block count (nextn layers)", &cfg.n_blocks, &3)?;
         // NextN-head refusal (prep §1.2): this module is NOT the preview MTP oracle
-        assert!(
-            model.st.raw("mtp.0.e_proj.weight").is_none(),
-            "mtp.0.e_proj present — NextN checkpoint, not a DSpark drafter; refuse"
-        );
-        cfg
+        if model.st.raw("mtp.0.e_proj.weight").is_some() {
+            return Err(
+                "dspark: mtp.0.e_proj present — NextN checkpoint, not a DSpark drafter; refuse"
+                    .into(),
+            );
+        }
+        Ok(cfg)
     }
 }
 
@@ -331,7 +347,7 @@ pub struct DsparkModule {
 
 impl DsparkModule {
     pub fn load(model: &Dsv4Model, model_dir: &Path, max_len: usize) -> Self {
-        let cfg = DsparkConfig::load(model_dir, model);
+        let cfg = DsparkConfig::load(model_dir, model).unwrap_or_else(|err| panic!("{err}"));
         let hidden = model.mc.n_embd as usize;
         let blocks = (0..cfg.n_blocks)
             .map(|k| DsparkBlockState::load(model, k, max_len))
@@ -687,5 +703,61 @@ mod tests {
     #[should_panic(expected = "start_pos > 0")]
     fn dspark_topk_idxs_refuses_prefill() {
         dspark_topk_idxs(128, 5, 0);
+    }
+
+    /// The serving loader propagates these with `?`, so a missing key or a census-pin drift
+    /// must come back as a named `Err`, never an unwind.
+    #[test]
+    fn config_refusals_are_named_errors() {
+        use crate::config::{HfConfig, ModelConfig};
+        use crate::safetensors::StModel;
+
+        let dir = std::env::temp_dir().join(format!("memra-dspark-config-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let header = r#"{"x":{"dtype":"F32","shape":[1],"data_offsets":[0,4]}}"#;
+        let mut shard = Vec::new();
+        shard.extend_from_slice(&(header.len() as u64).to_le_bytes());
+        shard.extend_from_slice(header.as_bytes());
+        shard.extend_from_slice(&0f32.to_le_bytes());
+        let shard_path = dir.join("model.safetensors");
+        std::fs::write(&shard_path, &shard).unwrap();
+        let mut mc = ModelConfig::from_hf(&HfConfig::parse(
+            r#"{"model_type":"qwen3","num_hidden_layers":1,"hidden_size":64,
+            "num_attention_heads":2,"num_key_value_heads":1,"head_dim":32,
+            "intermediate_size":128,"vocab_size":16,"max_position_embeddings":128}"#,
+        ));
+        mc.nextn_predict_layers = 3;
+        let model = Dsv4Model {
+            st: StModel::open(&shard_path).unwrap(),
+            mc,
+        };
+        let load = |json: &str| {
+            std::fs::write(dir.join("config.json"), json).unwrap();
+            DsparkConfig::load(&dir, &model)
+        };
+        let pinned = r#"{"dspark_block_size":5,"dspark_noise_token_id":128799,
+            "dspark_target_layer_ids":[40,41,42],"dspark_markov_rank":256}"#;
+
+        let cfg = load(pinned).unwrap();
+        assert_eq!(cfg.block_size, 5);
+        assert_eq!(cfg.n_blocks, 3);
+        let missing = load(
+            r#"{"dspark_noise_token_id":128799,
+            "dspark_target_layer_ids":[40,41,42],"dspark_markov_rank":256}"#,
+        )
+        .unwrap_err();
+        assert!(
+            missing.contains("missing required key dspark_block_size"),
+            "{missing}"
+        );
+        let drift = load(&pinned.replace("\"dspark_block_size\":5", "\"dspark_block_size\":4"))
+            .unwrap_err();
+        assert!(
+            drift.contains("dspark_block_size = 4 drifts from the census pin 5"),
+            "{drift}"
+        );
+        let layers = load(&pinned.replace("[40,41,42]", "[39,40,41]")).unwrap_err();
+        assert!(layers.contains("dspark_target_layer_ids"), "{layers}");
+        std::fs::remove_dir_all(&dir).ok();
     }
 }
