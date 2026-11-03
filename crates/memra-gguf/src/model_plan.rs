@@ -2467,7 +2467,10 @@ fn compile_mlp(cfg: &ModelConfig, index: u32, mtp: bool) -> Result<MlpPlan, Plan
         shared: (shared_intermediate_size > 0).then_some(SharedMlpPlan {
             // qwen4_exp: shared expert output scaled by sigmoid(shared_expert_gate(x))
             // (SEMANTICS.md §MoE — the Qwen3NextSparseMoeBlock convention qwen35moe rides).
-            gated: matches!(cfg.arch, Arch::Qwen35Moe | Arch::Qwen4Exp),
+            // Arch::Qwen35 reaches this MoE branch only through the `qwen3next` /
+            // `qwen3_next` alias of an expert-bearing hybrid, whose shared expert is the
+            // same sigmoid-gated block.
+            gated: matches!(cfg.arch, Arch::Qwen35 | Arch::Qwen35Moe | Arch::Qwen4Exp),
             intermediate_size: shared_intermediate_size,
         }),
         activation: activation(cfg, index, true),
@@ -3280,6 +3283,52 @@ mod tests {
         assert_eq!(moe.expert_count, 128);
         assert_eq!(moe.experts_per_token, 8);
         assert_eq!(moe.shared.as_ref().unwrap().intermediate_size, 512);
+    }
+
+    #[test]
+    fn qwen3next_alias_with_experts_plans_the_gated_shared_expert() {
+        // `qwen3_next` (HF) and `qwen3next` (GGUF) parse to the dense enum Arch::Qwen35 even
+        // when the file carries experts. The shared expert is still sigmoid-gated, so the
+        // plan and the tensor contract must declare its gate; otherwise bind refuses the
+        // checkpoint's `ffn_gate_inp_shexp` as an extra tensor.
+        let cfg = config(
+            r#"{"model_type":"qwen3_next","num_hidden_layers":4,"hidden_size":8,
+            "num_attention_heads":2,"num_key_value_heads":1,"head_dim":4,
+            "intermediate_size":16,"vocab_size":32,"max_position_embeddings":32,
+            "rms_norm_eps":0.000001,"full_attention_interval":2,
+            "linear_conv_kernel_dim":3,"linear_key_head_dim":4,
+            "linear_value_head_dim":4,"linear_num_key_heads":1,
+            "linear_num_value_heads":2,"num_experts":4,"num_experts_per_tok":2,
+            "moe_intermediate_size":8,"shared_expert_intermediate_size":8}"#,
+        );
+        assert_eq!(cfg.arch, Arch::Qwen35);
+        assert_eq!(
+            crate::model_packs::for_config(&cfg).unwrap().family,
+            "qwen35_moe"
+        );
+        let plan = crate::model_packs::compile_for_load(&cfg).unwrap();
+        for layer in &plan.layers {
+            let MlpPlan::Moe(moe) = &layer.mlp else {
+                panic!("expected MoE layer");
+            };
+            assert!(moe.shared.as_ref().unwrap().gated);
+        }
+        let contract = crate::tensor_contract::TensorContract::for_plan(
+            &plan,
+            crate::tensor_contract::CheckpointDialect::Gguf,
+            crate::tensor_contract::ContractOptions::default(),
+        )
+        .unwrap();
+        for index in 0..plan.layers.len() {
+            let name = format!("blk.{index}.ffn_gate_inp_shexp.weight");
+            assert!(
+                contract
+                    .requirements
+                    .iter()
+                    .any(|requirement| requirement.names == [name.as_str()]),
+                "contract must declare {name}"
+            );
+        }
     }
 
     #[test]
