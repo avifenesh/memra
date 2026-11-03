@@ -21699,6 +21699,13 @@ impl HybridModel {
         // The sequential no-cache/frozen staging oracle is f32. Use q8 only where sequential
         // also does: a local resident slab or a live SLRU dispatch.
         let grouped_q8 = moe_q8 && (slab_local.is_some() || use_cache);
+        // memra#147: a repacked (split-plane) resident slab is read through the q8 dots, whose
+        // `expert_dot_g` takes the V2 case when told `QT_NVFP4_V2`. The f32 activation reader
+        // (`qmatvec_view`) has no V2 case and refuses by name before any expert is dispatched.
+        let slab_rp = slab_local.is_some_and(|d| d.rp);
+        if slab_local.is_some() && !grouped_q8 {
+            crate::moe_rp_refuse(slab_rp, "moe_ffn_grouped per-expert slab read (f32)")?;
+        }
 
         // GPU scratch for staging (only allocated without a local slab or cache).
         let (mut scratch_g, mut scratch_u, mut scratch_d) = if slab_local.is_none() && !use_cache {
@@ -21795,7 +21802,7 @@ impl HybridModel {
                         m_e,
                         m.gate_exps.in_f,
                         m.gate_exps.out_f,
-                        gl.qtype,
+                        crate::rp_qt(slab_rp, gl.qtype),
                         gl.row_bytes,
                     )?;
                     let up = e.qmatvec_expert_q8(
@@ -21806,7 +21813,7 @@ impl HybridModel {
                         m_e,
                         m.up_exps.in_f,
                         m.up_exps.out_f,
-                        ul.qtype,
+                        crate::rp_qt(slab_rp, ul.qtype),
                         ul.row_bytes,
                     )?;
                     let mut act = e.uninit(m_e * n_ff_exp)?;
@@ -21830,7 +21837,7 @@ impl HybridModel {
                         m_e,
                         m.down_exps.in_f,
                         m.down_exps.out_f,
-                        dl.qtype,
+                        crate::rp_qt(slab_rp, dl.qtype),
                         dl.row_bytes,
                     )?
                 } else {
