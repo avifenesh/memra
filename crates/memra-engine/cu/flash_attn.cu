@@ -5838,7 +5838,7 @@ static __device__ __forceinline__ void fa_dec_v3_qquant(
         }                                                                                     \
     } while (0)
 
-template<int B1_UNROLL, bool HOIST_ALIGN = false, bool CAST_LD = false, bool PROF = false>
+template<int B1_UNROLL, bool PROF = false>
 static __device__ __forceinline__ void fa_dec_v3_walk_u(
         const uint8_t* __restrict__ K, const uint8_t* __restrict__ V,
         __nv_bfloat16* sV, int bt, int bsz,
@@ -5853,19 +5853,6 @@ static __device__ __forceinline__ void fa_dec_v3_walk_u(
     // head's row -> quant block bK = (l*dpl)>>5, byte offset (l*dpl)&31 in qs.
     const int bK   = (lane * dpl) >> 5;
     const int koff = (lane * dpl) & 31;
-    // HOIST_ALIGN (MEMRA_FA_HOIST=1): B1's aligned-word K read derives its alignment CLASS
-    // and the resulting branch structure from a per-key pointer, so the compiler cannot prove
-    // either loop-invariant and serializes the loads — which is why widening the unroll bought
-    // no memory-level parallelism (MEMRA_FA_UNROLL=8 measured -2.2%). The class IS invariant:
-    // k_tok_bytes % 4 == 0, so every key's qs pointer shares this lane's residue (the
-    // REVISION-4b comment states exactly this). Hoisting it here leaves a loop whose loads
-    // differ only by a constant stride. Same bytes, same funnel shifts, same dp4a order:
-    // BIT-IDENTICAL.
-    const unsigned sh8_h = HOIST_ALIGN
-        ? ((unsigned)(size_t)(K + (size_t)t_lo * k_tok_bytes
-                              + (size_t)(kblk0 + bK) * 34 + 2 + koff) & 3u) * 8u
-        : 0u;
-    const bool wide_h = HOIST_ALIGN && (dpl > 4);
     FA_PROF_STAMP(0);
     for (int t0 = t_lo; t0 < t_hi; t0 += FA_DEC_TILE) {
         const int nt = min(FA_DEC_TILE, t_hi - t0);
@@ -5919,36 +5906,14 @@ static __device__ __forceinline__ void fa_dec_v3_walk_u(
             // to fa_ld_int_2a's. The trailing word is loaded ONLY when the class
             // needs it (misaligned lanes) — never reads past the last block.
             const uint8_t* qsp = blk + 2 + koff;
-            const unsigned sh8 = HOIST_ALIGN ? sh8_h : ((unsigned)(size_t)qsp & 3u) * 8u;
+            const unsigned sh8 = ((unsigned)(size_t)qsp & 3u) * 8u;
             const uint8_t* ap  = (const uint8_t*)((size_t)qsp & ~(size_t)3);
             uint32_t w0, w1 = 0, w2 = 0;
-            // CAST_LD: `ap` is masked to a 4-byte boundary by construction, but memcpy from a
-            // uint8_t* leaves the compiler free to lower each word to FOUR byte loads (the rest
-            // of this file uses the typed form — see get_int_b4's __ldcs((const int*)p)). The
-            // typed load names the width; identical bytes either way.
-            if (CAST_LD) {
-                w0 = *reinterpret_cast<const uint32_t*>(ap);
-            } else {
-                memcpy(&w0, ap, 4);
-            }
-            if (HOIST_ALIGN && CAST_LD) {
-                if (wide_h) {
-                    w1 = *reinterpret_cast<const uint32_t*>(ap + 4);
-                    if (sh8_h) w2 = *reinterpret_cast<const uint32_t*>(ap + 8);
-                } else if (sh8_h) {
-                    w1 = *reinterpret_cast<const uint32_t*>(ap + 4);
-                }
-            } else if (HOIST_ALIGN) {
-                // Loop-invariant predicates: the compiler versions the loop instead of
-                // branching per key, so the loads pipeline.
-                if (wide_h) { memcpy(&w1, ap + 4, 4); if (sh8_h) memcpy(&w2, ap + 8, 4); }
-                else if (sh8_h) { memcpy(&w1, ap + 4, 4); }
-            } else {
-                if (dpl > 4) { memcpy(&w1, ap + 4, 4); if (sh8) memcpy(&w2, ap + 8, 4); }
-                else if (sh8) memcpy(&w1, ap + 4, 4);
-            }
+            memcpy(&w0, ap, 4);
+            if (dpl > 4) { memcpy(&w1, ap + 4, 4); if (sh8) memcpy(&w2, ap + 8, 4); }
+            else if (sh8) memcpy(&w1, ap + 4, 4);
             int sumi = __dp4a((int)__funnelshift_r(w0, w1, sh8), qq[0], 0);
-            if (HOIST_ALIGN ? wide_h : (dpl > 4))
+            if (dpl > 4)
                 sumi = __dp4a((int)__funnelshift_r(w1, w2, sh8), qq[1], sumi);
             const float part = __fmul_rn(__fmul_rn(dK, dQ), (float)sumi);
             const float score = warp_reduce_sum(part);
@@ -9034,7 +8999,7 @@ extern "C" __global__ void fa_decode_vec_q_v3_dcw_prof(
     const int bt  = wy * WARP_SZ + lane;
     const int bsz = WARP_SZ * gqa;
     const int kblk0 = (kv_head * head_dim) >> 5;
-    fa_dec_v3_walk_u<4, false, false, true>(Kv, Vv, sV, bt, bsz, qq, dQ, dpl, lane, head_dim,
+    fa_dec_v3_walk_u<4, true>(Kv, Vv, sV, bt, bsz, qq, dQ, dpl, lane, head_dim,
                    t_lo, t_hi, kblk0, k_tok_bytes, v_tok_bytes, m_i, l_i, acc, prof);
 
     #pragma unroll
