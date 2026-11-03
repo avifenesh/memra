@@ -302,7 +302,8 @@ pub static MLA_DSA_DECODE_DISPATCHES: std::sync::atomic::AtomicU64 =
 ///
 /// THE DOOR IS A LEVEL, not a boolean, and the level is the numeric-class boundary:
 ///
-/// * `0` (default) - nothing engages. Every kernel is the shipped one.
+/// * `0` - nothing engages. Every kernel is the shipped one. (The default on a non-sm_100a
+///   build, where the door cannot engage; an sm_100a build defaults to `2`.)
 /// * `1` - the BIT-IDENTICAL arms only: `memra_mla_attn_gathered_dsa_kernel` (same fold, same
 ///   lane stride, same shuffle tree; what changes is that each tile's KV rows are staged once
 ///   into shared memory with float4 loads and serve BOTH the score dot and the PV accumulate,
@@ -409,11 +410,11 @@ pub const MLA_DSA_ARM_T_MAX: usize = 8;
 ///   were not in the log this cell was set from, and the kernel is depth-flat.
 /// * `t_q=2,3,5..8` -> **0** (shipped). Unmeasured, and unmeasured behavior does not go on.
 ///
-/// The door is default OFF and arm >= 2 additionally needs level 2, so nothing here reaches a
-/// request without two deliberate acts. `dsa-decode-gate` FAILS with a `REGRESSION` line if a
-/// cell is slower than shipped by more than `MLA_DSA_REGRESSION_MARGIN` on a later run, so the
-/// next box run either confirms these cells or names the one to change. Cite the run here when
-/// a cell moves.
+/// On an sm_100a build the door defaults to level 2, so the `t_q=1` cell (32, a named numeric
+/// class) runs on every plain-decode request by default; every other build sees level 0.
+/// `dsa-decode-gate` FAILS with a `REGRESSION` line if a cell is slower than shipped by more than
+/// `MLA_DSA_REGRESSION_MARGIN` on a later run, so the next box run either confirms these cells or
+/// names the one to change. Cite the run here when a cell moves.
 pub const MLA_DSA_ATTN_ARM: [i32; MLA_DSA_ARM_T_MAX + 1] = [0, 32, 0, 0, 1, 0, 0, 0, 0];
 
 /// Widest query width at which the NAMED numeric class (`dsa-warp-online-f32`, arm >= 2) may be
@@ -520,7 +521,8 @@ pub(crate) fn mla_gathered_live_arm(t_q: usize, kv_rank: usize) -> Option<usize>
 pub static MLA_DSA_SELECT_DISPATCHES: std::sync::atomic::AtomicU64 =
     std::sync::atomic::AtomicU64::new(0);
 
-/// `MEMRA_B200_DSA_SELECT=1` (default OFF, read per call: the rollback seam), compile-time gated
+/// `MEMRA_B200_DSA_SELECT` (DEFAULT ON on sm_100a builds, see [`mla_dsa_select_on_from`]; `=0` is
+/// the rollback seam, read per call), compile-time gated
 /// to sm_100a builds exactly like its two siblings, so a 120a/90a/89 build sees no behaviour
 /// change from a var it cannot engage.
 ///
