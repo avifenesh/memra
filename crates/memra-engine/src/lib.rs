@@ -10433,8 +10433,10 @@ impl Engine {
     }
 
     /// MEMRA_KQRP seam: the K-quant (q4_K/q6_K) split-plane decode mirrors at model load.
-    /// Default follows the Q8RP convention — ON on the Hopper lane (80GB pays the mirror
-    /// VRAM), OFF elsewhere (a 24GB card cannot hold model + mirror + KV for the big trunks).
+    /// This returns the env and Hopper half of the default: `=1`/`=0` decide, unset is ON on
+    /// the Hopper lane. Off-Hopper the only caller (`kqrp_on` in hybrid.rs) ORs in the Q8RP
+    /// capacity rule — ON iff free VRAM covers the q4_K/q6_K mirror mass + 8 GiB, so a 24GB
+    /// card refuses by construction.
     pub fn kqrp_enabled() -> bool {
         static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
         *ON.get_or_init(|| match std::env::var("MEMRA_KQRP").as_deref() {
