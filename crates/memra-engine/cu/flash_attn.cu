@@ -5652,7 +5652,7 @@ extern "C" __global__ void fa_decode_vec_q_rows_v2(
 }
 
 // _dc (graph-capture) twin of fa_decode_vec_q_v2: T_kv comes from a device counter, n_splits is
-// sized from bucket_max at capture (same contract as fa_decode_vec_q_dc). Calls the SAME
+// sized from bucket_max at capture (the contract every _dc main shares). Calls the SAME
 // fa_dec_v2_walk body -> bit-identical to the eager v2 kernel for equal (t_kv, n_splits), which is
 // the graph-vs-eager identity the graph_decode_gate pins. Without this twin the captured graph
 // (a per-key _dc walk) would silently diverge from eager (the tile-batched v2 walk).
