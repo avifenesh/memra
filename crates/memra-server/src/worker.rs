@@ -25325,8 +25325,10 @@ fn prefix_insert_from_session(
     }
     let mut demote = |dead| host_demote_prefix_entry(engine, hpx, dead);
     // The snapshot is not allocated yet: on unified memory the guard reserves its room from the
-    // live reading (allocated = 0).
-    let budget = prefix_insert_budget(engine, prefix_cache_budget_bytes(), px.total_bytes, 0);
+    // live reading (allocated = 0). The budget is the insert wrappers' (floor + flex grant): a
+    // floor-only preflight would evict every borrowed entry before each publish, so MEMRA_KV_FLEX
+    // could never retain one.
+    let budget = prefix_insert_budget(engine, kv_flex_effective_budget(), px.total_bytes, 0);
     if !px.prepare_snapshot(
         &pool_key,
         prefix_snapshot_bytes(cache),
@@ -29983,7 +29985,7 @@ pub fn run(
                 let pending_seed = if admit_memory_cfg.armed {
                     seed_booking_cap(
                         pending_seed_uncapped,
-                        prefix_cache_budget_bytes(),
+                        kv_flex_effective_budget(),
                         px.total_bytes,
                     )
                 } else {
@@ -52490,6 +52492,31 @@ mod tests {
                 body.find("prefix_cache_budget_bytes()")
                     .is_none_or(|i| i > 900),
                 "{wrapper} must not read the bare floor beside the flexed budget"
+            );
+        }
+
+        // The snapshot preflight evicts to its budget before every publish, and the admission
+        // seed booking mirrors that budget. A floor-only preflight shed every borrowed entry
+        // first, so flex never retained one on this path.
+        for (site, end) in [
+            (
+                "fn prefix_insert_from_session(",
+                "match prefix_capture_off_tick(",
+            ),
+            (
+                "let pending_seed = if admit_memory_cfg.armed {",
+                "let primary_device",
+            ),
+        ] {
+            let start = prod.find(site).expect("budget site exists");
+            let body = &prod[start..start + prod[start..].find(end).expect("site end")];
+            assert!(
+                body.contains("kv_flex_effective_budget()"),
+                "{site} must use the flexed budget"
+            );
+            assert!(
+                !body.contains("prefix_cache_budget_bytes()"),
+                "{site} must not read the bare floor"
             );
         }
 
