@@ -1714,9 +1714,14 @@ arm and `nvfp4_routes_build_graph` with its `RoutesGraph`, the token-graph route
 (`routes_rank_section`, `routes_root_section`, `routes_arm_raw`), the decode-v2 token mirrors and
 their raw pointers, the routes workspace's graph staging and accessors, the graph-door exclusions
 in the prestage and selection-mirror paths, the `TokenGraphDoorOpen` restore refusal with its
-test, and the `MEMRA_TG_PROBE_LAYER` token-graph bisection dumps, whose subject arm no longer
-exists. No kernel or `docs/KERNELS.md` row goes with it. Git history is the archive. Ledger:
+test, and the token-graph bisection dumps (below), whose subject arm no longer exists. No kernel
+or `docs/KERNELS.md` row goes with it. Git history is the archive. Ledger:
 `VERDICT:step-tp-token-graph-door-removed` (darklanes `agent-knowledge/gpu/verdicts-ledger.md`).
+
+Retired with it, so the boot audit refuses a stale arm:
+
+- `MEMRA_TG_PROBE_LAYER`: the token-graph bisection layer index. It dumped the eager attention
+  output and the post-FFN residual at one layer, and its subject arm no longer exists.
 
 ## Removed doors, 2026-11-03 (the gemma graph decode's drain window, `MEMRA_GRAPH_DRAIN`)
 
