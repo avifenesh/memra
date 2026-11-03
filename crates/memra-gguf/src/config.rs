@@ -26,8 +26,9 @@ pub enum Arch {
     DeepSeekV4, // DeepSeek-V4-Flash: MLA-lineage attention + per-layer KV compressor +
     // DSA lightning indexer (21 of 43 layers), sqrtsoftplus-scored 256-expert MoE with
     // 3 leading HASH-routed layers (tid2eid, still full expert banks — NOT dense FFN),
-    // Sinkhorn hyper-connections (hc_*), 1 NextN/MTP layer. Loader lane only for now:
-    // no forward pass — census-gated safetensors ingest (research/dsv4-flash-loader-20260818).
+    // Sinkhorn hyper-connections (hc_*), 1 NextN/MTP layer. Census-gated safetensors ingest
+    // (research/dsv4-flash-loader-20260818); its dedicated engine is `Dsv4Gpu`, served by
+    // memra-server's dsv4 route (`dsv4_serve`), not by the generic HybridModel forward.
     Qwen4Exp, // Qwen3.8-Flash-Next (HF `qwen4_exp`): hybrid GDN 3:1 QSA (micro-block sparse
     // attention, MQA indexer 4Q/1K over 4-token blocks, budget 512 blocks), 512-expert
     // softmax top-k renormalized router (Qwen3NextTopKRouter — NOT sigmoid; the sigmoid
@@ -178,12 +179,14 @@ impl Arch {
         }
     }
 
-    /// DeepSeek-V4-Flash (HF `deepseek_v4`) — safetensors-first, loader lane only today.
+    /// DeepSeek-V4-Flash (HF `deepseek_v4`) — safetensors-first; runs on its dedicated
+    /// `Dsv4Gpu` engine, which memra-server's `dsv4_serve` route serves.
     pub fn is_dsv4(&self) -> bool {
         matches!(self, Arch::DeepSeekV4)
     }
 
-    /// Qwen3.8-Flash-Next (HF `qwen4_exp`) — safetensors-first, loader lane only today.
+    /// Qwen3.8-Flash-Next (HF `qwen4_exp`) — safetensors-first; runs on its dedicated
+    /// `Qwen4ExpGpu` engine (memra-engine), which memra-server does not serve.
     pub fn is_qwen4exp(&self) -> bool {
         matches!(self, Arch::Qwen4Exp)
     }
