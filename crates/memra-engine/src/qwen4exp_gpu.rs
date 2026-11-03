@@ -1517,7 +1517,7 @@ fn sel_v3_on() -> bool {
 // thing the box A/B has to check at t=1, where the down launch already runs only
 // out_f/4 * selected warps.
 // SCOPE (revuto, PR #27): the `dn` seam reaches ONLY `launch_nvfp4_sel_matvec`. The TP2
-// seg-C tail has a third launcher, `launch_nvfp4_sel_matvec_pack` (below, ~L19840), which
+// seg-C tail has a third launcher, `launch_nvfp4_sel_matvec_pack` (further down), which
 // hardcodes `qmatvec_nvfp4_modelopt_sel_f32_v3c` and never reads the seam — while that
 // same seg C's gate+up goes through the seam-aware `launch_nvfp4_sel_gu_silu`. Deliberate
 // for now: TP2 is not the shipped route on this family (depth regression, receipts in
