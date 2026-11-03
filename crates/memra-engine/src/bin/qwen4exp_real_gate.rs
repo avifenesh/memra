@@ -693,10 +693,6 @@ struct Args {
     /// full-vocab control, at `spec_k` over `--spec-ab`'s token count. The accept table
     /// the trim width is chosen from. Requires --draft-trim.
     trim_sweep: Vec<usize>,
-    /// Interleaved A/B of the VERIFY scan-chain segment graphs (`set_verify_graphs`):
-    /// (reps, tokens per arm) at `spec_k`. Chains must be identical across arms — a graph
-    /// replay is bit-identical to the eager chain by construction.
-    vgraph_ab: Option<(usize, usize)>,
     /// Interleaved A/B of the DEFERRED round readback (mtp11, `SpecOpts::defer`):
     /// (reps, tokens per arm) at `spec_k`, arms host / defer (+ defer-guard-sync when
     /// the p-min guard is armed). Chains AND admission counters must be identical
@@ -790,7 +786,7 @@ fn parse_args() -> Res<Args> {
                   [--owngen-greedy <n>] [--owngen-sampled <n>] [--owngen-seeds <n>] \
                   [--owngen-eos <id,id>] [--owngen-corpus-out <corpus-ids.tsv>] [--owngen-limit <n>] [--owngen-max-prompt <n>]] \
                  [--draft-trim <ranks.txt>] [--draft-trim-n <N>] [--trim-ab <reps>x<tokens>] \
-                 [--trim-sweep <n1,n2,..>] [--vgraph-ab <reps>x<tokens>] \
+                 [--trim-sweep <n1,n2,..>] \
                  [--mtp-dev1] [--spec-pmin <p>] [--spec-adapt <k_lo>] \
                  [--spec-dynk <window>,<thr>,<k_floor>] [--spec-trace <tokens>] \
                  [--spec-defer] [--spec-defer-guard-sync] [--defer-ab <reps>x<tokens>] \
@@ -844,7 +840,6 @@ fn parse_args() -> Res<Args> {
         draft_trim_n: 0,
         trim_ab: None,
         trim_sweep: Vec::new(),
-        vgraph_ab: None,
         defer_ab: None,
         verify_cost: None,
         verify_cost_depth: 0,
@@ -984,14 +979,6 @@ fn parse_args() -> Res<Args> {
                 args.draft_trim = Some(PathBuf::from(value("--draft-trim")?));
             }
             "--draft-trim-n" => args.draft_trim_n = value("--draft-trim-n")?.parse()?,
-            "--vgraph-ab" => {
-                args.opts.load_mtp = true;
-                let spec = value("--vgraph-ab")?;
-                let (reps, toks) = spec
-                    .split_once('x')
-                    .ok_or("--vgraph-ab wants <reps>x<tokens>")?;
-                args.vgraph_ab = Some((reps.parse()?, toks.parse()?));
-            }
             "--trim-sweep" => {
                 args.opts.load_mtp = true;
                 args.trim_sweep = value("--trim-sweep")?
@@ -3362,105 +3349,6 @@ fn main() -> Res<()> {
         model.set_draft_trim(true);
     }
 
-    // ------------------------------------------------- verify scan-chain graph A/B
-    // The verify chunk's per-GDN-layer scan run is a serially DEPENDENT launch chain, the
-    // one case the trunk's decode-graph receipt (+1.3% for 2,400 launches removed, mostly
-    // overlapped) does not cover. Interleaved, at whatever draft config is live, on the
-    // real prompt. A replay is bit-identical to the eager chain by construction, so the
-    // arms' chains must match — hard fail otherwise.
-    if let Some((reps, toks)) = args.vgraph_ab {
-        let ab_prompt: Vec<u32> = match args.prompts.as_ref() {
-            Some(path) => read_prompts(path)?
-                .first()
-                .map(|p| p.ids.clone())
-                .ok_or("empty prompts file")?,
-            None => return Err("--vgraph-ab needs --prompts (real prompts, perf-row law)".into()),
-        };
-        let k = args.spec_k;
-        let mut ab = header.clone();
-        ab.push_str(&format!(
-            "# vgraph-ab k={k} draft_head_rows={}: verify scan-chain segment graphs OFF vs ON, \
-             interleaved, fresh states per arm per rep\n\
-             rep\tarm\ttokens\tms_per_token\ttok_per_s\taccept_rate\tmean_accept_len\tverify_ms_share\n",
-            model.draft_logits_width()
-        ));
-        let mut arm_means: [Vec<f64>; 2] = [Vec::new(), Vec::new()];
-        let mut rep0: [Vec<u32>; 2] = [Vec::new(), Vec::new()];
-        for rep in 0..reps {
-            for (slot, on) in [(0usize, false), (1usize, true)] {
-                memra_engine::qwen4exp_gpu::set_verify_graphs(on);
-                let cap = ab_prompt.len() + toks + k + 4;
-                let mut ss = model.alloc_state(&engine, cap)?;
-                let mut ds = model.mtp_state(de, cap)?;
-                let report = model.spec_generate_ext(
-                    &engine,
-                    de,
-                    &ab_prompt,
-                    toks,
-                    k,
-                    &mut ss,
-                    &mut ds,
-                    None,
-                    args.spec_opts,
-                    None,
-                )?;
-                let decode_ms = report.total_ms - report.prefill_ms;
-                let per_tok = decode_ms / report.tokens.len().max(1) as f64;
-                arm_means[slot].push(per_tok);
-                ab.push_str(&format!(
-                    "{rep}\t{}\t{}\t{per_tok:.2}\t{:.2}\t{:.3}\t{:.2}\t{:.2}\n",
-                    if on { "vgraph" } else { "eager" },
-                    report.tokens.len(),
-                    1e3 / per_tok,
-                    report.accept_rate(),
-                    report.mean_accept_len(),
-                    report.verify_ms / decode_ms,
-                ));
-                if rep == 0 {
-                    rep0[slot] = report.tokens.clone();
-                }
-            }
-        }
-        for (slot, name) in [(0usize, "eager"), (1usize, "vgraph")] {
-            let v = &arm_means[slot];
-            let mean = v.iter().sum::<f64>() / v.len().max(1) as f64;
-            ab.push_str(&format!(
-                "# arm {name}\tmean_of_means_ms={mean:.2}\tmin={:.2}\tmax={:.2}\ttok_per_s={:.2}\n",
-                v.iter().copied().fold(f64::INFINITY, f64::min),
-                v.iter().copied().fold(f64::NEG_INFINITY, f64::max),
-                1e3 / mean,
-            ));
-        }
-        let eager_mean = arm_means[0].iter().sum::<f64>() / arm_means[0].len().max(1) as f64;
-        let graph_mean = arm_means[1].iter().sum::<f64>() / arm_means[1].len().max(1) as f64;
-        let first_div = rep0[0]
-            .iter()
-            .zip(&rep0[1])
-            .position(|(a, b)| a != b)
-            .map(|p| p as i64)
-            .unwrap_or(if rep0[0].len() == rep0[1].len() {
-                -1
-            } else {
-                rep0[0].len().min(rep0[1].len()) as i64
-            });
-        ab.push_str(&format!(
-            "# speedup_vgraph_over_eager\t{:.4}\n# rep0_eager_vs_vgraph_first_divergence\t{first_div}\n",
-            eager_mean / graph_mean
-        ));
-        let path = args.out.join(format!("ab-vgraph-k{k}-{}.tsv", args.label));
-        std::fs::write(&path, &ab)?;
-        println!("{ab}\n# vgraph-ab receipt: {}", path.display());
-        if first_div >= 0 {
-            eprintln!(
-                "vgraph-ab: the graph arm's chain DIVERGED from the eager arm at {first_div} — a \
-                 replay must be bit-identical to the chain it captured"
-            );
-            std::process::exit(1);
-        }
-        // Leave the seam at its shipped default for whatever follows.
-        memra_engine::qwen4exp_gpu::set_verify_graphs(false);
-    }
-
     // ---------------------------------------------------------------- defer-ab
     // Interleaved A/B of the DEFERRED round readback (mtp11): host chain vs the
     // deferred chain (+ the sequential-guard sub-arm when pmin is armed — the
@@ -3749,7 +3637,7 @@ fn main() -> Res<()> {
                 let _ = model.prefill(&engine, chunk, &mut st)?;
                 let dt = ms(at);
                 // c == 0 is the WARM chunk: a first chunk of a width allocates every
-                // workspace slot (the scan_warm lesson), so its cost is allocation, not
+                // workspace slot, so its cost is allocation, not
                 // program.
                 if c > 0 {
                     out.push(dt);
