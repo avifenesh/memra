@@ -52,6 +52,8 @@ crates/memra-engine/tests/glm5_dflash_session_gpu.rs:MEMRA_GLM5_MTP # test route
 crates/memra-engine/tests/glm5_dflash_session_gpu.rs:MEMRA_GLM5_DFLASH_GATE_RED # test red gate
 crates/memra-engine/tests/glm5_dflash_session_gpu.rs:MEMRA_GLM5_SPEC_FULLCOVER # test teardown
 crates/memra-engine/tests/glm5_dflash_session_gpu.rs:MEMRA_SPEC_PENALTY # test teardown
+crates/memra-engine/tests/gemma4_chunked_prime_gpu.rs:MEMRA_PP_STAGES # Pp2Door Drop restores the single-stage default placement, a topology knob, not a door's OFF arm
+crates/memra-engine/tests/gemma4_chunked_prime_gpu.rs:MEMRA_PP_DEVICES # Pp2Door Drop restores the default device list
 
 # Non-literal helper / RAII Drop guard cleanup
 crates/memra-engine/tests/glm5_matvec_doors_gpu.rs:key # with_flag / without_flag helper teardown
