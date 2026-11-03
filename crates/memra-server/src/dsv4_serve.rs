@@ -2070,16 +2070,12 @@ fn rows_step(
                             },
                         );
                     }
-                    let (rows, am) = if full {
-                        let (rows, am) = m.gpu.decode_rows_full(toks, states, &mut ws.0)?;
-                        (Some(rows), am)
-                    } else {
-                        (None, m.gpu.decode_rows_greedy(toks, states, &mut ws.0)?)
-                    };
-                    let mut rows = rows.map(Vec::into_iter);
+                    // A row asked for its logits (`full`); the argmax/draw case returned above.
+                    let (rows, am) = m.gpu.decode_rows_full(toks, states, &mut ws.0)?;
+                    let mut rows = rows.into_iter();
                     let mut out = Vec::with_capacity(toks.len());
                     for (i, (&tok, ask)) in am.iter().zip(asks).enumerate() {
-                        let row = rows.as_mut().and_then(Iterator::next);
+                        let row = rows.next();
                         out.push(match *ask {
                             RowAsk::Argmax => RowOut { tok, logits: None },
                             RowAsk::Logits => RowOut { tok, logits: row },
