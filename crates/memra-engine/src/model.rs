@@ -626,6 +626,26 @@ pub fn full_prec_enabled() -> bool {
     })
 }
 
+/// How `GpuTensor::load_from_source` uploads a float view: f32, or raw BF16 for a 2-D BF16 matrix
+/// of at least `bf16_resident_min_elements` under `MEMRA_FULL_PREC` (1M: only the big trunk
+/// matrices need the 2 B/w saving; norms and gate_inp stay f32) or `MEMRA_BF16_MMV` (2M: the MoE
+/// router, 288x4096 = 1.18M, is consumed via float_data() and its logits pick the routes, so it
+/// stays exact f32 and routing never moves). The resident-expert budget sizes the trunk with the
+/// same law (`memra_gguf::source::safetensors_resident_bytes`).
+pub(crate) fn float_upload() -> memra_gguf::source::FloatUpload {
+    let full_precision = full_prec_enabled();
+    memra_gguf::source::FloatUpload {
+        full_precision,
+        bf16_resident_min_elements: if full_precision {
+            Some(1_000_000)
+        } else if crate::Engine::bf16_mmv_on() {
+            Some(2_000_000)
+        } else {
+            None
+        },
+    }
+}
+
 /// LOADER-LAW allowlist (loadersweep audit 2026-07-08): 2D Float tensors that are DELIBERATELY
 /// Float despite being matmul-class. Every entry needs an audit rationale — this list silences
 /// the tripwire below, so an unjustified entry re-opens the trap.
@@ -1279,18 +1299,10 @@ impl GpuTensor {
                 // owning-stage attention, dense FFN, router) with the one-block-per-row bf16
                 // matvec at decode m=1 and the chunked expansion path at m>1. Numeric-class
                 // door, run-gen argmax gate + boot battery (see docs/FLAGS.md).
-                if full_prec_enabled() || crate::Engine::bf16_mmv_on() {
+                if let Some(threshold) = float_upload().bf16_resident_min_elements {
                     // Only bf16 sources take the resident-bf16 arm; F16/F32 fall through to f32 Float
-                    // (exact, and tiny/absent in the bf16 ST checkpoints this mode targets). The 1M
-                    // threshold keeps small tensors (norms, gate_inp) on the proven f32 path — only
-                    // the big trunk matrices need the 2 B/w VRAM saving. The MMV door uses 2M:
-                    // the MoE router (288x4096 = 1.18M) is consumed via float_data() and its
-                    // logits pick the routes — it stays exact-f32 so routing never moves.
-                    let threshold = if full_prec_enabled() {
-                        1_000_000
-                    } else {
-                        2_000_000
-                    };
+                    // (exact, and tiny/absent in the bf16 ST checkpoints this mode targets). The
+                    // threshold (`float_upload`) keeps small tensors on the proven f32 path.
                     if v.ggml_type == GgmlType::BF16 && v.ne.len() == 2 && n >= threshold {
                         let data = e.htod_bytes(&v.bytes)?; // raw bf16 bytes, u16 LE pairs
                         // LOAD-TIME ENGAGEMENT RECEIPT. This is the only DOOR-GATED producer of
@@ -1689,7 +1701,7 @@ impl Model {
                 .output_head_ggml_name()
                 .map_err(std::io::Error::other)?,
         )?;
-        let mut resident = crate::hybrid::ResidentPlan::unsharded(e, src, &cfg);
+        let mut resident = crate::hybrid::ResidentPlan::unsharded(e, src, Some(&binding), &cfg)?;
         let mut step_runtimes = crate::hybrid::StepParallelRuntimeRegistry::default();
 
         let mut layers = Vec::with_capacity(plan.layers.len());
