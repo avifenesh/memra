@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import argparse
 from dataclasses import dataclass, field
+import hashlib
 import json
 from pathlib import Path, PurePosixPath
 import re
@@ -217,7 +218,7 @@ def _template(value, match, path):
     return value.format(**fields)
 
 
-def classify_file(change, rules, arch, *, owners=None, crate_inputs=None, linked=None):
+def classify_file(change, rules, arch, *, owners=None, crate_inputs=None, linked=None, same_registry=False):
     """One path -> {class, targets, perf, defaults, pack, route, why, linked}.
 
     linked: the workspace packages linked into the battery binaries (link_closure); None means
@@ -228,6 +229,8 @@ def classify_file(change, rules, arch, *, owners=None, crate_inputs=None, linked
               "devices": [], "pack": None, "route": None, "why": "no rule matches this path", "linked": True}
     if path.startswith(PUBLICATION) or path == "research/INDEX.md":
         return {**result, "class": "research", "why": "qualification metadata (excluded from source inputs)"}
+    if path == FLAGS_MD and same_registry and change.old_mode == change.new_mode == "100644":
+        return {**result, "class": "docs", "why": "FLAGS.md prose: the env registry build.rs compiles from it is unchanged"}
     package = _package_of(path, owners)
     if "120000" in (change.old_mode, change.new_mode) and (package is not None or not path.startswith(("research/", "docs/"))):
         return {**result, "why": "symlink: its target is a source input the diff does not show"}
@@ -341,6 +344,105 @@ def link_closure(read, root=BATTERY_PACKAGE):
     return names
 
 
+# docs/FLAGS.md is compiled into the engine only through the env registry build.rs generates from
+# it (generate_env_registry: legal names, prefixes and retired doors; the owned families come
+# from the sources). An edit that leaves that registry as it was compiles to the same program.
+# flags_registry() is a port of the generator pinned to its source: when build.rs's
+# generate_env_registry differs from the pinned hash, the port is not trusted and FLAGS.md keeps
+# its crate class.
+FLAGS_MD = "docs/FLAGS.md"
+REGISTRY_GENERATOR_SHA = "18bf048eb85d32519550"
+_RUST_WS = set("\t\n\x0b\x0c\r \x85\xa0\u1680\u2028\u2029\u202f\u205f\u3000") | {chr(c) for c in range(0x2000, 0x200B)}
+
+
+def registry_generator_sha(build_rs):
+    match = re.search(r"^fn generate_env_registry\(.*?^\}$", build_rs or "", re.M | re.S)
+    return hashlib.sha256(match.group(0).encode()).hexdigest()[:20] if match else None
+
+
+def flags_registry(text):
+    """(legal names, prefixes, retired (name, ledger heading)) as build.rs derives them."""
+    def trim(s):
+        i, j = 0, len(s)
+        while i < j and s[i] in _RUST_WS:
+            i += 1
+        while j > i and s[j - 1] in _RUST_WS:
+            j -= 1
+        return s[i:j]
+
+    def tokens(cell):
+        out, i = [], 0
+        while (start := cell.find("MEMRA_", i)) >= 0:
+            end = start
+            while end < len(cell) and ("A" <= cell[end] <= "Z" or "0" <= cell[end] <= "9" or cell[end] == "_"):
+                end += 1
+            prefix = end < len(cell) and cell[end] == "*"
+            stem = cell[start:end].rstrip("_")
+            if len(stem) > len("MEMRA"):
+                out.append((stem + "_" if prefix else stem, prefix))
+            i = max(end, start + 1)
+        return out
+
+    def heading(line):
+        level = len(line) - len(line.lstrip("#"))
+        if level == 0 or level > 6 or not line[level:].startswith(" "):
+            return None
+        return level, trim(line[level:])
+
+    lines = text.split("\n")
+    if lines and lines[-1] == "":
+        lines.pop()
+    defs, legal, prefixes, ledger = set(), set(), set(), {}
+    removed, in_block = None, False
+    for line in (l[:-1] if l.endswith("\r") else l for l in lines):
+        hd = heading(line)
+        if hd is not None:
+            level, head = hd
+            in_block = False
+            if removed is not None and level > removed[0] and not head.startswith("Removed"):
+                pass
+            elif head.startswith("Removed"):
+                removed = (level, head)
+            else:
+                removed = None
+            continue
+        if removed is not None:
+            starts = line.startswith(("- ", "| ", "`MEMRA_"))
+            continues = in_block and line.startswith(" ") and trim(line) != ""
+            if starts or continues:
+                in_block = True
+                for name, prefix in tokens(line):
+                    if not prefix:
+                        ledger.setdefault(name, removed[1])
+            else:
+                in_block = False
+            continue
+        for name, prefix in tokens(line):
+            (prefixes if prefix else legal).add(name)
+        if line.startswith("| "):
+            cells = line[2:].split("|")
+            second = trim(cells[1] if len(cells) > 1 else "").lstrip("*")
+            removed_row = second.startswith("REMOVED")
+            for name, prefix in tokens(cells[0]):
+                if prefix:
+                    continue
+                if removed_row:
+                    ledger.setdefault(name, "row marked " + second.rstrip("*"))
+                else:
+                    defs.add(name)
+    retired = sorted((n, h) for n, h in ledger.items() if n not in defs)
+    return sorted(legal - {n for n, _ in retired}), sorted(prefixes), retired
+
+
+def same_flags_registry(repo, base, head):
+    """True when FLAGS.md changed but the registry build.rs compiles from it did not."""
+    build_rs = read_blob(repo, head, BUILD_RS)
+    if registry_generator_sha(build_rs) != REGISTRY_GENERATOR_SHA:
+        return False
+    old, new = read_blob(repo, base, FLAGS_MD), read_blob(repo, head, FLAGS_MD)
+    return old is not None and new is not None and flags_registry(old) == flags_registry(new)
+
+
 def _input_match(path, pattern):
     import fnmatch
     return (path == pattern or fnmatch.fnmatchcase(path, pattern)
@@ -371,7 +473,8 @@ def parse_trailers(messages, arch):
     return declared, reasons, missing
 
 
-def classify(changes, rules, arch, *, owners=None, crate_inputs=None, declared=None, refiner=None, linked=None):
+def classify(changes, rules, arch, *, owners=None, crate_inputs=None, declared=None, refiner=None, linked=None,
+             same_registry=False):
     """Changes -> impact: the cells, the per-file classes and what stayed uncovered.
 
     refiner (tools/impact_map/gate.py) narrows a Rust/CUDA program file from the items the diff
@@ -380,8 +483,8 @@ def classify(changes, rules, arch, *, owners=None, crate_inputs=None, declared=N
 
     linked: the packages linked into the battery binaries (link_closure). A cell records whether
     any of its paths is linked; requirements() asks for the battery and the perf A/B only then."""
-    files = [classify_file(c, rules, arch, owners=owners, crate_inputs=crate_inputs, linked=linked)
-             for c in changes]
+    files = [classify_file(c, rules, arch, owners=owners, crate_inputs=crate_inputs, linked=linked,
+                           same_registry=same_registry) for c in changes]
     if refiner is not None and refiner.active():
         files = [refiner.file(f) for f in files]
     covered = {name for name, pack in rules.get("pack", {}).items() if pack.get("roster")}
@@ -692,8 +795,9 @@ def impact_between(repo, base, head, rules_text=None, use_map=True, map_ref=None
             refiner = impact_gate.Refiner(repo, base, head, rules, arch, map_ref=map_ref, map_data=map_data)
         except impact_gate.MapError as error:
             raise ImpactError(str(error)) from error
+    same_registry = any(c.path == FLAGS_MD for c in changes) and same_flags_registry(repo, base, head)
     impact = classify(changes, rules, arch, owners=owners, crate_inputs=inputs, declared=declared, refiner=refiner,
-                      linked=battery_linked(repo, base, head))
+                      linked=battery_linked(repo, base, head), same_registry=same_registry)
     impact["declared_reasons"] = reasons
     impact["base"], impact["head"] = base, head
     impact["map"] = refiner.report() if refiner is not None else None
