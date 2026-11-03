@@ -4867,6 +4867,12 @@ impl Engine {
         self.verify_exact.load(std::sync::atomic::Ordering::Relaxed)
     }
 
+    /// MEMRA_DECODE_TC=1 research arm (default OFF, decide-by 2026-11-17): see decode_batch.rs.
+    pub fn decode_tc_on() -> bool {
+        static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+        *ON.get_or_init(|| std::env::var("MEMRA_DECODE_TC").as_deref() == Ok("1"))
+    }
+
     /// Widest m the group3/group4 doors take: 16, or 32 inside the decode-wide scope.
     pub(crate) fn group_tier_max(&self) -> usize {
         if self.decode_wide.load(std::sync::atomic::Ordering::Relaxed) {
@@ -19048,6 +19054,7 @@ impl Engine {
     ) -> Result<Option<Vec<CudaSlice<f32>>>, Box<dyn std::error::Error>> {
         use crate::model::GpuTensor;
         if !on
+            || (Self::decode_tc_on() && m >= 16 && !self.verify_exact_on())
             || !(2..=self.group_tier_max()).contains(&m)
             || std::env::var("MEMRA_NO_BATCHED").is_ok()
             || (m > 4 && !Self::b8_enabled())
