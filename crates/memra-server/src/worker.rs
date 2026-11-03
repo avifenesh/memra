@@ -27090,7 +27090,7 @@ struct Session {
     spec_rounds: u64,
     sampler: Sampler,
     /// Whether penalized SAMPLED rows of this session may take the device penalty path.
-    /// Resolved ONCE at admit from `serve_devpenalty_for(engine, lm.model.cfg.arch)` — the
+    /// Resolved ONCE at admit from `serve_devpenalty_for(engine, &lm.model.plan)` — the
     /// default is keyed on the (model class, card class) pair, so it has to be read where the
     /// loaded model and the device are in scope, and the value cannot drift mid-request.
     devpenalty: bool,
@@ -40749,7 +40749,7 @@ fn admit(
         lane: req.lane,
         cache,
         sampler,
-        devpenalty: serve_devpenalty_for(engine, &lm.model.cfg.arch),
+        devpenalty: serve_devpenalty_for(engine, &lm.model.plan),
         spec,
         mtp_prime: None,
         oom_retries: req_oom_retries,
@@ -42292,7 +42292,10 @@ fn advance_token_emit(
 /// runs GB10, which carries no receipt for this pair.
 ///
 /// Qualified, default ON:
-/// - `Arch::Qwen35` (Qwen3.8-27B is this class) on the RTX 5090 card class.
+/// - the dense `Arch::Qwen35` class (Qwen3.8-27B; no MoE MLP in the plan) on the RTX 5090 card
+///   class. The MoE test reads the plan because the arch enum alone does not name the class:
+///   `qwen3next` GGUFs that carry experts parse to `Arch::Qwen35` too (config.rs alias), and
+///   that MoE program is not the measured one.
 ///   `research/devpenalty-qwen35-20260909/`, one
 ///   RTX 5090 (575 W, driver 580.95.05), interleaved OFF/ON, three boots per arm, five reps,
 ///   the vendor NON-THINKING shape (`presence_penalty 1.5`, `top_k 20`): aggregate decode
@@ -42301,7 +42304,7 @@ fn advance_token_emit(
 ///   with no penalty never enter this path in either arm) and greedy output is
 ///   byte-identical across all six boots in both penalty shapes.
 ///
-/// - `Arch::Qwen35` on the RTX PRO 6000 Blackwell card class. Qwen3.8-27B, vendor non-thinking
+/// - the dense `Arch::Qwen35` class on the RTX PRO 6000 Blackwell card class. Qwen3.8-27B, vendor non-thinking
 ///   shape: Server Edition plain c1/c16 46.49 -> 68.66 / 94.95 -> 300.93 tok/s
 ///   (`research/pro-device-penalty-sampling-20260824/`, darklanes verdict `q38-devpenalty-flip`);
 ///   Workstation Edition aggregate c8 155.16 -> 294.05 tok/s, six interleaved boots (darklanes
@@ -42310,13 +42313,14 @@ fn advance_token_emit(
 /// Off by default: every other (model class, card class) pair, GB10 included. Ornith
 /// (`Arch::Qwen35Moe`) on the PRO 6000 Server Edition has a measured win in the same receipt
 /// but no default of its own yet.
-fn serve_devpenalty_from(v: Option<&str>, device_name: &str, arch: &Arch) -> bool {
+fn serve_devpenalty_from(v: Option<&str>, device_name: &str, arch: &Arch, moe: bool) -> bool {
     use memra_engine::parallel::HardwareTarget;
     match v.map(str::trim) {
         Some("1") => true,
         Some("0") => false,
         _ => {
             matches!(arch, Arch::Qwen35)
+                && !moe
                 && matches!(
                     HardwareTarget::from_device_name(device_name),
                     Ok(HardwareTarget::Rtx5090 | HardwareTarget::RtxPro6000Blackwell)
@@ -42325,14 +42329,26 @@ fn serve_devpenalty_from(v: Option<&str>, device_name: &str, arch: &Arch) -> boo
     }
 }
 
-/// [`serve_devpenalty_from`] against this process's environment and the worker's device. The
-/// env read is cached and the device name is one driver query, so this is called per session
-/// at admit, never per token. An unreadable name classifies as no card and keeps the default off.
-fn serve_devpenalty_for(engine: &Engine, arch: &Arch) -> bool {
+/// Does the plan's trunk route any layer through an MoE MLP? The devpenalty class test.
+fn devpenalty_plan_moe(plan: &memra_gguf::model_plan::ModelPlan) -> bool {
+    plan.trunk_operations()
+        .contains(&memra_gguf::model_plan::OperationKind::MoeMlp)
+}
+
+/// [`serve_devpenalty_from`] against this process's environment, the worker's device and the
+/// loaded model's plan. The env read is cached and the device name is one driver query, so this
+/// is called per session at admit, never per token. An unreadable name classifies as no card
+/// and keeps the default off.
+fn serve_devpenalty_for(engine: &Engine, plan: &memra_gguf::model_plan::ModelPlan) -> bool {
     static ENV: std::sync::OnceLock<Option<String>> = std::sync::OnceLock::new();
     let env = ENV.get_or_init(|| std::env::var("MEMRA_SERVE_DEVPENALTY").ok());
     let device = engine.ctx().name().unwrap_or_default();
-    serve_devpenalty_from(env.as_deref(), &device, arch)
+    serve_devpenalty_from(
+        env.as_deref(),
+        &device,
+        &plan.arch,
+        devpenalty_plan_moe(plan),
+    )
 }
 
 #[cfg(test)]
@@ -42479,7 +42495,7 @@ mod dspark_restore_default_tests {
 
 #[cfg(test)]
 mod serve_devpenalty_default_tests {
-    use super::serve_devpenalty_from as door;
+    use super::{devpenalty_plan_moe, serve_devpenalty_from as door};
     use memra_gguf::config::Arch;
 
     const RTX5090: &str = "NVIDIA GeForce RTX 5090";
@@ -42494,30 +42510,31 @@ mod serve_devpenalty_default_tests {
 
     #[test]
     fn unset_follows_the_qualified_pair() {
-        assert!(door(None, RTX5090, &Arch::Qwen35));
+        assert!(door(None, RTX5090, &Arch::Qwen35, false));
         for card in PRO6000 {
-            assert!(door(None, card, &Arch::Qwen35), "{card:?}");
-            assert!(!door(None, card, &Arch::Qwen35Moe), "{card:?}");
+            assert!(door(None, card, &Arch::Qwen35, false), "{card:?}");
+            assert!(!door(None, card, &Arch::Qwen35Moe, true), "{card:?}");
+            assert!(!door(None, card, &Arch::Qwen35, true), "{card:?}");
         }
         // qualified model class, unqualified card
         for card in UNQUALIFIED_CARDS {
-            assert!(!door(None, card, &Arch::Qwen35), "{card:?}");
+            assert!(!door(None, card, &Arch::Qwen35, false), "{card:?}");
         }
         // qualified card, unqualified model class
-        assert!(!door(None, RTX5090, &Arch::Qwen3));
-        assert!(!door(None, RTX5090, &Arch::Qwen3Moe));
-        assert!(!door(None, RTX5090, &Arch::Qwen35Moe));
-        assert!(!door(None, RTX5090, &Arch::Gemma4));
+        assert!(!door(None, RTX5090, &Arch::Qwen3, false));
+        assert!(!door(None, RTX5090, &Arch::Qwen3Moe, false));
+        assert!(!door(None, RTX5090, &Arch::Qwen35Moe, false));
+        assert!(!door(None, RTX5090, &Arch::Gemma4, false));
     }
 
     #[test]
     fn explicit_values_win_on_every_pair() {
         for arch in [&Arch::Qwen35, &Arch::Qwen3Moe, &Arch::Gemma4] {
             for card in std::iter::once(RTX5090).chain(UNQUALIFIED_CARDS) {
-                assert!(door(Some("1"), card, arch));
-                assert!(door(Some(" 1 "), card, arch));
-                assert!(!door(Some("0"), card, arch));
-                assert!(!door(Some(" 0 "), card, arch));
+                assert!(door(Some("1"), card, arch, false));
+                assert!(door(Some(" 1 "), card, arch, false));
+                assert!(!door(Some("0"), card, arch, false));
+                assert!(!door(Some(" 0 "), card, arch, false));
             }
         }
     }
@@ -42525,12 +42542,33 @@ mod serve_devpenalty_default_tests {
     #[test]
     fn other_spellings_fall_back_to_the_pair_default() {
         for v in ["", "true", "on", "yes", "2"] {
-            assert!(door(Some(v), RTX5090, &Arch::Qwen35));
-            assert!(!door(Some(v), RTX5090, &Arch::Qwen3Moe));
+            assert!(door(Some(v), RTX5090, &Arch::Qwen35, false));
+            assert!(!door(Some(v), RTX5090, &Arch::Qwen3Moe, false));
             for card in UNQUALIFIED_CARDS {
-                assert!(!door(Some(v), card, &Arch::Qwen35), "{card:?}");
+                assert!(!door(Some(v), card, &Arch::Qwen35, false), "{card:?}");
             }
         }
+    }
+
+    /// A qwen3next-named MoE checkpoint parses to the dense enum Arch::Qwen35, so an arch-only
+    /// key would default devpenalty ON for it on a qualified card; the plan's MoE MLP keeps the
+    /// unqualified class off.
+    #[test]
+    fn qwen3next_moe_plan_keeps_the_default_off() {
+        let cfg = memra_gguf::config::ModelConfig::from_hf(&memra_gguf::config::HfConfig::parse(
+            r#"{"model_type":"qwen3_next","num_hidden_layers":4,"hidden_size":8,
+            "num_attention_heads":2,"num_key_value_heads":1,"head_dim":4,
+            "intermediate_size":16,"vocab_size":32,"max_position_embeddings":32,
+            "rms_norm_eps":0.000001,"full_attention_interval":2,
+            "linear_conv_kernel_dim":3,"linear_key_head_dim":4,
+            "linear_value_head_dim":4,"linear_num_key_heads":1,
+            "linear_num_value_heads":2,"num_experts":4,"num_experts_per_tok":2,
+            "moe_intermediate_size":8,"shared_expert_intermediate_size":8}"#,
+        ));
+        let plan = memra_gguf::model_packs::compile_for_load(&cfg).unwrap();
+        assert_eq!(plan.arch, Arch::Qwen35);
+        assert!(devpenalty_plan_moe(&plan));
+        assert!(!door(None, RTX5090, &plan.arch, devpenalty_plan_moe(&plan)));
     }
 }
 
