@@ -1,10 +1,11 @@
 //! Explicit DSV4 multi-card topology admission.
 //!
-//! PP+EP is the shipped correctness reference.  The TP/EP topology is a
-//! separate program: every rank must own every trunk layer's attention/router
-//! state and the expert adapter must return a rank-order down partial.  Keeping
-//! this admission contract separate prevents a requested TP/EP experiment from
-//! silently running the old PP walk.
+//! TP/EP is the served two-card default since memra #710 (2026-09-25), and PP-2
+//! (`MEMRA_DSV4_TOPOLOGY=pp`) is the rollback program.  The two are separate programs:
+//! under TP/EP every rank must own every trunk layer's attention/router state and the
+//! expert adapter must return a rank-order down partial.  Keeping this admission
+//! contract separate prevents a TP/EP load from silently running the PP walk, or the
+//! reverse.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
