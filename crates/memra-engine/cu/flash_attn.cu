@@ -7816,6 +7816,70 @@ extern "C" __global__ void fa_decode_vec_q_seqs_v4(
     }
 }
 
+// SEQS DEEP twin (batch-spec 2026-11-03, GB10 plain-decode lever 3): the batched tick's
+// z = sequence frame of fa_decode_vec_q_seqs_v4 around fa_v4_deep_walk, the walk the B=1 eager
+// arm already runs (fa_decode_vec_q_v4_deep: de-conflicted K-tile rows + the tile+2 L2
+// prefetch, every value and accumulation order the v4 program's). Same split partition (the
+// ONE-PARTITION LAW from the per-seq T_kv), same [B, n_head, n_splits_max] partial layout, so
+// each sequence's partials are bit-identical to its eager v4/v4_deep program. Default KV
+// module only (hd256 q8_0 K / q5_1 V), as the eager deep pick.
+extern "C" __global__ void fa_decode_vec_q_seqs_v4_deep(
+        const float* __restrict__ Q,
+        const unsigned long long* __restrict__ kv_ptrs,
+        const int* __restrict__ pos_seq,
+        float* __restrict__ partO, float* __restrict__ partM, float* __restrict__ partL,
+        int head_dim, int n_head, int n_head_kv,
+        float scale, int n_splits_max, int split_keys,
+        long k_tok_bytes, long v_tok_bytes)
+{
+    const int z       = blockIdx.z;
+    const uint8_t* K  = (const uint8_t*)kv_ptrs[2 * z];
+    const uint8_t* V  = (const uint8_t*)kv_ptrs[2 * z + 1];
+    const int T_kv    = pos_seq[z] + 1;
+    const int kv_head = blockIdx.x;
+    const int split   = blockIdx.y;
+    if (kv_head >= n_head_kv || split >= n_splits_max) return;
+    const int gqa  = n_head / n_head_kv;
+    const int wy   = threadIdx.y;
+    const int lane = threadIdx.x;
+    if (wy >= gqa) return;
+    const int head = kv_head * gqa + wy;
+    const int dpl  = head_dim >> 5;
+
+    const int ns_eff = max(1, (T_kv + split_keys - 1) / split_keys);
+    const int per  = (T_kv + ns_eff - 1) / ns_eff;
+    const int t_lo = split * per;
+    const int t_hi = (split < ns_eff) ? min(T_kv, t_lo + per) : t_lo;
+
+    extern __shared__ unsigned char sm_raw_v4sd[];
+    fa_v4_deep_smem* sm = (fa_v4_deep_smem*)sm_raw_v4sd;
+    fa_v4_sv_t* sV = (fa_v4_sv_t*)(sm_raw_v4sd + sizeof(fa_v4_deep_smem));
+
+    fa_v4_deep_stage_q(Q, ((size_t)z * n_head + head) * head_dim, scale, lane, wy, sm);
+    __syncthreads();
+
+    float m_i = NEG_INF, l_i = 0.0f;
+    float acc[FA_DEC_MAX_DPL];
+    #pragma unroll
+    for (int i = 0; i < FA_DEC_MAX_DPL; ++i) acc[i] = 0.0f;
+    const int kblk0 = (kv_head * head_dim) >> 5;
+
+    fa_v4_deep_walk(K, V, sm, sV, t_lo, t_hi, gqa, wy, lane,
+                    kblk0, k_tok_bytes, v_tok_bytes, m_i, l_i, acc);
+
+    #pragma unroll
+    for (int i = 0; i < FA_DEC_MAX_DPL; ++i) {
+        if (i < dpl) {
+            int d = (lane << 1) + ((i >> 1) << 6) + (i & 1);
+            partO[(((size_t)z * n_head + head) * n_splits_max + split) * head_dim + d] = acc[i];
+        }
+    }
+    if (lane == 0) {
+        partM[((size_t)z * n_head + head) * n_splits_max + split] = m_i;
+        partL[((size_t)z * n_head + head) * n_splits_max + split] = l_i;
+    }
+}
+
 // SEQS combine: grid = (n_head, B). Sequence z merges its OWN n_splits_z (the same
 // ceil(T_kv_z/split_keys) formula the seqs kernel used) in the SAME ascending-split order
 // as fa_decode_combine_f32 — identical values, identical fmax/sum order; only the partial

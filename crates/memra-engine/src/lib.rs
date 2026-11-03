@@ -30742,9 +30742,10 @@ impl Engine {
         let (nspm, spk) = (n_splits_max as i32, split_keys as i32);
         let (ktb, vtb) = (k_tok_bytes as i64, v_tok_bytes as i64);
         let gqa = (n_head / n_head_kv).max(1) as u32;
-        let f = self.func("fa_decode_vec_q_seqs_v4");
-        // fa_v4_smem (11520B) + sV bf16 tile — the v4 eager arm's sizing on the default module.
-        let shmem = (11520 + 32 * head_dim * 2) as u32;
+        // The deep twin (fa_v4_deep_walk: padded K-tile rows + tile+2 L2 prefetch, the eager
+        // B=1 arm's walk) on the default module: fa_v4_deep_smem (12160B) + sV bf16 tile.
+        let f = self.func("fa_decode_vec_q_seqs_v4_deep");
+        let shmem = (12160 + 32 * head_dim * 2) as u32;
         use cudarc::driver::sys::CUfunction_attribute_enum as A;
         f.set_attribute(
             A::CU_FUNC_ATTRIBUTE_MAX_DYNAMIC_SHARED_SIZE_BYTES,
