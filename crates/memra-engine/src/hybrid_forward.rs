@@ -15936,23 +15936,7 @@ impl HybridModel {
             .sigmoid_router()
             .ok_or("glm5 TP expert split requires the sigmoid router")?;
         let (gate_w, bias, active) = router;
-        // MEMRA_ROUTER_FUSED: GEMV and top-k in one launch, bitwise the same selection.
-        let (sel_d, selw_d) = if crate::router_fused_on() && n_expert <= 512 {
-            let (_logits, s, wsel) = dev.router_sigmoid_topk_fused(
-                gate_w,
-                z,
-                t,
-                n_embd,
-                n_expert,
-                n_used,
-                m.active_count(),
-                bias,
-                active,
-                sf,
-                route_norm,
-            )?;
-            (s, wsel)
-        } else {
+        let (sel_d, selw_d) = {
             let logits = dev.router_gemv(gate_w, z, n_embd, n_expert, t)?;
             dev.moe_router_sigmoid_topk(
                 &logits,
