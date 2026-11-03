@@ -32,7 +32,8 @@
 // bit-identical to the hand-rolled GEMM, gated as its own numeric config behind MEMRA_PP_Q4MMQ
 // with the full exactness battery (same discipline as the Q8_0 / k-quant / W4A8 MMQ arms).
 //
-// C-ABI: memra_mmq_q4_0 (+ memra_mmq_q4_0_act_bytes). Compiled into libmemra_mmq.a, called via FFI.
+// C-ABI: memra_mmq_q4_0_quant_act + memra_mmq_q4_0_gemm / _gemm_sk (+ memra_mmq_q4_0_act_bytes,
+// _fixup_bytes). Compiled into libmemra_mmq.a, called via FFI.
 
 #include <cuda_runtime.h>
 #include <cuda_fp16.h>
@@ -761,7 +762,14 @@ int memra_mmq_q4_0_quant_act(const float * act_f32, void * act_scratch,
     return 0;
 }
 
-// GEMM-only entry: y = pre-quantized act_scratch @ W^T (same tile as memra_mmq_q4_0).
+// GEMM-only entry. y[n_tokens, out_f] = act[n_tokens, in_f] @ W[out_f, in_f]^T, with act already
+// quantized into act_scratch by memra_mmq_q4_0_quant_act.
+//   W_q4_0 : rp == 0 -> raw ggml block_q4_0 weight rows (18B blocks, in_f/32 per row).
+//            rp != 0 -> MEMRA_Q4RP split-plane repack: qs plane (out_f * in_f/32 * 16B, block-major)
+//                       at W, fp16 d plane (dense) at W + out_f*(in_f/32)*16.
+//   act_scratch   : >= memra_mmq_q4_0_act_bytes(in_f, n_tokens).
+//   y             : f32 output [n_tokens, out_f].
+// Requires in_f % 32 == 0.
 int memra_mmq_q4_0_gemm(const void * W_q4_0, const void * act_scratch, float * y,
                        int in_f, int out_f, int n_tokens, void * stream, int rp) {
     cudaStream_t st = reinterpret_cast<cudaStream_t>(stream);
@@ -778,21 +786,6 @@ int memra_mmq_q4_0_gemm(const void * W_q4_0, const void * act_scratch, float * y
     return need_check
         ? mmq_q4_0_launch<true,  false>(W, nullptr, y_q, y, in_f, out_f, n_tokens, st)
         : mmq_q4_0_launch<false, false>(W, nullptr, y_q, y, in_f, out_f, n_tokens, st);
-}
-
-// Run the Q4_0 int8-MMA MMQ prefill GEMM. y[n_tokens, out_f] = act[n_tokens, in_f] @ W[out_f, in_f]^T.
-//   W_q4_0 : rp == 0 -> raw ggml block_q4_0 weight rows (18B blocks, in_f/32 per row).
-//            rp != 0 -> MEMRA_Q4RP split-plane repack: qs plane (out_f * in_f/32 * 16B, block-major)
-//                       at W, fp16 d plane (dense) at W + out_f*(in_f/32)*16.
-//   act_f32       : f32 activation [n_tokens, in_f].
-//   y             : f32 output [n_tokens, out_f].
-//   act_scratch   : pre-alloc'd >= memra_mmq_q4_0_act_bytes(in_f, n_tokens).
-// Requires in_f % 32 == 0. Returns 0 on success, else (1000 + cudaError).
-int memra_mmq_q4_0(const void * W_q4_0, const float * act_f32, float * y,
-                  int in_f, int out_f, int n_tokens, void * act_scratch, void * stream, int rp) {
-    int rc = memra_mmq_q4_0_quant_act(act_f32, act_scratch, in_f, n_tokens, stream);
-    if (rc != 0) { return rc; }
-    return memra_mmq_q4_0_gemm(W_q4_0, act_scratch, y, in_f, out_f, n_tokens, stream, rp);
 }
 
 } // extern "C"
