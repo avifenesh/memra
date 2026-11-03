@@ -1073,6 +1073,11 @@ mod tests {
         ("MEMRA_DSV4_SAMPLER", "program selector"),
         ("MEMRA_DSV4_SAMPLE_SORT", "program selector"),
         ("MEMRA_DSV4_SPEC_DEPTH", "spec parameter"),
+        (
+            "MEMRA_DSV4_TOPOLOGY",
+            "topology selector the server reads and passes to Dsv4Gpu::load_placed; \
+             engine sources name it in docs only",
+        ),
         ("MEMRA_DSV4_VERIFY_TOPK", "program selector"),
         ("MEMRA_DSV4_VT", "spec threshold parameter"),
         ("MEMRA_DSV4_VT_FLOOR", "spec threshold parameter"),
