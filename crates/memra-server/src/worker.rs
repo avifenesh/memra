@@ -3020,24 +3020,12 @@ fn plain_resume_cap_admits(entry_cap: usize, ctx_cap: usize, park_compact: bool)
 /// Minimum parked prefix worth reusing (below this, cold prime is cheaper than bookkeeping).
 const REUSE_MIN_PREFIX: usize = 16;
 
-/// ROLLBACK DOOR + A/B ARM for the whole-session sampler predicate
-/// (lane/session-resume-sampler-predicate-20260820).
+/// THE WHOLE-SESSION SAMPLER PREDICATE (lane/session-resume-sampler-predicate-20260820): a
+/// parked spec session resumes only when the incoming sampler is EQUIVALENT to the one that
+/// shaped it ([`SamplerIdentity::mismatch`]); its penalty-window position, Philox stream position
+/// and draft-plane state are all sampler-shaped. `SampledGraphKey` separately refuses to launch a
+/// draft graph captured under a different regime.
 ///
-/// Default ON: a parked spec session resumes only when the incoming sampler is EQUIVALENT to the
-/// one that shaped it ([`SamplerIdentity::mismatch`]). `MEMRA_SPEC_RESUME_SAMPLER=0` selects
-/// `SamplerIdentity::legacy_admits` — the pre-lane probe, which compared prompts and never
-/// samplers — and is the arm the cost measurement A/Bs against inside ONE binary, so a
-/// hit-vs-refuse delta is not a cross-build comparison on a contended host.
-///
-/// The door is a POLICY door, not an exactness door: with it shut, `SampledGraphKey` still refuses
-/// to launch a draft graph captured under a different regime (that fix is unconditional). What the
-/// door restores is the older, weaker posture in which a sampler-differing request keeps a parked
-/// session's penalty-window position, Philox stream position and draft-plane state.
-fn spec_resume_sampler_predicate_on() -> bool {
-    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| std::env::var("MEMRA_SPEC_RESUME_SAMPLER").as_deref() != Ok("0"))
-}
-
 /// Does `req` admit resuming `entry`? On refusal, records the NAMED mismatching field in
 /// `refused` so the caller's downgrade line can say why — a refusal that does not name itself is
 /// indistinguishable from an unwired mechanism.
@@ -3053,7 +3041,7 @@ fn spec_resume_sampler_admits(
     entry: &SpecReuseEntry,
     refused: &mut Option<&'static str>,
 ) -> bool {
-    match spec_resume_sampler_verdict(spec_resume_sampler_predicate_on(), req, &entry.sampler) {
+    match spec_resume_sampler_verdict(req, &entry.sampler) {
         None => true,
         Some(field) => {
             *refused = Some(field);
@@ -3062,19 +3050,12 @@ fn spec_resume_sampler_admits(
     }
 }
 
-/// The predicate AND the door, as one pure function: `None` = admit, `Some(field)` = refuse and
-/// name that field. Split out from [`spec_resume_sampler_admits`] so both door positions have CPU
-/// teeth — `spec_resume_sampler_predicate_on` is a process-lifetime `OnceLock`, so a test that set
-/// the env var would decide the door for every other test in the binary.
+/// The server's one sampler verdict for every resume tier, plain and dspark: `None` = admit,
+/// `Some(field)` = refuse and name that field.
 fn spec_resume_sampler_verdict(
-    predicate_on: bool,
     req: &SamplerIdentity,
     parked: &SamplerIdentity,
 ) -> Option<&'static str> {
-    if !predicate_on {
-        debug_assert!(req.legacy_admits(parked), "legacy_admits must admit all");
-        return None;
-    }
     req.mismatch(parked)
 }
 
@@ -38611,21 +38592,15 @@ fn admit(
                         prompt.len() - pos,
                         req.model
                     ),
-                    // The sampler tag is on the line because "a resume happened" is otherwise
-                    // ambiguous between "the predicate matched" and "the predicate is off" — and a
-                    // receipt that cannot tell those apart cannot prove the no-regression half.
+                    // The sampler tag says the resume passed the sampler predicate.
                     None => eprintln!(
-                        "[worker] spec-reuse: {} committed tokens resumed{} [sampler={}] (model {})",
+                        "[worker] spec-reuse: {} committed tokens resumed{} [sampler=equivalent] \
+                         (model {})",
                         spec_resumed,
                         if text_suffix.is_some() {
                             " [text-prefix]"
                         } else {
                             ""
-                        },
-                        if spec_resume_sampler_predicate_on() {
-                            "equivalent"
-                        } else {
-                            "unchecked"
                         },
                         req.model
                     ),
@@ -38665,8 +38640,7 @@ fn admit(
                     eprintln!(
                         "[worker] spec-reuse REFUSED: parked session's sampler differs on \
                          {field}; serving COLD spec (a parked session's penalty window, Philox \
-                         stream position and draft plane were shaped by that sampler; \
-                         MEMRA_SPEC_RESUME_SAMPLER=0 restores the pre-lane resume) (model {})",
+                         stream position and draft plane were shaped by that sampler) (model {})",
                         req.model,
                     );
                 }
@@ -38996,7 +38970,6 @@ fn admit(
     {
         let mut refused: Option<&'static str> = None;
         let mut admits = |e2: &DsparkReuseEntry| match spec_resume_sampler_verdict(
-            spec_resume_sampler_predicate_on(),
             &sampler.identity(),
             &e2.sampler,
         ) {
@@ -39066,14 +39039,9 @@ fn admit(
             Some((entry, suffix)) => {
                 eprintln!(
                     "[worker] dspark-reuse: {} committed tokens resumed \
-                     (suffix {} to prime) [sampler={}] (model {})",
+                     (suffix {} to prime) [sampler=equivalent] (model {})",
                     entry.fed.len(),
                     suffix.len(),
-                    if spec_resume_sampler_predicate_on() {
-                        "equivalent"
-                    } else {
-                        "unchecked"
-                    },
                     req.model
                 );
                 reuse_metrics.spec_hits += 1;
@@ -67654,13 +67622,12 @@ mod tests {
     }
 }
 
-/// SESSION-RESUME SAMPLER PREDICATE, the door's own teeth
+/// SESSION-RESUME SAMPLER PREDICATE, the server's verdict
 /// (lane/session-resume-sampler-predicate-20260820).
 ///
-/// The pure-predicate contract lives in `memra-sampling` (`resume_sampler_predicate_tests`). What
-/// is tested HERE is the thing only this crate owns: that the rollback door actually selects the
-/// pre-lane behaviour, and that the reproduced collision pair flips verdict across it. Both
-/// directions, on the same pair, so neither arm can be green for an unrelated reason.
+/// The pure-predicate contract lives in `memra-sampling` (`resume_sampler_predicate_tests`, whose
+/// refusal tests also assert that `legacy_admits` would have admitted each pair). What is tested
+/// HERE is the server's verdict on the reproduced collision pair: refused and named.
 #[cfg(test)]
 mod resume_sampler_door_tests {
     use super::spec_resume_sampler_verdict;
@@ -67688,34 +67655,26 @@ mod resume_sampler_door_tests {
     }
 
     #[test]
-    fn door_open_refuses_the_collision_pair_and_names_the_field() {
+    fn the_verdict_refuses_the_collision_pair_and_names_the_field() {
         assert_eq!(
-            spec_resume_sampler_verdict(true, &incoming_vendor_filtered(), &parked_pure_temp()),
+            spec_resume_sampler_verdict(&incoming_vendor_filtered(), &parked_pure_temp()),
             Some("top_k"),
-            "default posture: refuse a sampler-differing resume and name the field",
+            "refuse a sampler-differing resume and name the field",
+        );
+        assert!(
+            incoming_vendor_filtered().legacy_admits(&parked_pure_temp()),
+            "the pre-lane probe admitted this pair, so the refusal is not tautological",
         );
     }
 
     #[test]
-    fn door_shut_reproduces_the_pre_lane_acceptance() {
-        // MEMRA_SPEC_RESUME_SAMPLER=0 == the probe that compared prompts and never samplers.
-        assert_eq!(
-            spec_resume_sampler_verdict(false, &incoming_vendor_filtered(), &parked_pure_temp()),
-            None,
-            "the door must restore the acceptance, or the refusal test is tautological",
-        );
-    }
-
-    #[test]
-    fn a_same_sampler_resume_is_admitted_in_both_arms() {
+    fn a_same_sampler_resume_is_admitted() {
         let s = parked_pure_temp();
-        for on in [true, false] {
-            assert_eq!(
-                spec_resume_sampler_verdict(on, &s, &s),
-                None,
-                "no regression: an unchanged sampler resumes with the door {on}",
-            );
-        }
+        assert_eq!(
+            spec_resume_sampler_verdict(&s, &s),
+            None,
+            "no regression: an unchanged sampler resumes",
+        );
     }
 }
 
