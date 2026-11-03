@@ -1855,25 +1855,6 @@ static DEV1_ROUTER_REPS: std::sync::Mutex<
     )>,
 > = std::sync::Mutex::new(None);
 
-/// SHEXP-ON-DEV1 workspace (MEMRA_SHEXP_DEV1): replica weights + scratch on rank1, the
-/// down row lands ROOT-resident over P2P (single store pass), and apply adds it on e
-/// behind ev_done. (pins, wg1, wu1, wd1, act1, sh_root, ev_z, ev_done).
-#[allow(clippy::type_complexity)]
-static SHEXP_D1_REPS: std::sync::Mutex<
-    Option<std::collections::HashMap<u16, (CudaSlice<u8>, CudaSlice<u8>, CudaSlice<u8>)>>,
-> = std::sync::Mutex::new(None);
-#[allow(clippy::type_complexity)]
-static SHEXP_D1_WS: std::sync::Mutex<
-    Option<(
-        (usize, usize),
-        CudaSlice<f32>,
-        CudaSlice<f32>,
-        CudaSlice<f32>,
-        cudarc::driver::CudaEvent,
-        cudarc::driver::CudaEvent,
-    )>,
-> = std::sync::Mutex::new(None);
-
 /// SHEXP OVERLAP workspace (issue writes, apply reads): (device, n_embd, n_ff_sh, act, sh).
 #[allow(clippy::type_complexity)] // allow: one-shot composite type; naming it would hide the shape that matters at the call site
 static SHEXP_OV_WS: std::sync::Mutex<
@@ -12637,36 +12618,11 @@ impl HybridModel {
                 static SHEXP_OV: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
                 let shexp_ov = *SHEXP_OV
                     .get_or_init(|| std::env::var("MEMRA_SHEXP_OVERLAP").as_deref() == Ok("1"));
-                // MEMRA_SHEXP_DEV1=1 (supersedes the dev0 overlap): the shared
-                // expert runs on rank1 — the idle device — same kernels, same
-                // split program, down row root-resident: bit-identical.
-                static SHEXP_D1: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-                let shexp_d1 = *SHEXP_D1
-                    .get_or_init(|| std::env::var("MEMRA_SHEXP_DEV1").as_deref() == Ok("1"))
-                    && tp.runtime.rank_engine(1).is_some();
                 // MOE TAIL FUSION M1: pre-arm the overlap ws + ones row and hand their RAW
                 // pointers to the routed run — the join add folds the shexp apply into one launch.
                 let mut ov_issued = false;
-                let mut d1_issued = false;
                 let mut tail_folded = false;
-                let mut output = if shexp_d1 {
-                    let rank1 = tp.runtime.rank_engine(1).expect("checked above");
-                    tp.runtime
-                        .run_tensor_parallel_routes_nvfp4_device_routed_prejoin(
-                            bank,
-                            e,
-                            z,
-                            sel_d,
-                            w_d,
-                            n_used,
-                            tp.activation_limit,
-                            || {
-                                d1_issued =
-                                    Self::shexp_dev1_issue(e, rank1, m, z, cfg, il, n_embd)?;
-                                Ok(())
-                            },
-                        )?
-                } else if shexp_ov {
+                let mut output = if shexp_ov {
                     // Raw sh/ones pointers for the fused tail (persistent statics;
                     // pointers stable, no lock held across the routed call). The
                     // sh CONTENT is written by the prejoin-issued kernels earlier
@@ -12717,8 +12673,6 @@ impl HybridModel {
                 }
                 if tail_folded {
                     // shexp already folded into the join add (MOE TAIL FUSION M1)
-                } else if d1_issued {
-                    Self::shexp_dev1_apply(e, &mut output, n_embd)?;
                 } else if ov_issued {
                     Self::shexp_overlap_apply(e, &mut output, n_embd)?;
                 } else {
@@ -20509,160 +20463,6 @@ impl HybridModel {
         e.matvec_bf16_into(wd, act, sh, n_ff_sh, n_embd)?;
         drop(guard);
         Ok(true)
-    }
-
-    /// SHEXP ON DEV1 issue (MEMRA_SHEXP_DEV1=1): the shared expert runs on rank1 — the
-    /// idle device — with replica weights (one-time P2P upload), the SAME kernels and the
-    /// SAME split program as the dev0 overlap (dual matvec+SwiGLU, f32acc down), so the
-    /// values are bit-identical. z rides one 16KB P2P pull behind an e-stream event; the
-    /// down row lands root-resident (single P2P store pass); apply waits ev_done on e.
-    #[allow(clippy::too_many_arguments)]
-    #[allow(clippy::map_entry)] // allow: the init body is fallible (`?`); Entry::or_insert_with cannot propagate errors
-    fn shexp_dev1_issue(
-        e: &Engine,
-        rank1: &Engine,
-        m: &MoeWeights,
-        z: &CudaSlice<f32>,
-        cfg: &ModelConfig,
-        il: u16,
-        n_embd: usize,
-    ) -> Result<bool, Box<dyn std::error::Error>> {
-        use cudarc::driver::DevicePtr;
-        if cfg.m3.is_some() || m.gate_inp_shexp.is_some() {
-            return Ok(false);
-        }
-        let (
-            Some(crate::model::GpuTensor::FloatBf16 { data: wg, .. }),
-            Some(crate::model::GpuTensor::FloatBf16 { data: wu, .. }),
-            Some(crate::model::GpuTensor::FloatBf16 { data: wd, .. }),
-        ) = (&m.gate_shexp, &m.up_shexp, &m.down_shexp)
-        else {
-            return Ok(false);
-        };
-        let n_ff_sh = m
-            .gate_shexp
-            .as_ref()
-            .expect("matched Some above")
-            .out_features();
-        // POST-form epilogue only (see `fused_post_limit`): a PRE-clamped layer declines
-        // (Ok(false) = nothing issued, caller falls back per column).
-        let Ok(lim) = Self::fused_post_limit(cfg.clamp_shexp_at(il as u32)) else {
-            return Ok(false);
-        };
-        // Shared scratch, geometry-keyed.
-        let mut ws_guard = SHEXP_D1_WS
-            .lock()
-            .map_err(|_| "shexp dev1 workspace lock is poisoned")?;
-        if ws_guard
-            .as_ref()
-            .is_none_or(|(k, ..)| *k != (n_embd, n_ff_sh))
-        {
-            let (act1, z1, ev_done) = {
-                let _r1 = rank1.gpu.enter_main()?;
-                (
-                    rank1.htod(&vec![0.0f32; n_ff_sh])?,
-                    rank1.htod(&vec![0.0f32; n_embd])?,
-                    rank1.ctx().new_event(None)?,
-                )
-            };
-            let (sh_root, ev_z) = {
-                let _main = e.gpu.enter_main()?;
-                (e.htod(&vec![0.0f32; n_embd])?, e.ctx().new_event(None)?)
-            };
-            *ws_guard = Some(((n_embd, n_ff_sh), act1, z1, sh_root, ev_z, ev_done));
-        }
-        // Per-LAYER weight replicas (gate/up/down differ per layer): one-time P2P upload.
-        let mut reps_guard = SHEXP_D1_REPS
-            .lock()
-            .map_err(|_| "shexp dev1 replica lock is poisoned")?;
-        let reps = reps_guard.get_or_insert_with(Default::default);
-        if !reps.contains_key(&il) {
-            let (wg1, wu1, wd1) = {
-                let _r1 = rank1.gpu.enter_main()?;
-                (
-                    rank1.alloc_u8_uninit(n_ff_sh * n_embd * 2)?,
-                    rank1.alloc_u8_uninit(n_ff_sh * n_embd * 2)?,
-                    rank1.alloc_u8_uninit(n_embd * n_ff_sh * 2)?,
-                )
-            };
-            for (src, dst) in [(wg, &wg1), (wu, &wu1), (wd, &wd1)] {
-                let s_ptr = {
-                    let _main = e.gpu.enter_main()?;
-                    let stream = e.stream();
-                    let (p, _g) = src.device_ptr(&stream);
-                    p
-                };
-                let d_ptr = {
-                    let _r1 = rank1.gpu.enter_main()?;
-                    let stream = rank1.stream();
-                    let (p, _g) = dst.device_ptr(&stream);
-                    p
-                };
-                let _r1 = rank1.gpu.enter_main()?;
-                crate::tp::raw_copy_bytes(d_ptr, s_ptr, src.len(), rank1)?;
-            }
-            {
-                let _r1 = rank1.gpu.enter_main()?;
-                rank1.stream().synchronize()?;
-            }
-            reps.insert(il, (wg1, wu1, wd1));
-        }
-        let (wg1, wu1, wd1) = reps.get(&il).expect("armed above");
-        let (_, act1, z1, sh_root, ev_z, ev_done) = ws_guard.as_mut().expect("armed above");
-        // z ready on e's stream -> rank1 pulls it, runs the split shexp, pushes the down
-        // row root-side (single store pass), rings ev_done.
-        let (raw_z, raw_sh) = {
-            let _main = e.gpu.enter_main()?;
-            let stream = e.stream();
-            let (a, _g0) = z.device_ptr(&stream);
-            let (b, _g1) = sh_root.device_ptr(&stream);
-            ev_z.record(&stream)?;
-            (a, b)
-        };
-        {
-            let _r1 = rank1.gpu.enter_main()?;
-            rank1.stream().wait(ev_z)?;
-            let raw_z1 = {
-                let stream = rank1.stream();
-                let (p, _g) = z1.device_ptr(&stream);
-                p
-            };
-            crate::tp::raw_copy_bytes(raw_z1, raw_z, n_embd * 4, rank1)?;
-            rank1.matvec_bf16_dual_silu_into(wg1, wu1, z1, act1, n_embd, n_ff_sh, lim)?;
-            // down writes the ROOT-resident row over P2P via the raw-output twin of
-            // matvec_bf16_into: reuse the view launcher with a slice view is not possible
-            // cross-device, so launch on the raw pointer.
-            rank1.matvec_bf16_raw_out(wd1, act1, raw_sh, n_ff_sh, n_embd)?;
-            ev_done.record(&rank1.stream())?;
-        }
-        Ok(true)
-    }
-
-    /// Apply the dev1 shared expert: wait ev_done on e, then the exact add_scaled_rows.
-    fn shexp_dev1_apply(
-        e: &Engine,
-        output: &mut CudaSlice<f32>,
-        n_embd: usize,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        let guard = SHEXP_D1_WS
-            .lock()
-            .map_err(|_| "shexp dev1 workspace lock is poisoned")?;
-        let (pin, _, _, sh_root, _, ev_done) =
-            guard.as_ref().ok_or("shexp dev1 apply without issue")?;
-        if pin.0 != n_embd {
-            return Err("shexp dev1 width drifted".into());
-        }
-        let _main = e.gpu.enter_main()?;
-        e.stream().wait(ev_done)?;
-        static ONES_D1: std::sync::Mutex<Option<(usize, CudaSlice<f32>)>> =
-            std::sync::Mutex::new(None);
-        let mut og = ONES_D1.lock().map_err(|_| "ones lock is poisoned")?;
-        if og.as_ref().is_none_or(|(d, _)| *d != e.ctx().ordinal()) {
-            *og = Some((e.ctx().ordinal(), e.htod(&[1.0f32])?));
-        }
-        let ones = &og.as_ref().expect("armed above").1;
-        e.add_scaled_rows(sh_root, ones, output, n_embd, 1)?;
-        Ok(())
     }
 
     /// MOE TAIL FUSION M1 helper: pre-arm the overlap ws + persistent ones row and
