@@ -656,21 +656,15 @@ where
     out
 }
 
-/// Node census of a captured graph: the receipt every verify-graph capture prints and the
-/// guard behind it. A memcpy node whose source (or destination) is HOST memory is a capture
+/// Node census of a captured graph: the guard the prime graph checks before it keeps a
+/// capture. A memcpy node whose source (or destination) is HOST memory is a capture
 /// defect by construction: the graph re-reads that host address on every replay, and a
 /// pageable upload's source is a temporary the host freed before the first replay (the
 /// 2026-09-05 shared-expert ones vector: seven 12-byte host-sourced copies, every output word
 /// wrong at 1e21 while the eager walk and the graph were each deterministic against themselves).
 pub(crate) struct GraphCensus {
-    pub nodes: usize,
-    pub kernels: usize,
-    pub memcpys: usize,
-    /// Memcpy nodes with a HOST endpoint, and their byte counts.
+    /// Memcpy nodes with a HOST endpoint.
     pub host_memcpys: usize,
-    pub host_bytes: Vec<usize>,
-    pub mem_allocs: usize,
-    pub mem_frees: usize,
 }
 
 pub(crate) fn graph_census(graph: &CudaGraph) -> Res<GraphCensus> {
@@ -686,42 +680,25 @@ pub(crate) fn graph_census(graph: &CudaGraph) -> Res<GraphCensus> {
     if r != cu::CUresult::CUDA_SUCCESS {
         return Err(format!("cuGraphGetNodes: {r:?}").into());
     }
-    let mut c = GraphCensus {
-        nodes: n,
-        kernels: 0,
-        memcpys: 0,
-        host_memcpys: 0,
-        host_bytes: Vec::new(),
-        mem_allocs: 0,
-        mem_frees: 0,
-    };
+    let mut c = GraphCensus { host_memcpys: 0 };
     for node in nodes.iter().take(n) {
         let mut ty = std::mem::MaybeUninit::<cu::CUgraphNodeType>::uninit();
         let r = unsafe { cu::cuGraphNodeGetType(*node, ty.as_mut_ptr()) };
         if r != cu::CUresult::CUDA_SUCCESS {
             return Err(format!("cuGraphNodeGetType: {r:?}").into());
         }
-        match unsafe { ty.assume_init() } {
-            cu::CUgraphNodeType::CU_GRAPH_NODE_TYPE_KERNEL => c.kernels += 1,
-            cu::CUgraphNodeType::CU_GRAPH_NODE_TYPE_MEM_ALLOC => c.mem_allocs += 1,
-            cu::CUgraphNodeType::CU_GRAPH_NODE_TYPE_MEM_FREE => c.mem_frees += 1,
-            cu::CUgraphNodeType::CU_GRAPH_NODE_TYPE_MEMCPY => {
-                c.memcpys += 1;
-                let mut p = std::mem::MaybeUninit::<cu::CUDA_MEMCPY3D>::zeroed();
-                let r = unsafe { cu::cuGraphMemcpyNodeGetParams(*node, p.as_mut_ptr()) };
-                if r != cu::CUresult::CUDA_SUCCESS {
-                    return Err(format!("cuGraphMemcpyNodeGetParams: {r:?}").into());
-                }
-                let p = unsafe { p.assume_init() };
-                if p.srcMemoryType == cu::CUmemorytype::CU_MEMORYTYPE_HOST
-                    || p.dstMemoryType == cu::CUmemorytype::CU_MEMORYTYPE_HOST
-                {
-                    c.host_memcpys += 1;
-                    c.host_bytes
-                        .push(p.WidthInBytes * p.Height.max(1) * p.Depth.max(1));
-                }
+        if unsafe { ty.assume_init() } == cu::CUgraphNodeType::CU_GRAPH_NODE_TYPE_MEMCPY {
+            let mut p = std::mem::MaybeUninit::<cu::CUDA_MEMCPY3D>::zeroed();
+            let r = unsafe { cu::cuGraphMemcpyNodeGetParams(*node, p.as_mut_ptr()) };
+            if r != cu::CUresult::CUDA_SUCCESS {
+                return Err(format!("cuGraphMemcpyNodeGetParams: {r:?}").into());
             }
-            _ => {}
+            let p = unsafe { p.assume_init() };
+            if p.srcMemoryType == cu::CUmemorytype::CU_MEMORYTYPE_HOST
+                || p.dstMemoryType == cu::CUmemorytype::CU_MEMORYTYPE_HOST
+            {
+                c.host_memcpys += 1;
+            }
         }
     }
     Ok(c)
