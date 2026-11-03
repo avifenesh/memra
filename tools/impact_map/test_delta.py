@@ -245,6 +245,13 @@ class ScannerTest(unittest.TestCase):
         recs = rust_items.scan("crates/c/src/ffi.rs", src)
         self.assertEqual([(r["name"], r["container"]) for r in recs if r["kind"] == "fn"], [("memra_x", "extern"), ("cb", "mod")])
 
+    def test_items_of_a_test_target_are_test_items(self):
+        src = "#![allow(dead_code)]\nuse memra_server::x;\npub fn helper() -> u32 { 1 }\n"
+        for path in ("crates/memra-engine/tests/dsv4_rows_gpu.rs", "crates/memra-engine/benches/b.rs"):
+            got = rust_items.scan(path, src)
+            self.assertTrue(got and all(r["test"] for r in got if r["kind"] != "outside"), path)
+        self.assertFalse(any(r["test"] for r in rust_items.scan("crates/memra-engine/src/x.rs", src)))
+
     def test_cfg_test_module_is_test(self):
         src = "fn live() {}\n#[cfg(test)]\nmod tests {\n    #[test]\n    fn t() {}\n}\n"
         recs = {r["name"]: r["test"] for r in rust_items.scan("crates/c/src/lib.rs", src) if r["kind"] == "fn"}

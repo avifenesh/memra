@@ -500,7 +500,9 @@ def scan(path, src):
                               cfg=cfgs + ctx_cfg, test=item_test, toks=toks[start:k + 1]))
             i = k + 1
 
-    walk(0, len(toks), base_mods, "mod", False, [])
+    # every item of a test target (crates/<crate>/tests|benches|examples/) is a test item, whatever
+    # its attributes say: no served binary links it
+    walk(0, len(toks), base_mods, "mod", re.match(r"crates/[^/]+/(tests|benches|examples)/", path) is not None, [])
     # every token outside an item (inner attributes, `mod x;` with its cfg, extern-block headers and
     # attributes, inline-mod attributes, anything the item walk does not place) goes into one
     # synthetic item the map never contains, so a change there is never invisible
