@@ -247,7 +247,9 @@ def main():
     writes = collections.defaultdict(set)  # mutable static -> items that write it
     for l in open(os.path.join(S0, "graph/edges.tsv")):
         s, d, k, n, lines = l.rstrip("\n").split("\t")
-        if s not in nodes or d not in nodes or offline(s):
+        # an edge into an offline item (a test target, build script, unserved binary) carries no
+        # served reach: no served binary links its destination
+        if s not in nodes or d not in nodes or offline(s) or offline(d):
             continue
         fan_in[d] += 1
         src = nodes[s]
