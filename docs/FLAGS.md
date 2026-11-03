@@ -1840,67 +1840,82 @@ Both ledger lines go in darklanes `agent-knowledge/gpu/verdicts-ledger.md`. Git 
 archive. The `MEMRA_FENCE_RANK1` row of the 2026-09-05 door sweep below still says
 `MEMRA_FENCE_MEMOPS` stayed; this entry supersedes that.
 
-## Removed doors, 2026-11-03 (`MEMRA_SHEXP_SWIGLU_ZQ8` and `MEMRA_HC_PRE_NORM_FUSE`: decide-by passed with no row)
+## Removed doors, 2026-11-03 (`MEMRA_SHEXP_SWIGLU_ZQ8` and `MEMRA_HC_PRE_NORM_FUSE`: flat and negative)
 
 Two lane/launch-collapse-20260906 doors on the glm5 B200 decode, both bit-identical by
-construction, both landed DEFAULT OFF with decide-by 2026-09-20, both pending a composed-posture
-row on the pair (darklanes `research/glm5-b200-mint-20260904/LANE.md`) that was never recorded,
-and neither armed by the served 1M TP-2 launcher. Removed as expired doors; each returns only with
-a receipt. Git history is the archive.
+construction on the unsharded walk and both landed DEFAULT OFF with decide-by 2026-09-20. Their
+box rows on the 2x B200 pair (darklanes `research/glm5-b200-mint-20260904/LANE.md`) are flat or
+negative, and no launcher sets either door. A flat or negative receipt deletes the door. Git
+history is the archive.
 
 - `MEMRA_SHEXP_SWIGLU_ZQ8=1`: at t == 1 the shared expert's pre-clamped SwiGLU emitted its q8_1
   pair in one launch (`swiglu_preclamped_mul_scaled_q8_1_f32`, `cu/hybrid.cu`) and the down
-  projection rode `matmul_q8_fast`, dropping one `quantize_q8_1` launch per layer. Deleted: the
-  env read, the dispatch branch in the shared-expert tail (it runs `ffn_act_lim` + `matmul` as
-  before), the `SHEXP_SWIGLU_ZQ8_DISPATCHES` counter, `Engine::swiglu_preclamped_mul_scaled_q8_1`,
-  the kernel, `tests/swiglu_zq8_gpu.rs` with its skip-census row, and the FLAGS.md and KERNELS.md
-  rows. Ledger: `VERDICT:shexp-swiglu-zq8-door-removed`.
+  projection rode `matmul_q8_fast`, dropping one `quantize_q8_1` launch per layer. **FLAT**: the
+  `doorscreen` (composed posture, c1 plain, one boot per arm, 22 rows, tape `223d73a5a78e59a9`)
+  read 87.74 against 86.90 tok/s off, +0.97%, below the screen's +1.0% bar for a three-boot
+  confirm, so it never went to one. Deleted: the env read, the dispatch branch in the
+  shared-expert tail (it runs `ffn_act_lim` + `matmul` as before), the
+  `SHEXP_SWIGLU_ZQ8_DISPATCHES` counter, `Engine::swiglu_preclamped_mul_scaled_q8_1`, the kernel,
+  `tests/swiglu_zq8_gpu.rs` with its skip-census row, and the FLAGS.md and KERNELS.md rows.
+  Ledger: `VERDICT:shexp-swiglu-zq8-flat-below-confirm-bar`.
 - `MEMRA_HC_PRE_NORM_FUSE=1`: folded `rms_norm_zq8_f32`'s epilogue into the v4 hc-pre launch
   (`memra_dsv4_hc_pre_v4_norm_zq8`, `cu/dsv4_gpu.cu`) on an index coincidence at hidden 4096 and
-  `MEMRA_RMS_BLOCK=1024`. Deleted: the env read, the norm-fused arm of `pre_finish_into`,
-  `hyper::pre_t1_ws_norm` and its two thread-locals (`ws_attn_pre` calls `pre_t1_ws` and keeps its
-  own norm launch), the `HC_PRE_NORM_FUSE_DISPATCHES` counter, the FFI declaration, the launcher,
-  `dsv4_hc_pre_v4_e16_norm_zq8_kernel` and its body template, `tests/hc_pre_norm_fuse_gpu.rs` with
-  its two skip-census rows, and the FLAGS.md and KERNELS.md entries. Ledger:
-  `VERDICT:hc-pre-norm-fuse-door-removed`.
+  `MEMRA_RMS_BLOCK=1024`. **NEGATIVE on TP, FLAT on PP-2**: `tpwalk12` (TP-2 symmetric graphed
+  walk, both ranks, 160 greedy tokens, same binary interleaved) off 97.18 / 98.42 vs on 89.82 /
+  89.70, about -8%, and the tape moved (`3aeb3992afcd3da2` to `ed00957ac384a80a`): the epilogue
+  serializes the norm inside the hc-pre block and costs more than the separate launch it
+  removes. `tpwalk6` v2 had read the fold on the shards flat (91.74 / 91.57 off vs 91.55 / 91.33
+  on), and `tpwalk24` (PP-2 plain at 32k, three boots per arm) read 46.91 / 50.27 / 50.37 against
+  47.98 / 50.72 / 51.05 off, -0.9%, overlapping: flat. Deleted: the env read, the norm-fused arm of
+  `pre_finish_into`, `hyper::pre_t1_ws_norm` and its two thread-locals (`ws_attn_pre` calls
+  `pre_t1_ws` and keeps its own norm launch), the `HC_PRE_NORM_FUSE_DISPATCHES` counter, the FFI
+  declaration, the launcher, `dsv4_hc_pre_v4_e16_norm_zq8_kernel` and its body template,
+  `tests/hc_pre_norm_fuse_gpu.rs` with its two skip-census rows, and the FLAGS.md and KERNELS.md
+  entries. Ledger: `VERDICT:glm5-hc-pre-norm-fold-loses-on-tp-symmetric`.
 
-Both ledger lines go in darklanes `agent-knowledge/gpu/verdicts-ledger.md`. The fourth door of the
-same audit, `MEMRA_GLM5_TP_SPLIT_GROUPED_PRIME`, is not removed: the served launcher arms it, and its
-row now says so.
+The `shexp-swiglu-zq8` ledger line goes in darklanes `agent-knowledge/gpu/verdicts-ledger.md`; the
+hc-pre fold already has its line there. The fourth door of the same audit,
+`MEMRA_GLM5_TP_SPLIT_GROUPED_PRIME`, is not removed: a launcher sets it, and its row now says so.
 
-## Removed doors, 2026-11-03 (`MEMRA_ROUTER_FUSED`: decide-by 2026-09-20 passed with no box row)
+## Removed doors, 2026-11-03 (`MEMRA_ROUTER_FUSED`: negative on the TP walk)
 
 `MEMRA_ROUTER_FUSED=1` (lane/router-fused-20260906) ran the MoE router chain as one launch:
 `memra_router_fused_f32` (`_dexp` under `MEMRA_SIG_EXPF_DEV`) was `router_gemv_f32_w8`'s GEMV
 with `moe_router_sigmoid_topk_f32`'s sigmoid + top-k run by the last block to finish, a
 bit-identical selection gated by `tests/router_fused_gpu.rs`. Its only consumer was the glm5 TP
 expert split's device-routed half (`moe_split_rank_half`). It landed DEFAULT OFF with decide-by
-2026-09-20 "pending its box row" (darklanes `research/glm5-b200-mint-20260904/LANE.md`); no row
-was recorded and the served 1M TP-2 launcher never armed it. Removed as an expired door: the env
-read (`router_fused_on`), the `moe_split_rank_half` branch (it runs `router_gemv` +
-`moe_router_sigmoid_topk` as before), `Engine::router_sigmoid_topk_fused`, the
+2026-09-20. **NEGATIVE** on the 2x B200 pair (darklanes `research/glm5-b200-mint-20260904/LANE.md`):
+on the TP-2 symmetric walk with the per-rank graph door, 160 greedy tokens, tape unchanged, the
+PMFR arm read 83.54 against PMF's 87.90 (-5%, 883fd9ac7) and, in `tpwalk6` v2, 83.49 against
+91.55 / 91.33 (-9%, a86ce5ab3). `tpwalk24` did not engage it on PP-2 (no announce line), so it
+has no PP-2 row, and PP-2 is no longer this model's decision shape. No launcher sets it.
+Deleted: the env read (`router_fused_on`), the `moe_split_rank_half` branch (it runs
+`router_gemv` + `moe_router_sigmoid_topk` as before), `Engine::router_sigmoid_topk_fused`, the
 `ROUTER_FUSED_DISPATCHES` counter, both kernels and their device template (`cu/moe_router.cu`),
-the gate file with its two skip-census rows, and the FLAGS.md and KERNELS.md rows. It returns
-only with a receipt. Git history is the archive. Ledger: `VERDICT:router-fused-door-removed`
-(darklanes `agent-knowledge/gpu/verdicts-ledger.md`).
+the gate file with its two skip-census rows, and the FLAGS.md and KERNELS.md rows. Git history
+is the archive. Ledger: `VERDICT:glm5-router-fused-loses-on-tp-symmetric` (darklanes
+`agent-knowledge/gpu/verdicts-ledger.md`).
 
-## Removed doors, 2026-11-03 (`MEMRA_KDA_NARROW_Q8`: past its decide window with no receipt)
+## Removed doors, 2026-11-03 (`MEMRA_KDA_NARROW_Q8`: flat)
 
 `MEMRA_KDA_NARROW_Q8=1` (lane/kda-narrow-q8-20260905) routed the decode KDA core's low-rank `f_b`
 / `g_b` projections through `qmatvec_q8_0_mmvq_f32in_narrow`, which quantized the 128-wide row
 inside the MMVQ launch instead of `quantize_q8_1` + `qmatvec_q8_0_mmvq`. It was bit-identical by
-construction and gated bitwise, but it landed DEFAULT OFF "pending its model-scale row" with no
-decide-by date, the 14-day window passed on 2026-09-19, no box row was ever recorded, and the
-served 1M TP-2 launcher never armed it. Deleted the same way as a decide-by expiry: the env
-read (`kda::kda_narrow_q8_on`), the dispatch helper (`kda::matmul_lowrank`; both sites call
-`matmul` again), the `KDA_NARROW_Q8_DISPATCHES` counter, the `Engine::matmul_q8_narrow_f32in` /
-`q8_narrow_f32in_raw` launchers, the kernel (`cu/qmatvec.cu`), its gate
-`tests/q8_narrow_f32in_gpu.rs` with its skip-census row, and its FLAGS.md row. It returns only
-with a receipt. Git history is the archive. Ledger: `VERDICT:kda-narrow-q8-door-removed`
-(darklanes `agent-knowledge/gpu/verdicts-ledger.md`).
+construction and gated bitwise, and it landed DEFAULT OFF "pending its model-scale row" with no
+decide-by date. **FLAT** on the 2x B200 pair (darklanes
+`research/glm5-b200-mint-20260904/LANE.md`, composed posture, c1 plain, tape
+`223d73a5a78e59a9`): `gemvab` (three interleaved boots per arm, 21 reps each) 84.87 / 84.31 /
+84.61 against 83.12 / 83.89 / 84.20 off, median +0.9%, below the 1.0% rule its siblings were
+promoted on; the `doorscreen` (one boot) read 87.12 against 86.90, +0.25%. No launcher sets it.
+Deleted: the env read (`kda::kda_narrow_q8_on`), the dispatch helper (`kda::matmul_lowrank`;
+both sites call `matmul` again), the `KDA_NARROW_Q8_DISPATCHES` counter, the
+`Engine::matmul_q8_narrow_f32in` / `q8_narrow_f32in_raw` launchers, the kernel
+(`cu/qmatvec.cu`), its gate `tests/q8_narrow_f32in_gpu.rs` with its skip-census row, and its
+FLAGS.md row. Git history is the archive. Ledger: `VERDICT:f32-gemv-kernel-c1-plus-2-2` (darklanes
+`agent-knowledge/gpu/verdicts-ledger.md`, the gemvab line that records this door as flat).
 
 `MEMRA_MLA_COALESCE` and `MEMRA_KDA_FUSED_PROJ`, named in the same audit as default-OFF doors with
-no decide-by, are not removed: the served 1M TP-2 launcher arms both, and their rows now say so.
+no decide-by, are not removed: a launcher sets both, and their rows now say so.
 
 ## Removed doors, 2026-11-03 (the B200 MoE v2 twins: neutral gate/up, negative down)
 
