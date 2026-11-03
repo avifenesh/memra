@@ -4624,8 +4624,8 @@ template<int MCOLS>
 __device__ __forceinline__ void q5k_mmvq_batched(
         const unsigned char* __restrict__ W, const signed char* __restrict__ aq,
         const float* __restrict__ ad, float* __restrict__ y,
-        int in_f, int out_f, int m, long row_bytes) {
-    int o = blockIdx.x * MEMRA_MMVQ_ROWS + threadIdx.y;
+        int in_f, int out_f, int m, long row_bytes, int bx = -1) {
+    int o = (bx < 0 ? (int)blockIdx.x : bx) * MEMRA_MMVQ_ROWS + threadIdx.y;
     if (o >= out_f) return;
     int lane = threadIdx.x;
     int nsb = in_f >> 5;
@@ -4711,6 +4711,21 @@ extern "C" __global__ void qmatvec_q5_K_mmvq_b16(
         const float* __restrict__ ad, float* __restrict__ y,
         int in_f, int out_f, int m, long row_bytes) {
     q5k_mmvq_batched<16>(W, aq, ad, y, in_f, out_f, m, row_bytes);
+}
+// b32 tier (batch-spec 2026-11-03): two 16-column halves per 4-row block, adjacent in launch
+// order so the second half's weight reads hit L2 (the GB10 Q5_K output head, 870 MB, read once
+// from DRAM per 32-row tick). Each column runs q5k_mmvq_batched<16>'s chain -> bit-identical.
+extern "C" __global__ void qmatvec_q5_K_mmvq_b32cs(
+        const unsigned char* __restrict__ W, const signed char* __restrict__ aq,
+        const float* __restrict__ ad, float* __restrict__ y,
+        int in_f, int out_f, int m, long row_bytes) {
+    const int split = (int)blockIdx.x & 1;
+    const int c0 = split * 16;
+    const int mm = min(16, m - c0);
+    if (mm <= 0) return;
+    const size_t nsb = (size_t)(in_f >> 5);
+    q5k_mmvq_batched<16>(W, aq + (size_t)c0 * in_f, ad + c0 * nsb, y + (size_t)c0 * out_f,
+                         in_f, out_f, mm, row_bytes, (int)blockIdx.x >> 1);
 }
 
 // ----- Q6_K batched. Per-group reusable: d, scales, 8 decoded signed wpack. Symmetric (no min). -----

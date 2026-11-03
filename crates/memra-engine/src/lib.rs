@@ -19038,6 +19038,37 @@ impl Engine {
             return Ok(None);
         }
         let in_f = ws[0].in_features();
+        // 17..32 rows (decode-wide scope): two 16-column halves through the b16 group kernel,
+        // each column on the same chain -> bit-identical; outputs concatenate along columns.
+        if m > 16 && std::env::var("MEMRA_G4H").as_deref() == Ok("1") {
+            let nsb = in_f / 32;
+            let mut halves: Vec<Vec<CudaSlice<f32>>> = Vec::with_capacity(2);
+            for (c0, mm) in [(0usize, 16usize), (16, m - 16)] {
+                let mut aq_h = self.alloc_uninit::<i8>(mm * in_f)?;
+                self.gpu
+                    .stream()
+                    .memcpy_dtod(&aq.slice(c0 * in_f..(c0 + mm) * in_f), &mut aq_h)?;
+                let mut ad_h = self.alloc_uninit::<f32>(mm * nsb)?;
+                self.gpu
+                    .stream()
+                    .memcpy_dtod(&ad.slice(c0 * nsb..(c0 + mm) * nsb), &mut ad_h)?;
+                match self.matmul_decode_exact_group_pre(ws, &aq_h, &ad_h, mm, on, tag)? {
+                    Some(ys) => halves.push(ys),
+                    None => return Ok(None),
+                }
+            }
+            let mut out = Vec::with_capacity(ws.len());
+            for (t, w) in ws.iter().enumerate() {
+                let n = w.out_features();
+                let mut y = self.alloc_uninit::<f32>(m * n)?;
+                let mut lo = y.slice_mut(0..16 * n);
+                self.gpu.stream().memcpy_dtod(&halves[0][t], &mut lo)?;
+                let mut hi = y.slice_mut(16 * n..m * n);
+                self.gpu.stream().memcpy_dtod(&halves[1][t], &mut hi)?;
+                out.push(y);
+            }
+            return Ok(Some(out));
+        }
         let mut parts: Vec<(&CudaSlice<u8>, usize, f32)> = Vec::with_capacity(4);
         for w in ws {
             if !self.uses_q8_1_fast(w) || w.in_features() != in_f {
@@ -23922,6 +23953,34 @@ impl Engine {
                 // 4 blocks per 8-row block -> grid = ceil(out_f / 2)
                 let cfg = LaunchConfig {
                     grid_dim: ((out_f as u32).div_ceil(ROWS_PER_BLOCK / 2), 1, 1),
+                    block_dim: (32, ROWS_PER_BLOCK, 1),
+                    shared_mem_bytes: 0,
+                };
+                let (inf, outf, mi, rb) = (in_f as i32, out_f as i32, m as i32, row_bytes as i64);
+                let __s_b = self.gpu.stream();
+                let mut b = __s_b.launch_builder(&f);
+                b.arg(bytes)
+                    .arg(aq)
+                    .arg(ad)
+                    .arg(&mut y)
+                    .arg(&inf)
+                    .arg(&outf)
+                    .arg(&mi)
+                    .arg(&rb);
+                unsafe {
+                    b.launch(cfg)?;
+                }
+                if scale != 1.0 {
+                    self.scale_inplace(&mut y, scale, m * out_f)?;
+                }
+                return Ok(y);
+            }
+            if qtype == QT_Q5_K && !rp {
+                let f = self.func("qmatvec_q5_K_mmvq_b32cs");
+                let mut y = self.alloc_uninit::<f32>(m * out_f)?;
+                // 2 blocks (column halves) per 4-row block
+                let cfg = LaunchConfig {
+                    grid_dim: ((out_f as u32).div_ceil(ROWS_PER_BLOCK) * 2, 1, 1),
                     block_dim: (32, ROWS_PER_BLOCK, 1),
                     shared_mem_bytes: 0,
                 };
