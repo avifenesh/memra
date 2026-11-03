@@ -24205,8 +24205,9 @@ impl Engine {
         const ROWS_PER_BLOCK: u32 = 4;
         // TUNE SEAM (H100 lane): MEMRA_BVAR forces the batched-variant pick for the whole
         // process — the auto heuristics were tuned on sm_120 (82 SMs / 858 GB/s) and the
-        // sm_90a re-tune sweeps this seam empirically. Layout variants stay safe: an rp
-        // weight keeps its rp-layout kernel family regardless of the override.
+        // sm_90a re-tune sweeps this seam empirically. Layout variants stay safe: a forced
+        // variant applies only when its layout matches the weight's (rp variants on rp bytes,
+        // the rest on GGUF-layout bytes); otherwise the auto pick runs.
         let forced: Option<&'static str> = {
             static V: std::sync::OnceLock<Option<String>> = std::sync::OnceLock::new();
             V.get_or_init(|| std::env::var("MEMRA_BVAR").ok())
@@ -24214,7 +24215,7 @@ impl Engine {
                 .map(|s| Box::leak(s.to_string().into_boxed_str()) as &'static str)
         };
         let variant = match forced {
-            Some(v) if !rp || v.contains("rp") => v,
+            Some(v) if v.contains("rp") == rp => v,
             _ => self.batched_variant(m, in_f, out_f, qtype, mcols, rp),
         };
         // EXACT TENSOR-CORE tier (batch-spec 2026-11-03, MEMRA_MMVQ_TC=1 A/B seam): int8
