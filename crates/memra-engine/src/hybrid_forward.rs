@@ -14876,8 +14876,8 @@ impl HybridModel {
                     n_embd,
                     n_ff_exp,
                     n_used,
-                    m.gate_exps.qtype,
-                    m.up_exps.qtype,
+                    crate::rp_qt(slab_rp, m.gate_exps.qtype), // memra#147: V2 via expert_dot_g
+                    crate::rp_qt(slab_rp, m.up_exps.qtype),
                     m.gate_exps.row_bytes,
                     m.up_exps.row_bytes,
                 )?;
@@ -14892,7 +14892,7 @@ impl HybridModel {
                     n_ff_exp,
                     n_embd,
                     n_used,
-                    m.down_exps.qtype,
+                    crate::rp_qt(slab_rp, m.down_exps.qtype),
                     m.down_exps.row_bytes,
                 )?;
                 continue;
@@ -15105,6 +15105,12 @@ impl HybridModel {
                 // `qmatvec_view`), same ffn_act_lim/macro folds; provenance = slab base +
                 // ex*stride. No dispatch lock, no admission, no prefetch — nothing to miss.
                 if let Some(d) = slab_local {
+                    // memra#147: a repacked (split-plane) slab is read through the q8 dots,
+                    // whose `expert_dot_g` takes the V2 case when told `QT_NVFP4_V2`. The f32
+                    // activation reader (`qmatvec_f32`) has no V2 case and refuses by name.
+                    if !moe_q8 {
+                        crate::moe_rp_refuse(slab_rp, "moe_ffn per-expert slab read (f32)")?;
+                    }
                     let gl = m.gate_exps.expert_layout(ex);
                     let ul = m.up_exps.expert_layout(ex);
                     let dl = m.down_exps.expert_layout(ex);
@@ -15128,7 +15134,7 @@ impl HybridModel {
                                 1,
                                 m.gate_exps.in_f,
                                 m.gate_exps.out_f,
-                                gl.qtype,
+                                crate::rp_qt(slab_rp, gl.qtype),
                                 gl.row_bytes,
                             )?,
                             e.qmatvec_expert_q8(
@@ -15139,7 +15145,7 @@ impl HybridModel {
                                 1,
                                 m.up_exps.in_f,
                                 m.up_exps.out_f,
-                                ul.qtype,
+                                crate::rp_qt(slab_rp, ul.qtype),
                                 ul.row_bytes,
                             )?,
                         )
@@ -15191,7 +15197,7 @@ impl HybridModel {
                             1,
                             m.down_exps.in_f,
                             m.down_exps.out_f,
-                            dl.qtype,
+                            crate::rp_qt(slab_rp, dl.qtype),
                             dl.row_bytes,
                         )?
                     } else {
