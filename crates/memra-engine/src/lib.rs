@@ -3178,10 +3178,11 @@ pub fn bf16_tcols_red_fused_dispatches() -> u64 {
 // glm5-b200-vrows-pack-plus-0-70-ord-neutral for the receipt.
 
 /// `MEMRA_MOE_VROWS_ILP` (lane/glm5-moe-rows-ilp-20260904; default ON on sm_100a builds since
-/// 2026-09-04, OFF elsewhere, `=0`/`=1` override): the verify-rows MoE pair launches its `_ilp` twins, the same per-warp program with the loads of four (then two)
-/// groups per lane issued ahead of their math. Composes with door M (`_w4_ilp`). ONLY the
-/// interleaved NVFP4 expert layout (`QT_NVFP4`): the launchers refuse by name for any other
-/// qtype and keep the shipped kernel. Read PER CALL. Why and receipts: the kernel header in
+/// 2026-09-04, OFF elsewhere, `=0`/`=1` override): the verify-rows MoE pair launches its `_ilp`
+/// twins, the same per-warp program with the loads of four (then two) groups per lane issued
+/// ahead of their math. ONLY the NVFP4 expert layouts (`QT_NVFP4` and the slot-major
+/// `QT_NVFP4_V2`): the launchers refuse by name for any other qtype and keep the shipped
+/// kernel. Read PER CALL. Why and receipts: the kernel header in
 /// cu/qmatvec.cu and docs/FLAGS.md.
 pub(crate) fn moe_vrows_ilp_on() -> bool {
     moe_vrows_ilp_on_from(
@@ -9572,8 +9573,9 @@ impl Engine {
         // 2026-09-28 (memra#886, door hygiene): superseded / neutral, neither armed in the served
         // launcher. See docs/FLAGS.md "Removed doors".
         //
-        // MEMRA_MOE_VROWS_ILP (lane/glm5-moe-rows-ilp-20260904, default OFF): the `_ilp` twin,
-        // interleaved-NVFP4 only. Refuses by name otherwise.
+        // MEMRA_MOE_VROWS_ILP (lane/glm5-moe-rows-ilp-20260904, default ON on sm_100a builds,
+        // OFF elsewhere): the `_ilp` twin, NVFP4 expert layouts only (`QT_NVFP4` and the
+        // slot-major `QT_NVFP4_V2`). Refuses by name otherwise.
         let ilp = moe_vrows_ilp_on()
             && if (qt_g == QT_NVFP4 && qt_u == QT_NVFP4)
                 || (qt_g == QT_NVFP4_V2 && qt_u == QT_NVFP4_V2)
@@ -9661,7 +9663,7 @@ impl Engine {
         // inside the block and keeps its ORIGINAL slot order; only the grid moves. Needs no table
         // plane (the down chain cannot be permuted).
         let tmaj = moe_vrows_down_tmaj_on() && out_f <= 65535;
-        // MEMRA_MOE_VROWS_ILP: the down `_ilp` twins, interleaved-NVFP4 only (see gate/up).
+        // MEMRA_MOE_VROWS_ILP: the down `_ilp` twins, NVFP4 layouts only (see gate/up).
         let ilp = moe_vrows_ilp_on()
             && if qt == QT_NVFP4 || qt == QT_NVFP4_V2 {
                 true
@@ -18370,12 +18372,12 @@ impl Engine {
             // MEMRA_FULL_PREC bf16-resident weight: dequant-on-use to f32 scratch, then the same
             // cuBLASLt f32 GEMV as the Float arm.
             GpuTensor::FloatBf16 { data, .. } => {
-                // DECODE-TIER ROWS FAST PATH (2 <= m <= 8, bf16-mmv class): the chunked
+                // DECODE-TIER ROWS FAST PATH (1 <= m <= 32, bf16-mmv class): the chunked
                 // arm dequants the WHOLE weight to f32 scratch per call — 4.7 ms/call on
                 // the 1.24 GB LM head (nsys: 8x591us bf16_to_f32 per batch tick / per
                 // verify round). matvec_bf16_f32acc_x4_rows runs the t=1 decode head
                 // program PER ROW (identical dot + reduce), so decode/verify tiers keep
-                // the t=1 numeric class and skip the convert. Prefill (m>8) keeps GEMM.
+                // the t=1 numeric class and skip the convert. m > 32 keeps the chunked GEMM.
                 if (1..=32).contains(&m) && Self::bf16_mmv_on() && in_f.is_multiple_of(8) {
                     let mut y = self.alloc_uninit::<f32>(m * out_f)?;
                     self.matvec_bf16_rows_into(data, x, &mut y, in_f, out_f, m)?;
@@ -24657,7 +24659,8 @@ impl Engine {
         result
     }
 
-    /// MEMRA_BF16_MMV=1: decode-time (m=1) BF16-resident matvec door. Numeric class change vs
+    /// MEMRA_BF16_MMV=1: BF16-resident matvec door for the decode and verify rows tier (m <= 32,
+    /// each row the t=1 matvec program). Numeric class change vs
     /// the expansion path (single-kernel deterministic tree reduce vs f32 cuBLASLt), so it is
     /// default OFF and gated by the run-gen argmax gate + boot battery like the other
     /// numeric-class doors (DEV_ROUTES precedent).
