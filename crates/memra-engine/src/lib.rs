@@ -3571,8 +3571,8 @@ pub(crate) fn ep_diet_armed() -> (bool, &'static str) {
 /// (dieted) sequential EP walk. Numeric class: per-expert GEMMs are the plain grouped arm's;
 /// the ONE reassociation is the per-token root+peer partial add (band-gated, never claimed
 /// byte). Read per call.
-/// `MEMRA_GLM5_TP_SPLIT_GROUPED_PRIME=1` (default OFF in code; the served 1M TP-2 launcher arms
-/// it, see its FLAGS.md row): the grouped prime for the expert-SPLIT TP walk (`moe_ffn_glm5_tp_split_grouped_prime`): the EP grouped
+/// `MEMRA_GLM5_TP_SPLIT_GROUPED_PRIME=1` (default OFF in code; a launcher sets it, see its
+/// FLAGS.md row): the grouped prime for the expert-SPLIT TP walk (`moe_ffn_glm5_tp_split_grouped_prime`): the EP grouped
 /// prime's per-rank program run by both ranks over all routed pairs against the half-width
 /// slabs, one partial add per layer per chunk. Read per call; falls closed to the slot walk.
 pub fn glm5_tp_split_grouped_prime_on() -> bool {
