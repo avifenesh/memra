@@ -4294,6 +4294,28 @@ impl HybridModel {
         let gemma_program = batch_program == crate::plan_backend::DecodeBatchProgram::Gemma;
         let sliding_gated_moe_program =
             batch_program == crate::plan_backend::DecodeBatchProgram::SlidingGatedMoe;
+        // Per-model numeric defaults: they live in process-global statics, so decide
+        // the whole set HERE, before any tensor upload or door read, and claim it. A second
+        // model in this process that wants a different set refuses by name instead of running
+        // this one's program (see `ModelNumericDefaults`). The stores below apply exactly
+        // these values.
+        let gemma_real_moe = plan
+            .trunk_operations()
+            .contains(&memra_gguf::model_plan::OperationKind::MoeMlp);
+        let spec_mmq_key =
+            std::env::var("MEMRA_DRAFT").is_ok() && std::env::var("MEMRA_MMQ_SK").is_err();
+        let numeric = crate::ModelNumericDefaults::for_model(
+            if cfg.n_head_kv > 0 {
+                cfg.n_head / cfg.n_head_kv
+            } else {
+                0
+            },
+            gemma_program.then_some(gemma_real_moe),
+            cfg.arch.is_glm5_next() && env!("MEMRA_BUILT_CUDA_ARCH") == "100a",
+            sliding_gated_moe_program,
+            spec_mmq_key.then_some(cfg.n_embd),
+        );
+        crate::claim_model_numeric_defaults(&format!("{} ({:?})", cfg.name, cfg.arch), numeric)?;
         if matches!(
             src.expert_activation_precision(),
             memra_gguf::source::ExpertActivationPrecision::Bf16
@@ -4310,7 +4332,7 @@ impl HybridModel {
         // The co-load guard runs first: the defaults are process-wide and the W8 hybrid half
         // reaches generic GEMVs, so a mixed-family process refuses here (lib.rs co-load audit).
         crate::admit_step37_coload(sliding_gated_moe_program)?;
-        if sliding_gated_moe_program {
+        if numeric.step37_serving {
             crate::arm_step37_serving_defaults();
         }
         // Refuse an architecture that declares no attention output-gate layout, BEFORE any
@@ -4343,9 +4365,8 @@ impl HybridModel {
         // MEMRA_MMQ_SK_FORM pins a separately measured arm.
         // An earlier attempt set this in generate_spec_gemma — too late, the prime's
         // GEMMs had already selected their form.
-        if std::env::var("MEMRA_DRAFT").is_ok() && std::env::var("MEMRA_MMQ_SK").is_err() {
-            let force = if cfg.n_embd >= 3500 { 0i8 } else { -1i8 };
-            crate::MMQ_SK_FORCE.store(force, std::sync::atomic::Ordering::Relaxed);
+        if spec_mmq_key {
+            crate::MMQ_SK_FORCE.store(numeric.mmq_sk_force, std::sync::atomic::Ordering::Relaxed);
         }
         // B0 FIX (hoisted): cfg.n_layer == block_count INCLUDES the MTP/NextN block(s)
         // (41 for the 35B-MoE); the trunk is n_layer - nextn. Computed before any tensor
@@ -5635,9 +5656,9 @@ impl HybridModel {
         // readers latch at first dispatch. A load that comes after another model's first
         // dispatch cannot apply its own value, so it refuses by name instead of decoding under
         // the other model's program (for the v4 threshold: all-NaN logits at gqa>8).
-        if cfg.n_head_kv > 0 && cfg.n_head / cfg.n_head_kv > 8 {
+        if numeric.fa_v4_max != crate::ModelNumericDefaults::PROCESS.fa_v4_max {
             if let Some(msg) = crate::fa_v4_max_default_conflict(
-                0,
+                numeric.fa_v4_max,
                 &format!(
                     "gqa {} > fa_v4_smem capacity 8; the v4 kernels decode all-NaN past it",
                     cfg.n_head / cfg.n_head_kv
@@ -5645,7 +5666,7 @@ impl HybridModel {
             ) {
                 return Err(msg.into());
             }
-            crate::FA_V4_MAX_DEFAULT.store(0, std::sync::atomic::Ordering::Relaxed);
+            crate::FA_V4_MAX_DEFAULT.store(numeric.fa_v4_max, std::sync::atomic::Ordering::Relaxed);
             eprintln!(
                 "[fa] v4 decode family disabled: gqa {} > fa_v4_smem capacity 8 (v3 lane serves)",
                 cfg.n_head / cfg.n_head_kv
@@ -5653,27 +5674,27 @@ impl HybridModel {
         }
 
         if gemma_program {
-            if let Some(msg) = crate::fa_vec_min_default_conflict(1, "gemma4 fa-vec crossover")
-                .or_else(|| crate::rms_block_default_conflict(1024, "gemma4 rms_norm block"))
+            // The values are `ModelNumericDefaults::for_model`'s (claimed above); the
+            // measurements behind them stay here.
+            if let Some(msg) =
+                crate::fa_vec_min_default_conflict(numeric.fa_vec_min, "gemma4 fa-vec crossover")
+                    .or_else(|| {
+                        crate::rms_block_default_conflict(
+                            numeric.rms_block,
+                            "gemma4 rms_norm block",
+                        )
+                    })
             {
                 return Err(msg.into());
             }
             // gemma4 fa-vec crossover default (measured sweep 2026-07-10; env overrides).
-            crate::FA_VEC_MIN_DEFAULT.store(1, std::sync::atomic::Ordering::Relaxed);
+            crate::FA_VEC_MIN_DEFAULT
+                .store(numeric.fa_vec_min, std::sync::atomic::Ordering::Relaxed);
             // windowed split per gemma variant (2026-07-12 sweeps): MoE 26B = 32 (grid-limited
             // t=1 under the raw-e4m3 sV ceiling), dense 31B = 64 (37.13 vs 36.87 at 1.7k, N=2).
-            let real_moe = plan
-                .trunk_operations()
-                .contains(&memra_gguf::model_plan::OperationKind::MoeMlp);
-            crate::FA_SPW_DEFAULT.store(
-                if real_moe { 32 } else { 64 },
-                std::sync::atomic::Ordering::Relaxed,
-            );
+            crate::FA_SPW_DEFAULT.store(numeric.fa_spw, std::sync::atomic::Ordering::Relaxed);
             // hd512 global split per variant (26B=16 landed 2026-07-11; 31B=32 swept 2026-07-12).
-            crate::FA_SP512_DEFAULT.store(
-                if real_moe { 16 } else { 32 },
-                std::sync::atomic::Ordering::Relaxed,
-            );
+            crate::FA_SP512_DEFAULT.store(numeric.fa_sp512, std::sync::atomic::Ordering::Relaxed);
             // gemma4 router w8 RE-ARBITRATED 2026-08-01 (g26 decode dig): the 2026-07-31
             // knife-edge that stored false here was single-synthetic-prompt roulette — on 6
             // real prompts the w8 twin's gate outcome is IDENTICAL to the lone-warp form
@@ -5683,11 +5704,11 @@ impl HybridModel {
             // the global default (true); MEMRA_ROUTER_V2=0 is the rollback seam.
             // fused t=1 pair/triple mr1 per variant (2026-07-14 DRAM-duty arc: dense +1.1%
             // short / +0.6% depth on 31B; MoE 26B −1.2% — stays mr2).
-            crate::FUSED_MR1_DEFAULT.store(!real_moe, std::sync::atomic::Ordering::Relaxed);
+            crate::FUSED_MR1_DEFAULT.store(numeric.fused_mr1, std::sync::atomic::Ordering::Relaxed);
             // gemma4 rms_norm block 1024 (single-row 2816-col norms; battery-arbitrated per model).
-            crate::RMS_BLOCK_DEFAULT.store(1024, std::sync::atomic::Ordering::Relaxed);
+            crate::RMS_BLOCK_DEFAULT.store(numeric.rms_block, std::sync::atomic::Ordering::Relaxed);
             // gemma4 fa split ladder (d1736 sweep; see fa_split_keys).
-            crate::FA_SP_GEMMA.store(true, std::sync::atomic::Ordering::Relaxed);
+            crate::FA_SP_GEMMA.store(numeric.fa_sp_gemma, std::sync::atomic::Ordering::Relaxed);
             // depth fa: PARITY LAW (2026-07-10) — decode and verify share the rows_w/rows_dpl16
             // kernel symbols (decode t=1), so lane choice is freely tunable; v4 measured the
             // depth winner. Seams: MEMRA_FA_V4_MAX / MEMRA_FA_SMEM_TKV / MEMRA_GEMMA_ROWS_W.
@@ -5697,12 +5718,13 @@ impl HybridModel {
         // research/glm5-b200-mint-20260904/LANE.md). `MEMRA_RMS_BLOCK=<n>` still overrides;
         // other archs keep the per-model default above.
         if cfg.arch.is_glm5_next() && env!("MEMRA_BUILT_CUDA_ARCH") == "100a" {
-            if let Some(msg) =
-                crate::rms_block_default_conflict(1024, "GLM-5.3-Flash sm_100a rms_norm block")
-            {
+            if let Some(msg) = crate::rms_block_default_conflict(
+                numeric.rms_block,
+                "GLM-5.3-Flash sm_100a rms_norm block",
+            ) {
                 return Err(msg.into());
             }
-            crate::RMS_BLOCK_DEFAULT.store(1024, std::sync::atomic::Ordering::Relaxed);
+            crate::RMS_BLOCK_DEFAULT.store(numeric.rms_block, std::sync::atomic::Ordering::Relaxed);
         }
         // gemma4: the dc serving loop + spec draft gather read the device embed table every
         // step — upload it AT LOAD (OnceLock init) so first-use cost never lands in a timed span.
