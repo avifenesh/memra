@@ -948,8 +948,8 @@ pub fn kda_conv3_dispatches() -> u64 {
 /// six-projection launcher (`MEMRA_GLM5_Q8_FUSE_ATTN`, lane/glm5-attn-norm-zq8-20260904).
 pub type KdaPreQ8<'a> = Option<(&'a CudaSlice<i8>, &'a CudaSlice<f32>)>;
 
-/// `MEMRA_KDA_ONORM_ZQ8=1` (lane/kda-onorm-zq8-20260905, default OFF pending its model-scale row):
-/// the decode (t=1, non-rows) KDA core emits the o_norm output's q8_1 pair from the gated-norm
+/// `MEMRA_KDA_ONORM_ZQ8` (lane/kda-onorm-zq8-20260905; default ON on sm_100a builds through the
+/// B200 posture, OFF elsewhere; `=1` / `=0` override): the decode (t=1, non-rows) KDA core emits the o_norm output's q8_1 pair from the gated-norm
 /// launch itself (`memra_kda_gated_rmsnorm_zq8_f32`) and hands it to the `wo` MMVQ through
 /// `matmul_q8_fast`, dropping the standalone `quantize_q8_1` launch (34 per token on
 /// GLM-5.3-Flash, in-graph). BIT-IDENTICAL: same norm bytes, same q8_1 arithmetic as
