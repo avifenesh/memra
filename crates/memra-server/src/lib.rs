@@ -10290,24 +10290,33 @@ fn prepare_budget_prompt(
     if let Some(error) = worker::prompt_source_limit_error(request) {
         return Err(error);
     }
-    if request.prepared_prompt.is_none() {
+    let prompt_tokens = if let Some(prompt) = request.prepared_prompt.as_ref() {
+        prompt.len()
+    } else {
         if let Some(trace) = request.ttft.as_ref() {
             trace.mark_tokenize_start();
         }
-        let prompt = render_prompt_ids(request, tokenizer, true)?;
+        let mut prompt = render_prompt_ids(request, tokenizer, true)?;
         if prompt.is_empty() {
             return Err("empty prompt after tokenization".into());
         }
-        if let Some(trace) = request.ttft.as_ref() {
-            trace.mark_tokenize_end(prompt.len());
+        // The worker's prepare skips its render once `prepared_prompt` is set, so this
+        // render serves and must take the worker's post-render seal (hidden-capture eos,
+        // vision special-id guard). Only explicit prompt_ids render without a tokenizer,
+        // and the seal needs one: those bill as given and stay unset for the worker to seal.
+        match tokenizer {
+            Some(tokenizer) => {
+                worker::seal_prompt_ids(&mut prompt, tokenizer, tokenizer.eos_id(), request)?;
+                if let Some(trace) = request.ttft.as_ref() {
+                    trace.mark_tokenize_end(prompt.len());
+                }
+                let prompt_tokens = prompt.len();
+                request.prepared_prompt = Some(prompt);
+                prompt_tokens
+            }
+            None => prompt.len(),
         }
-        request.prepared_prompt = Some(prompt);
-    }
-    let prompt_tokens = request
-        .prepared_prompt
-        .as_ref()
-        .expect("budget prompt was prepared")
-        .len();
+    };
     if let Some(limit) = request.max_prompt_tokens
         && prompt_tokens > limit
     {
@@ -25014,6 +25023,39 @@ temperature = 0.6
         assert_eq!(response.status(), StatusCode::OK);
         assert!(response.headers().contains_key("x-ratelimit-limit"));
         assert_eq!(token_api_json(response).await["prompt"], "Hello, שלום!");
+    }
+
+    /// Metered budget admission renders the prompt the worker then serves (the worker skips
+    /// its own render once `prepared_prompt` is set), so that render must take the worker's
+    /// post-render seal: the hidden-capture eos append (embedding pooling position) and the
+    /// vision special-id guard. Before the shared seal, this path stored the bare encode.
+    #[test]
+    fn budget_render_takes_the_worker_post_render_seal() {
+        let tok = worker::vision_special_guard_tests::glm5_vision_fixture_tokenizer();
+        let request_for = |prompt: &str| {
+            let completion: CompletionReq =
+                serde_json::from_value(json!({"model":"m", "prompt": prompt})).unwrap();
+            let (tx, _rx) = worker::event_channel();
+            build_request(&completion, tx, lanes::Lane::Interactive, None)
+        };
+
+        let mut capture = request_for("hello");
+        capture.capture = Some(worker::CaptureSpec {
+            hidden: true,
+            logit_pieces: Vec::new(),
+        });
+        let billed = prepare_budget_prompt(&mut capture, Some(tok)).unwrap();
+        let mut sealed = tok.encode("hello", true);
+        assert_ne!(sealed.last(), Some(&tok.eos_id()));
+        sealed.push(tok.eos_id());
+        assert_eq!(capture.prepared_prompt.as_deref(), Some(sealed.as_slice()));
+        assert_eq!(billed, sealed.len());
+
+        let mut smuggled = request_for("What does <|image|> mean here?");
+        let err = prepare_budget_prompt(&mut smuggled, Some(tok))
+            .expect_err("a text-only literal vision special token must refuse");
+        assert!(err.contains("<|image|>"), "{err}");
+        assert!(smuggled.prepared_prompt.is_none());
     }
 
     #[tokio::test]

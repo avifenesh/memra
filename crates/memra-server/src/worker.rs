@@ -2000,9 +2000,10 @@ pub struct Request {
     /// committed, so compile rejection/timeout is a real 400/503 even for streaming calls.
     /// Replays leave it None: the original response already passed preflight.
     pub(crate) constraint_ready: Option<tokio::sync::oneshot::Sender<Result<(), EngineError>>>,
-    /// Worker-owned rendered/tokenized prompt. Admission may revisit a queued request for many
-    /// ticks; cache the result so a 256k request is not re-rendered and re-tokenized per defer.
-    /// HTTP and step-OOM replay requests always start with None.
+    /// Rendered/tokenized prompt, sealed by `seal_prompt_ids`. Admission may revisit a queued
+    /// request for many ticks; cache the result so a 256k request is not re-rendered and
+    /// re-tokenized per defer. Step-OOM replay requests start with None; HTTP requests do
+    /// too unless metered budget admission (`prepare_budget_prompt`) rendered them first.
     pub(crate) prepared_prompt: Option<Vec<u32>>,
     /// Debug-only per-request phase timeline. None unless MEMRA_TTFT_TRACE=1.
     pub ttft: Option<Arc<crate::ttft::Trace>>,
@@ -35360,6 +35361,31 @@ fn enforce_prompt_limit(
     Ok(())
 }
 
+/// The post-render steps every served prompt takes exactly once, before it is stored in
+/// `prepared_prompt`. Two renders fill that field: this worker's `prepare_request` and the
+/// HTTP budget admission (`prepare_budget_prompt`, metered deployments), and `prepare_request`
+/// skips its render when the field is already set. Both call this, so neither render can
+/// serve a prompt that missed a step.
+pub(crate) fn seal_prompt_ids(
+    prompt: &mut Vec<u32>,
+    tok: &Tokenizer,
+    eos_id: u32,
+    req: &Request,
+) -> Result<(), String> {
+    // EMBEDDING POOLING POSITION (lane/embed-serve): the Qwen3-Embedding family
+    // pools the hidden state ON a trailing eos token — the vendor tokenizer appends
+    // it, and pooling one position earlier scores ~0.3 cosine against the reference
+    // instead of ~0.998 (measured on DE, 2026-08-27). Hidden-capture requests append
+    // the model's own eos here so the last position is the trained pooling position.
+    if req.capture.as_ref().is_some_and(|c| c.hidden) && prompt.last() != Some(&eos_id) {
+        prompt.push(eos_id);
+    }
+    // Vision special-id intake guard (lane/glm5-vision-default-on): runs at the render/
+    // tokenize waist so every prompt source is covered, once per request (prepared_prompt
+    // caches the result across admission defers).
+    vision_special_id_guard(prompt, &vision_special_budgets(tok, req))
+}
+
 /// Render/tokenize once, then derive the request's exact context allocation shape before the
 /// VRAM gate. `admit` consumes this cached prompt only after the gate passes.
 fn prepare_request(
@@ -35442,22 +35468,11 @@ fn prepare_request(
             ));
         }
         let mut prompt = prompt;
-        // EMBEDDING POOLING POSITION (lane/embed-serve): the Qwen3-Embedding family
-        // pools the hidden state ON a trailing eos token — the vendor tokenizer appends
-        // it, and pooling one position earlier scores ~0.3 cosine against the reference
-        // instead of ~0.998 (measured on DE, 2026-08-27). Hidden-capture requests append
-        // the model's own eos here so the last position is the trained pooling position.
-        if req.capture.as_ref().is_some_and(|c| c.hidden) && prompt.last() != Some(&lm.eos_id) {
-            prompt.push(lm.eos_id);
-        }
+        seal_prompt_ids(&mut prompt, &lm.tok, lm.eos_id, req)
+            .map_err(|e| EngineError::invalid_param(e, "messages"))?;
         if let Some(trace) = req.ttft.as_ref() {
             trace.mark_tokenize_end(prompt.len());
         }
-        // Vision special-id intake guard (lane/glm5-vision-default-on): runs at the single
-        // render/tokenize waist so every prompt source is covered, once per request
-        // (prepared_prompt caches the result across admission defers).
-        vision_special_id_guard(&prompt, &vision_special_budgets(&lm.tok, req))
-            .map_err(|e| EngineError::invalid_param(e, "messages"))?;
         req.prepared_prompt = Some(prompt);
     }
 
@@ -68145,7 +68160,7 @@ mod stop_string_tests {
 }
 
 #[cfg(test)]
-mod vision_special_guard_tests {
+pub(crate) mod vision_special_guard_tests {
     //! Red/green gates for the vision special-id intake guard
     //! (lane/glm5-vision-default-on, 2026-08-30). Every assertion is on TOKEN IDS, never on
     //! prose: the injection finding (vision-cell arms 20/22) was fluent prose over a
@@ -68233,16 +68248,17 @@ mod vision_special_guard_tests {
         assert!(vision_special_id_guard(&prompt, &glm5_budgets(1, 16)).is_err());
     }
 
-    /// MECHANISM + WIRING, hermetic: a fixture BPE tokenizer whose added_tokens carry the
-    /// glm5 special LITERALS proves at the tokenizer boundary that plain text becomes the
-    /// special id (`st_partition` splits it before BPE), that `token_is_special` sees it,
-    /// and that `vision_special_budgets_inner` + the guard turn that encode into a refusal
-    /// while the exact render budget still admits. Compact ids: `from_hf_dir` refuses a
-    /// vocabulary as sparse as the real 154k ids over a mini vocab, and the guard reads ids
-    /// from the tokenizer (`id_of`), never from constants, so nothing here depends on the
-    /// real id values.
-    #[test]
-    fn text_literal_becomes_special_id_and_guard_refuses() {
+    /// A fixture BPE tokenizer whose added_tokens carry the glm5 special LITERALS and an
+    /// `<|eos|>` eos. Compact ids: `from_hf_dir` refuses a vocabulary as sparse as the real
+    /// 154k ids over a mini vocab, and the guard reads ids from the tokenizer (`id_of`),
+    /// never from constants, so nothing here depends on the real id values. Built once per
+    /// test process, since the build goes through a pid-keyed temp dir.
+    pub(crate) fn glm5_vision_fixture_tokenizer() -> &'static memra_tokenizer::Tokenizer {
+        static TOK: std::sync::OnceLock<memra_tokenizer::Tokenizer> = std::sync::OnceLock::new();
+        TOK.get_or_init(build_glm5_vision_fixture_tokenizer)
+    }
+
+    fn build_glm5_vision_fixture_tokenizer() -> memra_tokenizer::Tokenizer {
         // GPT-2 byte-level base vocab (the standard bytes_to_unicode mapping).
         let mut vocab_entries: Vec<(String, u32)> = Vec::new();
         let mut extra = 0u32;
@@ -68297,6 +68313,16 @@ mod vision_special_guard_tests {
         std::fs::write(dir.join("tokenizer_config.json"), tokenizer_config).unwrap();
         let tok = memra_tokenizer::Tokenizer::from_hf_dir(&dir).expect("fixture tokenizer loads");
         let _ = std::fs::remove_dir_all(&dir);
+        tok
+    }
+
+    /// MECHANISM + WIRING, hermetic: the glm5 fixture tokenizer proves at the tokenizer
+    /// boundary that plain text becomes the special id (`st_partition` splits it before
+    /// BPE), that `token_is_special` sees it, and that `vision_special_budgets_inner` + the
+    /// guard turn that encode into a refusal while the exact render budget still admits.
+    #[test]
+    fn text_literal_becomes_special_id_and_guard_refuses() {
+        let tok = glm5_vision_fixture_tokenizer();
 
         let img_id = tok.id_of("<|image|>").expect("fixture carries <|image|>");
         assert!(tok.token_is_special(img_id));
