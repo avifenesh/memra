@@ -921,7 +921,7 @@ These exist because correctness discipline needs a same-binary oracle. Each is a
 | `MEMRA_NO_FUSE_NORMQ` (set) | unfused rms_norm + quantize (decode norm-fusion off) | fused 2026-07-03 |
 | `MEMRA_NO_GEMM` (set) | force the dp4a fallback for prefill matmuls — the int8-GEMM bit-reference | 2026-06-28 dispatch |
 | `MEMRA_NOFA` (set) | naive SDPA instead of the hand-written prefill FlashAttention (also the auto-fallback for unstamped head_dims) | FA prefill 2026-06 |
-| `MEMRA_KS=0` | drop the 2026-07-06 rpsc smem-scale-prestage entries from variant AUTO | rpsc landed 2026-07-06 (rtx6000 +2.6% K=4; 5090 neutral, harmless) |
+| `MEMRA_KS=0` | drop the 2026-07-06 rpsc smem-scale-prestage entries from variant AUTO, including the 2026-11-03 b16 rpsc pick (b16 falls back to `rp`) | rpsc landed 2026-07-06 (rtx6000 +2.6% K=4; 5090 neutral, harmless); b16 rpsc 2026-11-03 (GB10 B=16 tick -18%, `research/batch-spec-20261101/GB10-PLAIN-DECODE.md`) |
 | `MEMRA_EVT=1` | restore cudarc cross-stream event tracking (elision default: −7ms/tok host on 35B) | elision default 2026-07-05 |
 | `MEMRA_RP=0` | GGUF-layout NVFP4 (no A6 split-plane repack); also the W4A4 door key (required — an rp weight always takes W4A8), see §5 | rp default 2026-07-05 |
 | `MEMRA_ST_DIRECT=0` | safetensors NVFP4 → GGUF-layout conversion instead of direct split-plane load | 2026-07-07 |
