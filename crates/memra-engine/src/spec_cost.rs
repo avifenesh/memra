@@ -93,6 +93,73 @@ fn median(mut v: Vec<f64>) -> f64 {
 }
 
 impl HybridModel {
+    /// Boot probe for the 32-row decode wave (batch-spec 2026-11-03): one plain step over 32
+    /// sessions in one wave against the same 32 sessions as two 16-row waves, at `depth`,
+    /// median of 3. Returns `(two_waves_ms, one_wave_ms)`. The one-wave tier is per-row
+    /// bit-identical to the two-wave program, so the faster form is a pure speed choice, and
+    /// the margin is small and device-shaped (GB10 27B: one wave 3.8% faster; an RTX 5090
+    /// laptop on a 9B: within its thermal drift), hence measured on the serving box. Every
+    /// buffer is dropped on return.
+    pub fn decode_wave_probe(
+        &self,
+        e: &Engine,
+        depth: usize,
+    ) -> Result<(f64, f64), Box<dyn std::error::Error>> {
+        const N: usize = 32;
+        let vocab = (self.cfg.n_vocab as usize).max(64) - 16;
+        let mut caches: Vec<Cache> = Vec::with_capacity(N);
+        for i in 0..N {
+            let mut c = crate::pp::new_cache(e, &self.cfg, depth + 32)?;
+            let p: Vec<u32> = (0..depth as u32)
+                .map(|j| (55 + (i as u32 + 1) * 97 + j * 31) % vocab as u32)
+                .collect();
+            let _ = self.prime_cache(e, &p, &mut c, 0)?;
+            caches.push(c);
+        }
+        let snaps = caches
+            .iter()
+            .map(|c| c.snapshot(e))
+            .collect::<Result<Vec<_>, _>>()?;
+        let toks: Vec<u32> = (0..N as u32)
+            .map(|j| (4242 + j * 7) % vocab as u32)
+            .collect();
+        let samp = vec![Some(DevSamp::new(0.0, 0, 0, 0, 1.0, 0.0)); N];
+        let masks = vec![None; N];
+        let (mut two, mut one) = (Vec::with_capacity(REPS), Vec::with_capacity(REPS));
+        for rep in 0..=REPS {
+            for wide in [false, true] {
+                for (c, s) in caches.iter_mut().zip(&snaps) {
+                    c.rollback(e, s, 0)?;
+                }
+                let t0 = Instant::now();
+                if wide {
+                    let mut refs: Vec<&mut Cache> = caches.iter_mut().collect();
+                    let _ = self.decode_step_batch_sampled_lean_masked(
+                        e, &toks, &mut refs, &samp, &masks, true,
+                    )?;
+                } else {
+                    let (lo, hi) = caches.split_at_mut(N / 2);
+                    for (half, off) in [(lo, 0usize), (hi, N / 2)] {
+                        let mut refs: Vec<&mut Cache> = half.iter_mut().collect();
+                        let _ = self.decode_step_batch_sampled_lean_masked(
+                            e,
+                            &toks[off..off + N / 2],
+                            &mut refs,
+                            &samp[off..off + N / 2],
+                            &masks[off..off + N / 2],
+                            true,
+                        )?;
+                    }
+                }
+                if rep > 0 {
+                    let ms = t0.elapsed().as_secs_f64() * 1e3;
+                    if wide { one.push(ms) } else { two.push(ms) }
+                }
+            }
+        }
+        Ok((median(two), median(one)))
+    }
+
     /// Measure this model's [`SpecCostTable`] at `depth` (see the module docs). Runs on the
     /// serving engine before readiness; every buffer it allocates is dropped on return.
     pub fn spec_cost_calibrate(

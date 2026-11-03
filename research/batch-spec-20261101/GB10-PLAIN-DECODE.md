@@ -13,7 +13,14 @@ Geometry: 64 layers, 16 of them full attention (4 KV heads x 256) and 48 GDN (48
 
 Raw data: `gb10-decode-prof/` (profile), `gb10-ncu/` (ncu), `gb10-b16-rpsc/`, `gb10-b16-final-ab/`, `rig5090-b16-ab/` (the fix), `gb10-g4-rpsc/` (the twin not kept).
 
-**Result.** Up to B=8 the matmuls stream at the ceiling. At B=16 the b16 kernel stalled on L1 latency at 130 GB/s, and attention runs at half bandwidth at every batch. One exact fix went in: the b16 tier now uses the rpsc schedule, bit-identical. It cuts the B=16 tick by 18.4% on GB10 (100.9 -> 123.6 tok/s at depth 2048, 77.6 -> 90.5 at depth 12288) and by 14.4% on the 5090. The remaining levers are listed under Findings.
+**Result.** Up to B=8 the matmuls stream at the ceiling. At B=16 the b16 kernel stalled on L1 latency at 130 GB/s, and attention runs at half bandwidth at every batch. One exact fix went in: the b16 tier now uses the rpsc schedule, bit-identical. It cuts the B=16 tick by 18.4% on GB10 (100.9 -> 123.6 tok/s at depth 2048, 77.6 -> 90.5 at depth 12288) and by 14.4% on the 5090.
+
+**Afternoon levers** (section "The three exact levers, measured"):
+
+- Activation staging and next-weight prefetch in the 16-row kernel lose. A column split won the bench but was flat in the step. None of it is kept.
+- The 32-row tier is kept, decided per box at boot. On GB10 at 32 sessions it is -3.8% per tick at depth 2048 and -3.0% at depth 12288.
+- The batched-tick attention deep walk is kept. On GB10 it is -9.6% at 8 sessions x depth 32768 and -1.7% at 16 x 12288; on the 5090 9B, -9.5%.
+- Served on GB10, the agentic cell went 60.4 / 67.1 / 67.8 -> 61.8 / 75.8 / 79.0 tok/s at c = 8 / 16 / 32 (vLLM 96.7 / 121.4 / 135.5).
 
 ## Tick time and aggregate tok/s
 
@@ -126,7 +133,7 @@ The two asked-for variants lose. The prefetch costs registers that cut residency
 
 It is flat to negative in the real step. nsys (`gb10-lever1/nsys-*`) shows why: the decode step's singles are the FFN-sized tensors, where rpcs8 runs 268 us per launch against rpsc's 264. Its bench win came from the small tensors, which in the step ride the group4 door. Nothing from lever 1 is kept, and its kernels were deleted.
 
-### Lever 2: the 32-row tier: adopted
+### Lever 2: the 32-row tier: adopted, decided per box at boot
 
 - **Kernels.** `qmatvec_nvfp4_mmvq_b32_rpcs8` and `qmatvec_nvfp4_mmvq_group4_b32_rpcs8` give 32 columns as four 8-column blocks per 8-row weight block, adjacent in launch order so the repeat weight reads hit L2. Every other qtype at 17..32 rows runs as two bit-identical 16-column halves (here, the Q5_K output head).
 - **Scope.** `decode_step_batch` admits 17..32 rows for exact-16 models and sets a decode-wide scope (`Engine::set_decode_wide`). Only inside that scope do `small_m_tier_max` and the group doors widen to 32. Verify and prime never see it, and the PP entries keep 16.
@@ -144,6 +151,24 @@ Decode step at 32 sessions, one wave of 32 against two waves of 16 on the same b
 Schedule choice in the same step (`gb10-lever2/schedules-ab.txt`): 4 x 8 singles plus 4 x 8 group4 took 249.2 ms, and 2 x 16 singles took 367.7. 4 x 8 singles plus 2 x 16 group4 took 258.6 ms (in `ab.txt`'s first, killed run). nsys at 32 rows (`gb10-lever2/b32-kern.csv`): singles take 475 us per launch, against 2 x 264 for two b16 launches. group4 takes 612 us, against 2 x 276. The Q5_K head runs twice (2 x 6.5 ms).
 
 The win is small: the dp4a kernel is latency-bound at every width, so a second column block per weight row costs nearly as much as the first, even when its weight reads hit L2.
+
+**Device check on the RTX 5090: inconclusive under throttling, so the server measures it.** On the local 5090 laptop (`rig5090-levers/`, `battery/rig5090_levers.sh`), the test model was Qwen3.5-9B NVFP4 GGUF: the 27B GGUF runs out of memory on 24 GB at 24 or more sessions, and at 8 sessions x depth 12288. Results at 32 sessions, depth 2048, 3 + 3 interleaved twice, tokens identical:
+
+| run | two 16-row waves (ms/tick) | one 32-row wave (ms/tick) |
+|---|---|---|
+| first (`ab.txt`) | 52.71, 59.30, 59.97 | 56.25, 61.96, 62.79 |
+| rerun (`ab-wave-rerun.txt`) | 54.09, 63.90, 62.62 | 57.16, 60.74, 66.42 |
+
+The laptop ran at 81-87 C, and its SM clock drifted from 2002 down to 1477 MHz across each run. The first run favored two waves in every adjacent pair. The rerun split 2 to 1. The drift is larger than the effect.
+
+So the server decides on the box. At boot, `decode_wave_probe` times one plain step over 32 sessions as one wave and as two 16-row waves, interleaved per rep (spec-cost depth 2048, median of 3). `measured_wave_cap` keeps the 32-row cap only if one wave is faster. The cap stays 16 when the probe cannot run (allocation failure) or `MEMRA_MAX_SESSIONS` <= 16, and an explicit `MEMRA_DECODE_BATCH_CAP` skips the probe. Boot lines:
+
+| box | two waves | one wave | cap | probe time |
+|---|---:|---:|---:|---:|
+| GB10, 27B (`gb10-probe/boot-lines.txt`) | 276.2 ms | 266.2 ms | 32 | 79.3 s |
+| RTX 5090, 9B (`rig5090-probe/boot-lines.txt`) | 52.8 ms | 49.6 ms | 32 | 13.7 s |
+
+The probe adds its time to boot: priming 32 sessions at depth 2048 dominates. No PRO 6000 measurement.
 
 Two follow-ups on the 32-row tick were measured and are not kept (`gb10-lever2/followups-ab.txt`, 32 sessions at depth 2048, 3 runs per arm interleaved, tokens identical):
 
@@ -168,6 +193,8 @@ A = the lever-2 build, B = the same plus the deep seqs twin (`gb10-lever3/ab.txt
 | B=16, depth 12288, 3 + 3 (old new new old old new) | 178.50, 176.59, 176.57 | 173.38, 173.85, 173.62 | **-1.7%** (90.6 -> 92.2 tok/s) | identical |
 | B=8, depth 32768, 1 + 1 | 152.02 | 137.46 | **-9.6%** (52.6 -> 58.2 tok/s) | identical |
 | B=32, depth 12288, 1 + 1 | 342.30 | 337.37 | **-1.4%** (93.5 -> 94.9 tok/s) | identical |
+
+RTX 5090, Qwen3.5-9B, 16 sessions at depth 12288, 3 + 3 interleaved (`rig5090-levers/ab.txt`): before 43.58, 44.75, 45.00 ms; after 40.47, 40.51, 41.36 ms. That is **-9.5%**, tokens identical. The deep walk wins on both devices and is not keyed on either.
 
 nsys at B=16, depth 12288 (`gb10-lever3/fa-kern.csv`): attention takes 42.4 ms per step, down from 45.6 (138 GB/s, 59% of the part's ceiling); the combine stays at 6.0. The gain grows with depth because the prefetch covers more tiles per split.
 

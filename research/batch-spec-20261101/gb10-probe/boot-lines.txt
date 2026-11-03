@@ -1,0 +1,4 @@
+[worker] q38: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false qwen_effort=true gemma_think=false dsv4=false glm5=false ctx=262144 tok="qwen35" instruct=Some("chatml") chat_defaults=None/None
+[wave-probe] 32 sessions at depth 2048: two 16-row waves 276.2 ms, one 32-row wave 266.2 ms -> wave cap 32 (79.3s)
+[worker] q38: decode wave cap 32; scheduler tick cap 32 (exact-32 tier)
+[spec-cost] model="q38" depth=2048 pooled=true plain_cap=32 round_overhead=12.87ms pooled_overhead=Some((4, 4.729473562499997)) verify_ms[1..16]=[76.3 74.9 75.0 75.9 76.6 77.3 79.0 80.8 83.4 86.0 88.6 91.1 94.6 98.0 101.4 104.8] plain_ms[1..]=[74.8 78.5 82.3 86.2 90.6 95.0 99.4 103.9 109.2 114.4 119.7 125.0 130.3 135.6 140.9 146.2 153.7 161.2 168.6 176.1 183.6 191.1 198.6 206.0 213.5 221.0 228.5 236.0 243.4 250.9 258.4 265.9] (108.7s)

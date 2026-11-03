@@ -40497,8 +40497,53 @@ fn chunk_cap_for(lm: &LoadedModel) -> usize {
     }
 }
 
+/// Decide a 32-row wave cap by measurement (batch-spec 2026-11-03): the one-wave tick is
+/// per-row bit-identical to two 16-row waves, and which is faster is device-shaped (GB10 27B:
+/// one wave 3.8% faster; an RTX 5090 laptop on a 9B: within its thermal drift), so the first
+/// call per model runs
+/// `decode_wave_probe` at the spec-cost depth and keeps 32 only when one wave is faster.
+/// A probe that cannot run (allocation failure, fewer than 17 sessions allowed) keeps 16.
+/// An explicit MEMRA_DECODE_BATCH_CAP skips the probe.
+fn measured_wave_cap(lm: &LoadedModel, engine: &Engine, cap: usize) -> usize {
+    if cap <= 16 || std::env::var("MEMRA_DECODE_BATCH_CAP").is_ok() {
+        return cap;
+    }
+    static DECIDED: std::sync::OnceLock<std::sync::Mutex<HashMap<usize, usize>>> =
+        std::sync::OnceLock::new();
+    let key = &lm.model as *const HybridModel as usize;
+    let reg = DECIDED.get_or_init(|| std::sync::Mutex::new(HashMap::new()));
+    if let Some(&c) = reg.lock().unwrap().get(&key) {
+        return c;
+    }
+    let sessions = std::env::var("MEMRA_MAX_SESSIONS")
+        .ok()
+        .and_then(|v| v.parse::<usize>().ok())
+        .unwrap_or(usize::MAX);
+    let decided = if sessions <= 16 {
+        16
+    } else {
+        let t0 = std::time::Instant::now();
+        let probe = lm.model.decode_wave_probe(engine, SPEC_COST_DEPTH);
+        let c = match &probe {
+            Ok((two, one)) if one < two => 32,
+            _ => 16,
+        };
+        match probe {
+            Ok((two, one)) => eprintln!(
+                "[wave-probe] 32 sessions at depth {SPEC_COST_DEPTH}: two 16-row waves {two:.1} ms, \
+                 one 32-row wave {one:.1} ms -> wave cap {c} ({:.1}s)",
+                t0.elapsed().as_secs_f64()
+            ),
+            Err(err) => eprintln!("[wave-probe] failed ({err}); wave cap 16"),
+        }
+        c
+    };
+    reg.lock().unwrap().insert(key, decided);
+    decided
+}
+
 fn decode_chunk_policy(lm: &LoadedModel, engine: &Engine) -> DecodeChunkPolicy {
-    let wave_cap = chunk_cap_for(lm);
+    let wave_cap = measured_wave_cap(lm, engine, chunk_cap_for(lm));
     // mHC hyper trunks form SERIAL ticks only: `decode_step_batch_dual` has no hyper arm
     // and the scheduled entry refuses it by name, so the policy must never hand the engine
     // a dual-wave midpoint for this topology (decode_step_batch_hyper owns the PP-N split
