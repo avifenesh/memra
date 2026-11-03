@@ -217,9 +217,6 @@ pub mod tp_transport;
 pub mod unified_memory;
 pub use memra_sampling as sampler;
 
-/// In-house MoE router GEMV on the spec-verify small-t path (DEFAULT ON since 2026-07-10:
-/// battery green on 35B p2/p3 K=1..8, acceptance bit-identical, +2-4% spec e2e — replaces
-/// ~240 per-column cuBLAS gemv launches/round).
 /// MoE grouped f16 GEMM door (experimental until gated), f16-mirror numeric class:
 /// per-layer expert dequant to f16 + one grouped f16 GEMM over the CSR groups.
 ///   MEMRA_MOE_F16G=1  cublasGemmGroupedBatchedEx (round 46 arc 2). The grouped API issues
@@ -684,16 +681,6 @@ pub fn glm5_graph_no_capture() -> bool {
     std::env::var("MEMRA_GLM5_GRAPH_NO_CAPTURE").as_deref() == Ok("1")
 }
 
-/// `MEMRA_GLM5_VROWS_T1_DEV=1` — the T=1 device-table MoE arm, forced ON with no capture, no
-/// graph, and no `MEMRA_GLM5_DECODE_GRAPH` anywhere in the run. Default OFF, gate harness only.
-///
-/// From 2026-09-03 the arm is keyed on an OPEN CAPTURE REGION rather than on the decode-graph
-/// door, because that is the only place it is required (a host sel/w readback cannot live inside
-/// a capture). That keying is what makes the door's eager fall-through byte-identical again, and
-/// it also means the arm can no longer be observed on a plain decode run — so this knob puts it
-/// back within reach of a bisect. It is the cell box takes 4 through 11 never had: they set one
-/// env that turned on BOTH the arm and the capture, so a wrong tape could not be attributed to
-/// either. Run this alone and the answer is unambiguous.
 /// `MEMRA_GLM5_GRAPH_RECAPTURE=1` (default OFF): when a captured stage is invalidated (its
 /// `cache.pos` moved, or a recurrent-state buffer was re-seated rather than overwritten), REBUILD
 /// it instead of latching that stage to the eager walk for the rest of the session.
@@ -793,6 +780,18 @@ pub static VERIFY_GRAPH_KEEP: std::sync::Mutex<Vec<Box<dyn std::any::Any + Send>
 /// Pageable host-to-device copies the `MEMRA_GLM5_SPEC_DEV_IO` door replaced with launches.
 pub static SPEC_DEV_IO_AVOIDED: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
+/// `MEMRA_GLM5_VROWS_T1_DEV=1` — the T=1 device-table MoE arm, forced ON with no capture, no
+/// graph, and no `MEMRA_GLM5_DECODE_GRAPH` anywhere in the run. Unset forces the arm ON on
+/// sm_100a builds and leaves it OFF elsewhere (see [`glm5_vrows_t1_dev_forced_from`]); `=0`
+/// keeps the eager layers on the host readback.
+///
+/// From 2026-09-03 the arm is keyed on an OPEN CAPTURE REGION rather than on the decode-graph
+/// door, because that is the only place it is required (a host sel/w readback cannot live inside
+/// a capture). That keying is what makes the door's eager fall-through byte-identical again, and
+/// it also means the arm can no longer be observed on a plain decode run — so this knob puts it
+/// back within reach of a bisect. It is the cell box takes 4 through 11 never had: they set one
+/// env that turned on BOTH the arm and the capture, so a wrong tape could not be attributed to
+/// either. Run this alone and the answer is unambiguous.
 pub fn glm5_vrows_t1_dev_forced() -> bool {
     glm5_vrows_t1_dev_forced_from(
         std::env::var("MEMRA_GLM5_VROWS_T1_DEV").ok().as_deref(),
@@ -1894,21 +1893,6 @@ pub(crate) fn b200_bf16_gemv_lt_on() -> bool {
     })
 }
 
-/// MEMRA_STEP_TP_W8=1: q8_0 mirror of the step TP attention projections for DECODE.
-///
-/// NUMERIC-CLASS door, same class and acceptance as `MEMRA_STEP_TP_QKV_FUSED` /
-/// `MEMRA_BF16_MMV`: the per-row arithmetic becomes an int8 dp4a dot
-/// with per-32 scales instead of a bf16xf32 fma chain, so a bit-tape cannot apply and the
-/// acceptance is the argmax gate plus the boot battery. Motivation is measured, not assumed
-/// (`decode-kernel-census`, 2026-08-25): the fused qkv shape runs 23.0 us in bf16 at
-/// 1.83 TB/s and 14.0 us in q8_0 at 1.60, and o_proj 24.2 -> 11.7 us — together
-/// ~-1.0 ms of a 13.16 ms token. Default OFF.
-/// MEMRA_W8_HYBRID=1 opts the door's HYBRID half in (LM head, shared expert, dense FFN).
-/// Default OFF on measurement AND on residency: it moved decode +0.1% (the W8 trace showed it
-/// only ever mirrored the shexp down rows, which SHEXP_OVERLAP already hides), while costing
-/// ~1.7 GB per card on top of the attention mirrors' ~0.9 GB — and at the model's NATURAL
-/// 262144-token context the full set does not fit: `MEMRA_STEP_TP_W8=1` there dies in
-/// CUDA_ERROR_OUT_OF_MEMORY while plain decode runs 76.03 tok/s.
 /// STEP37 SERVING DEFAULTS (owner flip, 2026-08-27). The step37 serving shape — the t-row walk,
 /// the q8 W8 doors, the SWA ring, the NVFP4 draft heads, and this lane's three verify fixes —
 /// was gated door by door (byte tape == plain, acceptance unchanged, run-spec K=1..8 PASS,
@@ -1989,10 +1973,29 @@ pub(crate) fn step37_door_for_plan(
 static W8_HYBRID_ENV: std::sync::OnceLock<Option<bool>> = std::sync::OnceLock::new();
 static STEP_TP_W8_ENV: std::sync::OnceLock<Option<bool>> = std::sync::OnceLock::new();
 
+/// MEMRA_W8_HYBRID: the `MEMRA_STEP_TP_W8` door's HYBRID half (LM head, shared expert, dense
+/// FFN). Unset = the step37 family default, like `MEMRA_STEP_TP_W8` (the co-load guard in
+/// [`admit_step37_coload`] covers it). Measured before the 2026-08-27 family flip, when it was
+/// opt-in: it moved decode +0.1% (the W8 trace showed it
+/// only ever mirrored the shexp down rows, which SHEXP_OVERLAP already hides), while costing
+/// ~1.7 GB per card on top of the attention mirrors' ~0.9 GB — and at the model's NATURAL
+/// 262144-token context the full set does not fit: `MEMRA_STEP_TP_W8=1` there dies in
+/// CUDA_ERROR_OUT_OF_MEMORY while plain decode runs 76.03 tok/s.
 pub(crate) fn w8_hybrid_on() -> bool {
     step37_door(&W8_HYBRID_ENV, "MEMRA_W8_HYBRID")
 }
 
+/// MEMRA_STEP_TP_W8: q8_0 mirror of the step TP attention projections for DECODE.
+///
+/// NUMERIC-CLASS door, same class and acceptance as `MEMRA_STEP_TP_QKV_FUSED` /
+/// `MEMRA_BF16_MMV`: the per-row arithmetic becomes an int8 dp4a dot
+/// with per-32 scales instead of a bf16xf32 fma chain, so a bit-tape cannot apply and the
+/// acceptance is the argmax gate plus the boot battery. Motivation is measured, not assumed
+/// (`decode-kernel-census`, 2026-08-25): the fused qkv shape runs 23.0 us in bf16 at
+/// 1.83 TB/s and 14.0 us in q8_0 at 1.60, and o_proj 24.2 -> 11.7 us — together
+/// ~-1.0 ms of a 13.16 ms token. Unset = the step37 family default ([`step37_door`]): ON once
+/// a SlidingGatedMoe model armed the serving defaults (owner flip 2026-08-27), OFF otherwise;
+/// `=0` kills, `=1` forces.
 pub(crate) fn step_tp_w8_on() -> bool {
     step37_door(&STEP_TP_W8_ENV, "MEMRA_STEP_TP_W8")
 }
@@ -2120,13 +2123,6 @@ pub(crate) fn w8_view_on() -> bool {
     *ON.get_or_init(|| std::env::var("MEMRA_W8_VIEW").as_deref() == Ok("1"))
 }
 
-/// MEMRA_Q8T_WONCE=1: the q8 t-column verify kernels take their weight-once `_tw` twins — one
-/// row grid, each weight int4 loaded once and dotted against all t columns — instead of the `_t`
-/// forms, whose column grid axis plus __ldcs (streaming, evict-first) re-reads the fully-shared
-/// weights from DRAM once per column (nsys 2026-08-27: qkv_rp_t 1.67x, b4_rp_t 1.43x a
-/// single-column call for 2 columns, where weight-bound scaling says ~1.1x). Per-column float
-/// program unchanged (same lane-strided blk order, own accumulator chain, same reduce); default
-/// off until the byte tape says so.
 /// MEMRA_STEP_GEMM_PRIME: prime chunks (t>=16) route the routed MoE through the grouped f16 GEMM
 /// over the resident NVFP4 banks instead of the per-token device routes. FAMILY-DEFAULT ON since
 /// 2026-08-28 because on the server route it is the only prime that WORKS: measured there, walk
@@ -2138,6 +2134,14 @@ pub(crate) fn step_gemm_prime_on() -> bool {
     step37_door(&ENV, "MEMRA_STEP_GEMM_PRIME")
 }
 
+/// MEMRA_Q8T_WONCE: the q8 t-column verify kernels take their weight-once `_tw` twins — one
+/// row grid, each weight int4 loaded once and dotted against all t columns — instead of the `_t`
+/// forms, whose column grid axis plus __ldcs (streaming, evict-first) re-reads the fully-shared
+/// weights from DRAM once per column (nsys 2026-08-27: qkv_rp_t 1.67x, b4_rp_t 1.43x a
+/// single-column call for 2 columns, where weight-bound scaling says ~1.1x). Per-column float
+/// program unchanged (same lane-strided blk order, own accumulator chain, same reduce). Unset =
+/// the step37 family default ([`step37_door`]): ON once a SlidingGatedMoe model armed the
+/// serving defaults, OFF otherwise; `=0` kills, `=1` forces.
 pub(crate) fn q8t_wonce_on() -> bool {
     static ENV: std::sync::OnceLock<Option<bool>> = std::sync::OnceLock::new();
     step37_door(&ENV, "MEMRA_Q8T_WONCE")
@@ -3764,17 +3768,6 @@ pub fn moe_rp_refuse(rp: bool, path: &str) -> Result<(), Box<dyn std::error::Err
     Ok(())
 }
 
-/// `MEMRA_VERIFY_WS` (lane/glm5-matvec door W, default ON since the 2026-08-31 mv-battery
-/// flip; `=0` is the rollback seam; generalized from `MEMRA_GLM5_VERIFY_WS`, which stays
-/// honored as the family alias — OFF-WINS composition: either name `=0` disables, so every
-/// banked gate arm and box script pinning the old name keeps its exact semantics, and the
-/// old name is never silently dead): the verify walk's
-/// recurring buffers draw from the engine's size-keyed free-lists and recycle back instead
-/// of one `cuMemAllocAsync`+Free pair per buffer (~1380+1370 driver calls/token on the ship
-/// shape — diet-battery apisum; `MEMRA_HC_DECODE_WS` owns only the t=1 walk and never
-/// reaches the spec serving shape). Byte-identical by the sites' own full-overwrite uninit
-/// contract; gated by `glm5_matvec_doors_gpu` (multi-call byte identity + the
-/// `SCRATCH_ALLOC_CALLS` delta receipt). Read per call — the rollback seam.
 /// `MEMRA_HYPER_BATCH_SOLO=1` (default OFF, read per call — the rollback seam is its absence):
 /// at B=1 the batched hc decode walk delegates to the solo walk `hyper_range_decode`.
 ///
@@ -3794,29 +3787,6 @@ pub(crate) fn hyper_batch_solo_on() -> bool {
     std::env::var("MEMRA_HYPER_BATCH_SOLO").as_deref() == Ok("1")
 }
 
-/// `MEMRA_HC_PRE_BLOCK=<n>` (default 128, lane/b200-hcpre-wide-20260903): the CUDA block
-/// width of the fused hyper-connection pre-chain, when `MEMRA_HC_FUSED_PRE=2` selected the
-/// v2 arm. 128 is v2 verbatim.
-///
-/// WHY THIS EXISTS. `memra_dsv4_hc_pre_fused_v2` launches one block of 128 threads PER ROW.
-/// At t=1 decode there is one row, so the whole call occupies ONE SM of a B200's 148. nsys
-/// on the 2x B200 pair in the current best posture (2026-09-03) makes it the largest kernel
-/// in the decode profile: 17.5% of kernel time, 31.1 us average, 23,220 launches over 256
-/// profiled tokens = 90.7 per token, which is exactly the 2 sites (attn, mlp) on each of 45
-/// layers. Those 31 us move about 128 KB, i.e. 4.1 GB/s, so the kernel is latency-bound on
-/// four warps rather than limited by its arithmetic.
-///
-/// EXACTNESS, stated rather than assumed. Stage 3 (the collapse) is bit-identical at any
-/// width: each output sums the same hc terms in the same order and only the owning thread
-/// moves. Stage 2 (Sinkhorn) is warp-0-only at every width. Stage 1 (rowsq) is NOT: a wider
-/// block gives `dsv4_block_sum` a different partition of the row, so the double accumulation
-/// order changes. The f32 narrowing of `1/sqrt(tot/w + eps)` is expected to absorb a
-/// last-ulp double difference, but expected is not constructed, so any width other than 128
-/// is the named numeric class `hc_pre_rowsq_blockwide` and carries an argmax gate plus a
-/// greedy tape before it can be a default.
-///
-/// Refuses a value that is not a power of two in [32, 1024], by name, at read time — a bad
-/// width would otherwise reach the launcher and return an opaque 40023.
 /// `MEMRA_HC_PRE_SINK_REG=1` (default OFF, read per call — the rollback seam is its absence):
 /// run the fused hc pre-chain's Sinkhorn stage in registers with `__shfl_sync` instead of
 /// shared memory. Only meaningful alongside `MEMRA_HC_PRE_BLOCK` (it rides the v3 kernel).
@@ -4011,6 +3981,30 @@ pub fn hc_pre_block_default(built_arch: &str) -> usize {
     if built_arch == "100a" { 512 } else { 128 }
 }
 
+/// `MEMRA_HC_PRE_BLOCK=<n>` (lane/b200-hcpre-wide-20260903; default 512 on sm_100a builds, 128
+/// elsewhere, see `hc_pre_block_default`): the CUDA block width of the fused hyper-connection
+/// pre-chain on its v2 arm. 128 is v2 verbatim.
+///
+/// WHY THIS EXISTS. `memra_dsv4_hc_pre_fused_v2` launches one block of 128 threads PER ROW.
+/// At t=1 decode there is one row, so the whole call occupies ONE SM of a B200's 148. nsys
+/// on the 2x B200 pair in the current best posture (2026-09-03) makes it the largest kernel
+/// in the decode profile: 17.5% of kernel time, 31.1 us average, 23,220 launches over 256
+/// profiled tokens = 90.7 per token, which is exactly the 2 sites (attn, mlp) on each of 45
+/// layers. Those 31 us move about 128 KB, i.e. 4.1 GB/s, so the kernel is latency-bound on
+/// four warps rather than limited by its arithmetic.
+///
+/// EXACTNESS, stated rather than assumed. Stage 3 (the collapse) is bit-identical at any
+/// width: each output sums the same hc terms in the same order and only the owning thread
+/// moves. Stage 2 (Sinkhorn) is warp-0-only at every width. Stage 1 (rowsq) is NOT: a wider
+/// block gives `dsv4_block_sum` a different partition of the row, so the double accumulation
+/// order changes. The f32 narrowing of `1/sqrt(tot/w + eps)` is expected to absorb a
+/// last-ulp double difference, but expected is not constructed, so any width other than 128
+/// is the named numeric class `hc_pre_rowsq_blockwide` and carries an argmax gate plus a
+/// greedy tape before it can be a default.
+///
+/// A value that is not a power of two in [32, 1024] is announced by name at read time and falls
+/// back to the build default — a bad width would otherwise reach the launcher and return an
+/// opaque 40023.
 pub(crate) fn hc_pre_block() -> usize {
     // Arch-keyed default since 2026-09-04: 512 on `100a` builds (receipt +10.25% with the
     // register Sinkhorn, tape 9437b599f6b9d2a9 unchanged, darklanes
@@ -4035,6 +4029,17 @@ pub(crate) fn hc_pre_block() -> usize {
     }
 }
 
+/// `MEMRA_VERIFY_WS` (lane/glm5-matvec door W, default ON since the 2026-08-31 mv-battery
+/// flip; `=0` is the rollback seam; generalized from `MEMRA_GLM5_VERIFY_WS`, which stays
+/// honored as the family alias — OFF-WINS composition: either name `=0` disables, so every
+/// banked gate arm and box script pinning the old name keeps its exact semantics, and the
+/// old name is never silently dead): the verify walk's
+/// recurring buffers draw from the engine's size-keyed free-lists and recycle back instead
+/// of one `cuMemAllocAsync`+Free pair per buffer (~1380+1370 driver calls/token on the ship
+/// shape — diet-battery apisum; `MEMRA_HC_DECODE_WS` owns only the t=1 walk and never
+/// reaches the spec serving shape). Byte-identical by the sites' own full-overwrite uninit
+/// contract; gated by `glm5_matvec_doors_gpu` (multi-call byte identity + the
+/// `SCRATCH_ALLOC_CALLS` delta receipt). Read per call — the rollback seam.
 fn verify_ws_on() -> bool {
     if glm5_verify_graph_on() {
         return true;
@@ -5405,16 +5410,6 @@ impl Engine {
         })
     }
 
-    /// PDL launch arm (SOTA item 2, 2026-07-13, DEFAULT ON): the six MEMRA_PDL_ENTRY glue
-    /// kernels launch through cuLaunchKernelEx with PROGRAMMATIC_STREAM_SERIALIZATION — the
-    /// grid launches while the predecessor drains (~120ns/kernel back, pdl_probe), the
-    /// kernels' entry grid-dep sync restores read order (SASS-audited: ACQBULK precedes
-    /// every LDG in all six). Valid windows: E4B +1.0-1.2% (128 AND 384-tok gens);
-    /// 26B/31B/qwen flat no-harm. Battery: kernel-check GREEN, run-gen tokens IDENTICAL x3
-    /// gemma, spec 64/64 E4B K=1/4/8 + 26B/31B K=4 + qwen PASS. Works eager AND under
-    /// capture (capture encodes native programmatic edges — the post-capture edge-REWRITE
-    /// arm died: engine graphs hold cuMemAllocAsync alloc nodes, edge edits on those return
-    /// CUDA_ERROR_NOT_SUPPORTED). MEMRA_PDL=0 rollback seam.
     /// See the `verify_exact` field. Scoped by the dflash round around its t=16 verify.
     /// Prefer `exact_scope` — the RAII form — anywhere a `?` can exit the scope: a manual
     /// true/false pair leaves the flag LATCHED engine-wide when an error propagates
@@ -5576,6 +5571,16 @@ impl Engine {
         })
     }
 
+    /// PDL launch arm (SOTA item 2, 2026-07-13, DEFAULT ON): the six MEMRA_PDL_ENTRY glue
+    /// kernels launch through cuLaunchKernelEx with PROGRAMMATIC_STREAM_SERIALIZATION — the
+    /// grid launches while the predecessor drains (~120ns/kernel back, pdl_probe), the
+    /// kernels' entry grid-dep sync restores read order (SASS-audited: ACQBULK precedes
+    /// every LDG in all six). Valid windows: E4B +1.0-1.2% (128 AND 384-tok gens);
+    /// 26B/31B/qwen flat no-harm. Battery: kernel-check GREEN, run-gen tokens IDENTICAL x3
+    /// gemma, spec 64/64 E4B K=1/4/8 + 26B/31B K=4 + qwen PASS. Works eager AND under
+    /// capture (capture encodes native programmatic edges — the post-capture edge-REWRITE
+    /// arm died: engine graphs hold cuMemAllocAsync alloc nodes, edge edits on those return
+    /// CUDA_ERROR_NOT_SUPPORTED). MEMRA_PDL=0 rollback seam.
     pub fn pdl_on() -> bool {
         static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
         *ON.get_or_init(|| std::env::var("MEMRA_PDL").map(|v| v != "0").unwrap_or(true))
@@ -6200,6 +6205,9 @@ impl Engine {
 
     /// MoE router GEMV: deterministic warp-per-(expert,token) f32 dot.
     /// Different FP order than the cuBLAS path it replaces — battery-gated numeric config.
+    /// The spec-verify small-t path takes it (DEFAULT ON since 2026-07-10: battery green on 35B
+    /// p2/p3 K=1..8, acceptance bit-identical, +2-4% spec e2e — replaces ~240 per-column cuBLAS
+    /// gemv launches/round).
     pub fn router_gemv(
         &self,
         w: &CudaSlice<f32>,
@@ -9846,26 +9854,6 @@ impl Engine {
         Ok(())
     }
 
-    /// LAUNCH-STRUCTURE STAGE 3: device-dispatch twin of `moe_gate_up_silu8` for FULLY-RESIDENT
-    /// layers. The expert ids come from the router kernel's DEVICE `sel` output (no DtoH) and the
-    /// weight pointers from the per-layer device table `[3, n_expert]` of slot base addresses.
-    /// BIT-IDENTICAL math (same grid/block/reduction; only the pointer/id source differs).
-    #[allow(clippy::too_many_arguments)]
-    /// dp4a q8 twin of the _dev pair (resident-experts arc).
-    ///
-    /// GEOMETRY VARIANTS (multirow/occupancy arc 2026-07-05): all outputs are BIT-IDENTICAL to
-    /// the base one-warp-per-(row,slot) kernel (same expert_dot_g g-order + warp tree per row;
-    /// down's FMA chain stays slot-ordered serial). Seams:
-    ///   MEMRA_MOE_DEVQ8_GU   = 0(base) | 1 | 2 | 4 -> _r{1,2,4} multirow twin (RPW rows/warp)
-    ///                       | s2 (gate/up warp split) | s2z (s2 + WPB rows packed per block)
-    ///                       | gs4 (gate/up x low/high-group 4-warp split, nsb==64 only)
-    ///                       | u64 (nsb==64 unrolled ILP twin, geometry unchanged)
-    ///   MEMRA_MOE_DEVQ8_WPB  = warps per block for _r twins / z-rows for s2z (default 4)
-    ///   MEMRA_MOE_DEVQ8_DOWN = auto(default: w8h2 when in_f==512 & n_used<=8 — measured +3.8%
-    ///                       decode on 35B/rtx6000) | 0 (base one-warp serial-slot) | 1 | 2 | 4 ->
-    ///                       _w8r{1,2,4} slot-parallel twin | h2 (half-warp dual-row, nsb==16
-    ///                       only) | w8h2 (h2 x slot-parallel)
-    #[allow(clippy::too_many_arguments)]
     /// MoE PREFILL pair-batch matvec: one launch covers all (token,expert) pairs for one proj.
     #[allow(clippy::too_many_arguments)]
     #[allow(clippy::manual_div_ceil)] // allow: explicit (n + k - 1) / k is the load-bearing sizing form, kept textually identical to the kernel-side math
@@ -10995,6 +10983,20 @@ impl Engine {
         Ok(())
     }
 
+    /// dp4a q8 twin of the _dev pair (resident-experts arc).
+    ///
+    /// GEOMETRY VARIANTS (multirow/occupancy arc 2026-07-05): all outputs are BIT-IDENTICAL to
+    /// the base one-warp-per-(row,slot) kernel (same expert_dot_g g-order + warp tree per row;
+    /// down's FMA chain stays slot-ordered serial). Seams:
+    ///   MEMRA_MOE_DEVQ8_GU   = 0(base) | 1 | 2 | 4 -> _r{1,2,4} multirow twin (RPW rows/warp)
+    ///                       | s2 (gate/up warp split) | s2z (s2 + WPB rows packed per block)
+    ///                       | gs4 (gate/up x low/high-group 4-warp split, nsb==64 only)
+    ///                       | u64 (nsb==64 unrolled ILP twin, geometry unchanged)
+    ///   MEMRA_MOE_DEVQ8_WPB  = warps per block for _r twins / z-rows for s2z (default 4)
+    ///   MEMRA_MOE_DEVQ8_DOWN = auto(default: w8h2 when in_f==512 & n_used<=8 — measured +3.8%
+    ///                       decode on 35B/rtx6000) | 0 (base one-warp serial-slot) | 1 | 2 | 4 ->
+    ///                       _w8r{1,2,4} slot-parallel twin | h2 (half-warp dual-row, nsb==16
+    ///                       only) | w8h2 (h2 x slot-parallel)
     #[allow(clippy::too_many_arguments)] // allow: the parameter list mirrors the kernel/FFI/call contract; bundling into a struct is a refactor, not a lint fix
     pub fn moe_gate_up_silu8_dev_q8(
         &self,
@@ -11629,6 +11631,10 @@ impl Engine {
         Ok(act)
     }
 
+    /// LAUNCH-STRUCTURE STAGE 3: device-dispatch twin of `moe_gate_up_silu8` for FULLY-RESIDENT
+    /// layers. The expert ids come from the router kernel's DEVICE `sel` output (no DtoH) and the
+    /// weight pointers from the per-layer device table `[3, n_expert]` of slot base addresses.
+    /// BIT-IDENTICAL math (same grid/block/reduction; only the pointer/id source differs).
     #[allow(clippy::too_many_arguments)] // allow: the parameter list mirrors the kernel/FFI/call contract; bundling into a struct is a refactor, not a lint fix
     pub fn moe_gate_up_silu8_dev(
         &self,
