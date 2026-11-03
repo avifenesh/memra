@@ -19371,8 +19371,7 @@ impl Dsv4Gpu {
 
     /// The row-count-free half of the fused pair's engagement.
     fn moe_fused_eligible(&self, vws: &VerifyWs, allow_gu_fuse: bool) -> bool {
-        crate::dsv4_moe_fused_on()
-            && !self.grouped_fresh_storage_control
+        !self.grouped_fresh_storage_control
             && vws.moe_fault_armed
             && vws.moe_fault.is_some()
             && self.grouped_route_device
