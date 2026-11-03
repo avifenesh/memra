@@ -387,11 +387,6 @@ impl RouteRegistry {
         self.routes.iter().find(|r| r.model == model)
     }
 
-    /// The route's declared concurrency, the number the admission cap mirror should read.
-    pub fn capacity_for(&self, model: &str) -> Option<RouteCapacity> {
-        self.contract_for(model).map(|r| r.capacity)
-    }
-
     /// The boot gate. Every registered route must declare every surface (an omission is the
     /// first error). An ARMED policy is refused only when no registered route can honor it: a
     /// mixed process (hybrid models beside a dsv4 checkpoint) with `MEMRA_REWRITE_BUNDLE` keeps
@@ -619,10 +614,11 @@ mod tests {
         let mut reg = RouteRegistry::default();
         reg.register(RouteContract::hybrid_worker("gate", 8));
         reg.register(RouteContract::dsv4_thread("ds"));
-        assert_eq!(reg.capacity_for("gate"), Some(RouteCapacity::Sessions(8)));
-        assert_eq!(reg.capacity_for("ds"), Some(RouteCapacity::Serial));
-        assert_eq!(reg.capacity_for("ds").unwrap().concurrency(), 1);
-        assert_eq!(reg.capacity_for("nope"), None);
+        let capacity_for = |model: &str| reg.contract_for(model).map(|r| r.capacity);
+        assert_eq!(capacity_for("gate"), Some(RouteCapacity::Sessions(8)));
+        assert_eq!(capacity_for("ds"), Some(RouteCapacity::Serial));
+        assert_eq!(capacity_for("ds").unwrap().concurrency(), 1);
+        assert_eq!(capacity_for("nope"), None);
     }
 
     /// WIRING GATE, generalized from `progress::tests::the_prime_walks_actually_call_the_odometer`
