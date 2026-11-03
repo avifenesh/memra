@@ -2775,12 +2775,6 @@ pub(crate) fn fa_part_zero_on() -> bool {
     *ON.get_or_init(|| std::env::var("MEMRA_FA_PART_ZERO").as_deref() == Ok("1"))
 }
 
-/// t_kv-conditional v4 pick (gemma depth lesson 2026-07-10: v4's key-per-lane pipeline starves
-/// at the 1024-window with short splits — the v3 arm measured depth plain 158.0 vs 156.7).
-/// Threshold MEMRA_FA_V4_MAX (default usize::MAX = unchanged behavior; the loader stores 0 via
-/// FA_V4_MAX_DEFAULT for gqa > 8 plans). Applied at EVERY dispatch site (eager, rows, rows_w, dc)
-/// so verify stays kernel-family-identical to decode at the same t_kv; `fa_decode_rows` groups
-/// its rows by this pick.
 /// Per-model deep-ctx smem floor default (MEMRA_FA_SMEM_TKV env overrides): gemma pushes it
 /// above the 1024 window so the windowed decode + verify rows share the REGISTER family.
 pub static FA_SMEM_TKV_DEFAULT: std::sync::atomic::AtomicUsize =
@@ -2790,6 +2784,14 @@ pub static FA_V4_MAX_DEFAULT: std::sync::atomic::AtomicUsize =
 pub fn fa_v4_at_pub(t_kv: usize) -> bool {
     fa_v4_at(t_kv)
 }
+/// t_kv-conditional v4 decode pick: the v4 family below the threshold, the v3 family at and
+/// above it. Threshold `MEMRA_FA_V4_MAX`; unset, `FA_V4_MAX_DEFAULT`, which is `usize::MAX` (v4
+/// at every depth) unless the loader stores 0 for a gqa > 8 plan (the v4 q-array capacity
+/// guard). Gemma stores no threshold and rides v4 at every depth (its rows_w/dpl16 parity sweep
+/// measured v4 the depth winner); the seam dates from the 2026-07-10 gemma depth lesson, when
+/// v4's key-per-lane pipeline starved at the 1024 window with short splits. Applied at EVERY
+/// dispatch site (eager, rows, rows_w, dc) so verify stays kernel-family-identical to decode at
+/// the same t_kv; `fa_decode_rows` groups its rows by this pick.
 fn fa_v4_at(t_kv: usize) -> bool {
     let mx = *FA_V4_MAX_LATCH.get_or_init(|| {
         std::env::var("MEMRA_FA_V4_MAX")
