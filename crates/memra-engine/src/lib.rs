@@ -3846,7 +3846,7 @@ impl Engine {
                 gpu.ctx.disable_event_tracking();
             }
         }
-        Ok(Self {
+        let engine = Self {
             gpu,
             module,
             hybrid,
@@ -3888,7 +3888,26 @@ impl Engine {
             f16_scratch: Mutex::new(None),
             #[cfg(memra_cutlass)]
             cutlass_scratch: Mutex::new(None),
-        })
+        };
+        // MEMRA_GDN_STATE_BF16=1 (research arm, default OFF, decide-by 2026-11-17): every GDN
+        // state store rounds to bf16 precision (cu/hybrid.cu `gdn_st`); compute stays fp32.
+        if std::env::var("MEMRA_GDN_STATE_BF16").as_deref() == Ok("1") {
+            let f = engine.func("gdn_state_bf16_set");
+            let on = 1i32;
+            let __s_b = engine.gpu.stream();
+            let mut b = __s_b.launch_builder(&f);
+            b.arg(&on);
+            unsafe {
+                b.launch(LaunchConfig {
+                    grid_dim: (1, 1, 1),
+                    block_dim: (1, 1, 1),
+                    shared_mem_bytes: 0,
+                })?;
+            }
+            engine.gpu.stream().synchronize()?;
+            eprintln!("[gdn-state] bf16-rounded GDN state stores (MEMRA_GDN_STATE_BF16=1)");
+        }
+        Ok(engine)
     }
 
     pub fn ctx(&self) -> &Arc<CudaContext> {

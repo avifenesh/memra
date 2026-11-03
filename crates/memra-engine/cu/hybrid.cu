@@ -5,6 +5,17 @@
 #include <cuda_fp16.h>
 #include <cuda_bf16.h>
 
+// GDN STATE BF16 research arm (batch-spec 2026-11-03, MEMRA_GDN_STATE_BF16=1, default OFF): every
+// store of the recurrent GDN state rounds to bf16 precision (round-to-nearest-even through
+// __float2bfloat16) while the kernels keep computing in fp32 -- the numerics of a bf16-resident
+// state with fp32 math, at fp32 storage. It measures the quality/acceptance cost of bf16 state;
+// the byte saving is projected from the measured fp32 scan bandwidth, not realized here.
+__device__ int memra_gdn_state_bf16 = 0;
+__device__ __forceinline__ float gdn_st(float v) {
+    return memra_gdn_state_bf16 ? __bfloat162float(__float2bfloat16(v)) : v;
+}
+extern "C" __global__ void gdn_state_bf16_set(int on) { memra_gdn_state_bf16 = on; }
+
 __device__ __forceinline__ float silu(float x) { return x / (1.0f + expf(-x)); }
 
 // All-reduce sum via XOR butterfly: EVERY lane ends with the 32-lane sum in
@@ -383,7 +394,7 @@ __device__ void gdn_scan_kernel(
     // write state back
     float* so = state_out + ((size_t)h * S_v + col) * S_v;
     #pragma unroll
-    for (int r = 0; r < rows_per_lane; r++) so[r * WARP + lane] = s_shard[r];
+    for (int r = 0; r < rows_per_lane; r++) so[r * WARP + lane] = gdn_st(s_shard[r]);
 }
 
 extern "C" __global__ void gdn_scan_s128(
@@ -858,7 +869,7 @@ extern "C" __global__ void gdn_chunk_state_f32(
     }
     for (int idx = tid; idx < COLS * GDN_D; idx += 256) {
         int cl2 = idx / GDN_D, i = idx % GDN_D;
-        state_out[((size_t)h * GDN_D + col0 + cl2) * GDN_D + i] = Ms[cl2][i];
+        state_out[((size_t)h * GDN_D + col0 + cl2) * GDN_D + i] = gdn_st(Ms[cl2][i]);
     }
 }
 
@@ -1591,12 +1602,12 @@ __device__ void gdn_scan_kernel_snap(
         if (snap != nullptr && t + 1 < T) {
             float* sr = snap + (size_t)t * H * S_v * S_v + ((size_t)h * S_v + col) * S_v;
             #pragma unroll
-            for (int r = 0; r < rows_per_lane; r++) sr[r * WARP + lane] = s_shard[r];
+            for (int r = 0; r < rows_per_lane; r++) sr[r * WARP + lane] = gdn_st(s_shard[r]);
         }
     }
     float* so = state_out + ((size_t)h * S_v + col) * S_v;
     #pragma unroll
-    for (int r = 0; r < rows_per_lane; r++) so[r * WARP + lane] = s_shard[r];
+    for (int r = 0; r < rows_per_lane; r++) so[r * WARP + lane] = gdn_st(s_shard[r]);
 }
 
 extern "C" __global__ void gdn_scan_s128_tsnap(
@@ -1952,7 +1963,7 @@ gdn_k4_body(const __nv_bfloat16* __restrict__ kb16, const float* __restrict__ gc
         for (int l = 0; l < 4; l++) {
             int col = mh * 16 + fr + ((l < 2) ? 0 : 8);
             int i = nq * 32 + t4 * 8 + fc + (l & 1);
-            state_out[((size_t)h * D + col0 + col) * D + i] = Macc[t4].x[l];
+            state_out[((size_t)h * D + col0 + col) * D + i] = gdn_st(Macc[t4].x[l]);
         }
 }
 
@@ -2602,12 +2613,12 @@ gdn_k45_wgmma_body(const __nv_bfloat16* __restrict__ kb16, const float* __restri
         int cll = warp * 16 + fr;
         int il = fc + n8 * 8;
         if (cll < 32) {
-            state_out[((size_t)h * D + col0 + cll) * D + ih + il + 0] = Macc[q + 0];
-            state_out[((size_t)h * D + col0 + cll) * D + ih + il + 1] = Macc[q + 1];
+            state_out[((size_t)h * D + col0 + cll) * D + ih + il + 0] = gdn_st(Macc[q + 0]);
+            state_out[((size_t)h * D + col0 + cll) * D + ih + il + 1] = gdn_st(Macc[q + 1]);
         }
         if (cll + 8 < 32) {
-            state_out[((size_t)h * D + col0 + cll + 8) * D + ih + il + 0] = Macc[q + 2];
-            state_out[((size_t)h * D + col0 + cll + 8) * D + ih + il + 1] = Macc[q + 3];
+            state_out[((size_t)h * D + col0 + cll + 8) * D + ih + il + 0] = gdn_st(Macc[q + 2]);
+            state_out[((size_t)h * D + col0 + cll + 8) * D + ih + il + 1] = gdn_st(Macc[q + 3]);
         }
     }
 #endif  // MEMRA_K45_REAL
