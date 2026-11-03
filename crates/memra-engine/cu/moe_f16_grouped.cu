@@ -2223,13 +2223,6 @@ moe_kq_mrow_stream_kernel(
 
 extern "C" {
 
-size_t memra_moe_f16g_w_bytes(int n_active, int out_f, int in_f){
-    return (size_t)n_active*out_f*in_f*sizeof(__half);
-}
-size_t memra_moe_f16g_act_bytes(int n_pairs, int in_f){
-    return (size_t)n_pairs*in_f*sizeof(__half);
-}
-
 int memra_moe_f16g_dequant(const unsigned long long* table, int proj, int n_expert,
         const int* ex_ids, void* w_f16, int in_f, int out_f, int n_active,
         int qtype, long row_bytes, void* stream){
