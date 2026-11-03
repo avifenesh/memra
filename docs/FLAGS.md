@@ -1075,7 +1075,6 @@ These exist because correctness discipline needs a same-binary oracle. Each is a
 | `MEMRA_DRAFT_GRAPH_CHECK=1` | re-run the gemma draft chain eagerly after each graph replay and diff the drafted slots (non-destructive replay-vs-eager bisect) |
 | `MEMRA_E4B_GRAPH_GATE=N` (gemma-gate) | E4B graph-door stream gate: `generate()` door OFF then ON on fresh caches, streams must be identical (the warmup-side-effect + exec-update oracle) |
 | `MEMRA_GRAPH_GATE=N` (gemma-gate) | 12B/31B graph-door stream gate: eager vs graph token streams over N tokens must be identical + both throughputs printed |
-| `MEMRA_GRAPH_DRAIN=N` | raise the graph door's drain window above the pinned 1 (EXPERIMENTS ONLY: relaunching the same graph exec before its prior launch completes is ILLEGAL — chunk=4 reproduced ILLEGAL_ADDRESS) |
 | `MEMRA_GRAPH_CENSUS=1` | print the captured graph's node-type census (kernel/memset/memcpy/alloc/free counts) at instantiate |
 | `MEMRA_GRAPH_WARMUPS=N` | eager warmup runs before `capture_graph` captures (DEFAULT 1 since lane/graph-warmups 2026-08-05; min 1; `=2` = the rollback seam). The win: recapture −38% q27 / −41% q9 (pod) re-minted −42% q27 / −41% q9 on the 5090, decode +~1% both, capture+prime −13ms. Warmup 2's address-stability job (warmup 1 may grow/map the async pool; a stale capture reproduces the #68 baked-address class) is guarded structurally — balanced in-graph alloc/free pairs, retire-on-grow pools, capture-retain on the draft path — and was arbitrated adversarially: `tools/graph-warmup-stress-gate.sh` (pool-growth cycles both directions x10 + overlap arm + forced recaptures over freed blocks, bit-identity vs eager, canary teeth) GREEN at `=1` on the deployment rig. Receipts: `research/graph-warmups-5090-20260805/`, pod `research/graph-allocfree-20260805/logs/warmup-lever-N5.txt` |
 | `MEMRA_VERIFY_GATE2=K` (gemma-gate) | CHAINED batched-verify oracle: prefix tokenwise, then two back-to-back `decode_step_t` calls — per-position argmax must match the tokenwise chain. `MEMRA_VERIFY_GATE2_DEV=1` runs the device-token verify arm (the spec round's exact path) |
@@ -1694,6 +1693,19 @@ deleted and the conversion is on wherever `MEMRA_DSPARK_PREFIX_RESTORE` and
 - GB10 GGUF DFlash2 agentic cell, one run each, off/on: c1 12.04 -> 14.47 (+20%), c2..c32 inside
   run noise. RTX 5090: the veto never fires on its shape, so the door is inert there.
 - Receipts: `research/dflash-restorable-hit-20261103/`.
+
+## Removed doors, 2026-11-03 (the gemma graph decode's drain window, `MEMRA_GRAPH_DRAIN`)
+
+`MEMRA_GRAPH_DRAIN=N` raised the gemma4 graph decode loop's launches-per-sync above the pinned 1.
+Its own row and the code's note recorded why the pin exists: relaunching the same graph exec
+before its prior launch completes is illegal (chunk=4 reproduced ILLEGAL_ADDRESS, chunk=1 is
+clean), and the measured payoff of pipelining was ~0 because the ~200 us cuGraphLaunch host cost
+already overlaps its own launch's GPU work (2026-07-23). Values 0 and 1 were the default and every
+larger value opened the known-bad multi-launch window, so the door could only add a crash.
+Deleted with its env read, the chunk-extension loop and the multi-token ring drain with its
+mid-chunk stop rollback; the loop launches once, syncs and reads its one token from the ring.
+Git history is the archive. Ledger: `VERDICT:graph-drain-door-removed` (darklanes
+`agent-knowledge/gpu/verdicts-ledger.md`).
 
 ## Removed doors, 2026-11-03 (the segmented prime capture, `MEMRA_PRIME_SEG=1`)
 
