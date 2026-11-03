@@ -2636,6 +2636,11 @@ pub struct Engine {
     /// name -> resolved CudaFunction (capture-safe lookups; see `func`).
     fn_cache: Mutex<std::collections::HashMap<String, CudaFunction>>,
     f16_scratch: Mutex<Option<crate::f16_ffi::F16Scratch>>,
+    /// Bytes of fp16 dequant mirrors this engine holds against `MEMRA_PP_F16_BUDGET_MB`
+    /// (`build_q8_f16`); each `F16Mirror` refunds its share when it drops.
+    f16_mirror_spent: Arc<std::sync::atomic::AtomicUsize>,
+    /// The budget-reached announce fires once per engine.
+    f16_mirror_skip_announced: std::sync::atomic::AtomicBool,
     /// RANK1 LEVER (parallel argmax): resident pass-1 partials scratch (part_v[NB] f32, part_i[NB] i32),
     /// allocated ONCE on first parallel-argmax call and reused. Stable pointers so the 2-pass argmax
     /// is CUDA-graph-capturable (the buffer is referenced by both captured passes; lazy-allocated
@@ -4487,6 +4492,8 @@ impl Engine {
             fa_part_retired: Mutex::new(Vec::new()),
             fn_cache: Mutex::new(Default::default()),
             f16_scratch: Mutex::new(None),
+            f16_mirror_spent: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+            f16_mirror_skip_announced: std::sync::atomic::AtomicBool::new(false),
             #[cfg(memra_cutlass)]
             cutlass_scratch: Mutex::new(None),
         })
