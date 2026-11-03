@@ -6,7 +6,7 @@
 #
 # THE CONTRACT: the full battery (tools/local-ci.sh — kernel-check ALL GREEN + run-gen argmax
 # per affected model + run-spec K=1..8 + serve-smoke) gates the native change classes AGENTS.md
-# names. A tag takes tools/release-battery.sh, which covers the qwen35 class only.
+# names. A tag takes tools/release-battery.sh, which covers two qwen35-class checkpoints only.
 # CPU-only tooling admission is defined in docs/TESTING.md; it grants no model qualification.
 # fast-gate accelerates the loop between battery points by running only the gates a diff
 # actually needs (docs/TESTING.md):
@@ -356,6 +356,6 @@ echo "tier 1: requested diagnostics, $FAILS fail ($(stamp)s total)"
 echo
 echo "fast-gate is the DEV-LOOP gate only — the full battery (tools/local-ci.sh + perf stage)"
 echo "gates the full-battery change classes in AGENTS.md; a tag takes tools/release-battery.sh"
-echo "(qwen35 class only)."
+echo "(two qwen35-class checkpoints only)."
 echo "CPU-only tooling uses the admission rules in docs/TESTING.md."
 [ "$FAILS" -eq 0 ] || exit 1
