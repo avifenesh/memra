@@ -123,7 +123,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         let prompt_refs: Vec<&[u32]> = batched.iter().map(|p| p.as_slice()).collect();
         let mut cache_refs: Vec<&mut Cache> = caches.iter_mut().collect();
-        let outs = model.prime_cache_batch(&e, &prompt_refs, &mut cache_refs)?;
+        // A refusal is a verdict, not a crash: the step35 canary (MEMRA_STEP35_PRIME_BATCH=0)
+        // restores exactly this refusal, and the gate script reads only the counted tally.
+        let outs = match model.prime_cache_batch(&e, &prompt_refs, &mut cache_refs) {
+            Ok(outs) => outs,
+            Err(err) => {
+                println!("batched prime REFUSED: {err}");
+                return Err(format!("prime-batch-gate: {} FAIL(s)", fails + 1).into());
+            }
+        };
         for (s, (logits, h_seed, hidden)) in outs.iter().enumerate() {
             let a = argmax(logits) as u32;
             let ok = a == ref_argmax[s];
