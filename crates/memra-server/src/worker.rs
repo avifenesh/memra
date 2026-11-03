@@ -26259,9 +26259,9 @@ struct Session {
     spec_rounds: u64,
     sampler: Sampler,
     /// Whether penalized SAMPLED rows of this session may take the device penalty path.
-    /// Resolved ONCE at admit from `serve_devpenalty_for(lm.model.cfg.arch)` — the default is
-    /// keyed on the (model class, build arch) pair, so it has to be read where the loaded
-    /// model is in scope, and the value cannot drift mid-request.
+    /// Resolved ONCE at admit from `serve_devpenalty_for(engine, lm.model.cfg.arch)` — the
+    /// default is keyed on the (model class, card class) pair, so it has to be read where the
+    /// loaded model and the device are in scope, and the value cannot drift mid-request.
     devpenalty: bool,
     last_logits: Vec<f32>,
     /// Token pre-sampled ON DEVICE by the last batched tick (decode_step_batch_sampled) —
@@ -39294,7 +39294,7 @@ fn admit(
         lane: req.lane,
         cache,
         sampler,
-        devpenalty: serve_devpenalty_for(&lm.model.cfg.arch),
+        devpenalty: serve_devpenalty_for(engine, &lm.model.cfg.arch),
         spec,
         mtp_prime: None,
         oom_retries: req_oom_retries,
@@ -40828,14 +40828,18 @@ fn advance_token_emit(
 ///
 /// `MEMRA_SERVE_DEVPENALTY` is the rollback seam and always wins: `1` forces the path on for
 /// every model, `0` forces it off. With the variable absent the default follows the
-/// (model class, build arch) pairs that have a serving qualification, because the win is a
+/// (model class, card class) pairs that have a serving qualification, because the win is a
 /// property of the model's vocabulary size and the board's host, not of the code: on an
 /// unqualified pair the default stays off rather than inheriting another board's receipt.
+/// The card class comes from the worker device's name through
+/// `memra_engine::parallel::HardwareTarget::from_device_name`, the rule the parallel planner
+/// and the pinned-host default key on. The build arch is not the key: a `120a` build also
+/// runs the RTX PRO 6000 and GB10, which carry no receipt for this pair.
 ///
 /// Qualified, default ON:
-/// - `Arch::Qwen35` on a `120a` build. `research/devpenalty-qwen35-20260909/`, one RTX 5090
-///   (575 W, driver 580.95.05), interleaved OFF/ON, three boots per arm, five reps, the
-///   vendor NON-THINKING shape (`presence_penalty 1.5`, `top_k 20`): aggregate decode
+/// - `Arch::Qwen35` on the RTX 5090 card class. `research/devpenalty-qwen35-20260909/`, one
+///   RTX 5090 (575 W, driver 580.95.05), interleaved OFF/ON, three boots per arm, five reps,
+///   the vendor NON-THINKING shape (`presence_penalty 1.5`, `top_k 20`): aggregate decode
 ///   109.6 -> 527.2 tok/s at c=4 (+381.0%) and 115.5 -> 758.0 at c=8 (+556.3%), c=1
 ///   233.5 -> 242.2 (+3.7%). The `presence_penalty 0.0` control moves -2.0% / -0.5% (rows
 ///   with no penalty never enter this path in either arm) and greedy output is
@@ -40844,22 +40848,31 @@ fn advance_token_emit(
 /// Still off by default, and deliberately: `Arch::Qwen3Moe` on RTX PRO 6000 has an even
 /// larger measured win (`research/pro-device-penalty-sampling-20260824/`, darklanes verdict
 /// `q38-devpenalty-flip`) but that fleet pins the flag explicitly, so its default change is
-/// a separate lane with its own launcher smoke.
-fn serve_devpenalty_from(v: Option<&str>, built_arch: &str, arch: &Arch) -> bool {
+/// a separate lane with its own launcher smoke. `Arch::Qwen35` on RTX PRO 6000 or GB10 has no
+/// receipt and stays off until one lands.
+fn serve_devpenalty_from(v: Option<&str>, device_name: &str, arch: &Arch) -> bool {
+    use memra_engine::parallel::HardwareTarget;
     match v.map(str::trim) {
         Some("1") => true,
         Some("0") => false,
-        _ => built_arch == "120a" && matches!(arch, Arch::Qwen35),
+        _ => {
+            matches!(arch, Arch::Qwen35)
+                && matches!(
+                    HardwareTarget::from_device_name(device_name),
+                    Ok(HardwareTarget::Rtx5090)
+                )
+        }
     }
 }
 
-/// [`serve_devpenalty_from`] against this process's environment and build arch. The env read
-/// is cached; the arch match is a discriminant compare, so this is called per session, never
-/// per token.
-fn serve_devpenalty_for(arch: &Arch) -> bool {
+/// [`serve_devpenalty_from`] against this process's environment and the worker's device. The
+/// env read is cached and the device name is one driver query, so this is called per session
+/// at admit, never per token. An unreadable name classifies as no card and keeps the default off.
+fn serve_devpenalty_for(engine: &Engine, arch: &Arch) -> bool {
     static ENV: std::sync::OnceLock<Option<String>> = std::sync::OnceLock::new();
     let env = ENV.get_or_init(|| std::env::var("MEMRA_SERVE_DEVPENALTY").ok());
-    serve_devpenalty_from(env.as_deref(), memra_engine::BUILT_CUDA_ARCH, arch)
+    let device = engine.ctx().name().unwrap_or_default();
+    serve_devpenalty_from(env.as_deref(), &device, arch)
 }
 
 #[cfg(test)]
@@ -41009,28 +41022,39 @@ mod serve_devpenalty_default_tests {
     use super::serve_devpenalty_from as door;
     use memra_gguf::config::Arch;
 
+    const RTX5090: &str = "NVIDIA GeForce RTX 5090";
+    /// Cards a `120a` build also runs (or another build serves) with no Qwen3.5 receipt.
+    const UNQUALIFIED_CARDS: [&str; 6] = [
+        "NVIDIA RTX PRO 6000 Blackwell Workstation Edition",
+        "NVIDIA RTX PRO 6000 Blackwell Server Edition",
+        "NVIDIA GB10",
+        "NVIDIA B200",
+        "NVIDIA H100 80GB HBM3",
+        "",
+    ];
+
     #[test]
     fn unset_follows_the_qualified_pair() {
-        assert!(door(None, "120a", &Arch::Qwen35));
-        // qualified model class, unqualified board
-        assert!(!door(None, "100a", &Arch::Qwen35));
-        assert!(!door(None, "90a", &Arch::Qwen35));
-        assert!(!door(None, "89", &Arch::Qwen35));
-        // qualified board, unqualified model class
-        assert!(!door(None, "120a", &Arch::Qwen3));
-        assert!(!door(None, "120a", &Arch::Qwen3Moe));
-        assert!(!door(None, "120a", &Arch::Qwen35Moe));
-        assert!(!door(None, "120a", &Arch::Gemma4));
+        assert!(door(None, RTX5090, &Arch::Qwen35));
+        // qualified model class, unqualified card
+        for card in UNQUALIFIED_CARDS {
+            assert!(!door(None, card, &Arch::Qwen35), "{card:?}");
+        }
+        // qualified card, unqualified model class
+        assert!(!door(None, RTX5090, &Arch::Qwen3));
+        assert!(!door(None, RTX5090, &Arch::Qwen3Moe));
+        assert!(!door(None, RTX5090, &Arch::Qwen35Moe));
+        assert!(!door(None, RTX5090, &Arch::Gemma4));
     }
 
     #[test]
     fn explicit_values_win_on_every_pair() {
         for arch in [&Arch::Qwen35, &Arch::Qwen3Moe, &Arch::Gemma4] {
-            for built in ["120a", "100a", "90a", "89"] {
-                assert!(door(Some("1"), built, arch));
-                assert!(door(Some(" 1 "), built, arch));
-                assert!(!door(Some("0"), built, arch));
-                assert!(!door(Some(" 0 "), built, arch));
+            for card in std::iter::once(RTX5090).chain(UNQUALIFIED_CARDS) {
+                assert!(door(Some("1"), card, arch));
+                assert!(door(Some(" 1 "), card, arch));
+                assert!(!door(Some("0"), card, arch));
+                assert!(!door(Some(" 0 "), card, arch));
             }
         }
     }
@@ -41038,9 +41062,11 @@ mod serve_devpenalty_default_tests {
     #[test]
     fn other_spellings_fall_back_to_the_pair_default() {
         for v in ["", "true", "on", "yes", "2"] {
-            assert!(door(Some(v), "120a", &Arch::Qwen35));
-            assert!(!door(Some(v), "120a", &Arch::Qwen3Moe));
-            assert!(!door(Some(v), "100a", &Arch::Qwen35));
+            assert!(door(Some(v), RTX5090, &Arch::Qwen35));
+            assert!(!door(Some(v), RTX5090, &Arch::Qwen3Moe));
+            for card in UNQUALIFIED_CARDS {
+                assert!(!door(Some(v), card, &Arch::Qwen35), "{card:?}");
+            }
         }
     }
 }
