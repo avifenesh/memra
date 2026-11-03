@@ -1,0 +1,43 @@
+# Lever ledger: GB10 plain decode, 2026-11-03
+
+One row per lever tried today, adopted, rejected or broken: config, hardware, n, baseline, candidate, commit and receipt. Model: owner GGUF Qwen3.8-27B (NVFP4 + Q5_K) unless marked 9B (Qwen3.5-9B NVFP4 GGUF, on the 5090).
+
+Hardware:
+
+- **GB10:** one DGX Spark, sm_121a.
+- **5090:** RTX 5090 Laptop, sm_120a, thermally throttling.
+
+Bench conventions:
+
+- **Bench:** `decode-batch-bench --seqs N --chunk N --ctx D --steps 16 --reps 3`, with `MEMRA_DECODE_BATCH_CAP=32` and `MEMRA_DBB_SAMP=greedy`. The value is the median ms/tick of 3 reps.
+- **Exactness:** kernel-check bit-bad=0 and decode token fingerprints (TOKFP) equal between arms.
+- **Interleaving:** "3+3" means three runs per arm, interleaved in both orders.
+
+SHAs on `batch-spec` are pushed. Rejected arms live on `research/*` branches on origin, so every SHA stays reachable. The lever-1 sweep kernels were never committed; only their receipt survives.
+
+| # | lever | config / flags | hw | n | baseline | candidate | sha | receipt | verdict |
+|---:|---|---|---|---|---|---|---|---|---|
+| 1 | b16 tier on the rpsc schedule | auto at mcols 16 (rpsc) | GB10 | 3+3 | 158.62 ms/tick (B16 d2048, rp) | 129.43 | 9a1ef496fa | GB10-PLAIN-DECODE.md, gb10-b16-final-ab/ | **adopted** (-18.4%, exact) |
+| 1b | same | same, `MEMRA_KS=0` as base | 5090 27B | 3+3 | 85.38 | 73.10 | 9a1ef496fa | rig5090-b16-ab/ | adopted (-14.4%) |
+| 2 | group4 b16 smem-scale twin | group4_b16_rpsc | GB10 | 1+1 x2 | 129.3 / 176.6 | 130.1 / 177.1 | (uncommitted, deleted) | gb10-g4-rpsc/ | rejected (flat) |
+| 3 | b16 next-quant register prefetch (rpscp) | MEMRA_BVAR=rpscp | GB10 bench | 3 rounds | 6.43-6.48 ms/pass (rpsc) | 8.53-8.63 | (uncommitted) | gb10-lever1/sweep.txt | rejected (exact, slower) |
+| 4 | b16 cp.async smem activation staging (rpscs) | MEMRA_BVAR=rpscs | GB10 bench | 3 rounds | 6.43-6.48 | 8.41-8.57 | (uncommitted) | gb10-lever1/sweep.txt | rejected (exact, slower) |
+| 5 | b16 four rows per warp (rpsc4) | MEMRA_BVAR=rpsc4 | GB10 bench | 3 rounds | 6.43-6.48 | 7.11-7.13 | (uncommitted) | gb10-lever1/sweep.txt | rejected |
+| 6 | b16 column split 2x8 (rpcs8) | auto at mcols 16 | GB10 | bench 3 rounds; step 2-3 per arm | bench 6.47; step 129.3 | bench 5.66; step 130.5 | (uncommitted) | gb10-lever1/ | rejected (bench win, flat in the step) |
+| 7 | b16 column split 4x4 (rpcs4) | MEMRA_BVAR=rpcs4 | GB10 bench | 3 rounds | 6.47 | 6.49-6.81 | (uncommitted) | gb10-lever1/sweep.txt | rejected |
+| 8 | 32-row tier, one wave (b32 rpcs8 4x8) | wave cap 32, decode-wide scope | GB10 | 3+3 | 259.15 (2x16 waves, B32 d2048) | 249.21 | fb90a89dc9 | gb10-lever2/ab.txt | **adopted** (-3.8%; d12288 -3.0%) |
+| 9 | b32 singles 2x16 schedule (rpcs16) | MEMRA_B32V=cs16 | GB10 | 2 | 249.2 | 367.7 | 1a3decf498 lineage (research/batch-spec-wip-levers) | gb10-lever2/schedules-ab.txt | rejected |
+| 10 | group4 b32 as 2x16 halves | in-tree variant | GB10 | 3 | 249.2 | 258.6 | 808119c506 (research/batch-spec-wip-levers) | gb10-lever2/ (first killed run) | rejected |
+| 11 | Q5_K head b32 2x16 split + group4 halves | MEMRA_G4H=0/1 | GB10 | 3x3 | 247.5 | 253.2 (g4) / 251.9 (g4h) | 4959f37392 (research/b32-followups-rejected) | gb10-lever2/followups-ab.txt | rejected |
+| 12 | boot wave probe (32-row vs 2x16 waves) | measured_wave_cap | GB10 / 5090 9B | probe median 3 | 276.2 / 52.8 (2x16) | 266.2 / 49.6 (1x32) | 8e271ade80 | gb10-probe/, rig5090-probe/ | **adopted** (per-box decision) |
+| 13 | batched-tick attention on the deep walk | fa_decode_vec_q_seqs_v4_deep | GB10 | 3+3, 1+1 | 176.59 (B16 d12288) / 152.02 (B8 d32768) | 173.62 / 137.46 | fb90a89dc9 | gb10-lever3/ | **adopted** (-1.7% / -9.6%, exact) |
+| 13b | same | same | 5090 9B | 3+3 | 44.75 (B16 d12288) | 40.51 | fb90a89dc9 | rig5090-levers/ab.txt | adopted (-9.5%) |
+| 14 | raw-V attention in smem | MEMRA_FA_RAWV=1 | GB10 | 3+3, 1+1 | 173.75 / 137.46 | 176.52 / 141.22 | d14e4ae5c6 (research/fa-rawv-rejected) | gb10-rawv/ | rejected (exact, +1.6% / +2.7%) |
+| 15 | tensor-core GEMM tier (non-exact) at 16..32 rows | MEMRA_DECODE_TC=1 | 5090 9B | 3+3 | 27.40 (B16), 66.37 (B32) | 73.98, 91.07 | b207de734c (research/decode-tc-gemm-arm) | rig5090-tc/ | rejected (slower; 9/16 and 18/32 streams identical) |
+| 15b | same, >16 rows only | MEMRA_DECODE_TC=1 | GB10 | 3+3 bench; served 1 run | bench 247.8 (B32); served 79.16 (c32) | bench 232.2; served 79.36 | a28a2f4fc6 (research/decode-tc-gemm-rejected) | gb10-tc-served/ | rejected (served flat, not exact) |
+| 16 | exact tensor-core b32 tier (int8 mma, dp4a float order) | b32 auto via boot probe; MEMRA_MMVQ_TC=0/1 forces | GB10 | 3+3, 1+1 | 247.53 (B32 d2048) / 337.27 (B32 d12288) | 213.46 / 302.00 | 0e914ccf4c | gb10-tc/ab.txt | **adopted** (-13.8% / -10.5%, exact) |
+| 16b | same | same | 5090 9B | 3+3 | 58.39 | 53.03 | 0e914ccf4c | rig5090-tc2/ab.txt | adopted (-9.2%) |
+| 16s | same, served | boot probe picked the tensor-core tier | GB10 | 1 run | 79.0 tok/s c32 (lever 3) | 83.6 | 0e914ccf4c | gb10-agentic/tc-b32/ | adopted (+5.8% served c32) |
+| 16c | same at the b16 tier | MEMRA_MMVQ_TC=1 at mcols 16 | GB10 | 2+2 | 128.3 (B16 d2048) | 149.1 | 0e914ccf4c parent tree (v2, step-tc) | gb10-tc/ab-b16.txt | rejected (b16 stays dp4a) |
+| 17 | bf16 GDN state, rounding emulation | MEMRA_GDN_STATE_BF16=1 (round on store, fp32 bytes) | GB10 | panel 264; agentic 1 run | 158/164, 97/100 (fp32) | 160/164, 97/100 | cdda787cde (research/gdn-state-bf16) | GDN-STATE-BF16.md (branch) | quality in band; served speed confounded |
+| 18 | bf16 GDN state, real storage | MEMRA_GDN_STATE_BF16=1 (bf16 in first half of each fp32 buffer) | GB10 | see GDN-STATE-BF16.md | | | c3356b88b3 (research/gdn-state-bf16) | GDN-STATE-BF16.md (branch) | pending (served A/B running) |
