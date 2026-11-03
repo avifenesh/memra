@@ -263,6 +263,9 @@ fn main() {
     // Declared unconditionally: printed only inside its block, setting it after a build
     // without it did not rerun this script, and the archive was silently left out.
     println!("cargo:rerun-if-env-changed=MEMRA_DSV4_CUTLASS");
+    // Both CUTLASS archives compile against this header tree. Unwatched, pointing it at
+    // another tree after a build kept both archives on the old headers.
+    println!("cargo:rerun-if-env-changed=MEMRA_CUTLASS_ROOT");
     println!("cargo:rustc-check-cfg=cfg(memra_portable_cuda)");
     println!("cargo:rustc-check-cfg=cfg(memra_hopper_mma)");
     println!("cargo:rustc-check-cfg=cfg(memra_sm100_tcgen05)");
