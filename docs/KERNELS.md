@@ -213,7 +213,11 @@ Facts worth knowing before "cleaning up":
 
 - **`fattn_vendor.cu` is NOT BUILT** — appears nowhere in build.rs or src/; header says
   "WIP SKELETON" (fattn_vendor.cu:1). Zero exported symbols.
-- **`mma_tile.cuh` is dead** — no `#include` of it anywhere in cu/ or src/.
+- **`mma_tile.cuh` is not in any engine build**: no TU in cu/ or src/ includes it, so it adds
+  no symbol to any fatbin. It is NOT dead: the standalone DSV4 dense tensor-core probe
+  `tools/dsv4-dense-tc-gate.cu` includes it, and so do `tools/dsv4-dense-tc-gate-r4.cu` and
+  the `-r7`, `-r8` and `-r9` drivers, which include that file. Deleting the header breaks those
+  gate builds.
 - **`wgmma_common.cuh`** is included only by `hybrid.cu:2202`; guard
   `__CUDA_ARCH__ == 900` at wgmma_common.cuh:9.
 - `MEMRA_MMQ_STREAMK` arm is documented as removed (mmq_ffi.rs:714).
