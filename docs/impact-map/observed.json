@@ -1,0 +1,2092 @@
+{
+"schema": "memra-impact-observed-v1",
+"runs": [
+{
+"run": "q38-plain",
+"family": "qwen35",
+"route": "plain",
+"device": "rtx5090",
+"kernels": [
+"add_f32",
+"add_rms_norm_q8_1",
+"append_quantize_kv_q8_0_q5_1",
+"append_quantize_kv_q8_0_q5_1_dc",
+"append_quantize_kv_q8_0_q5_1_rows",
+"argmax_final_f32",
+"argmax_partial_f32",
+"embed_gather_u32",
+"embed_gather_u32_t",
+"f32_to_bf16_bulk",
+"fa_decode_combine_f32",
+"fa_decode_f32",
+"fa_dequant_kv_ws_bf16",
+"fa_prefill_bf16kv_pp",
+"fa_prefill_qw_db",
+"gated_rmsnorm_f32",
+"gated_rmsnorm_q8_1",
+"gdn_chunk_attn_f32",
+"gdn_chunk_cumgate_f32",
+"gdn_chunk_output_mma",
+"gdn_chunk_solve32_f32",
+"gdn_chunk_state_mma",
+"gdn_glog_f32",
+"gdn_prep_decode_f32",
+"gdn_scan_s128",
+"inc_i32",
+"l2_norm_f32",
+"l2_norm_pp_v2_f32",
+"memra_f16_cvt_kernel",
+"mul_f32",
+"mul_mat_q_nvfp4_w4a8",
+"q_gate_split_f32",
+"qmatvec_nvfp4_dp4a_rp",
+"qmatvec_nvfp4_mmvq_dual_mr2_rp",
+"qmatvec_nvfp4_mmvq_mr2_rp",
+"qmatvec_q5_K_mmvq_il",
+"quantize_mmq_q8_1_d4_kernel",
+"quantize_q8_1",
+"rms_norm_f32_v2",
+"rms_norm_q8_1",
+"rope_neox_f32",
+"sigmoid_f32",
+"silu_mul_f32",
+"silu_mul_scaled_q8_1",
+"ssm_conv1d_fused_decode_f32",
+"ssm_conv1d_gdn_f32",
+"ssm_conv1d_gdn_state_f32",
+"ssm_conv_ring_update_f32"
+]
+},
+{
+"run": "q38-mtp",
+"family": "qwen35",
+"route": "mtp",
+"device": "rtx5090",
+"kernels": [
+"add_f32",
+"add_rms_norm_f32_v2",
+"add_rms_norm_q8_1",
+"append_quantize_kv_q8_0_q5_1",
+"append_quantize_kv_q8_0_q5_1_dc",
+"append_quantize_kv_q8_0_q5_1_seqs",
+"argmax_final_f32",
+"argmax_partial_f32",
+"copy_batch_uniform_f32",
+"embed_gather_u32",
+"embed_gather_u32_t",
+"fa_decode_combine_f32",
+"fa_decode_f32",
+"gated_rmsnorm_q8_1",
+"gdn_prep_decode_b_f32",
+"gdn_prep_decode_f32",
+"gdn_scan_s128",
+"gdn_scan_s128_b",
+"gdn_scan_s128_tsnap",
+"inc_i32",
+"mul_f32",
+"q_gate_split_f32",
+"qmatvec_nvfp4_mmvq_b4_rp",
+"qmatvec_nvfp4_mmvq_b4_rpr2w8",
+"qmatvec_nvfp4_mmvq_dual_b4_rpr2",
+"qmatvec_nvfp4_mmvq_dual_mr2_rp",
+"qmatvec_nvfp4_mmvq_fused3_rp",
+"qmatvec_nvfp4_mmvq_fused4_rp",
+"qmatvec_nvfp4_mmvq_group4_b4_rp",
+"qmatvec_nvfp4_mmvq_mr2_rp",
+"qmatvec_q5_K_mmvq_b4_r2",
+"qmatvec_q5_K_mmvq_il",
+"quantize_q8_1",
+"rms_norm_f32_v2",
+"rms_norm_q8_1",
+"rope_neox_f32",
+"sigmoid_f32",
+"silu_mul_f32",
+"silu_mul_scaled_q8_1",
+"ssm_conv1d_fused_decode_b_f32",
+"ssm_conv1d_fused_decode_f32",
+"ssm_conv1d_fused_decode_tloop_f32"
+]
+},
+{
+"run": "ornith-plain",
+"family": "qwen35_moe",
+"route": "plain",
+"device": "rtx5090",
+"kernels": [
+"add_f32",
+"add_rms_norm_f32_v2",
+"add_rms_norm_q8_1",
+"add_scaled_rows_f32",
+"append_quantize_kv_q8_0_q5_1",
+"append_quantize_kv_q8_0_q5_1_dc",
+"append_quantize_kv_q8_0_q5_1_rows",
+"argmax_final_f32",
+"argmax_partial_f32",
+"embed_gather_u32",
+"embed_gather_u32_t",
+"f32_to_bf16_bulk",
+"fa_decode_combine_f32",
+"fa_decode_f32",
+"fa_dequant_kv_ws_bf16",
+"fa_prefill_bf16kv_pp",
+"fa_prefill_qw_db",
+"gated_rmsnorm_f32",
+"gated_rmsnorm_q8_1",
+"gather_act_f16_kernel",
+"gdn_chunk_attn_f32",
+"gdn_chunk_cumgate_f32",
+"gdn_chunk_output_mma",
+"gdn_chunk_solve32_f32",
+"gdn_chunk_state_mma",
+"gdn_glog_f32",
+"gdn_prep_decode_f32",
+"gdn_scan_s128",
+"inc_i32",
+"l2_norm_f32",
+"l2_norm_pp_v2_f32",
+"moe_down8_fma_dev_q8_w8h2v",
+"moe_gate_up_silu8_dev_q8_v",
+"moe_kq_sktail_kernel",
+"moe_pairs_scatter",
+"moe_pairs_silu_mul",
+"moe_router_topk_f32",
+"mul_f32",
+"mul_mat_q_nvfp4_w4a8",
+"q_gate_split_f32",
+"qmatvec_nvfp4_dp4a_rp",
+"qmatvec_nvfp4_mmvq_dual_mr2_rp",
+"qmatvec_nvfp4_mmvq_fused2_rp",
+"qmatvec_nvfp4_mmvq_mr2_rp",
+"qmatvec_q5_K_mmvq_il",
+"quantize_mmq_q8_1_d4_kernel",
+"quantize_q8_1",
+"rms_norm_f32_v2",
+"rms_norm_q8_1",
+"rope_neox_f32",
+"router_gemv_f32_w8",
+"router_gemv_f32_w8_batch",
+"rows_permute_f32",
+"sigmoid_dot_rows_f32",
+"sigmoid_f32",
+"silu_mul_f32",
+"ssm_conv1d_fused_decode_f32",
+"ssm_conv1d_gdn_f32",
+"ssm_conv1d_gdn_state_f32",
+"ssm_conv_ring_update_f32"
+]
+},
+{
+"run": "ornith-mtp",
+"family": "qwen35_moe",
+"route": "mtp",
+"device": "rtx5090",
+"kernels": [
+"add_f32",
+"add_rms_norm_f32_v2",
+"add_rms_norm_q8_1",
+"add_scaled_rows_f32",
+"append_quantize_kv_q8_0_q5_1",
+"append_quantize_kv_q8_0_q5_1_dc",
+"append_quantize_kv_q8_0_q5_1_seqs",
+"argmax_final_f32",
+"argmax_partial_f32",
+"copy_batch_uniform_f32",
+"embed_gather_u32",
+"embed_gather_u32_t",
+"fa_decode_combine_f32",
+"fa_decode_f32",
+"gated_rmsnorm_q8_1",
+"gdn_prep_decode_b_f32",
+"gdn_prep_decode_f32",
+"gdn_scan_s128",
+"gdn_scan_s128_b",
+"gdn_scan_s128_tsnap",
+"inc_i32",
+"moe_down8_fma_dev_q8_w8h2v",
+"moe_down8_fma_dev_q8_w8h2v_rows",
+"moe_gate_up_silu8_dev_q8_v",
+"moe_gate_up_silu8_dev_q8_v_rows",
+"moe_router_topk_f32",
+"mul_f32",
+"q_gate_split_f32",
+"qmatvec_nvfp4_mmvq_b2_rp",
+"qmatvec_nvfp4_mmvq_b4_rp",
+"qmatvec_nvfp4_mmvq_dual_mr2_rp",
+"qmatvec_nvfp4_mmvq_fused2_rp",
+"qmatvec_nvfp4_mmvq_fused3_rp",
+"qmatvec_nvfp4_mmvq_fused4_rp",
+"qmatvec_nvfp4_mmvq_group4_b4_rp",
+"qmatvec_nvfp4_mmvq_mr2_rp",
+"qmatvec_q5_K_mmvq_b4_r2",
+"qmatvec_q5_K_mmvq_il",
+"quantize_q8_1",
+"rms_norm_f32_v2",
+"rms_norm_q8_1",
+"rope_neox_f32",
+"router_gemv_f32_w8",
+"sigmoid_dot_rows_f32",
+"sigmoid_f32",
+"silu_mul_f32",
+"ssm_conv1d_fused_decode_b_f32",
+"ssm_conv1d_fused_decode_f32",
+"ssm_conv1d_fused_decode_tloop_f32"
+]
+},
+{
+"run": "q9b-plain",
+"family": "qwen35",
+"route": "plain",
+"device": "rtx5090",
+"kernels": [
+"add_f32",
+"add_rms_norm_q8_1",
+"append_quantize_kv_q8_0_q5_1",
+"append_quantize_kv_q8_0_q5_1_dc",
+"append_quantize_kv_q8_0_q5_1_rows",
+"argmax_final_f32",
+"argmax_partial_f32",
+"embed_gather_u32",
+"embed_gather_u32_t",
+"f32_to_bf16_bulk",
+"fa_decode_combine_f32",
+"fa_decode_f32",
+"fa_dequant_kv_ws_bf16",
+"fa_prefill_bf16kv_pp",
+"fa_prefill_qw_db",
+"gated_rmsnorm_f32",
+"gated_rmsnorm_q8_1",
+"gdn_chunk_attn_f32",
+"gdn_chunk_cumgate_f32",
+"gdn_chunk_output_mma",
+"gdn_chunk_solve32_f32",
+"gdn_chunk_state_mma",
+"gdn_glog_f32",
+"gdn_prep_decode_f32",
+"gdn_scan_s128",
+"inc_i32",
+"l2_norm_f32",
+"l2_norm_pp_v2_f32",
+"memra_f16_cvt_kernel",
+"mul_f32",
+"mul_mat_q_nvfp4_w4a8",
+"mul_mat_q_q45k",
+"q4_K_split_rp_build",
+"q6_K_split_rp_build",
+"q8_0_split_rp_build",
+"q_gate_split_f32",
+"qmatvec_nvfp4_mmvq_dual_mr2_rp",
+"qmatvec_nvfp4_mmvq_mr2_rp",
+"qmatvec_q4_K_mmvq_rp",
+"qmatvec_q5_K_mmvq_mr2_il",
+"qmatvec_q6_K_mmvq_rp",
+"qmatvec_q8_0_dp4a",
+"qmatvec_q8_0_mmvq_fused2",
+"quantize_mmq_q8_1_d4_kernel",
+"quantize_mmq_q8_1_ds4_kernel",
+"quantize_q8_1",
+"rms_norm_f32_v2",
+"rms_norm_q8_1",
+"rope_neox_f32",
+"sigmoid_f32",
+"silu_mul_f32",
+"silu_mul_scaled_q8_1",
+"ssm_conv1d_fused_decode_f32",
+"ssm_conv1d_gdn_f32",
+"ssm_conv1d_gdn_state_f32",
+"ssm_conv_ring_update_f32"
+]
+},
+{
+"run": "gemma31-plain",
+"family": "gemma4_dense",
+"route": "plain",
+"device": "rtx5090",
+"kernels": [
+"add_rms_norm_f32_v2",
+"add_scale_f32",
+"append_quantize_kv_q8_0_q5_1_rows",
+"argmax_final_f32",
+"argmax_partial_f32",
+"bf16_to_f16_flat",
+"embed_gather_u32",
+"embed_gather_u32_t",
+"f32_to_bf16_bulk",
+"fa_decode_combine_f32",
+"fa_decode_f32",
+"fa_decode_vec_q_v4",
+"fa_dequant_kv_ws_bf16",
+"fa_prefill_bf16_hd512_sp16h2",
+"fa_prefill_bf16kv_pp",
+"fa_prefill_w_bf16_p1h2",
+"gelu_tanh_mul_q8_1",
+"inc_i32",
+"mul_mat_q_q4_0",
+"q4_0_split_rp_build",
+"qmatvec_q4_0_mmvq_fused2_mr1_rp",
+"qmatvec_q4_0_mmvq_fused3_mr1_rp",
+"qmatvec_q4_0_mmvq_rp",
+"qmatvec_q6_K_mmvq",
+"quantize_mmq_q8_1_d4_q4_0",
+"quantize_q8_1",
+"rms_norm_f32_v2",
+"rms_norm_q8_1",
+"rms_norm_qkv_rope_append_dc_f32",
+"rms_norm_qkv_rope_append_f32",
+"rms_norm_qkv_w4b_f32",
+"rms_pre_add_rms_norm_q8z_f32",
+"rms_pre_add_scale_rms_norm_q8_1",
+"rope_neox2_bf16e_f32",
+"scale_f32",
+"softcap_f32"
+]
+}
+],
+"observed": [
+{
+"kernel": "add_f32",
+"family": "qwen35",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "add_rms_norm_q8_1",
+"family": "qwen35",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "append_quantize_kv_q8_0_q5_1",
+"family": "qwen35",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "append_quantize_kv_q8_0_q5_1_dc",
+"family": "qwen35",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "append_quantize_kv_q8_0_q5_1_rows",
+"family": "qwen35",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "argmax_final_f32",
+"family": "qwen35",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "argmax_partial_f32",
+"family": "qwen35",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "embed_gather_u32",
+"family": "qwen35",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "embed_gather_u32_t",
+"family": "qwen35",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "f32_to_bf16_bulk",
+"family": "qwen35",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "fa_decode_combine_f32",
+"family": "qwen35",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "fa_decode_f32",
+"family": "qwen35",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "fa_dequant_kv_ws_bf16",
+"family": "qwen35",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "fa_prefill_bf16kv_pp",
+"family": "qwen35",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "fa_prefill_qw_db",
+"family": "qwen35",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "gated_rmsnorm_f32",
+"family": "qwen35",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "gated_rmsnorm_q8_1",
+"family": "qwen35",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "gdn_chunk_attn_f32",
+"family": "qwen35",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "gdn_chunk_cumgate_f32",
+"family": "qwen35",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "gdn_chunk_output_mma",
+"family": "qwen35",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "gdn_chunk_solve32_f32",
+"family": "qwen35",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "gdn_chunk_state_mma",
+"family": "qwen35",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "gdn_glog_f32",
+"family": "qwen35",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "gdn_prep_decode_f32",
+"family": "qwen35",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "gdn_scan_s128",
+"family": "qwen35",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "inc_i32",
+"family": "qwen35",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "l2_norm_f32",
+"family": "qwen35",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "l2_norm_pp_v2_f32",
+"family": "qwen35",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "memra_f16_cvt_kernel",
+"family": "qwen35",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "mul_f32",
+"family": "qwen35",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "mul_mat_q_nvfp4_w4a8",
+"family": "qwen35",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "q_gate_split_f32",
+"family": "qwen35",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "qmatvec_nvfp4_dp4a_rp",
+"family": "qwen35",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "qmatvec_nvfp4_mmvq_dual_mr2_rp",
+"family": "qwen35",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "qmatvec_nvfp4_mmvq_mr2_rp",
+"family": "qwen35",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "qmatvec_q5_K_mmvq_il",
+"family": "qwen35",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "quantize_mmq_q8_1_d4_kernel",
+"family": "qwen35",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "quantize_q8_1",
+"family": "qwen35",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "rms_norm_f32_v2",
+"family": "qwen35",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "rms_norm_q8_1",
+"family": "qwen35",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "rope_neox_f32",
+"family": "qwen35",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "sigmoid_f32",
+"family": "qwen35",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "silu_mul_f32",
+"family": "qwen35",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "silu_mul_scaled_q8_1",
+"family": "qwen35",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "ssm_conv1d_fused_decode_f32",
+"family": "qwen35",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "ssm_conv1d_gdn_f32",
+"family": "qwen35",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "ssm_conv1d_gdn_state_f32",
+"family": "qwen35",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "ssm_conv_ring_update_f32",
+"family": "qwen35",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "add_f32",
+"family": "qwen35",
+"route": "mtp",
+"device": "rtx5090"
+},
+{
+"kernel": "add_rms_norm_f32_v2",
+"family": "qwen35",
+"route": "mtp",
+"device": "rtx5090"
+},
+{
+"kernel": "add_rms_norm_q8_1",
+"family": "qwen35",
+"route": "mtp",
+"device": "rtx5090"
+},
+{
+"kernel": "append_quantize_kv_q8_0_q5_1",
+"family": "qwen35",
+"route": "mtp",
+"device": "rtx5090"
+},
+{
+"kernel": "append_quantize_kv_q8_0_q5_1_dc",
+"family": "qwen35",
+"route": "mtp",
+"device": "rtx5090"
+},
+{
+"kernel": "append_quantize_kv_q8_0_q5_1_seqs",
+"family": "qwen35",
+"route": "mtp",
+"device": "rtx5090"
+},
+{
+"kernel": "argmax_final_f32",
+"family": "qwen35",
+"route": "mtp",
+"device": "rtx5090"
+},
+{
+"kernel": "argmax_partial_f32",
+"family": "qwen35",
+"route": "mtp",
+"device": "rtx5090"
+},
+{
+"kernel": "copy_batch_uniform_f32",
+"family": "qwen35",
+"route": "mtp",
+"device": "rtx5090"
+},
+{
+"kernel": "embed_gather_u32",
+"family": "qwen35",
+"route": "mtp",
+"device": "rtx5090"
+},
+{
+"kernel": "embed_gather_u32_t",
+"family": "qwen35",
+"route": "mtp",
+"device": "rtx5090"
+},
+{
+"kernel": "fa_decode_combine_f32",
+"family": "qwen35",
+"route": "mtp",
+"device": "rtx5090"
+},
+{
+"kernel": "fa_decode_f32",
+"family": "qwen35",
+"route": "mtp",
+"device": "rtx5090"
+},
+{
+"kernel": "gated_rmsnorm_q8_1",
+"family": "qwen35",
+"route": "mtp",
+"device": "rtx5090"
+},
+{
+"kernel": "gdn_prep_decode_b_f32",
+"family": "qwen35",
+"route": "mtp",
+"device": "rtx5090"
+},
+{
+"kernel": "gdn_prep_decode_f32",
+"family": "qwen35",
+"route": "mtp",
+"device": "rtx5090"
+},
+{
+"kernel": "gdn_scan_s128",
+"family": "qwen35",
+"route": "mtp",
+"device": "rtx5090"
+},
+{
+"kernel": "gdn_scan_s128_b",
+"family": "qwen35",
+"route": "mtp",
+"device": "rtx5090"
+},
+{
+"kernel": "gdn_scan_s128_tsnap",
+"family": "qwen35",
+"route": "mtp",
+"device": "rtx5090"
+},
+{
+"kernel": "inc_i32",
+"family": "qwen35",
+"route": "mtp",
+"device": "rtx5090"
+},
+{
+"kernel": "mul_f32",
+"family": "qwen35",
+"route": "mtp",
+"device": "rtx5090"
+},
+{
+"kernel": "q_gate_split_f32",
+"family": "qwen35",
+"route": "mtp",
+"device": "rtx5090"
+},
+{
+"kernel": "qmatvec_nvfp4_mmvq_b4_rp",
+"family": "qwen35",
+"route": "mtp",
+"device": "rtx5090"
+},
+{
+"kernel": "qmatvec_nvfp4_mmvq_b4_rpr2w8",
+"family": "qwen35",
+"route": "mtp",
+"device": "rtx5090"
+},
+{
+"kernel": "qmatvec_nvfp4_mmvq_dual_b4_rpr2",
+"family": "qwen35",
+"route": "mtp",
+"device": "rtx5090"
+},
+{
+"kernel": "qmatvec_nvfp4_mmvq_dual_mr2_rp",
+"family": "qwen35",
+"route": "mtp",
+"device": "rtx5090"
+},
+{
+"kernel": "qmatvec_nvfp4_mmvq_fused3_rp",
+"family": "qwen35",
+"route": "mtp",
+"device": "rtx5090"
+},
+{
+"kernel": "qmatvec_nvfp4_mmvq_fused4_rp",
+"family": "qwen35",
+"route": "mtp",
+"device": "rtx5090"
+},
+{
+"kernel": "qmatvec_nvfp4_mmvq_group4_b4_rp",
+"family": "qwen35",
+"route": "mtp",
+"device": "rtx5090"
+},
+{
+"kernel": "qmatvec_nvfp4_mmvq_mr2_rp",
+"family": "qwen35",
+"route": "mtp",
+"device": "rtx5090"
+},
+{
+"kernel": "qmatvec_q5_K_mmvq_b4_r2",
+"family": "qwen35",
+"route": "mtp",
+"device": "rtx5090"
+},
+{
+"kernel": "qmatvec_q5_K_mmvq_il",
+"family": "qwen35",
+"route": "mtp",
+"device": "rtx5090"
+},
+{
+"kernel": "quantize_q8_1",
+"family": "qwen35",
+"route": "mtp",
+"device": "rtx5090"
+},
+{
+"kernel": "rms_norm_f32_v2",
+"family": "qwen35",
+"route": "mtp",
+"device": "rtx5090"
+},
+{
+"kernel": "rms_norm_q8_1",
+"family": "qwen35",
+"route": "mtp",
+"device": "rtx5090"
+},
+{
+"kernel": "rope_neox_f32",
+"family": "qwen35",
+"route": "mtp",
+"device": "rtx5090"
+},
+{
+"kernel": "sigmoid_f32",
+"family": "qwen35",
+"route": "mtp",
+"device": "rtx5090"
+},
+{
+"kernel": "silu_mul_f32",
+"family": "qwen35",
+"route": "mtp",
+"device": "rtx5090"
+},
+{
+"kernel": "silu_mul_scaled_q8_1",
+"family": "qwen35",
+"route": "mtp",
+"device": "rtx5090"
+},
+{
+"kernel": "ssm_conv1d_fused_decode_b_f32",
+"family": "qwen35",
+"route": "mtp",
+"device": "rtx5090"
+},
+{
+"kernel": "ssm_conv1d_fused_decode_f32",
+"family": "qwen35",
+"route": "mtp",
+"device": "rtx5090"
+},
+{
+"kernel": "ssm_conv1d_fused_decode_tloop_f32",
+"family": "qwen35",
+"route": "mtp",
+"device": "rtx5090"
+},
+{
+"kernel": "add_f32",
+"family": "qwen35_moe",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "add_rms_norm_f32_v2",
+"family": "qwen35_moe",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "add_rms_norm_q8_1",
+"family": "qwen35_moe",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "add_scaled_rows_f32",
+"family": "qwen35_moe",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "append_quantize_kv_q8_0_q5_1",
+"family": "qwen35_moe",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "append_quantize_kv_q8_0_q5_1_dc",
+"family": "qwen35_moe",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "append_quantize_kv_q8_0_q5_1_rows",
+"family": "qwen35_moe",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "argmax_final_f32",
+"family": "qwen35_moe",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "argmax_partial_f32",
+"family": "qwen35_moe",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "embed_gather_u32",
+"family": "qwen35_moe",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "embed_gather_u32_t",
+"family": "qwen35_moe",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "f32_to_bf16_bulk",
+"family": "qwen35_moe",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "fa_decode_combine_f32",
+"family": "qwen35_moe",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "fa_decode_f32",
+"family": "qwen35_moe",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "fa_dequant_kv_ws_bf16",
+"family": "qwen35_moe",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "fa_prefill_bf16kv_pp",
+"family": "qwen35_moe",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "fa_prefill_qw_db",
+"family": "qwen35_moe",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "gated_rmsnorm_f32",
+"family": "qwen35_moe",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "gated_rmsnorm_q8_1",
+"family": "qwen35_moe",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "gather_act_f16_kernel",
+"family": "qwen35_moe",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "gdn_chunk_attn_f32",
+"family": "qwen35_moe",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "gdn_chunk_cumgate_f32",
+"family": "qwen35_moe",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "gdn_chunk_output_mma",
+"family": "qwen35_moe",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "gdn_chunk_solve32_f32",
+"family": "qwen35_moe",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "gdn_chunk_state_mma",
+"family": "qwen35_moe",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "gdn_glog_f32",
+"family": "qwen35_moe",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "gdn_prep_decode_f32",
+"family": "qwen35_moe",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "gdn_scan_s128",
+"family": "qwen35_moe",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "inc_i32",
+"family": "qwen35_moe",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "l2_norm_f32",
+"family": "qwen35_moe",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "l2_norm_pp_v2_f32",
+"family": "qwen35_moe",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "moe_down8_fma_dev_q8_w8h2v",
+"family": "qwen35_moe",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "moe_gate_up_silu8_dev_q8_v",
+"family": "qwen35_moe",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "moe_kq_sktail_kernel",
+"family": "qwen35_moe",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "moe_pairs_scatter",
+"family": "qwen35_moe",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "moe_pairs_silu_mul",
+"family": "qwen35_moe",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "moe_router_topk_f32",
+"family": "qwen35_moe",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "mul_f32",
+"family": "qwen35_moe",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "mul_mat_q_nvfp4_w4a8",
+"family": "qwen35_moe",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "q_gate_split_f32",
+"family": "qwen35_moe",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "qmatvec_nvfp4_dp4a_rp",
+"family": "qwen35_moe",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "qmatvec_nvfp4_mmvq_dual_mr2_rp",
+"family": "qwen35_moe",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "qmatvec_nvfp4_mmvq_fused2_rp",
+"family": "qwen35_moe",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "qmatvec_nvfp4_mmvq_mr2_rp",
+"family": "qwen35_moe",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "qmatvec_q5_K_mmvq_il",
+"family": "qwen35_moe",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "quantize_mmq_q8_1_d4_kernel",
+"family": "qwen35_moe",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "quantize_q8_1",
+"family": "qwen35_moe",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "rms_norm_f32_v2",
+"family": "qwen35_moe",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "rms_norm_q8_1",
+"family": "qwen35_moe",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "rope_neox_f32",
+"family": "qwen35_moe",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "router_gemv_f32_w8",
+"family": "qwen35_moe",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "router_gemv_f32_w8_batch",
+"family": "qwen35_moe",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "rows_permute_f32",
+"family": "qwen35_moe",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "sigmoid_dot_rows_f32",
+"family": "qwen35_moe",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "sigmoid_f32",
+"family": "qwen35_moe",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "silu_mul_f32",
+"family": "qwen35_moe",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "ssm_conv1d_fused_decode_f32",
+"family": "qwen35_moe",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "ssm_conv1d_gdn_f32",
+"family": "qwen35_moe",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "ssm_conv1d_gdn_state_f32",
+"family": "qwen35_moe",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "ssm_conv_ring_update_f32",
+"family": "qwen35_moe",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "add_f32",
+"family": "qwen35_moe",
+"route": "mtp",
+"device": "rtx5090"
+},
+{
+"kernel": "add_rms_norm_f32_v2",
+"family": "qwen35_moe",
+"route": "mtp",
+"device": "rtx5090"
+},
+{
+"kernel": "add_rms_norm_q8_1",
+"family": "qwen35_moe",
+"route": "mtp",
+"device": "rtx5090"
+},
+{
+"kernel": "add_scaled_rows_f32",
+"family": "qwen35_moe",
+"route": "mtp",
+"device": "rtx5090"
+},
+{
+"kernel": "append_quantize_kv_q8_0_q5_1",
+"family": "qwen35_moe",
+"route": "mtp",
+"device": "rtx5090"
+},
+{
+"kernel": "append_quantize_kv_q8_0_q5_1_dc",
+"family": "qwen35_moe",
+"route": "mtp",
+"device": "rtx5090"
+},
+{
+"kernel": "append_quantize_kv_q8_0_q5_1_seqs",
+"family": "qwen35_moe",
+"route": "mtp",
+"device": "rtx5090"
+},
+{
+"kernel": "argmax_final_f32",
+"family": "qwen35_moe",
+"route": "mtp",
+"device": "rtx5090"
+},
+{
+"kernel": "argmax_partial_f32",
+"family": "qwen35_moe",
+"route": "mtp",
+"device": "rtx5090"
+},
+{
+"kernel": "copy_batch_uniform_f32",
+"family": "qwen35_moe",
+"route": "mtp",
+"device": "rtx5090"
+},
+{
+"kernel": "embed_gather_u32",
+"family": "qwen35_moe",
+"route": "mtp",
+"device": "rtx5090"
+},
+{
+"kernel": "embed_gather_u32_t",
+"family": "qwen35_moe",
+"route": "mtp",
+"device": "rtx5090"
+},
+{
+"kernel": "fa_decode_combine_f32",
+"family": "qwen35_moe",
+"route": "mtp",
+"device": "rtx5090"
+},
+{
+"kernel": "fa_decode_f32",
+"family": "qwen35_moe",
+"route": "mtp",
+"device": "rtx5090"
+},
+{
+"kernel": "gated_rmsnorm_q8_1",
+"family": "qwen35_moe",
+"route": "mtp",
+"device": "rtx5090"
+},
+{
+"kernel": "gdn_prep_decode_b_f32",
+"family": "qwen35_moe",
+"route": "mtp",
+"device": "rtx5090"
+},
+{
+"kernel": "gdn_prep_decode_f32",
+"family": "qwen35_moe",
+"route": "mtp",
+"device": "rtx5090"
+},
+{
+"kernel": "gdn_scan_s128",
+"family": "qwen35_moe",
+"route": "mtp",
+"device": "rtx5090"
+},
+{
+"kernel": "gdn_scan_s128_b",
+"family": "qwen35_moe",
+"route": "mtp",
+"device": "rtx5090"
+},
+{
+"kernel": "gdn_scan_s128_tsnap",
+"family": "qwen35_moe",
+"route": "mtp",
+"device": "rtx5090"
+},
+{
+"kernel": "inc_i32",
+"family": "qwen35_moe",
+"route": "mtp",
+"device": "rtx5090"
+},
+{
+"kernel": "moe_down8_fma_dev_q8_w8h2v",
+"family": "qwen35_moe",
+"route": "mtp",
+"device": "rtx5090"
+},
+{
+"kernel": "moe_down8_fma_dev_q8_w8h2v_rows",
+"family": "qwen35_moe",
+"route": "mtp",
+"device": "rtx5090"
+},
+{
+"kernel": "moe_gate_up_silu8_dev_q8_v",
+"family": "qwen35_moe",
+"route": "mtp",
+"device": "rtx5090"
+},
+{
+"kernel": "moe_gate_up_silu8_dev_q8_v_rows",
+"family": "qwen35_moe",
+"route": "mtp",
+"device": "rtx5090"
+},
+{
+"kernel": "moe_router_topk_f32",
+"family": "qwen35_moe",
+"route": "mtp",
+"device": "rtx5090"
+},
+{
+"kernel": "mul_f32",
+"family": "qwen35_moe",
+"route": "mtp",
+"device": "rtx5090"
+},
+{
+"kernel": "q_gate_split_f32",
+"family": "qwen35_moe",
+"route": "mtp",
+"device": "rtx5090"
+},
+{
+"kernel": "qmatvec_nvfp4_mmvq_b2_rp",
+"family": "qwen35_moe",
+"route": "mtp",
+"device": "rtx5090"
+},
+{
+"kernel": "qmatvec_nvfp4_mmvq_b4_rp",
+"family": "qwen35_moe",
+"route": "mtp",
+"device": "rtx5090"
+},
+{
+"kernel": "qmatvec_nvfp4_mmvq_dual_mr2_rp",
+"family": "qwen35_moe",
+"route": "mtp",
+"device": "rtx5090"
+},
+{
+"kernel": "qmatvec_nvfp4_mmvq_fused2_rp",
+"family": "qwen35_moe",
+"route": "mtp",
+"device": "rtx5090"
+},
+{
+"kernel": "qmatvec_nvfp4_mmvq_fused3_rp",
+"family": "qwen35_moe",
+"route": "mtp",
+"device": "rtx5090"
+},
+{
+"kernel": "qmatvec_nvfp4_mmvq_fused4_rp",
+"family": "qwen35_moe",
+"route": "mtp",
+"device": "rtx5090"
+},
+{
+"kernel": "qmatvec_nvfp4_mmvq_group4_b4_rp",
+"family": "qwen35_moe",
+"route": "mtp",
+"device": "rtx5090"
+},
+{
+"kernel": "qmatvec_nvfp4_mmvq_mr2_rp",
+"family": "qwen35_moe",
+"route": "mtp",
+"device": "rtx5090"
+},
+{
+"kernel": "qmatvec_q5_K_mmvq_b4_r2",
+"family": "qwen35_moe",
+"route": "mtp",
+"device": "rtx5090"
+},
+{
+"kernel": "qmatvec_q5_K_mmvq_il",
+"family": "qwen35_moe",
+"route": "mtp",
+"device": "rtx5090"
+},
+{
+"kernel": "quantize_q8_1",
+"family": "qwen35_moe",
+"route": "mtp",
+"device": "rtx5090"
+},
+{
+"kernel": "rms_norm_f32_v2",
+"family": "qwen35_moe",
+"route": "mtp",
+"device": "rtx5090"
+},
+{
+"kernel": "rms_norm_q8_1",
+"family": "qwen35_moe",
+"route": "mtp",
+"device": "rtx5090"
+},
+{
+"kernel": "rope_neox_f32",
+"family": "qwen35_moe",
+"route": "mtp",
+"device": "rtx5090"
+},
+{
+"kernel": "router_gemv_f32_w8",
+"family": "qwen35_moe",
+"route": "mtp",
+"device": "rtx5090"
+},
+{
+"kernel": "sigmoid_dot_rows_f32",
+"family": "qwen35_moe",
+"route": "mtp",
+"device": "rtx5090"
+},
+{
+"kernel": "sigmoid_f32",
+"family": "qwen35_moe",
+"route": "mtp",
+"device": "rtx5090"
+},
+{
+"kernel": "silu_mul_f32",
+"family": "qwen35_moe",
+"route": "mtp",
+"device": "rtx5090"
+},
+{
+"kernel": "ssm_conv1d_fused_decode_b_f32",
+"family": "qwen35_moe",
+"route": "mtp",
+"device": "rtx5090"
+},
+{
+"kernel": "ssm_conv1d_fused_decode_f32",
+"family": "qwen35_moe",
+"route": "mtp",
+"device": "rtx5090"
+},
+{
+"kernel": "ssm_conv1d_fused_decode_tloop_f32",
+"family": "qwen35_moe",
+"route": "mtp",
+"device": "rtx5090"
+},
+{
+"kernel": "add_f32",
+"family": "qwen35",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "add_rms_norm_q8_1",
+"family": "qwen35",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "append_quantize_kv_q8_0_q5_1",
+"family": "qwen35",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "append_quantize_kv_q8_0_q5_1_dc",
+"family": "qwen35",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "append_quantize_kv_q8_0_q5_1_rows",
+"family": "qwen35",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "argmax_final_f32",
+"family": "qwen35",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "argmax_partial_f32",
+"family": "qwen35",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "embed_gather_u32",
+"family": "qwen35",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "embed_gather_u32_t",
+"family": "qwen35",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "f32_to_bf16_bulk",
+"family": "qwen35",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "fa_decode_combine_f32",
+"family": "qwen35",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "fa_decode_f32",
+"family": "qwen35",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "fa_dequant_kv_ws_bf16",
+"family": "qwen35",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "fa_prefill_bf16kv_pp",
+"family": "qwen35",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "fa_prefill_qw_db",
+"family": "qwen35",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "gated_rmsnorm_f32",
+"family": "qwen35",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "gated_rmsnorm_q8_1",
+"family": "qwen35",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "gdn_chunk_attn_f32",
+"family": "qwen35",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "gdn_chunk_cumgate_f32",
+"family": "qwen35",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "gdn_chunk_output_mma",
+"family": "qwen35",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "gdn_chunk_solve32_f32",
+"family": "qwen35",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "gdn_chunk_state_mma",
+"family": "qwen35",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "gdn_glog_f32",
+"family": "qwen35",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "gdn_prep_decode_f32",
+"family": "qwen35",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "gdn_scan_s128",
+"family": "qwen35",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "inc_i32",
+"family": "qwen35",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "l2_norm_f32",
+"family": "qwen35",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "l2_norm_pp_v2_f32",
+"family": "qwen35",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "memra_f16_cvt_kernel",
+"family": "qwen35",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "mul_f32",
+"family": "qwen35",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "mul_mat_q_nvfp4_w4a8",
+"family": "qwen35",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "mul_mat_q_q45k",
+"family": "qwen35",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "q4_K_split_rp_build",
+"family": "qwen35",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "q6_K_split_rp_build",
+"family": "qwen35",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "q8_0_split_rp_build",
+"family": "qwen35",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "q_gate_split_f32",
+"family": "qwen35",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "qmatvec_nvfp4_mmvq_dual_mr2_rp",
+"family": "qwen35",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "qmatvec_nvfp4_mmvq_mr2_rp",
+"family": "qwen35",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "qmatvec_q4_K_mmvq_rp",
+"family": "qwen35",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "qmatvec_q5_K_mmvq_mr2_il",
+"family": "qwen35",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "qmatvec_q6_K_mmvq_rp",
+"family": "qwen35",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "qmatvec_q8_0_dp4a",
+"family": "qwen35",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "qmatvec_q8_0_mmvq_fused2",
+"family": "qwen35",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "quantize_mmq_q8_1_d4_kernel",
+"family": "qwen35",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "quantize_mmq_q8_1_ds4_kernel",
+"family": "qwen35",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "quantize_q8_1",
+"family": "qwen35",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "rms_norm_f32_v2",
+"family": "qwen35",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "rms_norm_q8_1",
+"family": "qwen35",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "rope_neox_f32",
+"family": "qwen35",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "sigmoid_f32",
+"family": "qwen35",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "silu_mul_f32",
+"family": "qwen35",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "silu_mul_scaled_q8_1",
+"family": "qwen35",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "ssm_conv1d_fused_decode_f32",
+"family": "qwen35",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "ssm_conv1d_gdn_f32",
+"family": "qwen35",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "ssm_conv1d_gdn_state_f32",
+"family": "qwen35",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "ssm_conv_ring_update_f32",
+"family": "qwen35",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "add_rms_norm_f32_v2",
+"family": "gemma4_dense",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "add_scale_f32",
+"family": "gemma4_dense",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "append_quantize_kv_q8_0_q5_1_rows",
+"family": "gemma4_dense",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "argmax_final_f32",
+"family": "gemma4_dense",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "argmax_partial_f32",
+"family": "gemma4_dense",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "bf16_to_f16_flat",
+"family": "gemma4_dense",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "embed_gather_u32",
+"family": "gemma4_dense",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "embed_gather_u32_t",
+"family": "gemma4_dense",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "f32_to_bf16_bulk",
+"family": "gemma4_dense",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "fa_decode_combine_f32",
+"family": "gemma4_dense",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "fa_decode_f32",
+"family": "gemma4_dense",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "fa_decode_vec_q_v4",
+"family": "gemma4_dense",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "fa_dequant_kv_ws_bf16",
+"family": "gemma4_dense",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "fa_prefill_bf16_hd512_sp16h2",
+"family": "gemma4_dense",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "fa_prefill_bf16kv_pp",
+"family": "gemma4_dense",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "fa_prefill_w_bf16_p1h2",
+"family": "gemma4_dense",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "gelu_tanh_mul_q8_1",
+"family": "gemma4_dense",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "inc_i32",
+"family": "gemma4_dense",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "mul_mat_q_q4_0",
+"family": "gemma4_dense",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "q4_0_split_rp_build",
+"family": "gemma4_dense",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "qmatvec_q4_0_mmvq_fused2_mr1_rp",
+"family": "gemma4_dense",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "qmatvec_q4_0_mmvq_fused3_mr1_rp",
+"family": "gemma4_dense",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "qmatvec_q4_0_mmvq_rp",
+"family": "gemma4_dense",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "qmatvec_q6_K_mmvq",
+"family": "gemma4_dense",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "quantize_mmq_q8_1_d4_q4_0",
+"family": "gemma4_dense",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "quantize_q8_1",
+"family": "gemma4_dense",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "rms_norm_f32_v2",
+"family": "gemma4_dense",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "rms_norm_q8_1",
+"family": "gemma4_dense",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "rms_norm_qkv_rope_append_dc_f32",
+"family": "gemma4_dense",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "rms_norm_qkv_rope_append_f32",
+"family": "gemma4_dense",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "rms_norm_qkv_w4b_f32",
+"family": "gemma4_dense",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "rms_pre_add_rms_norm_q8z_f32",
+"family": "gemma4_dense",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "rms_pre_add_scale_rms_norm_q8_1",
+"family": "gemma4_dense",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "rope_neox2_bf16e_f32",
+"family": "gemma4_dense",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "scale_f32",
+"family": "gemma4_dense",
+"route": "plain",
+"device": "rtx5090"
+},
+{
+"kernel": "softcap_f32",
+"family": "gemma4_dense",
+"route": "plain",
+"device": "rtx5090"
+}
+]
+}

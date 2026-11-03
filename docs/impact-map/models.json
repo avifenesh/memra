@@ -1,0 +1,386 @@
+{
+ "schema": "memra-impact-models-v1",
+ "note": "device classes are where the model has been measured; per-box artifact paths are local config, not tracked",
+ "families": {
+  "qwen35": [
+   {
+    "id": "qwen/qwen3.8-27b",
+    "formats": [
+     "NVFP4",
+     "Q5_K",
+     "BF16"
+    ],
+    "routes": [
+     "plain",
+     "batch",
+     "graph",
+     "prime",
+     "mtp",
+     "dflash",
+     "vision",
+     "prefix_cache",
+     "constrained",
+     "tools",
+     "http_api"
+    ],
+    "devices": [
+     "gb10",
+     "rtx5090",
+     "rtxpro6000"
+    ],
+    "class": "vendor",
+    "source": "tools/release-roster.tsv:18"
+   },
+   {
+    "id": "Qwen/Qwen3.8-27B-FP8@017b9c7a",
+    "formats": [
+     "FP8_BLOCK"
+    ],
+    "routes": [
+     "plain",
+     "prime",
+     "http_api"
+    ],
+    "devices": [
+     "b200"
+    ],
+    "class": "vendor",
+    "source": "docs/support-records.toml:132"
+   },
+   {
+    "id": "Qwen3.5-9B",
+    "formats": [
+     "NVFP4",
+     "Q8_0"
+    ],
+    "routes": [
+     "plain",
+     "batch",
+     "graph",
+     "prime",
+     "mtp",
+     "eagle",
+     "http_api"
+    ],
+    "devices": [
+     "b200",
+     "h100",
+     "rtx5090"
+    ],
+    "class": "vendor",
+    "source": "docs/support-records.toml:84"
+   },
+   {
+    "id": "Qwen3.6-27B",
+    "formats": [
+     "NVFP4",
+     "Q4_K",
+     "Q6_K"
+    ],
+    "routes": [
+     "plain",
+     "batch",
+     "graph",
+     "prime",
+     "mtp",
+     "http_api"
+    ],
+    "devices": [
+     "h100",
+     "rtx5090"
+    ],
+    "class": "vendor",
+    "source": "docs/MODELS.md:103"
+   },
+   {
+    "id": "Ornith-1.0-9B",
+    "formats": [
+     "Q8_0"
+    ],
+    "routes": [
+     "plain",
+     "mtp",
+     "http_api"
+    ],
+    "devices": [
+     "rtx5090"
+    ],
+    "class": "own",
+    "source": "docs/DRAFT-REGIME.md:75"
+   }
+  ],
+  "qwen35_moe": [
+   {
+    "id": "ornith-ai/ornith-1.5-35b-a3b",
+    "formats": [
+     "NVFP4",
+     "Q5_K"
+    ],
+    "routes": [
+     "plain",
+     "batch",
+     "graph",
+     "prime",
+     "mtp",
+     "vision",
+     "prefix_cache",
+     "constrained",
+     "tools",
+     "http_api"
+    ],
+    "devices": [
+     "rtx5090",
+     "rtxpro6000"
+    ],
+    "class": "own",
+    "source": "tools/release-roster.tsv:17"
+   },
+   {
+    "id": "Qwen3.6-35B-A3B",
+    "formats": [
+     "IQ4_XS"
+    ],
+    "routes": [
+     "plain",
+     "batch",
+     "graph",
+     "prime",
+     "mtp",
+     "spill",
+     "http_api"
+    ],
+    "devices": [
+     "gb10",
+     "h100",
+     "rtx5090",
+     "rtxpro6000"
+    ],
+    "class": "vendor",
+    "source": "docs/support-records.toml:153"
+   },
+   {
+    "id": "Ornith-1.0-35B",
+    "formats": [
+     "Q4_K",
+     "Q6_K"
+    ],
+    "routes": [
+     "plain",
+     "mtp",
+     "spill",
+     "http_api"
+    ],
+    "devices": [
+     "rtx5090"
+    ],
+    "class": "own",
+    "source": "docs/MODELS.md:110"
+   },
+   {
+    "id": "Qwen-AgentWorld-35B-A3B",
+    "formats": [
+     "IQ4_XS"
+    ],
+    "routes": [
+     "plain",
+     "mtp",
+     "http_api"
+    ],
+    "devices": [
+     "rtx5090"
+    ],
+    "class": "vendor",
+    "source": "docs/MODELS.md:112"
+   }
+  ],
+  "hy3": [
+   {
+    "id": "Memra ModelOpt W4A16 mint of tencent/Hy3",
+    "formats": [
+     "NVFP4",
+     "BF16"
+    ],
+    "routes": [
+     "plain",
+     "batch",
+     "prime",
+     "mtp",
+     "ep",
+     "pp",
+     "prefix_cache",
+     "tools",
+     "http_api"
+    ],
+    "devices": [
+     "rtxpro6000"
+    ],
+    "class": "vendor",
+    "source": "docs/support-records.toml:321"
+   }
+  ],
+  "gemma4_dense": [
+   {
+    "id": "Gemma-4 31B",
+    "formats": [
+     "Q4_0",
+     "NVFP4"
+    ],
+    "routes": [
+     "plain",
+     "batch",
+     "prime",
+     "mtp",
+     "eagle",
+     "vision",
+     "prefix_cache",
+     "tools",
+     "http_api"
+    ],
+    "devices": [
+     "h100",
+     "rtx5090",
+     "rtxpro6000"
+    ],
+    "class": "vendor",
+    "source": "docs/MODELS.md:106"
+   },
+   {
+    "id": "Gemma-4 12B",
+    "formats": [
+     "Q4_0"
+    ],
+    "routes": [
+     "plain",
+     "batch",
+     "prime",
+     "mtp",
+     "eagle",
+     "http_api"
+    ],
+    "devices": [
+     "h100",
+     "rtx5090"
+    ],
+    "class": "vendor",
+    "source": "docs/MODELS.md:108"
+   }
+  ],
+  "gemma4_moe": [
+   {
+    "id": "Gemma-4 26B-A4B",
+    "formats": [
+     "Q4_0"
+    ],
+    "routes": [
+     "plain",
+     "batch",
+     "prime",
+     "chunked_prefill",
+     "mtp",
+     "eagle",
+     "http_api"
+    ],
+    "devices": [
+     "h100",
+     "rtx5090"
+    ],
+    "class": "vendor",
+    "source": "docs/MODELS.md:105"
+   }
+  ],
+  "glm5_next": [
+   {
+    "id": "zai-org/GLM-5.3-Flash@04c4e9e9",
+    "formats": [
+     "FP8_BLOCK",
+     "BF16"
+    ],
+    "routes": [
+     "plain",
+     "batch",
+     "prime",
+     "glm5_spec",
+     "tp",
+     "pp",
+     "vision",
+     "prefix_cache",
+     "tools",
+     "http_api"
+    ],
+    "devices": [
+     "rtxpro6000"
+    ],
+    "class": "vendor",
+    "source": "docs/models/glm53-flash.md:7"
+   }
+  ],
+  "deepseek_v4": [
+   {
+    "id": "Avifenesh/DeepSeek-V4-Flash-0731-NVFP4@bafd09f8",
+    "formats": [
+     "NVFP4",
+     "FP8_BLOCK"
+    ],
+    "routes": [
+     "plain",
+     "batch",
+     "graph",
+     "prime",
+     "chunked_prefill",
+     "dflash",
+     "tp",
+     "ep",
+     "pp",
+     "tools",
+     "http_api"
+    ],
+    "devices": [
+     "rtxpro6000"
+    ],
+    "class": "own",
+    "source": "docs/models/deepseek-v4-flash.md:18"
+   }
+  ],
+  "step35": [
+   {
+    "id": "Step-3.7-Flash 196B-A11B",
+    "formats": [
+     "IQ4_XS",
+     "Q8_0",
+     "BF16"
+    ],
+    "routes": [
+     "plain",
+     "batch",
+     "graph",
+     "prime",
+     "mtp",
+     "pp",
+     "vision",
+     "constrained",
+     "tools",
+     "http_api"
+    ],
+    "devices": [
+     "rtxpro6000"
+    ],
+    "class": "vendor",
+    "source": "docs/MODELS.md:113"
+   }
+  ],
+  "whisper": [
+   {
+    "id": "ivrit-ai/whisper-large-v3@766847c9",
+    "formats": [
+     "F32"
+    ],
+    "routes": [],
+    "devices": [
+     "cpu"
+    ],
+    "class": "vendor",
+    "source": "crates/memra-gguf/src/model_packs/whisper/mod.rs:16"
+   }
+  ]
+ }
+}
