@@ -1789,6 +1789,17 @@ layers keep `d2_windowed_attn`. An fa arm returns only with a fixed kernel and i
 receipt. Git history is the archive. Ledger: `VERDICT:dflash-fa-door-removed` (darklanes
 `agent-knowledge/gpu/verdicts-ledger.md`).
 
+## Removed doors, 2026-11-03 (engine kernel sweep: orphaned and lapsed doors)
+
+Each row lost its door without a receipt that kept it: either the env read was already gone
+and only the kernel it reached stayed behind, or the decide-by date passed with no decision
+receipt. The kernel, its launcher, its tests and its rows went in the same commit. Git history
+is the archive; a door returns only with a receipt.
+
+| flag | verdict | record |
+|---|---|---|
+| `MEMRA_DUAL_ILV` | Interleaved gate/up dual-SiLU matvec twin (`matvec_bf16_dual_silu_ilv`). The env read and its FLAGS row were gone before the 2026-09-01 catch-up sync, with no receipt in the tree; the kernel stayed unlaunched until this sweep deleted it. | no receipt; `matvec_bf16_dual_silu` is the shared-expert kernel |
+
 ## Removed doors, 2026-11-02 (GB10 unified-memory prefix booking seam, booking kept)
 
 `MEMRA_UNIFIED_PREFIX_BOOKING` (`0` = admission stops booking the prefix cache's allowed growth on
