@@ -10006,7 +10006,6 @@ impl PrefixCache {
 
     /// Refresh recency for pool[i] on a demonstrated reuse. This is the ONLY legal unpinned
     /// `last_use` write after insert, so the index never drifts from the entries.
-    #[cfg_attr(not(test), allow(dead_code))]
     fn touch(&mut self, key: &PoolKey, i: usize) {
         let Some((old_lru, pinned)) = self
             .entries
@@ -10186,7 +10185,7 @@ impl PrefixCache {
     }
 
     /// Env-budgeted insert for unit tests (production inserts route through `insert_demoting`).
-    #[cfg_attr(not(test), allow(dead_code))]
+    #[cfg(test)]
     fn insert(&mut self, key: &PoolKey, e: PrefixEntry, why: &str) {
         let _ = self.insert_with_budget_pins(key, e, why, prefix_cache_budget_bytes(), 0, None);
     }
@@ -10260,7 +10259,7 @@ impl PrefixCache {
 
     /// `insert` with the budget as a parameter (the env-independent seam the eviction
     /// unit tests drive).
-    #[cfg_attr(not(test), allow(dead_code))]
+    #[cfg(test)]
     fn insert_with_budget(&mut self, key: &PoolKey, e: PrefixEntry, why: &str, budget: usize) {
         let _ = self.insert_with_budget_pins(key, e, why, budget, 0, None);
     }
