@@ -2127,7 +2127,8 @@ pub struct Request {
     /// committed, so compile rejection/timeout is a real 400/503 even for streaming calls.
     /// Replays leave it None: the original response already passed preflight.
     pub(crate) constraint_ready: Option<tokio::sync::oneshot::Sender<Result<(), EngineError>>>,
-    /// Rendered/tokenized prompt, sealed by `seal_prompt_ids`. Admission may revisit a queued
+    /// Rendered/tokenized prompt, after `append_capture_eos`. `prepare_request` runs the
+    /// vision special-id guard on it whichever render filled it. Admission may revisit a queued
     /// request for many ticks; cache the result so a 256k request is not re-rendered and
     /// re-tokenized per defer. Step-OOM replay requests start with None; HTTP requests do
     /// too unless metered budget admission (`prepare_budget_prompt`) rendered them first.
@@ -36079,17 +36080,11 @@ fn enforce_prompt_limit(
     Ok(())
 }
 
-/// The post-render steps every served prompt takes exactly once, before it is stored in
-/// `prepared_prompt`. Two renders fill that field: this worker's `prepare_request` and the
-/// HTTP budget admission (`prepare_budget_prompt`, metered deployments), and `prepare_request`
-/// skips its render when the field is already set. Both call this, so neither render can
-/// serve a prompt that missed a step.
-pub(crate) fn seal_prompt_ids(
-    prompt: &mut Vec<u32>,
-    tok: &Tokenizer,
-    eos_id: u32,
-    req: &Request,
-) -> Result<(), String> {
+/// The post-render step every served prompt takes before it is stored in `prepared_prompt`.
+/// Two renders fill that field: this worker's `prepare_request` and the HTTP budget admission
+/// (`prepare_budget_prompt`, metered deployments), and `prepare_request` skips its render when
+/// the field is already set. Both call this, so neither render serves a prompt without it.
+pub(crate) fn append_capture_eos(prompt: &mut Vec<u32>, eos_id: u32, req: &Request) {
     // EMBEDDING POOLING POSITION (lane/embed-serve): the Qwen3-Embedding family
     // pools the hidden state ON a trailing eos token — the vendor tokenizer appends
     // it, and pooling one position earlier scores ~0.3 cosine against the reference
@@ -36098,9 +36093,18 @@ pub(crate) fn seal_prompt_ids(
     if req.capture.as_ref().is_some_and(|c| c.hidden) && prompt.last() != Some(&eos_id) {
         prompt.push(eos_id);
     }
-    // Vision special-id intake guard (lane/glm5-vision-default-on): runs at the render/
-    // tokenize waist so every prompt source is covered, once per request (prepared_prompt
-    // caches the result across admission defers).
+}
+
+/// Vision special-id intake guard (lane/glm5-vision-default-on) on a stored prompt against
+/// the request's own image units. `prepare_request` runs it on every prepared prompt, after
+/// its render block, whichever render filled the field: the budget render runs before
+/// `decode_pending_vision` fills the units the budgets count, so its prompt carries the
+/// planned runs with no units yet, and only the worker sees the prompt and its units together.
+pub(crate) fn guard_prompt_vision_ids(
+    prompt: &[u32],
+    tok: &Tokenizer,
+    req: &Request,
+) -> Result<(), String> {
     vision_special_id_guard(prompt, &vision_special_budgets(tok, req))
 }
 
@@ -36186,15 +36190,23 @@ fn prepare_request(
             ));
         }
         let mut prompt = prompt;
-        seal_prompt_ids(&mut prompt, &lm.tok, lm.eos_id, req)
-            .map_err(|e| EngineError::invalid_param(e, "messages"))?;
+        append_capture_eos(&mut prompt, lm.eos_id, req);
         if let Some(trace) = req.ttft.as_ref() {
             trace.mark_tokenize_end(prompt.len());
         }
         req.prepared_prompt = Some(prompt);
     }
 
-    let prompt_len = req.prepared_prompt.as_ref().unwrap().len();
+    let prompt = req
+        .prepared_prompt
+        .as_deref()
+        .expect("prompt prepared above");
+    // Every prompt source and both renders: a metered request arrives here with the budget
+    // render already stored and its image units decoded since. A defer re-runs this pure
+    // count on the same prompt and units.
+    guard_prompt_vision_ids(prompt, &lm.tok, req)
+        .map_err(|e| EngineError::invalid_param(e, "messages"))?;
+    let prompt_len = prompt.len();
     enforce_prompt_limit(prompt_len, req.max_prompt_tokens)?;
     let model_ctx = lm.model.cfg.context_length as usize;
     let server_ctx = resolve_env_ctx(model_ctx).map_err(EngineError::context_length)?;
@@ -69756,6 +69768,40 @@ pub(crate) mod vision_special_guard_tests {
         let run_ids = tok.encode(&rendered, false);
         let budgets = vision_special_budgets_inner(tok, 1, 16, 0, 0, 0);
         vision_special_id_guard(&run_ids, &budgets).expect("the rendered run must admit");
+    }
+
+    /// WIRING: `prepare_request` guards the STORED prompt after its render block closes, so a
+    /// prompt the metered budget render stored before `decode_pending_vision` ran is judged
+    /// with its decoded units, and the render block itself runs no guard. Comment-stripped
+    /// source, so a rationale comment cannot satisfy it.
+    #[test]
+    fn prepare_request_guards_every_stored_prompt_after_the_render_block() {
+        let code: String = include_str!("worker.rs")
+            .lines()
+            .map(|l| l.split("//").next().unwrap_or(""))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let start = code
+            .find("fn prepare_request(")
+            .expect("prepare_request exists");
+        let end = start + code[start..].find("\n}\n").expect("prepare_request ends");
+        let body = &code[start..end];
+        let block = body
+            .find("if req.prepared_prompt.is_none() {")
+            .expect("the render block exists");
+        let stored = body
+            .find("req.prepared_prompt = Some(prompt);")
+            .expect("the render block stores its prompt");
+        let guard = body
+            .find("guard_prompt_vision_ids(prompt, &lm.tok, req)")
+            .expect("prepare_request guards the stored prompt");
+        assert!(block < stored && stored < guard);
+        assert!(
+            body[stored..guard].contains("\n    }\n"),
+            "the guard must run after the render block closes, on every stored prompt"
+        );
+        assert_eq!(body.matches("guard_prompt_vision_ids(").count(), 1);
+        assert!(!body.contains("vision_special_id_guard("));
     }
 }
 
