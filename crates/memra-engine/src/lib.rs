@@ -32960,10 +32960,6 @@ impl Engine {
         result
     }
 
-    /// conv1d where the input is a CudaView (resident conv state assembled in place).
-    #[allow(clippy::too_many_arguments)]
-    // allow: the parameter list mirrors the kernel/FFI/call contract; bundling into a struct is a refactor, not a lint fix
-
     /// BATCHED verify conv (T>1, carried state): window reads the resident conv ring for
     /// negative rows; separate ring-update launch afterwards. BIT-IDENTICAL per value to the
     /// T=1 chain. T >= pad rides the pure input-column ring update (unchanged legacy path);
