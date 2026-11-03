@@ -25080,15 +25080,14 @@ impl HybridModel {
         // ALLOC-FREE capture: persistent transient slots — the captured graph carries zero
         // mem nodes (the 226us/launch tax). Slots must outlive every cached graph.
         let mut slots = self.g4_dc_slots(e)?;
-        // Chunked replay ring: tokens park on-device; ONE drain sync per chunk. ring_base is
-        // baked at the door entry (the modulo keeps every capture valid indefinitely).
+        // Replay ring: the token parks on-device and the host reads it after the launch's sync.
+        // ring_base is baked at the door entry (the modulo keeps every capture valid
+        // indefinitely). One launch per sync (2026-07-23): relaunching the SAME graph exec
+        // before its prior launch completes is ILLEGAL (chunk=4 -> ILLEGAL_ADDRESS; chunk=1
+        // clean), pipelining would need alternating exec instances, and the measured payoff
+        // was ~0 (the ~200us cuGraphLaunch host cost already overlaps its own launch's GPU
+        // work; llama pays 885us/launch the same way).
         const RING: usize = 64;
-        // DRAIN pinned at 1 (2026-07-23): relaunching the SAME graph exec before its prior
-        // launch completes is ILLEGAL (chunk=4 -> ILLEGAL_ADDRESS; chunk=1 clean). Pipelining
-        // needs alternating exec instances — and the measured payoff was ~0 (the ~200us
-        // cuGraphLaunch host cost already overlaps its own launch's GPU work; llama pays
-        // 885us/launch the same way). MEMRA_GRAPH_DRAIN raises it only for experiments.
-        const DRAIN: usize = 1;
         let mut ring = e.stream().alloc_zeros::<u32>(RING)?;
         let ring_base = prompt_pos;
         let mut out = Vec::with_capacity(max_new);
@@ -25178,70 +25177,14 @@ impl HybridModel {
                 graphs.insert(key, graph);
                 captures += 1;
             }
-            // CHUNKED REPLAY: enqueue up to DRAIN launches back-to-back (the ~200us host
-            // cost of each cuGraphLaunch overlaps the PREVIOUS launch's ~11ms GPU work),
-            // then ONE sync + ring drain. The chunk must stay inside this bucket key and
-            // the budget; capture warmups already emitted their tokens through the ring.
-            let mut chunk = 1usize;
-            let drain_cap: usize = std::env::var("MEMRA_GRAPH_DRAIN")
-                .ok()
-                .and_then(|v| v.parse().ok())
-                .unwrap_or(DRAIN);
-            while chunk < drain_cap && out.len() + chunk < max_new {
-                let t_next = cache.pos + 1 + chunk;
-                let key_s2 = if t_next > win {
-                    (true, usize::MAX)
-                } else {
-                    e.fa_bucket_key(t_next, hd_s, nkv_s, crate::Engine::wkv_on())
-                };
-                let key_g2 = if t_next >= f512 {
-                    (true, (t_next + 1).next_power_of_two().max(f512 * 2))
-                } else {
-                    e.fa_bucket_key(t_next, hd_g, nkv_g, false)
-                };
-                if (key_s2, key_g2, t_next >= f512, t_next > win) != key {
-                    break;
-                }
-                chunk += 1;
-            }
             let g = &graphs.get(&key).unwrap().0;
-            for _ in 0..chunk {
-                g.launch()?;
-            }
+            g.launch()?;
             e.stream().synchronize()?;
             let ringh = e.dtoh_u32(&ring)?;
-            for j in 0..chunk {
-                let pos_j = cache.pos + j;
-                let tok_j = ringh[(pos_j - ring_base) % RING];
-                cache.pos += 0; // advanced below in one shot
-                if j + 1 == chunk {
-                    next = tok_j;
-                } else {
-                    out.push(tok_j);
-                    if eos.contains(&tok_j) || !on_token(tok_j) {
-                        reason = if eos.contains(&tok_j) {
-                            StopReason::Eos
-                        } else {
-                            StopReason::Callback
-                        };
-                        // roll device/host state back to the stop point.
-                        let keep = cache.pos + j + 1;
-                        e.set_i32_one(&mut pos_d, keep as i32)?;
-                        for kvl in cache.kv.iter_mut().filter_map(|k| k.as_mut()) {
-                            e.set_i32_one(&mut kvl.len_d, keep as i32)?;
-                            kvl.len = keep;
-                        }
-                        cache.pos = keep;
-                        if std::env::var("MEMRA_GRAPH_STATS").is_ok() {
-                            eprintln!("[gemma-graph] captures={captures} buckets={}", graphs.len());
-                        }
-                        return Ok((out, reason));
-                    }
-                }
-            }
-            cache.pos += chunk;
+            next = ringh[(cache.pos - ring_base) % RING];
+            cache.pos += 1;
             for kvl in cache.kv.iter_mut().filter_map(|k| k.as_mut()) {
-                kvl.len += chunk;
+                kvl.len += 1;
             }
         }
         if std::env::var("MEMRA_GRAPH_STATS").is_ok() {
