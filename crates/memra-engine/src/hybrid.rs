@@ -3946,10 +3946,6 @@ pub struct HybridModel {
     /// expert banks and clamp policy. Keeping it model-scoped avoids multiplying the large
     /// capacity workspaces by the routed layer count.
     pub(crate) step_grouped_prefill: std::sync::Mutex<StepEpGroupedPrefill>,
-    /// Whole-token decode graph state (step TP graph increment B): the stitched parent per fa
-    /// bucket plus the persistent token/pos/logits plumbing. None until the door builds it.
-    pub(crate) step35_token_graph:
-        std::sync::Mutex<Option<crate::hybrid_forward::Step35TokenGraphState>>,
     /// mHC residual topology (`crate::hyper`), `Some` iff the compiled plan declares
     /// `ResidualTopology::HyperConnections` for the trunk. Every forward path keys on this:
     /// the ones that implement the hc program branch to it, and the ones that do not refuse
@@ -6451,7 +6447,6 @@ impl HybridModel {
             prime_slabs: std::sync::Mutex::new(std::collections::HashMap::new()),
             dspark_vgraphs: std::sync::Mutex::new(None),
             step_grouped_prefill: std::sync::Mutex::new(StepEpGroupedPrefill::default()),
-            step35_token_graph: std::sync::Mutex::new(None),
             hyper,
             hyper_head,
             glm5_dflash,

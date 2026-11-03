@@ -695,30 +695,6 @@ impl HybridModel {
             // q8_1-quantize fused into ONE add_rms_norm_q8_1 launch on the Dense q8_1-fast path, then
             // the FFN consumes the pre-quantized activation. Bit-identical to the unfused path.
             let (x1, ffn_out) = self.residual_norm_ffn(e, layer, &x, &mixed, n_embd, il, eps)?;
-            // MEMRA_TG_PROBE_LAYER diagnostics (token-graph bisection): dump layer K's
-            // attention output and post-FFN residual through the real eager path.
-            if std::env::var("MEMRA_TG_PROBE_LAYER")
-                .ok()
-                .and_then(|v| v.parse::<usize>().ok())
-                == Some(il)
-            {
-                use std::io::Write;
-                let mut xp = e.uninit(n_embd)?;
-                e.add(&x1, &ffn_out, &mut xp, n_embd)?;
-                let (pm, px) = (e.dtoh(&mixed)?, e.dtoh(&xp)?);
-                for (path, data) in [
-                    ("/root/eager-probe-mixed.bin", &pm),
-                    ("/root/eager-probe-x.bin", &px),
-                ] {
-                    let mut fo = std::fs::OpenOptions::new()
-                        .create(true)
-                        .append(true)
-                        .open(path)?;
-                    for v in data {
-                        fo.write_all(&v.to_le_bytes())?;
-                    }
-                }
-            }
             let mut x2 = e.uninit(n_embd)?;
             e.add(&x1, &ffn_out, &mut x2, n_embd)?;
             if capture_hy3_layer0 && il == 0 {
@@ -774,13 +750,6 @@ impl HybridModel {
             let rt = crate::pp::PpNRt::get(e)?;
             let _walk = rt.acquire_walk("decode_step_h_ppn")?;
             return self.decode_step_h_ppn(e, token, cache, &fence);
-        }
-        // Whole-token decode graph (step TP graph increment B, MEMRA_STEP_TP_GRAPH=1 +
-        // the dcw/fused/router doors): one stitched multi-device launch per token.
-        if self.uses_sliding_gated_moe_program()
-            && let Some(result) = self.step35_token_graph_step(e, token, cache)?
-        {
-            return Ok(result);
         }
         let cfg = &self.cfg;
         let n_embd = cfg.n_embd as usize;
@@ -896,30 +865,6 @@ impl HybridModel {
             // fast path. Bit-identical to add + rms_norm + ffn (add_rms_norm == add then rms_norm,
             // proven in kernel_check; add_rms_norm_q8_1 == add_rms_norm then quantize_q8_1).
             let (x1, ffn_out) = self.residual_norm_ffn(e, layer, &x, &mixed, n_embd, il, eps)?;
-            // MEMRA_TG_PROBE_LAYER diagnostics (token-graph bisection): dump layer K's
-            // attention output and post-FFN residual through the real eager path.
-            if std::env::var("MEMRA_TG_PROBE_LAYER")
-                .ok()
-                .and_then(|v| v.parse::<usize>().ok())
-                == Some(il)
-            {
-                use std::io::Write;
-                let mut xp = e.uninit(n_embd)?;
-                e.add(&x1, &ffn_out, &mut xp, n_embd)?;
-                let (pm, px) = (e.dtoh(&mixed)?, e.dtoh(&xp)?);
-                for (path, data) in [
-                    ("/root/eager-probe-mixed.bin", &pm),
-                    ("/root/eager-probe-x.bin", &px),
-                ] {
-                    let mut fo = std::fs::OpenOptions::new()
-                        .create(true)
-                        .append(true)
-                        .open(path)?;
-                    for v in data {
-                        fo.write_all(&v.to_le_bytes())?;
-                    }
-                }
-            }
             lap(
                 if il >= tail_from { &B_FFN_TAIL } else { &B_FFN },
                 &mut lap_start,
@@ -1286,30 +1231,6 @@ impl HybridModel {
                 }
             };
             let (x1, ffn_out) = self.residual_norm_ffn(e, layer, &x, &mixed, n_embd, il, eps)?;
-            // MEMRA_TG_PROBE_LAYER diagnostics (token-graph bisection): dump layer K's
-            // attention output and post-FFN residual through the real eager path.
-            if std::env::var("MEMRA_TG_PROBE_LAYER")
-                .ok()
-                .and_then(|v| v.parse::<usize>().ok())
-                == Some(il)
-            {
-                use std::io::Write;
-                let mut xp = e.uninit(n_embd)?;
-                e.add(&x1, &ffn_out, &mut xp, n_embd)?;
-                let (pm, px) = (e.dtoh(&mixed)?, e.dtoh(&xp)?);
-                for (path, data) in [
-                    ("/root/eager-probe-mixed.bin", &pm),
-                    ("/root/eager-probe-x.bin", &px),
-                ] {
-                    let mut fo = std::fs::OpenOptions::new()
-                        .create(true)
-                        .append(true)
-                        .open(path)?;
-                    for v in data {
-                        fo.write_all(&v.to_le_bytes())?;
-                    }
-                }
-            }
             pending = Some((x1, ffn_out));
         }
         // range's final add (no next norm inside the range to fuse with)
@@ -1825,30 +1746,6 @@ impl HybridModel {
             // DECODE NORM-FUSION LEVER (residual_norm_ffn): see decode_step_h. Shared helper -> dc
             // path stays bit-identical to decode_step_h's token stream (the Phase-2 gate).
             let (x1, ffn_out) = self.residual_norm_ffn(e, layer, &x, &mixed, n_embd, il, eps)?;
-            // MEMRA_TG_PROBE_LAYER diagnostics (token-graph bisection): dump layer K's
-            // attention output and post-FFN residual through the real eager path.
-            if std::env::var("MEMRA_TG_PROBE_LAYER")
-                .ok()
-                .and_then(|v| v.parse::<usize>().ok())
-                == Some(il)
-            {
-                use std::io::Write;
-                let mut xp = e.uninit(n_embd)?;
-                e.add(&x1, &ffn_out, &mut xp, n_embd)?;
-                let (pm, px) = (e.dtoh(&mixed)?, e.dtoh(&xp)?);
-                for (path, data) in [
-                    ("/root/eager-probe-mixed.bin", &pm),
-                    ("/root/eager-probe-x.bin", &px),
-                ] {
-                    let mut fo = std::fs::OpenOptions::new()
-                        .create(true)
-                        .append(true)
-                        .open(path)?;
-                    for v in data {
-                        fo.write_all(&v.to_le_bytes())?;
-                    }
-                }
-            }
             let mut x2 = e.uninit(n_embd)?;
             e.add(&x1, &ffn_out, &mut x2, n_embd)?;
             x = x2;
@@ -1917,30 +1814,6 @@ impl HybridModel {
             // DECODE NORM-FUSION LEVER (residual_norm_ffn): see decode_step_aux. Shared helper keeps
             // the capture path bit-identical to eager by construction.
             let (x1, ffn_out) = self.residual_norm_ffn(e, layer, &x, &mixed, n_embd, il, eps)?;
-            // MEMRA_TG_PROBE_LAYER diagnostics (token-graph bisection): dump layer K's
-            // attention output and post-FFN residual through the real eager path.
-            if std::env::var("MEMRA_TG_PROBE_LAYER")
-                .ok()
-                .and_then(|v| v.parse::<usize>().ok())
-                == Some(il)
-            {
-                use std::io::Write;
-                let mut xp = e.uninit(n_embd)?;
-                e.add(&x1, &ffn_out, &mut xp, n_embd)?;
-                let (pm, px) = (e.dtoh(&mixed)?, e.dtoh(&xp)?);
-                for (path, data) in [
-                    ("/root/eager-probe-mixed.bin", &pm),
-                    ("/root/eager-probe-x.bin", &px),
-                ] {
-                    let mut fo = std::fs::OpenOptions::new()
-                        .create(true)
-                        .append(true)
-                        .open(path)?;
-                    for v in data {
-                        fo.write_all(&v.to_le_bytes())?;
-                    }
-                }
-            }
             let mut x2 = e.uninit(n_embd)?;
             e.add(&x1, &ffn_out, &mut x2, n_embd)?;
             x = x2;
