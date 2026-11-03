@@ -1042,7 +1042,6 @@ impl GpuTensor {
                         rp4: None,
                     });
                 }
-                crate::fp8_ffi::note_blk_native_nan_refused();
             }
         }
         // ARM B' — GPU BLOCK-128 DEQUANT (MEMRA_FP8_BLK_GPU=1, default OFF; lane fp8-gemm-arm
