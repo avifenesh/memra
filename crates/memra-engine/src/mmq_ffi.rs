@@ -769,40 +769,15 @@ unsafe extern "C" {
     ///   act_f32        : f32 activation [n_tokens, in_f] (contiguous).
     ///   y              : f32 output [n_tokens, out_f].
     ///   act_scratch    : pre-alloc'd quant buffer >= memra_mmq_nvfp4_act_bytes(in_f, n_tokens).
-    /// Returns 0 on success, else (1000 + cudaError).
-    pub fn memra_mmq_nvfp4(
-        w_nvfp4_blocks: *const core::ffi::c_void,
-        act_f32: *const f32,
-        y: *mut f32,
-        in_f: i32,
-        out_f: i32,
-        n_tokens: i32,
-        act_scratch: *mut core::ffi::c_void,
-        stream: *mut core::ffi::c_void,
-        out_scale: f32,
-    ) -> i32;
-    /// Same as `memra_mmq_nvfp4`, plus the activation-quantizer selector.
     ///   per_token_scale = 1: two-level scaling (per-token row amax folded into the GEMM epilogue
-    ///     + per-sub-block UE4M3). This is what `memra_mmq_nvfp4` does.
+    ///     + per-sub-block UE4M3).
     ///   per_token_scale = 0: the v1 sub-block-only quantizer, retained as the numeric oracle so
     ///     kernel-check can measure what the row scale bought, and as the rollback seam.
-    pub fn memra_mmq_nvfp4_ex(
-        w_nvfp4_blocks: *const core::ffi::c_void,
-        act_f32: *const f32,
-        y: *mut f32,
-        in_f: i32,
-        out_f: i32,
-        n_tokens: i32,
-        act_scratch: *mut core::ffi::c_void,
-        stream: *mut core::ffi::c_void,
-        out_scale: f32,
-        per_token_scale: i32,
-    ) -> i32;
-    /// Same as `memra_mmq_nvfp4_ex`, plus the residual high-precision channel count.
     ///   residual_k = 0: off.
     ///   residual_k > 0: the k largest-magnitude activation channels (ranked across the batch) are
     ///     zeroed before quantization and their exact f32 contribution is added back as a rank-k
     ///     correction. Requires per_token_scale = 1. Clamped to MMQ_MAX_RESIDUAL_K (64).
+    /// Returns 0 on success, else (1000 + cudaError).
     pub fn memra_mmq_nvfp4_ex2(
         w_nvfp4_blocks: *const core::ffi::c_void,
         act_f32: *const f32,
@@ -819,12 +794,12 @@ unsafe extern "C" {
     /// Bytes needed for the block_q8_1_mmq activation scratch for the NVFP4 W4A8 path.
     pub fn memra_mmq_nvfp4_w4a8_act_bytes(in_f: i32, n_tokens: i32) -> usize;
     /// Run the NVFP4 W4A8 MMQ prefill GEMM (STAGE 2 accuracy-safe rung). Same fast MMQ tile as
-    /// memra_mmq_nvfp4 (W4A4) but the non-Blackwell int8 pair: weight FP4 LUT-dequantized to int8 at
+    /// memra_mmq_nvfp4_ex2 (W4A4) but the non-Blackwell int8 pair: weight FP4 LUT-dequantized to int8 at
     /// tile-load, activation stays q8_1 int8 (D4, the same quant class as the default int8 GEMM).
     /// `rp`: 0 = GGUF 36B-block weight layout, 1 = A6 split-plane repack (the resident decode
     /// layout). The rp tile loader is a pure address remap of the GGUF loader (same dequant math,
     /// same FP op order) — output is bit-identical either way.
-    /// Same contract as memra_mmq_nvfp4 otherwise. Returns 0 or (1000 + cudaError).
+    /// Same contract as memra_mmq_nvfp4_ex2 otherwise. Returns 0 or (1000 + cudaError).
     pub fn memra_mmq_nvfp4_w4a8(
         w_nvfp4_blocks: *const core::ffi::c_void,
         act_f32: *const f32,
@@ -1065,8 +1040,9 @@ unsafe extern "C" {
     ) -> i32;
     /// Bytes needed for the block_q8_1_mmq activation scratch (shared by Q4_K and Q5_K).
     pub fn memra_mmq_q45k_act_bytes(in_f: i32, n_tokens: i32) -> usize;
-    /// Run the Q4_K W4A8 MMQ prefill GEMM. Same contract as memra_mmq_nvfp4 (raw ggml block_q4_K
-    /// weight rows, in_f/256 144B superblocks per row). Returns 0 or (1000 + cudaError).
+    /// Run the Q4_K W4A8 MMQ prefill GEMM. y[n_tokens, out_f] = act[n_tokens, in_f] @ W[out_f, in_f]^T
+    /// over raw ggml block_q4_K weight rows (in_f/256 144B superblocks per row); act_scratch
+    /// >= memra_mmq_q45k_act_bytes(in_f, n_tokens). Returns 0 or (1000 + cudaError).
     pub fn memra_mmq_q4_K(
         w_q4k_blocks: *const core::ffi::c_void,
         act_f32: *const f32,
@@ -1137,22 +1113,6 @@ unsafe extern "C" {
 
     /// Bytes needed for the block_q8_1_mmq (D4) activation scratch for the Q4_0 MMQ path.
     pub fn memra_mmq_q4_0_act_bytes(in_f: i32, n_tokens: i32) -> usize;
-    /// Run the Q4_0 int8-MMA MMQ prefill GEMM (MEMRA_PP_Q4MMQ). Nibbles dequant to int8 at
-    /// tile-load (the -8 zero-point folds into the quants, D4 epilogue — same accuracy class as
-    /// the Q8_0 MMQ). `rp`: 0 = raw ggml 18B blocks, 1 = MEMRA_Q4RP split-plane repack (qs plane +
-    /// fp16 d plane) — pure address remap, bit-identical output either way. Requires
-    /// in_f % 32 == 0. Returns 0 or (1000 + cudaError).
-    pub fn memra_mmq_q4_0(
-        w_q4_0: *const core::ffi::c_void,
-        act_f32: *const f32,
-        y: *mut f32,
-        in_f: i32,
-        out_f: i32,
-        n_tokens: i32,
-        act_scratch: *mut core::ffi::c_void,
-        stream: *mut core::ffi::c_void,
-        rp: i32,
-    ) -> i32;
     /// Quantize-only entry (quantize-once seam): f32 activation -> block_q8_1_mmq scratch.
     pub fn memra_mmq_q4_0_quant_act(
         act_f32: *const f32,
@@ -1161,7 +1121,11 @@ unsafe extern "C" {
         n_tokens: i32,
         stream: *mut core::ffi::c_void,
     ) -> i32;
-    /// GEMM-only entry: consumes a pre-quantized scratch (from memra_mmq_q4_0_quant_act).
+    /// Run the Q4_0 int8-MMA MMQ prefill GEMM (MEMRA_PP_Q4MMQ) on a pre-quantized scratch (from
+    /// memra_mmq_q4_0_quant_act). Nibbles dequant to int8 at tile-load (the -8 zero-point folds
+    /// into the quants, D4 epilogue — same accuracy class as the Q8_0 MMQ). `rp`: 0 = raw ggml
+    /// 18B blocks, 1 = MEMRA_Q4RP split-plane repack (qs plane + fp16 d plane) — pure address
+    /// remap, bit-identical output either way. Requires in_f % 32 == 0.
     pub fn memra_mmq_q4_0_gemm(
         w_q4_0: *const core::ffi::c_void,
         act_scratch: *const core::ffi::c_void,

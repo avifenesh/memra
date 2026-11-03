@@ -19,9 +19,10 @@
 // That is the SAME packing quantize_mmq_nvfp4 emits for activations -> load_tiles_nvfp4_nvfp4 reads
 // the raw weight bytes directly (pure u32 copy, no repack).
 //
-// C-ABI launcher: memra_mmq_nvfp4(W_nvfp4, act_f32, y, in_f, out_f, n_tokens, stream). Internally
-// quantizes act_f32 -> block_fp4_mmq, then launches mul_mat_q NVFP4. Compiled to a static lib (same as
-// cutlass_fp4_sm120.cu), called from Rust via FFI.
+// C-ABI launcher: memra_mmq_nvfp4_ex2(W_nvfp4, act_f32, y, in_f, out_f, n_tokens, act_scratch,
+// stream, out_scale, per_token_scale, residual_k). Internally quantizes act_f32 -> block_fp4_mmq,
+// then launches mul_mat_q NVFP4. Compiled to a static lib (same as cutlass_fp4_sm120.cu), called
+// from Rust via FFI.
 
 #include <cuda_runtime.h>
 #include <cuda_fp16.h>
@@ -1516,23 +1517,6 @@ int memra_mmq_nvfp4_ex2(const void * W_nvfp4_blocks, const float * act_f32, floa
         if (e != cudaSuccess) { return 1000 + (int) e; }
     }
     return 0;
-}
-
-int memra_mmq_nvfp4_ex(const void * W_nvfp4_blocks, const float * act_f32, float * y,
-                   int in_f, int out_f, int n_tokens, void * act_scratch, void * stream,
-                   float out_scale, int per_token_scale) {
-    return memra_mmq_nvfp4_ex2(W_nvfp4_blocks, act_f32, y, in_f, out_f, n_tokens, act_scratch,
-                               stream, out_scale, per_token_scale, /*residual_k=*/0);
-}
-
-// Default entry point: two-level scaling on, residual channels off unless MEMRA_MMQ_RESIDUAL_K asks
-// (the Rust side reads the env var and passes k through ex2). per_token_scale=0 is reachable only
-// through the _ex entry points, which is what the kernel-check accuracy arms use.
-int memra_mmq_nvfp4(const void * W_nvfp4_blocks, const float * act_f32, float * y,
-                   int in_f, int out_f, int n_tokens, void * act_scratch, void * stream,
-                   float out_scale) {
-    return memra_mmq_nvfp4_ex2(W_nvfp4_blocks, act_f32, y, in_f, out_f, n_tokens, act_scratch,
-                               stream, out_scale, /*per_token_scale=*/1, /*residual_k=*/0);
 }
 
 // A4 RECALIBRATION STATISTICS. Per program slot: running |x| amax and a 64-bin log2 histogram of
