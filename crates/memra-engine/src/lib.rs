@@ -19074,11 +19074,11 @@ impl Engine {
             8 => "qmatvec_nvfp4_mmvq_group4_b8_rp",
             // column split (8-column slices per 8-row block, L2-shared weights; bit-identical)
             16 => "qmatvec_nvfp4_mmvq_group4_b16_rp",
-            32 => "qmatvec_nvfp4_mmvq_group4_b32_rpcs16",
+            32 => "qmatvec_nvfp4_mmvq_group4_b32_rpcs8",
             _ => return Ok(None),
         };
-        // b32: two 16-column halves per 8-row block.
-        let col_splits: u32 = if mcols == 32 { 2 } else { 1 };
+        // b32: four 8-column slices per 8-row block.
+        let col_splits: u32 = if mcols == 32 { 4 } else { 1 };
         // Engagement receipt PER DOOR (dead-arm lesson): one shared Once here suppressed
         // the second door's print on the slice-D battery — key the once-set by tag.
         if std::env::var("MEMRA_DEBUG").is_ok() {

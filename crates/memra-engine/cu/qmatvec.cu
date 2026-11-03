@@ -2457,8 +2457,8 @@ MEMRA_GROUP4_WRAP(7)
 MEMRA_GROUP4_WRAP(8)
 MEMRA_GROUP4_WRAP(16)
 #undef MEMRA_GROUP4_WRAP
-// group4 COLUMN SPLIT (batch-spec 2026-11-03): the b32 quartet as two 16-column halves (the
-// 4 x 8 split measured 611 us/launch on GB10 against 2 x 276 for two group4_b16_rp launches), the NS
+// group4 COLUMN SPLIT (batch-spec 2026-11-03): the b32 quartet as four 8-column slices (GB10,
+// 32 sessions at depth 2048: tick 249.2 ms; two 16-column halves measured 258.6 ms), the NS
 // blocks of one row-block adjacent in launch order (the rpcs8 singles' L2-reuse schedule). Each
 // (tensor, token, row) runs the group4<MC> body's chain -> bit-identical to group4_b16_rp.
 template<int MC, int NS>
@@ -2493,7 +2493,7 @@ extern "C" __global__ void qmatvec_nvfp4_mmvq_group4_b32_##NAME( \
     nvfp4_mmvq_group4_csplit<MC, NS>(W0, W1, W2, W3, aq, ad, y0, y1, y2, y3, \
                                  in_f, n0, n1, n2, n3, m, s0, s1, s2, s3); \
 }
-MEMRA_GROUP4_CS_WRAP(rpcs16, 16, 2)
+MEMRA_GROUP4_CS_WRAP(rpcs8, 8, 4)
 #undef MEMRA_GROUP4_CS_WRAP
 
 // ---- DUAL gate+up BATCHED twins (lane/verify-economics, 2026-08-02). The verify-tier FFN pair
