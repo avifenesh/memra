@@ -10,9 +10,9 @@
 // no-op (grid dependencies are complete before any block starts). Under a PROGRAMMATIC
 // graph edge (the MEMRA_PDL post-capture rewrite) it orders this kernel's global reads
 // after the producer kernel's writes while still letting the grid launch overlap the
-// producer's drain (~120ns/kernel on sm_120, pdl_probe). sm_90+ only; the sm_89
-// portable arm compiles it out.
-#if !defined(MEMRA_PORTABLE_CUDA) && defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 900
+// producer's drain (~120ns/kernel on sm_120, pdl_probe). sm_90+ only, keyed on the arch
+// alone like memra_pdl_chain.cuh: portable 90a launches these PDL too and keeps the wait.
+#if defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 900
 #define MEMRA_PDL_ENTRY() cudaGridDependencySynchronize()
 #else
 #define MEMRA_PDL_ENTRY()

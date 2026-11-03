@@ -250,7 +250,7 @@ Header: "Stage-1 kernels: correctness-first, all f32, no tensor cores" (kernels.
 
 | symbol (family) | purpose | qtype | arch guard | dispatch flag | FFI binding |
 |---|---|---|---|---|---|
-| `argmax_*`, `prob_of_token_*` | device argmax / token-prob reduction | f32 logits | PDL macro sm≥900 non-portable (kernels.cu:15) | UNKNOWN | fatbin/by-name |
+| `argmax_*`, `prob_of_token_*` | device argmax / token-prob reduction | f32 logits | PDL macro sm≥900, portable 90a included (kernels.cu:15) | UNKNOWN | fatbin/by-name |
 | `topk_rows_shard_f32` + `topk_rows_shard_merge_f32` (lane/glm5-matvec 2026-08-31) | EXACT sharded twin pair of `topk_rows_f32` (per-(row, column-shard) partial top-k + per-row shard merge, the standing kernel's insertion/tie rules verbatim on global column indices — discrete selection under (value desc, index asc), output-identical by construction; the standing kernel puts n_rows blocks on the card, 15 blocks/188 SMs at 7 GB/s on the DFlash2 selector) | f32 logits | — | `MEMRA_TOPK_SHARDS` (default ON since the 2026-08-31 mv-battery flip, `=0` = rollback seam, engages at n_cols >= 16384) — `glm5_matvec_doors_gpu` planted-tie bit-gate + rotated-row red | fatbin/by-name |
 | `topk_rows_wshard_k8_f32` / `_k16_` / `_k32_` + `topk_rows_wshard_merge_f32` (lane/draft-topk-warp-20260905) | EXACT warp-merged twin pair of `topk_rows_f32`: stage 1 (grid n_rows x n_shards, 256 threads) keeps each lane's list in registers at a compile-time k (`tkw_insert<K>`: rank-count + predicated shift, the standing while-loop's landing slot), merges the 32 lane lists by shuffle argmax per output slot inside each warp (`tkw_argmax`, a butterfly all-reduce under the total order value desc / column asc; exhausted head = (-inf, SENTINEL)) and the warp lists the same way, writing the shard's top-k; stage 2 (one warp per row) merges the shard lists. Output-identical by construction (discrete selection; top-k of a union = top-k of the parts' top-k lists; NaN never enters a list). Door `MEMRA_TOPK_WARP` (default OFF). Gate: `glm5_matvec_doors_gpu::gpu_topk_warp_matches_standing_kernel_exactly`. |
 | `rms_norm*` family (~16 incl. fused add/scale/QKV/rope, q8_1 out) | RMSNorm variants | f32 in; f32/f16/q8_1 out | same PDL guard | per-model wiring; MEMRA_QKVNORM_W in lib.rs | fatbin/by-name |
@@ -379,7 +379,7 @@ dequantized in-register" (qmatvec.cu:1-2). Guards: PDL sm≥900 (qmatvec.cu:17);
 ### cu/flash_attn.cu — 91 symbols (fatbin `MEMRA_FLASH_FATBIN` + KV-variant fatbins)
 
 Header: "hand-written FlashAttention for RTX 5090 (sm_120a), m16n8k16 bf16 mma"
-(flash_attn.cu:1-6). PDL sm≥900 non-portable (flash_attn.cu:59). Head dims: `template<int
+(flash_attn.cu:1-6). PDL sm≥900, portable 90a included (flash_attn.cu:59). Head dims: `template<int
 HD>` stamped at 256 (base) and 128 (`_hd128`) (flash_attn.cu:66-72); `_hd512`/`_512_tb`
 variants; other dims fall back to `sdpa_naive` (flash_attn.cu:72).
 
