@@ -40941,12 +40941,6 @@ fn prefill_tick(
     Ok(consumed)
 }
 
-/// GRAMMAR MASK STAGING (constrained-full, 2026-08-03): compute the session's current
-/// llguidance token mask and H2D the packed bitset into its STABLE device buffer for the
-/// upcoming batched step. Runs AFTER advance_sample_emit consumed the tick's token — the
-/// mask reflects the post-consume grammar state, exactly the set legal for the NEXT token.
-/// No-op (mask_words = 0 -> host fallback) for unconstrained sessions, unsupported constrained
-/// penalty/filter compositions, and the MEMRA_CONSTRAIN_HOST=1 oracle.
 /// EAGER-ONLY predicate (lane/gemma4-serve-gaps, 2026-08-07): models the batched scheduler
 /// must serve through the per-session eager body. gemma4 (12B/26B/31B and E4B): the batched
 /// decode bodies have no arm for its per-layer swa/global geometry + softcapped head (the
@@ -41029,6 +41023,12 @@ fn hyper_batched_decode_model(lm: &LoadedModel) -> bool {
         && !memra_engine::glm5_tp::glm5_tp_armed()
 }
 
+/// GRAMMAR MASK STAGING (constrained-full, 2026-08-03): compute the session's current
+/// llguidance token mask and H2D the packed bitset into its STABLE device buffer for the
+/// upcoming batched step. Runs AFTER advance_sample_emit consumed the tick's token — the
+/// mask reflects the post-consume grammar state, exactly the set legal for the NEXT token.
+/// No-op (mask_words = 0 -> host fallback) for unconstrained sessions, unsupported constrained
+/// penalty/filter compositions, and the MEMRA_CONSTRAIN_HOST=1 oracle.
 fn stage_grammar_mask(engine: &Engine, s: &mut Session) -> Result<(), String> {
     s.mask_words = 0;
     if s.constraint.is_none() || constrain_host() || devsample_meta(s).is_none() {
