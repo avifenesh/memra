@@ -41,6 +41,12 @@ def argmax_output(prime="MATCH"):
             + "  PASS: fixture calibrated margin gate\n")
 
 
+def argmax_batch_output(served="MATCH"):
+    return ("  SUMMARY flips=0 bad=0\n"
+            + (f"  SERVED-SUMMARY served={served}\n" if served else "")
+            + "  PASS: fixture calibrated margin gate\n")
+
+
 class ReleaseBatteryCoverageTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory(prefix="release-coverage-")
@@ -82,7 +88,18 @@ exit "${FIXTURE_SPEC_RC:-0}"
         self.write_executable(self.bin / "argmax-margin-probe", "#!/bin/sh\nexit 0\n")
         self.argmax_log = self.root / "argmax.log"
         self.argmax_log.write_text(argmax_output())
+        self.argmax_batch_log = self.root / "argmax-batch.log"
+        self.argmax_batch_log.write_text(argmax_batch_output())
+        # The served-batch cell calls the same gate with `--decode batch`; the stub answers each
+        # cell from its own log so the battery's per-cell reading is what the fixture tests.
         self.write_executable(self.tools / "argmax-margin-gate.sh", """#!/bin/sh
+case " $* " in
+  *" --decode batch "*)
+    env > "$FIXTURE_ROOT/argmax-batch.env"
+    printf '%s\\n' "$@" > "$FIXTURE_ROOT/argmax-batch.args"
+    cat "$FIXTURE_ROOT/argmax-batch.log"
+    exit "${FIXTURE_ARGMAX_BATCH_RC:-0}" ;;
+esac
 env > "$FIXTURE_ROOT/argmax.env"
 cat "$FIXTURE_ROOT/argmax.log"
 """)
@@ -155,10 +172,13 @@ esac
                 self.assertEqual(result.returncode == 0, code == "0", result.stdout)
                 rows = [line.split("\t") for line in (destination / "runs.tsv").read_text().splitlines()]
                 self.assertEqual([(row[0], row[1]) for row in rows],
-                                 [("kernel", "kernel"), ("argmax", "fixture"), ("spec", "fixture")])
+                                 [("kernel", "kernel"), ("argmax", "fixture"),
+                                  ("argmax-batch", "fixture"), ("spec", "fixture")])
                 self.assertEqual(rows[0][2], code)
                 self.assertEqual((destination / rows[0][3]).read_text(), self.kernel_log.read_text().rstrip() + "\n")
-                self.assertEqual((destination / rows[2][3]).read_text(), self.spec_log.read_text().rstrip() + "\n")
+                self.assertEqual((destination / rows[2][3]).read_text(),
+                                 self.argmax_batch_log.read_text().rstrip() + "\n")
+                self.assertEqual((destination / rows[3][3]).read_text(), self.spec_log.read_text().rstrip() + "\n")
                 if code != "0": self.assertNotIn("RELEASE BATTERY PASS", result.stdout)
 
     def test_complete_in_reverse_order(self):
@@ -208,6 +228,29 @@ esac
                           if "=" in line)
         for name in ("MEMRA_PRIME_GATE", "MEMRA_PRIME_TOKENWISE"):
             self.assertNotIn(name, argmax_env)
+
+    def test_served_batch_arm_requires_its_own_pass_and_served_verdict(self):
+        # The eager cell cannot stand in for the served batched decode program: the battery runs
+        # the gate a second time with --decode batch and accepts only served=MATCH from it.
+        stdout = self.run_battery()
+        self.assertIn("fixture  argmax-margin-batch  PASS  SUMMARY flips=0 bad=0 served=MATCH", stdout)
+        self.assertIn("fixture  argmax-margin  PASS", stdout)
+        for served in ("", "MISMATCH", "MISSING"):
+            with self.subTest(served=served):
+                self.argmax_batch_log.write_text(argmax_batch_output(served))
+                self.run_battery(expected=1, diagnostic="served-batch arm reported served=")
+        self.argmax_batch_log.write_text(argmax_batch_output())
+        self.run_battery(expected=1, diagnostic="argmax-margin-batch  FAIL", FIXTURE_ARGMAX_BATCH_RC="1")
+        self.argmax_batch_log.write_text("argmax-margin-gate: SKIP (no probe model on this rig)\n")
+        self.run_battery(expected=1, diagnostic="argmax-margin-batch  REFUSED   gate skipped itself")
+
+    def test_served_batch_arm_runs_the_default_served_program(self):
+        self.run_battery(MEMRA_SERVE_B1FAST="1")
+        batch_env = dict(line.split("=", 1) for line in (self.root / "argmax-batch.env").read_text().splitlines()
+                         if "=" in line)
+        self.assertNotIn("MEMRA_SERVE_B1FAST", batch_env)
+        args = (self.root / "argmax-batch.args").read_text().splitlines()
+        self.assertEqual(args[:3], [str(self.model), "--decode", "batch"])
 
     def test_nonzero_exit_cannot_pass(self):
         self.run_battery(expected=1, FIXTURE_SPEC_RC="1")
