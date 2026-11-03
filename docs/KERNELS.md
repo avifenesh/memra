@@ -228,7 +228,7 @@ Facts worth knowing before "cleaning up":
 Legend: FFI binding "fatbin/by-name" = loaded from module by kernel name string;
 "extern in <file>" = Rust `unsafe extern "C"` declaration.
 
-### cu/kernels.cu — 132 symbols (the qwen4_exp `kvhoist` / `poolT` seam kernels `q4e_sdpa_blocklist_q8q5_hoist`, `qsa_index_score_f32_t` and `qsa_pooled_transpose_f32` removed 2026-11-03; lane/f32-gemv-rows-20260905 +1: `gemv_f32_rows`; lane/hc-mixes-gemv-20260905 +1: `hc_mixes_gemv_f32`; lane/b200-q8-fuse-20260902 +1: `rms_norm_zq8_f32`; prior recount 2026-09-02, 132, includes the TP verified-prefix batched-copy lane) (fatbin `MEMRA_ENGINE_FATBIN`)
+### cu/kernels.cu — 133 symbols (measured `grep -c 'extern "C" __global__'` on 2026-11-03, after `add_q8_1_f32`, `i32_add_k`, `rms_norm3_f32`, `row_softmax_f32` and `add_rms_norm_zq8` left that day with no caller; it was 142 just before, and the heading had drifted to 135 by annotation. Earlier annotations: lane/f32-gemv-rows-20260905 +1: `gemv_f32_rows`; lane/hc-mixes-gemv-20260905 +1: `hc_mixes_gemv_f32`; lane/b200-q8-fuse-20260902 +1: `rms_norm_zq8_f32`; prior recount 2026-09-02, 132, includes the TP verified-prefix batched-copy lane) (fatbin `MEMRA_ENGINE_FATBIN`)
 
 Header: "Stage-1 kernels: correctness-first, all f32, no tensor cores" (kernels.cu:1).
 
@@ -290,7 +290,7 @@ Header: "Stage-1 kernels: correctness-first, all f32, no tensor cores" (kernels.
 | `hc_diet_stage1_mt_f32` | hc-diet MT stage 1: down/inject weight rows read ONCE, tokens iterated inside with INLINE (x*inv)*nw normalization — per-(row,token) fma chain the stage-1 program VERBATIM => BIT-IDENTICAL to the token-grid stage 1; t<=12 | bf16-w/f32 | — | qwen4exp_gpu read gate at verify chunks (set_verify_mt); oracle `gate_hc_diet_kernels` mt mode | fatbin/by-name |
 | `hc_diet_stage3_mt_f32` | hc-diet MT stage 3: up rows read once, ALL T low_act rows resident in smem, per-token lane chains + the stage-3 epilogue with inv[t,s] — BIT-IDENTICAL to the token-grid stage 3 | bf16-w/f32 | — | qwen4exp_gpu read gate at verify chunks (set_verify_mt); oracle `gate_hc_diet_kernels` mt mode | fatbin/by-name |
 
-### cu/hybrid.cu — 67 symbols (fatbin `MEMRA_HYBRID_FATBIN`)
+### cu/hybrid.cu — 72 symbols (measured `grep -c 'extern "C" __global__'` on 2026-11-03, after `transpose_f32`, `repeat_heads_f32`, `conv_left_pad_f32`, `ssm_conv1d_tm_f32`, `moe_pairs_weighted_scatter_f32` and `swiglu_preclamped_mul_scaled_q8_1_f32` left that day; it was 79 just before, against a heading of 67) (fatbin `MEMRA_HYBRID_FATBIN`)
 
 Header: "Qwen3.5/3.6 hybrid linear-attention: depthwise causal conv1d + SiLU, Gated
 DeltaNet scan; all f32" (hybrid.cu:1-3).
@@ -360,7 +360,7 @@ dequantized in-register" (qmatvec.cu:1-2). Guards: PDL sm≥900 (qmatvec.cu:18);
 | `matvec_bf16_f32acc_x1_tcols_rf`, `..._x4_tcols_rf`, `..._x4_tcols16_rf` (lane/glm5-door-r 2026-08-31) | door R fused-reduce-tail twins of the three tcols kernels (designed+sized moe-loc LANE.md §2.2): the standing tail runs t separate strided trees = 9 block-wide barriers per token column (~30 at t=3.34, 135 at the drafter head's t=15) against a 4-trip main loop — barrier/tail-bound at 67.0% of peak on the kda trunk after door X. The `_rf` tail shares ONE barrier sequence across the t columns (`red[t*blockDim]` dynamic shared) and runs levels s<=16 as an intra-warp `__shfl_down_sync` chain at the IDENTICAL pairing and operand order — 9t -> 3 barriers/block (x1 form, 128 threads); main loop verbatim, bit-identical per (row, token). Requires power-of-two blockDim (launcher-enforced) | bf16 weights, f32 acc | — | `MEMRA_BF16_TCOLS_RED_FUSED` (default OFF — no box receipt yet, predicted -1.0 to -2.0 ms/round, box prices the flip) — `glm5_matvec_doors_gpu` bit-gate t=1..=16 both grid forms + shifted-pairing red | fatbin/by-name |
 | `matvec_bf16_f32acc_x1_tcols_rf_redshift` (lane/glm5-door-r 2026-08-31) | GATE-ONLY shifted-pairing RED twin of `..._x1_tcols_rf`: the warp phase runs ASCENDING shuffle offsets (1,2,4,8,16) — the same 32 partials under a different association, so f32 rounding must move and the door-R bit bar must see it. Never dispatched by any route; launched only through `Engine::matvec_bf16_tcols_gate_kernel_into` (an allowlist, not a name proxy) by `glm5_matvec_doors_gpu` | bf16 weights, f32 acc | — | none (gate harness only) | fatbin/by-name |
 
-### cu/flash_attn.cu — 86 symbols (fatbin `MEMRA_FLASH_FATBIN` + KV-variant fatbins)
+### cu/flash_attn.cu — 87 symbols (measured `grep -c 'extern "C" __global__'` on 2026-11-03; the heading had read 91) (fatbin `MEMRA_FLASH_FATBIN` + KV-variant fatbins)
 
 Header: "hand-written FlashAttention for RTX 5090 (sm_120a), m16n8k16 bf16 mma"
 (flash_attn.cu:1-6). PDL sm≥900, portable 90a included (flash_attn.cu:59). Head dims: `template<int
@@ -391,7 +391,7 @@ Header: "batched tensor-core int8 quant GEMM for the memra PREFILL path (sm_120a
 | `qmatvec_gemm_nvfp4_fp4` | native FP4 block-scale GEMM (mxf4nvf4) | NVFP4 W4A4 | `#if !defined(MEMRA_PORTABLE_CUDA) && !defined(MEMRA_DISABLE_NATIVE_FP4)` (qmatvec_gemm.cu:1234); omitted from 100a fatbin via `-DMEMRA_DISABLE_NATIVE_FP4` (build.rs:273) | MEMRA_FP4 | fatbin/by-name |
 | `qmatvec_gemm_q8_0_wgmma` | Hopper wgmma Q8_0 prefill GEMM | Q8_0 | `#if defined(MEMRA_HOPPER_MMA) && __CUDA_ARCH__ >= 900` (qmatvec_gemm.cu:1565) | MEMRA_WGMMA=1 opt-in (mmq_ffi.rs:627) | fatbin/by-name |
 
-### cu/moe_router.cu — 3 symbols (fatbin `MEMRA_ROUTER_FATBIN`)
+### cu/moe_router.cu — 11 symbols (measured `grep -c 'extern "C" __global__'` on 2026-11-03, after `memra_router_fused_f32` / `_dexp` left that day with `MEMRA_ROUTER_FUSED`; it was 13 just before, against a heading of 3) (fatbin `MEMRA_ROUTER_FATBIN`)
 
 Header: "fused MoE router… bit-identical to host path" (moe_router.cu:1-4).
 
