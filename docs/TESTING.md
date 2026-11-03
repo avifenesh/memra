@@ -386,8 +386,10 @@ compensate for an unreachable registry entry.
 `git diff --name-only <ref>` (plus untracked files) is mapped through
 [`tools/fast-gate/map.tsv`](../tools/fast-gate/map.tsv), an editable TSV that encodes the
 dispatch structure: which kernels serve which model classes. Every matching row contributes
-to the plan (union); an unmatched path falls back to the conservative full plan and prints a
-warning (add a row when that happens).
+to the plan (union); an unmatched path falls back to the `DEFAULT` plan (full kernel-check plus
+the gemma4 and qwen35-class representatives) and prints a warning (add a row when that happens).
+No registered probe loads the other model packs; the plan names their own gates as `REQUIRED`
+lines.
 
 kernel-check gained two loud diagnostics seams for this (see the `kc_model` header in
 `crates/memra-engine/src/bin/kernel_check.rs`):
