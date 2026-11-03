@@ -8,8 +8,11 @@
 // Epilogue: sum_f32 * d_act only (weight scale folded into values).
 // Seam: MEMRA_MMQ_F8F4=1 (default OFF until the full battery is green in-config).
 //
-// STATUS: piece 1 of the arc — activation quantize kernel + MMA primitive + ABI size helpers.
-// The tile mainloop (load_tiles fold + vec_dot + writeback + pipeline) lands next.
+// STATUS: this TU holds the activation quantizer (memra_mmq_nvfp4_f8f4_quantize_act), the ABI
+// size helper and an uncalled plain-form MMA primitive. The tile mainloop (load_tiles fold +
+// vec_dot + writeback + pipeline) and the launcher memra_mmq_nvfp4_f8f4 live in
+// mmq_nvfp4_w4a8.cu, which issues the block_scale identity MMA form on sm_120a and the plain
+// form on sm_100a or under MEMRA_MMQ_F8F4_PLAIN=1.
 #include <cstdint>
 #include <cuda_runtime.h>
 #include <cuda_fp8.h>
