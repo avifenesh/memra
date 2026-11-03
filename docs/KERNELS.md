@@ -302,11 +302,12 @@ DeltaNet scan; all f32" (hybrid.cu:1-3).
 | `gdn_chunk_state_mma[_vl]`, `gdn_chunk_output_mma[_vl]` | fused wgmma K4+K5 chunk kernels | bf16 mirrors, f32 acc | sm_90a-only wgmma via wgmma_common.cuh:9 (include at hybrid.cu:2202) | MEMRA_GDN_WGMMA (hybrid.cu:2195 "env+cfg gated") | fatbin/by-name |
 | glue (~17: sigmoid, gated_rmsnorm incl. f16out/q8_1, transpose, repeat_heads, axpy, scatter/gather/reduce slots, f32_to_bf16_bulk, q_gate_split, qkv_to_gdn_repack) | hybrid-path glue | f32 | — | UNKNOWN | fatbin/by-name |
 
-### cu/qmatvec.cu — 346 symbols (fatbin `MEMRA_QMATVEC_FATBIN`; batch-spec-20261101 +6: `qmatvec_nvfp4_mmvq_b16_rpsc`, `qmatvec_nvfp4_mmvq_b16_rpscx`, `qmatvec_nvfp4_mmvq_b32_rpcs8`, `qmatvec_nvfp4_mmvq_group4_b32_rpcs8`, `qmatvec_nvfp4_mmvq_b32_tc`, `qmatvec_nvfp4_mmvq_group4_b32_tc`; lane/kda-narrow-q8-20260905 +1: `qmatvec_q8_0_mmvq_f32in_narrow`; lane/moe-gateup-ilp2-20260905 +2: `moe_gate_up_preclamp8_q8_rows_ilp2`, `_w4_ilp2`; lane/moe-down-ilp2-20260905's `moe_down8_fma_q8_rows_ilp2` / `_w4_ilp2` removed 2026-09-06 on the gemvab receipt; the unreachable `qmatvec_q4_0_mmvq_b16_r2` / `_b16_r2_rp` removed 2026-11-03, since the b16 tier dispatches only base and `_rp`)
+### cu/qmatvec.cu — 332 symbols (fatbin `MEMRA_QMATVEC_FATBIN`; batch-spec-20261101 +6: `qmatvec_nvfp4_mmvq_b16_rpsc`, `qmatvec_nvfp4_mmvq_b16_rpscx`, `qmatvec_nvfp4_mmvq_b32_rpcs8`, `qmatvec_nvfp4_mmvq_group4_b32_rpcs8`, `qmatvec_nvfp4_mmvq_b32_tc`, `qmatvec_nvfp4_mmvq_group4_b32_tc`; lane/kda-narrow-q8-20260905 +1: `qmatvec_q8_0_mmvq_f32in_narrow`; lane/moe-gateup-ilp2-20260905 +2: `moe_gate_up_preclamp8_q8_rows_ilp2`, `_w4_ilp2`; lane/moe-down-ilp2-20260905's `moe_down8_fma_q8_rows_ilp2` / `_w4_ilp2` removed 2026-09-06 on the gemvab receipt; the unreachable `qmatvec_q4_0_mmvq_b16_r2` / `_b16_r2_rp` removed 2026-11-03, since the b16 tier dispatches only base and `_rp`; 14 unlaunched kernels removed 2026-11-03: `moe_w_exscale`, `axpy_rows_seq_md_off_f32`, `qmatvec_nvfp4_bf16_sel_down_fma`, `qmatvec_nvfp4_{bf16,q8}_ep_down_fma`, `qmatvec_nvfp4_bf16_ep_dual_pairs`, `matvec_bf16_f32acc_tcol`, the compile-time-T `matvec_bf16_{qkvg,b4}_tcol_t{2,4,8}` twins and `matvec_bf16_dual_silu_ilv`)
 
-Count basis: 346 is a MEASURED `grep -c 'extern "C" __global__'` on this file on 2026-11-05:
-340 on 2026-11-03 after the two b16 r2 twins left (342 just before that removal), plus batch-spec's
-six b16/b32 tiers. The heading had drifted to 347 by annotation (later lanes noted each +1/+2 and removal without re-measuring), so the
+Count basis: 332 is a MEASURED `grep -c 'extern "C" __global__'` on this file on 2026-11-05:
+326 on 2026-11-03 after the 14 unlaunched kernels in the heading left (340 after the two b16 r2
+twins left, 342 before that), plus batch-spec's six b16/b32 tiers. The heading had drifted
+to 347 by annotation (later lanes noted each +1/+2 and removal without re-measuring), so the
 number above replaces the arithmetic. History: 344 was measured at commit bbbef06b17 (343 at
 its parent e208899d plus the one `matvec_bf16_f32acc_x4_range` entry below), and the 321 before
 that after the glm5 door-r/dedup merge. This file is measured; every other file's count in this
