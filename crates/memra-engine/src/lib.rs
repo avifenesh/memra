@@ -14135,7 +14135,8 @@ impl Engine {
         *self.mla_seg_ws.lock().unwrap() = Some(ws);
     }
 
-    /// `MEMRA_MLA_SEG_WS=1` (lane/glm5-mla-capture-20260904, default OFF): the T=1 MLA core runs
+    /// `MEMRA_MLA_SEG_WS` (lane/glm5-mla-capture-20260904; default ON on sm_100a builds through
+    /// the B200 posture, OFF elsewhere; `=0` is the rollback): the T=1 MLA core runs
     /// its PRE segment into the session's stable buffers instead of fresh allocations, so the
     /// capture arc can hand a captured PRE graph's outputs to a captured POST graph. Read PER
     /// CALL. Byte-identical by construction (same kernels, same order, different address).
