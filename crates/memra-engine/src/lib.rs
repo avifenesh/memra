@@ -1575,6 +1575,20 @@ pub fn model_numeric_claim_verdict(
 }
 
 #[cfg(test)]
+mod fa_ladder_engine_tests {
+    use super::fa_ladder_engine_verdict;
+
+    #[test]
+    fn an_engine_on_a_card_with_another_sm_count_refuses_by_name() {
+        fa_ladder_engine_verdict(1, 188, 188).expect("same SM count joins");
+        let err = fa_ladder_engine_verdict(1, 170, 188).unwrap_err();
+        for needle in ["device 1", "170 SMs", "188 SMs", "separate processes"] {
+            assert!(err.contains(needle), "{needle} missing from {err}");
+        }
+    }
+}
+
+#[cfg(test)]
 mod model_numeric_defaults_tests {
     use super::{ModelNumericDefaults, model_numeric_claim_verdict};
 
@@ -2318,9 +2332,32 @@ pub(crate) fn fa_split_keys(t_kv: usize, n_head_kv: usize) -> usize {
 /// SM count behind fa_split_keys' rig-size rung: the device of the first Engine this process
 /// built (`Engine::new` records it), so a process serving from a non-zero ordinal follows its
 /// own card. It is one value per process on purpose: split planners and FA dispatch read it
-/// from free functions and must agree, and PP/TP topology already requires uniform cards.
-/// Before any Engine exists it falls back to querying ordinal 0.
+/// from free functions and must agree. Before any Engine exists it falls back to querying
+/// ordinal 0. `Engine::new` refuses a later engine whose card has a different SM count
+/// (`fa_ladder_engine_verdict`), so no engine runs another card's ladder.
 static FA_SM_COUNT: std::sync::OnceLock<i32> = std::sync::OnceLock::new();
+
+/// An engine may join the process only on a card whose SM count is the one the FA split ladder
+/// was fixed at (`FA_SM_COUNT`). Otherwise it would run another card's ladder, a different FA
+/// split and so a different numeric class from the same card serving alone, and nothing would
+/// say so. PP/TP topology compares cards by name only; this compares the number the ladder
+/// actually reads. Pure, so the tooth needs no GPU.
+pub(crate) fn fa_ladder_engine_verdict(
+    ordinal: usize,
+    sm_count: i32,
+    ladder_sm_count: i32,
+) -> Result<(), String> {
+    if sm_count == ladder_sm_count {
+        return Ok(());
+    }
+    Err(format!(
+        "device {ordinal} has {sm_count} SMs, but this process fixed its FA split ladder at \
+         {ladder_sm_count} SMs (the first engine built, or device 0 when the ladder was read \
+         before any engine). The ladder is one value per process, so an engine here would run \
+         the other card's FA split class. Serve cards with different SM counts from separate \
+         processes"
+    ))
+}
 
 pub(crate) fn fa_sm_count() -> i32 {
     *FA_SM_COUNT.get_or_init(|| {
@@ -4334,7 +4371,7 @@ impl Engine {
                 .attribute(A::CU_DEVICE_ATTRIBUTE_MULTIPROCESSOR_COUNT)
                 .unwrap_or(82)
         };
-        FA_SM_COUNT.get_or_init(|| sm_count);
+        fa_ladder_engine_verdict(ordinal, sm_count, *FA_SM_COUNT.get_or_init(|| sm_count))?;
         // Default async-pool RELEASE_THRESHOLD is 0: freed blocks return to the OS at every
         // sync, so cuMemAllocAsync NODES inside captured graphs re-map memory on EVERY
         // cuGraphLaunch (measured 226us/launch on the gemma graph door, 2026-07-23 osrt).
