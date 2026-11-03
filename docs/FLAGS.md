@@ -469,7 +469,6 @@ Rules that follow, and are now enforced rather than remembered:
 | `MEMRA_MOE_VRAM_FRAC` | 0.85 | SLRU expert-cache fraction of free VRAM (sweep 2026-07-06: 0.40=25.0 → 0.85=28.5 tok/s). The measured Hy3 5090 launcher sets 0.90 for both soft and hard fractions; lower it on rigs co-running other GPU work. A value that is not a fraction in (0, 1] refuses the load |
 | `MEMRA_MOE_HARD_VRAM_FRAC` | 0.80 | machine-specific hard ceiling for the SLRU allocation (`0.10..=0.95`). Raise only after a local OOM-gated sweep. Hy3 on the 24GB RTX 5090 validated `0.85` at 21.21GiB peak framebuffer use: 2,006 slots, exact argmax/tokens, and 0.53 -> 1.03 tok/s on the warm repeat together with worker depth 16 |
 | `MEMRA_MOE_SLOTS` | auto | force the SLRU slot count (spill experiments used 64/512). A value that is not a whole count refuses the load; a count above the hard ceiling (`MEMRA_MOE_HARD_VRAM_FRAC`) or below the eight-slot floor is clamped, and a `[moe-cache] MEMRA_MOE_SLOTS=N gives M slots` line names both counts |
-| `MEMRA_MOE_COLD_BYPASS` | **`off` (default), decide-by: 2026-10-10** | COLD READ-ONCE BYPASS (lane/spill-f-20260919, OWED 17, registered in `research/spill-f-20260919/M1-PREREG.md` section F). Positioned-read spill path only (`MEMRA_SPILL_IO` pread, worker or direct; any other setup refuses at cache construction) and only at the batch-1 decode expert GEMMs (`moe_cached_gemm`, `moe_cached_gemm_q8`), where the kernel is enqueued inside the cache scope; every other dispatch keeps first-miss admit. A doorkeeper (FIFO of the last max(4 x slots, 64) first misses) decides cold: a block's first miss is not admitted, a repeat miss admits. `staged` copies the first-miss block into one dedicated device scratch (never published): this is the removed `MEMRA_MOE_GHOST` program, kept only as the cell's control. `mapped` copies nothing: the kernel reads the pinned read-pool buffer through `cuMemHostGetDevicePointer`, and the buffer stays owned until an event recorded after that kernel; refused loudly if the driver will not map the pool. Same bytes and same kernel in every arm, so the token stream must equal the byte oracle. Receipts: `[moe-bypass] mode= bypassed= ghost_admits=` at teardown and `mapped_serves=` on the `[spill-pread]` totals line. Unit cells: `cold_ghost_*`, `cold_bypass_parse_*`; GPU cell `mapped_serve_reads_in_place_and_owns_the_buffer_until_its_event`. Decision: the registered interleaved B3-shape cell on both rigs; a losing `staged` value is deleted in the measuring lane, a flat or losing door is deleted whole. |
 | `MEMRA_MOE_RESIDENT` | on | `0` forces the SLRU path even when experts fit VRAM (fits-VRAM resident = 169.55 vs 28.5 tok/s on the local 35B) |
 | `MEMRA_MOE_RESIDENT_GB` | free − trunk − headroom | resident-experts budget override, absolute GB (rtx6000 M3 partial-resident tier). On a unified-memory device (GB10) `free` is the allocatable reading (page cache counts), because pinning experts in host memory adds no capacity there: every bank that fits in system memory stays resident. Default is RESIDENT-IF-FITS (2026-08-02): exact expert-bank bytes summed from the GGUF header (per-layer x n_layer misprojects UD-quants both ways: Ornith-35B +7%, Qwen3.6-35B −2%) vs free VRAM minus the file's non-expert bytes minus the headroom reserve. Under PP, the expert numerator is partitioned by the actual stage-to-device placement; stages sharing one device are combined, while distinct devices decide from only their owned layer slices. The old 0.80 x free default reserved 20% of the card and spilled the Ornith-35B 19.5GB bank that fits: −33% decode / −54% prefill (research/residency-cap-20260802/) |
 | `MEMRA_MOE_RESIDENT_HEADROOM_GB` | 2.0 | machine-specific headroom the resident decision reserves beside weights (CUDA ctx + KV + workspace; measured ~1.7GB at board shape on the 24GB 5090, serve c=8 peaked 23220/24463 MiB). Raise it on rigs co-running other GPU work or serving many long-ctx sessions |
@@ -1705,6 +1704,27 @@ deleted and the conversion is on wherever `MEMRA_DSPARK_PREFIX_RESTORE` and
 - GB10 GGUF DFlash2 agentic cell, one run each, off/on: c1 12.04 -> 14.47 (+20%), c2..c32 inside
   run noise. RTX 5090: the veto never fires on its shape, so the door is inert there.
 - Receipts: `research/dflash-restorable-hit-20261103/`.
+
+## Removed doors, 2026-11-03 (the MoE cold read-once bypass: flat and losing on the PRO 6000, no 5090 row by its date)
+
+`MEMRA_MOE_COLD_BYPASS` (`staged` or `mapped`) served a cold expert block's first miss
+without admitting it, on the positioned-read spill path at the batch-1 decode expert GEMMs
+(lane/spill-f-20260919, OWED 17). Its row named the decision: the registered interleaved
+B3-shape cell on both rigs, and a flat or losing door is deleted whole. The PRO 6000 row
+(`research/spill-f-20260919/box36/RESULTS.md`, 10 cold and 9 bounded pairs) read `staged` flat
+(median ratio 1.002 cold, 1.010 bounded) and `mapped` a loser (0.873 cold, 0.896 bounded), with
+tokens equal to the oracle in both arms. The RTX 5090 cell stayed queued, and the decide-by date
+(2026-10-10) passed without it. No row anywhere read a win. Deleted with its env read, the
+doorkeeper (`ColdBypass`, `ColdGhost`), the bypass branch in the positioned-read dispatch,
+`dispatch_source_once`, `consumed` and `payload`, the `Scratch` and `Mapped` dispatch slots, the
+staged scratch buffer, the read pool's mapped device alias (`enable_mapped`, `mapped_view`,
+`mark_mapped`, `set_consumer_event`, the `awaiting_consumer` hold and the `mapped_serves` field
+of the `[spill-pread]` totals line), its unit cells (`cold_ghost_*`, `cold_bypass_parse_*`) and
+its GPU cell `mapped_serve_reads_in_place_and_owns_the_buffer_until_its_event`. No kernel and no
+`docs/KERNELS.md` row goes with it. The batch-1 expert GEMMs dispatch through `dispatch_source`
+again: first-miss admit, the program every other dispatch already ran. The door returns only
+with a receipt on both rigs. Git history is the archive. Ledger:
+`VERDICT:moe-cold-bypass-door-removed` (darklanes `agent-knowledge/gpu/verdicts-ledger.md`).
 
 ## Removed doors, 2026-11-03 (the DFlash drafter `fa_prefill` block attention)
 
