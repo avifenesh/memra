@@ -2039,11 +2039,15 @@ pub(crate) fn fa_split_keys(t_kv: usize, n_head_kv: usize) -> usize {
     }
 }
 
-/// SM count of device 0, cached (used by fa_split_keys' rig-size rung; primary-context query,
-/// same attribute Engine::batched_variant reads).
+/// SM count behind fa_split_keys' rig-size rung: the device of the first Engine this process
+/// built (`Engine::new` records it), so a process serving from a non-zero ordinal follows its
+/// own card. It is one value per process on purpose: split planners and FA dispatch read it
+/// from free functions and must agree, and PP/TP topology already requires uniform cards.
+/// Before any Engine exists it falls back to querying ordinal 0.
+static FA_SM_COUNT: std::sync::OnceLock<i32> = std::sync::OnceLock::new();
+
 pub(crate) fn fa_sm_count() -> i32 {
-    static N: std::sync::OnceLock<i32> = std::sync::OnceLock::new();
-    *N.get_or_init(|| {
+    *FA_SM_COUNT.get_or_init(|| {
         cudarc::driver::result::init().ok();
         cudarc::driver::result::device::get(0)
             .and_then(|d| unsafe { cudarc::driver::result::device::get_attribute(
@@ -2196,6 +2200,8 @@ impl SpillStageStats {
 /// Engine device context: CUDA context, stream, loaded kernel modules, cuBLASLt (via runtime::Gpu).
 pub struct Engine {
     pub gpu: memra_runtime::Gpu,
+    /// This engine's own device SM count, read once at construction (`Engine::sm_count`).
+    sm_count: i32,
     module: Arc<CudaModule>,
     hybrid: Arc<CudaModule>,
     /// Kimi Delta Attention kernels (cu/kda.cu) — separate fatbin, resolved through `func`.
@@ -4038,6 +4044,14 @@ impl Engine {
                 .into());
             }
         }
+        // This engine's own SM count; the first engine also fixes the process FA split ladder.
+        let sm_count = {
+            use cudarc::driver::sys::CUdevice_attribute_enum as A;
+            gpu.ctx
+                .attribute(A::CU_DEVICE_ATTRIBUTE_MULTIPROCESSOR_COUNT)
+                .unwrap_or(82)
+        };
+        FA_SM_COUNT.get_or_init(|| sm_count);
         // Default async-pool RELEASE_THRESHOLD is 0: freed blocks return to the OS at every
         // sync, so cuMemAllocAsync NODES inside captured graphs re-map memory on EVERY
         // cuGraphLaunch (measured 226us/launch on the gemma graph door, 2026-07-23 osrt).
@@ -4103,6 +4117,7 @@ impl Engine {
         }
         Ok(Self {
             gpu,
+            sm_count,
             module,
             hybrid,
             kda,
@@ -23994,14 +24009,7 @@ impl Engine {
     /// (deterministic but k-reduce-order-shifted: rel<1e-3 + run-to-run bit-identity required).
     /// Device SM count (cached) — grid-fill policy input.
     pub fn sm_count(&self) -> i32 {
-        static SMS: std::sync::OnceLock<i32> = std::sync::OnceLock::new();
-        *SMS.get_or_init(|| {
-            use cudarc::driver::sys::CUdevice_attribute_enum as A;
-            self.gpu
-                .ctx
-                .attribute(A::CU_DEVICE_ATTRIBUTE_MULTIPROCESSOR_COUNT)
-                .unwrap_or(82)
-        })
+        self.sm_count
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -24030,14 +24038,7 @@ impl Engine {
         static KS_ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
         let ks_on = *KS_ON.get_or_init(|| std::env::var("MEMRA_KS").as_deref() != Ok("0"));
         let sc_ok = ks_on && qtype == QT_NVFP4 && in_f.is_multiple_of(256) && (in_f / 64 <= 272);
-        static SMS: std::sync::OnceLock<i32> = std::sync::OnceLock::new();
-        let sms = *SMS.get_or_init(|| {
-            use cudarc::driver::sys::CUdevice_attribute_enum as A;
-            self.gpu
-                .ctx
-                .attribute(A::CU_DEVICE_ATTRIBUTE_MULTIPROCESSOR_COUNT)
-                .unwrap_or(82)
-        });
+        let sms = self.sm_count();
         // k-quant r2 port (2026-07-04): q4_K/q5_K/q6_K have _r2/_r2w8 twins. ncu on the DRAM-cold
         // 9B msweep showed q4_K/q5_K b4 memory-latency bound like NVFP4 pre-fix (long_scoreboard
         // 19.6/16.4 per issue, DRAM 47.7/38.2%, L2 weight hit ~13%); q6_K lm_head is the exception
