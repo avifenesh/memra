@@ -2415,6 +2415,7 @@ impl LayerPlacement {
         self.local_of[expert] as usize
     }
     /// True when this layer is the plain contiguous even split (the control arm).
+    #[cfg(test)]
     pub fn is_even(&self) -> bool {
         let half = self.rank_of.len() / 2;
         self.card1.len() == half
@@ -3961,48 +3962,6 @@ fn route_topk_device(
     ROUTE_AUDIT_ROWS.fetch_add(rows as u64, std::sync::atomic::Ordering::Relaxed);
     ROUTE_AUDIT_MAX_ULP.fetch_max(worst, std::sync::atomic::Ordering::Relaxed);
     Ok(())
-}
-
-/// The historical mask-producing entry point, now select + render (byte-identical mask;
-/// the TP2 decode path and the masked-kernel arm consume it).
-// dead_code: bring-up scaffolding the in-flight qwen4exp lanes still call; not deleted in
-// the clippy-zero lane (bit-neutral by construction).
-#[allow(dead_code)]
-#[allow(clippy::too_many_arguments)]
-fn indexer_mask_rows(
-    overlay: &MicroBlockIndexPlan,
-    rope_base: f32,
-    yarn: Option<(&[f32], f32)>,
-    epsilon: f32,
-    idx_q_norm: &[f32],
-    idx_k_norm: &[f32],
-    proj_rows: &[f32],
-    raw_keys: &IdxRawCache,
-    pooled_keys: &mut Vec<f32>,
-    base_pos: usize,
-    t: usize,
-    t_kv: usize,
-    pos_off: usize,
-) -> Res<Vec<u8>> {
-    let sels = indexer_select_rows(
-        overlay,
-        rope_base,
-        yarn,
-        epsilon,
-        idx_q_norm,
-        idx_k_norm,
-        proj_rows,
-        raw_keys,
-        pooled_keys,
-        // TP2 decode + the reference/mask arm keep the host scorer (TP2's selection runs
-        // on card 0's projection and feeds both halves; its depths are decode-class).
-        None,
-        base_pos,
-        t,
-        t_kv,
-        pos_off,
-    )?;
-    Ok(rowsel_to_mask(&sels, overlay.block_size as usize, t_kv))
 }
 
 /// memra_reference `shift_right_ignore_eos` twin.
@@ -11852,7 +11811,7 @@ impl Qwen4ExpGpu {
         base_pos: usize,
         t: usize,
         // Rope/indexer position offset (0 = trunk; 1 = the MTP draft, see
-        // `indexer_mask_rows`). Causality stays cache-row based either way.
+        // `indexer_select_rows`). Causality stays cache-row based either way.
         pos_off: usize,
         // Verify-exact rows (mtp-spec): per-token indexer-projection launches — the
         // one cuBLASLt op in this path whose m > 1 algorithm may differ from the
@@ -13536,12 +13495,6 @@ pub struct MtpDraftState {
     ws: StepPool,
 }
 
-impl MtpDraftState {
-    pub fn rows(&self) -> usize {
-        self.rows
-    }
-}
-
 /// The draft forward's token source (mtp11): host ids (the mtp10 program), host ids
 /// GATHERED ON DEVICE from the full-vocab chain table (the defer arm's prefill/replay
 /// shape — a 4t-byte htod replaces t 10 KB pageable embed rows, the spec.rs
@@ -13557,12 +13510,6 @@ enum DraftTokSrc<'a> {
 impl Qwen4ExpGpu {
     pub fn has_mtp(&self) -> bool {
         self.mtp.is_some()
-    }
-
-    /// Card-1 draft placement armed? (`load_from_dir_dev1` — the draft's device tensors
-    /// live on `mtp_dev1.dev`, and every draft call must present an engine there.)
-    pub fn mtp_on_dev1(&self) -> bool {
-        self.mtp_dev1.is_some()
     }
 
     /// The draft's device tensors were built on ONE engine; a call presenting another
@@ -14525,10 +14472,6 @@ impl Qwen4ExpGpu {
             last_row_only: false,
         });
         Ok(())
-    }
-
-    pub fn spec_disarm(&self, state: &mut Qwen4ExpState) {
-        state.verify = None;
     }
 
     pub fn set_verify_want_argmax(&self, state: &mut Qwen4ExpState, on: bool) -> Res<()> {
@@ -18022,53 +17965,6 @@ impl Qwen4ExpGpu {
         ws.put_f32("qsa.att", attended);
         ws.put_f32("qsa.gate", gate);
         Ok(partial)
-    }
-
-    /// The QSA indexer host twin factored for TP2 (runs on card 0's projection; the mask
-    /// bytes feed BOTH cards' masked SDPA halves).
-    // dead_code: bring-up scaffolding the in-flight qwen4exp lanes still call; not deleted in
-    // the clippy-zero lane (bit-neutral by construction).
-    #[allow(dead_code)]
-    #[allow(clippy::too_many_arguments)]
-    fn qsa_indexer_mask(
-        &self,
-        e: &Engine,
-        ws: &mut StepPool,
-        qsa: &QsaW,
-        eps: f32,
-        mixed: &CudaSlice<f32>,
-        raw_keys: &mut IdxRawCache,
-        pooled_keys: &mut Vec<f32>,
-        base_pos: usize,
-    ) -> Res<Vec<u8>> {
-        let overlay = &qsa.overlay;
-        let idx_dim = overlay.head_dim as usize;
-        let qk_width = (overlay.query_heads as usize + overlay.kv_heads as usize) * idx_dim;
-        let hidden = self.hidden;
-        let mut idx_proj = ws.take_f32(e, "qsa.idxp", qk_width, 0)?;
-        e.linear_device_into(mixed, &qsa.idx_proj, &mut idx_proj, 1, hidden, qk_width)?;
-        let rows = e.dtoh_view(&idx_proj.slice(0..qk_width))?;
-        ws.put_f32("qsa.idxp", idx_proj);
-        raw_keys.append_rows_f32(
-            &rows[overlay.query_heads as usize * idx_dim..qk_width],
-            1,
-            idx_dim,
-        );
-        indexer_mask_rows(
-            overlay,
-            qsa.attn.rope.base,
-            qsa.yarn.as_ref().map(|y| (y.ff_host.as_slice(), y.mscale)),
-            eps,
-            &qsa.idx_q_norm,
-            &qsa.idx_k_norm,
-            &rows,
-            raw_keys,
-            pooled_keys,
-            base_pos,
-            1,
-            base_pos + 1,
-            0,
-        )
     }
 
     /// Shared-expert half on one card: gate/up rows (card 0 = the resident full twins'
