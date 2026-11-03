@@ -10614,12 +10614,15 @@ impl HybridModel {
         let (nh, dn, r) = (g.n_head, g.d_nope, g.kv_rank);
         let wk_b = Self::mla_split_operand(&mla.wk_b, "attn_k_b", il);
         let mut q_lat = e.uninit(t * nh * r)?;
+        // A glm5 TP head shard keeps the shipped absorb/decompress partition: the default-ON
+        // MEMRA_MLA_DECODE_SPLIT has no TP composition gate (mla_ffi::MlaSplitScope).
+        let scope = crate::mla_ffi::MlaSplitScope::of_layer(mla.tp_shard);
         // MEMRA_MLA_ABSORB_BF16: the BF16 copy of the plane on the served `_wp` partition;
         // falls through to the f32 dispatch when the door, the copy or the partition is absent.
         let absorbed16 = if crate::mla_absorb_bf16_on()
             && let Some(w16) = mla.wk_b16.as_ref()
         {
-            let hit = e.mla_absorb_q_bf16(q_nope, w16, &mut q_lat, t, nh, dn, r)?;
+            let hit = e.mla_absorb_q_bf16(q_nope, w16, &mut q_lat, t, nh, dn, r, scope)?;
             if hit
                 && MLA_ABSORB_BF16_DISPATCHES.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
                     == 0
@@ -10634,7 +10637,7 @@ impl HybridModel {
             false
         };
         if !absorbed16 {
-            e.mla_absorb_q(q_nope, wk_b, &mut q_lat, t, nh, dn, r)?;
+            e.mla_absorb_q_scoped(q_nope, wk_b, &mut q_lat, t, nh, dn, r, scope)?;
         }
         Ok(q_lat)
     }
@@ -10653,17 +10656,18 @@ impl HybridModel {
         let (nh, dv, r) = (g.n_head, g.d_v, g.kv_rank);
         let wv_b = Self::mla_split_operand(&mla.wv_b, "attn_v_b", il);
         let mut attn = e.uninit(t * nh * dv)?;
+        let scope = crate::mla_ffi::MlaSplitScope::of_layer(mla.tp_shard);
         let bf16_plane = if crate::mla_absorb_bf16_on() {
             mla.wv_b16.as_ref()
         } else {
             None
         };
         let decompressed16 = match bf16_plane {
-            Some(w16) => e.mla_decompress_v_bf16(o_lat, w16, &mut attn, t, nh, dv, r)?,
+            Some(w16) => e.mla_decompress_v_bf16(o_lat, w16, &mut attn, t, nh, dv, r, scope)?,
             None => false,
         };
         if !decompressed16 {
-            e.mla_decompress_v(o_lat, wv_b, &mut attn, t, nh, dv, r)?;
+            e.mla_decompress_v_scoped(o_lat, wv_b, &mut attn, t, nh, dv, r, scope)?;
         }
         Ok(attn)
     }
