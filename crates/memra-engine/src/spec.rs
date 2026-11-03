@@ -747,8 +747,6 @@ pub trait SpecConstraint {
     /// -inf the current state's banned ids on a HOST logits row (prompt-tail / init-feed
     /// masked argmax).
     fn mask_logits(&mut self, logits: &mut [f32]) -> Result<(), String>;
-    /// Packed 32-bit bitset words of the CURRENT state's allowed set (device-mask form).
-    fn mask_words(&mut self) -> Result<Vec<u32>, String>;
     /// Is `tok` consumable in the CURRENT state?
     fn is_allowed(&mut self, tok: u32) -> Result<bool, String>;
     /// Advance the state with an emitted token.
@@ -10840,6 +10838,11 @@ impl HybridModel {
         })
     }
 
+    // -----------------------------------------------------------------------------------------
+    // WP-A day 23 (memra#536 Move 2, the draft-bearing restore): the restore-side draft scratch as
+    // a value the worker can own before a session exists. See `RestoredDraftScratch`.
+    // -----------------------------------------------------------------------------------------
+
     /// SPEC-ON-CACHE-HIT restore (lane/spec-on-cache-hit, 2026-08-18 — PORT-PLAN item 3,
     /// research/cache-spec-design-20260814, scoped to WHOLE-ENTRY restores only): build a
     /// SpecSession around a trunk cache the worker already restored from a prefix-cache
@@ -10884,66 +10887,9 @@ impl HybridModel {
     /// `Err((None, why))` after the suffix feed began — the carrier is part-fed and
     /// UNUSABLE; the worker serves the request cold-plain (correct, slower) and the
     /// entry stays published for the next request.
-    #[allow(clippy::too_many_arguments)]
-    #[allow(clippy::result_large_err)] // allow: the fat error type is the diagnostic contract here; boxing it would change the error surface
-    pub fn spec_session_from_restored(
-        &self,
-        e: &Engine,
-        cache: Cache,
-        prefix: Vec<u32>,
-        suffix: &[u32],
-        draft_k: &CudaSlice<u8>,
-        draft_v: &CudaSlice<u8>,
-        draft_k_tok_bytes: usize,
-        draft_v_tok_bytes: usize,
-        draft_len: usize,
-        last_h: &[f32],
-        // The ENTRY's boundary logits row (the full-cover shape's seed source). May be empty
-        // when a suffix follows — the feed's own logits are the boundary then.
-        boundary_logits: &[f32],
-        // The request's sampler, or None for greedy. Owned here so the seed rule lives in
-        // ONE place instead of being half-applied by the worker.
-        sampling: Option<SpecSampling>,
-        require_anchor: bool,
-        max_ctx: usize,
-        // STABLE-BOUNDARY REPUBLICATION (lane/frspec-multiturn-cache, 2026-08-21): ABSOLUTE
-        // prompt position to split the suffix feed at and capture the extended-entry
-        // publication + this session's `turn_ckpt` — the worker's stable pre-generation
-        // boundary (`plain_checkpoint_boundary`). None = legacy prompt-end republication.
-        // WHY: the prompt-end capture below includes the template's live generation header
-        // (`<|im_start|>assistant\n<think>\n`), which the next turn's re-render replaces, so
-        // for a hybrid (whole-entry restores only) every extended entry's last ~2 tokens
-        // diverged from every future prompt and the hit boundary FROZE at the first
-        // lcp-split entry forever (measured: cached 6811 of 38228 by turn 8, B4).
-        republish_at: Option<usize>,
-    ) -> Result<SpecSession, (Option<Cache>, String)> {
-        self.spec_session_from_restored_deferred(
-            e,
-            cache,
-            prefix,
-            suffix,
-            draft_k,
-            draft_v,
-            draft_k_tok_bytes,
-            draft_v_tok_bytes,
-            draft_len,
-            last_h,
-            boundary_logits,
-            sampling,
-            require_anchor,
-            max_ctx,
-            republish_at,
-            false,
-        )
-    }
-
-    // -----------------------------------------------------------------------------------------
-    // WP-A day 23 (memra#536 Move 2, the draft-bearing restore): the restore-side draft scratch as
-    // a value the worker can own before a session exists. See `RestoredDraftScratch`.
-    // -----------------------------------------------------------------------------------------
-
-    /// Worker restore materialization can defer the suffix to its owned prime walker.
-    /// No boundary is sampled until the suffix has actually completed.
+    ///
+    /// `defer_suffix`: the worker's restore materialization can defer the suffix to its owned
+    /// prime walker; no boundary is sampled until the suffix has actually completed.
     #[allow(clippy::too_many_arguments)]
     #[allow(clippy::result_large_err)] // preserves the existing recoverable carrier error contract
     pub fn spec_session_from_restored_deferred(
@@ -12083,24 +12029,6 @@ impl HybridModel {
     /// column — token-identical to constrained plain greedy decode. GREEDY only (the
     /// worker routes sampled constrained to plain decode). Acceptance under tight grammars
     /// may drop (drafter is unconstrained); that is measured, not hidden.
-    #[allow(clippy::too_many_arguments)]
-    #[allow(clippy::type_complexity)] // allow: one-shot composite type; naming it would hide the shape that matters at the call site
-    pub fn generate_spec_session_constrained(
-        &self,
-        e: &Engine,
-        sess: &mut SpecSession,
-        suffix: &[u32],
-        max_new: usize,
-        k: usize,
-        sampling: Option<SpecSampling>,
-        constraint: Option<&mut dyn SpecConstraint>,
-        on_commit: Option<&mut dyn FnMut(&[u32]) -> bool>,
-    ) -> Result<(Vec<u32>, usize, usize), Box<dyn std::error::Error>> {
-        self.generate_spec_session_constrained_prime_split(
-            e, sess, suffix, max_new, k, sampling, constraint, None, on_commit,
-        )
-    }
-
     #[allow(clippy::too_many_arguments)]
     #[allow(clippy::type_complexity)] // allow: one-shot composite type; naming it would hide the shape that matters at the call site
     pub fn generate_spec_session_constrained_prime_split(
@@ -13387,9 +13315,10 @@ impl HybridModel {
         // `next_pred` plays prime_logits' role: it is the token produced from the logits after
         // committed.last() by the same rule this entry applies to a cold prime's last row —
         // an argmax when greedy, a `sample_boundary_token` draw when sampled (the burst tail,
-        // or `spec_session_from_restored` for a converted prefix-cache hit, did the drawing
-        // where the sampler and the session's Philox counters were live). `last_h` seeds the
-        // predecessor pairing below. Fresh calls and non-empty suffixes take the normal path.
+        // or `spec_session_from_restored_ready`/`_deferred` for a converted prefix-cache hit,
+        // did the drawing where the sampler and the session's Philox counters were live).
+        // `last_h` seeds the predecessor pairing below. Fresh calls and non-empty suffixes take
+        // the normal path.
         let continuation = prompt.is_empty();
         if continuation {
             assert!(session_mode, "empty prompt requires a session");
@@ -13711,8 +13640,8 @@ impl HybridModel {
             b
         } else if continuation {
             // A continuation's boundary token was DRAWN by the burst that stashed it (the
-            // session tail below), or by `spec_session_from_restored` for a converted
-            // prefix-cache hit — in both cases from the correct logits row with this same
+            // session tail below), or by `spec_session_from_restored_ready`/`_deferred` for a
+            // converted prefix-cache hit — in both cases from the correct logits row with this same
             // session's Philox stream, which is why it can be consumed here as-is.
             sess_tail.as_ref().unwrap().2.unwrap()
         } else if sampled && constraint.is_none() && spec_sampled_boundary_on() {

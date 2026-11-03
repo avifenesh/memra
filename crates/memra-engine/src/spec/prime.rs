@@ -85,14 +85,14 @@ pub struct MtpPrimeWalker<'a> {
     constraint: Option<&'a mut dyn SpecConstraint>,
 }
 
-/// `carried` = the prime continues a cache the worker already restored (`base > 0`: a
-/// prefix-cache hit's queued suffix, a turn continuation). A carried suffix follows the plain
-/// prefill tick's arms EXACTLY, the program law `spec_session_from_restored` documents: eager
-/// `decode_step_h` below `PRIME_MIN_T`, `prime_cache` at or above it, tokenwise everywhere
-/// under the override. GDN cold sub-floor prompts use the same eager program: the GDN
-/// `spec_target_step_h` call uses batched T=1 math, which changes the initial cache/logits
-/// and can flip greedy output before verification (#918). Longer cold primes retain the
-/// legacy override program (target steps without stops, batched non-final segments).
+/// `carried` = the prime continues a cache the worker already restored (`base > 0`: a prefix-cache
+/// hit's queued suffix, a turn continuation). A carried suffix follows the plain prefill tick's
+/// arms EXACTLY, the program law `spec_session_from_restored_deferred` documents: eager
+/// `decode_step_h` below `PRIME_MIN_T`, `prime_cache` at or above it, tokenwise everywhere under
+/// the override. GDN cold sub-floor prompts use the same eager program: the GDN
+/// `spec_target_step_h` call uses batched T=1 math, which changes the initial cache/logits and can
+/// flip greedy output before verification (#918). Longer cold primes retain the legacy override
+/// program (target steps without stops, batched non-final segments).
 fn trunk_schedule(
     tp: usize,
     prime_split: Option<usize>,
