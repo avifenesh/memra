@@ -8367,9 +8367,6 @@ impl HybridModel {
                     .into(),
             );
         }
-        if !Self::step35_prime_batch_on() {
-            return Err("step35 batched prime is disabled (MEMRA_STEP35_PRIME_BATCH=0)".into());
-        }
         // Continuation chunks are admitted (positions above carry each sequence's base). The
         // remaining restriction is genuine: a CROSS-REQUEST batch mixing sequences at different
         // positions still needs per-request queued_after to place its KV, so B > 1 keeps the
@@ -8675,6 +8672,13 @@ impl HybridModel {
         // Step35 has a dedicated concat walk: the generic core below cannot express its
         // per-layer geometry/SWA/head gate, and under PP the dedicated path is stage-scoped.
         if self.uses_sliding_gated_moe_program() {
+            // MEMRA_STEP35_PRIME_BATCH=0 disables the CROSS-REQUEST concat only, so it refuses
+            // here, at the cross-request entry. The single-session GEMM prime in
+            // `prime_cache_overlaid` calls the same core at B=1 and must keep working: that
+            // single prime is the fallback the seam restores.
+            if !Self::step35_prime_batch_on() {
+                return Err("step35 batched prime is disabled (MEMRA_STEP35_PRIME_BATCH=0)".into());
+            }
             // The cross-request driver hands whole requests (no chunk loop of its own), so each
             // sequence's request-absolute end IS its base plus its prompt length — the value
             // `ts[s]` happened to equal for the fresh B>=1 batches this caller admits, which is
