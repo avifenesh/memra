@@ -3087,9 +3087,6 @@ impl HybridModel {
         self.hyper_range_decode_ws_segments(e, topology, x, &segs, pos_d, pos, cache, ws, None)
     }
 
-    /// The TP runtime the layers in `lo..hi` were sharded with, if every one of them carries
-    /// symmetric glue; `None` means the range is plain or only partly armed, and the symmetric
-    /// walk must not be attempted over it.
     /// True when this model runs the glm5 TP walk (any layer carries a TP sidecar): the
     /// prefix-cache seams key their per-rank capture on it (`MEMRA_GLM5_TP_PREFIX`).
     pub fn glm5_tp_prefix_class(&self) -> bool {
@@ -3293,6 +3290,9 @@ impl HybridModel {
         Ok(())
     }
 
+    /// The TP runtime the layers in `lo..hi` were sharded with, if every one of them carries
+    /// symmetric glue; `None` means the range is plain or only partly armed, and the symmetric
+    /// walk must not be attempted over it.
     fn glm5_tp_rt_for(
         &self,
         lo: usize,
@@ -3314,15 +3314,6 @@ impl HybridModel {
         rt
     }
 
-    /// The SYMMETRIC workspace walk (lane/tp-symmetric-20260906). Both ranks hold the residual
-    /// stream; each runs the hc glue and the norms from its own copy; the three sharded ops take
-    /// both ranks' inputs and leave their output on both through a one-shot all-reduce. Per
-    /// layer: two crossings, both reductions. Per TOKEN: one fan-out of the entry residual and
-    /// one of the positions, which is what replaces the per-layer fan-outs.
-    ///
-    /// Kept call-for-call with the root walk on the root rank so the named-class gate compares
-    /// the same program: pre -> norm -> mixer -> post -> pre -> norm -> ffn -> post.
-    #[allow(clippy::too_many_arguments)]
     /// ONE layer of the symmetric walk, both ranks (lane/glm5-tp-sym-graph-20260907 pulled it
     /// out of the loop so the graph door can record it): attention-site glue on both ranks, the
     /// sharded mixer meeting in a one-shot all-reduce, FFN-site glue, the split MoE meeting in a
@@ -3734,6 +3725,14 @@ impl HybridModel {
         )
     }
 
+    /// The SYMMETRIC workspace walk (lane/tp-symmetric-20260906). Both ranks hold the residual
+    /// stream; each runs the hc glue and the norms from its own copy; the three sharded ops take
+    /// both ranks' inputs and leave their output on both through a one-shot all-reduce. Per
+    /// layer: two crossings, both reductions. Per TOKEN: one fan-out of the entry residual and
+    /// one of the positions, which is what replaces the per-layer fan-outs.
+    ///
+    /// Kept call-for-call with the root walk on the root rank so the named-class gate compares
+    /// the same program: pre -> norm -> mixer -> post -> pre -> norm -> ffn -> post.
     #[allow(clippy::too_many_arguments)]
     fn hyper_range_decode_ws_sym(
         &self,
