@@ -13,11 +13,6 @@
 # and reported absent when not: we do not publish other people's checkpoints, so a
 # missing vendor file is a rig-provisioning fact, not a custody failure.
 #
-# SCOPE (owner, 2026-11-03): this roster is the qwen35 class only, two NVFP4+Q5_K MTP
-# GGUFs (qwen35_moe and qwen35). A tag PASS is no model evidence for any other family or
-# format; those get their evidence from their own family gates and the daily per-device
-# regression run (docs/RELEASING.md).
-#
 # class	id	path	notes
 own	ornith-ai/ornith-1.5-35b-a3b	/data/ai-ml/hf-models/ornith15-gguf/Ornith-1.5-35B-A3B-NVFP4-Q5K-mtp.gguf	self-published NVFP4+MTP (HF Avifenesh/Ornith-1.5-35B-A3B-NVFP4-MTP-GGUF); the only endpoint serving it anywhere
 vendor	qwen/qwen3.8-27b	/data/ai-ml/hf-models/qwen38-27b-nvfp4-mtp/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf	primary billing model on box10 /data/q38
