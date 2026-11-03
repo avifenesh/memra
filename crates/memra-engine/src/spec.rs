@@ -14152,6 +14152,9 @@ impl HybridModel {
         // per-class optima). Acceptance-rate rises under the law while tokens/round falls —
         // it buys accept-% by adding rounds, and a round's fixed draft+verify cost wins.
         // K=1..8 self-consistency PASS both models with the law ON (exactness held).
+        // KEPT despite that verdict: a serve launcher exports MEMRA_SPEC_ADAPT=1 on this route
+        // (docs/FLAGS.md row), and door hygiene keeps a flag a launcher sets. Deleting the arm
+        // is the owner's call, made together with that launcher change.
         let adapt = std::env::var("MEMRA_SPEC_ADAPT").as_deref() == Ok("1");
         // floor: per-model default keyed on n_embd (gemma's tiering — models with an expensive
         // verify keep deep drafts after a miss); MEMRA_SPEC_ADAPT_FLOOR pins it everywhere.
