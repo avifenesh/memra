@@ -191,6 +191,13 @@ message ("`MEMRA_FA3=1` forces a kernel path this build does not contain: it nee
 fa3/bf16 kernels…"). Same idiom as `gemm_fatbin_bytes`'s existing refusal for
 `MEMRA_GEMM_FATBIN` — one shape for "this switch cannot work on this build."
 
+**Update, 2026-11-03:** `MEMRA_FA3=1` no longer calls `refuse_portable_force()`. That check was
+dead for it (portable builds return to naive SDPA before the switch), while every non-sm_90a
+build compiles `fa3_prefill.cu` as a stub that returns rc 3, so the force arm failed mid-request
+on sm_120a and sm_100a. It now refuses unless the build is sm_90a (`fa3_force_verdict`), at
+`Engine::new` (boot) and again at the switch. `MEMRA_FP4` still calls `refuse_portable_force()`.
+The `hybrid_forward.rs` read cited above no longer exists.
+
 **sm_89 shipped from 2026-08-23 to 2026-09-02.** The ruling above ("fix the guard, do not drop
 the arch") answered a FALSE panic claim, and the fix held: v0.107-v0.123 carried working sm_89
 and sm_90a prebuilts. **Superseded 2026-09-02 by an economics ruling, not a defect:** the
