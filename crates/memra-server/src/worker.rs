@@ -355,6 +355,21 @@ fn carried_prime_batch_eligible(plan: &memra_gguf::model_plan::ModelPlan) -> boo
         .supported
 }
 
+/// The one gate for a CONTINUATION chunk (cache primed exactly through a non-empty `fed`)
+/// joining a cross-request concat prime, shared by the interactive and dark-lane batches: a
+/// cold session (no cache hit, no source lease) on a plan whose trunk has a batched
+/// carried-prime implementation and whose rewrite bundle allows `CarriedPrime`. Any other
+/// continuation primes alone, on every lane.
+fn carried_prime_chunk_batchable(s: &Session, model: &HybridModel) -> bool {
+    s.n_cached == 0
+        && s.prefix_pin.is_none()
+        && s.cache.as_ref().is_some_and(|c| c.pos == s.fed.len())
+        // P0 coldhol guard: routed-MoE carried batches stay serial until a
+        // realistic multi-chunk + serving-decode gate qualifies the class.
+        && carried_prime_batch_eligible(&model.plan)
+        && model.rewrite_allowed(memra_gguf::execution_manifest::RewriteSurface::CarriedPrime)
+}
+
 fn concat_prime_pp_eligible(model: &HybridModel, engine: &Engine) -> bool {
     let n_trunk = (model.cfg.n_layer - model.cfg.nextn_predict_layers) as usize;
     let pp_open = memra_engine::pp::pp_cuts(n_trunk).is_some();
@@ -33546,15 +33561,7 @@ pub fn run(
                         let fresh =
                             s.fed.is_empty() && s.cache.as_ref().is_some_and(|c| c.pos == 0);
                         let whole_fresh = fresh && take == ql;
-                        let cold_chunk = s.n_cached == 0
-                            && s.prefix_pin.is_none()
-                            && s.cache.as_ref().is_some_and(|c| c.pos == s.fed.len())
-                            // P0 coldhol guard: routed-MoE carried batches stay serial until a
-                            // realistic multi-chunk + serving-decode gate qualifies the class.
-                            && carried_prime_batch_eligible(&loaded[&s.model].model.plan)
-                            && loaded[&s.model].model.rewrite_allowed(
-                                memra_gguf::execution_manifest::RewriteSurface::CarriedPrime,
-                            );
+                        let cold_chunk = carried_prime_chunk_batchable(s, &loaded[&s.model].model);
                         if s.spec.is_none() && !s.prefill_done
                             // vision sessions prime alone (mixed-embedding overlay; the
                             // concat prime has no overlay seam); capture sessions too —
@@ -34296,6 +34303,13 @@ pub fn run(
                             s.fed.len() + s.prefill_queue.len(),
                         )
                         || !s.cache.as_ref().is_some_and(|c| c.pos == s.fed.len())
+                    {
+                        continue;
+                    }
+                    // A continuation joins only under the interactive batch's own gate
+                    // (routed-MoE carried batches stay serial; cache hits prime alone).
+                    if !s.fed.is_empty()
+                        && !carried_prime_chunk_batchable(s, &loaded[&s.model].model)
                     {
                         continue;
                     }
@@ -49503,6 +49517,42 @@ mod tests {
         assert!(routed_moe_prefix_split(&qwen_next_moe));
         assert!(!carried_prime_batch_eligible(&qwen_next_moe));
         assert!(!carried_prime_batch_eligible(&gemma_swa));
+    }
+
+    /// Both cross-request prime batches gate a continuation chunk on the one shared
+    /// predicate. The dark-lane batch used to admit any session primed through `fed`, so a
+    /// routed-MoE continuation the interactive batch keeps serial (the coldhol EOS-at-26/60
+    /// class) could concat with a harvest-lane peer.
+    #[test]
+    fn both_prime_batches_gate_continuations_on_one_predicate() {
+        let src = include_str!("worker.rs");
+        let interactive = src
+            .find("let whole_fresh = fresh && take == ql;")
+            .expect("the interactive batch's candidate predicate");
+        let cold = interactive
+            + src[interactive..]
+                .find("let cold_chunk = ")
+                .expect("the interactive batch's cold_chunk");
+        assert!(
+            src[cold..].starts_with(
+                "let cold_chunk = carried_prime_chunk_batchable(s, &loaded[&s.model].model);"
+            ),
+            "the interactive batch's cold_chunk is the shared predicate"
+        );
+        let dark = src
+            .find("let mut dark_batched = false;")
+            .expect("the dark-lane batch block");
+        let formed = dark
+            + src[dark..]
+                .find("if dcand.len() >= 2 {")
+                .expect("the dark-lane batch launch");
+        let dark_cands = &src[dark..formed];
+        assert!(
+            dark_cands.contains(
+                "if !s.fed.is_empty()\n                        && !carried_prime_chunk_batchable(s, &loaded[&s.model].model)"
+            ),
+            "dark-lane continuations take the shared predicate before joining"
+        );
     }
 
     #[test]
