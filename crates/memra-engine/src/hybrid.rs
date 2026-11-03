@@ -5854,8 +5854,9 @@ impl HybridModel {
         // (Qwen3.5-9B class) stream their whole weight mass through the 34B-stride GGUF
         // layout — ncu on H100 held Max Bandwidth at 41-46% (Mem Busy 66-76%) from sector
         // overfetch. Mirrors route the m<=16 mmvq/batched decode family to the aligned-16B
-        // `_rp` twins (bit-identical). VRAM cost == the mirrored trunk (~model size), so
-        // DEFAULT ON only on the Hopper lane (80GB); MEMRA_Q8RP=1/0 overrides either way.
+        // `_rp` twins (bit-identical). VRAM cost == the mirrored trunk (~model size), so the
+        // unset default is ON on the Hopper lane and CAPACITY-KEYED elsewhere (ON iff free VRAM
+        // covers the mirror mass + 8 GiB, below); MEMRA_Q8RP=1/0 overrides either way.
         {
             let q8rp_on = match std::env::var("MEMRA_Q8RP").as_deref() {
                 Ok("0") => false,
