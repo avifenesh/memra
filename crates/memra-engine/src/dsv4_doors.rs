@@ -377,7 +377,18 @@ pub fn below_instrument_floor(row: &DoorRow, floor_pct: f64) -> bool {
 /// What to do about a door on the served path: its resolved state, then the
 /// program that admits it and whether that program can take a request.
 pub fn served_disposition(row: &DoorRow, facts: &ProgramFacts) -> DoorDisposition {
-    let state = (row.resolve)(&SERVED_PROGRAM);
+    disposition_on(row, &SERVED_PROGRAM, facts)
+}
+
+/// The same decision for any program. The load receipt asks it about the program the process
+/// actually loaded, so a line's `resolved=` and `disposition=` describe one program: a naked
+/// TP/EP boot loads no drafter, which `SERVED_PROGRAM` assumes resident.
+pub fn disposition_on(
+    row: &DoorRow,
+    program: &Dsv4Program,
+    facts: &ProgramFacts,
+) -> DoorDisposition {
+    let state = (row.resolve)(program);
     if state.engaged() {
         return DoorDisposition::Engaged;
     }
@@ -746,7 +757,8 @@ pub fn inert_default_on_doors(rows: &[DoorRow]) -> Vec<&'static str> {
 }
 
 /// One line per door for the load receipt, so an operator reading a boot log can
-/// see which doors this process actually got.
+/// see which doors this process actually got. Both the resolved state and the
+/// disposition are for `program`.
 pub fn door_receipt_lines(program: &Dsv4Program) -> Vec<String> {
     DSV4_DOORS
         .iter()
@@ -759,7 +771,7 @@ pub fn door_receipt_lines(program: &Dsv4Program) -> Vec<String> {
                 row.merged,
                 row.declared_default,
                 (row.resolve)(program),
-                served_disposition(row, &PROGRAM_FACTS)
+                disposition_on(row, program, &PROGRAM_FACTS)
             )
         })
         .collect()
@@ -1465,6 +1477,33 @@ mod tests {
             )
             .len(),
             1
+        );
+    }
+
+    /// A naked TP/EP boot loads no drafter, which `SERVED_PROGRAM` assumes resident, and
+    /// replay cadence engages there. Its receipt line must say Engaged next to resolved=On,
+    /// not the drafter-resident program's disposition.
+    #[test]
+    fn receipt_disposition_describes_the_loaded_program() {
+        let naked = Dsv4Program {
+            name: "loaded",
+            drafter_resident: false,
+            ..SERVED_PROGRAM
+        };
+        let line = door_receipt_lines(&naked)
+            .into_iter()
+            .find(|l| l.contains("door=\"replay cadence\""))
+            .expect("replay cadence row");
+        assert!(line.contains("resolved=On(DecodeOnlyM1)"), "{line}");
+        assert!(line.contains("disposition=Engaged"), "{line}");
+        let row = DSV4_DOORS
+            .iter()
+            .find(|row| row.name == "replay cadence")
+            .expect("replay cadence row");
+        assert_ne!(
+            served_disposition(row, &PROGRAM_FACTS),
+            DoorDisposition::Engaged,
+            "the served program still carries the drafter, so the red side is not vacuous"
         );
     }
 }
