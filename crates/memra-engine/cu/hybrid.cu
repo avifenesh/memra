@@ -1507,6 +1507,54 @@ extern "C" __global__ void gdn_scan_s128_b(
                              state_ins[b], state_outs[b], o + row, H, 1, scale);
 }
 
+// BANDWIDTH PROBE for the bf16-state research arm (batch-spec 2026-11-03): gdn_scan_s128_b's
+// T=1 program with the recurrent state stored as bf16 (load -> fp32 math -> store bf16). Used
+// only by gdn-state-bench to time the state traffic at half the bytes; no serving path calls it.
+extern "C" __global__ void gdn_scan_s128_b_bf16st(
+        const float* q, const float* k, const float* v, const float* g, const float* beta,
+        const __nv_bfloat16* const* state_ins, __nv_bfloat16* const* state_outs,
+        float* o, int H, float scale) {
+    constexpr int S_v = 128, WARP = 32, rows_per_lane = S_v / WARP;
+    const int b = blockIdx.y;
+    const size_t row = (size_t)b * H * 128;
+    const size_t sc = (size_t)b * H;
+    const int h = blockIdx.x;
+    const int lane = threadIdx.x;
+    const int col = blockIdx.z * blockDim.y + threadIdx.y;
+    if (col >= S_v) return;
+    const __nv_bfloat16* st = state_ins[b] + ((size_t)h * S_v + col) * S_v;
+    float s_shard[rows_per_lane];
+    #pragma unroll
+    for (int r = 0; r < rows_per_lane; r++) s_shard[r] = __bfloat162float(st[r * WARP + lane]);
+    const float* q_t = q + row + (size_t)h * S_v;
+    const float* k_t = k + row + (size_t)h * S_v;
+    const float* v_t = v + row + (size_t)h * S_v;
+    float g_val = expf(g[sc + h]);
+    float beta_val = beta[sc + h];
+    float k_reg[rows_per_lane], q_reg[rows_per_lane];
+    #pragma unroll
+    for (int r = 0; r < rows_per_lane; r++) {
+        int i = r * WARP + lane;
+        k_reg[r] = k_t[i]; q_reg[r] = q_t[i];
+    }
+    float kv_shard = 0.0f;
+    #pragma unroll
+    for (int r = 0; r < rows_per_lane; r++) kv_shard += s_shard[r] * k_reg[r];
+    float kv_col = warp_reduce_sum<WARP>(kv_shard);
+    float delta_col = (v_t[col] - g_val * kv_col) * beta_val;
+    float attn_partial = 0.0f;
+    #pragma unroll
+    for (int r = 0; r < rows_per_lane; r++) {
+        s_shard[r] = g_val * s_shard[r] + k_reg[r] * delta_col;
+        attn_partial += s_shard[r] * q_reg[r];
+    }
+    float attn_col = warp_sum_down<WARP>(attn_partial);
+    if (lane == 0) o[row + (size_t)h * S_v + col] = attn_col * scale;
+    __nv_bfloat16* so = state_outs[b] + ((size_t)h * S_v + col) * S_v;
+    #pragma unroll
+    for (int r = 0; r < rows_per_lane; r++) so[r * WARP + lane] = __float2bfloat16(s_shard[r]);
+}
+
 // ---- PACKED T-ROW twins (lane/dspark-gdn-packed, 2026-09-08) ----
 // The batched-class spec verify ran the three per-row state kernels once PER DRAFT ROW (48
 // layers x vt rows x 3 launches per round; measured 2026-09-07 on the 5090: verify 14.1 ms at
