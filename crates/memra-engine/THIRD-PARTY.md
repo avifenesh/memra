@@ -8,7 +8,6 @@ ggml-decoupled and self-contained. Affected translation units:
 - `cu/mmq_q8_0.cu`, `cu/mmq_q4_0.cu`, `cu/mmq_q45k.cu`, `cu/mmq_iq_experts.cu`,
   `cu/mmq_fp4.cu`, `cu/mmq_nvfp4_w4a8.cu`, `cu/mmq_nvfp4_f8f4.cu`, `cu/mmq_fp8_blk.cu`
   (mul_mat_q tile/MMA structure)
-- `cu/fattn_vendor.cu` (flash_attn_ext MMA-f16 structure)
 
 llama.cpp is distributed under the MIT license:
 

@@ -214,8 +214,6 @@ Two artifact kinds (build.rs:251-257, 337-458, 583-642):
 
 Facts worth knowing before "cleaning up":
 
-- **`fattn_vendor.cu` is NOT BUILT** — appears nowhere in build.rs or src/; header says
-  "WIP SKELETON" (fattn_vendor.cu:1). Zero exported symbols.
 - **`mma_tile.cuh` is not in any engine build**: no TU in cu/ or src/ includes it, so it adds
   no symbol to any fatbin. It is NOT dead: the standalone DSV4 dense tensor-core probe
   `tools/dsv4-dense-tc-gate.cu` includes it, and so do `tools/dsv4-dense-tc-gate-r4.cu` and
