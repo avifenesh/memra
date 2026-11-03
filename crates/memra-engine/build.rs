@@ -547,7 +547,10 @@ fn main() {
             // builds everywhere; every non-120a arch takes the fail-closed __trap() arm).
             "cu/mmq_q8_0_f32acc.cu",
             // MLA (multi-head latent attention) forward: the glm-dsa / glm5_next attention
-            // core. Portable CUDA C (no tensor-core intrinsics, no arch stub needed).
+            // core. Its only tensor-core code is the bf16 `mma.sync` m16n8k16 / `ldmatrix`
+            // k-pool scorer with `cp.async` staging (`memra_mla_kpool_score_tc_kernel`):
+            // sm_80-class forms every target arch (89, 90a, 100a, 120a) has, so the TU needs
+            // no arch stub.
             // Deliberately NOT compiled -fmad=false like dsv4_gpu.cu below: that flag serves
             // that lane's bit-parity-with-oracle contract, while the MLA gates are maxdiff
             // bounds (the online-softmax tiling already reorders accumulation vs the CPU
