@@ -42,18 +42,21 @@ Eight fixed prompts, 384 tokens each, greedy (T=0) and sampled (T=1, seed 1234),
 
 48 real coding-agent turns, thinking on, T=1, one boot (`cells.jsonl`). The arm does not save bytes, so these numbers carry its acceptance and scheduling effects only.
 
-| c | bf16-rounded state | fp32 base, same sequence (`base-full/`) |
+| c | bf16-rounded state (`cells.jsonl`) | fp32 base, same harness, same box, next boot (`base-full-cells.jsonl`) |
 |---:|---:|---:|
-| 1 | 19.99 | see below |
-| 2 | 26.91 | |
-| 4 | 37.68 | |
-| 8 | 52.58 | |
-| 16 | 73.51 | |
-| 32 | 76.18 | |
+| 1 | 19.99 | 22.31 |
+| 2 | 26.91 | 27.71 |
+| 4 | 37.68 | 38.97 |
+| 8 | 52.58 | 62.30 |
+| 16 | 73.51 | 75.95 |
+| 32 | 76.18 | 78.60 |
 
-The fp32 base column comes from the same harness and sequence on the same box right after this arm. It is filled in the batch-spec copy of this file once that run lands.
+One run each. These numbers do not isolate bf16 state:
 
-At c=8 the cost gate chose K=1 speculation several times. The verdicts read "predicted 60.7 vs plain 58.5 tok/s", and plain at c=8 had served 61.8 in the lever-3 run. This happens once c1..c4 have filled the acceptance history. The fp32 base run in the same sequence shows whether it is the arm or the gate.
+- **Order confound.** The bf16 boot ran the 16-prompt coherence probe (8 of them greedy, near-full acceptance) before the cells. That filled the cost gate's acceptance history. At n=8 it then chose K=1 speculation six times (for example "predicted 60.7 vs plain 58.5 tok/s"). The fp32 base boot had no probe first and chose plain at every n=8 verdict.
+- **No byte saving.** The arm cannot save bytes, so any speed difference is acceptance and gate behavior.
+
+Read the speed case from the bandwidth probe below, not from this table. A clean served A/B needs the real bf16-storage implementation and both arms booted the same way.
 
 ## Speed: bf16-stored state, measured (GB10)
 
@@ -79,3 +82,9 @@ Projected on the measured ticks, assuming no other change:
 On the RTX 5090 (9B), the same probe also gives 0.50x from B=8 up.
 
 The Flash-Next mechanism (more prefix-cache blocks) does not apply to this cell. memra's prefix cache already hits 99.6% of prompt tokens in the GB10 agentic cell (budget 52 GB). The gain here is the per-step state bytes, as in the SGLang 27B result.
+
+## Verdict for the owner
+
+- **Quality:** in band. HumanEval 160/164 and GSM8K 97/100 against 158/97. Answers stay coherent at T=0 and T=1. Greedy streams diverge on long answers, as expected from a rounding change.
+- **Speed:** the batched GDN scan halves at the part's bandwidth ceiling: 22.7 -> 11.5 ms per step at 16 sessions, 45.3 -> 23.0 at 32. That projects to -6.4% to -9.0% per decode tick at c16/c32 on GB10, with nothing in this cell coming from prefix-cache capacity.
+- **To claim it:** a real bf16-resident state. That means the bf16 state class in every GDN state kernel (decode, batched, verify with snapshots, chunked prime, tensor-core chunk state), the snapshot and rollback copies, the prefix-cache entries and the admission byte accounting, then a clean served A/B. Not built; the default stays fp32.
