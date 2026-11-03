@@ -818,18 +818,6 @@ impl HybridModel {
         let pos_d = e.htod_i32(&[pos as i32])?;
         // O-PROJ TAIL deferral eligibility: this walk flows into residual_norm_ffn.
         let _oproj_tail_scope = crate::tp::oproj_tail_scope();
-        // RANK0 STREAM MERGE (MEMRA_RANK0_MERGE=1): rank0 shares dev0's PRIMARY context
-        // with e (cudarc primary_ctx::retain), so its per-layer work can ride e's stream —
-        // every e<->rank0 event hop becomes program order. Scheduling-only: BIT-IDENTICAL.
-        let _r0merge = if crate::tp::rank0_merge_on() && self.uses_sliding_gated_moe_program() {
-            Some(memra_runtime::rank0_redirect_scope(
-                e.ctx().ordinal(),
-                e.gpu.main_stream().clone(),
-                e.gpu.blas(),
-            ))
-        } else {
-            None
-        };
 
         // embed the single token -> [1, n_embd]
         let mut x = e.htod(&self.embd.try_gather(n_embd, &[token])?)?;
@@ -1115,16 +1103,6 @@ impl HybridModel {
 
         // O-PROJ TAIL deferral eligibility (see decode_step_h).
         let _oproj_tail_scope = crate::tp::oproj_tail_scope();
-        // RANK0 STREAM MERGE (see decode_step_h).
-        let _r0merge = if crate::tp::rank0_merge_on() {
-            Some(memra_runtime::rank0_redirect_scope(
-                e.ctx().ordinal(),
-                e.gpu.main_stream().clone(),
-                e.gpu.blas(),
-            ))
-        } else {
-            None
-        };
         // Per-token pos buffers staged BEFORE the chain (the only H2D the chain needs).
         let mut pos_bufs = Vec::with_capacity(k);
         for step in 0..k {
