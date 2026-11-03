@@ -13,7 +13,7 @@ Bench conventions:
 - **Exactness:** kernel-check bit-bad=0 and decode token fingerprints (TOKFP) equal between arms.
 - **Interleaving:** "3+3" means three runs per arm, interleaved in both orders.
 
-SHAs on `batch-spec` are pushed. Rejected arms live on `research/*` branches on origin, so every SHA stays reachable. The lever-1 sweep kernels were never committed; only their receipt survives.
+SHAs on `batch-spec` are pushed. The served tensor-core build was 35897adf14, the same code tree as 0e914ccf4c, kept on `research/tc-b32-wip`. Rejected arms live on `research/*` branches on origin, so every SHA stays reachable. The lever-1 sweep kernels were never committed; only their receipt survives.
 
 | # | lever | config / flags | hw | n | baseline | candidate | sha | receipt | verdict |
 |---:|---|---|---|---|---|---|---|---|---|
@@ -40,4 +40,5 @@ SHAs on `batch-spec` are pushed. Rejected arms live on `research/*` branches on 
 | 16s | same, served | boot probe picked the tensor-core tier | GB10 | 1 run | 79.0 tok/s c32 (lever 3) | 83.6 | 0e914ccf4c | gb10-agentic/tc-b32/ | adopted (+5.8% served c32) |
 | 16c | same at the b16 tier | MEMRA_MMVQ_TC=1 at mcols 16 | GB10 | 2+2 | 128.3 (B16 d2048) | 149.1 | 0e914ccf4c parent tree (v2, step-tc) | gb10-tc/ab-b16.txt | rejected (b16 stays dp4a) |
 | 17 | bf16 GDN state, rounding emulation | MEMRA_GDN_STATE_BF16=1 (round on store, fp32 bytes) | GB10 | panel 264; agentic 1 run | 158/164, 97/100 (fp32) | 160/164, 97/100 | cdda787cde (research/gdn-state-bf16) | GDN-STATE-BF16.md (branch) | quality in band; served speed confounded |
-| 18 | bf16 GDN state, real storage | MEMRA_GDN_STATE_BF16=1 (bf16 in first half of each fp32 buffer) | GB10 | see GDN-STATE-BF16.md | | | c3356b88b3 (research/gdn-state-bf16) | GDN-STATE-BF16.md (branch) | pending (served A/B running) |
+| 18 | bf16 GDN state, real storage | MEMRA_GDN_STATE_BF16=1 (bf16 in the first half of each fp32 buffer) | GB10 | identity; decode 3+3, 1+1; served 1 run per arm | 247.44 (B32 d2048) / 173.48 (B16 d12288); served 22.34/29.02/37.64/62.59/76.82/79.23 (c1..c32) | 225.38 / 162.07; served 23.05/23.80/39.91/60.22/77.90/80.60 | c3356b88b3, receipts 2d8617de0f (research/gdn-state-bf16) | GDN-STATE-BF16.md (branch) | research arm, owner decides: exact to the emulation (TOKFP 73fe2628), decode -8.9%/-6.6%, served -18%..+6% by c |
+| 19 | b16 tensor-core form (v1 kernel, 2 butterfly levels in smem) | MEMRA_MMVQ_TC=1 at mcols 16/32 | GB10 bench | 1 | 6.52 (m16) / 9.93 (m32) | 7.21 / 8.41 | ca62d9df98 lineage (research/tc-b32-wip) | gb10-tc/ (step-tc-v1, superseded) | superseded by v2 (registers fold two levels) |
