@@ -2402,7 +2402,7 @@ without a new receipt that justifies it.
 | `MEMRA_Q40_BV` | forced `ms`/`sm`/`la` q4_0 batched-verify arms ALL FLAT/NEGATIVE, never auto; the auto base/r2 fill rule stays, the force seam goes | 2026-07-13 |
 | `MEMRA_B4_X2` | bf16 b4 grid-halving twin RECEIPTED NEGATIVE (-0.2) at out_f=4096 | step TP receipts, 2026-08 |
 | `MEMRA_FA_P1` | non-windowed hd256 prefill P1 arm "opt-in until the qwen battery", never qualified since 2026-07 | `cu/flash_attn.cu` header history |
-| `MEMRA_FA_HOIST` | `1` -2.3%, `2` FLAT; the `_h`/`_hc` decode-attention instantiations went with it (the `HOIST_ALIGN` template branch stays compile-time false) | step TP fa ladder, 2026-08 |
+| `MEMRA_FA_HOIST` | `1` -2.3%, `2` FLAT; the `_h`/`_hc` decode-attention instantiations went with it, and the never-instantiated `HOIST_ALIGN`/`CAST_LD` template branches of `fa_dec_v3_walk_u` were deleted 2026-11-03 | step TP fa ladder, 2026-08 |
 | `MEMRA_GRAPH_IFLAG` / `MEMRA_GRAPH_CAPTIME` | Q1 mem-node refactor diagnostics; the refactor was killed by the split they measured (instantiate 4.4 of 34.4 ms), `priority`/`upload` measured FLAT; `graph-allocfree-probe` bin removed | `research/graph-allocfree-20260805/` |
 | `MEMRA_SEL_MR` / `MEMRA_SEL_STREAM` | v1-layout NVFP4 selected-row probes: MR slower (40.8 vs 42.9 tok/s), STREAM geometry-limited; the slot-major reader is layout-chosen | 2026-08-21 |
 | `MEMRA_FENCE_RANK1` | peer doorbell ring RECEIPTED NEGATIVE (75.13/75.25 vs 75.89 base); `memra_ring_flag` kernel removed, `MEMRA_FENCE_MEMOPS` stays (NVLink reason stated) | step TP join receipts, 2026-08-23 |
