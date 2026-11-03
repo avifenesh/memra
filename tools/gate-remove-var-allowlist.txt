@@ -40,6 +40,7 @@ crates/memra-engine/tests/glm5_moe_grouped_prefill_gpu.rs:MEMRA_MOE_TRACE # trac
 crates/memra-engine/tests/glm5_moe_grouped_prefill_gpu.rs:MEMRA_MOE_WEIGHT_TRACE # trace budget cleanup
 crates/memra-engine/tests/glm5_tparallel_verify_gpu.rs:MEMRA_FRSPEC_TRIM # path artifact unset
 crates/memra-engine/tests/glm5_tparallel_verify_gpu.rs:MEMRA_GLM5_VERIFY_BATCH # None arm test
+crates/memra-engine/tests/glm5_decode_graph_capture_gpu.rs:MEMRA_GLM5_GRAPH_CAPTURE_FAULT # disarms a fault-injection plan after the refused-capture arm; unset means no fault
 crates/memra-engine/tests/glm5_spec_session_gpu.rs:MEMRA_FRSPEC_TRIM # untrimmed fixture load
 crates/memra-engine/tests/glm5_spec_session_gpu.rs:MEMRA_GLM5_VERIFY_WS # test teardown
 crates/memra-engine/tests/glm5_dflash_session_gpu.rs:MEMRA_GLM5_DFLASH # drafter dir teardown
