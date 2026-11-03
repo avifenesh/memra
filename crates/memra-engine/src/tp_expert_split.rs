@@ -35,12 +35,16 @@
 use crate::model::HostExps;
 use memra_gguf::GgmlType;
 
-/// Block size for a staged expert qtype, from the ONE table that defines them
+/// Block size for a staged expert qtype, or for a 2D projection the glm5 TP walk K-slices
+/// (`glm5_tp::k_slice_bytes`), from the ONE table that defines them
 /// (`GgmlType::block_and_type_size`). An unknown qtype returns `None` and its caller refuses,
-/// because a split that guesses a block size slices through one.
+/// because a split that guesses a block size slices through one. `Q4_0` is never a staged
+/// expert type (`model::staged_expert_qtype`); it is here for the K slice, which sliced it on
+/// block-aligned halves before the block count existed.
 pub(crate) fn qtype_block(qtype: i32) -> Option<u64> {
     let ty = match qtype {
         q if q == crate::QT_Q8_0 => GgmlType::Q8_0,
+        q if q == crate::QT_Q4_0 => GgmlType::Q4_0,
         q if q == crate::QT_Q2_K => GgmlType::Q2_K,
         q if q == crate::QT_Q3_K => GgmlType::Q3_K,
         q if q == crate::QT_Q4_K => GgmlType::Q4_K,

@@ -2297,6 +2297,13 @@ mod tests {
             k_slice_bytes(crate::QT_BF16, 192, 96, &(48..96)),
             Ok((96, 96))
         );
+        // Q4_0 (block 32, 18 bytes) keeps slicing on block-aligned halves, as it did before
+        // the block count: 4096 / 32 * 18 = 2304 bytes per row; its half-block cut refuses
+        assert_eq!(
+            k_slice_bytes(crate::QT_Q4_0, 2304, 4096, &(2048..4096)),
+            Ok((1152, 1152))
+        );
+        assert!(k_slice_bytes(crate::QT_Q4_0, 54, 96, &(0..48)).is_err());
         // a code with no known block size refuses instead of guessing
         assert!(k_slice_bytes(crate::QT_NVFP4_MODELOPT, 64, 128, &(0..64)).is_err());
     }
