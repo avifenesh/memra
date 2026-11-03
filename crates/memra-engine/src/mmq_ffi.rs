@@ -3163,16 +3163,6 @@ impl Engine {
         Ok((act, scales))
     }
 
-    /// One projection through the grouped f16 lane: dequant the active experts' rows to an
-    /// f16 workspace, then ONE grouped GEMM over the CSR groups (variable m per expert).
-    /// y = f32 [n_pairs, out_f] pair-major — same layout as mmq_iq_experts.
-    /// MEMRA_MOE_F16G=1: cublasGemmGroupedBatchedEx (+ h2f pass + per-projection sync — the
-    /// grouped API runs on internal streams unordered with ours, round-47 ledger).
-    /// MEMRA_MOE_F16G=2: single-kernel grouped GEMM on the engine stream (round 49) — the
-    /// row scale folds into the kernel epilogue; no f16 C, no h2f, NO sync (ordered by
-    /// construction). f16-MIRROR numeric class either way (argmax/spec gated, not
-    /// byte-identity). Errors on unsupported qtype (caller keeps the MMQ arm as fallback).
-    #[allow(clippy::too_many_arguments)]
     /// Bind the RUNTIME API's current device to `ordinal`. Every raw `<<<>>>` launch in the
     /// grouped-MoE FFI follows this, not cudarc's pushed driver context — mandatory before
     /// calling the FFI on a non-root rank engine (the TP2 grouped prime), a mismatch is
@@ -3185,6 +3175,15 @@ impl Engine {
         Ok(())
     }
 
+    /// One projection through the grouped f16 lane: dequant the active experts' rows to an
+    /// f16 workspace, then ONE grouped GEMM over the CSR groups (variable m per expert).
+    /// y = f32 [n_pairs, out_f] pair-major — same layout as mmq_iq_experts.
+    /// MEMRA_MOE_F16G=1: cublasGemmGroupedBatchedEx (+ h2f pass + per-projection sync — the
+    /// grouped API runs on internal streams unordered with ours, round-47 ledger).
+    /// MEMRA_MOE_F16G=2: single-kernel grouped GEMM on the engine stream (round 49) — the
+    /// row scale folds into the kernel epilogue; no f16 C, no h2f, NO sync (ordered by
+    /// construction). f16-MIRROR numeric class either way (argmax/spec gated, not
+    /// byte-identity). Errors on unsupported qtype (caller keeps the MMQ arm as fallback).
     #[allow(clippy::too_many_arguments)]
     // allow: the parameter list mirrors the kernel/FFI/call contract; bundling into a struct is a refactor, not a lint fix
     #[allow(clippy::manual_is_multiple_of)] // allow: divisor is runtime-derived; the modulo form keeps a zero divisor loud (a panic), where is_multiple_of would return false silently
