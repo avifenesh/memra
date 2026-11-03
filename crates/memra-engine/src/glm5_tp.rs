@@ -2087,9 +2087,10 @@ impl Glm5TpSplitExps {
     }
 }
 
-/// `MEMRA_TP_AR_1STAGE=1` (lane/tp-ar-1stage-20260906, default OFF, decide-by 2026-09-20): the
-/// walk's two REDUCE sites take the one-shot all-reduce (`memra_tp_ar_1stage`) instead of a
-/// return-to-root hop.
+/// `MEMRA_TP_AR_1STAGE=1` (lane/tp-ar-1stage-20260906, default OFF in code): the walk's two
+/// REDUCE sites take the one-shot all-reduce (`memra_tp_ar_1stage`) instead of a return-to-root
+/// hop. The symmetric walk the served TP-2 launcher arms runs only with it on
+/// ([`Glm5TpRt::ar_1stage_available`]), so it stays (docs/FLAGS.md).
 ///
 /// WHY. A reduce done as a push plus a fold costs 4 kernel launches and 8 cross-context CUDA event
 /// operations, which measured 20-26 us for 16 KB on a pair whose fabric moves 956 GB/s: host
@@ -2101,8 +2102,9 @@ pub fn tp_ar_1stage_on() -> bool {
     std::env::var("MEMRA_TP_AR_1STAGE").as_deref() == Ok("1")
 }
 
-/// `MEMRA_GLM5_TP_EXPERT_SPLIT=1` (lane/tp-expert-split-20260906, default OFF, decide-by
-/// 2026-09-20): shard every expert across the TP ranks instead of assigning whole experts.
+/// `MEMRA_GLM5_TP_EXPERT_SPLIT=1` (lane/tp-expert-split-20260906, default OFF in code): shard
+/// every expert across the TP ranks instead of assigning whole experts. The symmetric walk the
+/// served TP-2 launcher arms runs only with it on, so it stays (docs/FLAGS.md).
 ///
 /// NOT byte-identical, and the split is where: `gate`/`up` are row splits, so every output
 /// element stays one full-K dot over the same bytes and that half is bit-identical, as is the
