@@ -16144,8 +16144,8 @@ impl Engine {
 
     /// `MEMRA_HC_MIXES_KERNEL=1` (lane/hc-mixes-gemv-20260905): the hyper-connection mixes
     /// projection at t=1 through the native `hc_mixes_gemv_f32` kernel instead of cuBLASLt.
-    /// NUMERIC CLASS (a different, fixed summation order), deterministic run to run. Default OFF
-    /// pending its model-scale row.
+    /// NUMERIC CLASS (a different, fixed summation order), deterministic run to run. Default ON on
+    /// sm_100a builds through the B200 posture, OFF elsewhere; `=0` is the rollback.
     pub fn hc_mixes_kernel_on() -> bool {
         static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
         *ON.get_or_init(|| {
