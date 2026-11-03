@@ -5385,8 +5385,8 @@ impl HybridModel {
         // Returning Err (not a panic) is what the capture sites already handle by degrading to
         // the eager chain (`mtp_head_forward_dev` -> `mtp_step35_attn`).
         // ROUND-STREAM stays refused EITHER WAY: the stream VERIFY has no step35 twin (see the
-        // step35_verify refusal), so a stream capture that succeeded here would only move the
-        // failure from capture time (graceful stream-off) to serve time (a failed round).
+        // step35 refusal in `verify_layers`), so a stream capture that succeeded here would only
+        // move the failure from capture time (graceful stream-off) to serve time (a failed round).
         if let Some(g) = mtp.step35.as_ref() {
             if stream_pack.is_some() {
                 return Err(
@@ -10986,6 +10986,15 @@ impl HybridModel {
         Box<dyn std::error::Error>,
     > {
         cache.ensure_usable("decode_step_t_aux2")?;
+        // step35's served verify is `step35_verify_batch_layers`; this per-layer walk has no
+        // twin of it, and the generic `full_attn_verify` geometry is wrong for that arch.
+        if self.sliding_gated_moe_batch_program() {
+            return Err(
+                "decode_step_t_aux2 has no step35 arm: step35 verifies through \
+                        step35_verify_batch_layers"
+                    .into(),
+            );
+        }
         let cfg = &self.cfg;
         let n_embd = cfg.n_embd as usize;
         let eps = cfg.rms_eps;
@@ -11123,91 +11132,6 @@ impl HybridModel {
         ))
     }
 
-    /// step35 SPEC-VERIFY attention over T query tokens — a per-row REPLAY of the eager
-    /// `step35_decode_attn`.
-    ///
-    /// WHY A REPLAY AND NOT A BATCHED TWIN. The verify's whole job is to be bit-identical to what
-    /// the eager decode would have computed for the same tokens; that is what makes greedy spec
-    /// decode exact (run-spec asserts token identity for K=1..8). Every other verify arm in this
-    /// file earns that identity by carefully mirroring dispatch (`matmul_decode_exact` to force
-    /// MMVQ at any m, per-layer `ffn_fuse` mirroring, per-row `fa_decode` key bounds). step35
-    /// stacks FOUR more per-layer degrees of freedom on top of that — per-layer `n_head`
-    /// (64 full / 96 SWA), per-layer rotary width (64 full / 128 SWA), per-layer rope base, and a
-    /// SEPARATE `attn_gate` tensor whose projection shares the attn-normed input — and its SWA
-    /// layers attend through a token-OFFSET view whose offset is a function of the ABSOLUTE
-    /// position of each query row. A batched twin would have to reproduce all of that AND the
-    /// per-row offset in one launch; the offset alone rules out the existing rows kernels (they
-    /// take one `base_len`, not a per-row offset).
-    ///
-    /// So this arm calls the eager path itself, once per row, on the same cache. Identity is then
-    /// true BY CONSTRUCTION rather than by mirroring: row r runs exactly the kernel sequence that
-    /// eager decode step r runs (same projections, same q8_1 fusion decision, same append, same
-    /// view arithmetic, same `fa_decode_kvmod`, same gate), because it IS that code. Cost: T x the
-    /// eager decode mixer instead of one batched pass — the same trade the generic arm's `else`
-    /// per-row loop already accepts when `fa_rows_eligible` says no. Correctness first; a batched
-    /// step35 twin is a perf lane's job and must be gated against this arm.
-    ///
-    /// The `h_q8` pre-quantized pair from the caller's fused norm is NOT forwarded: it is a
-    /// T-row buffer and `step35_decode_attn`'s `pre_q` contract is one row. Instead each row's
-    /// f32 `h` slice is handed over and the callee re-derives its own q8_1 exactly as eager decode
-    /// does (`quantize_q8_1(h, 1, n_embd)`) — which is the dispatch being mirrored. Callers that
-    /// took the fused arm therefore MUST still pass a live `h`; `step35_verify` asserts that.
-    #[allow(clippy::too_many_arguments)]
-    fn step35_verify(
-        &self,
-        e: &Engine,
-        fa: &FullAttnLayer,
-        h: &CudaSlice<f32>,
-        h_q8: Option<(&CudaSlice<i8>, &CudaSlice<f32>)>,
-        t: usize,
-        cache: &mut Cache,
-        il: usize,
-    ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
-        let n_embd = self.cfg.n_embd as usize;
-        // The fused (h-less) attn-norm arm hands `h` as a zero-length placeholder. This arm needs
-        // the f32 rows, so the caller must not take that lever for step35. The one caller,
-        // `decode_step_t_aux2`, always norms to f32 (`verify_layers` returns step35 into its
-        // batch walk before the generic loop); asserted here so a future caller cannot regress
-        // it into silently reading an empty buffer.
-        assert_eq!(
-            h.len(),
-            t * n_embd,
-            "step35_verify needs the f32 attn-normed rows ([t*n_embd]); the caller took the \
-             fused q8-only norm arm (h_q8={}) — step35 must stay on the unfused arm",
-            h_q8.is_some()
-        );
-        // ROW WIDTH IS n_embd, NOT n_head*head_dim: `step35_decode_attn` returns the mixer output
-        // AFTER `wo`, so a row is [n_embd] — the same contract the generic arm's
-        // `matmul_decode_exact(&fa.wo, &attn_g, t)` return has. Sizing this buffer from the
-        // per-layer head geometry (8192 on full-attn, 12288 on SWA) instead overran the row on the
-        // FIRST copy and panicked inside `copy_into`'s `CudaView::slice` unwrap
-        // (raw/mtp-bt-20260806T212127Z.log frames 12-13).
-        let mut out = vbuf(e, t * n_embd)?; // each row fully written by the copy below
-        for r in 0..t {
-            // Absolute position of this query row. `cache.pos` is the committed length at round
-            // start and every row before r has already been appended by this loop, so the r-th
-            // verify token sits at cache.pos + r — the same position eager decode would give it.
-            let pos_d = e.htod_i32(&[(cache.pos + r) as i32])?;
-            let mut h_row = vbuf(e, n_embd)?; // fully written by copy_view_into
-            e.copy_view_into(
-                &mut h_row,
-                0,
-                &h.slice(r * n_embd..(r + 1) * n_embd),
-                n_embd,
-            )?;
-            // THE eager decode mixer: appends this row's K/V at kvl.len, advances it, then
-            // attends over the (SWA-offset) view. Post-`wo`, same contract as this fn returns.
-            let o = self.step35_decode_attn(e, fa, il, &h_row, None, &pos_d, cache)?;
-            debug_assert_eq!(
-                o.len(),
-                n_embd,
-                "step35_decode_attn returns post-wo [n_embd]"
-            );
-            e.copy_into(&mut out, r * n_embd, &o, n_embd)?;
-        }
-        Ok(out)
-    }
-
     /// Full-attention mixer over T query tokens with a GROWING resident KV (verify path, §D.3).
     /// Appends the T new K/V columns to cache.kv[il] then attends causally over [0..len) via
     /// fa_prefill. Token-major [T, kv_dim] projection layout == cache row layout (single copy).
@@ -11224,23 +11148,6 @@ impl HybridModel {
         il: usize,
         stream_ctr: Option<&CudaSlice<i32>>,
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
-        // step35: the generic geometry below is wrong for this arch (per-layer n_head, partial
-        // per-layer rope, the SWA offset view, and a SEPARATE head-wise gate tensor), so it takes
-        // its own arm. A verify that silently computes different attention than decode defeats the
-        // whole self-consistency gate, so the arm is a per-row REPLAY of `step35_decode_attn`
-        // rather than a batched twin — see `step35_verify` for why that is the exactness-correct
-        // shape and not laziness.
-        if self.sliding_gated_moe_batch_program() {
-            if stream_ctr.is_some() {
-                return Err(
-                    "step35 has no ROUND-STREAM verify arm (the device-counter _dc twins \
-                            cannot express the SWA offset KV view; same root cause as the dc \
-                            decode refusal) — run spec without the stream arm"
-                        .into(),
-                );
-            }
-            return self.step35_verify(e, fa, h, h_q8, t, cache, il);
-        }
         let cfg = &self.cfg;
         let geometry = cfg.full_attention_geometry_at(il as u32);
         let n_head = geometry.n_head as usize;
