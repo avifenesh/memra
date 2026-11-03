@@ -1836,6 +1836,20 @@ is the archive; a door returns only with a receipt.
 | Standalone `dsv4-full-token-control-gate` (no env flag) | Model-free prerequisite fixture for full-token replay: `cu/dsv4_replay_control.cuh` (`dsv4_replay_control_kernel`) and `tools/dsv4-full-token-control-gate.cu`, built outside every engine target. Default OFF, decide-by 2026-09-22, kept only for the root qualification decision. That decision went to the engine's own `Dsv4Gpu::arm_full_token_replay` in `dsv4_gpu.rs`, served on TP/EP plain requests since #710 with its own gates, so the fixture was superseded and nothing ran it. Deleted with both files and their KERNELS rows. | `research/dsv4f-full-token-replay-20260908/RESULT.md`; served replay rows above |
 | `MEMRA_DUAL_ILV` | Interleaved gate/up dual-SiLU matvec twin (`matvec_bf16_dual_silu_ilv`). The env read and its FLAGS row were gone before the 2026-09-01 catch-up sync, with no receipt in the tree; the kernel stayed unlaunched until this sweep deleted it. | no receipt; `matvec_bf16_dual_silu` is the shared-expert kernel |
 
+The same sweep deleted the compile-time-T tcol twins, `matvec_bf16_qkvg_tcol_t{2,4,8}` and
+`matvec_bf16_b4_tcol_t{2,4,8}`, with the unlaunched runtime-T `matvec_bf16_f32acc_tcol`. The twins
+had no door and were never dispatched: picking a kernel by the live batch width switches a
+request's numeric program as peers arrive or retire, and no serving-shape gate qualified that
+crossing (Hermes `64fa2b55baf0d887`; the `MEMRA_STEP_TP_BATCH` row). Their measured win is kept
+here so the lever can be rebuilt. The runtime-T `matvec_bf16_b4_tcol` indexes `acc[c]`
+dynamically and spills its accumulators to local memory, which made the weight walk
+latency-bound: 283 us against the t=1 kernel's 33 us at t=8. Full unrolling kept every column's
+FP chain bit-identical to the t=1 kernel with the accumulators in registers. On the
+`MEMRA_STEP_TP_BATCH` ladder the twins moved B=8 at 4400 context from 93.3 to 95.9 tok/s
+(83.4 ms/tick), with TOKFP identity at each rung. A rebuild restores them from git history and
+lands with a serving-shape bit-identity gate across batch-width changes (AGENTS.md, "One numeric
+program per request").
+
 ## Removed doors, 2026-11-02 (GB10 unified-memory prefix booking seam, booking kept)
 
 `MEMRA_UNIFIED_PREFIX_BOOKING` (`0` = admission stops booking the prefix cache's allowed growth on
