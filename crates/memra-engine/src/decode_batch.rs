@@ -1387,10 +1387,12 @@ impl HybridModel {
         // verify-exact scope plus the decode-wide flag (`Engine::set_decode_wide`). The NVFP4
         // split-plane singles and group4 stream each weight once (rpcs8, four 8-column blocks
         // per row-block); every other class runs as bit-identical 16-column halves.
-        // MEMRA_DECODE_TC=1 (research arm, default OFF): 16..32-row ticks leave the exact
+        // MEMRA_DECODE_TC=1 (research arm, default OFF): 17..32-row ticks leave the exact
         // scope, so their matmuls take the tensor-core GEMM tier (MMQ / F8F4) instead of the
         // dp4a decode class. NOT bit-identical to isolated decode; token divergence measured.
-        let tc = crate::Engine::decode_tc_on() && b_n >= 16;
+        // Only the 17..32-row waves: GB10 measured the GEMM tier slower at 16 rows (196.5 vs
+        // 128.3 ms/tick) and faster at 32 (232.2 vs 247.8).
+        let tc = crate::Engine::decode_tc_on() && b_n > 16;
         let exact16 = !tc && b_n > 8 && b_n <= 32 && self.decode_batch_exact16_ok();
         let wide = exact16 && b_n > 16;
         assert!(

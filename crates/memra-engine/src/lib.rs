@@ -19054,7 +19054,7 @@ impl Engine {
     ) -> Result<Option<Vec<CudaSlice<f32>>>, Box<dyn std::error::Error>> {
         use crate::model::GpuTensor;
         if !on
-            || (Self::decode_tc_on() && m >= 16 && !self.verify_exact_on())
+            || (Self::decode_tc_on() && m > 16 && !self.verify_exact_on())
             || !(2..=self.group_tier_max()).contains(&m)
             || std::env::var("MEMRA_NO_BATCHED").is_ok()
             || (m > 4 && !Self::b8_enabled())
