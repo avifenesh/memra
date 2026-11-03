@@ -3933,12 +3933,6 @@ extern "C" __global__ void qmatvec_q4_0_mmvq_b16(
         int in_f, int out_f, int m, long row_bytes) {
     q4_0_mmvq_batched<16>(W, aq, ad, y, in_f, out_f, m, row_bytes);
 }
-extern "C" __global__ void qmatvec_q4_0_mmvq_b16_r2(
-        const unsigned char* __restrict__ W, const signed char* __restrict__ aq,
-        const float* __restrict__ ad, float* __restrict__ y,
-        int in_f, int out_f, int m, long row_bytes) {
-    q4_0_mmvq_batched_mr2<16>(W, aq, ad, y, in_f, out_f, m, row_bytes);
-}
 
 
 extern "C" __global__ void qmatvec_q8_0_mmvq_b2(
@@ -9976,12 +9970,6 @@ extern "C" __global__ void qmatvec_q4_0_mmvq_b16_rp(
         const float* __restrict__ ad, float* __restrict__ y,
         int in_f, int out_f, int m, long row_bytes) {
     q4_0_mmvq_batched_rp<16>(W, aq, ad, y, in_f, out_f, m, row_bytes);
-}
-extern "C" __global__ void qmatvec_q4_0_mmvq_b16_r2_rp(
-        const unsigned char* __restrict__ W, const signed char* __restrict__ aq,
-        const float* __restrict__ ad, float* __restrict__ y,
-        int in_f, int out_f, int m, long row_bytes) {
-    q4_0_mmvq_batched_mr2_rp<16>(W, aq, ad, y, in_f, out_f, m, row_bytes);
 }
 
 
