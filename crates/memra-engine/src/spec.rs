@@ -6454,10 +6454,11 @@ impl HybridModel {
                 *TROWS_PREFILL.get_or_init(|| prime_trows_on() && !crate::step_gemm_prime_on());
             // MEMRA_PRIME_TROWS_T=<w>: chunk width, default 8 = the REAL cap of this walk.
             // The workspace slabs go to 32 rows, but `matvec_bf16_qkvg_tcol_into` refuses
-            // t > 8 (compile-time-T twins exist for 2/4/8 only; the runtime-t kernel spills
-            // its accumulators to local memory), so a wider chunk fails the request with
-            // "matvec_bf16_qkvg_tcol geometry" — which is exactly how the first server-path
-            // TROWS arm died. Measured at 193 tokens: w=8 2.459 s, w=4 2.574 s.
+            // t > 8 (the runtime-T kernel's `acc[8]` holds at most 8 columns; the
+            // compile-time 2/4/8 twins were deleted unlaunched 2026-11-03), so a wider chunk
+            // fails the request with "matvec_bf16_qkvg_tcol geometry" — which is exactly how
+            // the first server-path TROWS arm died. Measured at 193 tokens: w=8 2.459 s,
+            // w=4 2.574 s.
             static TROWS_W: std::sync::OnceLock<Result<usize, String>> = std::sync::OnceLock::new();
             let trows_w = match TROWS_W.get_or_init(|| {
                 let value = std::env::var("MEMRA_PRIME_TROWS_T").ok();
