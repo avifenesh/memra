@@ -5720,11 +5720,15 @@ impl HybridModel {
         // commit) leaves continuations on the walk while fresh primes stay on the fast path;
         // MEMRA_STEP_GEMM_PRIME=0 is the whole-path seam. The `seq_end` threading above is
         // deliberately NOT behind either door — it is a correctness fix for the fresh path too.
+        // MEMRA_STEP_TP_PREFILL=1 declines this entry: the rank-local prefill arm it opens lives
+        // in the walk (`step35_attn_prime`), and the batched core below refuses the door as a
+        // cross-request mode, so taking this entry would refuse the per-session prime too.
         if overlay.is_none()
             && (cache.pos == 0 || step_gemm_prime_suffix_on())
             && t >= PRIME_MIN_T
             && crate::step_gemm_prime_on()
             && self.uses_sliding_gated_moe_program()
+            && !step_tp_prefill_enabled()?
         {
             let n_embd = self.cfg.n_embd as usize;
             let base = cache.pos;
