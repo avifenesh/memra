@@ -399,7 +399,8 @@ def cell_verdicts(run, evidence, repo, head):
                         if line.split("#", 1)[0].strip())
     require(required, "required-cell census is empty")
     coverage = coverage_module()
-    expected = {("kernel", "kernel")} | {(kind, row["id"]) for row in roster for kind in ("argmax", "spec")}
+    expected = {("kernel", "kernel")} | {(kind, row["id"]) for row in roster
+                                         for kind in ("argmax", "argmax-batch", "spec")}
     seen, verdicts = set(), []
     for cell in run["cells"]:
         key = (cell["kind"], cell["model"])
@@ -411,6 +412,17 @@ def cell_verdicts(run, evidence, repo, head):
             verdict = coverage.kernel_coverage(lines, required)
         elif cell["kind"] == "spec":
             verdict = coverage.spec_coverage(lines)
+        elif cell["kind"] == "argmax-batch":
+            # The served batched decode program at B=1 (argmax-margin-gate.sh --decode batch):
+            # the same calibrated margin verdict plus one SERVED-SUMMARY line, and only MATCH
+            # (every device-sampled token equals the host argmax of its row).
+            served = [line for line in lines if line.startswith("SERVED-SUMMARY served=")]
+            require(sum(line.startswith("PASS:") for line in lines) == 1
+                    and any(re.search(r"SUMMARY flips=\d+ bad=0\b", line) for line in lines)
+                    and served == ["SERVED-SUMMARY served=MATCH"]
+                    and not any("SKIP" in line or line.startswith("FAIL") for line in lines),
+                    "served-batch argmax cell did not pass its calibrated gate")
+            verdict = "calibrated served-batch argmax PASS"
         else:
             # The batched serving prime (prime_cache vs tokenwise) rides the same cell: one
             # PRIME-SUMMARY line, and only the classes tools/release-battery.sh accepts.
