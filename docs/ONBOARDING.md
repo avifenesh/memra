@@ -65,6 +65,13 @@ their staged manifest hash is recorded.
 Do not edit model metadata to make a parser accept it. If the artifact changes, start a new
 manifest and preserve the old receipt.
 
+The `memra model inspect` artifact lock is bound to the code as well as to the bytes. Its
+`plan_sha256` hashes the compiled plan's text for every source. For a GGUF or Hy3-repack source,
+`config_sha256` hashes the normalized `ModelConfig`'s text instead of a `config.json`, so a
+`ModelConfig` field change moves the lock when the same artifact is inspected again (removing
+`n_layer_total` on 2026-11-03 did). A regenerated lock needs its rewrite receipts regenerated
+with it.
+
 ## 1. Inspect before implementing
 
 Build the header inspector and capture both metadata and tensor patterns:
