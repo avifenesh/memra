@@ -1,12 +1,15 @@
 //! dsv4 serve door (ds4f rung 3) — DeepSeek-V4-Flash serving through the worker's
-//! `Cmd::Generate(Request) -> Event` contract, on the engine's own 2-card PP stack
+//! `Cmd::Generate(Request) -> Event` contract, on the engine's own two-card program
 //! (`Dsv4Gpu`), NOT through `HybridModel`.
 //!
 //! Shape: a dsv4 checkpoint directory (config.json `model_type: "deepseek_v4"`) loads
-//! at worker boot onto the 2-card placement and serves on a DEDICATED thread with a
-//! FIFO channel — one request at a time (the engine is a bs=1 program today; the
-//! channel IS the queue, and concurrency cells measure queueing honestly). The HTTP
-//! surface (OpenAI routes, template render inputs, DSML tools parse, streaming SSE)
+//! at worker boot onto the two-card placement `MEMRA_DSV4_TOPOLOGY` selects: TP/EP by
+//! default (memra #710: experts split by id, attention split by head), PP-2 as the `pp`
+//! rollback. The route serves from one FIFO queue through `MEMRA_DSV4_SESSIONS` lanes that
+//! share a launch turn: on a plain TP/EP load 16 lanes coalesce their plain steps into
+//! B-row steps (`MEMRA_DSV4_ROWS`, the lane count there); on a plain PP-2 matrix load two
+//! lanes pipeline their steps across the two cards; a drafter route keeps one lane. The
+//! HTTP surface (OpenAI routes, template render inputs, DSML tools parse, streaming SSE)
 //! is untouched: this module only implements the worker side of the contract.
 //!
 //! Routes inside a request, decided by `sampler_cfg` + drafter residency. Every prompt, cold or
