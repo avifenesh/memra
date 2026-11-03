@@ -504,7 +504,7 @@ export R=research/qwen38-bringup-$(date +%Y%m%d)
 mkdir -p "$R"
 
 # A copied shell must not turn a default-path gate into an inherited experiment.
-unset MEMRA_ST_E4M3 MEMRA_ST_E4M3_BLK MEMRA_FP8_MMQ MEMRA_FP8_FOLD
+unset MEMRA_ST_E4M3 MEMRA_ST_E4M3_BLK MEMRA_FP8_MMQ
 unset MEMRA_FP8_BLK_GPU MEMRA_PP_FP8 MEMRA_MTP_DRAFT MEMRA_FRSPEC_TRIM
 unset MEMRA_SPEC_K
 
@@ -769,7 +769,6 @@ FP8_DEFAULT_ENV=(
   -u MEMRA_ST_E4M3
   -u MEMRA_ST_E4M3_BLK
   -u MEMRA_FP8_MMQ
-  -u MEMRA_FP8_FOLD
   -u MEMRA_FP8_BLK_GPU
   -u MEMRA_PP_FP8
 )
@@ -817,7 +816,7 @@ must remove those native bytes and increase Q8_0 residency. Residual small Q8_0 
 allowed; routing the FP8 projection bank through Q8_0 is not. Any native decline, NaN refusal,
 bad grid, or zero block-MMQ dispatch is STOP.
 
-Never set `MEMRA_FP8_FOLD=1`; it is lossy. Never set `MEMRA_FP8_MMQ=0`; that reintroduces
+Never set `MEMRA_FP8_MMQ=0`; that reintroduces
 dequant-per-call. Never use `MEMRA_FP8_MMQ=1`; that enables the duplicate stash source.
 
 ### H+03:15 - Hugging Face greedy-reference gate
