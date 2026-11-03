@@ -6515,20 +6515,6 @@ fn serve_batching() -> bool {
     })
 }
 
-/// Can this process admit a spec session under the current placement policy?
-///
-/// The admission gate uses this only for the SPEC_SHRINK_RESERVE transient floor
-/// (lane/admit-oom). A sharded PP-2 process at the placement-aware default has LOW=0, so no
-/// request can take spec and the plain path must not pay that reserve. `MEMRA_SPEC_GATE=0`
-/// remains always-spec and therefore still pays it.
-/// GEMMA SPEC seam (lane/gemma-batched stage 2/3, 2026-08-17): DEFAULT ON when a drafter
-/// is attached, since the stage-3 mixed coexistence cell went green (owner law — better
-/// wins by default; receipts in SERVED-SPEC.md: within-boot identity ALL GREEN, served
-/// c1 spec 135.5 prose / 211.3 code tok/s, c8 batch coexists at 169.8 agg under a live
-/// spec stream). Semantics: unset + MEMRA_DRAFT present = armed at the shipping K=5;
-/// unset without a drafter = off (nothing to draft with); `0` = the eager/plain kill
-/// switch; explicit K >= 1 = armed at that depth (and REQUIRES MEMRA_DRAFT — boot
-/// refuses loud). Any other value REFUSES LOUD (the mis-typed-seam law).
 /// A drafter path with the route off (memra #478): `MEMRA_DSPARK_DRAFT` set while
 /// `MEMRA_DSPARK_SPEC` is not `1` loads nothing and boots the MTP route, so the operator's drafter
 /// would be discarded in silence. The reverse pairing already refuses by name; this is its twin.
@@ -6859,6 +6845,14 @@ pub(crate) fn load_verified_tokenizer(
     Ok((tok, n_ids))
 }
 
+/// GEMMA SPEC seam (lane/gemma-batched stage 2/3, 2026-08-17): DEFAULT ON when a drafter
+/// is attached, since the stage-3 mixed coexistence cell went green (owner law — better
+/// wins by default; receipts in SERVED-SPEC.md: within-boot identity ALL GREEN, served
+/// c1 spec 135.5 prose / 211.3 code tok/s, c8 batch coexists at 169.8 agg under a live
+/// spec stream). Semantics: unset + MEMRA_DRAFT present = armed at the shipping K=5;
+/// unset without a drafter = off (nothing to draft with); `0` = the eager/plain kill
+/// switch; explicit K >= 1 = armed at that depth (and REQUIRES MEMRA_DRAFT — boot
+/// refuses loud). Any other value REFUSES LOUD (the mis-typed-seam law).
 fn gemma4_spec_k_env() -> usize {
     static K: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
     *K.get_or_init(|| match std::env::var("MEMRA_GEMMA4_SPEC").as_deref() {
@@ -6880,6 +6874,12 @@ fn gemma4_spec_k_env() -> usize {
     })
 }
 
+/// Can this process admit a spec session under the current placement policy?
+///
+/// The admission gate uses this only for the SPEC_SHRINK_RESERVE transient floor
+/// (lane/admit-oom). A sharded PP-2 process at the placement-aware default has LOW=0, so no
+/// request can take spec and the plain path must not pay that reserve. `MEMRA_SPEC_GATE=0`
+/// remains always-spec and therefore still pays it.
 fn serve_spec_enabled() -> bool {
     if memra_engine::pp::pp_host_bounce_active() {
         // Stream-mode spec exposes primary-device token/position buffers to stage 0 by UVA.
