@@ -68336,7 +68336,7 @@ pub(crate) mod vision_special_guard_tests {
         );
 
         // THE WIRING: budgets from the tokenizer + zero units refuse that encode by name...
-        let budgets = vision_special_budgets_inner(&tok, 0, 0, 0, 0, 0);
+        let budgets = vision_special_budgets_inner(tok, 0, 0, 0, 0, 0);
         assert!(
             budgets.iter().any(|b| b.id == img_id),
             "budgets must guard the tokenizer's own <|image|> id"
@@ -68350,7 +68350,7 @@ pub(crate) mod vision_special_guard_tests {
             "<|image|>".repeat(16)
         );
         let run_ids = tok.encode(&rendered, false);
-        let budgets = vision_special_budgets_inner(&tok, 1, 16, 0, 0, 0);
+        let budgets = vision_special_budgets_inner(tok, 1, 16, 0, 0, 0);
         vision_special_id_guard(&run_ids, &budgets).expect("the rendered run must admit");
     }
 }
