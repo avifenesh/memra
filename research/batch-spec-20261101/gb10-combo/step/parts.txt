@@ -1,0 +1,36 @@
+d12288-b8: tick 112.8 | matmul 71.7 | attention 24.4 | gdn 10.3 | rest 2.6 | gap 3.7
+      52.84 ms/step   256/step  qmatvec_nvfp4_mmvq_b8_rpsc
+      21.48 ms/step    16/step  fa_decode_vec_q_seqs_v4_deep
+      10.72 ms/step    48/step  qmatvec_nvfp4_mmvq_fused4_b8_rpsc
+      10.30 ms/step    48/step  gdn_scan_s128_b
+       5.00 ms/step     1/step  qmatvec_q5_K_mmvq_b8_r2
+       3.16 ms/step    16/step  qmatvec_nvfp4_mmvq_fused3_b8_rpsc
+       2.93 ms/step    16/step  fa_decode_combine_seqs
+       0.47 ms/step   209/step  quantize_q8_1
+d12288-b8-bf16: tick 107.1 | matmul 72.0 | attention 24.6 | gdn 4.7 | rest 2.6 | gap 3.2
+      53.02 ms/step   256/step  qmatvec_nvfp4_mmvq_b8_rpsc
+      21.58 ms/step    16/step  fa_decode_vec_q_seqs_v4_deep
+      10.75 ms/step    48/step  qmatvec_nvfp4_mmvq_fused4_b8_rpsc
+       5.09 ms/step     1/step  qmatvec_q5_K_mmvq_b8_r2
+       4.73 ms/step    48/step  gdn_scan_s128_b
+       3.16 ms/step    16/step  qmatvec_nvfp4_mmvq_fused3_b8_rpsc
+       2.97 ms/step    16/step  fa_decode_combine_seqs
+       0.46 ms/step   209/step  quantize_q8_1
+d12288-b16: tick 173.3 | matmul 91.5 | attention 48.5 | gdn 22.4 | rest 3.7 | gap 7.2
+      67.31 ms/step   256/step  qmatvec_nvfp4_mmvq_b16_rpsc
+      42.37 ms/step    16/step  fa_decode_vec_q_seqs_v4_deep
+      22.44 ms/step    48/step  gdn_scan_s128_b
+      17.65 ms/step    64/step  qmatvec_nvfp4_mmvq_group4_b16_rp
+       6.53 ms/step     1/step  qmatvec_q5_K_mmvq_b16
+       6.11 ms/step    16/step  fa_decode_combine_seqs
+       0.78 ms/step   209/step  quantize_q8_1
+       0.59 ms/step    48/step  ssm_conv1d_fused_decode_b_f32
+d12288-b16-bf16: tick 162.0 | matmul 91.5 | attention 48.4 | gdn 11.5 | rest 3.7 | gap 6.8
+      67.32 ms/step   256/step  qmatvec_nvfp4_mmvq_b16_rpsc
+      42.34 ms/step    16/step  fa_decode_vec_q_seqs_v4_deep
+      17.68 ms/step    64/step  qmatvec_nvfp4_mmvq_group4_b16_rp
+      11.50 ms/step    48/step  gdn_scan_s128_b
+       6.55 ms/step     1/step  qmatvec_q5_K_mmvq_b16
+       6.11 ms/step    16/step  fa_decode_combine_seqs
+       0.78 ms/step   209/step  quantize_q8_1
+       0.65 ms/step    48/step  ssm_conv1d_fused_decode_b_f32

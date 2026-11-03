@@ -1,0 +1,10 @@
+00:44:03 start memra-combo-bf16 base=http://127.0.0.1:8090 model=q38 node=spark-cb33
+00:45:19 warm {"size": 8192, "users": 1, "cold_max_s": 9.95, "turn256": [0.5, 0.5]} {"size": 32768, "users": 1, "cold_max_s": 43.78, "turn256": [0.61, 0.61]}
+01:09:09 cell c1 {"arm": "memra-combo-bf16", "users": 1, "max_tokens": 768, "seed": 1234, "think": 1, "temperature": 1.0, "turns": 48, "tokens": 18930, "wall_s": 817.4, "aggrega
+01:22:36 cell c2 {"arm": "memra-combo-bf16", "users": 2, "max_tokens": 768, "seed": 1234, "think": 1, "temperature": 1.0, "turns": 48, "tokens": 18975, "wall_s": 794.7, "aggrega
+01:30:41 cell c4 {"arm": "memra-combo-bf16", "users": 4, "max_tokens": 768, "seed": 1234, "think": 1, "temperature": 1.0, "turns": 48, "tokens": 18758, "wall_s": 475.1, "aggrega
+01:35:51 cell c8 {"arm": "memra-combo-bf16", "users": 8, "max_tokens": 768, "seed": 1234, "think": 1, "temperature": 1.0, "turns": 48, "tokens": 18255, "wall_s": 300.6, "aggrega
+01:39:54 cell c16 {"arm": "memra-combo-bf16", "users": 16, "max_tokens": 768, "seed": 1234, "think": 1, "temperature": 1.0, "turns": 48, "tokens": 18101, "wall_s": 233.9, "aggreg
+01:43:33 cell c32 {"arm": "memra-combo-bf16", "users": 32, "max_tokens": 768, "seed": 1234, "think": 1, "temperature": 1.0, "turns": 48, "tokens": 17947, "wall_s": 210.3, "aggreg
+MemAvailable min 29.47 GiB, median 52.80 GiB over 3551 s
+01:43:33 end

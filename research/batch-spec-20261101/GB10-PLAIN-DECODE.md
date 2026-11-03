@@ -309,3 +309,82 @@ What this says:
 - **Host gaps stay small** (2-18 ms, under 5% of every tick).
 
 So the plateau at c>=8 has two causes. The b16 matmul tier jumps from 72 to 121 ms, and attention grows linearly at half bandwidth. The b16 jump is the only part that gets worse per row as the batch grows.
+
+## Combined opt-in build and where the 8- and 16-row ticks go now (2026-11-04, night)
+
+Build: `research/combo-tc-gdnbf16` at 19b3495bab (batch-spec with the exact tensor-core b32 tier, merged with `research/gdn-state-bf16`). Default stays fp32 GDN state; `MEMRA_GDN_STATE_BF16=1` opts in. Receipts: `gb10-combo/`.
+
+Identity: flag off, 16 sessions at depth 2048, TOKFP ffd722c3ca34, the fp32 fingerprint.
+
+### Served agentic cell, one fresh boot per arm, GB10
+
+The boot probe chose the tensor-core b32 tier with the flag on (two 16-row waves 253.1 ms, one 32-row wave 243.4 ms, tensor-core 209.0 ms).
+
+| c | fp32, dp4a b32 | bf16 state, dp4a b32 | fp32, tensor-core b32 | **bf16 state + tensor-core b32** | vLLM |
+|---:|---:|---:|---:|---:|---:|
+| 1 | 22.34 | 23.05 | | **23.17** | 24.2 |
+| 2 | 29.02 | 23.80 | | **23.89** | |
+| 4 | 37.64 | 39.91 | | **39.51** | 68.7 |
+| 8 | 62.59 | 60.22 | 62.41 | **60.80** | 96.7 |
+| 16 | 76.82 | 77.90 | 75.84 | **77.49** | 121.4 |
+| 32 | 79.23 | 80.60 | 83.61 | **85.46** | 135.5 |
+
+aggregate gen tok/s, 48 turns, thinking on, T=1. The fp32 and bf16 dp4a arms are `research/gdn-state-bf16` (c3356b88b3); the tensor-core arm is `gb10-agentic/tc-b32/`.
+
+- c32: 85.46, the best c32 so far (+7.9% over fp32 dp4a, +2.2% over the tensor-core tier alone).
+- c2 drops to 23.9 in both bf16 runs (fp32: 29.0). It is the spec cost gate, not the decode. With bf16 state, 9 of 18 rung-3 decisions at n=2 choose K=0, each at "predicted 24.9 vs plain 24.9". The fp32 run never chose K=0 at n=2. The gate's predicted spec rate falls to the plain rate and plain wins the tie, so it stops collecting acceptance there. This is a gate issue, worth its own fix.
+- c8: -2.9% vs fp32 dp4a, inside one run's spread at this cell (c8 ranged 60.2-62.6 across four runs today).
+
+### Per-part tick at depth 12288 (the served cell's median turn), nsys
+
+`decode-batch-bench --ctx 12288 --steps 16 --reps 3` for the tick, nsys over 8 steps for the kernels (`gb10-combo/step/parts.txt`). ms per step; GB/s in parentheses where the bytes are known (weights 15.7 GB per forward; KV 365 MB per session; fp32 GDN state 302 MB per session read plus write).
+
+| cell | tick | matmul | attention (core + combine) | GDN | rest | gap |
+|---|---:|---:|---:|---:|---:|---:|
+| B8 fp32 | 112.8 | 71.7 (219) | 21.5 + 2.9 | 10.3 | 2.6 | 3.7 |
+| B8 bf16 | 107.1 | 72.0 | 21.6 + 3.0 | 4.7 | 2.6 | 3.2 |
+| B16 fp32 | 173.3 | 91.5 (172) | 42.4 + 6.1 | 22.4 | 3.7 | 7.2 |
+| B16 bf16 | 162.0 | 91.5 | 42.3 + 6.1 | 11.5 | 3.7 | 6.8 |
+
+B16 matmul split: `mmvq_b16_rpsc` 67.3 ms (256 launches), `group4_b16_rp` 17.7 (64), the Q5_K head 6.5. At B8 the same weights take 52.8 + 13.9 + 5.0.
+
+What is left, per lever, at B16 depth 12288:
+
+| part | now (ms) | floor at 226 GB/s (ms) | headroom (ms) | exact levers already tried |
+|---|---:|---:|---:|---|
+| matmul | 91.5 | 69.5 | 22.0 | rpsc (adopted), rpscp, rpscs, rpsc4, rpcs8, rpcs4, group4 rpsc, tensor-core b16 (all rejected) |
+| attention core | 42.4 | 25.8 (KV) + 5.3 (partial writes) | 11.3 | deep walk (adopted), raw V (rejected) |
+| partials memset + combine | about 5 + 6.1 | 5.3 (combine read) | about 5.8 | none |
+| GDN | 22.4 fp32 / 11.5 bf16 | 21.4 / 10.7 | about 1 | bf16 storage (research arm) |
+
+The attention partials are a large hidden byte stream. At depth 12288 the split is 64 keys, so 192 splits. Each layer writes B x 24 heads x 192 x 256 fp32 partials: 75.5 MB at B16. `fa_decode_batch_seqs_v4` zero-fills that buffer with `memset_zeros` before every launch, then the kernel writes it and the combine reads it back. That is 3 x 1.2 GB per B16 tick.
+
+The memset is dead work. The seqs kernel writes every slot `split < n_splits_z` for each (z, head), including empty splits, which write acc=0 and m=-inf. The seqs combine reads only `s < n_splits_z`. The gap column fits the memset. Gap grows with B x depth:
+- d12288: 2.5, 3.5, 5.0, 8.5, 18.0 ms at B1..B32;
+- d2048 B16, with 32 splits: 3.7 ms.
+The model predicts 5.3 ms of memset at B16 d12288 and 10.7 at B32.
+
+### Top remaining exact lever
+
+**Drop the three partial-buffer memsets in `fa_decode_batch_seqs_v4`.** It is bit-identical by construction: no value read by the combine changes.
+
+| cell | expected saving | share of tick |
+|---|---:|---:|
+| B8 d12288 | about 2.7 ms | about 2.4% |
+| B16 d12288 | about 5.3 ms | about 3% |
+| B32 d12288 | about 10.7 ms | about 2.6% |
+| d32768 | proportionally more | |
+
+Gate: kernel-check seqs-vs-loop bitdiff=0, TOKFP equal, an nsys capture showing the memset time gone, then the 3+3 tick A/B.
+
+It is small but certain. It does not close the vLLM gap by itself.
+
+What would close the gap at c8 is the second row. The served gate already picks plain at c>=8 because verify does not pay: spec wins only while the 16-row tick costs less than 1 + acceptance (about 1.49) times the 8-row tick.
+- fp32: 173.3 vs 1.49 x 112.8 = 168.
+- bf16: 162.0 vs 1.49 x 107.1 = 159.6.
+
+Both sit just above break-even. Two changes move it:
+- With the memset gone (about -5.3 / -2.7 ms), bf16 reaches 156.7 vs 155.6, about level.
+- A 16-row matmul at the 8-row tier's bandwidth (-20 ms) would put the 16-row tick near 137 ms. Spec at c8 would then predict about 8 x 1.49 / 0.137 = 87 tok/s, against vLLM's 96.7.
+
+Every exact schedule of the dp4a 16-row kernel has been tried, so the matmul part needs a new kernel design, not another schedule.
