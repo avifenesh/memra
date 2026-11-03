@@ -1,7 +1,9 @@
 """Adversarial CPU tests. Wrapper execution uses only temporary shell stubs."""
 from __future__ import annotations
 
+import contextlib
 import importlib.util
+import io
 import json
 import os
 from pathlib import Path
@@ -22,7 +24,8 @@ MIMO_GATES = {"MiMo text checkpoint parity", "MiMo vision", "MiMo audio", "MiMo 
               "MiMo serving and topology"}
 # The packs a models.tsv probe loads: gemma4 (g12/g31/g26), qwen35 and qwen35_moe (q9, k27, q35,
 # aw35, kat, and Ornith 1.0 o9/o35 per research/onboard-ornith-20260801/gates), and step35 (the
-# *35 command gates). Every other automatic pack must appear as a REQUIRED line.
+# *35 command gates). Every other automatic pack must appear as a REQUIRED line. A hand list:
+# models.tsv names no pack, so add a pack here when a probe for it lands.
 PROBED_PACKS = {"gemma4_dense", "gemma4_moe", "qwen35", "qwen35_moe", "step35"}
 PACKS_RS = HERE.parents[1] / "crates/memra-gguf/src/model_packs/mod.rs"
 
@@ -127,7 +130,7 @@ class PlannerTests(unittest.TestCase):
                      "crates/memra-gguf/src/model_packs/mimo_v2_5/mod.rs"):
             with self.subTest(path=path):
                 value = plan.make_plan([path])
-                self.assertLessEqual(MIMO_GATES, set(value["required_unregistered"]))
+                self.assertEqual(set(value["required_unregistered"]), MIMO_GATES | unprobed_gates())
                 self.assertEqual(value["decision"], "expand")
                 self.assert_development_only(value)
 
@@ -135,7 +138,8 @@ class PlannerTests(unittest.TestCase):
         unprobed = automatic_pack_modules() - PROBED_PACKS
         self.assertTrue(unprobed)
         named = {gate.split()[0] for gate in unprobed_gates() if not gate.startswith("FP8_BLOCK")}
-        # Both directions: a new pack without a probe, or a stale line for a newly probed pack.
+        # A pack added to PACKS with neither a PROBED_PACKS entry nor a line fails here. A line
+        # left after its pack gains a probe fails only once PROBED_PACKS names that pack.
         self.assertEqual(named, unprobed)
         for path in ("crates/memra-engine/cu/dsv4_gpu.cu", "crates/memra-engine/cu/mla_attn.cu",
                      "crates/memra-engine/cu/mmq_fp8_blk.cu", "crates/memra-engine/src/dsv4_gpu.rs",
@@ -144,6 +148,19 @@ class PlannerTests(unittest.TestCase):
                 value = plan.make_plan([path])
                 self.assertLessEqual(unprobed_gates(), set(value["required_unregistered"]))
                 self.assertIn("unprobed-model-packs", value["transitive_impact"])
+
+    def test_required_lines_print_that_they_are_not_reach_filtered(self):
+        # A gemma4-only edit still gets every unprobed pack's line: the lines are static.
+        value = plan.make_plan(["crates/memra-gguf/src/model_packs/gemma4_dense/mod.rs"])
+        self.assertLessEqual(unprobed_gates(), set(value["required_unregistered"]))
+        printed = io.StringIO()
+        with contextlib.redirect_stdout(printed):
+            plan.summary(value)
+        self.assertIn("  NOTE: " + plan.REQUIRED_NOTE + "\n", printed.getvalue())
+        quiet = io.StringIO()
+        with contextlib.redirect_stdout(quiet):
+            plan.summary(plan.make_plan(["docs/TESTING.md"]))
+        self.assertNotIn("NOTE:", quiet.getvalue())
 
     def test_included_research_fixture_cannot_hide_behind_no_gate_mapping(self):
         value = plan.make_plan(["research/census/expected-plan.json"])
