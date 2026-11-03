@@ -434,41 +434,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             mism_rp,
             maxd_rp,
         );
-
-        // MEMRA_B200_GEMV_V2 arm: 8 warps/block + g-walk unrolled by two.
-        {
-            let g0 = wptr8(&gate_copies[0], &stream);
-            let u0 = wptr8(&up_copies[0], &stream);
-            let v2_act = e.moe_gate_up_preclamp8_q8_v2(
-                g0, u0, &aq, &ad, gs, us, limit, n_embd, n_ff, n_used, QT_NVFP4, QT_NVFP4,
-                row_bytes, row_bytes,
-            )?;
-            e.stream().synchronize()?;
-            let h_v2 = e.dtoh(&v2_act)?;
-            let (mv, dv) = compare(&h_shipped, &h_v2);
-            let mut t_v2 = Vec::with_capacity(iters);
-            for i in 0..iters {
-                let c = i % copies;
-                let g = wptr8(&gate_copies[c], &stream);
-                let u = wptr8(&up_copies[c], &stream);
-                let t0 = Instant::now();
-                let _ = e.moe_gate_up_preclamp8_q8_v2(
-                    g, u, &aq, &ad, gs, us, limit, n_embd, n_ff, n_used, QT_NVFP4, QT_NVFP4,
-                    row_bytes, row_bytes,
-                )?;
-                e.stream().synchronize()?;
-                t_v2.push(t0.elapsed().as_secs_f64() * 1e6);
-            }
-            report_arm(
-                "moe_gate_up_preclamp8_q8_v2",
-                "v2",
-                ship_us,
-                median(&mut t_v2),
-                bytes,
-                mv,
-                dv,
-            );
-        }
     }
 
     // -----------------------------------------------------------------------------------
@@ -644,45 +609,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             mism_rp,
             maxd_rp,
         );
-
-        // MEMRA_B200_GEMV_V2 arm: one block per output row, warp j owning expert slot j.
-        {
-            let mut y_v2 = e.zeros(n_embd)?;
-            let d0 = wptr8(&down_copies[0], &stream);
-            {
-                let mut dst = y_v2.slice_mut(0..n_embd);
-                e.moe_down8_fma_q8_v2(
-                    d0, w, &aq2, &ad2, &mut dst, n_ff, n_embd, n_used, QT_NVFP4, row_bytes,
-                )?;
-            }
-            e.stream().synchronize()?;
-            let h_v2 = e.dtoh(&y_v2)?;
-            let (mv, dv) = compare(&h_ship, &h_v2);
-            let mut t_v2 = Vec::with_capacity(iters);
-            for i in 0..iters {
-                let c = i % copies;
-                let mut y = e.zeros(n_embd)?;
-                let d = wptr8(&down_copies[c], &stream);
-                let t0 = Instant::now();
-                {
-                    let mut dst = y.slice_mut(0..n_embd);
-                    e.moe_down8_fma_q8_v2(
-                        d, w, &aq2, &ad2, &mut dst, n_ff, n_embd, n_used, QT_NVFP4, row_bytes,
-                    )?;
-                }
-                e.stream().synchronize()?;
-                t_v2.push(t0.elapsed().as_secs_f64() * 1e6);
-            }
-            report_arm(
-                "moe_down8_fma_q8_v2",
-                "v2",
-                ship_us,
-                median(&mut t_v2),
-                bytes,
-                mv,
-                dv,
-            );
-        }
     }
 
     // -----------------------------------------------------------------------------------

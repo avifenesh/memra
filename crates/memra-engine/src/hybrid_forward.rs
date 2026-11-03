@@ -19474,9 +19474,9 @@ impl HybridModel {
         // and the shipped kernel's single warp was already covering the latency it was accused
         // of exposing. The gate/up twin is inside noise of `_w4` and its own static receipt
         // predicted that (longest LDG burst moved 18 -> 19; the shipped `sl` unroll already had
-        // the depth). So this call site keeps the shipped/`_w4` pair unconditionally: the v2
-        // kernels stay in the fatbin and in `b200_matvec_bench` as measured arms, and the door
-        // no longer overrides `MEMRA_B200_MATVEC_ARM` here. `MEMRA_B200_GEMV_V2` is a bf16-row
+        // the depth). So this call site keeps the shipped/`_w4` pair unconditionally, the door
+        // no longer overrides `MEMRA_B200_MATVEC_ARM` here, and the v2 kernels were deleted
+        // with their bench arms on that receipt (docs/FLAGS.md "Removed doors, 2026-11-03"). `MEMRA_B200_GEMV_V2` is a bf16-row
         // and kda6 door now; see docs/FLAGS.md and the lane doc's section 4.
         let use_w4 = crate::b200_matvec_arm_on();
         let act = if use_w4 {
