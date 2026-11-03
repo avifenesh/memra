@@ -2689,8 +2689,16 @@ dependent grid could then start before its producer's stores were visible, and a
 chain kernel (`memra_pdl_chain.cuh` issues `launch_dependents` at entry) it could run beside
 the producer. The macro is now keyed on `__CUDA_ARCH__ >= 900` alone, as the chain header
 already was. sm_120a and sm_100a compile the same code as before; sm_89 has no PDL and still
-compiles the wait out. No H100 cell was re-measured for this change: kernel-check, decode-dc
-and graph-decode on Hopper are the gates that prove it.
+compiles the wait out. That is proven at the byte level, not argued: the `kernels`,
+`qmatvec`, `flash_attn` and `flash_attn_kf8vf8` fatbins built with build.rs's flags at the
+commit and at its parent are byte-identical for sm_120a and sm_100a, while all four differ for
+sm_90a, where the fix adds 14, 25, 8 and 8 `ACQBULK` (the wait) and nothing else
+(`research/pdl-90a-fatbin-identity-20261103/`). The battery for this change is therefore
+Hopper-only. No H100 cell was run. Correctness: kernel-check, decode-dc and graph-decode on
+Hopper. Performance: the wait changes H100 scheduling, and the PERF-H100 board was measured
+with it compiled out, so the change also owes a balanced interleaved H100 decode A/B (parent vs
+commit, both orders, three runs each), with `current-board.json` and PERF-H100 refreshed if
+the numbers move.
 
 **Dense block-128 FP8 checkpoints load on 90a; MoE block-FP8 stays unsupported (2026-11-03).**
 `memra_fp8_blk_count_nan` lived in
