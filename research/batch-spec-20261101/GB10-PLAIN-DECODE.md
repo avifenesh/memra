@@ -220,7 +220,23 @@ The cheapest tensor-core prototype skips the exact scope for 16..32-row ticks, s
 | 16 | 27.40, 28.23, 30.00 | 73.98, 73.61, 81.87 | 9 / 16 (greedy) |
 | 32 | 66.37, 66.57, 66.57 | 91.07, 90.69, 92.90 | 18 / 32 (greedy), 8 / 32 (sampled) |
 
-Each arm is deterministic run to run. The prefill GEMM tier is 1.4-2.7x slower at these widths, and it diverges by construction. A real tensor-core decode matmul is a new kernel. One exact design exists: run only the integer per-16-element dot products on `mma.sync` s8 (integer sums are order-independent), and keep the float epilogue (`ws0*s0 + ws1*s1`, `acc += adg*partial`, the warp butterfly) in the dp4a kernel's order. That would make it bit-identical. It saves only the dp4a issue slots of a latency-bound kernel, so its value is unclear. Not built.
+Each arm is deterministic run to run. The prefill GEMM tier is 1.4-2.7x slower at these widths, and it diverges by construction.
+
+On GB10 (second box, 27B, depth 2048, `gb10-tc-served/tc-bench-ab.txt`) the picture splits:
+
+| sessions | dp4a tier (ms/tick) | tensor-core GEMM tier (ms/tick) |
+|---:|---|---|
+| 16 | 128.31, 128.30, 128.58 | 196.52, 196.55, 196.74 |
+| 32 | 247.81, 248.49 | 232.23, 232.46 |
+
+So the arm was narrowed to 17..32-row waves only and served through the agentic cell, both arms on the same box (`gb10-tc-served/`):
+
+| c | dp4a (exact) | tensor-core GEMM above 16 rows |
+|---:|---:|---:|
+| 16 | 76.09 | 75.76 |
+| 32 | 79.16 | 79.36 |
+
+Served, it is flat: the cell's waves are rarely full 32-row waves, and the arm also gives up bit-identity. The research branch was not kept. A real tensor-core decode matmul is a new kernel. One exact design exists: run only the integer per-16-element dot products on `mma.sync` s8 (integer sums are order-independent), and keep the float epilogue (`ws0*s0 + ws1*s1`, `acc += adg*partial`, the warp butterfly) in the dp4a kernel's order. That would make it bit-identical. It saves only the dp4a issue slots of a latency-bound kernel, so its value is unclear. Not built.
 
 ## Every cell, per part (`gb10-decode-prof/parts.txt`, `battery/kern_parts.py`)
 
