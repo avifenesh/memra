@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Check literal runtime MEMRA_* environment reads against docs/FLAGS.md.
+# Check literal runtime MEMRA_* environment reads, and the build switches crates/*/build.rs
+# reads, against docs/FLAGS.md.
 # EVERY uncovered name fails. There is no grandfather list — it was deleted 2026-08-23 once
 # measurement showed all 75 of its entries were already documented, i.e. every exemption was
 # dead while still being able to absorb a future one. See the retired-grandfather note below.
@@ -92,6 +93,15 @@ while IFS= read -r runtime_dir; do
     runtime_dirs+=("$runtime_dir")
 done < <(find crates -mindepth 2 -maxdepth 3 -type d \( -path '*/src' -o -path '*/src/bin' \) 2>/dev/null | sort)
 
+# Every crate's build script. A build.rs env read is a build-time door (MEMRA_DSV4_CUTLASS links
+# a whole tensor-core archive) and it needs its row as much as a runtime read does, but the
+# src-only scan never saw one: MEMRA_DSV4_CUTLASS reached KERNELS.md with no FLAGS.md row and no
+# decide-by date. Discovered like the src dirs, so a new crate's build.rs is covered on day one.
+build_scripts=()
+while IFS= read -r build_script; do
+    build_scripts+=("$build_script")
+done < <(find crates -mindepth 2 -maxdepth 2 -type f -name build.rs 2>/dev/null | sort)
+
 command -v rg >/dev/null || { echo "check-flags: rg is required" >&2; exit 2; }
 [[ -f "$flag_doc" ]] || { echo "check-flags: missing $flag_doc" >&2; exit 2; }
 if (( ${#runtime_dirs[@]} == 0 )); then
@@ -109,9 +119,9 @@ uncovered_file="$temp_dir/uncovered"
 
 # Pass A — literal reads. Keep this deliberately grep-shaped: it catches literal reads in
 # source while avoiding MEMRA_* names that appear only in comments or in set_var calls inside
-# test/bench harnesses.
+# test/bench harnesses. The build scripts are named files, so the glob does not filter them.
 rg -N 'env::var(_os)?[[:space:]]*\(|(option_)?env![[:space:]]*\(' \
-    "${runtime_dirs[@]}" --glob '*.rs' 2>/dev/null \
+    "${runtime_dirs[@]}" "${build_scripts[@]}" --glob '*.rs' 2>/dev/null \
     | rg -o 'MEMRA_[A-Z0-9_]+' | sort -u > "$literal_file" || true
 
 # Pass A, CUDA/C side. Kernel TUs read doors too (`std::getenv("MEMRA_DSV4_HC_DOT_SPLIT")` in
@@ -169,7 +179,7 @@ fi
 # nothing at the call site — a silent no-op that would have looked exactly like a clean pass.
 rg -N --no-filename -o --replace '$1 $2' \
     '(?:const|static)\s+([A-Z][A-Z0-9_]*)\s*:\s*&(?:'"'"'static\s+)?str\s*=\s*"(MEMRA_[A-Z0-9_]+)"' \
-    "${runtime_dirs[@]}" --glob '*.rs' 2>/dev/null | sort -u > "$const_map" || true
+    "${runtime_dirs[@]}" "${build_scripts[@]}" --glob '*.rs' 2>/dev/null | sort -u > "$const_map" || true
 
 while read -r const_name flag_name; do
     [[ -n "${const_name:-}" && -n "${flag_name:-}" ]] || continue
@@ -178,7 +188,7 @@ while read -r const_name flag_name; do
         echo "check-flags: malformed const capture: '$const_name'" >&2; exit 2; }
     if rg -q -N \
         "(env::var(_os)?|(option_)?env!)[[:space:]]*\([[:space:]]*&?([A-Za-z0-9_]+::)*${const_name}\b" \
-        "${runtime_dirs[@]}" --glob '*.rs' 2>/dev/null
+        "${runtime_dirs[@]}" "${build_scripts[@]}" --glob '*.rs' 2>/dev/null
     then
         printf '%s\n' "$flag_name" >> "$literal_file"
     fi
