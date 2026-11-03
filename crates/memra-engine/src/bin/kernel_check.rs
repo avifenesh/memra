@@ -6874,7 +6874,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         // --- BATCHED-TICK increment 2: z-batched SEQS decode (append + FA) vs the per-seq
         // loop: BYTE identity. The seqs append twin must write bit-identical cache bytes to
-        // B per-seq append calls, and fa_decode_vec_q_seqs_v4 + combine_seqs must reproduce
+        // B per-seq append calls, and fa_decode_vec_q_seqs_v4_deep + combine_seqs must reproduce
         // the per-seq eager v4 (fa_decode) program exactly — same in-kernel split partition
         // (ONE-PARTITION LAW at the shared rung), same walk, same combine order. Depths mix
         // uneven sequences crossing split boundaries within one fa_split_keys rung.

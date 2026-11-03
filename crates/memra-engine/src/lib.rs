@@ -2246,7 +2246,7 @@ fn fa_v3_active(head_dim: usize) -> bool {
 
 /// BATCHED-TICK increment 2 (2026-08-01): true iff a row at this t_kv would take the v4
 /// eager arm in `fa_decode_kvmod`'s dispatch — the exact precondition for the z-batched
-/// `fa_decode_vec_q_seqs_v4` twin to reproduce its per-seq program bit-identically.
+/// `fa_decode_vec_q_seqs_v4_deep` twin to reproduce its per-seq program bit-identically.
 /// Mirrors the kvmod predicates: vec on + above the vec floor + hd256 + inside the v4
 /// window. Callers must ALSO group rows on one
 /// `fa_split_keys` rung (the rows-twins' straddle law) before batching.
