@@ -15,14 +15,36 @@
 use crate::Engine;
 use cudarc::driver::{CudaSlice, CudaView, DevicePtr, DevicePtrMut};
 
-/// Quantize-once seam state (see `Engine::mmq_act_begin`): window epoch + one cached
-/// (epoch, act_ptr, m, in_f, D4 scratch) slot. Slot drops (freeing the scratch) on each new window.
+/// Quantize-once seam state (see `Engine::mmq_act_begin`): window epoch counter, the epoch of
+/// the open window (0 = none open) + one cached (epoch, act_ptr, m, in_f, D4 scratch) slot. The
+/// slot is read and filled only while a window is open, and drops (freeing the scratch) when
+/// that window closes.
 static MMQ_ACT_EPOCH: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+static MMQ_ACT_OPEN: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 /// kernel-check's override of the v3 F8F4 mainloop route: 0 follows the route, 1 off, 2 on.
 static F8F4_V3_FORCE: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
 #[allow(clippy::type_complexity)]
 static MMQ_ACT_SLOT: std::sync::Mutex<Option<(u64, u64, usize, usize, CudaSlice<u8>)>> =
     std::sync::Mutex::new(None);
+
+/// An open quantize-once window (`Engine::mmq_act_begin`). Dropping it closes the window and
+/// frees the cached scratch, so no later Q4_0 MMQ call can match a stale (ptr, m, in_f) key.
+#[must_use = "the quantize-once window closes when this guard drops"]
+pub struct MmqActWindow {
+    epoch: u64,
+}
+
+impl Drop for MmqActWindow {
+    fn drop(&mut self) {
+        use std::sync::atomic::Ordering;
+        if MMQ_ACT_OPEN
+            .compare_exchange(self.epoch, 0, Ordering::Relaxed, Ordering::Relaxed)
+            .is_ok()
+        {
+            *MMQ_ACT_SLOT.lock().unwrap() = None;
+        }
+    }
+}
 /// Stream-k fixup scratch (lazy; sized once per process — one slot per SM).
 static MMQ_FIXUP_SLOT: std::sync::Mutex<Option<cudarc::driver::CudaSlice<u8>>> =
     std::sync::Mutex::new(None);
@@ -1947,14 +1969,17 @@ impl Engine {
     }
 
     /// Open a quantize-once sharing window for the NEXT activation (quantize-once seam): sibling
-    /// Q4_0 MMQ matmuls on the SAME input (q/k/v; gate/up) quantize its D4 scratch once. Safe by
-    /// construction: a hit requires the same window epoch AND the same (ptr, m, in_f) — the caller
-    /// opens a window while it holds the shared input alive, so its address can neither change nor
-    /// be recycled inside the window. Paths that never call this never hit the cache.
-    pub fn mmq_act_begin(&self) {
+    /// Q4_0 MMQ matmuls on the SAME input (q/k/v; gate/up) quantize its D4 scratch once. The
+    /// window lasts as long as the returned guard: hold it across the siblings only, while the
+    /// shared input stays alive, so its address can neither change nor be recycled inside the
+    /// window. A hit requires the open window's epoch AND the same (ptr, m, in_f); with no
+    /// window open the cache is neither read nor filled.
+    pub fn mmq_act_begin(&self) -> MmqActWindow {
         use std::sync::atomic::Ordering;
-        MMQ_ACT_EPOCH.fetch_add(1, Ordering::Relaxed);
+        let epoch = MMQ_ACT_EPOCH.fetch_add(1, Ordering::Relaxed) + 1;
         *MMQ_ACT_SLOT.lock().unwrap() = None;
+        MMQ_ACT_OPEN.store(epoch, Ordering::Relaxed);
+        MmqActWindow { epoch }
     }
 
     /// Bare Q4_0 int8-MMA MMQ launch (no macro-scale) — the kernel_check accuracy-gate entry and
@@ -1977,12 +2002,17 @@ impl Engine {
         let mut y = self.alloc_uninit::<f32>(m * out_f)?;
         let stream = self.gpu.stream();
         let (x_p, _gx) = x.device_ptr(&stream);
-        let epoch = MMQ_ACT_EPOCH.load(Ordering::Relaxed);
-        // quantize-once: reuse the window's scratch when the SAME activation comes back.
+        let open = MMQ_ACT_OPEN.load(Ordering::Relaxed);
+        // quantize-once: inside an open window, reuse its scratch when the SAME activation
+        // comes back. Outside a window every call quantizes into its own scratch.
         let mut slot = MMQ_ACT_SLOT.lock().unwrap();
-        let hit = matches!(&*slot,
-            Some((e, p, mm, inf, _)) if *e == epoch && *p == x_p && *mm == m && *inf == in_f);
-        if !hit {
+        let hit = open != 0
+            && matches!(&*slot,
+                Some((e, p, mm, inf, _)) if *e == open && *p == x_p && *mm == m && *inf == in_f);
+        let unshared: CudaSlice<u8>;
+        let scratch = if hit {
+            &slot.as_ref().unwrap().4
+        } else {
             let act_bytes = unsafe { memra_mmq_q4_0_act_bytes(in_f as i32, m as i32) };
             let mut scratch = self.alloc_uninit::<u8>(act_bytes)?;
             {
@@ -2002,9 +2032,14 @@ impl Engine {
                     );
                 }
             }
-            *slot = Some((epoch, x_p, m, in_f, scratch));
-        }
-        let scratch = &slot.as_ref().unwrap().4;
+            if open != 0 {
+                *slot = Some((open, x_p, m, in_f, scratch));
+                &slot.as_ref().unwrap().4
+            } else {
+                unshared = scratch;
+                &unshared
+            }
+        };
         {
             let (w_p, _gw) = bytes.device_ptr(&stream);
             let (y_p, _gy) = y.device_ptr_mut(&stream);
