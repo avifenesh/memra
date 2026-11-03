@@ -20264,9 +20264,6 @@ impl Engine {
         self.q8_fused2_core(b0, b1, &aq, &ad, in_f, out0, out1, row_bytes)
     }
 
-    /// FUSED Q8_0 m=1 matvec TRIPLE (wq+wk+wv on the 35B full-attn layers: out_f 8192/512/512).
-    /// Same block-offset recipe as `matmul_q8_fused2` with three ranges. BIT-IDENTICAL per
-    /// (tensor,row) to three separate m=1 MMVQ launches.
     /// FUSED Q4_0 m=1 TRIPLE (gemma q/k/v — same quantized input; per (tensor,row) chain
     /// identical to the mr2 kernel). Returns None unless all three are Q4_0 with equal in_f.
     #[allow(clippy::type_complexity)] // allow: one-shot composite type; naming it would hide the shape that matters at the call site
@@ -20943,6 +20940,9 @@ impl Engine {
         Ok(Some((y0, y1, y2)))
     }
 
+    /// FUSED Q8_0 m=1 matvec TRIPLE (wq+wk+wv on the 35B full-attn layers: out_f 8192/512/512).
+    /// Same block-offset recipe as `matmul_q8_fused2` with three ranges. BIT-IDENTICAL per
+    /// (tensor,row) to three separate m=1 MMVQ launches.
     #[allow(clippy::type_complexity)] // allow: one-shot composite type; naming it would hide the shape that matters at the call site
     pub fn matmul_q8_fused3(
         &self,
