@@ -114,6 +114,19 @@ rg -N 'env::var(_os)?[[:space:]]*\(|(option_)?env![[:space:]]*\(' \
     "${runtime_dirs[@]}" --glob '*.rs' 2>/dev/null \
     | rg -o 'MEMRA_[A-Z0-9_]+' | sort -u > "$literal_file" || true
 
+# Pass A, CUDA/C side. Kernel TUs read doors too (`std::getenv("MEMRA_DSV4_HC_DOT_SPLIT")` in
+# cu/dsv4_dense_m1_exact_tail.cuh), and a `.rs`-only scan let MEMRA_MIMO_SPLIT_STAGE_TIMING land
+# in cu/mimo_mixed_attn.cu with no row. Same shape as the Rust pass: the name on the getenv line.
+# Every crate's cu/ dir is discovered, plus the runtime dirs for a .cu kept next to Rust sources.
+cuda_dirs=("${runtime_dirs[@]}")
+while IFS= read -r cuda_dir; do
+    cuda_dirs+=("$cuda_dir")
+done < <(find crates -mindepth 2 -maxdepth 2 -type d -name cu 2>/dev/null | sort)
+rg -N 'getenv[[:space:]]*\(' "${cuda_dirs[@]}" \
+    --glob '*.cu' --glob '*.cuh' --glob '*.h' --glob '*.hpp' --glob '*.c' --glob '*.cc' \
+    --glob '*.cpp' 2>/dev/null \
+    | rg -o 'MEMRA_[A-Z0-9_]+' | sort -u >> "$literal_file" || true
+
 # Pass B — CONST-INDIRECTED reads. Pass A matches a MEMRA_ name on the same line as the env
 # call, so `std::env::var(ALLOW_UNKNOWN_PRETOKENIZER_ENV)` — with the name three lines up in a
 # `pub const` — is invisible to it. That is the second half of the v0.94.0 blind spot, and it
