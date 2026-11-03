@@ -309,6 +309,20 @@ fn main() {
     println!("cargo:rustc-env=MEMRA_BUILT_CUDA_ARCH={cuda_arch}");
     println!("cargo:rustc-env=MEMRA_BUILT_CUDA_TARGET={target}");
 
+    // Watch every local header, not a hand list. Cargo reruns this script only for the paths
+    // it names and does not follow #include, so a header missing from a hand list (it once
+    // missed memra_pdl_chain.cuh and dsv4_dense_census.cuh) let an edit ship the previous
+    // kernels under an unchanged archive hash. A header no unit includes costs one rebuild.
+    let mut headers: Vec<PathBuf> = std::fs::read_dir("cu")
+        .expect("read cu/ for the header watch list")
+        .map(|entry| entry.expect("read a cu/ entry").path())
+        .filter(|path| path.extension().is_some_and(|ext| ext == "cuh"))
+        .collect();
+    headers.sort();
+    for header in &headers {
+        println!("cargo:rerun-if-changed={}", header.display());
+    }
+
     for (src, env) in [
         ("cu/kernels.cu", "MEMRA_ENGINE_FATBIN"),
         ("cu/hybrid.cu", "MEMRA_HYBRID_FATBIN"),
@@ -323,7 +337,6 @@ fn main() {
         ("cu/tier_receipt.cu", "MEMRA_TIER_RECEIPT_FATBIN"),
     ] {
         println!("cargo:rerun-if-changed={src}");
-        println!("cargo:rerun-if-changed=cu/wgmma_common.cuh");
         let stem = src.split('/').next_back().unwrap().trim_end_matches(".cu");
         let fatbin = out.join(format!("{stem}.fatbin"));
         let mut args = vec!["-gencode", &gencode, "-O3", "--fatbin"];
@@ -567,14 +580,6 @@ fn main() {
             "cu/tp_ar.cu",
         ] {
             println!("cargo:rerun-if-changed={mmq_src}");
-            println!("cargo:rerun-if-changed=cu/mmq_common.cuh");
-            println!("cargo:rerun-if-changed=cu/dsv4_dense_m1_exact_tail.cuh");
-            println!("cargo:rerun-if-changed=cu/dsv4_dense_tile.cuh");
-            println!("cargo:rerun-if-changed=cu/mmq_mma_i8.cuh");
-            println!("cargo:rerun-if-changed=cu/sm100_blockscale_layout.cuh");
-            println!("cargo:rerun-if-changed=cu/moe_kq_prims.cuh");
-            // fa3_prefill.cu includes the shared wgmma header (dedup 2026-08-21).
-            println!("cargo:rerun-if-changed=cu/wgmma_common.cuh");
             let compile_src =
                 if !matches!(cuda_arch.as_str(), "120a" | "100a") && mmq_src == "cu/mmq_fp4.cu" {
                     // NVFP4 W4A4 has two native Blackwell programs: sm_120a warp MMA and the
