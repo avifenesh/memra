@@ -681,7 +681,10 @@ fi
 # two consecutive runs on the local RTX 5090 read identically (run1, run2 under
 # research/spill-b-20260919/rtx5090-day25/); its arms are boots and injected faults with
 # fixed doors, not timings, so nothing in them depends on the rig's load. In-battery per the
-# H100 lane law: gates outside the battery rot silently. MEMRA_CI_HEALTH_FAULT=0 skips.
+# H100 lane law: gates outside the battery rot silently. Arm j (the batched chunk's OOM
+# retry) reads the card's default and SKIPs where the boot line says the recovery is OFF, which
+# is every card but the full-power RTX PRO 6000 Workstation Edition. MEMRA_CI_HEALTH_FAULT=0
+# skips.
 if [ "${MEMRA_CI_HEALTH_FAULT:-1}" = "1" ] && [ -x tools/health-fault-gate.sh ]; then
     tools/health-fault-gate.sh || { echo "health-fault-gate FAIL"; exit 1; }
 fi

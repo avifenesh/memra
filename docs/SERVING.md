@@ -398,6 +398,12 @@ share the class, not the receipts). None has an environment switch; each states 
   kernels, same bytes, fixed addresses. Boot line `[kv-vmm] door=ON ... grow=inline
   (pro6000-ws-receipt)`; every other card prints `[kv-vmm] door=OFF` and keeps pooled planes.
   [Decision](decisions/KV-VMM-SERVING-DEFAULT.md).
+- **Batched-chunk OOM retry.** A batched decode chunk whose quoted CUDA OOM came before any
+  session-state write (the engine's `step_guard`) takes one reclaim rung (parked sessions dropped,
+  the device prefix cache halved, the pools trimmed) and runs the same batched step once more, so
+  each request keeps one numeric program; a second failure or a torn step ends the chunk as on
+  every other card, where one OOM ends every session of the chunk. Boot line `[admit-oom] batch
+  OOM recovery: ON` or `OFF`. [Decision](decisions/BATCH-OOM-RECOVER-DEFAULT.md).
 
 ### Request body ceiling: 192 MiB, explicit, with a clean 413 (lane/hermes-fixes, 2026-08-19)
 

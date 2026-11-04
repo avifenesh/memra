@@ -16890,17 +16890,24 @@ fn reclaim_offtick_pass(
     removed + reclaim_queue_drain(engine, px, hpx, queue, &req.request_id)
 }
 
-/// Submit the worker queue's next demote while the tier's slot is free (DAY42 addendum E): the
-/// admission pass calls it, and so does the tick top after its settle calls, so the whole demote
-/// set reaches the host whether or not the arrival that queued it is still waiting. A queued entry
-/// that is no longer evictable (leased, hit or evicted meanwhile) is skipped; a refused submission
-/// dropped its entry (its bytes free now) and the next is tried. Returns the entries removed.
-/// MEMRA_BATCH_OOM_RECOVER (default unset, WP-B day 49, OWED O14): `1` retries a batched decode
-/// chunk once after one reclaim rung when its quoted CUDA OOM came before any session-state write
-/// (`memra_engine::step_guard`). Unset reads nothing.
-fn batch_oom_recover_on() -> bool {
-    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| std::env::var("MEMRA_BATCH_OOM_RECOVER").as_deref() == Ok("1"))
+/// The batched decode chunk's OOM recovery (WP-B day 49, `research/spill-b-20260919/DAY49.md`,
+/// `docs/decisions/BATCH-OOM-RECOVER-DEFAULT.md`): a chunk whose quoted CUDA OOM came before any
+/// session-state write (`memra_engine::step_guard`) takes one reclaim rung and runs the same
+/// batched step once more. The default on the full-power RTX PRO 6000 Blackwell Workstation
+/// Edition, the card the deciding cell read; every other card keeps the chunk's error arm.
+fn batch_oom_recover_default(device_name: &str) -> bool {
+    memra_engine::parallel::HardwareTarget::is_pro6000_workstation(device_name)
+}
+
+/// The boot receipt of [`batch_oom_recover_default`], one line.
+fn batch_oom_recover_boot_line(on: bool) -> &'static str {
+    if on {
+        "[admit-oom] batch OOM recovery: ON (RTX PRO 6000 Blackwell Workstation Edition: an \
+         untouched batched chunk takes one reclaim rung and retries once)"
+    } else {
+        "[admit-oom] batch OOM recovery: OFF (no receipt for this card: a batched chunk's OOM \
+         ends the chunk's sessions)"
+    }
 }
 
 /// The batch OOM's reclaim rung (DAY49 1.5): the parked sessions of the three pools are dropped,
@@ -17260,6 +17267,11 @@ fn exact_settle_spec(
     Ok(Some((from, to)))
 }
 
+/// Submit the worker queue's next demote while the tier's slot is free (DAY42 addendum E): the
+/// admission pass calls it, and so does the tick top after its settle calls, so the whole demote
+/// set reaches the host whether or not the arrival that queued it is still waiting. A queued entry
+/// that is no longer evictable (leased, hit or evicted meanwhile) is skipped; a refused submission
+/// dropped its entry (its bytes free now) and the next is tried. Returns the entries removed.
 fn reclaim_queue_drain(
     engine: &Engine,
     px: &mut PrefixCache,
@@ -28425,6 +28437,9 @@ pub fn run(
     // same receipt the qualification env is derived from.
     let admit_memory_cfg = crate::admit_memory::MemoryAdmitConfig::from_env();
     eprintln!("{}", admit_memory_cfg.boot_line());
+    // BATCHED-CHUNK OOM RECOVERY (WP-B day 49): the card's arm, resolved once and stated.
+    let batch_oom_recover = batch_oom_recover_default(&engine.ctx().name().unwrap_or_default());
+    eprintln!("{}", batch_oom_recover_boot_line(batch_oom_recover));
     // ON-DEMAND KV PLANES (WP-B day 37, research/spill-b-20260919/DAY37.md): the default on the
     // card class whose deciding cell read PROMOTE-ELIGIBLE (the RTX PRO 6000 Blackwell
     // Workstation Edition, docs/decisions/KV-VMM-SERVING-DEFAULT.md), pooled planes elsewhere.
@@ -32701,10 +32716,11 @@ pub fn run(
                     .map(|&i| active[i].request_id.as_str())
                     .collect::<Vec<_>>()
                     .join(",");
-                // WP-B day 49 (O14, MEMRA_BATCH_OOM_RECOVER): a quoted CUDA OOM of a chunk that
-                // wrote no session state (the step guard: before the engine call, or the generic
-                // body before any state write) takes one reclaim rung and runs the same batched
-                // step once more; any other failure is the error arm below, as today.
+                // WP-B day 49 (O14, batch OOM recovery): on a card whose default it is
+                // (`batch_oom_recover`), a quoted CUDA OOM of a chunk that wrote no session state
+                // (the step guard: before the engine call, or the generic body before any state
+                // write) takes one reclaim rung and runs the same batched step once more; any
+                // other failure, and every OOM elsewhere, is the error arm below.
                 let mut batch_attempt = 0usize;
                 let logits = loop {
                     memra_engine::step_guard::arm();
@@ -32770,7 +32786,7 @@ pub fn run(
                     match attempt {
                         Err(err)
                             if batch_attempt == 0
-                                && batch_oom_recover_on()
+                                && batch_oom_recover
                                 && is_cuda_oom(&err.to_string())
                                 && memra_engine::step_guard::recoverable(guard_state) =>
                         {
@@ -32795,7 +32811,7 @@ pub fn run(
                                 eprintln!(
                                     "[admit-oom] batch OOM: retry failed ({err}); ended as today"
                                 );
-                            } else if batch_oom_recover_on() && is_cuda_oom(&err.to_string()) {
+                            } else if batch_oom_recover && is_cuda_oom(&err.to_string()) {
                                 eprintln!(
                                     "[admit-oom] batch OOM: torn ({guard_state:?}); ended as today"
                                 );
@@ -63830,20 +63846,43 @@ mod tests {
         assert!(live.contains("match lm.model.spec_rewind_to_checkpoint(engine, &mut sess) {"));
     }
 
-    /// WP-B day 49 (DAY49 1.5): the batch-OOM door is read at the batched chunk only; the retry is
-    /// bounded to one and gated on a quoted CUDA OOM and the step guard's recoverable states.
+    /// WP-B day 49: the batch OOM recovery is the default on the card the deciding cell read and
+    /// nowhere else; the Max-Q and Server editions share the class, not the receipt.
     #[test]
-    fn batch_oom_recover_door_reaches_the_batched_chunk_only() {
+    fn batch_oom_recovery_is_the_pro6000_workstation_default_only() {
+        assert!(super::batch_oom_recover_default(
+            "NVIDIA RTX PRO 6000 Blackwell Workstation Edition"
+        ));
+        for name in [
+            "NVIDIA GeForce RTX 5090",
+            "NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition",
+            "NVIDIA RTX PRO 6000 Blackwell Server Edition",
+            "NVIDIA B200",
+            "",
+        ] {
+            assert!(!super::batch_oom_recover_default(name), "{name}");
+        }
+        assert!(super::batch_oom_recover_boot_line(true).contains("batch OOM recovery: ON"));
+        assert!(super::batch_oom_recover_boot_line(false).contains("batch OOM recovery: OFF"));
+    }
+
+    /// WP-B day 49 (DAY49 1.5): the batch OOM recovery is resolved once at worker start and read
+    /// at the batched chunk only; the retry is bounded to one and gated on a quoted CUDA OOM and
+    /// the step guard's recoverable states.
+    #[test]
+    fn batch_oom_recovery_reaches_the_batched_chunk_only() {
         let squash = |src: &str| -> String { src.split_whitespace().collect::<Vec<_>>().join(" ") };
         let worker = squash(include_str!("worker.rs"));
         let live = &worker[..worker.find("mod tests").expect("the test module exists")];
-        let call = format!("batch_oom_recover_on{}", "()");
+        let call = format!("batch_oom_recover_default{}", "(");
         assert_eq!(
             live.matches(call.as_str()).count(),
-            3,
-            "definition, the retry arm, the torn line"
+            2,
+            "definition, the worker start"
         );
-        assert!(live.contains("if batch_attempt == 0 && batch_oom_recover_on() && is_cuda_oom(&err.to_string()) && memra_engine::step_guard::recoverable(guard_state) =>"));
+        assert!(live.contains("let batch_oom_recover = batch_oom_recover_default(&engine.ctx().name().unwrap_or_default());"));
+        assert!(live.contains("if batch_attempt == 0 && batch_oom_recover && is_cuda_oom(&err.to_string()) && memra_engine::step_guard::recoverable(guard_state) =>"));
+        assert!(live.contains("} else if batch_oom_recover && is_cuda_oom(&err.to_string()) {"));
         assert_eq!(live.matches("memra_engine::step_guard::arm();").count(), 1);
         assert!(live.contains("let guard_state = memra_engine::step_guard::take();"));
         assert!(live.contains("batch_attempt += 1;"));
