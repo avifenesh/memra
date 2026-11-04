@@ -93,6 +93,23 @@ tape `9437b599f6b9d2a9` on all six (darklanes verdicts ledger
 **Scope:** sm_100a builds, plain KDA layers only. TP-sharded KDA layers and MLA layers keep the
 plain norm, so TP-2 loads are unchanged.
 
+## TP prefix entries: sm_100a default
+
+**Chosen:** on sm_100a builds the server captures and restores every rank's state in the
+prefix entries of a glm5 TP-2 session (each rank's KDA shard, each peer's latent plane, on their
+own devices). `MEMRA_GLM5_TP_PREFIX` is deleted.
+
+**Rejected:** refusing TP prefix capture by default on sm_100a, which was the door-off state.
+On other builds the refusal stays: no receipt exists there.
+
+**Measurement that settled it:** 2x B200 pair, 128k prompt cold and then again (darklanes
+`research/glm5-b200-mint-20260904/LANE.md:3619-3623`, box2h2, memra #324): the second request
+hit 130433 of 130433 prompt tokens from cache with ids identical over the continuation, and the
++2k extension was answered on the cached prefix. A correctness receipt, not a speed one: the
+mechanism replaces a refusal with a restore of the same bytes.
+
+**Scope:** sm_100a builds. `MEMRA_PREFIX_LATENT=1` is still required for the root planes.
+
 ## Open calls
 
 ### `MEMRA_GLM5_TP_EXPERT_SPLIT`: keep, promote or delete
