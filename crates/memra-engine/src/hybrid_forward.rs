@@ -3353,15 +3353,17 @@ impl HybridModel {
     /// layer in range is sharded.
     fn glm5_tp_sym_note_decline(&self, lo: usize, hi: usize) {
         use std::sync::atomic::Ordering;
-        if GLM5_TP_SYM_DECLINED.load(Ordering::Relaxed) || !crate::glm5_tp::glm5_tp_symmetric_on() {
+        if GLM5_TP_SYM_DECLINED.load(Ordering::Relaxed) {
             return;
         }
+        // The layer scan first: it is a pointer check per layer and no lock, so a model that
+        // carries no TP sidecar pays no environment read here on any token.
         let sharded = |il: usize| match self.layers.get(il).map(|l| &l.mixer) {
             Some(Mixer::Kda(la)) => la.tp.is_some(),
             Some(Mixer::Mla(mla)) => mla.tp.is_some(),
             _ => false,
         };
-        if !(lo..hi).any(sharded) {
+        if !(lo..hi).any(sharded) || !crate::glm5_tp::glm5_tp_symmetric_on() {
             return;
         }
         let why = if !crate::glm5_tp::glm5_tp_expert_split_on() {
@@ -3389,11 +3391,14 @@ impl HybridModel {
         lo: usize,
         hi: usize,
     ) -> Option<std::sync::Arc<crate::glm5_tp::Glm5TpRt>> {
-        if !crate::glm5_tp::glm5_tp_symmetric_on() || !crate::glm5_tp::glm5_tp_expert_split_on() {
-            return None;
-        }
-        self.glm5_tp_glued_rt_for(lo, hi)
-            .filter(|rt| rt.ranks() == 2 && rt.ar_1stage_available())
+        // The loaded sidecars first: an unsharded range returns at its first layer without an
+        // environment read, so plain glm5 decode on sm_100a pays nothing for this rule.
+        let rt = self.glm5_tp_glued_rt_for(lo, hi)?;
+        (crate::glm5_tp::glm5_tp_symmetric_on()
+            && crate::glm5_tp::glm5_tp_expert_split_on()
+            && rt.ranks() == 2
+            && rt.ar_1stage_available())
+        .then_some(rt)
     }
 
     /// ONE layer of the symmetric walk, both ranks (lane/glm5-tp-sym-graph-20260907 pulled it
