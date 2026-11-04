@@ -1207,6 +1207,7 @@ selectors it replaced refuse: `--tpep`, `MEMRA_DSV4_ATTENTION_TP_GATE` and
 | Gate binary | Placement | Why |
 | --- | --- | --- |
 | `dsv4-ar-phase-gate`, `dsv4_compose_cadence_dense_gate`, `dsv4_dense_exact_tail_gate`, `dsv4_dense_fast_gate`, `dsv4_hc_dot_split_gate`, `dsv4_kv_split_gate`, `dsv4_launch_boundary_gate`, `dsv4_tp_replay_long_gate` | `tp_ep` | They qualify the served program. |
+| `dsv4_park_boundary_gate`, `dsv4-dense-arm-ab` | `tp_ep` | They guard or measure the served shape (the spec driver's park boundary, served-width prefill); their receipts before memra #710 are PP-2 cells. |
 | `dsv4-gpu-dspark-gate` | `--placement=tp_ep\|tp_ep_replicated\|pp` | Spec == plain; `tp_ep` first, `pp` is the PP-2 cell. |
 | `dsv4_rows_gate` | `--placement=tp_ep\|pp` | TP/EP B-row groups need attention TP2, so there is no replicated cell. |
 | `dsv4_tp_ep_verify_gate` | `--placement=tp_ep\|tp_ep_replicated\|pp` | `pp` is the control cell. |
@@ -1220,7 +1221,6 @@ selectors it replaced refuse: `--tpep`, `MEMRA_DSV4_ATTENTION_TP_GATE` and
 | `dsv4_graph_probe_gate` | `pp` | The per-layer graph probes run the PP walk only. |
 | `dsv4_grouped_prefill_gate` | `pp` | The prefill-only grouped probe refuses the matrix program and EP. |
 | `dsv4_long_decode_gate`, `dsv4_chunk_sweep_gate`, `dsv4_coupled_proposal_gate`, `dsv4_dense_census`, `dsv4_dense_tile_gate`, `dsv4_prefill_work_gate`, `dsv4_wide_prefill_gate`, `dsv4_matrix_program_gate` | `pp` | Historical instruments that pin the doors they were taken with; their receipts are PP-2 cells. A TP/EP cell of one is a new cell with its own receipt. The served long-decode cell is `dsv4_tp_replay_long_gate`. |
-| `dsv4_park_boundary_gate`, `dsv4-dense-arm-ab` | `pp` | The placement their receipts were taken on. |
 
 `dsv4-hc-grid-gate`, `dsv4-dense-family-bench`, `dsv4_q_layout_gate`, `dsv4_sampler_sort_gate`
 and `dsv4_http_prompt_pack` load no model and have no placement.

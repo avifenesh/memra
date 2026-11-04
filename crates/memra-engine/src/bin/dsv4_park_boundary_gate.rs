@@ -17,7 +17,9 @@
 //!
 //! usage: dsv4_park_boundary_gate <model-dir> <source.txt>
 //!
-//! Placement: `pp`, a PP-2 cell, the placement the memra #495 red arm was taken on.
+//! Placement: `tp_ep` (`Dsv4Placement::SERVED`). The red arm guards the served spec driver, so
+//! it runs the served placement; its memra #495 receipt is a PP-2 cell, taken before the TP/EP
+//! default (memra #710).
 use memra_engine::dsv4_gpu::{Dsv4Gpu, Dsv4SampleCfg, Dsv4Vt, RoundTake};
 use memra_engine::dsv4_topology::Dsv4Placement;
 use memra_gguf::dsv4_forward::ActQuantVariant;
@@ -104,7 +106,7 @@ fn main() {
         &[0, 1],
         ActQuantVariant::RefFp8Round,
         8192,
-        Dsv4Placement::Pp,
+        Dsv4Placement::SERVED,
     )
     .expect("model");
     let width = 512.min(PROMPT_TOKENS);
