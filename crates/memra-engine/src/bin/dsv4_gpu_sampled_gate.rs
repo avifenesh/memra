@@ -23,10 +23,14 @@
 //!
 //! Usage: dsv4-gpu-sampled-gate <model-dir> <prompts.json> <out-dir> [n_new] \
 //!          [seeds,csv] [n_prompts] [dev0,dev1]
+//!
+//! Placement: `pp`, a PP-2 cell. The monolithic reference prefill it drives (`forward`,
+//! `prefill_with_cache`) runs the PP walk only.
 
 use memra_engine::dsv4_gpu::{
     Dsv4Gpu, Dsv4PenaltyCfg, Dsv4SampleCfg, Dsv4Vt, dsv4_penalize_row, dsv4_sample_row,
 };
+use memra_engine::dsv4_topology::Dsv4Placement;
 use memra_gguf::dsv4_forward::ActQuantVariant;
 use std::io::Write;
 use std::path::Path;
@@ -158,7 +162,7 @@ fn main() {
     let variant = ActQuantVariant::ClampOnly;
     let max_p = prompts.iter().map(|(_, i)| i.len()).max().unwrap();
     let max_seq = (max_p + n_new + 96).max(256);
-    let gpu = Dsv4Gpu::load(dir, &devices, variant, max_seq).expect("load");
+    let gpu = Dsv4Gpu::load(dir, &devices, variant, max_seq, Dsv4Placement::Pp).expect("load");
     println!(
         "loaded: split at layer {}, t={:.0}s",
         gpu.split_at,

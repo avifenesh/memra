@@ -1,7 +1,11 @@
 //! Explicit sampled plain-decode capture after warmup; not a throughput cell.
+//!
+//! Placement: `pp`, a PP-2 cell. Its states keep C4 history in pinned host RAM, which TP/EP
+//! refuses.
 use memra_engine::dsv4_gpu::{
     Dsv4Gpu, Dsv4SampleCfg, Dsv4SamplerOrder, dsv4_sample_row, dsv4_sampler_order,
 };
+use memra_engine::dsv4_topology::Dsv4Placement;
 use memra_gguf::dsv4_forward::ActQuantVariant;
 use memra_tokenizer::Tokenizer;
 use sha2::{Digest, Sha256};
@@ -131,7 +135,14 @@ fn main() {
         Sha256::digest(source.as_bytes()),
         arm.name()
     );
-    let gpu = Dsv4Gpu::load(dir, &[0, 1], ActQuantVariant::RefFp8Round, 8544).expect("model");
+    let gpu = Dsv4Gpu::load(
+        dir,
+        &[0, 1],
+        ActQuantVariant::RefFp8Round,
+        8544,
+        Dsv4Placement::Pp,
+    )
+    .expect("model");
     assert!(gpu.matrix_moe_enabled());
     // Preserve the old environment-controlled profile when no fourth argument is supplied.
     // Fixed attribution arms deliberately defer every gate below until after restore, so the

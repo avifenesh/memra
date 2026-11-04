@@ -13,8 +13,12 @@
 //!
 //! Usage: `dsv4_pipeline_gate <model-dir> <source.txt> [output-tokens] [repeats]`.
 //! Rig law: under the box GPU lock, served defaults (no MEMRA_DSV4_* overrides).
+//!
+//! Placement: `pp`, a PP-2 cell. Request pipelining exists on PP-2 only, the
+//! `MEMRA_DSV4_TOPOLOGY=pp` rollback.
 use memra_engine::dsv4_gpu::{DecodeState, Dsv4Gpu};
 use memra_engine::dsv4_source_tape::SourceTape;
+use memra_engine::dsv4_topology::Dsv4Placement;
 use memra_gguf::dsv4_forward::ActQuantVariant;
 use memra_tokenizer::Tokenizer;
 use std::{path::Path, time::Instant};
@@ -154,7 +158,14 @@ fn main() {
         prompts[1].len(),
         tape.sha256
     );
-    let gpu = Dsv4Gpu::load(dir, &[0, 1], ActQuantVariant::RefFp8Round, capacity).expect("model");
+    let gpu = Dsv4Gpu::load(
+        dir,
+        &[0, 1],
+        ActQuantVariant::RefFp8Round,
+        capacity,
+        Dsv4Placement::Pp,
+    )
+    .expect("model");
     assert!(!gpu.topology().is_tp_ep(), "PP-2 program only");
     let (reference, _) = serial(&gpu, &prompts, capacity, output);
     for (i, tokens) in reference.iter().enumerate() {

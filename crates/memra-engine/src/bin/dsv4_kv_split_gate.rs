@@ -18,8 +18,12 @@
 //!
 //! Usage: `dsv4_kv_split_gate <model-dir> <source-tape> [prompt-tokens] [steps]` (defaults
 //! 3000, 300). Rig law: under the box GPU lock, one pair, no other tenant.
+//!
+//! Placement: `tp_ep` (`Dsv4Placement::SERVED`), the served placement: TP/EP with exact attention
+//! TP2.
 use memra_engine::dsv4_gpu::{DecodeState, Dsv4Gpu, Dsv4SampleCfg, set_c4_split_for_gate};
 use memra_engine::dsv4_source_tape::SourceTape;
+use memra_engine::dsv4_topology::Dsv4Placement;
 use memra_gguf::dsv4_forward::ActQuantVariant;
 use memra_tokenizer::Tokenizer;
 use std::path::Path;
@@ -116,9 +120,14 @@ fn main() {
     let max_seq: usize = std::env::var("DSV4_KV_SPLIT_GATE_MAX_SEQ").map_or(capacity + 64, |v| {
         v.parse().expect("DSV4_KV_SPLIT_GATE_MAX_SEQ")
     });
-    Dsv4Gpu::set_tp_ep_topology_for_gate(true);
-    Dsv4Gpu::set_attention_tp_for_gate(true);
-    let gpu = Dsv4Gpu::load(dir, &[0, 1], ActQuantVariant::RefFp8Round, max_seq).expect("load");
+    let gpu = Dsv4Gpu::load(
+        dir,
+        &[0, 1],
+        ActQuantVariant::RefFp8Round,
+        max_seq,
+        Dsv4Placement::SERVED,
+    )
+    .expect("load");
     assert!(gpu.topology().is_tp_ep() && gpu.attention_tp_geometry().is_some());
     println!(
         "PROTOCOL {{\"prompt_tokens\":{prompt_tokens},\"chunk\":{CHUNK},\"steps\":{steps},\"capacity\":{capacity},\"compare\":\"prefill and every step's full logits bits, replicated against split\",\"source_sha256\":\"{}\"}}",

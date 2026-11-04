@@ -1189,6 +1189,42 @@ Neither diagnostic is a timed performance cell. Route receipts live under
 `research/prefill-fairness-20260908/`.
 
 
+### DSv4 gate placement (S06:F0)
+
+`Dsv4Gpu::load` has no default placement: every caller names one, and every load logs
+`[load] placement <name>`. The names:
+- `tp_ep` (`Dsv4Placement::SERVED`): TP/EP with exact attention TP2, what memra-server loads
+  unless `MEMRA_DSV4_TOPOLOGY=pp`.
+- `tp_ep_replicated`: TP/EP with replicated attention, gate-only.
+- `pp`: PP-2, the `MEMRA_DSV4_TOPOLOGY=pp` rollback.
+
+A serving-qualification run takes the `tp_ep` cells first, on a 2x RTX PRO 6000 pair under
+`/tmp/memra-gpu.lock`. A PP-2 cell qualifies only the `pp` rollback and runs only where a gate
+names it. A gate with cells on more than one placement requires `--placement=<name>`. The
+selectors it replaced refuse: `--tpep`, `MEMRA_DSV4_ATTENTION_TP_GATE` and
+`DSV4_ROWS_GATE_TOPOLOGY`.
+
+| Gate binary | Placement | Why |
+| --- | --- | --- |
+| `dsv4-ar-phase-gate`, `dsv4_compose_cadence_dense_gate`, `dsv4_dense_exact_tail_gate`, `dsv4_dense_fast_gate`, `dsv4_hc_dot_split_gate`, `dsv4_kv_split_gate`, `dsv4_launch_boundary_gate`, `dsv4_tp_replay_long_gate` | `tp_ep` | They qualify the served program. |
+| `dsv4-gpu-dspark-gate` | `--placement=tp_ep\|tp_ep_replicated\|pp` | Spec == plain; `tp_ep` first, `pp` is the PP-2 cell. |
+| `dsv4_rows_gate` | `--placement=tp_ep\|pp` | TP/EP B-row groups need attention TP2, so there is no replicated cell. |
+| `dsv4_tp_ep_verify_gate` | `--placement=tp_ep\|tp_ep_replicated\|pp` | `pp` is the control cell. |
+| `dsv4_tp_ep_gate`, `dsv4_tp_ep_sampled_perf_gate` | `--placement=tp_ep\|tp_ep_replicated` | TP/EP-only gates; the full-token replay cells need `tp_ep`. |
+| `dsv4_c4_direct_gate`, `dsv4_c4_host_gate`, `dsv4_decode_profile`, `dsv4_decode_rate_gate`, `dsv4_plain_perf_gate` | `pp` | Their states keep C4 history in pinned host RAM, which TP/EP refuses. |
+| `dsv4_program_accuracy`, `dsv4_moe_program_class_gate`, `dsv4_matrix_distribution_gate` | `pp` | The reference expert program loads on PP-2 only. |
+| `dsv4-gpu-gate`, `dsv4-gpu-greedy`, `dsv4-gpu-decode-gate`, `dsv4-decode-probe`, `dsv4-native-gemm-gate`, `dsv4-gpu-tf-gate`, `dsv4-gpu-sampled-gate`, `dsv4-drafted-corpus`, `dsv4-decode-bench`, `dsv4_host_cache_gate` | `pp` | The monolithic reference prefill (`forward`, `prefill_with_cache`) runs the PP walk only. |
+| `dsv4_capacity_gate` | `pp` | 1M context with DSpark is PP-2's reach; TP/EP reaches 1M plain and 500k with DSpark. |
+| `dsv4_ep_pair_gate` | `pp` | PP-2 against PP-2 with the whole-expert EP pair. |
+| `dsv4_pipeline_gate` | `pp` | Request pipelining exists on PP-2 only. |
+| `dsv4_graph_probe_gate` | `pp` | The per-layer graph probes run the PP walk only. |
+| `dsv4_grouped_prefill_gate` | `pp` | The prefill-only grouped probe refuses the matrix program and EP. |
+| `dsv4_long_decode_gate`, `dsv4_chunk_sweep_gate`, `dsv4_coupled_proposal_gate`, `dsv4_dense_census`, `dsv4_dense_tile_gate`, `dsv4_prefill_work_gate`, `dsv4_wide_prefill_gate`, `dsv4_matrix_program_gate` | `pp` | Historical instruments that pin the doors they were taken with; their receipts are PP-2 cells. A TP/EP cell of one is a new cell with its own receipt. The served long-decode cell is `dsv4_tp_replay_long_gate`. |
+| `dsv4_park_boundary_gate`, `dsv4-dense-arm-ab` | `pp` | The placement their receipts were taken on. |
+
+`dsv4-hc-grid-gate`, `dsv4-dense-family-bench`, `dsv4_q_layout_gate`, `dsv4_sampler_sort_gate`
+and `dsv4_http_prompt_pack` load no model and have no placement.
+
 ### HC24 default engagement, owner accepted 2026-09-09
 
 Run `dsv4_hc_dot_split_gate <model-dir> <source.txt> <new-output-dir> --defaults`
@@ -1209,8 +1245,8 @@ all five dense-TC drivers under unset, explicit S16 and zero before CUDA calls.
 
 ### DSv4 DSpark spec == plain on the served program (#660)
 
-`dsv4-gpu-dspark-gate <model-dir> <fixtures.json> <out-dir> [runs] [dev0,dev1] --served` runs plain,
-sequential-verify and batched T=k+1 verify arms in one process on the served defaults
+`dsv4-gpu-dspark-gate <model-dir> <fixtures.json> <out-dir> [runs] [dev0,dev1] --placement=tp_ep --served`
+runs plain, sequential-verify and batched T=k+1 verify arms in one process on the served defaults
 (`MEMRA_DSV4_DRAFTER=dspark MEMRA_DSV4_DECODE_PATH=device`, chunked prefill and prime, the
 matrix expert program, the serve route's depth cap and verify threshold). It requires greedy
 spec == plain byte-exact, batched verify logits and every live cache class after commit bit-equal
@@ -1219,7 +1255,8 @@ and determinism across runs. Without `--served` it pins `MEMRA_DSV4_HC_DOT_SPLIT
 `MEMRA_DSV4_DENSE_FAST=0`, the historical program. Run it on the pair under `/tmp/memra-gpu.lock`
 for any change that touches a DSv4 dense, HC, verify or commit path. Before #660 the served run
 failed every bit-gate cell: the HC24 split ran only on one-row calls, so verify rows took the
-sequential class. Receipts: `research/dsv4f-bringup-20260923/`.
+sequential class. Receipts: `research/dsv4f-bringup-20260923/`; those before memra #710 are PP-2
+cells (`--placement=pp`), and the served cell is `--placement=tp_ep`, run first.
 
 ### DSv4 one-token MoE stream visitor (#664)
 
@@ -1229,8 +1266,9 @@ B-value probe over every E4M3FN scale byte and E2M1 code, then gate, up, H and t
 contribution over a full bank and both EP halves, four route patterns (empty groups, one shard
 owning every route, duplicate routes, contiguous). It also pins engagement (3 enqueues per live
 step ON, 0 OFF) and precedence (a gate-armed half2 down tail keeps down; the stream takes gate
-and up). On the pair, `dsv4-gpu-dspark-gate ... --served` takes the stream and fails unless arm
-P enqueued it; without `--served` the historical pins hold the sktail program and fail if it did.
+and up). On the pair, `dsv4-gpu-dspark-gate ... --placement=tp_ep --served` takes the stream and
+fails unless arm P enqueued it; without `--served` the historical pins hold the sktail program and
+fail if it did.
 Both invocations must PASS every DSpark bit gate.
 
 ### DSv4 multi-row MoE stream visitor (#669)
@@ -1242,9 +1280,9 @@ halves, five route patterns (scattered distinct experts, every token on the same
 owning every route, a within-token duplicate, seeded random top-6), with at least one group wider
 than a 16-row chunk. It pins engagement (3 enqueues per live step for 2..=16 rows, 0 at 17 rows
 and with the gate setter off) and that the one-token visitor never enqueues on a multi-row step.
-On the pair, `dsv4-gpu-dspark-gate ... --served` must PASS every DSpark bit gate and its batched
-arm DB must log a nonzero `mrow stream ON dispatches` count; without `--served` the historical
-pins must log zero.
+On the pair, `dsv4-gpu-dspark-gate ... --placement=tp_ep --served` must PASS every DSpark bit gate
+and its batched arm DB must log a nonzero `mrow stream ON dispatches` count; without `--served`
+the historical pins must log zero.
 
 
 ### DSv4 fused one-token MoE (#694)
@@ -1255,8 +1293,8 @@ pins must log zero.
 16-launch grouped chain, requiring the intermediate H, every slot's down contribution and the
 combined row to compare `to_bits`-equal, and each deferred fault (a dead slot, a lossy x mirror, a
 lossy h mirror) to land in the same fault word bit the chain sets. `dsv4-gpu-dspark-gate
---served` counts the fused dispatches on its plain arm, so a served run that fell back to the
-chain fails. Receipts: `research/dsv4f-bringup-20260923/moe-fused/`.
+--placement=tp_ep --served` counts the fused dispatches on its plain arm, so a served run that fell
+back to the chain fails. Receipts: `research/dsv4f-bringup-20260923/moe-fused/`.
 
 ### DSv4 gate source tape (#657)
 
@@ -1330,8 +1368,9 @@ tokens and accept shas. Receipts: `research/dsv4f-bringup-20260923/kv-split/`.
 
 ### DSv4 TP/EP B-row steps and their graphs (#710)
 
-`DSV4_ROWS_GATE_TOPOLOGY=tp_ep dsv4_rows_gate <model-dir> <source-tape> 24 64` (a 2x RTX PRO 6000
-pair, under `/tmp/memra-gpu.lock`) runs the B-row identity gate on the served TP/EP program.
+`dsv4_rows_gate <model-dir> <source-tape> 24 64 --placement=tp_ep` (a 2x RTX PRO 6000
+pair, under `/tmp/memra-gpu.lock`) runs the B-row identity gate on the served TP/EP program;
+`--placement=pp` is the PP-2 cell (memra #667 lever 2).
 Four sessions decode alone for the solo trace. Every arm then compares each step's logits
 bits against it:
 - The eager B-row step, as the sessions join and leave (widths 1 to 4) and their rows rotate.
@@ -1410,8 +1449,8 @@ checks and again with the checks routed to a device fault word. On valid routes 
 16 rows, gate, up, H and the down contribution must be bit-equal and the word must stay 0. Three
 red arms must each set their own bit while the synchronous arm refuses the same input: an expert
 id outside the bank (route), an E4M3 NaN code in the routed input (input mirror) and one in the H
-row before down (intermediate mirror). On the pair, `dsv4-gpu-dspark-gate ... --served` covers
-the served transaction with the deferred checks on.
+row before down (intermediate mirror). On the pair,
+`dsv4-gpu-dspark-gate ... --placement=tp_ep --served` covers the served transaction with the deferred checks on.
 
 
 ### Model-owned device admission and reclaim (#544)

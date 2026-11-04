@@ -24,8 +24,12 @@
 //!
 //! Usage: dsv4-gpu-tf-gate <model-dir> <tf.json> <out-dir> [dev0,dev1]
 //!   exit 0 = every position agrees or is an in-band near-tie, determinism holds
+//!
+//! Placement: `pp`, a PP-2 cell. The monolithic reference prefill it drives (`forward`,
+//! `prefill_with_cache`) runs the PP walk only.
 
 use memra_engine::dsv4_gpu::Dsv4Gpu;
+use memra_engine::dsv4_topology::Dsv4Placement;
 use memra_gguf::config::JsonObj;
 use memra_gguf::dsv4_forward::{ActQuantVariant, drift_coeff, expert_arm_native};
 use std::io::Write as _;
@@ -134,7 +138,7 @@ fn main() {
     }
 
     let max_seq = prompt.len() + n + 96;
-    let gpu = Dsv4Gpu::load(dir, &devices, variant, max_seq).expect("load");
+    let gpu = Dsv4Gpu::load(dir, &devices, variant, max_seq, Dsv4Placement::Pp).expect("load");
     println!(
         "loaded: split at layer {}, t={:.0}s",
         gpu.split_at,

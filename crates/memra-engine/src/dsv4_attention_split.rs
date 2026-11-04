@@ -1,6 +1,6 @@
 //! Rank-local DSV4 FP8 dense planes for TP2 head-parallel attention.
 //!
-//! `Dsv4Gpu::load_placed` builds these for every TP/EP load with attention TP, the served
+//! `Dsv4Gpu::load` builds these for every TP/EP load with attention TP, the served
 //! two-card default. Each rank packs a contiguous output-row partition of `wq_b`, `wo_a` and
 //! `wo_b` from the checkpoint plane on its own device ([`DeviceFp8Plane::from_device`]), so
 //! every packed row is the one-card row and the join is an exact row gather

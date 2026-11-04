@@ -1,9 +1,14 @@
 //! Compare emitted tokens and persistent state with plain position-keyed sampling.
 //! Proposal acceptance/timing is characterization, not a serving promotion.
+//!
+//! Placement: `pp`, a PP-2 cell. This historical instrument pins the doors it was taken with (the
+//! startup pins below), and its receipts are PP-2 cells. A TP/EP cell of the same check is a new
+//! cell with its own receipt.
 use memra_engine::dsv4_gpu::{
     Dsv4DraftProposal, Dsv4Gpu, Dsv4PenaltyCfg, Dsv4SampleCfg, Dsv4Vt, dsv4_penalize_row,
     dsv4_sample_row,
 };
+use memra_engine::dsv4_topology::Dsv4Placement;
 use memra_gguf::dsv4_forward::ActQuantVariant;
 use memra_tokenizer::Tokenizer;
 use sha2::{Digest, Sha256};
@@ -49,7 +54,14 @@ fn main() {
         true,
     );
     assert!(tokens.len() >= 1025, "real source must not be padded");
-    let mut gpu = Dsv4Gpu::load(dir, &[0, 1], ActQuantVariant::RefFp8Round, 4096).expect("load");
+    let mut gpu = Dsv4Gpu::load(
+        dir,
+        &[0, 1],
+        ActQuantVariant::RefFp8Round,
+        4096,
+        Dsv4Placement::Pp,
+    )
+    .expect("load");
     gpu.set_prefill_grouped_for_gate(false)
         .expect("reference math");
     for count in [160, 1025] {

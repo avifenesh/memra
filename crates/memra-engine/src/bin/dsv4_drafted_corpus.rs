@@ -31,8 +31,12 @@
 //! Prompt file: {"prompts": [{"pool": "hermes", "ids": [..]}, ...]}
 //!
 //! Usage: dsv4-drafted-corpus <model-dir> <prompts.json> <out-dir> [n_new] [reps] [dev0,dev1]
+//!
+//! Placement: `pp`, a PP-2 cell. The monolithic reference prefill it drives (`forward`,
+//! `prefill_with_cache`) runs the PP walk only.
 
 use memra_engine::dsv4_gpu::{Dsv4Gpu, Dsv4Vt};
+use memra_engine::dsv4_topology::Dsv4Placement;
 use memra_gguf::dsv4_forward::ActQuantVariant;
 use std::io::Write;
 use std::path::Path;
@@ -155,7 +159,7 @@ fn main() {
         dir.display(),
         prompts.len()
     );
-    let gpu = Dsv4Gpu::load(dir, &devices, variant, max_seq).expect("load");
+    let gpu = Dsv4Gpu::load(dir, &devices, variant, max_seq, Dsv4Placement::Pp).expect("load");
     println!(
         "loaded: split at layer {}, verify tmax {}, t={:.0}s",
         gpu.split_at,

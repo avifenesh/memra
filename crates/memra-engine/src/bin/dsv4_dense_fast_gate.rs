@@ -1,8 +1,12 @@
 //! Dense-fast same-class qualification on the default split-K/cadence program.
 //! OFF eager, OFF replay and ON replay must match at every step.
+//!
+//! Placement: `tp_ep` (`Dsv4Placement::SERVED`), the served placement: TP/EP with exact attention
+//! TP2.
 use memra_engine::dsv4_gpu::{DecodeState, Dsv4Gpu, Dsv4SampleCfg, dsv4_pos_uniform, dsv4_prof_on};
 use memra_engine::dsv4_sampler::{Dsv4DeviceSampler, Dsv4Sampler, dsv4_sampler};
 use memra_engine::dsv4_source_tape::SourceTape;
+use memra_engine::dsv4_topology::Dsv4Placement;
 use memra_gguf::dsv4_forward::ActQuantVariant;
 use memra_tokenizer::Tokenizer;
 use sha2::{Digest, Sha256};
@@ -739,8 +743,6 @@ fn main() {
     );
     let output = PathBuf::from(&args[3]);
     std::fs::create_dir(&output).expect("new output directory");
-    Dsv4Gpu::set_tp_ep_topology_for_gate(true);
-    Dsv4Gpu::set_attention_tp_for_gate(true);
     // memra #458: this is a bench process, so it may run the matrix expert program
     // with the default-ON split-K arm; a serving process cannot arm it and refuses
     // that combination at load instead of failing every request.
@@ -750,6 +752,7 @@ fn main() {
             &[0, 1],
             ActQuantVariant::RefFp8Round,
             PRIME + OUTPUT + 32,
+            Dsv4Placement::SERVED,
         )
         .expect("pinned TP2 model"),
     );

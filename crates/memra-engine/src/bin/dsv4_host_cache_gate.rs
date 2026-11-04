@@ -10,8 +10,12 @@
 //! element is compared by bits. Dead capacity tails and scratch are intentionally absent.
 //!
 //! Usage: dsv4-host-cache-gate <model-dir> <fixtures.json> [dev0,dev1]
+//!
+//! Placement: `pp`, a PP-2 cell. The monolithic reference prefill it drives (`forward`,
+//! `prefill_with_cache`) runs the PP walk only.
 
 use memra_engine::dsv4_gpu::{DecodeState, DsparkCaptureOut, DsparkState, Dsv4Gpu};
+use memra_engine::dsv4_topology::Dsv4Placement;
 use memra_gguf::dsv4_forward::{FixtureSpec, drift_coeff};
 use std::path::Path;
 
@@ -145,8 +149,14 @@ fn main() {
     let continuation = 11usize;
     let small_capacity = prompt.len() + warm + continuation + 1;
     let grown_capacity = small_capacity + 97;
-    let mut gpu = Dsv4Gpu::load(model_dir, &devices, fixture.variant, grown_capacity)
-        .expect("load DSV4 GPU model");
+    let mut gpu = Dsv4Gpu::load(
+        model_dir,
+        &devices,
+        fixture.variant,
+        grown_capacity,
+        Dsv4Placement::Pp,
+    )
+    .expect("load DSV4 GPU model");
     assert!(
         gpu.dspark.is_some(),
         "gate requires MEMRA_DSV4_DRAFTER=dspark"
