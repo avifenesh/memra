@@ -40425,15 +40425,17 @@ fn admit(
         choice: req.choice.clone(),
         is_capture,
     };
-    if memra_engine::glm5_tp_sampler::enabled() {
+    // The device sampler's per-request rules apply only to a model whose loaded head can take
+    // it (a GLM TP-2 load on its measured walk). Every other model keeps the host sampler without
+    // building a config, so it logs no per-request refusal.
+    if memra_engine::glm5_tp_sampler::enabled() && lm.model.glm5_tp_device_sample_supported() {
         use memra_engine::glm5_tp_sampler::{Glm5TpDeviceSampler, Glm5TpSampleConfig};
         let plain = s.spec_k == 0
             && s.spec.is_none()
             && s.gspec_k == 0
             && !s.dspark_on
             && !s.glm5_on
-            && s.cache.is_some()
-            && lm.model.glm5_tp_device_sample_supported();
+            && s.cache.is_some();
         // HTTP logprobs requests currently refuse before worker admission.
         // Full-row consumers must always select the host arm here.
         let cfg = Glm5TpSampleConfig::for_request(
