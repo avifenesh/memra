@@ -113,3 +113,46 @@ A fresh boot of the server built at 35897adf14 (the same code tree as 0e914ccf4c
 | 32 | 67.8 | 79.0 | 78.6 | **83.6** | 135.5 |
 
 c=32 gains 5.8% over the dp4a b32 tier. c=8 and c=16 do not move, as designed: the tensor-core tier serves only 17..32-row waves, and it is bit-identical anyway.
+
+## Spec gate at c=2: stale spec prices, three variants (2026-11-04)
+
+With bf16 GDN state the c=2 cell served 23.8-23.9 tok/s in two runs against 29.0 on fp32. The gate log showed why. A K=3 price was extrapolated from a K=5 slot measured in a low-acceptance stretch. Plain won the tie, no spec tick ran at n=2 again, and nothing corrected the price. Three fixes were served on fresh boots, each with the memset removal and the tensor-core b32 tier (receipts `gb10-gate/`):
+
+| variant | sha | c1 | c2 | c4 | c8 | c16 | c32 | verdict |
+|---|---|---:|---:|---:|---:|---:|---:|---|
+| v1: spec slots older than 64 s stop pricing; probe within the plain EMA's noise | 2ac067a1a9 | 22.58 | 28.25 | 38.70 | **49.21** | 71.35 | 83.35 | rejected: with no stale ratio anchors the raw table priced c8 spec at 98.7 against a realized 49.3 |
+| v2: prices keep every slot; probe within 2 SE of the plain EMA | 781ecc64ef | 22.45 | **23.95** | 39.80 | 62.25 | stopped | | rejected: c2 still plain (K=3 at 25.8 vs plain 26.1; the plain EMA's SE alone is too small to call that a tie) |
+| **v3: spec slots priced at the live acceptance; probe within 2 SE of the difference** | **062ecac658** | **22.60** | **28.94** | **38.10** | **62.10** | **75.77** | **83.11** | **adopted** (default build, fp32) |
+
+v3, two changes:
+- Each spec slot records the acceptance window's expected tokens per round at its K when sampled, and is priced at expected-now over expected-then. A slot measured in a low-acceptance stretch recovers as soon as any spec round, at any concurrency, moves the window.
+- The tie band is two standard errors of the difference: the plain EMA's SE and the largest relative SE among this n's spec slots, in quadrature.
+
+The bf16 arm on v3 (`caed240c24` = combo + v3, `MEMRA_GDN_STATE_BF16=1`, fresh boot, c2 then c8):
+
+| c | bf16 + TC, old gate (19b3495bab) | bf16 + TC, v3 gate |
+|---:|---:|---:|
+| 2 | 23.89 | **27.98** |
+| 8 | 60.80 | 59.42 |
+
+c2 recovers on both arms (fp32 28.94, bf16 27.98, against the 29.0 fp32 reference).
+
+c8 holds on fp32 (62.10 against 62.4-62.6). On bf16 it is 59.42, inside the 59.4-62.6 band the c8 cell has shown across today's runs:
+- that arm ran c8 straight after c2, with no c4 step;
+- the n=7/8 verdicts first speculated at the table price (98-103 tok/s predicted) until n=8 K=1 was realized at 53.6;
+- after that it served plain.
+
+One run per arm; c2 has varied 23.8-29.0 between runs of one build before, so this is a direction, not a tight number.
+
+Default-build rerun (memset removal + v3 gate + tensor-core b32 chosen at boot), against the earlier default:
+
+| c | previous default, tensor-core b32 (0e914ccf4c tree) | default now (062ecac658) | vLLM |
+|---:|---:|---:|---:|
+| 1 | 22.34 (fp32 dp4a run) | 22.60 | 24.2 |
+| 2 | 29.02 (fp32 dp4a run) | 28.94 | |
+| 4 | 37.64 (fp32 dp4a run) | 38.10 | 68.7 |
+| 8 | 62.41 | 62.10 | 96.7 |
+| 16 | 75.84 | 75.77 | 121.4 |
+| 32 | 83.61 | 83.11 | 135.5 |
+
+Served, the memset removal is flat within single-run noise: the cell's decode ticks are mostly shallower than 12288, and the tick gain there is 2.6-3.9%.
