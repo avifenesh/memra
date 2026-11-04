@@ -401,7 +401,12 @@ fi
 #   (b) generation STOPS at the turn end (finish=stop, no <turn|> in content — the
 #       eog_ids() union) and no channel/turn tag ever reaches content (gap 2);
 #   (c) a thinking-ON request separates: reasoning non-empty, content still clean;
-#   (d) the server survived: /health green after all of it, zero panic lines in the log.
+#   (d) the server survived: /health green after all of it, zero panic lines in the log;
+#   (e) the (a) chat streamed: no tag in any delta, and the deltas reassemble to the
+#       non-stream content and reasoning (greedy). This covers the stream half of the
+#       unopened-thought rule (docs/decisions/GEMMA-UNOPENED-THOUGHT.md): E4B's thought
+#       after the closed channel goes to reasoning on both shapes, and a card that writes
+#       none streams the content it streamed before.
 # same canonical path as local-ci.sh's G12 (MEMRA_G12_MODEL overrides there too)
 GEMMA_MODEL="${GEMMA_MODEL:-/data/ai-ml/models/gemma-4-12b-it-qat/gemma-4-12b-it-qat-q4_0.gguf}"
 if [ -f "$GEMMA_MODEL" ]; then
@@ -423,6 +428,27 @@ for tag in ("<turn|>", "<|channel>", "<channel|>", "<|turn>"):
 assert r["choices"][0]["finish_reason"] == "stop", "did not stop at turn end"
 ' && PASS "gemma4 1-request on DEFAULT scheduler (clean content, stop at turn end)" \
   || FAIL "gemma4 default-scheduler request"
+    S=$(gchat '"stream":true')
+    R="$R" S="$S" python3 -c '
+import json, os
+m = json.loads(os.environ["R"])["choices"][0]["message"]
+want_c, want_r = m.get("content") or "", m.get("reasoning") or ""
+content, reasoning, frames = "", "", 0
+for line in os.environ["S"].splitlines():
+    if not line.startswith("data: ") or line == "data: [DONE]":
+        continue
+    frames += 1
+    d = json.loads(line[len("data: "):])["choices"][0]["delta"]
+    c = d.get("content") or ""
+    for tag in ("<turn|>", "<|channel>", "<channel|>", "<|turn>"):
+        assert tag not in c, f"tag leak in a stream delta: {tag} in {c!r}"
+    content += c
+    reasoning += d.get("reasoning") or ""
+assert frames, "no stream frames"
+assert content == want_c, f"stream content {content!r} != non-stream {want_c!r}"
+assert reasoning == want_r, f"stream reasoning {reasoning!r} != non-stream {want_r!r}"
+' && PASS "gemma4 stream: no tag in any delta, reassembles to the non-stream message" \
+  || FAIL "gemma4 stream reassembly"
     R=$(gchat '"reasoning_effort":"low"')
     echo "$R" | python3 -c '
 import json,sys
