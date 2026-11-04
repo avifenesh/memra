@@ -1431,8 +1431,18 @@ impl ModelConfig {
                 expert_count: expert_count.unwrap_or(0),
                 expert_used_count: u("expert_used_count").unwrap_or(0),
                 expert_ff_length: u("expert_feed_forward_length").unwrap_or(0),
-                // meta_arch tries "qwen35moe.expert_shared_feed_forward_length" first, then bare key
-                expert_shared_ff_length: u("expert_shared_feed_forward_length").unwrap_or(0),
+                // meta_arch tries "qwen35moe.expert_shared_feed_forward_length" first, then bare key.
+                // A gemma4 MoE GGUF names no shared width: its parallel shared MLP is the dense
+                // `feed_forward_length` block, the `intermediate_size` the HF parse takes.
+                expert_shared_ff_length: u("expert_shared_feed_forward_length").unwrap_or_else(
+                    || {
+                        if matches!(arch, Arch::Gemma4) {
+                            u("feed_forward_length").unwrap_or(0)
+                        } else {
+                            0
+                        }
+                    },
+                ),
             })
         } else {
             None
@@ -4998,6 +5008,46 @@ pub(crate) mod hf_tests {
         let mc = ModelConfig::from_hf(&c);
         assert_eq!(mc.rope_dim_count, 256);
         assert_eq!(mc.layer_geometry(3).unwrap().n_rot, 256);
+    }
+
+    /// A gemma4 MoE GGUF carries no `expert_shared_feed_forward_length`: its parallel shared
+    /// MLP is the dense `feed_forward_length` block. The HF parse takes `intermediate_size`, so
+    /// both loader paths must give the plan the same shared width, or the GGUF plan has no
+    /// shared branch and the tensor contract refuses the board artifact at load.
+    #[test]
+    fn gemma4_moe_gguf_shared_width_matches_the_hf_parse() {
+        use crate::micro_gguf::{GgufWriter, MetaW};
+
+        let path = std::env::temp_dir().join(format!(
+            "memra-gemma4-moe-shared-{}-{:?}.gguf",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        let mut writer = GgufWriter::new();
+        writer.kv("general.architecture", MetaW::Str("gemma4"));
+        writer.kv("gemma4.block_count", MetaW::U32(30));
+        writer.kv("gemma4.embedding_length", MetaW::U32(2816));
+        writer.kv("gemma4.feed_forward_length", MetaW::U32(2112));
+        writer.kv("gemma4.attention.head_count", MetaW::U32(16));
+        writer.kv("gemma4.attention.head_count_kv", MetaW::U32(8));
+        writer.kv("gemma4.expert_count", MetaW::U32(128));
+        writer.kv("gemma4.expert_used_count", MetaW::U32(8));
+        writer.kv("gemma4.expert_feed_forward_length", MetaW::U32(704));
+        writer.write(&path).unwrap();
+        let gguf = GgufFile::open(&path).unwrap();
+        let from_gguf = ModelConfig::from_gguf(&gguf);
+        std::fs::remove_file(&path).ok();
+
+        let from_hf = ModelConfig::from_hf(&HfConfig::parse(
+            r#"{"model_type":"gemma4","text_config":{"model_type":"gemma4_text",
+            "num_hidden_layers":30,"hidden_size":2816,"num_attention_heads":16,
+            "num_key_value_heads":8,"head_dim":256,"intermediate_size":2112,
+            "moe_intermediate_size":704,"num_experts":128,"top_k_experts":8,
+            "vocab_size":262144,"max_position_embeddings":262144}}"#,
+        ));
+        let shared = |cfg: &ModelConfig| cfg.moe.as_ref().unwrap().expert_shared_ff_length;
+        assert_eq!(shared(&from_hf), 2112);
+        assert_eq!(shared(&from_gguf), shared(&from_hf));
     }
 
     #[test]
