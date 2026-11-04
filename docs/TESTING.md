@@ -520,14 +520,22 @@ server's batched or speculative paths, and supplies no performance result. `amar
 `amarginbc` (2026-11-03, owner decision) run it with `--decode batch`: the decode side becomes
 the **served batched decode program at B=1**, the server's own
 `decode_step_batch_sampled_lean_masked` call for one unconstrained greedy row (greedy device
-sample, lean logits read from the cache's device park), stepped over the whole prompt. Serving
-runs that body at every width, B=1 included, and it carries a decode-config FP-composition gap
-against `decode_step_h`, so the default arm cannot see a change to the batched body or its
-epilogue. Same prefill reference, flip budget and margin rules; instead of the prime line the
-probe prints `SERVED-ARGMAX: rows=N device_mismatch=M`, the wrapper prints
-`SERVED-SUMMARY served=<MATCH|MISMATCH>`, and `M > 0` or a missing or malformed line fails (a
-probe that ignores `--decode` prints no such line). The canary also injects an `M=1` line. The
-release battery runs both arms per roster model. The default arm also runs the **batched serving prime**
+sample, lean logits read from the cache's device park), stepped over the whole prompt. The
+server's batched scheduler runs that body for every non-speculative row of a batch-served model
+at every width, B=1 included, and it carries a decode-config FP-composition gap against
+`decode_step_h`, so the default arm cannot see a change to the batched body or its epilogue.
+Speculative rows (the default `MEMRA_SERVE_SPEC` route for spec-eligible requests on a model
+with a draft head) decode through the spec path and stay gated by `run-spec`. The probe installs
+no `MEMRA_REWRITE_BUNDLE`, so the arm gates the default bundle-less served program. Same
+prefill reference, flip budget and margin rules; instead of the prime line the probe prints
+`SERVED-ARGMAX: rows=N device_mismatch=M`, the wrapper prints
+`SERVED-SUMMARY served=<MATCH|MISMATCH|EAGER-ROUTED>`, and `M > 0` or a missing or malformed
+line fails (a probe that ignores `--decode` prints no such line). A model the scheduler decodes
+through the per-session eager body (`HybridModel::served_decode_is_eager`, the worker's own
+routing read) has no served batched program: the probe steps `decode_step`, the program that
+serves it, prints `SERVED-ARGMAX: n/a reason=eager-routed`, and the wrapper reports
+`served=EAGER-ROUTED` and passes on the table's verdict. The canary also injects an `M=1` line.
+The release battery runs both arms per roster model. The default arm also runs the **batched serving prime**
 (`prime_cache`, what seeds generation) once over the whole prompt and judges its last-position
 logits against the tokenwise reference with `forward::prime_gate_verdict`, the same cell as
 run-gen's gap #46 arm: the probe prints one `PRIME-GATE:` line, the wrapper prints

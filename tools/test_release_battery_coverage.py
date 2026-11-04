@@ -235,10 +235,15 @@ esac
         stdout = self.run_battery()
         self.assertIn("fixture  argmax-margin-batch  PASS  SUMMARY flips=0 bad=0 served=MATCH", stdout)
         self.assertIn("fixture  argmax-margin  PASS", stdout)
-        for served in ("", "MISMATCH", "MISSING"):
+        for served in ("", "MISMATCH", "MISSING", "EAGER", "MATCHED"):
             with self.subTest(served=served):
                 self.argmax_batch_log.write_text(argmax_batch_output(served))
                 self.run_battery(expected=1, diagnostic="served-batch arm reported served=")
+        # The probe's routing read (HybridModel::served_decode_is_eager) names a model the
+        # scheduler decodes eagerly; its table measured decode_step, the program that serves it.
+        self.argmax_batch_log.write_text(argmax_batch_output("EAGER-ROUTED"))
+        stdout = self.run_battery()
+        self.assertIn("fixture  argmax-margin-batch  PASS  SUMMARY flips=0 bad=0 served=EAGER-ROUTED", stdout)
         self.argmax_batch_log.write_text(argmax_batch_output())
         self.run_battery(expected=1, diagnostic="argmax-margin-batch  FAIL", FIXTURE_ARGMAX_BATCH_RC="1")
         self.argmax_batch_log.write_text("argmax-margin-gate: SKIP (no probe model on this rig)\n")

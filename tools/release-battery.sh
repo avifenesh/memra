@@ -310,15 +310,20 @@ while IFS=$'\t' read -r class id path _ || [ -n "${class:-}" ]; do
     FAILED=1
   fi
   # THE SERVED DECODE PROGRAM, second argmax cell (owner decision 2026-11-03). The cell above
-  # decodes through decode_step (decode_step_h), the eager program. Serving decodes every model
-  # its scheduler batches through decode_step_batch_sampled_lean_masked at every width, B=1
-  # included, and the two programs carry a decode-config FP-composition gap, so the cell above
-  # can pass while a change to the batched body or its epilogue moves served tokens.
+  # decodes through decode_step (decode_step_h), the eager program. The server's batched
+  # scheduler decodes every non-speculative row of a batch-served model through
+  # decode_step_batch_sampled_lean_masked at every width, B=1 included, and the two programs
+  # carry a decode-config FP-composition gap, so the cell above can pass while a change to the
+  # batched body or its epilogue moves served tokens. (Speculative rows, the default
+  # MEMRA_SERVE_SPEC route on a model with a draft head, stay gated by run-spec below.)
   # `--decode batch` makes the server's own call for one greedy row at B=1 and judges it against
   # the same prefill reference with the same margin rules; it also requires every window step's
-  # device-sampled token to equal the host argmax of its row (served=MATCH). The B=1 fast-path
-  # seam is unset so the arm runs the default served program. Its own card wait: the previous
-  # cell's process may still be handing memory back.
+  # device-sampled token to equal the host argmax of its row (served=MATCH). A model the
+  # scheduler decodes eagerly (HybridModel::served_decode_is_eager, the worker's routing read)
+  # has no served batched program: the probe steps decode_step, which serves it, and the gate
+  # reports served=EAGER-ROUTED, the only other value accepted. The B=1 fast-path seam is unset
+  # so the arm runs the default served program. Its own card wait: the previous cell's process
+  # may still be handing memory back.
   if ! await_card "$NEED" "$id argmax-margin-batch"; then
     note "$id  argmax-margin-batch  REFUSED   card cannot seat the model (gpu=${PHYSICAL_GPU_TAG:-?} free ${CARD_FREE}MiB, need ${NEED}MiB after ${CARD_WAIT_S}s)"
     gpu_tenants | sed 's/^/    on the card: /'
@@ -334,7 +339,8 @@ while IFS=$'\t' read -r class id path _ || [ -n "${class:-}" ]; do
       MEMRA_GATE_LOG_ROOT="$EVIDENCE_DIR" "$HERE/argmax-margin-gate.sh" "$path" --decode batch "${argmax_batch_evidence[@]}" 2>&1) || rc=$?
   save_evidence argmax-batch "$id" "$rc"
   SERVED=$(printf '%s\n' "$OUT" | grep -m1 -o 'SERVED-SUMMARY served=[A-Za-z:-]*' | cut -d= -f2)
-  if [ "$rc" -eq 0 ] && printf '%s' "$OUT" | grep -q "^  PASS:" && [ "$SERVED" = MATCH ]; then
+  if [ "$rc" -eq 0 ] && printf '%s' "$OUT" | grep -q "^  PASS:" \
+      && { [ "$SERVED" = MATCH ] || [ "$SERVED" = EAGER-ROUTED ]; }; then
     note "$id  argmax-margin-batch  PASS  $(printf '%s' "$OUT" | grep -m1 -o 'SUMMARY flips=[0-9]* bad=[0-9]*') served=$SERVED"
   elif [ "$rc" -eq 0 ] && printf '%s' "$OUT" | grep -q "^  PASS:"; then
     note "$id  argmax-margin-batch  FAIL  served-batch arm reported served=${SERVED:-<none>}, which a release does not accept"
