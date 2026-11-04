@@ -34544,7 +34544,9 @@ pub fn resolve_env_ctx(model_ctx: usize) -> Result<usize, String> {
 /// hundred tokens, and a session cap of 4 was the only thing standing between that charge and
 /// the card. Deployments whose registry pins `default_output_length`/`max_output_length` never
 /// reach this arm (the HTTP layer bounds `max_new` first); this makes the naked path agree with
-/// them instead of disagreeing by two orders of magnitude.
+/// them instead of disagreeing by two orders of magnitude. The armed charge never exceeds the
+/// envelope the unarmed arm would charge: it exists to charge less on a wide `MEMRA_CTX`, and an
+/// operator who sets a `MEMRA_CTX` below the open output keeps that bound.
 fn request_ctx_cap(
     server_ctx: usize,
     model_ctx: usize,
@@ -34557,24 +34559,27 @@ fn request_ctx_cap(
         // A request-supplied hard cap is authoritative. In particular, a 128k request on a
         // 256k-default server must allocate and be charged as 128k, not inherit the default.
         (Some(c), _) => c,
-        (None, MAX_NEW_CTX_BOUNDED) => match open_output_tokens {
-            // Door ON: charge the output this request will plausibly emit, not the envelope.
-            // `charged_ctx_tokens` applies the same `+8` slack and the same model-context
-            // clamp the bounded arm below applies, and never lands under the prompt itself.
-            Some(open) => {
-                return crate::admit_memory::charged_ctx_tokens(prompt_len, None, open, model_ctx);
+        (None, MAX_NEW_CTX_BOUNDED) => {
+            // With no output bound, the server context default. A prompt that does not fit
+            // grows to prompt + one default window of room, capped at the model's trained
+            // context when it is known (below).
+            let mut envelope = server_ctx;
+            if prompt_len.saturating_add(16) > envelope {
+                envelope = prompt_len.saturating_add(server_ctx);
             }
-            // Door OFF: with no output bound, use the server context default. A prompt that
-            // does not fit grows to prompt + one default window of room, capped at the
-            // model's trained context when it is known.
-            None => {
-                let mut cap = server_ctx;
-                if prompt_len.saturating_add(16) > cap {
-                    cap = prompt_len.saturating_add(server_ctx);
+            match open_output_tokens {
+                // Armed: charge the output this request will plausibly emit, capped at that
+                // envelope. `charged_ctx_tokens` applies the same `+8` slack and the same
+                // model-context clamp the bounded arm below applies, and never lands under
+                // the prompt itself; the envelope is past the prompt too.
+                Some(open) => {
+                    crate::admit_memory::charged_ctx_tokens(prompt_len, None, open, model_ctx)
+                        .min(envelope)
                 }
-                cap
+                // Unarmed: the envelope.
+                None => envelope,
             }
-        },
+        }
         (None, max_new) => prompt_len.saturating_add(max_new).saturating_add(8),
     };
     if model_ctx > 0 {
@@ -47495,6 +47500,38 @@ mod tests {
         assert_eq!(
             request_budget(cap, 3_000, None, MAX_NEW_CTX_BOUNDED, Some(2_048)),
             4_096 - 3_000 - slack
+        );
+        // Door ON, open, on a MEMRA_CTX below the open output: the unarmed envelope bounds the
+        // charge, and the slack still comes off the room.
+        let cap = request_ctx_cap(
+            8_192,
+            262_144,
+            1_439,
+            None,
+            MAX_NEW_CTX_BOUNDED,
+            Some(32_768),
+        );
+        assert_eq!(cap, 8_192);
+        assert_eq!(
+            request_ctx_cap(8_192, 262_144, 1_439, None, MAX_NEW_CTX_BOUNDED, None),
+            cap,
+            "armed never charges more than unarmed"
+        );
+        assert_eq!(
+            request_budget(cap, 1_439, None, MAX_NEW_CTX_BOUNDED, Some(32_768)),
+            8_192 - 1_439 - slack
+        );
+        // ... and a prompt past that MEMRA_CTX keeps the unarmed growth rule.
+        assert_eq!(
+            request_ctx_cap(
+                8_192,
+                262_144,
+                9_000,
+                None,
+                MAX_NEW_CTX_BOUNDED,
+                Some(32_768)
+            ),
+            9_000 + 8_192
         );
         // Door ON, open, a room no wider than the slack keeps the room.
         assert_eq!(
