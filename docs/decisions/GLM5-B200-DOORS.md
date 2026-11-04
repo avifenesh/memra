@@ -9,6 +9,21 @@ with everything only it reaches. One-rig evidence sets a one-rig default: no oth
 The deleted doors are in the Removed doors ledger of `docs/FLAGS.md`; this record covers the
 defaults that changed and the calls left open.
 
+**The TP-2 receipts carried a posture that no longer exists.** The host-diet row below was taken
+on the darklanes launcher's composed posture, and the TP-prefix row in the same window, when the
+launcher armed the TP prefix together with it: `MEMRA_TP_TRANSPORT=device-push`,
+`MEMRA_GLM5_TP_SYMMETRIC=1` (KDA `wo` K-sliced at load, with a row-parallel partial-sum branch
+in `kda_tp_core` that prime and decode both ran), `MEMRA_TP_AR_1STAGE=1` (the one-shot
+all-reduce at the MLA `wo` and split-MoE reduce sites, prime chunks included) and decode through
+the symmetric graphs, which is why those rows decode at 65-67 tok/s against the eager split
+walk's 35-39. fe66a24a0d deleted those programs (the open call below). So those promoted TP-2
+defaults run a numeric program no receipt measured: column-parallel KDA `wo` over the gather,
+return-to-root reduces, root-orchestrated eager decode. Their tapes and ids on that program are
+unverified, and each on/off delta is assumed to transfer. Where a mechanism is byte-identical
+by construction (the host diet: launch order and host work only), the on/off identity still
+holds; what is unverified is the walk underneath. The pair cell that would confirm them is
+named in each section; it needs an sm_100a pair, and none is in hand.
+
 ## The TP split grouped prime and its host diet: sm_100a default
 
 **Chosen:** on sm_100a builds the expert-split TP walk's prefill chunks always take the grouped
@@ -32,6 +47,13 @@ grouped prime's own need: without it the split walk primed at about 520 tok/s fl
 in 7.08 s, 29,961 tokens in 57.7 s, tpprime2 2026-09-07); with it the 256k prime took 74.27 s.
 That comparison is across windows, not an interleaved A/B, and the owner promoted the pair on
 these rows.
+
+**Unverified on the promoted program:** the receipt ran on the composed posture (above). The
+cell that would confirm the transfer: an sm_100a pair, `glm5-tp2-box-probe` at 256k and 1M with
+`MEMRA_GLM5_TP=all@0,1` and `MEMRA_TP_TRANSPORT=device-push` on the post-deletion walk, prime
+seconds against a slot-walk build of the same commit, and the tape and ids against the split
+walk's own reference at its band (`glm5-tp-gate` arm S's class). No gate cell runs the grouped
+prime on any other card: on sm_120a the split walk primes through the slot walk.
 
 **Scope:** sm_100a builds only. On every other build the split walk keeps its per-token slot
 walk at prefill. The walk is the expert split, which is the sm_100a TP placement default (next
@@ -57,7 +79,9 @@ command.
 split decoded at 34.84 / 39.43 tok/s against whole-expert EP's 20.29 / 20.32, with the graphed
 PP-2 control at 59.81 / 59.91. The split is a different numeric class (tape `f6b309777546b67e`
 against whole-expert's `2fad380bb459ff0a`): `down` and MLA `wo` split their K reduction two ways,
-gated on a logits band plus tape identity and never on bits (`glm5-tp-gate` arm S).
+gated on a logits band plus tape identity and never on bits (`glm5-tp-gate` arm S). Unlike the
+other TP-2 rows here, tpwalk2's `tp2s` arm is the root-orchestrated eager split walk, the decode
+program that remains after fe66a24a0d; its prime has since gained the grouped prime above.
 
 **Scope:** sm_100a builds only; every other build keeps whole experts, since no receipt exists
 there.
@@ -98,7 +122,10 @@ flat with overlapping ranges, at a context where the selector is a smaller share
 Prose rows in darklanes `research/glm5-b200-mint-20260904/LANE.md`; the raw outputs are not
 banked. Bit-identical by construction, gated over 14 cells with ties, -inf and NaN pools.
 
-**Scope:** sm_100a builds only; the v1 body stays the selector elsewhere.
+**Scope:** sm_100a builds only; the v1 body stays the selector elsewhere. The RTX 5090 rig has a
+kernel-level reading for v2 (`VERDICT:kpool-select-v2-rig-ordering-wins`, all 18 pairs, 61,323
+pools random 114.4 against 132.0 us) but no model-scale row; whether sm_120a takes v2 on that
+reading is an open call (below).
 
 ## The attention-norm q8_1 fuse: sm_100a default
 
@@ -131,7 +158,12 @@ On other builds the refusal stays: no receipt exists there.
 `research/glm5-b200-mint-20260904/LANE.md:3619-3623`, box2h2, memra #324): the second request
 hit 130433 of 130433 prompt tokens from cache with ids identical over the continuation, and the
 +2k extension was answered on the cached prefix. A correctness receipt, not a speed one: the
-mechanism replaces a refusal with a restore of the same bytes.
+mechanism replaces a refusal with a restore of the same bytes. The receipt was taken in the
+composed posture's window (above). The restored planes do not depend on the walk (KDA conv/ssm
+state per head and the latent rows are the same bytes either way), but ids over a restored
+continuation on the promoted walk are unverified. The cell that would confirm it: box2h2 again on an sm_100a pair on
+the post-deletion walk, a 128k prompt cold and then again, full hit and ids identical over the
+continuation.
 
 **Scope:** sm_100a builds, all-layer `MEMRA_GLM5_TP` specs (the receipt's `all@0,1`).
 `MEMRA_PREFIX_LATENT=1` is still required for the root planes. A partial spec refuses capture
@@ -159,9 +191,40 @@ indexer split. Not bit-identical: on the pair it moved one greedy token at 36/64
 prompt, and the first-token argmax control (tpwalk22) showed the f32-scorer posture already
 diverging at the same near-tie token. The owner chose precision 1 over precision 2 on these rows.
 
-**Scope:** sm_100a builds, prefill chunks only. Other builds keep the f32 scorer.
+**Scope:** sm_100a builds, prefill chunks only. Other builds keep the f32 scorer. The prime rows
+ran on the TP-2 walk of that window; the scorer's numerics do not depend on the walk around it,
+but its share of the prime does, so the 2.3x is a statement about that walk.
 
 ## Open calls
+
+### The symmetric TP-2 walk: deleted as unreceipted, but darklanes carries positive rows
+
+fe66a24a0d deleted `MEMRA_GLM5_TP_SYMMETRIC`, `MEMRA_GLM5_TP_SYM_GRAPH` with its seam
+`MEMRA_GLM5_TP_SYM_GRAPH_MLA`, and `MEMRA_TP_AR_1STAGE` on the premise that none had a receipt.
+That premise holds for this repo and not for darklanes `research/glm5-b200-mint-20260904/LANE.md`:
+symcheck2 (2026-09-06 23:40Z) ran the symmetric walk engaged (`[glm5-tp-sym] engaged`, 45.53
+tok/s, then 54.06, tape `d3c3955d916b8ef6`), and tpwalk4 v2 (2026-09-07) read two reps per arm:
+eager symmetric 54.46 / 54.93 tok/s, the graph door on the served posture 74.65 / 74.87, the
+graphed PP-2 control 71.33, tapes equal across reps. The same tpwalk4 v2 run caught the bare
+graph arm decoding garbage (fixed in 9d074abc6 by declining on the process preconditions). The
+one-shot alone read flat (tpwalk2: 34.84 / 39.43 split against 34.60 / 39.10 with the one-shot),
+but it is the symmetric walk's crossing primitive, so that row does not price it inside the walk.
+This record accepts darklanes prose rows elsewhere (the k-pool selector, the top-k twin, the
+host diet), so by the same standard these are positive rows, and the 2026-11-04 rule would make
+the walk a TP-2 sm_100a default rather than delete it. The cost of the deletion: TP-2 decode on
+any future pair is the root-orchestrated eager walk (tpwalk2's split, 34.84 / 39.43 tok/s)
+instead of the graphed symmetric walk (74.65 / 74.87). Options: restore the four doors as TP-2
+sm_100a defaults (reverting fe66a24a0d, then the composed posture is again what the receipts
+measured); or confirm the deletion as a policy deletion (the box is retired and no sm_100a
+pair is in hand), in which case the ledger keeps these rows and calls it that. The branch
+carries the deletion until the owner rules.
+
+### `MEMRA_KPOOL_SELECT_V2` on sm_120a
+
+The v2 body is the sm_100a default above. The RTX 5090 rig's kernel instrument won all 18 pairs
+for v2; no model-scale row exists on any sm_120a card. Options: take v2 on sm_120a on the
+instrument (the two bodies are bit-identical, so only speed is at stake), or wait for a 5090
+model-scale cell, which runs centrally.
 
 ### `MEMRA_E4M3_BATCH_R2` and `MEMRA_Q80_BATCH_R2`: promote or delete
 
