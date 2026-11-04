@@ -1277,7 +1277,6 @@ fn add_ple_fixture(
     Ok(())
 }
 
-#[allow(clippy::unusual_byte_groupings)] // allow: mnemonic grouping of a pinned seed/magic constant
 /// gemma4 per-layer input tensors: the token table, model projection and projection norm, plus
 /// each trunk layer's gate, projection and post norm.
 fn add_per_layer_input_fixture(
@@ -1324,6 +1323,7 @@ fn add_per_layer_input_fixture(
     Ok(())
 }
 
+#[allow(clippy::unusual_byte_groupings)] // allow: mnemonic grouping of a pinned seed/magic constant
 fn generated_tensor(
     shape: &[usize],
     salt: u64,
@@ -1334,7 +1334,7 @@ fn generated_tensor(
         .map(|index| {
             let mut value = index as u64 ^ salt.wrapping_mul(0x9e37_79b9);
             value ^= value >> 16;
-            value = value.wrapping_mul(0x045d_9f3b);
+            value = value.wrapping_mul(0x45d9_f3b);
             value ^= value >> 16;
             let unit = (value as u32) as f32 / u32::MAX as f32;
             (2.0 * unit - 1.0) * scale
