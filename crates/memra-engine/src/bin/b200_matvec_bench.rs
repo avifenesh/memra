@@ -693,37 +693,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             );
         }
 
-        // v3 (MEMRA_B200_GEMV_V2=2): the same walk with its weight tiles staged through shared
-        // memory by cp.async, so the in-flight budget is smem-bound instead of register-bound.
-        // Skipped when its 36 KB (at mmv_block()=128) would not fit the 48 KB default cap.
-        if e.gemv_v3_fits() {
-            let mut y_v3 = e.zeros(out_f)?;
-            e.matvec_bf16_v3_raw(&wcopies[0], &xd, &mut y_v3, in_f, out_f, 1)?;
-            e.stream().synchronize()?;
-            let h_v3 = e.dtoh(&y_v3)?;
-            let (mv, dv) = compare(&h_ship, &h_v3);
-            let mut t_v3 = Vec::with_capacity(iters);
-            for i in 0..iters {
-                let c = i % copies;
-                let mut y = e.zeros(out_f)?;
-                let t0 = Instant::now();
-                e.matvec_bf16_v3_raw(&wcopies[c], &xd, &mut y, in_f, out_f, 1)?;
-                e.stream().synchronize()?;
-                t_v3.push(t0.elapsed().as_secs_f64() * 1e6);
-            }
-            report_arm(
-                &format!("matvec_bf16_v3 {label} (cp.async staged)"),
-                "v3",
-                ship_us,
-                median(&mut t_v3),
-                bytes,
-                mv,
-                dv,
-            );
-        } else {
-            println!("  matvec_bf16_v3 {label}: SKIPPED (v3 smem over the 48 KB default cap)");
-        }
-
         // cuBLASLt REFERENCE arm (MEMRA_B200_BF16_GEMV_LT, lane/b200-gemv-hbm-20260902).
         // Called directly (the door is a process-wide OnceLock, so it cannot flip mid-run).
         // NAMED NUMERIC CLASS `bf16_gemv_lt`: the activation is cast f32 -> bf16 and the K
@@ -1054,11 +1023,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         };
         let run = |c: usize,
                    outs: &mut [CudaSlice<f32>; 6],
-                   arm: u8|
+                   v2: bool|
          -> Result<(), Box<dyn std::error::Error>> {
             let b = &bf_copies[c];
             e.kda_proj_fused6_bf16_arm_raw(
-                &b[0], &b[1], &b[2], &f32w[0], &f32w[1], &f32w[2], &xd, outs, in_f, dims, 1, arm,
+                &b[0], &b[1], &b[2], &f32w[0], &f32w[1], &f32w[2], &xd, outs, in_f, dims, 1, v2,
             )
         };
         // Per-projection identity, not just a total: the first cut's y5 bug (a dropped
@@ -1080,9 +1049,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         };
 
         let mut o_ship = mk_outs()?;
-        run(0, &mut o_ship, 0)?;
+        run(0, &mut o_ship, false)?;
         let mut o_v2 = mk_outs()?;
-        run(0, &mut o_v2, 1)?;
+        run(0, &mut o_v2, true)?;
         e.stream().synchronize()?;
         let (mism, maxd, per2) = cmp6(&o_ship, &o_v2)?;
 
@@ -1092,13 +1061,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let c = i % copies;
             let mut outs = mk_outs()?;
             let t0 = Instant::now();
-            run(c, &mut outs, 0)?;
+            run(c, &mut outs, false)?;
             e.stream().synchronize()?;
             t_ship.push(t0.elapsed().as_secs_f64() * 1e6);
 
             let mut outs = mk_outs()?;
             let t1 = Instant::now();
-            run(c, &mut outs, 1)?;
+            run(c, &mut outs, true)?;
             e.stream().synchronize()?;
             t_v2.push(t1.elapsed().as_secs_f64() * 1e6);
         }
@@ -1115,34 +1084,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             maxd,
         );
         println!("  per-projection mismatch counts (v2): {per2}");
-
-        if e.gemv_v3_fits() {
-            let mut o_v3 = mk_outs()?;
-            run(0, &mut o_v3, 2)?;
-            e.stream().synchronize()?;
-            let (m3, d3, per3) = cmp6(&o_ship, &o_v3)?;
-            let mut t_v3 = Vec::with_capacity(iters);
-            for i in 0..iters {
-                let c = i % copies;
-                let mut outs = mk_outs()?;
-                let t0 = Instant::now();
-                run(c, &mut outs, 2)?;
-                e.stream().synchronize()?;
-                t_v3.push(t0.elapsed().as_secs_f64() * 1e6);
-            }
-            report_arm(
-                "qmatvec_kda6_bf16f32_v3 (cp.async staged)",
-                "v3",
-                ship_us,
-                median(&mut t_v3),
-                bytes,
-                m3,
-                d3,
-            );
-            println!("  per-projection mismatch counts (v3): {per3}");
-        } else {
-            println!("  qmatvec_kda6_bf16f32_v3: SKIPPED (v3 smem over the 48 KB default cap)");
-        }
         println!(
             "  (kda6 bytes: {:.1} MB bf16 + {:.1} MB f32; shipped GB/s above is over the sum)",
             bf_bytes as f64 / 1e6,
