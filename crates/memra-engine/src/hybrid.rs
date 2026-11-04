@@ -3115,8 +3115,9 @@ pub struct Gemma4LayerBits {
 
 /// gemma-4 E4B per-layer bits (see research/gemma4-bringup/e4b-arch-map.md):
 /// tail block  cur += rms_norm(proj . (gelu(inp_gate . cur) * inp_pl[il]), post_norm)
-/// and the KV-share map — layers il >= n_layer-shared_kv_layers have NO own k/v projections
-/// and attend the cache of layer (n_layer-shared) - (swa ? 2 : 1) with their own Q.
+/// and the KV-share target from the plan: a layer whose state is
+/// `StatePlan::SharedKvCache { source_layer }` has NO own k/v projections and attends
+/// `source_layer`'s cache with its own Q (on E4B, layers 24..41 read 22 and 23).
 pub struct Gemma4E4bLayer {
     pub inp_gate: GpuTensor,  // blk.N.inp_gate  [n_embd, n_epl]
     pub proj: GpuTensor,      // blk.N.proj      [n_epl, n_embd]
@@ -5912,9 +5913,9 @@ impl HybridModel {
                     }
                     let row_bytes = t.bytes.len() / (t.ne[1] as usize);
                     eprintln!(
-                        "[gemma4-e4b] per-layer-embed model detected (n_epl={n_epl}, row {row}) — \
-                               first-light forward (eager decode + prime); dc/graph/spec unwired \
-                               (HANDOVER-E4B.md)"
+                        "[gemma4-e4b] per-layer inputs from the plan (n_epl={n_epl}, row {row}): \
+                         dedicated E4B prime, decode, graph and verify programs; whole-prompt \
+                         prime, no batched decode"
                     );
                     Some(crate::hybrid::Gemma4E4bModel {
                         tok_tbl_gpu: std::sync::OnceLock::new(),
