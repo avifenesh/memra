@@ -92,17 +92,15 @@ const THINK_END: &str = "</think>";
 const GEMMA_OPEN: &str = "<|channel>";
 const GEMMA_CLOSE: &str = "<channel|>";
 /// Bound on a stream's opening hold-back (`State::GemmaOpening`; owner rule 2026-11-04,
-/// docs/decisions/GEMMA-UNOPENED-THOUGHT.md). A gemma4 turn that never writes an unopened
-/// `<channel|>` (the dense cards) holds its first content delta for at most this many
-/// bytes, about 60 tokens at the 4.3 bytes per token of the E4B receipt. At the RTX 5090
-/// engine decode rates that is about 0.30 s on E4B (202 tok/s), 0.65 s on the 12B (92.5),
-/// 0.31 s on the 26B-A4B (194) and 1.5 s on the 31B (40 tok/s plain); a served stream adds
-/// its own overhead. It covers the unopened thought on record (81 bytes, E4B) and the 12B's
-/// opened thought on the same prompt (151 bytes). A close tag that starts at or past the
-/// cap stays content on a stream, as before this rule. A non-stream parser has no cap: it
-/// holds the whole turn and splits after the fact, so above the cap the two shapes split
-/// the same greedy turn differently. Keeping 256 until a census of unopened-thought lengths
-/// runs is an open owner call.
+/// docs/decisions/GEMMA-UNOPENED-THOUGHT.md) on a gemma4 model that writes no unopened
+/// `<channel|>`. The 2026-11-04 census read none on the 26B-A4B and the 31B (0 of 24
+/// thinking-off prompts each, every stream equal to its blocking twin), so there the cap only
+/// bounds the first content delta: about 60 tokens, about 0.3 s on the 26B-A4B (194 tok/s
+/// plain) and 1.5 s on the 31B (40 tok/s) at the RTX 5090 engine rates. A close tag that starts
+/// at or past the cap stays content on such a stream, as before the rule. A model that does
+/// write them (E4B: 12 of 24, 81 to 1,027 bytes) arms
+/// [`ToolStreamParser::holding_unopened_thought`] and has no cap. The blocking parser has no
+/// cap either: it holds the whole turn and splits after the fact.
 const GEMMA_STREAM_OPENING_CAP: usize = 256;
 /// gemma tooluse dialect (lane/gemma4-tools, 2026-08-18): the served trunk (official Google
 /// tooluse template) emits `<|tool_call>call:NAME{args}<tool_call|>`. The args are the compact
@@ -186,6 +184,11 @@ pub struct ToolStreamParser {
     /// Set by the SSE renderers (`streaming()`): bound the gemma opening hold-back by
     /// `GEMMA_STREAM_OPENING_CAP`. Unset, the opening resolves on tags and turn end only.
     stream: bool,
+    /// Set for a model that writes its thought after the template's closed channel (an
+    /// unopened `<channel|>`; `ModelCaps::gemma_unopened_thought`, the E4B pack): a stream's
+    /// opening hold-back has no byte cap and resolves on tags and turn end only, as the
+    /// blocking parser's does.
+    opening_uncapped: bool,
     /// GemmaOpening: bytes of `buf` already searched with no tag start in them.
     opening_scanned: usize,
 }
@@ -260,6 +263,7 @@ impl ToolStreamParser {
             initial_skip_think: skip_think,
             json_arguments: false,
             stream: false,
+            opening_uncapped: false,
             opening_scanned: 0,
         }
     }
@@ -274,6 +278,17 @@ impl ToolStreamParser {
     /// streams. No effect on the other dialects.
     pub fn streaming(mut self) -> Self {
         self.stream = true;
+        self
+    }
+
+    /// The model writes unopened thoughts (`ModelCaps::gemma_unopened_thought`): a stream
+    /// holds its opening until a tag or the turn end resolves it, with no byte cap, so it
+    /// splits the turn the way the blocking parser does. The E4B census of 2026-11-04 read
+    /// unopened thoughts of 81 to 1,027 bytes on 12 of 24 thinking-off prompts, and the
+    /// 256-byte cap sent every one of them to content with its tag
+    /// (`research/gemma-unopened-thought-census-20261104/`).
+    pub fn holding_unopened_thought(mut self) -> Self {
+        self.opening_uncapped = true;
         self
     }
 
@@ -316,6 +331,7 @@ impl ToolStreamParser {
         parser.hy3 = self.hy3;
         parser.json_arguments = self.json_arguments;
         parser.stream = self.stream;
+        parser.opening_uncapped = self.opening_uncapped;
         if parser.gemma || parser.gemma_tools {
             parser.state = State::GemmaOpening;
         }
@@ -622,7 +638,7 @@ impl ToolStreamParser {
                         .map(|i| from + i);
                     // The cap is positional, so a stream splits the same way however
                     // its text is chunked: a close at or past the cap stays content.
-                    let stream = self.stream;
+                    let stream = self.stream && !self.opening_uncapped;
                     let capped = |i: usize| stream && i >= GEMMA_STREAM_OPENING_CAP;
                     if let Some(i) = close
                         && opener.is_none_or(|o| i < o)
@@ -1945,6 +1961,48 @@ rain. "
             assert!(p.push("x").is_empty());
         }
         assert_eq!(p.finish(), vec![Piece::Content("x".repeat(cap + 2))]);
+    }
+
+    #[test]
+    fn an_unopened_thought_model_streams_a_long_thought_as_its_blocking_twin() {
+        // E4B writes thoughts well past the cap (census: up to 1,027 bytes thinking-off). With
+        // the hold armed a stream splits them as the blocking parser does, one push or
+        // char-by-char; a turn with no tag still streams, but only at the turn end.
+        let cap = GEMMA_STREAM_OPENING_CAP;
+        let thought = "The user wants a short answer. ".repeat(40);
+        assert!(thought.len() > 4 * cap);
+        let text = format!("{thought}\n<channel|>Answer.");
+        let want = reassemble3(&feed(&mut ToolStreamParser::gemma_thought(), &text, false));
+        assert_eq!(want.1, thought);
+        assert_eq!(want.0, "Answer.");
+        for base in [
+            ToolStreamParser::gemma_thought(),
+            ToolStreamParser::gemma_tools(),
+        ] {
+            for chunked in [false, true] {
+                let mut p = base.fresh().holding_unopened_thought().streaming();
+                let got = reassemble3(&feed(&mut p, &text, chunked));
+                assert_eq!(
+                    (got.0, got.1),
+                    (want.0.clone(), want.1.clone()),
+                    "chunked={chunked}"
+                );
+            }
+        }
+        let mut p = ToolStreamParser::gemma_thought()
+            .holding_unopened_thought()
+            .streaming();
+        for _ in 0..cap + 2 {
+            assert!(p.push("x").is_empty());
+        }
+        assert_eq!(p.finish(), vec![Piece::Content("x".repeat(cap + 2))]);
+        // fresh() keeps the hold.
+        let mut p = ToolStreamParser::gemma_thought()
+            .holding_unopened_thought()
+            .streaming()
+            .fresh();
+        let got = reassemble3(&feed(&mut p, &text, true));
+        assert_eq!(got.1, thought);
     }
 
     #[test]

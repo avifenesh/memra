@@ -9581,6 +9581,15 @@ fn build_chat_request_with_trace(
     let is_hy3 = caps.map(|c| c.hy3).unwrap_or(false);
     let hy3_think_open = is_hy3 && think == ThinkMode::Think;
     let hy3_tools = is_hy3 && !tools_json.is_empty();
+    // E4B writes unopened thoughts past the stream cap: its gemma parsers hold the opening
+    // until it resolves (`ToolStreamParser::holding_unopened_thought`).
+    let gemma_hold = |p: ToolStreamParser| {
+        if caps.is_some_and(|c| c.gemma_unopened_thought) {
+            p.holding_unopened_thought()
+        } else {
+            p
+        }
+    };
     let parser = if glm5 {
         Some(ToolStreamParser::glm5(think_open, schemas))
     } else if is_hy3 && (hy3_tools || hy3_think_open) {
@@ -9588,7 +9597,7 @@ fn build_chat_request_with_trace(
     } else if is_dsv4 && (dsv4_tools || dsv4_think_open) {
         Some(ToolStreamParser::dsv4(dsv4_think_open))
     } else if gemma_tools {
-        Some(ToolStreamParser::gemma_tools())
+        Some(gemma_hold(ToolStreamParser::gemma_tools()))
     } else if !tools_json.is_empty() {
         Some(ToolStreamParser::new(schemas, think_open))
     } else if think_open {
@@ -9603,7 +9612,7 @@ fn build_chat_request_with_trace(
         // tools branch, so this arm never competes with the tool scanner. Text before an
         // unopened `<channel|>` at the start of the turn is reasoning too: E4B writes a
         // thought after the closed channel (docs/decisions/GEMMA-UNOPENED-THOUGHT.md).
-        Some(ToolStreamParser::gemma_thought())
+        Some(gemma_hold(ToolStreamParser::gemma_thought()))
     } else {
         None
     };
@@ -30046,6 +30055,7 @@ temperature = 0.6
             effort_levels: false,
             qwen_effort: false,
             gemma_think: false,
+            gemma_unopened_thought: false,
             dsv4: false,
             glm5: false,
             chat_temperature_default: None,

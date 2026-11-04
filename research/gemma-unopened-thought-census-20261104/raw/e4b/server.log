@@ -1,0 +1,371 @@
+[server] build: memra-0.138.0-a2959e6200c4 (id: source-tree, git: 27c227fc3454)
+[server] starting; models config = [("e4b", "/data/ai-ml/hf-models/gemma4-e4b-qat-gguf/gemma-4-E4B_q4_0-it.gguf", None)]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[worker-affinity] off (MEMRA_WORKER_CPUSET / MEMRA_WORKER_AFFINITY unset or =0)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal after 3 consecutive misses (MEMRA_GPU_PROBE_MISSES), fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[worker] loading model "e4b" <- /data/ai-ml/hf-models/gemma4-e4b-qat-gguf/gemma-4-E4B_q4_0-it.gguf
+[tensor-contract] bound 666 semantic tensors (pack gemma4_e4b, Gguf, output head TiedToEmbedding); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[gemma4-e4b] per-layer inputs from the plan (n_epl=256, row 10752): dedicated E4B prime, decode, graph and verify programs; whole-prompt prime, no batched decode
+[q8rp] split-plane decode mirrors built: 1 tensors
+[q4rp] split-plane decode mirrors built: 402 trunk tensors
+[q4f16] prefill program = INT8 MMQ (no f16 mirrors) (reason: model geometry not eligible); free 18100 MiB, mirror mass 7525 MiB, capacity threshold 15717 MiB (mass + 8192 headroom) — SELECTS PREFILL ARITHMETIC
+[q4rp] split-plane IN-PLACE swap: 294 dense trunk tensors
+[worker]   loaded "e4b": 42 layers, eos=1, stop=[1, 106]
+[spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2 (K=5 when the loaded MTP head is rank-trimmed)
+[worker] e4b: template caps tools=true think=false think_switch=true chat_ok=true effort_levels=false qwen_effort=false gemma_think=true dsv4=false glm5=false ctx=131072 tok="gemma4" instruct=None chat_defaults=None/None
+[route-contract] model="e4b" route=hybrid-worker capacity=64 sessions implemented=[capacity,occupancy,progress,fault-ownership,shutdown-ownership,memory-cost,rewrite-qualification,prime-fairness,service-metrics] refused=[]
+[worker] e4b: decode wave cap 1; scheduler tick cap 1
+[worker] e4b: EAGER-ONLY serving (gemma4 class — no batched decode arm): per-session eager decode, monolithic prefill, no prime batching
+[prefix-cache] on: budget 470MB (469762048 B, derived: 2 x 234881024 B max entry for model "e4b" at served ctx 8192 (from MEMRA_CTX; MEMRA_CTX set), requested 469762048 B; boot driver free 18979356672 B, post-reserve clamp 17368743936 B), policy plain-LRU (global oldest unleased entry first; leases untouchable), min prefix 64 tokens, whole-entry restores only
+[admission] "e4b": plain 28672 B/token, spec 28672 B/token; fixed residual learns from effective-free deltas
+[admit-mem] door=OFF open_output_tokens=8192 defer_budget_ms=8000 (admission charges prompt+output, the reclaim flush demotes to the host tier before dropping, and a memory defer past the budget refuses 429 instead of queueing past the client's deadline)
+[kv-vmm] door=OFF (MEMRA_KV_ALLOCATOR unset or pooled: pooled K/V planes)
+[server] worker ready; serving models: ["e4b"]
+[server] listening on http://127.0.0.1:18172
+[meter] admit id=chatcmpl-6fbaa36512524b7ac669c874700e0bf1 tenant=default lane=interactive model="e4b"
+[admission] request cost: model="e4b" ctx=482 path=plain = 28672 B/token x ctx + 5MB prefill-workspace + 0MB fixed = 18MB
+[admission] fixed residual high-water: model="e4b" 0MB (observed 12MB at ctx 426 path=plain)
+[fa-pool] grow #0 dev=0 o_len 0 -> 6144 ml_len 0 -> 24 (retired kept, zero=false)
+[fa-pool] grow #1 dev=0 o_len 6144 -> 12288 ml_len 24 -> 48 (retired kept, zero=false)
+[fa-pool] grow #2 dev=0 o_len 12288 -> 24576 ml_len 48 -> 96 (retired kept, zero=false)
+[meter] admit id=chatcmpl-a585bb7e0aeaede0f7813cae1b80f88e tenant=default lane=interactive model="e4b"
+[admission] request cost: model="e4b" ctx=482 path=plain = 28672 B/token x ctx + 5MB prefill-workspace + 0MB fixed = 18MB
+[worker] plain-affinity: declined (no checkpoint retained; 1 parked, 18 prompt tokens; model e4b)
+[meter] admit id=chatcmpl-e9411e2bccc9b21675f50b9c7ec879b2 tenant=default lane=interactive model="e4b"
+[admission] request cost: model="e4b" ctx=485 path=plain = 28672 B/token x ctx + 5MB prefill-workspace + 0MB fixed = 19MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 21 prompt tokens; model e4b)
+[meter] admit id=chatcmpl-9b44315afec249f0a3b5277a3fc8dfe6 tenant=default lane=interactive model="e4b"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 21 prompt tokens; model e4b)
+[meter] admit id=chatcmpl-e50e547fd48435ead2339966fde2eb4b tenant=default lane=interactive model="e4b"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 21 prompt tokens; model e4b)
+[meter] admit id=chatcmpl-d0b2ff5e519021c27a2f5549ac318f56 tenant=default lane=interactive model="e4b"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 21 prompt tokens; model e4b)
+[meter] admit id=chatcmpl-9b98d2a07434e9aaac4efcaedcb25621 tenant=default lane=interactive model="e4b"
+[admission] request cost: model="e4b" ctx=492 path=plain = 28672 B/token x ctx + 7MB prefill-workspace + 0MB fixed = 21MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 28 prompt tokens; model e4b)
+[fa-pool] grow #3 dev=0 o_len 24576 -> 49152 ml_len 96 -> 192 (retired kept, zero=false)
+[fa-pool] grow #4 dev=0 o_len 49152 -> 98304 ml_len 192 -> 384 (retired kept, zero=false)
+[fa-pool] grow #5 dev=0 o_len 98304 -> 196608 ml_len 384 -> 768 (retired kept, zero=false)
+[meter] admit id=chatcmpl-008687dcbacd647428ba4082c34780e2 tenant=default lane=interactive model="e4b"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 28 prompt tokens; model e4b)
+[meter] admit id=chatcmpl-bf8d065eee139acf1e32ffffafa80b94 tenant=default lane=interactive model="e4b"
+[admission] request cost: model="e4b" ctx=495 path=plain = 28672 B/token x ctx + 8MB prefill-workspace + 0MB fixed = 22MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 31 prompt tokens; model e4b)
+[fa-pool] grow #6 dev=0 o_len 196608 -> 393216 ml_len 768 -> 1536 (retired kept, zero=false)
+[meter] admit id=chatcmpl-62881461570dcc233e6dae0dfaed6816 tenant=default lane=interactive model="e4b"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 31 prompt tokens; model e4b)
+[meter] admit id=chatcmpl-169d16d4fafab436b598d781b11ea1a2 tenant=default lane=interactive model="e4b"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 31 prompt tokens; model e4b)
+[meter] admit id=chatcmpl-920afe32b732c88eb311fca4175045fe tenant=default lane=interactive model="e4b"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 31 prompt tokens; model e4b)
+[meter] admit id=chatcmpl-8f3a1b878bec3a8477dcfe2a7186e482 tenant=default lane=interactive model="e4b"
+[admission] request cost: model="e4b" ctx=491 path=plain = 28672 B/token x ctx + 7MB prefill-workspace + 0MB fixed = 21MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model e4b)
+[meter] admit id=chatcmpl-2352a708280791bcd68fd7b6460f68a9 tenant=default lane=interactive model="e4b"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model e4b)
+[meter] admit id=chatcmpl-07a12e4d895a548e257d94dcf1da4441 tenant=default lane=interactive model="e4b"
+[admission] request cost: model="e4b" ctx=494 path=plain = 28672 B/token x ctx + 8MB prefill-workspace + 0MB fixed = 22MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 30 prompt tokens; model e4b)
+[meter] admit id=chatcmpl-fa23f8f9e5f9b52a04b9263ed047aea1 tenant=default lane=interactive model="e4b"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 30 prompt tokens; model e4b)
+[meter] admit id=chatcmpl-b0dabc3ce8b7e2b843817d0706aba7a3 tenant=default lane=interactive model="e4b"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 30 prompt tokens; model e4b)
+[meter] admit id=chatcmpl-0a411f7f0d8f910c3df671cf07e16b7e tenant=default lane=interactive model="e4b"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 30 prompt tokens; model e4b)
+[meter] admit id=chatcmpl-40b9be661f291f3d3aa496dd21e722cd tenant=default lane=interactive model="e4b"
+[admission] request cost: model="e4b" ctx=502 path=plain = 28672 B/token x ctx + 10MB prefill-workspace + 0MB fixed = 24MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 38 prompt tokens; model e4b)
+[meter] admit id=chatcmpl-5f898a276126bc5d88cd31af1fe2552d tenant=default lane=interactive model="e4b"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 38 prompt tokens; model e4b)
+[meter] admit id=chatcmpl-6be41348781d8dc50bbd8861792fef6d tenant=default lane=interactive model="e4b"
+[admission] request cost: model="e4b" ctx=505 path=plain = 28672 B/token x ctx + 10MB prefill-workspace + 0MB fixed = 25MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 41 prompt tokens; model e4b)
+[meter] admit id=chatcmpl-0d75f113fb0662d6430c15deb79f5e17 tenant=default lane=interactive model="e4b"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 41 prompt tokens; model e4b)
+[meter] admit id=chatcmpl-f63cd7fc5263d30e75ed98f68d55b91c tenant=default lane=interactive model="e4b"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 41 prompt tokens; model e4b)
+[meter] admit id=chatcmpl-3270d28974bf5b948046925d4a614abf tenant=default lane=interactive model="e4b"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 41 prompt tokens; model e4b)
+[meter] admit id=chatcmpl-de65188d97957759506af8564b645ce2 tenant=default lane=interactive model="e4b"
+[admission] request cost: model="e4b" ctx=485 path=plain = 28672 B/token x ctx + 5MB prefill-workspace + 0MB fixed = 19MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 21 prompt tokens; model e4b)
+[meter] admit id=chatcmpl-08df9cb6b080609cbd3a78b253c5f369 tenant=default lane=interactive model="e4b"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 21 prompt tokens; model e4b)
+[meter] admit id=chatcmpl-b73c516f11a66c7e2117cca7060689b5 tenant=default lane=interactive model="e4b"
+[admission] request cost: model="e4b" ctx=488 path=plain = 28672 B/token x ctx + 6MB prefill-workspace + 0MB fixed = 20MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 24 prompt tokens; model e4b)
+[meter] admit id=chatcmpl-f69c8e7694d8251d5a7d639788f9e979 tenant=default lane=interactive model="e4b"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 24 prompt tokens; model e4b)
+[meter] admit id=chatcmpl-fb0e0ccef4109f976cddb5320d6d0591 tenant=default lane=interactive model="e4b"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 24 prompt tokens; model e4b)
+[meter] admit id=chatcmpl-eee9a3e2ce7d1450ae3afa6242887522 tenant=default lane=interactive model="e4b"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 24 prompt tokens; model e4b)
+[meter] admit id=chatcmpl-48e7b3e63149e758bd96f6d67a4b7299 tenant=default lane=interactive model="e4b"
+[admission] request cost: model="e4b" ctx=485 path=plain = 28672 B/token x ctx + 5MB prefill-workspace + 0MB fixed = 19MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 21 prompt tokens; model e4b)
+[meter] admit id=chatcmpl-92aaeb5aa2841ae6e3fbb368065c8897 tenant=default lane=interactive model="e4b"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 21 prompt tokens; model e4b)
+[meter] admit id=chatcmpl-e114c552f02e3c694ad8eedaea730ba3 tenant=default lane=interactive model="e4b"
+[admission] request cost: model="e4b" ctx=488 path=plain = 28672 B/token x ctx + 6MB prefill-workspace + 0MB fixed = 20MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 24 prompt tokens; model e4b)
+[meter] admit id=chatcmpl-b6c9e8a5b5c918ceffebef22a7a65c60 tenant=default lane=interactive model="e4b"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 24 prompt tokens; model e4b)
+[meter] admit id=chatcmpl-96d0dda5ca7f5cc2dbb6ae63b2b637be tenant=default lane=interactive model="e4b"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 24 prompt tokens; model e4b)
+[meter] admit id=chatcmpl-821012462e89170b5050b6875419a8e7 tenant=default lane=interactive model="e4b"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 24 prompt tokens; model e4b)
+[meter] admit id=chatcmpl-705dcf600792075a9087c86732f99498 tenant=default lane=interactive model="e4b"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 24 prompt tokens; model e4b)
+[meter] admit id=chatcmpl-213e0846f16f7a87ede5a136f0c99a4d tenant=default lane=interactive model="e4b"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 24 prompt tokens; model e4b)
+[meter] admit id=chatcmpl-1c0b7ddf55bacaafe27ed7ff7c8039eb tenant=default lane=interactive model="e4b"
+[admission] request cost: model="e4b" ctx=491 path=plain = 28672 B/token x ctx + 7MB prefill-workspace + 0MB fixed = 21MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model e4b)
+[meter] admit id=chatcmpl-7f49077b3d021aafcfae95eb1a439578 tenant=default lane=interactive model="e4b"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model e4b)
+[meter] admit id=chatcmpl-0aedb77c81dfe4cc235af70d78c7781c tenant=default lane=interactive model="e4b"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model e4b)
+[meter] admit id=chatcmpl-6cb63e12bf4eea9a076dec352805edc1 tenant=default lane=interactive model="e4b"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model e4b)
+[meter] admit id=chatcmpl-c862c7c4a5e4e37f855bcfb7696da78f tenant=default lane=interactive model="e4b"
+[admission] request cost: model="e4b" ctx=488 path=plain = 28672 B/token x ctx + 6MB prefill-workspace + 0MB fixed = 20MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 24 prompt tokens; model e4b)
+[meter] admit id=chatcmpl-1bb95cb524cfc63b1d40f61ae77ca8c2 tenant=default lane=interactive model="e4b"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 24 prompt tokens; model e4b)
+[meter] admit id=chatcmpl-0f9948a96a6c5e849e4d663209d14443 tenant=default lane=interactive model="e4b"
+[admission] request cost: model="e4b" ctx=491 path=plain = 28672 B/token x ctx + 7MB prefill-workspace + 0MB fixed = 21MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model e4b)
+[meter] admit id=chatcmpl-f94471e2789ef7f474a3fe93b586b3f8 tenant=default lane=interactive model="e4b"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model e4b)
+[meter] admit id=chatcmpl-7a6854fe088487b2d37c63b2eec68706 tenant=default lane=interactive model="e4b"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model e4b)
+[meter] admit id=chatcmpl-30633457e69a2fbc10489dc9f06ea10c tenant=default lane=interactive model="e4b"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model e4b)
+[meter] admit id=chatcmpl-925052b6bbd583244899bc3db3ec18a9 tenant=default lane=interactive model="e4b"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model e4b)
+[meter] admit id=chatcmpl-23fcf13b59219863f7d5c6cc73f9f9d4 tenant=default lane=interactive model="e4b"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model e4b)
+[meter] admit id=chatcmpl-00fc8743611f7b51441eca652acd9631 tenant=default lane=interactive model="e4b"
+[admission] request cost: model="e4b" ctx=494 path=plain = 28672 B/token x ctx + 8MB prefill-workspace + 0MB fixed = 22MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 30 prompt tokens; model e4b)
+[meter] admit id=chatcmpl-ff269f8416f2b711c07325a135398e6f tenant=default lane=interactive model="e4b"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 30 prompt tokens; model e4b)
+[meter] admit id=chatcmpl-087e6a3a20ce7c99f8b7450dd71f83be tenant=default lane=interactive model="e4b"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 30 prompt tokens; model e4b)
+[meter] admit id=chatcmpl-7a7111b2a760d6efa6ac5afdd15bfdd9 tenant=default lane=interactive model="e4b"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 30 prompt tokens; model e4b)
+[meter] admit id=chatcmpl-0c7a2484b89305188fafcbecac90a1bd tenant=default lane=interactive model="e4b"
+[admission] request cost: model="e4b" ctx=484 path=plain = 28672 B/token x ctx + 5MB prefill-workspace + 0MB fixed = 19MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 20 prompt tokens; model e4b)
+[meter] admit id=chatcmpl-9c9368a3236539c61c034b811bca97ac tenant=default lane=interactive model="e4b"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 20 prompt tokens; model e4b)
+[meter] admit id=chatcmpl-f5a4ede2cff10223c8e74030b6454524 tenant=default lane=interactive model="e4b"
+[admission] request cost: model="e4b" ctx=487 path=plain = 28672 B/token x ctx + 6MB prefill-workspace + 0MB fixed = 20MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 23 prompt tokens; model e4b)
+[meter] admit id=chatcmpl-49459efa89a56e8ed2dc135a87024148 tenant=default lane=interactive model="e4b"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 23 prompt tokens; model e4b)
+[meter] admit id=chatcmpl-57f0cbcedf3ff3ed0bbd5151a485644d tenant=default lane=interactive model="e4b"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 23 prompt tokens; model e4b)
+[meter] admit id=chatcmpl-0a4890423eb2dcb921beacd7d6ddf77a tenant=default lane=interactive model="e4b"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 23 prompt tokens; model e4b)
+[meter] admit id=chatcmpl-1fd59f77e987dcace4dcee538deae99c tenant=default lane=interactive model="e4b"
+[admission] request cost: model="e4b" ctx=492 path=plain = 28672 B/token x ctx + 7MB prefill-workspace + 0MB fixed = 21MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 28 prompt tokens; model e4b)
+[meter] admit id=chatcmpl-d479da069cc0c038b2c712e608b78d37 tenant=default lane=interactive model="e4b"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 28 prompt tokens; model e4b)
+[meter] admit id=chatcmpl-d170ccbf8fe2201dd5e3cf65192b8f4a tenant=default lane=interactive model="e4b"
+[admission] request cost: model="e4b" ctx=495 path=plain = 28672 B/token x ctx + 8MB prefill-workspace + 0MB fixed = 22MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 31 prompt tokens; model e4b)
+[meter] admit id=chatcmpl-c3cef06b624cb2aa891fad31003803ef tenant=default lane=interactive model="e4b"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 31 prompt tokens; model e4b)
+[meter] admit id=chatcmpl-2297f7cea408d12ae35e3c52fa54f7b4 tenant=default lane=interactive model="e4b"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 31 prompt tokens; model e4b)
+[meter] admit id=chatcmpl-3c509d717c1388c1feeccafd80200c74 tenant=default lane=interactive model="e4b"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 31 prompt tokens; model e4b)
+[meter] admit id=chatcmpl-983919242bb05e04829f7f9f9323dc06 tenant=default lane=interactive model="e4b"
+[admission] request cost: model="e4b" ctx=497 path=plain = 28672 B/token x ctx + 8MB prefill-workspace + 0MB fixed = 23MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 33 prompt tokens; model e4b)
+[meter] admit id=chatcmpl-849f59259ee5f760e1e736d458558fa5 tenant=default lane=interactive model="e4b"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 33 prompt tokens; model e4b)
+[meter] admit id=chatcmpl-1b37029f0d62725d8d6f005a807fcbcb tenant=default lane=interactive model="e4b"
+[admission] request cost: model="e4b" ctx=500 path=plain = 28672 B/token x ctx + 9MB prefill-workspace + 0MB fixed = 23MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 36 prompt tokens; model e4b)
+[meter] admit id=chatcmpl-8c2f27017b6d943d94c45e03a3d684ee tenant=default lane=interactive model="e4b"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 36 prompt tokens; model e4b)
+[meter] admit id=chatcmpl-5fb0c463b796237d6f96f45271d66d46 tenant=default lane=interactive model="e4b"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 36 prompt tokens; model e4b)
+[meter] admit id=chatcmpl-9a1afb7617fb936e9f46f23d93af27bf tenant=default lane=interactive model="e4b"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 36 prompt tokens; model e4b)
+[meter] admit id=chatcmpl-c14da6f3b707f32471243d79de9fc4cd tenant=default lane=interactive model="e4b"
+[admission] request cost: model="e4b" ctx=489 path=plain = 28672 B/token x ctx + 6MB prefill-workspace + 0MB fixed = 20MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 25 prompt tokens; model e4b)
+[meter] admit id=chatcmpl-f33b86170f0d1ccb87bf0d44e746b5b6 tenant=default lane=interactive model="e4b"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 25 prompt tokens; model e4b)
+[meter] admit id=chatcmpl-2e255c7ce5d528293b4fb866c43e2c10 tenant=default lane=interactive model="e4b"
+[admission] request cost: model="e4b" ctx=492 path=plain = 28672 B/token x ctx + 7MB prefill-workspace + 0MB fixed = 21MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 28 prompt tokens; model e4b)
+[meter] admit id=chatcmpl-b0d6a629ce85a9daf71b6f54ffdb6b5c tenant=default lane=interactive model="e4b"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 28 prompt tokens; model e4b)
+[meter] admit id=chatcmpl-b6cf91442f8239b67dfb6881b568a58e tenant=default lane=interactive model="e4b"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 28 prompt tokens; model e4b)
+[meter] admit id=chatcmpl-4903b2826989f4180ee8342c36471c4f tenant=default lane=interactive model="e4b"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 28 prompt tokens; model e4b)
+[meter] admit id=chatcmpl-08d4fd48dc7c80a74553ce261d506208 tenant=default lane=interactive model="e4b"
+[admission] request cost: model="e4b" ctx=500 path=plain = 28672 B/token x ctx + 9MB prefill-workspace + 0MB fixed = 23MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 36 prompt tokens; model e4b)
+[meter] admit id=chatcmpl-3f06985794d744afafe45d52fd117ba2 tenant=default lane=interactive model="e4b"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 36 prompt tokens; model e4b)
+[meter] admit id=chatcmpl-b798e3d7ab8cee2df237623f252a6b66 tenant=default lane=interactive model="e4b"
+[admission] request cost: model="e4b" ctx=503 path=plain = 28672 B/token x ctx + 10MB prefill-workspace + 0MB fixed = 24MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 39 prompt tokens; model e4b)
+[meter] admit id=chatcmpl-dbff7328dd1f731347a500337950f174 tenant=default lane=interactive model="e4b"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 39 prompt tokens; model e4b)
+[meter] admit id=chatcmpl-4343b7e94d8e639b75fce72adc64a8b6 tenant=default lane=interactive model="e4b"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 39 prompt tokens; model e4b)
+[meter] admit id=chatcmpl-321227dcfa6ac0087f552e94ace8bfda tenant=default lane=interactive model="e4b"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 39 prompt tokens; model e4b)
+[meter] admit id=chatcmpl-0088f3eca797c0452d87030356581d79 tenant=default lane=interactive model="e4b"
+[admission] request cost: model="e4b" ctx=493 path=plain = 28672 B/token x ctx + 7MB prefill-workspace + 0MB fixed = 21MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 29 prompt tokens; model e4b)
+[meter] admit id=chatcmpl-5974a5a43dd8c8b041589da2619600f9 tenant=default lane=interactive model="e4b"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 29 prompt tokens; model e4b)
+[meter] admit id=chatcmpl-2fed86246cea6f4204b266bc668d18fe tenant=default lane=interactive model="e4b"
+[admission] request cost: model="e4b" ctx=496 path=plain = 28672 B/token x ctx + 8MB prefill-workspace + 0MB fixed = 22MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 32 prompt tokens; model e4b)
+[meter] admit id=chatcmpl-7a1a050b61c1624e21d1faf80bbd12d2 tenant=default lane=interactive model="e4b"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 32 prompt tokens; model e4b)
+[meter] admit id=chatcmpl-5a42f3245d7d7471f0d5393303b2be81 tenant=default lane=interactive model="e4b"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 32 prompt tokens; model e4b)
+[meter] admit id=chatcmpl-289234647dbb76fae3a9eb581944adf2 tenant=default lane=interactive model="e4b"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 32 prompt tokens; model e4b)
+[meter] admit id=chatcmpl-a246690338b5c9557d47cda4f99f253d tenant=default lane=interactive model="e4b"
+[admission] request cost: model="e4b" ctx=491 path=plain = 28672 B/token x ctx + 7MB prefill-workspace + 0MB fixed = 21MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model e4b)
+[meter] admit id=chatcmpl-ab83cf7c1d5f08c46a2fc06bc9679479 tenant=default lane=interactive model="e4b"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model e4b)
+[meter] admit id=chatcmpl-917737d3ef39b8096c09ecb7a16455df tenant=default lane=interactive model="e4b"
+[admission] request cost: model="e4b" ctx=494 path=plain = 28672 B/token x ctx + 8MB prefill-workspace + 0MB fixed = 22MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 30 prompt tokens; model e4b)
+[meter] admit id=chatcmpl-be2aa2fa0747516e6c3a21c399538cd0 tenant=default lane=interactive model="e4b"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 30 prompt tokens; model e4b)
+[meter] admit id=chatcmpl-a4dee56b17b3a9850228409b78d3e2a2 tenant=default lane=interactive model="e4b"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 30 prompt tokens; model e4b)
+[meter] admit id=chatcmpl-8939b2642e0480054ae54ef8614edbf7 tenant=default lane=interactive model="e4b"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 30 prompt tokens; model e4b)
+[meter] admit id=chatcmpl-90f8d15ec81b11cbcaa5d95881062d87 tenant=default lane=interactive model="e4b"
+[admission] request cost: model="e4b" ctx=503 path=plain = 28672 B/token x ctx + 10MB prefill-workspace + 0MB fixed = 24MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 39 prompt tokens; model e4b)
+[meter] admit id=chatcmpl-470957661b92eda086a667dcb9be1d8f tenant=default lane=interactive model="e4b"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 39 prompt tokens; model e4b)
+[meter] admit id=chatcmpl-5b880851f28001524ae0d8c43a6b8d93 tenant=default lane=interactive model="e4b"
+[admission] request cost: model="e4b" ctx=506 path=plain = 28672 B/token x ctx + 11MB prefill-workspace + 0MB fixed = 25MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 42 prompt tokens; model e4b)
+[meter] admit id=chatcmpl-c02418b45374b651c4c34eb00bc5160f tenant=default lane=interactive model="e4b"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 42 prompt tokens; model e4b)
+[meter] admit id=chatcmpl-a101b8356927b41655f9dd1b4a330bd4 tenant=default lane=interactive model="e4b"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 42 prompt tokens; model e4b)
+[meter] admit id=chatcmpl-51cef517502805e21e54dde9f2827c8e tenant=default lane=interactive model="e4b"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 42 prompt tokens; model e4b)
+[meter] admit id=chatcmpl-c9c3b79b918702594cd5a8417675f8e9 tenant=default lane=interactive model="e4b"
+[admission] request cost: model="e4b" ctx=497 path=plain = 28672 B/token x ctx + 8MB prefill-workspace + 0MB fixed = 23MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 33 prompt tokens; model e4b)
+[meter] admit id=chatcmpl-a80bd8736588df851f1ef921d9e4b524 tenant=default lane=interactive model="e4b"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 33 prompt tokens; model e4b)
+[meter] admit id=chatcmpl-b37eb1ceceb556ffc623445622c6a745 tenant=default lane=interactive model="e4b"
+[admission] request cost: model="e4b" ctx=500 path=plain = 28672 B/token x ctx + 9MB prefill-workspace + 0MB fixed = 23MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 36 prompt tokens; model e4b)
+[meter] admit id=chatcmpl-9e5eb671258e696ffac341874a575eec tenant=default lane=interactive model="e4b"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 36 prompt tokens; model e4b)
+[meter] admit id=chatcmpl-4e2a6e20d80d97459cd14ea580363d45 tenant=default lane=interactive model="e4b"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 36 prompt tokens; model e4b)
+[meter] admit id=chatcmpl-79db92ffb90e6fa56d67c953de3871b7 tenant=default lane=interactive model="e4b"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 36 prompt tokens; model e4b)
+[meter] admit id=chatcmpl-27598b6108d11c6f47ea06951a63f389 tenant=default lane=interactive model="e4b"
+[admission] request cost: model="e4b" ctx=491 path=plain = 28672 B/token x ctx + 7MB prefill-workspace + 0MB fixed = 21MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model e4b)
+[meter] admit id=chatcmpl-24d7919a5778cb1668dd5ece4a560ce6 tenant=default lane=interactive model="e4b"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model e4b)
+[meter] admit id=chatcmpl-7eae99ac5ff4987da17eabf40efef344 tenant=default lane=interactive model="e4b"
+[admission] request cost: model="e4b" ctx=494 path=plain = 28672 B/token x ctx + 8MB prefill-workspace + 0MB fixed = 22MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 30 prompt tokens; model e4b)
+[meter] admit id=chatcmpl-286cbfc258ee700d04b1717d7c84bb7a tenant=default lane=interactive model="e4b"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 30 prompt tokens; model e4b)
+[meter] admit id=chatcmpl-ee97d91f953cc6a2fb8df4cbe6f0e162 tenant=default lane=interactive model="e4b"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 30 prompt tokens; model e4b)
+[meter] admit id=chatcmpl-0f94007b1533c38121629643100728fb tenant=default lane=interactive model="e4b"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 30 prompt tokens; model e4b)
+[meter] admit id=chatcmpl-cc86186d2052f95cc9006ffed74d84dd tenant=default lane=interactive model="e4b"
+[admission] request cost: model="e4b" ctx=486 path=plain = 28672 B/token x ctx + 6MB prefill-workspace + 0MB fixed = 19MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 22 prompt tokens; model e4b)
+[meter] admit id=chatcmpl-f524918f8bc470ffc9fa195a5bc45fe6 tenant=default lane=interactive model="e4b"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 22 prompt tokens; model e4b)
+[meter] admit id=chatcmpl-466c3c52e77632b7d8cc49f8221421c9 tenant=default lane=interactive model="e4b"
+[admission] request cost: model="e4b" ctx=489 path=plain = 28672 B/token x ctx + 6MB prefill-workspace + 0MB fixed = 20MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 25 prompt tokens; model e4b)
+[meter] admit id=chatcmpl-259d1c9d20889b1235d886e88bf11523 tenant=default lane=interactive model="e4b"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 25 prompt tokens; model e4b)
+[meter] admit id=chatcmpl-90d9e70c4772f7ac606d1a6e850c1524 tenant=default lane=interactive model="e4b"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 25 prompt tokens; model e4b)
+[meter] admit id=chatcmpl-a51fd4bb3ee8d3b071509d7ef61404ba tenant=default lane=interactive model="e4b"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 25 prompt tokens; model e4b)
+[meter] admit id=chatcmpl-88d5a9ebeb86f8d79d53cf28691788e3 tenant=default lane=interactive model="e4b"
+[admission] request cost: model="e4b" ctx=486 path=plain = 28672 B/token x ctx + 6MB prefill-workspace + 0MB fixed = 19MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 22 prompt tokens; model e4b)
+[meter] admit id=chatcmpl-83c46ffd1fff4553a6235d8cff2ac600 tenant=default lane=interactive model="e4b"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 22 prompt tokens; model e4b)
+[meter] admit id=chatcmpl-9db5204311d4da4258ef7bdac5366dc6 tenant=default lane=interactive model="e4b"
+[admission] request cost: model="e4b" ctx=489 path=plain = 28672 B/token x ctx + 6MB prefill-workspace + 0MB fixed = 20MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 25 prompt tokens; model e4b)
+[meter] admit id=chatcmpl-7426fda4dce9c830053e23304437308b tenant=default lane=interactive model="e4b"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 25 prompt tokens; model e4b)
+[meter] admit id=chatcmpl-e0b52843fa4d311e547bed246d03f828 tenant=default lane=interactive model="e4b"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 25 prompt tokens; model e4b)
+[meter] admit id=chatcmpl-2009a4e8cbea3377361deb9426a2be74 tenant=default lane=interactive model="e4b"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 25 prompt tokens; model e4b)
+[meter] admit id=chatcmpl-e386cfa54687ec797e9233f525cff7f4 tenant=default lane=interactive model="e4b"
+[admission] request cost: model="e4b" ctx=492 path=plain = 28672 B/token x ctx + 7MB prefill-workspace + 0MB fixed = 21MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 28 prompt tokens; model e4b)
+[meter] admit id=chatcmpl-fe03cbd6cadafc7d9d1ec0d46b3ab569 tenant=default lane=interactive model="e4b"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 28 prompt tokens; model e4b)
+[meter] admit id=chatcmpl-4c678809cb21e2db246451e4526dbe27 tenant=default lane=interactive model="e4b"
+[admission] request cost: model="e4b" ctx=495 path=plain = 28672 B/token x ctx + 8MB prefill-workspace + 0MB fixed = 22MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 31 prompt tokens; model e4b)
+[meter] admit id=chatcmpl-7378b9fd496f03d9ddc77335ae1454df tenant=default lane=interactive model="e4b"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 31 prompt tokens; model e4b)
+[meter] admit id=chatcmpl-d90097bb6f040d21e6f654a3b35cfb73 tenant=default lane=interactive model="e4b"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 31 prompt tokens; model e4b)
+[meter] admit id=chatcmpl-e80e3dc143e67968030d1f7dfa993714 tenant=default lane=interactive model="e4b"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 31 prompt tokens; model e4b)
+[meter] admit id=chatcmpl-0de4eaa482339ab315dc1cd775197bfc tenant=default lane=interactive model="e4b"
+[admission] request cost: model="e4b" ctx=491 path=plain = 28672 B/token x ctx + 7MB prefill-workspace + 0MB fixed = 21MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model e4b)
+[meter] admit id=chatcmpl-daeb90fec3b2776fd6a656b546d5129b tenant=default lane=interactive model="e4b"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model e4b)
+[meter] admit id=chatcmpl-48872593cfaa28c8cf3f6bfd4e180190 tenant=default lane=interactive model="e4b"
+[admission] request cost: model="e4b" ctx=494 path=plain = 28672 B/token x ctx + 8MB prefill-workspace + 0MB fixed = 22MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 30 prompt tokens; model e4b)
+[meter] admit id=chatcmpl-5882349eb23b9fe3ff02eb5cd7994b72 tenant=default lane=interactive model="e4b"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 30 prompt tokens; model e4b)
+[meter] admit id=chatcmpl-c35d812fc9b4cb8dbb1f91372bd85b44 tenant=default lane=interactive model="e4b"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 30 prompt tokens; model e4b)
+[meter] admit id=chatcmpl-0856332a8751b12c1481aefa941f765d tenant=default lane=interactive model="e4b"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 30 prompt tokens; model e4b)
+[meter] admit id=chatcmpl-6fa92d4e2ffb58f9997e1d2e95158d80 tenant=default lane=interactive model="e4b"
+[admission] request cost: model="e4b" ctx=486 path=plain = 28672 B/token x ctx + 6MB prefill-workspace + 0MB fixed = 19MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 22 prompt tokens; model e4b)
+[meter] admit id=chatcmpl-24066177b51a88be5e4b84103d587087 tenant=default lane=interactive model="e4b"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 22 prompt tokens; model e4b)
+[meter] admit id=chatcmpl-4a5ece5d3dbb02f932599de8be03082d tenant=default lane=interactive model="e4b"
+[admission] request cost: model="e4b" ctx=489 path=plain = 28672 B/token x ctx + 6MB prefill-workspace + 0MB fixed = 20MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 25 prompt tokens; model e4b)
+[meter] admit id=chatcmpl-6a8d1ac6ea26d326cb2ab7bf0989fe76 tenant=default lane=interactive model="e4b"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 25 prompt tokens; model e4b)
+[meter] admit id=chatcmpl-bf0a3caf95023aa956150d76ac09fb30 tenant=default lane=interactive model="e4b"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 25 prompt tokens; model e4b)
+[meter] admit id=chatcmpl-fd9a4cf97dd34308f15617251937cc40 tenant=default lane=interactive model="e4b"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 25 prompt tokens; model e4b)
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting
+[server] GPU worker shutdown complete

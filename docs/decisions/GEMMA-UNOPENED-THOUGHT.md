@@ -11,10 +11,12 @@ parser holds every byte until the opening resolves, at the earliest of:
   bytes take the path they took before this rule;
 - the end of the turn: the held bytes are content.
 
-A non-stream response holds the whole turn and splits after the fact. A stream holds at most
-256 bytes (`GEMMA_STREAM_OPENING_CAP`) and then hands the opening to content. The cap is
-positional: on a stream a close tag that starts at byte 256 or later stays content, however
-the text is chunked. The four SSE renderers (chat and completions, Anthropic messages,
+A non-stream response holds the whole turn and splits after the fact. A stream on E4B, the one
+model that writes unopened thoughts (`ModelCaps::gemma_unopened_thought`), holds the opening
+the same way, with no byte cap, so both shapes split a turn alike. A stream on any other gemma4
+model holds at most 256 bytes (`GEMMA_STREAM_OPENING_CAP`) and then hands the opening to
+content. That cap is positional: a close tag that starts at byte 256 or later stays content,
+however the text is chunked. The four SSE renderers (chat and completions, Anthropic messages,
 Responses, n>1 choices) mark their parser with `streaming()`; every other path is a blocking
 shape.
 
@@ -59,16 +61,31 @@ unopened thought (81 bytes) and the 12B's opened thought on the same prompt (151
 `research/gemma4-serve-20260807/raw/gap2-on-20260807T193310Z.json`). 128 would already miss the
 in-family length. Both thoughts come from one trivial prompt, so the cap rests on two samples.
 
-**Stream and non-stream differ above the cap.** A non-stream response routes an unopened
-thought to reasoning at any length. On a stream, an unopened thought of 256 bytes or more
-already went out as content when the cap filled, so the thought and the literal `<channel|>`
-reach content, the defect this rule fixes. A greedy chat with such a thought therefore gives
-different outputs on the two shapes. `gemma_stream_opening_holdback_is_bounded_and_chunking_independent`
-in `toolcall.rs` pins both sides.
+**Stream and non-stream differ above the cap, on a capped model only.** On a model with the
+256-byte cap, an unopened thought of 256 bytes or more already went out as content when the
+cap filled, so a greedy chat with such a thought would split differently on the two shapes.
+The census found no such thought outside E4B, and E4B has no cap.
+`gemma_stream_opening_holdback_is_bounded_and_chunking_independent` and
+`an_unopened_thought_model_streams_a_long_thought_as_its_blocking_twin` in `toolcall.rs` pin
+both arms.
 
-**Open owner call:** keep 256 until the census of E4B unopened-thought lengths on a real prompt
-set runs on the RTX 5090 (below), or set another bound now. Every other part of the rule stands
-either way.
+**Census, 2026-11-04 (settles the cap).** Twenty-four prompts, thinking off and at
+`reasoning_effort` low and medium, greedy, `max_tokens` 400, each sent as a stream and as a
+blocking request, on the RTX 5090 at the lane tip (`research/gemma-unopened-thought-census-20261104/`):
+
+| model | unopened thoughts, thinking off | their length | stream equal to blocking, 256-byte cap |
+|---|---|---|---|
+| E4B | 12 of 24 | 81 to 1,027 bytes | 60 of 72; all 12 misses carry `<channel|>` in a delta |
+| 26B-A4B | 0 of 24 | none | 72 of 72 |
+| 31B | 0 of 24 | none | 72 of 72 |
+
+The cap fails every long E4B thought, and no other model writes one. So E4B's streams hold
+the opening with no cap, and the other models keep the 256-byte cap, which on them only bounds
+the first content delta. Rejected: a larger cap for every model, which would delay every
+26B-A4B and 31B stream with no thought to catch. The cost of the uncapped hold lands on E4B
+alone: a thinking-off answer with no tag at all streams only at the turn end. Six E4B prompts
+wrote a thinking process into content with no tag ("Here's a thinking process to arrive
+at..."), which no parser rule can split.
 
 **Measurement that settled it:** `research/modelplan-onboarding-e4b-20261104/serve-09348940b8/`:
 `probe.log` (rendered prompt tail and tag ids), `probe/probe-chat-off.json` (the leak),
@@ -79,9 +96,8 @@ first delta of `gap2-stream-20260807T193310Z.sse` is reasoning).
 
 **Scope and what is open:**
 
-- One unopened thought is on record, on a trivial prompt. Retune the cap from a census of E4B
-  unopened-thought lengths on a real prompt set when the RTX 5090 serve cells run (the open
-  owner call above).
+- The census is one card, greedy, 400 tokens a request. A model whose pack starts writing
+  unopened thoughts needs the same census before it joins `gemma_unopened_thought`.
 - A stream that ends in a worker error or a deadline inside the hold-back sends the error
   without the held bytes, as it already does for a held partial tag or stop-string tail.
 - serve-smoke's gemma4 arm has check (e) for the stream half. Two greedy chats run as stream
@@ -91,13 +107,11 @@ first delta of `gap2-stream-20260807T193310Z.sse` is reasoning).
   writes no unopened close. It does not compare against the binary before the rule; the
   `toolcall.rs` unit tests pin that.
 - serve-smoke's gemma4 check (c) needs the model to think: at `reasoning_effort: low` E4B
-  answered `ok` with no thought (`probe/probe-chat-low.json`, 2 completion tokens), and no
-  parser rule can change that. Open owner call: give (c) a prompt E4B thinks on, or record
-  (c) as an expected E4B FAIL.
-- GPU cells owed, on the RTX 5090: serve-smoke's gemma4 arm on E4B, the 31B and the 12B
-  default (`GEMMA_MODEL=<gguf> tools/serve-smoke.sh`, with the E4B cell run as in its
-  onboarding receipt). Expected: (a), both (e) chats and (d) PASS on all three, and (c)
-  PASSes on the 12B and FAILs on E4B as above. On E4B the long (e) chat FAILs with a tag in
-  a delta if E4B writes an unopened thought of 256 bytes or more there, which is a census
-  data point for the cap, not a regression. The 31B has no receipt on this arm yet, so its
-  (c) result is open.
+  answered `ok` with no thought (`probe/probe-chat-low.json`, 2 completion tokens). Check (c)
+  now asks "What is 17 times 23? Show your work briefly." with 1,200 tokens: the census read
+  reasoning on it at low effort for E4B, the 26B-A4B and the 31B (the last two think past 400
+  tokens on it).
+- GPU cells, on the RTX 5090: serve-smoke's gemma4 arm on E4B, the 26B-A4B and the 31B
+  (`GEMMA_MODEL=<gguf> tools/serve-smoke.sh`, the E4B cell run as in its onboarding receipt),
+  and on the 12B default when its model is on the rig. Expected: (a), (c), both (e) chats and
+  (d) PASS on each.

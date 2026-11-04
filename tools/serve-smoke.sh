@@ -406,10 +406,11 @@ fi
 #       the deltas reassemble to the non-stream content and reasoning. Two chats: the (a)
 #       chat, whose opening resolves inside the stream hold-back (at E4B's unopened close,
 #       or at the turn end), and a thinking-off chat whose content passes the 256-byte
-#       stream cap (GEMMA_STREAM_OPENING_CAP in toolcall.rs). On a card that writes no
+#       stream cap (GEMMA_STREAM_OPENING_CAP in toolcall.rs). On a model that writes no
 #       unopened close the stream hands its opening to content at the cap while the
-#       non-stream parser holds the whole turn. On E4B an unopened thought of 256 bytes or
-#       more on that chat FAILs here (a tag in a delta): the cap is too small for it.
+#       non-stream parser holds the whole turn. E4B writes unopened thoughts past the cap
+#       (census research/gemma-unopened-thought-census-20261104/), so its stream holds the
+#       opening until a tag or the turn end resolves it, and the two shapes split alike.
 #       This is the stream half of the unopened-thought rule
 #       (docs/decisions/GEMMA-UNOPENED-THOUGHT.md). It does not compare against the binary
 #       before the rule; the toolcall.rs unit tests pin that a turn with no unopened close
@@ -470,7 +471,10 @@ assert r["choices"][0]["finish_reason"] == "stop", "did not stop at turn end"
     gstream_check "$RL" "$SL" 257 \
       && PASS "gemma4 long stream: past the 256-byte opening cap, reassembles to non-stream" \
       || FAIL "gemma4 long stream reassembly"
-    R=$(gchat '"reasoning_effort":"low"')
+    # (c) asks a question every served gemma4 thinks on at low effort (the census read
+    # reasoning on it for E4B, the 26B-A4B and the 31B); E4B answers "Reply with exactly: ok"
+    # with no thought at all. The 26B-A4B and the 31B think past 400 tokens on it.
+    R=$(gchat '"reasoning_effort":"low"' 'What is 17 times 23? Show your work briefly.' 1200)
     echo "$R" | python3 -c '
 import json,sys
 r = json.load(sys.stdin)
