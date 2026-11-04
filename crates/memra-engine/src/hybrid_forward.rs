@@ -2571,23 +2571,20 @@ impl HybridModel {
     /// launcher's TP-2 exec block (expert split, symmetric walk and graphs) and every accepted
     /// process logged TP graph engagement. Inspect loaded sidecars, not the requested TP
     /// environment string, then apply the symmetric walk's own engagement rule
-    /// (`hyper_range_decode_ws_body`) over every layer. A load that would decline into the
-    /// root-orchestrated walk keeps the host sampler: the +12.22% has no receipt there.
+    /// ([`Self::glm5_tp_sym_walk_rt`], the one its routing applies) over every layer. A load that
+    /// would decline into the root-orchestrated walk keeps the host sampler: the +12.22% has no
+    /// receipt there.
     pub fn glm5_tp_device_sample_supported(&self) -> bool {
         self.hyper.is_some()
             && crate::pp::pp_cuts(self.layers.len()).is_none()
             && self.glm5_tp_symmetric_walk_engages()
     }
 
-    /// Whether a whole-range decode takes the symmetric TP-2 walk: the same rule
-    /// `hyper_range_decode_ws_body` applies before it declines into the root-orchestrated walk,
-    /// over `0..layers.len()`, with exactly two ranks.
+    /// Whether a whole-range decode takes the symmetric TP-2 walk: the rule the walk's routing
+    /// applies (the posture over the split, the glue on every layer, two ranks on the
+    /// device-signal link), over `0..layers.len()`.
     fn glm5_tp_symmetric_walk_engages(&self) -> bool {
-        crate::glm5_tp::glm5_tp_symmetric_on()
-            && crate::glm5_tp::glm5_tp_expert_split_on()
-            && self
-                .glm5_tp_rt_for(0, self.layers.len())
-                .is_some_and(|rt| rt.ranks() == 2 && rt.ar_1stage_available())
+        self.glm5_tp_sym_walk_rt(0, self.layers.len()).is_some()
     }
 
     /// Plain TP-2 decode with the unchanged trunk/head program. Retain the full
