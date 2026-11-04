@@ -10334,8 +10334,7 @@ fn host_entry_from_device(
         return Err(format!(
             "pinned arena admission refused: host byte census does not match snapshot accounting {}",
             dead.bytes
-        )
-        .into());
+        ));
     }
     sizes.extend([dead.last_logits.len() * 4, dead.last_h.len() * 4]);
     let bytes = host_image_bytes(dead.bytes, &dead.toks, &dead.last_logits)?;
