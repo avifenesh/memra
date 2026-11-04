@@ -1,8 +1,12 @@
 //! Corrected grouped-prefill bring-up: complete MoE, FP8-QAT transport, and
 //! same-forced-path logit characterization. No production/performance promotion.
 //!
-//! Placement: `pp`, a PP-2 cell. The prefill-only grouped probe refuses the matrix program and EP,
-//! which TP/EP requires.
+//! Placement: `pp` is named, but no cell of this gate runs at HEAD (S06:F0). Its grouped arm,
+//! `set_prefill_grouped_for_gate(true)`, refuses the matrix expert program ("cannot overlay the
+//! matrix request program"), and a `pp` load resolves that program too unless a gate arms the
+//! reference executor, which this gate does not. The probe also refuses EP, which TP/EP requires.
+//! Port or delete is an owner decision owed; kept, it arms the reference executor before load, as
+//! `dsv4_program_accuracy` does.
 use memra_engine::dsv4_gpu::{Dsv4Gpu, Dsv4SampleCfg, dsv4_sample_row};
 use memra_engine::dsv4_topology::Dsv4Placement;
 use memra_gguf::dsv4_forward::FixtureSpec;

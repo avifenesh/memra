@@ -1212,18 +1212,25 @@ selectors it replaced refuse: `--tpep`, `MEMRA_DSV4_ATTENTION_TP_GATE` and
 | `dsv4_rows_gate` | `--placement=tp_ep\|pp` | TP/EP B-row groups need attention TP2, so there is no replicated cell. |
 | `dsv4_tp_ep_verify_gate` | `--placement=tp_ep\|tp_ep_replicated\|pp` | `pp` is the control cell. |
 | `dsv4_tp_ep_gate`, `dsv4_tp_ep_sampled_perf_gate` | `--placement=tp_ep\|tp_ep_replicated` | TP/EP-only gates; the full-token replay cells need `tp_ep`. |
-| `dsv4_c4_direct_gate`, `dsv4_c4_host_gate`, `dsv4_decode_profile`, `dsv4_decode_rate_gate`, `dsv4_plain_perf_gate` | `pp` | Their states keep C4 history in pinned host RAM, which TP/EP refuses. |
+| `dsv4_c4_direct_gate`, `dsv4_c4_host_gate`, `dsv4_decode_profile`, `dsv4_decode_rate_gate`, `dsv4_plain_perf_gate` | `pp` | Their states keep C4 history in pinned host RAM, which TP/EP refuses. `dsv4_c4_host_gate capture` refuses at HEAD: `arm_layer_capture_probe` refuses the matrix expert program. |
 | `dsv4_program_accuracy`, `dsv4_moe_program_class_gate`, `dsv4_matrix_distribution_gate` | `pp` | The reference expert program loads on PP-2 only. |
-| `dsv4-gpu-gate`, `dsv4-gpu-greedy`, `dsv4-gpu-decode-gate`, `dsv4-decode-probe`, `dsv4-native-gemm-gate`, `dsv4-gpu-tf-gate`, `dsv4-gpu-sampled-gate`, `dsv4-drafted-corpus`, `dsv4-decode-bench`, `dsv4_host_cache_gate` | `pp` | The monolithic reference prefill (`forward`, `prefill_with_cache`) runs the PP walk only. |
+| `dsv4-gpu-gate`, `dsv4-gpu-greedy`, `dsv4-gpu-decode-gate`, `dsv4-decode-probe`, `dsv4-native-gemm-gate`, `dsv4-gpu-tf-gate`, `dsv4-gpu-sampled-gate`, `dsv4-drafted-corpus`, `dsv4-decode-bench`, `dsv4_host_cache_gate` | `pp` named; **no runnable cell at HEAD** | They refuse on every placement, `pp` included. Their monolithic prefill (`forward`, `prefill_with_cache`, `dspark_prefill_prime`) refuses the matrix expert program ("matrix request program requires chunked prefill"), which every load resolves unless a gate arms the reference executor, and none of them arms it. |
 | `dsv4_capacity_gate` | `pp` | 1M context with DSpark is PP-2's reach; TP/EP reaches 1M plain and 500k with DSpark. |
 | `dsv4_ep_pair_gate` | `pp` | PP-2 against PP-2 with the whole-expert EP pair. |
 | `dsv4_pipeline_gate` | `pp` | Request pipelining exists on PP-2 only. |
 | `dsv4_graph_probe_gate` | `pp` | The per-layer graph probes run the PP walk only. |
-| `dsv4_grouped_prefill_gate` | `pp` | The prefill-only grouped probe refuses the matrix program and EP. |
-| `dsv4_long_decode_gate`, `dsv4_chunk_sweep_gate`, `dsv4_coupled_proposal_gate`, `dsv4_dense_census`, `dsv4_dense_tile_gate`, `dsv4_prefill_work_gate`, `dsv4_wide_prefill_gate`, `dsv4_matrix_program_gate` | `pp` | Historical instruments that pin the doors they were taken with; their receipts are PP-2 cells. A TP/EP cell of one is a new cell with its own receipt. The served long-decode cell is `dsv4_tp_replay_long_gate`. |
+| `dsv4_grouped_prefill_gate` | `pp` named; **no runnable cell at HEAD** | Its grouped arm (`set_prefill_grouped_for_gate(true)`) refuses the matrix expert program, which a `pp` load resolves too, and the gate does not arm the reference executor. The probe also refuses EP, which TP/EP requires. |
+| `dsv4_wide_prefill_gate` | `pp` named; **stops at its `grouped=true` arm at HEAD** | A historical instrument with PP-2 receipts, like the row below; its grouped arm refuses the matrix expert program the same way. |
+| `dsv4_long_decode_gate`, `dsv4_chunk_sweep_gate`, `dsv4_coupled_proposal_gate`, `dsv4_dense_census`, `dsv4_dense_tile_gate`, `dsv4_prefill_work_gate`, `dsv4_matrix_program_gate` | `pp` | Historical instruments that pin the doors they were taken with; their receipts are PP-2 cells. A TP/EP cell of one is a new cell with its own receipt. The served long-decode cell is `dsv4_tp_replay_long_gate`. |
 
 `dsv4-hc-grid-gate`, `dsv4-dense-family-bench`, `dsv4_q_layout_gate`, `dsv4_sampler_sort_gate`
 and `dsv4_http_prompt_pack` load no model and have no placement.
+
+The cells marked as refusing at HEAD refuse because of the expert program, not the placement:
+the matrix program has been the loaded default since memra #461, and these cells were never
+ported to it. Whether each is ported (to the chunked prefill, or by arming the reference executor
+before load as `dsv4_program_accuracy` does) or deleted is an owner decision still owed. Until
+then a battery lists them with the expected result REFUSE, not PASS.
 
 ### HC24 default engagement, owner accepted 2026-09-09
 

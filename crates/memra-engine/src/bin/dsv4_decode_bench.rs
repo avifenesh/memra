@@ -15,8 +15,11 @@
 //!
 //! Usage: dsv4-decode-bench <model-dir> <fixtures.json> <out.json> [n_new] [dev0,dev1]
 //!
-//! Placement: `pp`, a PP-2 cell. The monolithic reference prefill it drives (`forward`,
-//! `prefill_with_cache`) runs the PP walk only.
+//! Placement: `pp` is named, but no cell of this gate runs at HEAD (S06:F0). The monolithic prefill
+//! it drives (`prefill_with_cache`) refuses the matrix expert program, which every load resolves
+//! unless a gate arms the reference executor, and this gate does not arm it. So it refuses on every
+//! placement, `pp` included, until it is ported to the chunked prefill or deleted (owner decision
+//! owed; docs/TESTING.md "DSv4 gate placement").
 
 use memra_engine::dsv4_gpu::Dsv4Gpu;
 use memra_engine::dsv4_topology::Dsv4Placement;
