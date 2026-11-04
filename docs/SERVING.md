@@ -2322,17 +2322,18 @@ line with the reclaim's refusal appended (the exact production text; a gate grep
 lines, not a paraphrase: `tools/kv-host-tenant-reclaim-gate.sh`). Full trade discussion
 in the [flag catalog](FLAGS.md) row.
 
-**Continuation-pool park compaction (`MEMRA_KV_PARK_COMPACT`, default 0 = off;
-lane/kv-tenancy-compaction-20260831, tiering spec Arc C1):** a parked plain-pool session
-keeps its full ladder-cap `Cache` allocation today (cap = `cache.max_ctx`, so a 6k-token
-session can park ~1 GB on a 262k-ctx deployment). Armed, the park compacts the cache to
-exactly its committed length through the same snapshot + checkpoint-restore machinery the
-plain-affinity grow uses, and the resume grows it back to the request's own charged cap
-before any suffix primes; failures in either direction fall back to today's behavior
-(full-size park, or cold serve). SPEC/DSPARK pools are out of scope by design (they park
-live engine sessions). Default off until the pod battery lands the resume byte-identity
-gate and the step-OOM adjacency replay; see the [flag catalog](FLAGS.md) row and
-`research/kv-tenancy-20260831/REPORT.md` for the pending cells.
+**Continuation-pool park compaction (lane/kv-tenancy-compaction-20260831, tiering spec Arc
+C1; per-device default since 2026-11-04, no flag):** without it a parked plain-pool session
+keeps its full ladder-cap `Cache` allocation (cap = `cache.max_ctx`, so a 6k-token session
+can park ~1 GB on a 262k-ctx deployment). On the RTX 5090 class and the full-power RTX PRO
+6000 Blackwell Workstation Edition the park compacts the cache to exactly its committed
+length through the same snapshot + checkpoint-restore machinery the plain-affinity grow uses,
+and the resume grows it back to the request's own charged cap before any suffix primes;
+failures in either direction fall back to the full-size park or a cold serve. Other cards,
+the Max-Q and Server Edition variants included, park whole until a cell on them reads the
+same. SPEC/DSPARK pools are out of scope by design (they park live engine sessions). The
+receipts and what the flip rejected are in
+[decisions/KV-PARK-COMPACT-DEFAULT.md](decisions/KV-PARK-COMPACT-DEFAULT.md).
 
 ## Cache-hit metering (lane/cache-metering, 2026-08-07)
 

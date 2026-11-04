@@ -3070,20 +3070,36 @@ fn reuse_pool_global_cap() -> usize {
     })
 }
 
-/// MEMRA_KV_PARK_COMPACT (lane/kv-tenancy-compaction-20260831, tiering spec Arc C1):
-/// `1` = at PLAIN-pool park time, compact the retiring session's `Cache` from its
-/// ladder cap (`cache.max_ctx`, up to the full server context: a 6k-token session can
-/// park ~1 GB on a 262k-ctx deployment because cap = max_ctx) to exactly its committed
-/// length, freeing the overcharge; resume re-allocates at the request's own charged
-/// cap through the same checkpoint-restore machinery the plain-affinity grow uses.
-/// Default **0 = OFF by design**: the resume byte-identity gate (compacted-park vs
-/// plain-park) and the step-OOM adjacency replay are pod-battery cells, PENDING
-/// (`research/kv-tenancy-20260831/REPORT.md`), and unmeasured behavior does not
-/// default on. OFF is byte-identical to today by construction: neither the park nor
-/// the probe path changes engage.
-fn kv_park_compact_on() -> bool {
-    static V: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *V.get_or_init(|| std::env::var("MEMRA_KV_PARK_COMPACT").as_deref() == Ok("1"))
+/// CONTINUATION-POOL PARK COMPACTION (lane/kv-tenancy-compaction-20260831, tiering spec Arc
+/// C1): at PLAIN-pool park time the retiring session's `Cache` compacts from its ladder cap
+/// (`cache.max_ctx`, up to the full server context: a 6k-token session can park ~1 GB on a
+/// 262k-ctx deployment because cap = max_ctx) to exactly its committed length, freeing the
+/// overcharge; resume re-allocates at the request's own charged cap through the same
+/// checkpoint-restore machinery the plain-affinity grow uses.
+///
+/// The default on the card classes whose deciding cell read PROMOTE-ELIGIBLE (2026-11-04,
+/// `docs/decisions/KV-PARK-COMPACT-DEFAULT.md`; `research/spill-b-20260919/DAY38.md` 2.3 and
+/// 2.4 under addendum D: every resumed turn equal across arms in both orders, the step-OOM
+/// adjacency replay green with its red arm red): the RTX 5090 class and the full-power RTX
+/// PRO 6000 Blackwell Workstation Edition. Keyed by device name as
+/// `tier_transfer::kv_vmm_placement_for_device` keys its Workstation receipt: the class's
+/// Max-Q and Server Edition variants and every other card park the ladder-cap cache whole
+/// until a cell on them reads the same. No environment variable.
+fn park_compact_for_device(device_name: &str) -> bool {
+    use memra_engine::parallel::HardwareTarget;
+    match HardwareTarget::from_device_name(device_name) {
+        Ok(HardwareTarget::Rtx5090) => true,
+        Ok(HardwareTarget::RtxPro6000Blackwell) => {
+            device_name.contains("Workstation") && !device_name.contains("Max-Q")
+        }
+        Err(_) => false,
+    }
+}
+
+/// [`park_compact_for_device`] on this worker's device (one driver name query; called per
+/// park and per continuation probe, never per token). An unreadable name parks whole.
+fn park_compact_on(engine: &Engine) -> bool {
+    park_compact_for_device(&engine.ctx().name().unwrap_or_default())
 }
 
 /// Park-time compaction eligibility for a PLAIN continuation-pool entry (Arc C1).
@@ -3122,13 +3138,12 @@ fn park_compact_rows(
 }
 
 /// The exact-extension probe's capacity arm (lane/kv-tenancy-compaction-20260831).
-/// Legacy contract: a parked cache must already FIT the request's charged context
-/// (`entry_cap >= ctx_cap`), because the resume hands the cache to the session as-is.
-/// With park compaction armed, compacted entries park at fed-length capacity BY
+/// Without park compaction (a card class with no receipt) a parked cache must already FIT
+/// the request's charged context (`entry_cap >= ctx_cap`), because the resume hands the
+/// cache to the session as-is. With it, compacted entries park at fed-length capacity BY
 /// DESIGN, so the probe admits them and the admit path grows the cache to `ctx_cap`
 /// through the checkpoint-restore extension before any suffix primes. Pure so both
-/// arms are unit-testable; with the flag OFF the predicate is byte-identical to the
-/// legacy comparison.
+/// arms are unit-testable.
 fn plain_resume_cap_admits(entry_cap: usize, ctx_cap: usize, park_compact: bool) -> bool {
     entry_cap >= ctx_cap || park_compact
 }
@@ -3655,7 +3670,7 @@ fn prepare_park<P: ParkedEntryAge, S: ParkedEntryAge, D: ParkedEntryAge>(
     true
 }
 
-/// PARK COMPACTION (MEMRA_KV_PARK_COMPACT, tiering spec Arc C1): shrink a retiring
+/// PARK COMPACTION (tiering spec Arc C1, `park_compact_for_device`): shrink a retiring
 /// PLAIN session's parked `Cache` from its ladder cap to exactly its committed length.
 /// Allocate a fed-length cache, D2D-copy the live rows through the SAME machinery the
 /// plain-affinity grow path uses (`Cache::snapshot` at the committed boundary +
@@ -19858,10 +19873,9 @@ fn host_promote_park_probe(
         return false;
     }
     let pool_key: PoolKey = (req.model.clone(), req.cache_ns.clone());
-    if reuse
-        .get(&pool_key)
-        .is_some_and(|pool| continuation_reuse_index(pool, prompt, ctx_cap).is_some())
-    {
+    if reuse.get(&pool_key).is_some_and(|pool| {
+        continuation_reuse_index(pool, prompt, ctx_cap, park_compact_on(engine)).is_some()
+    }) {
         return false;
     }
     // A settled promote waiting for a device cache publishes here (the probe has one in hand).
@@ -22274,10 +22288,9 @@ fn host_restore_park_probe(
         return false;
     }
     let pool_key: PoolKey = (req.model.clone(), req.cache_ns.clone());
-    if reuse
-        .get(&pool_key)
-        .is_some_and(|pool| continuation_reuse_index(pool, prompt, ctx_cap).is_some())
-    {
+    if reuse.get(&pool_key).is_some_and(|pool| {
+        continuation_reuse_index(pool, prompt, ctx_cap, park_compact_on(engine)).is_some()
+    }) {
         return false;
     }
     let Some(i) = px.lookup(&pool_key, prompt) else {
@@ -34149,12 +34162,11 @@ pub fn run(
                             reuse_pool_per_namespace(),
                             reuse_pool_global_cap(),
                         ) {
-                            // PARK COMPACTION (MEMRA_KV_PARK_COMPACT, Arc C1): with the
-                            // flag on, the parked cache shrinks to its committed length
-                            // here and grows back to the resuming request's own cap at
-                            // the admit probe. Flag off: the ladder-cap cache parks
-                            // whole, byte-identical to today.
-                            let (mut cache, cap) = if kv_park_compact_on() {
+                            // PARK COMPACTION (Arc C1): on a card class with its receipt
+                            // the parked cache shrinks to its committed length here and
+                            // grows back to the resuming request's own cap at the admit
+                            // probe; elsewhere the ladder-cap cache parks whole.
+                            let (mut cache, cap) = if park_compact_on(&engine) {
                                 compact_parked_plain_cache(
                                     &engine,
                                     &loaded[&s.model],
@@ -36109,10 +36121,15 @@ fn request_prefix_on(reuse_on: bool, plan: &memra_gguf::model_plan::ModelPlan) -
 
 /// The continuation pool's match: the newest parked plain session whose fed tokens prefix the
 /// prompt at or above `REUSE_MIN_PREFIX`, with a capacity this request's cap admits.
-fn continuation_reuse_index(pool: &[ReuseEntry], prompt: &[u32], ctx_cap: usize) -> Option<usize> {
+fn continuation_reuse_index(
+    pool: &[ReuseEntry],
+    prompt: &[u32],
+    ctx_cap: usize,
+    park_compact: bool,
+) -> Option<usize> {
     pool.iter().rposition(|e| {
         e.fed.len() >= REUSE_MIN_PREFIX
-            && plain_resume_cap_admits(e.cap, ctx_cap, kv_park_compact_on())
+            && plain_resume_cap_admits(e.cap, ctx_cap, park_compact)
             && prompt.len() >= e.fed.len()
             && prompt.starts_with(&e.fed)
     })
@@ -36455,16 +36472,17 @@ fn admit(
     if let (true, Some(pool)) = (
         reuse_on && admission_restore.is_none(),
         reuse.get_mut(&pool_key),
-    ) && let Some(idx) = continuation_reuse_index(pool, &prompt, ctx_cap)
+    ) && let Some(idx) =
+        continuation_reuse_index(pool, &prompt, ctx_cap, park_compact_on(engine))
     {
         reused = Some(pool.remove(idx));
     }
-    // PARK-COMPACT GROW (MEMRA_KV_PARK_COMPACT, Arc C1): a compacted entry parked at
+    // PARK-COMPACT GROW (Arc C1, `park_compact_for_device`): a compacted entry parked at
     // fed-length capacity; grow it to THIS request's charged cap before anything primes
     // into it, through the same snapshot + checkpoint-restore extension the
     // plain-affinity grow path uses. Failure leaves no trustworthy resume state: drop
     // the entry and let the cold path serve (the plain-affinity failure contract).
-    // Unreachable with the flag off: the legacy probe arm requires e.cap >= ctx_cap.
+    // Unreachable on a card class without compaction: its probe arm requires e.cap >= ctx_cap.
     if let Some(e) = reused.as_mut()
         && e.cap < ctx_cap
     {
@@ -57389,7 +57407,7 @@ mod tests {
         for needle in [
             "request_has_images(&req)",
             "request_reuse_on(vision_req, capture_req)",
-            "continuation_reuse_index(pool, &prompt, ctx_cap)",
+            "continuation_reuse_index(pool, &prompt, ctx_cap, park_compact_on(engine))",
             "ring_prefix_excluded(&lm.model.plan)",
         ] {
             assert!(admit.contains(needle), "admit lacks {needle}");
@@ -57399,7 +57417,7 @@ mod tests {
             "request_has_images(req)",
             "request_reuse_on(vision_req, capture_req)",
             "request_prefix_on(reuse_on, plan)",
-            "continuation_reuse_index(pool, prompt, ctx_cap)",
+            "continuation_reuse_index(pool, prompt, ctx_cap, park_compact_on(engine))",
             "host_promote_settle_pending(",
             "host_demote_settle_pending(host, ContractWait::Block, \"a promote\")",
             "ContractH2d::OffTick",
@@ -64700,7 +64718,7 @@ mod tests {
         assert!(lib[render..render + 600].contains("prefix_host_tenant_reclaims_wasted"));
     }
 
-    /// PARK COMPACTION eligibility (MEMRA_KV_PARK_COMPACT, tiering spec Arc C1): the
+    /// PARK COMPACTION eligibility (tiering spec Arc C1): the
     /// refusal matrix is pure and every refusal is NAMED, because the park site logs
     /// the reason and parks the FULL cache on any of them.
     #[test]
@@ -64726,18 +64744,38 @@ mod tests {
         );
     }
 
-    /// The exact-extension probe's capacity arm: byte-identical to the legacy
-    /// comparison with the flag OFF; admits fed-length compacted entries (grown at
-    /// admit) with it ON. Plus the comment-stripped wiring: the park site must CALL
-    /// the compactor behind the flag, the probe must go through this predicate, and
-    /// the grow arm must restore through the checkpoint machinery.
+    /// The card classes park compaction is the default on (2026-11-04,
+    /// `docs/decisions/KV-PARK-COMPACT-DEFAULT.md`): the two the deciding cell read
+    /// PROMOTE-ELIGIBLE on, and no other.
+    #[test]
+    fn park_compact_follows_the_receipted_cards() {
+        use super::park_compact_for_device as on;
+        assert!(on("NVIDIA GeForce RTX 5090"));
+        assert!(on("NVIDIA GeForce RTX 5090 Laptop GPU"));
+        assert!(on("NVIDIA RTX PRO 6000 Blackwell Workstation Edition"));
+        for card in [
+            "NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition",
+            "NVIDIA RTX PRO 6000 Blackwell Server Edition",
+            "NVIDIA GB10",
+            "NVIDIA B200",
+            "NVIDIA H100 80GB HBM3",
+            "",
+        ] {
+            assert!(!on(card), "{card:?} has no park-compaction receipt");
+        }
+    }
+
+    /// The exact-extension probe's capacity arm: the legacy comparison without compaction;
+    /// admits fed-length compacted entries (grown at admit) with it. Plus the comment-stripped
+    /// wiring: the park site must CALL the compactor behind the device key, the probe must go
+    /// through this predicate, and the grow arm must restore through the checkpoint machinery.
     #[test]
     fn park_compact_probe_and_park_site_wiring_is_real() {
-        // Legacy arm (flag off): the parked cache must fit the request's charged cap.
+        // No compaction on this card: the parked cache must fit the request's charged cap.
         assert!(super::plain_resume_cap_admits(8192, 8192, false));
         assert!(super::plain_resume_cap_admits(8193, 8192, false));
         assert!(!super::plain_resume_cap_admits(8191, 8192, false));
-        // Compaction armed: a fed-length entry is admitted; the admit path grows it.
+        // Compaction on: a fed-length entry is admitted; the admit path grows it.
         assert!(super::plain_resume_cap_admits(6000, 8192, true));
         let strip = |src: &str| -> String {
             src.lines()
@@ -64747,11 +64785,11 @@ mod tests {
         };
         let code = strip(include_str!("worker.rs"));
         let gate = code
-            .find("if kv_park_compact_on() {")
+            .find("if park_compact_on(&engine) {")
             .expect("the park-site gate exists");
         assert!(
             code[gate..gate + 500].contains("compact_parked_plain_cache("),
-            "the park site must CALL the compactor behind the flag"
+            "the park site must CALL the compactor behind the device key"
         );
         let probe = code
             .find("prompt.starts_with(&e.fed)")
