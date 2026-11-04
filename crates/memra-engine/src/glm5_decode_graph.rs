@@ -768,11 +768,11 @@ pub(crate) struct RunSnap {
     mla_lens: Vec<(usize, usize, usize)>,
 }
 
-/// The PROCESS-level reasons no glm5 decode graph may be recorded, shared by the plain door
-/// and the symmetric TP door: host-visible observers, the host-oracle MoE arms, the pageable
-/// shared-expert upload (`MEMRA_HTOD_DIET` off: a capture bakes the host pointer and replays
-/// stale bytes: the 2026-09-07 00:56Z bare TP arm decoded garbage from token 2 with the tape
-/// silently different), event tracking. Per-layer and per-stage reasons stay with each door.
+/// The PROCESS-level reasons no glm5 decode graph may be recorded: host-visible observers,
+/// the host-oracle MoE arms, the pageable shared-expert upload (`MEMRA_HTOD_DIET` off: a
+/// capture bakes the host pointer and replays stale bytes: the 2026-09-07 00:56Z bare TP arm
+/// decoded garbage from token 2 with the tape silently different), event tracking. Per-layer
+/// and per-stage reasons stay with the door.
 pub(crate) fn glm5_graph_process_refusal(e: &Engine) -> Option<String> {
     if crate::glm5_graph_no_capture() {
         return Some(
