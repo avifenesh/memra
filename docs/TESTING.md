@@ -1192,7 +1192,8 @@ Neither diagnostic is a timed performance cell. Route receipts live under
 ### DSv4 gate placement (S06:F0)
 
 `Dsv4Gpu::load` has no default placement: every caller names one, and every load logs
-`[load] placement <name>`. The names:
+`[load] placing <name>` first, on its own line (a refused load names its placement too). The
+names:
 - `tp_ep` (`Dsv4Placement::SERVED`): TP/EP with exact attention TP2, what memra-server loads
   unless `MEMRA_DSV4_TOPOLOGY=pp`.
 - `tp_ep_replicated`: TP/EP with replicated attention, gate-only.
