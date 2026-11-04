@@ -2660,6 +2660,11 @@ struct ReuseEntry {
     /// Global park age used by admission and preemptive ceiling reclaim. Per-key vector order
     /// remains unchanged.
     parked_at: Instant,
+    /// PARK COMPACTION (Arc C1): the park shrank this cache to its committed length
+    /// (`compact_parked_plain_cache` returned a compacted cache). Only such an entry may resume
+    /// below the request's charged cap: the admit grows it back through the checkpoint restore,
+    /// and only a cache that passed `park_compact_rows` at park can take that round trip.
+    compacted: bool,
 }
 /// A retired PLAIN session's PROMPT-END-class boundary state — the rewind target for
 /// plain-session affinity resume (lane/plain-affinity, 2026-08-09). The plain twin of
@@ -2836,7 +2841,7 @@ fn park_compact_for_device(device_name: &str) -> bool {
 }
 
 /// [`park_compact_for_device`] on this worker's device (one driver name query; called per
-/// park and per continuation probe, never per token). An unreadable name parks whole.
+/// plain park, never per token). An unreadable name parks whole.
 fn park_compact_on(engine: &Engine) -> bool {
     park_compact_for_device(&engine.ctx().name().unwrap_or_default())
 }
@@ -2845,14 +2850,29 @@ fn park_compact_on(engine: &Engine) -> bool {
 /// Returns the compact row target (the parked cache's committed pos) or the NAMED
 /// refusal. Pure so the refusal matrix is unit-testable without a device. Refusals
 /// park the ORIGINAL cache unchanged: compaction is an optimization, never a gate.
+#[allow(clippy::too_many_arguments)]
 fn park_compact_rows(
     pos: usize,
     fed_len: usize,
     max_ctx: usize,
+    has_latent_plane: bool,
+    eager_only: bool,
     has_swa_ring: bool,
     has_tp_mirror: bool,
     pp_host_bounce: bool,
 ) -> Result<usize, &'static str> {
+    if has_latent_plane {
+        // `CacheSnapshot` carries no latent plane and `restore_cache_checkpoint` never writes
+        // one: a compacted MLA/DSA cache would resume with `pos` at the fed length over empty
+        // latent rows (the same blind spot `maybe_plain_checkpoint` refuses).
+        return Err("latent (MLA/DSA) KV planes (the checkpoint restore carries none)");
+    }
+    if eager_only {
+        // The eager-only class's contract has no prefix snapshot
+        // (`HybridModel::eager_only_class`), and the compact-then-grow round trip is a snapshot
+        // plus a checkpoint restore.
+        return Err("eager-only model class (no prefix snapshot)");
+    }
     if has_swa_ring {
         // The checkpoint-restore machinery can copy ring windows, but a FED-LENGTH ring
         // target changes the physical row count and the compact-then-grow round trip
@@ -2877,14 +2897,15 @@ fn park_compact_rows(
 }
 
 /// The exact-extension probe's capacity arm (lane/kv-tenancy-compaction-20260831).
-/// Without park compaction (a card class with no receipt) a parked cache must already FIT
-/// the request's charged context (`entry_cap >= ctx_cap`), because the resume hands the
-/// cache to the session as-is. With it, compacted entries park at fed-length capacity BY
-/// DESIGN, so the probe admits them and the admit path grows the cache to `ctx_cap`
-/// through the checkpoint-restore extension before any suffix primes. Pure so both
-/// arms are unit-testable.
-fn plain_resume_cap_admits(entry_cap: usize, ctx_cap: usize, park_compact: bool) -> bool {
-    entry_cap >= ctx_cap || park_compact
+/// A parked cache the park did not compact must already FIT the request's charged context
+/// (`entry_cap >= ctx_cap`), because the resume hands the cache to the session as-is. A
+/// compacted entry (`ReuseEntry::compacted`) parks at fed-length capacity BY DESIGN, so the
+/// probe admits it and the admit path grows the cache to `ctx_cap` through the
+/// checkpoint-restore extension before any suffix primes. An entry compaction declined (an
+/// SWA ring, a TP mirror, PP host bounce, latent planes, the eager-only class) never takes
+/// that grow. Pure so both arms are unit-testable.
+fn plain_resume_cap_admits(entry_cap: usize, ctx_cap: usize, compacted: bool) -> bool {
+    entry_cap >= ctx_cap || compacted
 }
 
 /// Minimum parked prefix worth reusing (below this, cold prime is cheaper than bookkeeping).
@@ -3398,21 +3419,23 @@ fn prepare_park<P: ParkedEntryAge, S: ParkedEntryAge, D: ParkedEntryAge>(
 /// `pp::new_cache_planned` + `pp::restore_cache_checkpoint` with the parked cache as
 /// source), and let the big allocation free on drop. SPEC/DSPARK pools are OUT OF
 /// SCOPE by design: they park LIVE engine sessions (draft scratch, captured graphs,
-/// sampler state), not a lone `Cache`. Returns the cache to park plus its cap; every
-/// refusal or failure returns the ORIGINAL cache unchanged, because compaction is an
-/// optimization and must never cost a park.
+/// sampler state), not a lone `Cache`. Returns the cache to park, its cap and whether it was
+/// compacted; every refusal or failure returns the ORIGINAL cache unchanged (not compacted),
+/// because compaction is an optimization and must never cost a park.
 fn compact_parked_plain_cache(
     engine: &Engine,
     lm: &LoadedModel,
     cache: Cache,
     fed_len: usize,
     model: &str,
-) -> (Cache, usize) {
+) -> (Cache, usize, bool) {
     let orig_cap = cache.max_ctx;
     let target = match park_compact_rows(
         cache.pos,
         fed_len,
         cache.max_ctx,
+        cache.latent.iter().any(Option::is_some),
+        lm.model.eager_only_class(),
         cache.has_swa_ring(),
         cache.tp_kv.iter().any(Option::is_some),
         memra_engine::pp::pp_host_bounce_active(),
@@ -3423,7 +3446,7 @@ fn compact_parked_plain_cache(
                 "[kv-reuse] park-compact declined ({why}); parking the full \
                  {orig_cap}-row cache (model {model})"
             );
-            return (cache, orig_cap);
+            return (cache, orig_cap, false);
         }
     };
     let t0 = Instant::now();
@@ -3447,7 +3470,7 @@ fn compact_parked_plain_cache(
                  {:.1}ms (model {model})",
                 t0.elapsed().as_secs_f64() * 1e3,
             );
-            (small, target)
+            (small, target, true)
         }
         Err(err) => {
             // Alloc or copy failure: the parked source is untouched (the restore only
@@ -3456,7 +3479,7 @@ fn compact_parked_plain_cache(
                 "[kv-reuse] park-compact failed ({err}); parking the full \
                  {orig_cap}-row cache (model {model})"
             );
-            (cache, orig_cap)
+            (cache, orig_cap, false)
         }
     }
 }
@@ -21911,7 +21934,7 @@ pub fn run(
                             // the parked cache shrinks to its committed length here and
                             // grows back to the resuming request's own cap at the admit
                             // probe; elsewhere the ladder-cap cache parks whole.
-                            let (mut cache, cap) = if park_compact_on(&engine) {
+                            let (mut cache, cap, compacted) = if park_compact_on(&engine) {
                                 compact_parked_plain_cache(
                                     &engine,
                                     &loaded[&s.model],
@@ -21920,7 +21943,7 @@ pub fn run(
                                     &s.model,
                                 )
                             } else {
-                                (cache, cap)
+                                (cache, cap, false)
                             };
                             // ON-DEMAND KV (WP-B day 37, DAY37 1.1 park trim): the plain twin of
                             // the spec park's trim above.
@@ -21943,6 +21966,7 @@ pub fn run(
                                 affinity,
                                 fingerprint,
                                 parked_at: Instant::now(),
+                                compacted,
                             });
                         }
                     }
@@ -23746,15 +23770,10 @@ fn request_prefix_on(reuse_on: bool, plan: &memra_gguf::model_plan::ModelPlan) -
 
 /// The continuation pool's match: the newest parked plain session whose fed tokens prefix the
 /// prompt at or above `REUSE_MIN_PREFIX`, with a capacity this request's cap admits.
-fn continuation_reuse_index(
-    pool: &[ReuseEntry],
-    prompt: &[u32],
-    ctx_cap: usize,
-    park_compact: bool,
-) -> Option<usize> {
+fn continuation_reuse_index(pool: &[ReuseEntry], prompt: &[u32], ctx_cap: usize) -> Option<usize> {
     pool.iter().rposition(|e| {
         e.fed.len() >= REUSE_MIN_PREFIX
-            && plain_resume_cap_admits(e.cap, ctx_cap, park_compact)
+            && plain_resume_cap_admits(e.cap, ctx_cap, e.compacted)
             && prompt.len() >= e.fed.len()
             && prompt.starts_with(&e.fed)
     })
@@ -24096,8 +24115,7 @@ fn admit(
     if let (true, Some(pool)) = (
         reuse_on && admission_restore.is_none(),
         reuse.get_mut(&pool_key),
-    ) && let Some(idx) =
-        continuation_reuse_index(pool, &prompt, ctx_cap, park_compact_on(engine))
+    ) && let Some(idx) = continuation_reuse_index(pool, &prompt, ctx_cap)
     {
         reused = Some(pool.remove(idx));
     }
@@ -24106,8 +24124,10 @@ fn admit(
     // into it, through the same snapshot + checkpoint-restore extension the
     // plain-affinity grow path uses. Failure leaves no trustworthy resume state: drop
     // the entry and let the cold path serve (the plain-affinity failure contract).
-    // Unreachable on a card class without compaction: its probe arm requires e.cap >= ctx_cap.
+    // Only a compacted entry reaches it (the probe admits `e.cap < ctx_cap` for no other), so
+    // the grow's refusal set is the compactor's (`park_compact_rows`).
     if let Some(e) = reused.as_mut()
+        && e.compacted
         && e.cap < ctx_cap
     {
         let old_cap = e.cap;
@@ -24155,6 +24175,7 @@ fn admit(
             )?;
             e.cache = grown_cache;
             e.cap = ctx_cap;
+            e.compacted = false;
             Ok(())
         })();
         match grown {
@@ -24743,6 +24764,7 @@ fn admit(
                                     affinity: None,
                                     fingerprint: Vec::new(),
                                     parked_at: Instant::now(),
+                                    compacted: false,
                                 }
                             }),
                             Err(err) => Err(format!("restore failed: {err}")),
@@ -25133,6 +25155,7 @@ fn admit(
                             affinity: None,
                             fingerprint: Vec::new(),
                             parked_at: Instant::now(),
+                            compacted: false,
                         });
                     }
                     Err((None, why)) => {
@@ -42832,12 +42855,29 @@ mod tests {
         // The target shape: committed == fed, flat single-device cache, room to shave
         // (the 6k-fed / 262k-cap overcharge the arc exists for).
         assert_eq!(
-            super::park_compact_rows(6000, 6000, 262_144, false, false, false),
+            super::park_compact_rows(6000, 6000, 262_144, false, false, false, false, false),
             Ok(6000)
         );
         let err = |pos, fed, cap, ring, tp, pp| {
-            super::park_compact_rows(pos, fed, cap, ring, tp, pp).unwrap_err()
+            super::park_compact_rows(pos, fed, cap, false, false, ring, tp, pp).unwrap_err()
         };
+        // The checkpoint restore carries no latent plane, and the eager-only class has no
+        // prefix snapshot: both park whole, whatever else holds.
+        assert!(
+            super::park_compact_rows(6000, 6000, 262_144, true, false, false, false, false)
+                .unwrap_err()
+                .contains("latent (MLA/DSA) KV planes")
+        );
+        assert!(
+            super::park_compact_rows(6000, 6000, 262_144, false, true, false, false, false)
+                .unwrap_err()
+                .contains("eager-only model class")
+        );
+        assert!(
+            super::park_compact_rows(6000, 6000, 262_144, true, true, true, true, true)
+                .unwrap_err()
+                .contains("latent")
+        );
         assert!(err(6000, 6000, 262_144, true, false, false).contains("SWA ring"));
         assert!(err(6000, 6000, 262_144, false, true, false).contains("TP KV mirror"));
         assert!(err(6000, 6000, 262_144, false, false, true).contains("PP_HOST_BOUNCE"));
@@ -42871,17 +42911,20 @@ mod tests {
         }
     }
 
-    /// The exact-extension probe's capacity arm: the legacy comparison without compaction;
-    /// admits fed-length compacted entries (grown at admit) with it. Plus the comment-stripped
-    /// wiring: the park site must CALL the compactor behind the device key, the probe must go
-    /// through this predicate, and the grow arm must restore through the checkpoint machinery.
+    /// The exact-extension probe's capacity arm: an entry the park did not compact must fit
+    /// the request's charged cap; a compacted (fed-length) entry is admitted and grown at admit.
+    /// Plus the comment-stripped wiring of the live code: the park site must CALL the compactor
+    /// behind the device key and record what it did, the probe must go through this predicate
+    /// with the entry's own bit, and the grow arm must take only compacted entries and restore
+    /// through the checkpoint machinery.
     #[test]
     fn park_compact_probe_and_park_site_wiring_is_real() {
-        // No compaction on this card: the parked cache must fit the request's charged cap.
+        // Not compacted (no receipt on this card, or the compactor declined): the parked cache
+        // must fit the request's charged cap.
         assert!(super::plain_resume_cap_admits(8192, 8192, false));
         assert!(super::plain_resume_cap_admits(8193, 8192, false));
         assert!(!super::plain_resume_cap_admits(8191, 8192, false));
-        // Compaction on: a fed-length entry is admitted; the admit path grows it.
+        // Compacted: a fed-length entry is admitted; the admit path grows it.
         assert!(super::plain_resume_cap_admits(6000, 8192, true));
         let strip = |src: &str| -> String {
             src.lines()
@@ -42889,7 +42932,8 @@ mod tests {
                 .collect::<Vec<_>>()
                 .join("\n")
         };
-        let code = strip(include_str!("worker.rs"));
+        let all = strip(include_str!("worker.rs"));
+        let code = &all[..all.find("mod tests {").expect("the test module exists")];
         let gate = code
             .find("if park_compact_on(&engine) {")
             .expect("the park-site gate exists");
@@ -42897,21 +42941,27 @@ mod tests {
             code[gate..gate + 500].contains("compact_parked_plain_cache("),
             "the park site must CALL the compactor behind the device key"
         );
+        assert!(
+            code[gate..gate + 3000].contains("compacted,"),
+            "the park site must record whether the cache was compacted"
+        );
         let probe = code
             .find("prompt.starts_with(&e.fed)")
             .expect("the exact-extension probe exists");
         assert!(
-            code[probe.saturating_sub(300)..probe].contains("plain_resume_cap_admits("),
-            "the probe's capacity arm must go through the shared predicate"
+            code[probe.saturating_sub(300)..probe]
+                .contains("plain_resume_cap_admits(e.cap, ctx_cap, e.compacted)"),
+            "the probe's capacity arm must go through the shared predicate with the entry's bit"
         );
         let grow = code
-            .find("if e.cap < ctx_cap {")
-            .expect("the grow arm exists");
+            .find("&& e.compacted\n        && e.cap < ctx_cap\n    {")
+            .expect("the grow arm takes compacted entries only");
         assert!(
             code[grow..grow + 3000].contains("restore_cache_checkpoint("),
             "the grow arm must restore the parked rows through the checkpoint machinery \
              before any suffix primes"
         );
+        assert_eq!(code.matches("e.cap < ctx_cap").count(), 1, "one grow arm");
     }
 
     /// The device half of the purge: unpinned entries in the tenant's namespaces drop
