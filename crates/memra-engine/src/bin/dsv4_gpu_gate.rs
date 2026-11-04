@@ -48,8 +48,11 @@
 //! the 20/21 boundary gaps are always printed; the greedy-continuation gate remains the
 //! end-to-end semantic instrument.
 //!
-//! Placement: `pp`, a PP-2 cell. The monolithic reference prefill it drives (`forward`,
-//! `prefill_with_cache`) runs the PP walk only.
+//! Placement: `pp` is named, but no cell of this gate runs at HEAD (S06:F0). The monolithic prefill
+//! it drives (`forward`) refuses the matrix expert program, which every load resolves unless a gate
+//! arms the reference executor, and this gate does not arm it. So it refuses on every placement,
+//! `pp` included, until it is ported to the chunked prefill or deleted (owner decision owed;
+//! docs/TESTING.md "DSv4 gate placement").
 
 use memra_engine::dsv4_gpu::{Dsv4Gpu, GpuCapture};
 use memra_engine::dsv4_topology::Dsv4Placement;
