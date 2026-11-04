@@ -28382,8 +28382,12 @@ pub fn run(
             {
                 let dg = memra_gguf::GgufFile::open(&dpath)
                     .unwrap_or_else(|e| panic!("MEMRA_DRAFT={dpath}: open failed: {e}"));
+                // The drafter's load reads the target's residency doors (BF16 rows), so it runs
+                // under the target's numeric profile, as the +draft MTP head attach does.
+                let numeric = lm.model.enter_numeric();
                 let d = memra_engine::gemma_spec::GemmaDraft::load(&engine, &dg)
                     .unwrap_or_else(|e| panic!("MEMRA_DRAFT={dpath}: drafter load failed: {e}"));
+                drop(numeric);
                 // The attach line NAMES THE ARTIFACT, like both MTP spellings already do
                 // (`[mtp-draft] loading external MTP draft: {path}`, `regime draft attached
                 // ({dpath})`). Gemma was the one attach of the three that logged only that
@@ -28493,11 +28497,14 @@ pub fn run(
             .unwrap_or_else(|err| panic!("MEMRA_DSPARK_DRAFT={dpath_spec:?}: {err}"));
         for (n, lm) in &loaded {
             if memra_engine::plan_backend::gdn_dspark_compatible(&lm.model.plan) {
+                // Loaded under the target's numeric profile, like every drafter attach.
+                let numeric = lm.model.enter_numeric();
                 let d =
                     memra_engine::dflash::DflashDraft::load(&engine, std::path::Path::new(&dpath))
                         .unwrap_or_else(|e| {
                             panic!("MEMRA_DSPARK_DRAFT={dpath}: drafter load failed: {e}")
                         });
+                drop(numeric);
                 eprintln!(
                     "[worker] {n}: DSPARK SPEC route armed (drafter attached ({dpath}); greedy+sampled \
                      [T>0 rejection verify, sampled penalties included; greedy penalties {}]\

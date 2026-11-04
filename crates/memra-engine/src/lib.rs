@@ -1265,12 +1265,12 @@ mod numeric_profile_coload_tests {
         // A roster that used to refuse: qwen beside dense gemma, MoE gemma, a gqa-16 MoE, a
         // step37 model, and a big dense model keyed for spec serving.
         let roster = [
-            NumericProfile::for_model(6, None, false, false, None),
-            NumericProfile::for_model(2, Some(false), false, false, None),
-            NumericProfile::for_model(2, Some(true), false, false, None),
-            NumericProfile::for_model(16, None, false, false, None),
-            NumericProfile::for_model(8, None, false, true, None),
-            NumericProfile::for_model(6, None, false, false, Some(5120)),
+            NumericProfile::for_model(6, None, false, false, None, false),
+            NumericProfile::for_model(2, Some(false), false, false, None, false),
+            NumericProfile::for_model(2, Some(true), false, false, None, false),
+            NumericProfile::for_model(16, None, false, false, None, false),
+            NumericProfile::for_model(8, None, false, true, None, false),
+            NumericProfile::for_model(6, None, false, false, Some(5120), false),
         ];
         let alone: Vec<_> = roster
             .iter()
@@ -1321,8 +1321,8 @@ mod numeric_profile_coload_tests {
         }
         // Outside every model scope (BASE keys no capacity guard), under a profile that keys
         // none, and under the gqa > 8 profile: a gqa 16 launch takes v3, a gqa 8 launch v4.
-        let qwen = NumericProfile::for_model(4, None, false, false, None);
-        let gqa16 = NumericProfile::for_model(16, None, false, false, None);
+        let qwen = NumericProfile::for_model(4, None, false, false, None, false);
+        let gqa16 = NumericProfile::for_model(16, None, false, false, None, false);
         assert!(!fa_v4_at(4096, 32, 2));
         assert!(fa_v4_at(4096, 16, 2));
         for p in [qwen, gqa16] {
@@ -1333,6 +1333,26 @@ mod numeric_profile_coload_tests {
         let _numeric = qwen.enter();
         assert!(fa_v4_at(4096, 16, 2));
         assert!(super::fa_seqs_eligible(4096, 256, 16, 2));
+    }
+
+    #[test]
+    fn the_automatic_w4a16_bf16_program_stays_with_its_model() {
+        assert!(
+            std::env::var_os("MEMRA_BF16_MMV").is_none(),
+            "run without MEMRA_BF16_MMV"
+        );
+        // MEMRA_PARALLEL=auto's W4A16 expert-parallel arm used to set MEMRA_BF16_MMV=1 for the
+        // whole process: a model read before it latched OFF, one read after it inherited ON.
+        let auto_w4a16 = NumericProfile::for_model(4, None, false, false, None, true);
+        let other = NumericProfile::for_model(4, None, false, false, None, false);
+        assert!(!Engine::bf16_mmv_on());
+        for _round in 0..2 {
+            for (p, on) in [(other, false), (auto_w4a16, true)] {
+                let _numeric = p.enter();
+                assert_eq!(Engine::bf16_mmv_on(), on);
+            }
+        }
+        assert!(!Engine::bf16_mmv_on());
     }
 }
 /// bf16 matvec family block size (MEMRA_MMV_BLOCK, default 128, clamped to [64, 256] and a
@@ -23932,9 +23952,17 @@ impl Engine {
     /// the expansion path (single-kernel deterministic tree reduce vs f32 cuBLASLt), so it is
     /// default OFF and gated by the run-gen argmax gate + boot battery like the other
     /// numeric-class doors (DEV_ROUTES precedent).
+    ///
+    /// Set (parsed once per process), the env wins for every model: `1` on, anything else off.
+    /// Unset, the installed model profile decides (`NumericProfile::bf16_mmv`): ON only for a
+    /// routed W4A16 artifact that `MEMRA_PARALLEL=auto` placed expert-parallel, OFF for every
+    /// other model and outside every model scope. The automatic arm used to set the env var
+    /// for the whole process, so a model loaded before it latched OFF and one loaded after it
+    /// inherited ON.
     pub(crate) fn bf16_mmv_on() -> bool {
-        static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-        *ON.get_or_init(|| std::env::var("MEMRA_BF16_MMV").as_deref() == Ok("1"))
+        static ENV: std::sync::OnceLock<Option<bool>> = std::sync::OnceLock::new();
+        ENV.get_or_init(|| std::env::var_os("MEMRA_BF16_MMV").map(|v| v == "1"))
+            .unwrap_or_else(|| NumericProfile::current().bf16_mmv)
     }
 
     /// One-block-per-row BF16 matvec: y[out_f] = W_bf16[out_f, in_f] @ x[in_f], f32 accumulate.
