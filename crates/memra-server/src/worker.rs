@@ -1876,10 +1876,10 @@ pub struct Request {
     /// verdict at its FIRST decisive admission consideration and never again: defer
     /// ticks and step-OOM park replays must not multiply one arrival into many rows.
     pub(crate) admit_predict_logged: bool,
-    /// MEMORY-SHAPED ADMISSION (memra#365, door `MEMRA_ADMIT_BY_MEMORY`): when this request
+    /// MEMORY-SHAPED ADMISSION (memra#365, `crate::admit_memory`): when this request
     /// FIRST deferred on memory. Latched once, never restamped, because the whole point is to
     /// bound the total wait against the client's own pre-header budget; a per-tick stamp would
-    /// reset the budget forever and bound nothing. `None` off the door and until the first
+    /// reset the budget forever and bound nothing. `None` unarmed and until the first
     /// memory defer.
     pub(crate) memory_defer_since: Option<Instant>,
     /// WP-B day 42 (`MEMRA_ADMIT_RECLAIM_OFFTICK`): this arrival's off-tick reclaim plan, made at
@@ -17309,7 +17309,7 @@ fn reclaim_queue_drain(
     removed
 }
 
-/// MEMORY-ADMISSION FLUSH (memra#365, door `MEMRA_ADMIT_BY_MEMORY`): the admission reclaim
+/// MEMORY-ADMISSION FLUSH (memra#365, `crate::admit_memory`): the admission reclaim
 /// ladder's device-prefix flush, DEMOTING into the pinned host tier instead of dropping.
 ///
 /// [`host_demote_prefix_entry`]'s own doc names this seam: "the emergency `evict_all` flush
@@ -26194,7 +26194,7 @@ struct Session {
     request_id: String,
     /// The request's `[admit-predict]` one-shot latch, carried across a park replay.
     admit_predict_logged: bool,
-    /// The request's memory-defer stamp (`MEMRA_ADMIT_BY_MEMORY`), carried across a park
+    /// The request's memory-defer stamp (`crate::admit_memory`), carried across a park
     /// replay: a replayed request has already spent that wait, and re-zeroing it would hand
     /// a step-OOM park a fresh defer budget the client never got.
     memory_defer_since: Option<Instant>,
@@ -28430,29 +28430,30 @@ pub fn run(
         admit_predict_cfg.resolve_budget(derived);
     }
     let admit_predict_cfg = admit_predict_cfg;
-    // MEMORY-SHAPED ADMISSION (memra#365, door MEMRA_ADMIT_BY_MEMORY, default OFF). Read
-    // once here so the door cannot arm or disarm mid-process, and state the resolved policy
-    // in the boot log beside the predictor's own armed line: a launcher that raises
-    // MEMRA_MAX_SESSIONS is trusting THIS door to hold the card, so its knobs belong in the
-    // same receipt the qualification env is derived from.
-    let admit_memory_cfg = crate::admit_memory::MemoryAdmitConfig::from_env();
+    // MEMORY-SHAPED ADMISSION (memra#365): armed on the card class whose deciding cell read
+    // (the RTX PRO 6000 Blackwell Workstation Edition, docs/decisions/ADMIT-BY-MEMORY-DEFAULT.md),
+    // unarmed elsewhere. Resolved once here so it cannot arm or disarm mid-process, and the
+    // resolved policy is stated in the boot log beside the predictor's own armed line: a
+    // launcher that raises MEMRA_MAX_SESSIONS is trusting it to hold the card, so its knobs
+    // belong in the same receipt the qualification env is derived from.
+    let device_name = engine.ctx().name().unwrap_or_default();
+    let admit_memory_cfg = crate::admit_memory::MemoryAdmitConfig::for_device(&device_name);
     eprintln!("{}", admit_memory_cfg.boot_line());
     // BATCHED-CHUNK OOM RECOVERY (WP-B day 49): the card's arm, resolved once and stated.
-    let batch_oom_recover = batch_oom_recover_default(&engine.ctx().name().unwrap_or_default());
+    let batch_oom_recover = batch_oom_recover_default(&device_name);
     eprintln!("{}", batch_oom_recover_boot_line(batch_oom_recover));
     // ON-DEMAND KV PLANES (WP-B day 37, research/spill-b-20260919/DAY37.md): the default on the
     // card class whose deciding cell read PROMOTE-ELIGIBLE (the RTX PRO 6000 Blackwell
     // Workstation Edition, docs/decisions/KV-VMM-SERVING-DEFAULT.md), pooled planes elsewhere.
     // Resolved once here; a bad fault spec, or that card without VMM support, refuses the boot
     // instead of serving pooled under an ON line.
-    let kv_vmm_cfg =
-        match crate::kv_vmm::KvVmmConfig::for_device(&engine.ctx().name().unwrap_or_default()) {
-            Ok(cfg) => cfg,
-            Err(why) => {
-                let _ = ready_tx.send(Err(why));
-                return;
-            }
-        };
+    let kv_vmm_cfg = match crate::kv_vmm::KvVmmConfig::for_device(&device_name) {
+        Ok(cfg) => cfg,
+        Err(why) => {
+            let _ = ready_tx.send(Err(why));
+            return;
+        }
+    };
     let kv_vmm_granularity = if kv_vmm_cfg.armed {
         match memra_engine::cache::vmm_granularity_for(&engine.stream()) {
             Ok(g) => Some(g),
@@ -29723,7 +29724,7 @@ pub fn run(
                         .join("; ");
                     eprintln!("[admission] parallel device plan: [{budgets}]");
                 }
-                // PENDING-PRIME BOOKING (memra#680, door MEMRA_ADMIT_BY_MEMORY). The live reading
+                // PENDING-PRIME BOOKING (memra#680, memory-shaped admission). The live reading
                 // sees an admitted session's context KV and learned residual as soon as they are
                 // allocated, but not its prefill workspace: that grows at PRIME time
                 // (`AdmissionCostModel`'s own note), so a burst admitted in one tick saw every
@@ -30381,7 +30382,7 @@ pub fn run(
                                 }
                             }
                         }
-                        // BOUNDED MEMORY DEFER (memra#365, door MEMRA_ADMIT_BY_MEMORY).
+                        // BOUNDED MEMORY DEFER (memra#365, memory-shaped admission).
                         // Today's defer is unbounded: a request the gate cannot fit requeues
                         // FIFO forever unless `active` is empty, so it does not get refused,
                         // it gets to die as a pre-header timeout at the edge (the 2026-09-09
@@ -34531,8 +34532,8 @@ pub fn resolve_env_ctx(model_ctx: usize) -> Result<usize, String> {
 }
 
 /// `open_output_tokens` is the memory-admission door's open-output charge
-/// (`MEMRA_ADMIT_BY_MEMORY`, `MemoryAdmitConfig::open_output_charge`): `None` off the door,
-/// which keeps the `MEMRA_CTX` arm below byte-identical. ON, a request that bounds NEITHER
+/// (`MemoryAdmitConfig::open_output_charge`): `None` unarmed, which keeps the `MEMRA_CTX` arm
+/// below byte-identical. Armed, a request that bounds NEITHER
 /// `max_tokens` nor `max_ctx` is charged its prompt plus that output instead of the server's
 /// whole context envelope. On the 1M route the difference is the whole door: `MEMRA_CTX` is
 /// 1,048,576 there, so the naked arm booked ~13 GB of latent KV for a request that emits a few
@@ -35451,7 +35452,7 @@ fn device_admission_headroom(
 /// route, the sse-cadence hook on the qwen route), where `generated` is still empty. A
 /// step-time CUDA OOM after any in-burst flush therefore takes the honest error (a
 /// terminal error event on the stream, no replay) instead of re-sending the prefix.
-/// PREFILL-OOM PARK (memra#680, door MEMRA_ADMIT_BY_MEMORY): armed, a prefill CUDA OOM on a
+/// PREFILL-OOM PARK (memra#680, memory-shaped admission): armed, a prefill CUDA OOM on a
 /// session that has emitted nothing is capacity the admission gate should have deferred, so the
 /// session parks and requeues exactly like a step-OOM park and the door's bounded defer or
 /// typed refusal answers it. Unarmed, or on any other error, the prefill arm's honest error
@@ -50761,12 +50762,12 @@ mod tests {
     #[test]
     fn the_memory_admission_door_is_wired_at_the_admission_seam() {
         let code = include_str!("worker.rs");
-        // Read once at worker start, and stated in the boot log.
+        // Resolved once at worker start from its device, and stated in the boot log.
         assert!(
             code.contains(
-                "let admit_memory_cfg = crate::admit_memory::MemoryAdmitConfig::from_env();"
+                "let admit_memory_cfg = crate::admit_memory::MemoryAdmitConfig::for_device(&device_name);"
             ),
-            "the door must be read once at worker start"
+            "memory-shaped admission must be resolved once at worker start"
         );
         assert!(
             code.contains("eprintln!(\"{}\", admit_memory_cfg.boot_line());"),
@@ -50817,11 +50818,10 @@ mod tests {
             defer.contains(".get_or_insert_with(Instant::now)"),
             "the defer stamp must latch on the FIRST memory defer"
         );
-        // And the whole seam is behind the door.
+        // And the whole seam is behind the armed check.
         assert!(
-            defer.starts_with(", door MEMRA_ADMIT_BY_MEMORY)")
-                || defer.contains("if admit_memory_cfg.armed {"),
-            "the bounded defer must be behind the door"
+            defer.contains("if admit_memory_cfg.armed {"),
+            "the bounded defer must be behind the armed check"
         );
     }
 
@@ -63880,7 +63880,7 @@ mod tests {
             2,
             "definition, the worker start"
         );
-        assert!(live.contains("let batch_oom_recover = batch_oom_recover_default(&engine.ctx().name().unwrap_or_default());"));
+        assert!(live.contains("let batch_oom_recover = batch_oom_recover_default(&device_name);"));
         assert!(live.contains("if batch_attempt == 0 && batch_oom_recover && is_cuda_oom(&err.to_string()) && memra_engine::step_guard::recoverable(guard_state) =>"));
         assert!(live.contains("} else if batch_oom_recover && is_cuda_oom(&err.to_string()) {"));
         assert_eq!(live.matches("memra_engine::step_guard::arm();").count(), 1);

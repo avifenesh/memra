@@ -70,8 +70,9 @@ pub(crate) mod tool_constraint;
 pub(crate) mod lanes {
     pub use memra_lanes::*;
 }
-/// Memory-shaped admission for a high session ceiling (`MEMRA_ADMIT_BY_MEMORY`, default 0):
-/// the per-session KV estimate keyed on prompt + output rather than the server context
+/// Memory-shaped admission for a high session ceiling, the default on the RTX PRO 6000
+/// Blackwell Workstation Edition: the per-session KV estimate keyed on prompt + output rather
+/// than the server context
 /// envelope, the host-tier demotion the reclaim flush takes before dropping cache bytes, and
 /// the bounded 429 a memory defer becomes once it has outlived the client's own budget.
 mod admit_memory;
@@ -2504,18 +2505,23 @@ fn unified_stream_ttft_default() -> Option<u64> {
 // 131k-token prompt, or four concurrent 32k prompts, cannot prefill inside it at GB10's measured
 // rate (32,768 cold tokens in 45.2 s alone). vLLM and SGLang have no such deadline. The derived
 // bound therefore covers the full prefill (the streaming TTFT derivation above) plus a generation
-// budget: the open-output allowance admission already charges for a request without max_tokens
-// (`admit_memory::DEFAULT_OPEN_OUTPUT_TOKENS`, 8192) at a per-stream decode floor measured on the
-// device under concurrent prefill (GB10 Qwen3.8-27B, agentic c4 cell, 2026-11-01: per-user
-// median 4.59 tok/s; floored to 4).
+// budget: 8192 open output tokens (admission's open-output charge when this was derived) at a
+// per-stream decode floor measured on the device under concurrent prefill (GB10 Qwen3.8-27B,
+// agentic c4 cell, 2026-11-01: per-user median 4.59 tok/s; floored to 4).
+
+/// Open output tokens in the non-streaming generation budget, the GB10 derivation's value
+/// (`research/gb10-defaults-20261101/derive.py`). It is its own constant: admission's
+/// `admit_memory::DEFAULT_OPEN_OUTPUT_TOKENS` is measured on, and charged only by, the card
+/// that arms memory-shaped admission, and a unified-memory device does not arm it.
+const UNIFIED_NONSTREAM_OPEN_OUTPUT_TOKENS: u64 = 8192;
 
 /// Per-stream decode floor (tok/s) used for the non-streaming generation budget.
 const UNIFIED_NONSTREAM_DECODE_FLOOR_TOK_S: u64 = 4;
 
 /// The unified-memory non-streaming deadline: full-context prefill ([`unified_stream_ttft_ms`])
-/// plus [`admit_memory::DEFAULT_OPEN_OUTPUT_TOKENS`] at [`UNIFIED_NONSTREAM_DECODE_FLOOR_TOK_S`].
+/// plus [`UNIFIED_NONSTREAM_OPEN_OUTPUT_TOKENS`] at [`UNIFIED_NONSTREAM_DECODE_FLOOR_TOK_S`].
 pub(crate) fn unified_nonstream_timeout_ms(max_served_ctx: usize, sm_count: u32) -> u64 {
-    let generation_ms = (admit_memory::DEFAULT_OPEN_OUTPUT_TOKENS as u64)
+    let generation_ms = UNIFIED_NONSTREAM_OPEN_OUTPUT_TOKENS
         .saturating_mul(1000)
         .div_ceil(UNIFIED_NONSTREAM_DECODE_FLOOR_TOK_S);
     unified_stream_ttft_ms(max_served_ctx, sm_count).saturating_add(generation_ms)
@@ -2571,7 +2577,7 @@ pub(crate) fn stream_deadline_boot_line() -> String {
             device.map_or(0, |d| d.max_served_ctx),
             sse_prefill_commit_ms().unwrap_or(0),
             nonstream_timeout_ms_max(),
-            admit_memory::DEFAULT_OPEN_OUTPUT_TOKENS,
+            UNIFIED_NONSTREAM_OPEN_OUTPUT_TOKENS,
             UNIFIED_NONSTREAM_DECODE_FLOOR_TOK_S,
         ),
         None => format!(
@@ -3643,8 +3649,9 @@ struct CompletionReq {
     #[serde(default)]
     prompt_ids: Vec<u32>,
     /// Omitted (gap-scan F2) => context-bounded (session ctx - prompt, model-capped), never a
-    /// silent 128-token truncation. Under `MEMRA_ADMIT_BY_MEMORY=1` the bound is the charged open
-    /// output instead (`admit_memory::charged_ctx_tokens`, `worker::request_budget`). The OpenAI
+    /// silent 128-token truncation. Where memory-shaped admission is armed (the RTX PRO 6000
+    /// Blackwell Workstation Edition) the bound is the charged open output instead
+    /// (`admit_memory::charged_ctx_tokens`, `worker::request_budget`). The OpenAI
     /// contract does not pin this bound (`research/spill-b-20260919/OPEN-OUTPUT-SURVEY.md`).
     #[serde(default)]
     max_tokens: Option<usize>,
@@ -3849,8 +3856,9 @@ struct ChatCompletionReq {
     background: serde_json::Value,
     messages: Vec<ChatMessage>,
     /// Omitted (gap-scan F2) => context-bounded (session ctx - prompt, model-capped), never a
-    /// silent 128-token truncation. Under `MEMRA_ADMIT_BY_MEMORY=1` the bound is the charged open
-    /// output instead (`admit_memory::charged_ctx_tokens`, `worker::request_budget`). The OpenAI
+    /// silent 128-token truncation. Where memory-shaped admission is armed (the RTX PRO 6000
+    /// Blackwell Workstation Edition) the bound is the charged open output instead
+    /// (`admit_memory::charged_ctx_tokens`, `worker::request_budget`). The OpenAI
     /// contract does not pin this bound (`research/spill-b-20260919/OPEN-OUTPUT-SURVEY.md`).
     #[serde(default, alias = "max_completion_tokens")]
     max_tokens: Option<usize>,

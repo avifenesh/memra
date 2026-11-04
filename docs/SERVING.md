@@ -374,7 +374,9 @@ Receipts: `research/admit-oom-20260806/`, `research/serving-density-20260806/VER
 Admission sizes each session's KV ladder from the request's own bound. An explicit
 `max_ctx` is authoritative. Without one, a finite request uses
 `prompt_tokens + max_tokens + 8`; only a request that **omits `max_tokens`** falls back to
-`MEMRA_CTX`. `MEMRA_CTX` itself resolves through `worker::resolve_ctx` (2026-09-10): set, it is
+`MEMRA_CTX` (on the full-power RTX PRO 6000 Workstation Edition, where memory-shaped admission
+is the default, it is charged `prompt_tokens + 32768 + 8` and 32768 is its output budget;
+`MEMRA_ADMIT_OPEN_OUTPUT_TOKENS` sets another value). `MEMRA_CTX` itself resolves through `worker::resolve_ctx` (2026-09-10): set, it is
 authoritative; unset, it is the checkpoint's own declared context, never a constant; unusable, it
 refuses at the boundary that reads it rather than substituting a window the checkpoint does not
 declare. At `MEMRA_CTX=32768`, that fallback reserves ladder slack an unbounded client
@@ -404,6 +406,13 @@ share the class, not the receipts). None has an environment switch; each states 
   each request keeps one numeric program; a second failure or a torn step ends the chunk as on
   every other card, where one OOM ends every session of the chunk. Boot line `[admit-oom] batch
   OOM recovery: ON` or `OFF`. [Decision](decisions/BATCH-OOM-RECOVER-DEFAULT.md).
+- **Memory-shaped admission.** A request that bounds neither `max_tokens` nor `max_ctx` is
+  charged `prompt + 32768 + 8` instead of the `MEMRA_CTX` envelope (32768 is also its output
+  budget); the admission reclaim flush demotes device prefix entries to the pinned host tier
+  before dropping; a memory defer past `MEMRA_ADMIT_DEFER_BUDGET_MS` (8 s) answers 429 with
+  `Retry-After`; and every headroom reading books what still-priming sessions owe, with a
+  prefill OOM on a session that emitted nothing parked and requeued. Boot line
+  `[admit-mem] door=ON` or `door=OFF`. [Decision](decisions/ADMIT-BY-MEMORY-DEFAULT.md).
 
 ### Request body ceiling: 192 MiB, explicit, with a clean 413 (lane/hermes-fixes, 2026-08-19)
 
@@ -945,7 +954,11 @@ gated by the official `openai` Python SDK against a live server
   `<|im_end|>`) stop generation (`eog_ids()` union) and never reach the client as text.
 - **`max_tokens` omitted** ⇒ context-bounded budget (session ctx − prompt, capped at the
   model's trained context) — the OpenAI default-when-omitted semantics, not a silent
-  128-token truncation. Explicit `max_tokens`/`max_completion_tokens` honored exactly.
+  128-token truncation. Where memory-shaped admission is the card's default (the full-power
+  RTX PRO 6000 Workstation Edition) the budget is the open-output charge instead, 32768
+  tokens unless `MEMRA_ADMIT_OPEN_OUTPUT_TOKENS` says otherwise, and a request that runs to
+  it ends `finish_reason: length`. Explicit `max_tokens`/`max_completion_tokens` honored
+  exactly.
 - **`temperature` omitted ⇒ 1.0; `seed` omitted ⇒ fresh per request** (dogfood F4,
   2026-08-04). Both were `#[serde(default)]`, which is `0.0` for `f32` and `0` for `u64` —
   and both of those zeros are *meaningful values*, not "unset": temperature 0 is greedy
@@ -1818,7 +1831,7 @@ paused (`docs/models/deepseek-v4-flash.md`).
   rule (`admit_memory::decide`): device first on every card, then the host tier with LRU
   eviction of parked entries (never the entry the request would restore from, never for a
   device shortfall), then a defer that re-reads every 50 ms. The budget is
-  `MEMRA_ADMIT_DEFER_BUDGET_MS`, read on this route whatever `MEMRA_ADMIT_BY_MEMORY` says,
+  `MEMRA_ADMIT_DEFER_BUDGET_MS`, read on this route on every card,
   clamped to half the stall bound. Past it the request is refused 429 `rate_limit_exceeded` with
   `Retry-After: 5` and the shared memory refusal sentence. A session above what a card offers
   with the route idle answers 400 `context_length_exceeded` naming the card, the bytes and the
@@ -2793,7 +2806,7 @@ Discrete cards (RTX 5090, RTX PRO 6000, H100, B200) read none of them. Arithmeti
 | `MEMRA_PREFIX_CACHE_MB` | 2 full-context entries, clamped to boot free minus 1.5 GiB | the larger of 2 entries and half of (boot free minus 1.5 GiB, the 2 GiB driver headroom and any host KV tier) | 2 entries (15.9 GB for Qwen3.8-27B at 262,144 tokens) held ~20 of a 48-prompt agentic set; every turn re-primed 14k-42k tokens. Half of ~70 GB is 34,048 MiB, the 32,768 MB the first Spark run set by hand |
 | `MEMRA_STREAM_TTFT_MS_MAX` | 90,000 ms | one full served context at 4118 tok/s x SMs / 188 / 4, at least 90,000 ms: 997,311 ms on GB10 at 262,144 tokens | four 14k-42k-token prompts prefilling together missed 90 s on the first Spark run and answered 408 |
 | `MEMRA_SSE_PREFILL_COMMIT_MS` | off | 60,000 ms beside the derived deadline | headers and keepalives start inside the shipped 90 s window, so a fronting proxy still sees them; a stream still queued there keeps waiting under the keepalive until its first-token deadline |
-| non-streaming `timeout_ms` default/max | 90,000 ms | the streaming value above plus 8192 open output tokens (admission's open-output charge) at 4 tok/s: 3,045,311 ms on GB10 at 262,144 tokens | a non-streaming deadline bounds the whole response and cannot send headers early; 90 s cannot hold one 131k prompt or four concurrent 32k prompts at GB10's measured prefill (32,768 cold tokens in 45.2 s), and vLLM and SGLang have no such deadline. 4 tok/s floors the measured per-stream decode under concurrent prefill (agentic c4, 4.59 tok/s median) |
+| non-streaming `timeout_ms` default/max | 90,000 ms | the streaming value above plus 8192 open output tokens (admission's open-output charge when derived; the deadline keeps its own constant) at 4 tok/s: 3,045,311 ms on GB10 at 262,144 tokens | a non-streaming deadline bounds the whole response and cannot send headers early; 90 s cannot hold one 131k prompt or four concurrent 32k prompts at GB10's measured prefill (32,768 cold tokens in 45.2 s), and vLLM and SGLang have no such deadline. 4 tok/s floors the measured per-stream decode under concurrent prefill (agentic c4, 4.59 tok/s median) |
 | prefix-cache insert budget | the configured budget | clamped on every insert to what the cache holds plus live allocatable free memory minus the driver headroom and the admission reserve; the insert loop evicts LRU entries or refuses (`[prefix-cache] unified memory: insert budget` line) | the first GB10 quality panel admitted eight 131k sessions while each prefill published a 4 GB entry, and MemAvailable fell to 1.5 GiB; with the guard and the booking below the same panel bottomed at 17.0 GiB; the guard alone was not enough (next row) |
 | admission booking of the cache's growth | none | the cache's allowed growth (budget minus resident) is booked as committed | sessions and the cache draw from one pool: with the insert guard alone the same panel fell to 1.02 GiB MemAvailable and the memory guard stopped the server (A/B in `research/gb10-tuning-20261102/booking-ab/`) |
 
