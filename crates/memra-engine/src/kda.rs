@@ -46,7 +46,34 @@ use memra_gguf::model_plan::KimiDeltaNetPlan;
 use memra_gguf::source::TensorSource;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-/// Engagement counter for the fused 6-way projection door (`MEMRA_KDA_FUSED_PROJ`), the
+/// Whether the KDA stage-1 six-projection group runs as one fused launch (`kda_proj_fused6`).
+/// The default on sm_100a builds since 2026-11-04: on the 2x B200 pair the five-door decode
+/// bundle it rode in read 42.5 / 42.1 -> 44.9 / 44.5 tok/s plain and 71.4 / 49.4 -> 77.1 / 53.5
+/// on the DFlash2 spec route (three interleaved fresh boots per arm, darklanes
+/// `research/glm5-b200-20260902/LANE.md`), and on the symmetric TP-2 walk adding it alone moved
+/// 82.58 to 87.90 tok/s with the tape unchanged (tpwalk3 v5, one rep; darklanes
+/// `research/glm5-b200-mint-20260904/LANE.md`). Every B200 receipt since carried it, and the
+/// sm_100a attention-norm q8_1 fuse feeds only this group. Other builds keep the six launches:
+/// no receipt there. `MEMRA_KDA_FUSED_PROJ` picks explicitly, `1` on and `0` off, on any build:
+/// the two GPU gates drive both arms through it. Read per call.
+pub fn kda_fused_proj_on() -> bool {
+    kda_fused_proj_for(
+        crate::BUILT_CUDA_ARCH,
+        std::env::var("MEMRA_KDA_FUSED_PROJ").ok().as_deref(),
+    )
+}
+
+/// [`kda_fused_proj_on`] over an explicit build and value. Pure, so the law is unit-tested
+/// without touching the process environment.
+pub(crate) fn kda_fused_proj_for(arch: &str, value: Option<&str>) -> bool {
+    match value.map(str::trim) {
+        Some("1") => true,
+        Some("0") => false,
+        _ => arch == "100a",
+    }
+}
+
+/// Engagement counter for the fused 6-way projection group (`kda_fused_proj_on`), the
 /// grouped-prefill `moe_grouped_prefill_dispatches` precedent: gates and box A/B arms count
 /// dispatches at the arm's own call site instead of inferring engagement from a 200.
 pub static KDA_FUSED6_DISPATCHES: AtomicU64 = AtomicU64::new(0);
@@ -383,10 +410,11 @@ fn kda_core(
 /// cross-rank GATHERED gated tensor rather than this shard's slice — the plain path is
 /// `kda_core` above, byte-for-byte the pre-split body (the wo matmul and its rows-exact
 /// routing moved, nothing else). This body is the CURRENT doored/batched core: it carries
-/// the `MEMRA_KDA_FUSED_PROJ` door and the verify-batch rows arm; the TP decode/prime walk
-/// calls it with `KdaStash::None`, the spec x TP verify walk (lane/glm5-composition) with
-/// `KdaStash::Rows` per rank, and the TP load preflight refuses the fused-proj door by
-/// name (unproven composition on head shards — see the FLAGS.md composition matrix).
+/// the fused six-projection group (`kda_fused_proj_on`) and the verify-batch rows arm; the TP
+/// decode/prime walk calls it with `KdaStash::None` and the spec x TP verify walk
+/// (lane/glm5-composition) with `KdaStash::Rows` per rank. The fused group engages on head
+/// shards too (a shard's six are row subsets of the full six), so the TP preflight does not
+/// refuse it.
 #[allow(clippy::too_many_arguments)] // mirrors kda_core's own contract-shaped list
 pub(crate) fn kda_core_gated(
     e: &Engine,
@@ -438,7 +466,8 @@ pub(crate) fn kda_core_gated(
     // Stage 1 — the six projections that read x directly. f_b/g_b are chained off their own
     // down-projections below, exactly as the reference nests them.
     //
-    // MEMRA_KDA_FUSED_PROJ=1 (default OFF): the six matvec calls collapse to one quantize +
+    // The fused six-projection group (`kda_fused_proj_on`, the sm_100a default): the six matvec
+    // calls collapse to one quantize +
     // one `qmatvec_kda6_q8f32_mmvq` launch — the program shape both vLLM and SGLang ship for
     // this trunk (ENGINE-SURVEY.md C1) and the step37 QKV_FUSED transfer (TRANSFER-MAP lever 1).
     // `kda_proj_fused6` refuses (returns None) on any operand/env shape where its bit-identity
@@ -1640,7 +1669,7 @@ impl Engine {
         t: usize,
         pre_q8: KdaPreQ8<'_>,
     ) -> Result<Option<Vec<CudaSlice<f32>>>, Box<dyn std::error::Error>> {
-        if std::env::var("MEMRA_KDA_FUSED_PROJ").as_deref() != Ok("1") {
+        if !kda_fused_proj_on() {
             return Ok(None);
         }
         // glm5 TP composition (2026-09-07): a head shard's six projections are ROW SUBSETS
@@ -1663,7 +1692,7 @@ impl Engine {
         // each of the 34 KDA layers, with six redundant broadcasts of the same activation.
         //
         // This is an operand arm of an EXISTING door, not a new one: it rides
-        // MEMRA_KDA_FUSED_PROJ=1 exactly as the bf16 and q8rp arms do, and it additionally
+        // the fused group exactly as the bf16 and q8rp arms do, and it additionally
         // declines wherever the unfused e4m3 program it claims bit-identity against would not
         // be the shipped one (MEMRA_FAST=0, no MMVQ support for the qtype, or the
         // MEMRA_E4M3_DUAL=0 rollback that restores per-tensor launches).
@@ -1759,7 +1788,7 @@ impl Engine {
                 eprintln!(
                     "[kda-fused6] engaged arm=e4m3 in_f={in_f} out={dims:?} t={t} (one launch \
                      replaces the six per-tensor e4m3 projections and their six redundant \
-                     activation quantizes; MEMRA_KDA_FUSED_PROJ=1 MEMRA_ST_E4M3=1)"
+                     activation quantizes; fused group with MEMRA_ST_E4M3=1)"
                 );
             }
             return Ok(Some(outs.into_iter().collect()));
@@ -1872,7 +1901,7 @@ impl Engine {
                     eprintln!(
                         "[kda-fused6] engaged arm=q8rp_v2 in_f={in_f} out={dims:?} t={t} (one \
                          launch replaces the six W8-mirror projections and their six redundant \
-                         activation quantizes; MEMRA_KDA_FUSED_PROJ=1 MEMRA_B200_GEMV_V2=1)"
+                         activation quantizes; fused group with MEMRA_B200_GEMV_V2=1)"
                     );
                 }
                 return Ok(Some(outs.into_iter().collect()));
@@ -1926,8 +1955,7 @@ impl Engine {
             if KDA_FUSED6_BF16_DISPATCHES.fetch_add(1, Ordering::Relaxed) == 0 {
                 eprintln!(
                     "[kda-fused6] engaged arm=bf16 in_f={in_f} out={dims:?} t={t} (one launch \
-                     replaces the six-projection group on the bf16-resident serving recipe; \
-                     MEMRA_KDA_FUSED_PROJ=1)"
+                     replaces the six-projection group on the bf16-resident serving recipe)"
                 );
             }
             return Ok(Some(outs.into_iter().collect()));
@@ -2011,7 +2039,7 @@ impl Engine {
         if KDA_FUSED6_DISPATCHES.fetch_add(1, Ordering::Relaxed) == 0 {
             eprintln!(
                 "[kda-fused6] engaged in_f={in_f} out={dims:?} t={t} (one launch replaces the \
-                 six-projection group; MEMRA_KDA_FUSED_PROJ=1)"
+                 six-projection group)"
             );
         }
         Ok(Some(outs.into_iter().collect()))
@@ -2268,6 +2296,24 @@ impl Engine {
             .arg(&mi);
         unsafe { b.launch(cfg)? };
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod kda_fused_proj_default_tests {
+    use super::kda_fused_proj_for;
+
+    /// The fused group is the sm_100a default; `0`/`1` pick explicitly on any build.
+    #[test]
+    fn arch_keyed_default_with_explicit_override() {
+        assert!(kda_fused_proj_for("100a", None));
+        assert!(kda_fused_proj_for("100a", Some("")));
+        assert!(!kda_fused_proj_for("100a", Some("0")));
+        for arch in ["120a", "90a", "89"] {
+            assert!(!kda_fused_proj_for(arch, None));
+            assert!(!kda_fused_proj_for(arch, Some("0")));
+            assert!(kda_fused_proj_for(arch, Some("1")));
+        }
     }
 }
 

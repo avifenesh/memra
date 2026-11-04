@@ -1361,22 +1361,21 @@ pub(crate) fn mmv_block() -> u32 {
     })
 }
 
-/// MEMRA_B200_MATVEC_ARM=1: the sm_100a occupancy arms for the plain-decode MoE/matvec family
-/// (lane/b200-matvec-occupancy-20260902, docs/FLAGS.md). The B200 census (2026-09-02,
-/// GLM-5.3-Flash NVFP4, PP2 decode) found `moe_gate_up_preclamp8_q8` / `moe_down8_fma_q8` /
+/// The sm_100a occupancy arms for the plain-decode MoE/matvec family
+/// (lane/b200-matvec-occupancy-20260902; `MEMRA_B200_MATVEC_ARM` until 2026-11-04). The B200
+/// census (2026-09-02, GLM-5.3-Flash NVFP4, PP2 decode) found `moe_gate_up_preclamp8_q8` / `moe_down8_fma_q8` /
 /// `matvec_bf16_f32acc_x4_rows` running ~3-9x their roofline byte estimate on 2x B200 — an
 /// occupancy/latency signature from kernels tuned for the RTX PRO 6000's 188-SM/1.8-TB/s shape,
-/// not the B200's 148-SM/8-TB/s one. Restricted to `sm_100a` BUILDS (`MEMRA_BUILT_CUDA_ARCH`,
-/// baked in at compile time): setting the var on an `sm_120a` build is a documented no-op, so
-/// the naked sm_120a defaults stay byte-identical (per-hardware arm selection law, AGENTS.md).
-/// Default OFF everywhere; the arms are BIT-IDENTICAL per-output twins pending their B200 A/B —
-/// see docs/FLAGS.md and research/b200-matvec-occupancy-20260902/LANE.md.
+/// not the B200's 148-SM/8-TB/s one. The arms are BIT-IDENTICAL per-output twins. The default
+/// on `sm_100a` BUILDS (`MEMRA_BUILT_CUDA_ARCH`, baked in at compile time) since 2026-11-04,
+/// with no switch: on the 2x B200 pair their bit-identical kernel A/B read faster on every
+/// kernel (N=5 interleaved: bf16 up 33.4 -> 28.5 us, down 30.65 -> 24.9, MoE gate/up 55.0 -> 53.3,
+/// down 37.6 -> 36.0; `b200_matvec_bench`), the five-door decode bundle they rode in read +5.6%
+/// plain and +8% spec (three interleaved boots), and the `MEMRA_B200_MR1_FILL=16` default's
+/// +2.03% row ran on them (docs/FLAGS.md, docs/decisions/GLM5-B200-DOORS.md). Other builds keep
+/// the shipped kernels (per-hardware arm selection law, AGENTS.md).
 pub(crate) fn b200_matvec_arm_on() -> bool {
-    static V: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *V.get_or_init(|| {
-        env!("MEMRA_BUILT_CUDA_ARCH") == "100a"
-            && std::env::var("MEMRA_B200_MATVEC_ARM").as_deref() == Ok("1")
-    })
+    env!("MEMRA_BUILT_CUDA_ARCH") == "100a"
 }
 
 /// MEMRA_B200_GEMV_V2=1: the sm_100a HBM-speed rewrite of the t=1 decode matvec class
@@ -1401,10 +1400,10 @@ pub(crate) fn b200_matvec_arm_on() -> bool {
 /// numeric class `bf16_gemv_v2_splitk` that only engages when a shape's row grid cannot cover
 /// two waves of CTAs on this die; the shipped GLM-5.3 decode shapes never reach it.
 ///
-/// Restricted to `sm_100a` BUILDS (`MEMRA_BUILT_CUDA_ARCH`, baked in at compile time), like
-/// `MEMRA_B200_MATVEC_ARM`: on an sm_120a build the var is a documented no-op and the naked
-/// sm_120a defaults stay byte-identical, per the per-hardware arm selection law. Default OFF
-/// everywhere pending its B200 A/B.
+/// Restricted to `sm_100a` BUILDS (`MEMRA_BUILT_CUDA_ARCH`, baked in at compile time), like the
+/// matvec occupancy arms (`b200_matvec_arm_on`): on an sm_120a build the var is a documented
+/// no-op and the naked sm_120a defaults stay byte-identical, per the per-hardware arm selection
+/// law. Default OFF everywhere pending its B200 A/B.
 ///
 /// Strict `1` arms the door; unset and every other value are off, deliberately: a typo must
 /// not silently arm a kernel arm. It was a level until 2026-11-04, when level 2 (the
@@ -1497,7 +1496,7 @@ pub fn nvfp4_row_ilp_dispatches() -> u64 {
 /// `MEMRA_B200_MR1_FILL=<blocks per SM>` (lane/glm5-nvfp4-row-ilp-20260904; default 16 since
 /// 2026-09-04, receipt +2.03% alone / +2.55% with the ILP twin on the pair; 2 was the
 /// lane/b200-matvec-occupancy-20260902 threshold): the B200 grid-fill arm of the NVFP4 m=1
-/// decode matvec (under `MEMRA_B200_MATVEC_ARM=1`) forces mr1 (two warps per row pair -> one
+/// decode matvec (one of the matvec occupancy arms, the sm_100a default) forces mr1 (two warps per row pair -> one
 /// warp per row, the shipped `qmatvec_nvfp4_mmvq_rp`) when the mr2 grid would be fewer than
 /// this many four-warp blocks per SM. At 2 the 4096-row shapes (512 blocks, 2,048 warps on a
 /// 148-SM part) stay mr2; 16 is one full wave of four-warp blocks (64 warp slots).
@@ -1558,8 +1557,8 @@ pub(crate) static GEMV_V2_BF16_DISPATCHES: std::sync::atomic::AtomicU64 =
 /// REFERENCE door: default OFF, never a serving default, and it is not a candidate for
 /// promotion without its own argmax/serving acceptance.
 ///
-/// Restricted to `sm_100a` BUILDS (`MEMRA_BUILT_CUDA_ARCH`, baked in at compile time), like
-/// `MEMRA_B200_MATVEC_ARM`: setting it on an sm_120a build is a documented no-op, so the naked
+/// Restricted to `sm_100a` BUILDS (`MEMRA_BUILT_CUDA_ARCH`, baked in at compile time), like the
+/// matvec occupancy arms: setting it on an sm_120a build is a documented no-op, so the naked
 /// sm_120a defaults stay byte-identical.
 pub(crate) fn b200_bf16_gemv_lt_on() -> bool {
     static V: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
@@ -8501,7 +8500,7 @@ impl Engine {
         Ok(())
     }
 
-    /// WARP-PACKED twin of [`Engine::moe_gate_up_preclamp8_q8`] (MEMRA_B200_MATVEC_ARM occupancy
+    /// WARP-PACKED twin of [`Engine::moe_gate_up_preclamp8_q8`] (B200 matvec occupancy
     /// arm, lane/b200-matvec-occupancy-20260902): MEMRA_MMVQ_ROWS warps/block on threadIdx.y
     /// instead of one warp/block, same per-warp body -> bit-identical per (o,j). See
     /// `b200_matvec_arm_on` and docs/FLAGS.md for the door.
@@ -8558,7 +8557,7 @@ impl Engine {
         Ok(act)
     }
 
-    /// WARP-PACKED twin of [`Engine::moe_down8_fma_q8`] (MEMRA_B200_MATVEC_ARM occupancy arm) —
+    /// WARP-PACKED twin of [`Engine::moe_down8_fma_q8`] (B200 matvec occupancy arm) —
     /// see [`Engine::moe_gate_up_preclamp8_q8_w4`].
     #[allow(clippy::too_many_arguments)]
     pub fn moe_down8_fma_q8_w4(
@@ -18793,7 +18792,7 @@ impl Engine {
         const ROWS_PER_BLOCK: u32 = 4; // MEMRA_MMVQ_ROWS
         let mut rpw: u32 = 2;
         let mut kname = "qmatvec_nvfp4_mmvq_fused2_rp";
-        // B200 sub-wave grid-fill (MEMRA_B200_MATVEC_ARM occupancy arm, lane/b200-matvec-
+        // B200 sub-wave grid-fill (B200 matvec occupancy arm, lane/b200-matvec-
         // occupancy-20260902): halves RPW to 1 (doubling the grid) when the RPW=2 grid would
         // leave B200's 148 SMs under a full wave, dispatching the `_g2` twin that
         // instantiates `nvfp4_mmvq_fused_seg_rp<1>` instead of `<2>`. Per (tensor,row) the
@@ -18922,7 +18921,7 @@ impl Engine {
         const ROWS_PER_BLOCK: u32 = 4; // MEMRA_MMVQ_ROWS
         let mut rpw: u32 = 2;
         let mut kname = "qmatvec_nvfp4_mmvq_fused2_rp";
-        // B200 sub-wave grid-fill (MEMRA_B200_MATVEC_ARM occupancy arm) — see
+        // B200 sub-wave grid-fill (B200 matvec occupancy arm) — see
         // `matmul_nvfp4_fused2` above for the full rationale; identical policy, alloc-free
         // caller.
         if b200_matvec_arm_on() {
@@ -21597,7 +21596,7 @@ impl Engine {
                     .unwrap_or(1)
             });
         }
-        // B200 sub-wave grid-fill (MEMRA_B200_MATVEC_ARM occupancy arm, lane/b200-matvec-
+        // B200 sub-wave grid-fill (B200 matvec occupancy arm, lane/b200-matvec-
         // occupancy-20260902): the mr2_rp/RPW=2 default halves the grid vs mr1, which the
         // decode-kernel census (2026-09-02) found under-filling B200's 148 SMs for the
         // NVFP4 m=1 decode shapes (qmatvec_nvfp4_mmvq_mr2_rp: 5.2% of GPU time, 11.5us avg
@@ -21813,8 +21812,8 @@ impl Engine {
 
     /// Bench-only direct arm selector for the NVFP4 split-plane rp m=1 decode pair
     /// (b200_matvec_bench.rs). Bypasses `qmatvec_mmvq_into`'s policy AND the
-    /// `MEMRA_B200_MATVEC_ARM` env door (which is read once into a process-wide `OnceLock` and
-    /// so cannot flip mid-process for an in-process A/B) — `use_arm=false` launches
+    /// build-keyed occupancy arm (`b200_matvec_arm_on`, which cannot flip mid-process for an
+    /// in-process A/B) — `use_arm=false` launches
     /// `qmatvec_nvfp4_mmvq_mr2_rp` (shipped default, RPW=2, half the grid); `true` launches the
     /// already-shipped `qmatvec_nvfp4_mmvq_rp` (RPW=1, full grid) that the B200 grid-fill arm
     /// dispatches to. Per-row arithmetic is IDENTICAL between the two (see qmatvec.cu) — only
@@ -21973,7 +21972,7 @@ impl Engine {
 
     /// Bench-only direct arm selector for `matvec_bf16_f32acc_x4_rows` (b200_matvec_bench.rs) —
     /// same rationale as `qmatvec_nvfp4_rp_arm_raw`: bypasses `matvec_bf16_rows_into`'s policy
-    /// stack and the memoized `MEMRA_B200_MATVEC_ARM` door. `use_arm=false` launches the shipped
+    /// stack and the build-keyed occupancy arm. `use_arm=false` launches the shipped
     /// kernel; `true` launches the software-pipelined `_pf` twin. Bit-identical per (row,token).
     #[allow(clippy::too_many_arguments)]
     pub fn matvec_bf16_f32acc_x4_rows_arm_raw(
@@ -25601,7 +25600,7 @@ impl Engine {
         if b200_bf16_gemv_lt_on() && self.bf16_gemv_lt_into(w, x, y, in_f, out_f, t)? {
             return Ok(());
         }
-        // MEMRA_B200_MATVEC_ARM occupancy arm (lane/b200-matvec-occupancy-20260902): the
+        // B200 matvec occupancy arm (lane/b200-matvec-occupancy-20260902, the sm_100a default): the
         // software-pipelined `_pf` twin double-buffers the K-loop's weight/activation loads
         // (next iteration's loads issue before the current iteration's fma chain runs) to
         // hide DRAM latency on B200's narrower SM/bandwidth shape. Same grid/block/reduction
