@@ -86,7 +86,7 @@ for t in kernel-check run-spec argmax-margin-probe; do
   ln -sf "$src" "$ROOT/target/release/$t"
 done
 
-OUT=$(cd "$ROOT" && CARD_WAIT_S=10 timeout 600 tools/release-battery.sh 2>&1 || true)
+OUT=$(cd "$ROOT" && env -u CARGO_TARGET_DIR CARD_WAIT_S=10 timeout 600 tools/release-battery.sh 2>&1 || true)
 kill $HOLDER 2>/dev/null; wait $HOLDER 2>/dev/null
 
 printf '%s' "$OUT" | grep -q "REFUSED   card cannot seat the model" \
