@@ -970,7 +970,8 @@ gated by the official `openai` Python SDK against a live server
   close (owner rule, 2026-11-04). A non-stream response splits the whole turn after the
   fact; a stream holds its opening until a `<channel|>`, a `<|channel>` or `<|tool_call>`
   open or the turn end resolves it, for at most 256 bytes, so a turn that opens with content
-  sends its first delta at most that late
+  sends its first delta at most that late. An unopened thought of 256 bytes or more still
+  reaches content on a stream, tag included, while non-stream splits it at any length
   ([decision](decisions/GEMMA-UNOPENED-THOUGHT.md)). Turn-end control tokens (`<turn|>`, `<end_of_turn>`,
   `<|im_end|>`) stop generation (`eog_ids()` union) and never reach the client as text.
 - **`max_tokens` omitted** ⇒ context-bounded budget (session ctx − prompt, capped at the
