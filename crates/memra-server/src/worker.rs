@@ -6899,28 +6899,81 @@ struct SpecCostEntry {
     /// Recent acceptance window (set from `SpecMetricState::record`).
     accept: Option<memra_engine::spec::SpecTelemetry>,
     /// REALIZED aggregate tok/s per (sessions, K; K=0 = plain) from steady serving ticks
-    /// (`spec_cost_observe`): (EMA, samples). The tables price a fixed depth and an engine-only
-    /// burst; serving adds emission, admission and whatever depth the traffic has, so a realized
-    /// rate replaces its prediction once it has `SPEC_COST_REALIZED_MIN` samples, and corrects
-    /// the predictions at other concurrencies in proportion.
-    realized: HashMap<(usize, usize), (f64, u32)>,
+    /// (`spec_cost_observe`). The tables price a fixed depth and an engine-only burst; serving
+    /// adds emission, admission and whatever depth the traffic has, so a realized rate replaces
+    /// its prediction once it has `SPEC_COST_REALIZED_MIN` samples, and corrects the predictions
+    /// at other concurrencies in proportion.
+    realized: HashMap<(usize, usize), RealizedRate>,
+}
+
+/// One realized-rate slot: the EMA of per-tick aggregate tok/s samples, the EMA of their squared
+/// deviation (the slot's noise), the sample count and when the last sample landed.
+#[derive(Clone, Copy, Debug)]
+struct RealizedRate {
+    ema: f64,
+    var: f64,
+    samples: u32,
+    last: Instant,
+}
+
+impl RealizedRate {
+    fn new(tok_per_s: f64) -> Self {
+        RealizedRate {
+            ema: tok_per_s,
+            var: 0.0,
+            samples: 0,
+            last: Instant::now(),
+        }
+    }
+
+    /// Standard error of the EMA itself: a stationary EMA with weight a over samples of
+    /// standard deviation sd has sd * sqrt(a / (2 - a)).
+    fn noise(&self) -> f64 {
+        let a = SPEC_COST_REALIZED_ALPHA;
+        self.var.sqrt() * (a / (2.0 - a)).sqrt()
+    }
+
+    /// Enough samples, and the last one recent enough that it still describes the traffic.
+    fn fresh(&self) -> bool {
+        self.samples >= SPEC_COST_REALIZED_MIN && self.last.elapsed() <= SPEC_COST_REALIZED_TTL
+    }
 }
 
 /// Samples before a realized rate replaces its prediction.
 const SPEC_COST_REALIZED_MIN: u32 = 3;
+
+/// EMA weight of one realized sample: a few ticks follow a regime change, single ticks do not
+/// swing it.
+const SPEC_COST_REALIZED_ALPHA: f64 = 0.3;
+
+/// How long a realized spec rate stays evidence for the tie probe. One max-length turn (768
+/// tokens) at the agentic c=2 per-user rate (about 12 tok/s) is 64 s: a slot older than that
+/// was measured on a different turn, depth and acceptance than the one being decided.
+const SPEC_COST_REALIZED_TTL: std::time::Duration = std::time::Duration::from_secs(64);
 
 impl SpecCostEntry {
     /// The aggregate tok/s to price (n, k) at: the realized EMA when it has enough samples,
     /// else `predict(n, k)` scaled by the realized/predicted ratio of the closest observation of
     /// the same kind (plain for k = 0, any draft length for k > 0), preferring the same n, then
     /// the same k at the nearest n, then any draft length at the nearest n. 1.0 when none.
+    ///
+    /// A spec slot (k > 0) counts only while fresh (`RealizedRate::fresh`). Spec slots stop
+    /// refreshing whenever plain wins, so an old spec sample would otherwise price spec for
+    /// good; once it ages out the price falls back to the table and the current acceptance
+    /// window, which every spec round keeps current. Plain slots refresh whenever plain runs.
     fn priced(&self, n: usize, k: usize, predict: impl Fn(usize, usize) -> f64) -> f64 {
         let predicted = predict(n, k);
-        let ok = |c: &u32| *c >= SPEC_COST_REALIZED_MIN;
-        if let Some(&(r, c)) = self.realized.get(&(n, k))
-            && ok(&c)
+        let ok = |kk: usize, r: &RealizedRate| {
+            if kk > 0 {
+                r.fresh()
+            } else {
+                r.samples >= SPEC_COST_REALIZED_MIN
+            }
+        };
+        if let Some(r) = self.realized.get(&(n, k))
+            && ok(k, r)
         {
-            return r;
+            return r.ema;
         }
         let same_kind = |kk: usize| (kk == 0) == (k == 0);
         let rank = |m: usize, kk: usize| -> (u8, usize) {
@@ -6936,13 +6989,13 @@ impl SpecCostEntry {
         let best = self
             .realized
             .iter()
-            .filter(|((m, kk), (_, c))| ok(c) && same_kind(*kk) && (*m, *kk) != (n, k))
+            .filter(|((m, kk), r)| ok(*kk, r) && same_kind(*kk) && (*m, *kk) != (n, k))
             .min_by_key(|((m, kk), _)| rank(*m, *kk));
         match best {
-            Some(((m, kk), (r, _))) => {
+            Some(((m, kk), r)) => {
                 let p = predict(*m, *kk);
                 if p > 0.0 {
-                    predicted * r / p
+                    predicted * r.ema / p
                 } else {
                     predicted
                 }
@@ -7047,13 +7100,41 @@ fn spec_cost_best_k(entry: &SpecCostEntry, n: usize, rung: usize) -> Option<(usi
     };
     let plain = entry.priced(n, 0, rate_at);
     let mut best = (0usize, plain);
+    let mut best_spec: Option<(usize, f64)> = None;
     for k in 1..=rung {
         if spec_expected_tokens(accept, k).is_none() {
             break;
         }
         let rate = entry.priced(n, k, rate_at);
+        if best_spec.is_none_or(|(_, r)| rate > r) {
+            best_spec = Some((k, rate));
+        }
         if rate > best.1 {
             best = (k, rate);
+        }
+    }
+    // TIE PROBE. Plain wins only on a measured margin. When the best draft length prices
+    // within the plain rate's own noise and its price is not backed by fresh samples at this
+    // (n, K) (it was extrapolated from another slot, or its samples are older than one turn),
+    // speculate so the slot gets measured. Without this a spec price can go stale for good:
+    // plain wins the tie, no spec tick runs, and nothing ever corrects the price (GB10 agentic
+    // c=2 with bf16 GDN state: 9 of 18 rung-3 verdicts went plain on a K=3 price extrapolated
+    // from an old K=5 slot, 23.9 tok/s against 29.0 when spec runs).
+    if best.0 == 0
+        && let Some((ks, rs)) = best_spec
+        && n * (ks + 1) <= 16
+        && !entry
+            .realized
+            .get(&(n, ks))
+            .is_some_and(RealizedRate::fresh)
+    {
+        let noise = entry
+            .realized
+            .get(&(n, 0))
+            .filter(|r| r.samples >= SPEC_COST_REALIZED_MIN)
+            .map_or(0.0, RealizedRate::noise);
+        if rs >= plain - noise {
+            best = (ks, rs);
         }
     }
     Some((best.0, best.1, plain))
@@ -7100,19 +7181,23 @@ fn spec_cost_observe(model: &str, n: usize, k: usize, tok_per_s: f64) {
     }
     let mut reg = spec_cost_registry().lock().unwrap();
     if let Some(entry) = reg.get_mut(model) {
-        let slot = entry.realized.entry((n, k)).or_insert((tok_per_s, 0));
-        // EMA weight 0.3: a few ticks follow a regime change, single ticks do not swing it.
-        slot.0 = if slot.1 == 0 {
-            tok_per_s
-        } else {
-            0.7 * slot.0 + 0.3 * tok_per_s
-        };
-        slot.1 = slot.1.saturating_add(1);
-        if slot.1 == SPEC_COST_REALIZED_MIN {
+        let slot = entry
+            .realized
+            .entry((n, k))
+            .or_insert_with(|| RealizedRate::new(tok_per_s));
+        let a = SPEC_COST_REALIZED_ALPHA;
+        if slot.samples > 0 {
+            let d = tok_per_s - slot.ema;
+            slot.ema += a * d;
+            slot.var = (1.0 - a) * (slot.var + a * d * d);
+        }
+        slot.samples = slot.samples.saturating_add(1);
+        slot.last = Instant::now();
+        if slot.samples == SPEC_COST_REALIZED_MIN {
             eprintln!(
                 "[spec-cost] model={model:?} realized n={n} K={k}: {:.1} tok/s (now priced from \
                  serving)",
-                slot.0
+                slot.ema
             );
         }
     }
@@ -44135,10 +44220,10 @@ mod tests {
         // Realized at n=4: every spec K far below plain.
         for k in 1..=3 {
             e.realized
-                .insert((4, k), (20.0, super::SPEC_COST_REALIZED_MIN));
+                .insert((4, k), slot(20.0, super::SPEC_COST_REALIZED_MIN));
         }
         e.realized
-            .insert((4, 0), (50.0, super::SPEC_COST_REALIZED_MIN));
+            .insert((4, 0), slot(50.0, super::SPEC_COST_REALIZED_MIN));
         let (k, rate, plain) = super::spec_cost_best_k(&e, 4, 3).unwrap();
         assert_eq!((k, rate, plain), (0, 50.0, 50.0));
         // n=3 has no samples: its predictions scale by the n=4 realized/predicted ratios.
@@ -44147,11 +44232,69 @@ mod tests {
         // Too few samples change nothing.
         let mut few = gb10_entry([0.7, 0.5, 0.35]);
         few.realized
-            .insert((4, 1), (1.0, super::SPEC_COST_REALIZED_MIN - 1));
+            .insert((4, 1), slot(1.0, super::SPEC_COST_REALIZED_MIN - 1));
         assert_eq!(
             super::spec_cost_best_k(&few, 4, 3).map(|v| v.0),
             super::spec_cost_best_k(&gb10_entry([0.7, 0.5, 0.35]), 4, 3).map(|v| v.0)
         );
+    }
+
+    fn slot(ema: f64, samples: u32) -> super::RealizedRate {
+        super::RealizedRate {
+            ema,
+            var: 0.0,
+            samples,
+            last: std::time::Instant::now(),
+        }
+    }
+
+    /// A spec slot older than the TTL stops pricing spec: plain had won on it, so no spec tick
+    /// could refresh it. The price falls back to the table and the current acceptance (the
+    /// GB10 c=2 bf16 cell: a K=3 price extrapolated from an old K=5 slot held plain).
+    #[test]
+    fn stale_spec_slot_stops_pricing_spec() {
+        let mut e = gb10_entry([0.7, 0.5, 0.35]);
+        let old = std::time::Instant::now()
+            .checked_sub(super::SPEC_COST_REALIZED_TTL + std::time::Duration::from_secs(1))
+            .unwrap();
+        e.realized.insert(
+            (2, 3),
+            super::RealizedRate {
+                last: old,
+                ..slot(10.0, 10)
+            },
+        );
+        e.realized.insert((2, 0), slot(25.0, 10));
+        let (k, _, _) = super::spec_cost_best_k(&e, 2, 3).unwrap();
+        assert!(k > 0, "the stale K=3 slot no longer holds plain");
+        // The same slot, fresh, still decides.
+        e.realized.insert((2, 3), slot(10.0, 10));
+        assert_eq!(super::spec_cost_best_k(&e, 2, 3).unwrap().0, 0);
+    }
+
+    /// Plain wins only on a measured margin: a spec price within the plain rate's noise that no
+    /// fresh sample backs is probed; a fresh spec sample below plain is not.
+    #[test]
+    fn spec_tie_within_plain_noise_probes_spec() {
+        let mut e = gb10_entry([0.7, 0.5, 0.35]);
+        // The table-only spec price at n=2; plain realized 4% above it, noisy.
+        let p2 = super::spec_cost_best_k(&e, 2, 3).unwrap().1;
+        let mut plain = slot(p2 * 1.04, 10);
+        plain.var = (p2 * 0.2).powi(2);
+        e.realized.insert((2, 0), plain);
+        let (k, rate, plain_rate) = super::spec_cost_best_k(&e, 2, 3).unwrap();
+        assert!(k > 0 && rate < plain_rate, "probe: {k} {rate} {plain_rate}");
+        // No noise: plain wins the margin.
+        let mut quiet = plain;
+        quiet.var = 0.0;
+        e.realized.insert((2, 0), quiet);
+        assert_eq!(super::spec_cost_best_k(&e, 2, 3).unwrap().0, 0);
+        // Fresh spec samples, below plain but within its noise: measured, so no probe.
+        e.realized.insert((2, 0), plain);
+        for k in 1..=3 {
+            e.realized.insert((2, k), slot(p2 * 0.97, 10));
+        }
+        assert_eq!(super::spec_cost_best_k(&e, 2, 3).unwrap().0, 0);
     }
 
     /// Riders priced by the cost model: on the 5090 q9 table a forward stops near 8 rows; on
