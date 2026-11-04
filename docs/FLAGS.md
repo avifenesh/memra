@@ -58,9 +58,10 @@ measured on a GPU, because no speech operation has a CUDA kernel yet (§1).
 
 ## Qwen attention prime staging, 2026-09-09
 
+`MEMRA_PRIME_KV_T3`, the three-plane KV staging door, was deleted on 2026-11-04 as superseded at its measured geometry (Removed doors, 2026-11-04).
+
 | Flag | Contract |
 | --- | --- |
-| `MEMRA_PRIME_KV_T3` | **OFF (default), decide-by: 2026-09-23 (passed; held for the owner's call below).** Strict `1` selects three-plane BF16 KV staging for head-dim 256, t>=128, double-buffered quantized-KV prime. `0`/unset uses the existing four-plane kernel. Two K buffers and one V buffer replace four KV buffers; P operands stay in registers with the same scalar RN conversions, MMA and softmax order. Shared memory 69888 -> 49152 bytes. Decode and other head dimensions are unchanged. Rollback: unset or `0`. Receipt: `research/qwen-prefill-20260909/`; all 12 direct byte cells pass, 1024-row attention at depth 131070 changes 29.090 -> 24.019 ms. Final 12-cell typed and real 32k/131070 boundary byte gates pass, K=1..8 exact, canonical margin flips=0, greedy restore exact. Fresh 131070 cold TTFT 68.295 -> 63.450 s at unchanged chunk 1024, N=3 interleaved boots/arm. Global default remains OFF pending clearance of the separately recorded accumulated-state failure (RESULTS.md: a one-boot 8k, 32k, 131k request sequence failed in decode after long-prefix publication in one chunk-1024 T3 boot, unpaired, no cause assigned). Since 2026-11-04 the FA2 class takes every chunk of the Qwen 24 Q / 4 KV / d256 prime on the 170-SM RTX 5090 at `MEMRA_PRIME_CHUNK=1024` (section "Qwen FA2 prefill attention"), which is the geometry this receipt measured, so T3 no longer engages there; its remaining reach (the naked 4096 chunk, other head-dim 256 primes, other cards) has no receipt. Owner's call: delete it as superseded at its measured geometry, or run one 170-SM RTX 5090 cell (cold TTFT 8k/32k/131k at the naked chunk, OFF and T3, N=3 interleaved, plus the one-boot 8k, 32k, 131k sequence in both arms) and key T3 to that card if it wins and clears, deleting it if flat or if only T3 fails. |
 | `MEMRA_PRIME_KV_H2` | **ON on a unified-memory 120a-family device (GB10), OFF elsewhere (2026-11-06).** `1`/`0` decide on any device; unset follows the device. Selects the two-head (h2) quantized-KV prime attention twin for head-dim 256, t>=128, even query-head groups: two query heads of one KV head share each staged K/V tile in an 8-warp CTA (grid `ceil(T/64) x n_head/2`, 64 KB smem, 1 CTA/SM), with P operands from the C fragments in registers. Every row keeps its head's tile sequence, QK/softmax/PV order and scalar RN conversions, so outputs are bit-identical to the db/t3 twins. `MEMRA_PRIME_KV_T3=1` takes precedence, and h2 is a variant of the db twin, so `MEMRA_PRIME_DEQW_DB=0` turns it off too. A value other than `1` or `0` reads as unset and follows the device. GB10 served A/B (Qwen3.8-27B GGUF, both orders, 2 boots per arm): 131k TTFT -13.92%, 32k -4.75%, identical text. Discrete cards are unmeasured and keep the db twin. On GB10 the h2 route runs the h2p ring by default (`MEMRA_PRIME_KV_H2P`, bit-identical); h2 itself is `MEMRA_PRIME_KV_H2P=0`. Gates: kernel-check ARC B cells at t>=128 run with the door set, `tests/prime_kv_h2_gpu.rs`. Receipt: `research/gb10-prefill-20261106/`. Rollback: `0`. |
 | `MEMRA_PRIME_KV_H2P` | **ON on a unified-memory 120a-family device (GB10), OFF elsewhere (2026-11-07); decide-by for discrete cards: 2026-11-21.** `1`/`0` decide on any device; unset follows the device; another value reads as unset. Inside the h2 route only (`MEMRA_PRIME_KV_H2=0` and `MEMRA_PRIME_KV_T3=1` keep their meaning) it selects `fa_prefill_qw_h2p`: h2's row program on a three-stage K/V ring handed over by per-stage full/empty mbarriers, the second head's warps one QK behind the first so one head's softmax overlaps the other's MMAs, `ldmatrix.shared` on precomputed per-lane offsets (98,368 B dynamic smem, 1 CTA/SM). Bit-identical to h2/db/t3. GB10 probe (T 4,096, depth 131,072): 85.0 against h2's 67.9 TFLOPS. Served cold TTFT against main (B H H B B H, 3 boots per arm, one unit): 32k -1.59%, 131k -5.75%, 260k -8.97%, identical text, MemAvailable floor 66.6 GiB. Gates: kernel-check ARC B cells (the 4096 x 36864 cell added for the ring) in h2p, h2 and db modes; `MEMRA_PP_PRIME` prime logits byte compare. Receipt: `research/gb10-prefill-attn-20261107/`. Rollback: `0`. |
 
@@ -2159,6 +2160,30 @@ existing kernel. Deleted: the env read, and the two instruments only the door se
 outputs are in the receipt). No kernel was only the door's. Decision:
 `docs/decisions/QWEN-PRIME-FA2-DEFAULT.md`. Ledger:
 `VERDICT:qwen-prime-fa2-default-on-5090-chunk1024` (pending: the darklanes `agent-knowledge/gpu/verdicts-ledger.md` line is owed by a darklanes lane; this engine lane does not write darklanes).
+
+## Removed doors, 2026-11-04 (`MEMRA_PRIME_KV_T3`: superseded at its measured geometry, no receipt elsewhere)
+
+`MEMRA_PRIME_KV_T3=1` selected three-plane BF16 KV staging for the double-buffered quantized-KV
+prime at head-dim 256 and t>=128 (`fa_prefill_qw_t3`, `fa_prefill_qw_t3_prime_table`): two K
+planes and one V plane in place of four KV planes, with the P operands held in registers. Its only
+receipt (`research/qwen-prefill-20260909/RESULTS.md`) measured the legacy attention class on the
+Qwen 24 Q / 4 KV / d256 prime at `MEMRA_PRIME_CHUNK=1024` on the 170-SM RTX 5090: twelve direct
+byte cells exact, 1024-row attention at depth 131070 29.090 -> 24.019 ms, 131070 cold TTFT
+68.295 -> 63.450 s (N=3 interleaved boots per arm). Its default stayed OFF on an unpaired
+accumulated-state failure: an 8k, 32k, 131k request sequence failed in decode after long-prefix
+publication in one chunk-1024 T3 boot, with no cause assigned. Since 2026-11-04 the FA2 class
+takes every chunk at exactly that geometry (`docs/decisions/QWEN-PRIME-FA2-DEFAULT.md`), so T3
+never engages where it was measured. Its remaining reach (the naked 4096 chunk, other head-dim 256
+primes, other cards) has no receipt, and its 2026-09-23 decide-by passed. Deleted: the env read
+and the `_t3` arm of the dispatch in `Engine::fa_prefill_view_ws`, both kernels and the `TRIPLE`
+arm of `fa_prefill_qw_db_body` that only they instantiated, the `fa_prefill_qw_t3_prime_table`
+entry in the carried-prime warm list (`qwen_prime_graph.rs`), its byte gate
+`tests/prime_kv_t3_gpu.rs`, and its FLAGS and KERNELS rows. `stage_kv_plane_async`, which T3
+introduced, stays: the FA2 body stages through it. The four-plane kernels and the FA2 dispatch are
+unchanged. It returns only with a receipt, for example a cold-TTFT cell at the naked chunk on the
+170-SM card, OFF against T3, that also clears the failing request sequence in both arms. Ledger:
+`VERDICT:qwen-prime-kv-t3-superseded-by-fa2-removed`
+(pending: the darklanes `agent-knowledge/gpu/verdicts-ledger.md` line is owed by a darklanes lane; this engine lane does not write darklanes).
 
 ## Removed doors, 2026-11-04 (`MEMRA_MOE_PREFETCH`, the CPU-expert companion's prediction-guided prefetch: negative, decide-by passed)
 

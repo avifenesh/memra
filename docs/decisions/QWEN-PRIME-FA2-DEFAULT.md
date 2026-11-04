@@ -45,9 +45,14 @@ profile serves owes one with its draft at chunk 1024 on the 170-SM card. The in-
 instruments are deleted, so the OFF arm is the binary built before this change and the ON arm is
 this one, on the same prompt set.
 
-**Not decided here:** `MEMRA_PRIME_KV_T3`, the three-plane staging door on the same geometry,
-stays default OFF. Its receipt (`research/qwen-prefill-20260909/RESULTS.md`) is exact and faster,
-but holds the default on an unpaired accumulated-state failure in one T3 boot that has no assigned
-cause. That receipt measured the legacy class at chunk 1024 on this card, which is now FA2's
-geometry, so T3 no longer engages there; its row carries the owner's call (delete it as
-superseded, or measure it at the naked chunk on this card).
+**Consequence for `MEMRA_PRIME_KV_T3` (deleted the same day):** the three-plane staging door
+staged the legacy class's KV in two K planes and one V plane. Its only receipt
+(`research/qwen-prefill-20260909/RESULTS.md`) measured the legacy class on this geometry at chunk
+1024 on this card: exact, and 131k cold TTFT 68.295 -> 63.450 s. It held its own default OFF on an
+unpaired accumulated-state failure in one T3 boot with no assigned cause. FA2 now takes every chunk
+of that geometry, so T3 never engages where it was measured. Its remaining reach (the naked 4096
+chunk, other head-dim 256 primes, other cards) has no receipt, and its 2026-09-23 decide-by
+passed. Superseded at its measured geometry with no receipt elsewhere, it was deleted with its two
+kernels and its byte gate (`docs/FLAGS.md`, Removed doors). It returns only with a receipt, for
+example a cold-TTFT cell at the naked chunk on this card, OFF against T3, that also clears the
+failing request sequence in both arms.

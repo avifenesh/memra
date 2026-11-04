@@ -382,7 +382,6 @@ impl Engine {
             "append_quantize_kv_q8_0_q5_1_rows_prime_table",
             "fa_dequant_kv_ws_bf16_prime_table",
             "fa_prefill_qw_db_prime_table",
-            "fa_prefill_qw_t3_prime_table",
             "fa_prefill_qw_h2_prime_table",
             "fa_prefill_qw_h2p_prime_table",
             "ssm_conv1d_gdn_state_f32_prime_table",
