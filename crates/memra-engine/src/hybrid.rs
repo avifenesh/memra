@@ -274,7 +274,7 @@ impl ResidentPlan {
                     "the resident-expert budget of a non-GGUF source reserves its trunk from the \
                      checkpoint binding, and none was passed",
                 )?;
-                let trunk = binding.trunk_resident_bytes(src, crate::model::float_upload());
+                let trunk = binding.trunk_resident_bytes(src, crate::model::upload_policy());
                 (None, usize::try_from(trunk).unwrap_or(usize::MAX))
             }
         };
