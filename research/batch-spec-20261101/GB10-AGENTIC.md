@@ -156,3 +156,28 @@ Default-build rerun (memset removal + v3 gate + tensor-core b32 chosen at boot),
 | 32 | 83.61 | 83.11 | 135.5 |
 
 Served, the memset removal is flat within single-run noise: the cell's decode ticks are mostly shallower than 12288, and the tick gain there is 2.6-3.9%.
+
+## bf16 GDN state arm, rebased onto every exact lever (2026-11-04)
+
+`research/combo-tc-gdnbf16` was rebased (cherry-picked, no merges) onto batch-spec 0d0ac2d8e4. Head 62492dac54; the pre-rebase head caed240c24 is kept on `research/combo-tc-gdnbf16-premerge`.
+
+The arm now carries every exact lever plus `MEMRA_GDN_STATE_BF16=1`:
+- the tensor-core 32-row tier;
+- the memset removal;
+- the v3 spec gate;
+- the exact-width 16-row twin.
+
+Served on a fresh boot, c1..c32 (`gb10-combo2/`). The boot probe picked the tensor-core 32-row tier (207.7 ms against 238.5 for two 16-row waves).
+
+| c | fp32 default now (062ecac658 run, c8/c16 from 88805bc1f1) | bf16 arm, rebased | bf16 + TC, before the gate fix (19b3495bab) | vLLM |
+|---:|---:|---:|---:|---:|
+| 1 | 22.60 | 23.50 | 23.17 | 24.2 |
+| 2 | 28.94 | 28.52 | 23.89 | |
+| 4 | 38.10 | 38.80 | 39.51 | 68.7 |
+| 8 | 62.35 | **50.88** | 60.80 | 96.7 |
+| 16 | 77.27 | 78.78 | 77.49 | 121.4 |
+| 32 | 83.11 | **86.06** | 85.46 | 135.5 |
+
+The bf16 arm leads at c16 (+2.0%) and c32 (+3.5%), and c2 is fixed. c8 regresses. Both bf16 runs on the v3 gate speculated at n=7/8 for a stretch: 4 and 5 K=1 verdicts, priced at 60-63 tok/s from the lower-concurrency anchors while the plain EMA had dipped to 57-60. They realized 53.6 and 56.6 against plain 72-73 before switching back. This run also hit one acceptance-history "explore" verdict at n=8. The fp32 runs never speculated at n=8.
+
+So the gate's spec price at n>=7 is too optimistic when it is extrapolated from n<=4. That is the next gate fix. It does not touch the decode path. One run per arm.
