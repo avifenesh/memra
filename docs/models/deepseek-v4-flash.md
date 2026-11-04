@@ -27,7 +27,7 @@ A preview-encoding checkpoint (`deepseek_v4_preview`, clamp-only) is gate-only: 
 refuses it at load by name, before the weights load.
 
 Plain requests replay each step on full-token CUDA graphs, with the device sampler.
-`MEMRA_DSV4_TOPOLOGY=pp` is the PP-2 rollback (decision:
+`MEMRA_DSV4_TOPOLOGY=pp` loads PP-2, an explicit placement that aggregates more at c2 (decision:
 [DSV4-TPEP-DEFAULT](../decisions/DSV4-TPEP-DEFAULT.md)). All rows: 256 max tokens, one boot per
 row, median of N=3 rows (N=2 for DSpark), 2026-09-24/25, same text on every request of every arm.
 

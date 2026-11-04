@@ -1179,10 +1179,11 @@ placement too). The names:
 - `tp_ep` (`Dsv4Placement::SERVED`): TP/EP with exact attention TP2, what memra-server loads
   unless `MEMRA_DSV4_TOPOLOGY=pp`.
 - `tp_ep_replicated`: TP/EP with replicated attention, gate-only.
-- `pp`: PP-2, the `MEMRA_DSV4_TOPOLOGY=pp` rollback.
+- `pp`: PP-2, what memra-server loads with `MEMRA_DSV4_TOPOLOGY=pp`, an explicit placement
+  kept for its c2 aggregate (owner 2026-11-04).
 
 A serving-qualification run takes the `tp_ep` cells first, on a 2x RTX PRO 6000 pair under
-`/tmp/memra-gpu.lock`. A PP-2 cell qualifies only the `pp` rollback and runs only where a gate
+`/tmp/memra-gpu.lock`. A PP-2 cell qualifies only the `pp` placement and runs only where a gate
 names it. A gate with cells on more than one placement requires `--placement=<name>`. The
 selectors it replaced refuse, and each refusal names the placement it meant: `--tpep` (or the
 `tpep` positional, or a TP/EP-only gate) alone is `tp_ep_replicated`, and with

@@ -1,7 +1,7 @@
 //! B-row decode identity gate (memra #667 lever 2, memra #710 B-row).
 //!
 //! Placement is required (S06:F0): `--placement=tp_ep` is the served cell and runs first;
-//! `--placement=pp` is the PP-2 cell (the `MEMRA_DSV4_TOPOLOGY=pp` rollback).
+//! `--placement=pp` is the PP-2 cell (the `MEMRA_DSV4_TOPOLOGY=pp` placement).
 //!
 //! Four sessions with distinct prompts of distinct lengths decode `steps` greedy tokens
 //! alone, one `decode_step` each (the one-row program of the placement). Each step's full

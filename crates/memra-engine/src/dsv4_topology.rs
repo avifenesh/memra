@@ -1,7 +1,8 @@
 //! Explicit DSV4 multi-card topology admission.
 //!
 //! TP/EP is the served two-card default since memra #710 (2026-09-25), and PP-2
-//! (`MEMRA_DSV4_TOPOLOGY=pp`) is the rollback program.  The two are separate programs:
+//! (`MEMRA_DSV4_TOPOLOGY=pp`) is the other explicit placement, kept because it aggregates
+//! more at c2 (owner, 2026-11-04).  The two are separate programs:
 //! under TP/EP every rank must own every trunk layer's attention/router state and the
 //! expert adapter must return a rank-order down partial.  Keeping this admission
 //! contract separate prevents a TP/EP load from silently running the PP walk, or the
@@ -118,7 +119,7 @@ impl Dsv4Placement {
 
     /// The name logs, receipts and gate arguments use: `tp_ep` (the served placement),
     /// `tp_ep_replicated` (TP/EP with replicated attention, a gate-only placement) or `pp`
-    /// (PP-2, the `MEMRA_DSV4_TOPOLOGY=pp` rollback).
+    /// (PP-2, what memra-server loads with `MEMRA_DSV4_TOPOLOGY=pp`).
     pub const fn name(self) -> &'static str {
         match self {
             Self::TpEp { attention_tp: true } => "tp_ep",
