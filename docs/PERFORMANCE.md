@@ -56,22 +56,17 @@ Every number in this repo belongs to exactly one of these. A cell moved to anoth
 different number, not the same number re-measured: the same kernel is 5-12% apart between the
 two PRO 6000 pod classes and roughly 2x apart between a 188-SM and an 82-SM board.
 
-| Rig label | Hardware | Owned? | What it produces |
-|---|---|---|---|
-| **RTX 5090 Laptop** | GB203, 82 SM, 858 GB/s, local | **The only owned GPU** | Development and single-card tuning; the tracked 5090 regression board and development-iteration battery |
-| `pro6000wk-runpod` | RTX PRO 6000 Blackwell Workstation 96 GB, 188 SM, 600 W, clocks pinned 2865 MHz, zero throttle | Retired rental | Historical 27B cells below; receipt label only |
-| `pro6000wk-runpod-community` | Same SKU, community-tier pod | Retired rental | Historical iteration receipts. Runs **5-11% slower** than the standard pod — compare only relative deltas within one pod |
-| `rig2x5090-serve` | 2x RTX 5090 32 GB (single card used) | Rented | Historical official-FP8 and multi-card receipts; not the current target shape |
-| `pro6000wk-pair` | 2x RTX PRO 6000 Blackwell Workstation Edition, 96 GB each, full 600 W, PCIe 5.0, driver 610.57.04; peer path byte-probed **CLEAN** — native `cudaMemcpyPeerAsync`, no host bounce | Rented | Two-card receipts on the pair shape. Held by a separate task while in use |
-| `vast-maxq-20260810` (historical) | 2x RTX PRO 6000 Blackwell Max-Q Workstation Edition, 96 GB each, 300 W, CUDA 13.1; PP-2 used host bounce | Rented | Historical/Max-Q serving numbers only; never a current regression baseline (`research/27bab-20260810/`) |
-| `pro6000sv-pair` | 2x RTX PRO 6000 Blackwell Server Edition 96 GB, sm_120a, CUDA 13.2, Gen5 x16 P2P | Rented, retired | Pre-merge and pre-release battery receipts (`research/coldfix-20260812/`, `research/b1fix-20260810/`); source of the PP-2 lanes (batched decode, spec verdict, hardening) and Step-3.7-Flash bring-up. GPU windows held under `flock`, both cards verified at 0 MiB on entry and exit |
-| rented H100 80 GB | 8x / 3x / 1x HBM3 pods | Rented | The H100 board, the replica fleet, QoS lanes, endurance |
-| `rtx6000` (receipts `research/tune-data/cloud-rtx6000.jsonl`) | PRO 6000 Server Edition | Rented | Hy3 spill / quantization research (`docs/HY3-SPILL.md`) |
-
-**No datacenter or desktop card is owned** — the 5090 Laptop is the only owned GPU, and the
-`Owned?` column above says so per rig. That is stated once, here, so no reader mistakes this
-for a repo with a fleet behind it. Individual rig labels then name hardware and nothing else:
-procurement is a deployment fact, and this repo does not carry those.
+| Rig label | Hardware | What it produces |
+|---|---|---|
+| **RTX 5090 Laptop** | GB203, 82 SM, 858 GB/s | Development and single-card tuning; the tracked 5090 regression board and development-iteration battery |
+| `pro6000wk-runpod` | RTX PRO 6000 Blackwell Workstation 96 GB, 188 SM, 600 W, clocks pinned 2865 MHz, zero throttle | Historical 27B cells below; receipt label only |
+| `pro6000wk-runpod-community` | Same SKU, community-tier pod | Historical iteration receipts. Runs **5-11% slower** than the standard pod — compare only relative deltas within one pod |
+| `rig2x5090-serve` | 2x RTX 5090 32 GB (single card used) | Historical official-FP8 and multi-card receipts; not the current target shape |
+| `pro6000wk-pair` | 2x RTX PRO 6000 Blackwell Workstation Edition, 96 GB each, full 600 W, PCIe 5.0, driver 610.57.04; peer path byte-probed **CLEAN** — native `cudaMemcpyPeerAsync`, no host bounce | Two-card receipts on the pair shape. Held by a separate task while in use |
+| `vast-maxq-20260810` (historical) | 2x RTX PRO 6000 Blackwell Max-Q Workstation Edition, 96 GB each, 300 W, CUDA 13.1; PP-2 used host bounce | Historical/Max-Q serving numbers only; never a current regression baseline (`research/27bab-20260810/`) |
+| `pro6000sv-pair` | 2x RTX PRO 6000 Blackwell Server Edition 96 GB, sm_120a, CUDA 13.2, Gen5 x16 P2P | Retired. Pre-merge and pre-release battery receipts (`research/coldfix-20260812/`, `research/b1fix-20260810/`); source of the PP-2 lanes (batched decode, spec verdict, hardening) and Step-3.7-Flash bring-up. GPU windows held under `flock`, both cards verified at 0 MiB on entry and exit |
+| H100 80 GB | 8x / 3x / 1x HBM3 pods | The H100 board, the replica fleet, QoS lanes, endurance |
+| `rtx6000` (receipts `research/tune-data/cloud-rtx6000.jsonl`) | PRO 6000 Server Edition | Hy3 spill / quantization research (`docs/HY3-SPILL.md`) |
 
 **Which rig serves production is not recorded here.** This table exists so a number can be
 read against the hardware that produced it — that is an engine fact and it belongs in this
