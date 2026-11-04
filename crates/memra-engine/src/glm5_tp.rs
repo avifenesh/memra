@@ -189,6 +189,25 @@ pub struct Glm5TpRt {
     ar: std::sync::Mutex<Option<crate::tp_ar::ArLink>>,
 }
 
+/// Whether a TP runtime of `ranks` ranks armed on `transport` may run the device-signal link
+/// ([`crate::tp_ar::ArLink`]). Pure, so the law is unit-tested without a device.
+///
+/// The link's kernels read the peer's buffers and write the peer's signal block from inside a
+/// kernel, so they need peer access granted both ways AND proof that an SM-issued peer store
+/// lands. Only `device-push` gives both: its arm grants peer access and its byte ladder runs the
+/// push primitive, a kernel store into the peer (`tp_transport::arm_transport`).
+/// `host-canonical` grants no peer access at all, and `peer-pull`'s ladder proves
+/// consumer-issued copies, not kernel stores: on a direct-attach host the driver can stage
+/// SM-issued peer access through system memory while copies look healthy. Two contexts on one
+/// card cannot do a kernel peer store either, so the same-device gate never qualifies.
+pub(crate) fn peer_link_admits(
+    ranks: usize,
+    same_device_gate: bool,
+    transport: crate::tp_transport::TpTransport,
+) -> bool {
+    ranks == 2 && !same_device_gate && transport == crate::tp_transport::TpTransport::DevicePush
+}
+
 impl Glm5TpRt {
     /// Complete both ranks before a saved prime returns to the worker.
     pub(crate) fn prime_completion_fence(
@@ -261,11 +280,11 @@ impl Glm5TpRt {
         })
     }
 
-    /// Whether the device-signal link ([`crate::tp_ar::ArLink`]) can serve this runtime: a real
-    /// two-device group, not the same-device gate (two contexts on one card cannot do a kernel
-    /// peer store). The TP indexer's prime candidate exchange runs over it.
+    /// Whether the device-signal link ([`crate::tp_ar::ArLink`]) can serve this runtime
+    /// ([`peer_link_admits`]): a real two-device group armed on `device-push`. The TP indexer's
+    /// prime candidate exchange runs over it.
     pub fn peer_link_available(&self) -> bool {
-        self.ranks() == 2 && !self.same_device_gate
+        peer_link_admits(self.ranks(), self.same_device_gate, self.transport)
     }
 
     /// Device-side candidate exchange over the device-signal link.
@@ -276,7 +295,10 @@ impl Glm5TpRt {
         n: usize,
     ) -> Result<Vec<CudaSlice<i32>>, Box<dyn std::error::Error>> {
         if !self.peer_link_available() {
-            return Err("TP indexer exchange requires a real peer-access two-device link".into());
+            return Err(
+                "TP indexer exchange requires two devices armed on MEMRA_TP_TRANSPORT=device-push"
+                    .into(),
+            );
         }
         let engines = [root, &self.peers[0]];
         let mut guard = self.ar.lock().map_err(|_| "TP indexer link poisoned")?;
@@ -1873,6 +1895,27 @@ pub struct Glm5TpPrefixShards {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The device-signal link (the TP indexer's prime candidate exchange) needs a transport
+    /// whose arm granted peer access AND proved an SM-issued peer store: `device-push` alone.
+    /// `host-canonical` maps no peer memory, so a kernel peer read there is an illegal address
+    /// or a barrier trap; `peer-pull` proves copies only.
+    #[test]
+    fn peer_link_needs_device_push_on_two_devices() {
+        use crate::tp_transport::TpTransport::{DevicePush, HostCanonical, PeerPull};
+        assert!(peer_link_admits(2, false, DevicePush));
+        assert!(!peer_link_admits(2, false, HostCanonical));
+        assert!(!peer_link_admits(2, false, PeerPull));
+        // The same-device gate never qualifies, whatever it armed.
+        for transport in [HostCanonical, PeerPull, DevicePush] {
+            assert!(!peer_link_admits(2, true, transport));
+        }
+        // The link is two ranks.
+        for transport in [HostCanonical, PeerPull, DevicePush] {
+            assert!(!peer_link_admits(4, false, transport));
+            assert!(!peer_link_admits(1, false, transport));
+        }
+    }
 
     /// The red arm `tp_expert_split` carries, on the `wo` K slice: Q8_0 at in_f 96 (row_bytes
     /// 102) halves into 48 columns, 1.5 blocks, that still divide into 51 whole bytes. A
