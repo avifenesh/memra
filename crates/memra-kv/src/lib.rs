@@ -3056,18 +3056,16 @@ impl Cache {
                 .chain(plan.mtp_blocks.iter().map(|block| &block.layer))
                 .find(|layer| layer.index == il)
                 .ok_or_else(|| format!("cache ModelPlan has no layer {il}"))?;
-            // E4B KV-SHARING: the trailing shared_kv_layers have no k/v of their own — they
-            // attend an earlier layer's cache (hybrid_forward resolves the target). No KvLayer
-            // here: any accidental use is a loud unwrap at bring-up, and rewind/len loops
-            // (iter_mut().flatten()) skip None naturally.
-            let g4_shared = cfg.gemma4.as_ref().map(|g| g.shared_kv_layers).unwrap_or(0);
-            if g4_shared > 0 && il >= cfg.n_layer - g4_shared {
-                kv.push(None);
-                recur.push(None);
-                latent.push(None);
-                continue;
-            }
             match layer.state {
+                // E4B KV-SHARING: the plan's shared layers have no k/v of their own — they
+                // attend an earlier layer's cache (hybrid_forward resolves the target). No
+                // KvLayer here: any accidental use is a loud unwrap at bring-up, and rewind/len
+                // loops (iter_mut().flatten()) skip None naturally.
+                StatePlan::SharedKvCache { .. } => {
+                    kv.push(None);
+                    recur.push(None);
+                    latent.push(None);
+                }
                 StatePlan::KvCache { .. } | StatePlan::SlidingKvCache { .. } => {
                     // KVQUANT block constraint. Scoped to the QUANTIZED planes: it was a
                     // function-wide assert, which made any model whose cfg head dims are not
