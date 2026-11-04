@@ -292,6 +292,19 @@ fn mla_b200_split_announce(kind: &str, t_q: usize, n_head: usize, split: i32) {
 pub static MLA_DSA_DECODE_DISPATCHES: std::sync::atomic::AtomicU64 =
     std::sync::atomic::AtomicU64::new(0);
 
+/// The k-pool scorer of a PREFILL chunk on bf16 `mma.sync` tensor cores (`cu/mla_attn.cu`,
+/// "the TENSOR-CORE arm"; lane/glm5-dsa-score-tc, 2026-09-07): plain bf16 operands, one MMA
+/// per product, ~1e-3 relative on the scores. The default on sm_100a builds, with no switch
+/// (2026-11-04, `MEMRA_DSA_SCORE_TC` before): on the 2x B200 pair the TP-2 1M prime fell from
+/// 782 s to 339.8 s (docs/decisions/GLM5-B200-DOORS.md). Prefill chunks at `t_q >= 8` only:
+/// the rows-exact verify walk and decode keep the f32 scorer, so a verify row stays
+/// bit-identical to the plain decode program it is compared against. Not bit-identical to the
+/// f32 scorer, admitted like `MEMRA_MLA_TC_PREFILL`: served-prompt ids against the f32 arm.
+/// Other builds keep the f32 scorer: no receipt there.
+pub fn dsa_score_tc_default() -> bool {
+    crate::BUILT_CUDA_ARCH == "100a"
+}
+
 /// `MEMRA_B200_DSA_DECODE` (DEFAULT 2 since 2026-09-07 on sm_100a builds; `=0` is the
 /// rollback seam and `=1` the bit-identical level, both read per call), compile-time gated to
 /// sm_100a builds exactly like its sibling `MEMRA_B200_MLA_DECODE_ARM`, so a 120a/90a/89 build
@@ -329,19 +342,6 @@ pub static MLA_DSA_DECODE_DISPATCHES: std::sync::atomic::AtomicU64 =
 ///
 /// Rollback seam: unset the var (or set 0). Both arms are read per call, so a rollback is the
 /// next request, not a restart.
-/// The k-pool scorer of a PREFILL chunk on bf16 `mma.sync` tensor cores (`cu/mla_attn.cu`,
-/// "the TENSOR-CORE arm"; lane/glm5-dsa-score-tc, 2026-09-07): plain bf16 operands, one MMA
-/// per product, ~1e-3 relative on the scores. The default on sm_100a builds, with no switch
-/// (2026-11-04, `MEMRA_DSA_SCORE_TC` before): on the 2x B200 pair the TP-2 1M prime fell from
-/// 782 s to 339.8 s (docs/decisions/GLM5-B200-DOORS.md). Prefill chunks at `t_q >= 8` only:
-/// the rows-exact verify walk and decode keep the f32 scorer, so a verify row stays
-/// bit-identical to the plain decode program it is compared against. Not bit-identical to the
-/// f32 scorer, admitted like `MEMRA_MLA_TC_PREFILL`: served-prompt ids against the f32 arm.
-/// Other builds keep the f32 scorer: no receipt there.
-pub fn dsa_score_tc_default() -> bool {
-    crate::BUILT_CUDA_ARCH == "100a"
-}
-
 fn mla_dsa_decode_level() -> u32 {
     if !cfg!(memra_sm100_tcgen05) {
         return 0;
