@@ -6960,11 +6960,6 @@ const SPEC_COST_FAR_N: usize = 7;
 /// A spec slot prices a far concurrency (n >= SPEC_COST_FAR_N) only from n-1..=n+1.
 const SPEC_COST_FAR_NEIGHBOR: usize = 1;
 
-/// The brief probe at an unmeasured far concurrency: open this long, at most once per
-/// SPEC_COST_REALIZED_TTL per (model, n). 2 s is 12-18 ticks at 8-16 sessions (110-160 ms per
-/// tick), enough for the three steady samples a slot needs when the cohort is all on spec.
-const SPEC_COST_FAR_PROBE: std::time::Duration = std::time::Duration::from_secs(2);
-
 /// How long a realized spec rate stays evidence against the tie probe. One max-length turn (768
 /// tokens) at the agentic c=2 per-user rate (about 12 tok/s) is 64 s: a slot older than that
 /// was measured on a different turn, depth and acceptance than the one being decided.
@@ -7012,7 +7007,7 @@ impl SpecCostEntry {
             return self.realized_now(k, r);
         }
         // Far concurrency: a spec price needs a measured slot at n or a bounded neighbor;
-        // without one there is no price (0.0), and the verdict decides plain or a brief probe.
+        // without one there is no price (0.0), and the verdict serves plain.
         let far = k > 0 && n >= SPEC_COST_FAR_N;
         let same_kind = |kk: usize| (kk == 0) == (k == 0);
         let rank = |m: usize, kk: usize| -> (u8, usize) {
@@ -7195,9 +7190,9 @@ fn spec_cost_best_k(entry: &SpecCostEntry, n: usize, rung: usize) -> Option<(usi
 
 /// The cost model's draft length for `model` at `n` concurrent sessions (0 = plain), or None
 /// when the model has no table or not enough acceptance history (the band then decides).
-/// The draft length a far concurrency would probe: the largest K in 1..=rung whose verify rows
-/// fit one pooled forward, when n >= SPEC_COST_FAR_N and no spec slot is measured at n or a
-/// bounded neighbor. None otherwise.
+/// When n >= SPEC_COST_FAR_N and no spec slot is measured at n or a bounded neighbor: the
+/// largest K in 1..=rung whose verify rows fit one pooled forward (the draft length a
+/// measurement would need). None otherwise.
 fn spec_far_unmeasured(entry: &SpecCostEntry, n: usize, rung: usize) -> Option<usize> {
     if n < SPEC_COST_FAR_N {
         return None;
@@ -7211,41 +7206,22 @@ fn spec_far_unmeasured(entry: &SpecCostEntry, n: usize, rung: usize) -> Option<u
     (1..=rung).rev().find(|k| n * (k + 1) <= 16)
 }
 
-/// Whether the brief far-concurrency probe for (model, n) is open now: the first ask opens a
-/// SPEC_COST_FAR_PROBE window; after it closes the next one opens SPEC_COST_REALIZED_TTL
-/// after the last opened.
-fn spec_far_probe_open(model: &str, n: usize) -> bool {
-    type Opened = HashMap<(String, usize), Instant>;
-    static OPENED: std::sync::OnceLock<std::sync::Mutex<Opened>> = std::sync::OnceLock::new();
-    let mut opened = OPENED
-        .get_or_init(|| std::sync::Mutex::new(HashMap::new()))
-        .lock()
-        .unwrap();
-    let key = (model.to_string(), n);
-    match opened.get(&key).map(|t| t.elapsed()) {
-        Some(e) if e < SPEC_COST_FAR_PROBE => true,
-        Some(e) if e < SPEC_COST_REALIZED_TTL => false,
-        _ => {
-            opened.insert(key, Instant::now());
-            true
-        }
-    }
-}
-
 fn spec_cost_verdict(model: &str, n: usize, rung: usize) -> Option<usize> {
     let reg = spec_cost_registry().lock().unwrap();
     let entry = reg.get(model)?;
     // FAR CONCURRENCY (n >= SPEC_COST_FAR_N) with no spec slot measured at n or its neighbor:
-    // never price spec by extrapolation; probe briefly, then plain.
-    if let Some(kp) = spec_far_unmeasured(entry, n, rung) {
-        let k = if spec_far_probe_open(model, n) { kp } else { 0 };
-        if spec_cost_log_due(model, n, rung, k) {
+    // never price spec by extrapolation; serve plain. A brief probe (2 s, once per 64 s) was
+    // served first (f276032189): on the GB10 agentic cell it never produced a measured slot,
+    // since an all-spec cohort at 7+ sessions does not form inside the window, and fp32 c8
+    // ran 61.14/61.32/61.55 against 62.10-62.44 without it.
+    if spec_far_unmeasured(entry, n, rung).is_some() {
+        if spec_cost_log_due(model, n, rung, 0) {
             eprintln!(
-                "[spec-cost] model={model:?} n={n} rung={rung} -> K={k} (far concurrency, no                  measured spec slot near n: {})",
-                if k > 0 { "brief probe" } else { "plain" }
+                "[spec-cost] model={model:?} n={n} rung={rung} -> K=0 (far concurrency, no \
+                 measured spec slot near n: plain)"
             );
         }
-        return Some(k);
+        return Some(0);
     }
     let Some((k, spec_rate, plain_rate)) = spec_cost_best_k(entry, n, rung) else {
         // EXPLORE WITHOUT ACCEPTANCE HISTORY. The verdict needs the model's acceptance, and
@@ -44368,7 +44344,7 @@ mod tests {
     }
 
     /// Far concurrency (n >= 7): spec is never priced by extrapolating slots measured under 7
-    /// sessions; a measured slot at n or n+-1 prices it; with none, the verdict probes briefly.
+    /// sessions; a measured slot at n or n+-1 prices it; with none, the verdict serves plain.
     #[test]
     fn far_concurrency_needs_a_measured_spec_slot_near_n() {
         let mut e = gb10_entry([0.7, 0.5, 0.35]);
@@ -44389,22 +44365,11 @@ mod tests {
             None,
             "below 7: unchanged"
         );
-        // A measured neighbor prices it, and the probe is no longer needed.
+        // A measured neighbor prices it.
         e.realized.insert((7, 1), slot(50.0, 10));
         assert_eq!(super::spec_far_unmeasured(&e, 8, 3), None);
         let (k, spec, _) = super::spec_cost_best_k(&e, 8, 3).unwrap();
         assert!(k == 0 && spec > 0.0 && spec < 60.0, "{spec}");
-    }
-
-    /// The far probe opens once, stays open SPEC_COST_FAR_PROBE, then stays shut.
-    #[test]
-    fn far_probe_window_opens_once() {
-        assert!(super::spec_far_probe_open("far-probe-model", 8));
-        assert!(super::spec_far_probe_open("far-probe-model", 8));
-        assert!(
-            super::spec_far_probe_open("far-probe-model", 9),
-            "keyed per n"
-        );
     }
 
     /// A spec slot is priced at today's acceptance: measured when the window expected half the
