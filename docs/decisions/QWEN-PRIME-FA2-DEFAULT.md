@@ -31,8 +31,19 @@ switches go.
 **Scope:** one card class (the 170-SM RTX 5090) and one geometry. The naked prime chunk is
 unchanged, so a naked command reaches FA2 only on a deployment that sets chunk 1024. Whether
 chunk 1024 with FA2 should replace the 4096 cap as the naked chunk on that profile is a separate
-question: no receipt compares those two arms. On that profile `MEMRA_PRIME_CHUNK=1024` against
-any other value is now a class change, which the `MEMRA_PRIME_CHUNK` row states.
+question: no receipt compares those two arms. The open cell that decides it is a cold-TTFT A/B on
+the 170-SM card, FA2 at `MEMRA_PRIME_CHUNK=1024` against the existing kernel at the naked chunk
+(the 4096 cap), at 8k, 32k and 131k, three boots per arm in both orders. On that profile
+`MEMRA_PRIME_CHUNK=1024` against any other value is now a class change, which the
+`MEMRA_PRIME_CHUNK` row states.
+
+**Owed (acceptance):** FA2 changes the prefill numeric class, and prefill writes the prompt KV and
+hidden lineage the draft head reads (AGENTS.md, Prefill and acceptance). The receipt has
+same-binary K=1..8 self-consistency, the margin gate and NLL, and every campaign boot shows
+`dspark-acc` engagement, but there is no OFF-against-ON acceptance row. Each Qwen 24 Q / 4 KV / d256 checkpoint this
+profile serves owes one with its draft at chunk 1024 on the 170-SM card. The in-process OFF/ON
+instruments are deleted, so the OFF arm is the binary built before this change and the ON arm is
+this one, on the same prompt set.
 
 **Not decided here:** `MEMRA_PRIME_KV_T3`, the three-plane staging door on the same geometry,
 stays default OFF. Its receipt (`research/qwen-prefill-20260909/RESULTS.md`) is exact and faster,
