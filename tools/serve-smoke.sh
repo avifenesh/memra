@@ -402,37 +402,37 @@ fi
 #       eog_ids() union) and no channel/turn tag ever reaches content (gap 2);
 #   (c) a thinking-ON request separates: reasoning non-empty, content still clean;
 #   (d) the server survived: /health green after all of it, zero panic lines in the log;
-#   (e) the (a) chat streamed: no tag in any delta, and the deltas reassemble to the
-#       non-stream content and reasoning (greedy). This covers the stream half of the
-#       unopened-thought rule (docs/decisions/GEMMA-UNOPENED-THOUGHT.md): E4B's thought
-#       after the closed channel goes to reasoning on both shapes, and a card that writes
-#       none streams the content it streamed before.
+#   (e) stream against non-stream on the same binary (greedy): no tag in any delta, and
+#       the deltas reassemble to the non-stream content and reasoning. Two chats: the (a)
+#       chat, whose opening resolves inside the stream hold-back (at E4B's unopened close,
+#       or at the turn end), and a thinking-off chat whose content passes the 256-byte
+#       stream cap (GEMMA_STREAM_OPENING_CAP in toolcall.rs). On a card that writes no
+#       unopened close the stream hands its opening to content at the cap while the
+#       non-stream parser holds the whole turn. On E4B an unopened thought of 256 bytes or
+#       more on that chat FAILs here (a tag in a delta): the cap is too small for it.
+#       This is the stream half of the unopened-thought rule
+#       (docs/decisions/GEMMA-UNOPENED-THOUGHT.md). It does not compare against the binary
+#       before the rule; the toolcall.rs unit tests pin that a turn with no unopened close
+#       keeps its content and events.
 # same canonical path as local-ci.sh's G12 (MEMRA_G12_MODEL overrides there too)
 GEMMA_MODEL="${GEMMA_MODEL:-/data/ai-ml/models/gemma-4-12b-it-qat/gemma-4-12b-it-qat-q4_0.gguf}"
 if [ -f "$GEMMA_MODEL" ]; then
   echo "== serve-smoke: gemma4 arm (default scheduler; the worker-panic regression) =="
   if start_server "smoke=$GEMMA_MODEL"; then
-    gchat() { # extra-json-fields
+    gchat() { # extra-json-fields [prompt [max_tokens]]
       curl -sf -m 300 $BASE/v1/chat/completions -H 'Content-Type: application/json' \
-        -d "{\"model\":\"smoke\",\"messages\":[{\"role\":\"user\",\"content\":\"Reply with exactly: ok\"}],
-             \"max_tokens\":64,\"temperature\":0${1:+,$1}}"
+        -d "{\"model\":\"smoke\",\"messages\":[{\"role\":\"user\",\"content\":\"${2:-Reply with exactly: ok}\"}],
+             \"max_tokens\":${3:-64},\"temperature\":0${1:+,$1}}"
     }
-    R=$(gchat '')
-    echo "$R" | python3 -c '
-import json,sys
-r = json.load(sys.stdin)
-c = r["choices"][0]["message"].get("content") or ""
-assert c.strip(), "empty content"
-for tag in ("<turn|>", "<|channel>", "<channel|>", "<|turn>"):
-    assert tag not in c, f"tag leak: {tag} in {c!r}"
-assert r["choices"][0]["finish_reason"] == "stop", "did not stop at turn end"
-' && PASS "gemma4 1-request on DEFAULT scheduler (clean content, stop at turn end)" \
-  || FAIL "gemma4 default-scheduler request"
-    S=$(gchat '"stream":true')
-    R="$R" S="$S" python3 -c '
+    # (e): $1 non-stream body, $2 stream body of the same chat, $3 the least content bytes
+    # the answer must carry (0 = no floor).
+    gstream_check() {
+      R="$1" S="$2" MIN="$3" python3 -c '
 import json, os
 m = json.loads(os.environ["R"])["choices"][0]["message"]
 want_c, want_r = m.get("content") or "", m.get("reasoning") or ""
+floor = int(os.environ["MIN"])
+assert len(want_c.encode()) >= floor, f"content is {len(want_c.encode())} bytes, under {floor}: {want_c!r}"
 content, reasoning, frames = "", "", 0
 for line in os.environ["S"].splitlines():
     if not line.startswith("data: ") or line == "data: [DONE]":
@@ -447,8 +447,29 @@ for line in os.environ["S"].splitlines():
 assert frames, "no stream frames"
 assert content == want_c, f"stream content {content!r} != non-stream {want_c!r}"
 assert reasoning == want_r, f"stream reasoning {reasoning!r} != non-stream {want_r!r}"
-' && PASS "gemma4 stream: no tag in any delta, reassembles to the non-stream message" \
-  || FAIL "gemma4 stream reassembly"
+'
+    }
+    R=$(gchat '')
+    echo "$R" | python3 -c '
+import json,sys
+r = json.load(sys.stdin)
+c = r["choices"][0]["message"].get("content") or ""
+assert c.strip(), "empty content"
+for tag in ("<turn|>", "<|channel>", "<channel|>", "<|turn>"):
+    assert tag not in c, f"tag leak: {tag} in {c!r}"
+assert r["choices"][0]["finish_reason"] == "stop", "did not stop at turn end"
+' && PASS "gemma4 1-request on DEFAULT scheduler (clean content, stop at turn end)" \
+  || FAIL "gemma4 default-scheduler request"
+    S=$(gchat '"stream":true')
+    gstream_check "$R" "$S" 0 \
+      && PASS "gemma4 stream: no tag in any delta, reassembles to the non-stream message" \
+      || FAIL "gemma4 stream reassembly"
+    LONG='Explain in about 150 words how the water cycle works.'
+    RL=$(gchat '' "$LONG" 200)
+    SL=$(gchat '"stream":true' "$LONG" 200)
+    gstream_check "$RL" "$SL" 257 \
+      && PASS "gemma4 long stream: past the 256-byte opening cap, reassembles to non-stream" \
+      || FAIL "gemma4 long stream reassembly"
     R=$(gchat '"reasoning_effort":"low"')
     echo "$R" | python3 -c '
 import json,sys
