@@ -965,7 +965,13 @@ gated by the official `openai` Python SDK against a live server
   2026-08-07): `<|channel>thought\n…\n<channel|>` blocks route to `reasoning` the same
   way — tags, the channel label and the bracketing newlines are syntax — and the splitter
   runs on *every* gemma4 chat request (channels can open mid-stream even under the
-  closed-channel default). Turn-end control tokens (`<turn|>`, `<end_of_turn>`,
+  closed-channel default). Text before an unopened `<channel|>` at the start of the turn is
+  reasoning too: E4B writes a thought after the closed channel and ends it with a stray
+  close (owner rule, 2026-11-04). A non-stream response splits the whole turn after the
+  fact; a stream holds its opening until a `<channel|>`, a `<|channel>` or `<|tool_call>`
+  open or the turn end resolves it, for at most 256 bytes, so a turn that opens with content
+  sends its first delta at most that late
+  ([decision](decisions/GEMMA-UNOPENED-THOUGHT.md)). Turn-end control tokens (`<turn|>`, `<end_of_turn>`,
   `<|im_end|>`) stop generation (`eog_ids()` union) and never reach the client as text.
 - **`max_tokens` omitted** ⇒ context-bounded budget (session ctx − prompt, capped at the
   model's trained context) — the OpenAI default-when-omitted semantics, not a silent
