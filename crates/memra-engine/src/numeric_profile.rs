@@ -18,6 +18,10 @@
 //! spawner's profile first (`let profile = NumericProfile::current();` before the spawn,
 //! `let _numeric = profile.enter();` inside the closure).
 //!
+//! `tools/check-numeric-scope.py` (pre-push) refuses a public `HybridModel` method that takes an
+//! `Engine`, a prime-walker step or a model thread whose first statement is not the install; a
+//! thread that launches nothing says `numeric-scope: host-only` instead.
+//!
 //! Env overrides keep their meaning: `MEMRA_RMS_BLOCK`, `MEMRA_FA_VEC_MIN`,
 //! `MEMRA_FA_V4_MAX`, `MEMRA_FA_SPW`, `MEMRA_FA_SP512`, `MEMRA_Q40_MR`, `MEMRA_MMQ_SK` and the
 //! step37 door flags win over the profile for every model, as they did over the old statics.
