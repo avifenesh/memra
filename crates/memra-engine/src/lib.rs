@@ -2108,8 +2108,9 @@ pub struct Engine {
     /// its owner. Set only by the door's installer; false keeps the legacy prefetch condition.
     expert_bank_prefetch: std::sync::atomic::AtomicBool,
     /// The legacy slot cache's in-token prefetch of the next routed expert, by card class, read
-    /// once from the device name at construction (`moe_cache::in_token_prefetch_for_device`).
-    moe_prefetch: bool,
+    /// once from the device name at construction (`moe_cache::in_token_prefetch_for_device`):
+    /// the arm and the name of its source, which the slot cache's boot line states.
+    moe_prefetch: (bool, &'static str),
     /// DAY60: `--moe-dispatch-clock` (a gate binary's log-only flag): every MoE slot cache built
     /// after it is set keeps a dispatch clock (both the legacy program and the door).
     moe_dispatch_clock: std::sync::atomic::AtomicBool,
@@ -3923,7 +3924,7 @@ impl Engine {
         // The MoE in-token prefetch follows this device's card class. An unreadable name
         // classifies as no card and keeps it off.
         let moe_prefetch =
-            crate::moe_cache::in_token_prefetch_for_device(&gpu.ctx.name().unwrap_or_default()).0;
+            crate::moe_cache::in_token_prefetch_for_device(&gpu.ctx.name().unwrap_or_default());
         // A force flag this build cannot honor stops the boot, not the first long prompt.
         fa3_force_verdict(
             std::env::var("MEMRA_FA3").ok().as_deref(),
@@ -6750,7 +6751,13 @@ impl Engine {
     /// Whether this device's card class takes the legacy slot cache's in-token prefetch
     /// (`moe_cache::in_token_prefetch_for_device`).
     pub(crate) fn moe_prefetch(&self) -> bool {
-        self.moe_prefetch
+        self.moe_prefetch.0
+    }
+
+    /// Why [`Engine::moe_prefetch`] reads as it does: the receipt that keys this card class, or
+    /// `no-receipt-default`.
+    pub(crate) fn moe_prefetch_source(&self) -> &'static str {
+        self.moe_prefetch.1
     }
 
     /// DAY50: whether the door prefetches through its owner (the forward's prefetch condition).

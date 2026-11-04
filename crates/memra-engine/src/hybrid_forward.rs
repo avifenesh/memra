@@ -1024,7 +1024,7 @@ fn moe_grouped_prefill_enabled() -> bool {
 }
 
 /// Deterministic in-token expert prefetch: overlaps the next routed expert's memory-source H2D on
-/// the copy stream. The default on the card classes whose DAY59 cell passed (`Engine::moe_prefetch`,
+/// the copy stream. The default on the cards whose DAY59 cell passed (`Engine::moe_prefetch`,
 /// `moe_cache::in_token_prefetch_for_device`); selecting the opt-in worker spill backend enables
 /// the same known-next hook for disk on any card.
 fn moe_prefetch_enabled(e: &Engine) -> bool {
