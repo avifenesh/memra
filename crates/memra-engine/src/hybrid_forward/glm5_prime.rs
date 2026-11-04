@@ -142,6 +142,7 @@ impl Glm5TrunkPrime {
         e: &Engine,
         cache: &mut Cache,
     ) -> Result<usize, PrimeError> {
+        let _numeric = m.enter_numeric();
         let &(start, end) = self.ranges.get(self.cursor).ok_or("GLM5 trunk exhausted")?;
         if cache.pos != self.base + start {
             return Err("GLM5 prime cursor does not match its frozen range".into());
@@ -286,6 +287,7 @@ impl Glm5TrunkPrime {
                     let seq_end = self.seq_end;
                     let arm = &arm;
                     scope.spawn(move || -> Result<usize, String> {
+                        let _numeric = m.enter_numeric();
                         let slot = m
                             .prime_hyper_pp2_stage0_enqueue(
                                 e,
@@ -369,6 +371,7 @@ impl HybridModel {
             .unwrap_or(1)
     }
     pub(crate) fn glm5_prime_fence(&self, e: &Engine) -> Result<(), PrimeError> {
+        let _numeric = self.enter_numeric();
         if crate::pp::pp_cuts(self.layers.len()).is_some() && !crate::pp::pp2_streams_off() {
             let rt = crate::pp::PpNRt::get(e)?;
             rt.publish_all_to(&e.stream())?;

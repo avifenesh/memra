@@ -508,6 +508,7 @@ pub(crate) fn walk_graphed(
     hi: usize,
     cache: &mut Cache,
 ) -> Res<bool> {
+    let _numeric = m.enter_numeric();
     let n_embd = m.cfg.n_embd as usize;
     let width = topology.streams * n_embd;
     if x.len() != width || x_peer.len() != width || pos_d.len() != 1 {

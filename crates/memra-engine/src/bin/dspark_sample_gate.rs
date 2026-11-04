@@ -179,6 +179,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mode = std::env::args().nth(3).unwrap_or_else(|| "all".into());
     let e = Engine::new(0)?;
     let model = load_model(&target, &e)?;
+    let _numeric = model.enter_numeric();
     let draft = DflashDraft::load(&e, std::path::Path::new(&draft_dir))?;
     println!(
         "target loaded ({} layers); draft block {}, dflash2 {}, markov {}",

@@ -3078,17 +3078,16 @@ pub struct Gemma4MoeBits {
 /// safetensors families quantize here. Draft-head precision cannot change served output — verify
 /// arbitrates every drafted token — so acceptance is the only quantity at risk.
 ///
-/// `sliding_gated_moe`: the loading model's plan is SlidingGatedMoe. The unset default follows
-/// that plan, not the process, so a model loaded after a step37 load keeps its BF16 head.
+/// The unset default is the loading model's step37 serving default (its profile, installed for
+/// the load), so a model loaded beside a step37 model keeps its BF16 head.
 fn load_mtp_head_maybe_nvfp4(
     e: &Engine,
     src: &dyn TensorSource,
     name: &str,
-    sliding_gated_moe: bool,
 ) -> Result<Option<GpuTensor>, Box<dyn std::error::Error>> {
     if !{
         static ENV: std::sync::OnceLock<Option<bool>> = std::sync::OnceLock::new();
-        crate::step37_door_for_plan(&ENV, "MEMRA_MTP_HEAD_NVFP4", sliding_gated_moe)
+        crate::step37_door(&ENV, "MEMRA_MTP_HEAD_NVFP4")
     } {
         return load_opt(e, src, name);
     }
@@ -3972,9 +3971,21 @@ pub struct HybridModel {
     pub(crate) draft_state_bytes: std::sync::atomic::AtomicUsize,
     /// Test helper: extra device ordinals participating in this model for structural tests.
     pub test_extra_devices: Vec<usize>,
+    /// This model's numeric profile (`crate::numeric_profile`), keyed once at load. Every
+    /// model entry point installs it ([`Self::enter_numeric`]) so this model's launches read
+    /// their own kernel defaults whatever else the process has loaded.
+    pub numeric: crate::NumericProfile,
 }
 
 impl HybridModel {
+    /// Install this model's numeric profile on the calling thread until the scope drops. Every
+    /// non-private method enters it first; a caller that launches engine kernels for this
+    /// model outside its methods (a gate bin's reference path, a vision tower serving it)
+    /// enters it too.
+    pub fn enter_numeric(&self) -> crate::NumericScope {
+        self.numeric.enter()
+    }
+
     pub fn install_rewrite_bundle(
         &mut self,
         bundle: &std::path::Path,
@@ -4268,17 +4279,16 @@ impl HybridModel {
         let gemma_program = batch_program == crate::plan_backend::DecodeBatchProgram::Gemma;
         let sliding_gated_moe_program =
             batch_program == crate::plan_backend::DecodeBatchProgram::SlidingGatedMoe;
-        // Per-model numeric defaults: they live in process-global statics, so decide
-        // the whole set HERE, before any tensor upload or door read, and claim it. A second
-        // model in this process that wants a different set refuses by name instead of running
-        // this one's program (see `ModelNumericDefaults`). The stores below apply exactly
-        // these values.
+        // Per-model numeric profile (`crate::numeric_profile`): decided HERE, before any
+        // tensor upload or door read, installed on this thread for the rest of the load, and
+        // stored on the model, whose every entry point installs it again for its own launches.
+        // A co-loaded model runs its own profile, in any load or call order.
         let gemma_real_moe = plan
             .trunk_operations()
             .contains(&memra_gguf::model_plan::OperationKind::MoeMlp);
         let spec_mmq_key =
             std::env::var("MEMRA_DRAFT").is_ok() && std::env::var("MEMRA_MMQ_SK").is_err();
-        let numeric = crate::ModelNumericDefaults::for_model(
+        let numeric = crate::NumericProfile::for_model(
             cfg.n_head.checked_div(cfg.n_head_kv).unwrap_or(0),
             gemma_program.then_some(gemma_real_moe),
             cfg.arch.is_glm5_next() && env!("MEMRA_BUILT_CUDA_ARCH") == "100a",
@@ -4286,6 +4296,7 @@ impl HybridModel {
             spec_mmq_key.then_some(cfg.n_embd),
         );
         crate::claim_model_numeric_defaults(&format!("{} ({:?})", cfg.name, cfg.arch), numeric)?;
+        let _numeric = numeric.enter();
         if matches!(
             src.expert_activation_precision(),
             memra_gguf::source::ExpertActivationPrecision::Bf16
@@ -4297,13 +4308,16 @@ impl HybridModel {
         }
         // OWNER FLIP 2026-08-27: the gated step37 serving doors (t-row walk, W8 q8 mirrors, SWA
         // ring, NVFP4 draft heads, prejoin/head-rows/weight-once verify fixes) default ON for
-        // this family. Armed HERE — before any tensor upload, cache sizing, or mirror build reads
-        // a door — and only for the SlidingGatedMoe program; every door keeps its =0 kill switch.
-        // The co-load guard runs first: the defaults are process-wide and the W8 hybrid half
-        // reaches generic GEMVs, so a mixed-family process refuses here (lib.rs co-load audit).
-        crate::admit_step37_coload(sliding_gated_moe_program)?;
+        // this family through its profile (`step37_serving`), installed above before any tensor
+        // upload, cache sizing, or mirror build reads a door; every door keeps its =0 kill
+        // switch. The SWA ring default is process-wide but read per plan
+        // (`cache::swa_ring_on_for_plan`), so it is armed here for the SlidingGatedMoe program.
         if numeric.step37_serving {
-            crate::arm_step37_serving_defaults();
+            crate::cache::set_swa_ring_default(true);
+            eprintln!(
+                "[step37-defaults] serving doors armed ON for the SlidingGatedMoe program \
+                 (per-flag =0 kills, =1 forces; owner flip 2026-08-27)"
+            );
         }
         // Refuse an architecture that declares no attention output-gate layout, BEFORE any
         // tensor is uploaded or split. The old permissive default answered "qwen3.5 FusedQ" for
@@ -4327,17 +4341,13 @@ impl HybridModel {
                 ),
             }
         }
-        // SPEC-SERVING stream-k key, per model, set at LOAD so it governs the PRIME too
-        // (2026-07-27; explicit MEMRA_MMQ_SK wins). The former per-process timing selector
-        // made knife-edge prime shapes BIMODAL across independent boots and was removed
-        // 2026-08-14. Big dense (n_embd >= 3500) still forces tiling under spec intent;
-        // MoE/small models defer to the deterministic fail-closed TILE form unless
-        // MEMRA_MMQ_SK_FORM pins a separately measured arm.
-        // An earlier attempt set this in generate_spec_gemma — too late, the prime's
-        // GEMMs had already selected their form.
-        if spec_mmq_key {
-            crate::MMQ_SK_FORCE.store(numeric.mmq_sk_force, std::sync::atomic::Ordering::Relaxed);
-        }
+        // SPEC-SERVING stream-k key (`numeric.mmq_sk_force`), per model, keyed at LOAD so it
+        // governs the PRIME too (2026-07-27; explicit MEMRA_MMQ_SK wins). The former
+        // per-process timing selector made knife-edge prime shapes BIMODAL across independent
+        // boots and was removed 2026-08-14. Big dense (n_embd >= 3500) still forces tiling under
+        // spec intent; MoE/small models defer to the deterministic fail-closed TILE form unless
+        // MEMRA_MMQ_SK_FORM pins a separately measured arm. An earlier attempt set this in
+        // generate_spec_gemma — too late, the prime's GEMMs had already selected their form.
         // B0 FIX (hoisted): cfg.n_layer == block_count INCLUDES the MTP/NextN block(s)
         // (41 for the 35B-MoE); the trunk is n_layer - nextn. Computed before any tensor
         // upload because the M2 sharded loader (crate::pp::layer_engine) places tensors
@@ -5048,7 +5058,6 @@ impl HybridModel {
                         e,
                         src,
                         &p("nextn.shared_head_head.weight"),
-                        sliding_gated_moe_program,
                     )?
                     .or(load_opt(e, src, &p("nextn.shared_head.weight"))?),
                     d2t: None,
@@ -5604,86 +5613,33 @@ impl HybridModel {
         // scores -> all-NaN decode logits (receipts: research/122b-bringup-20260806/, arm
         // battery: v4/deep MISMATCH+NaN, v3/v2/smem/reg/scalar all MATCH). The hd512 lane
         // already carries its own capacity guard at dispatch ("gqa <= 16 = fa_v4_smem_512's
-        // q-array capacity"); hd256 v4 never got one. Key FA_V4_MAX_DEFAULT=0 at load so
+        // q-array capacity"); hd256 v4 never got one. The profile keys fa_v4_max=0 so
         // EVERY v4 dispatch site (eager, rows-verify, dc, rows_dc, windowed, seqs) flips to
         // the v3 lane together — decode/verify stay kernel-family-identical (the parity law).
         // Explicit MEMRA_FA_V4_MAX env still wins (diagnostic seam). The real v4 gqa16
         // extension is a kernel change gated on its own battery + perf receipts (fix brief
         // in research/122b-bringup-20260806/VERDICT.md).
-        // INTERIM LATCH GUARD (S15:F1): these defaults are still process globals that their
-        // readers latch at first dispatch. A load that comes after another model's first
-        // dispatch cannot apply its own value, so it refuses by name instead of decoding under
-        // the other model's program (for the v4 threshold: all-NaN logits at gqa>8).
-        if numeric.fa_v4_max != crate::ModelNumericDefaults::PROCESS.fa_v4_max {
-            if let Some(msg) = crate::fa_v4_max_default_conflict(
-                numeric.fa_v4_max,
-                &format!(
-                    "gqa {} > fa_v4_smem capacity 8; the v4 kernels decode all-NaN past it",
-                    cfg.n_head / cfg.n_head_kv
-                ),
-            ) {
-                return Err(msg.into());
-            }
-            crate::FA_V4_MAX_DEFAULT.store(numeric.fa_v4_max, std::sync::atomic::Ordering::Relaxed);
+        if numeric.fa_v4_max != crate::NumericProfile::BASE.fa_v4_max {
             eprintln!(
                 "[fa] v4 decode family disabled: gqa {} > fa_v4_smem capacity 8 (v3 lane serves)",
                 cfg.n_head / cfg.n_head_kv
             );
         }
-
-        if gemma_program {
-            // The values are `ModelNumericDefaults::for_model`'s (claimed above); the
-            // measurements behind them stay here.
-            if let Some(msg) =
-                crate::fa_vec_min_default_conflict(numeric.fa_vec_min, "gemma4 fa-vec crossover")
-                    .or_else(|| {
-                        crate::rms_block_default_conflict(
-                            numeric.rms_block,
-                            "gemma4 rms_norm block",
-                        )
-                    })
-            {
-                return Err(msg.into());
-            }
-            // gemma4 fa-vec crossover default (measured sweep 2026-07-10; env overrides).
-            crate::FA_VEC_MIN_DEFAULT
-                .store(numeric.fa_vec_min, std::sync::atomic::Ordering::Relaxed);
-            // windowed split per gemma variant (2026-07-12 sweeps): MoE 26B = 32 (grid-limited
-            // t=1 under the raw-e4m3 sV ceiling), dense 31B = 64 (37.13 vs 36.87 at 1.7k, N=2).
-            crate::FA_SPW_DEFAULT.store(numeric.fa_spw, std::sync::atomic::Ordering::Relaxed);
-            // hd512 global split per variant (26B=16 landed 2026-07-11; 31B=32 swept 2026-07-12).
-            crate::FA_SP512_DEFAULT.store(numeric.fa_sp512, std::sync::atomic::Ordering::Relaxed);
-            // gemma4 router w8 RE-ARBITRATED 2026-08-01 (g26 decode dig): the 2026-07-31
-            // knife-edge that stored false here was single-synthetic-prompt roulette — on 6
-            // real prompts the w8 twin's gate outcome is IDENTICAL to the lone-warp form
-            // (5 MATCH/5 MATCH; the one MISMATCH prompt fails both arms with the same
-            // argmax pair, router-independent). w8 = +13% g26 decode (182->206 tok/s x3
-            // interleaved, H100). Receipts: research/g26-decode-20260801/. gemma4 now rides
-            // the global default (true); MEMRA_ROUTER_V2=0 is the rollback seam.
-            // fused t=1 pair/triple mr1 per variant (2026-07-14 DRAM-duty arc: dense +1.1%
-            // short / +0.6% depth on 31B; MoE 26B −1.2% — stays mr2).
-            crate::FUSED_MR1_DEFAULT.store(numeric.fused_mr1, std::sync::atomic::Ordering::Relaxed);
-            // gemma4 rms_norm block 1024 (single-row 2816-col norms; battery-arbitrated per model).
-            crate::RMS_BLOCK_DEFAULT.store(numeric.rms_block, std::sync::atomic::Ordering::Relaxed);
-            // gemma4 fa split ladder (d1736 sweep; see fa_split_keys).
-            crate::FA_SP_GEMMA.store(numeric.fa_sp_gemma, std::sync::atomic::Ordering::Relaxed);
-            // depth fa: PARITY LAW (2026-07-10) — decode and verify share the rows_w/rows_dpl16
-            // kernel symbols (decode t=1), so lane choice is freely tunable; v4 measured the
-            // depth winner. Seams: MEMRA_FA_V4_MAX / MEMRA_FA_SMEM_TKV / MEMRA_GEMMA_ROWS_W.
-        }
-        // GLM-5.3-Flash on sm_100a builds: rms_norm block 1024 (B200 posture flip 2026-09-06;
-        // +2.59% alone and inside every all4 receipt, darklanes
-        // research/glm5-b200-mint-20260904/LANE.md). `MEMRA_RMS_BLOCK=<n>` still overrides;
-        // other archs keep the per-model default above.
-        if cfg.arch.is_glm5_next() && env!("MEMRA_BUILT_CUDA_ARCH") == "100a" {
-            if let Some(msg) = crate::rms_block_default_conflict(
-                numeric.rms_block,
-                "GLM-5.3-Flash sm_100a rms_norm block",
-            ) {
-                return Err(msg.into());
-            }
-            crate::RMS_BLOCK_DEFAULT.store(numeric.rms_block, std::sync::atomic::Ordering::Relaxed);
-        }
+        // gemma4 keys its fa-vec crossover, windowed and hd512 splits, fused q4_0 row mapping,
+        // rms_norm block and split-ladder seam in `numeric` (`NumericProfile::for_model` holds
+        // the measurements). Its router w8 form was RE-ARBITRATED 2026-08-01 (g26 decode dig):
+        // the 2026-07-31 knife-edge that turned it off for gemma was single-synthetic-prompt
+        // roulette — on 6 real prompts the w8 twin's gate outcome is IDENTICAL to the lone-warp
+        // form (5 MATCH/5 MATCH; the one MISMATCH prompt fails both arms with the same argmax
+        // pair, router-independent). w8 = +13% g26 decode (182->206 tok/s x3 interleaved, H100).
+        // Receipts: research/g26-decode-20260801/. gemma4 rides the global default (true);
+        // MEMRA_ROUTER_V2=0 is the rollback seam. Depth fa: PARITY LAW (2026-07-10) — decode and
+        // verify share the rows_w/rows_dpl16 kernel symbols (decode t=1), so lane choice is
+        // freely tunable; v4 measured the depth winner. Seams: MEMRA_FA_V4_MAX /
+        // MEMRA_FA_SMEM_TKV / MEMRA_GEMMA_ROWS_W.
+        // GLM-5.3-Flash on sm_100a builds keys rms_norm block 1024 (B200 posture flip
+        // 2026-09-06; +2.59% alone and inside every all4 receipt, darklanes
+        // research/glm5-b200-mint-20260904/LANE.md). `MEMRA_RMS_BLOCK=<n>` still overrides.
         // gemma4: the dc serving loop + spec draft gather read the device embed table every
         // step — upload it AT LOAD (OnceLock init) so first-use cost never lands in a timed span.
         let force_embd_gpu = gemma_program;
@@ -6454,6 +6410,7 @@ impl HybridModel {
             glm5_dflash,
             draft_state_bytes: std::sync::atomic::AtomicUsize::new(0),
             test_extra_devices: Vec::new(),
+            numeric,
         };
         e.configure_moe_cache_layout(model.moe_cache_block_sizes());
         if force_embd_gpu {
@@ -6479,6 +6436,7 @@ impl HybridModel {
     /// transient surfaces as a catchable Err (shrink further / fall back) instead
     /// of a panic. No-op when the table is already resident.
     pub fn ensure_embed_resident(&self, e: &Engine) -> Result<(), Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         if self.embd_gpu.get().is_none() {
             let buf = e.upload_u8(&self.embd.raw)?;
             let _ = self.embd_gpu.set(buf); // racing set = already resident; fine
@@ -6491,6 +6449,7 @@ impl HybridModel {
         e: &Engine,
         tokens: &[u32],
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         let n_embd = self.cfg.n_embd as usize;
         // DEVICE embed gather (round 30; the gemma4 machinery adopted for every model):
         // resident quantized table + gather kernel — replaces the CPU row gather + 31MB

@@ -901,6 +901,7 @@ impl HybridModel {
         pos: usize,
         cache: &mut Cache,
     ) -> Res<CudaSlice<f32>> {
+        let _numeric = self.enter_numeric();
         let dev = e.ctx().ordinal();
         let runs = kda_runs(self, lo, hi);
         let mut cursor = lo;
@@ -929,6 +930,7 @@ impl HybridModel {
         lo: usize,
         hi: usize,
     ) -> bool {
+        let _numeric = self.enter_numeric();
         // A stage whose capture already failed once stays eager for the life of this session —
         // the reason was printed then, so this arm is silent by design.
         if cache
@@ -973,6 +975,7 @@ impl HybridModel {
         pos: usize,
         cache: &mut Cache,
     ) -> Res<CudaSlice<f32>> {
+        let _numeric = self.enter_numeric();
         let dev = e.ctx().ordinal();
         let n_embd = self.cfg.n_embd as usize;
         let width = topology.streams * n_embd;

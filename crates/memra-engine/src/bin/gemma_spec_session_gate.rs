@@ -75,6 +75,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let e = memra_engine::Engine::new(0)?;
     let g = memra_gguf::GgufFile::open(&path)?;
     let model = HybridModel::load(&e, &g)?;
+    let _numeric = model.enter_numeric();
     let ctx = toks.len() + n_new + 4 * (k + 2); // overshoot headroom
     let mut fails = 0usize;
     let mut check = |name: &str, ok: bool| {

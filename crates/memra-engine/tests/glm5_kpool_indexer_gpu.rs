@@ -796,6 +796,7 @@ impl Harness {
     /// Run the engine's selection on explicit inputs — the same entry point the MLA forward calls.
     fn select(&self, x: &[f32], q_resid: &[f32], t: usize) -> (Vec<i32>, usize) {
         let e = &self.engine;
+        let _numeric = self.model.enter_numeric();
         let indexer = self.indexer();
         let h = e.htod(x).expect("upload x");
         let qr = e.htod(q_resid).expect("upload q_resid");
@@ -821,6 +822,7 @@ impl Harness {
     /// pool the first finished are RESIDENT, never rebuilt. Returns the decode step's selection.
     fn select_resident(&self, x: &[f32], q_resid: &[f32], prime: usize) -> (Vec<i32>, usize) {
         let e = &self.engine;
+        let _numeric = self.model.enter_numeric();
         let indexer = self.indexer();
         let t = prime + 1;
         let mut plane = e
@@ -894,6 +896,7 @@ impl Harness {
         ring_rows: usize,
     ) -> Vec<Vec<usize>> {
         let e = &self.engine;
+        let _numeric = self.model.enter_numeric();
         let indexer = self.indexer();
         let plane_rows = if ring_rows > 0 { ring_rows } else { t };
         let mut plane = e
@@ -943,6 +946,7 @@ impl Harness {
         ring_rows: usize,
     ) -> Result<(), String> {
         let e = &self.engine;
+        let _numeric = self.model.enter_numeric();
         let indexer = self.indexer();
         let mut plane = e
             .zeros(ring_rows * indexer.geom.state_width())
@@ -992,6 +996,7 @@ impl Harness {
         ready: usize,
     ) -> Result<(), String> {
         let e = &self.engine;
+        let _numeric = self.model.enter_numeric();
         let indexer = self.indexer();
         let mut plane = e
             .zeros(ring_rows * indexer.geom.state_width())

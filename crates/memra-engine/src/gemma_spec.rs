@@ -502,6 +502,7 @@ impl HybridModel {
         pos: usize,
         cache: &Cache,
     ) -> Result<(Vec<f32>, CudaSlice<f32>), Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         let (hn, h_next) = self.gemma4_draft_trunk(e, d, token, h, pos, cache)?;
         let logits = e.dtoh(&e.matmul(&d.head, &hn, 1)?)?;
         Ok((logits, h_next))
@@ -715,6 +716,7 @@ impl HybridModel {
         pos: usize,
         cache: &Cache,
     ) -> Result<(u32, CudaSlice<f32>), Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         let (hn, h_next) = self.gemma4_draft_trunk(e, d, token, h, pos, cache)?;
         let ld = e.matmul(&d.head, &hn, 1)?;
         let tok_d = e.argmax_token_device(&ld, d.head.out_features())?;
@@ -743,6 +745,7 @@ impl HybridModel {
         k: usize,
         eos: &[u32],
     ) -> Result<Vec<u32>, Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         let n_embd = self.cfg.n_embd as usize;
         let eps = self.cfg.rms_eps;
         let mut cache = Cache::new(e, &self.cfg, prompt.len() + max_new + k + 8)?;
@@ -1624,6 +1627,7 @@ impl HybridModel {
         max_ctx: usize,
         sp: Option<&crate::spec::SpecSampling>,
     ) -> Result<GemmaSpecSession, Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         if self.is_gemma4_e4b() || !self.uses_gemma_program() {
             return Err(
                 "gemma_spec_session_new: dense gemma4 only (E4B keeps its own arms)".into(),
@@ -1722,6 +1726,7 @@ impl HybridModel {
         suffix: &[u32],
         sp: Option<&crate::spec::SpecSampling>,
     ) -> Result<GemmaSpecSession, Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         if self.is_gemma4_e4b() || !self.uses_gemma_program() {
             return Err(
                 "gemma_spec_session_from_restored: dense gemma4 only (E4B keeps its own arms)"
@@ -1813,6 +1818,7 @@ impl HybridModel {
         k: usize,
         eos: &[u32],
     ) -> Result<(Vec<u32>, usize, usize), Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         let n_embd = self.cfg.n_embd as usize;
         if target == 0 {
             return Ok((Vec::new(), 0, 0));
@@ -2064,6 +2070,7 @@ impl HybridModel {
         eos: &[u32],
         sp: &crate::spec::SpecSampling,
     ) -> Result<(Vec<u32>, usize, usize), Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         if sp.temp <= 0.0 {
             return Err("gemma sampled burst: temp <= 0 is the greedy burst's shape".into());
         }
@@ -2254,6 +2261,7 @@ impl HybridModel {
         max_new: usize,
         eos: &[u32],
     ) -> Result<Vec<u32>, Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         const RING: usize = 64;
         const DRAIN: usize = 32; // replays per host sync
         let win_main = self

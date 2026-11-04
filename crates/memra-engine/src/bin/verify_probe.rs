@@ -37,6 +37,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let e = Engine::new(0)?;
     let g = GgufFile::open(path)?;
     let model = HybridModel::load(&e, &g)?;
+    let _numeric = model.enter_numeric();
     let prompt: Vec<u32> = if let Ok(text) = std::env::var("MEMRA_PROMPT") {
         let tok = memra_tokenizer::Tokenizer::from_gguf(&g)?;
         tok.encode(&text, true)

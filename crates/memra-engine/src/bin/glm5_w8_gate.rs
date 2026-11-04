@@ -183,6 +183,7 @@ fn worker_main(artifact: &str) -> Result<(), Box<dyn std::error::Error>> {
         let g = memra_gguf::GgufFile::open(artifact)?;
         HybridModel::load_without_mtp(&e, &g)?
     };
+    let _numeric = model.enter_numeric();
 
     const PROMPT_LEN: usize = 16;
     const GEN_LEN: usize = 32;
