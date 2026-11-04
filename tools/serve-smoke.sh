@@ -52,12 +52,13 @@ FAIL() { echo "  FAIL: $1"; FAILS=$((FAILS+1)); }
 # existed: on 2026-08-11 it booted a week-old (Aug-4) memra-server carrying the
 # already-fixed gemma4 decode_step_batch panic, reporting a phantom regression against
 # HEAD. A serving gate that can run a stale binary is a rotted gate (H100 lane law 3).
+# It runs what this build wrote: under CARGO_TARGET_DIR, not the tree's own target/.
 cargo build --release -p memra-server || { echo "serve-smoke: build FAILED"; exit 1; }
 
 start_server() {  # extra env via prefix, e.g. start_server "smoke=/path.gguf"
   # MEMRA_COMPAT=openai: this battery tests the OpenAI-compatible surface the README
   # sells (the default native /v1/completions shape is a different contract).
-  MEMRA_COMPAT=openai MEMRA_MODELS="$1" MEMRA_ADDR=$ADDR target/release/memra-server > /tmp/serve-smoke.log 2>&1 &
+  MEMRA_COMPAT=openai MEMRA_MODELS="$1" MEMRA_ADDR=$ADDR "${CARGO_TARGET_DIR:-target}"/release/memra-server > /tmp/serve-smoke.log 2>&1 &
   SPID=$!
   # Belt and braces on the pre-flight guard: a process that grabbed the port in the window
   # between the check above and our bind would otherwise be measured as the model under test.
