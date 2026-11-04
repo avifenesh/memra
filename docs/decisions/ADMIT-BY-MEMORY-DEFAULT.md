@@ -1,7 +1,7 @@
 # Memory-shaped admission is the default on the RTX PRO 6000 Workstation Edition (2026-11-04)
 
-**Chosen:** on the full-power RTX PRO 6000 Blackwell Workstation Edition, the batched worker
-admits by memory, in four parts. (a) A request that bounds neither `max_tokens` nor `max_ctx` is
+**Chosen:** on the full-power RTX PRO 6000 Blackwell Workstation Edition, a batched worker that
+serves that one card admits by memory, in four parts. (a) A request that bounds neither `max_tokens` nor `max_ctx` is
 charged `prompt + 32768 + 8` (clamped to the trained context) instead of the `MEMRA_CTX`
 envelope, and 32768 is its output budget. The charge never exceeds the envelope the unarmed
 program would charge, so a `MEMRA_CTX` below the open output still bounds a naked request (its
@@ -12,8 +12,8 @@ memory-deferred request requeues until both tiers are exhausted and `MEMRA_ADMIT
 prefill workspace and the capped prefix seeds that still-priming sessions owe, and a prefill CUDA
 OOM on a session that emitted nothing parks and requeues. `MEMRA_ADMIT_BY_MEMORY` is deleted;
 `MEMRA_ADMIT_OPEN_OUTPUT_TOKENS` and `MEMRA_ADMIT_DEFER_BUDGET_MS` stay as runtime parameters. The
-boot line `[admit-mem] door=ON` or `door=OFF` states the card's arm. Code:
-`MemoryAdmitConfig::for_device` in `crates/memra-server/src/admit_memory.rs`.
+boot line `[admit-mem] door=ON` or `door=OFF` states the arm and its reason. Code:
+`MemoryAdmitConfig::for_deployment` in `crates/memra-server/src/admit_memory.rs`.
 
 **Rejected:**
 
@@ -27,6 +27,10 @@ boot line `[admit-mem] door=ON` or `door=OFF` states the card's arm. Code:
   was a placeholder the code itself called unmeasured.
 - The RTX 5090 class for now. It read V-DOOR PASS on day 34 and day 36, but on the uncapped seed
   booking; its half of the final-booking cell (DAY40, `rtx5090-day40/chain.sh`) has not read.
+- A multi-card deployment of that card (PP stages, a TP pair, EP; `worker::is_multi_device_deployment`):
+  the deciding cell ran one card, and no cell measured the open-output cap, the bounded defer or
+  the pending-prime booking across devices. It keeps the unarmed program until one does (Step-3.7
+  PP on a pair is the first such cell).
 - The Max-Q and Server editions, the B200 route the mechanism was first built for and every other
   card: no cell in this repo. A launcher that set the retired name is refused at boot; that
   route needs its own cell before it arms.
@@ -47,6 +51,19 @@ boot.
 (65,536 on the 5090, the checkpoint's 262,144 on the target card), where the cap changes nothing.
 It exists because the 32768 default would otherwise let a naked request on a narrow `MEMRA_CTX`
 (the 8192 several serving gates boot with) book four times the KV its operator set.
+
+Also not measured: whole-session resume of naked multi-turn conversations. Armed, a naked
+request's session cap is its own charge (`prompt + 32768 + 8`, at most the envelope) instead of the
+constant `MEMRA_CTX` envelope, the shape a bounded request already has on every card. A later turn's
+prompt is longer, so its cap is larger than the parked session's, and the exact and text tiers of
+the spec pool and the plain continuation probe (each requires the parked cap to cover the new one)
+miss it. The spec and plain affinity tiers (default on) still resume it, growing the parked
+session and rewinding to its last prompt-end checkpoint, so the previous reply is primed again;
+without them the prefix cache serves the turn. DAY40's continuation turns read the prefix cache on both arms (1440 of about
+1570 tokens cached), so no receipt shows the cost. The cell that would: naked back-to-back
+multi-turn requests on that card, unarmed against armed, reading resume hits and TTFT per turn.
+If it regresses, the pool tiers would admit a smaller parked cap and grow it as park compaction
+does, or the owner takes the trade.
 
 **What would change it:** the 5090 half of DAY40 reading V-DOOR PASS on its registered tree adds
 the RTX 5090 class (its own SELECT read R1 and R2 8192 on day 36, so its open-output value is its
