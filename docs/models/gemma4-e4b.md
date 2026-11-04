@@ -15,7 +15,8 @@ input embeddings and KV sharing (the last 18 layers read the caches of layers 22
 `gemma4_e4b` model pack types both in the plan, and its global layers carry their own V
 projection. The pack matches this geometry only (42 layers, 18 of them KV-shared, per-layer
 inputs 256 wide); another checkpoint with per-layer inputs gets no pack until it has its own
-record. The artifact gates are pending a tracked receipt.
+record. On the QAT Q4_0 GGUF, Config, TokenizerTemplate and TensorCensus pass on a tracked
+receipt; CheckpointParity, RewriteParity and Serve are pending.
 Pack state: **NativeReference** on the tiny gate. <!-- support: gemma4_e4b-reference -->
 
 E4B runs its own programs: whole-prompt prime, eager and dc decode, a graph-exec loop, and
@@ -34,20 +35,16 @@ pending.
 
 ## Qualification record
 
-RTX 5090 Laptop (driver 615.71.09), 2026-11-04 02:06-02:16 UTC. Binaries built for sm_120a
-from commit `09348940b84a5efce445f2f437e95ef685409eb7`:
-
-| Binary | sha256 |
-|---|---|
-| `run-gen` | `b8eddc5263526a8485195ad08fb183002b5bf04d92a4e9c6d3c1b1a12c9bcdf6` |
-| `gemma-gate` | `186e21cc14ba55ccaaa947e3c9fdf58463cb68977ec983d777c8a4bb6f673057` |
-| `argmax-margin-probe` | `c7ad0726da47d120f4c8fc53714ffb7b195703fe81bec33327579007e4edcb8e` |
-| `memra-server` | `ba12980a90677fade976433b271047fda5647fdaf510ee2773bb7ad90c0c89ae` |
+RTX 5090 Laptop (driver 615.71.09), 2026-11-04, sm_120a builds. The engine cells (load, run-gen,
+calibrated argmax, speculative, verify, graph) were re-run on the fix-stack commit `fbdd631927`;
+the pipeline-refusal and serve cells come from the lane's first run at `09348940b8`, whose binary
+hashes are in `serve-09348940b8/binaries.sha256`. Raw logs for every cell are in
+[`research/modelplan-onboarding-e4b-20261104/`](../../research/modelplan-onboarding-e4b-20261104/RESULTS.md),
+which also backs the TokenizerTemplate and TensorCensus gates in `docs/support-records.toml`.
 
 Artifact `gemma-4-E4B_q4_0-it.gguf` (5,154,941,280 bytes, from
 `google/gemma-4-E4B-it-qat-q4_0-gguf`), drafter `gemma-4-E4B-it-assistant.Q8_0.gguf`
-(98,653,280 bytes). Each cell is a single run. The raw logs are not in this repository, so no
-cell below backs a gate in `docs/support-records.toml`.
+(98,653,280 bytes). Each cell is a single run.
 
 | Cell | Command | Result |
 |---|---|---|

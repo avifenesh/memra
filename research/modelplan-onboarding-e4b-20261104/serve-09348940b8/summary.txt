@@ -1,0 +1,115 @@
+== e4b cells 2026-11-04T02:06:37Z cells=rungen argmax spec verify graph pp head=09348940b84a5efce445f2f437e95ef685409eb7
+NVIDIA GeForce RTX 5090 Laptop GPU, 615.71.09, 48 MiB, 69, 1582 MHz
+rungen rc=0 match_lines=1 mismatch_structured=0 golden_identical=yes
+  got:    tokens: [8291, 236789, 236751, 496, 6972, 1657, 600, 9025, 531, 506, 10340, 15569, 236787, 108, 236770, 236761, 138, 1018, 115863, 506]
+  golden: tokens: [8291, 236789, 236751, 496, 6972, 1657, 600, 9025, 531, 506, 10340, 15569, 236787, 108, 236770, 236761, 138, 1018, 115863, 506]
+  [gemma4-e4b] per-layer inputs from the plan (n_epl=256, row 10752): dedicated E4B prime, decode, graph and verify programs; whole-prompt prime, no batched decode
+  prefill argmax=8291  decode argmax=8291  logit maxdiff=2.876e0  MATCH
+  batched-prime argmax=8291  tokenwise argmax=8291  logit maxdiff=2.876e0  MATCH
+  prefill 19 tok in 0.0352s = 540.3 tok/s (pp19)
+  generated 20 tokens in 0.099s = 201.82 tok/s (Stage-B int8 dp4a decode, gen-only; prime 0.035s) [stop: MaxNew]
+argmax-margin-gate rc=0
+    SUMMARY flips=0 bad=0
+    PRIME-SUMMARY prime=MATCH
+    PASS: every prefill/decode argmax flip is explained by a margin the config spread covers
+spec K=1 rc=0 plain: 200.86 tok/s | spec: 263.44 tok/s (1.31x) | stream agreement 64/64 | [gemma-spec] rounds=38 drafted=38 accepted=26 accept-rate=0.684 tok/round=1.68
+spec K=2 rc=0 plain: 201.75 tok/s | spec: 264.65 tok/s (1.31x) | stream agreement 64/64 | [gemma-spec] rounds=33 drafted=66 accepted=31 accept-rate=0.470 tok/round=1.94
+spec K=3 rc=0 plain: 201.54 tok/s | spec: 264.38 tok/s (1.31x) | stream agreement 64/64 | [gemma-spec] rounds=31 drafted=75 accepted=33 accept-rate=0.440 tok/round=2.06
+spec K=4 rc=0 plain: 201.63 tok/s | spec: 258.83 tok/s (1.28x) | stream agreement 64/64 | [gemma-spec] rounds=31 drafted=78 accepted=33 accept-rate=0.423 tok/round=2.06
+spec K=5 rc=0 plain: 201.96 tok/s | spec: 259.07 tok/s (1.28x) | stream agreement 64/64 | [gemma-spec] rounds=31 drafted=79 accepted=33 accept-rate=0.418 tok/round=2.06
+spec K=6 rc=0 plain: 201.79 tok/s | spec: 258.96 tok/s (1.28x) | stream agreement 64/64 | [gemma-spec] rounds=31 drafted=80 accepted=33 accept-rate=0.412 tok/round=2.06
+spec K=7 rc=0 plain: 201.85 tok/s | spec: 257.10 tok/s (1.27x) | stream agreement 64/64 | [gemma-spec] rounds=31 drafted=81 accepted=33 accept-rate=0.407 tok/round=2.06
+spec K=8 rc=0 plain: 201.80 tok/s | spec: 256.38 tok/s (1.27x) | stream agreement 64/64 | [gemma-spec] rounds=31 drafted=81 accepted=33 accept-rate=0.407 tok/round=2.06
+verify-gate K=7 depth rc=0 VERIFY-GATE K=7: PASS
+e4b-graph-gate 256 rc=0 E4B-GRAPH-GATE: eager-dc 166.08 tok/s | graph 184.88 tok/s | stream 256/256 IDENTICAL
+pp2-refusal rc=1 pipeline placement is unsupported for plan operations [Embedding, PerLayerInputEmbedding, RmsNorm, SlidingWindowAttention, SlidingKvState, RmsNorm, DenseMlp, GeluTanhActivation, GemmaResidual, PerLayerInputGate, RmsNorm, SlidingWindowAttention, SlidingKvState, RmsNorm, DenseMlp, GeluTanhActivation, GemmaResidual, PerLayerInputGate, RmsNorm, SlidingWindowAttention, SlidingKvState, RmsNorm, DenseMlp
+== done 2026-11-04T02:08:02Z
+== e4b cells 2026-11-04T02:08:43Z cells=serve identity head=09348940b84a5efce445f2f437e95ef685409eb7
+NVIDIA GeForce RTX 5090 Laptop GPU, 615.71.09, 48 MiB, 67, 180 MHz
+serve-smoke rc=1
+  == serve-smoke: plain serving ==
+    ok: /models lists the model
+    ok: chat non-stream (text + usage + finish_reason)
+    ok: chat stream (SSE chunks + [DONE])
+    ok: /v1/completions
+    ok: greedy determinism (2 runs identical)
+    ok: 3 concurrent chats
+    ok: long generation (>=100 tok)
+  == serve-smoke: cache-metering exactness ==
+    FAIL: A fanout cached_tokens == [0] + [256]x4 — got [0, 0, 0, 0, 0]
+    ok: A-req1 prompt_tokens == 272
+    ok: A-req2 prompt_tokens == 272
+    ok: A-req3 prompt_tokens == 272
+    ok: A-req4 prompt_tokens == 272
+    ok: A-req5 prompt_tokens == 272
+    ok: B-req1 cached_tokens == 0 (cross-salt blindness)
+    ok: B-req1 prompt_tokens == 272
+    ok: prompt_tokens_in == 1632
+    FAIL: cached_tokens_in == 1024 — got 0
+    FAIL: computed_tokens_in == prompt - cached — got 1632
+    FAIL: cache_hit_token_ratio matches arithmetic — got 0.0
+    FAIL: prefix_cache_hits == N-1 — got 0
+    FAIL: prefix_cache_misses == 2 (one A leader + cross-salt B) — got 6
+    FAIL: prefix_cache_inserts == 2 (shared A prefix + B seed) — got 0
+    FAIL: prefix_cache_hit_tokens == 1024 — got 0
+    ok: lcp_histogram: 6 probes total
+    FAIL: lcp_histogram: 2 cold probes in bucket [0] — got [6]
+    FAIL: lcp_histogram: 4 probes in K's bucket (edge 256) — got 0
+    FAIL: tick-seg [64,512) window carries the shared-prefix probes — got 0
+    FAIL: tenants[meter-A] split exact — got {'prompt_tokens_in': 1360, 'cached_tokens_in': 0, 'cache_hit_token_ratio': 0.0}
+    ok: tenants[meter-B] split exact (0 cached)
+    FAIL: economics revenue_multiplier == 2.6842 (factor 1.0) — got 1.0
+    FAIL: cache-metering gate
+  == serve-smoke: spec arm SKIP (no draft at /nonexistent-no-nextn-draft)
+  == serve-smoke: gemma4 arm SKIP (no model at /data/ai-ml/models/gemma-4-12b-it-qat/gemma-4-12b-it-qat-q4_0.gguf)
+  == serve-smoke: Q35 mixed c=4 cold-prefill exactness ==
+    FAIL: Q35 mixed c=4 gate failed without a summary
+    ok: Q35 routed-MoE carried prime batches remain gated
+served identity rc=0 IDENTITY: PASS solo == concurrent 3/3 (completion_tokens=96 text_sha16=5e9c6bec32a52133)
+== done 2026-11-04T02:09:29Z
+== e4b cells 2026-11-04T02:11:31Z cells=serve-gemma head=09348940b84a5efce445f2f437e95ef685409eb7
+NVIDIA GeForce RTX 5090 Laptop GPU, 615.71.09, 48 MiB, 63, 180 MHz
+serve-smoke (gemma4 arm on E4B) rc=1
+  == serve-smoke: plain serving ==
+    ok: /models lists the model
+    ok: chat non-stream (text + usage + finish_reason)
+    ok: chat stream (SSE chunks + [DONE])
+    ok: /v1/completions
+    ok: greedy determinism (2 runs identical)
+    ok: 3 concurrent chats
+    ok: long generation (>=100 tok)
+  == serve-smoke: cache-metering exactness ==
+    FAIL: A fanout cached_tokens == [0] + [256]x4 — got [0, 0, 0, 0, 0]
+    ok: A-req1 prompt_tokens == 272
+    ok: A-req2 prompt_tokens == 272
+    ok: A-req3 prompt_tokens == 272
+    ok: A-req4 prompt_tokens == 272
+    ok: A-req5 prompt_tokens == 272
+    ok: B-req1 cached_tokens == 0 (cross-salt blindness)
+    ok: B-req1 prompt_tokens == 272
+    ok: prompt_tokens_in == 1632
+    FAIL: cached_tokens_in == 1024 — got 0
+    FAIL: computed_tokens_in == prompt - cached — got 1632
+    FAIL: cache_hit_token_ratio matches arithmetic — got 0.0
+    FAIL: prefix_cache_hits == N-1 — got 0
+    FAIL: prefix_cache_misses == 2 (one A leader + cross-salt B) — got 6
+    FAIL: prefix_cache_inserts == 2 (shared A prefix + B seed) — got 0
+    FAIL: prefix_cache_hit_tokens == 1024 — got 0
+    ok: lcp_histogram: 6 probes total
+    FAIL: lcp_histogram: 2 cold probes in bucket [0] — got [6]
+    FAIL: lcp_histogram: 4 probes in K's bucket (edge 256) — got 0
+    FAIL: tick-seg [64,512) window carries the shared-prefix probes — got 0
+    FAIL: tenants[meter-A] split exact — got {'prompt_tokens_in': 1360, 'cached_tokens_in': 0, 'cache_hit_token_ratio': 0.0}
+    ok: tenants[meter-B] split exact (0 cached)
+    FAIL: economics revenue_multiplier == 2.6842 (factor 1.0) — got 1.0
+  cache-meter-gate: 13 failed
+    FAIL: cache-metering gate
+  == serve-smoke: spec arm SKIP (no draft at /nonexistent-no-nextn-draft)
+  == serve-smoke: gemma4 arm (default scheduler; the worker-panic regression) ==
+    FAIL: gemma4 default-scheduler request
+    FAIL: gemma4 thought/content separation
+    ok: gemma4 server alive after both requests
+    ok: gemma4 arm: zero panics in the server log
+  == serve-smoke: Q35 coldhol arm SKIP (no model at /nonexistent-q35)
+  serve-smoke: 3 failed
+== done 2026-11-04T02:11:53Z
