@@ -13386,12 +13386,19 @@ enum DflashRestoreSuffix {
 }
 
 impl DflashRestoreSuffix {
+    /// The plan admits exactly the hits the probe will restore (`dspark_hit_is_restorable_with`:
+    /// a suffix of at least `PRIME_MIN_T` rows and a carrier on the GDN prime grid). A plan for
+    /// an off-grid strict-prefix carrier reserved the suffix-only charge, then the probe refused
+    /// the carrier and the request ended in "retained DFlash conversion failed" (429) instead of
+    /// a normal admission.
     fn new(rows: usize, prompt: usize, partial: bool) -> Option<Self> {
-        match prompt.checked_sub(rows)? {
-            0 => Some(Self::FullCover),
-            n if partial && n >= memra_engine::hybrid_forward::PRIME_MIN_T => Some(Self::Prime(n)),
-            _ => None,
+        if !dspark_hit_is_restorable_with(rows, prompt, true, partial) {
+            return None;
         }
+        Some(match prompt - rows {
+            0 => Self::FullCover,
+            n => Self::Prime(n),
+        })
     }
 }
 
@@ -40016,7 +40023,10 @@ mod tests {
         ] {
             let k = key("tenant");
             let mut px = PrefixCache::default();
-            let tokens = toks(PREFIX_CACHE_MIN_TOKENS);
+            // On the prime grid, so the "boundary" arm is a carrier the probe would restore.
+            let tokens = toks(
+                PREFIX_CACHE_MIN_TOKENS.next_multiple_of(memra_engine::Engine::gdn_chunk_size()),
+            );
             let rows = tokens.len();
             let mut donor = entry(&k, tokens.clone());
             donor.pos = rows;
@@ -40166,7 +40176,7 @@ mod tests {
     #[test]
     fn dflash_retained_suffix_distinguishes_full_boundary_and_unsupported_suffix() {
         use super::DflashRestoreSuffix::{self, FullCover, Prime};
-        let rows = PREFIX_CACHE_MIN_TOKENS;
+        let rows = PREFIX_CACHE_MIN_TOKENS.next_multiple_of(memra_engine::Engine::gdn_chunk_size());
         let min = memra_engine::hybrid_forward::PRIME_MIN_T;
         assert_eq!(DflashRestoreSuffix::new(rows, rows, false), Some(FullCover));
         assert_eq!(
@@ -40176,6 +40186,15 @@ mod tests {
         assert_eq!(DflashRestoreSuffix::new(rows, rows + min - 1, true), None);
         assert_eq!(DflashRestoreSuffix::new(rows, rows + min, false), None);
         assert_eq!(DflashRestoreSuffix::new(rows, rows - 1, true), None);
+        // An off-grid carrier is no plan: the probe would refuse it (DAY56 section 2c).
+        assert_eq!(
+            DflashRestoreSuffix::new(rows + 1, rows + 1 + min, true),
+            None
+        );
+        assert_eq!(
+            DflashRestoreSuffix::new(rows + 1, rows + 1, true),
+            Some(FullCover)
+        );
     }
 
     #[test]
