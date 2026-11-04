@@ -703,6 +703,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // the default on sm_100a builds, so an unset variable would turn the byte-identity arms
     // into split arms there. Arm S sets `1` and puts the pin back.
     set_env("MEMRA_GLM5_TP_EXPERT_SPLIT", "0");
+    // The SYMMETRIC posture PINNED off for every arm but Y (same reason): it is the sm_100a
+    // default over the split, so arm S would otherwise load the row-parallel KDA `wo` and the
+    // replicated glue there. Arm Y sets `1` and puts the pin back.
+    set_env("MEMRA_GLM5_TP_SYMMETRIC", "0");
     // The GENERAL names of the three doors above (lane/glm5-extract2): a leaked general name
     // would DISAGREE with the alias pins and fall the door closed — correct for the OFF arms,
     // but it would silently defeat the ON twins. Cleared here so the alias pins are the only
@@ -907,6 +911,32 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Some(PRIME_BAND),
         &mut verdicts,
     )?;
+    set_env("MEMRA_GLM5_TP_EXPERT_SPLIT", "0");
+
+    // ================= Y. SYMMETRIC posture on the same-device gate =================
+    // The symmetric walk needs a kernel peer store (the one-shot all-reduce), which two contexts
+    // on ONE device cannot do, so on this rig the walk must DECLINE LOUDLY and take the
+    // root-orchestrated walk, and the loader half (the replicated glue, the row-parallel KDA
+    // `wo`) must not disturb it. That is what this arm proves: with the posture and the split
+    // set, decode is the same named class as arm S and the tape matches. The transport stays
+    // pinned to host-canonical, so on a two-device run the walk declines here too: its engaged
+    // numeric row needs `device-push` on a real pair (docs/decisions/GLM5-B200-DOORS.md).
+    eprintln!(
+        "[phase] arm Y: symmetric posture on the same-device gate (loud decline + glue inert)"
+    );
+    set_env("MEMRA_GLM5_TP_EXPERT_SPLIT", "1");
+    set_env("MEMRA_GLM5_TP_SYMMETRIC", "1");
+    run_tp_arm(
+        &cx2,
+        "Y tp-symmetric-declines-on-one-card",
+        "all@0,1",
+        None,
+        None,
+        false,
+        Some(PRIME_BAND),
+        &mut verdicts,
+    )?;
+    set_env("MEMRA_GLM5_TP_SYMMETRIC", "0");
     set_env("MEMRA_GLM5_TP_EXPERT_SPLIT", "0");
 
     // ================= E/F. poison + co-refusal on a live TP model =================
