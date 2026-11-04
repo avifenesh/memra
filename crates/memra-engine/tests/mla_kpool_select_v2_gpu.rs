@@ -1,9 +1,10 @@
-//! `MEMRA_KPOOL_SELECT_V2`: the single-CTA k-pool selector's v2 body (warp-aggregated histogram
-//! atomics, warp-scan rank walk and emit prefix) against the shipped body, BITWISE on the emitted
-//! index lists, for the scalar entry, at pool counts from a handful to the
-//! 61,323 the 245k-token trace ran at, with planted ties (an all-equal row is the contention
-//! worst case), -inf and NaN pools, t_q 1 and 4. Engagement counted; a red arm (one selected
-//! pool's score sent to -inf) must move the list THROUGH the door.
+//! The single-CTA k-pool selector's v2 body (warp 0's shuffle-scan rank walk, per-warp
+//! coalesced membership count and emit; the sm_100a default since 2026-11-04) against the v1
+//! body, both called directly so the cells run on every build, BITWISE on the emitted index
+//! lists, at pool counts from a handful to the 61,323 the 245k-token trace ran at, with planted
+//! ties (an all-equal row is the contention worst case), -inf and NaN pools, t_q 1 and 4. On an
+//! sm_100a build the `mla_kpool_select` dispatch must take v2 (counted); a red arm (one selected
+//! pool's score sent to -inf) must move the v2 list.
 //!
 //! Run: `flock /tmp/memra-5090.lock cargo test --release -p memra-engine --test mla_kpool_select_v2_gpu -- --ignored --nocapture`
 use memra_engine::Engine;
@@ -81,22 +82,26 @@ fn gpu_kpool_select_v2_matches_shipped_bitwise() {
             // scalar entry: v1 vs v2
             let mut i1 = e.htod_i32(&vec![7i32; t_q * width]).expect("i1");
             let mut i2 = e.htod_i32(&vec![9i32; t_q * width]).expect("i2");
-            set("MEMRA_KPOOL_SELECT_V2", "0");
-            e.mla_kpool_select(
-                &sc, &mut i1, t_q, n_pools, pool, select_k, width, first_pos, true,
+            e.mla_kpool_select_single_cta(
+                &sc, &mut i1, t_q, n_pools, pool, select_k, width, first_pos, true, false,
             )
             .expect("v1");
-            let d0 = memra_engine::mla_ffi::kpool_select_v2_dispatches();
-            set("MEMRA_KPOOL_SELECT_V2", "1");
-            e.mla_kpool_select(
-                &sc, &mut i2, t_q, n_pools, pool, select_k, width, first_pos, true,
+            e.mla_kpool_select_single_cta(
+                &sc, &mut i2, t_q, n_pools, pool, select_k, width, first_pos, true, true,
             )
             .expect("v2");
-            set("MEMRA_KPOOL_SELECT_V2", "0");
-            assert!(
-                memra_engine::mla_ffi::kpool_select_v2_dispatches() > d0,
-                "v2 door did not engage (scalar) at n_pools={n_pools} t_q={t_q}"
-            );
+            if memra_engine::BUILT_CUDA_ARCH == "100a" {
+                let mut i3 = e.htod_i32(&vec![5i32; t_q * width]).expect("i3");
+                let d0 = memra_engine::mla_ffi::kpool_select_v2_dispatches();
+                e.mla_kpool_select(
+                    &sc, &mut i3, t_q, n_pools, pool, select_k, width, first_pos, true,
+                )
+                .expect("dispatched");
+                assert!(
+                    memra_engine::mla_ffi::kpool_select_v2_dispatches() > d0,
+                    "an sm_100a build's selector did not take v2 at n_pools={n_pools} t_q={t_q}"
+                );
+            }
             e.stream().synchronize().expect("sync");
             let (h1, h2) = (e.dtoh_i32(&i1).expect("h1"), e.dtoh_i32(&i2).expect("h2"));
             let sel = h1.iter().filter(|&&x| x >= 0).count();
@@ -110,7 +115,7 @@ fn gpu_kpool_select_v2_matches_shipped_bitwise() {
     }
     println!("kpool select v2 PASS: {cells} (shape, t_q) cells bitwise against the shipped body");
 
-    // RED ARM through the door: send one selected pool to -inf; the emitted list must move.
+    // RED ARM through v2: send one selected pool to -inf; the emitted list must move.
     let (n_pools, t_q) = (4096usize, 1usize);
     let select_k = select_k_cap.min(n_pools);
     let width = select_k * pool + pool - 1;
@@ -118,9 +123,8 @@ fn gpu_kpool_select_v2_matches_shipped_bitwise() {
     let mut base = scores(n_pools, 0x77, false);
     let sc = e.htod(&base).expect("scores");
     let mut i2 = e.htod_i32(&vec![9i32; width]).expect("i2");
-    set("MEMRA_KPOOL_SELECT_V2", "1");
-    e.mla_kpool_select(
-        &sc, &mut i2, t_q, n_pools, pool, select_k, width, first_pos, true,
+    e.mla_kpool_select_single_cta(
+        &sc, &mut i2, t_q, n_pools, pool, select_k, width, first_pos, true, true,
     )
     .expect("v2 ref");
     e.stream().synchronize().expect("sync");
@@ -129,11 +133,10 @@ fn gpu_kpool_select_v2_matches_shipped_bitwise() {
     base[victim] = f32::NEG_INFINITY;
     let sc2 = e.htod(&base).expect("scores red");
     let mut i3 = e.htod_i32(&vec![9i32; width]).expect("i3");
-    e.mla_kpool_select(
-        &sc2, &mut i3, t_q, n_pools, pool, select_k, width, first_pos, true,
+    e.mla_kpool_select_single_cta(
+        &sc2, &mut i3, t_q, n_pools, pool, select_k, width, first_pos, true, true,
     )
     .expect("v2 red");
-    set("MEMRA_KPOOL_SELECT_V2", "0");
     e.stream().synchronize().expect("sync");
     let red = e.dtoh_i32(&i3).expect("red");
     assert_ne!(

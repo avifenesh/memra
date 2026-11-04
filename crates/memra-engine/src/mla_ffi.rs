@@ -488,18 +488,33 @@ pub fn dsa_score_rp() -> i32 {
 pub static MLA_DSA_SELECT_DISPATCHES: std::sync::atomic::AtomicU64 =
     std::sync::atomic::AtomicU64::new(0);
 
-/// `MEMRA_KPOOL_SELECT_V2=1` (lane/kpool-select-v2-20260906, default OFF, decide-by 2026-11-17,
-/// re-filed with its box receipts; see the FLAGS.md row): the single-CTA k-pool selector runs
-/// the v2 body (warp-aggregated histogram atomics, warp-scan rank walk and emit prefix; the same
-/// key, ranks and emit order). Output bit-identical by construction; gate
-/// `tests/mla_kpool_select_v2_gpu.rs`. Read per call. Below the multi-CTA door's floor this is
-/// the selector every long-context decode step runs (trace 2026-09-05 at 245k tokens: 174 us per
-/// launch at 61,323 pools, 15% of the token).
-pub(crate) fn mla_kpool_select_v2_on() -> bool {
-    std::env::var("MEMRA_KPOOL_SELECT_V2").as_deref() == Ok("1")
+/// The single-CTA k-pool selector's v2 body (lane/kpool-select-v2-20260906: warp 0's
+/// shuffle-scan rank walk, per-warp coalesced membership count and emit; the same key, ranks
+/// and emit order), the default on sm_100a builds with no switch (2026-11-04): `selab2` on the
+/// 2x B200 pair read +1.40% at 256k, three interleaved boots per arm with every v2 boot above
+/// every v1 boot (docs/decisions/GLM5-B200-DOORS.md). Output bit-identical by construction; gate
+/// `tests/mla_kpool_select_v2_gpu.rs`. Below the multi-CTA door's floor this is the selector
+/// every long-context decode step runs (trace 2026-09-05 at 245k tokens: 174 us per launch at
+/// 61,323 pools, 15% of the token). Other builds keep the v1 body: no receipt there.
+fn mla_kpool_select_v2_default() -> bool {
+    crate::BUILT_CUDA_ARCH == "100a"
 }
 
-/// Engagement counter for `MEMRA_KPOOL_SELECT_V2` (both twins).
+/// The single-CTA selector entries' shared signature (v1 and v2 bodies take the same operands).
+type KpoolSelectFn = unsafe extern "C" fn(
+    *const f32,
+    *mut i32,
+    i32,
+    i32,
+    i32,
+    i32,
+    i32,
+    i32,
+    i32,
+    *mut c_void,
+) -> i32;
+
+/// Engagement counter for the v2 single-CTA selector on the `mla_kpool_select` dispatch.
 pub static KPOOL_SELECT_V2_DISPATCHES: std::sync::atomic::AtomicU64 =
     std::sync::atomic::AtomicU64::new(0);
 
@@ -512,7 +527,7 @@ fn kpool_select_v2_announce(twin: &str, t_q: usize, n_pools: usize) {
     if KPOOL_SELECT_V2_DISPATCHES.fetch_add(1, std::sync::atomic::Ordering::Relaxed) == 0 {
         eprintln!(
             "[kpool-select-v2] engaged {twin} t_q={t_q} n_pools={n_pools}: warp-aggregated \
-             histogram + warp scans in the single-CTA selector (MEMRA_KPOOL_SELECT_V2=1; \
+             histogram + warp scans in the single-CTA selector (sm_100a default; \
              bit-identical index lists)"
         );
     }
@@ -2218,30 +2233,54 @@ impl Engine {
                 )
             };
         }
-        if mla_kpool_select_v2_on() {
+        let v2 = mla_kpool_select_v2_default();
+        if v2 {
             kpool_select_v2_announce("scalar", t_q, n_pools);
-            return unsafe {
-                ck(
-                    "kpool_select_v2",
-                    memra_mla_kpool_select_v2_f32(
-                        score.device_ptr(&s).0 as *const f32,
-                        idx.device_ptr_mut(&s).0 as *mut i32,
-                        t_q as i32,
-                        n_pools as i32,
-                        pool as i32,
-                        select_k as i32,
-                        width as i32,
-                        first_pos as i32,
-                        i32::from(always_tail),
-                        s.cu_stream() as *mut c_void,
-                    ),
-                )
-            };
         }
+        self.mla_kpool_select_single_cta(
+            score,
+            idx,
+            t_q,
+            n_pools,
+            pool,
+            select_k,
+            width,
+            first_pos,
+            always_tail,
+            v2,
+        )
+    }
+
+    /// The single-CTA k-pool selector with its body named: `v2` picks the v2 body (the sm_100a
+    /// default of [`Self::mla_kpool_select`]), otherwise the v1 body. Bit-identical index lists
+    /// by construction; `tests/mla_kpool_select_v2_gpu.rs` calls both bodies directly.
+    #[allow(clippy::too_many_arguments)]
+    pub fn mla_kpool_select_single_cta(
+        &self,
+        score: &CudaSlice<f32>,
+        idx: &mut CudaSlice<i32>,
+        t_q: usize,
+        n_pools: usize,
+        pool: usize,
+        select_k: usize,
+        width: usize,
+        first_pos: usize,
+        always_tail: bool,
+        v2: bool,
+    ) -> Res<()> {
+        let s = self.stream();
+        let (name, entry) = if v2 {
+            (
+                "kpool_select_v2",
+                memra_mla_kpool_select_v2_f32 as KpoolSelectFn,
+            )
+        } else {
+            ("kpool_select", memra_mla_kpool_select_f32 as KpoolSelectFn)
+        };
         unsafe {
             ck(
-                "kpool_select",
-                memra_mla_kpool_select_f32(
+                name,
+                entry(
                     score.device_ptr(&s).0 as *const f32,
                     idx.device_ptr_mut(&s).0 as *mut i32,
                     t_q as i32,
