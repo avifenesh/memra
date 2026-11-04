@@ -388,3 +388,19 @@ Both sit just above break-even. Two changes move it:
 - A 16-row matmul at the 8-row tier's bandwidth (-20 ms) would put the 16-row tick near 137 ms. Spec at c8 would then predict about 8 x 1.49 / 0.137 = 87 tok/s, against vLLM's 96.7.
 
 Every exact schedule of the dp4a 16-row kernel has been tried, so the matmul part needs a new kernel design, not another schedule.
+
+### Dead partial-buffer memsets in the batched-tick attention: adopted (2026-11-04)
+
+`fa_decode_batch_seqs_v4` zero-filled its three partial buffers before every launch. The seqs kernel writes every slot below `n_splits_max` for each (sequence, head), including empty splits, and the seqs combine reads only `s < n_splits_z`. So the fill was dead work. It is removed in c86ae1ac6e. The single-sequence path keeps its memsets: the TP token graph's retargeting keys on their three-memset signature.
+
+Exactness: kernel-check `fa_decode_seqs_v4 vs per-seq loop` bitdiff=0 at B=4 and B=8 (`gb10-memset/kc.log`, rc=0); TOKFP identical in every run.
+
+Ticks, GB10, old = batch-spec 6ad5af8032, new = c86ae1ac6e, both built in the same target (`gb10-memset/ab.txt`):
+
+| cell | old (ms/tick) | new (ms/tick) | change |
+|---|---|---|---:|
+| 16 sessions, depth 12288, order old new new old old new | 173.75, 173.45, 173.67 | 167.31, 167.29, 167.22 | **-3.7%** |
+| 8 sessions, depth 12288, old new new old | 113.05, 113.05 | 110.05, 110.12 | **-2.6%** |
+| 32 sessions, depth 12288, new old (dp4a b32) | 337.40 | 324.38 | **-3.9%** |
+
+nsys at 16 sessions depth 12288 (`p-old-mem.csv`, `p-new-mem.csv`): the memset time falls from 5.58 ms per step to 0, against the 5.3 ms the byte model predicted. The tick drops 6.4 ms, a little more than the memsets alone, since their launch gaps go too.

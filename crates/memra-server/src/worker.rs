@@ -6933,7 +6933,8 @@ impl RealizedRate {
         self.var.sqrt() * (a / (2.0 - a)).sqrt()
     }
 
-    /// Enough samples, and the last one recent enough that it still describes the traffic.
+    /// Enough samples, and the last one recent enough that it still describes the traffic
+    /// (the tie probe's evidence test).
     fn fresh(&self) -> bool {
         self.samples >= SPEC_COST_REALIZED_MIN && self.last.elapsed() <= SPEC_COST_REALIZED_TTL
     }
@@ -6946,7 +6947,7 @@ const SPEC_COST_REALIZED_MIN: u32 = 3;
 /// swing it.
 const SPEC_COST_REALIZED_ALPHA: f64 = 0.3;
 
-/// How long a realized spec rate stays evidence for the tie probe. One max-length turn (768
+/// How long a realized spec rate stays evidence against the tie probe. One max-length turn (768
 /// tokens) at the agentic c=2 per-user rate (about 12 tok/s) is 64 s: a slot older than that
 /// was measured on a different turn, depth and acceptance than the one being decided.
 const SPEC_COST_REALIZED_TTL: std::time::Duration = std::time::Duration::from_secs(64);
@@ -6956,20 +6957,9 @@ impl SpecCostEntry {
     /// else `predict(n, k)` scaled by the realized/predicted ratio of the closest observation of
     /// the same kind (plain for k = 0, any draft length for k > 0), preferring the same n, then
     /// the same k at the nearest n, then any draft length at the nearest n. 1.0 when none.
-    ///
-    /// A spec slot (k > 0) counts only while fresh (`RealizedRate::fresh`). Spec slots stop
-    /// refreshing whenever plain wins, so an old spec sample would otherwise price spec for
-    /// good; once it ages out the price falls back to the table and the current acceptance
-    /// window, which every spec round keeps current. Plain slots refresh whenever plain runs.
     fn priced(&self, n: usize, k: usize, predict: impl Fn(usize, usize) -> f64) -> f64 {
         let predicted = predict(n, k);
-        let ok = |kk: usize, r: &RealizedRate| {
-            if kk > 0 {
-                r.fresh()
-            } else {
-                r.samples >= SPEC_COST_REALIZED_MIN
-            }
-        };
+        let ok = |_kk: usize, r: &RealizedRate| r.samples >= SPEC_COST_REALIZED_MIN;
         if let Some(r) = self.realized.get(&(n, k))
             && ok(k, r)
         {
@@ -7082,7 +7072,7 @@ fn spec_plain_ms(t: &memra_engine::spec_cost::SpecCostTable, n: usize, cap: usiz
 }
 
 /// Pure half of the verdict: the best draft length in `0..=rung` for `n` sessions (0 = plain),
-/// with the two predicted aggregate rates for the log.
+/// with the best draft length's price and the plain price for the log.
 fn spec_cost_best_k(entry: &SpecCostEntry, n: usize, rung: usize) -> Option<(usize, f64, f64)> {
     let accept = entry
         .accept
@@ -7114,12 +7104,14 @@ fn spec_cost_best_k(entry: &SpecCostEntry, n: usize, rung: usize) -> Option<(usi
         }
     }
     // TIE PROBE. Plain wins only on a measured margin. When the best draft length prices
-    // within the plain rate's own noise and its price is not backed by fresh samples at this
-    // (n, K) (it was extrapolated from another slot, or its samples are older than one turn),
-    // speculate so the slot gets measured. Without this a spec price can go stale for good:
-    // plain wins the tie, no spec tick runs, and nothing ever corrects the price (GB10 agentic
-    // c=2 with bf16 GDN state: 9 of 18 rung-3 verdicts went plain on a K=3 price extrapolated
-    // from an old K=5 slot, 23.9 tok/s against 29.0 when spec runs).
+    // within two standard errors of the plain rate's EMA and its price is not backed by fresh
+    // samples at this (n, K) (it was extrapolated from another slot, or its samples are older
+    // than one turn), speculate so the slot gets measured. Without this a spec price can go
+    // stale for good: plain wins the tie, no spec tick runs, and nothing ever corrects the
+    // price (GB10 agentic c=2 with bf16 GDN state: 9 of 18 rung-3 verdicts went plain on a K=3
+    // price extrapolated from an old K=5 slot, 23.9 tok/s against 29.0 when spec runs). Prices
+    // themselves keep every realized slot: dropping stale spec anchors left the raw table to
+    // price c=8 spec at 98.7 against a realized 49.3, and c=8 fell from 62.6 to 49.2 tok/s.
     if best.0 == 0
         && let Some((ks, rs)) = best_spec
         && n * (ks + 1) <= 16
@@ -7133,11 +7125,17 @@ fn spec_cost_best_k(entry: &SpecCostEntry, n: usize, rung: usize) -> Option<(usi
             .get(&(n, 0))
             .filter(|r| r.samples >= SPEC_COST_REALIZED_MIN)
             .map_or(0.0, RealizedRate::noise);
-        if rs >= plain - noise {
+        if rs >= plain - 2.0 * noise {
             best = (ks, rs);
         }
     }
-    Some((best.0, best.1, plain))
+    // The log's spec figure: the chosen K's price, or the best draft length's when plain wins.
+    let spec = if best.0 > 0 {
+        best.1
+    } else {
+        best_spec.map_or(plain, |(_, r)| r)
+    };
+    Some((best.0, spec, plain))
 }
 
 /// The cost model's draft length for `model` at `n` concurrent sessions (0 = plain), or None
@@ -44225,7 +44223,7 @@ mod tests {
         e.realized
             .insert((4, 0), slot(50.0, super::SPEC_COST_REALIZED_MIN));
         let (k, rate, plain) = super::spec_cost_best_k(&e, 4, 3).unwrap();
-        assert_eq!((k, rate, plain), (0, 50.0, 50.0));
+        assert_eq!((k, rate, plain), (0, 20.0, 50.0));
         // n=3 has no samples: its predictions scale by the n=4 realized/predicted ratios.
         let (k3, _, _) = super::spec_cost_best_k(&e, 3, 3).unwrap();
         assert_eq!(k3, 0);
@@ -44248,15 +44246,18 @@ mod tests {
         }
     }
 
-    /// A spec slot older than the TTL stops pricing spec: plain had won on it, so no spec tick
-    /// could refresh it. The price falls back to the table and the current acceptance (the
-    /// GB10 c=2 bf16 cell: a K=3 price extrapolated from an old K=5 slot held plain).
+    /// A stale spec slot still prices spec (it anchors the corrections at other n), but a near
+    /// tie on it is probed; a stale slot far below plain is not (the c=8 case).
     #[test]
-    fn stale_spec_slot_stops_pricing_spec() {
+    fn stale_spec_slot_prices_and_near_ties_are_probed() {
         let mut e = gb10_entry([0.7, 0.5, 0.35]);
         let old = std::time::Instant::now()
             .checked_sub(super::SPEC_COST_REALIZED_TTL + std::time::Duration::from_secs(1))
             .unwrap();
+        let mut plain = slot(25.0, 10);
+        plain.var = 4.0;
+        e.realized.insert((2, 0), plain);
+        // Far below plain: plain, stale or not.
         e.realized.insert(
             (2, 3),
             super::RealizedRate {
@@ -44264,11 +44265,22 @@ mod tests {
                 ..slot(10.0, 10)
             },
         );
-        e.realized.insert((2, 0), slot(25.0, 10));
-        let (k, _, _) = super::spec_cost_best_k(&e, 2, 3).unwrap();
-        assert!(k > 0, "the stale K=3 slot no longer holds plain");
-        // The same slot, fresh, still decides.
-        e.realized.insert((2, 3), slot(10.0, 10));
+        assert_eq!(super::spec_cost_best_k(&e, 2, 3).unwrap().0, 0);
+        // Within two standard errors and stale: probed.
+        for k in 1..=3 {
+            e.realized.insert(
+                (2, k),
+                super::RealizedRate {
+                    last: old,
+                    ..slot(24.5, 10)
+                },
+            );
+        }
+        assert!(super::spec_cost_best_k(&e, 2, 3).unwrap().0 > 0);
+        // The same prices, fresh: measured, so plain keeps its margin.
+        for k in 1..=3 {
+            e.realized.insert((2, k), slot(24.5, 10));
+        }
         assert_eq!(super::spec_cost_best_k(&e, 2, 3).unwrap().0, 0);
     }
 
