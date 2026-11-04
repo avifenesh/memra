@@ -26,3 +26,6 @@ research/n-choices-528-20261003/receipts/**/wire.sse -text whitespace=-blank-at-
 
 # Raw GB10 F8F4 v2 receipts (ncu pages, gate and probe logs) keep their tool output whitespace.
 research/gb10-prefill-20261106/gemm-v2-*/** -text whitespace=-blank-at-eol,-blank-at-eof
+
+# Raw fast-gate consoles and nsys CSVs, kept byte-exact (a trailing space and a blank last line).
+research/fastgate-goldens-20261104/raw/** -text whitespace=-blank-at-eol,-trailing-space
