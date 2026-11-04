@@ -140,7 +140,7 @@
       "model": "Gemma-4 E4B",
       "class": "dense",
       "quants": "QAT Q4_0",
-      "drafter": "Gemma assistant draft — served since 2026-08-17 via the gspec attach (MEMRA_DRAFT, shipping depth K=5); table spec numbers remain gemma-gate CLI measurements",
+      "drafter": "Gemma assistant draft — gemma-gate CLI only; memra-server's gspec attach skips E4B, so serving runs it without a drafter",
       "since": "v0.35.0"
     },
     {

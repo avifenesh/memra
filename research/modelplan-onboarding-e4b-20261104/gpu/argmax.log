@@ -1,0 +1,6 @@
+argmax-margin-gate: model=gemma-4-E4B_q4_0-it.gguf prompt=board-2048.txt window=12 decode=eager canary=0
+  SUMMARY flips=0 bad=0
+  PRIME-SUMMARY prime=MATCH
+    PRIME-GATE: class=MATCH bp_argmax=236772 tw_argmax=236772 tw_margin=6.463327408e-1 bp_margin=8.060007095e-1 maxdiff=1.298631549e0
+  PASS: every prefill/decode argmax flip is explained by a margin the config spread covers
+  raw: /home/avifenesh/.cache/memra-fix/logs-w3/e4b/argmax/gate-gemma-4-E4B_q4_0-it-board-2048.log

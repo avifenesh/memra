@@ -1,0 +1,39 @@
+[server] build: memra-0.138.0-8c27fe998b18 (id: source-tree, git: 09348940b84a)
+[env-audit] warning: 1 MEMRA_* name(s) in the environment that nothing in this build reads and docs/FLAGS.md does not list: MEMRA_Q35_COLD_MODEL. Left alone: launchers and gate scripts own names outside the engine's families.
+[server] starting; models config = [("smoke", "/data/ai-ml/hf-models/gemma4-e4b-qat-gguf/gemma-4-E4B_q4_0-it.gguf", None)]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[worker-affinity] off (MEMRA_WORKER_CPUSET / MEMRA_WORKER_AFFINITY unset or =0)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal after 3 consecutive misses (MEMRA_GPU_PROBE_MISSES), fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[worker] loading model "smoke" <- /data/ai-ml/hf-models/gemma4-e4b-qat-gguf/gemma-4-E4B_q4_0-it.gguf
+[tensor-contract] bound 666 semantic tensors (pack gemma4_e4b, Gguf, output head TiedToEmbedding); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[gemma4-e4b] per-layer inputs from the plan (n_epl=256, row 10752): dedicated E4B prime, decode, graph and verify programs; whole-prompt prime, no batched decode
+[q8rp] split-plane decode mirrors built: 1 tensors
+[q4rp] split-plane decode mirrors built: 402 trunk tensors
+[q4f16] prefill program = INT8 MMQ (no f16 mirrors) (reason: model geometry not eligible); free 18100 MiB, mirror mass 7525 MiB, capacity threshold 15717 MiB (mass + 8192 headroom) — SELECTS PREFILL ARITHMETIC
+[q4rp] split-plane IN-PLACE swap: 294 dense trunk tensors
+[worker]   loaded "smoke": 42 layers, eos=1, stop=[1, 106]
+[spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2 (K=5 when the loaded MTP head is rank-trimmed)
+[worker] smoke: template caps tools=true think=false think_switch=true chat_ok=true effort_levels=false qwen_effort=false gemma_think=true dsv4=false glm5=false ctx=131072 tok="gemma4" instruct=None chat_defaults=None/None
+[route-contract] model="smoke" route=hybrid-worker capacity=64 sessions implemented=[capacity,occupancy,progress,fault-ownership,shutdown-ownership,memory-cost,rewrite-qualification,prime-fairness,service-metrics] refused=[]
+[worker] smoke: decode wave cap 1; scheduler tick cap 1
+[worker] smoke: EAGER-ONLY serving (gemma4 class — no batched decode arm): per-session eager decode, monolithic prefill, no prime batching
+[prefix-cache] on: budget 7516MB (7516192768 B, derived: 2 x 3758096384 B max entry for model "smoke" at served ctx 131072 (from checkpoint; MEMRA_CTX unset), requested 7516192768 B; boot driver free 18979356672 B, post-reserve clamp 17368743936 B), policy plain-LRU (global oldest unleased entry first; leases untouchable), min prefix 64 tokens, whole-entry restores only
+[admission] "smoke": plain 28672 B/token, spec 28672 B/token; fixed residual learns from effective-free deltas
+[admit-mem] door=OFF open_output_tokens=8192 defer_budget_ms=8000 (admission charges prompt+output, the reclaim flush demotes to the host tier before dropping, and a memory defer past the budget refuses 429 instead of queueing past the client's deadline)
+[kv-vmm] door=OFF (MEMRA_KV_ALLOCATOR unset or pooled: pooled K/V planes)
+[server] worker ready; serving models: ["smoke"]
+[server] listening on http://127.0.0.1:8177
+[meter] admit id=chatcmpl-ba355719d656b642b7b54851285292cb tenant=default lane=interactive model="smoke"
+[admission] request cost: model="smoke" ctx=146 path=plain = 28672 B/token x ctx + 5MB prefill-workspace + 0MB fixed = 9MB
+[admission] fixed residual high-water: model="smoke" 0MB (observed 3MB at ctx 90 path=plain)
+[fa-pool] grow #0 dev=0 o_len 0 -> 6144 ml_len 0 -> 24 (retired kept, zero=false)
+[fa-pool] grow #1 dev=0 o_len 6144 -> 12288 ml_len 24 -> 48 (retired kept, zero=false)
+[fa-pool] grow #2 dev=0 o_len 12288 -> 24576 ml_len 48 -> 96 (retired kept, zero=false)
+[meter] admit id=chatcmpl-395741b51494296e78e3ef5f8c6f5fa0 tenant=default lane=interactive model="smoke"
+[admission] request cost: model="smoke" ctx=149 path=plain = 28672 B/token x ctx + 5MB prefill-workspace + 0MB fixed = 10MB
+[worker] plain-affinity: declined (no checkpoint retained; 1 parked, 21 prompt tokens; model smoke)
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting
+[server] GPU worker shutdown complete
