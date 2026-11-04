@@ -2301,11 +2301,11 @@ Raw-salt (no-keyring) namespaces carry no tenant and never match. Receipts:
 lane/kv-tenancy-compaction-20260831):** one tenant's maximum share of the
 `MEMRA_KV_HOST_MB` budget, keyed on the same tenant row identity as the `tenants`
 receipt. A demotion that would push the tenant past its share first reclaims that
-tenant's own unleased host entries, oldest first, until it fits (memra#384; another
-tenant's row is never read, a leased entry is skipped, the exact-key twin is spared), so
-a tenant at its cap turns over its own row and one tenant still can never squeeze the
-others out of the pool. Only when the image alone exceeds the share, or the row's
-unleased bytes cannot cover the shortfall, does the demotion evaporate (checked before
+tenant's own host entries, oldest first, until it fits (memra#384; another tenant's row
+is never read, the exact-key twin is spared), so a tenant at its cap turns over its own
+row and one tenant still can never squeeze the others out of the pool. Only when the
+image alone exceeds the share, or the row's bytes cannot cover the shortfall, does the
+demotion evaporate (checked before
 the D2H copy, so it also skips the PCIe trip), with nothing evicted for it. On the
 pageable tier the reclaim runs once the image is built and ready to insert, so a copy,
 digest or charge failure costs the row nothing; on the fixed arena
