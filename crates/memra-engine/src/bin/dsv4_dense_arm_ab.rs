@@ -29,7 +29,9 @@
 //!
 //! Usage: `dsv4-dense-arm-ab <model-dir> <real-source.txt> [reps]`
 //!
-//! Placement: `pp`, a PP-2 cell, the placement the 2026-09 served A/B it explains ran on.
+//! Placement: `tp_ep` (`Dsv4Placement::SERVED`). The cell measures the served shape, so it loads
+//! the served placement; the 2026-09 served A/B it explains ran on PP-2, before the TP/EP default
+//! (memra #710).
 use memra_engine::dsv4_gpu::{
     Dsv4Gpu, arm_dense_cutlass_for_gate, dense_cutlass_armed_for_gate,
     dense_cutlass_counts_for_gate,
@@ -105,7 +107,7 @@ fn main() {
         &[0, 1],
         ActQuantVariant::RefFp8Round,
         4096,
-        Dsv4Placement::Pp,
+        Dsv4Placement::SERVED,
     )
     .expect("load");
 
