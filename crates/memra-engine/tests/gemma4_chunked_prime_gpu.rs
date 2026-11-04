@@ -54,13 +54,23 @@ const VOCAB: u32 = 32;
 const MAX_CTX: usize = 1024;
 /// Shorter than every GPU prompt below, so the sliding layer's window mask is exercised.
 const WINDOW: usize = 64;
+/// Hidden and FFN width of the prime fixture (the truth and split bands are calibrated on it).
+const PRIME_WIDTH: usize = 64;
+/// Hidden and FFN width of the decode fixture (the quantized walk). The q8_1-emitting norm and
+/// GELU kernels of that walk (`rms_norm_q8_1`, `rms_pre_add_rms_norm_q8z_f32`,
+/// `gelu_tanh_mul_q8_1`, `rms_pre_add_scale_rms_norm_q8_1`) cover a row in 128-column quads
+/// (32 lanes x float4) and run `ncols / 128` of them, so at 64 columns they write nothing and
+/// the next matmul reads whatever an earlier allocation left in the buffer: the bytes then
+/// change from one run to the next. Every real gemma4 width is a multiple of 128.
+const DECODE_WIDTH: usize = 128;
+const _: () = assert!(DECODE_WIDTH.is_multiple_of(128));
 
-fn mini_config_json(window: usize) -> String {
+fn mini_config_json(window: usize, width: usize) -> String {
     format!(
         r#"{{"model_type":"gemma4","text_config":{{"model_type":"gemma4_text",
-        "num_hidden_layers":2,"hidden_size":64,"num_attention_heads":2,
+        "num_hidden_layers":2,"hidden_size":{width},"num_attention_heads":2,
         "num_key_value_heads":1,"num_global_key_value_heads":1,"head_dim":256,
-        "global_head_dim":512,"intermediate_size":64,"vocab_size":{VOCAB},
+        "global_head_dim":512,"intermediate_size":{width},"vocab_size":{VOCAB},
         "max_position_embeddings":{MAX_CTX},"rms_norm_eps":0.000001,
         "sliding_window":{window},"final_logit_softcapping":30,"hidden_activation":"gelu_pytorch_tanh",
         "layer_types":["sliding_attention","full_attention"],
@@ -74,7 +84,12 @@ fn mini_config() -> ModelConfig {
 }
 
 fn mini_config_with_window(window: usize) -> ModelConfig {
-    ModelConfig::from_hf(&HfConfig::parse(&mini_config_json(window)))
+    ModelConfig::from_hf(&HfConfig::parse(&mini_config_json(window, PRIME_WIDTH)))
+}
+
+/// The fixture a decode walk runs on: [`DECODE_WIDTH`] columns, same layers and window.
+fn decode_config() -> ModelConfig {
+    ModelConfig::from_hf(&HfConfig::parse(&mini_config_json(WINDOW, DECODE_WIDTH)))
 }
 
 fn mini_plan(config: &ModelConfig) -> ModelPlan {
@@ -260,6 +275,7 @@ fn add_partial_rotary_factors(plan: &ModelPlan, weights: &mut BTreeMap<TensorId,
 struct Harness {
     engine: Engine,
     model: HybridModel,
+    config: ModelConfig,
     plan: ModelPlan,
     weights: BTreeMap<TensorId, ReferenceTensor>,
 }
@@ -270,8 +286,16 @@ impl Harness {
     }
 
     fn with_window(window: usize) -> Self {
+        Self::with_config(mini_config_with_window(window))
+    }
+
+    /// The harness on the decode fixture ([`decode_config`]).
+    fn for_decode() -> Self {
+        Self::with_config(decode_config())
+    }
+
+    fn with_config(config: ModelConfig) -> Self {
         force_true_f32();
-        let config = mini_config_with_window(window);
         let plan = mini_plan(&config);
         let mut fixture = deterministic_fixture(&plan).expect("deterministic gemma4 fixture");
         add_partial_rotary_factors(&plan, &mut fixture.weights);
@@ -282,6 +306,7 @@ impl Harness {
         Self {
             engine,
             model,
+            config,
             plan,
             weights: fixture.weights,
         }
@@ -697,18 +722,21 @@ impl<'m> GreedyRun<'m> {
 /// the fixture with Q8_0 projections (`fixture_source_q8`; the gemma decode arms refuse F32
 /// weights). Model A runs the dense gemma profile it loads with; model B runs the profile a
 /// gemma4 MoE load keys (other windowed and hd512 split widths, the mr2 fused mapping). The arm
-/// first requires the two programs to differ on this fixture; if they did not, it could not
-/// see one model's profile reach the other. The decode walk runs past the 64-key window, so
-/// the windowed rows lane is in it. Before the profile these gemma keys were process globals
-/// latched on first read, and the roster claim refused this pairing at load.
+/// runs on the decode fixture ([`DECODE_WIDTH`] columns): at the prime fixture's 64 columns the
+/// q8_1-emitting norm and GELU kernels write nothing, so no tape, solo or not, repeats its own
+/// bytes. The arm first requires each solo run to repeat itself and the two programs to
+/// differ on this fixture; without either it could not see one model's profile reach the
+/// other. The decode walk runs past the 64-key window, so the windowed rows lane is in it.
+/// Before the profile these gemma keys were process globals latched on first read, and the
+/// roster claim refused this pairing at load.
 #[test]
 #[ignore = "needs a CUDA device — run under flock /tmp/memra-5090.lock"]
 fn two_co_loaded_models_with_different_profiles_each_keep_their_own_program() {
     let _gpu = gpu_guard();
     set_prime_chunk("0");
-    let h = Harness::new();
+    let h = Harness::for_decode();
     let load = || {
-        let source = fixture_source_q8(&mini_config(), &h.plan, &h.weights);
+        let source = fixture_source_q8(&h.config, &h.plan, &h.weights);
         HybridModel::load_from_source_without_mtp(&h.engine, &source)
             .expect("a quantized mini gemma4 model loads into the shared engine")
     };
@@ -733,6 +761,14 @@ fn two_co_loaded_models_with_different_profiles_each_keep_their_own_program() {
         run.tape
     };
     let solo_tapes = [solo(&dense), solo(&other)];
+    for (i, model) in [&dense, &other].into_iter().enumerate() {
+        assert_eq!(
+            solo(model),
+            solo_tapes[i],
+            "model {i} does not repeat its own solo bytes, so no difference below could be \
+             attributed to the other model"
+        );
+    }
     assert_ne!(
         solo_tapes[0], solo_tapes[1],
         "the dense and MoE gemma programs give identical bytes on this fixture, so this arm cannot \
