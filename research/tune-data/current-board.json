@@ -96,7 +96,7 @@
   "supported_models": [
     {
       "model": "Qwen3.5-9B",
-      "class": "dense",
+      "class": "dense hybrid (GDN + gated attention)",
       "quants": "NVFP4 (5090), Q8_0 (H100)",
       "drafter": "MTP + own-gen trimmed draft",
       "since": "v0.1.0"
@@ -110,14 +110,14 @@
     },
     {
       "model": "Qwen3.6-27B",
-      "class": "dense",
+      "class": "dense hybrid (GDN + gated attention)",
       "quants": "NVFP4, Q4_K_M MTP-baked",
       "drafter": "MTP + own-gen trimmed draft",
       "since": "v0.1.0"
     },
     {
       "model": "Qwen3.6-35B-A3B",
-      "class": "MoE",
+      "class": "MoE hybrid (GDN + gated attention)",
       "quants": "IQ4_XS",
       "drafter": "MTP + own-gen trimmed draft",
       "since": "v0.1.0"
@@ -152,7 +152,7 @@
     },
     {
       "model": "Ornith-1.0-9B",
-      "class": "dense",
+      "class": "dense hybrid (GDN + gated attention)",
       "quants": "Q8_0",
       "drafter": "own-gen donor-block draft",
       "since": "v0.63.0"
