@@ -23,14 +23,40 @@ nsys at 16 rows (`gb10-combo/step/d12288-b16-kern.csv`) against 8 rows (`d12288-
 
 The singles carry three quarters of the gap. They are the FFN tensors: `ffn_gate`/`ffn_up` 5120 -> 17408, `ffn_down` 17408 -> 5120, 50.1 MB each in NVFP4. At 226 GB/s one costs 222 us. The 16-row launch runs about 264 us, the 8-row one about 206 us.
 
-The weight bytes from DRAM are identical at 8 and 16 rows. What doubles is the activation traffic into the SMs. A block is 4 warps x 2 weight rows = 8 rows (`MEMRA_MMVQ_ROWS 4`, rpsc `WROWS 2`), and every block reads all MCOLS activation rows of the projection:
+## The first hypothesis, tested and refuted: activation traffic
 
-| tensor | blocks | activation bytes per block at 16 rows | L2 -> SM activation traffic per launch, 8 rows / 16 rows |
-|---|---:|---:|---:|
-| ffn_up / ffn_gate (in 5120, out 17408) | 2176 | 16 x 5120 = 80 KB | 87 MB / 174 MB |
-| ffn_down (in 17408, out 5120) | 640 | 16 x 17408 = 272 KB | 89 MB / 178 MB |
+A block is 4 warps x 2 weight rows = 8 rows (`MEMRA_MMVQ_ROWS 4`, rpsc `WROWS 2`), and every block reads all MCOLS activation rows. On paper that doubles the L2 -> SM activation bytes at 16 rows: 87 -> 174 MB per ffn_up launch, about 3.5x the 50 MB of weights. The first draft of this design (a 32-row block sharing a cp.async.bulk activation tile in smem) rested on that.
 
-So at 16 rows each FFN launch moves about 3.5x its own DRAM weight bytes through L2 into the SMs. ncu (`gb10-ncu/`) agrees: the 16-row rpsc kernel is latency-bound on the L1TEX scoreboard (23.8 cycles per warp, issue slots 19% busy, 39% occupancy at 90 registers), not on DRAM (26% memory throughput).
+ncu says otherwise (`gb10-b16-ncu/`, blk.0 tensors, `lts__t_sectors_srcunit_tex_op_read.sum`):
+
+| launch | m=8: L2 -> L1 sectors, L1 hit | m=16: L2 -> L1 sectors, L1 hit | L2 throughput m8 / m16 |
+|---|---|---|---|
+| ffn_gate (2176 blocks) | 5.50 M, 78% | 4.91 M, 90% | 27% / 26% |
+| ffn_up (2176 blocks) | 6.11 M, 76% | 5.41 M, 89% | 27% / 20% |
+| ffn_down (640 blocks) | 2.13 M, 92% | 4.76 M, 90% | 13% / 8% |
+
+Co-resident blocks already share the activation rows in L1: the L1 hit rate rises with m and the L2 sectors stay flat on the 17408-row tensors. Neither L2 (8-27%) nor L1 (16-34%) throughput is near a limit. The shared-tile design would cut traffic that is not the bottleneck, so it is dropped before building.
+
+## What the 16-row kernel actually waits on
+
+ncu with boost clocks, stall sampling and SASS attribution on the FFN launches (`gb10-b16-ncu/stalls.txt`):
+
+| ffn_gate, one launch | m=8 (`b8_rpsc`) | m=16 (`b16_rpsc`) |
+|---|---:|---:|
+| duration | 321.6 us | 415.9 us |
+| registers per thread, block limit | 72, 7 blocks | 90, 5 blocks |
+| active warps per scheduler | 6.20 | 4.70 |
+| executed instructions | 26.6 M | 40.7 M (1.53x) |
+| warp cycles per issued instruction | 27.8 | 19.1 |
+| of which long scoreboard (global load not yet back) | 22.7 | 14.3 |
+| issue slots busy | 19.7% | 23.3% |
+
+Time follows instructions x cycles per instruction / resident warps: 26.6 x 27.8 / 6.20 against 40.7 x 19.1 / 4.70 is a 1.39x ratio; the measured ratio is 1.29x. Stall samples sit on the first use of loaded registers: `IDP.4A` (dp4a) operands 51% and the `SHF` that consumes the loaded quant word 26%. So the 16-row kernel loses on two fronts at once:
+
+1. It runs 1.53x the instructions per weight byte, because the column loop doubles while the weight decode and loads stay.
+2. Its 90 registers (32 accumulators plus 16 decoded weight words plus the column's activations) drop residency from 6.2 to 4.7 warps per scheduler. So fewer warps hide each load's latency.
+
+The column loop issues each column's two activation `int4` loads and its `adg` load right before that column's dp4a chain. The `if (c >= m) break` inside the unrolled loop keeps the compiler from hoisting later columns' loads. So a warp waits once per column on an L1 round trip, and on L2 for the 10-13% that miss.
 
 ## The exactness contract
 
@@ -40,41 +66,33 @@ Every design keeps the dp4a chain per (weight row r, column c): lane l walks g =
 
 | tried (16 rows) | result | what it rules out |
 |---|---|---|
-| next-quant register prefetch | slower | more registers per lane: occupancy is the binding constraint |
-| cp.async activation staging into smem, 8 rows per block | slower | staging that does not cut the per-block re-read: same traffic, plus two block barriers per step |
-| four weight rows per warp (16 columns) | slower | 64 accumulators per lane: occupancy again |
-| column split 2 x 8 (2 rows) | bench -12%, step flat | splitting columns across blocks: each block still re-reads its activation half, and the FFN singles did not move (268 vs 264 us) |
-| exact tensor-core form at 16 rows | 7.09 vs 6.50 ms per pass; step 149 vs 128 | the int8 mma: the integer part is not the cost |
+| next-quant register prefetch | slower | prefetch paid for with registers: residency is the binding constraint |
+| cp.async activation staging into smem, 8 rows per block | slower | smem staging: same latency class as an L1 hit, plus two block barriers per step |
+| four weight rows per warp (16 columns) | slower | 64 accumulators per lane: residency again |
+| column split 2 x 8 (2 rows) | bench -12%, step flat | splitting columns across blocks: the FFN singles did not move (268 vs 264 us) |
+| exact tensor-core form at 16 rows | 7.09 vs 6.50 ms per pass; step 149 vs 128 | the int8 mma alone: the integer part is not the cost |
 
-The common thread: no variant reduced the L2 -> SM activation bytes per weight byte. Two levers were tried. One cut the re-read but paid in registers (four rows per warp). The others kept the 8-row block, which fixes the re-read factor.
+## Proposed design: compile-time width, batched column loads, fixed residency (design B2)
 
-## Proposed design: a wide block with a shared activation tile (design A)
+Keep the rpsc lane program and its chain. Change only the schedule of loads within a g step and the register budget:
 
-Keep the rpsc lane program unchanged: same registers per lane, 2 rows per warp, scale rows prestaged. Change three things:
+1. **Compile-time width.** Instantiate the 16-row kernel for the exact m=16 the served tick runs, with no `c >= m` test inside the column loop; m=9..15 keep today's kernel. The compiler can then schedule the 16 columns' loads freely.
+2. **Column groups of 4.** Issue the 8 activation `int4` loads and 4 `adg` loads of columns c..c+3 together, then run their dp4a chains while the next group's loads are in flight. That is two groups in flight: 2 x (8 x 4 + 4) = 72 registers of activations in the naive form. Too many, so the staged values are the packed `int4` words consumed in place: 36 extra registers in the worst case and 20 if the `adg` loads ride one `float4`. The float chain per (r, c) is untouched.
+3. **Hold residency.** `__launch_bounds__(128, 5)` keeps the 5-block (4.7 warps per scheduler) residency it has now, and the build fails if the schedule needs more. If it fits in 4 blocks only, the batching must pay for the lost warp; the bench decides.
 
-1. **Rows per block:** from 8 to 32. That is 16 warps x 2 rows, or 8 warps x 2 rows x 2 row-tiles walked in sequence by a persistent block.
-2. **Activation source:** for each j-step (g = l + 32j), one producer warp copies the step's activation tile, 16 columns x 32 groups x 32 B = 16 KB, plus 16 x 32 `adg` floats, from global into smem. It uses `cp.async.bulk` (the bulk-copy engine, on sm_120/121) and signals on an mbarrier. The tile is double-buffered (32 KB) so the next step's copy is in flight during this step's math.
-3. **Activation reads:** each consumer warp reads the tile from smem. Lane l reads its 32 B per column as two `int4` loads from a column-major tile: 32 lanes x 32 B = 1 KB contiguous per column, no bank conflicts in 4 phases. It waits on the mbarrier phase, so no block barrier.
+Expected effect: the per-column L1 round trip leaves the critical path. With 4 columns per group the waits per g step fall from 16 to 4. At today's 14.3 long-scoreboard cycles per instruction that is the bulk of the stall, so the target is the 8-row kernel's 1.29x instruction-time ratio less the latency share. If cycles per issued instruction fall from 19 to about 12 at 4.7 warps, the FFN launch drops from 416 to about 280 us under ncu. That is the 8-row kernel's time, and about -14 ms per 16-row step.
 
-L2 -> SM activation traffic falls by the rows-per-block factor: 32 instead of 8 is 4x less, 44 MB instead of 174 MB per FFN launch, below the 8-row tier's 87 MB. The per-lane chain is untouched: same g order, same ops, only the address the 32 activation bytes come from changes. So it is bit-identical by construction.
-
-Resources per block (16 consumer warps + 1 producer):
-- **smem:** 32 KB tile + 16 x 2 x 272 x 4 B prestaged scale rows (34.8 KB) = 67 KB, so one block per SM.
-- **Registers:** about 90 x 544 threads = 49K of 64K.
-- **Occupancy:** 17 warps per SM against about 18 today, so similar latency hiding with a quarter of the L2 traffic.
-- **Tail:** ffn_up has 544 row-tiles over 48 SMs, 11.3 waves; the persistent form walks row-tiles to avoid the 0.7-wave tail.
-
-Predicted: the singles go from 264 to about 206-222 us per FFN launch, bounded below by the 222 us DRAM time. That is -12 to -14.5 ms per 16-row step. The same tile scheme applies to the group4 door (-2 to -3.8 ms) and to the Q5_K head (-1 to -1.5 ms) as follow-ups.
+Risk: the compiler may spill or reorder the groups. The SASS must show the grouped `LDG`s ahead of each group's `IDP` chain, and no local memory.
 
 ## Alternatives kept on the list
 
-- **B. Four rows per warp with an 8-column split across two warps of the same block.** 32 accumulators per lane, as today; 32 weight registers instead of 16. The activation re-read halves because a block covers 16 rows. It is cheaper to write than A, but the extra weight registers repeat the rpsc4 occupancy loss unless the compiler keeps the count near 100. One kernel template change; worth a bench round before A.
-- **C. The tensor-core form with a shared activation tile.** At 16 rows the integer part is not the cost, so this matters only if A moves the bound to issue slots. Not first.
+- **C. Fewer instructions per weight byte.** The m=16 kernel decodes each weight word once per g (shared across 16 columns), so the 1.53x is the dp4a and float epilogue, not the decode. The integer part could move to int8 `mma.sync` with the weights as A (16 rows) and the 16 activation columns as B (two n8 tiles), keeping the float epilogue. The earlier tensor-core form lost at 16 rows, but it was built for 32 rows and folded the butterfly through smem. Worth a second look only if B2 leaves the kernel issue-bound.
+- **A (dropped).** The shared activation tile. Refuted above.
 
-## Measure before building
+## Measure before building (done for A, to do for B2)
 
-1. **ncu on GB10:** `mmvq-b16-bench`, FFN shapes only, m=8 and m=16, sections MemoryWorkloadAnalysis plus `lts__t_sectors_srcunit_tex_op_read.sum` and `l1tex__t_bytes_pipe_lsu_mem_global_op_ld.sum`. The hypothesis holds if L2 -> SM read bytes per launch are about 3.5x the weight bytes at m=16 (about 1.7x at m=8), and L2 throughput is the top sub-unit. If it fails, if the L2 sectors equal the weight bytes because L1 already shares the tile across co-resident blocks, design A is wrong and the next suspect is the per-lane load issue rate (design B or C).
-2. **Bench, the FFN shapes only:** the step's singles, not blocks 0-3 (lever 1's bench mixed shapes and misled us).
+1. Done: ncu L2 -> L1 sectors and stall attribution (`gb10-b16-ncu/`). They rule out A and point at load latency per column plus residency.
+2. Next: a one-kernel B2 prototype in `mmvq-b16-bench` on the FFN shapes, `MEMRA_BVAR` door, ncu stall attribution against `b16_rpsc`. It goes forward only if the FFN launch time drops at equal hash.
 
 ## Gates and adoption
 
