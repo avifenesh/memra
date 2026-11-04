@@ -2384,7 +2384,7 @@ extern "C" __global__ void topk_rows_shard_merge_f32(const float* __restrict__ p
     }
 }
 
-// ---- WARP-MERGED exact top-k twin pair (lane/draft-topk-warp-20260905, MEMRA_TOPK_WARP). ----
+// ---- WARP-MERGED exact top-k twin pair (lane/draft-topk-warp-20260905, sm_100a default). ----
 // The standing kernel and the shard twin both keep each lane's sorted list in LOCAL memory
 // (runtime k, dynamic indexing) and finish with ONE thread walking every lane's list (nth x k
 // dependent shared-memory steps per block); the DFlash2 selector's top-k over the vocab costs
