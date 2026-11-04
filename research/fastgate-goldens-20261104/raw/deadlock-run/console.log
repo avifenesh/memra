@@ -1,0 +1,12 @@
+gpulock: 5090 leased as claude-code-20261104T101105-2344097 for 60m
+fast-gate plan: expand (development only; GPU selection shadow-only)
+  kernel-check: all 
+  probes: e4b,g26,g31,q35,q35slru,q9,q35spec
+  EXPAND: no probe mapping: target
+  EXPAND: unmodelled input: target
+  CPU CI components: build, clippy, server, engine, portable, core, lanes, arch, publish
+  NATIVE EVIDENCE: unmodelled input: target
+  logs: /tmp/fast-gate-20261104-101105
+== fast-gate tier 0 ==
+  build: OK (6s)
+gpulock: TTL reached, command stopped

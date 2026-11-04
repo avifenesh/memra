@@ -1,0 +1,17 @@
+[tensor-contract] bound 658 semantic tensors (pack gemma4_moe, Gguf, output head TiedToEmbedding); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[moe] resident-experts decision (dev0): experts 12.85GB + trunk 1.58GB vs free 24.25GB (expert budget 20.67GB) -> RESIDENT
+[q8rp] split-plane decode mirrors built: 1 tensors
+[q4rp] split-plane decode mirrors built: 210 trunk tensors
+[q4f16] prefill program = INT8 MMQ (no f16 mirrors) (reason: model geometry not eligible); free 8476 MiB, mirror mass 0 MiB, capacity threshold 8192 MiB (mass + 8192 headroom) — SELECTS PREFILL ARITHMETIC
+loaded gemma4 (30 trunk layers; optional MTP skipped)
+prompt tokens: [2, 105, 2364, 107, 155122, 506, 1813, 8881, 21485, 236761, 106, 107, 105, 4368, 107, 100, 45518, 107, 101]
+[fa-pool] grow #0 dev=0 o_len 0 -> 4096 ml_len 0 -> 16 (retired kept, zero=false)
+[fa-pool] grow #1 dev=0 o_len 4096 -> 8192 ml_len 16 -> 32 (retired kept, zero=false)
+[fa-pool] grow #2 dev=0 o_len 8192 -> 16384 ml_len 32 -> 64 (retired kept, zero=false)
+[fa-pool] grow #3 dev=0 o_len 16384 -> 32768 ml_len 64 -> 128 (retired kept, zero=false)
+prefill argmax=818  decode argmax=818  logit maxdiff=5.869e-1  MATCH
+batched-prime argmax=818  tokenwise argmax=818  logit maxdiff=6.140e-1  MATCH
+prefill 19 tok in 0.0316s = 601.9 tok/s (pp19)
+[fa-pool] grow #4 dev=0 o_len 32768 -> 65536 ml_len 128 -> 256 (retired kept, zero=false)
+generated 20 tokens in 0.095s = 210.02 tok/s (Stage-B int8 dp4a decode, gen-only; prime 0.032s) [stop: MaxNew]
+tokens: [818, 1813, 8881, 563, 506, 8906, 7296, 529, 1813, 699, 506, 10824, 236789, 236751, 3761, 1131, 506, 11661, 532, 1063]
