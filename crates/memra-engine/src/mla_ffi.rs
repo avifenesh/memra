@@ -330,7 +330,7 @@ pub static MLA_DSA_DECODE_DISPATCHES: std::sync::atomic::AtomicU64 =
 /// Rollback seam: unset the var (or set 0). Both arms are read per call, so a rollback is the
 /// next request, not a restart.
 /// `MEMRA_DSA_SCORE_TC=1|2` (lane/glm5-dsa-score-tc, 2026-09-07, default OFF, decide-by
-/// 2026-09-21): the prefill scorer on bf16 `mma.sync` tensor cores (`cu/mla_attn.cu`, "the
+/// 2026-11-18 on the owner's call recorded in docs/FLAGS.md): the prefill scorer on bf16 `mma.sync` tensor cores (`cu/mla_attn.cu`, "the
 /// TENSOR-CORE arm"). `1` = plain bf16 operands (one MMA per product, ~1e-3 relative);
 /// `2` = every operand split hi/lo bf16, three MMAs (f32-class, ~3e-6 relative). Prefill widths
 /// only (`t_q >= 8`); neither is bit-identical to the f32 scorer, admitted like

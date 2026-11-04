@@ -121,3 +121,29 @@ the TP-2 expert-placement switch next to `MEMRA_GLM5_TP` (recommended: the owner
 prime that needs it, and the two placements are different numeric classes an operator picks);
 make the split the sm_100a TP default on the receipts its prime rows carry (no A/B against
 whole-expert EP exists); or delete it with the grouped prime. Decide-by 2026-11-18.
+
+### `MEMRA_DSA_SCORE_TC`: scope of an sm_100a default
+
+The receipt is positive and large: the TP-2 1M prime fell from 782 s (f32 scorer) to 339.8 s
+with the bf16 arm, and the owner's precision call chose precision 1 over precision 2 (slower,
+same flips). It is not bit-identical, and it covers the TP-2 plain prime only: spec x TP is
+declined, so no verify walk ran under it. The arm keys on `t_q >= 8`, which the DFlash2 verify
+walk reaches at K+1 >= 8. There bf16 scores would break the verify's rows-exact equality with
+plain decode, a spec-verify against plain pair in the one-program-per-request sense, and the
+retired box cannot measure it. Options: an sm_100a default limited to prefill chunks, with the
+rows-exact verify keeping the f32 scorer and precision 2 deleted (recommended: it is the shape
+the receipt measured); the door's own `t_q >= 8` rule as the sm_100a default; or delete the door
+and both arms. Decide-by 2026-11-18; the door stays default OFF until then.
+
+### `MEMRA_E4M3_BATCH_R2` and `MEMRA_Q80_BATCH_R2`: promote or delete
+
+Both are bit-identical two-rows-per-warp twins of the batched verify-width matvec tier. Their
+three-boot `tpwalk24` rows on the PP-2 spec route read +2.1% and +1.9% on the median, but the
+lowest door boot sits under the highest off boot in both, so they are inconclusive, not
+positive; the one-boot `doorscreen` rows read +2.69% and +1.40%. The missing cell named by the
+lane needs the retired box. The 2026-11-04 ruling covers positive receipts (promote) and
+negative, flat or missing ones (delete), not inconclusive ones, and the rows already reserve
+this call for the owner by 2026-11-17. Options: promote both on sm_100a on these rows; delete
+both with their kernels and gates (recommended: no cell can settle them on the card they target,
+and git keeps the kernels for a later receipt on another card); or keep them default OFF for an
+RTX 5090 or RTX PRO 6000 cell, which would be a new lane on a different card.
