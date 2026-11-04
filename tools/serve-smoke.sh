@@ -29,9 +29,9 @@ if [ "${1:-}" = "--test-stream" ]; then
   exit 0
 fi
 
-# Default = the 9B NVFP4 + its regime draft (full serving support; E4B's serve path is
-# first-light only — dc/graph/spec unwired — and gemma assistant drafts use MEMRA_DRAFT,
-# not the '+draft' NextN attach).
+# Default = the 9B NVFP4 + its regime draft (full serving support). E4B serves in the
+# worker's eager-only class (no batched decode, whole-prompt prime) and the gspec attach skips
+# it; gemma assistant drafts use MEMRA_DRAFT, not the '+draft' NextN attach.
 MODEL="${1:-/data/ai-ml/hf-models/qwen35-9b-nvfp4-gguf/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf}"
 DRAFT="${2:-/data/ai-ml/hf-models/qwen35-9b-nvfp4-gguf/draft-9b-owntrim-nvfp4head-q4blk.gguf}"
 [ -f "$MODEL" ] || { echo "serve-smoke: SKIP (no model at $MODEL)"; exit 0; }

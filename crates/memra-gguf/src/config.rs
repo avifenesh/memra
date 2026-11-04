@@ -586,8 +586,9 @@ pub struct Gemma4Config {
     // ---- E4B (per-layer-embedding + KV-sharing variant; 0 on 26B/31B) ----
     /// n_embd_per_layer (E4B: 256). 0 = no per-layer-embedding machinery.
     pub n_embd_per_layer: u32,
-    /// trailing layers WITHOUT own KV (E4B: 18); they attend an earlier layer's cache:
-    /// il >= n_layer - shared_kv_layers reads layer (n_layer - shared_kv_layers) - (swa ? 2 : 1).
+    /// trailing layers WITHOUT own KV (E4B: 18); each attends the last earlier layer of its
+    /// attention type that owns a cache. The plan carries the answer per layer
+    /// (`StatePlan::SharedKvCache { source_layer }`); runtime code reads the plan, not this.
     pub shared_kv_layers: u32,
     /// Global layers reuse the K projection as V (`attention_k_eq_v`; true on 26B/31B, false
     /// on E4B). HF carries the key; GGUF carries none, so its reader takes it from whether the
