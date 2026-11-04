@@ -96,7 +96,10 @@ RC=1
   echo "lock acquired $(date -u +%FT%TZ)"
   nvidia-smi --query-gpu=index,memory.used --format=csv,noheader
 
-  # Serve config: LIVE defaults, PP-2, spec OFF per #87 (spec over PP-2 is quarantined).
+  # Serve config: the live defaults plus MEMRA_MOE_GROUPED=1, PP-2, spec OFF per #87 (spec over
+  # PP-2 is quarantined). MEMRA_MOE_GROUPED=1 is not a default: it opts prefill into the grouped
+  # expert dispatch, a door kept because this gate sets it (owner 2026-11-04, docs/FLAGS.md row).
+  # Why the gate armed it is not recorded; the assertions above run with it armed.
   # In particular, do NOT pin MEMRA_SERVE_B1FAST=0: Step35's code-level exclusion remains
   # defense in depth and must keep B=1 batched even if the global policy regresses.
   CANARY_ENV=()
