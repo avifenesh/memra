@@ -10061,6 +10061,7 @@ impl HybridModel {
                 first_pos,
                 (d as f32).powf(-0.5),
                 (ig.heads as f32).powf(-0.5),
+                !rows_exact,
             )?;
             let mut idx = e.uninit_i32(t_q * width)?;
             e.mla_kpool_select(
@@ -10098,6 +10099,7 @@ impl HybridModel {
                     slot,
                     (d as f32).powf(-0.5),
                     (ig.heads as f32).powf(-0.5),
+                    !rows_exact,
                 )?;
                 let candidates = e.mla_kpool_candidates(&score, t, pools, p0, select_k)?;
                 let check = if crate::glm5_tp_indexer_split_check_on() {
