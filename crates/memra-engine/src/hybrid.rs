@@ -4924,17 +4924,12 @@ impl HybridModel {
                 mixer: {
                     // E4B KV-shared layers ship NO attn_k/attn_v — load the SHARE TARGET's
                     // k/v tensors for shape symmetry (forward skips k/v compute there and
-                    // reads the target layer's cache; see Gemma4E4bLayer::kv_share).
-                    let g4_shared = cfg.gemma4.as_ref().map(|g| g.shared_kv_layers).unwrap_or(0);
-                    let kv_from = n_trunk as u32 - g4_shared;
-                    if g4_shared > 0
-                        && il >= kv_from
-                        && !src.has(&format!("blk.{il}.attn_k.weight"))
+                    // reads the target layer's cache; see Gemma4E4bLayer::kv_share). The
+                    // plan names the target (`StatePlan::SharedKvCache`).
+                    if let memra_gguf::model_plan::StatePlan::SharedKvCache { source_layer } =
+                        layer_plan.state
                     {
-                        let g4 = cfg.gemma4.as_ref().unwrap();
-                        let swa = g4.swa_pattern.get(il as usize).copied().unwrap_or(true);
-                        let tgt = kv_from - if swa { 2 } else { 1 };
-                        let tp = |s: &str| format!("blk.{tgt}.{s}");
+                        let tp = |s: &str| format!("blk.{source_layer}.{s}");
                         Mixer::Full(FullAttnLayer {
                             wq: load_t(e, src, &p("attn_q.weight"))?,
                             wk: load_t(e, src, &tp("attn_k.weight"))?,
@@ -5003,15 +4998,14 @@ impl HybridModel {
                     } else {
                         None
                     };
-                    // E4B extras (tensor-presence: blk.N.inp_gate only exists on E4B)
-                    let e4b = if src.has(&p("inp_gate.weight")) {
-                        let g4 = cfg.gemma4.as_ref().unwrap();
-                        let kv_from = n_trunk as u32 - g4.shared_kv_layers;
-                        let kv_share = if g4.shared_kv_layers > 0 && il >= kv_from {
-                            let swa = g4.swa_pattern.get(il as usize).copied().unwrap_or(true);
-                            Some(kv_from - if swa { 2 } else { 1 })
-                        } else {
-                            None
+                    // E4B extras: the plan's per-layer input program (the contract bound
+                    // blk.N.inp_gate/proj/post_norm for it) and its KV-share target.
+                    let e4b = if plan.per_layer_input.is_some() {
+                        let kv_share = match layer_plan.state {
+                            memra_gguf::model_plan::StatePlan::SharedKvCache { source_layer } => {
+                                Some(source_layer)
+                            }
+                            _ => None,
                         };
                         Some(crate::hybrid::Gemma4E4bLayer {
                             inp_gate: load_t(e, src, &p("inp_gate.weight"))?,
