@@ -21,7 +21,16 @@
 # usage: dspark-serve-smoke.sh <trunk.gguf> <draft_export_dir> <server_bin> <evidence_dir>
 set -uo pipefail
 MODEL=$1; DRAFT=$2; BIN=$3; EV=$4
-GPU_LOCK=${MEMRA_GPU_LOCK:-/tmp/memra-serve.lock}
+# The RTX 5090 lock (AGENTS.md lock table); MEMRA_GPU_LOCK overrides it, as `gpulock run` does.
+GPU_LOCK=${MEMRA_GPU_LOCK:-/tmp/memra-5090.lock}
+# A caller that already holds the lock on FD 9 (`gpulock run`) boots under it: a second flock
+# on a fresh descriptor would wait on that very lock. flock -n on the inherited FD succeeds only
+# when that open file description owns the lock or the lock is free.
+LOCK_INHERITED=0
+if [ "$(stat -L -c %d:%i /proc/self/fd/9 2>/dev/null)" = "$(stat -L -c %d:%i "$GPU_LOCK" 2>/dev/null)" ] \
+    && flock -n 9 2>/dev/null; then
+    LOCK_INHERITED=1
+fi
 PORT=${MEMRA_GATE_PORT:-18097}
 mkdir -p "$EV"
 SERVER_PID=""
@@ -49,8 +58,10 @@ boot() { # $1 extra-env  $2 log
         echo "port $PORT already serving — refusing to boot over it"; return 1
     fi
     command -v setsid >/dev/null 2>&1 || { echo "setsid is required for PID-scoped cleanup"; return 1; }
+    local hold=(flock -w 300 "$GPU_LOCK")
+    [ "$LOCK_INHERITED" = 1 ] && hold=()
     # shellcheck disable=SC2086
-    setsid flock -w 300 "$GPU_LOCK" env CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-0} \
+    setsid "${hold[@]}" env CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-0} \
         MEMRA_COMPAT=openai "MEMRA_MODELS=gate=$MODEL" \
         "MEMRA_ADDR=127.0.0.1:$PORT" MEMRA_CTX=8192 MEMRA_MAX_SESSIONS=4 \
         $1 "$BIN" >"$2" 2>&1 &
