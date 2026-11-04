@@ -84,9 +84,20 @@ first delta of `gap2-stream-20260807T193310Z.sse` is reasoning).
   owner call above).
 - A stream that ends in a worker error or a deadline inside the hold-back sends the error
   without the held bytes, as it already does for a held partial tag or stop-string tail.
-- serve-smoke's gemma4 arm has check (e) for the stream half: the streamed chat reassembles
-  to the non-stream message, with no tag in any delta.
+- serve-smoke's gemma4 arm has check (e) for the stream half. Two greedy chats run as stream
+  and non-stream on the same binary, and the deltas must reassemble to the non-stream message
+  with no tag in any delta: the (a) chat, which resolves inside the hold-back, and a
+  thinking-off chat whose content passes 256 bytes, which crosses the cap on a card that
+  writes no unopened close. It does not compare against the binary before the rule; the
+  `toolcall.rs` unit tests pin that.
 - serve-smoke's gemma4 check (c) needs the model to think: at `reasoning_effort: low` E4B
   answered `ok` with no thought (`probe/probe-chat-low.json`, 2 completion tokens), and no
-  parser rule can change that.
-- GPU cells owed: serve-smoke's gemma4 arm on E4B, the 31B and the 12B default.
+  parser rule can change that. Open owner call: give (c) a prompt E4B thinks on, or record
+  (c) as an expected E4B FAIL.
+- GPU cells owed, on the RTX 5090: serve-smoke's gemma4 arm on E4B, the 31B and the 12B
+  default (`GEMMA_MODEL=<gguf> tools/serve-smoke.sh`, with the E4B cell run as in its
+  onboarding receipt). Expected: (a), both (e) chats and (d) PASS on all three, and (c)
+  PASSes on the 12B and FAILs on E4B as above. On E4B the long (e) chat FAILs with a tag in
+  a delta if E4B writes an unopened thought of 256 bytes or more there, which is a census
+  data point for the cap, not a regression. The 31B has no receipt on this arm yet, so its
+  (c) result is open.
