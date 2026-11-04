@@ -3182,10 +3182,11 @@ impl DsparkVerifyGraphs {
         if kvl0.kv_dim_k != kv_dim || kvl0.kv_dim_v != kv_dim {
             return None;
         }
+        let (geom_nh, geom_nkv) = (geom.n_head as usize, geom.n_head_kv as usize);
         let len0 = kvl0.len;
         let (t_kv_first, t_kv_last) = (len0 + 1, len0 + t);
-        if !crate::fa_seqs_eligible(t_kv_first, head_dim_global)
-            || !crate::fa_seqs_eligible(t_kv_last, head_dim_global)
+        if !crate::fa_seqs_eligible(t_kv_first, head_dim_global, geom_nh, geom_nkv)
+            || !crate::fa_seqs_eligible(t_kv_last, head_dim_global, geom_nh, geom_nkv)
             || crate::fa_split_keys(t_kv_first, nkv) != crate::fa_split_keys(t_kv_last, nkv)
         {
             return None;
@@ -9053,7 +9054,7 @@ impl HybridModel {
         // (`fa_decode_kvmod_view` over that session's cache) — every row of the stack is
         // already appended, and row r's view stops at its own t_kv.
         let head_dim_global = cfg.head_dim_k as usize;
-        let elig = |tk: usize| crate::fa_seqs_eligible(tk, head_dim_global);
+        let elig = |tk: usize| crate::fa_seqs_eligible(tk, head_dim_global, n_head, n_head_kv);
         let sp_of = |tk: usize| crate::fa_split_keys(tk, cfg.n_head_kv as usize);
         let mut a = 0usize;
         while a < t {
@@ -9350,8 +9351,8 @@ impl HybridModel {
                     // guard keeps any asymmetric-kv model on the per-row loop).
                     && kdk == kv_dim
                     && kdv == kv_dim
-                    && crate::fa_seqs_eligible(t_kv_first, head_dim_global)
-                    && crate::fa_seqs_eligible(t_kv_last, head_dim_global)
+                    && crate::fa_seqs_eligible(t_kv_first, head_dim_global, n_head, n_head_kv)
+                    && crate::fa_seqs_eligible(t_kv_last, head_dim_global, n_head, n_head_kv)
                     && crate::fa_split_keys(t_kv_first, cfg.n_head_kv as usize)
                         == crate::fa_split_keys(t_kv_last, cfg.n_head_kv as usize);
                 // Sizing: eager = exact round bound; graph mode = the rung end (stride +
@@ -9451,7 +9452,7 @@ impl HybridModel {
                         let mut q_row = e.uninit(q_dim)?;
                         e.dtod_copy_view(&q.slice(r * q_dim..(r + 1) * q_dim), &mut q_row)?;
                         let mut a_row = e.uninit(q_dim)?;
-                        if crate::fa_seqs_eligible(t_kv, head_dim_global) {
+                        if crate::fa_seqs_eligible(t_kv, head_dim_global, n_head, n_head_kv) {
                             let sp0_r = crate::fa_split_keys(t_kv, cfg.n_head_kv as usize);
                             e.fa_decode_batch_seqs_v4(
                                 &q_row,

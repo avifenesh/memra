@@ -1217,14 +1217,15 @@ mod numeric_profile_coload_tests {
     };
 
     /// What one model's launches read: the rms_norm block, the FA vec floor, the v4 pick at a
-    /// mid-depth t_kv, the fused q4_0 row mapping, the W8 hybrid half, the windowed and hd512
-    /// split widths, the gemma split seam and the stream-k key.
+    /// mid-depth t_kv (at a gqa the v4 kernels hold, so the profile decides it), the fused q4_0
+    /// row mapping, the W8 hybrid half, the windowed and hd512 split widths, the gemma split
+    /// seam and the stream-k key.
     fn program() -> (u32, usize, bool, bool, bool, usize, usize, bool, i8) {
         let p = NumericProfile::current();
         (
             rms_block(),
             fa_vec_min_tkv(),
-            fa_v4_at(4096),
+            fa_v4_at(4096, 8, 2),
             Engine::q40_mr1_on(),
             step_tp_w8_on() && w8_hybrid_on(),
             p.fa_spw,
@@ -1300,6 +1301,27 @@ mod numeric_profile_coload_tests {
         let other = std::thread::scope(|s| s.spawn(program).join().unwrap());
         assert_eq!(other, alone[0]);
         assert_eq!(program(), alone[1]);
+    }
+
+    #[test]
+    fn v4_never_runs_past_its_q_array_capacity_in_any_scope() {
+        for knob in ["MEMRA_FA_V4_MAX", "MEMRA_NO_FA_VEC", "MEMRA_FA_VEC_MIN"] {
+            assert!(std::env::var_os(knob).is_none(), "run without {knob}");
+        }
+        // Outside every model scope (BASE keys no capacity guard), under a profile that keys
+        // none, and under the gqa > 8 profile: a gqa 16 launch takes v3, a gqa 8 launch v4.
+        let qwen = NumericProfile::for_model(4, None, false, false, None);
+        let gqa16 = NumericProfile::for_model(16, None, false, false, None);
+        assert!(!fa_v4_at(4096, 32, 2));
+        assert!(fa_v4_at(4096, 16, 2));
+        for p in [qwen, gqa16] {
+            let _numeric = p.enter();
+            assert!(!fa_v4_at(4096, 32, 2));
+            assert!(!super::fa_seqs_eligible(4096, 256, 32, 2));
+        }
+        let _numeric = qwen.enter();
+        assert!(fa_v4_at(4096, 16, 2));
+        assert!(super::fa_seqs_eligible(4096, 256, 16, 2));
     }
 }
 /// bf16 matvec family block size (MEMRA_MMV_BLOCK, default 128, clamped to [64, 256] and a
@@ -2242,22 +2264,32 @@ pub(crate) fn fa_part_zero_on() -> bool {
 /// above the 1024 window so the windowed decode + verify rows share the REGISTER family.
 pub static FA_SMEM_TKV_DEFAULT: std::sync::atomic::AtomicUsize =
     std::sync::atomic::AtomicUsize::new(1024);
-pub fn fa_v4_at_pub(t_kv: usize) -> bool {
-    fa_v4_at(t_kv)
+pub fn fa_v4_at_pub(t_kv: usize, n_head: usize, n_head_kv: usize) -> bool {
+    fa_v4_at(t_kv, n_head, n_head_kv)
 }
+/// Most Q heads per KV head the hd256 v4 decode family holds: fa_v4_smem sizes its per-warp Q
+/// arrays `q_ints[8][64]` / `q_d[8][8]`, and at gqa > 8 the `(32, gqa, 1)` block's warps 8.. write
+/// past them into the K tile, which decodes all-NaN logits (research/122b-bringup-20260806/).
+pub const FA_V4_GQA_MAX: usize = 8;
 /// t_kv-conditional v4 decode pick: the v4 family below the threshold, the v3 family at and
 /// above it. Threshold `MEMRA_FA_V4_MAX`; unset, the model profile's `fa_v4_max`: `usize::MAX`
-/// (v4 at every depth) unless the profile keys 0 for a gqa > 8 plan (the v4 q-array capacity
-/// guard). Gemma keys no threshold and rides v4 at every depth (its rows_w/dpl16 parity sweep
-/// measured v4 the depth winner); the seam dates from the 2026-07-10 gemma depth lesson, when
-/// v4's key-per-lane pipeline starved at the 1024 window with short splits. Applied at EVERY
-/// dispatch site (eager, rows, rows_w, dc) so verify stays kernel-family-identical to decode at
-/// the same t_kv; `fa_decode_rows` groups its rows by this pick.
-fn fa_v4_at(t_kv: usize) -> bool {
+/// (v4 at every depth) unless the profile keys 0 for a gqa > 8 plan. Gemma keys no threshold
+/// and rides v4 at every depth (its rows_w/dpl16 parity sweep measured v4 the depth winner); the
+/// seam dates from the 2026-07-10 gemma depth lesson, when v4's key-per-lane pipeline starved at
+/// the 1024 window with short splits. Applied at EVERY dispatch site (eager, rows, rows_w, dc)
+/// so verify stays kernel-family-identical to decode at the same t_kv; `fa_decode_rows` groups
+/// its rows by this pick.
+///
+/// The q-array capacity ([`FA_V4_GQA_MAX`]) is checked here too, from the launch's own head
+/// counts, so v4 never runs past it whatever profile is installed and whatever the env says.
+/// A launch outside every model scope reads `NumericProfile::BASE`, which keys no capacity
+/// guard; this term keeps such a launch for a gqa > 8 model on the v3 lane instead of the NaN
+/// decode. Every qualified config already keys 0 there, so the pick is unchanged for them.
+fn fa_v4_at(t_kv: usize, n_head: usize, n_head_kv: usize) -> bool {
     static ENV: std::sync::OnceLock<Option<usize>> = std::sync::OnceLock::new();
     let mx = numeric_profile::env_override(&ENV, "MEMRA_FA_V4_MAX")
         .unwrap_or_else(|| NumericProfile::current().fa_v4_max);
-    t_kv < mx
+    t_kv < mx && n_head / n_head_kv.max(1) <= FA_V4_GQA_MAX
 }
 // The deep v4 twins (fa_decode_vec_q_v4_deep / _deep_dc, lane fa-decode-deep 2026-08-02) run
 // the v4 program verbatim with a de-conflicted smem layout and L2 prefetch; they are the only
@@ -2272,13 +2304,13 @@ fn fa_v3_active(head_dim: usize) -> bool {
 /// eager arm in `fa_decode_kvmod`'s dispatch — the exact precondition for the z-batched
 /// `fa_decode_vec_q_seqs_v4_deep` twin to reproduce its per-seq program bit-identically.
 /// Mirrors the kvmod predicates: vec on + above the vec floor + hd256 + inside the v4
-/// window. Callers must ALSO group rows on one
+/// window (which carries the v4 q-array capacity). Callers must ALSO group rows on one
 /// `fa_split_keys` rung (the rows-twins' straddle law) before batching.
-pub fn fa_seqs_eligible(t_kv: usize, head_dim: usize) -> bool {
+pub fn fa_seqs_eligible(t_kv: usize, head_dim: usize, n_head: usize, n_head_kv: usize) -> bool {
     std::env::var("MEMRA_NO_FA_VEC").is_err()
         && t_kv >= fa_vec_min_tkv()
         && head_dim == 256
-        && fa_v4_at(t_kv)
+        && fa_v4_at(t_kv, n_head, n_head_kv)
 }
 /// Public twin of the crate-private split ladder (kernel-check builds the seqs-vs-loop pin).
 pub fn fa_split_keys_pub(t_kv: usize, n_head_kv: usize) -> usize {
@@ -29015,7 +29047,7 @@ impl Engine {
         // hd256 under g: v4-or-scalar. hd128/other under g ride the REGISTER g-lane (the
         // dq_K_lane/dq_V_lane macros are format-aware; v3 is format-gated off, v2/smem
         // arms are excluded under g). Mirrored in kvmod / fa_decode_dc / fa_geom_eager.
-        if g && head_dim == 256 && !fa_v4_at(t_kv) {
+        if g && head_dim == 256 && !fa_v4_at(t_kv, n_head, n_head_kv) {
             fa_vec = false;
         }
         let sp = fa_split_keys(t_kv, n_head_kv);
@@ -29091,7 +29123,7 @@ impl Engine {
         let fa512_min = fa512_min_tkv();
         // FA-DEEP pick (bit-identical twins, see fa_deep_at): default module only — the
         // g-module keeps the v4 pick (its class is not the depth-decay class).
-        let deep = fa_vec && head_dim == 256 && fa_v4_at(t_kv) && !g;
+        let deep = fa_vec && head_dim == 256 && fa_v4_at(t_kv, n_head, n_head_kv) && !g;
         let (f, cfg) = if fa_vec && head_dim == 512 && t_kv >= fa512_min {
             // gemma4 globals (hd 512): the DPL16 register twin (fa_decode_vec_q body with a
             // 16-slot accumulator ceiling). Scalar fallback measured 82.5us/layer at 1736 ctx.
@@ -29107,7 +29139,7 @@ impl Engine {
             )
         } else if fa_vec && head_dim <= 256 {
             let gqa = (n_head / n_head_kv).max(1) as u32;
-            if fa_v4_at(t_kv) && head_dim == 256 {
+            if fa_v4_at(t_kv, n_head, n_head_kv) && head_dim == 256 {
                 // FA v4 lane (2026-07-10): key-per-lane score phase, zero shuffles per key.
                 // NEW NUMERIC CONFIG (chunk-serial per-key dot) — battery-arbitrated.
                 // g (fp8-windowed): the v4 staging is format-aware (2026-07-12) — kf8vf8 module.
@@ -29275,6 +29307,15 @@ impl Engine {
         v_tok_bytes: usize,
     ) -> Result<(), Box<dyn std::error::Error>> {
         debug_assert!(head_dim == 256, "seqs twin is v4-stamped (hd256 only)");
+        // The seqs twin is the v4 program, so it carries the v4 q-array capacity. Callers gate
+        // through `fa_seqs_eligible`, which already checks it; this refuses a caller that did not.
+        if n_head / n_head_kv.max(1) > FA_V4_GQA_MAX {
+            return Err(format!(
+                "fa_decode_batch_seqs_v4: gqa {} > v4 q-array capacity {FA_V4_GQA_MAX}",
+                n_head / n_head_kv.max(1)
+            )
+            .into());
+        }
         #[allow(clippy::manual_div_ceil)]
         // allow: explicit (n + k - 1) / k is the load-bearing sizing form, kept textually identical to the kernel-side math
         let n_splits_max = (t_kv_max + split_keys - 1) / split_keys;
@@ -29521,7 +29562,7 @@ impl Engine {
         // Deep-ctx smem twin for the VERIFY rows (2026-07-05): same threshold + rationale as
         // fa_decode's dispatch — at 40k the register path's GQA L2-reuse premise is dead and the
         // verify multiplies the 4x DRAM re-read by T rows. Bit-identical per (row,token,split).
-        let v4_row = |r: usize| fa_v4_at(base_len + r + 1) && head_dim == 256;
+        let v4_row = |r: usize| fa_v4_at(base_len + r + 1, n_head, n_head_kv) && head_dim == 256;
         let mut groups: Vec<(usize, usize, usize, bool)> = Vec::new(); // (row0, t_g, sp_g, v4_g)
         if head_dim == 512
             || (fa_split_keys(base_len + 1, n_head_kv) == sp && v4_row(0) == v4_row(t - 1))
@@ -30050,8 +30091,9 @@ impl Engine {
         let wg = Self::wkv_on();
         // STAGING-PARALLEL v4 (MEMRA_FA_SPW2, default ON at gqa==1): warp 1 = staging helper
         // (v4 is 61% staging); score phases identical to v4_w. Same symbol all t.
-        let sp2 =
-            gqa <= 4 && fa_v4_at(window) && std::env::var("MEMRA_FA_SPW2").as_deref() != Ok("0");
+        let sp2 = gqa <= 4
+            && fa_v4_at(window, n_head, n_head_kv)
+            && std::env::var("MEMRA_FA_SPW2").as_deref() != Ok("0");
         if sp2 {
             let sh = (11520 + 32 * head_dim * if wg { 1 } else { 2 }) as u32;
             if Self::pdl_on() && Self::pdl_wb_on() {
@@ -30133,7 +30175,7 @@ impl Engine {
                 }
             }
         } else {
-            if fa_v4_at(window) && Self::pdl_on() && Self::pdl_wb_on() {
+            if fa_v4_at(window, n_head, n_head_kv) && Self::pdl_on() && Self::pdl_wb_on() {
                 // wave-B2b: the v4_w pick only (smem/reg twins stay builder-launched).
                 let sh = (11520 + 32 * head_dim * if wg { 1 } else { 2 }) as u32;
                 use cudarc::driver::{DevicePtr, DevicePtrMut};
@@ -30182,7 +30224,7 @@ impl Engine {
                         self.func(name)
                     }
                 };
-                let (f, sh) = if fa_v4_at(window) {
+                let (f, sh) = if fa_v4_at(window, n_head, n_head_kv) {
                     let f = pick("fa_decode_vec_q_rows_v4_w");
                     (f, (11520 + 32 * head_dim * if wg { 1 } else { 2 }) as u32)
                 } else if smem_tkv > 0 && window >= smem_tkv {
@@ -30337,7 +30379,7 @@ impl Engine {
         base_plus: i32,
         g: bool,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        let v4 = head_dim == 256 && fa_v4_at(t_kv_upper);
+        let v4 = head_dim == 256 && fa_v4_at(t_kv_upper, n_head, n_head_kv);
         assert!(
             v4 || fa_v3_active(head_dim),
             "stream fa rows requires the v3 or v4 lane"
@@ -30644,7 +30686,7 @@ impl Engine {
         // 2026-07-12).
         let mut fa_vec =
             std::env::var("MEMRA_NO_FA_VEC").is_err() && bucket_max >= fa_vec_min_tkv();
-        if g && head_dim == 256 && !fa_v4_at(bucket_max) {
+        if g && head_dim == 256 && !fa_v4_at(bucket_max, n_head, n_head_kv) {
             fa_vec = false;
         } // mirror kvmod/geom
         let sp = fa_split_keys(bucket_max, n_head_kv);
@@ -30709,7 +30751,7 @@ impl Engine {
         let fa_vec = fa_vec && head_dim <= 512 && head_dim.is_multiple_of(32);
         // FA-DEEP pick keyed on bucket_max (the fa_v4_at precedent) — bit-identical twins,
         // so a threshold falling between t_kv and bucket_max cannot diverge eager-vs-graph.
-        let deep = fa_vec && head_dim == 256 && fa_v4_at(bucket_max) && !g;
+        let deep = fa_vec && head_dim == 256 && fa_v4_at(bucket_max, n_head, n_head_kv) && !g;
         let (f, cfg) = if fa_vec
             && head_dim == 512
             && bucket_max >= {
@@ -30757,7 +30799,7 @@ impl Engine {
                 &mut *part_l,
                 q8_out,
             );
-        } else if fa_vec && head_dim == 256 && fa_v4_at(bucket_max) {
+        } else if fa_vec && head_dim == 256 && fa_v4_at(bucket_max, n_head, n_head_kv) {
             // gemma/qwen v4 dc twin (eager default lane) — capture must mirror eager's pick,
             // incl the g-module route + raw-e4m3 sV sizing.
             let gqa = (n_head / n_head_kv).max(1) as u32;
@@ -31405,6 +31447,7 @@ impl Engine {
         &self,
         t_kv: usize,
         head_dim: usize,
+        n_head: usize,
         n_head_kv: usize,
         g: bool,
     ) -> (bool, usize) {
@@ -31424,7 +31467,7 @@ impl Engine {
         // hd256 under g: v4-or-scalar. hd128/other under g ride the REGISTER g-lane (the
         // dq_K_lane/dq_V_lane macros are format-aware; v3 is format-gated off, v2/smem
         // arms are excluded under g). Mirrored in kvmod / fa_decode_dc / fa_geom_eager.
-        if g && head_dim == 256 && !fa_v4_at(t_kv) {
+        if g && head_dim == 256 && !fa_v4_at(t_kv, n_head, n_head_kv) {
             fa_vec = false;
         }
         let sp = fa_split_keys(t_kv, n_head_kv);
@@ -31445,10 +31488,11 @@ impl Engine {
         &self,
         t_kv: usize,
         head_dim: usize,
+        n_head: usize,
         n_head_kv: usize,
         g: bool,
     ) -> (bool, usize) {
-        self.fa_geom_eager(t_kv, head_dim, n_head_kv, g)
+        self.fa_geom_eager(t_kv, head_dim, n_head, n_head_kv, g)
     }
 
     /// CUDA-graph capture wrapper (CUDA-GRAPH-PLAN §3.2, llama.cpp warmup pattern). Runs `step`

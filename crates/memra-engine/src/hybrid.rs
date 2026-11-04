@@ -5612,12 +5612,14 @@ impl HybridModel {
         // scores -> all-NaN decode logits (receipts: research/122b-bringup-20260806/, arm
         // battery: v4/deep MISMATCH+NaN, v3/v2/smem/reg/scalar all MATCH). The hd512 lane
         // already carries its own capacity guard at dispatch ("gqa <= 16 = fa_v4_smem_512's
-        // q-array capacity"); hd256 v4 never got one. The profile keys fa_v4_max=0 so
-        // EVERY v4 dispatch site (eager, rows-verify, dc, rows_dc, windowed, seqs) flips to
-        // the v3 lane together — decode/verify stay kernel-family-identical (the parity law).
-        // Explicit MEMRA_FA_V4_MAX env still wins (diagnostic seam). The real v4 gqa16
-        // extension is a kernel change gated on its own battery + perf receipts (fix brief
-        // in research/122b-bringup-20260806/VERDICT.md).
+        // q-array capacity"). The profile keys fa_v4_max=0 so EVERY v4 dispatch site (eager,
+        // rows-verify, dc, rows_dc, windowed, seqs) flips to the v3 lane together —
+        // decode/verify stay kernel-family-identical (the parity law). Since 2026-11-04 the
+        // hd256 v4 pick (`fa_v4_at`) also checks `crate::FA_V4_GQA_MAX` from each launch's own
+        // head counts, so a launch outside this model's scope cannot reach v4 at gqa 16 either,
+        // and `MEMRA_FA_V4_MAX` moves the depth threshold only below that capacity. The real
+        // v4 gqa16 extension is a kernel change gated on its own battery + perf receipts (fix
+        // brief in research/122b-bringup-20260806/VERDICT.md).
         if numeric.fa_v4_max != crate::NumericProfile::BASE.fa_v4_max {
             eprintln!(
                 "[fa] v4 decode family disabled: gqa {} > fa_v4_smem capacity 8 (v3 lane serves)",
