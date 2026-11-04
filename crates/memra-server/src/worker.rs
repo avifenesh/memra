@@ -9695,7 +9695,7 @@ struct HostPrefixCache {
     tenant_rejects: u64,
     /// TENANT-SHARE RECLAIM (memra#384): entries evicted from a tenant's OWN row so that
     /// tenant's demotion fits its share (a subset of `evictions`; `telemetry_stamp` already
-    /// moves with `evictions`). Never another tenant's entry, never a leased one.
+    /// moves with `evictions`). Never another tenant's entry.
     tenant_reclaims: u64,
     /// The subset of `tenant_reclaims` whose demotion then never inserted (integ15 review of
     /// PR #597): the reclaim runs once the image is built and ready, so only `insert`'s own
@@ -9856,12 +9856,11 @@ impl HostPrefixCache {
     /// PURE. At the share cap a demotion used to EVAPORATE even while the pool had free space,
     /// because the cap is per-row arithmetic and nothing of the row's own was ever evicted for
     /// it (the gates-3 run: three refusals at 152.7 GB resident of a 154.6 GB share, zero
-    /// allocation rejections). The plan names what THIS tenant's own unleased entries could give
-    /// up: this row only (`auth::meter_key`), never the exact-key twin (`tenant_cap_would_evaporate`
-    /// credits it and `insert` replaces it), never a leased entry (`HostPrefixEntry::leased`).
-    /// `Ok` with `need == 0` below the cap; `Err` with nothing evicted when the image alone
-    /// exceeds the share (no eviction can help, into a full row or an empty one) or the row's
-    /// unleased bytes cannot cover the shortfall. The demote hook runs this BEFORE the D2H copy
+    /// allocation rejections). The plan names what THIS tenant's own entries could give up: this
+    /// row only (`auth::meter_key`), never the exact-key twin (`tenant_cap_would_evaporate`
+    /// credits it and `insert` replaces it). `Ok` with `need == 0` below the cap; `Err` with
+    /// nothing evicted when the image alone exceeds the share (no eviction can help, into a full
+    /// row or an empty one) or the row's bytes cannot cover the shortfall. The demote hook runs this BEFORE the D2H copy
     /// so an infeasible demotion skips the PCIe trip, and it mutates nothing. On the pageable
     /// tier the evictions then wait for the built image, so a copy, digest or charge failure
     /// costs the row nothing; on the fixed arena (`MEMRA_GLM5_TP_KV_HOST=1`) `reserve_image`
@@ -9912,7 +9911,7 @@ impl HostPrefixCache {
         Ok(plan)
     }
 
-    /// The eviction half: the plan above, then this tenant's own unleased entries oldest first
+    /// The eviction half: the plan above, then this tenant's own entries oldest first
     /// (re-resolved after every removal because `remove_at` swap-removes) until the predicate is
     /// false, which is the one retry; `Ok` means it passed. The accounting flows through
     /// `remove_at` like every other removal; the evicted count is also parked in
@@ -9993,7 +9992,7 @@ impl HostPrefixCache {
     }
 
     /// Oldest entry in `row` that the tenant-share reclaim may evict: not the exact-key
-    /// twin of the incoming demotion, not leased. LRU order is the `lru` map's own.
+    /// twin of the incoming demotion. LRU order is the `lru` map's own.
     fn oldest_reclaimable(
         &self,
         row: &str,
@@ -10787,18 +10786,17 @@ fn host_demote_prefix_ref(
     // demotion that would evaporate at insert must skip the PCIe trip entirely, not
     // pay gigabytes of synchronous copy for an entry the pool then refuses.
     //
-    // TENANT-SHARE RECLAIM (memra#384): at the cap, this tenant's OWN unleased LRU host
-    // entries make room and the predicate is retried once. The PLAN runs here, before the copy,
-    // and mutates nothing: an infeasible demotion (image above the share, or the row's unleased
-    // bytes short of the shortfall) skips the PCIe trip with today's line plus what the plan
+    // TENANT-SHARE RECLAIM (memra#384): at the cap, this tenant's OWN LRU host entries make
+    // room and the predicate is retried once. The PLAN runs here, before the copy, and mutates
+    // nothing: an infeasible demotion (image above the share, or the row's bytes short of the
+    // shortfall) skips the PCIe trip with today's line plus what the plan
     // found, and nothing is evicted for it. On the pageable tier the evictions themselves run in
     // the `Ok(mut e)` arm below, once the image is built and bound, right before `insert`: the
     // charge, the digest and the copy can all still fail after this point, and none of them costs
     // the row its warm entries. On the fixed arena (`MEMRA_GLM5_TP_KV_HOST=1`) the planes'
     // backing is reserved before the copy, so `reserve_image` evicts at reservation and a copy
     // that then fails is booked wasted in the `Err` arm (integ15 review of PR #597, both rounds).
-    // The cap, the lease protections and the D2H payload bytes are unchanged; no other tenant's
-    // row is touched.
+    // The cap and the D2H payload bytes are unchanged; no other tenant's row is touched.
     if host.tenant_cap_would_evaporate(&dead.pool_key, &dead.toks, host_bytes)
         && let Err(refusal) = host.tenant_share_reclaim_plan(&dead.pool_key, &dead.toks, host_bytes)
     {
@@ -44387,8 +44385,8 @@ mod tests {
         );
         assert!(
             sweep_body.contains("px.remove_at("),
-            "the device entry leaves the index into the sink's route (WP-A day 47, design V: a \
-             failure reinstates it)"
+            "the device entry leaves the index only after its host copy published (a copy that \
+             did not publish leaves it resident)"
         );
         assert!(sweep_body.contains("pause_demotes"));
         assert!(sweep_body.contains("pause_cancels"));
