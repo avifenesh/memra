@@ -56,6 +56,25 @@ under a total order), gated bitwise.
 **Scope:** sm_100a builds only. The selector serves every DFlash2 family, so a default on the
 RTX 5090 or RTX PRO 6000 needs the same cell on that card.
 
+## The k-pool selector's v2 body: sm_100a default
+
+**Chosen:** on sm_100a builds the single-CTA DSA k-pool selector runs the v2 body (warp-scan
+rank walk, per-warp coalesced membership count and emit; same key, ranks and emit order).
+`MEMRA_KPOOL_SELECT_V2` is deleted.
+
+**Rejected:** the v1 body on sm_100a, and a `selab2` rerun with raw output banked, which cannot
+run on a retired box.
+
+**Measurement that settled it:** `selab2` on the 2x B200 pair (256k plain, three interleaved
+boots per arm, 12 rows each, same tape): off 63.71 / 63.42 / 62.45 against v2 63.86 / 64.31 /
+64.89 tok/s, +1.40% on the median, every v2 boot above every off boot. `tpwalk14` (TP-2 decode at
+128k, two boots per arm) read about +1% with ids identical; `tpwalk24` (PP-2 plain at 32k) read
+flat with overlapping ranges, at a context where the selector is a smaller share of the token.
+Prose rows in darklanes `research/glm5-b200-mint-20260904/LANE.md`; the raw outputs are not
+banked. Bit-identical by construction, gated over 14 cells with ties, -inf and NaN pools.
+
+**Scope:** sm_100a builds only; the v1 body stays the selector elsewhere.
+
 ## Open calls
 
 ### `MEMRA_GLM5_TP_EXPERT_SPLIT`: keep, promote or delete
