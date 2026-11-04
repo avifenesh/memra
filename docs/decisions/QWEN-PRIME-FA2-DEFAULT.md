@@ -37,4 +37,6 @@ any other value is now a class change, which the `MEMRA_PRIME_CHUNK` row states.
 **Not decided here:** `MEMRA_PRIME_KV_T3`, the three-plane staging door on the same geometry,
 stays default OFF. Its receipt (`research/qwen-prefill-20260909/RESULTS.md`) is exact and faster,
 but holds the default on an unpaired accumulated-state failure in one T3 boot that has no assigned
-cause.
+cause. That receipt measured the legacy class at chunk 1024 on this card, which is now FA2's
+geometry, so T3 no longer engages there; its row carries the owner's call (delete it as
+superseded, or measure it at the naked chunk on this card).
