@@ -1,7 +1,7 @@
 //! vmm-call-cost: what each CUDA VMM driver call costs on this card, and whether it waits for
 //! queued device work (WP-B day 37 stage 0, `research/spill-b-20260919/DAY37.md` 1.5).
 //!
-//! WHY. The on-demand KV planes of `MEMRA_KV_ALLOCATOR=vmm` map granules as a session's rows
+//! WHY. The server's on-demand KV planes map granules as a session's rows
 //! grow and release them at retire and park. Where those calls may run (inline on the CUDA
 //! owner thread, on a helper thread, or only at an idle tick) depends on two facts no receipt
 //! holds: the host wall of each call, and whether a call returns only after work already queued

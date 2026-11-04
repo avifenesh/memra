@@ -384,6 +384,21 @@ may never use: measured **6.3% of a 96GB card at c=16 and 12.6% at c=32** strand
 client defaults, and keep the `MEMRA_CTX` fallback at the unbounded-request workload
 rather than the maximum. Receipt: `research/serving-density-20260806/VERDICT.md` (Q1).
 
+### Serving defaults keyed to the RTX PRO 6000 Workstation Edition (2026-11-04)
+
+The full-power RTX PRO 6000 Blackwell Workstation Edition carries single-card serving receipts
+the other cards do not, so the mechanisms below are its defaults and no other card's
+(`memra_engine::parallel::HardwareTarget::is_pro6000_workstation`; the Max-Q and Server editions
+share the class, not the receipts). None has an environment switch; each states itself at boot.
+
+- **On-demand KV planes.** A covered session's full-attention K/V planes (the MTP spec route and
+  the plain route on one device, no SWA ring, no latent planes, no ppN or TP stage ownership)
+  reserve their capacity as a fixed virtual range and map granules as the rows grow, inline on
+  the owner thread; admission subtracts the reserved-but-unbacked bytes of active sessions. Same
+  kernels, same bytes, fixed addresses. Boot line `[kv-vmm] door=ON ... grow=inline
+  (pro6000-ws-receipt)`; every other card prints `[kv-vmm] door=OFF` and keeps pooled planes.
+  [Decision](decisions/KV-VMM-SERVING-DEFAULT.md).
+
 ### Request body ceiling: 192 MiB, explicit, with a clean 413 (lane/hermes-fixes, 2026-08-19)
 
 Every inference route carries an explicit `DefaultBodyLimit` of **192 MiB**, and a body over it

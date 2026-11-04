@@ -1705,7 +1705,7 @@ impl SpecSession {
         std::iter::once(&self.scratch.kv).chain(self.scratch.extra.iter().map(|p| &p.kv))
     }
 
-    /// WP-B day 37 (`MEMRA_KV_ALLOCATOR=vmm`): the on-demand VMM planes this session holds,
+    /// WP-B day 37 (the on-demand KV planes): the on-demand VMM planes this session holds,
     /// trunk cache and draft scratch together. The server compares it with the count its
     /// construction scope allocated, so a plane this visitor cannot reach refuses the session.
     pub fn kv_on_demand_planes(&self) -> usize {

@@ -93,25 +93,26 @@ impl PinnedKind {
     }
 }
 
-/// Where on-demand KV grows run on a device (WP-B day 37, `MEMRA_KV_ALLOCATOR=vmm`), by card
-/// class, keyed exactly as [`PinnedKind::for_device`]: the stage-0 rule of
-/// `research/spill-b-20260919/DAY37.md` 1.5 per class that has its receipt. The RTX 5090 class
-/// reads `helper` (DAY37 2.1: `GROW-PLACEMENT extent=1 busy_p95_sum_us=11330.8 ... -> helper`).
-/// A class with no stage-0 receipt takes the helper arm, which never holds the owner thread
-/// across a driver call's tail. Returns the placement and the name of its source.
+/// Where on-demand KV grows run on a device (WP-B day 37), by card class, keyed exactly as
+/// [`PinnedKind::for_device`]: the stage-0 rule of `research/spill-b-20260919/DAY37.md` 1.5 per
+/// class that has its receipt. The RTX 5090 class reads `helper` (DAY37 2.1: `GROW-PLACEMENT
+/// extent=1 busy_p95_sum_us=11330.8 ... -> helper`). A class with no stage-0 receipt takes the
+/// helper arm, which never holds the owner thread across a driver call's tail. Returns the
+/// placement and the name of its source. The planes themselves are the serving default only
+/// where the deciding cell read PROMOTE-ELIGIBLE, the full-power RTX PRO 6000 Blackwell
+/// Workstation Edition (`docs/decisions/KV-VMM-SERVING-DEFAULT.md`); there the placement is
+/// `inline`, the arm that cell qualified. The 5090's `helper` row is kept for its own cell.
 pub fn kv_vmm_placement_for_device(name: &str) -> (memra_kv::VmmGrowPlacement, &'static str) {
     use crate::parallel::HardwareTarget;
+    // DAY37 2.5: stage 0 on one RTX PRO 6000 Blackwell Workstation Edition read
+    // `busy_p95_sum_us=55.3 ... -> inline`. The receipt covers the full-power Workstation card
+    // only; the class's other variants (the Max-Q card, the Server Edition) keep the no-receipt
+    // default until their own stage 0.
+    if HardwareTarget::is_pro6000_workstation(name) {
+        return (memra_kv::VmmGrowPlacement::Inline, "pro6000-ws-receipt");
+    }
     match HardwareTarget::from_device_name(name) {
         Ok(HardwareTarget::Rtx5090) => (memra_kv::VmmGrowPlacement::Helper, "rtx5090-receipt"),
-        // DAY37 2.5: stage 0 on one RTX PRO 6000 Blackwell Workstation Edition read
-        // `busy_p95_sum_us=55.3 ... -> inline`. The receipt covers the full-power Workstation card
-        // only; the class's other variants (the Max-Q card, the Server Edition) keep the no-receipt
-        // default until their own stage 0.
-        Ok(HardwareTarget::RtxPro6000Blackwell)
-            if name.contains("Workstation") && !name.contains("Max-Q") =>
-        {
-            (memra_kv::VmmGrowPlacement::Inline, "pro6000-ws-receipt")
-        }
         Ok(HardwareTarget::RtxPro6000Blackwell) | Err(_) => {
             (memra_kv::VmmGrowPlacement::Helper, "no-receipt-default")
         }
