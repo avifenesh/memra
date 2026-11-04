@@ -750,6 +750,42 @@ class Tree:
         return result
 
 
+_INDEX_GITLINKS = {}
+
+
+def _index_gitlinks(repo):
+    """Gitlink (submodule) paths in `repo`'s index, read once per index content.
+
+    `LocalTree.input_modes` used to run `git ls-files --stage -- <path>` for every query, and each
+    run reads the whole index: the public CI witness made 396 such single-leaf queries per run on a
+    202k-entry index. The cache is keyed on a SHA-256 of the index bytes, so any rewrite of the
+    index, including one that keeps its size and resets its mtime, reads it again. Hashing the
+    index is much cheaper than one `ls-files` run. The paths are the 160000 entries
+    `ls-files --stage` lists.
+    """
+    index = Path(git(repo, 'rev-parse', '--path-format=absolute', '--git-path', 'index').decode().strip())
+    try:
+        key = (str(repo), hashlib.sha256(index.read_bytes()).hexdigest())
+    except FileNotFoundError:
+        key = (str(repo), None)
+    if key not in _INDEX_GITLINKS:
+        links = set()
+        for row in git(repo, 'ls-files', '--stage', '-z').split(b'\0'):
+            if row:
+                metadata, name = row.split(b'\t', 1)
+                if metadata.startswith(b'160000 '):
+                    links.add(name.decode())
+        _INDEX_GITLINKS.clear()
+        _INDEX_GITLINKS[key] = frozenset(links)
+    return _INDEX_GITLINKS[key]
+
+
+def _literal_prefix(prefix):
+    """A canonical repository path, which a Git pathspec and a literal prefix match the same way."""
+    return (isinstance(prefix, str) and prefix not in ('', '.') and not prefix.startswith((':', '/'))
+            and not prefix.endswith('/') and not any(c in prefix for c in '*?[\\'))
+
+
 class LocalTree(Tree):
     def __init__(self, repo):
         super().__init__(repo, 'WORKTREE')
@@ -789,6 +825,14 @@ class LocalTree(Tree):
             result[name] = ('120000' if stat.S_ISLNK(mode) else '040000' if stat.S_ISDIR(mode)
                             else '100755' if stat.S_ISREG(mode) and mode & stat.S_IXUSR
                             else '100644' if stat.S_ISREG(mode) else 'unsupported')
+        if prefixes and all(_literal_prefix(prefix) for prefix in prefixes):
+            for name in _index_gitlinks(self.repo):
+                if name in prefixes or (recursive and any(
+                        name.startswith(prefix + '/') for prefix in prefixes)):
+                    result[name] = '160000'
+            return result
+        # A pathspec that is not a plain path (empty, '.', a glob, magic, a trailing slash) keeps
+        # Git's own matching, exactly as before the cache.
         for row in git(self.repo, 'ls-files', '--stage', '-z', '--', *prefixes).split(b'\0'):
             if row:
                 metadata, name = row.split(b'\t', 1)
