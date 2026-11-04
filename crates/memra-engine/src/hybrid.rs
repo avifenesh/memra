@@ -4201,6 +4201,86 @@ impl HybridModel {
         self.decode_batch_program() == crate::plan_backend::DecodeBatchProgram::SlidingGatedMoe
     }
 
+    /// EAGER-ONLY class (lane/gemma4-serve-gaps, 2026-08-07): models the server's batched
+    /// scheduler must serve through the per-session eager body. gemma4 (12B/26B/31B and E4B):
+    /// the batched decode bodies have no arm for its per-layer swa/global geometry + softcapped
+    /// head (the engine refuses), `prime_cache_batch` has no gemma4 core, `gemma4_prime` is
+    /// fresh-only (no chunked/continuation prime), and the step-wise graph capture walks the
+    /// generic qwen-class dc step. One predicate, consumed at every batched entry point of the
+    /// worker, so a future arch with the same gaps joins by predicate rather than scattered
+    /// call-site checks.
+    pub fn eager_only_class(&self) -> bool {
+        self.uses_gemma_program()
+            || self.is_gemma4_e4b()
+            // HYPER-CONNECTIONS RESIDUAL (lane/glm53-flash-bringup, 2026-08-28): the batched
+            // decode chunks, batched prime core, graph capture and every speculative entry point
+            // run a serial residual and REFUSE this topology (`refuse_hyper`). Before this route,
+            // a GLM-5.3-Flash request reached `decode_step_batch_sampled_lean_masked` and came
+            // back as `engine_error` after one token. The converted paths (forward,
+            // forward_last, prime_cache, decode_step) are exactly the ones the eager-only class
+            // uses.
+            || crate::plan_backend::decode_batch_unconverted(&self.plan)
+            // NO BATCHED ARM AT ALL: a serial-residual plan with an operation the generic batched
+            // body does not implement (glm_dsa's LatentMlaAttention) panicked in
+            // `decode_batch_layers` (`mla_path_unimplemented`) on every decode chunk, because
+            // the worker's chunk cap only narrows such a plan to width 1. The manifest is an AND
+            // over the plan, so the same capability read that sets the width also routes the
+            // session to the eager body (`decode_step_h`), which carries the MLA arm.
+            // MiniMax-M3 joins the class by the same read (SwiGluOaiActivation has no
+            // decode-batch surface): the batched body asserts on any of its dense FFN layers
+            // ("M3 swigluoai FFN not yet batched"), while `ffn_swiglu_decode` carries the
+            // swigluoai arm. Membership is the whole eager-only class (monolithic prime,
+            // tokenwise carried suffixes, no prefix snapshot), not a decode-only carve-out: the
+            // batched prime, graph capture and snapshot paths carry no receipt for either family
+            // (glm_dsa is NativeReference, MiniMax-M3 has no support state), so neither is moved
+            // onto them without a serve receipt.
+            || !crate::plan_backend::DECODE_BATCH
+                .trunk_capabilities(&self.plan)
+                .batch
+                .supported
+    }
+
+    /// BATCHED-DECODE carve-out from the eager-only class (lane/gemma-batched, 2026-08-16):
+    /// dense gemma4 (31B class, NOT E4B, which keeps its dedicated decode) has a batched decode
+    /// arm (`gemma4_decode_batch`, exactness battery green at B=4/8) that is DEFAULT ON since
+    /// the 2026-08-16 owner flip (`MEMRA_GEMMA4_BATCH=0` = the eager kill switch). When the arm
+    /// is live, ONLY the worker's two decode scheduling sites route these sessions into batched
+    /// chunks; every other eager-only exclusion (prime batching, concat/fanout prime, graph
+    /// promotion, checkpoint nomination, monolithic prefill) stays keyed on the full
+    /// [`Self::eager_only_class`]: gemma4 still has no batched prime core and no dc graph
+    /// capture.
+    pub fn gemma4_batched_decode(&self) -> bool {
+        self.uses_gemma_program() && !self.is_gemma4_e4b() && Self::gemma4_batch_on()
+    }
+
+    /// BATCHED-DECODE carve-out for mHC (HyperConnections) trunks (lane/glm53-batched-decode,
+    /// 2026-08-28): the engine's `decode_step_batch_hyper` walk (batched hc glue + MoE,
+    /// per-session mixers, decode-exact seams, gate `glm5-hyper-batch-gate`) serves these
+    /// sessions in batched chunks. DEFAULT ON since 2026-08-31 (the hbatch-battery box
+    /// receipts); `MEMRA_HYPER_BATCH=0` returns every session to the eager per-session decode.
+    /// Like the gemma4 carve-out, ONLY the worker's two decode scheduling sites consume this:
+    /// prime batching, graph promotion, and every speculative entry point stay eager-only for
+    /// this topology. The glm5 TP walk is eager per session by contract (the worker's
+    /// `glm5_tp_serve_boot_verdict` refuses `MEMRA_HYPER_BATCH=1` at boot); the TP read here is
+    /// the second lock on the same door, so a future env read cannot route a sharded model onto
+    /// the batched walk.
+    pub fn hyper_batched_decode(&self) -> bool {
+        crate::plan_backend::decode_batch_unconverted(&self.plan)
+            && Self::hyper_batch_on()
+            && !crate::glm5_tp::glm5_tp_armed()
+    }
+
+    /// Does the server's batched scheduler decode this model through the per-session eager body
+    /// (`step_session`, which calls [`Self::decode_step`]) instead of
+    /// `decode_step_batch_sampled_lean_masked`? The eager-only class minus the live
+    /// batched-decode carve-outs. The worker's two decode scheduling sites read this, and so does
+    /// the served-batch argmax cell (`argmax-margin-probe --decode batch`), which reports an
+    /// eager-routed model by name instead of driving a batched body the server never calls for
+    /// it.
+    pub fn served_decode_is_eager(&self) -> bool {
+        self.eager_only_class() && !self.gemma4_batched_decode() && !self.hyper_batched_decode()
+    }
+
     /// Does THIS model take ring-backed SWA planes (`cache::swa_ring_on_for_plan`)? The cache,
     /// admission and the prime schedule (`hybrid_forward::prime_chunk_tokens`) all ask this,
     /// not the process default a co-loaded step37 model arms.
