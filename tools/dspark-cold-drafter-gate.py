@@ -12,8 +12,11 @@ Sequence (raw /v1/completions, fixed seed):
   a:  P + S (S longer than the drafter window), sampled and greedy, short decode: on the arm the
       cache-preferred veto fires on P's plain hit and the door re-arms a cold drafter at |P|;
   b:  a's prompt + a's text + a follow-up, which on the arm restores a's tail-carrying entry.
-The gate passes when every a/b completion is byte-identical between arm and reference."""
+The gate passes when every a/b completion is byte-identical between arm and reference.
+GATE_P_PARAS / GATE_S_PARAS size P and S (60-word paragraphs; defaults 70 / 80, about 12k / 14k
+tokens); S must stay above the drafter window (2,056 rows on the 27B DFlash2)."""
 import json
+import os
 import sys
 import urllib.request
 
@@ -32,8 +35,8 @@ def para(i, n):
 
 
 def run(base, model, out):
-    P = "Background notes.\n" + "\n".join(para(i, 60) for i in range(70)) + "\n"
-    S = "Session log.\n" + "\n".join(para(1000 + i, 60) for i in range(80)) + "\n"
+    P = "Background notes.\n" + "\n".join(para(i, 60) for i in range(int(os.environ.get("GATE_P_PARAS", "70")))) + "\n"
+    S = "Session log.\n" + "\n".join(para(1000 + i, 60) for i in range(int(os.environ.get("GATE_S_PARAS", "80")))) + "\n"
     q = "\nQuestion: summarize the notes above in three sentences.\nAnswer:"
     recs = []
     x0 = post(base, {"model": model, "prompt": P, "max_tokens": 1, "temperature": 0,
