@@ -285,8 +285,8 @@ impl AdmissionBook {
         }
     }
 
-    /// WP-B day 45 (O4, `MEMRA_ADMIT_W_RELEASE`): a session's prefill workspace leaves both
-    /// books when its prime completes; the session keeps being in flight.
+    /// WP-B day 45 (O4, the worker's `w_release_for_device`): a session's prefill workspace
+    /// leaves both books when its prime completes; the session keeps being in flight.
     pub(crate) fn release(&mut self, model: &str, booked_bytes: u64, shadow_bytes: u64) {
         if let Some(row) = self.models.get_mut(model) {
             row.booked_bytes = row.booked_bytes.saturating_sub(booked_bytes);
