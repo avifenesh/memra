@@ -114,6 +114,12 @@ second wave is released when the burst's first request completes `200` (its prim
 whole cell runs again under a new receipt name (`b-day46c` on the target card, `rtx5090-day46c` on the 5090), six
 boots each. No clause, bound or reading changes; 2.1's P1 to P5 lines stand as they read.
 
+### 1.9 Addendum D (2026-11-04, the Max-Q pre-registration, written before any Max-Q boot)
+
+The RTX PRO 6000 Blackwell Max-Q rerun of 2.2 (addendum C's cell) is registered whole in DAY45.md 1.9 (DAY45
+addendum C), with DAY45 2.2's half, because one verdict reads both halves. No clause, bound or reading of this day
+changes.
+
 ## 2. Results
 
 Written after the runs. Section 1 is unchanged.
