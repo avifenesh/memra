@@ -8,8 +8,22 @@ session's rows grow, inline on the owner thread. Releases run after an owner-str
 reaped at the tick top. The admission gate subtracts the reserved-but-unbacked bytes of active
 on-demand sessions (`vmm_owed`). No numeric program changes: the same kernels touch the same
 bytes at addresses a session keeps for its life. `MEMRA_KV_ALLOCATOR` and `MEMRA_KV_VMM_GROW`
-are deleted. `MEMRA_KV_VMM_FAULT` stays as the fault door of the A5 cells. Code:
-`memra_engine::parallel::HardwareTarget::is_pro6000_workstation`, `crates/memra-server/src/kv_vmm.rs`.
+are deleted. `MEMRA_KV_VMM_FAULT` stays as the fault door of the A5 cells and of
+`tools/health-fault-gate.sh` arm k, the tracked gate that reruns A5-ENSURE's shape on that card. If
+the card's VMM granularity query refuses at boot (a driver or virtualization layer without VMM
+support), the server keeps pooled planes, the program every other card runs, and the boot line reads
+`[kv-vmm] door=OFF (VMM unsupported: <the refusal>; pooled K/V planes)` instead of refusing the boot.
+Code: `memra_engine::parallel::HardwareTarget::is_pro6000_workstation`,
+`crates/memra-server/src/kv_vmm.rs`.
+
+**Kept without a reachable caller:** the helper (mapper-thread) grow placement and its mapper in
+`memra-kv` (`VmmGrowPlacement::Helper`, `post_to_mapper`) and the 5090's `rtx5090-receipt` row of
+`memra_engine::tier_transfer::kv_vmm_placement_for_device`. No binary at this tree reaches them:
+serving arms only the Workstation Edition, inline, and `kv-tier-gate` sets inline. The owed 5090 r5
+cell builds its own registered tree (`build-r5.sh`, `02dbdfa40`), so it does not need them here.
+They are kept as the code the 5090 class runs if r5 reads PROMOTE-ELIGIBLE; if it reads anything
+else they are deleted with the 5090 row. Deleting them now and restoring them from git then is the
+owner's call (open).
 
 **Rejected:**
 

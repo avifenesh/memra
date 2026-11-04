@@ -399,7 +399,8 @@ share the class, not the receipts). None has an environment switch; each states 
   reserve their capacity as a fixed virtual range and map granules as the rows grow, inline on
   the owner thread; admission subtracts the reserved-but-unbacked bytes of active sessions. Same
   kernels, same bytes, fixed addresses. Boot line `[kv-vmm] door=ON ... grow=inline
-  (pro6000-ws-receipt)`; every other card prints `[kv-vmm] door=OFF` and keeps pooled planes.
+  (pro6000-ws-receipt)`; every other card prints `[kv-vmm] door=OFF` and keeps pooled planes, and
+  so does that card when its VMM granularity query refuses (`door=OFF (VMM unsupported: ...)`).
   [Decision](decisions/KV-VMM-SERVING-DEFAULT.md).
 - **Batched-chunk OOM retry.** A batched decode chunk whose quoted CUDA OOM came before any
   session-state write (the engine's `step_guard`) takes one reclaim rung (parked sessions dropped,

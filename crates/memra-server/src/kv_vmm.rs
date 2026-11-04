@@ -21,11 +21,12 @@ pub(crate) const SLACK: usize = 64;
 static CONFIG: std::sync::OnceLock<KvVmmConfig> = std::sync::OnceLock::new();
 
 /// Install the worker's read-once configuration (worker start). A respawned worker reads the
-/// same device and environment and installs the same value; a different value is refused, so
-/// the allocator cannot move mid-process.
+/// same device and environment and installs the same program; a different one is refused, so
+/// the allocator cannot move mid-process. The text of a VMM refusal may differ between two
+/// starts; only whether the card fell back is part of the program.
 pub(crate) fn install(cfg: KvVmmConfig) -> Result<(), String> {
     match CONFIG.get() {
-        Some(existing) if *existing == cfg => Ok(()),
+        Some(existing) if existing.same_program(&cfg) => Ok(()),
         Some(_) => Err("kv-vmm configuration changed between worker starts".to_string()),
         None => CONFIG
             .set(cfg)
@@ -49,8 +50,12 @@ pub(crate) struct KvVmmConfig {
     pub placement: VmmGrowPlacement,
     /// Why the placement is what it is (the boot line states it).
     pub placement_source: &'static str,
-    /// `MEMRA_KV_VMM_FAULT` (the fault door of the DAY37 A5 cells), read only when armed.
+    /// `MEMRA_KV_VMM_FAULT` (the fault door of the DAY37 A5 cells, `tools/health-fault-gate.sh`
+    /// arm k), parsed on every card and armed only with the planes.
     pub faults: Option<VmmFaults>,
+    /// The receipted card refused VMM at boot (its granularity query failed): the planes stay
+    /// pooled and the boot line quotes the refusal.
+    pub unsupported: Option<String>,
 }
 
 /// The per-class placement (`memra_engine::tier_transfer::kv_vmm_placement_for_device`).
@@ -59,8 +64,8 @@ pub(crate) fn placement_for_device(name: &str) -> (VmmGrowPlacement, &'static st
 }
 
 impl KvVmmConfig {
-    /// Arms the planes on the receipted card class and reads `MEMRA_KV_VMM_FAULT` there; an
-    /// unparseable fault spec refuses the boot.
+    /// Arms the planes on the receipted card class and parses `MEMRA_KV_VMM_FAULT` on every
+    /// card; an unparseable fault spec refuses the boot.
     pub(crate) fn for_device(device_name: &str) -> Result<Self, String> {
         Self::from_values(
             std::env::var("MEMRA_KV_VMM_FAULT").ok().as_deref(),
@@ -72,28 +77,77 @@ impl KvVmmConfig {
         let armed = memra_engine::parallel::HardwareTarget::is_pro6000_workstation(device_name);
         let (placement, placement_source) = placement_for_device(device_name);
         let mut faults = None;
-        if armed && let Some(f) = fault.map(str::trim).filter(|f| !f.is_empty()) {
-            faults = Some(VmmFaults::parse(f).ok_or_else(|| {
+        if let Some(f) = fault.map(str::trim).filter(|f| !f.is_empty()) {
+            let parsed = VmmFaults::parse(f).ok_or_else(|| {
                 format!(
                     "MEMRA_KV_VMM_FAULT={f:?}: expected a comma list of build:<n>, \
                      ensure:<n>, mapper:all"
                 )
-            })?);
+            })?;
+            // Under the inline placement no mapper thread starts, so `mapper:all` would inject
+            // nothing while the boot line claimed a fault.
+            if armed && placement == VmmGrowPlacement::Inline && parsed.mapper_all {
+                return Err(format!(
+                    "MEMRA_KV_VMM_FAULT={f:?}: mapper:all injects nothing under the inline grow \
+                     placement this card runs (no mapper thread)"
+                ));
+            }
+            faults = Some(parsed);
         }
         Ok(Self {
             armed,
             placement,
             placement_source,
             faults,
+            unsupported: None,
         })
+    }
+
+    /// The VMM granularity query's outcome on the receipted card (`None` when the planes are not
+    /// this card's default and nothing was queried). A refusal falls back to pooled planes, the
+    /// program every other card runs, instead of refusing the boot: the planes are a default,
+    /// not an operator's request. Returns the configuration to install and the granularity.
+    pub(crate) fn with_granularity(
+        mut self,
+        granularity: Option<Result<usize, String>>,
+    ) -> (Self, Option<usize>) {
+        match granularity {
+            Some(Ok(g)) if self.armed => (self, Some(g)),
+            Some(Err(err)) if self.armed => {
+                self.armed = false;
+                self.unsupported = Some(err);
+                (self, None)
+            }
+            _ => (self, None),
+        }
+    }
+
+    /// The process-wide program: everything but the text of a VMM refusal.
+    fn same_program(&self, other: &Self) -> bool {
+        self.armed == other.armed
+            && self.placement == other.placement
+            && self.placement_source == other.placement_source
+            && self.faults == other.faults
+            && self.unsupported.is_some() == other.unsupported.is_some()
     }
 
     /// Boot receipt, one line.
     pub(crate) fn boot_line(&self, granularity: Option<usize>) -> String {
         if !self.armed {
-            return "[kv-vmm] door=OFF (pooled K/V planes: the on-demand planes are the default \
-                    on the RTX PRO 6000 Blackwell Workstation Edition only)"
-                .to_string();
+            let inert = if self.faults.is_some() {
+                "; MEMRA_KV_VMM_FAULT injects nothing on pooled planes"
+            } else {
+                ""
+            };
+            return match &self.unsupported {
+                Some(err) => {
+                    format!("[kv-vmm] door=OFF (VMM unsupported: {err}; pooled K/V planes{inert})")
+                }
+                None => format!(
+                    "[kv-vmm] door=OFF (pooled K/V planes: the on-demand planes are the default \
+                     on the RTX PRO 6000 Blackwell Workstation Edition only{inert})"
+                ),
+            };
         }
         format!(
             "[kv-vmm] door=ON routes=spec,plain granularity={} grow={} ({}) reap=owner-tick \
@@ -175,19 +229,83 @@ mod tests {
     }
 
     #[test]
-    fn the_fault_door_is_read_only_when_armed_and_refuses_bad_values() {
-        // Unarmed, the fault spec cannot arm anything and is not parsed.
-        let off = KvVmmConfig::from_values(Some("bogus"), "NVIDIA GeForce RTX 5090").unwrap();
-        assert!(!off.armed && off.faults.is_none());
-        let f = KvVmmConfig::from_values(Some("mapper:all,ensure:3,build:1"), PRO_WS)
+    fn the_fault_door_parses_on_every_card_and_refuses_what_cannot_fire() {
+        let f = KvVmmConfig::from_values(Some("ensure:1,ensure:2,build:3"), PRO_WS)
             .unwrap()
             .faults
             .unwrap();
-        assert!(f.mapper_all);
-        assert_eq!(f.ensure, vec![3]);
-        assert_eq!(f.build, vec![1]);
-        assert!(KvVmmConfig::from_values(Some("grow:2"), PRO_WS).is_err());
-        assert!(KvVmmConfig::from_values(Some("ensure:0"), PRO_WS).is_err());
+        assert!(!f.mapper_all);
+        assert_eq!(f.ensure, vec![1, 2]);
+        assert_eq!(f.build, vec![3]);
+        // A malformed value refuses the boot on every card, not only where the planes arm.
+        for name in [PRO_WS, "NVIDIA GeForce RTX 5090", ""] {
+            assert!(
+                KvVmmConfig::from_values(Some("bogus"), name).is_err(),
+                "{name}"
+            );
+            assert!(
+                KvVmmConfig::from_values(Some("grow:2"), name).is_err(),
+                "{name}"
+            );
+            assert!(
+                KvVmmConfig::from_values(Some("ensure:0"), name).is_err(),
+                "{name}"
+            );
+        }
+        // The receipted card grows inline, so no mapper thread exists for `mapper:all` to fail.
+        let err = KvVmmConfig::from_values(Some("mapper:all,ensure:1"), PRO_WS).unwrap_err();
+        assert!(err.contains("inline"), "{err}");
+        // Where the planes are pooled the parsed spec is kept for the boot line and arms nothing.
+        let off = KvVmmConfig::from_values(Some("mapper:all,ensure:1"), "NVIDIA GeForce RTX 5090")
+            .unwrap();
+        assert!(!off.armed);
+        assert!(off.faults.as_ref().is_some_and(|f| f.mapper_all));
+        assert!(
+            off.boot_line(None)
+                .contains("MEMRA_KV_VMM_FAULT injects nothing on pooled planes"),
+            "{}",
+            off.boot_line(None)
+        );
+    }
+
+    /// The receipted card whose VMM query fails keeps pooled planes and says why, instead of
+    /// refusing the boot; a card the planes do not arm on is never queried.
+    #[test]
+    fn a_vmm_refusal_on_the_receipted_card_falls_back_to_pooled_planes() {
+        let on = KvVmmConfig::from_values(None, PRO_WS).unwrap();
+        let (ok, g) = on.clone().with_granularity(Some(Ok(2 << 20)));
+        assert!(ok.armed && ok.unsupported.is_none());
+        assert_eq!(g, Some(2 << 20));
+
+        let refusal = "REFUSED: VMM granularity query failed: CUDA_ERROR_NOT_SUPPORTED";
+        let (fell, g) = on.clone().with_granularity(Some(Err(refusal.to_string())));
+        assert!(!fell.armed);
+        assert_eq!(g, None);
+        assert_eq!(fell.unsupported.as_deref(), Some(refusal));
+        assert_eq!(
+            fell.boot_line(g),
+            format!("[kv-vmm] door=OFF (VMM unsupported: {refusal}; pooled K/V planes)")
+        );
+        // A respawn that reads another refusal text runs the same program; one that reads VMM
+        // support does not.
+        let (again, _) = on
+            .clone()
+            .with_granularity(Some(Err("CUDA_ERROR_INVALID_VALUE".to_string())));
+        assert!(fell.same_program(&again));
+        assert!(!fell.same_program(&ok));
+        // A fault spec on the fallen-back card is stated and stays inert.
+        let faulted = KvVmmConfig::from_values(Some("ensure:1"), PRO_WS).unwrap();
+        let (faulted, _) = faulted.with_granularity(Some(Err(refusal.to_string())));
+        assert!(!faulted.armed);
+        assert!(
+            faulted
+                .boot_line(None)
+                .contains("injects nothing on pooled planes")
+        );
+
+        let off = KvVmmConfig::from_values(None, "NVIDIA GeForce RTX 5090").unwrap();
+        let (off, g) = off.with_granularity(None);
+        assert!(!off.armed && off.unsupported.is_none() && g.is_none());
     }
 
     #[test]
