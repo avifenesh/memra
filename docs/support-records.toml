@@ -263,6 +263,7 @@ artifact = "tiny fixture (text oracle; per-layer inputs and shared KV)"
 numeric_program = "f32 reference executor"
 topology = "cpu"
 route = "memra model verify tiny"
+notes = "The 2026-11-04 RTX 5090 record on docs/models/gemma4-e4b.md (QAT Q4_0 GGUF: inspect, run-gen, calibrated argmax, gemma-gate spec K=1..8, verify, graph, serve-smoke) has no tracked raw logs, so TokenizerTemplate, TensorCensus, CheckpointParity, RewriteParity and Serve stay pending. Serve also fails on its own: serve-smoke's gemma4 chat arm leaks a stray <channel|> and the thought before it into content."
 [record.gates]
 Config = "passed"
 TinyParity = "passed"
