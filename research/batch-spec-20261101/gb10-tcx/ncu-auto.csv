@@ -1,0 +1,26 @@
+==WARNING== Note: Running with unmodified GPU clocks. If not controlled otherwise, profiling results may be inconsistent.
+==PROF== Connected to process 513056 (/home/avifenesh/.cache/memra-batchspec-target/release/mmvq-b16-bench)
+B16BENCH variant=auto m=16 tensors=8 bytes=215.6MB median=1.523ms min=1.523ms gbs=141.6 hash=f6633ca5c59e1964 pick(5120x6144)=rpsc
+==PROF== Disconnected from process 513056
+"ID","Process ID","Process Name","Host Name","Kernel Name","Context","Stream","Block Size","Grid Size","Device","CC","Section Name","Metric Name","Metric Unit","Metric Value"
+"0","513056","mmvq-b16-bench","127.0.0.1","qmatvec_nvfp4_mmvq_b16_rpscx","1","13","(32, 4, 1)","(640, 1, 1)","0","12.1","Command line profiler metrics","gpu__time_duration.sum","ns","492,576"
+"0","513056","mmvq-b16-bench","127.0.0.1","qmatvec_nvfp4_mmvq_b16_rpscx","1","13","(32, 4, 1)","(640, 1, 1)","0","12.1","Command line profiler metrics","l1tex__t_bytes_pipe_lsu_mem_local_op_ld.sum","byte","0"
+"0","513056","mmvq-b16-bench","127.0.0.1","qmatvec_nvfp4_mmvq_b16_rpscx","1","13","(32, 4, 1)","(640, 1, 1)","0","12.1","Command line profiler metrics","launch__registers_per_thread","register/thread","96"
+"0","513056","mmvq-b16-bench","127.0.0.1","qmatvec_nvfp4_mmvq_b16_rpscx","1","13","(32, 4, 1)","(640, 1, 1)","0","12.1","Command line profiler metrics","sm__warps_active.avg.per_cycle_active","warp","18.85"
+"0","513056","mmvq-b16-bench","127.0.0.1","qmatvec_nvfp4_mmvq_b16_rpscx","1","13","(32, 4, 1)","(640, 1, 1)","0","12.1","Command line profiler metrics","smsp__average_warp_latency_per_inst_issued.ratio","cycle","26.82"
+"0","513056","mmvq-b16-bench","127.0.0.1","qmatvec_nvfp4_mmvq_b16_rpscx","1","13","(32, 4, 1)","(640, 1, 1)","0","12.1","Command line profiler metrics","smsp__average_warps_issue_stalled_long_scoreboard_per_issue_active.ratio","inst","22.24"
+"0","513056","mmvq-b16-bench","127.0.0.1","qmatvec_nvfp4_mmvq_b16_rpscx","1","13","(32, 4, 1)","(640, 1, 1)","0","12.1","Command line profiler metrics","smsp__inst_executed.sum","inst","35,453,440"
+"1","513056","mmvq-b16-bench","127.0.0.1","qmatvec_nvfp4_mmvq_b16_rpscx","1","13","(32, 4, 1)","(2176, 1, 1)","0","12.1","Command line profiler metrics","gpu__time_duration.sum","ns","380,480"
+"1","513056","mmvq-b16-bench","127.0.0.1","qmatvec_nvfp4_mmvq_b16_rpscx","1","13","(32, 4, 1)","(2176, 1, 1)","0","12.1","Command line profiler metrics","l1tex__t_bytes_pipe_lsu_mem_local_op_ld.sum","byte","0"
+"1","513056","mmvq-b16-bench","127.0.0.1","qmatvec_nvfp4_mmvq_b16_rpscx","1","13","(32, 4, 1)","(2176, 1, 1)","0","12.1","Command line profiler metrics","launch__registers_per_thread","register/thread","96"
+"1","513056","mmvq-b16-bench","127.0.0.1","qmatvec_nvfp4_mmvq_b16_rpscx","1","13","(32, 4, 1)","(2176, 1, 1)","0","12.1","Command line profiler metrics","sm__warps_active.avg.per_cycle_active","warp","19.09"
+"1","513056","mmvq-b16-bench","127.0.0.1","qmatvec_nvfp4_mmvq_b16_rpscx","1","13","(32, 4, 1)","(2176, 1, 1)","0","12.1","Command line profiler metrics","smsp__average_warp_latency_per_inst_issued.ratio","cycle","19.17"
+"1","513056","mmvq-b16-bench","127.0.0.1","qmatvec_nvfp4_mmvq_b16_rpscx","1","13","(32, 4, 1)","(2176, 1, 1)","0","12.1","Command line profiler metrics","smsp__average_warps_issue_stalled_long_scoreboard_per_issue_active.ratio","inst","14.31"
+"1","513056","mmvq-b16-bench","127.0.0.1","qmatvec_nvfp4_mmvq_b16_rpscx","1","13","(32, 4, 1)","(2176, 1, 1)","0","12.1","Command line profiler metrics","smsp__inst_executed.sum","inst","38,654,464"
+"2","513056","mmvq-b16-bench","127.0.0.1","qmatvec_nvfp4_mmvq_b16_rpscx","1","13","(32, 4, 1)","(2176, 1, 1)","0","12.1","Command line profiler metrics","gpu__time_duration.sum","ns","367,264"
+"2","513056","mmvq-b16-bench","127.0.0.1","qmatvec_nvfp4_mmvq_b16_rpscx","1","13","(32, 4, 1)","(2176, 1, 1)","0","12.1","Command line profiler metrics","l1tex__t_bytes_pipe_lsu_mem_local_op_ld.sum","byte","0"
+"2","513056","mmvq-b16-bench","127.0.0.1","qmatvec_nvfp4_mmvq_b16_rpscx","1","13","(32, 4, 1)","(2176, 1, 1)","0","12.1","Command line profiler metrics","launch__registers_per_thread","register/thread","96"
+"2","513056","mmvq-b16-bench","127.0.0.1","qmatvec_nvfp4_mmvq_b16_rpscx","1","13","(32, 4, 1)","(2176, 1, 1)","0","12.1","Command line profiler metrics","sm__warps_active.avg.per_cycle_active","warp","18.99"
+"2","513056","mmvq-b16-bench","127.0.0.1","qmatvec_nvfp4_mmvq_b16_rpscx","1","13","(32, 4, 1)","(2176, 1, 1)","0","12.1","Command line profiler metrics","smsp__average_warp_latency_per_inst_issued.ratio","cycle","18.50"
+"2","513056","mmvq-b16-bench","127.0.0.1","qmatvec_nvfp4_mmvq_b16_rpscx","1","13","(32, 4, 1)","(2176, 1, 1)","0","12.1","Command line profiler metrics","smsp__average_warps_issue_stalled_long_scoreboard_per_issue_active.ratio","inst","13.73"
+"2","513056","mmvq-b16-bench","127.0.0.1","qmatvec_nvfp4_mmvq_b16_rpscx","1","13","(32, 4, 1)","(2176, 1, 1)","0","12.1","Command line profiler metrics","smsp__inst_executed.sum","inst","38,654,464"

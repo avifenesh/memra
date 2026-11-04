@@ -158,3 +158,39 @@ Served, fresh boot per arm, c8 then c16, previous default 062ecac658 then 88805b
 | 16 | 75.90 | 77.27 (+1.8%) |
 
 The boot probe saw the 16-row tier move too: two 16-row waves at 262.2 ms against 273.3 on the previous build. Both builds still pick the tensor-core 32-row wave (227.6 / 229.7 ms).
+
+## Group door at 16 rows and design C: both rejected (2026-11-04)
+
+Both are on `research/b16-group4x-tcx-rejected` (9f3f053dcf). Every arm is bit-identical:
+- kernel-check `FUSED4 m=16` and `RP BATCHED m=16` at bit-bad=0;
+- bench hash and TOKFP equal to the default.
+
+**Group door (17.7 ms at 16 rows against 13.9 at 8; `gb10-g4x/`).** Tested in the 16-row decode step at depth 12288, 2 runs per arm, both orders:
+
+| arm | ms/tick |
+|---|---|
+| default (`group4_b16_rp`) | 161.60, 162.07 |
+| exact width, 1-column groups (`MEMRA_G4X=1`) | 166.50, 166.43 |
+| exact width, 2-column groups (`MEMRA_G4X=2`) | 165.83, 166.21 |
+| exact width, 4-column groups (`MEMRA_G4X=4`) | 161.38, 161.59 |
+| group tensors as `rpscx` singles (`MEMRA_G4X=s`, `gb10-tcx/`) | 164.62, 164.71 |
+
+nsys: the group kernel takes 21.5 ms with 2-column groups, against 17.7. The group body loads its scale words from global memory in the loop (the singles prestage them to smem), and the grouped form adds registers on top. The 4-column form ties. An smem-scale group twin was already flat (ledger row 2).
+
+**Design C: the exact tensor-core form at 16 rows (`gb10-tcx/`).** UP = virtual-lane chains advanced per loop iteration.
+
+| arm | bench pass (ms) | ffn_gate/up launch (ncu) | executed instructions | registers, warps per SM | 16-row tick (ms) |
+|---|---:|---:|---:|---|---|
+| default (`rpscx`) | 5.63-5.69 | 367-380 us | 38.7 M | 96, 19.0 | 161.65, 161.67 |
+| UP=1 | 6.45-6.80 | 430-434 us | 50.0 M | 80, 23.5 | |
+| UP=2 | 6.05-6.07 | 412-414 us | 54.5 M | 94, 15.8 | 178.95, 178.89 |
+| UP=4 | 6.27-6.28 | 446 us | 47.8 M | 143, 8.0 | 180.01, 179.98 |
+
+The premise fails at 16 columns. mma removes the dp4a issue, but the exact float epilogue has to run per (row, column, g) wherever the C fragment lands. Each of the four threads of a quad also re-decodes the weight words, and the fragment selects add up. Net, the kernel executes 1.2-1.4x the instructions of the dp4a form. Advancing more chains per iteration cuts the long-scoreboard stall from 15.8 to 3.6 cycles, but loses residency. At 32 columns the same form wins because the epilogue cost is shared across twice the mma work per decoded weight.
+
+What is left on the 16-row matmul: 14 ms over the 8-row tier, now spread across:
+- the singles: 61.9 ms against 53.1 at 8 rows, an instruction-count gap;
+- the group door: 17.7 against 13.9;
+- the head: 6.6 against 5.0.
+
+No exact lever measured today moves it further.
