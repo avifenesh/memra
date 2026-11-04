@@ -8,6 +8,7 @@
 #include <cuda_runtime.h>
 #include <cuda_fp16.h>
 #include <cuda_fp8.h>
+#include <cuda_fp4.h>
 #include <cuda_pipeline.h>   // cp.async staging for the v3 GEMV family (sm_80+)
 #include <cstdint>
 
@@ -14975,3 +14976,161 @@ extern "C" __global__ void nvfp4_expert_split_repack(
     #pragma unroll
     for (int k = 0; k < 8; k++) q[k] = sb[1 + k];
 }
+
+// ======================= RESEARCH ARM B: W4A4 decode matmul (batch-spec 2026-11-05) =============
+// NON-EXACT, opt-in (MEMRA_W4A4_DECODE=1). The batched decode tier on Blackwell's block-scaled
+// tensor-core MMA (mma.sync kind::mxf4nvf4 m16n8k64, ue4m3 scale per 16 elements): the NVFP4
+// weight bytes and scale words feed the MMA as stored (no LUT decode), and the activation is
+// re-quantized from the tick's q8_1 rows to NVFP4 (per-16 ue4m3 scale under a per-column fp32
+// global scale). The float accumulation happens inside the MMA, so the per-(row, column) order
+// differs from the dp4a chain. Every column is computed independently by the same kernel at
+// every width, so outputs are batch-invariant across widths that take this kernel.
+//
+// Activation layout matches the weight's nibble order inside each 16-element scale group (the dp4a
+// pairing): bytes 0-3 hold elements 0-3 (low nibbles) and 8-11 (high); bytes 4-7 hold 4-7 and
+// 12-15. The MMA pairs nibble positions, so the per-group dot product is the true one.
+__device__ __forceinline__ float w4a4_ue4m3_hw(unsigned char x) {
+    if (x == 0 || x == 0x7F) return 0.0f;
+    int exp = (x >> 3) & 0xF;
+    float man = (float)(x & 0x7);
+    return (exp == 0) ? ldexpf(man, -9) : ldexpf(1.0f + man / 8.0f, exp - 7);
+}
+__device__ __forceinline__ unsigned int w4a4_e2m1(float v) {
+    __nv_fp4x2_storage_t p = __nv_cvt_float2_to_fp4x2(make_float2(v, 0.0f), __NV_E2M1, cudaRoundNearest);
+    return (unsigned int)(p & 0xF);
+}
+// grid = m columns, block = 256. Writes aqf [m][in_f/2] bytes, asf [m][in_f/16] ue4m3 bytes
+// (4 per 64-element block = the MMA's scale word), agl [m] fp32 global scale.
+extern "C" __global__ void __launch_bounds__(256) w4a4_requant_q8_1(
+        const signed char* __restrict__ aq, const float* __restrict__ ad,
+        unsigned char* __restrict__ aqf, unsigned char* __restrict__ asf,
+        float* __restrict__ agl, int in_f) {
+    const int c = blockIdx.x;
+    const int nsb = in_f >> 5, ng = in_f >> 4;
+    const signed char* xq = aq + (size_t)c * in_f;
+    const float* xd = ad + (size_t)c * nsb;
+    __shared__ float red[256];
+    float mx = 0.0f;
+    for (int gi = threadIdx.x; gi < ng; gi += 256) {
+        const float d = xd[gi >> 1];
+        for (int i = 0; i < 16; i++) mx = fmaxf(mx, fabsf((float)xq[gi * 16 + i] * d));
+    }
+    red[threadIdx.x] = mx;
+    __syncthreads();
+    for (int o = 128; o > 0; o >>= 1) {
+        if (threadIdx.x < o) red[threadIdx.x] = fmaxf(red[threadIdx.x], red[threadIdx.x + o]);
+        __syncthreads();
+    }
+    const float amax = red[0];
+    const float G = amax > 0.0f ? amax / (6.0f * 448.0f) : 1.0f;
+    if (threadIdx.x == 0) agl[c] = G;
+    unsigned char* oq = aqf + (size_t)c * (in_f >> 1);
+    unsigned char* os = asf + (size_t)c * ng;
+    for (int gi = threadIdx.x; gi < ng; gi += 256) {
+        const float d = xd[gi >> 1];
+        float v[16];
+        float a = 0.0f;
+        for (int i = 0; i < 16; i++) { v[i] = (float)xq[gi * 16 + i] * d; a = fmaxf(a, fabsf(v[i])); }
+        unsigned char senc = 0;
+        float S = 0.0f;
+        if (a > 0.0f) {
+            senc = (unsigned char)__nv_cvt_float_to_fp8(a / 6.0f / G, __NV_SATFINITE, __NV_E4M3);
+            S = w4a4_ue4m3_hw(senc) * G;
+        }
+        os[gi] = senc;
+        const float inv = S > 0.0f ? 1.0f / S : 0.0f;
+        unsigned char* ob = oq + gi * 8;
+        for (int j = 0; j < 4; j++) {
+            ob[j]     = (unsigned char)(w4a4_e2m1(v[j] * inv)     | (w4a4_e2m1(v[8 + j] * inv) << 4));
+            ob[4 + j] = (unsigned char)(w4a4_e2m1(v[4 + j] * inv) | (w4a4_e2m1(v[12 + j] * inv) << 4));
+        }
+    }
+}
+__device__ __forceinline__ void w4a4_mma(float (&d)[4], unsigned a0, unsigned a1, unsigned a2,
+                                         unsigned a3, unsigned b0, unsigned b1, unsigned sa,
+                                         unsigned sb) {
+#if defined(__CUDA_ARCH_FEAT_SM120_ALL) || defined(__CUDA_ARCH_FEAT_SM121_ALL)
+    asm volatile(
+        "mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 "
+        "{%0, %1, %2, %3}, {%4, %5, %6, %7}, {%8, %9}, {%0, %1, %2, %3}, "
+        "%10, {0, 0}, %11, {0, 0};"
+        : "+f"(d[0]), "+f"(d[1]), "+f"(d[2]), "+f"(d[3])
+        : "r"(a0), "r"(a1), "r"(a2), "r"(a3), "r"(b0), "r"(b1), "r"(sa), "r"(sb));
+#else
+    __trap();
+#endif
+}
+// grid = ceil(out_f / 16), block = (32, 4): one 16-row tile per block, the 4 warps split the
+// 64-element K blocks (b = w, w+4, ...) and sum in a fixed order at the end. NT = column tiles of 8.
+template<int NT>
+__device__ __forceinline__ void w4a4_decode_body(
+        const unsigned char* __restrict__ W, const unsigned char* __restrict__ aqf,
+        const unsigned char* __restrict__ asf, const float* __restrict__ agl,
+        float* __restrict__ y, int in_f, int out_f, int m) {
+    const int lane = threadIdx.x, w = threadIdx.y;
+    const int gq = lane >> 2, t = lane & 3;
+    const int nsb64 = in_f >> 6;
+    const int r0 = (int)blockIdx.x * 16;
+    const unsigned char* qplane = W;
+    const unsigned char* splane = W + (size_t)out_f * nsb64 * 32;
+    const int ra = r0 + gq, rb = r0 + gq + 8;
+    const int rs = r0 + gq + (lane & 1) * 8;
+    const bool oka = ra < out_f, okb = rb < out_f, oks = rs < out_f;
+    float acc[NT][4];
+    #pragma unroll
+    for (int j = 0; j < NT; j++)
+        #pragma unroll
+        for (int e = 0; e < 4; e++) acc[j][e] = 0.0f;
+    const size_t abytes = (size_t)(in_f >> 1);
+    for (int b = w; b < nsb64; b += 4) {
+        unsigned a0 = 0, a1 = 0, a2 = 0, a3 = 0, sa = 0;
+        if (oka) {
+            const unsigned char* p = qplane + (size_t)ra * nsb64 * 32 + (size_t)b * 32;
+            a0 = *(const unsigned*)(p + 4 * t);
+            a2 = *(const unsigned*)(p + 16 + 4 * t);
+        }
+        if (okb) {
+            const unsigned char* p = qplane + (size_t)rb * nsb64 * 32 + (size_t)b * 32;
+            a1 = *(const unsigned*)(p + 4 * t);
+            a3 = *(const unsigned*)(p + 16 + 4 * t);
+        }
+        if (oks) sa = *(const unsigned*)(splane + (size_t)rs * nsb64 * 4 + (size_t)b * 4);
+        #pragma unroll
+        for (int j = 0; j < NT; j++) {
+            const int col = j * 8 + gq;
+            unsigned b0 = 0, b1 = 0, sb = 0;
+            if (col < m) {
+                const unsigned char* q = aqf + (size_t)col * abytes + (size_t)b * 32;
+                b0 = *(const unsigned*)(q + 4 * t);
+                b1 = *(const unsigned*)(q + 16 + 4 * t);
+                sb = *(const unsigned*)(asf + (size_t)col * (in_f >> 4) + (size_t)b * 4);
+            }
+            w4a4_mma(acc[j], a0, a1, a2, a3, b0, b1, sa, sb);
+        }
+    }
+    __shared__ float red[4][16][NT * 8 + 1];
+    #pragma unroll
+    for (int j = 0; j < NT; j++)
+        #pragma unroll
+        for (int e = 0; e < 4; e++)
+            red[w][gq + ((e >> 1) << 3)][j * 8 + 2 * t + (e & 1)] = acc[j][e];
+    __syncthreads();
+    const int tid = w * 32 + lane;
+    for (int cell = tid; cell < 16 * NT * 8; cell += 128) {
+        const int row = cell / (NT * 8), col = cell - row * (NT * 8);
+        if (col >= m || r0 + row >= out_f) continue;
+        const float v = ((red[0][row][col] + red[1][row][col]) + red[2][row][col]) + red[3][row][col];
+        y[(size_t)col * out_f + r0 + row] = v * agl[col];
+    }
+}
+#define MEMRA_W4A4_WRAP(NT) \
+extern "C" __global__ void __launch_bounds__(128) qmatvec_nvfp4_w4a4_dec_n##NT( \
+        const unsigned char* __restrict__ W, const unsigned char* __restrict__ aqf, \
+        const unsigned char* __restrict__ asf, const float* __restrict__ agl, \
+        float* __restrict__ y, int in_f, int out_f, int m) { \
+    w4a4_decode_body<NT>(W, aqf, asf, agl, y, in_f, out_f, m); \
+}
+MEMRA_W4A4_WRAP(1)
+MEMRA_W4A4_WRAP(2)
+MEMRA_W4A4_WRAP(4)
+#undef MEMRA_W4A4_WRAP

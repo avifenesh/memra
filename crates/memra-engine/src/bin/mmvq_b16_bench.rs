@@ -87,7 +87,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Ok(outs)
     };
     let mut h: u64 = 0xcbf29ce484222325;
-    for y in pass(true)? {
+    let outs = pass(true)?;
+    // MEMRA_BENCH_DUMP=PATH: every output as little-endian f32, tensor after tensor (accuracy
+    // comparisons between numeric arms run as two processes).
+    if let Ok(path) = std::env::var("MEMRA_BENCH_DUMP") {
+        let mut buf: Vec<u8> = Vec::new();
+        for y in &outs {
+            for v in y {
+                buf.extend_from_slice(&v.to_le_bytes());
+            }
+        }
+        std::fs::write(&path, buf)?;
+    }
+    for y in outs {
         for v in y {
             h ^= v.to_bits() as u64;
             h = h.wrapping_mul(0x100000001b3);

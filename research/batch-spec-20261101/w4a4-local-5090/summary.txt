@@ -1,0 +1,5 @@
+m=16 median=0.317ms -> median=0.189ms n=458752 rel_l2=1.0675e-01 max_abs_err/max_ref=1.3039e-01 cos=0.994447 nan=0
+m=8 median=0.783ms -> median=0.645ms n=1015808 rel_l2=1.0648e-01 max_abs_err/max_ref=1.5294e-01 cos=0.994472 nan=0
+m=32 median=2.613ms -> median=1.074ms n=4063232 rel_l2=1.0635e-01 max_abs_err/max_ref=1.4467e-01 cos=0.994488 nan=0
+m=5 median=0.621ms -> median=0.629ms n=634880 rel_l2=1.0642e-01 max_abs_err/max_ref=1.6624e-01 cos=0.994479 nan=0
+batch invariance: columns 0-7 bit-identical across m=8/13/16 (blk.0 FFN, tensor order 4096/12288/12288)

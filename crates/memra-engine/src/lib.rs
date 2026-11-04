@@ -1730,6 +1730,14 @@ pub(crate) fn rms_block() -> u32 {
     })
 }
 
+/// Research arm B (batch-spec 2026-11-05): `MEMRA_W4A4_DECODE=1` routes the batched NVFP4 decode
+/// tier through the block-scaled FP4 tensor-core kernel with NVFP4-requantized activations.
+/// Non-exact; default off.
+pub(crate) fn w4a4_decode_on() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var("MEMRA_W4A4_DECODE").as_deref() == Ok("1"))
+}
+
 pub(crate) fn fa_split_keys(t_kv: usize, n_head_kv: usize) -> usize {
     static S: std::sync::OnceLock<Option<usize>> = std::sync::OnceLock::new();
     if let Some(forced) = *S.get_or_init(|| {
@@ -19086,6 +19094,9 @@ impl Engine {
         } else {
             Self::batched_mcols(m)
         };
+        if w4a4_decode_on() && m >= 2 {
+            return Ok(None);
+        }
         let kname: &'static str = match mcols {
             2 => "qmatvec_nvfp4_mmvq_group4_b2_rp",
             4 => "qmatvec_nvfp4_mmvq_group4_b4_rp",
@@ -19581,7 +19592,7 @@ impl Engine {
         let (b0, b1, b2) = unsafe { (&*p0.0, &*p1.0, &*p2.0) };
         if m > 1 {
             // batched twin has no in-kernel scale — refuse scale carriers (GGUF trunk = 1.0).
-            if p0.1 != 1.0 || p1.1 != 1.0 || p2.1 != 1.0 {
+            if p0.1 != 1.0 || p1.1 != 1.0 || p2.1 != 1.0 || w4a4_decode_on() {
                 return Ok(None);
             }
             let f = self.func("qmatvec_nvfp4_mmvq_fused3_b8_rpsc");
@@ -19985,7 +19996,7 @@ impl Engine {
         if m > 1 {
             // Batched fused twin: no in-kernel scale (the bN_rpsc program has none) — refuse
             // scale-carrying tensors so the singles path keeps them (GGUF trunk scales are 1.0).
-            if p0.1 != 1.0 || p1.1 != 1.0 || p2.1 != 1.0 || p3.1 != 1.0 {
+            if p0.1 != 1.0 || p1.1 != 1.0 || p2.1 != 1.0 || p3.1 != 1.0 || w4a4_decode_on() {
                 return Ok(None);
             }
             let f = self.func("qmatvec_nvfp4_mmvq_fused4_b8_rpsc");
@@ -23928,6 +23939,70 @@ impl Engine {
             m <= mcols,
             "batched mmvq tier: m={m} exceeds the kernel column width {mcols}"
         );
+        // RESEARCH ARM B (MEMRA_W4A4_DECODE=1, non-exact, default off): the batched tier on the
+        // block-scaled FP4 tensor-core MMA with the activation re-quantized to NVFP4.
+        if w4a4_decode_on()
+            && qtype == QT_NVFP4
+            && rp
+            && m >= 2
+            && m <= 32
+            && in_f.is_multiple_of(64)
+        {
+            let mut aqf = self.alloc_uninit::<u8>(m * in_f / 2)?;
+            let mut asf = self.alloc_uninit::<u8>(m * in_f / 16)?;
+            let mut agl = self.alloc_uninit::<f32>(m)?;
+            let inf = in_f as i32;
+            {
+                let f = self.func("w4a4_requant_q8_1");
+                let cfg = LaunchConfig {
+                    grid_dim: (m as u32, 1, 1),
+                    block_dim: (256, 1, 1),
+                    shared_mem_bytes: 0,
+                };
+                let __s_b = self.gpu.stream();
+                let mut b = __s_b.launch_builder(&f);
+                b.arg(aq)
+                    .arg(ad)
+                    .arg(&mut aqf)
+                    .arg(&mut asf)
+                    .arg(&mut agl)
+                    .arg(&inf);
+                unsafe {
+                    b.launch(cfg)?;
+                }
+            }
+            let nt = m.div_ceil(8);
+            let kname = match nt {
+                1 => "qmatvec_nvfp4_w4a4_dec_n1",
+                2 => "qmatvec_nvfp4_w4a4_dec_n2",
+                _ => "qmatvec_nvfp4_w4a4_dec_n4",
+            };
+            let f = self.func(kname);
+            let mut y = self.alloc_uninit::<f32>(m * out_f)?;
+            let cfg = LaunchConfig {
+                grid_dim: ((out_f as u32).div_ceil(16), 1, 1),
+                block_dim: (32, 4, 1),
+                shared_mem_bytes: 0,
+            };
+            let (outf, mi) = (out_f as i32, m as i32);
+            let __s_b = self.gpu.stream();
+            let mut b = __s_b.launch_builder(&f);
+            b.arg(bytes)
+                .arg(&aqf)
+                .arg(&asf)
+                .arg(&agl)
+                .arg(&mut y)
+                .arg(&inf)
+                .arg(&outf)
+                .arg(&mi);
+            unsafe {
+                b.launch(cfg)?;
+            }
+            if scale != 1.0 {
+                self.scale_inplace(&mut y, scale, m * out_f)?;
+            }
+            return Ok(y);
+        }
         const ROWS_PER_BLOCK: u32 = 4;
         // TUNE SEAM (H100 lane): MEMRA_BVAR forces the batched-variant pick for the whole
         // process — the auto heuristics were tuned on sm_120 (82 SMs / 858 GB/s) and the
