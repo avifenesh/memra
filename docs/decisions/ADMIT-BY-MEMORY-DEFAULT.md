@@ -3,7 +3,9 @@
 **Chosen:** on the full-power RTX PRO 6000 Blackwell Workstation Edition, the batched worker
 admits by memory, in four parts. (a) A request that bounds neither `max_tokens` nor `max_ctx` is
 charged `prompt + 32768 + 8` (clamped to the trained context) instead of the `MEMRA_CTX`
-envelope, and 32768 is its output budget. (b) The admission reclaim flush demotes device prefix
+envelope, and 32768 is its output budget. The charge never exceeds the envelope the unarmed
+program would charge, so a `MEMRA_CTX` below the open output still bounds a naked request (its
+budget is then the envelope less the prompt and the 8 slack rows). (b) The admission reclaim flush demotes device prefix
 entries into the pinned host tier up to the arrival's shortfall before dropping the rest. (c) A
 memory-deferred request requeues until both tiers are exhausted and `MEMRA_ADMIT_DEFER_BUDGET_MS`
 (8 s) is spent, then answers 429 with `Retry-After`. (d) Every headroom reading subtracts the
@@ -40,6 +42,11 @@ V-TRUNC band and conservation, V-ALLOC, V-RETRY, V-OOM, G-BOOK, PARK) passes on 
 in both orders, in an 80 to 92 s window against `off`'s 150 to 152 s; `on2048` and `on8192` admit
 64 of 64. The seed cap bound on every armed boot. No panic, respawn, fatal or engine error on any
 boot.
+
+**Not measured:** the envelope cap. Every cell ran at a `MEMRA_CTX` wider than its open output
+(65,536 on the 5090, the checkpoint's 262,144 on the target card), where the cap changes nothing.
+It exists because the 32768 default would otherwise let a naked request on a narrow `MEMRA_CTX`
+(the 8192 several serving gates boot with) book four times the KV its operator set.
 
 **What would change it:** the 5090 half of DAY40 reading V-DOOR PASS on its registered tree adds
 the RTX 5090 class (its own SELECT read R1 and R2 8192 on day 36, so its open-output value is its

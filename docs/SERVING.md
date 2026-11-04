@@ -375,7 +375,8 @@ Admission sizes each session's KV ladder from the request's own bound. An explic
 `max_ctx` is authoritative. Without one, a finite request uses
 `prompt_tokens + max_tokens + 8`; only a request that **omits `max_tokens`** falls back to
 `MEMRA_CTX` (on the full-power RTX PRO 6000 Workstation Edition, where memory-shaped admission
-is the default, it is charged `prompt_tokens + 32768 + 8` and 32768 is its output budget;
+is the default, it is charged `prompt_tokens + 32768 + 8`, never more than that `MEMRA_CTX`
+envelope, and the charge less the prompt and 8 slack rows is its output budget;
 `MEMRA_ADMIT_OPEN_OUTPUT_TOKENS` sets another value). `MEMRA_CTX` itself resolves through `worker::resolve_ctx` (2026-09-10): set, it is
 authoritative; unset, it is the checkpoint's own declared context, never a constant; unusable, it
 refuses at the boundary that reads it rather than substituting a window the checkpoint does not
@@ -407,8 +408,8 @@ share the class, not the receipts). None has an environment switch; each states 
   every other card, where one OOM ends every session of the chunk. Boot line `[admit-oom] batch
   OOM recovery: ON` or `OFF`. [Decision](decisions/BATCH-OOM-RECOVER-DEFAULT.md).
 - **Memory-shaped admission.** A request that bounds neither `max_tokens` nor `max_ctx` is
-  charged `prompt + 32768 + 8` instead of the `MEMRA_CTX` envelope (32768 is also its output
-  budget); the admission reclaim flush demotes device prefix entries to the pinned host tier
+  charged `prompt + 32768 + 8` instead of the `MEMRA_CTX` envelope, never more than it (the
+  charge less the prompt and 8 slack rows is its output budget); the admission reclaim flush demotes device prefix entries to the pinned host tier
   before dropping; a memory defer past `MEMRA_ADMIT_DEFER_BUDGET_MS` (8 s) answers 429 with
   `Retry-After`; and every headroom reading books what still-priming sessions owe, with a
   prefill OOM on a session that emitted nothing parked and requeued. Boot line
@@ -962,8 +963,8 @@ gated by the official `openai` Python SDK against a live server
   model's trained context) — the OpenAI default-when-omitted semantics, not a silent
   128-token truncation. Where memory-shaped admission is the card's default (the full-power
   RTX PRO 6000 Workstation Edition) the budget is the open-output charge instead, 32768
-  tokens unless `MEMRA_ADMIT_OPEN_OUTPUT_TOKENS` says otherwise, and a request that runs to
-  it ends `finish_reason: length`. Explicit `max_tokens`/`max_completion_tokens` honored
+  tokens unless `MEMRA_ADMIT_OPEN_OUTPUT_TOKENS` says otherwise or a narrower session ctx
+  leaves less, and a request that runs to it ends `finish_reason: length`. Explicit `max_tokens`/`max_completion_tokens` honored
   exactly.
 - **`temperature` omitted ⇒ 1.0; `seed` omitted ⇒ fresh per request** (dogfood F4,
   2026-08-04). Both were `#[serde(default)]`, which is `0.0` for `f32` and `0` for `u64` —
