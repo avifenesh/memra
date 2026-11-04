@@ -237,69 +237,75 @@ fn check_pool_split(devs: &[&Engine; 2], mut link: Option<&mut ArLink>) {
 fn gpu_range_scores_are_bit_identical_including_causal_boundary() {
     let e = Engine::new(0).unwrap();
     // Same caller dispatch and RP environment as the OFF/ON production-shape cells.
-    // The early prime queries precede the peer's entire pool range.
-    for (rows, n, first_pos) in [
-        (1usize, 32213usize, 128851usize),
-        (1, 250483, 1001931),
-        (128, 257, 900),
-        (128, 33, 4),
-        (8, 129, 508),
-    ] {
-        let heads = 32;
-        let d = 128;
-        let finite = |n, seed| {
-            scores(n, seed)
-                .into_iter()
-                .map(|v| if v.is_finite() { v } else { 0.0 })
-                .collect::<Vec<_>>()
-        };
-        let q = e.htod(&finite(rows * heads * d, 71)).unwrap();
-        let keys = e.htod(&finite(n * d, 79)).unwrap();
-        let hw = e.htod(&finite(rows * heads, 89)).unwrap();
-        let mut all = e.uninit(rows * n).unwrap();
-        e.mla_kpool_score(
-            &q,
-            &keys,
-            &hw,
-            &mut all,
-            rows,
-            heads,
-            d,
-            n,
-            4,
-            first_pos,
-            (d as f32).powf(-0.5),
-            (heads as f32).powf(-0.5),
-        )
-        .unwrap();
-        let all = e.dtoh(&all).unwrap();
-        let mid = n.div_ceil(2);
-        for (lo, hi) in [(0, mid), (mid, n)] {
-            let mut part = e.uninit(rows * (hi - lo)).unwrap();
-            e.mla_kpool_score_range(
+    // The early prime queries precede the peer's entire pool range. Both scorers: `prefill`
+    // takes the tensor-core scorer on sm_100a builds at rows >= 8, which the split prime runs on
+    // its own range, so the range has to match the whole plane there too.
+    for prefill in [false, true] {
+        for (rows, n, first_pos) in [
+            (1usize, 32213usize, 128851usize),
+            (1, 250483, 1001931),
+            (128, 257, 900),
+            (128, 33, 4),
+            (8, 129, 508),
+        ] {
+            let heads = 32;
+            let d = 128;
+            let finite = |n, seed| {
+                scores(n, seed)
+                    .into_iter()
+                    .map(|v| if v.is_finite() { v } else { 0.0 })
+                    .collect::<Vec<_>>()
+            };
+            let q = e.htod(&finite(rows * heads * d, 71)).unwrap();
+            let keys = e.htod(&finite(n * d, 79)).unwrap();
+            let hw = e.htod(&finite(rows * heads, 89)).unwrap();
+            let mut all = e.uninit(rows * n).unwrap();
+            e.mla_kpool_score(
                 &q,
                 &keys,
                 &hw,
-                &mut part,
+                &mut all,
                 rows,
                 heads,
                 d,
-                hi - lo,
-                lo,
+                n,
                 4,
                 first_pos,
                 (d as f32).powf(-0.5),
                 (heads as f32).powf(-0.5),
+                prefill,
             )
             .unwrap();
-            let part = e.dtoh(&part).unwrap();
-            for row in 0..rows {
-                for p in lo..hi {
-                    assert_eq!(
-                        part[row * (hi - lo) + p - lo].to_bits(),
-                        all[row * n + p].to_bits(),
-                        "row={row} pool={p} rows={rows} pools={n}"
-                    );
+            let all = e.dtoh(&all).unwrap();
+            let mid = n.div_ceil(2);
+            for (lo, hi) in [(0, mid), (mid, n)] {
+                let mut part = e.uninit(rows * (hi - lo)).unwrap();
+                e.mla_kpool_score_range(
+                    &q,
+                    &keys,
+                    &hw,
+                    &mut part,
+                    rows,
+                    heads,
+                    d,
+                    hi - lo,
+                    lo,
+                    4,
+                    first_pos,
+                    (d as f32).powf(-0.5),
+                    (heads as f32).powf(-0.5),
+                    prefill,
+                )
+                .unwrap();
+                let part = e.dtoh(&part).unwrap();
+                for row in 0..rows {
+                    for p in lo..hi {
+                        assert_eq!(
+                            part[row * (hi - lo) + p - lo].to_bits(),
+                            all[row * n + p].to_bits(),
+                            "row={row} pool={p} rows={rows} pools={n} prefill={prefill}"
+                        );
+                    }
                 }
             }
         }

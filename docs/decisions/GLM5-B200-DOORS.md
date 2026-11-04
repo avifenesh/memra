@@ -139,20 +139,29 @@ and counts as TP-class at restore: the per-rank snapshot keys on one runtime ove
 trunk, and the partial form used to mint an entry without shards that the restore admitted as
 plain.
 
+## The tensor-core DSA prefill scorer: sm_100a default for prefill chunks
+
+**Chosen:** on sm_100a builds the DSA indexer scores a PREFILL chunk at `t_q >= 8` on bf16
+`mma.sync` tensor cores with f32 accumulation, one MMA per product (`MEMRA_DSA_SCORE_TC`'s
+precision 1). The rows-exact verify walk and decode keep the f32 scorer. `MEMRA_DSA_SCORE_TC`
+and precision 2 are deleted.
+
+**Rejected:** the door's own `t_q >= 8` rule as the default, which also reaches the DFlash2
+rows-exact verify walk at K+1 >= 8, where bf16 scores would break the verify's row-for-row
+equality with plain decode (a spec-verify against plain pair in the one-program-per-request
+sense) and which no receipt covers; precision 2 (every operand split hi/lo, three MMAs), slower
+with the same flips; and deleting the door, which would give up a measured 2.3x on the 1M prime.
+
+**Measurement that settled it:** 2x B200 pair (darklanes
+`research/glm5-b200-mint-20260904/LANE.md:3372-3502`, tpwalk18/18b/18c/20/21/22, memra #309): the
+TP-2 1M prime fell from 782 s (f32 scorer) to 339.8 s with precision 1, 310.1 s composed with the
+indexer split. Not bit-identical: on the pair it moved one greedy token at 36/64 after a 32k
+prompt, and the first-token argmax control (tpwalk22) showed the f32-scorer posture already
+diverging at the same near-tie token. The owner chose precision 1 over precision 2 on these rows.
+
+**Scope:** sm_100a builds, prefill chunks only. Other builds keep the f32 scorer.
+
 ## Open calls
-
-### `MEMRA_DSA_SCORE_TC`: scope of an sm_100a default
-
-The receipt is positive and large: the TP-2 1M prime fell from 782 s (f32 scorer) to 339.8 s
-with the bf16 arm, and the owner's precision call chose precision 1 over precision 2 (slower,
-same flips). It is not bit-identical, and it covers the TP-2 plain prime only: spec x TP is
-declined, so no verify walk ran under it. The arm keys on `t_q >= 8`, which the DFlash2 verify
-walk reaches at K+1 >= 8. There bf16 scores would break the verify's rows-exact equality with
-plain decode, a spec-verify against plain pair in the one-program-per-request sense, and the
-retired box cannot measure it. Options: an sm_100a default limited to prefill chunks, with the
-rows-exact verify keeping the f32 scorer and precision 2 deleted (recommended: it is the shape
-the receipt measured); the door's own `t_q >= 8` rule as the sm_100a default; or delete the door
-and both arms. Decide-by 2026-11-18; the door stays default OFF until then.
 
 ### `MEMRA_E4M3_BATCH_R2` and `MEMRA_Q80_BATCH_R2`: promote or delete
 

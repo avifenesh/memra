@@ -1692,7 +1692,7 @@ fn gpu_kpool_scoring_is_byte_identical_to_the_reference_kernel() {
         for first_pos in horizons {
             e.mla_kpool_score(
                 &q_d, &keys_d, &hw_d, &mut fast, t_q, heads, d, n_pools, POOL, first_pos, qk_scale,
-                head_scale,
+                head_scale, false,
             )
             .expect("tiled scoring");
             e.mla_kpool_score_ref(
