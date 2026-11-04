@@ -24049,7 +24049,13 @@ impl Engine {
             if !rp {
                 "base"
             } else if variant == "rpsc" {
-                "rpsc"
+                // A full 16-row call runs the exact-width twin (design B2: compile-time width,
+                // two-column load groups; bit-identical to rpsc). MEMRA_BVAR=rpsc keeps rpsc.
+                if m == 16 && forced != Some("rpsc") {
+                    "rpscx"
+                } else {
+                    "rpsc"
+                }
             } else {
                 "rp"
             }
