@@ -1508,18 +1508,11 @@ struct SpecDraftSetup {
     s_capturable: bool,
 }
 
-/// WP-A day 23 (memra#536 Move 2, the draft-bearing restore;
-/// `memra_tier::conformance::d2d_restore_draft_ready`): a draft scratch allocated for a prefix
-/// restore BEFORE the session that will read it exists. Under the host-tier contracts door the
-/// restore probe allocates it (`HybridModel::alloc_restored_draft_scratch`, the OFF constructor's
-/// geometry checks), sets its length, and hands its two K and V destinations
-/// (`destinations`, exactly `pos x k_tok_bytes` and `pos x v_tok_bytes`) to the same-device restore
-/// batch as borrowed views; the pending `Restoring` state owns the value while the copy is in
-/// flight, and `HybridModel::spec_session_from_restored_ready` consumes it only after the owner
-/// stream's wait on the batch's completion events was installed (rule 3). The OFF constructor uses
-/// the same value for its own owner-stream copies (`copy_from_entry`), so both arms run one
-/// allocation program and one set of checks. `MtpScratch` itself stays crate-private.
-pub struct RestoredDraftScratch {
+/// WP-A day 23 (the draft-bearing restore): a draft scratch allocated for a prefix restore
+/// BEFORE the session that will read it exists (`HybridModel::alloc_restored_draft_scratch`, the
+/// restore constructor's geometry checks), filled by `copy_from_entry` and sized by `set_len`.
+/// `MtpScratch` itself stays crate-private.
+struct RestoredDraftScratch {
     scratch: MtpScratch,
     pos: usize,
     k_bytes: usize,
@@ -1527,42 +1520,14 @@ pub struct RestoredDraftScratch {
 }
 
 impl RestoredDraftScratch {
-    /// The restored prefix length the scratch was allocated for (its rows `[0..pos)`).
-    pub fn pos(&self) -> usize {
-        self.pos
-    }
-    /// Bytes of the K rows `[0..pos)`.
-    pub fn k_bytes(&self) -> usize {
-        self.k_bytes
-    }
-    /// Bytes of the V rows `[0..pos)`.
-    pub fn v_bytes(&self) -> usize {
-        self.v_bytes
-    }
-    /// The two borrowed destination views of exactly `k_bytes` and `v_bytes` (the door's D2D
-    /// restore items). Empty views when `pos x tok_bytes` is zero; the caller submits no item then.
-    pub fn destinations(
-        &mut self,
-    ) -> (
-        cudarc::driver::CudaViewMut<'_, u8>,
-        cudarc::driver::CudaViewMut<'_, u8>,
-    ) {
-        let kb = self.k_bytes;
-        let vb = self.v_bytes;
-        (
-            self.scratch.kv.k.slice_mut(..kb),
-            self.scratch.kv.v.slice_mut(..vb),
-        )
-    }
-    /// Set the scratch's length to `pos` (host `len` and the device `len_d`, the OFF statement).
-    /// Under the door this runs at the probe on the owner stream, before the producer fence; it
-    /// touches a buffer of its own, never the K/V rows.
-    pub fn set_len(&mut self, e: &Engine) -> Result<(), String> {
+    /// Set the scratch's length to `pos` (host `len` and the device `len_d`). It touches a buffer
+    /// of its own, never the K/V rows.
+    fn set_len(&mut self, e: &Engine) -> Result<(), String> {
         self.scratch
             .set_len(e, self.pos)
             .map_err(|err| format!("draft scratch len set failed: {err}"))
     }
-    /// The OFF program's copies: the entry's draft K and V rows `[0..pos)` into the scratch on the
+    /// The restore's copies: the entry's draft K and V rows `[0..pos)` into the scratch on the
     /// owner stream (`copy_u8_into`), the statements the constructor ran before day 23.
     fn copy_from_entry(
         &mut self,
@@ -10837,8 +10802,8 @@ impl HybridModel {
     }
 
     // -----------------------------------------------------------------------------------------
-    // WP-A day 23 (memra#536 Move 2, the draft-bearing restore): the restore-side draft scratch as
-    // a value the worker can own before a session exists. See `RestoredDraftScratch`.
+    // WP-A day 23: the restore-side draft scratch, allocated and checked before the session that
+    // reads it exists. See `RestoredDraftScratch`.
     // -----------------------------------------------------------------------------------------
 
     /// SPEC-ON-CACHE-HIT restore (lane/spec-on-cache-hit, 2026-08-18 — PORT-PLAN item 3,
@@ -10960,10 +10925,8 @@ impl HybridModel {
             );
         }
         // WP-A day 23: the alloc, the geometry checks, the two owner-stream copies and `set_len`
-        // are the OFF draft program, shared with the door's probe through `RestoredDraftScratch`
-        // (the probe allocates and checks here, copies on the copy stream, and hands a READY
-        // scratch to `spec_session_from_restored_ready`); the statements and their order are the
-        // ones this constructor ran before day 23.
+        // through `RestoredDraftScratch`; the statements and their order are the ones this
+        // constructor ran before day 23.
         let mut draft = match self.alloc_restored_draft_scratch(
             e,
             max_ctx,
@@ -10997,107 +10960,14 @@ impl HybridModel {
         )
     }
 
-    /// WP-A day 23 (memra#536 Move 2, the draft-bearing restore;
-    /// `memra_tier::conformance::d2d_restore_draft_ready`): the constructor over a READY scratch.
-    /// The door's restore probe allocated the scratch before any session existed
-    /// (`alloc_restored_draft_scratch`, the same geometry checks as the OFF constructor), its rows
-    /// `[0..pos)` were written on the copy stream from the pinned entry's draft plane as items of
-    /// the trunk restore's batch, its `len` was set at the probe, and the OWNER stream's wait on
-    /// every completion event of that batch was installed at the settle BEFORE the worker handed
-    /// the scratch here (rule 3): this constructor runs no draft copy and issues the first
-    /// draft-head read only through the session it returns. Everything after the scratch is the
-    /// OFF constructor's own tail (`spec_session_from_restored_scratch`), so a session built here
-    /// and one built by `spec_session_from_restored_deferred` over the same bytes are the same
-    /// program. A scratch whose `len` is not the restored prefix length is refused with the cache
-    /// handed back (the hit serves plain).
-    #[allow(clippy::too_many_arguments)]
-    #[allow(clippy::result_large_err)]
-    pub fn spec_session_from_restored_ready(
-        &self,
-        e: &Engine,
-        cache: Cache,
-        prefix: Vec<u32>,
-        suffix: &[u32],
-        draft: RestoredDraftScratch,
-        last_h: &[f32],
-        boundary_logits: &[f32],
-        sampling: Option<SpecSampling>,
-        require_anchor: bool,
-        max_ctx: usize,
-        republish_at: Option<usize>,
-        defer_suffix: bool,
-    ) -> Result<SpecSession, (Option<Cache>, String)> {
-        let _numeric = self.enter_numeric();
-        let pos = prefix.len();
-        let fail = |cache: Cache, msg: String| -> Result<SpecSession, (Option<Cache>, String)> {
-            Err((Some(cache), msg))
-        };
-        if let Err(error) = cache.ensure_usable("spec_session_from_restored") {
-            drop(cache);
-            return Err((None, error.to_string()));
-        }
-        if self.mtp.is_none() {
-            return fail(cache, "no MTP head attached (nothing to draft with)".into());
-        }
-        if pos == 0 {
-            return fail(cache, "empty committed prefix".into());
-        }
-        if cache.pos != pos {
-            let msg = format!(
-                "restored cache pos {} != restored prefix len {pos}",
-                cache.pos
-            );
-            return fail(cache, msg);
-        }
-        if draft.pos != pos {
-            return fail(
-                cache,
-                format!("draft plane len {} != restored prefix len {pos}", draft.pos),
-            );
-        }
-        if draft.scratch.kv.len != pos {
-            return fail(
-                cache,
-                format!(
-                    "ready draft scratch len {} != restored prefix len {pos} (set_len did not run \
-                     at the probe)",
-                    draft.scratch.kv.len
-                ),
-            );
-        }
-        if pos + suffix.len() >= max_ctx {
-            return fail(
-                cache,
-                format!(
-                    "prompt {} + suffix would not leave generation room in ctx {max_ctx}",
-                    pos + suffix.len(),
-                ),
-            );
-        }
-        self.spec_session_from_restored_scratch(
-            e,
-            cache,
-            prefix,
-            suffix,
-            draft.scratch,
-            last_h,
-            boundary_logits,
-            sampling,
-            require_anchor,
-            republish_at,
-            defer_suffix,
-        )
-    }
-
-    /// WP-A day 23: the OFF constructor's geometry checks and allocation, callable before any
-    /// session exists. In the OFF constructor's order: the scratch is allocated at `max_ctx`
+    /// WP-A day 23: the restore constructor's geometry checks and allocation, callable before any
+    /// session exists. In the constructor's order: the scratch is allocated at `max_ctx`
     /// (`MtpScratch::new`), a ring-backed scratch is refused, the entry's per-token layout must
     /// equal the scratch's, `pos` must fit the capacity, and the source planes must hold at least
-    /// `pos x tok_bytes` each. The messages are the OFF constructor's, verbatim. Nothing is copied
-    /// and `len` is not set: `copy_from_entry` (OFF) or the door's copy-stream restore write the
-    /// rows, and `set_len` sets the length.
+    /// `pos x tok_bytes` each. Nothing is copied and `len` is not set: `copy_from_entry` writes
+    /// the rows, and `set_len` sets the length.
     #[allow(clippy::too_many_arguments)]
-    pub fn alloc_restored_draft_scratch(
+    fn alloc_restored_draft_scratch(
         &self,
         e: &Engine,
         max_ctx: usize,
@@ -11154,10 +11024,10 @@ impl HybridModel {
         })
     }
 
-    /// The shared tail of the two restore constructors (WP-A day 23): everything the OFF
-    /// constructor did after the draft rows were in the scratch. `scratch` holds rows `[0..pos)`
-    /// with `len == pos`; the suffix feed, the draft-scratch fill of the suffix rows, the
-    /// boundary token and the session assembly are unchanged from the day-22 tree.
+    /// The restore constructor's tail (WP-A day 23): everything it did after the draft rows were
+    /// in the scratch. `scratch` holds rows `[0..pos)` with `len == pos`; the suffix feed, the
+    /// draft-scratch fill of the suffix rows, the boundary token and the session assembly are
+    /// unchanged from the day-22 tree.
     #[allow(clippy::too_many_arguments)]
     #[allow(clippy::result_large_err)]
     fn spec_session_from_restored_scratch(
@@ -13253,7 +13123,7 @@ impl HybridModel {
         // `next_pred` plays prime_logits' role: it is the token produced from the logits after
         // committed.last() by the same rule this entry applies to a cold prime's last row —
         // an argmax when greedy, a `sample_boundary_token` draw when sampled (the burst tail,
-        // or `spec_session_from_restored_ready`/`_deferred` for a converted prefix-cache hit,
+        // or `spec_session_from_restored_deferred` for a converted prefix-cache hit,
         // did the drawing where the sampler and the session's Philox counters were live).
         // `last_h` seeds the predecessor pairing below. Fresh calls and non-empty suffixes take
         // the normal path.
@@ -13578,7 +13448,7 @@ impl HybridModel {
             b
         } else if continuation {
             // A continuation's boundary token was DRAWN by the burst that stashed it (the
-            // session tail below), or by `spec_session_from_restored_ready`/`_deferred` for a
+            // session tail below), or by `spec_session_from_restored_deferred` for a
             // converted prefix-cache hit — in both cases from the correct logits row with this same
             // session's Philox stream, which is why it can be consumed here as-is.
             sess_tail.as_ref().unwrap().2.unwrap()
@@ -18160,24 +18030,15 @@ mod sampled_graph_key_tests {
     }
 }
 
-/// WP-A day 23 (the draft-bearing restore): the two restore constructors share one tail and one
-/// allocation program; the ready constructor runs NO draft copy. Source census, CPU.
+/// WP-A day 23 (the draft-bearing restore): the restore constructor runs its draft program in
+/// the order it ran before day 23 and reaches its tail once. Source census, CPU.
 #[cfg(test)]
 mod day23_restored_draft_census {
     #[test]
-    fn the_ready_constructor_copies_nothing_and_both_constructors_share_the_tail() {
+    fn the_restore_constructor_keeps_its_order_and_reaches_the_tail_once() {
         let src = include_str!("spec.rs");
         let body = &src[..src.find("mod day23_restored_draft_census").unwrap()];
-        let ready = body
-            .find("pub fn spec_session_from_restored_ready(")
-            .unwrap();
-        let ready_body = &body[ready..ready + body[ready..].find("\n    }\n").unwrap()];
-        assert!(
-            !ready_body.contains("copy_u8_into") && !ready_body.contains("MtpScratch::new("),
-            "the ready constructor allocates and copies nothing: the scratch arrived filled"
-        );
-        assert!(ready_body.contains("draft.scratch.kv.len != pos"));
-        assert!(ready_body.contains("self.spec_session_from_restored_scratch("));
+        assert!(!body.contains(concat!("spec_session_from_restored", "_ready(")));
         let deferred = body
             .find("pub fn spec_session_from_restored_deferred(")
             .unwrap();
@@ -18199,15 +18060,15 @@ mod day23_restored_draft_census {
         assert_eq!(
             body.matches("self.spec_session_from_restored_scratch(")
                 .count(),
-            2,
-            "exactly the two constructors reach the shared tail"
+            1,
+            "only the restore constructor reaches the tail"
         );
         // The OFF copy statements live in `copy_from_entry` and nowhere else on the restore side.
         let copier = body.find("fn copy_from_entry(").unwrap();
         let copier_body = &body[copier..copier + body[copier..].find("\n    }\n").unwrap()];
         assert_eq!(copier_body.matches("copy_u8_into(").count(), 2);
-        // The alloc keeps the OFF geometry messages verbatim.
-        let alloc_fn = body.find("pub fn alloc_restored_draft_scratch(").unwrap();
+        // The alloc keeps the geometry messages verbatim.
+        let alloc_fn = body.find("fn alloc_restored_draft_scratch(").unwrap();
         let alloc_body = &body[alloc_fn..alloc_fn + body[alloc_fn..].find("\n    }\n").unwrap()];
         for msg in [
             "draft scratch alloc failed: {err}",
