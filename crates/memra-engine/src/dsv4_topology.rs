@@ -150,8 +150,15 @@ impl Dsv4Placement {
     /// than parse into nothing: the `--tpep` switch, `MEMRA_DSV4_ATTENTION_TP_GATE` and
     /// `DSV4_ROWS_GATE_TOPOLOGY`.
     pub fn take_gate_arg(args: &mut Vec<String>, runs: &[Self]) -> Res<Self> {
-        for retired in ["MEMRA_DSV4_ATTENTION_TP_GATE", "DSV4_ROWS_GATE_TOPOLOGY"] {
-            if std::env::var_os(retired).is_some() {
+        // Deliberate refusal reads (env_audit's DELIBERATE_REFUSAL_READS). Each name sits on
+        // the line of its read, so the retired-name census sees the read.
+        let attention_tp_gate = std::env::var_os("MEMRA_DSV4_ATTENTION_TP_GATE").is_some();
+        let rows_gate_topology = std::env::var_os("DSV4_ROWS_GATE_TOPOLOGY").is_some();
+        for (retired, set) in [
+            ("MEMRA_DSV4_ATTENTION_TP_GATE", attention_tp_gate),
+            ("DSV4_ROWS_GATE_TOPOLOGY", rows_gate_topology),
+        ] {
+            if set {
                 return Err(format!(
                     "{retired} is retired: unset it and pass --placement=<{}>",
                     Self::names(runs)
