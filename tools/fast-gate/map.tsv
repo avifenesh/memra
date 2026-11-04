@@ -17,7 +17,7 @@
 # Scope union rule: none < synthetic < csv < all. Unmatched engine/runtime paths fall through
 # to the DEFAULT row at the bottom: full kernel-check plus the gemma4 and qwen35-class
 # representatives. That is not one probe per model class. The registered probes load only the
-# gemma4_dense, gemma4_moe, qwen35, qwen35_moe and step35 packs, so the plan names every other
+# gemma4_dense, gemma4_e4b, gemma4_moe, qwen35, qwen35_moe and step35 packs, so the plan names every other
 # pack's own gates as REQUIRED lines (dependencies.json `unprobed-model-packs`). Those lines are
 # static: they print for every engine, model-plan, build or harness change, not only for the
 # packs the change reaches (README.md says why).

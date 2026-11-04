@@ -22,8 +22,8 @@ pub mod speech;
 use memra_gguf::config::AttentionGateKind;
 use memra_gguf::model_plan::{
     ActivationPlan, AttentionPlan, AttentionScale, GdnGateActivation, GemmaLayerScale, HcCollapse,
-    LogitsTransform, MicroBlockIndexPlan, MlpPlan, ModelPlan, PleEmbeddingPlan, ResidualTopology,
-    RopePlan, TensorPresence, ValueNorm, ValueProjection,
+    LogitsTransform, MicroBlockIndexPlan, MlpPlan, ModelPlan, PerLayerInputPlan, PleEmbeddingPlan,
+    ResidualTopology, RopePlan, StatePlan, TensorPresence, ValueNorm, ValueProjection,
 };
 use memra_gguf::tensor_contract::{DsparkTensor, LayerTensor, MtpTensor, TensorId, VisionTensor};
 use std::collections::BTreeMap;
@@ -154,6 +154,8 @@ pub enum ReferenceLayerState {
         window: usize,
         compressed_tokens: usize,
     },
+    /// gemma4 KV-shared layer: no cache of its own; it attends `source_layer`'s.
+    SharedKv { source_layer: u32 },
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -348,6 +350,9 @@ pub fn deterministic_fixture(plan: &ModelPlan) -> Result<ReferenceFixture, Refer
             ReferenceTensor::new(vec![width], vec![1.0; width])?,
         );
     }
+    if let Some(per_layer) = plan.per_layer_input.as_ref() {
+        add_per_layer_input_fixture(&mut weights, per_layer, &plan.layers, hidden)?;
+    }
     if let Some((streams, epsilon, sinkhorn_iterations, collapse)) = hyper_topology(plan)? {
         // The mean collapse has no learned head tensors (Glm5NextTextHyperHead).
         if collapse == HcCollapse::GatedHead {
@@ -441,7 +446,8 @@ pub fn deterministic_fixture(plan: &ModelPlan) -> Result<ReferenceFixture, Refer
         }
         match &layer.attention {
             AttentionPlan::Full(attention) | AttentionPlan::SlidingWindow { attention, .. } => {
-                add_full_attention_fixture(&mut weights, layer.index, attention, hidden)?;
+                let owns_kv = !matches!(layer.state, StatePlan::SharedKvCache { .. });
+                add_full_attention_fixture(&mut weights, layer.index, attention, hidden, owns_kv)?;
             }
             AttentionPlan::GatedDeltaNet(gdn) => {
                 add_gdn_fixture(&mut weights, layer.index, gdn, hidden)?;
@@ -1272,6 +1278,52 @@ fn add_ple_fixture(
 }
 
 #[allow(clippy::unusual_byte_groupings)] // allow: mnemonic grouping of a pinned seed/magic constant
+/// gemma4 per-layer input tensors: the token table, model projection and projection norm, plus
+/// each trunk layer's gate, projection and post norm.
+fn add_per_layer_input_fixture(
+    weights: &mut ReferenceWeights,
+    plan: &PerLayerInputPlan,
+    layers: &[memra_gguf::model_plan::LayerPlan],
+    hidden: usize,
+) -> Result<(), ReferenceError> {
+    let width = plan.width as usize;
+    if width == 0 || plan.layers as usize != layers.len() {
+        return Err(ReferenceError::InvalidPlan {
+            layer: None,
+            reason: "per-layer input needs a positive width and one slice per trunk layer",
+        });
+    }
+    let packed = layers.len() * width;
+    weights.insert(
+        TensorId::PerLayerTokenEmbedding,
+        generated_tensor(&[plan.vocab_size as usize, packed], 260, 0.5)?,
+    );
+    weights.insert(
+        TensorId::PerLayerModelProjection,
+        generated_tensor(&[packed, hidden], 261, 1.0 / (hidden as f32).sqrt())?,
+    );
+    weights.insert(
+        TensorId::PerLayerProjectionNorm,
+        ReferenceTensor::new(vec![width], vec![1.0; width])?,
+    );
+    for layer in layers {
+        let salt = layer.index as u64 * 31;
+        weights.insert(
+            layer_id(layer.index, LayerTensor::PerLayerInputGate),
+            generated_tensor(&[width, hidden], 262 + salt, 1.0 / (hidden as f32).sqrt())?,
+        );
+        weights.insert(
+            layer_id(layer.index, LayerTensor::PerLayerProjection),
+            generated_tensor(&[hidden, width], 263 + salt, 1.0 / (width as f32).sqrt())?,
+        );
+        weights.insert(
+            layer_id(layer.index, LayerTensor::PerLayerPostNorm),
+            ReferenceTensor::new(vec![hidden], vec![1.0; hidden])?,
+        );
+    }
+    Ok(())
+}
+
 fn generated_tensor(
     shape: &[usize],
     salt: u64,
@@ -1282,7 +1334,7 @@ fn generated_tensor(
         .map(|index| {
             let mut value = index as u64 ^ salt.wrapping_mul(0x9e37_79b9);
             value ^= value >> 16;
-            value = value.wrapping_mul(0x45d9_f3b);
+            value = value.wrapping_mul(0x045d_9f3b);
             value ^= value >> 16;
             let unit = (value as u32) as f32 / u32::MAX as f32;
             (2.0 * unit - 1.0) * scale
@@ -1291,11 +1343,13 @@ fn generated_tensor(
     ReferenceTensor::new(shape.to_vec(), data)
 }
 
+/// `owns_kv` is false on a gemma4 KV-shared layer, which carries only the query side.
 fn add_full_attention_fixture(
     weights: &mut ReferenceWeights,
     layer: u32,
     attention: &memra_gguf::model_plan::FullAttentionPlan,
     hidden: usize,
+    owns_kv: bool,
 ) -> Result<(), ReferenceError> {
     let query_heads = attention.query_heads as usize;
     let kv_heads = attention.kv_heads as usize;
@@ -1331,7 +1385,9 @@ fn add_full_attention_fixture(
             13,
         ),
     ] {
-        if fused_qkv && tensor != LayerTensor::AttentionOutput {
+        if (fused_qkv && tensor != LayerTensor::AttentionOutput)
+            || (!owns_kv && tensor == LayerTensor::Key)
+        {
             continue;
         }
         weights.insert(
@@ -1343,7 +1399,7 @@ fn add_full_attention_fixture(
             )?,
         );
     }
-    if attention.value_projection == ValueProjection::Separate && !fused_qkv {
+    if attention.value_projection == ValueProjection::Separate && !fused_qkv && owns_kv {
         weights.insert(
             layer_id(layer, LayerTensor::Value),
             generated_tensor(
@@ -1354,7 +1410,12 @@ fn add_full_attention_fixture(
         );
     }
     if attention.qk_norm != memra_gguf::model_plan::TensorPresence::Absent {
-        for tensor in [LayerTensor::QueryNorm, LayerTensor::KeyNorm] {
+        let norms: &[LayerTensor] = if owns_kv {
+            &[LayerTensor::QueryNorm, LayerTensor::KeyNorm]
+        } else {
+            &[LayerTensor::QueryNorm]
+        };
+        for &tensor in norms {
             weights.insert(
                 layer_id(layer, tensor),
                 ReferenceTensor::new(vec![key_dim], vec![1.0; key_dim])?,
@@ -2014,6 +2075,14 @@ pub fn execute_multimodal(
         layer: None,
         reason: "multimodal input requires a vision-token injection plan",
     })?;
+    // Image rows' per-layer inputs (llama.cpp feeds the padding token's table row) are not a
+    // qualified program here.
+    if plan.per_layer_input.is_some() {
+        return Err(ReferenceError::UnsupportedOperation {
+            layer: None,
+            operation: "multimodal input with gemma4 per-layer inputs",
+        });
+    }
     let vision = execute_vision(plan, weights, vision_input)?;
     if let Some(tokens_per_image) = injection.tokens_per_image
         && vision.output_tokens != tokens_per_image as usize
@@ -2077,6 +2146,15 @@ fn embed_token_rows(
     Ok(embedded)
 }
 
+/// Does this plan carry gemma4 E4B cross-layer inputs (per-layer embeddings or KV sharing)?
+fn uses_gemma_cross_layer_inputs(plan: &ModelPlan) -> bool {
+    plan.per_layer_input.is_some()
+        || plan
+            .layers
+            .iter()
+            .any(|layer| matches!(layer.state, StatePlan::SharedKvCache { .. }))
+}
+
 fn execute_embedded(
     plan: &ModelPlan,
     weights: &ReferenceWeights,
@@ -2120,17 +2198,60 @@ fn execute_embedded(
         memra_gguf::model_plan::DrafterPlan::MiMoMtp3(_) => None,
     });
     let mut draft_taps = dspark.map(|plan| vec![None; plan.target_layer_ids.len()]);
+    // gemma4 E4B: per-layer inputs and KV sharing reach across layers, so its layers take the
+    // gemma dense body directly with the prologue output and each source layer's rows.
+    let gemma_cross_layer = uses_gemma_cross_layer_inputs(plan);
+    let per_layer = plan
+        .per_layer_input
+        .as_ref()
+        .map(|per_layer| {
+            per_layer_inputs(per_layer, weights, token_ids, &embedded, hidden)
+                .map(|inputs| (per_layer, inputs))
+        })
+        .transpose()?;
+    let mut kv_rows: Vec<Option<KvRows>> = Vec::with_capacity(plan.layers.len());
     for layer in &plan.layers {
-        let (next, layer_state) = execute_layer(
-            layer,
-            weights,
-            &x,
-            token_ids,
-            tokens,
-            hidden,
-            vocab,
-            LayerScope::Trunk,
-        )?;
+        let (next, layer_state) = if gemma_cross_layer {
+            let shared_kv = match layer.state {
+                StatePlan::SharedKvCache { source_layer } => Some((
+                    source_layer,
+                    kv_rows
+                        .get(source_layer as usize)
+                        .and_then(Option::as_ref)
+                        .ok_or(ReferenceError::InvalidPlan {
+                            layer: Some(layer.index),
+                            reason: "shared KV source is not an earlier layer with its own cache",
+                        })?,
+                )),
+                _ => None,
+            };
+            let (next, layer_state, rows) = execute_gemma_dense_layer(
+                layer,
+                weights,
+                &x,
+                tokens,
+                hidden,
+                GemmaLayerInputs {
+                    per_layer: per_layer
+                        .as_ref()
+                        .map(|(per_layer, inputs)| (*per_layer, inputs.as_slice())),
+                    shared_kv,
+                },
+            )?;
+            kv_rows.push(rows);
+            (next, layer_state)
+        } else {
+            execute_layer(
+                layer,
+                weights,
+                &x,
+                token_ids,
+                tokens,
+                hidden,
+                vocab,
+                LayerScope::Trunk,
+            )?
+        };
         x = next;
         layer_hidden.push(x.clone());
         if let (Some(dspark), Some(taps)) = (dspark, draft_taps.as_mut())
@@ -2338,6 +2459,12 @@ impl<'a> StreamedTrunkExecution<'a> {
             return Err(ReferenceError::UnsupportedOperation {
                 layer: None,
                 operation: "streamed drafter execution",
+            });
+        }
+        if uses_gemma_cross_layer_inputs(plan) {
+            return Err(ReferenceError::UnsupportedOperation {
+                layer: None,
+                operation: "streamed gemma4 per-layer input / shared KV execution",
             });
         }
         let tokens = token_ids.len();
@@ -4129,7 +4256,15 @@ fn execute_layer(
         parallel_moe: None, ..
     } = layer.residual
     {
-        return execute_gemma_dense_layer(layer, weights, input, tokens, hidden);
+        return execute_gemma_dense_layer(
+            layer,
+            weights,
+            input,
+            tokens,
+            hidden,
+            GemmaLayerInputs::default(),
+        )
+        .map(|(output, state, _)| (output, state));
     }
     if layer.residual != ResidualTopology::Serial {
         return Err(ReferenceError::UnsupportedOperation {
@@ -5432,13 +5567,35 @@ fn tensor_i64<'a>(
     Ok(ints)
 }
 
+/// Inputs a gemma4 dense layer reads from outside its own tensors (E4B). The trunk loop of
+/// [`execute`] supplies them; every other caller passes the default and so cannot run a layer
+/// that needs them (a KV-shared layer refuses, see below).
+#[derive(Clone, Copy, Default)]
+struct GemmaLayerInputs<'a> {
+    /// The plan's per-layer input program and its `[tokens, layers, width]` prologue output.
+    per_layer: Option<(&'a PerLayerInputPlan, &'a [f32])>,
+    /// On a KV-shared layer: the source layer index and its rows from this forward.
+    shared_kv: Option<(u32, &'a KvRows)>,
+}
+
 fn execute_gemma_dense_layer(
     layer: &memra_gguf::model_plan::LayerPlan,
     weights: &ReferenceWeights,
     input: &[f32],
     tokens: usize,
     hidden: usize,
-) -> Result<(Vec<f32>, ReferenceLayerState), ReferenceError> {
+    inputs: GemmaLayerInputs<'_>,
+) -> Result<(Vec<f32>, ReferenceLayerState, Option<KvRows>), ReferenceError> {
+    let shared_source = match layer.state {
+        StatePlan::SharedKvCache { source_layer } => Some(source_layer),
+        _ => None,
+    };
+    if shared_source != inputs.shared_kv.map(|(source, _)| source) {
+        return Err(ReferenceError::UnsupportedOperation {
+            layer: Some(layer.index),
+            operation: "gemma4 KV-shared layer outside the trunk forward that holds its source rows",
+        });
+    }
     let ResidualTopology::Gemma {
         post_attention_norm,
         post_mlp_norm,
@@ -5462,8 +5619,8 @@ fn execute_gemma_dense_layer(
         )?,
         layer.pre_attention_norm.epsilon,
     );
-    let (attention, state) = match &layer.attention {
-        AttentionPlan::Full(attention) => full_attention(
+    let (attention, state, rows) = match &layer.attention {
+        AttentionPlan::Full(attention) => full_attention_rows(
             layer.index,
             attention,
             None,
@@ -5473,8 +5630,9 @@ fn execute_gemma_dense_layer(
             tokens,
             hidden,
             None,
+            inputs.shared_kv,
         )?,
-        AttentionPlan::SlidingWindow { attention, window } => full_attention(
+        AttentionPlan::SlidingWindow { attention, window } => full_attention_rows(
             layer.index,
             attention,
             Some(*window as usize),
@@ -5484,6 +5642,7 @@ fn execute_gemma_dense_layer(
             tokens,
             hidden,
             None,
+            inputs.shared_kv,
         )?,
         _ => {
             return Err(ReferenceError::UnsupportedOperation {
@@ -5543,10 +5702,137 @@ fn execute_gemma_dense_layer(
     };
     let mut output = attention_residual;
     add_in_place(&mut output, &mlp);
+    if let Some((per_layer, per_layer_inputs)) = inputs.per_layer {
+        per_layer_input_tail(
+            layer.index,
+            per_layer,
+            per_layer_inputs,
+            weights,
+            &mut output,
+            tokens,
+            hidden,
+        )?;
+    }
     for value in &mut output {
         *value *= scale;
     }
-    Ok((output, state))
+    Ok((output, state, rows))
+}
+
+/// gemma4 per-layer inputs `[tokens, layers, width]` (the `PerLayerInputPlan` prologue) from the
+/// token ids and the already scaled token embedding rows.
+fn per_layer_inputs(
+    plan: &PerLayerInputPlan,
+    weights: &ReferenceWeights,
+    token_ids: &[u32],
+    embedded: &[f32],
+    hidden: usize,
+) -> Result<Vec<f32>, ReferenceError> {
+    let tokens = token_ids.len();
+    let width = plan.width as usize;
+    let packed = plan.layers as usize * width;
+    let vocab = plan.vocab_size as usize;
+    let table = tensor(weights, &TensorId::PerLayerTokenEmbedding, &[vocab, packed])?;
+    let mut projected = linear(
+        embedded,
+        tensor(
+            weights,
+            &TensorId::PerLayerModelProjection,
+            &[packed, hidden],
+        )?,
+        tokens,
+        hidden,
+        packed,
+    );
+    for value in &mut projected {
+        *value *= plan.projection_scale;
+    }
+    let mut inputs = rms_norm(
+        &projected,
+        tokens * plan.layers as usize,
+        width,
+        tensor(weights, &TensorId::PerLayerProjectionNorm, &[width])?,
+        plan.projection_norm.epsilon,
+    );
+    for (position, &token) in token_ids.iter().enumerate() {
+        let token = token as usize;
+        if token >= vocab {
+            return Err(ReferenceError::TokenOutOfRange {
+                token: token as u32,
+                vocab,
+            });
+        }
+        let gathered = &table[token * packed..(token + 1) * packed];
+        for (value, &row) in inputs[position * packed..(position + 1) * packed]
+            .iter_mut()
+            .zip(gathered)
+        {
+            *value = (*value + row * plan.token_scale) * plan.combine_scale;
+        }
+    }
+    Ok(inputs)
+}
+
+/// The gemma4 per-layer gated residual: `h += rms_norm(W_proj . (gelu(W_gate . h) * inp[l]))`.
+fn per_layer_input_tail(
+    layer: u32,
+    plan: &PerLayerInputPlan,
+    inputs: &[f32],
+    weights: &ReferenceWeights,
+    residual: &mut [f32],
+    tokens: usize,
+    hidden: usize,
+) -> Result<(), ReferenceError> {
+    if plan.gate_activation != ActivationPlan::GeluTanh {
+        return Err(ReferenceError::UnsupportedOperation {
+            layer: Some(layer),
+            operation: "per-layer input gate activation other than gelu_tanh",
+        });
+    }
+    let width = plan.width as usize;
+    let layers = plan.layers as usize;
+    let gate = linear(
+        residual,
+        tensor(
+            weights,
+            &layer_id(layer, LayerTensor::PerLayerInputGate),
+            &[width, hidden],
+        )?,
+        tokens,
+        hidden,
+        width,
+    );
+    let mut gated = vec![0.0; tokens * width];
+    for token in 0..tokens {
+        let slice = (token * layers + layer as usize) * width;
+        for dim in 0..width {
+            gated[token * width + dim] = gelu_tanh(gate[token * width + dim]) * inputs[slice + dim];
+        }
+    }
+    let projected = linear(
+        &gated,
+        tensor(
+            weights,
+            &layer_id(layer, LayerTensor::PerLayerProjection),
+            &[hidden, width],
+        )?,
+        tokens,
+        width,
+        hidden,
+    );
+    let normed = rms_norm(
+        &projected,
+        tokens,
+        hidden,
+        tensor(
+            weights,
+            &layer_id(layer, LayerTensor::PerLayerPostNorm),
+            &[hidden],
+        )?,
+        plan.post_norm.epsilon,
+    );
+    add_in_place(residual, &normed);
+    Ok(())
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -7127,7 +7413,6 @@ fn kimi_delta_net(
 
 #[allow(clippy::too_many_arguments)]
 // allow: the parameter list mirrors the kernel/FFI/call contract; bundling into a struct is a refactor, not a lint fix
-#[allow(clippy::manual_is_multiple_of)] // allow: divisor is runtime-derived; the modulo form keeps a zero divisor loud (a panic), where is_multiple_of would return false silently
 fn full_attention(
     layer: u32,
     plan: &memra_gguf::model_plan::FullAttentionPlan,
@@ -7141,6 +7426,52 @@ fn full_attention(
     // source); attention runs dense under causal AND selection (SEMANTICS.md §QSA).
     selection: Option<&[bool]>,
 ) -> Result<(Vec<f32>, ReferenceLayerState), ReferenceError> {
+    full_attention_rows(
+        layer,
+        plan,
+        window,
+        norm_epsilon,
+        weights,
+        x,
+        tokens,
+        hidden,
+        selection,
+        None,
+    )
+    .map(|(output, state, _)| (output, state))
+}
+
+/// One attention layer's attended K and V for every token of the forward, `[tokens,
+/// kv_heads, dim]`: K after its norm and rope, V after its norm. A gemma4 KV-shared layer reads
+/// its source layer's rows, so the reference keeps them for the whole forward, not only the
+/// window tail the layer state retains.
+#[derive(Debug, Clone, PartialEq)]
+struct KvRows {
+    key: Vec<f32>,
+    value: Vec<f32>,
+    kv_heads: usize,
+    key_dim: usize,
+    value_dim: usize,
+}
+
+/// [`full_attention`] that also returns the layer's [`KvRows`]. With `shared = Some((source,
+/// rows))` the layer projects only its queries and attends `rows` (gemma4 KV sharing); it then
+/// owns no rows and its state names the source.
+#[allow(clippy::too_many_arguments)]
+// allow: the parameter list mirrors the kernel/FFI/call contract; bundling into a struct is a refactor, not a lint fix
+#[allow(clippy::manual_is_multiple_of)] // allow: divisor is runtime-derived; the modulo form keeps a zero divisor loud (a panic), where is_multiple_of would return false silently
+fn full_attention_rows(
+    layer: u32,
+    plan: &memra_gguf::model_plan::FullAttentionPlan,
+    window: Option<usize>,
+    norm_epsilon: f32,
+    weights: &ReferenceWeights,
+    x: &[f32],
+    tokens: usize,
+    hidden: usize,
+    selection: Option<&[bool]>,
+    shared: Option<(u32, &KvRows)>,
+) -> Result<(Vec<f32>, ReferenceLayerState, Option<KvRows>), ReferenceError> {
     let query_heads = plan.query_heads as usize;
     let kv_heads = plan.kv_heads as usize;
     let key_dim = plan.key_head_dim as usize;
@@ -7185,7 +7516,32 @@ fn full_attention(
         &layer_id(layer, LayerTensor::AttentionOutput),
         &[hidden, query_heads * value_dim],
     )?;
-    let (q_projected, mut key, mut value) = if fused_qkv {
+    if let Some((_, rows)) = shared
+        && (fused_qkv
+            || plan.mimo_math.is_some()
+            || (rows.kv_heads, rows.key_dim, rows.value_dim) != (kv_heads, key_dim, value_dim)
+            || rows.key.len() != tokens * k_width
+            || rows.value.len() != tokens * v_width)
+    {
+        return Err(ReferenceError::InvalidPlan {
+            layer: Some(layer),
+            reason: "shared KV rows do not match this layer's attention geometry",
+        });
+    }
+    let (q_projected, mut key, mut value) = if let Some((_, rows)) = shared {
+        let query = linear(
+            x,
+            tensor(
+                weights,
+                &layer_id(layer, LayerTensor::Query),
+                &[q_projection_width, hidden],
+            )?,
+            tokens,
+            hidden,
+            q_projection_width,
+        );
+        (query, rows.key.clone(), rows.value.clone())
+    } else if fused_qkv {
         let shards = fused_qkv_shards.unwrap() as usize;
         let q_per_shard = q_projection_width / shards;
         let k_per_shard = k_width / shards;
@@ -7299,19 +7655,22 @@ fn full_attention(
         plan.qk_norm,
         norm_epsilon,
     )?;
-    if plan.value_norm == ValueNorm::WeightlessRms {
-        let ones = vec![1.0; value_dim];
-        value = rms_norm(&value, tokens * kv_heads, value_dim, &ones, norm_epsilon);
+    // Shared rows arrive normed and roped by their source layer.
+    if shared.is_none() {
+        if plan.value_norm == ValueNorm::WeightlessRms {
+            let ones = vec![1.0; value_dim];
+            value = rms_norm(&value, tokens * kv_heads, value_dim, &ones, norm_epsilon);
+        }
+        apply_optional_head_norm(
+            weights,
+            layer_id(layer, LayerTensor::KeyNorm),
+            &mut key,
+            tokens * kv_heads,
+            key_dim,
+            plan.qk_norm,
+            norm_epsilon,
+        )?;
     }
-    apply_optional_head_norm(
-        weights,
-        layer_id(layer, LayerTensor::KeyNorm),
-        &mut key,
-        tokens * kv_heads,
-        key_dim,
-        plan.qk_norm,
-        norm_epsilon,
-    )?;
     let (rope_factors, rope_mscale) = rope_factor_values(&plan.rope, weights)?;
     apply_rope(
         &mut query,
@@ -7323,16 +7682,18 @@ fn full_attention(
         rope_factors.as_deref(),
         rope_mscale,
     );
-    apply_rope(
-        &mut key,
-        tokens,
-        kv_heads,
-        key_dim,
-        plan.rope.dimensions as usize,
-        plan.rope.base,
-        rope_factors.as_deref(),
-        rope_mscale,
-    );
+    if shared.is_none() {
+        apply_rope(
+            &mut key,
+            tokens,
+            kv_heads,
+            key_dim,
+            plan.rope.dimensions as usize,
+            plan.rope.base,
+            rope_factors.as_deref(),
+            rope_mscale,
+        );
+    }
 
     let mut attended = vec![0.0; tokens * query_heads * value_dim];
     let scale = match plan.scale {
@@ -7424,6 +7785,16 @@ fn full_attention(
             }
         }
     }
+    let output = linear(
+        &attended,
+        output_weight,
+        tokens,
+        query_heads * value_dim,
+        hidden,
+    );
+    if let Some((source_layer, _)) = shared {
+        return Ok((output, ReferenceLayerState::SharedKv { source_layer }, None));
+    }
     let state_start = window
         .map(|window| tokens.saturating_sub(window))
         .unwrap_or(0);
@@ -7431,13 +7802,7 @@ fn full_attention(
     let state_key = key[state_start * k_width..].to_vec();
     let state_value = value[state_start * v_width..].to_vec();
     Ok((
-        linear(
-            &attended,
-            output_weight,
-            tokens,
-            query_heads * value_dim,
-            hidden,
-        ),
+        output,
         ReferenceLayerState::Kv {
             key: state_key,
             value: state_value,
@@ -7447,6 +7812,13 @@ fn full_attention(
             value_head_dim: value_dim,
             window,
         },
+        Some(KvRows {
+            key,
+            value,
+            kv_heads,
+            key_dim,
+            value_dim,
+        }),
     ))
 }
 

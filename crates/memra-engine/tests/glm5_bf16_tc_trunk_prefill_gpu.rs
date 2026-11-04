@@ -159,6 +159,7 @@ fn one_kda_layer_plan() -> ModelPlan {
         exit_mixer: None,
         draft_source: DraftSourcePlan::Embedded,
         sampling_defaults: None,
+        per_layer_input: None,
         partition_boundaries: Vec::new(),
     }
 }
