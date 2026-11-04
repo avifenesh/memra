@@ -2822,6 +2822,116 @@ extern "C" __global__ void qmatvec_nvfp4_mmvq_b16_rpsc(
         int in_f, int out_f, int m, long row_bytes) {
     nvfp4_mmvq_batched_rp_sc<16, 2>(W, aq, ad, y, in_f, out_f, m, row_bytes);
 }
+// ---- rpscx: EXACT-WIDTH rpsc with grouped column loads (batch-spec 2026-11-04, design B2,
+// research/batch-spec-20261101/B16-MATMUL-DESIGN.md). The rpsc body at a compile-time column
+// count (m == MCOLS; no `c >= m` test in the column loop) issuing CG columns' activation
+// loads (two int4 + the adg float each) together before their dp4a chains, so a warp waits on
+// one L1 round trip per column group instead of per column. The per-(row, column) chain is
+// the rpsc chain verbatim -- same weight decode, same dp4a order, same `partial` and `acc`
+// expressions, same warp reduce -> BIT-IDENTICAL to rpsc. Dispatch: the b16 tier at m == 16.
+template<int MCOLS, int WROWS, int CG>
+__device__ __forceinline__ void nvfp4_mmvq_batched_rp_scx(
+        const unsigned char* __restrict__ W, const signed char* __restrict__ aq,
+        const float* __restrict__ ad, float* __restrict__ y,
+        int in_f, int out_f) {
+    int o0 = (blockIdx.x * MEMRA_MMVQ_ROWS + threadIdx.y) * WROWS;
+    if (o0 >= out_f) return;
+    const bool has1 = (WROWS == 2) && (o0 + 1) < out_f;
+    int lane = threadIdx.x;
+    int nsb = in_f >> 5;
+    int nsb64 = in_f >> 6;
+    const unsigned char* qplane = W;
+    const unsigned char* splane = W + (size_t)out_f * nsb64 * 32;
+    const unsigned char* rowq0 = qplane + (size_t)o0 * nsb64 * 32;
+    const unsigned char* rows0 = splane + (size_t)o0 * nsb64 * 4;
+    __shared__ __align__(16) int ssc[MEMRA_MMVQ_ROWS][WROWS][RP_MAX_NSB64];
+    int n4 = nsb64 >> 2;
+    #pragma unroll
+    for (int r = 0; r < WROWS; r++) {
+        if (WROWS == 2 && r == 1 && !has1) break;
+        const int4* src = (const int4*)(rows0 + (size_t)r * nsb64 * 4);
+        int4* dst = (int4*)&ssc[threadIdx.y][r][0];
+        for (int i = lane; i < n4; i += 32) dst[i] = src[i];
+    }
+    __syncwarp();
+    float acc[WROWS][MCOLS];
+    #pragma unroll
+    for (int r = 0; r < WROWS; r++)
+        #pragma unroll
+        for (int c = 0; c < MCOLS; c++) acc[r][c] = 0.0f;
+    for (int g = lane; g < nsb; g += 32) {
+        int sblk = g >> 1;
+        int s0 = (g & 1) * 2;
+        int2 wv[WROWS][2][2];
+        float wscale[WROWS][2];
+        #pragma unroll
+        for (int r = 0; r < WROWS; r++) {
+            if (WROWS == 2 && r == 1 && !has1) break;
+            const int4* qh = (const int4*)(rowq0 + (size_t)r * nsb64 * 32 + (size_t)g * 16);
+            int4 qw = *qh;
+            int cscw = ssc[threadIdx.y][r][sblk];
+            wv[r][0][0] = get_int_from_table_16_d(qw.x, kvalues_mxfp4_d);
+            wv[r][0][1] = get_int_from_table_16_d(qw.y, kvalues_mxfp4_d);
+            wv[r][1][0] = get_int_from_table_16_d(qw.z, kvalues_mxfp4_d);
+            wv[r][1][1] = get_int_from_table_16_d(qw.w, kvalues_mxfp4_d);
+            wscale[r][0] = ue4m3_to_f32_d((unsigned char)((cscw >> (8 *  s0     )) & 0xFF));
+            wscale[r][1] = ue4m3_to_f32_d((unsigned char)((cscw >> (8 * (s0 + 1))) & 0xFF));
+        }
+        #pragma unroll
+        for (int c0 = 0; c0 < MCOLS; c0 += CG) {
+            int4 a01[CG], a23[CG];
+            float adg[CG];
+            #pragma unroll
+            for (int j = 0; j < CG; j++) {
+                const int4* aq16 = (const int4*)(aq + (size_t)(c0 + j) * in_f + (size_t)g * 32);
+                a01[j] = aq16[0];
+                a23[j] = aq16[1];
+                adg[j] = ad[(size_t)(c0 + j) * nsb + g];
+            }
+            #pragma unroll
+            for (int j = 0; j < CG; j++) {
+                const int c = c0 + j;
+                int aq4[8] = { a01[j].x, a01[j].y, a01[j].z, a01[j].w,
+                               a23[j].x, a23[j].y, a23[j].z, a23[j].w };
+                #pragma unroll
+                for (int r = 0; r < WROWS; r++) {
+                    if (WROWS == 2 && r == 1 && !has1) break;
+                    float partial = 0.0f;
+                    #pragma unroll
+                    for (int sl = 0; sl < 2; sl++) {
+                        int base = sl * 4;
+                        int2 va = wv[r][sl][0], vb = wv[r][sl][1];
+                        int sumi = 0;
+                        sumi = dp4a(va.x, aq4[base + 0], sumi);
+                        sumi = dp4a(vb.x, aq4[base + 1], sumi);
+                        sumi = dp4a(va.y, aq4[base + 2], sumi);
+                        sumi = dp4a(vb.y, aq4[base + 3], sumi);
+                        partial += wscale[r][sl] * (float)sumi;
+                    }
+                    acc[r][c] += adg[j] * partial;
+                }
+            }
+        }
+    }
+    #pragma unroll
+    for (int r = 0; r < WROWS; r++) {
+        if (WROWS == 2 && r == 1 && !has1) break;
+        #pragma unroll
+        for (int c = 0; c < MCOLS; c++) {
+            float a = warp_reduce_sum(acc[r][c]);
+            if (lane == 0) y[(size_t)c * out_f + o0 + r] = a;
+        }
+    }
+}
+// Two-column groups won the GB10 sweep (`gb10-b2/`): CG=1 (width only) -4%, CG=2 -13% on the
+// bench pass and -3.4% on the 16-row decode tick; CG=4 and CG=8 lost residency (132/171
+// registers, or a spill under __launch_bounds__(128,5)).
+extern "C" __global__ void qmatvec_nvfp4_mmvq_b16_rpscx(
+        const unsigned char* __restrict__ W, const signed char* __restrict__ aq,
+        const float* __restrict__ ad, float* __restrict__ y,
+        int in_f, int out_f, int m, long row_bytes) {
+    nvfp4_mmvq_batched_rp_scx<16, 2, 2>(W, aq, ad, y, in_f, out_f);
+}
 // ---- b32 COLUMN SPLIT (batch-spec 2026-11-03, GB10 plain-decode lever 2). Block b computes
 // row-block b / NS (8 weight rows: 4 warps x 2 rows, the rpsc schedule with the warp's scale rows
 // prestaged to smem) for the columns [(b % NS) * MC, +MC). The NS blocks of one row-block are
