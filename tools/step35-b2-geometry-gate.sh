@@ -96,11 +96,20 @@ RC=1
   echo "lock acquired $(date -u +%FT%TZ)"
   nvidia-smi --query-gpu=index,memory.used --format=csv,noheader
 
-  # Serve config: the live defaults plus MEMRA_MOE_GROUPED=1, PP-2, spec OFF per #87 (spec over
-  # PP-2 is quarantined). MEMRA_MOE_GROUPED=1 is not a default: it opts prefill into the grouped
-  # expert dispatch, a door kept because this gate sets it (owner 2026-11-04, docs/FLAGS.md row).
-  # Why the gate armed it is not recorded; the assertions above run with it armed.
-  # In particular, do NOT pin MEMRA_SERVE_B1FAST=0: Step35's code-level exclusion remains
+  # Serve config: PP-2, spec OFF per #87 (spec over PP-2 is quarantined), and the Step PP-2 serving
+  # env this gate mirrored when it was written as "LIVE defaults": MEMRA_CTX=262144,
+  # MEMRA_MOE_GROUPED=1 and MEMRA_PREFILL_TICK=2048 (the same three lines as
+  # research/27bab-20260810/raw/A/step-server.env), plus MEMRA_TICK_TRACE=1 for the per-tick
+  # trace. MEMRA_MOE_GROUPED=1, MEMRA_PREFILL_TICK=2048 and MEMRA_TICK_TRACE=1 are not naked
+  # defaults. MEMRA_MOE_GROUPED=1 opts prefill into the grouped expert dispatch:
+  # research/grouped-serve-20260810 promoted it into that Step PP-2 env, and
+  # research/groupedregate-20260813 then blocked it on the PRO card (-67.2%, serve-smoke red), so
+  # the promotion did not stand. The door is kept because this gate sets it (owner 2026-11-04,
+  # docs/FLAGS.md row). MEMRA_PREFILL_TICK=2048 is not the 1024 default, and an explicit value
+  # also turns off the 8192-token widening for a sole fresh request. MEMRA_CTX=262144 is an
+  # explicit pin; unset takes the model's declared context. The assertions above run with all of
+  # these set.
+  # Do NOT pin MEMRA_SERVE_B1FAST=0: Step35's code-level exclusion remains
   # defense in depth and must keep B=1 batched even if the global policy regresses.
   CANARY_ENV=()
   [ "$CANARY" = 1 ] && CANARY_ENV=(MEMRA_STEP35_BATCH=0)
