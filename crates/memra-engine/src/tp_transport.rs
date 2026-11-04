@@ -16,13 +16,15 @@
 //! transport is swappable WITHOUT changing a single bit, and this module is the seam where
 //! the swap happens — one named function per hop shape, two arms behind each:
 //!
-//!   * `host-canonical` (v1, the DEFAULT): every hop is `dtoh` -> host buffer -> `htod`.
+//!   * `host-canonical` (v1, the default on every build but sm_100a): every hop is `dtoh` ->
+//!     host buffer -> `htod`.
 //!     `Engine::dtoh` ends in `stream().synchronize()`, so each leg is a full stream drain
 //!     plus a PCIe host round trip. This is what every banked glm5 TP number was measured
 //!     on (`research/glm53-flash-bringup-20260827/tp2-battery-20260831/RESULTS.md` cell 2:
 //!     "v1 transport = host-canonical (every boot announces `transport=host-canonical` on
 //!     all four seams)").
-//!   * `peer-pull`: the hop is a DEVICE copy issued on the CONSUMER's stream, reading the
+//!   * `peer-pull` (the default on sm_100a since 2026-11-04, [`default_transport_for_build`]):
+//!     the hop is a DEVICE copy issued on the CONSUMER's stream, reading the
 //!     producer's buffer, ordered by a publication event. Zero host legs, zero stream
 //!     drains. PULL and not push by design (see the transport laws below).
 //!
@@ -136,26 +138,45 @@ pub const TRANSPORT_ENV: &str = "MEMRA_TP_TRANSPORT";
 /// scripts and every banked transport receipt set it. Never silently dead.
 pub const TRANSPORT_ENV_GLM5: &str = "MEMRA_GLM5_TP_TRANSPORT";
 
-/// Parse a transport value. Pure so the law is unit-testable without touching the process
-/// environment. `flag` is the name the operator actually set, so a refusal names it.
+/// The transport an armed TP walk uses when no transport name is set, by build.
 ///
-/// DEFAULT IS `host-canonical` (OFF), by decision, not by accident: on the day this flag
-/// landed the peer-pull arm had zero receipts on real peer hardware (the rig is a single
-/// card — `LAW:rig-exactness-only` — so its gate arms run the code path over N contexts on
-/// ONE device and can only prove bit-preservation, never fabric engagement). Unmeasured
-/// behaviour does not default ON. The default flips in the same commit as the box window's
-/// interleaved re-price receipt, and the FLAGS.md row carries both arms plus the rollback
-/// seam (`=0`).
+/// sm_100a (the 2x B200 pair, NVLink) takes `peer-pull`: on that pair it measured faster than
+/// the host bounce, 16.48 -> 19.11 tok/s (+16%, 160 greedy tokens, same tape) and
+/// 15.20 -> 17.81 (+17.2%) (darklanes `research/glm5-b200-mint-20260904/LANE.md`), and the owner's
+/// 2026-11-04 ruling makes a positive-receipt winner the default on its card. Every other build
+/// keeps `host-canonical`: on the day this flag landed the peer-pull arm had zero receipts on
+/// real peer hardware (the rig is a single card — `LAW:rig-exactness-only` — so its gate arms
+/// run the code path over N contexts on ONE device and can only prove bit-preservation, never
+/// fabric engagement), and no other card class has one since. Unmeasured behaviour does not
+/// default ON.
+pub fn default_transport_for_build(arch: &str) -> TpTransport {
+    if arch == "100a" {
+        TpTransport::PeerPull
+    } else {
+        TpTransport::HostCanonical
+    }
+}
+
+/// [`default_transport_for_build`] for this binary's build.
+pub fn default_transport() -> TpTransport {
+    default_transport_for_build(env!("MEMRA_BUILT_CUDA_ARCH"))
+}
+
+/// Parse a transport value. Pure so the law is unit-testable without touching the process
+/// environment. `flag` is the name the operator actually set, so a refusal names it. Unset or
+/// empty takes [`default_transport`]; every arm also has its explicit spelling, which the
+/// `glm5-tp-gate` transport arms set and a launcher sets for `device-push`.
 pub fn parse_transport(flag: &str, value: Option<&str>) -> Result<TpTransport, String> {
     match value {
-        None | Some("") | Some("0") | Some("host-canonical") => Ok(TpTransport::HostCanonical),
+        None | Some("") => Ok(default_transport()),
+        Some("0") | Some("host-canonical") => Ok(TpTransport::HostCanonical),
         Some("1") | Some("peer-pull") => Ok(TpTransport::PeerPull),
         Some("2") | Some("device-push") => Ok(TpTransport::DevicePush),
         Some(other) => Err(format!(
             "{flag}={other:?} is not a known transport \
-             (host-canonical | 0 = the v1 host-staged arm, the default; peer-pull | 1 = the \
-             consumer-issued device peer copy arm; device-push | 2 = the producer-issued \
-             device peer store arm)"
+             (host-canonical | 0 = the v1 host-staged arm, the default except on sm_100a; \
+             peer-pull | 1 = the consumer-issued device peer copy arm, the sm_100a default; \
+             device-push | 2 = the producer-issued device peer store arm)"
         )),
     }
 }
@@ -1333,7 +1354,13 @@ mod tests {
 
     #[test]
     fn transport_parse_is_literal_and_fail_closed() {
-        for off in [None, Some(""), Some("0"), Some("host-canonical")] {
+        for unset in [None, Some("")] {
+            assert_eq!(
+                parse_transport(TRANSPORT_ENV, unset).unwrap(),
+                default_transport()
+            );
+        }
+        for off in [Some("0"), Some("host-canonical")] {
             assert_eq!(
                 parse_transport(TRANSPORT_ENV, off).unwrap(),
                 TpTransport::HostCanonical
@@ -1380,10 +1407,10 @@ mod tests {
 
     #[test]
     fn alias_resolution_honors_both_names_and_refuses_a_disagreeing_pair() {
-        // unset/unset -> the default, cited under the general name
+        // unset/unset -> the build's default, cited under the general name
         assert_eq!(
             resolve_transport(None, None).unwrap(),
-            (TpTransport::HostCanonical, TRANSPORT_ENV)
+            (default_transport(), TRANSPORT_ENV)
         );
         // either name alone arms, and the ARMED NAME comes back with it
         assert_eq!(
@@ -1415,11 +1442,19 @@ mod tests {
     }
 
     #[test]
-    fn default_is_the_v1_arm() {
-        // The written default (docs/FLAGS.md): unmeasured behaviour does not default ON.
+    fn default_follows_the_build() {
+        // The written default (docs/FLAGS.md): peer-pull where its receipt is (sm_100a), the
+        // v1 arm everywhere else, since unmeasured behaviour does not default ON.
+        assert_eq!(default_transport_for_build("100a"), TpTransport::PeerPull);
+        for arch in ["120a", "90a", "89"] {
+            assert_eq!(
+                default_transport_for_build(arch),
+                TpTransport::HostCanonical
+            );
+        }
         assert_eq!(
             parse_transport(TRANSPORT_ENV, None).unwrap(),
-            TpTransport::HostCanonical
+            default_transport_for_build(env!("MEMRA_BUILT_CUDA_ARCH"))
         );
         assert_eq!(TpTransport::HostCanonical.name(), "host-canonical");
         assert_eq!(TpTransport::PeerPull.name(), "peer-pull");

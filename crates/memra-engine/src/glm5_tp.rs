@@ -29,10 +29,11 @@
 //! TRANSPORT is a SEPARATE, SWAPPABLE AXIS (`MEMRA_GLM5_TP_TRANSPORT`,
 //! lane/glm5-tp-transport 2026-09-01). Because every cross-rank hop above is pure movement,
 //! the transport arm cannot change a bit — so this module names the hop SHAPES and
-//! `tp_transport` owns the bytes. `host-canonical` (the default, and what every banked
-//! glm5 TP number was measured on) bounces each hop through host with a full stream drain
-//! per leg; `peer-pull` issues a consumer-side device peer copy per hop with event ordering
-//! and no host boundary. The join-diet doors are an orthogonal axis (they cut hop COUNT; the
+//! `tp_transport` owns the bytes. `host-canonical` (the default on every build but sm_100a,
+//! and what the banked glm5 TP numbers were measured on) bounces each hop through host with a
+//! full stream drain per leg; `peer-pull` (the sm_100a default,
+//! `tp_transport::default_transport_for_build`) issues a consumer-side device peer copy per
+//! hop with event ordering and no host boundary. The join-diet doors are an orthogonal axis (they cut hop COUNT; the
 //! transport cuts hop COST) and compose.
 //!
 //! FAIL-CLOSED SURFACE. The preflight refuses before any TP CUDA state exists: non-glm5
@@ -175,7 +176,8 @@ pub struct Glm5TpRt {
     /// serving parse can never reach this: the grammar refuses duplicate devices.
     pub same_device_gate: bool,
     /// Which transport every cross-rank hop of this runtime moves its bytes with
-    /// (`MEMRA_GLM5_TP_TRANSPORT`, default `host-canonical`). Frozen at
+    /// (`MEMRA_TP_TRANSPORT` / `MEMRA_GLM5_TP_TRANSPORT`, default by build:
+    /// `tp_transport::default_transport`). Frozen at
     /// [`Glm5TpRt::arm_transport`] time, announced once, and named in every gate log.
     pub transport: crate::tp_transport::TpTransport,
     /// The peer-pull ordering primitives — `Some` only on the peer-pull arm, and only after
