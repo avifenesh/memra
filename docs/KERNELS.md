@@ -98,7 +98,6 @@ Numerical bodies preserve the corresponding eager entry's operation order.
 | `append_quantize_kv_q8_0_q5_1_rows_prime_table` | Quantized KV append and live length publication | `Engine::append_kv_quantized_rows` |
 | `fa_dequant_kv_ws_bf16_prime_table` | True-depth dequantization into stable BF16 workspace | `Engine::fa_prefill_view_ws` |
 | `fa_prefill_qw_db_prime_table` | Existing four-plane attention with live causal depth | `Engine::fa_prefill_view_ws` |
-| `fa_prefill_qw_t3_prime_table` | Existing three-plane attention with live causal depth | `Engine::fa_prefill_view_ws` |
 | `fa_prefill_qw_h2_prime_table` | Two-head (h2) attention with live causal depth | `Engine::fa_prefill_view_ws` |
 | `fa_prefill_qw_h2p_prime_table` | Two-head mbarrier-ring (h2p) attention with live causal depth; reached only on a 170-SM 120a card with `MEMRA_PRIME_KV_H2=1 MEMRA_PRIME_KV_H2P=1` (no default reaches it), ungated | `Engine::fa_prefill_view_ws` |
 | `ssm_conv1d_gdn_state_f32_prime_table` | Carried convolution reads the live ring | `Engine::ssm_conv1d_gdn_state_pad` |
@@ -132,7 +131,6 @@ Exact rewrites on the eager prime path; each emits the bytes of the kernels it r
 
 | Symbol | Purpose | Types | Architecture | Door | Binding |
 | --- | --- | --- | --- | --- | --- |
-| `fa_prefill_qw_t3` | Two K staging planes plus one V plane, register P operands; unchanged head-dim 256 prime arithmetic | BF16 KV, f32 Q/O | existing warp-MMA support | `MEMRA_PRIME_KV_T3`, default OFF | `Engine::fa_prefill_view_ws` |
 | `fa_prefill_qw_h2` | Two query heads of one KV head per 8-warp CTA over double-buffered K/V planes, register P operands; unchanged head-dim 256 prime arithmetic (2026-11-06) | BF16 KV, f32 Q/O | existing warp-MMA support | `MEMRA_PRIME_KV_H2`: the h2 route is ON by default on unified-memory 120a (GB10), OFF elsewhere; on GB10 that route runs h2p unless `MEMRA_PRIME_KV_H2P=0` | `Engine::fa_prefill_view_ws` |
 | `fa_prefill_qw_h2p` | h2's row program on a three-stage K/V ring handed over by per-stage full/empty mbarriers, the second head's warps one QK behind the first so one head's softmax overlaps the other's MMAs; ldmatrix through precomputed `.shared` offsets; bit-identical to h2 (2026-11-07) | BF16 KV, f32 Q/O | mbarrier `try_wait` on sm_90+, `test_wait` below | `MEMRA_PRIME_KV_H2P`, default ON on unified-memory 120a (GB10) inside the h2 route, OFF elsewhere | `Engine::fa_prefill_view_ws` |
 
@@ -383,7 +381,7 @@ dequantized in-register" (qmatvec.cu:1-2). Guards: PDL sm≥900 (qmatvec.cu:18);
 | `matvec_bf16_f32acc_x1_tcols_rf`, `..._x4_tcols_rf`, `..._x4_tcols16_rf` (lane/glm5-door-r 2026-08-31) | door R fused-reduce-tail twins of the three tcols kernels (designed+sized moe-loc LANE.md §2.2): the standing tail runs t separate strided trees = 9 block-wide barriers per token column (~30 at t=3.34, 135 at the drafter head's t=15) against a 4-trip main loop — barrier/tail-bound at 67.0% of peak on the kda trunk after door X. The `_rf` tail shares ONE barrier sequence across the t columns (`red[t*blockDim]` dynamic shared) and runs levels s<=16 as an intra-warp `__shfl_down_sync` chain at the IDENTICAL pairing and operand order — 9t -> 3 barriers/block (x1 form, 128 threads); main loop verbatim, bit-identical per (row, token). Requires power-of-two blockDim (launcher-enforced) | bf16 weights, f32 acc | — | `MEMRA_BF16_TCOLS_RED_FUSED` (default OFF — no box receipt yet, predicted -1.0 to -2.0 ms/round, box prices the flip) — `glm5_matvec_doors_gpu` bit-gate t=1..=16 both grid forms + shifted-pairing red | fatbin/by-name |
 | `matvec_bf16_f32acc_x1_tcols_rf_redshift` (lane/glm5-door-r 2026-08-31) | GATE-ONLY shifted-pairing RED twin of `..._x1_tcols_rf`: the warp phase runs ASCENDING shuffle offsets (1,2,4,8,16) — the same 32 partials under a different association, so f32 rounding must move and the door-R bit bar must see it. Never dispatched by any route; launched only through `Engine::matvec_bf16_tcols_gate_kernel_into` (an allowlist, not a name proxy) by `glm5_matvec_doors_gpu` | bf16 weights, f32 acc | — | none (gate harness only) | fatbin/by-name |
 
-### cu/flash_attn.cu — 87 symbols (measured `grep -c 'extern "C" __global__'` on 2026-11-03; the heading had read 91) (fatbin `MEMRA_FLASH_FATBIN` + KV-variant fatbins)
+### cu/flash_attn.cu — 89 symbols (measured `grep -c 'extern "C" __global__'` on 2026-11-07, after `fa_prefill_qw_t3` and `fa_prefill_qw_t3_prime_table` left with `MEMRA_PRIME_KV_T3` and the two-head `fa_prefill_qw_h2` and `fa_prefill_qw_h2p` twins came in; the heading had read 91 before 2026-11-03) (fatbin `MEMRA_FLASH_FATBIN` + KV-variant fatbins)
 
 Header: "hand-written FlashAttention for RTX 5090 (sm_120a), m16n8k16 bf16 mma"
 (flash_attn.cu:1-6). PDL sm≥900, portable 90a included (flash_attn.cu:59). Head dims: `template<int

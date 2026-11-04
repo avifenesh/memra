@@ -28818,15 +28818,9 @@ impl Engine {
             .map(|v| v != "0")
             .unwrap_or(true);
         {
-            // Same row program, three KV staging planes and register-resident P operands.
-            let triple = db
-                && head_dim == 256
-                && t >= 128
-                && std::env::var("MEMRA_PRIME_KV_T3").as_deref() == Ok("1");
             // Two query heads of one KV head per 8-warp CTA (h2): same per-row program as
-            // the db/t3 twins, each staged K/V tile read once for both heads.
+            // the db twin, each staged K/V tile read once for both heads.
             let h2 = db
-                && !triple
                 && head_dim == 256
                 && t >= 128
                 && n_head.is_multiple_of(2)
@@ -28839,9 +28833,7 @@ impl Engine {
             let hd_sfx = fa_hd_suffix(head_dim)?;
             let f = self.func(&format!(
                 "fa_prefill_qw{}{hd_sfx}{}",
-                if triple {
-                    "_t3"
-                } else if h2p {
+                if h2p {
                     "_h2p"
                 } else if h2 {
                     "_h2"
@@ -28852,14 +28844,13 @@ impl Engine {
                 },
                 if live.is_some() { "_prime_table" } else { "" }
             ));
-            let shmem = if triple {
-                (2 * 3 * BK * head_dim) as u32
-            } else if h2p {
+            let shmem = if h2p {
                 // three stages of K and V planes, then six 8-byte mbarriers (padded to 64)
                 (2 * 6 * BK * head_dim + 64) as u32
             } else if h2 {
                 (2 * 4 * BK * head_dim) as u32
             } else if db {
+                // 4x KV tile buffers (bf16) + sP (bf16) + sL (f32)
                 (2 * (4 * BK * head_dim + BLOCK_Q * BK) + 4 * BLOCK_Q) as u32
             } else {
                 (2 * (2 * BK * head_dim + BLOCK_Q * BK) + 4 * (BLOCK_Q * BK + 2 * BLOCK_Q)) as u32
