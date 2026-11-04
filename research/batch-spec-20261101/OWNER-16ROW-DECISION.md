@@ -35,7 +35,7 @@ Each changes the numeric program, so each needs the quality panel (HumanEval 164
 
 | option | what changes numerically | expected 16-row tick | expected served effect | cost / risk |
 |---|---|---|---|---|
-| A. bf16 GDN state (built, `research/combo-tc-gdnbf16`) | state stored as bf16, math fp32 | -11 ms (measured: 173.5 -> 162.1 before the other levers) | served c16 +2.0%, c32 +3.5% (one run); quality 160/164, 97/100 vs fp32 158/164, 97/100 | ready; c8 depends on the gate fix being verified now |
+| A. bf16 GDN state (built, `research/combo-tc-gdnbf16`) | state stored as bf16, math fp32 | -11 ms (measured: 173.5 -> 162.1 before the other levers) | served, 2 runs each against fp32: c16 +2.9%, c32 +2.6%, c8 -3.2% (60.2 vs 62.3); quality 160/164, 97/100 vs fp32 158/164, 97/100 | ready |
 | B. matmul with a different reduction order (e.g. a K-split across warps or 4 rows per warp with a tree reduce) | float sums per (row, column) reassociated | up to -14 ms (to the 8-row tier's time) | c16 up to about +9%; makes speculation pay at c8 by the cost model (16-row tick about 148 vs the 1.49 x 110 = 164 break-even) | a new kernel; batch-invariance across widths is lost unless every width uses the same order |
 | C. attention with a smaller tile / different split | online-softmax summation order | up to -11 ms (core at 138 GB/s; KV + partials at 226 GB/s is about 31 ms) | grows with depth: about -25 ms at depth 32768, 8 rows | moderate; one kernel family |
 | D. FP8 or smaller KV format | KV values | attention bytes down by the format ratio (q8_0/q5_1 today) | largest at long context | changes every model's KV path; acceptance and quality rows per model |
@@ -45,6 +45,6 @@ The exact ceiling for the 16-row tick is about 162 ms. With A + B + C together t
 
 ## Recommendation
 
-- **A** is built and measured: adopt it when its c8 is confirmed.
+- **A** is built and measured: it trades about 3% at c8 for about 3% at c16 and c32.
 - **B** is the largest remaining lever on the matmul and the one that unlocks speculation at c8. Build it next only if you accept a non-batch-invariant decode matmul, or one order shared by all widths.
 - **C** is the long-context lever.

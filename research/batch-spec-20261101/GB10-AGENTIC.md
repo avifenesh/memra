@@ -181,3 +181,22 @@ Served on a fresh boot, c1..c32 (`gb10-combo2/`). The boot probe picked the tens
 The bf16 arm leads at c16 (+2.0%) and c32 (+3.5%), and c2 is fixed. c8 regresses. Both bf16 runs on the v3 gate speculated at n=7/8 for a stretch: 4 and 5 K=1 verdicts, priced at 60-63 tok/s from the lower-concurrency anchors while the plain EMA had dipped to 57-60. They realized 53.6 and 56.6 against plain 72-73 before switching back. This run also hit one acceptance-history "explore" verdict at n=8. The fp32 runs never speculated at n=8.
 
 So the gate's spec price at n>=7 is too optimistic when it is extrapolated from n<=4. That is the next gate fix. It does not touch the decode path. One run per arm.
+
+## Spec gate at 7+ sessions: no extrapolated spec price (2026-11-04, evening)
+
+From 7 sessions a K=1 pooled verify is 14+ rows, the 16-row matmul tier. Spec rates measured under 7 sessions therefore do not price it. The rule now: at n >= 7 a spec price needs a measured spec slot at n or n+-1; without one the verdict serves plain. Each arm below is two fresh boots, c1..c32, in the order fp32, bf16, bf16, fp32 (`gb10-far-v4/`, `gb10-far-v5/`).
+
+| arm | gate | c8 | c16 | c32 |
+|---|---|---|---|---|
+| fp32 | before (v3; 062ecac658 / 88805bc1f1 runs) | 62.10, 62.35, 62.44 | 75.77, 77.27 | 83.11 |
+| fp32 | v4: no extrapolation + a 2 s probe every 64 s (f276032189) | 61.14, 61.32, 61.55 | 77.16, 77.25, 77.34 | 83.06, 83.58, 83.09 |
+| fp32 | **v5: no extrapolation, plain (655a07cb82)** | **62.12, 62.40** | **77.28, 77.33** | **83.75, 83.17** |
+| bf16 | before (v3; 62492dac54) | 50.88 | 78.78 | 86.06 |
+| bf16 | v4 | 59.07, 59.33, 58.78 | 79.64, 79.44, 79.21 | 85.85, 85.46, 85.84 |
+| bf16 | **v5 (19e818cad8)** | **60.29, 60.18** | **79.58, 79.56** | **85.90, 85.54** |
+
+- **v4's probe never measured anything.** No n=8 spec slot reached three steady samples in any v4 run: an all-spec cohort at 7+ sessions does not form inside 2 s. It cost fp32 c8 about 1.5%, so v5 serves plain instead.
+- **v5 makes no spec verdict at n=8 in any of the four runs.** fp32 c8, c16 and c32 match the builds before the gate change.
+- **The bf16 arm at c8 recovers from 50.88 to 60.2-60.3** (+18%), the level it had before v3 (60.22, 60.80, 59.42).
+- **It stays 3% under fp32 at c8.** That gap was there before the gate work, with spec never chosen at n=8 (bf16 60.22 vs fp32 62.59 on the first bf16 A/B), so it belongs to the bf16 arm itself, not to the gate.
+- **The bf16 arm leads at c16 (+2.9%) and c32 (+2.6%).**
