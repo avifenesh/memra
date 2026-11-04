@@ -1,4 +1,4 @@
-# DSv4-Flash on two cards: TP/EP by default, PP-2 as the rollback (2026-09-25)
+# DSv4-Flash on two cards: TP/EP by default, PP-2 as the rollback (2026-09-25; pp amended to a placement 2026-11-04)
 
 > Amended 2026-11-04: `pp` is no longer a rollback seam with a decide-by. It stays as the PP-2
 > value of the placement selector ([amendment](#amendment-2026-11-04-pp-is-a-placement)). The
