@@ -73,7 +73,7 @@
 #       reports "no teeth". Correct behavior, useless as a teeth check.
 set -uo pipefail
 cd "$(dirname "$0")/.."
-PROBE=./target/release/argmax-margin-probe
+PROBE=${CARGO_TARGET_DIR:-./target}/release/argmax-margin-probe
 
 MODEL="${1:-}"
 if [ -n "$MODEL" ] && [ "${MODEL#--}" != "$MODEL" ]; then MODEL=""; else shift 2>/dev/null || true; fi
