@@ -270,6 +270,38 @@ mod tests {
         assert!(!gemma_pp2_covers(&dense, 3));
     }
 
+    /// The shared layers' source and the gemma4-assistant drafter's KV target are one plan
+    /// read, `last_own_kv_layer`, not the config formula `n_layer - shared - (swa ? 2 : 1)`.
+    #[test]
+    fn shared_sources_are_the_last_own_kv_layer_of_each_class() {
+        let plan = PACK.compile_plan(&official_e4b()).unwrap();
+        assert_eq!(plan.last_own_kv_layer(true), Some(22));
+        assert_eq!(plan.last_own_kv_layer(false), Some(23));
+        let mut shared = 0;
+        for layer in &plan.layers {
+            if let StatePlan::SharedKvCache { source_layer } = layer.state {
+                let sliding = matches!(layer.attention, AttentionPlan::SlidingWindow { .. });
+                assert_eq!(
+                    plan.last_own_kv_layer(sliding),
+                    Some(source_layer),
+                    "layer {}",
+                    layer.index
+                );
+                shared += 1;
+            }
+        }
+        assert_eq!(shared, 18);
+        // The same geometry without per-layer inputs and sharing is a dense gemma4 plan, where
+        // the read gives the formula's `n_layer - 2` and `n_layer - 1`.
+        let mut dense = official_e4b();
+        let gemma = dense.gemma4.as_mut().unwrap();
+        gemma.n_embd_per_layer = 0;
+        gemma.shared_kv_layers = 0;
+        let dense = compile_for_load(&dense).unwrap();
+        assert_eq!(dense.last_own_kv_layer(true), Some(40));
+        assert_eq!(dense.last_own_kv_layer(false), Some(41));
+    }
+
     /// No safetensors loader binds the PLE names, so the HF schema refuses instead of guessing.
     #[test]
     fn safetensors_schema_refuses_per_layer_input() {

@@ -5892,15 +5892,24 @@ impl HybridModel {
                     Some(copies)
                 }
             };
-            // E4B per-layer-embedding model tensors (tensor-presence gated).
-            let e4b = match src.find("per_layer_token_embd.weight") {
-                Some(t) => {
-                    let n_epl = cfg
-                        .gemma4
-                        .as_ref()
-                        .map(|g| g.n_embd_per_layer as usize)
-                        .unwrap_or(0);
+            // E4B per-layer-input model tensors. The plan's PerLayerInputPlan says the prologue
+            // exists and how wide it is; the contract bound these three tensors for it.
+            let e4b = match plan.per_layer_input.as_ref() {
+                Some(per_layer) => {
+                    let t = src.find("per_layer_token_embd.weight").ok_or(
+                        "the plan declares per-layer inputs but per_layer_token_embd.weight \
+                         is missing",
+                    )?;
+                    let n_epl = per_layer.width as usize;
                     let row = t.ne[0] as usize; // n_epl * n_layer
+                    if row != n_epl * per_layer.layers as usize {
+                        return Err(format!(
+                            "per_layer_token_embd.weight rows are {row} wide, the plan's \
+                             per-layer input is {n_epl} x {} layers",
+                            per_layer.layers
+                        )
+                        .into());
+                    }
                     let row_bytes = t.bytes.len() / (t.ne[1] as usize);
                     eprintln!(
                         "[gemma4-e4b] per-layer-embed model detected (n_epl={n_epl}, row {row}) — \
