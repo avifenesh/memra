@@ -1913,21 +1913,22 @@ kv-tier-gate --artifact <gguf> --case baseline|active|prefix|grow --context 8192
 - Naked baseline: any `MEMRA_*` variable other than `MEMRA_NVCC`, `MEMRA_CUDA_ARCH` and
   `MEMRA_GPU_LOCK` refuses (`REFUSED: runtime override <name> must be unset for this naked
   eager baseline`); the gate inspects names only, values never enter a receipt.
-- `--kv-allocator pooled|vmm` (default `pooled`) is a gate-only door with
-  **decide-by: 2026-10-04** ([decision record](decisions/KV-PHYSICAL-RECLAIM.md)). The gate
+- `--kv-allocator pooled|vmm` (default `pooled`) is the gate's allocator arm
+  ([decision record](decisions/KV-PHYSICAL-RECLAIM.md)). The gate
   constructs the cache directly with VMM-backed planes
   (`Cache::new_with_allocator(&e, &model.cfg, args.context, memra_kv::KvAllocator::Vmm)`) and
   records `construction=direct` / `empty_plane_swap=false` in `allocation-construction.txt`; the
   kernels and addresses are unchanged. Containment is a call-site policy, not a structural
   property: `memra-kv` exposes `Cache::new_with_allocator` and `KvAllocator` publicly and
   `impl KvDev for Engine` implements `alloc_vmm_u8`, so any caller *could* construct VMM planes;
-  today only this gate does, and the decide-by decides whether that surface is promoted or
-  deleted. Any other value refuses:
-  `REFUSED: unknown KV allocator (expected pooled, vmm or vmm-ondemand)`. It is a CLI door; its
-  serving arm is `MEMRA_KV_ALLOCATOR` (the `docs/FLAGS.md` row, same decide-by).
+  the server's on-demand planes are the other caller, the default on the RTX PRO 6000
+  Blackwell Workstation Edition ([decision](decisions/KV-VMM-SERVING-DEFAULT.md)). Any other
+  value refuses:
+  `REFUSED: unknown KV allocator (expected pooled, vmm or vmm-ondemand)`. It is a CLI arm of the
+  gate, not an environment door.
 - `--case grow --kv-allocator vmm-ondemand` (WP-B day 37, clause A2 of
   `research/spill-b-20260919/DAY37.md`; the two come together or refuse) is the G1 grow series of
-  the serving arm's on-demand planes: in one process the tokenwise program runs first on pooled
+  the server's on-demand planes: in one process the tokenwise program runs first on pooled
   planes, then on on-demand planes (`memra_kv::with_on_demand_kv`) that back rows only as the
   position grows, every grow read on the driver around a stream sync (grows run inline; no
   mapper thread). It prints `GROW-G1 PASS|FAIL (grows=.. unequal=.. planes=.. planes_crossed=..

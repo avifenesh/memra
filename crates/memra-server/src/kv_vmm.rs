@@ -1,10 +1,12 @@
-//! `MEMRA_KV_ALLOCATOR=vmm` (WP-B day 37, `research/spill-b-20260919/DAY37.md`): the serving arm
-//! of the `--kv-allocator vmm` door (decide-by 2026-10-04). Armed, the full-attention K/V planes
-//! of a covered session (the MTP spec route and the plain route, single device, no SWA ring, no
-//! latent planes) are on-demand VMM planes: the whole capacity is a reserved virtual range at a
-//! fixed address, and physical granules are mapped as the session's rows grow. Nothing numeric
-//! changes: the same kernels touch the same bytes at addresses a session keeps for its life, and
-//! a session's allocator is fixed at construction.
+//! On-demand KV planes (WP-B day 37, `research/spill-b-20260919/DAY37.md`), the serving default
+//! on the card class whose deciding cell read PROMOTE-ELIGIBLE: the full-power RTX PRO 6000
+//! Blackwell Workstation Edition (`docs/decisions/KV-VMM-SERVING-DEFAULT.md`). There, the
+//! full-attention K/V planes of a covered session (the MTP spec route and the plain route,
+//! single device, no SWA ring, no latent planes) are on-demand VMM planes: the whole capacity is
+//! a reserved virtual range at a fixed address, and physical granules are mapped as the
+//! session's rows grow. Every other card keeps pooled planes. Nothing numeric changes: the same
+//! kernels touch the same bytes at addresses a session keeps for its life, and a session's
+//! allocator is fixed at construction.
 //!
 //! This module holds the read-once configuration and the pure arithmetic the worker uses at its
 //! ensure points (construction, the tick top, adoption); the worker owns the wiring.
@@ -19,8 +21,8 @@ pub(crate) const SLACK: usize = 64;
 static CONFIG: std::sync::OnceLock<KvVmmConfig> = std::sync::OnceLock::new();
 
 /// Install the worker's read-once configuration (worker start). A respawned worker reads the
-/// same environment and installs the same value; a different value is refused, so the door cannot
-/// move mid-process.
+/// same device and environment and installs the same value; a different value is refused, so
+/// the allocator cannot move mid-process.
 pub(crate) fn install(cfg: KvVmmConfig) -> Result<(), String> {
     match CONFIG.get() {
         Some(existing) if *existing == cfg => Ok(()),
@@ -31,23 +33,23 @@ pub(crate) fn install(cfg: KvVmmConfig) -> Result<(), String> {
     }
 }
 
-/// Whether the door is armed in this process (false until `install`, and in every unit test
-/// that builds sessions without a worker).
+/// Whether the on-demand planes are on in this process (false until `install`, and in every
+/// unit test that builds sessions without a worker).
 pub(crate) fn armed() -> bool {
     CONFIG.get().is_some_and(|c| c.armed)
 }
 
-/// Read-once door configuration, built at worker start.
+/// Read-once configuration, built at worker start from the worker's device.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct KvVmmConfig {
-    /// `MEMRA_KV_ALLOCATOR=vmm`.
+    /// The device is the full-power RTX PRO 6000 Blackwell Workstation Edition
+    /// (`memra_engine::parallel::HardwareTarget::is_pro6000_workstation`).
     pub armed: bool,
-    /// Where grows run (DAY37 1.5's rule per card class; `MEMRA_KV_VMM_GROW` is the
-    /// measurement seam).
+    /// Where grows run (DAY37 1.5's rule per card class).
     pub placement: VmmGrowPlacement,
     /// Why the placement is what it is (the boot line states it).
     pub placement_source: &'static str,
-    /// `MEMRA_KV_VMM_FAULT` (a fault door of the gate).
+    /// `MEMRA_KV_VMM_FAULT` (the fault door of the DAY37 A5 cells), read only when armed.
     pub faults: Option<VmmFaults>,
 }
 
@@ -57,50 +59,26 @@ pub(crate) fn placement_for_device(name: &str) -> (VmmGrowPlacement, &'static st
 }
 
 impl KvVmmConfig {
-    /// Reads `MEMRA_KV_ALLOCATOR` (unset or `pooled`: OFF; strict `vmm`: armed; anything else
-    /// refuses the boot), `MEMRA_KV_VMM_GROW` (`helper` or `inline`, measurement seam) and
-    /// `MEMRA_KV_VMM_FAULT`. The two knobs are read only when armed.
-    pub(crate) fn from_env(device_name: &str) -> Result<Self, String> {
+    /// Arms the planes on the receipted card class and reads `MEMRA_KV_VMM_FAULT` there; an
+    /// unparseable fault spec refuses the boot.
+    pub(crate) fn for_device(device_name: &str) -> Result<Self, String> {
         Self::from_values(
-            std::env::var("MEMRA_KV_ALLOCATOR").ok().as_deref(),
-            std::env::var("MEMRA_KV_VMM_GROW").ok().as_deref(),
             std::env::var("MEMRA_KV_VMM_FAULT").ok().as_deref(),
             device_name,
         )
     }
 
-    pub(crate) fn from_values(
-        allocator: Option<&str>,
-        grow: Option<&str>,
-        fault: Option<&str>,
-        device_name: &str,
-    ) -> Result<Self, String> {
-        let armed = match allocator.map(str::trim) {
-            None | Some("") | Some("pooled") => false,
-            Some("vmm") => true,
-            Some(other) => {
-                return Err(format!(
-                    "MEMRA_KV_ALLOCATOR={other:?}: expected `pooled` or `vmm`"
-                ));
-            }
-        };
-        let (mut placement, mut placement_source) = placement_for_device(device_name);
+    pub(crate) fn from_values(fault: Option<&str>, device_name: &str) -> Result<Self, String> {
+        let armed = memra_engine::parallel::HardwareTarget::is_pro6000_workstation(device_name);
+        let (placement, placement_source) = placement_for_device(device_name);
         let mut faults = None;
-        if armed {
-            if let Some(g) = grow.map(str::trim).filter(|g| !g.is_empty()) {
-                placement = VmmGrowPlacement::parse(g).ok_or_else(|| {
-                    format!("MEMRA_KV_VMM_GROW={g:?}: expected `helper` or `inline`")
-                })?;
-                placement_source = "MEMRA_KV_VMM_GROW";
-            }
-            if let Some(f) = fault.map(str::trim).filter(|f| !f.is_empty()) {
-                faults = Some(VmmFaults::parse(f).ok_or_else(|| {
-                    format!(
-                        "MEMRA_KV_VMM_FAULT={f:?}: expected a comma list of build:<n>, \
-                         ensure:<n>, mapper:all"
-                    )
-                })?);
-            }
+        if armed && let Some(f) = fault.map(str::trim).filter(|f| !f.is_empty()) {
+            faults = Some(VmmFaults::parse(f).ok_or_else(|| {
+                format!(
+                    "MEMRA_KV_VMM_FAULT={f:?}: expected a comma list of build:<n>, \
+                     ensure:<n>, mapper:all"
+                )
+            })?);
         }
         Ok(Self {
             armed,
@@ -113,7 +91,8 @@ impl KvVmmConfig {
     /// Boot receipt, one line.
     pub(crate) fn boot_line(&self, granularity: Option<usize>) -> String {
         if !self.armed {
-            return "[kv-vmm] door=OFF (MEMRA_KV_ALLOCATOR unset or pooled: pooled K/V planes)"
+            return "[kv-vmm] door=OFF (pooled K/V planes: the on-demand planes are the default \
+                    on the RTX PRO 6000 Blackwell Workstation Edition only)"
                 .to_string();
         }
         format!(
@@ -170,49 +149,45 @@ pub(crate) fn grow_line(id: &str, label: &str, rows: usize, ev: &GrowEvent) -> S
 mod tests {
     use super::*;
 
+    const PRO_WS: &str = "NVIDIA RTX PRO 6000 Blackwell Workstation Edition";
+
+    /// The planes arm on the card class whose deciding cell read PROMOTE-ELIGIBLE, with the
+    /// placement that cell qualified, and nowhere else.
     #[test]
-    fn door_reads_pooled_vmm_and_refuses_anything_else() {
-        let off = KvVmmConfig::from_values(None, None, None, "NVIDIA GeForce RTX 5090").unwrap();
-        assert!(!off.armed);
-        assert!(off.faults.is_none());
-        assert!(
-            !KvVmmConfig::from_values(Some("pooled"), None, None, "x")
-                .unwrap()
-                .armed
-        );
-        let on = KvVmmConfig::from_values(
-            Some("vmm"),
-            None,
-            None,
-            "NVIDIA GeForce RTX 5090 Laptop GPU",
-        )
-        .unwrap();
+    fn the_planes_follow_the_card_class() {
+        let on = KvVmmConfig::from_values(None, PRO_WS).unwrap();
         assert!(on.armed);
-        assert_eq!(on.placement, VmmGrowPlacement::Helper);
-        assert_eq!(on.placement_source, "rtx5090-receipt");
-        assert!(KvVmmConfig::from_values(Some("VMM"), None, None, "x").is_err());
-        assert!(KvVmmConfig::from_values(Some("1"), None, None, "x").is_err());
+        assert_eq!(on.placement, VmmGrowPlacement::Inline);
+        assert_eq!(on.placement_source, "pro6000-ws-receipt");
+        assert!(on.faults.is_none());
+        for name in [
+            "NVIDIA GeForce RTX 5090",
+            "NVIDIA GeForce RTX 5090 Laptop GPU",
+            "NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition",
+            "NVIDIA RTX PRO 6000 Blackwell Server Edition",
+            "NVIDIA H100 80GB HBM3",
+            "",
+        ] {
+            let off = KvVmmConfig::from_values(None, name).unwrap();
+            assert!(!off.armed, "{name}");
+            assert!(off.faults.is_none(), "{name}");
+        }
     }
 
     #[test]
-    fn knobs_are_read_only_when_armed_and_refuse_bad_values() {
-        // OFF ignores the knobs entirely (they cannot arm anything).
-        let off = KvVmmConfig::from_values(None, Some("bogus"), Some("bogus"), "x").unwrap();
+    fn the_fault_door_is_read_only_when_armed_and_refuses_bad_values() {
+        // Unarmed, the fault spec cannot arm anything and is not parsed.
+        let off = KvVmmConfig::from_values(Some("bogus"), "NVIDIA GeForce RTX 5090").unwrap();
         assert!(!off.armed && off.faults.is_none());
-        let inline = KvVmmConfig::from_values(Some("vmm"), Some("inline"), None, "x").unwrap();
-        assert_eq!(inline.placement, VmmGrowPlacement::Inline);
-        assert_eq!(inline.placement_source, "MEMRA_KV_VMM_GROW");
-        assert!(KvVmmConfig::from_values(Some("vmm"), Some("sideways"), None, "x").is_err());
-        let f =
-            KvVmmConfig::from_values(Some("vmm"), None, Some("mapper:all,ensure:3,build:1"), "x")
-                .unwrap()
-                .faults
-                .unwrap();
+        let f = KvVmmConfig::from_values(Some("mapper:all,ensure:3,build:1"), PRO_WS)
+            .unwrap()
+            .faults
+            .unwrap();
         assert!(f.mapper_all);
         assert_eq!(f.ensure, vec![3]);
         assert_eq!(f.build, vec![1]);
-        assert!(KvVmmConfig::from_values(Some("vmm"), None, Some("grow:2"), "x").is_err());
-        assert!(KvVmmConfig::from_values(Some("vmm"), None, Some("ensure:0"), "x").is_err());
+        assert!(KvVmmConfig::from_values(Some("grow:2"), PRO_WS).is_err());
+        assert!(KvVmmConfig::from_values(Some("ensure:0"), PRO_WS).is_err());
     }
 
     #[test]
@@ -234,15 +209,15 @@ mod tests {
     }
 
     #[test]
-    fn boot_line_states_the_door_and_its_placement() {
-        let off = KvVmmConfig::from_values(None, None, None, "x").unwrap();
+    fn boot_line_states_the_planes_and_their_placement() {
+        let off = KvVmmConfig::from_values(None, "NVIDIA GeForce RTX 5090").unwrap();
         assert!(off.boot_line(None).starts_with("[kv-vmm] door=OFF"));
-        let on = KvVmmConfig::from_values(Some("vmm"), None, None, "NVIDIA RTX PRO 6000 Blackwell")
-            .unwrap();
+        let on = KvVmmConfig::from_values(None, PRO_WS).unwrap();
         let line = on.boot_line(Some(2 << 20));
-        assert!(
-            line.starts_with("[kv-vmm] door=ON routes=spec,plain granularity=2097152 grow=helper")
-        );
+        assert!(line.starts_with(
+            "[kv-vmm] door=ON routes=spec,plain granularity=2097152 grow=inline \
+             (pro6000-ws-receipt)"
+        ));
         assert!(line.contains("reap=owner-tick"));
         assert!(line.contains("faults=none"));
     }

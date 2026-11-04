@@ -244,7 +244,7 @@ pub fn on_demand_pays(capacity: usize, initial: usize, granularity: usize) -> bo
                 .saturating_add(granularity)
 }
 
-// ---------------- on-demand planes (WP-B day 37, `MEMRA_KV_ALLOCATOR=vmm`) ----------------
+// ---------------- on-demand planes (WP-B day 37, the server's on-demand KV planes) ------------
 //
 // A plane reserves its whole capacity as virtual range once and backs it in extents: one
 // `cuMemCreate` handle per grow, mapped at the end of the backed prefix. The address never
@@ -985,8 +985,8 @@ pub fn note_on_demand_plane() {
 pub struct KvPlane {
     operand: Option<CudaSlice<u8>>,
     mapping: Option<Mapping>,
-    /// On-demand VMM storage (WP-B day 37, `MEMRA_KV_ALLOCATOR=vmm`): the full capacity is a
-    /// reserved virtual range and only `ensure_mapped` extents are backed. Exclusive with
+    /// On-demand VMM storage (WP-B day 37, the server's on-demand KV planes): the full capacity
+    /// is a reserved virtual range and only `ensure_mapped` extents are backed. Exclusive with
     /// `mapping`; the gate-only demote/restore arms refuse it.
     on_demand: Option<OnDemand>,
     suspended: Option<Range<usize>>,

@@ -1,5 +1,5 @@
 //! WP-B day 37, clause A2 (`research/spill-b-20260919/DAY37.md` 1.6): the G1 grow series of
-//! on-demand VMM K/V planes (`MEMRA_KV_ALLOCATOR=vmm`'s mechanism, `memra_kv::with_on_demand_kv`).
+//! on-demand VMM K/V planes (the serving mechanism, `memra_kv::with_on_demand_kv`).
 //!
 //! One process runs the gate's tokenwise program twice at the same context: first on pooled
 //! planes, then on on-demand planes that back rows only as the position grows. The pooled arm
