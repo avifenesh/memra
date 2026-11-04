@@ -6914,6 +6914,9 @@ struct RealizedRate {
     var: f64,
     samples: u32,
     last: Instant,
+    /// EMA of the acceptance window's expected tokens per round at this slot's K when its
+    /// samples landed (0 for plain, or when the window had no estimate).
+    accept_e: f64,
 }
 
 impl RealizedRate {
@@ -6923,6 +6926,7 @@ impl RealizedRate {
             var: 0.0,
             samples: 0,
             last: Instant::now(),
+            accept_e: 0.0,
         }
     }
 
@@ -6953,6 +6957,34 @@ const SPEC_COST_REALIZED_ALPHA: f64 = 0.3;
 const SPEC_COST_REALIZED_TTL: std::time::Duration = std::time::Duration::from_secs(64);
 
 impl SpecCostEntry {
+    /// A realized rate at today's acceptance. A spec slot's samples carry the acceptance of
+    /// the rounds they were measured on; the window keeps moving with every spec round at any
+    /// concurrency, so the slot is rescaled by expected tokens now over expected tokens then
+    /// (a slot measured in a low-acceptance stretch no longer prices spec low for good).
+    fn realized_now(&self, k: usize, r: &RealizedRate) -> f64 {
+        if k == 0 || r.accept_e <= 0.0 {
+            return r.ema;
+        }
+        match self
+            .accept
+            .as_ref()
+            .and_then(|a| spec_expected_tokens(a, k))
+        {
+            Some(e) => r.ema * e / r.accept_e,
+            None => r.ema,
+        }
+    }
+
+    /// Relative noise of the spec prices at `n`: the largest EMA standard error over ema among
+    /// the sampled spec slots at that concurrency (0 when none).
+    fn spec_rel_noise(&self, n: usize) -> f64 {
+        self.realized
+            .iter()
+            .filter(|((m, kk), r)| *m == n && *kk > 0 && r.samples >= SPEC_COST_REALIZED_MIN)
+            .map(|(_, r)| if r.ema > 0.0 { r.noise() / r.ema } else { 0.0 })
+            .fold(0.0, f64::max)
+    }
+
     /// The aggregate tok/s to price (n, k) at: the realized EMA when it has enough samples,
     /// else `predict(n, k)` scaled by the realized/predicted ratio of the closest observation of
     /// the same kind (plain for k = 0, any draft length for k > 0), preferring the same n, then
@@ -6963,7 +6995,7 @@ impl SpecCostEntry {
         if let Some(r) = self.realized.get(&(n, k))
             && ok(k, r)
         {
-            return r.ema;
+            return self.realized_now(k, r);
         }
         let same_kind = |kk: usize| (kk == 0) == (k == 0);
         let rank = |m: usize, kk: usize| -> (u8, usize) {
@@ -6985,7 +7017,7 @@ impl SpecCostEntry {
             Some(((m, kk), r)) => {
                 let p = predict(*m, *kk);
                 if p > 0.0 {
-                    predicted * r.ema / p
+                    predicted * self.realized_now(*kk, r) / p
                 } else {
                     predicted
                 }
@@ -7104,7 +7136,8 @@ fn spec_cost_best_k(entry: &SpecCostEntry, n: usize, rung: usize) -> Option<(usi
         }
     }
     // TIE PROBE. Plain wins only on a measured margin. When the best draft length prices
-    // within two standard errors of the plain rate's EMA and its price is not backed by fresh
+    // within two standard errors of the difference (plain EMA and this n's spec slots, in
+    // quadrature) and its price is not backed by fresh
     // samples at this (n, K) (it was extrapolated from another slot, or its samples are older
     // than one turn), speculate so the slot gets measured. Without this a spec price can go
     // stale for good: plain wins the tie, no spec tick runs, and nothing ever corrects the
@@ -7120,12 +7153,13 @@ fn spec_cost_best_k(entry: &SpecCostEntry, n: usize, rung: usize) -> Option<(usi
             .get(&(n, ks))
             .is_some_and(RealizedRate::fresh)
     {
-        let noise = entry
+        let plain_se = entry
             .realized
             .get(&(n, 0))
             .filter(|r| r.samples >= SPEC_COST_REALIZED_MIN)
             .map_or(0.0, RealizedRate::noise);
-        if rs >= plain - 2.0 * noise {
+        let spec_se = entry.spec_rel_noise(n) * rs;
+        if rs >= plain - 2.0 * (plain_se * plain_se + spec_se * spec_se).sqrt() {
             best = (ks, rs);
         }
     }
@@ -7184,10 +7218,26 @@ fn spec_cost_observe(model: &str, n: usize, k: usize, tok_per_s: f64) {
             .entry((n, k))
             .or_insert_with(|| RealizedRate::new(tok_per_s));
         let a = SPEC_COST_REALIZED_ALPHA;
+        let e_now = if k > 0 {
+            entry
+                .accept
+                .as_ref()
+                .and_then(|t| spec_expected_tokens(t, k))
+                .unwrap_or(0.0)
+        } else {
+            0.0
+        };
         if slot.samples > 0 {
             let d = tok_per_s - slot.ema;
             slot.ema += a * d;
             slot.var = (1.0 - a) * (slot.var + a * d * d);
+            slot.accept_e = if slot.accept_e > 0.0 && e_now > 0.0 {
+                slot.accept_e + a * (e_now - slot.accept_e)
+            } else {
+                e_now
+            };
+        } else {
+            slot.accept_e = e_now;
         }
         slot.samples = slot.samples.saturating_add(1);
         slot.last = Instant::now();
@@ -44243,7 +44293,29 @@ mod tests {
             var: 0.0,
             samples,
             last: std::time::Instant::now(),
+            accept_e: 0.0,
         }
+    }
+
+    /// A spec slot is priced at today's acceptance: measured when the window expected half the
+    /// tokens per round it expects now, it prices twice its EMA (a low-acceptance stretch no
+    /// longer holds plain after acceptance recovers).
+    #[test]
+    fn spec_slot_prices_follow_the_live_acceptance() {
+        let mut e = gb10_entry([0.7, 0.5, 0.35]);
+        let e3 = super::spec_expected_tokens(e.accept.as_ref().unwrap(), 3).unwrap();
+        e.realized.insert(
+            (2, 3),
+            super::RealizedRate {
+                accept_e: e3 / 2.0,
+                ..slot(20.0, 10)
+            },
+        );
+        let price = e.priced(2, 3, |_, _| 1.0);
+        assert!((price - 40.0).abs() < 1e-9, "{price}");
+        // No acceptance recorded with the slot: its EMA as measured.
+        e.realized.insert((2, 3), slot(20.0, 10));
+        assert!((e.priced(2, 3, |_, _| 1.0) - 20.0).abs() < 1e-9);
     }
 
     /// A stale spec slot still prices spec (it anchors the corrections at other n), but a near
