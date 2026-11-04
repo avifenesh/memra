@@ -1848,7 +1848,7 @@ pub(crate) fn shard_moe_layer_split(
 }
 
 // ------------------------------------------------------------------------------------------
-// Prefix entries on the TP walk (lane/glm5-tp-prefix, 2026-09-07, `MEMRA_GLM5_TP_PREFIX`)
+// Prefix entries on the TP walk (lane/glm5-tp-prefix, 2026-09-07, sm_100a builds)
 // ------------------------------------------------------------------------------------------
 
 /// The per-rank state a prefix entry must carry for a glm5 session on the TP-2 walk, over and

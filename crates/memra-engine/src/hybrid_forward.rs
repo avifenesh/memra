@@ -3057,7 +3057,7 @@ impl HybridModel {
     }
 
     /// True when this model runs the glm5 TP walk (any layer carries a TP sidecar): the
-    /// prefix-cache seams key their per-rank capture on it (`MEMRA_GLM5_TP_PREFIX`).
+    /// prefix-cache seams key their per-rank capture on it (sm_100a builds).
     pub fn glm5_tp_prefix_class(&self) -> bool {
         self.glm5_tp_rt_for(0, self.layers.len()).is_some()
     }
