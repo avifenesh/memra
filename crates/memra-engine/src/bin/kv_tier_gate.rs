@@ -77,6 +77,7 @@ fn capture(
         || cache.dflash_taps.is_some()
         || cache.hc_taps.is_some()
         || cache.glm5_decode_graph.is_some()
+        || cache.glm5_tp_sym_graph.is_some()
         || cache.qwen_prime_graph.is_some()
         || cache.last_logits_dev.is_some()
     {

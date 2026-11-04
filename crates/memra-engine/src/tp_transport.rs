@@ -167,8 +167,19 @@ pub fn default_transport() -> TpTransport {
 /// empty takes [`default_transport`]; every arm also has its explicit spelling, which the
 /// `glm5-tp-gate` transport arms set and a launcher sets for `device-push`.
 pub fn parse_transport(flag: &str, value: Option<&str>) -> Result<TpTransport, String> {
+    parse_transport_or(flag, value, default_transport())
+}
+
+/// [`parse_transport`] with an explicit transport for the unset case. A consumer whose walk
+/// needs SM-issued peer access passes `device-push` there (the glm5 symmetric posture,
+/// `glm5_tp::unset_transport_for`); every other caller passes [`default_transport`].
+pub fn parse_transport_or(
+    flag: &str,
+    value: Option<&str>,
+    unset: TpTransport,
+) -> Result<TpTransport, String> {
     match value {
-        None | Some("") => Ok(default_transport()),
+        None | Some("") => Ok(unset),
         Some("0") | Some("host-canonical") => Ok(TpTransport::HostCanonical),
         Some("1") | Some("peer-pull") => Ok(TpTransport::PeerPull),
         Some("2") | Some("device-push") => Ok(TpTransport::DevicePush),
@@ -193,6 +204,15 @@ pub fn resolve_transport(
     general: Option<&str>,
     alias: Option<&str>,
 ) -> Result<(TpTransport, &'static str), String> {
+    resolve_transport_or(general, alias, default_transport())
+}
+
+/// [`resolve_transport`] with an explicit transport for the unset case ([`parse_transport_or`]).
+pub fn resolve_transport_or(
+    general: Option<&str>,
+    alias: Option<&str>,
+    unset: TpTransport,
+) -> Result<(TpTransport, &'static str), String> {
     let (armed, value) = match (general, alias) {
         (Some(g), Some(a)) if g != a => {
             return Err(format!(
@@ -205,7 +225,7 @@ pub fn resolve_transport(
         (None, Some(a)) => (TRANSPORT_ENV_GLM5, Some(a)),
         (None, None) => (TRANSPORT_ENV, None),
     };
-    Ok((parse_transport(armed, value)?, armed))
+    Ok((parse_transport_or(armed, value, unset)?, armed))
 }
 
 /// Every transport name currently SET, for ROLLBACK ADVICE only — never for policy.
@@ -239,9 +259,15 @@ fn rollback_advice() -> String {
 /// Live read of [`resolve_transport`]. Returns the transport and the ARMED FLAG NAME, so
 /// downstream refusals and peer-access grants cite the flag the operator typed.
 pub fn transport_env() -> Result<(TpTransport, &'static str), String> {
-    resolve_transport(
+    transport_env_or(default_transport())
+}
+
+/// [`transport_env`] with an explicit transport for the unset case ([`parse_transport_or`]).
+pub fn transport_env_or(unset: TpTransport) -> Result<(TpTransport, &'static str), String> {
+    resolve_transport_or(
         std::env::var(TRANSPORT_ENV).ok().as_deref(),
         std::env::var(TRANSPORT_ENV_GLM5).ok().as_deref(),
+        unset,
     )
 }
 

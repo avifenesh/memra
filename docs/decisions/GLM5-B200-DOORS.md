@@ -9,20 +9,19 @@ with everything only it reaches. One-rig evidence sets a one-rig default: no oth
 The deleted doors are in the Removed doors ledger of `docs/FLAGS.md`; this record covers the
 defaults that changed and the calls left open.
 
-**The TP-2 receipts carried a posture that no longer exists.** The host-diet row below was taken
-on the darklanes launcher's composed posture, and the TP-prefix row in the same window, when the
-launcher armed the TP prefix together with it: `MEMRA_TP_TRANSPORT=device-push`,
-`MEMRA_GLM5_TP_SYMMETRIC=1` (KDA `wo` K-sliced at load, with a row-parallel partial-sum branch
-in `kda_tp_core` that prime and decode both ran), `MEMRA_TP_AR_1STAGE=1` (the one-shot
-all-reduce at the MLA `wo` and split-MoE reduce sites, prime chunks included) and decode through
-the symmetric graphs, which is why those rows decode at 65-67 tok/s against the eager split
-walk's 35-39. fe66a24a0d deleted those programs (the open call below). So those promoted TP-2
-defaults run a numeric program no receipt measured: column-parallel KDA `wo` over the gather,
-return-to-root reduces, root-orchestrated eager decode. Their tapes and ids on that program are
-unverified, and each on/off delta is assumed to transfer. Where a mechanism is byte-identical
-by construction (the host diet: launch order and host work only), the on/off identity still
-holds; what is unverified is the walk underneath. The pair cell that would confirm them is
-named in each section; it needs an sm_100a pair, and none is in hand.
+**The TP-2 receipts carried one posture, and it is the sm_100a default again.** The host-diet
+row below was taken on the darklanes launcher's composed posture, and the TP-prefix and device
+sampler rows in the same window: `MEMRA_TP_TRANSPORT=device-push`, `MEMRA_GLM5_TP_SYMMETRIC=1`
+(KDA `wo` K-sliced at load, with a row-parallel partial-sum branch in `kda_tp_core` that prime
+and decode both ran), `MEMRA_TP_AR_1STAGE=1` (the one-shot all-reduce at the MLA `wo` and
+split-MoE reduce sites, prime chunks included) and decode through the symmetric graphs, which is
+why those rows decode at 65-67 tok/s against the eager split walk's 35-39. An earlier pass on
+2026-11-04 deleted the symmetric walk as unreceipted, which left those promoted defaults on a
+program no receipt measured. The walk is restored as the sm_100a TP-2 default (its section
+below), with `device-push` armed when no transport is named, so a naked sm_100a TP-2 command runs
+the measured posture again. What no cell has done is run that posture on today's code: the
+receipts are from September builds, and the pair cell that would confirm each default is named
+in its section. It needs an sm_100a pair, and none is in hand.
 
 ## The TP split grouped prime and its host diet: sm_100a default
 
@@ -48,12 +47,11 @@ in 7.08 s, 29,961 tokens in 57.7 s, tpprime2 2026-09-07); with it the 256k prime
 That comparison is across windows, not an interleaved A/B, and the owner promoted the pair on
 these rows.
 
-**Unverified on the promoted program:** the receipt ran on the composed posture (above). The
-cell that would confirm the transfer: an sm_100a pair, `glm5-tp2-box-probe` at 256k and 1M with
-`MEMRA_GLM5_TP=all@0,1` and `MEMRA_TP_TRANSPORT=device-push` on the post-deletion walk, prime
-seconds against a slot-walk build of the same commit, and the tape and ids against the split
-walk's own reference at its band (`glm5-tp-gate` arm S's class). No gate cell runs the grouped
-prime on any other card: on sm_120a the split walk primes through the slot walk.
+**Still owed on today's code:** the receipt ran on the composed posture (above), which is the
+naked sm_100a TP-2 program again. The confirming cell: an sm_100a pair, `glm5-tp2-box-probe` at
+256k and 1M with `MEMRA_GLM5_TP=all@0,1` and nothing else, prime seconds against a slot-walk build
+of the same commit, and the tape and ids against the posture's own reference. No gate cell runs
+the grouped prime on any other card: on sm_120a the split walk primes through the slot walk.
 
 **Scope:** sm_100a builds only. On every other build the split walk keeps its per-token slot
 walk at prefill. The walk is the expert split, which is the sm_100a TP placement default (next
@@ -79,9 +77,9 @@ command.
 split decoded at 34.84 / 39.43 tok/s against whole-expert EP's 20.29 / 20.32, with the graphed
 PP-2 control at 59.81 / 59.91. The split is a different numeric class (tape `f6b309777546b67e`
 against whole-expert's `2fad380bb459ff0a`): `down` and MLA `wo` split their K reduction two ways,
-gated on a logits band plus tape identity and never on bits (`glm5-tp-gate` arm S). Unlike the
-other TP-2 rows here, tpwalk2's `tp2s` arm is the root-orchestrated eager split walk, the decode
-program that remains after fe66a24a0d; its prime has since gained the grouped prime above.
+gated on a logits band plus tape identity and never on bits (`glm5-tp-gate` arm S). tpwalk2's
+`tp2s` arm is the root-orchestrated eager split walk; on sm_100a the symmetric walk now runs over
+the split by default (below), and `MEMRA_GLM5_TP_SYMMETRIC=0` keeps the walk this row measured.
 
 **Scope:** sm_100a builds only; every other build keeps whole experts, since no receipt exists
 there.
@@ -159,11 +157,12 @@ On other builds the refusal stays: no receipt exists there.
 hit 130433 of 130433 prompt tokens from cache with ids identical over the continuation, and the
 +2k extension was answered on the cached prefix. A correctness receipt, not a speed one: the
 mechanism replaces a refusal with a restore of the same bytes. The receipt was taken in the
-composed posture's window (above). The restored planes do not depend on the walk (KDA conv/ssm
-state per head and the latent rows are the same bytes either way), but ids over a restored
-continuation on the promoted walk are unverified. The cell that would confirm it: box2h2 again on an sm_100a pair on
-the post-deletion walk, a 128k prompt cold and then again, full hit and ids identical over the
-continuation.
+composed posture's window (above), which is the naked sm_100a TP-2 program again. The restored
+planes do not depend on the walk (KDA conv/ssm state per head and the latent rows are the same
+bytes either way). The cell owed on today's code: box2h2 again on an sm_100a pair, a 128k prompt
+cold and then again, full hit and ids identical over the continuation, once at an odd and once at
+an even decoded-token count (the per-rank graphs mirror the KDA ping-pong, and a restore between
+graphed tokens must replay the right phase).
 
 **Scope:** sm_100a builds, all-layer `MEMRA_GLM5_TP` specs (the receipt's `all@0,1`).
 `MEMRA_PREFIX_LATENT=1` is still required for the root planes. A partial spec refuses capture
@@ -195,29 +194,68 @@ diverging at the same near-tie token. The owner chose precision 1 over precision
 ran on the TP-2 walk of that window; the scorer's numerics do not depend on the walk around it,
 but its share of the prime does, so the 2.3x is a statement about that walk.
 
+## The symmetric TP-2 walk with its graphs: sm_100a TP-2 default
+
+**Chosen:** on sm_100a builds an armed TP-2 walk over the expert split takes the symmetric
+posture. At load every TP layer's glue (norms, hc sites, a router copy, the dense FFN, the
+shared-expert halves) is replicated to the peer and the KDA `wo` turns row-parallel. At decode
+both ranks run the glue themselves and the three sharded ops meet in one-shot all-reduces fused
+into the hc post launch, two crossings per layer, recorded as one CUDA graph per rank over each
+run of KDA layers with each MLA layer in graphed halves around an eager middle. Under the
+posture the root-orchestrated reduce sites the prime chunks take use the one-shot too. With no
+transport named, the posture on a real pair arms `device-push`, the only transport the one-shot's
+kernel peer stores admit. `MEMRA_GLM5_TP_SYM_GRAPH`, `MEMRA_GLM5_TP_SYM_GRAPH_MLA` and
+`MEMRA_TP_AR_1STAGE` are deleted as switches. `MEMRA_GLM5_TP_SYMMETRIC` stays as the posture
+selector, `=1` on and `=0` off on any build, the way `MEMRA_GLM5_TP_EXPERT_SPLIT` stays: the
+one-card rig gate reaches the posture only through `=1` (arm Y) and its other arms pin `=0`.
+
+**Rejected:** the deletion an earlier pass made the same day on the premise that the walk had no
+receipt (darklanes carries positive rows, below); confirming that deletion as a policy deletion,
+which would leave every promoted TP-2 row above on a program none of them measured; the eager
+symmetric walk as the default, slower than the graphed walk at the same tape; MLA layers whole
+and eager inside the graphs (`MEMRA_GLM5_TP_SYM_GRAPH_MLA=0`), slower below; the one-shot as a
+door of its own on the root-orchestrated walk, flat there; keeping `peer-pull` as the transport
+under the posture, which the one-shot cannot use because its ladder proves copies, not kernel
+stores; and making `device-push` the sm_100a transport for every TP walk, which no pull-vs-push
+row supports (below).
+
+**Measurement that settled it:** 2x B200 pair, darklanes
+`research/glm5-b200-mint-20260904/LANE.md`. symcheck2 (2026-09-06 23:40Z) ran the walk engaged,
+45.53 then 54.06 tok/s, tape `d3c3955d916b8ef6`. tpwalk4 v2 (2026-09-07, two reps per arm,
+tapes equal across reps): eager walk 54.46 / 54.93 tok/s, graphed walk on the served posture
+74.65 / 74.87, graphed PP-2 control 71.33. tpwalk3 v5 (two reps): eager 53.30 / 53.38, KDA runs
+graphed with MLA whole 71.11 / 78.76, with the MLA halves 82.58 / 82.18, every 160-token tape
+equal to the eager walk's (`VERDICT:glm5-tp-sym-graph-byte-identical-1.65x`). tpwalk11: the fused
+crossing 97.90 / 98.39 against 96.43 / 96.17 with the separate reduce and post, same tape
+(`VERDICT:glm5-tp-fused-reduce-post-crossing`). The root-orchestrated split walk read 34.84 /
+39.43 an hour before the eager walk's first row (tpwalk2, same pair), so that comparison is
+across windows; the graph and MLA-halves rows are within one run. The one-shot alone on the
+root-orchestrated walk read flat, 34.60 / 39.10, with the same tape `f6b309777546b67e`
+(tpwalk2). The host diet, TP prefix and device sampler receipts all ran on this posture.
+
+**Transport:** no balanced interleaved pull-vs-push row exists. The one same-window reading is
+tpwalk (2026-09-06, one round per arm on the root-orchestrated walk, quoted in the walk's
+2026-09-06 FLAGS row, no raw table in either repo): host-canonical 16.59, peer-pull 19.07,
+device-push 20.49 tok/s against PP-2's 59.86. `device-push` is the default under the posture
+because the link needs it and every posture receipt ran on it. `peer-pull` stays the sm_100a
+default for the root-orchestrated walk, where its receipt was measured
+(`docs/decisions/TP-PEER-PULL-DEFAULT.md`). The TP indexer's candidate exchange keeps the same
+link predicate and engages wherever `device-push` is armed, posture or not.
+
+**Owed on today's code (an sm_100a pair):** `glm5-tp2-box-probe` at 160 greedy tokens with
+`MEMRA_GLM5_TP=all@0,1` and nothing else, checking `[glm5-tp-sym] engaged`,
+`[glm5-tp-sym-graph] engaged` and `[glm5-tp-transport] armed transport=device-push`, against
+`MEMRA_GLM5_GRAPH_NO_CAPTURE=1` (the eager walk, same tape) and `MEMRA_GLM5_TP_SYMMETRIC=0` (the
+root-orchestrated walk, the split's class), three interleaved boots per arm; `glm5-tp-gate` on two
+devices; `tests/tp_ar_gpu.rs`; and the reuse-pool continuation the graph row always owed: decode
+an odd and an even number of tokens, continue with the prefix and suffix-prime paths, tape equal
+to a cold run.
+
+**Scope:** sm_100a builds, TP-2 over the expert split. Every other build keeps the
+root-orchestrated walk, since no receipt exists there; `=1` reaches the posture there for the
+gate, and with no transport named it arms `device-push` too.
+
 ## Open calls
-
-### The symmetric TP-2 walk: deleted as unreceipted, but darklanes carries positive rows
-
-fe66a24a0d deleted `MEMRA_GLM5_TP_SYMMETRIC`, `MEMRA_GLM5_TP_SYM_GRAPH` with its seam
-`MEMRA_GLM5_TP_SYM_GRAPH_MLA`, and `MEMRA_TP_AR_1STAGE` on the premise that none had a receipt.
-That premise holds for this repo and not for darklanes `research/glm5-b200-mint-20260904/LANE.md`:
-symcheck2 (2026-09-06 23:40Z) ran the symmetric walk engaged (`[glm5-tp-sym] engaged`, 45.53
-tok/s, then 54.06, tape `d3c3955d916b8ef6`), and tpwalk4 v2 (2026-09-07) read two reps per arm:
-eager symmetric 54.46 / 54.93 tok/s, the graph door on the served posture 74.65 / 74.87, the
-graphed PP-2 control 71.33, tapes equal across reps. The same tpwalk4 v2 run caught the bare
-graph arm decoding garbage (fixed in 9d074abc6 by declining on the process preconditions). The
-one-shot alone read flat (tpwalk2: 34.84 / 39.43 split against 34.60 / 39.10 with the one-shot),
-but it is the symmetric walk's crossing primitive, so that row does not price it inside the walk.
-This record accepts darklanes prose rows elsewhere (the k-pool selector, the top-k twin, the
-host diet), so by the same standard these are positive rows, and the 2026-11-04 rule would make
-the walk a TP-2 sm_100a default rather than delete it. The cost of the deletion: TP-2 decode on
-any future pair is the root-orchestrated eager walk (tpwalk2's split, 34.84 / 39.43 tok/s)
-instead of the graphed symmetric walk (74.65 / 74.87). Options: restore the four doors as TP-2
-sm_100a defaults (reverting fe66a24a0d, then the composed posture is again what the receipts
-measured); or confirm the deletion as a policy deletion (the box is retired and no sm_100a
-pair is in hand), in which case the ledger keeps these rows and calls it that. The branch
-carries the deletion until the owner rules.
 
 ### `MEMRA_KPOOL_SELECT_V2` on sm_120a
 
