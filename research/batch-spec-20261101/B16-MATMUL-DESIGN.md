@@ -145,3 +145,16 @@ Kept: `qmatvec_nvfp4_mmvq_b16_rpscx` (CG=2, unbounded) for full 16-row calls, in
 What remains: 14 ms of the 16-row matmul, now with 96 registers at 19 warps per SM. Grouping alone cannot remove it. The next candidates both cut instructions per weight byte rather than hide latency:
 - design C, the integer part on `mma.sync` with the float epilogue unchanged;
 - 16-row coverage in the group4 door (17.7 ms at 16 rows against 13.9 at 8).
+
+Wired as the default (88805bc1f1). Gate (`gb10-b2/served/gate/`):
+- kernel-check (KC_FAST) passes with the default dispatching the twin: rc=0, `RP BATCHED m=16` bit-bad=0 on attn_gate, attn_qkv and ffn_down.
+- Confirm pair at 16 rows, depth 12288: 161.54 / 161.68 ms against `MEMRA_BVAR=rpsc` 167.47 / 167.12. TOKFP identical.
+
+Served, fresh boot per arm, c8 then c16, previous default 062ecac658 then 88805bc1f1 (`gb10-b2/served/`):
+
+| c | 062ecac658 | 88805bc1f1 (16-row twin) |
+|---:|---:|---:|
+| 8 | 62.44 | 62.35 |
+| 16 | 75.90 | 77.27 (+1.8%) |
+
+The boot probe saw the 16-row tier move too: two 16-row waves at 262.2 ms against 273.3 on the previous build. Both builds still pick the tensor-core 32-row wave (227.6 / 229.7 ms).
