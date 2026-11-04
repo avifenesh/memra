@@ -37,6 +37,25 @@ these rows.
 walk at prefill. The walk itself still needs `MEMRA_GLM5_TP_EXPERT_SPLIT=1`, which is an open
 call (below).
 
+## The warp-merged top-k twin: sm_100a default
+
+**Chosen:** on sm_100a builds `Engine::topk_rows` (the DFlash2 candidate selector) runs the
+warp-merged exact twin pair (`topk_rows_wshard_k{8,16,32}_f32` + `topk_rows_wshard_merge_f32`)
+for k in {8, 16, 32}, ahead of the shard split. `MEMRA_TOPK_WARP` is deleted.
+
+**Rejected:** the shipped arms on sm_100a (lane lists in local memory, one-thread merges), and
+waiting for a `topkab` cell on the TP-2 walk, which cannot run: the box is retired and the TP-2
+walk serves no spec route.
+
+**Measurement that settled it:** 2x B200 pair, GLM-5.3-Flash, `tpwalk24` (2026-09-07, PP-2 spec
+route at 32k, three interleaved boots per arm): off 63.40 / 65.21 / 66.65 tok/s against
+68.02 / 68.07 / 68.09, +4.4%, ranges apart; `doorscreen` one boot +1.12%
+(`FLAGS-HISTORY.md#memra_topk_warp`). Output-identical by construction (a discrete selection
+under a total order), gated bitwise.
+
+**Scope:** sm_100a builds only. The selector serves every DFlash2 family, so a default on the
+RTX 5090 or RTX PRO 6000 needs the same cell on that card.
+
 ## Open calls
 
 ### `MEMRA_GLM5_TP_EXPERT_SPLIT`: keep, promote or delete

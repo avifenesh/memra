@@ -610,20 +610,26 @@ fn gpu_topk_shards_match_standing_kernel_exactly() {
     }
     let l_d = e.htod(&l).expect("logits upload");
 
-    // STANDING-KERNEL reference PINNED =0: door K is default ON and n_cols=20000 is above
-    // its 16384 engagement threshold, so an unset var would route this "standing" reference
-    // through the shard split and compare the sharded path against itself.
-    let (v_off, i_off) = without_flag("MEMRA_TOPK_SHARDS", || {
-        e.topk_rows(&l_d, n_rows, n_cols, k).expect("standing topk")
-    });
-    let d0 = memra_engine::topk_shards_dispatches();
-    let (v_on, i_on) = with_flag("MEMRA_TOPK_SHARDS", || {
-        e.topk_rows(&l_d, n_rows, n_cols, k).expect("sharded topk")
-    });
-    assert!(
-        memra_engine::topk_shards_dispatches() > d0,
-        "the shard door did not engage at n_cols=20000"
-    );
+    // Both arms called directly: the dispatch reaches the shard split only below the warp
+    // twin's precedence (sm_100a builds take the warp twin for k in {8, 16, 32}), so routing
+    // the reference or the arm through `topk_rows` would compare a path against itself there.
+    let (v_off, i_off) = e
+        .topk_rows_standing(&l_d, n_rows, n_cols, k)
+        .expect("standing topk");
+    let (v_on, i_on) = e
+        .topk_rows_sharded(&l_d, n_rows, n_cols, k, 16)
+        .expect("sharded topk");
+    if memra_engine::BUILT_CUDA_ARCH != "100a" {
+        let d0 = memra_engine::topk_shards_dispatches();
+        let _ = with_flag("MEMRA_TOPK_SHARDS", || {
+            e.topk_rows(&l_d, n_rows, n_cols, k)
+                .expect("dispatched topk")
+        });
+        assert!(
+            memra_engine::topk_shards_dispatches() > d0,
+            "the shard door did not engage at n_cols=20000"
+        );
+    }
     let vals_off = e.dtoh(&v_off).expect("v off");
     let vals_on = e.dtoh(&v_on).expect("v on");
     let idx_off = e.dtoh_u32(&i_off).expect("i off");
@@ -674,9 +680,9 @@ fn gpu_topk_shards_match_standing_kernel_exactly() {
     let mut l_rot = l.clone();
     l_rot[4 * n_cols..5 * n_cols].rotate_right(1);
     let lr_d = e.htod(&l_rot).expect("rotated upload");
-    let (_, i_rot) = with_flag("MEMRA_TOPK_SHARDS", || {
-        e.topk_rows(&lr_d, n_rows, n_cols, k).expect("rotated topk")
-    });
+    let (_, i_rot) = e
+        .topk_rows_sharded(&lr_d, n_rows, n_cols, k, 16)
+        .expect("rotated topk");
     let idx_rot = e.dtoh_u32(&i_rot).expect("i rot");
     assert_ne!(
         &idx_rot[4 * k..5 * k],
@@ -686,10 +692,11 @@ fn gpu_topk_shards_match_standing_kernel_exactly() {
     println!("door K RED bites: row-4 indices moved under a one-column rotation");
 }
 
-/// Door `MEMRA_TOPK_WARP`: the warp-merged exact twin vs the STANDING kernel (both other
-/// doors pinned off), values bitwise and indices equal on the planted-tie fixture of door K
-/// plus a planted-NaN row and a row narrower than the block; engagement counted; the
-/// rotated-row red arm bites through the door.
+/// The warp-merged exact top-k twin (the sm_100a default of `topk_rows` since 2026-11-04) vs
+/// the STANDING kernel, both called directly so the cell runs on every build: values bitwise
+/// and indices equal on the planted-tie fixture of door K plus a planted-NaN row and a row
+/// narrower than the block; the rotated-row red arm bites through the twin. On an sm_100a
+/// build `topk_rows` must also route to the twin (dispatch counted).
 #[test]
 #[ignore = "needs a CUDA device, run under flock /tmp/memra-5090.lock"]
 fn gpu_topk_warp_matches_standing_kernel_exactly() {
@@ -719,19 +726,24 @@ fn gpu_topk_warp_matches_standing_kernel_exactly() {
     l[5 * n_cols + 4000] = 11.0;
     let l_d = e.htod(&l).expect("logits upload");
 
-    let (v_off, i_off) = without_flag("MEMRA_TOPK_SHARDS", || {
-        e.topk_rows(&l_d, n_rows, n_cols, k).expect("standing topk")
-    });
-    let d0 = memra_engine::topk_warp_dispatches();
-    let (v_on, i_on) = without_flag("MEMRA_TOPK_SHARDS", || {
-        with_flag("MEMRA_TOPK_WARP", || {
-            e.topk_rows(&l_d, n_rows, n_cols, k).expect("warp topk")
-        })
-    });
-    assert!(
-        memra_engine::topk_warp_dispatches() > d0,
-        "the warp door did not engage"
-    );
+    let (v_off, i_off) = e
+        .topk_rows_standing(&l_d, n_rows, n_cols, k)
+        .expect("standing topk");
+    let (v_on, i_on) = e
+        .topk_rows_warp(&l_d, n_rows, n_cols, k)
+        .expect("warp topk")
+        .expect("k=16 has a warp instantiation");
+    if memra_engine::BUILT_CUDA_ARCH == "100a" {
+        let d0 = memra_engine::topk_warp_dispatches();
+        let _ = without_flag("MEMRA_TOPK_SHARDS", || {
+            e.topk_rows(&l_d, n_rows, n_cols, k)
+                .expect("dispatched topk")
+        });
+        assert!(
+            memra_engine::topk_warp_dispatches() > d0,
+            "an sm_100a build's topk_rows did not take the warp twin"
+        );
+    }
     let vals_off = e.dtoh(&v_off).expect("v off");
     let vals_on = e.dtoh(&v_on).expect("v on");
     let idx_off = e.dtoh_u32(&i_off).expect("i off");
@@ -759,21 +771,18 @@ fn gpu_topk_warp_matches_standing_kernel_exactly() {
         vals_off[5 * k..6 * k].iter().all(|v| !v.is_nan()),
         "row-5 selected a NaN"
     );
-    println!("door TOPK_WARP PASS: {n_rows} rows x {k} slots value+index identical");
+    println!("topk warp twin PASS: {n_rows} rows x {k} slots value+index identical");
 
     // A row narrower than the block: most lanes hold empty lists, and k > lanes-with-data.
     let narrow_cols = 100usize;
     let narrow = e.htod(&l[..n_rows * narrow_cols]).expect("narrow logits");
-    let (nv_off, ni_off) = without_flag("MEMRA_TOPK_SHARDS", || {
-        e.topk_rows(&narrow, n_rows, narrow_cols, k)
-            .expect("narrow standing")
-    });
-    let (nv_on, ni_on) = without_flag("MEMRA_TOPK_SHARDS", || {
-        with_flag("MEMRA_TOPK_WARP", || {
-            e.topk_rows(&narrow, n_rows, narrow_cols, k)
-                .expect("narrow warp")
-        })
-    });
+    let (nv_off, ni_off) = e
+        .topk_rows_standing(&narrow, n_rows, narrow_cols, k)
+        .expect("narrow standing");
+    let (nv_on, ni_on) = e
+        .topk_rows_warp(&narrow, n_rows, narrow_cols, k)
+        .expect("narrow warp")
+        .expect("k=16 has a warp instantiation");
     assert_eq!(
         bit_diffs(
             &e.dtoh(&nv_on).expect("nv on"),
@@ -788,22 +797,21 @@ fn gpu_topk_warp_matches_standing_kernel_exactly() {
         "narrow-row indices diverged"
     );
 
-    // RED ARM: rotating row 4 by one column must move its indices through the door.
+    // RED ARM: rotating row 4 by one column must move its indices through the twin.
     let mut l_rot = l.clone();
     l_rot[4 * n_cols..5 * n_cols].rotate_right(1);
     let lr_d = e.htod(&l_rot).expect("rotated upload");
-    let (_, i_rot) = without_flag("MEMRA_TOPK_SHARDS", || {
-        with_flag("MEMRA_TOPK_WARP", || {
-            e.topk_rows(&lr_d, n_rows, n_cols, k).expect("rotated topk")
-        })
-    });
+    let (_, i_rot) = e
+        .topk_rows_warp(&lr_d, n_rows, n_cols, k)
+        .expect("rotated topk")
+        .expect("k=16 has a warp instantiation");
     let idx_rot = e.dtoh_u32(&i_rot).expect("i rot");
     assert_ne!(
         &idx_rot[4 * k..5 * k],
         &idx_off[4 * k..5 * k],
         "rotated-row red arm left row-4 indices unchanged — the gate is vacuous"
     );
-    println!("door TOPK_WARP RED bites: row-4 indices moved under a one-column rotation");
+    println!("topk warp twin RED bites: row-4 indices moved under a one-column rotation");
 }
 
 /// Door I (`MEMRA_MOE_VROWS_ILP`): the `_ilp` twins (loads of four, then two, groups per lane
