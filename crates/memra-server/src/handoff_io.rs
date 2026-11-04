@@ -1,24 +1,26 @@
-//! Host-tier handoff file I/O (lane/spill-f-20260919, OWED 18, `M1-PREREG.md` section E).
+//! Host-tier handoff file I/O (lane/spill-f-20260919, OWED 18, `M1-PREREG.md` section E;
+//! `docs/decisions/HANDOFF-DIRECT-EXPORT.md`).
 //!
-//! `MEMRA_KV_HOST_HANDOFF_IO` selects how the handoff file meets storage:
-//! - `buffered` (default): a 4 MiB `BufWriter` / `BufReader` through the page cache, then
-//!   `fsync`. The program every earlier handoff receipt measured.
-//! - `direct`: `O_DIRECT` through one 4096-aligned 4 MiB buffer. Full buffers go straight to the
-//!   device; the last block is zero-padded, the file is truncated to its logical length, then
-//!   `fdatasync`. Reads use the same aligned buffer shape.
+//! The export writes the handoff file one of two ways, chosen by the worker's card:
+//! - `direct` on the full-power RTX PRO 6000 Blackwell Workstation Edition, where the registered
+//!   cell read the export 8.3 to 8.4% shorter: `O_DIRECT` through one 4096-aligned 4 MiB buffer.
+//!   Full buffers go straight to the device; the last block is zero-padded, the file is
+//!   truncated to its logical length, then `fdatasync`. A filesystem that refuses `O_DIRECT` at
+//!   open (`EINVAL`: it has no direct path) gets the buffered writer, and the export line says so.
+//! - `buffered` everywhere else: a 4 MiB `BufWriter` through the page cache, then `fsync`.
 //!
-//! The wire format does not depend on the mode: both writers produce the same bytes and both
-//! readers accept either file. A filesystem that refuses `O_DIRECT` fails the call loudly; the
-//! direct arm never falls back to buffered I/O.
+//! The import reads through a 4 MiB `BufReader` on every card: the direct reader read flat on
+//! both rigs and is deleted. The wire format does not depend on the writer: both writers produce
+//! the same bytes.
 
 use std::fs::File;
-use std::io::{self, Read, Write};
+use std::io::{self, Write};
 use std::os::unix::fs::{FileExt, OpenOptionsExt};
 
-/// Alignment for the direct arm's buffer, offsets and lengths. 4096 covers 512-byte and
+/// Alignment for the direct writer's buffer, offsets and lengths. 4096 covers 512-byte and
 /// 4 KiB logical-block devices.
 pub(crate) const DIRECT_ALIGN: usize = 4096;
-/// Buffer size for both arms (the buffered arm's historical 4 MiB).
+/// Buffer size for both writers and the reader (the buffered program's historical 4 MiB).
 pub(crate) const HANDOFF_BUF: usize = 4 << 20;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -35,25 +37,16 @@ impl HandoffIo {
         }
     }
 
-    pub(crate) fn parse(v: &str) -> Result<HandoffIo, String> {
-        match v {
-            "" | "buffered" => Ok(HandoffIo::Buffered),
-            "direct" => Ok(HandoffIo::Direct),
-            other => Err(format!(
-                "MEMRA_KV_HOST_HANDOFF_IO={other:?}: expected buffered or direct"
-            )),
+    /// The export writer for a device: `direct` on the full-power RTX PRO 6000 Blackwell
+    /// Workstation Edition (BOX36, 10 pairs per size, export 0.917 at 1 GiB and 0.916 at 8 GiB
+    /// of buffered), `buffered` on every other card (the RTX 5090's 1 GiB cell read flat).
+    pub(crate) fn for_device(device_name: &str) -> HandoffIo {
+        if memra_engine::parallel::HardwareTarget::is_pro6000_workstation(device_name) {
+            HandoffIo::Direct
+        } else {
+            HandoffIo::Buffered
         }
     }
-}
-
-/// MEMRA_KV_HOST_HANDOFF_IO (default `buffered`; default-OFF door, see docs/FLAGS.md). An
-/// unparseable value is an error at the first handoff, never a silent default.
-pub(crate) fn handoff_io_mode() -> Result<HandoffIo, String> {
-    static M: std::sync::OnceLock<Result<HandoffIo, String>> = std::sync::OnceLock::new();
-    M.get_or_init(|| {
-        HandoffIo::parse(&std::env::var("MEMRA_KV_HOST_HANDOFF_IO").unwrap_or_default())
-    })
-    .clone()
 }
 
 /// One heap block aligned to `DIRECT_ALIGN`.
@@ -95,18 +88,6 @@ impl Drop for AlignedBuf {
     }
 }
 
-fn open_direct(path: &str, write: bool) -> io::Result<File> {
-    let mut o = std::fs::OpenOptions::new();
-    if write {
-        o.write(true).create(true).truncate(true);
-    } else {
-        o.read(true);
-    }
-    o.custom_flags(libc::O_DIRECT)
-        .open(path)
-        .map_err(|e| io::Error::new(e.kind(), format!("O_DIRECT open refused for {path}: {e}")))
-}
-
 /// `O_DIRECT` writer: every device write is a whole aligned buffer at an aligned offset.
 pub(crate) struct DirectWriter {
     file: File,
@@ -116,9 +97,20 @@ pub(crate) struct DirectWriter {
 }
 
 impl DirectWriter {
+    /// Opens `path` with `O_DIRECT`. The error keeps the open's kind, so a caller can tell a
+    /// filesystem without a direct path (`InvalidInput`, `EINVAL`) from every other failure.
     pub(crate) fn create(path: &str) -> io::Result<DirectWriter> {
+        let file = std::fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .custom_flags(libc::O_DIRECT)
+            .open(path)
+            .map_err(|e| {
+                io::Error::new(e.kind(), format!("O_DIRECT open refused for {path}: {e}"))
+            })?;
         Ok(DirectWriter {
-            file: open_direct(path, true)?,
+            file,
             buf: AlignedBuf::new(HANDOFF_BUF),
             fill: 0,
             offset: 0,
@@ -154,86 +146,14 @@ impl Write for DirectWriter {
     }
 }
 
-/// `O_DIRECT` reader: every device read is one whole aligned buffer at an aligned offset;
-/// the final read returns the short tail.
-pub(crate) struct DirectReader {
-    file: File,
-    buf: AlignedBuf,
-    pos: usize,
-    len: usize,
-    offset: u64,
-    eof: bool,
-}
-
-impl DirectReader {
-    pub(crate) fn open(path: &str) -> io::Result<DirectReader> {
-        Ok(DirectReader {
-            file: open_direct(path, false)?,
-            buf: AlignedBuf::new(HANDOFF_BUF),
-            pos: 0,
-            len: 0,
-            offset: 0,
-            eof: false,
-        })
-    }
-
-    pub(crate) fn file(&self) -> &File {
-        &self.file
-    }
-
-    fn refill(&mut self) -> io::Result<()> {
-        let mut got = 0usize;
-        while got < self.buf.cap {
-            let off = self.offset + got as u64;
-            match self.file.read_at(&mut self.buf.as_mut_slice()[got..], off) {
-                Ok(0) => {
-                    self.eof = true;
-                    break;
-                }
-                Ok(n) => {
-                    got += n;
-                    // A short read that leaves an unaligned position can only be EOF.
-                    if !got.is_multiple_of(DIRECT_ALIGN) {
-                        self.eof = true;
-                        break;
-                    }
-                }
-                Err(e) if e.kind() == io::ErrorKind::Interrupted => {}
-                Err(e) => return Err(e),
-            }
-        }
-        self.offset += got as u64;
-        self.pos = 0;
-        self.len = got;
-        Ok(())
-    }
-}
-
-impl Read for DirectReader {
-    fn read(&mut self, out: &mut [u8]) -> io::Result<usize> {
-        if self.pos == self.len {
-            if self.eof {
-                return Ok(0);
-            }
-            self.refill()?;
-            if self.len == 0 {
-                return Ok(0);
-            }
-        }
-        let n = out.len().min(self.len - self.pos);
-        out[..n].copy_from_slice(&self.buf.as_slice()[self.pos..self.pos + n]);
-        self.pos += n;
-        Ok(n)
-    }
-}
-
-/// The export side of either arm.
+/// The export side of either writer.
 pub(crate) enum HandoffWriter {
     Buffered(io::BufWriter<File>),
     Direct(DirectWriter),
 }
 
 impl HandoffWriter {
+    /// Exactly `mode`: the direct writer fails loudly where `O_DIRECT` is refused.
     pub(crate) fn create(path: &str, mode: HandoffIo) -> Result<HandoffWriter, String> {
         match mode {
             HandoffIo::Buffered => File::create(path)
@@ -245,8 +165,36 @@ impl HandoffWriter {
         }
     }
 
-    /// Flush every byte to the file: the buffered arm's `into_inner`, the direct arm's padded
-    /// tail plus truncate. Durability is `sync`, measured apart by the caller.
+    /// The export's writer for the card's `mode`. A filesystem that refuses `O_DIRECT` at open
+    /// (`EINVAL`) gets the buffered writer, the program every earlier handoff ran, and the
+    /// second value carries the refusal for the export line; any other open failure fails.
+    pub(crate) fn create_for_export(
+        path: &str,
+        mode: HandoffIo,
+    ) -> Result<(HandoffWriter, Option<String>), String> {
+        if mode == HandoffIo::Direct {
+            return match DirectWriter::create(path) {
+                Ok(w) => Ok((HandoffWriter::Direct(w), None)),
+                Err(e) if e.kind() == io::ErrorKind::InvalidInput => {
+                    HandoffWriter::create(path, HandoffIo::Buffered)
+                        .map(|w| (w, Some(e.to_string())))
+                }
+                Err(e) => Err(format!("create {path}: {e}")),
+            };
+        }
+        HandoffWriter::create(path, mode).map(|w| (w, None))
+    }
+
+    /// The writer this export actually runs.
+    pub(crate) fn mode(&self) -> HandoffIo {
+        match self {
+            HandoffWriter::Buffered(_) => HandoffIo::Buffered,
+            HandoffWriter::Direct(_) => HandoffIo::Direct,
+        }
+    }
+
+    /// Flush every byte to the file: the buffered writer's `into_inner`, the direct writer's
+    /// padded tail plus truncate. Durability is `sync`, measured apart by the caller.
     pub(crate) fn finish(self) -> Result<FinishedHandoff, String> {
         match self {
             HandoffWriter::Buffered(w) => w
@@ -254,20 +202,9 @@ impl HandoffWriter {
                 .map(FinishedHandoff::Buffered)
                 .map_err(|e| format!("handoff flush failed: {e}")),
             HandoffWriter::Direct(w) => {
-                let DirectWriter {
-                    file,
-                    buf,
-                    fill,
-                    offset,
-                } = w;
-                let logical = offset + fill as u64;
+                let logical = w.offset + w.fill as u64;
                 Ok(FinishedHandoff::Direct {
-                    pending: Some(DirectWriter {
-                        file,
-                        buf,
-                        fill,
-                        offset,
-                    }),
+                    pending: Some(w),
                     logical,
                 })
             }
@@ -294,8 +231,9 @@ impl Write for HandoffWriter {
 /// A written handoff before its durability step.
 pub(crate) enum FinishedHandoff {
     Buffered(File),
-    /// The direct arm's tail block is written in `sync` so the caller's write clock covers the
-    /// same work in both arms: bytes handed to the kernel (buffered) or the device (direct).
+    /// The direct writer's tail block is written in `complete_writes` so the caller's write
+    /// clock covers the same work for both writers: bytes handed to the kernel (buffered) or
+    /// the device (direct).
     Direct {
         pending: Option<DirectWriter>,
         logical: u64,
@@ -303,7 +241,7 @@ pub(crate) enum FinishedHandoff {
 }
 
 impl FinishedHandoff {
-    /// Write the direct arm's tail now (part of the write stage in both arms).
+    /// Write the direct writer's tail now (part of the write stage for both writers).
     pub(crate) fn complete_writes(&mut self) -> Result<(), String> {
         if let FinishedHandoff::Direct {
             pending: Some(w),
@@ -339,45 +277,18 @@ impl FinishedHandoff {
     }
 }
 
-/// The import side of either arm.
-pub(crate) enum HandoffReader {
-    Buffered(io::BufReader<File>),
-    Direct(DirectReader),
-}
-
-impl HandoffReader {
-    /// Open `path` and return the reader plus the file's length.
-    pub(crate) fn open(path: &str, mode: HandoffIo) -> Result<(HandoffReader, u64), String> {
-        match mode {
-            HandoffIo::Buffered => {
-                let f = File::open(path).map_err(|e| format!("open {path}: {e}"))?;
-                let len = f.metadata().map_or(u64::MAX, |m| m.len());
-                Ok((
-                    HandoffReader::Buffered(io::BufReader::with_capacity(HANDOFF_BUF, f)),
-                    len,
-                ))
-            }
-            HandoffIo::Direct => {
-                let r = DirectReader::open(path).map_err(|e| format!("open {path}: {e}"))?;
-                let len = r.file().metadata().map_or(u64::MAX, |m| m.len());
-                Ok((HandoffReader::Direct(r), len))
-            }
-        }
-    }
-}
-
-impl Read for HandoffReader {
-    fn read(&mut self, out: &mut [u8]) -> io::Result<usize> {
-        match self {
-            HandoffReader::Buffered(r) => r.read(out),
-            HandoffReader::Direct(r) => r.read(out),
-        }
-    }
+/// The import side: open `path` for a buffered read and return the reader plus the file's
+/// length (the frame-size bound). Either writer's file reads here.
+pub(crate) fn open_import_reader(path: &str) -> Result<(io::BufReader<File>, u64), String> {
+    let f = File::open(path).map_err(|e| format!("open {path}: {e}"))?;
+    let len = f.metadata().map_or(u64::MAX, |m| m.len());
+    Ok((io::BufReader::with_capacity(HANDOFF_BUF, f), len))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::Read;
 
     fn scratch(name: &str) -> String {
         // The crate's target dir sits on a real filesystem; tmpfs refuses O_DIRECT.
@@ -406,8 +317,8 @@ mod tests {
         std::fs::metadata(path).unwrap().len()
     }
 
-    fn read_with(path: &str, mode: HandoffIo) -> Vec<u8> {
-        let (mut r, _) = HandoffReader::open(path, mode).unwrap();
+    fn read_back(path: &str) -> Vec<u8> {
+        let (mut r, _) = open_import_reader(path).unwrap();
         let mut out = Vec::new();
         r.read_to_end(&mut out).unwrap();
         out
@@ -421,9 +332,9 @@ mod tests {
     }
 
     #[test]
-    fn both_writers_produce_identical_bytes_and_both_readers_read_both() {
+    fn both_writers_produce_identical_bytes_and_the_import_reads_both() {
         if !direct_supported() {
-            eprintln!("SKIP[O_DIRECT filesystem]: direct writer and reader parity not run");
+            eprintln!("SKIP[O_DIRECT filesystem]: direct writer parity not run");
             return;
         }
         for len in [
@@ -451,8 +362,7 @@ mod tests {
                     "len {len} chunk {chunk}"
                 );
                 for p in [&pb, &pd] {
-                    assert_eq!(read_with(p, HandoffIo::Buffered), data, "len {len}");
-                    assert_eq!(read_with(p, HandoffIo::Direct), data, "len {len}");
+                    assert_eq!(read_back(p), data, "len {len}");
                 }
                 let _ = std::fs::remove_file(&pb);
                 let _ = std::fs::remove_file(&pd);
@@ -460,24 +370,38 @@ mod tests {
         }
     }
 
+    /// The direct export is the card default of the full-power Workstation Edition only.
     #[test]
-    fn mode_parse_refuses_unknown_values() {
-        assert_eq!(HandoffIo::parse("").unwrap(), HandoffIo::Buffered);
-        assert_eq!(HandoffIo::parse("buffered").unwrap(), HandoffIo::Buffered);
-        assert_eq!(HandoffIo::parse("direct").unwrap(), HandoffIo::Direct);
-        assert!(
-            HandoffIo::parse("odirect")
-                .unwrap_err()
-                .contains("expected buffered or direct")
+    fn the_export_writer_follows_the_card() {
+        assert_eq!(
+            HandoffIo::for_device("NVIDIA RTX PRO 6000 Blackwell Workstation Edition"),
+            HandoffIo::Direct
         );
+        for name in [
+            "NVIDIA GeForce RTX 5090",
+            "NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition",
+            "NVIDIA RTX PRO 6000 Blackwell Server Edition",
+            "NVIDIA B200",
+            "",
+        ] {
+            assert_eq!(HandoffIo::for_device(name), HandoffIo::Buffered, "{name}");
+        }
     }
 
     #[test]
-    fn direct_open_on_a_refusing_filesystem_fails_loudly() {
-        // /dev/shm is tmpfs, which refuses O_DIRECT on Linux: the arm must not fall back.
+    fn a_refusing_filesystem_fails_the_strict_writer_and_buffers_the_export() {
+        // /dev/shm is tmpfs, which refuses O_DIRECT on older Linux kernels.
         let p = format!("/dev/shm/memra-handoff-io-refuse-{}", std::process::id());
         match HandoffWriter::create(&p, HandoffIo::Direct) {
-            Err(e) => assert!(e.contains("O_DIRECT open refused"), "{e}"),
+            Err(e) => {
+                assert!(e.contains("O_DIRECT open refused"), "{e}");
+                let (w, refused) = HandoffWriter::create_for_export(&p, HandoffIo::Direct).unwrap();
+                assert_eq!(w.mode(), HandoffIo::Buffered);
+                assert!(
+                    refused.is_some_and(|r| r.contains("O_DIRECT open refused")),
+                    "the export line must carry the refusal"
+                );
+            }
             Ok(_) => eprintln!("NOTE: this kernel's tmpfs accepts O_DIRECT; refusal not exercised"),
         }
         let _ = std::fs::remove_file(&p);
