@@ -329,19 +329,17 @@ pub static MLA_DSA_DECODE_DISPATCHES: std::sync::atomic::AtomicU64 =
 ///
 /// Rollback seam: unset the var (or set 0). Both arms are read per call, so a rollback is the
 /// next request, not a restart.
-/// `MEMRA_DSA_SCORE_TC=1|2` (lane/glm5-dsa-score-tc, 2026-09-07, default OFF, decide-by
-/// 2026-11-18 on the owner's call recorded in docs/FLAGS.md): the prefill scorer on bf16 `mma.sync` tensor cores (`cu/mla_attn.cu`, "the
-/// TENSOR-CORE arm"). `1` = plain bf16 operands (one MMA per product, ~1e-3 relative);
-/// `2` = every operand split hi/lo bf16, three MMAs (f32-class, ~3e-6 relative). Prefill widths
-/// only (`t_q >= 8`); neither is bit-identical to the f32 scorer, admitted like
-/// `MEMRA_MLA_TC_PREFILL`: served-prompt ids against the f32 arm. 0 = off.
-pub fn dsa_score_tc() -> i32 {
-    static LEVEL: std::sync::OnceLock<i32> = std::sync::OnceLock::new();
-    *LEVEL.get_or_init(|| match std::env::var("MEMRA_DSA_SCORE_TC").as_deref() {
-        Ok("1") => 1,
-        Ok("2") => 2,
-        _ => 0,
-    })
+/// The k-pool scorer of a PREFILL chunk on bf16 `mma.sync` tensor cores (`cu/mla_attn.cu`,
+/// "the TENSOR-CORE arm"; lane/glm5-dsa-score-tc, 2026-09-07): plain bf16 operands, one MMA
+/// per product, ~1e-3 relative on the scores. The default on sm_100a builds, with no switch
+/// (2026-11-04, `MEMRA_DSA_SCORE_TC` before): on the 2x B200 pair the TP-2 1M prime fell from
+/// 782 s to 339.8 s (docs/decisions/GLM5-B200-DOORS.md). Prefill chunks at `t_q >= 8` only:
+/// the rows-exact verify walk and decode keep the f32 scorer, so a verify row stays
+/// bit-identical to the plain decode program it is compared against. Not bit-identical to the
+/// f32 scorer, admitted like `MEMRA_MLA_TC_PREFILL`: served-prompt ids against the f32 arm.
+/// Other builds keep the f32 scorer: no receipt there.
+pub fn dsa_score_tc_default() -> bool {
+    crate::BUILT_CUDA_ARCH == "100a"
 }
 
 fn mla_dsa_decode_level() -> u32 {
@@ -865,7 +863,6 @@ unsafe extern "C" {
         first_pos: i32,
         qk_scale: f32,
         head_scale: f32,
-        precision: i32,
         stream: *mut c_void,
     ) -> i32;
     pub fn memra_mla_kpool_score_ref_f32(
@@ -1869,6 +1866,11 @@ impl Engine {
     /// with explicit intrinsics — and gated so
     /// (`gpu_kpool_scoring_is_byte_identical_to_the_reference_kernel`). See the scoring section
     /// of `cu/mla_attn.cu` for why that identity is the requirement and not a nicety.
+    ///
+    /// `prefill` says the caller is a prefill chunk, not a rows-exact verify walk or decode. On
+    /// sm_100a builds a prefill chunk at `t_q >= 8` scores on tensor cores instead
+    /// ([`dsa_score_tc_default`]), which is NOT bit-identical to the reference; `false` always
+    /// takes the f32 scorer above.
     #[allow(clippy::too_many_arguments)]
     pub fn mla_kpool_score(
         &self,
@@ -1884,6 +1886,7 @@ impl Engine {
         first_pos: usize,
         qk_scale: f32,
         head_scale: f32,
+        prefill: bool,
     ) -> Res<()> {
         self.mla_kpool_score_range(
             q,
@@ -1899,11 +1902,14 @@ impl Engine {
             first_pos,
             qk_scale,
             head_scale,
+            prefill,
         )
     }
 
     /// Score a contiguous pool range without copying keys. Moving the key base and subtracting
-    /// pool_start * pool from the causal position preserves each dot product and visibility.
+    /// pool_start * pool from the causal position preserves each dot product and visibility, on
+    /// either scorer (`prefill`, as in [`Self::mla_kpool_score`]): every score is one
+    /// (query, pool) dot, independent of the tile it lands in.
     #[allow(clippy::too_many_arguments)]
     pub fn mla_kpool_score_range(
         &self,
@@ -1920,6 +1926,7 @@ impl Engine {
         first_pos: usize,
         qk_scale: f32,
         head_scale: f32,
+        prefill: bool,
     ) -> Res<()> {
         if pool_start
             .checked_add(n_pools)
@@ -1937,11 +1944,10 @@ impl Engine {
         let relative_pos = i32::try_from(position - offset)
             .map_err(|_| "kpool score relative position exceeds i32")?;
         let s = self.stream();
-        // MEMRA_DSA_SCORE_TC door: the prefill scorer on tensor cores. Refusals (4003x) are the
-        // kernel's own geometry bounds and fall through to the f32 dispatch below.
-        let tc = dsa_score_tc();
-        if tc > 0 && t_q >= 8 {
-            let mut scratch = self.alloc_uninit::<u16>(tc as usize * t_q * heads * d)?;
+        // The sm_100a prefill-chunk scorer on tensor cores (`dsa_score_tc_default`). Refusals
+        // (4003x) are the kernel's own geometry bounds and fall through to the f32 dispatch.
+        if prefill && dsa_score_tc_default() && t_q >= 8 {
+            let mut scratch = self.alloc_uninit::<u16>(t_q * heads * d)?;
             let rc = unsafe {
                 memra_mla_kpool_score_tc_f32(
                     q.device_ptr(&s).0 as *const f32,
@@ -1957,7 +1963,6 @@ impl Engine {
                     relative_pos,
                     qk_scale,
                     head_scale,
-                    tc,
                     s.cu_stream() as *mut c_void,
                 )
             };
@@ -1967,8 +1972,7 @@ impl Engine {
                 if !SAID.swap(true, std::sync::atomic::Ordering::Relaxed) {
                     eprintln!(
                         "[mla-dsa-score-tc] engaged kpool_score t={t_q} heads={heads} \
-                         pools={n_pools} precision={tc} class={} (MEMRA_DSA_SCORE_TC)",
-                        if tc == 2 { "bf16x2-mma" } else { "bf16-mma" }
+                         pools={n_pools} class=bf16-mma (sm_100a prefill default)"
                     );
                 }
                 return ck("kpool_score_tc", rc);
