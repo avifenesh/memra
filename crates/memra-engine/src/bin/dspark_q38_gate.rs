@@ -136,6 +136,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         (None, Some(source)) => HybridModel::load_from_source(&e, source.as_ref())?,
         _ => unreachable!(),
     };
+    let _numeric = model.enter_numeric();
     let draft = DflashDraft::load(&e, std::path::Path::new(&draft_dir))?;
     println!(
         "target loaded ({} layers); dspark draft: block {}, taps {:?}, markov {}, yarn {}",

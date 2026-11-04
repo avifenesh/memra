@@ -13,6 +13,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let e = Engine::new(0)?;
     let st = memra_gguf::source::SafetensorsSource::open(std::path::Path::new(&path))?;
     let model = HybridModel::load_from_source(&e, &st)?;
+    let _numeric = model.enter_numeric();
     let x = model.embed(&e, &[tok])?;
     let h = e.dtoh(&x)?;
     println!("our embed[{tok}][:8]: {:?}", &h[..8]);

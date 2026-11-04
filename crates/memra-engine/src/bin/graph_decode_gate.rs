@@ -33,6 +33,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let e = Engine::new(0)?;
     let g = GgufFile::open(&path)?;
     let m = HybridModel::load(&e, &g)?;
+    let _numeric = m.enter_numeric();
 
     let prompt: Vec<u32> = (0..p).map(|i| (100 + (i * 7) % 900) as u32).collect();
 

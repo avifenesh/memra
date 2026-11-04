@@ -194,6 +194,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let e = Engine::new(0)?;
     let g = GgufFile::open(&path)?;
     let model = HybridModel::load(&e, &g)?;
+    let _numeric = model.enter_numeric();
     println!(
         "{path}: activation program {}; reference width {reference}; compared widths {widths:?}",
         if model.cfg.prefill_activation.is_some() {

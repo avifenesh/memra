@@ -3144,6 +3144,7 @@ impl DsparkVerifyGraphs {
         hi: usize,
         t: usize,
     ) -> Option<usize> {
+        let _numeric = model.enter_numeric();
         if std::env::var("MEMRA_DSPARK_FULLG_DEBUG").as_deref() == Ok("1") {
             static ONCE: std::sync::Once = std::sync::Once::new();
             let len0 = self
@@ -3216,6 +3217,7 @@ impl DsparkVerifyGraphs {
         rung: usize,
         cache: &mut Cache,
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
+        let _numeric = model.enter_numeric();
         let n_embd = self.n_embd;
         if !self.stage.contains_key(&t) {
             let xin = e.uninit(t * n_embd)?;
@@ -4432,6 +4434,7 @@ impl HybridModel {
         cache: &mut Cache,
         mtp_pos: usize,
     ) -> Result<(CudaSlice<f32>, CudaSlice<f32>), Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         if depth >= self.mtp_head_count() {
             return Err(format!(
                 "MTP depth {depth} out of range: {} embedded head(s) loaded \
@@ -5543,6 +5546,7 @@ impl HybridModel {
         pos0: usize,
         cache: &mut Cache,
     ) -> Result<Vec<f32>, Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         if self.is_gemma4_e4b() {
             return Ok(self.gemma4_e4b_decode_step_t_h(e, tokens, pos0, cache)?.0);
         }
@@ -5563,6 +5567,7 @@ impl HybridModel {
         pos0: usize,
         cache: &mut Cache,
     ) -> Result<(Vec<f32>, CudaSlice<f32>), Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         self.decode_step_t_h_emb(e, tokens, pos0, cache, None)
     }
 
@@ -5576,6 +5581,7 @@ impl HybridModel {
         cache: &mut Cache,
         embd_dev: Option<(&CudaSlice<u8>, i32, usize)>,
     ) -> Result<(Vec<f32>, CudaSlice<f32>), Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         let (logits_d, h_seed) = self.decode_step_t_h_emb_dev(e, tokens, pos0, cache, embd_dev)?;
         Ok((e.dtoh(&logits_d)?, h_seed))
     }
@@ -5593,6 +5599,7 @@ impl HybridModel {
         cache: &mut Cache,
         embd_dev: Option<(&CudaSlice<u8>, i32, usize)>,
     ) -> Result<(CudaSlice<f32>, CudaSlice<f32>), Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         cache.ensure_usable("decode_step_t")?;
         let n_embd = self.cfg.n_embd as usize;
         let t = tokens.len();
@@ -6145,6 +6152,7 @@ impl HybridModel {
         cache: &mut Cache,
     ) -> Result<Option<(Vec<f32>, CudaSlice<f32>, CudaSlice<f32>)>, Box<dyn std::error::Error>>
     {
+        let _numeric = self.enter_numeric();
         let dbg = std::env::var("MEMRA_SPEC_FA2_DEBUG").as_deref() == Ok("1");
         if !prime_trows_on() {
             return Ok(None);
@@ -6255,9 +6263,9 @@ impl HybridModel {
         // doors) — row-outer, so row r's appends land before row r+1 attends: bit-equal to
         // plain greedy by construction. Only the unsplit full-range walk qualifies; PP splits
         // and the tap path keep the batch-layer class.
-        static VE: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-        let eager_verify =
-            *VE.get_or_init(spec_verify_eager_on) && lo == 0 && hi == self.layers.len();
+        // The door reads the calling model's profile (`step37_door`), so it is never cached
+        // across models.
+        let eager_verify = spec_verify_eager_on() && lo == 0 && hi == self.layers.len();
         if eager_verify {
             // T-COLUMN LAYER-OUTER WALK (MEMRA_SPEC_VERIFY_TCOL=1): per layer, one t-grid
             // attn norm + ONE weight-amortized QKV(+gate) over all T columns, then each
@@ -6266,18 +6274,15 @@ impl HybridModel {
             // row-outer walk: rms over the materialized residual == the fused add+norm
             // (kernel_check identity), the tcol kernel's per-column FP order == the t=1
             // kernel, and every downstream op IS the t=1 program.
-            static TCOL: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-            let tcol = *TCOL.get_or_init(spec_verify_tcol_on);
+            let tcol = spec_verify_tcol_on();
             // T > 32 (prefill-class): run the SAME walk in 32-row chunks — each chunk's
             // rows are the t=1 program bit-for-bit and the rope pass advances the cache,
             // so a chunked call is value-identical to the row-outer loop it replaces.
-            static TROWS_PREFILL: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
             // MEMRA_STEP_GEMM_PRIME outranks the walk: with the grouped GEMM prime armed, the
             // t-row walk defers so the batch path (GEMM trunk + grouped MoE) takes the prompt —
             // flag precedence between two existing doors, not a new flag. Without this, both
             // doors ON meant the walk still won and the GEMM prime needed PRIME_TROWS=0 by hand.
-            let trows_prefill =
-                *TROWS_PREFILL.get_or_init(|| prime_trows_on() && !crate::step_gemm_prime_on());
+            let trows_prefill = prime_trows_on() && !crate::step_gemm_prime_on();
             // MEMRA_PRIME_TROWS_T=<w>: chunk width, default 8 = the REAL cap of this walk.
             // The workspace slabs go to 32 rows, but `matvec_bf16_qkvg_tcol_into` refuses
             // t > 8 (the runtime-T kernel's `acc[8]` holds at most 8 columns; the
@@ -6355,8 +6360,7 @@ impl HybridModel {
                 // changed generated text in serving. The flag itself stays because it is
                 // family-armed in the step37 serving defaults and killing it here would
                 // silently drop the o_proj defer from the qualified serving shape.
-                static FFN2: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-                let ffn_batch = *FFN2.get_or_init(tcol_ffn_on);
+                let ffn_batch = tcol_ffn_on();
                 let oproj_batch = crate::tp::tcol_oproj_on() || ffn_batch;
                 // MEMRA_SPEC_FA2=1: eligible layers defer every verify column's fa —
                 // the per-column pass norms/ropes/appends and stashes q+gate, then one
@@ -6750,6 +6754,7 @@ impl HybridModel {
         pos0: usize,
         cache: &mut Cache,
     ) -> Result<Vec<u32>, Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         let (logits, _hn) =
             self.decode_step_t_core_stream(e, tokens, pos0, cache, None, None, None, None)?;
         let t = tokens.len();
@@ -6772,6 +6777,7 @@ impl HybridModel {
         pos0: usize,
         cache: &mut Cache,
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         let (logits, _hn) =
             self.decode_step_t_core_stream(e, tokens, pos0, cache, None, None, None, None)?;
         Ok(logits)
@@ -6788,6 +6794,7 @@ impl HybridModel {
         pos0: usize,
         cache: &mut Cache,
     ) -> Result<(Vec<u32>, DsparkVerifyCkpt), Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         let mut ck = VerifyCkpt::new(self.layers.len());
         let (logits, _hn) = self.decode_step_t_core_stream(
             e,
@@ -6825,6 +6832,7 @@ impl HybridModel {
         embd_dev: (&CudaSlice<u8>, i32, usize),
         graphs: Option<&mut DsparkVerifyGraphs>,
     ) -> Result<(CudaSlice<u32>, DsparkVerifyCkpt), Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         debug_assert!(
             vtok.len() >= t,
             "verify window exceeds the device token buffer"
@@ -6865,6 +6873,7 @@ impl HybridModel {
         pos0: usize,
         cache: &mut Cache,
     ) -> Result<(CudaSlice<f32>, DsparkVerifyCkpt), Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         let mut ck = VerifyCkpt::new(self.layers.len());
         let (logits, _hn) = self.decode_step_t_core_stream(
             e,
@@ -6890,6 +6899,7 @@ impl HybridModel {
         ckpt: &DsparkVerifyCkpt,
         keep: usize,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         self.commit_verified_prefix(e, cache, snap, &ckpt.0, keep)
     }
 
@@ -6906,6 +6916,7 @@ impl HybridModel {
         ctx: &DsparkVerifyGraphs,
         keep: usize,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         use cudarc::driver::DevicePtr;
         debug_assert!(keep >= 1, "keep==0 rounds take the legacy rollback");
         let mut conv_src: Vec<u64> = Vec::new();
@@ -7287,6 +7298,7 @@ impl HybridModel {
         segs: &mut [PooledVerifySeg<'_>],
         embd_dev: Option<(&CudaSlice<u8>, i32, usize)>,
     ) -> Result<Option<PooledVerifyOut>, Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         let cfg = &self.cfg;
         let n_embd = cfg.n_embd as usize;
         let eps = cfg.rms_eps;
@@ -7437,6 +7449,7 @@ impl HybridModel {
         segs: &mut [DsparkPooledSeg<'_>],
     ) -> Result<Option<Vec<(CudaSlice<f32>, Option<DsparkVerifyCkpt>)>>, Box<dyn std::error::Error>>
     {
+        let _numeric = self.enter_numeric();
         let mut cks: Vec<Option<VerifyCkpt>> = segs
             .iter()
             .map(|s| s.ckpt.then(|| VerifyCkpt::new(self.layers.len())))
@@ -7531,6 +7544,7 @@ impl HybridModel {
         plain_samp: &[Option<crate::decode_batch::DevSamp>],
         reps: usize,
     ) -> Result<Vec<String>, Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         assert_eq!(spec.len(), spec_toks.len());
         assert_eq!(plain.len(), plain_toks.len());
         assert_eq!(plain.len(), plain_samp.len());
@@ -7852,6 +7866,7 @@ impl HybridModel {
         caches: &mut [&mut Cache],
         tokens: &[&[u32]],
     ) -> Result<Option<CudaSlice<f32>>, Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         assert_eq!(caches.len(), tokens.len(), "one token slice per cache");
         let mut segs: Vec<PooledVerifySeg<'_>> = caches
             .iter_mut()
@@ -8035,6 +8050,7 @@ impl HybridModel {
         e: &Engine,
         reqs: Vec<PooledBurstReq<'a>>,
     ) -> Vec<PooledBurstResult> {
+        let _numeric = self.enter_numeric();
         self.generate_spec_sessions_unified(e, reqs, None)
     }
 
@@ -8055,6 +8071,7 @@ impl HybridModel {
         reqs: Vec<PooledBurstReq<'a>>,
         mut riders: Option<&mut dyn PooledPlainRiders>,
     ) -> Vec<PooledBurstResult> {
+        let _numeric = self.enter_numeric();
         let n = reqs.len();
         let rider_rows_cap = if riders.is_some() && self.plain_rider_capable() {
             self.rider_forward_rows()
@@ -8429,6 +8446,7 @@ impl HybridModel {
         sampling: &[Option<SpecSampling>],
         reps: usize,
     ) -> Result<Vec<String>, Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         let n = sessions.len();
         assert!(n == ks.len() && n == sampling.len() && (1..=16).contains(&n));
         let k_max = ks.iter().copied().max().unwrap_or(1);
@@ -10334,6 +10352,7 @@ impl HybridModel {
         (Vec<f32>, Vec<CudaSlice<f32>>, Option<Vec<CudaSlice<f32>>>),
         Box<dyn std::error::Error>,
     > {
+        let _numeric = self.enter_numeric();
         cache.ensure_usable("decode_step_t_aux2")?;
         // step35's served verify is `step35_verify_batch_layers`; this per-layer walk has no
         // twin of it, and the generic `full_attn_verify` geometry is wrong for that arch.
@@ -10811,6 +10830,7 @@ impl HybridModel {
         e: &Engine,
         max_ctx: usize,
     ) -> Result<SpecSession, Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         Ok(SpecSession {
             prime_ready: None,
             // STAGE-OWNED KV (lane/pp2-spec 2026-08-06): `pp::new_cache`, not `Cache::new`. This
@@ -10926,6 +10946,7 @@ impl HybridModel {
         republish_at: Option<usize>,
         defer_suffix: bool,
     ) -> Result<SpecSession, (Option<Cache>, String)> {
+        let _numeric = self.enter_numeric();
         let pos = prefix.len();
         let fail = |cache: Cache, msg: String| -> Result<SpecSession, (Option<Cache>, String)> {
             Err((Some(cache), msg))
@@ -11030,6 +11051,7 @@ impl HybridModel {
         republish_at: Option<usize>,
         defer_suffix: bool,
     ) -> Result<SpecSession, (Option<Cache>, String)> {
+        let _numeric = self.enter_numeric();
         let pos = prefix.len();
         let fail = |cache: Cache, msg: String| -> Result<SpecSession, (Option<Cache>, String)> {
             Err((Some(cache), msg))
@@ -11109,6 +11131,7 @@ impl HybridModel {
         source_k_len: usize,
         source_v_len: usize,
     ) -> Result<RestoredDraftScratch, String> {
+        let _numeric = self.enter_numeric();
         if self.mtp.is_none() {
             return Err("no MTP head attached (nothing to draft with)".into());
         }
@@ -11566,6 +11589,7 @@ impl HybridModel {
         e: &Engine,
         sess: &mut SpecSession,
     ) -> Result<Option<usize>, Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         if sess.turn_ckpt.as_ref().is_some_and(|ckpt| {
             !sess.cache.can_rollback(&ckpt.snap, 0) || !sess.scratch.can_rewind_to(ckpt.pos)
         }) {
@@ -11607,6 +11631,7 @@ impl HybridModel {
         sess: &mut SpecSession,
         tokens: &[u32],
     ) -> Result<(), Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         if tokens.len() < crate::hybrid_forward::PRIME_MIN_T {
             return Err("settle prime below PRIME_MIN_T".into());
         }
@@ -11631,6 +11656,7 @@ impl HybridModel {
         e: &Engine,
         sess: &mut SpecSession,
     ) -> Result<Option<usize>, Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         let Some(ckpt) = sess.turn_ckpt.as_ref() else {
             return Ok(None);
         };
@@ -11672,6 +11698,7 @@ impl HybridModel {
         sess: &mut SpecSession,
         target_cap: usize,
     ) -> Result<Option<usize>, Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         if target_cap <= sess.cache.max_ctx {
             return self.spec_rewind_to_checkpoint(e, sess);
         }
@@ -11815,6 +11842,7 @@ impl HybridModel {
         sess: &mut SpecSession,
         sampling: Option<SpecSampling>,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         sess.cache.ensure_usable("spec_flush_pending")?;
         let Some(b) = sess.pending_tok.take() else {
             return Ok(());
@@ -11956,6 +11984,7 @@ impl HybridModel {
         max_new: usize,
         k: usize,
     ) -> Result<(Vec<u32>, usize, usize), Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         let sampling = Some(SpecSampling::from_cli_env());
         self.generate_spec_session_sampled(e, sess, suffix, max_new, k, sampling, None)
     }
@@ -11990,6 +12019,7 @@ impl HybridModel {
         sampling: Option<SpecSampling>,
         on_commit: Option<&mut dyn FnMut(&[u32]) -> bool>,
     ) -> Result<(Vec<u32>, usize, usize), Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         self.generate_spec_session_sampled_prime_split(
             e, sess, suffix, max_new, k, sampling, None, on_commit,
         )
@@ -12011,6 +12041,7 @@ impl HybridModel {
         prime_split: Option<usize>,
         on_commit: Option<&mut dyn FnMut(&[u32]) -> bool>,
     ) -> Result<(Vec<u32>, usize, usize), Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         self.generate_spec_session_constrained_prime_split(
             e,
             sess,
@@ -12045,6 +12076,7 @@ impl HybridModel {
         prime_split: Option<usize>,
         on_commit: Option<&mut dyn FnMut(&[u32]) -> bool>,
     ) -> Result<(Vec<u32>, usize, usize), Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         if constraint.is_some() && sampling.is_some_and(|s| s.temp > 0.0) {
             return Err(
                 "constrained spec decode is greedy-only (worker routes sampled \
@@ -12125,6 +12157,7 @@ impl HybridModel {
         max_new: usize,
         k: usize,
     ) -> Result<(Vec<u32>, usize, usize), Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         // glm5 T-parallel verify door (lane/glm5-tparallel-verify): an hc trunk with a
         // loaded DRAFT SOURCE — the embedded MTP head OR the DFlash2 drafter
         // (lane/glm5-dflash-draft-src) — routes to the glm5 draft->verify->rollback loop —
@@ -17165,6 +17198,7 @@ impl HybridModel {
         chunk: usize,
         temperature: f32,
     ) -> Result<Vec<DsparkAnchorRecord>, Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         if tokens.len() < gamma + 2 || gamma == 0 || chunk < 2 {
             return Err("DSpark extraction token tape/gamma/chunk is invalid".into());
         }
@@ -17324,6 +17358,7 @@ impl HybridModel {
         chunk: usize,
         mut hdump: Option<&mut std::fs::File>,
     ) -> Result<(Vec<(usize, Vec<u32>, Vec<u32>)>, Vec<u32>), Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         assert!(k >= 1 && stride >= 1 && chunk >= 2);
         let mtp = self
             .mtp

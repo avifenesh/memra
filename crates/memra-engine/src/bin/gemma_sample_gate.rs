@@ -175,6 +175,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let e = Engine::new(0)?;
     let tg = GgufFile::open(&memra_gguf::hf::resolve_arg(&target)?)?;
     let model = HybridModel::load(&e, &tg)?;
+    let _numeric = model.enter_numeric();
     let dg = GgufFile::open(&memra_gguf::hf::resolve_arg(&drafter)?)?;
     let mut d = GemmaDraft::load(&e, &dg)?;
     let k = env_usize("MEMRA_GSG_K", 5);

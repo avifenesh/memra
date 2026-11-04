@@ -75,6 +75,7 @@ impl HybridModel {
     /// Physical default-pool statistics and trim may subsequently collapse ordinals.
     /// This only observes already-loaded PP/TP runtimes; it never initializes a device.
     pub fn owned_engines<'a>(&'a self, primary: &'a Engine) -> Vec<&'a Engine> {
+        let _numeric = self.enter_numeric();
         let mut owners = vec![primary];
         if let Some(pp) = crate::pp::PpNRt::initialized() {
             for stage in 0..pp.n_stages() {

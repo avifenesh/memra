@@ -201,6 +201,7 @@ fn load(path: &str) -> Result<Ctx, Box<dyn std::error::Error>> {
         let tok = Tokenizer::from_gguf(&g).map_err(|err| format!("tokenizer: {err}"))?;
         (model, tok, source_name)
     };
+    let _numeric = model.enter_numeric();
     eprintln!("loaded {} ({} layers)", source_name, model.layers.len());
     Ok(Ctx {
         e,
