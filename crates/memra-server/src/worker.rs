@@ -28414,7 +28414,7 @@ pub fn run(
     // glm5 TP-2 walk on a serving worker (MEMRA_GLM5_TP, lane/glm5-tp-serve-20260907).
     // Until this lane the worker panicked here ("engine/gate-only in v1"). What the panic
     // named has since landed in the engine: per-session TP state lives in the session's
-    // Cache (`glm5_tp_recur`, `glm5_tp_latent_peer`, `glm5_tp_sym_graph`), so sessions are
+    // Cache (`glm5_tp_recur`, `glm5_tp_latent_peer`), so sessions are
     // independent and the walk is the same `prime_cache` / `decode_step` pair the eager-only
     // class already serves. What is NOT gated stays refused BY NAME in
     // `glm5_tp_serve_boot_verdict`: every spec program (the TP verify walk has no gate

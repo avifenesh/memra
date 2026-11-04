@@ -183,9 +183,9 @@ pub struct Glm5TpRt {
     /// The peer-pull ordering primitives — `Some` only on the peer-pull arm, and only after
     /// its byte-integrity ladder passed.
     link: Option<crate::tp_transport::PeerPullLink>,
-    /// The one-shot all-reduce's per-rank state (`MEMRA_TP_AR_1STAGE`), built on first use.
-    /// Behind a mutex because the runtime is shared through an `Arc` and the walk takes it by
-    /// `&self`; the lock is uncontended at batch 1 and costs nothing against a 20 us collective.
+    /// The device-signal link's per-rank state (the TP indexer's prime candidate exchange),
+    /// built on first use. Behind a mutex because the runtime is shared through an `Arc` and the
+    /// walk takes it by `&self`; the lock is uncontended at batch 1.
     ar: std::sync::Mutex<Option<crate::tp_ar::ArLink>>,
 }
 
@@ -261,58 +261,11 @@ impl Glm5TpRt {
         })
     }
 
-    /// One-shot all-reduce over `x[r]`, `x[r]` living on rank `r`'s engine, when
-    /// `MEMRA_TP_AR_1STAGE` is armed and the runtime is a real two-device group. Returns `false`
-    /// when it declined, in which case the caller's own return-to-root still owes the work.
-    ///
-    /// WHY THIS EXISTS SEPARATELY from the transport arms: those move bytes hop by hop, and the
-    /// walk's two REDUCE sites are not hops, they are collectives. Doing them as a push plus a
-    /// fold costs 4 launches and 8 cross-context event operations, which measured 20-26 us for
-    /// 16 KB on a 956 GB/s fabric. The one-shot is two launches and no events.
-    /// Whether [`Self::ar_1stage`] can serve this runtime at all: the door, a real two-device
-    /// group, and not the same-device gate. Split out so a caller can ask BEFORE it rearranges the
-    /// buffers it would hand over, which is the shape that stops a decline from silently dropping
-    /// a rank's contribution.
-    pub fn ar_1stage_available(&self) -> bool {
-        tp_ar_1stage_on() && self.ranks() == 2 && !self.same_device_gate
-    }
-
-    /// Size the one-shot's stage buffers for `n` floats BEFORE a graph capture records a walk
-    /// (an allocation that outlives a capture makes instantiate refuse). No-op when sized.
-    pub fn ar_prepare(&self, root: &Engine, n: usize) -> Result<(), Box<dyn std::error::Error>> {
-        if !self.ar_1stage_available() {
-            return Ok(());
-        }
-        let engines: Vec<&Engine> = std::iter::once(root).chain(self.peers.iter()).collect();
-        let mut guard = self.ar.lock().map_err(|_| "tp ar link poisoned")?;
-        match guard.as_mut() {
-            Some(link) => link.ensure_stage(&engines, n),
-            None => Ok(()),
-        }
-    }
-
-    pub fn ar_1stage(
-        &self,
-        root: &Engine,
-        x: &mut [&mut CudaSlice<f32>],
-        n: usize,
-    ) -> Result<bool, Box<dyn std::error::Error>> {
-        if !self.ar_1stage_available() {
-            return Ok(false);
-        }
-        let engines: Vec<&Engine> = std::iter::once(root).chain(self.peers.iter()).collect();
-        let mut guard = self
-            .ar
-            .lock()
-            .map_err(|_| "glm5-tp one-shot all-reduce: the link mutex is poisoned")?;
-        if guard.is_none() {
-            *guard = Some(crate::tp_ar::ArLink::new(&engines)?);
-        }
-        guard
-            .as_mut()
-            .expect("built above")
-            .all_reduce_1stage(&engines, x, n)?;
-        Ok(true)
+    /// Whether the device-signal link ([`crate::tp_ar::ArLink`]) can serve this runtime: a real
+    /// two-device group, not the same-device gate (two contexts on one card cannot do a kernel
+    /// peer store). The TP indexer's prime candidate exchange runs over it.
+    pub fn peer_link_available(&self) -> bool {
+        self.ranks() == 2 && !self.same_device_gate
     }
 
     /// Device-side candidate exchange, using the same ordered link as the TP graph pieces.
@@ -322,7 +275,7 @@ impl Glm5TpRt {
         inputs: &[&CudaSlice<i32>],
         n: usize,
     ) -> Result<Vec<CudaSlice<i32>>, Box<dyn std::error::Error>> {
-        if !self.ar_1stage_available() {
+        if !self.peer_link_available() {
             return Err("TP indexer exchange requires a real peer-access two-device link".into());
         }
         let engines = [root, &self.peers[0]];
@@ -341,36 +294,6 @@ impl Glm5TpRt {
         Ok(vec![a, b])
     }
 
-    /// The one-shot fused with the hc post-branch (see `ArLink::all_reduce_1stage_hcpost`).
-    #[allow(clippy::too_many_arguments)] // allow: the reduce's operands plus the post-branch's
-    pub fn ar_1stage_hcpost(
-        &self,
-        root: &Engine,
-        inputs: &[&CudaSlice<f32>],
-        residuals: &[&CudaSlice<f32>],
-        posts: &[&CudaSlice<f32>],
-        combs: &[&CudaSlice<f32>],
-        outs: &mut [&mut CudaSlice<f32>],
-        hc: usize,
-        d: usize,
-    ) -> Result<bool, Box<dyn std::error::Error>> {
-        if !self.ar_1stage_available() {
-            return Ok(false);
-        }
-        let engines: Vec<&Engine> = std::iter::once(root).chain(self.peers.iter()).collect();
-        let mut guard = self
-            .ar
-            .lock()
-            .map_err(|_| "glm5-tp one-shot all-reduce: the link mutex is poisoned")?;
-        if guard.is_none() {
-            *guard = Some(crate::tp_ar::ArLink::new(&engines)?);
-        }
-        guard
-            .as_mut()
-            .expect("built above")
-            .all_reduce_1stage_hcpost(&engines, inputs, residuals, posts, combs, outs, hc, d)?;
-        Ok(true)
-    }
     /// Rank count of this runtime (root + peers).
     pub fn ranks(&self) -> usize {
         self.peers.len() + 1
@@ -1131,18 +1054,7 @@ pub(crate) fn shard_kda_layer(
             // COLUMN-parallel wo: rank r owns OUT rows [r*hh, (r+1)*hh) over the FULL qkv
             // input — consumed by the join over the gathered gated tensor, never by
             // kda_core_gated itself.
-            // COLUMN-parallel wo (default): out rows over the FULL gathered qkv, so the walk
-            // must all-gather every rank's channels before the multiply and concat the out-row
-            // bands after it. Under the SYMMETRIC door wo is sharded by input columns matching
-            // this rank's own channels instead, so it multiplies only what it just computed and
-            // produces a full-width partial sum: the gather and the concat both disappear and ONE
-            // reduction replaces them. Named class, same reason as the MLA and expert splits: the
-            // K reduction runs two ways instead of one pass.
-            wo: if glm5_tp_symmetric_on() {
-                shard_cols(e, dst, &la.wo, wr * ql..(wr + 1) * ql)?
-            } else {
-                shard_rows(e, dst, &la.wo, wr * hh..(wr + 1) * hh)?
-            },
+            wo: shard_rows(e, dst, &la.wo, wr * hh..(wr + 1) * hh)?,
             conv: conv_rank(dst, r)?,
             a_log: shard_rows(e, dst, &la.a_log, r * hl..(r + 1) * hl)?,
             dt_bias: shard_rows(e, dst, &la.dt_bias, r * ql..(r + 1) * ql)?,
@@ -1287,41 +1199,6 @@ fn kda_tp_core(
         .map(|g| g.as_ref().expect("filled above"))
         .collect();
 
-    // ROW-PARALLEL wo (`MEMRA_GLM5_TP_SYMMETRIC` K-sliced it at load): each rank multiplies only
-    // its own channels and produces a FULL-WIDTH partial sum, so the all-gather and the concat
-    // both go and one reduction replaces them. This branch is what makes the root-orchestrated
-    // walk CORRECT whenever the symmetric walk declines (the same-device gate, any single-card
-    // pairing): the first cut K-sliced the weight and left this tail column-parallel, and the
-    // gate read it as max_rel 1.1e2 with the tape broken.
-    if glm5_tp_symmetric_on() {
-        let mut partials = Vec::with_capacity(ranks);
-        for r in 0..ranks {
-            let dev = if r == 0 { e } else { &rt.peers[r - 1] };
-            let la = if r == 0 { la_root } else { &tp.peers[r - 1] };
-            partials.push(dev.matmul(&la.wo, gated_refs[r], t)?);
-        }
-        let mut y = partials.remove(0);
-        let reduced = if partials.len() == 1 && rt.ar_1stage_available() {
-            let mut peer_y = partials.remove(0);
-            let done = rt.ar_1stage(e, &mut [&mut y, &mut peer_y], t * n_embd)?;
-            if !done {
-                partials.insert(0, peer_y);
-            }
-            done
-        } else {
-            false
-        };
-        if !reduced {
-            for (r, peer_y) in partials.iter().enumerate() {
-                let landed =
-                    crate::tp_transport::return_row_to_root(&hop, r + 1, peer_y, t * n_embd)?;
-                let mut dst = y.slice_mut(0..t * n_embd);
-                e.axpy_into(&landed, 1.0, &mut dst, t * n_embd)?;
-            }
-        }
-        return Ok(y);
-    }
-
     let fulls = crate::tp_transport::gather_parts(&hop, &gated_refs, t, ql)?;
 
     // Per-rank column wo slices: each output element is one full-K dot by the SAME kernel
@@ -1338,73 +1215,6 @@ fn kda_tp_core(
 }
 
 /// The KDA TP walk for one prime/decode call: [`kda_tp_core`].
-/// The SYMMETRIC KDA mixer (lane/tp-symmetric-20260906): every rank already holds its own copy of
-/// the layer input, so there is no fan-out; each rank runs its heads over its own `x`, multiplies
-/// by its ROW-PARALLEL `wo` (its own channels, full output width), and the two partial sums meet
-/// in ONE one-shot all-reduce that leaves the mixer output on BOTH ranks. Two crossings per layer
-/// become zero here and one reduction, against the root-orchestrated path's fan-out, all-gather
-/// and concat.
-///
-/// Requires the symmetric door (so `wo` was K-sliced at load) and a real two-device group (the
-/// one-shot needs a kernel peer store). Named class: not byte-identical to the unsharded walk.
-#[allow(clippy::too_many_arguments)] // mirrors the kda entry contract shape
-pub(crate) fn kda_tp_partials_sym(
-    e: &Engine,
-    la_root: &KdaAttnLayer,
-    x_by_rank: &[&CudaSlice<f32>],
-    t: usize,
-    eps: f32,
-    cache: &mut Cache,
-    il: usize,
-    arm: ConvArm,
-) -> Result<Vec<CudaSlice<f32>>, Box<dyn std::error::Error>> {
-    let tp = la_root
-        .tp
-        .as_ref()
-        .ok_or("kda_tp_cached_sym called on an unsharded layer")?;
-    let rt = &tp.rt;
-    let ranks = rt.ranks();
-    if ranks != 2 || x_by_rank.len() != 2 {
-        return Err("kda_tp_cached_sym: this arm is two ranks".into());
-    }
-    if !glm5_tp_symmetric_on() || !rt.ar_1stage_available() {
-        return Err(
-            "kda_tp_cached_sym: needs MEMRA_GLM5_TP_SYMMETRIC and a real two-device group".into(),
-        );
-    }
-    let states = ensure_kda_tp_state(e, rt, la_root, cache, il)?;
-    let mut partials: Vec<CudaSlice<f32>> = Vec::with_capacity(ranks);
-    for r in 0..ranks {
-        let dev = if r == 0 { e } else { &rt.peers[r - 1] };
-        let la = if r == 0 { la_root } else { &tp.peers[r - 1] };
-        let RecurLayer {
-            conv_state,
-            ssm_state,
-            ssm_state_alt,
-        } = &mut states[r];
-        let gated = crate::kda::kda_core_gated(
-            dev,
-            la,
-            x_by_rank[r],
-            t,
-            eps,
-            conv_state,
-            ssm_state,
-            ssm_state_alt,
-            arm,
-            crate::kda::KdaStash::None,
-            None,
-            None,
-            None,
-        )?;
-        std::mem::swap(ssm_state, ssm_state_alt);
-        // Row-parallel wo: this rank's channels in, the FULL hidden width out, as a partial sum.
-        partials.push(dev.matmul(&la.wo, &gated, t)?);
-    }
-    // Out of place: the partials are the inputs, two fresh buffers the outputs (no staging copy).
-    Ok(partials)
-}
-
 #[allow(clippy::too_many_arguments)] // mirrors the kda entry contract shape
 pub(crate) fn kda_tp_cached(
     e: &Engine,
@@ -1892,165 +1702,6 @@ pub(crate) fn arm_moe_ep(
 }
 
 // ------------------------------------------------------------------------------------------
-// Symmetric walk glue (lane/tp-symmetric-20260906)
-// ------------------------------------------------------------------------------------------
-
-/// A peer rank's copy of one layer's GLUE: the two norms and the two hyper-connection sites.
-///
-/// WHY. The TP walk today is root-orchestrated: root runs the hc chain and the norms, fans the
-/// activation out to every peer, the peers run their shard, root gathers. That is three
-/// pure-movement crossings per layer on top of the two reductions, and at 20-26 us a crossing on
-/// this pair it is the join count, not the transport, that keeps TP-2 3x behind PP-2. A SYMMETRIC
-/// walk lets every rank hold the residual stream and run the glue itself, so a layer costs two
-/// one-shot reductions and nothing else. The price is this struct: ~1.4 GB of replicated glue
-/// across the trunk (hc sites are 1.5 MB each, norms are 16 KB), which is nothing against the
-/// 94 GB of expert shards a rank already holds.
-///
-/// Built by [`replicate_layer_glue`] at TP arm time, one per peer, stored on
-/// `HybridLayer::tp_glue`. A byte-exact copy: every tensor goes through the same host bounce
-/// `shard_rows` uses, over its full range.
-pub struct Glm5TpGlue {
-    pub attn_norm: GpuTensor,
-    pub post_attn_norm: GpuTensor,
-    pub hyper: crate::hyper::HyperLayer,
-    /// The MoE router on the peer, so it can select experts REDUNDANTLY from its own copy of the
-    /// FFN input instead of receiving the selection from root: the same kernel on the same input
-    /// picks the same experts, and it costs zero crossings where a push of `sel`/`w` would cost
-    /// two per layer. `None` on a dense-FFN layer.
-    pub router: Option<Glm5TpPeerRouter>,
-    /// The dense FFN of a dense-FFN layer (the three leading layers of GLM-5.3-Flash),
-    /// replicated so the peer computes it REDUNDANTLY from its own copy of the FFN input
-    /// instead of receiving root's output over the event-published transport: the same
-    /// kernels on the same input give the same bytes, it costs zero crossings, and it is what
-    /// lets the layer sit inside a captured graph piece (a fan-out cannot). `None` on MoE.
-    pub dense: Option<Glm5TpPeerDense>,
-    /// The shared expert split across the ranks like the routed experts: gate/up ROW halves,
-    /// down COLUMN halves, each rank's half output a partial sum the one-shot carries. Root's
-    /// half sits here too (the layer's full tensors stay for prime and every other walk).
-    /// `None` keeps the shared expert on the root, which tptrace5 (2026-09-07) measured as
-    /// ~0.8 ms of root-only work per token and the same amount of peer spin at the crossings.
-    pub shexp_root: Option<Glm5TpShexpHalf>,
-    pub shexp_peer: Option<Glm5TpShexpHalf>,
-}
-
-/// One rank's half of the shared expert.
-pub struct Glm5TpShexpHalf {
-    pub gate: GpuTensor,
-    pub up: GpuTensor,
-    pub down: GpuTensor,
-}
-
-/// The peer's copy of a dense FFN: gate, up, down and the AWQ pre-quant scale when present.
-pub struct Glm5TpPeerDense {
-    pub ffn_gate: GpuTensor,
-    pub ffn_up: GpuTensor,
-    pub ffn_down: GpuTensor,
-    pub ffn_down_pqs: Option<GpuTensor>,
-}
-
-/// The peer's router operands: the gate projection and the two per-expert planes the sigmoid
-/// top-k reads (`e_score_correction_bias`, the active-expert mask).
-pub struct Glm5TpPeerRouter {
-    pub gate_inp: GpuTensor,
-    pub exp_probs_b_dev: CudaSlice<f32>,
-    pub active_experts_dev: CudaSlice<u8>,
-}
-
-/// Copy a whole tensor onto `dst`, byte for byte. `shard_rows` over the full outer range is
-/// exactly that copy, and reusing it means the glue takes the same refusals the shards take
-/// (mirror planes refuse by name rather than being silently dropped).
-fn replicate_tensor(
-    src_engine: &Engine,
-    dst: &Engine,
-    t: &GpuTensor,
-) -> Result<GpuTensor, Box<dyn std::error::Error>> {
-    let outer = match t {
-        GpuTensor::Float { ne, .. }
-        | GpuTensor::FloatBf16 { ne, .. }
-        | GpuTensor::Quant { ne, .. } => outer_rows(ne).0,
-    };
-    shard_rows(src_engine, dst, t, 0..outer)
-}
-
-fn replicate_f32(
-    src_engine: &Engine,
-    dst: &Engine,
-    x: &CudaSlice<f32>,
-) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
-    let host = src_engine.dtoh(x)?;
-    dst.htod(&host)
-}
-
-fn replicate_site(
-    src_engine: &Engine,
-    dst: &Engine,
-    s: &crate::hyper::HyperSite,
-) -> Result<crate::hyper::HyperSite, Box<dyn std::error::Error>> {
-    Ok(crate::hyper::HyperSite {
-        fn_w: replicate_f32(src_engine, dst, &s.fn_w)?,
-        base: replicate_f32(src_engine, dst, &s.base)?,
-        scale: replicate_f32(src_engine, dst, &s.scale)?,
-    })
-}
-
-/// Build every peer's copy of one layer's glue. Load-time only.
-pub(crate) fn replicate_layer_glue(
-    e: &Engine,
-    rt: &Arc<Glm5TpRt>,
-    attn_norm: &GpuTensor,
-    post_attn_norm: &GpuTensor,
-    hyper: &crate::hyper::HyperLayer,
-    ffn: &crate::hybrid::Ffn,
-) -> Result<Vec<Glm5TpGlue>, Box<dyn std::error::Error>> {
-    let moe = match ffn {
-        crate::hybrid::Ffn::Moe(m) => Some(m),
-        crate::hybrid::Ffn::Dense { .. } => None,
-    };
-    let mut out = Vec::with_capacity(rt.peers.len());
-    for peer in &rt.peers {
-        // the dense-FFN replica is loaded from the source on the peer engine by the caller
-        // (a device replicate refuses the rp split-plane mirror layout by name)
-        let dense = None;
-        let router = match moe {
-            Some(m) => Some(Glm5TpPeerRouter {
-                gate_inp: replicate_tensor(e, peer, &m.gate_inp)?,
-                exp_probs_b_dev: replicate_f32(e, peer, &m.exp_probs_b_dev)?,
-                active_experts_dev: {
-                    let host = e.dtoh_u8(&m.active_experts_dev)?;
-                    peer.htod_bytes(&host)?
-                },
-            }),
-            None => None,
-        };
-        out.push(Glm5TpGlue {
-            attn_norm: replicate_tensor(e, peer, attn_norm)?,
-            post_attn_norm: replicate_tensor(e, peer, post_attn_norm)?,
-            hyper: crate::hyper::HyperLayer {
-                attn: replicate_site(e, peer, &hyper.attn)?,
-                mlp: replicate_site(e, peer, &hyper.mlp)?,
-            },
-            router,
-            dense,
-            shexp_root: None,
-            shexp_peer: None,
-        });
-    }
-    Ok(out)
-}
-
-/// `MEMRA_GLM5_TP_SYMMETRIC=1` (lane/tp-symmetric-20260906, default OFF in code; the darklanes
-/// TP-2 launcher sets it, docs/FLAGS.md): at load, replicate every TP layer's glue to the peers
-/// and shard the KDA `wo` by input columns (row-parallel); at decode, route the walk through
-/// the symmetric path (`hyper_range_decode_ws_sym`: `kda_tp_partials_sym`,
-/// `mla_tp_attn_cached_sym` and `moe_ffn_glm5_tp_split_sym`, each ending in a one-shot
-/// all-reduce). The walk needs
-/// `MEMRA_GLM5_TP_EXPERT_SPLIT` and a real two-device group with `MEMRA_TP_AR_1STAGE`;
-/// without them it declines loudly to the root-orchestrated walk.
-pub fn glm5_tp_symmetric_on() -> bool {
-    std::env::var("MEMRA_GLM5_TP_SYMMETRIC").as_deref() == Ok("1")
-}
-
-// ------------------------------------------------------------------------------------------
 // Expert TENSOR-parallelism (lane/tp-expert-split-20260906)
 // ------------------------------------------------------------------------------------------
 
@@ -2093,25 +1744,9 @@ impl Glm5TpSplitExps {
     }
 }
 
-/// `MEMRA_TP_AR_1STAGE=1` (lane/tp-ar-1stage-20260906, default OFF in code): the walk's two
-/// REDUCE sites take the one-shot all-reduce (`memra_tp_ar_1stage`) instead of a return-to-root
-/// hop. The darklanes TP-2 launcher sets it, and the symmetric walk runs only with it on
-/// ([`Glm5TpRt::ar_1stage_available`]); keeping it is the owner's call (docs/FLAGS.md).
-///
-/// WHY. A reduce done as a push plus a fold costs 4 kernel launches and 8 cross-context CUDA event
-/// operations, which measured 20-26 us for 16 KB on a pair whose fabric moves 956 GB/s: host
-/// overhead, not bandwidth. vLLM's `cross_device_reduce_1stage` is ONE kernel per rank and NO
-/// events, synchronising through flags in the peer's memory and reading both inputs directly. This
-/// is that shape. Requires a real two-device group; it declines on the same-device gate, where a
-/// kernel peer store is undefined.
-pub fn tp_ar_1stage_on() -> bool {
-    std::env::var("MEMRA_TP_AR_1STAGE").as_deref() == Ok("1")
-}
-
 /// `MEMRA_GLM5_TP_EXPERT_SPLIT=1` (lane/tp-expert-split-20260906, default OFF in code): shard
-/// every expert across the TP ranks instead of assigning whole experts. The darklanes TP-2
-/// launcher sets it, and the symmetric walk runs only with it on; keeping it is the owner's
-/// call (docs/FLAGS.md).
+/// every expert across the TP ranks instead of assigning whole experts. Keeping it is the
+/// owner's call (docs/FLAGS.md).
 ///
 /// NOT byte-identical, and the split is where: `gate`/`up` are row splits, so every output
 /// element stays one full-K dot over the same bytes and that half is bit-identical, as is the

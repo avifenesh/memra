@@ -2321,9 +2321,6 @@ pub struct Cache {
     /// seam (rollback, reuse-pool retire, prefix restore) has moved the session under it. Drop
     /// it (`= None`) in any seam that REPLACES a state buffer rather than overwriting it.
     pub glm5_decode_graph: Option<Box<dyn std::any::Any + Send>>,
-    /// The symmetric TP walk's per-rank graph state (`memra_engine::glm5_tp_sym_graph`), the
-    /// same opaque-slot pattern as `glm5_decode_graph`; None until that door records a token.
-    pub glm5_tp_sym_graph: Option<Box<dyn std::any::Any + Send>>,
 }
 
 /// The context-linear K/V layout for one full-attention layer. This is the single sizing source
@@ -2925,7 +2922,6 @@ impl Cache {
             .ok_or(SuspendError::NotResident { layer: il })?;
         self.suspended.0.insert(il);
         self.glm5_decode_graph = None;
-        self.glm5_tp_sym_graph = None;
         self.qwen_prime_graph = None;
         Ok(layer)
     }
@@ -3227,7 +3223,6 @@ impl Cache {
             dflash_taps: None,
             hc_taps: None,
             glm5_decode_graph: None,
-            glm5_tp_sym_graph: None,
             qwen_prime_graph: None,
             last_logits_dev: None,
         })
@@ -3925,7 +3920,6 @@ mod tp_transaction_tests {
             dflash_taps: None,
             hc_taps: None,
             glm5_decode_graph: None,
-            glm5_tp_sym_graph: None,
             qwen_prime_graph: None,
             last_logits_dev: None,
         };
@@ -4271,7 +4265,6 @@ mod continuation_gate_tests {
             dflash_taps: None,
             hc_taps: None,
             glm5_decode_graph: None,
-            glm5_tp_sym_graph: None,
             qwen_prime_graph: None,
             last_logits_dev: None,
         }
