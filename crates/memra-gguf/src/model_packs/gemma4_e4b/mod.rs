@@ -246,6 +246,30 @@ mod tests {
         }
     }
 
+    /// `MEMRA_PP_STAGES=2` on E4B: gemma's PP2 program does not cover per-layer inputs or
+    /// shared KV, so the load takes the generic pipeline check, which refuses with those
+    /// operations named. The dense gemma plan keeps its two-stage program.
+    #[test]
+    fn two_stage_pipeline_refuses_e4b_by_operation() {
+        use crate::execution_manifest::{PIPELINE, gemma_pp2_covers};
+        let plan = PACK.compile_plan(&official_e4b()).unwrap();
+        assert!(!gemma_pp2_covers(&plan, 2));
+        let pipeline = PIPELINE.trunk_capabilities(&plan).pipeline;
+        assert!(!pipeline.supported);
+        for operation in [
+            OperationKind::PerLayerInputEmbedding,
+            OperationKind::PerLayerInputGate,
+            OperationKind::SharedKvState,
+        ] {
+            assert!(pipeline.blockers.contains(&operation), "{operation:?}");
+        }
+        let dense = super::super::gemma4_dense::PACK
+            .compile_tiny_plan()
+            .unwrap();
+        assert!(gemma_pp2_covers(&dense, 2));
+        assert!(!gemma_pp2_covers(&dense, 3));
+    }
+
     /// No safetensors loader binds the PLE names, so the HF schema refuses instead of guessing.
     #[test]
     fn safetensors_schema_refuses_per_layer_input() {
