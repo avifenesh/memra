@@ -2142,8 +2142,8 @@ all eight boots, V-DOOR PASS; SELECT R1 none, R2 none, R3 32768. The 5090 read V
 days 34 and 36 on the uncapped seed booking, and its final-booking half has not read. Owner,
 2026-11-04: winners become defaults keyed to the card each receipt came from, and their switches
 go. Memory-shaped admission is now armed on the full-power Workstation Edition
-(`MemoryAdmitConfig::for_device`) with the open-output default at 32768, R3's reading; every
-other card, the 5090 and the B200 route included, runs the unarmed program byte for byte.
+(`MemoryAdmitConfig::for_device`) with the open-output default at 32768, R3's reading, and the
+armed charge capped at the envelope the unarmed program charges; every other card, the 5090 and the B200 route included, runs the unarmed program byte for byte.
 `MEMRA_ADMIT_OPEN_OUTPUT_TOKENS` and `MEMRA_ADMIT_DEFER_BUDGET_MS` stay as runtime parameters.
 `tools/admit-mem-burst-gate.sh` SKIPs where the boot line reads `door=OFF`, and
 `tools/spec-ctx-edge-gate.sh` runs its `on` and `plain` arms where the admission is armed and its
@@ -2334,8 +2334,8 @@ went red, placed on the missing DAY39 addendum-B booking (2.7, 2.8), and the r5 
 the card each receipt came from, and their switches go. The planes are now the default on the
 full-power Workstation Edition (`HardwareTarget::is_pro6000_workstation`) with the inline
 placement the cell qualified; every other card, the 5090, the Max-Q and the Server Edition
-included, keeps pooled planes. The env reads went from `kv_vmm.rs`; the helper placement and its
-mapper stay in `memra-kv` as the 5090 class's stage-0 arm for its own cell, and
+included, keeps pooled planes. Both env reads are deleted from `kv_vmm.rs`; the helper placement
+and its mapper stay in `memra-kv` as the 5090 class's stage-0 arm for its own cell, and
 `MEMRA_KV_VMM_FAULT` stays as the A5 fault door. A stale caller that sets either removed name is
 refused at boot by the env audit. Decision: `docs/decisions/KV-VMM-SERVING-DEFAULT.md`. Ledger:
 `VERDICT:kv-vmm-planes-pro6000-ws-default-door-removed` (darklanes
