@@ -6,8 +6,11 @@
 //! same prefixed state into eager and graph arms, captures one ratio-0/window-only
 //! layer for one token, commits it, then replays that retained graph for the next
 //! token.  It reports graph nodes and exact output/route/KV identities.
+//!
+//! Placement: `pp`, a PP-2 cell. The per-layer graph probes run the PP walk only.
 
 use memra_engine::dsv4_gpu::{Dsv4Gpu, Dsv4GraphProbeCensus};
+use memra_engine::dsv4_topology::Dsv4Placement;
 use memra_gguf::dsv4_forward::ActQuantVariant;
 use memra_tokenizer::Tokenizer;
 use sha2::{Digest, Sha256};
@@ -185,8 +188,14 @@ fn main() {
     // memra #458: this is a bench process, so it may run the matrix expert program
     // with the default-ON split-K arm; a serving process cannot arm it and refuses
     // that combination at load instead of failing every request.
-    let gpu =
-        Dsv4Gpu::load(dir, &[0, 1], ActQuantVariant::RefFp8Round, prompt_len + 2).expect("model");
+    let gpu = Dsv4Gpu::load(
+        dir,
+        &[0, 1],
+        ActQuantVariant::RefFp8Round,
+        prompt_len + 2,
+        Dsv4Placement::Pp,
+    )
+    .expect("model");
     assert!(gpu.matrix_moe_enabled(), "graph probe requires matrix MoE");
 
     let mut candidate_layers: Vec<usize> = gpu

@@ -46,14 +46,16 @@
 //!
 //! Requires MEMRA_DSV4_DRAFTER=dspark and MEMRA_DSV4_DECODE_PATH=device.
 //!
-//! `--tpep` runs every arm on the all-layer TP/EP walk (memra #454), the drafter resident on
-//! rank 1 with its full expert slab; it needs the TP/EP load environment
-//! (`MEMRA_DSV4_EP=pair` and the matrix program).
+//! Placement is required (S06:F0). `--placement=tp_ep` runs every arm on the served placement:
+//! the all-layer TP/EP walk (memra #454) with exact attention TP2 (#710) and the drafter's
+//! experts split by id like the trunk's (#720). `tp_ep_replicated` keeps attention replicated.
+//! `pp` is the PP-2 cell, the `MEMRA_DSV4_TOPOLOGY=pp` rollback. Run the `tp_ep` cell first.
 //!
 //! Usage: dsv4-gpu-dspark-gate <model-dir> <fixtures.json> <out-dir> [runs] [dev0,dev1]
-//! [--served] [--tpep]
+//! --placement=<tp_ep|tp_ep_replicated|pp> [--served]
 
 use memra_engine::dsv4_gpu::{DSV4_BATCH_WIDTH_MAX, DecodeState, DsparkState, Dsv4Gpu, resolve_vt};
+use memra_engine::dsv4_topology::Dsv4Placement;
 use memra_gguf::dsv4_dspark::DsparkFixtureSpec;
 use memra_gguf::dsv4_forward::ActQuantVariant;
 use std::io::Write;
@@ -456,7 +458,6 @@ fn main() {
     // `--served` runs the program a served request runs: the current default doors.
     // Without it the historical instrument stays frozen on the pre-door numeric class.
     let served = std::env::args().any(|a| a == "--served");
-    let tp_ep = std::env::args().any(|a| a == "--tpep");
     // This is process startup, before any model or worker threads exist.
     unsafe {
         if !served {
@@ -473,13 +474,27 @@ fn main() {
         memra_engine::set_dsv4_moe_m1_stream_for_gate(false);
     }
 
-    let args: Vec<String> = std::env::args()
-        .filter(|a| a != "--served" && a != "--tpep")
-        .collect();
+    let mut args: Vec<String> = std::env::args().filter(|a| a != "--served").collect();
+    let placement = Dsv4Placement::take_gate_arg(
+        &mut args,
+        &[
+            Dsv4Placement::SERVED,
+            Dsv4Placement::TpEp {
+                attention_tp: false,
+            },
+            Dsv4Placement::Pp,
+        ],
+    )
+    .unwrap_or_else(|err| {
+        eprintln!("REFUSE: {err}");
+        std::process::exit(2);
+    });
+    let tp_ep = placement.is_tp_ep();
+    let attention_tp = placement == Dsv4Placement::SERVED;
     if args.len() < 4 {
         eprintln!(
             "usage: dsv4-gpu-dspark-gate <model-dir> <fixtures.json> <out-dir> [runs] [dev0,dev1] \
-             [--served] [--tpep]"
+             --placement=<tp_ep|tp_ep_replicated|pp> [--served]"
         );
         std::process::exit(2);
     }
@@ -535,16 +550,7 @@ fn main() {
         other => panic!("the spec==plain identity gate runs the REF contract, got {other:?}"),
     };
     let max_seq = (p0 + n_new + 32).max(256);
-    // `--tpep` also takes the exact attention TP2 program when the gate selector asks for it.
-    let attention_tp = match std::env::var("MEMRA_DSV4_ATTENTION_TP_GATE").as_deref() {
-        Err(std::env::VarError::NotPresent) | Ok("0") => false,
-        Ok("1") if tp_ep => true,
-        _ => panic!("MEMRA_DSV4_ATTENTION_TP_GATE requires 0, or 1 with --tpep"),
-    };
-    Dsv4Gpu::set_tp_ep_topology_for_gate(tp_ep);
-    Dsv4Gpu::set_attention_tp_for_gate(attention_tp);
-    let gpu = Dsv4Gpu::load(dir, &devices, variant, max_seq).expect("load");
-    Dsv4Gpu::set_attention_tp_for_gate(false);
+    let gpu = Dsv4Gpu::load(dir, &devices, variant, max_seq, placement).expect("load");
     assert_eq!(
         gpu.topology().is_tp_ep(),
         tp_ep,
@@ -556,8 +562,8 @@ fn main() {
         "no silent attention program fallback"
     );
     println!(
-        "loaded: topology {}, split at layer {}, verify tmax {}, t={:.0}s",
-        if tp_ep { "tp_ep" } else { "pp" },
+        "loaded: placement {}, split at layer {}, verify tmax {}, t={:.0}s",
+        placement.name(),
         gpu.split_at,
         gpu.verify_tmax(),
         t0.elapsed().as_secs_f64()

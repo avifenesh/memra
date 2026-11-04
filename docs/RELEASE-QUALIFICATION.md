@@ -343,6 +343,13 @@ limit. Step/multi-card topology qualification stays with its existing gates.
 A sealed full record also counts as the device battery for its card's target in the
 per-cell push gate. It does not supply serving or perf evidence.
 
+DSv4-Flash two-card cells run on a 2x RTX PRO 6000 pair, and each names its placement:
+`Dsv4Gpu::load` has no default, and every load logs `[load] placement <name>`. Serving
+qualification runs the served placement first: `tp_ep`, TP/EP with exact attention TP2, which
+memra-server loads unless `MEMRA_DSV4_TOPOLOGY=pp`. A PP-2 cell (`pp`) qualifies only that
+rollback. The placement of every DSv4 gate binary is in
+[TESTING.md](TESTING.md#dsv4-gate-placement).
+
 ```sh
 memra-gpu-run --gpus "$GPU_UUID" --receipt "$LEASE" -- \
   python3 tools/qualify-release.py capture --expected-head "$COMMIT" --build "$BUILD" --out "$RUN" \

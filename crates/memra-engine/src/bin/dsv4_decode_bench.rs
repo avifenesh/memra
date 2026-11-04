@@ -14,8 +14,12 @@
 //! MEMRA_DSV4_DECODE_PATH (lane 8, once it exists).
 //!
 //! Usage: dsv4-decode-bench <model-dir> <fixtures.json> <out.json> [n_new] [dev0,dev1]
+//!
+//! Placement: `pp`, a PP-2 cell. The monolithic reference prefill it drives (`forward`,
+//! `prefill_with_cache`) runs the PP walk only.
 
 use memra_engine::dsv4_gpu::Dsv4Gpu;
+use memra_engine::dsv4_topology::Dsv4Placement;
 use memra_gguf::dsv4_forward::FixtureSpec;
 use std::io::Write;
 use std::path::Path;
@@ -106,7 +110,7 @@ fn main() {
 
     let prompt = spec.tokens_32.clone();
     let max_seq = (prompt.len() + n_new + 96).max(256);
-    let gpu = Dsv4Gpu::load(dir, &devices, spec.variant, max_seq).expect("load");
+    let gpu = Dsv4Gpu::load(dir, &devices, spec.variant, max_seq, Dsv4Placement::Pp).expect("load");
     println!(
         "loaded: split at layer {}, t={:.0}s",
         gpu.split_at,

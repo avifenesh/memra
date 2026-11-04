@@ -3,10 +3,14 @@
 //! Loads the exact artifact at 1M model context with bundled DSpark, then allocates
 //! one full-capacity compact trunk state, DSpark session state, and width-32 prefill
 //! transaction workspace. This is a reachability gate, not serving or performance.
+//!
+//! Placement: `pp`, a PP-2 cell. 1M context with DSpark resident is PP-2's reach; TP/EP reaches 1M
+//! plain and 500k with DSpark.
 
 use cudarc::driver::{DevicePtr, DevicePtrMut};
 use memra_engine::dsv4_ffi;
 use memra_engine::dsv4_gpu::Dsv4Gpu;
+use memra_engine::dsv4_topology::Dsv4Placement;
 use memra_gguf::dsv4_forward::FixtureSpec;
 use std::path::Path;
 
@@ -116,8 +120,14 @@ fn main() {
         .unwrap_or_else(|| vec![0, 1]);
     let max_seq = 1_048_576usize;
     let chunk = 32usize;
-    let gpu = Dsv4Gpu::load(model_dir, &devices, fixture.variant, max_seq)
-        .expect("load 1M DSV4 GPU model");
+    let gpu = Dsv4Gpu::load(
+        model_dir,
+        &devices,
+        fixture.variant,
+        max_seq,
+        Dsv4Placement::Pp,
+    )
+    .expect("load 1M DSV4 GPU model");
     assert!(
         gpu.dspark.is_some(),
         "capacity gate requires bundled DSpark"

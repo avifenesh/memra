@@ -47,8 +47,12 @@
 //! An id outside that band dropping out or climbing in is a REAL bug. Raw overlap and
 //! the 20/21 boundary gaps are always printed; the greedy-continuation gate remains the
 //! end-to-end semantic instrument.
+//!
+//! Placement: `pp`, a PP-2 cell. The monolithic reference prefill it drives (`forward`,
+//! `prefill_with_cache`) runs the PP walk only.
 
 use memra_engine::dsv4_gpu::{Dsv4Gpu, GpuCapture};
+use memra_engine::dsv4_topology::Dsv4Placement;
 use memra_gguf::dsv4_forward::{
     ActQuantVariant, FixtureSpec, drift_coeff, expert_arm_native, quant_depth_of, read_npz,
 };
@@ -574,7 +578,7 @@ fn main() {
             .unwrap_or(0)
             .max(512),
     );
-    let gpu = Dsv4Gpu::load(dir, &devices, spec.variant, max_seq).expect("load");
+    let gpu = Dsv4Gpu::load(dir, &devices, spec.variant, max_seq, Dsv4Placement::Pp).expect("load");
     println!(
         "loaded: split at layer {} (stage0 {} layers, stage1 {} layers), t={:.0}s",
         gpu.split_at,
