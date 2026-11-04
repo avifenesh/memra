@@ -6644,8 +6644,8 @@ fn glm5_tp_serve_boot_verdict(
     // mixer branches: the engine's KDA choke point refuses a sharded layer on it by name,
     // which is exactly how every request of the first serving smoke (tpwalk25, 2026-09-07)
     // died ("the plain mixer path is unwired for a head shard ... arm decode"). Under TP the
-    // sessions step one at a time through the TP walk (`decode_step`, the symmetric per-rank
-    // graphs); several sessions still admit and interleave per token. Refused at boot rather
+    // sessions step one at a time through the TP walk (`decode_step`); several sessions
+    // still admit and interleave per token. Refused at boot rather
     // than overridden so the operator's env says what the box runs.
     if matches!(hyper_batch_env.map(str::trim), Some("1")) {
         return Err(
