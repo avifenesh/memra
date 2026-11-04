@@ -1752,7 +1752,10 @@ switch goes: compaction is now on for the RTX 5090 class and the full-power RTX 
 Blackwell Workstation Edition (`park_compact_for_device`, the Workstation scope
 `tier_transfer::kv_vmm_placement_for_device` uses), and every other card parks the ladder-cap
 cache whole until a cell on it reads the same. The env read (`kv_park_compact_on`) is deleted;
-the compactor, the grow arm and the refusal matrix are the code. Decision record:
+the compactor, the grow arm and the refusal matrix are the code. A cache with latent (MLA/DSA)
+planes or of the eager-only class parks whole (the checkpoint restore carries no latent plane, and
+the eager-only class has no prefix snapshot), and only an entry the park compacted takes the
+admit-time grow; the decision record names the families no cell has covered. Decision record:
 [decisions/KV-PARK-COMPACT-DEFAULT.md](decisions/KV-PARK-COMPACT-DEFAULT.md). History:
 [FLAGS-HISTORY.md](FLAGS-HISTORY.md#memra_kv_park_compact). Ledger:
 `VERDICT:kv-park-compact-default-per-card` (darklanes `agent-knowledge/gpu/verdicts-ledger.md`).
