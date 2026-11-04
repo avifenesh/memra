@@ -802,13 +802,15 @@ fn auto_parallel_tp_attention_ranks() -> Result<Option<usize>, String> {
 /// A selected pipeline is persisted into the existing process-level PP configuration before
 /// `pp_cuts`, cache allocation, or weight placement reads it. Expert placement is passed directly
 /// to the backend registry below. No architecture or layer list participates in this decision.
+/// The second value is the automatic W4A16 BF16 residency decision, which goes into this model's
+/// numeric profile (`NumericProfile::bf16_mmv`), not into the process environment.
 fn prepare_auto_parallel(
     src: &dyn TensorSource,
     cfg: &ModelConfig,
     plan: &memra_gguf::model_plan::ModelPlan,
-) -> Result<Option<crate::parallel::AutoParallelPlacement>, Box<dyn std::error::Error>> {
+) -> Result<(Option<crate::parallel::AutoParallelPlacement>, bool), Box<dyn std::error::Error>> {
     let Some(devices) = crate::tp::auto_parallel_devices()? else {
-        return Ok(None);
+        return Ok((None, false));
     };
     if std::env::var_os("MEMRA_PP_STAGES").is_some()
         || std::env::var_os("MEMRA_PP_DEVICES").is_some()
@@ -826,6 +828,7 @@ fn prepare_auto_parallel(
             src.expert_activation_precision(),
             memra_gguf::source::ExpertActivationPrecision::Bf16
         );
+    let mut auto_bf16_mmv = false;
     let bf16_nonexpert = if auto_w4a16_bf16 {
         let explicit = match std::env::var("MEMRA_BF16_MMV") {
             Ok(value) => Some(value),
@@ -833,13 +836,7 @@ fn prepare_auto_parallel(
             Err(error) => return Err(format!("cannot read MEMRA_BF16_MMV: {error}").into()),
         };
         let enabled = parse_auto_w4a16_bf16_mmv(explicit.as_deref())?;
-        if enabled && explicit.is_none() {
-            // SAFETY: automatic placement is resolved before any model tensor loads or
-            // `Engine::bf16_mmv_on()` reads the process-level numeric policy.
-            unsafe {
-                std::env::set_var("MEMRA_BF16_MMV", "1");
-            }
-        }
+        auto_bf16_mmv = enabled;
         match (enabled, explicit.is_some()) {
             (true, false) => "bf16-resident(auto)",
             (true, true) => "bf16-resident(explicit)",
@@ -894,7 +891,7 @@ fn prepare_auto_parallel(
         placement.device_capacity_bytes,
         placement.pipeline_splits,
     );
-    Ok(Some(placement))
+    Ok((Some(placement), auto_bf16_mmv))
 }
 
 fn prepare_step_parallel_load(
@@ -4274,7 +4271,7 @@ impl HybridModel {
         let binding = memra_gguf::checkpoint_binding::bind_source(src, &cfg, &plan)
             .map_err(|error| std::io::Error::other(error.to_string()))?;
         eprintln!("{}", memra_gguf::checkpoint_binding::describe(&binding));
-        let auto_parallel = prepare_auto_parallel(src, &cfg, &plan)?;
+        let (auto_parallel, auto_bf16_mmv) = prepare_auto_parallel(src, &cfg, &plan)?;
         let batch_program = crate::plan_backend::decode_batch_program(&plan);
         let gemma_program = batch_program == crate::plan_backend::DecodeBatchProgram::Gemma;
         let sliding_gated_moe_program =
@@ -4294,6 +4291,7 @@ impl HybridModel {
             cfg.arch.is_glm5_next() && env!("MEMRA_BUILT_CUDA_ARCH") == "100a",
             sliding_gated_moe_program,
             spec_mmq_key.then_some(cfg.n_embd),
+            auto_bf16_mmv,
         );
         let _numeric = numeric.enter();
         if matches!(

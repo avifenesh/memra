@@ -2,9 +2,10 @@
 //!
 //! A few kernel defaults are keyed per model: the rms_norm block, the FA vec crossover, the
 //! windowed and hd512 split widths, the gemma split ladder seam, the fused q4_0 row mapping,
-//! the v4 decode capacity guard, the spec-serving stream-k key and the step37 serving door
-//! defaults. Each one changes the launch shape, and with it the FP order or the kernel
-//! family, so it belongs to the model whose qualification measured it.
+//! the v4 decode capacity guard, the spec-serving stream-k key, the step37 serving door
+//! defaults and the automatic W4A16 BF16 residency. Each one changes the launch shape, and with
+//! it the FP order or the kernel family, so it belongs to the model whose qualification
+//! measured it.
 //!
 //! Each loaded `HybridModel` owns its profile (`HybridModel::numeric`, built once at load
 //! by [`NumericProfile::for_model`]). Every model entry point installs it on the calling
@@ -23,8 +24,9 @@
 //! thread that launches nothing says `numeric-scope: host-only` instead.
 //!
 //! Env overrides keep their meaning: `MEMRA_RMS_BLOCK`, `MEMRA_FA_VEC_MIN`,
-//! `MEMRA_FA_V4_MAX`, `MEMRA_FA_SPW`, `MEMRA_FA_SP512`, `MEMRA_Q40_MR`, `MEMRA_MMQ_SK` and the
-//! step37 door flags win over the profile for every model, as they did over the old statics.
+//! `MEMRA_FA_V4_MAX`, `MEMRA_FA_SPW`, `MEMRA_FA_SP512`, `MEMRA_Q40_MR`, `MEMRA_MMQ_SK`,
+//! `MEMRA_BF16_MMV` and the step37 door flags win over the profile for every model, as they did
+//! over the old statics.
 
 use std::cell::Cell;
 use std::marker::PhantomData;
@@ -56,6 +58,11 @@ pub struct NumericProfile {
     pub mmq_sk_force: i8,
     /// The step37 serving door defaults (`step37_door`): ON for the SlidingGatedMoe program.
     pub step37_serving: bool,
+    /// BF16-resident non-expert rows and the row-wise BF16 matvec (`Engine::bf16_mmv_on`): ON
+    /// for a routed W4A16 artifact that `MEMRA_PARALLEL=auto` placed expert-parallel. It decides
+    /// load-time residency and every BF16 dispatch of that model, so it is the model's, not the
+    /// process's.
+    pub bf16_mmv: bool,
 }
 
 impl NumericProfile {
@@ -70,19 +77,22 @@ impl NumericProfile {
         fa_sp_gemma: false,
         mmq_sk_force: -1,
         step37_serving: false,
+        bf16_mmv: false,
     };
 
     /// The profile one model's load keys. `gqa` is `n_head / n_head_kv` (0 when `n_head_kv`
     /// is 0), `gemma_moe` is `Some(real_moe)` for the gemma batch program, `glm5_next_b200` is
     /// a glm5_next model on an sm_100a build, `sliding_gated_moe` is the SlidingGatedMoe
-    /// (step37) program, `spec_mmq_n_embd` is `Some(n_embd)` under spec intent. Pure: the
-    /// loader passes what it already computed.
+    /// (step37) program, `spec_mmq_n_embd` is `Some(n_embd)` under spec intent, `auto_bf16_mmv`
+    /// is the automatic placement's W4A16 BF16 residency decision. Pure: the loader passes what
+    /// it already computed.
     pub fn for_model(
         gqa: u32,
         gemma_moe: Option<bool>,
         glm5_next_b200: bool,
         sliding_gated_moe: bool,
         spec_mmq_n_embd: Option<u32>,
+        auto_bf16_mmv: bool,
     ) -> Self {
         let mut p = Self::BASE;
         // FA v4 GQA capacity guard: fa_v4_smem's per-warp Q arrays hold gqa <= 8 (see the
@@ -120,6 +130,10 @@ impl NumericProfile {
             p.mmq_sk_force = if n_embd >= 3500 { 0 } else { -1 };
         }
         p.step37_serving = sliding_gated_moe;
+        // MEMRA_PARALLEL=auto on a routed W4A16 artifact placed expert-parallel: BF16-resident
+        // non-expert rows (the preserved checkpoint values, one deterministic row program at
+        // every batch width), unless the operator set MEMRA_BF16_MMV explicitly.
+        p.bf16_mmv = auto_bf16_mmv;
         p
     }
 
@@ -169,18 +183,18 @@ mod tests {
     use super::NumericProfile;
 
     fn gemma31() -> NumericProfile {
-        NumericProfile::for_model(2, Some(false), false, false, None)
+        NumericProfile::for_model(2, Some(false), false, false, None, false)
     }
 
     #[test]
     fn qwen_class_keys_nothing() {
         assert_eq!(
-            NumericProfile::for_model(4, None, false, false, None),
+            NumericProfile::for_model(4, None, false, false, None, false),
             NumericProfile::BASE
         );
         // Small/MoE under spec intent keeps the -1 key.
         assert_eq!(
-            NumericProfile::for_model(4, None, false, false, Some(2048)),
+            NumericProfile::for_model(4, None, false, false, Some(2048), false),
             NumericProfile::BASE
         );
     }
@@ -199,27 +213,36 @@ mod tests {
             ),
             (1, 64, 32, true, 1024, true)
         );
-        let g26 = NumericProfile::for_model(2, Some(true), false, false, None);
+        let g26 = NumericProfile::for_model(2, Some(true), false, false, None, false);
         assert_eq!((g26.fa_spw, g26.fa_sp512, g26.fused_mr1), (32, 16, false));
         assert_eq!(
-            NumericProfile::for_model(16, None, false, false, None).fa_v4_max,
+            NumericProfile::for_model(16, None, false, false, None, false).fa_v4_max,
             0
         );
         assert_eq!(
-            NumericProfile::for_model(1, None, true, false, None).rms_block,
+            NumericProfile::for_model(1, None, true, false, None, false).rms_block,
             1024
         );
         assert_eq!(
-            NumericProfile::for_model(4, None, false, false, Some(5120)).mmq_sk_force,
+            NumericProfile::for_model(4, None, false, false, Some(5120), false).mmq_sk_force,
             0
         );
-        assert!(NumericProfile::for_model(4, None, false, true, None).step37_serving);
+        assert!(NumericProfile::for_model(4, None, false, true, None, false).step37_serving);
+        let auto_w4a16 = NumericProfile::for_model(4, None, false, false, None, true);
+        assert!(auto_w4a16.bf16_mmv);
+        assert_eq!(
+            NumericProfile {
+                bf16_mmv: false,
+                ..auto_w4a16
+            },
+            NumericProfile::BASE
+        );
     }
 
     #[test]
     fn scopes_nest_and_restore() {
         let gemma = gemma31();
-        let gqa16 = NumericProfile::for_model(16, None, false, false, None);
+        let gqa16 = NumericProfile::for_model(16, None, false, false, None, false);
         assert_eq!(NumericProfile::current(), NumericProfile::BASE);
         {
             let _outer = gemma.enter();
