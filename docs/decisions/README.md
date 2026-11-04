@@ -35,6 +35,7 @@ half — "we tried X and it lost by Y% on Z" cannot be reconstructed from the co
 | [MOE-INTOKEN-PREFETCH-DEFAULT.md](MOE-INTOKEN-PREFETCH-DEFAULT.md) | the legacy MoE slot cache's in-token prefetch of the next routed expert is the default on the RTX 5090 Laptop GPU and the RTX PRO 6000 Workstation card from one pre-registered cell per card, and the `MEMRA_MOE_PREFETCH=1` in-token switch goes |
 | [GLM5-TP-DEVICE-SAMPLER-DEFAULT.md](GLM5-TP-DEVICE-SAMPLER-DEFAULT.md) | the GLM TP-2 plain route samples on the device by default on sm_100a builds from the B200 pair's served receipt, and `MEMRA_GLM5_TP_DEVICE_SAMPLE` goes; the host sampler stays everywhere else |
 | [TP-PEER-PULL-DEFAULT.md](TP-PEER-PULL-DEFAULT.md) | an armed TP walk with no transport set moves its hops by consumer-issued device peer copies on sm_100a builds, from the B200 pair's receipt, and through host everywhere else |
+| [GLM5-B200-DOORS.md](GLM5-B200-DOORS.md) | the GLM-5.3-Flash B200 doors decided from their receipts after the pair retired: which became sm_100a defaults, which were deleted, and the calls left open |
 
 Adding one: a decision that changes a default, a format, a target or an arm belongs here, with
 the measurement that settled it. Superseded records get a banner naming what replaced them —

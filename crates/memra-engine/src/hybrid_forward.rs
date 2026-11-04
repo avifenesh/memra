@@ -14772,7 +14772,7 @@ impl HybridModel {
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
         let n_embd = cfg.n_embd as usize;
         let lim_shexp = cfg.clamp_shexp_at(il as u32);
-        // Prefill chunks take the grouped prime when the door is on (host sigmoid routing, the
+        // Prefill chunks take the grouped prime on sm_100a builds (host sigmoid routing, the
         // plain grouped arm's admission); otherwise, and at decode, the slot walk below.
         if prefill && t > MOE_DEV_MAX_T && crate::glm5_tp_split_grouped_prime_on() {
             let moe = cfg
@@ -14786,23 +14786,17 @@ impl HybridModel {
             let logits = Self::moe_router_logits(e, m, z, t, cfg)?;
             let (sel_all, w_all) =
                 Self::moe_route_sigmoid_cfg(e, &logits, t, n_expert, n_used, m, sig)?;
-            // DOOR `MEMRA_GLM5_TP_SPLIT_PRIME_HOSTDIET` (lane/glm5-tp-prime-router-20260907,
-            // default OFF): the 256k profile on the pair put 16.2 of root's 74.8 s prime in ONE
-            // gap class, after the z fan-out push and before root's first MoE kernel: the host
-            // built the identical expert CSR once PER RANK, uploaded it, and launched the peer
-            // before root. With the door on the shared expert is launched BEFORE the routing
-            // table is built (its GEMMs cover the host time), the CSR is built once with a
-            // counting sort and uploaded to each rank, and root's pass is issued first (root is
-            // the critical path; the peer has slack). Byte-identical: the same kernels see the
-            // same operands in the same per-device order; only host work and launch order move.
-            let host_diet = crate::glm5_tp_split_prime_hostdiet_level();
-            let shexp_early = if host_diet > 0 {
-                Self::moe_shexp_compute(e, m, z, zq8, t, cfg, lim_shexp)?
-            } else {
-                None
-            };
+            // THE HOST DIET (lane/glm5-tp-prime-router-20260907, the default with the grouped
+            // prime since 2026-11-04): the 256k profile on the pair put 16.2 of root's 74.8 s
+            // prime in ONE gap class, after the z fan-out push and before root's first MoE
+            // kernel, because the host built the identical expert CSR once PER RANK. So the
+            // shared expert is launched BEFORE the routing table is built (its GEMMs cover the
+            // host time) and the CSR is built once with a counting sort and uploaded to each
+            // rank through a pinned arena. Byte-identical to the undieted grouped prime: the
+            // same kernels see the same operands in the same per-device order.
+            let shexp_early = Self::moe_shexp_compute(e, m, z, zq8, t, cfg, lim_shexp)?;
             if let Some(mut out) = Self::moe_ffn_glm5_tp_split_grouped_prime(
-                e, m, xs, z, &sel_all, &w_all, t, cfg, il, host_diet,
+                e, m, xs, z, &sel_all, &w_all, t, cfg, il,
             )? {
                 match shexp_early {
                     Some((sh, g)) => {
@@ -15475,7 +15469,7 @@ impl HybridModel {
         Ok(Some(out))
     }
 
-    /// The TP-SPLIT GROUPED PRIME (`MEMRA_GLM5_TP_SPLIT_GROUPED_PRIME`, default OFF): the EP
+    /// The TP-SPLIT GROUPED PRIME (the default on sm_100a builds since 2026-11-04): the EP
     /// grouped prime's per-rank program run by BOTH ranks over ALL routed pairs against the
     /// split slabs (gate/up row halves, down column halves, pointer tables minted at arm time),
     /// so each rank's scatter is a `[t, n_embd]` partial and the root adds the peer's, the same
@@ -15494,7 +15488,6 @@ impl HybridModel {
         t: usize,
         cfg: &ModelConfig,
         il: u16,
-        host_diet: u8,
     ) -> Result<Option<CudaSlice<f32>>, Box<dyn std::error::Error>> {
         use std::sync::atomic::Ordering;
         let moe = cfg
@@ -15545,9 +15538,8 @@ impl HybridModel {
         // 0.0 — the scatter fully overwrites, so partials add cleanly on root).
         // The expert CSR over ALL pairs (every rank holds every expert at half width, so the
         // table is the same on every rank): local pair index l == global pair index p, in
-        // ascending order (per-token slot order == ascending l). The door builds it ONCE per
-        // call; the door-off arm keeps the per-rank build (same values, the bucket order is
-        // the counting sort's order: expert-major, l ascending).
+        // ascending order (per-token slot order == ascending l). Built ONCE per call with a
+        // counting sort (expert-major, l ascending) and uploaded to every rank.
         struct SplitCsr {
             ex_ids: Vec<i32>,
             ex_off: Vec<i32>,
@@ -15632,7 +15624,7 @@ impl HybridModel {
                 n_active,
             }))
         };
-        let shared_csr = if host_diet > 0 { build_csr()? } else { None };
+        let shared_csr = build_csr()?;
         // Page-locked staging for the table uploads (the measured gap: 85% pageable HtoD).
         // One arena per device ordinal, sized for the largest chunk (t x n_used pairs, nine
         // tables), rewound per layer-call after a host wait on the previous call's copies.
@@ -15647,16 +15639,8 @@ impl HybridModel {
                          ptr_row: &CudaSlice<u64>,
                          z_dev: &CudaSlice<f32>|
          -> Result<Option<CudaSlice<f32>>, Box<dyn std::error::Error>> {
-            let own;
-            let csr = match shared_csr.as_ref() {
-                Some(c) => c,
-                None => match build_csr()? {
-                    Some(c) => {
-                        own = c;
-                        &own
-                    }
-                    None => return Ok(None),
-                },
+            let Some(csr) = shared_csr.as_ref() else {
+                return Ok(None);
             };
             let n_owned = csr.n_owned;
             let n_active = csr.n_active;
@@ -15666,40 +15650,16 @@ impl HybridModel {
             if arenas.len() <= ord {
                 arenas.resize_with(ord + 1, || None);
             }
-            let mut arena = if host_diet > 0 {
-                let slot = &mut arenas[ord];
-                let need = slot.as_ref().is_none_or(|a| a.capacity() < arena_bytes);
-                if need {
-                    *slot = Some(crate::PinnedHtodArena::new(arena_bytes)?);
-                }
-                let a = slot.as_mut().expect("just filled");
-                a.begin()?;
-                Some(a)
-            } else {
-                None
-            };
-            let up_i32 = |dev: &Engine,
-                          arena: &mut Option<&mut crate::PinnedHtodArena>,
-                          v: &[i32]|
-             -> Result<CudaSlice<i32>, Box<dyn std::error::Error>> {
-                match arena.as_deref_mut() {
-                    Some(a) => dev.htod_i32_staged(a, v),
-                    None => dev.htod_i32(v),
-                }
-            };
-            let up_f32 = |dev: &Engine,
-                          arena: &mut Option<&mut crate::PinnedHtodArena>,
-                          v: &[f32]|
-             -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
-                match arena.as_deref_mut() {
-                    Some(a) => dev.htod_f32_staged(a, v),
-                    None => dev.htod(v),
-                }
-            };
-            let exi = up_i32(dev, &mut arena, &csr.ex_ids)?;
-            let exo = up_i32(dev, &mut arena, ex_off)?;
-            let exp_d = up_i32(dev, &mut arena, &csr.ex_pairs)?;
-            let csr_tok_d = up_i32(dev, &mut arena, &csr.csr_tok)?;
+            let slot = &mut arenas[ord];
+            if slot.as_ref().is_none_or(|a| a.capacity() < arena_bytes) {
+                *slot = Some(crate::PinnedHtodArena::new(arena_bytes)?);
+            }
+            let arena = slot.as_mut().expect("just filled");
+            arena.begin()?;
+            let exi = dev.htod_i32_staged(arena, &csr.ex_ids)?;
+            let exo = dev.htod_i32_staged(arena, ex_off)?;
+            let exp_d = dev.htod_i32_staged(arena, &csr.ex_pairs)?;
+            let csr_tok_d = dev.htod_i32_staged(arena, &csr.csr_tok)?;
 
             // GATE/UP grouped GEMMs over the rank slab, CSR order end to end.
             let (z16, zs) = dev.moe_f16g_act(z_dev, Some(&csr_tok_d), n_embd, n_owned)?;
@@ -15720,7 +15680,7 @@ impl HybridModel {
                 m.gate_exps.row_bytes,
             )?;
             if let Some(mg) = csr.mg.as_ref() {
-                let mg_d = up_f32(dev, &mut arena, mg)?;
+                let mg_d = dev.htod_f32_staged(arena, mg)?;
                 dev.scale_rows(&mut g, &mg_d, half_ff, n_owned)?;
             }
             let mut u = dev.moe_f16_grouped(
@@ -15740,7 +15700,7 @@ impl HybridModel {
                 m.up_exps.row_bytes,
             )?;
             if let Some(mu) = csr.mu.as_ref() {
-                let mu_d = up_f32(dev, &mut arena, mu)?;
+                let mu_d = dev.htod_f32_staged(arena, mu)?;
                 dev.scale_rows(&mut u, &mu_d, half_ff, n_owned)?;
             }
 
@@ -15782,12 +15742,10 @@ impl HybridModel {
                 xs.down_row_bytes,
             )?;
             let y_local = dev.rows_permute(&d_csr, &exp_d, n_owned, n_embd)?;
-            let pw = up_f32(dev, &mut arena, &csr.local_wd)?;
-            let toff_d = up_i32(dev, &mut arena, &csr.toff)?;
-            let tids_d = up_i32(dev, &mut arena, &csr.tids)?;
-            if let Some(a) = arena {
-                a.end(&dev.stream())?;
-            }
+            let pw = dev.htod_f32_staged(arena, &csr.local_wd)?;
+            let toff_d = dev.htod_i32_staged(arena, &csr.toff)?;
+            let tids_d = dev.htod_i32_staged(arena, &csr.tids)?;
+            arena.end(&dev.stream())?;
             let mut partial = dev.uninit(t * n_embd)?; // scatter fully overwrites
             dev.moe_pairs_scatter(&y_local, &pw, &toff_d, &tids_d, &mut partial, t, n_embd)?;
             Ok(Some(partial))
@@ -15800,14 +15758,9 @@ impl HybridModel {
         let ranks = xs.ranks();
         let hop = xs.rt.hop(e);
         let mut peer_partials: Vec<Option<CudaSlice<f32>>> = (0..ranks).map(|_| None).collect();
-        // Host-diet LEVEL 2: root FIRST. Measured at 256k on the pair (tpwalk27): root first
-        // is 9.6% SLOWER (80.65 vs 73.56 s) because the peer's pass then starts after root's
-        // launches and the combine waits on it; level 1 keeps the peer-first order.
-        let root_first = if host_diet >= 2 {
-            Some(rank_pass(e, 0, &xs.ptr_rows[0], z)?)
-        } else {
-            None
-        };
+        // Peer first, root second: issuing root's pass first measured 9.6% SLOWER at 256k on
+        // the pair (tpwalk27, 80.65 vs 73.56 s), because the peer's pass then starts after
+        // root's launches and the combine waits on it.
         for r in 1..ranks {
             let rank_owns_pairs = true; // every rank holds every expert
             if !rank_owns_pairs {
@@ -15821,10 +15774,7 @@ impl HybridModel {
             e.bind_runtime_device(e.ctx().ordinal() as i32)?;
             peer_partials[r] = res?;
         }
-        let root_partial = match root_first {
-            Some(p) => p,
-            None => rank_pass(e, 0, &xs.ptr_rows[0], z)?,
-        };
+        let root_partial = rank_pass(e, 0, &xs.ptr_rows[0], z)?;
 
         // Root combine: root partial + bulk-returned peer partials (SWAP POINT 2, the named
         // transport shape). One partial add per contributing rank — the same reassociation
@@ -15851,10 +15801,9 @@ impl HybridModel {
             eprintln!(
                 "[glm5-tp-split-grouped-prime] execute layer={il} tokens={t} \
                  provenance=split-half-slabs router=sigmoid-host-oracle epilogue=pre-clamped \
-                 combine=rank-partial-add transport={} host_diet={} performance_claim=false \
+                 combine=rank-partial-add transport={} performance_claim=false \
                  (logged once per layer)",
                 hop.transport.name(),
-                host_diet,
             );
         }
         Ok(Some(out))
