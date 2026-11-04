@@ -641,13 +641,15 @@ run_k() { # <label> <MEMRA_KV_VMM_FAULT value or 0>: one long stream whose decod
   local label=$1 f=$2
   local envs=()
   [ "$f" != 0 ] && envs+=(MEMRA_KV_VMM_FAULT="$f")
-  K_PLANES=0
+  K_PLANES=0; K_OK=0; K_ERR=""; K_DIG=""; K_GROWS=0; K_FAILED=0; K_ENSURE_FAILED=0; K_PANIC=0
+  K_AFTER=0; K_HEALTH=000
   if boot "$label" "${envs[@]}"; then
     if planes_on; then
       K_PLANES=1
       SPIDS=""
-      # 8192 tokens: the session's planes pay for on-demand backing at any row size the card's
-      # granule can hold twice, and the decode crosses the initial extent's granule.
+      # 8192 tokens: the session cap then spans more than two 2 MiB granules of any plane whose
+      # rows are 512 bytes or more, so its planes are on-demand (`on_demand_pays`), and the
+      # decode crosses the granule the construction mapped.
       sstream "$D/long" "$KPROMPT" 8192
       # shellcheck disable=SC2086
       wait $SPIDS
@@ -678,10 +680,10 @@ if in_arms k; then
     kctrl_ok=$K_OK; kctrl_dig=$K_DIG; kctrl_grows=$K_GROWS
     if run_k k ensure:1; then
       v=FAIL
-      [ "$kctrl_ok" = 1 ] && [ "$kctrl_grows" -ge 1 ] && [ "$K_OK" = 1 ] && [ -z "$K_ERR" ] && [ "$K_FAILED" = 1 ] \
+      [ "$K_PLANES" = 1 ] && [ "$kctrl_ok" = 1 ] && [ "$kctrl_grows" -ge 1 ] && [ "$K_OK" = 1 ] && [ -z "$K_ERR" ] && [ "$K_FAILED" = 1 ] \
         && [ "$K_ENSURE_FAILED" = 0 ] && [ "$K_PANIC" = 0 ] && [ "$K_DIG" = "$kctrl_dig" ] && [ "$K_AFTER" = 1 ] \
         && [ "$K_HEALTH" = 200 ] && v=PASS
-      verdict "HFG (k) kv-vmm-grow-failure-retries: fault=ensure:1 grow_failed_lines=$K_FAILED ensure_failed_lines=$K_ENSURE_FAILED grow_lines=$K_GROWS completed=$K_OK error={${K_ERR:-none}} panic_or_illegal_address_lines=$K_PANIC digest=$K_DIG control=$kctrl_dig control_completed=$kctrl_ok control_grow_lines=$kctrl_grows next_request=$K_AFTER health_after=$K_HEALTH -> $v"
+      verdict "HFG (k) kv-vmm-grow-failure-retries: fault=ensure:1 planes_on=$K_PLANES grow_failed_lines=$K_FAILED ensure_failed_lines=$K_ENSURE_FAILED grow_lines=$K_GROWS completed=$K_OK error={${K_ERR:-none}} panic_or_illegal_address_lines=$K_PANIC digest=$K_DIG control=$kctrl_dig control_completed=$kctrl_ok control_grow_lines=$kctrl_grows next_request=$K_AFTER health_after=$K_HEALTH -> $v"
     else
       verdict "HFG (k) kv-vmm-grow-failure-retries: boot failed -> FAIL"
     fi
@@ -689,9 +691,9 @@ if in_arms k; then
       green=false
       [ "$K_OK" = 1 ] && [ -z "$K_ERR" ] && [ "$K_DIG" = "$kctrl_dig" ] && green=true
       v=FAIL
-      [ "$green" = false ] && [ "$K_FAILED" = 1 ] && [ "$K_ENSURE_FAILED" = 1 ] && [ -n "$K_ERR" ] && [ "$K_PANIC" = 0 ] \
+      [ "$K_PLANES" = 1 ] && [ "$green" = false ] && [ "$K_FAILED" = 1 ] && [ "$K_ENSURE_FAILED" = 1 ] && [ -n "$K_ERR" ] && [ "$K_PANIC" = 0 ] \
         && [ "$K_AFTER" = 1 ] && [ "$K_HEALTH" = 200 ] && v=PASS
-      verdict "HFG (k-red) kv-vmm-grow-retry-also-fails: fault=ensure:1,ensure:2 grow_failed_lines=$K_FAILED ensure_failed_lines=$K_ENSURE_FAILED completed=$K_OK error={${K_ERR:-none}} panic_or_illegal_address_lines=$K_PANIC next_request=$K_AFTER health_after=$K_HEALTH green_assertion_fired=$([ "$green" = false ] && echo true || echo false) -> $v"
+      verdict "HFG (k-red) kv-vmm-grow-retry-also-fails: fault=ensure:1,ensure:2 planes_on=$K_PLANES grow_failed_lines=$K_FAILED ensure_failed_lines=$K_ENSURE_FAILED completed=$K_OK error={${K_ERR:-none}} panic_or_illegal_address_lines=$K_PANIC next_request=$K_AFTER health_after=$K_HEALTH green_assertion_fired=$([ "$green" = false ] && echo true || echo false) -> $v"
     else
       verdict "HFG (k-red) kv-vmm-grow-retry-also-fails: boot failed -> FAIL"
     fi
