@@ -13,7 +13,8 @@ catalog advertising `capacity.concurrency 8` (darklanes
 `research/glm5-1m-b200-ship-20260906/RESULTS-CUTOVER.md` addendum).
 
 Since 2026-11-04 memory-shaped admission is a card default, not a door: armed on the full-power
-RTX PRO 6000 Blackwell Workstation Edition, where its deciding cell read V-DOOR PASS on the
+RTX PRO 6000 Blackwell Workstation Edition serving one card (a PP, TP or EP deployment of that card
+keeps the unarmed program), where its deciding cell read V-DOOR PASS on the
 booking that ships (`research/spill-b-20260919/DAY40.md`), and unarmed everywhere else, the B200
 route included. The four parts, the receipts and the rejected arms are in
 [ADMIT-BY-MEMORY-DEFAULT.md](decisions/ADMIT-BY-MEMORY-DEFAULT.md); the removed switch is in the
@@ -2166,8 +2167,9 @@ pending-prime booking with the prefill-OOM park. The final-booking cell (WP-B da
 all eight boots, V-DOOR PASS; SELECT R1 none, R2 none, R3 32768. The 5090 read V-DOOR PASS on
 days 34 and 36 on the uncapped seed booking, and its final-booking half has not read. Owner,
 2026-11-04: winners become defaults keyed to the card each receipt came from, and their switches
-go. Memory-shaped admission is now armed on the full-power Workstation Edition
-(`MemoryAdmitConfig::for_device`) with the open-output default at 32768, R3's reading, and the
+go. Memory-shaped admission is now armed on the full-power Workstation Edition when the worker
+serves that one card (`MemoryAdmitConfig::for_deployment`; the cell ran one card, so a PP, TP or EP
+deployment keeps the unarmed program) with the open-output default at 32768, R3's reading, and the
 armed charge capped at the envelope the unarmed program charges; every other card, the 5090 and the B200 route included, runs the unarmed program byte for byte.
 `MEMRA_ADMIT_OPEN_OUTPUT_TOKENS` and `MEMRA_ADMIT_DEFER_BUDGET_MS` stay as runtime parameters.
 `tools/admit-mem-burst-gate.sh` SKIPs where the boot line reads `door=OFF`, and

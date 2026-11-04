@@ -73,14 +73,17 @@ pub(crate) const CTX_SLACK: usize = 8;
 pub(crate) const RETRY_AFTER_MIN_S: u64 = 1;
 pub(crate) const RETRY_AFTER_MAX_S: u64 = 60;
 
-/// Read-once configuration. Built at worker start from the worker's device; it cannot arm
-/// mid-process.
+/// Read-once configuration. Built at worker start from the worker's device and deployment; it
+/// cannot arm mid-process.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct MemoryAdmitConfig {
-    /// The device is the full-power RTX PRO 6000 Blackwell Workstation Edition
-    /// (`memra_engine::parallel::HardwareTarget::is_pro6000_workstation`), the card whose
-    /// deciding cell read V-DOOR PASS on the booking that ships.
+    /// The worker serves one device and that device is the full-power RTX PRO 6000 Blackwell
+    /// Workstation Edition (`memra_engine::parallel::HardwareTarget::is_pro6000_workstation`),
+    /// the card whose deciding cell read V-DOOR PASS on the booking that ships. The cell ran one
+    /// card, so a PP, TP or EP deployment on that card keeps the unarmed program.
     pub armed: bool,
+    /// Why the arm is what it is (the boot line states it).
+    pub source: &'static str,
     /// `MEMRA_ADMIT_OPEN_OUTPUT_TOKENS` (default [`DEFAULT_OPEN_OUTPUT_TOKENS`]).
     pub open_output_tokens: usize,
     /// `MEMRA_ADMIT_DEFER_BUDGET_MS` (default [`DEFAULT_DEFER_BUDGET_MS`]). 0 disables the
@@ -89,16 +92,19 @@ pub(crate) struct MemoryAdmitConfig {
 }
 
 impl MemoryAdmitConfig {
-    /// Arms on the receipted card class and reads the two runtime parameters
-    /// (`MEMRA_ADMIT_OPEN_OUTPUT_TOKENS`, `MEMRA_ADMIT_DEFER_BUDGET_MS`).
-    pub(crate) fn for_device(device_name: &str) -> Self {
+    /// Arms on the receipted card class when the worker serves that one device
+    /// (`multi_device` is `worker::is_multi_device_deployment`), and reads the two runtime
+    /// parameters (`MEMRA_ADMIT_OPEN_OUTPUT_TOKENS`, `MEMRA_ADMIT_DEFER_BUDGET_MS`).
+    pub(crate) fn for_deployment(device_name: &str, multi_device: bool) -> Self {
         let open_output_tokens = std::env::var("MEMRA_ADMIT_OPEN_OUTPUT_TOKENS")
             .ok()
             .and_then(|v| v.trim().parse::<usize>().ok())
             .filter(|&n| n > 0)
             .unwrap_or(DEFAULT_OPEN_OUTPUT_TOKENS);
+        let (armed, source) = arm_for(device_name, multi_device);
         MemoryAdmitConfig {
-            armed: memra_engine::parallel::HardwareTarget::is_pro6000_workstation(device_name),
+            armed,
+            source,
             open_output_tokens,
             defer_budget_ms: defer_budget_ms_from_env(),
         }
@@ -114,15 +120,27 @@ impl MemoryAdmitConfig {
     /// from the log without shell access to the box.
     pub(crate) fn boot_line(&self) -> String {
         format!(
-            "[admit-mem] door={} open_output_tokens={} defer_budget_ms={} \
-             (the RTX PRO 6000 Blackwell Workstation Edition's default; armed, admission \
-             charges prompt+output, the reclaim flush demotes to the host tier before \
+            "[admit-mem] door={} open_output_tokens={} defer_budget_ms={} ({}; the \
+             single-card default of the RTX PRO 6000 Blackwell Workstation Edition: armed, \
+             admission charges prompt+output, the reclaim flush demotes to the host tier before \
              dropping, and a memory defer past the budget refuses 429 instead of queueing \
              past the client's deadline)",
             if self.armed { "ON" } else { "OFF" },
             self.open_output_tokens,
             self.defer_budget_ms,
+            self.source,
         )
+    }
+}
+
+/// The arm and its source: the receipted card serving alone, or why not.
+fn arm_for(device_name: &str, multi_device: bool) -> (bool, &'static str) {
+    if !memra_engine::parallel::HardwareTarget::is_pro6000_workstation(device_name) {
+        (false, "not the receipted card")
+    } else if multi_device {
+        (false, "multi-device deployment: the receipt is one card")
+    } else {
+        (true, "pro6000-ws-receipt")
     }
 }
 
@@ -748,13 +766,24 @@ mod tests {
         assert!(deferred.contains(" short_by=42 "), "{deferred}");
     }
 
-    /// Armed on the card class whose deciding cell read and on no other; the Max-Q and Server
-    /// editions share the class, not the receipt.
+    /// Armed on the card class whose deciding cell read, serving alone, and nowhere else: the
+    /// Max-Q and Server editions share the class, not the receipt, and the receipt is one card,
+    /// so a PP, TP or EP deployment on the receipted card keeps the unarmed program.
     #[test]
-    fn memory_admission_is_the_pro6000_workstation_default_only() {
+    fn memory_admission_is_the_single_card_pro6000_workstation_default_only() {
+        const PRO_WS: &str = "NVIDIA RTX PRO 6000 Blackwell Workstation Edition";
+        let on = MemoryAdmitConfig::for_deployment(PRO_WS, false);
+        assert!(on.armed);
+        assert_eq!(on.source, "pro6000-ws-receipt");
+        let multi = MemoryAdmitConfig::for_deployment(PRO_WS, true);
+        assert!(!multi.armed);
+        assert_eq!(multi.open_output_charge(), None);
         assert!(
-            MemoryAdmitConfig::for_device("NVIDIA RTX PRO 6000 Blackwell Workstation Edition")
-                .armed
+            multi
+                .boot_line()
+                .contains("multi-device deployment: the receipt is one card"),
+            "{}",
+            multi.boot_line()
         );
         for name in [
             "NVIDIA GeForce RTX 5090",
@@ -763,9 +792,12 @@ mod tests {
             "NVIDIA B200",
             "",
         ] {
-            let off = MemoryAdmitConfig::for_device(name);
-            assert!(!off.armed, "{name}");
-            assert_eq!(off.open_output_charge(), None, "{name}");
+            for multi_device in [false, true] {
+                let off = MemoryAdmitConfig::for_deployment(name, multi_device);
+                assert!(!off.armed, "{name}");
+                assert_eq!(off.open_output_charge(), None, "{name}");
+                assert_eq!(off.source, "not the receipted card", "{name}");
+            }
         }
     }
 
@@ -775,19 +807,23 @@ mod tests {
     fn boot_line_states_the_arm_and_its_knobs() {
         let cfg = MemoryAdmitConfig {
             armed: true,
+            source: "pro6000-ws-receipt",
             open_output_tokens: 8_192,
             defer_budget_ms: 8_000,
         };
         let s = cfg.boot_line();
-        assert!(s.contains("door=ON"), "{s}");
-        assert!(s.contains("open_output_tokens=8192"), "{s}");
-        assert!(s.contains("defer_budget_ms=8000"), "{s}");
+        assert!(
+            s.starts_with("[admit-mem] door=ON open_output_tokens=8192 defer_budget_ms=8000 "),
+            "{s}"
+        );
+        assert!(s.contains("(pro6000-ws-receipt; "), "{s}");
         assert_eq!(cfg.open_output_charge(), Some(8_192));
         let off = MemoryAdmitConfig {
             armed: false,
+            source: "not the receipted card",
             ..cfg
         };
-        assert!(off.boot_line().contains("door=OFF"));
+        assert!(off.boot_line().starts_with("[admit-mem] door=OFF "));
         // OFF hands the caller nothing, so request_ctx_cap keeps today's MEMRA_CTX arm.
         assert_eq!(off.open_output_charge(), None);
     }
