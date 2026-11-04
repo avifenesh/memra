@@ -39,8 +39,11 @@
 # instrument; same binary, same model, cross-boot determinism as in the other cache gates).
 #
 # usage: kv-host-spill-failure-gate.sh <model.gguf> <server_bin> <evidence_dir>
-# env:   MEMRA_HOSTGATE_CACHE_MB (default 1024)  device prefix budget; must hold ONE seed
-#                                                entry but not two, or no demote ever fires
+# env:   MEMRA_HOSTGATE_CACHE_MB (default: sized) device prefix budget; must hold ONE seed
+#                                                entry but not two, or no demote ever fires.
+#                                                Unset, a sizing boot caches P_A once and the
+#                                                budget is 1.5x that entry, as in
+#                                                kv-host-spill-identity-gate.sh
 #        MEMRA_HOSTGATE_HOST_MB  (default 8192)  host budget for the fault cells
 #        MEMRA_KV_HOST_TENANT_PCT (server default 50) selects the pool-full refusal arm asserted
 # Boots its own servers one cell at a time (flock ${MEMRA_GPU_LOCK:-/tmp/memra-5090.lock}).
@@ -82,7 +85,7 @@ LOCK_PROOF=$(python3 "$HERE/tier-lock-proof.py" --fd "$LOCK_FD" --lock "$GPU_LOC
 mkdir -p "$EV"
 printf '%s\n' "$LOCK_PROOF" > "$EV/LOCK.json"
 SERVER_PID=""
-CACHE_MB=${MEMRA_HOSTGATE_CACHE_MB:-1024}
+CACHE_MB=${MEMRA_HOSTGATE_CACHE_MB:-}
 HOST_MB=${MEMRA_HOSTGATE_HOST_MB:-8192}
 # The effective per-tenant share cap, mirroring the server's parse (integer 1..=100, else 50 loudly).
 TENANT_PCT=${MEMRA_KV_HOST_TENANT_PCT:-50}
@@ -203,6 +206,24 @@ run_cell() { # $1 cell-name: r1 seeds, r2 forces the eviction/demote, r3 probes 
     req "$P_A$EXT" "$EV/$1-r3.json"
     scrape_metrics "$EV/$1-metrics.json"
 }
+
+if [ -z "$CACHE_MB" ]; then
+    # One boot with room for both entries and no host tier: P_A's entry size sets a budget that
+    # holds one entry and not two (the capture cut and per-token state differ by model and route).
+    CACHE_MB=4096
+    echo "== sizing boot (MEMRA_PREFIX_CACHE_MB=$CACHE_MB) =="
+    boot "" "$EV/size-server.log" || exit 1
+    req "$P_A" "$EV/size-r1.json"
+    stop
+    ENTRY_MB=$(grep -a -m1 -o -E '\[prefix-cache\] insert \([^)]*\): [0-9]+ tokens, [0-9.]+MB' "$EV/size-server.log" \
+        | grep -o -E '[0-9.]+MB$' | tr -d 'MB')
+    if [ -z "$ENTRY_MB" ]; then
+        echo "  FAIL: the sizing boot cached no entry for P_A"
+        exit 1
+    fi
+    CACHE_MB=$(python3 -c 'import math, sys; print(math.ceil(float(sys.argv[1]) * 1.5))' "$ENTRY_MB")
+    echo "  sized: one entry is ${ENTRY_MB}MB, so MEMRA_PREFIX_CACHE_MB=$CACHE_MB holds one and not two"
+fi
 
 echo "== cell 1: POOL-FULL (MEMRA_KV_HOST_MB=1, no real entry fits) =="
 boot "MEMRA_KV_HOST_MB=1" "$EV/poolfull-server.log"
