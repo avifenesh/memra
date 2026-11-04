@@ -65,6 +65,8 @@ first delta of `gap2-stream-20260807T193310Z.sse` is reasoning).
   of E4B unopened-thought lengths on a real prompt set when the RTX 5090 serve cells run.
 - A stream that ends in a worker error or a deadline inside the hold-back sends the error
   without the held bytes, as it already does for a held partial tag or stop-string tail.
+- serve-smoke's gemma4 arm has check (e) for the stream half: the streamed chat reassembles
+  to the non-stream message, with no tag in any delta.
 - serve-smoke's gemma4 check (c) needs the model to think: at `reasoning_effort: low` E4B
   answered `ok` with no thought (`probe/probe-chat-low.json`, 2 completion tokens), and no
   parser rule can change that.
