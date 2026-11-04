@@ -15,30 +15,17 @@ use std::sync::Arc;
 
 type Res<T> = Result<T, Box<dyn std::error::Error>>;
 
-fn parse_requested(value: Option<&str>) -> Result<bool, &'static str> {
-    match value {
-        None | Some("0") => Ok(false),
-        Some("1") => Ok(true),
-        _ => Err("expected 0 or 1"),
-    }
+/// The device sampler is the default on the build its receipt came from, sm_100a (the 2x B200
+/// pair: five served TP-2 p32k pairs, 81.317 -> 91.250 wall tok/s, greedy twins exact;
+/// `research/glm5-tp2-gpu-sampler-20260908/RESULTS.md`), and has no runtime door. Every other
+/// build keeps the host sampler. Per request the route and refusal rules of
+/// [`Glm5TpSampleConfig::for_request`] still apply.
+fn default_on_for_build(arch: &str) -> bool {
+    arch == "100a"
 }
 
-pub fn requested() -> bool {
-    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| {
-        let value = std::env::var_os("MEMRA_GLM5_TP_DEVICE_SAMPLE");
-        let parsed = match &value {
-            None => parse_requested(None),
-            Some(v) => v
-                .to_str()
-                .ok_or("non-Unicode flag value")
-                .and_then(|v| parse_requested(Some(v))),
-        };
-        parsed.unwrap_or_else(|reason| {
-            eprintln!("[glm5-tp-device-sample] refused: {reason}; host fallback");
-            false
-        })
-    })
+pub fn enabled() -> bool {
+    default_on_for_build(env!("MEMRA_BUILT_CUDA_ARCH"))
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -166,10 +153,10 @@ mod tests {
 
     #[test]
     fn glm5_tp_sample_args_and_refusals() {
-        assert_eq!(parse_requested(None), Ok(false));
-        assert_eq!(parse_requested(Some("0")), Ok(false));
-        assert_eq!(parse_requested(Some("1")), Ok(true));
-        assert!(parse_requested(Some("device")).is_err());
+        assert!(default_on_for_build("100a"));
+        for arch in ["120a", "90a", "89"] {
+            assert!(!default_on_for_build(arch));
+        }
         let cfg = SamplerConfig {
             temperature: 0.7,
             top_p: 0.95,
