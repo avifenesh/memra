@@ -28449,8 +28449,8 @@ pub fn run(
     // ON-DEMAND KV PLANES (WP-B day 37, research/spill-b-20260919/DAY37.md): the default on the
     // card class whose deciding cell read PROMOTE-ELIGIBLE (the RTX PRO 6000 Blackwell
     // Workstation Edition, docs/decisions/KV-VMM-SERVING-DEFAULT.md), pooled planes elsewhere.
-    // Resolved once here; a bad fault spec, or that card without VMM support, refuses the boot
-    // instead of serving pooled under an ON line.
+    // Resolved once here; a bad fault spec refuses the boot. That card without VMM support keeps
+    // pooled planes, the program of every other card, and its boot line quotes the refusal.
     let kv_vmm_cfg = match crate::kv_vmm::KvVmmConfig::for_device(&device_name) {
         Ok(cfg) => cfg,
         Err(why) => {
@@ -28458,17 +28458,10 @@ pub fn run(
             return;
         }
     };
-    let kv_vmm_granularity = if kv_vmm_cfg.armed {
-        match memra_engine::cache::vmm_granularity_for(&engine.stream()) {
-            Ok(g) => Some(g),
-            Err(err) => {
-                let _ = ready_tx.send(Err(format!("on-demand KV planes: {err}")));
-                return;
-            }
-        }
-    } else {
-        None
-    };
+    let vmm_query = kv_vmm_cfg.armed.then(|| {
+        memra_engine::cache::vmm_granularity_for(&engine.stream()).map_err(|err| err.to_string())
+    });
+    let (kv_vmm_cfg, kv_vmm_granularity) = kv_vmm_cfg.with_granularity(vmm_query);
     if kv_vmm_cfg.armed {
         memra_engine::cache::vmm_set_grow_placement(kv_vmm_cfg.placement);
         memra_engine::cache::vmm_set_faults(kv_vmm_cfg.faults.clone());
