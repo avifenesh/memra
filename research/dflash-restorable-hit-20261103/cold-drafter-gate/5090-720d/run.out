@@ -1,0 +1,16 @@
+gpulock: 5090 leased as claude-code-20261105T011033-3731290 for 45m
+waitfor: MET after 0m31s
+GATE_RUN_DONE /home/avifenesh/.cache/memra-1031-5090/gate-720d-b/arm.jsonl
+waitfor: MET after 0m15s
+waitfor: MET after 0m25s
+GATE_RUN_DONE /home/avifenesh/.cache/memra-1031-5090/gate-720d-b/ref.jsonl
+waitfor: MET after 0m15s
+a-greedy: identical=True arm_len=428 ref_len=428
+a-sampled: identical=True arm_len=518 ref_len=518
+b-greedy: identical=True arm_len=436 ref_len=436
+b-sampled: identical=True arm_len=469 ref_len=469
+GATE PASS
+cache-preferred=4
+cold-drafter restore=4
+DSPARK restore=0
+dspark-boundary=0
