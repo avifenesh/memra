@@ -1,0 +1,16 @@
+ffn_gate launch (ID 1 of launches 2..4), boost clocks; stall cycles per issued instruction
+long_scoreboard          m8  22.67  m16  14.33
+wait                     m8   1.86  m16   1.92
+short_scoreboard         m8   1.08  m16   1.22
+selected                 m8   1.00  m16   1.00
+not_selected             m8   0.33  m16   0.34
+branch_resolving         m8   0.21  m16   0.21
+math_pipe_throttle       m8   0.19  m16   0.21
+dispatch_stall           m8   0.10  m16   0.12
+no_instruction           m8   0.06  m16   0.12
+lg_throttle              m8   0.06  m16   0.05
+mio_throttle             m8   0.06  m16   0.01
+
+stall samples by SASS opcode (second profiled kernel in the source page)
+m=8 samples=35158: SHF 42.5%, IDP 35.7%, STS 9.3%, FFMA 4.0%, FADD 1.2%, LDG 1.1%
+m=16 samples=56729: IDP 51.4%, SHF 25.9%, FFMA 8.1%, STS 5.2%, LDG 1.9%, FADD 1.6%
