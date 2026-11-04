@@ -30809,16 +30809,13 @@ impl Engine {
             *part_guard =
                 Some(self.fa_part_alloc(o_len.max(2 * co), ml_len.max(2 * cm), co, cm)?);
         }
+        // No partial-buffer memsets here: every (z, head, split < n_splits_max) block of the
+        // seqs kernel writes all of its partO/partM/partL slots (empty splits write acc=0,
+        // m=-inf, l=0), and the seqs combine reads only s < n_splits_z. The zero-fill was a
+        // dead 3 x B x n_head x n_splits_max x head_dim fp32 stream per layer (1.2 GB per
+        // 16-row tick at depth 12288). This path is not in the TP token graph, whose
+        // retargeting keys on the three-memset signature of the single-sequence path.
         let pg = part_guard.as_mut().unwrap();
-        self.gpu
-            .stream()
-            .memset_zeros(&mut pg.0.slice_mut(0..o_len))?;
-        self.gpu
-            .stream()
-            .memset_zeros(&mut pg.1.slice_mut(0..ml_len))?;
-        self.gpu
-            .stream()
-            .memset_zeros(&mut pg.2.slice_mut(0..ml_len))?;
         let (part_o, part_m, part_l) = (&mut pg.0, &mut pg.1, &mut pg.2);
         let (hd, nh, nhkv) = (head_dim as i32, n_head as i32, n_head_kv as i32);
         let (nspm, spk) = (n_splits_max as i32, split_keys as i32);
