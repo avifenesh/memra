@@ -16602,11 +16602,27 @@ fn batch_oom_reclaim(
     )
 }
 
-/// MEMRA_ADMIT_W_RELEASE (default unset, WP-B day 45, OWED O4): `1` releases each session's prefill
-/// workspace from both admission books when its prime completes. Unset reads nothing.
-fn admit_w_release_on() -> bool {
-    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| std::env::var("MEMRA_ADMIT_W_RELEASE").as_deref() == Ok("1"))
+/// THE OUTSTANDING-ONLY WORKSPACE BOOKING (WP-B day 45, OWED O4): each session's prefill
+/// workspace leaves both admission books (the predictive shadow book and the real book) when its
+/// prime completes, instead of staying booked for the session's life. Only the books move; no
+/// token path reads them.
+///
+/// The default on the card its deciding cells ran on (2026-11-04,
+/// `docs/decisions/ADMIT-W-RELEASE-DEFAULT.md`): the full-power RTX PRO 6000 Blackwell
+/// Workstation Edition, where `research/spill-b-20260919/DAY45.md` 2.2 read every clause PASS
+/// (both books exact at idle, one release or same-tick retire receipt per booked session, equal
+/// digests, no OOM or 503) and `DAY46.md` 2.2 read the enforcing predictive door admitting 11 of
+/// 32 second-wave requests with the release against 1 of 32 without it, P1 to P5 PASS. Keyed by
+/// device name as `park_compact_for_device` keys its Workstation receipt; no other card has a
+/// release cell (the RTX 5090 class's DAY45 and DAY46 enforce-wrel halves never ran), so they
+/// keep the whole-life booking. No environment variable.
+fn w_release_for_device(device_name: &str) -> bool {
+    use memra_engine::parallel::HardwareTarget;
+    matches!(
+        HardwareTarget::from_device_name(device_name),
+        Ok(HardwareTarget::RtxPro6000Blackwell)
+    ) && device_name.contains("Workstation")
+        && !device_name.contains("Max-Q")
 }
 
 /// The prime-completion release (DAY45 1.1): every active session with `prefill_done` and its
@@ -25594,8 +25610,9 @@ struct Session {
     /// D2 gap G5: this session's SHADOW kv_hat (P-tenant-p95 book). 0 whenever
     /// `MEMRA_ADMIT_PREDICT_SHADOW` is off.
     shadow_kv_hat: u64,
-    /// WP-B day 45 (O4, `MEMRA_ADMIT_W_RELEASE`): the prefill-workspace term both books carry for
-    /// this session, still booked; 0 once released at prime completion (or never booked).
+    /// WP-B day 45 (O4, `w_release_for_device`): the prefill-workspace term both books carry for
+    /// this session, still booked; 0 once released at prime completion (or never booked, on a
+    /// card without the release).
     booked_w_bytes: u64,
     /// The predicted TOTAL completion tokens behind `shadow_kv_hat`; with
     /// `generated.len()` this gives the per-session remainder the would-reject
@@ -26290,6 +26307,8 @@ pub fn run(
         "[worker] Engine ready (device={device}, MEMRA_FAST={})",
         fast
     );
+    // WP-B day 45: the outstanding-only workspace booking, keyed on this worker's card.
+    let w_release = w_release_for_device(&engine.ctx().name().unwrap_or_default());
 
     let (constraint_result_tx, constraint_result_rx) =
         std::sync::mpsc::channel::<crate::constrained::ConstraintCompileResult>();
@@ -28115,10 +28134,10 @@ pub fn run(
                 }
             }
         }
-        // WP-B day 45 (O4, `MEMRA_ADMIT_W_RELEASE`): the prime-completion seam, one site, after
+        // WP-B day 45 (O4, `w_release_for_device`): the prime-completion seam, one site, after
         // the command drain and before admission. A session whose prime completed releases its
         // prefill workspace from both books, once.
-        if admit_w_release_on() {
+        if w_release {
             release_primed_workspace(&mut active, &mut admission_book);
         }
         resolve_constraint_compiles(&constraint_result_rx, &mut pending_constraints, &mut queue);
@@ -30223,7 +30242,7 @@ pub fn run(
                         );
                     }
                     // WP-B day 45 (O4): the workspace term both books carry for this session.
-                    if admit_w_release_on() {
+                    if w_release {
                         let w_bytes = crate::admit_predict::RequestCharge::from_physical_cost(
                             cost as u64,
                             context_cap_bytes as u64,
@@ -63076,26 +63095,42 @@ mod tests {
         );
     }
 
-    /// WP-B day 45 (DAY45 1.3): the W-release door is read at the admit seam and the one release
-    /// site; the release is exact and happens once.
+    /// WP-B day 45 (DAY45 1.3): the W release is keyed on the receipted card once per worker and
+    /// read at the admit seam and the one release site; the release is exact and happens once.
     #[test]
-    fn w_release_door_reaches_the_admit_seam_and_one_site() {
+    fn w_release_reaches_the_admit_seam_and_one_site() {
+        use super::w_release_for_device as on;
+        assert!(on("NVIDIA RTX PRO 6000 Blackwell Workstation Edition"));
+        for card in [
+            "NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition",
+            "NVIDIA RTX PRO 6000 Blackwell Server Edition",
+            "NVIDIA GeForce RTX 5090",
+            "NVIDIA GB10",
+            "NVIDIA B200",
+            "",
+        ] {
+            assert!(!on(card), "{card:?} has no W-release receipt");
+        }
         let squash = |src: &str| -> String { src.split_whitespace().collect::<Vec<_>>().join(" ") };
         let worker = squash(include_str!("worker.rs"));
         let live = &worker[..worker.find("mod tests").expect("the test module exists")];
-        let call = format!("admit_w_release_on{}", "()");
         assert_eq!(
-            live.matches(call.as_str()).count(),
-            3,
-            "definition, admit seam, release site"
+            live.matches("w_release_for_device(").count(),
+            2,
+            "definition and the one per-worker read"
+        );
+        assert_eq!(
+            live.matches("if w_release {").count(),
+            2,
+            "admit seam and release site"
         );
         assert!(live.contains(
-            "if admit_w_release_on() { release_primed_workspace(&mut active, &mut admission_book); }"
+            "if w_release { release_primed_workspace(&mut active, &mut admission_book); }"
         ));
         assert_eq!(live.matches("release_primed_workspace(&mut").count(), 1);
         assert!(live.contains("if s.booked_w_bytes == 0 || !s.prefill_done { continue; }"));
         assert!(live.contains("s.booked_w_bytes = 0;"));
-        // Addendum B: the retire receipt reads the per-session field, which only the door sets.
+        // Addendum B: the retire receipt reads the per-session field, which only the release sets.
         assert!(live.contains("if s.booked_w_bytes > 0 { eprintln!( \"[admit-book] w-retire-unreleased id={} bytes={} reason={}\","));
         // Never more than a book carries.
         assert_eq!(super::release_split(2_000, 5_000, 0), (2_000, 0));
