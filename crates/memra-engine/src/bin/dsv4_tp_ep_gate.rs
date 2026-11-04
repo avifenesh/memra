@@ -2,9 +2,10 @@
 //!
 //! This gate intentionally exercises only the currently implemented shape:
 //! one-token prime followed by teacher-forced single-token continuation. It
-//! arms TP/EP before loading, refuses DSpark/MTP, and requires both replicated
-//! ranks to execute every trunk layer. It is a correctness/engagement gate,
-//! not a throughput benchmark and has no PP comparison arm.
+//! loads the TP/EP placement it is given, refuses DSpark/MTP, and requires both
+//! ranks to execute every trunk layer (TP/EP puts every layer on both cards; only
+//! `tp_ep_replicated` also replicates attention). It is a correctness/engagement
+//! gate, not a throughput benchmark and has no PP comparison arm.
 //!
 //! Placement is required (S06:F0): `--placement=tp_ep` is the served placement (attention
 //! TP2) and runs first; `--placement=tp_ep_replicated` keeps attention replicated.

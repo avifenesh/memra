@@ -1210,7 +1210,7 @@ variable changes numeric class.
 
 | Gate binary | Placement | Why |
 | --- | --- | --- |
-| `dsv4-ar-phase-gate`, `dsv4_compose_cadence_dense_gate`, `dsv4_dense_exact_tail_gate`, `dsv4_dense_fast_gate`, `dsv4_hc_dot_split_gate`, `dsv4_kv_split_gate`, `dsv4_launch_boundary_gate`, `dsv4_tp_replay_long_gate` | `tp_ep` | They qualify the served program. |
+| `dsv4-ar-phase-gate`, `dsv4_compose_cadence_dense_gate`, `dsv4_dense_exact_tail_gate`, `dsv4_dense_fast_gate`, `dsv4_hc_dot_split_gate`, `dsv4_kv_split_gate`, `dsv4_launch_boundary_gate`, `dsv4_tp_replay_long_gate` | `tp_ep` | They run the served placement. `dsv4-ar-phase-gate`, `dsv4_launch_boundary_gate` and `dsv4_dense_exact_tail_gate` are gate-only instruments or experiments; the others check one mechanism on it. None of them alone qualifies the served program. |
 | `dsv4_park_boundary_gate`, `dsv4-dense-arm-ab` | `tp_ep` | They guard or measure the served shape (the spec driver's park boundary, served-width prefill); their receipts before memra #710 are PP-2 cells. |
 | `dsv4-gpu-dspark-gate` | `--placement=tp_ep\|tp_ep_replicated\|pp` | Spec == plain; `tp_ep` first, `pp` is the PP-2 cell. |
 | `dsv4_rows_gate` | `--placement=tp_ep\|pp` | TP/EP B-row groups need attention TP2, so there is no replicated cell. |
