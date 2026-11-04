@@ -2905,12 +2905,12 @@ impl HybridModel {
 
             let (y, mix) = crate::hyper::pre(e, topology, &hyper.attn, &x, 1, n_embd)?;
             let mut h = e.uninit(n_embd)?;
-            // MEMRA_GLM5_Q8_FUSE_ATTN (lane/glm5-attn-norm-zq8-20260904, default OFF): on a plain
-            // KDA layer the attention-input norm emits its q8_1 view too, and the fused
-            // six-projection launcher reads it instead of quantizing `h` again. Byte-identical
-            // (rms_norm_zq8_f32 = rms_norm then quantize_q8_1; the launcher's quantize is the
-            // same kernel). Every other mixer keeps the plain norm.
-            let attn_q8 = if crate::glm5_q8_fuse_attn_on()
+            // The attention-norm q8_1 fuse (lane/glm5-attn-norm-zq8-20260904, the sm_100a
+            // default): on a plain KDA layer the attention-input norm emits its q8_1 view too, and
+            // the fused six-projection launcher reads it instead of quantizing `h` again.
+            // Byte-identical (rms_norm_zq8_f32 = rms_norm then quantize_q8_1; the launcher's
+            // quantize is the same kernel). Every other mixer keeps the plain norm.
+            let attn_q8 = if crate::glm5_q8_fuse_attn_default()
                 && matches!(&layer.mixer, Mixer::Kda(la) if la.tp.is_none())
             {
                 let pair =
@@ -3313,7 +3313,7 @@ impl HybridModel {
         n_embd: usize,
         eps: f32,
     ) -> Result<Option<Q8Pair>, Box<dyn std::error::Error>> {
-        let want_q8 = crate::glm5_q8_fuse_attn_on()
+        let want_q8 = crate::glm5_q8_fuse_attn_default()
             && matches!(&layer.mixer, Mixer::Kda(la) if la.tp.is_none());
         crate::hyper::pre_t1_ws(e, topology, &hyper.attn, x, ws, n_embd)?;
         let attn_q8 = if want_q8 {

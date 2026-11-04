@@ -945,7 +945,7 @@ pub fn kda_conv3_dispatches() -> u64 {
 
 /// A pre-quantized q8_1 view of the mixer input (`(aq, ad)` from `rms_norm_zq8_f32`), or
 /// `None` for the launcher to quantize itself. Threaded from the walk to the fused
-/// six-projection launcher (`MEMRA_GLM5_Q8_FUSE_ATTN`, lane/glm5-attn-norm-zq8-20260904).
+/// six-projection launcher (the attention-norm q8_1 fuse, lane/glm5-attn-norm-zq8-20260904).
 pub type KdaPreQ8<'a> = Option<(&'a CudaSlice<i8>, &'a CudaSlice<f32>)>;
 
 /// `MEMRA_KDA_ONORM_ZQ8` (lane/kda-onorm-zq8-20260905; default ON on sm_100a builds through the
@@ -970,7 +970,7 @@ pub static KDA_ONORM_ZQ8_DISPATCHES: std::sync::atomic::AtomicU64 =
 pub type KdaOnormQ8 = Option<(CudaSlice<i8>, CudaSlice<f32>)>;
 
 /// [`kda_decode_cached`] with the mixer input's q8_1 view already emitted by the caller's norm
-/// (`MEMRA_GLM5_Q8_FUSE_ATTN`): identical launches minus the fused launcher's own quantize.
+/// (the attention-norm q8_1 fuse): identical launches minus the fused launcher's own quantize.
 pub fn kda_decode_cached_q8(
     e: &Engine,
     la: &KdaAttnLayer,
@@ -1631,7 +1631,7 @@ impl Engine {
     }
 
     /// [`Engine::kda_proj_fused6`] with an optional pre-quantized activation for the W8 arm
-    /// (`MEMRA_GLM5_Q8_FUSE_ATTN`); every other arm ignores it (they quantize per projection or
+    /// (the attention-norm q8_1 fuse); every other arm ignores it (they quantize per projection or
     /// run bf16) and stays the program it was.
     pub fn kda_proj_fused6_pre(
         &self,
@@ -1732,7 +1732,7 @@ impl Engine {
                 bytes(&la.b_proj),
             ];
             // ONE activation quantize for all six ranges — the six-launch path pays this per
-            // projection. When the walk already quantized `x` (`MEMRA_GLM5_Q8_FUSE_ATTN`:
+            // projection. When the walk already quantized `x` (the attention-norm q8_1 fuse:
             // rms_norm_zq8_f32's pair IS quantize_q8_1(x) byte for byte), consume that pair; the
             // e4m3 arm reads the same q8_1 activation as the W8 arm, so nothing changes but the
             // launch count (34 per token on GLM-5.3-Flash, in-graph). Gate:
