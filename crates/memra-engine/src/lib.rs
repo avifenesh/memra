@@ -23943,6 +23943,20 @@ impl Engine {
             Some(v) if !rp || v.contains("rp") => v,
             _ => self.batched_variant(m, in_f, out_f, qtype, mcols, rp),
         };
+        // rpscx prototype (design B2): exact-width kernels, NVFP4 split-plane with the smem
+        // scale plane only, and only when the call fills the tier (m == mcols).
+        let variant = if variant.starts_with("rpscx")
+            && !(qtype == QT_NVFP4
+                && rp
+                && m == mcols
+                && (mcols == 8 || mcols == 16)
+                && in_f.is_multiple_of(256)
+                && in_f / 64 <= 272)
+        {
+            self.batched_variant(m, in_f, out_f, qtype, mcols, rp)
+        } else {
+            variant
+        };
         // EXACT TENSOR-CORE tier (batch-spec 2026-11-03, MEMRA_MMVQ_TC=1 A/B seam): int8
         // mma.sync computes the per-half integer dot products, the float epilogue replays the
         // dp4a chain -> bit-identical (kernel `nvfp4_mmvq_tc`).
@@ -24048,8 +24062,8 @@ impl Engine {
         let variant = if mcols == 16 {
             if !rp {
                 "base"
-            } else if variant == "rpsc" {
-                "rpsc"
+            } else if variant == "rpsc" || variant.starts_with("rpscx") {
+                variant
             } else {
                 "rp"
             }
