@@ -281,6 +281,34 @@ above).
 everywhere since 2026-09-04, still refuses capture on a naked command there: an open owner call
 (below).
 
+## MLA decode on sm_100a: the coalesced arm, and the B200 split on TP head shards only
+
+**Chosen:** on sm_100a builds the MLA absorb and decompress launchers take the warp-per-row
+coalesced twins whenever a split is in force (`mla_coalesce_on`, the named class
+`mla_warp_row_reduce`), over the generic decode split on an unsharded layer. A glm5 TP head shard
+refuses the generic split, and there the B200 decode arm's table split, scaled by the head ratio,
+is the split, for absorb, decompress and gathered attention (`mla_b200_decode_arm_on(scope)`).
+`MEMRA_MLA_COALESCE` and `MEMRA_B200_MLA_DECODE_ARM` are deleted.
+
+**Rejected:** the B200 arm on unsharded layers, where the generic split beat it; keeping either
+door default OFF, which left the TP-2 posture's MLA layers unsplit and uncoalesced on a naked
+command; and the coalesced twins at split 1, which lose.
+
+**Measurement that settled it:** 2x B200 pair, darklanes `research/glm5-b200-20260902/LANE.md`:
+coalesce round 2 (two interleaved rounds, ranges clear, every tape `9437b599f6b9d2a9`) read the
+generic split alone at 59.83 tok/s and coalesce on top of it at 60.93 (+1.84%), coalesce alone at
+51.07 (-10.82%); `mlasplit` (three interleaved rounds, same tape) read the generic split at
+58.32 against the B200 arm's 58.16, below on every round. On the TP-2 walk (darklanes
+`research/glm5-b200-mint-20260904/LANE.md`, tpwalk6 v2) the posture with the arm and coalesce
+read 91.55 / 91.33 against 84.20 without them (one rep).
+
+**Owed:** an ON/OFF argmax gate for the coalesced class, which its row named; the served tapes are
+the only correctness evidence. On an sm_100a build `tests/mla_gpu_forward.rs` now reaches the
+coalesced class through the Engine dispatch at its CPU-oracle tolerance.
+
+**Scope:** sm_100a builds only; other builds keep the thread-per-row kernels and the generic
+split, and TP head shards there stay unsplit.
+
 ## Open calls
 
 ### The plain decode graph off sm_100a

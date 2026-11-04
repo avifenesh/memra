@@ -1,4 +1,5 @@
-//! Gate/bench for `MEMRA_B200_MLA_DECODE_ARM`, the t<=8 head-parallel MLA/DSA decode arm
+//! Gate/bench for the B200 MLA decode arm (`MEMRA_B200_MLA_DECODE_ARM` until 2026-11-04; since then
+//! the sm_100a default on glm5 TP head shards, `mla_ffi::mla_b200_decode_arm_on`), the t<=8 arm
 //! (lane/b200-mla-decode-20260902, then lane/b200-mla-depth-20260902 for the depth axis;
 //! research/b200-mla-decode-20260902/LANE.md and research/b200-mla-depth-20260902/LANE.md).
 //!

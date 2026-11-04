@@ -10160,8 +10160,19 @@ impl HybridModel {
         let q_lat = self.mla_post_absorb(e, mla, q_nope, t, il)?;
         let mut o_lat = e.uninit(t * nh * r)?;
         match &gathered {
-            Some((idx, slots)) => e.mla_attn_gathered(
-                &q_lat, q_pe, latent, idx, &mut o_lat, nh, r, dr, t, *slots, g.scale,
+            Some((idx, slots)) => e.mla_attn_gathered_scoped(
+                &q_lat,
+                q_pe,
+                latent,
+                idx,
+                &mut o_lat,
+                nh,
+                r,
+                dr,
+                t,
+                *slots,
+                g.scale,
+                crate::mla_ffi::MlaSplitScope::of_layer(mla.tp_shard),
             )?,
             None => e.mla_attn_absorbed(
                 &q_lat, q_pe, latent, &mut o_lat, nh, r, dr, t, t_kv, g.scale,
@@ -10184,8 +10195,9 @@ impl HybridModel {
         let (nh, dn, r) = (g.n_head, g.d_nope, g.kv_rank);
         let wk_b = Self::mla_split_operand(&mla.wk_b, "attn_k_b", il);
         let mut q_lat = e.uninit(t * nh * r)?;
-        // A glm5 TP head shard keeps the shipped absorb/decompress partition: the default-ON
-        // MEMRA_MLA_DECODE_SPLIT has no TP composition gate (mla_ffi::MlaSplitScope).
+        // A glm5 TP head shard never takes the default-ON MEMRA_MLA_DECODE_SPLIT, which has no TP
+        // composition gate; on sm_100a it takes the B200 arm's heads-scaled split instead
+        // (mla_ffi::MlaSplitScope, `mla_b200_decode_arm_on`).
         let scope = crate::mla_ffi::MlaSplitScope::of_layer(mla.tp_shard);
         // MEMRA_MLA_ABSORB_BF16: the BF16 copy of the plane on the served `_wp` partition;
         // falls through to the f32 dispatch when the door, the copy or the partition is absent.
