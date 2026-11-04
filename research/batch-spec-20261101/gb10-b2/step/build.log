@@ -1,0 +1,14 @@
+warning: memra-engine@0.138.0: nvcc from $CUDA_HOME: /usr/local/cuda/bin/nvcc
+warning: memra-engine@0.138.0: MEMRA_CUDA_ARCH auto-detected 121a (compute_cap 12.1); set MEMRA_CUDA_ARCH to override
+warning: function `chain` is never used
+  --> crates/memra-engine/src/cpu_probe.rs:51:4
+   |
+51 | fn chain(steps: u64) -> u64 {
+   |    ^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: `memra-engine` (lib) generated 1 warning
+   Compiling memra-engine v0.138.0 (/home/avifenesh/projects/memra-batchspec/crates/memra-engine)
+    Finished `release` profile [optimized] target(s) in 1.71s
+BUILD=0

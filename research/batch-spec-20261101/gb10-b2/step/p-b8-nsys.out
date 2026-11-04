@@ -1,0 +1,19 @@
+WARNING: CPU IP/backtrace sampling not supported, disabling.
+Try the 'nsys status --environment' command to learn more.
+
+WARNING: CPU context switch tracing not supported, disabling.
+Try the 'nsys status --environment' command to learn more.
+
+[tensor-contract] bound 866 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+loaded qwen35 (64 layers); steps=8 reps=1 batches=[1, 2, 4, 8] primary_dev=0
+[fa-pool] grow #0 dev=0 o_len 0 -> 9486336 ml_len 0 -> 37056 (retired kept, zero=false)
+[fa-pool] grow #1 dev=0 o_len 9486336 -> 18972672 ml_len 37056 -> 74112 (retired kept, zero=false)
+Capture range started in the application.
+Capture range ended in the application.
+Generating '/tmp/nsys-report-5d30.qdstrm'
+[1/1] [0%                          ] p-b8.nsys-repProcessing events...
+[1/1] [0%                          ] p-b8.nsys-rep[1/1] [=16%                        ] p-b8.nsys-rep[1/1] [=====32%                    ] p-b8.nsys-rep[1/1] [==========47%               ] p-b8.nsys-rep[1/1] [==============63%           ] p-b8.nsys-rep[1/1] [==================78%       ] p-b8.nsys-rep[1/1] [======================90%   ] p-b8.nsys-rep[1/1] [========================100%] p-b8.nsys-rep[1/1] [========================100%] p-b8.nsys-rep
+CHUNKSWEEP seqs=8 chunk=8: aggregate 72.6 tok/s (110.25 ms/tick, median of 1)
+TOKFP seqs=8 chunk=8 [8a356281eb9d851f 2c0bd7afbada32bf 14db6391280fe025 19ec2c751c8b4072 98704fd03906b885 14db6391280fe025 f3d99d64a4d26396 0938e382a059f5d8]
+Generated:
+	/home/avifenesh/memra-run/step-b2step/p-b8.nsys-rep

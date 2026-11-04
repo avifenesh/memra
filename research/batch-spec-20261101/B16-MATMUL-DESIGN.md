@@ -97,3 +97,51 @@ Risk: the compiler may spill or reorder the groups. The SASS must show the group
 ## Gates and adoption
 
 kernel-check bit-identity at m=9..16; bench hash; TOKFP equal; decode tick at 16 rows depth 2048 and 12288, 3+3 in both orders; then the served cell c8/c16. Adopt per box at boot if it wins (the wave probe already times the 16-row arm), with a 5090 measurement before any 5090 default.
+
+## Prototype result (2026-11-04): adopted in part
+
+`research/b16-rpscx-proto` (584a8522de) built `nvfp4_mmvq_batched_rp_scx<MCOLS, WROWS, CG>` and forced it with `MEMRA_BVAR`. Every variant hashes identically to rpsc on the bench (31 tensors, blk.0-3), and kernel-check `RP BATCHED m=8/16` stays at bit-bad=0 (`gb10-b2/`).
+
+Bench pass, GB10, 3 rounds (ms; `gb10-b2/sweep.txt`, `round2/sweep.txt`):
+
+| 16 rows | ms per pass | | 8 rows | ms per pass |
+|---|---:|---|---|---:|
+| rpsc (today) | 6.38-6.62 | | rpsc (today) | 4.65-4.78 |
+| width only (CG=1) | 6.26-6.62 | | width only (CG=1) | 4.65-4.75 |
+| **CG=2** | **5.60-5.77** | | CG=2 | 4.63-4.75 |
+| CG=2, `__launch_bounds__(128,5)` | 5.65-5.77 | | CG=4 | 4.20-4.21 |
+| CG=4 | 7.01-7.09 | | CG=8 | 4.08-4.21 |
+| CG=4, `__launch_bounds__(128,5)` | 7.40-7.48 | | | |
+| CG=8 | 7.26-7.27 | | | |
+
+ncu, FFN launches (`ncu-*.csv`, boost clocks, one launch each):
+
+| variant | ffn_down (640 blocks) | ffn_gate / ffn_up (2176) | registers | warps per SM | local memory |
+|---|---:|---:|---:|---:|---|
+| 16 rows rpsc | 517 us | 399-406 us | 90 | 19.4 | 0 |
+| 16 rows CG=2 | 500 us | 380-381 us | 96 | 19.1 | 0 |
+| 16 rows CG=2 bounded | 483 us | 375-379 us | 96 | 19.1 | 0 |
+| 16 rows CG=4 | 530 us | 437-444 us | 132 | 11.8 | 0 |
+| 16 rows CG=4 bounded | 608 us | 487-489 us | 96 | 18.9 | 160 MB spill |
+| 16 rows CG=8 | 520 us | 468-472 us | 171 | 7.7 | 0 |
+| 8 rows rpsc | 437 us | 317-328 us | 72 | 25.6 | 0 |
+| 8 rows CG=8 | 340 us | 300-303 us | 128 | 14.0 | 0 |
+
+The FFN launch went from 403 to 380 us, short of the ~350 us goal. Grouping cuts long-scoreboard stalls only while residency holds. Past two columns per group, the extra registers cost more warps than the overlap buys back.
+
+Decode step, one binary, `MEMRA_BVAR` unset (rpsc) vs forced, 3+3 in both orders (`gb10-b2/step/ab.txt`). TOKFP is identical in every run.
+
+| cell | rpsc (ms/tick) | forced (ms/tick) | change |
+|---|---|---|---:|
+| 16 rows, depth 12288, CG=2 | 167.46, 167.21, 167.34 | 161.70, 161.90, 161.73 | **-3.4%** |
+| 16 rows, depth 2048, CG=2 | 127.07 | 121.90 | **-4.1%** |
+| 8 rows, depth 12288, CG=8 | 109.97, 109.90, 110.13 | 110.18, 110.27, 110.35 | +0.2% (flat) |
+| 8 rows, depth 2048, CG=8 | 90.22 | 90.28 | flat |
+
+nsys at 16 rows depth 12288: the singles go from 67.31 to 61.86 ms per step. The 16-row matmul falls from 91.5 to 86.1 ms, so 14.1 ms remain over the 8-row tier. At 8 rows the singles stay at 53.1 ms. That tier is already at the bandwidth ceiling in the step: the bench gain comes from the small tensors, which the step routes through group4.
+
+Kept: `qmatvec_nvfp4_mmvq_b16_rpscx` (CG=2, unbounded) for full 16-row calls, in 88805bc1f1. Deleted (SHAs on the research branch): CG=1/4/8, the bounded forms and every 8-row twin.
+
+What remains: 14 ms of the 16-row matmul, now with 96 registers at 19 warps per SM. Grouping alone cannot remove it. The next candidates both cut instructions per weight byte rather than hide latency:
+- design C, the integer part on `mma.sync` with the float epilogue unchanged;
+- 16-row coverage in the group4 door (17.7 ms at 16 rows against 13.9 at 8).
