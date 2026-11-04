@@ -4654,10 +4654,13 @@ impl HybridModel {
             let pipeline = crate::plan_backend::PIPELINE
                 .trunk_capabilities(&plan)
                 .pipeline;
-            // Gemma retains its separately gated PP2 program. Every generic PP-N load must be
-            // admitted by ModelPlan operations before the first shard is uploaded; a legacy env
-            // door is not evidence that an arbitrary dense/stateful architecture is splittable.
-            let qualified_gemma_pp2 = gemma_program && fence.len() == 3;
+            // Gemma retains its separately gated PP2 program for the 12B/26B/31B plans. E4B's
+            // per-layer inputs and shared KV cross a stage boundary that program does not carry,
+            // so E4B takes the generic check below and refuses with those operations named.
+            // Every generic PP-N load must be admitted by ModelPlan operations before the first
+            // shard is uploaded; a legacy env door is not evidence that an arbitrary
+            // dense/stateful architecture is splittable.
+            let qualified_gemma_pp2 = crate::plan_backend::gemma_pp2_covers(&plan, fence.len() - 1);
             if !pipeline.supported && !qualified_gemma_pp2 {
                 return Err(format!(
                     "pipeline placement is unsupported for plan operations {:?}; blockers={:?}",
