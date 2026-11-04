@@ -2717,6 +2717,69 @@ pub fn bf16_tcols_red_fused_dispatches() -> u64 {
     BF16_TCOLS_RED_FUSED_DISPATCHES.load(std::sync::atomic::Ordering::Relaxed)
 }
 
+/// `MEMRA_TCOL_TWINS=1` (default OFF; decide-by and owed gate in docs/FLAGS.md): the step TP
+/// T-column launchers `matvec_bf16_qkvg_tcol_into` and `matvec_bf16_b4_tcol_into` take the
+/// compile-time-T twins (`matvec_bf16_qkvg_tcol_t{2,4,8}`, `matvec_bf16_b4_tcol_t{2,4,8}`) at
+/// t = 2, 4 and 8, and the runtime-T kernels at every other width. The runtime-T loop spills its
+/// accumulators to local memory; the twins unroll the same per-column FP chain with the
+/// accumulators in registers (`MEMRA_STEP_TP_BATCH` ladder, B=8 at 4400 context: 93.3 -> 95.9
+/// tok/s, TOKFP identity at each rung). OFF because a request whose batch width crosses 2, 4 or
+/// 8 changes kernels as peers join or retire, and no serving-shape gate has proven that crossing
+/// bit-identical (AGENTS.md "One numeric program per request"; Hermes `64fa2b55baf0d887`).
+/// Strict: unset or `0` is off, `1` is on, anything else refuses the launch. Read once.
+fn tcol_twins_on() -> Result<bool, String> {
+    static ON: std::sync::OnceLock<Result<bool, String>> = std::sync::OnceLock::new();
+    ON.get_or_init(|| {
+        let raw = std::env::var_os("MEMRA_TCOL_TWINS");
+        parse_tcol_twins(raw.as_deref().map(|v| v.to_str().unwrap_or("<non-UTF-8>")))
+    })
+    .clone()
+}
+
+fn parse_tcol_twins(raw: Option<&str>) -> Result<bool, String> {
+    match raw {
+        None | Some("0") => Ok(false),
+        Some("1") => Ok(true),
+        Some(other) => Err(format!("MEMRA_TCOL_TWINS={other:?}: expected 0 or 1")),
+    }
+}
+
+/// Whether this width-`t` launch takes a compile-time-T twin: `MEMRA_TCOL_TWINS=1` and t is 2,
+/// 4 or 8. `false` means the runtime-T kernel. Counts each twin launch.
+fn tcol_twin_launch(t: usize) -> Result<bool, String> {
+    let twin = tcol_twins_on()? && matches!(t, 2 | 4 | 8);
+    if twin {
+        TCOL_TWIN_DISPATCHES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    }
+    Ok(twin)
+}
+
+/// Engagement counter for `MEMRA_TCOL_TWINS`, incremented at each twin launch
+/// (LAW:wiring-assertions-match-prose). Read via [`tcol_twin_dispatches`].
+pub static TCOL_TWIN_DISPATCHES: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(0);
+
+/// Snapshot of [`TCOL_TWIN_DISPATCHES`] — gates take a before/after delta.
+pub fn tcol_twin_dispatches() -> u64 {
+    TCOL_TWIN_DISPATCHES.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+#[cfg(test)]
+mod tcol_twins_tests {
+    use super::parse_tcol_twins;
+
+    #[test]
+    fn only_an_exact_one_arms_the_twins_and_other_values_refuse() {
+        assert_eq!(parse_tcol_twins(None), Ok(false));
+        assert_eq!(parse_tcol_twins(Some("0")), Ok(false));
+        assert_eq!(parse_tcol_twins(Some("1")), Ok(true));
+        for v in ["", "true", "on", " 1", "2"] {
+            let err = parse_tcol_twins(Some(v)).unwrap_err();
+            assert!(err.contains("MEMRA_TCOL_TWINS"), "{v:?}: {err}");
+        }
+    }
+}
+
 // MEMRA_MOE_VROWS_PACK (door M, the `_w4` warp-packed verify-rows MoE twins) was removed
 // 2026-09-28 (memra#886, door hygiene): +0.70% alone, superseded as a posture by the ILP twins
 // (composed with ILP 76.84 vs ILP alone 77.50, so the served posture takes ILP and drops PACK).
@@ -24606,13 +24669,18 @@ impl Engine {
             t as i32,
         );
         let __s_b = self.gpu.stream();
-        // One runtime-T program for every live width. The compile-time 2/4/8 twins (faster:
-        // this kernel's runtime-t loop spills its accumulators) were deleted unlaunched on
-        // 2026-11-03, because dispatching them by the current batch width changes kernels
-        // inside a request when peers arrive or retire. That is a load-history numeric-program
-        // switch, and their pre-twin TOKFP receipts did not qualify it (Hermes
-        // `64fa2b55baf0d887`).
-        let f = self.func("matvec_bf16_qkvg_tcol");
+        // One runtime-T program for every live width unless `MEMRA_TCOL_TWINS=1` (default OFF)
+        // picks a compile-time 2/4/8 twin (faster: this kernel's runtime-t loop spills its
+        // accumulators). Picking by the current batch width changes kernels inside a request
+        // when peers arrive or retire, a load-history numeric-program switch no serving-shape
+        // gate has qualified yet (Hermes `64fa2b55baf0d887`; see [`tcol_twins_on`]).
+        let twin = tcol_twin_launch(t)?;
+        let f = match (twin, t) {
+            (true, 2) => self.func("matvec_bf16_qkvg_tcol_t2"),
+            (true, 4) => self.func("matvec_bf16_qkvg_tcol_t4"),
+            (true, _) => self.func("matvec_bf16_qkvg_tcol_t8"),
+            (false, _) => self.func("matvec_bf16_qkvg_tcol"),
+        };
         let mut b = __s_b.launch_builder(&f);
         b.arg(wq)
             .arg(wk)
@@ -24626,8 +24694,10 @@ impl Engine {
             .arg(&ini)
             .arg(&oq)
             .arg(&okv)
-            .arg(&og)
-            .arg(&ti);
+            .arg(&og);
+        if !twin {
+            b.arg(&ti);
+        }
         unsafe {
             b.launch(cfg)?;
         }
@@ -24764,9 +24834,10 @@ impl Engine {
             )
             .into());
         }
-        // Keep one runtime-T program at every live width. The compile-time twins were deleted
-        // unlaunched: selecting them from the changing batch width switches programs
-        // mid-request.
+        // Keep one runtime-T program at every live width unless `MEMRA_TCOL_TWINS=1` (default
+        // OFF): selecting a compile-time twin from the changing batch width switches programs
+        // mid-request, and no serving-shape gate has qualified that yet ([`tcol_twins_on`]).
+        let twin = tcol_twin_launch(t)?;
         let cfg = LaunchConfig {
             grid_dim: (out_f as u32, 1, 1),
             block_dim: (mmv_block(), 1, 1),
@@ -24774,7 +24845,12 @@ impl Engine {
         };
         let (bc, of, ti) = (block_cols as i32, out_f as i32, t as i32);
         let __s_b = self.gpu.stream();
-        let f = self.func("matvec_bf16_b4_tcol");
+        let f = match (twin, t) {
+            (true, 2) => self.func("matvec_bf16_b4_tcol_t2"),
+            (true, 4) => self.func("matvec_bf16_b4_tcol_t4"),
+            (true, _) => self.func("matvec_bf16_b4_tcol_t8"),
+            (false, _) => self.func("matvec_bf16_b4_tcol"),
+        };
         let mut b = __s_b.launch_builder(&f);
         b.arg(w[0])
             .arg(w[1])
@@ -24783,8 +24859,10 @@ impl Engine {
             .arg(x_t)
             .arg(y_t)
             .arg(&bc)
-            .arg(&of)
-            .arg(&ti);
+            .arg(&of);
+        if !twin {
+            b.arg(&ti);
+        }
         unsafe {
             b.launch(cfg)?;
         }
