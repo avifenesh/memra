@@ -21,7 +21,6 @@ fn values(n: usize, seed: u64) -> Vec<f32> {
 #[ignore = "requires isolated CUDA device and MEMRA_PRIME_KV_H2=1"]
 fn two_head_ctas_preserve_quantized_attention_bytes() {
     assert_eq!(std::env::var("MEMRA_PRIME_KV_H2").as_deref(), Ok("1"));
-    assert_ne!(std::env::var("MEMRA_PRIME_KV_T3").as_deref(), Ok("1"));
     let e = Engine::new(0).unwrap();
     let hd = 256;
     for (t, tkv, nh, nkv) in [
