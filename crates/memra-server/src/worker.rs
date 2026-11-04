@@ -43354,9 +43354,7 @@ mod tests {
         let squash = |src: &str| -> String { src.split_whitespace().collect::<Vec<_>>().join(" ") };
         let worker = squash(include_str!("worker.rs"));
         let live = &worker[..worker.find("mod tests").expect("the test module exists")];
-        assert!(live.contains(
-            "&& hpx.restoring.is_none() && !vmm_pending && reclaim_queue.ids.is_empty() {"
-        ));
+        assert!(live.contains("&& handoff_import.is_none() && !vmm_pending {"));
         assert!(live.contains("if vmm_pending { wait = wait.min(Duration::from_millis(2)); }"));
         assert!(live.contains("let (reaped, pending) = vmm_reap_tick(&mut active, &mut reuse, &mut spec_reuse); vmm_pending = pending > 0;"));
         // Addendum E2 and E4: the idle decision re-reads the pending bytes (this tick's retires
@@ -43368,9 +43366,7 @@ mod tests {
             .expect("the idle decision refreshes the pending flag first");
         assert!(
             at < live
-                .find(
-                    "&& hpx.restoring.is_none() && !vmm_pending && reclaim_queue.ids.is_empty() {"
-                )
+                .find("&& handoff_import.is_none() && !vmm_pending {")
                 .unwrap()
         );
         assert_eq!(live.matches("vmm_idle_refresh(&mut").count(), 1);
