@@ -3080,25 +3080,17 @@ fn reuse_pool_global_cap() -> usize {
 /// `docs/decisions/KV-PARK-COMPACT-DEFAULT.md`; `research/spill-b-20260919/DAY38.md` 2.3 and
 /// 2.4 under addendum D: every resumed turn equal across arms in both orders, the step-OOM
 /// adjacency replay green with its red arm red): the RTX 5090 class and the full-power RTX
-/// PRO 6000 Blackwell Workstation Edition. Keyed by device name as
-/// `tier_transfer::kv_vmm_placement_for_device` keys its Workstation receipt: the class's
-/// Max-Q and Server Edition variants and every other card park the ladder-cap cache whole
-/// until a cell on them reads the same. No environment variable.
+/// PRO 6000 Blackwell Workstation Edition. Keyed by device name, once per worker, as
+/// `tier_transfer::kv_vmm_placement_for_device` keys its Workstation receipt
+/// (`HardwareTarget::is_pro6000_workstation`): the class's Max-Q and Server Edition
+/// variants, every other card and an unreadable name park the ladder-cap cache whole until a
+/// cell on them reads the same. No environment variable.
 fn park_compact_for_device(device_name: &str) -> bool {
     use memra_engine::parallel::HardwareTarget;
-    match HardwareTarget::from_device_name(device_name) {
-        Ok(HardwareTarget::Rtx5090) => true,
-        Ok(HardwareTarget::RtxPro6000Blackwell) => {
-            device_name.contains("Workstation") && !device_name.contains("Max-Q")
-        }
-        Err(_) => false,
-    }
-}
-
-/// [`park_compact_for_device`] on this worker's device (one driver name query; called per
-/// plain park, never per token). An unreadable name parks whole.
-fn park_compact_on(engine: &Engine) -> bool {
-    park_compact_for_device(&engine.ctx().name().unwrap_or_default())
+    matches!(
+        HardwareTarget::from_device_name(device_name),
+        Ok(HardwareTarget::Rtx5090)
+    ) || HardwareTarget::is_pro6000_workstation(device_name)
 }
 
 /// Park-time compaction eligibility for a PLAIN continuation-pool entry (Arc C1).
@@ -11478,12 +11470,7 @@ fn batch_oom_reclaim(
 /// release cell (the RTX 5090 class's DAY45 and DAY46 enforce-wrel halves never ran), so they
 /// keep the whole-life booking. No environment variable.
 fn w_release_for_device(device_name: &str) -> bool {
-    use memra_engine::parallel::HardwareTarget;
-    matches!(
-        HardwareTarget::from_device_name(device_name),
-        Ok(HardwareTarget::RtxPro6000Blackwell)
-    ) && device_name.contains("Workstation")
-        && !device_name.contains("Max-Q")
+    memra_engine::parallel::HardwareTarget::is_pro6000_workstation(device_name)
 }
 
 /// The prime-completion release (DAY45 1.1): every active session with `prefill_done` and its
@@ -16616,8 +16603,11 @@ pub fn run(
         "[worker] Engine ready (device={device}, MEMRA_FAST={})",
         fast
     );
-    // WP-B day 45: the outstanding-only workspace booking, keyed on this worker's card.
-    let w_release = w_release_for_device(&engine.ctx().name().unwrap_or_default());
+    // The per-card defaults, keyed on this worker's card once: WP-B day 45's outstanding-only
+    // workspace booking and Arc C1's park compaction. An unreadable name takes neither.
+    let card_name = engine.ctx().name().unwrap_or_default();
+    let w_release = w_release_for_device(&card_name);
+    let park_compact = park_compact_for_device(&card_name);
 
     let (constraint_result_tx, constraint_result_rx) =
         std::sync::mpsc::channel::<crate::constrained::ConstraintCompileResult>();
@@ -23211,7 +23201,7 @@ pub fn run(
                             // the parked cache shrinks to its committed length here and
                             // grows back to the resuming request's own cap at the admit
                             // probe; elsewhere the ladder-cap cache parks whole.
-                            let (mut cache, cap, compacted) = if park_compact_on(&engine) {
+                            let (mut cache, cap, compacted) = if park_compact {
                                 compact_parked_plain_cache(
                                     &engine,
                                     &loaded[&s.model],
@@ -45333,8 +45323,14 @@ mod tests {
         };
         let all = strip(include_str!("worker.rs"));
         let code = &all[..all.find("mod tests {").expect("the test module exists")];
+        assert_eq!(
+            code.matches("park_compact_for_device(").count(),
+            2,
+            "definition and the one per-worker read"
+        );
+        assert!(code.contains("let park_compact = park_compact_for_device(&card_name);"));
         let gate = code
-            .find("if park_compact_on(&engine) {")
+            .find("if park_compact {")
             .expect("the park-site gate exists");
         assert!(
             code[gate..gate + 500].contains("compact_parked_plain_cache("),
