@@ -1,0 +1,10 @@
+12:33:21 start fp32-r1 base=http://127.0.0.1:8090 model=q38 node=spark-cb33
+12:34:40 warm {"size": 8192, "users": 1, "cold_max_s": 9.88, "turn256": [0.51, 0.51]} {"size": 32768, "users": 1, "cold_max_s": 43.67, "turn256": [0.63, 0.63]}
+12:58:37 cell c1 {"arm": "fp32-r1", "users": 1, "max_tokens": 768, "seed": 1234, "think": 1, "temperature": 1.0, "turns": 48, "tokens": 18494, "wall_s": 824.5, "aggregate_gen_tp
+13:08:36 cell c2 {"arm": "fp32-r1", "users": 2, "max_tokens": 768, "seed": 1234, "think": 1, "temperature": 1.0, "turns": 48, "tokens": 16904, "wall_s": 586.3, "aggregate_gen_tp
+13:17:34 cell c4 {"arm": "fp32-r1", "users": 4, "max_tokens": 768, "seed": 1234, "think": 1, "temperature": 1.0, "turns": 48, "tokens": 20085, "wall_s": 526.1, "aggregate_gen_tp
+13:23:04 cell c8 {"arm": "fp32-r1", "users": 8, "max_tokens": 768, "seed": 1234, "think": 1, "temperature": 1.0, "turns": 48, "tokens": 19535, "wall_s": 319.8, "aggregate_gen_tp
+13:27:26 cell c16 {"arm": "fp32-r1", "users": 16, "max_tokens": 768, "seed": 1234, "think": 1, "temperature": 1.0, "turns": 48, "tokens": 19540, "wall_s": 253.5, "aggregate_gen_t
+13:31:31 cell c32 {"arm": "fp32-r1", "users": 32, "max_tokens": 768, "seed": 1234, "think": 1, "temperature": 1.0, "turns": 48, "tokens": 19540, "wall_s": 235.5, "aggregate_gen_t
+MemAvailable min 29.81 GiB, median 50.67 GiB over 3472 s
+13:31:31 end
