@@ -392,7 +392,11 @@ rather than the maximum. Receipt: `research/serving-density-20260806/VERDICT.md`
 The full-power RTX PRO 6000 Blackwell Workstation Edition carries single-card serving receipts
 the other cards do not, so the mechanisms below are its defaults and no other card's
 (`memra_engine::parallel::HardwareTarget::is_pro6000_workstation`; the Max-Q and Server editions
-share the class, not the receipts). None has an environment switch; each states itself at boot.
+share the class, not the receipts). The receipts are one card, so a multi-card deployment of that
+card keeps the on-demand planes off (their per-model coverage excludes PP and TP stage ownership)
+and memory-shaped admission unarmed (`worker::is_multi_device_deployment`), and the PP batched
+paths return before the step guard marks a batched OOM retryable. None has an environment switch;
+each states itself at boot.
 
 - **On-demand KV planes.** A covered session's full-attention K/V planes (the MTP spec route and
   the plain route on one device, no SWA ring, no latent planes, no ppN or TP stage ownership)
@@ -408,13 +412,16 @@ share the class, not the receipts). None has an environment switch; each states 
   each request keeps one numeric program; a second failure or a torn step ends the chunk as on
   every other card, where one OOM ends every session of the chunk. Boot line `[admit-oom] batch
   OOM recovery: ON` or `OFF`. [Decision](decisions/BATCH-OOM-RECOVER-DEFAULT.md).
-- **Memory-shaped admission.** A request that bounds neither `max_tokens` nor `max_ctx` is
+- **Memory-shaped admission**, on a worker that serves that one card (its receipt is one card; a
+  PP, TP or EP deployment keeps the unarmed program, `worker::is_multi_device_deployment`). A
+  request that bounds neither `max_tokens` nor `max_ctx` is
   charged `prompt + 32768 + 8` instead of the `MEMRA_CTX` envelope, never more than it (the
   charge less the prompt and 8 slack rows is its output budget); the admission reclaim flush demotes device prefix entries to the pinned host tier
   before dropping; a memory defer past `MEMRA_ADMIT_DEFER_BUDGET_MS` (8 s) answers 429 with
   `Retry-After`; and every headroom reading books what still-priming sessions owe, with a
   prefill OOM on a session that emitted nothing parked and requeued. Boot line
-  `[admit-mem] door=ON` or `door=OFF`. [Decision](decisions/ADMIT-BY-MEMORY-DEFAULT.md).
+  `[admit-mem] door=ON` or `door=OFF`, with the reason in parentheses.
+  [Decision](decisions/ADMIT-BY-MEMORY-DEFAULT.md).
 - **Direct handoff export.** The host-tier deploy handoff export (`MEMRA_KV_HOST_HANDOFF`)
   writes its file with `O_DIRECT` through one aligned 4 MiB buffer, then `fdatasync`, where every
   other card writes through the page cache, then `fsync`. The bytes are the same, every card

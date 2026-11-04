@@ -29272,13 +29272,17 @@ pub fn run(
     }
     let admit_predict_cfg = admit_predict_cfg;
     // MEMORY-SHAPED ADMISSION (memra#365): armed on the card class whose deciding cell read
-    // (the RTX PRO 6000 Blackwell Workstation Edition, docs/decisions/ADMIT-BY-MEMORY-DEFAULT.md),
-    // unarmed elsewhere. Resolved once here so it cannot arm or disarm mid-process, and the
+    // (the RTX PRO 6000 Blackwell Workstation Edition, docs/decisions/ADMIT-BY-MEMORY-DEFAULT.md)
+    // when the worker serves that one card, unarmed elsewhere and on every PP/TP/EP deployment
+    // (the cell ran one card). Resolved once here so it cannot arm or disarm mid-process, and the
     // resolved policy is stated in the boot log beside the predictor's own armed line: a
     // launcher that raises MEMRA_MAX_SESSIONS is trusting it to hold the card, so its knobs
     // belong in the same receipt the qualification env is derived from.
     let device_name = engine.ctx().name().unwrap_or_default();
-    let admit_memory_cfg = crate::admit_memory::MemoryAdmitConfig::for_device(&device_name);
+    let admit_memory_cfg = crate::admit_memory::MemoryAdmitConfig::for_deployment(
+        &device_name,
+        is_multi_device_deployment(&loaded),
+    );
     eprintln!("{}", admit_memory_cfg.boot_line());
     // BATCHED-CHUNK OOM RECOVERY (WP-B day 49): the card's arm, resolved once and stated.
     let batch_oom_recover = batch_oom_recover_default(&device_name);
@@ -52672,12 +52676,13 @@ mod tests {
     #[test]
     fn the_memory_admission_door_is_wired_at_the_admission_seam() {
         let code = include_str!("worker.rs");
-        // Resolved once at worker start from its device, and stated in the boot log.
+        // Resolved once at worker start from its device and its deployment's device count, and
+        // stated in the boot log.
         assert!(
             code.contains(
-                "let admit_memory_cfg = crate::admit_memory::MemoryAdmitConfig::for_device(&device_name);"
+                "let admit_memory_cfg = crate::admit_memory::MemoryAdmitConfig::for_deployment(\n        &device_name,\n        is_multi_device_deployment(&loaded),\n    );"
             ),
-            "memory-shaped admission must be resolved once at worker start"
+            "memory-shaped admission must be resolved once at worker start, single-card only"
         );
         assert!(
             code.contains("eprintln!(\"{}\", admit_memory_cfg.boot_line());"),
