@@ -770,6 +770,21 @@ impl ContractBuilder {
         let aux_id = id.clone();
         let aux_name = name.clone();
         let aux_shape = shape.clone();
+        self.weight_without_quant_aux(id, name, shape, owner, transform);
+        self.gguf_quant_auxiliaries(&aux_id, &[aux_name], &aux_shape, owner);
+    }
+
+    /// A weight whose `.scale` sibling is a model tensor of its own, so no quant auxiliary may
+    /// claim it: in a gemma4 MoE GGUF `ffn_gate_inp.scale` is the router input scale and
+    /// `ffn_down_exps.scale` the per-expert output scale.
+    fn weight_without_quant_aux(
+        &mut self,
+        id: TensorId,
+        name: String,
+        shape: Vec<u64>,
+        owner: TensorOwner,
+        transform: TensorTransform,
+    ) {
         self.requirements.push(TensorRequirement {
             id,
             names: vec![name],
@@ -785,7 +800,6 @@ impl ContractBuilder {
             auxiliaries: None,
             required: true,
         });
-        self.gguf_quant_auxiliaries(&aux_id, &[aux_name], &aux_shape, owner);
     }
 
     fn weight_group(
@@ -1100,96 +1114,120 @@ fn add_gemma_parallel_moe(
     moe: &MoeMlpPlan,
     parallel: crate::model_plan::GemmaParallelMoePlan,
 ) -> Result<(), TensorContractError> {
-    if builder.dialect != CheckpointDialect::HfSafetensors {
-        return Err(TensorContractError::UnsupportedPlanOperation {
-            operation: "gemma parallel MoE non-safetensors schema",
-        });
-    }
+    let dialect = builder.dialect;
+    let gguf = dialect == CheckpointDialect::Gguf;
     let owner = TensorOwner::Layer(index);
     let hidden = plan.hidden_size;
     let expert_ff = moe.expert_intermediate_size;
+    let experts = moe.expert_count;
     let shared = moe
         .shared
         .as_ref()
         .ok_or(TensorContractError::UnsupportedPlanOperation {
             operation: "gemma parallel MoE without shared branch",
         })?;
-    for (tensor, suffix, output, input) in [
+    for (tensor, gguf_suffix, hf_suffix, output, input) in [
         (
             LayerTensor::SharedMlpGate,
+            "ffn_gate.weight",
             "mlp.gate_proj.weight",
             shared.intermediate_size,
             hidden,
         ),
         (
             LayerTensor::SharedMlpUp,
+            "ffn_up.weight",
             "mlp.up_proj.weight",
             shared.intermediate_size,
             hidden,
         ),
         (
             LayerTensor::SharedMlpDown,
+            "ffn_down.weight",
             "mlp.down_proj.weight",
             hidden,
             shared.intermediate_size,
         ),
-        (
-            LayerTensor::MoeRouter,
-            "router.proj.weight",
-            moe.expert_count,
-            hidden,
-        ),
     ] {
         builder.weight(
             layer_id(index, tensor),
-            format!("model.layers.{index}.{suffix}"),
-            vec![output as u64, input as u64],
+            layer_name(dialect, index, gguf_suffix, hf_suffix),
+            matrix_shape(dialect, output, input),
             owner,
             TensorTransform::Identity,
         );
     }
-    builder.weight(
-        layer_id(index, LayerTensor::MoeExpertGateUpBank),
-        format!("model.layers.{index}.experts.gate_up_proj"),
-        vec![
-            moe.expert_count as u64,
-            (2 * expert_ff) as u64,
-            hidden as u64,
-        ],
-        owner,
-        TensorTransform::SplitExpertGateUp,
-    );
-    builder.weight(
-        layer_id(index, LayerTensor::MoeExpertDownBank),
-        format!("model.layers.{index}.experts.down_proj"),
-        vec![moe.expert_count as u64, hidden as u64, expert_ff as u64],
-        owner,
+    // GGUF ships the router input scale as `ffn_gate_inp.scale` and the per-expert output
+    // scale as `ffn_down_exps.scale`, the names a quant auxiliary of the router and of the
+    // down bank would take, so those two weights carry no auxiliary claim there.
+    let declare = |builder: &mut ContractBuilder, id, name, shape, transform, aux: bool| {
+        if aux {
+            builder.weight(id, name, shape, owner, transform);
+        } else {
+            builder.weight_without_quant_aux(id, name, shape, owner, transform);
+        }
+    };
+    declare(
+        builder,
+        layer_id(index, LayerTensor::MoeRouter),
+        layer_name(dialect, index, "ffn_gate_inp.weight", "router.proj.weight"),
+        matrix_shape(dialect, experts, hidden),
         TensorTransform::Identity,
+        !gguf,
     );
-    for (tensor, suffix, width, norm) in [
+    declare(
+        builder,
+        layer_id(index, LayerTensor::MoeExpertGateUpBank),
+        layer_name(
+            dialect,
+            index,
+            "ffn_gate_up_exps.weight",
+            "experts.gate_up_proj",
+        ),
+        if gguf {
+            vec![hidden as u64, (2 * expert_ff) as u64, experts as u64]
+        } else {
+            vec![experts as u64, (2 * expert_ff) as u64, hidden as u64]
+        },
+        TensorTransform::SplitExpertGateUp,
+        true,
+    );
+    declare(
+        builder,
+        layer_id(index, LayerTensor::MoeExpertDownBank),
+        layer_name(dialect, index, "ffn_down_exps.weight", "experts.down_proj"),
+        if gguf {
+            vec![expert_ff as u64, hidden as u64, experts as u64]
+        } else {
+            vec![experts as u64, hidden as u64, expert_ff as u64]
+        },
+        TensorTransform::Identity,
+        !gguf,
+    );
+    for (tensor, gguf_suffix, hf_suffix, norm) in [
         (
             LayerTensor::PostSharedMlpNorm,
+            "post_ffw_norm_1.weight",
             "post_feedforward_layernorm_1.weight",
-            hidden,
             parallel.shared_post_norm,
         ),
         (
             LayerTensor::PreRoutedMlpNorm,
+            "pre_ffw_norm_2.weight",
             "pre_feedforward_layernorm_2.weight",
-            hidden,
             parallel.routed_pre_norm,
         ),
         (
             LayerTensor::PostRoutedMlpNorm,
+            "post_ffw_norm_2.weight",
             "post_feedforward_layernorm_2.weight",
-            hidden,
             parallel.routed_post_norm,
         ),
     ] {
         builder.float(
             layer_id(index, tensor),
-            format!("model.layers.{index}.{suffix}"),
-            vec![width as u64],
+            layer_name(dialect, index, gguf_suffix, hf_suffix),
+            vec![hidden as u64],
             owner,
             norm_transform(norm.weight_transform),
             true,
@@ -1198,7 +1236,7 @@ fn add_gemma_parallel_moe(
     if parallel.router_input_scale {
         builder.float(
             layer_id(index, LayerTensor::MoeRouterScale),
-            format!("model.layers.{index}.router.scale"),
+            layer_name(dialect, index, "ffn_gate_inp.scale", "router.scale"),
             vec![hidden as u64],
             owner,
             TensorTransform::Identity,
@@ -1208,8 +1246,13 @@ fn add_gemma_parallel_moe(
     if parallel.per_expert_output_scale {
         builder.float(
             layer_id(index, LayerTensor::MoeExpertOutputScale),
-            format!("model.layers.{index}.router.per_expert_scale"),
-            vec![moe.expert_count as u64],
+            layer_name(
+                dialect,
+                index,
+                "ffn_down_exps.scale",
+                "router.per_expert_scale",
+            ),
+            vec![experts as u64],
             owner,
             TensorTransform::Identity,
             true,
