@@ -57,7 +57,16 @@ if [ -n "$DRAFT" ] && [ -n "$MTP_DRAFT" ]; then
     echo "different spec programs; pass exactly one" >&2
     exit 2
 fi
-GPU_LOCK=${MEMRA_GPU_LOCK:-/tmp/memra-serve.lock}
+# The RTX 5090 lock (AGENTS.md lock table); MEMRA_GPU_LOCK overrides it, as `gpulock run` does.
+GPU_LOCK=${MEMRA_GPU_LOCK:-/tmp/memra-5090.lock}
+# A caller that already holds the lock on FD 9 (`gpulock run`) boots under it: a second flock
+# on a fresh descriptor would wait on that very lock. flock -n on the inherited FD succeeds only
+# when that open file description owns the lock or the lock is free.
+LOCK_INHERITED=0
+if [ "$(stat -L -c %d:%i /proc/self/fd/9 2>/dev/null)" = "$(stat -L -c %d:%i "$GPU_LOCK" 2>/dev/null)" ] \
+    && flock -n 9 2>/dev/null; then
+    LOCK_INHERITED=1
+fi
 PORT=${MEMRA_GATE_PORT:-18098}
 HERE=$(cd "$(dirname "$0")" && pwd)
 # Port occupancy guard (GATE-INTEGRITY-20260819 A-16, deferred to this file's merge because
@@ -120,8 +129,10 @@ boot() { # $1 extra-env  $2 log
     local extra="$1"
     [ -n "$DRAFT" ] && extra="MEMRA_DRAFT=$DRAFT $extra"
     [ -n "$MTP_DRAFT" ] && extra="MEMRA_MTP_DRAFT=$MTP_DRAFT $extra"
+    local hold=(flock -w 300 "$GPU_LOCK")
+    [ "$LOCK_INHERITED" = 1 ] && hold=()
     # shellcheck disable=SC2086
-    flock -w 300 "$GPU_LOCK" env CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-0} \
+    "${hold[@]}" env CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-0} \
         MEMRA_COMPAT=openai "MEMRA_MODELS=gate=$MODEL" \
         "MEMRA_ADDR=127.0.0.1:$PORT" MEMRA_CTX=32768 MEMRA_MAX_SESSIONS=$((CONC + 4)) \
         $extra "$BIN" >"$2" 2>&1 &
