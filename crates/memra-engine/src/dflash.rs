@@ -3662,6 +3662,7 @@ impl crate::hybrid::HybridModel {
         max_new: usize,
         eos: &[u32],
     ) -> Result<Vec<u32>, Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         self.refuse_hyper("generate_spec_dflash")?;
         use crate::cache::{Cache, DflashTapSink};
         let n_embd = self.cfg.n_embd as usize;
@@ -4023,6 +4024,7 @@ impl crate::hybrid::HybridModel {
         eos: &[u32],
         sampling: Option<&crate::spec::SpecSampling>,
     ) -> Result<Vec<u32>, Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         self.refuse_hyper("generate_spec_dspark")?;
         use crate::cache::{Cache, DflashTapSink};
         assert!(
@@ -5338,10 +5340,12 @@ impl crate::prime_walker::PrimeWalker for DsparkPrimeWalker<'_> {
     fn advance_chunk(
         &mut self,
     ) -> Result<crate::prime_walker::PrimeChunk, crate::prime_walker::PrimeError> {
+        let _numeric = self.model.enter_numeric();
         self.taps()?.advance_chunk()
     }
 
     fn finish(mut self) -> Result<Self::Output, crate::prime_walker::PrimeError> {
+        let _numeric = self.model.enter_numeric();
         let logits = crate::prime_walker::finish_prime(self.taps()?)?;
         let DsparkPrimeState { taps, mode } =
             self.state.take().ok_or("DFlash prime already finalized")?;
@@ -5464,6 +5468,7 @@ impl crate::prime_walker::PrimeWalker for DflashTapWalker<'_> {
     fn advance_chunk(
         &mut self,
     ) -> Result<crate::prime_walker::PrimeChunk, crate::prime_walker::PrimeError> {
+        let _numeric = self.model.enter_numeric();
         use crate::cache::DflashTapSink;
         let (start, end) = *self
             .state
@@ -5546,6 +5551,7 @@ impl crate::prime_walker::PrimeWalker for DflashTapWalker<'_> {
     }
 
     fn finish(self) -> Result<Vec<f32>, crate::prime_walker::PrimeError> {
+        let _numeric = self.model.enter_numeric();
         if self.remaining_chunks() != 0 {
             return Err("DFlash prime incomplete".into());
         }
@@ -5633,6 +5639,7 @@ impl crate::hybrid::HybridModel {
         sampling: Option<crate::spec::SpecSampling>,
         capture: DsparkCapture,
     ) -> Result<DsparkSpecSession, crate::prime_walker::PrimeError> {
+        let _numeric = self.enter_numeric();
         let mut state =
             Some(self.dspark_prime_start(e, draft, prompt, ctx_cap, sampling, capture)?);
         let mut walker = self.dspark_prime_walker(e, draft, &mut state);
@@ -5650,6 +5657,7 @@ impl crate::hybrid::HybridModel {
         sampling: Option<crate::spec::SpecSampling>,
         capture: DsparkCapture,
     ) -> Result<DsparkPrimeState, crate::prime_walker::PrimeError> {
+        let _numeric = self.enter_numeric();
         use crate::cache::Cache;
         assert!(
             !self.uses_gemma_program(),
@@ -5721,6 +5729,7 @@ impl crate::hybrid::HybridModel {
         draft: &'a DflashDraft,
         state: &'a mut Option<DsparkPrimeState>,
     ) -> DsparkPrimeWalker<'a> {
+        let _numeric = self.enter_numeric();
         DsparkPrimeWalker {
             model: self,
             e,
@@ -5856,6 +5865,7 @@ impl crate::hybrid::HybridModel {
     /// (`MEMRA_DSPARK_VERIFY_GRAPH=0` and the MTP door off), frozen
     /// (`MEMRA_DSPARK_VG_MAX=0`), or the pool has not captured yet.
     pub fn dspark_vg_admission_debt(&self, e: &Engine) -> usize {
+        let _numeric = self.enter_numeric();
         let dspark_door =
             crate::spec::dspark_verify_graph_serve_on() || crate::spec::dspark_verify_graph_on();
         let mtp_door =
@@ -5876,6 +5886,7 @@ impl crate::hybrid::HybridModel {
     /// what the physical gate's call later in the same admission returns, read first by the predictive
     /// seam under `MEMRA_ADMIT_PREDICT_VG_DEBT`, so that call is unchanged.
     pub fn dspark_vg_admission_debt_peek(&self, e: &Engine) -> usize {
+        let _numeric = self.enter_numeric();
         let dspark_door =
             crate::spec::dspark_verify_graph_serve_on() || crate::spec::dspark_verify_graph_on();
         let mtp_door =
@@ -5934,6 +5945,7 @@ impl crate::hybrid::HybridModel {
         sampling: Option<crate::spec::SpecSampling>,
         ctx_cap: usize,
     ) -> Result<DsparkSpecSession, Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         assert!(
             !self.uses_gemma_program(),
             "gemma4 targets use the assistant-drafter route; dspark is the qwen-hybrid arm"
@@ -6044,6 +6056,7 @@ impl crate::hybrid::HybridModel {
         suffix: &[u32],
         capture: DsparkCapture,
     ) -> Result<(), crate::prime_walker::PrimeError> {
+        let _numeric = self.enter_numeric();
         let split = self.validate_dspark_resume(draft, sess, suffix, capture)?;
         let logits = self.prime_dflash_taps(
             e,
@@ -6066,6 +6079,7 @@ impl crate::hybrid::HybridModel {
         suffix: &[u32],
         capture: DsparkCapture,
     ) -> Result<DsparkPrimeState, crate::prime_walker::PrimeError> {
+        let _numeric = self.enter_numeric();
         let split = self.validate_dspark_resume(draft, &sess, suffix, capture)?;
         let taps = DflashTapPrime::new(self, e, draft, suffix, sess.cache.pos, split)?;
         Ok(DsparkPrimeState {
@@ -6186,6 +6200,7 @@ impl crate::hybrid::HybridModel {
         request_room: usize,
         eos: &[u32],
     ) -> Result<(Vec<u32>, usize, usize), Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         self.dspark_spec_session_burst_inner(e, draft, sess, burst_target, request_room, eos, None)
     }
 
@@ -6219,6 +6234,7 @@ impl crate::hybrid::HybridModel {
         eos: &[u32],
         on_commit: crate::glm_spec::CommitHook<'_>,
     ) -> Result<(Vec<u32>, usize, usize), Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         self.dspark_spec_session_burst_inner(
             e,
             draft,
@@ -6990,6 +7006,7 @@ impl crate::hybrid::HybridModel {
         draft: &DflashDraft,
         reqs: Vec<DsparkPooledReq<'a>>,
     ) -> Vec<crate::spec::PooledBurstResult> {
+        let _numeric = self.enter_numeric();
         if draft.dflash2.is_none() || !self.dspark_pool_capable() {
             return reqs
                 .into_iter()

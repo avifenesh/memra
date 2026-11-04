@@ -113,6 +113,8 @@ pub mod hybrid;
 pub mod hybrid_forward;
 pub mod hyper;
 pub mod model;
+pub mod numeric_profile;
+pub use numeric_profile::{NumericProfile, NumericScope};
 mod prime_receipt;
 pub mod prime_walker;
 pub mod sigrouter_contract;
@@ -1122,80 +1124,14 @@ pub(crate) fn wgmma_gemm_enabled() -> bool {
 /// fa_geom_eager / fa_decode_rows-eligibility (spec verify) so the kernel pick NEVER diverges
 /// between eager decode and the verify (the spec-exactness law).
 pub const FA_VEC_MIN_TKV: usize = 96;
-/// Env-overridable crossover (MEMRA_FA_VEC_MIN, default FA_VEC_MIN_TKV). The 96 floor was
-/// measured on the qwen geometry (nkv=2); gemma4 SWA layers run nkv=8 = 4x the vec grid,
-/// which moves the crossover — sweep per model, adopt per the battery.
+/// Env-overridable crossover (MEMRA_FA_VEC_MIN; unset, the model's profile, `FA_VEC_MIN_TKV`
+/// for every model that keys nothing). The 96 floor was measured on the qwen geometry (nkv=2);
+/// gemma4 SWA layers run nkv=8 = 4x the vec grid, which moves the crossover — sweep per model,
+/// adopt per the battery.
 pub fn fa_vec_min_tkv() -> usize {
-    *FA_VEC_MIN_LATCH.get_or_init(|| {
-        std::env::var("MEMRA_FA_VEC_MIN")
-            .ok()
-            .and_then(|v| v.parse().ok())
-            .unwrap_or_else(|| FA_VEC_MIN_DEFAULT.load(std::sync::atomic::Ordering::Relaxed))
-    })
-}
-static FA_VEC_MIN_LATCH: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
-
-/// Load-time guard for the per-model kernel defaults that are still process globals: their
-/// readers latch the value in a OnceLock at first dispatch, so a model that loads after another
-/// model's first dispatch cannot apply its own default and would run a program its
-/// qualification never saw. Returns the refusal when `latched` holds a value other than the one
-/// this model would latch alone: its env override when that parses, else `default`.
-fn latched_default_conflict<T>(
-    knob: &str,
-    latched: Option<T>,
-    env_value: Option<&str>,
-    default: T,
-    why: &str,
-) -> Option<String>
-where
-    T: Copy + PartialEq + std::fmt::Debug + std::str::FromStr,
-{
-    let latched = latched?;
-    let want = env_value.and_then(|v| v.parse().ok()).unwrap_or(default);
-    (latched != want).then(|| {
-        format!(
-            "{knob}: this model needs {want:?} ({why}), but the process already latched \
-             {latched:?} at an earlier model's first dispatch. Per-model kernel defaults are \
-             process globals until the per-model numeric profile lands; load this model in its \
-             own process, or before any other model runs"
-        )
-    })
-}
-
-#[cfg(test)]
-mod latched_default_tests {
-    use super::latched_default_conflict;
-
-    #[test]
-    fn a_load_refuses_a_latched_kernel_default_it_cannot_apply() {
-        // nothing latched yet: the load's store still takes effect, no refusal
-        assert!(latched_default_conflict("K", None::<usize>, None, 0, "why").is_none());
-        // the NaN case: a gqa>8 load needs 0 after another model latched usize::MAX
-        let msg = latched_default_conflict("MEMRA_FA_V4_MAX", Some(usize::MAX), None, 0, "gqa 16")
-            .expect("a gqa>8 load after a v4 latch must refuse");
-        assert!(
-            msg.contains("MEMRA_FA_V4_MAX") && msg.contains("gqa 16"),
-            "{msg}"
-        );
-        // the latch agrees with this model's default: no refusal
-        assert!(latched_default_conflict("K", Some(1024u32), None, 1024, "why").is_none());
-        // an env override that parses is what this model would latch alone, on either side
-        assert!(latched_default_conflict("K", Some(256u32), Some("256"), 1024, "why").is_none());
-        assert!(latched_default_conflict("K", Some(1024u32), Some("256"), 1024, "why").is_some());
-        // an override that does not parse falls back to the default, as the latch itself does
-        assert!(latched_default_conflict("K", Some(256u32), Some("x"), 1024, "why").is_some());
-    }
-}
-
-/// [`latched_default_conflict`] for the fa-vec crossover (`fa_vec_min_tkv`).
-pub(crate) fn fa_vec_min_default_conflict(default: usize, why: &str) -> Option<String> {
-    latched_default_conflict(
-        "MEMRA_FA_VEC_MIN",
-        FA_VEC_MIN_LATCH.get().copied(),
-        std::env::var("MEMRA_FA_VEC_MIN").ok().as_deref(),
-        default,
-        why,
-    )
+    static ENV: std::sync::OnceLock<Option<usize>> = std::sync::OnceLock::new();
+    numeric_profile::env_override(&ENV, "MEMRA_FA_VEC_MIN")
+        .unwrap_or_else(|| NumericProfile::current().fa_vec_min)
 }
 
 /// f16-P/V class (DEFAULT since 2026-07-23 stamp v4; MEMRA_FA_F16PV=0 = f32-class rollback):
@@ -1244,24 +1180,7 @@ pub fn fa512_min_tkv() -> usize {
             .unwrap_or(512)
     })
 }
-/// Per-model crossover default, set at model load BEFORE the first decode (per-model
-/// numeric-config adoption law). qwen keeps the measured 96; gemma4 (nkv=8 SWA) measured
-/// vec-always fastest: 119.9 (96) / 130.0 (48) / 133.2 (1) tok/s tg128-regime, 2026-07-10.
-pub static FA_VEC_MIN_DEFAULT: std::sync::atomic::AtomicUsize =
-    std::sync::atomic::AtomicUsize::new(ModelNumericDefaults::PROCESS.fa_vec_min);
-/// Per-model windowed-split default (MEMRA_FA_SPW overrides): gemma MoE (26B, nkv=8) measured
-/// 32 (grid-limited t=1 under the raw-e4m3 sV ceiling, 2026-07-12); dense gemma (31B)
-/// measured 64 (37.13/37.12 vs 36.87/36.86 at 1.7k, N=2 — different attention geometry).
-pub static FA_SPW_DEFAULT: std::sync::atomic::AtomicUsize =
-    std::sync::atomic::AtomicUsize::new(ModelNumericDefaults::PROCESS.fa_spw);
-/// Per-model hd512 (gemma globals) split default (MEMRA_FA_SP512 overrides): 26B measured 16
-/// (2026-07-11 N=2), dense 31B measured 32 (36.86/36.93 vs 36.73/36.73 at 1.7k, 2026-07-12).
-/// fused t=1 q4_0 pair/triple row mapping: true = mr1 (one row/warp). Per-model default
-/// (dense gemma wins +1.1% short / +0.6% depth on the 31B; MoE 26B REGRESSES −1.2% —
-/// its shared-expert fused2 shapes lose to the finer grid). MEMRA_Q40_MR env still wins.
-pub static FUSED_MR1_DEFAULT: std::sync::atomic::AtomicBool =
-    std::sync::atomic::AtomicBool::new(ModelNumericDefaults::PROCESS.fused_mr1);
-/// Per-model router-GEMV form (2026-07-31): the 8-warp twin is +8.8% on the H100 q35
+/// Router-GEMV form (2026-07-31): the 8-warp twin is +8.8% on the H100 q35
 /// decode step (router was 14.8% of it) with argmax + spec self-consistency green on
 /// qwen-class MoE both rigs. The gemma-4 26B knife-edge block (2026-07-31, single
 /// synthetic prompt) was RE-ARBITRATED 2026-08-01 on 6 real prompts — gate outcomes
@@ -1269,189 +1188,66 @@ pub static FUSED_MR1_DEFAULT: std::sync::atomic::AtomicBool =
 /// (research/g26-decode-20260801/). MEMRA_ROUTER_V2 env overrides either way.
 pub static ROUTER_W8_DEFAULT: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(true);
-pub static FA_SP512_DEFAULT: std::sync::atomic::AtomicUsize =
-    std::sync::atomic::AtomicUsize::new(ModelNumericDefaults::PROCESS.fa_sp512);
-/// Per-model rms_norm block size (per-model numeric-config law: the per-thread partial-sum
-/// split changes with blockDim -> different FP order -> battery-arbitrated per model).
-/// qwen keeps the shipped 256; gemma4 adopts 1024 (single-row 2816-col norms are one-block
-/// latency-bound at 256 threads — 7us/launch measured).
-pub static RMS_BLOCK_DEFAULT: std::sync::atomic::AtomicU32 =
-    std::sync::atomic::AtomicU32::new(ModelNumericDefaults::PROCESS.rms_block);
-/// gemma4 fa split ladder switch (set at model load; see fa_split_keys).
-pub static FA_SP_GEMMA: std::sync::atomic::AtomicBool =
-    std::sync::atomic::AtomicBool::new(ModelNumericDefaults::PROCESS.fa_sp_gemma);
-/// Per-model stream-k entry override for SPEC serving (-1 = unset → env/default;
-/// 0 = force tiling; 1 = admit the deterministic form selector). The former timing
-/// selector made identical boots choose different fold orders; `MEMRA_MMQ_SK_FORM` is the
-/// explicit numerical-form seam. mmq_ffi reads this before the env.
-pub static MMQ_SK_FORCE: std::sync::atomic::AtomicI8 =
-    std::sync::atomic::AtomicI8::new(ModelNumericDefaults::PROCESS.mmq_sk_force);
 
-/// The per-model numeric defaults one model's load keys into the process-global statics
-/// above (`HybridModel::load_from_source_impl`). ONE value set serves a whole process: the
-/// launchers read these statics directly, `rms_block`, `fa_vec_min_tkv` and `fa_v4_at` latch
-/// the first value they see in a OnceLock, and nothing resets them for the next model. So two
-/// models in one process that want different sets (a multi-model `MEMRA_MODELS` roster with
-/// gemma4 beside qwen, a dense gemma beside a MoE one, a gqa-16 model beside a gqa-8 one)
-/// cannot both run their own program: one of them runs the other's rms_norm block, FA
-/// crossover, split ladder, fused row mapping, stream-k key, v4 capacity guard or step37 door
-/// defaults, and which one depends on load and first-call order.
-/// [`claim_model_numeric_defaults`] refuses that roster by name at load, before any tensor
-/// upload. Carrying these on the model and passing them to the launchers would lift the
-/// refusal; until then the refusal is the contract.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct ModelNumericDefaults {
-    /// `FA_V4_MAX_DEFAULT` (0 = the v4 decode family off: the gqa > 8 capacity guard).
-    pub fa_v4_max: usize,
-    /// `FA_VEC_MIN_DEFAULT`.
-    pub fa_vec_min: usize,
-    /// `FA_SPW_DEFAULT`.
-    pub fa_spw: usize,
-    /// `FA_SP512_DEFAULT`.
-    pub fa_sp512: usize,
-    /// `FUSED_MR1_DEFAULT`.
-    pub fused_mr1: bool,
-    /// `RMS_BLOCK_DEFAULT`.
-    pub rms_block: u32,
-    /// `FA_SP_GEMMA`.
-    pub fa_sp_gemma: bool,
-    /// `MMQ_SK_FORCE` under spec intent (`MEMRA_DRAFT` set, `MEMRA_MMQ_SK` unset); -1 otherwise.
-    pub mmq_sk_force: i8,
-    /// `arm_step37_serving_defaults` (the SlidingGatedMoe program's door defaults).
-    pub step37_serving: bool,
-}
-
-impl ModelNumericDefaults {
-    /// The statics' initial values: what a model that keys nothing runs. The statics are
-    /// initialized FROM this, so the two cannot drift.
-    pub const PROCESS: Self = Self {
-        fa_v4_max: usize::MAX,
-        fa_vec_min: FA_VEC_MIN_TKV,
-        fa_spw: 32,
-        fa_sp512: 16,
-        fused_mr1: false,
-        rms_block: 256,
-        fa_sp_gemma: false,
-        mmq_sk_force: -1,
-        step37_serving: false,
+/// Each field where two profiles disagree, as `FIELD=<a> vs <b>`.
+fn numeric_profile_differences(a: &NumericProfile, b: &NumericProfile) -> Vec<String> {
+    let mut d = Vec::new();
+    let mut cmp = |name: &str, x: String, y: String| {
+        if x != y {
+            d.push(format!("{name}={x} vs {y}"));
+        }
     };
-
-    /// The set one model's load keys. `gqa` is `n_head / n_head_kv` (0 when `n_head_kv` is 0),
-    /// `gemma_moe` is `Some(real_moe)` for the gemma batch program, `glm5_next_b200` is a
-    /// glm5_next model on an sm_100a build, `spec_mmq_n_embd` is `Some(n_embd)` under spec
-    /// intent. Pure: the loader passes what it already computed, and the stores apply exactly
-    /// these values.
-    pub fn for_model(
-        gqa: u32,
-        gemma_moe: Option<bool>,
-        glm5_next_b200: bool,
-        sliding_gated_moe: bool,
-        spec_mmq_n_embd: Option<u32>,
-    ) -> Self {
-        let mut d = Self::PROCESS;
-        // FA v4 GQA capacity guard: fa_v4_smem's per-warp Q arrays hold gqa <= 8 (see the
-        // loader's comment and research/122b-bringup-20260806/).
-        if gqa > 8 {
-            d.fa_v4_max = 0;
+    let v4 = |v: usize| {
+        if v == usize::MAX {
+            "unbounded".to_string()
+        } else {
+            v.to_string()
         }
-        if let Some(real_moe) = gemma_moe {
-            // gemma4 fa-vec crossover (measured sweep 2026-07-10).
-            d.fa_vec_min = 1;
-            // windowed split: MoE 26B = 32, dense 31B = 64 (2026-07-12 sweeps).
-            d.fa_spw = if real_moe { 32 } else { 64 };
-            // hd512 global split: 26B = 16 (2026-07-11), 31B = 32 (2026-07-12).
-            d.fa_sp512 = if real_moe { 16 } else { 32 };
-            // fused t=1 pair/triple mr1: dense +1.1% short / +0.6% depth, MoE -1.2% (2026-07-14).
-            d.fused_mr1 = !real_moe;
-            // rms_norm block 1024 (single-row 2816-col norms; battery-arbitrated per model).
-            d.rms_block = 1024;
-            // gemma4 fa split ladder (d1736 sweep; see fa_split_keys).
-            d.fa_sp_gemma = true;
-        }
-        // GLM-5.3-Flash on sm_100a: rms_norm block 1024 (B200 posture flip 2026-09-06).
-        if glm5_next_b200 {
-            d.rms_block = 1024;
-        }
-        // Spec-serving stream-k key: big dense forces tiling, MoE/small defer to the
-        // fail-closed TILE form (2026-07-27; the timing selector was removed 2026-08-14).
-        if let Some(n_embd) = spec_mmq_n_embd {
-            d.mmq_sk_force = if n_embd >= 3500 { 0 } else { -1 };
-        }
-        d.step37_serving = sliding_gated_moe;
-        d
-    }
-
-    /// Each field where `self` and `other` disagree, as `STATIC=<self> vs <other>`.
-    pub fn differences(&self, other: &Self) -> Vec<String> {
-        let mut d = Vec::new();
-        let mut cmp = |name: &str, a: String, b: String| {
-            if a != b {
-                d.push(format!("{name}={a} vs {b}"));
-            }
-        };
-        let v4 = |v: usize| {
-            if v == usize::MAX {
-                "unbounded".to_string()
-            } else {
-                v.to_string()
-            }
-        };
-        cmp("FA_V4_MAX_DEFAULT", v4(self.fa_v4_max), v4(other.fa_v4_max));
-        cmp(
-            "FA_VEC_MIN_DEFAULT",
-            self.fa_vec_min.to_string(),
-            other.fa_vec_min.to_string(),
-        );
-        cmp(
-            "FA_SPW_DEFAULT",
-            self.fa_spw.to_string(),
-            other.fa_spw.to_string(),
-        );
-        cmp(
-            "FA_SP512_DEFAULT",
-            self.fa_sp512.to_string(),
-            other.fa_sp512.to_string(),
-        );
-        cmp(
-            "FUSED_MR1_DEFAULT",
-            self.fused_mr1.to_string(),
-            other.fused_mr1.to_string(),
-        );
-        cmp(
-            "RMS_BLOCK_DEFAULT",
-            self.rms_block.to_string(),
-            other.rms_block.to_string(),
-        );
-        cmp(
-            "FA_SP_GEMMA",
-            self.fa_sp_gemma.to_string(),
-            other.fa_sp_gemma.to_string(),
-        );
-        cmp(
-            "MMQ_SK_FORCE",
-            self.mmq_sk_force.to_string(),
-            other.mmq_sk_force.to_string(),
-        );
-        cmp(
-            "step37 serving defaults",
-            self.step37_serving.to_string(),
-            other.step37_serving.to_string(),
-        );
-        d
-    }
+    };
+    cmp("fa_v4_max", v4(a.fa_v4_max), v4(b.fa_v4_max));
+    cmp(
+        "fa_vec_min",
+        a.fa_vec_min.to_string(),
+        b.fa_vec_min.to_string(),
+    );
+    cmp("fa_spw", a.fa_spw.to_string(), b.fa_spw.to_string());
+    cmp("fa_sp512", a.fa_sp512.to_string(), b.fa_sp512.to_string());
+    cmp(
+        "fused_mr1",
+        a.fused_mr1.to_string(),
+        b.fused_mr1.to_string(),
+    );
+    cmp(
+        "rms_block",
+        a.rms_block.to_string(),
+        b.rms_block.to_string(),
+    );
+    cmp(
+        "fa_sp_gemma",
+        a.fa_sp_gemma.to_string(),
+        b.fa_sp_gemma.to_string(),
+    );
+    cmp(
+        "mmq_sk_force",
+        a.mmq_sk_force.to_string(),
+        b.mmq_sk_force.to_string(),
+    );
+    cmp(
+        "step37_serving",
+        a.step37_serving.to_string(),
+        b.step37_serving.to_string(),
+    );
+    d
 }
 
-/// The first model's claim in this process: its set and its label.
-static MODEL_NUMERIC_CLAIM: std::sync::Mutex<Option<(ModelNumericDefaults, String)>> =
+/// The first model's claim in this process: its profile and its label.
+static MODEL_NUMERIC_CLAIM: std::sync::Mutex<Option<(NumericProfile, String)>> =
     std::sync::Mutex::new(None);
 
-/// Claim the process's per-model numeric defaults for `model` (a label naming it). The first
-/// claim wins; a later model with the same set passes (the same model loaded twice, two models
-/// of one numeric class); a later model with a different set refuses by name. Never reset:
-/// the latched readers keep the first values for the life of the process, so a reload of a
-/// different model in the same process refuses too, and a load that fails after its claim
-/// keeps it (its stores may already have run).
-pub fn claim_model_numeric_defaults(model: &str, want: ModelNumericDefaults) -> Result<(), String> {
+/// Interim roster guard, kept until the per-model profile's co-load cells pass: the first
+/// model's profile wins; a later model with the same profile passes; a later model with a
+/// different profile refuses by name.
+pub fn claim_model_numeric_defaults(model: &str, want: NumericProfile) -> Result<(), String> {
     let mut claim = MODEL_NUMERIC_CLAIM
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
@@ -1466,20 +1262,19 @@ pub fn claim_model_numeric_defaults(model: &str, want: ModelNumericDefaults) -> 
 
 /// The pure verdict behind [`claim_model_numeric_defaults`].
 pub fn model_numeric_claim_verdict(
-    have: &ModelNumericDefaults,
+    have: &NumericProfile,
     first: &str,
-    want: &ModelNumericDefaults,
+    want: &NumericProfile,
     model: &str,
 ) -> Result<(), String> {
-    let diff = have.differences(want);
+    let diff = numeric_profile_differences(have, want);
     if diff.is_empty() {
         return Ok(());
     }
     Err(format!(
-        "model {model} keys per-model numeric defaults that differ from the ones {first} already \
-         keyed into this process ({}; first model vs this one). They live in process-global \
-         statics, some latched on first use, so one of the two models would run the other's \
-         numeric program: serve them from separate processes",
+        "model {model} keys a numeric profile that differs from the one {first} already \
+         keyed into this process ({}; first model vs this one): serve them from separate \
+         processes",
         diff.join(", ")
     ))
 }
@@ -1517,76 +1312,21 @@ mod fa_ladder_engine_tests {
 }
 
 #[cfg(test)]
-mod model_numeric_defaults_tests {
-    use super::{ModelNumericDefaults, model_numeric_claim_verdict};
-
-    #[test]
-    fn qwen_class_keys_nothing_and_matches_the_statics() {
-        assert_eq!(
-            ModelNumericDefaults::for_model(4, None, false, false, None),
-            ModelNumericDefaults::PROCESS
-        );
-        // Small/MoE under spec intent keeps the -1 key.
-        assert_eq!(
-            ModelNumericDefaults::for_model(4, None, false, false, Some(2048)),
-            ModelNumericDefaults::PROCESS
-        );
-    }
-
-    #[test]
-    fn per_model_keys_are_the_loader_values() {
-        let g31 = ModelNumericDefaults::for_model(2, Some(false), false, false, None);
-        assert_eq!(
-            (
-                g31.fa_vec_min,
-                g31.fa_spw,
-                g31.fa_sp512,
-                g31.fused_mr1,
-                g31.rms_block
-            ),
-            (1, 64, 32, true, 1024)
-        );
-        assert!(g31.fa_sp_gemma);
-        let g26 = ModelNumericDefaults::for_model(2, Some(true), false, false, None);
-        assert_eq!((g26.fa_spw, g26.fa_sp512, g26.fused_mr1), (32, 16, false));
-        assert_eq!(
-            ModelNumericDefaults::for_model(16, None, false, false, None).fa_v4_max,
-            0
-        );
-        assert_eq!(
-            ModelNumericDefaults::for_model(1, None, true, false, None).rms_block,
-            1024
-        );
-        assert_eq!(
-            ModelNumericDefaults::for_model(4, None, false, false, Some(5120)).mmq_sk_force,
-            0
-        );
-        assert!(ModelNumericDefaults::for_model(4, None, false, true, None).step37_serving);
-    }
+mod model_numeric_claim_tests {
+    use super::{NumericProfile, model_numeric_claim_verdict};
 
     #[test]
     fn a_conflicting_roster_refuses_by_name_and_a_matching_one_passes() {
-        let qwen = ModelNumericDefaults::for_model(4, None, false, false, None);
-        let gemma = ModelNumericDefaults::for_model(2, Some(false), false, false, None);
+        let qwen = NumericProfile::for_model(4, None, false, false, None);
+        let gemma = NumericProfile::for_model(2, Some(false), false, false, None);
         model_numeric_claim_verdict(&qwen, "qwen-a", &qwen, "qwen-b").expect("same class");
         let err = model_numeric_claim_verdict(&gemma, "g31", &qwen, "q27").unwrap_err();
-        for needle in [
-            "g31",
-            "q27",
-            "RMS_BLOCK_DEFAULT=1024 vs 256",
-            "FA_VEC_MIN_DEFAULT=1 vs 96",
-        ] {
+        for needle in ["g31", "q27", "rms_block=1024 vs 256", "fa_vec_min=1 vs 96"] {
             assert!(err.contains(needle), "{needle} missing from {err}");
         }
-        // The gqa > 8 v4 guard is a correctness key: a gqa-16 model beside a gqa-8 one refuses.
-        let gqa16 = ModelNumericDefaults::for_model(16, None, false, false, None);
+        let gqa16 = NumericProfile::for_model(16, None, false, false, None);
         let err = model_numeric_claim_verdict(&qwen, "q27", &gqa16, "q122").unwrap_err();
-        assert!(err.contains("FA_V4_MAX_DEFAULT=unbounded vs 0"), "{err}");
-        // Dense and MoE gemma differ in their split and row-mapping keys.
-        let g26 = ModelNumericDefaults::for_model(2, Some(true), false, false, None);
-        let err = model_numeric_claim_verdict(&gemma, "g31", &g26, "g26").unwrap_err();
-        assert!(err.contains("FA_SPW_DEFAULT=64 vs 32"), "{err}");
-        assert!(!err.contains("RMS_BLOCK_DEFAULT"), "{err}");
+        assert!(err.contains("fa_v4_max=unbounded vs 0"), "{err}");
     }
 }
 /// bf16 matvec family block size (MEMRA_MMV_BLOCK, default 128, clamped to [64, 256] and a
@@ -1812,56 +1552,6 @@ pub(crate) fn b200_bf16_gemv_lt_on() -> bool {
     })
 }
 
-/// STEP37 SERVING DEFAULTS (owner flip, 2026-08-27). The step37 serving shape — the t-row walk,
-/// the q8 W8 doors, the SWA ring, the NVFP4 draft heads, and this lane's three verify fixes —
-/// was gated door by door (byte tape == plain, acceptance unchanged, run-spec K=1..8 PASS,
-/// interleaved x5 wall, vendor-default sampled cell with engagement receipts: greedy 93.18 vs
-/// 81.95 plain, sampled 81.79 vs 78.50) and the owner ordered the defaults ON. The doors' call
-/// sites are not all family-scoped (the W8 mirror routing sits inside generic matmul paths), so
-/// the default arms AT MODEL LOAD when the plan compiles to the SlidingGatedMoe program, never
-/// globally. Every door keeps a per-flag env override: `=1` forces ON for any family, `=0` is
-/// the kill switch — the rollback seam the FLAGS rows name. Per-process: a process that loads a
-/// step37-class model arms the defaults for its lifetime.
-///
-/// CO-LOAD AUDIT (2026-11-03, every `step37_door` call site). Per-process arming is harmless
-/// where the call site already answers for one family:
-/// - plan-gated at the call site: `MEMRA_SPEC_VERIFY_EAGER`, `MEMRA_SPEC_VERIFY_TCOL`,
-///   `MEMRA_SPEC_HEAD_ROWS`, `MEMRA_TCOL_FFN`, `MEMRA_SPEC_FA2` (the spec verify walk refuses
-///   any plan but SlidingGatedMoe) and `MEMRA_STEP_GEMM_PRIME` (the prime arm checks the
-///   program; the MoE arm needs the step TP NVFP4 bank);
-/// - step-TP-only by construction: the `MEMRA_STEP_TP_W8` arms in `tp.rs`, which only step
-///   loaders build;
-/// - plan-scoped at load: `MEMRA_SWA_RING` (`cache::swa_ring_on_for_plan`) and
-///   `MEMRA_MTP_HEAD_NVFP4` ([`step37_door_for_plan`]).
-///
-/// The W8 HYBRID half is the one door a plan cannot scope: `MEMRA_STEP_TP_W8` +
-/// `MEMRA_W8_HYBRID` route bf16 GEMVs to q8_0 mirrors inside generic Engine paths
-/// (`matvec_bf16_into`, `matvec_bf16_rows_into`, the rows-exact `matmul` guard, the KDA fused
-/// projection), which see a weight and no model. A co-loaded family would run a substituted
-/// weight program there, so [`admit_step37_coload`] refuses the co-load while that half rides
-/// the family default. `MEMRA_Q8T_WONCE` is reached only through the q8 mirrors and the step
-/// TP q8 kernels, and its weight-once twins keep the per-column float program, so it needs no
-/// guard of its own.
-static STEP37_SERVING_DEFAULTS: std::sync::atomic::AtomicBool =
-    std::sync::atomic::AtomicBool::new(false);
-
-/// A model whose plan is NOT SlidingGatedMoe loaded in this process ([`admit_step37_coload`]).
-static OTHER_FAMILY_LOADED: std::sync::atomic::AtomicBool =
-    std::sync::atomic::AtomicBool::new(false);
-
-pub fn arm_step37_serving_defaults() {
-    STEP37_SERVING_DEFAULTS.store(true, std::sync::atomic::Ordering::Relaxed);
-    crate::cache::set_swa_ring_default(true);
-    eprintln!(
-        "[step37-defaults] serving doors armed ON for the SlidingGatedMoe program \
-         (per-flag =0 kills, =1 forces; owner flip 2026-08-27)"
-    );
-}
-
-pub(crate) fn step37_defaults_armed() -> bool {
-    STEP37_SERVING_DEFAULTS.load(std::sync::atomic::Ordering::Relaxed)
-}
-
 /// A step37 door's cached env value: `Some(true)` for `=1`, `Some(false)` for `=0`, `None`
 /// otherwise (the family default applies).
 fn step37_door_env(cell: &'static std::sync::OnceLock<Option<bool>>, name: &str) -> Option<bool> {
@@ -1872,29 +1562,34 @@ fn step37_door_env(cell: &'static std::sync::OnceLock<Option<bool>>, name: &str)
     })
 }
 
-/// Tri-state door: `=1` ON, `=0` OFF, unset = the family default (ON once a step37-class model
-/// armed it, OFF otherwise). The env parse is cached; the family default is read live because
-/// arming happens at model load, possibly after another door's first read.
+/// STEP37 SERVING DEFAULTS (owner flip, 2026-08-27). The step37 serving shape — the t-row walk,
+/// the q8 W8 doors, the SWA ring, the NVFP4 draft heads, and this lane's three verify fixes —
+/// was gated door by door (byte tape == plain, acceptance unchanged, run-spec K=1..8 PASS,
+/// interleaved x5 wall, vendor-default sampled cell with engagement receipts: greedy 93.18 vs
+/// 81.95 plain, sampled 81.79 vs 78.50) and the owner ordered the defaults ON. The unset default
+/// is the model's numeric profile (`NumericProfile::step37_serving`, ON for the SlidingGatedMoe
+/// program), read through the profile the calling model entry installed. A co-loaded family
+/// therefore keeps every door at its own unset default (OFF), including the W8 HYBRID half,
+/// which routes bf16 GEMVs to q8_0 mirrors inside generic Engine paths (`matvec_bf16_into`,
+/// `matvec_bf16_rows_into`, the rows-exact `matmul` guard, the KDA fused projection) that see a
+/// weight and no model: it engages only inside a step37 model's own launches. Every door keeps
+/// a per-flag env override: `=1` forces ON for any family, `=0` is the kill switch — the
+/// rollback seam the FLAGS rows name. `MEMRA_SWA_RING` is the one process-wide part: the
+/// SlidingGatedMoe load arms its default (`cache::set_swa_ring_default`), and every reader asks
+/// `cache::swa_ring_on_for_plan`, so only a SlidingGatedMoe plan takes the ring.
+///
+/// Tri-state door: `=1` ON, `=0` OFF, unset = the calling model's step37 serving default (ON
+/// for the SlidingGatedMoe program, OFF for every other model and outside any model scope).
 pub(crate) fn step37_door(cell: &'static std::sync::OnceLock<Option<bool>>, name: &str) -> bool {
-    step37_door_env(cell, name).unwrap_or_else(step37_defaults_armed)
-}
-
-/// [`step37_door`] for a call site that knows the model: unset = the family default only for a
-/// SlidingGatedMoe plan, so a model loaded after a step37 load does not inherit it.
-pub(crate) fn step37_door_for_plan(
-    cell: &'static std::sync::OnceLock<Option<bool>>,
-    name: &str,
-    sliding_gated_moe: bool,
-) -> bool {
-    step37_door_env(cell, name).unwrap_or_else(|| sliding_gated_moe && step37_defaults_armed())
+    step37_door_env(cell, name).unwrap_or_else(|| NumericProfile::current().step37_serving)
 }
 
 static W8_HYBRID_ENV: std::sync::OnceLock<Option<bool>> = std::sync::OnceLock::new();
 static STEP_TP_W8_ENV: std::sync::OnceLock<Option<bool>> = std::sync::OnceLock::new();
 
 /// MEMRA_W8_HYBRID: the `MEMRA_STEP_TP_W8` door's HYBRID half (LM head, shared expert, dense
-/// FFN). Unset = the step37 family default, like `MEMRA_STEP_TP_W8` (the co-load guard in
-/// [`admit_step37_coload`] covers it). Measured before the 2026-08-27 family flip, when it was
+/// FFN). Unset = the step37 family default, like `MEMRA_STEP_TP_W8` (the calling model's
+/// profile, so it never reaches another family's GEMVs). Measured before the 2026-08-27 family flip, when it was
 /// opt-in: it moved decode +0.1% (the W8 trace showed it
 /// only ever mirrored the shexp down rows, which SHEXP_OVERLAP already hides), while costing
 /// ~1.7 GB per card on top of the attention mirrors' ~0.9 GB — and at the model's NATURAL
@@ -1912,102 +1607,11 @@ pub(crate) fn w8_hybrid_on() -> bool {
 /// acceptance is the argmax gate plus the boot battery. Motivation is measured, not assumed
 /// (`decode-kernel-census`, 2026-08-25): the fused qkv shape runs 23.0 us in bf16 at
 /// 1.83 TB/s and 14.0 us in q8_0 at 1.60, and o_proj 24.2 -> 11.7 us — together
-/// ~-1.0 ms of a 13.16 ms token. Unset = the step37 family default ([`step37_door`]): ON once
-/// a SlidingGatedMoe model armed the serving defaults (owner flip 2026-08-27), OFF otherwise;
-/// `=0` kills, `=1` forces.
+/// ~-1.0 ms of a 13.16 ms token. Unset = the step37 family default ([`step37_door`]): ON for a
+/// SlidingGatedMoe model's own launches (owner flip 2026-08-27), OFF otherwise; `=0` kills,
+/// `=1` forces.
 pub(crate) fn step_tp_w8_on() -> bool {
     step37_door(&STEP_TP_W8_ENV, "MEMRA_STEP_TP_W8")
-}
-
-/// Does arming the step37 defaults turn the generic-path W8 hybrid half on for a model that
-/// would not run it otherwise? The half needs both doors, so it does exactly when neither is
-/// pinned `0` and at least one rides the family default.
-fn step37_w8_hybrid_reaches_other_families(w8: Option<bool>, hybrid: Option<bool>) -> bool {
-    w8 != Some(false) && hybrid != Some(false) && (w8.is_none() || hybrid.is_none())
-}
-
-/// The co-load decision, pure for tests: `Some(reason)` refuses this load.
-fn step37_coload_refusal(
-    sliding_gated_moe: bool,
-    w8_hybrid_reaches: bool,
-    step37_armed: bool,
-    other_family_loaded: bool,
-) -> Option<&'static str> {
-    if !w8_hybrid_reaches {
-        return None;
-    }
-    if sliding_gated_moe && other_family_loaded {
-        Some("a model of another family is already loaded in this process")
-    } else if !sliding_gated_moe && step37_armed {
-        Some("a SlidingGatedMoe (step37) model already armed the step37 serving defaults")
-    } else {
-        None
-    }
-}
-
-/// Load-time guard, called for every plan before the step37 arming point. The W8 hybrid half
-/// routes inside generic Engine GEMVs that see no plan (see the co-load audit above), so a
-/// SlidingGatedMoe model and another family cannot share a process while that half rides the
-/// family default: the other family would run q8_0 mirrors in place of its bf16 weights.
-/// Pinning `MEMRA_W8_HYBRID=0` keeps every family on its bf16 program; pinning
-/// `MEMRA_STEP_TP_W8=1 MEMRA_W8_HYBRID=1` runs the mirrors for every family by choice.
-pub(crate) fn admit_step37_coload(sliding_gated_moe: bool) -> Result<(), String> {
-    use std::sync::atomic::Ordering::Relaxed;
-    let reaches = step37_w8_hybrid_reaches_other_families(
-        step37_door_env(&STEP_TP_W8_ENV, "MEMRA_STEP_TP_W8"),
-        step37_door_env(&W8_HYBRID_ENV, "MEMRA_W8_HYBRID"),
-    );
-    if let Some(reason) = step37_coload_refusal(
-        sliding_gated_moe,
-        reaches,
-        step37_defaults_armed(),
-        OTHER_FAMILY_LOADED.load(Relaxed),
-    ) {
-        return Err(format!(
-            "step37 co-load refused: {reason}. The step37 serving defaults are process-wide and \
-             their W8 hybrid half routes bf16 GEMVs to q8_0 mirrors inside generic engine paths, \
-             so the other family would run a substituted weight program. Serve the families in \
-             separate processes, or pin MEMRA_W8_HYBRID=0 (every family keeps its bf16 GEMVs) \
-             or MEMRA_STEP_TP_W8=1 MEMRA_W8_HYBRID=1 (every family takes the mirrors)."
-        ));
-    }
-    if !sliding_gated_moe {
-        OTHER_FAMILY_LOADED.store(true, Relaxed);
-    }
-    Ok(())
-}
-
-#[cfg(test)]
-mod step37_coload_tests {
-    use super::{step37_coload_refusal, step37_w8_hybrid_reaches_other_families as reaches};
-
-    #[test]
-    fn w8_hybrid_reaches_other_families_only_through_the_family_default() {
-        // Unset doors ride the family default: arming turns the generic half on.
-        assert!(reaches(None, None));
-        assert!(reaches(Some(true), None));
-        assert!(reaches(None, Some(true)));
-        // Both pinned on: the operator chose the half for every family.
-        assert!(!reaches(Some(true), Some(true)));
-        // Either pinned off: the half is off for every family.
-        for other in [None, Some(true), Some(false)] {
-            assert!(!reaches(Some(false), other));
-            assert!(!reaches(other, Some(false)));
-        }
-    }
-
-    #[test]
-    fn a_mixed_coload_is_refused_in_either_load_order() {
-        // step37 first, then another family.
-        assert!(step37_coload_refusal(false, true, true, false).is_some());
-        // another family first, then step37.
-        assert!(step37_coload_refusal(true, true, false, true).is_some());
-        // Same-family processes and pinned doors load.
-        assert!(step37_coload_refusal(true, true, true, false).is_none());
-        assert!(step37_coload_refusal(false, true, false, true).is_none());
-        assert!(step37_coload_refusal(false, false, true, true).is_none());
-        assert!(step37_coload_refusal(true, false, true, true).is_none());
-    }
 }
 
 /// MEMRA_GLM5_W8=1 (default OFF, unset/0 = bf16): q8_0 mirror of the bf16-resident glm5_next
@@ -2035,7 +1639,7 @@ pub(crate) static GLM5_W8_DISPATCHES: std::sync::atomic::AtomicU64 =
 
 /// MEMRA_W8_VIEW=1: extend the W8 hybrid half to the ROW-RANGE-VIEW GEMVs, i.e. the lo halves
 /// that `MEMRA_HEAD_SPLIT` and `MEMRA_SHEXP_OVERLAP` keep on rank 0. NOT a step37 family door
-/// and NOT armed by `arm_step37_serving_defaults`: it stays off until it carries its own
+/// and NOT in the step37 serving defaults: it stays off until it carries its own
 /// interleaved speed rows and its own argmax gate. Unset or `=0` is the rollback seam.
 pub(crate) fn w8_view_on() -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
@@ -2059,8 +1663,8 @@ pub(crate) fn step_gemm_prime_on() -> bool {
 /// weights from DRAM once per column (nsys 2026-08-27: qkv_rp_t 1.67x, b4_rp_t 1.43x a
 /// single-column call for 2 columns, where weight-bound scaling says ~1.1x). Per-column float
 /// program unchanged (same lane-strided blk order, own accumulator chain, same reduce). Unset =
-/// the step37 family default ([`step37_door`]): ON once a SlidingGatedMoe model armed the
-/// serving defaults, OFF otherwise; `=0` kills, `=1` forces.
+/// the step37 family default ([`step37_door`]): ON for a SlidingGatedMoe model's own launches,
+/// OFF otherwise; `=0` kills, `=1` forces.
 pub(crate) fn q8t_wonce_on() -> bool {
     static ENV: std::sync::OnceLock<Option<bool>> = std::sync::OnceLock::new();
     step37_door(&ENV, "MEMRA_Q8T_WONCE")
@@ -2097,25 +1701,12 @@ mod sigmoid_topk_dispatch_tests {
     }
 }
 
+/// rms_norm blockDim: `MEMRA_RMS_BLOCK`, else the model's profile (256 for every model that
+/// keys nothing; gemma4 and GLM-5.3-Flash on sm_100a key 1024).
 pub(crate) fn rms_block() -> u32 {
-    *RMS_BLOCK_LATCH.get_or_init(|| {
-        std::env::var("MEMRA_RMS_BLOCK")
-            .ok()
-            .and_then(|v| v.parse().ok())
-            .unwrap_or_else(|| RMS_BLOCK_DEFAULT.load(std::sync::atomic::Ordering::Relaxed))
-    })
-}
-static RMS_BLOCK_LATCH: std::sync::OnceLock<u32> = std::sync::OnceLock::new();
-
-/// [`latched_default_conflict`] for the rms_norm block size (`rms_block`).
-pub(crate) fn rms_block_default_conflict(default: u32, why: &str) -> Option<String> {
-    latched_default_conflict(
-        "MEMRA_RMS_BLOCK",
-        RMS_BLOCK_LATCH.get().copied(),
-        std::env::var("MEMRA_RMS_BLOCK").ok().as_deref(),
-        default,
-        why,
-    )
+    static ENV: std::sync::OnceLock<Option<u32>> = std::sync::OnceLock::new();
+    numeric_profile::env_override(&ENV, "MEMRA_RMS_BLOCK")
+        .unwrap_or_else(|| NumericProfile::current().rms_block)
 }
 
 /// Keys per FA-decode split. `MEMRA_FA_SPLIT` (a multiple of 8, at least 8) forces one size at
@@ -2123,7 +1714,7 @@ pub(crate) fn rms_block_default_conflict(default: u32, why: &str) -> Option<Stri
 /// rung comments below): on parts with at least 128 SMs, 16 up to t_kv 2048 (`MEMRA_FA_SP_SHORT`
 /// overrides that rung), 64 up to 16384 and 128 beyond; on smaller parts, 8 up to 512 for
 /// n_head_kv <= 4 and 32 up to 8192 otherwise, then 64 up to 16384 and 128 beyond. The gemma seam
-/// (`FA_SP_GEMMA` with `MEMRA_FA_SP16=1`) takes 16 / 64 / 128 at 8192 / 16384. The split changes
+/// (the profile's `fa_sp_gemma` with `MEMRA_FA_SP16=1`) takes 16 / 64 / 128 at 8192 / 16384. The split changes
 /// the combine's FP summation order, so every ladder change is a numeric-class change that
 /// kernel-check and run-spec K=1..8 arbitrate. Takes t_kv so eager decode, `_dc` capture and
 /// `fa_geom_eager` share one signature.
@@ -2153,9 +1744,8 @@ pub(crate) fn fa_split_keys(t_kv: usize, n_head_kv: usize) -> usize {
     // gemma4 all-16 ladder probe REVERTED (2026-07-10): +1.3 plain at d1736 (157.5 vs 156.2)
     // but depth VERIFY collapsed (spec 203.5 -> 169 — the windowed rows' per-row combine over
     // 64 splits). The mixed default (swa nkv=8 -> 32, globals nkv=2 -> 8-ladder) stays; a
-    // caller-split policy would break row-vs-decode split parity. FA_SP_GEMMA kept as a seam.
-    if FA_SP_GEMMA.load(std::sync::atomic::Ordering::Relaxed)
-        && std::env::var("MEMRA_FA_SP16").as_deref() == Ok("1")
+    // caller-split policy would break row-vs-decode split parity. `fa_sp_gemma` kept as a seam.
+    if NumericProfile::current().fa_sp_gemma && std::env::var("MEMRA_FA_SP16").as_deref() == Ok("1")
     {
         return if t_kv <= 8192 {
             16
@@ -2718,41 +2308,22 @@ pub(crate) fn fa_part_zero_on() -> bool {
 /// above the 1024 window so the windowed decode + verify rows share the REGISTER family.
 pub static FA_SMEM_TKV_DEFAULT: std::sync::atomic::AtomicUsize =
     std::sync::atomic::AtomicUsize::new(1024);
-pub static FA_V4_MAX_DEFAULT: std::sync::atomic::AtomicUsize =
-    std::sync::atomic::AtomicUsize::new(ModelNumericDefaults::PROCESS.fa_v4_max);
 pub fn fa_v4_at_pub(t_kv: usize) -> bool {
     fa_v4_at(t_kv)
 }
 /// t_kv-conditional v4 decode pick: the v4 family below the threshold, the v3 family at and
-/// above it. Threshold `MEMRA_FA_V4_MAX`; unset, `FA_V4_MAX_DEFAULT`, which is `usize::MAX` (v4
-/// at every depth) unless the loader stores 0 for a gqa > 8 plan (the v4 q-array capacity
-/// guard). Gemma stores no threshold and rides v4 at every depth (its rows_w/dpl16 parity sweep
+/// above it. Threshold `MEMRA_FA_V4_MAX`; unset, the model profile's `fa_v4_max`: `usize::MAX`
+/// (v4 at every depth) unless the profile keys 0 for a gqa > 8 plan (the v4 q-array capacity
+/// guard). Gemma keys no threshold and rides v4 at every depth (its rows_w/dpl16 parity sweep
 /// measured v4 the depth winner); the seam dates from the 2026-07-10 gemma depth lesson, when
 /// v4's key-per-lane pipeline starved at the 1024 window with short splits. Applied at EVERY
 /// dispatch site (eager, rows, rows_w, dc) so verify stays kernel-family-identical to decode at
 /// the same t_kv; `fa_decode_rows` groups its rows by this pick.
 fn fa_v4_at(t_kv: usize) -> bool {
-    let mx = *FA_V4_MAX_LATCH.get_or_init(|| {
-        std::env::var("MEMRA_FA_V4_MAX")
-            .ok()
-            .and_then(|v| v.parse().ok())
-            .unwrap_or_else(|| FA_V4_MAX_DEFAULT.load(std::sync::atomic::Ordering::Relaxed))
-    });
+    static ENV: std::sync::OnceLock<Option<usize>> = std::sync::OnceLock::new();
+    let mx = numeric_profile::env_override(&ENV, "MEMRA_FA_V4_MAX")
+        .unwrap_or_else(|| NumericProfile::current().fa_v4_max);
     t_kv < mx
-}
-static FA_V4_MAX_LATCH: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
-
-/// [`latched_default_conflict`] for the v4 decode threshold (`fa_v4_at`). The case it exists
-/// for: a gqa>8 model whose load stores 0 after another model latched `usize::MAX`, which sends
-/// it to the v4 kernels past their q-array capacity and decodes all-NaN logits.
-pub(crate) fn fa_v4_max_default_conflict(default: usize, why: &str) -> Option<String> {
-    latched_default_conflict(
-        "MEMRA_FA_V4_MAX",
-        FA_V4_MAX_LATCH.get().copied(),
-        std::env::var("MEMRA_FA_V4_MAX").ok().as_deref(),
-        default,
-        why,
-    )
 }
 // The deep v4 twins (fa_decode_vec_q_v4_deep / _deep_dc, lane fa-decode-deep 2026-08-02) run
 // the v4 program verbatim with a de-conflicted smem layout and L2 prefetch; they are the only
@@ -5542,7 +5113,7 @@ impl Engine {
     /// through the raw driver API (cudarc hides its CUfunction handles; a duplicate module
     /// of tiny glue kernels is free). Resolved lazily per name, cached process-wide.
     /// Fused t=1 q4_0 mr policy: env MEMRA_Q40_MR wins (1/2); else the per-model
-    /// FUSED_MR1_DEFAULT (dense gemma = mr1, MoE = mr2 — see the static's doc).
+    /// profile's `fused_mr1` (dense gemma = mr1, MoE = mr2 — see `NumericProfile::for_model`).
     fn q40_mr1_on() -> bool {
         static Q40MR: std::sync::OnceLock<Option<u32>> = std::sync::OnceLock::new();
         match *Q40MR.get_or_init(|| {
@@ -5551,7 +5122,7 @@ impl Engine {
                 .and_then(|v| v.parse().ok())
         }) {
             Some(v) => v == 1,
-            None => crate::FUSED_MR1_DEFAULT.load(std::sync::atomic::Ordering::Relaxed),
+            None => NumericProfile::current().fused_mr1,
         }
     }
 
@@ -15607,7 +15178,7 @@ impl Engine {
     /// `rms_block()`, the SAME blockDim `rms_norm` uses: the sum-of-squares block-reduce tree
     /// depends on blockDim (per-thread stride, shfl-tree depth), so a fixed 1024 would diverge
     /// from `rms_norm`'s actual per-model blockDim (256 by default; 1024 only where a loader
-    /// overrides `RMS_BLOCK_DEFAULT`, e.g. gemma4) — caught by `q8_fuse_gate`'s ncols=1536 shape
+    /// keys a 1024 block in its profile, e.g. gemma4) — caught by `q8_fuse_gate`'s ncols=1536 shape
     /// before this landed (README: keep this dynamic, never hardcode the block size again).
     pub fn rms_norm_zq8_f32(
         &self,
@@ -30218,7 +29789,7 @@ impl Engine {
             sp = if v >= 8 {
                 v
             } else {
-                FA_SP512_DEFAULT.load(std::sync::atomic::Ordering::Relaxed)
+                NumericProfile::current().fa_sp512
             };
         }
         let (hd, nh, nhkv) = (head_dim as i32, n_head as i32, n_head_kv as i32);
@@ -30687,7 +30258,7 @@ impl Engine {
             if v >= 8 {
                 v
             } else {
-                FA_SPW_DEFAULT.load(std::sync::atomic::Ordering::Relaxed)
+                NumericProfile::current().fa_spw
             }
         };
         #[allow(clippy::manual_div_ceil)]

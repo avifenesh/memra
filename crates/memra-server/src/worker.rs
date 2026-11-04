@@ -27952,7 +27952,12 @@ pub fn run(
                         return;
                     }
                 };
-                match memra_engine::hybrid::MtpHead::load_draft(&engine, &dg, &model.cfg) {
+                // The draft head's load reads this model's step37 door defaults (the W8 mirrors
+                // of its attention projections), so it runs under the model's numeric profile.
+                let numeric = model.enter_numeric();
+                let head = memra_engine::hybrid::MtpHead::load_draft(&engine, &dg, &model.cfg);
+                drop(numeric);
+                match head {
                     Ok(head) => {
                         let draft_cfg = match memra_gguf::source::GgufSource(&dg).try_config() {
                             Ok(config) => config,
@@ -41223,6 +41228,8 @@ fn prefill_tick(
     if let Some(v) = s.vision.as_mut()
         && v.overlay.is_none()
     {
+        // The tower's launches serve this model's prompt: run them under its numeric profile.
+        let _numeric = lm.model.enter_numeric();
         build_vision_overlay(
             engine,
             lm.model.vision_intake_engine(engine)?,

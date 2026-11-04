@@ -89,6 +89,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let g = GgufFile::open(&path)?;
     let arch = g.arch().unwrap_or("?").to_string();
     let model = HybridModel::load_without_mtp(&e, &g)?;
+    let _numeric = model.enter_numeric();
     let cfg = &model.cfg;
     let nhkv = cfg.n_head_kv as usize;
     let hd = cfg.head_dim_k as usize;

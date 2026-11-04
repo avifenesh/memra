@@ -155,6 +155,7 @@ impl HybridModel {
         prompt: &[u32],
         k: usize,
     ) -> Result<(), PrimeError> {
+        let _numeric = self.enter_numeric();
         let grid = Engine::gdn_chunk_size();
         let boundary = (prompt.len() / 2 / grid) * grid;
         if !self.mtp_prime_walk_supported()
@@ -284,6 +285,7 @@ impl HybridModel {
         sampling: Option<SpecSampling>,
         prime_split: Option<usize>,
     ) -> Result<MtpPrimeState, PrimeError> {
+        let _numeric = self.enter_numeric();
         if prompt.is_empty() || !self.mtp_prime_walk_supported() || k == 0 {
             return Err("MTP prime walker requires a nonempty supported prime and K>0".into());
         }
@@ -383,6 +385,7 @@ impl HybridModel {
         state: &'a mut Option<MtpPrimeState>,
         constraint: Option<&'a mut dyn SpecConstraint>,
     ) -> MtpPrimeWalker<'a> {
+        let _numeric = self.enter_numeric();
         MtpPrimeWalker {
             model: self,
             e,
@@ -692,6 +695,7 @@ impl PrimeWalker for MtpPrimeWalker<'_> {
     }
 
     fn advance_chunk(&mut self) -> Result<PrimeChunk, PrimeError> {
+        let _numeric = self.model.enter_numeric();
         let s = self.state.as_ref().ok_or("MTP prime already finalized")?;
         let tracking = s.graph_draft && self.e.ctx().is_event_tracking();
         if tracking {
@@ -749,6 +753,7 @@ impl PrimeWalker for MtpPrimeWalker<'_> {
     }
 
     fn finish(self) -> Result<(), PrimeError> {
+        let _numeric = self.model.enter_numeric();
         if self.remaining_chunks() != 0 {
             return Err("MTP prime incomplete".into());
         }

@@ -650,6 +650,7 @@ impl Engine {
         gguf: &GgufFile,
         budget: ExpertBankBudget,
     ) -> std::result::Result<BankedExpertGate<'_>, Box<dyn std::error::Error>> {
+        let _numeric = model.enter_numeric();
         if gguf.n_shards() != 1 || !Engine::moe_cache_enabled() || !model.mtp_extra.is_empty() {
             return Err(
                 "experts-via-tier requires one immutable GGUF, cache, and at most one MTP head"

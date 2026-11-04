@@ -27,6 +27,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let g = GgufFile::open(&model_path)?;
     let tok = memra_tokenizer::Tokenizer::from_gguf(&g)?;
     let model = memra_engine::hybrid::HybridModel::load(&e, &g)?;
+    let _numeric = model.enter_numeric();
     let tower = GemmaVisionTower::load(&e, Path::new(&mmproj))?;
 
     // tower forward
