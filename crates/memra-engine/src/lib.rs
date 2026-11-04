@@ -1178,96 +1178,6 @@ pub fn fa512_min_tkv() -> usize {
 pub static ROUTER_W8_DEFAULT: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(true);
 
-/// Each field where two profiles disagree, as `FIELD=<a> vs <b>`.
-fn numeric_profile_differences(a: &NumericProfile, b: &NumericProfile) -> Vec<String> {
-    let mut d = Vec::new();
-    let mut cmp = |name: &str, x: String, y: String| {
-        if x != y {
-            d.push(format!("{name}={x} vs {y}"));
-        }
-    };
-    let v4 = |v: usize| {
-        if v == usize::MAX {
-            "unbounded".to_string()
-        } else {
-            v.to_string()
-        }
-    };
-    cmp("fa_v4_max", v4(a.fa_v4_max), v4(b.fa_v4_max));
-    cmp(
-        "fa_vec_min",
-        a.fa_vec_min.to_string(),
-        b.fa_vec_min.to_string(),
-    );
-    cmp("fa_spw", a.fa_spw.to_string(), b.fa_spw.to_string());
-    cmp("fa_sp512", a.fa_sp512.to_string(), b.fa_sp512.to_string());
-    cmp(
-        "fused_mr1",
-        a.fused_mr1.to_string(),
-        b.fused_mr1.to_string(),
-    );
-    cmp(
-        "rms_block",
-        a.rms_block.to_string(),
-        b.rms_block.to_string(),
-    );
-    cmp(
-        "fa_sp_gemma",
-        a.fa_sp_gemma.to_string(),
-        b.fa_sp_gemma.to_string(),
-    );
-    cmp(
-        "mmq_sk_force",
-        a.mmq_sk_force.to_string(),
-        b.mmq_sk_force.to_string(),
-    );
-    cmp(
-        "step37_serving",
-        a.step37_serving.to_string(),
-        b.step37_serving.to_string(),
-    );
-    d
-}
-
-/// The first model's claim in this process: its profile and its label.
-static MODEL_NUMERIC_CLAIM: std::sync::Mutex<Option<(NumericProfile, String)>> =
-    std::sync::Mutex::new(None);
-
-/// Interim roster guard, kept until the per-model profile's co-load cells pass: the first
-/// model's profile wins; a later model with the same profile passes; a later model with a
-/// different profile refuses by name.
-pub fn claim_model_numeric_defaults(model: &str, want: NumericProfile) -> Result<(), String> {
-    let mut claim = MODEL_NUMERIC_CLAIM
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner());
-    match claim.as_ref() {
-        Some((have, first)) => model_numeric_claim_verdict(have, first, &want, model),
-        None => {
-            *claim = Some((want, model.to_string()));
-            Ok(())
-        }
-    }
-}
-
-/// The pure verdict behind [`claim_model_numeric_defaults`].
-pub fn model_numeric_claim_verdict(
-    have: &NumericProfile,
-    first: &str,
-    want: &NumericProfile,
-    model: &str,
-) -> Result<(), String> {
-    let diff = numeric_profile_differences(have, want);
-    if diff.is_empty() {
-        return Ok(());
-    }
-    Err(format!(
-        "model {model} keys a numeric profile that differs from the one {first} already \
-         keyed into this process ({}; first model vs this one): serve them from separate \
-         processes",
-        diff.join(", ")
-    ))
-}
-
 #[cfg(test)]
 mod fa3_force_tests {
     use super::fa3_force_verdict;
@@ -1301,21 +1211,95 @@ mod fa_ladder_engine_tests {
 }
 
 #[cfg(test)]
-mod model_numeric_claim_tests {
-    use super::{NumericProfile, model_numeric_claim_verdict};
+mod numeric_profile_coload_tests {
+    use super::{
+        Engine, NumericProfile, fa_v4_at, fa_vec_min_tkv, rms_block, step_tp_w8_on, w8_hybrid_on,
+    };
+
+    /// What one model's launches read: the rms_norm block, the FA vec floor, the v4 pick at a
+    /// mid-depth t_kv, the fused q4_0 row mapping, the W8 hybrid half, the windowed and hd512
+    /// split widths, the gemma split seam and the stream-k key.
+    fn program() -> (u32, usize, bool, bool, bool, usize, usize, bool, i8) {
+        let p = NumericProfile::current();
+        (
+            rms_block(),
+            fa_vec_min_tkv(),
+            fa_v4_at(4096),
+            Engine::q40_mr1_on(),
+            step_tp_w8_on() && w8_hybrid_on(),
+            p.fa_spw,
+            p.fa_sp512,
+            p.fa_sp_gemma,
+            p.mmq_sk_force,
+        )
+    }
 
     #[test]
-    fn a_conflicting_roster_refuses_by_name_and_a_matching_one_passes() {
-        let qwen = NumericProfile::for_model(4, None, false, false, None);
-        let gemma = NumericProfile::for_model(2, Some(false), false, false, None);
-        model_numeric_claim_verdict(&qwen, "qwen-a", &qwen, "qwen-b").expect("same class");
-        let err = model_numeric_claim_verdict(&gemma, "g31", &qwen, "q27").unwrap_err();
-        for needle in ["g31", "q27", "rms_block=1024 vs 256", "fa_vec_min=1 vs 96"] {
-            assert!(err.contains(needle), "{needle} missing from {err}");
+    fn co_loaded_models_each_keep_their_own_program() {
+        // An env override wins for every model by design; this test pins the defaults.
+        for knob in [
+            "MEMRA_RMS_BLOCK",
+            "MEMRA_FA_VEC_MIN",
+            "MEMRA_FA_V4_MAX",
+            "MEMRA_Q40_MR",
+            "MEMRA_STEP_TP_W8",
+            "MEMRA_W8_HYBRID",
+        ] {
+            assert!(
+                std::env::var_os(knob).is_none(),
+                "{knob} overrides the per-model defaults this test pins; run it without {knob}"
+            );
         }
-        let gqa16 = NumericProfile::for_model(16, None, false, false, None);
-        let err = model_numeric_claim_verdict(&qwen, "q27", &gqa16, "q122").unwrap_err();
-        assert!(err.contains("fa_v4_max=unbounded vs 0"), "{err}");
+        // A roster that used to refuse: qwen beside dense gemma, MoE gemma, a gqa-16 MoE, a
+        // step37 model, and a big dense model keyed for spec serving.
+        let roster = [
+            NumericProfile::for_model(6, None, false, false, None),
+            NumericProfile::for_model(2, Some(false), false, false, None),
+            NumericProfile::for_model(2, Some(true), false, false, None),
+            NumericProfile::for_model(16, None, false, false, None),
+            NumericProfile::for_model(8, None, false, true, None),
+            NumericProfile::for_model(6, None, false, false, Some(5120)),
+        ];
+        let alone: Vec<_> = roster
+            .iter()
+            .map(|p| {
+                let _numeric = p.enter();
+                program()
+            })
+            .collect();
+        assert_eq!(alone[0], (256, 96, true, false, false, 32, 16, false, -1));
+        assert_eq!(alone[1], (1024, 1, true, true, false, 64, 32, true, -1));
+        assert_eq!(alone[2], (1024, 1, true, false, false, 32, 16, true, -1));
+        assert_eq!(alone[3], (256, 96, false, false, false, 32, 16, false, -1));
+        assert_eq!(alone[4], (256, 96, true, false, true, 32, 16, false, -1));
+        assert_eq!(alone[5], (256, 96, true, false, false, 32, 16, false, 0));
+        // A multi-model worker ticks its models in any order, several times: each model's
+        // launches read exactly what it reads alone, whatever ran before it.
+        for order in [[0, 1, 2, 3, 4, 5], [5, 4, 3, 2, 1, 0], [1, 0, 4, 3, 5, 2]] {
+            for _round in 0..2 {
+                for &i in &order {
+                    let _numeric = roster[i].enter();
+                    assert_eq!(program(), alone[i], "model {i} in order {order:?}");
+                }
+            }
+        }
+        // A model entry nested inside another (a drafter step inside its target's verify, say)
+        // runs its own profile and hands the outer one back on return.
+        {
+            let _outer = roster[1].enter();
+            {
+                let _inner = roster[3].enter();
+                assert_eq!(program(), alone[3]);
+            }
+            assert_eq!(program(), alone[1]);
+        }
+        // Outside every model scope the base program runs, and another thread is unaffected by
+        // this thread's scope.
+        assert_eq!(program(), alone[0]);
+        let _numeric = roster[1].enter();
+        let other = std::thread::scope(|s| s.spawn(program).join().unwrap());
+        assert_eq!(other, alone[0]);
+        assert_eq!(program(), alone[1]);
     }
 }
 /// bf16 matvec family block size (MEMRA_MMV_BLOCK, default 128, clamped to [64, 256] and a

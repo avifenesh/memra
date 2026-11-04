@@ -4295,7 +4295,6 @@ impl HybridModel {
             sliding_gated_moe_program,
             spec_mmq_key.then_some(cfg.n_embd),
         );
-        crate::claim_model_numeric_defaults(&format!("{} ({:?})", cfg.name, cfg.arch), numeric)?;
         let _numeric = numeric.enter();
         if matches!(
             src.expert_activation_precision(),
