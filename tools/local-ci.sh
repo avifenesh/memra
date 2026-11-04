@@ -721,14 +721,15 @@ fi
 
 # SPECULATIVE CONTEXT EDGE (memra#659): open requests driven to their cap back to back under the
 # default spec route, memory-shaped admission armed (open output 64: four open requests and a
-# bounded control) and unarmed (MEMRA_CTX=384: three runaways), plus a plain boot whose message
-# must equal the spec one.
+# bounded control) and the narrow envelope (MEMRA_CTX=384: three runaways inside the bound of the
+# admission program the boot states, then a bounded request), plus a plain boot whose bounded
+# message must equal the spec one (and, where admission is armed, whose open message must too).
 # Before the fix the last speculative round of a request whose budget spans its cap wrote past the
 # session cache: every such request took the #87 NaN trap and a later admission panicked the
 # worker (`mtp_kv_fill: scratch overflow`). Wired after two consecutive green runs on the local
-# RTX 5090 (research/spec-ctx-edge-20260923/). About 20 s on the 9B NVFP4. Its `on` and `plain`
-# arms run where memory-shaped admission is the default (the full-power RTX PRO 6000
-# Workstation Edition) and its `off` arm everywhere else; each SKIPs on the other program.
+# RTX 5090 (research/spec-ctx-edge-20260923/). About 20 s on the 9B NVFP4. Its `on` arm runs
+# where memory-shaped admission is the default (the full-power RTX PRO 6000 Workstation Edition
+# serving one card) and SKIPs elsewhere; `off` and `plain` run on every card.
 # MEMRA_CI_SPEC_CTX_EDGE=0 skips.
 EDGE_MODEL=${MEMRA_CI_CONT_MODEL:-$MODELS/qwen35-9b-nvfp4-gguf/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf}
 if [ "${MEMRA_CI_SPEC_CTX_EDGE:-1}" = "1" ] && [ -f "$EDGE_MODEL" ]; then

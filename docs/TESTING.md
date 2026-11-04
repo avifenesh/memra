@@ -333,12 +333,15 @@ worker.rs. Receipts: `research/request-fault-20260922/`.
 Speculative context edge (memra#659, `tools/spec-ctx-edge-gate.sh`, in `tools/local-ci.sh`,
 `MEMRA_CI_SPEC_CTX_EDGE=0` skips): three boots of the real server on the 9B's default spec route.
 Memory-shaped admission armed with open output 64: four open requests each 200, `finish_reason:
-length`, exactly 64 tokens, then a bounded control. The same admission with `MEMRA_SERVE_SPEC=0`:
-one open request whose message equals the spec arm's first byte for byte. Unarmed at
-`MEMRA_CTX=384`: three runaways each 200 with `finish_reason: length` inside the cap. The
-admission is a card default (the full-power RTX PRO 6000 Workstation Edition), so each arm reads
-the boot's `[admit-mem] door=` line and SKIPs on the other program: the two armed arms run on that
-card, the unarmed one everywhere else. Every boot: no `panicked`, `argmax sentinel`,
+length`, exactly 64 tokens, then a bounded control. The narrow envelope at `MEMRA_CTX=384`, on
+every card: three runaways each 200 with `finish_reason: length` inside the bound of the program
+the boot states (the cap less the prompt unarmed; that less the 8 slack rows armed, where the open
+charge is capped at the envelope), then a bounded 64-token request. `MEMRA_SERVE_SPEC=0`, on every
+card: a bounded 64-token request whose message equals the spec boot's bounded one byte for byte,
+and, where admission is armed, one open request whose message equals the armed spec arm's first.
+The admission is a card default (the full-power RTX PRO 6000 Workstation Edition serving one card),
+so each boot reads its `[admit-mem] door=` line: the armed arm SKIPs elsewhere and every other
+verdict names the state it read. Every boot: no `panicked`, `argmax sentinel`,
 `[worker] FATAL`, respawn or `spec verify refused` line, `/health` 200 after the last request. The
 engine side is a CPU source census (`spec::ctx_edge_659_census`) of the round guards in the qwen
 and gemma burst loops and of the verify funnel's refusal. Receipts: `research/spec-ctx-edge-20260923/`.
