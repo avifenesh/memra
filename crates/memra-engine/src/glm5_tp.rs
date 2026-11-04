@@ -670,6 +670,19 @@ pub fn prepare_glm5_tp_load(
     let rt = Arc::new(rt);
     let layers: std::collections::BTreeSet<usize> = specs.iter().map(|s| s.layer).collect();
     let ep_map = load_glm5_ep_map(view, &layers, ranks)?;
+    // A placement map places WHOLE experts; the split has none to place, and `arm_moe_ep` would
+    // drop the map without a word. Since the split became the sm_100a default that pairing is
+    // reachable from a naked command, so it refuses here, before any shard exists.
+    if ep_map.is_some() && glm5_tp_expert_split_on() {
+        return Err(format!(
+            "the placement map (MEMRA_EP_MAP / MEMRA_GLM5_EP_MAP) places whole experts, but \
+             this load shards every expert across the \
+             ranks (the expert split, the default on {} builds); set \
+             MEMRA_GLM5_TP_EXPERT_SPLIT=0 to place whole experts, or unset the map",
+            crate::BUILT_CUDA_ARCH,
+        )
+        .into());
+    }
     let (mut kda_n, mut mla_n, mut moe_n) = (0usize, 0usize, 0usize);
     for &il in &layers {
         match view.layer_class[il] {
@@ -1766,9 +1779,15 @@ impl Glm5TpSplitExps {
     }
 }
 
-/// `MEMRA_GLM5_TP_EXPERT_SPLIT=1` (lane/tp-expert-split-20260906, default OFF in code): shard
-/// every expert across the TP ranks instead of assigning whole experts. Keeping it is the
-/// owner's call (docs/FLAGS.md).
+/// The expert placement of the TP walk (lane/tp-expert-split-20260906): shard every expert
+/// across the ranks (the SPLIT) instead of assigning whole experts. The split is the default
+/// on sm_100a builds since 2026-11-04: on the 2x B200 pair it decoded at 34.84 / 39.43 tok/s
+/// against whole-expert EP's 20.29 / 20.32 (tpwalk2, same window, two reps), and the TP split
+/// grouped prime with its host diet, the sm_100a prefill default, runs only inside it
+/// (docs/decisions/GLM5-B200-DOORS.md). Every other build keeps whole-expert EP: no receipt
+/// there. `MEMRA_GLM5_TP_EXPERT_SPLIT` picks the placement explicitly, `1` the split and `0`
+/// whole experts, on any build: the one-card rig gate reaches the split through it (arm S),
+/// and the gate's whole-expert arms pin `0`.
 ///
 /// NOT byte-identical, and the split is where: `gate`/`up` are row splits, so every output
 /// element stays one full-K dot over the same bytes and that half is bit-identical, as is the
@@ -1776,7 +1795,20 @@ impl Glm5TpSplitExps {
 /// K range and the ranks' partials are added, which is a 2-way split of a reduction the
 /// unsharded walk does in one pass. Named class, gated as one.
 pub fn glm5_tp_expert_split_on() -> bool {
-    std::env::var("MEMRA_GLM5_TP_EXPERT_SPLIT").as_deref() == Ok("1")
+    expert_split_for(
+        crate::BUILT_CUDA_ARCH,
+        std::env::var("MEMRA_GLM5_TP_EXPERT_SPLIT").ok().as_deref(),
+    )
+}
+
+/// [`glm5_tp_expert_split_on`] over an explicit build and value. Pure, so the law is
+/// unit-tested without touching the process environment.
+pub(crate) fn expert_split_for(arch: &str, value: Option<&str>) -> bool {
+    match value.map(str::trim) {
+        Some("1") => true,
+        Some("0") => false,
+        _ => arch == "100a",
+    }
 }
 
 static SPLIT_MARKED: AtomicBool = AtomicBool::new(false);
@@ -1962,6 +1994,20 @@ mod tests {
             Ok(false)
         );
         assert_eq!(glm5_tp_prefix_capture_shards(Glm5TpCoverage::All), Ok(true));
+    }
+
+    /// The expert split is the sm_100a placement default; `0`/`1` pick explicitly on any build.
+    #[test]
+    fn expert_split_defaults_on_sm100a_and_honors_explicit_values() {
+        assert!(expert_split_for("100a", None));
+        assert!(expert_split_for("100a", Some("")));
+        assert!(!expert_split_for("100a", Some("0")));
+        assert!(expert_split_for("100a", Some("1")));
+        for arch in ["120a", "90a", "89"] {
+            assert!(!expert_split_for(arch, None));
+            assert!(!expert_split_for(arch, Some("0")));
+            assert!(expert_split_for(arch, Some("1")));
+        }
     }
 
     #[test]

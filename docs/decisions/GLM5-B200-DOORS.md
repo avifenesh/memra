@@ -34,8 +34,33 @@ That comparison is across windows, not an interleaved A/B, and the owner promote
 these rows.
 
 **Scope:** sm_100a builds only. On every other build the split walk keeps its per-token slot
-walk at prefill. The walk itself still needs `MEMRA_GLM5_TP_EXPERT_SPLIT=1`, which is an open
-call (below).
+walk at prefill. The walk is the expert split, which is the sm_100a TP placement default (next
+section), so a naked TP-2 command on sm_100a runs this prime.
+
+## The expert split: sm_100a TP placement default
+
+**Chosen:** on sm_100a builds an armed `MEMRA_GLM5_TP` walk shards every routed expert across
+the ranks (each rank holds half of every expert's `gate`/`up` rows and the matching `down`
+columns, and MLA `wo` turns row-parallel with it) instead of assigning whole experts.
+`MEMRA_GLM5_TP_EXPERT_SPLIT` stays as the placement selector, `=1` the split and `=0` whole
+experts on any build: the one-card rig gate (sm_120a) reaches the split only through `=1` (arm
+S), and the gate's whole-expert arms pin `=0`. A placement map places whole experts, so a map
+together with the split refuses at preflight.
+
+**Rejected:** whole-expert EP as the sm_100a default, slower below; deleting the variable, which
+would leave the split, the default program of a retired card, with no gate that can run on any
+card in hand; and keeping it default OFF, which kept the promoted prime above out of every naked
+command.
+
+**Measurement that settled it:** 2x B200 pair, tpwalk2 (darklanes
+`research/glm5-b200-mint-20260904/LANE.md`, 2026-09-06, same window, two reps per arm): the
+split decoded at 34.84 / 39.43 tok/s against whole-expert EP's 20.29 / 20.32, with the graphed
+PP-2 control at 59.81 / 59.91. The split is a different numeric class (tape `f6b309777546b67e`
+against whole-expert's `2fad380bb459ff0a`): `down` and MLA `wo` split their K reduction two ways,
+gated on a logits band plus tape identity and never on bits (`glm5-tp-gate` arm S).
+
+**Scope:** sm_100a builds only; every other build keeps whole experts, since no receipt exists
+there.
 
 ## The warp-merged top-k twin: sm_100a default
 
@@ -115,16 +140,6 @@ trunk, and the partial form used to mint an entry without shards that the restor
 plain.
 
 ## Open calls
-
-### `MEMRA_GLM5_TP_EXPERT_SPLIT`: keep, promote or delete
-
-Its 2026-09-20 decide-by passed with no split-against-whole-expert row in this repo, and the
-launcher that set it is retired, so door hygiene would delete it. Deleting it deletes the
-grouped prime and host diet above, which run only inside the split walk. Options: keep it as
-the TP-2 expert-placement switch next to `MEMRA_GLM5_TP` (recommended: the owner promoted the
-prime that needs it, and the two placements are different numeric classes an operator picks);
-make the split the sm_100a TP default on the receipts its prime rows carry (no A/B against
-whole-expert EP exists); or delete it with the grouped prime. Decide-by 2026-11-18.
 
 ### `MEMRA_DSA_SCORE_TC`: scope of an sm_100a default
 
