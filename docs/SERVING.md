@@ -140,7 +140,7 @@ resident heads retain the existing graph default. See [the capture receipt](../r
   boundary hidden alongside the trunk KV (`PREFIX_ENTRY_LAYOUT_VERSION` 2; plane + hidden
   bytes counted in the entry budget). On an unconstrained, spec-eligible WHOLE-entry hit the
   worker re-arms a warm spec session instead of downgrading: qwen/MTP via
-  `spec_session_from_restored_ready` or `_deferred` (restored trunk + draft plane + entry
+  `spec_session_from_restored_deferred` (restored trunk + draft plane + entry
   anchor; the engine feeds any prompt suffix itself, mirroring prefill_tick's program arms),
   gemma via `gemma_spec_session_from_restored` (drafter seed regenerated from a non-empty
   suffix feed; full-cover gemma hits stay plain by design). `spec_restore_refusal` refuses

@@ -36,8 +36,9 @@
 //! registry admits only moved buffers, never a borrowed pointer; a capture's source is the live
 //! session cache's plane, which the decoding session keeps. So the capture class is a same-device
 //! copy from a BORROWED source span into an OWNED, registered destination lease, and its typed op
-//! lives in the engine (`CudaTransfers::submit_d2d_capture`), not as a `TransferOp` variant; the
-//! schedule here is over that class. `ContiguousCopy` stays the owned-to-owned (peer) shape.
+//! lived in the engine (`CudaTransfers::submit_d2d_capture`, deleted on 2026-11-04 with the
+//! host-tier contracts door), not as a `TransferOp` variant; the schedule here is over that
+//! class. `ContiguousCopy` stays the owned-to-owned (peer) shape.
 use crate::contracts::*;
 
 /// The capture fixture: one batch of same-device copies issued off the reader's stream, each
