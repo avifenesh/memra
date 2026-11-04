@@ -30,14 +30,14 @@ RTX 5090 or RTX PRO 6000 program changes.
 
 **Walk:** the receipt ran the launcher's exec block with the TP-2 expert split, the symmetric walk
 and its graphs, and every accepted process logged TP graph engagement. The default is held to that
-walk: `HybridModel::glm5_tp_device_sample_supported` applies the symmetric walk's own engagement
-rule over every layer (symmetric glue loaded, `MEMRA_GLM5_TP_EXPERT_SPLIT=1`,
-`MEMRA_TP_AR_1STAGE=1`, a real two-device pair). A TP-2 load that would take the root-orchestrated
-walk keeps the host sampler, because no row measured the sampler there.
+walk: `HybridModel::glm5_tp_device_sample_supported` asks `glm5_tp_sym_walk_rt` over every layer,
+the one rule the walk's own routing applies (the posture selected over the split, the glue loaded
+on every layer, two devices armed on `device-push`). A TP-2 load that takes the root-orchestrated
+walk (`MEMRA_GLM5_TP_SYMMETRIC=0`, whole experts, a partial spec, another transport named) keeps
+the host sampler, because no row measured the sampler there.
 
-**Open at integration:** the B200 lane (fix4/b200-tp2, fe66a24a0d) deletes the symmetric walk and
-rekeys the TP runtime lookup on the mixer sidecars, and its message says the symmetric walk was
-never measured engaged. This receipt measured it engaged. If that deletion lands, the sampler has
-no measured walk left: either it goes with the walk, or the integration records that its default
-reaches the root-orchestrated walk with no receipt. That is the owner's call; no B200 row can be
-measured now.
+**Settled at integration:** an earlier pass the same day deleted the symmetric walk as
+unreceipted, which would have left this default with no measured walk. That deletion is reverted:
+the walk with its graphs is the sm_100a TP-2 default, and an sm_100a TP-2 load with no transport
+named arms `device-push` under it (`docs/decisions/GLM5-B200-DOORS.md`), so a naked command
+reaches the walk this receipt measured. The confirming pair cell on today's code is named there.
