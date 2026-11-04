@@ -34,9 +34,15 @@
 # its teeth.
 #
 # usage: kv-host-spill-identity-gate.sh <model.gguf> <server_bin> <evidence_dir>
-# env:   MEMRA_HOSTGATE_CACHE_MB (default 1024)  device prefix budget; must hold ONE seed
-#                                                entry but not two: the gate FAILS with a
-#                                                tuning message if no demote fires
+# env:   MEMRA_HOSTGATE_CACHE_MB (default: sized) device prefix budget; must hold ONE seed
+#                                                entry but not two. Unset, a sizing boot
+#                                                caches P_A once and the budget is set to
+#                                                1.5x that entry: the capture cut and the
+#                                                per-token state differ by model and route
+#                                                (a spec-boundary cut stores 64 tokens, so a
+#                                                fixed 1024 held both entries and no demote
+#                                                fired). The gate FAILS with a tuning
+#                                                message if no demote fires
 #        MEMRA_HOSTGATE_HOST_MB  (default 8192)  host tier budget for the ON boot
 #        MEMRA_HOSTGATE_TEETH=1                  forced-tiny red arm (see above)
 # Boots its own servers one arm at a time (flock ${MEMRA_GPU_LOCK:-/tmp/memra-5090.lock}).
@@ -78,7 +84,7 @@ LOCK_PROOF=$(python3 "$HERE/tier-lock-proof.py" --fd "$LOCK_FD" --lock "$GPU_LOC
 mkdir -p "$EV"
 printf '%s\n' "$LOCK_PROOF" > "$EV/LOCK.json"
 SERVER_PID=""
-CACHE_MB=${MEMRA_HOSTGATE_CACHE_MB:-1024}
+CACHE_MB=${MEMRA_HOSTGATE_CACHE_MB:-}
 HOST_MB=${MEMRA_HOSTGATE_HOST_MB:-8192}
 TEETH=${MEMRA_HOSTGATE_TEETH:-0}
 
@@ -207,6 +213,24 @@ a = json.load(open('$1'))['choices'][0]['text']
 b = json.load(open('$2'))['choices'][0]['text']
 sys.exit(0 if a == b else 1)"
 }
+
+if [ -z "$CACHE_MB" ]; then
+    # One boot with room for both entries, the ON arm's capture route, no host tier: P_A's
+    # entry size sets a budget that holds one entry and not two.
+    CACHE_MB=4096
+    echo "== sizing boot (MEMRA_PREFIX_CACHE_MB=$CACHE_MB) =="
+    boot "" "$EV/size-server.log" || exit 1
+    req "$P_A" "$EV/size-r1.json"
+    stop
+    ENTRY_MB=$(grep -a -m1 -o -E '\[prefix-cache\] insert \([^)]*\): [0-9]+ tokens, [0-9.]+MB' "$EV/size-server.log" \
+        | grep -o -E '[0-9.]+MB$' | tr -d 'MB')
+    if [ -z "$ENTRY_MB" ]; then
+        echo "  FAIL: the sizing boot cached no entry for P_A"
+        exit 1
+    fi
+    CACHE_MB=$(python3 -c 'import math, sys; print(math.ceil(float(sys.argv[1]) * 1.5))' "$ENTRY_MB")
+    echo "  sized: one entry is ${ENTRY_MB}MB, so MEMRA_PREFIX_CACHE_MB=$CACHE_MB holds one and not two"
+fi
 
 if [ "$TEETH" = 1 ]; then
     echo "== host-tier ON boot, FORCED-TINY RED ARM (MEMRA_KV_HOST_MB=1) =="
