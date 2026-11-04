@@ -361,7 +361,16 @@ mod tests {
         ))));
         let pack = model_packs::by_alias("mimo_v2_source").unwrap();
         let plan = pack.compile_plan(&config).unwrap();
-        assert!(plan.drafter.is_none());
+        // The pinned source types its MTP3 draft as a separate artifact, so the trunk contract
+        // this runner streams carries none of the draft's tensors.
+        assert!(matches!(
+            plan.drafter,
+            Some(memra_gguf::model_plan::DrafterPlan::MiMoMtp3(_))
+        ));
+        assert_eq!(
+            plan.draft_source,
+            memra_gguf::model_plan::DraftSourcePlan::ExternalArtifact
+        );
         assert!(plan.speech.is_none());
         let contract = pack
             .compile_tensor_contract(
