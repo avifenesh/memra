@@ -4,8 +4,8 @@
 //!
 //! Shape: a dsv4 checkpoint directory (config.json `model_type: "deepseek_v4"`) loads
 //! at worker boot onto the two-card placement `MEMRA_DSV4_TOPOLOGY` selects: TP/EP by
-//! default (memra #710: experts split by id, attention split by head), PP-2 as the `pp`
-//! rollback. The route serves from one FIFO queue through `MEMRA_DSV4_SESSIONS` lanes that
+//! default (memra #710: experts split by id, attention split by head), PP-2 as the explicit
+//! `pp` placement. The route serves from one FIFO queue through `MEMRA_DSV4_SESSIONS` lanes that
 //! share a launch turn: on a plain TP/EP load 16 lanes coalesce their plain steps into
 //! B-row steps (`MEMRA_DSV4_ROWS`, the lane count there); on a plain PP-2 matrix load two
 //! lanes pipeline their steps across the two cards; a drafter route keeps one lane. The
@@ -263,7 +263,8 @@ pub fn sessions_from_env(default: usize) -> Result<usize, String> {
 
 /// `MEMRA_DSV4_TOPOLOGY` (memra #710): where a two-card load places the model. Unset, empty or
 /// `tp_ep` is the default since 2026-09-25: every layer on both cards, experts split by id and
-/// attention split by head (exact attention TP2). `pp` is the PP-2 rollback. Anything else
+/// attention split by head (exact attention TP2). `pp` selects PP-2, an explicit placement kept
+/// because its two pipelined lanes aggregate more at c2 (owner, 2026-11-04). Anything else
 /// refuses the boot.
 fn resolve_topology(raw: Option<&str>) -> Result<Dsv4Placement, String> {
     match raw.map(str::trim) {
@@ -3673,10 +3674,10 @@ mod c4_host_budget_tests {
         assert_eq!(session_capacity(false, 300, 1_048_576), 300);
     }
 
-    /// TP/EP with attention TP2 is the default placement (memra #710); `pp` is the rollback,
-    /// and any other value, the retired `tp_ep_attn` measurement name included, refuses.
+    /// TP/EP with attention TP2 is the default placement (memra #710); `pp` selects PP-2, and
+    /// any other value, the retired `tp_ep_attn` measurement name included, refuses.
     #[test]
-    fn the_topology_defaults_to_tp_ep_and_pp_is_the_rollback() {
+    fn the_topology_defaults_to_tp_ep_and_pp_selects_pp2() {
         for raw in [None, Some(""), Some("tp_ep"), Some(" tp_ep ")] {
             assert_eq!(
                 resolve_topology(raw),

@@ -23,8 +23,9 @@
 //! **That changed on 2026-09-25** (memra #710, owner ruling "flip"): TP/EP with exact attention
 //! TP2 is the served two-card default. The expert-split drafter fits and serves (#720), plain
 //! requests ride the full-token replay graphs (#719, #721), and the served A/B beat PP-2 on
-//! plain and DSpark with the same text on every request. PP-2 stays as the
-//! `MEMRA_DSV4_TOPOLOGY=pp` rollback, so `SERVED_PROGRAM.tp_ep` is true and TP/EP can serve.
+//! plain and DSpark with the same text on every request. PP-2 stays as the explicit
+//! `MEMRA_DSV4_TOPOLOGY=pp` placement (it aggregates more at c2), so `SERVED_PROGRAM.tp_ep` is
+//! true and TP/EP can serve.
 //!
 //! Before that flip a door admitted only under TP/EP was not "inert", it was
 //! unreachable on the served path, and no door-level change could rescue it. Since
@@ -222,7 +223,7 @@ pub struct Dsv4Program {
 }
 
 /// What a customer request runs today: TP/EP with exact attention TP2 (the two-card default
-/// since memra #710, 2026-09-25; PP-2 is the `MEMRA_DSV4_TOPOLOGY=pp` rollback), the MATRIX
+/// since memra #710, 2026-09-25; PP-2 is the `MEMRA_DSV4_TOPOLOGY=pp` placement), the MATRIX
 /// expert program, DSpark resident, chunked prefill, and no gate-only arms.
 ///
 /// THIS IS THE DSPARK SERVING POSTURE (`MEMRA_DSV4_DRAFTER=dspark`), NOT THE NAKED DEFAULT.
