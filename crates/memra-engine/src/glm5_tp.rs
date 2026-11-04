@@ -268,7 +268,7 @@ impl Glm5TpRt {
         self.ranks() == 2 && !self.same_device_gate
     }
 
-    /// Device-side candidate exchange, using the same ordered link as the TP graph pieces.
+    /// Device-side candidate exchange over the device-signal link.
     pub(crate) fn indexer_gather(
         &self,
         root: &Engine,
