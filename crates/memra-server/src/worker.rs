@@ -40425,7 +40425,7 @@ fn admit(
         choice: req.choice.clone(),
         is_capture,
     };
-    if memra_engine::glm5_tp_sampler::requested() {
+    if memra_engine::glm5_tp_sampler::enabled() {
         use memra_engine::glm5_tp_sampler::{Glm5TpDeviceSampler, Glm5TpSampleConfig};
         let plain = s.spec_k == 0
             && s.spec.is_none()
