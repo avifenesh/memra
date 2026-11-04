@@ -16712,8 +16712,9 @@ fn host_demote_prefix_entry(engine: &Engine, host: &mut HostPrefixCache, mut dea
     // Otherwise `dead` drops here whatever happened: it was already evicted from the device tier.
 }
 
-/// MEMRA_ADMIT_RECLAIM_OFFTICK (default unset = OFF; WP-B day 42, O12): under
-/// `MEMRA_ADMIT_BY_MEMORY` and the host tier's contracts door, the admission reclaim flush drops
+/// MEMRA_ADMIT_RECLAIM_OFFTICK (default unset = OFF; WP-B day 42, O12): where memory-shaped
+/// admission is armed (the full-power RTX PRO 6000 Workstation Edition serving one card) and
+/// under the host tier's contracts door, the admission reclaim flush drops
 /// its drop set at once and demotes its demote set off the tick, one landing at a time, and the
 /// arrival defers on the landings within the door's defer budget
 /// (`research/spill-b-20260919/DAY42.md` 1.2). Unset, today's on-tick flush runs.
@@ -16724,8 +16725,9 @@ fn admit_reclaim_offtick_on() -> bool {
         if on {
             eprintln!(
                 "[admit-mem] MEMRA_ADMIT_RECLAIM_OFFTICK=1: the reclaim flush demotes off the tick \
-                 and the arrival waits on the landings (DAY42 door; needs MEMRA_ADMIT_BY_MEMORY=1 \
-                 and MEMRA_KV_HOST_CONTRACTS=1)"
+                 and the arrival waits on the landings (DAY42 door; read where memory-shaped \
+                 admission is armed, the full-power RTX PRO 6000 Workstation Edition serving one \
+                 card, with MEMRA_KV_HOST_CONTRACTS=1)"
             );
         }
         on
