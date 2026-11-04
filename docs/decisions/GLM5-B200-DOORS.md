@@ -18,10 +18,16 @@ split-MoE reduce sites, prime chunks included) and decode through the symmetric 
 why those rows decode at 65-67 tok/s against the eager split walk's 35-39. An earlier pass on
 2026-11-04 deleted the symmetric walk as unreceipted, which left those promoted defaults on a
 program no receipt measured. The walk is restored as the sm_100a TP-2 default (its section
-below), with `device-push` armed when no transport is named, so a naked sm_100a TP-2 command runs
-the measured posture again. What no cell has done is run that posture on today's code: the
-receipts are from September builds, and the pair cell that would confirm each default is named
-in its section. It needs an sm_100a pair, and none is in hand.
+below), with `device-push` armed when no transport is named, and the posture doors with
+positive rows (the HtoD diet, the coalesced MLA arm, the B200 MLA split on TP shards, the fused
+KDA group, the matvec occupancy arms) are sm_100a defaults too, so a naked sm_100a TP-2 command
+runs the measured posture again. The launcher's other doors keep their own calls: the q8 fuse
+(inconclusive, below), `MEMRA_B200_GEMV_V2` (the owner's, decide-by 2026-11-17),
+`MEMRA_PREFIX_LATENT` and `MEMRA_HYPER_SUFFIX_PRIME` (serving doors other launchers set too) and
+door D (verify walk only, which the TP-2 launcher never served). What no cell has done is run
+that posture on today's code: the receipts are from September builds, and the pair cell that
+would confirm each default is named in its section. It needs an sm_100a pair, and none is in
+hand.
 
 ## The TP split grouped prime and its host diet: sm_100a default
 
@@ -378,6 +384,39 @@ kernel A/B and the `MEMRA_B200_MR1_FILL` row that ran on it) and keeps `MEMRA_GL
 which has only the bundle, default OFF with a decide-by. Options: accept the bundle per door
 (promote the q8 fuse too); keep this split (recommended); or require a single-door row for all,
 which no sm_100a box in hand can produce. Decide-by 2026-11-18.
+
+### The sm_100a TP transport: device-push under the posture, peer-pull elsewhere
+
+The owner named peer-pull among the winners to make card defaults, and it is, for the walk its
+receipt measured: the root-orchestrated TP walk against the host bounce. The restored symmetric
+walk cannot run on it: its one-shot crossings are kernel peer loads and stores, and only
+`device-push`'s ladder proves one, so an sm_100a TP-2 load with no transport named arms
+`device-push` under the posture (`glm5_tp::unset_transport_for`). No balanced pull-vs-push row
+exists. Options: keep this split (recommended: each transport default sits on the walk its
+receipts ran, and a naked command reaches the measured posture); make `device-push` the sm_100a
+default for every TP walk (simpler, but it drops peer-pull's only receipt on the floor); or keep
+`peer-pull` everywhere and add a kernel-store ladder to its arm so the walk may run on it (new
+code, and the walk's fan-out hops would then run on a transport none of its rows used).
+Decide-by 2026-11-18.
+
+### `MEMRA_HYPER_PRIME_V2`: the owner's flip, or delete
+
+The PP-2 mHC prime schedule read about 2x on TTFT on the 2x B200 pair (4.08 / 16.73 / 56.30 s to
+2.09 / 9.59 / 30.63 s at 4k / 42k / 128k), one boot per arm, and its row reserved the flip for
+the owner. PP-2 is no longer that model's decision shape and the pair is retired. Options: flip
+it on these rows; or let its decide-by (2026-11-18) delete it (recommended, unless a PP-2 serving
+shape comes back).
+
+### Launchers other than the B200 one
+
+The 2026-11-04 ruling voided "a launcher sets it" for the retired B200 launcher. The darklanes
+glm53 launcher still sets `MEMRA_GLM5_HTOD_DIET`, `MEMRA_MOE_VROWS_DEV_TABLES` (door D),
+`MEMRA_HYPER_SUFFIX_PRIME`, `MEMRA_PREFIX_LATENT`, `MEMRA_PP_BF16` and `MEMRA_BF16_MMV`, and
+other retired launchers set `MEMRA_ADMIT_PREDICT_SHADOW`. Door D has no timing receipt and would
+go under door hygiene; the others are serving or per-family configuration. Options: void the
+clause for every retired launcher and run the same sweep on those doors (recommended, since
+hosted serving is retired); or keep the clause for launchers that still exist. Decide-by
+2026-11-18.
 
 ### `MEMRA_KPOOL_SELECT_V2` on sm_120a
 
