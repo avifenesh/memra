@@ -3030,26 +3030,16 @@ pub(crate) fn ep_diet_armed() -> (bool, &'static str) {
 /// (dieted) sequential EP walk. Numeric class: per-expert GEMMs are the plain grouped arm's;
 /// the ONE reassociation is the per-token root+peer partial add (band-gated, never claimed
 /// byte). Read per call.
-/// `MEMRA_GLM5_TP_SPLIT_GROUPED_PRIME=1` (default OFF in code; a launcher sets it, see its
-/// FLAGS.md row): the grouped prime for the expert-SPLIT TP walk (`moe_ffn_glm5_tp_split_grouped_prime`): the EP grouped
-/// prime's per-rank program run by both ranks over all routed pairs against the half-width
-/// slabs, one partial add per layer per chunk. Read per call; falls closed to the slot walk.
-pub fn glm5_tp_split_grouped_prime_on() -> bool {
-    std::env::var("MEMRA_GLM5_TP_SPLIT_GROUPED_PRIME").as_deref() == Ok("1")
-}
-
-/// `MEMRA_GLM5_TP_SPLIT_PRIME_HOSTDIET=1|2` (lane/glm5-tp-prime-router-20260907, default OFF,
-/// decide-by 2026-09-21): `1` = the TP split grouped prime builds its expert CSR ONCE (counting
-/// sort) instead of once per rank and launches the shared expert before the routing table is
-/// built so the host time hides behind device work; `2` = additionally issues root's pass before
-/// the peers' (measured 9.6% slower at 256k, kept as the explanatory arm). Byte-identical:
-/// launch order and host work only.
-pub fn glm5_tp_split_prime_hostdiet_level() -> u8 {
-    match std::env::var("MEMRA_GLM5_TP_SPLIT_PRIME_HOSTDIET").as_deref() {
-        Ok("1") => 1,
-        Ok("2") => 2,
-        _ => 0,
-    }
+/// The grouped prime for the expert-SPLIT TP walk (`moe_ffn_glm5_tp_split_grouped_prime`), with
+/// its host diet: the EP grouped prime's per-rank program run by both ranks over all routed pairs
+/// against the half-width slabs, one partial add per layer per chunk, the expert CSR built once
+/// per layer-call and the shared expert launched before it. The default on sm_100a builds, with
+/// no switch (2026-11-04): the 2x B200 pair's 256k and 1M primes ran 74.27 -> 59.89 s and
+/// 310.1 -> 251.1 s with the host diet against the grouped prime alone, tapes and ids identical
+/// (docs/decisions/GLM5-B200-DOORS.md). Other builds keep the per-token slot walk: no receipt
+/// there. Falls closed to the slot walk outside the plain grouped arm's admission.
+pub(crate) fn glm5_tp_split_grouped_prime_on() -> bool {
+    BUILT_CUDA_ARCH == "100a"
 }
 
 /// `MEMRA_GLM5_TP_INDEXER_SPLIT_PRIME` (default **ON** since 2026-09-10; `=0` restores the
