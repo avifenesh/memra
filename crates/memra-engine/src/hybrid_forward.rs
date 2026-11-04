@@ -1023,14 +1023,12 @@ fn moe_grouped_prefill_enabled() -> bool {
         .unwrap_or(true)
 }
 
-/// Deterministic in-token expert prefetch. `MEMRA_MOE_PREFETCH=1` overlaps memory-source H2D on the
-/// copy stream; selecting the opt-in worker spill backend enables the same known-next hook for disk.
-fn moe_prefetch_enabled() -> bool {
-    static E: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *E.get_or_init(|| {
-        std::env::var("MEMRA_MOE_PREFETCH").as_deref() == Ok("1")
-            || crate::spill_pread::worker_enabled()
-    })
+/// Deterministic in-token expert prefetch: overlaps the next routed expert's memory-source H2D on
+/// the copy stream. The default on the card classes whose DAY59 cell passed (`Engine::moe_prefetch`,
+/// `moe_cache::in_token_prefetch_for_device`); selecting the opt-in worker spill backend enables
+/// the same known-next hook for disk on any card.
+fn moe_prefetch_enabled(e: &Engine) -> bool {
+    e.moe_prefetch() || crate::spill_pread::worker_enabled()
 }
 
 /// Best-effort OS page-cache prefetch distance for mmap-backed expert ranges. Independent of the
@@ -14343,7 +14341,7 @@ impl HybridModel {
                     }
                 } else if cache_dispatch
                     && !cpu_hybrid
-                    && (moe_prefetch_enabled() || e.expert_bank_prefetch())
+                    && (moe_prefetch_enabled(e) || e.expert_bank_prefetch())
                     && j + 1 < sel.len()
                 {
                     // DAY50: under the MoE slot cache door the prefetch takes its lease through

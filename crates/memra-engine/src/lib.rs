@@ -2064,6 +2064,9 @@ pub struct Engine {
     /// DAY50: the MoE slot cache door is installed and prefetches the next routed expert through
     /// its owner. Set only by the door's installer; false keeps the legacy prefetch condition.
     expert_bank_prefetch: std::sync::atomic::AtomicBool,
+    /// The legacy slot cache's in-token prefetch of the next routed expert, by card class, read
+    /// once from the device name at construction (`moe_cache::in_token_prefetch_for_device`).
+    moe_prefetch: bool,
     /// DAY60: `--moe-dispatch-clock` (a gate binary's log-only flag): every MoE slot cache built
     /// after it is set keeps a dispatch clock (both the legacy program and the door).
     moe_dispatch_clock: std::sync::atomic::AtomicBool,
@@ -3867,6 +3870,10 @@ impl Engine {
                 .unwrap_or(82)
         };
         fa_ladder_engine_verdict(ordinal, sm_count, *FA_SM_COUNT.get_or_init(|| sm_count))?;
+        // The MoE in-token prefetch follows this device's card class. An unreadable name
+        // classifies as no card and keeps it off.
+        let moe_prefetch =
+            crate::moe_cache::in_token_prefetch_for_device(&gpu.ctx.name().unwrap_or_default()).0;
         // A force flag this build cannot honor stops the boot, not the first long prompt.
         fa3_force_verdict(
             std::env::var("MEMRA_FA3").ok().as_deref(),
@@ -3950,6 +3957,7 @@ impl Engine {
             moe_cache: Mutex::new(None),
             expert_host_mapped: std::sync::atomic::AtomicBool::new(false),
             expert_bank_prefetch: std::sync::atomic::AtomicBool::new(false),
+            moe_prefetch,
             moe_dispatch_clock: std::sync::atomic::AtomicBool::new(false),
             a4_clip_stats: Mutex::new(None),
             w8_mirrors: Mutex::new(std::collections::HashMap::new()),
@@ -6685,6 +6693,12 @@ impl Engine {
             .unwrap()
             .as_ref()
             .and_then(|cache| cache.dispatch_clock_line())
+    }
+
+    /// Whether this device's card class takes the legacy slot cache's in-token prefetch
+    /// (`moe_cache::in_token_prefetch_for_device`).
+    pub(crate) fn moe_prefetch(&self) -> bool {
+        self.moe_prefetch
     }
 
     /// DAY50: whether the door prefetches through its owner (the forward's prefetch condition).
