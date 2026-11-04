@@ -1,0 +1,10 @@
+05:27:21 start memra-default-fp32-v3 base=http://127.0.0.1:8090 model=q38 node=spark-cb33
+05:28:35 warm {"size": 8192, "users": 1, "cold_max_s": 9.95, "turn256": [0.47, 0.47]} {"size": 32768, "users": 1, "cold_max_s": 43.68, "turn256": [0.59, 0.59]}
+05:52:26 cell c1 {"arm": "memra-default-fp32-v3", "users": 1, "max_tokens": 768, "seed": 1234, "think": 1, "temperature": 1.0, "turns": 48, "tokens": 18494, "wall_s": 818.5, "ag
+06:02:17 cell c2 {"arm": "memra-default-fp32-v3", "users": 2, "max_tokens": 768, "seed": 1234, "think": 1, "temperature": 1.0, "turns": 48, "tokens": 16742, "wall_s": 578.9, "ag
+06:09:54 cell c4 {"arm": "memra-default-fp32-v3", "users": 4, "max_tokens": 768, "seed": 1234, "think": 1, "temperature": 1.0, "turns": 48, "tokens": 16955, "wall_s": 445.2, "ag
+06:15:18 cell c8 {"arm": "memra-default-fp32-v3", "users": 8, "max_tokens": 768, "seed": 1234, "think": 1, "temperature": 1.0, "turns": 48, "tokens": 19540, "wall_s": 314.9, "ag
+06:19:49 cell c16 {"arm": "memra-default-fp32-v3", "users": 16, "max_tokens": 768, "seed": 1234, "think": 1, "temperature": 1.0, "turns": 48, "tokens": 19795, "wall_s": 261.5, "a
+06:23:53 cell c32 {"arm": "memra-default-fp32-v3", "users": 32, "max_tokens": 768, "seed": 1234, "think": 1, "temperature": 1.0, "turns": 48, "tokens": 19540, "wall_s": 235.4, "a
+MemAvailable min 30.30 GiB, median 52.19 GiB over 3375 s
+06:23:53 end
