@@ -32,6 +32,10 @@
 //! Placement: `tp_ep` (`Dsv4Placement::SERVED`). The cell measures the served shape, so it loads
 //! the served placement; the 2026-09 served A/B it explains ran on PP-2, before the TP/EP default
 //! (memra #710).
+//! No TP/EP receipt exists yet, and its numbers are not comparable to the PP-2 receipts
+//! (dw-ab-gr1, dw-ab-gr2): on TP/EP split-K runs through the rank-local attention planes,
+//! `ws_device_flips` comes from the one host thread alternating ranks, and the lazy bf16
+//! mirror also covers the dense weights replicated on both ranks, so `mirror_MB` grows.
 use memra_engine::dsv4_gpu::{
     Dsv4Gpu, arm_dense_cutlass_for_gate, dense_cutlass_armed_for_gate,
     dense_cutlass_counts_for_gate,
