@@ -19094,6 +19094,18 @@ impl Engine {
             7 => "qmatvec_nvfp4_mmvq_group4_b7_rp",
             8 => "qmatvec_nvfp4_mmvq_group4_b8_rp",
             // column split (8-column slices per 8-row block, L2-shared weights; bit-identical)
+            16 if m == 16 && std::env::var("MEMRA_G4X").as_deref() == Ok("s") => {
+                return Ok(None);
+            }
+            16 if m == 16
+                && matches!(std::env::var("MEMRA_G4X").as_deref(), Ok("1" | "2" | "4")) =>
+            {
+                match std::env::var("MEMRA_G4X").as_deref() {
+                    Ok("1") => "qmatvec_nvfp4_mmvq_group4_b16_rpx1",
+                    Ok("2") => "qmatvec_nvfp4_mmvq_group4_b16_rpx2",
+                    _ => "qmatvec_nvfp4_mmvq_group4_b16_rpx4",
+                }
+            }
             16 => "qmatvec_nvfp4_mmvq_group4_b16_rp",
             32 if self.mmvq_tc_on() && parts.iter().all(|p| p.1 % 16 == 0) => {
                 "qmatvec_nvfp4_mmvq_group4_b32_tc"
@@ -23940,9 +23952,47 @@ impl Engine {
                 .map(|s| Box::leak(s.to_string().into_boxed_str()) as &'static str)
         };
         let variant = match forced {
+            // design-C prototype names only steer the 16-row NVFP4 rp branch below
+            Some(v) if v.starts_with("tc") => {
+                self.batched_variant(m, in_f, out_f, qtype, mcols, rp)
+            }
             Some(v) if !rp || v.contains("rp") => v,
             _ => self.batched_variant(m, in_f, out_f, qtype, mcols, rp),
         };
+        // Design C prototype (MEMRA_BVAR=tc1/tc2/tc4): the exact tensor-core form at a full
+        // 16-row call, 1/2/4 virtual-lane chains per loop iteration (`nvfp4_mmvq_tcx`).
+        if mcols == 16
+            && m == 16
+            && qtype == QT_NVFP4
+            && rp
+            && matches!(forced, Some("tc1" | "tc2" | "tc4"))
+        {
+            let f = self.func(&format!("qmatvec_nvfp4_mmvq_b16_{}", forced.unwrap()));
+            let mut y = self.alloc_uninit::<f32>(m * out_f)?;
+            let cfg = LaunchConfig {
+                grid_dim: ((out_f as u32).div_ceil(16), 1, 1),
+                block_dim: (32, 8, 1),
+                shared_mem_bytes: 0,
+            };
+            let (inf, outf, mi, rb) = (in_f as i32, out_f as i32, m as i32, row_bytes as i64);
+            let __s_b = self.gpu.stream();
+            let mut b = __s_b.launch_builder(&f);
+            b.arg(bytes)
+                .arg(aq)
+                .arg(ad)
+                .arg(&mut y)
+                .arg(&inf)
+                .arg(&outf)
+                .arg(&mi)
+                .arg(&rb);
+            unsafe {
+                b.launch(cfg)?;
+            }
+            if scale != 1.0 {
+                self.scale_inplace(&mut y, scale, m * out_f)?;
+            }
+            return Ok(y);
+        }
         // EXACT TENSOR-CORE tier (batch-spec 2026-11-03, MEMRA_MMVQ_TC=1 A/B seam): int8
         // mma.sync computes the per-half integer dot products, the float epilogue replays the
         // dp4a chain -> bit-identical (kernel `nvfp4_mmvq_tc`).

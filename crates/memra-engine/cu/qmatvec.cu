@@ -2457,6 +2457,123 @@ MEMRA_GROUP4_WRAP(7)
 MEMRA_GROUP4_WRAP(8)
 MEMRA_GROUP4_WRAP(16)
 #undef MEMRA_GROUP4_WRAP
+// group4 EXACT-WIDTH twin (batch-spec 2026-11-04, design B2 on the group door): the group4 body
+// at a compile-time column count (m == MCOLS, no `c >= m` test) issuing CG columns' activation
+// loads together before their dp4a chains. The per-(tensor, token, row) chain is the group4
+// body's verbatim -> BIT-IDENTICAL to group4_b16_rp. Prototype: MEMRA_G4X=<CG>.
+template<int MCOLS, int CG>
+__device__ __forceinline__ void nvfp4_mmvq_batched_group4_rpx(
+        const unsigned char* __restrict__ W0, const unsigned char* __restrict__ W1,
+        const unsigned char* __restrict__ W2, const unsigned char* __restrict__ W3,
+        const signed char* __restrict__ aq, const float* __restrict__ ad,
+        float* __restrict__ y0, float* __restrict__ y1,
+        float* __restrict__ y2, float* __restrict__ y3,
+        int in_f, int n0, int n1, int n2, int n3,
+        float s0, float s1, float s2, float s3, int bx) {
+    const int WROWS = 2;
+    int o0 = (bx * MEMRA_MMVQ_ROWS + threadIdx.y) * WROWS;
+    const unsigned char* W;
+    float* y;
+    float ys;
+    int out_f;
+    if (o0 < n0) { W = W0; y = y0; ys = s0; out_f = n0; }
+    else if ((o0 -= n0) < n1) { W = W1; y = y1; ys = s1; out_f = n1; }
+    else if ((o0 -= n1) < n2) { W = W2; y = y2; ys = s2; out_f = n2; }
+    else if ((o0 -= n2) < n3) { W = W3; y = y3; ys = s3; out_f = n3; }
+    else return;
+    const bool has1 = (o0 + 1) < out_f;
+    int lane = threadIdx.x;
+    int nsb = in_f >> 5;
+    int nsb64 = in_f >> 6;
+    const unsigned char* qplane = W;
+    const unsigned char* splane = W + (size_t)out_f * nsb64 * 32;
+    const unsigned char* rowq0 = qplane + (size_t)o0 * nsb64 * 32;
+    const unsigned char* rows0 = splane + (size_t)o0 * nsb64 * 4;
+    float acc[WROWS][MCOLS];
+    #pragma unroll
+    for (int r = 0; r < WROWS; r++)
+        #pragma unroll
+        for (int c = 0; c < MCOLS; c++) acc[r][c] = 0.0f;
+    for (int g = lane; g < nsb; g += 32) {
+        int sblk = g >> 1;
+        int s0w = (g & 1) * 2;
+        int2 wv[WROWS][2][2];
+        float wscale[WROWS][2];
+        #pragma unroll
+        for (int r = 0; r < WROWS; r++) {
+            if (r == 1 && !has1) break;
+            const int4* qh = (const int4*)(rowq0 + (size_t)r * nsb64 * 32 + (size_t)g * 16);
+            int4 qw = *qh;
+            int cscw = *(const int*)(rows0 + (size_t)r * nsb64 * 4 + (size_t)sblk * 4);
+            wv[r][0][0] = get_int_from_table_16_d(qw.x, kvalues_mxfp4_d);
+            wv[r][0][1] = get_int_from_table_16_d(qw.y, kvalues_mxfp4_d);
+            wv[r][1][0] = get_int_from_table_16_d(qw.z, kvalues_mxfp4_d);
+            wv[r][1][1] = get_int_from_table_16_d(qw.w, kvalues_mxfp4_d);
+            wscale[r][0] = ue4m3_to_f32_d((unsigned char)((cscw >> (8 *  s0w     )) & 0xFF));
+            wscale[r][1] = ue4m3_to_f32_d((unsigned char)((cscw >> (8 * (s0w + 1))) & 0xFF));
+        }
+        #pragma unroll
+        for (int c0 = 0; c0 < MCOLS; c0 += CG) {
+            int4 a01[CG], a23[CG];
+            float adg[CG];
+            #pragma unroll
+            for (int j = 0; j < CG; j++) {
+                const int4* aq16 = (const int4*)(aq + (size_t)(c0 + j) * in_f + (size_t)g * 32);
+                a01[j] = aq16[0];
+                a23[j] = aq16[1];
+                adg[j] = ad[(size_t)(c0 + j) * nsb + g];
+            }
+            #pragma unroll
+            for (int j = 0; j < CG; j++) {
+                const int c = c0 + j;
+                int aq4[8] = { a01[j].x, a01[j].y, a01[j].z, a01[j].w,
+                               a23[j].x, a23[j].y, a23[j].z, a23[j].w };
+                #pragma unroll
+                for (int r = 0; r < WROWS; r++) {
+                    if (r == 1 && !has1) break;
+                    float partial = 0.0f;
+                    #pragma unroll
+                    for (int sl = 0; sl < 2; sl++) {
+                        int base = sl * 4;
+                        int2 va = wv[r][sl][0], vb = wv[r][sl][1];
+                        int sumi = 0;
+                        sumi = dp4a(va.x, aq4[base + 0], sumi);
+                        sumi = dp4a(vb.x, aq4[base + 1], sumi);
+                        sumi = dp4a(va.y, aq4[base + 2], sumi);
+                        sumi = dp4a(vb.y, aq4[base + 3], sumi);
+                        partial += wscale[r][sl] * (float)sumi;
+                    }
+                    acc[r][c] += adg[j] * partial;
+                }
+            }
+        }
+    }
+    #pragma unroll
+    for (int r = 0; r < WROWS; r++) {
+        if (r == 1 && !has1) break;
+        #pragma unroll
+        for (int c = 0; c < MCOLS; c++) {
+            float a = warp_reduce_sum(acc[r][c]);
+            if (lane == 0) y[(size_t)c * out_f + o0 + r] = (ys == 1.0f) ? a : a * ys;
+        }
+    }
+}
+#define MEMRA_GROUP4X_WRAP(NAME, CG) \
+extern "C" __global__ void qmatvec_nvfp4_mmvq_group4_b16_##NAME( \
+        const unsigned char* __restrict__ W0, const unsigned char* __restrict__ W1, \
+        const unsigned char* __restrict__ W2, const unsigned char* __restrict__ W3, \
+        const signed char* __restrict__ aq, const float* __restrict__ ad, \
+        float* __restrict__ y0, float* __restrict__ y1, \
+        float* __restrict__ y2, float* __restrict__ y3, \
+        int in_f, int n0, int n1, int n2, int n3, int m, \
+        float s0, float s1, float s2, float s3) { \
+    nvfp4_mmvq_batched_group4_rpx<16, CG>(W0, W1, W2, W3, aq, ad, y0, y1, y2, y3, \
+                                          in_f, n0, n1, n2, n3, s0, s1, s2, s3, blockIdx.x); \
+}
+MEMRA_GROUP4X_WRAP(rpx1, 1)
+MEMRA_GROUP4X_WRAP(rpx2, 2)
+MEMRA_GROUP4X_WRAP(rpx4, 4)
+#undef MEMRA_GROUP4X_WRAP
 // group4 COLUMN SPLIT (batch-spec 2026-11-03): the b32 quartet as four 8-column slices (GB10,
 // 32 sessions at depth 2048: tick 249.2 ms; two 16-column halves measured 258.6 ms), the NS
 // blocks of one row-block adjacent in launch order (the rpcs8 singles' L2-reuse schedule). Each
@@ -3188,6 +3305,147 @@ extern "C" __global__ void __launch_bounds__(256) qmatvec_nvfp4_mmvq_b32_tc(
         int in_f, int out_f, int m, long row_bytes) {
     nvfp4_mmvq_tc<4>(W, aq, ad, y, in_f, out_f, m, (int)blockIdx.x * 16, 1.0f);
 }
+// ---- DESIGN C prototype (batch-spec 2026-11-04): the exact tensor-core form at 16 rows, aimed at
+// latency. nvfp4_mmvq_tc carries a warp's four virtual-lane chains (l = w, w+8, w+16, w+24) one
+// after another, so each g step's loads are consumed at once. This twin advances UP chains in
+// the same loop iteration (their loads issued together), at an exact width of NT*8 columns
+// (m == NT*8; no column guards). Each chain still walks its own g = l, l+32, ... in order with
+// the same partial/acc expressions, and the butterfly replay is unchanged -> BIT-IDENTICAL to
+// nvfp4_mmvq_tc and to every batched rp variant. Prototype: MEMRA_BVAR=tc1/tc2/tc4 at m=16.
+template<int NT, int UP>
+__device__ __forceinline__ void nvfp4_mmvq_tcx(
+        const unsigned char* __restrict__ W, const signed char* __restrict__ aq,
+        const float* __restrict__ ad, float* __restrict__ y,
+        int in_f, int out_f, int r0) {
+    constexpr int NC = NT * 8;
+    const int lane = threadIdx.x, w = threadIdx.y;
+    const int gq = lane >> 2, t = lane & 3;
+    const int nsb = in_f >> 5, nsb64 = in_f >> 6;
+    const unsigned char* qplane = W;
+    const unsigned char* splane = W + (size_t)out_f * nsb64 * 32;
+    const int ra = r0 + gq, rb = r0 + gq + 8;
+    const bool oka = ra < out_f, okb = rb < out_f;
+    __shared__ float red[8][16][NC + 1];
+    float acc[4][NT][4];
+    #pragma unroll
+    for (int u = 0; u < 4; u++)
+        #pragma unroll
+        for (int j = 0; j < NT; j++)
+            #pragma unroll
+            for (int e = 0; e < 4; e++) acc[u][j][e] = 0.0f;
+    #pragma unroll
+    for (int u0 = 0; u0 < 4; u0 += UP) {
+        for (int k = 0; w + 8 * u0 + 32 * k < nsb; k++) {
+            int4 qa[UP], qb[UP];
+            int sa[UP], sb[UP];
+            int bv0[UP][NT], bv1[UP][NT];
+            float ad0[UP][NT], ad1[UP][NT];
+            bool live[UP];
+            #pragma unroll
+            for (int p = 0; p < UP; p++) {
+                const int g = w + 8 * (u0 + p) + 32 * k;
+                live[p] = g < nsb;
+                qa[p] = make_int4(0, 0, 0, 0); qb[p] = make_int4(0, 0, 0, 0);
+                sa[p] = 0; sb[p] = 0;
+                if (live[p]) {
+                    if (oka) {
+                        qa[p] = *(const int4*)(qplane + (size_t)ra * nsb64 * 32 + (size_t)g * 16);
+                        sa[p] = *(const int*)(splane + (size_t)ra * nsb64 * 4 + (size_t)(g >> 1) * 4);
+                    }
+                    if (okb) {
+                        qb[p] = *(const int4*)(qplane + (size_t)rb * nsb64 * 32 + (size_t)g * 16);
+                        sb[p] = *(const int*)(splane + (size_t)rb * nsb64 * 4 + (size_t)(g >> 1) * 4);
+                    }
+                }
+                #pragma unroll
+                for (int j = 0; j < NT; j++) {
+                    const int bcol = j * 8 + gq;
+                    const int c0 = j * 8 + 2 * t;
+                    bv0[p][j] = 0; bv1[p][j] = 0; ad0[p][j] = 0.0f; ad1[p][j] = 0.0f;
+                    if (live[p]) {
+                        const int* ar = (const int*)(aq + (size_t)bcol * in_f + (size_t)g * 32);
+                        bv0[p][j] = ar[t];
+                        bv1[p][j] = ar[4 + t];
+                        ad0[p][j] = ad[(size_t)c0 * nsb + g];
+                        ad1[p][j] = ad[(size_t)(c0 + 1) * nsb + g];
+                    }
+                }
+            }
+            #pragma unroll
+            for (int p = 0; p < UP; p++) {
+                if (!live[p]) continue;
+                const int u = u0 + p;
+                const int g = w + 8 * u + 32 * k;
+                const int s0 = (g & 1) * 2;
+                const int2 da0 = get_int_from_table_16_d((t & 1) ? qa[p].y : qa[p].x, kvalues_mxfp4_d);
+                const int2 da1 = get_int_from_table_16_d((t & 1) ? qa[p].w : qa[p].z, kvalues_mxfp4_d);
+                const int2 db0 = get_int_from_table_16_d((t & 1) ? qb[p].y : qb[p].x, kvalues_mxfp4_d);
+                const int2 db1 = get_int_from_table_16_d((t & 1) ? qb[p].w : qb[p].z, kvalues_mxfp4_d);
+                const int A0a = (t & 2) ? da0.y : da0.x, A1a = (t & 2) ? da1.y : da1.x;
+                const int A0b = (t & 2) ? db0.y : db0.x, A1b = (t & 2) ? db1.y : db1.x;
+                const float wsa0 = ue4m3_to_f32_d((unsigned char)((sa[p] >> (8 *  s0     )) & 0xFF));
+                const float wsa1 = ue4m3_to_f32_d((unsigned char)((sa[p] >> (8 * (s0 + 1))) & 0xFF));
+                const float wsb0 = ue4m3_to_f32_d((unsigned char)((sb[p] >> (8 *  s0     )) & 0xFF));
+                const float wsb1 = ue4m3_to_f32_d((unsigned char)((sb[p] >> (8 * (s0 + 1))) & 0xFF));
+                #pragma unroll
+                for (int j = 0; j < NT; j++) {
+                    int S0[4] = {0, 0, 0, 0}, S1[4] = {0, 0, 0, 0};
+                    tc_mma_s8(S0, A0a, A0b, bv0[p][j]);
+                    tc_mma_s8(S1, A1a, A1b, bv1[p][j]);
+                    #pragma unroll
+                    for (int e = 0; e < 4; e++) {
+                        const float ws0 = (e < 2) ? wsa0 : wsb0;
+                        const float ws1 = (e < 2) ? wsa1 : wsb1;
+                        const float adg = (e & 1) ? ad1[p][j] : ad0[p][j];
+                        float partial = 0.0f;
+                        partial += ws0 * (float)S0[e];
+                        partial += ws1 * (float)S1[e];
+                        acc[u][j][e] += adg * partial;
+                    }
+                }
+            }
+        }
+    }
+    #pragma unroll
+    for (int j = 0; j < NT; j++)
+        #pragma unroll
+        for (int e = 0; e < 4; e++) {
+            const int row = gq + ((e >> 1) << 3);
+            const int col = j * 8 + 2 * t + (e & 1);
+            const float v1a = acc[0][j][e] + acc[2][j][e];
+            const float v1b = acc[1][j][e] + acc[3][j][e];
+            red[w][row][col] = v1a + v1b;
+        }
+    __syncthreads();
+    const int tid = w * 32 + lane;
+    for (int cell = tid; cell < 16 * NC; cell += 256) {
+        const int row = cell / NC, col = cell - row * NC;
+        if (r0 + row >= out_f) continue;
+        float v[8];
+        #pragma unroll
+        for (int i = 0; i < 8; i++) v[i] = red[i][row][col];
+        #pragma unroll
+        for (int off = 4; off > 0; off >>= 1) {
+            float nv[8];
+            #pragma unroll
+            for (int i = 0; i < 8; i++) nv[i] = v[i] + v[i ^ off];
+            #pragma unroll
+            for (int i = 0; i < 8; i++) v[i] = nv[i];
+        }
+        y[(size_t)col * out_f + r0 + row] = v[0];
+    }
+}
+#define MEMRA_TCX_WRAP(NAME, UP) \
+extern "C" __global__ void __launch_bounds__(256) qmatvec_nvfp4_mmvq_b16_##NAME( \
+        const unsigned char* __restrict__ W, const signed char* __restrict__ aq, \
+        const float* __restrict__ ad, float* __restrict__ y, \
+        int in_f, int out_f, int m, long row_bytes) { \
+    nvfp4_mmvq_tcx<2, UP>(W, aq, ad, y, in_f, out_f, (int)blockIdx.x * 16); \
+}
+MEMRA_TCX_WRAP(tc1, 1)
+MEMRA_TCX_WRAP(tc2, 2)
+MEMRA_TCX_WRAP(tc4, 4)
+#undef MEMRA_TCX_WRAP
 // group4/group3 twin of the b32 tensor-core tier: blocks map onto the concatenated row space of up
 // to four tensors sharing one activation (host gate: every out_f % 16 == 0, so a 16-row tile never
 // straddles two tensors); the tensor's macro-scale ys is applied at the write as group4 does.
