@@ -1,5 +1,9 @@
 //! Active C4 residency: compare to all-device state under identical numeric policy.
+//!
+//! Placement: `pp`, a PP-2 cell. Its states keep C4 history in pinned host RAM, which TP/EP
+//! refuses.
 use memra_engine::dsv4_gpu::{Dsv4Gpu, Dsv4SampleCfg, Dsv4VerifyTopk, Dsv4Vt, dsv4_sample_row};
+use memra_engine::dsv4_topology::Dsv4Placement;
 use memra_gguf::dsv4_forward::ActQuantVariant;
 use memra_tokenizer::Tokenizer;
 use sha2::{Digest, Sha256};
@@ -40,7 +44,14 @@ fn main() {
     let tokenizer = Tokenizer::from_hf_dir(dir).expect("tokenizer");
     let tokens = tokenizer.encode(&format!("Review this inference code:\n{source}"), true);
     assert!(tokens.len() > 5000);
-    let mut gpu = Dsv4Gpu::load(dir, &[0, 1], ActQuantVariant::RefFp8Round, 8192).expect("load");
+    let mut gpu = Dsv4Gpu::load(
+        dir,
+        &[0, 1],
+        ActQuantVariant::RefFp8Round,
+        8192,
+        Dsv4Placement::Pp,
+    )
+    .expect("load");
     let cfg = Dsv4SampleCfg {
         temperature: 1.0,
         top_p: 1.0,

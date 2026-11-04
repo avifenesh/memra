@@ -44,7 +44,7 @@ use crate::dsv4_ep::{EpCompute, EpLayer, EpScratch, TpEpArState};
 use crate::dsv4_ffi as k;
 use crate::dsv4_ffi::ck;
 pub use crate::dsv4_graph::Dsv4LayerCapture;
-use crate::dsv4_topology::{self, Dsv4Placement, Dsv4TopologyPlan};
+use crate::dsv4_topology::{Dsv4Placement, Dsv4TopologyPlan};
 
 unsafe extern "C" {
     fn memra_dsv4_hc_dot_split_slices() -> i32;
@@ -2648,19 +2648,6 @@ impl Dsv4Gpu {
         self.plain_sampler
     }
 
-    /// Gate placement selector, read by [`Self::load`] before it places the model: armed, the
-    /// load takes TP/EP (`Dsv4Placement::TpEp`), PP-2 otherwise. Serving passes its placement
-    /// to [`Self::load_placed`] and never reads it.
-    pub fn set_tp_ep_topology_for_gate(enabled: bool) -> bool {
-        dsv4_topology::set_tp_ep_for_gate(enabled)
-    }
-
-    /// Gate selector for attention TP2 under [`Self::load`]; it requires the TP/EP selector
-    /// above. Serving passes its placement to [`Self::load_placed`] and never reads it.
-    pub fn set_attention_tp_for_gate(enabled: bool) -> bool {
-        dsv4_attention_tp::set_for_gate(enabled)
-    }
-
     pub fn attention_tp_geometry(&self) -> Option<AttentionTpGeometry> {
         self.attention_tp
     }
@@ -3457,31 +3444,11 @@ impl Dsv4Gpu {
         })
     }
 
-    /// Open the artifact and place it across `devices` with the placement the gate switches
-    /// armed (`set_tp_ep_topology_for_gate`, `set_attention_tp_for_gate`), PP-2 when neither
-    /// is. Serving passes its placement to [`Self::load_placed`].
+    /// Open the artifact and place it across `devices` with `placement`. There is no default
+    /// placement (S06:F0): memra-server passes `MEMRA_DSV4_TOPOLOGY`'s placement
+    /// ([`Dsv4Placement::SERVED`] unless `pp`), and every gate names the placement it measures.
+    /// Under PP, `split_at` = first layer of stage 1, derived from per-layer byte math.
     pub fn load(
-        dir: &Path,
-        devices: &[usize],
-        variant: ActQuantVariant,
-        max_seq: usize,
-    ) -> Res<Self> {
-        let attention_tp = dsv4_attention_tp::enabled_for_gate();
-        let placement = if dsv4_topology::tp_ep_for_gate() {
-            Dsv4Placement::TpEp { attention_tp }
-        } else if attention_tp {
-            return Err(
-                "attention TP2 requires the explicit all-layer expert-ID EP topology".into(),
-            );
-        } else {
-            Dsv4Placement::Pp
-        };
-        Self::load_placed(dir, devices, variant, max_seq, placement)
-    }
-
-    /// Open the artifact and place it across `devices`. Under PP, `split_at` = first layer
-    /// of stage 1, derived from per-layer byte math unless overridden.
-    pub fn load_placed(
         dir: &Path,
         devices: &[usize],
         variant: ActQuantVariant,
@@ -3958,7 +3925,8 @@ impl Dsv4Gpu {
             }
         );
         eprintln!(
-            "[load] topology: {:?} | layers={} per-rank-resident={}",
+            "[load] placement {} | topology: {:?} | layers={} per-rank-resident={}",
+            placement.name(),
             me.topology.topology,
             me.topology.layers,
             if me.topology.is_tp_ep() {
@@ -21855,7 +21823,7 @@ impl Dsv4Gpu {
     /// `toks[r]` to `states[r]` at its own position. Both ranks read every weight once for all
     /// rows, each row's attention reads only its own request's caches, and each request
     /// commits its row on both planes as its one-row step would, so every row is bit-identical
-    /// to that request's one-row TP/EP step, replayed or eager (`dsv4_rows_gate --tpep`). A
+    /// to that request's one-row TP/EP step, replayed or eager (`dsv4_rows_gate --placement=tp_ep`). A
     /// request armed for full-token replay may ride the step: the step touches its caches and
     /// checkpoints only, never its graphs or one-row workspace, and the replay refreshes its
     /// host marks from the position when it resumes.
@@ -25369,6 +25337,7 @@ mod sampled_path_tests {
                 &[0, 1],
                 super::ActQuantVariant::RefFp8Round,
                 32,
+                super::Dsv4Placement::SERVED,
             ) {
                 Err(err) => err,
                 Ok(_) => panic!("invalid sampler configuration loaded"),

@@ -14,8 +14,12 @@
 //!
 //! ONE ARM PER PROCESS. `MEMRA_DSV4_AR_PHASE` is read at load, so the controller runs a fresh
 //! process per arm and each cell below states which arm it requires.
+//!
+//! Placement: `tp_ep` (`Dsv4Placement::SERVED`), the served placement: TP/EP with exact attention
+//! TP2.
 use memra_engine::dsv4_gpu::{ArPhaseDoor, DecodeState, Dsv4Gpu, Dsv4SampleCfg};
 use memra_engine::dsv4_sampler::{Dsv4Sampler, dsv4_sampler};
+use memra_engine::dsv4_topology::Dsv4Placement;
 use memra_engine::tp_ar::ArPhaseRecord;
 use memra_gguf::dsv4_forward::ActQuantVariant;
 use memra_tokenizer::Tokenizer;
@@ -431,14 +435,13 @@ fn main() {
         None
     };
 
-    Dsv4Gpu::set_tp_ep_topology_for_gate(true);
-    Dsv4Gpu::set_attention_tp_for_gate(true);
     let gpu = Box::new(
         Dsv4Gpu::load(
             Path::new(&args[1]),
             &[0, 1],
             ActQuantVariant::RefFp8Round,
             CAPACITY + 32,
+            Dsv4Placement::SERVED,
         )
         .expect("pinned TP2 model"),
     );

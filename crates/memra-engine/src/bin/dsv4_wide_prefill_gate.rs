@@ -1,6 +1,11 @@
 //! Exact width-32/128/512 transaction comparison on a real 1025-token prompt.
 //! Includes every live cache class, DSpark rings and sampled speculative output.
+//!
+//! Placement: `pp`, a PP-2 cell. This historical instrument pins the doors it was taken with (the
+//! startup pins below), and its receipts are PP-2 cells. A TP/EP cell of the same check is a new
+//! cell with its own receipt.
 use memra_engine::dsv4_gpu::{Dsv4Gpu, Dsv4SampleCfg, Dsv4Vt};
+use memra_engine::dsv4_topology::Dsv4Placement;
 use memra_gguf::dsv4_forward::ActQuantVariant;
 use memra_tokenizer::Tokenizer;
 use sha2::{Digest, Sha256};
@@ -120,7 +125,14 @@ fn main() {
         Sha256::digest(source.as_bytes()),
         prompt.len()
     );
-    let mut gpu = Dsv4Gpu::load(dir, &[0, 1], ActQuantVariant::RefFp8Round, 4096).expect("load");
+    let mut gpu = Dsv4Gpu::load(
+        dir,
+        &[0, 1],
+        ActQuantVariant::RefFp8Round,
+        4096,
+        Dsv4Placement::Pp,
+    )
+    .expect("load");
     for grouped in [false, true] {
         gpu.set_prefill_grouped_for_gate(grouped).expect("arm");
         gpu.set_grouped_route_device_for_gate(false)

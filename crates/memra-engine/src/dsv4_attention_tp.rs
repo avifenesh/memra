@@ -1,8 +1,8 @@
 //! Geometry for DSV4 head-parallel attention (attention TP2) with an exact output join.
 //!
-//! `Dsv4Gpu::load_placed` builds it for every `Dsv4Placement::TpEp { attention_tp: true }`
-//! load, the served two-card default since memra #710. Only [`set_for_gate`] is gate-only: it
-//! is how a gate that calls `Dsv4Gpu::load` selects this placement.
+//! `Dsv4Gpu::load` builds it for every `Dsv4Placement::TpEp { attention_tp: true }` load
+//! (`Dsv4Placement::SERVED`), the served two-card default since memra #710. Gates select it
+//! the same way serving does, by the placement they pass to the load.
 //!
 //! KV latent, compressor and indexer state stay replicated. Each rank owns whole heads and
 //! whole wo_a groups, so its Q_b rows, attention and wo_a group outputs are the one-card
@@ -10,21 +10,7 @@
 //! of the output rows over the full input, and the two halves are gathered. Every value is
 //! written by the one-card per-row program; no sum crosses ranks.
 
-use std::sync::atomic::{AtomicBool, Ordering};
-
 pub const ATTENTION_TP_NUMERIC_CLASS: &str = "dsv4_attention_head_split_row_gather_exact";
-
-static ENABLED_FOR_GATE: AtomicBool = AtomicBool::new(false);
-
-/// Before-load gate placement control only; serving never reads it. Existing model instances
-/// never change program.
-pub fn set_for_gate(enabled: bool) -> bool {
-    ENABLED_FOR_GATE.swap(enabled, Ordering::AcqRel)
-}
-
-pub(crate) fn enabled_for_gate() -> bool {
-    ENABLED_FOR_GATE.load(Ordering::Acquire)
-}
 
 /// Derived from the normalized model configuration, not a fixed layer/head allowlist.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

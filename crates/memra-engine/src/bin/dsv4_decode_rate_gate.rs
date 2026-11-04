@@ -1,10 +1,14 @@
 //! Sampled engine decode-only timing, independent of prefill and restoration.
 //! ABBA x3, one model load, exact restored prompt per row, EOS respected.
 //! This is not HTTP latency or concurrent-serving qualification.
+//!
+//! Placement: `pp`, a PP-2 cell. Its states keep C4 history in pinned host RAM, which TP/EP
+//! refuses.
 use memra_engine::dsv4_gpu::{
     Dsv4Gpu, Dsv4HostDecodeState, Dsv4HostDsparkState, Dsv4SampleCfg, Dsv4SamplerOrder, Dsv4Vt,
     RoundTake, dsv4_sample_row, dsv4_sampler_order, resolve_vt, set_dsv4_sampler_order_for_gate,
 };
+use memra_engine::dsv4_topology::Dsv4Placement;
 use memra_gguf::dsv4_forward::ActQuantVariant;
 use memra_tokenizer::Tokenizer;
 use sha2::{Digest, Sha256};
@@ -364,8 +368,14 @@ fn main() {
     // memra #458: this is a bench process, so it may run the matrix expert program
     // with the default-ON split-K arm; a serving process cannot arm it and refuses
     // that combination at load instead of failing every request.
-    let gpu =
-        Dsv4Gpu::load(dir, &[0, 1], ActQuantVariant::RefFp8Round, 8192 + 256 + 96).expect("model");
+    let gpu = Dsv4Gpu::load(
+        dir,
+        &[0, 1],
+        ActQuantVariant::RefFp8Round,
+        8192 + 256 + 96,
+        Dsv4Placement::Pp,
+    )
+    .expect("model");
     assert!(gpu.matrix_moe_enabled());
     for count in [256, 8192] {
         let prompt = &tokens[..count];

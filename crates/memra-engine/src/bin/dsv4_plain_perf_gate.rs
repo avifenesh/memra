@@ -1,6 +1,10 @@
 //! Plain-only, sampled ABBA over a frozen prompt snapshot. No speculative timing rows.
+//!
+//! Placement: `pp`, a PP-2 cell. Its states keep C4 history in pinned host RAM, which TP/EP
+//! refuses.
 use memra_engine::dsv4_gpu::{Dsv4Gpu, Dsv4HostDecodeState, Dsv4SampleCfg, dsv4_sample_row};
 use memra_engine::dsv4_source_tape::SourceTape;
+use memra_engine::dsv4_topology::Dsv4Placement;
 use memra_gguf::dsv4_forward::ActQuantVariant;
 use memra_tokenizer::Tokenizer;
 use sha2::{Digest, Sha256};
@@ -300,6 +304,7 @@ fn main() {
         &[0, 1],
         ActQuantVariant::RefFp8Round,
         8192 + OUTPUT + 96,
+        Dsv4Placement::Pp,
     )
     .expect("model");
     assert!(gpu.matrix_moe_enabled());

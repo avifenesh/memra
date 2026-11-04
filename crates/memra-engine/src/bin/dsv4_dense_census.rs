@@ -24,10 +24,15 @@
 //! that turn them into bandwidths come from an nsys run over the same process,
 //! and the ceilings they must be compared against come from the standalone probe
 //! in the lane. Numbers printed here are counts and derived bytes only.
+//!
+//! Placement: `pp`, a PP-2 cell. This historical instrument pins the doors it was taken with (the
+//! startup pins below), and its receipts are PP-2 cells. A TP/EP cell of the same check is a new
+//! cell with its own receipt.
 use memra_engine::dsv4_gpu::{
     Dsv4Gpu, dense_census_for_gate, dense_tile_counts_for_gate, reset_dense_census_for_gate,
     set_dense_census_for_gate,
 };
+use memra_engine::dsv4_topology::Dsv4Placement;
 use memra_gguf::dsv4_forward::ActQuantVariant;
 use memra_tokenizer::Tokenizer;
 use sha2::{Digest, Sha256};
@@ -81,7 +86,14 @@ fn main() {
         prompt.len()
     );
 
-    let mut gpu = Dsv4Gpu::load(dir, &[0, 1], ActQuantVariant::RefFp8Round, 4096).expect("load");
+    let mut gpu = Dsv4Gpu::load(
+        dir,
+        &[0, 1],
+        ActQuantVariant::RefFp8Round,
+        4096,
+        Dsv4Placement::Pp,
+    )
+    .expect("load");
     gpu.set_prefill_grouped_for_gate(false).expect("arm");
     gpu.set_grouped_route_device_for_gate(false)
         .expect("host routes");

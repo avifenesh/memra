@@ -19,10 +19,14 @@
 //!
 //! Usage: MEMRA_DSV4_EXPERT_ARM=native dsv4-native-gemm-gate <model-dir> <fixtures.json>
 //!        [dev0,dev1]                                          exit 0 = PASS
+//!
+//! Placement: `pp`, a PP-2 cell. The monolithic reference prefill it drives (`forward`,
+//! `prefill_with_cache`) runs the PP walk only.
 
 use cudarc::driver::{DevicePtr, DevicePtrMut};
 use memra_engine::dsv4_ffi as k;
 use memra_engine::dsv4_gpu::{Dsv4Gpu, ExpertArm, ExpertKind, GpuCapture};
+use memra_engine::dsv4_topology::Dsv4Placement;
 use memra_gguf::dsv4::{E2M1, e8m0_to_f32};
 use memra_gguf::dsv4_forward::{FixtureSpec, U_FP8, pow2_ceil};
 use memra_gguf::nvfp4_repack::{f32_to_fp8_e4m3, fp8_e4m3_to_f32};
@@ -189,7 +193,7 @@ fn main() {
         spec.variant_tag
     );
 
-    let gpu = Dsv4Gpu::load(dir, &devices, spec.variant, 512).expect("load");
+    let gpu = Dsv4Gpu::load(dir, &devices, spec.variant, 512, Dsv4Placement::Pp).expect("load");
     assert_eq!(gpu.expert_arm, ExpertArm::Native, "arm seam mismatch");
     let n_trunk = gpu.model.mc.n_layer - gpu.model.mc.nextn_predict_layers;
 

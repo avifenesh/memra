@@ -67,10 +67,10 @@
 //! 1. `Dsv4Program`, a description of a running program, with the two constants
 //!    that matter: `SERVED_PROGRAM` (what a customer request takes today on the DSpark
 //!    posture; the naked default loads no drafter, see its doc) and
-//!    `TUNED_BENCH_PROGRAM` (what every DSV4 gate binary pins). Since the flip
+//!    `TUNED_BENCH_PROGRAM` (what the TP/EP bench gates pin). Since the flip
 //!    they differ on topology and gate-only arms, no longer on expert program.
 //! 2. The door policy functions themselves. The load path reaches exactly these:
-//!    `Dsv4Gpu::load_placed` resolves the expert program through
+//!    `Dsv4Gpu::load` resolves the expert program through
 //!    `matrix_expert_program_resolved` and prints every door's disposition through
 //!    `door_receipt_lines`, which runs each row's policy function on the loaded
 //!    program. So the gate cannot drift into being a second, kinder model of admission.
@@ -258,9 +258,11 @@ pub const SERVED_PROGRAM: Dsv4Program = Dsv4Program {
     can_serve: true,
 };
 
-/// What every `dsv4_*_gate` binary pins, and what every merged door was measured
-/// on: TP/EP, the matrix expert program, the drafter off, no chunked prefill,
-/// and the gate-only fused-GU arm on.
+/// What the TP/EP bench gates pin (they load `Dsv4Placement::SERVED` and arm the
+/// gate-only fused-GU seam), and what every merged door was measured on: TP/EP,
+/// the matrix expert program, the drafter off, no chunked prefill, and the
+/// gate-only fused-GU arm on. PP-2 gates name `Dsv4Placement::Pp` instead
+/// (docs/TESTING.md "DSv4 gate placement").
 pub const TUNED_BENCH_PROGRAM: Dsv4Program = Dsv4Program {
     name: "tuned-bench",
     tp_ep: true,
@@ -1044,6 +1046,10 @@ mod tests {
         (
             "MEMRA_DSV4_AR_PHASE",
             "gate-only all-reduce phase instrument, refuses to load unarmed",
+        ),
+        (
+            "MEMRA_DSV4_ATTENTION_TP_GATE",
+            "retired gate selector, read only to refuse with the placement it meant",
         ),
         ("MEMRA_DSV4_BENCH_PROFILE", "bench profile selector"),
         (
