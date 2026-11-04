@@ -1540,6 +1540,22 @@ impl ModelPlan {
                 .all(|&boundary| boundary > 0 && boundary < self.layers.len())
     }
 
+    /// The last trunk layer that owns a cache of the given attention class: a sliding-window
+    /// cache when `sliding`, a full-attention cache otherwise. On gemma4 E4B this is the source
+    /// every KV-shared layer of that class reads (`StatePlan::SharedKvCache`, 22 and 23), and on
+    /// every gemma4 plan it is the main layer a gemma4-assistant drafter layer attends.
+    pub fn last_own_kv_layer(&self, sliding: bool) -> Option<u32> {
+        self.layers
+            .iter()
+            .rev()
+            .find(|layer| match layer.state {
+                StatePlan::SlidingKvCache { .. } => sliding,
+                StatePlan::KvCache { .. } => !sliding,
+                _ => false,
+            })
+            .map(|layer| layer.index)
+    }
+
     pub fn requires_hybrid_executor(&self) -> bool {
         self.operations().into_iter().any(|operation| {
             !matches!(

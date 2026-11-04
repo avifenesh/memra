@@ -2337,13 +2337,23 @@ enum FullAttentionClass {
     GemmaWindowed,
 }
 
-fn full_attention_class(plan: &ModelPlan, il: u32) -> FullAttentionClass {
-    let layer = plan
-        .layers
+fn plan_layer(plan: &ModelPlan, il: u32) -> &memra_gguf::model_plan::LayerPlan {
+    plan.layers
         .iter()
         .chain(plan.mtp_blocks.iter().map(|block| &block.layer))
         .find(|layer| layer.index == il)
-        .unwrap_or_else(|| panic!("ModelPlan has no layer {il}"));
+        .unwrap_or_else(|| panic!("ModelPlan has no layer {il}"))
+}
+
+/// Does layer `il` own a KV cache? A gemma4 KV-shared layer (`StatePlan::SharedKvCache`) reads
+/// its source layer's cache and allocates none. `Cache::new_inner` skips it by the same plan
+/// state, so admission sizing and the allocator agree without the config's shared count.
+fn owns_kv_cache(plan: &ModelPlan, il: u32) -> bool {
+    !matches!(plan_layer(plan, il).state, StatePlan::SharedKvCache { .. })
+}
+
+fn full_attention_class(plan: &ModelPlan, il: u32) -> FullAttentionClass {
+    let layer = plan_layer(plan, il);
     if !matches!(layer.residual, ResidualTopology::Gemma { .. }) {
         return FullAttentionClass::Ordinary;
     }
@@ -2436,10 +2446,9 @@ pub fn cache_bytes_per_token_for_plan(
         lo <= hi && hi <= cfg.n_layer as usize,
         "cache layer range out of bounds"
     );
-    let shared = cfg.gemma4.as_ref().map(|g| g.shared_kv_layers).unwrap_or(0);
     let full_attn: usize = (lo as u32..hi as u32)
         .filter(|&il| cfg.layer_kind(il) == LayerKind::FullAttention)
-        .filter(|&il| shared == 0 || il < cfg.n_layer - shared)
+        .filter(|&il| owns_kv_cache(plan, il))
         .map(|il| {
             let (kv_dim_k, kv_dim_v, kbb, vbb) = full_attention_kv_layout(cfg, plan, il);
             (kv_dim_k / 32) * kbb + (kv_dim_v / 32) * vbb
@@ -2534,7 +2543,7 @@ pub fn cache_ring_bytes_per_token_for_plan(
     if !swa_ring_on_for_plan(plan) {
         return 0;
     }
-    let shared = cfg.gemma4.as_ref().map(|g| g.shared_kv_layers).unwrap_or(0);
+    // A KV-shared layer's state is `SharedKvCache`, so the state filter already skips it.
     plan.layers
         .iter()
         .chain(plan.mtp_blocks.iter().map(|block| &block.layer))
@@ -2545,7 +2554,6 @@ pub fn cache_ring_bytes_per_token_for_plan(
                 memra_gguf::model_plan::StatePlan::SlidingKvCache { .. }
             )
         })
-        .filter(|layer| shared == 0 || layer.index < cfg.n_layer - shared)
         .map(|layer| {
             let (kv_dim_k, kv_dim_v, kbb, vbb) = full_attention_kv_layout(cfg, plan, layer.index);
             (kv_dim_k / 32) * kbb + (kv_dim_v / 32) * vbb
@@ -4069,6 +4077,49 @@ mod swa_ring_tests {
 
         // A checkpoint from before the rebase is gone: refuse, never slice.
         assert!(ring.restore_plan(400).is_err());
+    }
+}
+
+#[cfg(test)]
+mod shared_kv_sizing_tests {
+    use super::cache_bytes_per_token_for_plan;
+    use memra_gguf::config::{HfConfig, ModelConfig};
+    use memra_gguf::model_plan::{ModelPlan, StatePlan};
+
+    /// Admission sizing skips a gemma4 KV-shared layer by its plan state, the read
+    /// `Cache::new_inner` makes. A config whose shared count drifts from the plan (cleared here)
+    /// sizes the same; with the config arithmetic it reached `full_attention_class` with a
+    /// shared layer and panicked.
+    #[test]
+    fn shared_kv_layers_cost_no_cache_bytes_by_plan_state() {
+        let cfg = ModelConfig::from_hf(&HfConfig::parse(
+            r#"{"model_type":"gemma4","text_config":{"model_type":"gemma4_text",
+            "num_hidden_layers":4,"hidden_size":64,"num_attention_heads":2,
+            "num_key_value_heads":1,"num_global_key_value_heads":1,"head_dim":32,
+            "global_head_dim":64,"intermediate_size":128,"vocab_size":64,
+            "max_position_embeddings":8192,"rms_norm_eps":0.000001,"sliding_window":512,
+            "final_logit_softcapping":30,"hidden_size_per_layer_input":8,
+            "num_kv_shared_layers":2,"attention_k_eq_v":false,
+            "layer_types":["sliding_attention","full_attention","sliding_attention","full_attention"],
+            "rope_parameters":{"full_attention":{"rope_theta":1000000,
+            "partial_rotary_factor":0.25},"sliding_attention":{"rope_theta":10000}}}}"#,
+        ));
+        let plan = ModelPlan::compile(&cfg).unwrap();
+        assert_eq!(
+            plan.layers[2].state,
+            StatePlan::SharedKvCache { source_layer: 0 }
+        );
+        assert_eq!(
+            plan.layers[3].state,
+            StatePlan::SharedKvCache { source_layer: 1 }
+        );
+        let all = cache_bytes_per_token_for_plan(&cfg, &plan, 0, 4);
+        assert!(all > 0);
+        assert_eq!(all, cache_bytes_per_token_for_plan(&cfg, &plan, 0, 2));
+        assert_eq!(cache_bytes_per_token_for_plan(&cfg, &plan, 2, 4), 0);
+        let mut drifted = cfg.clone();
+        drifted.gemma4.as_mut().unwrap().shared_kv_layers = 0;
+        assert_eq!(cache_bytes_per_token_for_plan(&drifted, &plan, 0, 4), all);
     }
 }
 
