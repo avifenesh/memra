@@ -1703,7 +1703,17 @@ impl Model {
                 .output_head_ggml_name()
                 .map_err(std::io::Error::other)?,
         )?;
-        let mut resident = crate::hybrid::ResidentPlan::unsharded(e, src, Some(&binding), &cfg)?;
+        // This loader uploads the plan's layers and no MTP block.
+        let mut resident = crate::hybrid::ResidentPlan::unsharded(
+            e,
+            src,
+            Some(crate::hybrid::TrunkCensus {
+                binding: &binding,
+                n_trunk_layers: plan.layers.len() as u32,
+                loaded_mtp_blocks: 0,
+            }),
+            &cfg,
+        )?;
         let mut step_runtimes = crate::hybrid::StepParallelRuntimeRegistry::default();
 
         let mut layers = Vec::with_capacity(plan.layers.len());
