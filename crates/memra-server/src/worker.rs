@@ -6512,20 +6512,20 @@ impl KvFlex {
     }
 }
 
-/// `MEMRA_GLM5_TP_PREFIX=1` (lane/glm5-tp-prefix, 2026-09-07; OFF in code, armed `=1` by the 1M
-/// TP-2 launcher since the v0.132.0 promotion, docs/FLAGS.md row) arms per-rank capture +
-/// restore of glm5 TP-2 sessions in prefix entries: every
-/// rank's KDA shard and every peer's latent plane ride the entry on their own devices. With it
-/// off a TP-class cache refuses capture and restore by name (a root-only entry would restore
+/// Per-rank capture + restore of glm5 TP-2 sessions in prefix entries (lane/glm5-tp-prefix,
+/// 2026-09-07): every rank's KDA shard and every peer's latent plane ride the entry on their own
+/// devices. The default on sm_100a builds, with no switch (2026-11-04): on the 2x B200 pair a
+/// 128k prompt sent cold and then again hit 130433 of 130433 prompt tokens with ids identical
+/// over the continuation (docs/decisions/GLM5-B200-DOORS.md). Other builds have no receipt, so
+/// a TP-class cache there refuses capture and restore by name (a root-only entry would restore
 /// rank 0 and leave rank 1 at zero state: the same silent-fabrication class the latent gate
 /// closed). Composes with `MEMRA_PREFIX_LATENT=1`, which the root planes still require.
 fn glm5_tp_prefix_on() -> bool {
-    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| std::env::var("MEMRA_GLM5_TP_PREFIX").as_deref() == Ok("1"))
+    memra_engine::BUILT_CUDA_ARCH == "100a"
 }
 
-/// Capture-side TP gate: a cache with per-rank planes needs the door and the model handle
-/// (the peer engines live behind it); a single-device cache is untouched.
+/// Capture-side TP gate: a cache with per-rank planes needs an sm_100a build and the model
+/// handle (the peer engines live behind it); a single-device cache is untouched.
 fn unsupported_prefix_tp_capture(
     tp_cache: bool,
     tp_prefix_on: bool,
@@ -6535,9 +6535,7 @@ fn unsupported_prefix_tp_capture(
         return None;
     }
     if !tp_prefix_on {
-        return Some(
-            "TP rank shards are not carried by prefix entries (MEMRA_GLM5_TP_PREFIX=1 arms them)",
-        );
+        return Some("TP rank shards are carried by prefix entries only on sm_100a builds");
     }
     if !have_model {
         return Some(
@@ -6548,7 +6546,7 @@ fn unsupported_prefix_tp_capture(
 }
 
 /// Restore-side TP gate: a TP-class model admits only an entry that carries every rank's
-/// shards, and only while the door is armed; a single-device model never sees TP shards.
+/// shards, and only on an sm_100a build; a single-device model never sees TP shards.
 fn unsupported_prefix_tp_restore(
     tp_model: bool,
     tp_prefix_on: bool,
@@ -6559,7 +6557,7 @@ fn unsupported_prefix_tp_restore(
             .then_some("entry carries TP rank shards this single-device cache cannot hold");
     }
     if !tp_prefix_on {
-        return Some("TP rank shards are not restored (MEMRA_GLM5_TP_PREFIX=1 arms them)");
+        return Some("TP rank shards are restored only on sm_100a builds");
     }
     if !entry_carries_tp {
         return Some(
@@ -9703,7 +9701,7 @@ struct PrefixEntry {
     /// cache ONLY for entries whose slots here are populated, so entries minted before the
     /// flag flip (or by a publish site that cannot capture latent state) keep refusing.
     latent: Vec<Option<memra_engine::cache::LatentPlaneSnapshot>>,
-    /// glm5 TP-2 walk (lane/glm5-tp-prefix, 2026-09-07, `MEMRA_GLM5_TP_PREFIX`): every rank's
+    /// glm5 TP-2 walk (lane/glm5-tp-prefix, 2026-09-07, sm_100a builds): every rank's
     /// KDA shard and every peer's latent plane, each resident on its own rank's device. `None`
     /// on a single-device cache; a TP-class cache admits only an entry that carries it.
     tp: Option<memra_engine::glm5_tp::Glm5TpPrefixShards>,
@@ -52827,8 +52825,9 @@ mod tests {
     }
 
     /// lane/glm5-tp-prefix: the TP gates, every arm (capture: a single-device cache is
-    /// untouched, a TP cache needs the door AND the model handle; restore: a TP model admits
-    /// only a shard-bearing entry under the door, a single-device model refuses shards).
+    /// untouched, a TP cache needs an sm_100a build AND the model handle; restore: a TP model
+    /// admits only a shard-bearing entry on an sm_100a build, a single-device model refuses
+    /// shards).
     #[test]
     fn tp_prefix_gates_cover_every_arm() {
         assert_eq!(
