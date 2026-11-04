@@ -1,5 +1,10 @@
 # KV physical reclaim: VMM-backed planes, not pool trim (2026-09-20)
 
+> **Superseded for serving (2026-11-04):** the server's on-demand VMM planes, grown from this
+> record, are the serving default on the full-power RTX PRO 6000 Blackwell Workstation Edition and
+> `MEMRA_KV_ALLOCATOR` is deleted: [KV-VMM-SERVING-DEFAULT.md](KV-VMM-SERVING-DEFAULT.md). The
+> gate's `--kv-allocator vmm` arm and the demote/restore record below are unchanged.
+
 **Status:** gate-only door (`kv-tier-gate --kv-allocator vmm`, default `pooled`), decide-by 2026-10-04.
 Not a serving default. Lane: `research/spill-b-20260919/{DAY8.md,DAY9.md,RECLAIM-DESIGN.md}` (rented RTX 5090)
 and `DAY10.md` (one RTX PRO 6000 Blackwell).

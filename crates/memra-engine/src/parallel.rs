@@ -59,6 +59,17 @@ impl HardwareTarget {
              Blackwell"
         )))
     }
+
+    /// The full-power RTX PRO 6000 Blackwell Workstation Edition (600 W), by device name: the
+    /// edition of [`Self::RtxPro6000Blackwell`] that the single-card serving receipts of WP-B
+    /// (`research/spill-b-20260919/`) and spill-f (`research/spill-f-20260919/box36/`) were read
+    /// on. The Max-Q Workstation and Server editions share the class, not those receipts, so a
+    /// default keyed here stays off on them until they carry their own.
+    pub fn is_pro6000_workstation(name: &str) -> bool {
+        matches!(Self::from_device_name(name), Ok(Self::RtxPro6000Blackwell))
+            && name.contains("Workstation")
+            && !name.contains("Max-Q")
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1979,6 +1990,26 @@ mod tests {
             HardwareTarget::Rtx5090
         );
         assert!(HardwareTarget::from_device_name("NVIDIA H100 80GB HBM3").is_err());
+    }
+
+    /// Only the full-power Workstation Edition carries the WP-B and spill-f single-card
+    /// receipts; its siblings in the class, the 5090 and unknown cards do not.
+    #[test]
+    fn pro6000_workstation_is_the_full_power_workstation_edition_only() {
+        assert!(HardwareTarget::is_pro6000_workstation(
+            "NVIDIA RTX PRO 6000 Blackwell Workstation Edition"
+        ));
+        for name in [
+            "NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition",
+            "NVIDIA RTX PRO 6000 Blackwell Server Edition",
+            "NVIDIA GeForce RTX 5090",
+            "NVIDIA GeForce RTX 5090 Laptop GPU",
+            "NVIDIA RTX PRO 6000 Ada Generation",
+            "NVIDIA H100 80GB HBM3",
+            "",
+        ] {
+            assert!(!HardwareTarget::is_pro6000_workstation(name), "{name}");
+        }
     }
 
     #[test]

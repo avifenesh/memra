@@ -117,8 +117,8 @@ mod job_publication;
 /// (`background: true`) job's output would live in between the worker finishing and the
 /// caller's poll. Not yet wired to a live generation; see the module doc.
 pub mod job_store;
-/// `MEMRA_KV_ALLOCATOR=vmm` (WP-B day 37, decide-by 2026-10-04): the serving arm of the
-/// `--kv-allocator vmm` door, on-demand fixed-address K/V planes for covered sessions.
+/// On-demand fixed-address K/V planes for covered sessions (WP-B day 37), the default on the
+/// RTX PRO 6000 Blackwell Workstation Edition (`docs/decisions/KV-VMM-SERVING-DEFAULT.md`).
 mod kv_vmm;
 /// The admission/accounting seam: the server admits, denies, and reports counts;
 /// what admission MEANS — budgets, prices, tenancy policy — is a deployment concern,

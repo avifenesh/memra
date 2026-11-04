@@ -2571,7 +2571,7 @@ pub struct Metrics {
     pub cuda_pool_reserved_bytes: u64,
     pub cuda_pool_used_bytes: u64,
     pub cuda_pool_cached_bytes: u64,
-    /// WP-B day 37 (`MEMRA_KV_ALLOCATOR=vmm`): on-demand K/V planes held by active and parked
+    /// WP-B day 37 (the on-demand KV planes): on-demand K/V planes held by active and parked
     /// sessions, backed and reserved; their owed growth (active only); the graveyard's pending
     /// bytes; process counters. All 0 with the door off.
     pub kv_vmm_mapped_bytes: u64,
@@ -8326,7 +8326,7 @@ fn pending_seed_bytes(active: &[Session]) -> usize {
         .fold(0usize, usize::saturating_add)
 }
 
-/// WP-B day 37 (`MEMRA_KV_ALLOCATOR=vmm`, DAY37 1.3): the routes whose engine calls the tick-top
+/// WP-B day 37 (on-demand KV planes, DAY37 1.3): the routes whose engine calls the tick-top
 /// ensure bounds. A model is covered when it runs on one device (no ppN stage ownership, no
 /// model-owned peer engines) and its plan has no SWA ring and no latent planes; every other
 /// model keeps pooled planes under the door.
@@ -26199,7 +26199,7 @@ struct Session {
     /// park point (a failed step may have advanced state that `fed` does not describe), and its
     /// length stays out of the completion history, exactly as an abort's does.
     errored: bool,
-    /// WP-B day 37 (`MEMRA_KV_ALLOCATOR=vmm`): the rows this request's prompt occupies, the
+    /// WP-B day 37 (the on-demand KV planes): the rows this request's prompt occupies, the
     /// floor of the tick-top ensure bound for its on-demand K/V planes (`kv_vmm::bound_rows`).
     /// Set at admission, including a resume, to that request's prompt rows.
     vmm_floor_rows: usize,
@@ -28425,11 +28425,13 @@ pub fn run(
     // same receipt the qualification env is derived from.
     let admit_memory_cfg = crate::admit_memory::MemoryAdmitConfig::from_env();
     eprintln!("{}", admit_memory_cfg.boot_line());
-    // ON-DEMAND KV PLANES (WP-B day 37, door MEMRA_KV_ALLOCATOR=vmm, decide-by 2026-10-04,
-    // research/spill-b-20260919/DAY37.md). Read once here; an unknown value, or the door armed on
-    // a device without VMM support, refuses the boot instead of serving pooled under an ON line.
+    // ON-DEMAND KV PLANES (WP-B day 37, research/spill-b-20260919/DAY37.md): the default on the
+    // card class whose deciding cell read PROMOTE-ELIGIBLE (the RTX PRO 6000 Blackwell
+    // Workstation Edition, docs/decisions/KV-VMM-SERVING-DEFAULT.md), pooled planes elsewhere.
+    // Resolved once here; a bad fault spec, or that card without VMM support, refuses the boot
+    // instead of serving pooled under an ON line.
     let kv_vmm_cfg =
-        match crate::kv_vmm::KvVmmConfig::from_env(&engine.ctx().name().unwrap_or_default()) {
+        match crate::kv_vmm::KvVmmConfig::for_device(&engine.ctx().name().unwrap_or_default()) {
             Ok(cfg) => cfg,
             Err(why) => {
                 let _ = ready_tx.send(Err(why));
@@ -28440,7 +28442,7 @@ pub fn run(
         match memra_engine::cache::vmm_granularity_for(&engine.stream()) {
             Ok(g) => Some(g),
             Err(err) => {
-                let _ = ready_tx.send(Err(format!("MEMRA_KV_ALLOCATOR=vmm: {err}")));
+                let _ = ready_tx.send(Err(format!("on-demand KV planes: {err}")));
                 return;
             }
         }
@@ -29776,7 +29778,7 @@ pub fn run(
                 let pending_booked = pending_prime.saturating_add(pending_seed);
                 let pending_booked =
                     pending_booked.saturating_add(unified_growth.saturating_sub(pending_seed));
-                // OWED GROWTH (WP-B day 37, MEMRA_KV_ALLOCATOR=vmm, DAY37 1.4): an admitted
+                // OWED GROWTH (WP-B day 37, on-demand KV planes, DAY37 1.4): an admitted
                 // on-demand session backs only the rows it has reached, so the live reading does
                 // not see the rest of the context the pooled allocator would already hold. Armed,
                 // every reading is reduced by that owed growth too. Unarmed it is 0.
@@ -31002,7 +31004,7 @@ pub fn run(
                 finished.push(i);
             }
         }
-        // ON-DEMAND KV (WP-B day 37, MEMRA_KV_ALLOCATOR=vmm, DAY37 1.2 ensure point 2 and
+        // ON-DEMAND KV (WP-B day 37, on-demand KV planes, DAY37 1.2 ensure point 2 and
         // addendum A): the owner-tick reap, then every active on-demand session backed through
         // its bound before the first engine call of this tick. A grow failure takes the reclaim
         // retry (the graveyard's release events waited once, the prefix cache and one parked
@@ -37994,7 +37996,7 @@ fn admit(
                         req.model
                     );
                 }
-                // WP-B day 37: under `MEMRA_KV_ALLOCATOR=vmm` a covered model's session is built
+                // WP-B day 37: with the on-demand planes on, a covered model's session is built
                 // with on-demand planes (`vmm_build_spec`); unarmed it is this call unchanged.
                 let vmm_new_session = |cap: usize| {
                     vmm_build_spec(
@@ -64446,7 +64448,7 @@ mod tests {
         let live_sq = squash(live);
         let pred = format!("step_oom_parkable{}", "(");
         // 1. Exactly one definition, the step guard's call, the memra#680 prefill-OOM
-        //    predicate's call, and the WP-B day 37 on-demand ensure guard (MEMRA_KV_ALLOCATOR=vmm)
+        //    predicate's call, and the WP-B day 37 on-demand ensure guard (the on-demand planes)
         //    in live code.
         assert_eq!(
             live.matches(pred.as_str()).count(),
