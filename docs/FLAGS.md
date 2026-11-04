@@ -1791,8 +1791,8 @@ receipts (`Capturing`, `Restoring`), and the pause sweep's demotes (design V). I
 (2026-10-05) passed. Its only receipts are N=1 and executed-not-qualified on one RTX PRO 6000
 (`research/spill-c-20260919/DAY13.md` through `DAY56.md`, `research/spill-a-20260919/DAY17.md`
 through `DAY42.md`), and the review that read them (S12:F0) found the only cost table showing the
-door ON costing more than OFF. The owner ruled
-on 2026-11-04 to delete it. `MEMRA_ADMIT_RECLAIM_OFFTICK=1` (WP-B day 42) made the memory door's
+door ON costing more than OFF. The owner ruled on 2026-11-04 to delete it.
+`MEMRA_ADMIT_RECLAIM_OFFTICK=1` (WP-B day 42) made the memory door's
 reclaim flush demote off the tick through the door's route and deferred the arrival on the landings;
 its cell read F1 to F4 PASS (`research/spill-b-20260919/DAY42.md` 2.3), but it read only with the
 contracts door armed, so it goes with it.
