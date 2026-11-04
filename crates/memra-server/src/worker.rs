@@ -950,6 +950,14 @@ fn should_probe_prefix_cache(
 /// DEFAULT OFF until its own restored-vs-cold byte-identity gate is green on the serving
 /// binary, per the carve-out law: a route inheriting a restore path must re-gate its own
 /// identity — loading and running never proves support.
+/// `MEMRA_DSPARK_COLD_DRAFTER=1` (memra#1031, default off): a hit the cache-preferred veto would
+/// serve plain re-arms the drafter EMPTY at the restored boundary when the suffix covers the
+/// drafter window (see the conversion in `admit`). Needs the restore and partial doors.
+fn dspark_cold_drafter_on() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var("MEMRA_DSPARK_COLD_DRAFTER").as_deref() == Ok("1"))
+}
+
 fn dspark_partial_restore_on() -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *ON.get_or_init(|| std::env::var("MEMRA_DSPARK_PARTIAL_RESTORE").as_deref() == Ok("1"))
@@ -37210,6 +37218,103 @@ fn admit(
                 "[prefix-cache] dspark: hit cannot re-arm the drafter; cold admission required (model {})",
                 req.model,
             );
+        }
+    }
+    // COLD-DRAFTER CONVERSION OF A VETOED HIT (`MEMRA_DSPARK_COLD_DRAFTER=1`, memra#1031 second
+    // half). The cache-preferred veto serves a long prompt's PLAIN hit plain, the session
+    // publishes another plain entry, and a multi-turn DFlash session never speculates again
+    // (GB10 GGUF DFlash2 c1: 12.0 tok/s, 28 vetoes). When the suffix the hit leaves covers the
+    // whole drafter window (`sliding_window + block` rows), the drafter can be born EMPTY at the
+    // restored boundary (`DflashKv::new_cold_at`) and filled from the suffix prime's taps: every
+    // row a round at the prompt end reads lies in the suffix, so the draft state is the one a
+    // cold DFlash prime of the whole prompt builds, row for row. The session therefore keeps
+    // the hit's prefill saving, speculates, and publishes a tail-carrying entry at its prime
+    // boundary that later turns restore. Shorter suffixes keep the plain hit (a cold drafter
+    // would read rows it never saw). Every refusal hands the carrier back, so the request is
+    // never worse than the plain hit it had.
+    if dspark_prefix_restore_on()
+        && dspark_partial_restore_on()
+        && dspark_cold_drafter_on()
+        && !dspark_prefers_cold
+        && spec_restored.is_none()
+        && dspark_prefix_restored.is_none()
+        && dspark_prefers_cold_over_prefix(DsparkColdPrefixAdmission {
+            hit_available: false,
+            ..cold_prefix_inputs
+        })
+        && let Some(draft) = dspark_draft
+        && let Some(carrier) = reused.take()
+    {
+        let window = draft.cfg.sliding_window + draft.cfg.block_size;
+        let suffix_len = prompt.len().saturating_sub(carrier.fed.len());
+        let shape_ok = !vision_req
+            && constraint.is_none()
+            && ((sampler.is_greedy() && (!greedy_penalized || dspark_greedy_penalty_on()))
+                || sampler.temperature() > 0.0)
+            && memra_engine::plan_backend::gdn_dspark_compatible(&lm.model.plan)
+            && serve_spec;
+        let geometry_ok = !carrier.fed.is_empty()
+            && carrier.fed.len() < prompt.len()
+            && suffix_len >= window
+            && memra_engine::dflash::dspark_spec_prompt_fits(
+                prompt.len(),
+                carrier.cap,
+                draft.cfg.block_size,
+                draft.cfg.sliding_window,
+                draft.dflash2.is_some(),
+            );
+        let mut handed_back = Some(carrier);
+        if shape_ok && geometry_ok {
+            let carrier = handed_back.take().expect("set above");
+            let cap = carrier.cap;
+            let fed = carrier.fed.clone();
+            let logits = carrier.last_logits.clone();
+            match memra_engine::dflash::DflashKv::new_cold_at(engine, &draft.cfg, cap, fed.len()) {
+                Ok(dkv) => match lm.model.dspark_spec_session_from_restored(
+                    engine,
+                    draft,
+                    carrier.cache,
+                    &fed,
+                    dkv,
+                    &logits,
+                    dspark_spec_sampling_for(&sampler),
+                    cap,
+                ) {
+                    Ok(sess) => {
+                        eprintln!(
+                            "[prefix-cache] DSPARK cold-drafter restore: {} of {} prompt tokens \
+                             from a plain hit, drafter born at the boundary ({} suffix tokens \
+                             to prime, window {window}) (model {})",
+                            fed.len(),
+                            prompt.len(),
+                            suffix_len,
+                            req.model,
+                        );
+                        let suffix = prompt[fed.len()..].to_vec();
+                        dspark_prefix_restored = Some((sess, fed, suffix));
+                    }
+                    Err(why) => {
+                        // The carrier's cache moved into the failed constructor; the request
+                        // primes cold on the plain path (no hit), never a broken session.
+                        eprintln!(
+                            "[prefix-cache] DSPARK cold-drafter restore declined ({why}); \
+                             plain path, cold (model {})",
+                            req.model,
+                        );
+                    }
+                },
+                Err(why) => {
+                    eprintln!(
+                        "[prefix-cache] DSPARK cold-drafter: drafter allocation refused ({why}); \
+                         serving the plain hit (model {})",
+                        req.model,
+                    );
+                    handed_back = Some(carrier);
+                }
+            }
+        }
+        if handed_back.is_some() {
+            reused = handed_back;
         }
     }
     if let Err(error) = finish_planned_dflash_conversion(
