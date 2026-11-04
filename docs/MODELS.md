@@ -176,7 +176,9 @@ loader refuses it (`draft n_embd != model n_embd`). Since 2026-08-17, `memra-ser
 through its own attach path (`gspec`): `MEMRA_DRAFT=<assistant.gguf>` with `MEMRA_GEMMA4_SPEC`
 unset arms served speculative decode at the shipping depth K=5 (`MEMRA_GEMMA4_SPEC=0` is the
 plain kill switch — see docs/FLAGS.md). The speculative numbers in the table above remain
-`gemma-gate` CLI measurements, not serving ones.
+`gemma-gate` CLI measurements, not serving ones. E4B is the exception to the served attach: the
+worker skips it, so its assistant drafter runs through `gemma-gate` only
+([E4B card](models/gemma4-e4b.md)).
 
 ## Capture models — embeddings and rerank (v0.116.0)
 
