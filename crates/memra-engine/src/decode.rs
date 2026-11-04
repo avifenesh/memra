@@ -2134,10 +2134,10 @@ impl HybridModel {
     pub(crate) fn fa_class_of(&self, e: &Engine, t_kv: usize) -> (bool, bool, bool, usize) {
         let _numeric = self.enter_numeric();
         let head_dim = self.cfg.head_dim_k as usize;
-        let nkv = self.cfg.n_head_kv as usize;
+        let (nh, nkv) = (self.cfg.n_head as usize, self.cfg.n_head_kv as usize);
         (
-            e.fa_geom_eager(t_kv, head_dim, nkv, false).0,
-            crate::fa_v4_at_pub(t_kv),
+            e.fa_geom_eager(t_kv, head_dim, nh, nkv, false).0,
+            crate::fa_v4_at_pub(t_kv, nh, nkv),
             head_dim == 512 && t_kv >= crate::fa512_min_tkv(),
             crate::fa_split_keys_pub(t_kv, nkv),
         )

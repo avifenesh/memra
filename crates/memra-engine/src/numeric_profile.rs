@@ -31,7 +31,8 @@ use std::sync::OnceLock;
 pub struct NumericProfile {
     /// v4 decode threshold (`fa_v4_at`): v4 below it, v3 at and above. 0 turns the v4 decode
     /// family off: the gqa > 8 capacity guard (fa_v4_smem's per-warp Q arrays hold gqa <= 8,
-    /// research/122b-bringup-20260806/).
+    /// research/122b-bringup-20260806/). `fa_v4_at` also checks that capacity from each
+    /// launch's own head counts (`crate::FA_V4_GQA_MAX`), so it holds outside a model scope too.
     pub fa_v4_max: usize,
     /// FA vec-lane t_kv floor (`fa_vec_min_tkv`).
     pub fa_vec_min: usize,

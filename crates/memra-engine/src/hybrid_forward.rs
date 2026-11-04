@@ -24863,7 +24863,13 @@ impl HybridModel {
             let key_s = if t_kv > win {
                 (true, usize::MAX)
             } else {
-                e.fa_bucket_key(t_kv, hd_s, nkv_s, crate::Engine::wkv_on())
+                e.fa_bucket_key(
+                    t_kv,
+                    hd_s,
+                    self.cfg.n_head as usize,
+                    nkv_s,
+                    crate::Engine::wkv_on(),
+                )
             };
             let (key_g, rung_end) = if t_kv >= f512 {
                 // strict upper bound: the rung must ROLL at exact powers (t_kv==1024 starts
@@ -24871,7 +24877,10 @@ impl HybridModel {
                 let end = (t_kv + 1).next_power_of_two().max(f512 * 2);
                 ((true, end), end)
             } else {
-                (e.fa_bucket_key(t_kv, hd_g, nkv_g, false), t_kv)
+                (
+                    e.fa_bucket_key(t_kv, hd_g, self.cfg.n_head as usize, nkv_g, false),
+                    t_kv,
+                )
             };
             let key = (key_s, key_g, t_kv >= f512, t_kv > win);
             if !graphs.contains_key(&key) {

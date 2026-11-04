@@ -2907,10 +2907,11 @@ impl HybridModel {
         let t_kvs: Vec<usize> = caches.iter().map(|c| c.pos + 1).collect();
         let t_kv_max = *t_kvs.iter().max().unwrap();
         let sp0 = crate::fa_split_keys(t_kvs[0], cfg.n_head_kv as usize);
-        let seqs_fa = t_kvs.iter().all(|&t| crate::fa_seqs_eligible(t, head_dim))
-            && t_kvs
-                .iter()
-                .all(|&t| crate::fa_split_keys(t, cfg.n_head_kv as usize) == sp0);
+        let seqs_fa = t_kvs.iter().all(|&t| {
+            crate::fa_seqs_eligible(t, head_dim, cfg.n_head as usize, cfg.n_head_kv as usize)
+        }) && t_kvs
+            .iter()
+            .all(|&t| crate::fa_split_keys(t, cfg.n_head_kv as usize) == sp0);
 
         Ok(BatchLayerCtx {
             lin_base,

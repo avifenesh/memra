@@ -7703,7 +7703,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let sp0 = memra_engine::fa_split_keys_pub(depths[0], nhkv);
                 let eligible = depths
                     .iter()
-                    .all(|&t| memra_engine::fa_seqs_eligible(t, hd))
+                    .all(|&t| memra_engine::fa_seqs_eligible(t, hd, nh, nhkv))
                     && depths
                         .iter()
                         .all(|&t| memra_engine::fa_split_keys_pub(t, nhkv) == sp0);
