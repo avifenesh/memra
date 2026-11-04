@@ -75,7 +75,22 @@ fi
 mkdir -p "$LOGDIR"
 T_START=$(date +%s)
 stamp() { echo $(( $(date +%s) - T_START )); }
-lockrun() { flock -w "$LOCK_WAIT" "$LOCK" "$@"; }
+# A caller that already holds the lock on FD 9 (`gpulock run` passes it that way) runs the
+# steps under it: a second flock on a fresh descriptor would wait on that very lock until
+# the caller's lease expired. flock -n on the inherited FD succeeds only when that open
+# file description owns the lock or the lock is free (it then takes it for this run). The
+# probe runs at the first locked step, so a run that refuses before any GPU work takes no lock.
+LOCK_INHERITED=
+lockrun() {
+    if [ -z "$LOCK_INHERITED" ]; then
+        LOCK_INHERITED=0
+        if [ "$(stat -L -c %d:%i /proc/self/fd/9 2>/dev/null)" = "$(stat -L -c %d:%i "$LOCK" 2>/dev/null)" ] \
+            && flock -n 9 2>/dev/null; then
+            LOCK_INHERITED=1
+        fi
+    fi
+    if [ "$LOCK_INHERITED" = 1 ]; then "$@"; else flock -w "$LOCK_WAIT" "$LOCK" "$@"; fi
+}
 
 # ---------- tier 2 = the unchanged full battery ----------
 if [ "$TIER" = "2" ]; then
