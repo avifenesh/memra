@@ -249,7 +249,7 @@ Facts worth knowing before "cleaning up":
 Legend: FFI binding "fatbin/by-name" = loaded from module by kernel name string;
 "extern in <file>" = Rust `unsafe extern "C"` declaration.
 
-### cu/kernels.cu — 131 symbols (recount 2026-11-03 of the `extern "C" __global__` definitions: 142 before the 2026-11-03 door sweep, minus `pack_tok_p` and `tok_map_u32` with `MEMRA_SPEC_STREAM`; the header's earlier 135 was stale. Lineage: lane/f32-gemv-rows-20260905 +1: `gemv_f32_rows`; lane/hc-mixes-gemv-20260905 +1: `hc_mixes_gemv_f32`; lane/b200-q8-fuse-20260902 +1: `rms_norm_zq8_f32`; prior recount 2026-09-02, 132, includes the TP verified-prefix batched-copy lane) (fatbin `MEMRA_ENGINE_FATBIN`)
+### cu/kernels.cu — 131 symbols (measured `grep -c 'extern "C" __global__'` after the 2026-11-03 door sweep, which removed `pack_tok_p` and `tok_map_u32` with `MEMRA_SPEC_STREAM` among others; the header's earlier 135 was stale. Lineage: lane/f32-gemv-rows-20260905 +1: `gemv_f32_rows`; lane/hc-mixes-gemv-20260905 +1: `hc_mixes_gemv_f32`; lane/b200-q8-fuse-20260902 +1: `rms_norm_zq8_f32`; prior recount 2026-09-02, 132, includes the TP verified-prefix batched-copy lane) (fatbin `MEMRA_ENGINE_FATBIN`)
 
 Header: "Stage-1 kernels: correctness-first, all f32, no tensor cores" (kernels.cu:1).
 
@@ -311,7 +311,7 @@ Header: "Stage-1 kernels: correctness-first, all f32, no tensor cores" (kernels.
 | `hc_diet_stage1_mt_f32` | hc-diet MT stage 1: down/inject weight rows read ONCE, tokens iterated inside with INLINE (x*inv)*nw normalization — per-(row,token) fma chain the stage-1 program VERBATIM => BIT-IDENTICAL to the token-grid stage 1; t<=12 | bf16-w/f32 | — | qwen4exp_gpu read gate at verify chunks (set_verify_mt); oracle `gate_hc_diet_kernels` mt mode | fatbin/by-name |
 | `hc_diet_stage3_mt_f32` | hc-diet MT stage 3: up rows read once, ALL T low_act rows resident in smem, per-token lane chains + the stage-3 epilogue with inv[t,s] — BIT-IDENTICAL to the token-grid stage 3 | bf16-w/f32 | — | qwen4exp_gpu read gate at verify chunks (set_verify_mt); oracle `gate_hc_diet_kernels` mt mode | fatbin/by-name |
 
-### cu/hybrid.cu — 67 symbols (recount 2026-11-03 of the `extern "C" __global__` definitions: 79 before the 2026-11-03 door sweep, minus `gdn_scan_s128_dc`, `qkv_to_gdn_repack_f32`, `ssm_conv1d_tm_state_f32`, `ssm_conv_ring_rebuild_f32` and `ssm_conv_ring_rebuild_f32_dc` with `MEMRA_SPEC_STREAM`, and `swiglu_preclamped_mul_scaled_q8_1_f32` with `MEMRA_SHEXP_SWIGLU_ZQ8`) (fatbin `MEMRA_HYBRID_FATBIN`)
+### cu/hybrid.cu — 67 symbols (measured `grep -c 'extern "C" __global__'` after the 2026-11-03 door sweep, which removed `gdn_scan_s128_dc`, `qkv_to_gdn_repack_f32`, `ssm_conv1d_tm_state_f32`, `ssm_conv_ring_rebuild_f32` and `ssm_conv_ring_rebuild_f32_dc` with `MEMRA_SPEC_STREAM` and `swiglu_preclamped_mul_scaled_q8_1_f32` with `MEMRA_SHEXP_SWIGLU_ZQ8`, among others) (fatbin `MEMRA_HYBRID_FATBIN`)
 
 Header: "Qwen3.5/3.6 hybrid linear-attention: depthwise causal conv1d + SiLU, Gated
 DeltaNet scan; all f32" (hybrid.cu:1-3).
