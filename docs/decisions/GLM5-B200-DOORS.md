@@ -255,7 +255,42 @@ to a cold run.
 root-orchestrated walk, since no receipt exists there; `=1` reaches the posture there for the
 gate, and with no transport named it arms `device-push` too.
 
+## The HtoD diet: sm_100a default with the graphs
+
+**Chosen:** on sm_100a builds door H (`MEMRA_HTOD_DIET`, alias `MEMRA_GLM5_HTOD_DIET`) is on
+with neither name set: the ungated shared-expert add reads a resident ones buffer and the
+latent-plane length mirror takes the async store. Bit-identical by construction. Both names stay:
+`=1`/`=0` pick explicitly on any build, the gates and the door's GPU test pin them, and a
+disagreeing pair still falls closed.
+
+**Rejected:** deleting it as unpriced, which would end every glm5 decode graph, since each one
+refuses capture without it (`glm5_graph_process_refusal`: a pageable upload inside a capture
+replays stale bytes, the garbage tpwalk4 v2's bare graph arm decoded); keeping it OFF, which
+leaves the plain decode graph and the restored symmetric graphs inert on every naked sm_100a
+command; and turning it on for every build, which would start the plain decode graph on cards
+where it has no throughput receipt.
+
+**Measurement that settled it:** its own row measures nothing (shexpab: the OFF arm already had
+the diet through the alias and the graph capture). What settles it is the graphs it gates. Every
+positive graph receipt on the 2x B200 pair ran with it on: the plain decode graph's graphab
+(three interleaved boots per arm, 66.40 against 72.97 tok/s, +9.89%, darklanes
+`research/glm5-b200-20260902/LANE.md`) and the symmetric walk's graphs (tpwalk4 v2, tpwalk3 v5,
+above).
+
+**Scope:** sm_100a builds. Other builds keep it OFF, so the plain decode graph, default ON
+everywhere since 2026-09-04, still refuses capture on a naked command there: an open owner call
+(below).
+
 ## Open calls
+
+### The plain decode graph off sm_100a
+
+`MEMRA_GLM5_DECODE_GRAPH` is default ON on every build, but it refuses capture without the HtoD
+diet, which stays OFF off sm_100a, so on the RTX 5090 and RTX PRO 6000 a naked glm5 command never
+captures. Options: turn the diet on for every build, which starts the graph there with an
+exactness gate but no throughput row (recommended only with a 5090 or PRO 6000 graph A/B); or
+record the graph default as sm_100a-effective and leave both as they are (recommended until that
+cell runs, since it changes nothing today). Decide-by 2026-11-18.
 
 ### `MEMRA_KPOOL_SELECT_V2` on sm_120a
 

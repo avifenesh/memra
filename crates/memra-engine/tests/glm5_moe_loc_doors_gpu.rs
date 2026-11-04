@@ -574,20 +574,25 @@ fn gpu_htod_diet_shexp_ones_and_len_mirror_are_bit_identical() {
         );
     }
 
-    // The len_d mirror: identical value, and the door must actually take the async path.
+    // The len_d mirror: identical value, and the door must actually take the async path. The
+    // shipped arm pins the door OFF by name: door H is the sm_100a default, so an unset
+    // variable would run the door there.
     let mut mirror = e.htod_i32(&[0i32]).expect("mirror");
-    e.i32_mirror_store(&mut mirror, 4321)
-        .expect("shipped mirror store");
+    let a0 = memra_engine::htod_diet_avoided();
+    let shipped = with_flags(&[("MEMRA_HTOD_DIET", "0")], || {
+        e.i32_mirror_store(&mut mirror, 4321)
+            .expect("shipped mirror store");
+    });
+    drop(shipped);
     assert_eq!(
         e.dtoh_i32(&mirror).expect("mirror readback")[0],
         4321,
         "the shipped memcpy_htod mirror store did not land"
     );
-    let a0 = memra_engine::htod_diet_avoided();
     assert_eq!(
         a0,
         memra_engine::htod_diet_avoided(),
-        "the door-H counter moved with the door OFF"
+        "the door-H counter moved with the door pinned OFF"
     );
     let n1 = with_flag("MEMRA_GLM5_HTOD_DIET", || {
         e.i32_mirror_store(&mut mirror, 9876).expect("door H store");

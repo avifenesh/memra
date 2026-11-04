@@ -2953,6 +2953,19 @@ pub(crate) fn alias_door_from(
     }
 }
 
+/// [`alias_door_from`] with a default for the unset case: NEITHER name set takes `unset`, the
+/// general name cited; any value set on either name resolves exactly as [`alias_door_from`].
+pub(crate) fn alias_door_or_from(
+    general: (&'static str, Option<&str>),
+    alias: (&'static str, Option<&str>),
+    unset: bool,
+) -> Result<(bool, &'static str), String> {
+    if general.1.is_none() && alias.1.is_none() {
+        return Ok((unset, general.0));
+    }
+    alias_door_from(general, alias)
+}
+
 /// Env-reading wrapper over [`alias_door_from`]. A disagreeing pair FALLS CLOSED (door not
 /// armed = the shipped program) and prints the refusal ONCE PER PROCESS through `latch`.
 ///
@@ -2974,9 +2987,22 @@ fn alias_door(
     alias: &'static str,
     latch: &'static std::sync::atomic::AtomicBool,
 ) -> (bool, &'static str) {
+    alias_door_or(general, alias, latch, false)
+}
+
+/// [`alias_door`] for a door whose default is not OFF everywhere: with NEITHER name set the
+/// door takes `unset` (a card-keyed default); any value set on either name resolves exactly as
+/// [`alias_door_from`] says, so `=0` stays a deliberate pin and a disagreeing pair still falls
+/// closed. Same two lookups per call as [`alias_door`].
+fn alias_door_or(
+    general: &'static str,
+    alias: &'static str,
+    latch: &'static std::sync::atomic::AtomicBool,
+    unset: bool,
+) -> (bool, &'static str) {
     let g = std::env::var(general).ok();
     let a = std::env::var(alias).ok();
-    match alias_door_from((general, g.as_deref()), (alias, a.as_deref())) {
+    match alias_door_or_from((general, g.as_deref()), (alias, a.as_deref()), unset) {
         Ok(resolved) => resolved,
         Err(msg) => {
             if !latch.swap(true, std::sync::atomic::Ordering::Relaxed) {
@@ -2987,10 +3013,10 @@ fn alias_door(
     }
 }
 
-/// `MEMRA_HTOD_DIET=1` (default OFF; generalized from `MEMRA_GLM5_HTOD_DIET`, which stays
-/// honored per the flag-alias law above — door H, lane/glm5-moe-loc): ENGINE-GENERIC HtoD
-/// hygiene. Nothing in either class is family knowledge; both are "the host uploaded bytes
-/// the device already had".
+/// `MEMRA_HTOD_DIET` (the default on sm_100a builds since 2026-11-04, OFF elsewhere; generalized
+/// from `MEMRA_GLM5_HTOD_DIET`, which stays honored per the flag-alias law above; door H,
+/// lane/glm5-moe-loc): ENGINE-GENERIC HtoD hygiene. Nothing in either class is family
+/// knowledge; both are "the host uploaded bytes the device already had".
 ///
 /// 1. The UNGATED shared-expert add re-uploaded a fresh `vec![1.0f32; t]` per MoE layer-call
 ///    (42 pageable HtoD/round to move a CONSTANT) — it now reads a resident ones buffer
@@ -3004,10 +3030,22 @@ fn alias_door(
 ///    Engine method, not a family method).
 ///
 /// Both write identical values to identical buffers and both are stream-ordered, so the arms are
-/// bit-identical by construction. Default OFF because no box timing receipt exists (rig is
-/// exactness-only): 64 driver calls/round of measured count, UNPRICED wall. Read per call.
+/// bit-identical by construction. Its own wall is unpriced (64 driver calls per round of
+/// measured count), but every glm5 decode graph refuses capture without it
+/// (`glm5_graph_process_refusal`: a pageable upload inside a capture replays stale bytes), and
+/// every positive graph receipt on the 2x B200 pair ran with it on: the plain decode graph's
+/// +9.89% (graphab) and the symmetric TP-2 walk's graphs (tpwalk4 v2, tpwalk3 v5). So it is the
+/// sm_100a default with those graphs ([`htod_diet_default_for`]); `=1`/`=0` on either name pick
+/// explicitly on any build, and the gates pin them. Other builds keep it OFF: no graph receipt
+/// there. Read per call.
 pub fn htod_diet_on() -> bool {
     htod_diet_armed().0
+}
+
+/// The door-H default for a build: ON on sm_100a, the card its graph receipts came from. Pure,
+/// so the law is unit-tested without the process environment.
+pub(crate) fn htod_diet_default_for(arch: &str) -> bool {
+    arch == "100a"
 }
 
 /// Once-per-process latch for door H's disagreeing-pair line.
@@ -3016,10 +3054,11 @@ static HTOD_DIET_ALIAS_WARNED: std::sync::atomic::AtomicBool =
 
 /// Resolve door H, returning the armed flag name for refusals/announces.
 pub(crate) fn htod_diet_armed() -> (bool, &'static str) {
-    alias_door(
+    alias_door_or(
         "MEMRA_HTOD_DIET",
         "MEMRA_GLM5_HTOD_DIET",
         &HTOD_DIET_ALIAS_WARNED,
+        htod_diet_default_for(BUILT_CUDA_ARCH),
     )
 }
 
@@ -3762,7 +3801,7 @@ mod glm5_decode_graph_default_tests {
 
 #[cfg(test)]
 mod alias_door_tests {
-    use super::alias_door_from;
+    use super::{alias_door_from, alias_door_or_from, htod_diet_default_for};
 
     const G: &str = "MEMRA_EP_DIET";
     const A: &str = "MEMRA_GLM5_EP_DIET";
@@ -3784,6 +3823,32 @@ mod alias_door_tests {
         // anything that is not "1" is not an arming (no truthiness guessing)
         assert_eq!(r(None, Some("on")).unwrap(), (false, A));
         assert_eq!(r(Some(""), None).unwrap(), (false, G));
+    }
+
+    /// A card-keyed default (door H): unset takes the default; a set value on either name
+    /// resolves as the plain law, so `=0` pins OFF on the default's card and `=1` arms
+    /// elsewhere, and a disagreeing pair still falls closed.
+    #[test]
+    fn unset_takes_the_card_default_and_set_values_keep_the_law() {
+        for unset in [true, false] {
+            assert_eq!(
+                alias_door_or_from((G, None), (A, None), unset).unwrap(),
+                (unset, G)
+            );
+            assert_eq!(
+                alias_door_or_from((G, Some("0")), (A, None), unset).unwrap(),
+                (false, G)
+            );
+            assert_eq!(
+                alias_door_or_from((G, None), (A, Some("1")), unset).unwrap(),
+                (true, A)
+            );
+            assert!(alias_door_or_from((G, Some("1")), (A, Some("0")), unset).is_err());
+        }
+        assert!(htod_diet_default_for("100a"));
+        for arch in ["120a", "90a", "89"] {
+            assert!(!htod_diet_default_for(arch));
+        }
     }
 
     #[test]
