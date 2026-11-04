@@ -2388,7 +2388,12 @@ because the darklanes TP-2 launcher set it; that box is retired. Owner, 2026-11-
 with a positive receipt becomes the sm_100a default. TP prefix entries are now captured and
 restored on every sm_100a build (`glm5_tp_prefix_on()` in `memra-server/src/worker.rs` keys on
 `memra_engine::BUILT_CUDA_ARCH`); other builds keep refusing them by name, with the refusal now
-naming the build. `MEMRA_PREFIX_LATENT=1` is still required for the root planes. Deleted: the
+naming the build. `MEMRA_PREFIX_LATENT=1` is still required for the root planes. A partial
+`MEMRA_GLM5_TP` spec (some layers sharded, the grammar's `0-2@0,1;4@0,1` form) refuses capture by
+name and counts as TP-class at restore (`glm5_tp::glm5_tp_prefix_capture_shards`): the per-rank
+snapshot covers an all-layer spec only, which is the one the receipt ran, and before this the
+partial form minted an entry without shards that the restore admitted as plain, leaving the
+peers at stale or zero state. Deleted: the
 env read and the row; the per-rank snapshot and restore and their unit gates are unchanged.
 Decision: `docs/decisions/GLM5-B200-DOORS.md`. Ledger: `VERDICT:glm5-tp-prefix-sm100a-default`
 (darklanes `agent-knowledge/gpu/verdicts-ledger.md`).
