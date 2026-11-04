@@ -95,8 +95,14 @@ impl GraphSession {
 
     /// Profiling decomposition of step() (graph-session-gate MEMRA_GS_PROF): the three
     /// phases exposed separately. prof_launch is ASYNC (no sync) — prof_read carries the
-    /// sync+D2H. Advances the session exactly like step().
-    pub fn prof_apply(&mut self, _e: &Engine) -> Result<(), Box<dyn std::error::Error>> {
+    /// sync+D2H. Advances the session exactly like step(), under the same model profile (the
+    /// split ladder reads it).
+    pub fn prof_apply(
+        &mut self,
+        _e: &Engine,
+        m: &crate::hybrid::HybridModel,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let _numeric = m.enter_numeric();
         crate::graph_update::fa_apply(
             &self.graph,
             &mut self.plan,
