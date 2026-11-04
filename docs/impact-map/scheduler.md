@@ -16,7 +16,7 @@ python3 tools/impact_map/scheduler.py run --device rtx5090 --queue q.json --out 
 | RTX 5090 (a desktop machine people use) | `gpulock status` says free, the shared build lock is free, and the 1-minute load average is below `--max-load` (default: a quarter of the CPUs, so a busy desktop is never joined) | build under the shared build lock at `nice 15` with 2 jobs (`cell_evidence.py` sets both); GPU phase under `gpulock run`, which also takes `/tmp/memra-5090.lock` |
 | GB10 | `sparklock status` says the unit is free; it counts an unleased GPU process or container as busy, so a benchmark another session runs is never joined | `sparklock run --unit U --wait` around an ssh to the unit (`--ssh-host` from local config) |
 | RTX PRO 6000 Max-Q on a shared workstation | a grant covers the queue: the cards belong to other work, so a window is granted, not detected | `request` writes what is needed and for how long; whoever relays the agreement records it with `grant --gpus 1,3 --until <hard stop>`; `run` pins `CUDA_VISIBLE_DEVICES` to the granted cards, holds `/tmp/memra-gpu.lock`, and stops 5 minutes before the hard stop |
-| H100, B200 | never: not owned, so best effort (owner, 2026-11-04) | no cell is owed; nothing is queued |
+| H100, B200 | never: best effort (owner, 2026-11-04) | no cell is owed; nothing is queued |
 
 ## How it fits the daily regression
 

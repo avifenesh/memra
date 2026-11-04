@@ -23,7 +23,7 @@ Windows per device class:
   agreement records it with `grant` (GPUs and a hard stop); `run` starts only inside a grant
   long enough for the queue, pins CUDA_VISIBLE_DEVICES to the granted cards and stops 5 minutes
   before the hard stop.
-- h100, b200: not owned, so best effort (owner, 2026-11-04): no window and no cell is owed.
+- h100, b200: best effort (owner, 2026-11-04): no window and no cell is owed.
 
 Every wait is bounded (--max-wait); a device that never opens is reported, not retried forever.
 """
@@ -113,7 +113,7 @@ def wait(device, *, max_wait, max_load, unit, need):
         elif device == "rtxpro6000":
             ok, why, grant = granted_window(device, need)
         else:
-            return False, f"{device}: not owned; best effort, no cell is owed", None
+            return False, f"{device}: best effort; no cell is owed", None
         if ok:
             return True, why, grant
         if time.monotonic() >= deadline:
