@@ -57,14 +57,16 @@ pub static PACK: ModelPack = ModelPack {
 };
 
 /// Four layers cover every E4B layer class: own-KV sliding (0), own-KV global (1), and the
-/// shared sliding (2 reads 0) and shared global (3 reads 1) layers.
+/// shared sliding (2 reads 0) and shared global (3 reads 1) layers. The window (2) is shorter
+/// than the fixture's three tokens, so the last position masks on both sliding layers,
+/// including the shared one reading its source's rows.
 fn tiny_plan() -> Result<ModelPlan, PlanCompileError> {
     canonical_plan(&ModelConfig::from_hf(&HfConfig::parse(
         r#"{"model_type":"gemma4","text_config":{"model_type":"gemma4_text",
         "num_hidden_layers":4,"hidden_size":8,"num_attention_heads":2,
         "num_key_value_heads":1,"num_global_key_value_heads":1,"head_dim":4,
         "global_head_dim":8,"intermediate_size":16,"vocab_size":32,
-        "max_position_embeddings":64,"rms_norm_eps":0.000001,"sliding_window":8,
+        "max_position_embeddings":64,"rms_norm_eps":0.000001,"sliding_window":2,
         "hidden_size_per_layer_input":4,"num_kv_shared_layers":2,"attention_k_eq_v":false,
         "layer_types":["sliding_attention","full_attention","sliding_attention","full_attention"],
         "rope_parameters":{"full_attention":{"rope_theta":10000,

@@ -1301,9 +1301,10 @@ fn add_per_layer_input_fixture(
         TensorId::PerLayerModelProjection,
         generated_tensor(&[packed, hidden], 261, 1.0 / (hidden as f32).sqrt())?,
     );
+    // Non-unit norm weights, so the gate sees a per-element weight error on either PLE norm.
     weights.insert(
         TensorId::PerLayerProjectionNorm,
-        ReferenceTensor::new(vec![width], vec![1.0; width])?,
+        norm_weight_tensor(width, 264)?,
     );
     for layer in layers {
         let salt = layer.index as u64 * 31;
@@ -1317,10 +1318,20 @@ fn add_per_layer_input_fixture(
         );
         weights.insert(
             layer_id(layer.index, LayerTensor::PerLayerPostNorm),
-            ReferenceTensor::new(vec![hidden], vec![1.0; hidden])?,
+            norm_weight_tensor(hidden, 265 + salt)?,
         );
     }
     Ok(())
+}
+
+/// Norm weights in [0.5, 1.5]: `1 + generated_tensor(scale 0.5)`.
+fn norm_weight_tensor(width: usize, salt: u64) -> Result<ReferenceTensor, ReferenceError> {
+    let values = generated_tensor(&[width], salt, 0.5)?
+        .data
+        .iter()
+        .map(|value| 1.0 + value)
+        .collect();
+    ReferenceTensor::new(vec![width], values)
 }
 
 #[allow(clippy::unusual_byte_groupings)] // allow: mnemonic grouping of a pinned seed/magic constant
