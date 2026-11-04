@@ -429,6 +429,11 @@ pub const fn surfaces(operation: OperationKind) -> Surfaces {
         | OperationKind::GatedResidualConnections
         | OperationKind::GatedResidualMixer
         | OperationKind::PleNgramEmbedding
+        // gemma4 E4B runs its own dedicated programs (`gemma4_e4b_prime`, the E4B decode and
+        // verify twins), not these canonical surfaces.
+        | OperationKind::PerLayerInputEmbedding
+        | OperationKind::PerLayerInputGate
+        | OperationKind::SharedKvState
         | OperationKind::CompressedAttentionState
         | OperationKind::DraftPlan
         | OperationKind::DsparkFusion
@@ -497,11 +502,14 @@ pub const ALL_OPERATIONS: &[OperationKind] = &[
     OperationKind::GatedResidualConnections,
     OperationKind::GatedResidualMixer,
     OperationKind::PleNgramEmbedding,
+    OperationKind::PerLayerInputEmbedding,
+    OperationKind::PerLayerInputGate,
     OperationKind::KvState,
     OperationKind::SlidingKvState,
     OperationKind::RecurrentState,
     OperationKind::LatentKvState,
     OperationKind::CompressedAttentionState,
+    OperationKind::SharedKvState,
     OperationKind::Mtp,
     OperationKind::DraftPlan,
     OperationKind::MtpFusion,
@@ -560,7 +568,7 @@ mod tests {
         // follow. Bump it in the same commit as the variant.
         assert_eq!(
             ALL_OPERATIONS.len(),
-            71,
+            74,
             "OperationKind variant count moved; update ALL_OPERATIONS"
         );
     }

@@ -589,6 +589,10 @@ pub struct Gemma4Config {
     /// trailing layers WITHOUT own KV (E4B: 18); they attend an earlier layer's cache:
     /// il >= n_layer - shared_kv_layers reads layer (n_layer - shared_kv_layers) - (swa ? 2 : 1).
     pub shared_kv_layers: u32,
+    /// Global layers reuse the K projection as V (`attention_k_eq_v`; true on 26B/31B, false
+    /// on E4B). HF carries the key; GGUF carries none, so its reader takes it from whether the
+    /// first global layer ships `attn_v.weight`, the rule llama.cpp's loader applies.
+    pub attention_k_eq_v: bool,
     /// tokenizer.ggml.suppress_tokens — ids the model card forbids at sampling (the 12B QAT
     /// ships two control ids); empty on 26B/31B/E4B. Masked to -inf before every argmax/sample.
     pub suppress_tokens: Vec<u32>,
@@ -1463,12 +1467,16 @@ impl ModelConfig {
                     _ => Vec::new(),
                 }
             };
+            let swa_pattern: Vec<bool> = arr_u("attention.sliding_window_pattern")
+                .iter()
+                .map(|&x| x == 1)
+                .collect();
+            let first_global = swa_pattern.iter().position(|&swa| !swa);
             Some(Gemma4Config {
                 head_count_kv: arr_u("attention.head_count_kv"),
-                swa_pattern: arr_u("attention.sliding_window_pattern")
-                    .iter()
-                    .map(|&x| x == 1)
-                    .collect(),
+                attention_k_eq_v: first_global
+                    .is_none_or(|layer| g.find(&format!("blk.{layer}.attn_v.weight")).is_none()),
+                swa_pattern,
                 sliding_window: u("attention.sliding_window").unwrap_or(1024),
                 key_length_global: u("attention.key_length").unwrap_or(512),
                 key_length_swa: u("attention.key_length_swa").unwrap_or(256),
@@ -2570,6 +2578,8 @@ impl ModelConfig {
                     partial_rotary_global: c.gemma4_partial_rotary_global.unwrap_or(0.25),
                     n_embd_per_layer: c.hidden_size_per_layer_input.unwrap_or(0),
                     shared_kv_layers: c.num_kv_shared_layers.unwrap_or(0),
+                    // Absent key keeps the K=V global program this arm always assumed.
+                    attention_k_eq_v: c.attention_k_eq_v.unwrap_or(true),
                     // HF ships no suppress list for the 31B (GGUF twin: key ABSENT too —
                     // verified 2026-08-16); parity holds with the empty set.
                     suppress_tokens: Vec::new(),
@@ -3000,6 +3010,7 @@ pub struct HfConfig {
     pub gemma4_partial_rotary_global: Option<f32>,
     pub hidden_size_per_layer_input: Option<u32>,
     pub num_kv_shared_layers: Option<u32>,
+    pub attention_k_eq_v: Option<bool>,
     pub vision: Option<VisionConfig>,
     /// glm5_next tower (`vision_config.model_type == "glm5_next_vision"`); when this is
     /// Some, `vision` stays None — the two structs are different semantic programs.
@@ -3251,6 +3262,7 @@ impl Default for HfConfig {
             gemma4_partial_rotary_global: None,
             hidden_size_per_layer_input: None,
             num_kv_shared_layers: None,
+            attention_k_eq_v: None,
             vision: None,
             vision_glm5: None,
             image_token_id: None,
@@ -3769,6 +3781,9 @@ impl HfConfig {
         }
         if let Some(v) = o.u32("num_kv_shared_layers")? {
             self.num_kv_shared_layers = Some(v);
+        }
+        if let Some(v) = o.boolean("attention_k_eq_v")? {
+            self.attention_k_eq_v = Some(v);
         }
         if let Some(rp) = o.object("rope_parameters")? {
             for class in ["full_attention", "sliding_attention"] {

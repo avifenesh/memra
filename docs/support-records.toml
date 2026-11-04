@@ -256,6 +256,26 @@ Config = ["ci:verify-tiny"]
 TinyParity = ["ci:verify-tiny"]
 
 [[record]]
+id = "gemma4_e4b-reference"
+pack = "gemma4_e4b"
+state = "NativeReference"
+artifact = "tiny fixture (text oracle; per-layer inputs and shared KV)"
+numeric_program = "f32 reference executor"
+topology = "cpu"
+route = "memra model verify tiny"
+[record.gates]
+Config = "passed"
+TinyParity = "passed"
+TokenizerTemplate = "pending"
+TensorCensus = "pending"
+CheckpointParity = "pending"
+RewriteParity = "pending"
+Serve = "pending"
+[record.evidence]
+Config = ["ci:verify-tiny"]
+TinyParity = ["ci:verify-tiny"]
+
+[[record]]
 id = "deepseek_v4_dspark-reference"
 pack = "deepseek_v4_dspark"
 state = "NativeReference"

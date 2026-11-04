@@ -128,6 +128,7 @@ fn tiny_plan() -> Result<ModelPlan, PlanCompileError> {
         drafter: None,
         draft_source: crate::model_plan::DraftSourcePlan::Embedded,
         sampling_defaults: None,
+        per_layer_input: None,
         partition_boundaries: vec![1],
     })
 }

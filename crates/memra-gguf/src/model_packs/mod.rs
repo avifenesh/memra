@@ -11,6 +11,7 @@ use crate::tensor_contract::{
 
 pub mod deepseek_v4;
 pub mod gemma4_dense;
+pub mod gemma4_e4b;
 pub mod gemma4_moe;
 pub mod glm5_next;
 pub mod glm_dsa;
@@ -181,6 +182,7 @@ pub const PACKS: &[&ModelPack] = &[
     &glm5_next::PACK,
     &glm_dsa::PACK,
     &gemma4_dense::PACK,
+    &gemma4_e4b::PACK,
     &gemma4_moe::PACK,
     &deepseek_v4::PACK,
     &deepseek_v4::DSPARK_PACK,

@@ -1303,6 +1303,7 @@ mod tests {
             exit_mixer: None,
             draft_source: DraftSourcePlan::Embedded,
             sampling_defaults: None,
+            per_layer_input: None,
             partition_boundaries: Vec::new(),
         };
         let gguf = TensorContract::for_plan(
