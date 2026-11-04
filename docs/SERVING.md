@@ -413,6 +413,12 @@ share the class, not the receipts). None has an environment switch; each states 
   `Retry-After`; and every headroom reading books what still-priming sessions owe, with a
   prefill OOM on a session that emitted nothing parked and requeued. Boot line
   `[admit-mem] door=ON` or `door=OFF`. [Decision](decisions/ADMIT-BY-MEMORY-DEFAULT.md).
+- **Direct handoff export.** The host-tier deploy handoff export (`MEMRA_KV_HOST_HANDOFF`)
+  writes its file with `O_DIRECT` through one aligned 4 MiB buffer, then `fdatasync`, where every
+  other card writes through the page cache, then `fsync`. The bytes are the same, every card
+  imports through a buffered reader, and a filesystem that refuses `O_DIRECT` gets the buffered
+  writer. The export line says which ran (`io=direct` or `io=buffered`).
+  [Decision](decisions/HANDOFF-DIRECT-EXPORT.md).
 
 ### Request body ceiling: 192 MiB, explicit, with a clean 413 (lane/hermes-fixes, 2026-08-19)
 
