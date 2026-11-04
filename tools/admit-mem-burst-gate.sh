@@ -1,12 +1,15 @@
 #!/usr/bin/env bash
-# tools/admit-mem-burst-gate.sh: the memory-admission burst gate (memra#680). Under
-# MEMRA_ADMIT_BY_MEMORY=1 an open-output burst used to be admitted past the door's own estimate:
+# tools/admit-mem-burst-gate.sh: the memory-admission burst gate (memra#680). Under memory-shaped
+# admission an open-output burst used to be admitted past the admission's own estimate:
 # the VRAM gate compared each arrival with one live reading, which cannot see the prefill
 # workspace the sessions admitted earlier in the same burst still owe (it grows at prime time),
 # so the burst filled the card and requests died in prefill with CUDA_ERROR_OUT_OF_MEMORY,
-# returned as 503. This gate boots the real memra-server with the door armed, releases one burst
-# of open requests on a barrier, and asserts that every request is either served or refused with
-# a typed 429 before prefill, and that every admission fits the door's booked reading.
+# returned as 503. This gate boots the real memra-server, releases one burst of open requests on a
+# barrier, and asserts that every request is either served or refused with a typed 429 before
+# prefill, and that every admission fits the booked reading. Memory-shaped admission is the
+# default on the full-power RTX PRO 6000 Blackwell Workstation Edition only
+# (docs/decisions/ADMIT-BY-MEMORY-DEFAULT.md): on any other card the boot line reads
+# `[admit-mem] door=OFF` and the gate SKIPs (exit 0) after the boot.
 #
 # Verdicts (one line each, verbatim, in `$OUT/VERDICTS.txt`):
 #   no prefill OOM   zero CUDA_ERROR_OUT_OF_MEMORY lines in the server log, zero 503s.
@@ -19,12 +22,13 @@
 #                    `[worker] FATAL`, `[worker] respawn` or `spec verify refused` line.
 #
 # Usage: tools/admit-mem-burst-gate.sh <model.gguf> <memra-server binary> [out_dir]
-#   AMB_PORT (8194), AMB_OPEN (8192), AMB_BURST (64), AMB_CTX (65536, MEMRA_CTX). The defaults are the
-#   shape that reproduced memra#680 on the local RTX 5090 (lane B day 33, shape G2: 34 prefill-OOM 503s of 64
-#   on the unfixed tree).
+#   AMB_PORT (8194), AMB_OPEN (8192, MEMRA_ADMIT_OPEN_OUTPUT_TOKENS), AMB_BURST (64), AMB_CTX (65536,
+#   MEMRA_CTX). The defaults are the shape that reproduced memra#680 on the local RTX 5090 (lane B day
+#   33, shape G2: 34 prefill-OOM 503s of 64 on the unfixed tree, when an env door armed it there).
 #   The binary is an argument, not built here, so the red arm (the unfixed tree) and the green arm
-#   run the same gate. Run under the rig lock (`flock /tmp/memra-5090.lock`); the gate boots one
-#   server and never takes the lock itself. Exit 0 when no verdict FAILED; 1 on any FAIL; 2 on setup.
+#   run the same gate. Run under the rig lock (`/tmp/memra-gpu.lock` on a PRO box,
+#   `/tmp/memra-5090.lock` locally); the gate boots one server and never takes the lock itself.
+#   Exit 0 when no verdict FAILED or on a SKIP; 1 on any FAIL; 2 on setup.
 set -uo pipefail
 cd "$(dirname "$0")/.." || exit 2
 
@@ -65,7 +69,7 @@ trap cleanup EXIT
 echo "== admit-mem-burst-gate: open=$OPEN burst=$BURST ctx=$CTX port=$PORT out=$OUT =="
 gpu_apps "$OUT/compute-apps-before.csv"
 env MEMRA_COMPAT=openai MEMRA_MODELS="amb=$MODEL" MEMRA_ADDR=$ADDR MEMRA_CTX="$CTX" \
-  MEMRA_ADMIT_BY_MEMORY=1 MEMRA_ADMIT_OPEN_OUTPUT_TOKENS="$OPEN" MEMRA_TIMEOUT_MS_MAX=3600000 \
+  MEMRA_ADMIT_OPEN_OUTPUT_TOKENS="$OPEN" MEMRA_TIMEOUT_MS_MAX=3600000 \
   "$BIN" > "$OUT/server.log" 2>&1 &
 SPID=$!
 t=0
@@ -75,6 +79,13 @@ until [ "$(curl -s -o /dev/null -w '%{http_code}' -m 2 "$BASE/readyz" 2>/dev/nul
   sleep 0.1
 done
 memra_port_owned admit-mem-burst-gate "$PORT" "$SPID" || exit 2
+if ! grep -q '\[admit-mem\] door=ON' "$OUT/server.log"; then
+  line=$(grep -m1 '\[admit-mem\] door=' "$OUT/server.log")
+  if [ "$(readlink /proc/$SPID/cwd 2>/dev/null)" = "$PWD" ]; then kill -TERM "$SPID"; fi
+  wait "$SPID" 2>/dev/null; SPID=0
+  echo "AMB memory-shaped admission is not this card's default (${line:-no [admit-mem] boot line}) -> SKIP" | tee -a "$VERDICTS"
+  echo "ADMIT-MEM BURST GATE: SKIP"; exit 0
+fi
 echo "  ready (pid $SPID); releasing the burst"
 python3 tools/admit-mem-burst-client.py "$BASE" amb "$BURST" "$OUT/burst.jsonl" > "$OUT/client.log" 2>&1
 

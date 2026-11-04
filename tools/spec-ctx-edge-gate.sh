@@ -9,14 +9,19 @@
 # server log, its request bodies and `nvidia-smi --query-compute-apps` before and after.
 #
 # Arms:
-#   on     MEMRA_ADMIT_BY_MEMORY=1, MEMRA_ADMIT_OPEN_OUTPUT_TOKENS=$SCE_OPEN (64), default spec.
+#   on     memory-shaped admission armed, MEMRA_ADMIT_OPEN_OUTPUT_TOKENS=$SCE_OPEN (64), default spec.
 #          Four open requests then one bounded control. Each open request: 200, finish_reason
 #          `length`, completion_tokens == $SCE_OPEN (the charged output; the 8 slack rows stay
 #          free). The control: 200, completion_tokens == its max_tokens.
-#   plain  the `on` boot's door with MEMRA_SERVE_SPEC=0: one open request, its message byte-equal
+#   plain  the `on` boot's admission with MEMRA_SERVE_SPEC=0: one open request, its message byte-equal
 #          to the `on` arm's first (spec and plain emit the same tokens up to the same bound).
-#   off    door OFF, MEMRA_CTX=$SCE_CTX (384), default spec. Three open requests run away to the
-#          cap: each 200, finish_reason `length`, 0 < completion_tokens <= cap - prompt_tokens.
+#   off    memory-shaped admission unarmed, MEMRA_CTX=$SCE_CTX (384), default spec. Three open
+#          requests run away to the cap: each 200, finish_reason `length`,
+#          0 < completion_tokens <= cap - prompt_tokens.
+#   Memory-shaped admission is a card default, not a switch: armed on the full-power RTX PRO 6000
+#   Blackwell Workstation Edition only (docs/decisions/ADMIT-BY-MEMORY-DEFAULT.md). Each arm reads
+#   the boot's `[admit-mem] door=` line and SKIPs when the card runs the other program: `on` and
+#   `plain` run on that card, `off` everywhere else.
 #   Every arm's boot: no `panicked`, no `argmax sentinel`, no `[worker] FATAL`, no respawn, no
 #   `spec verify refused` line; the server is alive after the last request; `/health` 200; spec
 #   rounds ran (`[spec-acc]` lines) on the spec arms.
@@ -26,7 +31,7 @@
 #   The binary is an argument, not built here, so the red arm (the unfixed tree) and the green arm
 #   run the same gate. Run under the rig lock (`flock /tmp/memra-5090.lock`, or the collector on a
 #   PRO box); the gate boots three servers in sequence and never takes the lock itself.
-#   Exit 0 when no verdict FAILED; 1 on any FAIL; 2 on setup.
+#   Exit 0 when no verdict FAILED (SKIP lines do not fail it); 1 on any FAIL; 2 on setup.
 set -uo pipefail
 cd "$(dirname "$0")/.." || exit 2
 
@@ -57,7 +62,7 @@ sha256sum "$BIN" > "$OUT/binary.sha256"
 PASSN=0; FAILN=0
 verdict() { # <line ending in -> PASS|FAIL>
   echo "$1" | tee -a "$VERDICTS"
-  case "$1" in *"-> PASS") PASSN=$((PASSN+1));; *) FAILN=$((FAILN+1));; esac
+  case "$1" in *"-> PASS") PASSN=$((PASSN+1));; *"-> SKIP"*) ;; *) FAILN=$((FAILN+1));; esac
 }
 jget() { # <file> <dotted.path> -> value or ""
   python3 - "$1" "$2" <<'PY' 2>/dev/null
@@ -137,13 +142,22 @@ census() {
   verdict "SCE ($label) boot census: alive=$alive health=$health panicked=$panics argmax_sentinel=$sentinels worker_fatal=$fatal respawn=$respawn verify_refused=$refused spec_acc_lines=$specacc (spec expected=$want_spec) -> $v"
 }
 in_arms() { case ",$ARMS," in *",$1,"*) return 0;; *) return 1;; esac; }
+# armed_as <ON|OFF> <label>: the boot just made reads memory-shaped admission as that state;
+# otherwise the arm's one SKIP line is written and the caller skips its requests.
+armed_as() {
+  grep -q "\[admit-mem\] door=$1" "$D/server.log" && return 0
+  verdict "SCE ($2) memory-shaped admission is not door=$1 on this card ($(grep -m1 -o '\[admit-mem\] door=[A-Z]*' "$D/server.log")) -> SKIP"
+  return 1
+}
 
 echo "== spec-ctx-edge-gate: arms=$ARMS port=$PORT open=$OPEN ctx=$CTX out=$OUT =="
 ON_SHA=""
 
 if in_arms on; then
-  echo "--- arm on: door ON, open output $OPEN, default spec ---"
-  if boot on MEMRA_ADMIT_BY_MEMORY=1 MEMRA_ADMIT_OPEN_OUTPUT_TOKENS="$OPEN"; then
+  echo "--- arm on: memory-shaped admission armed, open output $OPEN, default spec ---"
+  if ! boot on MEMRA_ADMIT_OPEN_OUTPUT_TOKENS="$OPEN"; then
+    verdict "SCE (on) boot failed -> FAIL"
+  elif armed_as ON on; then
     for i in 1 2 3 4; do
       code=$(chat "$D/r$i"); fr=$(jget "$D/r$i.body" choices.0.finish_reason); ct=$(jget "$D/r$i.body" usage.completion_tokens)
       pt=$(jget "$D/r$i.body" usage.prompt_tokens)
@@ -155,15 +169,15 @@ if in_arms on; then
     v=FAIL; [ "$code" = 200 ] && [ "$ct" = 16 ] && v=PASS
     verdict "SCE (on) bounded control: http=$code completion_tokens=$ct expected=16 -> $v"
     census on 1
-  else
-    verdict "SCE (on) boot failed -> FAIL"
   fi
   stop on
 fi
 
 if in_arms plain; then
-  echo "--- arm plain: door ON, open output $OPEN, MEMRA_SERVE_SPEC=0 ---"
-  if boot plain MEMRA_ADMIT_BY_MEMORY=1 MEMRA_ADMIT_OPEN_OUTPUT_TOKENS="$OPEN" MEMRA_SERVE_SPEC=0; then
+  echo "--- arm plain: memory-shaped admission armed, open output $OPEN, MEMRA_SERVE_SPEC=0 ---"
+  if ! boot plain MEMRA_ADMIT_OPEN_OUTPUT_TOKENS="$OPEN" MEMRA_SERVE_SPEC=0; then
+    verdict "SCE (plain) boot failed -> FAIL"
+  elif armed_as ON plain; then
     code=$(chat "$D/r1"); fr=$(jget "$D/r1.body" choices.0.finish_reason); ct=$(jget "$D/r1.body" usage.completion_tokens)
     sha=$(msg_sha "$D/r1.body")
     v=FAIL; [ "$code" = 200 ] && [ "$fr" = length ] && [ "$ct" = "$OPEN" ] && v=PASS
@@ -173,15 +187,15 @@ if in_arms plain; then
       verdict "SCE (plain) message equals the on arm's r1: plain=${sha:0:16} spec=${ON_SHA:0:16} -> $v"
     fi
     census plain 0
-  else
-    verdict "SCE (plain) boot failed -> FAIL"
   fi
   stop plain
 fi
 
 if in_arms off; then
-  echo "--- arm off: door OFF, MEMRA_CTX=$CTX, default spec ---"
-  if boot off MEMRA_CTX="$CTX"; then
+  echo "--- arm off: memory-shaped admission unarmed, MEMRA_CTX=$CTX, default spec ---"
+  if ! boot off MEMRA_CTX="$CTX"; then
+    verdict "SCE (off) boot failed -> FAIL"
+  elif armed_as OFF off; then
     for i in 1 2 3; do
       code=$(chat "$D/r$i"); fr=$(jget "$D/r$i.body" choices.0.finish_reason); ct=$(jget "$D/r$i.body" usage.completion_tokens)
       pt=$(jget "$D/r$i.body" usage.prompt_tokens)
@@ -190,8 +204,6 @@ if in_arms off; then
       verdict "SCE (off) r$i open request to the cap: http=$code finish_reason=$fr prompt_tokens=$pt completion_tokens=$ct room=$room -> $v"
     done
     census off 1
-  else
-    verdict "SCE (off) boot failed -> FAIL"
   fi
   stop off
 fi
