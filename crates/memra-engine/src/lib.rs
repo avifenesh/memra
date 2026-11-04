@@ -28477,8 +28477,8 @@ impl Engine {
                 b.launch(cfg)?;
             }
         }
-        // Shape first, door last: the door reads the process environment, and every
-        // other model's prefill reaches this line on the same build.
+        // Shape first, class last: the class reads the prime chunk from the process
+        // environment, and every other model's prefill reaches this line on the same build.
         if head_dim == 256
             && n_head == 24
             && n_head_kv == 4
@@ -28648,22 +28648,26 @@ impl Engine {
         })
     }
 
-    /// The FA2 prefill door. Compile-time architecture first, then the cached SM
-    /// count, so a build or a card outside the qualified target never reads the
-    /// environment and never leaves the existing kernel.
+    /// Whether the Qwen 24 Q / 4 KV / d256 prime takes the FA2 attention class. It is
+    /// the default on its qualified profile and has no door
+    /// (`docs/decisions/QWEN-PRIME-FA2-DEFAULT.md`; receipt
+    /// `research/qwen-prefill-attn-20260909/FA2.md`). Compile-time architecture first,
+    /// then the cached SM count, so a build or a card outside the qualified target (the
+    /// 170-SM sm_120a RTX 5090) never reads the environment and never leaves the
+    /// existing kernel.
     ///
     /// The qualified profile primes at exactly `MEMRA_PRIME_CHUNK=1024`, and the
     /// dispatch guard admits `PRIME_MIN_T..=1039`. A wider deployment chunk would
     /// leave every full chunk on the legacy class and hand only the folded tail to
     /// FA2, so a single prime would mix numerical classes and a restored suffix
     /// would stop matching its cold twin, the exact defect the first integration hit
-    /// at the t<128 boundary. The door therefore requires its qualified chunk.
-    /// Both env reads stay live because `qwen-fa2-margin-gate` toggles the door
+    /// at the t<128 boundary. The class therefore requires its qualified chunk, and
+    /// every other chunk setting (the naked 4096 cap included) keeps the existing
+    /// kernel. The chunk read stays live, not latched: gates flip `MEMRA_PRIME_CHUNK`
     /// inside one process, and the carried-graph reuse key calls this same helper.
     pub(crate) fn prime_attn_fa2_enabled(&self) -> bool {
         env!("MEMRA_BUILT_CUDA_ARCH") == "120a"
             && self.sm_count() == 170
-            && std::env::var("MEMRA_PRIME_ATTN_FA2").as_deref() == Ok("1")
             && std::env::var("MEMRA_PRIME_CHUNK").as_deref() == Ok("1024")
     }
 
