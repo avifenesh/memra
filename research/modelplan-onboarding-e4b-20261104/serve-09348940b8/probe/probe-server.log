@@ -1,0 +1,41 @@
+[server] build: memra-0.138.0-8c27fe998b18 (id: source-tree, git: 09348940b84a)
+[server] starting; models config = [("e4b", "/data/ai-ml/hf-models/gemma4-e4b-qat-gguf/gemma-4-E4B_q4_0-it.gguf", None)]
+[worker-affinity] off (MEMRA_WORKER_CPUSET / MEMRA_WORKER_AFFINITY unset or =0)
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal after 3 consecutive misses (MEMRA_GPU_PROBE_MISSES), fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[worker] loading model "e4b" <- /data/ai-ml/hf-models/gemma4-e4b-qat-gguf/gemma-4-E4B_q4_0-it.gguf
+[tensor-contract] bound 666 semantic tensors (pack gemma4_e4b, Gguf, output head TiedToEmbedding); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[gemma4-e4b] per-layer inputs from the plan (n_epl=256, row 10752): dedicated E4B prime, decode, graph and verify programs; whole-prompt prime, no batched decode
+[q8rp] split-plane decode mirrors built: 1 tensors
+[q4rp] split-plane decode mirrors built: 402 trunk tensors
+[q4f16] prefill program = INT8 MMQ (no f16 mirrors) (reason: model geometry not eligible); free 18100 MiB, mirror mass 7525 MiB, capacity threshold 15717 MiB (mass + 8192 headroom) — SELECTS PREFILL ARITHMETIC
+[q4rp] split-plane IN-PLACE swap: 294 dense trunk tensors
+[worker]   loaded "e4b": 42 layers, eos=1, stop=[1, 106]
+[spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2 (K=5 when the loaded MTP head is rank-trimmed)
+[worker] e4b: template caps tools=true think=false think_switch=true chat_ok=true effort_levels=false qwen_effort=false gemma_think=true dsv4=false glm5=false ctx=131072 tok="gemma4" instruct=None chat_defaults=None/None
+[route-contract] model="e4b" route=hybrid-worker capacity=64 sessions implemented=[capacity,occupancy,progress,fault-ownership,shutdown-ownership,memory-cost,rewrite-qualification,prime-fairness,service-metrics] refused=[]
+[worker] e4b: decode wave cap 1; scheduler tick cap 1
+[worker] e4b: EAGER-ONLY serving (gemma4 class — no batched decode arm): per-session eager decode, monolithic prefill, no prime batching
+[prefix-cache] on: budget 7516MB (7516192768 B, derived: 2 x 3758096384 B max entry for model "e4b" at served ctx 131072 (from checkpoint; MEMRA_CTX unset), requested 7516192768 B; boot driver free 18979356672 B, post-reserve clamp 17368743936 B), policy plain-LRU (global oldest unleased entry first; leases untouchable), min prefix 64 tokens, whole-entry restores only
+[admission] "e4b": plain 28672 B/token, spec 28672 B/token; fixed residual learns from effective-free deltas
+[admit-mem] door=OFF open_output_tokens=8192 defer_budget_ms=8000 (admission charges prompt+output, the reclaim flush demotes to the host tier before dropping, and a memory defer past the budget refuses 429 instead of queueing past the client's deadline)
+[kv-vmm] door=OFF (MEMRA_KV_ALLOCATOR unset or pooled: pooled K/V planes)
+[server] worker ready; serving models: ["e4b"]
+[server] listening on http://127.0.0.1:8192
+[meter] admit id=cmpl-2afa97d06c314907e102736c643d2894 tenant=default lane=interactive model="e4b"
+[admission] request cost: model="e4b" ctx=131 path=plain = 28672 B/token x ctx + 5MB prefill-workspace + 0MB fixed = 9MB
+[admission] fixed residual high-water: model="e4b" 0MB (observed 2MB at ctx 75 path=plain)
+[fa-pool] grow #0 dev=0 o_len 0 -> 6144 ml_len 0 -> 24 (retired kept, zero=false)
+[fa-pool] grow #1 dev=0 o_len 6144 -> 12288 ml_len 24 -> 48 (retired kept, zero=false)
+[fa-pool] grow #2 dev=0 o_len 12288 -> 24576 ml_len 48 -> 96 (retired kept, zero=false)
+[meter] admit id=chatcmpl-d1e84b8450f69456641bd0fe101f8490 tenant=default lane=interactive model="e4b"
+[admission] request cost: model="e4b" ctx=146 path=plain = 28672 B/token x ctx + 5MB prefill-workspace + 0MB fixed = 9MB
+[worker] plain-affinity: declined (no checkpoint retained; 1 parked, 18 prompt tokens; model e4b)
+[meter] admit id=chatcmpl-88754eec7735cad2aa19830c6c620715 tenant=default lane=interactive model="e4b"
+[admission] request cost: model="e4b" ctx=149 path=plain = 28672 B/token x ctx + 5MB prefill-workspace + 0MB fixed = 10MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 21 prompt tokens; model e4b)
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting
+[server] GPU worker shutdown complete
