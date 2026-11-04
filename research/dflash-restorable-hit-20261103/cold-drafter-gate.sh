@@ -1,18 +1,21 @@
 #!/usr/bin/env bash
-# RTX 5090 (24 GB): exactness gate for MEMRA_DSPARK_COLD_DRAFTER=1 (memra#1031 second half).
-#   cold-drafter-gate-5090.sh <memra-server bin> <out dir>
+# Exactness gate (RTX 5090 or GB10) for MEMRA_DSPARK_COLD_DRAFTER=1 (memra#1031 second half).
+#   cold-drafter-gate.sh <memra-server bin> <out dir>
 # Arm: prefix cache + restore/partial/cold-drafter doors. Reference: prefix cache off, so every
 # request cold-primes DFlash. Same model, drafter, seed and requests (tools/dspark-cold-drafter-gate.py).
 set -u
 BIN=$1; O=$2; mkdir -p "$O"
-M=/data/ai-ml/models/q38-gguf
-G=$(dirname "$0")/../../tools/dspark-cold-drafter-gate.py
+M=${M:-/data/ai-ml/models/q38-gguf}
+GGUF=${GGUF:-$M/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf}
+DF=${DF:-$M/Qwen3.8-27B-DFlash2-memra}
+RANKS=${RANKS:-$M/q38-ranks-sxc32768.gguf.txt}
+G=${GATE:-$(dirname "$0")/../../tools/dspark-cold-drafter-gate.py}
 boot() { # tag extra-env...
   local tag=$1; shift
-  env MEMRA_COMPAT=openai MEMRA_MODELS="q38=$M/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf" MEMRA_ADDR=127.0.0.1:8093 \
+  env MEMRA_COMPAT=openai MEMRA_MODELS="q38=$GGUF" MEMRA_ADDR=127.0.0.1:8093 \
     MEMRA_CTX=16384 MEMRA_MAX_SESSIONS=1 MEMRA_KV_HOST_MB=0 \
-    MEMRA_MTP_SKIP=1 MEMRA_DSPARK_SPEC=1 MEMRA_DSPARK_DRAFT=$M/Qwen3.8-27B-DFlash2-memra \
-    MEMRA_FRSPEC_TRIM=$M/q38-ranks-sxc32768.gguf.txt "$@" \
+    MEMRA_MTP_SKIP=1 MEMRA_DSPARK_SPEC=1 MEMRA_DSPARK_DRAFT=$DF \
+    MEMRA_FRSPEC_TRIM=$RANKS "$@" \
     "$BIN" > "$O/serve-$tag.log" 2>&1 &
   SP=$!
   waitfor --http http://127.0.0.1:8093/v1/models --timeout 10m --every 5s --fail-after 120 --quiet

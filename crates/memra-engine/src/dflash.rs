@@ -4702,6 +4702,14 @@ pub struct DsparkSpecSession {
     /// across bursts so a burst boundary never resets the stream the client asked us to
     /// penalize. Empty (and never touched) when the request carries no penalties.
     pen_hist: Vec<u32>,
+    /// Set by `dspark_spec_session_from_restored`: the session was born from a prefix entry
+    /// and has drawn its provisional boundary token from the ENTRY's logits. When a suffix
+    /// prime follows (a partial restore), that draw is not part of the request's stream: a cold
+    /// prime of the same prompt draws its boundary token as event 0 after the full prompt.
+    /// The first resume rewinds the sampling counter to 0 so the restored stream draws the
+    /// same events as the cold one (memra#1031 gate: before this, every sampled partial
+    /// restore was shifted by one Philox event from its first token).
+    restored_boundary_pending: bool,
 }
 
 fn dspark_commit_limit(
@@ -5623,6 +5631,7 @@ impl crate::hybrid::HybridModel {
             sctr: sctr0,
             uctr: 0,
             pen_hist,
+            restored_boundary_pending: false,
         };
         sess.pin_capture();
         Ok(sess)
@@ -5829,6 +5838,7 @@ impl crate::hybrid::HybridModel {
             sctr: sctr0,
             uctr: 0,
             pen_hist,
+            restored_boundary_pending: true,
         })
     }
 
@@ -5941,6 +5951,10 @@ impl crate::hybrid::HybridModel {
         let sp_pen = sess.sampling.filter(|s| s.pen_on());
         if let Some(sp) = sp_pen.as_ref() {
             sess.pen_hist = crate::spec::pen_window_seed(&sess.pen_hist, suffix, sp.penalty_last_n);
+        }
+        if std::mem::take(&mut sess.restored_boundary_pending) {
+            // The provisional draw from the entry's logits is superseded by this one.
+            sess.sctr = 0;
         }
         let last = match sess.sampling.filter(|s| s.temp > 0.0) {
             Some(sp) => crate::spec::sample_boundary_token(
@@ -6123,6 +6137,9 @@ impl crate::hybrid::HybridModel {
                 break;
             }
             sess.rounds += 1;
+            // A round committed from this boundary: a later resume (a pool continuation) keeps
+            // its counter.
+            sess.restored_boundary_pending = false;
             let mut vt = sess.vt;
             // ---- draft: block = [last, MASK x b-1] (identical to the bin arm) ----
             // RAII: a `?` exit restores the pre-scope value instead of latching exact
