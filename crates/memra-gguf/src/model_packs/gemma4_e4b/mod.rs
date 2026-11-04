@@ -8,6 +8,10 @@
 use super::*;
 use crate::config::HfConfig;
 
+const E4B_LAYERS: u32 = 42;
+const E4B_SHARED_KV_LAYERS: u32 = 18;
+const E4B_PER_LAYER_WIDTH: u32 = 256;
+
 pub static PACK: ModelPack = ModelPack {
     family: "gemma4_e4b",
     output_head: OutputHeadContract::TiedHeadAllowed,
@@ -34,13 +38,18 @@ pub static PACK: ModelPack = ModelPack {
         max_rel: 0.005,
         require_argmax: true,
     }),
+    // The support record was measured on E4B only, so the match is pinned to its geometry: 42
+    // trunk layers, the last 18 KV-shared, per-layer inputs 256 wide. Another checkpoint with
+    // per-layer inputs and KV sharing gets no pack until it is qualified and recorded.
     matches_config: |config| {
         matches!(config.arch, Arch::Gemma4)
             && !config.moe.as_ref().is_some_and(|moe| moe.expert_count > 0)
-            && config
-                .gemma4
-                .as_ref()
-                .is_some_and(|gemma| gemma.n_embd_per_layer > 0 && gemma.shared_kv_layers > 0)
+            && config.n_layer == E4B_LAYERS
+            && config.nextn_predict_layers == 0
+            && config.gemma4.as_ref().is_some_and(|gemma| {
+                gemma.n_embd_per_layer == E4B_PER_LAYER_WIDTH
+                    && gemma.shared_kv_layers == E4B_SHARED_KV_LAYERS
+            })
     },
     plan_builder: canonical_plan,
     tensor_schema: super::gemma4_dense::tensor_schema,
@@ -102,6 +111,26 @@ mod tests {
         assert!(!super::super::gemma4_dense::PACK.matches_config(&config));
         assert!(!super::super::gemma4_moe::PACK.matches_config(&config));
         assert!(compile_for_load(&config).is_ok());
+    }
+
+    /// A sibling with per-layer inputs and KV sharing but another geometry (35 layers, 20
+    /// shared, the E2B shape) binds to no pack: the record covers E4B only.
+    #[test]
+    fn another_per_layer_input_geometry_gets_no_pack() {
+        let mut config = official_e4b();
+        config.n_layer = 35;
+        let gemma = config.gemma4.as_mut().unwrap();
+        gemma.shared_kv_layers = 20;
+        gemma.swa_pattern.truncate(35);
+        gemma.head_count_kv.truncate(35);
+        assert!(for_config(&config).is_none());
+        assert!(matches!(
+            compile_for_load(&config),
+            Err(PlanCompileError::NoMatchingModelPack { .. })
+        ));
+        let mut width = official_e4b();
+        width.gemma4.as_mut().unwrap().n_embd_per_layer = 128;
+        assert!(for_config(&width).is_none());
     }
 
     #[test]
