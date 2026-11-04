@@ -3,7 +3,10 @@
 //!
 //! Placement: `pp`, a PP-2 cell. This historical instrument pins the doors it was taken with (the
 //! startup pins below), and its receipts are PP-2 cells. A TP/EP cell of the same check is a new
-//! cell with its own receipt.
+//! cell with its own receipt. At HEAD the gate stops at its `grouped=true` arm:
+//! `set_prefill_grouped_for_gate(true)` refuses the matrix expert program, which a `pp` load
+//! resolves unless a gate arms the reference executor, and this gate does not. Port or delete is
+//! an owner decision owed, together with `dsv4_grouped_prefill_gate`.
 use memra_engine::dsv4_gpu::{Dsv4Gpu, Dsv4SampleCfg, Dsv4Vt};
 use memra_engine::dsv4_topology::Dsv4Placement;
 use memra_gguf::dsv4_forward::ActQuantVariant;
