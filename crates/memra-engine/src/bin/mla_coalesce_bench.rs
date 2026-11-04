@@ -1,7 +1,7 @@
 //! mla-coalesce-bench: structural-profiling target for the MLA absorb/decompress kernel family
 //! (lane/glm5-b200, 2026-09-04). NOT a gate and NOT a timing instrument: it exists so `ncu` can
 //! read sectors-per-request, occupancy and stall reasons for the SHIPPED thread-per-row kernels,
-//! the decode-SPLIT twins, and the warp-per-row COALESCED twins (`MEMRA_MLA_COALESCE`) on one
+//! the decode-SPLIT twins, and the warp-per-row COALESCED twins (`mla_ffi::mla_coalesce_on`) on one
 //! process at the served GLM-5.3-Flash geometry (64 heads, kv_lora_rank 512, qk_nope_head_dim
 //! 256, v_head_dim 256). `mla-decode-arm-gate` calls the raw launchers directly and cannot route
 //! the coalesce door, which is why this bin exists. Random operands; outputs are not compared.

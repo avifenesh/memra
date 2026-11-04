@@ -286,8 +286,9 @@ extern "C" int memra_mla_decompress_v_f32(const float* o_lat, const float* wv_b,
 // longer one thread's serial ascending-index dot. It is 32 lane-partial sums (each ascending,
 // stride 32) combined by a shuffle tree. Same terms, same values, different association — so
 // this is NOT bit-identical to the shipped kernels and it is NOT the decode-split twins'
-// contract, which deliberately kept the serial dot so it could claim bit identity. Door
-// MEMRA_MLA_COALESCE, default OFF, and it needs a greedy tape plus an argmax gate.
+// contract, which deliberately kept the serial dot so it could claim bit identity. The sm_100a
+// default whenever a split is in force since 2026-11-04 (host seam mla_ffi.rs, mla_coalesce_on;
+// MEMRA_MLA_COALESCE before), on a served-tape receipt; an ON/OFF argmax gate is still owed.
 //
 // COMPOSES WITH THE SPLIT rather than competing with it: the two fix different halves. The
 // split raises the GRID (t_q*n_head blocks -> ~1024) and leaves the loads uncoalesced; this
@@ -2157,7 +2158,8 @@ extern "C" int memra_mla_attn_gathered_f32(const float* q_lat, const float* q_pe
 
 // ------------------------------------------------------- B200 (sm_100a) t<=8 decode arm
 //
-// MEMRA_B200_MLA_DECODE_ARM (host seam mla_ffi.rs, default OFF). Census motivation
+// Host seam mla_ffi.rs (mla_b200_decode_arm_on: sm_100a builds, glm5 TP head shards only, no
+// switch since 2026-11-04; MEMRA_B200_MLA_DECODE_ARM before). Census motivation
 // (nsys, 2x B200 SXM sm_100a, GLM-5.3-Flash NVFP4, plain decode t=1): the 11 MLA/DSA sparse
 // layers' `memra_mla_attn_gathered_kernel` costs 16 x 42.3 us/token. At t_q=1 the grid is
 // `t_q * n_head` = 64 blocks (n_head=64 on the glm5_next/GLM-5.2 geometry) — head-parallel by
