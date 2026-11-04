@@ -11657,6 +11657,179 @@ extern "C" __global__ void matvec_bf16_qkvg_tcol(
     }
 }
 
+// COMPILE-TIME-T twins of matvec_bf16_qkvg_tcol and matvec_bf16_b4_tcol (MEMRA_TCOL_TWINS=1,
+// default OFF; restored 2026-11-04 from the 2026-11-03 deletion). The runtime-t loops of those
+// two kernels (one above, one below) index acc[c] dynamically, which spills the accumulators to local memory and turns the weight
+// walk latency-bound (283us vs the t=1 kernel's 33 at t=8). Full unroll keeps the IDENTICAL
+// per-column (per-(b, c) for b4) FP chain, so each column is bit-identical to the t=1 kernel,
+// with the accumulators in registers. They stay off until a serving-shape gate proves that a
+// request whose batch width crosses 2, 4 or 8 keeps its tokens (docs/FLAGS.md row).
+template <int T>
+static __device__ __forceinline__ void qkvg_tcol_body(
+        const unsigned short* __restrict__ wq, const unsigned short* __restrict__ wk,
+        const unsigned short* __restrict__ wv, const unsigned short* __restrict__ wg,
+        const float* __restrict__ x, float* __restrict__ yq, float* __restrict__ yk,
+        float* __restrict__ yv, float* __restrict__ yg,
+        int in_f, int out_q, int out_kv, int out_g) {
+    int r = blockIdx.x;
+    const unsigned short* w;
+    float* y;
+    int row;
+    int out_stride;
+    if (r < out_q) {
+        w = wq; y = yq; row = r; out_stride = out_q;
+    } else if (r < out_q + out_kv) {
+        w = wk; y = yk; row = r - out_q; out_stride = out_kv;
+    } else if (r < out_q + 2 * out_kv) {
+        w = wv; y = yv; row = r - out_q - out_kv; out_stride = out_kv;
+    } else {
+        w = wg; y = yg; row = r - out_q - 2 * out_kv; out_stride = out_g;
+    }
+    const unsigned short* wr = w + (size_t)row * in_f;
+    float acc[T];
+    #pragma unroll
+    for (int c = 0; c < T; c++) acc[c] = 0.0f;
+    const int stride = blockDim.x * 8;
+#pragma unroll 4
+    for (int i = threadIdx.x * 8; i < in_f; i += stride) {
+        uint4 pack = *reinterpret_cast<const uint4*>(wr + i);
+        const unsigned short* wp = reinterpret_cast<const unsigned short*>(&pack);
+        float wv8[8];
+        #pragma unroll
+        for (int j = 0; j < 8; j++) wv8[j] = __uint_as_float((unsigned)wp[j] << 16);
+        #pragma unroll
+        for (int c = 0; c < T; c++) {
+            const float* xc = x + (size_t)c * in_f;
+            float4 x0 = *reinterpret_cast<const float4*>(xc + i);
+            float4 x1 = *reinterpret_cast<const float4*>(xc + i + 4);
+            acc[c] += wv8[0] * x0.x;
+            acc[c] += wv8[1] * x0.y;
+            acc[c] += wv8[2] * x0.z;
+            acc[c] += wv8[3] * x0.w;
+            acc[c] += wv8[4] * x1.x;
+            acc[c] += wv8[5] * x1.y;
+            acc[c] += wv8[6] * x1.z;
+            acc[c] += wv8[7] * x1.w;
+        }
+    }
+    __shared__ float s[32];
+    #pragma unroll
+    for (int c = 0; c < T; c++) {
+        float a = acc[c];
+        for (int off = 16; off > 0; off >>= 1) a += __shfl_down_sync(0xffffffff, a, off);
+        if ((threadIdx.x & 31) == 0) s[threadIdx.x >> 5] = a;
+        __syncthreads();
+        if (threadIdx.x < 32) {
+            float v = (threadIdx.x < (blockDim.x + 31) / 32) ? s[threadIdx.x] : 0.0f;
+            for (int off = 16; off > 0; off >>= 1) v += __shfl_down_sync(0xffffffff, v, off);
+            if (threadIdx.x == 0) y[(size_t)c * out_stride + row] = v;
+        }
+        __syncthreads();
+    }
+}
+extern "C" __global__ void matvec_bf16_qkvg_tcol_t2(
+        const unsigned short* __restrict__ wq, const unsigned short* __restrict__ wk,
+        const unsigned short* __restrict__ wv, const unsigned short* __restrict__ wg,
+        const float* __restrict__ x, float* __restrict__ yq, float* __restrict__ yk,
+        float* __restrict__ yv, float* __restrict__ yg,
+        int in_f, int out_q, int out_kv, int out_g) {
+    qkvg_tcol_body<2>(wq, wk, wv, wg, x, yq, yk, yv, yg, in_f, out_q, out_kv, out_g);
+}
+extern "C" __global__ void matvec_bf16_qkvg_tcol_t4(
+        const unsigned short* __restrict__ wq, const unsigned short* __restrict__ wk,
+        const unsigned short* __restrict__ wv, const unsigned short* __restrict__ wg,
+        const float* __restrict__ x, float* __restrict__ yq, float* __restrict__ yk,
+        float* __restrict__ yv, float* __restrict__ yg,
+        int in_f, int out_q, int out_kv, int out_g) {
+    qkvg_tcol_body<4>(wq, wk, wv, wg, x, yq, yk, yv, yg, in_f, out_q, out_kv, out_g);
+}
+extern "C" __global__ void matvec_bf16_qkvg_tcol_t8(
+        const unsigned short* __restrict__ wq, const unsigned short* __restrict__ wk,
+        const unsigned short* __restrict__ wv, const unsigned short* __restrict__ wg,
+        const float* __restrict__ x, float* __restrict__ yq, float* __restrict__ yk,
+        float* __restrict__ yv, float* __restrict__ yg,
+        int in_f, int out_q, int out_kv, int out_g) {
+    qkvg_tcol_body<8>(wq, wk, wv, wg, x, yq, yk, yv, yg, in_f, out_q, out_kv, out_g);
+}
+
+template <int T>
+static __device__ __forceinline__ void b4_tcol_body(
+        const unsigned short* __restrict__ w0, const unsigned short* __restrict__ w1,
+        const unsigned short* __restrict__ w2, const unsigned short* __restrict__ w3,
+        const float* __restrict__ x, float* __restrict__ y, int block_cols, int out_f) {
+    int r = blockIdx.x;
+    if (r >= out_f) return;
+    int tid = threadIdx.x;
+    const unsigned short* ws4[4] = { w0, w1, w2, w3 };
+    __shared__ float s[32];
+    float total[T];
+    #pragma unroll
+    for (int c = 0; c < T; c++) total[c] = 0.0f;
+    for (int b = 0; b < 4; b++) {
+        const unsigned short* wr = ws4[b] + (size_t)r * block_cols;
+        float acc[T];
+        #pragma unroll
+        for (int c = 0; c < T; c++) acc[c] = 0.0f;
+#pragma unroll 4
+        for (int i = tid * 8; i < block_cols; i += blockDim.x * 8) {
+            uint4 pack = *reinterpret_cast<const uint4*>(wr + i);
+            const unsigned short* wp = reinterpret_cast<const unsigned short*>(&pack);
+            float wv8[8];
+            #pragma unroll
+            for (int j = 0; j < 8; j++) wv8[j] = __uint_as_float((unsigned)wp[j] << 16);
+            #pragma unroll
+            for (int c = 0; c < T; c++) {
+                const float* xb = x + ((size_t)c * 4 + b) * block_cols;
+                float4 x0 = *reinterpret_cast<const float4*>(xb + i);
+                float4 x1 = *reinterpret_cast<const float4*>(xb + i + 4);
+                acc[c] += wv8[0] * x0.x;
+                acc[c] += wv8[1] * x0.y;
+                acc[c] += wv8[2] * x0.z;
+                acc[c] += wv8[3] * x0.w;
+                acc[c] += wv8[4] * x1.x;
+                acc[c] += wv8[5] * x1.y;
+                acc[c] += wv8[6] * x1.z;
+                acc[c] += wv8[7] * x1.w;
+            }
+        }
+        #pragma unroll
+        for (int c = 0; c < T; c++) {
+            float a = acc[c];
+            for (int off = 16; off > 0; off >>= 1) a += __shfl_down_sync(0xffffffff, a, off);
+            if ((tid & 31) == 0) s[tid >> 5] = a;
+            __syncthreads();
+            if (tid == 0) {
+                float v = 0.0f;
+                for (int wi = 0; wi < (blockDim.x + 31) / 32; wi++) v += s[wi];
+                total[c] += v;
+            }
+            __syncthreads();
+        }
+    }
+    if (tid == 0) {
+        #pragma unroll
+        for (int c = 0; c < T; c++) y[(size_t)c * out_f + r] = total[c];
+    }
+}
+extern "C" __global__ void matvec_bf16_b4_tcol_t2(
+        const unsigned short* __restrict__ w0, const unsigned short* __restrict__ w1,
+        const unsigned short* __restrict__ w2, const unsigned short* __restrict__ w3,
+        const float* __restrict__ x, float* __restrict__ y, int block_cols, int out_f) {
+    b4_tcol_body<2>(w0, w1, w2, w3, x, y, block_cols, out_f);
+}
+extern "C" __global__ void matvec_bf16_b4_tcol_t4(
+        const unsigned short* __restrict__ w0, const unsigned short* __restrict__ w1,
+        const unsigned short* __restrict__ w2, const unsigned short* __restrict__ w3,
+        const float* __restrict__ x, float* __restrict__ y, int block_cols, int out_f) {
+    b4_tcol_body<4>(w0, w1, w2, w3, x, y, block_cols, out_f);
+}
+extern "C" __global__ void matvec_bf16_b4_tcol_t8(
+        const unsigned short* __restrict__ w0, const unsigned short* __restrict__ w1,
+        const unsigned short* __restrict__ w2, const unsigned short* __restrict__ w3,
+        const float* __restrict__ x, float* __restrict__ y, int block_cols, int out_f) {
+    b4_tcol_body<8>(w0, w1, w2, w3, x, y, block_cols, out_f);
+}
+
 extern "C" __global__ void matvec_bf16_b4_tcol(
         const unsigned short* __restrict__ w0, const unsigned short* __restrict__ w1,
         const unsigned short* __restrict__ w2, const unsigned short* __restrict__ w3,
