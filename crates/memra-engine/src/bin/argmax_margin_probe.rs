@@ -33,15 +33,22 @@
 //! `--decode` picks the program on the decode side of the table:
 //!   * `eager` (default): `decode_step`, the eager tokenwise program (`decode_step_h`). This arm
 //!     also runs the batched-prime line above.
-//!   * `batch`: the SERVED batched decode program at batch width 1. Serving decodes every model
-//!     its scheduler batches through `decode_step_batch_sampled_lean_masked` at every width, B=1
-//!     included (the B=1 fast path is an opt-in seam), and that body carries a decode-config
-//!     FP-composition gap against `decode_step_h` (decode_batch.rs, `b1_fast_on`). So the eager
-//!     arm can stay green while a change to the batched body or its epilogue moves served tokens.
-//!     This arm makes the server's own call for one unconstrained greedy row (see
-//!     `served_batch_decode`) and judges it against the same prefill reference with the same
-//!     margin rules. It prints one `SERVED-ARGMAX:` line instead of the prime line: how many
-//!     window steps' device-sampled token differs from the host argmax of the same served row.
+//!   * `batch`: the SERVED batched decode program at batch width 1. The server's batched
+//!     scheduler decodes every non-speculative row of a batch-served model through
+//!     `decode_step_batch_sampled_lean_masked` at every width, B=1 included (the B=1 fast path
+//!     is an opt-in seam), and that body carries a decode-config FP-composition gap against
+//!     `decode_step_h` (decode_batch.rs, `b1_fast_on`). So the eager arm can stay green while a
+//!     change to the batched body or its epilogue moves served tokens. Speculative rows (the
+//!     default `MEMRA_SERVE_SPEC` route for spec-eligible requests on a model with a draft head)
+//!     decode through the spec path, which `run-spec` gates, not through this body. This arm
+//!     makes the server's own call for one unconstrained greedy row (see `served_batch_decode`)
+//!     and judges it against the same prefill reference with the same margin rules. It prints
+//!     one `SERVED-ARGMAX:` line instead of the prime line: how many window steps'
+//!     device-sampled token differs from the host argmax of the same served row. A model the
+//!     scheduler decodes through the per-session eager body
+//!     (`HybridModel::served_decode_is_eager`, the predicate the worker's decode sites read)
+//!     has no served batched program: the arm then steps the program that does serve it,
+//!     `decode_step`, and prints `SERVED-ARGMAX: n/a reason=eager-routed`.
 //!
 //! usage: argmax-margin-probe <model.gguf|hf_dir> <prompt-file> [window=24] [--decode eager|batch]
 //! env: engine knobs (MEMRA_FA_SPLIT, MEMRA_Q80_G2, MEMRA_FAST, ...) steer the arm under test.
@@ -119,12 +126,15 @@ fn parse_args(args: &[String]) -> Result<ProbeArgs, String> {
 /// Each step is the call the server's batched scheduler makes for one unconstrained greedy row
 /// (`crates/memra-server/src/worker.rs`, the unscheduled `decode_step_batch_sampled_lean_masked`
 /// arm): one token, a cache from `pp::new_cache_planned`, the greedy device sample
-/// `devsample_meta` builds, no grammar mask, lean logits. The engine routes it exactly as it
-/// routes a served tick: program arm, the B=1 fast-path seam, the pipeline door and the
-/// unqualified-rewrite fallback. Lean rows come back empty, so each window row is read from the
-/// cache's device park (`last_logits_dev`), the buffer the server's retire-time pool park reads.
-/// The park is cleared before each window step, so a step that parks nothing fails here instead
-/// of handing back the previous position's row.
+/// `devsample_meta` builds, no grammar mask, lean logits. The engine routes it as it routes a
+/// served tick of a server booted with no rewrite bundle: program arm, the B=1 fast-path seam
+/// and the pipeline door. The probe installs no `MEMRA_REWRITE_BUNDLE` (the worker does at boot
+/// when it is set), so `rewrite_allowed` is open for every surface and the engine's
+/// unqualified-decode-batch fallback to eager rows cannot fire here: this cell gates the default
+/// bundle-less served program, not a bundle-governed one. Lean rows come back empty, so each
+/// window row is read from the cache's device park (`last_logits_dev`), the buffer the server's
+/// retire-time pool park reads. The park is cleared before each window step, so a step that
+/// parks nothing fails here instead of handing back the previous position's row.
 ///
 /// Returns the window rows and the number of window steps whose device-sampled token differs
 /// from the host argmax of the same parked row. The greedy device argmax is bit-identical to the
@@ -188,6 +198,38 @@ struct ServedBatchRun {
 /// The one `SERVED-ARGMAX:` line the gate script parses in `--decode batch` mode.
 fn served_argmax_row(rows: usize, device_mismatch: usize) -> String {
     format!("SERVED-ARGMAX: rows={rows} device_mismatch={device_mismatch}")
+}
+
+/// The `SERVED-ARGMAX:` line for a model the batched scheduler decodes eagerly
+/// (`HybridModel::served_decode_is_eager`). The gate reports it as `served=EAGER-ROUTED`; the
+/// table above it then measures `decode_step`, the program that serves the model.
+const SERVED_EAGER_ROUTED: &str = "SERVED-ARGMAX: n/a reason=eager-routed";
+
+/// What the eager tokenwise program measured over the window.
+struct EagerRun {
+    /// Logits rows, one per window position.
+    rows: Vec<Vec<f32>>,
+    /// The decode cache, which the eager arm drops before the prime runs.
+    cache: memra_engine::cache::Cache,
+}
+
+/// The eager tokenwise program (`decode_step`) over the whole prompt.
+fn eager_decode(
+    e: &Engine,
+    model: &HybridModel,
+    prompt: &[u32],
+    window: usize,
+) -> Result<EagerRun, Box<dyn std::error::Error>> {
+    let t = prompt.len();
+    let mut cache = new_model_cache(e, &model.cfg, t + 8)?;
+    let mut rows = Vec::with_capacity(window);
+    for (i, &tk) in prompt.iter().enumerate() {
+        let l = model.decode_step(e, tk, &mut cache)?;
+        if i + window >= t {
+            rows.push(l);
+        }
+    }
+    Ok(EagerRun { rows, cache })
 }
 
 fn top2(l: &[f32]) -> (usize, f32, usize, f32) {
@@ -313,7 +355,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         std::env::var("MEMRA_FAST").unwrap_or_else(|_| "<unset>".into()),
         std::env::var("MEMRA_PRIME_CHUNK").unwrap_or_else(|_| "<unset>".into()),
     );
-    if probe.decode == DecodeArm::Batch {
+    // The server's own routing read: a model its batched scheduler decodes eagerly has no
+    // served batched program, so the batch arm steps the program that serves it.
+    let eager_routed = probe.decode == DecodeArm::Batch && model.served_decode_is_eager();
+    if eager_routed {
+        println!(
+            "decode program: served per-session eager body (decode_step); the batched scheduler \
+             routes this model eager (HybridModel::served_decode_is_eager) batch_program={:?}",
+            model.decode_batch_program(),
+        );
+    } else if probe.decode == DecodeArm::Batch {
         println!(
             "decode program: served batch B=1 (decode_step_batch_sampled_lean_masked, greedy \
              device sample, lean) batch_program={:?} MEMRA_SERVE_B1FAST={}",
@@ -326,21 +377,26 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // This is the gate's "decode" side. Stepping the whole prompt gives us, for free, the
     // per-position top-2 margin distribution under one fixed arithmetic config: the eager
     // tokenwise path (`decode_step`) or the served batched program at B=1.
-    let (dec_at, decode_cache, served_mismatch) = match probe.decode {
+    let (dec_at, decode_cache, served_line) = match probe.decode {
         DecodeArm::Eager => {
-            let mut cache = new_model_cache(&e, &model.cfg, t + 8)?;
-            let mut dec_at: Vec<Vec<f32>> = Vec::with_capacity(window);
-            for (i, &tk) in prompt.iter().enumerate() {
-                let l = model.decode_step(&e, tk, &mut cache)?;
-                if i + window >= t {
-                    dec_at.push(l);
-                }
-            }
-            (dec_at, Some(cache), None)
+            let run = eager_decode(&e, &model, &prompt, window)?;
+            (run.rows, Some(run.cache), None)
+        }
+        DecodeArm::Batch if eager_routed => {
+            let run = eager_decode(&e, &model, &prompt, window)?;
+            (
+                run.rows,
+                Some(run.cache),
+                Some(SERVED_EAGER_ROUTED.to_string()),
+            )
         }
         DecodeArm::Batch => {
             let run = served_batch_decode(&e, &model, &prompt, window)?;
-            (run.rows, None, Some(run.device_mismatch))
+            (
+                run.rows,
+                None,
+                Some(served_argmax_row(window, run.device_mismatch)),
+            )
         }
     };
 
@@ -358,8 +414,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     //     decode cache is dropped first so the prime's cache does not double the KV footprint.
     //     The batch arm reports its served-token check instead; the eager cell owns the prime.
     drop(decode_cache);
-    let report_line = match served_mismatch {
-        Some(mismatch) => served_argmax_row(window, mismatch),
+    let report_line = match served_line {
+        Some(line) => line,
         None => match prime_gate_skip_reason(
             t,
             std::env::var("MEMRA_PRIME_TOKENWISE").is_ok(),
@@ -529,8 +585,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 #[cfg(test)]
 mod tests {
     use super::{
-        DecodeArm, ProbeArgs, measurement_row, parse_args, prime_gate_row, prime_gate_skip_reason,
-        served_argmax_row, validate_placement,
+        DecodeArm, ProbeArgs, SERVED_EAGER_ROUTED, measurement_row, parse_args, prime_gate_row,
+        prime_gate_skip_reason, served_argmax_row, validate_placement,
     };
     use memra_engine::forward::{PrimeGateClass, PrimeGateVerdict};
 
@@ -592,6 +648,11 @@ mod tests {
         assert_eq!(
             served_argmax_row(12, 3),
             "SERVED-ARGMAX: rows=12 device_mismatch=3"
+        );
+        // tools/argmax-margin-gate.sh matches this line verbatim (served=EAGER-ROUTED).
+        assert_eq!(
+            SERVED_EAGER_ROUTED,
+            "SERVED-ARGMAX: n/a reason=eager-routed"
         );
     }
 

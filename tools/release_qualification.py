@@ -413,16 +413,20 @@ def cell_verdicts(run, evidence, repo, head):
         elif cell["kind"] == "spec":
             verdict = coverage.spec_coverage(lines)
         elif cell["kind"] == "argmax-batch":
-            # The served batched decode program at B=1 (argmax-margin-gate.sh --decode batch):
-            # the same calibrated margin verdict plus one SERVED-SUMMARY line, and only MATCH
-            # (every device-sampled token equals the host argmax of its row).
+            # The served decode program (argmax-margin-gate.sh --decode batch): the same
+            # calibrated margin verdict plus one SERVED-SUMMARY line. MATCH: the batched program at
+            # B=1, every device-sampled token equal to the host argmax of its row. EAGER-ROUTED:
+            # the probe's routing read (HybridModel::served_decode_is_eager, the worker's own) says
+            # the scheduler decodes this model eagerly, so the table measured decode_step.
             served = [line for line in lines if line.startswith("SERVED-SUMMARY served=")]
             require(sum(line.startswith("PASS:") for line in lines) == 1
                     and any(re.search(r"SUMMARY flips=\d+ bad=0\b", line) for line in lines)
-                    and served == ["SERVED-SUMMARY served=MATCH"]
+                    and served in (["SERVED-SUMMARY served=MATCH"],
+                                   ["SERVED-SUMMARY served=EAGER-ROUTED"])
                     and not any("SKIP" in line or line.startswith("FAIL") for line in lines),
                     "served-batch argmax cell did not pass its calibrated gate")
-            verdict = "calibrated served-batch argmax PASS"
+            verdict = ("calibrated served-batch argmax PASS" if served == ["SERVED-SUMMARY served=MATCH"]
+                       else "calibrated served-decode argmax PASS (eager-routed: decode_step serves)")
         else:
             # The batched serving prime (prime_cache vs tokenwise) rides the same cell: one
             # PRIME-SUMMARY line, and only the classes tools/release-battery.sh accepts.

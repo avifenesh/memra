@@ -11,6 +11,7 @@ PRIME_MATCH = ("PRIME-GATE: class=MATCH bp_argmax=7 tw_argmax=7 tw_margin=1.5e0 
                "bp_margin=1.25e0 maxdiff=3.0e-2")
 ROWS = "10 1 1.0000 1 1.0000 0.1000 yes\n11 2 1.0000 2 1.0000 0.1000 yes"
 SERVED_MATCH = "SERVED-ARGMAX: rows=2 device_mismatch=0"
+SERVED_EAGER_ROUTED = "SERVED-ARGMAX: n/a reason=eager-routed"
 BATCH = ("--decode", "batch")
 
 
@@ -137,7 +138,10 @@ class GateTest(unittest.TestCase):
                              (SERVED_MATCH + "\n" + SERVED_MATCH, "MISSING"),
                              ("SERVED-ARGMAX: rows=3 device_mismatch=0", "MALFORMED"),
                              ("SERVED-ARGMAX: rows=2 device_mismatch=x", "MALFORMED"),
-                             ("SERVED-ARGMAX: rows=2", "MALFORMED")):
+                             ("SERVED-ARGMAX: rows=2", "MALFORMED"),
+                             ("SERVED-ARGMAX: n/a reason=other", "MALFORMED"),
+                             ("SERVED-ARGMAX: n/a", "MALFORMED"),
+                             (SERVED_EAGER_ROUTED + "\n" + SERVED_MATCH, "MISSING")):
             for extra in (BATCH, (*BATCH, "--canary")):
                 with self.subTest(served=served, extra=extra):
                     r = self.run_gate(ROWS, extra=extra, prime=served)
@@ -148,6 +152,23 @@ class GateTest(unittest.TestCase):
         r = self.run_gate(ROWS, extra=(*BATCH, "--canary"), prime=SERVED_MATCH)
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertIn("served-token mismatch line; the reader saw: MISMATCH", r.stdout)
+
+    def test_eager_routed_model_passes_on_the_table_and_says_so(self):
+        # The probe's routing read says the scheduler decodes this model eagerly: the table then
+        # measured decode_step, and the cell reports EAGER-ROUTED instead of a served-token check.
+        for extra in (BATCH, (*BATCH, "--canary")):
+            with self.subTest(extra=extra):
+                r = self.run_gate(ROWS, extra=extra, prime=SERVED_EAGER_ROUTED)
+                self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+                self.assertIn("SERVED-SUMMARY served=EAGER-ROUTED", r.stdout)
+                self.assertIn("CANARY PASS:" if "--canary" in extra else "  PASS:", r.stdout)
+        r = self.run_gate(ROWS, extra=(*BATCH, "--canary"), prime=SERVED_EAGER_ROUTED)
+        self.assertIn("served-token mismatch line; the reader saw: MISMATCH", r.stdout)
+        # EAGER-ROUTED keeps the margin rules: an unexplained flip still fails.
+        r = self.run_gate("10 1 5.0 2 5.0 0.1 NO\n11 2 1.0 2 1.0 0.1 yes", extra=BATCH,
+                          prime=SERVED_EAGER_ROUTED)
+        self.assertNotEqual(r.returncode, 0, r.stdout)
+        self.assertIn("UNEXPLAINED", r.stdout)
 
     def test_batch_cell_keeps_the_margin_rules(self):
         r = self.run_gate("10 1 5.0 2 5.0 0.1 NO\n11 2 1.0 2 1.0 0.1 yes", extra=BATCH, prime=SERVED_MATCH)
