@@ -3018,6 +3018,35 @@ fn gpu_penalized_greedy_session_refuses_demotion() {
 #[ignore = "requires the lane-owned B200 and /tmp/memra-gpu.lock"]
 fn gpu_glm5_prime_walker_four_turns_with_restored_suffix_and_peer() {
     use memra_engine::prime_walker::{PrimeWalker, advance_prime, finish_prime};
+    // `glm5_spec_prefix_on` is read once per process, and an earlier test in this binary that
+    // primes a spec session fixes it OFF, so the capture arm below only holds in a fresh process.
+    if std::env::var_os("GLM5_PRIME_WALKER_CHILD").is_none() {
+        let _gpu = gpu_guard();
+        let exe = std::env::current_exe().expect("test binary path");
+        let child = std::process::Command::new(exe)
+            .args([
+                "gpu_glm5_prime_walker_four_turns_with_restored_suffix_and_peer",
+                "--exact",
+                "--ignored",
+                "--nocapture",
+                "--test-threads=1",
+            ])
+            .env("GLM5_PRIME_WALKER_CHILD", "1")
+            .output()
+            .expect("spawn the prime-walker child");
+        let stdout = String::from_utf8_lossy(&child.stdout);
+        eprint!("{stdout}{}", String::from_utf8_lossy(&child.stderr));
+        assert!(
+            child.status.success(),
+            "prime-walker child: {}",
+            child.status
+        );
+        assert!(
+            stdout.contains("test result: ok. 1 passed"),
+            "the prime-walker child ran no test"
+        );
+        return;
+    }
     let _gpu = gpu_guard();
     let _chunk = EnvArm::set("MEMRA_PRIME_CHUNK", "32");
     let _prefix = EnvArm::set("MEMRA_PREFIX_LATENT", "1");
