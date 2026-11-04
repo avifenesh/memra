@@ -635,17 +635,20 @@ fn census_from_safetensors_model(model: &StModel) -> Result<TensorCensus, String
 /// rather than surfacing as f32. The GDN `in_proj_a/b` pair is re-encoded below it.
 const REENCODE_MIN_ELEMENTS: u64 = 1_000_000;
 
-/// How the engine uploads a float view a source hands it: `GpuTensor::Float` (f32), or raw BF16
-/// (`GpuTensor::FloatBf16`) for a large 2-D BF16 matrix under a BF16-resident door. The engine owns
-/// those doors and passes their state in; the source owns the re-encodes in `find`.
+/// How the engine uploads what a source hands it. A float view becomes `GpuTensor::Float` (f32), or
+/// stays raw BF16 (`GpuTensor::FloatBf16`) for a large 2-D BF16 matrix under a BF16-resident door;
+/// an FP8 weight keeps its native e4m3 bytes unless `MEMRA_ST_E4M3=0`. The engine owns those doors
+/// and passes their state in; the source owns the re-encodes in `find`.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct FloatUpload {
+pub struct UploadPolicy {
     /// `MEMRA_FULL_PREC=1`: `find` re-encodes no BF16 weight and the engine quantizes no float
     /// tensor at load.
     pub full_precision: bool,
     /// Smallest 2-D BF16 tensor, in elements, the engine keeps BF16-resident. `None` means every
     /// float view uploads as f32.
     pub bf16_resident_min_elements: Option<u64>,
+    /// `MEMRA_ST_E4M3=0`: every FP8 weight loads as the Q8_0 slab instead of its native e4m3 bytes.
+    pub fp8_as_q8_0: bool,
 }
 
 /// Bytes of `elements` weights encoded as `kind`, rounded up to whole blocks.
@@ -656,29 +659,37 @@ fn encoded_bytes(kind: GgmlType, elements: u64) -> u64 {
 
 /// Device bytes the engine leaves resident for one bound tensor of a safetensors checkpoint: the
 /// census bytes scaled by the conversion `SafetensorsSource::find` and the engine's upload apply.
-/// Sized from the census row alone (shape, storage and checkpoint bytes), never the payload.
-/// `preserved` is the source's `modules_to_not_convert` test on a checkpoint name.
+/// Sized from headers alone (the census row, plus an FP8 weight's scale-plane shape), never the
+/// payload. `preserved` is the source's `modules_to_not_convert` test on a checkpoint name, and
+/// `fp8_scale_shape` the shape of an FP8 weight's `weight_scale`/`weight_scale_inv` plane.
 ///
 /// - BF16: a 2-D matmul weight of at least [`REENCODE_MIN_ELEMENTS`] with a 32-aligned row is
 ///   re-encoded to Q8_0 (1.0625 B/weight, 0.53x the checkpoint), or to Q5_K (0.6875 B/weight)
-///   for a separate output head with a 256-aligned row. The router, preserved modules,
-///   `MEMRA_FULL_PREC` and the MLA key/value split keep BF16, which the engine uploads as f32, or
-///   keeps BF16 under a BF16-resident door when the tensor is a plain rename (a transform always
-///   surfaces f32).
+///   for a separate output head with a 256-aligned row. The router, preserved modules and
+///   `MEMRA_FULL_PREC` keep BF16, which the engine uploads as f32, or keeps BF16 under a
+///   BF16-resident door when the tensor is a plain rename (a transform always surfaces f32).
 /// - F16 and F32 upload as f32.
+/// - The token embedding is the table `EmbedHost` keeps and uploads as `find`'s view bytes: Q8_0
+///   when re-encoded, otherwise the checkpoint dtype (2 B/weight for BF16), never an f32 upload.
+/// - The MLA key/value split (`SplitMlaKv`) is f32 on the device whatever the checkpoint ships:
+///   the source dequantizes the fused `kv_b_proj` and `MlaAttnLayer::load` refuses anything else.
 /// - The GDN `in_proj_a/b` pair goes to Q8_0 at any size from any float type, except under
 ///   `MEMRA_FULL_PREC`.
-/// - FP8 E4M3 with a scale plane is charged as the Q8_0 slab. The per-tensor and block-128
-///   classes stay native (1 B/weight plus the scale grid) and the per-row class takes the slab;
-///   the census does not carry the scale plane's shape, so the estimate takes the larger. A
-///   transformed FP8 weight below [`REENCODE_MIN_ELEMENTS`] surfaces f32.
+/// - FP8 E4M3 with a scale plane stays native (1 B/weight; a block-128 class adds its f32 grid)
+///   when the engine's native arm takes it: a per-tensor scale (plain, or transformed at
+///   [`REENCODE_MIN_ELEMENTS`] or more) or a plain block-128 grid, on a 32-aligned row and a
+///   16-aligned column count. Everything else, and every FP8 weight under `MEMRA_ST_E4M3=0`,
+///   takes the Q8_0 slab, except a transformed weight below [`REENCODE_MIN_ELEMENTS`], which
+///   surfaces f32. With no scale shape known the estimate takes the larger of the slab and the
+///   checkpoint bytes.
 /// - NVFP4 and MXFP4 repack into the same 4.5 bits per weight, and integer tensors upload as
 ///   stored: the checkpoint bytes.
 pub fn safetensors_resident_bytes(
     id: &TensorId,
     tensor: &BoundTensor,
     preserved: &dyn Fn(&str) -> bool,
-    upload: FloatUpload,
+    fp8_scale_shape: &dyn Fn(&str) -> Option<Vec<u64>>,
+    upload: UploadPolicy,
 ) -> u64 {
     let gdn_ab = matches!(
         id,
@@ -696,6 +707,8 @@ pub fn safetensors_resident_bytes(
     );
     let plain = tensor.transform == TensorTransform::Identity;
     let separate_head = *id == TensorId::OutputProjection && plain;
+    let embed_table = *id == TensorId::TokenEmbedding;
+    let mla_split = tensor.transform == TensorTransform::SplitMlaKv;
     let elements_of = |shape: &[u64]| {
         shape
             .iter()
@@ -728,12 +741,12 @@ pub fn safetensors_resident_bytes(
         let row_aligned = |block: u64| shape.last().is_some_and(|row| row.is_multiple_of(block));
         let gdn_ab_q8 = gdn_ab && matrix && row_aligned(32) && !upload.full_precision;
         let bytes = match storage {
+            _ if mla_split => encoded_bytes(GgmlType::F32, elements),
             StorageLayout::Float(FloatType::Bf16) => {
                 let reencoded = matrix
                     && row_aligned(32)
                     && !upload.full_precision
                     && !router
-                    && tensor.transform != TensorTransform::SplitMlaKv
                     && !preserved(name)
                     && (elements >= REENCODE_MIN_ELEMENTS || gdn_ab);
                 let bf16_resident = plain
@@ -745,7 +758,7 @@ pub fn safetensors_resident_bytes(
                     encoded_bytes(GgmlType::Q5_K, elements)
                 } else if reencoded {
                     encoded_bytes(GgmlType::Q8_0, elements)
-                } else if bf16_resident {
+                } else if bf16_resident || embed_table {
                     encoded_bytes(GgmlType::BF16, elements)
                 } else if gdn_ab_q8 {
                     encoded_bytes(GgmlType::Q8_0, elements)
@@ -753,18 +766,46 @@ pub fn safetensors_resident_bytes(
                     encoded_bytes(GgmlType::F32, elements)
                 }
             }
-            StorageLayout::Float(FloatType::F16 | FloatType::F32) => {
+            StorageLayout::Float(float @ (FloatType::F16 | FloatType::F32)) => {
                 if gdn_ab_q8 {
                     encoded_bytes(GgmlType::Q8_0, elements)
+                } else if embed_table && matches!(float, FloatType::F16) {
+                    encoded_bytes(GgmlType::F16, elements)
                 } else {
                     encoded_bytes(GgmlType::F32, elements)
                 }
             }
             StorageLayout::Quantized(layout) if layout.format == "FP8_E4M3" => {
-                if !plain && elements < REENCODE_MIN_ELEMENTS && !gdn_ab_q8 {
-                    encoded_bytes(GgmlType::F32, elements)
-                } else {
-                    checkpoint.max(encoded_bytes(GgmlType::Q8_0, elements))
+                let q8_0 = encoded_bytes(GgmlType::Q8_0, elements);
+                let scale_shape = fp8_scale_shape(name);
+                // The engine's native arms (`GpuTensor::load_from_source`) claim a weight before
+                // `find` sees it; the table `EmbedHost` keeps comes from `find` alone.
+                let native_grid = match (&scale_shape, shape.as_slice()) {
+                    (Some(scale), &[out, input])
+                        if !upload.fp8_as_q8_0
+                            && !embed_table
+                            && input.is_multiple_of(32)
+                            && out.is_multiple_of(16) =>
+                    {
+                        let scales = elements_of(scale);
+                        let grid = [out.div_ceil(128), input.div_ceil(128)];
+                        if scales == 1 && (plain || elements >= REENCODE_MIN_ELEMENTS) {
+                            Some(0)
+                        } else if plain && scale.as_slice() == grid {
+                            Some(scales.saturating_mul(4))
+                        } else {
+                            None
+                        }
+                    }
+                    _ => None,
+                };
+                match native_grid {
+                    Some(grid) => elements.saturating_add(grid),
+                    None if !plain && elements < REENCODE_MIN_ELEMENTS && !gdn_ab_q8 => {
+                        encoded_bytes(GgmlType::F32, elements)
+                    }
+                    None if scale_shape.is_some() => q8_0,
+                    None => checkpoint.max(q8_0),
                 }
             }
             StorageLayout::Float(FloatType::Fp8E4m3)
@@ -825,7 +866,7 @@ pub trait TensorSource: Sync {
     /// after the conversions this source and the engine's upload apply. Header-only. The default
     /// charges the checkpoint bytes: GGUF files and repack manifests hand the engine their stored
     /// bytes, the rule the resident-expert budget has always used for a GGUF trunk.
-    fn resident_bytes(&self, _id: &TensorId, tensor: &BoundTensor, _upload: FloatUpload) -> u64 {
+    fn resident_bytes(&self, _id: &TensorId, tensor: &BoundTensor, _upload: UploadPolicy) -> u64 {
         tensor.physical_bytes
     }
     /// Routed-expert activation precision declared by the artifact.
@@ -1013,6 +1054,21 @@ impl RepackFallback {
         }
     }
 
+    /// The dialect of the census this fallback names its rows in, without building it.
+    fn census_dialect(&self) -> CheckpointDialect {
+        match self {
+            Self::Safetensors(_) => CheckpointDialect::HfSafetensors,
+            Self::Repack(source) => source.census_dialect(),
+        }
+    }
+
+    fn resident_bytes(&self, id: &TensorId, tensor: &BoundTensor, upload: UploadPolicy) -> u64 {
+        match self {
+            Self::Safetensors(source) => source.resident_bytes(id, tensor, upload),
+            Self::Repack(source) => source.resident_bytes(id, tensor, upload),
+        }
+    }
+
     fn expert_activation_precision(&self) -> ExpertActivationPrecision {
         match self {
             Self::Safetensors(source) => source.expert_activation_precision(),
@@ -1078,6 +1134,9 @@ pub struct Hy3RepackSource {
     // original HF checkpoint (v1) or a complete manifest repack (v2).
     fallback: Option<RepackFallback>,
     active_experts: BTreeMap<u32, Vec<bool>>,
+    // The census names of the manifest's own tensors, built on the first `resident_bytes` call:
+    // a row named here is served from the manifest, every other row from the fallback.
+    manifest_census_names: std::sync::OnceLock<BTreeSet<String>>,
 }
 
 impl Hy3RepackSource {
@@ -1298,11 +1357,34 @@ impl Hy3RepackSource {
             files,
             fallback,
             active_experts,
+            manifest_census_names: std::sync::OnceLock::new(),
         })
     }
 
     pub fn dir(&self) -> &Path {
         &self.dir
+    }
+
+    /// The dialect of this source's census: its fallback's, or GGUF names for a complete repack.
+    fn census_dialect(&self) -> CheckpointDialect {
+        self.fallback
+            .as_ref()
+            .map_or(CheckpointDialect::Gguf, RepackFallback::census_dialect)
+    }
+
+    /// The census name of one manifest tensor: the canonical HF name its ggml name maps to when
+    /// the census speaks the HF dialect, the ggml name otherwise.
+    fn manifest_census_name(&self, dialect: CheckpointDialect, name: &str) -> String {
+        if dialect == CheckpointDialect::HfSafetensors {
+            use crate::hf_mapping::{HfTarget, resolve_ggml};
+            if let Some(target) = resolve_ggml(name, &self.cfg) {
+                let hf = match target {
+                    HfTarget::Plain(hf) | HfTarget::Transform { hf, .. } => hf,
+                };
+                return canonical_hf_name(&hf);
+            }
+        }
+        name.to_string()
     }
 
     /// The original HF checkpoint dir recorded by the transcoder (tokenizer files live there —
@@ -1337,18 +1419,7 @@ impl TensorSource for Hy3RepackSource {
             }
             None => (CheckpointDialect::Gguf, Vec::new()),
         };
-        let semantic_name = |name: &str| {
-            if dialect == CheckpointDialect::HfSafetensors {
-                use crate::hf_mapping::{HfTarget, resolve_ggml};
-                if let Some(target) = resolve_ggml(name, &self.cfg) {
-                    let hf = match target {
-                        HfTarget::Plain(hf) | HfTarget::Transform { hf, .. } => hf,
-                    };
-                    return canonical_hf_name(&hf);
-                }
-            }
-            name.to_string()
-        };
+        let semantic_name = |name: &str| self.manifest_census_name(dialect, name);
 
         let mut by_name: BTreeMap<String, TensorCensusRecord> = rows
             .drain(..)
@@ -1394,6 +1465,31 @@ impl TensorSource for Hy3RepackSource {
             dialect,
             tensors: by_name.into_values().collect(),
         })
+    }
+
+    /// A manifest tensor reaches the engine as its stored bytes (the GGUF rule). An overlay row the
+    /// manifest does not store is served by the fallback's `find`, so the fallback's own law sizes
+    /// it: a v1 overlay's HF trunk is charged at its device format, like the checkpoint itself.
+    fn resident_bytes(&self, id: &TensorId, tensor: &BoundTensor, upload: UploadPolicy) -> u64 {
+        let Some(fallback) = self.fallback.as_ref() else {
+            return tensor.physical_bytes;
+        };
+        let manifest = self.manifest_census_names.get_or_init(|| {
+            let dialect = self.census_dialect();
+            self.tensors
+                .keys()
+                .map(|name| self.manifest_census_name(dialect, name))
+                .collect()
+        });
+        if tensor
+            .checkpoint_names
+            .iter()
+            .any(|name| manifest.contains(name))
+        {
+            tensor.physical_bytes
+        } else {
+            fallback.resident_bytes(id, tensor, upload)
+        }
     }
 
     fn expert_activation_precision(&self) -> ExpertActivationPrecision {
@@ -2557,11 +2653,16 @@ impl TensorSource for SafetensorsSource {
     fn tensor_census(&self) -> Result<TensorCensus, String> {
         census_from_safetensors_model(&self.model)
     }
-    fn resident_bytes(&self, id: &TensorId, tensor: &BoundTensor, upload: FloatUpload) -> u64 {
+    fn resident_bytes(&self, id: &TensorId, tensor: &BoundTensor, upload: UploadPolicy) -> u64 {
         safetensors_resident_bytes(
             id,
             tensor,
             &|name| self.preserves_source_dtype(name),
+            &|name| {
+                let stem = name.strip_suffix(".weight")?;
+                self.f8_scale_sibling(stem)
+                    .map(|(info, _)| info.shape.clone())
+            },
             upload,
         )
     }
@@ -5992,7 +6093,7 @@ mod resident_bytes_tests {
 
     #[test]
     fn safetensors_trunk_rows_are_charged_at_their_device_format() {
-        let census = census_from_safetensors_headers(&headers(&[
+        let infos = headers(&[
             ("model.embed_tokens.weight", "BF16", &[2048, 1024]),
             ("lm_head.weight", "BF16", &[2048, 1024]),
             ("model.norm.weight", "BF16", &[1024]),
@@ -6038,6 +6139,56 @@ mod resident_bytes_tests {
                 &[],
             ),
             (
+                "model.layers.0.mlp.shared_expert.up_proj.weight",
+                "F8_E4M3",
+                &[1024, 1024],
+            ),
+            (
+                "model.layers.0.mlp.shared_expert.up_proj.weight_scale",
+                "F32",
+                &[1024, 1],
+            ),
+            (
+                "model.layers.0.mlp.shared_expert.down_proj.weight",
+                "F8_E4M3",
+                &[1024, 1024],
+            ),
+            (
+                "model.layers.0.mlp.shared_expert.down_proj.weight_scale",
+                "F32",
+                &[],
+            ),
+            (
+                "model.layers.0.self_attn.kv_b_proj.weight",
+                "F8_E4M3",
+                &[2048, 512],
+            ),
+            (
+                "model.layers.0.self_attn.kv_b_proj.weight_scale_inv",
+                "F32",
+                &[16, 4],
+            ),
+            (
+                "model.layers.1.self_attn.kv_b_proj.weight",
+                "U8",
+                &[2048, 256],
+            ),
+            (
+                "model.layers.1.self_attn.kv_b_proj.weight_scale",
+                "F8_E4M3",
+                &[2048, 32],
+            ),
+            (
+                "model.layers.1.self_attn.kv_b_proj.weight_scale_2",
+                "F32",
+                &[],
+            ),
+            (
+                "model.layers.2.self_attn.kv_b_proj.weight",
+                "BF16",
+                &[2048, 512],
+            ),
+            (
                 "model.layers.1.linear_attn.in_proj_a.weight",
                 "BF16",
                 &[32, 1024],
@@ -6058,67 +6209,76 @@ mod resident_bytes_tests {
                 &[],
             ),
             ("model.layers.1.linear_attn.A_log", "F32", &[32]),
-        ]))
-        .unwrap();
+        ]);
+        let census = census_from_safetensors_headers(&infos).unwrap();
         let preserved = |name: &str| {
             name.starts_with("model.layers.0.self_attn.v_proj")
                 || name.starts_with("model.layers.1.linear_attn.in_proj_z")
         };
-        let default = FloatUpload::default();
-        let full_prec = FloatUpload {
+        // The scale-plane shape `SafetensorsSource` reads from the header.
+        let fp8_scale_shape = |name: &str| {
+            let stem = name.strip_suffix(".weight")?;
+            infos
+                .get(&format!("{stem}.weight_scale"))
+                .or_else(|| infos.get(&format!("{stem}.weight_scale_inv")))
+                .map(|info| info.shape.clone())
+        };
+        let default = UploadPolicy::default();
+        let full_prec = UploadPolicy {
             full_precision: true,
             bf16_resident_min_elements: Some(1_000_000),
+            fp8_as_q8_0: false,
         };
-        let bf16_mmv = FloatUpload {
+        let bf16_mmv = UploadPolicy {
             full_precision: false,
             bf16_resident_min_elements: Some(2_000_000),
+            fp8_as_q8_0: false,
         };
-        use TensorTransform::{AbReorderRows, Identity, NegExpReorderHeads, ZReorderRows};
-        // (semantic id, census name, transform, default, MEMRA_FULL_PREC, MEMRA_BF16_MMV)
+        let st_e4m3_off = UploadPolicy {
+            fp8_as_q8_0: true,
+            ..default
+        };
+        use TensorTransform::{
+            AbReorderRows, Identity, NegExpReorderHeads, SplitMlaKv, ZReorderRows,
+        };
+        // (semantic id, census name, transform,
+        //  default, MEMRA_FULL_PREC, MEMRA_BF16_MMV, MEMRA_ST_E4M3=0)
         let q8_1m = 1_114_112; // 1Mi weights as Q8_0: 34 B per 32
-        let cases: [(TensorId, &str, TensorTransform, u64, u64, u64); 13] = [
-            // A matmul-class BF16 table lands as Q8_0 wherever it is not the separate head.
+        let kv_b_f32 = 4 * MIB; // 1Mi weights as f32
+        type Case = (TensorId, &'static str, TensorTransform, [u64; 4]);
+        let cases: [Case; 18] = [
+            // A matmul-class BF16 table lands as Q8_0, and `EmbedHost` keeps that view.
             (
                 TensorId::TokenEmbedding,
                 "model.embed_tokens.weight",
                 Identity,
-                2 * q8_1m,
-                4 * MIB,
-                2 * q8_1m,
+                [2 * q8_1m, 4 * MIB, 2 * q8_1m, 2 * q8_1m],
             ),
             // The separate head takes Q5_K: 176 B per 256.
             (
                 TensorId::OutputProjection,
                 "lm_head.weight",
                 Identity,
-                1_441_792,
-                4 * MIB,
-                1_441_792,
+                [1_441_792, 4 * MIB, 1_441_792, 1_441_792],
             ),
             (
                 TensorId::OutputNorm,
                 "model.norm.weight",
                 Identity,
-                4096,
-                4096,
-                4096,
+                [4096; 4],
             ),
             (
                 layer(0, LayerTensor::Query),
                 "model.layers.0.self_attn.q_proj.weight",
                 Identity,
-                q8_1m,
-                2 * MIB,
-                q8_1m,
+                [q8_1m, 2 * MIB, q8_1m, q8_1m],
             ),
             // Below the 1M re-encode gate a BF16 matrix uploads as f32: twice its disk bytes.
             (
                 layer(0, LayerTensor::Key),
                 "model.layers.0.self_attn.k_proj.weight",
                 Identity,
-                MIB,
-                MIB,
-                MIB,
+                [MIB; 4],
             ),
             // A preserved module keeps BF16 out of `find` and uploads f32, or BF16 under a
             // BF16-resident door when it clears that door's size.
@@ -6126,87 +6286,129 @@ mod resident_bytes_tests {
                 layer(0, LayerTensor::Value),
                 "model.layers.0.self_attn.v_proj.weight",
                 Identity,
-                8 * MIB,
-                4 * MIB,
-                4 * MIB,
+                [8 * MIB, 4 * MIB, 4 * MIB, 8 * MIB],
             ),
-            // FP8 with a scale plane: the Q8_0 slab, the larger of the slab and native e4m3.
+            // Block-128 FP8 stays native: 1 B/weight plus the f32 grid; the Q8_0 slab when off.
             (
                 layer(0, LayerTensor::AttentionOutput),
                 "model.layers.0.self_attn.o_proj.weight",
                 Identity,
-                q8_1m,
-                q8_1m,
-                q8_1m,
+                [MIB + 256, MIB + 256, MIB + 256, q8_1m],
             ),
             // The router keeps its checkpoint dtype through `find` at any size.
             (
                 layer(0, LayerTensor::MoeRouter),
                 "model.layers.0.mlp.gate.weight",
                 Identity,
-                4 * MIB,
-                2 * MIB,
-                4 * MIB,
+                [4 * MIB, 2 * MIB, 4 * MIB, 4 * MIB],
             ),
             // NVFP4 repacks into the same 4.5 bits per weight: codes, per-16 scales, the scalar.
             (
                 layer(0, LayerTensor::SharedMlpGate),
                 "model.layers.0.mlp.shared_expert.gate_proj.weight",
                 Identity,
-                589_828,
-                589_828,
-                589_828,
+                [589_828; 4],
+            ),
+            // Per-row FP8 has no native kernel: the Q8_0 slab on every arm.
+            (
+                layer(0, LayerTensor::SharedMlpUp),
+                "model.layers.0.mlp.shared_expert.up_proj.weight",
+                Identity,
+                [q8_1m; 4],
+            ),
+            // Per-tensor FP8 stays native at 1 B/weight; its scalar scale lives on the host.
+            (
+                layer(0, LayerTensor::SharedMlpDown),
+                "model.layers.0.mlp.shared_expert.down_proj.weight",
+                Identity,
+                [MIB, MIB, MIB, q8_1m],
+            ),
+            // The MLA key/value split is f32 whatever kv_b_proj ships in: FP8, NVFP4 or BF16.
+            (
+                layer(0, LayerTensor::MlaKvSource),
+                "model.layers.0.self_attn.kv_b_proj.weight",
+                SplitMlaKv,
+                [kv_b_f32; 4],
+            ),
+            (
+                layer(1, LayerTensor::MlaKvSource),
+                "model.layers.1.self_attn.kv_b_proj.weight",
+                SplitMlaKv,
+                [kv_b_f32; 4],
+            ),
+            (
+                layer(2, LayerTensor::MlaKvSource),
+                "model.layers.2.self_attn.kv_b_proj.weight",
+                SplitMlaKv,
+                [kv_b_f32; 4],
             ),
             // The GDN in_proj_a/b pair goes to Q8_0 below the gate, except under full precision.
             (
                 layer(1, LayerTensor::GdnAlpha),
                 "model.layers.1.linear_attn.in_proj_a.weight",
                 AbReorderRows,
-                34_816,
-                131_072,
-                34_816,
+                [34_816, 131_072, 34_816, 34_816],
             ),
             // A transform always surfaces f32, so no BF16-resident door keeps it BF16.
             (
                 layer(1, LayerTensor::GdnGate),
                 "model.layers.1.linear_attn.in_proj_z.weight",
                 ZReorderRows,
-                8 * MIB,
-                8 * MIB,
-                8 * MIB,
+                [8 * MIB; 4],
             ),
             // A small transformed FP8 weight surfaces f32.
             (
                 layer(1, LayerTensor::GdnOutput),
                 "model.layers.1.linear_attn.out_proj.weight",
                 TensorTransform::OutReorderColumns,
-                256 * 1024,
-                256 * 1024,
-                256 * 1024,
+                [256 * 1024; 4],
             ),
             (
                 layer(1, LayerTensor::GdnA),
                 "model.layers.1.linear_attn.A_log",
                 NegExpReorderHeads,
-                128,
-                128,
-                128,
+                [128; 4],
             ),
         ];
-        for (id, name, transform, want_default, want_full_prec, want_bf16_mmv) in cases {
+        for (id, name, transform, wants) in cases {
             let tensor = bound(&census, name, transform);
             for (upload, want, arm) in [
-                (default, want_default, "default"),
-                (full_prec, want_full_prec, "MEMRA_FULL_PREC"),
-                (bf16_mmv, want_bf16_mmv, "MEMRA_BF16_MMV"),
+                (default, wants[0], "default"),
+                (full_prec, wants[1], "MEMRA_FULL_PREC"),
+                (bf16_mmv, wants[2], "MEMRA_BF16_MMV"),
+                (st_e4m3_off, wants[3], "MEMRA_ST_E4M3=0"),
             ] {
                 assert_eq!(
-                    safetensors_resident_bytes(&id, &tensor, &preserved, upload),
+                    safetensors_resident_bytes(&id, &tensor, &preserved, &fp8_scale_shape, upload),
                     want,
                     "{name} under {arm}"
                 );
             }
         }
+        // A preserved table stays BF16 in `EmbedHost`: 2 B/weight, never an f32 upload.
+        let table = bound(&census, "model.embed_tokens.weight", Identity);
+        assert_eq!(
+            safetensors_resident_bytes(
+                &TensorId::TokenEmbedding,
+                &table,
+                &|_| true,
+                &fp8_scale_shape,
+                default
+            ),
+            4 * MIB
+        );
+        // With no scale shape known, an FP8 weight takes the larger of the slab and its bytes.
+        let o_proj = bound(&census, "model.layers.0.self_attn.o_proj.weight", Identity);
+        assert_eq!(
+            safetensors_resident_bytes(
+                &layer(0, LayerTensor::AttentionOutput),
+                &o_proj,
+                &preserved,
+                &|_| None,
+                default
+            ),
+            q8_1m
+        );
     }
 
     /// The law against the source itself: every trunk class sized from the census equals the
@@ -6259,6 +6461,16 @@ mod resident_bytes_tests {
                 "F32",
                 &[],
             ),
+            (
+                "model.layers.0.mlp.shared_expert.down_proj.weight",
+                "F8_E4M3",
+                &[1024, 1024],
+            ),
+            (
+                "model.layers.0.mlp.shared_expert.down_proj.weight_scale",
+                "F32",
+                &[],
+            ),
         ];
         let infos = headers(rows);
         let payload_len = infos
@@ -6271,6 +6483,7 @@ mod resident_bytes_tests {
         for name in [
             "model.layers.0.self_attn.o_proj.weight_scale_inv",
             "model.layers.0.mlp.shared_expert.gate_proj.weight_scale_2",
+            "model.layers.0.mlp.shared_expert.down_proj.weight_scale",
         ] {
             let [begin, end] = infos[name].data_offsets;
             for chunk in payload[begin..end].chunks_exact_mut(4) {
@@ -6380,20 +6593,38 @@ mod resident_bytes_tests {
                 layer(0, LayerTensor::SharedMlpGate),
                 4,
             ),
+            // The native per-tensor FP8 arm keeps its scalar scale on the host too.
+            (
+                "blk.0.ffn_down_shexp.weight",
+                "model.layers.0.mlp.shared_expert.down_proj.weight",
+                layer(0, LayerTensor::SharedMlpDown),
+                0,
+            ),
         ];
         let mut seen = Vec::new();
+        let mut native_fp8 = 0;
         for (ggml, name, id, host_only) in cases {
             let view = src.find(ggml).unwrap_or_else(|| panic!("find {ggml}"));
             seen.push(view.ggml_type);
-            let on_device = match view.ggml_type {
-                GgmlType::F32 | GgmlType::F16 | GgmlType::BF16 => {
-                    view.ne.iter().product::<u64>() * 4
+            // The engine's native e4m3 arms claim an FP8 weight before `find` (codes plus the f32
+            // grid of a block-128 class), and `EmbedHost` keeps the table's view bytes.
+            let on_device = if let Some(f8) = src.find_fp8_native(ggml) {
+                native_fp8 += 1;
+                let grid = f8.blk.as_ref().map_or(0, |grid| grid.scales.len() * 4);
+                (f8.bytes.len() + grid) as u64
+            } else if id == TensorId::TokenEmbedding {
+                view.bytes.len() as u64
+            } else {
+                match view.ggml_type {
+                    GgmlType::F32 | GgmlType::F16 | GgmlType::BF16 => {
+                        view.ne.iter().product::<u64>() * 4
+                    }
+                    _ => view.bytes.len() as u64,
                 }
-                _ => view.bytes.len() as u64,
             };
             let tensor = bound(&census, name, TensorTransform::Identity);
             assert_eq!(
-                src.resident_bytes(&id, &tensor, FloatUpload::default()),
+                src.resident_bytes(&id, &tensor, UploadPolicy::default()),
                 on_device + host_only,
                 "{ggml} ({:?})",
                 view.ggml_type
@@ -6409,5 +6640,96 @@ mod resident_bytes_tests {
         ] {
             assert!(seen.contains(&kind), "{kind:?} not exercised");
         }
+        assert_eq!(
+            native_fp8, 2,
+            "the block-128 and per-tensor FP8 classes stay native"
+        );
+    }
+
+    /// A v1 expert overlay resolves every tensor its manifest does not store from the HF
+    /// checkpoint through that checkpoint's `find`, so those rows are charged by the safetensors
+    /// law. A tensor the manifest stores reaches the engine as its stored bytes.
+    #[test]
+    fn v1_overlay_charges_fallback_rows_by_the_safetensors_law() {
+        let root =
+            std::env::temp_dir().join(format!("memra_overlay_resident_{}", std::process::id()));
+        let (base, overlay) = (root.join("base"), root.join("overlay"));
+        std::fs::create_dir_all(&base).unwrap();
+        std::fs::create_dir_all(&overlay).unwrap();
+        let infos = headers(&[
+            ("model.embed_tokens.weight", "BF16", &[1024, 1024]),
+            ("model.norm.weight", "BF16", &[1024]),
+            (
+                "model.layers.0.self_attn.q_proj.weight",
+                "BF16",
+                &[1024, 1024],
+            ),
+        ]);
+        let payload_len = infos
+            .values()
+            .map(|info| info.data_offsets[1])
+            .max()
+            .unwrap();
+        let header = format!(
+            "{{{}}}",
+            infos
+                .iter()
+                .map(|(name, info)| format!(
+                    r#""{name}":{{"dtype":"{}","shape":{:?},"data_offsets":[{},{}]}}"#,
+                    info.dtype, info.shape, info.data_offsets[0], info.data_offsets[1]
+                ))
+                .collect::<Vec<_>>()
+                .join(",")
+        );
+        let mut file = Vec::with_capacity(8 + header.len() + payload_len);
+        file.extend_from_slice(&(header.len() as u64).to_le_bytes());
+        file.extend_from_slice(header.as_bytes());
+        file.resize(file.len() + payload_len, 0);
+        std::fs::write(base.join("model.safetensors"), file).unwrap();
+        std::fs::write(
+            base.join("config.json"),
+            r#"{"model_type":"qwen3","num_hidden_layers":1,"hidden_size":1024,
+            "num_attention_heads":8,"num_key_value_heads":1,"intermediate_size":64,
+            "vocab_size":1024,"max_position_embeddings":128}"#,
+        )
+        .unwrap();
+        // The overlay stores q_proj itself, as BF16.
+        std::fs::write(overlay.join("q.bin"), vec![0u8; 2 * MIB as usize]).unwrap();
+        std::fs::write(
+            overlay.join("manifest.json"),
+            format!(
+                r#"{{"format":"memra-expert-overlay-v1","source_dir":"{}","tensors":{{
+                "blk.0.attn_q.weight":{{"file":"q.bin","qtype":"BF16","ne":[1024,1024],
+                "bytes":{}}}}}}}"#,
+                base.display(),
+                2 * MIB
+            ),
+        )
+        .unwrap();
+        let src = Hy3RepackSource::open(&overlay).unwrap();
+        let census = src.tensor_census().unwrap();
+        let upload = UploadPolicy::default();
+        let charged = |name: &str, id: TensorId| {
+            src.resident_bytes(
+                &id,
+                &bound(&census, name, TensorTransform::Identity),
+                upload,
+            )
+        };
+        // Fallback rows: the table re-encoded to Q8_0, the norm uploaded f32.
+        assert_eq!(
+            charged("model.embed_tokens.weight", TensorId::TokenEmbedding),
+            1_114_112
+        );
+        assert_eq!(charged("model.norm.weight", TensorId::OutputNorm), 4096);
+        // The manifest's own tensor keeps its stored bytes, not the HF law's Q8_0 slab.
+        assert_eq!(
+            charged(
+                "model.layers.0.self_attn.q_proj.weight",
+                layer(0, LayerTensor::Query)
+            ),
+            2 * MIB
+        );
+        std::fs::remove_dir_all(&root).ok();
     }
 }

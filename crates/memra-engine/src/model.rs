@@ -626,15 +626,16 @@ pub fn full_prec_enabled() -> bool {
     })
 }
 
-/// How `GpuTensor::load_from_source` uploads a float view: f32, or raw BF16 for a 2-D BF16 matrix
-/// of at least `bf16_resident_min_elements` under `MEMRA_FULL_PREC` (1M: only the big trunk
-/// matrices need the 2 B/w saving; norms and gate_inp stay f32) or `MEMRA_BF16_MMV` (2M: the MoE
-/// router, 288x4096 = 1.18M, is consumed via float_data() and its logits pick the routes, so it
-/// stays exact f32 and routing never moves). The resident-expert budget sizes the trunk with the
-/// same law (`memra_gguf::source::safetensors_resident_bytes`).
-pub(crate) fn float_upload() -> memra_gguf::source::FloatUpload {
+/// How `GpuTensor::load_from_source` uploads what a source hands it. A float view becomes f32, or
+/// stays raw BF16 for a 2-D BF16 matrix of at least `bf16_resident_min_elements` under
+/// `MEMRA_FULL_PREC` (1M: only the big trunk matrices need the 2 B/w saving; norms and gate_inp
+/// stay f32) or `MEMRA_BF16_MMV` (2M: the MoE router, 288x4096 = 1.18M, is consumed via
+/// float_data() and its logits pick the routes, so it stays exact f32 and routing never moves).
+/// An FP8 weight keeps its native e4m3 bytes unless `MEMRA_ST_E4M3=0`. The resident-expert budget
+/// sizes the trunk with the same law (`memra_gguf::source::safetensors_resident_bytes`).
+pub(crate) fn upload_policy() -> memra_gguf::source::UploadPolicy {
     let full_precision = full_prec_enabled();
-    memra_gguf::source::FloatUpload {
+    memra_gguf::source::UploadPolicy {
         full_precision,
         bf16_resident_min_elements: if full_precision {
             Some(1_000_000)
@@ -643,6 +644,7 @@ pub(crate) fn float_upload() -> memra_gguf::source::FloatUpload {
         } else {
             None
         },
+        fp8_as_q8_0: !crate::fp8_ffi::st_e4m3_enabled(),
     }
 }
 
@@ -1299,10 +1301,10 @@ impl GpuTensor {
                 // owning-stage attention, dense FFN, router) with the one-block-per-row bf16
                 // matvec at decode m=1 and the chunked expansion path at m>1. Numeric-class
                 // door, run-gen argmax gate + boot battery (see docs/FLAGS.md).
-                if let Some(threshold) = float_upload().bf16_resident_min_elements {
+                if let Some(threshold) = upload_policy().bf16_resident_min_elements {
                     // Only bf16 sources take the resident-bf16 arm; F16/F32 fall through to f32 Float
                     // (exact, and tiny/absent in the bf16 ST checkpoints this mode targets). The
-                    // threshold (`float_upload`) keeps small tensors on the proven f32 path.
+                    // threshold (`upload_policy`) keeps small tensors on the proven f32 path.
                     if v.ggml_type == GgmlType::BF16 && v.ne.len() == 2 && n >= threshold {
                         let data = e.htod_bytes(&v.bytes)?; // raw bf16 bytes, u16 LE pairs
                         // LOAD-TIME ENGAGEMENT RECEIPT. This is the only DOOR-GATED producer of

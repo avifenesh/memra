@@ -33,8 +33,8 @@ use crate::hf_mapping::{HfTarget, resolve_ggml};
 use crate::model_packs::{ModelPack, OutputHeadContract, TensorConsumption, for_config};
 use crate::model_plan::ModelPlan;
 use crate::source::{
-    DiskExtent, ExpertActivationPrecision, FloatUpload, Fp8Native, Fp8StackedNative,
-    MimoMxfp4Native, Nvfp4Native, Nvfp4StackedNative, TensorCensus, TensorSource, TensorView,
+    DiskExtent, ExpertActivationPrecision, Fp8Native, Fp8StackedNative, MimoMxfp4Native,
+    Nvfp4Native, Nvfp4StackedNative, TensorCensus, TensorSource, TensorView, UploadPolicy,
     canonical_hf_name,
 };
 use crate::tensor_contract::{
@@ -381,7 +381,7 @@ impl CheckpointBinding {
     /// the routed experts, each sized by the source's own load conversion
     /// ([`TensorSource::resident_bytes`]). A vision tower is not trunk: it loads through its own
     /// owner after the text model, and a GGUF trunk never carried one either.
-    pub fn trunk_resident_bytes(&self, src: &dyn TensorSource, upload: FloatUpload) -> u64 {
+    pub fn trunk_resident_bytes(&self, src: &dyn TensorSource, upload: UploadPolicy) -> u64 {
         self.bound
             .tensors
             .iter()
@@ -556,7 +556,7 @@ impl TensorSource for RecordingSource<'_> {
     fn tensor_census(&self) -> Result<TensorCensus, String> {
         self.inner.tensor_census()
     }
-    fn resident_bytes(&self, id: &TensorId, tensor: &BoundTensor, upload: FloatUpload) -> u64 {
+    fn resident_bytes(&self, id: &TensorId, tensor: &BoundTensor, upload: UploadPolicy) -> u64 {
         self.inner.resident_bytes(id, tensor, upload)
     }
     fn expert_activation_precision(&self) -> ExpertActivationPrecision {
@@ -1087,7 +1087,7 @@ mod tests {
             .sum();
         assert!(experts > 0, "the fixture must carry expert banks");
         assert_eq!(
-            binding.trunk_resident_bytes(&src, FloatUpload::default()),
+            binding.trunk_resident_bytes(&src, UploadPolicy::default()),
             header_rule
         );
     }
@@ -1117,10 +1117,10 @@ mod tests {
                 &self,
                 id: &TensorId,
                 tensor: &BoundTensor,
-                upload: FloatUpload,
+                upload: UploadPolicy,
             ) -> u64 {
                 if self.converts {
-                    safetensors_resident_bytes(id, tensor, &|_| false, upload)
+                    safetensors_resident_bytes(id, tensor, &|_| false, &|_| None, upload)
                 } else {
                     tensor.physical_bytes
                 }
@@ -1216,13 +1216,13 @@ mod tests {
         // embed 2Mi weights as Q8_0 (2_228_224), the norm as f32 (4096), q_proj 1Mi weights as
         // Q8_0 (1_114_112), the 64x1024 router kept BF16 by `find` and uploaded f32 (262_144).
         assert_eq!(
-            binding.trunk_resident_bytes(&Source { converts: true }, FloatUpload::default()),
+            binding.trunk_resident_bytes(&Source { converts: true }, UploadPolicy::default()),
             2_228_224 + 4096 + 1_114_112 + 262_144
         );
         // The same trunk at its checkpoint bytes: the BF16 tables would be over-charged 1.9x
         // and the f32 router and norm under-charged 2x.
         assert_eq!(
-            binding.trunk_resident_bytes(&Source { converts: false }, FloatUpload::default()),
+            binding.trunk_resident_bytes(&Source { converts: false }, UploadPolicy::default()),
             4_194_304 + 2048 + 2_097_152 + 131_072
         );
     }
