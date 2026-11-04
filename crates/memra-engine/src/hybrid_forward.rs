@@ -3062,7 +3062,8 @@ impl HybridModel {
         self.glm5_tp_rt_for(0, self.layers.len()).is_some()
     }
 
-    /// Loaded symmetric GLM TP rank count, independent of requested environment flags.
+    /// Loaded GLM TP rank count when every trunk layer carries a TP mixer sidecar, read from the
+    /// loaded sidecars rather than the requested environment flags.
     pub fn glm5_tp_rank_count(&self) -> Option<usize> {
         self.glm5_tp_rt_for(0, self.layers.len())
             .map(|rt| rt.ranks())
@@ -10377,8 +10378,9 @@ impl HybridModel {
             static SAID: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
             if !SAID.swap(true, std::sync::atomic::Ordering::Relaxed) {
                 eprintln!(
-                    "[glm5-tp-indexer-split] refused: requires two peer-access shards, \
-                    matching resident indexers, >=2 pools, k<=2048; indexer=replicated"
+                    "[glm5-tp-indexer-split] refused: requires two devices armed on \
+                    MEMRA_TP_TRANSPORT=device-push, matching resident indexers, >=2 pools, \
+                    k<=2048; indexer=replicated"
                 );
             }
         }
