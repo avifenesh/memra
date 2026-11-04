@@ -699,6 +699,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // twins run after the diet arms, and the flat movement census across this whole battery
     // is asserted there (lane/glm5-tp-transport).
     set_env("MEMRA_GLM5_TP_TRANSPORT", "0");
+    // EXPERT PLACEMENT PINNED to whole experts for every arm but S (same reason): the split is
+    // the default on sm_100a builds, so an unset variable would turn the byte-identity arms
+    // into split arms there. Arm S sets `1` and puts the pin back.
+    set_env("MEMRA_GLM5_TP_EXPERT_SPLIT", "0");
     // The GENERAL names of the three doors above (lane/glm5-extract2): a leaked general name
     // would DISAGREE with the alias pins and fall the door closed — correct for the OFF arms,
     // but it would silently defeat the ON twins. Cleared here so the alias pins are the only
@@ -903,7 +907,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Some(PRIME_BAND),
         &mut verdicts,
     )?;
-    rm_env("MEMRA_GLM5_TP_EXPERT_SPLIT");
+    set_env("MEMRA_GLM5_TP_EXPERT_SPLIT", "0");
 
     // ================= E/F. poison + co-refusal on a live TP model =================
     eprintln!("[phase] arm E/F: plain-path poison + spec co-refusal");
