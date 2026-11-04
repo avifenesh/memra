@@ -158,6 +158,7 @@ impl WhisperPlan {
             drafter: None,
             draft_source: super::DraftSourcePlan::None,
             sampling_defaults: None,
+            per_layer_input: None,
             partition_boundaries: Vec::new(),
         }
     }

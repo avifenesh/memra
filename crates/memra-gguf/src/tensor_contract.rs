@@ -9,7 +9,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::config::{Arch, AttentionGateKind};
 use crate::model_plan::{
     AttentionPlan, LayerPlan, MlaAttentionPlan, MlpPlan, ModelPlan, MoeMlpPlan, ResidualTopology,
-    RopeFactors, RouterPlan, SparseIndexPlan, TensorPresence, ValueProjection, WeightTransform,
+    RopeFactors, RouterPlan, SparseIndexPlan, StatePlan, TensorPresence, ValueProjection,
+    WeightTransform,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -46,6 +47,12 @@ pub enum TensorId {
     HyperHeadScale,
     OutputNorm,
     OutputProjection,
+    /// gemma4 per-layer input token table `[vocab, layers * width]` (`PerLayerInputPlan`).
+    PerLayerTokenEmbedding,
+    /// gemma4 per-layer input model projection `[layers * width, hidden]`.
+    PerLayerModelProjection,
+    /// gemma4 per-layer input projection norm `[width]`.
+    PerLayerProjectionNorm,
     Layer {
         index: u32,
         tensor: LayerTensor,
@@ -276,6 +283,12 @@ pub enum LayerTensor {
     SharedMlpUp,
     SharedMlpDown,
     SharedMlpInputGate,
+    /// gemma4 per-layer input gate `[width, hidden]`.
+    PerLayerInputGate,
+    /// gemma4 per-layer input projection back to the residual `[hidden, width]`.
+    PerLayerProjection,
+    /// gemma4 per-layer input post norm `[hidden]`.
+    PerLayerPostNorm,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -556,9 +569,43 @@ impl TensorContract {
                 TensorTransform::Identity,
             );
         }
+        if let Some(per_layer) = plan.per_layer_input.as_ref() {
+            // The qualified artifact is the GGUF; no safetensors loader binds these names.
+            if dialect != CheckpointDialect::Gguf {
+                return Err(TensorContractError::UnsupportedPlanOperation {
+                    operation: "gemma4 per-layer input non-GGUF schema",
+                });
+            }
+            let packed = per_layer.layers * per_layer.width;
+            builder.weight(
+                TensorId::PerLayerTokenEmbedding,
+                "per_layer_token_embd.weight".to_string(),
+                matrix_shape(dialect, per_layer.vocab_size, packed),
+                TensorOwner::Global,
+                TensorTransform::Identity,
+            );
+            builder.weight(
+                TensorId::PerLayerModelProjection,
+                "per_layer_model_proj.weight".to_string(),
+                matrix_shape(dialect, packed, plan.hidden_size),
+                TensorOwner::Global,
+                TensorTransform::Identity,
+            );
+            builder.float(
+                TensorId::PerLayerProjectionNorm,
+                "per_layer_proj_norm.weight".to_string(),
+                vec![per_layer.width as u64],
+                TensorOwner::Global,
+                norm_transform(per_layer.projection_norm.weight_transform),
+                true,
+            );
+        }
 
         for layer in &plan.layers {
             add_layer(&mut builder, plan, layer)?;
+            if let Some(per_layer) = plan.per_layer_input.as_ref() {
+                add_per_layer_input_tail(&mut builder, plan, layer.index, per_layer);
+            }
         }
         for block in &plan.mtp_blocks {
             if plan.arch == Arch::DeepSeekV4 {
@@ -1032,7 +1079,8 @@ fn add_layer(
     );
     match &layer.attention {
         AttentionPlan::Full(attention) | AttentionPlan::SlidingWindow { attention, .. } => {
-            add_full_attention(builder, plan, index, attention)?;
+            let owns_kv = !matches!(layer.state, StatePlan::SharedKvCache { .. });
+            add_full_attention(builder, plan, index, attention, owns_kv)?;
         }
         AttentionPlan::GatedDeltaNet(gdn) => add_gdn(builder, plan, index, *gdn),
         AttentionPlan::KimiDeltaNet(kda) => add_kda(builder, plan, index, *kda),
@@ -1400,13 +1448,53 @@ fn add_mtp_glue(
     }
 }
 
+/// The gemma4 per-layer input tail of one trunk layer (`PerLayerInputPlan`).
+fn add_per_layer_input_tail(
+    builder: &mut ContractBuilder,
+    plan: &ModelPlan,
+    index: u32,
+    per_layer: &crate::model_plan::PerLayerInputPlan,
+) {
+    let owner = TensorOwner::Layer(index);
+    builder.weight(
+        layer_id(index, LayerTensor::PerLayerInputGate),
+        format!("blk.{index}.inp_gate.weight"),
+        matrix_shape(builder.dialect, per_layer.width, plan.hidden_size),
+        owner,
+        TensorTransform::Identity,
+    );
+    builder.weight(
+        layer_id(index, LayerTensor::PerLayerProjection),
+        format!("blk.{index}.proj.weight"),
+        matrix_shape(builder.dialect, plan.hidden_size, per_layer.width),
+        owner,
+        TensorTransform::Identity,
+    );
+    builder.float(
+        layer_id(index, LayerTensor::PerLayerPostNorm),
+        format!("blk.{index}.post_norm.weight"),
+        vec![plan.hidden_size as u64],
+        owner,
+        norm_transform(per_layer.post_norm.weight_transform),
+        true,
+    );
+}
+
+/// `owns_kv` is false on a gemma4 KV-shared layer (`StatePlan::SharedKvCache`): it ships only
+/// the query side, so K, V and the K norm are not part of its contract.
 #[allow(clippy::result_large_err)] // the contract error names the exact rejected tensor
 fn add_full_attention(
     builder: &mut ContractBuilder,
     plan: &ModelPlan,
     index: u32,
     attention: &crate::model_plan::FullAttentionPlan,
+    owns_kv: bool,
 ) -> Result<(), TensorContractError> {
+    if !owns_kv && attention.mimo_math.is_some() {
+        return Err(TensorContractError::UnsupportedPlanOperation {
+            operation: "shared KV with MiMo attention math",
+        });
+    }
     let gate_multiplier = if attention.output_gate == AttentionGateKind::FusedQ {
         2
     } else {
@@ -1474,7 +1562,9 @@ fn add_full_attention(
             output_width,
         ),
     ] {
-        if fused_qkv && tensor != LayerTensor::AttentionOutput {
+        if (fused_qkv && tensor != LayerTensor::AttentionOutput)
+            || (!owns_kv && tensor == LayerTensor::Key)
+        {
             continue;
         }
         builder.weight(
@@ -1485,7 +1575,7 @@ fn add_full_attention(
             TensorTransform::Identity,
         );
     }
-    if attention.value_projection == ValueProjection::Separate && !fused_qkv {
+    if attention.value_projection == ValueProjection::Separate && !fused_qkv && owns_kv {
         builder.weight(
             layer_id(index, LayerTensor::Value),
             layer_name(
@@ -1514,19 +1604,21 @@ fn add_full_attention(
             TensorTransform::Identity,
             qk_required,
         );
-        builder.float(
-            layer_id(index, LayerTensor::KeyNorm),
-            layer_name(
-                builder.dialect,
-                index,
-                "attn_k_norm.weight",
-                "self_attn.k_norm.weight",
-            ),
-            vec![attention.key_head_dim as u64],
-            TensorOwner::Layer(index),
-            TensorTransform::Identity,
-            qk_required,
-        );
+        if owns_kv {
+            builder.float(
+                layer_id(index, LayerTensor::KeyNorm),
+                layer_name(
+                    builder.dialect,
+                    index,
+                    "attn_k_norm.weight",
+                    "self_attn.k_norm.weight",
+                ),
+                vec![attention.key_head_dim as u64],
+                TensorOwner::Layer(index),
+                TensorTransform::Identity,
+                qk_required,
+            );
+        }
     }
     if attention.output_gate == AttentionGateKind::SeparateHead {
         builder.weight(

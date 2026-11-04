@@ -101,11 +101,14 @@ pre-existing allowlists for every operation, pinned by
 | `GatedResidualConnections` | — | — | — | — | — | — | — | — | — | — |
 | `GatedResidualMixer` | — | — | — | — | — | — | — | — | — | — |
 | `PleNgramEmbedding` | — | — | — | — | — | — | — | — | — | — |
+| `PerLayerInputEmbedding` | — | — | — | — | — | — | — | — | — | — |
+| `PerLayerInputGate` | — | — | — | — | — | — | — | — | — | — |
 | `KvState` | yes | yes | yes | yes | yes | yes | — | — | yes | yes |
 | `SlidingKvState` | — | — | yes | — | yes | yes | — | — | yes | yes |
 | `RecurrentState` | yes | — | yes | yes | yes | yes | yes | yes | yes | yes |
 | `LatentKvState` | — | — | — | — | — | — | yes | yes | yes | — |
 | `CompressedAttentionState` | — | — | — | — | — | — | — | — | — | — |
+| `SharedKvState` | — | — | — | — | — | — | — | — | — | — |
 | `Mtp` | — | — | — | — | yes | — | yes | — | yes | — |
 | `DraftPlan` | — | — | — | — | — | — | — | — | — | — |
 | `MtpFusion` | — | — | — | — | yes | — | yes | — | yes | — |
