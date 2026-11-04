@@ -732,7 +732,10 @@ Two holes in this stage were closed by that same red (2026-08-06):
   of the real server asserting `/readyz`, `/health` and the request path across readiness
   before and after the boot probe (`phase=warming` on the respawn window), the three
   probe-skipped boots (recorded as DOCUMENTED, ready without warmup), a `MEMRA_PANIC_AFTER`
-  worker panic and respawn, a latched gpu-watch fault, and a SIGTERM drain with a stream open;
+  worker panic and respawn, a latched gpu-watch fault, and a SIGTERM drain with a stream open
+  (arm k, on the full-power RTX PRO 6000 Workstation Edition only: an injected on-demand KV grow
+  failure retries once and completes byte-equal to its control, and a failed retry ends only its
+  session; elsewhere the control boot reads `[kv-vmm] door=OFF` and the arm SKIPs);
   `HFG_ARMS=d,f` runs a subset, `HFG_OUT` names the receipt dir. Three more serving gates exist
   and are **not** wired into fast-gate or `local-ci.sh`: invoke them by hand for any diff in
   their area:

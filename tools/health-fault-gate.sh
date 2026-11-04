@@ -55,11 +55,21 @@
 #   h  a client that closes its stream mid-generation is retired within 1,000 ms (`[abort] client
 #      disconnected:`), its peer completes, and the box idles clean (DAY47 1.2). Red twin h-red: the
 #      same shape with no close, and the green assertion must fire there.
+#   k  (the DAY37 A5-ENSURE cell, research/spill-b-20260919/DAY37.md) an on-demand KV grow failure:
+#      one long stream (8192 tokens, its decode crosses the initial extent's granule) under
+#      MEMRA_KV_VMM_FAULT=ensure:1 takes the reclaim retry (`[kv-vmm] grow failed (...); reclaim-retry`)
+#      and completes with the no-fault control's digest (k-ctrl, which must show grow lines), and
+#      the next request completes. Red twin k-red: ensure:1,ensure:2 fails the retry too; the
+#      session, which has emitted, ends with the typed error (`[kv-vmm] ensure failed: not
+#      parked`), the next request completes, no panic and no illegal address, and the green
+#      assertion must fire there. The planes are the default of the full-power RTX PRO 6000
+#      Blackwell Workstation Edition (docs/decisions/KV-VMM-SERVING-DEFAULT.md); the control
+#      boot's `[kv-vmm] door=OFF` line SKIPs the arm on any other card before the long request.
 #
 # Usage: tools/health-fault-gate.sh [model.gguf]
-#   HFG_PORT (8189; 8186 is serve-gemma4-batch-gate.sh's, revuto on #621; census of tools/ before choosing a default), HFG_ARMS (a,b,c,d,e,f,g,h,j by default; i runs by name; a and b share one boot), HFG_OUT (receipt dir).
+#   HFG_PORT (8189; 8186 is serve-gemma4-batch-gate.sh's, revuto on #621; census of tools/ before choosing a default), HFG_ARMS (a,b,c,d,e,f,g,h,j,k by default; i runs by name; a and b share one boot), HFG_OUT (receipt dir).
 #   Run under the rig lock (`flock /tmp/memra-5090.lock`, or the collector on a PRO box); the
-#   gate boots seven servers in sequence and never takes the lock itself, like serve-smoke.
+#   gate boots its servers one at a time and never takes the lock itself, like serve-smoke.
 #   Exit 0 when no arm FAILED (DOCUMENTED and SKIP lines do not fail the gate); 1 on any FAIL; 2 on
 #   setup.
 set -uo pipefail
@@ -72,7 +82,7 @@ ADDR=127.0.0.1:$PORT
 BASE=http://$ADDR
 # Arm i is not in the default list (WP-B DAY49 2.1 and addendum E): its unaimed fault lands on whichever step comes
 # first, a solo spec step on the 27B, so its verdict depends on placement. Arm j aims the same check.
-ARMS="${HFG_ARMS:-a,b,c,d,e,f,g,h,j}"
+ARMS="${HFG_ARMS:-a,b,c,d,e,f,g,h,j,k}"
 OUT="${HFG_OUT:-/tmp/health-fault-gate-$(date -u +%Y%m%dT%H%M%SZ)}"
 mkdir -p "$OUT"
 VERDICTS="$OUT/VERDICTS.txt"
@@ -621,6 +631,70 @@ if in_arms j; then
     verdict "HFG (j-red) aimed-batch-oom-retry-also-fails: fired_lines=$J_FIRED other_fired=$J_OTHER chunk_sessions=$J_SESS retry_lines=$J_RETRY retry_failed=$J_RETRY_FAIL completed=$J_OK/3 error_events=$J_ERR http_5xx=$J_5XX panic_lines=$J_PANIC green_assertion_fired=$([ "$green" = false ] && echo true || echo false) -> $v"
   else
     verdict "HFG (j-red) aimed-batch-oom-retry-also-fails: boot failed -> FAIL"
+  fi
+fi
+
+# ---------------------------------------------------------------- k: an on-demand KV grow failure (DAY37 A5-ENSURE)
+KPROMPT="Count from 1 to 2000, one number per line, and write nothing else."
+planes_on() { grep -q '\[kv-vmm\] door=ON' "$D/server.log"; }
+run_k() { # <label> <MEMRA_KV_VMM_FAULT value or 0>: one long stream whose decode crosses a granule
+  local label=$1 f=$2
+  local envs=()
+  [ "$f" != 0 ] && envs+=(MEMRA_KV_VMM_FAULT="$f")
+  K_PLANES=0
+  if boot "$label" "${envs[@]}"; then
+    if planes_on; then
+      K_PLANES=1
+      SPIDS=""
+      # 8192 tokens: the session's planes pay for on-demand backing at any row size the card's
+      # granule can hold twice, and the decode crosses the initial extent's granule.
+      sstream "$D/long" "$KPROMPT" 8192
+      # shellcheck disable=SC2086
+      wait $SPIDS
+      K_OK=0; sok "$D/long" && K_OK=1
+      K_ERR=$(serror "$D/long")
+      K_DIG=$(sdigest "$D/long")
+      K_GROWS=$(grep -c '\[kv-vmm\] grow id=' "$D/server.log")
+      K_FAILED=$(grep -c '\[kv-vmm\] grow failed (.*MEMRA_KV_VMM_FAULT' "$D/server.log")
+      K_ENSURE_FAILED=$(grep -c '\[kv-vmm\] ensure failed: not parked' "$D/server.log")
+      K_PANIC=$(grep -cE 'panicked|\[worker\] PANIC|CUDA_ERROR_ILLEGAL_ADDRESS' "$D/server.log")
+      code=$(chat 32 false "$D/after" 120)
+      K_AFTER=0; [ "$code" = 200 ] && completes "$D/after" && K_AFTER=1
+      sample /health "$D/health-k.csv"; K_HEALTH=$LAST_CODE
+    fi
+    stop "$label"
+    return 0
+  fi
+  stop "$label"; return 1
+}
+if in_arms k; then
+  echo "--- arm k: an on-demand KV grow failure retries once, and a failed retry ends only its session ---"
+  if ! run_k k-ctrl 0; then
+    verdict "HFG (k) kv-vmm-grow-failure-retries: control boot failed -> FAIL"
+  elif [ "$K_PLANES" = 0 ]; then
+    verdict "HFG (k) kv-vmm-grow-failure-retries: the on-demand KV planes are OFF on this card ($(grep -m1 -o '\[kv-vmm\] door=OFF ([^;)]*' "$OUT/k-ctrl/server.log")) -> SKIP"
+    verdict "HFG (k-red) kv-vmm-grow-retry-also-fails: the on-demand KV planes are OFF on this card -> SKIP"
+  else
+    kctrl_ok=$K_OK; kctrl_dig=$K_DIG; kctrl_grows=$K_GROWS
+    if run_k k ensure:1; then
+      v=FAIL
+      [ "$kctrl_ok" = 1 ] && [ "$kctrl_grows" -ge 1 ] && [ "$K_OK" = 1 ] && [ -z "$K_ERR" ] && [ "$K_FAILED" = 1 ] \
+        && [ "$K_ENSURE_FAILED" = 0 ] && [ "$K_PANIC" = 0 ] && [ "$K_DIG" = "$kctrl_dig" ] && [ "$K_AFTER" = 1 ] \
+        && [ "$K_HEALTH" = 200 ] && v=PASS
+      verdict "HFG (k) kv-vmm-grow-failure-retries: fault=ensure:1 grow_failed_lines=$K_FAILED ensure_failed_lines=$K_ENSURE_FAILED grow_lines=$K_GROWS completed=$K_OK error={${K_ERR:-none}} panic_or_illegal_address_lines=$K_PANIC digest=$K_DIG control=$kctrl_dig control_completed=$kctrl_ok control_grow_lines=$kctrl_grows next_request=$K_AFTER health_after=$K_HEALTH -> $v"
+    else
+      verdict "HFG (k) kv-vmm-grow-failure-retries: boot failed -> FAIL"
+    fi
+    if run_k k-red ensure:1,ensure:2; then
+      green=false
+      [ "$K_OK" = 1 ] && [ -z "$K_ERR" ] && [ "$K_DIG" = "$kctrl_dig" ] && green=true
+      v=FAIL
+      [ "$green" = false ] && [ "$K_FAILED" = 1 ] && [ "$K_ENSURE_FAILED" = 1 ] && [ -n "$K_ERR" ] && [ "$K_PANIC" = 0 ] \
+        && [ "$K_AFTER" = 1 ] && [ "$K_HEALTH" = 200 ] && v=PASS
+      verdict "HFG (k-red) kv-vmm-grow-retry-also-fails: fault=ensure:1,ensure:2 grow_failed_lines=$K_FAILED ensure_failed_lines=$K_ENSURE_FAILED completed=$K_OK error={${K_ERR:-none}} panic_or_illegal_address_lines=$K_PANIC next_request=$K_AFTER health_after=$K_HEALTH green_assertion_fired=$([ "$green" = false ] && echo true || echo false) -> $v"
+    else
+      verdict "HFG (k-red) kv-vmm-grow-retry-also-fails: boot failed -> FAIL"
+    fi
   fi
 fi
 
