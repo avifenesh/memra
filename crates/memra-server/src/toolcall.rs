@@ -94,12 +94,15 @@ const GEMMA_CLOSE: &str = "<channel|>";
 /// Bound on a stream's opening hold-back (`State::GemmaOpening`; owner rule 2026-11-04,
 /// docs/decisions/GEMMA-UNOPENED-THOUGHT.md). A gemma4 turn that never writes an unopened
 /// `<channel|>` (the dense cards) holds its first content delta for at most this many
-/// bytes, about 60 tokens at the 4.3 bytes per token of the E4B receipt. On the RTX 5090
-/// that is about 0.3 s of decode on E4B (202 tok/s) and about 1.5 s on the 31B (40 tok/s
-/// plain). It covers the unopened thought on record (81 bytes, E4B) and the 12B's opened
-/// thought on the same prompt (151 bytes). A close tag that starts at or past the
+/// bytes, about 60 tokens at the 4.3 bytes per token of the E4B receipt. At the RTX 5090
+/// engine decode rates that is about 0.30 s on E4B (202 tok/s), 0.65 s on the 12B (92.5),
+/// 0.31 s on the 26B-A4B (194) and 1.5 s on the 31B (40 tok/s plain); a served stream adds
+/// its own overhead. It covers the unopened thought on record (81 bytes, E4B) and the 12B's
+/// opened thought on the same prompt (151 bytes). A close tag that starts at or past the
 /// cap stays content on a stream, as before this rule. A non-stream parser has no cap: it
-/// holds the whole turn and splits after the fact.
+/// holds the whole turn and splits after the fact, so above the cap the two shapes split
+/// the same greedy turn differently. Keeping 256 until a census of unopened-thought lengths
+/// runs is an open owner call.
 const GEMMA_STREAM_OPENING_CAP: usize = 256;
 /// gemma tooluse dialect (lane/gemma4-tools, 2026-08-18): the served trunk (official Google
 /// tooluse template) emits `<|tool_call>call:NAME{args}<tool_call|>`. The args are the compact
