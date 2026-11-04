@@ -2627,6 +2627,63 @@ fn parse_cache_hard_vram_frac(raw: Option<&str>) -> Result<f64, &'static str> {
     }
 }
 
+/// Whether the MoE forward stages the next routed expert's cache misses on the copy stream while
+/// the current expert computes (the in-token prefetch, `MoeSlotCache::prefetch_source`), by
+/// card class. Same bytes, same kernels; only when the H2D happens moves. Keyed on the device name
+/// exactly as `tier_transfer::kv_vmm_placement_for_device`, from the per-card deciding cell
+/// `research/spill-c-20260919/DAY59.md` (G1 run-gen tapes at two shapes, G2 run-spec K=1..8, G3
+/// serving byte-equality, then a gen-only decode A/B in both orders, N=10 per arm):
+///
+/// - RTX PRO 6000 Blackwell Workstation Edition (section 2, `pro-single-day61/`): G1 to G3 PASS,
+///   the pressure shape 0.310 -> 0.255 s (`pf_wins`), the naked shape 0.113 -> 0.113 s
+///   (`pf_flat`). The receipt covers the full-power Workstation card only; the Max-Q and Server
+///   Edition variants keep the no-receipt default until their own cell.
+/// - RTX 5090 class (section 3, `rtx5090-day59/`, the laptop card): G1 to G3 PASS, pressure
+///   0.412 -> 0.364 s (`pf_wins`), naked 0.216 -> 0.214 s (`pf_flat`).
+///
+/// Every other card keeps the prefetch off. Returns the arm and the name of its source.
+pub fn in_token_prefetch_for_device(name: &str) -> (bool, &'static str) {
+    use crate::parallel::HardwareTarget;
+    match HardwareTarget::from_device_name(name) {
+        Ok(HardwareTarget::Rtx5090) => (true, "rtx5090-receipt"),
+        Ok(HardwareTarget::RtxPro6000Blackwell)
+            if name.contains("Workstation") && !name.contains("Max-Q") =>
+        {
+            (true, "pro6000-ws-receipt")
+        }
+        Ok(HardwareTarget::RtxPro6000Blackwell) | Err(_) => (false, "no-receipt-default"),
+    }
+}
+
+#[cfg(test)]
+mod in_token_prefetch_tests {
+    use super::in_token_prefetch_for_device as p;
+
+    /// Each class's DAY59 cell turns the prefetch on; a card without one keeps it off.
+    #[test]
+    fn prefetch_follows_each_class_receipt() {
+        assert_eq!(
+            p("NVIDIA GeForce RTX 5090 Laptop GPU"),
+            (true, "rtx5090-receipt")
+        );
+        assert_eq!(p("NVIDIA GeForce RTX 5090"), (true, "rtx5090-receipt"));
+        assert_eq!(
+            p("NVIDIA RTX PRO 6000 Blackwell Workstation Edition"),
+            (true, "pro6000-ws-receipt")
+        );
+        assert_eq!(
+            p("NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition"),
+            (false, "no-receipt-default")
+        );
+        assert_eq!(
+            p("NVIDIA RTX PRO 6000 Blackwell Server Edition"),
+            (false, "no-receipt-default")
+        );
+        assert_eq!(p("NVIDIA B200"), (false, "no-receipt-default"));
+        assert_eq!(p(""), (false, "no-receipt-default"));
+    }
+}
+
 #[cfg(test)]
 mod slru_intrusive_tests {
     //! Q5 policy-equivalence proof (research/audit-fixes2-20260805): the intrusive-list SLRU
