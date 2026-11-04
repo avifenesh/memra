@@ -75,6 +75,24 @@ banked. Bit-identical by construction, gated over 14 cells with ties, -inf and N
 
 **Scope:** sm_100a builds only; the v1 body stays the selector elsewhere.
 
+## The attention-norm q8_1 fuse: sm_100a default
+
+**Chosen:** on sm_100a builds the attention-input norm of a plain (unsharded) KDA layer in the
+glm5_next T=1 walk emits its q8_1 view (`rms_norm_zq8_f32`) and the fused six-projection
+launcher consumes it instead of quantizing again. `MEMRA_GLM5_Q8_FUSE_ATTN` is deleted.
+
+**Rejected:** deleting it as marginal. memra#886 judged +0.43% marginal as a lever on its own,
+but the arms' ranges do not overlap, which is the test that confirmed the k-pool selector v2
+above, and the program is bit-identical, so the promotion carries no correctness cost.
+
+**Measurement that settled it:** 2x B200 pair, c1, three boots per arm: base 74.77 / 75.17 /
+75.19 against fused 75.49 / 75.76 / 75.32 tok/s, +0.43%, every fused boot above every base boot,
+tape `9437b599f6b9d2a9` on all six (darklanes verdicts ledger
+`glm5-b200-attn-norm-zq8-plus-0-43`, memra PR #177).
+
+**Scope:** sm_100a builds, plain KDA layers only. TP-sharded KDA layers and MLA layers keep the
+plain norm, so TP-2 loads are unchanged.
+
 ## Open calls
 
 ### `MEMRA_GLM5_TP_EXPERT_SPLIT`: keep, promote or delete

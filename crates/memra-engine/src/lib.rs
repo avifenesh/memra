@@ -607,16 +607,18 @@ pub fn glm5_q8_fuse_on() -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *ON.get_or_init(|| std::env::var("MEMRA_GLM5_Q8_FUSE").as_deref() == Ok("1"))
 }
-/// `MEMRA_GLM5_Q8_FUSE_ATTN=1` (lane/glm5-attn-norm-zq8-20260904, default OFF): the
-/// ATTENTION-input norm of a plain KDA layer in the glm5_next T=1 walk runs `rms_norm_zq8_f32`
-/// and hands its q8_1 view to the fused six-projection launcher, which then skips its own
-/// `quantize_q8_1_into`. The FFN-input twin is `MEMRA_GLM5_Q8_FUSE`. Read PER CALL. Why and
-/// receipts: docs/FLAGS.md.
-pub fn glm5_q8_fuse_attn_on() -> bool {
-    std::env::var("MEMRA_GLM5_Q8_FUSE_ATTN").as_deref() == Ok("1")
+/// The attention-norm q8_1 fuse (lane/glm5-attn-norm-zq8-20260904): the ATTENTION-input norm
+/// of a plain KDA layer in the glm5_next T=1 walk runs `rms_norm_zq8_f32` and hands its q8_1
+/// view to the fused six-projection launcher, which then skips its own `quantize_q8_1_into`.
+/// Bit-identical by construction. The default on sm_100a builds, with no switch (2026-11-04):
+/// +0.43% at c1 on the 2x B200 pair, every door boot above every base boot
+/// (docs/decisions/GLM5-B200-DOORS.md). Other builds keep the plain norm: no receipt there. The
+/// FFN-input twin is `MEMRA_GLM5_Q8_FUSE`.
+pub fn glm5_q8_fuse_attn_default() -> bool {
+    BUILT_CUDA_ARCH == "100a"
 }
 
-/// Engagement counter for `MEMRA_GLM5_Q8_FUSE_ATTN`; gates take a delta.
+/// Engagement counter for the attention-norm q8_1 fuse; gates take a delta.
 pub static GLM5_Q8_FUSE_ATTN_DISPATCHES: std::sync::atomic::AtomicU64 =
     std::sync::atomic::AtomicU64::new(0);
 
@@ -22255,7 +22257,7 @@ impl Engine {
 
     /// [`Engine::kda_proj_fused6_q8rp_raw_arm`] with an optional PRE-QUANTIZED activation
     /// (`pre_q8 = Some((aq, ad))`, the q8_1 view of `x` some producer already emitted, e.g.
-    /// `rms_norm_zq8_f32` under `MEMRA_GLM5_Q8_FUSE_ATTN`): the launcher then skips its own
+    /// `rms_norm_zq8_f32` under the attention-norm q8_1 fuse): the launcher then skips its own
     /// `quantize_q8_1_into` and reads those planes. `quantize_q8_1_into` is `quantize_q8_1`
     /// verbatim and `rms_norm_zq8_f32` is `rms_norm` then `quantize_q8_1` bitwise, so the
     /// bytes are the ones this launcher would have produced (gate `tests/kda_fused_proj_gpu.rs`).
