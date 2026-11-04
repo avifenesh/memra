@@ -147,8 +147,9 @@ impl Dsv4Placement {
     /// placement, taken out of `args` so the gate's positional parsing never sees it. It is
     /// required: a cell names the placement it measures, so its command line does too. `runs`
     /// lists the placements the gate has cells for. The selectors this replaced refuse rather
-    /// than parse into nothing: the `--tpep` switch, `MEMRA_DSV4_ATTENTION_TP_GATE` and
-    /// `DSV4_ROWS_GATE_TOPOLOGY`.
+    /// than parse into nothing, and each refusal names the placement the selector meant: the
+    /// `--tpep` switch, `dsv4_tp_ep_verify_gate`'s `tpep` positional,
+    /// `MEMRA_DSV4_ATTENTION_TP_GATE` and `DSV4_ROWS_GATE_TOPOLOGY`.
     pub fn take_gate_arg(args: &mut Vec<String>, runs: &[Self]) -> Res<Self> {
         // Deliberate refusal reads (env_audit's DELIBERATE_REFUSAL_READS). Each name sits on
         // the line of its read, so the retired-name census sees the read.
@@ -159,10 +160,7 @@ impl Dsv4Placement {
             ("DSV4_ROWS_GATE_TOPOLOGY", rows_gate_topology),
         ] {
             if set {
-                return Err(format!(
-                    "{retired} is retired: unset it and pass --placement=<{}>",
-                    Self::names(runs)
-                ));
+                return Err(Self::retired_selector(retired, runs));
             }
         }
         Self::parse_gate_arg(args, runs)
@@ -175,12 +173,29 @@ impl Dsv4Placement {
             .join("|")
     }
 
+    /// The refusal for a retired selector, with the placement it meant. Every TP/EP cell the old
+    /// selectors chose ran replicated attention unless `MEMRA_DSV4_ATTENTION_TP_GATE=1` was also
+    /// set, so a ported command line that keeps only `--tpep` is `tp_ep_replicated`, not `tp_ep`
+    /// (a different numeric class). `DSV4_ROWS_GATE_TOPOLOGY=tp_ep` armed attention TP2 itself.
+    fn retired_selector(selector: &str, runs: &[Self]) -> String {
+        const TP_EP: &str = "an old TP/EP cell (--tpep, the tpep positional, a TP/EP-only gate) ran \
+             replicated attention unless MEMRA_DSV4_ATTENTION_TP_GATE=1: without it the cell is \
+             tp_ep_replicated, with it tp_ep; an old PP-2 cell is pp";
+        const ROWS: &str = "DSV4_ROWS_GATE_TOPOLOGY=tp_ep is tp_ep; pp or unset is pp";
+        let (action, mapping) = match selector {
+            "DSV4_ROWS_GATE_TOPOLOGY" => ("unset it and pass", ROWS),
+            "MEMRA_DSV4_ATTENTION_TP_GATE" => ("unset it and pass", TP_EP),
+            _ => ("pass", TP_EP),
+        };
+        format!(
+            "{selector} is retired: {action} --placement=<{}> ({mapping})",
+            Self::names(runs)
+        )
+    }
+
     fn parse_gate_arg(args: &mut Vec<String>, runs: &[Self]) -> Res<Self> {
-        if args.iter().any(|arg| arg == "--tpep") {
-            return Err(format!(
-                "--tpep is retired: pass --placement=<{}>",
-                Self::names(runs)
-            ));
+        if let Some(retired) = args.iter().find(|arg| *arg == "--tpep" || *arg == "tpep") {
+            return Err(Self::retired_selector(retired, runs));
         }
         let mut found = None;
         let mut rest = Vec::with_capacity(args.len());
@@ -273,6 +288,7 @@ mod tests {
             &["gate", "--placement=tp_ep", "--placement=pp"],
             &["gate", "--placement=tpep"],
             &["gate", "--placement=pp", "--tpep"],
+            &["gate", "model", "tape", "tpep"],
         ] {
             let mut argv = args(refused);
             assert!(
@@ -280,6 +296,40 @@ mod tests {
                 "{refused:?}"
             );
         }
+    }
+
+    /// A retired selector's refusal names the placement it meant. The old TP/EP cells ran
+    /// replicated attention unless `MEMRA_DSV4_ATTENTION_TP_GATE=1`, so `--tpep` alone ports to
+    /// `tp_ep_replicated`, not to the served `tp_ep`.
+    #[test]
+    fn a_retired_selector_names_the_placement_it_meant() {
+        let all = [
+            Dsv4Placement::SERVED,
+            Dsv4Placement::TpEp {
+                attention_tp: false,
+            },
+            Dsv4Placement::Pp,
+        ];
+        for retired in ["--tpep", "tpep"] {
+            let mut argv = args(&["gate", "model", retired, "--placement=tp_ep"]);
+            let err = Dsv4Placement::parse_gate_arg(&mut argv, &all).unwrap_err();
+            assert!(err.starts_with(&format!("{retired} is retired")), "{err}");
+            assert!(
+                err.contains("without it the cell is tp_ep_replicated, with it tp_ep"),
+                "{err}"
+            );
+        }
+        let err = Dsv4Placement::retired_selector("MEMRA_DSV4_ATTENTION_TP_GATE", &all);
+        assert!(err.contains("unset it"), "{err}");
+        assert!(
+            err.contains("without it the cell is tp_ep_replicated, with it tp_ep"),
+            "{err}"
+        );
+        let err = Dsv4Placement::retired_selector("DSV4_ROWS_GATE_TOPOLOGY", &all[..]);
+        assert!(
+            err.contains("DSV4_ROWS_GATE_TOPOLOGY=tp_ep is tp_ep; pp or unset is pp"),
+            "{err}"
+        );
     }
 
     #[test]
