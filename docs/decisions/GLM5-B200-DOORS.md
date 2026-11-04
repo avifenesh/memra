@@ -1,12 +1,12 @@
 # GLM-5.3-Flash B200 doors decided after the box retired (2026-11-04)
 
-> Banner, later on 2026-11-04: B200 is not maintained (owner: "b200 dont need to be maintain, we
-> dont work on those"; "the hardware i dont own we cant maintain, best effort"). The sm_100a
-> defaults below stand on the receipts quoted here, and the code stays as it is. No cell this
-> record names as owed on an sm_100a pair will run, and the open calls that concern only sm_100a
-> builds (the five-door bundle, the TP transport split, `MEMRA_HYPER_PRIME_V2`, the batched R2
-> twins) are not pursued. The calls about other cards and launchers (the plain decode graph off
-> sm_100a, launchers other than the B200 one, the k-pool v2 body on sm_120a) stay open.
+> Banner, later on 2026-11-04: B200 is best effort and not maintained (owner: "b200 dont need
+> to be maintain, we dont work on those"). The sm_100a defaults below stand on the receipts quoted
+> here, and the code stays as it is. No cell this record names as owed on an sm_100a pair will
+> run, and the open calls that concern only sm_100a builds (the five-door bundle, the TP transport
+> split, `MEMRA_HYPER_PRIME_V2`, the batched R2 twins) are not pursued. The calls about other
+> cards and launchers (the plain decode graph off sm_100a, launchers other than the B200 one, the
+> k-pool v2 body on sm_120a) stay open.
 
 The 2x B200 pair that carried the GLM-5.3-Flash TP-2 lanes is retired, so no new cell can run
 on it. Owner, 2026-11-04: decide every B200 door from the receipts already on record. A winner
