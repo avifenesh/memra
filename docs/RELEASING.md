@@ -92,12 +92,14 @@ our own model on a position whose prefill top-2 margin was 0.0256 against a conf
 0.5540; the calibrated gate returns `flips=0 bad=0 PASS` on the same model.
 
 That cell's decode side is the eager program (`decode_step_h`), which is not what serves: the
-server decodes through the batched body at every width, B=1 included. So each model also gets
-an `argmax-margin-batch` cell, the same gate with `--decode batch`. It drives the served batched
-program at B=1 against the same prefill reference and margin rules, runs with
+server's batched scheduler decodes every non-speculative row of a batch-served model through the
+batched body at every width, B=1 included (speculative rows stay gated by `run-spec`). So each
+model also gets an `argmax-margin-batch` cell, the same gate with `--decode batch`. It drives the
+served batched program at B=1 against the same prefill reference and margin rules, runs with
 `MEMRA_SERVE_B1FAST` unset, and accepts only `served=MATCH` (every window step's device-sampled
-token equals the host argmax of its row). Cell table and rationale:
-[Release qualification](RELEASE-QUALIFICATION.md#argmax-cells).
+token equals the host argmax of its row), or `served=EAGER-ROUTED` for a model the scheduler
+decodes eagerly, where the probe steps `decode_step`, the program that serves it. Cell table and
+rationale: [Release qualification](RELEASE-QUALIFICATION.md#argmax-cells).
 
 If a published number moved: update `research/tune-data/current-board.json`, run `tools/update-perf-board.py`, and commit the regenerated `docs/MODELS.md` + `docs/PERFORMANCE.md` with the change (the pre-push hook enforces this).
 

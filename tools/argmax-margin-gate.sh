@@ -58,19 +58,26 @@
 # injects a MISMATCH-STRUCTURED line and requires the prime reader to reject it.
 #
 # THE SERVED BATCHED DECODE CELL (--decode batch). The default cell's decode side is
-# `decode_step` (decode_step_h), the eager program. Serving decodes every model its scheduler
-# batches through decode_step_batch_sampled_lean_masked at every width, B=1 included, and that
-# body carries a decode-config FP-composition gap against decode_step_h. So the default cell can
-# stay green while a change to the batched body or its epilogue moves served tokens. With
-# --decode batch the probe makes the server's own call for one unconstrained greedy row (greedy
-# device sample, lean logits read from the cache's device park) at every prompt position. The
-# table, the prefill reference, the flip budget and the margin rules are the default cell's.
-# Instead of the PRIME-GATE line (the default cell owns the prime) the probe prints one
-# `SERVED-ARGMAX: rows=N device_mismatch=M` line: M counts window steps whose device-sampled
-# token differs from the host argmax of the same served row. M > 0, or a missing or malformed
-# line, FAILS: a probe that ignores --decode runs the eager program and prints no such line. The
-# canary also injects an M=1 line and requires the served reader to reject it. The wrapper
-# prints `SERVED-SUMMARY served=<MATCH|MISMATCH>`.
+# `decode_step` (decode_step_h), the eager program. The server's batched scheduler decodes every
+# non-speculative row of a batch-served model through decode_step_batch_sampled_lean_masked at
+# every width, B=1 included, and that body carries a decode-config FP-composition gap against
+# decode_step_h. So the default cell can stay green while a change to the batched body or its
+# epilogue moves served tokens. (Speculative rows, the default MEMRA_SERVE_SPEC route for
+# spec-eligible requests on a model with a draft head, decode through the spec path, which
+# run-spec gates.) With --decode batch the probe makes the server's own call for one
+# unconstrained greedy row (greedy device sample, lean logits read from the cache's device park)
+# at every prompt position. The table, the prefill reference, the flip budget and the margin
+# rules are the default cell's. Instead of the PRIME-GATE line (the default cell owns the prime)
+# the probe prints one `SERVED-ARGMAX: rows=N device_mismatch=M` line: M counts window steps
+# whose device-sampled token differs from the host argmax of the same served row. M > 0, or a
+# missing or malformed line, FAILS: a probe that ignores --decode runs the eager program and
+# prints no such line. The canary also injects an M=1 line and requires the served reader to
+# reject it. A model the scheduler decodes through the per-session eager body
+# (HybridModel::served_decode_is_eager, the worker's own routing read) has no served batched
+# program: the probe then steps decode_step, the program that serves it, and prints
+# `SERVED-ARGMAX: n/a reason=eager-routed`. The wrapper prints
+# `SERVED-SUMMARY served=<MATCH|MISMATCH|EAGER-ROUTED>`; EAGER-ROUTED passes on the table's
+# verdict alone.
 #
 # TEETH: --canary INJECTS A BREAK rather than relabelling an expectation (the trap documented
 # in tools/chunk-invariance-gate.sh's header, learned the hard way on lane/chunkinv-flip).
@@ -261,12 +268,14 @@ prime_judge() {
         }' "$1"
 }
 # The served-batch line (--decode batch): exactly one, with the measured window. Prints MATCH,
-# MISMATCH (a device-sampled token differs from the host argmax of its row), MISSING or MALFORMED.
+# MISMATCH (a device-sampled token differs from the host argmax of its row), EAGER-ROUTED (the
+# scheduler decodes this model eagerly, so the table measured decode_step), MISSING or MALFORMED.
 served_judge() {
     awk -v rows="$WINDOW" '
         /^SERVED-ARGMAX: / { n++; line = $0 }
         END {
             if (n != 1) { print "MISSING"; exit }
+            if (line == "SERVED-ARGMAX: n/a reason=eager-routed") { print "EAGER-ROUTED"; exit }
             if (line !~ /^SERVED-ARGMAX: rows=[0-9]+ device_mismatch=[0-9]+$/) { print "MALFORMED"; exit }
             split(line, f, "[ =]")
             if (f[3] + 0 != rows + 0) { print "MALFORMED"; exit }
