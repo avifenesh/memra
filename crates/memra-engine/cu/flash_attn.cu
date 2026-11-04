@@ -9132,9 +9132,11 @@ extern "C" __global__ void __launch_bounds__(2*N_WARPS*WARP_SZ, 1) fa_prefill_qw
                            scale, causal, kv_dim_k, kv_dim_v);
 }
 
-// Experimental numeric class: GQA-packed rows, FP32 direct PV accumulation,
+// Its own numeric class: GQA-packed rows, FP32 direct PV accumulation,
 // BF16-rounded denominator and log2 softmax. Session state enters through the
-// replay table in captured prime. Qualified only through MEMRA_PRIME_ATTN_FA2.
+// replay table in captured prime. The default only on its qualified profile
+// (170-SM sm_120a, Qwen 24 Q / 4 KV / d256, MEMRA_PRIME_CHUNK=1024), selected by
+// Engine::prime_attn_fa2_enabled.
 __device__ __forceinline__ float fa2_exp2(float x) {
     float y; asm("ex2.approx.ftz.f32 %0, %1;" : "=f"(y) : "f"(x)); return y;
 }

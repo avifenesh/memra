@@ -28,6 +28,7 @@ half — "we tried X and it lost by Y% on Z" cannot be reconstructed from the co
 | [GB10-PRIME-ATTENTION-H2P.md](GB10-PRIME-ATTENTION-H2P.md) | GB10 runs h2's row program on a three-stage mbarrier K/V ring with the second head one QK behind the first (h2p), bit-identical to h2; probe 68 -> 85 TFLOPS at depth 131,072; one-barrier tiles, Q in shared memory, FA2 staging, mask-free interior tiles rejected |
 | [GB10-PRIME-CHUNK-8192.md](GB10-PRIME-CHUNK-8192.md) | REJECTED 2026-11-06: an 8,192-row GB10 prime chunk default (exact, -0.64% on a lone 131k prime) doubles the prime walker's peer quantum (worst peer first token 8.7 -> 13.2 s, tick_max 7.4 -> 14.2 s); 4,096 stays. 16,384 was rejected earlier for its admission and memory cost |
 | [GB10-F8F4-GEMM-V2.md](GB10-F8F4-GEMM-V2.md) | GB10 runs F8F4 prefill GEMMs of at least 2,048 rows on the v2 tile (per-call weight image, pipelined 16-warp 256 x 128 tile, grouped raster; exact, -8.0% served 131k TTFT at 4,096-row chunks on both units, -10.7% at 8,192); two 8-warp CTAs per SM and resident images rejected |
+| [QWEN-PRIME-FA2-DEFAULT.md](QWEN-PRIME-FA2-DEFAULT.md) | the Qwen 24 Q / 4 KV / d256 prime takes the FA2 attention class by default on the 170-SM RTX 5090 at prime chunk 1024, and `MEMRA_PRIME_ATTN_FA2` goes; the existing kernel stays everywhere else; the three-plane staging door is not decided by it |
 
 Adding one: a decision that changes a default, a format, a target or an arm belongs here, with
 the measurement that settled it. Superseded records get a banner naming what replaced them —
