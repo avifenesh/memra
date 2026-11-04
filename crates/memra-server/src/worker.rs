@@ -42397,8 +42397,10 @@ fn step_session(
     Ok(true)
 }
 
-/// Sample retained GLM logits or the existing host row. On a sampler refusal,
-/// recover that same row and disable the device arm for the rest of the request.
+/// Sample retained GLM logits or the existing host row. One request draws under one numeric
+/// program: a refusal on the first draw recovers that same row and keeps the request on the host
+/// sampler from its first token, while a refusal after a device draw fails the request, since the
+/// host sampler (f32, stateful RNG) would emit the rest of it under a second program.
 fn sample_glm5_tp_plain(
     engine: &Engine,
     s: &mut Session,
@@ -42416,10 +42418,18 @@ fn sample_glm5_tp_plain(
         };
         match result {
             Ok(token) => return Ok(token),
+            Err(err) if sampler.engagements() > 0 => {
+                return Err(format!(
+                    "GLM device sampler failed after {} draws: {err}; the request ends here \
+                     rather than switch to the host sampler mid-request",
+                    sampler.engagements()
+                )
+                .into());
+            }
             Err(err) => {
                 eprintln!(
-                    "[glm5-tp-device-sample] refused after {} draws: {err}; host fallback request={}",
-                    sampler.engagements(),
+                    "[glm5-tp-device-sample] refused on the first draw: {err}; host fallback \
+                     from the first token request={}",
                     s.request_id
                 );
                 if s.last_logits.is_empty() {

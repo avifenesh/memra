@@ -21,7 +21,9 @@ positive-receipt winners defaults keyed to the receipt's card, with the switch r
 **What changes for a user:** sampled tokens on that route take the numeric class
 `device-f64-exp-tree-cdf-v1` (f64 exponentials, position-keyed SplitMix64) instead of the host
 sampler's f32, stateful draw. Sampled identity across the two classes was never claimed; greedy
-ids are the same.
+ids are the same. Because the two classes differ, one request never crosses between them: a
+sampler error on the first draw keeps the whole request on the host sampler, and an error after a
+device draw ends the request with an error instead of finishing it on the host sampler.
 
 **Scope:** one card class, the B200 pair, keyed on the build as the other sm_100a defaults are. No
 RTX 5090 or RTX PRO 6000 program changes.
