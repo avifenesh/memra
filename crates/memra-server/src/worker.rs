@@ -6546,7 +6546,9 @@ fn unsupported_prefix_tp_capture(
 }
 
 /// Restore-side TP gate: a TP-class model admits only an entry that carries every rank's
-/// shards, and only on an sm_100a build; a single-device model never sees TP shards.
+/// shards, and only on an sm_100a build; a single-device model never sees TP shards. A model
+/// with only some layers TP-sharded is TP-class (`HybridModel::glm5_tp_prefix_class`), and its
+/// capture refuses, so it never restores an entry at all.
 fn unsupported_prefix_tp_restore(
     tp_model: bool,
     tp_prefix_on: bool,

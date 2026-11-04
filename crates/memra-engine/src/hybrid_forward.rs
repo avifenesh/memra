@@ -3056,10 +3056,20 @@ impl HybridModel {
         self.hyper_range_decode_ws_segments(e, topology, x, &segs, pos_d, pos, cache, ws, None)
     }
 
-    /// True when this model runs the glm5 TP walk (any layer carries a TP sidecar): the
-    /// prefix-cache seams key their per-rank capture on it (sm_100a builds).
+    /// How this model's TP mixer sidecars cover the trunk (none, some or every layer).
+    pub fn glm5_tp_coverage(&self) -> crate::glm5_tp::Glm5TpCoverage {
+        crate::glm5_tp::glm5_tp_coverage(self.layers.iter().map(|layer| match &layer.mixer {
+            Mixer::Kda(la) => la.tp.is_some(),
+            Mixer::Mla(mla) => mla.tp.is_some(),
+            _ => false,
+        }))
+    }
+
+    /// True when this model runs the glm5 TP walk on any layer, a partial `MEMRA_GLM5_TP` spec
+    /// included: the prefix-cache seams key their per-rank refusal on it, so an entry without
+    /// rank shards never restores into a cache whose peers hold state (sm_100a builds).
     pub fn glm5_tp_prefix_class(&self) -> bool {
-        self.glm5_tp_rt_for(0, self.layers.len()).is_some()
+        self.glm5_tp_coverage() != crate::glm5_tp::Glm5TpCoverage::Plain
     }
 
     /// Loaded GLM TP rank count when every trunk layer carries a TP mixer sidecar, read from the
@@ -3071,8 +3081,9 @@ impl HybridModel {
 
     /// Capture the per-rank state of a glm5 TP session for a prefix entry: every rank's KDA
     /// shard and every peer's latent plane, each cloned ON ITS OWN DEVICE (lane/glm5-tp-prefix,
-    /// 2026-09-07). `Ok(None)` when the model is not TP-sharded. `pos` is the cache boundary the
-    /// entry represents; a peer latent plane at a different length is a torn capture and errors.
+    /// 2026-09-07). `Ok(None)` when the model is not TP-sharded; an error when only some layers
+    /// are (`glm5_tp::glm5_tp_prefix_capture_shards`). `pos` is the cache boundary the entry
+    /// represents; a peer latent plane at a different length is a torn capture and errors.
     pub fn glm5_tp_prefix_snapshot(
         &self,
         e: &Engine,
@@ -3080,8 +3091,11 @@ impl HybridModel {
         pos: usize,
     ) -> Result<Option<crate::glm5_tp::Glm5TpPrefixShards>, Box<dyn std::error::Error>> {
         let _numeric = self.enter_numeric();
-        let Some(rt) = self.glm5_tp_rt_for(0, self.layers.len()) else {
+        if !crate::glm5_tp::glm5_tp_prefix_capture_shards(self.glm5_tp_coverage())? {
             return Ok(None);
+        }
+        let Some(rt) = self.glm5_tp_rt_for(0, self.layers.len()) else {
+            return Err("glm5-tp prefix: every layer is TP-sharded but no runtime resolved".into());
         };
         let n = self.layers.len();
         if cache.glm5_tp_recur.len() < n || cache.glm5_tp_latent_peer.len() < n {

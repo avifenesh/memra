@@ -1883,6 +1883,52 @@ pub(crate) fn shard_moe_layer_split(
 /// One rank's KDA shard state as a prefix entry holds it: `(conv_state, ssm_state)`.
 pub type KdaShardState = (CudaSlice<f32>, CudaSlice<f32>);
 
+/// How a loaded model's TP mixer sidecars cover its trunk. The `MEMRA_GLM5_TP` grammar admits
+/// partial ranges (`0-2@0,1;4@0,1`), and the prefix seams must tell those apart from a plain
+/// model: a partly sharded cache still holds per-rank planes on its TP layers.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Glm5TpCoverage {
+    /// No layer carries a TP sidecar.
+    Plain,
+    /// Some layers do and some do not.
+    Partial,
+    /// Every trunk layer does.
+    All,
+}
+
+/// Classify per-layer "carries a TP sidecar" flags. An empty trunk is `Plain`.
+pub fn glm5_tp_coverage(layer_is_tp: impl IntoIterator<Item = bool>) -> Glm5TpCoverage {
+    let (mut tp, mut plain) = (false, false);
+    for is_tp in layer_is_tp {
+        if is_tp {
+            tp = true;
+        } else {
+            plain = true;
+        }
+    }
+    match (tp, plain) {
+        (false, _) => Glm5TpCoverage::Plain,
+        (true, true) => Glm5TpCoverage::Partial,
+        (true, false) => Glm5TpCoverage::All,
+    }
+}
+
+/// What a prefix capture does with a model of this coverage: `Ok(false)` captures no rank
+/// shards (a plain model), `Ok(true)` captures every rank's shards (an all-layer spec), and a
+/// partial spec REFUSES. The per-rank snapshot keys on one runtime over the whole trunk, so a
+/// partial spec used to mint an entry without shards, and the restore then admitted it as a
+/// plain entry: rank 0 restored, every peer left at stale or zero state.
+pub fn glm5_tp_prefix_capture_shards(coverage: Glm5TpCoverage) -> Result<bool, &'static str> {
+    match coverage {
+        Glm5TpCoverage::Plain => Ok(false),
+        Glm5TpCoverage::All => Ok(true),
+        Glm5TpCoverage::Partial => Err(
+            "glm5-tp prefix: only some trunk layers are TP-sharded (a partial MEMRA_GLM5_TP \
+             spec); prefix entries carry rank shards only when every layer is sharded",
+        ),
+    }
+}
+
 pub struct Glm5TpPrefixShards {
     /// Per layer, per rank (index 0 = root): the KDA shard's `(conv_state, ssm_state)`.
     pub recur: Vec<Option<Vec<KdaShardState>>>,
@@ -1900,6 +1946,24 @@ mod tests {
     /// whose arm granted peer access AND proved an SM-issued peer store: `device-push` alone.
     /// `host-canonical` maps no peer memory, so a kernel peer read there is an illegal address
     /// or a barrier trap; `peer-pull` proves copies only.
+    /// A partial `MEMRA_GLM5_TP` spec is TP-class for the prefix seams and refuses capture; only
+    /// an all-layer spec carries rank shards.
+    #[test]
+    fn prefix_capture_refuses_a_partial_tp_spec() {
+        assert_eq!(glm5_tp_coverage([false; 0]), Glm5TpCoverage::Plain);
+        assert_eq!(glm5_tp_coverage([false, false]), Glm5TpCoverage::Plain);
+        assert_eq!(glm5_tp_coverage([true, true, true]), Glm5TpCoverage::All);
+        // `0-2@0,1;4@0,1` over a five-layer trunk: layer 3 stays plain.
+        let partial = glm5_tp_coverage([true, true, true, false, true]);
+        assert_eq!(partial, Glm5TpCoverage::Partial);
+        assert!(glm5_tp_prefix_capture_shards(partial).is_err());
+        assert_eq!(
+            glm5_tp_prefix_capture_shards(Glm5TpCoverage::Plain),
+            Ok(false)
+        );
+        assert_eq!(glm5_tp_prefix_capture_shards(Glm5TpCoverage::All), Ok(true));
+    }
+
     #[test]
     fn peer_link_needs_device_push_on_two_devices() {
         use crate::tp_transport::TpTransport::{DevicePush, HostCanonical, PeerPull};
