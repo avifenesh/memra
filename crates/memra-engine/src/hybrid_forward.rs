@@ -21764,19 +21764,6 @@ impl HybridModel {
         Ok(())
     }
 
-    /// ONE-PROGRAM seam (lane/gemma-restore-exactness-20260819, DEFAULT OFF): route dense
-    /// gemma SWA prefill attention through the WINDOWED arm at every prompt length instead of
-    /// switching program at `t > sliding_window`. The door is the measured cause of the
-    /// prefix-restore exactness violation: below it the SWA layers attend unwindowed on f32
-    /// operands, above it windowed on bf16 operands, so rows[0..932) of a 932-row prime and of
-    /// a 1048-row prime differ in 59 of 60 layers. `=1` collapses it to one program so the
-    /// published prefix KV stops depending on the total prompt length. Off by default because
-    /// collapsing changes the bytes short prompts get today; the flip is an owner call.
-    fn gemma_fa_one_program() -> bool {
-        static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-        *ON.get_or_init(|| std::env::var("MEMRA_GEMMA_FA_ONE_PROGRAM").as_deref() == Ok("1"))
-    }
-
     /// gemma4 attention (R5 geometry, R7 weightless V-norm on the RAW K projection, R9 dual rope).
     /// `cache`: Some => PRIME mode — append the T post-rope K / normed V rows into the quantized
     /// KV cache (same per-row quantize math as the decode append) and advance len. Fresh-prompt
@@ -22051,7 +22038,11 @@ impl HybridModel {
             // window, the real window beyond it.
             let w = if swa && t > win { win } else { 0 };
             e.sdpa_naive_island(&q, &k, &v, &mut attn, span, hd, nh, nkv, t, t, scale, w)?;
-        } else if swa && (t > win || Self::gemma_fa_one_program()) {
+        } else if swa {
+            // One program at every prompt length (lane/gemma-restore-exactness-20260819, flipped
+            // 2026-11-04): SWA layers always take the windowed arm, so the prefix KV a prime
+            // writes does not depend on whether the whole prompt passes the window
+            // (`research/gemma-one-program-20261104/`).
             if hd == 256 && std::env::var("MEMRA_NOFA").is_err() {
                 if emit {
                     e.fa_prefill_w_pre(

@@ -1295,7 +1295,6 @@ These exist because correctness discipline needs a same-binary oracle. Each is a
 | `MEMRA_GEMMA_ROUND_GRAPH=1` | the WHOLE gemma spec round (draft chain + stream verify + device accept/seed/rollback/commit + `spec_adapt_k` device adaptive depth) captured once per regime, ONE graph launch per round | EXACT (26B 64/64 short + 128/128 depth, 31B 64/64) with BETTER round dynamics (tok/round 5.33 vs 4.74) but PERF-NEGATIVE at fixed shapes (−10/−11% interleaved, 2026-07-13) — the replay pays fixed k_cap drafts + fixed-width verify, not launch gaps (the enqueue-ahead law, 4th confirmation). Door kept for the exec-update-width phase 2; 31B pair pending a valid window |
 | `MEMRA_G4PLAIN_EAGER=1` | gemma4 PLAIN-serving graph loop bisect: run the step body eagerly every step (no capture/replay) — splits "body semantics wrong" from "replay mechanics wrong" (the round-graph law; `gemma_spec.rs`) | bisect seam, not a config |
 | `MEMRA_ALLOW_UNKNOWN_PRETOKENIZER=1` | downgrade the unknown-pre-tokenizer **hard load error** to a loud per-load WARN, then run the `qwen35` split anyway (`memra-tokenizer/src/lib.rs`; supported: `qwen35`, `qwen2`, `deepseek-v3`, `gemma4`, `glm4` — gemma-4's absent `pre` key is allowlisted explicitly, on a tensor-census audit, not by falling through; `glm4` is recognised from the tokenizer.json Split regex, because the GLM checkpoints carry `pre = default`) | **Produces WRONG TOKEN IDS by construction.** Before 2026-08-19 this was the DEFAULT behaviour and it was silent: one `eprintln!` per process, then a fall-through to the qwen35 split — the model loaded, generated fluent text, and every id was wrong. Same fluent-and-invisible class as the GGUF chat-template mint trap. Wrong ids poison goldens, parity fixtures, acceptance counts and every quality number downstream. Set it ONLY for deliberate bring-up experimentation on an unported family, and never for a run whose numbers will be quoted (lane/engine-hardening-20260819) |
-| `MEMRA_GEMMA_FA_ONE_PROGRAM=1` | route dense-gemma SWA prefill attention through the WINDOWED arm at EVERY prompt length instead of switching program at `t > sliding_window` (`hybrid_forward.rs gemma_fa_one_program()`) | **Names a live prefix-restore exactness violation, and does not fix it by default.** Below the switch the SWA layers attend unwindowed on f32 operands, above it windowed on bf16, so rows `[0..932)` of a 932-row prime and of a 1048-row prime differ in **59 of 60 layers** — the published prefix KV depends on total prompt length. `=1` collapses it to one program so it stops depending on length. **Default OFF** because collapsing changes the bytes short prompts get today; the flip is an owner call (lane/gemma-restore-exactness-20260819) |
 
 ### Diagnostics for the gemma prefix-restore arc (lane/gemma-restore-exactness-20260819)
 
@@ -2138,6 +2137,24 @@ arm (`kda_proj_fused6_bf16_arm_raw` now takes a `v2: bool`), `Engine::matvec_bf1
 test or gate cell drove v3. Level 1 (the v2 bf16, kda6 and W8 q8_0 families, and
 `MEMRA_Q8_ROW_ILP`'s `_ilp` twins under it) is unchanged and keeps its decide-by. Git history is
 the archive. Ledger: `VERDICT:cp-async-staged-gemv-loses-to-register-ilp-on-b200` (darklanes
+`agent-knowledge/gpu/verdicts-ledger.md`).
+
+## Removed doors, 2026-11-04 (`MEMRA_GEMMA_FA_ONE_PROGRAM`: the winner is the default, its seam goes)
+
+`MEMRA_GEMMA_FA_ONE_PROGRAM=1` routed dense and MoE gemma SWA prefill attention through the
+windowed arm at every prompt length, instead of switching program at `t > sliding_window`
+(lane/gemma-restore-exactness-20260819). The switch was the measured cause of a prefix-restore
+exactness violation: rows `[0..932)` of a 932-row and a 1048-row prime differed in 59 of 60
+layers. It stayed default OFF only because it changes the bytes short prompts get, so the flip
+was an owner call. Owner, 2026-11-03: flip it ON once the gemma4 dense and MoE run-gen, run-spec
+and acceptance rows pass on the 5090, then delete the switch. On the RTX 5090
+(`research/gemma-one-program-20261104/RESULTS.md`, 31B dense and 26B-A4B QAT Q4_0), both arms
+gave `flips=1 bad=0` and `flips=2 bad=0` argmax, 128/128 spec stream agreement at K=1..8 with
+identical drafted/accepted counts, and identical prefix KV, whole-prompt KV and logits digests.
+The windowed arm is now the only SWA prefill program, so a prime's prefix KV no longer depends
+on whether the whole prompt passes the window. Deleted with the env read in
+`hybrid_forward.rs`; no kernel was only its. Decision: `docs/decisions/GEMMA-FA-ONE-PROGRAM.md`.
+Ledger: `VERDICT:gemma-fa-one-program-flipped-seam-removed` (darklanes
 `agent-knowledge/gpu/verdicts-ledger.md`).
 
 ## Removed doors, 2026-11-03 (the qwen MTP round-stream arm, `MEMRA_SPEC_STREAM`)

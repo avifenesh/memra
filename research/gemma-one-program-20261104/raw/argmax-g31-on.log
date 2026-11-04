@@ -1,0 +1,8 @@
+gpulock: 5090 leased as claude-code-20261104T030431-439313 for 60m
+argmax-margin-gate: model=gemma-4-31B_q4_0-it.gguf prompt=board-2048.txt window=12 canary=0
+  explained pos=2101 margin=0.2228 < delta=0.4213
+  SUMMARY flips=1 bad=0
+  PRIME-SUMMARY prime=MATCH
+    PRIME-GATE: class=MATCH bp_argmax=715 tw_argmax=715 tw_margin=1.980424881e0 bp_margin=2.759378433e0 maxdiff=1.611012459e0
+  PASS: every prefill/decode argmax flip is explained by a margin the config spread covers
+  raw: /home/avifenesh/.cache/memra-fix/logs-gemma-c/argmax-g31-on/gate-gemma-4-31B_q4_0-it-board-2048.log
