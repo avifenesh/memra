@@ -824,11 +824,9 @@ by `include_bytes!(env!(...))`), never user flags. The exhaustive set (2026-08-1
 gemma's GKV/WKV layers; the four trunk-format variants went with `MEMRA_KV_K` / `MEMRA_KV_V`
 2026-09-05), `MEMRA_GEMM_FATBIN`, `MEMRA_QMATVEC_FATBIN`, `MEMRA_ROUTER_FATBIN`,
 `MEMRA_SAMPLE_FATBIN` (spec_sample), `MEMRA_HYBRID_FATBIN`, `MEMRA_KDA_FATBIN` (glm5_next Kimi
-Delta Attention kernels, added with the kernel lane 2026-08-28), `MEMRA_TIER_RECEIPT_FATBIN` (the
-host-tier D2D receipt digest and fault delay of `cu/tier_receipt.cu`, WP-A day 22, loaded only by the
-copy-stream transfer engine `tier_transfer::CudaTransfers::new_with_copy_stream`, which no serving path
-constructs since the contracts door was deleted on 2026-11-04), and `MEMRA_FATBIN` (memra-probe's
-own module). The same class covers the four build-identity vars below and
+Delta Attention kernels, added with the kernel lane 2026-08-28), and `MEMRA_FATBIN` (memra-probe's
+own module). `MEMRA_TIER_RECEIPT_FATBIN` (the host-tier receipt kernels) went with the contracts
+door on 2026-11-04. The same class covers the four build-identity vars below and
 `MEMRA_BUILT_CUDA_ARCH` (memra-engine build.rs → the policy family every arch-keyed default
 reads; `121a` reports `120a`), `MEMRA_BUILT_CUDA_TARGET` (the exact SASS target, the
 `MEMRA_ARCH_CHECK` device-vs-binary guard's compiled-arch side) and `MEMRA_PROBE_CUDA_TARGET`
@@ -1825,8 +1823,16 @@ tests. Deleted tools: `tools/kv-host-contract-fault-gate.sh` and `tools/kv-host-
 (the design-V gate); the door arms of `tools/spec-on-cache-hit-gate.sh`,
 `tools/kv-host-spill-identity-gate.sh` and `tools/kv-host-spill-failure-gate.sh`. The host tier is
 the tick program again: a demote and a promote are synchronous copies on the owner stream,
-`MEMRA_KV_HOST_VERIFY` the round-trip check. The transfer engine itself (`tier_transfer`) stays for
-the tier gates' own arms (`kv-tier-gate`, `tier-transfer-gate`). The program is banked on
+`MEMRA_KV_HOST_VERIFY` the round-trip check. Deleted in the engine: the copy-stream transfer
+engine (`CudaTransfers::new_with_copy_stream`, the copy stream and every class only it ran: the
+same-device capture and restore batches with their receipts, the D2H device receipt, the D2H and
+H2D f32 span batches with their receipts and the staging fill, the deferred H2D checksums, the
+consumer-wait settle and the fault injectors), the five receipt kernels with their fatbin and
+KERNELS.md rows, the spec pool's ready-scratch restore constructor
+(`spec_session_from_restored_ready`), the pinned staging buffers' span copies, and their tests.
+The owner-stream transfer engine (`CudaTransfers::new`, its lease pool and the per-card pinned and
+VMM placement defaults) stays for the tier gates (`kv-tier-gate`, `tier-transfer-gate`). The
+program is banked on
 `bank/spill-program-20260928`. Git history is the archive. History:
 [FLAGS-HISTORY.md](FLAGS-HISTORY.md#memra_kv_host_contracts). Ledger:
 `VERDICT:kv-host-contracts-door-removed` (darklanes `agent-knowledge/gpu/verdicts-ledger.md`).

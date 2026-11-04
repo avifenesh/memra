@@ -4580,7 +4580,7 @@ fn plain_ckpt_nominatable(prompt: &[u32], is_control: &dyn Fn(u32) -> bool) -> b
 // trunk KV + the MTP draft plane + the boundary hidden (prefix_insert_from_spec_boundary)
 // — greedy and sampled sessions alike, since a prime is sampler-independent; a whole-entry
 // hit on an unconstrained spec-eligible request re-arms a SpecSession from the restored
-// carrier (spec_session_from_restored_ready/_deferred — the engine feeds any prompt suffix
+// carrier (spec_session_from_restored_deferred — the engine feeds any prompt suffix
 // through the plain path's exact program), in BOTH sampling regimes. Hits that cannot re-arm
 // (no draft plane, constrained, sampled-with-active-penalties, partial) serve on the plain path and
 // the downgrade line names which. The spec tier additionally keeps its own continuation
