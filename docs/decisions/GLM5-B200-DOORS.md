@@ -309,6 +309,53 @@ coalesced class through the Engine dispatch at its CPU-oracle tolerance.
 **Scope:** sm_100a builds only; other builds keep the thread-per-row kernels and the generic
 split, and TP head shards there stay unsplit.
 
+## The fused KDA six-projection group: sm_100a default
+
+**Chosen:** on sm_100a builds the KDA stage-1 six projections run as one fused launch per layer
+per token (`kda_fused_proj_on`; the e4m3 arm on the hybrid mint, the bf16 and q8 arms on other
+operand classes), on unsharded layers and TP head shards alike. `MEMRA_KDA_FUSED_PROJ` stays as
+an explicit `=1`/`=0` selector on any build, because its two GPU gates drive both arms through
+it.
+
+**Rejected:** keeping it default OFF, which the retired launcher alone justified, and which left
+the sm_100a attention-norm q8_1 fuse (above) computing a q8_1 view that nothing read; deleting it
+on a missing single-door row, which would delete the launch the TP-2 posture's best rows ran.
+
+**Measurement that settled it:** 2x B200 pair. The five-door decode bundle it rode in (with the
+matvec occupancy arms, the fused hc pre chain, the B200 MLA arm and the q8 fuse), three
+interleaved fresh boots per arm (darklanes `research/glm5-b200-20260902/LANE.md`): plain 42.5 /
+42.1 -> 44.9 / 44.5 tok/s, DFlash2 spec 71.4 / 49.4 -> 77.1 / 53.5. On the symmetric TP-2 walk,
+adding it alone moved 82.58 to 87.90 tok/s with the tape unchanged (tpwalk3 v5, one rep; darklanes
+`research/glm5-b200-mint-20260904/LANE.md`). Every TP-2 row after that carried it.
+
+**Scope:** sm_100a builds. Other builds keep the six launches.
+
+## The matvec occupancy arms: sm_100a default
+
+**Chosen:** on sm_100a builds the plain-decode MoE and matvec family runs its four bit-identical
+occupancy arms (the warp-packed `_w4` MoE pair, the NVFP4 rp grid fill, the `_g2` fused gate+up,
+the pipelined bf16 rows kernel) with no switch. `MEMRA_B200_MATVEC_ARM` is deleted; the bench
+calls both kernels of each pair directly.
+
+**Rejected:** keeping it default OFF, which also kept the promoted `MEMRA_B200_MR1_FILL=16`
+from ever running; deleting it, against a positive kernel A/B and bundle row.
+
+**Measurement that settled it:** 2x B200 pair (darklanes `research/glm5-b200-20260902/LANE.md`):
+`b200_matvec_bench`, N=5 interleaved, bit-identical, bf16 up 33.4 -> 28.5 us, down 30.65 -> 24.9,
+MoE gate/up 55.0 -> 53.3, down 37.6 -> 36.0; the five-door decode bundle (above) +5.6% plain,
++8% spec, its nsys census showing the door kernels; and nvab's `MEMRA_B200_MR1_FILL=16` +2.03%,
+measured with the arms on.
+
+**Scope:** sm_100a builds. Other builds keep the shipped kernels.
+
+## The q8_1 activation-quantize fuse: kept OFF, inconclusive
+
+`MEMRA_GLM5_Q8_FUSE` has only the bundle row, and the bundle cannot split its gain across five
+doors (one of them, the B200 MLA arm, later lost a single-door row). Its sibling
+`MEMRA_HC_PRE_ZQ8` read flat alone and was deleted. It stays default OFF with decide-by
+2026-11-18; the missing gate is a single-door interleaved A/B on an sm_100a pair. With no pair in
+hand the date deletes it, unless the owner accepts the bundle per door (open call below).
+
 ## Open calls
 
 ### The plain decode graph off sm_100a
@@ -319,6 +366,18 @@ captures. Options: turn the diet on for every build, which starts the graph ther
 exactness gate but no throughput row (recommended only with a 5090 or PRO 6000 graph A/B); or
 record the graph default as sm_100a-effective and leave both as they are (recommended until that
 cell runs, since it changes nothing today). Decide-by 2026-11-18.
+
+### What the five-door decode bundle proves per door
+
+The 2026-09-02 bundle (`MEMRA_B200_MATVEC_ARM`, `MEMRA_HC_FUSED_PRE`, `MEMRA_B200_MLA_DECODE_ARM`,
+`MEMRA_GLM5_Q8_FUSE`, `MEMRA_KDA_FUSED_PROJ`) is one positive interleaved row for five doors.
+`MEMRA_HC_FUSED_PRE` was promoted on it earlier, and one of the five later lost a single-door row
+(the B200 MLA arm on unsharded layers, `mlasplit`). This record promotes the doors with a second,
+door-level row (the fused KDA group: tpwalk3 v5; the matvec occupancy arms: a bit-identical
+kernel A/B and the `MEMRA_B200_MR1_FILL` row that ran on it) and keeps `MEMRA_GLM5_Q8_FUSE`,
+which has only the bundle, default OFF with a decide-by. Options: accept the bundle per door
+(promote the q8 fuse too); keep this split (recommended); or require a single-door row for all,
+which no sm_100a box in hand can produce. Decide-by 2026-11-18.
 
 ### `MEMRA_KPOOL_SELECT_V2` on sm_120a
 

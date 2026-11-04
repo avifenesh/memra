@@ -18789,8 +18789,8 @@ impl HybridModel {
             us[j] = m.up_exps.macro_scale(ex);
             wv[j] = w[j] * m.down_exps.macro_scale(ex);
         }
-        // MEMRA_B200_MATVEC_ARM occupancy arm (lane/b200-matvec-occupancy-20260902, sm_100a
-        // only, default OFF): the warp-packed `_w4` twins are bit-identical per (o,j)/(o) to
+        // B200 matvec occupancy arm (lane/b200-matvec-occupancy-20260902, the sm_100a default
+        // since 2026-11-04): the warp-packed `_w4` twins are bit-identical per (o,j)/(o) to
         // the shipped kernels below — packing only changes which block/warp computes an
         // output, never the per-output arithmetic order. See `b200_matvec_arm_on` and
         // docs/FLAGS.md.
