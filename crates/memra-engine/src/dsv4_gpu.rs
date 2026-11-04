@@ -18,7 +18,7 @@
 //! Multi-GPU: the served default (memra #710) is all-layer TP/EP: every trunk layer on both
 //! ranks, the matrix expert-ID EP pair and exact head-parallel attention TP2
 //! (`dsv4_attention_tp`), with eligible plain requests replaying full-token graphs
-//! (`dsv4_graph`). The PP-2 layer split (`MEMRA_DSV4_TOPOLOGY=pp`) is the rollback program;
+//! (`dsv4_graph`). The PP-2 layer split (`MEMRA_DSV4_TOPOLOGY=pp`) is the other placement;
 //! the host-math decode path (`MEMRA_DSV4_DECODE_PATH`) and the reference expert executor
 //! are oracle arms. PP boundaries and EP contribution/commit work keep explicit peer/event
 //! ordering.
@@ -1403,7 +1403,7 @@ pub struct DecodeState {
     /// Rank 1's cache plane under the TP/EP placement (the served default): one
     /// [`LayerCache`] per trunk layer on stage 1, next to rank 0's plane in `caches`.
     /// The same-layer executor writes and reads both planes; a position-split store keeps
-    /// half of each layer's blocks here. `None` under the PP-2 rollback.
+    /// half of each layer's blocks here. `None` under the PP-2 placement.
     tp_ep_caches: Option<Vec<LayerCache>>,
     pub pos: usize,
     /// Token capacity of this session's cache allocation. This is independently planned

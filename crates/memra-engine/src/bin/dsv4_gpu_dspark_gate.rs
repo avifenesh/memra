@@ -49,7 +49,7 @@
 //! Placement is required (S06:F0). `--placement=tp_ep` runs every arm on the served placement:
 //! the all-layer TP/EP walk (memra #454) with exact attention TP2 (#710) and the drafter's
 //! experts split by id like the trunk's (#720). `tp_ep_replicated` keeps attention replicated.
-//! `pp` is the PP-2 cell, the `MEMRA_DSV4_TOPOLOGY=pp` rollback. Run the `tp_ep` cell first.
+//! `pp` is the PP-2 cell, the `MEMRA_DSV4_TOPOLOGY=pp` placement. Run the `tp_ep` cell first.
 //!
 //! Usage: dsv4-gpu-dspark-gate <model-dir> <fixtures.json> <out-dir> [runs] [dev0,dev1]
 //! --placement=<tp_ep|tp_ep_replicated|pp> [--served]

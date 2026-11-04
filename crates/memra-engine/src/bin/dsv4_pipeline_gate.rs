@@ -15,7 +15,7 @@
 //! Rig law: under the box GPU lock, served defaults (no MEMRA_DSV4_* overrides).
 //!
 //! Placement: `pp`, a PP-2 cell. Request pipelining exists on PP-2 only, the
-//! `MEMRA_DSV4_TOPOLOGY=pp` rollback.
+//! `MEMRA_DSV4_TOPOLOGY=pp` placement, and it is why PP-2 aggregates more at c2.
 use memra_engine::dsv4_gpu::{DecodeState, Dsv4Gpu};
 use memra_engine::dsv4_source_tape::SourceTape;
 use memra_engine::dsv4_topology::Dsv4Placement;
