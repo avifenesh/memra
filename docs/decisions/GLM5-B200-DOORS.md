@@ -108,7 +108,11 @@ hit 130433 of 130433 prompt tokens from cache with ids identical over the contin
 +2k extension was answered on the cached prefix. A correctness receipt, not a speed one: the
 mechanism replaces a refusal with a restore of the same bytes.
 
-**Scope:** sm_100a builds. `MEMRA_PREFIX_LATENT=1` is still required for the root planes.
+**Scope:** sm_100a builds, all-layer `MEMRA_GLM5_TP` specs (the receipt's `all@0,1`).
+`MEMRA_PREFIX_LATENT=1` is still required for the root planes. A partial spec refuses capture
+and counts as TP-class at restore: the per-rank snapshot keys on one runtime over the whole
+trunk, and the partial form used to mint an entry without shards that the restore admitted as
+plain.
 
 ## Open calls
 
