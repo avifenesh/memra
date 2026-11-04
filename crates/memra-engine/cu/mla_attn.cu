@@ -1838,7 +1838,7 @@ __device__ __forceinline__ void memra_mla_kpool_select_body(const float* __restr
     }
     for (int j = filled + tid; j < width; j += MLA_THREADS) out[j] = -1;
 }
-// ---- v2 body (lane/kpool-select-v2-20260906, MEMRA_KPOOL_SELECT_V2): the same radix select, the
+// ---- v2 body (lane/kpool-select-v2-20260906, the sm_100a default): the same radix select, the
 // same 64-bit order key, the same rank arithmetic, the same contiguous-range membership and
 // ascending emit, with the three serial spots of the body above made parallel:
 //   1. the per-pass histogram takes ONE shared-memory atomic per distinct bin per warp
@@ -2080,7 +2080,7 @@ extern "C" int memra_mla_kpool_select_f32(const float* score, int* idx, int t_q,
     return 0;
 }
 
-// v2 entries (MEMRA_KPOOL_SELECT_V2): the same audits, the v2 body.
+// v2 entries (the sm_100a default of the single-CTA selector): the same audits, the v2 body.
 extern "C" int memra_mla_kpool_select_v2_f32(const float* score, int* idx, int t_q, int n_pools,
                                              int pool, int select_k, int width, int first_pos,
                                              int always_tail, void* stream_v) {
