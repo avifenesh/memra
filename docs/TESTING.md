@@ -1201,8 +1201,11 @@ Neither diagnostic is a timed performance cell. Route receipts live under
 A serving-qualification run takes the `tp_ep` cells first, on a 2x RTX PRO 6000 pair under
 `/tmp/memra-gpu.lock`. A PP-2 cell qualifies only the `pp` rollback and runs only where a gate
 names it. A gate with cells on more than one placement requires `--placement=<name>`. The
-selectors it replaced refuse: `--tpep`, `MEMRA_DSV4_ATTENTION_TP_GATE` and
-`DSV4_ROWS_GATE_TOPOLOGY`.
+selectors it replaced refuse, and each refusal names the placement it meant: `--tpep` (or the
+`tpep` positional, or a TP/EP-only gate) alone is `tp_ep_replicated`, and with
+`MEMRA_DSV4_ATTENTION_TP_GATE=1` it is `tp_ep`; `DSV4_ROWS_GATE_TOPOLOGY=tp_ep` is `tp_ep`, and
+`pp` or unset is `pp`. A research command line ported to `--placement=tp_ep` without the
+variable changes numeric class.
 
 | Gate binary | Placement | Why |
 | --- | --- | --- |
