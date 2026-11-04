@@ -263,7 +263,7 @@ artifact = "tiny fixture (text oracle; per-layer inputs and shared KV)"
 numeric_program = "f32 reference executor"
 topology = "cpu"
 route = "memra model verify tiny"
-notes = "The QAT Q4_0 GGUF passes Config, TokenizerTemplate and TensorCensus on inspect (research/modelplan-onboarding-e4b-20261104), and its RTX 5090 engine cells pass there (run-gen, calibrated argmax, gemma-gate spec K=1..8, verify, graph). CheckpointParity and RewriteParity have no receipt. Serve stays pending: on a thinking-off chat E4B writes a thought after the closed channel and leaks a stray <channel|> into content."
+notes = "The QAT Q4_0 GGUF passes Config, TokenizerTemplate and TensorCensus on inspect (research/modelplan-onboarding-e4b-20261104), and its RTX 5090 engine cells pass there (run-gen, calibrated argmax, gemma-gate spec K=1..8, verify, graph). CheckpointParity and RewriteParity have no receipt. Serve stays pending: on a thinking-off chat E4B writes a thought after the closed channel and leaked a stray <channel|> into content; the gemma4 parsers now route that text to reasoning (docs/decisions/GEMMA-UNOPENED-THOUGHT.md), and the serve-smoke gemma4 arm has not been re-run on it."
 [record.gates]
 Config = "passed"
 TinyParity = "passed"

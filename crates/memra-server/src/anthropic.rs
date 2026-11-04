@@ -884,10 +884,12 @@ fn messages_sse(
     mut receipt: Option<Box<dyn crate::metering::Receipt>>,
     env: Envelope,
     model: String,
-    mut parser: Option<crate::toolcall::ToolStreamParser>,
+    parser: Option<crate::toolcall::ToolStreamParser>,
     stop_strings: Vec<String>,
     guard: Option<crate::InflightGuard>,
 ) -> Sse<impl futures_core::Stream<Item = Result<SseEvent, std::convert::Infallible>>> {
+    // a stream bounds the gemma opening hold-back; the blocking shape splits the whole turn.
+    let mut parser = parser.map(crate::toolcall::ToolStreamParser::streaming);
     let http_observation = crate::http_metrics::current();
     let mut scrub = (!stop_strings.is_empty()).then(|| SurfaceScrubber::new(stop_strings.clone()));
     let stream = async_stream::stream! {

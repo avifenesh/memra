@@ -768,6 +768,13 @@ pub(crate) async fn respond(
         }
     }
     let mut input = multiplex(receivers);
+    // a stream bounds the gemma opening hold-back; the blocking shape splits the whole turn.
+    let parsers = if stream {
+        let streaming = |p: Option<ToolStreamParser>| p.map(ToolStreamParser::streaming);
+        parsers.into_iter().map(streaming).collect()
+    } else {
+        parsers
+    };
     let mut rows = Rows::new(chat, parsers, &stop);
     let mut initial = Vec::new();
     if stream {
