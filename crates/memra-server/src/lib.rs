@@ -9600,7 +9600,9 @@ fn build_chat_request_with_trace(
         // request, not just thinking-on: the closed-channel prompt still leaves the model
         // free to open a channel mid-stream (observed live), and the template's own
         // strip_thinking law applies wherever the tags appear. gemma4 templates carry no
-        // tools branch, so this arm never competes with the tool scanner.
+        // tools branch, so this arm never competes with the tool scanner. Text before an
+        // unopened `<channel|>` at the start of the turn is reasoning too: E4B writes a
+        // thought after the closed channel (docs/decisions/GEMMA-UNOPENED-THOUGHT.md).
         Some(ToolStreamParser::gemma_thought())
     } else {
         None
@@ -11938,12 +11940,14 @@ fn sse_response_for_format(
     mut rx: worker::EventReceiver,
     model: String,
     format: SseFormat,
-    mut parser: Option<ToolStreamParser>,
+    parser: Option<ToolStreamParser>,
     env: Envelope,
     stop_strings: Vec<String>,
     guard: Option<InflightGuard>,
     mut receipt: Option<Box<dyn metering::Receipt>>,
 ) -> Sse<impl futures_core::Stream<Item = Result<SseEvent, std::convert::Infallible>>> {
+    // a stream bounds the gemma opening hold-back; the blocking shape splits the whole turn.
+    let mut parser = parser.map(ToolStreamParser::streaming);
     let http_observation = http_metrics::current();
     let SseFormat {
         chat,

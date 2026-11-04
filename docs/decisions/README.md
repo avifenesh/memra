@@ -39,6 +39,7 @@ half — "we tried X and it lost by Y% on Z" cannot be reconstructed from the co
 | [GLM5-B200-DOORS.md](GLM5-B200-DOORS.md) | the GLM-5.3-Flash B200 doors decided from their receipts after the pair retired: which became sm_100a defaults, which were deleted, and the calls left open |
 | [KV-PARK-COMPACT-DEFAULT.md](KV-PARK-COMPACT-DEFAULT.md) | continuation-pool park compaction as the default on the RTX 5090 class and the RTX PRO 6000 Blackwell Workstation Edition, keyed by device name from the door's deciding cell; the door and a one-default-for-every-card flip rejected |
 | [ADMIT-W-RELEASE-DEFAULT.md](ADMIT-W-RELEASE-DEFAULT.md) | the prefill workspace leaving both admission books at prime completion as the default on the RTX PRO 6000 Blackwell Workstation Edition, keyed by device name from its two cells; the door, a one-default-for-every-card flip and tying it to the predictive door rejected |
+| [GEMMA-UNOPENED-THOUGHT.md](GEMMA-UNOPENED-THOUGHT.md) | gemma4 parsers route text before an unopened `<channel\|>` at the start of the turn to reasoning; non-stream splits the whole turn, a stream holds at most 256 bytes; verbatim content, tag-only stripping and an unbounded stream hold-back rejected |
 
 Adding one: a decision that changes a default, a format, a target or an arm belongs here, with
 the measurement that settled it. Superseded records get a banner naming what replaced them —
