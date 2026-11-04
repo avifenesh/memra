@@ -332,21 +332,26 @@ worker.rs. Receipts: `research/request-fault-20260922/`.
 
 Speculative context edge (memra#659, `tools/spec-ctx-edge-gate.sh`, in `tools/local-ci.sh`,
 `MEMRA_CI_SPEC_CTX_EDGE=0` skips): three boots of the real server on the 9B's default spec route.
-Door ON with open output 64: four open requests each 200, `finish_reason: length`, exactly 64
-tokens, then a bounded control. The same door with `MEMRA_SERVE_SPEC=0`: one open request whose
-message equals the spec arm's first byte for byte. Door OFF at `MEMRA_CTX=384`: three runaways each
-200 with `finish_reason: length` inside the cap. Every boot: no `panicked`, `argmax sentinel`,
+Memory-shaped admission armed with open output 64: four open requests each 200, `finish_reason:
+length`, exactly 64 tokens, then a bounded control. The same admission with `MEMRA_SERVE_SPEC=0`:
+one open request whose message equals the spec arm's first byte for byte. Unarmed at
+`MEMRA_CTX=384`: three runaways each 200 with `finish_reason: length` inside the cap. The
+admission is a card default (the full-power RTX PRO 6000 Workstation Edition), so each arm reads
+the boot's `[admit-mem] door=` line and SKIPs on the other program: the two armed arms run on that
+card, the unarmed one everywhere else. Every boot: no `panicked`, `argmax sentinel`,
 `[worker] FATAL`, respawn or `spec verify refused` line, `/health` 200 after the last request. The
 engine side is a CPU source census (`spec::ctx_edge_659_census`) of the round guards in the qwen
 and gemma burst loops and of the verify funnel's refusal. Receipts: `research/spec-ctx-edge-20260923/`.
 
 Memory-admission burst (memra#680, `tools/admit-mem-burst-gate.sh`, in `tools/local-ci.sh`,
-`MEMRA_CI_ADMIT_MEM_BURST=0` skips): one boot of the real server on the 9B with
-`MEMRA_ADMIT_BY_MEMORY=1` at open output 8192 and 64 open requests released on one barrier. No
+`MEMRA_CI_ADMIT_MEM_BURST=0` skips): one boot of the real server on the 9B with memory-shaped
+admission armed at open output 8192 and 64 open requests released on one barrier; on a card where
+the admission is not the default (all but the full-power RTX PRO 6000 Workstation Edition) the
+boot line reads `[admit-mem] door=OFF` and the gate SKIPs. No
 `CUDA_ERROR_OUT_OF_MEMORY` line and no 503; every refusal a 429 with Retry-After in 1..=60, as many
 as the `verdict=refuse` lines; every `verdict=admit` line with `est_bytes <= device_free` (the booked
 reading, `pending_prime=` on the line); no crash line; `/health` 200 after the burst. On the unfixed
-tree 34 of 64 died in prefill as 503s. The door's arithmetic is covered by CPU tests in
+tree 34 of 64 died in prefill as 503s. The admission's arithmetic is covered by CPU tests in
 `admit_memory` and `worker` (the booked reading per decision arm, the pending-prime rows, the
 prefill-OOM park predicate). Receipts: `research/spill-b-20260919/rtx5090-day33/`.
 
