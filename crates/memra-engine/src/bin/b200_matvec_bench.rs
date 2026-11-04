@@ -1443,9 +1443,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             mism_i,
             maxd_i,
         );
-        // MEMRA_GLM5_Q8_FUSE_ATTN: the launcher fed a PRE-QUANTIZED activation (the q8_1 view a
-        // producer such as rms_norm_zq8_f32 emits) vs its own quantize: bitwise on all six
-        // outputs; the timing delta is the skipped quantize launch.
+        // The attention-norm q8_1 fuse: the launcher fed a PRE-QUANTIZED activation (the q8_1
+        // view a producer such as rms_norm_zq8_f32 emits) vs its own quantize: bitwise on all
+        // six outputs; the timing delta is the skipped quantize launch.
         let (aq_pre, ad_pre) = e.quantize_q8_1(&xd, 1, in_f)?;
         let fused_pre =
             |c: usize, outs: &mut [CudaSlice<f32>; 6]| -> Result<(), Box<dyn std::error::Error>> {
@@ -1494,7 +1494,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             t_p.push(t1.elapsed().as_secs_f64() * 1e6);
         }
         report(
-            "kda6 W8 fused: own quantize -> pre-quantized (MEMRA_GLM5_Q8_FUSE_ATTN)",
+            "kda6 W8 fused: own quantize -> pre-quantized (attention-norm q8_1 fuse)",
             median(&mut t_o),
             median(&mut t_p),
             bytes,
