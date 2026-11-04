@@ -40,6 +40,28 @@ driver-free on the 5090. Resumed turns flip against their cold prime at the same
 2 of 20), the continuation pool's documented near-tie residual, not a property of compaction.
 The VMM interaction pair (`MEMRA_KV_ALLOCATOR=vmm`) showed no digest difference.
 
-**Scope:** the receipts are one model per card on the plain path. SPEC and DSpark pools park
-live engine sessions and were never in scope. A card class joins the default only with its own
-DAY38-shape cell.
+**Scope:** the receipts are one model per card on the plain path, both of the qwen35 hybrid
+class (full-attention KV plus recurrent state). SPEC and DSpark pools park live engine sessions and
+were never in scope. A card class joins the default only with its own DAY38-shape cell. The device
+key covers the whole RTX 5090 class (the desktop card with the Laptop GPU the cell ran on), the
+class scope every per-device default in the engine uses.
+
+**What compaction refuses** (`park_compact_rows`, each refusal named on the `[kv-reuse]
+park-compact declined` line; the cache parks whole):
+
+- latent (MLA/DSA) KV planes: `CacheSnapshot` carries none and `restore_cache_checkpoint` never
+  writes one, so a compacted glm5_next or glm_dsa cache would resume over empty latent rows;
+- the eager-only class (`HybridModel::eager_only_class`: Gemma-4, GLM-5.3-Flash, glm_dsa,
+  MiniMax-M3), whose contract has no prefix snapshot;
+- an SWA ring, a distributed TP KV mirror and `MEMRA_PP_HOST_BOUNCE=1`, the refusals the door
+  carried;
+- a cache whose position is not its fed length, or one already at its committed length.
+
+Only an entry the park compacted resumes below the request's charged cap (`ReuseEntry::compacted`),
+so the admit-time grow never runs on a cache the compactor declined.
+
+**Owed:** no cell has run compaction on a family outside the qwen35 class. On these two cards it
+still reaches every plan the refusals above let through, among them step35 (Step-3.7, whose
+blocking gate on the RTX PRO 6000 is `step-pro`), hy3 and the dense and MoE qwen3 packs. Each
+joins the evidence with a plain-path identity cell on its card: every resumed turn read against
+the same turn primed cold, with the near-tie residual counted as DAY38 counts it.
