@@ -76,8 +76,8 @@ memra-gguf	source::nv27b_twin_parity::nvidia_27b_vs_gguf_twin_f32_parity	crates/
 memra-reference	reference_matches_upstream_tower_on_banked_fixture	crates/memra-reference/tests/glm5_vision_upstream.rs	SKIP[fixture {fixture}]: regenerable fixture not present; run gen_upstream_fixture.py
 memra-reference	speech::text::tests::a_window_of_pinned_oracle_ids_reads_as_hebrew	crates/memra-reference/src/speech/text/tests.rs	SKIP[{CHECKPOINT}]: Whisper transcript assembly on the real vocabulary not run
 memra-reference	speech::text::tests::timestamps_and_the_terminator_never_reach_the_transcript	crates/memra-reference/src/speech/text/tests.rs	SKIP[{CHECKPOINT}]: Whisper transcript assembly on the real vocabulary not run
-memra-server	handoff_io::tests::both_writers_produce_identical_bytes_and_both_readers_read_both	crates/memra-server/src/handoff_io.rs	SKIP[O_DIRECT filesystem]: direct writer and reader parity not run
-memra-server	worker::host_handoff_tests::host_handoff_file_arms_are_byte_identical_and_cross_readable	crates/memra-server/src/worker.rs	SKIP[O_DIRECT filesystem]: direct handoff arm not run: {e}
+memra-server	handoff_io::tests::both_writers_produce_identical_bytes_and_the_import_reads_both	crates/memra-server/src/handoff_io.rs	SKIP[O_DIRECT filesystem]: direct writer parity not run
+memra-server	worker::host_handoff_tests::host_handoff_file_writers_are_byte_identical_and_the_import_reads_both	crates/memra-server/src/worker.rs	SKIP[O_DIRECT filesystem]: direct handoff writer not run: {e}
 memra-tokenizer	detokenize::tests::the_real_sentencepiece_model_decodes_the_pinned_hebrew_tokens	crates/memra-tokenizer/src/detokenize/tests.rs	SKIP[{NEMO}]: real SentencePiece decode not run
 memra-tokenizer	detokenize::tests::the_real_whisper_vocabulary_decodes_hebrew_when_the_checkpoint_is_present	crates/memra-tokenizer/src/detokenize/tests.rs	SKIP[{}]: real Whisper vocabulary decode not run
 memra-tokenizer	golden_pairs	crates/memra-tokenizer/tests/llama_parity.rs	SKIP[{model}]: tokenizer assertions on the real GGUF not run

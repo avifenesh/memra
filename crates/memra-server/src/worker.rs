@@ -23874,13 +23874,18 @@ fn host_handoff_export(
     //    inserts reconstruct true LRU recency.
     let tmp = format!("{path}.tmp");
     // Stage clocks for the handoff's storage cost (lane/spill-f-20260919 B2): serialize and
-    // buffered write, then fsync, measured apart so the durability share is not inferred.
-    // MEMRA_KV_HOST_HANDOFF_IO (OWED 18) picks buffered or O_DIRECT; the bytes are identical.
-    let io_mode = crate::handoff_io::handoff_io_mode()?;
+    // write, then fsync, measured apart so the durability share is not inferred. The writer
+    // follows the card (OWED 18, docs/decisions/HANDOFF-DIRECT-EXPORT.md): O_DIRECT on the
+    // full-power RTX PRO 6000 Workstation Edition, buffered elsewhere; the bytes are identical.
+    let io_mode =
+        crate::handoff_io::HandoffIo::for_device(&engine.ctx().name().unwrap_or_default());
     let (mut write_ms, mut fsync_ms) = (0.0f64, 0.0f64);
+    let (mut io_used, mut io_refused) = (io_mode, None::<String>);
     let write = (|| -> Result<(), String> {
         let t_write = Instant::now();
-        let mut w = crate::handoff_io::HandoffWriter::create(&tmp, io_mode)?;
+        let (mut w, refused) = crate::handoff_io::HandoffWriter::create_for_export(&tmp, io_mode)?;
+        io_used = w.mode();
+        io_refused = refused;
         handoff_write_header(
             &mut w,
             &HandoffHeader {
@@ -23912,10 +23917,13 @@ fn host_handoff_export(
         "[prefix-host] handoff export: {} entries / {:.1}MB to {path} in {ms:.0}ms \
          write_ms={write_ms:.1} fsync_ms={fsync_ms:.1} \
          (drain-demoted {demoted} device entries first; {skipped_over_cap} skipped over \
-         the MEMRA_KV_HOST_HANDOFF_MB cap) io={}",
+         the MEMRA_KV_HOST_HANDOFF_MB cap) io={}{}",
         selected.len(),
         sel_bytes as f64 / 1e6,
-        io_mode.name(),
+        io_used.name(),
+        io_refused.map_or(String::new(), |why| format!(
+            " ({why}; the export buffered)"
+        )),
     );
     Ok(HostHandoffExportReport {
         path: path.to_string(),
@@ -23935,8 +23943,7 @@ fn host_handoff_export(
 /// whole file.
 struct HostHandoffImport {
     path: String,
-    reader: crate::handoff_io::HandoffReader,
-    io_mode: crate::handoff_io::HandoffIo,
+    reader: std::io::BufReader<std::fs::File>,
     max_frame: u64,
     refused_models: std::collections::HashSet<String>,
     header_entries: u64,
@@ -23951,8 +23958,7 @@ fn open_host_handoff_import(
     path: &str,
     local_stamps: &[HandoffModelStamp],
 ) -> Result<(HostHandoffImport, HostHandoffImportStart), String> {
-    let io_mode = crate::handoff_io::handoff_io_mode()?;
-    let (mut reader, max_frame) = crate::handoff_io::HandoffReader::open(path, io_mode)?;
+    let (mut reader, max_frame) = crate::handoff_io::open_import_reader(path)?;
     let header = handoff_read_header(&mut reader)?;
     let now = handoff_now_unix();
     let refused = handoff_header_verdict(&header, PREFIX_ENTRY_LAYOUT_VERSION, now, local_stamps)?;
@@ -23971,7 +23977,6 @@ fn open_host_handoff_import(
         HostHandoffImport {
             path: path.to_string(),
             reader,
-            io_mode,
             max_frame,
             refused_models: refused.into_iter().map(|(m, _)| m).collect(),
             header_entries: header.entries,
@@ -24001,13 +24006,12 @@ fn host_handoff_import_step(imp: &mut HostHandoffImport, hpx: &mut HostPrefixCac
         Ok(None) => {
             eprintln!(
                 "[prefix-host] handoff import DONE: {} entries / {:.1}MB re-materialized, \
-                 {} skipped, in {:.1}s from {} io={}",
+                 {} skipped, in {:.1}s from {}",
                 imp.imported,
                 imp.imported_bytes as f64 / 1e6,
                 imp.skipped,
                 imp.started.elapsed().as_secs_f64(),
                 imp.path,
-                imp.io_mode.name(),
             );
             true
         }
@@ -68285,12 +68289,12 @@ mod host_handoff_tests {
         assert!(err.contains("exceeds the file-size bound"), "{err}");
     }
 
-    /// OWED 18: the file layer under both `MEMRA_KV_HOST_HANDOFF_IO` arms. Frames written
-    /// through either writer are byte-identical on disk, either reader restores them exactly,
-    /// and a truncated file breaks the stream the same way under both readers.
+    /// OWED 18: the file layer under both export writers. Frames written through either are
+    /// byte-identical on disk, the import reader restores both exactly, and a truncated file
+    /// breaks the stream after the last whole frame.
     #[test]
-    fn host_handoff_file_arms_are_byte_identical_and_cross_readable() {
-        use crate::handoff_io::{HandoffIo, HandoffReader, HandoffWriter};
+    fn host_handoff_file_writers_are_byte_identical_and_the_import_reads_both() {
+        use crate::handoff_io::{HandoffIo, HandoffWriter, open_import_reader};
         let dir =
             std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/handoff-io-tests");
         std::fs::create_dir_all(&dir).unwrap();
@@ -68314,7 +68318,7 @@ mod host_handoff_tests {
         write(&pb, HandoffIo::Buffered).unwrap();
         if let Err(e) = write(&pd, HandoffIo::Direct) {
             assert!(e.contains("O_DIRECT open refused"), "{e}");
-            eprintln!("SKIP[O_DIRECT filesystem]: direct handoff arm not run: {e}");
+            eprintln!("SKIP[O_DIRECT filesystem]: direct handoff writer not run: {e}");
             let _ = std::fs::remove_file(&pb);
             return;
         }
@@ -68322,31 +68326,29 @@ mod host_handoff_tests {
         assert_eq!(
             bytes,
             std::fs::read(&pd).unwrap(),
-            "both arms write the same bytes"
+            "both writers write the same bytes"
         );
         for file in [&pb, &pd] {
-            for mode in [HandoffIo::Buffered, HandoffIo::Direct] {
-                let (mut r, max) = HandoffReader::open(file, mode).unwrap();
-                assert_eq!(max, bytes.len() as u64);
-                assert_eq!(
-                    handoff_read_header(&mut r).unwrap(),
-                    handoff_header_fixture(1000)
-                );
-                assert_eq!(
-                    handoff_read_entry(&mut r, max).unwrap().unwrap().unwrap(),
-                    a
-                );
-                assert_eq!(
-                    handoff_read_entry(&mut r, max).unwrap().unwrap().unwrap(),
-                    b
-                );
-                assert!(
-                    handoff_read_entry(&mut r, max).unwrap().is_none(),
-                    "clean EOF"
-                );
-            }
+            let (mut r, max) = open_import_reader(file).unwrap();
+            assert_eq!(max, bytes.len() as u64);
+            assert_eq!(
+                handoff_read_header(&mut r).unwrap(),
+                handoff_header_fixture(1000)
+            );
+            assert_eq!(
+                handoff_read_entry(&mut r, max).unwrap().unwrap().unwrap(),
+                a
+            );
+            assert_eq!(
+                handoff_read_entry(&mut r, max).unwrap().unwrap().unwrap(),
+                b
+            );
+            assert!(
+                handoff_read_entry(&mut r, max).unwrap().is_none(),
+                "clean EOF"
+            );
         }
-        // Truncate mid-frame B: both readers see a broken stream after frame A.
+        // Truncate mid-frame B: the reader sees a broken stream after frame A.
         let cut = bytes.len() as u64 - 40;
         std::fs::OpenOptions::new()
             .write(true)
@@ -68354,19 +68356,17 @@ mod host_handoff_tests {
             .unwrap()
             .set_len(cut)
             .unwrap();
-        for mode in [HandoffIo::Buffered, HandoffIo::Direct] {
-            let (mut r, _) = HandoffReader::open(&pd, mode).unwrap();
-            handoff_read_header(&mut r).unwrap();
-            assert_eq!(
-                handoff_read_entry(&mut r, 1 << 20)
-                    .unwrap()
-                    .unwrap()
-                    .unwrap(),
-                a
-            );
-            let err = handoff_read_entry(&mut r, 1 << 20).unwrap_err();
-            assert!(err.contains("failed"), "{mode:?}: {err}");
-        }
+        let (mut r, _) = open_import_reader(&pd).unwrap();
+        handoff_read_header(&mut r).unwrap();
+        assert_eq!(
+            handoff_read_entry(&mut r, 1 << 20)
+                .unwrap()
+                .unwrap()
+                .unwrap(),
+            a
+        );
+        let err = handoff_read_entry(&mut r, 1 << 20).unwrap_err();
+        assert!(err.contains("failed"), "{err}");
         let _ = std::fs::remove_file(&pb);
         let _ = std::fs::remove_file(&pd);
     }
