@@ -26145,6 +26145,111 @@ temperature = 0.6
         assert_eq!(body_value(poll).await["status"], "cancelled");
     }
 
+    /// A cancelled background job on a gemma4 model delivers the text its parser still
+    /// held. The blocking gemma parser holds the opening of the turn until a tag resolves
+    /// it (docs/decisions/GEMMA-UNOPENED-THOUGHT.md), so a cancel before any tag used to
+    /// answer an empty output while the receipt billed every token; a held partial tag
+    /// went the same way. The cancel arm now flushes the parser as the Done arm does.
+    #[tokio::test]
+    #[allow(clippy::await_holding_lock)] // allow: background_env_lock serializes tests that flip MEMRA_BACKGROUND_RESPONSES; holding it across awaits is the point
+    async fn cancel_mid_run_delivers_the_gemma_opening_the_parser_held() {
+        let _l = drain_lock();
+        let _env_lock = background_env_lock();
+        unsafe { std::env::set_var(responses_api::BACKGROUND_RESPONSES_ENV, "1") };
+
+        let (cmd_tx, cmd_rx) = std::sync::mpsc::channel::<Cmd>();
+        let health = health::WorkerHealth::new();
+        let h = health.clone();
+        let cancelled = Arc::new(tokio::sync::Notify::new());
+        let cancelled2 = cancelled.clone();
+        std::thread::spawn(move || {
+            h.mark_ready();
+            while let Ok(Cmd::Generate(req)) = cmd_rx.recv() {
+                worker::release_pending_admit();
+                worker::release_admission_reservation(req.lane);
+                let _ = req.tx.send(Event::PromptUsage {
+                    n_prompt: 1,
+                    n_cached: 0,
+                });
+                // No tag yet, and the turn ends in the prefix of one: the parser holds all
+                // of it. Never sends Done; the job is cancelled first.
+                for (id, text) in [(1, "The answer "), (2, "is 42. <chan")] {
+                    let _ = req.tx.send(Event::Token {
+                        id,
+                        text: text.into(),
+                    });
+                }
+                tokio::runtime::Builder::new_current_thread()
+                    .build()
+                    .unwrap()
+                    .block_on(req.tx.closed());
+                cancelled2.notify_one();
+            }
+        });
+        for _ in 0..2_000 {
+            if health.live().is_ok() {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(1));
+        }
+
+        let mut st = fake_worker_state();
+        st.cmd_tx = cmd_tx;
+        st.health = health;
+        st.caps = Arc::new(HashMap::from([(
+            "m".to_string(),
+            ModelCaps {
+                chat_ok: true,
+                gemma_think: true,
+                instruct_type: Some("gemma".into()),
+                ..Default::default()
+            },
+        )]));
+        let mock = MockMetering::admit_all();
+        st.metering = Some(mock.clone());
+
+        let resp = responses_api::responses(
+            State(st.clone()),
+            axum::http::HeaderMap::new(),
+            None,
+            axum::body::Bytes::from(
+                json!({"model": "m", "input": "hi", "background": true}).to_string(),
+            ),
+        )
+        .await;
+        assert_eq!(resp.status(), StatusCode::OK);
+        let id = body_value(resp).await["id"].as_str().unwrap().to_string();
+
+        // Give the background task a moment to record both tokens before cancelling.
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+
+        let cancel = responses_api::cancel_admitted(
+            State(st.clone()),
+            axum::http::HeaderMap::new(),
+            Path(id.clone()),
+        )
+        .await;
+        assert_eq!(cancel.status(), StatusCode::OK);
+        let cb = body_value(cancel).await;
+        assert_eq!(cb["status"], "cancelled");
+        let output = cb["output"].as_array().expect("output array");
+        assert_eq!(output.len(), 1, "one message item, no reasoning item: {cb}");
+        assert_eq!(
+            output[0]["content"][0]["text"], "The answer is 42. <chan",
+            "the held opening and the held partial tag are the delivered partial: {cb}"
+        );
+        tokio::time::timeout(std::time::Duration::from_secs(1), cancelled.notified())
+            .await
+            .unwrap();
+        assert!(
+            mock.events()
+                .iter()
+                .any(|e| matches!(e, MeterEvent::DeadlinePartial { completion: 2, .. })),
+            "both tokens are billed as the delivered partial: {:?}",
+            mock.events()
+        );
+    }
+
     /// A worker result arriving after a job was cancelled and already collected must not
     /// resurrect it. This is the exact race `job_store::tests::a_stale_write_after_cancel_and_...`
     /// covers at the `JobStore` level, exercised here through the same store instance a
