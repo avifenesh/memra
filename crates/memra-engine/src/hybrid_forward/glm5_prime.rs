@@ -384,8 +384,8 @@ impl HybridModel {
                 rt.engine(stage, e).stream().synchronize()?;
             }
         }
-        // Each loaded group can own different streams. Do not infer group ownership
-        // from decode-only symmetric glue or from mutable environment placement.
+        // Each loaded group can own different streams. Read group ownership from the layers'
+        // TP mixer sidecars, never from mutable environment placement.
         let mut seen = std::collections::HashSet::new();
         for l in &self.layers {
             let rt = match &l.mixer {
