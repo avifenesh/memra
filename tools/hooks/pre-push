@@ -258,6 +258,32 @@ if grep -q '^\[workspace\.package\]' Cargo.toml 2>/dev/null; then
     fi
 fi
 
+# ---- numeric-scope census (2026-11-04) ----
+# Each loaded model owns a NumericProfile, and the kernel launchers read the one installed on
+# the calling thread. An entry point that forgets to install its model's profile does not fail:
+# it runs NumericProfile::BASE, and for a gqa > 8 model a v4 hd256 pick on BASE is the all-NaN
+# decode. tools/check-numeric-scope.py refuses a public HybridModel method that takes an Engine,
+# a prime-walker step or a model thread whose first statement is not the install. Text-only,
+# about two seconds, unconditional, no skip switch. Teeth: tools/test_check_numeric_scope.py.
+if grep -q '^\[workspace\.package\]' Cargo.toml 2>/dev/null; then
+    if [ ! -x tools/check-numeric-scope.py ]; then
+        echo "pre-push: REFUSED: tools/check-numeric-scope.py is missing or not executable." >&2
+        echo "    This repo IS the memra workspace, so a census that cannot answer is a gate" >&2
+        echo "    someone removed. Fails closed." >&2
+        exit 1
+    elif ! scope_out=$(python3 tools/check-numeric-scope.py 2>&1); then
+        printf '%s\n' "$scope_out" >&2
+        echo "" >&2
+        echo "pre-push: REFUSED: a model entry point does not install the model's numeric profile" >&2
+        echo "    (sites above). Open it with \`let _numeric = self.enter_numeric();\`, enter the" >&2
+        echo "    captured profile first in a model thread, or mark a thread that launches nothing" >&2
+        echo "    with a \`numeric-scope: host-only\` comment." >&2
+        exit 1
+    else
+        echo "pre-push: $(printf '%s\n' "$scope_out" | tail -n 1)"
+    fi
+fi
+
 # ---- workflow-file census (2026-09-21) ----
 # Same WHEN-lesson again, for the workflow files themselves. On 2026-09-21 two merged PRs
 # (#592, #590) each added a ci.yml job named portable-suites; each PR's CI was green on its

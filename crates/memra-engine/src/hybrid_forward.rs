@@ -21522,6 +21522,7 @@ impl HybridModel {
         type Tickets = Vec<(CpuPart, crate::cpu_experts::CpuExpertTicket)>;
         let (tickets, mut moe_out) = std::thread::scope(
             |sc| -> Result<(Tickets, CudaSlice<f32>), Box<dyn std::error::Error>> {
+                // numeric-scope: host-only (queues prepared CPU expert jobs, launches nothing)
                 let submitter = sc.spawn(move || -> Result<Tickets, String> {
                     let mut out = Vec::with_capacity(jobs.len());
                     for (part, job) in jobs {
