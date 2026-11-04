@@ -20,6 +20,9 @@
 //! Placement: `tp_ep` (`Dsv4Placement::SERVED`). The red arm guards the served spec driver, so
 //! it runs the served placement; its memra #495 receipt is a PP-2 cell, taken before the TP/EP
 //! default (memra #710).
+//! No TP/EP receipt exists yet. Owed before this cell counts: the first `tp_ep` run, and one
+//! red-arm run against a reverted driver on `tp_ep`, which shows the arm is not vacuous on the
+//! TP/EP walk (it has only been shown to fail a reverted driver on PP-2).
 use memra_engine::dsv4_gpu::{Dsv4Gpu, Dsv4SampleCfg, Dsv4Vt, RoundTake};
 use memra_engine::dsv4_topology::Dsv4Placement;
 use memra_gguf::dsv4_forward::ActQuantVariant;
