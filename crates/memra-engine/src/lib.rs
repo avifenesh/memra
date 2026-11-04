@@ -3847,6 +3847,24 @@ mod exact_scope_tests {
     }
 }
 
+/// The q8_1-emitting fused norms and the gemma GELU epilogue walk each row in 128-column chunks
+/// (`quad < nblk / 4`) with no tail, so a width that is not a multiple of 128 leaves its last
+/// columns unwritten and the next matmul reads stale memory. `rms_norm_q8_1` and
+/// `add_rms_norm_q8_1` carry a tail and take any multiple of 32. Refuse here, in every build:
+/// a `debug_assert!` let release builds compute garbage.
+fn q8_chunk_cols(kernel: &str, ncols: usize) -> Result<(), Box<dyn std::error::Error>> {
+    if ncols.is_multiple_of(128) {
+        Ok(())
+    } else {
+        Err(format!(
+            "{kernel}: {ncols} columns is not a multiple of 128; the kernel walks 128-column chunks \
+             with no tail and would leave the last {} unwritten",
+            ncols % 128
+        )
+        .into())
+    }
+}
+
 impl Engine {
     pub fn new(ordinal: usize) -> Result<Self, Box<dyn std::error::Error>> {
         let gpu = memra_runtime::Gpu::new(ordinal)?;
@@ -14493,6 +14511,7 @@ impl Engine {
         nrows: usize,
         eps: f32,
     ) -> Result<(CudaSlice<i8>, CudaSlice<f32>), Box<dyn std::error::Error>> {
+        q8_chunk_cols("add_scale_rms_norm_q8_1", ncols)?;
         let mut out_q = self.alloc_uninit::<i8>(nrows * ncols)?;
         let mut out_d = self.alloc_uninit::<f32>(nrows * (ncols / 32))?;
         let (nc, e2) = (ncols as i32, eps);
@@ -14566,6 +14585,7 @@ impl Engine {
         out_q: &mut CudaSlice<i8>,
         out_d: &mut CudaSlice<f32>,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        q8_chunk_cols("add_scale_rms_norm_q8_1", ncols)?;
         debug_assert!(out_q.len() >= nrows * ncols && out_d.len() >= nrows * (ncols / 32));
         let (nc, e2) = (ncols as i32, eps);
         if Self::pdl_on() && Self::pdl_wb_on() {
@@ -14636,6 +14656,7 @@ impl Engine {
         nrows: usize,
         eps: f32,
     ) -> Result<(CudaSlice<i8>, CudaSlice<f32>), Box<dyn std::error::Error>> {
+        q8_chunk_cols("rms_pre_add_scale_rms_norm_q8_1", ncols)?;
         let mut out_q = self.alloc_uninit::<i8>(nrows * ncols)?;
         let mut out_d = self.alloc_uninit::<f32>(nrows * (ncols / 32))?;
         let (nc, e2) = (ncols as i32, eps);
@@ -14707,7 +14728,7 @@ impl Engine {
         ncols: usize,
         nrows: usize,
     ) -> Result<(CudaSlice<i8>, CudaSlice<f32>), Box<dyn std::error::Error>> {
-        debug_assert!(ncols.is_multiple_of(128));
+        q8_chunk_cols("gelu_tanh_mul_q8_1", ncols)?;
         let mut out_q = self.alloc_uninit::<i8>(nrows * ncols)?;
         let mut out_d = self.alloc_uninit::<f32>(nrows * (ncols / 32))?;
         let nc = ncols as i32;
@@ -14771,7 +14792,7 @@ impl Engine {
         out_q: &mut CudaSlice<i8>,
         out_d: &mut CudaSlice<f32>,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        debug_assert!(ncols.is_multiple_of(128));
+        q8_chunk_cols("gelu_tanh_mul_q8_1", ncols)?;
         debug_assert!(out_q.len() >= nrows * ncols && out_d.len() >= nrows * (ncols / 32));
         let nc = ncols as i32;
         if Self::pdl_on() {
@@ -14844,6 +14865,7 @@ impl Engine {
         ),
         Box<dyn std::error::Error>,
     > {
+        q8_chunk_cols("add_rms_norm3_q8z_f32", ncols)?;
         let mut q0 = self.alloc_uninit::<i8>(nrows * ncols)?;
         let mut d0 = self.alloc_uninit::<f32>(nrows * (ncols / 32))?;
         let mut q2 = self.alloc_uninit::<i8>(nrows * ncols)?;
@@ -15616,7 +15638,7 @@ impl Engine {
         nrows: usize,
         eps: f32,
     ) -> Result<(CudaSlice<i8>, CudaSlice<f32>), Box<dyn std::error::Error>> {
-        debug_assert!(ncols.is_multiple_of(128));
+        q8_chunk_cols("rms_pre_add_rms_norm_q8z_f32", ncols)?;
         let mut out_q = self.alloc_uninit::<i8>(nrows * ncols)?;
         let mut out_d = self.alloc_uninit::<f32>(nrows * (ncols / 32))?;
         let (nc, e) = (ncols as i32, eps);
@@ -15697,7 +15719,7 @@ impl Engine {
         out_q: &mut CudaSlice<i8>,
         out_d: &mut CudaSlice<f32>,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        debug_assert!(ncols.is_multiple_of(128));
+        q8_chunk_cols("rms_pre_add_rms_norm_q8z_f32", ncols)?;
         let (nc, e) = (ncols as i32, eps);
         let f = self.func("rms_pre_add_rms_norm_q8z_f32");
         let cfg = LaunchConfig {
@@ -15740,7 +15762,7 @@ impl Engine {
         out_q: &mut CudaSlice<i8>,
         out_d: &mut CudaSlice<f32>,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        debug_assert!(ncols.is_multiple_of(128));
+        q8_chunk_cols("rms_pre_add_scale_rms_norm_q8_1", ncols)?;
         let (nc, e2) = (ncols as i32, eps);
         let f = self.func("rms_pre_add_scale_rms_norm_q8_1");
         let cfg = LaunchConfig {
@@ -16495,7 +16517,7 @@ impl Engine {
         nrows: usize,
         eps: f32,
     ) -> Result<(CudaSlice<i8>, CudaSlice<f32>), Box<dyn std::error::Error>> {
-        debug_assert!(ncols.is_multiple_of(128));
+        q8_chunk_cols("rms_pre_add_q8_1_f32", ncols)?;
         let mut out_q = self.alloc_uninit::<i8>(nrows * ncols)?;
         let mut out_d = self.alloc_uninit::<f32>(nrows * (ncols / 32))?;
         let f = self.func("rms_pre_add_q8_1_f32");
