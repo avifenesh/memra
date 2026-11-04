@@ -3499,6 +3499,10 @@ impl Dsv4Gpu {
         placement: Dsv4Placement,
     ) -> Res<Self> {
         assert_eq!(devices.len(), 2, "lane 4 placement is a 2-card layer split");
+        // Its own token, first, so a refused load names its placement too. "[load] topology:"
+        // keeps its text (receipt parsers count it once per load), and so does the split line
+        // "[load] placement: split_at=...".
+        eprintln!("[load] placing {}", placement.name());
         let pdl_chain = dsv4_pdl_chain_env()?;
         let vocab_head = dsv4_vocab_head_env()?;
         // Before any stream capture: a replay graph records the launch attribute it saw.
@@ -3968,8 +3972,7 @@ impl Dsv4Gpu {
             }
         );
         eprintln!(
-            "[load] placement {} | topology: {:?} | layers={} per-rank-resident={}",
-            placement.name(),
+            "[load] topology: {:?} | layers={} per-rank-resident={}",
             me.topology.topology,
             me.topology.layers,
             if me.topology.is_tp_ep() {
