@@ -1209,6 +1209,7 @@ pub fn caps(m: &Dsv4Model) -> ModelCaps {
         effort_levels: t.is_some_and(|t| t.contains("reasoning_effort is defined")),
         qwen_effort: t.is_some_and(chat::template_has_qwen_effort),
         gemma_think: false,
+        gemma_unopened_thought: false,
         dsv4: enc || t.is_some_and(chat::template_is_dsv4),
         // A dsv4 artifact is never a glm5 one (disjoint dialect markers); stated rather than
         // left to `..Default::default()`, which this literal does not use.

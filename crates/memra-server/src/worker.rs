@@ -2410,6 +2410,11 @@ pub struct ModelCaps {
     /// arm the gemma-dialect reasoning splitter so thought text routes to `reasoning` and
     /// the channel tags never reach the client as content.
     pub gemma_think: bool,
+    /// The gemma4 model writes its thought after the template's closed channel, ending it
+    /// with an unopened `<channel|>` (the E4B pack, `is_gemma4_e4b`; census
+    /// `research/gemma-unopened-thought-census-20261104/`). Its stream parsers hold the
+    /// opening until a tag or the turn end resolves it, with no byte cap.
+    pub gemma_unopened_thought: bool,
     /// deepseek-v4 (`encoding_dsv4`) dialect (lane/dsv4-template, 2026-08-18): three think
     /// modes + DSML tool calls. When true, chat requests arm the dsv4 parser (reasoning split
     /// on `</think>`, `<｜DSML｜tool_calls>…</｜DSML｜tool_calls>` -> OpenAI tool_calls) and the
@@ -17068,6 +17073,7 @@ pub fn run(
                 // a gemma4 GGUF without its template falls back to ChatML rendering, where
                 // arming a channel splitter would be guessing.
                 gemma_think: t.is_some_and(|t| t.contains("<|channel>")),
+                gemma_unopened_thought: lm.model.is_gemma4_e4b(),
                 dsv4: t.is_some_and(memra_tokenizer::chat::template_is_dsv4),
                 // GLM-5.3-Flash: `[gMASK]<sop>` + `<|observation|>`. Template-keyed like every
                 // other cap — a glm5 checkpoint that shipped without its template would fall
