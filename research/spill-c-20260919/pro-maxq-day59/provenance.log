@@ -1,0 +1,63 @@
+box start 2026-11-05T04:00:11Z tree f0e77b8bebf2b2b9ded37bde39b25c9e823a645b bins da649107c7e85f7681ddfd179650543b8400270d card 0 rig pro-maxq
+kit: PREREG.md sha256 ec3d727b139da66479af8138dca804301d86f0be1ee713e5183d235a7d89f9cb  run.sh sha256 b0caa452a5be09e0a2b3c397acc2c5550244bde2eb5884f464802a1ce2808f5d
+run-gen-c60: OK
+run-spec-c60: OK
+memra-server-c60: OK
+index, name, pci.bus_id, driver_version, memory.total [MiB], power.limit [W], power.default_limit [W], power.max_limit [W], clocks.max.sm [MHz]
+0, NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition, 00000000:01:00.0, 615.71.09, 97887 MiB, 300.00 W, 300.00 W, 325.00 W, 3090 MHz
+all cards:
+index, name, power.limit [W], memory.used [MiB], temperature.gpu
+0, NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition, 300.00 W, 2 MiB, 32
+1, NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition, 250.00 W, 2 MiB, 29
+2, NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition, 280.00 W, 2 MiB, 32
+3, NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition, 280.00 W, 2 MiB, 30
+
+==============NVSMI LOG==============
+
+Timestamp                                              : Thu Nov  5 06:00:11 2026
+Driver Version                                         : 615.71.09 [Deprecated; will be removed in CUDA 14.0. Use KMD Version instead]
+CUDA Version                                           : 13.4 [Deprecated; will be removed in CUDA 14.0. Use CUDA UMD Version instead]
+KMD Version                                            : 615.71.09
+CUDA UMD Version                                       : 13.4
+
+Attached GPUs                                          : 4
+GPU 00000000:01:00.0
+    Performance State                                  : P8
+    Clocks Event Reasons
+        Idle                                           : Not Active
+        Applications Clocks Setting                    : Not Active
+        SW Power Cap                                   : Not Active
+        HW Slowdown                                    : Not Active
+            HW Thermal Slowdown                        : Not Active
+            HW Power Brake Slowdown                    : Not Active
+        Sync Boost                                     : Not Active
+        SW Thermal Slowdown                            : Not Active
+        Display Clock Setting                          : Not Active
+        Board Limit                                    : Not Active
+        Reliability                                    : Active
+    Clocks Event Reasons Counters
+        SW Power Capping                               : 772882121708 us
+        Sync Boost                                     : 0 us
+        SW Thermal Slowdown                            : 1033457673 us
+        HW Thermal Slowdown                            : 0 us
+        HW Power Braking                               : 0 us
+    Sparse Operation Mode                              : N/A
+
+64
+CPU(s):                                  64
+Model name:                              AMD Ryzen Threadripper PRO 9975WX 32-Cores
+Thread(s) per core:                      2
+Socket(s):                               1
+CPU(s) scaling MHz:                      25%
+MemTotal:       1051302028 kB
+MemAvailable:   1017920868 kB
+SwapTotal:       8388604 kB
+Filesystem      Size  Used Avail Use% Mounted on
+/dev/nvme0n1    7.3T  5.8T  1.2T  84% /mnt/Data
+/dev/nvme0n1    7.3T  5.8T  1.2T  84% /mnt/Data
+7.0.0-38-generic
+Python 3.14.4
+cpu cap: nice -n 10 (no core pinning; DEVIATIONS.md)
+/mnt/Data/work/memra-maxq/models/Qwen3.6-35B-A3B-UD-IQ4_XS.gguf: OK
+artifact sha256 check rc=0 took 9s
+power.limit card 0: start=300.00W end=300.00W

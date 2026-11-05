@@ -1,0 +1,33 @@
+label=c60 sha=da649107c7e85f7681ddfd179650543b8400270d start=2026-11-04T20:37:19Z host=laptop
+head=da649107c7e85f7681ddfd179650543b8400270d
+MEMRA_CUDA_ARCH=120a CARGO_TARGET_DIR=/home/avifenesh/.cache/memra-maxq/target MEMRA_NVCC=/usr/local/cuda-13.1/bin/nvcc
+cargo 1.97.1 (c980f4866 2026-06-30)
+rustc 1.97.1 (8bab26f4f 2026-07-14)
+   Compiling memra-gguf v0.138.0 (/home/avifenesh/.cache/memra-maxq/moe-prefetch/wt-c60/crates/memra-gguf)
+   Compiling memra-tier v0.138.0 (/home/avifenesh/.cache/memra-maxq/moe-prefetch/wt-c60/crates/memra-tier)
+   Compiling memra-engine v0.138.0 (/home/avifenesh/.cache/memra-maxq/moe-prefetch/wt-c60/crates/memra-engine)
+   Compiling memra-tokenizer v0.138.0 (/home/avifenesh/.cache/memra-maxq/moe-prefetch/wt-c60/crates/memra-tokenizer)
+   Compiling memra-reference v0.138.0 (/home/avifenesh/.cache/memra-maxq/moe-prefetch/wt-c60/crates/memra-reference)
+   Compiling memra-runtime v0.138.0 (/home/avifenesh/.cache/memra-maxq/moe-prefetch/wt-c60/crates/memra-runtime)
+   Compiling memra-kv v0.138.0 (/home/avifenesh/.cache/memra-maxq/moe-prefetch/wt-c60/crates/memra-kv)
+   Compiling memra-validate v0.138.0 (/home/avifenesh/.cache/memra-maxq/moe-prefetch/wt-c60/crates/memra-validate)
+   Compiling memra-sampling v0.138.0 (/home/avifenesh/.cache/memra-maxq/moe-prefetch/wt-c60/crates/memra-sampling)
+warning: memra-engine@0.138.0: nvcc from MEMRA_NVCC: /usr/local/cuda-13.1/bin/nvcc
+    Finished `release` profile [optimized] target(s) in 3m 10s
+   Compiling memra-gguf v0.138.0 (/home/avifenesh/.cache/memra-maxq/moe-prefetch/wt-c60/crates/memra-gguf)
+   Compiling memra-tier v0.138.0 (/home/avifenesh/.cache/memra-maxq/moe-prefetch/wt-c60/crates/memra-tier)
+warning: memra-engine@0.138.0: nvcc from MEMRA_NVCC: /usr/local/cuda-13.1/bin/nvcc
+   Compiling memra-server v0.138.0 (/home/avifenesh/.cache/memra-maxq/moe-prefetch/wt-c60/crates/memra-server)
+   Compiling memra-lanes v0.138.0 (/home/avifenesh/.cache/memra-maxq/moe-prefetch/wt-c60/crates/memra-lanes)
+   Compiling memra-tokenizer v0.138.0 (/home/avifenesh/.cache/memra-maxq/moe-prefetch/wt-c60/crates/memra-tokenizer)
+   Compiling memra-runtime v0.138.0 (/home/avifenesh/.cache/memra-maxq/moe-prefetch/wt-c60/crates/memra-runtime)
+   Compiling memra-kv v0.138.0 (/home/avifenesh/.cache/memra-maxq/moe-prefetch/wt-c60/crates/memra-kv)
+   Compiling memra-reference v0.138.0 (/home/avifenesh/.cache/memra-maxq/moe-prefetch/wt-c60/crates/memra-reference)
+   Compiling memra-engine v0.138.0 (/home/avifenesh/.cache/memra-maxq/moe-prefetch/wt-c60/crates/memra-engine)
+    Finished `release` profile [optimized] target(s) in 1m 12s
+binary=run-gen-c60 tree=da649107c7e85f7681ddfd179650543b8400270d sha256=5cfbba77ea5ab88bf68a26db98fa5fd0f483df2eb52d144faab0089e79058f96 bytes=53713648
+binary=run-spec-c60 tree=da649107c7e85f7681ddfd179650543b8400270d sha256=e975457315dee2d7e0a6671555c5aafd3014f74114ead269210d7996ce2f8091 bytes=53765112
+binary=memra-server-c60 tree=da649107c7e85f7681ddfd179650543b8400270d sha256=6464475041c1060bc0ab7b7fb28033698aeb18ecaf8504bf2052f6fc532f511e bytes=70364264
+end=2026-11-04T20:41:57Z
+rc=0
+closure: all 11 workspace crates of memra-server, run-gen and run-spec compiled from /home/avifenesh/.cache/memra-maxq/moe-prefetch/wt-c60
