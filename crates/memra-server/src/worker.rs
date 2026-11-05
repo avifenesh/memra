@@ -888,13 +888,43 @@ fn dspark_prefers_cold_over_prefix_with(
         )
 }
 
-/// DSPARK PREFIX RESTORE (lane/dspark-draft-plane-20260827). Default **OFF**: the mechanism
-/// re-arms a speculative session from cached draft state, so it does not ship on until the
-/// restored-vs-cold accept trajectory is proven byte-identical on the bench box. `1` arms it.
-/// Written as an explicit decision per the flags law; the FLAGS.md row lands with the receipts.
+/// Device default of the three DFlash prefix-restore doors (`MEMRA_DSPARK_PREFIX_RESTORE`,
+/// `MEMRA_DSPARK_PARTIAL_RESTORE`, `MEMRA_DSPARK_BOUNDARY_CAPTURE`), set once at boot when
+/// DFlash is armed (`MEMRA_DSPARK_SPEC=1`). ON on the devices whose restored-vs-cold
+/// byte-identity gate is green with all three armed (memra#1031 cold-drafter gate: GB10 and
+/// the RTX 5090); OFF elsewhere (RTX PRO 6000 until its own gate runs). Unset = OFF, so a
+/// boot without DFlash, and every unit test, keeps the pre-flip behavior.
+static DSPARK_RESTORE_DEVICE_DEFAULT: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+
+/// Whether the device passed the restore gate: GB10 (unified-memory 120a family) or an RTX 5090.
+fn dspark_restore_default_for_device(device_name: &str, gb10: bool) -> bool {
+    gb10 || device_name.contains("RTX 5090")
+}
+
+/// One door: an explicit `1` or `0` decides; anything else follows the device default.
+fn dspark_door(env: Option<&str>, device_default: bool) -> bool {
+    match env {
+        Some("1") => true,
+        Some("0") => false,
+        _ => device_default,
+    }
+}
+
+fn dspark_door_env(var: &str) -> bool {
+    dspark_door(
+        std::env::var(var).ok().as_deref(),
+        DSPARK_RESTORE_DEVICE_DEFAULT
+            .get()
+            .copied()
+            .unwrap_or(false),
+    )
+}
+
+/// DSPARK PREFIX RESTORE (lane/dspark-draft-plane-20260827). Re-arms a speculative session
+/// from cached draft state. Device default (`DSPARK_RESTORE_DEVICE_DEFAULT`); `1`/`0` decide.
 fn dspark_prefix_restore_on() -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| std::env::var("MEMRA_DSPARK_PREFIX_RESTORE").as_deref() == Ok("1"))
+    *ON.get_or_init(|| dspark_door_env("MEMRA_DSPARK_PREFIX_RESTORE"))
 }
 
 /// `dspark_restorable_hit` = the restore is armed AND the consumable hit actually carries a
@@ -927,8 +957,8 @@ fn should_probe_prefix_cache(
 /// convert never buys the carrier. A strict-prefix hit (entry shorter than the prompt) fails
 /// this on purpose: the multi-turn shape keeps its pre-lane behavior — `dspark_prefers_cold`
 /// suppresses the probe and the request cold-primes with zero restore cost.
-/// MEMRA_DSPARK_PARTIAL_RESTORE (default **0 = OFF by design**, lane/dspark-partial-restore
-/// 2026-09-05). Let a STRICT-PREFIX prefix-cache hit re-arm a dspark session: restore the
+/// MEMRA_DSPARK_PARTIAL_RESTORE (device default, see `DSPARK_RESTORE_DEVICE_DEFAULT`;
+/// lane/dspark-partial-restore 2026-09-05). Let a STRICT-PREFIX prefix-cache hit re-arm a dspark session: restore the
 /// carrier's trunk planes and draft tail at `entry_toks`, then prime only
 /// `prompt[entry_toks..]` through the SAME `step_dspark_spec` suffix path the reuse pool
 /// already uses for a resumed session.
@@ -947,16 +977,17 @@ fn should_probe_prefix_cache(
 /// That is what separates it from `MEMRA_PREFIX_PARTIAL_RESTORE` (NO-GO, research/
 /// lcprestore-20260813), whose suffix went through T=1 `decode_step` and byte-diverged.
 ///
-/// DEFAULT OFF until its own restored-vs-cold byte-identity gate is green on the serving
-/// binary, per the carve-out law: a route inheriting a restore path must re-gate its own
-/// identity — loading and running never proves support.
+/// Its restored-vs-cold byte-identity gate (memra#1031, `tools/dspark-cold-drafter-gate.py`)
+/// is green on GB10 and the RTX 5090, so it defaults on there; other devices stay off until
+/// they pass the same gate (the carve-out law: a route inheriting a restore path re-gates its
+/// own identity).
 fn dspark_partial_restore_on() -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| std::env::var("MEMRA_DSPARK_PARTIAL_RESTORE").as_deref() == Ok("1"))
+    *ON.get_or_init(|| dspark_door_env("MEMRA_DSPARK_PARTIAL_RESTORE"))
 }
 
-/// MEMRA_DSPARK_BOUNDARY_CAPTURE (default **0 = OFF by design**, lane/dspark-boundary-capture
-/// 2026-09-06, memra#248). Cut the dspark prefix-cache entry at the prompt's RENDER-STABLE
+/// MEMRA_DSPARK_BOUNDARY_CAPTURE (device default, see `DSPARK_RESTORE_DEVICE_DEFAULT`;
+/// lane/dspark-boundary-capture 2026-09-06, memra#248). Cut the dspark prefix-cache entry at the prompt's RENDER-STABLE
 /// turn boundary (`plain_checkpoint_boundary`) instead of at prompt end: the cold prime stops
 /// there, snapshots the trunk, and then primes the rest of the prompt onto the same cache.
 ///
@@ -975,13 +1006,13 @@ fn dspark_partial_restore_on() -> bool {
 /// of restoring whole. That is the trade the shape asks for — exact re-sends are 31 of 220
 /// customer requests, and every other request is a strict prefix that gets nothing today.
 ///
-/// DEFAULT OFF until the restored-vs-cold byte-identity gate is green on the serving binary,
-/// per the carve-out law. The split itself is grid-aligned (`plain_checkpoint_boundary`
+/// Defaults on where the restored-vs-cold byte-identity gate is green (GB10, RTX 5090). The
+/// split itself is grid-aligned (`plain_checkpoint_boundary`
 /// returns a `grid_align_boundary` value, and the engine REFUSES an off-grid boundary), which
 /// is the measured precondition for a two-call prime to be bit-identical to a monolithic one.
 fn dspark_boundary_capture_on() -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| std::env::var("MEMRA_DSPARK_BOUNDARY_CAPTURE").as_deref() == Ok("1"))
+    *ON.get_or_init(|| dspark_door_env("MEMRA_DSPARK_BOUNDARY_CAPTURE"))
 }
 
 fn dspark_hit_is_restorable(entry_toks: usize, prompt_toks: usize, entry_has_tail: bool) -> bool {
@@ -27637,6 +27668,19 @@ pub fn run(
     let mut dspark_drafts: std::collections::HashMap<String, memra_engine::dflash::DflashDraft> =
         Default::default();
     if std::env::var("MEMRA_DSPARK_SPEC").as_deref() == Ok("1") {
+        let device_name = engine.ctx().name().unwrap_or_default();
+        let gb10 = memra_engine::BUILT_CUDA_ARCH == "120a"
+            && memra_engine::unified_memory::is_unified(engine.ctx());
+        let restore_default = dspark_restore_default_for_device(&device_name, gb10);
+        let _ = DSPARK_RESTORE_DEVICE_DEFAULT.set(restore_default);
+        eprintln!(
+            "[dspark] prefix restore doors default {} on {device_name:?} (gb10={gb10}): \
+             restore={} partial={} capture={}",
+            if restore_default { "ON" } else { "OFF" },
+            dspark_door_env("MEMRA_DSPARK_PREFIX_RESTORE"),
+            dspark_door_env("MEMRA_DSPARK_PARTIAL_RESTORE"),
+            dspark_door_env("MEMRA_DSPARK_BOUNDARY_CAPTURE"),
+        );
         if let Some(msg) = dspark_spec_boot_conflict(
             std::env::var("MEMRA_SPEC_DFLASH").is_ok(),
             gemma4_spec_k_env(),
@@ -40488,6 +40532,44 @@ fn serve_devpenalty_for(arch: &Arch) -> bool {
     static ENV: std::sync::OnceLock<Option<String>> = std::sync::OnceLock::new();
     let env = ENV.get_or_init(|| std::env::var("MEMRA_SERVE_DEVPENALTY").ok());
     serve_devpenalty_from(env.as_deref(), memra_engine::BUILT_CUDA_ARCH, arch)
+}
+
+#[cfg(test)]
+mod dspark_restore_default_tests {
+    use super::{dspark_door, dspark_restore_default_for_device};
+
+    #[test]
+    fn restore_doors_default_on_only_on_gated_devices_and_the_flag_decides_everywhere() {
+        assert!(
+            dspark_restore_default_for_device("NVIDIA GB10", true),
+            "GB10 passed the gate"
+        );
+        assert!(dspark_restore_default_for_device(
+            "NVIDIA GeForce RTX 5090",
+            false
+        ));
+        assert!(dspark_restore_default_for_device(
+            "NVIDIA GeForce RTX 5090 Laptop GPU",
+            false
+        ));
+        assert!(
+            !dspark_restore_default_for_device(
+                "NVIDIA RTX PRO 6000 Blackwell Server Edition",
+                false
+            ),
+            "the PRO 6000 waits for its own gate"
+        );
+        assert!(!dspark_restore_default_for_device(
+            "NVIDIA H100 80GB HBM3",
+            false
+        ));
+        assert!(dspark_door(None, true));
+        assert!(!dspark_door(None, false));
+        assert!(!dspark_door(Some("0"), true), "0 rolls a gated device back");
+        assert!(dspark_door(Some("1"), false), "1 opts any device in");
+        assert!(dspark_door(Some("yes"), true));
+        assert!(!dspark_door(Some("yes"), false));
+    }
 }
 
 #[cfg(test)]

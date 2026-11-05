@@ -21,8 +21,14 @@ boot() { # tag extra-env...
   waitfor --http http://127.0.0.1:8093/v1/models --timeout 10m --every 5s --fail-after 120 --quiet
 }
 stop() { kill -TERM $SP; waitfor --gone $SP --timeout 90s --quiet || kill -KILL $SP; wait $SP 2>/dev/null; }
-boot arm MEMRA_PREFIX_CACHE_MB=4000 MEMRA_DSPARK_PREFIX_RESTORE=1 MEMRA_DSPARK_BOUNDARY_CAPTURE=1 \
-  MEMRA_DSPARK_PARTIAL_RESTORE=1 MEMRA_PREFIX_STABLE_BOUNDARY=1 \
+# DOORS=default leaves the three restore doors unset, so the arm runs on the device default.
+if [ "${DOORS:-explicit}" = default ]; then
+  ARMDOORS=""
+else
+  ARMDOORS="MEMRA_DSPARK_PREFIX_RESTORE=1 MEMRA_DSPARK_BOUNDARY_CAPTURE=1 MEMRA_DSPARK_PARTIAL_RESTORE=1"
+fi
+# shellcheck disable=SC2086
+boot arm MEMRA_PREFIX_CACHE_MB=4000 $ARMDOORS MEMRA_PREFIX_STABLE_BOUNDARY=1 \
   && python3 "$G" http://127.0.0.1:8093 q38 "$O/arm.jsonl"
 stop
 boot ref MEMRA_PREFIX_CACHE_MB=0 && python3 "$G" http://127.0.0.1:8093 q38 "$O/ref.jsonl"
