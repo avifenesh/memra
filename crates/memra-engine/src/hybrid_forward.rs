@@ -5478,7 +5478,7 @@ impl HybridModel {
     ///   (a) full-attn layers append their T post-RoPE K/V rows into `cache.kv[il]` via the SAME
     ///       per-row quantize kernel as the decode append (bit-identical cache bytes per row);
     ///   (b) linear layers run STATEFULLY from the cache's current recurrent state (zero at a
-    ///       fresh prime): carried-ring conv (ssm_conv1d_tm_state) + ONE gdn_scan(state_in,
+    ///       fresh prime): carried-ring conv + ONE gdn_scan(state_in,
     ///       state_out) whose internal sequential t-loop equals T chained T=1 steps — but with
     ///       the NORMAL prefill matmul dispatch (GEMM at m>=16), NOT the decode-exact MMVQ the
     ///       spec verify uses (prime is a prefill-regime pass; the run-gen prefill==decode
@@ -9395,9 +9395,9 @@ impl HybridModel {
     /// STATEFUL batched linear-attention prime: `linear_attn`'s prefill-dispatch pass (normal
     /// `e.matmul` — GEMM at m>=16 — plus the prefill repack/L2/glog kernels) but with the state
     /// carried THROUGH the cache like the spec verify does: carried-ring conv
-    /// (ssm_conv1d_tm_state writes the final ring back) + ONE gdn_scan from cache.recur[il]'s
+    /// (`ssm_conv1d_gdn_state_pad`, then the ring update) + ONE gdn_scan from cache.recur[il]'s
     /// current state (zero at a fresh prime) whose final state ping-pongs back into the cache.
-    /// Wiring mirrors `linear_attn_verify_t` (spec.rs); dispatch mirrors `linear_attn` (prefill).
+    /// Dispatch mirrors `linear_attn` (prefill).
     #[allow(clippy::too_many_arguments)] // allow: the parameter list mirrors the kernel/FFI/call contract; bundling into a struct is a refactor, not a lint fix
     fn linear_attn_prime(
         &self,

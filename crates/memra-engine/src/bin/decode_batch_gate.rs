@@ -2057,8 +2057,8 @@ fn pp_battery(
 /// round. This is the gate that licenses lifting `refuse_unsplit_if_remote` on the spec path.
 ///
 /// WHY IT IS NOT COVERED BY `--mode pp`: the verify forward is a different numeric config from
-/// batched decode. It runs T columns through the GDN recurrence SEQUENTIALLY, its own
-/// `t >= 3 || (t == 2 && spec_m2())` batched-linear window, and FA at m=T — and it allocates
+/// batched decode. It runs T columns through the GDN recurrence SEQUENTIALLY and FA at m=T —
+/// and it allocates
 /// more per-stage Engine scratch than any decode path (the FA partial pool at m=T plus the
 /// per-layer retains). The scratch-race class this design prevents therefore has MORE surface
 /// here, not less, which is why the split arm repeats (`reps`).

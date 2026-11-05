@@ -1,6 +1,6 @@
-//! ROUND-STREAM: the model-generic device machinery for pre-issued M-round speculative
-//! bursts with zero per-round host readbacks (extracted from the qwen spec loop 2026-07-12
-//! so the gemma/next-model loops reuse it instead of re-growing their own).
+//! ROUND-STREAM: the device machinery for pre-issued M-round speculative bursts with zero
+//! per-round host readbacks (extracted from the qwen spec loop 2026-07-12; the gemma burst is
+//! its caller since the qwen arm was removed on 2026-11-03, docs/FLAGS.md "Removed doors").
 //!
 //! The pieces that live here are pure device-buffer plumbing — every model-specific thing
 //! (the draft-chain graph, the verify trunk, commit semantics) stays in the caller:
@@ -11,8 +11,8 @@
 //!   - `drain_ring`: the one host sync per M rounds — reads the ring and appends tokens.
 //!
 //! The kernels these feed (`spec_accept_greedy_dc`, `spec_ring_commit`,
-//! `spec_rollback_stream`, `spec_seed_gather`, `spec_assemble_verify`) are already
-//! model-generic in lib.rs; this module is the buffer/lifecycle half.
+//! `spec_rollback_stream`, `spec_seed_gather`) are model-generic in lib.rs; this module is
+//! the buffer/lifecycle half.
 
 use crate::Engine;
 use crate::cache::Cache;
