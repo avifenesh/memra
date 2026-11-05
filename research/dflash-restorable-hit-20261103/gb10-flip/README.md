@@ -2,7 +2,7 @@
 
 Change (branch `dspark-restore-default-on`, measured binary 6561499516): with `MEMRA_DSPARK_SPEC=1`, `MEMRA_DSPARK_PREFIX_RESTORE`, `MEMRA_DSPARK_PARTIAL_RESTORE` and `MEMRA_DSPARK_BOUNDARY_CAPTURE` default ON on GB10 and the RTX 5090 and OFF elsewhere. `1` or `0` still decides. `MEMRA_PREFIX_STABLE_BOUNDARY` is unchanged.
 
-Verdict: on GB10, doors on by default beats doors off at c1 (+17.4%) and c2 (+5.9%) and is flat at c4..c32 (within 0.9%). Exactness holds with the doors unset. The flip is adopted for GB10. The RTX 5090 default rests on its exactness gate; no served doors-on vs doors-off cell ran on that card (its agentic shape logs 0 vetoes, `../5090-cold-drafter-ab/`).
+Verdict: on GB10, doors on by default beats doors off at c1 (+17.4% across units, +17.1% in a same-unit ABBA of 2+2 runs) and c2 (+5.9%) and is flat at c4..c32 (within 0.9%). Exactness holds with the doors unset. The flip is adopted for GB10. The RTX 5090 default rests on its exactness gate; no served doors-on vs doors-off cell ran on that card (its agentic shape logs 0 vetoes, `../5090-cold-drafter-ab/`).
 
 ## Exactness
 
@@ -48,4 +48,13 @@ Reading:
 
 ## c1 repeats (cb33, ABBA)
 
-Arm 4's c1 is the first A (off). The repeats on the same unit and launcher follow in the order on, on, off (`cb33_tail.sh`). Results are added here when they finish.
+Arm 4's c1 is the first A (off); the repeats follow on the same unit, launcher and client in the order on, on, off (`cb33_tail.sh`, log `cb33-chain.log`), fresh boot each.
+
+| order | doors | run | c1 tok/s | wall s |
+|---:|---|---|---:|---:|
+| 1 | off | arm 4, c1 of the full run (`arm4-1031-off-cb33/`) | 12.16 | 1609.2 |
+| 2 | on | `c1r-on1-cb33/` | 14.22 | 1329.3 |
+| 3 | on | `c1r-on2-cb33/` | 14.23 | 1327.7 |
+| 4 | off | `c1r-off-cb33/` | 12.14 | 1612.0 |
+
+Doors on 14.22 / 14.23, doors off 12.16 / 12.14: mean 14.23 against 12.15, +17.1%, with no overlap between the arms. Arm 3's c1 on b23d (14.28) sits with the doors-on runs.
