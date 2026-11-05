@@ -2,7 +2,7 @@
 
 Change (branch `dspark-restore-default-on`, measured binary 6561499516): with `MEMRA_DSPARK_SPEC=1`, `MEMRA_DSPARK_PREFIX_RESTORE`, `MEMRA_DSPARK_PARTIAL_RESTORE` and `MEMRA_DSPARK_BOUNDARY_CAPTURE` default ON on GB10 and the RTX 5090 and OFF elsewhere. `1` or `0` still decides. `MEMRA_PREFIX_STABLE_BOUNDARY` is unchanged.
 
-Later the same day the RTX PRO 6000 Max-Q joined the device default after its exactness gate (`../cold-drafter-gate/pro6000maxq-c76b/`, no served A/B on that card). The RTX 5090 Laptop served A/B is in `../rig5090-flip/`.
+Later the same day the RTX PRO 6000 Max-Q joined the device default after its exactness gate (`../cold-drafter-gate/pro6000maxq-c76b/`, no served A/B on that card). The RTX 5090 Laptop served A/B (`../rig5090-flip/`) gave c1 +7.6% but refused 17.9k-token prompts at c2 on 24 GB, so the owner ruled "Spark + Max-Q only": the shipped default is ON on GB10 and the RTX PRO 6000 Max-Q, and every RTX 5090 stays OFF unless a launcher sets the doors to `1`.
 
 Verdict: on GB10, doors on by default beats doors off at c1 (+17.4% across units, +17.1% in a same-unit ABBA of 2+2 runs) and c2 (+5.9%) and is flat at c4..c32 (within 0.9%). Exactness holds with the doors unset. The flip is adopted for GB10. The RTX 5090 default rests on its exactness gate; no served doors-on vs doors-off cell ran on that card (its agentic shape logs 0 vetoes, `../5090-cold-drafter-ab/`).
 

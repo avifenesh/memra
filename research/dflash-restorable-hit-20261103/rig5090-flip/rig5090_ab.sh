@@ -9,11 +9,11 @@
 # 4,000 MB, the 29 agentic bodies that fit 24 GB, T=1 seed 1234, thinking on; sessions raised 1 -> 8
 # for c2..c8. GPU telemetry every 250 ms. Run under gpulock.
 set -u
-BIN=/home/avifenesh/.cache/memra-1031-rebase/memra-server-flip-6561499516
+BIN=$HOME/.cache/memra-1031-rebase/memra-server-flip-6561499516
 M=/data/ai-ml/models/q38-gguf
-H=/home/avifenesh/.cache/model-scout/harness
-W=/home/avifenesh/.cache/memra-1025/ab-workload-5090.json
-O=/home/avifenesh/.cache/memra-1031-rebase/rig5090
+H=$HOME/.cache/model-scout/harness
+W=$HOME/.cache/memra-1025/ab-workload-5090.json
+O=$HOME/.cache/memra-1031-rebase/rig5090
 mkdir -p "$O"
 log(){ echo "$(TZ=Asia/Jerusalem date +%H:%M:%S) $*" | tee -a "$O/chain.log"; }
 OFF="MEMRA_DSPARK_PREFIX_RESTORE=0 MEMRA_DSPARK_PARTIAL_RESTORE=0 MEMRA_DSPARK_BOUNDARY_CAPTURE=0"

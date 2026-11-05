@@ -114,6 +114,6 @@ Agentic cell, GGUF DFlash2, the doors armed in the launcher (`MEMRA_DSPARK_PREFI
 
 Both runs logged 56 `cache-preferred` vetoes. The head converted 15 of them to a cold-drafter DFlash prime, the base none. These are single runs on two units, so I read only c1. The cb33 launcher also sets `MEMRA_VISION_DIR`, so that boot loaded the vision tower; the b23d boot did not. Text-only requests never reach it.
 
-Without the doors the conversion is off, so this PR changes nothing for a boot that does not arm them. Making the doors a GB10 and RTX 5090 default, with its doors-on vs doors-off A/B, is the follow-up on branch `dspark-restore-default-on` (`gb10-flip/` there).
+Without the doors the conversion is off, so this PR changes nothing for a boot that does not arm them. The follow-up memra#1069 makes the doors a device default on GB10 and the RTX PRO 6000 Max-Q (the RTX 5090 stays off, owner ruling), with the doors-on vs doors-off A/Bs in `gb10-flip/` and `rig5090-flip/`.
 
 Every lever of this lane, with SHAs and receipts: `LEVER-LEDGER.md`.

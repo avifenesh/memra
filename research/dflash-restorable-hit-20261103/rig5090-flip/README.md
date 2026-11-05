@@ -2,6 +2,8 @@
 
 Verdict: on the 24 GB RTX 5090 Laptop, doors on beats doors off in every cell both arms complete: c1 +7.6% in a 2+2 ABBA with no overlap, c2 +13.3% on the shorter-prompt subset. Doors on also hits the card's memory limit at a lower concurrency. With doors on, the full workload's 17-18k-token prompts are refused (HTTP 400) from c2, and the subset gets an HTTP 408 at c4. Doors off serves both of those cells, and both arms fail at c8.
 
+Decision (owner, 2026-11-05): "Spark + Max-Q only". The RTX 5090 stays default OFF; `MEMRA_DSPARK_PREFIX_RESTORE=1`, `MEMRA_DSPARK_PARTIAL_RESTORE=1` and `MEMRA_DSPARK_BOUNDARY_CAPTURE=1` still arm the doors on it.
+
 ## Setup
 
 - Card: RTX 5090 Laptop GPU, 24 GB, platform profile `balanced`. Every arm ran at about 80 C and 900 MHz SM under the software power cap (`gpu-250ms.csv`, 250 ms samples). The host load average was 10-23 throughout from other sessions' work, the same for every arm.

@@ -10,7 +10,7 @@ LEASE=${LEASE:?lease}
 UNIT=${UNIT:?unit}
 O=$1; shift
 mkdir -p "$O"
-H=/home/avifenesh/.cache/model-scout/harness
+H=$HOME/.cache/model-scout/harness
 SERVE=${SERVE:-$HOME/memra-run/serve-batchspec.sh}   # cb33: the b23d copy (no MEMRA_VISION_DIR), to match b23d
 log(){ echo "$(TZ=Asia/Jerusalem date +%H:%M:%S) [$UNIT] $*" | tee -a "$O/chain.log"; }
 OFF="MEMRA_DSPARK_PREFIX_RESTORE=0 MEMRA_DSPARK_PARTIAL_RESTORE=0 MEMRA_DSPARK_BOUNDARY_CAPTURE=0 MEMRA_PREFIX_STABLE_BOUNDARY=0"
@@ -25,7 +25,7 @@ bench() { # OUT TAG USERS
   (cd $H && timeout 900 python3 turnbench.py "$out/warm" --plan 8192:1 32768:1 --new 256 --reps 1 >> "$out/turn.log" 2>&1) || blog "warm rc=$?"
   blog "warm $(tail -n 2 "$out/turn.log" | cut -c1-90 | tr '\n' ' ')"
   for u in $users; do
-    (cd $H && timeout 3600 python3 ab_agent.py run /home/avifenesh/.cache/claude-spark-20261025/ab-workload.json "$out" "$tag" --users $u --think 1 --temperature 1.0 --seed 1234 >> "$out/cells.log" 2>&1) || blog "cell c$u rc=$?"
+    (cd $H && timeout 3600 python3 ab_agent.py run $HOME/.cache/claude-spark-20261025/ab-workload.json "$out" "$tag" --users $u --think 1 --temperature 1.0 --seed 1234 >> "$out/cells.log" 2>&1) || blog "cell c$u rc=$?"
     blog "cell c$u $(tail -n 1 "$out/cells.log" | cut -c1-160)"
   done
   kill $mw 2>/dev/null

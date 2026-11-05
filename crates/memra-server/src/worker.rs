@@ -890,18 +890,22 @@ fn dspark_prefers_cold_over_prefix_with(
 
 /// Device default of the three DFlash prefix-restore doors (`MEMRA_DSPARK_PREFIX_RESTORE`,
 /// `MEMRA_DSPARK_PARTIAL_RESTORE`, `MEMRA_DSPARK_BOUNDARY_CAPTURE`), set once at boot when
-/// DFlash is armed (`MEMRA_DSPARK_SPEC=1`). ON on the devices whose restored-vs-cold
-/// byte-identity gate is green with all three armed (memra#1031 cold-drafter gate: GB10, the
-/// RTX 5090 and the RTX PRO 6000 Max-Q); OFF elsewhere, other RTX PRO 6000 editions included,
-/// until the same gate runs there. Unset = OFF, so a boot without DFlash, and every unit test,
-/// keeps the pre-flip behavior.
+/// DFlash is armed (`MEMRA_DSPARK_SPEC=1`). ON on GB10 and the RTX PRO 6000 Max-Q, whose
+/// restored-vs-cold byte-identity gate is green with all three armed (memra#1031 cold-drafter
+/// gate). OFF everywhere else (owner, 2026-11-05: "Spark + Max-Q only"), including:
+/// - every RTX 5090: its gate is green too, but on the 24 GB laptop card the doors' memory
+///   cost refuses long prompts one concurrency step sooner
+///   (research/dflash-restorable-hit-20261103/rig5090-flip/);
+/// - the other RTX PRO 6000 editions, which have no gate yet.
+///
+/// `1` arms the doors on any device. Unset = OFF, so a boot without DFlash, and every unit
+/// test, keeps the pre-flip behavior.
 static DSPARK_RESTORE_DEVICE_DEFAULT: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
 
-/// Whether the device passed the restore gate: GB10 (unified-memory 120a family), an RTX 5090,
-/// or the RTX PRO 6000 Blackwell Max-Q.
+/// The devices whose restore doors default ON: GB10 (unified-memory 120a family) and the RTX
+/// PRO 6000 Blackwell Max-Q.
 fn dspark_restore_default_for_device(device_name: &str, gb10: bool) -> bool {
-    gb10 || device_name.contains("RTX 5090")
-        || (device_name.contains("RTX PRO 6000") && device_name.contains("Max-Q"))
+    gb10 || (device_name.contains("RTX PRO 6000") && device_name.contains("Max-Q"))
 }
 
 /// One door: an explicit `1` or `0` decides; anything else follows the device default.
@@ -981,9 +985,10 @@ fn should_probe_prefix_cache(
 /// lcprestore-20260813), whose suffix went through T=1 `decode_step` and byte-diverged.
 ///
 /// Its restored-vs-cold byte-identity gate (memra#1031, `tools/dspark-cold-drafter-gate.py`)
-/// is green on GB10, the RTX 5090 and the RTX PRO 6000 Max-Q, so it defaults on there; other
-/// devices stay off until they pass the same gate (the carve-out law: a route inheriting a
-/// restore path re-gates its own identity).
+/// is green on GB10, the RTX 5090 and the RTX PRO 6000 Max-Q. It defaults on with the other
+/// doors on GB10 and the Max-Q (`DSPARK_RESTORE_DEVICE_DEFAULT`); a device without the gate
+/// stays off until it passes it (the carve-out law: a route inheriting a restore path re-gates
+/// its own identity).
 fn dspark_partial_restore_on() -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *ON.get_or_init(|| dspark_door_env("MEMRA_DSPARK_PARTIAL_RESTORE"))
@@ -1009,8 +1014,8 @@ fn dspark_partial_restore_on() -> bool {
 /// of restoring whole. That is the trade the shape asks for — exact re-sends are 31 of 220
 /// customer requests, and every other request is a strict prefix that gets nothing today.
 ///
-/// Defaults on where the restored-vs-cold byte-identity gate is green (GB10, RTX 5090, RTX PRO
-/// 6000 Max-Q). The split itself is grid-aligned (`plain_checkpoint_boundary`
+/// Defaults on with the other doors on GB10 and the RTX PRO 6000 Max-Q
+/// (`DSPARK_RESTORE_DEVICE_DEFAULT`). The split itself is grid-aligned (`plain_checkpoint_boundary`
 /// returns a `grid_align_boundary` value, and the engine REFUSES an off-grid boundary), which
 /// is the measured precondition for a two-call prime to be bit-identical to a monolithic one.
 fn dspark_boundary_capture_on() -> bool {
@@ -40681,16 +40686,16 @@ mod dspark_restore_default_tests {
     }
 
     #[test]
-    fn restore_doors_default_on_only_on_gated_devices_and_the_flag_decides_everywhere() {
+    fn restore_doors_default_on_only_on_gb10_and_the_max_q_and_the_flag_decides_everywhere() {
         assert!(
             dspark_restore_default_for_device("NVIDIA GB10", true),
             "GB10 passed the gate"
         );
-        assert!(dspark_restore_default_for_device(
-            "NVIDIA GeForce RTX 5090",
-            false
-        ));
-        assert!(dspark_restore_default_for_device(
+        assert!(
+            !dspark_restore_default_for_device("NVIDIA GeForce RTX 5090", false),
+            "the RTX 5090 stays off by default (owner, 2026-11-05)"
+        );
+        assert!(!dspark_restore_default_for_device(
             "NVIDIA GeForce RTX 5090 Laptop GPU",
             false
         ));
