@@ -298,9 +298,9 @@ DeltaNet scan; all f32" (hybrid.cu:1-3).
 | symbol (family) | purpose | qtype | arch guard | dispatch flag | FFI binding |
 |---|---|---|---|---|---|
 | `ssm_conv1d_*`, `conv_assemble_and_roll_f32`, `ssm_conv_ring_*` | causal conv1d + ring KV state | f32 | — | UNKNOWN | fatbin/by-name |
-| `gdn_*` scan family (prep_decode, scan_s128/_dc/_b, chunk_* incl. `_vl`) | Gated DeltaNet recurrent/chunked scan | f32 | mma-body region `#if !defined(MEMRA_PORTABLE_CUDA) \|\| defined(MEMRA_HOPPER_MMA)` (hybrid.cu:489, 1531, 2192) | MEMRA_GDN_MMA | fatbin/by-name |
+| `gdn_*` scan family (prep_decode, scan_s128/_b, chunk_* incl. `_vl`) | Gated DeltaNet recurrent/chunked scan | f32 | mma-body region `#if !defined(MEMRA_PORTABLE_CUDA) \|\| defined(MEMRA_HOPPER_MMA)` (hybrid.cu:489, 1531, 2192) | MEMRA_GDN_MMA | fatbin/by-name |
 | `gdn_chunk_state_mma[_vl]`, `gdn_chunk_output_mma[_vl]` | fused wgmma K4+K5 chunk kernels | bf16 mirrors, f32 acc | sm_90a-only wgmma via wgmma_common.cuh:9 (include at hybrid.cu:2202) | MEMRA_GDN_WGMMA (hybrid.cu:2195 "env+cfg gated") | fatbin/by-name |
-| glue (~15: sigmoid, gated_rmsnorm incl. f16out/q8_1, axpy, scatter/gather/reduce slots, f32_to_bf16_bulk, q_gate_split, qkv_to_gdn_repack) | hybrid-path glue | f32 | — | UNKNOWN | fatbin/by-name |
+| glue (~14: sigmoid, gated_rmsnorm incl. f16out/q8_1, axpy, scatter/gather/reduce slots, f32_to_bf16_bulk, q_gate_split) | hybrid-path glue | f32 | — | UNKNOWN | fatbin/by-name |
 
 ### cu/qmatvec.cu — 329 symbols (fatbin `MEMRA_QMATVEC_FATBIN`; batch-spec-20261101 +6: `qmatvec_nvfp4_mmvq_b16_rpsc`, `qmatvec_nvfp4_mmvq_b16_rpscx`, `qmatvec_nvfp4_mmvq_b32_rpcs8`, `qmatvec_nvfp4_mmvq_group4_b32_rpcs8`, `qmatvec_nvfp4_mmvq_b32_tc`, `qmatvec_nvfp4_mmvq_group4_b32_tc`; lane/kda-narrow-q8-20260905's `qmatvec_q8_0_mmvq_f32in_narrow` removed 2026-11-03 with its door; the B200 MoE v2 twins removed 2026-11-03 on their neutral and negative receipt; lane/moe-gateup-ilp2-20260905 +2: `moe_gate_up_preclamp8_q8_rows_ilp2`, `_w4_ilp2`; lane/moe-down-ilp2-20260905's `moe_down8_fma_q8_rows_ilp2` / `_w4_ilp2` removed 2026-09-06 on the gemvab receipt; the unreachable `qmatvec_q4_0_mmvq_b16_r2` / `_b16_r2_rp` removed 2026-11-03, since the b16 tier dispatches only base and `_rp`; 14 unlaunched kernels removed 2026-11-03: `moe_w_exscale`, `axpy_rows_seq_md_off_f32`, `qmatvec_nvfp4_bf16_sel_down_fma`, `qmatvec_nvfp4_{bf16,q8}_ep_down_fma`, `qmatvec_nvfp4_bf16_ep_dual_pairs`, `matvec_bf16_f32acc_tcol`, the compile-time-T `matvec_bf16_{qkvg,b4}_tcol_t{2,4,8}` twins and `matvec_bf16_dual_silu_ilv`)
 
@@ -411,7 +411,7 @@ counter-based" (spec_sample.cu:1-5).
 | symbol (family) | purpose | dispatch flag |
 |---|---|---|
 | `gumbel_perturb_*`, `softmax_gather_*`, `residual_sample_*`, `filter_stats_f32`, `scatter_trim_logits_*`, `penalize_logits_*` (including heterogeneous sparse serving rows), `mask_logits_f32`, `memra_sctr_inc` | Gumbel-max sampling, top-k/p filtering, penalties, residual (rejection) sampler | sampling chain via MEMRA_TEMP/TOP_K/TOP_P/MIN_P/PENALTY_* plus batched serving `MEMRA_SERVE_DEVPENALTY` |
-| `spec_accept_greedy_dc`, `spec_seed_gather`, `spec_rollback_stream`, `spec_assemble_verify`, `spec_ring_commit`, `spec_adapt_k`, `plain_tok_ring`, misc int copies | spec-decode accept/rollback/fork machinery | MEMRA_SPEC_* family (MEMRA_SPEC_DUAL_T lib.rs; MEMRA_SPEC_DFLASH FLAGS.md:25) |
+| `spec_accept_greedy_dc`, `spec_seed_gather`, `spec_rollback_stream`, `spec_ring_commit`, `spec_adapt_k`, `plain_tok_ring`, misc int copies | spec-decode accept/rollback/fork machinery | MEMRA_SPEC_* family (MEMRA_SPEC_DUAL_T lib.rs; MEMRA_SPEC_DFLASH FLAGS.md:25) |
 
 ROOFLINE PROBES (lane/b200-roofline-recalibrate, 2026-09-06, BENCH-ONLY, no serving path
 reaches them): `memra_bw_read` (`memra_bw_read_scalar_kernel<ILP>` / `memra_bw_read_v4_kernel<ILP>`)
