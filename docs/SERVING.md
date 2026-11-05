@@ -2352,9 +2352,7 @@ payload:
 spec decode decays monotonically from position 0 (acceptance is a prefix walk: position j can
 only be accepted if 0..j-1 were). Arrays are trimmed to the deepest position ever drafted
 (up to 8 tracked positions; totals count deeper drafts too). Normalization matches
-`MEMRA_SPEC_STATS`: a p-min-cut chain token is counted in neither drafted nor accepted. The
-opt-in round-stream arm (`MEMRA_SPEC_STREAM=1`) keeps its accept counts on device, so under
-it per-position arrays cover the standard-path rounds only; totals stay complete.
+`MEMRA_SPEC_STATS`: a p-min-cut chain token is counted in neither drafted nor accepted.
 
 The first-class operator metrics use a rolling 30-second per-model window. `spec_tau` is the
 mean accepted draft-prefix length (`accepted / rounds`, excluding the target bonus token), and
