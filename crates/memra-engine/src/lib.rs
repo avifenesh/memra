@@ -4401,17 +4401,22 @@ impl Engine {
                 .unwrap_or((0, 0));
             let built = BUILT_CUDA_TARGET;
             if !cuda_arch::target_runs_on(built, maj, min) {
-                let hint = match cuda_arch::target_for_compute_cap(&format!("{maj}.{min}")) {
-                    Some(t) => format!("MEMRA_CUDA_ARCH={t}"),
-                    None => "no MEMRA_CUDA_ARCH target covers this device".to_string(),
+                let msg = match cuda_arch::target_for_compute_cap(&format!("{maj}.{min}")) {
+                    Some(t) => format!(
+                        "memra was built for sm_{built} but device {ordinal} reports compute \
+                         capability {maj}.{min}, and sm_{built} SASS does not load there. Rebuild \
+                         on this machine (MEMRA_CUDA_ARCH auto-detects the GPU; \
+                         MEMRA_CUDA_ARCH={t}) or set MEMRA_ARCH_CHECK=0 to bypass."
+                    ),
+                    // No bypass hint here: with no target for this capability, skipping the
+                    // guard only reaches the opaque module-load failure the guard names.
+                    None => format!(
+                        "memra was built for sm_{built} but device {ordinal} reports compute \
+                         capability {maj}.{min}, and no MEMRA_CUDA_ARCH target covers this \
+                         device (an sm_*a binary loads only on its exact capability)."
+                    ),
                 };
-                return Err(format!(
-                    "memra was built for sm_{built} but device {ordinal} reports compute \
-                     capability {maj}.{min}, and sm_{built} SASS does not load there. Rebuild \
-                     on this machine (MEMRA_CUDA_ARCH auto-detects the GPU; {hint}) or set \
-                     MEMRA_ARCH_CHECK=0 to bypass."
-                )
-                .into());
+                return Err(msg.into());
             }
         }
         // This engine's own SM count; the first engine also fixes the process FA split ladder.
