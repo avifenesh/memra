@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Second chance for refuted claims that narrowed families: re-check the family restriction
 alone (any route, any device, any env setting). Writes verify/fam-NN.json."""
-import json, sys
+import json, os, sys
 H = os.environ.get("MEMRA_IMPACT_WORK", os.path.expanduser("~/.cache/memra-impact-map-build"))
 res = json.load(open(f'{H}/wave1/results.json'))
 claims = {}

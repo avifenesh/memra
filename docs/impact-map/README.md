@@ -151,5 +151,6 @@ That change impact is judged with the push base's rules and map. A rules or map 
 ## Refreshing
 
 - Run `build.py` after merges that move many items. Regions are re-anchored through their items: by token hash when the item is unchanged, otherwise by searching for the evidence quote inside the item. A region that cannot be re-anchored is dropped, which only widens the map.
-- When a subsystem is rewritten, re-annotate its slice: `gen_facts.py` writes the agent fact sheets, `ingest.py` turns agent output plus skeptic verdicts into `annotations.json`, then `assemble.py` builds the map.
+- A failed step stops the build instead of narrowing it: a build.rs replay that exits nonzero or logs no nvcc call, and a device variant whose preprocessing failed or is missing (its kernels would read as dead). The CUTLASS variant sets no device reach and is not checked.
+- When a subsystem is rewritten, re-annotate its slice: `gen_facts.py` writes the agent fact sheets, `ingest.py` turns agent output plus skeptic verdicts into `annotations.json`, then `assemble.py` builds the map. A narrowing claim without a skeptic verdict is widened, so an ingest without verdicts gives a wide map.
 - `tools/impact_map/test_delta.py` covers the delta logic on a synthetic repository.
