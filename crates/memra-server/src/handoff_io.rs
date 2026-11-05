@@ -37,11 +37,18 @@ impl HandoffIo {
         }
     }
 
-    /// The export writer for a device: `direct` on the full-power RTX PRO 6000 Blackwell
-    /// Workstation Edition (BOX36, 10 pairs per size, export 0.917 at 1 GiB and 0.916 at 8 GiB
-    /// of buffered), `buffered` on every other card (the RTX 5090's 1 GiB cell read flat).
+    /// The export writer for a device: `direct` on the RTX PRO 6000 Blackwell Workstation
+    /// Edition, full power and Max-Q, each from its own cell (10 pairs per size; export of
+    /// buffered: BOX36 at 600 W 0.917 at 1 GiB and 0.916 at 8 GiB, the Max-Q at a 300 W limit
+    /// 0.860 and 0.916, `research/spill-f-20260919/pro-maxq-owed18/`), `buffered` on every other
+    /// card (the RTX 5090's 1 GiB cell read flat; the Server Edition has no cell).
     pub(crate) fn for_device(device_name: &str) -> HandoffIo {
-        if memra_engine::parallel::HardwareTarget::is_pro6000_workstation(device_name) {
+        use memra_engine::parallel::HardwareTarget;
+        if matches!(
+            HardwareTarget::from_device_name(device_name),
+            Ok(HardwareTarget::RtxPro6000Blackwell)
+        ) && device_name.contains("Workstation")
+        {
             HandoffIo::Direct
         } else {
             HandoffIo::Buffered
@@ -373,13 +380,14 @@ mod tests {
     /// The direct export is the card default of the full-power Workstation Edition only.
     #[test]
     fn the_export_writer_follows_the_card() {
-        assert_eq!(
-            HandoffIo::for_device("NVIDIA RTX PRO 6000 Blackwell Workstation Edition"),
-            HandoffIo::Direct
-        );
+        for name in [
+            "NVIDIA RTX PRO 6000 Blackwell Workstation Edition",
+            "NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition",
+        ] {
+            assert_eq!(HandoffIo::for_device(name), HandoffIo::Direct, "{name}");
+        }
         for name in [
             "NVIDIA GeForce RTX 5090",
-            "NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition",
             "NVIDIA RTX PRO 6000 Blackwell Server Edition",
             "NVIDIA B200",
             "",

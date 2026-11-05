@@ -1,7 +1,7 @@
-# The host-tier handoff export writes with O_DIRECT on the RTX PRO 6000 Workstation Edition (2026-11-04)
+# The host-tier handoff export writes with O_DIRECT on the RTX PRO 6000 Workstation Edition, full power and Max-Q (2026-11-04, Max-Q 2026-11-05)
 
-**Chosen:** on the full-power RTX PRO 6000 Blackwell Workstation Edition, the host-tier deploy
-handoff export (`MEMRA_KV_HOST_HANDOFF`) writes its `.tmp` file with `O_DIRECT` through one
+**Chosen:** on the RTX PRO 6000 Blackwell Workstation Edition, the full-power card and the Max-Q
+(since 2026-11-05, from its own cell), the host-tier deploy handoff export (`MEMRA_KV_HOST_HANDOFF`) writes its `.tmp` file with `O_DIRECT` through one
 4096-aligned 4 MiB buffer: the last block zero-padded, the file truncated to its logical length,
 then `fdatasync` and the same rename. Every other card keeps the buffered writer (a 4 MiB
 `BufWriter` through the page cache, then `fsync`). The import reads through a 4 MiB `BufReader`
@@ -37,6 +37,19 @@ against 1,393.4 ms); import flat. `O_DIRECT` removes the writeback at fsync and 
 back in a slower write, for a net shorter export. The RTX 5090 row:
 `research/spill-f-20260919/owed18/5090/handoff-1g.pairs.log`.
 
+| Card | Storage | Export, direct / buffered (1 GiB, 8 GiB) | Write | Fsync | Import |
+|---|---|---|---|---|---|
+| RTX PRO 6000 Blackwell Workstation, 600 W (`box36/`) | xfs, local NVMe | 0.917, 0.916 winner | 1.215, 1.212 loser | winner | flat |
+| RTX PRO 6000 Blackwell Max-Q, 300 W limit (`pro-maxq-owed18/`, 2026-11-05) | ext4, local PCIe NVMe | 0.860, 0.916 winner | 1.002 flat, 1.066 loser | winner | flat |
+| RTX 5090, 1 GiB only (`owed18/5090/`) | | 0.843 flat | flat | winner | flat |
+
+The Max-Q row is `M1-PREREG.md` section H, registered before any Max-Q boot with the BOX36 tree,
+driver, reader, arms and schedule: all 40 cycles passed, 10 pairs per size, export medians 1,710.0
+-> 1,471.0 ms (1 GiB, 17 entries, 2,161.8 MB) and 6,221.0 -> 5,691.0 ms (8 GiB, 76 entries,
+9,664.7 MB), buffered -> direct. The card ran at a 300 W limit with the SW power cap active in 109
+of 218 samples (the fill prefill) and no thermal or power-brake slowdown.
+
 **What would change it:** the 5090 8 GiB cell reading a winner on the export adds the RTX 5090
-class. The win is a storage property as much as a card one: the cell ran on local NVMe, and a
-box whose handoff path is on other storage is outside the receipt.
+class; a Server Edition cell reading a winner adds that card. The win is a storage property as
+much as a card one: both PRO 6000 cells ran on local NVMe (xfs on the Workstation card, ext4 on
+the Max-Q), and a box whose handoff path is on other storage is outside the receipts.
