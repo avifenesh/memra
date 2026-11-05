@@ -1,0 +1,181 @@
+   Compiling memra-engine v0.138.0 (/home/avifenesh/.cache/memra-maxq/park-compact/wt-tip/crates/memra-engine)
+   Compiling memra-reference v0.138.0 (/home/avifenesh/.cache/memra-maxq/park-compact/wt-tip/crates/memra-reference)
+warning: ignoring -C extra-filename flag due to -o flag
+
+error[E0433]: cannot find `mimo_v2` in `model_packs`
+ --> crates/memra-reference/src/mimo_audio.rs:5:30
+  |
+5 | use memra_gguf::model_packs::mimo_v2::audio::MiMoAudioPatchPlan;
+  |                              ^^^^^^^ could not find `mimo_v2` in `model_packs`
+
+error[E0433]: cannot find `mimo_v2` in `model_packs`
+ --> crates/memra-reference/src/mimo_audio_attn.rs:8:30
+  |
+8 | use memra_gguf::model_packs::mimo_v2::audio::MiMoAudioPatchPlan;
+  |                              ^^^^^^^ could not find `mimo_v2` in `model_packs`
+
+error[E0433]: cannot find `mimo_v2` in `model_packs`
+ --> crates/memra-reference/src/mimo_vision.rs:4:30
+  |
+4 | use memra_gguf::model_packs::mimo_v2::vision::MiMoVisionAttentionPlan;
+  |                              ^^^^^^^ could not find `mimo_v2` in `model_packs`
+
+error[E0433]: cannot find `mimo_v2` in `model_packs`
+ --> crates/memra-reference/src/mimo_vision_patchify.rs:8:30
+  |
+8 | use memra_gguf::model_packs::mimo_v2::vision::MiMoVisionGrid;
+  |                              ^^^^^^^ could not find `mimo_v2` in `model_packs`
+
+error[E0433]: cannot find `mimo_v2` in `model_packs`
+ --> crates/memra-reference/src/mimo_vision_rope.rs:4:30
+  |
+4 | use memra_gguf::model_packs::mimo_v2::vision::{
+  |                              ^^^^^^^ could not find `mimo_v2` in `model_packs`
+
+error[E0432]: unresolved import `memra_gguf::model_plan::PerLayerInputPlan`
+  --> crates/memra-reference/src/lib.rs:25:63
+   |
+25 |     LogitsTransform, MicroBlockIndexPlan, MlpPlan, ModelPlan, PerLayerInputPlan, PleEmbeddingPlan,
+   |                                                               ^^^^^^^^^^^^^^^^^ no `PerLayerInputPlan` in `model_plan`
+
+Some errors have detailed explanations: E0432, E0433.
+For more information about an error, try `rustc --explain E0432`.
+warning: `memra-reference` (lib) generated 1 warning
+error: could not compile `memra-reference` (lib) due to 6 previous errors; 1 warning emitted
+warning: build failed, waiting for other jobs to finish...
+warning: memra-engine@0.138.0: nvcc from MEMRA_NVCC: /usr/local/cuda-13.1/bin/nvcc
+error: failed to run custom build command for `memra-engine v0.138.0 (/home/avifenesh/.cache/memra-maxq/park-compact/wt-tip/crates/memra-engine)`
+
+Caused by:
+  process didn't exit successfully: `/home/avifenesh/.cache/memra-maxq/target/release/build/memra-engine-254f2ff390141a76/build-script-build` (exit status: 101)
+  --- stdout
+  cargo:rerun-if-env-changed=DOCS_RS
+  cargo:rustc-check-cfg=cfg(memra_env_registry_present)
+  cargo:rerun-if-changed=/home/avifenesh/.cache/memra-maxq/park-compact/wt-tip/crates/memra-engine/../../docs/FLAGS.md
+  cargo:rustc-cfg=memra_env_registry_present
+  cargo:rerun-if-env-changed=MEMRA_NVCC
+  cargo:rerun-if-env-changed=CUDA_HOME
+  cargo:rerun-if-env-changed=CUDA_PATH
+  cargo:rerun-if-env-changed=CUDA_ROOT
+  cargo:warning=nvcc from MEMRA_NVCC: /usr/local/cuda-13.1/bin/nvcc
+  cargo:rerun-if-env-changed=MEMRA_CUDA_ARCH
+  cargo:rerun-if-env-changed=MEMRA_CUTLASS
+  cargo:rustc-check-cfg=cfg(memra_portable_cuda)
+  cargo:rustc-check-cfg=cfg(memra_hopper_mma)
+  cargo:rustc-check-cfg=cfg(memra_sm100_tcgen05)
+  cargo:rustc-check-cfg=cfg(memra_cutlass)
+  cargo:rustc-env=MEMRA_BUILT_CUDA_ARCH=120a
+  cargo:rerun-if-changed=cu/kernels.cu
+  cargo:rerun-if-changed=cu/wgmma_common.cuh
+  cargo:rerun-if-env-changed=MEMRA_FA_PP_MINBLOCKS
+  cargo:rustc-env=MEMRA_ENGINE_FATBIN=/home/avifenesh/.cache/memra-maxq/target/release/build/memra-engine-c4c48b93bc59328a/out/kernels.fatbin
+  cargo:rerun-if-changed=cu/hybrid.cu
+  cargo:rerun-if-changed=cu/wgmma_common.cuh
+  cargo:rerun-if-env-changed=MEMRA_FA_PP_MINBLOCKS
+  cargo:rustc-env=MEMRA_HYBRID_FATBIN=/home/avifenesh/.cache/memra-maxq/target/release/build/memra-engine-c4c48b93bc59328a/out/hybrid.fatbin
+  cargo:rerun-if-changed=cu/kda.cu
+  cargo:rerun-if-changed=cu/wgmma_common.cuh
+  cargo:rerun-if-env-changed=MEMRA_FA_PP_MINBLOCKS
+  cargo:rustc-env=MEMRA_KDA_FATBIN=/home/avifenesh/.cache/memra-maxq/target/release/build/memra-engine-c4c48b93bc59328a/out/kda.fatbin
+  cargo:rerun-if-changed=cu/qmatvec.cu
+  cargo:rerun-if-changed=cu/wgmma_common.cuh
+  cargo:rerun-if-env-changed=MEMRA_FA_PP_MINBLOCKS
+  cargo:rustc-env=MEMRA_QMATVEC_FATBIN=/home/avifenesh/.cache/memra-maxq/target/release/build/memra-engine-c4c48b93bc59328a/out/qmatvec.fatbin
+  cargo:rerun-if-changed=cu/flash_attn.cu
+  cargo:rerun-if-changed=cu/wgmma_common.cuh
+  cargo:rerun-if-env-changed=MEMRA_FA_PP_MINBLOCKS
+  cargo:rustc-env=MEMRA_FLASH_FATBIN=/home/avifenesh/.cache/memra-maxq/target/release/build/memra-engine-c4c48b93bc59328a/out/flash_attn.fatbin
+  cargo:rerun-if-changed=cu/qmatvec_gemm.cu
+  cargo:rerun-if-changed=cu/wgmma_common.cuh
+  cargo:rerun-if-env-changed=MEMRA_FA_PP_MINBLOCKS
+  cargo:rustc-env=MEMRA_GEMM_FATBIN=/home/avifenesh/.cache/memra-maxq/target/release/build/memra-engine-c4c48b93bc59328a/out/qmatvec_gemm.fatbin
+  cargo:rerun-if-changed=cu/moe_router.cu
+  cargo:rerun-if-changed=cu/wgmma_common.cuh
+  cargo:rerun-if-env-changed=MEMRA_FA_PP_MINBLOCKS
+  cargo:rustc-env=MEMRA_ROUTER_FATBIN=/home/avifenesh/.cache/memra-maxq/target/release/build/memra-engine-c4c48b93bc59328a/out/moe_router.fatbin
+  cargo:rerun-if-changed=cu/spec_sample.cu
+  cargo:rerun-if-changed=cu/wgmma_common.cuh
+  cargo:rerun-if-env-changed=MEMRA_FA_PP_MINBLOCKS
+  cargo:rustc-env=MEMRA_SAMPLE_FATBIN=/home/avifenesh/.cache/memra-maxq/target/release/build/memra-engine-c4c48b93bc59328a/out/spec_sample.fatbin
+  cargo:rerun-if-changed=cu/tier_receipt.cu
+  cargo:rerun-if-changed=cu/wgmma_common.cuh
+  cargo:rerun-if-env-changed=MEMRA_FA_PP_MINBLOCKS
+
+  --- stderr
+  cu/kernels.cu(1070): warning #550-D: variable "head" was set but never used
+        int head = hr % n_heads;
+            ^
+
+  Remark: The warnings can be suppressed with "-diag-suppress <warning-number>"
+
+  cu/kernels.cu(2082): warning #550-D: variable "red" was set but never used
+        __attribute__((shared)) float red[1];
+                                      ^
+
+  cu/kernels.cu(2188): warning #550-D: variable "red" was set but never used
+        __attribute__((shared)) float red[1];
+                                      ^
+
+  cu/kernels.cu(2627): warning #550-D: variable "red" was set but never used
+        __attribute__((shared)) float red[1];
+                                      ^
+
+  cu/qmatvec.cu(5205): warning #550-D: variable "s1" was set but never used
+            int s0 = whichHalf * 2, s1 = s0 + 1;
+                                    ^
+
+  Remark: The warnings can be suppressed with "-diag-suppress <warning-number>"
+
+  cu/qmatvec.cu(11499): warning #550-D: variable "vals_sh" was set but never used
+        __attribute__((shared)) float vals_sh[2];
+                                      ^
+
+  cu/flash_attn.cu(848): warning #177-D: variable "alpha_self" was declared but never referenced
+                float alpha_self = 1.0f;
+                      ^
+
+  Remark: The warnings can be suppressed with "-diag-suppress <warning-number>"
+
+  cu/flash_attn.cu(1083): warning #177-D: variable "sMw" was declared but never referenced
+        float* sMw = sM + warp*16;
+               ^
+
+  cu/flash_attn.cu(3669): warning #177-D: variable "sSw" was declared but never referenced
+        float* sSw = sS + warp*16*32;
+               ^
+
+  cu/flash_attn.cu(3670): warning #177-D: variable "sMw" was declared but never referenced
+        float* sMw = sM + warp*16;
+               ^
+
+  cu/flash_attn.cu(268): warning #177-D: function "dq_fp8_elem" was declared but never referenced
+    static __attribute__((device)) __inline__ __attribute__((always_inline)) float dq_fp8_elem(
+                                                                                   ^
+
+  cu/flash_attn.cu(5401): warning #177-D: function "fa_ld_int_2a" was declared but never referenced
+    static __attribute__((device)) __inline__ __attribute__((always_inline)) int fa_ld_int_2a(const uint8_t* p) {
+                                                                                 ^
+
+  cu/qmatvec_gemm.cu(1489): warning #177-D: variable "kg" was declared but never referenced
+        int kg = lane % 4;
+            ^
+
+  Remark: The warnings can be suppressed with "-diag-suppress <warning-number>"
+
+  cu/qmatvec_gemm.cu(443): warning #821-D: extern inline function "decode_block_s<QT>(const unsigned char *, int, int8_t *, float *) [with QT=9]" was referenced but not defined
+    __attribute__((device)) __inline__ __attribute__((always_inline)) float decode_block_s(const unsigned char* b, int grp, int8_t* out, float* bias);
+                                                                            ^
+
+  cu/moe_router.cu(627): warning #177-D: variable "s_pick_w" was declared but never referenced
+        __attribute__((shared)) float s_pick_w[32];
+                                      ^
+
+  Remark: The warnings can be suppressed with "-diag-suppress <warning-number>"
+
+  cc1plus: fatal error: cu/tier_receipt.cu: No such file or directory
+  compilation terminated.
+
+  thread 'main' (3995786) panicked at crates/memra-engine/build.rs:333:9:
+  nvcc fatbin build failed for cu/tier_receipt.cu
+  note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+exit=101

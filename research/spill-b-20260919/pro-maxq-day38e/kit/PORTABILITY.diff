@@ -1,0 +1,144 @@
+--- a/research/spill-b-20260919/day38d-run.sh
++++ b/research/spill-b-20260919/day38d-run.sh
+@@ -1,56 +1,62 @@
+ #!/usr/bin/env bash
+-# DAY38 addendum D boots (1.11; day38-run.sh with shape Xp in place of X): one boot per spec through run-day26-cell.sh (it takes the rig lock), after a bounded idle
+-# wait (at most 7200 s: lock free, no compute app, >= 24 GB host memory). Never a signal to anything this lane did not
++# DAY38 addendum D boots (1.11; day38-run.sh with shape Xp in place of X): one boot per spec through run-day26-cell.sh, after a bounded idle
++# wait (lock free, no compute app, >= 24 GB host memory). Never a signal to anything this lane did not
+ # start. usage: day38-run.sh <receipt root> <name>:<arm> ...
+ #   arm = off | on | on-fault-batch | on-fault-nobatch | on-fault-nobatch-red | vmm-off | vmm-on
+ # env: WT, RIG_LOCK (/tmp/memra-5090.lock), BIN, MODEL, MODEL_KEY, BOOT_CTX (65536; empty = the checkpoint's),
+ #      LENGTHS (6144,30720), NO_SCOPE.
++# Max-Q kit port (kit/DEVIATIONS.md D1, D3, D6): the tip deleted MEMRA_KV_PARK_COMPACT and MEMRA_KV_ALLOCATOR,
++# so the arms are binaries: off -> BIN_OFF, on and the green fault arms -> BIN_ON, the red fault arm -> RED_BIN.
++# The vmm pair cannot run (no allocator door) and is refused. The caller (kit/run.sh) holds RIG_LOCK for the
++# whole run, so idle() checks only the pinned card (SMI_CARD) and host memory, and the cell runs with LOCK=none.
+ set -uo pipefail
+ R=${1:?receipt root}; shift
+ WT=${WT:-$HOME/projects/wt-spill-b}
+ RIG_LOCK=${RIG_LOCK:-/tmp/memra-5090.lock}
+-BIN=${BIN:-$WT/target/day38d/green/memra-server}
+-RED_BIN=${RED_BIN:-$WT/target/day38d/red/memra-server}
++SMI_CARD=${SMI_CARD:?SMI_CARD (the nvidia-smi index of the pinned card)}
++BIN_OFF=${BIN_OFF:?BIN_OFF}
++BIN_ON=${BIN_ON:?BIN_ON}
++RED_BIN=${RED_BIN:?RED_BIN}
+ LENGTHS=${LENGTHS:-6144,30720}
++IDLE_WAIT_S=${IDLE_WAIT_S:-600}
+ cd "$WT" || exit 1
+ mkdir -p "$R/boots"
+ log() { echo "$(date -u +%FT%TZ) $*" >> "$R/run.log"; }
+ idle() {
+-  flock -n "$RIG_LOCK" true || return 1
+-  [ -z "$(nvidia-smi --query-compute-apps=pid --format=csv,noheader)" ] || return 1
++  [ -z "$(nvidia-smi -i "$SMI_CARD" --query-compute-apps=pid --format=csv,noheader)" ] || return 1
+   [ "$(free -g | awk '/^Mem:/{print $7}')" -ge 24 ] || return 1
+ }
+ BOOT_CTX=${BOOT_CTX-65536}
+ if [ -n "$BOOT_CTX" ]; then export MEMRA_CTX=$BOOT_CTX; else unset MEMRA_CTX; fi
+-export LOCK=$RIG_LOCK RIGDIR="$R/boots" N=5 CLIENT=day38-client.py PARSER=day38-parse.py MEMRA_TIMEOUT_MS_MAX=3600000 \
++export LOCK=none RIGDIR="$R/boots" N=5 CLIENT=day38-client.py PARSER=day38-parse.py MEMRA_TIMEOUT_MS_MAX=3600000 \
+   MEMRA_SERVE_SPEC=0 MEMRA_PREFIX_CACHE_MB=0
+ for spec in "$@"; do
+   IFS=: read -r name arm <<< "$spec"
+   aenv=(-u MEMRA_KV_PARK_COMPACT -u MEMRA_KV_ALLOCATOR -u MEMRA_STEP_OOM_FAULT -u MEMRA_SERVE_BATCH)
+-  use_red=0
++  B=$BIN_ON
+   args="--lengths $LENGTHS --shapes Xp,A"
+   case $arm in
+-    off) ;;
+-    on) aenv+=(MEMRA_KV_PARK_COMPACT=1) ;;
+-    on-fault-batch) aenv+=(MEMRA_KV_PARK_COMPACT=1 MEMRA_STEP_OOM_FAULT=1); args="--lengths 6144 --shapes Xp --turn4" ;;
+-    on-fault-nobatch) aenv+=(MEMRA_KV_PARK_COMPACT=1 MEMRA_STEP_OOM_FAULT=1 MEMRA_SERVE_BATCH=0); args="--lengths 6144 --shapes Xp --turn4" ;;
+-    on-fault-nobatch-red) aenv+=(MEMRA_KV_PARK_COMPACT=1 MEMRA_STEP_OOM_FAULT=1 MEMRA_SERVE_BATCH=0); args="--lengths 6144 --shapes Xp --turn4"; use_red=1 ;;
+-    vmm-off) aenv+=(MEMRA_KV_ALLOCATOR=vmm); args="--lengths 6144 --shapes Xp" ;;
+-    vmm-on) aenv+=(MEMRA_KV_ALLOCATOR=vmm MEMRA_KV_PARK_COMPACT=1); args="--lengths 6144 --shapes Xp" ;;
++    off) B=$BIN_OFF ;;
++    on) ;;
++    on-fault-batch) aenv+=(MEMRA_STEP_OOM_FAULT=1); args="--lengths 6144 --shapes Xp --turn4" ;;
++    on-fault-nobatch) aenv+=(MEMRA_STEP_OOM_FAULT=1 MEMRA_SERVE_BATCH=0); args="--lengths 6144 --shapes Xp --turn4" ;;
++    on-fault-nobatch-red) aenv+=(MEMRA_STEP_OOM_FAULT=1 MEMRA_SERVE_BATCH=0); args="--lengths 6144 --shapes Xp --turn4"; B=$RED_BIN ;;
++    vmm-off|vmm-on) log "boot $name: arm $arm needs MEMRA_KV_ALLOCATOR, deleted at the tip; not run"; exit 1 ;;
+     *) log "boot $name: unknown arm $arm"; exit 1 ;;
+   esac
+-  B=$BIN; [ "$use_red" = 1 ] && B=$RED_BIN
+   [ -x "$B" ] || { log "boot $name: no binary $B; not run"; exit 1; }
+-  deadline=$((SECONDS + 7200)); waited=0
++  deadline=$((SECONDS + IDLE_WAIT_S)); waited=0
+   until idle; do
+-    [ $SECONDS -ge $deadline ] && { log "boot $name: rig not idle after 7200 s; not run"; exit 3; }
+-    [ $waited = 0 ] && log "boot $name: waiting for an idle rig"
+-    waited=1; sleep 30
++    [ $SECONDS -ge $deadline ] && { log "boot $name: card $SMI_CARD not idle after $IDLE_WAIT_S s; not run"; exit 3; }
++    [ $waited = 0 ] && log "boot $name: waiting for an idle card $SMI_CARD"
++    waited=1; sleep 10
+   done
+   log "boot $name start arm=$arm bin=$(sha256sum "$B" | cut -c1-16) env=[${aenv[*]}] args=[$args]"
+   printf 'arm=%s\nbin_sha256=%s\narm_env=%s\nclient_args=%s\n' "$arm" "$(sha256sum "$B" | cut -d' ' -f1)" "${aenv[*]}" "$args" > "$R/boots/$name.arm.txt"
+   env "${aenv[@]}" CLIENT_ARGS="$args" bash research/spill-b-20260919/run-day26-cell.sh "$name" AB "$B" > "$R/boots/$name.launch.log" 2>&1
+-  log "boot $name rc=$? $(tail -1 "$R/boots/$name/client.log" 2>/dev/null | cut -c1-120)"
++  rc=$?
++  log "boot $name rc=$rc $(tail -1 "$R/boots/$name/client.log" 2>/dev/null | cut -c1-120)"
++  [ "$rc" = 0 ] || exit "$rc"
+   sleep 5
+ done
+ log "boots done: $*"
+--- a/research/spill-b-20260919/run-day26-cell.sh
++++ b/research/spill-b-20260919/run-day26-cell.sh
+@@ -10,6 +10,11 @@
+ #      select the day-31 workload; the door env (MEMRA_ADMIT_BY_MEMORY, MEMRA_ADMIT_OPEN_OUTPUT_TOKENS) and
+ #      MEMRA_TIMEOUT_MS_MAX pass through to the server and are recorded in shape.txt. Unset, every default is day 26's.
+ set -uo pipefail
++# Max-Q kit port (kit/DEVIATIONS.md D4, D5, D7): no git on the box (source.txt is the kit's SOURCE_SHA and
++# dirty.txt is the kit manifest check, empty when every kit file matches), every nvidia-smi call and the server
++# pinned to one card (SMI_CARD; CUDA_DEVICE_ORDER=PCI_BUS_ID CUDA_VISIBLE_DEVICES=SMI_CARD), and the server pid
++# plus the card's compute apps recorded at ready (the pin check).
++SMI_CARD=${SMI_CARD:?SMI_CARD (the nvidia-smi index of the pinned card)}
+ cell=${1:?cell}; order=${2:?AB|BA}
+ WT=${WT:-$HOME/projects/wt-spill-b}
+ RIGDIR=${RIGDIR:-$WT/research/spill-b-20260919/rtx5090-day26}
+@@ -27,7 +32,7 @@
+ cd "$WT" || exit 1
+ [ -f "$MODEL" ] || { echo "model absent: $MODEL"; exit 2; }
+ C=$RIGDIR/$cell; rm -rf "$C"; mkdir -p "$C"
+-sha256sum "$BIN" > "$C/binary.sha256"; git rev-parse HEAD > "$C/source.txt"; git status --short > "$C/dirty.txt"
++sha256sum "$BIN" > "$C/binary.sha256"; cat "$WT/SOURCE_SHA" > "$C/source.txt"; sha256sum -c --quiet KIT-MANIFEST.sha256 > "$C/dirty.txt" 2>&1
+ sha256sum "$MODEL" > "$C/model.sha256" &
+ echo "order=$order n=$N model_key=$MODEL_KEY ctx=${MEMRA_CTX:-unset} lock=$LOCK warm=${WARM_IMMEDIATE:+immediate}${WARM_IMMEDIATE:-deferred} park_compact=${MEMRA_KV_PARK_COMPACT:-unset} serve_spec=${MEMRA_SERVE_SPEC:-default}${CLIENT:+ client=$CLIENT args=${CLIENT_ARGS:-none} admit_by_memory=${MEMRA_ADMIT_BY_MEMORY:-unset} open_output_tokens=${MEMRA_ADMIT_OPEN_OUTPUT_TOKENS:-unset} timeout_ms_max=${MEMRA_TIMEOUT_MS_MAX:-unset} max_sessions=${MEMRA_MAX_SESSIONS:-unset} kv_host_mb=${MEMRA_KV_HOST_MB:-unset}}" > "$C/shape.txt"
+ [ -n "${CLIENT:-}" ] && sha256sum docs/SERVING.md "research/spill-b-20260919/$CLIENT" "research/spill-b-20260919/${PARSER:-day26-parse.py}" > "$C/inputs.sha256"
+@@ -40,11 +45,12 @@
+   echo "$(date -u +%FT%TZ) lock held by the collector (external)" | tee "$C/lock.txt"
+ fi
+ wait
+-nvidia-smi --query-compute-apps=pid,process_name,used_memory --format=csv > "$C/compute-apps-before.csv"
+-nvidia-smi --query-gpu=name,memory.used,memory.total,temperature.gpu,power.draw,power.limit --format=csv > "$C/gpu-before.csv"
++nvidia-smi -i "$SMI_CARD" --query-compute-apps=pid,process_name,used_memory --format=csv > "$C/compute-apps-before.csv"
++nvidia-smi -i "$SMI_CARD" --query-gpu=name,memory.used,memory.total,temperature.gpu,power.draw,power.limit --format=csv > "$C/gpu-before.csv"
+ ss -ltn | grep -q ":$PORT " && { echo "port $PORT busy"; exit 4; }
+ date -u +%FT%TZ > "$C/started.txt"
+ # server stderr is stamped per line (epoch ms) so log events align with the 250 ms samples.
++CUDA_DEVICE_ORDER=PCI_BUS_ID CUDA_VISIBLE_DEVICES=$SMI_CARD \
+ MEMRA_COMPAT=openai MEMRA_MODELS="$MODEL_KEY=$MODEL" MEMRA_ADDR=127.0.0.1:$PORT MEMRA_ADMIT_PREDICT_SHADOW=1 \
+   run "$BIN" 2>&1 | python3 -u -c 'import sys,time
+ for line in sys.stdin:
+@@ -62,6 +68,8 @@
+ done
+ [ -n "$ready_ms" ] || { echo "server never ready"; tail -20 "$C/server.log"; echo 5 > "$C.exit"; exit 5; }
+ echo "$ready_ms" > "$C/ready_ms.txt"
++own_server_pid > "$C/server.pid"
++nvidia-smi -i "$SMI_CARD" --query-compute-apps=pid,process_name,used_memory --format=csv > "$C/compute-apps-ready.csv"
+ curl -s -m 5 "$BASE/metrics" > "$C/metrics-ready.json"
+ run python3 "$WT/research/spill-b-20260919/${CLIENT:-day26-client.py}" --base "$BASE" --out "$C" --model "$MODEL_KEY" \
+   --order "$order" --n "$N" ${WARM_IMMEDIATE:+--warm-immediate} ${CLIENT_ARGS:-} > "$C/client.log" 2>&1
+@@ -70,8 +78,8 @@
+ stop_server; trap - EXIT
+ sleep 2
+ date -u +%FT%TZ > "$C/finished.txt"
+-nvidia-smi --query-compute-apps=pid,process_name,used_memory --format=csv > "$C/compute-apps-after.csv"
+-nvidia-smi --query-gpu=name,memory.used,memory.total,temperature.gpu,power.draw,power.limit --format=csv > "$C/gpu-after.csv"
++nvidia-smi -i "$SMI_CARD" --query-compute-apps=pid,process_name,used_memory --format=csv > "$C/compute-apps-after.csv"
++nvidia-smi -i "$SMI_CARD" --query-gpu=name,memory.used,memory.total,temperature.gpu,power.draw,power.limit --format=csv > "$C/gpu-after.csv"
+ python3 "$WT/research/spill-b-20260919/${PARSER:-day26-parse.py}" "$C" > "$C/REPORT.txt" 2>&1
+ tail -40 "$C/REPORT.txt"
+ exit $rc

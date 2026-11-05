@@ -1,0 +1,23 @@
+park-compact build start=2026-11-04T20:00:56Z host=laptop sha=2ccb038d1c16358edde65582597e7b840e3f63fb
+head=2ccb038d1c16358edde65582597e7b840e3f63fb
+MEMRA_CUDA_ARCH=120a CARGO_TARGET_DIR=/home/avifenesh/.cache/memra-maxq/target MEMRA_NVCC=/usr/local/cuda-13.1/bin/nvcc
+Build cuda_13.1.r13.1/compiler.37061995_0
+cargo 1.97.1 (c980f4866 2026-06-30)
+rustc 1.97.1 (8bab26f4f 2026-07-14)
+== arm off start=2026-11-04T20:00:56Z patches=[]
+   Compiling memra-engine v0.138.0 (/home/avifenesh/.cache/memra-maxq/park-compact/wt-tip/crates/memra-engine)
+   Compiling memra-reference v0.138.0 (/home/avifenesh/.cache/memra-maxq/park-compact/wt-tip/crates/memra-reference)
+error[E0433]: cannot find `mimo_v2` in `model_packs`
+error[E0433]: cannot find `mimo_v2` in `model_packs`
+error[E0433]: cannot find `mimo_v2` in `model_packs`
+error[E0433]: cannot find `mimo_v2` in `model_packs`
+error[E0433]: cannot find `mimo_v2` in `model_packs`
+error[E0432]: unresolved import `memra_gguf::model_plan::PerLayerInputPlan`
+error: could not compile `memra-reference` (lib) due to 6 previous errors; 1 warning emitted
+warning: memra-engine@0.138.0: nvcc from MEMRA_NVCC: /usr/local/cuda-13.1/bin/nvcc
+error: failed to run custom build command for `memra-engine v0.138.0 (/home/avifenesh/.cache/memra-maxq/park-compact/wt-tip/crates/memra-engine)`
+  cargo:warning=nvcc from MEMRA_NVCC: /usr/local/cuda-13.1/bin/nvcc
+  cargo:rerun-if-env-changed=MEMRA_CUDA_ARCH
+  nvcc fatbin build failed for cu/tier_receipt.cu
+arm off: build failed rc=101
+rc=1
