@@ -48,3 +48,36 @@ The exact ceiling for the 16-row tick is about 162 ms. With A + B + C together t
 - **A** is built and measured: it trades about 3% at c8 for about 3% at c16 and c32.
 - **B** is the largest remaining lever on the matmul and the one that unlocks speculation at c8. Build it next only if you accept a non-batch-invariant decode matmul, or one order shared by all widths.
 - **C** is the long-context lever.
+
+## Measured: option C, attention partition (2026-11-05)
+
+Arm: the existing `MEMRA_FA_SPLIT` knob forced to 256 keys per split at every depth, on the default
+binary (655a07cb82), default untouched (the ladder is 64 keys up to depth 16,384 and 128 above).
+Receipts `gb10-optC/`, branch `research/attn-split-c`.
+
+Decode tick, GB10, one binary (`gb10-optC/sweep/ab.txt`; 16 x 12288 in 2+2 runs per split, both orders):
+
+| cell | default | split 128 | split 256 | split 512 |
+|---|---:|---:|---:|---:|
+| 16 sessions, depth 12288 | 161.74, 161.62 | 149.56, 149.06 | **145.24, 145.29** | 144.82, 147.21 |
+| 8 sessions, depth 32768 | 133.02, 133.27 | | **127.24, 127.50** | 125.79, 125.91 |
+| 32 sessions, depth 12288 (dp4a b32) | 325.15 | | **291.20** | |
+
+256 was kept over 512: equal at depth 12288, and a fixed 512 leaves 4 splits per head at depth 2,048.
+
+Served agentic cell, fresh boot, c1..c32, then the 264-task quality panel:
+
+| c | default now (fp32, v5 gate, 2 runs) | split 256 | change |
+|---:|---:|---:|---:|
+| 1 | 22.65 | 22.81 | +0.7% |
+| 2 | 28.65, 27.83 | 30.81 | noise band |
+| 4 | 39.52, 38.55 | 40.60 | +3% |
+| 8 | 62.12, 62.40 | 63.11 | +1.3% |
+| 16 | 77.28, 77.33 | **83.70** | **+8.3%** |
+| 32 | 83.75, 83.17 | **90.65** | **+8.6%** |
+
+Quality: long HumanEval 156/164 (1 truncated), long GSM8K 97/100, inside the default's band
+(156-159, 96-97). Divergence against exact: greedy coherence probes identical on 5 of 8 prompts
+(the rest diverge after 560-940 characters); 48-token greedy decode streams identical on 13/16
+sessions (16 x 12288), 5/8 (8 x 32768) and 23/32 (32 x 12288). The change is a different
+partition of the same online-softmax sums, so divergence is rounding-order only.
