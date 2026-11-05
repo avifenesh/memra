@@ -1,0 +1,15 @@
+waitfor: MET after 0m15s
+GATE_RUN_DONE <work>/dspark-gate/out-20261105T164354Z/arm.jsonl
+waitfor: MET after 0m15s
+waitfor: MET after 0m15s
+GATE_RUN_DONE <work>/dspark-gate/out-20261105T164354Z/ref.jsonl
+waitfor: MET after 0m15s
+a-greedy: identical=True arm_len=415 ref_len=415
+a-sampled: identical=True arm_len=454 ref_len=454
+b-greedy: identical=True arm_len=457 ref_len=457
+b-sampled: identical=True arm_len=26 ref_len=26
+GATE PASS
+cache-preferred=4
+cold-drafter restore=4
+DSPARK restore=0
+dspark-boundary=0

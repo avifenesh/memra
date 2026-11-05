@@ -1,0 +1,954 @@
+[server] build: memra-0.138.0-22b5537f7bfa (id: source-tree, git: 6561499516e2)
+[server] starting; models config = [("q38", "/data/ai-ml/models/q38-gguf/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf", None)]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[worker-affinity] off (MEMRA_WORKER_CPUSET / MEMRA_WORKER_AFFINITY unset or =0)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal after 3 consecutive misses (MEMRA_GPU_PROBE_MISSES), fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2 (K=5 when the loaded MTP head is rank-trimmed)
+[worker] loading model "q38" <- /data/ai-ml/models/q38-gguf/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf
+[tensor-contract] bound 866 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[mtp-skip] MEMRA_MTP_SKIP=1: skipping 1 embedded MTP/NextN block(s) blk.64..=blk.64 (~227 MiB of weights not loaded); MTP spec decode is unavailable for this model (dspark/DFlash2 drafting keeps its trimmed head via the MEMRA_FRSPEC_TRIM stub)
+[mtp-skip] FR-Spec stub draft head built: 32768 rows of main output.weight (Q5_K); DFlash2 trim serves without the embedded MTP block
+[worker]   loaded "q38": 65 layers, eos=248046, stop=[248046]
+[worker] q38: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false qwen_effort=true gemma_think=false dsv4=false glm5=false ctx=262144 tok="qwen35" instruct=Some("chatml") chat_defaults=None/None
+[route-contract] model="q38" route=hybrid-worker capacity=8 sessions implemented=[capacity,occupancy,progress,fault-ownership,shutdown-ownership,memory-cost,rewrite-qualification,prime-fairness,service-metrics] refused=[]
+[worker] q38: decode wave cap 16; scheduler tick cap 16 (exact-16 tier)
+[dspark] prefix restore doors default ON on "NVIDIA GeForce RTX 5090 Laptop GPU" (gb10=false): restore=false partial=false capture=false
+[dspark] precision=q4 (MEMRA_DFLASH_PREC unset)
+[dspark] harvest=dflash (checkpoint census dflash2=true strategy_dspark=false, MEMRA_DSPARK_HARVEST unset)
+[dspark] verify-window=Ladder (accept-rate head ABSENT -> ladder, MEMRA_DSPARK_VT unset)
+[worker] q38: DSPARK SPEC route armed (drafter attached (/data/ai-ml/models/q38-gguf/Qwen3.8-27B-DFlash2-memra); greedy+sampled [T>0 rejection verify, sampled penalties included; greedy penalties verified by penalised argmax (MEMRA_DSPARK_GREEDY_PENALTY=1)]/unconstrained/text-only; greedy LOW-wave admission + HIGH demotion, sampled solo admission; MTP spec DISABLED for this model — refuse-on-ambiguity; MEMRA_DSPARK_SPEC unset = off)
+[dspark] q38: DFlash2 draft head TRIMMED to 32768 rows (FR-Spec d2t; verify stays full-vocab)
+[prefix-cache] on: budget 4194MB (4194304000 B, configured by MEMRA_PREFIX_CACHE_MB), policy plain-LRU (global oldest unleased entry first; leases untouchable), min prefix 64 tokens, immediate partial restore=off (rollback) (transformer-only; hybrid mid-entry + routed-MoE N/A)
+[admission] "q38": dspark owns the spec program: spec coefficient = plain (no MTP scratch term); the draft plane is charged per session, 169MB at a 30k cap (ring on: constant above two windows)
+[admission] "q38": plain 29696 B/token, spec 29696 B/token; fixed residual learns from effective-free deltas
+[prime-walk] model="q38" route=dspark supported=false yield_door=true [gdn_dspark_compatible=true mtp_head_loaded=false no_hyper_connections=true no_pipeline_cuts=true]
+[dspark-vg] serve pool ENGAGED (vt_cap=8)
+[topk-shards] engaged: rows=7 cols=32768 k=16 shards=16 (MEMRA_TOPK_SHARDS=1)
+[fa-pool] grow #0 dev=0 o_len 0 -> 3194880 ml_len 0 -> 12480 (retired kept, zero=false)
+[dflash-kv-ring] compact keep_from=2057 kept=2056 phys_rows=4120
+[device-trim] reason=calibration-complete {"device":0,"reclaimed_bytes":1744830464,"still_owned_bytes":19437171584,"pool_reserved_bytes":19595788288,"pool_cached_bytes":158616704,"driver_free_bytes":4905369600,"synchronization_errors":[]}
+[admit-cal] post-probe pool trim: released 1664MB cached back to the driver
+[admit-cal] boot calibration done: model="q38" route=dspark transient floor 1544MB (static was 1536MB; measured 1544MB; probe kv charge 119MB, draft-state 0MB, drafted 71 accepted 44; [dev0 peak-mapped 20352MB rest-mapped 18688MB charged 119MB -> 1544MB]; 9.7s)
+[admit-mem] door=OFF open_output_tokens=8192 defer_budget_ms=8000 (admission charges prompt+output, the reclaim flush demotes to the host tier before dropping, and a memory defer past the budget refuses 429 instead of queueing past the client's deadline)
+[kv-vmm] door=OFF (MEMRA_KV_ALLOCATOR unset or pooled: pooled K/V planes)
+[server] worker ready; serving models: ["q38"]
+[server] listening on http://127.0.0.1:8093
+[meter] admit id=chatcmpl-df5a86f00f01b59370722715f677688f tenant=default lane=interactive model="q38"
+[admission] per-session draft-state charge: model="q38" +116MB (DFlash draft plane at this cap)
+[admission] request cost: model="q38" ctx=2825 path=spec = 29696 B/token x ctx + 1323MB prefill-workspace + 0MB fixed = 1407MB
+[spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=2760 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="q38" 313MB (observed 395MB at ctx 2769 path=plain)
+[prefix-cache] insert (seed): 2720 tokens, 237.7MB (resident 237.7MB / 4194MB, model q38)
+[meter] admit id=chatcmpl-809820264ea04470da0e9f69e8fe6f67 tenant=default lane=interactive model="q38"
+[admission] per-session draft-state charge: model="q38" +166MB (DFlash draft plane at this cap)
+[admission] request cost: model="q38" ctx=4041 path=spec = 29696 B/token x ctx + 1905MB prefill-workspace + 313MB fixed = 2338MB
+[worker] plain-affinity: grew parked cache 2769 -> 4041 rows (request-owned need)
+[worker] plain-affinity: rewound to 2720 of 3976 prompt tokens (priming 1256 suffix; model q38)
+[worker] kv-reuse: 2720 of 3976 prompt tokens resumed (model q38)
+[spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=3976 cached=2720 lcp=2720 active=1 wave=1 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-5b1aa7010794430c0b02344715e15a66 tenant=default lane=interactive model="q38"
+[admission] per-session draft-state charge: model="q38" +169MB (DFlash draft plane at this cap)
+[admission] request cost: model="q38" ctx=14770 path=spec = 29696 B/token x ctx + 2180MB prefill-workspace + 313MB fixed = 2932MB
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=237666304 pool_cached_gain_bytes=237666304 trim_released_bytes=234881024 driver_free_bytes 3393323008 -> 3628204032 pool_reserved_bytes 21105737728 -> 20870856704 pool_used_bytes 20268114452 -> 20030448148 pool_retained_bytes=2785280 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer: evicted 1 prefix entries + 1 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 4231MB -> 5062MB
+[spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=14705 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="q38" 335MB (observed 772MB at ctx 14714 path=plain)
+[prefix-cache] insert (seed): 14688 tokens, 593.1MB (resident 593.1MB / 4194MB, model q38)
+[meter] admit id=chatcmpl-1e66111f5e943afb7f0e2698f0ab2d78 tenant=default lane=interactive model="q38"
+[admission] per-session draft-state charge: model="q38" +96MB (DFlash draft plane at this cap)
+[admission] request cost: model="q38" ctx=2332 path=spec = 29696 B/token x ctx + 1086MB prefill-workspace + 335MB fixed = 1491MB
+[admit-trim] dev0 driver_free_bytes=1984036864 floor_bytes=2147483648 reclaimed_bytes=134217728 still_owned_bytes=21003725140 pool_reserved_bytes=22380806144 driver_free_after=2118254592 before prime
+[worker] plain-affinity: declined (history diverged at 282 of checkpoint 14688; 1 parked, 2267 prompt tokens; model q38)
+[spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=2267 cached=0 lcp=282 active=1 wave=1 placement=single-or-non-pp2
+[prefix-cache] insert (lcp-split): 256 tokens, 164.5MB (resident 757.6MB / 4194MB, model q38)
+[prefix-cache] insert (seed): 2240 tokens, 223.4MB (resident 981.0MB / 4194MB, model q38)
+[meter] admit id=chatcmpl-689454738a3faec23b62c7909bea9aca tenant=default lane=interactive model="q38"
+[admission] per-session draft-state charge: model="q38" +123MB (DFlash draft plane at this cap)
+[admission] request cost: model="q38" ctx=3002 path=spec = 29696 B/token x ctx + 1408MB prefill-workspace + 335MB fixed = 1832MB
+[admit-oom] reclaim spared the prompt's prefix entry (2240 tokens, model q38)
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=757563392 pool_cached_gain_bytes=757563392 trim_released_bytes=738197504 driver_free_bytes 2118254592 -> 2856452096 pool_reserved_bytes 22380806144 -> 21642608640 pool_used_bytes 21929220008 -> 21171656616 pool_retained_bytes=19365888 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer: evicted 2 prefix entries + 1 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 2570MB -> 4257MB
+[worker] plain-affinity: grew parked cache 2276 -> 3002 rows (request-owned need)
+[worker] plain-affinity: rewound to 2240 of 2937 prompt tokens (priming 697 suffix; model q38)
+[worker] kv-reuse: 2240 of 2937 prompt tokens resumed (model q38)
+[spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=2937 cached=2240 lcp=2240 active=1 wave=1 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-5184dbcf6a51913b21695acba03d142c tenant=default lane=interactive model="q38"
+[admission] per-session draft-state charge: model="q38" +169MB (DFlash draft plane at this cap)
+[admission] request cost: model="q38" ctx=13281 path=spec = 29696 B/token x ctx + 2150MB prefill-workspace + 335MB fixed = 2879MB
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=223412224 pool_cached_gain_bytes=223412224 trim_released_bytes=201326592 driver_free_bytes 2856452096 -> 3057778688 pool_reserved_bytes 21642608640 -> 21441282048 pool_used_bytes 20264532308 -> 20041120084 pool_retained_bytes=22085632 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer: evicted 1 prefix entries + 1 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 4235MB -> 5018MB
+[spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=13216 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 13216 tokens, 549.4MB (resident 549.4MB / 4194MB, model q38)
+[meter] admit id=chatcmpl-3e38770eff3888664fac1749ef552982 tenant=default lane=interactive model="q38"
+[admission] per-session draft-state charge: model="q38" +101MB (DFlash draft plane at this cap)
+[admission] request cost: model="q38" ctx=2468 path=spec = 29696 B/token x ctx + 1152MB prefill-workspace + 335MB fixed = 1560MB
+[admit-trim] dev0 driver_free_bytes=2118254592 floor_bytes=2147483648 reclaimed_bytes=0 still_owned_bytes=20913031700 pool_reserved_bytes=22380806144 driver_free_after=2118254592 before prime
+[worker] plain-affinity: declined (history diverged at 282 of checkpoint 13184; 1 parked, 2403 prompt tokens; model q38)
+[spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=2403 cached=0 lcp=282 active=1 wave=1 placement=single-or-non-pp2
+[prefix-cache] insert (lcp-split): 256 tokens, 164.5MB (resident 713.9MB / 4194MB, model q38)
+[prefix-cache] insert (seed): 2368 tokens, 227.2MB (resident 941.1MB / 4194MB, model q38)
+[meter] admit id=chatcmpl-3bbad100b762c3ff6b138c3ff5c596c8 tenant=default lane=interactive model="q38"
+[admission] per-session draft-state charge: model="q38" +126MB (DFlash draft plane at this cap)
+[admission] request cost: model="q38" ctx=3062 path=spec = 29696 B/token x ctx + 1436MB prefill-workspace + 335MB fixed = 1862MB
+[admit-oom] reclaim spared the prompt's prefix entry (2368 tokens, model q38)
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=713850880 pool_cached_gain_bytes=713850880 trim_released_bytes=704643072 driver_free_bytes 2118254592 -> 2822897664 pool_reserved_bytes 22380806144 -> 21676163072 pool_used_bytes 21846618728 -> 21132767848 pool_retained_bytes=9207808 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer: evicted 2 prefix entries + 1 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 2652MB -> 4249MB
+[worker] plain-affinity: grew parked cache 2412 -> 3062 rows (request-owned need)
+[worker] plain-affinity: rewound to 2368 of 2997 prompt tokens (priming 629 suffix; model q38)
+[worker] kv-reuse: 2368 of 2997 prompt tokens resumed (model q38)
+[spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=2997 cached=2368 lcp=2368 active=1 wave=1 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-7779a96091d20c14180a48db47e02472 tenant=default lane=interactive model="q38"
+[admission] per-session draft-state charge: model="q38" +169MB (DFlash draft plane at this cap)
+[admission] request cost: model="q38" ctx=17166 path=spec = 29696 B/token x ctx + 2229MB prefill-workspace + 335MB fixed = 3074MB
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=227213312 pool_cached_gain_bytes=227213312 trim_released_bytes=201326592 driver_free_bytes 2822897664 -> 3024224256 pool_reserved_bytes 21676163072 -> 21474836480 pool_used_bytes 20270226516 -> 20043013204 pool_retained_bytes=25886720 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer: evicted 1 prefix entries + 1 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 4229MB -> 5018MB
+[spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=17101 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="q38" 340MB (observed 848MB at ctx 17110 path=plain)
+[prefix-cache] insert (seed): 17056 tokens, 663.4MB (resident 663.4MB / 4194MB, model q38)
+[meter] admit id=chatcmpl-a941452f74e03f804a8d3d92ca75c929 tenant=default lane=interactive model="q38"
+[admission] per-session draft-state charge: model="q38" +89MB (DFlash draft plane at this cap)
+[admission] request cost: model="q38" ctx=2165 path=spec = 29696 B/token x ctx + 1006MB prefill-workspace + 340MB fixed = 1410MB
+[admit-trim] dev0 driver_free_bytes=1715601408 floor_bytes=2147483648 reclaimed_bytes=402653184 still_owned_bytes=21159457876 pool_reserved_bytes=22380806144 driver_free_after=2118254592 before prime
+[worker] plain-affinity: declined (history diverged at 282 of checkpoint 17056; 1 parked, 2100 prompt tokens; model q38)
+[spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=2100 cached=0 lcp=282 active=1 wave=1 placement=single-or-non-pp2
+[prefix-cache] insert (lcp-split): 256 tokens, 164.5MB (resident 827.9MB / 4194MB, model q38)
+[prefix-cache] insert (seed): 2080 tokens, 218.7MB (resident 1046.5MB / 4194MB, model q38)
+[meter] admit id=chatcmpl-9171ec9ee439356d3bff6b33dfe156c3 tenant=default lane=interactive model="q38"
+[admission] per-session draft-state charge: model="q38" +169MB (DFlash draft plane at this cap)
+[admission] request cost: model="q38" ctx=4907 path=spec = 29696 B/token x ctx + 1978MB prefill-workspace + 340MB fixed = 2464MB
+[admit-oom] reclaim spared the prompt's prefix entry (2080 tokens, model q38)
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=827883520 pool_cached_gain_bytes=827883520 trim_released_bytes=805306368 driver_free_bytes 2118254592 -> 2923560960 pool_reserved_bytes 22380806144 -> 21575499776 pool_used_bytes 22074932200 -> 21247048680 pool_retained_bytes=22577152 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer: evicted 2 prefix entries + 1 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 2424MB -> 4258MB
+[worker] plain-affinity: grew parked cache 2109 -> 4907 rows (request-owned need)
+[worker] plain-affinity: rewound to 2080 of 4842 prompt tokens (priming 2762 suffix; model q38)
+[worker] kv-reuse: 2080 of 4842 prompt tokens resumed (model q38)
+[spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=4842 cached=2080 lcp=2080 active=1 wave=1 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-adda4c4ed7a691a3221b887492c32e03 tenant=default lane=interactive model="q38"
+[admission] per-session draft-state charge: model="q38" +169MB (DFlash draft plane at this cap)
+[admission] request cost: model="q38" ctx=10793 path=spec = 29696 B/token x ctx + 2099MB prefill-workspace + 340MB fixed = 2759MB
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=218660864 pool_cached_gain_bytes=218660864 trim_released_bytes=201326592 driver_free_bytes 2923560960 -> 3124887552 pool_reserved_bytes 21575499776 -> 21374173184 pool_used_bytes 20329701524 -> 20111040660 pool_retained_bytes=17334272 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer: evicted 1 prefix entries + 1 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 4169MB -> 5009MB
+[spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=10728 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 10688 tokens, 474.3MB (resident 474.3MB / 4194MB, model q38)
+[meter] admit id=chatcmpl-678edd9df30c5bd9ef66953558dd6343 tenant=default lane=interactive model="q38"
+[admission] per-session draft-state charge: model="q38" +169MB (DFlash draft plane at this cap)
+[admission] request cost: model="q38" ctx=5009 path=spec = 29696 B/token x ctx + 1980MB prefill-workspace + 340MB fixed = 2469MB
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=474284032 pool_cached_gain_bytes=474284032 trim_released_bytes=469762048 driver_free_bytes 1950482432 -> 2420244480 pool_reserved_bytes 22548578304 -> 22078816256 pool_used_bytes 20769272852 -> 20294988820 pool_retained_bytes=4521984 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer: evicted 1 prefix entries + 1 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 3730MB -> 5009MB
+[spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=4944 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4928 tokens, 303.2MB (resident 303.2MB / 4194MB, model q38)
+[meter] admit id=chatcmpl-f3a041471c5fd975a7607bc0884a7abe tenant=default lane=interactive model="q38"
+[admission] per-session draft-state charge: model="q38" +169MB (DFlash draft plane at this cap)
+[admission] request cost: model="q38" ctx=8118 path=spec = 29696 B/token x ctx + 2044MB prefill-workspace + 340MB fixed = 2625MB
+[admit-oom] reclaim spared the prompt's prefix entry (4928 tokens, model q38)
+[admit-oom] reclaim-on-defer: evicted 0 prefix entries + 1 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 4083MB -> 4705MB
+[prefix-cache] hit: 4928 of 8053 prompt tokens from cache (model q38)
+[spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=8053 cached=4928 lcp=4928 active=1 wave=1 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 4928 tokens, model q38)
+[prefix-cache] insert (seed): 8032 tokens, 395.4MB (resident 698.6MB / 4194MB, model q38)
+[meter] admit id=chatcmpl-a9b8f79bc12d54303e52a447f4426f05 tenant=default lane=interactive model="q38"
+[admission] per-session draft-state charge: model="q38" +169MB (DFlash draft plane at this cap)
+[admission] request cost: model="q38" ctx=12392 path=spec = 29696 B/token x ctx + 2132MB prefill-workspace + 340MB fixed = 2839MB
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=698646528 pool_cached_gain_bytes=698646528 trim_released_bytes=671088640 driver_free_bytes 2319581184 -> 2990669824 pool_reserved_bytes 22179479552 -> 21508390912 pool_used_bytes 20909233748 -> 20210587220 pool_retained_bytes=27557888 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer: evicted 2 prefix entries + 1 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 3590MB -> 5009MB
+[spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=12327 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 12288 tokens, 521.8MB (resident 521.8MB / 4194MB, model q38)
+[meter] admit id=chatcmpl-268f505c209f3320bb36349354c30d9a tenant=default lane=interactive model="q38"
+[admission] per-session draft-state charge: model="q38" +169MB (DFlash draft plane at this cap)
+[admission] request cost: model="q38" ctx=13297 path=spec = 29696 B/token x ctx + 2150MB prefill-workspace + 340MB fixed = 2885MB
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=521797632 pool_cached_gain_bytes=521797632 trim_released_bytes=503316480 driver_free_bytes 1950482432 -> 2453798912 pool_reserved_bytes 22548578304 -> 22045261824 pool_used_bytes 20867238100 -> 20345440468 pool_retained_bytes=18481152 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer: evicted 1 prefix entries + 1 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 3632MB -> 5009MB
+[spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=13232 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 13216 tokens, 549.4MB (resident 549.4MB / 4194MB, model q38)
+[meter] admit id=chatcmpl-3dbc6a6cdc66216008dea6282c76f6b8 tenant=default lane=interactive model="q38"
+[admission] per-session draft-state charge: model="q38" +119MB (DFlash draft plane at this cap)
+[admission] request cost: model="q38" ctx=2898 path=spec = 29696 B/token x ctx + 1358MB prefill-workspace + 340MB fixed = 1783MB
+[admit-trim] dev0 driver_free_bytes=1916928000 floor_bytes=2147483648 reclaimed_bytes=201326592 still_owned_bytes=20923350548 pool_reserved_bytes=22380806144 driver_free_after=2118254592 before prime
+[worker] plain-affinity: declined (history diverged at 282 of checkpoint 13216; 1 parked, 2833 prompt tokens; model q38)
+[spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=2833 cached=0 lcp=282 active=1 wave=1 placement=single-or-non-pp2
+[prefix-cache] insert (lcp-split): 256 tokens, 164.5MB (resident 713.9MB / 4194MB, model q38)
+[prefix-cache] insert (seed): 2816 tokens, 240.5MB (resident 954.4MB / 4194MB, model q38)
+[meter] admit id=chatcmpl-4c64ec20ecaf40b880e28d391a53db10 tenant=default lane=interactive model="q38"
+[admission] per-session draft-state charge: model="q38" +169MB (DFlash draft plane at this cap)
+[admission] request cost: model="q38" ctx=5297 path=spec = 29696 B/token x ctx + 1986MB prefill-workspace + 340MB fixed = 2483MB
+[admit-oom] reclaim spared the prompt's prefix entry (2816 tokens, model q38)
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=713850880 pool_cached_gain_bytes=713850880 trim_released_bytes=704643072 driver_free_bytes 2118254592 -> 2822897664 pool_reserved_bytes 22380806144 -> 21676163072 pool_used_bytes 21883808744 -> 21169957864 pool_retained_bytes=9207808 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer: evicted 2 prefix entries + 2 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 2615MB -> 4768MB
+[prefix-cache] hit: 2816 of 5232 prompt tokens from cache (model q38)
+[spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=5232 cached=2816 lcp=2816 active=1 wave=1 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 2816 tokens, model q38)
+[prefix-cache] insert (seed): 5216 tokens, 311.8MB (resident 552.3MB / 4194MB, model q38)
+[meter] admit id=chatcmpl-12d46b110f88c2d688a37ba20972e696 tenant=default lane=interactive model="q38"
+[admission] per-session draft-state charge: model="q38" +69MB (DFlash draft plane at this cap)
+[admission] request cost: model="q38" ctx=1669 path=spec = 29696 B/token x ctx + 769MB prefill-workspace + 340MB fixed = 1158MB
+[worker] plain-affinity: declined (history diverged at 282 of checkpoint 5216; 1 parked, 1604 prompt tokens; model q38)
+[spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=1604 cached=0 lcp=282 active=1 wave=1 placement=single-or-non-pp2
+[prefix-cache] insert (lcp-split): 256 tokens, 164.5MB (resident 716.8MB / 4194MB, model q38)
+[prefix-cache] insert (seed): 1568 tokens, 203.5MB (resident 920.3MB / 4194MB, model q38)
+[meter] admit id=chatcmpl-b0f8a0dac455d358598ee76375933135 tenant=default lane=interactive model="q38"
+[admission] per-session draft-state charge: model="q38" +169MB (DFlash draft plane at this cap)
+[admission] request cost: model="q38" ctx=5791 path=spec = 29696 B/token x ctx + 1996MB prefill-workspace + 340MB fixed = 2508MB
+[admit-oom] reclaim spared the prompt's prefix entry (1568 tokens, model q38)
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=716800000 pool_cached_gain_bytes=716800000 trim_released_bytes=503316480 driver_free_bytes 2755788800 -> 3259105280 pool_reserved_bytes 21743271936 -> 21239955456 pool_used_bytes 21558503848 -> 20841703848 pool_retained_bytes=213483520 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer: evicted 3 prefix entries + 2 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 2941MB -> 4805MB
+[prefix-cache] hit: 1568 of 5726 prompt tokens from cache (model q38)
+[spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=5726 cached=1568 lcp=1568 active=1 wave=1 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 1568 tokens, model q38)
+[prefix-cache] insert (seed): 5696 tokens, 326.0MB (resident 529.5MB / 4194MB, model q38)
+[meter] admit id=chatcmpl-4374abd41a7467bb2af4cdd8aebb9573 tenant=default lane=interactive model="q38"
+[admission] per-session draft-state charge: model="q38" +147MB (DFlash draft plane at this cap)
+[admission] request cost: model="q38" ctx=3578 path=spec = 29696 B/token x ctx + 1684MB prefill-workspace + 340MB fixed = 2129MB
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=529498112 pool_cached_gain_bytes=529498112 trim_released_bytes=503316480 driver_free_bytes 3259105280 -> 3762421760 pool_reserved_bytes 21239955456 -> 20736638976 pool_used_bytes 20666663828 -> 20137165716 pool_retained_bytes=26181632 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer: evicted 2 prefix entries + 0 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 3832MB -> 4362MB
+[worker] plain-affinity: declined (history diverged at 282 of checkpoint 5696; 1 parked, 3513 prompt tokens; model q38)
+[spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=3513 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 3488 tokens, 260.5MB (resident 260.5MB / 4194MB, model q38)
+[meter] admit id=chatcmpl-be82ed96a3d269095752686dd8f25422 tenant=default lane=interactive model="q38"
+[admission] per-session draft-state charge: model="q38" +163MB (DFlash draft plane at this cap)
+[admission] request cost: model="q38" ctx=3970 path=spec = 29696 B/token x ctx + 1871MB prefill-workspace + 340MB fixed = 2329MB
+[admit-oom] reclaim spared the prompt's prefix entry (3488 tokens, model q38)
+[admit-oom] reclaim-on-defer: evicted 0 prefix entries + 1 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 3525MB -> 4171MB
+[worker] plain-affinity: grew parked cache 3522 -> 3970 rows (request-owned need)
+[worker] plain-affinity: rewound to 3488 of 3905 prompt tokens (priming 417 suffix; model q38)
+[worker] kv-reuse: 3488 of 3905 prompt tokens resumed (model q38)
+[spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=3905 cached=3488 lcp=3488 active=1 wave=1 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-63a510e6a170e793437c65b3ccc2d2e2 tenant=default lane=interactive model="q38"
+[admission] per-session draft-state charge: model="q38" +169MB (DFlash draft plane at this cap)
+[admission] request cost: model="q38" ctx=16708 path=spec = 29696 B/token x ctx + 2220MB prefill-workspace + 340MB fixed = 3056MB
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=260472832 pool_cached_gain_bytes=260472832 trim_released_bytes=234881024 driver_free_bytes 2218917888 -> 2453798912 pool_reserved_bytes 22280142848 -> 22045261824 pool_used_bytes 20341949268 -> 20081476436 pool_retained_bytes=25591808 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer: evicted 1 prefix entries + 1 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 4157MB -> 5009MB
+[spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=16643 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 16608 tokens, 650.1MB (resident 650.1MB / 4194MB, model q38)
+[meter] admit id=chatcmpl-e23de9c6869295c3038ba5e8105e2aae tenant=default lane=interactive model="q38"
+[admission] per-session draft-state charge: model="q38" +150MB (DFlash draft plane at this cap)
+[admission] request cost: model="q38" ctx=3665 path=spec = 29696 B/token x ctx + 1725MB prefill-workspace + 340MB fixed = 2174MB
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=650084352 pool_cached_gain_bytes=650084352 trim_released_bytes=637534208 driver_free_bytes 1883373568 -> 2520907776 pool_reserved_bytes 22615687168 -> 21978152960 pool_used_bytes 21131703252 -> 20481618900 pool_retained_bytes=12550144 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer: evicted 1 prefix entries + 0 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 3367MB -> 4017MB
+[worker] plain-affinity: declined (history diverged at 97 of checkpoint 16608; 1 parked, 3600 prompt tokens; model q38)
+[spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=3600 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 3584 tokens, 263.3MB (resident 263.3MB / 4194MB, model q38)
+[meter] admit id=chatcmpl-f3ab999b8ce691d81a34e4f2e145f686 tenant=default lane=interactive model="q38"
+[admission] per-session draft-state charge: model="q38" +169MB (DFlash draft plane at this cap)
+[admission] request cost: model="q38" ctx=7456 path=spec = 29696 B/token x ctx + 2030MB prefill-workspace + 340MB fixed = 2591MB
+[admit-oom] reclaim spared the prompt's prefix entry (3584 tokens, model q38)
+[admit-oom] reclaim-on-defer: evicted 0 prefix entries + 2 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 3174MB -> 4745MB
+[admit-trim] dev0 driver_free_bytes=1816264704 floor_bytes=2147483648 reclaimed_bytes=301989888 still_owned_bytes=19753763712 pool_reserved_bytes=22380806144 driver_free_after=2118254592 before prime
+[prefix-cache] hit: 3584 of 7391 prompt tokens from cache (model q38)
+[spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=7391 cached=3584 lcp=3584 active=1 wave=1 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 3584 tokens, model q38)
+[prefix-cache] insert (seed): 7360 tokens, 375.5MB (resident 638.8MB / 4194MB, model q38)
+[meter] admit id=chatcmpl-a9db23b281a78c9a7121782807b1e926 tenant=default lane=interactive model="q38"
+[admission] per-session draft-state charge: model="q38" +100MB (DFlash draft plane at this cap)
+[admission] request cost: model="q38" ctx=2432 path=spec = 29696 B/token x ctx + 1134MB prefill-workspace + 340MB fixed = 1546MB
+[admit-trim] dev0 driver_free_bytes=2118254592 floor_bytes=2147483648 reclaimed_bytes=0 still_owned_bytes=20828479188 pool_reserved_bytes=22380806144 driver_free_after=2118254592 before prime
+[worker] plain-affinity: declined (history diverged at 138 of checkpoint 7360; 1 parked, 2367 prompt tokens; model q38)
+[spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=2367 cached=0 lcp=138 active=1 wave=1 placement=single-or-non-pp2
+[prefix-cache] insert (lcp-split): 128 tokens, 160.7MB (resident 799.5MB / 4194MB, model q38)
+[prefix-cache] insert (seed): 2336 tokens, 226.3MB (resident 1025.7MB / 4194MB, model q38)
+[meter] admit id=chatcmpl-e1287bb323f209e7d43b9eb17e007e89 tenant=default lane=interactive model="q38"
+[admission] per-session draft-state charge: model="q38" +111MB (DFlash draft plane at this cap)
+[admission] request cost: model="q38" ctx=2697 path=spec = 29696 B/token x ctx + 1261MB prefill-workspace + 340MB fixed = 1681MB
+[admit-oom] reclaim spared the prompt's prefix entry (2336 tokens, model q38)
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=799473664 pool_cached_gain_bytes=799473664 trim_released_bytes=771751936 driver_free_bytes 2118254592 -> 2890006528 pool_reserved_bytes 22380806144 -> 21609054208 pool_used_bytes 21756178984 -> 20956705320 pool_retained_bytes=27721728 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer: evicted 3 prefix entries + 0 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 2743MB -> 3542MB
+[worker] plain-affinity: grew parked cache 2376 -> 2697 rows (request-owned need)
+[worker] plain-affinity: rewound to 2336 of 2632 prompt tokens (priming 296 suffix; model q38)
+[worker] kv-reuse: 2336 of 2632 prompt tokens resumed (model q38)
+[spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=2632 cached=2336 lcp=2336 active=1 wave=1 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-a36a8d9b7592a2461c99d566d57ad732 tenant=default lane=interactive model="q38"
+[admission] per-session draft-state charge: model="q38" +169MB (DFlash draft plane at this cap)
+[admission] request cost: model="q38" ctx=4377 path=spec = 29696 B/token x ctx + 1967MB prefill-workspace + 340MB fixed = 2437MB
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=226263040 pool_cached_gain_bytes=226263040 trim_released_bytes=201326592 driver_free_bytes 2890006528 -> 3091333120 pool_reserved_bytes 21609054208 -> 21407727616 pool_used_bytes 20966833512 -> 20740570472 pool_retained_bytes=24936448 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer: evicted 1 prefix entries + 1 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 3532MB -> 4458MB
+[worker] plain-affinity: declined (history diverged at 138 of checkpoint 2592; 1 parked, 4312 prompt tokens; model q38)
+[spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=4312 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4288 tokens, 284.2MB (resident 284.2MB / 4194MB, model q38)
+[meter] admit id=chatcmpl-a0e7c220cc634684b9fb03bf0b4777c6 tenant=default lane=interactive model="q38"
+[admission] per-session draft-state charge: model="q38" +169MB (DFlash draft plane at this cap)
+[admission] request cost: model="q38" ctx=5770 path=spec = 29696 B/token x ctx + 1996MB prefill-workspace + 340MB fixed = 2507MB
+[admit-oom] reclaim spared the prompt's prefix entry (4288 tokens, model q38)
+[admit-oom] reclaim-on-defer: evicted 0 prefix entries + 2 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 3571MB -> 4724MB
+[admit-trim] dev0 driver_free_bytes=1950482432 floor_bytes=2147483648 reclaimed_bytes=167772160 still_owned_bytes=19774669696 pool_reserved_bytes=22380806144 driver_free_after=2118254592 before prime
+[prefix-cache] hit: 4288 of 5705 prompt tokens from cache (model q38)
+[spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=5705 cached=4288 lcp=4288 active=1 wave=1 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 4288 tokens, model q38)
+[prefix-cache] insert (seed): 5664 tokens, 325.1MB (resident 609.3MB / 4194MB, model q38)
+[meter] admit id=chatcmpl-cfd7c8a18a4777edf22f115a0f7617c3 tenant=default lane=interactive model="q38"
+[admission] per-session draft-state charge: model="q38" +147MB (DFlash draft plane at this cap)
+[admission] request cost: model="q38" ctx=3592 path=spec = 29696 B/token x ctx + 1323MB prefill-workspace + 340MB fixed = 1769MB
+[admit-trim] dev0 driver_free_bytes=2118254592 floor_bytes=2147483648 reclaimed_bytes=0 still_owned_bytes=20745824084 pool_reserved_bytes=22380806144 driver_free_after=2118254592 before prime
+[worker] plain-affinity: declined (history diverged at 97 of checkpoint 5664; 1 parked, 2760 prompt tokens; model q38)
+[spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=2760 cached=0 lcp=97 active=1 wave=1 placement=single-or-non-pp2
+[dspark-acc] ctx=2760 burst=20/40 cum=20/40=0.500
+[prefix-cache] insert (dspark-boundary): 2760 tokens, 238.9MB (resident 848.2MB / 4194MB, model q38)
+[dspark-acc] ctx=2793 burst=25/30 cum=45/70=0.643
+[dspark-acc] ctx=2826 burst=23/37 cum=68/107=0.636
+[dspark-acc] ctx=2860 burst=26/35 cum=94/142=0.662
+[dspark-acc] ctx=2895 burst=6/9 cum=100/151=0.662
+[meter] admit id=chatcmpl-d7105116991ab933d5cc53c5f9b93296 tenant=default lane=interactive model="q38"
+[admission] per-session draft-state charge: model="q38" +169MB (DFlash draft plane at this cap)
+[admission] request cost: model="q38" ctx=4808 path=spec = 29696 B/token x ctx + 1905MB prefill-workspace + 340MB fixed = 2388MB
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=848175104 pool_cached_gain_bytes=848175104 trim_released_bytes=838860800 driver_free_bytes 1581383680 -> 2420244480 pool_reserved_bytes 22917677056 -> 22078816256 pool_used_bytes 21707200168 -> 20859025064 pool_retained_bytes=9314304 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer: evicted 3 prefix entries + 1 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 2792MB -> 4286MB
+[worker] dspark-reuse MISS: 1 parked, best text overlap 8455B                              of 12081B prompt; serving COLD (model q38)
+[spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=3976 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[dspark-acc] ctx=3976 burst=24/38 cum=24/38=0.632
+[prefix-cache] insert (dspark-boundary): 3976 tokens, 275.0MB (resident 275.0MB / 4194MB, model q38)
+[dspark-acc] ctx=4008 burst=19/33 cum=43/71=0.606
+[dspark-acc] ctx=4040 burst=21/38 cum=64/109=0.587
+[dspark-acc] ctx=4073 burst=20/33 cum=84/142=0.592
+[dflash-kv-ring] compact keep_from=2058 kept=2056 phys_rows=4120
+[dspark-acc] ctx=4105 burst=24/34 cum=108/176=0.614
+[dspark-acc] ctx=4139 burst=21/35 cum=129/211=0.611
+[dspark-acc] ctx=4172 burst=21/37 cum=150/248=0.605
+[fa-pool] grow #1 dev=0 o_len 3194880 -> 6389760 ml_len 12480 -> 24960 (retired kept, zero=false)
+[dspark-acc] ctx=4206 burst=25/38 cum=175/286=0.612
+[dspark-acc] ctx=4241 burst=21/36 cum=196/322=0.609
+[dspark-acc] ctx=4274 burst=31/34 cum=227/356=0.638
+[dspark-acc] ctx=4311 burst=25/39 cum=252/395=0.638
+[dspark-acc] ctx=4347 burst=23/36 cum=275/431=0.638
+[dspark-acc] ctx=4380 burst=25/36 cum=300/467=0.642
+[dspark-acc] ctx=4414 burst=21/36 cum=321/503=0.638
+[dspark-acc] ctx=4447 burst=22/33 cum=343/536=0.640
+[dspark-acc] ctx=4479 burst=20/36 cum=363/572=0.635
+[dspark-acc] ctx=4511 burst=30/33 cum=393/605=0.650
+[dspark-acc] ctx=4548 burst=21/39 cum=414/644=0.643
+[dspark-acc] ctx=4581 burst=19/35 cum=433/679=0.638
+[dspark-acc] ctx=4613 burst=18/39 cum=451/718=0.628
+[dspark-acc] ctx=4646 burst=17/37 cum=468/755=0.620
+[dspark-acc] ctx=4678 burst=16/38 cum=484/793=0.610
+[dspark-acc] ctx=4710 burst=24/34 cum=508/827=0.614
+[dspark-acc] ctx=4743 burst=4/4 cum=512/831=0.616
+[meter] admit id=chatcmpl-f3acad15b114b6104aad4e4a09a67d73 tenant=default lane=interactive model="q38"
+[admission] per-session draft-state charge: model="q38" +169MB (DFlash draft plane at this cap)
+[admission] request cost: model="q38" ctx=15537 path=spec = 29696 B/token x ctx + 2180MB prefill-workspace + 340MB fixed = 2981MB
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=274964480 pool_cached_gain_bytes=274964480 trim_released_bytes=268435456 driver_free_bytes 1178730496 -> 1447165952 pool_reserved_bytes 23320330240 -> 23051894784 pool_used_bytes 21296790056 -> 21021825576 pool_retained_bytes=6529024 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer: evicted 1 prefix entries + 0 plain + 0 spec + 2 dspark parked sessions (global LRU); effective free 3202MB -> 4982MB
+[admit-trim] dev0 driver_free_bytes=1447165952 floor_bytes=2147483648 reclaimed_bytes=671088640 still_owned_bytes=19516838784 pool_reserved_bytes=22380806144 driver_free_after=2118254592 before prime
+[spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=14705 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=3 chunks=1 wall_ms=5457.870 max_chunk_ms=5457.870
+[dflash-kv-ring] compact keep_from=2040 kept=2056 phys_rows=4120
+[dflash-kv-ring] compact keep_from=4088 kept=2056 phys_rows=4120
+[prime-yield] count=2 remaining=2 chunks=1 wall_ms=5732.229 max_chunk_ms=5732.229
+[dflash-kv-ring] compact keep_from=6136 kept=2056 phys_rows=4120
+[dflash-kv-ring] compact keep_from=8184 kept=2056 phys_rows=4120
+[prime-yield] count=3 remaining=1 chunks=1 wall_ms=6003.006 max_chunk_ms=6003.006
+[dflash-kv-ring] compact keep_from=10232 kept=2056 phys_rows=4120
+[dflash-kv-ring] compact keep_from=12280 kept=2056 phys_rows=4120
+[fa-pool] grow #2 dev=0 o_len 6389760 -> 12779520 ml_len 24960 -> 49920 (retired kept, zero=false)
+[dspark-acc] ctx=14705 burst=0/7 cum=0/7=0.000
+[prefix-cache] insert (dspark-boundary): 14705 tokens, 593.6MB (resident 593.6MB / 4194MB, model q38)
+[dspark-acc] ctx=14706 burst=17/38 cum=17/45=0.378
+[dspark-acc] ctx=14739 burst=16/40 cum=33/85=0.388
+[dspark-acc] ctx=14771 burst=16/40 cum=49/125=0.392
+[dspark-acc] ctx=14804 burst=18/38 cum=67/163=0.411
+[dspark-acc] ctx=14836 burst=22/34 cum=89/197=0.452
+[dspark-acc] ctx=14870 burst=17/42 cum=106/239=0.444
+[dspark-acc] ctx=14903 burst=18/38 cum=124/277=0.448
+[dspark-acc] ctx=14936 burst=14/40 cum=138/317=0.435
+[dspark-acc] ctx=14968 burst=20/34 cum=158/351=0.450
+[dspark-acc] ctx=15002 burst=18/39 cum=176/390=0.451
+[dspark-acc] ctx=15036 burst=18/40 cum=194/430=0.451
+[dspark-acc] ctx=15070 burst=18/41 cum=212/471=0.450
+[dspark-acc] ctx=15102 burst=16/37 cum=228/508=0.449
+[dspark-acc] ctx=15134 burst=18/36 cum=246/544=0.452
+[dspark-acc] ctx=15167 burst=18/38 cum=264/582=0.454
+[dspark-acc] ctx=15200 burst=17/35 cum=281/617=0.455
+[dspark-acc] ctx=15232 burst=20/35 cum=301/652=0.462
+[dspark-acc] ctx=15265 burst=18/37 cum=319/689=0.463
+[dspark-acc] ctx=15297 burst=19/37 cum=338/726=0.466
+[dspark-acc] ctx=15329 burst=22/37 cum=360/763=0.472
+[dspark-acc] ctx=15364 burst=20/38 cum=380/801=0.474
+[dspark-acc] ctx=15396 burst=18/35 cum=398/836=0.476
+[dspark-acc] ctx=15428 burst=16/38 cum=414/874=0.474
+[dspark-acc] ctx=15461 burst=5/18 cum=419/892=0.470
+[meter] admit id=chatcmpl-e557080e76788f3ee37f47e33bda281b tenant=default lane=interactive model="q38"
+[admission] per-session draft-state charge: model="q38" +127MB (DFlash draft plane at this cap)
+[admission] request cost: model="q38" ctx=3099 path=spec = 29696 B/token x ctx + 1086MB prefill-workspace + 340MB fixed = 1518MB
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=593572864 pool_cached_gain_bytes=593572864 trim_released_bytes=570425344 driver_free_bytes 1581383680 -> 2151809024 pool_reserved_bytes 22917677056 -> 22347251712 pool_used_bytes 21283791508 -> 20690218644 pool_retained_bytes=23147520 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer: evicted 1 prefix entries + 0 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 3215MB -> 3809MB
+[worker] dspark-reuse MISS: 1 parked, best text overlap 1291B                              of 7926B prompt; serving COLD (model q38)
+[spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=2267 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[dspark-acc] ctx=2267 burst=28/37 cum=28/37=0.757
+[prefix-cache] insert (dspark-boundary): 2267 tokens, 224.2MB (resident 224.2MB / 4194MB, model q38)
+[dspark-acc] ctx=2301 burst=18/40 cum=46/77=0.597
+[dspark-acc] ctx=2335 burst=24/29 cum=70/106=0.660
+[dspark-acc] ctx=2367 burst=22/39 cum=92/145=0.634
+[dspark-acc] ctx=2401 burst=28/33 cum=120/178=0.674
+[dspark-acc] ctx=2438 burst=8/14 cum=128/192=0.667
+[meter] admit id=chatcmpl-fa377430bd707530f07dcf117afac6ab tenant=default lane=interactive model="q38"
+[admission] per-session draft-state charge: model="q38" +155MB (DFlash draft plane at this cap)
+[admission] request cost: model="q38" ctx=3769 path=spec = 29696 B/token x ctx + 1408MB prefill-workspace + 340MB fixed = 1859MB
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=224214016 pool_cached_gain_bytes=224214016 trim_released_bytes=201326592 driver_free_bytes 1749155840 -> 1950482432 pool_reserved_bytes 22749904896 -> 22548578304 pool_used_bytes 21600808104 -> 21376594088 pool_retained_bytes=22887424 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer: evicted 1 prefix entries + 0 plain + 0 spec + 1 dspark parked sessions (global LRU); effective free 2898MB -> 4244MB
+[admit-trim] dev0 driver_free_bytes=1950482432 floor_bytes=2147483648 reclaimed_bytes=167772160 still_owned_bytes=20254599188 pool_reserved_bytes=22380806144 driver_free_after=2118254592 before prime
+[worker] dspark-reuse MISS: 1 parked, best text overlap 7926B                              of 9883B prompt; serving COLD (model q38)
+[spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=2937 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[dspark-acc] ctx=2937 burst=18/41 cum=18/41=0.439
+[prefix-cache] insert (dspark-boundary): 2937 tokens, 244.1MB (resident 244.1MB / 4194MB, model q38)
+[dspark-acc] ctx=2970 burst=15/39 cum=33/80=0.412
+[dspark-acc] ctx=3002 burst=27/29 cum=60/109=0.550
+[dspark-acc] ctx=3035 burst=22/38 cum=82/147=0.558
+[dspark-acc] ctx=3068 burst=26/36 cum=108/183=0.590
+[dspark-acc] ctx=3104 burst=4/5 cum=112/188=0.596
+[meter] admit id=chatcmpl-043cade1c691b829514116eba83fff88 tenant=default lane=interactive model="q38"
+[admission] per-session draft-state charge: model="q38" +169MB (DFlash draft plane at this cap)
+[admission] request cost: model="q38" ctx=14048 path=spec = 29696 B/token x ctx + 2150MB prefill-workspace + 340MB fixed = 2907MB
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=244110336 pool_cached_gain_bytes=244110336 trim_released_bytes=234881024 driver_free_bytes 1849819136 -> 2084700160 pool_reserved_bytes 22649241600 -> 22414360576 pool_used_bytes 21232492968 -> 20988382632 pool_retained_bytes=9229312 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer: evicted 1 prefix entries + 0 plain + 0 spec + 2 dspark parked sessions (global LRU); effective free 3267MB -> 4931MB
+[admit-trim] dev0 driver_free_bytes=2084700160 floor_bytes=2147483648 reclaimed_bytes=33554432 still_owned_bytes=19568269824 pool_reserved_bytes=22380806144 driver_free_after=2118254592 before prime
+[spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=13216 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=3 chunks=1 wall_ms=5460.114 max_chunk_ms=5460.114
+[dflash-kv-ring] compact keep_from=2040 kept=2056 phys_rows=4120
+[dflash-kv-ring] compact keep_from=4088 kept=2056 phys_rows=4120
+[prime-yield] count=2 remaining=2 chunks=1 wall_ms=5732.032 max_chunk_ms=5732.032
+[dflash-kv-ring] compact keep_from=6136 kept=2056 phys_rows=4120
+[dflash-kv-ring] compact keep_from=8184 kept=2056 phys_rows=4120
+[prime-yield] count=3 remaining=1 chunks=1 wall_ms=6003.217 max_chunk_ms=6003.217
+[dflash-kv-ring] compact keep_from=10232 kept=2056 phys_rows=4120
+[dspark-acc] ctx=13216 burst=2/7 cum=2/7=0.286
+[prefix-cache] insert (dspark-boundary): 13216 tokens, 549.4MB (resident 549.4MB / 4194MB, model q38)
+[dspark-acc] ctx=13219 burst=19/37 cum=21/44=0.477
+[dspark-acc] ctx=13252 burst=21/39 cum=42/83=0.506
+[dspark-acc] ctx=13286 burst=16/40 cum=58/123=0.472
+[dspark-acc] ctx=13319 burst=19/37 cum=77/160=0.481
+[dspark-acc] ctx=13351 burst=18/37 cum=95/197=0.482
+[dspark-acc] ctx=13384 burst=16/40 cum=111/237=0.468
+[dspark-acc] ctx=13418 burst=19/35 cum=130/272=0.478
+[dspark-acc] ctx=13450 burst=17/38 cum=147/310=0.474
+[dspark-acc] ctx=13483 burst=22/35 cum=169/345=0.490
+[dspark-acc] ctx=13516 burst=13/22 cum=182/367=0.496
+[meter] admit id=chatcmpl-1e897ff4713e8d692b5caf3c70b3c528 tenant=default lane=interactive model="q38"
+[admission] per-session draft-state charge: model="q38" +133MB (DFlash draft plane at this cap)
+[admission] request cost: model="q38" ctx=3235 path=spec = 29696 B/token x ctx + 1152MB prefill-workspace + 340MB fixed = 1587MB
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=549355520 pool_cached_gain_bytes=549355520 trim_released_bytes=536870912 driver_free_bytes 1581383680 -> 2118254592 pool_reserved_bytes 22917677056 -> 22380806144 pool_used_bytes 21192863956 -> 20643508436 pool_retained_bytes=12484608 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer: evicted 1 prefix entries + 0 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 3306MB -> 3856MB
+[admit-trim] dev0 driver_free_bytes=2118254592 floor_bytes=2147483648 reclaimed_bytes=0 still_owned_bytes=20643508436 pool_reserved_bytes=22380806144 driver_free_after=2118254592 before prime
+[worker] dspark-reuse MISS: 1 parked, best text overlap 1291B                              of 8084B prompt; serving COLD (model q38)
+[spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=2403 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[dspark-acc] ctx=2403 burst=25/37 cum=25/37=0.676
+[prefix-cache] insert (dspark-boundary): 2403 tokens, 228.3MB (resident 228.3MB / 4194MB, model q38)
+[dspark-acc] ctx=2438 burst=21/38 cum=46/75=0.613
+[dspark-acc] ctx=2470 burst=22/32 cum=68/107=0.636
+[dspark-acc] ctx=2503 burst=27/35 cum=95/142=0.669
+[dspark-acc] ctx=2538 burst=27/39 cum=122/181=0.674
+[dspark-acc] ctx=2574 burst=13/17 cum=135/198=0.682
+[meter] admit id=chatcmpl-370a324985fd3b117cec52f5db412327 tenant=default lane=interactive model="q38"
+[admission] per-session draft-state charge: model="q38" +157MB (DFlash draft plane at this cap)
+[admission] request cost: model="q38" ctx=3829 path=spec = 29696 B/token x ctx + 1436MB prefill-workspace + 340MB fixed = 1890MB
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=228252672 pool_cached_gain_bytes=228252672 trim_released_bytes=201326592 driver_free_bytes 1782710272 -> 1984036864 pool_reserved_bytes 22716350464 -> 22515023872 pool_used_bytes 21567036264 -> 21338783592 pool_retained_bytes=26926080 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer: evicted 1 prefix entries + 0 plain + 0 spec + 1 dspark parked sessions (global LRU); effective free 2932MB -> 4235MB
+[admit-trim] dev0 driver_free_bytes=1984036864 floor_bytes=2147483648 reclaimed_bytes=134217728 still_owned_bytes=20263769620 pool_reserved_bytes=22380806144 driver_free_after=2118254592 before prime
+[worker] dspark-reuse MISS: 1 parked, best text overlap 8084B                              of 9856B prompt; serving COLD (model q38)
+[spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=2997 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[dspark-acc] ctx=2997 burst=19/40 cum=19/40=0.475
+[prefix-cache] insert (dspark-boundary): 2997 tokens, 245.9MB (resident 245.9MB / 4194MB, model q38)
+[dspark-acc] ctx=3029 burst=19/35 cum=38/75=0.507
+[dspark-acc] ctx=3061 burst=23/31 cum=61/106=0.575
+[dspark-acc] ctx=3093 burst=28/29 cum=89/135=0.659
+[dspark-acc] ctx=3126 burst=25/32 cum=114/167=0.683
+[dspark-acc] ctx=3158 burst=31/35 cum=145/202=0.718
+[dspark-acc] ctx=3195 burst=25/38 cum=170/240=0.708
+[dspark-acc] ctx=3230 burst=26/34 cum=196/274=0.715
+[dspark-acc] ctx=3264 burst=4/5 cum=200/279=0.717
+[meter] admit id=chatcmpl-8512427e0942ead85186af29dc012c2a tenant=default lane=interactive model="q38"
+[admission] per-session draft-state charge: model="q38" +169MB (DFlash draft plane at this cap)
+[admission] request cost: model="q38" ctx=17933 path=spec = 29696 B/token x ctx + 2229MB prefill-workspace + 340MB fixed = 3101MB
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=245892096 pool_cached_gain_bytes=245892096 trim_released_bytes=234881024 driver_free_bytes 1816264704 -> 2051145728 pool_reserved_bytes 22682796032 -> 22447915008 pool_used_bytes 21248832680 -> 21002940584 pool_retained_bytes=11011072 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer: evicted 1 prefix entries + 0 plain + 0 spec + 2 dspark parked sessions (global LRU); effective free 3250MB -> 4930MB
+[admit-trim] dev0 driver_free_bytes=2051145728 floor_bytes=2147483648 reclaimed_bytes=67108864 still_owned_bytes=19568615424 pool_reserved_bytes=22380806144 driver_free_after=2118254592 before prime
+[spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=17101 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=5452.221 max_chunk_ms=5452.221
+[dflash-kv-ring] compact keep_from=2040 kept=2056 phys_rows=4120
+[dflash-kv-ring] compact keep_from=4088 kept=2056 phys_rows=4120
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=5724.589 max_chunk_ms=5724.589
+[dflash-kv-ring] compact keep_from=6136 kept=2056 phys_rows=4120
+[dflash-kv-ring] compact keep_from=8184 kept=2056 phys_rows=4120
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=5996.120 max_chunk_ms=5996.120
+[dflash-kv-ring] compact keep_from=10232 kept=2056 phys_rows=4120
+[dflash-kv-ring] compact keep_from=12280 kept=2056 phys_rows=4120
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=6267.053 max_chunk_ms=6267.053
+[dflash-kv-ring] compact keep_from=14328 kept=2056 phys_rows=4120
+[dspark-acc] ctx=17101 burst=3/7 cum=3/7=0.429
+[prefix-cache] insert (dspark-boundary): 17101 tokens, 664.7MB (resident 664.7MB / 4194MB, model q38)
+[dspark-acc] ctx=17105 burst=19/38 cum=22/45=0.489
+[dspark-acc] ctx=17137 burst=17/37 cum=39/82=0.476
+[dspark-acc] ctx=17169 burst=17/39 cum=56/121=0.463
+[dspark-acc] ctx=17201 burst=19/37 cum=75/158=0.475
+[dspark-acc] ctx=17233 burst=23/36 cum=98/194=0.505
+[dspark-acc] ctx=17266 burst=26/32 cum=124/226=0.549
+[meter] admit id=chatcmpl-1abc391c53d17165885761bede3e8fc2 tenant=default lane=interactive model="q38"
+[admission] per-session draft-state charge: model="q38" +120MB (DFlash draft plane at this cap)
+[admission] request cost: model="q38" ctx=2932 path=spec = 29696 B/token x ctx + 1006MB prefill-workspace + 340MB fixed = 1433MB
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=664724480 pool_cached_gain_bytes=664724480 trim_released_bytes=637534208 driver_free_bytes 1480720384 -> 2118254592 pool_reserved_bytes 23018340352 -> 22380806144 pool_used_bytes 21431071636 -> 20766347156 pool_retained_bytes=27190272 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer: evicted 1 prefix entries + 0 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 3068MB -> 3733MB
+[admit-trim] dev0 driver_free_bytes=2118254592 floor_bytes=2147483648 reclaimed_bytes=0 still_owned_bytes=20766347156 pool_reserved_bytes=22380806144 driver_free_after=2118254592 before prime
+[worker] dspark-reuse MISS: 1 parked, best text overlap 1291B                              of 7984B prompt; serving COLD (model q38)
+[spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=2100 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[dspark-acc] ctx=2100 burst=21/39 cum=21/39=0.538
+[prefix-cache] insert (dspark-boundary): 2100 tokens, 219.3MB (resident 219.3MB / 4194MB, model q38)
+[dspark-acc] ctx=2133 burst=20/35 cum=41/74=0.554
+[dspark-acc] ctx=2166 burst=22/35 cum=63/109=0.578
+[dspark-acc] ctx=2199 burst=19/37 cum=82/146=0.562
+[dspark-acc] ctx=2233 burst=21/35 cum=103/181=0.569
+[dspark-acc] ctx=2266 burst=24/35 cum=127/216=0.588
+[dspark-acc] ctx=2303 burst=25/34 cum=152/250=0.608
+[dspark-acc] ctx=2336 burst=27/30 cum=179/280=0.639
+[dspark-acc] ctx=2369 burst=20/43 cum=199/323=0.616
+[dspark-acc] ctx=2403 burst=27/36 cum=226/359=0.630
+[dspark-acc] ctx=2438 burst=6/9 cum=232/368=0.630
+[meter] admit id=chatcmpl-572e9333628be1de0e1cbe32e4c0b7a1 tenant=default lane=interactive model="q38"
+[admission] per-session draft-state charge: model="q38" +169MB (DFlash draft plane at this cap)
+[admission] request cost: model="q38" ctx=5674 path=spec = 29696 B/token x ctx + 1978MB prefill-workspace + 340MB fixed = 2486MB
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=219254784 pool_cached_gain_bytes=219254784 trim_released_bytes=201326592 driver_free_bytes 1682046976 -> 1883373568 pool_reserved_bytes 22817013760 -> 22615687168 pool_used_bytes 21658376040 -> 21439121256 pool_retained_bytes=17928192 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer: evicted 1 prefix entries + 0 plain + 0 spec + 2 dspark parked sessions (global LRU); effective free 2841MB -> 4931MB
+[admit-trim] dev0 driver_free_bytes=1883373568 floor_bytes=2147483648 reclaimed_bytes=234881024 still_owned_bytes=19567872384 pool_reserved_bytes=22380806144 driver_free_after=2118254592 before prime
+[spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=4842 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=1 chunks=1 wall_ms=5453.739 max_chunk_ms=5453.739
+[dflash-kv-ring] compact keep_from=2040 kept=2056 phys_rows=4120
+[dspark-acc] ctx=4842 burst=3/7 cum=3/7=0.429
+[prefix-cache] insert (dspark-boundary): 4842 tokens, 300.7MB (resident 300.7MB / 4194MB, model q38)
+[dspark-acc] ctx=4846 burst=22/37 cum=25/44=0.568
+[dspark-acc] ctx=4880 burst=14/39 cum=39/83=0.470
+[dspark-acc] ctx=4912 burst=24/33 cum=63/116=0.543
+[dspark-acc] ctx=4946 burst=22/36 cum=85/152=0.559
+[dspark-acc] ctx=4981 burst=18/39 cum=103/191=0.539
+[dspark-acc] ctx=5013 burst=18/34 cum=121/225=0.538
+[dspark-acc] ctx=5045 burst=17/37 cum=138/262=0.527
+[dspark-acc] ctx=5077 burst=19/33 cum=157/295=0.532
+[dspark-acc] ctx=5109 burst=21/38 cum=178/333=0.535
+[dspark-acc] ctx=5141 burst=18/39 cum=196/372=0.527
+[dspark-acc] ctx=5173 burst=20/35 cum=216/407=0.531
+[dspark-acc] ctx=5207 burst=23/37 cum=239/444=0.538
+[dspark-acc] ctx=5242 burst=20/36 cum=259/480=0.540
+[dspark-acc] ctx=5275 burst=28/35 cum=287/515=0.557
+[dspark-acc] ctx=5312 burst=21/35 cum=308/550=0.560
+[dspark-acc] ctx=5345 burst=19/38 cum=327/588=0.556
+[dspark-acc] ctx=5377 burst=22/35 cum=349/623=0.560
+[dspark-acc] ctx=5412 burst=23/37 cum=372/660=0.564
+[dspark-acc] ctx=5447 burst=27/32 cum=399/692=0.577
+[dspark-acc] ctx=5482 burst=6/13 cum=405/705=0.574
+[meter] admit id=chatcmpl-78814d411e6dab576121a8a7140dea69 tenant=default lane=interactive model="q38"
+[admission] per-session draft-state charge: model="q38" +169MB (DFlash draft plane at this cap)
+[admission] request cost: model="q38" ctx=11560 path=spec = 29696 B/token x ctx + 2099MB prefill-workspace + 340MB fixed = 2782MB
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=300681216 pool_cached_gain_bytes=300681216 trim_released_bytes=268435456 driver_free_bytes 1581383680 -> 1849819136 pool_reserved_bytes 22917677056 -> 22649241600 pool_used_bytes 20680399444 -> 20379718228 pool_retained_bytes=32245760 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer: evicted 1 prefix entries + 0 plain + 0 spec + 1 dspark parked sessions (global LRU); effective free 3819MB -> 4930MB
+[admit-trim] dev0 driver_free_bytes=1849819136 floor_bytes=2147483648 reclaimed_bytes=268435456 still_owned_bytes=19568920704 pool_reserved_bytes=22380806144 driver_free_after=2118254592 before prime
+[spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=10728 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=2 chunks=1 wall_ms=5462.295 max_chunk_ms=5462.295
+[dflash-kv-ring] compact keep_from=2040 kept=2056 phys_rows=4120
+[dflash-kv-ring] compact keep_from=4088 kept=2056 phys_rows=4120
+[prime-yield] count=2 remaining=1 chunks=1 wall_ms=5734.254 max_chunk_ms=5734.254
+[dflash-kv-ring] compact keep_from=6136 kept=2056 phys_rows=4120
+[dflash-kv-ring] compact keep_from=8184 kept=2056 phys_rows=4120
+[dspark-acc] ctx=10728 burst=3/7 cum=3/7=0.429
+[prefix-cache] insert (dspark-boundary): 10728 tokens, 475.5MB (resident 475.5MB / 4194MB, model q38)
+[dspark-acc] ctx=10732 burst=16/39 cum=19/46=0.413
+[dspark-acc] ctx=10764 burst=29/32 cum=48/78=0.615
+[dspark-acc] ctx=10801 burst=26/37 cum=74/115=0.643
+[dspark-acc] ctx=10836 burst=23/38 cum=97/153=0.634
+[dspark-acc] ctx=10870 burst=20/37 cum=117/190=0.616
+[dspark-acc] ctx=10902 burst=25/32 cum=142/222=0.640
+[dspark-acc] ctx=10936 burst=22/37 cum=164/259=0.633
+[dspark-acc] ctx=10968 burst=23/34 cum=187/293=0.638
+[dspark-acc] ctx=11002 burst=20/39 cum=207/332=0.623
+[dspark-acc] ctx=11036 burst=14/40 cum=221/372=0.594
+[dspark-acc] ctx=11068 burst=20/31 cum=241/403=0.598
+[dspark-acc] ctx=11100 burst=18/40 cum=259/443=0.585
+[dspark-acc] ctx=11133 burst=18/39 cum=277/482=0.575
+[dspark-acc] ctx=11167 burst=24/33 cum=301/515=0.584
+[dspark-acc] ctx=11200 burst=28/33 cum=329/548=0.600
+[dspark-acc] ctx=11235 burst=29/38 cum=358/586=0.611
+[dspark-acc] ctx=11273 burst=18/43 cum=376/629=0.598
+[dspark-acc] ctx=11305 burst=19/36 cum=395/665=0.594
+[dspark-acc] ctx=11337 burst=21/33 cum=416/698=0.596
+[dspark-acc] ctx=11370 burst=19/35 cum=435/733=0.593
+[dspark-acc] ctx=11403 burst=18/37 cum=453/770=0.588
+[dspark-acc] ctx=11435 burst=23/29 cum=476/799=0.596
+[dspark-acc] ctx=11467 burst=22/34 cum=498/833=0.598
+[meter] admit id=chatcmpl-9b69d082a0f683ee8cbd46d9b0105d80 tenant=default lane=interactive model="q38"
+[admission] per-session draft-state charge: model="q38" +169MB (DFlash draft plane at this cap)
+[admission] request cost: model="q38" ctx=5776 path=spec = 29696 B/token x ctx + 1980MB prefill-workspace + 340MB fixed = 2491MB
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=475471872 pool_cached_gain_bytes=475471872 trim_released_bytes=469762048 driver_free_bytes 1614938112 -> 2084700160 pool_reserved_bytes 22884122624 -> 22414360576 pool_used_bytes 21040893652 -> 20565421780 pool_retained_bytes=5709824 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer: evicted 1 prefix entries + 0 plain + 0 spec + 1 dspark parked sessions (global LRU); effective free 3458MB -> 4930MB
+[admit-trim] dev0 driver_free_bytes=2084700160 floor_bytes=2147483648 reclaimed_bytes=33554432 still_owned_bytes=19568909184 pool_reserved_bytes=22380806144 driver_free_after=2118254592 before prime
+[spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=4944 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=1 chunks=1 wall_ms=5451.534 max_chunk_ms=5451.534
+[dflash-kv-ring] compact keep_from=2040 kept=2056 phys_rows=4120
+[dspark-acc] ctx=4944 burst=0/7 cum=0/7=0.000
+[prefix-cache] insert (dspark-boundary): 4944 tokens, 303.7MB (resident 303.7MB / 4194MB, model q38)
+[dspark-acc] ctx=4945 burst=17/38 cum=17/45=0.378
+[dspark-acc] ctx=4977 burst=16/38 cum=33/83=0.398
+[dspark-acc] ctx=5009 burst=21/36 cum=54/119=0.454
+[dspark-acc] ctx=5043 burst=28/34 cum=82/153=0.536
+[dspark-acc] ctx=5079 burst=27/35 cum=109/188=0.580
+[dspark-acc] ctx=5115 burst=22/40 cum=131/228=0.575
+[dspark-acc] ctx=5149 burst=23/34 cum=154/262=0.588
+[dspark-acc] ctx=5182 burst=16/42 cum=170/304=0.559
+[dspark-acc] ctx=5215 burst=17/36 cum=187/340=0.550
+[dspark-acc] ctx=5247 burst=24/31 cum=211/371=0.569
+[dspark-acc] ctx=5279 burst=1/5 cum=212/376=0.564
+[meter] admit id=chatcmpl-82551a599694cca74d9cb4c2614f42f8 tenant=default lane=interactive model="q38"
+[admission] per-session draft-state charge: model="q38" +169MB (DFlash draft plane at this cap)
+[admission] request cost: model="q38" ctx=8885 path=spec = 29696 B/token x ctx + 2044MB prefill-workspace + 340MB fixed = 2647MB
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=303710208 pool_cached_gain_bytes=303710208 trim_released_bytes=301989888 driver_free_bytes 1816264704 -> 2118254592 pool_reserved_bytes 22682796032 -> 22380806144 pool_used_bytes 20685759700 -> 20382049492 pool_retained_bytes=1720320 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer: evicted 1 prefix entries + 0 plain + 0 spec + 1 dspark parked sessions (global LRU); effective free 3813MB -> 4931MB
+[admit-trim] dev0 driver_free_bytes=2118254592 floor_bytes=2147483648 reclaimed_bytes=0 still_owned_bytes=19568033664 pool_reserved_bytes=22380806144 driver_free_after=2118254592 before prime
+[spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=8053 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=1 chunks=1 wall_ms=5459.145 max_chunk_ms=5459.145
+[dflash-kv-ring] compact keep_from=2040 kept=2056 phys_rows=4120
+[dflash-kv-ring] compact keep_from=4088 kept=2056 phys_rows=4120
+[dspark-acc] ctx=8053 burst=0/7 cum=0/7=0.000
+[prefix-cache] insert (dspark-boundary): 8053 tokens, 396.0MB (resident 396.0MB / 4194MB, model q38)
+[dspark-acc] ctx=8054 burst=14/41 cum=14/48=0.292
+[dspark-acc] ctx=8086 burst=17/37 cum=31/85=0.365
+[dspark-acc] ctx=8118 burst=18/38 cum=49/123=0.398
+[dspark-acc] ctx=8150 burst=23/33 cum=72/156=0.462
+[dflash-kv-ring] compact keep_from=6145 kept=2056 phys_rows=4120
+[dspark-acc] ctx=8182 burst=20/38 cum=92/194=0.474
+[dspark-acc] ctx=8216 burst=22/32 cum=114/226=0.504
+[dspark-acc] ctx=8248 burst=17/40 cum=131/266=0.492
+[dspark-acc] ctx=8280 burst=21/30 cum=152/296=0.514
+[dspark-acc] ctx=8312 burst=12/19 cum=164/315=0.521
+[meter] admit id=chatcmpl-db5afedf19f69c7001ad3996a224c73a tenant=default lane=interactive model="q38"
+[admission] per-session draft-state charge: model="q38" +169MB (DFlash draft plane at this cap)
+[admission] request cost: model="q38" ctx=13159 path=spec = 29696 B/token x ctx + 2132MB prefill-workspace + 340MB fixed = 2862MB
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=396035072 pool_cached_gain_bytes=396035072 trim_released_bytes=369098752 driver_free_bytes 1581383680 -> 1950482432 pool_reserved_bytes 22917677056 -> 22548578304 pool_used_bytes 20876392852 -> 20480357780 pool_retained_bytes=26936320 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer: evicted 1 prefix entries + 0 plain + 0 spec + 1 dspark parked sessions (global LRU); effective free 3623MB -> 4931MB
+[admit-trim] dev0 driver_free_bytes=1950482432 floor_bytes=2147483648 reclaimed_bytes=167772160 still_owned_bytes=19568246784 pool_reserved_bytes=22380806144 driver_free_after=2118254592 before prime
+[spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=12327 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=3 chunks=1 wall_ms=5463.216 max_chunk_ms=5463.216
+[dflash-kv-ring] compact keep_from=2040 kept=2056 phys_rows=4120
+[dflash-kv-ring] compact keep_from=4088 kept=2056 phys_rows=4120
+[prime-yield] count=2 remaining=2 chunks=1 wall_ms=5733.035 max_chunk_ms=5733.035
+[dflash-kv-ring] compact keep_from=6136 kept=2056 phys_rows=4120
+[dflash-kv-ring] compact keep_from=8184 kept=2056 phys_rows=4120
+[prime-yield] count=3 remaining=1 chunks=1 wall_ms=6006.675 max_chunk_ms=6006.675
+[dflash-kv-ring] compact keep_from=10232 kept=2056 phys_rows=4120
+[dspark-acc] ctx=12327 burst=0/7 cum=0/7=0.000
+[prefix-cache] insert (dspark-boundary): 12327 tokens, 523.0MB (resident 523.0MB / 4194MB, model q38)
+[dspark-acc] ctx=12328 burst=22/32 cum=22/39=0.564
+[dspark-acc] ctx=12360 burst=25/31 cum=47/70=0.671
+[dspark-acc] ctx=12392 burst=25/36 cum=72/106=0.679
+[dspark-acc] ctx=12426 burst=1/5 cum=73/111=0.658
+[meter] admit id=chatcmpl-99f0782b3447e7209ec40b78e7097c02 tenant=default lane=interactive model="q38"
+[admission] per-session draft-state charge: model="q38" +169MB (DFlash draft plane at this cap)
+[admission] request cost: model="q38" ctx=14064 path=spec = 29696 B/token x ctx + 2150MB prefill-workspace + 340MB fixed = 2907MB
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=522955776 pool_cached_gain_bytes=522955776 trim_released_bytes=503316480 driver_free_bytes 1581383680 -> 2084700160 pool_reserved_bytes 22917677056 -> 22414360576 pool_used_bytes 21137717524 -> 20614761748 pool_retained_bytes=19639296 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer: evicted 1 prefix entries + 0 plain + 0 spec + 1 dspark parked sessions (global LRU); effective free 3361MB -> 4931MB
+[admit-trim] dev0 driver_free_bytes=2084700160 floor_bytes=2147483648 reclaimed_bytes=33554432 still_owned_bytes=19567797504 pool_reserved_bytes=22380806144 driver_free_after=2118254592 before prime
+[spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=13232 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=3 chunks=1 wall_ms=5456.866 max_chunk_ms=5456.866
+[dflash-kv-ring] compact keep_from=2040 kept=2056 phys_rows=4120
+[dflash-kv-ring] compact keep_from=4088 kept=2056 phys_rows=4120
+[prime-yield] count=2 remaining=2 chunks=1 wall_ms=5731.935 max_chunk_ms=5731.935
+[dflash-kv-ring] compact keep_from=6136 kept=2056 phys_rows=4120
+[dflash-kv-ring] compact keep_from=8184 kept=2056 phys_rows=4120
+[prime-yield] count=3 remaining=1 chunks=1 wall_ms=6004.895 max_chunk_ms=6004.895
+[dflash-kv-ring] compact keep_from=10232 kept=2056 phys_rows=4120
+[dspark-acc] ctx=13232 burst=0/7 cum=0/7=0.000
+[prefix-cache] insert (dspark-boundary): 13232 tokens, 549.8MB (resident 549.8MB / 4194MB, model q38)
+[dspark-acc] ctx=13233 burst=17/37 cum=17/44=0.386
+[dspark-acc] ctx=13265 burst=21/36 cum=38/80=0.475
+[dspark-acc] ctx=13300 burst=23/34 cum=61/114=0.535
+[dspark-acc] ctx=13332 burst=21/34 cum=82/148=0.554
+[dspark-acc] ctx=13364 burst=19/35 cum=101/183=0.552
+[dspark-acc] ctx=13397 burst=17/39 cum=118/222=0.532
+[dspark-acc] ctx=13430 burst=22/33 cum=140/255=0.549
+[dspark-acc] ctx=13464 burst=17/39 cum=157/294=0.534
+[dspark-acc] ctx=13497 burst=23/29 cum=180/323=0.557
+[dspark-acc] ctx=13529 burst=24/37 cum=204/360=0.567
+[dspark-acc] ctx=13564 burst=21/36 cum=225/396=0.568
+[dspark-acc] ctx=13596 burst=27/31 cum=252/427=0.590
+[dspark-acc] ctx=13630 burst=25/37 cum=277/464=0.597
+[dspark-acc] ctx=13666 burst=21/39 cum=298/503=0.592
+[dspark-acc] ctx=13700 burst=22/33 cum=320/536=0.597
+[dspark-acc] ctx=13733 burst=25/33 cum=345/569=0.606
+[dspark-acc] ctx=13766 burst=21/37 cum=366/606=0.604
+[dspark-acc] ctx=13799 burst=26/35 cum=392/641=0.612
+[dspark-acc] ctx=13835 burst=22/37 cum=414/678=0.611
+[dspark-acc] ctx=13868 burst=22/35 cum=436/713=0.612
+[dspark-acc] ctx=13903 burst=17/38 cum=453/751=0.603
+[dspark-acc] ctx=13935 burst=17/39 cum=470/790=0.595
+[dspark-acc] ctx=13969 burst=19/35 cum=489/825=0.593
+[meter] admit id=chatcmpl-c184ba777fe9be202bfda8d5d70b1a9d tenant=default lane=interactive model="q38"
+[admission] per-session draft-state charge: model="q38" +150MB (DFlash draft plane at this cap)
+[admission] request cost: model="q38" ctx=3665 path=spec = 29696 B/token x ctx + 1358MB prefill-workspace + 340MB fixed = 1806MB
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=549830656 pool_cached_gain_bytes=549830656 trim_released_bytes=536870912 driver_free_bytes 1581383680 -> 2118254592 pool_reserved_bytes 22917677056 -> 22380806144 pool_used_bytes 21193936084 -> 20644105428 pool_retained_bytes=12959744 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer: evicted 1 prefix entries + 0 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 3305MB -> 3855MB
+[admit-trim] dev0 driver_free_bytes=2118254592 floor_bytes=2147483648 reclaimed_bytes=0 still_owned_bytes=20644105428 pool_reserved_bytes=22380806144 driver_free_after=2118254592 before prime
+[worker] dspark-reuse MISS: 1 parked, best text overlap 1291B                              of 9163B prompt; serving COLD (model q38)
+[spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=2833 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[dspark-acc] ctx=2833 burst=22/36 cum=22/36=0.611
+[prefix-cache] insert (dspark-boundary): 2833 tokens, 241.0MB (resident 241.0MB / 4194MB, model q38)
+[dspark-acc] ctx=2865 burst=20/38 cum=42/74=0.568
+[dspark-acc] ctx=2899 burst=23/35 cum=65/109=0.596
+[dspark-acc] ctx=2934 burst=24/36 cum=89/145=0.614
+[dspark-acc] ctx=2966 burst=20/36 cum=109/181=0.602
+[dspark-acc] ctx=2999 burst=22/30 cum=131/211=0.621
+[dspark-acc] ctx=3031 burst=25/30 cum=156/241=0.647
+[dspark-acc] ctx=3063 burst=29/37 cum=185/278=0.665
+[dspark-acc] ctx=3099 burst=23/35 cum=208/313=0.665
+[dspark-acc] ctx=3132 burst=27/35 cum=235/348=0.675
+[dspark-acc] ctx=3168 burst=20/20 cum=255/368=0.693
+[meter] admit id=chatcmpl-eaf5d3f594cf3544eefa0b3954393b48 tenant=default lane=interactive model="q38"
+[admission] per-session draft-state charge: model="q38" +169MB (DFlash draft plane at this cap)
+[admission] request cost: model="q38" ctx=6064 path=spec = 29696 B/token x ctx + 1986MB prefill-workspace + 340MB fixed = 2506MB
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=241021952 pool_cached_gain_bytes=241021952 trim_released_bytes=234881024 driver_free_bytes 1614938112 -> 1849819136 pool_reserved_bytes 22884122624 -> 22649241600 pool_used_bytes 21611018216 -> 21369996264 pool_retained_bytes=6140928 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer: evicted 1 prefix entries + 0 plain + 0 spec + 2 dspark parked sessions (global LRU); effective free 2888MB -> 4931MB
+[admit-trim] dev0 driver_free_bytes=1849819136 floor_bytes=2147483648 reclaimed_bytes=268435456 still_owned_bytes=19567670784 pool_reserved_bytes=22380806144 driver_free_after=2118254592 before prime
+[spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=5232 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=1 chunks=1 wall_ms=5458.483 max_chunk_ms=5458.483
+[dflash-kv-ring] compact keep_from=2040 kept=2056 phys_rows=4120
+[dspark-acc] ctx=5232 burst=1/7 cum=1/7=0.143
+[prefix-cache] insert (dspark-boundary): 5232 tokens, 312.3MB (resident 312.3MB / 4194MB, model q38)
+[dspark-acc] ctx=5234 burst=16/38 cum=17/45=0.378
+[dspark-acc] ctx=5266 burst=18/43 cum=35/88=0.398
+[dspark-acc] ctx=5302 burst=23/37 cum=58/125=0.464
+[dspark-acc] ctx=5334 burst=23/33 cum=81/158=0.513
+[dspark-acc] ctx=5366 burst=24/30 cum=105/188=0.559
+[dspark-acc] ctx=5399 burst=6/11 cum=111/199=0.558
+[meter] admit id=chatcmpl-cedbb8b9ac3138c6c3681d7346120224 tenant=default lane=interactive model="q38"
+[admission] per-session draft-state charge: model="q38" +100MB (DFlash draft plane at this cap)
+[admission] request cost: model="q38" ctx=2436 path=spec = 29696 B/token x ctx + 769MB prefill-workspace + 340MB fixed = 1181MB
+[admit-trim] dev0 driver_free_bytes=1782710272 floor_bytes=2147483648 reclaimed_bytes=335544320 still_owned_bytes=20703583444 pool_reserved_bytes=22380806144 driver_free_after=2118254592 before prime
+[worker] dspark-reuse MISS: 1 parked, best text overlap 1291B                              of 6728B prompt; serving COLD (model q38)
+[spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=1604 cached=0 lcp=282 active=1 wave=1 placement=single-or-non-pp2
+[dspark-acc] ctx=1604 burst=22/37 cum=22/37=0.595
+[prefix-cache] insert (dspark-boundary): 1604 tokens, 204.5MB (resident 516.8MB / 4194MB, model q38)
+[dspark-acc] ctx=1636 burst=21/40 cum=43/77=0.558
+[dspark-acc] ctx=1672 burst=26/33 cum=69/110=0.627
+[dspark-acc] ctx=1705 burst=32/32 cum=101/142=0.711
+[dspark-acc] ctx=1742 burst=22/37 cum=123/179=0.687
+[dspark-acc] ctx=1774 burst=27/34 cum=150/213=0.704
+[dspark-acc] ctx=1808 burst=7/7 cum=157/220=0.714
+[meter] admit id=chatcmpl-fd761f36f9195177ea8de848df1cc41c tenant=default lane=interactive model="q38"
+[admission] per-session draft-state charge: model="q38" +169MB (DFlash draft plane at this cap)
+[admission] request cost: model="q38" ctx=6558 path=spec = 29696 B/token x ctx + 1996MB prefill-workspace + 340MB fixed = 2531MB
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=516788224 pool_cached_gain_bytes=516788224 trim_released_bytes=503316480 driver_free_bytes 1816264704 -> 2319581184 pool_reserved_bytes 22682796032 -> 22179479552 pool_used_bytes 21545545000 -> 21028756776 pool_retained_bytes=13471744 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer: evicted 2 prefix entries + 0 plain + 0 spec + 2 dspark parked sessions (global LRU); effective free 2954MB -> 4931MB
+[spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=5726 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=1 chunks=1 wall_ms=5459.023 max_chunk_ms=5459.023
+[dflash-kv-ring] compact keep_from=2040 kept=2056 phys_rows=4120
+[dspark-acc] ctx=5726 burst=1/7 cum=1/7=0.143
+[prefix-cache] insert (dspark-boundary): 5726 tokens, 326.9MB (resident 326.9MB / 4194MB, model q38)
+[dspark-acc] ctx=5728 burst=22/38 cum=23/45=0.511
+[dspark-acc] ctx=5764 burst=14/42 cum=37/87=0.425
+[dspark-acc] ctx=5796 burst=11/45 cum=48/132=0.364
+[dspark-acc] ctx=5829 burst=14/43 cum=62/175=0.354
+[dspark-acc] ctx=5861 burst=25/35 cum=87/210=0.414
+[dspark-acc] ctx=5896 burst=25/36 cum=112/246=0.455
+[dspark-acc] ctx=5931 burst=18/39 cum=130/285=0.456
+[dspark-acc] ctx=5964 burst=21/34 cum=151/319=0.473
+[dspark-acc] ctx=5996 burst=20/36 cum=171/355=0.482
+[dspark-acc] ctx=6028 burst=21/34 cum=192/389=0.494
+[dspark-acc] ctx=6060 burst=24/30 cum=216/419=0.516
+[dspark-acc] ctx=6092 burst=22/36 cum=238/455=0.523
+[dspark-acc] ctx=6124 burst=4/4 cum=242/459=0.527
+[meter] admit id=chatcmpl-4b04d6c6562c82dfec4c8c774c00727b tenant=default lane=interactive model="q38"
+[admission] per-session draft-state charge: model="q38" +169MB (DFlash draft plane at this cap)
+[admission] request cost: model="q38" ctx=4345 path=spec = 29696 B/token x ctx + 1684MB prefill-workspace + 340MB fixed = 2152MB
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=326932480 pool_cached_gain_bytes=326932480 trim_released_bytes=301989888 driver_free_bytes 1547829248 -> 1849819136 pool_reserved_bytes 22951231488 -> 22649241600 pool_used_bytes 20733736276 -> 20406803796 pool_retained_bytes=24942592 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer: evicted 1 prefix entries + 0 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 3765MB -> 4092MB
+[admit-trim] dev0 driver_free_bytes=1849819136 floor_bytes=2147483648 reclaimed_bytes=268435456 still_owned_bytes=20406803796 pool_reserved_bytes=22380806144 driver_free_after=2118254592 before prime
+[worker] dspark-reuse MISS: 1 parked, best text overlap 1291B                              of 11492B prompt; serving COLD (model q38)
+[spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=3513 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[dspark-acc] ctx=3513 burst=18/39 cum=18/39=0.462
+[prefix-cache] insert (dspark-boundary): 3513 tokens, 261.2MB (resident 261.2MB / 4194MB, model q38)
+[dspark-acc] ctx=3545 burst=26/33 cum=44/72=0.611
+[dspark-acc] ctx=3580 burst=17/41 cum=61/113=0.540
+[dspark-acc] ctx=3612 burst=23/31 cum=84/144=0.583
+[dspark-acc] ctx=3644 burst=27/33 cum=111/177=0.627
+[dspark-acc] ctx=3679 burst=24/36 cum=135/213=0.634
+[dspark-acc] ctx=3712 burst=2/5 cum=137/218=0.628
+[meter] admit id=chatcmpl-51a8b2381a58ed0c056ea7d56713d0fb tenant=default lane=interactive model="q38"
+[admission] per-session draft-state charge: model="q38" +169MB (DFlash draft plane at this cap)
+[admission] request cost: model="q38" ctx=4737 path=spec = 29696 B/token x ctx + 1871MB prefill-workspace + 340MB fixed = 2352MB
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=261215232 pool_cached_gain_bytes=261215232 trim_released_bytes=234881024 driver_free_bytes 1413611520 -> 1648492544 pool_reserved_bytes 23085449216 -> 22850568192 pool_used_bytes 21437408104 -> 21176192872 pool_retained_bytes=26334208 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer: evicted 1 prefix entries + 0 plain + 0 spec + 1 dspark parked sessions (global LRU); effective free 3062MB -> 4162MB
+[admit-trim] dev0 driver_free_bytes=1648492544 floor_bytes=2147483648 reclaimed_bytes=469762048 still_owned_bytes=20337503380 pool_reserved_bytes=22380806144 driver_free_after=2118254592 before prime
+[worker] dspark-reuse MISS: 1 parked, best text overlap 11492B                              of 12880B prompt; serving COLD (model q38)
+[spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=3905 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[dspark-acc] ctx=3905 burst=22/34 cum=22/34=0.647
+[prefix-cache] insert (dspark-boundary): 3905 tokens, 272.9MB (resident 272.9MB / 4194MB, model q38)
+[dspark-acc] ctx=3937 burst=29/38 cum=51/72=0.708
+[dspark-acc] ctx=3975 burst=12/19 cum=63/91=0.692
+[meter] admit id=chatcmpl-6eec0982b276a9c58bbd5a01dd15c355 tenant=default lane=interactive model="q38"
+[admission] per-session draft-state charge: model="q38" +169MB (DFlash draft plane at this cap)
+[admission] request cost: model="q38" ctx=17475 path=spec = 29696 B/token x ctx + 2220MB prefill-workspace + 340MB fixed = 3078MB
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=272856064 pool_cached_gain_bytes=272856064 trim_released_bytes=268435456 driver_free_bytes 1178730496 -> 1447165952 pool_reserved_bytes 23320330240 -> 23051894784 pool_used_bytes 21390901544 -> 21118045480 pool_retained_bytes=4420608 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer: evicted 1 prefix entries + 0 plain + 0 spec + 2 dspark parked sessions (global LRU); effective free 3108MB -> 4931MB
+[admit-trim] dev0 driver_free_bytes=1447165952 floor_bytes=2147483648 reclaimed_bytes=671088640 still_owned_bytes=19567947264 pool_reserved_bytes=22380806144 driver_free_after=2118254592 before prime
+[spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=16643 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=5462.477 max_chunk_ms=5462.477
+[dflash-kv-ring] compact keep_from=2040 kept=2056 phys_rows=4120
+[dflash-kv-ring] compact keep_from=4088 kept=2056 phys_rows=4120
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=5736.337 max_chunk_ms=5736.337
+[dflash-kv-ring] compact keep_from=6136 kept=2056 phys_rows=4120
+[dflash-kv-ring] compact keep_from=8184 kept=2056 phys_rows=4120
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=6003.056 max_chunk_ms=6003.056
+[dflash-kv-ring] compact keep_from=10232 kept=2056 phys_rows=4120
+[dflash-kv-ring] compact keep_from=12280 kept=2056 phys_rows=4120
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=6277.000 max_chunk_ms=6277.000
+[dflash-kv-ring] compact keep_from=14328 kept=2056 phys_rows=4120
+[dspark-acc] ctx=16643 burst=5/7 cum=5/7=0.714
+[prefix-cache] insert (dspark-boundary): 16643 tokens, 651.1MB (resident 651.1MB / 4194MB, model q38)
+[dspark-acc] ctx=16649 burst=19/39 cum=24/46=0.522
+[dspark-acc] ctx=16682 burst=20/35 cum=44/81=0.543
+[dspark-acc] ctx=16714 burst=25/32 cum=69/113=0.611
+[dspark-acc] ctx=16747 burst=24/32 cum=93/145=0.641
+[dspark-acc] ctx=16779 burst=22/35 cum=115/180=0.639
+[dspark-acc] ctx=16811 burst=21/33 cum=136/213=0.638
+[dspark-acc] ctx=16843 burst=24/29 cum=160/242=0.661
+[dspark-acc] ctx=16875 burst=25/31 cum=185/273=0.678
+[dspark-acc] ctx=16907 burst=7/7 cum=192/280=0.686
+[meter] admit id=chatcmpl-923846455f6ab39d34ca0b7ea3bf05b3 tenant=default lane=interactive model="q38"
+[admission] per-session draft-state charge: model="q38" +169MB (DFlash draft plane at this cap)
+[admission] request cost: model="q38" ctx=4432 path=spec = 29696 B/token x ctx + 1725MB prefill-workspace + 340MB fixed = 2196MB
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=651123712 pool_cached_gain_bytes=651123712 trim_released_bytes=637534208 driver_free_bytes 1514274816 -> 2151809024 pool_reserved_bytes 22984785920 -> 22347251712 pool_used_bytes 21403313812 -> 20752190100 pool_retained_bytes=13589504 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer: evicted 1 prefix entries + 0 plain + 0 spec + 1 dspark parked sessions (global LRU); effective free 3096MB -> 4930MB
+[spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=3600 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[dspark-acc] ctx=3600 burst=17/42 cum=17/42=0.405
+[prefix-cache] insert (dspark-boundary): 3600 tokens, 263.8MB (resident 263.8MB / 4194MB, model q38)
+[dspark-acc] ctx=3632 burst=20/35 cum=37/77=0.481
+[dspark-acc] ctx=3665 burst=22/35 cum=59/112=0.527
+[dspark-acc] ctx=3699 burst=23/34 cum=82/146=0.562
+[dspark-acc] ctx=3732 burst=26/35 cum=108/181=0.597
+[dspark-acc] ctx=3768 burst=23/36 cum=131/217=0.604
+[dspark-acc] ctx=3800 burst=25/34 cum=156/251=0.622
+[dspark-acc] ctx=3834 burst=21/25 cum=177/276=0.641
+[meter] admit id=chatcmpl-45f4708c1f1d0c601182ef8e93711607 tenant=default lane=interactive model="q38"
+[admission] per-session draft-state charge: model="q38" +169MB (DFlash draft plane at this cap)
+[admission] request cost: model="q38" ctx=8223 path=spec = 29696 B/token x ctx + 2030MB prefill-workspace + 340MB fixed = 2614MB
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=263798784 pool_cached_gain_bytes=263798784 trim_released_bytes=234881024 driver_free_bytes 2051145728 -> 2286026752 pool_reserved_bytes 22447915008 -> 22213033984 pool_used_bytes 20603073748 -> 20339274964 pool_retained_bytes=28917760 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer: evicted 1 prefix entries + 0 plain + 0 spec + 1 dspark parked sessions (global LRU); effective free 3896MB -> 4931MB
+[spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=7391 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=1 chunks=1 wall_ms=5463.343 max_chunk_ms=5463.343
+[dflash-kv-ring] compact keep_from=2040 kept=2056 phys_rows=4120
+[dflash-kv-ring] compact keep_from=4088 kept=2056 phys_rows=4120
+[dspark-acc] ctx=7391 burst=4/7 cum=4/7=0.571
+[prefix-cache] insert (dspark-boundary): 7391 tokens, 376.4MB (resident 376.4MB / 4194MB, model q38)
+[dspark-acc] ctx=7396 burst=18/43 cum=22/50=0.440
+[dspark-acc] ctx=7429 burst=23/32 cum=45/82=0.549
+[dspark-acc] ctx=7462 burst=21/34 cum=66/116=0.569
+[dspark-acc] ctx=7494 burst=20/33 cum=86/149=0.577
+[dspark-acc] ctx=7527 burst=22/35 cum=108/184=0.587
+[dspark-acc] ctx=7560 burst=20/41 cum=128/225=0.569
+[dspark-acc] ctx=7594 burst=22/34 cum=150/259=0.579
+[dspark-acc] ctx=7627 burst=22/34 cum=172/293=0.587
+[dspark-acc] ctx=7661 burst=26/34 cum=198/327=0.606
+[dspark-acc] ctx=7696 burst=22/34 cum=220/361=0.609
+[dspark-acc] ctx=7728 burst=24/37 cum=244/398=0.613
+[dspark-acc] ctx=7762 burst=21/33 cum=265/431=0.615
+[dspark-acc] ctx=7794 burst=22/37 cum=287/468=0.613
+[dspark-acc] ctx=7828 burst=9/15 cum=296/483=0.613
+[meter] admit id=chatcmpl-61a57e8de8decba6fc116e1304037374 tenant=default lane=interactive model="q38"
+[admission] per-session draft-state charge: model="q38" +131MB (DFlash draft plane at this cap)
+[admission] request cost: model="q38" ctx=3199 path=spec = 29696 B/token x ctx + 1134MB prefill-workspace + 340MB fixed = 1569MB
+[admit-trim] dev0 driver_free_bytes=1648492544 floor_bytes=2147483648 reclaimed_bytes=469762048 still_owned_bytes=20836457236 pool_reserved_bytes=22380806144 driver_free_after=2118254592 before prime
+[worker] dspark-reuse MISS: 1 parked, best text overlap 586B                              of 8646B prompt; serving COLD (model q38)
+[spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=2367 cached=0 lcp=138 active=1 wave=1 placement=single-or-non-pp2
+[dspark-acc] ctx=2367 burst=18/40 cum=18/40=0.450
+[prefix-cache] insert (dspark-boundary): 2367 tokens, 227.2MB (resident 603.6MB / 4194MB, model q38)
+[dspark-acc] ctx=2400 burst=23/35 cum=41/75=0.547
+[dspark-acc] ctx=2433 burst=19/36 cum=60/111=0.541
+[dspark-acc] ctx=2465 burst=16/37 cum=76/148=0.514
+[dspark-acc] ctx=2497 burst=17/39 cum=93/187=0.497
+[dspark-acc] ctx=2531 burst=17/40 cum=110/227=0.485
+[dspark-acc] ctx=2565 burst=21/37 cum=131/264=0.496
+[dspark-acc] ctx=2598 burst=23/34 cum=154/298=0.517
+[dspark-acc] ctx=2634 burst=22/36 cum=176/334=0.527
+[dspark-acc] ctx=2666 burst=17/38 cum=193/372=0.519
+[dspark-acc] ctx=2700 burst=18/38 cum=211/410=0.515
+[dspark-acc] ctx=2733 burst=17/36 cum=228/446=0.511
+[dspark-acc] ctx=2766 burst=21/35 cum=249/481=0.518
+[dspark-acc] ctx=2799 burst=17/38 cum=266/519=0.513
+[dspark-acc] ctx=2831 burst=17/36 cum=283/555=0.510
+[dspark-acc] ctx=2863 burst=16/38 cum=299/593=0.504
+[dspark-acc] ctx=2895 burst=16/41 cum=315/634=0.497
+[dspark-acc] ctx=2929 burst=19/35 cum=334/669=0.499
+[dspark-acc] ctx=2961 burst=17/37 cum=351/706=0.497
+[dspark-acc] ctx=2993 burst=14/41 cum=365/747=0.489
+[dspark-acc] ctx=3025 burst=14/43 cum=379/790=0.480
+[dspark-acc] ctx=3059 burst=21/34 cum=400/824=0.485
+[dspark-acc] ctx=3091 burst=16/36 cum=416/860=0.484
+[dspark-acc] ctx=3123 burst=6/16 cum=422/876=0.482
+[meter] admit id=chatcmpl-7c2ee412ef5c8ac44ebfc2b7d81560b2 tenant=default lane=interactive model="q38"
+[admission] per-session draft-state charge: model="q38" +142MB (DFlash draft plane at this cap)
+[admission] request cost: model="q38" ctx=3464 path=spec = 29696 B/token x ctx + 1261MB prefill-workspace + 340MB fixed = 1704MB
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=603559936 pool_cached_gain_bytes=603559936 trim_released_bytes=570425344 driver_free_bytes 1682046976 -> 2252472320 pool_reserved_bytes 22817013760 -> 22246588416 pool_used_bytes 21755735336 -> 21152175400 pool_retained_bytes=33134592 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer: evicted 2 prefix entries + 0 plain + 0 spec + 1 dspark parked sessions (global LRU); effective free 2743MB -> 4238MB
+[worker] dspark-reuse MISS: 1 parked, best text overlap 8646B                              of 9560B prompt; serving COLD (model q38)
+[spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=2632 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[dspark-acc] ctx=2632 burst=20/42 cum=20/42=0.476
+[prefix-cache] insert (dspark-boundary): 2632 tokens, 235.1MB (resident 235.1MB / 4194MB, model q38)
+[dspark-acc] ctx=2666 burst=32/32 cum=52/74=0.703
+[dspark-acc] ctx=2704 burst=28/28 cum=80/102=0.784
+[dspark-acc] ctx=2736 burst=3/7 cum=83/109=0.761
+[meter] admit id=chatcmpl-be269006aa60eff1e8d91676074db530 tenant=default lane=interactive model="q38"
+[admission] per-session draft-state charge: model="q38" +169MB (DFlash draft plane at this cap)
+[admission] request cost: model="q38" ctx=5144 path=spec = 29696 B/token x ctx + 1967MB prefill-workspace + 340MB fixed = 2460MB
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=235053056 pool_cached_gain_bytes=235053056 trim_released_bytes=234881024 driver_free_bytes 1883373568 -> 2118254592 pool_reserved_bytes 22615687168 -> 22380806144 pool_used_bytes 21208288488 -> 20973235432 pool_retained_bytes=172032 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer: evicted 1 prefix entries + 0 plain + 0 spec + 2 dspark parked sessions (global LRU); effective free 3291MB -> 4931MB
+[admit-trim] dev0 driver_free_bytes=2118254592 floor_bytes=2147483648 reclaimed_bytes=0 still_owned_bytes=19567987584 pool_reserved_bytes=22380806144 driver_free_after=2118254592 before prime
+[spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=4312 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=1 chunks=1 wall_ms=5454.963 max_chunk_ms=5454.963
+[dflash-kv-ring] compact keep_from=2040 kept=2056 phys_rows=4120
+[dspark-acc] ctx=4312 burst=3/7 cum=3/7=0.429
+[prefix-cache] insert (dspark-boundary): 4312 tokens, 284.9MB (resident 284.9MB / 4194MB, model q38)
+[dspark-acc] ctx=4316 burst=17/39 cum=20/46=0.435
+[dspark-acc] ctx=4348 burst=22/32 cum=42/78=0.538
+[dspark-acc] ctx=4381 burst=22/38 cum=64/116=0.552
+[dspark-acc] ctx=4415 burst=26/33 cum=90/149=0.604
+[dspark-acc] ctx=4451 burst=22/37 cum=112/186=0.602
+[dspark-acc] ctx=4484 burst=21/32 cum=133/218=0.610
+[dspark-acc] ctx=4516 burst=19/37 cum=152/255=0.596
+[dspark-acc] ctx=4549 burst=24/31 cum=176/286=0.615
+[dspark-acc] ctx=4582 burst=21/40 cum=197/326=0.604
+[dspark-acc] ctx=4616 burst=18/37 cum=215/363=0.592
+[dspark-acc] ctx=4648 burst=23/30 cum=238/393=0.606
+[dspark-acc] ctx=4680 burst=14/44 cum=252/437=0.577
+[dspark-acc] ctx=4712 burst=18/37 cum=270/474=0.570
+[dspark-acc] ctx=4744 burst=21/32 cum=291/506=0.575
+[dspark-acc] ctx=4776 burst=22/33 cum=313/539=0.581
+[dspark-acc] ctx=4809 burst=23/34 cum=336/573=0.586
+[dspark-acc] ctx=4841 burst=18/36 cum=354/609=0.581
+[dspark-acc] ctx=4874 burst=22/34 cum=376/643=0.585
+[dspark-acc] ctx=4908 burst=24/36 cum=400/679=0.589
+[dspark-acc] ctx=4943 burst=19/39 cum=419/718=0.584
+[dspark-acc] ctx=4975 burst=18/35 cum=437/753=0.580
+[dspark-acc] ctx=5007 burst=20/36 cum=457/789=0.579
+[dspark-acc] ctx=5039 burst=20/33 cum=477/822=0.580
+[dspark-acc] ctx=5071 burst=5/9 cum=482/831=0.580
+[meter] admit id=chatcmpl-02dc04dc8ada58627737d16d7ef27fa2 tenant=default lane=interactive model="q38"
+[admission] per-session draft-state charge: model="q38" +169MB (DFlash draft plane at this cap)
+[admission] request cost: model="q38" ctx=6537 path=spec = 29696 B/token x ctx + 1996MB prefill-workspace + 340MB fixed = 2530MB
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=284942336 pool_cached_gain_bytes=284942336 trim_released_bytes=268435456 driver_free_bytes 1849819136 -> 2118254592 pool_reserved_bytes 22649241600 -> 22380806144 pool_used_bytes 20647834324 -> 20362891988 pool_retained_bytes=16506880 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer: evicted 1 prefix entries + 0 plain + 0 spec + 1 dspark parked sessions (global LRU); effective free 3851MB -> 4930MB
+[admit-trim] dev0 driver_free_bytes=2118254592 floor_bytes=2147483648 reclaimed_bytes=0 still_owned_bytes=19568817024 pool_reserved_bytes=22380806144 driver_free_after=2118254592 before prime
+[spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=5705 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=1 chunks=1 wall_ms=5462.236 max_chunk_ms=5462.236
+[dflash-kv-ring] compact keep_from=2040 kept=2056 phys_rows=4120
+[dspark-acc] ctx=5705 burst=0/7 cum=0/7=0.000
+[prefix-cache] insert (dspark-boundary): 5705 tokens, 326.3MB (resident 326.3MB / 4194MB, model q38)
+[dspark-acc] ctx=5706 burst=24/33 cum=24/40=0.600
+[dspark-acc] ctx=5739 burst=23/34 cum=47/74=0.635
+[dspark-acc] ctx=5773 burst=22/33 cum=69/107=0.645
+[dspark-acc] ctx=5805 burst=22/35 cum=91/142=0.641
+[dspark-acc] ctx=5839 burst=22/34 cum=113/176=0.642
+[dspark-acc] ctx=5874 burst=20/35 cum=133/211=0.630
+[dspark-acc] ctx=5906 burst=17/36 cum=150/247=0.607
+[dspark-acc] ctx=5938 burst=26/33 cum=176/280=0.629
+[dspark-acc] ctx=5973 burst=18/38 cum=194/318=0.610
+[dspark-acc] ctx=6006 burst=18/38 cum=212/356=0.596
+[dspark-acc] ctx=6038 burst=26/34 cum=238/390=0.610
+[dspark-acc] ctx=6074 burst=24/38 cum=262/428=0.612
+[dspark-acc] ctx=6109 burst=27/31 cum=289/459=0.630
+[dflash-kv-ring] compact keep_from=4100 kept=2056 phys_rows=4120
+[dspark-acc] ctx=6143 burst=24/40 cum=313/499=0.627
+[dspark-acc] ctx=6177 burst=20/37 cum=333/536=0.621
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting
+[server] GPU worker shutdown complete
