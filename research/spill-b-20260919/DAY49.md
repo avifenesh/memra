@@ -272,6 +272,10 @@ is unchanged: it still only records the limit it reads.
   judged.
 - Reading: every clause is pass/fail on HTTP status, retry lines and digests, so the throttle summary is recorded with
   the receipt and not judged.
+- Neighbour rule, asked by the box's training session: this cell runs on GPU 2 beside training on GPUs 0, 1 and 3,
+  so every 10 s the runner also reads GPUs 1 and 3. If either reaches 90 C, GPU 2 returns to its previous limit (280
+  W) for the rest of the cell, and the summary line records when. The verdict does not depend on power, so the drop
+  changes no clause.
 - The thermal stop above is unchanged. The runner applies the same rule on its 10 s samples as a
   backstop, and a stopped cell has no verdict.
 
