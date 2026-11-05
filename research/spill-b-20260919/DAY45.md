@@ -323,3 +323,52 @@ is unchanged: it still only records the limit it reads.
   changes no clause.
 - The thermal stop above is unchanged. The runner applies the same rule on its 10 s samples as a
   backstop, and a stopped cell has no verdict.
+
+### 2.3 Addendum C on the RTX PRO 6000 Blackwell Max-Q (`pro-maxq-day45-46/`, 2026-11-05 05:22:49Z to 07:15:32Z)
+
+The cell ran as addendum C and its power amendment registered, in two parts on GPU 2 of the four-card box ("NVIDIA
+RTX PRO 6000 Blackwell Max-Q Workstation Edition", driver 615.71.09) while the box's other three cards trained, under
+the GPU 2 lock agreed with the training session. Part 1 (`run-part1.sh`, the DAY45 half, 4 boots) ran 05:22:49Z to
+06:07:50Z; part 2 (`run-part2.sh`, the DAY46 half, 6 boots) ran 06:07:55Z to 07:15:32Z and read the DAY45 half from
+part 1's out dir, as the kit's README states. Binaries: `memra-server` from `09badfe575fc` (`9f40fa7d...`) and
+`8926ccfb3e8a` (`e8d9454d...`), the chain trees `0ac7f6413` and `43dbdb29f` as M.2 registered; the model hashed
+`1facf36c...` in both parts before the first boot. Receipts mirrored file for file (each part's `MIRROR-CHECK.txt`:
+292 `OK` lines in all; the one line that fails in each is `run.out`, which the runner appends to after writing the
+manifest, and the box's final copy hashes equal to this mirror's), then exported with
+`research/spill-f-20260919/m1-box-sanitize.py`: the card's UUID became `GPU-<card2-uuid>`, and the box name, local time
+zone and remote home path their placeholders (`EXPORT-MANIFEST.json`, 29 files). The scheduler's try logs, power summaries and 10 s
+thermal samples are in `runner/`.
+
+Power and validity (M.5 and its amendment): the runner set GPU 2 to 300 W (from 280 W, max 300 W) before each part.
+The box re-applies its own per-card caps every 10 minutes (a system timer, 280 W on this card), so the card ran at 280
+W from 05:30:03Z in part 1 (43 of 268 samples at 300 W) and from 06:10:26Z in part 2 (15 of 402); the runner's
+restore found 280 W set both times. The part 1 summary line (`runner/power-w-release-part1-try1.txt`) reports the
+limit it read at the start; the samples are the record. No clause depends on power (M.5). Maximum 91 C, fan 91 %; SW
+power cap active in 637 of 670 samples, no thermal or power-brake slowdown, no thermal stop; GPUs 1 and 3 at most 89 C,
+so the neighbour rule never dropped the limit. No server log of the cell has a `[gpu-watch] CRITICAL` line
+(`gpu_watch_fault_lines=0` in both halves). Verbatim (`day45/read.log`, `day46/read.log`, `VERDICT.txt`):
+
+- DAY45, all 4 boots: `DAY45 W4 card=pro6000maxq boot=O1-off oom_lines=0 crash_lines=0 r503=0 -> PASS` and
+  `DAY45 W1 card=pro6000maxq boot=O1-off probe_booked=0 probe_booked_real=0 metrics_booked=0 -> PASS`
+- `DAY45 W2 card=pro6000maxq boot=O1-on w_booked=54 w_release=49 w_retire_unreleased=5 reasons={'same-tick': 5} twice=[] bytes_mismatch=[] neither=[] -> PASS` (O2-on reads the same)
+- `DAY45 W3 card=pro6000maxq order=O1 rows_200_both=53 status_mismatch=2 differ=[] -> PASS` and
+  `order=O2 rows_200_both=53 status_mismatch=1 differ=[] -> PASS` (addendum B made the status mismatches a reading)
+- DAY46, both `enforce` and both `enforce-wrel` boots: `P2 ... oom_lines=0 parked_oom_lines=0 crash_lines=0 r503=0 -> PASS`,
+  `P1 ... r429=78` (`enforce`) and `r429=67` (`enforce-wrel`) `without_reject_line=[] retry_after_out_of_1_60=[] other_non200=[] -> PASS`,
+  `P3 ... over_budget=[] -> PASS`, `P5-PROBE ... probe_booked=0 probe_booked_real=0 -> PASS`; both shadow boots
+  `P5-PROBE ... -> PASS`
+- `DAY46 P5 card=pro6000maxq boot=O1-enforce-wrel w_booked=40 w_release=39 w_retire_unreleased=1 twice=[] bytes_mismatch=[] neither=[] -> PASS` (O2 reads the same)
+- `DAY46 P4 ... order=O1 arm=enforce rows_200_both=21 status_mismatch=78 differ=[] -> PASS`, `arm=enforce-wrel rows_200_both=32
+  status_mismatch=67 differ=[] -> PASS`; O2: 22 and 32 rows, `differ=[]`, PASS
+- `VERDICT admit-w-release-default card=pro6000maxq day45=PASS(12/12) day46=PASS(24/24) -> PASS`
+
+Readings, taken on a shared box at 280 W (no bound, M.6): the second wave's admitted count is 12 of 32 on
+`enforce-wrel` against 1 of 32 on `enforce` in both orders, the book at the second wave's first line 20.47 GB against
+60.60 GB; second-wave TTFT p50 156.7 s and 155.9 s on `enforce-wrel`, 14.7 s for the one admission on `enforce`. The
+before (`shadow`, no door): 53 and 51 OOM lines, the burst ends `200` on 13 and 14 of 64, the second wave 32 of 32.
+Budget 65.98 GB on every boot; telemetry 16,081 samples at 250 ms, SM clock p50 1627 MHz.
+
+**Read as registered (M.4): PASS.** The W release becomes the Max-Q default by the change the scope names: a Max-Q
+helper beside `HardwareTarget::is_pro6000_workstation`, used only in `w_release_for_device`. It lands as its own
+commit. The other Workstation-keyed defaults are not widened; the memory door stays keyed to the Workstation, so on a
+Max-Q the release runs in the DAY46 shape this half tested (door unset).

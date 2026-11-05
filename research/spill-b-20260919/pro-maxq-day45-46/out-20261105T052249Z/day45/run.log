@@ -1,0 +1,9 @@
+2026-11-05T05:23:03Z boot O1-off start arm=off bin=9f40fa7db6fa759a env=[MEMRA_ADMIT_PREDICT_SHADOW=1 MEMRA_ADMIT_BY_MEMORY=1] args=[--burst 64 --length 30720 --max-tokens 64 --wave2-delay-s 10]
+2026-11-05T05:34:01Z boot O1-off rc=0 DAY45 BOOT rows=101 ok=54 w_booked=0 w_release=0 predict_lines=102 oom=0
+2026-11-05T05:34:06Z boot O1-on start arm=on bin=9f40fa7db6fa759a env=[MEMRA_ADMIT_PREDICT_SHADOW=1 MEMRA_ADMIT_BY_MEMORY=1 MEMRA_ADMIT_W_RELEASE=1] args=[--burst 64 --length 30720 --max-tokens 64 --wave2-delay-s 10]
+2026-11-05T05:45:19Z boot O1-on rc=0 DAY45 BOOT rows=101 ok=54 w_booked=54 w_release=49 predict_lines=102 oom=0
+2026-11-05T05:45:24Z boot O2-on start arm=on bin=9f40fa7db6fa759a env=[MEMRA_ADMIT_PREDICT_SHADOW=1 MEMRA_ADMIT_BY_MEMORY=1 MEMRA_ADMIT_W_RELEASE=1] args=[--burst 64 --length 30720 --max-tokens 64 --wave2-delay-s 10]
+2026-11-05T05:56:38Z boot O2-on rc=0 DAY45 BOOT rows=101 ok=54 w_booked=54 w_release=49 predict_lines=102 oom=0
+2026-11-05T05:56:43Z boot O2-off start arm=off bin=9f40fa7db6fa759a env=[MEMRA_ADMIT_PREDICT_SHADOW=1 MEMRA_ADMIT_BY_MEMORY=1] args=[--burst 64 --length 30720 --max-tokens 64 --wave2-delay-s 10]
+2026-11-05T06:07:45Z boot O2-off rc=0 DAY45 BOOT rows=101 ok=53 w_booked=0 w_release=0 predict_lines=102 oom=0
+2026-11-05T06:07:50Z boots done: O1-off:off O1-on:on O2-on:on O2-off:off

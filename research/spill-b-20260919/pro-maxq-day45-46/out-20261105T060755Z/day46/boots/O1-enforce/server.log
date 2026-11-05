@@ -1,0 +1,468 @@
+1793860182787 [server] build: memra-0.138.0-65b15cdfdd55 (id: source-tree, git: 8926ccfb3e8a)
+1793860182787 [server] starting; models config = [("q38", "/mnt/Data/work/memra-maxq/models/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf", None)]
+1793860182787 [gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+1793860182788 [worker-affinity] off (MEMRA_WORKER_CPUSET / MEMRA_WORKER_AFFINITY unset or =0)
+1793860182987 [gpu-watch] on: every 60s, probe deadline 10s, fatal after 3 consecutive misses (MEMRA_GPU_PROBE_MISSES), fatal Xid [48, 64, 79, 94, 95, 119, 120]
+1793860183181 [worker] Engine ready (device=0, MEMRA_FAST=true)
+1793860183181 [spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+1793860183181 [spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2 (K=5 when the loaded MTP head is rank-trimmed)
+1793860183181 [worker] loading model "q38" <- /mnt/Data/work/memra-maxq/models/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf
+1793860183214 [tensor-contract] bound 866 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+1793860186729 [worker]   loaded "q38": 65 layers, eos=248046, stop=[248046]
+1793860186729 [worker] q38: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false qwen_effort=true gemma_think=false dsv4=false glm5=false ctx=262144 tok="qwen35" instruct=Some("chatml") chat_defaults=None/None
+1793860186729 [route-contract] model="q38" route=hybrid-worker capacity=64 sessions implemented=[capacity,occupancy,progress,fault-ownership,shutdown-ownership,memory-cost,rewrite-qualification,prime-fairness,service-metrics] refused=[]
+1793860186729 [worker] q38: decode wave cap 16; scheduler tick cap 16 (exact-16 tier)
+1793860186729 [prefix-cache] on: budget 15883MB (15883042816 B, derived: 2 x 7941521408 B max entry for model "q38" at served ctx 262144 (from checkpoint; MEMRA_CTX unset), requested 15883042816 B; boot driver free 86614081536 B, post-reserve clamp 85003468800 B), policy plain-LRU (global oldest unleased entry first; leases untouchable), min prefix 64 tokens, immediate partial restore=off (rollback) (transformer-only; hybrid mid-entry + routed-MoE N/A)
+1793860186729 [admission] "q38": plain 29696 B/token, spec 31552 B/token; fixed residual learns from effective-free deltas
+1793860186729 [prime-walk] model="q38" route=mtp supported=true yield_door=true [gdn_dspark_compatible=true mtp_head_loaded=true no_hyper_connections=true no_pipeline_cuts=true]
+1793860188271 [fa-pool] grow #0 dev=0 o_len 0 -> 399360 ml_len 0 -> 1560 (retired kept, zero=false)
+1793860188283 [func] CAPTURE-TIME kernel lookup (not warmed): embed_gather_u32
+1793860188284 [func] CAPTURE-TIME kernel lookup (not warmed): inc_i32
+1793860188284 [fa-pool] grow #1 dev=0 o_len 399360 -> 798720 ml_len 1560 -> 3120 (retired kept, zero=false)
+1793860188284 [func] CAPTURE-TIME kernel lookup (not warmed): fa_decode_vec_q_v4_deep_dc
+1793860188284 [func] CAPTURE-TIME kernel lookup (not warmed): fa_decode_combine_f32
+1793860188285 [func] CAPTURE-TIME kernel lookup (not warmed): memra_sctr_inc
+1793860188285 [func] CAPTURE-TIME kernel lookup (not warmed): gumbel_perturb_filtered_ctr_f32
+1793860188288 [spec] draft-session state high-water: 44MB (max of parked delta 44MB and capture-time pool peak 12MB; charged per spec admission and gating future captures)
+1793860188323 [fa-pool] grow #2 dev=0 o_len 798720 -> 1597440 ml_len 3120 -> 6240 (retired kept, zero=false)
+1793860188816 [device-trim] reason=calibration-complete {"device":0,"reclaimed_bytes":2483027968,"still_owned_bytes":17283255616,"pool_reserved_bytes":17414750208,"pool_cached_bytes":131494592,"driver_free_bytes":84030390272,"synchronization_errors":[]}
+1793860188816 [admit-cal] post-probe pool trim: released 2368MB cached back to the driver
+1793860188816 [admit-cal] boot calibration done: model="q38" route=mtp transient floor 2196MB (static was 1536MB; measured 2196MB; probe kv charge 127MB, draft-state 44MB, drafted 63 accepted 42; [dev0 peak-mapped 18976MB rest-mapped 16608MB charged 171MB -> 2196MB]; 2.1s)
+1793860188816 [admit-predict] shadow armed: budget_bytes=65975529168 budget_src=derived(effective_free_bytes=84161884864 - prefix_cache_budget_bytes=15883042816 - admission_reserve_bytes=2303312880) exempt_tenants=0 enforce=true (ENFORCING: a request whose predicted KV exceeds the arm is REJECTED before device work)
+1793860188816 [admit-mem] door=OFF open_output_tokens=8192 defer_budget_ms=8000 (admission charges prompt+output, the reclaim flush demotes to the host tier before dropping, and a memory defer past the budget refuses 429 instead of queueing past the client's deadline)
+1793860188816 [kv-vmm] door=OFF (MEMRA_KV_ALLOCATOR unset or pooled: pooled K/V planes)
+1793860188816 [server] worker ready; serving models: ["q38"]
+1793860188816 [server] listening on http://127.0.0.1:18526
+1793860189491 [meter] admit id=cmpl-07ae3a336fbe33a0cfbada208c9b404b tenant=default lane=interactive model="q38"
+1793860189491 [admission] per-session draft-state charge: model="q38" +46MB (measured capture high-water)
+1793860189491 [admission] request cost: model="q38" ctx=192 path=spec = 31552 B/token x ctx + 31MB prefill-workspace + 0MB fixed = 37MB
+1793860189492 [admit-predict] id=cmpl-07ae3a336fbe33a0cfbada208c9b404b tenant="d46-warm" model="q38" verdict=admit reason=maxtok-fallback prompt=64 predicted_completion=64 kv_hat=81401360 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=65975529168 retry_after_s=- exempt=0 enforce=1 live_free_bytes=84161884864
+1793860189493 [spec-k] model="q38" tenant="d46-warm" K=3 source=cold-short prompt=64 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1793860189493 [admission] fixed residual high-water: model="q38" 308MB (observed 312MB at ctx 136 path=spec)
+1793860189952 [spec-acc] ctx=64 burst=17/45 cum=17/45=0.378
+1793860189953 [prefix-cache] insert (spec-boundary): 64 tokens, 158.9MB (resident 158.9MB / 15883MB, model q38, ns "d46-warm")
+1793860190213 [spec-acc] ctx=97 burst=20/39 cum=37/84=0.440
+1793860192217 [meter] admit id=cmpl-1be3d6618eda4b743c463659ae466d5c tenant=default lane=interactive model="q38"
+1793860192217 [meter] admit id=cmpl-7265d51b332fab651eea1554f436feab tenant=default lane=interactive model="q38"
+1793860192217 [admission] per-session draft-state charge: model="q38" +46MB (measured capture high-water)
+1793860192217 [admission] request cost: model="q38" ctx=6160 path=spec = 31552 B/token x ctx + 2002MB prefill-workspace + 308MB fixed = 2504MB
+1793860192217 [meter] admit id=cmpl-71dfa18e40b819618e9cbbb331b23e16 tenant=default lane=interactive model="q38"
+1793860192220 [admit-predict] id=cmpl-1be3d6618eda4b743c463659ae466d5c tenant="d46-seq0" model="q38" verdict=admit reason=global-p95 prompt=6000 predicted_completion=64 kv_hat=2548092264 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=65975529168 retry_after_s=- exempt=0 enforce=1 live_free_bytes=83530120508
+1793860192220 [spec-k] model="q38" tenant="d46-seq0" K=0 source=concurrency prompt=6000 cached=0 lcp=0 active=1 wave=3 placement=single-or-non-pp2
+1793860192220 [admission] fixed residual high-water: model="q38" 319MB (observed 500MB at ctx 6104 path=plain)
+1793860192220 [admission] request cost: model="q38" ctx=6160 path=plain = 29696 B/token x ctx + 2002MB prefill-workspace + 319MB fixed = 2504MB
+1793860192220 [admit-predict] id=cmpl-7265d51b332fab651eea1554f436feab tenant="d46-seq1" model="q38" verdict=admit reason=global-p95 prompt=6000 predicted_completion=64 kv_hat=2501459796 booked_bytes=2548092264 booked_real=2550868840 inflight=1 cap=64 budget_bytes=65975529168 retry_after_s=- exempt=0 enforce=1 live_free_bytes=83029638632
+1793860192221 [spec-k] model="q38" tenant="d46-seq1" K=0 source=concurrency prompt=6000 cached=0 lcp=0 active=2 wave=3 placement=single-or-non-pp2
+1793860192221 [meter] admit id=cmpl-d467af9fdf867f2875c46562d8b22743 tenant=default lane=interactive model="q38"
+1793860192221 [admit-predict] id=cmpl-71dfa18e40b819618e9cbbb331b23e16 tenant="d46-seq3" model="q38" verdict=admit reason=global-p95 prompt=6000 predicted_completion=64 kv_hat=2501459796 booked_bytes=5049552060 booked_real=5054941884 inflight=2 cap=64 budget_bytes=65975529168 retry_after_s=- exempt=0 enforce=1 live_free_bytes=82529156756
+1793860192222 [spec-k] model="q38" tenant="d46-seq3" K=0 source=concurrency prompt=6000 cached=0 lcp=0 active=3 wave=4 placement=single-or-non-pp2
+1793860192584 [admit-predict] id=cmpl-d467af9fdf867f2875c46562d8b22743 tenant="d46-seq2" model="q38" verdict=admit reason=global-p95 prompt=6000 predicted_completion=64 kv_hat=2501459796 booked_bytes=7551011856 booked_real=7559014928 inflight=3 cap=64 budget_bytes=65975529168 retry_after_s=- exempt=0 enforce=1 live_free_bytes=82028674880
+1793860192585 [spec-k] model="q38" tenant="d46-seq2" K=0 source=concurrency prompt=6000 cached=0 lcp=0 active=4 wave=4 placement=single-or-non-pp2
+1793860198726 [prefix-cache] insert (seed): 5984 tokens, 334.6MB (resident 493.5MB / 15883MB, model q38, ns "d46-seq0")
+1793860200351 [prefix-cache] insert (seed): 5984 tokens, 334.6MB (resident 828.1MB / 15883MB, model q38, ns "d46-seq1")
+1793860200709 [prefix-cache] insert (seed): 5984 tokens, 334.6MB (resident 1162.7MB / 15883MB, model q38, ns "d46-seq3")
+1793860201225 [prime-batch] B=2 tokens=32 carried=2 partial=0 in 104.6ms
+1793860201578 [prefix-cache] insert (seed): 5984 tokens, 334.6MB (resident 1497.3MB / 15883MB, model q38, ns "d46-seq2")
+1793860201579 [fa-pool] grow #3 dev=0 o_len 1597440 -> 3194880 ml_len 6240 -> 12480 (retired kept, zero=false)
+1793860205643 [meter] admit id=cmpl-bb1703b8e6814106cbaf763026a4821a tenant=default lane=interactive model="q38"
+1793860205643 [admission] per-session draft-state charge: model="q38" +46MB (measured capture high-water)
+1793860205643 [admission] request cost: model="q38" ctx=12160 path=spec = 31552 B/token x ctx + 2125MB prefill-workspace + 319MB fixed = 2828MB
+1793860205644 [admit-predict] id=cmpl-bb1703b8e6814106cbaf763026a4821a tenant="d46-seqb" model="q38" verdict=admit reason=global-p95 prompt=12000 predicted_completion=96 kv_hat=2872370532 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=65975529168 retry_after_s=- exempt=0 enforce=1 live_free_bytes=80163068396
+1793860205645 [spec-k] model="q38" tenant="d46-seqb" K=3 source=cold-long prompt=12000 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1793860205645 [admission] fixed residual high-water: model="q38" 330MB (observed 712MB at ctx 12104 path=spec)
+1793860207174 [prime-yield] count=1 remaining=5 chunks=1 wall_ms=1528.108 max_chunk_ms=1528.108
+1793860208777 [prime-yield] count=2 remaining=4 chunks=1 wall_ms=1602.864 max_chunk_ms=1602.864
+1793860210349 [prime-yield] count=3 remaining=3 chunks=1 wall_ms=1571.970 max_chunk_ms=1571.970
+1793860210374 [prime-yield] count=4 remaining=2 chunks=1 wall_ms=24.935 max_chunk_ms=24.935
+1793860210399 [prime-yield] count=5 remaining=1 chunks=1 wall_ms=24.781 max_chunk_ms=24.781
+1793860210422 [prefix-cache] insert (spec-boundary): 12000 tokens, 535.5MB (resident 2032.8MB / 15883MB, model q38, ns "d46-seqb")
+1793860210442 [fa-pool] grow #4 dev=0 o_len 3194880 -> 6389760 ml_len 12480 -> 24960 (retired kept, zero=false)
+1793860210761 [spec-acc] ctx=12001 burst=18/42 cum=18/42=0.429
+1793860211027 [spec-acc] ctx=12034 burst=24/33 cum=42/75=0.560
+1793860211344 [spec-acc] ctx=12069 burst=15/39 cum=57/114=0.500
+1793860213348 [meter] admit id=cmpl-b685aa2f36e124f475a2daed15187d9a tenant=default lane=interactive model="q38"
+1793860213348 [meter] admit id=cmpl-cceb3132d60f60f0960f84415ca6d862 tenant=default lane=interactive model="q38"
+1793860213348 [admission] per-session draft-state charge: model="q38" +46MB (measured capture high-water)
+1793860213348 [admission] request cost: model="q38" ctx=6160 path=spec = 31552 B/token x ctx + 2002MB prefill-workspace + 330MB fixed = 2527MB
+1793860213348 [admit-predict] id=cmpl-b685aa2f36e124f475a2daed15187d9a tenant="d46-seq0" model="q38" verdict=admit reason=global-p95 prompt=6000 predicted_completion=96 kv_hat=2571314536 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=65975529168 retry_after_s=- exempt=0 enforce=1 live_free_bytes=78704537704
+1793860213348 [worker] plain-affinity: declined (no checkpoint retained; 1 parked, 6000 prompt tokens; model q38)
+1793860213348 [meter] admit id=cmpl-7f252e28ee9fb6f0d9cd331b28f1552d tenant=default lane=interactive model="q38"
+1793860213348 [meter] admit id=cmpl-f90fdee214b30f9a209a6edd8d52b625 tenant=default lane=interactive model="q38"
+1793860213349 [prefix-cache] hit: 5984 of 6000 prompt tokens from cache (model q38)
+1793860213349 [prefix-cache] spec-eligible request takes the hit on the PLAIN path (reason: entry carries no draft plane (plain-published)) (model q38)
+1793860213349 [spec-k] model="q38" tenant="d46-seq0" K=0 source=eligibility-fallback prompt=6000 cached=5984 lcp=5984 active=1 wave=4 placement=single-or-non-pp2
+1793860213349 [prefix-cache] source lease released after restore fence (entry 5984 tokens, model q38)
+1793860213444 [admission] request cost: model="q38" ctx=6160 path=plain = 29696 B/token x ctx + 2002MB prefill-workspace + 330MB fixed = 2515MB
+1793860213444 [admit-predict] id=cmpl-cceb3132d60f60f0960f84415ca6d862 tenant="d46-seq1" model="q38" verdict=admit reason=global-p95 prompt=6000 predicted_completion=96 kv_hat=2513546072 booked_bytes=2571314536 booked_real=2573081448 inflight=1 cap=64 budget_bytes=65975529168 retry_after_s=- exempt=0 enforce=1 live_free_bytes=78203062548
+1793860213444 [worker] plain-affinity: declined (no checkpoint retained; 1 parked, 6000 prompt tokens; model q38)
+1793860213445 [prefix-cache] hit: 5984 of 6000 prompt tokens from cache (model q38)
+1793860213445 [spec-k] model="q38" tenant="d46-seq1" K=0 source=concurrency prompt=6000 cached=5984 lcp=5984 active=2 wave=4 placement=single-or-non-pp2
+1793860213445 [prefix-cache] source lease released after restore fence (entry 5984 tokens, model q38)
+1793860213445 [admit-predict] id=cmpl-7f252e28ee9fb6f0d9cd331b28f1552d tenant="d46-seq2" model="q38" verdict=admit reason=global-p95 prompt=6000 predicted_completion=96 kv_hat=2513546072 booked_bytes=5084860608 booked_real=5088290496 inflight=2 cap=64 budget_bytes=65975529168 retry_after_s=- exempt=0 enforce=1 live_free_bytes=77702580672
+1793860213445 [worker] plain-affinity: declined (no checkpoint retained; 1 parked, 6000 prompt tokens; model q38)
+1793860213446 [prefix-cache] hit: 5984 of 6000 prompt tokens from cache (model q38)
+1793860213446 [spec-k] model="q38" tenant="d46-seq2" K=0 source=concurrency prompt=6000 cached=5984 lcp=5984 active=3 wave=4 placement=single-or-non-pp2
+1793860213446 [prefix-cache] source lease released after restore fence (entry 5984 tokens, model q38)
+1793860213446 [admit-predict] id=cmpl-f90fdee214b30f9a209a6edd8d52b625 tenant="d46-seq3" model="q38" verdict=admit reason=global-p95 prompt=6000 predicted_completion=96 kv_hat=2513546072 booked_bytes=7598406680 booked_real=7603499544 inflight=3 cap=64 budget_bytes=65975529168 retry_after_s=- exempt=0 enforce=1 live_free_bytes=77202098796
+1793860213446 [worker] plain-affinity: declined (no checkpoint retained; 1 parked, 6000 prompt tokens; model q38)
+1793860213448 [prefix-cache] hit: 5984 of 6000 prompt tokens from cache (model q38)
+1793860213448 [spec-k] model="q38" tenant="d46-seq3" K=0 source=concurrency prompt=6000 cached=5984 lcp=5984 active=4 wave=4 placement=single-or-non-pp2
+1793860213448 [prefix-cache] source lease released after restore fence (entry 5984 tokens, model q38)
+1793860220669 [meter] admit id=cmpl-57f1731dd90922ad72df2fa236e4e647 tenant=default lane=interactive model="q38"
+1793860220669 [admission] per-session draft-state charge: model="q38" +46MB (measured capture high-water)
+1793860220669 [admission] request cost: model="q38" ctx=30848 path=spec = 31552 B/token x ctx + 2508MB prefill-workspace + 330MB fixed = 3812MB
+1793860220669 [admit-predict] id=cmpl-57f1731dd90922ad72df2fa236e4e647 tenant="d46-burst0" model="q38" verdict=admit reason=global-p95 prompt=30720 predicted_completion=64 kv_hat=3856535912 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=65975529168 retry_after_s=- exempt=0 enforce=1 live_free_bytes=76698637080
+1793860220669 [meter] admit id=cmpl-a12a273d3e03689d8578ad7607eadd0f tenant=default lane=interactive model="q38"
+1793860220671 [spec-k] model="q38" tenant="d46-burst0" K=3 source=cold-long prompt=30720 cached=0 lcp=0 active=1 wave=2 placement=single-or-non-pp2
+1793860220671 [admission] fixed residual high-water: model="q38" 365MB (observed 1337MB at ctx 30792 path=spec)
+1793860220671 [meter] admit id=cmpl-1969a66ee52b15d92b84c912e9befc13 tenant=default lane=interactive model="q38"
+1793860220672 [meter] admit id=cmpl-f454a0e4c20e865eee48ee107b641daa tenant=default lane=interactive model="q38"
+1793860220672 [meter] admit id=cmpl-51e431c32d60379f4c7a0ddab46a1d11 tenant=default lane=interactive model="q38"
+1793860220675 [meter] admit id=cmpl-fc23942e5f1153c66acc83626ac57792 tenant=default lane=interactive model="q38"
+1793860220675 [meter] admit id=cmpl-0fbb7d8981c99dce1c12c1f128b5b0ef tenant=default lane=interactive model="q38"
+1793860220676 [meter] admit id=cmpl-ebdeccb582b5e1a6f53547790fe685fb tenant=default lane=interactive model="q38"
+1793860220676 [meter] admit id=cmpl-3df904fb180d09b7ebc1c86d69abc249 tenant=default lane=interactive model="q38"
+1793860220678 [meter] admit id=cmpl-1e730a7fb7af0af05a1d2e10e943e589 tenant=default lane=interactive model="q38"
+1793860220678 [meter] admit id=cmpl-358e4b4429d1d316cc0173108b640674 tenant=default lane=interactive model="q38"
+1793860220678 [meter] admit id=cmpl-ca111526074aba14de0eb2e424cd016d tenant=default lane=interactive model="q38"
+1793860220680 [meter] admit id=cmpl-2b756abfa9c82c2b943891fea2cc5c92 tenant=default lane=interactive model="q38"
+1793860220680 [meter] admit id=cmpl-73fec7532f96aa9dcbca4750e7372771 tenant=default lane=interactive model="q38"
+1793860220683 [meter] admit id=cmpl-38a3ea61f04fe3d94f353dcc2f5d7e2c tenant=default lane=interactive model="q38"
+1793860220683 [meter] admit id=cmpl-2dc67680db5337c6864b4a2f4cd5473f tenant=default lane=interactive model="q38"
+1793860220697 [meter] admit id=cmpl-23d4e00bacf0091d216e3ce94e1a8387 tenant=default lane=interactive model="q38"
+1793860220697 [meter] admit id=cmpl-45c2948ef5812b4b0722028dd7fcd962 tenant=default lane=interactive model="q38"
+1793860220697 [meter] admit id=cmpl-7dfca88c8da9da58dedafd678b1a209e tenant=default lane=interactive model="q38"
+1793860220697 [meter] admit id=cmpl-80c60598f1afb777bcbfec7b8e9c3bf4 tenant=default lane=interactive model="q38"
+1793860220698 [meter] admit id=cmpl-52a173995ed72435613459f1642038f3 tenant=default lane=interactive model="q38"
+1793860220698 [meter] admit id=cmpl-24ab4e3cea10948a0175fef7e838c64f tenant=default lane=interactive model="q38"
+1793860220698 [meter] admit id=cmpl-7274e2d96252e9488526d4c5d4631592 tenant=default lane=interactive model="q38"
+1793860220698 [meter] admit id=cmpl-d069ff334f4e826ee3e9b1a18e885d61 tenant=default lane=interactive model="q38"
+1793860220699 [meter] admit id=cmpl-f9f7747a0ff8fcd666b05cf262329210 tenant=default lane=interactive model="q38"
+1793860220700 [meter] admit id=cmpl-c76dfb494711a42ab31892d118ed4686 tenant=default lane=interactive model="q38"
+1793860220700 [meter] admit id=cmpl-2bc707d815e7be5474883a6c5c894e7d tenant=default lane=interactive model="q38"
+1793860220700 [meter] admit id=cmpl-825442826189002c1a88626402e2d79d tenant=default lane=interactive model="q38"
+1793860220702 [meter] admit id=cmpl-de6fd9860747f05f30a74dd4ffef123c tenant=default lane=interactive model="q38"
+1793860220702 [meter] admit id=cmpl-ddde75efb3e4a0d943c6d10060df7bf2 tenant=default lane=interactive model="q38"
+1793860220704 [meter] admit id=cmpl-db052fc5b57d96fad8706696b6f05b2e tenant=default lane=interactive model="q38"
+1793860220704 [meter] admit id=cmpl-70ca428d0e7019d3bb1a164d5267aa10 tenant=default lane=interactive model="q38"
+1793860220705 [meter] admit id=cmpl-8de71c703c218f245f44619de7c83038 tenant=default lane=interactive model="q38"
+1793860220707 [meter] admit id=cmpl-fad662ba32c8521aeec47b0fc8352d24 tenant=default lane=interactive model="q38"
+1793860220708 [meter] admit id=cmpl-008437c45ebbf61ea6a178d136d2ec27 tenant=default lane=interactive model="q38"
+1793860220708 [meter] admit id=cmpl-f590959429376ea417edfe6ae9f9543c tenant=default lane=interactive model="q38"
+1793860220708 [meter] admit id=cmpl-4427cbdaf3f7994e461484045421a6aa tenant=default lane=interactive model="q38"
+1793860220708 [meter] admit id=cmpl-4205be710fbe83483ca15bec6a27f634 tenant=default lane=interactive model="q38"
+1793860220710 [meter] admit id=cmpl-d1f658f5d2084385fed694d84be9a0d4 tenant=default lane=interactive model="q38"
+1793860220710 [meter] admit id=cmpl-38fe651711c910865ec32891d53f0ebb tenant=default lane=interactive model="q38"
+1793860220712 [meter] admit id=cmpl-aa6041f5e5f6baba94d1dc733453b6f6 tenant=default lane=interactive model="q38"
+1793860220713 [meter] admit id=cmpl-e9e727f10e2d18bdef24cc81f3734e92 tenant=default lane=interactive model="q38"
+1793860220714 [meter] admit id=cmpl-ace0ac1df018fac2e2675f47c3401fbc tenant=default lane=interactive model="q38"
+1793860220714 [meter] admit id=cmpl-d1bf986fd7ee39b163fab3f3003896f9 tenant=default lane=interactive model="q38"
+1793860220714 [meter] admit id=cmpl-02a29cdbb8cf2dd72e90ec34a3627234 tenant=default lane=interactive model="q38"
+1793860220717 [meter] admit id=cmpl-d46aa23ef612ebd1b2f85a14f4de4f91 tenant=default lane=interactive model="q38"
+1793860220718 [meter] admit id=cmpl-5e0becf28f60082f0213e146abd4531b tenant=default lane=interactive model="q38"
+1793860220720 [meter] admit id=cmpl-c0e691bdaa3f690edb0d080091fe447a tenant=default lane=interactive model="q38"
+1793860220720 [meter] admit id=cmpl-596bbf82eac477e6cfd012ee2ff7153e tenant=default lane=interactive model="q38"
+1793860220720 [meter] admit id=cmpl-b03a93bfdb83afe0e6a3e26c88944b9c tenant=default lane=interactive model="q38"
+1793860220720 [meter] admit id=cmpl-818bcedcb874760093d671335559c0a1 tenant=default lane=interactive model="q38"
+1793860220722 [meter] admit id=cmpl-8ef508953f9767d2ffc10e64dfd569c9 tenant=default lane=interactive model="q38"
+1793860220723 [meter] admit id=cmpl-96a419b142532a644db51375463a6387 tenant=default lane=interactive model="q38"
+1793860220723 [meter] admit id=cmpl-7926151a60d2de128063f0ee8772cdf5 tenant=default lane=interactive model="q38"
+1793860220724 [meter] admit id=cmpl-e655bbccca28c42c1af50de7a98f5c91 tenant=default lane=interactive model="q38"
+1793860220726 [meter] admit id=cmpl-214e366a3efb36b728ef7d485c38cad9 tenant=default lane=interactive model="q38"
+1793860220727 [meter] admit id=cmpl-6ceddf7752d20998690a9c523d1103cf tenant=default lane=interactive model="q38"
+1793860220728 [meter] admit id=cmpl-ffdf69498c38f0edd85e4daaf214f673 tenant=default lane=interactive model="q38"
+1793860220729 [meter] admit id=cmpl-03d962f2a7b5277cf8904b55e3ed9ba8 tenant=default lane=interactive model="q38"
+1793860220729 [meter] admit id=cmpl-a18c7c81848970b308cf884b13bfa563 tenant=default lane=interactive model="q38"
+1793860220730 [meter] admit id=cmpl-706d5ff9d9c442dc57b71d04d99802f4 tenant=default lane=interactive model="q38"
+1793860220731 [meter] admit id=cmpl-96ec891abd5d492bd82825b236baff3b tenant=default lane=interactive model="q38"
+1793860220731 [meter] admit id=cmpl-6fb84c7cb0eb9832b05ae1e5251d90d9 tenant=default lane=interactive model="q38"
+1793860220731 [meter] admit id=cmpl-f1e3955a3d21dcff3052c822d1cbe5a8 tenant=default lane=interactive model="q38"
+1793860222209 [prime-yield] count=1 remaining=15 chunks=1 wall_ms=1536.521 max_chunk_ms=1536.521
+1793860222209 [admission] request cost: model="q38" ctx=30848 path=plain = 29696 B/token x ctx + 2508MB prefill-workspace + 365MB fixed = 3789MB
+1793860222209 [admit-predict] id=cmpl-a12a273d3e03689d8578ad7607eadd0f tenant="d46-burst1" model="q38" verdict=admit reason=global-p95 prompt=30720 predicted_completion=64 kv_hat=3787631448 booked_bytes=3856535912 booked_real=3858302824 inflight=1 cap=64 budget_bytes=65975529168 retry_after_s=- exempt=0 enforce=1 live_free_bytes=74732903872
+1793860222210 [spec-k] model="q38" tenant="d46-burst1" K=0 source=concurrency prompt=30720 cached=0 lcp=0 active=2 wave=64 placement=single-or-non-pp2
+1793860222210 [admit-predict] id=cmpl-1969a66ee52b15d92b84c912e9befc13 tenant="d46-burst2" model="q38" verdict=admit reason=global-p95 prompt=30720 predicted_completion=64 kv_hat=3787631448 booked_bytes=7644167360 booked_real=7647597248 inflight=2 cap=64 budget_bytes=65975529168 retry_after_s=- exempt=0 enforce=1 live_free_bytes=73453466220
+1793860222211 [spec-k] model="q38" tenant="d46-burst2" K=0 source=concurrency prompt=30720 cached=0 lcp=0 active=3 wave=64 placement=single-or-non-pp2
+1793860222211 [admit-predict] id=cmpl-f454a0e4c20e865eee48ee107b641daa tenant="d46-burst4" model="q38" verdict=admit reason=global-p95 prompt=30720 predicted_completion=64 kv_hat=3787631448 booked_bytes=11431798808 booked_real=11436891672 inflight=3 cap=64 budget_bytes=65975529168 retry_after_s=- exempt=0 enforce=1 live_free_bytes=72174028568
+1793860222213 [spec-k] model="q38" tenant="d46-burst4" K=0 source=concurrency prompt=30720 cached=0 lcp=0 active=4 wave=64 placement=single-or-non-pp2
+1793860222213 [admit-predict] id=cmpl-51e431c32d60379f4c7a0ddab46a1d11 tenant="d46-burst3" model="q38" verdict=admit reason=global-p95 prompt=30720 predicted_completion=64 kv_hat=3787631448 booked_bytes=15219430256 booked_real=15226186096 inflight=4 cap=64 budget_bytes=65975529168 retry_after_s=- exempt=0 enforce=1 live_free_bytes=70894590916
+1793860222215 [spec-k] model="q38" tenant="d46-burst3" K=0 source=concurrency prompt=30720 cached=0 lcp=0 active=5 wave=64 placement=single-or-non-pp2
+1793860222215 [admit-predict] id=cmpl-fc23942e5f1153c66acc83626ac57792 tenant="d46-burst5" model="q38" verdict=admit reason=global-p95 prompt=30720 predicted_completion=64 kv_hat=3787631448 booked_bytes=19007061704 booked_real=19015480520 inflight=5 cap=64 budget_bytes=65975529168 retry_after_s=- exempt=0 enforce=1 live_free_bytes=69615153264
+1793860222217 [spec-k] model="q38" tenant="d46-burst5" K=0 source=concurrency prompt=30720 cached=0 lcp=0 active=6 wave=64 placement=single-or-non-pp2
+1793860222217 [admit-predict] id=cmpl-0fbb7d8981c99dce1c12c1f128b5b0ef tenant="d46-burst7" model="q38" verdict=admit reason=global-p95 prompt=30720 predicted_completion=64 kv_hat=3787631448 booked_bytes=22794693152 booked_real=22804774944 inflight=6 cap=64 budget_bytes=65975529168 retry_after_s=- exempt=0 enforce=1 live_free_bytes=68335715612
+1793860222219 [spec-k] model="q38" tenant="d46-burst7" K=0 source=concurrency prompt=30720 cached=0 lcp=0 active=7 wave=64 placement=single-or-non-pp2
+1793860222219 [admit-predict] id=cmpl-ebdeccb582b5e1a6f53547790fe685fb tenant="d46-burst6" model="q38" verdict=admit reason=global-p95 prompt=30720 predicted_completion=64 kv_hat=3787631448 booked_bytes=26582324600 booked_real=26594069368 inflight=7 cap=64 budget_bytes=65975529168 retry_after_s=- exempt=0 enforce=1 live_free_bytes=67056277960
+1793860222221 [spec-k] model="q38" tenant="d46-burst6" K=0 source=concurrency prompt=30720 cached=0 lcp=0 active=8 wave=64 placement=single-or-non-pp2
+1793860222221 [admit-predict] id=cmpl-3df904fb180d09b7ebc1c86d69abc249 tenant="d46-burst8" model="q38" verdict=admit reason=global-p95 prompt=30720 predicted_completion=64 kv_hat=3787631448 booked_bytes=30369956048 booked_real=30383363792 inflight=8 cap=64 budget_bytes=65975529168 retry_after_s=- exempt=0 enforce=1 live_free_bytes=65776840308
+1793860222223 [spec-k] model="q38" tenant="d46-burst8" K=0 source=concurrency prompt=30720 cached=0 lcp=0 active=9 wave=64 placement=single-or-non-pp2
+1793860222223 [admit-predict] id=cmpl-1e730a7fb7af0af05a1d2e10e943e589 tenant="d46-burst11" model="q38" verdict=admit reason=global-p95 prompt=30720 predicted_completion=64 kv_hat=3787631448 booked_bytes=34157587496 booked_real=34172658216 inflight=9 cap=64 budget_bytes=65975529168 retry_after_s=- exempt=0 enforce=1 live_free_bytes=64497402656
+1793860222225 [spec-k] model="q38" tenant="d46-burst11" K=0 source=concurrency prompt=30720 cached=0 lcp=0 active=10 wave=64 placement=single-or-non-pp2
+1793860222225 [admit-predict] id=cmpl-358e4b4429d1d316cc0173108b640674 tenant="d46-burst9" model="q38" verdict=admit reason=global-p95 prompt=30720 predicted_completion=64 kv_hat=3787631448 booked_bytes=37945218944 booked_real=37961952640 inflight=10 cap=64 budget_bytes=65975529168 retry_after_s=- exempt=0 enforce=1 live_free_bytes=63217965004
+1793860222226 [spec-k] model="q38" tenant="d46-burst9" K=0 source=concurrency prompt=30720 cached=0 lcp=0 active=11 wave=64 placement=single-or-non-pp2
+1793860222227 [admit-predict] id=cmpl-ca111526074aba14de0eb2e424cd016d tenant="d46-burst10" model="q38" verdict=admit reason=global-p95 prompt=30720 predicted_completion=64 kv_hat=3787631448 booked_bytes=41732850392 booked_real=41751247064 inflight=11 cap=64 budget_bytes=65975529168 retry_after_s=- exempt=0 enforce=1 live_free_bytes=61938527352
+1793860222228 [spec-k] model="q38" tenant="d46-burst10" K=0 source=concurrency prompt=30720 cached=0 lcp=0 active=12 wave=64 placement=single-or-non-pp2
+1793860222228 [admit-predict] id=cmpl-2b756abfa9c82c2b943891fea2cc5c92 tenant="d46-burst13" model="q38" verdict=admit reason=global-p95 prompt=30720 predicted_completion=64 kv_hat=3787631448 booked_bytes=45520481840 booked_real=45540541488 inflight=12 cap=64 budget_bytes=65975529168 retry_after_s=- exempt=0 enforce=1 live_free_bytes=60659089700
+1793860222230 [spec-k] model="q38" tenant="d46-burst13" K=0 source=concurrency prompt=30720 cached=0 lcp=0 active=13 wave=64 placement=single-or-non-pp2
+1793860222230 [admit-predict] id=cmpl-73fec7532f96aa9dcbca4750e7372771 tenant="d46-burst12" model="q38" verdict=admit reason=global-p95 prompt=30720 predicted_completion=64 kv_hat=3787631448 booked_bytes=49308113288 booked_real=49329835912 inflight=13 cap=64 budget_bytes=65975529168 retry_after_s=- exempt=0 enforce=1 live_free_bytes=59379652048
+1793860222232 [spec-k] model="q38" tenant="d46-burst12" K=0 source=concurrency prompt=30720 cached=0 lcp=0 active=14 wave=64 placement=single-or-non-pp2
+1793860222232 [admit-predict] id=cmpl-38a3ea61f04fe3d94f353dcc2f5d7e2c tenant="d46-burst15" model="q38" verdict=admit reason=global-p95 prompt=30720 predicted_completion=64 kv_hat=3787631448 booked_bytes=53095744736 booked_real=53119130336 inflight=14 cap=64 budget_bytes=65975529168 retry_after_s=- exempt=0 enforce=1 live_free_bytes=58100214396
+1793860222234 [spec-k] model="q38" tenant="d46-burst15" K=0 source=concurrency prompt=30720 cached=0 lcp=0 active=15 wave=64 placement=single-or-non-pp2
+1793860222234 [admit-predict] id=cmpl-2dc67680db5337c6864b4a2f4cd5473f tenant="d46-burst14" model="q38" verdict=admit reason=global-p95 prompt=30720 predicted_completion=64 kv_hat=3787631448 booked_bytes=56883376184 booked_real=56908424760 inflight=15 cap=64 budget_bytes=65975529168 retry_after_s=- exempt=0 enforce=1 live_free_bytes=56820776744
+1793860222236 [spec-k] model="q38" tenant="d46-burst14" K=0 source=concurrency prompt=30720 cached=0 lcp=0 active=16 wave=64 placement=single-or-non-pp2
+1793860222236 [admit-predict] id=cmpl-23d4e00bacf0091d216e3ce94e1a8387 tenant="d46-burst16" model="q38" verdict=admit reason=global-p95 prompt=30720 predicted_completion=64 kv_hat=3787631448 booked_bytes=60671007632 booked_real=60697719184 inflight=16 cap=64 budget_bytes=65975529168 retry_after_s=- exempt=0 enforce=1 live_free_bytes=55541339092
+1793860222238 [spec-k] model="q38" tenant="d46-burst16" K=0 source=concurrency prompt=30720 cached=0 lcp=0 active=17 wave=64 placement=single-or-non-pp2
+1793860222238 [admit-predict] id=cmpl-45c2948ef5812b4b0722028dd7fcd962 tenant="d46-burst23" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=64 kv_hat=3787631448 booked_bytes=64458639080 booked_real=64487013608 inflight=17 cap=64 budget_bytes=65975529168 retry_after_s=2 exempt=0 enforce=1 live_free_bytes=54261901440
+1793860222238 [admit-predict] id=cmpl-7dfca88c8da9da58dedafd678b1a209e tenant="d46-burst20" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=64 kv_hat=3787631448 booked_bytes=64458639080 booked_real=64487013608 inflight=17 cap=64 budget_bytes=65975529168 retry_after_s=2 exempt=0 enforce=1 live_free_bytes=54261901440
+1793860222238 [admit-predict] id=cmpl-80c60598f1afb777bcbfec7b8e9c3bf4 tenant="d46-burst21" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=64 kv_hat=3787631448 booked_bytes=64458639080 booked_real=64487013608 inflight=17 cap=64 budget_bytes=65975529168 retry_after_s=2 exempt=0 enforce=1 live_free_bytes=54261901440
+1793860222238 [admit-predict] id=cmpl-52a173995ed72435613459f1642038f3 tenant="d46-burst18" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=64 kv_hat=3787631448 booked_bytes=64458639080 booked_real=64487013608 inflight=17 cap=64 budget_bytes=65975529168 retry_after_s=2 exempt=0 enforce=1 live_free_bytes=54261901440
+1793860222238 [admit-predict] id=cmpl-24ab4e3cea10948a0175fef7e838c64f tenant="d46-burst19" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=64 kv_hat=3787631448 booked_bytes=64458639080 booked_real=64487013608 inflight=17 cap=64 budget_bytes=65975529168 retry_after_s=2 exempt=0 enforce=1 live_free_bytes=54261901440
+1793860222238 [admit-predict] id=cmpl-7274e2d96252e9488526d4c5d4631592 tenant="d46-burst17" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=64 kv_hat=3787631448 booked_bytes=64458639080 booked_real=64487013608 inflight=17 cap=64 budget_bytes=65975529168 retry_after_s=2 exempt=0 enforce=1 live_free_bytes=54261901440
+1793860222238 [admit-predict] id=cmpl-d069ff334f4e826ee3e9b1a18e885d61 tenant="d46-burst22" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=64 kv_hat=3787631448 booked_bytes=64458639080 booked_real=64487013608 inflight=17 cap=64 budget_bytes=65975529168 retry_after_s=2 exempt=0 enforce=1 live_free_bytes=54261901440
+1793860222238 [admit-predict] id=cmpl-f9f7747a0ff8fcd666b05cf262329210 tenant="d46-burst24" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=64 kv_hat=3787631448 booked_bytes=64458639080 booked_real=64487013608 inflight=17 cap=64 budget_bytes=65975529168 retry_after_s=2 exempt=0 enforce=1 live_free_bytes=54261901440
+1793860222238 [admit-predict] id=cmpl-c76dfb494711a42ab31892d118ed4686 tenant="d46-burst26" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=64 kv_hat=3787631448 booked_bytes=64458639080 booked_real=64487013608 inflight=17 cap=64 budget_bytes=65975529168 retry_after_s=2 exempt=0 enforce=1 live_free_bytes=54261901440
+1793860222238 [admit-predict] id=cmpl-2bc707d815e7be5474883a6c5c894e7d tenant="d46-burst27" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=64 kv_hat=3787631448 booked_bytes=64458639080 booked_real=64487013608 inflight=17 cap=64 budget_bytes=65975529168 retry_after_s=2 exempt=0 enforce=1 live_free_bytes=54261901440
+1793860222238 [admit-predict] id=cmpl-825442826189002c1a88626402e2d79d tenant="d46-burst25" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=64 kv_hat=3787631448 booked_bytes=64458639080 booked_real=64487013608 inflight=17 cap=64 budget_bytes=65975529168 retry_after_s=2 exempt=0 enforce=1 live_free_bytes=54261901440
+1793860222238 [admit-predict] id=cmpl-de6fd9860747f05f30a74dd4ffef123c tenant="d46-burst29" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=64 kv_hat=3787631448 booked_bytes=64458639080 booked_real=64487013608 inflight=17 cap=64 budget_bytes=65975529168 retry_after_s=2 exempt=0 enforce=1 live_free_bytes=54261901440
+1793860222239 [admit-predict] id=cmpl-ddde75efb3e4a0d943c6d10060df7bf2 tenant="d46-burst28" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=64 kv_hat=3787631448 booked_bytes=64458639080 booked_real=64487013608 inflight=17 cap=64 budget_bytes=65975529168 retry_after_s=2 exempt=0 enforce=1 live_free_bytes=54261901440
+1793860222239 [admit-predict] id=cmpl-db052fc5b57d96fad8706696b6f05b2e tenant="d46-burst31" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=64 kv_hat=3787631448 booked_bytes=64458639080 booked_real=64487013608 inflight=17 cap=64 budget_bytes=65975529168 retry_after_s=2 exempt=0 enforce=1 live_free_bytes=54261901440
+1793860222239 [admit-predict] id=cmpl-70ca428d0e7019d3bb1a164d5267aa10 tenant="d46-burst30" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=64 kv_hat=3787631448 booked_bytes=64458639080 booked_real=64487013608 inflight=17 cap=64 budget_bytes=65975529168 retry_after_s=2 exempt=0 enforce=1 live_free_bytes=54261901440
+1793860222239 [admit-predict] id=cmpl-8de71c703c218f245f44619de7c83038 tenant="d46-burst32" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=64 kv_hat=3787631448 booked_bytes=64458639080 booked_real=64487013608 inflight=17 cap=64 budget_bytes=65975529168 retry_after_s=2 exempt=0 enforce=1 live_free_bytes=54261901440
+1793860222239 [admit-predict] id=cmpl-fad662ba32c8521aeec47b0fc8352d24 tenant="d46-burst33" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=64 kv_hat=3787631448 booked_bytes=64458639080 booked_real=64487013608 inflight=17 cap=64 budget_bytes=65975529168 retry_after_s=2 exempt=0 enforce=1 live_free_bytes=54261901440
+1793860222239 [admit-predict] id=cmpl-008437c45ebbf61ea6a178d136d2ec27 tenant="d46-burst34" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=64 kv_hat=3787631448 booked_bytes=64458639080 booked_real=64487013608 inflight=17 cap=64 budget_bytes=65975529168 retry_after_s=2 exempt=0 enforce=1 live_free_bytes=54261901440
+1793860222239 [admit-predict] id=cmpl-f590959429376ea417edfe6ae9f9543c tenant="d46-burst35" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=64 kv_hat=3787631448 booked_bytes=64458639080 booked_real=64487013608 inflight=17 cap=64 budget_bytes=65975529168 retry_after_s=2 exempt=0 enforce=1 live_free_bytes=54261901440
+1793860222239 [admit-predict] id=cmpl-4427cbdaf3f7994e461484045421a6aa tenant="d46-burst36" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=64 kv_hat=3787631448 booked_bytes=64458639080 booked_real=64487013608 inflight=17 cap=64 budget_bytes=65975529168 retry_after_s=2 exempt=0 enforce=1 live_free_bytes=54261901440
+1793860222239 [admit-predict] id=cmpl-4205be710fbe83483ca15bec6a27f634 tenant="d46-burst37" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=64 kv_hat=3787631448 booked_bytes=64458639080 booked_real=64487013608 inflight=17 cap=64 budget_bytes=65975529168 retry_after_s=2 exempt=0 enforce=1 live_free_bytes=54261901440
+1793860222239 [admit-predict] id=cmpl-d1f658f5d2084385fed694d84be9a0d4 tenant="d46-burst38" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=64 kv_hat=3787631448 booked_bytes=64458639080 booked_real=64487013608 inflight=17 cap=64 budget_bytes=65975529168 retry_after_s=2 exempt=0 enforce=1 live_free_bytes=54261901440
+1793860222239 [admit-predict] id=cmpl-38fe651711c910865ec32891d53f0ebb tenant="d46-burst39" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=64 kv_hat=3787631448 booked_bytes=64458639080 booked_real=64487013608 inflight=17 cap=64 budget_bytes=65975529168 retry_after_s=2 exempt=0 enforce=1 live_free_bytes=54261901440
+1793860222239 [admit-predict] id=cmpl-aa6041f5e5f6baba94d1dc733453b6f6 tenant="d46-burst40" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=64 kv_hat=3787631448 booked_bytes=64458639080 booked_real=64487013608 inflight=17 cap=64 budget_bytes=65975529168 retry_after_s=2 exempt=0 enforce=1 live_free_bytes=54261901440
+1793860222239 [admit-predict] id=cmpl-e9e727f10e2d18bdef24cc81f3734e92 tenant="d46-burst41" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=64 kv_hat=3787631448 booked_bytes=64458639080 booked_real=64487013608 inflight=17 cap=64 budget_bytes=65975529168 retry_after_s=2 exempt=0 enforce=1 live_free_bytes=54261901440
+1793860222239 [admit-predict] id=cmpl-ace0ac1df018fac2e2675f47c3401fbc tenant="d46-burst42" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=64 kv_hat=3787631448 booked_bytes=64458639080 booked_real=64487013608 inflight=17 cap=64 budget_bytes=65975529168 retry_after_s=2 exempt=0 enforce=1 live_free_bytes=54261901440
+1793860222239 [admit-predict] id=cmpl-d1bf986fd7ee39b163fab3f3003896f9 tenant="d46-burst44" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=64 kv_hat=3787631448 booked_bytes=64458639080 booked_real=64487013608 inflight=17 cap=64 budget_bytes=65975529168 retry_after_s=2 exempt=0 enforce=1 live_free_bytes=54261901440
+1793860222239 [admit-predict] id=cmpl-02a29cdbb8cf2dd72e90ec34a3627234 tenant="d46-burst43" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=64 kv_hat=3787631448 booked_bytes=64458639080 booked_real=64487013608 inflight=17 cap=64 budget_bytes=65975529168 retry_after_s=2 exempt=0 enforce=1 live_free_bytes=54261901440
+1793860222239 [admit-predict] id=cmpl-d46aa23ef612ebd1b2f85a14f4de4f91 tenant="d46-burst45" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=64 kv_hat=3787631448 booked_bytes=64458639080 booked_real=64487013608 inflight=17 cap=64 budget_bytes=65975529168 retry_after_s=2 exempt=0 enforce=1 live_free_bytes=54261901440
+1793860222239 [admit-predict] id=cmpl-5e0becf28f60082f0213e146abd4531b tenant="d46-burst48" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=64 kv_hat=3787631448 booked_bytes=64458639080 booked_real=64487013608 inflight=17 cap=64 budget_bytes=65975529168 retry_after_s=2 exempt=0 enforce=1 live_free_bytes=54261901440
+1793860222239 [admit-predict] id=cmpl-c0e691bdaa3f690edb0d080091fe447a tenant="d46-burst46" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=64 kv_hat=3787631448 booked_bytes=64458639080 booked_real=64487013608 inflight=17 cap=64 budget_bytes=65975529168 retry_after_s=2 exempt=0 enforce=1 live_free_bytes=54261901440
+1793860222239 [admit-predict] id=cmpl-596bbf82eac477e6cfd012ee2ff7153e tenant="d46-burst49" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=64 kv_hat=3787631448 booked_bytes=64458639080 booked_real=64487013608 inflight=17 cap=64 budget_bytes=65975529168 retry_after_s=2 exempt=0 enforce=1 live_free_bytes=54261901440
+1793860222239 [admit-predict] id=cmpl-b03a93bfdb83afe0e6a3e26c88944b9c tenant="d46-burst47" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=64 kv_hat=3787631448 booked_bytes=64458639080 booked_real=64487013608 inflight=17 cap=64 budget_bytes=65975529168 retry_after_s=2 exempt=0 enforce=1 live_free_bytes=54261901440
+1793860222239 [admit-predict] id=cmpl-818bcedcb874760093d671335559c0a1 tenant="d46-burst50" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=64 kv_hat=3787631448 booked_bytes=64458639080 booked_real=64487013608 inflight=17 cap=64 budget_bytes=65975529168 retry_after_s=2 exempt=0 enforce=1 live_free_bytes=54261901440
+1793860222239 [admit-predict] id=cmpl-8ef508953f9767d2ffc10e64dfd569c9 tenant="d46-burst51" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=64 kv_hat=3787631448 booked_bytes=64458639080 booked_real=64487013608 inflight=17 cap=64 budget_bytes=65975529168 retry_after_s=2 exempt=0 enforce=1 live_free_bytes=54261901440
+1793860222240 [admit-predict] id=cmpl-96a419b142532a644db51375463a6387 tenant="d46-burst52" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=64 kv_hat=3787631448 booked_bytes=64458639080 booked_real=64487013608 inflight=17 cap=64 budget_bytes=65975529168 retry_after_s=2 exempt=0 enforce=1 live_free_bytes=54261901440
+1793860222240 [admit-predict] id=cmpl-7926151a60d2de128063f0ee8772cdf5 tenant="d46-burst53" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=64 kv_hat=3787631448 booked_bytes=64458639080 booked_real=64487013608 inflight=17 cap=64 budget_bytes=65975529168 retry_after_s=2 exempt=0 enforce=1 live_free_bytes=54261901440
+1793860222240 [admit-predict] id=cmpl-e655bbccca28c42c1af50de7a98f5c91 tenant="d46-burst54" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=64 kv_hat=3787631448 booked_bytes=64458639080 booked_real=64487013608 inflight=17 cap=64 budget_bytes=65975529168 retry_after_s=2 exempt=0 enforce=1 live_free_bytes=54261901440
+1793860222240 [admit-predict] id=cmpl-214e366a3efb36b728ef7d485c38cad9 tenant="d46-burst55" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=64 kv_hat=3787631448 booked_bytes=64458639080 booked_real=64487013608 inflight=17 cap=64 budget_bytes=65975529168 retry_after_s=2 exempt=0 enforce=1 live_free_bytes=54261901440
+1793860222240 [admit-predict] id=cmpl-6ceddf7752d20998690a9c523d1103cf tenant="d46-burst56" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=64 kv_hat=3787631448 booked_bytes=64458639080 booked_real=64487013608 inflight=17 cap=64 budget_bytes=65975529168 retry_after_s=2 exempt=0 enforce=1 live_free_bytes=54261901440
+1793860222240 [admit-predict] id=cmpl-ffdf69498c38f0edd85e4daaf214f673 tenant="d46-burst58" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=64 kv_hat=3787631448 booked_bytes=64458639080 booked_real=64487013608 inflight=17 cap=64 budget_bytes=65975529168 retry_after_s=2 exempt=0 enforce=1 live_free_bytes=54261901440
+1793860222240 [admit-predict] id=cmpl-03d962f2a7b5277cf8904b55e3ed9ba8 tenant="d46-burst60" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=64 kv_hat=3787631448 booked_bytes=64458639080 booked_real=64487013608 inflight=17 cap=64 budget_bytes=65975529168 retry_after_s=2 exempt=0 enforce=1 live_free_bytes=54261901440
+1793860222240 [admit-predict] id=cmpl-a18c7c81848970b308cf884b13bfa563 tenant="d46-burst57" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=64 kv_hat=3787631448 booked_bytes=64458639080 booked_real=64487013608 inflight=17 cap=64 budget_bytes=65975529168 retry_after_s=2 exempt=0 enforce=1 live_free_bytes=54261901440
+1793860222240 [admit-predict] id=cmpl-706d5ff9d9c442dc57b71d04d99802f4 tenant="d46-burst59" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=64 kv_hat=3787631448 booked_bytes=64458639080 booked_real=64487013608 inflight=17 cap=64 budget_bytes=65975529168 retry_after_s=2 exempt=0 enforce=1 live_free_bytes=54261901440
+1793860222240 [admit-predict] id=cmpl-96ec891abd5d492bd82825b236baff3b tenant="d46-burst62" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=64 kv_hat=3787631448 booked_bytes=64458639080 booked_real=64487013608 inflight=17 cap=64 budget_bytes=65975529168 retry_after_s=2 exempt=0 enforce=1 live_free_bytes=54261901440
+1793860222240 [admit-predict] id=cmpl-6fb84c7cb0eb9832b05ae1e5251d90d9 tenant="d46-burst63" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=64 kv_hat=3787631448 booked_bytes=64458639080 booked_real=64487013608 inflight=17 cap=64 budget_bytes=65975529168 retry_after_s=2 exempt=0 enforce=1 live_free_bytes=54261901440
+1793860222240 [admit-predict] id=cmpl-f1e3955a3d21dcff3052c822d1cbe5a8 tenant="d46-burst61" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=64 kv_hat=3787631448 booked_bytes=64458639080 booked_real=64487013608 inflight=17 cap=64 budget_bytes=65975529168 retry_after_s=2 exempt=0 enforce=1 live_free_bytes=54261901440
+1793860223847 [prime-yield] count=2 remaining=14 chunks=1 wall_ms=1606.424 max_chunk_ms=1606.424
+1793860226081 [prime-batch] B=6 tokens=6144 carried=0 partial=6 in 2234.5ms
+1793860228322 [prime-batch] B=6 tokens=6144 carried=0 partial=6 in 2240.5ms
+1793860229817 [prime-batch] B=4 tokens=4096 carried=0 partial=4 in 1495.4ms
+1793860231495 [prime-yield] count=3 remaining=13 chunks=1 wall_ms=1677.839 max_chunk_ms=1677.839
+1793860233754 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2258.6ms
+1793860236012 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2258.0ms
+1793860237516 [prime-batch] B=4 tokens=4096 carried=4 partial=4 in 1504.0ms
+1793860239254 [prime-yield] count=4 remaining=12 chunks=1 wall_ms=1736.428 max_chunk_ms=1736.428
+1793860241536 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2282.1ms
+1793860243817 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2280.6ms
+1793860245333 [prime-batch] B=4 tokens=4096 carried=4 partial=4 in 1516.1ms
+1793860247121 [prime-yield] count=5 remaining=11 chunks=1 wall_ms=1787.176 max_chunk_ms=1787.176
+1793860249424 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2303.7ms
+1793860251728 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2303.2ms
+1793860253259 [prime-batch] B=4 tokens=4096 carried=4 partial=4 in 1531.6ms
+1793860255096 [prime-yield] count=6 remaining=10 chunks=1 wall_ms=1836.204 max_chunk_ms=1836.204
+1793860257419 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2323.1ms
+1793860259741 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2321.7ms
+1793860261284 [prime-batch] B=4 tokens=4096 carried=4 partial=4 in 1542.8ms
+1793860263170 [prime-yield] count=7 remaining=9 chunks=1 wall_ms=1886.017 max_chunk_ms=1886.017
+1793860265512 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2342.2ms
+1793860267852 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2340.2ms
+1793860269408 [prime-batch] B=4 tokens=4096 carried=4 partial=4 in 1555.5ms
+1793860270413 [prime-yield] count=8 remaining=8 chunks=1 wall_ms=1004.939 max_chunk_ms=1004.939
+1793860272780 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2366.4ms
+1793860275146 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2365.9ms
+1793860276718 [prime-batch] B=4 tokens=4096 carried=4 partial=4 in 1572.7ms
+1793860276743 [prime-yield] count=9 remaining=7 chunks=1 wall_ms=24.904 max_chunk_ms=24.904
+1793860279126 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2382.6ms
+1793860281514 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2387.4ms
+1793860283101 [prime-batch] B=4 tokens=4096 carried=4 partial=4 in 1586.9ms
+1793860283126 [prime-yield] count=10 remaining=6 chunks=1 wall_ms=24.914 max_chunk_ms=24.914
+1793860285530 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2403.7ms
+1793860287940 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2410.4ms
+1793860289543 [prime-batch] B=4 tokens=4096 carried=4 partial=4 in 1603.0ms
+1793860289576 [prime-yield] count=11 remaining=5 chunks=1 wall_ms=32.754 max_chunk_ms=32.754
+1793860292003 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2427.0ms
+1793860294437 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2433.7ms
+1793860296055 [prime-batch] B=4 tokens=4096 carried=4 partial=4 in 1618.3ms
+1793860296080 [prime-yield] count=12 remaining=4 chunks=1 wall_ms=24.873 max_chunk_ms=24.873
+1793860298533 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2452.9ms
+1793860300991 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2457.9ms
+1793860302627 [prime-batch] B=4 tokens=4096 carried=4 partial=4 in 1635.1ms
+1793860302652 [prime-yield] count=13 remaining=3 chunks=1 wall_ms=24.917 max_chunk_ms=24.917
+1793860305128 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2476.7ms
+1793860307610 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2481.2ms
+1793860309260 [prime-batch] B=4 tokens=4096 carried=4 partial=4 in 1650.4ms
+1793860309285 [prime-yield] count=14 remaining=2 chunks=1 wall_ms=24.920 max_chunk_ms=24.920
+1793860311786 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2500.5ms
+1793860314291 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2505.1ms
+1793860315959 [prime-batch] B=4 tokens=4096 carried=4 partial=4 in 1667.5ms
+1793860315984 [prime-yield] count=15 remaining=1 chunks=1 wall_ms=24.971 max_chunk_ms=24.971
+1793860318509 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2524.8ms
+1793860321042 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2533.7ms
+1793860322728 [prime-batch] B=4 tokens=4096 carried=4 partial=4 in 1685.6ms
+1793860325299 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2555.6ms
+1793860327859 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2560.3ms
+1793860329564 [prime-batch] B=4 tokens=4096 carried=4 partial=4 in 1704.4ms
+1793860329564 [prefix-cache] insert (spec-boundary): 30720 tokens, 1126.2MB (resident 3159.0MB / 15883MB, model q38, ns "d46-burst0")
+1793860329564 [spec-gate] demoted session to batched decode: 17 active >= HIGH=4 (model q38, committed 30721, generated 1)
+1793860332150 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2585.9ms
+1793860334735 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2585.0ms
+1793860336455 [prime-batch] B=4 tokens=4096 carried=4 partial=4 in 1720.0ms
+1793860339083 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2610.8ms
+1793860341694 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2611.3ms
+1793860343432 [prime-batch] B=4 tokens=4096 carried=4 partial=4 in 1738.1ms
+1793860346088 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2638.8ms
+1793860348726 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2638.5ms
+1793860350482 [prime-batch] B=4 tokens=4096 carried=4 partial=4 in 1756.1ms
+1793860353165 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2665.6ms
+1793860355829 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2663.9ms
+1793860357603 [prime-batch] B=4 tokens=4096 carried=4 partial=4 in 1773.9ms
+1793860360313 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2693.6ms
+1793860363007 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2693.8ms
+1793860364799 [prime-batch] B=4 tokens=4096 carried=4 partial=4 in 1792.5ms
+1793860367537 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2721.0ms
+1793860370259 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2721.5ms
+1793860372070 [prime-batch] B=4 tokens=4096 carried=4 partial=4 in 1810.9ms
+1793860374832 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2746.1ms
+1793860377577 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2744.3ms
+1793860379403 [prime-batch] B=4 tokens=4096 carried=4 partial=4 in 1825.8ms
+1793860382190 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2771.0ms
+1793860384963 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2772.3ms
+1793860386809 [prime-batch] B=4 tokens=4096 carried=4 partial=4 in 1845.8ms
+1793860389623 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2797.5ms
+1793860392424 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2800.1ms
+1793860394287 [prime-batch] B=4 tokens=4096 carried=4 partial=4 in 1863.2ms
+1793860397133 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2829.0ms
+1793860399961 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2828.5ms
+1793860401842 [prime-batch] B=4 tokens=4096 carried=4 partial=4 in 1880.9ms
+1793860404712 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2852.8ms
+1793860407564 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2852.6ms
+1793860409463 [prime-batch] B=4 tokens=4096 carried=4 partial=4 in 1898.2ms
+1793860412357 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2878.3ms
+1793860415233 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2875.8ms
+1793860417146 [prime-batch] B=4 tokens=4096 carried=4 partial=4 in 1912.1ms
+1793860420065 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2903.2ms
+1793860422967 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2901.5ms
+1793860424897 [prime-batch] B=4 tokens=4096 carried=4 partial=4 in 1930.0ms
+1793860427842 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2928.0ms
+1793860430769 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2926.8ms
+1793860432715 [prime-batch] B=4 tokens=4096 carried=4 partial=4 in 1945.9ms
+1793860435683 [prime-batch] B=6 tokens=6144 carried=6 partial=0 in 2951.9ms
+1793860435683 [prefix-cache] insert (seed): 30720 tokens, 1069.2MB (resident 4228.2MB / 15883MB, model q38, ns "d46-burst1")
+1793860435684 [prefix-cache] insert (seed): 30720 tokens, 1069.2MB (resident 5297.3MB / 15883MB, model q38, ns "d46-burst2")
+1793860435685 [prefix-cache] insert (seed): 30720 tokens, 1069.2MB (resident 6366.5MB / 15883MB, model q38, ns "d46-burst4")
+1793860435687 [prefix-cache] insert (seed): 30720 tokens, 1069.2MB (resident 7435.7MB / 15883MB, model q38, ns "d46-burst3")
+1793860435689 [prefix-cache] insert (seed): 30720 tokens, 1069.2MB (resident 8504.8MB / 15883MB, model q38, ns "d46-burst5")
+1793860435691 [prefix-cache] insert (seed): 30720 tokens, 1069.2MB (resident 9574.0MB / 15883MB, model q38, ns "d46-burst7")
+1793860438647 [prime-batch] B=6 tokens=6144 carried=6 partial=0 in 2956.0ms
+1793860438647 [prefix-cache] insert (seed): 30720 tokens, 1069.2MB (resident 10643.1MB / 15883MB, model q38, ns "d46-burst6")
+1793860438648 [prefix-cache] insert (seed): 30720 tokens, 1069.2MB (resident 11712.3MB / 15883MB, model q38, ns "d46-burst8")
+1793860438650 [prefix-cache] insert (seed): 30720 tokens, 1069.2MB (resident 12781.4MB / 15883MB, model q38, ns "d46-burst11")
+1793860438652 [prefix-cache] insert (seed): 30720 tokens, 1069.2MB (resident 13850.6MB / 15883MB, model q38, ns "d46-burst9")
+1793860438653 [prefix-cache] insert (seed): 30720 tokens, 1069.2MB (resident 14919.7MB / 15883MB, model q38, ns "d46-burst10")
+1793860438653 [prefix-cache] evict (snapshot preflight, LRU): 64 tokens, 158.9MB (model q38, ns "d46-warm")
+1793860438655 [prefix-cache] insert (seed): 30720 tokens, 1069.2MB (resident 15830.0MB / 15883MB, model q38, ns "d46-burst13")
+1793860440621 [prime-batch] B=4 tokens=4096 carried=4 partial=0 in 1965.7ms
+1793860440621 [prefix-cache] evict (snapshot preflight, LRU): 12000 tokens, 535.5MB (model q38, ns "d46-seqb")
+1793860440621 [prefix-cache] evict (snapshot preflight, LRU): 5984 tokens, 334.6MB (model q38, ns "d46-seq0")
+1793860440621 [prefix-cache] evict (snapshot preflight, LRU): 5984 tokens, 334.6MB (model q38, ns "d46-seq1")
+1793860440622 [prefix-cache] insert (seed): 30720 tokens, 1069.2MB (resident 15694.4MB / 15883MB, model q38, ns "d46-burst12")
+1793860440622 [prefix-cache] evict (snapshot preflight, LRU): 5984 tokens, 334.6MB (model q38, ns "d46-seq2")
+1793860440622 [prefix-cache] evict (snapshot preflight, LRU): 5984 tokens, 334.6MB (model q38, ns "d46-seq3")
+1793860440622 [prefix-cache] evict (snapshot preflight, LRU): 30720 tokens, 1126.2MB (model q38, ns "d46-burst0")
+1793860440623 [prefix-cache] insert (seed): 30720 tokens, 1069.2MB (resident 14968.2MB / 15883MB, model q38, ns "d46-burst15")
+1793860440623 [prefix-cache] evict (snapshot preflight, LRU): 30720 tokens, 1069.2MB (model q38, ns "d46-burst1")
+1793860440624 [prefix-cache] insert (seed): 30720 tokens, 1069.2MB (resident 14968.2MB / 15883MB, model q38, ns "d46-burst14")
+1793860440624 [prefix-cache] evict (snapshot preflight, LRU): 30720 tokens, 1069.2MB (model q38, ns "d46-burst2")
+1793860440624 [prefix-cache] insert (seed): 30720 tokens, 1069.2MB (resident 14968.2MB / 15883MB, model q38, ns "d46-burst16")
+1793860440627 [fa-pool] grow #5 dev=0 o_len 6389760 -> 23691264 ml_len 24960 -> 92544 (retired kept, zero=false)
+1793860445489 [meter] admit id=cmpl-b635be60ecbfd5f5b14f6e065cb8439c tenant=default lane=interactive model="q38"
+1793860445490 [meter] admit id=cmpl-bedddcda0ef14edb3422bd4a9f73441e tenant=default lane=interactive model="q38"
+1793860445490 [meter] admit id=cmpl-9dc7345a3d56c2b1c65451b7509efe36 tenant=default lane=interactive model="q38"
+1793860445490 [meter] admit id=cmpl-9e36ea1adc226613b2f892f8c8cc6c6a tenant=default lane=interactive model="q38"
+1793860445490 [meter] admit id=cmpl-4468506047f434d590d4bae48f4330a0 tenant=default lane=interactive model="q38"
+1793860445491 [meter] admit id=cmpl-570466a5ffba477ab4f907a0b4ac9b05 tenant=default lane=interactive model="q38"
+1793860445492 [meter] admit id=cmpl-ab798f1a08ebe38bcfaa84a346fb6fea tenant=default lane=interactive model="q38"
+1793860445493 [meter] admit id=cmpl-cd437d50e62f25adeb5011683c7a5f1f tenant=default lane=interactive model="q38"
+1793860445494 [meter] admit id=cmpl-cd4ee598f62d091990d064a14489c6bf tenant=default lane=interactive model="q38"
+1793860445494 [meter] admit id=cmpl-78f692b3c504f97f23b8fb0cac7e38e6 tenant=default lane=interactive model="q38"
+1793860445497 [meter] admit id=cmpl-d93d89741dc75ab21b05356997387270 tenant=default lane=interactive model="q38"
+1793860445497 [meter] admit id=cmpl-85d0138546254fdb5e334e1080f840cd tenant=default lane=interactive model="q38"
+1793860445497 [meter] admit id=cmpl-5c43f1b7aca06e077aa8ee77b6f09cca tenant=default lane=interactive model="q38"
+1793860445498 [meter] admit id=cmpl-5b37e0fc4a2d67ba1a22918004af24ec tenant=default lane=interactive model="q38"
+1793860445498 [meter] admit id=cmpl-d3215290ea911dff5903c2581a9f4bce tenant=default lane=interactive model="q38"
+1793860445499 [meter] admit id=cmpl-de95f6977da70c0d75c7418333808b74 tenant=default lane=interactive model="q38"
+1793860445502 [meter] admit id=cmpl-b669ae3e48b6742771a13719ca6ca76e tenant=default lane=interactive model="q38"
+1793860445503 [meter] admit id=cmpl-2014656577a1704f2242eedb9c0db95e tenant=default lane=interactive model="q38"
+1793860445503 [meter] admit id=cmpl-244add155db96b8d5774b26ea15498a7 tenant=default lane=interactive model="q38"
+1793860445503 [meter] admit id=cmpl-68bf5300240548fd5a2516edd54fd51f tenant=default lane=interactive model="q38"
+1793860445503 [meter] admit id=cmpl-f9a1953a1ceafa8a40f072aadd1a084b tenant=default lane=interactive model="q38"
+1793860445504 [meter] admit id=cmpl-e16dc05cef1e1a53555360ce0d96345b tenant=default lane=interactive model="q38"
+1793860445506 [meter] admit id=cmpl-9822d219ff7a6d22421215e9f3f58198 tenant=default lane=interactive model="q38"
+1793860445507 [meter] admit id=cmpl-76f3eaab2c9b93f77273a046b1a9150a tenant=default lane=interactive model="q38"
+1793860445508 [meter] admit id=cmpl-ab989bccca66a6bf99fdb92af61082a3 tenant=default lane=interactive model="q38"
+1793860445508 [meter] admit id=cmpl-11716983b330d0cace34189c80fb74b1 tenant=default lane=interactive model="q38"
+1793860445510 [meter] admit id=cmpl-657e44a9582542e5dd0165831c0f7d67 tenant=default lane=interactive model="q38"
+1793860445510 [meter] admit id=cmpl-ed819e02de54e2f6716c30275a383b20 tenant=default lane=interactive model="q38"
+1793860445510 [meter] admit id=cmpl-d8beb339acbec6f00647863836af5998 tenant=default lane=interactive model="q38"
+1793860445511 [meter] admit id=cmpl-044e1eb756fb664a9d45a015ae035cb0 tenant=default lane=interactive model="q38"
+1793860445511 [meter] admit id=cmpl-f6e89d4ce339b501bde3dced1e836762 tenant=default lane=interactive model="q38"
+1793860445512 [meter] admit id=cmpl-3561daa920de67f4bde52e88c1aa6ea2 tenant=default lane=interactive model="q38"
+1793860445562 [admit-predict] id=cmpl-b635be60ecbfd5f5b14f6e065cb8439c tenant="d46-wave22" model="q38" verdict=admit reason=global-p95 prompt=30720 predicted_completion=64 kv_hat=3787631448 booked_bytes=60602103168 booked_real=60628710784 inflight=16 cap=64 budget_bytes=65975529168 retry_after_s=- exempt=0 enforce=1 live_free_bytes=41823774340
+1793860445562 [spec-k] model="q38" tenant="d46-wave22" K=0 source=concurrency prompt=30720 cached=0 lcp=0 active=17 wave=48 placement=single-or-non-pp2
+1793860445562 [admit-predict] id=cmpl-bedddcda0ef14edb3422bd4a9f73441e tenant="d46-wave21" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=64 kv_hat=3787631448 booked_bytes=64389734616 booked_real=64418005208 inflight=17 cap=64 budget_bytes=65975529168 retry_after_s=2 exempt=0 enforce=1 live_free_bytes=40544336688
+1793860445562 [admit-predict] id=cmpl-9dc7345a3d56c2b1c65451b7509efe36 tenant="d46-wave20" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=64 kv_hat=3787631448 booked_bytes=64389734616 booked_real=64418005208 inflight=17 cap=64 budget_bytes=65975529168 retry_after_s=2 exempt=0 enforce=1 live_free_bytes=40544336688
+1793860445562 [admit-predict] id=cmpl-9e36ea1adc226613b2f892f8c8cc6c6a tenant="d46-wave24" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=64 kv_hat=3787631448 booked_bytes=64389734616 booked_real=64418005208 inflight=17 cap=64 budget_bytes=65975529168 retry_after_s=2 exempt=0 enforce=1 live_free_bytes=40544336688
+1793860445562 [admit-predict] id=cmpl-4468506047f434d590d4bae48f4330a0 tenant="d46-wave23" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=64 kv_hat=3787631448 booked_bytes=64389734616 booked_real=64418005208 inflight=17 cap=64 budget_bytes=65975529168 retry_after_s=2 exempt=0 enforce=1 live_free_bytes=40544336688
+1793860445562 [admit-predict] id=cmpl-570466a5ffba477ab4f907a0b4ac9b05 tenant="d46-wave25" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=64 kv_hat=3787631448 booked_bytes=64389734616 booked_real=64418005208 inflight=17 cap=64 budget_bytes=65975529168 retry_after_s=2 exempt=0 enforce=1 live_free_bytes=40544336688
+1793860445563 [admit-predict] id=cmpl-ab798f1a08ebe38bcfaa84a346fb6fea tenant="d46-wave26" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=64 kv_hat=3787631448 booked_bytes=64389734616 booked_real=64418005208 inflight=17 cap=64 budget_bytes=65975529168 retry_after_s=2 exempt=0 enforce=1 live_free_bytes=40544336688
+1793860445563 [admit-predict] id=cmpl-cd437d50e62f25adeb5011683c7a5f1f tenant="d46-wave27" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=64 kv_hat=3787631448 booked_bytes=64389734616 booked_real=64418005208 inflight=17 cap=64 budget_bytes=65975529168 retry_after_s=2 exempt=0 enforce=1 live_free_bytes=40544336688
+1793860445563 [admit-predict] id=cmpl-cd4ee598f62d091990d064a14489c6bf tenant="d46-wave29" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=64 kv_hat=3787631448 booked_bytes=64389734616 booked_real=64418005208 inflight=17 cap=64 budget_bytes=65975529168 retry_after_s=2 exempt=0 enforce=1 live_free_bytes=40544336688
+1793860445563 [admit-predict] id=cmpl-78f692b3c504f97f23b8fb0cac7e38e6 tenant="d46-wave28" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=64 kv_hat=3787631448 booked_bytes=64389734616 booked_real=64418005208 inflight=17 cap=64 budget_bytes=65975529168 retry_after_s=2 exempt=0 enforce=1 live_free_bytes=40544336688
+1793860445563 [admit-predict] id=cmpl-d93d89741dc75ab21b05356997387270 tenant="d46-wave210" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=64 kv_hat=3787631448 booked_bytes=64389734616 booked_real=64418005208 inflight=17 cap=64 budget_bytes=65975529168 retry_after_s=2 exempt=0 enforce=1 live_free_bytes=40544336688
+1793860445563 [admit-predict] id=cmpl-85d0138546254fdb5e334e1080f840cd tenant="d46-wave211" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=64 kv_hat=3787631448 booked_bytes=64389734616 booked_real=64418005208 inflight=17 cap=64 budget_bytes=65975529168 retry_after_s=2 exempt=0 enforce=1 live_free_bytes=40544336688
+1793860445563 [admit-predict] id=cmpl-5c43f1b7aca06e077aa8ee77b6f09cca tenant="d46-wave213" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=64 kv_hat=3787631448 booked_bytes=64389734616 booked_real=64418005208 inflight=17 cap=64 budget_bytes=65975529168 retry_after_s=2 exempt=0 enforce=1 live_free_bytes=40544336688
+1793860445563 [admit-predict] id=cmpl-5b37e0fc4a2d67ba1a22918004af24ec tenant="d46-wave212" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=64 kv_hat=3787631448 booked_bytes=64389734616 booked_real=64418005208 inflight=17 cap=64 budget_bytes=65975529168 retry_after_s=2 exempt=0 enforce=1 live_free_bytes=40544336688
+1793860445563 [admit-predict] id=cmpl-d3215290ea911dff5903c2581a9f4bce tenant="d46-wave214" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=64 kv_hat=3787631448 booked_bytes=64389734616 booked_real=64418005208 inflight=17 cap=64 budget_bytes=65975529168 retry_after_s=2 exempt=0 enforce=1 live_free_bytes=40544336688
+1793860445563 [admit-predict] id=cmpl-de95f6977da70c0d75c7418333808b74 tenant="d46-wave215" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=64 kv_hat=3787631448 booked_bytes=64389734616 booked_real=64418005208 inflight=17 cap=64 budget_bytes=65975529168 retry_after_s=2 exempt=0 enforce=1 live_free_bytes=40544336688
+1793860445563 [admit-predict] id=cmpl-b669ae3e48b6742771a13719ca6ca76e tenant="d46-wave218" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=64 kv_hat=3787631448 booked_bytes=64389734616 booked_real=64418005208 inflight=17 cap=64 budget_bytes=65975529168 retry_after_s=2 exempt=0 enforce=1 live_free_bytes=40544336688
+1793860445563 [admit-predict] id=cmpl-2014656577a1704f2242eedb9c0db95e tenant="d46-wave216" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=64 kv_hat=3787631448 booked_bytes=64389734616 booked_real=64418005208 inflight=17 cap=64 budget_bytes=65975529168 retry_after_s=2 exempt=0 enforce=1 live_free_bytes=40544336688
+1793860445563 [admit-predict] id=cmpl-244add155db96b8d5774b26ea15498a7 tenant="d46-wave220" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=64 kv_hat=3787631448 booked_bytes=64389734616 booked_real=64418005208 inflight=17 cap=64 budget_bytes=65975529168 retry_after_s=2 exempt=0 enforce=1 live_free_bytes=40544336688
+1793860445563 [admit-predict] id=cmpl-68bf5300240548fd5a2516edd54fd51f tenant="d46-wave219" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=64 kv_hat=3787631448 booked_bytes=64389734616 booked_real=64418005208 inflight=17 cap=64 budget_bytes=65975529168 retry_after_s=2 exempt=0 enforce=1 live_free_bytes=40544336688
+1793860445563 [admit-predict] id=cmpl-f9a1953a1ceafa8a40f072aadd1a084b tenant="d46-wave217" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=64 kv_hat=3787631448 booked_bytes=64389734616 booked_real=64418005208 inflight=17 cap=64 budget_bytes=65975529168 retry_after_s=2 exempt=0 enforce=1 live_free_bytes=40544336688
+1793860445563 [admit-predict] id=cmpl-e16dc05cef1e1a53555360ce0d96345b tenant="d46-wave221" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=64 kv_hat=3787631448 booked_bytes=64389734616 booked_real=64418005208 inflight=17 cap=64 budget_bytes=65975529168 retry_after_s=2 exempt=0 enforce=1 live_free_bytes=40544336688
+1793860445563 [admit-predict] id=cmpl-9822d219ff7a6d22421215e9f3f58198 tenant="d46-wave222" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=64 kv_hat=3787631448 booked_bytes=64389734616 booked_real=64418005208 inflight=17 cap=64 budget_bytes=65975529168 retry_after_s=2 exempt=0 enforce=1 live_free_bytes=40544336688
+1793860445563 [admit-predict] id=cmpl-76f3eaab2c9b93f77273a046b1a9150a tenant="d46-wave225" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=64 kv_hat=3787631448 booked_bytes=64389734616 booked_real=64418005208 inflight=17 cap=64 budget_bytes=65975529168 retry_after_s=2 exempt=0 enforce=1 live_free_bytes=40544336688
+1793860445563 [admit-predict] id=cmpl-ab989bccca66a6bf99fdb92af61082a3 tenant="d46-wave223" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=64 kv_hat=3787631448 booked_bytes=64389734616 booked_real=64418005208 inflight=17 cap=64 budget_bytes=65975529168 retry_after_s=2 exempt=0 enforce=1 live_free_bytes=40544336688
+1793860445563 [admit-predict] id=cmpl-11716983b330d0cace34189c80fb74b1 tenant="d46-wave224" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=64 kv_hat=3787631448 booked_bytes=64389734616 booked_real=64418005208 inflight=17 cap=64 budget_bytes=65975529168 retry_after_s=2 exempt=0 enforce=1 live_free_bytes=40544336688
+1793860445563 [admit-predict] id=cmpl-657e44a9582542e5dd0165831c0f7d67 tenant="d46-wave226" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=64 kv_hat=3787631448 booked_bytes=64389734616 booked_real=64418005208 inflight=17 cap=64 budget_bytes=65975529168 retry_after_s=2 exempt=0 enforce=1 live_free_bytes=40544336688
+1793860445563 [admit-predict] id=cmpl-ed819e02de54e2f6716c30275a383b20 tenant="d46-wave228" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=64 kv_hat=3787631448 booked_bytes=64389734616 booked_real=64418005208 inflight=17 cap=64 budget_bytes=65975529168 retry_after_s=2 exempt=0 enforce=1 live_free_bytes=40544336688
+1793860445563 [admit-predict] id=cmpl-d8beb339acbec6f00647863836af5998 tenant="d46-wave227" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=64 kv_hat=3787631448 booked_bytes=64389734616 booked_real=64418005208 inflight=17 cap=64 budget_bytes=65975529168 retry_after_s=2 exempt=0 enforce=1 live_free_bytes=40544336688
+1793860445563 [admit-predict] id=cmpl-044e1eb756fb664a9d45a015ae035cb0 tenant="d46-wave231" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=64 kv_hat=3787631448 booked_bytes=64389734616 booked_real=64418005208 inflight=17 cap=64 budget_bytes=65975529168 retry_after_s=2 exempt=0 enforce=1 live_free_bytes=40544336688
+1793860445563 [admit-predict] id=cmpl-f6e89d4ce339b501bde3dced1e836762 tenant="d46-wave230" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=64 kv_hat=3787631448 booked_bytes=64389734616 booked_real=64418005208 inflight=17 cap=64 budget_bytes=65975529168 retry_after_s=2 exempt=0 enforce=1 live_free_bytes=40544336688
+1793860445564 [admit-predict] id=cmpl-3561daa920de67f4bde52e88c1aa6ea2 tenant="d46-wave229" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=64 kv_hat=3787631448 booked_bytes=64389734616 booked_real=64418005208 inflight=17 cap=64 budget_bytes=65975529168 retry_after_s=2 exempt=0 enforce=1 live_free_bytes=40544336688
+1793860460185 [prefix-cache] evict (snapshot preflight, LRU): 30720 tokens, 1069.2MB (model q38, ns "d46-burst4")
+1793860460186 [prefix-cache] insert (seed): 30720 tokens, 1069.2MB (resident 14968.2MB / 15883MB, model q38, ns "d46-wave22")
+1793860466257 [meter] admit id=cmpl-a9f71c1b21e72331b5461d4ee5578a95 tenant=default lane=interactive model="q38"
+1793860466257 [admission] per-session draft-state charge: model="q38" +46MB (measured capture high-water)
+1793860466257 [admission] request cost: model="q38" ctx=592 path=spec = 31552 B/token x ctx + 245MB prefill-workspace + 365MB fixed = 629MB
+1793860466257 [admit-predict] id=cmpl-a9f71c1b21e72331b5461d4ee5578a95 tenant="d46-probe" model="q38" verdict=admit reason=global-p95 prompt=512 predicted_completion=16 kv_hat=673756520 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=65975529168 retry_after_s=- exempt=0 enforce=1 live_free_bytes=48461537152
+1793860466257 [spec-k] model="q38" tenant="d46-probe" K=3 source=cold-short prompt=512 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1793860466624 [spec-acc] ctx=512 burst=7/24 cum=7/24=0.292
+1793860466663 [server] SIGTERM: draining (0 in flight, deadline 30s)
+1793860466663 [server] drain complete in 0.0s; exiting
+1793860466744 [server] GPU worker shutdown complete

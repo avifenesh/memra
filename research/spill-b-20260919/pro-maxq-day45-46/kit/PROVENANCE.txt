@@ -1,0 +1,30 @@
+# admit-w-release Max-Q kit provenance (written by build.sh on the laptop)
+built_utc_start=2026-11-04T20:07:59Z
+host=laptop (RTX 5090 Laptop rig; no GPU used by the build)
+MEMRA_CUDA_ARCH=120a CARGO_TARGET_DIR=/home/avifenesh/.cache/memra-maxq/target jobs=2 profile=release features=default
+cargo: cargo 1.97.1 (c980f4866 2026-06-30)
+rustc: rustc 1.97.1 (8bab26f4f 2026-07-14)
+nvcc: Build cuda_13.4.r13.4/compiler.38855100_0
+driver(laptop): 615.71.09
+2026-11-04T20:07:59Z s45 build start sha=09badfe575fc156d177e9fce3835da6bcde5929f local_crates=11
+2026-11-04T20:11:22Z s45 build exit=0
+[s45] every local crate of memra-server's closure compiled from /home/avifenesh/.cache/memra-maxq/admit-w-release/wt-s45: memra-engine memra-gguf memra-kv memra-lanes memra-reference memra-runtime memra-sampling memra-server memra-tier memra-tokenizer memra-validate 
+[s45] source_sha=09badfe575fc156d177e9fce3835da6bcde5929f
+[s45] 9f40fa7db6fa759af5c853835cafc0ec6ea50014b295727db5ef78db1794ac15  memra-server
+[s45] bytes=71545216
+[s45] warning: memra-engine@0.138.0: nvcc from $CUDA_HOME: /usr/local/cuda/bin/nvcc
+2026-11-04T20:11:23Z s46 build start sha=8926ccfb3e8a27cf8f91aa747e2b088251215c7a local_crates=11
+2026-11-04T20:14:42Z s46 build exit=0
+[s46] every local crate of memra-server's closure compiled from /home/avifenesh/.cache/memra-maxq/admit-w-release/wt-s46: memra-engine memra-gguf memra-kv memra-lanes memra-reference memra-runtime memra-sampling memra-server memra-tier memra-tokenizer memra-validate 
+[s46] source_sha=8926ccfb3e8a27cf8f91aa747e2b088251215c7a
+[s46] e8d9454de3bc73288d7c817f28edb924bb75def399bf814cdc4a5ab12f561b51  memra-server
+[s46] bytes=71557992
+[s46] warning: memra-engine@0.138.0: nvcc from $CUDA_HOME: /usr/local/cuda/bin/nvcc
+built_utc_end=2026-11-04T20:14:42Z
+# build-id check (memra-server's content hash of the workspace's compiled inputs, crates/memra-server/src/build_id.rs)
+[s45] binary embeds memra-0.138.0-63e078bb8438 (id: source-tree, git: 09badfe575fc); the Workstation DAY45 2.2 boots logged "[server] build: memra-0.138.0-63e078bb8438 (id: source-tree, git: 09badfe575fc)" (pro-single-day45/box-b/boots/O1-on/server.log)
+[s46] binary embeds memra-0.138.0-65b15cdfdd55 (id: source-tree, git: 8926ccfb3e8a); the Workstation DAY46 2.2 boots logged "[server] build: memra-0.138.0-65b15cdfdd55 (id: source-tree, git: 8926ccfb3e8a)" (pro-single-day46/box-c/boots/O1-enforce-wrel/server.log)
+# Workstation box binaries (built on the box with nvcc 13.1): s45 2efafc68733e44c11dcc7f13c4ab65a9c73b896778c8dbc1990e5d1a472cd1ea, s46 357192375c6c54ddace88e2088c72c2bef372dcd8f3d7fbfcbcede4cef2bd27d; the kit's differ (laptop, nvcc 13.4.92), same source id.
+# linked libraries (ldd, both): libcudart.so.13 libcublasLt.so.13 libcublas.so.13 libstdc++ libgcc_s libm libc libdl libpthread librt; <box> resolves each CUDA one through ldconfig (/usr/local/cuda/targets/x86_64-linux/lib, cudart 13.4.92), driver 615.71.09 on both hosts.
+# cell scripts: d45/ from chain tree 0ac7f6413532b805fbce5ab9763d38b4b373606e, d46/ from 43dbdb29fa2a52be7744d0a03a617930f9426bf5 (git archive); ported files and diffs in DIRTY.txt and patches/
+# first build attempt (2026-11-04T19:56Z) failed: its log compiled only memra-engine and memra-server, and memra-engine could not find memra-tier's S45 types (HostBytes, HostBuffer, FillOutcome), so the memra-tier artifact in the shared target dir was not built from this tree and was reused; build.sh now touches the tree's crate sources before each build and refuses unless every local crate of memra-server's closure appears as Compiling in that build's log (both did)

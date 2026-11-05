@@ -1,0 +1,35 @@
+--- a/research/spill-b-20260919/day46-run.sh (43dbdb29f)
++++ b/research/spill-b-20260919/day46-run.sh (<box> Max-Q kit)
+@@ -16,14 +16,17 @@
+ cd "$WT" || exit 1
+ mkdir -p "$R/boots"
+ log() { echo "$(date -u +%FT%TZ) $*" >> "$R/run.log"; }
++CARD=${CARD:?CARD (the nvidia-smi index of the cell card)}
++# <box> Max-Q kit port (DEVIATIONS.md D5): the kit's run.sh holds RIG_LOCK for the whole run (RIG_LOCK_HELD=1, so the
++# boots run with LOCK=none through CELL_LOCK), the compute-app check reads CARD only, and the idle wait is IDLE_WAIT_S.
+ idle() {
+-  flock -n "$RIG_LOCK" true || return 1
+-  [ -z "$(nvidia-smi --query-compute-apps=pid --format=csv,noheader)" ] || return 1
++  [ "${RIG_LOCK_HELD:-0}" = 1 ] || flock -n "$RIG_LOCK" true || return 1
++  [ -z "$(nvidia-smi -i "$CARD" --query-compute-apps=pid --format=csv,noheader)" ] || return 1
+   [ "$(free -g | awk '/^Mem:/{print $7}')" -ge 24 ] || return 1
+ }
+ BOOT_CTX=${BOOT_CTX-65536}
+ if [ -n "$BOOT_CTX" ]; then export MEMRA_CTX=$BOOT_CTX; else unset MEMRA_CTX; fi
+-export LOCK=$RIG_LOCK RIGDIR="$R/boots" N=5 CLIENT=day46-client.py PARSER=day46-parse.py MEMRA_TIMEOUT_MS_MAX=3600000
++export LOCK=${CELL_LOCK:-$RIG_LOCK} RIGDIR="$R/boots" N=5 CLIENT=day46-client.py PARSER=day46-parse.py MEMRA_TIMEOUT_MS_MAX=3600000
+ for spec in "$@"; do
+   IFS=: read -r name arm <<< "$spec"
+   uenv=(-u MEMRA_ADMIT_W_RELEASE -u MEMRA_ADMIT_PREDICT_ENFORCE -u MEMRA_ADMIT_PREDICT_BUDGET_MB -u MEMRA_TTFT_TRACE
+@@ -38,9 +41,9 @@
+   esac
+   args="${CLIENT_EXTRA:-}"
+   [ -x "$B" ] || { log "boot $name: no binary $B; not run"; exit 1; }
+-  deadline=$((SECONDS + 7200)); waited=0
++  deadline=$((SECONDS + ${IDLE_WAIT_S:-7200})); waited=0
+   until idle; do
+-    [ $SECONDS -ge $deadline ] && { log "boot $name: rig not idle after 7200 s; not run"; exit 3; }
++    [ $SECONDS -ge $deadline ] && { log "boot $name: rig not idle after ${IDLE_WAIT_S:-7200} s; not run"; exit 3; }
+     [ $waited = 0 ] && log "boot $name: waiting for an idle rig"
+     waited=1; sleep 30
+   done

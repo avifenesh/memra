@@ -210,3 +210,9 @@ DAY46 READING card=pro6000 boot=O2-enforce-wrel wave=wave2 n=32 ok200=11 r429=21
   32 of 32 after the storm.
 - **What it decides:** no default moves. This is the owner's input for the enforcing predictive door, and for the W
   release that is its second arm.
+
+### 2.3 Addendum D on the RTX PRO 6000 Blackwell Max-Q (2026-11-05)
+
+Read with DAY45's half in DAY45.md 2.3 (receipts `pro-maxq-day45-46/out-20261105T060755Z/day46/`): every clause
+PASS on both enforcing arms and both orders, 24 of 24;
+`VERDICT admit-w-release-default card=pro6000maxq day45=PASS(12/12) day46=PASS(24/24) -> PASS`.
