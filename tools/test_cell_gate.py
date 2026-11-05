@@ -262,6 +262,22 @@ class CellGate(unittest.TestCase):
         self.assertIn("still proves battery,perf on sm_120a", out)
         self.assertIn("CELL-QUALIFIED", out)
 
+    def test_older_records_of_different_kinds_on_one_device_each_still_prove(self):
+        # battery measured at one commit, perf at a later one, same target and device: the newer
+        # record must not hide the older one's kind
+        self.f.write("crates/memra-engine/cu/qmatvec.cu", "__global__ void k() { int x = 8; }\n")
+        battery_at = self.f.commit("kernel")
+        self.f.record(battery_at, ["battery"], name="older-battery")
+        self.f.write("crates/memra-engine/cu/mmq_fp4_stub.cu", "__global__ void stub() { __trap(); }\n")
+        perf_at = self.f.commit("stub for other targets")
+        self.f.record(perf_at, ["perf"], name="newer-perf")
+        self.f.write("crates/memra-engine/cu/mmq_fp4_stub.cu", "__global__ void stub() { __trap(); __trap(); }\n")
+        self.f.commit("stub again")
+        out = self.f.push()
+        self.assertIn("still proves battery on sm_120a", out)
+        self.assertIn("still proves perf on sm_120a", out)
+        self.assertIn("CELL-QUALIFIED", out)
+
     def test_older_record_is_stale_once_a_change_reaches_its_target(self):
         self.f.write("crates/memra-engine/cu/qmatvec.cu", "__global__ void k() { int x = 6; }\n")
         measured = self.f.commit("kernel")

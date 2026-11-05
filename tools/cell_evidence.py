@@ -347,17 +347,20 @@ def proven_cells(repo, candidate, rules, arch, log=print, push_base=None):
     import release_qualification as q
     candidate_inputs = inputs_digest(repo, candidate)
     proven, by_device = proven_full_records(repo, candidate, rules, arch, log)
-    stale = {}  # (target, device class) -> the newest older-commit record: only it is re-judged
+    # (target, device class, kind) -> the newest older-commit record measuring that kind: only these
+    # are re-judged. Keyed per kind, so a newer perf record does not hide an older battery record.
+    stale = {}
     for path in records_in_tree(repo, candidate):
         root = path.rsplit("/", 1)[0]
         try:
             record = json.loads(git(repo, "show", f"{candidate}:{path}"))
             if record.get("inputs_sha256") != candidate_inputs:
-                key = (record.get("target"), (record.get("device") or {}).get("class"))
                 when = git(repo, "show", "-s", "--format=%ct", str(record.get("tested_commit")), check=False).strip()
                 when = int(when) if when.isdigit() else -1
-                if key not in stale or when > stale[key][0]:
-                    stale[key] = (when, record, root)
+                for kind in record.get("kinds") or {"": None}:
+                    key = (record.get("target"), (record.get("device") or {}).get("class"), kind)
+                    if key not in stale or when > stale[key][0]:
+                        stale[key] = (when, record, root)
                 continue
             target, kinds = verify_record(record, TreeEvidence(repo, candidate, root), repo, candidate,
                                           rules, arch, candidate_inputs, push_base)
@@ -368,7 +371,7 @@ def proven_cells(repo, candidate, rules, arch, log=print, push_base=None):
         by_device.setdefault(record["device"]["class"], set()).update(kinds)
         log(f"  record {root}: {ci.target_name(rules, target)} {','.join(sorted(kinds))} "
             f"on {record['device']['class']}")
-    for _, record, root in stale.values():
+    for root, record in {root: record for _, record, root in stale.values()}.items():
         held = still_proven(repo, record, root, candidate, rules, arch, push_base, log)
         if held:
             target, kinds = held
