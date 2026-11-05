@@ -51,6 +51,7 @@ The traffic shape above never publishes a draft tail because the cache-preferred
 Every row a round at the prompt end reads lies in the suffix, so the draft state equals a cold DFlash prime's. Shorter suffixes keep the plain hit. Needs `MEMRA_DSPARK_PREFIX_RESTORE=1` and `MEMRA_DSPARK_PARTIAL_RESTORE=1`. Commits:
 - 0fda98ddc3: the conversion;
 - 720d7b86f0: a fix the gate forced.
+- After the rebase onto batch-spec 2239ab9d45 these are a7b5face11 and 3de636cab4; ea5ef13e8b deletes the door. The measurement SHAs below are the pre-rebase heads.
 
 **Exactness gate** (`tools/dspark-cold-drafter-gate.py`, `cold-drafter-gate.sh`; receipts `cold-drafter-gate/`). The arm has the prefix cache and doors on; the reference has the prefix cache off, so it cold-primes DFlash every time. The sequence:
 1. a plain greedy-penalized prime of P;
@@ -64,6 +65,9 @@ The gate needs every completion byte-identical.
 | GB10, 0fda98ddc3 | identical | differs from token 1 | identical | differs | 4 |
 | GB10, 720d7b86f0 | identical | identical | identical | identical | 4 |
 | RTX 5090, 720d7b86f0 (smaller P/S) | identical | identical | identical | identical | 4 |
+| RTX 5090, ea5ef13e8b (rebased on batch-spec, door deleted; smaller P/S) | identical | identical | identical | identical | 4 |
+
+Rebased head ea5ef13e8b (RTX 5090): memra-server lib 1151 passed / 0 failed, memra-engine `dspark` 23 / 0, `tools/dspark-serve-smoke.sh` ALL GREEN (`5090-smoke-ea5e/`; a first attempt died before the server wrote a line, cause not captured; the rerun with the serve lock on disk passed).
 
 The first GB10 run had identical drafts (greedy acceptance trajectories matched round for round). The difference was the sampling stream:
 - `dspark_spec_session_from_restored` drew a provisional boundary token from the entry's logits, which advanced the Philox counter;
