@@ -32733,8 +32733,9 @@ pub fn run(
             // residual IS that peer burst). With it: 0.149s median (iter1 receipt). Stable
             // sort: FIFO within cold and warm classes; session order across independent
             // sessions is content-neutral (each owns its cache/scratch — greedy byte-identity
-            // gates verify). Shares the MEMRA_ADMIT_YIELD=0 rollback seam: off restores the
-            // full pre-lane behavior (index order + full-burst holds) in one flag.
+            // gates verify). Shares MEMRA_ADMIT_YIELD: `0` restores the full pre-lane behavior
+            // (index order + full-burst holds) in one flag, for tiers that want lockstep
+            // fairness.
             // BATCHDRAFT ANATOMY (diagnostics only): the original tick trace started below,
             // after this loop, so its `decode_ms` omitted the entire serial spec phase. Start a
             // phase clock here and emit one boundary record per request. This adds no sync and is
@@ -43066,7 +43067,6 @@ fn spec_burst_pre(
 /// The MTP spec burst's SSE emission state: one per burst, fed by the engine's round-cadence
 /// `on_commit` hook (`flush`) and settled by `spec_burst_post`.
 struct SpecBurstEmit<'t> {
-    per_burst_emit: bool,
     admit_yield: bool,
     tok: &'t memra_tokenizer::Tokenizer,
     decoded_visible: Vec<u8>,
@@ -43082,7 +43082,6 @@ struct SpecBurstEmit<'t> {
 
 impl<'t> SpecBurstEmit<'t> {
     fn new(lm: &'t LoadedModel, s: &mut Session, request_room: usize) -> Self {
-        let per_burst_emit = std::env::var("MEMRA_SSE_PER_BURST").as_deref() == Ok("1");
         // ADMISSION YIELD (lane/admission-latency, 2026-08-06): a request that arrives while
         // a burst is in flight used to wait the WHOLE burst out before the worker's tick-top
         // admission phase could even see it — contended first-text scaled with
@@ -43091,7 +43090,7 @@ impl<'t> SpecBurstEmit<'t> {
         // in the cmd channel, PENDING_ADMITS > 0) ends the burst at the current round exactly
         // as if burst-count had been reached — burst size is content-neutral (spec-levers
         // battery), so this moves WHEN control returns, never what tokens say.
-        // MEMRA_ADMIT_YIELD=0 = rollback seam (restores full-burst holds).
+        // MEMRA_ADMIT_YIELD=0 trades this back for lockstep fairness (full-burst holds).
         let admit_yield = std::env::var("MEMRA_ADMIT_YIELD").as_deref() != Ok("0");
         let tok = &lm.tok;
         let decoded_visible = std::mem::take(&mut s.decoded_bytes);
@@ -43104,7 +43103,6 @@ impl<'t> SpecBurstEmit<'t> {
         let eos_ids = s.params.eos.clone();
         let stop_ids = s.stop_token_ids.clone();
         SpecBurstEmit {
-            per_burst_emit,
             admit_yield,
             tok,
             decoded_visible,
@@ -43133,9 +43131,9 @@ impl<'t> SpecBurstEmit<'t> {
         // Continue-verdict polled at EVERY round boundary (even empty/post-EOS flushes).
         let keep =
             !self.admit_yield || PENDING_ADMITS.load(std::sync::atomic::Ordering::Acquire) == 0;
-        if self.per_burst_emit || self.eos_seen || self.emit_remaining == 0 || slice.is_empty() {
-            // poll-only boundary: rollback seam / post-EOS (tokens never visible;
-            // accounting happens post-burst) / nothing new committed this round.
+        if self.eos_seen || self.emit_remaining == 0 || slice.is_empty() {
+            // poll-only boundary: post-EOS (tokens never visible; accounting happens
+            // post-burst) / nothing new committed this round.
             return keep;
         }
         if let Some(trace) = ttft {
@@ -43187,14 +43185,10 @@ fn spec_burst_post(
         ..
     } = plan;
     let SpecBurstEmit {
-        per_burst_emit,
-        tok: tok_ref,
-        mut decoded_visible,
-        mut cursor,
-        mut emit_remaining,
-        mut eos_seen,
-        mut send_ok,
-        mut token_events,
+        decoded_visible,
+        cursor,
+        send_ok,
+        token_events,
         eos_ids,
         stop_ids,
         ..
@@ -43235,22 +43229,6 @@ fn spec_burst_post(
     }
     let (public_len, mut stop) = spec_visible_prefix(&burst, request_room, &eos_ids, &stop_ids);
     let public_burst = &burst[..public_len];
-    if per_burst_emit {
-        let emitted = emit_spec_token_events(
-            public_burst,
-            &mut emit_remaining,
-            &mut decoded_visible,
-            &mut cursor,
-            &eos_ids,
-            &stop_ids,
-            &mut eos_seen,
-            |id| tok_ref.decode_bytes_special(&[id], true),
-            |event| send_observed_event(&s.tx, &s.model, s.lane, &mut s.emission_clock, event),
-        );
-        token_events += emitted.sent;
-        s.tokens_emitted += emitted.sent;
-        send_ok = emitted.send_ok;
-    }
     if send_ok {
         debug_assert_eq!(
             token_events, public_len,
@@ -43269,8 +43247,8 @@ fn spec_burst_post(
     // EOS text is never streamed (serve-compat, 2026-08-03), but its empty-text token event
     // keeps the id/event/generated receipt 1:1. Engine-committed budget surplus remains only
     // in SpecSession committed/pending state; it never enters these public worker vectors.
-    // `tokens_emitted` was advanced at each send site above (the round-cadence hook
-    // and the per-burst arm), never here — the park guard reads it mid-burst.
+    // `tokens_emitted` was advanced at the round-cadence hook's sends, never here — the park
+    // guard reads it mid-burst.
     s.emitted_bytes = cursor;
     s.decoded_bytes = decoded_visible;
     if !send_ok {
@@ -43562,7 +43540,6 @@ fn step_spec_pooled(
             let (Some(emit), Some(plan)) = (emit.as_mut(), plan.as_ref()) else {
                 continue;
             };
-            let no_round_hook = emit.per_burst_emit && !emit.admit_yield;
             let Session {
                 spec,
                 ttft,
@@ -43573,9 +43550,7 @@ fn step_spec_pooled(
                 ..
             } = &mut **s;
             let lane = *lane;
-            let on_commit: Option<memra_engine::spec::PooledCommitHook<'_>> = if no_round_hook {
-                None
-            } else {
+            let on_commit: Option<memra_engine::spec::PooledCommitHook<'_>> =
                 Some(Box::new(move |slice: &[u32]| {
                     emit.flush(
                         slice,
@@ -43585,8 +43560,7 @@ fn step_spec_pooled(
                         emission_clock,
                         tokens_emitted,
                     )
-                }))
-            };
+                }));
             reqs.push(memra_engine::spec::PooledBurstReq {
                 sess: spec.as_mut().expect("pool candidates hold a spec session"),
                 max_new: plan.burst_target,
@@ -43684,10 +43658,7 @@ fn step_session(
         // SSE CADENCE (lane/sse-cadence, 2026-08-05): publish at ROUND cadence, not burst
         // cadence. Every committed id in the request-owned budget gets its own Event::Token;
         // UTF-8 fragments may make an individual event's text empty, but ids are never coalesced.
-        // MEMRA_SSE_PER_BURST=1 retains the timing rollback (events wait for burst end), not the
-        // old broken one-id-for-many-tokens event shape.
         let mut emit = SpecBurstEmit::new(lm, s, plan.request_room);
-        let no_round_hook = emit.per_burst_emit && !emit.admit_yield;
         let spec = s.spec.as_mut().expect("checked above");
         let mut flush_cb = |slice: &[u32]| -> bool {
             emit.flush(
@@ -43701,11 +43672,7 @@ fn step_session(
         };
         #[allow(clippy::type_complexity)]
         // allow: one-shot composite type; naming it would hide the shape that matters at the call site
-        let on_commit: Option<&mut dyn FnMut(&[u32]) -> bool> = if no_round_hook {
-            None
-        } else {
-            Some(&mut flush_cb)
-        };
+        let on_commit: Option<&mut dyn FnMut(&[u32]) -> bool> = Some(&mut flush_cb);
         let (burst, d, a) = match s.constraint.as_mut() {
             Some(c) => {
                 let mut g = crate::constrained::SpecGrammar::new(c, lm.eos_id);
@@ -45321,8 +45288,8 @@ fn synchronize_model_devices(engine: &Engine, loaded: &HashMap<String, LoadedMod
 /// 2026-09-02 box receipts (FLAGS.md row): the glm5 spec route publishes committed tokens
 /// at ROUND cadence instead of burst cadence (doc at the `step_glm5_spec` call site).
 /// `=0` is the rollback seam (burst-cadence emission, the pre-lane literal). Read per
-/// burst, the `MEMRA_SPEC_BURST` / `MEMRA_SSE_PER_BURST` convention (a few hundred ns;
-/// never a OnceLock, so a gate can flip it between bursts in one process).
+/// burst, the `MEMRA_SPEC_BURST` convention (a few hundred ns; never a OnceLock, so a gate
+/// can flip it between bursts in one process).
 fn spec_first_token_eager_on() -> bool {
     std::env::var("MEMRA_SPEC_FIRST_TOKEN_EAGER").as_deref() != Ok("0")
 }
@@ -67032,8 +66999,7 @@ mod tests {
             2,
             "glm5: one add in the hook, one gated post-burst add"
         );
-        // 3. The qwen sse-cadence hook: same marker at the send; the per-burst arm adds
-        //    its own; no unconditional post-burst add remains.
+        // 3. The qwen sse-cadence hook: same marker at the send; no post-burst add remains.
         //    The hook is `SpecBurstEmit::flush`, shared by the serial burst and the pooled
         //    cohort; both pass the session's own marker.
         let flush = live
