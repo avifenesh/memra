@@ -309,3 +309,13 @@ gets its own arm in `in_token_prefetch_for_device` (`pro6000-maxq-receipt`); the
 `no-receipt-default`. That change is its own commit. The HEAD boot line on the Max-Q (`[moe-cache] in-token prefetch:
 on (card pro6000-maxq-receipt)`) is owed to the next window on the box; it checks the arm and its source, not the
 timing. The decision record's "Owed" item (a second MoE family on the legacy slot-cache spill path) stays owed here.
+
+**The owed HEAD boot line, 2026-11-05 11:24Z (`pro-maxq-day59/head-boot/`).** `run-gen` built from the Max-Q arm
+commit `d9942ea8d7` (`build-status`: the lane tree compiled, sha256 `e38ea3ee...`, the `pro6000-maxq-receipt`
+string present) booted once on GPU 2 of the same box ("NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition", 280
+W, 2 MiB used before the boot) at the pressure shape with `MEMRA_MOE_PREFETCH` unset, after the GPU 2 gap closed and
+under its lock. It printed `[moe-cache] in-token prefetch: on (card pro6000-maxq-receipt)`, generated its 32 tokens
+(`rc=0`) and left the card at 2 MiB. The arm and its source check; this boot reads no timing.
+`d9942ea8d7` is the arm commit on the fix stack before its 2026-11-05 restack. Rebased onto the restacked
+stack, the arm keeps its code byte for byte: the commit's `crates/` diff has `git patch-id --stable`
+`cdfbb5981e79` on both sides, and only context lines in `docs/decisions/README.md` moved.
