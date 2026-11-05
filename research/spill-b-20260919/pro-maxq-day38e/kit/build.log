@@ -1,0 +1,39 @@
+park-compact build start=2026-11-04T20:21:58Z host=laptop sha=2ccb038d1c16358edde65582597e7b840e3f63fb
+head=2ccb038d1c16358edde65582597e7b840e3f63fb
+MEMRA_CUDA_ARCH=120a CARGO_TARGET_DIR=/home/avifenesh/.cache/memra-maxq/target MEMRA_NVCC=/usr/local/cuda-13.1/bin/nvcc
+Build cuda_13.1.r13.1/compiler.37061995_0
+cargo 1.97.1 (c980f4866 2026-06-30)
+rustc 1.97.1 (8bab26f4f 2026-07-14)
+== arm off start=2026-11-04T20:21:58Z patches=[]
+   Compiling memra-gguf v0.138.0 (/home/avifenesh/.cache/memra-maxq/park-compact/wt-tip/crates/memra-gguf)
+   Compiling memra-tier v0.138.0 (/home/avifenesh/.cache/memra-maxq/park-compact/wt-tip/crates/memra-tier)
+   Compiling memra-engine v0.138.0 (/home/avifenesh/.cache/memra-maxq/park-compact/wt-tip/crates/memra-engine)
+   Compiling memra-tokenizer v0.138.0 (/home/avifenesh/.cache/memra-maxq/park-compact/wt-tip/crates/memra-tokenizer)
+   Compiling memra-reference v0.138.0 (/home/avifenesh/.cache/memra-maxq/park-compact/wt-tip/crates/memra-reference)
+   Compiling memra-runtime v0.138.0 (/home/avifenesh/.cache/memra-maxq/park-compact/wt-tip/crates/memra-runtime)
+   Compiling memra-kv v0.138.0 (/home/avifenesh/.cache/memra-maxq/park-compact/wt-tip/crates/memra-kv)
+   Compiling memra-server v0.138.0 (/home/avifenesh/.cache/memra-maxq/park-compact/wt-tip/crates/memra-server)
+   Compiling memra-sampling v0.138.0 (/home/avifenesh/.cache/memra-maxq/park-compact/wt-tip/crates/memra-sampling)
+   Compiling memra-validate v0.138.0 (/home/avifenesh/.cache/memra-maxq/park-compact/wt-tip/crates/memra-validate)
+   Compiling memra-lanes v0.138.0 (/home/avifenesh/.cache/memra-maxq/park-compact/wt-tip/crates/memra-lanes)
+   Compiling memra-net-guard v0.138.0 (/home/avifenesh/.cache/memra-maxq/park-compact/wt-tip/crates/memra-net-guard)
+warning: memra-engine@0.138.0: nvcc from MEMRA_NVCC: /usr/local/cuda-13.1/bin/nvcc
+    Finished `release` profile [optimized] target(s) in 3m 37s
+binary=off/memra-server tree=2ccb038d1c16358edde65582597e7b840e3f63fb patches=[] sha256=7514121c8ef3d4c889801c096dacad3cddd659fde07f931e848f5c5ce9f153c8 bytes=69369088
+arm off: all 12 workspace crates of memra-server compiled from /home/avifenesh/.cache/memra-maxq/park-compact/wt-tip
+== arm on start=2026-11-04T20:25:36Z patches=[maxq-arm.patch]
+warning: memra-engine@0.138.0: nvcc from MEMRA_NVCC: /usr/local/cuda-13.1/bin/nvcc
+   Compiling memra-server v0.138.0 (/home/avifenesh/.cache/memra-maxq/park-compact/wt-tip/crates/memra-server)
+   Compiling memra-engine v0.138.0 (/home/avifenesh/.cache/memra-maxq/park-compact/wt-tip/crates/memra-engine)
+    Finished `release` profile [optimized] target(s) in 59.11s
+binary=on/memra-server tree=2ccb038d1c16358edde65582597e7b840e3f63fb patches=[maxq-arm.patch] sha256=a73967ac9d3fb9a757945df0e5cc12a07f4a54b8204c9f351ca31935e3aaae07 bytes=69389736
+== arm red start=2026-11-04T20:26:35Z patches=[maxq-arm.patch day38-red.patch]
+warning: memra-engine@0.138.0: nvcc from MEMRA_NVCC: /usr/local/cuda-13.1/bin/nvcc
+   Compiling memra-server v0.138.0 (/home/avifenesh/.cache/memra-maxq/park-compact/wt-tip/crates/memra-server)
+    Finished `release` profile [optimized] target(s) in 18.48s
+binary=red/memra-server tree=2ccb038d1c16358edde65582597e7b840e3f63fb patches=[maxq-arm.patch day38-red.patch] sha256=b1da1a6133e4bda41fbea8313a8e2d2ea2594e2ffa53f240891331e0495eb1f4 bytes=69390208
+7514121c8ef3d4c889801c096dacad3cddd659fde07f931e848f5c5ce9f153c8  off/memra-server
+a73967ac9d3fb9a757945df0e5cc12a07f4a54b8204c9f351ca31935e3aaae07  on/memra-server
+b1da1a6133e4bda41fbea8313a8e2d2ea2594e2ffa53f240891331e0495eb1f4  red/memra-server
+end=2026-11-04T20:26:55Z
+rc=0

@@ -482,3 +482,34 @@ DAY38D VMM-PAIR card=rtx5090 rows=30 differ=[] vmm_off idle vmm_mapped=0 vmm_on 
 - Readings: the park-time copy 1.1 and 2.8 ms p50 at 6,144 and 30,720 (N=100 each); resumed E2E p50 466 to 469 ms
   `off` against 481 to 483 ms `on` (N=30); at idle `on` holds 0.54 GB less driver-free memory (3.43 against 3.96 GB).
   Resumed against cold: 2 flips of 20 on both arms (the near-tie residual, O11). VMM-PAIR: no digest differs.
+
+### 2.5 Addendum E on the RTX PRO 6000 Blackwell Max-Q, part 1 (`pro-maxq-day38e/`, 2026-11-05 09:27:43Z to 11:23:12Z)
+
+`run-part1.sh` ran as addendum E and its power amendment registered, on GPU 2 of the four-card box ("NVIDIA RTX PRO
+6000 Blackwell Max-Q Workstation Edition", driver 615.71.09) while the box's other three cards trained, under the GPU 2
+lock agreed with the training session: `main-O1-off`, `main-O1-on` (3325 s each, 150 of 150 rows `200`),
+`fault-batch`, `fault-nobatch` and `fault-nobatch-red`, on the binaries built from `2ccb038d1c`. Receipts mirrored file
+for file (`MIRROR-CHECK.txt`: 141 `OK`; the one line that fails is `steps.txt`, which the runner appends to after
+writing the manifest, and the box's final copy hashes equal to this mirror's), then exported with
+`research/spill-f-20260919/m1-box-sanitize.py`: the card's UUID became `GPU-<card2-uuid>`, the board serial, GPU PDI,
+box name, local time zone and remote home path their placeholders (`EXPORT-MANIFEST.json`, 9 files). The scheduler's
+try log, power summary and 10 s thermal samples are in `runner/`.
+
+Power: the runner set GPU 2 to 300 W (from 280 W, max 300 W). The box re-applies its own per-card caps every 10
+minutes (a system timer, 280 W on this card), so from 09:30:08Z the card ran at 280 W: 15 of 688 samples read 300 W.
+At 10:07:09Z GPU 3 reached 90 C and the neighbour rule set GPU 2 to 280 W, the limit it already had. The rule depends
+on neither power nor clocks (amendment). Maximum 91 C, fan 93 %; SW power cap active in 674 samples, no thermal or
+power-brake slowdown, no thermal stop. No server log has a `[gpu-watch] CRITICAL` line. Verbatim (`SUMMARY.txt`,
+`VERDICT.txt`):
+
+- `DAY38D P1 card=pro6000-maxq order=O1 xp_turns=30 resumed_both=30 frac=1.00 xp_door_differ=[] prompt_mismatch=[] a_turn2=15 a_differ=[] on_resumed=30 park_compact_grow=30 affinity_rewound={'main-O1-off': 15, 'main-O1-on': 15} non200=[] faults=0 -> PASS`
+- `DAY38D P2 card=pro6000-maxq boot=fault-batch fired=1 errored_rows=['Xp-6144-r0-t1'] ok200=39 park_compact=39 next_turn=[{'tag': 'Xp-6144-r0-t2', 'equal_cold': True, 'pool_resumed': 0, 'cached': 0}] faults=0 -> PASS` (`fault-nobatch` reads the same)
+- the red arm: `fault-nobatch-red ... park_compact=40 next_turn=[{... 'pool_resumed': 1, 'cached': 6144}] ... -> FAIL (red arm: the expected reading is FAIL ...)`
+- `VERDICT DAY38D card=pro6000-maxq rule=DAY38-1.6 P1'=[O1:PASS,O2:absent] P2'=[fault-batch:PASS,fault-nobatch:PASS] red=[fault-nobatch-red:FAIL, red as expected] -> INCOMPLETE (absent boots: main-O2-on main-O2-off)`
+
+Readings (no bound): 3 resumed-against-cold flips on each main boot, the same three tags on both arms (the near-tie
+contract); P3 and P4 are co-tenant readings beside training, not readings for the record (`run-timed.sh` carries
+them). The prompt stream equals the Workstation's (`same_prompt_stream_as_workstation_box_d=2/2`).
+
+**Read as registered (M.6): INCOMPLETE.** Part 2 (`main-O2-on`, `main-O2-off`, then the combined reading) runs in a
+later gap; no default moves until it reads.

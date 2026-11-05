@@ -1,0 +1,15 @@
+2026-11-05T09:27:44Z boot main-O1-off start arm=off bin=7514121c8ef3d4c8 env=[-u MEMRA_KV_PARK_COMPACT -u MEMRA_KV_ALLOCATOR -u MEMRA_STEP_OOM_FAULT -u MEMRA_SERVE_BATCH] args=[--lengths 6144,30720,122880 --shapes Xp,A]
+2026-11-05T10:23:04Z boot main-O1-off rc=0 DAY38 CLIENT rows=150 ok=150
+2026-11-05T10:23:09Z boots done: main-O1-off:off
+2026-11-05T10:23:09Z boot main-O1-on start arm=on bin=a73967ac9d3fb9a7 env=[-u MEMRA_KV_PARK_COMPACT -u MEMRA_KV_ALLOCATOR -u MEMRA_STEP_OOM_FAULT -u MEMRA_SERVE_BATCH] args=[--lengths 6144,30720,122880 --shapes Xp,A]
+2026-11-05T11:18:29Z boot main-O1-on rc=0 DAY38 CLIENT rows=150 ok=150
+2026-11-05T11:18:34Z boots done: main-O1-on:on
+2026-11-05T11:18:34Z boot fault-batch start arm=on-fault-batch bin=a73967ac9d3fb9a7 env=[-u MEMRA_KV_PARK_COMPACT -u MEMRA_KV_ALLOCATOR -u MEMRA_STEP_OOM_FAULT -u MEMRA_SERVE_BATCH MEMRA_STEP_OOM_FAULT=1] args=[--lengths 6144 --shapes Xp --turn4]
+2026-11-05T11:20:03Z boot fault-batch rc=0 DAY38 CLIENT rows=40 ok=39
+2026-11-05T11:20:08Z boots done: fault-batch:on-fault-batch
+2026-11-05T11:20:08Z boot fault-nobatch start arm=on-fault-nobatch bin=a73967ac9d3fb9a7 env=[-u MEMRA_KV_PARK_COMPACT -u MEMRA_KV_ALLOCATOR -u MEMRA_STEP_OOM_FAULT -u MEMRA_SERVE_BATCH MEMRA_STEP_OOM_FAULT=1 MEMRA_SERVE_BATCH=0] args=[--lengths 6144 --shapes Xp --turn4]
+2026-11-05T11:21:37Z boot fault-nobatch rc=0 DAY38 CLIENT rows=40 ok=39
+2026-11-05T11:21:42Z boots done: fault-nobatch:on-fault-nobatch
+2026-11-05T11:21:42Z boot fault-nobatch-red start arm=on-fault-nobatch-red bin=b1da1a6133e4bda4 env=[-u MEMRA_KV_PARK_COMPACT -u MEMRA_KV_ALLOCATOR -u MEMRA_STEP_OOM_FAULT -u MEMRA_SERVE_BATCH MEMRA_STEP_OOM_FAULT=1 MEMRA_SERVE_BATCH=0] args=[--lengths 6144 --shapes Xp --turn4]
+2026-11-05T11:23:07Z boot fault-nobatch-red rc=0 DAY38 CLIENT rows=40 ok=39
+2026-11-05T11:23:12Z boots done: fault-nobatch-red:on-fault-nobatch-red
