@@ -39,8 +39,8 @@ jobs:
       engine: ${{ steps.plan.outputs.engine }}
       server: ${{ steps.plan.outputs.server }}
     steps:
-      - name: Free runner disk
-        run: if [ "$RUNNER_ENVIRONMENT" = github-hosted ]; then df -h / && sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL && df -h /; fi
+      - name: Runner disk
+        run: df -h / && if [ "$RUNNER_ENVIRONMENT" = github-hosted ] && [ "$(df --output=avail -k / | tail -n1)" -lt 41943040 ]; then sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL && df -h /; fi
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           fetch-depth: 0
@@ -99,8 +99,8 @@ jobs:
     env:
       TRUSTED_HEAD: ${{ github.event.pull_request.base.sha || github.event.before || github.sha }}
     steps:
-      - name: Free runner disk
-        run: if [ "$RUNNER_ENVIRONMENT" = github-hosted ]; then df -h / && sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL && df -h /; fi
+      - name: Runner disk
+        run: df -h / && if [ "$RUNNER_ENVIRONMENT" = github-hosted ] && [ "$(df --output=avail -k / | tail -n1)" -lt 41943040 ]; then sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL && df -h /; fi
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           fetch-depth: 0
@@ -141,8 +141,8 @@ jobs:
     env:
       TRUSTED_HEAD: ${{ github.event.pull_request.base.sha || github.event.before || github.sha }}
     steps:
-      - name: Free runner disk
-        run: if [ "$RUNNER_ENVIRONMENT" = github-hosted ]; then df -h / && sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL && df -h /; fi
+      - name: Runner disk
+        run: df -h / && if [ "$RUNNER_ENVIRONMENT" = github-hosted ] && [ "$(df --output=avail -k / | tail -n1)" -lt 41943040 ]; then sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL && df -h /; fi
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           fetch-depth: 0
@@ -173,8 +173,8 @@ jobs:
       MEMRA_CUDA_ARCH: "120a"
       MEMRA_NVCC: /usr/local/cuda-13.1/bin/nvcc
     steps:
-      - name: Free runner disk
-        run: if [ "$RUNNER_ENVIRONMENT" = github-hosted ]; then df -h / && sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL && df -h /; fi
+      - name: Runner disk
+        run: df -h / && if [ "$RUNNER_ENVIRONMENT" = github-hosted ] && [ "$(df --output=avail -k / | tail -n1)" -lt 41943040 ]; then sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL && df -h /; fi
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - name: Install the unchanged CUDA compiler
         if: needs.route.outputs.requires_cuda == 'true'
@@ -261,8 +261,8 @@ jobs:
       MEMRA_CUDA_ARCH: "120a"
       MEMRA_NVCC: /usr/local/cuda-13.1/bin/nvcc
     steps:
-      - name: Free runner disk
-        run: if [ "$RUNNER_ENVIRONMENT" = github-hosted ]; then df -h / && sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL && df -h /; fi
+      - name: Runner disk
+        run: df -h / && if [ "$RUNNER_ENVIRONMENT" = github-hosted ] && [ "$(df --output=avail -k / | tail -n1)" -lt 41943040 ]; then sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL && df -h /; fi
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - name: Install the unchanged CUDA compiler
         if: needs.route.outputs.requires_cuda == 'true'
@@ -294,8 +294,8 @@ jobs:
         # included, assembles for sm_121a and that the fatbins carry every looked-up kernel.
         cuda_arch: ["100a", "121a"]
     steps:
-      - name: Free runner disk
-        run: if [ "$RUNNER_ENVIRONMENT" = github-hosted ]; then df -h / && sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL && df -h /; fi
+      - name: Runner disk
+        run: df -h / && if [ "$RUNNER_ENVIRONMENT" = github-hosted ] && [ "$(df --output=avail -k / | tail -n1)" -lt 41943040 ]; then sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL && df -h /; fi
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       # cuda-cuobjdump-13-1 is here for the fatbin census below, and it is a SEPARATE package
       # from cuda-nvcc-13-1 — the first run of that census failed in CI for exactly this reason
@@ -362,8 +362,8 @@ jobs:
     env:
       TRUSTED_HEAD: ${{ github.event.pull_request.base.sha || github.event.before || github.sha }}
     steps:
-      - name: Free runner disk
-        run: if [ "$RUNNER_ENVIRONMENT" = github-hosted ]; then df -h / && sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL && df -h /; fi
+      - name: Runner disk
+        run: df -h / && if [ "$RUNNER_ENVIRONMENT" = github-hosted ] && [ "$(df --output=avail -k / | tail -n1)" -lt 41943040 ]; then sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL && df -h /; fi
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           fetch-depth: 0

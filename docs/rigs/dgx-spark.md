@@ -75,4 +75,3 @@ monolithic `run-gen` prefill, 43.5 s against 49.3 s of served cold prefill at 32
 greedy acceptance run per arm on three prompts at 0.702 against 0.672, c32 68.21 against 66.45
 tok/s, and the quality panel at 158/164 and 97/100 (W4A8: 158/164 and 98/100). `MEMRA_MMQ_F8F4=0`
 restores W4A8 ([research/gb10-tuning-20261102](../../research/gb10-tuning-20261102/)).
-
