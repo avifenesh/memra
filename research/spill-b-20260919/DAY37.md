@@ -693,9 +693,13 @@ is unchanged: it still only records the limit it reads.
   `thermal-<cell>.csv`. It prints one summary line with the maximum temperature and fan and the number of samples
   with each reason active. SW power cap is the normal state of a card running at its limit; it is recorded and not
   judged.
-- Reading: the untimed half (`run.sh`) records the summary and is not judged by it. If any sample during the timed
-  half (`run-timed.sh`) shows SW thermal slowdown, HW thermal slowdown or HW power brake, A1-STREAM and A3 read
-  MISSING and the timed half is owed again.
+- Reading: the untimed half (`run.sh`) records the summary and is not judged by it. Throttling during the timed half
+  (`run-timed.sh`) does not void A1-STREAM or A3: the stream pairs run pooled then vmm and vmm then pooled, so a
+  slowdown that reaches both arms stays inside the comparison. The throttle summary is reported with those lines.
+- Neighbour rule, asked by the box's training session: the untimed half runs on GPU 2 beside training on GPUs 0, 1
+  and 3, so every 10 s the runner also reads GPUs 1 and 3. If either reaches 90 C, GPU 2 returns to its previous
+  limit (280 W) for the rest of the cell, and the summary line records when. The verdict does not depend on power,
+  so the drop changes no clause.
 - The thermal stop above is unchanged. The runner applies the same rule on its 10 s samples as a
   backstop, and a stopped cell has no verdict.
 
