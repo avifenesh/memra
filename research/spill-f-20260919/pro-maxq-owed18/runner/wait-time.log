@@ -1,0 +1,3 @@
+waitfor: until test "$(date +%Y%m%d%H%M)" -ge 202611050600 (deadline 540m00s, every 30s)
+waitfor: not yet
+waitfor: MET after 226m34s

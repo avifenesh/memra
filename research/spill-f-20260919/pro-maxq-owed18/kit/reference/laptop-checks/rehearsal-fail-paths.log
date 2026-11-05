@@ -1,0 +1,12 @@
+PASS A no CARD refused
+PASS B lock held elsewhere refused, no out dir
+waitfor: MET after 0m15s
+waitfor: MET after 0m00s
+PASS C SIGTERM stopped the run in 1s rc=130
+PASS C VERDICT no-verdict written
+PASS C scratch removed
+PASS C lock free after stop
+PASS C no tagged process left (kit-procs reap: run 20261104T193755Z: SIGTERM 0, SIGKILL 0)
+PASS D 8 GiB cell not started: handoff-8g not started: projected 2600s (40.0 x the 1 GiB cell's 65s) does not fit the 1001s left (FORCE_8G=1 overrides)
+PASS D verdict follows the rule (default=buffered) and names the skip
+fail-path rehearsals: 9 passed, 0 failed

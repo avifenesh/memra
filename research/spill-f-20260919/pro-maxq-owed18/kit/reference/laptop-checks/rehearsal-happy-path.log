@@ -1,0 +1,29 @@
+runner start 2026-11-04T19:31:41Z card=3 deadline='2026-11-04 22:11' <local-tz> (2239s usable)
+card 3: NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition, power.limit 250.00 W, 2 MiB used; nice  10
+== stage start 2026-11-04T19:31:41Z (2239s left in the window)
+== stage end 2026-11-04T19:31:41Z rc=0
+== b2-prompts start 2026-11-04T19:31:41Z (2239s left in the window)
+== b2-prompts end 2026-11-04T19:31:41Z rc=0
+== m1-proof start 2026-11-04T19:31:41Z (2239s left in the window)
+== m1-proof end 2026-11-04T19:31:44Z rc=0
+== handoff-1g start 2026-11-04T19:31:44Z (2236s left in the window)
+== handoff-1g end 2026-11-04T19:32:49Z rc=0
+handoff-1g took 65s; handoff-8g projected 195s; 2171s left in the window
+== handoff-8g start 2026-11-04T19:32:49Z (2171s left in the window)
+== handoff-8g end 2026-11-04T19:33:55Z rc=0
+kit-procs reap: run 20261104T193141Z: SIGTERM 1, SIGKILL 0
+== VERDICT
+M1-HANDOFF-VERDICT handoff-1g export_ms direct/buffered: flat median_ratio=1.0 pairs=10
+M1-HANDOFF-VERDICT handoff-1g write_ms direct/buffered: flat median_ratio=1.0285714285714285 pairs=10
+M1-HANDOFF-VERDICT handoff-1g fsync_ms direct/buffered: flat median_ratio=0.9833333333333334 pairs=10
+M1-HANDOFF-VERDICT handoff-1g import_s direct/buffered: flat median_ratio=1.0 pairs=10
+pairs=10 failed_cycles=[] malformed_pairs=[]
+M1-HANDOFF-VERDICT handoff-8g export_ms direct/buffered: flat median_ratio=1.0833333333333335 pairs=10
+M1-HANDOFF-VERDICT handoff-8g write_ms direct/buffered: flat median_ratio=1.051388888888889 pairs=10
+M1-HANDOFF-VERDICT handoff-8g fsync_ms direct/buffered: flat median_ratio=1.0526315789473686 pairs=10
+M1-HANDOFF-VERDICT handoff-8g import_s direct/buffered: flat median_ratio=1.0 pairs=10
+pairs=10 failed_cycles=[] malformed_pairs=[]
+M1-HANDOFF-VERDICT pro6000-maxq export_ms direct/buffered: flat handoff-1g=flat@1.0/10 handoff-8g=flat@1.0833333333333335/10 default=buffered card_index=3 power_limit_w=250.00 card="NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition"
+receipts 1.9M; scratch removed: yes
+OUT /home/avifenesh/.cache/memra-maxq/handoff-direct/rehearsal/hd/out-20261104T193141Z
+rc=0

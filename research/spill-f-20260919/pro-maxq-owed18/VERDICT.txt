@@ -1,0 +1,11 @@
+M1-HANDOFF-VERDICT handoff-1g export_ms direct/buffered: winner median_ratio=0.8602963708794817 pairs=10
+M1-HANDOFF-VERDICT handoff-1g write_ms direct/buffered: flat median_ratio=1.0016031327496069 pairs=10
+M1-HANDOFF-VERDICT handoff-1g fsync_ms direct/buffered: winner median_ratio=0.010498404600322997 pairs=10
+M1-HANDOFF-VERDICT handoff-1g import_s direct/buffered: flat median_ratio=1.0606617647058822 pairs=10
+pairs=10 failed_cycles=[] malformed_pairs=[]
+M1-HANDOFF-VERDICT handoff-8g export_ms direct/buffered: winner median_ratio=0.9156872557932629 pairs=10
+M1-HANDOFF-VERDICT handoff-8g write_ms direct/buffered: loser median_ratio=1.066101836718885 pairs=10
+M1-HANDOFF-VERDICT handoff-8g fsync_ms direct/buffered: winner median_ratio=0.0033601915591593857 pairs=10
+M1-HANDOFF-VERDICT handoff-8g import_s direct/buffered: flat median_ratio=1.013157894736842 pairs=10
+pairs=10 failed_cycles=[] malformed_pairs=[]
+M1-HANDOFF-VERDICT pro6000-maxq export_ms direct/buffered: winner handoff-1g=winner@0.8602963708794817/10 handoff-8g=winner@0.9156872557932629/10 default=direct card_index=0 power_limit_w=300.00 card="NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition"

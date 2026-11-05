@@ -1,0 +1,2 @@
+waitfor: until test -z "$(nvidia-smi --query-compute-apps=pid --format=csv,noheader)" (deadline 10m00s, every 15s)
+waitfor: MET after 0m00s

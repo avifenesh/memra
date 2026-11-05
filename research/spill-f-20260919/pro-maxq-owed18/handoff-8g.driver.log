@@ -1,0 +1,241 @@
+M1-CACHE {"attempts": 1, "file": "handoff.bin", "mode": "cold", "pages": 2359544, "resident_pages": 0, "state": "PASS"}
+M1-B2-CYCLE 1 passed=True problems=[]
+M1-CACHE {"attempts": 1, "file": "handoff.bin", "mode": "cold", "pages": 2359544, "resident_pages": 0, "state": "PASS"}
+M1-B2-CYCLE 2 passed=True problems=[]
+M1-CACHE {"attempts": 1, "file": "handoff.bin", "mode": "cold", "pages": 2359544, "resident_pages": 0, "state": "PASS"}
+M1-B2-CYCLE 3 passed=True problems=[]
+M1-CACHE {"attempts": 1, "file": "handoff.bin", "mode": "cold", "pages": 2359544, "resident_pages": 0, "state": "PASS"}
+M1-B2-CYCLE 4 passed=True problems=[]
+M1-CACHE {"attempts": 1, "file": "handoff.bin", "mode": "cold", "pages": 2359544, "resident_pages": 0, "state": "PASS"}
+M1-B2-CYCLE 5 passed=True problems=[]
+M1-CACHE {"attempts": 1, "file": "handoff.bin", "mode": "cold", "pages": 2359544, "resident_pages": 0, "state": "PASS"}
+M1-B2-CYCLE 6 passed=True problems=[]
+M1-CACHE {"attempts": 1, "file": "handoff.bin", "mode": "cold", "pages": 2359544, "resident_pages": 0, "state": "PASS"}
+M1-B2-CYCLE 7 passed=True problems=[]
+M1-CACHE {"attempts": 1, "file": "handoff.bin", "mode": "cold", "pages": 2359544, "resident_pages": 0, "state": "PASS"}
+M1-B2-CYCLE 8 passed=True problems=[]
+M1-CACHE {"attempts": 1, "file": "handoff.bin", "mode": "cold", "pages": 2359544, "resident_pages": 0, "state": "PASS"}
+M1-B2-CYCLE 9 passed=True problems=[]
+M1-CACHE {"attempts": 1, "file": "handoff.bin", "mode": "cold", "pages": 2359544, "resident_pages": 0, "state": "PASS"}
+M1-B2-CYCLE 10 passed=True problems=[]
+M1-CACHE {"attempts": 1, "file": "handoff.bin", "mode": "cold", "pages": 2359544, "resident_pages": 0, "state": "PASS"}
+M1-B2-CYCLE 11 passed=True problems=[]
+M1-CACHE {"attempts": 1, "file": "handoff.bin", "mode": "cold", "pages": 2359544, "resident_pages": 0, "state": "PASS"}
+M1-B2-CYCLE 12 passed=True problems=[]
+M1-CACHE {"attempts": 1, "file": "handoff.bin", "mode": "cold", "pages": 2359544, "resident_pages": 0, "state": "PASS"}
+M1-B2-CYCLE 13 passed=True problems=[]
+M1-CACHE {"attempts": 1, "file": "handoff.bin", "mode": "cold", "pages": 2359544, "resident_pages": 0, "state": "PASS"}
+M1-B2-CYCLE 14 passed=True problems=[]
+M1-CACHE {"attempts": 1, "file": "handoff.bin", "mode": "cold", "pages": 2359544, "resident_pages": 0, "state": "PASS"}
+M1-B2-CYCLE 15 passed=True problems=[]
+M1-CACHE {"attempts": 1, "file": "handoff.bin", "mode": "cold", "pages": 2359544, "resident_pages": 0, "state": "PASS"}
+M1-B2-CYCLE 16 passed=True problems=[]
+M1-CACHE {"attempts": 1, "file": "handoff.bin", "mode": "cold", "pages": 2359544, "resident_pages": 0, "state": "PASS"}
+M1-B2-CYCLE 17 passed=True problems=[]
+M1-CACHE {"attempts": 1, "file": "handoff.bin", "mode": "cold", "pages": 2359544, "resident_pages": 0, "state": "PASS"}
+M1-B2-CYCLE 18 passed=True problems=[]
+M1-CACHE {"attempts": 1, "file": "handoff.bin", "mode": "cold", "pages": 2359544, "resident_pages": 0, "state": "PASS"}
+M1-B2-CYCLE 19 passed=True problems=[]
+M1-CACHE {"attempts": 1, "file": "handoff.bin", "mode": "cold", "pages": 2359544, "resident_pages": 0, "state": "PASS"}
+M1-B2-CYCLE 20 passed=True problems=[]
+M1-B2-SUMMARY {"cycles": 20, "passed": 20, "size_bytes": 8589934592, "median_export_ms": 5910.5, "median_fsync_ms": 432.15000000000003, "median_import_s": 7.55, "n": 20, "qualified": false}
+{
+  "schema_version": 1,
+  "kind": "subprocess-capture",
+  "command": [
+    "python3",
+    "research/spill-f-20260919/m1-handoff-driver.py",
+    "run",
+    "--gate",
+    "/mnt/Data/work/memra-maxq/handoff-direct/bins/box36/kv-handoff-gate",
+    "--server",
+    "/mnt/Data/work/memra-maxq/handoff-direct/bins/box36/memra-server",
+    "--artifact",
+    "/mnt/Data/work/memra-maxq/models/Qwen3.6-35B-A3B-UD-IQ4_XS.gguf",
+    "--prompts",
+    "/mnt/Data/work/memra-maxq/handoff-direct/scratch/b2-prompts.jsonl",
+    "--proof",
+    "/mnt/Data/work/memra-maxq/handoff-direct/private-20261105T040431Z/m1-proof.json",
+    "--scratch",
+    "/mnt/Data/work/memra-maxq/handoff-direct/scratch/b2",
+    "--host-mb",
+    "16384",
+    "--rig",
+    "pro-single",
+    "--lock-fd",
+    "3",
+    "--io-schedule",
+    "buffered,direct,direct,buffered,buffered,direct,direct,buffered,buffered,direct,direct,buffered,buffered,direct,direct,buffered,buffered,direct,direct,buffered",
+    "--size-bytes",
+    "8589934592",
+    "--tenant-pct",
+    "100",
+    "--out",
+    "/mnt/Data/work/memra-maxq/handoff-direct/out-20261105T040431Z/handoff-8g/visits"
+  ],
+  "exit_code": 0,
+  "timed_out": false,
+  "parse_error": null,
+  "status": "executed-not-qualified",
+  "gpu_power_limits": [
+    {
+      "device": "0",
+      "power.limit": "250.00 W",
+      "power.max_limit": "325.00 W"
+    }
+  ],
+  "started_monotonic_ns": 969358827759884,
+  "ended_monotonic_ns": 970989603322530,
+  "started_utc": "2026-11-05T04:13:43.412151+00:00",
+  "ended_utc": "2026-11-05T04:40:54.187716+00:00",
+  "elapsed_seconds": 1630.775562646,
+  "timing_scope": "collector-with-snapshots-and-sampler",
+  "storage": {
+    "class": "nvme-local-direct",
+    "nvme_proven": true,
+    "nvme_name_hint": true,
+    "label": "M1 proof: physical local NVMe (nvme-local-direct); not measured spill speed",
+    "allow_unproven_storage": false,
+    "root": "/mnt/Data/work/memra-maxq/handoff-direct/scratch",
+    "commands": [
+      {
+        "command": [
+          "findmnt",
+          "-J",
+          "-T",
+          "/mnt/Data/work/memra-maxq/handoff-direct/scratch"
+        ],
+        "exit_code": 0,
+        "timed_out": false,
+        "raw_log": {
+          "path": "storage-findmnt.log",
+          "bytes": 172,
+          "sha256": "e25589a2eeaa3c2bc3a167b819f6e6420b7a39eca97e232141234291f0acb98d"
+        }
+      },
+      {
+        "command": [
+          "lsblk",
+          "-J",
+          "-o",
+          "NAME,TYPE,SIZE,ROTA,TRAN,MOUNTPOINTS"
+        ],
+        "exit_code": 0,
+        "timed_out": false,
+        "raw_log": {
+          "path": "storage-lsblk.log",
+          "bytes": 6709,
+          "sha256": "f7859c7c87ea0101cb8af26730a56b0f4835ffca6f83a8739b77b5dfba12657d"
+        }
+      },
+      {
+        "command": [
+          "findmnt",
+          "-n",
+          "-o",
+          "SOURCE",
+          "-T",
+          "/mnt/Data/work/memra-maxq/handoff-direct/scratch"
+        ],
+        "exit_code": 0,
+        "timed_out": false,
+        "raw_log": {
+          "path": "storage-source.log",
+          "bytes": 13,
+          "sha256": "79f4a296736b0f935e5eb1eb24321554fd785dd61a2409c8fbd8f813e1696e1a"
+        }
+      },
+      {
+        "command": [
+          "lsblk",
+          "-s",
+          "-r",
+          "-n",
+          "-o",
+          "KNAME",
+          "/dev/nvme0n1"
+        ],
+        "exit_code": 0,
+        "timed_out": false,
+        "raw_log": {
+          "path": "storage-ancestry.log",
+          "bytes": 8,
+          "sha256": "1d76439d27aa20ec74a8e22c486dcfab67473b6fd6bbc7376a806fede0293b10"
+        }
+      }
+    ],
+    "qualification": false,
+    "m1_proof": {
+      "receipt": {
+        "path": "STORAGE-PROOF.json",
+        "bytes": 3597,
+        "sha256": "5d7105faa26485a00e9045c093622432e8cfcbd1786147b24799ea9fa6c5dddf"
+      },
+      "tool_sha256": "d59851b624339e16d2290b21b94567a593645266eb0e5dd83d4490decbb78864",
+      "identity": {
+        "device": 66307,
+        "filesystem_id": 15767208001070175684,
+        "mount_id": 242
+      },
+      "proof_utc": "2026-11-05T04:04:40.510743+00:00"
+    }
+  },
+  "raw_log": {
+    "path": "command.log",
+    "bytes": 3361,
+    "sha256": "77916dfb74f32585c467f05c743c9b0b0c3d436af9adf2c88e0ccdc44b9ece08"
+  },
+  "failure_quote": null,
+  "result": null,
+  "gpu_telemetry": {
+    "status": "captured-unvalidated",
+    "interval_ms": 250,
+    "command": [
+      "/usr/bin/nvidia-smi",
+      "-i",
+      "0",
+      "--query-gpu=timestamp,index,pstate,clocks.sm,clocks.mem,power.draw,power.limit,power.max_limit,temperature.gpu,memory.used,utilization.gpu,pcie.link.gen.current,pcie.link.width.current",
+      "--format=csv",
+      "-lms",
+      "250"
+    ],
+    "tier_counters": "not collected",
+    "exit_code": 0,
+    "raw_csv": {
+      "path": "command.gpu.csv",
+      "bytes": 705644,
+      "sha256": "7e787f944a95dbc0f1b46b429c4e3d1b2b8ea7f891e69557bfba7ae7f8a9cecd"
+    },
+    "stderr": {
+      "path": "command.sampler.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  },
+  "compute_apps": {
+    "before": {
+      "exit_code": 0,
+      "timed_out": false,
+      "raw_log": {
+        "path": "command.before.log",
+        "bytes": 41,
+        "sha256": "cae79969ce448872401f5d9bcd1d52bbefa1a5450cf3a5658f62f068ab59294b"
+      }
+    },
+    "after": {
+      "exit_code": 0,
+      "timed_out": false,
+      "raw_log": {
+        "path": "command.after.log",
+        "bytes": 41,
+        "sha256": "cae79969ce448872401f5d9bcd1d52bbefa1a5450cf3a5658f62f068ab59294b"
+      }
+    }
+  },
+  "qualification": false,
+  "lock_proof": {
+    "path": "lock.json",
+    "bytes": 178,
+    "sha256": "9cf5d448bfa62ff2d6ca92b698f3fd667ff900a50d05481d54be40b0ebc10eb0"
+  }
+}

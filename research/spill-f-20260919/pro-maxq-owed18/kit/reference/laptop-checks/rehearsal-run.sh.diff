@@ -1,0 +1,46 @@
+8c8
+< #   CARD=<nvidia-smi index> bash /mnt/Data/work/memra-maxq/handoff-direct/run.sh
+---
+> #   CARD=<nvidia-smi index> bash /home/avifenesh/.cache/memra-maxq/handoff-direct/rehearsal/hd/run.sh
+12c12
+< # Output: /mnt/Data/work/memra-maxq/handoff-direct/out-<UTC stamp>/ (VERDICT.txt, raw logs,
+---
+> # Output: /home/avifenesh/.cache/memra-maxq/handoff-direct/rehearsal/hd/out-<UTC stamp>/ (VERDICT.txt, raw logs,
+17,19c17,19
+< KIT=/mnt/Data/work/memra-maxq/handoff-direct
+< S=/mnt/Data/work/memra-maxq/handoff-direct/scratch
+< MODELS=/mnt/Data/work/memra-maxq/models
+---
+> KIT=/home/avifenesh/.cache/memra-maxq/handoff-direct/rehearsal/hd
+> S=/home/avifenesh/.cache/memra-maxq/handoff-direct/rehearsal/hd/scratch
+> MODELS=/home/avifenesh/.cache/memra-maxq/handoff-direct/rehearsal/models
+22,23c22,23
+< ART_SHA=df27a780435b7b45c2597536112ea3cb091f8544c3d0c3318d9f4258b31f7adf
+< ART_BYTES=18209036576
+---
+> ART_SHA=553f9824e69cfecf6f8b93a1c2fbb4c522192af8e6a054d59952bba43d681ea1
+> ART_BYTES=1048576
+57,61c57,61
+<     rm -f /mnt/Data/work/memra-maxq/handoff-direct/scratch/b2/handoff.bin \
+<           /mnt/Data/work/memra-maxq/handoff-direct/scratch/b2/handoff.bin.tmp \
+<           /mnt/Data/work/memra-maxq/handoff-direct/scratch/b2-prompts.jsonl
+<     find /mnt/Data/work/memra-maxq/handoff-direct/scratch -maxdepth 1 -type f -name '.m1-proof-*.bin' -delete
+<     rmdir /mnt/Data/work/memra-maxq/handoff-direct/scratch/b2 /mnt/Data/work/memra-maxq/handoff-direct/scratch 2>/dev/null
+---
+>     rm -f /home/avifenesh/.cache/memra-maxq/handoff-direct/rehearsal/hd/scratch/b2/handoff.bin \
+>           /home/avifenesh/.cache/memra-maxq/handoff-direct/rehearsal/hd/scratch/b2/handoff.bin.tmp \
+>           /home/avifenesh/.cache/memra-maxq/handoff-direct/rehearsal/hd/scratch/b2-prompts.jsonl
+>     find /home/avifenesh/.cache/memra-maxq/handoff-direct/rehearsal/hd/scratch -maxdepth 1 -type f -name '.m1-proof-*.bin' -delete
+>     rmdir /home/avifenesh/.cache/memra-maxq/handoff-direct/rehearsal/hd/scratch/b2 /home/avifenesh/.cache/memra-maxq/handoff-direct/rehearsal/hd/scratch 2>/dev/null
+127c127
+< [ "$MEMAVAIL_KB" -ge $(( 64 * 1024 * 1024 )) ] || refuse "MemAvailable ${MEMAVAIL_KB} kB < 64 GiB (SITTING.md)"
+---
+> [ "$MEMAVAIL_KB" -ge $(( 4 * 1024 * 1024 )) ] || refuse "MemAvailable ${MEMAVAIL_KB} kB < 64 GiB (SITTING.md)"
+133,135c133,135
+< rm -f /mnt/Data/work/memra-maxq/handoff-direct/scratch/b2/handoff.bin \
+<       /mnt/Data/work/memra-maxq/handoff-direct/scratch/b2/handoff.bin.tmp \
+<       /mnt/Data/work/memra-maxq/handoff-direct/scratch/b2-prompts.jsonl
+---
+> rm -f /home/avifenesh/.cache/memra-maxq/handoff-direct/rehearsal/hd/scratch/b2/handoff.bin \
+>       /home/avifenesh/.cache/memra-maxq/handoff-direct/rehearsal/hd/scratch/b2/handoff.bin.tmp \
+>       /home/avifenesh/.cache/memra-maxq/handoff-direct/rehearsal/hd/scratch/b2-prompts.jsonl
