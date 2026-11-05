@@ -1,0 +1,48 @@
+# Dry runs of the kit's readers and runner, laptop, 2026-11-04T20:09:51Z, no GPU
+
+## 1. The registered reader through maxq-verdict.py on the Workstation receipts (box-d, copied from wt-tip at 2ccb038d1c)
+command: python3 -I kit/maxq-verdict.py <copy of research/spill-b-20260919/pro-single-day38/box-d> --card pro6000 --regime workstation
+DAY38D P1 card=pro6000 order=O1 xp_turns=30 resumed_both=30 frac=1.00 xp_door_differ=[] prompt_mismatch=[] a_turn2=15 a_differ=[] on_resumed=30 park_compact_grow=30 affinity_rewound={'main-O1-off': 15, 'main-O1-on': 15} non200=[] faults=0 -> PASS
+DAY38D P1-READING card=pro6000 boot=main-O1-off xp_resumed=30 resumed_vs_cold_flips=3 flip_tags=['Xp-30720-r0-t3', 'Xp-30720-r1-t3', 'Xp-6144-r2-t3'] (near-tie contract, no bound)
+DAY38D P1-READING card=pro6000 boot=main-O1-on xp_resumed=30 resumed_vs_cold_flips=3 flip_tags=['Xp-30720-r0-t3', 'Xp-30720-r1-t3', 'Xp-6144-r2-t3'] (near-tie contract, no bound)
+DAY38D P1 card=pro6000 order=O2 xp_turns=30 resumed_both=30 frac=1.00 xp_door_differ=[] prompt_mismatch=[] a_turn2=15 a_differ=[] on_resumed=30 park_compact_grow=30 affinity_rewound={'main-O2-off': 15, 'main-O2-on': 15} non200=[] faults=0 -> PASS
+DAY38D P1-READING card=pro6000 boot=main-O2-off xp_resumed=30 resumed_vs_cold_flips=3 flip_tags=['Xp-30720-r0-t3', 'Xp-30720-r1-t3', 'Xp-6144-r2-t3'] (near-tie contract, no bound)
+DAY38D P1-READING card=pro6000 boot=main-O2-on xp_resumed=30 resumed_vs_cold_flips=3 flip_tags=['Xp-30720-r0-t3', 'Xp-30720-r1-t3', 'Xp-6144-r2-t3'] (near-tie contract, no bound)
+DAY38D P2 card=pro6000 boot=fault-batch fired=1 errored_rows=['Xp-6144-r0-t1'] ok200=39 park_compact=39 next_turn=[{'tag': 'Xp-6144-r0-t2', 'equal_cold': True, 'pool_resumed': 0, 'cached': 0}] faults=0 -> PASS
+DAY38D P2 card=pro6000 boot=fault-nobatch fired=1 errored_rows=['Xp-6144-r0-t1'] ok200=39 park_compact=39 next_turn=[{'tag': 'Xp-6144-r0-t2', 'equal_cold': True, 'pool_resumed': 0, 'cached': 0}] faults=0 -> PASS
+DAY38D P2 card=pro6000 boot=fault-nobatch-red fired=1 errored_rows=['Xp-6144-r0-t1'] ok200=39 park_compact=40 next_turn=[{'tag': 'Xp-6144-r0-t2', 'equal_cold': True, 'pool_resumed': 0, 'cached': 6144}] faults=0 -> FAIL (red arm: the expected reading is FAIL with park_compact=ok200+1 and a resumed next turn)
+DAY38D P3 card=pro6000 fed~6144 N=100 p50_ms=1.30 p95_ms=1.40 max_ms=4.50
+DAY38D P3 card=pro6000 fed~30720 N=100 p50_ms=2.60 p95_ms=2.70 max_ms=2.90
+DAY38D P3 card=pro6000 fed~122880 N=100 p50_ms=8.20 p95_ms=8.30 max_ms=8.50
+DAY38D P4 card=pro6000 boot=main-O1-off idle driver_free=7538343936 pool_cached=6699726720 continuation_pool_entries=16 resumed_e2e_ms N=45 p50=531.0 p95=1255.2
+DAY38D P4 card=pro6000 boot=main-O1-on idle driver_free=6296829952 pool_cached=8067565184 continuation_pool_entries=16 resumed_e2e_ms N=45 p50=533.0 p95=1248.8
+DAY38D P4 card=pro6000 boot=main-O2-off idle driver_free=7538343936 pool_cached=6699726720 continuation_pool_entries=16 resumed_e2e_ms N=45 p50=530.0 p95=1250.0
+DAY38D P4 card=pro6000 boot=main-O2-on idle driver_free=6296829952 pool_cached=8067565184 continuation_pool_entries=16 resumed_e2e_ms N=45 p50=533.0 p95=1250.8
+DAY38D VMM-PAIR card=pro6000 rows=30 differ=[] vmm_off idle vmm_mapped=0 vmm_on idle vmm_mapped=0 park_compact=30
+VERDICT DAY38D card=pro6000 rule=DAY38-1.6 P1'=[O1:PASS,O2:PASS] P2'=[fault-batch:PASS,fault-nobatch:PASS] red=[fault-nobatch-red:FAIL, red as expected] -> PROMOTE-ELIGIBLE (P1' and P2' pass; P3 and P4 go with it)
+
+SUMMARY.txt written by day38d-read.py: byte-identical to the committed box-d SUMMARY.txt (cmp exit 0).
+The VERDICT line reproduces DAY38.md 2.3: "The rule of 1.6 on the target class: PROMOTE-ELIGIBLE (P1' and P2' pass; P3 and P4 go with it)".
+
+## 2. Part split, combined reading and kit checks on box-d copies (dryrun/reader-cases.sh)
+case part1: VERDICT DAY38D card=pro6000 rule=DAY38-1.6 P1'=[O1:PASS,O2:absent] P2'=[fault-batch:PASS,fault-nobatch:PASS] red=[fault-nobatch-red:FAIL, red as expected] -> INCOMPLETE (absent boots: main-O2-on main-O2-off)
+case part2: VERDICT DAY38D card=pro6000 rule=DAY38-1.6 P1'=[O1:absent,O2:PASS] P2'=[fault-batch:absent,fault-nobatch:absent] red=[fault-nobatch-red:absent] -> INCOMPLETE (absent boots: main-O1-off main-O1-on fault-batch fault-nobatch)
+case combined: VERDICT DAY38D card=pro6000 rule=DAY38-1.6 P1'=[O1:PASS,O2:PASS] P2'=[fault-batch:PASS,fault-nobatch:PASS] red=[fault-nobatch-red:FAIL, red as expected] -> PROMOTE-ELIGIBLE (P1' and P2' pass; P3 and P4 go with it)
+cmp: EOF on ‘/dev/fd/63’ after byte 2810, line 16
+case combined: reader lines differ from box-d SUMMARY.txt only by the absent vmm pair: 1 line(s)
+case kit checks on Workstation receipts: VERDICT DAY38D card=pro6000 rule=DAY38-1.6 P1'=[O1:PASS,O2:PASS] P2'=[fault-batch:PASS,fault-nobatch:PASS] red=[fault-nobatch-red:FAIL, red as expected] -> INVALID (main-O1-off: card is not the Max-Q (['NVIDIA RTX PRO 6000 Blackwell Workstation Edition, 1 MiB, 97887 MiB, 37, 15.41 W, 600.00 W']); main-O1-off: server pid [] not on the pinned card at ready; main-O1-on: binary c65f30761a158589 is not arm on; main-O1-on: card is not the Max-Q (['NVIDIA RTX PRO 6000 Blackwell Workstation Edition, 1 MiB, 97887 MiB, 65, 23.71 W, 600.00 W']); main-O1-on: server pid [] not on the pinned card at ready; 
+DAY38D STREAM card=pro6000-maxq same_prompt_stream_as_workstation_box_d=4/4 ref=5ec2920ef7e54356 (informational: the rule compares arms on one card only)
+DAY38D REGIME card=pro6000-maxq co-tenant: other cards of the box were training; the P3 and P4 lines above are co-tenant readings, not readings for the record (run-timed.sh carries them)
+case kit checks satisfied: VERDICT DAY38D card=pro6000-maxq rule=DAY38-1.6 P1'=[O1:PASS,O2:PASS] P2'=[fault-batch:PASS,fault-nobatch:PASS] red=[fault-nobatch-red:FAIL, red as expected] -> PROMOTE-ELIGIBLE (P1' and P2' pass; P3 and P4 go with it)
+
+## 3. The runner end to end on CPU (dryrun/stub/run-dryrun.sh): fake nvidia-smi (one Max-Q card), a stub HTTP
+## server per arm in place of memra-server, a 1 MiB fake model; paths, lock and port rewritten to a test root
+== busy-card: REFUSED: card 2 has 5000 MiB in use (need under 2000) 
+== part1: VERDICT DAY38D card=pro6000-maxq rule=DAY38-1.6 P1'=[O1:PASS,O2:absent] P2'=[fault-batch:PASS,fault-nobatch:PASS] red=[fault-nobatch-red:FAIL, red as expected] -> INCOMPLETE (absent boots: main-O2-on main-O2-off) OUT /home/avifenesh/.cache/memra-maxq/park-compact/dryrun/stub/root/kit/out-20261104T200734Z 
+== part2: VERDICT DAY38D card=pro6000-maxq rule=DAY38-1.6 P1'=[O1:absent,O2:PASS] P2'=[fault-batch:absent,fault-nobatch:absent] red=[fault-nobatch-red:absent] -> INCOMPLETE (absent boots: main-O1-off main-O1-on fault-batch fault-nobatch) VERDICT DAY38D card=pro6000-maxq rule=DAY38-1.6 P1'=[O1:PASS,O2:PASS] P2'=[fault-batch:PASS,fault-nobatch:PASS] red=[fault-nobatch-red:FAIL, red as expected] -> PROMOTE-ELIGIBLE (P1' and P2' pass; P3 and P4 go with it) OUT /home/avifenesh/.cache/memra-maxq/park-compact/dryrun/stub/root/kit/out-combined-20261104T200818Z 
+== auto-after-complete: REFUSED: the cell is complete: /home/avifenesh/.cache/memra-maxq/park-compact/dryrun/stub/root/kit/out-combined-20261104T200818Z/VERDICT.txt (set PART=1 to run it again) 
+== budget-cut: == main-O1-on not started: 11s left, projection 69s VERDICT DAY38D card=pro6000-maxq rule=DAY38-1.6 P1'=[O1:absent,O2:absent] P2'=[fault-batch:absent,fault-nobatch:absent] red=[fault-nobatch-red:absent] -> INCOMPLETE (absent boots: main-O1-on main-O2-on main-O2-off fault-batch fault-nobatch) OUT /home/avifenesh/.cache/memra-maxq/park-compact/dryrun/stub/root/kit/out-20261104T200836Z 
+== thermal: == main-O1-on cut (rc=124); moved to /home/avifenesh/.cache/memra-maxq/park-compact/dryrun/stub/root/kit/out-20261104T200846Z/aborted/main-O1-on VERDICT DAY38D card=pro6000-maxq rule=DAY38-1.6 P1'=[O1:absent,O2:absent] P2'=[fault-batch:absent,fault-nobatch:absent] red=[fault-nobatch-red:absent] -> INVALID (thermal stop recorded: THERMAL-STOP.txt) OUT /home/avifenesh/.cache/memra-maxq/park-compact/dryrun/stub/root/kit/out-20261104T200846Z 
+servers left after the scenarios: 0; scratch left: no
+The stub only exercises the bash, the part logic, the budget and thermal cuts, the pin records and the reader;
+its PASS lines say nothing about memra.

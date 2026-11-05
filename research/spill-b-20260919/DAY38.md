@@ -514,3 +514,34 @@ them). The prompt stream equals the Workstation's (`same_prompt_stream_as_workst
 
 **Read as registered (M.6): INCOMPLETE.** Part 2 (`main-O2-on`, `main-O2-off`, then the combined reading) runs in a
 later gap; no default moves until it reads.
+
+### 2.6 Addendum E on the RTX PRO 6000 Blackwell Max-Q, part 2 and the combined reading (`pro-maxq-day38e-p2/`, 2026-11-05 16:46:43Z to 18:37:30Z)
+
+`run-part2.sh` ran in the next GPU 2 gap under the same lock, kit (`75f8f2a94560f6bb`, `kit/` equal file for file to
+2.5's) and binaries: `main-O2-on` (`a73967ac...`, 3320 s) then `main-O2-off` (`7514121c...`, 3326 s), 150 of 150 rows
+`200` on each. The runner then copied the boots of part 1 (2.5) and part 2 into `out-combined-20261105T164643Z/` and
+ran the unchanged reader on all seven (`PART.txt`: `part=combined complete=1`). Receipts mirrored file for file
+(`MIRROR-CHECK.txt`: 63 `OK` for part 2, with `steps.txt` again appended after the manifest and equal to the box's
+final copy; 192 `OK` and no failure for the combined directory), then exported with the same sanitizer
+(`EXPORT-MANIFEST.json`, 11 files). The scheduler's try log, power summary and thermal samples are in `runner/`.
+
+Power: the runner set GPU 2 to 300 W (from 280 W, max 300 W); the box's cap timer returned it to 280 W after about
+four minutes (23 of 660 samples at 300 W). Maximum 91 C, fan 94 %; SW power cap active in 650 samples, no thermal or
+power-brake slowdown, no thermal stop. GPUs 1 and 3 peaked at 89 C, so the neighbour rule did not fire. No server log
+has a `[gpu-watch] CRITICAL` line. Verbatim (`out-combined-20261105T164643Z/VERDICT.txt`):
+
+- `DAY38D P1 card=pro6000-maxq order=O1 xp_turns=30 resumed_both=30 frac=1.00 xp_door_differ=[] prompt_mismatch=[] a_turn2=15 a_differ=[] on_resumed=30 park_compact_grow=30 affinity_rewound={'main-O1-off': 15, 'main-O1-on': 15} non200=[] faults=0 -> PASS`
+- `DAY38D P1 card=pro6000-maxq order=O2 xp_turns=30 resumed_both=30 frac=1.00 xp_door_differ=[] prompt_mismatch=[] a_turn2=15 a_differ=[] on_resumed=30 park_compact_grow=30 affinity_rewound={'main-O2-off': 15, 'main-O2-on': 15} non200=[] faults=0 -> PASS`
+- `DAY38D P2 card=pro6000-maxq boot=fault-batch fired=1 errored_rows=['Xp-6144-r0-t1'] ok200=39 park_compact=39 next_turn=[{'tag': 'Xp-6144-r0-t2', 'equal_cold': True, 'pool_resumed': 0, 'cached': 0}] faults=0 -> PASS` (`fault-nobatch` reads the same)
+- the red arm: `fault-nobatch-red ... park_compact=40 next_turn=[{... 'pool_resumed': 1, 'cached': 6144}] ... -> FAIL (red arm: the expected reading is FAIL ...)`
+- `VERDICT DAY38D card=pro6000-maxq rule=DAY38-1.6 P1'=[O1:PASS,O2:PASS] P2'=[fault-batch:PASS,fault-nobatch:PASS] red=[fault-nobatch-red:FAIL, red as expected] -> PROMOTE-ELIGIBLE (P1' and P2' pass; P3 and P4 go with it)`
+
+Readings (no bound): 3 resumed-against-cold flips on each of the four main boots, the same three tags on every boot
+(the near-tie contract, as on the Workstation). P3 and P4 are co-tenant readings beside training, not readings for
+the record (`run-timed.sh` carries them): park-time copy p50 1.40, 2.70 and 8.40 ms at 6,144, 30,720 and 122,880 fed
+tokens (N=100 each); resumed-turn E2E p50 616 and 639 ms off against 642 and 618 ms on (N=45 per boot); at idle the
+compacting arm reads 1.14 GB less driver-free and 1.27 GB more pool-cached memory. The prompt stream equals the
+Workstation's (`same_prompt_stream_as_workstation_box_d=4/4`).
+
+**Read as registered (M.6): PROMOTE-ELIGIBLE.** The Max-Q joins the park-compaction default
+(`park_compact_for_device`, `HardwareTarget::is_pro6000_maxq`) with the record changes M.6 lists.

@@ -1,0 +1,8 @@
+DAY38D P1 card=pro6000-maxq order=O2 xp_turns=30 resumed_both=30 frac=1.00 xp_door_differ=[] prompt_mismatch=[] a_turn2=15 a_differ=[] on_resumed=30 park_compact_grow=30 affinity_rewound={'main-O2-off': 15, 'main-O2-on': 15} non200=[] faults=0 -> PASS
+DAY38D P1-READING card=pro6000-maxq boot=main-O2-off xp_resumed=30 resumed_vs_cold_flips=3 flip_tags=['Xp-30720-r0-t3', 'Xp-30720-r1-t3', 'Xp-6144-r2-t3'] (near-tie contract, no bound)
+DAY38D P1-READING card=pro6000-maxq boot=main-O2-on xp_resumed=30 resumed_vs_cold_flips=3 flip_tags=['Xp-30720-r0-t3', 'Xp-30720-r1-t3', 'Xp-6144-r2-t3'] (near-tie contract, no bound)
+DAY38D P3 card=pro6000-maxq fed~6144 N=50 p50_ms=1.40 p95_ms=1.70 max_ms=3.30
+DAY38D P3 card=pro6000-maxq fed~30720 N=50 p50_ms=2.70 p95_ms=3.00 max_ms=4.20
+DAY38D P3 card=pro6000-maxq fed~122880 N=50 p50_ms=8.40 p95_ms=9.00 max_ms=13.30
+DAY38D P4 card=pro6000-maxq boot=main-O2-off idle driver_free=7660503040 pool_cached=6716503936 continuation_pool_entries=16 resumed_e2e_ms N=45 p50=639.0 p95=1487.6
+DAY38D P4 card=pro6000-maxq boot=main-O2-on idle driver_free=6519652352 pool_cached=7983679104 continuation_pool_entries=16 resumed_e2e_ms N=45 p50=618.0 p95=1490.6

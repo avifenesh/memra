@@ -1,0 +1,35 @@
+park-compact Max-Q kit provenance, written 2026-11-04T20:29:19Z on the laptop
+
+source_sha=2ccb038d1c16358edde65582597e7b840e3f63fb (origin/fix4/gates, the fix-stack tip; the three arms build from it)
+workstation_deciding_tree=a803d308080d047eefedf76fc18cf5c09484869e (box-d arms: green c65f30761a15858954c3bb925b02b853eb7af68d8ebc30578fdbfcd34665313c, red 0673a71d04269abdebe9a9bd0a5f383392d63b26f336da65543e7a76c2bafd1f)
+workstation_harness_tree=3476ea4dca27c4c3c738017b8429f507389f1223 (box-d source.txt; docs/SERVING.md taken from it)
+
+patches:
+  1afa54e158b73c9494e1dba5db8dea140a7ddc3a5093db057f52c5833f5f0062  maxq-arm.patch
+  bb7998b6fbfac5ab7b0a493364db0012b21e119dd4a26580dedee6cf37be107c  day38-red.patch
+  day38-red.patch is research/spill-b-20260919/day38-red.patch at the tip, the sha256 box-d bins/*/source.patches records
+
+binaries (cargo build --release -j2 -p memra-server --bin memra-server, default features):
+  off: sha256=7514121c8ef3d4c889801c096dacad3cddd659fde07f931e848f5c5ce9f153c8 bytes=69369088 source=2ccb038d1c16358edde65582597e7b840e3f63fb patches=[]
+  on: sha256=a73967ac9d3fb9a757945df0e5cc12a07f4a54b8204c9f351ca31935e3aaae07 bytes=69389736 source=2ccb038d1c16358edde65582597e7b840e3f63fb patches=[maxq-arm.patch]
+  red: sha256=b1da1a6133e4bda41fbea8313a8e2d2ea2594e2ffa53f240891331e0495eb1f4 bytes=69390208 source=2ccb038d1c16358edde65582597e7b840e3f63fb patches=[maxq-arm.patch day38-red.patch]
+
+toolchain (kit/build.log):
+  MEMRA_CUDA_ARCH=120a CARGO_TARGET_DIR=/home/avifenesh/.cache/memra-maxq/target MEMRA_NVCC=/usr/local/cuda-13.1/bin/nvcc
+  Build cuda_13.1.r13.1/compiler.37061995_0
+  cargo 1.97.1 (c980f4866 2026-06-30)
+  rustc 1.97.1 (8bab26f4f 2026-07-14)
+  every one of the 12 workspace crates of memra-server compiled from the kit worktree in the off arm (build.log);
+  the on arm rebuilt memra-engine and memra-server, the red arm memra-server
+
+harness files (sha256; the first three byte-identical to the tip and to box-d inputs.sha256 where box-d records them):
+  dda4ae2ffd527a60248ee59ffd4318aeafdb4c8a7474d81c775534c68cfb5337  research/spill-b-20260919/day38-client.py
+  1037ef7e59e63b2b9fa2fd0fcb5b980b78e14d02bdc4d1681e7d67c85001e786  research/spill-b-20260919/day38-parse.py
+  b7f7ebaa8f05a6fd9e75a4781a3308b9d86c4c877acd85aa9bcb48a846cdf145  research/spill-b-20260919/day38d-read.py
+  022b1d50620f5b34bb6e6127be05ff79184ce3aa294aca618a31a0dd73887cff  docs/SERVING.md
+  3550aa5703932baf7eb0b5abdacf046131291f3969ab32733db18dfa77ad09dc  research/spill-b-20260919/day38d-run.sh
+  c735f28c2dd3a37947aea10d007c3071d57cd8acb82f228292fb30aaa7555e30  research/spill-b-20260919/run-day26-cell.sh
+  ported scripts: PORTABILITY.diff against the tip's day38d-run.sh and run-day26-cell.sh
+
+model: Qwen3.8-27B-NVFP4-Q5K-mtp.gguf sha256=1facf36c2db359dcf9c2475cf8f85fe84a528d10aaaaff20f7c0db3d561e024a bytes=15705922304
+  (research/mtp-learned-depth-20260920/qwen-artifacts.lock.json and box-d model.sha256; run.sh verifies it before the first boot)
