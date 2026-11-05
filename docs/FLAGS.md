@@ -343,9 +343,6 @@ Rules that follow, and are now enforced rather than remembered:
 | `MEMRA_KV_PARK_COMPACT` | **0 (default OFF), decide-by: 2026-10-06.** | Continuation-pool park compaction (tiering spec Arc C1). `1` = at PLAIN-pool park time the retiring session's `Cache` is compacted from its ladder cap (`cache.max_ctx`) to its committed length: allocate a fed-length cache, D2D-copy the live rows through the snapshot + checkpoint-restore machinery the plain-affinity grow path uses, free the big allocation. Resume mirrors it: `plain_resume_cap_admits` admits a compacted entry, the admit path re-allocates at the request's charged ctx cap and restores the rows before any suffix primes; any failure drops the entry and serves cold. Named refusals park the original cache unchanged (compaction never costs a park): SWA-ring caches, distributed TP KV mirrors, `MEMRA_PP_HOST_BOUNCE=1`, `pos != fed`, already-tight caches. SPEC/DSPARK pools are out of scope by design (they park live engine sessions, not a lone `Cache`), so the door reaches only the plain path (`MEMRA_SERVE_SPEC=0`). OFF is byte-identical by construction (the capacity predicate degenerates to `cap >= ctx_cap`). Receipts when armed: `[kv-reuse] park-compact:` / `park-compact grow:` / `park-compact declined` lines with row counts and copy wall-time. Rollback: `0`/unset. State: the door engages on the plain path with equal digests (WP-B day 27, 2071 of 262144 rows in 2.1 ms); the resume byte-identity gate on both resume shapes and the step-OOM adjacency replay are still owed. The deciding cell and what promotion or deletion would move are in `research/spill-b-20260919/DAY28.md` 2 and `KV-RESIDENCY-DESIGN.md` (day-28 addendum). The spec-pool park policy is the owner's decision (memra#539). Receipts: `research/kv-tenancy-20260831/REPORT.md`, `research/spill-b-20260919/DAY27.md` 2.4 to 2.6. History: [FLAGS-HISTORY.md](FLAGS-HISTORY.md#memra_kv_park_compact). |
 | `MEMRA_KV_VMM_FAULT` | **unset (off)** (parsed on every card; armed only where the on-demand KV planes are on: the full-power RTX PRO 6000 Blackwell Workstation Edition) | FAULT DOOR of the DAY37 A5 cells (`research/spill-b-20260919/DAY37.md`) and of `tools/health-fault-gate.sh` arm k (`ensure:1` and its red twin `ensure:1,ensure:2`): a comma list of `build:<n>` (the n-th construction grow fails once), `ensure:<n>` (the n-th owner grow at an ensure point fails once) and `mapper:all` (every mapper grow fails, so the owner is always behind); each injected failure is a synthetic `CUDA_ERROR_OUT_OF_MEMORY` before any driver call. Any other token refuses the boot on every card, and so does `mapper:all` where the planes are on, since that card grows inline and no mapper thread exists for it to fail. Where the planes are pooled (every other card, or that card when its VMM query refuses) a valid spec arms nothing and the `[kv-vmm] door=OFF` line says it injects nothing. The planes themselves (a covered session's full-attention K/V planes reserve their capacity as a fixed virtual range and map granules as rows grow; boot line `[kv-vmm] door=ON` or `door=OFF`, `[kv-vmm] grow`/`trim`/`reap`/`admit` lines, `/metrics` `kv_vmm_*`) are a card default with no switch: [decision](decisions/KV-VMM-SERVING-DEFAULT.md), Removed doors ledger 2026-11-04. |
 | `MEMRA_AFFINITY` | on | `0` disables session-affinity resume (docs/SERVING.md "Session affinity"): a conversation whose history the client REWROTE (think-strip) no longer resumes its parked session and re-primes in full — the pre-2026-08-05 behavior. Rollback seam / exactness A/B arm, not a tuning knob; prefer it over `MEMRA_REUSE_POOL=0` for that comparison, since killing the pool also kills the token/text-prefix resumes. Receipts `research/session-affinity-20260805/` |
-| `MEMRA_RESUME_GRID_REWIND` | **unset (default OFF), decide-by: 2026-10-09.** | MEASUREMENT DOOR for the verbatim-extension near-tie residual (WP-B day 41, `research/spill-b-20260919/DAY41.md`, OWED O11). `1` = a plain or spec pool resume that exactly extends a parked session's committed tokens (the exact or text probe) rewinds the parked state to its grid checkpoint (`restore_cache_checkpoint`, `spec_rewind_to_checkpoint`) and re-primes the prompt tail past the checkpoint, the previous turn's generated tokens and the new tokens, instead of resuming on the parked rows (the previous turn's DECODED rows, which a cold prime never reproduces: `docs/SERVING.md` "What the grid law still does NOT promise"). By the grid law the rewound resume is cold-identical. Armed, every plain and cold spec session also arms its checkpoint (not only nominatable prompts) by `grid_rewind_checkpoint_boundary` (DAY41 addenda B and C): a named or nominatable prompt at the grid floor of its last control token when that floor lies past the resumed depth, otherwise, and for every unnominatable prompt, at the guard window before the prompt end; every checkpoint clears the fed-start floor. The armed spec exact probe matches the parked session's public stream (`spec_public_len`, the final burst's overshoot rows excluded) and always rewinds below it. The checkpoint costs a recurrent-state snapshot per session (156.9 MB on the 27B) and takes raw-prompt sessions out of the in-batch fanout and prime-batch paths. No usable checkpoint drops the entry and the request primes cold. Receipts: `[kv-reuse] grid-rewind: <plain\|spec> extension of <F> committed rows rewound to <P> (re-priming <R> rows; ...)` or `... declined (<why>); cold`. Out of scope: the DSpark pool and the prefix cache's prompt-end seed extension hits. Needs `MEMRA_AFFINITY` on. Unset reads nothing. The contract (keep the decoded rows or rewind) is the owner's; the day-41 cells price it on both cards. |
-| `MEMRA_RESUME_EXACT` | **unset (default OFF), decide-by: 2026-10-10.** | THE EXACT AND FAST RESUME (WP-B day 44, `research/spill-b-20260919/DAY44.md`, OWED O11 revised on the owner's direction). `1` = every resumable prime call (plain sessions, and Qwen MTP spec sessions on the cooperative walker) captures its grid checkpoint INSIDE the call with no stop (`memra_engine::grid_capture`: one extra GDN state-pass launch over the chunk prefix and the conv ring over the prefix rows; at a call boundary the live state), at the last GDN grid point with the prime floor after it; an exact-extension hit restores it (or resumes a settled entry where it stands) and primes the prompt's tail in one call, cold-exact by the grid law; after a 100 ms idle grace an off-path settle re-primes a parked entry's reply rows with the prime program (`[kv-reuse] exact: settle <id> <from> -> <to> (...)`), so the next resume primes only the tail. Receipts `[kv-reuse] exact: <plain\|spec> resume from <P> of <F> committed rows (priming <R> rows, <settled\|checkpoint>; ...)` or `... declined (<why>); cold`. A capturing session primes alone (no batch, fanout or concat prime). Takes precedence over `MEMRA_RESUME_GRID_REWIND`. Out of scope: DSpark, the prefix cache, sampled or text-prefix hits (declined cold), the Hopper wgmma scan (no capture). Unset reads nothing. |
-| `MEMRA_RESUME_EXACT_FAULT` | unset | Fault injection for the `MEMRA_RESUME_EXACT` fault boot (DAY44 1.6): `settle-fail` makes every settle fail after its restore, so the entry is dropped with its `settle failed` line and the next turn primes cold. Unset reads nothing. |
 > **Qwen35-MoE exactness repair (2026-08-14):** verification now uses the live serving numeric
 > class, and every accepted round rebuilds committed cache state through sequential serving steps.
 > The production IQ4_XS long-prompt gate is bit-identical at verifier widths T=1..4 for 128 rounds,
@@ -1672,6 +1669,53 @@ pass is deleted. Deleted with its env read (`spec_budget_clamp_on`), the `budget
 carries the final burst's overshoot rows, so the spec pool's exact probe misses those turns as it
 did before the door (DAY41 2.1). No kernel. Git history is the archive. Ledger:
 `VERDICT:spec-budget-clamp-door-removed` (darklanes `agent-knowledge/gpu/verdicts-ledger.md`).
+
+## Removed doors, 2026-11-04 (the verbatim-extension resume arms, `MEMRA_RESUME_GRID_REWIND` and `MEMRA_RESUME_EXACT`)
+
+Both doors worked on the continuation pools' near-tie residual: a plain or spec pool resume that
+exactly extends a parked session keeps the previous reply's decoded rows, which a cold prime never
+reproduces (`docs/SERVING.md`, "What the grid law still does NOT promise").
+
+`MEMRA_RESUME_GRID_REWIND=1` (WP-B day 41) rewound such a hit to the entry's grid checkpoint and
+re-primed from there, so the resumed turn was cold-identical by the grid law. Its cell after
+addenda B and C (`research/spill-b-20260919/DAY41.md` 2.2, one RTX PRO 6000 Blackwell Workstation
+Edition, the 27B, both orders) read R1 to R4 PASS with 0 of 60 flips against cold where keeping the
+rows flipped 24 of 60 plain turns, and the price was the reading the owner asked for: resumed-turn
+TTFT p50 x2.0 to x2.6 on the plain route at 6,144 and 30,720 tokens and x7.3 and x14.9 at 122,880.
+The owner's direction of 2026-09-26 (exact and fast, not rewind) replaced it with `MEMRA_RESUME_EXACT`,
+which took precedence over it. No 5090 half was banked (`rtx5090-day41b/` holds only its chain script).
+
+`MEMRA_RESUME_EXACT=1` (WP-B day 44) captured each resumable prime call's grid checkpoint inside the
+call (`memra_engine::grid_capture`), resumed an exact-extension hit from it or from a settled entry,
+and re-primed a parked entry's reply rows off the request path after a 100 ms idle grace (the settle
+queue). Its cell (`DAY44.md` 2.1, the same card class) read E1 PASS (0 flips against cold on all 8
+`exact` boots, 24 of 60 on every `keep` boot) and E3 to E6 PASS, but E2 FAIL at 8 of 24 cells on
+TTFT: the zero-gap re-prime on the plain route and arrivals that waited for their entry's settle.
+The rewritten-turn cell's R1 also read FAIL as registered (`DAY44.md` 2.2) and stayed a named
+blocker. The revision that was to fix E2 (`DAY50.md`, arm O: settles on a second engine and stream)
+stopped after its stage-0 trace. On the 5090 only the capture's GPU unit tests ran
+(`rtx5090-day44/gpu-tests/`); its registered E cells were never read.
+
+Both decide-bys passed (2026-10-09 and 2026-10-10), and under the owner's 2026-11-04 ruling a door
+whose receipt does not pass is deleted. Deleted with their env reads (`resume_grid_rewind_on`,
+`resume_exact_on`) and the fault seam `MEMRA_RESUME_EXACT_FAULT`; the plain and spec rewind and
+exact-resume arms (`grid_rewind_plain`, `grid_rewind_spec`, `exact_resume_plain`,
+`exact_resume_spec`), the armed checkpoint rule (`grid_rewind_checkpoint_boundary`) and the spec
+pool's public-stream key (`spec_public_len`, the entry's `public_len`); the settle queue
+(`SettleQueue`, `settle_one`, both settle functions, the idle grace and the parked entries' `id` and
+`settled` fields); and the in-call capture: the engine's `grid_capture` module,
+`Engine::ssm_conv_ring_capture`, the capture variants of `gdn_scan_chunked` and `gdn_scan_prefill`
+(the extra prefix state-pass launch), the MTP walker's `grid_rel` and prime-only settle walk,
+`SpecSession::grid_capture_at`, `spec_prime_settle`, `spec_rewind_to_checkpoint_retaining`, the
+session's `exact_at` with its batch, concat and fanout exclusions, `tests/grid_capture_gpu.rs` with
+its skip-census rows, and the doors' census tests. The kernels the capture launched
+(`gdn_chunk_state_mma`, `gdn_chunk_state_f32`, `ssm_conv_ring_update_f32`) serve the prime and stay.
+The continuation pools again resume on the parked rows, the plain affinity checkpoint arms only for
+a named or nominatable prompt, and the spec exact probe again needs the whole `committed` stream.
+The near-tie residual stays the documented contract; an exact resume returns only with E1 and E2
+passing on both cards. The program is banked on `bank/spill-program-20260928`. Git history is the
+archive. Ledger: `VERDICT:resume-rewind-and-exact-doors-removed` (darklanes
+`agent-knowledge/gpu/verdicts-ledger.md`).
 
 ## Removed doors, 2026-11-03 (the FP8 block-128 scale fold: superseded by the block MMQ)
 
