@@ -3,8 +3,18 @@
   "full_steps": [
     {
       "job": "changes",
+      "step": "Free runner disk",
+      "sha256": "7045c89a9fee7eba7c77436cc21ea77aac80173d9a9234c6727d5de250ebd595"
+    },
+    {
+      "job": "changes",
       "step": "classify",
       "sha256": "c31fcfedfd1228e9736baf799592cabab60dd38b702e87932dd67ec84068bcdd"
+    },
+    {
+      "job": "gates",
+      "step": "Free runner disk",
+      "sha256": "7045c89a9fee7eba7c77436cc21ea77aac80173d9a9234c6727d5de250ebd595"
     },
     {
       "job": "gates",
@@ -243,6 +253,11 @@
     },
     {
       "job": "boundary",
+      "step": "Free runner disk",
+      "sha256": "7045c89a9fee7eba7c77436cc21ea77aac80173d9a9234c6727d5de250ebd595"
+    },
+    {
+      "job": "boundary",
       "step": "Public-boundary policy check",
       "sha256": "6c255d6c0017c44a4a3fa6173a02ffdb7109265a9ddd2494c158aa5f4f33ad4e"
     },
@@ -250,6 +265,11 @@
       "job": "boundary",
       "step": "Allowlist drift (every grandfathered entry still describes a live finding)",
       "sha256": "0b7c333572260bcb4875da281e48ed59d66b4796cdc84c11e2a523c7d5fdeb1a"
+    },
+    {
+      "job": "build",
+      "step": "Free runner disk",
+      "sha256": "7045c89a9fee7eba7c77436cc21ea77aac80173d9a9234c6727d5de250ebd595"
     },
     {
       "job": "build",
@@ -278,6 +298,11 @@
     },
     {
       "job": "clippy",
+      "step": "Free runner disk",
+      "sha256": "7045c89a9fee7eba7c77436cc21ea77aac80173d9a9234c6727d5de250ebd595"
+    },
+    {
+      "job": "clippy",
       "step": "Install CUDA 13.1 (nvcc + headers only \u2014 compile needs no GPU)",
       "sha256": "3060f51981a1b3a218170425cbd5facb8540361ca66b15772d92d661117edaa7"
     },
@@ -285,6 +310,11 @@
       "job": "clippy",
       "step": "Clippy affected packages and consumers (-D warnings)",
       "sha256": "81ece8fb50ecaff77fca3d6e094a4b18c708759435fa504b2e697eee012e3601"
+    },
+    {
+      "job": "server-tests",
+      "step": "Free runner disk",
+      "sha256": "7045c89a9fee7eba7c77436cc21ea77aac80173d9a9234c6727d5de250ebd595"
     },
     {
       "job": "server-tests",
@@ -300,6 +330,11 @@
       "job": "server-tests",
       "step": "Compile n-choice accounting observer (no native execution)",
       "sha256": "8dd8a9c56ee4808e9223cc58c5faafb9feb6da5d298d318fa9adb5f9c2f99a6a"
+    },
+    {
+      "job": "portable-suites",
+      "step": "Free runner disk",
+      "sha256": "7045c89a9fee7eba7c77436cc21ea77aac80173d9a9234c6727d5de250ebd595"
     },
     {
       "job": "portable-suites",
@@ -333,6 +368,11 @@
     },
     {
       "job": "engine-tests",
+      "step": "Free runner disk",
+      "sha256": "7045c89a9fee7eba7c77436cc21ea77aac80173d9a9234c6727d5de250ebd595"
+    },
+    {
+      "job": "engine-tests",
       "step": "Install CUDA 13.1 (nvcc + headers only \u2014 compile needs no GPU)",
       "sha256": "3060f51981a1b3a218170425cbd5facb8540361ca66b15772d92d661117edaa7"
     },
@@ -358,6 +398,11 @@
     },
     {
       "job": "arch-coverage",
+      "step": "Free runner disk",
+      "sha256": "7045c89a9fee7eba7c77436cc21ea77aac80173d9a9234c6727d5de250ebd595"
+    },
+    {
+      "job": "arch-coverage",
       "step": "Install CUDA 13.1 (nvcc + headers + SASS tools \u2014 no GPU needed)",
       "sha256": "db169f203c29b98d42f5429ca34403514686d1fd203383e441cc46478df9e6ce"
     },
@@ -375,6 +420,11 @@
       "job": "arch-coverage",
       "step": "Fatbin-vs-lookup census at sm_${{ matrix.cuda_arch }}",
       "sha256": "aeb0d47bf58702e844fe59060f8da997f469eca3b4382a9793057b190a396d55"
+    },
+    {
+      "job": "publish-dryrun",
+      "step": "Free runner disk",
+      "sha256": "7045c89a9fee7eba7c77436cc21ea77aac80173d9a9234c6727d5de250ebd595"
     },
     {
       "job": "publish-dryrun",
@@ -531,6 +581,6 @@
     "support-records",
     "tool-choice"
   ],
-  "full_workflow_sha256": "a8f05eb262e5a7f68796808ca56b561288d4d36e4eadf7bd9901fb4c092849f5",
-  "public_workflow_sha256": "138177e6121909e554a9bb973f52c3573546667a5e8de6b2af2c3c3abbb2ae73"
+  "full_workflow_sha256": "c8e0f5057c6f59ea251b5093d44dc0743dc00e0e38feb0c0e2798bd52f2574b9",
+  "public_workflow_sha256": "77fcf12dffe280527566db516d7666249b9657e31c34d2248529f733424647b7"
 }
