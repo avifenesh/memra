@@ -40,14 +40,16 @@ back in a slower write, for a net shorter export. The RTX 5090 row:
 | Card | Storage | Export, direct / buffered (1 GiB, 8 GiB) | Write | Fsync | Import |
 |---|---|---|---|---|---|
 | RTX PRO 6000 Blackwell Workstation, 600 W (`box36/`) | xfs, local NVMe | 0.917, 0.916 winner | 1.215, 1.212 loser | winner | flat |
-| RTX PRO 6000 Blackwell Max-Q, 300 W limit (`pro-maxq-owed18/`, 2026-11-05) | ext4, local PCIe NVMe | 0.860, 0.916 winner | 1.002 flat, 1.066 loser | winner | flat |
+| RTX PRO 6000 Blackwell Max-Q, 250 W limit (300 W for the first 12 cycles; `pro-maxq-owed18/`, 2026-11-05) | ext4, local PCIe NVMe | 0.860, 0.916 winner | 1.002 flat, 1.066 loser | winner | flat |
 | RTX 5090, 1 GiB only (`owed18/5090/`) | | 0.843 flat | flat | winner | flat |
 
 The Max-Q row is `M1-PREREG.md` section H, registered before any Max-Q boot with the BOX36 tree,
 driver, reader, arms and schedule: all 40 cycles passed, 10 pairs per size, export medians 1,710.0
 -> 1,471.0 ms (1 GiB, 17 entries, 2,161.8 MB) and 6,221.0 -> 5,691.0 ms (8 GiB, 76 entries,
-9,664.7 MB), buffered -> direct. The card ran at a 300 W limit with the SW power cap active in 109
-of 218 samples (the fill prefill) and no thermal or power-brake slowdown.
+9,664.7 MB), buffered -> direct. The runner raised the card to 300 W, but the box's cap timer
+returned it to 250 W 5.5 minutes in, so the 8 GiB cell and most of the 1 GiB cell ran at 250 W; the
+SW power cap was active in 109 of 218 samples (the fill prefill) and there was no thermal or
+power-brake slowdown.
 
 **What would change it:** the 5090 8 GiB cell reading a winner on the export adds the RTX 5090
 class; a Server Edition cell reading a winner adds that card. The win is a storage property as

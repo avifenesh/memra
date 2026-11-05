@@ -2312,7 +2312,7 @@ become defaults keyed to the card each receipt came from, and their switches go;
 deleted. The export now writes with `O_DIRECT` on the full-power Workstation Edition
 (`HandoffIo::for_device`), and since 2026-11-05 on the Max-Q from its own pre-registered cell
 (`research/spill-f-20260919/pro-maxq-owed18/RESULTS.md`: export 0.860 at 1 GiB and 0.916 at 8 GiB
-of buffered, 10 pairs per size, at a 300 W limit), and buffered everywhere else, and a filesystem that refuses `O_DIRECT`
+of buffered, 10 pairs per size, mostly at the box's 250 W cap), and buffered everywhere else, and a filesystem that refuses `O_DIRECT`
 at open gets the buffered writer with the refusal on the export line. The direct reader is
 deleted: every card imports through a 4 MiB `BufReader`, which reads either writer's file, and
 the import DONE line drops its `io=` field. A stale caller that sets the name is refused at boot
