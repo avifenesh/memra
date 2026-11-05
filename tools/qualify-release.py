@@ -130,8 +130,11 @@ def build(args):
     q.require(cargo.parent.parent == rustc.parent.parent, "cargo/rustc toolchain roots differ")
     # Fetching dependencies never executes workspace build scripts. Compilation is
     # offline inside the isolated view, so it cannot fetch excluded provenance.
+    # --quiet here and on the build: fetch.log and build.log are public receipts, and cargo's
+    # per-crate progress lines name a TLS crypto crate that the public-boundary provider rule
+    # refuses. Warnings and errors still reach the logs.
     with (args.out / "fetch.log").open("w") as log:
-        fetch = subprocess.run([str(cargo), "fetch", "--locked", "--target", "x86_64-unknown-linux-gnu"],
+        fetch = subprocess.run([str(cargo), "fetch", "--locked", "--quiet", "--target", "x86_64-unknown-linux-gnu"],
                                cwd=build_source, env=env, stdout=log, stderr=subprocess.STDOUT)
     q.require(fetch.returncode == 0, "dependency fetch failed; fetch.log retained")
     hidden = [args.repo, args.out / "provenance"]
@@ -140,7 +143,7 @@ def build(args):
         hidden.append(path if path.is_absolute() else args.repo / path)
     prefix, compiler_env = release_input_view.sandbox(build_source, args.out, rustc.parent.parent,
         args.nvcc.resolve().parent.parent, env, bwrap, hidden)
-    command = prefix + ["/toolchain/bin/cargo", "build", "--offline", "--release", "--locked", "--jobs", str(args.jobs),
+    command = prefix + ["/toolchain/bin/cargo", "build", "--offline", "--release", "--locked", "--quiet", "--jobs", str(args.jobs),
                "-p", "memra-engine", "--bin", "kernel-check", "--bin", "run-gen", "--bin", "run-spec",
                "--bin", "argmax-margin-probe", "-p", "memra-server", "--bin", "memra-server",
                "-p", "memra-tokenizer", "--bin", "tok-parity"]
