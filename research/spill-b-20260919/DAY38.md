@@ -289,6 +289,26 @@ is reported and not ruled on. On the Workstation receipts the same script prints
 - FAIL: the Max-Q keeps parking whole; the failing clause and its quoted cause go to DAY38.md 2.5 and to the
   decision record's Rejected list.
 
+**Amendment, 2026-11-05, before the first boot: the power limit.**
+
+Owner ruling, 2026-11-05: the cell may raise its card's power limit to 300 W, must note thermal throttling, and
+must restore the limit after use. This replaces the statement above that the limits have not been changed. The kit
+is unchanged: it still only records the limit it reads.
+
+- Before the cell boots, the runner, which sits outside the kit, sets the card under test to 300 W, the card's
+  default limit (`nvidia-smi -i <card> -pl 300`), and reads it back, so the receipts record 300 W. When the cell
+  ends, on any path, the runner restores the limit it read before (250 W on index 0 and 280 W on index 2 at kit
+  time) and reads it back. The slot guard and the gap scheduler also restore it when they stop.
+- Throttle telemetry: every 10 s during the cell the runner records temperature, fan, power draw, power limit, SM
+  clock and four clock-event reasons (SW power cap, SW thermal slowdown, HW thermal slowdown, HW power brake) in
+  `thermal-<cell>.csv`. It prints one summary line with the maximum temperature and fan and the number of samples
+  with each reason active. SW power cap is the normal state of a card running at its limit; it is recorded and not
+  judged.
+- Reading: the rule depends on neither power nor clocks, so the throttle summary is recorded with the receipt and not
+  judged.
+- The thermal stop above is unchanged. The runner applies the same rule on its 10 s samples as a
+  backstop, and a stopped cell has no verdict.
+
 ## 2. Results
 
 Written after the runs. Section 1 is unchanged.
