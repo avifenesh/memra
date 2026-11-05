@@ -1,0 +1,17 @@
+[server] build: memra-0.138.0-22b5537f7bfa (id: source-tree, git: unknown)
+[server] starting; models config = [("q38", "/home/avifenesh/models/memra-q38/Qwen3.8-27B-NVFP4-MTP-GGUF/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf", None)]
+[spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+[dspark] prefix restore doors default ON on "NVIDIA GB10" (gb10=true): restore=true partial=true capture=true
+[dspark] precision=q4 (MEMRA_DFLASH_PREC unset)
+[dspark] harvest=dflash (checkpoint census dflash2=true strategy_dspark=false, MEMRA_DSPARK_HARVEST unset)
+[dspark] verify-window=Ladder (accept-rate head ABSENT -> ladder, MEMRA_DSPARK_VT unset)
+[worker] q38: DSPARK SPEC route armed (drafter attached (/home/avifenesh/models/memra-q38/Qwen3.8-27B-DFlash2-memra); greedy+sampled [T>0 rejection verify, sampled penalties included; greedy penalties verified by penalised argmax (MEMRA_DSPARK_GREEDY_PENALTY=1)]/unconstrained/text-only; greedy LOW-wave admission + HIGH demotion, sampled solo admission; MTP spec DISABLED for this model — refuse-on-ambiguity; MEMRA_DSPARK_SPEC unset = off)
+[dspark] q38: DFlash2 draft head TRIMMED to 32768 rows (FR-Spec d2t; verify stays full-vocab)
+[server] worker ready; serving models: ["q38"]
+[server] listening on http://127.0.0.1:8090
+[dspark-acc] ctx=7922 burst=5/7 cum=5/7=0.714
+[prefix-cache] insert (dspark-boundary): 7904 tokens, 475.8MB (resident 475.8MB / 41760MB, model q38, ns "6411568c74c558e7843d5e96ae3b1d8456ec4b1589bd44f2724d4ac85ae3efb6")
+[dspark-acc] ctx=7928 burst=6/16 cum=11/23=0.478
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting
+[server] GPU worker shutdown complete

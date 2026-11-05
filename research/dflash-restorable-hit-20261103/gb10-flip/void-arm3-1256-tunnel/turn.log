@@ -1,0 +1,45 @@
+Traceback (most recent call last):
+  File "/home/avifenesh/.cache/model-scout/harness/turnbench.py", line 53, in <module>
+    {'role': 'user', 'content': new_turn(n, f'{size}-{u}-{i}-{rep}')}]
+                                ~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/avifenesh/.cache/model-scout/harness/turnbench.py", line 26, in new_turn
+    filler = client.session(n, f'turn-filler-{n}-{tag}')
+  File "/home/avifenesh/.cache/spark-cast-qualification-20261024-2250/client.py", line 100, in session
+    def session(size,identity,width=None):return normal.make_session(size,identity,CORPUS,width)
+                                                 ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/avifenesh/projects/dspark/receipts/2026-10-20-ttft-qwen-comparison/evidence/normal-sessions/run.py", line 103, in make_session
+    count = len(post("/tokenize", body)["tokens"])
+                ~~~~^^^^^^^^^^^^^^^^^^^
+  File "/home/avifenesh/projects/dspark/receipts/2026-10-20-ttft-qwen-comparison/evidence/normal-sessions/run.py", line 32, in post
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+         ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/avifenesh/.cache/model-scout/harness/client.py", line 56, in _urlopen
+    return _orig_urlopen(req, *a, **k)
+  File "/usr/lib/python3.14/urllib/request.py", line 187, in urlopen
+    return opener.open(url, data, timeout)
+           ~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.14/urllib/request.py", line 487, in open
+    response = self._open(req, data)
+  File "/usr/lib/python3.14/urllib/request.py", line 504, in _open
+    result = self._call_chain(self.handle_open, protocol, protocol +
+                              '_open', req)
+  File "/usr/lib/python3.14/urllib/request.py", line 464, in _call_chain
+    result = func(*args)
+  File "/usr/lib/python3.14/urllib/request.py", line 1350, in http_open
+    return self.do_open(http.client.HTTPConnection, req)
+           ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.14/urllib/request.py", line 1325, in do_open
+    r = h.getresponse()
+  File "/usr/lib/python3.14/http/client.py", line 1459, in getresponse
+    response.begin()
+    ~~~~~~~~~~~~~~^^
+  File "/usr/lib/python3.14/http/client.py", line 336, in begin
+    version, status, reason = self._read_status()
+                              ~~~~~~~~~~~~~~~~~^^
+  File "/usr/lib/python3.14/http/client.py", line 297, in _read_status
+    line = str(self.fp.readline(_MAXLINE + 1), "iso-8859-1")
+               ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^
+  File "/usr/lib/python3.14/socket.py", line 725, in readinto
+    return self._sock.recv_into(b)
+           ~~~~~~~~~~~~~~~~~~~~^^^
+TimeoutError: timed out
