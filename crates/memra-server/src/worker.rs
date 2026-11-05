@@ -1084,6 +1084,80 @@ fn dspark_hit_is_restorable_with(
             && entry_toks.is_multiple_of(memra_engine::Engine::gdn_chunk_size()))
 }
 
+/// Why a cache-preferred-vetoed plain hit cannot take the cold-drafter conversion
+/// (memra#1031): `None` when it can.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ColdDrafterRefusal {
+    /// The carrier is empty or covers the whole prompt: there is no suffix to prime.
+    NoStrictPrefix,
+    /// The suffix is shorter than the drafter window (`sliding_window + block`): a drafter
+    /// born at the boundary would read rows it never saw.
+    ShortSuffix,
+    /// The prompt does not fit the DFlash spec route (`dspark_spec_prompt_fits`).
+    PromptDoesNotFit,
+    /// The carrier's boundary is off the GDN prime grid: its suffix prime would be a second
+    /// numeric program next to a cold prime of the same prompt (DAY56.md section 2c).
+    OffGrid,
+    /// The carrier's cache position disagrees with its token boundary.
+    PositionMismatch,
+}
+
+impl ColdDrafterRefusal {
+    fn is_grid(self) -> bool {
+        matches!(self, Self::OffGrid | Self::PositionMismatch)
+    }
+
+    fn why(self) -> &'static str {
+        match self {
+            Self::NoStrictPrefix => "no strict prefix",
+            Self::ShortSuffix => "suffix shorter than the drafter window",
+            Self::PromptDoesNotFit => "prompt does not fit the DFlash route",
+            Self::OffGrid => "carrier boundary is off the GDN prime grid",
+            Self::PositionMismatch => "carrier cache position is off its token boundary",
+        }
+    }
+}
+
+/// Pure form of the cold-drafter geometry so the refusals are unit-testable.
+fn dspark_cold_drafter_refusal(
+    fed_len: usize,
+    cache_pos: usize,
+    prompt_len: usize,
+    window: usize,
+    grid: usize,
+    prompt_fits: bool,
+) -> Option<ColdDrafterRefusal> {
+    if fed_len == 0 || fed_len >= prompt_len {
+        return Some(ColdDrafterRefusal::NoStrictPrefix);
+    }
+    if prompt_len - fed_len < window {
+        return Some(ColdDrafterRefusal::ShortSuffix);
+    }
+    if !prompt_fits {
+        return Some(ColdDrafterRefusal::PromptDoesNotFit);
+    }
+    // Defense in depth (Bugbot on memra#1031): every plain capture publishes on the GDN prime
+    // grid (`grid_align_boundary_within`) and the engine refuses an off-grid boundary, so a
+    // carrier that reaches here is on the grid today. The conversion is default-on with the
+    // device-keyed doors, so it re-checks instead of trusting that: an off-grid or
+    // mispositioned carrier keeps the plain hit it had. Refusal only; no output changes.
+    if cache_pos != fed_len {
+        return Some(ColdDrafterRefusal::PositionMismatch);
+    }
+    if !fed_len.is_multiple_of(grid) {
+        return Some(ColdDrafterRefusal::OffGrid);
+    }
+    None
+}
+
+/// Cold-drafter conversions refused by the grid guard (`ColdDrafterRefusal::is_grid`).
+pub static DSPARK_COLD_DRAFTER_GRID_REFUSALS_TOTAL: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(0);
+
+pub fn dspark_cold_drafter_grid_refusals_total() -> u64 {
+    DSPARK_COLD_DRAFTER_GRID_REFUSALS_TOTAL.load(std::sync::atomic::Ordering::Relaxed)
+}
+
 fn dspark_prefix_capture_requested(
     dspark_on: bool,
     prefix_on: bool,
@@ -37292,16 +37366,35 @@ fn admit(
                 || sampler.temperature() > 0.0)
             && memra_engine::plan_backend::gdn_dspark_compatible(&lm.model.plan)
             && serve_spec;
-        let geometry_ok = !carrier.fed.is_empty()
-            && carrier.fed.len() < prompt.len()
-            && suffix_len >= window
-            && memra_engine::dflash::dspark_spec_prompt_fits(
+        let refusal = dspark_cold_drafter_refusal(
+            carrier.fed.len(),
+            carrier.cache.pos,
+            prompt.len(),
+            window,
+            memra_engine::Engine::gdn_chunk_size(),
+            memra_engine::dflash::dspark_spec_prompt_fits(
                 prompt.len(),
                 carrier.cap,
                 draft.cfg.block_size,
                 draft.cfg.sliding_window,
                 draft.dflash2.is_some(),
+            ),
+        );
+        if shape_ok && let Some(r) = refusal.filter(|r| r.is_grid()) {
+            let n = DSPARK_COLD_DRAFTER_GRID_REFUSALS_TOTAL
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+                + 1;
+            eprintln!(
+                "[prefix-cache] DSPARK cold-drafter refused: {} (entry {} tokens, cache pos {}, \
+                 grid {}); serving the plain hit (grid refusals {n}) (model {})",
+                r.why(),
+                carrier.fed.len(),
+                carrier.cache.pos,
+                memra_engine::Engine::gdn_chunk_size(),
+                req.model,
             );
+        }
+        let geometry_ok = refusal.is_none();
         let mut handed_back = Some(carrier);
         if shape_ok && geometry_ok {
             let carrier = handed_back.take().expect("set above");
@@ -40539,7 +40632,53 @@ fn serve_devpenalty_for(arch: &Arch) -> bool {
 
 #[cfg(test)]
 mod dspark_restore_default_tests {
-    use super::{dspark_door, dspark_restore_default_for_device};
+    use super::{
+        ColdDrafterRefusal, dspark_cold_drafter_refusal, dspark_door,
+        dspark_restore_default_for_device,
+    };
+
+    /// A forged off-grid plain carrier (or one whose cache position disagrees with its token
+    /// boundary) must never take the cold-drafter conversion; an on-grid one with a long
+    /// suffix still does, and the geometry refusals keep their order.
+    #[test]
+    fn cold_drafter_refuses_an_off_grid_or_mispositioned_carrier() {
+        let (prompt, window, grid) = (8000, 2056, 32);
+        assert_eq!(
+            dspark_cold_drafter_refusal(4096, 4096, prompt, window, grid, true),
+            None,
+            "an on-grid carrier with a suffix past the window converts"
+        );
+        assert_eq!(
+            dspark_cold_drafter_refusal(4100, 4100, prompt, window, grid, true),
+            Some(ColdDrafterRefusal::OffGrid),
+            "a forged off-grid plain entry must not convert"
+        );
+        assert_eq!(
+            dspark_cold_drafter_refusal(4096, 4100, prompt, window, grid, true),
+            Some(ColdDrafterRefusal::PositionMismatch),
+            "a restored cache whose position disagrees with the entry must not convert"
+        );
+        assert!(ColdDrafterRefusal::OffGrid.is_grid());
+        assert!(ColdDrafterRefusal::PositionMismatch.is_grid());
+        assert_eq!(
+            dspark_cold_drafter_refusal(0, 0, prompt, window, grid, true),
+            Some(ColdDrafterRefusal::NoStrictPrefix)
+        );
+        assert_eq!(
+            dspark_cold_drafter_refusal(prompt, prompt, prompt, window, grid, true),
+            Some(ColdDrafterRefusal::NoStrictPrefix)
+        );
+        assert_eq!(
+            dspark_cold_drafter_refusal(6100, 6100, prompt, window, grid, true),
+            Some(ColdDrafterRefusal::ShortSuffix),
+            "geometry refusals come before the grid check"
+        );
+        assert_eq!(
+            dspark_cold_drafter_refusal(4096, 4096, prompt, window, grid, false),
+            Some(ColdDrafterRefusal::PromptDoesNotFit)
+        );
+        assert!(!ColdDrafterRefusal::ShortSuffix.is_grid());
+    }
 
     #[test]
     fn restore_doors_default_on_only_on_gated_devices_and_the_flag_decides_everywhere() {

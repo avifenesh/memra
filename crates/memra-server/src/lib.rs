@@ -7423,6 +7423,11 @@ fn render_prometheus_metrics(
                 worker::worker_respawns_total(),
                 "Worker thread respawn attempts since process start.",
             ),
+            (
+                "memra_dspark_cold_drafter_grid_refusals_total",
+                worker::dspark_cold_drafter_grid_refusals_total(),
+                "Cold-drafter conversions refused because the plain hit was off the GDN prime grid or mispositioned.",
+            ),
         ] {
             prometheus_header(&mut out, name, "counter", help);
             out.push_str(&format!("{name} {value}\n"));
@@ -7721,6 +7726,8 @@ async fn get_metrics(State(st): State<AppState>, headers: HeaderMap) -> Response
         // worker respawns are the supervisor's ladder. A truncated-200 class shows up here.
         body["request_faults_total"] = json!(worker::request_faults_total());
         body["worker_respawns_total"] = json!(worker::worker_respawns_total());
+        body["dspark_cold_drafter_grid_refusals_total"] =
+            json!(worker::dspark_cold_drafter_grid_refusals_total());
         body["prefix_cache_seed_grid_refusals"] = json!(m.prefix_seed_grid_refusals);
         body["prefix_cache_hit_tokens"] = json!(m.prefix_hit_tokens);
         // Pinned-host spill tier behind the prefix cache (lane/kv-host-spill-20260830;
