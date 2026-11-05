@@ -504,11 +504,6 @@ Rules that follow, and are now enforced rather than remembered:
 | `MEMRA_ST_REPACK_DISK` | on | `0` forces in-RAM gather instead of the `.memra-repack` disk cache (safetensors stream-repack loader) |
 | `MEMRA_Q4F16` | capacity-keyed auto | dense-gemma (12B/31B geometry) f16 prefill mirrors on the cuBLASLt lane — the sm_120a sibling of the Hopper `MEMRA_PP_F16` class (`memra-engine/src/hybrid.rs`). With the flag unset, mirrors are admitted iff free VRAM covers the admissible f16 mass (every 2D Q8_0/Q4_0/Q6_K/Q4_K/Q5_K tensor `build_q8_f16` admits) + 8 GiB serving headroom (zoo-fusion arc, 2026-08-17: the 31B downQ6K trunk's Q6_K ffn_down otherwise rides the 3.46 ms/call dequant-GEMM prefill wall — 30% of c8 GPU time; mirrors measured c8 agg +37% / ttft −70%). `1` forces (still requires the f16 lane compiled in), `0` kills; 24 GB rigs refuse by construction |
 | `MEMRA_CPU_EXPERT_EXECUTORS` | 1 | CPU-expert executor count without explicit cpusets (`1..=8`; `memra-engine/src/cpu_experts.rs`). Ignored when `MEMRA_CPU_EXPERT_EXECUTOR_CPUSETS` is set — the group list then determines the count |
-| `MEMRA_CPU_EXPERT_PREFETCH_ANNEX_GB` | 1.5 | prefetch annex byte budget in the native companion (`tools/memra_cpu_experts.cpp`): LRU-held prefetched projection bytes awaiting promotion, clamped `0.125..=16.0` GiB. Companion-side (requires `MEMRA_CPU_EXPERT_LIB` + `MEMRA_MOE_PREFETCH=1`) |
-| `MEMRA_CPU_EXPERT_PREFETCH_MAX_INFLIGHT` | 32 | max in-flight prefetch reads in the companion (`1..=4096`; out-of-range falls back to 32). Same companion scope as the annex budget |
-| `MEMRA_MOE_PREFETCH=N` | off | CPU-expert companion only: `N` in `1..=8` is the depth of the prediction-guided prefetch worker (`cpu_experts.rs` `start_prefetch_predictor`), which `run-gen` and `run-spec` start after a residency-freeze warm-up (`MEMRA_CPU_EXPERT_LIB`, sigmoid-router models); unset or `0` starts nothing. Until 2026-11-04 `=1` also switched on the legacy slot cache's in-token prefetch of the next routed expert; that prefetch is now a per-card default with no switch (RTX 5090 Laptop GPU and RTX PRO 6000 Blackwell Workstation Edition, `moe_cache::in_token_prefetch_for_device`; Removed doors, 2026-11-04). The deciding cell `research/spill-c-20260919/DAY59.md` decided the in-token prefetch only, so this companion reading still owes its own decision: decide-by 2026-10-04 (passed, the date the shared row carried). **Open owner call (2026-11-04), recommendation delete.** Its own receipts are negative: the increment-2 A/B on the local 5090 Hy3 profile read 4.74 tok/s off against 2.90 on, and the annex redesign A/B'd twice more and stayed negative with the demand counters unmoved, so the lane closed on 2026-07-23 (`research/moe/expert-prefetch-prediction-pilot.md`). The 2026-08-13 resurrection case (`research/moe/expert-prefetch-RESURRECTION-CASE-20260813.md`, written after the owner raised the mechanism) argues that closure was hardware-scoped but carries no new row. Deleting it reaches past this repo's Rust side: `start_prefetch_predictor` and the predictor in `cpu_experts.rs`, its submit hook and `start_moe_prefetch_predictor`, the `run-gen`/`run-spec` starts, `MEMRA_MOE_PREFETCH_TOP`/`_MIN_LAYER`, and in the native companion `memra_cpu_expert_prefetch_v2`, `memra_cpu_expert_prefetch_stats_v2`, the annex and its two knobs, `tools/test_cpu_expert_prefetch.sh` with its CI step, and the `cpu_native_check` symbol probes |
-| `MEMRA_MOE_PREFETCH_TOP` | 1 | how many predicted next experts the `MEMRA_MOE_PREFETCH=N` companion predictor prefetches per layer (`1..=8`; `cpu_experts.rs`) |
-| `MEMRA_MOE_PREFETCH_MIN_LAYER` | 40 | first layer index eligible for the prediction-table prefetch (early layers churn; `cpu_experts.rs`) |
 | `MEMRA_MMQ_F8F4` | off; **on by default on a unified-memory 120a-family device (GB10)** | GB10 DEFAULT (2026-11-03): unset follows the device, `0` keeps W4A8 there, `1` opts any card in. GB10 receipts (`research/gb10-tuning-20261102/`): prefill +15.4% (`run-gen` pp8788), served cold prefill 43.5 s against 49.3 s at 32,768 tokens, greedy served acceptance 0.702 against 0.672 (one run per arm, three prompts), c32 68.21 against 66.45 tok/s, quality panel 158/164 and 97/100 against 158/164 and 98/100. Discrete cards keep the verdicts below. `1` = W4A8-FP8 prefill MMQ (e4m3 fold + f8f6f4 MMA, 381-TF class). pp +3.9-6.3% ALL models, TTFT -4-5.6%; e2e spec MODEL-SIGNED via the prefill-KV acceptance law (27B ST +7.2%, 9B -3.5/-6.1%) — per-model serve adoption (NV-27B ST config), never a global default (2026-07-10 flip battery). **RE-VERDICT 2026-08-06 (`research/f8f4-flip-20260806/`): still NO global flip.** The route got faster — `7c0df07b`'s block_scale MMA form is 1.2153x (q27) / 1.1485x (q9) and **bit-exact** vs plain f8f4, so it cannot repair a route-level acceptance dip. Reachable on **2 of 12** gate models (the single `QT_NVFP4 && use_w4a8` dispatch arm); everything else is a structural no-op. Red cells: q27 bare-head K=3 (its serve K) −3.6pp deterministic 5/5, and q9 + its **production regime drafter** −9.5pp on a short prompt (OFF==OFF2 control green). All exactness gates PASS both arms (incl. chunk-invariance and serve-smoke/stress c=64) and greedy divergence lands *past* the 20-token goldens — the battery is blind to this class. The acceptance **sign follows (model × drafter × prompt)**, not the model: it inverted between the embedded MTP head and the regime drafter on the same day. Adopting the route on a new artifact requires its own receipt via `research/f8f4-flip-20260806/tools/regime_accept_ab.sh`. Expert-tile twin measured NEGATIVE (-6.4% best variant, not pipe-bound) and was deleted — tag moe-f8f4-negative. **sm_100a:** available through the plain-E4M3 MMA form and exercised on the pinned Qwen3.5-9B B200 battery. It remains model-signed and opt-in; the B200 result does not authorize a global or cross-artifact default. No decide-by: GB10 runs it by default on its receipts, and on every other card it is a per-artifact serving choice by design, since its acceptance sign is model-signed; each adoption carries its own receipt. |
 | `MEMRA_MMQ_F8F4_V2` | **on by default on a unified-memory 120a-family device (GB10), off elsewhere (2026-11-06)** | Rollback seam of the F8F4 v2 prefill GEMM: `1`/`0` decide on any device; unset follows the device. Where the F8F4 route runs, v2 takes GEMMs of at least 2,048 rows over whole 256-value k groups whose image fits its 32-bit offsets and pre-pass grid (`F8F4_V2_MIN_ROWS`, `f8f4_v2_kernel_shape_ok`; below 2,048 rows the per-call image costs more than it saves): a pre-pass folds the NVFP4 weight once per call into a pooled e4m3 image (`memra_mmq_nvfp4_f8f4_v2_img_bytes`, 1.125 B per weight), the quantizers write the same activation bytes in the v2 layout, and a cp.async/ldmatrix tile (one 16-warp CTA per SM, 256 x 128, K 64 x 3 stages, 4-row-tile raster groups) runs the v1 numeric program. Output is bit-identical to the v1 tile (kernel-check `MMQ-F8F4-V2` / `MMQ-F8F4-V2-SILU`: every NVFP4 GEMM shape of the model, T 16/130/1,024/4,096, both weight layouts). GB10 receipts (`research/gb10-prefill-20261106/`, Qwen3.8-27B GGUF): GEMM 73-77 -> 106-111 TFLOPS with the image pass at 8,192 rows, `run-gen` pp3855 4.167 -> 3.673 s with identical logits, served cold TTFT at 4,096-row chunks 36.25 -> 32.54 s at 32k (-10.2%), 182.6 -> 168.1 s at 131k (-7.9%), 461.3 -> 433.1 s at 260k (-6.1%) on unit 1, unit 2 within 0.5 s, identical answers, MemAvailable floor unchanged. Discrete cards are unmeasured and keep v1. Rollback: `0`. |
 
@@ -2165,6 +2160,43 @@ outputs are in the receipt). No kernel was only the door's. Decision:
 `docs/decisions/QWEN-PRIME-FA2-DEFAULT.md`. Ledger:
 `VERDICT:qwen-prime-fa2-default-on-5090-chunk1024` (pending: the darklanes `agent-knowledge/gpu/verdicts-ledger.md` line is owed by a darklanes lane; this engine lane does not write darklanes).
 
+## Removed doors, 2026-11-04 (`MEMRA_MOE_PREFETCH`, the CPU-expert companion's prediction-guided prefetch: negative, decide-by passed)
+
+`MEMRA_MOE_PREFETCH=N` (`N` in `1..=8`) started a prefetch worker for the CPU-expert companion
+(`MEMRA_CPU_EXPERT_LIB`, sigmoid-router models) after the residency-freeze warm-up in `run-gen`
+and `run-spec`. The worker applied the routers of the next `N` layers, on host copies of their
+weights, to the current layer's MoE input, took the top predicted experts that were neither
+HBM-resident nor memory-backed, and handed their projections to the companion's detached read
+(`memra_cpu_expert_prefetch_v2`). The companion parked finished reads in a FIFO annex outside its
+RAM cache until a demand miss promoted them. Until earlier the same day, `=1` also switched on the
+legacy slot cache's in-token prefetch, which is now a per-card default with no switch (next
+entry). The worker's receipts are negative (`research/moe/expert-prefetch-prediction-pilot.md`).
+The increment-2 A/B on the local RTX 5090 Hy3 profile read 4.74/4.75 tok/s with the worker off
+against 2.90/2.88 on (depth 2, top 2). The annex redesign was A/B'd twice more (increments 3 and
+4) and stayed negative, with zero annex promotions in every arm despite 39 GB of completed
+speculative reads: a one- or two-layer lookahead gives 2.6-5 ms of lead, and a queued 2-4 MB
+O_DIRECT read under load takes tens of ms. The lane closed on 2026-07-23. The row's decide-by
+(2026-10-04) passed with no newer receipt. The 2026-08-13 resurrection case
+(`research/moe/expert-prefetch-RESURRECTION-CASE-20260813.md`) argues the closure was scoped to
+NVMe-tier reads and proposes a RAM-tier cell on an RTX PRO 6000 box. It carries no measurement,
+so the door returns only with that cell's receipt. The deleted names, which `memra-server`'s boot
+audit now refuses with this entry as their ledger:
+
+- `MEMRA_MOE_PREFETCH`, `MEMRA_MOE_PREFETCH_TOP`, `MEMRA_MOE_PREFETCH_MIN_LAYER`: the worker's depth, its experts per layer (default 1) and its first eligible layer (default 40).
+- `MEMRA_CPU_EXPERT_PREFETCH_ANNEX_GB`, `MEMRA_CPU_EXPERT_PREFETCH_MAX_INFLIGHT`: the companion annex's byte budget (default 1.5 GiB) and its in-flight read cap (default 32).
+
+Also deleted: the predictor in `cpu_experts.rs`, its submit hook on the CPU-expert decode path and
+`HybridModel::start_moe_prefetch_predictor`; the `run-gen` and `run-spec` starts and the `run-gen`
+predictor stats line; in the companion (`tools/memra_cpu_experts.cpp`),
+`memra_cpu_expert_prefetch_v2`, `memra_cpu_expert_prefetch_stats_v2`, the annex, the annex
+promotion on the demand-miss path, the detached-read completion branch, the RAM cache's cold-front
+insert and the two `prefetch_*` fields of the `[memra-cpu-profile]` exit line;
+`tools/test_cpu_expert_prefetch.sh` and `tools/memra_cpu_expert_prefetch_test.cpp` with their
+`ci.yml` step; and the detached-prefetch probe in `cpu_native_check`. The companion ABI stays at
+v2: both entries were optional symbols. No CUDA kernel was only its. Ledger:
+`VERDICT:moe-prefetch-predictor-negative-removed`
+(pending: the darklanes `agent-knowledge/gpu/verdicts-ledger.md` line is owed by a darklanes lane; this engine lane does not write darklanes).
+
 ## Removed doors, 2026-11-04 (`MEMRA_MOE_PREFETCH=1`'s in-token arm: a per-card default, its switch goes)
 
 `MEMRA_MOE_PREFETCH=1` switched on the legacy MoE slot cache's in-token prefetch: before the
@@ -2185,8 +2217,9 @@ engine construction (`moe_cache::in_token_prefetch_for_device`); the desktop RTX
 and Server Edition variants and every other card keep it off until their own cell. The slot
 cache's boot line names the arm and its source (`[moe-cache] in-token prefetch: on (card
 rtx5090-laptop-receipt)`). Deleted: the in-token env read in `hybrid_forward.rs`. No
-kernel was only its. The variable stays for the CPU-expert companion's prediction worker depth,
-which DAY59 did not decide (its row). Decision: `docs/decisions/MOE-INTOKEN-PREFETCH-DEFAULT.md`.
+kernel was only its. The variable's other reading, the CPU-expert companion's prediction worker
+depth, which DAY59 did not decide, was removed the same day on its own negative receipts
+(previous entry). Decision: `docs/decisions/MOE-INTOKEN-PREFETCH-DEFAULT.md`.
 Ledger: `VERDICT:moe-intoken-prefetch-default-5090laptop-pro6000ws`
 (pending: the darklanes `agent-knowledge/gpu/verdicts-ledger.md` line is owed by a darklanes lane; this engine lane does not write darklanes).
 
