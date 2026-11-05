@@ -950,14 +950,6 @@ fn should_probe_prefix_cache(
 /// DEFAULT OFF until its own restored-vs-cold byte-identity gate is green on the serving
 /// binary, per the carve-out law: a route inheriting a restore path must re-gate its own
 /// identity — loading and running never proves support.
-/// `MEMRA_DSPARK_COLD_DRAFTER=1` (memra#1031, default off): a hit the cache-preferred veto would
-/// serve plain re-arms the drafter EMPTY at the restored boundary when the suffix covers the
-/// drafter window (see the conversion in `admit`). Needs the restore and partial doors.
-fn dspark_cold_drafter_on() -> bool {
-    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| std::env::var("MEMRA_DSPARK_COLD_DRAFTER").as_deref() == Ok("1"))
-}
-
 fn dspark_partial_restore_on() -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *ON.get_or_init(|| std::env::var("MEMRA_DSPARK_PARTIAL_RESTORE").as_deref() == Ok("1"))
@@ -37220,8 +37212,9 @@ fn admit(
             );
         }
     }
-    // COLD-DRAFTER CONVERSION OF A VETOED HIT (`MEMRA_DSPARK_COLD_DRAFTER=1`, memra#1031 second
-    // half). The cache-preferred veto serves a long prompt's PLAIN hit plain, the session
+    // COLD-DRAFTER CONVERSION OF A VETOED HIT (memra#1031 second half; on whenever the restore
+    // and partial-restore doors are, receipts in research/dflash-restorable-hit-20261103/).
+    // The cache-preferred veto serves a long prompt's PLAIN hit plain, the session
     // publishes another plain entry, and a multi-turn DFlash session never speculates again
     // (GB10 GGUF DFlash2 c1: 12.0 tok/s, 28 vetoes). When the suffix the hit leaves covers the
     // whole drafter window (`sliding_window + block` rows), the drafter can be born EMPTY at the
@@ -37234,7 +37227,6 @@ fn admit(
     // never worse than the plain hit it had.
     if dspark_prefix_restore_on()
         && dspark_partial_restore_on()
-        && dspark_cold_drafter_on()
         && !dspark_prefers_cold
         && spec_restored.is_none()
         && dspark_prefix_restored.is_none()

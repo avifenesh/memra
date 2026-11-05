@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Exactness gate for MEMRA_DSPARK_COLD_DRAFTER (memra#1031 second half).
+"""Exactness gate for the DFlash cold-drafter conversion of a vetoed plain hit (memra#1031 second half).
 
 Usage: dspark-cold-drafter-gate.py BASE_URL MODEL OUT.jsonl
-Run once against a server with the prefix cache and the cold-drafter door on (the arm), once
+Run once against a server with the prefix cache and the DFlash restore doors on (the arm), once
 against a server with the prefix cache off (the reference: every request cold-primes DFlash),
 then compare the two files with --compare ARM.jsonl REF.jsonl.
 
@@ -10,7 +10,7 @@ Sequence (raw /v1/completions, fixed seed):
   x0: the shared prefix P, served PLAIN (presence_penalty on a greedy request, a shape the
       DFlash route declines) with max_tokens=1, so the cache holds a plain entry for P;
   a:  P + S (S longer than the drafter window), sampled and greedy, short decode: on the arm the
-      cache-preferred veto fires on P's plain hit and the door re-arms a cold drafter at |P|;
+      cache-preferred veto fires on P's plain hit and the conversion re-arms a cold drafter at |P|;
   b:  a's prompt + a's text + a follow-up, which on the arm restores a's tail-carrying entry.
 The gate passes when every a/b completion is byte-identical between arm and reference.
 GATE_P_PARAS / GATE_S_PARAS size P and S (60-word paragraphs; defaults 70 / 80, about 12k / 14k

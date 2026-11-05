@@ -38,7 +38,10 @@ drafter's tap features during the plain prime, `DflashDraft::ingest_ctx`, then `
 which costs tap state of about 100 KB per prompt token on the 27B and needs its own exactness
 gate. Not done in this PR.
 
-## Second half: a vetoed plain hit re-arms a cold drafter (2026-11-05, `MEMRA_DSPARK_COLD_DRAFTER=1`)
+## Second half: a vetoed plain hit re-arms a cold drafter (2026-11-05)
+
+Measured under a temporary door, `MEMRA_DSPARK_COLD_DRAFTER=1`; positive with nothing against it, so the door is deleted and the conversion is on wherever `MEMRA_DSPARK_PREFIX_RESTORE=1` and `MEMRA_DSPARK_PARTIAL_RESTORE=1` are (FLAGS.md "Removed doors, 2026-11-05"). The tables below are the door off/on measurements.
+
 
 The traffic shape above never publishes a draft tail because the cache-preferred veto serves a long prompt's plain hit plain. With the door, when the suffix that hit leaves is at least `sliding_window + block` rows (2,056 on the 27B DFlash2), the request goes to DFlash anyway:
 - the drafter is born empty at the restored boundary (`DflashKv::new_cold_at`);
