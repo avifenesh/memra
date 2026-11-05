@@ -1,0 +1,11 @@
+2026-11-04_22:39:29 runner armed pid 1722266
+2026-11-04_22:43:53 runner restarted with READY gating
+2026-11-04_22:43:53 runner armed pid 1723712
+2026-11-05_02:13:36 runner and guard restarted with the 300 W power wrapper (owner 2026-11-05)
+2026-11-05_02:13:36 runner armed pid 1820048 (power wrapper: 300 W per cell)
+2026-11-05_06:00:10 slot start; GPU 0 lock held; power.limit 250.00 W; free 1163G
+2026-11-05_06:04:31 moe-prefetch rc=0 out=/mnt/Data/work/memra-maxq/moe-prefetch/out-20261105T040010Z verdict: DAY59 VERDICT rig=pro-maxq card=0 power_limit=300.00W g1=PASS g2=PASS g3=PASS pftime=pf_wins pfnaked=pf_flat -> qualifies
+2026-11-05_06:04:31 moe-prefetch power GPU 0: limit 300 W (asked 300, was 250, max 325); 26 samples; max 55 C, max fan 30 %; sw_thermal 0, hw_thermal 0, hw_power_brake 0, sw_power_cap 0; throttle: no; thermal stop: none; neighbours none max 0 C, drop: none; restored 250 W; rc=0
+2026-11-05_06:40:57 handoff-direct rc=0 OUT /mnt/Data/work/memra-maxq/handoff-direct/out-20261105T040431Z verdict: M1-HANDOFF-VERDICT pro6000-maxq export_ms direct/buffered: winner handoff-1g=winner@0.8602963708794817/10 handoff-8g=winner@0.9156872557932629/10 default=direct card_index=0 power_limit_w=300.00 card="NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition"
+2026-11-05_06:40:57 handoff-direct power GPU 0: limit 300 W (asked 300, was 250, max 325); 218 samples; max 83 C, max fan 54 %; sw_thermal 0, hw_thermal 0, hw_power_brake 0, sw_power_cap 109; throttle: no; thermal stop: none; neighbours none max 0 C, drop: none; restored 250 W; rc=0
+2026-11-05_06:40:57 slot done; GPU 0 2 MiB; free 1163G; scratch left: 

@@ -1,0 +1,34 @@
+Reader dry-run on the Workstation receipt (research/spill-c-20260919/pro-single-day61 at origin/fix4/gates), laptop, 2026-11-04T19:26:00Z
+
+1. day59-pf.py (kit copy, byte-identical to f0e77b8be) gates/serve/time on pfgates, pfserve, pftime, pfnaked with --rig pro-single:
+   output compared with cat of the four committed reading.log files: cmp -> BYTE-IDENTICAL
+   DAY59 G1 rig=pro-single slots=9986 exits={'off': 0, 'pf': 0} match=True one_tape=True -> PASS
+   DAY59 G1 rig=pro-single slots=512 exits={'off': 0, 'pf': 0} match=True one_tape=True -> PASS
+   DAY59 G2 rig=pro-single exit=0 k_lines=8 k_pass=8 -> PASS
+   DAY59 GATES rig=pro-single -> PASS
+   DAY59 G3 rig=pro-single requests=7 equal=7 errors=[] -> PASS
+   DAY59 CHECKS rig=pro-single shape=pftime runs=20 integrity=ok
+   DAY59 TIME rig=pro-single shape=pftime gen-only decode: off=0.310 pf=0.255 (N=10 each) pf_minus_off pooled=-0.0550 o1=-0.0550 o2=-0.0550 noise=0.0000 -> pf_wins
+   DAY59 TIME rig=pro-single shape=pftime steady window: off=0.251 pf=0.226 (N=10 each) pf_minus_off pooled=-0.0250 o1=-0.0250 o2=-0.0250 noise=0.0003 -> pf_wins
+   DAY59 VERDICT rig=pro-single shape=pftime integrity=ok -> pf_wins
+   DAY59 CHECKS rig=pro-single shape=pfnaked runs=20 integrity=ok
+   DAY59 TIME rig=pro-single shape=pfnaked gen-only decode: off=0.113 pf=0.113 (N=10 each) pf_minus_off pooled=+0.0000 o1=+0.0000 o2=+0.0000 noise=0.0003 -> pf_flat
+   DAY59 TIME rig=pro-single shape=pfnaked steady window: not printed by this shape
+   DAY59 VERDICT rig=pro-single shape=pfnaked integrity=ok -> pf_flat
+
+2. maxq-verdict.py on the same receipt (--rig pro-single --card 0 --power-limit 600.00W):
+   DAY59 VERDICT rig=pro-single card=0 power_limit=600.00W g1=PASS g2=PASS g3=PASS pftime=pf_wins pfnaked=pf_flat -> qualifies
+
+3. c-regime.py on each cell's command.gpu.csv: output equals the first 20 lines of the committed regime.txt (cmp -> BYTE-IDENTICAL)
+
+4. tier-battery.py (kit copy, ported) --rig pro-single --validate on each cell dir: rc=0, status executed-not-qualified, for pfgates, pfserve, pftime, pfnaked
+
+5. bash -n: run.sh, tree/research/spill-c-20260919/day40-run-cell.sh, day59-cell.sh, tree/tools/port-guard.sh, build.sh: all OK; python3 -m py_compile on every kit .py: OK
+
+6. Plumbing test of run.sh on the laptop with stub binaries and a stub nvidia-smi (no GPU touched; the stubs replay the
+   Workstation ev/*.log for the label each cell marks; the artifact is the real local copy, so the SHA check was real):
+   CARD=2 MAXQ_TOTAL_S=900 MAXQ_MIN_AVAIL_GB=8 -> exit 0, 28 s, every run saw CUDA_DEVICE_ORDER=PCI_BUS_ID CUDA_VISIBLE_DEVICES=2,
+   every collector sampler and snapshot ran with -i 2, telemetry rows index 2 only, scratch removed on exit. Last line:
+   DAY59 VERDICT rig=pro-maxq card=2 power_limit=280.00W g1=PASS g2=PASS g3=PASS pftime=pf_wins pfnaked=pf_flat -> qualifies
+   Refusals checked: Workstation name -> REFUSED (name); 94194 MiB used -> REFUSED (memory); /tmp/memra-gpu.lock held -> REFUSED (lock); CARD=x -> REFUSED (usage).
+   MAXQ_TOTAL_S=95 -> pftime and pfnaked SKIPPED at the deadline, last line '... missing=pftime,pfnaked -> void', exit 1.

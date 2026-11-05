@@ -1,0 +1,163 @@
+Binary files orig/tools/__pycache__/tier-battery.cpython-314.pyc and kit/tree/tools/__pycache__/tier-battery.cpython-314.pyc differ
+Binary files orig/tools/__pycache__/tier-lock-proof.cpython-314.pyc and kit/tree/tools/__pycache__/tier-lock-proof.cpython-314.pyc differ
+diff -ruN orig/tools/tier-battery.py kit/tree/tools/tier-battery.py
+--- orig/tools/tier-battery.py	2026-11-04 21:13:08.456410972 +0200
++++ kit/tree/tools/tier-battery.py	2026-11-04 21:14:34.402609947 +0200
+@@ -311,10 +311,13 @@
+             cell["lock_proof"] = lock_proof
+         append_cell(root / "CELL.jsonl", {**cell, "event": "start"})
+         smi = shutil.which(self.smi)
++        # Max-Q kit (<box>): telemetry and snapshots name the one card under test (D40_CARD, nvidia-smi index).
++        card = os.environ.get("D40_CARD")
++        card_args = ["-i", card] if card else []
+         snapshots = {}
+         def snapshot(label):
+             path = root / f"{stem}.{label}.log"
+-            code, expired = tee_run([smi, "--query-compute-apps=pid,process_name,used_memory",
++            code, expired = tee_run([smi, *card_args, "--query-compute-apps=pid,process_name,used_memory",
+                                     "--format=csv"], path, timeout=20, echo=False)
+             snapshots[label] = {"exit_code": code, "timed_out": expired,
+                                 "raw_log": descriptor(root, path)}
+@@ -328,7 +331,7 @@
+                 snapshot("before")
+                 csv = stack.enter_context(csv_path.open("xb"))
+                 err = stack.enter_context(sampler_log.open("xb"))
+-                argv = [smi, "--query-gpu=timestamp,index,pstate,clocks.sm,clocks.mem,power.draw,power.limit,power.max_limit,temperature.gpu,memory.used,utilization.gpu,pcie.link.gen.current,pcie.link.width.current", "--format=csv", "-lms", "250"]
++                argv = [smi, *card_args, "--query-gpu=timestamp,index,pstate,clocks.sm,clocks.mem,power.draw,power.limit,power.max_limit,temperature.gpu,memory.used,utilization.gpu,pcie.link.gen.current,pcie.link.width.current", "--format=csv", "-lms", "250"]
+                 try:
+                     sampler = subprocess.Popen(argv, stdout=csv, stderr=err, start_new_session=True)
+                     telemetry = {"status": "started", "interval_ms": 250, "command": argv,
+diff -ruN -x day61-box.sh -x __pycache__ orig/research/spill-c-20260919/day40-run-cell.sh kit/tree/research/spill-c-20260919/day40-run-cell.sh
+--- orig/research/spill-c-20260919/day40-run-cell.sh	2026-11-04 21:13:08.462604612 +0200
++++ kit/tree/research/spill-c-20260919/day40-run-cell.sh	2026-11-04 21:14:34.403244613 +0200
+@@ -9,6 +9,8 @@
+ set -uo pipefail
+ cell=$1; timeout=$2
+ : "${D40_RIG:?}" "${D40_R:?}" "${D40_TREE:?}" "${D40_CELL_SCRIPT:?}"
++# Max-Q kit (<box>): every card check names the one card under test (D40_CARD, nvidia-smi index, PCI bus order).
++: "${D40_CARD:?set D40_CARD to the nvidia-smi index of the card under test}"
+ min_avail_gb=${D40_MIN_AVAIL_GB:-36}
+ waits=${D40_WAITS:-15}
+ lock_tries=${D40_LOCK_TRIES:-30}
+@@ -21,12 +23,12 @@
+ mkdir -p "$D40_R"
+ wait_free() {
+   for w in $(seq 1 "$waits"); do
+-    apps=$(nvidia-smi --query-compute-apps=pid --format=csv,noheader 2>/dev/null | grep -c .)
++    apps=$(nvidia-smi -i "$D40_CARD" --query-compute-apps=pid --format=csv,noheader 2>/dev/null | grep -c .)
+     avail_kb=$(awk '/MemAvailable/ {print $2}' /proc/meminfo)
+     if [ "$apps" = 0 ] && [ "$avail_kb" -ge $((min_avail_gb * 1024 * 1024)) ]; then return 0; fi
+     if [ $(( (w - 1) % log_every )) = 0 ]; then
+       { echo "$(date -u +%FT%TZ) $cell wait $w: compute_apps=$apps MemAvailable_kB=$avail_kb (need 0 and >= ${min_avail_gb} GiB)"
+-        nvidia-smi --query-compute-apps=pid,process_name,used_memory --format=csv,noheader 2>&1; } >> "$D40_R/waits.log"
++        nvidia-smi -i "$D40_CARD" --query-compute-apps=pid,process_name,used_memory --format=csv,noheader 2>&1; } >> "$D40_R/waits.log"
+     fi
+     sleep "$poll_s"
+   done
+diff -ruN -x day61-box.sh -x __pycache__ orig/research/spill-c-20260919/day59-cell.sh kit/tree/research/spill-c-20260919/day59-cell.sh
+--- orig/research/spill-c-20260919/day59-cell.sh	2026-11-04 21:13:08.464243178 +0200
++++ kit/tree/research/spill-c-20260919/day59-cell.sh	2026-11-04 21:14:34.403408657 +0200
+@@ -11,11 +11,16 @@
+ set -uo pipefail
+ cell=$1; fd=$2
+ : "${D40_R:?}" "${D40_BINS:?}" "${D40_TREE:?}" "${D40_LOCK:?}" "${D40_ART:?}"
++# Max-Q kit (<box>): the card is pinned by the runner (CUDA_DEVICE_ORDER=PCI_BUS_ID, CUDA_VISIBLE_DEVICES=<card>);
++# D40_CARD is the same card for nvidia-smi.
++: "${D40_CARD:?}" "${CUDA_VISIBLE_DEVICES:?}" "${CUDA_DEVICE_ORDER:?}"
+ EV=$D40_R/$cell/ev
+ mkdir -p "$EV"
+ cd "$D40_TREE" || exit 1
+ python3 tools/tier-lock-proof.py --fd "$fd" --lock "$D40_LOCK" --owner collector > "$EV/LOCK.json"
+-git rev-parse HEAD | tee "$EV/tree.sha"
++# Max-Q kit: no git checkout on <box>; the kit carries the source SHA of these scripts and of the binaries.
++cat "$D40_TREE/SOURCE_SHA" | tee "$EV/tree.sha"
++cp "$D40_BINS/BUILD_SHA" "$EV/build.sha"
+ mark() { printf '%s\t%s\n' "$(date -u +%FT%T.%3NZ)" "$1" >> "$EV/marks.tsv"; }
+ : > "$EV/marks.tsv"
+ # stamp: prefix every line of stdin with a UTC ms timestamp (line arrival time); nothing is dropped.
+@@ -26,7 +31,7 @@
+     sys.stdout.buffer.write(ts.encode() + b"\t" + line); sys.stdout.buffer.flush()
+ ' > "$1"; }
+ snap() { # $1 label: the card's compute apps and host memory at a run boundary (never acted on)
+-    { date -u +%FT%T.%3NZ; nvidia-smi --query-compute-apps=pid,process_name,used_memory --format=csv,noheader 2>&1
++    { date -u +%FT%T.%3NZ; nvidia-smi -i "$D40_CARD" --query-compute-apps=pid,process_name,used_memory --format=csv,noheader 2>&1
+       grep -E 'MemAvailable|SwapFree' /proc/meminfo; } > "$EV/$1.snap"
+ }
+ run_gen() { # $1 label  $2.. argv (env words first)
+@@ -89,7 +94,7 @@
+         [ "$arm" = pf ] && pre=(MEMRA_MOE_PREFETCH=1)
+         memra_port_guard day59-pfserve "$PORT" D59_PORT || exit 1
+         mark "boot-$arm"
+-        env CUDA_VISIBLE_DEVICES=0 MEMRA_COMPAT=openai "MEMRA_MODELS=gate=$D40_ART" "MEMRA_ADDR=127.0.0.1:$PORT" \
++        env CUDA_VISIBLE_DEVICES="$CUDA_VISIBLE_DEVICES" MEMRA_COMPAT=openai "MEMRA_MODELS=gate=$D40_ART" "MEMRA_ADDR=127.0.0.1:$PORT" \
+             MEMRA_CTX=8192 MEMRA_MAX_SESSIONS=4 MEMRA_MOE_RESIDENT=0 MEMRA_MOE_SLOTS=9986 "${pre[@]}" \
+             "$D40_BINS/memra-server-c60" > "$EV/serve-$arm-server.log" 2>&1 &
+         SERVER_PID=$!
+diff -ruN -x day61-box.sh -x __pycache__ orig/research/spill-c-20260919/maxq-verdict.py kit/tree/research/spill-c-20260919/maxq-verdict.py
+--- orig/research/spill-c-20260919/maxq-verdict.py	1970-01-01 02:00:00.000000000 +0200
++++ kit/tree/research/spill-c-20260919/maxq-verdict.py	2026-11-04 21:16:45.017553522 +0200
+@@ -0,0 +1,64 @@
++#!/usr/bin/env python3
++"""DAY59 rule over one card's four readings (DAY59.md:48-49, quoted in PREREG.md), one VERDICT line.
++
++"PF becomes that card's naked default iff G1, G2 and G3 pass there, `pftime` reads `pf_wins` and `pfnaked` does
++not read `pf_loses`". The inputs are the unchanged day59-pf.py readings (<out>/<cell>/reading.log); nothing is
++re-measured here. Outcomes: qualifies; does-not-qualify (a gate failed, which voids the timing verdict, or the rule
++is not met); void (a reading is missing or a timing cell's integrity failed: no decision, rerun).
++
++usage: maxq-verdict.py <out-dir> [--rig NAME] [--card N] [--power-limit W]
++"""
++import re
++import sys
++from pathlib import Path
++
++
++def opt(name, default):
++    return sys.argv[sys.argv.index(name) + 1] if name in sys.argv else default
++
++
++def read(path):
++    try:
++        return path.read_text(errors="replace").splitlines()
++    except FileNotFoundError:
++        return None
++
++
++def main():
++    out = Path(sys.argv[1])
++    rig, card, plim = opt("--rig", "?"), opt("--card", "?"), opt("--power-limit", "?")
++    logs = {c: read(out / c / "reading.log") for c in ("pfgates", "pfserve", "pftime", "pfnaked")}
++    missing = [c for c, ls in logs.items() if ls is None]
++
++    def result(cell, prefix):
++        hits = [l for l in (logs[cell] or []) if l.startswith(prefix)]
++        return [l.rsplit("-> ", 1)[-1].strip() for l in hits]
++
++    g1 = result("pfgates", "DAY59 G1 ")
++    g1 = "PASS" if len(g1) == 2 and all(r == "PASS" for r in g1) else ("missing" if not g1 else "FAIL")
++    g2 = (result("pfgates", "DAY59 G2 ") or ["missing"])[0]
++    g3 = (result("pfserve", "DAY59 G3 ") or ["missing"])[0]
++    shapes = {}
++    for cell in ("pftime", "pfnaked"):
++        line = next((l for l in (logs[cell] or []) if l.startswith(f"DAY59 VERDICT rig={rig} shape={cell} ")
++                     or re.match(rf"DAY59 VERDICT rig=\S+ shape={cell} ", l)), None)
++        m = re.search(r"integrity=(\S+) -> (\S+)$", line) if line else None
++        shapes[cell] = (m.group(1), m.group(2)) if m else ("missing", "void")
++    gates = [g1, g2, g3]
++    integrity_ok = all(shapes[c][0] == "ok" for c in shapes)
++    if missing or "missing" in gates or not integrity_ok:
++        name = "void"
++    elif any(g != "PASS" for g in gates):
++        name = "does-not-qualify"
++    elif shapes["pftime"][1] == "pf_wins" and shapes["pfnaked"][1] != "pf_loses":
++        name = "qualifies"
++    else:
++        name = "does-not-qualify"
++    print(f"DAY59 VERDICT rig={rig} card={card} power_limit={plim} g1={g1} g2={g2} g3={g3}"
++          f" pftime={shapes['pftime'][1]} pfnaked={shapes['pfnaked'][1]}"
++          + (f" missing={','.join(missing)}" if missing else "") + f" -> {name}")
++    return 0 if name != "void" else 1
++
++
++if __name__ == "__main__":
++    sys.exit(main())

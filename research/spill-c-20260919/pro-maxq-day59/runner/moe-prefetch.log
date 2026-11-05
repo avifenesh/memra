@@ -1,0 +1,93 @@
+moe-prefetch Max-Q run start 2026-11-05T04:00:10Z card=0 total_s=1200 out=/mnt/Data/work/memra-maxq/moe-prefetch/out-20261105T040010Z
+box start 2026-11-05T04:00:11Z tree f0e77b8bebf2b2b9ded37bde39b25c9e823a645b bins da649107c7e85f7681ddfd179650543b8400270d card 0 rig pro-maxq
+kit: PREREG.md sha256 ec3d727b139da66479af8138dca804301d86f0be1ee713e5183d235a7d89f9cb  run.sh sha256 b0caa452a5be09e0a2b3c397acc2c5550244bde2eb5884f464802a1ce2808f5d
+run-gen-c60: OK
+run-spec-c60: OK
+memra-server-c60: OK
+index, name, pci.bus_id, driver_version, memory.total [MiB], power.limit [W], power.default_limit [W], power.max_limit [W], clocks.max.sm [MHz]
+0, NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition, 00000000:01:00.0, 615.71.09, 97887 MiB, 300.00 W, 300.00 W, 325.00 W, 3090 MHz
+all cards:
+index, name, power.limit [W], memory.used [MiB], temperature.gpu
+0, NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition, 300.00 W, 2 MiB, 32
+1, NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition, 250.00 W, 2 MiB, 29
+2, NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition, 280.00 W, 2 MiB, 32
+3, NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition, 280.00 W, 2 MiB, 30
+
+==============NVSMI LOG==============
+
+Timestamp                                              : Thu Nov  5 06:00:11 2026
+Driver Version                                         : 615.71.09 [Deprecated; will be removed in CUDA 14.0. Use KMD Version instead]
+CUDA Version                                           : 13.4 [Deprecated; will be removed in CUDA 14.0. Use CUDA UMD Version instead]
+KMD Version                                            : 615.71.09
+CUDA UMD Version                                       : 13.4
+
+Attached GPUs                                          : 4
+GPU 00000000:01:00.0
+    Performance State                                  : P8
+    Clocks Event Reasons
+        Idle                                           : Not Active
+        Applications Clocks Setting                    : Not Active
+        SW Power Cap                                   : Not Active
+        HW Slowdown                                    : Not Active
+            HW Thermal Slowdown                        : Not Active
+            HW Power Brake Slowdown                    : Not Active
+        Sync Boost                                     : Not Active
+        SW Thermal Slowdown                            : Not Active
+        Display Clock Setting                          : Not Active
+        Board Limit                                    : Not Active
+        Reliability                                    : Active
+    Clocks Event Reasons Counters
+        SW Power Capping                               : 772882121708 us
+        Sync Boost                                     : 0 us
+        SW Thermal Slowdown                            : 1033457673 us
+        HW Thermal Slowdown                            : 0 us
+        HW Power Braking                               : 0 us
+    Sparse Operation Mode                              : N/A
+
+64
+CPU(s):                                  64
+Model name:                              AMD Ryzen Threadripper PRO 9975WX 32-Cores
+Thread(s) per core:                      2
+Socket(s):                               1
+CPU(s) scaling MHz:                      25%
+MemTotal:       1051302028 kB
+MemAvailable:   1017920868 kB
+SwapTotal:       8388604 kB
+Filesystem      Size  Used Avail Use% Mounted on
+/dev/nvme0n1    7.3T  5.8T  1.2T  84% /mnt/Data
+/dev/nvme0n1    7.3T  5.8T  1.2T  84% /mnt/Data
+7.0.0-38-generic
+Python 3.14.4
+cpu cap: nice -n 10 (no core pinning; DEVIATIONS.md)
+/mnt/Data/work/memra-maxq/models/Qwen3.6-35B-A3B-UD-IQ4_XS.gguf: OK
+artifact sha256 check rc=0 took 9s
+pfgates rc=0 timeout=420s 2026-11-05T04:00:52Z
+pfgates validate rc=0
+pfgates reader rc=0
+DAY59 G1 rig=pro-maxq slots=9986 exits={'off': 0, 'pf': 0} match=True one_tape=True -> PASS
+DAY59 G1 rig=pro-maxq slots=512 exits={'off': 0, 'pf': 0} match=True one_tape=True -> PASS
+DAY59 G2 rig=pro-maxq exit=0 k_lines=8 k_pass=8 -> PASS
+DAY59 GATES rig=pro-maxq -> PASS
+pfserve rc=0 timeout=420s 2026-11-05T04:01:19Z
+pfserve validate rc=0
+pfserve reader rc=0
+DAY59 G3 rig=pro-maxq requests=7 equal=7 errors=[] -> PASS
+pftime rc=0 timeout=900s 2026-11-05T04:02:56Z
+pftime validate rc=0
+pftime reader rc=0
+DAY59 CHECKS rig=pro-maxq shape=pftime runs=20 integrity=ok
+DAY59 TIME rig=pro-maxq shape=pftime gen-only decode: off=0.322 pf=0.258 (N=10 each) pf_minus_off pooled=-0.0640 o1=-0.0650 o2=-0.0640 noise=0.0010 -> pf_wins
+DAY59 TIME rig=pro-maxq shape=pftime steady window: off=0.262 pf=0.232 (N=10 each) pf_minus_off pooled=-0.0300 o1=-0.0300 o2=-0.0300 noise=0.0008 -> pf_wins
+DAY59 VERDICT rig=pro-maxq shape=pftime integrity=ok -> pf_wins
+pfnaked rc=0 timeout=900s 2026-11-05T04:04:24Z
+pfnaked validate rc=0
+pfnaked reader rc=0
+DAY59 CHECKS rig=pro-maxq shape=pfnaked runs=20 integrity=ok
+DAY59 TIME rig=pro-maxq shape=pfnaked gen-only decode: off=0.125 pf=0.125 (N=10 each) pf_minus_off pooled=+0.0000 o1=+0.0000 o2=+0.0000 noise=0.0010 -> pf_flat
+DAY59 TIME rig=pro-maxq shape=pfnaked steady window: not printed by this shape
+DAY59 VERDICT rig=pro-maxq shape=pfnaked integrity=ok -> pf_flat
+power.limit card 0: start=300.00W end=300.00W
+DAY59 VERDICT rig=pro-maxq card=0 power_limit=300.00W g1=PASS g2=PASS g3=PASS pftime=pf_wins pfnaked=pf_flat -> qualifies
+moe-prefetch Max-Q run exit=0 elapsed=254s
+/mnt/Data/work/memra-maxq/moe-prefetch/out-20261105T040010Z
+power GPU 0: limit 300 W (asked 300, was 250, max 325); 26 samples; max 55 C, max fan 30 %; sw_thermal 0, hw_thermal 0, hw_power_brake 0, sw_power_cap 0; throttle: no; thermal stop: none; neighbours none max 0 C, drop: none; restored 250 W; rc=0

@@ -1,0 +1,25 @@
+label=c60 sha=da649107c7e85f7681ddfd179650543b8400270d start=2026-11-04T19:19:55Z host=laptop
+head=da649107c7e85f7681ddfd179650543b8400270d
+MEMRA_CUDA_ARCH=120a CARGO_TARGET_DIR=/home/avifenesh/.cache/memra-maxq/target MEMRA_NVCC=/usr/local/cuda-13.1/bin/nvcc
+cargo 1.97.1 (c980f4866 2026-06-30)
+rustc 1.97.1 (8bab26f4f 2026-07-14)
+   Compiling memra-gguf v0.138.0 (/home/avifenesh/.cache/memra-maxq/moe-prefetch/wt-c60/crates/memra-gguf)
+   Compiling memra-tier v0.138.0 (/home/avifenesh/.cache/memra-maxq/moe-prefetch/wt-c60/crates/memra-tier)
+   Compiling memra-tokenizer v0.138.0 (/home/avifenesh/.cache/memra-maxq/moe-prefetch/wt-c60/crates/memra-tokenizer)
+   Compiling memra-engine v0.138.0 (/home/avifenesh/.cache/memra-maxq/moe-prefetch/wt-c60/crates/memra-engine)
+   Compiling memra-reference v0.138.0 (/home/avifenesh/.cache/memra-maxq/moe-prefetch/wt-c60/crates/memra-reference)
+   Compiling memra-kv v0.138.0 (/home/avifenesh/.cache/memra-maxq/moe-prefetch/wt-c60/crates/memra-kv)
+   Compiling memra-runtime v0.138.0 (/home/avifenesh/.cache/memra-maxq/moe-prefetch/wt-c60/crates/memra-runtime)
+warning: memra-engine@0.138.0: nvcc from MEMRA_NVCC: /usr/local/cuda-13.1/bin/nvcc
+    Finished `release` profile [optimized] target(s) in 3m 34s
+   Compiling memra-tier v0.138.0 (/home/avifenesh/.cache/memra-maxq/moe-prefetch/wt-c60/crates/memra-tier)
+warning: memra-engine@0.138.0: nvcc from MEMRA_NVCC: /usr/local/cuda-13.1/bin/nvcc
+   Compiling memra-server v0.138.0 (/home/avifenesh/.cache/memra-maxq/moe-prefetch/wt-c60/crates/memra-server)
+   Compiling memra-kv v0.138.0 (/home/avifenesh/.cache/memra-maxq/moe-prefetch/wt-c60/crates/memra-kv)
+   Compiling memra-engine v0.138.0 (/home/avifenesh/.cache/memra-maxq/moe-prefetch/wt-c60/crates/memra-engine)
+    Finished `release` profile [optimized] target(s) in 1m 00s
+binary=run-gen-c60 tree=da649107c7e85f7681ddfd179650543b8400270d sha256=42432a8da1e07e9fa61ef11d6505f93c0219e3f017ac6a8aa24ecd73df60c437 bytes=53713648
+binary=run-spec-c60 tree=da649107c7e85f7681ddfd179650543b8400270d sha256=c06270e7336c2554b8e4e074458b0dc6b258b16326da5ec6677d19113057d7e6 bytes=53765112
+binary=memra-server-c60 tree=da649107c7e85f7681ddfd179650543b8400270d sha256=d4d8de9b5dc7f6fdda6cce7f13959fb6c0faf37112bdb5c991f916913eac33ee bytes=70364264
+end=2026-11-04T19:24:30Z
+rc=0

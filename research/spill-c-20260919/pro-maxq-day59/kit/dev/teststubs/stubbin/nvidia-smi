@@ -1,0 +1,62 @@
+#!/usr/bin/env python3
+"""Laptop plumbing-test stub of nvidia-smi: four Max-Q cards, idle, no compute apps. Never touches a GPU."""
+import datetime
+import os
+import sys
+import time
+
+a = sys.argv[1:]
+log = os.environ.get("MAXQ_STUB_LOG")
+if log:
+    with open(log, "a") as f:
+        f.write("nvidia-smi " + " ".join(a) + "\n")
+NAME = os.environ.get("STUB_NAME", "NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition")
+LIMITS = {"0": "250.00", "1": "250.00", "2": "280.00", "3": "280.00"}
+idx = a[a.index("-i") + 1] if "-i" in a else None
+cards = [idx] if idx is not None else ["0", "1", "2", "3"]
+fmt = next((x.split("=", 1)[1] for x in a if x.startswith("--format=")), "csv")
+noheader, nounits = "noheader" in fmt, "nounits" in fmt
+HEAD = {"clocks.sm": "clocks.current.sm [MHz]", "clocks.mem": "clocks.current.memory [MHz]",
+        "power.draw": "power.draw [W]", "power.limit": "power.limit [W]", "power.max_limit": "power.max_limit [W]",
+        "power.default_limit": "power.default_limit [W]", "memory.used": "memory.used [MiB]",
+        "memory.total": "memory.total [MiB]", "utilization.gpu": "utilization.gpu [%]",
+        "clocks.max.sm": "clocks.max.sm [MHz]", "used_memory": "used_gpu_memory [MiB]"}
+
+
+def value(field, card):
+    v = {"name": NAME, "index": card, "pci.bus_id": f"00000000:{0x41 + int(card):02X}:00.0",
+         "driver_version": "615.71.09", "memory.total": "97887 MiB", "memory.used": os.environ.get("STUB_USED", "2") + " MiB",
+         "power.limit": LIMITS[card] + " W", "power.default_limit": "300.00 W", "power.max_limit": "300.00 W",
+         "clocks.max.sm": "3090 MHz", "pstate": "P0", "clocks.sm": "2617 MHz", "clocks.mem": "14001 MHz",
+         "power.draw": "87.50 W", "temperature.gpu": "41", "utilization.gpu": "0 %",
+         "pcie.link.gen.current": "5", "pcie.link.width.current": "16",
+         "timestamp": datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S.%f")[:-3]}[field]
+    return v.split(" ")[0] if nounits and field != "timestamp" else v
+
+
+q = next((x for x in a if x.startswith("--query-gpu=")), None)
+if q:
+    fields = q.split("=", 1)[1].split(",")
+    def emit():
+        for c in cards:
+            print(", ".join(value(f, c) for f in fields), flush=True)
+    if not noheader:
+        print(", ".join(HEAD.get(f, f) for f in fields), flush=True)
+    if "-lms" in a:
+        period = int(a[a.index("-lms") + 1]) / 1000
+        while True:
+            emit()
+            time.sleep(period)
+    emit()
+elif any(x.startswith("--query-compute-apps=") for x in a):
+    fields = next(x for x in a if x.startswith("--query-compute-apps=")).split("=", 1)[1].split(",")
+    if not noheader:
+        print(", ".join(HEAD.get(f, f) for f in fields))
+elif "-L" in a:
+    for c in cards:
+        print(f"GPU {c}: {NAME} (UUID: GPU-stub-{c})")
+elif "-q" in a:
+    print("==============NVSMI LOG==============\n\nDriver Version : 615.71.09\nCUDA Version : 13.4\n(stub)")
+else:
+    print("stub nvidia-smi: unsupported " + " ".join(a), file=sys.stderr)
+    sys.exit(2)

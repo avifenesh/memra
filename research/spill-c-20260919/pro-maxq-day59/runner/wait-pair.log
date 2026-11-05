@@ -1,0 +1,4 @@
+waitfor: until test ! -e /mnt/Data/work/memra-pair/dsv4-nvfp4 -a ! -e /mnt/Data/work/memra-pair/bin (deadline 10m00s, every 20s)
+waitfor: MET after 0m00s
+waitfor: no-proc /mnt/Data/work/memra-pair/ (deadline 3m00s, every 15s)
+waitfor: MET after 0m00s

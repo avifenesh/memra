@@ -1,0 +1,53 @@
+moe-prefetch Max-Q kit provenance (written 2026-11-04T19:25:30Z on the laptop; no GPU used to build or test)
+
+fix stack HEAD at kit time: origin/fix4/gates 2ccb038d1c16358edde65582597e7b840e3f63fb (the extension change target; not used by the cell)
+Workstation receipt: research/spill-c-20260919/pro-single-day61/ at origin/fix4/gates (landed in e6217375e1)
+
+== binaries (label c60), bins/c60/
+source: da649107c7e85f7681ddfd179650543b8400270d (DAY59.md section 1a pin), detached worktree, clean tree
+toolchain: nvcc /usr/local/cuda-13.1 (Cuda compilation tools, release 13.1, V13.1.115), cargo 1.97.1 (c980f4866 2026-06-30), rustc 1.97.1 (8bab26f4f 2026-07-14)
+build: MEMRA_CUDA_ARCH=120a, cargo build --release -j2 -p memra-engine --bin run-gen --bin run-spec; cargo build --release -j2 -p memra-server; default features; CARGO_TARGET_DIR=/home/avifenesh/.cache/memra-maxq/target
+built 2026-11-04T19:19:55Z to 19:24:30Z under flock /home/avifenesh/.cache/memra-rig-build.lock, nice -n 15 (build-c60.log)
+binary=run-gen-c60 tree=da649107c7e85f7681ddfd179650543b8400270d sha256=42432a8da1e07e9fa61ef11d6505f93c0219e3f017ac6a8aa24ecd73df60c437 bytes=53713648
+binary=run-spec-c60 tree=da649107c7e85f7681ddfd179650543b8400270d sha256=c06270e7336c2554b8e4e074458b0dc6b258b16326da5ec6677d19113057d7e6 bytes=53765112
+binary=memra-server-c60 tree=da649107c7e85f7681ddfd179650543b8400270d sha256=d4d8de9b5dc7f6fdda6cce7f13959fb6c0faf37112bdb5c991f916913eac33ee bytes=70364264
+links (ldd, all three): libcudart.so.13 libstdc++.so.6 libcublasLt.so.13 libcublas.so.13 libgcc_s libm libc libdl libpthread librt; highest glibc symbol GLIBC_2.39 (<box>: glibc 2.43; ldconfig on <box> resolves libcudart/libcublas/libcublasLt .so.13 from CUDA 13.4)
+Workstation c60 hashes for comparison (pro-single-day61/BINS.box.sha256): run-gen 579958158e33..., run-spec cf0cc23df7fb..., memra-server 7ddb8187f4d5...; they differ because the build path is part of the binary (DAY59.md section 3)
+
+== cell scripts, tree/ (sitting tree f0e77b8bebf2b2b9ded37bde39b25c9e823a645b, ported; PORTABILITY.diff)
+pristine sha256 at f0e77b8be:
+  e55e055cb299338c1e3597040bc36f578da2d82a265bae77288f7e98dd5792fb  ./research/spill-c-20260919/c-regime.py
+  424a44499367718c44dab6c32d4c03d6deaf1c92777e975574fc6db529ec2b58  ./research/spill-c-20260919/day40-attrib.py
+  924ec4e0c164bbf804b41690b1e55c9d25565f11c85220b06ef516224791aa24  ./research/spill-c-20260919/day40-run-cell.sh
+  b799bd90606e3ef1955bd7f39297f228601fca8c48558b0b45d9e84950775b05  ./research/spill-c-20260919/day59-cell.sh
+  b85ff3cc8f66e27006acf0cdad70463d1cbd0026cf8052068806dcce9082f8f2  ./research/spill-c-20260919/day59-pf.py
+  460ae3d26e32a17b24eacaa0c791c847f17e8ecc5002c088db0c7b7811290fd8  ./research/spill-c-20260919/day59-serve-client.py
+  2dd2ee10faae902abeaf7fe46d005e81f9a45ece38bdecdbc5f9d159f0c960e3  ./research/spill-c-20260919/day61-box.sh
+  c70f4b4fcb5794db82b91e70d945dfbafe4a1ff6e19d424823042dbea9b92715  ./tools/port-guard.sh
+  4861050b6df84c0bc5e6e5c6780efa6f159868e54bff2f978bc99e6b5fcea732  ./tools/tier-battery.py
+  91ef0d0a0a09746b8c991e8851630fceaf0aae9e7cf56e1c8e50f2597f7e513a  ./tools/tier-lock-proof.py
+kit sha256:
+  e55e055cb299338c1e3597040bc36f578da2d82a265bae77288f7e98dd5792fb  ./research/spill-c-20260919/c-regime.py
+  424a44499367718c44dab6c32d4c03d6deaf1c92777e975574fc6db529ec2b58  ./research/spill-c-20260919/day40-attrib.py
+  46d3a41f5efb263fbbe1a6c3f3eb55c68a6d0cbf64c0f8293cbce2e594863dc9  ./research/spill-c-20260919/day40-run-cell.sh
+  c8672932de321e4c52308f434368577ad1323c07542ebcae750192bb5f6ccc8d  ./research/spill-c-20260919/day59-cell.sh
+  b85ff3cc8f66e27006acf0cdad70463d1cbd0026cf8052068806dcce9082f8f2  ./research/spill-c-20260919/day59-pf.py
+  460ae3d26e32a17b24eacaa0c791c847f17e8ecc5002c088db0c7b7811290fd8  ./research/spill-c-20260919/day59-serve-client.py
+  0a906717a9947e61a29185a4d777671b8edb681280e42049d3374a990c8e12cb  ./research/spill-c-20260919/maxq-verdict.py
+  e845130abb53aea176891550477dfe4889368afa6dbfe3630c665061ef3f3b7d  ./SOURCE_SHA
+  c70f4b4fcb5794db82b91e70d945dfbafe4a1ff6e19d424823042dbea9b92715  ./tools/port-guard.sh
+  333e13ac97f8fc824cefd798786be43c20c5c98bc0576a9acfd16f08ebd5559d  ./tools/tier-battery.py
+  91ef0d0a0a09746b8c991e8851630fceaf0aae9e7cf56e1c8e50f2597f7e513a  ./tools/tier-lock-proof.py
+
+== artifact
+Qwen3.6-35B-A3B-UD-IQ4_XS.gguf 18209036576 bytes, registered sha256 df27a780435b7b45c2597536112ea3cb091f8544c3d0c3318d9f4258b31f7adf (day61-box.sh:18)
+laptop copy /data/ai-ml/hf-models/qwen36-35b-moe/Qwen3.6-35B-A3B-UD-IQ4_XS.gguf: sha256sum -c OK (2026-11-04, the plumbing test, 9-11 s)
+<box> copy /mnt/Data/work/memra-maxq/models/Qwen3.6-35B-A3B-UD-IQ4_XS.gguf: 18209036576 bytes at kit time; run.sh checks its sha256 before any cell
+
+== clean rebuild (2026-11-04, replaces the binaries above)
+The first build (build-c60-attempt1.log) compiled 8 of the 11 workspace crates in the closure; memra-lanes,
+memra-sampling and memra-validate came from the shared target dir, built from another 0.138.0 tree. rebuild-clean.sh
+touched every tracked file of the da649107c worktree and rebuilt; build-c60.log shows all 11 compiled from wt-c60.
+binary=run-gen-c60 sha256=5cfbba77ea5ab88bf68a26db98fa5fd0f483df2eb52d144faab0089e79058f96
+binary=run-spec-c60 sha256=e975457315dee2d7e0a6671555c5aafd3014f74114ead269210d7996ce2f8091
+binary=memra-server-c60 sha256=6464475041c1060bc0ab7b7fb28033698aeb18ecaf8504bf2052f6fc532f511e

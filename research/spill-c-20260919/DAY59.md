@@ -265,3 +265,47 @@ is unchanged: it still only records the limit it reads.
   covers the card at 300 W in this chassis, throttle included. G1 to G3 are read as registered.
 - The runner applies the Max-Q thermal rule on its 10 s samples: it stops the cell at >= 95 C, or at >= 92 C
   with the fan at >= 95 % on 3 consecutive samples, and a stopped cell has no verdict.
+
+## 5. The RTX PRO 6000 Blackwell Max-Q: the reading (2026-11-05 04:00Z to 04:04Z; `pro-maxq-day59/`)
+
+The cell ran as section 4 and its two amendments registered, on GPU 0 of the four-card box ("NVIDIA RTX PRO 6000
+Blackwell Max-Q Workstation Edition", driver 615.71.09), 2026-11-05 04:00:10Z to 04:04:24Z (254 s). The binaries are
+the clean rebuild from `da649107c` (`run-gen-c60` `5cfbba77...`, `run-spec-c60` `e9754573...`, `memra-server-c60`
+`64644750...`; `kit/PROVENANCE.txt`), checked by the kit before the first boot (`bins-check.log`), and the artifact
+check passed (`artifact-check.log`). The kit's `PREREG.md` (sha256 `ec3d727b...`) and `run.sh` (`b0caa452...`) are
+the ones `provenance.log` records. Receipts mirrored file for file (`MIRROR-CHECK.txt`: 282 of 282 `OK` against the
+kit's `MANIFEST.sha256`), then exported with `research/spill-f-20260919/m1-box-sanitize.py`, which replaced the box
+name in six kit files; `EXPORT-MANIFEST.json` lists each with its original and exported sha256. The runner's power
+summary, 10 s thermal samples and quiet-box checks are in `runner/`.
+
+Box and power: no compute app on any card at the start or before either timing cell (`box-state.log`). The runner set
+GPU 0 to 300 W (from 250 W, max 325 W), read it back (`power.limit` 300 W at start and end, `regime.txt`) and restored
+250 W after the cell (`runner/power-set-moe-prefetch.log`). Verbatim (`VERDICT.txt`):
+
+- `DAY59 GATES rig=pro-maxq -> PASS` (`G1 ... slots=9986 ... -> PASS`, `G1 ... slots=512 ... -> PASS`, `G2 ... k_pass=8 -> PASS`)
+- `DAY59 G3 rig=pro-maxq requests=7 equal=7 errors=[] -> PASS`
+- `DAY59 TIME rig=pro-maxq shape=pftime gen-only decode: off=0.322 pf=0.258 (N=10 each) pf_minus_off pooled=-0.0640 o1=-0.0650 o2=-0.0640 noise=0.0010 -> pf_wins`
+- `DAY59 TIME rig=pro-maxq shape=pftime steady window: off=0.262 pf=0.232 (N=10 each) pf_minus_off pooled=-0.0300 o1=-0.0300 o2=-0.0300 noise=0.0008 -> pf_wins`
+- `DAY59 VERDICT rig=pro-maxq shape=pftime integrity=ok -> pf_wins`
+- `DAY59 TIME rig=pro-maxq shape=pfnaked gen-only decode: off=0.125 pf=0.125 (N=10 each) pf_minus_off pooled=+0.0000 o1=+0.0000 o2=+0.0000 noise=0.0010 -> pf_flat`
+- `DAY59 VERDICT rig=pro-maxq shape=pfnaked integrity=ok -> pf_flat`
+- `DAY59 VERDICT rig=pro-maxq card=0 power_limit=300.00W g1=PASS g2=PASS g3=PASS pftime=pf_wins pfnaked=pf_flat -> qualifies`
+
+Throttle summary (`runner/power-moe-prefetch.txt`, 26 samples at 10 s): maximum 55 C, fan 30 %; SW power cap, SW
+thermal slowdown, HW thermal slowdown and HW power brake each active in 0 samples; no thermal stop. The 250 ms
+telemetry (`regime.txt`) agrees: the timing cells drew at most 146.5 W (`pftime`, SM median 2317 MHz, 47 to 54 C) and
+98.1 W (`pfnaked`, SM median 2280 MHz, 52 to 56 C), and the serving boot at most 266.4 W, so the 300 W limit never
+bound during the timing cells.
+
+| Card | Pressure shape OFF -> PF | Naked shape OFF -> PF |
+| --- | ---: | ---: |
+| RTX PRO 6000 Blackwell Workstation Edition, 600 W (section 2) | 0.310 -> 0.255 s, `pf_wins` | 0.113 -> 0.113 s, `pf_flat` |
+| RTX PRO 6000 Blackwell Max-Q Workstation Edition, 300 W limit (this section) | 0.322 -> 0.258 s, `pf_wins` | 0.125 -> 0.125 s, `pf_flat` |
+| RTX 5090 Laptop GPU, 175 W limit (section 3) | 0.412 -> 0.364 s, `pf_wins` | 0.216 -> 0.214 s, `pf_flat` |
+
+**Read as registered: `qualifies`.** G1, G2 and G3 PASS, `pftime` reads `pf_wins` in order 1, in order 2 and pooled,
+`pfnaked` reads `pf_flat`, and both timing cells read `integrity=ok`. As section 4 fixed before the cell, the Max-Q
+gets its own arm in `in_token_prefetch_for_device` (`pro6000-maxq-receipt`); the Server Edition keeps
+`no-receipt-default`. That change is its own commit. The HEAD boot line on the Max-Q (`[moe-cache] in-token prefetch:
+on (card pro6000-maxq-receipt)`) is owed to the next window on the box; it checks the arm and its source, not the
+timing. The decision record's "Owed" item (a second MoE family on the legacy slot-cache spill path) stays owed here.
