@@ -1,5 +1,11 @@
 # Pinned destinations of the contract path: cached or write-combined, per device (2026-09-21)
 
+> **2026-11-04:** the serving path this record decided for is gone. The host-tier contracts door
+> (`MEMRA_KV_HOST_CONTRACTS`) was deleted on the owner's ruling (docs/FLAGS.md, Removed doors), so no
+> serving request allocates a pinned lease through `CudaTransfers::alloc_host` any more. The per-device
+> default below still sets the transfer engine's arm for the tier gates that construct it
+> (`kv-tier-gate`, `tier-transfer-gate`); the measurements stand as recorded.
+
 **Status:** decided and landed as a per-device naked default (lane `lane/spill-a-20260919` day 14,
 lead ruling 22 in `research/spill-lead-20260919/INTEGRATION-DAY12.md`). `PinnedKind::for_device`
 (`crates/memra-engine/src/tier_transfer.rs`) returns `Cached` for the RTX PRO 6000 Blackwell class

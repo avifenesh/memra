@@ -153,7 +153,6 @@ async fn run_capture(
         request_id: env.id.clone(),
         admit_predict_logged: false,
         memory_defer_since: None,
-        reclaim_offtick: None,
         max_prompt_tokens: None,
         cache_ns,
         affinity: None,
