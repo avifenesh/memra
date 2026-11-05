@@ -33,7 +33,9 @@ switch removed.
 telemetry reads a 175 W power limit and a 1627 MHz SM median), so the desktop RTX 5090 (170 SMs,
 32 GB, a different bus-to-compute ratio) keeps the prefetch off until its own cell. The PRO 6000
 receipt covers the full-power Workstation card only. The CPU-expert companion's prediction worker,
-which reads the same variable as a depth, was not part of the cell and is not decided here.
+which read the same variable as a depth, was not part of the cell. It was deleted the same day on
+its own negative receipts (`docs/FLAGS.md`, Removed doors, `MEMRA_MOE_PREFETCH`), so the
+variable is gone.
 
 **Open for the owner:** his 2026-11-04 answer named this door "on the PRO 6000". The finding that
 reached him said the 5090 cells were still owed; the tracked receipt shows they ran and passed on
