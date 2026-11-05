@@ -1,0 +1,152 @@
+{
+ "A1_kernel": {
+  "cpu_flag_lines": true,
+  "dmi_virtual_markers": [],
+  "hypervisor_flag": false,
+  "pci_emulated_devices": [],
+  "pci_functions": 102,
+  "sys_hypervisor_type": null
+ },
+ "A2_A3_mount": {
+  "fstype": "ext4",
+  "identity": {
+   "device": 66307,
+   "filesystem_id_sha256_16": "666d753694d2e10d",
+   "mount_id": 242
+  },
+  "st_dev": "259:3",
+  "statx": {
+   "dev_major": 259,
+   "dev_minor": 3,
+   "dio_mem_align": null,
+   "dio_offset_align": null,
+   "mask": 5951,
+   "mnt_id": 242
+  }
+ },
+ "A4_block_graph": {
+  "leaves": [
+   {
+    "name": "nvme0n1"
+   }
+  ],
+  "nodes": [
+   {
+    "kind": "nvme-namespace",
+    "major_minor": "259:3",
+    "name": "nvme0n1",
+    "rotational": "0",
+    "via": "mount"
+   }
+  ]
+ },
+ "A5_controllers": [
+  {
+   "controller": "nvme0",
+   "device": "0xa810",
+   "firmware_rev": "0B2QNXH7",
+   "leaf": "nvme0n1",
+   "link": {
+    "current_link_speed": "32.0 GT/s PCIe",
+    "current_link_width": "4",
+    "max_link_speed": "32.0 GT/s PCIe",
+    "max_link_width": "4"
+   },
+   "model": "Samsung SSD 9100 PRO with Heatsink 8TB",
+   "numa_node": "-1",
+   "pci_class": "0x010802",
+   "pci_depth": 3,
+   "serial_sha256_16": "ae915e6968fd415c",
+   "subsystem_vendor": "0x144d",
+   "transport": "pcie",
+   "vendor": "0x144d"
+  }
+ ],
+ "A6_io_binding": {
+  "deltas": {
+   "leaf:nvme0n1": {
+    "read_sectors": 2097152,
+    "write_sectors": 2097400
+   },
+   "top": {
+    "read_sectors": 2097152,
+    "write_sectors": 2097400
+   }
+  },
+  "dio_mem_align": null,
+  "dio_offset_align": null,
+  "file": ".m1-proof-1892253-1793851480516730972.bin",
+  "foreign_read_sectors_upper": 0,
+  "foreign_write_sectors_upper": 248,
+  "leaf_read_sectors": 2097152,
+  "leaf_write_sectors": 2097400,
+  "payload_bytes": 1073741824,
+  "read_ns": 927750435,
+  "read_sha256": "dda4039292f227c756a24a477593c3c4bbd69e6db71787e8fb5e36681680224d",
+  "removed": true,
+  "required_sectors": 2097152,
+  "snapshots": {
+   "after_read": {
+    "leaf:nvme0n1": {
+     "read_ios": 71281758,
+     "read_sectors": 28062377202,
+     "write_ios": 43927387,
+     "write_sectors": 43927411208
+    },
+    "top": {
+     "read_ios": 71281758,
+     "read_sectors": 28062377202,
+     "write_ios": 43927387,
+     "write_sectors": 43927411208
+    }
+   },
+   "after_write": {
+    "leaf:nvme0n1": {
+     "read_ios": 71279710,
+     "read_sectors": 28060280050,
+     "write_ios": 43927383,
+     "write_sectors": 43927411160
+    },
+    "top": {
+     "read_ios": 71279710,
+     "read_sectors": 28060280050,
+     "write_ios": 43927383,
+     "write_sectors": 43927411160
+    }
+   },
+   "before_write": {
+    "leaf:nvme0n1": {
+     "read_ios": 71279708,
+     "read_sectors": 28060280034,
+     "write_ios": 43925333,
+     "write_sectors": 43925313760
+    },
+    "top": {
+     "read_ios": 71279708,
+     "read_sectors": 28060280034,
+     "write_ios": 43925333,
+     "write_sectors": 43925313760
+    }
+   }
+  },
+  "write_fdatasync_ns": 956367801,
+  "write_sha256": "dda4039292f227c756a24a477593c3c4bbd69e6db71787e8fb5e36681680224d"
+ },
+ "A7_capacity": {
+  "free_bytes": 1248580943872,
+  "reserve_bytes": 21474836480
+ },
+ "A8_identity": {
+  "device": 66307,
+  "filesystem_id_sha256_16": "666d753694d2e10d",
+  "mount_id": 242
+ },
+ "class": "nvme-local-direct",
+ "private_capture_sha256": "4e9b2284a8ba58a1abc0e5feb46667d94662086290c66d7da229313d89739f00",
+ "reasons": [],
+ "registration": "research/spill-f-20260919/M1-PREREG.md section A",
+ "schema": "m1-nvme-proof-v1",
+ "tool_sha256": "d59851b624339e16d2290b21b94567a593645266eb0e5dd83d4490decbb78864",
+ "utc": "2026-11-05T04:04:40.510743+00:00",
+ "verdict": "PASS"
+}

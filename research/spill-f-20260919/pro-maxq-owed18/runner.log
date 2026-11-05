@@ -1,0 +1,28 @@
+runner start 2026-11-05T04:04:31Z card=0 deadline='2026-11-05 06:50' <local-tz> (2609s usable)
+card 0: NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition, power.limit 300.00 W, 2 MiB used; nice  10
+== stage start 2026-11-05T04:04:32Z (2608s left in the window)
+== stage end 2026-11-05T04:04:40Z rc=0
+== b2-prompts start 2026-11-05T04:04:40Z (2600s left in the window)
+== b2-prompts end 2026-11-05T04:04:40Z rc=0
+== m1-proof start 2026-11-05T04:04:40Z (2600s left in the window)
+== m1-proof end 2026-11-05T04:04:42Z rc=0
+== handoff-1g start 2026-11-05T04:04:42Z (2598s left in the window)
+== handoff-1g end 2026-11-05T04:13:43Z rc=0
+handoff-1g took 541s; handoff-8g projected 1623s; 2057s left in the window
+== handoff-8g start 2026-11-05T04:13:43Z (2057s left in the window)
+== handoff-8g end 2026-11-05T04:40:54Z rc=0
+kit-procs reap: run 20261105T040431Z: SIGTERM 1, SIGKILL 0
+== VERDICT
+M1-HANDOFF-VERDICT handoff-1g export_ms direct/buffered: winner median_ratio=0.8602963708794817 pairs=10
+M1-HANDOFF-VERDICT handoff-1g write_ms direct/buffered: flat median_ratio=1.0016031327496069 pairs=10
+M1-HANDOFF-VERDICT handoff-1g fsync_ms direct/buffered: winner median_ratio=0.010498404600322997 pairs=10
+M1-HANDOFF-VERDICT handoff-1g import_s direct/buffered: flat median_ratio=1.0606617647058822 pairs=10
+pairs=10 failed_cycles=[] malformed_pairs=[]
+M1-HANDOFF-VERDICT handoff-8g export_ms direct/buffered: winner median_ratio=0.9156872557932629 pairs=10
+M1-HANDOFF-VERDICT handoff-8g write_ms direct/buffered: loser median_ratio=1.066101836718885 pairs=10
+M1-HANDOFF-VERDICT handoff-8g fsync_ms direct/buffered: winner median_ratio=0.0033601915591593857 pairs=10
+M1-HANDOFF-VERDICT handoff-8g import_s direct/buffered: flat median_ratio=1.013157894736842 pairs=10
+pairs=10 failed_cycles=[] malformed_pairs=[]
+M1-HANDOFF-VERDICT pro6000-maxq export_ms direct/buffered: winner handoff-1g=winner@0.8602963708794817/10 handoff-8g=winner@0.9156872557932629/10 default=direct card_index=0 power_limit_w=300.00 card="NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition"
+receipts 6.6M; scratch removed: yes
+OUT /mnt/Data/work/memra-maxq/handoff-direct/out-20261105T040431Z

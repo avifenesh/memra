@@ -1,0 +1,15 @@
+PASS 1a collector ran under the runner lock
+PASS 1b an independent open was refused during the cell
+PASS 1c lock still held after the cell
+PASS 1d telemetry sampler restricted to -i 3
+PASS 1e compute-app snapshot restricted to -i 3
+PASS 1f power limits recorded for card 3
+PASS 2a external-lock child owns the runner's description
+PASS 2b lock released when the runner closes fd 9
+PASS 3 refused while another description holds the lock (rc=2)
+PASS 4 wrong inode refused
+PASS 5 GpuSampler device from MAXQ_SMI_CARD
+PASS 6 reap kills only tagged processes
+PASS 7a no stop below the rule (hot without full fan, or under 3 in a row)
+PASS 7b stop after 3 hot samples with fan >= 95, run reaped
+tests: 14 passed, 0 failed

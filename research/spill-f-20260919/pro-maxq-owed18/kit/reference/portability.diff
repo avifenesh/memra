@@ -1,0 +1,74 @@
+--- a/tools/tier-battery.py
++++ b/tools/tier-battery.py
+@@ -210,6 +210,20 @@
+ @contextlib.contextmanager
+ def campaign_lock(rig, inherit=False):
+     require(rig in LOCKS and LOCKS[rig] is not None, "GPU-shaped campaign requires canonical rig lock")
++    # Max-Q kit (DEVIATIONS.md D6): run.sh holds the canonical lock for the whole cell on one
++    # open-file description and passes its FD. Re-asserting flock on a dup of that description
++    # succeeds only while no other description holds the lock; it is never LOCK_UN'd here, so
++    # the lock stays held between collector cells and drops when run.sh exits.
++    held = os.environ.get("MAXQ_LOCK_FD")
++    if held is not None:
++        fd = int(held)
++        live, canonical = os.fstat(fd), os.stat(LOCKS[rig])
++        require((live.st_dev, live.st_ino) == (canonical.st_dev, canonical.st_ino),
++                "MAXQ_LOCK_FD is not the canonical lock inode")
++        with os.fdopen(os.dup(fd), "a") as handle:
++            fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
++            yield handle if inherit else LOCKS[rig]
++        return
+     # Never unlink a shared lock inode: waiters and other campaigns must see the same file.
+     with open(LOCKS[rig], "a") as handle:
+         fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+@@ -311,10 +325,14 @@
+             cell["lock_proof"] = lock_proof
+         append_cell(root / "CELL.jsonl", {**cell, "event": "start"})
+         smi = shutil.which(self.smi)
++        # Max-Q kit (DEVIATIONS.md D4): telemetry and compute-app snapshots cover only the card
++        # under test (nvidia-smi index from run.sh), not every GPU on a multi-card box.
++        card = os.environ.get("MAXQ_SMI_CARD")
++        only = ["-i", card] if card is not None else []
+         snapshots = {}
+         def snapshot(label):
+             path = root / f"{stem}.{label}.log"
+-            code, expired = tee_run([smi, "--query-compute-apps=pid,process_name,used_memory",
++            code, expired = tee_run([smi, *only, "--query-compute-apps=pid,process_name,used_memory",
+                                     "--format=csv"], path, timeout=20, echo=False)
+             snapshots[label] = {"exit_code": code, "timed_out": expired,
+                                 "raw_log": descriptor(root, path)}
+@@ -328,7 +346,7 @@
+                 snapshot("before")
+                 csv = stack.enter_context(csv_path.open("xb"))
+                 err = stack.enter_context(sampler_log.open("xb"))
+-                argv = [smi, "--query-gpu=timestamp,index,pstate,clocks.sm,clocks.mem,power.draw,power.limit,power.max_limit,temperature.gpu,memory.used,utilization.gpu,pcie.link.gen.current,pcie.link.width.current", "--format=csv", "-lms", "250"]
++                argv = [smi, *only, "--query-gpu=timestamp,index,pstate,clocks.sm,clocks.mem,power.draw,power.limit,power.max_limit,temperature.gpu,memory.used,utilization.gpu,pcie.link.gen.current,pcie.link.width.current", "--format=csv", "-lms", "250"]
+                 try:
+                     sampler = subprocess.Popen(argv, stdout=csv, stderr=err, start_new_session=True)
+                     telemetry = {"status": "started", "interval_ms": 250, "command": argv,
+@@ -759,7 +777,8 @@
+     (out / "raw").mkdir(); (out / "telemetry").mkdir()
+     root = Path(__file__).resolve().parents[1]
+     runner = root / "crates/memra-tier/tests/battery/fake_runner.py"
+-    revision = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=root, text=True).strip()
++    # Max-Q kit (DEVIATIONS.md D8): no git on the box; the source SHA is the kit's SOURCE_SHA.
++    revision = (root / "SOURCE_SHA").read_text().strip()
+     identity = {"runtime_commit": revision, "binary_sha256": digest(runner),
+                 **{f"{name}_sha256": hashlib.sha256(("synthetic:" + name).encode()).hexdigest() for name in ("artifact","plan","layout","prompt")},
+                 "numeric_class": "opaque-fixture-no-executor", "context_tokens": 3, "requests": 1, "rig": "cpu", "kind": "cpu-fixture"}
+--- a/research/spill-f-20260919/m1-gpu-sampler.py
++++ b/research/spill-f-20260919/m1-gpu-sampler.py
+@@ -30,9 +30,11 @@
+ 
+ 
+ class GpuSampler:
+-    def __init__(self, path, device="0"):
++    def __init__(self, path, device=None):
+         self.path = Path(path)
+-        self.device = device
++        # Max-Q kit (DEVIATIONS.md D4): the card is the nvidia-smi index the runner was given,
++        # never a default 0; the driver calls GpuSampler(path) without a device.
++        self.device = device if device is not None else os.environ["MAXQ_SMI_CARD"]
+         self.proc = None
+ 
+     def start(self):

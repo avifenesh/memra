@@ -1,0 +1,22 @@
+## Workstation receipt (box36 at 2ccb038d1c), reader: kit/maxq-verdict.py
+M1-HANDOFF-VERDICT handoff-1g export_ms direct/buffered: winner median_ratio=0.917038670189261 pairs=10
+M1-HANDOFF-VERDICT handoff-1g write_ms direct/buffered: loser median_ratio=1.2153829424597005 pairs=10
+M1-HANDOFF-VERDICT handoff-1g fsync_ms direct/buffered: winner median_ratio=0.0021578316851375017 pairs=10
+M1-HANDOFF-VERDICT handoff-1g import_s direct/buffered: flat median_ratio=1.0 pairs=10
+pairs=10 failed_cycles=[] malformed_pairs=[]
+M1-HANDOFF-VERDICT handoff-8g export_ms direct/buffered: winner median_ratio=0.9164044948115526 pairs=10
+M1-HANDOFF-VERDICT handoff-8g write_ms direct/buffered: loser median_ratio=1.2116343093147717 pairs=10
+M1-HANDOFF-VERDICT handoff-8g fsync_ms direct/buffered: winner median_ratio=0.0009088471883929809 pairs=10
+M1-HANDOFF-VERDICT handoff-8g import_s direct/buffered: flat median_ratio=1.0434782608695652 pairs=10
+pairs=10 failed_cycles=[] malformed_pairs=[]
+M1-HANDOFF-VERDICT pro6000-ws-box36-replay export_ms direct/buffered: winner handoff-1g=winner@0.917038670189261/10 handoff-8g=winner@0.9164044948115526/10 default=direct
+handoff-1g.pairs.log: byte-identical to the committed receipt
+handoff-1g/handoff-pairs.json: byte-identical to the committed receipt
+handoff-8g.pairs.log: byte-identical to the committed receipt
+handoff-8g/handoff-pairs.json: byte-identical to the committed receipt
+
+## Red controls (copies of the receipts, edited)
+M1-HANDOFF-VERDICT red-8g-skipped export_ms direct/buffered: no-verdict handoff-1g=winner@0.917038670189261/10 handoff-8g=absent default=none (handoff-8g: projected 1900 s > remaining 1200 s)
+M1-HANDOFF-VERDICT red-5090-1g-flat export_ms direct/buffered: flat handoff-1g=flat@0.8430127003580612/10 handoff-8g=winner@0.9164044948115526/10 default=buffered
+M1-HANDOFF-VERDICT red-8g-cycle-7-failed export_ms direct/buffered: no-verdict handoff-1g=winner@0.917038670189261/10 handoff-8g=failed default=none (handoff-8g: failed_cycles=[7] malformed_pairs=[])
+M1-HANDOFF-VERDICT red-8g-cut-short export_ms direct/buffered: no-verdict handoff-1g=winner@0.917038670189261/10 handoff-8g=incomplete default=none (handoff-8g: pairs=9 of 10)

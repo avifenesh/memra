@@ -1,0 +1,90 @@
+{
+  "class": "nvme-local-direct",
+  "nvme_proven": true,
+  "nvme_name_hint": true,
+  "label": "M1 proof: physical local NVMe (nvme-local-direct); not measured spill speed",
+  "allow_unproven_storage": false,
+  "root": "/mnt/Data/work/memra-maxq/handoff-direct/scratch",
+  "commands": [
+    {
+      "command": [
+        "findmnt",
+        "-J",
+        "-T",
+        "/mnt/Data/work/memra-maxq/handoff-direct/scratch"
+      ],
+      "exit_code": 0,
+      "timed_out": false,
+      "raw_log": {
+        "path": "storage-findmnt.log",
+        "bytes": 172,
+        "sha256": "e25589a2eeaa3c2bc3a167b819f6e6420b7a39eca97e232141234291f0acb98d"
+      }
+    },
+    {
+      "command": [
+        "lsblk",
+        "-J",
+        "-o",
+        "NAME,TYPE,SIZE,ROTA,TRAN,MOUNTPOINTS"
+      ],
+      "exit_code": 0,
+      "timed_out": false,
+      "raw_log": {
+        "path": "storage-lsblk.log",
+        "bytes": 6709,
+        "sha256": "f7859c7c87ea0101cb8af26730a56b0f4835ffca6f83a8739b77b5dfba12657d"
+      }
+    },
+    {
+      "command": [
+        "findmnt",
+        "-n",
+        "-o",
+        "SOURCE",
+        "-T",
+        "/mnt/Data/work/memra-maxq/handoff-direct/scratch"
+      ],
+      "exit_code": 0,
+      "timed_out": false,
+      "raw_log": {
+        "path": "storage-source.log",
+        "bytes": 13,
+        "sha256": "79f4a296736b0f935e5eb1eb24321554fd785dd61a2409c8fbd8f813e1696e1a"
+      }
+    },
+    {
+      "command": [
+        "lsblk",
+        "-s",
+        "-r",
+        "-n",
+        "-o",
+        "KNAME",
+        "/dev/nvme0n1"
+      ],
+      "exit_code": 0,
+      "timed_out": false,
+      "raw_log": {
+        "path": "storage-ancestry.log",
+        "bytes": 8,
+        "sha256": "1d76439d27aa20ec74a8e22c486dcfab67473b6fd6bbc7376a806fede0293b10"
+      }
+    }
+  ],
+  "qualification": false,
+  "m1_proof": {
+    "receipt": {
+      "path": "STORAGE-PROOF.json",
+      "bytes": 3597,
+      "sha256": "5d7105faa26485a00e9045c093622432e8cfcbd1786147b24799ea9fa6c5dddf"
+    },
+    "tool_sha256": "d59851b624339e16d2290b21b94567a593645266eb0e5dd83d4490decbb78864",
+    "identity": {
+      "device": 66307,
+      "filesystem_id": 15767208001070175684,
+      "mount_id": 242
+    },
+    "proof_utc": "2026-11-05T04:04:40.510743+00:00"
+  }
+}

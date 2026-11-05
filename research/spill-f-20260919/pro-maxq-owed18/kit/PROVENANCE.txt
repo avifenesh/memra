@@ -1,0 +1,58 @@
+OWED 18 Max-Q kit (handoff-direct), written 2026-11-04T19:40:21Z
+
+source_sha (deciding tree, BOX36 commit.txt, binaries and every copied script): 114ef768d95ece38fcdfff9f74dfbc2cce814258
+receipt_sha (fix stack HEAD origin/fix4/gates, where box36/ and the decision record were read): 2ccb038d1c16358edde65582597e7b840e3f63fb
+worktree: git -C ~/projects/memra worktree add --detach /home/avifenesh/.cache/memra-maxq/handoff-direct/wt-box36 114ef768d95ece38fcdfff9f74dfbc2cce814258 (removed after the build)
+
+build (laptop, under flock /home/avifenesh/.cache/memra-rig-build.lock, nice 15):
+  source_sha=114ef768d95ece38fcdfff9f74dfbc2cce814258
+  built_utc=2026-11-04T19:19:55Z
+  MEMRA_CUDA_ARCH=120a
+  cargo_features=default
+  profile=release
+  rustc=rustc 1.97.1 (8bab26f4f 2026-07-14)
+  cargo=cargo 1.97.1 (c980f4866 2026-06-30)
+  nvcc=Build cuda_13.4.r13.4/compiler.38855100_0
+  cmd=cargo build --release -j2 -p memra-server --bin kv-handoff-gate --bin memra-server
+  CARGO_TARGET_DIR=/home/avifenesh/.cache/memra-maxq/target (shared between kits; bins copied out inside the lock hold)
+  build log: /home/avifenesh/.cache/memra-maxq/handoff-direct/logs/build.log
+
+binaries sha256 (kit/bins/box36/SHA256SUMS):
+  c173a0372aa2bac03573e7ca1ba94bc1f081b3e389736ac76fabccca346adce3  kv-handoff-gate
+  a4047806bd7b35262cab7b1052c86579fbafdac4aae84d3b822fba2bf8e25eca  memra-server
+  BOX36's own build of the same tree (nvcc 13.1), for reference: kv-handoff-gate 0f319e9c3eeb27ce8147ab0d682446a7d65aa70f99da0a060e5a1d6e407beb51, memra-server f00ad414366754dce672274a5219db1bcbc905f5ca3d12aaf29121c27c1df9f7
+  dynamic libs: libcudart.so.13, libcublas.so.13, libcublasLt.so.13, libstdc++, glibc (kit/bins/box36/ldd-*.txt)
+
+artifact: Qwen3.6-35B-A3B-UD-IQ4_XS.gguf, unsloth/Qwen3.6-35B-A3B-MTP-GGUF@5bc3e238d916f48a861bac2f8a1990a0e9b7e98d,
+  sha256 df27a780435b7b45c2597536112ea3cb091f8544c3d0c3318d9f4258b31f7adf, 18209036576 bytes (M1-PREREG.md:62-63); run.sh checks it before the first boot
+
+kit files sha256 (scripts from the deciding tree; only tools/tier-battery.py and m1-gpu-sampler.py are patched, reference/portability.diff):
+  830a88b96c842aa69ad4937b781f75ebccc1f8584d79376b8b92687403a2b9ea  ./DEVIATIONS.md
+  3ca06171bc1a2548cc4354671fb73481d3f117be48d6357a59008d1313c47b9b  ./kit-procs.py
+  d75b581b7fef04fa0a258da069eb9e6a23e3b3cc1d387badb8a17c742af8285b  ./maxq-verdict.py
+  3fdef919ca55df5e63b6c082888769387fc925614603622dc43c0d58e763b51b  ./PREREG.md
+  d60e73c7558e2354b61b2cae7d20fad398093ce59cdc9c1e03ee603eaa699ab0  ./reference/laptop-checks/lock-test.log
+  394eb252849760edbade6d43de92abd068c58e60d9dcade30d8c43189ff104a5  ./reference/laptop-checks/lock-test.sh
+  a23428b891fc2be540ceab15457e25acd21e7616606ac15d99aa646d4f17c4bb  ./reference/laptop-checks/reader-dry-run.log
+  00028f09cd851777096bfb25aca4d8b667614c57f275215b63f5e6a325b1316f  ./reference/laptop-checks/rehearsal-fail-paths.log
+  be3421ea24c7268aced348735e5585af8a1c1b85b4bb004b4cb6e290cff54e2c  ./reference/laptop-checks/rehearsal-fail-paths.sh
+  e542eab5807011dcc1334f1f818f2d873b340466a759362cdbbdb74ec0707cb3  ./reference/laptop-checks/rehearsal-happy-path.log
+  141fe13c983f6db8753cde539d2f5b919c6909c184bb78524671e6eee92c1b9c  ./reference/laptop-checks/rehearsal-run.sh.diff
+  3cde48873680a24b53b4a6861d0e15cee6ae497be34ec81860b95cb07c13aa40  ./reference/laptop-checks/rehearsal-setup.sh
+  871f639edfe237cdbcb2ea9943cbf29b83af6cfadd99dfe615fa548c8f0df40a  ./reference/laptop-checks/test-m1-handoff-driver.log
+  6939f463a11c44302aa9ca3156a1f6debc199c968b7945f674902557dae03b25  ./reference/laptop-checks/test-m1-nvme-proof.log
+  e9ffc9a717e2d60d6ce4b234a8b960fdc997416b8dcdccf5baad495a37fd49d6  ./reference/portability.diff
+  58477bd060dbcb5b1517d8220e0a27052b6c2f25e41b99ad23ef4494a4603c0b  ./reference/run-sitting.sh.orig
+  90234d66678dff0e91f925fce68b7af85d7327f9270cbf10ffbe25bc9cbf6c00  ./research/spill-f-20260919/m1-b2-prompts.py
+  8e438a5d62a4a06ed5c56187df0d6d57db71b37aec4f1cb1ed7faa942a677fc8  ./research/spill-f-20260919/m1-cache-regime.py
+  a77dfb823608290943afccd3e00347253602884d995cb16bd80816b27c718150  ./research/spill-f-20260919/m1-gpu-sampler.py
+  20aa411529f8bbe1eb4d0f553c3e279e6669b6e0def434b39c6469c234c387fd  ./research/spill-f-20260919/m1-handoff-driver.py
+  60ff347c20895a30bfd8e0fa065621ca895679db53cc101e1881ef5222c54971  ./research/spill-f-20260919/m1-handoff-pairs.py
+  4bda8586d7e7e8a75af71cc44a6bdce4f5a0b450d517e18e76b5451b8d1b1ee0  ./research/spill-f-20260919/m1-host-sampler.py
+  d59851b624339e16d2290b21b94567a593645266eb0e5dd83d4490decbb78864  ./research/spill-f-20260919/m1-nvme-proof.py
+  ba4f5890c88dc52960f97063763cf98a44eb60765a1c7d03eea1be6f8ffbad29  ./research/spill-f-20260919/m1-prereg/b2-prompts.manifest.json
+  fdf2dfecca761907cf91e266039a3b131d72ae46d62bf57fd0c3d01705235c55  ./research/spill-f-20260919/m1-spill-runner.py
+  d88f3ac66d67558cedf19246524d966b7633c8840c7cdf693886650d603b2a37  ./run.sh
+  b9dffeeb2bca699167aed3955309f204a305703426e44b4fc9ba607d9434ff7f  ./SOURCE_SHA
+  ec18a9697a1c51445e40c5ddc68c767aa75a07112e35043d060cc857b2edca48  ./tools/tier-battery.py
+  91ef0d0a0a09746b8c991e8851630fceaf0aae9e7cf56e1c8e50f2597f7e513a  ./tools/tier-lock-proof.py
