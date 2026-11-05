@@ -488,8 +488,9 @@ DAY38D VMM-PAIR card=rtx5090 rows=30 differ=[] vmm_off idle vmm_mapped=0 vmm_on 
 `run-part1.sh` ran as addendum E and its power amendment registered, on GPU 2 of the four-card box ("NVIDIA RTX PRO
 6000 Blackwell Max-Q Workstation Edition", driver 615.71.09) while the box's other three cards trained, under the GPU 2
 lock agreed with the training session: `main-O1-off`, `main-O1-on` (3325 s each, 150 of 150 rows `200`),
-`fault-batch`, `fault-nobatch` and `fault-nobatch-red`, on the binaries built from `2ccb038d1c`. Receipts mirrored file
-for file (`MIRROR-CHECK.txt`: 141 `OK`; the one line that fails is `steps.txt`, which the runner appends to after
+`fault-batch`, `fault-nobatch` and `fault-nobatch-red`. The binaries build from `2ccb038d1c` (`kit/PROVENANCE.txt`):
+`off` as is (`7514121c...`), `on` with `maxq-arm.patch` (`a73967ac...`), `red` with it and `day38-red.patch`
+(`b1da1a61...`). Receipts mirrored file for file (`MIRROR-CHECK.txt`: 141 `OK`; the one line that fails is `steps.txt`, which the runner appends to after
 writing the manifest, and the box's final copy hashes equal to this mirror's), then exported with
 `research/spill-f-20260919/m1-box-sanitize.py`: the card's UUID became `GPU-<card2-uuid>`, the board serial, GPU PDI,
 box name, local time zone and remote home path their placeholders (`EXPORT-MANIFEST.json`, 9 files). The scheduler's
