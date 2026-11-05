@@ -2768,6 +2768,43 @@ impl Dsv4Gpu {
         self.vocab_parallel_head()
     }
 
+    /// How far one one-row TP/EP step advances each one-shot block's AR epoch, the count
+    /// `full_token_ar_epochs_for_gate` is checked against. Every collective ticks each block it
+    /// launches (`tp_ar::ar_blocks_for` of its element count). Per trunk layer, attention TP2
+    /// gathers its wo_a groups and then its wo_b rows (replicated attention runs no attention
+    /// collective) and the expert join reduces the routed rows; once per step the
+    /// vocab-parallel head gathers its logits. The routed width is the gates' one-row decode
+    /// shape, with the shared expert outside the reduce plane.
+    pub fn tp_ep_ar_epochs_per_step_for_gate(&self) -> Vec<u32> {
+        let layers = self.topology.layers as u32;
+        let hidden = self.model.mc.n_embd as usize;
+        let topk = self
+            .model
+            .mc
+            .moe
+            .as_ref()
+            .map_or(0, |moe| moe.expert_used_count as usize);
+        let mut joins = Vec::with_capacity(4);
+        if let Some(plan) = self.attention_tp {
+            joins.push((plan.local_output_width, layers));
+            joins.push((plan.local_hidden, layers));
+        }
+        joins.push((topk * hidden, layers));
+        if self.vocab_parallel_head() {
+            let (info, _) = self.model.st.raw("head.weight").expect("head");
+            joins.push((info.shape[0] as usize / 2, 1));
+        }
+        (0..crate::tp_ar::AR_BLOCKS as usize)
+            .map(|block| {
+                joins
+                    .iter()
+                    .filter(|&&(n, _)| block < crate::tp_ar::ar_blocks_for(n) as usize)
+                    .map(|&(_, per_step)| per_step)
+                    .sum()
+            })
+            .collect()
+    }
+
     /// Drain both ranks and read the sticky device-side refusal words. The walk
     /// requires zero words before publishing any token or committing its caches.
     pub fn tp_ep_ar_refusal_words(&self) -> Res<[i32; 2]> {
