@@ -1,0 +1,19 @@
+gpulock: 5090 leased as claude-code-20261105T055924-3549474 for 40m
+== boot 1: dspark route armed ==
+on-r1: spec rounds=27 drafted=101 accepted=70
+on-r2: spec rounds=36 drafted=109 accepted=61
+on-r3: spec rounds=33 drafted=106 accepted=63
+-- sampled rejection-verify engagement --
+sampled: dspark engaged, 430 chars
+-- concurrent pair (LOW=2 wave admission) --
+-- sampled-first blocks later greedy LOW widening --
+sampled-first tooth: later greedy request stacked into the LOW band
+== boot 1b: LOW=1 negative-control tooth ==
+LOW=1 tooth: synchronized c=2 wave admitted zero drafting rows
+== boot 2: spec off (plain oracle) ==
+== byte identity ==
+r1 IDENTICAL (3accd7199d0f58c1)
+r2 IDENTICAL (f5feea34a51a16da)
+r3 IDENTICAL (0308118696d78674)
+dspark-serve-smoke: ALL GREEN
+SMOKE_EXIT=0
