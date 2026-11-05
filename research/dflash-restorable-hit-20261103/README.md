@@ -66,6 +66,7 @@ The gate needs every completion byte-identical.
 | GB10, 720d7b86f0 | identical | identical | identical | identical | 4 |
 | RTX 5090, 720d7b86f0 (smaller P/S) | identical | identical | identical | identical | 4 |
 | RTX 5090, ea5ef13e8b (rebased on batch-spec, door deleted; smaller P/S) | identical | identical | identical | identical | 4 |
+| GB10, ea5ef13e8b (`gb10-ea5e/`) | identical | identical | identical | identical | 4 |
 
 Rebased head ea5ef13e8b (RTX 5090): memra-server lib 1151 passed / 0 failed, memra-engine `dspark` 23 / 0, `tools/dspark-serve-smoke.sh` ALL GREEN (`5090-smoke-ea5e/`; a first attempt died before the server wrote a line, cause not captured; the rerun with the serve lock on disk passed).
 
@@ -89,3 +90,28 @@ This bug predates the door and shifted every sampled partial restore. 720d7b86f0
 The door converted 15 of the 56 cache-preferred vetoes. The rest left suffixes shorter than the drafter window: measured turns whose hit is their own prime's entry, 19-30 tokens short of the prompt. Those stay plain, and a sub-`PRIME_MIN_T` suffix cannot take the restore path either. So c1 goes from 12.0 to 14.5 tok/s, still below the MTP route's 21.4. The c8/c16 moves are inside the single-run T=1 spread of this cell.
 
 **RTX 5090 agentic c1 A/B** (`5090-cold-drafter-ab/`, order off/on/on/off): 33.73 / 32.75 / 32.60 / 32.75 tok/s. The door never fires on this card (0 vetoes in every arm, as in the first half), so the arms run the same path.
+
+## Rebased head on GB10 (2026-11-05, `gb10-served/`)
+
+Verdict: on GB10 the cold-drafter conversion lifts GGUF DFlash2 c1 by 17-20% and leaves c2..c32 flat. It acts only with the restore doors armed.
+
+The binary is ea5ef13e8b, built on spark-cb33 (sm_121a) and copied to spark-b23d. The branch was later rebased onto batch-spec e34d55815a and then main c0f8499d4d. `crates/memra-server` did not change in either rebase. The one engine change, the `mmq_f8f4_route` lookup in `mmq_ffi.rs`, moves the same F8F4 route decision into a method.
+
+The GB10 gate passed 4/4 with 4 conversions (`cold-drafter-gate/gb10-ea5e/`).
+
+Agentic cell, GGUF DFlash2, the doors armed in the launcher (`MEMRA_DSPARK_PREFIX_RESTORE=1`, `MEMRA_DSPARK_PARTIAL_RESTORE=1`, `MEMRA_DSPARK_BOUNDARY_CAPTURE=1`, `MEMRA_PREFIX_STABLE_BOUNDARY=1`), fresh boot, one run each, bench client off the unit through an ssh tunnel, aggregate tok/s:
+
+| c | batch-spec 655a07cb82 (spark-b23d) | #1031 ea5ef13e8b (spark-cb33) | change |
+|---:|---:|---:|---:|
+| 1 | 12.32 | **14.39** | **+16.8%** |
+| 2 | 23.58 | 23.30 | -1.2% |
+| 4 | 40.66 | 40.27 | -1.0% |
+| 8 | 62.82 | 62.41 | -0.7% |
+| 16 | 77.79 | 77.54 | -0.3% |
+| 32 | 84.38 | 83.25 | -1.3% |
+
+Both runs logged 56 `cache-preferred` vetoes. The head converted 15 of them to a cold-drafter DFlash prime, the base none. These are single runs on two units, so I read only c1. The cb33 launcher also sets `MEMRA_VISION_DIR`, so that boot loaded the vision tower; the b23d boot did not. Text-only requests never reach it.
+
+Without the doors the conversion is off, so this PR changes nothing for a boot that does not arm them. Making the doors a GB10 and RTX 5090 default, with its doors-on vs doors-off A/B, is the follow-up on branch `dspark-restore-default-on` (`gb10-flip/` there).
+
+Every lever of this lane, with SHAs and receipts: `LEVER-LEDGER.md`.
