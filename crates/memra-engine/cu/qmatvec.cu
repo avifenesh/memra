@@ -15082,30 +15082,47 @@ __device__ __forceinline__ void w4a4_decode_body(
         #pragma unroll
         for (int e = 0; e < 4; e++) acc[j][e] = 0.0f;
     const size_t abytes = (size_t)(in_f >> 1);
-    for (int b = w; b < nsb64; b += 4) {
-        unsigned a0 = 0, a1 = 0, a2 = 0, a3 = 0, sa = 0;
-        if (oka) {
-            const unsigned char* p = qplane + (size_t)ra * nsb64 * 32 + (size_t)b * 32;
-            a0 = *(const unsigned*)(p + 4 * t);
-            a2 = *(const unsigned*)(p + 16 + 4 * t);
-        }
-        if (okb) {
-            const unsigned char* p = qplane + (size_t)rb * nsb64 * 32 + (size_t)b * 32;
-            a1 = *(const unsigned*)(p + 4 * t);
-            a3 = *(const unsigned*)(p + 16 + 4 * t);
-        }
-        if (oks) sa = *(const unsigned*)(splane + (size_t)rs * nsb64 * 4 + (size_t)b * 4);
+    // Unrolled by UB K-blocks: every load of UB blocks is issued before their MMAs, so a warp
+    // keeps UB blocks of weights and activations in flight. The MMAs still run in ascending b
+    // per warp into the same accumulators, so the numerics equal the UB=1 form.
+    constexpr int UB = 4;
+    for (int b0 = w; b0 < nsb64; b0 += 4 * UB) {
+        unsigned a0[UB], a1[UB], a2[UB], a3[UB], sa[UB];
+        unsigned bq0[UB][NT], bq1[UB][NT], sbq[UB][NT];
         #pragma unroll
-        for (int j = 0; j < NT; j++) {
-            const int col = j * 8 + gq;
-            unsigned b0 = 0, b1 = 0, sb = 0;
-            if (col < m) {
-                const unsigned char* q = aqf + (size_t)col * abytes + (size_t)b * 32;
-                b0 = *(const unsigned*)(q + 4 * t);
-                b1 = *(const unsigned*)(q + 16 + 4 * t);
-                sb = *(const unsigned*)(asf + (size_t)col * (in_f >> 4) + (size_t)b * 4);
+        for (int u = 0; u < UB; u++) {
+            const int b = b0 + 4 * u;
+            a0[u] = a1[u] = a2[u] = a3[u] = sa[u] = 0;
+            const bool live = b < nsb64;
+            if (live && oka) {
+                const unsigned char* p = qplane + (size_t)ra * nsb64 * 32 + (size_t)b * 32;
+                a0[u] = *(const unsigned*)(p + 4 * t);
+                a2[u] = *(const unsigned*)(p + 16 + 4 * t);
             }
-            w4a4_mma(acc[j], a0, a1, a2, a3, b0, b1, sa, sb);
+            if (live && okb) {
+                const unsigned char* p = qplane + (size_t)rb * nsb64 * 32 + (size_t)b * 32;
+                a1[u] = *(const unsigned*)(p + 4 * t);
+                a3[u] = *(const unsigned*)(p + 16 + 4 * t);
+            }
+            if (live && oks) sa[u] = *(const unsigned*)(splane + (size_t)rs * nsb64 * 4 + (size_t)b * 4);
+            #pragma unroll
+            for (int j = 0; j < NT; j++) {
+                const int col = j * 8 + gq;
+                bq0[u][j] = bq1[u][j] = sbq[u][j] = 0;
+                if (live && col < m) {
+                    const unsigned char* q = aqf + (size_t)col * abytes + (size_t)b * 32;
+                    bq0[u][j] = *(const unsigned*)(q + 4 * t);
+                    bq1[u][j] = *(const unsigned*)(q + 16 + 4 * t);
+                    sbq[u][j] = *(const unsigned*)(asf + (size_t)col * (in_f >> 4) + (size_t)b * 4);
+                }
+            }
+        }
+        #pragma unroll
+        for (int u = 0; u < UB; u++) {
+            if (b0 + 4 * u >= nsb64) break;
+            #pragma unroll
+            for (int j = 0; j < NT; j++)
+                w4a4_mma(acc[j], a0[u], a1[u], a2[u], a3[u], bq0[u][j], bq1[u][j], sa[u], sbq[u][j]);
         }
     }
     __shared__ float red[4][16][NT * 8 + 1];
