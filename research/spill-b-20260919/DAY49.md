@@ -443,3 +443,36 @@ line, `-> PASS` (the defect as it reads). The chunk held 2 or 3 sessions on this
   `O2-on` (9 of 9 `200`, one retry each). Then `O2-off`'s idle wait ran out (`rig not idle after 7200 s; not run`),
   and the runner stopped there. queue-n asks again for the five unrun boots on green rebuilt at the same commit; that
   reading follows.
+
+### 2.7 Addendum F on the RTX PRO 6000 Blackwell Max-Q (`pro-maxq-day49f/`, 2026-11-05 05:15:55Z to 05:22:41Z)
+
+The cell ran as addendum F and its two power amendments registered, on GPU 2 of the four-card box ("NVIDIA RTX PRO
+6000 Blackwell Max-Q Workstation Edition", driver 615.71.09) while the box's other three cards trained, under the GPU 2
+lock agreed with the training session. Wall 406 s. Binaries: `off` = `2ccb038d1c` as is (`711b4f67...`), `on` = the
+same commit plus `maxq-batch-oom-recover.patch` (patch sha256 `6d88aae5...`, binary `91f68981...`); the model is
+`Qwen3.8-27B-NVFP4-Q5K-mtp.gguf` (`1facf36c...`, checked before the first boot). Receipts mirrored file for file
+(`MIRROR-CHECK.txt`: 301 of 302 `OK`; the one line that fails is `run.log`, which `run.sh` appends to after writing
+the manifest, and the box's final copy hashes equal to this mirror's), then exported with
+`research/spill-f-20260919/m1-box-sanitize.py`: the GPU UUIDs became `GPU-<cardN-uuid>` (the pin proof compares
+them, so each card keeps one placeholder), the board serial and GPU PDI placeholders, and the box name
+(`EXPORT-MANIFEST.json`, 14 files). The scheduler's try log, power summary and 10 s thermal samples are in `runner/`.
+
+Power and validity (M.5): the runner set GPU 2 to 300 W (from 280 W, max 300 W). The box re-applies its own per-card
+caps every 10 minutes (a system timer, 280 W on this card), and at 07:20:17 local it returned the card to 280 W for the
+last 2.5 minutes, so 26 of the 41 samples read 300 W and 15 read 280 W; the runner's restore found 280 W set. The
+summary line (`runner/power-batch-oom-recover-try1.txt`) reports the limit it read at the start; the samples are the
+record. No clause depends on power (M.5). Maximum 87 C, fan 66 %; SW power cap active in 16 samples (10 at 300 W, 6
+at 280 W), no thermal or power-brake slowdown, no thermal stop; GPUs 1 and 3 at most 85 C, so the neighbour rule never
+dropped the limit. Every `on` boot and each gate's boots print
+`batch OOM recovery: ON`, every `off` boot `OFF`; all 132 `pins.csv` rows are on GPU 2; no server log of the cell
+has a `[gpu-watch] CRITICAL` line. Verbatim (`verdict.log`, `VERDICT.txt`):
+
+- `HFG (j) aimed-batch-oom-recovers: fired_lines=1 other_fired=0 chunk_sessions=3 untouched=3 retry_lines=1 retried_ok=1 completed=3/3 error_events=0 http_5xx=0 panic_lines=0 ... -> PASS` (j1 and j2)
+- `HFG (j-red) aimed-batch-oom-retry-also-fails: ... retry_failed=1 ... green_assertion_fired=true -> PASS` (j1: 3 sessions, 0 of 3 completed; j2: 2 sessions, 1 of 3 completed)
+- every `on` boot: `status={200: 9} error_rows=0 retry_lines=1 retried_ok=1 -> PASS` (O1-on, O2-on on the spec default, fired chunks of 8; P1-on, P2-on on the plain route, chunks of 3 and 6)
+- the before: O1-off and O2-off `{200: 1, 503: 8}`, P1-off `{200: 6, 503: 3}`, P2-off `{200: 4, 503: 5}`
+- `VERDICT batch-oom-recover card=pro6000-maxq gates=[j1:j=PASS,j-red=PASS,recovery=ON(boot-line) j2:j=PASS,j-red=PASS,recovery=ON(boot-line)] gate_j_pass=2/2 gate_j_red_pass=2/2 j_vmm=n/a (on-demand KV planes are off on this card; MEMRA_KV_ALLOCATOR is retired) serve_on_pass=4/4 serve_off_read=4/4 ... routes_reached=plain:4/4,spec-default:4/4 -> ON`
+
+**Read as registered (M.4): ON.** The recovery becomes the Max-Q default: `maxq-batch-oom-recover.patch` lands as
+its own commit, as the cell ran it. j-vmm is `n/a` on this card, as M.3 registered, not a pass. The Server Edition
+and the RTX 5090 class are unchanged.

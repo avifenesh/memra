@@ -1,0 +1,99 @@
+diff --git a/crates/memra-engine/src/parallel.rs b/crates/memra-engine/src/parallel.rs
+index 3f60e7831e..894197587e 100644
+--- a/crates/memra-engine/src/parallel.rs
++++ b/crates/memra-engine/src/parallel.rs
+@@ -70,6 +70,14 @@ impl HardwareTarget {
+             && name.contains("Workstation")
+             && !name.contains("Max-Q")
+     }
++
++    /// The RTX PRO 6000 Blackwell Max-Q Workstation Edition (the power-capped sibling of
++    /// [`Self::is_pro6000_workstation`]), by device name. A default keyed here needs its own
++    /// Max-Q receipt; the Workstation receipts do not carry over.
++    pub fn is_pro6000_maxq(name: &str) -> bool {
++        matches!(Self::from_device_name(name), Ok(Self::RtxPro6000Blackwell))
++            && name.contains("Max-Q")
++    }
+ }
+ 
+ #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+@@ -2011,6 +2019,26 @@ mod tests {
+         }
+     }
+ 
++    /// The Max-Q predicate names the Max-Q Workstation Edition only: not the full-power
++    /// Workstation, not the Server Edition, not another class.
++    #[test]
++    fn pro6000_maxq_is_the_maxq_workstation_edition_only() {
++        assert!(HardwareTarget::is_pro6000_maxq(
++            "NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition"
++        ));
++        for name in [
++            "NVIDIA RTX PRO 6000 Blackwell Workstation Edition",
++            "NVIDIA RTX PRO 6000 Blackwell Server Edition",
++            "NVIDIA GeForce RTX 5090",
++            "NVIDIA GeForce RTX 5090 Laptop GPU",
++            "NVIDIA RTX PRO 6000 Ada Generation",
++            "NVIDIA H100 80GB HBM3",
++            "",
++        ] {
++            assert!(!HardwareTarget::is_pro6000_maxq(name), "{name}");
++        }
++    }
++
+     #[test]
+     fn step_tp2_tp4_tp8_and_hybrid_plans_are_geometry_valid() {
+         let tp2 = step37_contract().plan(request(1, 2, true)).unwrap();
+diff --git a/crates/memra-server/src/worker.rs b/crates/memra-server/src/worker.rs
+index 79db7fc6fd..65980ec75b 100644
+--- a/crates/memra-server/src/worker.rs
++++ b/crates/memra-server/src/worker.rs
+@@ -9554,16 +9554,18 @@ fn host_demote_prefix_entry(engine: &Engine, host: &mut HostPrefixCache, mut dea
+ /// `docs/decisions/BATCH-OOM-RECOVER-DEFAULT.md`): a chunk whose quoted CUDA OOM came before any
+ /// session-state write (`memra_engine::step_guard`) takes one reclaim rung and runs the same
+ /// batched step once more. The default on the full-power RTX PRO 6000 Blackwell Workstation
+-/// Edition, the card the deciding cell read; every other card keeps the chunk's error arm.
++/// Edition and the Max-Q Workstation Edition, the two cards a deciding cell read; every other
++/// card keeps the chunk's error arm.
+ fn batch_oom_recover_default(device_name: &str) -> bool {
+     memra_engine::parallel::HardwareTarget::is_pro6000_workstation(device_name)
++        || memra_engine::parallel::HardwareTarget::is_pro6000_maxq(device_name)
+ }
+ 
+ /// The boot receipt of [`batch_oom_recover_default`], one line.
+ fn batch_oom_recover_boot_line(on: bool) -> &'static str {
+     if on {
+-        "[admit-oom] batch OOM recovery: ON (RTX PRO 6000 Blackwell Workstation Edition: an \
+-         untouched batched chunk takes one reclaim rung and retries once)"
++        "[admit-oom] batch OOM recovery: ON (RTX PRO 6000 Blackwell Workstation or Max-Q \
++         Workstation Edition: an untouched batched chunk takes one reclaim rung and retries once)"
+     } else {
+         "[admit-oom] batch OOM recovery: OFF (no receipt for this card: a batched chunk's OOM \
+          ends the chunk's sessions)"
+@@ -39747,16 +39749,19 @@ mod tests {
+         );
+     }
+ 
+-    /// WP-B day 49: the batch OOM recovery is the default on the card the deciding cell read and
+-    /// nowhere else; the Max-Q and Server editions share the class, not the receipt.
++    /// WP-B day 49: the batch OOM recovery is the default on the two cards a deciding cell read
++    /// (the Workstation and Max-Q Workstation editions) and nowhere else; the Server Edition
++    /// shares the class, not the receipts.
+     #[test]
+-    fn batch_oom_recovery_is_the_pro6000_workstation_default_only() {
+-        assert!(super::batch_oom_recover_default(
+-            "NVIDIA RTX PRO 6000 Blackwell Workstation Edition"
+-        ));
++    fn batch_oom_recovery_is_the_pro6000_workstation_and_maxq_default_only() {
++        for name in [
++            "NVIDIA RTX PRO 6000 Blackwell Workstation Edition",
++            "NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition",
++        ] {
++            assert!(super::batch_oom_recover_default(name), "{name}");
++        }
+         for name in [
+             "NVIDIA GeForce RTX 5090",
+-            "NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition",
+             "NVIDIA RTX PRO 6000 Blackwell Server Edition",
+             "NVIDIA B200",
+             "",

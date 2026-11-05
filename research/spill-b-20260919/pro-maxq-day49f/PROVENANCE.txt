@@ -1,0 +1,57 @@
+batch-oom-recover Max-Q kit: provenance
+kit assembled 2026-11-04 on the laptop; nothing in it was committed anywhere
+
+source off: 2ccb038d1c16358edde65582597e7b840e3f63fb (origin/fix4/gates)
+source on:  2ccb038d1c16358edde65582597e7b840e3f63fb + maxq-batch-oom-recover.patch sha256 6d88aae54863c8b5c65ab3e470a4ae8e093158995810acb8d93bc3002a979dbd
+deciding tree (Workstation cell, DAY49 addendum D): 8926ccfb3e8a27cf8f91aa747e2b088251215c7a
+Workstation boots' chain tree: 6cef1bbe3b446d141b5699213cc440b83078f0d0; its five research scripts equal 2ccb038d1c's byte for byte
+
+binaries (build.sh; cargo build --release -j2 -p memra-server --bin memra-server; default features):
+  bins/off/memra-server sha256 711b4f674bdb501f2387374e5bd6b1a21ac86a45f4a38c9b32adde866c1a4ee3
+    label=off
+    source_sha=2ccb038d1c16358edde65582597e7b840e3f63fb
+    patch=none
+    built_utc=2026-11-04T20:18:19Z
+    host=laptop
+    MEMRA_CUDA_ARCH=120a
+    cargo_features=default
+    profile=release
+    rustc=rustc 1.97.1 (8bab26f4f 2026-07-14)
+    cargo=cargo 1.97.1 (c980f4866 2026-06-30)
+    nvcc=Build cuda_13.4.r13.4/compiler.38855100_0
+    cmd=cargo build --release -j2 -p memra-server --bin memra-server
+  bins/on/memra-server sha256 91f689817d9c92f415414e5980eca56617c31fc4ce76f0c962ea617c5247ec7e
+    label=on
+    source_sha=2ccb038d1c16358edde65582597e7b840e3f63fb
+    patch=maxq-batch-oom-recover.patch sha256=6d88aae54863c8b5c65ab3e470a4ae8e093158995810acb8d93bc3002a979dbd
+    built_utc=2026-11-04T20:21:58Z
+    host=laptop
+    MEMRA_CUDA_ARCH=120a
+    cargo_features=default
+    profile=release
+    rustc=rustc 1.97.1 (8bab26f4f 2026-07-14)
+    cargo=cargo 1.97.1 (c980f4866 2026-06-30)
+    nvcc=Build cuda_13.4.r13.4/compiler.38855100_0
+    cmd=cargo build --release -j2 -p memra-server --bin memra-server
+  Workstation binaries for comparison (DAY49 2.3, 2.4): gates green 707c2ac5539dc932f1f93ee5cf6eb1a12f47f075d28d072e7ad2738d4d1bfe63,
+  red 4b8501b772671a63efd8fcd0bc65504c33c3dc11b73c6404884b2241c052d239, boots green f625270791e263c455d842ed81c2b659682f4e3e355a6105498155b761dcf3a6
+
+model: Qwen3.8-27B-NVFP4-Q5K-mtp.gguf sha256 1facf36c2db359dcf9c2475cf8f85fe84a528d10aaaaff20f7c0db3d561e024a, 15705922304 B
+  (chain.sh:18's pin; run.sh checks it before the first boot)
+
+cell files (kit path <- source path @ rev: kit sha256; source blob sha256; state):
+  tools/health-fault-gate.sh <- tools/health-fault-gate.sh @ 2ccb038d1c: 7fff6faef2d1fca7ed3cc12e91bae98ba24072d13f279d5a9b5abf935505aa84; 70b34e42133e26560d5ab0b2b312bd49156b15b2721d3d60604719f2621dfa2f; ported (DEVIATIONS D3-D5)
+  tools/port-guard.sh <- tools/port-guard.sh @ 2ccb038d1c: c70f4b4fcb5794db82b91e70d945dfbafe4a1ff6e19d424823042dbea9b92715; c70f4b4fcb5794db82b91e70d945dfbafe4a1ff6e19d424823042dbea9b92715; unchanged
+  research/spill-b-20260919/day49d-run.sh <- research/spill-b-20260919/day49d-run.sh @ 2ccb038d1c: 37ea8a3561533049c63782628290f08d586ca12c564dca1dc83db4831c0d9f23; 2cce0ea23b648bdd2d37e9ea44b657da26956240ec3d540d0c37b86ce3f9d3cf; ported (D6-D8)
+  research/spill-b-20260919/run-day26-cell.sh <- research/spill-b-20260919/run-day26-cell.sh @ 2ccb038d1c: b75aa0412b1bb883370b64ea366f00b0c01596b0bc8b0f7e6610ebb8c058fd05; fad91c06a219e42867e42fb2203b107f9cd0ed03a4b7c0ec66fe8ea4ddd2ee66; ported (D9)
+  research/spill-b-20260919/day45-client.py <- research/spill-b-20260919/day45-client.py @ 2ccb038d1c: 53f5dece5d49299133fe4c94c5c4a1b73bddb521b270fc4e1ece8ce2994f2100; 53f5dece5d49299133fe4c94c5c4a1b73bddb521b270fc4e1ece8ce2994f2100; unchanged
+  research/spill-b-20260919/day45-parse.py <- research/spill-b-20260919/day45-parse.py @ 2ccb038d1c: 64568d5917dc93fc51737d34a021c597013234bdf909cafd9f6af3181d7f249b; 64568d5917dc93fc51737d34a021c597013234bdf909cafd9f6af3181d7f249b; unchanged
+  research/spill-b-20260919/day49d-read.py <- research/spill-b-20260919/day49d-read.py @ 2ccb038d1c: bd4f8fcc8eab5f4ca6dbe473432d567e07e6234db5145afbe7cd9f1497cd2115; bd4f8fcc8eab5f4ca6dbe473432d567e07e6234db5145afbe7cd9f1497cd2115; unchanged
+  docs/SERVING.md <- docs/SERVING.md @ 8926ccfb3e: 022b1d50620f5b34bb6e6127be05ff79184ce3aa294aca618a31a0dd73887cff; 022b1d50620f5b34bb6e6127be05ff79184ce3aa294aca618a31a0dd73887cff; unchanged, from the deciding tree (D13)
+  orig/health-fault-gate.sh: 70b34e42133e26560d5ab0b2b312bd49156b15b2721d3d60604719f2621dfa2f (the pre-port copy at 2ccb038d1c)
+  orig/day49d-run.sh: 2cce0ea23b648bdd2d37e9ea44b657da26956240ec3d540d0c37b86ce3f9d3cf (the pre-port copy at 2ccb038d1c)
+  orig/run-day26-cell.sh: fad91c06a219e42867e42fb2203b107f9cd0ed03a4b7c0ec66fe8ea4ddd2ee66 (the pre-port copy at 2ccb038d1c)
+
+kit-only files: run.sh, guard.py, maxq-verdict.py, dryrun-reader.sh, PREREG.md, DEVIATIONS.md, DRYRUN.txt,
+  maxq-batch-oom-recover.patch, reference/ws-receipt/ (a copy of research/spill-b-20260919/pro-single-day49d/ at
+  2ccb038d1c). KIT.sha256 pins every file of the kit; run.sh refuses when one differs.
