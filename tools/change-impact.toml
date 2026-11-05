@@ -48,6 +48,11 @@ name = "sm_120a"
 push_gate = true
 note = "RTX 50-series and RTX PRO 6000 Blackwell. The primary optimized target."
 
+[target."121a"]
+name = "sm_121a"
+push_gate = true
+note = "GB10 (DGX Spark). Its own 121a SASS in the 120a policy family; a GB10 counts for it, an sm_120 card does not."
+
 [target."100a"]
 name = "sm_100a"
 push_gate = false
