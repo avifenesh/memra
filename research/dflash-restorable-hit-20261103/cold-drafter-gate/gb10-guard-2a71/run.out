@@ -1,0 +1,15 @@
+waitfor: MET after 0m35s
+GATE_RUN_DONE /home/avifenesh/memra-run/gate-guard-c452d00ff6/arm.jsonl
+waitfor: MET after 0m15s
+waitfor: MET after 0m25s
+GATE_RUN_DONE /home/avifenesh/memra-run/gate-guard-c452d00ff6/ref.jsonl
+waitfor: MET after 0m15s
+a-greedy: identical=True arm_len=421 ref_len=421
+a-sampled: identical=True arm_len=525 ref_len=525
+b-greedy: identical=True arm_len=477 ref_len=477
+b-sampled: identical=True arm_len=254 ref_len=254
+GATE PASS
+cache-preferred=4
+cold-drafter restore=4
+DSPARK restore=0
+dspark-boundary=0

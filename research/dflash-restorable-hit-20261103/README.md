@@ -68,6 +68,7 @@ The gate needs every completion byte-identical.
 | RTX 5090, ea5ef13e8b (rebased on batch-spec, door deleted; smaller P/S) | identical | identical | identical | identical | 4 |
 | GB10, ea5ef13e8b (`gb10-ea5e/`) | identical | identical | identical | identical | 4 |
 | RTX 5090, 2a71203eb7 (memra#1069 head with the grid guard, doors on by device default; `5090-guard-2a71/`) | identical | identical | identical | identical | 4 (0 grid refusals) |
+| GB10, 2a71203eb7 (same source-tree id c49c9b3691f0, doors on by device default; `gb10-guard-2a71/`) | identical | identical | identical | identical | 4 (0 grid refusals) |
 
 Rebased head ea5ef13e8b (RTX 5090): memra-server lib 1151 passed / 0 failed, memra-engine `dspark` 23 / 0, `tools/dspark-serve-smoke.sh` ALL GREEN (`5090-smoke-ea5e/`; a first attempt died before the server wrote a line, cause not captured; the rerun with the serve lock on disk passed).
 
