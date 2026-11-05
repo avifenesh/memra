@@ -10973,16 +10973,18 @@ fn host_demote_prefix_entry(engine: &Engine, host: &mut HostPrefixCache, mut dea
 /// `docs/decisions/BATCH-OOM-RECOVER-DEFAULT.md`): a chunk whose quoted CUDA OOM came before any
 /// session-state write (`memra_engine::step_guard`) takes one reclaim rung and runs the same
 /// batched step once more. The default on the full-power RTX PRO 6000 Blackwell Workstation
-/// Edition, the card the deciding cell read; every other card keeps the chunk's error arm.
+/// Edition and the Max-Q Workstation Edition, the two cards a deciding cell read; every other
+/// card keeps the chunk's error arm.
 fn batch_oom_recover_default(device_name: &str) -> bool {
     memra_engine::parallel::HardwareTarget::is_pro6000_workstation(device_name)
+        || memra_engine::parallel::HardwareTarget::is_pro6000_maxq(device_name)
 }
 
 /// The boot receipt of [`batch_oom_recover_default`], one line.
 fn batch_oom_recover_boot_line(on: bool) -> &'static str {
     if on {
-        "[admit-oom] batch OOM recovery: ON (RTX PRO 6000 Blackwell Workstation Edition: an \
-         untouched batched chunk takes one reclaim rung and retries once)"
+        "[admit-oom] batch OOM recovery: ON (RTX PRO 6000 Blackwell Workstation or Max-Q \
+         Workstation Edition: an untouched batched chunk takes one reclaim rung and retries once)"
     } else {
         "[admit-oom] batch OOM recovery: OFF (no receipt for this card: a batched chunk's OOM \
          ends the chunk's sessions)"
@@ -44582,16 +44584,19 @@ mod tests {
         );
     }
 
-    /// WP-B day 49: the batch OOM recovery is the default on the card the deciding cell read and
-    /// nowhere else; the Max-Q and Server editions share the class, not the receipt.
+    /// WP-B day 49: the batch OOM recovery is the default on the two cards a deciding cell read
+    /// (the Workstation and Max-Q Workstation editions) and nowhere else; the Server Edition
+    /// shares the class, not the receipts.
     #[test]
-    fn batch_oom_recovery_is_the_pro6000_workstation_default_only() {
-        assert!(super::batch_oom_recover_default(
-            "NVIDIA RTX PRO 6000 Blackwell Workstation Edition"
-        ));
+    fn batch_oom_recovery_is_the_pro6000_workstation_and_maxq_default_only() {
+        for name in [
+            "NVIDIA RTX PRO 6000 Blackwell Workstation Edition",
+            "NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition",
+        ] {
+            assert!(super::batch_oom_recover_default(name), "{name}");
+        }
         for name in [
             "NVIDIA GeForce RTX 5090",
-            "NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition",
             "NVIDIA RTX PRO 6000 Blackwell Server Edition",
             "NVIDIA B200",
             "",

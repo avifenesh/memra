@@ -410,8 +410,9 @@ each states itself at boot.
   session-state write (the engine's `step_guard`) takes one reclaim rung (parked sessions dropped,
   the device prefix cache halved, the pools trimmed) and runs the same batched step once more, so
   each request keeps one numeric program; a second failure or a torn step ends the chunk as on
-  every other card, where one OOM ends every session of the chunk. Boot line `[admit-oom] batch
-  OOM recovery: ON` or `OFF`. [Decision](decisions/BATCH-OOM-RECOVER-DEFAULT.md).
+  every other card, where one OOM ends every session of the chunk. This one also covers the Max-Q,
+  which carries its own receipt (2026-11-05, `HardwareTarget::is_pro6000_maxq`). Boot line
+  `[admit-oom] batch OOM recovery: ON` or `OFF`. [Decision](decisions/BATCH-OOM-RECOVER-DEFAULT.md).
 - **Memory-shaped admission**, on a worker that serves that one card (its receipt is one card; a
   PP, TP or EP deployment keeps the unarmed program, `worker::is_multi_device_deployment`). A
   request that bounds neither `max_tokens` nor `max_ctx` is
