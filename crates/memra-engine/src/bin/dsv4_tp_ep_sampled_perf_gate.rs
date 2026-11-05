@@ -202,10 +202,11 @@ fn assert_engagement(gpu: &Dsv4Gpu, c: Counters, prime: usize, decode: usize) {
         (prime + decode) as u64 * layers,
         "one-shot AR engagement: the expert join only; the attention join gathers"
     );
+    let head_steps = u64::from(gpu.vocab_parallel_head_for_gate()) * (prime + decode) as u64;
     assert_eq!(
         c.gathers,
-        2 * attention_steps,
-        "attention TP2 row gathers: wo_a groups and wo_b rows"
+        2 * attention_steps + head_steps,
+        "row gathers: attention TP2 wo_a groups and wo_b rows, and the vocab-parallel head"
     );
     assert_eq!(
         c.attention_rank, [attention_steps; 2],

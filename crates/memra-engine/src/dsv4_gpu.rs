@@ -2753,13 +2753,19 @@ impl Dsv4Gpu {
             .unwrap_or(0)
     }
 
-    /// Row gathers of the exact attention TP join, two per layer per step.
+    /// Row gathers on the TP/EP pair: two per layer per step for the exact attention TP join,
+    /// plus one per one-row step for the vocab-parallel head ([`Self::vocab_parallel_head_for_gate`]).
     pub fn tp_ep_row_gathers(&self) -> u64 {
         self.tp_ep_ar
             .lock()
             .ok()
             .and_then(|ar| ar.as_ref().map(TpEpArState::gathers))
             .unwrap_or(0)
+    }
+
+    /// Whether this load's one-row TP/EP steps take the vocab-parallel head and its row gather.
+    pub fn vocab_parallel_head_for_gate(&self) -> bool {
+        self.vocab_parallel_head()
     }
 
     /// Drain both ranks and read the sticky device-side refusal words. The walk
@@ -23763,11 +23769,15 @@ impl Dsv4Gpu {
 }
 
 impl Dsv4Gpu {
-    /// Gate-only digest of the two replicated live cache planes.  It includes
+    /// Gate-only digest of the two live cache planes.  It includes
     /// persistent rings, compressed/indexer stores, and pending rows after the
     /// TP/EP commit; no transient verifier tail is used as evidence.  Equal
-    /// digests are the rank-symmetry check for the replicated attention/cache
-    /// numeric class, not a performance measurement.
+    /// digests are the rank-symmetry check of every replicated plane, not a
+    /// performance measurement.  A position-split C4 store (memra #710) keeps
+    /// each block on one rank, so both ranks digest its logical rows: the same
+    /// values in the same order as a replicated store, which keeps the digest
+    /// equal across the two attention programs.  The split's own exactness is
+    /// `dsv4_kv_split_gate`'s.
     pub fn tp_ep_cache_digest_for_gate(&self, state: &DecodeState) -> Res<[u64; 2]> {
         if !self.topology.is_tp_ep() {
             return Err("TP/EP cache digest requires the all-layer topology".into());
@@ -23778,6 +23788,18 @@ impl Dsv4Gpu {
             .ok_or("TP/EP rank-1 cache plane missing")?;
         if rank1.len() != state.caches.len() {
             return Err("TP/EP cache plane layer count mismatch".into());
+        }
+        let win = self.model.cfg().sliding_window as usize;
+        let hd = self.model.cfg().head_dim as usize;
+        let mut split_rows = Vec::with_capacity(rank1.len());
+        for (cache, peer) in state.caches.iter().zip(rank1) {
+            split_rows.push(if cache.split.is_some() {
+                let mut image = vec![0f32; (win + cache.n_blocks) * hd];
+                self.split_kvc_to_host(cache, peer, cache.n_blocks, &mut image)?;
+                Some(image.split_off(win * hd))
+            } else {
+                None
+            });
         }
         let mut digests = [0xcbf29ce484222325u64; 2];
         let mix = |hash: &mut u64, value: u64| {
@@ -23802,36 +23824,33 @@ impl Dsv4Gpu {
                     .iter()
                     .find(|layer| layer.il == il as u32)
                     .ok_or_else(|| format!("TP/EP cache digest missing rank {rank} layer {il}"))?;
-                let mut read = |plane: cudarc::driver::CudaView<'_, f32>| -> Res<()> {
+                let read = |hash: &mut u64, plane: cudarc::driver::CudaView<'_, f32>| -> Res<()> {
                     let mut values = vec![0f32; plane.len()];
                     stream
                         .memcpy_dtoh(&plane, &mut values)
                         .map_err(e("TP/EP cache digest copy"))?;
                     stream.synchronize().map_err(e("TP/EP cache digest sync"))?;
                     for value in values {
-                        mix(digest, value.to_bits() as u64);
+                        mix(hash, value.to_bits() as u64);
                     }
                     Ok(())
                 };
                 // Only persistent data participates. In particular, exclude
                 // transient verifier rows and n_blocks/i_blocks metadata so a
                 // stale pair cannot pass merely because counters advanced.
-                let win = self.model.cfg().sliding_window as usize;
-                let hd = self.model.cfg().head_dim as usize;
-                read(cache.kvc.slice(..win * hd))?;
-                if let Some(cmp) = &layer.cmp {
-                    // A position-split plane holds its parity of the live blocks (memra #710).
-                    let live = cache.split.as_ref().map_or(cache.n_blocks, |sp_| {
-                        if sp_.rank == 0 {
-                            cache.n_blocks.div_ceil(2)
-                        } else {
-                            cache.n_blocks / 2
-                        }
-                    });
+                read(digest, cache.kvc.slice(..win * hd))?;
+                if let Some(rows) = &split_rows[il] {
+                    // The split store's logical rows, assembled from both ranks above.
+                    for value in rows {
+                        mix(digest, value.to_bits() as u64);
+                    }
+                } else if let Some(cmp) = &layer.cmp {
                     let end = win
                         .checked_mul(hd)
                         .and_then(|start| {
-                            live.checked_mul(cmp.d)
+                            cache
+                                .n_blocks
+                                .checked_mul(cmp.d)
                                 .and_then(|rows| start.checked_add(rows))
                         })
                         .ok_or("TP/EP cache digest compressed range overflow")?;
@@ -23841,13 +23860,13 @@ impl Dsv4Gpu {
                             cache.kvc.len()
                         ));
                     }
-                    read(cache.kvc.slice(win * hd..end))?;
+                    read(digest, cache.kvc.slice(win * hd..end))?;
                 }
                 if let Some(plane) = &cache.pend_kv {
-                    read(plane.slice(..))?;
+                    read(digest, plane.slice(..))?;
                 }
                 if let Some(plane) = &cache.pend_score {
-                    read(plane.slice(..))?;
+                    read(digest, plane.slice(..))?;
                 }
                 if let Some(plane) = &cache.ikvc {
                     let ix = layer
@@ -23864,13 +23883,13 @@ impl Dsv4Gpu {
                             plane.len()
                         ));
                     }
-                    read(plane.slice(..end))?;
+                    read(digest, plane.slice(..end))?;
                 }
                 if let Some(plane) = &cache.ipend_kv {
-                    read(plane.slice(..))?;
+                    read(digest, plane.slice(..))?;
                 }
                 if let Some(plane) = &cache.ipend_score {
-                    read(plane.slice(..))?;
+                    read(digest, plane.slice(..))?;
                 }
             }
         }

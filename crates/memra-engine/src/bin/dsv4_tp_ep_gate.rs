@@ -199,8 +199,10 @@ fn run_once(gpu: &Dsv4Gpu, tokens: &[u32], source_sha256: &str) -> Receipt {
     );
     assert_eq!(
         gpu.tp_ep_row_gathers() - gathers_before,
-        2 * u64::from(attention_mode) * steps * trunk_layers,
-        "attention TP2 gathers wo_a groups and wo_b rows once each per layer/token"
+        2 * u64::from(attention_mode) * steps * trunk_layers
+            + u64::from(gpu.vocab_parallel_head_for_gate()) * steps,
+        "attention TP2 gathers wo_a groups and wo_b rows once each per layer/token, \
+         and the vocab-parallel head its logits once per token"
     );
     let attention_after = gpu.attention_tp_rank_calls();
     let attention_rank_calls =
