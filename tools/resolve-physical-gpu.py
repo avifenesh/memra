@@ -19,6 +19,20 @@ import subprocess
 import sys
 
 
+# nvidia-smi's memory.free on a unified-memory GPU (GB10): the card has no separate pool.
+UNIFIED_MEMORY_FREE = "[N/A]"
+
+
+def unified_free_mib(meminfo_text):
+    """MemAvailable from /proc/meminfo, in MiB: the free memory a unified-memory GPU can use."""
+    for line in meminfo_text.splitlines():
+        if line.startswith("MemAvailable:"):
+            fields = line.split()
+            if len(fields) >= 2 and fields[1].isdigit():
+                return int(fields[1]) // 1024
+    raise GpuResolutionError("unified-memory GPU but /proc/meminfo has no MemAvailable")
+
+
 class GpuResolutionError(ValueError):
     """Raised when CUDA's logical device 0 cannot be resolved to exactly one physical card."""
 
@@ -38,6 +52,11 @@ def parse_nvidia_smi_query(text):
         if len(parts) != 3:
             raise GpuResolutionError(f"malformed nvidia-smi device line: {line!r}")
         index, uuid, free = parts
+        if free == UNIFIED_MEMORY_FREE:
+            # GB10 and other unified-memory parts have no device-local pool to report. The
+            # free figure is the host's available memory instead (unified_free_mib).
+            devices.append({"index": index, "uuid": uuid, "free_mib": None})
+            continue
         try:
             free_mib = int(free)
         except ValueError:
@@ -181,6 +200,9 @@ def main():
         else:
             devices = query_nvidia_smi()
         device = resolve_physical_device(devices, cvd, args.logical_index, cdo)
+        if device["free_mib"] is None:
+            with open("/proc/meminfo", encoding="utf-8") as handle:
+                device = {**device, "free_mib": unified_free_mib(handle.read())}
     except GpuResolutionError as error:
         print(f"resolve-physical-gpu: refused: {error}", file=sys.stderr)
         return 1

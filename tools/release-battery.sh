@@ -116,7 +116,13 @@ resolve_physical_gpu || exit 1
 
 gpu_free_mib() {
   [ -n "$PHYSICAL_UUID" ] || return 0
-  nvidia-smi --query-gpu=memory.free --format=csv,noheader,nounits -i "$PHYSICAL_UUID" 2>/dev/null | head -1
+  free=$(nvidia-smi --query-gpu=memory.free --format=csv,noheader,nounits -i "$PHYSICAL_UUID" 2>/dev/null | head -1)
+  # A unified-memory GPU (GB10) reports [N/A]: its free memory is the host's MemAvailable.
+  if [ "$free" = "[N/A]" ]; then
+    awk '/^MemAvailable:/ { print int($2 / 1024); exit }' /proc/meminfo
+  else
+    printf '%s\n' "$free"
+  fi
 }
 gpu_tenants() {
   if [ -n "$PHYSICAL_UUID" ]; then

@@ -50,6 +50,18 @@ class ParseNvidiaSmiQueryTests(unittest.TestCase):
         with self.assertRaises(GpuResolutionError):
             parse_nvidia_smi_query("0, GPU-aaaa, N/A\n")
 
+    def test_unified_memory_card_has_no_device_free(self):
+        # GB10's nvidia-smi line, verbatim: memory.free is [N/A] on unified memory.
+        line = "0, GPU-3ea3e6d6-3acf-0bd3-ef7e-f2d4cc977b43, [N/A]\n"
+        self.assertEqual(parse_nvidia_smi_query(line),
+                         [{"index": "0", "uuid": "GPU-3ea3e6d6-3acf-0bd3-ef7e-f2d4cc977b43", "free_mib": None}])
+
+    def test_unified_free_is_memavailable(self):
+        meminfo = "MemTotal:       127535804 kB\nMemFree:        81000000 kB\nMemAvailable:   121000000 kB\n"
+        self.assertEqual(_resolve_physical_gpu.unified_free_mib(meminfo), 121000000 // 1024)
+        with self.assertRaises(GpuResolutionError):
+            _resolve_physical_gpu.unified_free_mib("MemTotal: 1 kB\n")
+
 
 PCI = "PCI_BUS_ID"
 
