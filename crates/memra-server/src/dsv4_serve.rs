@@ -42,6 +42,7 @@ use crate::dsv4_admit::{self, Admission, AdmissionLine, MemoryProbe, SessionNeed
 use crate::health::RouteHealth;
 use crate::route_telemetry::{RouteLoad, RouteRun, ServeStats};
 use crate::worker::{EngineError, Event, EventSender, ModelCaps, Request, SpecUsage};
+use memra_engine::decode::StopReason;
 use memra_engine::dsv4_gpu::{
     DSV4_BATCH_WIDTH_MAX, DecodePath, DecodeState, DsparkState, Dsv4Gpu, Dsv4HostDecodeState,
     Dsv4HostDsparkState, Dsv4PenaltyCfg, Dsv4RowDraw, Dsv4SampleCfg, Dsv4Vt, REPLAY_MIN_CAPACITY,
@@ -2292,7 +2293,9 @@ struct Emit<'a> {
     budget: usize,
     ids: Vec<u32>,
     text: String,
-    stop_reason: Option<&'static str>,
+    /// The engine's stop vocabulary, the one every finish mapper reads (`Eos`, `MaxNew`,
+    /// `Callback`); a bare "length" mapped to finish_reason "stop".
+    stop_reason: Option<StopReason>,
     client_gone: bool,
     /// The EOS id this stream CONSUMED but did not deliver. The device state advanced over it,
     /// so it is part of the token boundary the parked-prefix tier has to name; without it an
@@ -2342,10 +2345,9 @@ impl<'a> Emit<'a> {
             if self.stop_reason.is_some() || self.client_gone {
                 break;
             }
-            if crate::worker::stop_token_reason(id, self.stop_token_ids).is_some()
-                || self.eos.contains(&id)
-            {
-                self.stop_reason = Some("stop");
+            let stop_id = crate::worker::stop_token_reason(id, self.stop_token_ids);
+            if stop_id.is_some() || self.eos.contains(&id) {
+                self.stop_reason = Some(stop_id.unwrap_or(StopReason::Eos));
                 self.terminal = Some(id);
                 taken += 1;
                 break;
@@ -2371,7 +2373,7 @@ impl<'a> Emit<'a> {
                 {
                     self.client_gone = true;
                 }
-                self.stop_reason = Some("stop");
+                self.stop_reason = Some(StopReason::Callback);
                 break;
             }
             self.text = full;
@@ -2380,7 +2382,7 @@ impl<'a> Emit<'a> {
                 break;
             }
             if self.ids.len() >= self.budget {
-                self.stop_reason = Some("length");
+                self.stop_reason = Some(StopReason::MaxNew);
                 break;
             }
         }
@@ -2401,7 +2403,7 @@ impl<'a> Emit<'a> {
         }
         let _ = self.tx.send(Event::TokenSnapshot(self.ids.clone()));
         let _ = self.tx.send(Event::Done {
-            stop_reason: self.stop_reason.unwrap_or("length").to_string(),
+            stop_reason: format!("{:?}", self.stop_reason.unwrap_or(StopReason::MaxNew)),
             n_tokens: self.ids.len(),
             n_prompt,
             n_cached,
@@ -4492,5 +4494,70 @@ mod parked_tier_lookup_tests {
         assert_eq!(common_prefix_len(&[1, 2, 3], &[1, 2, 9, 3]), 2);
         assert_eq!(common_prefix_len(&[1, 2], &[1, 2, 3]), 2);
         assert_eq!(common_prefix_len(&[], &[1]), 0);
+    }
+}
+
+#[cfg(test)]
+mod stop_reason_tests {
+    use super::Emit;
+    use crate::worker::{Event, event_channel};
+    use memra_tokenizer::Tokenizer;
+
+    fn fixture() -> Tokenizer {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../memra-tokenizer/tests/fixtures/nfc/imports/nfc");
+        Tokenizer::from_hf_dir(&dir).expect("byte-level BPE fixture")
+    }
+
+    /// Feed `ids` one step at a time the way the plain loop does, finish, and return the
+    /// finish_reason the OpenAI layer derives from the Done event.
+    fn finish_reason(
+        eos: Vec<u32>,
+        stops: &[String],
+        stop_ids: &[u32],
+        budget: usize,
+        ids: &[u32],
+    ) -> &'static str {
+        let tok = fixture();
+        let (tx, mut rx) = event_channel();
+        let mut emit = Emit::new(&tok, &tx, eos, stops, stop_ids, budget);
+        for &id in ids {
+            if !emit.push(&[id]) {
+                break;
+            }
+        }
+        emit.finish(1, 0, 0.0, None);
+        let mut reason = None;
+        while let Ok(event) = rx.try_recv() {
+            if let Event::Done { stop_reason, .. } = event {
+                reason = Some(stop_reason);
+            }
+        }
+        crate::stop_reason_to_finish(&reason.expect("a Done event"))
+    }
+
+    /// RED ARM: a DSv4 answer cut at max_tokens read finish_reason "stop" (PRO 6000 pair,
+    /// 2026-11-05: 48 of 48 tokens, finish "stop"), so no client could tell it was truncated.
+    #[test]
+    fn a_max_tokens_cut_reads_length() {
+        assert_eq!(
+            finish_reason(vec![], &[], &[], 3, &[40, 41, 42, 43]),
+            "length"
+        );
+    }
+
+    #[test]
+    fn eos_stop_ids_and_stop_strings_read_stop() {
+        assert_eq!(
+            finish_reason(vec![42], &[], &[], 8, &[40, 41, 42, 43]),
+            "stop"
+        );
+        assert_eq!(finish_reason(vec![], &[], &[41], 8, &[40, 41, 42]), "stop");
+        let stop = fixture().decode(&[41]);
+        assert!(!stop.is_empty(), "fixture id 41 decodes to text");
+        assert_eq!(
+            finish_reason(vec![], &[stop], &[], 8, &[40, 41, 42]),
+            "stop"
+        );
     }
 }
