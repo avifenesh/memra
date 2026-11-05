@@ -6,12 +6,15 @@ from __future__ import annotations
 import contextlib
 import io
 import json
+import os
 from pathlib import Path
 import shutil
 import subprocess
 import sys
 import tempfile
+import tomllib
 import unittest
+from unittest import mock
 
 sys.dont_write_bytecode = True
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -87,7 +90,7 @@ class Repo:
             q.check_push(self.repo, [f"refs/heads/x {oid} {remote} {base or self.base}"], "qualified")
         return out.getvalue()
 
-    def record(self, commit, kinds, *, device_class="rtx5090", device=DEVICE, target="120a", slower=False,
+    def record(self, commit, kinds, *, device_class="rtx5090", device=DEVICE, target="120a", slowdown=0.0,
                name=None, accept=None, serve_tail="serve-smoke: 0 failed", perf_base=None, models=("model-a", "model-b")):
         out = self.root / f"evidence-{len(list(self.root.glob('evidence-*')))}"
         (out / "battery").mkdir(parents=True)
@@ -119,7 +122,7 @@ class Repo:
             runs = []
             for seq, arm in enumerate(ce.PERF_ORDER * len(models), 1):
                 model = models[(seq - 1) // len(ce.PERF_ORDER)]
-                rate = 100.0 + seq * 0.1 - (20.0 if slower and arm == "B" else 0.0)
+                rate = 100.0 + seq * 0.1 - (slowdown if arm == "B" else 0.0)
                 log = f"perf/{seq:02d}-{arm}-{model}.log"
                 (out / log).write_text(f"generated 128 tokens in 1.000s = {rate:.2f} tok/s (ST decode)\n")
                 runs.append({"arm": arm, "model": model, "log": log})
@@ -225,12 +228,23 @@ class CellGate(unittest.TestCase):
         self.f.write("crates/memra-engine/cu/qmatvec.cu", "__global__ void k() { int x = 7; }\n")
         code = self.f.commit("kernel")
         self.f.record(code, ["battery"])
-        slow = self.f.record(code, ["perf"], slower=True)
+        slow = self.f.record(code, ["perf"], slowdown=20.0)
         self.assertEqual(slow["status"], "fail")
         self.assertIn("REGRESSED on model-a, model-b", slow["failures"][0])
         with self.assertRaisesRegex(q.GateError, "needs perf evidence"):
             self.f.push()
-        self.f.record(code, ["perf"], slower=True, accept="reviewed: correctness fix costs 20%")
+        self.f.record(code, ["perf"], slowdown=20.0, accept="reviewed: correctness fix costs 20%")
+        self.assertIn("CELL-QUALIFIED", self.f.push())
+
+    def test_separated_slowdown_inside_the_noise_floor_is_admitted(self):
+        # B is about 1% slower on every run and every B run is below every A run: rank alone
+        # called this a regression, yet the recorded run-to-run noise reaches it on identical code.
+        self.f.write("crates/memra-engine/cu/qmatvec.cu", "__global__ void k() { int x = 13; }\n")
+        code = self.f.commit("kernel")
+        self.f.record(code, ["battery"])
+        small = self.f.record(code, ["perf"], slowdown=1.0)
+        self.assertEqual(small["status"], "pass", small["failures"])
+        self.assertTrue(all(-ce.PERF_MIN_REGRESSION_PCT < v["delta_pct"] < 0 for v in small["kinds"]["perf"]["verdicts"].values()))
         self.assertIn("CELL-QUALIFIED", self.f.push())
 
     def test_perf_must_compare_against_the_push_base_and_cover_the_roster(self):
@@ -319,6 +333,107 @@ class CellGate(unittest.TestCase):
         # Main itself still compares against its old value.
         with self.assertRaisesRegex(q.GateError, "missing evidence"):
             self.f.push("refs/heads/main", base=self.f.base)
+
+
+class PerfVerdict(unittest.TestCase):
+    def verdict(self, a, b):
+        runs = [{"arm": "A", "model": "m", "tps": x} for x in a] + [{"arm": "B", "model": "m", "tps": x} for x in b]
+        return ce.judge_perf(runs)["m"]
+
+    def test_complete_separation_inside_the_noise_floor_is_not_a_regression(self):
+        verdict = self.verdict([100.0, 100.2, 100.4], [99.5, 99.6, 99.9])
+        self.assertEqual(verdict["delta_pct"], -0.6)
+        self.assertFalse(verdict["regressed"])
+
+    def test_a_regression_needs_both_rank_and_effect(self):
+        self.assertTrue(self.verdict([100.0, 100.2, 100.4], [96.9, 97.2, 97.5])["regressed"])
+        self.assertTrue(self.verdict([100.0, 100.0, 100.0], [98.0, 98.0, 98.0])["regressed"], "the floor is inclusive")
+        # A 3% median drop whose arms overlap is not separated: not a regression.
+        self.assertFalse(self.verdict([100.0, 100.2, 100.4], [97.0, 97.2, 100.5])["regressed"])
+
+
+class Toolchain(unittest.TestCase):
+    def test_rustc_is_resolved_in_the_build_tree(self):
+        # The record named the caller's default rustc (1.98.1) while cargo built the tree with
+        # its pinned rust-toolchain.toml (1.97.1). The fake rustc answers like rustup's proxy:
+        # a toolchain file in the working directory wins over the default.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            fake = root / "bin"
+            fake.mkdir()
+            (fake / "rustc").write_text("#!/bin/sh\nif [ -f rust-toolchain.toml ]; then echo 'rustc 1.97.1 (pinned)'; "
+                                        "else echo 'rustc 1.98.1 (default)'; fi\n")
+            (fake / "nvcc").write_text("#!/bin/sh\necho 'Build cuda fixture'\n")
+            for tool in fake.iterdir():
+                tool.chmod(0o755)
+            tree = root / "tree"
+            tree.mkdir()
+            (tree / "rust-toolchain.toml").write_text('[toolchain]\nchannel = "1.97.1"\n')
+            self.assertNotEqual(Path.cwd().resolve(), tree.resolve())
+            found = ce.toolchain(tree, {**os.environ, "PATH": f"{fake}{os.pathsep}{os.environ['PATH']}"})
+            self.assertEqual(found, {"rustc": "rustc 1.97.1 (pinned)", "nvcc": "Build cuda fixture"})
+
+
+class DeviceLock(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def gb10_lock(self, repo=ROOT):
+        return tomllib.loads((repo / "tools/change-impact.toml").read_text())["device"]["gb10"]["lock"]
+
+    def test_gb10_takes_the_spark_through_sparklock_with_a_per_box_unit(self):
+        lock = self.gb10_lock()
+        self.assertEqual(lock[:2], ["sparklock", "run"])
+        self.assertEqual(lock[lock.index("--unit") + 1], "${MEMRA_SPARK_UNIT}")
+        self.assertEqual(lock[-1], "--")
+        self.assertFalse(any("/tmp" in arg for arg in lock), "a local /tmp flock is invisible to the Sparks' lease")
+        filled = ce.lock_command("gb10", {"lock": lock}, {"MEMRA_SPARK_UNIT": "unit-a"})
+        self.assertEqual(filled[filled.index("--unit") + 1], "unit-a")
+        for environ in ({}, {"MEMRA_SPARK_UNIT": ""}):
+            with self.assertRaisesRegex(ce.EvidenceError, "gb10 lock needs MEMRA_SPARK_UNIT"):
+                ce.lock_command("gb10", {"lock": lock}, environ)
+
+    def fixture(self):
+        f = Repo(self.root)
+        self.assertEqual(self.gb10_lock(f.repo)[0], "sparklock")
+        return f
+
+    def test_unset_unit_refuses_before_anything_builds(self):
+        f = self.fixture()
+        out = self.root / "out"
+        with mock.patch.dict(os.environ), mock.patch.object(ce, "build", side_effect=AssertionError("must not build")):
+            os.environ.pop("MEMRA_SPARK_UNIT", None)
+            with self.assertRaisesRegex(ce.EvidenceError, "gb10 lock needs MEMRA_SPARK_UNIT"):
+                ce.produce(f.repo, "HEAD", "gb10", ["battery"], out, work=self.root / "work", log=lambda _: None)
+        self.assertFalse(out.exists())
+
+    def test_refused_lease_runs_nothing(self):
+        f = self.fixture()
+        fake = self.root / "bin"
+        fake.mkdir()
+        argv = self.root / "sparklock.argv"
+        # sparklock exits non-zero without running its command when the unit is held.
+        (fake / "sparklock").write_text(f"#!/bin/sh\nprintf '%s\\n' \"$@\" > {argv}\necho 'sparklock: unit held' >&2\nexit 1\n")
+        (fake / "sparklock").chmod(0o755)
+        tree, bins = self.root / "tree", self.root / "bins"
+        bins.mkdir()
+        for name in ce.BINARIES:
+            (bins / name).write_bytes(b"fixture")
+        out = self.root / "out"
+        with mock.patch.dict(os.environ, {"PATH": f"{fake}{os.pathsep}{os.environ['PATH']}", "MEMRA_SPARK_UNIT": "unit-a"}), \
+                mock.patch.object(ce, "build", return_value=(tree, bins)), \
+                mock.patch.object(ce, "toolchain", return_value={}):
+            with self.assertRaisesRegex(ce.DeviceBusy, "sparklock exit 1"):
+                ce.produce(f.repo, "HEAD", "gb10", ["battery"], out, work=self.root / "work", log=lambda _: None)
+        args = argv.read_text().splitlines()
+        self.assertEqual(args[:4], ["run", "--unit", "unit-a", "--ttl"])
+        self.assertIn("gpu-phase", args)
+        self.assertFalse((out / "gpu-phase.started").exists())
+        self.assertFalse((out / "record.json").exists())
 
 
 if __name__ == "__main__":

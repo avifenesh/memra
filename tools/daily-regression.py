@@ -66,14 +66,24 @@ def install(args):
         dropin = UNIT_DIR / f"{instance}.timer.d"
         dropin.mkdir(exist_ok=True)
         (dropin / "at.conf").write_text(f"[Timer]\nOnCalendar=\nOnCalendar=*-*-* {args.at}:00\n")
+    sys.path.insert(0, str(HERE))
+    import cell_evidence as ce
+    import tomllib
+    # Lock variables the device row reads (the sparklock unit on a Spark): per box, so the
+    # env file names them empty and the lock refuses until the owner fills them in.
+    row = tomllib.loads((HERE / "change-impact.toml").read_text()).get("device", {}).get(args.device, {})
+    needed = sorted({name for arg in row.get("lock", []) for name in ce.LOCK_VARIABLE.findall(arg)})
     env_file = Path.home() / ".config/memra-daily" / f"{args.device}.env"
     env_file.parent.mkdir(parents=True, exist_ok=True)
     if not env_file.exists():
-        env_file.write_text(f"# Overrides for {instance}.service\nMEMRA_REPO={args.repo.resolve()}\n")
+        env_file.write_text(f"# Overrides for {instance}.service\nMEMRA_REPO={args.repo.resolve()}\n"
+                            + "".join(f"# Read by the {args.device} device lock; set it for this box.\n{name}=\n"
+                                      for name in needed))
     subprocess.run(["systemctl", "--user", "daemon-reload"], check=False)
     print(f"installed {instance} (timer NOT enabled)\n"
           f"  repo override: {env_file}\n"
-          f"  enable:  systemctl --user enable --now {instance}.timer\n"
+          + "".join(f"  set {name} in that file (read by the {args.device} device lock)\n" for name in needed)
+          + f"  enable:  systemctl --user enable --now {instance}.timer\n"
           f"  one run: systemctl --user start {instance}.service\n"
           f"  logs:    journalctl --user -u {instance}.service")
     return 0
@@ -209,8 +219,15 @@ def update_issue(repo, device, target_name, summary, link):
     return number
 
 
+def daily_bins(work):
+    """The daily run's own binary cache. The work dir can be shared with manual
+    `cell_evidence.py run` invocations (to reuse their build trees), whose caches live in
+    work/bins; the daily run builds, reads and prunes only this subdir."""
+    return work / "daily-bins"
+
+
 def prune_bins(work, keep):
-    bins = work / "bins"
+    bins = daily_bins(work)
     if not bins.is_dir():
         return
     for entry in bins.iterdir():
@@ -241,7 +258,10 @@ def run(args):
     target_name = ci.target_name(rules, target)
     # The perf baseline is the last head that PASSED here, so a regression stays failing
     # (and its issue open) until it is fixed or accepted, instead of passing the next day
-    # against its own slow self.
+    # against its own slow self. A false alarm would stay failing the same way, which is why
+    # the verdict needs a minimum effect on top of complete separation
+    # (cell_evidence.PERF_MIN_REGRESSION_PCT): rank alone fails identical code on about one
+    # head in ten.
     base = state.get("last_pass")
     run_dir = work / "runs" / f"{dt.date.today().isoformat()}-{head[:12]}"
     if run_dir.exists():
@@ -249,8 +269,8 @@ def run(args):
     log(f"{args.device} ({target_name}): main {head[:12]}, perf base {base[:12] if base else 'none'}")
     try:
         record = ce.produce(repo, head, args.device, ["battery", "serving", "perf"], run_dir,
-                            base=base, work=work, accept_regression=args.accept_regression, log=log,
-                            reference_perf=base is None)
+                            base=base, work=work, bins=daily_bins(work), accept_regression=args.accept_regression,
+                            log=log, reference_perf=base is None)
     except ce.DeviceBusy as error:
         log(f"{args.device}: {error}; not a regression, the next timer run retries")
         shutil.rmtree(run_dir, ignore_errors=True)

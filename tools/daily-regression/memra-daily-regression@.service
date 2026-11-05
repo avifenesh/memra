@@ -1,7 +1,8 @@
 # Daily per-device memra regression (tools/daily-regression.py). Instance = device class
 # from tools/change-impact.toml: memra-daily-regression@rtx5090, @gb10, @rtxpro6000.
 # Installed by `python3 tools/daily-regression.py install --device <class>`; the timer is
-# installed disabled. Per-box overrides (MEMRA_REPO, MEMRA_DAILY_WORK) live in
+# installed disabled. Per-box overrides (MEMRA_REPO, MEMRA_DAILY_WORK, and on a Spark the
+# sparklock unit MEMRA_SPARK_UNIT, which the gb10 lock refuses without) live in
 # ~/.config/memra-daily/<class>.env. cargo, nvcc, gh and the device lock command come from
 # the user manager's PATH; set PATH in that file on a box where they live elsewhere.
 [Unit]

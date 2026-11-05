@@ -3,7 +3,9 @@
 and the skip/busy decisions. CPU fixtures only; GitHub calls are recorded, not made."""
 from __future__ import annotations
 
+import contextlib
 import importlib.util
+import io
 import json
 import os
 from pathlib import Path
@@ -181,6 +183,49 @@ class RunDecisions(unittest.TestCase):
                 mock.patch.object(dr, "publish", side_effect=AssertionError("must not publish")):
             self.assertEqual(dr.run(self.args()), 3)
         self.assertFalse(Path(self.tmp.name, "state.json").exists())
+
+    def test_prune_keeps_what_other_runs_left_in_a_shared_work_dir(self):
+        # The work dir is shared with manual `cell_evidence.py run` invocations, which cache
+        # their binaries in work/bins. The daily run prunes only its own cache.
+        import cell_evidence as ce
+        import change_impact as ci
+        work = Path(self.tmp.name)
+        other = work / "bins" / ("e" * 40 + "-120a")
+        stale = work / "daily-bins" / ("f" * 40 + "-120a")
+        for entry in (other, stale):
+            entry.mkdir(parents=True)
+            (entry / "run-gen").write_bytes(b"fixture")
+        arch = ci.ArchTable(accepted=("120a",), caps={"12.0": "120a"})
+        rules = {"target": {"120a": {"name": "sm_120a"}}, "device": {"rtx5090": {"compute_cap": "12.0"}}}
+
+        def produce(repo, head, device, kinds, out, **kwargs):
+            cache = Path(kwargs.get("bins") or Path(kwargs["work"]) / "bins") / f"{head}-120a"
+            cache.mkdir(parents=True)
+            return {"status": "pass", "failures": [], "kinds": {"battery": {"exit_code": 0}}}
+        with mock.patch.object(ci, "arch_table_at", return_value=arch), \
+                mock.patch.object(ci, "rules_at", return_value=rules), \
+                mock.patch.object(ce, "produce", side_effect=produce):
+            self.assertEqual(dr.run(self.args()), 0)
+        self.assertTrue(other.is_dir(), "the daily run deleted binaries another run cached")
+        self.assertFalse(stale.exists(), "the daily run's own stale cache stays pruned")
+        self.assertTrue((work / "daily-bins" / ("d" * 40 + "-120a")).is_dir())
+
+
+class Install(unittest.TestCase):
+    def test_install_names_the_lock_variables_a_box_must_set(self):
+        import argparse
+        import cell_evidence  # noqa: F401  (imported before Path.home is patched below)
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            out = io.StringIO()
+            with mock.patch.object(dr, "UNIT_DIR", home / "units"), \
+                    mock.patch.object(dr, "INSTALL_DIR", home / "share"), \
+                    mock.patch.object(dr.Path, "home", return_value=home), \
+                    mock.patch.object(dr.subprocess, "run"), contextlib.redirect_stdout(out):
+                dr.install(argparse.Namespace(device="gb10", repo=home, at=None))
+            env = (home / ".config/memra-daily/gb10.env").read_text()
+            self.assertIn("\nMEMRA_SPARK_UNIT=\n", env)
+            self.assertIn("set MEMRA_SPARK_UNIT", out.getvalue())
 
 
 if __name__ == "__main__":

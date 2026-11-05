@@ -85,8 +85,11 @@ Evidence per target (`tools/cell_evidence.py`):
 A device counts for the target its compute capability maps to: the RTX 5090 and the RTX
 PRO 6000 both count for `sm_120a`. A default keyed on a card name (`RTX PRO 6000`,
 `RTX 5090`, `GB10`) is the exception: that card has to run it. The perf verdict is REGRESSED when every candidate run
-is slower than every base run. With three runs per arm that complete separation has a
-one-sided exact probability of 1/20 under no difference. A reviewed, intended regression
+is slower than every base run and the candidate median is at least 2% below the base median.
+With three runs per arm, complete separation alone has a one-sided exact probability of 1/20
+under no difference, so it failed about one two-model head in ten on identical code. The 2%
+floor comes from the run-to-run noise of the banked records and leaves 0.6% of heads on the
+RTX 5090 laptop and none on GB10 (`research/perf-verdict-noise-20261106/`). A reviewed, intended regression
 is recorded with `--accept-regression '<why>'`. The baseline must be the push base
 itself, not an older ancestor or a commit inside the pushed range. A target the base cannot
 build has no baseline; its perf record carries absolute rates.
@@ -109,7 +112,8 @@ python3 tools/cell_evidence.py check --base origin/main --head HEAD    # the hoo
 `run` builds the six battery binaries for the device's target under
 `flock ~/.cache/memra-rig-build.lock nice -n 15` with `CARGO_BUILD_JOBS=2`, one codegen unit
 and fat LTO, then runs the battery from a detached checkout of the tested commit under the
-device's lock (`gpulock` on the 5090, the rig flock elsewhere). The record binds the tested
+device's lock (`gpulock` on the 5090, the unit's `sparklock` lease on a GB10, the rig flock
+elsewhere). The record binds the tested
 commit, the source-input digest, the device class and observation (GPU UUID hashed), the
 binary digests and every raw log. The gate re-judges the raw logs; it never trusts a
 verdict field. Records live under `research/release-qualification/cells/`, which is
@@ -334,6 +338,10 @@ python3 tools/daily-regression.py run --device rtx5090 --no-publish  # a local d
 The unit templates are `tools/daily-regression/memra-daily-regression@.{service,timer}`.
 The instance name is the device class (`rtx5090`, `rtxpro6000`, `gb10`), so a Spark or a
 PRO 6000 box installs the same templates with its own class. Per-box overrides
-(`MEMRA_REPO`, `MEMRA_DAILY_WORK`) go in `~/.config/memra-daily/<class>.env`. The service
+(`MEMRA_REPO`, `MEMRA_DAILY_WORK`) go in `~/.config/memra-daily/<class>.env`. One `gb10` row
+serves both Sparks, so a Spark also names its own sparklock unit there (`MEMRA_SPARK_UNIT`);
+without it the lock refuses and nothing runs. A refused lease is a busy device, not a failure.
+The work dir may be shared with manual `cell_evidence.py run` invocations to reuse their build
+trees; the daily run caches its binaries in its own `daily-bins/` and prunes only there. The service
 runs at `Nice=15`, `CPUWeight=20`, `IOWeight=20`, and the build keeps the rig build policy
 above. The timer is not persistent: a laptop asleep at the hour skips that day.

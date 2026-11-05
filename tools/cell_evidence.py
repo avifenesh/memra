@@ -15,7 +15,8 @@ record does not change what it qualifies. Evidence kinds:
     serving   tools/serve-smoke.sh, judged by its own summary line
     perf      run-gen decode tok/s, base vs candidate interleaved A B B A A B per roster
               model; REGRESSED when every candidate run is slower than every base run
-              (complete separation: one-sided exact p = 1/20 for 3 runs per arm)
+              (complete separation: one-sided exact p = 1/20 for 3 runs per arm) AND the
+              candidate median is at least PERF_MIN_REGRESSION_PCT below the base median
 
 Commands:
 
@@ -66,6 +67,18 @@ BUILD_ENV = {"CARGO_BUILD_JOBS": "2", "CARGO_PROFILE_RELEASE_CODEGEN_UNITS": "1"
 BUILD_LOCK = Path.home() / ".cache/memra-rig-build.lock"
 PERF_ORDER = ("A", "B", "B", "A", "A", "B")
 PERF_NGEN = "128"
+# A perf regression needs complete separation AND a median drop of at least this much.
+# Rank alone fires on identical code with p = 1/20 per model (about 1 in 10 heads with two
+# roster models), and the daily run keeps its last pass as the base, so a false alarm stayed
+# failing. The floor comes from the run-to-run noise in the banked records (the 6 records
+# under research/release-qualification/cells/ and the first gb10 daily record; derivation in
+# research/perf-verdict-noise-20261106/): per-run relative sd 0.23% on GB10 and 0.99% on the
+# RTX 5090 laptop, single runs up to 2.5% off their arm mean. Resampling that noise as two
+# arms of one program, rank alone flags 4.7% of models on the 5090; rank + 2% flags 0.32%
+# (0.6% of two-model heads) and none on GB10. The largest median delta in the 10 recorded
+# base vs candidate pairs is 1.3%. With 2%, a true 3% regression is caught 83% of the time
+# on the 5090 and always on GB10; 5% is caught at least 99% on both.
+PERF_MIN_REGRESSION_PCT = 2.0
 TPS = re.compile(r"generated (\d+) tokens in ([0-9.]+)s = ([0-9.]+) tok/s")
 SHA = re.compile(r"[0-9a-f]{64}\Z")
 COMMIT = re.compile(r"[0-9a-f]{40}\Z")
@@ -175,16 +188,17 @@ def decode_tps(log):
 
 
 def judge_perf(runs):
-    """runs: [{"arm","model","tps"}] -> per-model verdicts. Complete separation = regression."""
+    """runs: [{"arm","model","tps"}] -> per-model verdicts. A regression needs both complete
+    separation and a median drop of at least PERF_MIN_REGRESSION_PCT."""
     out = {}
     for model in sorted({r["model"] for r in runs}):
         a = [r["tps"] for r in runs if r["model"] == model and r["arm"] == "A"]
         b = [r["tps"] for r in runs if r["model"] == model and r["arm"] == "B"]
         require(len(a) == len(b) == PERF_ORDER.count("A"), f"perf arms incomplete for {model}")
-        delta = (statistics.median(b) / statistics.median(a) - 1.0) * 100.0
-        regressed = max(b) < min(a)
+        delta = round((statistics.median(b) / statistics.median(a) - 1.0) * 100.0, 2)
+        regressed = max(b) < min(a) and delta <= -PERF_MIN_REGRESSION_PCT
         out[model] = {"base_median": statistics.median(a), "candidate_median": statistics.median(b),
-                      "delta_pct": round(delta, 2), "regressed": regressed}
+                      "delta_pct": delta, "regressed": regressed}
     return out
 
 
@@ -278,7 +292,8 @@ def verify_record(record, evidence, repo, candidate, rules, arch, candidate_inpu
             require(verdicts == perf["verdicts"], "perf verdicts differ from raw evidence")
             regressed = sorted(m for m, v in verdicts.items() if v["regressed"])
             require(not regressed or perf.get("accepted_regression"),
-                    "perf REGRESSED on " + ", ".join(regressed) + " (every candidate run slower than every base run)")
+                    "perf REGRESSED on " + ", ".join(regressed) + " (every candidate run slower than every base "
+                    f"run, median at least {PERF_MIN_REGRESSION_PCT:g}% lower)")
         proved.add("perf")
     return target, proved
 
@@ -442,9 +457,9 @@ def binary_ids(directory):
             for n in BINARIES}
 
 
-def build(repo, commit, target, work, log, role="tree"):
+def build(repo, commit, target, work, log, role="tree", bins=None):
     """Build the six battery binaries in work/<role>-<target> at `commit`; copy them to a
-    per-commit cache. Returns (tree, cache)."""
+    per-commit cache under `bins` (default work/bins). Returns (tree, cache)."""
     tree = tree_at(repo, commit, work / f"{role}-{target}")
     BUILD_LOCK.parent.mkdir(parents=True, exist_ok=True)
     command = ["flock", str(BUILD_LOCK), "nice", "-n", "15", *BUILD_COMMAND]
@@ -453,23 +468,43 @@ def build(repo, commit, target, work, log, role="tree"):
         out.flush()
         result = subprocess.run(command, cwd=tree, env=build_env(target, tree), stdout=out, stderr=subprocess.STDOUT)
     require(result.returncode == 0, f"build failed for {commit[:12]} (see {log})")
-    cache = work / "bins" / f"{commit}-{target}"
+    cache = Path(bins or work / "bins") / f"{commit}-{target}"
     cache.mkdir(parents=True, exist_ok=True)
     for name in BINARIES:
         shutil.copy2(tree / "target/release" / name, cache / name)
     return tree, cache
 
 
-def toolchain():
-    """Compiler versions of the build environment, for the record (not a qualification input)."""
+def toolchain(tree, env):
+    """Compiler versions the build used, for the record (not a qualification input). They
+    run in the build tree with the build's environment, so rustup resolves the tree's
+    rust-toolchain.toml as cargo did, not the caller's directory default."""
     out = {}
     for name, command in (("rustc", ["rustc", "-V"]), ("nvcc", ["nvcc", "--version"])):
         try:
-            text = subprocess.run(command, capture_output=True, text=True, env=clean_env()).stdout.strip()
+            text = subprocess.run(command, cwd=tree, capture_output=True, text=True, env=env).stdout.strip()
             out[name] = text.splitlines()[-1] if text else "unavailable"
         except OSError:
             out[name] = "unavailable"
     return out
+
+
+LOCK_VARIABLE = re.compile(r"\$\{([A-Z][A-Z0-9_]*)\}")
+
+
+def lock_command(device_class, row, environ=None):
+    """The device row's lock prefix with each ${NAME} filled from the environment. One row
+    can serve several boxes (the gb10 row serves two Sparks, each its own sparklock unit), so
+    the box-specific part comes from a per-box override. An unset one refuses before anything
+    builds or runs: there is no fallback lock."""
+    environ = os.environ if environ is None else environ
+    filled = []
+    for arg in row["lock"]:
+        missing = [name for name in LOCK_VARIABLE.findall(arg) if not environ.get(name)]
+        require(not missing, f"device {device_class} lock needs {', '.join(missing)} (per box: the environment, "
+                f"or ~/.config/memra-daily/{device_class}.env for the daily run); nothing ran")
+        filled.append(LOCK_VARIABLE.sub(lambda m: environ[m.group(1)], arg))
+    return filled
 
 
 def run_battery(src, roster, out, env):
@@ -578,9 +613,11 @@ def seal(out, meta):
     return record
 
 
-def produce(repo, commit, device_class, kinds, out, *, base=None, work=None, accept_regression=None,
+def produce(repo, commit, device_class, kinds, out, *, base=None, work=None, bins=None, accept_regression=None,
             lock=True, log=print, reference_perf=False):
-    """Build, run the requested kinds on this device under its lock, seal. Returns the record."""
+    """Build, run the requested kinds on this device under its lock, seal. Returns the record.
+    `bins` is the binary cache root (default work/bins); a caller that prunes its cache passes
+    its own, so it never deletes what other runs left in a shared work dir."""
     commit = resolve(repo, commit)
     arch = ci.arch_table_at(repo, commit)
     rules = ci.rules_at(repo, commit, arch)
@@ -591,36 +628,36 @@ def produce(repo, commit, device_class, kinds, out, *, base=None, work=None, acc
     # Push evidence compares against the push base; only the daily run's first day may
     # record reference rates with no base (that record never satisfies the push gate).
     require("perf" not in kinds or base or reference_perf, "perf evidence needs --base (the push base)")
+    lock_prefix = lock_command(device_class, row) if lock else []
     work = Path(work or Path.home() / ".cache/memra-cells" / device_class)
     work.mkdir(parents=True, exist_ok=True)
+    bins = Path(bins or work / "bins")
     out = Path(out)
     out.mkdir(parents=True, exist_ok=False)
     meta = {"commit": commit, "inputs": inputs_digest(repo, commit), "target": target, "device_class": device_class,
             "kinds": list(kinds), "started": dt.datetime.now(dt.timezone.utc).isoformat(),
             "accept_regression": accept_regression}
     log(f"cell evidence: {device_class} ({ci.target_name(rules, target)}) {','.join(kinds)} at {commit[:12]}")
-    tree, bins = build(repo, commit, target, work, out / "build.log")
-    meta["binaries"] = binary_ids(bins)
-    meta["toolchain"] = toolchain()
+    tree, head_bins = build(repo, commit, target, work, out / "build.log", bins=bins)
+    meta["binaries"] = binary_ids(head_bins)
+    meta["toolchain"] = toolchain(tree, build_env(target, tree))
     base_bins = None
     if "perf" in kinds and base:
         meta["base"] = resolve(repo, base)
         if target in ci.arch_table_at(repo, meta["base"]).accepted:
-            base_bins = work / "bins" / f"{meta['base']}-{target}"
+            base_bins = bins / f"{meta['base']}-{target}"
             if not all((base_bins / b).is_file() for b in BINARIES):
-                _, base_bins = build(repo, meta["base"], target, work, out / "build.log", role="base")
+                _, base_bins = build(repo, meta["base"], target, work, out / "build.log", role="base", bins=bins)
     plan = out / "gpu-phase.json"
     plan.write_text(json.dumps({**meta, "repo": str(repo), "work": str(work), "row": row, "tree": str(tree),
                                 "base_bins": str(base_bins) if base_bins else None}))
-    command = [sys.executable, str(Path(__file__).resolve()), "gpu-phase", "--plan", str(plan)]
-    if lock:
-        command = [*row["lock"], *command]
+    command = [*lock_prefix, sys.executable, str(Path(__file__).resolve()), "gpu-phase", "--plan", str(plan)]
     log("  $ " + " ".join(command))
     result = subprocess.run(command)
     started = out / "gpu-phase.started"
     if not started.exists():
         plan.unlink()
-        raise DeviceBusy(f"device lock not obtained ({' '.join(row['lock'][:1])} exit {result.returncode}); nothing ran")
+        raise DeviceBusy(f"device lock not obtained ({' '.join(lock_prefix[:1])} exit {result.returncode}); nothing ran")
     started.unlink()
     meta = json.loads(plan.read_text())
     plan.unlink()

@@ -74,7 +74,9 @@ note = "Portable eval build. Compile-only CI cell."
 # reported name. `roster` is the release roster this device runs (paths differ per box;
 # the model ids must equal tools/release-roster.tsv). `serve_model` / `serve_draft` feed
 # tools/serve-smoke.sh; empty means its default pair. `lock` is the command prefix that
-# takes the device; it must hold for the whole battery.
+# takes the device; it must hold for the whole battery and exit non-zero without running its
+# command when the device is not granted. A `${NAME}` in it is filled from the environment of
+# the run (a per-box override where one row serves several boxes); an unset one refuses.
 
 [device.rtx5090]
 name = "RTX 5090"
@@ -88,11 +90,15 @@ compute_cap = "12.0"
 roster = "tools/release-roster.tsv"
 lock = ["flock", "-w", "7200", "/tmp/memra-gpu.lock"]
 
+# A DGX Spark is shared through its sparklock lease, which every session on every machine
+# sees; a local flock is invisible to them. This row serves both Sparks, so each box names
+# its own unit in MEMRA_SPARK_UNIT (~/.config/memra-daily/gb10.env for the daily timer).
 [device.gb10]
 name = "GB10"
 compute_cap = "12.1"
 roster = "tools/release-roster.tsv"
-lock = ["flock", "-w", "7200", "/tmp/memra-gpu.lock"]
+lock = ["sparklock", "run", "--unit", "${MEMRA_SPARK_UNIT}", "--ttl", "6h", "--for", "memra cell evidence",
+        "--wait", "2h", "--"]
 
 [device.h100]
 name = "H100"
