@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from pathlib import Path
 import subprocess
+import re
 import sys
 import unittest
 
@@ -23,8 +24,10 @@ MAIN = ci.ArchTable(accepted=("120a", "100a", "90a", "89"),
 SPLIT = ci.ArchTable(accepted=("120a", "121a", "100a", "90a", "89"),
                      caps={"12.0": "120a", "12.1": "121a", "10.0": "100a", "9.0": "90a", "8.9": "89"},
                      families={"121a": "120a"})
-SPLIT_RULES = RULES_TEXT.replace('[target."100a"]', '[target."121a"]\nname = "sm_121a"\npush_gate = true\n\n'
-                                 '[target."100a"]', 1)
+# The tracked rules carry the sm_121a row; NO_121A_RULES is the same table without it.
+SPLIT_RULES = RULES_TEXT
+NO_121A_RULES = re.sub(r'\[target\."121a"\]\n(?:[^\[\n].*\n)*\n', '', RULES_TEXT, count=1)
+assert '[target."121a"]' in SPLIT_RULES and '[target."121a"]' not in NO_121A_RULES
 ALL = ("120a", "100a", "90a", "89")
 CODE = ("    let x = launch(a, b);",)
 COMMENT = ("    // explains the launch",)
@@ -193,7 +196,7 @@ class ClassifierTable(unittest.TestCase):
 
     def test_new_target_needs_a_policy_row(self):
         with self.assertRaisesRegex(ci.ImpactError, "no \\[target\\] row .*121a"):
-            ci.load_rules(RULES_TEXT, SPLIT)
+            ci.load_rules(NO_121A_RULES, SPLIT)
 
     def test_comment_only_needs_both_sides_unchanged_mode(self):
         rules = ci.load_rules(RULES_TEXT, MAIN)
