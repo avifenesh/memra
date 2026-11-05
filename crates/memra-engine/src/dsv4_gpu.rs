@@ -12153,7 +12153,7 @@ impl Dsv4Gpu {
             let (rank0_ws, rank1_ws) = verify.ws.split_at_mut(1);
             let owner_ws = &mut rank0_ws[0];
             let peer_ws = &mut rank1_ws[0];
-            let ar_outputs = verify
+            let mut ar_outputs = verify
                 .tp_ep_ar_outputs
                 .as_mut()
                 .ok_or("TP/EP one-shot output buffers missing")?;
@@ -12287,26 +12287,34 @@ impl Dsv4Gpu {
                 ));
             }
             {
-                let (owner_output, peer_output) = ar_outputs.split_at_mut(1);
                 let mut ar = self
                     .tp_ep_ar
                     .lock()
                     .map_err(|_| "TP/EP one-shot reduction state mutex poisoned")?;
-                ar.as_mut()
-                    .ok_or("TP/EP one-shot reduction state missing")?
-                    .all_reduce_into(
-                        owner_gpu,
-                        peer_gpu,
-                        &owner_ws.contrib,
-                        &peer_ws.contrib,
-                        &mut owner_output[0],
-                        &mut peer_output[0],
-                        t * (topk + usize::from(shared_joined)) * hidden,
-                        capture,
-                        None,
-                        2 * il as u32 + 1,
-                        true,
-                    )?;
+                let ar = ar
+                    .as_mut()
+                    .ok_or("TP/EP one-shot reduction state missing")?;
+                // Replicated attention puts no gather between two expert joins, so this join
+                // takes the plane the previous push join did not write (`tp_ep_ar_outputs_alt`).
+                if let Some(alt) = verify.tp_ep_ar_outputs_alt.as_mut()
+                    && ar.unwritten_plane(owner_gpu, peer_gpu, [&*ar_outputs, &*alt])? == 1
+                {
+                    ar_outputs = alt;
+                }
+                let (owner_output, peer_output) = ar_outputs.split_at_mut(1);
+                ar.all_reduce_into(
+                    owner_gpu,
+                    peer_gpu,
+                    &owner_ws.contrib,
+                    &peer_ws.contrib,
+                    &mut owner_output[0],
+                    &mut peer_output[0],
+                    t * (topk + usize::from(shared_joined)) * hidden,
+                    capture,
+                    None,
+                    2 * il as u32 + 1,
+                    true,
+                )?;
             }
             let layer0 = self.stages[0]
                 .layers
@@ -14730,6 +14738,12 @@ pub struct VerifyState {
     landing: Option<StepLanding>,
     tp_ep_layers: Option<Vec<LayerCkptDev>>,
     tp_ep_ar_outputs: Option<[CudaSlice<f32>; 2]>,
+    /// Replicated attention only: the expert join's second output plane. There the expert join
+    /// is the walk's only push join, and a push join may not write the previous one's output
+    /// (`TpEpArState::push_join`), so the join alternates planes
+    /// (`TpEpArState::unwritten_plane`). Attention TP2 needs none: its two gathers sit between
+    /// consecutive expert joins.
+    tp_ep_ar_outputs_alt: Option<[CudaSlice<f32>; 2]>,
     tp_ep_attention_outputs: Option<[CudaSlice<f32>; 2]>,
     /// Attention TP2: both ranks' wo_a group outputs gathered, [tmax][groups * o_lora].
     tp_ep_attention_og: Option<[CudaSlice<f32>; 2]>,
@@ -15898,7 +15912,12 @@ impl Dsv4Gpu {
         } else {
             None
         };
-        let tp_ep_ar_outputs = if self.topology.is_tp_ep() {
+        // The expert join's output plane, and under replicated attention its second plane
+        // (`VerifyState::tp_ep_ar_outputs_alt`).
+        let mut ar_planes = |wanted: bool| -> Res<Option<[CudaSlice<f32>; 2]>> {
+            if !wanted {
+                return Ok(None);
+            }
             let mut outputs = Vec::with_capacity(2);
             for (stage_i, st) in self.stages.iter().enumerate() {
                 st.gpu
@@ -15915,14 +15934,13 @@ impl Dsv4Gpu {
                 bytes[stage_i] += (plane * 4) as u64;
                 outputs.push(output);
             }
-            Some(
-                outputs
-                    .try_into()
-                    .map_err(|_| "TP/EP AR output rank count mismatch".to_string())?,
-            )
-        } else {
-            None
+            Ok(Some(outputs.try_into().map_err(|_| {
+                "TP/EP AR output rank count mismatch".to_string()
+            })?))
         };
+        let tp_ep_ar_outputs = ar_planes(self.topology.is_tp_ep())?;
+        let tp_ep_ar_outputs_alt =
+            ar_planes(self.topology.is_tp_ep() && self.attention_tp.is_none())?;
         let mut attention_planes = |width: usize| -> Res<Option<[CudaSlice<f32>; 2]>> {
             if self.attention_tp.is_none() {
                 return Ok(None);
@@ -15979,6 +15997,7 @@ impl Dsv4Gpu {
             landing: None,
             tp_ep_layers,
             tp_ep_ar_outputs,
+            tp_ep_ar_outputs_alt,
             tp_ep_attention_outputs,
             tp_ep_attention_og,
             tp_ep_head_half,
