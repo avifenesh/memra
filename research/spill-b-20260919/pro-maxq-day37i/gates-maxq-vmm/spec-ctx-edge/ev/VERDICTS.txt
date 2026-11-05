@@ -1,0 +1,13 @@
+SCE (on) r1 open request: http=200 finish_reason=length prompt_tokens=73 completion_tokens=64 expected=64 -> PASS
+SCE (on) r2 open request: http=200 finish_reason=length prompt_tokens=73 completion_tokens=64 expected=64 -> PASS
+SCE (on) r3 open request: http=200 finish_reason=length prompt_tokens=73 completion_tokens=64 expected=64 -> PASS
+SCE (on) r4 open request: http=200 finish_reason=length prompt_tokens=73 completion_tokens=64 expected=64 -> PASS
+SCE (on) bounded control: http=200 completion_tokens=16 expected=16 -> PASS
+SCE (on) boot census: alive=1 health=200 panicked=0 argmax_sentinel=0 worker_fatal=0 respawn=0 verify_refused=0 spec_acc_lines=9 (spec expected=1) -> PASS
+SCE (plain) r1 open request: http=200 finish_reason=length completion_tokens=64 expected=64 -> PASS
+SCE (plain) message equals the on arm's r1: plain=0ba35b0ee89ade1d spec=0ba35b0ee89ade1d -> PASS
+SCE (plain) boot census: alive=1 health=200 panicked=0 argmax_sentinel=0 worker_fatal=0 respawn=0 verify_refused=0 spec_acc_lines=0 (spec expected=0) -> PASS
+SCE (off) r1 open request to the cap: http=200 finish_reason=length prompt_tokens=73 completion_tokens=309 room=311 -> PASS
+SCE (off) r2 open request to the cap: http=200 finish_reason=length prompt_tokens=73 completion_tokens=311 room=311 -> PASS
+SCE (off) r3 open request to the cap: http=200 finish_reason=length prompt_tokens=73 completion_tokens=309 room=311 -> PASS
+SCE (off) boot census: alive=1 health=200 panicked=0 argmax_sentinel=0 worker_fatal=0 respawn=0 verify_refused=0 spec_acc_lines=30 (spec expected=1) -> PASS

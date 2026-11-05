@@ -1,0 +1,10 @@
+# day37-verdict.py on the Workstation receipts (research/spill-b-20260919/pro-single-day37/box and box-f),
+# the corrected reader (3476ea4dc day37-read.py) rerun on copies of both roots, python 3.14.4
+## assembled as DAY37 2.6 (sitting 1: A2, A1-MIX, A1-STREAM, A3, A4, A5-BUILD, A7; sitting 2: A1-GATE, A5-MAPPER, A5-ENSURE, A6)
+DAY37 VERDICT card=pro6000 rule=1.7 A1=PASS A2=PASS A5=PASS A6=PASS A7=PASS A3-i=PASS A3-ii=PASS A4=PASS(reading) lines=29 reader_cards=pro6000 -> PROMOTE-ELIGIBLE
+## the committed SUMMARY.txt files, assembled the same way (A3-i from the corrected rerun)
+DAY37 VERDICT card=pro6000 rule=1.7 A1=PASS A2=PASS A5=PASS A6=PASS A7=PASS A3-i=PASS A3-ii=PASS A4=PASS(reading) lines=29 reader_cards=pro6000 -> PROMOTE-ELIGIBLE
+## sitting 1 alone (DAY37 2.5: no reading)
+DAY37 VERDICT card=pro6000 rule=1.7 A1=FAIL A2=PASS A5=PASS A6=FAIL A7=PASS A3-i=PASS A3-ii=PASS A4=PASS(reading) lines=29 reader_cards=pro6000 -> FAIL (no reading)
+## sitting 2 alone
+DAY37 VERDICT card=pro6000 rule=1.7 A1=MISSING A2=MISSING A5=MISSING A6=PASS A7=MISSING A3-i=MISSING A3-ii=MISSING A4=PASS(reading) lines=15 reader_cards=pro6000 -> INCOMPLETE (owed: A1-MIX:spec:O1,A1-MIX:spec:O2,A1-MIX:plain:O1,A1-MIX:plain:O2,A1-STREAM,A2,A5-BUILD1,A5-BUILD64,A7:l64,A7:boff,A3-i,A3-ii:both)

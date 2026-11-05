@@ -1,0 +1,127 @@
+[tensor-contract] bound 866 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[fa-pool] grow #0 dev=0 o_len 0 -> 6144 ml_len 0 -> 24 (retired kept, zero=false)
+[fa-pool] grow #1 dev=0 o_len 6144 -> 36864 ml_len 24 -> 144 (retired kept, zero=false)
+[fa-pool] grow #2 dev=0 o_len 36864 -> 73728 ml_len 144 -> 288 (retired kept, zero=false)
+[fa-pool] grow #3 dev=0 o_len 73728 -> 147456 ml_len 288 -> 576 (retired kept, zero=false)
+[fa-pool] grow #4 dev=0 o_len 147456 -> 294912 ml_len 576 -> 1152 (retired kept, zero=false)
+[fa-pool] grow #5 dev=0 o_len 294912 -> 589824 ml_len 1152 -> 2304 (retired kept, zero=false)
+[fa-pool] grow #6 dev=0 o_len 589824 -> 1179648 ml_len 2304 -> 4608 (retired kept, zero=false)
+grow pooled prompt committed=4096
+grow pooled prompt committed=8192
+grow pooled prompt committed=12288
+[fa-pool] grow #7 dev=0 o_len 1179648 -> 2359296 ml_len 4608 -> 9216 (retired kept, zero=false)
+grow pooled prompt committed=16384
+grow pooled prompt committed=20480
+grow pooled prompt committed=24576
+grow pooled prompt committed=28672
+grow ondemand prompt committed=4096
+grow ondemand prompt committed=8192
+grow ondemand prompt committed=12288
+grow ondemand prompt committed=16384
+grow ondemand prompt committed=20480
+grow ondemand prompt committed=24576
+grow ondemand prompt committed=28672
+GROW-G1 PASS (grows=28 unequal=0 planes=34 planes_crossed=34 min_crossings_per_plane=12 rule>=5 drift=0 tokens_equal=true logits_equal=true prefix_state_equal=true final_state_equal=true) committed=32768 generated=128
+{
+  "schema_version": 1,
+  "kind": "subprocess-capture",
+  "command": [
+    "env",
+    "NVIDIA_TF32_OVERRIDE=0",
+    "/mnt/Data/work/memra-maxq/kv-vmm/bins/lane/kv-tier-gate",
+    "--artifact",
+    "/mnt/Data/work/memra-maxq/models/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf",
+    "--case",
+    "grow",
+    "--context",
+    "32768",
+    "--tiers",
+    "host",
+    "--same-program",
+    "--kv-allocator",
+    "vmm-ondemand",
+    "--out",
+    "/mnt/Data/work/memra-maxq/kv-vmm/out-20261105T071533Z/grow-32768-maxq/receipt"
+  ],
+  "exit_code": 0,
+  "timed_out": false,
+  "parse_error": null,
+  "status": "executed-not-qualified",
+  "gpu_power_limits": [
+    {
+      "device": "2",
+      "power.limit": "300.00 W",
+      "power.max_limit": "300.00 W"
+    },
+    {
+      "device": "2",
+      "power.limit": "250.00 W",
+      "power.max_limit": "300.00 W"
+    },
+    {
+      "device": "2",
+      "power.limit": "280.00 W",
+      "power.max_limit": "300.00 W"
+    }
+  ],
+  "started_monotonic_ns": 980276646580902,
+  "ended_monotonic_ns": 981246411980503,
+  "started_utc": "2026-11-05T07:15:41.230975+00:00",
+  "ended_utc": "2026-11-05T07:31:50.996374+00:00",
+  "elapsed_seconds": 969.765399601,
+  "timing_scope": "collector-with-snapshots-and-sampler",
+  "storage": null,
+  "raw_log": {
+    "path": "command.log",
+    "bytes": 1639,
+    "sha256": "1758584bd8a0d56d4ec302f08ced6a74112dfd179e6a130bfe929a51b38a8d44"
+  },
+  "failure_quote": null,
+  "result": null,
+  "gpu_telemetry": {
+    "status": "captured-unvalidated",
+    "interval_ms": 250,
+    "command": [
+      "/usr/bin/nvidia-smi",
+      "-i",
+      "2",
+      "--query-gpu=timestamp,index,pstate,clocks.sm,clocks.mem,power.draw,power.limit,power.max_limit,temperature.gpu,memory.used,utilization.gpu,pcie.link.gen.current,pcie.link.width.current",
+      "--format=csv",
+      "-lms",
+      "250"
+    ],
+    "tier_counters": "not collected",
+    "exit_code": 0,
+    "raw_csv": {
+      "path": "command.gpu.csv",
+      "bytes": 426914,
+      "sha256": "b7926153ab7b118aad2624137279e98096ec5bb5180f5f1c913ec6c3ae5e5293"
+    },
+    "stderr": {
+      "path": "command.sampler.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  },
+  "compute_apps": {
+    "before": {
+      "exit_code": 0,
+      "timed_out": false,
+      "raw_log": {
+        "path": "command.before.log",
+        "bytes": 41,
+        "sha256": "cae79969ce448872401f5d9bcd1d52bbefa1a5450cf3a5658f62f068ab59294b"
+      }
+    },
+    "after": {
+      "exit_code": 0,
+      "timed_out": false,
+      "raw_log": {
+        "path": "command.after.log",
+        "bytes": 41,
+        "sha256": "cae79969ce448872401f5d9bcd1d52bbefa1a5450cf3a5658f62f068ab59294b"
+      }
+    }
+  },
+  "qualification": false
+}

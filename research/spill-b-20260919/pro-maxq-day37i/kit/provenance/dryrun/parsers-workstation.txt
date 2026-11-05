@@ -1,0 +1,12 @@
+day26-parse.py box/boots/mix-spec-O1-vmm rc=0 report identical
+day26-parse.py box/boots/mix-plain-O2-pooled rc=0 report identical
+day31-parse.py box/boots/burst-g2-vmm rc=0 report identical
+day31-parse.py box/boots/burst-boff-pooled rc=0 report identical
+day31-parse.py box-f/boots/fault-ensure rc=0 report identical
+day37-stream-parse.py box/boots/stream-O1-1-vmm rc=0 report identical
+day37-stream-parse.py box/boots/stream-O2-5-pooled rc=0 report identical
+== day33-compare (A7 shapes, sitting 1)
+== V-ID (the day-32 term: green ON against green OFF)
+DAY33 V-ID card=pro6000 shape=G2 on=burst-g2-vmm off=burst-boff-vmm eligible=16 equal=16 differ=0 -> PASS
+== V-OFF (green OFF against red OFF: the default-OFF program unchanged)
+DAY33 VERDICT card=pro6000 boots=2 v_boot_all=True green_noom_book_all=True v_id_fix_all=True v_id_all=True v_off_all=True -> GREEN

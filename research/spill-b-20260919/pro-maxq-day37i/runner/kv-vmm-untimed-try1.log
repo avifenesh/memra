@@ -1,0 +1,16 @@
+out: /mnt/Data/work/memra-maxq/kv-vmm/out-20261105T071533Z
+window: FD 9 holds /mnt/Data/work/evals/gpu2.lock
+card 2: NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition, power.limit 300.00 W, 2 MiB used, driver 615.71.09
+model sha256 ok (1facf36c2db359dcf9c2475cf8f85fe84a528d10aaaaff20f7c0db3d561e024a)
+2026-11-05T07:15:41Z run marker kvvmm-20261105T071541Z-2019341; telemetry pid 2019627, watchdog pid 2019628
+2026-11-05T07:15:41Z untimed half start card=2 lane=c6f9282c26e71349c0263b88dc7beb59c4a57797 main=17dceb9817d050d0960a8e2d0be372921bfbee80 harness=3476ea4dca27c4c3c738017b8429f507389f1223 MEMRA_KV_VMM_GROW=inline
+2026-11-05T07:31:51Z A2 rc=0 GROW-G1 PASS (grows=28 unequal=0 planes=34 planes_crossed=34 min_crossings_per_plane=12 rule>=5 drift=0 tokens_equal=true logits_equal=true prefix_state_equal=true final_state_equal=true) committed=32768 generated=128
+2026-11-05T07:48:35Z gates pooled rc=0
+2026-11-05T08:05:42Z gates vmm rc=0
+2026-11-05T09:27:33Z boots rc=0
+2026-11-05T09:27:33Z MAXQ-KVVMM-UNTIMED-DONE
+2026-11-05T09:27:33Z untimed chain rc=0
+DAY37 VERDICT card=pro6000-maxq rule=1.7 A1=MISSING A2=PASS A5=PASS A6=PASS A7=PASS A3-i=MISSING A3-ii=MISSING A4=PASS(reading) lines=24 reader_cards=pro6000-maxq -> INCOMPLETE (owed: A1-STREAM,A3-i,A3-ii:both)
+untimed half done; timed half (quiet box): OUT=/mnt/Data/work/memra-maxq/kv-vmm/out-20261105T071533Z CARD=<idx> bash /mnt/Data/work/memra-maxq/kv-vmm/run-timed.sh
+out: /mnt/Data/work/memra-maxq/kv-vmm/out-20261105T071533Z
+power GPU 2: limit 300 W (asked 300, was 280, max 300); 785 samples, 27 at 300 W, first sample off it 2026/11/05 09:20:05.860 -> 280 W; max 91 C, max fan 90 %; sw_thermal 0, hw_thermal 0, hw_power_brake 0, sw_power_cap 600; throttle: no; thermal stop: none; neighbours 1,3 max 89 C, drop: none; restored 280 W; rc=0
