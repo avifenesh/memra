@@ -2127,6 +2127,20 @@ impl Engine {
         self.qmatvec_mmq_nvfp4_w4a8_scaled(bytes, x, m, in_f, out_f, 1.0, true)
     }
 
+    /// Whether the NVFP4 W4A8 prefill entry runs the F8F4 tile on this process's device:
+    /// `MEMRA_MMQ_F8F4` of `1`/`0` decides, unset follows the device (on for GB10). Gates
+    /// that judge the entry read this, so they apply the band of the tile that actually runs.
+    pub fn mmq_f8f4_route(&self) -> bool {
+        static F8F4: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+        *F8F4.get_or_init(|| {
+            f8f4_route_on(
+                std::env::var("MEMRA_MMQ_F8F4").ok().as_deref(),
+                env!("MEMRA_BUILT_CUDA_ARCH") == "120a"
+                    && crate::unified_memory::is_unified(self.ctx()),
+            )
+        })
+    }
+
     #[allow(clippy::too_many_arguments)] // allow: the parameter list mirrors the kernel/FFI/call contract; bundling into a struct is a refactor, not a lint fix
     fn qmatvec_mmq_nvfp4_w4a8_scaled(
         &self,
@@ -2144,14 +2158,7 @@ impl Engine {
         // Default ON only on a unified-memory 120a-family device (GB10), where it measured
         // +15.4% prefill with served acceptance up and the quality panel in band
         // (research/gb10-tuning-20261102); every discrete card keeps W4A8. `0`/`1` decide.
-        static F8F4: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-        let f8f4 = *F8F4.get_or_init(|| {
-            f8f4_route_on(
-                std::env::var("MEMRA_MMQ_F8F4").ok().as_deref(),
-                env!("MEMRA_BUILT_CUDA_ARCH") == "120a"
-                    && crate::unified_memory::is_unified(self.ctx()),
-            )
-        });
+        let f8f4 = self.mmq_f8f4_route();
         assert!(
             in_f.is_multiple_of(64),
             "MMQ NVFP4 W4A8 requires in_f % 64 == 0, got {in_f}"

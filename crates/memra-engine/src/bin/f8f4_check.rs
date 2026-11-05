@@ -46,7 +46,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // The seam is OnceLock-cached process-wide: run this bin twice — MEMRA_MMQ_F8F4 unset
         // (int8 arm) and =1 (f8f4 arm). Both must pass the same 3e-2 gate.
         let ya = e.dtoh(&e.qmatvec_mmq_nvfp4_w4a8_raw(&wd, &xd, m, in_f, out_f)?)?;
-        let arm_f8f4 = std::env::var("MEMRA_MMQ_F8F4").as_deref() == Ok("1");
+        let arm_f8f4 = e.mmq_f8f4_route();
 
         let scale = cpu.iter().map(|v| v.abs()).fold(0.0f32, f32::max).max(1.0);
         let rel = |ref_v: &[f32], got: &[f32]| -> f32 {

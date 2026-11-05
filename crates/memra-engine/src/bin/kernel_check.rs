@@ -3571,7 +3571,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         // int8 rung's 2e-2 made this gate fail on a correct kernel in every build, with
                         // or without the MMA form swap (logs/kc-plainform-control.log): the plain-form
                         // control reproduces 3.37e-2 / 3.45e-2 / 3.45e-2 / 4.34e-2 exactly.
-                        let f8f4_arm = std::env::var("MEMRA_MMQ_F8F4").as_deref() == Ok("1");
+                        // The route, not the env var: GB10 takes the f8f4 tile by default.
+                        let f8f4_arm = e.mmq_f8f4_route();
                         let (band, band_txt) = if f8f4_arm {
                             (5e-2f32, "e4m3-act band ~3e-2, gate 5e-2")
                         } else {
