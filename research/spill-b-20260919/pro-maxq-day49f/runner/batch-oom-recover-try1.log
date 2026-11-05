@@ -1,0 +1,14 @@
+2026-11-05T05:15:55Z batch-oom-recover Max-Q kit: start out=/mnt/Data/work/memra-maxq/batch-oom-recover/out-20261105T051555Z total_timeout=5400s
+2026-11-05T05:15:56Z lock /tmp/memra-gpu.lock held on fd 10
+2026-11-05T05:15:56Z model sha256 check (15705922304 B)
+2026-11-05T05:16:04Z card 2 NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition uuid=GPU-<card2-uuid> bus=00000000:C1:00.0 power.limit=300.00 W used=2 MiB
+2026-11-05T05:16:04Z step j1 start cap=1800s
+2026-11-05T05:16:24Z step j1 rc=0 health-fault-gate: arms=j pass=2 documented=0 skip=0 fail=0 receipts=/mnt/Data/work/memra-maxq/batch-oom-recover/out-20261105T051555Z/gates/j1
+2026-11-05T05:16:24Z step j2 start cap=1800s
+2026-11-05T05:16:40Z step j2 rc=0 health-fault-gate: arms=j pass=2 documented=0 skip=0 fail=0 receipts=/mnt/Data/work/memra-maxq/batch-oom-recover/out-20261105T051555Z/gates/j2
+2026-11-05T05:16:40Z step boots start cap=3600s
+2026-11-05T05:22:40Z step boots rc=0 
+2026-11-05T05:22:41Z wall 406s; VERDICT batch-oom-recover card=pro6000-maxq gates=[j1:j=PASS,j-red=PASS,recovery=ON(boot-line) j2:j=PASS,j-red=PASS,recovery=ON(boot-line)] gate_j_pass=2/2 gate_j_red_pass=2/2 j_vmm=n/a (on-demand KV planes are off on this card; MEMRA_KV_ALLOCATOR is retired) serve_on_pass=4/4 serve_off_read=4/4 before=[O1-off:{200:1,503:8} O2-off:{200:1,503:8} P1-off:{200:6,503:3} P2-off:{200:4,503:5}] routes_reached=plain:4/4,spec-default:4/4 -> ON
+2026-11-05T05:22:41Z exit rc=0
+OUT /mnt/Data/work/memra-maxq/batch-oom-recover/out-20261105T051555Z
+power GPU 2: limit 300 W (asked 300, was 280, max 300); 41 samples; max 87 C, max fan 66 %; sw_thermal 0, hw_thermal 0, hw_power_brake 0, sw_power_cap 16; throttle: no; thermal stop: none; neighbours 1,3 max 85 C, drop: none; restored 280 W; rc=0
