@@ -259,8 +259,9 @@ is unchanged: it still only records the limit it reads.
   `thermal-<cell>.csv`. It prints one summary line with the maximum temperature and fan and the number of samples
   with each reason active. SW power cap is the normal state of a card running at its limit; it is recorded and not
   judged.
-- Timing: if any sample during the cell shows SW thermal slowdown, HW thermal slowdown or HW power brake, the timing
-  verdict is void: `pftime` and `pfnaked` read `void` and the line reads `void`, because a clock change inside the
-  interleaved arms is not in the noise term. G1 to G3 are read as registered.
+- Timing: throttling does not void the timing verdict. The middle cards of this box throttle at 300 W, and the
+  registered rule already needs `pf_wins` in order 1, in order 2 and pooled, so a slowdown that reaches both arms
+  stays inside the comparison. The throttle summary follows the verdict line, and a default keyed to this reading
+  covers the card at 300 W in this chassis, throttle included. G1 to G3 are read as registered.
 - The runner applies the Max-Q thermal rule on its 10 s samples: it stops the cell at >= 95 C, or at >= 92 C
   with the fan at >= 95 % on 3 consecutive samples, and a stopped cell has no verdict.
