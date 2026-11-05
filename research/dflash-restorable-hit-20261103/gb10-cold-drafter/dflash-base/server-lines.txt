@@ -1,0 +1,620 @@
+[dspark-acc] ctx=7922 burst=7/7 cum=7/7=1.000
+[prefix-cache] insert (dspark-boundary): 7904 tokens, 475.8MB (resident 475.8MB / 51223MB, model q38, ns "6411568c74c558e7843d5e96ae3b1d8456ec4b1589bd44f2724d4ac85ae3efb6")
+[dspark-acc] ctx=7930 burst=6/12 cum=13/19=0.684
+[prefix-cache] DSPARK restore: 7904 of 8027 prompt tokens + draft tail from cache (123 suffix tokens to prime) (model q38)
+[dspark-acc] ctx=8027 burst=7/7 cum=7/7=1.000
+[prefix-cache] insert (dspark-boundary): 8000 tokens, 478.7MB (resident 954.5MB / 51223MB, model q38, ns "6411568c74c558e7843d5e96ae3b1d8456ec4b1589bd44f2724d4ac85ae3efb6")
+[dspark-acc] ctx=8035 burst=7/7 cum=14/14=1.000
+[dspark-acc] ctx=32494 burst=7/7 cum=7/7=1.000
+[prefix-cache] insert (dspark-boundary): 32448 tokens, 1204.7MB (resident 2159.2MB / 51223MB, model q38, ns "7d1b14075c3c6709b4c502ed728dd4a9ccb8c56bd1588d0812fea66620f91611")
+[dspark-acc] ctx=32502 burst=6/14 cum=13/21=0.619
+[prefix-cache] DSPARK restore: 32448 of 32600 prompt tokens + draft tail from cache (152 suffix tokens to prime) (model q38)
+[dspark-acc] ctx=32600 burst=7/7 cum=7/7=1.000
+[prefix-cache] insert (dspark-boundary): 32576 tokens, 1208.5MB (resident 3367.7MB / 51223MB, model q38, ns "7d1b14075c3c6709b4c502ed728dd4a9ccb8c56bd1588d0812fea66620f91611")
+[dspark-acc] ctx=32608 burst=7/7 cum=14/14=1.000
+[dspark-acc] ctx=2760 burst=0/7 cum=0/7=0.000
+[dspark-acc] ctx=2761 burst=20/33 cum=20/40=0.500
+[dspark-acc] ctx=2793 burst=25/30 cum=45/70=0.643
+[dspark-acc] ctx=2826 burst=23/37 cum=68/107=0.636
+[dspark-acc] ctx=2860 burst=26/35 cum=94/142=0.662
+[dspark-acc] ctx=2895 burst=6/9 cum=100/151=0.662
+[dspark-acc] ctx=3976 burst=6/7 cum=6/7=0.857
+[prefix-cache] insert (dspark-boundary): 3936 tokens, 358.0MB (resident 15001.1MB / 51223MB, model q38)
+[dspark-acc] ctx=3983 burst=23/36 cum=29/43=0.674
+[dspark-acc] ctx=4015 burst=21/36 cum=50/79=0.633
+[dspark-acc] ctx=4049 burst=21/38 cum=71/117=0.607
+[dspark-acc] ctx=4083 burst=24/37 cum=95/154=0.617
+[dspark-acc] ctx=4119 burst=21/36 cum=116/190=0.611
+[dspark-acc] ctx=4151 burst=21/35 cum=137/225=0.609
+[dspark-acc] ctx=4184 burst=25/37 cum=162/262=0.618
+[dspark-acc] ctx=4221 burst=20/42 cum=182/304=0.599
+[dspark-acc] ctx=4254 burst=29/33 cum=211/337=0.626
+[dspark-acc] ctx=4292 burst=29/37 cum=240/374=0.642
+[dspark-acc] ctx=4328 burst=26/37 cum=266/411=0.647
+[dspark-acc] ctx=4364 burst=22/40 cum=288/451=0.639
+[dspark-acc] ctx=4399 burst=23/36 cum=311/487=0.639
+[dspark-acc] ctx=4432 burst=21/34 cum=332/521=0.637
+[dspark-acc] ctx=4465 burst=22/36 cum=354/557=0.636
+[dspark-acc] ctx=4497 burst=23/29 cum=377/586=0.643
+[dspark-acc] ctx=4529 burst=26/38 cum=403/624=0.646
+[dspark-acc] ctx=4563 burst=22/36 cum=425/660=0.644
+[dspark-acc] ctx=4597 burst=17/38 cum=442/698=0.633
+[dspark-acc] ctx=4629 burst=18/36 cum=460/734=0.627
+[dspark-acc] ctx=4661 burst=15/42 cum=475/776=0.612
+[dspark-acc] ctx=4693 burst=23/35 cum=498/811=0.614
+[dspark-acc] ctx=4729 burst=14/20 cum=512/831=0.616
+[dspark] cache-preferred: prompt=22867 decode_budget=768 lcp=22848 — a cold prime would discard a prefix hit that 768 tokens of speculation cannot repay; serving the hit and going plain
+[dspark] cache-preferred: prompt=41913 decode_budget=768 lcp=22848 — a cold prime would discard a prefix hit that 768 tokens of speculation cannot repay; serving the hit and going plain
+[dspark] cache-preferred: prompt=14705 decode_budget=768 lcp=14688 — a cold prime would discard a prefix hit that 768 tokens of speculation cannot repay; serving the hit and going plain
+[dspark] cache-preferred: prompt=25846 decode_budget=768 lcp=14688 — a cold prime would discard a prefix hit that 768 tokens of speculation cannot repay; serving the hit and going plain
+[dspark-acc] ctx=2267 burst=6/7 cum=6/7=0.857
+[dspark-acc] ctx=2274 burst=18/40 cum=24/47=0.511
+[dspark-acc] ctx=2306 burst=22/30 cum=46/77=0.597
+[dspark-acc] ctx=2338 burst=18/40 cum=64/117=0.547
+[dspark-acc] ctx=2371 burst=20/34 cum=84/151=0.556
+[dspark-acc] ctx=2404 burst=22/37 cum=106/188=0.564
+[dspark-acc] ctx=2436 burst=21/38 cum=127/226=0.562
+[dspark-acc] ctx=2471 burst=29/34 cum=156/260=0.600
+[dspark-acc] ctx=2507 burst=26/36 cum=182/296=0.615
+[dspark-acc] ctx=2937 burst=0/7 cum=0/7=0.000
+[prefix-cache] insert (dspark-boundary): 2912 tokens, 327.6MB (resident 17653.2MB / 51223MB, model q38)
+[dspark-acc] ctx=2938 burst=22/34 cum=22/41=0.537
+[dspark-acc] ctx=2971 burst=21/33 cum=43/74=0.581
+[dspark-acc] ctx=3004 burst=21/36 cum=64/110=0.582
+[dspark-acc] ctx=3037 burst=18/35 cum=82/145=0.566
+[dspark-acc] ctx=3069 burst=23/35 cum=105/180=0.583
+[dspark-acc] ctx=3104 burst=25/32 cum=130/212=0.613
+[dspark-acc] ctx=3138 burst=23/37 cum=153/249=0.614
+[dspark-acc] ctx=3170 burst=22/32 cum=175/281=0.623
+[dspark-acc] ctx=3202 burst=22/37 cum=197/318=0.619
+[dspark-acc] ctx=3234 burst=14/17 cum=211/335=0.630
+[dspark] cache-preferred: prompt=22619 decode_budget=768 lcp=22592 — a cold prime would discard a prefix hit that 768 tokens of speculation cannot repay; serving the hit and going plain
+[dspark] cache-preferred: prompt=36527 decode_budget=768 lcp=22592 — a cold prime would discard a prefix hit that 768 tokens of speculation cannot repay; serving the hit and going plain
+[dspark] cache-preferred: prompt=13216 decode_budget=768 lcp=13184 — a cold prime would discard a prefix hit that 768 tokens of speculation cannot repay; serving the hit and going plain
+[dspark] cache-preferred: prompt=19154 decode_budget=768 lcp=13184 — a cold prime would discard a prefix hit that 768 tokens of speculation cannot repay; serving the hit and going plain
+[dspark-acc] ctx=2403 burst=1/7 cum=1/7=0.143
+[dspark-acc] ctx=2405 burst=21/37 cum=22/44=0.500
+[dspark-acc] ctx=2440 burst=24/37 cum=46/81=0.568
+[dspark-acc] ctx=2474 burst=4/7 cum=50/88=0.568
+[dspark-acc] ctx=2997 burst=0/7 cum=0/7=0.000
+[prefix-cache] insert (dspark-boundary): 2976 tokens, 329.5MB (resident 19948.1MB / 51223MB, model q38)
+[dspark-acc] ctx=2998 burst=23/33 cum=23/40=0.575
+[dspark-acc] ctx=3031 burst=20/33 cum=43/73=0.589
+[dspark-acc] ctx=3063 burst=19/36 cum=62/109=0.569
+[dspark-acc] ctx=3095 burst=18/37 cum=80/146=0.548
+[dspark-acc] ctx=3128 burst=32/32 cum=112/178=0.629
+[dspark-acc] ctx=3166 burst=25/35 cum=137/213=0.643
+[dspark-acc] ctx=3199 burst=27/36 cum=164/249=0.659
+[dspark-acc] ctx=3235 burst=27/34 cum=191/283=0.675
+[dspark-acc] ctx=3269 burst=22/37 cum=213/320=0.666
+[dspark-acc] ctx=3302 burst=20/37 cum=233/357=0.653
+[dspark-acc] ctx=3337 burst=27/34 cum=260/391=0.665
+[dspark] cache-preferred: prompt=22233 decode_budget=768 lcp=22208 — a cold prime would discard a prefix hit that 768 tokens of speculation cannot repay; serving the hit and going plain
+[dspark] cache-preferred: prompt=42334 decode_budget=768 lcp=22208 — a cold prime would discard a prefix hit that 768 tokens of speculation cannot repay; serving the hit and going plain
+[dspark] cache-preferred: prompt=17101 decode_budget=768 lcp=17056 — a cold prime would discard a prefix hit that 768 tokens of speculation cannot repay; serving the hit and going plain
+[dspark] cache-preferred: prompt=30306 decode_budget=768 lcp=17056 — a cold prime would discard a prefix hit that 768 tokens of speculation cannot repay; serving the hit and going plain
+[dspark-acc] ctx=2100 burst=1/7 cum=1/7=0.143
+[dspark-acc] ctx=2102 burst=22/32 cum=23/39=0.590
+[dspark-acc] ctx=2136 burst=17/40 cum=40/79=0.506
+[dspark-acc] ctx=2168 burst=23/29 cum=63/108=0.583
+[dspark-acc] ctx=2200 burst=21/37 cum=84/145=0.579
+[dspark-acc] ctx=2233 burst=22/37 cum=106/182=0.582
+[dspark-acc] ctx=2267 burst=19/36 cum=125/218=0.573
+[dspark-acc] ctx=2299 burst=19/38 cum=144/256=0.562
+[dspark-acc] ctx=2334 burst=21/35 cum=165/291=0.567
+[dspark-acc] ctx=2366 burst=20/37 cum=185/328=0.564
+[dspark-acc] ctx=2399 burst=21/33 cum=206/361=0.571
+[dspark-acc] ctx=2431 burst=17/39 cum=223/400=0.557
+[dspark-acc] ctx=2463 burst=25/32 cum=248/432=0.574
+[dspark-acc] ctx=2496 burst=22/33 cum=270/465=0.581
+[dspark-acc] ctx=2529 burst=24/35 cum=294/500=0.588
+[dspark-acc] ctx=4842 burst=1/7 cum=1/7=0.143
+[prefix-cache] insert (dspark-boundary): 4800 tokens, 383.6MB (resident 22800.7MB / 51223MB, model q38)
+[dspark-acc] ctx=4844 burst=17/41 cum=18/48=0.375
+[dspark-acc] ctx=4878 burst=21/36 cum=39/84=0.464
+[dspark-acc] ctx=4910 burst=20/35 cum=59/119=0.496
+[dspark-acc] ctx=4944 burst=18/40 cum=77/159=0.484
+[dspark-acc] ctx=4978 burst=24/35 cum=101/194=0.521
+[dspark-acc] ctx=5012 burst=20/35 cum=121/229=0.528
+[dspark-acc] ctx=5044 burst=18/37 cum=139/266=0.523
+[dspark-acc] ctx=5076 burst=19/34 cum=158/300=0.527
+[dspark-acc] ctx=5108 burst=19/24 cum=177/324=0.546
+[dspark] cache-preferred: prompt=17438 decode_budget=768 lcp=17408 — a cold prime would discard a prefix hit that 768 tokens of speculation cannot repay; serving the hit and going plain
+[dspark] cache-preferred: prompt=31411 decode_budget=768 lcp=17408 — a cold prime would discard a prefix hit that 768 tokens of speculation cannot repay; serving the hit and going plain
+[dspark] cache-preferred: prompt=10728 decode_budget=768 lcp=10688 — a cold prime would discard a prefix hit that 768 tokens of speculation cannot repay; serving the hit and going plain
+[dspark] cache-preferred: prompt=18259 decode_budget=768 lcp=10688 — a cold prime would discard a prefix hit that 768 tokens of speculation cannot repay; serving the hit and going plain
+[dspark-acc] ctx=4944 burst=1/7 cum=1/7=0.143
+[dspark-acc] ctx=4946 burst=21/36 cum=22/43=0.512
+[dspark-acc] ctx=4981 burst=16/41 cum=38/84=0.452
+[dspark-acc] ctx=5013 burst=18/35 cum=56/119=0.471
+[dspark-acc] ctx=5045 burst=19/35 cum=75/154=0.487
+[dspark-acc] ctx=5077 burst=18/36 cum=93/190=0.489
+[dspark-acc] ctx=5109 burst=20/31 cum=113/221=0.511
+[dspark-acc] ctx=5141 burst=21/35 cum=134/256=0.523
+[dspark-acc] ctx=5173 burst=23/33 cum=157/289=0.543
+[dspark-acc] ctx=5205 burst=18/40 cum=175/329=0.532
+[dspark-acc] ctx=5238 burst=24/36 cum=199/365=0.545
+[dspark-acc] ctx=5272 burst=7/9 cum=206/374=0.551
+[dspark] cache-preferred: prompt=8053 decode_budget=768 lcp=4928 — a cold prime would discard a prefix hit that 768 tokens of speculation cannot repay; serving the hit and going plain
+[dspark] cache-preferred: prompt=12327 decode_budget=768 lcp=12288 — a cold prime would discard a prefix hit that 768 tokens of speculation cannot repay; serving the hit and going plain
+[dspark] cache-preferred: prompt=27270 decode_budget=768 lcp=12288 — a cold prime would discard a prefix hit that 768 tokens of speculation cannot repay; serving the hit and going plain
+[dspark] cache-preferred: prompt=13232 decode_budget=768 lcp=13216 — a cold prime would discard a prefix hit that 768 tokens of speculation cannot repay; serving the hit and going plain
+[dspark] cache-preferred: prompt=19029 decode_budget=768 lcp=13216 — a cold prime would discard a prefix hit that 768 tokens of speculation cannot repay; serving the hit and going plain
+[dspark-acc] ctx=2833 burst=1/7 cum=1/7=0.143
+[dspark-acc] ctx=2835 burst=21/33 cum=22/40=0.550
+[dspark-acc] ctx=2868 burst=29/32 cum=51/72=0.708
+[dspark-acc] ctx=2903 burst=22/35 cum=73/107=0.682
+[dspark-acc] ctx=2936 burst=22/40 cum=95/147=0.646
+[dspark-acc] ctx=2971 burst=29/29 cum=124/176=0.705
+[dspark-acc] ctx=3005 burst=29/32 cum=153/208=0.736
+[dspark-acc] ctx=3039 burst=25/37 cum=178/245=0.727
+[dspark-acc] ctx=5232 burst=0/7 cum=0/7=0.000
+[prefix-cache] insert (dspark-boundary): 5216 tokens, 396.0MB (resident 27066.7MB / 51223MB, model q38)
+[dspark-acc] ctx=5233 burst=19/37 cum=19/44=0.432
+[dspark-acc] ctx=5265 burst=21/34 cum=40/78=0.513
+[dspark-acc] ctx=5299 burst=22/37 cum=62/115=0.539
+[dspark-acc] ctx=5331 burst=17/38 cum=79/153=0.516
+[dspark-acc] ctx=5364 burst=18/41 cum=97/194=0.500
+[dspark-acc] ctx=5398 burst=17/38 cum=114/232=0.491
+[dspark-acc] ctx=5430 burst=15/39 cum=129/271=0.476
+[dspark-acc] ctx=5462 burst=19/32 cum=148/303=0.488
+[dspark-acc] ctx=5494 burst=17/40 cum=165/343=0.481
+[dspark-acc] ctx=5527 burst=17/42 cum=182/385=0.473
+[dspark-acc] ctx=5561 burst=20/38 cum=202/423=0.478
+[dspark-acc] ctx=5595 burst=17/38 cum=219/461=0.475
+[dspark-acc] ctx=5628 burst=22/32 cum=241/493=0.489
+[dspark-acc] ctx=5660 burst=13/44 cum=254/537=0.473
+[dspark-acc] ctx=5692 burst=14/41 cum=268/578=0.464
+[dspark-acc] ctx=5725 burst=19/37 cum=287/615=0.467
+[dspark-acc] ctx=5758 burst=15/40 cum=302/655=0.461
+[dspark-acc] ctx=5790 burst=12/42 cum=314/697=0.451
+[dspark-acc] ctx=5822 burst=19/34 cum=333/731=0.456
+[dspark-acc] ctx=5854 burst=17/39 cum=350/770=0.455
+[dspark-acc] ctx=5887 burst=17/36 cum=367/806=0.455
+[dspark-acc] ctx=5919 burst=20/35 cum=387/841=0.460
+[dspark-acc] ctx=5951 burst=17/37 cum=404/878=0.460
+[dspark-acc] ctx=5983 burst=9/22 cum=413/900=0.459
+[dspark] cache-preferred: prompt=16868 decode_budget=768 lcp=16832 — a cold prime would discard a prefix hit that 768 tokens of speculation cannot repay; serving the hit and going plain
+[dspark] cache-preferred: prompt=35601 decode_budget=768 lcp=16832 — a cold prime would discard a prefix hit that 768 tokens of speculation cannot repay; serving the hit and going plain
+[dspark-acc] ctx=1604 burst=2/7 cum=2/7=0.286
+[dspark-acc] ctx=1607 burst=19/39 cum=21/46=0.457
+[dspark-acc] ctx=1641 burst=25/36 cum=46/82=0.561
+[dspark-acc] ctx=1675 burst=29/30 cum=75/112=0.670
+[dspark-acc] ctx=1710 burst=30/33 cum=105/145=0.724
+[dspark-acc] ctx=1745 burst=32/34 cum=137/179=0.765
+[dspark-acc] ctx=1782 burst=27/38 cum=164/217=0.756
+[dspark-acc] ctx=1816 burst=26/33 cum=190/250=0.760
+[dspark-acc] ctx=1851 burst=28/33 cum=218/283=0.770
+[dspark-acc] ctx=1886 burst=3/7 cum=221/290=0.762
+[dspark-acc] ctx=5726 burst=3/7 cum=3/7=0.429
+[prefix-cache] insert (dspark-boundary): 5696 tokens, 410.3MB (resident 28690.6MB / 51223MB, model q38)
+[dspark-acc] ctx=5730 burst=23/35 cum=26/42=0.619
+[dspark-acc] ctx=5763 burst=14/40 cum=40/82=0.488
+[dspark-acc] ctx=5795 burst=13/39 cum=53/121=0.438
+[dspark-acc] ctx=5827 burst=21/35 cum=74/156=0.474
+[dspark-acc] ctx=5860 burst=30/34 cum=104/190=0.547
+[dspark-acc] ctx=5897 burst=22/38 cum=126/228=0.553
+[dspark-acc] ctx=5930 burst=20/36 cum=146/264=0.553
+[dspark-acc] ctx=5962 burst=18/37 cum=164/301=0.545
+[dspark-acc] ctx=5994 burst=19/34 cum=183/335=0.546
+[dspark-acc] ctx=6026 burst=23/33 cum=206/368=0.560
+[dspark-acc] ctx=6060 burst=24/33 cum=230/401=0.574
+[dspark-acc] ctx=6093 burst=16/40 cum=246/441=0.558
+[dspark-acc] ctx=6125 burst=19/36 cum=265/477=0.556
+[dspark-acc] ctx=6158 burst=21/38 cum=286/515=0.555
+[dspark-acc] ctx=6193 burst=19/38 cum=305/553=0.552
+[dspark-acc] ctx=6226 burst=25/34 cum=330/587=0.562
+[dspark-acc] ctx=6260 burst=10/16 cum=340/603=0.564
+[dspark-acc] ctx=3513 burst=1/7 cum=1/7=0.143
+[dspark-acc] ctx=3515 burst=23/33 cum=24/40=0.600
+[dspark-acc] ctx=3550 burst=23/32 cum=47/72=0.653
+[dspark-acc] ctx=3582 burst=23/33 cum=70/105=0.667
+[dspark-acc] ctx=3615 burst=24/36 cum=94/141=0.667
+[dspark-acc] ctx=3648 burst=20/32 cum=114/173=0.659
+[dspark-acc] ctx=3905 burst=0/7 cum=0/7=0.000
+[prefix-cache] insert (dspark-boundary): 3872 tokens, 356.1MB (resident 29046.7MB / 51223MB, model q38)
+[dspark-acc] ctx=3906 burst=22/33 cum=22/40=0.550
+[dspark-acc] ctx=3939 burst=18/36 cum=40/76=0.526
+[dspark-acc] ctx=3972 burst=19/38 cum=59/114=0.518
+[dspark-acc] ctx=4005 burst=24/33 cum=83/147=0.565
+[dspark-acc] ctx=4037 burst=18/39 cum=101/186=0.543
+[dspark-acc] ctx=4071 burst=16/42 cum=117/228=0.513
+[dspark-acc] ctx=4103 burst=19/34 cum=136/262=0.519
+[dspark-acc] ctx=4135 burst=18/29 cum=154/291=0.529
+[dspark] cache-preferred: prompt=16643 decode_budget=768 lcp=16608 — a cold prime would discard a prefix hit that 768 tokens of speculation cannot repay; serving the hit and going plain
+[dspark] cache-preferred: prompt=37421 decode_budget=768 lcp=16608 — a cold prime would discard a prefix hit that 768 tokens of speculation cannot repay; serving the hit and going plain
+[dspark-acc] ctx=3600 burst=7/7 cum=7/7=1.000
+[dspark-acc] ctx=3608 burst=23/37 cum=30/44=0.682
+[dspark-acc] ctx=3640 burst=26/31 cum=56/75=0.747
+[dspark-acc] ctx=3674 burst=24/37 cum=80/112=0.714
+[dspark-acc] ctx=3709 burst=24/35 cum=104/147=0.707
+[dspark-acc] ctx=3743 burst=19/41 cum=123/188=0.654
+[dspark-acc] ctx=3777 burst=19/37 cum=142/225=0.631
+[dspark-acc] ctx=3810 burst=27/33 cum=169/258=0.655
+[dspark-acc] ctx=3845 burst=22/35 cum=191/293=0.652
+[dspark-acc] ctx=3877 burst=5/9 cum=196/302=0.649
+[dspark] cache-preferred: prompt=7391 decode_budget=768 lcp=3584 — a cold prime would discard a prefix hit that 768 tokens of speculation cannot repay; serving the hit and going plain
+[dspark-acc] ctx=2367 burst=0/7 cum=0/7=0.000
+[dspark-acc] ctx=2368 burst=20/35 cum=20/42=0.476
+[dspark-acc] ctx=2401 burst=21/30 cum=41/72=0.569
+[dspark-acc] ctx=2433 burst=19/39 cum=60/111=0.541
+[dspark-acc] ctx=2466 burst=21/33 cum=81/144=0.562
+[dspark-acc] ctx=2498 burst=22/36 cum=103/180=0.572
+[dspark-acc] ctx=2531 burst=22/37 cum=125/217=0.576
+[dspark-acc] ctx=2566 burst=23/33 cum=148/250=0.592
+[dspark-acc] ctx=2600 burst=24/39 cum=172/289=0.595
+[dspark-acc] ctx=2636 burst=26/38 cum=198/327=0.606
+[dspark-acc] ctx=2674 burst=19/26 cum=217/353=0.615
+[dspark-acc] ctx=2632 burst=2/7 cum=2/7=0.286
+[prefix-cache] insert (dspark-boundary): 2592 tokens, 318.1MB (resident 31007.0MB / 51223MB, model q38)
+[dspark-acc] ctx=2635 burst=23/36 cum=25/43=0.581
+[dspark-acc] ctx=2669 burst=32/34 cum=57/77=0.740
+[dspark-acc] ctx=2707 burst=20/28 cum=77/105=0.733
+[dspark] cache-preferred: prompt=20880 decode_budget=768 lcp=20864 — a cold prime would discard a prefix hit that 768 tokens of speculation cannot repay; serving the hit and going plain
+[dspark] cache-preferred: prompt=31328 decode_budget=768 lcp=20864 — a cold prime would discard a prefix hit that 768 tokens of speculation cannot repay; serving the hit and going plain
+[dspark-acc] ctx=4312 burst=0/7 cum=0/7=0.000
+[dspark-acc] ctx=4313 burst=19/34 cum=19/41=0.463
+[dspark-acc] ctx=4345 burst=19/35 cum=38/76=0.500
+[dspark-acc] ctx=4378 burst=20/37 cum=58/113=0.513
+[dspark-acc] ctx=4412 burst=19/35 cum=77/148=0.520
+[dspark-acc] ctx=4444 burst=15/39 cum=92/187=0.492
+[dspark-acc] ctx=4476 burst=13/41 cum=105/228=0.461
+[dspark-acc] ctx=4508 burst=18/36 cum=123/264=0.466
+[dspark-acc] ctx=4541 burst=15/40 cum=138/304=0.454
+[dspark-acc] ctx=4573 burst=14/40 cum=152/344=0.442
+[dspark-acc] ctx=4605 burst=18/35 cum=170/379=0.449
+[dspark-acc] ctx=4637 burst=17/37 cum=187/416=0.450
+[dspark-acc] ctx=4669 burst=15/40 cum=202/456=0.443
+[dspark-acc] ctx=4701 burst=17/38 cum=219/494=0.443
+[dspark-acc] ctx=4733 burst=20/34 cum=239/528=0.453
+[dspark-acc] ctx=4766 burst=24/33 cum=263/561=0.469
+[dspark-acc] ctx=4799 burst=15/40 cum=278/601=0.463
+[dspark-acc] ctx=4831 burst=19/33 cum=297/634=0.468
+[dspark-acc] ctx=4863 burst=19/35 cum=316/669=0.472
+[dspark-acc] ctx=4895 burst=18/35 cum=334/704=0.474
+[dspark-acc] ctx=4928 burst=19/37 cum=353/741=0.476
+[dspark-acc] ctx=4960 burst=19/31 cum=372/772=0.482
+[dspark-acc] ctx=4992 burst=23/32 cum=395/804=0.491
+[dspark-acc] ctx=5024 burst=13/45 cum=408/849=0.481
+[dspark-acc] ctx=5057 burst=19/26 cum=427/875=0.488
+[dspark-acc] ctx=5705 burst=1/7 cum=1/7=0.143
+[prefix-cache] insert (dspark-boundary): 5664 tokens, 409.3MB (resident 32502.6MB / 51223MB, model q38)
+[dspark-acc] ctx=5707 burst=20/36 cum=21/43=0.488
+[dspark-acc] ctx=5741 burst=21/37 cum=42/80=0.525
+[dspark-acc] ctx=5776 burst=26/37 cum=68/117=0.581
+[dspark-acc] ctx=5813 burst=27/37 cum=95/154=0.617
+[dspark-acc] ctx=5849 burst=19/41 cum=114/195=0.585
+[dspark-acc] ctx=5881 burst=22/36 cum=136/231=0.589
+[dspark-acc] ctx=5916 burst=23/34 cum=159/265=0.600
+[dspark-acc] ctx=5948 burst=20/38 cum=179/303=0.591
+[dspark-acc] ctx=5981 burst=25/36 cum=204/339=0.602
+[dspark-acc] ctx=6016 burst=23/34 cum=227/373=0.609
+[dspark-acc] ctx=6049 burst=19/41 cum=246/414=0.594
+[dspark-acc] ctx=6083 burst=24/29 cum=270/443=0.609
+[dspark-acc] ctx=6115 burst=29/32 cum=299/475=0.629
+[dspark-acc] ctx=6149 burst=24/37 cum=323/512=0.631
+[dspark-acc] ctx=6181 burst=15/20 cum=338/532=0.635
+[prefix-cache] DSPARK restore: 3936 of 3976 prompt tokens + draft tail from cache (40 suffix tokens to prime) (model q38)
+[dspark-acc] ctx=3976 burst=6/7 cum=6/7=0.857
+[dspark-acc] ctx=2760 burst=0/7 cum=0/7=0.000
+[dspark-acc] ctx=2761 burst=20/33 cum=20/40=0.500
+[dspark-acc] ctx=3983 burst=23/36 cum=29/43=0.674
+[dspark-acc] ctx=2793 burst=25/30 cum=45/70=0.643
+[dspark-acc] ctx=4015 burst=21/36 cum=50/79=0.633
+[dspark-acc] ctx=2826 burst=23/37 cum=68/107=0.636
+[dspark-acc] ctx=4049 burst=21/38 cum=71/117=0.607
+[dspark-acc] ctx=2860 burst=26/35 cum=94/142=0.662
+[dspark-acc] ctx=4083 burst=24/37 cum=95/154=0.617
+[dspark-acc] ctx=2895 burst=6/9 cum=100/151=0.662
+[dspark-acc] ctx=4119 burst=21/36 cum=116/190=0.611
+[dspark] cache-preferred: prompt=22867 decode_budget=768 lcp=22866 — a cold prime would discard a prefix hit that 768 tokens of speculation cannot repay; serving the hit and going plain
+[dspark-acc] ctx=4151 burst=21/35 cum=137/225=0.609
+[dspark-acc] ctx=4184 burst=25/37 cum=162/262=0.618
+[dspark-acc] ctx=4221 burst=20/42 cum=182/304=0.599
+[dspark-acc] ctx=4254 burst=29/33 cum=211/337=0.626
+[dspark-acc] ctx=4292 burst=29/37 cum=240/374=0.642
+[dspark-acc] ctx=4328 burst=26/37 cum=266/411=0.647
+[dspark-acc] ctx=4364 burst=22/40 cum=288/451=0.639
+[dspark-acc] ctx=4399 burst=23/36 cum=311/487=0.639
+[dspark-acc] ctx=4432 burst=21/34 cum=332/521=0.637
+[dspark-acc] ctx=4465 burst=22/36 cum=354/557=0.636
+[dspark-acc] ctx=4497 burst=23/29 cum=377/586=0.643
+[dspark-acc] ctx=4529 burst=26/38 cum=403/624=0.646
+[dspark-acc] ctx=4563 burst=22/36 cum=425/660=0.644
+[dspark-acc] ctx=4597 burst=17/38 cum=442/698=0.633
+[dspark-acc] ctx=4629 burst=18/36 cum=460/734=0.627
+[dspark-acc] ctx=4661 burst=15/42 cum=475/776=0.612
+[dspark-acc] ctx=4693 burst=23/35 cum=498/811=0.614
+[dspark-acc] ctx=4729 burst=14/20 cum=512/831=0.616
+[dspark] cache-preferred: prompt=41913 decode_budget=768 lcp=41888 — a cold prime would discard a prefix hit that 768 tokens of speculation cannot repay; serving the hit and going plain
+[dspark] cache-preferred: prompt=14705 decode_budget=768 lcp=14704 — a cold prime would discard a prefix hit that 768 tokens of speculation cannot repay; serving the hit and going plain
+[dspark] cache-preferred: prompt=25846 decode_budget=768 lcp=25824 — a cold prime would discard a prefix hit that 768 tokens of speculation cannot repay; serving the hit and going plain
+[dspark-acc] ctx=2267 burst=6/7 cum=6/7=0.857
+[dspark-acc] ctx=2274 burst=18/40 cum=24/47=0.511
+[dspark-acc] ctx=2306 burst=22/30 cum=46/77=0.597
+[dspark-acc] ctx=2338 burst=18/40 cum=64/117=0.547
+[dspark-acc] ctx=2371 burst=20/34 cum=84/151=0.556
+[dspark-acc] ctx=2404 burst=22/37 cum=106/188=0.564
+[dspark-acc] ctx=2436 burst=21/38 cum=127/226=0.562
+[dspark-acc] ctx=2471 burst=29/34 cum=156/260=0.600
+[dspark-acc] ctx=2507 burst=26/36 cum=182/296=0.615
+[prefix-cache] DSPARK restore: 2912 of 2937 prompt tokens + draft tail from cache (25 suffix tokens to prime) (model q38)
+[dspark-acc] ctx=2937 burst=22/41 cum=22/41=0.537
+[dspark-acc] ctx=2971 burst=21/33 cum=43/74=0.581
+[dspark-acc] ctx=3004 burst=21/36 cum=64/110=0.582
+[dspark-acc] ctx=3037 burst=18/35 cum=82/145=0.566
+[dspark-acc] ctx=3069 burst=23/35 cum=105/180=0.583
+[dspark-acc] ctx=3104 burst=25/32 cum=130/212=0.613
+[dspark-acc] ctx=3138 burst=23/37 cum=153/249=0.614
+[dspark-acc] ctx=3170 burst=22/32 cum=175/281=0.623
+[dspark-acc] ctx=3202 burst=22/37 cum=197/318=0.619
+[dspark-acc] ctx=3234 burst=14/17 cum=211/335=0.630
+[dspark] cache-preferred: prompt=22619 decode_budget=768 lcp=22618 — a cold prime would discard a prefix hit that 768 tokens of speculation cannot repay; serving the hit and going plain
+[dspark] cache-preferred: prompt=36527 decode_budget=768 lcp=36480 — a cold prime would discard a prefix hit that 768 tokens of speculation cannot repay; serving the hit and going plain
+[dspark] cache-preferred: prompt=13216 decode_budget=768 lcp=13215 — a cold prime would discard a prefix hit that 768 tokens of speculation cannot repay; serving the hit and going plain
+[dspark] cache-preferred: prompt=19154 decode_budget=768 lcp=19136 — a cold prime would discard a prefix hit that 768 tokens of speculation cannot repay; serving the hit and going plain
+[dspark-acc] ctx=2403 burst=1/7 cum=1/7=0.143
+[dspark-acc] ctx=2405 burst=21/37 cum=22/44=0.500
+[dspark-acc] ctx=2440 burst=24/37 cum=46/81=0.568
+[dspark-acc] ctx=2474 burst=4/7 cum=50/88=0.568
+[prefix-cache] DSPARK restore: 2976 of 2997 prompt tokens + draft tail from cache (21 suffix tokens to prime) (model q38)
+[dspark-acc] ctx=2997 burst=23/40 cum=23/40=0.575
+[dspark-acc] ctx=3031 burst=20/33 cum=43/73=0.589
+[dspark-acc] ctx=3063 burst=19/36 cum=62/109=0.569
+[dspark-acc] ctx=3095 burst=18/37 cum=80/146=0.548
+[dspark-acc] ctx=3128 burst=32/32 cum=112/178=0.629
+[dspark-acc] ctx=3166 burst=25/35 cum=137/213=0.643
+[dspark-acc] ctx=3199 burst=27/36 cum=164/249=0.659
+[dspark-acc] ctx=3235 burst=27/34 cum=191/283=0.675
+[dspark-acc] ctx=3269 burst=22/37 cum=213/320=0.666
+[dspark-acc] ctx=3302 burst=20/37 cum=233/357=0.653
+[dspark-acc] ctx=3337 burst=27/34 cum=260/391=0.665
+[dspark] cache-preferred: prompt=22233 decode_budget=768 lcp=22232 — a cold prime would discard a prefix hit that 768 tokens of speculation cannot repay; serving the hit and going plain
+[dspark] cache-preferred: prompt=42334 decode_budget=768 lcp=42304 — a cold prime would discard a prefix hit that 768 tokens of speculation cannot repay; serving the hit and going plain
+[dspark] cache-preferred: prompt=17101 decode_budget=768 lcp=17100 — a cold prime would discard a prefix hit that 768 tokens of speculation cannot repay; serving the hit and going plain
+[dspark] cache-preferred: prompt=30306 decode_budget=768 lcp=30272 — a cold prime would discard a prefix hit that 768 tokens of speculation cannot repay; serving the hit and going plain
+[dspark-acc] ctx=2100 burst=1/7 cum=1/7=0.143
+[dspark-acc] ctx=2102 burst=22/32 cum=23/39=0.590
+[dspark-acc] ctx=2136 burst=17/40 cum=40/79=0.506
+[dspark-acc] ctx=2168 burst=23/29 cum=63/108=0.583
+[dspark-acc] ctx=2200 burst=21/37 cum=84/145=0.579
+[dspark-acc] ctx=2233 burst=22/37 cum=106/182=0.582
+[dspark-acc] ctx=2267 burst=19/36 cum=125/218=0.573
+[dspark-acc] ctx=2299 burst=19/38 cum=144/256=0.562
+[dspark-acc] ctx=2334 burst=21/35 cum=165/291=0.567
+[dspark-acc] ctx=2366 burst=20/37 cum=185/328=0.564
+[dspark-acc] ctx=2399 burst=21/33 cum=206/361=0.571
+[dspark-acc] ctx=2431 burst=17/39 cum=223/400=0.557
+[dspark-acc] ctx=2463 burst=25/32 cum=248/432=0.574
+[dspark-acc] ctx=2496 burst=22/33 cum=270/465=0.581
+[dspark-acc] ctx=2529 burst=24/35 cum=294/500=0.588
+[prefix-cache] DSPARK restore: 4800 of 4842 prompt tokens + draft tail from cache (42 suffix tokens to prime) (model q38)
+[dspark-acc] ctx=4842 burst=15/45 cum=15/45=0.333
+[dspark-acc] ctx=4874 burst=23/35 cum=38/80=0.475
+[dspark-acc] ctx=4908 burst=19/35 cum=57/115=0.496
+[dspark-acc] ctx=4940 burst=16/39 cum=73/154=0.474
+[dspark-acc] ctx=4972 burst=26/34 cum=99/188=0.527
+[dspark-acc] ctx=5009 burst=21/36 cum=120/224=0.536
+[dspark-acc] ctx=5042 burst=19/38 cum=139/262=0.531
+[dspark-acc] ctx=5074 burst=19/38 cum=158/300=0.527
+[dspark-acc] ctx=5108 burst=19/24 cum=177/324=0.546
+[dspark] cache-preferred: prompt=17438 decode_budget=768 lcp=17437 — a cold prime would discard a prefix hit that 768 tokens of speculation cannot repay; serving the hit and going plain
+[dspark] cache-preferred: prompt=31411 decode_budget=768 lcp=31392 — a cold prime would discard a prefix hit that 768 tokens of speculation cannot repay; serving the hit and going plain
+[dspark] cache-preferred: prompt=10728 decode_budget=768 lcp=10727 — a cold prime would discard a prefix hit that 768 tokens of speculation cannot repay; serving the hit and going plain
+[dspark] cache-preferred: prompt=18259 decode_budget=768 lcp=18240 — a cold prime would discard a prefix hit that 768 tokens of speculation cannot repay; serving the hit and going plain
+[dspark-acc] ctx=4944 burst=1/7 cum=1/7=0.143
+[dspark-acc] ctx=4946 burst=21/36 cum=22/43=0.512
+[dspark-acc] ctx=4981 burst=16/41 cum=38/84=0.452
+[dspark-acc] ctx=5013 burst=18/35 cum=56/119=0.471
+[dspark-acc] ctx=5045 burst=19/35 cum=75/154=0.487
+[dspark-acc] ctx=5077 burst=18/36 cum=93/190=0.489
+[dspark-acc] ctx=5109 burst=20/31 cum=113/221=0.511
+[dspark-acc] ctx=5141 burst=21/35 cum=134/256=0.523
+[dspark-acc] ctx=5173 burst=23/33 cum=157/289=0.543
+[dspark-acc] ctx=5205 burst=18/40 cum=175/329=0.532
+[dspark-acc] ctx=5238 burst=24/36 cum=199/365=0.545
+[dspark-acc] ctx=5272 burst=7/9 cum=206/374=0.551
+[dspark] cache-preferred: prompt=8053 decode_budget=768 lcp=8032 — a cold prime would discard a prefix hit that 768 tokens of speculation cannot repay; serving the hit and going plain
+[dspark] cache-preferred: prompt=12327 decode_budget=768 lcp=12326 — a cold prime would discard a prefix hit that 768 tokens of speculation cannot repay; serving the hit and going plain
+[dspark] cache-preferred: prompt=27270 decode_budget=768 lcp=27232 — a cold prime would discard a prefix hit that 768 tokens of speculation cannot repay; serving the hit and going plain
+[dspark] cache-preferred: prompt=13232 decode_budget=768 lcp=13231 — a cold prime would discard a prefix hit that 768 tokens of speculation cannot repay; serving the hit and going plain
+[dspark] cache-preferred: prompt=19029 decode_budget=768 lcp=19008 — a cold prime would discard a prefix hit that 768 tokens of speculation cannot repay; serving the hit and going plain
+[dspark-acc] ctx=2833 burst=1/7 cum=1/7=0.143
+[dspark-acc] ctx=2835 burst=21/33 cum=22/40=0.550
+[dspark-acc] ctx=2868 burst=29/32 cum=51/72=0.708
+[dspark-acc] ctx=2903 burst=22/35 cum=73/107=0.682
+[dspark-acc] ctx=2936 burst=22/40 cum=95/147=0.646
+[dspark-acc] ctx=2971 burst=29/29 cum=124/176=0.705
+[dspark-acc] ctx=3005 burst=29/32 cum=153/208=0.736
+[dspark-acc] ctx=3039 burst=25/37 cum=178/245=0.727
+[prefix-cache] DSPARK restore: 5216 of 5232 prompt tokens + draft tail from cache (16 suffix tokens to prime) (model q38)
+[dspark-acc] ctx=5232 burst=19/40 cum=19/40=0.475
+[dspark-acc] ctx=5264 burst=21/38 cum=40/78=0.513
+[dspark-acc] ctx=5299 burst=22/37 cum=62/115=0.539
+[dspark-acc] ctx=5331 burst=17/38 cum=79/153=0.516
+[dspark-acc] ctx=5364 burst=18/41 cum=97/194=0.500
+[dspark-acc] ctx=5398 burst=17/38 cum=114/232=0.491
+[dspark-acc] ctx=5430 burst=15/39 cum=129/271=0.476
+[dspark-acc] ctx=5462 burst=19/32 cum=148/303=0.488
+[dspark-acc] ctx=5494 burst=17/40 cum=165/343=0.481
+[dspark-acc] ctx=5527 burst=17/42 cum=182/385=0.473
+[dspark-acc] ctx=5561 burst=20/38 cum=202/423=0.478
+[dspark-acc] ctx=5595 burst=17/38 cum=219/461=0.475
+[dspark-acc] ctx=5628 burst=22/32 cum=241/493=0.489
+[dspark-acc] ctx=5660 burst=13/44 cum=254/537=0.473
+[dspark-acc] ctx=5692 burst=14/41 cum=268/578=0.464
+[dspark-acc] ctx=5725 burst=19/37 cum=287/615=0.467
+[dspark-acc] ctx=5758 burst=15/40 cum=302/655=0.461
+[dspark-acc] ctx=5790 burst=12/42 cum=314/697=0.451
+[dspark-acc] ctx=5822 burst=19/34 cum=333/731=0.456
+[dspark-acc] ctx=5854 burst=17/39 cum=350/770=0.455
+[dspark-acc] ctx=5887 burst=17/36 cum=367/806=0.455
+[dspark-acc] ctx=5919 burst=20/35 cum=387/841=0.460
+[dspark-acc] ctx=5951 burst=17/37 cum=404/878=0.460
+[dspark-acc] ctx=5983 burst=9/22 cum=413/900=0.459
+[dspark] cache-preferred: prompt=16868 decode_budget=768 lcp=16867 — a cold prime would discard a prefix hit that 768 tokens of speculation cannot repay; serving the hit and going plain
+[dspark] cache-preferred: prompt=35601 decode_budget=768 lcp=35584 — a cold prime would discard a prefix hit that 768 tokens of speculation cannot repay; serving the hit and going plain
+[dspark-acc] ctx=1604 burst=2/7 cum=2/7=0.286
+[dspark-acc] ctx=1607 burst=19/39 cum=21/46=0.457
+[dspark-acc] ctx=1641 burst=25/36 cum=46/82=0.561
+[dspark-acc] ctx=1675 burst=29/30 cum=75/112=0.670
+[dspark-acc] ctx=1710 burst=30/33 cum=105/145=0.724
+[dspark-acc] ctx=1745 burst=32/34 cum=137/179=0.765
+[dspark-acc] ctx=1782 burst=27/38 cum=164/217=0.756
+[dspark-acc] ctx=1816 burst=26/33 cum=190/250=0.760
+[dspark-acc] ctx=1851 burst=28/33 cum=218/283=0.770
+[dspark-acc] ctx=1886 burst=3/7 cum=221/290=0.762
+[prefix-cache] DSPARK restore: 5696 of 5726 prompt tokens + draft tail from cache (30 suffix tokens to prime) (model q38)
+[dspark-acc] ctx=5726 burst=24/36 cum=24/36=0.667
+[dspark-acc] ctx=5760 burst=15/42 cum=39/78=0.500
+[dspark-acc] ctx=5792 burst=12/41 cum=51/119=0.429
+[dspark-acc] ctx=5824 burst=21/33 cum=72/152=0.474
+[dspark-acc] ctx=5857 burst=27/32 cum=99/184=0.538
+[dspark-acc] ctx=5891 burst=23/35 cum=122/219=0.557
+[dspark-acc] ctx=5923 burst=23/33 cum=145/252=0.575
+[dspark-acc] ctx=5957 burst=18/42 cum=163/294=0.554
+[dspark-acc] ctx=5990 burst=18/37 cum=181/331=0.547
+[dspark-acc] ctx=6022 burst=22/32 cum=203/363=0.559
+[dspark-acc] ctx=6056 burst=24/35 cum=227/398=0.570
+[dspark-acc] ctx=6089 burst=18/39 cum=245/437=0.561
+[dspark-acc] ctx=6122 burst=18/38 cum=263/475=0.554
+[dspark-acc] ctx=6155 burst=20/36 cum=283/511=0.554
+[dspark-acc] ctx=6189 burst=19/37 cum=302/548=0.551
+[dspark-acc] ctx=6222 burst=25/36 cum=327/584=0.560
+[dspark-acc] ctx=6256 burst=13/19 cum=340/603=0.564
+[dspark-acc] ctx=3513 burst=1/7 cum=1/7=0.143
+[dspark-acc] ctx=3515 burst=23/33 cum=24/40=0.600
+[dspark-acc] ctx=3550 burst=23/32 cum=47/72=0.653
+[dspark-acc] ctx=3582 burst=23/33 cum=70/105=0.667
+[dspark-acc] ctx=3615 burst=24/36 cum=94/141=0.667
+[dspark-acc] ctx=3648 burst=20/32 cum=114/173=0.659
+[prefix-cache] DSPARK restore: 3872 of 3905 prompt tokens + draft tail from cache (33 suffix tokens to prime) (model q38)
+[dspark-acc] ctx=3905 burst=22/40 cum=22/40=0.550
+[dspark-acc] ctx=3939 burst=18/36 cum=40/76=0.526
+[dspark-acc] ctx=3972 burst=19/38 cum=59/114=0.518
+[dspark-acc] ctx=4005 burst=24/33 cum=83/147=0.565
+[dspark-acc] ctx=4037 burst=18/39 cum=101/186=0.543
+[dspark-acc] ctx=4071 burst=16/42 cum=117/228=0.513
+[dspark-acc] ctx=4103 burst=19/34 cum=136/262=0.519
+[dspark-acc] ctx=4135 burst=18/29 cum=154/291=0.529
+[dspark] cache-preferred: prompt=16643 decode_budget=768 lcp=16642 — a cold prime would discard a prefix hit that 768 tokens of speculation cannot repay; serving the hit and going plain
+[dspark] cache-preferred: prompt=37421 decode_budget=768 lcp=37376 — a cold prime would discard a prefix hit that 768 tokens of speculation cannot repay; serving the hit and going plain
+[dspark-acc] ctx=3600 burst=7/7 cum=7/7=1.000
+[dspark-acc] ctx=3608 burst=23/37 cum=30/44=0.682
+[dspark-acc] ctx=3640 burst=26/31 cum=56/75=0.747
+[dspark-acc] ctx=3674 burst=24/37 cum=80/112=0.714
+[dspark-acc] ctx=3709 burst=24/35 cum=104/147=0.707
+[dspark-acc] ctx=3743 burst=19/41 cum=123/188=0.654
+[dspark-acc] ctx=3777 burst=19/37 cum=142/225=0.631
+[dspark-acc] ctx=3810 burst=27/33 cum=169/258=0.655
+[dspark-acc] ctx=3845 burst=22/35 cum=191/293=0.652
+[dspark-acc] ctx=3877 burst=5/9 cum=196/302=0.649
+[dspark] cache-preferred: prompt=7391 decode_budget=768 lcp=7360 — a cold prime would discard a prefix hit that 768 tokens of speculation cannot repay; serving the hit and going plain
+[dspark-acc] ctx=2367 burst=0/7 cum=0/7=0.000
+[dspark-acc] ctx=2368 burst=20/35 cum=20/42=0.476
+[dspark-acc] ctx=2401 burst=21/30 cum=41/72=0.569
+[dspark-acc] ctx=2433 burst=19/39 cum=60/111=0.541
+[dspark-acc] ctx=2466 burst=21/33 cum=81/144=0.562
+[dspark-acc] ctx=2498 burst=22/36 cum=103/180=0.572
+[dspark-acc] ctx=2531 burst=22/37 cum=125/217=0.576
+[dspark-acc] ctx=2566 burst=23/33 cum=148/250=0.592
+[dspark-acc] ctx=2600 burst=24/39 cum=172/289=0.595
+[dspark-acc] ctx=2636 burst=26/38 cum=198/327=0.606
+[dspark-acc] ctx=2674 burst=19/26 cum=217/353=0.615
+[prefix-cache] DSPARK restore: 2592 of 2632 prompt tokens + draft tail from cache (40 suffix tokens to prime) (model q38)
+[dspark-acc] ctx=2632 burst=22/37 cum=22/37=0.595
+[dspark-acc] ctx=2665 burst=28/33 cum=50/70=0.714
+[dspark-acc] ctx=2699 burst=27/35 cum=77/105=0.733
+[dspark] cache-preferred: prompt=20880 decode_budget=768 lcp=20879 — a cold prime would discard a prefix hit that 768 tokens of speculation cannot repay; serving the hit and going plain
+[dspark] cache-preferred: prompt=31328 decode_budget=768 lcp=31296 — a cold prime would discard a prefix hit that 768 tokens of speculation cannot repay; serving the hit and going plain
+[dspark-acc] ctx=4312 burst=0/7 cum=0/7=0.000
+[dspark-acc] ctx=4313 burst=19/34 cum=19/41=0.463
+[dspark-acc] ctx=4345 burst=19/35 cum=38/76=0.500
+[dspark-acc] ctx=4378 burst=20/37 cum=58/113=0.513
+[dspark-acc] ctx=4412 burst=19/35 cum=77/148=0.520
+[dspark-acc] ctx=4444 burst=15/39 cum=92/187=0.492
+[dspark-acc] ctx=4476 burst=13/41 cum=105/228=0.461
+[dspark-acc] ctx=4508 burst=18/36 cum=123/264=0.466
+[dspark-acc] ctx=4541 burst=15/40 cum=138/304=0.454
+[dspark-acc] ctx=4573 burst=14/40 cum=152/344=0.442
+[dspark-acc] ctx=4605 burst=18/35 cum=170/379=0.449
+[dspark-acc] ctx=4637 burst=17/37 cum=187/416=0.450
+[dspark-acc] ctx=4669 burst=15/40 cum=202/456=0.443
+[dspark-acc] ctx=4701 burst=17/38 cum=219/494=0.443
+[dspark-acc] ctx=4733 burst=20/34 cum=239/528=0.453
+[dspark-acc] ctx=4766 burst=24/33 cum=263/561=0.469
+[dspark-acc] ctx=4799 burst=15/40 cum=278/601=0.463
+[dspark-acc] ctx=4831 burst=19/33 cum=297/634=0.468
+[dspark-acc] ctx=4863 burst=19/35 cum=316/669=0.472
+[dspark-acc] ctx=4895 burst=18/35 cum=334/704=0.474
+[dspark-acc] ctx=4928 burst=19/37 cum=353/741=0.476
+[dspark-acc] ctx=4960 burst=19/31 cum=372/772=0.482
+[dspark-acc] ctx=4992 burst=23/32 cum=395/804=0.491
+[dspark-acc] ctx=5024 burst=13/45 cum=408/849=0.481
+[dspark-acc] ctx=5057 burst=19/26 cum=427/875=0.488
+[prefix-cache] DSPARK restore: 5664 of 5705 prompt tokens + draft tail from cache (41 suffix tokens to prime) (model q38)
+[dspark-acc] ctx=5705 burst=19/41 cum=19/41=0.463
+[dspark-acc] ctx=5738 burst=20/36 cum=39/77=0.506
+[dspark-acc] ctx=5772 burst=24/35 cum=63/112=0.562
+[dspark-acc] ctx=5807 burst=27/36 cum=90/148=0.608
+[dspark-acc] ctx=5843 burst=24/35 cum=114/183=0.623
+[dspark-acc] ctx=5876 burst=17/41 cum=131/224=0.585
+[dspark-acc] ctx=5908 burst=26/34 cum=157/258=0.609
+[dspark-acc] ctx=5944 burst=21/41 cum=178/299=0.595
+[dspark-acc] ctx=5979 burst=23/37 cum=201/336=0.598
+[dspark-acc] ctx=6012 burst=23/34 cum=224/370=0.605
+[dspark-acc] ctx=6045 burst=20/39 cum=244/409=0.597
+[dspark-acc] ctx=6079 burst=26/34 cum=270/443=0.609
+[dspark-acc] ctx=6115 burst=29/32 cum=299/475=0.629
+[dspark-acc] ctx=6149 burst=24/37 cum=323/512=0.631
+[dspark-acc] ctx=6181 burst=15/20 cum=338/532=0.635
+[dspark-acc] ctx=2760 burst=0/7 cum=0/7=0.000
+[dspark-acc] ctx=2761 burst=20/33 cum=20/40=0.500
+[dspark-acc] ctx=2793 burst=25/30 cum=45/70=0.643
+[dspark-acc] ctx=2826 burst=23/37 cum=68/107=0.636
+[dspark-acc] ctx=2860 burst=26/35 cum=94/142=0.662
+[dspark-acc] ctx=2895 burst=6/9 cum=100/151=0.662
+[dspark-acc] ctx=2760 burst=0/7 cum=0/7=0.000
+[dspark-acc] ctx=2761 burst=20/33 cum=20/40=0.500
+[dspark-acc] ctx=2793 burst=25/30 cum=45/70=0.643
+[dspark-acc] ctx=2826 burst=23/37 cum=68/107=0.636
+[dspark-acc] ctx=2860 burst=26/35 cum=94/142=0.662
+[dspark-acc] ctx=2895 burst=6/9 cum=100/151=0.662
+[prefix-cache] DSPARK restore: 3936 of 3976 prompt tokens + draft tail from cache (40 suffix tokens to prime) (model q38)
+[dspark-acc] ctx=3976 burst=6/7 cum=6/7=0.857
+[dspark-acc] ctx=3983 burst=0/7 cum=6/14=0.429
+[dspark-acc] ctx=2760 burst=0/7 cum=0/7=0.000
+[dspark-acc] ctx=2761 burst=20/33 cum=20/40=0.500
+[dspark-acc] ctx=3984 burst=23/33 cum=29/47=0.617
+[dspark-acc] ctx=2793 burst=25/30 cum=45/70=0.643
+[dspark-acc] ctx=4016 burst=21/32 cum=50/79=0.633
+[dspark-acc] ctx=2826 burst=23/37 cum=68/107=0.636
+[dspark-acc] ctx=4049 burst=21/38 cum=71/117=0.607
+[dspark-acc] ctx=2860 burst=26/35 cum=94/142=0.662
+[dspark-acc] ctx=4083 burst=24/37 cum=95/154=0.617
+[dspark-acc] ctx=2895 burst=6/9 cum=100/151=0.662
+[dspark-acc] ctx=4119 burst=21/36 cum=116/190=0.611
+[dspark-acc] ctx=4151 burst=21/35 cum=137/225=0.609
+[dspark-acc] ctx=4184 burst=25/37 cum=162/262=0.618
+[dspark-acc] ctx=4221 burst=20/42 cum=182/304=0.599
+[dspark-acc] ctx=4254 burst=29/33 cum=211/337=0.626
+[dspark-acc] ctx=4292 burst=29/37 cum=240/374=0.642
+[dspark-acc] ctx=4328 burst=26/37 cum=266/411=0.647
+[dspark-acc] ctx=4364 burst=22/40 cum=288/451=0.639
+[dspark-acc] ctx=4399 burst=23/36 cum=311/487=0.639
+[dspark-acc] ctx=4432 burst=21/34 cum=332/521=0.637
+[dspark-acc] ctx=4465 burst=22/36 cum=354/557=0.636
+[dspark-acc] ctx=4497 burst=23/29 cum=377/586=0.643
+[dspark-acc] ctx=4529 burst=26/38 cum=403/624=0.646
+[dspark-acc] ctx=4563 burst=22/36 cum=425/660=0.644
+[dspark-acc] ctx=4597 burst=17/38 cum=442/698=0.633
+[dspark-acc] ctx=4629 burst=18/36 cum=460/734=0.627
+[dspark-acc] ctx=4661 burst=15/42 cum=475/776=0.612
+[dspark-acc] ctx=4693 burst=23/35 cum=498/811=0.614
+[dspark-acc] ctx=4729 burst=14/20 cum=512/831=0.616
+[dspark-acc] ctx=2760 burst=0/7 cum=0/7=0.000
+[dspark-acc] ctx=2761 burst=20/33 cum=20/40=0.500
+[dspark-acc] ctx=2793 burst=25/30 cum=45/70=0.643
+[dspark-acc] ctx=2826 burst=23/37 cum=68/107=0.636
+[dspark-acc] ctx=2860 burst=26/35 cum=94/142=0.662
+[dspark-acc] ctx=2895 burst=6/9 cum=100/151=0.662

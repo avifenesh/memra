@@ -37,3 +37,48 @@ other half: a plain-served prime of a DFlash-armed model has to publish a draft 
 drafter's tap features during the plain prime, `DflashDraft::ingest_ctx`, then `export_tail`),
 which costs tap state of about 100 KB per prompt token on the 27B and needs its own exactness
 gate. Not done in this PR.
+
+## Second half: a vetoed plain hit re-arms a cold drafter (2026-11-05, `MEMRA_DSPARK_COLD_DRAFTER=1`)
+
+The traffic shape above never publishes a draft tail because the cache-preferred veto serves a long prompt's plain hit plain. With the door, when the suffix that hit leaves is at least `sliding_window + block` rows (2,056 on the 27B DFlash2), the request goes to DFlash anyway:
+- the drafter is born empty at the restored boundary (`DflashKv::new_cold_at`);
+- it is filled from the suffix prime's taps;
+- the session speculates and publishes at its boundary capture.
+
+Every row a round at the prompt end reads lies in the suffix, so the draft state equals a cold DFlash prime's. Shorter suffixes keep the plain hit. Needs `MEMRA_DSPARK_PREFIX_RESTORE=1` and `MEMRA_DSPARK_PARTIAL_RESTORE=1`. Commits:
+- 0fda98ddc3: the conversion;
+- 720d7b86f0: a fix the gate forced.
+
+**Exactness gate** (`tools/dspark-cold-drafter-gate.py`, `cold-drafter-gate.sh`; receipts `cold-drafter-gate/`). The arm has the prefix cache and doors on; the reference has the prefix cache off, so it cold-primes DFlash every time. The sequence:
+1. a plain greedy-penalized prime of P;
+2. P + S (S longer than the drafter window), sampled T=1 seed 1234 and greedy;
+3. a follow-up turn.
+
+The gate needs every completion byte-identical.
+
+| run | a greedy | a sampled | b greedy | b sampled | conversions |
+|---|---|---|---|---|---|
+| GB10, 0fda98ddc3 | identical | differs from token 1 | identical | differs | 4 |
+| GB10, 720d7b86f0 | identical | identical | identical | identical | 4 |
+| RTX 5090, 720d7b86f0 (smaller P/S) | identical | identical | identical | identical | 4 |
+
+The first GB10 run had identical drafts (greedy acceptance trajectories matched round for round). The difference was the sampling stream:
+- `dspark_spec_session_from_restored` drew a provisional boundary token from the entry's logits, which advanced the Philox counter;
+- the real boundary draw after the suffix prime then took event 1, where a cold prime takes event 0.
+
+This bug predates the door and shifted every sampled partial restore. 720d7b86f0 rewinds the counter on the first resume of a restored session, before any round. Tests: memra-server lib 1137 passed / 0 failed, memra-engine `dspark` 23 / 0.
+
+**GB10 GGUF DFlash2 agentic cell** (`gb10-cold-drafter/`, spark-b23d, 720d7b86f0, one binary with the door off/on, fresh boot each, one run each):
+
+| c | door off | door on | change |
+|---:|---:|---:|---:|
+| 1 | 12.04 | **14.47** | **+20.2%** |
+| 2 | 22.52 | 22.47 | flat |
+| 4 | 39.83 | 40.03 | flat |
+| 8 | 60.11 | 56.73 | -5.6% |
+| 16 | 63.43 | 66.85 | +5.4% |
+| 32 | 67.67 | 67.57 | flat |
+
+The door converted 15 of the 56 cache-preferred vetoes. The rest left suffixes shorter than the drafter window: measured turns whose hit is their own prime's entry, 19-30 tokens short of the prompt. Those stay plain, and a sub-`PRIME_MIN_T` suffix cannot take the restore path either. So c1 goes from 12.0 to 14.5 tok/s, still below the MTP route's 21.4. The c8/c16 moves are inside the single-run T=1 spread of this cell.
+
+**RTX 5090 agentic c1 A/B** (`5090-cold-drafter-ab/`, order off/on/on/off): 33.73 / 32.75 / 32.60 / 32.75 tok/s. The door never fires on this card (0 vetoes in every arm, as in the first half), so the arms run the same path.
