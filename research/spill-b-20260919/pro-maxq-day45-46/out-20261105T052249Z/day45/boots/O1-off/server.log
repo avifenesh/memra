@@ -1,0 +1,837 @@
+1793856190734 [server] build: memra-0.138.0-63e078bb8438 (id: source-tree, git: 09badfe575fc)
+1793856190734 [server] starting; models config = [("q38", "/mnt/Data/work/memra-maxq/models/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf", None)]
+1793856190734 [gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+1793856190735 [worker-affinity] off (MEMRA_WORKER_CPUSET / MEMRA_WORKER_AFFINITY unset or =0)
+1793856190934 [gpu-watch] on: every 60s, probe deadline 10s, fatal after 3 consecutive misses (MEMRA_GPU_PROBE_MISSES), fatal Xid [48, 64, 79, 94, 95, 119, 120]
+1793856191107 [worker] Engine ready (device=0, MEMRA_FAST=true)
+1793856191107 [spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+1793856191107 [spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2 (K=5 when the loaded MTP head is rank-trimmed)
+1793856191107 [worker] loading model "q38" <- /mnt/Data/work/memra-maxq/models/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf
+1793856191138 [tensor-contract] bound 866 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+1793856194610 [worker]   loaded "q38": 65 layers, eos=248046, stop=[248046]
+1793856194610 [worker] q38: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false qwen_effort=true gemma_think=false dsv4=false glm5=false ctx=262144 tok="qwen35" instruct=Some("chatml") chat_defaults=None/None
+1793856194610 [route-contract] model="q38" route=hybrid-worker capacity=64 sessions implemented=[capacity,occupancy,progress,fault-ownership,shutdown-ownership,memory-cost,rewrite-qualification,prime-fairness,service-metrics] refused=[]
+1793856194610 [worker] q38: decode wave cap 16; scheduler tick cap 16 (exact-16 tier)
+1793856194610 [prefix-cache] on: budget 15883MB (15883042816 B, derived: 2 x 7941521408 B max entry for model "q38" at served ctx 262144 (from checkpoint; MEMRA_CTX unset), requested 15883042816 B; boot driver free 86614081536 B, post-reserve clamp 85003468800 B), policy plain-LRU (global oldest unleased entry first; leases untouchable), min prefix 64 tokens, immediate partial restore=off (rollback) (transformer-only; hybrid mid-entry + routed-MoE N/A)
+1793856194610 [admission] "q38": plain 29696 B/token, spec 31552 B/token; fixed residual learns from effective-free deltas
+1793856194610 [prime-walk] model="q38" route=mtp supported=true yield_door=true [gdn_dspark_compatible=true mtp_head_loaded=true no_hyper_connections=true no_pipeline_cuts=true]
+1793856196088 [fa-pool] grow #0 dev=0 o_len 0 -> 399360 ml_len 0 -> 1560 (retired kept, zero=false)
+1793856196102 [func] CAPTURE-TIME kernel lookup (not warmed): embed_gather_u32
+1793856196103 [func] CAPTURE-TIME kernel lookup (not warmed): inc_i32
+1793856196103 [fa-pool] grow #1 dev=0 o_len 399360 -> 798720 ml_len 1560 -> 3120 (retired kept, zero=false)
+1793856196103 [func] CAPTURE-TIME kernel lookup (not warmed): fa_decode_vec_q_v4_deep_dc
+1793856196103 [func] CAPTURE-TIME kernel lookup (not warmed): fa_decode_combine_f32
+1793856196103 [func] CAPTURE-TIME kernel lookup (not warmed): memra_sctr_inc
+1793856196103 [func] CAPTURE-TIME kernel lookup (not warmed): gumbel_perturb_filtered_ctr_f32
+1793856196105 [spec] draft-session state high-water: 44MB (max of parked delta 44MB and capture-time pool peak 12MB; charged per spec admission and gating future captures)
+1793856196134 [fa-pool] grow #2 dev=0 o_len 798720 -> 1597440 ml_len 3120 -> 6240 (retired kept, zero=false)
+1793856196588 [device-trim] reason=calibration-complete {"device":0,"reclaimed_bytes":2483027968,"still_owned_bytes":17283255616,"pool_reserved_bytes":17414750208,"pool_cached_bytes":131494592,"driver_free_bytes":84030390272,"synchronization_errors":[]}
+1793856196588 [admit-cal] post-probe pool trim: released 2368MB cached back to the driver
+1793856196588 [admit-cal] boot calibration done: model="q38" route=mtp transient floor 2196MB (static was 1536MB; measured 2196MB; probe kv charge 127MB, draft-state 44MB, drafted 63 accepted 42; [dev0 peak-mapped 18976MB rest-mapped 16608MB charged 171MB -> 2196MB]; 2.0s)
+1793856196588 [admit-predict] shadow armed: budget_bytes=65975529168 budget_src=derived(effective_free_bytes=84161884864 - prefix_cache_budget_bytes=15883042816 - admission_reserve_bytes=2303312880) exempt_tenants=0 enforce=false (logging only, nothing is rejected; enforcement is a separate flip)
+1793856196588 [admit-mem] door=ON open_output_tokens=8192 defer_budget_ms=8000 (admission charges prompt+output, the reclaim flush demotes to the host tier before dropping, and a memory defer past the budget refuses 429 instead of queueing past the client's deadline)
+1793856196588 [kv-vmm] door=OFF (MEMRA_KV_ALLOCATOR unset or pooled: pooled K/V planes)
+1793856196588 [server] worker ready; serving models: ["q38"]
+1793856196588 [server] listening on http://127.0.0.1:18526
+1793856197015 [meter] admit id=cmpl-7e239c906625a5a7f9d0f636373df0be tenant=default lane=interactive model="q38"
+1793856197015 [admission] per-session draft-state charge: model="q38" +46MB (measured capture high-water)
+1793856197015 [admission] request cost: model="q38" ctx=592 path=spec = 31552 B/token x ctx + 245MB prefill-workspace + 0MB fixed = 264MB
+1793856197015 [admit-predict] id=cmpl-7e239c906625a5a7f9d0f636373df0be tenant="d45-warm-0" model="q38" verdict=admit reason=maxtok-fallback prompt=512 predicted_completion=16 kv_hat=308718096 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=65975529168 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1793856197015 [admit-mem] id=cmpl-7e239c906625a5a7f9d0f636373df0be model="q38" verdict=admit prompt=512 output_bound=16 charged_ctx=592 est_bytes=2613797888 est_context=18678784 est_fixed=2595119104 device_free=84161884864 pending_prime=0 pending_prime_v1=0 pending_seed=0 pending_seed_uncapped=0 host_free=0 demotable=0 short_by=0 inflight=0 cap=64 waited_ms=0 retry_after_s=- reason=-
+1793856197016 [spec-k] model="q38" tenant="d45-warm-0" K=3 source=cold-short prompt=512 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1793856197016 [admission] fixed residual high-water: model="q38" 309MB (observed 326MB at ctx 536 path=spec)
+1793856197318 [spec-acc] ctx=512 burst=10/18 cum=10/18=0.556
+1793856197319 [meter] admit id=cmpl-254242c99f20221741acda884bfdb0b4 tenant=default lane=interactive model="q38"
+1793856197332 [admission] per-session draft-state charge: model="q38" +46MB (measured capture high-water)
+1793856197332 [admission] request cost: model="q38" ctx=592 path=spec = 31552 B/token x ctx + 245MB prefill-workspace + 309MB fixed = 573MB
+1793856197332 [admit-predict] id=cmpl-254242c99f20221741acda884bfdb0b4 tenant="d45-warm-1" model="q38" verdict=admit reason=global-p95 prompt=512 predicted_completion=16 kv_hat=617601384 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=65975529168 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1793856197332 [admit-mem] id=cmpl-254242c99f20221741acda884bfdb0b4 model="q38" verdict=admit prompt=512 output_bound=16 charged_ctx=592 est_bytes=2922681176 est_context=18678784 est_fixed=2904002392 device_free=83518776636 pending_prime=0 pending_prime_v1=0 pending_seed=0 pending_seed_uncapped=0 host_free=0 demotable=0 short_by=0 inflight=0 cap=64 waited_ms=0 retry_after_s=- reason=-
+1793856197332 [spec-k] model="q38" tenant="d45-warm-1" K=3 source=cold-short prompt=512 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1793856197626 [spec-acc] ctx=512 burst=10/15 cum=10/15=0.667
+1793856197627 [meter] admit id=cmpl-12ade40b0c4c219f65dd59aded84f557 tenant=default lane=interactive model="q38"
+1793856197640 [admit-predict] id=cmpl-12ade40b0c4c219f65dd59aded84f557 tenant="d45-warm-2" model="q38" verdict=admit reason=global-p95 prompt=512 predicted_completion=16 kv_hat=617601384 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=65975529168 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1793856197640 [admit-mem] id=cmpl-12ade40b0c4c219f65dd59aded84f557 model="q38" verdict=admit prompt=512 output_bound=16 charged_ctx=592 est_bytes=2922681176 est_context=18678784 est_fixed=2904002392 device_free=82875668408 pending_prime=0 pending_prime_v1=0 pending_seed=0 pending_seed_uncapped=0 host_free=0 demotable=0 short_by=0 inflight=0 cap=64 waited_ms=0 retry_after_s=- reason=-
+1793856197640 [spec-k] model="q38" tenant="d45-warm-2" K=3 source=cold-short prompt=512 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1793856197973 [spec-acc] ctx=512 burst=10/21 cum=10/21=0.476
+1793856197974 [meter] admit id=cmpl-2d86672596debe64b4636863e1fda600 tenant=default lane=interactive model="q38"
+1793856197987 [admit-predict] id=cmpl-2d86672596debe64b4636863e1fda600 tenant="d45-warm-3" model="q38" verdict=admit reason=global-p95 prompt=512 predicted_completion=16 kv_hat=617601384 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=65975529168 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1793856197987 [admit-mem] id=cmpl-2d86672596debe64b4636863e1fda600 model="q38" verdict=admit prompt=512 output_bound=16 charged_ctx=592 est_bytes=2922681176 est_context=18678784 est_fixed=2904002392 device_free=82232560180 pending_prime=0 pending_prime_v1=0 pending_seed=0 pending_seed_uncapped=0 host_free=0 demotable=0 short_by=0 inflight=0 cap=64 waited_ms=0 retry_after_s=- reason=-
+1793856197987 [spec-k] model="q38" tenant="d45-warm-3" K=3 source=cold-short prompt=512 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1793856198340 [spec-acc] ctx=512 burst=10/24 cum=10/24=0.417
+1793856198348 [meter] admit id=cmpl-5166e5f04b088a596b45c48aa8c8c570 tenant=default lane=interactive model="q38"
+1793856198348 [meter] admit id=cmpl-bcf0b38be0c75686f2b2b751e7c832e1 tenant=default lane=interactive model="q38"
+1793856198350 [meter] admit id=cmpl-e29515f505c554733a9377a0c180ac05 tenant=default lane=interactive model="q38"
+1793856198351 [meter] admit id=cmpl-67578d29a47ec9657e91b58530376904 tenant=default lane=interactive model="q38"
+1793856198354 [meter] admit id=cmpl-7b8e4dbeda97d518467bb5a95ebc9a99 tenant=default lane=interactive model="q38"
+1793856198354 [admission] request cost: model="q38" ctx=30848 path=plain = 29696 B/token x ctx + 2508MB prefill-workspace + 309MB fixed = 3733MB
+1793856198354 [admit-predict] id=cmpl-5166e5f04b088a596b45c48aa8c8c570 tenant="d45-burst-1" model="q38" verdict=admit reason=global-p95 prompt=30720 predicted_completion=16 kv_hat=3730050904 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=65975529168 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1793856198354 [admit-mem] id=cmpl-5166e5f04b088a596b45c48aa8c8c570 model="q38" verdict=admit prompt=30720 output_bound=64 charged_ctx=30848 est_bytes=6036452168 est_context=916062208 est_fixed=5120389960 device_free=81589451952 pending_prime=0 pending_prime_v1=0 pending_seed=0 pending_seed_uncapped=0 host_free=0 demotable=0 short_by=0 inflight=0 cap=64 waited_ms=0 retry_after_s=- reason=-
+1793856198354 [meter] admit id=cmpl-f1a331d3a4e68ecf0b0aeb6aa62a21db tenant=default lane=interactive model="q38"
+1793856198354 [meter] admit id=cmpl-93b797914555ecd4a50049e35284f897 tenant=default lane=interactive model="q38"
+1793856198355 [meter] admit id=cmpl-8a75b704a79863442f68cf8929c7e3bf tenant=default lane=interactive model="q38"
+1793856198355 [spec-k] model="q38" tenant="d45-burst-1" K=0 source=concurrency prompt=30720 cached=0 lcp=0 active=1 wave=8 placement=single-or-non-pp2
+1793856198355 [meter] admit id=cmpl-5ec39f9bfc0809bc4b2deedf8a422f03 tenant=default lane=interactive model="q38"
+1793856198355 [admission] fixed residual high-water: model="q38" 365MB (observed 1279MB at ctx 30792 path=plain)
+1793856198355 [admission] request cost: model="q38" ctx=30848 path=plain = 29696 B/token x ctx + 2508MB prefill-workspace + 365MB fixed = 3789MB
+1793856198355 [admit-predict] id=cmpl-bcf0b38be0c75686f2b2b751e7c832e1 tenant="d45-burst-0" model="q38" verdict=admit reason=global-p95 prompt=30720 predicted_completion=16 kv_hat=3786206036 booked_bytes=3730050904 booked_real=3733139288 inflight=1 cap=64 budget_bytes=65975529168 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1793856198355 [admit-mem] id=cmpl-bcf0b38be0c75686f2b2b751e7c832e1 model="q38" verdict=admit prompt=30720 output_bound=64 charged_ctx=30848 est_bytes=6092607300 est_context=916062208 est_fixed=5176545092 device_free=78747636060 pending_prime=436207616 pending_prime_v1=2508193792 pending_seed=1126170624 pending_seed_uncapped=1126170624 host_free=0 demotable=0 short_by=0 inflight=1 cap=64 waited_ms=0 retry_after_s=- reason=-
+1793856198356 [meter] admit id=cmpl-ad64cdbeb033844041d2f221334a4d4a tenant=default lane=interactive model="q38"
+1793856198357 [spec-k] model="q38" tenant="d45-burst-0" K=0 source=concurrency prompt=30720 cached=0 lcp=0 active=2 wave=10 placement=single-or-non-pp2
+1793856198357 [admit-predict] id=cmpl-e29515f505c554733a9377a0c180ac05 tenant="d45-burst-2" model="q38" verdict=admit reason=global-p95 prompt=30720 predicted_completion=16 kv_hat=3786206036 booked_bytes=7516256940 booked_real=7522433708 inflight=2 cap=64 budget_bytes=65975529168 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1793856198357 [admit-mem] id=cmpl-e29515f505c554733a9377a0c180ac05 model="q38" verdict=admit prompt=30720 output_bound=64 charged_ctx=30848 est_bytes=6092607300 est_context=916062208 est_fixed=5176545092 device_free=76342027784 pending_prime=436207616 pending_prime_v1=5016387584 pending_seed=2252341248 pending_seed_uncapped=2252341248 host_free=0 demotable=0 short_by=0 inflight=2 cap=64 waited_ms=0 retry_after_s=- reason=-
+1793856198358 [meter] admit id=cmpl-95e26ecec73755d9f77cc19911aa925f tenant=default lane=interactive model="q38"
+1793856198359 [spec-k] model="q38" tenant="d45-burst-2" K=0 source=concurrency prompt=30720 cached=0 lcp=0 active=3 wave=11 placement=single-or-non-pp2
+1793856198359 [meter] admit id=cmpl-55346f2300f3eb654dca513954202d85 tenant=default lane=interactive model="q38"
+1793856198360 [meter] admit id=cmpl-f79f02c16aad5ead8b43d60cfb45a46d tenant=default lane=interactive model="q38"
+1793856198361 [meter] admit id=cmpl-04d778432bcfb468dbac63629ae8ea93 tenant=default lane=interactive model="q38"
+1793856198361 [meter] admit id=cmpl-b8f75e3c216aea39faae5f2a955ee5ef tenant=default lane=interactive model="q38"
+1793856198372 [admit-predict] id=cmpl-67578d29a47ec9657e91b58530376904 tenant="d45-burst-4" model="q38" verdict=admit reason=global-p95 prompt=30720 predicted_completion=16 kv_hat=3786206036 booked_bytes=11302462976 booked_real=11311728128 inflight=3 cap=64 budget_bytes=65975529168 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1793856198372 [admit-mem] id=cmpl-67578d29a47ec9657e91b58530376904 model="q38" verdict=admit prompt=30720 output_bound=64 charged_ctx=30848 est_bytes=6092607300 est_context=916062208 est_fixed=5176545092 device_free=73936419508 pending_prime=436207616 pending_prime_v1=7524581376 pending_seed=3378511872 pending_seed_uncapped=3378511872 host_free=0 demotable=0 short_by=0 inflight=3 cap=64 waited_ms=0 retry_after_s=- reason=-
+1793856198373 [meter] admit id=cmpl-ec84118ba8d7e6351f2e2f79a1026215 tenant=default lane=interactive model="q38"
+1793856198373 [meter] admit id=cmpl-eb70516c9c73fbeaa0a4cf45226056c3 tenant=default lane=interactive model="q38"
+1793856198373 [meter] admit id=cmpl-e0721a3186141bc05f69d95c0f63e020 tenant=default lane=interactive model="q38"
+1793856198373 [meter] admit id=cmpl-09f21e234a3a4a55f93b10ccff868c24 tenant=default lane=interactive model="q38"
+1793856198373 [meter] admit id=cmpl-604635fe6918412642e381b405526743 tenant=default lane=interactive model="q38"
+1793856198373 [meter] admit id=cmpl-50780c578bb6298d2c78977f0ead12f4 tenant=default lane=interactive model="q38"
+1793856198373 [meter] admit id=cmpl-a153c11ac3dc4b113096f64785535ac6 tenant=default lane=interactive model="q38"
+1793856198373 [meter] admit id=cmpl-cdabc8d910f1f3a1f772272b0d229ed7 tenant=default lane=interactive model="q38"
+1793856198374 [meter] admit id=cmpl-ebc0a605495cde8c650494c4234427f2 tenant=default lane=interactive model="q38"
+1793856198374 [spec-k] model="q38" tenant="d45-burst-4" K=0 source=concurrency prompt=30720 cached=0 lcp=0 active=4 wave=24 placement=single-or-non-pp2
+1793856198374 [admit-predict] id=cmpl-7b8e4dbeda97d518467bb5a95ebc9a99 tenant="d45-burst-3" model="q38" verdict=admit reason=global-p95 prompt=30720 predicted_completion=16 kv_hat=3786206036 booked_bytes=15088669012 booked_real=15101022548 inflight=4 cap=64 budget_bytes=65975529168 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1793856198374 [admit-mem] id=cmpl-7b8e4dbeda97d518467bb5a95ebc9a99 model="q38" verdict=admit prompt=30720 output_bound=64 charged_ctx=30848 est_bytes=6092607300 est_context=916062208 est_fixed=5176545092 device_free=71530811232 pending_prime=436207616 pending_prime_v1=10032775168 pending_seed=4504682496 pending_seed_uncapped=4504682496 host_free=0 demotable=0 short_by=0 inflight=4 cap=64 waited_ms=0 retry_after_s=- reason=-
+1793856198376 [spec-k] model="q38" tenant="d45-burst-3" K=0 source=concurrency prompt=30720 cached=0 lcp=0 active=5 wave=24 placement=single-or-non-pp2
+1793856198378 [meter] admit id=cmpl-7b875f015d01b7e1240ae22a8607778a tenant=default lane=interactive model="q38"
+1793856198380 [meter] admit id=cmpl-1fee5c457b573fc4699e03542dcf8304 tenant=default lane=interactive model="q38"
+1793856198380 [meter] admit id=cmpl-a39bad373c6275a6233175d2632af581 tenant=default lane=interactive model="q38"
+1793856198381 [meter] admit id=cmpl-484a696dd840324c5807f2c015d3619d tenant=default lane=interactive model="q38"
+1793856198381 [meter] admit id=cmpl-4bced7d53185ef7e4f1cd30f4d7a14b0 tenant=default lane=interactive model="q38"
+1793856198381 [meter] admit id=cmpl-4685ca9ee8d6e73ad3d1007ea4ee959a tenant=default lane=interactive model="q38"
+1793856198383 [meter] admit id=cmpl-c0bac9a17070d1f5dac8cda57e7b5876 tenant=default lane=interactive model="q38"
+1793856198384 [meter] admit id=cmpl-a012d587b56123616d3fd35badd8cad2 tenant=default lane=interactive model="q38"
+1793856198384 [meter] admit id=cmpl-e819cd1c35b4c79714d3f7d503be38c7 tenant=default lane=interactive model="q38"
+1793856198386 [meter] admit id=cmpl-a7be421404a35136c1c602ba5d0c2c15 tenant=default lane=interactive model="q38"
+1793856198387 [meter] admit id=cmpl-2c70dc1b8fafc8f514491e57b92edfd1 tenant=default lane=interactive model="q38"
+1793856198389 [meter] admit id=cmpl-7c9135f9ff4c21a2ce122cc7478cf6cd tenant=default lane=interactive model="q38"
+1793856198389 [meter] admit id=cmpl-fa4c239b5b22e0de2931f2c681e32c5b tenant=default lane=interactive model="q38"
+1793856198391 [meter] admit id=cmpl-ce58801403abf33533e3d223dc960b1c tenant=default lane=interactive model="q38"
+1793856198391 [meter] admit id=cmpl-d901748b11b4f56b9c42f74e58b2de90 tenant=default lane=interactive model="q38"
+1793856198391 [meter] admit id=cmpl-cd631d8b46bb64d3189647f209434471 tenant=default lane=interactive model="q38"
+1793856198391 [meter] admit id=cmpl-6ea24bdd7cbf45d9b8e4bd48080686eb tenant=default lane=interactive model="q38"
+1793856198394 [meter] admit id=cmpl-de97ab6d8ff5b9e4c5b617b6b0ba2d10 tenant=default lane=interactive model="q38"
+1793856198394 [meter] admit id=cmpl-c5a8619a4c5264d27dcb05e15ae47c4d tenant=default lane=interactive model="q38"
+1793856198394 [meter] admit id=cmpl-4d6ad1fc460fafd4819ce56c067791c0 tenant=default lane=interactive model="q38"
+1793856198395 [meter] admit id=cmpl-74ac8fbe1a790e28ca615ad120f3ef21 tenant=default lane=interactive model="q38"
+1793856198396 [meter] admit id=cmpl-1d748b5004cb22685c0e5ef062824de2 tenant=default lane=interactive model="q38"
+1793856198397 [meter] admit id=cmpl-488ac3d2dd819ab25ec3d75ff3b2ea17 tenant=default lane=interactive model="q38"
+1793856198398 [meter] admit id=cmpl-f4cc2082db4db5a38ed02b80c7365819 tenant=default lane=interactive model="q38"
+1793856198398 [meter] admit id=cmpl-deea1d45f1ba23269c5178f72930b0d0 tenant=default lane=interactive model="q38"
+1793856198399 [meter] admit id=cmpl-8a4f5bc0001576042dc44b3378ddff49 tenant=default lane=interactive model="q38"
+1793856198400 [meter] admit id=cmpl-9944360bb12a9af7f0f3e48a71ff4c4d tenant=default lane=interactive model="q38"
+1793856198401 [meter] admit id=cmpl-5c6eae9b7858438f0b1c9363cb89e352 tenant=default lane=interactive model="q38"
+1793856198404 [meter] admit id=cmpl-65851f239e8a0ad62cd3744f038c0d3c tenant=default lane=interactive model="q38"
+1793856198404 [meter] admit id=cmpl-0af5271968448b4580e195c71a33fee5 tenant=default lane=interactive model="q38"
+1793856198404 [meter] admit id=cmpl-b0083b5dfdc4565ab569bc6bfdb5d222 tenant=default lane=interactive model="q38"
+1793856198405 [meter] admit id=cmpl-ff23d8b403f6fd0ebf1a4bf44f322351 tenant=default lane=interactive model="q38"
+1793856198406 [meter] admit id=cmpl-68f1b233836b586c37d70412b3af734b tenant=default lane=interactive model="q38"
+1793856198406 [meter] admit id=cmpl-cc80498d0022c819797e9e564ff16c92 tenant=default lane=interactive model="q38"
+1793856198408 [meter] admit id=cmpl-2a53f8cdb57f71fa7ea9663f26e5774c tenant=default lane=interactive model="q38"
+1793856198409 [meter] admit id=cmpl-f0f51fed7d446eb3116438cabf682338 tenant=default lane=interactive model="q38"
+1793856198410 [meter] admit id=cmpl-f6652852012a5eabdca49930978e80fd tenant=default lane=interactive model="q38"
+1793856198410 [meter] admit id=cmpl-a40e6b94d6dac71f3890562bad592916 tenant=default lane=interactive model="q38"
+1793856198410 [meter] admit id=cmpl-6e192901b59b0060063914f07c584918 tenant=default lane=interactive model="q38"
+1793856198411 [meter] admit id=cmpl-de6703e3ecd2fede0c2272a9e59bd807 tenant=default lane=interactive model="q38"
+1793856199422 [prime-batch] B=3 tokens=3072 carried=0 partial=3 in 1046.4ms
+1793856199422 [admit-predict] id=cmpl-f1a331d3a4e68ecf0b0aeb6aa62a21db tenant="d45-burst-5" model="q38" verdict=admit reason=global-p95 prompt=30720 predicted_completion=16 kv_hat=3786206036 booked_bytes=18874875048 booked_real=18890316968 inflight=5 cap=64 budget_bytes=65975529168 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1793856199422 [admit-mem] id=cmpl-f1a331d3a4e68ecf0b0aeb6aa62a21db model="q38" verdict=admit prompt=30720 output_bound=64 charged_ctx=30848 est_bytes=6092607300 est_context=916062208 est_fixed=5176545092 device_free=69296251916 pending_prime=436207616 pending_prime_v1=12478054400 pending_seed=5459804160 pending_seed_uncapped=5459804160 host_free=0 demotable=0 short_by=0 inflight=5 cap=64 waited_ms=0 retry_after_s=- reason=-
+1793856199423 [spec-k] model="q38" tenant="d45-burst-5" K=0 source=concurrency prompt=30720 cached=0 lcp=0 active=6 wave=64 placement=single-or-non-pp2
+1793856199423 [admit-predict] id=cmpl-93b797914555ecd4a50049e35284f897 tenant="d45-burst-7" model="q38" verdict=admit reason=global-p95 prompt=30720 predicted_completion=16 kv_hat=3786206036 booked_bytes=22661081084 booked_real=22679611388 inflight=6 cap=64 budget_bytes=65975529168 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1793856199423 [admit-mem] id=cmpl-93b797914555ecd4a50049e35284f897 model="q38" verdict=admit prompt=30720 output_bound=64 charged_ctx=30848 est_bytes=6092607300 est_context=916062208 est_fixed=5176545092 device_free=66890643640 pending_prime=436207616 pending_prime_v1=14986248192 pending_seed=6585974784 pending_seed_uncapped=6585974784 host_free=0 demotable=0 short_by=0 inflight=6 cap=64 waited_ms=0 retry_after_s=- reason=-
+1793856199425 [spec-k] model="q38" tenant="d45-burst-7" K=0 source=concurrency prompt=30720 cached=0 lcp=0 active=7 wave=64 placement=single-or-non-pp2
+1793856199425 [admit-predict] id=cmpl-8a75b704a79863442f68cf8929c7e3bf tenant="d45-burst-6" model="q38" verdict=admit reason=global-p95 prompt=30720 predicted_completion=16 kv_hat=3786206036 booked_bytes=26447287120 booked_real=26468905808 inflight=7 cap=64 budget_bytes=65975529168 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1793856199425 [admit-mem] id=cmpl-8a75b704a79863442f68cf8929c7e3bf model="q38" verdict=admit prompt=30720 output_bound=64 charged_ctx=30848 est_bytes=6092607300 est_context=916062208 est_fixed=5176545092 device_free=64485035364 pending_prime=436207616 pending_prime_v1=17494441984 pending_seed=7712145408 pending_seed_uncapped=7712145408 host_free=0 demotable=0 short_by=0 inflight=7 cap=64 waited_ms=0 retry_after_s=- reason=-
+1793856199426 [spec-k] model="q38" tenant="d45-burst-6" K=0 source=concurrency prompt=30720 cached=0 lcp=0 active=8 wave=64 placement=single-or-non-pp2
+1793856199426 [admit-predict] id=cmpl-5ec39f9bfc0809bc4b2deedf8a422f03 tenant="d45-burst-8" model="q38" verdict=admit reason=global-p95 prompt=30720 predicted_completion=16 kv_hat=3786206036 booked_bytes=30233493156 booked_real=30258200228 inflight=8 cap=64 budget_bytes=65975529168 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1793856199426 [admit-mem] id=cmpl-5ec39f9bfc0809bc4b2deedf8a422f03 model="q38" verdict=admit prompt=30720 output_bound=64 charged_ctx=30848 est_bytes=6092607300 est_context=916062208 est_fixed=5176545092 device_free=62079427088 pending_prime=436207616 pending_prime_v1=20002635776 pending_seed=8838316032 pending_seed_uncapped=8838316032 host_free=0 demotable=0 short_by=0 inflight=8 cap=64 waited_ms=0 retry_after_s=- reason=-
+1793856199428 [spec-k] model="q38" tenant="d45-burst-8" K=0 source=concurrency prompt=30720 cached=0 lcp=0 active=9 wave=64 placement=single-or-non-pp2
+1793856199428 [admit-predict] id=cmpl-ad64cdbeb033844041d2f221334a4d4a tenant="d45-burst-9" model="q38" verdict=admit reason=global-p95 prompt=30720 predicted_completion=16 kv_hat=3786206036 booked_bytes=34019699192 booked_real=34047494648 inflight=9 cap=64 budget_bytes=65975529168 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1793856199428 [admit-mem] id=cmpl-ad64cdbeb033844041d2f221334a4d4a model="q38" verdict=admit prompt=30720 output_bound=64 charged_ctx=30848 est_bytes=6092607300 est_context=916062208 est_fixed=5176545092 device_free=59673818812 pending_prime=436207616 pending_prime_v1=22510829568 pending_seed=9964486656 pending_seed_uncapped=9964486656 host_free=0 demotable=0 short_by=0 inflight=9 cap=64 waited_ms=0 retry_after_s=- reason=-
+1793856199430 [spec-k] model="q38" tenant="d45-burst-9" K=0 source=concurrency prompt=30720 cached=0 lcp=0 active=10 wave=64 placement=single-or-non-pp2
+1793856199430 [admit-predict] id=cmpl-95e26ecec73755d9f77cc19911aa925f tenant="d45-burst-10" model="q38" verdict=admit reason=global-p95 prompt=30720 predicted_completion=16 kv_hat=3786206036 booked_bytes=37805905228 booked_real=37836789068 inflight=10 cap=64 budget_bytes=65975529168 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1793856199430 [admit-mem] id=cmpl-95e26ecec73755d9f77cc19911aa925f model="q38" verdict=admit prompt=30720 output_bound=64 charged_ctx=30848 est_bytes=6092607300 est_context=916062208 est_fixed=5176545092 device_free=57268210536 pending_prime=436207616 pending_prime_v1=25019023360 pending_seed=11090657280 pending_seed_uncapped=11090657280 host_free=0 demotable=0 short_by=0 inflight=10 cap=64 waited_ms=0 retry_after_s=- reason=-
+1793856199432 [spec-k] model="q38" tenant="d45-burst-10" K=0 source=concurrency prompt=30720 cached=0 lcp=0 active=11 wave=64 placement=single-or-non-pp2
+1793856199432 [admit-predict] id=cmpl-55346f2300f3eb654dca513954202d85 tenant="d45-burst-11" model="q38" verdict=admit reason=global-p95 prompt=30720 predicted_completion=16 kv_hat=3786206036 booked_bytes=41592111264 booked_real=41626083488 inflight=11 cap=64 budget_bytes=65975529168 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1793856199432 [admit-mem] id=cmpl-55346f2300f3eb654dca513954202d85 model="q38" verdict=admit prompt=30720 output_bound=64 charged_ctx=30848 est_bytes=6092607300 est_context=916062208 est_fixed=5176545092 device_free=54862602260 pending_prime=436207616 pending_prime_v1=27527217152 pending_seed=12216827904 pending_seed_uncapped=12216827904 host_free=0 demotable=0 short_by=0 inflight=11 cap=64 waited_ms=0 retry_after_s=- reason=-
+1793856199433 [spec-k] model="q38" tenant="d45-burst-11" K=0 source=concurrency prompt=30720 cached=0 lcp=0 active=12 wave=64 placement=single-or-non-pp2
+1793856199433 [admit-predict] id=cmpl-f79f02c16aad5ead8b43d60cfb45a46d tenant="d45-burst-12" model="q38" verdict=admit reason=global-p95 prompt=30720 predicted_completion=16 kv_hat=3786206036 booked_bytes=45378317300 booked_real=45415377908 inflight=12 cap=64 budget_bytes=65975529168 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1793856199434 [admit-mem] id=cmpl-f79f02c16aad5ead8b43d60cfb45a46d model="q38" verdict=admit prompt=30720 output_bound=64 charged_ctx=30848 est_bytes=6092607300 est_context=916062208 est_fixed=5176545092 device_free=52456993984 pending_prime=436207616 pending_prime_v1=30035410944 pending_seed=13342998528 pending_seed_uncapped=13342998528 host_free=0 demotable=0 short_by=0 inflight=12 cap=64 waited_ms=0 retry_after_s=- reason=-
+1793856199435 [spec-k] model="q38" tenant="d45-burst-12" K=0 source=concurrency prompt=30720 cached=0 lcp=0 active=13 wave=64 placement=single-or-non-pp2
+1793856199435 [admit-predict] id=cmpl-04d778432bcfb468dbac63629ae8ea93 tenant="d45-burst-14" model="q38" verdict=admit reason=global-p95 prompt=30720 predicted_completion=16 kv_hat=3786206036 booked_bytes=49164523336 booked_real=49204672328 inflight=13 cap=64 budget_bytes=65975529168 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1793856199435 [admit-mem] id=cmpl-04d778432bcfb468dbac63629ae8ea93 model="q38" verdict=admit prompt=30720 output_bound=64 charged_ctx=30848 est_bytes=6092607300 est_context=916062208 est_fixed=5176545092 device_free=50051385708 pending_prime=436207616 pending_prime_v1=32543604736 pending_seed=14469169152 pending_seed_uncapped=14469169152 host_free=0 demotable=0 short_by=0 inflight=13 cap=64 waited_ms=0 retry_after_s=- reason=-
+1793856199437 [spec-k] model="q38" tenant="d45-burst-14" K=0 source=concurrency prompt=30720 cached=0 lcp=0 active=14 wave=64 placement=single-or-non-pp2
+1793856199437 [admit-predict] id=cmpl-b8f75e3c216aea39faae5f2a955ee5ef tenant="d45-burst-13" model="q38" verdict=admit reason=global-p95 prompt=30720 predicted_completion=16 kv_hat=3786206036 booked_bytes=52950729372 booked_real=52993966748 inflight=14 cap=64 budget_bytes=65975529168 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1793856199437 [admit-mem] id=cmpl-b8f75e3c216aea39faae5f2a955ee5ef model="q38" verdict=admit prompt=30720 output_bound=64 charged_ctx=30848 est_bytes=6092607300 est_context=916062208 est_fixed=5176545092 device_free=47645777432 pending_prime=436207616 pending_prime_v1=35051798528 pending_seed=15595339776 pending_seed_uncapped=15595339776 host_free=0 demotable=0 short_by=0 inflight=14 cap=64 waited_ms=0 retry_after_s=- reason=-
+1793856199439 [spec-k] model="q38" tenant="d45-burst-13" K=0 source=concurrency prompt=30720 cached=0 lcp=0 active=15 wave=64 placement=single-or-non-pp2
+1793856199439 [admit-predict] id=cmpl-ec84118ba8d7e6351f2e2f79a1026215 tenant="d45-burst-19" model="q38" verdict=admit reason=global-p95 prompt=30720 predicted_completion=16 kv_hat=3786206036 booked_bytes=56736935408 booked_real=56783261168 inflight=15 cap=64 budget_bytes=65975529168 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1793856199439 [admit-mem] id=cmpl-ec84118ba8d7e6351f2e2f79a1026215 model="q38" verdict=admit prompt=30720 output_bound=64 charged_ctx=30848 est_bytes=6092607300 est_context=916062208 est_fixed=5176545092 device_free=46078636740 pending_prime=436207616 pending_prime_v1=37559992320 pending_seed=15883042816 pending_seed_uncapped=16721510400 host_free=0 demotable=0 short_by=0 inflight=15 cap=64 waited_ms=0 retry_after_s=- reason=-
+1793856199441 [spec-k] model="q38" tenant="d45-burst-19" K=0 source=concurrency prompt=30720 cached=0 lcp=0 active=16 wave=64 placement=single-or-non-pp2
+1793856199441 [admit-predict] id=cmpl-eb70516c9c73fbeaa0a4cf45226056c3 tenant="d45-burst-17" model="q38" verdict=admit reason=global-p95 prompt=30720 predicted_completion=16 kv_hat=3786206036 booked_bytes=60523141444 booked_real=60572555588 inflight=16 cap=64 budget_bytes=65975529168 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1793856199441 [admit-mem] id=cmpl-eb70516c9c73fbeaa0a4cf45226056c3 model="q38" verdict=admit prompt=30720 output_bound=64 charged_ctx=30848 est_bytes=6092607300 est_context=916062208 est_fixed=5176545092 device_free=44642305904 pending_prime=593100800 pending_prime_v1=40068186112 pending_seed=15883042816 pending_seed_uncapped=17847681024 host_free=0 demotable=0 short_by=0 inflight=16 cap=64 waited_ms=0 retry_after_s=- reason=-
+1793856199442 [spec-k] model="q38" tenant="d45-burst-17" K=0 source=concurrency prompt=30720 cached=0 lcp=0 active=17 wave=64 placement=single-or-non-pp2
+1793856199443 [admit-predict] id=cmpl-e0721a3186141bc05f69d95c0f63e020 tenant="d45-burst-16" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=16 kv_hat=3786206036 booked_bytes=64309347480 booked_real=64361850008 inflight=17 cap=64 budget_bytes=65975529168 retry_after_s=1 exempt=0 enforce=0 live_free_bytes=-
+1793856199443 [admit-mem] id=cmpl-e0721a3186141bc05f69d95c0f63e020 model="q38" verdict=admit prompt=30720 output_bound=64 charged_ctx=30848 est_bytes=6092607300 est_context=916062208 est_fixed=5176545092 device_free=43362868252 pending_prime=593100800 pending_prime_v1=42576379904 pending_seed=15883042816 pending_seed_uncapped=18973851648 host_free=0 demotable=0 short_by=0 inflight=17 cap=64 waited_ms=0 retry_after_s=- reason=-
+1793856199444 [spec-k] model="q38" tenant="d45-burst-16" K=0 source=concurrency prompt=30720 cached=0 lcp=0 active=18 wave=64 placement=single-or-non-pp2
+1793856199444 [admit-predict] id=cmpl-09f21e234a3a4a55f93b10ccff868c24 tenant="d45-burst-18" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=16 kv_hat=3786206036 booked_bytes=68095553516 booked_real=68151144428 inflight=18 cap=64 budget_bytes=65975529168 retry_after_s=1 exempt=0 enforce=0 live_free_bytes=-
+1793856199444 [admit-mem] id=cmpl-09f21e234a3a4a55f93b10ccff868c24 model="q38" verdict=admit prompt=30720 output_bound=64 charged_ctx=30848 est_bytes=6092607300 est_context=916062208 est_fixed=5176545092 device_free=42083430600 pending_prime=593100800 pending_prime_v1=45084573696 pending_seed=15883042816 pending_seed_uncapped=20100022272 host_free=0 demotable=0 short_by=0 inflight=18 cap=64 waited_ms=0 retry_after_s=- reason=-
+1793856199446 [spec-k] model="q38" tenant="d45-burst-18" K=0 source=concurrency prompt=30720 cached=0 lcp=0 active=19 wave=64 placement=single-or-non-pp2
+1793856199446 [admit-predict] id=cmpl-604635fe6918412642e381b405526743 tenant="d45-burst-22" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=16 kv_hat=3786206036 booked_bytes=71881759552 booked_real=71940438848 inflight=19 cap=64 budget_bytes=65975529168 retry_after_s=1 exempt=0 enforce=0 live_free_bytes=-
+1793856199446 [admit-mem] id=cmpl-604635fe6918412642e381b405526743 model="q38" verdict=admit prompt=30720 output_bound=64 charged_ctx=30848 est_bytes=6092607300 est_context=916062208 est_fixed=5176545092 device_free=40803992948 pending_prime=593100800 pending_prime_v1=47592767488 pending_seed=15883042816 pending_seed_uncapped=21226192896 host_free=0 demotable=0 short_by=0 inflight=19 cap=64 waited_ms=0 retry_after_s=- reason=-
+1793856199448 [spec-k] model="q38" tenant="d45-burst-22" K=0 source=concurrency prompt=30720 cached=0 lcp=0 active=20 wave=64 placement=single-or-non-pp2
+1793856199448 [admit-predict] id=cmpl-50780c578bb6298d2c78977f0ead12f4 tenant="d45-burst-21" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=16 kv_hat=3786206036 booked_bytes=75667965588 booked_real=75729733268 inflight=20 cap=64 budget_bytes=65975529168 retry_after_s=1 exempt=0 enforce=0 live_free_bytes=-
+1793856199448 [admit-mem] id=cmpl-50780c578bb6298d2c78977f0ead12f4 model="q38" verdict=admit prompt=30720 output_bound=64 charged_ctx=30848 est_bytes=6092607300 est_context=916062208 est_fixed=5176545092 device_free=39524555296 pending_prime=593100800 pending_prime_v1=50100961280 pending_seed=15883042816 pending_seed_uncapped=22352363520 host_free=0 demotable=0 short_by=0 inflight=20 cap=64 waited_ms=0 retry_after_s=- reason=-
+1793856199450 [spec-k] model="q38" tenant="d45-burst-21" K=0 source=concurrency prompt=30720 cached=0 lcp=0 active=21 wave=64 placement=single-or-non-pp2
+1793856199450 [admit-predict] id=cmpl-a153c11ac3dc4b113096f64785535ac6 tenant="d45-burst-15" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=16 kv_hat=3786206036 booked_bytes=79454171624 booked_real=79519027688 inflight=21 cap=64 budget_bytes=65975529168 retry_after_s=1 exempt=0 enforce=0 live_free_bytes=-
+1793856199450 [admit-mem] id=cmpl-a153c11ac3dc4b113096f64785535ac6 model="q38" verdict=admit prompt=30720 output_bound=64 charged_ctx=30848 est_bytes=6092607300 est_context=916062208 est_fixed=5176545092 device_free=38245117644 pending_prime=593100800 pending_prime_v1=52609155072 pending_seed=15883042816 pending_seed_uncapped=23478534144 host_free=0 demotable=0 short_by=0 inflight=21 cap=64 waited_ms=0 retry_after_s=- reason=-
+1793856199452 [spec-k] model="q38" tenant="d45-burst-15" K=0 source=concurrency prompt=30720 cached=0 lcp=0 active=22 wave=64 placement=single-or-non-pp2
+1793856199452 [admit-predict] id=cmpl-cdabc8d910f1f3a1f772272b0d229ed7 tenant="d45-burst-20" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=16 kv_hat=3786206036 booked_bytes=83240377660 booked_real=83308322108 inflight=22 cap=64 budget_bytes=65975529168 retry_after_s=1 exempt=0 enforce=0 live_free_bytes=-
+1793856199452 [admit-mem] id=cmpl-cdabc8d910f1f3a1f772272b0d229ed7 model="q38" verdict=admit prompt=30720 output_bound=64 charged_ctx=30848 est_bytes=6092607300 est_context=916062208 est_fixed=5176545092 device_free=36965679992 pending_prime=593100800 pending_prime_v1=55117348864 pending_seed=15883042816 pending_seed_uncapped=24604704768 host_free=0 demotable=0 short_by=0 inflight=22 cap=64 waited_ms=0 retry_after_s=- reason=-
+1793856199454 [spec-k] model="q38" tenant="d45-burst-20" K=0 source=concurrency prompt=30720 cached=0 lcp=0 active=23 wave=64 placement=single-or-non-pp2
+1793856199454 [admit-predict] id=cmpl-ebc0a605495cde8c650494c4234427f2 tenant="d45-burst-24" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=16 kv_hat=3786206036 booked_bytes=87026583696 booked_real=87097616528 inflight=23 cap=64 budget_bytes=65975529168 retry_after_s=1 exempt=0 enforce=0 live_free_bytes=-
+1793856199454 [admit-mem] id=cmpl-ebc0a605495cde8c650494c4234427f2 model="q38" verdict=admit prompt=30720 output_bound=64 charged_ctx=30848 est_bytes=6092607300 est_context=916062208 est_fixed=5176545092 device_free=35529349156 pending_prime=749993984 pending_prime_v1=57625542656 pending_seed=15883042816 pending_seed_uncapped=25730875392 host_free=0 demotable=0 short_by=0 inflight=23 cap=64 waited_ms=0 retry_after_s=- reason=-
+1793856199456 [spec-k] model="q38" tenant="d45-burst-24" K=0 source=concurrency prompt=30720 cached=0 lcp=0 active=24 wave=64 placement=single-or-non-pp2
+1793856199456 [admit-predict] id=cmpl-7b875f015d01b7e1240ae22a8607778a tenant="d45-burst-23" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=16 kv_hat=3786206036 booked_bytes=90812789732 booked_real=90886910948 inflight=24 cap=64 budget_bytes=65975529168 retry_after_s=1 exempt=0 enforce=0 live_free_bytes=-
+1793856199456 [admit-mem] id=cmpl-7b875f015d01b7e1240ae22a8607778a model="q38" verdict=admit prompt=30720 output_bound=64 charged_ctx=30848 est_bytes=6092607300 est_context=916062208 est_fixed=5176545092 device_free=34249911504 pending_prime=749993984 pending_prime_v1=60133736448 pending_seed=15883042816 pending_seed_uncapped=26857046016 host_free=0 demotable=0 short_by=0 inflight=24 cap=64 waited_ms=0 retry_after_s=- reason=-
+1793856199458 [spec-k] model="q38" tenant="d45-burst-23" K=0 source=concurrency prompt=30720 cached=0 lcp=0 active=25 wave=64 placement=single-or-non-pp2
+1793856199458 [admit-predict] id=cmpl-1fee5c457b573fc4699e03542dcf8304 tenant="d45-burst-27" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=16 kv_hat=3786206036 booked_bytes=94598995768 booked_real=94676205368 inflight=25 cap=64 budget_bytes=65975529168 retry_after_s=1 exempt=0 enforce=0 live_free_bytes=-
+1793856199458 [admit-mem] id=cmpl-1fee5c457b573fc4699e03542dcf8304 model="q38" verdict=admit prompt=30720 output_bound=64 charged_ctx=30848 est_bytes=6092607300 est_context=916062208 est_fixed=5176545092 device_free=32970473852 pending_prime=749993984 pending_prime_v1=62641930240 pending_seed=15883042816 pending_seed_uncapped=27983216640 host_free=0 demotable=0 short_by=0 inflight=25 cap=64 waited_ms=0 retry_after_s=- reason=-
+1793856199459 [spec-k] model="q38" tenant="d45-burst-27" K=0 source=concurrency prompt=30720 cached=0 lcp=0 active=26 wave=64 placement=single-or-non-pp2
+1793856199460 [admit-predict] id=cmpl-a39bad373c6275a6233175d2632af581 tenant="d45-burst-28" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=16 kv_hat=3786206036 booked_bytes=98385201804 booked_real=98465499788 inflight=26 cap=64 budget_bytes=65975529168 retry_after_s=1 exempt=0 enforce=0 live_free_bytes=-
+1793856199460 [admit-mem] id=cmpl-a39bad373c6275a6233175d2632af581 model="q38" verdict=admit prompt=30720 output_bound=64 charged_ctx=30848 est_bytes=6092607300 est_context=916062208 est_fixed=5176545092 device_free=31691036200 pending_prime=749993984 pending_prime_v1=65150124032 pending_seed=15883042816 pending_seed_uncapped=29109387264 host_free=0 demotable=0 short_by=0 inflight=26 cap=64 waited_ms=0 retry_after_s=- reason=-
+1793856199461 [spec-k] model="q38" tenant="d45-burst-28" K=0 source=concurrency prompt=30720 cached=0 lcp=0 active=27 wave=64 placement=single-or-non-pp2
+1793856199461 [admit-predict] id=cmpl-484a696dd840324c5807f2c015d3619d tenant="d45-burst-25" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=16 kv_hat=3786206036 booked_bytes=102171407840 booked_real=102254794208 inflight=27 cap=64 budget_bytes=65975529168 retry_after_s=1 exempt=0 enforce=0 live_free_bytes=-
+1793856199462 [admit-mem] id=cmpl-484a696dd840324c5807f2c015d3619d model="q38" verdict=admit prompt=30720 output_bound=64 charged_ctx=30848 est_bytes=6092607300 est_context=916062208 est_fixed=5176545092 device_free=30411598548 pending_prime=749993984 pending_prime_v1=67658317824 pending_seed=15883042816 pending_seed_uncapped=30235557888 host_free=0 demotable=0 short_by=0 inflight=27 cap=64 waited_ms=0 retry_after_s=- reason=-
+1793856199463 [spec-k] model="q38" tenant="d45-burst-25" K=0 source=concurrency prompt=30720 cached=0 lcp=0 active=28 wave=64 placement=single-or-non-pp2
+1793856199463 [admit-predict] id=cmpl-4bced7d53185ef7e4f1cd30f4d7a14b0 tenant="d45-burst-29" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=16 kv_hat=3786206036 booked_bytes=105957613876 booked_real=106044088628 inflight=28 cap=64 budget_bytes=65975529168 retry_after_s=1 exempt=0 enforce=0 live_free_bytes=-
+1793856199463 [admit-mem] id=cmpl-4bced7d53185ef7e4f1cd30f4d7a14b0 model="q38" verdict=admit prompt=30720 output_bound=64 charged_ctx=30848 est_bytes=6092607300 est_context=916062208 est_fixed=5176545092 device_free=29132160896 pending_prime=749993984 pending_prime_v1=70166511616 pending_seed=15883042816 pending_seed_uncapped=31361728512 host_free=0 demotable=0 short_by=0 inflight=28 cap=64 waited_ms=0 retry_after_s=- reason=-
+1793856199465 [spec-k] model="q38" tenant="d45-burst-29" K=0 source=concurrency prompt=30720 cached=0 lcp=0 active=29 wave=64 placement=single-or-non-pp2
+1793856199465 [admit-predict] id=cmpl-4685ca9ee8d6e73ad3d1007ea4ee959a tenant="d45-burst-26" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=16 kv_hat=3786206036 booked_bytes=109743819912 booked_real=109833383048 inflight=29 cap=64 budget_bytes=65975529168 retry_after_s=1 exempt=0 enforce=0 live_free_bytes=-
+1793856199465 [admit-mem] id=cmpl-4685ca9ee8d6e73ad3d1007ea4ee959a model="q38" verdict=admit prompt=30720 output_bound=64 charged_ctx=30848 est_bytes=6092607300 est_context=916062208 est_fixed=5176545092 device_free=27852723244 pending_prime=749993984 pending_prime_v1=72674705408 pending_seed=15883042816 pending_seed_uncapped=32487899136 host_free=0 demotable=0 short_by=0 inflight=29 cap=64 waited_ms=0 retry_after_s=- reason=-
+1793856199467 [spec-k] model="q38" tenant="d45-burst-26" K=0 source=concurrency prompt=30720 cached=0 lcp=0 active=30 wave=64 placement=single-or-non-pp2
+1793856199467 [admit-predict] id=cmpl-c0bac9a17070d1f5dac8cda57e7b5876 tenant="d45-burst-30" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=16 kv_hat=3786206036 booked_bytes=113530025948 booked_real=113622677468 inflight=30 cap=64 budget_bytes=65975529168 retry_after_s=1 exempt=0 enforce=0 live_free_bytes=-
+1793856199467 [admit-mem] id=cmpl-c0bac9a17070d1f5dac8cda57e7b5876 model="q38" verdict=admit prompt=30720 output_bound=64 charged_ctx=30848 est_bytes=6092607300 est_context=916062208 est_fixed=5176545092 device_free=26573285592 pending_prime=749993984 pending_prime_v1=75182899200 pending_seed=15883042816 pending_seed_uncapped=33614069760 host_free=0 demotable=0 short_by=0 inflight=30 cap=64 waited_ms=0 retry_after_s=- reason=-
+1793856199469 [spec-k] model="q38" tenant="d45-burst-30" K=0 source=concurrency prompt=30720 cached=0 lcp=0 active=31 wave=64 placement=single-or-non-pp2
+1793856199469 [admit-predict] id=cmpl-a012d587b56123616d3fd35badd8cad2 tenant="d45-burst-31" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=16 kv_hat=3786206036 booked_bytes=117316231984 booked_real=117411971888 inflight=31 cap=64 budget_bytes=65975529168 retry_after_s=1 exempt=0 enforce=0 live_free_bytes=-
+1793856199469 [admit-mem] id=cmpl-a012d587b56123616d3fd35badd8cad2 model="q38" verdict=admit prompt=30720 output_bound=64 charged_ctx=30848 est_bytes=6092607300 est_context=916062208 est_fixed=5176545092 device_free=25293847940 pending_prime=749993984 pending_prime_v1=77691092992 pending_seed=15883042816 pending_seed_uncapped=34740240384 host_free=0 demotable=0 short_by=0 inflight=31 cap=64 waited_ms=0 retry_after_s=- reason=-
+1793856199471 [spec-k] model="q38" tenant="d45-burst-31" K=0 source=concurrency prompt=30720 cached=0 lcp=0 active=32 wave=64 placement=single-or-non-pp2
+1793856199471 [admit-predict] id=cmpl-e819cd1c35b4c79714d3f7d503be38c7 tenant="d45-burst-32" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=16 kv_hat=3786206036 booked_bytes=121102438020 booked_real=121201266308 inflight=32 cap=64 budget_bytes=65975529168 retry_after_s=1 exempt=0 enforce=0 live_free_bytes=-
+1793856199471 [admit-mem] id=cmpl-e819cd1c35b4c79714d3f7d503be38c7 model="q38" verdict=admit prompt=30720 output_bound=64 charged_ctx=30848 est_bytes=6092607300 est_context=916062208 est_fixed=5176545092 device_free=24014410288 pending_prime=749993984 pending_prime_v1=80199286784 pending_seed=15883042816 pending_seed_uncapped=35866411008 host_free=0 demotable=0 short_by=0 inflight=32 cap=64 waited_ms=0 retry_after_s=- reason=-
+1793856199473 [spec-k] model="q38" tenant="d45-burst-32" K=0 source=concurrency prompt=30720 cached=0 lcp=0 active=33 wave=64 placement=single-or-non-pp2
+1793856199473 [admit-predict] id=cmpl-a7be421404a35136c1c602ba5d0c2c15 tenant="d45-burst-33" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=16 kv_hat=3786206036 booked_bytes=124888644056 booked_real=124990560728 inflight=33 cap=64 budget_bytes=65975529168 retry_after_s=1 exempt=0 enforce=0 live_free_bytes=-
+1793856199473 [admit-mem] id=cmpl-a7be421404a35136c1c602ba5d0c2c15 model="q38" verdict=admit prompt=30720 output_bound=64 charged_ctx=30848 est_bytes=6092607300 est_context=916062208 est_fixed=5176545092 device_free=22734972636 pending_prime=749993984 pending_prime_v1=82707480576 pending_seed=15883042816 pending_seed_uncapped=36992581632 host_free=0 demotable=0 short_by=0 inflight=33 cap=64 waited_ms=0 retry_after_s=- reason=-
+1793856199475 [spec-k] model="q38" tenant="d45-burst-33" K=0 source=concurrency prompt=30720 cached=0 lcp=0 active=34 wave=64 placement=single-or-non-pp2
+1793856199475 [admit-predict] id=cmpl-2c70dc1b8fafc8f514491e57b92edfd1 tenant="d45-burst-34" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=16 kv_hat=3786206036 booked_bytes=128674850092 booked_real=128779855148 inflight=34 cap=64 budget_bytes=65975529168 retry_after_s=1 exempt=0 enforce=0 live_free_bytes=-
+1793856199475 [admit-mem] id=cmpl-2c70dc1b8fafc8f514491e57b92edfd1 model="q38" verdict=admit prompt=30720 output_bound=64 charged_ctx=30848 est_bytes=6092607300 est_context=916062208 est_fixed=5176545092 device_free=21455534984 pending_prime=749993984 pending_prime_v1=85215674368 pending_seed=15883042816 pending_seed_uncapped=38118752256 host_free=0 demotable=0 short_by=0 inflight=34 cap=64 waited_ms=0 retry_after_s=- reason=-
+1793856199477 [spec-k] model="q38" tenant="d45-burst-34" K=0 source=concurrency prompt=30720 cached=0 lcp=0 active=35 wave=64 placement=single-or-non-pp2
+1793856199477 [admit-predict] id=cmpl-7c9135f9ff4c21a2ce122cc7478cf6cd tenant="d45-burst-35" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=16 kv_hat=3786206036 booked_bytes=132461056128 booked_real=132569149568 inflight=35 cap=64 budget_bytes=65975529168 retry_after_s=1 exempt=0 enforce=0 live_free_bytes=-
+1793856199477 [admit-mem] id=cmpl-7c9135f9ff4c21a2ce122cc7478cf6cd model="q38" verdict=admit prompt=30720 output_bound=64 charged_ctx=30848 est_bytes=6092607300 est_context=916062208 est_fixed=5176545092 device_free=20176097332 pending_prime=749993984 pending_prime_v1=87723868160 pending_seed=15883042816 pending_seed_uncapped=39244922880 host_free=0 demotable=0 short_by=0 inflight=35 cap=64 waited_ms=0 retry_after_s=- reason=-
+1793856199479 [spec-k] model="q38" tenant="d45-burst-35" K=0 source=concurrency prompt=30720 cached=0 lcp=0 active=36 wave=64 placement=single-or-non-pp2
+1793856199479 [admit-predict] id=cmpl-fa4c239b5b22e0de2931f2c681e32c5b tenant="d45-burst-36" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=16 kv_hat=3786206036 booked_bytes=136247262164 booked_real=136358443988 inflight=36 cap=64 budget_bytes=65975529168 retry_after_s=1 exempt=0 enforce=0 live_free_bytes=-
+1793856199479 [admit-mem] id=cmpl-fa4c239b5b22e0de2931f2c681e32c5b model="q38" verdict=admit prompt=30720 output_bound=64 charged_ctx=30848 est_bytes=6092607300 est_context=916062208 est_fixed=5176545092 device_free=18896659680 pending_prime=749993984 pending_prime_v1=90232061952 pending_seed=15883042816 pending_seed_uncapped=40371093504 host_free=0 demotable=0 short_by=0 inflight=36 cap=64 waited_ms=0 retry_after_s=- reason=-
+1793856199481 [spec-k] model="q38" tenant="d45-burst-36" K=0 source=concurrency prompt=30720 cached=0 lcp=0 active=37 wave=64 placement=single-or-non-pp2
+1793856199481 [admit-predict] id=cmpl-ce58801403abf33533e3d223dc960b1c tenant="d45-burst-39" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=16 kv_hat=3786206036 booked_bytes=140033468200 booked_real=140147738408 inflight=37 cap=64 budget_bytes=65975529168 retry_after_s=1 exempt=0 enforce=0 live_free_bytes=-
+1793856199481 [admit-mem] id=cmpl-ce58801403abf33533e3d223dc960b1c model="q38" verdict=admit prompt=30720 output_bound=64 charged_ctx=30848 est_bytes=6092607300 est_context=916062208 est_fixed=5176545092 device_free=17617222028 pending_prime=749993984 pending_prime_v1=92740255744 pending_seed=15883042816 pending_seed_uncapped=41497264128 host_free=0 demotable=0 short_by=0 inflight=37 cap=64 waited_ms=0 retry_after_s=- reason=-
+1793856199483 [spec-k] model="q38" tenant="d45-burst-39" K=0 source=concurrency prompt=30720 cached=0 lcp=0 active=38 wave=64 placement=single-or-non-pp2
+1793856199483 [admit-predict] id=cmpl-d901748b11b4f56b9c42f74e58b2de90 tenant="d45-burst-38" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=16 kv_hat=3786206036 booked_bytes=143819674236 booked_real=143937032828 inflight=38 cap=64 budget_bytes=65975529168 retry_after_s=1 exempt=0 enforce=0 live_free_bytes=-
+1793856199483 [admit-mem] id=cmpl-d901748b11b4f56b9c42f74e58b2de90 model="q38" verdict=admit prompt=30720 output_bound=64 charged_ctx=30848 est_bytes=6092607300 est_context=916062208 est_fixed=5176545092 device_free=16337784376 pending_prime=749993984 pending_prime_v1=95248449536 pending_seed=15883042816 pending_seed_uncapped=42623434752 host_free=0 demotable=0 short_by=0 inflight=38 cap=64 waited_ms=0 retry_after_s=- reason=-
+1793856199485 [spec-k] model="q38" tenant="d45-burst-38" K=0 source=concurrency prompt=30720 cached=0 lcp=0 active=39 wave=64 placement=single-or-non-pp2
+1793856199485 [admit-predict] id=cmpl-cd631d8b46bb64d3189647f209434471 tenant="d45-burst-37" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=16 kv_hat=3786206036 booked_bytes=147605880272 booked_real=147726327248 inflight=39 cap=64 budget_bytes=65975529168 retry_after_s=1 exempt=0 enforce=0 live_free_bytes=-
+1793856199485 [admit-mem] id=cmpl-cd631d8b46bb64d3189647f209434471 model="q38" verdict=admit prompt=30720 output_bound=64 charged_ctx=30848 est_bytes=6092607300 est_context=916062208 est_fixed=5176545092 device_free=15058346724 pending_prime=749993984 pending_prime_v1=97756643328 pending_seed=15883042816 pending_seed_uncapped=43749605376 host_free=0 demotable=0 short_by=0 inflight=39 cap=64 waited_ms=0 retry_after_s=- reason=-
+1793856199487 [spec-k] model="q38" tenant="d45-burst-37" K=0 source=concurrency prompt=30720 cached=0 lcp=0 active=40 wave=64 placement=single-or-non-pp2
+1793856199487 [admit-predict] id=cmpl-6ea24bdd7cbf45d9b8e4bd48080686eb tenant="d45-burst-40" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=16 kv_hat=3786206036 booked_bytes=151392086308 booked_real=151515621668 inflight=40 cap=64 budget_bytes=65975529168 retry_after_s=1 exempt=0 enforce=0 live_free_bytes=-
+1793856199487 [admit-mem] id=cmpl-6ea24bdd7cbf45d9b8e4bd48080686eb model="q38" verdict=admit prompt=30720 output_bound=64 charged_ctx=30848 est_bytes=6092607300 est_context=916062208 est_fixed=5176545092 device_free=13778909072 pending_prime=749993984 pending_prime_v1=100264837120 pending_seed=15883042816 pending_seed_uncapped=44875776000 host_free=0 demotable=0 short_by=0 inflight=40 cap=64 waited_ms=0 retry_after_s=- reason=-
+1793856199489 [spec-k] model="q38" tenant="d45-burst-40" K=0 source=concurrency prompt=30720 cached=0 lcp=0 active=41 wave=64 placement=single-or-non-pp2
+1793856199489 [admit-predict] id=cmpl-de97ab6d8ff5b9e4c5b617b6b0ba2d10 tenant="d45-burst-41" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=16 kv_hat=3786206036 booked_bytes=155178292344 booked_real=155304916088 inflight=41 cap=64 budget_bytes=65975529168 retry_after_s=1 exempt=0 enforce=0 live_free_bytes=-
+1793856199489 [admit-mem] id=cmpl-de97ab6d8ff5b9e4c5b617b6b0ba2d10 model="q38" verdict=admit prompt=30720 output_bound=64 charged_ctx=30848 est_bytes=6092607300 est_context=916062208 est_fixed=5176545092 device_free=12499471420 pending_prime=749993984 pending_prime_v1=102773030912 pending_seed=15883042816 pending_seed_uncapped=46001946624 host_free=0 demotable=0 short_by=0 inflight=41 cap=64 waited_ms=0 retry_after_s=- reason=-
+1793856199491 [spec-k] model="q38" tenant="d45-burst-41" K=0 source=concurrency prompt=30720 cached=0 lcp=0 active=42 wave=64 placement=single-or-non-pp2
+1793856199491 [admit-predict] id=cmpl-c5a8619a4c5264d27dcb05e15ae47c4d tenant="d45-burst-43" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=16 kv_hat=3786206036 booked_bytes=158964498380 booked_real=159094210508 inflight=42 cap=64 budget_bytes=65975529168 retry_after_s=1 exempt=0 enforce=0 live_free_bytes=-
+1793856199491 [admit-mem] id=cmpl-c5a8619a4c5264d27dcb05e15ae47c4d model="q38" verdict=admit prompt=30720 output_bound=64 charged_ctx=30848 est_bytes=6092607300 est_context=916062208 est_fixed=5176545092 device_free=11220033768 pending_prime=749993984 pending_prime_v1=105281224704 pending_seed=15883042816 pending_seed_uncapped=47128117248 host_free=0 demotable=0 short_by=0 inflight=42 cap=64 waited_ms=0 retry_after_s=- reason=-
+1793856199493 [spec-k] model="q38" tenant="d45-burst-43" K=0 source=concurrency prompt=30720 cached=0 lcp=0 active=43 wave=64 placement=single-or-non-pp2
+1793856199493 [admit-predict] id=cmpl-4d6ad1fc460fafd4819ce56c067791c0 tenant="d45-burst-42" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=16 kv_hat=3786206036 booked_bytes=162750704416 booked_real=162883504928 inflight=43 cap=64 budget_bytes=65975529168 retry_after_s=1 exempt=0 enforce=0 live_free_bytes=-
+1793856199493 [admit-mem] id=cmpl-4d6ad1fc460fafd4819ce56c067791c0 model="q38" verdict=admit prompt=30720 output_bound=64 charged_ctx=30848 est_bytes=6092607300 est_context=916062208 est_fixed=5176545092 device_free=9940596116 pending_prime=749993984 pending_prime_v1=107789418496 pending_seed=15883042816 pending_seed_uncapped=48254287872 host_free=0 demotable=0 short_by=0 inflight=43 cap=64 waited_ms=0 retry_after_s=- reason=-
+1793856199495 [spec-k] model="q38" tenant="d45-burst-42" K=0 source=concurrency prompt=30720 cached=0 lcp=0 active=44 wave=64 placement=single-or-non-pp2
+1793856199495 [admit-predict] id=cmpl-74ac8fbe1a790e28ca615ad120f3ef21 tenant="d45-burst-44" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=16 kv_hat=3786206036 booked_bytes=166536910452 booked_real=166672799348 inflight=44 cap=64 budget_bytes=65975529168 retry_after_s=1 exempt=0 enforce=0 live_free_bytes=-
+1793856199495 [admit-mem] id=cmpl-74ac8fbe1a790e28ca615ad120f3ef21 model="q38" verdict=admit prompt=30720 output_bound=64 charged_ctx=30848 est_bytes=6092607300 est_context=916062208 est_fixed=5176545092 device_free=8661158464 pending_prime=749993984 pending_prime_v1=110297612288 pending_seed=15883042816 pending_seed_uncapped=49380458496 host_free=0 demotable=0 short_by=0 inflight=44 cap=64 waited_ms=0 retry_after_s=- reason=-
+1793856199497 [spec-k] model="q38" tenant="d45-burst-44" K=0 source=concurrency prompt=30720 cached=0 lcp=0 active=45 wave=64 placement=single-or-non-pp2
+1793856199497 [admit-predict] id=cmpl-1d748b5004cb22685c0e5ef062824de2 tenant="d45-burst-47" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=16 kv_hat=3786206036 booked_bytes=170323116488 booked_real=170462093768 inflight=45 cap=64 budget_bytes=65975529168 retry_after_s=1 exempt=0 enforce=0 live_free_bytes=-
+1793856199497 [admit-mem] id=cmpl-1d748b5004cb22685c0e5ef062824de2 model="q38" verdict=admit prompt=30720 output_bound=64 charged_ctx=30848 est_bytes=6092607300 est_context=916062208 est_fixed=5176545092 device_free=7381720812 pending_prime=749993984 pending_prime_v1=112805806080 pending_seed=15883042816 pending_seed_uncapped=50506629120 host_free=0 demotable=0 short_by=0 inflight=45 cap=64 waited_ms=0 retry_after_s=- reason=-
+1793856199499 [spec-k] model="q38" tenant="d45-burst-47" K=0 source=concurrency prompt=30720 cached=0 lcp=0 active=46 wave=64 placement=single-or-non-pp2
+1793856199499 [admit-predict] id=cmpl-488ac3d2dd819ab25ec3d75ff3b2ea17 tenant="d45-burst-45" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=16 kv_hat=3786206036 booked_bytes=174109322524 booked_real=174251388188 inflight=46 cap=64 budget_bytes=65975529168 retry_after_s=1 exempt=0 enforce=0 live_free_bytes=-
+1793856199499 [admit-mem] id=cmpl-488ac3d2dd819ab25ec3d75ff3b2ea17 model="q38" verdict=admit prompt=30720 output_bound=64 charged_ctx=30848 est_bytes=6092607300 est_context=916062208 est_fixed=5176545092 device_free=6102283160 pending_prime=749993984 pending_prime_v1=115313999872 pending_seed=15883042816 pending_seed_uncapped=51632799744 host_free=0 demotable=0 short_by=0 inflight=46 cap=64 waited_ms=0 retry_after_s=- reason=-
+1793856199501 [spec-k] model="q38" tenant="d45-burst-45" K=0 source=concurrency prompt=30720 cached=0 lcp=0 active=47 wave=64 placement=single-or-non-pp2
+1793856199501 [admit-predict] id=cmpl-f4cc2082db4db5a38ed02b80c7365819 tenant="d45-burst-48" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=16 kv_hat=3786206036 booked_bytes=177895528560 booked_real=178040682608 inflight=47 cap=64 budget_bytes=65975529168 retry_after_s=1 exempt=0 enforce=0 live_free_bytes=-
+1793856199502 [admit-oom] reclaim-on-defer: evicted 0 prefix entries + 0 plain + 2 spec + 0 dspark parked sessions (global LRU); effective free 4823MB -> 6109MB
+1793856199502 [admit-mem] id=cmpl-f4cc2082db4db5a38ed02b80c7365819 model="q38" verdict=admit prompt=30720 output_bound=64 charged_ctx=30848 est_bytes=6092607300 est_context=916062208 est_fixed=5176545092 device_free=6109061964 pending_prime=749993984 pending_prime_v1=117822193664 pending_seed=15883042816 pending_seed_uncapped=52758970368 host_free=0 demotable=0 short_by=0 inflight=47 cap=64 waited_ms=0 retry_after_s=- reason=-
+1793856199502 [spec-k] model="q38" tenant="d45-burst-48" K=0 source=concurrency prompt=30720 cached=0 lcp=0 active=48 wave=64 placement=single-or-non-pp2
+1793856199502 [admit-predict] id=cmpl-deea1d45f1ba23269c5178f72930b0d0 tenant="d45-burst-46" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=16 kv_hat=3786206036 booked_bytes=181681734596 booked_real=181829977028 inflight=48 cap=64 budget_bytes=65975529168 retry_after_s=1 exempt=0 enforce=0 live_free_bytes=-
+1793856199503 [admit-oom] reclaim-on-defer: evicted 0 prefix entries + 0 plain + 2 spec + 0 dspark parked sessions (global LRU); effective free 4830MB -> 6116MB
+1793856199503 [admit-mem] id=cmpl-deea1d45f1ba23269c5178f72930b0d0 model="q38" verdict=admit prompt=30720 output_bound=64 charged_ctx=30848 est_bytes=6092607300 est_context=916062208 est_fixed=5176545092 device_free=6115840768 pending_prime=749993984 pending_prime_v1=120330387456 pending_seed=15883042816 pending_seed_uncapped=53885140992 host_free=0 demotable=0 short_by=0 inflight=48 cap=64 waited_ms=0 retry_after_s=- reason=-
+1793856199504 [spec-k] model="q38" tenant="d45-burst-46" K=0 source=concurrency prompt=30720 cached=0 lcp=0 active=49 wave=64 placement=single-or-non-pp2
+1793856199504 [admit-predict] id=cmpl-8a4f5bc0001576042dc44b3378ddff49 tenant="d45-burst-49" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=16 kv_hat=3786206036 booked_bytes=185467940632 booked_real=185619271448 inflight=49 cap=64 budget_bytes=65975529168 retry_after_s=1 exempt=0 enforce=0 live_free_bytes=-
+1793856199504 [admit-oom] VRAM defer: 49 active, effective free 4836MB (driver + 85MB pool-cached) < cost 3789MB + reserve 2303MB — queueing (FIFO) [pool res 80061MB used 79976MB; parked spec sessions 0; plain reuse 0; queue 14]
+1793856199504 [admit-mem] id=cmpl-8a4f5bc0001576042dc44b3378ddff49 model="q38" verdict=defer prompt=30720 output_bound=64 charged_ctx=30848 est_bytes=6092607300 est_context=916062208 est_fixed=5176545092 device_free=4836403116 pending_prime=749993984 pending_prime_v1=122838581248 pending_seed=15883042816 pending_seed_uncapped=55011311616 host_free=0 demotable=0 short_by=1256204184 inflight=49 cap=64 waited_ms=0 retry_after_s=- reason=-
+1793856199504 [admit-predict] id=cmpl-9944360bb12a9af7f0f3e48a71ff4c4d tenant="d45-burst-50" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=16 kv_hat=3786206036 booked_bytes=185467940632 booked_real=185619271448 inflight=49 cap=64 budget_bytes=65975529168 retry_after_s=1 exempt=0 enforce=0 live_free_bytes=-
+1793856199504 [admit-mem] id=cmpl-9944360bb12a9af7f0f3e48a71ff4c4d model="q38" verdict=defer prompt=30720 output_bound=64 charged_ctx=30848 est_bytes=6092607300 est_context=916062208 est_fixed=5176545092 device_free=4836403116 pending_prime=749993984 pending_prime_v1=122838581248 pending_seed=15883042816 pending_seed_uncapped=55011311616 host_free=0 demotable=0 short_by=1256204184 inflight=49 cap=64 waited_ms=0 retry_after_s=- reason=-
+1793856199504 [admit-predict] id=cmpl-5c6eae9b7858438f0b1c9363cb89e352 tenant="d45-burst-51" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=16 kv_hat=3786206036 booked_bytes=185467940632 booked_real=185619271448 inflight=49 cap=64 budget_bytes=65975529168 retry_after_s=1 exempt=0 enforce=0 live_free_bytes=-
+1793856199504 [admit-mem] id=cmpl-5c6eae9b7858438f0b1c9363cb89e352 model="q38" verdict=defer prompt=30720 output_bound=64 charged_ctx=30848 est_bytes=6092607300 est_context=916062208 est_fixed=5176545092 device_free=4836403116 pending_prime=749993984 pending_prime_v1=122838581248 pending_seed=15883042816 pending_seed_uncapped=55011311616 host_free=0 demotable=0 short_by=1256204184 inflight=49 cap=64 waited_ms=0 retry_after_s=- reason=-
+1793856199504 [admit-predict] id=cmpl-65851f239e8a0ad62cd3744f038c0d3c tenant="d45-burst-53" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=16 kv_hat=3786206036 booked_bytes=185467940632 booked_real=185619271448 inflight=49 cap=64 budget_bytes=65975529168 retry_after_s=1 exempt=0 enforce=0 live_free_bytes=-
+1793856199504 [admit-mem] id=cmpl-65851f239e8a0ad62cd3744f038c0d3c model="q38" verdict=defer prompt=30720 output_bound=64 charged_ctx=30848 est_bytes=6092607300 est_context=916062208 est_fixed=5176545092 device_free=4836403116 pending_prime=749993984 pending_prime_v1=122838581248 pending_seed=15883042816 pending_seed_uncapped=55011311616 host_free=0 demotable=0 short_by=1256204184 inflight=49 cap=64 waited_ms=0 retry_after_s=- reason=-
+1793856199504 [admit-predict] id=cmpl-0af5271968448b4580e195c71a33fee5 tenant="d45-burst-52" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=16 kv_hat=3786206036 booked_bytes=185467940632 booked_real=185619271448 inflight=49 cap=64 budget_bytes=65975529168 retry_after_s=1 exempt=0 enforce=0 live_free_bytes=-
+1793856199505 [admit-mem] id=cmpl-0af5271968448b4580e195c71a33fee5 model="q38" verdict=defer prompt=30720 output_bound=64 charged_ctx=30848 est_bytes=6092607300 est_context=916062208 est_fixed=5176545092 device_free=4836403116 pending_prime=749993984 pending_prime_v1=122838581248 pending_seed=15883042816 pending_seed_uncapped=55011311616 host_free=0 demotable=0 short_by=1256204184 inflight=49 cap=64 waited_ms=0 retry_after_s=- reason=-
+1793856199505 [admit-predict] id=cmpl-b0083b5dfdc4565ab569bc6bfdb5d222 tenant="d45-burst-54" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=16 kv_hat=3786206036 booked_bytes=185467940632 booked_real=185619271448 inflight=49 cap=64 budget_bytes=65975529168 retry_after_s=1 exempt=0 enforce=0 live_free_bytes=-
+1793856199505 [admit-mem] id=cmpl-b0083b5dfdc4565ab569bc6bfdb5d222 model="q38" verdict=defer prompt=30720 output_bound=64 charged_ctx=30848 est_bytes=6092607300 est_context=916062208 est_fixed=5176545092 device_free=4836403116 pending_prime=749993984 pending_prime_v1=122838581248 pending_seed=15883042816 pending_seed_uncapped=55011311616 host_free=0 demotable=0 short_by=1256204184 inflight=49 cap=64 waited_ms=0 retry_after_s=- reason=-
+1793856199505 [admit-predict] id=cmpl-ff23d8b403f6fd0ebf1a4bf44f322351 tenant="d45-burst-56" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=16 kv_hat=3786206036 booked_bytes=185467940632 booked_real=185619271448 inflight=49 cap=64 budget_bytes=65975529168 retry_after_s=1 exempt=0 enforce=0 live_free_bytes=-
+1793856199505 [admit-mem] id=cmpl-ff23d8b403f6fd0ebf1a4bf44f322351 model="q38" verdict=defer prompt=30720 output_bound=64 charged_ctx=30848 est_bytes=6092607300 est_context=916062208 est_fixed=5176545092 device_free=4836403116 pending_prime=749993984 pending_prime_v1=122838581248 pending_seed=15883042816 pending_seed_uncapped=55011311616 host_free=0 demotable=0 short_by=1256204184 inflight=49 cap=64 waited_ms=0 retry_after_s=- reason=-
+1793856199505 [admit-predict] id=cmpl-68f1b233836b586c37d70412b3af734b tenant="d45-burst-57" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=16 kv_hat=3786206036 booked_bytes=185467940632 booked_real=185619271448 inflight=49 cap=64 budget_bytes=65975529168 retry_after_s=1 exempt=0 enforce=0 live_free_bytes=-
+1793856199505 [admit-mem] id=cmpl-68f1b233836b586c37d70412b3af734b model="q38" verdict=defer prompt=30720 output_bound=64 charged_ctx=30848 est_bytes=6092607300 est_context=916062208 est_fixed=5176545092 device_free=4836403116 pending_prime=749993984 pending_prime_v1=122838581248 pending_seed=15883042816 pending_seed_uncapped=55011311616 host_free=0 demotable=0 short_by=1256204184 inflight=49 cap=64 waited_ms=0 retry_after_s=- reason=-
+1793856199505 [admit-predict] id=cmpl-cc80498d0022c819797e9e564ff16c92 tenant="d45-burst-55" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=16 kv_hat=3786206036 booked_bytes=185467940632 booked_real=185619271448 inflight=49 cap=64 budget_bytes=65975529168 retry_after_s=1 exempt=0 enforce=0 live_free_bytes=-
+1793856199505 [admit-mem] id=cmpl-cc80498d0022c819797e9e564ff16c92 model="q38" verdict=defer prompt=30720 output_bound=64 charged_ctx=30848 est_bytes=6092607300 est_context=916062208 est_fixed=5176545092 device_free=4836403116 pending_prime=749993984 pending_prime_v1=122838581248 pending_seed=15883042816 pending_seed_uncapped=55011311616 host_free=0 demotable=0 short_by=1256204184 inflight=49 cap=64 waited_ms=0 retry_after_s=- reason=-
+1793856199505 [admit-predict] id=cmpl-2a53f8cdb57f71fa7ea9663f26e5774c tenant="d45-burst-59" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=16 kv_hat=3786206036 booked_bytes=185467940632 booked_real=185619271448 inflight=49 cap=64 budget_bytes=65975529168 retry_after_s=1 exempt=0 enforce=0 live_free_bytes=-
+1793856199505 [admit-mem] id=cmpl-2a53f8cdb57f71fa7ea9663f26e5774c model="q38" verdict=defer prompt=30720 output_bound=64 charged_ctx=30848 est_bytes=6092607300 est_context=916062208 est_fixed=5176545092 device_free=4836403116 pending_prime=749993984 pending_prime_v1=122838581248 pending_seed=15883042816 pending_seed_uncapped=55011311616 host_free=0 demotable=0 short_by=1256204184 inflight=49 cap=64 waited_ms=0 retry_after_s=- reason=-
+1793856199505 [admit-predict] id=cmpl-f0f51fed7d446eb3116438cabf682338 tenant="d45-burst-58" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=16 kv_hat=3786206036 booked_bytes=185467940632 booked_real=185619271448 inflight=49 cap=64 budget_bytes=65975529168 retry_after_s=1 exempt=0 enforce=0 live_free_bytes=-
+1793856199505 [admit-mem] id=cmpl-f0f51fed7d446eb3116438cabf682338 model="q38" verdict=defer prompt=30720 output_bound=64 charged_ctx=30848 est_bytes=6092607300 est_context=916062208 est_fixed=5176545092 device_free=4836403116 pending_prime=749993984 pending_prime_v1=122838581248 pending_seed=15883042816 pending_seed_uncapped=55011311616 host_free=0 demotable=0 short_by=1256204184 inflight=49 cap=64 waited_ms=0 retry_after_s=- reason=-
+1793856199505 [admit-predict] id=cmpl-f6652852012a5eabdca49930978e80fd tenant="d45-burst-61" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=16 kv_hat=3786206036 booked_bytes=185467940632 booked_real=185619271448 inflight=49 cap=64 budget_bytes=65975529168 retry_after_s=1 exempt=0 enforce=0 live_free_bytes=-
+1793856199505 [admit-mem] id=cmpl-f6652852012a5eabdca49930978e80fd model="q38" verdict=defer prompt=30720 output_bound=64 charged_ctx=30848 est_bytes=6092607300 est_context=916062208 est_fixed=5176545092 device_free=4836403116 pending_prime=749993984 pending_prime_v1=122838581248 pending_seed=15883042816 pending_seed_uncapped=55011311616 host_free=0 demotable=0 short_by=1256204184 inflight=49 cap=64 waited_ms=0 retry_after_s=- reason=-
+1793856199505 [admit-predict] id=cmpl-a40e6b94d6dac71f3890562bad592916 tenant="d45-burst-60" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=16 kv_hat=3786206036 booked_bytes=185467940632 booked_real=185619271448 inflight=49 cap=64 budget_bytes=65975529168 retry_after_s=1 exempt=0 enforce=0 live_free_bytes=-
+1793856199506 [admit-mem] id=cmpl-a40e6b94d6dac71f3890562bad592916 model="q38" verdict=defer prompt=30720 output_bound=64 charged_ctx=30848 est_bytes=6092607300 est_context=916062208 est_fixed=5176545092 device_free=4836403116 pending_prime=749993984 pending_prime_v1=122838581248 pending_seed=15883042816 pending_seed_uncapped=55011311616 host_free=0 demotable=0 short_by=1256204184 inflight=49 cap=64 waited_ms=0 retry_after_s=- reason=-
+1793856199506 [admit-predict] id=cmpl-6e192901b59b0060063914f07c584918 tenant="d45-burst-62" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=16 kv_hat=3786206036 booked_bytes=185467940632 booked_real=185619271448 inflight=49 cap=64 budget_bytes=65975529168 retry_after_s=1 exempt=0 enforce=0 live_free_bytes=-
+1793856199506 [admit-mem] id=cmpl-6e192901b59b0060063914f07c584918 model="q38" verdict=defer prompt=30720 output_bound=64 charged_ctx=30848 est_bytes=6092607300 est_context=916062208 est_fixed=5176545092 device_free=4836403116 pending_prime=749993984 pending_prime_v1=122838581248 pending_seed=15883042816 pending_seed_uncapped=55011311616 host_free=0 demotable=0 short_by=1256204184 inflight=49 cap=64 waited_ms=0 retry_after_s=- reason=-
+1793856199506 [admit-predict] id=cmpl-de6703e3ecd2fede0c2272a9e59bd807 tenant="d45-burst-63" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=16 kv_hat=3786206036 booked_bytes=185467940632 booked_real=185619271448 inflight=49 cap=64 budget_bytes=65975529168 retry_after_s=1 exempt=0 enforce=0 live_free_bytes=-
+1793856199506 [admit-mem] id=cmpl-de6703e3ecd2fede0c2272a9e59bd807 model="q38" verdict=defer prompt=30720 output_bound=64 charged_ctx=30848 est_bytes=6092607300 est_context=916062208 est_fixed=5176545092 device_free=4836403116 pending_prime=749993984 pending_prime_v1=122838581248 pending_seed=15883042816 pending_seed_uncapped=55011311616 host_free=0 demotable=0 short_by=1256204184 inflight=49 cap=64 waited_ms=0 retry_after_s=- reason=-
+1793856201579 [prime-batch] B=6 tokens=6144 carried=3 partial=6 in 2072.6ms
+1793856203669 [prime-batch] B=6 tokens=6144 carried=0 partial=6 in 2090.0ms
+1793856205767 [prime-batch] B=6 tokens=6144 carried=0 partial=6 in 2097.8ms
+1793856207873 [prime-batch] B=6 tokens=6144 carried=0 partial=6 in 2105.3ms
+1793856208415 [meter] admit id=cmpl-16234eb07504033b12d41ce2b402c6bb tenant=default lane=interactive model="q38"
+1793856208417 [meter] admit id=cmpl-765b8d75d808ea4f9d56cb3359e0281f tenant=default lane=interactive model="q38"
+1793856208418 [meter] admit id=cmpl-6502975ca3a3f92d31a28bb8f2331ec7 tenant=default lane=interactive model="q38"
+1793856208419 [meter] admit id=cmpl-e737eaa83a4fed0f0c2c2fa5d9c1cc88 tenant=default lane=interactive model="q38"
+1793856208421 [meter] admit id=cmpl-1a70d4604040012f15bdc75846bd7d5f tenant=default lane=interactive model="q38"
+1793856208424 [meter] admit id=cmpl-b2ad81bdbf872ea03f630379f52a8d46 tenant=default lane=interactive model="q38"
+1793856208424 [meter] admit id=cmpl-834cce2ba377900bb1f811b34eb14a59 tenant=default lane=interactive model="q38"
+1793856208424 [meter] admit id=cmpl-fac192115c3e01952abd5f9a0d3a7878 tenant=default lane=interactive model="q38"
+1793856208425 [meter] admit id=cmpl-c6ca0649c8129df386fd3a1cc84714ad tenant=default lane=interactive model="q38"
+1793856208425 [meter] admit id=cmpl-fdc43006b360fdb7ef2312712f2fcd04 tenant=default lane=interactive model="q38"
+1793856208425 [meter] admit id=cmpl-ffc1309393c602374bb26e5b85125d8f tenant=default lane=interactive model="q38"
+1793856208426 [meter] admit id=cmpl-db2998af434829232cc708626ff6f664 tenant=default lane=interactive model="q38"
+1793856208426 [meter] admit id=cmpl-4aa12260b49ed64e2614e3db37d0a5a4 tenant=default lane=interactive model="q38"
+1793856208428 [meter] admit id=cmpl-c6d20383ecba5102178600089c14e6cc tenant=default lane=interactive model="q38"
+1793856208428 [meter] admit id=cmpl-56e02652f59d6261650c4e6afe871db3 tenant=default lane=interactive model="q38"
+1793856208433 [meter] admit id=cmpl-0a4e3d10a0ce37dcc7cc304588fc94b6 tenant=default lane=interactive model="q38"
+1793856208453 [meter] admit id=cmpl-b6790dcca4d505d25e2b75a22fc2bc2f tenant=default lane=interactive model="q38"
+1793856208453 [meter] admit id=cmpl-25a2aae99b776b674ca7a742fe3ed0f7 tenant=default lane=interactive model="q38"
+1793856208453 [meter] admit id=cmpl-1f8ad4d7ff617811a37435ada3255105 tenant=default lane=interactive model="q38"
+1793856208453 [meter] admit id=cmpl-9875d828e40e898c119f92da218e8a51 tenant=default lane=interactive model="q38"
+1793856208453 [meter] admit id=cmpl-997ecf24383abd7ff0ca73c5f70b02c9 tenant=default lane=interactive model="q38"
+1793856208454 [meter] admit id=cmpl-786c2e31cddfe1c2a4118342e9258adf tenant=default lane=interactive model="q38"
+1793856208454 [meter] admit id=cmpl-644bad45263ae52e7604ef04e631f39f tenant=default lane=interactive model="q38"
+1793856208454 [meter] admit id=cmpl-b3075b646ebb5cf67c2e43c36097aaf1 tenant=default lane=interactive model="q38"
+1793856208454 [meter] admit id=cmpl-5c43b09e1fcbabd9ee5e309d6f340bfc tenant=default lane=interactive model="q38"
+1793856208454 [meter] admit id=cmpl-5d76784510f239d4da2b3ce7c7e1b466 tenant=default lane=interactive model="q38"
+1793856208454 [meter] admit id=cmpl-75039567bfd5887ce102edfce96a7cf7 tenant=default lane=interactive model="q38"
+1793856208454 [meter] admit id=cmpl-2f32df1ee03a530343d3e23847487d6d tenant=default lane=interactive model="q38"
+1793856208454 [meter] admit id=cmpl-507b7a096cca7100a752ac6faeec1e84 tenant=default lane=interactive model="q38"
+1793856208454 [meter] admit id=cmpl-cec590ee3f73701384b24de5180d442c tenant=default lane=interactive model="q38"
+1793856208454 [meter] admit id=cmpl-e372f2d584a02889672557bd9fe131dc tenant=default lane=interactive model="q38"
+1793856208454 [meter] admit id=cmpl-a2ab15e12c61ba0c69fb83a470391f5f tenant=default lane=interactive model="q38"
+1793856209980 [prime-batch] B=6 tokens=6144 carried=0 partial=6 in 2107.5ms
+1793856212090 [prime-batch] B=6 tokens=6144 carried=0 partial=6 in 2109.5ms
+1793856214206 [prime-batch] B=6 tokens=6144 carried=0 partial=6 in 2116.3ms
+1793856215618 [prime-batch] B=4 tokens=4096 carried=0 partial=4 in 1411.1ms
+1793856216356 [admit-oom] VRAM defer: 49 active, effective free 4836MB (driver + 3340MB pool-cached) < cost 3789MB + reserve 2303MB — queueing (FIFO) [pool res 83316MB used 79976MB; parked spec sessions 0; plain reuse 0; queue 46]
+1793856216356 [admit-mem] id=cmpl-8a4f5bc0001576042dc44b3378ddff49 model="q38" verdict=refuse prompt=30720 output_bound=64 charged_ctx=30848 est_bytes=6092607300 est_context=916062208 est_fixed=5176545092 device_free=4836403116 pending_prime=749993984 pending_prime_v1=121831948288 pending_seed=15883042816 pending_seed_uncapped=52445577216 host_free=0 demotable=0 short_by=1256204184 inflight=49 cap=64 waited_ms=16851 retry_after_s=1 reason=-
+1793856216356 [admit-oom] VRAM defer: 49 active, effective free 4836MB (driver + 3340MB pool-cached) < cost 3789MB + reserve 2303MB — queueing (FIFO) [pool res 83316MB used 79976MB; parked spec sessions 0; plain reuse 0; queue 45]
+1793856216356 [admit-mem] id=cmpl-9944360bb12a9af7f0f3e48a71ff4c4d model="q38" verdict=refuse prompt=30720 output_bound=64 charged_ctx=30848 est_bytes=6092607300 est_context=916062208 est_fixed=5176545092 device_free=4836403116 pending_prime=749993984 pending_prime_v1=121831948288 pending_seed=15883042816 pending_seed_uncapped=52445577216 host_free=0 demotable=0 short_by=1256204184 inflight=49 cap=64 waited_ms=16851 retry_after_s=1 reason=-
+1793856216356 [admit-oom] VRAM defer: 49 active, effective free 4836MB (driver + 3340MB pool-cached) < cost 3789MB + reserve 2303MB — queueing (FIFO) [pool res 83316MB used 79976MB; parked spec sessions 0; plain reuse 0; queue 44]
+1793856216356 [admit-mem] id=cmpl-5c6eae9b7858438f0b1c9363cb89e352 model="q38" verdict=refuse prompt=30720 output_bound=64 charged_ctx=30848 est_bytes=6092607300 est_context=916062208 est_fixed=5176545092 device_free=4836403116 pending_prime=749993984 pending_prime_v1=121831948288 pending_seed=15883042816 pending_seed_uncapped=52445577216 host_free=0 demotable=0 short_by=1256204184 inflight=49 cap=64 waited_ms=16851 retry_after_s=1 reason=-
+1793856216356 [admit-oom] VRAM defer: 49 active, effective free 4836MB (driver + 3340MB pool-cached) < cost 3789MB + reserve 2303MB — queueing (FIFO) [pool res 83316MB used 79976MB; parked spec sessions 0; plain reuse 0; queue 43]
+1793856216356 [admit-mem] id=cmpl-65851f239e8a0ad62cd3744f038c0d3c model="q38" verdict=refuse prompt=30720 output_bound=64 charged_ctx=30848 est_bytes=6092607300 est_context=916062208 est_fixed=5176545092 device_free=4836403116 pending_prime=749993984 pending_prime_v1=121831948288 pending_seed=15883042816 pending_seed_uncapped=52445577216 host_free=0 demotable=0 short_by=1256204184 inflight=49 cap=64 waited_ms=16851 retry_after_s=1 reason=-
+1793856216357 [admit-oom] VRAM defer: 49 active, effective free 4836MB (driver + 3340MB pool-cached) < cost 3789MB + reserve 2303MB — queueing (FIFO) [pool res 83316MB used 79976MB; parked spec sessions 0; plain reuse 0; queue 42]
+1793856216357 [admit-mem] id=cmpl-0af5271968448b4580e195c71a33fee5 model="q38" verdict=refuse prompt=30720 output_bound=64 charged_ctx=30848 est_bytes=6092607300 est_context=916062208 est_fixed=5176545092 device_free=4836403116 pending_prime=749993984 pending_prime_v1=121831948288 pending_seed=15883042816 pending_seed_uncapped=52445577216 host_free=0 demotable=0 short_by=1256204184 inflight=49 cap=64 waited_ms=16851 retry_after_s=1 reason=-
+1793856216357 [admit-oom] VRAM defer: 49 active, effective free 4836MB (driver + 3340MB pool-cached) < cost 3789MB + reserve 2303MB — queueing (FIFO) [pool res 83316MB used 79976MB; parked spec sessions 0; plain reuse 0; queue 41]
+1793856216357 [admit-mem] id=cmpl-b0083b5dfdc4565ab569bc6bfdb5d222 model="q38" verdict=refuse prompt=30720 output_bound=64 charged_ctx=30848 est_bytes=6092607300 est_context=916062208 est_fixed=5176545092 device_free=4836403116 pending_prime=749993984 pending_prime_v1=121831948288 pending_seed=15883042816 pending_seed_uncapped=52445577216 host_free=0 demotable=0 short_by=1256204184 inflight=49 cap=64 waited_ms=16851 retry_after_s=1 reason=-
+1793856216357 [admit-oom] VRAM defer: 49 active, effective free 4836MB (driver + 3340MB pool-cached) < cost 3789MB + reserve 2303MB — queueing (FIFO) [pool res 83316MB used 79976MB; parked spec sessions 0; plain reuse 0; queue 40]
+1793856216357 [admit-mem] id=cmpl-ff23d8b403f6fd0ebf1a4bf44f322351 model="q38" verdict=refuse prompt=30720 output_bound=64 charged_ctx=30848 est_bytes=6092607300 est_context=916062208 est_fixed=5176545092 device_free=4836403116 pending_prime=749993984 pending_prime_v1=121831948288 pending_seed=15883042816 pending_seed_uncapped=52445577216 host_free=0 demotable=0 short_by=1256204184 inflight=49 cap=64 waited_ms=16852 retry_after_s=1 reason=-
+1793856216357 [admit-oom] VRAM defer: 49 active, effective free 4836MB (driver + 3340MB pool-cached) < cost 3789MB + reserve 2303MB — queueing (FIFO) [pool res 83316MB used 79976MB; parked spec sessions 0; plain reuse 0; queue 39]
+1793856216357 [admit-mem] id=cmpl-68f1b233836b586c37d70412b3af734b model="q38" verdict=refuse prompt=30720 output_bound=64 charged_ctx=30848 est_bytes=6092607300 est_context=916062208 est_fixed=5176545092 device_free=4836403116 pending_prime=749993984 pending_prime_v1=121831948288 pending_seed=15883042816 pending_seed_uncapped=52445577216 host_free=0 demotable=0 short_by=1256204184 inflight=49 cap=64 waited_ms=16852 retry_after_s=1 reason=-
+1793856216357 [admit-oom] VRAM defer: 49 active, effective free 4836MB (driver + 3340MB pool-cached) < cost 3789MB + reserve 2303MB — queueing (FIFO) [pool res 83316MB used 79976MB; parked spec sessions 0; plain reuse 0; queue 38]
+1793856216357 [admit-mem] id=cmpl-cc80498d0022c819797e9e564ff16c92 model="q38" verdict=refuse prompt=30720 output_bound=64 charged_ctx=30848 est_bytes=6092607300 est_context=916062208 est_fixed=5176545092 device_free=4836403116 pending_prime=749993984 pending_prime_v1=121831948288 pending_seed=15883042816 pending_seed_uncapped=52445577216 host_free=0 demotable=0 short_by=1256204184 inflight=49 cap=64 waited_ms=16852 retry_after_s=1 reason=-
+1793856216357 [admit-oom] VRAM defer: 49 active, effective free 4836MB (driver + 3340MB pool-cached) < cost 3789MB + reserve 2303MB — queueing (FIFO) [pool res 83316MB used 79976MB; parked spec sessions 0; plain reuse 0; queue 37]
+1793856216357 [admit-mem] id=cmpl-2a53f8cdb57f71fa7ea9663f26e5774c model="q38" verdict=refuse prompt=30720 output_bound=64 charged_ctx=30848 est_bytes=6092607300 est_context=916062208 est_fixed=5176545092 device_free=4836403116 pending_prime=749993984 pending_prime_v1=121831948288 pending_seed=15883042816 pending_seed_uncapped=52445577216 host_free=0 demotable=0 short_by=1256204184 inflight=49 cap=64 waited_ms=16852 retry_after_s=1 reason=-
+1793856216357 [admit-oom] VRAM defer: 49 active, effective free 4836MB (driver + 3340MB pool-cached) < cost 3789MB + reserve 2303MB — queueing (FIFO) [pool res 83316MB used 79976MB; parked spec sessions 0; plain reuse 0; queue 36]
+1793856216357 [admit-mem] id=cmpl-f0f51fed7d446eb3116438cabf682338 model="q38" verdict=refuse prompt=30720 output_bound=64 charged_ctx=30848 est_bytes=6092607300 est_context=916062208 est_fixed=5176545092 device_free=4836403116 pending_prime=749993984 pending_prime_v1=121831948288 pending_seed=15883042816 pending_seed_uncapped=52445577216 host_free=0 demotable=0 short_by=1256204184 inflight=49 cap=64 waited_ms=16852 retry_after_s=1 reason=-
+1793856216357 [admit-oom] VRAM defer: 49 active, effective free 4836MB (driver + 3340MB pool-cached) < cost 3789MB + reserve 2303MB — queueing (FIFO) [pool res 83316MB used 79976MB; parked spec sessions 0; plain reuse 0; queue 35]
+1793856216357 [admit-mem] id=cmpl-f6652852012a5eabdca49930978e80fd model="q38" verdict=refuse prompt=30720 output_bound=64 charged_ctx=30848 est_bytes=6092607300 est_context=916062208 est_fixed=5176545092 device_free=4836403116 pending_prime=749993984 pending_prime_v1=121831948288 pending_seed=15883042816 pending_seed_uncapped=52445577216 host_free=0 demotable=0 short_by=1256204184 inflight=49 cap=64 waited_ms=16852 retry_after_s=1 reason=-
+1793856216358 [admit-oom] VRAM defer: 49 active, effective free 4836MB (driver + 3340MB pool-cached) < cost 3789MB + reserve 2303MB — queueing (FIFO) [pool res 83316MB used 79976MB; parked spec sessions 0; plain reuse 0; queue 34]
+1793856216358 [admit-mem] id=cmpl-a40e6b94d6dac71f3890562bad592916 model="q38" verdict=refuse prompt=30720 output_bound=64 charged_ctx=30848 est_bytes=6092607300 est_context=916062208 est_fixed=5176545092 device_free=4836403116 pending_prime=749993984 pending_prime_v1=121831948288 pending_seed=15883042816 pending_seed_uncapped=52445577216 host_free=0 demotable=0 short_by=1256204184 inflight=49 cap=64 waited_ms=16852 retry_after_s=1 reason=-
+1793856216358 [admit-oom] VRAM defer: 49 active, effective free 4836MB (driver + 3340MB pool-cached) < cost 3789MB + reserve 2303MB — queueing (FIFO) [pool res 83316MB used 79976MB; parked spec sessions 0; plain reuse 0; queue 33]
+1793856216358 [admit-mem] id=cmpl-6e192901b59b0060063914f07c584918 model="q38" verdict=refuse prompt=30720 output_bound=64 charged_ctx=30848 est_bytes=6092607300 est_context=916062208 est_fixed=5176545092 device_free=4836403116 pending_prime=749993984 pending_prime_v1=121831948288 pending_seed=15883042816 pending_seed_uncapped=52445577216 host_free=0 demotable=0 short_by=1256204184 inflight=49 cap=64 waited_ms=16852 retry_after_s=1 reason=-
+1793856216358 [admit-oom] VRAM defer: 49 active, effective free 4836MB (driver + 3340MB pool-cached) < cost 3789MB + reserve 2303MB — queueing (FIFO) [pool res 83316MB used 79976MB; parked spec sessions 0; plain reuse 0; queue 32]
+1793856216358 [admit-mem] id=cmpl-de6703e3ecd2fede0c2272a9e59bd807 model="q38" verdict=refuse prompt=30720 output_bound=64 charged_ctx=30848 est_bytes=6092607300 est_context=916062208 est_fixed=5176545092 device_free=4836403116 pending_prime=749993984 pending_prime_v1=121831948288 pending_seed=15883042816 pending_seed_uncapped=52445577216 host_free=0 demotable=0 short_by=1256204184 inflight=49 cap=64 waited_ms=16852 retry_after_s=1 reason=-
+1793856216358 [admit-predict] id=cmpl-16234eb07504033b12d41ce2b402c6bb tenant="d45-wave2-0" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=16 kv_hat=3786206036 booked_bytes=185467940632 booked_real=185619271448 inflight=49 cap=64 budget_bytes=65975529168 retry_after_s=1 exempt=0 enforce=0 live_free_bytes=-
+1793856216358 [admit-oom] VRAM defer: 49 active, effective free 4836MB (driver + 3340MB pool-cached) < cost 3789MB + reserve 2303MB — queueing (FIFO) [pool res 83316MB used 79976MB; parked spec sessions 0; plain reuse 0; queue 31]
+1793856216358 [admit-mem] id=cmpl-16234eb07504033b12d41ce2b402c6bb model="q38" verdict=defer prompt=30720 output_bound=64 charged_ctx=30848 est_bytes=6092607300 est_context=916062208 est_fixed=5176545092 device_free=4836403116 pending_prime=749993984 pending_prime_v1=121831948288 pending_seed=15883042816 pending_seed_uncapped=52445577216 host_free=0 demotable=0 short_by=1256204184 inflight=49 cap=64 waited_ms=0 retry_after_s=- reason=-
+1793856216358 [admit-predict] id=cmpl-765b8d75d808ea4f9d56cb3359e0281f tenant="d45-wave2-1" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=16 kv_hat=3786206036 booked_bytes=185467940632 booked_real=185619271448 inflight=49 cap=64 budget_bytes=65975529168 retry_after_s=1 exempt=0 enforce=0 live_free_bytes=-
+1793856216358 [admit-mem] id=cmpl-765b8d75d808ea4f9d56cb3359e0281f model="q38" verdict=defer prompt=30720 output_bound=64 charged_ctx=30848 est_bytes=6092607300 est_context=916062208 est_fixed=5176545092 device_free=4836403116 pending_prime=749993984 pending_prime_v1=121831948288 pending_seed=15883042816 pending_seed_uncapped=52445577216 host_free=0 demotable=0 short_by=1256204184 inflight=49 cap=64 waited_ms=0 retry_after_s=- reason=-
+1793856216358 [admit-predict] id=cmpl-6502975ca3a3f92d31a28bb8f2331ec7 tenant="d45-wave2-2" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=16 kv_hat=3786206036 booked_bytes=185467940632 booked_real=185619271448 inflight=49 cap=64 budget_bytes=65975529168 retry_after_s=1 exempt=0 enforce=0 live_free_bytes=-
+1793856216358 [admit-mem] id=cmpl-6502975ca3a3f92d31a28bb8f2331ec7 model="q38" verdict=defer prompt=30720 output_bound=64 charged_ctx=30848 est_bytes=6092607300 est_context=916062208 est_fixed=5176545092 device_free=4836403116 pending_prime=749993984 pending_prime_v1=121831948288 pending_seed=15883042816 pending_seed_uncapped=52445577216 host_free=0 demotable=0 short_by=1256204184 inflight=49 cap=64 waited_ms=0 retry_after_s=- reason=-
+1793856216358 [admit-predict] id=cmpl-e737eaa83a4fed0f0c2c2fa5d9c1cc88 tenant="d45-wave2-3" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=16 kv_hat=3786206036 booked_bytes=185467940632 booked_real=185619271448 inflight=49 cap=64 budget_bytes=65975529168 retry_after_s=1 exempt=0 enforce=0 live_free_bytes=-
+1793856216358 [admit-mem] id=cmpl-e737eaa83a4fed0f0c2c2fa5d9c1cc88 model="q38" verdict=defer prompt=30720 output_bound=64 charged_ctx=30848 est_bytes=6092607300 est_context=916062208 est_fixed=5176545092 device_free=4836403116 pending_prime=749993984 pending_prime_v1=121831948288 pending_seed=15883042816 pending_seed_uncapped=52445577216 host_free=0 demotable=0 short_by=1256204184 inflight=49 cap=64 waited_ms=0 retry_after_s=- reason=-
+1793856216358 [admit-predict] id=cmpl-1a70d4604040012f15bdc75846bd7d5f tenant="d45-wave2-4" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=16 kv_hat=3786206036 booked_bytes=185467940632 booked_real=185619271448 inflight=49 cap=64 budget_bytes=65975529168 retry_after_s=1 exempt=0 enforce=0 live_free_bytes=-
+1793856216359 [admit-mem] id=cmpl-1a70d4604040012f15bdc75846bd7d5f model="q38" verdict=defer prompt=30720 output_bound=64 charged_ctx=30848 est_bytes=6092607300 est_context=916062208 est_fixed=5176545092 device_free=4836403116 pending_prime=749993984 pending_prime_v1=121831948288 pending_seed=15883042816 pending_seed_uncapped=52445577216 host_free=0 demotable=0 short_by=1256204184 inflight=49 cap=64 waited_ms=0 retry_after_s=- reason=-
+1793856216359 [admit-predict] id=cmpl-b2ad81bdbf872ea03f630379f52a8d46 tenant="d45-wave2-8" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=16 kv_hat=3786206036 booked_bytes=185467940632 booked_real=185619271448 inflight=49 cap=64 budget_bytes=65975529168 retry_after_s=1 exempt=0 enforce=0 live_free_bytes=-
+1793856216359 [admit-mem] id=cmpl-b2ad81bdbf872ea03f630379f52a8d46 model="q38" verdict=defer prompt=30720 output_bound=64 charged_ctx=30848 est_bytes=6092607300 est_context=916062208 est_fixed=5176545092 device_free=4836403116 pending_prime=749993984 pending_prime_v1=121831948288 pending_seed=15883042816 pending_seed_uncapped=52445577216 host_free=0 demotable=0 short_by=1256204184 inflight=49 cap=64 waited_ms=0 retry_after_s=- reason=-
+1793856216359 [admit-predict] id=cmpl-834cce2ba377900bb1f811b34eb14a59 tenant="d45-wave2-5" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=16 kv_hat=3786206036 booked_bytes=185467940632 booked_real=185619271448 inflight=49 cap=64 budget_bytes=65975529168 retry_after_s=1 exempt=0 enforce=0 live_free_bytes=-
+1793856216359 [admit-mem] id=cmpl-834cce2ba377900bb1f811b34eb14a59 model="q38" verdict=defer prompt=30720 output_bound=64 charged_ctx=30848 est_bytes=6092607300 est_context=916062208 est_fixed=5176545092 device_free=4836403116 pending_prime=749993984 pending_prime_v1=121831948288 pending_seed=15883042816 pending_seed_uncapped=52445577216 host_free=0 demotable=0 short_by=1256204184 inflight=49 cap=64 waited_ms=0 retry_after_s=- reason=-
+1793856216359 [admit-predict] id=cmpl-fac192115c3e01952abd5f9a0d3a7878 tenant="d45-wave2-7" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=16 kv_hat=3786206036 booked_bytes=185467940632 booked_real=185619271448 inflight=49 cap=64 budget_bytes=65975529168 retry_after_s=1 exempt=0 enforce=0 live_free_bytes=-
+1793856216359 [admit-mem] id=cmpl-fac192115c3e01952abd5f9a0d3a7878 model="q38" verdict=defer prompt=30720 output_bound=64 charged_ctx=30848 est_bytes=6092607300 est_context=916062208 est_fixed=5176545092 device_free=4836403116 pending_prime=749993984 pending_prime_v1=121831948288 pending_seed=15883042816 pending_seed_uncapped=52445577216 host_free=0 demotable=0 short_by=1256204184 inflight=49 cap=64 waited_ms=0 retry_after_s=- reason=-
+1793856216359 [admit-predict] id=cmpl-c6ca0649c8129df386fd3a1cc84714ad tenant="d45-wave2-10" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=16 kv_hat=3786206036 booked_bytes=185467940632 booked_real=185619271448 inflight=49 cap=64 budget_bytes=65975529168 retry_after_s=1 exempt=0 enforce=0 live_free_bytes=-
+1793856216359 [admit-mem] id=cmpl-c6ca0649c8129df386fd3a1cc84714ad model="q38" verdict=defer prompt=30720 output_bound=64 charged_ctx=30848 est_bytes=6092607300 est_context=916062208 est_fixed=5176545092 device_free=4836403116 pending_prime=749993984 pending_prime_v1=121831948288 pending_seed=15883042816 pending_seed_uncapped=52445577216 host_free=0 demotable=0 short_by=1256204184 inflight=49 cap=64 waited_ms=0 retry_after_s=- reason=-
+1793856216359 [admit-predict] id=cmpl-fdc43006b360fdb7ef2312712f2fcd04 tenant="d45-wave2-6" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=16 kv_hat=3786206036 booked_bytes=185467940632 booked_real=185619271448 inflight=49 cap=64 budget_bytes=65975529168 retry_after_s=1 exempt=0 enforce=0 live_free_bytes=-
+1793856216359 [admit-mem] id=cmpl-fdc43006b360fdb7ef2312712f2fcd04 model="q38" verdict=defer prompt=30720 output_bound=64 charged_ctx=30848 est_bytes=6092607300 est_context=916062208 est_fixed=5176545092 device_free=4836403116 pending_prime=749993984 pending_prime_v1=121831948288 pending_seed=15883042816 pending_seed_uncapped=52445577216 host_free=0 demotable=0 short_by=1256204184 inflight=49 cap=64 waited_ms=0 retry_after_s=- reason=-
+1793856216359 [admit-predict] id=cmpl-ffc1309393c602374bb26e5b85125d8f tenant="d45-wave2-11" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=16 kv_hat=3786206036 booked_bytes=185467940632 booked_real=185619271448 inflight=49 cap=64 budget_bytes=65975529168 retry_after_s=1 exempt=0 enforce=0 live_free_bytes=-
+1793856216359 [admit-mem] id=cmpl-ffc1309393c602374bb26e5b85125d8f model="q38" verdict=defer prompt=30720 output_bound=64 charged_ctx=30848 est_bytes=6092607300 est_context=916062208 est_fixed=5176545092 device_free=4836403116 pending_prime=749993984 pending_prime_v1=121831948288 pending_seed=15883042816 pending_seed_uncapped=52445577216 host_free=0 demotable=0 short_by=1256204184 inflight=49 cap=64 waited_ms=0 retry_after_s=- reason=-
+1793856216359 [admit-predict] id=cmpl-db2998af434829232cc708626ff6f664 tenant="d45-wave2-9" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=16 kv_hat=3786206036 booked_bytes=185467940632 booked_real=185619271448 inflight=49 cap=64 budget_bytes=65975529168 retry_after_s=1 exempt=0 enforce=0 live_free_bytes=-
+1793856216359 [admit-mem] id=cmpl-db2998af434829232cc708626ff6f664 model="q38" verdict=defer prompt=30720 output_bound=64 charged_ctx=30848 est_bytes=6092607300 est_context=916062208 est_fixed=5176545092 device_free=4836403116 pending_prime=749993984 pending_prime_v1=121831948288 pending_seed=15883042816 pending_seed_uncapped=52445577216 host_free=0 demotable=0 short_by=1256204184 inflight=49 cap=64 waited_ms=0 retry_after_s=- reason=-
+1793856216359 [admit-predict] id=cmpl-4aa12260b49ed64e2614e3db37d0a5a4 tenant="d45-wave2-12" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=16 kv_hat=3786206036 booked_bytes=185467940632 booked_real=185619271448 inflight=49 cap=64 budget_bytes=65975529168 retry_after_s=1 exempt=0 enforce=0 live_free_bytes=-
+1793856216360 [admit-mem] id=cmpl-4aa12260b49ed64e2614e3db37d0a5a4 model="q38" verdict=defer prompt=30720 output_bound=64 charged_ctx=30848 est_bytes=6092607300 est_context=916062208 est_fixed=5176545092 device_free=4836403116 pending_prime=749993984 pending_prime_v1=121831948288 pending_seed=15883042816 pending_seed_uncapped=52445577216 host_free=0 demotable=0 short_by=1256204184 inflight=49 cap=64 waited_ms=0 retry_after_s=- reason=-
+1793856216360 [admit-predict] id=cmpl-c6d20383ecba5102178600089c14e6cc tenant="d45-wave2-13" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=16 kv_hat=3786206036 booked_bytes=185467940632 booked_real=185619271448 inflight=49 cap=64 budget_bytes=65975529168 retry_after_s=1 exempt=0 enforce=0 live_free_bytes=-
+1793856216360 [admit-mem] id=cmpl-c6d20383ecba5102178600089c14e6cc model="q38" verdict=defer prompt=30720 output_bound=64 charged_ctx=30848 est_bytes=6092607300 est_context=916062208 est_fixed=5176545092 device_free=4836403116 pending_prime=749993984 pending_prime_v1=121831948288 pending_seed=15883042816 pending_seed_uncapped=52445577216 host_free=0 demotable=0 short_by=1256204184 inflight=49 cap=64 waited_ms=0 retry_after_s=- reason=-
+1793856216360 [admit-predict] id=cmpl-56e02652f59d6261650c4e6afe871db3 tenant="d45-wave2-14" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=16 kv_hat=3786206036 booked_bytes=185467940632 booked_real=185619271448 inflight=49 cap=64 budget_bytes=65975529168 retry_after_s=1 exempt=0 enforce=0 live_free_bytes=-
+1793856216360 [admit-mem] id=cmpl-56e02652f59d6261650c4e6afe871db3 model="q38" verdict=defer prompt=30720 output_bound=64 charged_ctx=30848 est_bytes=6092607300 est_context=916062208 est_fixed=5176545092 device_free=4836403116 pending_prime=749993984 pending_prime_v1=121831948288 pending_seed=15883042816 pending_seed_uncapped=52445577216 host_free=0 demotable=0 short_by=1256204184 inflight=49 cap=64 waited_ms=0 retry_after_s=- reason=-
+1793856216360 [admit-predict] id=cmpl-0a4e3d10a0ce37dcc7cc304588fc94b6 tenant="d45-wave2-17" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=16 kv_hat=3786206036 booked_bytes=185467940632 booked_real=185619271448 inflight=49 cap=64 budget_bytes=65975529168 retry_after_s=1 exempt=0 enforce=0 live_free_bytes=-
+1793856216360 [admit-mem] id=cmpl-0a4e3d10a0ce37dcc7cc304588fc94b6 model="q38" verdict=defer prompt=30720 output_bound=64 charged_ctx=30848 est_bytes=6092607300 est_context=916062208 est_fixed=5176545092 device_free=4836403116 pending_prime=749993984 pending_prime_v1=121831948288 pending_seed=15883042816 pending_seed_uncapped=52445577216 host_free=0 demotable=0 short_by=1256204184 inflight=49 cap=64 waited_ms=0 retry_after_s=- reason=-
+1793856216360 [admit-predict] id=cmpl-b6790dcca4d505d25e2b75a22fc2bc2f tenant="d45-wave2-28" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=16 kv_hat=3786206036 booked_bytes=185467940632 booked_real=185619271448 inflight=49 cap=64 budget_bytes=65975529168 retry_after_s=1 exempt=0 enforce=0 live_free_bytes=-
+1793856216360 [admit-mem] id=cmpl-b6790dcca4d505d25e2b75a22fc2bc2f model="q38" verdict=defer prompt=30720 output_bound=64 charged_ctx=30848 est_bytes=6092607300 est_context=916062208 est_fixed=5176545092 device_free=4836403116 pending_prime=749993984 pending_prime_v1=121831948288 pending_seed=15883042816 pending_seed_uncapped=52445577216 host_free=0 demotable=0 short_by=1256204184 inflight=49 cap=64 waited_ms=0 retry_after_s=- reason=-
+1793856216360 [admit-predict] id=cmpl-25a2aae99b776b674ca7a742fe3ed0f7 tenant="d45-wave2-24" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=16 kv_hat=3786206036 booked_bytes=185467940632 booked_real=185619271448 inflight=49 cap=64 budget_bytes=65975529168 retry_after_s=1 exempt=0 enforce=0 live_free_bytes=-
+1793856216360 [admit-mem] id=cmpl-25a2aae99b776b674ca7a742fe3ed0f7 model="q38" verdict=defer prompt=30720 output_bound=64 charged_ctx=30848 est_bytes=6092607300 est_context=916062208 est_fixed=5176545092 device_free=4836403116 pending_prime=749993984 pending_prime_v1=121831948288 pending_seed=15883042816 pending_seed_uncapped=52445577216 host_free=0 demotable=0 short_by=1256204184 inflight=49 cap=64 waited_ms=0 retry_after_s=- reason=-
+1793856216360 [admit-predict] id=cmpl-1f8ad4d7ff617811a37435ada3255105 tenant="d45-wave2-16" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=16 kv_hat=3786206036 booked_bytes=185467940632 booked_real=185619271448 inflight=49 cap=64 budget_bytes=65975529168 retry_after_s=1 exempt=0 enforce=0 live_free_bytes=-
+1793856216360 [admit-mem] id=cmpl-1f8ad4d7ff617811a37435ada3255105 model="q38" verdict=defer prompt=30720 output_bound=64 charged_ctx=30848 est_bytes=6092607300 est_context=916062208 est_fixed=5176545092 device_free=4836403116 pending_prime=749993984 pending_prime_v1=121831948288 pending_seed=15883042816 pending_seed_uncapped=52445577216 host_free=0 demotable=0 short_by=1256204184 inflight=49 cap=64 waited_ms=0 retry_after_s=- reason=-
+1793856216360 [admit-predict] id=cmpl-9875d828e40e898c119f92da218e8a51 tenant="d45-wave2-22" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=16 kv_hat=3786206036 booked_bytes=185467940632 booked_real=185619271448 inflight=49 cap=64 budget_bytes=65975529168 retry_after_s=1 exempt=0 enforce=0 live_free_bytes=-
+1793856216360 [admit-mem] id=cmpl-9875d828e40e898c119f92da218e8a51 model="q38" verdict=defer prompt=30720 output_bound=64 charged_ctx=30848 est_bytes=6092607300 est_context=916062208 est_fixed=5176545092 device_free=4836403116 pending_prime=749993984 pending_prime_v1=121831948288 pending_seed=15883042816 pending_seed_uncapped=52445577216 host_free=0 demotable=0 short_by=1256204184 inflight=49 cap=64 waited_ms=0 retry_after_s=- reason=-
+1793856216360 [admit-predict] id=cmpl-997ecf24383abd7ff0ca73c5f70b02c9 tenant="d45-wave2-21" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=16 kv_hat=3786206036 booked_bytes=185467940632 booked_real=185619271448 inflight=49 cap=64 budget_bytes=65975529168 retry_after_s=1 exempt=0 enforce=0 live_free_bytes=-
+1793856216361 [admit-mem] id=cmpl-997ecf24383abd7ff0ca73c5f70b02c9 model="q38" verdict=defer prompt=30720 output_bound=64 charged_ctx=30848 est_bytes=6092607300 est_context=916062208 est_fixed=5176545092 device_free=4836403116 pending_prime=749993984 pending_prime_v1=121831948288 pending_seed=15883042816 pending_seed_uncapped=52445577216 host_free=0 demotable=0 short_by=1256204184 inflight=49 cap=64 waited_ms=0 retry_after_s=- reason=-
+1793856216361 [admit-predict] id=cmpl-786c2e31cddfe1c2a4118342e9258adf tenant="d45-wave2-20" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=16 kv_hat=3786206036 booked_bytes=185467940632 booked_real=185619271448 inflight=49 cap=64 budget_bytes=65975529168 retry_after_s=1 exempt=0 enforce=0 live_free_bytes=-
+1793856216361 [admit-mem] id=cmpl-786c2e31cddfe1c2a4118342e9258adf model="q38" verdict=defer prompt=30720 output_bound=64 charged_ctx=30848 est_bytes=6092607300 est_context=916062208 est_fixed=5176545092 device_free=4836403116 pending_prime=749993984 pending_prime_v1=121831948288 pending_seed=15883042816 pending_seed_uncapped=52445577216 host_free=0 demotable=0 short_by=1256204184 inflight=49 cap=64 waited_ms=0 retry_after_s=- reason=-
+1793856216361 [admit-predict] id=cmpl-644bad45263ae52e7604ef04e631f39f tenant="d45-wave2-31" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=16 kv_hat=3786206036 booked_bytes=185467940632 booked_real=185619271448 inflight=49 cap=64 budget_bytes=65975529168 retry_after_s=1 exempt=0 enforce=0 live_free_bytes=-
+1793856216361 [admit-mem] id=cmpl-644bad45263ae52e7604ef04e631f39f model="q38" verdict=defer prompt=30720 output_bound=64 charged_ctx=30848 est_bytes=6092607300 est_context=916062208 est_fixed=5176545092 device_free=4836403116 pending_prime=749993984 pending_prime_v1=121831948288 pending_seed=15883042816 pending_seed_uncapped=52445577216 host_free=0 demotable=0 short_by=1256204184 inflight=49 cap=64 waited_ms=0 retry_after_s=- reason=-
+1793856216361 [admit-predict] id=cmpl-b3075b646ebb5cf67c2e43c36097aaf1 tenant="d45-wave2-27" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=16 kv_hat=3786206036 booked_bytes=185467940632 booked_real=185619271448 inflight=49 cap=64 budget_bytes=65975529168 retry_after_s=1 exempt=0 enforce=0 live_free_bytes=-
+1793856216361 [admit-mem] id=cmpl-b3075b646ebb5cf67c2e43c36097aaf1 model="q38" verdict=defer prompt=30720 output_bound=64 charged_ctx=30848 est_bytes=6092607300 est_context=916062208 est_fixed=5176545092 device_free=4836403116 pending_prime=749993984 pending_prime_v1=121831948288 pending_seed=15883042816 pending_seed_uncapped=52445577216 host_free=0 demotable=0 short_by=1256204184 inflight=49 cap=64 waited_ms=0 retry_after_s=- reason=-
+1793856216361 [admit-predict] id=cmpl-5c43b09e1fcbabd9ee5e309d6f340bfc tenant="d45-wave2-29" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=16 kv_hat=3786206036 booked_bytes=185467940632 booked_real=185619271448 inflight=49 cap=64 budget_bytes=65975529168 retry_after_s=1 exempt=0 enforce=0 live_free_bytes=-
+1793856216361 [admit-mem] id=cmpl-5c43b09e1fcbabd9ee5e309d6f340bfc model="q38" verdict=defer prompt=30720 output_bound=64 charged_ctx=30848 est_bytes=6092607300 est_context=916062208 est_fixed=5176545092 device_free=4836403116 pending_prime=749993984 pending_prime_v1=121831948288 pending_seed=15883042816 pending_seed_uncapped=52445577216 host_free=0 demotable=0 short_by=1256204184 inflight=49 cap=64 waited_ms=0 retry_after_s=- reason=-
+1793856216361 [admit-predict] id=cmpl-5d76784510f239d4da2b3ce7c7e1b466 tenant="d45-wave2-23" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=16 kv_hat=3786206036 booked_bytes=185467940632 booked_real=185619271448 inflight=49 cap=64 budget_bytes=65975529168 retry_after_s=1 exempt=0 enforce=0 live_free_bytes=-
+1793856216361 [admit-mem] id=cmpl-5d76784510f239d4da2b3ce7c7e1b466 model="q38" verdict=defer prompt=30720 output_bound=64 charged_ctx=30848 est_bytes=6092607300 est_context=916062208 est_fixed=5176545092 device_free=4836403116 pending_prime=749993984 pending_prime_v1=121831948288 pending_seed=15883042816 pending_seed_uncapped=52445577216 host_free=0 demotable=0 short_by=1256204184 inflight=49 cap=64 waited_ms=0 retry_after_s=- reason=-
+1793856216361 [admit-predict] id=cmpl-75039567bfd5887ce102edfce96a7cf7 tenant="d45-wave2-26" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=16 kv_hat=3786206036 booked_bytes=185467940632 booked_real=185619271448 inflight=49 cap=64 budget_bytes=65975529168 retry_after_s=1 exempt=0 enforce=0 live_free_bytes=-
+1793856216361 [admit-mem] id=cmpl-75039567bfd5887ce102edfce96a7cf7 model="q38" verdict=defer prompt=30720 output_bound=64 charged_ctx=30848 est_bytes=6092607300 est_context=916062208 est_fixed=5176545092 device_free=4836403116 pending_prime=749993984 pending_prime_v1=121831948288 pending_seed=15883042816 pending_seed_uncapped=52445577216 host_free=0 demotable=0 short_by=1256204184 inflight=49 cap=64 waited_ms=0 retry_after_s=- reason=-
+1793856216361 [admit-predict] id=cmpl-2f32df1ee03a530343d3e23847487d6d tenant="d45-wave2-19" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=16 kv_hat=3786206036 booked_bytes=185467940632 booked_real=185619271448 inflight=49 cap=64 budget_bytes=65975529168 retry_after_s=1 exempt=0 enforce=0 live_free_bytes=-
+1793856216362 [admit-mem] id=cmpl-2f32df1ee03a530343d3e23847487d6d model="q38" verdict=defer prompt=30720 output_bound=64 charged_ctx=30848 est_bytes=6092607300 est_context=916062208 est_fixed=5176545092 device_free=4836403116 pending_prime=749993984 pending_prime_v1=121831948288 pending_seed=15883042816 pending_seed_uncapped=52445577216 host_free=0 demotable=0 short_by=1256204184 inflight=49 cap=64 waited_ms=0 retry_after_s=- reason=-
+1793856216362 [admit-predict] id=cmpl-507b7a096cca7100a752ac6faeec1e84 tenant="d45-wave2-18" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=16 kv_hat=3786206036 booked_bytes=185467940632 booked_real=185619271448 inflight=49 cap=64 budget_bytes=65975529168 retry_after_s=1 exempt=0 enforce=0 live_free_bytes=-
+1793856216362 [admit-mem] id=cmpl-507b7a096cca7100a752ac6faeec1e84 model="q38" verdict=defer prompt=30720 output_bound=64 charged_ctx=30848 est_bytes=6092607300 est_context=916062208 est_fixed=5176545092 device_free=4836403116 pending_prime=749993984 pending_prime_v1=121831948288 pending_seed=15883042816 pending_seed_uncapped=52445577216 host_free=0 demotable=0 short_by=1256204184 inflight=49 cap=64 waited_ms=0 retry_after_s=- reason=-
+1793856216362 [admit-predict] id=cmpl-cec590ee3f73701384b24de5180d442c tenant="d45-wave2-15" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=16 kv_hat=3786206036 booked_bytes=185467940632 booked_real=185619271448 inflight=49 cap=64 budget_bytes=65975529168 retry_after_s=1 exempt=0 enforce=0 live_free_bytes=-
+1793856216362 [admit-mem] id=cmpl-cec590ee3f73701384b24de5180d442c model="q38" verdict=defer prompt=30720 output_bound=64 charged_ctx=30848 est_bytes=6092607300 est_context=916062208 est_fixed=5176545092 device_free=4836403116 pending_prime=749993984 pending_prime_v1=121831948288 pending_seed=15883042816 pending_seed_uncapped=52445577216 host_free=0 demotable=0 short_by=1256204184 inflight=49 cap=64 waited_ms=0 retry_after_s=- reason=-
+1793856216362 [admit-predict] id=cmpl-e372f2d584a02889672557bd9fe131dc tenant="d45-wave2-25" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=16 kv_hat=3786206036 booked_bytes=185467940632 booked_real=185619271448 inflight=49 cap=64 budget_bytes=65975529168 retry_after_s=1 exempt=0 enforce=0 live_free_bytes=-
+1793856216362 [admit-mem] id=cmpl-e372f2d584a02889672557bd9fe131dc model="q38" verdict=defer prompt=30720 output_bound=64 charged_ctx=30848 est_bytes=6092607300 est_context=916062208 est_fixed=5176545092 device_free=4836403116 pending_prime=749993984 pending_prime_v1=121831948288 pending_seed=15883042816 pending_seed_uncapped=52445577216 host_free=0 demotable=0 short_by=1256204184 inflight=49 cap=64 waited_ms=0 retry_after_s=- reason=-
+1793856216362 [admit-predict] id=cmpl-a2ab15e12c61ba0c69fb83a470391f5f tenant="d45-wave2-30" model="q38" verdict=reject-kv reason=global-p95 prompt=30720 predicted_completion=16 kv_hat=3786206036 booked_bytes=185467940632 booked_real=185619271448 inflight=49 cap=64 budget_bytes=65975529168 retry_after_s=1 exempt=0 enforce=0 live_free_bytes=-
+1793856216362 [admit-mem] id=cmpl-a2ab15e12c61ba0c69fb83a470391f5f model="q38" verdict=defer prompt=30720 output_bound=64 charged_ctx=30848 est_bytes=6092607300 est_context=916062208 est_fixed=5176545092 device_free=4836403116 pending_prime=749993984 pending_prime_v1=121831948288 pending_seed=15883042816 pending_seed_uncapped=52445577216 host_free=0 demotable=0 short_by=1256204184 inflight=49 cap=64 waited_ms=0 retry_after_s=- reason=-
+1793856218514 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2151.5ms
+1793856220659 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2145.1ms
+1793856222812 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2153.0ms
+1793856224970 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2158.3ms
+1793856227133 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2162.2ms
+1793856229300 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2166.9ms
+1793856231470 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2169.7ms
+1793856233267 [prime-batch] B=5 tokens=5120 carried=4 partial=5 in 1797.4ms
+1793856234024 [admit-oom] VRAM defer: 49 active, effective free 4836MB (driver + 3340MB pool-cached) < cost 3789MB + reserve 2303MB — queueing (FIFO) [pool res 83316MB used 79976MB; parked spec sessions 0; plain reuse 0; queue 31]
+1793856234024 [admit-mem] id=cmpl-16234eb07504033b12d41ce2b402c6bb model="q38" verdict=refuse prompt=30720 output_bound=64 charged_ctx=30848 est_bytes=6092607300 est_context=916062208 est_fixed=5176545092 device_free=4836403116 pending_prime=749993984 pending_prime_v1=120804343808 pending_seed=15883042816 pending_seed_uncapped=52388560896 host_free=0 demotable=0 short_by=1256204184 inflight=49 cap=64 waited_ms=17666 retry_after_s=5 reason=-
+1793856234025 [admit-oom] VRAM defer: 49 active, effective free 4836MB (driver + 3340MB pool-cached) < cost 3789MB + reserve 2303MB — queueing (FIFO) [pool res 83316MB used 79976MB; parked spec sessions 0; plain reuse 0; queue 30]
+1793856234025 [admit-mem] id=cmpl-765b8d75d808ea4f9d56cb3359e0281f model="q38" verdict=refuse prompt=30720 output_bound=64 charged_ctx=30848 est_bytes=6092607300 est_context=916062208 est_fixed=5176545092 device_free=4836403116 pending_prime=749993984 pending_prime_v1=120804343808 pending_seed=15883042816 pending_seed_uncapped=52388560896 host_free=0 demotable=0 short_by=1256204184 inflight=49 cap=64 waited_ms=17666 retry_after_s=5 reason=-
+1793856234025 [admit-oom] VRAM defer: 49 active, effective free 4836MB (driver + 3340MB pool-cached) < cost 3789MB + reserve 2303MB — queueing (FIFO) [pool res 83316MB used 79976MB; parked spec sessions 0; plain reuse 0; queue 29]
+1793856234025 [admit-mem] id=cmpl-6502975ca3a3f92d31a28bb8f2331ec7 model="q38" verdict=refuse prompt=30720 output_bound=64 charged_ctx=30848 est_bytes=6092607300 est_context=916062208 est_fixed=5176545092 device_free=4836403116 pending_prime=749993984 pending_prime_v1=120804343808 pending_seed=15883042816 pending_seed_uncapped=52388560896 host_free=0 demotable=0 short_by=1256204184 inflight=49 cap=64 waited_ms=17666 retry_after_s=5 reason=-
+1793856234025 [admit-oom] VRAM defer: 49 active, effective free 4836MB (driver + 3340MB pool-cached) < cost 3789MB + reserve 2303MB — queueing (FIFO) [pool res 83316MB used 79976MB; parked spec sessions 0; plain reuse 0; queue 28]
+1793856234025 [admit-mem] id=cmpl-e737eaa83a4fed0f0c2c2fa5d9c1cc88 model="q38" verdict=refuse prompt=30720 output_bound=64 charged_ctx=30848 est_bytes=6092607300 est_context=916062208 est_fixed=5176545092 device_free=4836403116 pending_prime=749993984 pending_prime_v1=120804343808 pending_seed=15883042816 pending_seed_uncapped=52388560896 host_free=0 demotable=0 short_by=1256204184 inflight=49 cap=64 waited_ms=17666 retry_after_s=5 reason=-
+1793856234025 [admit-oom] VRAM defer: 49 active, effective free 4836MB (driver + 3340MB pool-cached) < cost 3789MB + reserve 2303MB — queueing (FIFO) [pool res 83316MB used 79976MB; parked spec sessions 0; plain reuse 0; queue 27]
+1793856234025 [admit-mem] id=cmpl-1a70d4604040012f15bdc75846bd7d5f model="q38" verdict=refuse prompt=30720 output_bound=64 charged_ctx=30848 est_bytes=6092607300 est_context=916062208 est_fixed=5176545092 device_free=4836403116 pending_prime=749993984 pending_prime_v1=120804343808 pending_seed=15883042816 pending_seed_uncapped=52388560896 host_free=0 demotable=0 short_by=1256204184 inflight=49 cap=64 waited_ms=17666 retry_after_s=5 reason=-
+1793856234025 [admit-oom] VRAM defer: 49 active, effective free 4836MB (driver + 3340MB pool-cached) < cost 3789MB + reserve 2303MB — queueing (FIFO) [pool res 83316MB used 79976MB; parked spec sessions 0; plain reuse 0; queue 26]
+1793856234025 [admit-mem] id=cmpl-b2ad81bdbf872ea03f630379f52a8d46 model="q38" verdict=refuse prompt=30720 output_bound=64 charged_ctx=30848 est_bytes=6092607300 est_context=916062208 est_fixed=5176545092 device_free=4836403116 pending_prime=749993984 pending_prime_v1=120804343808 pending_seed=15883042816 pending_seed_uncapped=52388560896 host_free=0 demotable=0 short_by=1256204184 inflight=49 cap=64 waited_ms=17666 retry_after_s=5 reason=-
+1793856234025 [admit-oom] VRAM defer: 49 active, effective free 4836MB (driver + 3340MB pool-cached) < cost 3789MB + reserve 2303MB — queueing (FIFO) [pool res 83316MB used 79976MB; parked spec sessions 0; plain reuse 0; queue 25]
+1793856234025 [admit-mem] id=cmpl-834cce2ba377900bb1f811b34eb14a59 model="q38" verdict=refuse prompt=30720 output_bound=64 charged_ctx=30848 est_bytes=6092607300 est_context=916062208 est_fixed=5176545092 device_free=4836403116 pending_prime=749993984 pending_prime_v1=120804343808 pending_seed=15883042816 pending_seed_uncapped=52388560896 host_free=0 demotable=0 short_by=1256204184 inflight=49 cap=64 waited_ms=17666 retry_after_s=5 reason=-
+1793856234025 [admit-oom] VRAM defer: 49 active, effective free 4836MB (driver + 3340MB pool-cached) < cost 3789MB + reserve 2303MB — queueing (FIFO) [pool res 83316MB used 79976MB; parked spec sessions 0; plain reuse 0; queue 24]
+1793856234025 [admit-mem] id=cmpl-fac192115c3e01952abd5f9a0d3a7878 model="q38" verdict=refuse prompt=30720 output_bound=64 charged_ctx=30848 est_bytes=6092607300 est_context=916062208 est_fixed=5176545092 device_free=4836403116 pending_prime=749993984 pending_prime_v1=120804343808 pending_seed=15883042816 pending_seed_uncapped=52388560896 host_free=0 demotable=0 short_by=1256204184 inflight=49 cap=64 waited_ms=17666 retry_after_s=5 reason=-
+1793856234026 [admit-oom] VRAM defer: 49 active, effective free 4836MB (driver + 3340MB pool-cached) < cost 3789MB + reserve 2303MB — queueing (FIFO) [pool res 83316MB used 79976MB; parked spec sessions 0; plain reuse 0; queue 23]
+1793856234026 [admit-mem] id=cmpl-c6ca0649c8129df386fd3a1cc84714ad model="q38" verdict=refuse prompt=30720 output_bound=64 charged_ctx=30848 est_bytes=6092607300 est_context=916062208 est_fixed=5176545092 device_free=4836403116 pending_prime=749993984 pending_prime_v1=120804343808 pending_seed=15883042816 pending_seed_uncapped=52388560896 host_free=0 demotable=0 short_by=1256204184 inflight=49 cap=64 waited_ms=17666 retry_after_s=5 reason=-
+1793856234026 [admit-oom] VRAM defer: 49 active, effective free 4836MB (driver + 3340MB pool-cached) < cost 3789MB + reserve 2303MB — queueing (FIFO) [pool res 83316MB used 79976MB; parked spec sessions 0; plain reuse 0; queue 22]
+1793856234026 [admit-mem] id=cmpl-fdc43006b360fdb7ef2312712f2fcd04 model="q38" verdict=refuse prompt=30720 output_bound=64 charged_ctx=30848 est_bytes=6092607300 est_context=916062208 est_fixed=5176545092 device_free=4836403116 pending_prime=749993984 pending_prime_v1=120804343808 pending_seed=15883042816 pending_seed_uncapped=52388560896 host_free=0 demotable=0 short_by=1256204184 inflight=49 cap=64 waited_ms=17666 retry_after_s=5 reason=-
+1793856234026 [admit-oom] VRAM defer: 49 active, effective free 4836MB (driver + 3340MB pool-cached) < cost 3789MB + reserve 2303MB — queueing (FIFO) [pool res 83316MB used 79976MB; parked spec sessions 0; plain reuse 0; queue 21]
+1793856234026 [admit-mem] id=cmpl-ffc1309393c602374bb26e5b85125d8f model="q38" verdict=refuse prompt=30720 output_bound=64 charged_ctx=30848 est_bytes=6092607300 est_context=916062208 est_fixed=5176545092 device_free=4836403116 pending_prime=749993984 pending_prime_v1=120804343808 pending_seed=15883042816 pending_seed_uncapped=52388560896 host_free=0 demotable=0 short_by=1256204184 inflight=49 cap=64 waited_ms=17666 retry_after_s=5 reason=-
+1793856234026 [admit-oom] VRAM defer: 49 active, effective free 4836MB (driver + 3340MB pool-cached) < cost 3789MB + reserve 2303MB — queueing (FIFO) [pool res 83316MB used 79976MB; parked spec sessions 0; plain reuse 0; queue 20]
+1793856234026 [admit-mem] id=cmpl-db2998af434829232cc708626ff6f664 model="q38" verdict=refuse prompt=30720 output_bound=64 charged_ctx=30848 est_bytes=6092607300 est_context=916062208 est_fixed=5176545092 device_free=4836403116 pending_prime=749993984 pending_prime_v1=120804343808 pending_seed=15883042816 pending_seed_uncapped=52388560896 host_free=0 demotable=0 short_by=1256204184 inflight=49 cap=64 waited_ms=17666 retry_after_s=5 reason=-
+1793856234026 [admit-oom] VRAM defer: 49 active, effective free 4836MB (driver + 3340MB pool-cached) < cost 3789MB + reserve 2303MB — queueing (FIFO) [pool res 83316MB used 79976MB; parked spec sessions 0; plain reuse 0; queue 19]
+1793856234026 [admit-mem] id=cmpl-4aa12260b49ed64e2614e3db37d0a5a4 model="q38" verdict=refuse prompt=30720 output_bound=64 charged_ctx=30848 est_bytes=6092607300 est_context=916062208 est_fixed=5176545092 device_free=4836403116 pending_prime=749993984 pending_prime_v1=120804343808 pending_seed=15883042816 pending_seed_uncapped=52388560896 host_free=0 demotable=0 short_by=1256204184 inflight=49 cap=64 waited_ms=17666 retry_after_s=5 reason=-
+1793856234026 [admit-oom] VRAM defer: 49 active, effective free 4836MB (driver + 3340MB pool-cached) < cost 3789MB + reserve 2303MB — queueing (FIFO) [pool res 83316MB used 79976MB; parked spec sessions 0; plain reuse 0; queue 18]
+1793856234026 [admit-mem] id=cmpl-c6d20383ecba5102178600089c14e6cc model="q38" verdict=refuse prompt=30720 output_bound=64 charged_ctx=30848 est_bytes=6092607300 est_context=916062208 est_fixed=5176545092 device_free=4836403116 pending_prime=749993984 pending_prime_v1=120804343808 pending_seed=15883042816 pending_seed_uncapped=52388560896 host_free=0 demotable=0 short_by=1256204184 inflight=49 cap=64 waited_ms=17666 retry_after_s=5 reason=-
+1793856234026 [admit-oom] VRAM defer: 49 active, effective free 4836MB (driver + 3340MB pool-cached) < cost 3789MB + reserve 2303MB — queueing (FIFO) [pool res 83316MB used 79976MB; parked spec sessions 0; plain reuse 0; queue 17]
+1793856234026 [admit-mem] id=cmpl-56e02652f59d6261650c4e6afe871db3 model="q38" verdict=refuse prompt=30720 output_bound=64 charged_ctx=30848 est_bytes=6092607300 est_context=916062208 est_fixed=5176545092 device_free=4836403116 pending_prime=749993984 pending_prime_v1=120804343808 pending_seed=15883042816 pending_seed_uncapped=52388560896 host_free=0 demotable=0 short_by=1256204184 inflight=49 cap=64 waited_ms=17666 retry_after_s=5 reason=-
+1793856234026 [admit-oom] VRAM defer: 49 active, effective free 4836MB (driver + 3340MB pool-cached) < cost 3789MB + reserve 2303MB — queueing (FIFO) [pool res 83316MB used 79976MB; parked spec sessions 0; plain reuse 0; queue 16]
+1793856234026 [admit-mem] id=cmpl-0a4e3d10a0ce37dcc7cc304588fc94b6 model="q38" verdict=refuse prompt=30720 output_bound=64 charged_ctx=30848 est_bytes=6092607300 est_context=916062208 est_fixed=5176545092 device_free=4836403116 pending_prime=749993984 pending_prime_v1=120804343808 pending_seed=15883042816 pending_seed_uncapped=52388560896 host_free=0 demotable=0 short_by=1256204184 inflight=49 cap=64 waited_ms=17666 retry_after_s=5 reason=-
+1793856234027 [admit-oom] VRAM defer: 49 active, effective free 4836MB (driver + 3340MB pool-cached) < cost 3789MB + reserve 2303MB — queueing (FIFO) [pool res 83316MB used 79976MB; parked spec sessions 0; plain reuse 0; queue 15]
+1793856234027 [admit-mem] id=cmpl-b6790dcca4d505d25e2b75a22fc2bc2f model="q38" verdict=refuse prompt=30720 output_bound=64 charged_ctx=30848 est_bytes=6092607300 est_context=916062208 est_fixed=5176545092 device_free=4836403116 pending_prime=749993984 pending_prime_v1=120804343808 pending_seed=15883042816 pending_seed_uncapped=52388560896 host_free=0 demotable=0 short_by=1256204184 inflight=49 cap=64 waited_ms=17666 retry_after_s=5 reason=-
+1793856234027 [admit-oom] VRAM defer: 49 active, effective free 4836MB (driver + 3340MB pool-cached) < cost 3789MB + reserve 2303MB — queueing (FIFO) [pool res 83316MB used 79976MB; parked spec sessions 0; plain reuse 0; queue 14]
+1793856234027 [admit-mem] id=cmpl-25a2aae99b776b674ca7a742fe3ed0f7 model="q38" verdict=refuse prompt=30720 output_bound=64 charged_ctx=30848 est_bytes=6092607300 est_context=916062208 est_fixed=5176545092 device_free=4836403116 pending_prime=749993984 pending_prime_v1=120804343808 pending_seed=15883042816 pending_seed_uncapped=52388560896 host_free=0 demotable=0 short_by=1256204184 inflight=49 cap=64 waited_ms=17666 retry_after_s=5 reason=-
+1793856234027 [admit-oom] VRAM defer: 49 active, effective free 4836MB (driver + 3340MB pool-cached) < cost 3789MB + reserve 2303MB — queueing (FIFO) [pool res 83316MB used 79976MB; parked spec sessions 0; plain reuse 0; queue 13]
+1793856234027 [admit-mem] id=cmpl-1f8ad4d7ff617811a37435ada3255105 model="q38" verdict=refuse prompt=30720 output_bound=64 charged_ctx=30848 est_bytes=6092607300 est_context=916062208 est_fixed=5176545092 device_free=4836403116 pending_prime=749993984 pending_prime_v1=120804343808 pending_seed=15883042816 pending_seed_uncapped=52388560896 host_free=0 demotable=0 short_by=1256204184 inflight=49 cap=64 waited_ms=17666 retry_after_s=5 reason=-
+1793856234027 [admit-oom] VRAM defer: 49 active, effective free 4836MB (driver + 3340MB pool-cached) < cost 3789MB + reserve 2303MB — queueing (FIFO) [pool res 83316MB used 79976MB; parked spec sessions 0; plain reuse 0; queue 12]
+1793856234027 [admit-mem] id=cmpl-9875d828e40e898c119f92da218e8a51 model="q38" verdict=refuse prompt=30720 output_bound=64 charged_ctx=30848 est_bytes=6092607300 est_context=916062208 est_fixed=5176545092 device_free=4836403116 pending_prime=749993984 pending_prime_v1=120804343808 pending_seed=15883042816 pending_seed_uncapped=52388560896 host_free=0 demotable=0 short_by=1256204184 inflight=49 cap=64 waited_ms=17666 retry_after_s=5 reason=-
+1793856234027 [admit-oom] VRAM defer: 49 active, effective free 4836MB (driver + 3340MB pool-cached) < cost 3789MB + reserve 2303MB — queueing (FIFO) [pool res 83316MB used 79976MB; parked spec sessions 0; plain reuse 0; queue 11]
+1793856234027 [admit-mem] id=cmpl-997ecf24383abd7ff0ca73c5f70b02c9 model="q38" verdict=refuse prompt=30720 output_bound=64 charged_ctx=30848 est_bytes=6092607300 est_context=916062208 est_fixed=5176545092 device_free=4836403116 pending_prime=749993984 pending_prime_v1=120804343808 pending_seed=15883042816 pending_seed_uncapped=52388560896 host_free=0 demotable=0 short_by=1256204184 inflight=49 cap=64 waited_ms=17666 retry_after_s=5 reason=-
+1793856234027 [admit-oom] VRAM defer: 49 active, effective free 4836MB (driver + 3340MB pool-cached) < cost 3789MB + reserve 2303MB — queueing (FIFO) [pool res 83316MB used 79976MB; parked spec sessions 0; plain reuse 0; queue 10]
+1793856234027 [admit-mem] id=cmpl-786c2e31cddfe1c2a4118342e9258adf model="q38" verdict=refuse prompt=30720 output_bound=64 charged_ctx=30848 est_bytes=6092607300 est_context=916062208 est_fixed=5176545092 device_free=4836403116 pending_prime=749993984 pending_prime_v1=120804343808 pending_seed=15883042816 pending_seed_uncapped=52388560896 host_free=0 demotable=0 short_by=1256204184 inflight=49 cap=64 waited_ms=17666 retry_after_s=5 reason=-
+1793856234027 [admit-oom] VRAM defer: 49 active, effective free 4836MB (driver + 3340MB pool-cached) < cost 3789MB + reserve 2303MB — queueing (FIFO) [pool res 83316MB used 79976MB; parked spec sessions 0; plain reuse 0; queue 9]
+1793856234027 [admit-mem] id=cmpl-644bad45263ae52e7604ef04e631f39f model="q38" verdict=refuse prompt=30720 output_bound=64 charged_ctx=30848 est_bytes=6092607300 est_context=916062208 est_fixed=5176545092 device_free=4836403116 pending_prime=749993984 pending_prime_v1=120804343808 pending_seed=15883042816 pending_seed_uncapped=52388560896 host_free=0 demotable=0 short_by=1256204184 inflight=49 cap=64 waited_ms=17666 retry_after_s=5 reason=-
+1793856234027 [admit-oom] VRAM defer: 49 active, effective free 4836MB (driver + 3340MB pool-cached) < cost 3789MB + reserve 2303MB — queueing (FIFO) [pool res 83316MB used 79976MB; parked spec sessions 0; plain reuse 0; queue 8]
+1793856234027 [admit-mem] id=cmpl-b3075b646ebb5cf67c2e43c36097aaf1 model="q38" verdict=refuse prompt=30720 output_bound=64 charged_ctx=30848 est_bytes=6092607300 est_context=916062208 est_fixed=5176545092 device_free=4836403116 pending_prime=749993984 pending_prime_v1=120804343808 pending_seed=15883042816 pending_seed_uncapped=52388560896 host_free=0 demotable=0 short_by=1256204184 inflight=49 cap=64 waited_ms=17666 retry_after_s=5 reason=-
+1793856234028 [admit-oom] VRAM defer: 49 active, effective free 4836MB (driver + 3340MB pool-cached) < cost 3789MB + reserve 2303MB — queueing (FIFO) [pool res 83316MB used 79976MB; parked spec sessions 0; plain reuse 0; queue 7]
+1793856234028 [admit-mem] id=cmpl-5c43b09e1fcbabd9ee5e309d6f340bfc model="q38" verdict=refuse prompt=30720 output_bound=64 charged_ctx=30848 est_bytes=6092607300 est_context=916062208 est_fixed=5176545092 device_free=4836403116 pending_prime=749993984 pending_prime_v1=120804343808 pending_seed=15883042816 pending_seed_uncapped=52388560896 host_free=0 demotable=0 short_by=1256204184 inflight=49 cap=64 waited_ms=17666 retry_after_s=5 reason=-
+1793856234028 [admit-oom] VRAM defer: 49 active, effective free 4836MB (driver + 3340MB pool-cached) < cost 3789MB + reserve 2303MB — queueing (FIFO) [pool res 83316MB used 79976MB; parked spec sessions 0; plain reuse 0; queue 6]
+1793856234028 [admit-mem] id=cmpl-5d76784510f239d4da2b3ce7c7e1b466 model="q38" verdict=refuse prompt=30720 output_bound=64 charged_ctx=30848 est_bytes=6092607300 est_context=916062208 est_fixed=5176545092 device_free=4836403116 pending_prime=749993984 pending_prime_v1=120804343808 pending_seed=15883042816 pending_seed_uncapped=52388560896 host_free=0 demotable=0 short_by=1256204184 inflight=49 cap=64 waited_ms=17666 retry_after_s=5 reason=-
+1793856234028 [admit-oom] VRAM defer: 49 active, effective free 4836MB (driver + 3340MB pool-cached) < cost 3789MB + reserve 2303MB — queueing (FIFO) [pool res 83316MB used 79976MB; parked spec sessions 0; plain reuse 0; queue 5]
+1793856234028 [admit-mem] id=cmpl-75039567bfd5887ce102edfce96a7cf7 model="q38" verdict=refuse prompt=30720 output_bound=64 charged_ctx=30848 est_bytes=6092607300 est_context=916062208 est_fixed=5176545092 device_free=4836403116 pending_prime=749993984 pending_prime_v1=120804343808 pending_seed=15883042816 pending_seed_uncapped=52388560896 host_free=0 demotable=0 short_by=1256204184 inflight=49 cap=64 waited_ms=17666 retry_after_s=5 reason=-
+1793856234028 [admit-oom] VRAM defer: 49 active, effective free 4836MB (driver + 3340MB pool-cached) < cost 3789MB + reserve 2303MB — queueing (FIFO) [pool res 83316MB used 79976MB; parked spec sessions 0; plain reuse 0; queue 4]
+1793856234028 [admit-mem] id=cmpl-2f32df1ee03a530343d3e23847487d6d model="q38" verdict=refuse prompt=30720 output_bound=64 charged_ctx=30848 est_bytes=6092607300 est_context=916062208 est_fixed=5176545092 device_free=4836403116 pending_prime=749993984 pending_prime_v1=120804343808 pending_seed=15883042816 pending_seed_uncapped=52388560896 host_free=0 demotable=0 short_by=1256204184 inflight=49 cap=64 waited_ms=17666 retry_after_s=5 reason=-
+1793856234028 [admit-oom] VRAM defer: 49 active, effective free 4836MB (driver + 3340MB pool-cached) < cost 3789MB + reserve 2303MB — queueing (FIFO) [pool res 83316MB used 79976MB; parked spec sessions 0; plain reuse 0; queue 3]
+1793856234028 [admit-mem] id=cmpl-507b7a096cca7100a752ac6faeec1e84 model="q38" verdict=refuse prompt=30720 output_bound=64 charged_ctx=30848 est_bytes=6092607300 est_context=916062208 est_fixed=5176545092 device_free=4836403116 pending_prime=749993984 pending_prime_v1=120804343808 pending_seed=15883042816 pending_seed_uncapped=52388560896 host_free=0 demotable=0 short_by=1256204184 inflight=49 cap=64 waited_ms=17666 retry_after_s=5 reason=-
+1793856234028 [admit-oom] VRAM defer: 49 active, effective free 4836MB (driver + 3340MB pool-cached) < cost 3789MB + reserve 2303MB — queueing (FIFO) [pool res 83316MB used 79976MB; parked spec sessions 0; plain reuse 0; queue 2]
+1793856234028 [admit-mem] id=cmpl-cec590ee3f73701384b24de5180d442c model="q38" verdict=refuse prompt=30720 output_bound=64 charged_ctx=30848 est_bytes=6092607300 est_context=916062208 est_fixed=5176545092 device_free=4836403116 pending_prime=749993984 pending_prime_v1=120804343808 pending_seed=15883042816 pending_seed_uncapped=52388560896 host_free=0 demotable=0 short_by=1256204184 inflight=49 cap=64 waited_ms=17666 retry_after_s=5 reason=-
+1793856234028 [admit-oom] VRAM defer: 49 active, effective free 4836MB (driver + 3340MB pool-cached) < cost 3789MB + reserve 2303MB — queueing (FIFO) [pool res 83316MB used 79976MB; parked spec sessions 0; plain reuse 0; queue 1]
+1793856234028 [admit-mem] id=cmpl-e372f2d584a02889672557bd9fe131dc model="q38" verdict=refuse prompt=30720 output_bound=64 charged_ctx=30848 est_bytes=6092607300 est_context=916062208 est_fixed=5176545092 device_free=4836403116 pending_prime=749993984 pending_prime_v1=120804343808 pending_seed=15883042816 pending_seed_uncapped=52388560896 host_free=0 demotable=0 short_by=1256204184 inflight=49 cap=64 waited_ms=17666 retry_after_s=5 reason=-
+1793856234028 [admit-oom] VRAM defer: 49 active, effective free 4836MB (driver + 3340MB pool-cached) < cost 3789MB + reserve 2303MB — queueing (FIFO) [pool res 83316MB used 79976MB; parked spec sessions 0; plain reuse 0; queue 0]
+1793856234028 [admit-mem] id=cmpl-a2ab15e12c61ba0c69fb83a470391f5f model="q38" verdict=refuse prompt=30720 output_bound=64 charged_ctx=30848 est_bytes=6092607300 est_context=916062208 est_fixed=5176545092 device_free=4836403116 pending_prime=749993984 pending_prime_v1=120804343808 pending_seed=15883042816 pending_seed_uncapped=52388560896 host_free=0 demotable=0 short_by=1256204184 inflight=49 cap=64 waited_ms=17666 retry_after_s=5 reason=-
+1793856236234 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2206.0ms
+1793856238429 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2194.5ms
+1793856240623 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2193.6ms
+1793856242816 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2192.7ms
+1793856245008 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2191.9ms
+1793856247200 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2191.8ms
+1793856249392 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2191.8ms
+1793856251208 [prime-batch] B=5 tokens=5120 carried=5 partial=5 in 1815.5ms
+1793856254201 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2229.2ms
+1793856256416 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2214.4ms
+1793856258630 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2214.1ms
+1793856260843 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2212.9ms
+1793856263056 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2213.4ms
+1793856265270 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2213.5ms
+1793856267483 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2212.6ms
+1793856269317 [prime-batch] B=5 tokens=5120 carried=5 partial=5 in 1833.8ms
+1793856272337 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2250.1ms
+1793856274575 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2237.7ms
+1793856276813 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2237.3ms
+1793856279048 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2235.5ms
+1793856281288 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2239.8ms
+1793856283530 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2240.5ms
+1793856285768 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2238.2ms
+1793856287627 [prime-batch] B=5 tokens=5120 carried=5 partial=5 in 1854.1ms
+1793856290681 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2276.7ms
+1793856292946 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2265.3ms
+1793856295212 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2265.7ms
+1793856297478 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2265.9ms
+1793856299743 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2264.9ms
+1793856302009 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2266.0ms
+1793856304274 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2265.0ms
+1793856306152 [prime-batch] B=5 tokens=5120 carried=5 partial=5 in 1877.7ms
+1793856309243 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2302.0ms
+1793856311532 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2289.2ms
+1793856313822 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2289.8ms
+1793856316109 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2287.2ms
+1793856318397 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2287.8ms
+1793856320684 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2287.0ms
+1793856322971 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2286.9ms
+1793856324867 [prime-batch] B=5 tokens=5120 carried=5 partial=5 in 1895.3ms
+1793856327986 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2323.4ms
+1793856330296 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2309.4ms
+1793856332606 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2310.3ms
+1793856334917 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2310.3ms
+1793856337226 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2309.4ms
+1793856339536 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2309.8ms
+1793856341846 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2309.4ms
+1793856343763 [prime-batch] B=5 tokens=5120 carried=5 partial=5 in 1917.2ms
+1793856346914 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2347.0ms
+1793856349249 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2335.5ms
+1793856351584 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2334.9ms
+1793856353919 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2334.4ms
+1793856356255 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2335.7ms
+1793856358590 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2335.1ms
+1793856360925 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2335.0ms
+1793856362861 [prime-batch] B=5 tokens=5120 carried=5 partial=5 in 1935.4ms
+1793856366045 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2372.9ms
+1793856368405 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2359.4ms
+1793856370764 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2359.2ms
+1793856373123 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2358.7ms
+1793856375483 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2360.0ms
+1793856377843 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2359.4ms
+1793856380202 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2359.3ms
+1793856382157 [prime-batch] B=5 tokens=5120 carried=5 partial=5 in 1954.2ms
+1793856385372 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2395.5ms
+1793856387753 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2380.7ms
+1793856390135 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2381.9ms
+1793856392517 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2381.7ms
+1793856394898 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2381.7ms
+1793856397280 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2381.1ms
+1793856399662 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2382.3ms
+1793856401638 [prime-batch] B=5 tokens=5120 carried=5 partial=5 in 1975.0ms
+1793856404883 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2418.4ms
+1793856407288 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2405.5ms
+1793856409694 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2405.6ms
+1793856412099 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2405.2ms
+1793856414504 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2404.9ms
+1793856416910 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2405.0ms
+1793856419314 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2404.8ms
+1793856421308 [prime-batch] B=5 tokens=5120 carried=5 partial=5 in 1993.9ms
+1793856424585 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2441.4ms
+1793856427013 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2428.4ms
+1793856429443 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2429.9ms
+1793856431875 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2431.3ms
+1793856434304 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2429.2ms
+1793856436733 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2428.5ms
+1793856439162 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2429.5ms
+1793856441180 [prime-batch] B=5 tokens=5120 carried=5 partial=5 in 2017.0ms
+1793856444495 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2469.4ms
+1793856446953 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2454.0ms
+1793856449403 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2452.0ms
+1793856451858 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2455.6ms
+1793856454314 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2455.2ms
+1793856456771 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2457.1ms
+1793856459227 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2456.3ms
+1793856461264 [prime-batch] B=5 tokens=5120 carried=5 partial=5 in 2037.0ms
+1793856464610 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2493.4ms
+1793856467090 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2479.5ms
+1793856469569 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2479.3ms
+1793856472048 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2479.3ms
+1793856474528 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2479.3ms
+1793856477007 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2478.9ms
+1793856479486 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2479.0ms
+1793856481542 [prime-batch] B=5 tokens=5120 carried=5 partial=5 in 2055.8ms
+1793856484919 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2516.8ms
+1793856487422 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2503.0ms
+1793856489926 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2503.1ms
+1793856492428 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2502.6ms
+1793856494931 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2502.4ms
+1793856497433 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2501.7ms
+1793856499935 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2501.8ms
+1793856502009 [prime-batch] B=5 tokens=5120 carried=5 partial=5 in 2073.9ms
+1793856505417 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2540.8ms
+1793856507945 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2526.8ms
+1793856510474 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2530.0ms
+1793856512999 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2523.9ms
+1793856515526 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2526.8ms
+1793856518053 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2526.8ms
+1793856520581 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2527.9ms
+1793856522677 [prime-batch] B=5 tokens=5120 carried=5 partial=5 in 2095.8ms
+1793856526118 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2564.5ms
+1793856528668 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2550.1ms
+1793856531219 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2551.1ms
+1793856533771 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2551.4ms
+1793856536321 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2550.3ms
+1793856538876 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2552.5ms
+1793856541425 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2550.6ms
+1793856543539 [prime-batch] B=5 tokens=5120 carried=5 partial=5 in 2114.4ms
+1793856547013 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2589.7ms
+1793856549589 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2576.2ms
+1793856552167 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2577.4ms
+1793856554744 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2577.0ms
+1793856557321 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2576.5ms
+1793856559898 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2577.3ms
+1793856562477 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2578.6ms
+1793856564615 [prime-batch] B=5 tokens=5120 carried=5 partial=5 in 2138.5ms
+1793856568125 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2616.7ms
+1793856570729 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2603.4ms
+1793856573333 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2604.6ms
+1793856575939 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2605.2ms
+1793856578542 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2603.5ms
+1793856581145 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2602.7ms
+1793856583746 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2600.9ms
+1793856585905 [prime-batch] B=5 tokens=5120 carried=5 partial=5 in 2158.6ms
+1793856589451 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2644.3ms
+1793856592081 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2630.5ms
+1793856594712 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2627.7ms
+1793856597337 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2625.7ms
+1793856599967 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2630.4ms
+1793856602660 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2693.0ms
+1793856605383 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2722.4ms
+1793856607638 [prime-batch] B=5 tokens=5120 carried=5 partial=5 in 2255.4ms
+1793856611333 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2754.4ms
+1793856614072 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2739.0ms
+1793856616809 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2737.3ms
+1793856619544 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2734.1ms
+1793856622277 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2733.1ms
+1793856625009 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2731.7ms
+1793856627740 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2731.3ms
+1793856630002 [prime-batch] B=5 tokens=5120 carried=5 partial=5 in 2261.9ms
+1793856633713 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2766.6ms
+1793856636464 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2751.0ms
+1793856639215 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2750.7ms
+1793856641966 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2750.4ms
+1793856644716 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2750.0ms
+1793856647466 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2750.5ms
+1793856650216 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2749.3ms
+1793856652495 [prime-batch] B=5 tokens=5120 carried=5 partial=5 in 2279.4ms
+1793856656233 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2786.9ms
+1793856659007 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2774.2ms
+1793856661782 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2774.5ms
+1793856664555 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2773.3ms
+1793856667330 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2774.8ms
+1793856670103 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2773.4ms
+1793856672878 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2774.9ms
+1793856675180 [prime-batch] B=5 tokens=5120 carried=5 partial=5 in 2301.0ms
+1793856678954 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2814.7ms
+1793856681755 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2801.0ms
+1793856684559 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2803.3ms
+1793856687360 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2801.1ms
+1793856690161 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2801.4ms
+1793856692965 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2803.8ms
+1793856695770 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2804.6ms
+1793856698099 [prime-batch] B=5 tokens=5120 carried=5 partial=5 in 2328.3ms
+1793856701912 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2844.2ms
+1793856704744 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2831.8ms
+1793856707576 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2831.6ms
+1793856710406 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2829.5ms
+1793856713237 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2831.2ms
+1793856716071 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2833.8ms
+1793856718908 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2836.6ms
+1793856721261 [prime-batch] B=5 tokens=5120 carried=5 partial=5 in 2351.3ms
+1793856725115 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2873.8ms
+1793856727976 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2860.8ms
+1793856730837 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2860.8ms
+1793856733700 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2863.3ms
+1793856736565 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2864.7ms
+1793856739430 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2864.5ms
+1793856742294 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2864.2ms
+1793856744671 [prime-batch] B=5 tokens=5120 carried=5 partial=5 in 2377.2ms
+1793856748565 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2903.2ms
+1793856751456 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2890.7ms
+1793856754347 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2891.1ms
+1793856757239 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2891.6ms
+1793856760130 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2891.2ms
+1793856763022 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2892.4ms
+1793856765914 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2891.5ms
+1793856768317 [prime-batch] B=5 tokens=5120 carried=5 partial=5 in 2402.4ms
+1793856772251 [prime-batch] B=6 tokens=6144 carried=6 partial=3 in 2934.7ms
+1793856772252 [prefix-cache] insert (seed): 30720 tokens, 1069.2MB (resident 1069.2MB / 15883MB, model q38, ns "d45-burst-1")
+1793856772252 [prefix-cache] insert (seed): 30720 tokens, 1069.2MB (resident 2138.3MB / 15883MB, model q38, ns "d45-burst-0")
+1793856772253 [prefix-cache] insert (seed): 30720 tokens, 1069.2MB (resident 3207.5MB / 15883MB, model q38, ns "d45-burst-2")
+1793856775176 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2922.7ms
+1793856778097 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2920.7ms
+1793856781017 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2919.9ms
+1793856783938 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2921.1ms
+1793856786858 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2920.4ms
+1793856789780 [prime-batch] B=6 tokens=6144 carried=6 partial=6 in 2921.0ms
+1793856792201 [prime-batch] B=5 tokens=5120 carried=5 partial=5 in 2421.4ms
+1793856793051 [fa-pool] grow #3 dev=0 o_len 1597440 -> 4442112 ml_len 6240 -> 17352 (retired kept, zero=false)
+1793856796023 [prime-batch] B=6 tokens=6144 carried=6 partial=0 in 2948.0ms
+1793856796024 [prefix-cache] insert (seed): 30720 tokens, 1069.2MB (resident 4276.6MB / 15883MB, model q38, ns "d45-burst-4")
+1793856796025 [prefix-cache] insert (seed): 30720 tokens, 1069.2MB (resident 5345.8MB / 15883MB, model q38, ns "d45-burst-3")
+1793856796028 [prefix-cache] insert (seed): 30720 tokens, 1069.2MB (resident 6414.9MB / 15883MB, model q38, ns "d45-burst-5")
+1793856796030 [prefix-cache] insert (seed): 30720 tokens, 1069.2MB (resident 7484.1MB / 15883MB, model q38, ns "d45-burst-7")
+1793856796032 [prefix-cache] insert (seed): 30720 tokens, 1069.2MB (resident 8553.2MB / 15883MB, model q38, ns "d45-burst-6")
+1793856796035 [prefix-cache] insert (seed): 30720 tokens, 1069.2MB (resident 9622.4MB / 15883MB, model q38, ns "d45-burst-8")
+1793856798985 [prime-batch] B=6 tokens=6144 carried=6 partial=0 in 2949.9ms
+1793856798986 [prefix-cache] insert (seed): 30720 tokens, 1069.2MB (resident 10691.5MB / 15883MB, model q38, ns "d45-burst-9")
+1793856798986 [prefix-cache] insert (seed): 30720 tokens, 1069.2MB (resident 11760.7MB / 15883MB, model q38, ns "d45-burst-10")
+1793856798988 [prefix-cache] insert (seed): 30720 tokens, 1069.2MB (resident 12829.9MB / 15883MB, model q38, ns "d45-burst-11")
+1793856798990 [prefix-cache] insert (seed): 30720 tokens, 1069.2MB (resident 13899.0MB / 15883MB, model q38, ns "d45-burst-12")
+1793856798992 [prefix-cache] insert (seed): 30720 tokens, 1069.2MB (resident 14968.2MB / 15883MB, model q38, ns "d45-burst-14")
+1793856798992 [prefix-cache] evict (snapshot preflight, LRU): 30720 tokens, 1069.2MB (model q38, ns "d45-burst-1")
+1793856798992 [prefix-cache] insert (seed): 30720 tokens, 1069.2MB (resident 14968.2MB / 15883MB, model q38, ns "d45-burst-13")
+1793856801944 [prime-batch] B=6 tokens=6144 carried=6 partial=0 in 2951.4ms
+1793856801944 [prefix-cache] evict (snapshot preflight, LRU): 30720 tokens, 1069.2MB (model q38, ns "d45-burst-0")
+1793856801945 [prefix-cache] insert (seed): 30720 tokens, 1069.2MB (resident 14968.2MB / 15883MB, model q38, ns "d45-burst-17")
+1793856801945 [prefix-cache] evict (snapshot preflight, LRU): 30720 tokens, 1069.2MB (model q38, ns "d45-burst-2")
+1793856801945 [prefix-cache] insert (seed): 30720 tokens, 1069.2MB (resident 14968.2MB / 15883MB, model q38, ns "d45-burst-16")
+1793856801945 [prefix-cache] evict (snapshot preflight, LRU): 30720 tokens, 1069.2MB (model q38, ns "d45-burst-4")
+1793856801946 [prefix-cache] insert (seed): 30720 tokens, 1069.2MB (resident 14968.2MB / 15883MB, model q38, ns "d45-burst-18")
+1793856801946 [prefix-cache] evict (snapshot preflight, LRU): 30720 tokens, 1069.2MB (model q38, ns "d45-burst-3")
+1793856801947 [prefix-cache] insert (seed): 30720 tokens, 1069.2MB (resident 14968.2MB / 15883MB, model q38, ns "d45-burst-22")
+1793856801947 [prefix-cache] evict (snapshot preflight, LRU): 30720 tokens, 1069.2MB (model q38, ns "d45-burst-5")
+1793856801947 [prefix-cache] insert (seed): 30720 tokens, 1069.2MB (resident 14968.2MB / 15883MB, model q38, ns "d45-burst-21")
+1793856801947 [prefix-cache] evict (snapshot preflight, LRU): 30720 tokens, 1069.2MB (model q38, ns "d45-burst-7")
+1793856801948 [prefix-cache] insert (seed): 30720 tokens, 1069.2MB (resident 14968.2MB / 15883MB, model q38, ns "d45-burst-15")
+1793856804902 [prime-batch] B=6 tokens=6144 carried=6 partial=1 in 2953.7ms
+1793856804902 [prefix-cache] evict (snapshot preflight, LRU): 30720 tokens, 1069.2MB (model q38, ns "d45-burst-6")
+1793856804902 [prefix-cache] insert (seed): 30720 tokens, 1069.2MB (resident 14968.2MB / 15883MB, model q38, ns "d45-burst-24")
+1793856804903 [prefix-cache] evict (snapshot preflight, LRU): 30720 tokens, 1069.2MB (model q38, ns "d45-burst-8")
+1793856804903 [prefix-cache] insert (seed): 30720 tokens, 1069.2MB (resident 14968.2MB / 15883MB, model q38, ns "d45-burst-23")
+1793856804903 [prefix-cache] evict (snapshot preflight, LRU): 30720 tokens, 1069.2MB (model q38, ns "d45-burst-9")
+1793856804904 [prefix-cache] insert (seed): 30720 tokens, 1069.2MB (resident 14968.2MB / 15883MB, model q38, ns "d45-burst-27")
+1793856804904 [prefix-cache] evict (snapshot preflight, LRU): 30720 tokens, 1069.2MB (model q38, ns "d45-burst-10")
+1793856804905 [prefix-cache] insert (seed): 30720 tokens, 1069.2MB (resident 14968.2MB / 15883MB, model q38, ns "d45-burst-28")
+1793856804905 [prefix-cache] evict (snapshot preflight, LRU): 30720 tokens, 1069.2MB (model q38, ns "d45-burst-11")
+1793856804905 [prefix-cache] insert (seed): 30720 tokens, 1069.2MB (resident 14968.2MB / 15883MB, model q38, ns "d45-burst-25")
+1793856807859 [prime-batch] B=6 tokens=6144 carried=6 partial=0 in 2954.1ms
+1793856807859 [prefix-cache] evict (snapshot preflight, LRU): 30720 tokens, 1069.2MB (model q38, ns "d45-burst-12")
+1793856807860 [prefix-cache] insert (seed): 30720 tokens, 1069.2MB (resident 14968.2MB / 15883MB, model q38, ns "d45-burst-29")
+1793856807860 [prefix-cache] evict (snapshot preflight, LRU): 30720 tokens, 1069.2MB (model q38, ns "d45-burst-14")
+1793856807861 [prefix-cache] insert (seed): 30720 tokens, 1069.2MB (resident 14968.2MB / 15883MB, model q38, ns "d45-burst-26")
+1793856807861 [prefix-cache] evict (snapshot preflight, LRU): 30720 tokens, 1069.2MB (model q38, ns "d45-burst-13")
+1793856807862 [prefix-cache] insert (seed): 30720 tokens, 1069.2MB (resident 14968.2MB / 15883MB, model q38, ns "d45-burst-30")
+1793856807862 [prefix-cache] evict (snapshot preflight, LRU): 30720 tokens, 1069.2MB (model q38, ns "d45-burst-17")
+1793856807862 [prefix-cache] insert (seed): 30720 tokens, 1069.2MB (resident 14968.2MB / 15883MB, model q38, ns "d45-burst-31")
+1793856807862 [prefix-cache] evict (snapshot preflight, LRU): 30720 tokens, 1069.2MB (model q38, ns "d45-burst-16")
+1793856807863 [prefix-cache] insert (seed): 30720 tokens, 1069.2MB (resident 14968.2MB / 15883MB, model q38, ns "d45-burst-32")
+1793856807863 [prefix-cache] evict (snapshot preflight, LRU): 30720 tokens, 1069.2MB (model q38, ns "d45-burst-18")
+1793856807864 [prefix-cache] insert (seed): 30720 tokens, 1069.2MB (resident 14968.2MB / 15883MB, model q38, ns "d45-burst-33")
+1793856810819 [prime-batch] B=6 tokens=6144 carried=6 partial=0 in 2954.8ms
+1793856810819 [prefix-cache] evict (snapshot preflight, LRU): 30720 tokens, 1069.2MB (model q38, ns "d45-burst-22")
+1793856810819 [prefix-cache] insert (seed): 30720 tokens, 1069.2MB (resident 14968.2MB / 15883MB, model q38, ns "d45-burst-34")
+1793856810819 [prefix-cache] evict (snapshot preflight, LRU): 30720 tokens, 1069.2MB (model q38, ns "d45-burst-21")
+1793856810820 [prefix-cache] insert (seed): 30720 tokens, 1069.2MB (resident 14968.2MB / 15883MB, model q38, ns "d45-burst-35")
+1793856810820 [prefix-cache] evict (snapshot preflight, LRU): 30720 tokens, 1069.2MB (model q38, ns "d45-burst-15")
+1793856810821 [prefix-cache] insert (seed): 30720 tokens, 1069.2MB (resident 14968.2MB / 15883MB, model q38, ns "d45-burst-36")
+1793856810821 [prefix-cache] evict (snapshot preflight, LRU): 30720 tokens, 1069.2MB (model q38, ns "d45-burst-24")
+1793856810821 [prefix-cache] insert (seed): 30720 tokens, 1069.2MB (resident 14968.2MB / 15883MB, model q38, ns "d45-burst-39")
+1793856810821 [prefix-cache] evict (snapshot preflight, LRU): 30720 tokens, 1069.2MB (model q38, ns "d45-burst-23")
+1793856810822 [prefix-cache] insert (seed): 30720 tokens, 1069.2MB (resident 14968.2MB / 15883MB, model q38, ns "d45-burst-38")
+1793856810822 [prefix-cache] evict (snapshot preflight, LRU): 30720 tokens, 1069.2MB (model q38, ns "d45-burst-27")
+1793856810823 [prefix-cache] insert (seed): 30720 tokens, 1069.2MB (resident 14968.2MB / 15883MB, model q38, ns "d45-burst-37")
+1793856813779 [prime-batch] B=6 tokens=6144 carried=6 partial=0 in 2955.6ms
+1793856813779 [prefix-cache] evict (snapshot preflight, LRU): 30720 tokens, 1069.2MB (model q38, ns "d45-burst-28")
+1793856813779 [prefix-cache] insert (seed): 30720 tokens, 1069.2MB (resident 14968.2MB / 15883MB, model q38, ns "d45-burst-40")
+1793856813779 [prefix-cache] evict (snapshot preflight, LRU): 30720 tokens, 1069.2MB (model q38, ns "d45-burst-25")
+1793856813780 [prefix-cache] insert (seed): 30720 tokens, 1069.2MB (resident 14968.2MB / 15883MB, model q38, ns "d45-burst-41")
+1793856813780 [prefix-cache] evict (snapshot preflight, LRU): 30720 tokens, 1069.2MB (model q38, ns "d45-burst-29")
+1793856813781 [prefix-cache] insert (seed): 30720 tokens, 1069.2MB (resident 14968.2MB / 15883MB, model q38, ns "d45-burst-43")
+1793856813781 [prefix-cache] evict (snapshot preflight, LRU): 30720 tokens, 1069.2MB (model q38, ns "d45-burst-26")
+1793856813781 [prefix-cache] insert (seed): 30720 tokens, 1069.2MB (resident 14968.2MB / 15883MB, model q38, ns "d45-burst-42")
+1793856813781 [prefix-cache] evict (snapshot preflight, LRU): 30720 tokens, 1069.2MB (model q38, ns "d45-burst-30")
+1793856813782 [prefix-cache] insert (seed): 30720 tokens, 1069.2MB (resident 14968.2MB / 15883MB, model q38, ns "d45-burst-44")
+1793856813782 [prefix-cache] evict (snapshot preflight, LRU): 30720 tokens, 1069.2MB (model q38, ns "d45-burst-31")
+1793856813783 [prefix-cache] insert (seed): 30720 tokens, 1069.2MB (resident 14968.2MB / 15883MB, model q38, ns "d45-burst-47")
+1793856815272 [prime-batch] B=3 tokens=3072 carried=3 partial=1 in 1489.0ms
+1793856815272 [prefix-cache] evict (snapshot preflight, LRU): 30720 tokens, 1069.2MB (model q38, ns "d45-burst-32")
+1793856815273 [prefix-cache] insert (seed): 30720 tokens, 1069.2MB (resident 14968.2MB / 15883MB, model q38, ns "d45-burst-45")
+1793856815273 [prefix-cache] evict (snapshot preflight, LRU): 30720 tokens, 1069.2MB (model q38, ns "d45-burst-33")
+1793856815273 [prefix-cache] insert (seed): 30720 tokens, 1069.2MB (resident 14968.2MB / 15883MB, model q38, ns "d45-burst-48")
+1793856815625 [fa-pool] grow #4 dev=0 o_len 4442112 -> 23691264 ml_len 17352 -> 92544 (retired kept, zero=false)
+1793856816772 [prime-batch] B=3 tokens=1824 carried=3 partial=0 in 912.2ms
+1793856816772 [prefix-cache] evict (snapshot preflight, LRU): 30720 tokens, 1069.2MB (model q38, ns "d45-burst-34")
+1793856816772 [prefix-cache] insert (seed): 30720 tokens, 1069.2MB (resident 14968.2MB / 15883MB, model q38, ns "d45-burst-19")
+1793856816772 [prefix-cache] evict (snapshot preflight, LRU): 30720 tokens, 1069.2MB (model q38, ns "d45-burst-35")
+1793856816773 [prefix-cache] insert (seed): 30720 tokens, 1069.2MB (resident 14968.2MB / 15883MB, model q38, ns "d45-burst-20")
+1793856816773 [prefix-cache] evict (snapshot preflight, LRU): 30720 tokens, 1069.2MB (model q38, ns "d45-burst-36")
+1793856816774 [prefix-cache] insert (seed): 30720 tokens, 1069.2MB (resident 14968.2MB / 15883MB, model q38, ns "d45-burst-46")
+1793856838304 [meter] admit id=cmpl-6bc4da569d7aa9f51f30f416bd7a2085 tenant=default lane=interactive model="q38"
+1793856838304 [admission] per-session draft-state charge: model="q38" +46MB (measured capture high-water)
+1793856838304 [admission] request cost: model="q38" ctx=592 path=spec = 31552 B/token x ctx + 245MB prefill-workspace + 365MB fixed = 629MB
+1793856838304 [admit-predict] id=cmpl-6bc4da569d7aa9f51f30f416bd7a2085 tenant="d45-probe" model="q38" verdict=admit reason=global-p95 prompt=512 predicted_completion=16 kv_hat=673756516 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=65975529168 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1793856838305 [admit-mem] id=cmpl-6bc4da569d7aa9f51f30f416bd7a2085 model="q38" verdict=admit prompt=512 output_bound=16 charged_ctx=592 est_bytes=2978836308 est_context=18678784 est_fixed=2960157524 device_free=48168481600 pending_prime=0 pending_prime_v1=0 pending_seed=0 pending_seed_uncapped=0 host_free=0 demotable=14968160256 short_by=0 inflight=0 cap=64 waited_ms=0 retry_after_s=- reason=-
+1793856838307 [spec-k] model="q38" tenant="d45-probe" K=3 source=cold-short prompt=512 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1793856838666 [spec] pre-capture pool trim: released 41792MB cached back to the driver (driver free 2983MB < required 3160MB; instantiate allocates from the driver)
+1793856838809 [spec-acc] ctx=512 burst=8/21 cum=8/21=0.381
+1793856838878 [server] SIGTERM: draining (0 in flight, deadline 30s)
+1793856838878 [server] drain complete in 0.0s; exiting
+1793856839039 [server] GPU worker shutdown complete

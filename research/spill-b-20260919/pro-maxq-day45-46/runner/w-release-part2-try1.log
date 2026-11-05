@@ -1,0 +1,23 @@
+2026-11-05T06:07:55Z admit-w-release Max-Q kit: CARD=2 PART=2 TOTAL_TIMEOUT_S=9000 DRY_RUN=0 OUT=/mnt/Data/work/memra-maxq/admit-w-release/out-20261105T060755Z
+2026-11-05T06:07:55Z card: 2, NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition, 00000000:C1:00.0, GPU-<card2-uuid>, 300.00 W, 280.00 W, 300.00 W, 300.00 W, 97887 MiB, 2 MiB, 74, 63 %, 615.71.09
+2026-11-05T06:07:55Z hashing /mnt/Data/work/memra-maxq/models/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf
+2026-11-05T06:08:02Z model sha256 OK (1facf36c2db359dcf9c2475cf8f85fe84a528d10aaaaff20f7c0db3d561e024a)
+2026-11-05T06:08:02Z waiting for /tmp/memra-gpu.lock (flock -w 300)
+2026-11-05T06:08:02Z lock acquired: /tmp/memra-gpu.lock
+2026-11-05T06:08:02Z cell start: parts=[2]
+2026-11-05T06:08:09Z chain start HEAD=43dbdb29fa2a52be7744d0a03a617930f9426bf5 e8d9454de3bc73288d7c817f28edb924bb75def399bf814cdc4a5ab12f561b51  ./tip/memra-server 
+2026-11-05T07:15:32Z LANE-B-DAY46C-BOX-DONE
+2026-11-05T07:15:32Z part 2 rc=0
+2026-11-05T07:15:32Z cell end rc=0
+READING day45 taken from /mnt/Data/work/memra-maxq/admit-w-release/out-20261105T052249Z/day45 (the newest out dir whose day45 boots all finished)
+READING DAY46 READING card=pro6000maxq boot=O1-enforce wave=wave2 n=32 ok200=1 r429=31 booked_at_first_line=60602103168 ttft_ms p50=14701.1 p95=14701.1 N=1 time_to_429_ms p50=80.3 max=97.2
+READING DAY46 READING card=pro6000maxq boot=O1-enforce-wrel wave=wave2 n=32 ok200=12 r429=20 booked_at_first_line=20471002496 ttft_ms p50=156732.1 p95=157633.5 N=12 time_to_429_ms p50=93.2 max=102.2
+READING DAY46 READING card=pro6000maxq boot=O2-enforce wave=wave2 n=32 ok200=1 r429=31 booked_at_first_line=60602103168 ttft_ms p50=14720.3 p95=14720.3 N=1 time_to_429_ms p50=80.5 max=103.1
+READING DAY46 READING card=pro6000maxq boot=O2-enforce-wrel wave=wave2 n=32 ok200=12 r429=20 booked_at_first_line=20471002496 ttft_ms p50=155932.6 p95=157159.9 N=12 time_to_429_ms p50=88.3 max=103.5
+READING day45 dir=/mnt/Data/work/memra-maxq/admit-w-release/out-20261105T052249Z/day45 card_csv=[NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition, 300.00 W, 97887 MiB] run_card=[2, NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition, 00000000:C1:00.0, GPU-<card2-uuid>, 300.00 W, 300.00 W, 300.00 W, 300.00 W, 97887 MiB, 2 MiB, 73, 58 %, 615.71.09] gpu_watch_fault_lines=0
+READING day46 dir=/mnt/Data/work/memra-maxq/admit-w-release/out-20261105T060755Z/day46 card_csv=[NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition, 300.00 W, 97887 MiB, 615.71.09] run_card=[2, NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition, 00000000:C1:00.0, GPU-<card2-uuid>, 300.00 W, 280.00 W, 300.00 W, 300.00 W, 97887 MiB, 2 MiB, 74, 63 %, 615.71.09] gpu_watch_fault_lines=0
+READING telemetry samples=16081 (250 ms, card only) temp_max=91C fan_max=91% power_max=306.8W sm_clock_p50=1627MHz
+VERDICT admit-w-release-default card=pro6000maxq day45=PASS(12/12) day46=PASS(24/24) -> PASS
+2026-11-05T07:15:32Z exit rc=0 OUT=/mnt/Data/work/memra-maxq/admit-w-release/out-20261105T060755Z
+OUT=/mnt/Data/work/memra-maxq/admit-w-release/out-20261105T060755Z
+power GPU 2: limit 300 W (asked 300, was 280, max 300); 402 samples, 15 at 300 W, first sample off it 2026/11/05 08:10:26.802 -> 280 W; max 91 C, max fan 91 %; sw_thermal 0, hw_thermal 0, hw_power_brake 0, sw_power_cap 381; throttle: no; thermal stop: none; neighbours 1,3 max 88 C, drop: none; restored 280 W; rc=0

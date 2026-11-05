@@ -1,0 +1,20 @@
+# Reader dry run on the Workstation receipts (memra 2ccb038d1c: research/spill-b-20260919/pro-single-day45/box-b, pro-single-day46/box-c), laptop, 2026-11-04
+day45-read.py pro6000 box-b  -> stdout sha256 f0c6984173488784331f1801045f533a264e405a7ab971a7479dd06613656a2a; box-b/read.log sha256 f0c6984173488784331f1801045f533a264e405a7ab971a7479dd06613656a2a (byte-identical)
+day46-read.py pro6000 box-c  -> stdout sha256 64d2e023352f6c7100fa4908dc8774c79cf14c7c2e0dd4c11bbfa9f99dba1f45; box-c/read.log sha256 64d2e023352f6c7100fa4908dc8774c79cf14c7c2e0dd4c11bbfa9f99dba1f45 (byte-identical)
+verdict.py --card pro6000 --day45 box-b --day46 box-c:
+READING DAY46 READING card=pro6000 boot=O1-enforce wave=wave2 n=32 ok200=1 r429=31 booked_at_first_line=60602103104 ttft_ms p50=9329.5 p95=9329.5 N=1 time_to_429_ms p50=57.1 max=83.3
+READING DAY46 READING card=pro6000 boot=O1-enforce-wrel wave=wave2 n=32 ok200=11 r429=21 booked_at_first_line=20471002432 ttft_ms p50=97338.0 p95=98386.0 N=11 time_to_429_ms p50=50.6 max=64.5
+READING DAY46 READING card=pro6000 boot=O2-enforce wave=wave2 n=32 ok200=1 r429=31 booked_at_first_line=60602103168 ttft_ms p50=10103.2 p95=10103.2 N=1 time_to_429_ms p50=48.6 max=81.2
+READING DAY46 READING card=pro6000 boot=O2-enforce-wrel wave=wave2 n=32 ok200=11 r429=21 booked_at_first_line=20471002496 ttft_ms p50=98617.5 p95=99449.3 N=11 time_to_429_ms p50=49.5 max=76.5
+READING day45 dir=dryrun/day45 card_csv=[NVIDIA RTX PRO 6000 Blackwell Workstation Edition, 600.00 W, 97887 MiB] run_card=[None] gpu_watch_fault_lines=0
+READING day46 dir=dryrun/day46 card_csv=[NVIDIA RTX PRO 6000 Blackwell Workstation Edition, 600.00 W, 97887 MiB, 580.65.06] run_card=[None] gpu_watch_fault_lines=0
+VERDICT admit-w-release-default card=pro6000 day45=PASS(12/12) day46=PASS(24/24) -> PASS
+verdict.py on DAY45 2.1 (box/, the failed tenth sitting) + box-c:
+NOTE day45_failed=['W4@O1-off', 'W4@O1-on', 'W4@O2-on', 'W4@O2-off', 'W2@O1-on', 'W2@O2-on']
+VERDICT admit-w-release-default card=pro6000 day45=FAIL(6/12) day46=PASS(24/24) -> FAIL
+verdict.py with O2-shadow/finished.txt removed from box-c:
+NOTE day46_missing=['P5-PROBE@O2-shadow', 'P4@O2:enforce', 'P4@O2:enforce-wrel']
+VERDICT admit-w-release-default card=pro6000 day45=PASS(12/12) day46=INCOMPLETE(21/24) -> INCOMPLETE
+verdict.py --root over out-A/day45=box-b and out-B/day46=box-c, --out out-B:
+READING day45 taken from dryrun/combine/out-20261105T010000Z/day45 (the newest out dir whose day45 boots all finished)
+VERDICT admit-w-release-default card=pro6000 day45=PASS(12/12) day46=PASS(24/24) -> PASS
