@@ -4155,24 +4155,6 @@ fn grid_rewind_spec(
     }
 }
 
-/// MEMRA_SPEC_BUDGET_CLAMP (default unset, WP-B day 43, OWED O13): `1` makes the Qwen MTP
-/// session route truncate a round that would commit accepted drafts past the request's budget
-/// (`memra_engine::spec::budget_clamp_slot`), so a parked spec session equals the public stream
-/// and the pool's exact probe can resume it. The public stream is unchanged. Unset reads nothing.
-fn spec_budget_clamp_on() -> bool {
-    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| {
-        let on = std::env::var("MEMRA_SPEC_BUDGET_CLAMP").as_deref() == Ok("1");
-        if on {
-            eprintln!(
-                "[spec] MEMRA_SPEC_BUDGET_CLAMP=1: the final round commits at the request budget \
-                 (DAY43 measurement door)"
-            );
-        }
-        on
-    })
-}
-
 /// MEMRA_RESUME_EXACT (default unset, WP-B day 44, OWED O11 revised): the exact and fast resume.
 /// `1`: every resumable prime call captures its grid checkpoint inside the call with no stop
 /// (`memra_engine::grid_capture`), an exact-extension hit restores it and primes the prompt's tail
@@ -42940,11 +42922,6 @@ fn spec_burst_pre(
     // the delta is this burst's contribution, merged per-model for /metrics and summed
     // per-request for usage.spec.
     let telem_before = spec.telemetry();
-    // BUDGET CLAMP (MEMRA_SPEC_BUDGET_CLAMP, WP-B day 43): the request's remaining public
-    // budget, not the burst's cadence target; unset leaves the engine's field None.
-    if spec_budget_clamp_on() {
-        spec.budget_room = Some(request_room);
-    }
     Ok(SpecBurstPre::Run(Box::new(SpecBurstPlan {
         k,
         request_room,
@@ -43091,13 +43068,6 @@ fn spec_burst_post(
         if !burst.is_empty() {
             trace.mark_first_decode();
         }
-    }
-    if let Some((na, n_acc, room)) = spec.budget_clamp_fired.take() {
-        eprintln!(
-            "[spec] budget clamp: round truncated at {na} of {n_acc} accepted ({room} of the \
-             request's budget left; model {})",
-            s.model
-        );
     }
     let telem_delta = spec.telemetry().delta_since(&telem_before);
     spec_metrics.record(&s.model, telem_delta);
@@ -66510,59 +66480,6 @@ mod tests {
         }
         assert_eq!(q.jobs.len(), SettleQueue::CAP);
         assert_eq!(q.pop(), Some(job(99, "c")), "the newest kept");
-    }
-
-    /// WP-B day 43 (DAY43 1.3): the budget-clamp door is read once, where the qwen spec arm hands
-    /// the session its request budget; the firing is reported with the model.
-    #[test]
-    fn spec_budget_clamp_door_is_read_at_the_qwen_spec_burst_only() {
-        let squash = |src: &str| -> String { src.split_whitespace().collect::<Vec<_>>().join(" ") };
-        let worker = squash(include_str!("worker.rs"));
-        let live = &worker[..worker.find("mod tests").expect("the test module exists")];
-        let call = format!("spec_budget_clamp_on{}", "()");
-        assert_eq!(
-            live.matches(call.as_str()).count(),
-            2,
-            "the definition and one read"
-        );
-        assert!(
-            live.contains("if spec_budget_clamp_on() { spec.budget_room = Some(request_room); }")
-        );
-        assert_eq!(
-            live.matches("budget_room").count(),
-            1,
-            "only the qwen arm sets it"
-        );
-        // The read is the tail of the shared burst preamble, and both burst entries (the
-        // serial step and the pooled cohort) run that preamble right before their burst.
-        let set = live.find("spec.budget_room = Some(request_room);").unwrap();
-        let pre = live[..set]
-            .rfind("fn spec_burst_pre(")
-            .expect("set inside the preamble");
-        assert!(
-            !live[pre..set].contains("\nfn "),
-            "the set is inside spec_burst_pre"
-        );
-        assert!(
-            live[set..].find("Ok(SpecBurstPre::Run(").unwrap() < 600,
-            "the set ends the preamble"
-        );
-        for (caller, burst) in [
-            (
-                "fn step_session(",
-                "generate_spec_session_sampled_prime_split(",
-            ),
-            ("fn step_spec_pooled(", "generate_spec_sessions_unified("),
-        ] {
-            let body = &live[live.find(caller).unwrap()..];
-            let pre_call = body.find("spec_burst_pre(engine, lm, s)").unwrap();
-            let call = body.find(burst).unwrap();
-            assert!(
-                pre_call < call && call - pre_call < 6000,
-                "{caller} runs the preamble first"
-            );
-        }
-        assert!(live.contains("if let Some((na, n_acc, room)) = spec.budget_clamp_fired.take() {"));
     }
 
     /// WP-B day 41 addendum B (B1, B2): the armed arm's checkpoint boundary.

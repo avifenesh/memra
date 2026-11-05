@@ -1582,14 +1582,6 @@ impl RestoredDraftScratch {
     }
 }
 
-/// The budget clamp's truncation slot (WP-B day 43, DAY43.md 1.1): with `room` public tokens
-/// left in the request, a round emitting `n_acc + 1` tokens overshoots when `n_acc + 1 > room`;
-/// it is truncated at slot `room - 1` when that still commits a row (`base + room - 1 >= 1`).
-/// `None`: no truncation (the round fits, no room, or a first round with nothing to commit).
-pub fn budget_clamp_slot(room: usize, n_acc: usize, base: usize) -> Option<usize> {
-    (room >= 1 && n_acc + 1 > room && base + room > 1).then(|| room - 1)
-}
-
 pub struct SpecSession {
     prime_ready: Option<prime::PreparedMtp>,
     pub(crate) cache: Cache,
@@ -1627,14 +1619,6 @@ pub struct SpecSession {
     /// commit pass). Non-empty-suffix or sampled turns must flush first (spec_flush_pending);
     /// generate_spec_session_sampled does this at entry, and serve parks only flushed sessions.
     pub pending_tok: Option<u32>,
-    /// BUDGET CLAMP (`MEMRA_SPEC_BUDGET_CLAMP`, WP-B day 43): the request's remaining public
-    /// budget, set by the serve worker before a burst when the door is on; consumed one-shot by
-    /// the burst. `None` (every other caller, and the door unset) is today's program: the final
-    /// round commits every accepted draft, overshoot included.
-    pub budget_room: Option<usize>,
-    /// The burst's clamp firing, `(truncated slot, accepted drafts, room left)`, for the
-    /// worker's receipt line; written only when the clamp truncated a round.
-    pub budget_clamp_fired: Option<(usize, usize, usize)>,
     /// EXACT RESUME (`MEMRA_RESUME_EXACT`, WP-B day 44): the absolute grid point the next MTP prime
     /// walk captures its turn checkpoint at INSIDE the call (`grid_capture`), with no prime stop.
     /// One-shot, consumed by `mtp_prime_start`; `None` is today's program.
@@ -3672,7 +3656,6 @@ struct SpecRoundCfg<'a> {
     s_capturable: bool,
     vg_t_cap: usize,
     pp_split: bool,
-    budget_room: Option<usize>,
     sess_telem: Option<&'a SpecTelemetryCounters>,
     debug_spec: bool,
     spec_stats: bool,
@@ -3702,7 +3685,6 @@ struct SpecRoundState<'a, 'c> {
     cache: &'a mut Cache,
     scratch: &'a mut MtpScratch,
     constraint: Option<&'a mut (dyn SpecConstraint + 'c)>,
-    sess_clamp_slot: Option<&'a mut Option<(usize, usize, usize)>>,
     vg_guard: Option<std::sync::MutexGuard<'a, Option<DsparkVerifyGraphs>>>,
     dctx: DraftGraphCtx,
     out: Vec<u32>,
@@ -10849,8 +10831,6 @@ impl HybridModel {
             uctr: 0,
             draft_ctx: None,
             pending_tok: None,
-            budget_room: None,
-            budget_clamp_fired: None,
             grid_capture_at: None,
             turn_ckpt: None,
             telem: SpecTelemetryCounters::default(),
@@ -11539,8 +11519,6 @@ impl HybridModel {
             uctr: 0,
             draft_ctx: None,
             pending_tok: None,
-            budget_room: None,
-            budget_clamp_fired: None,
             grid_capture_at: None,
             // Stable-boundary capture from the split feed above (None on the legacy shape):
             // a restored session previously parked WITHOUT a checkpoint, so the next turn's
@@ -13201,10 +13179,6 @@ impl HybridModel {
         let mut ckpt_req: Option<usize> = None;
         // FAIL-SAFE bit threaded out of the session (see `SpecSession::capture_disabled`).
         let mut sess_capture_disabled = false;
-        // BUDGET CLAMP (WP-B day 43): the request's remaining budget, one-shot, and where the
-        // firing is reported.
-        let mut budget_room: Option<usize> = None;
-        let mut sess_clamp_slot: Option<&mut Option<(usize, usize, usize)>> = None;
         let (
             cache,
             scratch,
@@ -13246,13 +13220,8 @@ impl HybridModel {
                     ckpt_at,
                     capture_disabled,
                     prime_ready: _,
-                    budget_room: s_budget_room,
-                    budget_clamp_fired,
                     grid_capture_at: _,
                 } = sr;
-                budget_room = s_budget_room.take();
-                *budget_clamp_fired = None;
-                sess_clamp_slot = Some(budget_clamp_fired);
                 sess_capture_disabled = *capture_disabled;
                 sess_capture = Some((capture_at.take(), boundary_captures));
                 ckpt_req = ckpt_at.take();
@@ -14274,7 +14243,6 @@ impl HybridModel {
                 s_capturable,
                 vg_t_cap,
                 pp_split: crate::pp::pp_cuts(self.layers.len()).is_some(),
-                budget_room,
                 sess_telem,
                 debug_spec,
                 spec_stats,
@@ -14285,7 +14253,6 @@ impl HybridModel {
             cache,
             scratch,
             constraint,
-            sess_clamp_slot,
             vg_guard,
             dctx,
             out,
@@ -16313,7 +16280,6 @@ impl HybridModel {
             session_mode,
             adapt,
             k_cap,
-            budget_room,
             sess_telem,
             debug_spec,
             spec_stats,
@@ -16337,7 +16303,6 @@ impl HybridModel {
             cache,
             scratch,
             constraint,
-            sess_clamp_slot,
             vg_guard,
             dctx,
             out,
@@ -16825,26 +16790,6 @@ impl HybridModel {
                 c.consume(bo).map_err(ce)?;
                 (na, bo)
             }
-        };
-        // --- 3c. BUDGET CLAMP (MEMRA_SPEC_BUDGET_CLAMP, WP-B day 43, DAY43.md 1.1): a greedy,
-        // unconstrained session round that would commit accepted drafts past the request's
-        // budget is truncated at the budget exactly like the grammar truncation above: the
-        // bonus is the verify's own argmax at that column (the accepted draft there), and the
-        // round commits through the ordinary partial-accept path. The public stream is
-        // unchanged; the parked `committed` then equals it. `budget_room` None: today's.
-        let (n_acc, bonus) = match (budget_room, sampled || constraint.is_some()) {
-            (Some(room_total), false) => {
-                match budget_clamp_slot(room_total.saturating_sub(out.len()), n_acc, base) {
-                    Some(na) => {
-                        if let Some(slot) = sess_clamp_slot.as_deref_mut() {
-                            *slot = Some((na, n_acc, room_total.saturating_sub(out.len())));
-                        }
-                        (na, draft[na])
-                    }
-                    None => (n_acc, bonus),
-                }
-            }
-            _ => (n_acc, bonus),
         };
         *total_drafted += k_round;
         *total_accepted += n_acc;
@@ -18453,48 +18398,5 @@ mod ctx_edge_659_census {
                 "break;"
             );
         }
-    }
-}
-
-/// WP-B day 43 (DAY43 1.1 and 1.3): the budget clamp's truncation rule, and its one site.
-#[cfg(test)]
-mod budget_clamp_tests {
-    use super::budget_clamp_slot;
-
-    #[test]
-    fn budget_clamp_truncates_only_the_round_that_overshoots_the_request() {
-        // The round fits: no truncation.
-        assert_eq!(budget_clamp_slot(4, 3, 1), None);
-        assert_eq!(budget_clamp_slot(10, 3, 0), None);
-        // It overshoots: truncated so exactly `room` tokens are emitted (na drafts + the bonus).
-        assert_eq!(budget_clamp_slot(3, 3, 1), Some(2));
-        assert_eq!(
-            budget_clamp_slot(1, 3, 1),
-            Some(0),
-            "a pending token commits the row"
-        );
-        assert_eq!(budget_clamp_slot(2, 5, 0), Some(1));
-        // No room, or a first round (no pending) with one token of room: nothing to commit.
-        assert_eq!(budget_clamp_slot(0, 3, 1), None);
-        assert_eq!(budget_clamp_slot(1, 3, 0), None);
-    }
-
-    #[test]
-    fn budget_clamp_is_read_once_after_the_grammar_truncation() {
-        let src = include_str!("spec.rs");
-        let live = &src[..src.find("mod budget_clamp_tests").unwrap()];
-        assert_eq!(
-            live.matches("budget_clamp_slot(").count(),
-            2,
-            "the definition and one call"
-        );
-        let grammar = live.find("--- 3b. GRAMMAR TRUNCATION").unwrap();
-        let clamp = live.find("--- 3c. BUDGET CLAMP").unwrap();
-        let commit = live.find("--- 4. COMMIT:").unwrap();
-        assert!(grammar < clamp && clamp < commit);
-        // Sampled and constrained rounds never clamp; None is today's program.
-        let squash = |t: &str| t.split_whitespace().collect::<Vec<_>>().join(" ");
-        assert!(squash(live).contains("match (budget_room, sampled || constraint.is_some()) {"));
-        assert!(live.contains("budget_room = s_budget_room.take();"));
     }
 }
