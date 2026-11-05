@@ -299,3 +299,23 @@ wave, TTFT p50/p95 with N, time to 429, `budget_bytes`. The value reading (DAY46
 admitted count on `enforce-wrel` against `enforce`, per order. On the Workstation: 11 of 32 against 1 of 32, the
 book at the second wave 20.47 GB against 60.60 GB. Plus the kit's labels: telemetry (250 ms, the card only),
 `gpu_watch_fault_lines` per half, the box state at start and end.
+
+**Amendment, 2026-11-05, before the first boot: the power limit.**
+
+Owner ruling, 2026-11-05: the cell may raise its card's power limit to 300 W, must note thermal throttling, and
+must restore the limit after use. This replaces the statement above that the limits have not been changed. The kit
+is unchanged: it still only records the limit it reads.
+
+- Before the cell boots, the runner, which sits outside the kit, sets the card under test to 300 W, the card's
+  default limit (`nvidia-smi -i <card> -pl 300`), and reads it back, so the receipts record 300 W. When the cell
+  ends, on any path, the runner restores the limit it read before (250 W on index 0 and 280 W on index 2 at kit
+  time) and reads it back. The slot guard and the gap scheduler also restore it when they stop.
+- Throttle telemetry: every 10 s during the cell the runner records temperature, fan, power draw, power limit, SM
+  clock and four clock-event reasons (SW power cap, SW thermal slowdown, HW thermal slowdown, HW power brake) in
+  `thermal-<cell>.csv`. It prints one summary line with the maximum temperature and fan and the number of samples
+  with each reason active. SW power cap is the normal state of a card running at its limit; it is recorded and not
+  judged.
+- Reading: every clause is a pass/fail line from the registered readers, so the throttle summary is recorded with the
+  receipt and not judged.
+- The thermal stop above is unchanged. The runner applies the same rule on its 10 s samples as a
+  backstop, and a stopped cell has no verdict.
