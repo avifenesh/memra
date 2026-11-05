@@ -2654,8 +2654,8 @@ neither number scales with `MEMRA_SPEC_BURST` anymore.
   EOS-text-never-streamed rule), so first text is ~0.12 s and inter-chunk gap p50 ~27 ms at
   ANY burst size for a solo stream (B32 fix-off was 0.41 s / 299 ms). Content is
   byte-identical either way — only chunk boundaries move. Throughput parity measured c=1
-  and c=8. Rollback: `MEMRA_SSE_PER_BURST=1`. Receipts:
-  `research/sse-cadence-20260805/VERDICT.md`.
+  and c=8. Its per-burst rollback seam was deleted after the default served unused (FLAGS.md
+  "Removed doors"). Receipts: `research/sse-cadence-20260805/VERDICT.md`.
 - **Admission yield + cold-first ordering** (lane/admission-latency): a request arriving
   mid-burst used to wait the whole in-flight burst out (contended first text 0.54 s at B32 /
   1.60 s at B128, i.e. burst size set round-robin admission latency). Two pieces, one flag:
@@ -2664,8 +2664,8 @@ neither number scales with `MEMRA_SPEC_BURST` anymore.
   burst before mid-generation peers. Contended first text is now **0.123 s (B32) / 0.152 s
   (B128)** — the solo class at any burst. Content byte-identical on/off, solo AND contended.
   The cost lives at c=8 saturation only: −3.4% agg tok/s for 3.8x better p50
-  (newcomer-first vs lockstep-fair; p95 tail pays); c=1 parity. Rollback:
-  `MEMRA_ADMIT_YIELD=0` (both pieces). Receipts: `research/admission-20260806/VERDICT.md`.
+  (newcomer-first vs lockstep-fair; p95 tail pays); c=1 parity. `MEMRA_ADMIT_YIELD=0`
+  selects lockstep fairness (both pieces) on tiers that want it. Receipts: `research/admission-20260806/VERDICT.md`.
 
 Burst default stays **B32** by the strict flip criterion, but the two old flip-blockers are
 gone: B128 buys +8.4% (c=1) / +8.5% (c=8) and now trails B32's contended first text by one
