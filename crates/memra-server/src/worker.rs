@@ -2949,17 +2949,19 @@ fn reuse_pool_global_cap() -> usize {
 /// `docs/decisions/KV-PARK-COMPACT-DEFAULT.md`; `research/spill-b-20260919/DAY38.md` 2.3 and
 /// 2.4 under addendum D: every resumed turn equal across arms in both orders, the step-OOM
 /// adjacency replay green with its red arm red): the RTX 5090 class and the full-power RTX
-/// PRO 6000 Blackwell Workstation Edition. Keyed by device name, once per worker, as
-/// `tier_transfer::kv_vmm_placement_for_device` keys its Workstation receipt
-/// (`HardwareTarget::is_pro6000_workstation`): the class's Max-Q and Server Edition
-/// variants, every other card and an unreadable name park the ladder-cap cache whole until a
-/// cell on them reads the same. No environment variable.
+/// PRO 6000 Blackwell Workstation Edition, plus the Max-Q Workstation Edition from the same
+/// cell rerun on that card (DAY38 addendum E and 2.5). Keyed by device name, once per worker,
+/// as `tier_transfer::kv_vmm_placement_for_device` keys its Workstation receipt
+/// (`HardwareTarget::is_pro6000_workstation`, `HardwareTarget::is_pro6000_maxq`): the class's
+/// Server Edition, every other card and an unreadable name park the ladder-cap cache whole
+/// until a cell on them reads the same. No environment variable.
 fn park_compact_for_device(device_name: &str) -> bool {
     use memra_engine::parallel::HardwareTarget;
     matches!(
         HardwareTarget::from_device_name(device_name),
         Ok(HardwareTarget::Rtx5090)
     ) || HardwareTarget::is_pro6000_workstation(device_name)
+        || HardwareTarget::is_pro6000_maxq(device_name)
 }
 
 /// Park-time compaction eligibility for a PLAIN continuation-pool entry (Arc C1).
@@ -44072,7 +44074,7 @@ mod tests {
     }
 
     /// The card classes park compaction is the default on (2026-11-04,
-    /// `docs/decisions/KV-PARK-COMPACT-DEFAULT.md`): the two the deciding cell read
+    /// `docs/decisions/KV-PARK-COMPACT-DEFAULT.md`): the three the deciding cell read
     /// PROMOTE-ELIGIBLE on, and no other.
     #[test]
     fn park_compact_follows_the_receipted_cards() {
@@ -44080,8 +44082,10 @@ mod tests {
         assert!(on("NVIDIA GeForce RTX 5090"));
         assert!(on("NVIDIA GeForce RTX 5090 Laptop GPU"));
         assert!(on("NVIDIA RTX PRO 6000 Blackwell Workstation Edition"));
+        assert!(on(
+            "NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition"
+        ));
         for card in [
-            "NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition",
             "NVIDIA RTX PRO 6000 Blackwell Server Edition",
             "NVIDIA GB10",
             "NVIDIA B200",

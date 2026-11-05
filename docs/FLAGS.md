@@ -1750,8 +1750,10 @@ turns equal across arms, the step-OOM adjacency replay green with its red arm re
 2026-11-04 ruling a winner becomes a default keyed to the card its receipt came from and its
 switch goes: compaction is now on for the RTX 5090 class and the full-power RTX PRO 6000
 Blackwell Workstation Edition (`park_compact_for_device`, the Workstation scope
-`tier_transfer::kv_vmm_placement_for_device` uses), and every other card parks the ladder-cap
-cache whole until a cell on it reads the same. The env read (`kv_park_compact_on`) is deleted;
+`tier_transfer::kv_vmm_placement_for_device` uses), and since 2026-11-05 on the Max-Q
+Workstation Edition from its own pre-registered rerun (`DAY38.md` 2.5 and 2.6,
+`pro-maxq-day38e/` and `pro-maxq-day38e-p2/`: P1' both orders and P2' both modes PASS, red arm
+red); every other card parks the ladder-cap cache whole until a cell on it reads the same. The env read (`kv_park_compact_on`) is deleted;
 the compactor, the grow arm and the refusal matrix are the code. A cache with latent (MLA/DSA)
 planes or of the eager-only class parks whole (the checkpoint restore carries no latent plane, and
 the eager-only class has no prefix snapshot), and only an entry the park compacted takes the
