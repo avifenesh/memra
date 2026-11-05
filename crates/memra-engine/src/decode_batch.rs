@@ -31,7 +31,6 @@ use crate::cache::Cache;
 use crate::hybrid::{HybridModel, Mixer};
 use cudarc::driver::{CudaEvent, CudaSlice};
 use std::collections::VecDeque;
-use std::sync::Arc;
 
 type DualPpCudaSpan = Option<(CudaEvent, CudaEvent)>;
 
@@ -373,101 +372,6 @@ pub struct DevPenalty {
     freq: f32,
     present: f32,
     counts: Vec<(u32, u32)>,
-}
-
-/// A one-row decode whose device work has been enqueued but whose result has not crossed back
-/// to the host yet. The worker owns the CUDA context, so this is deliberately a poll-at-the-next
-/// scheduler-boundary handoff rather than a background CUDA thread. Keeping the completion event
-/// and output buffers alive prevents the async-pool from recycling them while the next step runs.
-pub struct PendingBatchStep {
-    logits: CudaSlice<f32>,
-    pristine: Vec<Option<CudaSlice<f32>>>,
-    tokens: Option<CudaSlice<u32>>,
-    sampled: Vec<bool>,
-    n_vocab: usize,
-    lean: bool,
-    done: CudaEvent,
-    readback: Arc<cudarc::driver::CudaStream>,
-}
-
-impl PendingBatchStep {
-    #[allow(clippy::too_many_arguments)] // allow: the parameter list mirrors the kernel/FFI/call contract; bundling into a struct is a refactor, not a lint fix
-    fn new(
-        logits: CudaSlice<f32>,
-        pristine: Vec<Option<CudaSlice<f32>>>,
-        tokens: Option<CudaSlice<u32>>,
-        sampled: Vec<bool>,
-        n_vocab: usize,
-        lean: bool,
-        done: CudaEvent,
-        readback: Arc<cudarc::driver::CudaStream>,
-    ) -> Self {
-        Self {
-            logits,
-            pristine,
-            tokens,
-            sampled,
-            n_vocab,
-            lean,
-            done,
-            readback,
-        }
-    }
-
-    /// Wait for this step only, then perform one ordered readback of its host-visible results.
-    /// The compute stream may already be carrying the following step when this runs.
-    #[allow(clippy::type_complexity)] // allow: one-shot composite type; naming it would hide the shape that matters at the call site
-    pub fn wait(self) -> Result<(Vec<Vec<f32>>, Vec<Option<u32>>), Box<dyn std::error::Error>> {
-        self.readback.wait(&self.done)?;
-        // Lean device-sampled rows already parked their pristine logits in the session cache;
-        // their only host-visible result is the sampled token id. Avoid recreating the large
-        // vocab-row D2H that this path was introduced to remove.
-        let need_logits = !self.lean || self.sampled.iter().any(|sampled| !sampled);
-        let host_logits = need_logits
-            .then(|| self.readback.clone_dtoh(&self.logits))
-            .transpose()?;
-        let host_pristine: Vec<Option<Vec<f32>>> = self
-            .pristine
-            .iter()
-            .map(|row| {
-                row.as_ref()
-                    .map(|row| self.readback.clone_dtoh(row))
-                    .transpose()
-            })
-            .collect::<Result<_, _>>()?;
-        let host_tokens = self
-            .tokens
-            .as_ref()
-            .map(|tokens| self.readback.clone_dtoh(tokens))
-            .transpose()?;
-        self.readback.synchronize()?;
-
-        let mut rows = Vec::with_capacity(self.sampled.len());
-        for (bi, sampled) in self.sampled.iter().copied().enumerate() {
-            if self.lean && sampled {
-                rows.push(Vec::new());
-            } else if let Some(row) = host_pristine[bi].as_ref() {
-                rows.push(row.clone());
-            } else {
-                let start = bi * self.n_vocab;
-                let logits = host_logits
-                    .as_ref()
-                    .ok_or("pending step did not retain host logits for an unsampled row")?;
-                rows.push(logits[start..start + self.n_vocab].to_vec());
-            }
-        }
-        let next = host_tokens.map_or_else(
-            || vec![None; self.sampled.len()],
-            |tokens| {
-                self.sampled
-                    .iter()
-                    .enumerate()
-                    .map(|(bi, sampled)| sampled.then_some(tokens[bi]))
-                    .collect()
-            },
-        );
-        Ok((rows, next))
-    }
 }
 
 impl DevPenalty {
@@ -1062,71 +966,8 @@ impl HybridModel {
         lean: bool,
     ) -> Result<(Vec<Vec<f32>>, Vec<Option<u32>>), Box<dyn std::error::Error>> {
         self.decode_step_batch_sampled_lean_masked_schedule(
-            e, tokens, caches, samp, masks, lean, None, None,
+            e, tokens, caches, samp, masks, lean, None,
         )
-    }
-
-    /// Whether the generic, unsplit batched trunk can leave its result on the device for one
-    /// scheduler boundary. The pending path is intentionally c=1-only today: PP stages, model
-    /// specific batched programs, and the fixed-solo fusion arm each have different output
-    /// ownership and keep their established synchronous readback contract.
-    pub fn decode_step_overlap_eligible(&self) -> bool {
-        !batch_phase_on()
-            && crate::pp::pp_cuts(self.layers.len()).is_none()
-            // mHC trunks are excluded: the pending (deferred-readback) epilogue is only
-            // wired for the generic trunk body, and the hyper walk keeps the synchronous
-            // readback contract (see the named refusal in `_pending`).
-            && self.hyper.is_none()
-            && !Self::b1_fast_on()
-            && self.rewrite_allowed(memra_gguf::execution_manifest::RewriteSurface::DecodeBatch)
-            && crate::plan_backend::decode_batch_program(&self.plan)
-                == crate::plan_backend::DecodeBatchProgram::Generic
-    }
-
-    /// Enqueue one generic B=1 decode and defer its D2H until [`PendingBatchStep::wait`]. This
-    /// is the engine half of the overlap scheduler: the server can publish the token selected
-    /// from step n before it waits for step n+1's logits.
-    pub fn decode_step_batch_sampled_lean_masked_pending(
-        &self,
-        e: &Engine,
-        tokens: &[u32],
-        caches: &mut [&mut Cache],
-        samp: &[Option<DevSamp>],
-        masks: &[Option<(&CudaSlice<u32>, usize)>],
-        lean: bool,
-    ) -> Result<PendingBatchStep, Box<dyn std::error::Error>> {
-        if self.hyper.is_some() {
-            return Err(
-                "decode_step_batch_sampled_lean_masked_pending: the overlap scheduler's \
-                 deferred-readback step is not wired for the HyperConnections residual — \
-                 the hyper batched walk keeps the synchronous epilogue (its `pending_out` \
-                 plumbing through `decode_step_batch_hyper` does not exist yet). Serve mHC \
-                 sessions through the synchronous batched chain or the eager per-session \
-                 loop; `decode_step_overlap_eligible` already reports false for this trunk."
-                    .into(),
-            );
-        }
-        if tokens.len() != 1 || caches.len() != 1 {
-            return Err("overlap scheduler requires a single decode row".into());
-        }
-        if !self.decode_step_overlap_eligible() {
-            return Err(
-                "overlap scheduler is unavailable for this model, topology, or diagnostic arm"
-                    .into(),
-            );
-        }
-        let mut pending = None;
-        let _ = self.decode_step_batch_sampled_lean_masked_schedule(
-            e,
-            tokens,
-            caches,
-            samp,
-            masks,
-            lean,
-            None,
-            Some(&mut pending),
-        )?;
-        pending.ok_or_else(|| "overlap scheduler did not produce a pending step".into())
     }
 
     /// Worker-scheduled twin of [`Self::decode_step_batch_sampled_lean_masked`]. The worker
@@ -1164,7 +1005,6 @@ impl HybridModel {
             masks,
             lean,
             Some(dual_wave_mid),
-            None,
         )
     }
 
@@ -1179,7 +1019,6 @@ impl HybridModel {
         masks: &[Option<(&CudaSlice<u32>, usize)>],
         lean: bool,
         scheduled_dual_mid: Option<usize>,
-        pending_out: Option<&mut Option<PendingBatchStep>>,
     ) -> Result<(Vec<Vec<f32>>, Vec<Option<u32>>), Box<dyn std::error::Error>> {
         // WP-B day 49 (O14): the step guard records that the batched entry was reached.
         crate::step_guard::entered();
@@ -1233,22 +1072,14 @@ impl HybridModel {
         // on an hc model that is a DIFFERENT function computed fluently (the failure class
         // `refuse_hyper` exists for) — so the hyper route must come before the pp door, the
         // b1 fast path, and the width tiers, and it owns its own PP-N stage split inside.
-        // The dual-wave and pending entries refused above with named reasons; this guard is
-        // the defense-in-depth backstop for a future caller that reaches here with either.
+        // The dual-wave entry refused above with a named reason; this guard is the
+        // defense-in-depth backstop for a future caller that reaches here with one.
         if self.hyper.is_some() {
             if scheduled_dual_mid.is_some() {
                 return Err(
                     "decode_step_batch: a dual-wave schedule reached the hyper trunk — \
                      no dual-wave twin of hyper_batch_range_decode exists; mHC chunks are \
                      serial ticks"
-                        .into(),
-                );
-            }
-            if pending_out.is_some() {
-                return Err(
-                    "decode_step_batch: the pending (deferred-readback) epilogue reached \
-                     the hyper trunk — the hyper walk keeps the synchronous readback \
-                     contract"
                         .into(),
                 );
             }
@@ -1502,7 +1333,6 @@ impl HybridModel {
                 logits,
                 b_n,
                 &mut ph_last,
-                None,
             );
         }
         let n_embd = self.cfg.n_embd as usize;
@@ -1540,17 +1370,7 @@ impl HybridModel {
         let logits = e.matmul(&self.output, &hn, b_n)?;
         ph_mark(e, 10, &mut ph_last)?;
 
-        self.decode_batch_epilogue(
-            e,
-            caches,
-            samp,
-            masks,
-            lean,
-            logits,
-            b_n,
-            &mut ph_last,
-            pending_out,
-        )
+        self.decode_batch_epilogue(e, caches, samp, masks, lean, logits, b_n, &mut ph_last)
     }
 
     /// PP3/PP4 WAVEFRONT DECODE: split one scheduler tick into up to one wave per stage and drive
@@ -2026,7 +1846,6 @@ impl HybridModel {
             logits,
             width,
             &mut wave.phase_last,
-            None,
         )?);
         Ok(())
     }
@@ -2331,17 +2150,7 @@ impl HybridModel {
         let logits = e1.matmul(&self.output, &hn, b_n)?;
         ph_mark(e1, 10, &mut ph_last)?;
         Ok((
-            self.decode_batch_epilogue(
-                e1,
-                caches,
-                samp,
-                masks,
-                lean,
-                logits,
-                b_n,
-                &mut ph_last,
-                None,
-            )?,
+            self.decode_batch_epilogue(e1, caches, samp, masks, lean, logits, b_n, &mut ph_last)?,
             timing,
         ))
     }
@@ -2626,17 +2435,7 @@ impl HybridModel {
         let logits = el.matmul(&self.output, &hn, b_n)?;
         ph_mark(el, 10, &mut ph_last)?;
 
-        self.decode_batch_epilogue(
-            el,
-            caches,
-            samp,
-            masks,
-            lean,
-            logits,
-            b_n,
-            &mut ph_last,
-            None,
-        )
+        self.decode_batch_epilogue(el, caches, samp, masks, lean, logits, b_n, &mut ph_last)
     }
 
     /// The mHC (HyperConnections) batched decode arm (lane/glm53-batched-decode,
@@ -2844,17 +2643,7 @@ impl HybridModel {
         )?;
         let logits = self.hyper_batch_head_logits(e, &topology, &x, b_n, n_embd, eps)?;
         ph_mark(e, 10, &mut ph_last)?;
-        self.decode_batch_epilogue(
-            e,
-            caches,
-            samp,
-            masks,
-            lean,
-            logits,
-            b_n,
-            &mut ph_last,
-            None,
-        )
+        self.decode_batch_epilogue(e, caches, samp, masks, lean, logits, b_n, &mut ph_last)
     }
 
     /// Per-row single-position device buffers, uploaded through THIS engine (under a pp
@@ -2955,7 +2744,6 @@ impl HybridModel {
                 logits,
                 b_n,
                 &mut ph_last,
-                None,
             );
         }
 
@@ -3018,17 +2806,7 @@ impl HybridModel {
         )?;
         let logits = self.hyper_batch_head_logits(el, topology, &x, b_n, n_embd, eps)?;
         ph_mark(el, 10, &mut ph_last)?;
-        self.decode_batch_epilogue(
-            el,
-            caches,
-            samp,
-            masks,
-            lean,
-            logits,
-            b_n,
-            &mut ph_last,
-            None,
-        )
+        self.decode_batch_epilogue(el, caches, samp, masks, lean, logits, b_n, &mut ph_last)
     }
 
     /// Build the per-step layer context for layers `[lo, hi)`: the device state-pointer
@@ -4393,7 +4171,7 @@ impl HybridModel {
         e.softcap(&mut ld, cap, b_n * self.output.out_features())?;
         self.gemma4_suppress(e, &mut ld, b_n)?; // non-monotonic — before any argmax/sample
         let mut ph_last = std::time::Instant::now();
-        self.decode_batch_epilogue(e, caches, samp, masks, lean, ld, b_n, &mut ph_last, None)
+        self.decode_batch_epilogue(e, caches, samp, masks, lean, ld, b_n, &mut ph_last)
     }
 
     /// Per-session gemma4 attention for the batched arm: batched projections + fused
@@ -4706,37 +4484,8 @@ impl HybridModel {
         logits: CudaSlice<f32>,
         b_n: usize,
         ph_last: &mut std::time::Instant,
-        pending_out: Option<&mut Option<PendingBatchStep>>,
     ) -> Result<(Vec<Vec<f32>>, Vec<Option<u32>>), Box<dyn std::error::Error>> {
-        let n_vocab = self.output.out_features();
-        let staged = self.decode_batch_sample_stage(
-            e,
-            caches,
-            samp,
-            masks,
-            lean,
-            logits,
-            b_n,
-            pending_out.is_some(),
-        )?;
-        if let Some(slot) = pending_out {
-            for c in caches.iter_mut() {
-                c.pos += 1;
-            }
-            ph_mark(e, 11, ph_last)?;
-            let done = e.stream().record_event(None)?;
-            *slot = Some(PendingBatchStep::new(
-                staged.logits,
-                staged.pristine,
-                staged.device_tokens,
-                samp.iter().take(b_n).map(Option::is_some).collect(),
-                n_vocab,
-                lean,
-                done,
-                e.copy_stream.clone(),
-            ));
-            return Ok((Vec::new(), vec![None; b_n]));
-        }
+        let staged = self.decode_batch_sample_stage(e, caches, samp, masks, lean, logits, b_n)?;
         let rows = self.decode_batch_sample_rows(e, caches, samp, masks, lean, &staged, b_n)?;
         for c in caches.iter_mut() {
             c.pos += 1;
@@ -4760,14 +4509,13 @@ impl HybridModel {
         logits: CudaSlice<f32>,
         b_n: usize,
     ) -> Result<(Vec<Vec<f32>>, Vec<Option<u32>>), Box<dyn std::error::Error>> {
-        let staged =
-            self.decode_batch_sample_stage(e, caches, samp, &[], lean, logits, b_n, false)?;
+        let staged = self.decode_batch_sample_stage(e, caches, samp, &[], lean, logits, b_n)?;
         let rows = self.decode_batch_sample_rows(e, caches, samp, &[], lean, &staged, b_n)?;
         Ok((rows, staged.next))
     }
 
     /// The epilogue's device half: pristine parks, penalties, masks and the device draws
-    /// (with the `[B]` token readback unless `pending`).
+    /// (with the `[B]` token readback).
     #[allow(clippy::too_many_arguments)]
     fn decode_batch_sample_stage(
         &self,
@@ -4778,7 +4526,6 @@ impl HybridModel {
         lean: bool,
         logits: CudaSlice<f32>,
         b_n: usize,
-        pending: bool,
     ) -> Result<SampledStack, Box<dyn std::error::Error>> {
         // Grammar masks and penalties both mutate the sampling copy. Preserve each affected
         // row's PRISTINE logits first: continuation/reuse consumers must never inherit a mask
@@ -4892,7 +4639,6 @@ impl HybridModel {
         // Device-side sampling for requested rows (see the method doc). Enqueued before the
         // big logits D2H so the tiny [B] token readback rides the same sync.
         let mut next: Vec<Option<u32>> = vec![None; b_n];
-        let mut device_tokens: Option<CudaSlice<u32>> = None;
         if samp.iter().take(b_n).any(|s| s.is_some()) {
             let mut toks = e.alloc_u32_zeroed(b_n)?;
             let mut perturb: Option<CudaSlice<f32>> = None;
@@ -4981,21 +4727,17 @@ impl HybridModel {
                     e.argmax_token_device_col(pb, 0, n_vocab, &mut toks, bi)?;
                 }
             }
-            if !pending {
-                let host_toks = e.dtoh_u32(&toks)?;
-                for (bi, s) in samp.iter().take(b_n).enumerate() {
-                    if s.is_some() {
-                        next[bi] = Some(host_toks[bi]);
-                    }
+            let host_toks = e.dtoh_u32(&toks)?;
+            for (bi, s) in samp.iter().take(b_n).enumerate() {
+                if s.is_some() {
+                    next[bi] = Some(host_toks[bi]);
                 }
             }
-            device_tokens = Some(toks);
         }
         Ok(SampledStack {
             logits,
             pristine,
             next,
-            device_tokens,
         })
     }
 
@@ -5071,12 +4813,11 @@ impl HybridModel {
 }
 
 /// `decode_batch_sample_stage`'s output: the (penalized, masked) logits stack, the pristine
-/// copies of mutated non-lean rows, the host-read device draws, and the device token buffer.
+/// copies of mutated non-lean rows, and the host-read device draws.
 struct SampledStack {
     logits: CudaSlice<f32>,
     pristine: Vec<Option<CudaSlice<f32>>>,
     next: Vec<Option<u32>>,
-    device_tokens: Option<CudaSlice<u32>>,
 }
 
 fn b1_fast_plan_eligible(plan: &memra_gguf::model_plan::ModelPlan) -> bool {
