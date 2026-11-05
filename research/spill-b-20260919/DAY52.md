@@ -165,5 +165,9 @@ is unchanged: it still only records the limit it reads.
   with each reason active. SW power cap is the normal state of a card running at its limit; it is recorded and not
   judged.
 - Reading: this is an untimed pass/fail cell, so the throttle summary is recorded with the receipt and not judged.
+- Neighbour rule, asked by the box's training session: this cell runs on GPU 2 beside training on GPUs 0, 1 and 3,
+  so every 10 s the runner also reads GPUs 1 and 3. If either reaches 90 C, GPU 2 returns to its previous limit (280
+  W) for the rest of the cell, and the summary line records when. The verdict does not depend on power, so the drop
+  changes no clause.
 - The runner applies the Max-Q thermal rule on its 10 s samples: it stops the cell at >= 95 C, or at >= 92 C
   with the fan at >= 95 % on 3 consecutive samples, and a stopped cell has no verdict.
