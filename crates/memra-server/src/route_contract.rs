@@ -271,9 +271,10 @@ impl RouteContract {
         .implemented(PolicySurface::Occupancy, "m.admission_inflight = ")
         .implemented(PolicySurface::Progress, "health.beat_busy()")
         .implemented(PolicySurface::FaultOwnership, "request_fault_guard(")
+        // Shutdown: a closed command channel drains the active sessions, then the loop exits.
         .implemented(
             PolicySurface::ShutdownOwnership,
-            "host_capture_drain_at_shutdown(",
+            "Err(std::sync::mpsc::TryRecvError::Disconnected) => {",
         )
         .implemented(PolicySurface::MemoryCost, "admit_memory::decide(")
         .implemented(

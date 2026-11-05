@@ -28,9 +28,7 @@
 #                  the host copy's draft K plane, boundary hidden row or logits after the demote
 #                  digest, and the promote must print VERIFY FAILED as in digest-mismatch; with
 #                  MEMRA_SERVE_SPEC=0 (plain entries: no draft plane, no hidden row) the draft
-#                  and hidden cells must flip nothing and promote with verify ok; with
-#                  MEMRA_KV_HOST_CONTRACTS=1 (the door's receipts attest these planes; the
-#                  values apply on the legacy copy path only) all three must.
+#                  and hidden cells must flip nothing and promote with verify ok.
 #   alloc-refusal  MEMRA_KV_HOST_FAULT=alloc-fail: every pinned alloc reports failure, so the
 #                  first demote must print "[prefix-host] TIER DISABLED" (latched off, no
 #                  pageable fallback), count prefix_host_rejected_allocs, complete zero
@@ -254,16 +252,11 @@ chk "r3 served the COLD path with reference bytes (corruption never reached a cu
 # `insert (spec-boundary)` entries carrying a draft plane and a hidden row) must fail the promote
 # like cell 2; plain-published entries (MEMRA_SERVE_SPEC=0) carry neither, so the draft and hidden
 # faults must flip nothing: no FAULT line, `verify ok`, a real promote.
-# Under MEMRA_KV_HOST_CONTRACTS=1 the door's receipts attest these planes and the three values
-# apply only on the legacy copy path, so the door-ON arm asserts the no-flip outcome: no FAULT
-# line, `verify ok` (the v3 digest across the door's round trip), a real promote.
 SPEC_MODE=1
 [ "${MEMRA_SERVE_SPEC:-}" = 0 ] && SPEC_MODE=0
-DOOR_ON=0
-[ "${MEMRA_KV_HOST_CONTRACTS:-}" = 1 ] && DOOR_ON=1
 for plane in draft hidden logits; do
     case $plane in draft) what="draft K" ;; *) what=$plane ;; esac
-    echo "== cell digest-$plane: verify on + MEMRA_KV_HOST_FAULT=flip-demote-$plane (spec mode $SPEC_MODE, door $DOOR_ON) =="
+    echo "== cell digest-$plane: verify on + MEMRA_KV_HOST_FAULT=flip-demote-$plane (spec mode $SPEC_MODE) =="
     boot "MEMRA_KV_HOST_MB=$HOST_MB MEMRA_KV_HOST_VERIFY=1 MEMRA_KV_HOST_FAULT=flip-demote-$plane" \
         "$EV/digest-$plane-server.log"
     run_cell "digest-$plane"
@@ -274,7 +267,7 @@ for plane in draft hidden logits; do
         chk "digest-$plane: the default boot published spec entries (the plane exists)" \
             grep -q "\[prefix-cache\] insert (spec-boundary)" "$log"
     fi
-    if [ "$DOOR_ON" = 0 ] && { [ "$SPEC_MODE" = 1 ] || [ "$plane" = logits ]; }; then
+    if [ "$SPEC_MODE" = 1 ] || [ "$plane" = logits ]; then
         chk "digest-$plane: the fault door announced the injected corruption" \
             grep -q "\[prefix-host\] FAULT: flipped one demoted $what byte" "$log"
         chk "digest-$plane: the promote caught it: VERIFY FAILED, loud and named" \
@@ -284,7 +277,7 @@ for plane in draft hidden logits; do
         chk "digest-$plane: metrics: zero promotions after the refusal" \
             jqpy "$EV/digest-$plane-metrics.json" "r['prefix_host_promotions'] == 0"
     else
-        if [ "$DOOR_ON" = 1 ]; then why="door ON: the receipts attest the $what plane"; else why="plain entries carry no $what plane"; fi
+        why="plain entries carry no $what plane"
         chk "digest-$plane: $why: nothing flipped" \
             absent "\[prefix-host\] FAULT:" "$log"
         chk "digest-$plane: $why: verify ok, the fault touched nothing else" \
