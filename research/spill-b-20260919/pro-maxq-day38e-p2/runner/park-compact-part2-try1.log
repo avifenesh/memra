@@ -1,0 +1,21 @@
+verifying the model sha256 (15705922304 bytes)
+runner start 2026-11-05T16:46:43Z mode=gap part=2 card=2 budget_s=13800 boots=[main-O2-on:on main-O2-off:off]
+caller fd9=/mnt/Data/work/evals/gpu2.lock memra_lock=/tmp/memra-gpu.lock (fd 8)
+power.limit=300.00 W enforced=300.00 W default=300.00 W max=300.00 W
+== main-O2-on start 2026-11-05T16:46:43Z (13613s left, projection 4800s)
+== main-O2-on end rc=0 dur_s=3320 DAY38 CLIENT rows=150 ok=150
+== main-O2-off start 2026-11-05T17:42:03Z (10293s left, projection 3712s)
+== main-O2-off end rc=0 dur_s=3326 DAY38 CLIENT rows=150 ok=150
+== reading /mnt/Data/work/memra-maxq/park-compact/out-20261105T164643Z
+DAY38D P1 card=pro6000-maxq order=O2 xp_turns=30 resumed_both=30 frac=1.00 xp_door_differ=[] prompt_mismatch=[] a_turn2=15 a_differ=[] on_resumed=30 park_compact_grow=30 affinity_rewound={'main-O2-off': 15, 'main-O2-on': 15} non200=[] faults=0 -> PASS
+VERDICT DAY38D card=pro6000-maxq rule=DAY38-1.6 P1'=[O1:absent,O2:PASS] P2'=[fault-batch:absent,fault-nobatch:absent] red=[fault-nobatch-red:absent] -> INCOMPLETE (absent boots: main-O1-off main-O1-on fault-batch fault-nobatch)
+== combined reading /mnt/Data/work/memra-maxq/park-compact/out-combined-20261105T164643Z
+DAY38D P1 card=pro6000-maxq order=O1 xp_turns=30 resumed_both=30 frac=1.00 xp_door_differ=[] prompt_mismatch=[] a_turn2=15 a_differ=[] on_resumed=30 park_compact_grow=30 affinity_rewound={'main-O1-off': 15, 'main-O1-on': 15} non200=[] faults=0 -> PASS
+DAY38D P1 card=pro6000-maxq order=O2 xp_turns=30 resumed_both=30 frac=1.00 xp_door_differ=[] prompt_mismatch=[] a_turn2=15 a_differ=[] on_resumed=30 park_compact_grow=30 affinity_rewound={'main-O2-off': 15, 'main-O2-on': 15} non200=[] faults=0 -> PASS
+DAY38D P2 card=pro6000-maxq boot=fault-batch fired=1 errored_rows=['Xp-6144-r0-t1'] ok200=39 park_compact=39 next_turn=[{'tag': 'Xp-6144-r0-t2', 'equal_cold': True, 'pool_resumed': 0, 'cached': 0}] faults=0 -> PASS
+DAY38D P2 card=pro6000-maxq boot=fault-nobatch fired=1 errored_rows=['Xp-6144-r0-t1'] ok200=39 park_compact=39 next_turn=[{'tag': 'Xp-6144-r0-t2', 'equal_cold': True, 'pool_resumed': 0, 'cached': 0}] faults=0 -> PASS
+DAY38D P2 card=pro6000-maxq boot=fault-nobatch-red fired=1 errored_rows=['Xp-6144-r0-t1'] ok200=39 park_compact=40 next_turn=[{'tag': 'Xp-6144-r0-t2', 'equal_cold': True, 'pool_resumed': 1, 'cached': 6144}] faults=0 -> FAIL (red arm: the expected reading is FAIL with park_compact=ok200+1 and a resumed next turn)
+VERDICT DAY38D card=pro6000-maxq rule=DAY38-1.6 P1'=[O1:PASS,O2:PASS] P2'=[fault-batch:PASS,fault-nobatch:PASS] red=[fault-nobatch-red:FAIL, red as expected] -> PROMOTE-ELIGIBLE (P1' and P2' pass; P3 and P4 go with it)
+receipts 4.0M; scratch removed: yes; servers left: 0
+OUT /mnt/Data/work/memra-maxq/park-compact/out-combined-20261105T164643Z
+power GPU 2: limit 300 W (asked 300, was 280, max 300); 660 samples, 23 at 300 W, first sample off it 2026/11/05 18:50:28.267 -> 280 W; max 91 C, max fan 94 %; sw_thermal 0, hw_thermal 0, hw_power_brake 0, sw_power_cap 650; throttle: no; thermal stop: none; neighbours 1,3 max 89 C, drop: none; restored 280 W; rc=0
