@@ -55,6 +55,17 @@ A script checks every claim against the tree: its quote must appear on the cited
 
 The wide share is mostly real sharing, not missing labels. The server, the tokenizer and the `Engine` launch helpers run for every model. One exception is called out in `findings.md`: 459 items write a process-global static, which makes their change reach the static's whole reach.
 
+## Rebuild on the code of b86fc497c2 (main at 516ec03e94)
+
+`build.py --run-scip` re-anchored the first build's annotations; no region was re-annotated.
+
+| Step | Result |
+|---|---|
+| Re-anchoring | 6,334 of 6,392 regions re-anchored. 58 were dropped, and their items widen back to every cell: 54 whose evidence quote is no longer in the item, 3 whose shifted span leaves the item, 1 whose item is gone. 38 of them are in `spec.rs` and `dflash.rs`, where main deleted the DSpark doors, so that slice is the one to re-annotate |
+| Precision | 17,275 items. 77.5% of items (71.9% of their lines) reach every family, 14.4% exactly one family and 7.8% several. 12.2% are GPU-only and 1.9% run on a narrower device set. 469 items write a process-global static |
+
+Lines are counted once per source line, for the innermost item that holds it. Counted that way, the first build's map gives 71.3%, not the 75% reported above.
+
 ## The delta query
 
 `python3 tools/impact_map/delta.py --base origin/main --head HEAD` prints the reached cells and the run plan. `change_impact.py` and `cell_evidence.py need` print the same plan under the target cells.

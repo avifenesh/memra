@@ -1,6 +1,6 @@
 # Past diffs through the delta query
 
-Each row replays one real diff against `map.json` (built on the code of 372a4cf284) with today's rules in `tools/change-impact.toml`:
+Each row replays one real diff against the first build's `map.json` (built on the code of 372a4cf284; the current map is a rebuild, see the README) with today's rules in `tools/change-impact.toml`:
 
 - main commits against their first parent;
 - open PRs against their merge base.
