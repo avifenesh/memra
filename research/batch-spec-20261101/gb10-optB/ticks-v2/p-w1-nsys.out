@@ -1,0 +1,18 @@
+WARNING: CPU IP/backtrace sampling not supported, disabling.
+Try the 'nsys status --environment' command to learn more.
+
+WARNING: CPU context switch tracing not supported, disabling.
+Try the 'nsys status --environment' command to learn more.
+
+[tensor-contract] bound 866 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+loaded qwen35 (64 layers); steps=8 reps=1 batches=[1, 2, 4, 8] primary_dev=0
+[fa-pool] grow #0 dev=0 o_len 0 -> 19070976 ml_len 0 -> 74496 (retired kept, zero=false)
+Capture range started in the application.
+Capture range ended in the application.
+Generating '/tmp/nsys-report-fe7f.qdstrm'
+[1/1] [0%                          ] p-w1.nsys-repProcessing events...
+[1/1] [0%                          ] p-w1.nsys-rep[1/1] [11%                         ] p-w1.nsys-rep[1/1] [10%                         ] p-w1.nsys-rep[1/1] [9%                          ] p-w1.nsys-rep[1/1] [=17%                        ] p-w1.nsys-rep[1/1] [====26%                     ] p-w1.nsys-rep[1/1] [======35%                   ] p-w1.nsys-rep[1/1] [=========43%                ] p-w1.nsys-rep[1/1] [===========52%              ] p-w1.nsys-rep[1/1] [==============61%           ] p-w1.nsys-rep[1/1] [================69%         ] p-w1.nsys-rep[1/1] [==================78%       ] p-w1.nsys-rep[1/1] [=====================86%    ] p-w1.nsys-rep[1/1] [=====================89%    ] p-w1.nsys-rep[1/1] [========================100%] p-w1.nsys-rep[1/1] [========================100%] p-w1.nsys-rep
+CHUNKSWEEP seqs=16 chunk=16: aggregate 84.3 tok/s (189.74 ms/tick, median of 1)
+TOKFP seqs=16 chunk=16 [3d9ccf4ecee274f5 2c0bd7afbada32bf 14db6391280fe025 7193a3ad37db242e 98704fd03906b885 14db6391280fe025 f3d99d64a4d26396 14db6391280fe025 14db6391280fe025 7c830d3a720e32d8 1224667b5900d0bb 8c82cc64bde6f7e9 c0609da9895721db 673d4931c8c731a5 14db6391280fe025 bac7fb4e81cd16bb]
+Generated:
+	/home/avifenesh/memra-run/step-w4a4v2/p-w1.nsys-rep

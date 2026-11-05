@@ -1,0 +1,5 @@
+[tensor-contract] bound 866 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+loaded qwen35 (64 layers); steps=16 reps=3 batches=[1, 2, 4, 8] primary_dev=0
+[fa-pool] grow #0 dev=0 o_len 0 -> 12632064 ml_len 0 -> 49344 (retired kept, zero=false)
+CHUNKSWEEP seqs=8 chunk=8: aggregate 60.1 tok/s (133.18 ms/tick, median of 3)
+TOKFP seqs=8 chunk=8 [95d831b8582c8638 1b76b1d140e1c961 91ece9d0278a5a39 b918f1512e26533c 7210f48acab4a825 e8ab5f2233db47aa 0fac7c7537f4468c 8e7f88521b7d0868]

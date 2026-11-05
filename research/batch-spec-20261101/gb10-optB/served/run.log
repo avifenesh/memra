@@ -1,0 +1,11 @@
+03:32:12 start b-w4a4 base=http://127.0.0.1:8090 model=q38 node=spark-cb33
+03:33:26 warm {"size": 8192, "users": 1, "cold_max_s": 9.87, "turn256": [0.47, 0.47]} {"size": 32768, "users": 1, "cold_max_s": 43.73, "turn256": [0.62, 0.62]} 
+04:02:59 cell c1 {"arm": "b-w4a4", "users": 1, "max_tokens": 768, "seed": 1234, "think": 1, "temperature": 1.0, "turns": 48, "tokens": 19942, "wall_s": 1160.9, "aggregate_gen_tp
+04:15:22 cell c2 {"arm": "b-w4a4", "users": 2, "max_tokens": 768, "seed": 1234, "think": 1, "temperature": 1.0, "turns": 48, "tokens": 17759, "wall_s": 731.1, "aggregate_gen_tps
+04:25:29 cell c4 {"arm": "b-w4a4", "users": 4, "max_tokens": 768, "seed": 1234, "think": 1, "temperature": 1.0, "turns": 48, "tokens": 18729, "wall_s": 594.2, "aggregate_gen_tps
+04:32:31 cell c8 {"arm": "b-w4a4", "users": 8, "max_tokens": 768, "seed": 1234, "think": 1, "temperature": 1.0, "turns": 48, "tokens": 17985, "wall_s": 413.0, "aggregate_gen_tps
+04:37:40 cell c16 {"arm": "b-w4a4", "users": 16, "max_tokens": 768, "seed": 1234, "think": 1, "temperature": 1.0, "turns": 48, "tokens": 17988, "wall_s": 299.6, "aggregate_gen_tp
+04:41:46 cell c32 {"arm": "b-w4a4", "users": 32, "max_tokens": 768, "seed": 1234, "think": 1, "temperature": 1.0, "turns": 48, "tokens": 17988, "wall_s": 236.2, "aggregate_gen_tp
+05:29:36 quality {"prime": "b-w4a4", "ttft_s": 239.6065179130528, "prompt_tokens": 131550, "finish": "stop", "identity": true, "gpu_hits": 0, "external_hits": 0} {"quality": "b-w4a4", "rep": 0, "long_humaneval": [155, 164, 1], "long_gsm8k": [96, 100, 0]} 
+MemAvailable min 3.96 GiB, median 47.72 GiB over 7008 s
+05:29:36 end
