@@ -49,6 +49,7 @@ def main():
         if line.startswith("version"):
             version = line.split('"')[1]
             break
+    failed = []
     for tag, arch, extra in VARIANTS:
         out = os.path.join(ROOT, "out-" + tag)
         shutil.rmtree(out, ignore_errors=True)
@@ -62,6 +63,11 @@ def main():
         print(f"{tag}: exit={r.returncode} nvcc_calls={n}")
         if r.returncode != 0:
             open(os.path.join(out, "stderr.txt"), "w").write(r.stderr)
+        if r.returncode != 0 or n == 0:
+            failed.append(f"{tag} (exit {r.returncode}, {n} nvcc calls; {out}/stderr.txt)")
+    # a variant whose replay failed has missing or partial nvcc logs: its kernels would read as dead
+    if failed:
+        sys.exit("build.rs replay failed: " + "; ".join(failed))
 
 
 if __name__ == "__main__":

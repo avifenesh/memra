@@ -64,6 +64,9 @@ def run_unit(args, crate_dir, workdir):
     steps = [l[3:] for l in plan.stderr.splitlines() if l.startswith("#$ ")]
     env = dict(os.environ)
     result = {"src": src, "defines": [x for x in a if x.startswith("-D")], "passes": {}}
+    if plan.returncode != 0:
+        result["passes"]["plan"] = {"error": "nvcc --dryrun failed: " + plan.stderr[-2000:]}
+        return result
     for st in steps:
         m = re.match(r"^([A-Za-z_][A-Za-z0-9_]*)=(.*)$", st)
         if m and " " not in st.split("=")[0]:
@@ -86,6 +89,9 @@ def run_unit(args, crate_dir, workdir):
             result["passes"][passname] = {"error": pp.stderr[-2000:]}
             continue
         result["passes"][passname] = live_lines(pp.stdout, crate_dir + "/")
+    if "device" not in result["passes"]:
+        # every CUDA unit has a device compile; a plan without one gives no liveness, not "nothing live"
+        result["passes"]["device"] = {"error": "the nvcc plan has no device preprocessing step"}
     return result
 
 

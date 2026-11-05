@@ -2,8 +2,9 @@
 """Turn annotation-agent output into docs/impact-map/annotations.json: every claim's citations are
 checked against the tree (quote must be a substring of the cited line, +-3 lines allowed and
 re-pinned), each region is anchored to its innermost stage-0 item (id, start line, token hash)
-so later trees can re-anchor it, and adversarial verdicts are applied (a refuted narrowing claim
-is widened back to every cell; an unverified narrowing claim is kept and marked).
+so later trees can re-anchor it, and adversarial verdicts are applied: a narrowing claim narrows
+only once a skeptic verified it; a refuted or unverified one is widened back to every cell and
+marked, so an ingest without verdicts gives a wide map, never a narrow one.
 
 Usage: ingest.py RESULTS.json [VERDICTS.json] > annotations.json
 Env: MEMRA_IMPACT_WORK (stage-0 dir parent), MEMRA_IMPACT_REPO (the tree the agents read).
@@ -101,8 +102,8 @@ def main():
                 rec["verdict"] = "verified"
                 stats["regions_verified"] += 1
             else:
-                rec["verdict"] = "unverified"
-                stats["regions_unverified_narrowing"] += 1
+                rec.update(families=["*"], routes=["*"], devices=["*"], door=None, narrowing=False, verdict="unverified")
+                stats["regions_unverified_widened"] += 1
         out["regions"].append(rec)
         stats["regions_kept"] += 1
 
@@ -167,10 +168,14 @@ def main():
             cid = f"{sid}:F{j}"
             rec = {"claim": cid, "file": clean_path(fd["file"]), **{k: fd.get(k) or ["*"] for k in ("families", "routes", "devices", "formats")},
                    "effects": fd.get("effects") or [], "note": fd.get("note", "")[:300], "basis": (fd.get("narrowing_basis") or "")[:400], "evidence": ev[:3]}
+            narrows = any("*" not in rec[k] for k in ("families", "routes", "devices"))
             if cid in refuted:
                 rec.update(families=["*"], routes=["*"], devices=["*"], verdict="refuted")
             elif cid in verified:
                 rec["verdict"] = "verified"
+            elif narrows:
+                rec.update(families=["*"], routes=["*"], devices=["*"], verdict="unverified")
+                stats["file_defaults_unverified_widened"] += 1
             out["file_defaults"].append(rec)
         for e in a.get("entries", []):
             ev = [p for p in (pin(x) for x in e.get("evidence", [])) if p]

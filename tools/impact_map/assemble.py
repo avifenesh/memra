@@ -40,6 +40,27 @@ DEVICES = ["rtx5090", "rtxpro6000", "gb10", "b200", "h100", "sm89", "cpu"]
 DEVICE_OF_VARIANT = {"120a": ["rtx5090", "rtxpro6000", "gb10"], "100a": ["b200"], "90a": ["h100"], "89": ["sm89"]}
 CFG_DEVICES = {"memra_hopper_mma": {"h100"}, "memra_sm100_tcgen05": {"b200"}, "memra_portable_cuda": {"h100", "sm89"}}
 
+def liveness_failures(live):
+    """Why liveness.json cannot be trusted for the variants that set device reach, or [].
+    A missing or empty variant, or a unit whose preprocessing failed, would leave its lines
+    unlisted, which reads as dead and narrows the map. Variants that set no device reach (the
+    CUTLASS build door) are not checked."""
+    bad = []
+    for variant in DEVICE_OF_VARIANT:
+        units = (live.get(variant) or {}).get("units") or []
+        if not units:
+            bad.append(f"{variant}: no units")
+        for u in units:
+            passes = u.get("passes") or {}
+            if "device" not in passes:
+                bad.append(f"{variant} {u.get('src')}: no device pass")
+            for name, p in passes.items():
+                if not isinstance(p, dict) or "error" in p:
+                    err = p.get("error", "") if isinstance(p, dict) else repr(p)
+                    bad.append(f"{variant} {u.get('src')} {name}: {err.strip().splitlines()[-1][:200] if err.strip() else 'error'}")
+    return bad
+
+
 _lines = {}
 # a static's use that mutates it: atomics, cells, locks, maps, or assignment to a static mut
 WRITE = re.compile(r"^\s*(\.(store|set|get_or_init|get_or_try_init|swap|fetch_\w+|compare_exchange\w*|lock|write|borrow_mut|insert|push|replace|take|clear|with)\b|\s*[-+*/|&^]?=[^=])")
@@ -161,6 +182,9 @@ def main():
 
     # ---- devices per item ----
     live = json.load(open(os.path.join(S0, "liveness.json")))
+    bad = liveness_failures(live)
+    if bad:
+        sys.exit("liveness incomplete for a device variant (a kernel would read as dead):\n  " + "\n  ".join(bad))
     live_lines = collections.defaultdict(lambda: collections.defaultdict(set))
     for variant, d in live.items():
         if variant not in DEVICE_OF_VARIANT:

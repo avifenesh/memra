@@ -334,5 +334,87 @@ class ServerSideTest(unittest.TestCase):
         self.assertEqual(delta.cell_fingerprints(m, before, {cell}, linked=linked)[cell],
                          delta.cell_fingerprints(m, after, {cell}, linked=linked)[cell])
 
+
+class BuildFailsClosedTest(unittest.TestCase):
+    """A build step that fails must stop the build or widen the map, never narrow it."""
+
+    def test_a_failed_build_rs_replay_fails_the_capture(self):
+        import buildrs_capture as bc
+        from unittest import mock
+
+        def run(cmd, **kw):
+            if cmd[0] == "rustc":
+                return subprocess.CompletedProcess(cmd, 0, "", "")
+            return subprocess.CompletedProcess(cmd, 101, "", "build.rs panicked")
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.object(bc, "ROOT", tmp), \
+                mock.patch.object(bc.subprocess, "run", side_effect=run):
+            with self.assertRaises(SystemExit) as e:
+                bc.main()
+        self.assertIn("build.rs replay failed", str(e.exception.code))
+
+    def test_a_failed_or_empty_nvcc_plan_is_an_error_not_empty_liveness(self):
+        import cu_liveness
+        from unittest import mock
+        args = ["-arch=sm_120a", "-c", "cu/a.cu", "-o", "a.o"]
+        with tempfile.TemporaryDirectory() as tmp:
+            nvcc = Path(tmp) / "nvcc"
+            with mock.patch.dict(os.environ, {"PATH": f"{tmp}:{os.environ['PATH']}"}):
+                nvcc.write_text("#!/bin/sh\necho 'nvcc fatal: unsupported gpu architecture' >&2\nexit 1\n")
+                nvcc.chmod(0o755)
+                self.assertIn("error", cu_liveness.run_unit(args, tmp, None)["passes"].get("plan", {}))
+                nvcc.write_text("#!/bin/sh\nexit 0\n")
+                self.assertIn("error", cu_liveness.run_unit(args, tmp, None)["passes"].get("device", {}))
+
+    def test_incomplete_liveness_for_a_device_variant_is_refused(self):
+        import assemble
+
+        def unit(src, **passes):
+            return {"src": src, "passes": passes or {"device": {"cu/a.cu": [[1, 9]]}}}
+        good = {v: {"units": [unit("cu/a.cu")]} for v in assemble.DEVICE_OF_VARIANT}
+        good["120a-MEMRA_CUTLASS"] = {"units": [unit("cu/c.cu", device={"error": "no cutlass headers"})]}
+        self.assertEqual(assemble.liveness_failures(good), [])  # the CUTLASS door sets no device reach
+        failed = json.loads(json.dumps(good))
+        failed["90a"]["units"][0]["passes"]["host"] = {"error": "x.h: No such file or directory"}
+        self.assertTrue(any(b.startswith("90a cu/a.cu host") for b in assemble.liveness_failures(failed)))
+        missing = {v: d for v, d in good.items() if v != "89"}
+        self.assertIn("89: no units", assemble.liveness_failures(missing))
+        no_device = json.loads(json.dumps(good))
+        no_device["100a"]["units"][0]["passes"] = {"host": {}}
+        self.assertIn("100a cu/a.cu: no device pass", assemble.liveness_failures(no_device))
+
+    def test_an_ingest_without_verdicts_widens_every_narrowing_claim(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, work = Path(tmp) / "repo", Path(tmp) / "work"
+            (repo / "src").mkdir(parents=True)
+            (repo / "src/a.rs").write_text("fn a() {\n    if qwen() { k(); }\n}\n")
+            (work / "stage0/graph").mkdir(parents=True)
+            (work / "stage0/graph/nodes.jsonl").write_text(json.dumps(
+                {"id": "src/a.rs::a", "file": "src/a.rs", "kind": "fn", "line_start": 1, "line_end": 3, "hash": "h"}) + "\n")
+            ev = [{"file": "src/a.rs", "line": 2, "quote": "if qwen() { k(); }"}]
+            res = {"annotated": [{"slice": "S1",
+                                  "regions": [{"file": "src/a.rs", "line_start": 2, "line_end": 2, "families": ["qwen3"], "evidence": ev}],
+                                  "file_defaults": [{"file": "src/a.rs", "families": ["qwen3"], "evidence": ev}]}]}
+            (Path(tmp) / "results.json").write_text(json.dumps(res))
+            out = subprocess.run([sys.executable, str(HERE / "ingest.py"), str(Path(tmp) / "results.json")],
+                                 capture_output=True, text=True,
+                                 env=dict(os.environ, MEMRA_IMPACT_WORK=str(work), MEMRA_IMPACT_REPO=str(repo)))
+            self.assertEqual(out.returncode, 0, out.stderr)
+            ann = json.loads(out.stdout)
+            self.assertEqual([(r["families"], r["verdict"], r["narrowing"]) for r in ann["regions"]], [(["*"], "unverified", False)])
+            self.assertEqual([(f["families"], f["verdict"]) for f in ann["file_defaults"]], [(["*"], "unverified")])
+
+    def test_the_family_batch_script_runs(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            for d in ("wave1", "wave2", "verify"):
+                os.makedirs(f"{tmp}/{d}")
+            region = {"file": "src/a.rs", "line_start": 2, "line_end": 2, "families": ["qwen3"]}
+            Path(f"{tmp}/wave1/results.json").write_text(json.dumps({"annotated": [{"slice": "S1", "regions": [region]}]}))
+            Path(f"{tmp}/wave2/verdicts-narrow.json").write_text(json.dumps([{"claim": "S1:R0", "refuted": True, "reason": "gemma too"}]))
+            out = subprocess.run([sys.executable, str(HERE / "make_family_batches.py")], capture_output=True, text=True,
+                                 env=dict(os.environ, MEMRA_IMPACT_WORK=tmp))
+            self.assertEqual(out.returncode, 0, out.stderr)
+            self.assertEqual(json.loads(Path(f"{tmp}/verify/fam-00.json").read_text())[0]["claim"], "S1:R0~fam")
+
+
 if __name__ == "__main__":
     unittest.main()
