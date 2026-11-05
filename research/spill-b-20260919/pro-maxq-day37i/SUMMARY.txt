@@ -1,0 +1,32 @@
+DAY37 A2 card=pro6000-maxq receipt=grow-32768-maxq/receipt/GROW.txt GROW-G1 PASS (grows=28 unequal=0 planes=34 planes_crossed=34 min_crossings_per_plane=12 rule>=5 drift=0 tokens_equal=true logits_equal=true prefix_state_equal=true final_state_equal=true) committed=32768 generated=128
+DAY37 A1-GATE card=pro6000-maxq cell=admit-mem-burst pooled=[rc=0 ALL GREEN] vmm=[rc=0 ALL GREEN] ok_lines=0/0 door_on/off pooled=0/1 vmm=1/0 -> PASS
+DAY37 A1-GATE card=pro6000-maxq cell=fault-default pooled=[rc=0 ALL GREEN] vmm=[rc=0 ALL GREEN] ok_lines=160/160 door_on/off pooled=0/14 vmm=14/0 -> PASS
+DAY37 A1-GATE card=pro6000-maxq cell=fault-plain pooled=[rc=0 ALL GREEN] vmm=[rc=0 ALL GREEN] ok_lines=160/160 door_on/off pooled=0/14 vmm=14/0 -> PASS
+DAY37 A1-GATE card=pro6000-maxq cell=hit-off pooled=[rc=0 ALL GREEN (qwen)] vmm=[rc=0 ALL GREEN (qwen)] ok_lines=61/61 door_on/off pooled=0/2 vmm=2/0 -> PASS
+DAY37 A1-GATE card=pro6000-maxq cell=hit-on pooled=[rc=0 ALL GREEN (qwen)] vmm=[rc=0 ALL GREEN (qwen)] ok_lines=68/68 door_on/off pooled=0/2 vmm=2/0 -> PASS
+DAY37 A1-GATE card=pro6000-maxq cell=identity-default-on pooled=[rc=0 ALL GREEN (teeth=0)] vmm=[rc=0 ALL GREEN (teeth=0)] ok_lines=12/12 door_on/off pooled=0/2 vmm=2/0 -> PASS
+DAY37 A1-GATE card=pro6000-maxq cell=serve-smoke pooled=[rc=0 serve-smoke: 0 failed] vmm=[rc=0 serve-smoke: 0 failed] ok_lines=31/31 door_on/off pooled=0/1 vmm=1/0 -> PASS
+DAY37 A1-GATE card=pro6000-maxq cell=spec-ctx-edge pooled=[rc=0 ALL GREEN] vmm=[rc=0 ALL GREEN] ok_lines=0/0 door_on/off pooled=0/3 vmm=3/0 -> PASS
+DAY37 A1-GATE card=pro6000-maxq cell=twin27-off pooled=[rc=0 PREFIX-NEWEST-TURN-FITS: budget_bytes=1073741824 cohort_bytes=736755712 turns=8 cold_turns] vmm=[rc=0 PREFIX-NEWEST-TURN-FITS: budget_bytes=1073741824 cohort_bytes=736755712 turns=8 cold_turns] ok_lines=0/0 door_on/off pooled=0/2 vmm=2/0 -> PASS
+DAY37 A1-GATE card=pro6000-maxq cell=twin27-on pooled=[rc=0 PREFIX-NEWEST-TURN-FITS: budget_bytes=1073741824 cohort_bytes=736755712 turns=8 cold_turns] vmm=[rc=0 PREFIX-NEWEST-TURN-FITS: budget_bytes=1073741824 cohort_bytes=736755712 turns=8 cold_turns] ok_lines=0/0 door_on/off pooled=0/2 vmm=2/0 -> PASS
+DAY37 A1-MIX card=pro6000-maxq kind=spec order=O1 compared=45 equal=45 differ=0 excluded=0 differ_tags=[] faults_pooled=0 faults_vmm=0 door_on_vmm=1 -> PASS
+DAY37 A1-MIX card=pro6000-maxq kind=spec order=O2 compared=45 equal=45 differ=0 excluded=0 differ_tags=[] faults_pooled=0 faults_vmm=0 door_on_vmm=1 -> PASS
+DAY37 A1-MIX card=pro6000-maxq kind=plain order=O1 compared=45 equal=45 differ=0 excluded=0 differ_tags=[] faults_pooled=0 faults_vmm=0 door_on_vmm=1 -> PASS
+DAY37 A1-MIX card=pro6000-maxq kind=plain order=O2 compared=45 equal=45 differ=0 excluded=0 differ_tags=[] faults_pooled=0 faults_vmm=0 door_on_vmm=1 -> PASS
+DAY37 A4 card=pro6000-maxq retires=328 within_bound=328 worst_over_bound_bytes=0 boots_without_granularity=[] rule mapped-used<=planes*granule+slack -> PASS
+DAY37 A4-IDLE card=pro6000-maxq boot=mix-plain-O1-pooled driver_free=45845446656 pool_cached=8767078360 pool_reserved=55633248256 vmm_mapped=0 vmm_reserved=0 spec_pool=0 continuation_pool=2
+DAY37 A4-IDLE card=pro6000-maxq boot=mix-plain-O1-vmm driver_free=69893488640 pool_cached=512688632 pool_reserved=30836523008 vmm_mapped=499122176 vmm_reserved=16684941312 spec_pool=0 continuation_pool=2
+DAY37 A4-IDLE card=pro6000-maxq boot=mix-plain-O2-pooled driver_free=45845446656 pool_cached=8767078360 pool_reserved=55633248256 vmm_mapped=0 vmm_reserved=0 spec_pool=0 continuation_pool=2
+DAY37 A4-IDLE card=pro6000-maxq boot=mix-plain-O2-vmm driver_free=69893488640 pool_cached=512688632 pool_reserved=30836523008 vmm_mapped=499122176 vmm_reserved=16684941312 spec_pool=0 continuation_pool=2
+DAY37 A4-IDLE card=pro6000-maxq boot=mix-spec-O1-pooled driver_free=43798626304 pool_cached=9867833272 pool_reserved=57646514176 vmm_mapped=0 vmm_reserved=0 spec_pool=2 continuation_pool=0
+DAY37 A4-IDLE card=pro6000-maxq boot=mix-spec-O1-vmm driver_free=67913777152 pool_cached=1546334680 pool_reserved=32782680064 vmm_mapped=499122176 vmm_reserved=16684941312 spec_pool=2 continuation_pool=0
+DAY37 A4-IDLE card=pro6000-maxq boot=mix-spec-O2-pooled driver_free=43798626304 pool_cached=9867833272 pool_reserved=57646514176 vmm_mapped=0 vmm_reserved=0 spec_pool=2 continuation_pool=0
+DAY37 A4-IDLE card=pro6000-maxq boot=mix-spec-O2-vmm driver_free=67913777152 pool_cached=1546334680 pool_reserved=32782680064 vmm_mapped=499122176 vmm_reserved=16684941312 spec_pool=2 continuation_pool=0
+DAY37 A5-MAPPER card=pro6000-maxq against=off-lane compared=45 equal=45 differ=0 owner_grows_waited=0 faults=0 -> N/A (inline: no mapper)
+DAY37 A5-ENSURE card=pro6000-maxq reclaim_retry_lines=1 outcomes=['not parked'] errored_rows=['i-L0-r0'] dependent_rows=['iii-L0-r0'] peers_compared=78 equal=78 differ=0 differ_tags=[] faults=0 -> PASS
+DAY37 A5-BUILD1 card=pro6000-maxq retry_lines=11 cache_alloc_failed_lines=0 non200_rows=0 faults=0 -> PASS
+DAY37 A5-BUILD64 card=pro6000-maxq retry_lines=9 cache_alloc_failed_lines=52 non200_rows=52 faults=0 -> PASS
+DAY37 A6 card=pro6000-maxq lane_boot=off-lane compared=45 equal=45 differ=0 lane_kv_vmm_lines=1 main_kv_vmm_lines=0 -> PASS
+DAY37 A7 card=pro6000-maxq shape=g2 oom_lines=0 r503=0 grow_failures=0 admit_lines=80 est_over_booked_free=0 status={200: 80} faults=0 -> PASS
+DAY37 A7 card=pro6000-maxq shape=l64 oom_lines=0 r503=0 grow_failures=0 admit_lines=66 est_over_booked_free=0 status={200: 66, 429: 14} faults=0 -> PASS
+DAY37 A7 card=pro6000-maxq shape=boff oom_lines=0 r503=0 grow_failures=0 admit_lines=0 est_over_booked_free=0 status={200: 80} faults=0 -> PASS

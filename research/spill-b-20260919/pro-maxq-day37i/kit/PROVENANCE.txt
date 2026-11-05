@@ -1,0 +1,70 @@
+kv-vmm Max-Q kit provenance (DAY37 O1 replay at the r4 tree)
+written_utc=2026-11-04T20:49:51Z
+
+[sources]
+lane (r4, the deciding tree): c6f9282c26e71349c0263b88dc7beb59c4a57797  2026-09-24T18:30:47+03:00 fix(kv): DAY37 addendum E, the on-demand release path: an ensure cancels every pendi
+main (A6 baseline): 17dceb9817d050d0960a8e2d0be372921bfbee80  2026-09-24T14:23:38+03:00 Merge pull request #712 from avifenesh/lane/dsv4-sampler-door-20260924
+harness and reader (sitting 2 tree): 3476ea4dca27c4c3c738017b8429f507389f1223  2026-09-25T04:23:50+03:00 data(spill-b): OWED and STATE after the first target-card sitting: O1 rerun half (ad
+fix stack HEAD (not run): 2ccb038d1c16358edde65582597e7b840e3f63fb  2026-11-04T20:57:33+02:00 docs: stop publishing which hardware is owned
+c6f9282c2 ancestor of origin/main: True
+17dceb981 ancestor of origin/main: True
+3476ea4dc ancestor of origin/main: True
+
+[bins]  (built by provenance/build.sh under the shared build lock; log provenance/build.log)
+-- lane: source.commit=c6f9282c26e71349c0263b88dc7beb59c4a57797
+   built_utc=2026-11-04T20:45:57Z
+   MEMRA_CUDA_ARCH=120a
+   cargo_features=default
+   rustc=rustc 1.97.1 (8bab26f4f 2026-07-14)
+   MEMRA_NVCC=/usr/local/cuda-13.1/bin/nvcc
+   nvcc=Build cuda_13.1.r13.1/compiler.37061995_0
+   cmd=cargo build --release -j2 -p memra-server --bin memra-server -p memra-engine --bin kv-tier-gate --bin vmm-call-cost
+   sha256 ca750a06d76220da23c1bbcaa7dc577be320c9d1097a0af84e090ac6c033d244  memra-server
+   sha256 7357fe9b7232326dce34b67f8b6c2191eb5111ac758865d3e63c0dfb77b5b0ab  kv-tier-gate
+   sha256 f09d91bcc793fdccbf030408a99430aad5fad5a42f520171b9c45476168b62d6  vmm-call-cost
+-- main: source.commit=17dceb9817d050d0960a8e2d0be372921bfbee80
+   built_utc=2026-11-04T20:49:51Z
+   MEMRA_CUDA_ARCH=120a
+   cargo_features=default
+   rustc=rustc 1.97.1 (8bab26f4f 2026-07-14)
+   MEMRA_NVCC=/usr/local/cuda-13.1/bin/nvcc
+   nvcc=Build cuda_13.1.r13.1/compiler.37061995_0
+   cmd=cargo build --release -j2 -p memra-server --bin memra-server
+   sha256 fc414a3cfcc251d54b9a41c31baf07a2d14d77d35861cba35dd62855cfe245d0  memra-server
+
+[workstation bins of the deciding sittings, for reference: different machine, same sources]
+   sitting 1 lane memra-server 3dc05d17ac5e958d1c44ef3d3cde64b94ae40c00d74c6c45508d6984f50de4cd, kv-tier-gate 536ac4e6dc23e488..., main e0da013e2aca8db0...
+   sitting 2 lane memra-server 7e586b8cdb06ef5bfe75d7b2d031914a5b0036aa5fa1047f420bf1a08bba1528, vmm-call-cost 4eefd8940400f0e9..., main 92c1bf3b845e2b1d...
+   (pro-single-day37/box*/box-binaries.sha256; both auto-detected nvcc 13.1 and arch 120a)
+
+[model]
+   Qwen3.8-27B-NVFP4-Q5K-mtp.gguf 15705922304 B sha256 1facf36c2db359dcf9c2475cf8f85fe84a528d10aaaaff20f7c0db3d561e024a
+   source copy on the build machine rehashed 2026-11-04: 1facf36c2db359dcf9c2475cf8f85fe84a528d10aaaaff20f7c0db3d561e024a (matches)
+   the box copy is hashed by the runner before the first boot of each part
+
+[harness]
+   harness/MANIFEST.sha256 sha256 26a7cb2ccbc6f3d856468b329afc0e8a7c5dc66074b84245504efd3c75d1de60 (587 files)
+   harness/PORTED.txt sha256 c7e92ee437daa64ae8967dfbf6c76eeffdf491ea7b45770a17cda5e156d047b5
+   ported research/spill-b-20260919/rtx5090-day37/gates.sh  c863bdfa3f8606e05ac7b15bf5e85a8951b77836  eff1559164ca2ed4329415d2e336e84f8cdacfb706b789417046aaac46c7bbb8  8db166529b3dd6d689a18e33227838101d6dae7636de1d6f1a13068ea8d2e5ea
+   ported tools/serve-smoke.sh  9629fc6284b96526f722a919002085826c9b8458  c5bcd706641331196a556a7457035860ce401d29304188653faaa251fd4a32cf  188c570859d36159816a86b93a17acd97b98599ebec23ab6f200c6c73d2c8ee5
+   ported tools/admit-mem-burst-gate.sh  ed76572a8f28c6687d49c8f0c8da9ac4e92c0525  dfdd77c1f2e410ca67568c0ca2353ec988531c834e6e9caa660ae9c74c4ea92f  29e6657d42cec1874e435f703fcdf6dcf4c22742c4bfae3a698b2f2ecb7092c1
+   ported tools/spec-ctx-edge-gate.sh  f84eb5e8627da0dddbab59a809ab4c90178a7e19  4e3c16bcca9e0c9d982d91f9137f4e50ebef458753fe9d0a1f7a6db39c38458b  bdefee001c6900d9e505f0d78939f36fe85b4af2df82f5f9c450bd06e0776913
+   ported tools/prefix-newest-turn-fits-gate.py  082b88d7582d3210908ec87d63c890172ad19586  d22f3769983dacf525911ef34a0e6545d5d4b40631c81a7fd646d2516756c866  59005737b213df9c5b103d9d7c514845a740c9c0c1ab8e67bdaca641ab34c80b
+   ported tools/tier-battery.py  35e3760b4934dca1fa5f7a08077727153c550b54  4861050b6df84c0bc5e6e5c6780efa6f159868e54bff2f978bc99e6b5fcea732  563f12799214585fa883fd2b312f761498902796a32b6b492afa7496e58ac8d4
+   ported research/spill-b-20260919/rtx5090-day37/run-grow.sh  11ee2a18fae5b3ce0642c6da2d194adb2e04e67a  c65cf1e696e08fca01c1a99ab0194e43109b2d38da00793fd865abbf9e85d413  b87c1ab1b9946eabad67fa90ee2dbb42c8c0d6c883944291cf9675eb380363df
+   ported research/spill-b-20260919/run-day26-cell.sh  e7f3e321026c53ba01f74eb81c90457ad94b6e74  fad91c06a219e42867e42fb2203b107f9cd0ed03a4b7c0ec66fe8ea4ddd2ee66  329e0da48913dff5756a3a514aca30bca394598e9b7ab71ab92aff14b1f1bdb4
+   ported research/spill-b-20260919/rtx5090-day37/boots-f.sh  1063b1ccb6bce17449a3d4c61fcd779247f03be8  ede0ea216b7a7b2c3dc6d50447625141c2aca3f756c4404660db3c498633f823  30e678c2eca619048c3ec1cf04a89139ea4bc9604fee0fe7f950256e392be90d
+   ported research/spill-b-20260919/day26-client.py  01c565510f3c171b03afc4b6a814ea72a9cf99ef  249928f923986a95d224139c464a3a6535ab451a7b6bc69fb9745e13bd0e856d  ac51188c8446f0b2fd4fa09e8539ccce8450c6c9f176d498124cf804c7ba3b31
+   ported research/spill-b-20260919/day33-client.py  ce88a5338f8ad5341fc604de1d8adde6f6a70750  b5707f33752571390ab8fce6ba2173fd534a043f8495c41f2b2b7eec4f353933  2cf82916080b3e29c5e52db5c234d994010281a41660d4d862b9858710c19903
+   ported research/spill-b-20260919/day37-stream-client.py  4e620b6f847dcad98adf084e566da7bfe9c38144  21afa891835613e06ae2a81377e6b88f182c7a944621bf5ddee44f530d94ac9e  c2388dd44664eb41d189885ae0c0d4cdd48fb47703545d68648d758c4891c7ed
+
+[kit scripts]
+   3dd76b3e939b2fef577a987a930daa31f106ef33e1f5f3472c5e294d308f81aa  run.sh
+   368418b97af49bacca907fc28d05177689a691d3c30ad850bf0324c0f4278649  run-timed.sh
+   e106bb1669124a252b4e499a6578ab43005c77a39f6b61d4787ef72426203f66  lib.sh
+   56228d36c2519c1651c6d97100bfc9129516e255d425d9fbb5acf5022e0ccc52  chain-untimed.sh
+   53fd0325f3a1cccadddbd2c22be6967b7bfab2290ba40d9cd39cac0f951e3459  chain-timed.sh
+   d13a9dd5a73d5776cd4990b5f90fe3e35228208d6d054103c57b482b405a044f  watchdog.py
+   8d2a0beb1ce4443d9297e940bea32a8083481ad9d1b80f48ccbb39317ae66802  day37-verdict.py
+   dc59b4ea494b08d370818010d8d9e44c7322ed9ebfa40591541343094f1f6013  provenance/build.sh
+   88f95f8bfd873fa320b55cbdd13f9e39e4a1d2f1dc924fd223f92a3314186edf  provenance/port.py

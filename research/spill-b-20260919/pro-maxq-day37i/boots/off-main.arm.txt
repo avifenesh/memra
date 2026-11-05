@@ -1,0 +1,5 @@
+arm=main
+kind=mixspec
+bin_sha256=fc414a3cfcc251d54b9a41c31baf07a2d14d77d35861cba35dd62855cfe245d0
+arm_env=-u MEMRA_KV_ALLOCATOR -u MEMRA_KV_VMM_GROW -u MEMRA_KV_VMM_FAULT 
+kind_env=-u MEMRA_SERVE_SPEC -u MEMRA_TIMEOUT_MS_MAX

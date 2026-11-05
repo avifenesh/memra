@@ -1040,3 +1040,38 @@ r4-2: AMB no prefill OOM: oom_lines=8 status={200: 45, 429: 19} -> FAIL
   DAY39's `be2177ead`) greens on the same gate. 2.7's A1 red is the door's booking without DAY39 addendum B's terms,
   not the pooled allocator. The 5090 class's rule reading on the r4 tree stays FAIL (no reading) as it read; a rerun
   of O1's 5090 cell (the gate set and the A1 lines) on a tree with addendum B is owed.
+
+### 2.9 Addendum I on the RTX PRO 6000 Blackwell Max-Q, the untimed half (`pro-maxq-day37i/`, 2026-11-05 07:15:33Z to 09:27:33Z)
+
+`run.sh` ran as addendum I and its power amendment registered, on GPU 2 of the four-card box ("NVIDIA RTX PRO 6000
+Blackwell Max-Q Workstation Edition", driver 615.71.09) while the box's other three cards trained, under the GPU 2
+lock agreed with the training session. Sources as M.10 pinned them: lane `c6f9282c26`, main `17dceb9817`, harness
+`3476ea4dca`, `MEMRA_KV_VMM_GROW=inline`. Receipts mirrored file for file (`MIRROR-CHECK.txt`: 1205 of 1205 `OK`),
+then exported with `research/spill-f-20260919/m1-box-sanitize.py` (the box name, local time zone and remote home path
+replaced; `EXPORT-MANIFEST.json`, 6 files). The kit's harness keeps its 12 ported files and its manifests; the 573
+unchanged files of tree `3476ea4dca` are listed, not copied (`kit/harness/NOT-COPIED.txt`). The scheduler's try log,
+power summary and 10 s thermal samples are in `runner/`.
+
+Power: the runner set GPU 2 to 300 W (from 280 W, max 300 W). The box re-applies its own per-card caps every 10
+minutes (a system timer, 280 W on this card), so from 07:20:05Z the card ran at 280 W: 27 of 785 samples read 300 W.
+`card.csv` and `VERDICT.txt` record the 300 W read at the start; the samples are the record. Every clause of this half
+is pass/fail (M.4), so none depends on power. Maximum 91 C, fan 90 %; SW power cap active in 600 samples, no thermal or
+power-brake slowdown, no thermal stop; GPUs 1 and 3 at most 89 C, so the neighbour rule never dropped the limit. No
+server or gate log has a `[gpu-watch] CRITICAL` line. Verbatim (`read.log`, `VERDICT.txt`):
+
+- `DAY37 A2 card=pro6000-maxq receipt=grow-32768-maxq/receipt/GROW.txt GROW-G1 PASS (grows=28 unequal=0 planes=34 planes_crossed=34 min_crossings_per_plane=12 rule>=5 drift=0 tokens_equal=true logits_equal=true prefix_state_equal=true ...`
+- A1-GATE, all ten cells PASS on both arms (`admit-mem-burst`, `fault-default` 160/160, `fault-plain` 160/160,
+  `hit-off` 61/61, `hit-on` 68/68, `identity-default-on` 12/12, `serve-smoke` 31/31, `spec-ctx-edge`, `twin27-off`,
+  `twin27-on`), the door `on` on every vmm boot and `off` on every pooled one
+- A1-MIX, spec and plain, O1 and O2: `compared=45 equal=45 differ=0 excluded=0 ... -> PASS` (four lines)
+- `DAY37 A4 card=pro6000-maxq retires=328 within_bound=328 worst_over_bound_bytes=0 boots_without_granularity=[] rule mapped-used<=planes*granule+slack -> PASS` (a reading, 1.7)
+- `DAY37 A5-MAPPER ... -> N/A (inline: no mapper)`; `A5-ENSURE ... peers_compared=78 equal=78 differ=0 ... -> PASS`;
+  `A5-BUILD1 ... non200_rows=0 faults=0 -> PASS`; `A5-BUILD64 ... retry_lines=9 cache_alloc_failed_lines=52 non200_rows=52 faults=0 -> PASS`
+- `DAY37 A6 card=pro6000-maxq lane_boot=off-lane compared=45 equal=45 differ=0 lane_kv_vmm_lines=1 main_kv_vmm_lines=0 -> PASS`
+- A7: `shape=g2 ... status={200: 80} -> PASS`, `shape=l64 ... status={200: 66, 429: 14} -> PASS`,
+  `shape=boff ... status={200: 80} -> PASS`, each `oom_lines=0 r503=0 grow_failures=0 est_over_booked_free=0`
+- `DAY37 VERDICT card=pro6000-maxq rule=1.7 A1=MISSING A2=PASS A5=PASS A6=PASS A7=PASS A3-i=MISSING A3-ii=MISSING A4=PASS(reading) lines=24 reader_cards=pro6000-maxq -> INCOMPLETE (owed: A1-STREAM,A3-i,A3-ii:both)`
+
+**Read as registered (M.5): INCOMPLETE.** No correctness clause failed, so the reading waits on the timed half
+(`run-timed.sh` into this root on a quiet box: stage 0, the ten stream pairs, A1-STREAM, A3 (i) and A3 (ii)). No
+default moves until it reads.

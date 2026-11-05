@@ -1,0 +1,18 @@
+lane build start 2026-11-04T20:01:47Z src=c6f9282c26e71349c0263b88dc7beb59c4a57797 arch=120a target=/home/avifenesh/.cache/memra-maxq/target
+   Compiling memra-engine v0.138.0 (/home/avifenesh/.cache/memra-maxq/kv-vmm/wt-lane/crates/memra-engine)
+   Compiling memra-server v0.138.0 (/home/avifenesh/.cache/memra-maxq/kv-vmm/wt-lane/crates/memra-server)
+warning: memra-engine@0.138.0: nvcc from MEMRA_NVCC: /usr/local/cuda-13.1/bin/nvcc
+    Finished `release` profile [optimized] target(s) in 3m 02s
+cb1a6b629a532afff42711604e628c8c42e16f8286efe2b1284fee4c845f3a90  memra-server
+09d2d4eb70abf7598e690a86a4549452fc271ec101120c7ee2cf3adbbc81b2c5  kv-tier-gate
+f09d91bcc793fdccbf030408a99430aad5fad5a42f520171b9c45476168b62d6  vmm-call-cost
+lane build end 2026-11-04T20:04:50Z
+main build start 2026-11-04T20:04:50Z src=17dceb9817d050d0960a8e2d0be372921bfbee80 arch=120a target=/home/avifenesh/.cache/memra-maxq/target
+   Compiling memra-engine v0.138.0 (/home/avifenesh/.cache/memra-maxq/kv-vmm/wt-main/crates/memra-engine)
+   Compiling memra-server v0.138.0 (/home/avifenesh/.cache/memra-maxq/kv-vmm/wt-main/crates/memra-server)
+warning: memra-engine@0.138.0: nvcc from MEMRA_NVCC: /usr/local/cuda-13.1/bin/nvcc
+    Finished `release` profile [optimized] target(s) in 3m 09s
+c8db578443a856ab942f26a325f59d5d61af0c7ebb3399fc38cebb67c65d6aa0  memra-server
+main build end 2026-11-04T20:07:59Z
+all builds done 2026-11-04T20:07:59Z
+build rc=0

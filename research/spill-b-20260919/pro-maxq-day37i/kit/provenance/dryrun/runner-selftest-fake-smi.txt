@@ -1,0 +1,98 @@
+== dry run (no window held)
+out: /home/avifenesh/.cache/memra-maxq/kv-vmm/scratch/selftest/kv-vmm/out-20261104T201506Z-dry
+window check would refuse: FD 9 is 'closed', not /home/avifenesh/.cache/memra-maxq/kv-vmm/scratch/selftest/evals/gpu2.lock: run from the session that holds the card's window (exec 9>/home/avifenesh/.cache/memra-maxq/kv-vmm/scratch/selftest/evals/gpu2.lock; flock 9)
+card 2: NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition, power.limit 280.00 W, 3 MiB used, driver 615.71.09
+model sha256 ok (3a347fb2634adf78446f49fb1668a8d762d2e8fb1c628429c63cc33523126c4d)
+dry run done: static checks passed (card and window lines above say whether a run would start now); nothing was started
+== refusal without the window
+out: /home/avifenesh/.cache/memra-maxq/kv-vmm/scratch/selftest/kv-vmm/out-20261104T201506Z
+REFUSED: FD 9 is 'closed', not /home/avifenesh/.cache/memra-maxq/kv-vmm/scratch/selftest/evals/gpu2.lock: run from the session that holds the card's window (exec 9>/home/avifenesh/.cache/memra-maxq/kv-vmm/scratch/selftest/evals/gpu2.lock; flock 9)
+== run with the window held, WINDOW_MIN=1
+run rc=143
+window: FD 9 holds /home/avifenesh/.cache/memra-maxq/kv-vmm/scratch/selftest/evals/gpu2.lock
+card 2: NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition, power.limit 280.00 W, 3 MiB used, driver 615.71.09
+model sha256 ok (3a347fb2634adf78446f49fb1668a8d762d2e8fb1c628429c63cc33523126c4d)
+2026-11-04T20:15:07Z run marker kvvmm-20261104T201507Z-157135; telemetry pid 157341, watchdog pid 157342
+2026-11-04T20:16:07Z untimed chain rc=143 stopped: 2026-11-04T20:16:07Z WINDOW-DEADLINE at 2026-11-04T20:16:07Z
+DAY37 VERDICT card=pro6000-maxq rule=1.7 A1=MISSING A2=MISSING A5=MISSING A6=MISSING A7=MISSING A3-i=MISSING A3-ii=MISSING A4=FAIL(reading) lines=1 reader_cards=pro6000-maxq -> INCOMPLETE (owed: A1-GATE:admit-mem-burst,A1-GATE:fault-default,A1-GATE:fault-plain,A1-GATE:hit-off,A1-GATE:hit-on,A1-GATE:identity-default-on,A1-GATE:serve-smoke,A1-GATE:spec-ctx-edge,A1-GATE:twin27-off,A1-GATE:twin27-on,A1-MIX:spec:O1,A1-MIX:spec:O2,A1-MIX:plain:O1,A1-MIX:plain:O2,A1-STREAM,A2,A5-MAPPER,A5-ENSURE,A5-BUILD1,A5-BUILD64,A6,A7:g2,A7:l64,A7:boff,A3-i,A3-ii:both)
+not finished; resume in the next window: OUT=/home/avifenesh/.cache/memra-maxq/kv-vmm/scratch/selftest/kv-vmm/out-20261104T201507Z CARD=<idx> bash /home/avifenesh/.cache/memra-maxq/kv-vmm/scratch/selftest/kv-vmm/run.sh
+out: /home/avifenesh/.cache/memra-maxq/kv-vmm/scratch/selftest/kv-vmm/out-20261104T201507Z
+== chain.log
+2026-11-04T20:15:07Z run.sh start card=2 out=/home/avifenesh/.cache/memra-maxq/kv-vmm/scratch/selftest/kv-vmm/out-20261104T201507Z resumed=0 dry=0 window_min=1 deadline=2026-11-04T20:16:07Z dropped_env=[]
+2026-11-04T20:15:07Z run marker kvvmm-20261104T201507Z-157135; telemetry pid 157341, watchdog pid 157342
+2026-11-04T20:15:07Z selftest collector rc=0
+2026-11-04T20:15:07Z selftest collector2 rc=0
+2026-11-04T20:15:17Z selftest boots rc=0
+2026-11-04T20:16:07Z watchdog: WINDOW-DEADLINE at 2026-11-04T20:16:07Z; stopping the run
+2026-11-04T20:16:07Z watchdog: stopped 3 marked processes (SIGTERM), 0 needed SIGKILL
+2026-11-04T20:16:07Z untimed chain rc=143 stopped: 2026-11-04T20:16:07Z WINDOW-DEADLINE at 2026-11-04T20:16:07Z
+reader rc=0 (2 clause lines)
+== boots
+2026-11-04T20:15:07Z boot mix-spec-O1-pooled: executed already (exit 0); not run again
+2026-11-04T20:15:07Z boot mix-spec-O1-vmm: an earlier attempt left no exit file (cut); moved to boots/cut/*.20261104T201507Z, asked again
+2026-11-04T20:15:07Z boot mix-spec-O1-vmm start arm=vmm kind=mixspec bin=cb1a6b629a532aff env=[MEMRA_KV_ALLOCATOR=vmm -u MEMRA_SERVE_SPEC -u MEMRA_TIMEOUT_MS_MAX]
+2026-11-04T20:15:07Z boot mix-spec-O1-vmm rc=0 door_on=0 door_off=1 
+2026-11-04T20:15:12Z boot off-main start arm=main kind=mixspec bin=c8db578443a856ab env=[ -u MEMRA_SERVE_SPEC -u MEMRA_TIMEOUT_MS_MAX]
+2026-11-04T20:15:12Z boot off-main rc=0 door_on=0 door_off=1 
+2026-11-04T20:15:17Z boots done: mix-spec-O1-pooled:pooled:mixspec mix-spec-O1-vmm:vmm:mixspec off-main:main:mixspec
+/home/avifenesh/.cache/memra-maxq/kv-vmm/scratch/selftest/kv-vmm/out-20261104T201507Z/boots:
+cut
+mix-spec-O1-pooled.exit
+mix-spec-O1-vmm
+mix-spec-O1-vmm.arm.txt
+mix-spec-O1-vmm.exit
+mix-spec-O1-vmm.launch.log
+off-main
+off-main.arm.txt
+off-main.exit
+off-main.launch.log
+
+/home/avifenesh/.cache/memra-maxq/kv-vmm/scratch/selftest/kv-vmm/out-20261104T201507Z/boots/cut:
+mix-spec-O1-vmm.20261104T201507Z
+mix-spec-O1-vmm.arm.txt.20261104T201507Z
+lock=none card=2 cvd=2 grow=inline alloc=vmm
+arm=main
+kind=mixspec
+bin_sha256=c8db578443a856ab942f26a325f59d5d61af0c7ebb3399fc38cebb67c65d6aa0
+arm_env=-u MEMRA_KV_ALLOCATOR -u MEMRA_KV_VMM_GROW -u MEMRA_KV_VMM_FAULT 
+kind_env=-u MEMRA_SERVE_SPEC -u MEMRA_TIMEOUT_MS_MAX
+== collector
+{"kind": "CELL", "run_id": "st-collector", "command": ["bash", "-c", "python3 tools/tier-lock-proof.py --fd \"$0\" --lock /tmp/memra-gpu.lock", "3"], "started_utc": "2026-11-04T20:15:07.499655+00:00", "provider_instance_id": null, "hourly_cost": null, "qualification": false, "resume_from": null, "st
+{"kind": "CELL", "run_id": "st-collector", "command": ["bash", "-c", "python3 tools/tier-lock-proof.py --fd \"$0\" --lock /tmp/memra-gpu.lock", "3"], "started_utc": "2026-11-04T20:15:07.499655+00:00", "provider_instance_id": null, "hourly_cost": null, "qualification": false, "resume_from": null, "st
+  }
+}
+CELL.jsonl
+command.after.log
+command.before.log
+command.capture.json
+command.gpu.csv
+command.log
+command.sampler.log
+lock.json
+== verdict
+DAY37 VERDICT card=pro6000-maxq rule=1.7 A1=MISSING A2=MISSING A5=MISSING A6=MISSING A7=MISSING A3-i=MISSING A3-ii=MISSING A4=FAIL(reading) lines=1 reader_cards=pro6000-maxq -> INCOMPLETE (owed: A1-GATE:admit-mem-burst,A1-GATE:fault-default,A1-GATE:fault-plain,A1-GATE:hit-off,A1-GATE:hit-on,A1-GATE:identity-default-on,A1-GATE:serve-smoke,A1-GATE:spec-ctx-edge,A1-GATE:twin27-off,A1-GATE:twin27-on,A1-MIX:spec:O1,A1-MIX:spec:O2,A1-MIX:plain:O1,A1-MIX:plain:O2,A1-STREAM,A2,A5-MAPPER,A5-ENSURE,A5-BUILD1,A5-BUILD64,A6,A7:g2,A7:l64,A7:boff,A3-i,A3-ii:both)
+card_index=2 power_limit_w=280.00 name=NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition
+sources lane=c6f9282c26e71349c0263b88dc7beb59c4a57797 main=17dceb9817d050d0960a8e2d0be372921bfbee80 harness=3476ea4dca27c4c3c738017b8429f507389f1223 placement=MEMRA_KV_VMM_GROW=inline (pinned, PREREG.md)
+stopped: 2026-11-04T20:16:07Z WINDOW-DEADLINE at 2026-11-04T20:16:07Z
+== leftovers
+. .. MANIFEST.sha256 STOP-REASON SUMMARY.txt VERDICT.txt boots card.csv chain.log cut preflight read.log run.log st-collector st-collector.log st-collector2 st-collector2.log telemetry 
+memra lock free after the run
+== nvidia-smi calls without -i
+      3 --query-compute-apps=gpu_bus_id,used_memory --format=csv
+      3 --query-gpu=index,name,power.limit,power.draw,temperature.gpu,fan.speed,memory.used,utilization.gpu --format=csv
+== nvidia-smi calls total 23
+== run-timed on GPU 0 (refuse) and on GPU 2 into the same OUT
+REFUSED: GPU 0 is airflow-limited on this box: run the timed half on another card, or set ALLOW_GPU0=1
+run-timed rc=0
+2026-11-04T20:16:08Z run marker kvvmm-timed-20261104T201608Z-172442; telemetry pid 172640, watchdog pid 172641
+2026-11-04T20:16:08Z timed chain rc=0
+DAY37 VERDICT card=pro6000-maxq rule=1.7 A1=MISSING A2=MISSING A5=MISSING A6=MISSING A7=MISSING A3-i=MISSING A3-ii=MISSING A4=FAIL(reading) lines=1 reader_cards=pro6000-maxq -> INCOMPLETE (owed: A1-GATE:admit-mem-burst,A1-GATE:fault-default,A1-GATE:fault-plain,A1-GATE:hit-off,A1-GATE:hit-on,A1-GATE:identity-default-on,A1-GATE:serve-smoke,A1-GATE:spec-ctx-edge,A1-GATE:twin27-off,A1-GATE:twin27-on,A1-MIX:spec:O1,A1-MIX:spec:O2,A1-MIX:plain:O1,A1-MIX:plain:O2,A1-STREAM,A2,A5-MAPPER,A5-ENSURE,A5-BUILD1,A5-BUILD64,A6,A7:g2,A7:l64,A7:boff,A3-i,A3-ii:both)
+out: /home/avifenesh/.cache/memra-maxq/kv-vmm/scratch/selftest/kv-vmm/out-20261104T201507Z
+2026-11-04T20:16:08Z untimed half card: 2, 280.00; timed half card: 2,280.00
+2026-11-04T20:16:08Z run marker kvvmm-timed-20261104T201608Z-172442; telemetry pid 172640, watchdog pid 172641
+2026-11-04T20:16:08Z selftest timed stub card=2 scope=box lockfd=7
+2026-11-04T20:16:08Z MAXQ-KVVMM-TIMED-DONE
+2026-11-04T20:16:08Z timed chain rc=0
+reader rc=0 (2 clause lines)
+2026-11-04T20:16:07Z WINDOW-DEADLINE at 2026-11-04T20:16:07Z
+memra lock free after run-timed

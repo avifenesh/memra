@@ -1,0 +1,41 @@
+2026-11-05T08:05:42Z boot mix-spec-O1-pooled start arm=pooled kind=mixspec bin=ca750a06d76220da env=[ -u MEMRA_SERVE_SPEC -u MEMRA_TIMEOUT_MS_MAX]
+2026-11-05T08:09:09Z boot mix-spec-O1-pooled rc=0 door_on=0 door_off=1 
+2026-11-05T08:09:14Z boot mix-spec-O1-vmm start arm=vmm kind=mixspec bin=ca750a06d76220da env=[MEMRA_KV_ALLOCATOR=vmm -u MEMRA_SERVE_SPEC -u MEMRA_TIMEOUT_MS_MAX]
+2026-11-05T08:12:43Z boot mix-spec-O1-vmm rc=0 door_on=1 door_off=0 
+2026-11-05T08:12:48Z boot mix-plain-O1-pooled start arm=pooled kind=mixplain bin=ca750a06d76220da env=[ -u MEMRA_TIMEOUT_MS_MAX MEMRA_SERVE_SPEC=0]
+2026-11-05T08:17:43Z boot mix-plain-O1-pooled rc=0 door_on=0 door_off=1 
+2026-11-05T08:17:48Z boot mix-plain-O1-vmm start arm=vmm kind=mixplain bin=ca750a06d76220da env=[MEMRA_KV_ALLOCATOR=vmm -u MEMRA_TIMEOUT_MS_MAX MEMRA_SERVE_SPEC=0]
+2026-11-05T08:22:43Z boot mix-plain-O1-vmm rc=0 door_on=1 door_off=0 
+2026-11-05T08:22:48Z boot mix-spec-O2-vmm start arm=vmm kind=mixspec bin=ca750a06d76220da env=[MEMRA_KV_ALLOCATOR=vmm -u MEMRA_SERVE_SPEC -u MEMRA_TIMEOUT_MS_MAX]
+2026-11-05T08:26:16Z boot mix-spec-O2-vmm rc=0 door_on=1 door_off=0 
+2026-11-05T08:26:21Z boot mix-spec-O2-pooled start arm=pooled kind=mixspec bin=ca750a06d76220da env=[ -u MEMRA_SERVE_SPEC -u MEMRA_TIMEOUT_MS_MAX]
+2026-11-05T08:29:51Z boot mix-spec-O2-pooled rc=0 door_on=0 door_off=1 
+2026-11-05T08:29:56Z boot mix-plain-O2-vmm start arm=vmm kind=mixplain bin=ca750a06d76220da env=[MEMRA_KV_ALLOCATOR=vmm -u MEMRA_TIMEOUT_MS_MAX MEMRA_SERVE_SPEC=0]
+2026-11-05T08:34:52Z boot mix-plain-O2-vmm rc=0 door_on=1 door_off=0 
+2026-11-05T08:34:57Z boot mix-plain-O2-pooled start arm=pooled kind=mixplain bin=ca750a06d76220da env=[ -u MEMRA_TIMEOUT_MS_MAX MEMRA_SERVE_SPEC=0]
+2026-11-05T08:39:53Z boot mix-plain-O2-pooled rc=0 door_on=0 door_off=1 
+2026-11-05T08:39:58Z boot off-lane start arm=pooled kind=mixspec bin=ca750a06d76220da env=[ -u MEMRA_SERVE_SPEC -u MEMRA_TIMEOUT_MS_MAX]
+2026-11-05T08:43:26Z boot off-lane rc=0 door_on=0 door_off=1 
+2026-11-05T08:43:31Z boot fault-mapper start arm=vmm-mapperfault kind=mixspec bin=ca750a06d76220da env=[MEMRA_KV_ALLOCATOR=vmm MEMRA_KV_VMM_FAULT=mapper:all -u MEMRA_SERVE_SPEC -u MEMRA_TIMEOUT_MS_MAX]
+2026-11-05T08:46:58Z boot fault-mapper rc=0 door_on=1 door_off=0 
+2026-11-05T08:47:03Z boot off-main start arm=main kind=mixspec bin=fc414a3cfcc251d5 env=[ -u MEMRA_SERVE_SPEC -u MEMRA_TIMEOUT_MS_MAX]
+2026-11-05T08:50:29Z boot off-main rc=0 door_on=0 door_off=0 
+2026-11-05T08:50:34Z boot burst-g2-pooled start arm=pooled kind=g2 bin=ca750a06d76220da env=[ CLIENT=day33-client.py PARSER=day31-parse.py MEMRA_ADMIT_BY_MEMORY=1 MEMRA_ADMIT_OPEN_OUTPUT_TOKENS=8192 CLIENT_ARGS=--chars 5000 --skip-long --burst 64]
+2026-11-05T08:54:52Z boot burst-g2-pooled rc=0 door_on=0 door_off=1 DAY31 V-BOOT boot=burst-g2-pooled arm=on8192 door_line=present -> PASS
+2026-11-05T08:54:58Z boot burst-g2-vmm start arm=vmm kind=g2 bin=ca750a06d76220da env=[MEMRA_KV_ALLOCATOR=vmm CLIENT=day33-client.py PARSER=day31-parse.py MEMRA_ADMIT_BY_MEMORY=1 MEMRA_ADMIT_OPEN_OUTPUT_TOKENS=8192 CLIENT_ARGS=--chars 5000 --skip-long --burst 64]
+2026-11-05T08:59:19Z boot burst-g2-vmm rc=0 door_on=1 door_off=0 DAY31 V-BOOT boot=burst-g2-vmm arm=on8192 door_line=present -> PASS
+2026-11-05T08:59:24Z boot burst-l64-vmm start arm=vmm kind=l64 bin=ca750a06d76220da env=[MEMRA_KV_ALLOCATOR=vmm CLIENT=day33-client.py PARSER=day31-parse.py MEMRA_ADMIT_BY_MEMORY=1 MEMRA_ADMIT_OPEN_OUTPUT_TOKENS=32768 CLIENT_ARGS=--chars 5000 --skip-long --burst 64]
+2026-11-05T09:02:49Z boot burst-l64-vmm rc=0 door_on=1 door_off=0 DAY31 V-BOOT boot=burst-l64-vmm arm=on32768 door_line=present -> PASS
+2026-11-05T09:02:54Z boot burst-l64-pooled start arm=pooled kind=l64 bin=ca750a06d76220da env=[ CLIENT=day33-client.py PARSER=day31-parse.py MEMRA_ADMIT_BY_MEMORY=1 MEMRA_ADMIT_OPEN_OUTPUT_TOKENS=32768 CLIENT_ARGS=--chars 5000 --skip-long --burst 64]
+2026-11-05T09:06:53Z boot burst-l64-pooled rc=0 door_on=0 door_off=1 DAY31 V-BOOT boot=burst-l64-pooled arm=on32768 door_line=present -> PASS
+2026-11-05T09:06:58Z boot burst-boff-pooled start arm=pooled kind=boff bin=ca750a06d76220da env=[ -u MEMRA_ADMIT_BY_MEMORY -u MEMRA_ADMIT_OPEN_OUTPUT_TOKENS CLIENT=day33-client.py PARSER=day31-parse.py CLIENT_ARGS=--chars 5000 --skip-long --burst 64]
+2026-11-05T09:11:42Z boot burst-boff-pooled rc=0 door_on=0 door_off=1 DAY31 V-BOOT boot=burst-boff-pooled arm=off door_line=present -> PASS
+2026-11-05T09:11:47Z boot burst-boff-vmm start arm=vmm kind=boff bin=ca750a06d76220da env=[MEMRA_KV_ALLOCATOR=vmm -u MEMRA_ADMIT_BY_MEMORY -u MEMRA_ADMIT_OPEN_OUTPUT_TOKENS CLIENT=day33-client.py PARSER=day31-parse.py CLIENT_ARGS=--chars 5000 --skip-long --burst 64]
+2026-11-05T09:16:39Z boot burst-boff-vmm rc=0 door_on=1 door_off=0 DAY31 V-BOOT boot=burst-boff-vmm arm=off door_line=present -> PASS
+2026-11-05T09:16:44Z boot fault-ensure start arm=vmm-ensurefault kind=g2 bin=ca750a06d76220da env=[MEMRA_KV_ALLOCATOR=vmm MEMRA_KV_VMM_FAULT=mapper:all,ensure:1,ensure:2 CLIENT=day33-client.py PARSER=day31-parse.py MEMRA_ADMIT_BY_MEMORY=1 MEMRA_ADMIT_OPEN_OUTPUT_TOKENS=8192 CLIENT_ARGS=--chars 5000 --skip-long --burst 64]
+2026-11-05T09:21:08Z boot fault-ensure rc=1 door_on=1 door_off=0 DAY31 V-BOOT boot=fault-ensure arm=on8192 door_line=present -> PASS
+2026-11-05T09:21:13Z boot fault-build1 start arm=vmm-buildfault1 kind=g2 bin=ca750a06d76220da env=[MEMRA_KV_ALLOCATOR=vmm MEMRA_KV_VMM_FAULT=build:1 CLIENT=day33-client.py PARSER=day31-parse.py MEMRA_ADMIT_BY_MEMORY=1 MEMRA_ADMIT_OPEN_OUTPUT_TOKENS=8192 CLIENT_ARGS=--chars 5000 --skip-long --burst 64]
+2026-11-05T09:25:39Z boot fault-build1 rc=0 door_on=1 door_off=0 DAY31 V-BOOT boot=fault-build1 arm=on8192 door_line=present -> PASS
+2026-11-05T09:25:44Z boot fault-build64 start arm=vmm-buildfault64 kind=g2 bin=ca750a06d76220da env=[MEMRA_KV_ALLOCATOR=vmm MEMRA_KV_VMM_FAULT=build:1,build:2,build:3,build:4,build:5,build:6,build:7,build:8,build:9,build:10,build:11,build:12,build:13,build:14,build:15,build:16,build:17,build:18,build:19,build:20,build:21,build:22,build:23,build:24,build:25,build:26,build:27,build:28,build:29,build:30,build:31,build:32,build:33,build:34,build:35,build:36,build:37,build:38,build:39,build:40,build:41,build:42,build:43,build:44,build:45,build:46,build:47,build:48,build:49,build:50,build:51,build:52,build:53,build:54,build:55,build:56,build:57,build:58,build:59,build:60,build:61,build:62,build:63,build:64 CLIENT=day33-client.py PARSER=day31-parse.py MEMRA_ADMIT_BY_MEMORY=1 MEMRA_ADMIT_OPEN_OUTPUT_TOKENS=8192 CLIENT_ARGS=--chars 5000 --skip-long --burst 64]
+2026-11-05T09:27:28Z boot fault-build64 rc=1 door_on=1 door_off=0 DAY31 V-BOOT boot=fault-build64 arm=on8192 door_line=present -> PASS
+2026-11-05T09:27:33Z boots done: mix-spec-O1-pooled:pooled:mixspec mix-spec-O1-vmm:vmm:mixspec mix-plain-O1-pooled:pooled:mixplain mix-plain-O1-vmm:vmm:mixplain mix-spec-O2-vmm:vmm:mixspec mix-spec-O2-pooled:pooled:mixspec mix-plain-O2-vmm:vmm:mixplain mix-plain-O2-pooled:pooled:mixplain off-lane:pooled:mixspec fault-mapper:vmm-mapperfault:mixspec off-main:main:mixspec burst-g2-pooled:pooled:g2 burst-g2-vmm:vmm:g2 burst-l64-vmm:vmm:l64 burst-l64-pooled:pooled:l64 burst-boff-pooled:pooled:boff burst-boff-vmm:vmm:boff fault-ensure:vmm-ensurefault:g2 fault-build1:vmm-buildfault1:g2 fault-build64:vmm-buildfault64:g2
