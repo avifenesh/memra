@@ -45,9 +45,6 @@ memra-engine	engine_tower_matches_banked_upstream_fixture	crates/memra-engine/te
 memra-engine	gemv_f32_rows_matches_cublas_deterministic_and_m_identical	crates/memra-engine/tests/f32_gemv_rows_gpu.rs	SKIP[CUDA device]: GPU test not run
 memra-engine	gpu_kda_gate_beta_matches_gate_then_sigmoid_bitwise	crates/memra-engine/tests/kda_small_folds_gpu.rs	SKIP[CUDA device]: GPU test not run
 memra-engine	gpu_l2_norm_pair_matches_two_launches_bitwise	crates/memra-engine/tests/kda_small_folds_gpu.rs	SKIP[CUDA device]: GPU test not run
-memra-engine	gpu_model_boundary_capture_is_the_live_state	crates/memra-engine/tests/grid_capture_gpu.rs	SKIP[MEMRA_TEST_QWEN_GGUF]: model-backed capture test not run
-memra-engine	gpu_model_capture_equals_split_and_resumes_cold_exact	crates/memra-engine/tests/grid_capture_gpu.rs	SKIP[MEMRA_TEST_QWEN_GGUF]: model-backed capture test not run
-memra-engine	gpu_model_settle_then_resume_is_cold_exact	crates/memra-engine/tests/grid_capture_gpu.rs	SKIP[MEMRA_TEST_QWEN_GGUF]: model-backed capture test not run
 memra-engine	hc_mixes_gemv_matches_cublas_within_tolerance_and_is_deterministic	crates/memra-engine/tests/hc_mixes_gemv_gpu.rs	SKIP[CUDA device]: GPU test not run
 memra-engine	hc_pre_v4_is_bit_identical_to_v3	crates/memra-engine/tests/hc_pre_v4_gpu.rs	SKIP[CUDA device]: GPU test not run
 memra-engine	kda_onorm_zq8_matches_norm_then_quantize_bitwise	crates/memra-engine/tests/kda_onorm_zq8_gpu.rs	SKIP[CUDA device]: GPU test not run
