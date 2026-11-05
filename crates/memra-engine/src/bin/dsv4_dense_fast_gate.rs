@@ -117,16 +117,15 @@ fn epochs(gpu: &Dsv4Gpu, before: &[Vec<u32>; 2], steps: u32) {
     let after = gpu
         .full_token_ar_epochs_for_gate()
         .expect("device AR epochs");
-    let attention = memra_engine::tp_ar::ar_blocks_for(4096) as usize;
-    let expert = memra_engine::tp_ar::ar_blocks_for(6 * 4096) as usize;
+    // Attention TP2's two row gathers, the expert reduce and the vocab-parallel head's gather.
+    let per_step = gpu.tp_ep_ar_epochs_per_step_for_gate();
     for rank in 0..2 {
         assert_eq!(before[rank].len(), 72);
         assert_eq!(after[rank].len(), 72);
         for block in 0..72 {
-            let per_step = 43 * (u32::from(block < attention) + u32::from(block < expert));
             assert_eq!(
                 after[rank][block].wrapping_sub(before[rank][block]),
-                per_step * steps,
+                per_step[block] * steps,
                 "AR epoch rank {rank} block {block}"
             );
         }
