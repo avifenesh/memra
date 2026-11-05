@@ -53,7 +53,10 @@ CELLS = "research/release-qualification/cells/"
 KINDS = ("battery", "serving", "perf")
 BINARIES = ("kernel-check", "run-gen", "run-spec", "argmax-margin-probe", "memra-server", "tok-parity")
 MANIFESTS = ("tools/kernel-check-27b.cells", "tools/kernel-check-step35.cells")
-BUILD_COMMAND = ["cargo", "build", "--release", "--locked",
+# --quiet drops cargo's per-crate progress lines. The banked build.log is a public receipt,
+# and some dependency names in those lines (a TLS crypto backend named after a cloud
+# provider) trip the public-boundary provider rule. Warnings and errors still reach the log.
+BUILD_COMMAND = ["cargo", "build", "--release", "--locked", "--quiet",
                  "-p", "memra-engine", "--bin", "kernel-check", "--bin", "run-gen", "--bin", "run-spec",
                  "--bin", "argmax-margin-probe", "-p", "memra-server", "--bin", "memra-server",
                  "-p", "memra-tokenizer", "--bin", "tok-parity"]
