@@ -11,7 +11,8 @@ Use this card when the model or context needs more memory than a 5090 offers, or
 a PRO-class receipt. Do not copy a 5090 default onto this card without its own measurement.
 The full-power Workstation Edition has serving defaults of its own, keyed on the device name
 ([list](../SERVING.md#serving-defaults-keyed-to-the-rtx-pro-6000-workstation-edition-2026-11-04));
-the Max-Q and Server editions keep the generic program until they carry their own receipts.
+the Max-Q and Server editions keep the generic program until they carry their own receipts. The
+Max-Q carries its own for the W release (2026-11-05, `research/spill-b-20260919/pro-maxq-day45-46/`).
 
 See [models](../MODELS.md), [performance](../PERFORMANCE.md), and
 [testing](../TESTING.md#target-aware-release-evidence).

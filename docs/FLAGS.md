@@ -1772,8 +1772,10 @@ exact at idle, one release or same-tick retire receipt per booked session, equal
 second-wave requests with the release against 1 of 32 without it. No RTX 5090 release cell ran.
 Under the owner's 2026-11-04 ruling the winner becomes the default on the card its receipts came
 from and its switch goes: the release is on for the full-power Workstation Edition
-(`w_release_for_device`, read once per worker) and every other card keeps the whole-life booking
-until a cell on it passes. The env read (`admit_w_release_on`) and the door census test are
+(`w_release_for_device`, read once per worker), and since 2026-11-05 on the Max-Q from its own
+pre-registered rerun of both halves (`DAY45.md` 2.3, `pro-maxq-day45-46/`: 12 of 12 and 24 of 24
+PASS, 12 of 32 second-wave admissions against 1 of 32); every other card keeps the whole-life
+booking until a cell on it passes. The env read (`admit_w_release_on`) and the door census test are
 deleted; the release site, the admit seam's `w-booked` line and the retire receipt are the code.
 Decision record: [decisions/ADMIT-W-RELEASE-DEFAULT.md](decisions/ADMIT-W-RELEASE-DEFAULT.md).
 Ledger: `VERDICT:admit-w-release-default-per-card` (darklanes
