@@ -372,10 +372,6 @@ pub(crate) struct MemoryLine<'a> {
     pub waited_ms: u64,
     /// Only on the refuse arm; `-` elsewhere.
     pub retry_after_s: Option<u64>,
-    /// WP-B day 42: why a defer or refusal happened when it is not the tiers' reading alone
-    /// (`reclaim-landing`, `reclaim-landing-timeout` under `MEMRA_ADMIT_RECLAIM_OFFTICK`); `-`
-    /// otherwise.
-    pub reason: Option<&'a str>,
 }
 
 /// One grep-stable receipt line, `[admit-mem]`-prefixed, all fields `key=value`. The
@@ -391,7 +387,7 @@ pub(crate) fn memory_line(line: &MemoryLine<'_>) -> String {
         "[admit-mem] id={} model={:?} verdict={} prompt={} output_bound={} charged_ctx={} \
          est_bytes={} est_context={} est_fixed={} device_free={} pending_prime={} pending_prime_v1={} \
          pending_seed={} pending_seed_uncapped={} \
-         host_free={} demotable={} short_by={} inflight={} cap={} waited_ms={} retry_after_s={} reason={}",
+         host_free={} demotable={} short_by={} inflight={} cap={} waited_ms={} retry_after_s={}",
         line.request_id,
         line.model,
         line.verdict.as_str(),
@@ -414,19 +410,6 @@ pub(crate) fn memory_line(line: &MemoryLine<'_>) -> String {
         line.waited_ms,
         line.retry_after_s
             .map_or("-".to_string(), |v| v.to_string()),
-        line.reason.unwrap_or("-"),
-    )
-}
-
-// An advisory MemoryVerdict is not a lease. The worker injects the SAME governor
-// used by banks/storage and keeps the resulting guard next to the actual payload.
-pub(crate) fn reserve_tier_image(
-    governor: memra_engine::cache::tiered::hostprefix::SharedGovernor,
-    program: &memra_engine::cache::record::ProgramIdentity,
-    request: &memra_engine::cache::tiered::BudgetRequest,
-) -> memra_engine::cache::tiered::Result<memra_engine::cache::tiered::hostprefix::ResidentCharge> {
-    memra_engine::cache::tiered::hostprefix::ResidentCharge::reserve_for_program(
-        governor, program, request,
     )
 }
 
@@ -697,7 +680,6 @@ mod tests {
             pending_prime_v1_bytes: 1_316_000_000,
             pending_seed_bytes: 197_800_000,
             pending_seed_uncapped_bytes: 395_600_000,
-            reason: None,
             inflight: 9,
             cap: 32,
             waited_ms: 0,
