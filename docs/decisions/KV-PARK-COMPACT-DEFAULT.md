@@ -1,10 +1,11 @@
-# Continuation-pool park compaction is the default on its two receipted cards (2026-11-04)
+# Continuation-pool park compaction is the default on its receipted cards (2026-11-04, Max-Q 2026-11-05)
 
 **Chosen:** a parked plain-pool session's `Cache` compacts from its ladder cap to its committed
 length at park time, and the resume grows it back to the request's charged cap through the
-checkpoint-restore extension before any suffix primes. The default holds on the RTX 5090 class
-and on the full-power RTX PRO 6000 Blackwell Workstation Edition, keyed by device name
-(`park_compact_for_device` in `crates/memra-server/src/worker.rs`). `MEMRA_KV_PARK_COMPACT` is
+checkpoint-restore extension before any suffix primes. The default holds on the RTX 5090 class,
+on the full-power RTX PRO 6000 Blackwell Workstation Edition and, since 2026-11-05, on the Max-Q
+Workstation Edition (each from its own cell), keyed by device name (`park_compact_for_device` in
+`crates/memra-server/src/worker.rs`, `HardwareTarget::is_pro6000_maxq` for the Max-Q). `MEMRA_KV_PARK_COMPACT` is
 deleted.
 
 **Rejected:**
@@ -12,9 +13,9 @@ deleted.
 - Keeping the door default-off past its decide-by (2026-10-06). The owner's 2026-11-04 ruling:
   a winner with a positive, correct receipt becomes a default keyed to the card it came from,
   and its switch goes.
-- One default for every card. The receipts cover two card classes. The RTX PRO 6000 Blackwell
-  Max-Q and Server Edition variants, GB10, B200 and H100 have no cell, so they park whole, the
-  same scope `tier_transfer::kv_vmm_placement_for_device` gives its Workstation receipt.
+- One default for every card. The receipts cover the RTX 5090 class and the two RTX PRO 6000
+  Blackwell Workstation editions. The Server Edition, GB10, B200 and H100 have no cell, so they
+  park whole.
 - An environment switch beside the key. The doctrine for a hardware-shaped default is
   detection, and no launcher or gate in the repo set the variable.
 
@@ -29,6 +30,15 @@ and P2 before its runs, and both cards then passed:
 |---|---|---|---|
 | RTX PRO 6000 Blackwell Workstation Edition, 27B (2.3) | 30 of 30 resumed on both arms, no digest difference, both orders | PASS in both modes, red arm red | PROMOTE-ELIGIBLE |
 | RTX 5090 Laptop GPU, 9B (2.4) | 20 of 20, no digest difference, both orders | PASS in both modes, red arm red | PROMOTE-ELIGIBLE |
+| RTX PRO 6000 Blackwell Max-Q Workstation Edition, 27B (2.5, 2.6) | 30 of 30 resumed on both arms, no digest difference, both orders | PASS in both modes, red arm red | PROMOTE-ELIGIBLE |
+
+The Max-Q row is DAY38 addendum E (1.12), pre-registered before any Max-Q boot: the Workstation's
+addendum D cell rerun on one Max-Q card (index 2) beside training on the box's other cards, in two
+parts in two gaps (`pro-maxq-day38e/`, `pro-maxq-day38e-p2/`), at 280 W for all but the first
+minutes of each part (the runner set 300 W; the box's cap timer restored 280 W), the same 27B,
+arms, orders, fault boots and client. Its co-tenant readings (no bound): park-time copy 1.40,
+2.70 and 8.40 ms p50 at the three fed lengths, resumed-turn E2E p50 616 to 642 ms on both arms
+(N=45 per boot), the same 3 of 30 near-tie flips on every main boot.
 
 Readings that rode with the rule (no bound): the park-time copy cost 1.3, 2.6 and 8.2 ms p50 at
 the three fed lengths on the target card and 1.1 and 2.8 ms p50 at 6,144 and 30,720 on the 5090
@@ -42,7 +52,8 @@ The VMM interaction pair (`MEMRA_KV_ALLOCATOR=vmm`) showed no digest difference.
 
 **Scope:** the receipts are one model per card on the plain path, both of the qwen35 hybrid
 class (full-attention KV plus recurrent state). SPEC and DSpark pools park live engine sessions and
-were never in scope. A card class joins the default only with its own DAY38-shape cell. The device
+were never in scope. A card class joins the default only with its own DAY38-shape cell; the
+Max-Q joined with its own (2026-11-05), and the Server Edition has none. The device
 key covers the whole RTX 5090 class (the desktop card with the Laptop GPU the cell ran on), the
 class scope every per-device default in the engine uses.
 
@@ -60,7 +71,7 @@ park-compact declined` line; the cache parks whole):
 Only an entry the park compacted resumes below the request's charged cap (`ReuseEntry::compacted`),
 so the admit-time grow never runs on a cache the compactor declined.
 
-**Owed:** no cell has run compaction on a family outside the qwen35 class. On these two cards it
+**Owed:** no cell has run compaction on a family outside the qwen35 class. On these cards it
 still reaches every plan the refusals above let through, among them step35 (Step-3.7, whose
 blocking gate on the RTX PRO 6000 is `step-pro`), hy3 and the dense and MoE qwen3 packs. Each
 joins the evidence with a plain-path identity cell on its card: every resumed turn read against

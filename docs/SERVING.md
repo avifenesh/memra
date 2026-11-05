@@ -2332,13 +2332,13 @@ in the [flag catalog](FLAGS.md) row.
 **Continuation-pool park compaction (lane/kv-tenancy-compaction-20260831, tiering spec Arc
 C1; per-device default since 2026-11-04, no flag):** without it a parked plain-pool session
 keeps its full ladder-cap `Cache` allocation (cap = `cache.max_ctx`, so a 6k-token session
-can park ~1 GB on a 262k-ctx deployment). On the RTX 5090 class and the full-power RTX PRO
-6000 Blackwell Workstation Edition the park compacts the cache to exactly its committed
+can park ~1 GB on a 262k-ctx deployment). On the RTX 5090 class, the full-power RTX PRO
+6000 Blackwell Workstation Edition and, since 2026-11-05, the Max-Q Workstation Edition (each
+from its own cell) the park compacts the cache to exactly its committed
 length through the same snapshot + checkpoint-restore machinery the plain-affinity grow uses,
 and the resume grows it back to the request's own charged cap before any suffix primes;
 failures in either direction fall back to the full-size park or a cold serve. Other cards,
-the Max-Q and Server Edition variants included, park whole until a cell on them reads the
-same. SPEC/DSPARK pools are out of scope by design (they park live engine sessions). The
+the Server Edition included, park whole until a cell on them reads the same. SPEC/DSPARK pools are out of scope by design (they park live engine sessions). The
 receipts and what the flip rejected are in
 [decisions/KV-PARK-COMPACT-DEFAULT.md](decisions/KV-PARK-COMPACT-DEFAULT.md).
 
