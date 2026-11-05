@@ -2653,8 +2653,11 @@ fn parse_cache_hard_vram_frac(raw: Option<&str>) -> Result<f64, &'static str> {
 ///
 /// - RTX PRO 6000 Blackwell Workstation Edition (section 2, `pro-single-day61/`): G1 to G3 PASS,
 ///   the pressure shape 0.310 -> 0.255 s (`pf_wins`), the naked shape 0.113 -> 0.113 s
-///   (`pf_flat`). The receipt covers the full-power Workstation card only; the Max-Q and Server
-///   Edition variants keep the no-receipt default until their own cell.
+///   (`pf_flat`). The receipt covers the full-power Workstation card only.
+/// - RTX PRO 6000 Blackwell Max-Q Workstation Edition (section 5, `pro-maxq-day59/`, a 300 W
+///   limit that never bound during the timing cells): G1 to G3 PASS, pressure 0.322 -> 0.258 s
+///   (`pf_wins`), naked 0.125 -> 0.125 s (`pf_flat`). The Server Edition keeps the no-receipt
+///   default until its own cell.
 /// - RTX 5090 Laptop GPU (section 3, `rtx5090-day59/`; its telemetry reads a 175 W power limit
 ///   and a 1627 MHz SM median, the laptop card): G1 to G3 PASS, pressure 0.412 -> 0.364 s
 ///   (`pf_wins`), naked 0.216 -> 0.214 s (`pf_flat`). The receipt covers the laptop card only;
@@ -2670,6 +2673,9 @@ pub fn in_token_prefetch_for_device(name: &str) -> (bool, &'static str) {
             if name.contains("Workstation") && !name.contains("Max-Q") =>
         {
             (true, "pro6000-ws-receipt")
+        }
+        Ok(HardwareTarget::RtxPro6000Blackwell) if name.contains("Max-Q") => {
+            (true, "pro6000-maxq-receipt")
         }
         Ok(HardwareTarget::Rtx5090) | Ok(HardwareTarget::RtxPro6000Blackwell) | Err(_) => {
             (false, "no-receipt-default")
@@ -2696,7 +2702,7 @@ mod in_token_prefetch_tests {
         );
         assert_eq!(
             p("NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition"),
-            (false, "no-receipt-default")
+            (true, "pro6000-maxq-receipt")
         );
         assert_eq!(
             p("NVIDIA RTX PRO 6000 Blackwell Server Edition"),

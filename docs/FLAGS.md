@@ -2453,13 +2453,17 @@ tapes at two shapes, G2 run-spec K=1..8 and G3 serving byte-equality, then gen-o
 orders, N=10 per arm. RTX PRO 6000 Blackwell Workstation Edition (section 2,
 `pro-single-day61/`): G1 to G3 PASS, pressure 0.310 -> 0.255 s (`pf_wins`), naked 0.113 -> 0.113 s
 (`pf_flat`, every expert resident). RTX 5090 Laptop (section 3, `rtx5090-day59/`): G1 to G3 PASS,
-pressure 0.412 -> 0.364 s (`pf_wins`), naked 0.216 -> 0.214 s (`pf_flat`). The row kept the door
+pressure 0.412 -> 0.364 s (`pf_wins`), naked 0.216 -> 0.214 s (`pf_flat`). RTX PRO 6000 Blackwell
+Max-Q (section 5, `pro-maxq-day59/`, 2026-11-05, pre-registered in section 4, a 300 W limit that
+never bound during the timing cells): G1 to G3 PASS, pressure 0.322 -> 0.258 s (`pf_wins`), naked
+0.125 -> 0.125 s (`pf_flat`). The row kept the door
 OFF past its 2026-10-04 decide-by as the owner's call, and said the 5090 cells were still waiting;
 section 3 had already banked them. Owner, 2026-11-04: positive-receipt winners become defaults
 keyed to the receipt's card, and their switches go. The prefetch is now on by default on the RTX
 5090 Laptop GPU and on the full-power RTX PRO 6000 Workstation card, keyed on the device name at
-engine construction (`moe_cache::in_token_prefetch_for_device`); the desktop RTX 5090, the Max-Q
-and Server Edition variants and every other card keep it off until their own cell. The slot
+engine construction (`moe_cache::in_token_prefetch_for_device`), and since 2026-11-05 on the Max-Q
+(`pro6000-maxq-receipt`); the desktop RTX 5090, the Server Edition and every other card keep it off
+until their own cell. The slot
 cache's boot line names the arm and its source (`[moe-cache] in-token prefetch: on (card
 rtx5090-laptop-receipt)`). Deleted: the in-token env read in `hybrid_forward.rs`. No
 kernel was only its. The variable's other reading, the CPU-expert companion's prediction worker
