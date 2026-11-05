@@ -424,7 +424,8 @@ each states itself at boot.
   [Decision](decisions/ADMIT-BY-MEMORY-DEFAULT.md).
 - **Direct handoff export.** The host-tier deploy handoff export (`MEMRA_KV_HOST_HANDOFF`)
   writes its file with `O_DIRECT` through one aligned 4 MiB buffer, then `fdatasync`, where every
-  other card writes through the page cache, then `fsync`. The bytes are the same, every card
+  other card writes through the page cache, then `fsync`. This one also covers the Max-Q, which
+  carries its own receipt (2026-11-05, `HandoffIo::for_device`). The bytes are the same, every card
   imports through a buffered reader, and a filesystem that refuses `O_DIRECT` gets the buffered
   writer. The export line says which ran (`io=direct` or `io=buffered`).
   [Decision](decisions/HANDOFF-DIRECT-EXPORT.md).
