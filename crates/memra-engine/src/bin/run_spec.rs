@@ -391,11 +391,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     } else if !gen_only {
         let _ = plain_oracle(&model, &e, &prompt, 1)?; // cold-start warmup (weights/L2/allocator)
     }
-    if freeze_warmup_tokens > 0
-        && std::env::var("MEMRA_MOE_PREFETCH").is_ok_and(|value| value != "0")
-    {
-        model.start_moe_prefetch_predictor(&e, &model.cfg)?;
-    }
     e.stream().synchronize()?;
     let t0 = std::time::Instant::now();
     let gold = plain_oracle(&model, &e, &prompt, n_new)?;

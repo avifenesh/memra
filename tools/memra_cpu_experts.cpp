@@ -37,7 +37,6 @@
 #include <string>
 #include <thread>
 #include <unordered_map>
-#include <unordered_set>
 #include <vector>
 
 extern "C" {
@@ -1672,16 +1671,13 @@ struct CpuProfile {
     std::atomic<std::uint64_t> stage_cached_ns { 0 };
     std::atomic<std::uint64_t> stage_missing_ns { 0 };
     std::atomic<std::uint64_t> stage_accum_ns { 0 };
-    std::atomic<std::uint64_t> prefetch_projections { 0 };
-    std::atomic<std::uint64_t> prefetch_bytes { 0 };
     ~CpuProfile() {
         const auto to_seconds = [](std::uint64_t ns) { return ns / 1.0e9; };
         std::fprintf(
             stderr,
             "[memra-cpu-profile] calls=%llu prepare=%.6fs io=%.6fs insert=%.6fs "
             "compute=%.6fs read_projections=%llu read_GB=%.3f "
-            "stage_entry=%.6fs stage_cached=%.6fs stage_missing=%.6fs stage_accum=%.6fs "
-            "prefetch_projections=%llu prefetch_GB=%.3f\n",
+            "stage_entry=%.6fs stage_cached=%.6fs stage_missing=%.6fs stage_accum=%.6fs\n",
             static_cast<unsigned long long>(calls.load(std::memory_order_relaxed)),
             to_seconds(prepare_ns.load(std::memory_order_relaxed)),
             to_seconds(io_ns.load(std::memory_order_relaxed)),
@@ -1692,10 +1688,7 @@ struct CpuProfile {
             to_seconds(stage_entry_ns.load(std::memory_order_relaxed)),
             to_seconds(stage_cached_ns.load(std::memory_order_relaxed)),
             to_seconds(stage_missing_ns.load(std::memory_order_relaxed)),
-            to_seconds(stage_accum_ns.load(std::memory_order_relaxed)),
-            static_cast<unsigned long long>(
-                prefetch_projections.load(std::memory_order_relaxed)),
-            prefetch_bytes.load(std::memory_order_relaxed) / 1.0e9);
+            to_seconds(stage_accum_ns.load(std::memory_order_relaxed)));
     }
 };
 
@@ -1902,30 +1895,15 @@ public:
     }
 
     void insert(const CacheKey & key, const std::shared_ptr<AlignedBytes> & bytes) {
-        insert_at(key, bytes, /*cold=*/false);
-    }
-
-    bool contains(const CacheKey & key) {
-        std::lock_guard<std::mutex> lock(mutex_);
-        return entries_.find(key) != entries_.end();
-    }
-
-    void insert_at(const CacheKey & key, const std::shared_ptr<AlignedBytes> & bytes,
-                   bool cold) {
         if (budget_ == 0 || bytes->size() > budget_) return;
         std::lock_guard<std::mutex> lock(mutex_);
         const auto found = entries_.find(key);
         if (found != entries_.end()) {
-            if (!cold) lru_.splice(lru_.end(), lru_, found->second.lru);
+            lru_.splice(lru_.end(), lru_, found->second.lru);
             return;
         }
-        if (cold) {
-            lru_.push_front(key);
-            entries_.emplace(key, Entry { bytes, lru_.begin() });
-        } else {
-            lru_.push_back(key);
-            entries_.emplace(key, Entry { bytes, std::prev(lru_.end()) });
-        }
+        lru_.push_back(key);
+        entries_.emplace(key, Entry { bytes, std::prev(lru_.end()) });
         used_ += key.len;
         read_bytes_ += key.len;
         while (used_ > budget_ && !lru_.empty()) {
@@ -2049,95 +2027,6 @@ WeightCache & weight_cache() {
     return cache;
 }
 
-// Speculative entries live OUTSIDE the main LRU (2026-07-23 A/B autopsy: cold-front
-// insertions at a full cache are evicted by demand fills before their layer arrives and the
-// same experts re-prefetch every token). The annex is a small FIFO side-buffer: a demand miss
-// checks it and PROMOTES a hit into the main cache; annex membership plus the in-flight set
-// dedups repeat predictions for free. Speculation can therefore never evict a demand entry
-// and never re-reads what it already holds.
-class PrefetchAnnex {
-public:
-    static PrefetchAnnex & instance() {
-        static PrefetchAnnex * annex = new PrefetchAnnex();  // leaked: static-dtor ordering
-        return *annex;
-    }
-
-    std::size_t budget() const { return budget_; }
-
-    /// True if the key is already speculated (held or being read) — callers skip re-prefetch.
-    bool speculated(const CacheKey & key) {
-        std::lock_guard<std::mutex> lock(mutex_);
-        return held_.find(key) != held_.end() || inflight_.find(key) != inflight_.end();
-    }
-
-    bool begin_read(const CacheKey & key) {
-        std::lock_guard<std::mutex> lock(mutex_);
-        if (held_.find(key) != held_.end()) return false;
-        return inflight_.insert(key).second;
-    }
-
-    void abort_read(const CacheKey & key) {
-        std::lock_guard<std::mutex> lock(mutex_);
-        inflight_.erase(key);
-    }
-
-    void complete_read(const CacheKey & key, const std::shared_ptr<AlignedBytes> & bytes) {
-        std::lock_guard<std::mutex> lock(mutex_);
-        inflight_.erase(key);
-        if (held_.find(key) != held_.end()) return;
-        order_.push_back(key);
-        held_.emplace(key, bytes);
-        used_ += key.len;
-        while (used_ > budget_ && !order_.empty()) {
-            const auto oldest = order_.front();
-            order_.pop_front();
-            const auto found = held_.find(oldest);
-            if (found != held_.end()) {
-                used_ -= found->first.len;
-                held_.erase(found);
-                ++expired_;
-            }
-        }
-    }
-
-    /// Demand-miss path: take a speculated buffer if present (promotion into the main cache
-    /// is the caller's job). Counts usefulness.
-    std::shared_ptr<AlignedBytes> take(const CacheKey & key) {
-        std::lock_guard<std::mutex> lock(mutex_);
-        const auto found = held_.find(key);
-        if (found == held_.end()) return {};
-        auto bytes = found->second;
-        used_ -= found->first.len;
-        held_.erase(found);
-        ++promoted_;
-        return bytes;
-    }
-
-    void snapshot(std::uint64_t * promoted, std::uint64_t * expired) {
-        std::lock_guard<std::mutex> lock(mutex_);
-        if (promoted != nullptr) *promoted = promoted_;
-        if (expired != nullptr) *expired = expired_;
-    }
-
-private:
-    PrefetchAnnex() {
-        const char * raw = std::getenv("MEMRA_CPU_EXPERT_PREFETCH_ANNEX_GB");
-        const double gib = raw != nullptr && *raw != '\0' ? std::strtod(raw, nullptr) : 1.5;
-        budget_ = static_cast<std::size_t>(
-            std::clamp(gib, 0.125, 16.0) * 1024.0 * 1024.0 * 1024.0);
-    }
-
-    std::mutex mutex_;
-    std::size_t budget_ = 0;
-    std::size_t used_ = 0;
-    std::deque<CacheKey> order_;
-    std::unordered_map<CacheKey, std::shared_ptr<AlignedBytes>, CacheKeyHash> held_;
-    std::unordered_set<CacheKey, CacheKeyHash> inflight_;
-    std::uint64_t promoted_ = 0;
-    std::uint64_t expired_ = 0;
-};
-
-
 void copy_error(char * dst, std::size_t capacity, const std::string & message) {
     if (dst == nullptr || capacity == 0) return;
     const std::size_t count = std::min(capacity - 1, message.size());
@@ -2175,13 +2064,6 @@ ProjectionRuntime prepare_projection(
         const CacheKey key { source, desc.file_offset, desc.byte_len };
         runtime.cache_key = key;
         runtime.weight_owner = weight_cache().find(key);
-        if (!runtime.weight_owner) {
-            // Demand miss: promote a speculated buffer from the prefetch annex if one landed.
-            if (auto speculated = PrefetchAnnex::instance().take(key)) {
-                weight_cache().insert(key, speculated);
-                runtime.weight_owner = std::move(speculated);
-            }
-        }
         if (!runtime.weight_owner) {
             runtime.weight_owner = std::make_shared<AlignedBytes>();
             const bool direct = direct_io_enabled()
@@ -2259,23 +2141,6 @@ struct CallIoState {
     int first_error = 0;                // first errno observed by any read
 };
 
-// Detached speculative-prefetch batch: heap-owned, freed by the last completing read. Owns
-// copies of the caller's projection descriptors (the caller returns immediately) and the
-// destination buffers; each fully-read projection is inserted cold into the weight cache.
-struct PrefetchState {
-    std::vector<memra_cpu_projection_v2> descs;
-    std::vector<ProjectionRuntime> runtimes;
-    std::unique_ptr<std::atomic<int>[]> projection_pending;
-    std::unique_ptr<std::atomic<bool>[]> projection_failed;
-    std::atomic<int> outstanding { 0 };
-};
-
-std::atomic<int> & prefetch_inflight() {
-    static std::atomic<int> count { 0 };
-    return count;
-}
-
-
 struct IoJob {
     ProjectionRuntime * projection = nullptr;
     int fd = -1;
@@ -2283,7 +2148,6 @@ struct IoJob {
     std::size_t length = 0;
     int expert_index = -1;
     CallIoState * call = nullptr;
-    PrefetchState * prefetch = nullptr;  // set instead of `call` for detached prefetch reads
 };
 
 class IoPool {
@@ -2370,34 +2234,6 @@ private:
                 job.projection->weight_owner->data) + job.offset;
             const int status = pread_exact(
                 *job.projection, job.fd, destination, job.offset, job.length);
-            if (job.prefetch != nullptr) {
-                auto * state = job.prefetch;
-                const std::size_t index = static_cast<std::size_t>(job.expert_index);
-                if (status != 0) {
-                    state->projection_failed[index].store(true, std::memory_order_release);
-                }
-                if (state->projection_pending[index].fetch_sub(1,
-                        std::memory_order_acq_rel) == 1) {
-                    // Completed speculative read lands in the ANNEX, never the main cache; a
-                    // failed one just releases its in-flight claim (dropped, never fatal).
-                    if (state->projection_failed[index].load(std::memory_order_acquire)) {
-                        PrefetchAnnex::instance().abort_read(job.projection->cache_key);
-                    } else {
-                        PrefetchAnnex::instance().complete_read(
-                            job.projection->cache_key, job.projection->weight_owner);
-                    }
-                    // The in-flight charge is per PROJECTION (one fetch_add at submit), so it
-                    // is released exactly once, with the projection's final half, success or
-                    // failure. A mirrored projection is two jobs; releasing per job drove the
-                    // signed counter negative and let the admission cap admit excess work
-                    // (memra#586, tools/test_cpu_expert_prefetch.sh).
-                    prefetch_inflight().fetch_sub(1, std::memory_order_relaxed);
-                }
-                if (state->outstanding.fetch_sub(1, std::memory_order_acq_rel) == 1) {
-                    delete state;
-                }
-                continue;
-            }
             auto * state = job.call;
             {
                 std::lock_guard<std::mutex> lock(state->mutex);
@@ -3009,127 +2845,6 @@ extern "C" std::int32_t memra_cpu_expert_rows_raw_v2(
                             error, error_capacity);
 }
 
-// Detached speculative prefetch: reads the given projections into the RAM cache as cold
-// (evict-first) insertions and returns immediately. Cached projections are skipped; requests
-// beyond the in-flight cap are dropped, never queued — speculative traffic must not compound
-// under load. Returns the number of projections actually submitted, or -1 on invalid input.
-extern "C" std::int32_t memra_cpu_expert_prefetch_v2(
-        const memra_cpu_projection_v2 * projections,
-        std::int32_t count,
-        char * error,
-        std::size_t error_capacity) try {
-    if (projections == nullptr || count <= 0) {
-        throw std::runtime_error("invalid CPU expert prefetch invocation");
-    }
-    static const int max_inflight = [] {
-        const char * raw = std::getenv("MEMRA_CPU_EXPERT_PREFETCH_MAX_INFLIGHT");
-        if (raw == nullptr || *raw == '\0') return 32;
-        const long value = std::strtol(raw, nullptr, 10);
-        return value >= 1 && value <= 4096 ? static_cast<int>(value) : 32;
-    }();
-    auto & annex = PrefetchAnnex::instance();
-    auto state = std::make_unique<PrefetchState>();
-    state->descs.reserve(static_cast<std::size_t>(count));
-    for (std::int32_t index = 0; index < count; ++index) {
-        const auto & desc = projections[index];
-        if (desc.file_fd < 0) continue;  // memory-backed projections need no prefetch
-        state->descs.push_back(desc);
-    }
-    const std::size_t n = state->descs.size();
-    if (n == 0) return 0;
-    state->runtimes.reserve(n);
-    state->projection_pending = std::make_unique<std::atomic<int>[]>(n);
-    state->projection_failed = std::make_unique<std::atomic<bool>[]>(n);
-    std::vector<IoJob> jobs;
-    std::int32_t submitted = 0;
-    // Submit-side symmetry (memra#586, review rounds on #612): a projection's stat, resize or
-    // O_DIRECT/mirror resolve can throw after the annex claim was taken (begin_read) and after
-    // earlier projections took their charge, all before pool.submit; nothing would ever release
-    // them, the cap would count phantom work and the key would read as speculated for the life
-    // of the process. `claimed` records every claim the moment it is taken (a runtime is pushed
-    // only later, so state->runtimes cannot drive this). The guard releases exactly what this
-    // call took and is disarmed once the jobs are handed to the pool, from where the completion
-    // path owns every release (tools/test_cpu_expert_prefetch.sh, cells submit-throw and
-    // submit-throw-claim).
-    std::vector<CacheKey> claimed;
-    claimed.reserve(n);
-    struct SubmitGuard {
-        PrefetchAnnex & annex;
-        const std::vector<CacheKey> & claimed;
-        const std::int32_t & submitted;
-        bool armed = true;
-        ~SubmitGuard() {
-            if (!armed) return;
-            if (submitted > 0) prefetch_inflight().fetch_sub(submitted, std::memory_order_relaxed);
-            for (const auto & key : claimed) annex.abort_read(key);
-        }
-    } submit_guard { annex, claimed, submitted };
-    auto & profile = cpu_profile();
-    for (std::size_t index = 0; index < state->descs.size(); ++index) {
-        const auto & desc = state->descs[index];
-        if (prefetch_inflight().load(std::memory_order_relaxed) >= max_inflight) break;
-        // Build the cache key without prepare_projection: the demand path's annex promotion
-        // must never fire from a speculative probe, and cache stats must not count them.
-        const FileKey source = file_key(desc.file_fd);
-        const CacheKey key { source, desc.file_offset, desc.byte_len };
-        if (weight_cache().contains(key)) continue;
-        if (!annex.begin_read(key)) continue;  // already speculated or in flight (dedup)
-        claimed.push_back(key);
-        ProjectionRuntime runtime;
-        runtime.desc = &state->descs[index];
-        runtime.cache_key = key;
-        runtime.weight_owner = std::make_shared<AlignedBytes>();
-        const bool direct = direct_io_enabled()
-            && desc.file_offset % 4096 == 0 && desc.byte_len % 4096 == 0;
-        runtime.weight_owner->resize(desc.byte_len, direct ? 4096 : 64);
-        runtime.read_fd = direct
-            ? direct_files().resolve(desc.file_fd, source.inode)
-            : desc.file_fd;
-        runtime.alternate_read_fd = direct
-            ? mirror_files().resolve(desc.file_fd, source)
-            : -1;
-        runtime.needs_read = true;
-        state->runtimes.push_back(std::move(runtime));
-        auto & stored = state->runtimes.back();
-        const std::size_t slot = state->runtimes.size() - 1;
-        const std::size_t jobs_before = jobs.size();
-        state->projection_pending[slot].store(0, std::memory_order_relaxed);
-        state->projection_failed[slot].store(false, std::memory_order_relaxed);
-        const std::size_t length = desc.byte_len;
-        if (stored.alternate_read_fd >= 0 && length >= 8192) {
-            const std::size_t split = (length / 2) & ~std::size_t(4095);
-            jobs.push_back(IoJob { &stored, stored.read_fd, 0, split,
-                static_cast<int>(slot), nullptr, state.get() });
-            jobs.push_back(IoJob { &stored, stored.alternate_read_fd, split, length - split,
-                static_cast<int>(slot), nullptr, state.get() });
-        } else {
-            jobs.push_back(IoJob { &stored, stored.read_fd, 0, length,
-                static_cast<int>(slot), nullptr, state.get() });
-        }
-        state->projection_pending[slot].store(
-            static_cast<int>(jobs.size() - jobs_before), std::memory_order_relaxed);
-        prefetch_inflight().fetch_add(1, std::memory_order_relaxed);
-        profile.prefetch_projections.fetch_add(1, std::memory_order_relaxed);
-        profile.prefetch_bytes.fetch_add(length, std::memory_order_relaxed);
-        ++submitted;
-    }
-    if (jobs.empty()) return 0;
-    state->outstanding.store(static_cast<int>(jobs.size()), std::memory_order_relaxed);
-    auto & pool = IoPool::instance();
-    pool.ensure_started(io_thread_count(8));
-    submit_guard.armed = false;  // the pool and the completion path own every release from here
-    pool.submit(std::move(jobs));
-    state.release();  // owned by the completion path from here
-    if (error != nullptr && error_capacity != 0) error[0] = '\0';
-    return submitted;
-} catch (const std::exception & exception) {
-    copy_error(error, error_capacity, exception.what());
-    return -1;
-} catch (...) {
-    copy_error(error, error_capacity, "unknown CPU expert prefetch failure");
-    return -1;
-}
-
 // Model-independent correctness hook used by `cpu-native-check`. This intentionally exercises the
 // same activation quantizer and row-dot dispatch as production without constructing a full model.
 extern "C" int memra_cpu_dot_v2(
@@ -3167,31 +2882,6 @@ extern "C" int memra_cpu_dot_v2(
 } catch (...) {
     copy_error(error, error_capacity, "unknown memra CPU dot failure");
     return 1;
-}
-
-// Annex/speculation accounting: submitted speculative projections, annex promotions (a
-// speculated buffer served a demand miss), annex expiries (never used, FIFO-evicted), and
-// reads still in flight.
-extern "C" void memra_cpu_expert_prefetch_stats_v2(
-        std::uint64_t * submitted,
-        std::uint64_t * promoted,
-        std::uint64_t * expired,
-        std::uint64_t * inflight) noexcept {
-    if (submitted != nullptr) {
-        *submitted = cpu_profile().prefetch_projections.load(std::memory_order_relaxed);
-    }
-    if (inflight != nullptr) {
-        // The unsigned ABI field cannot carry a negative count; the clamp keeps the legacy
-        // signature and is NOT the balancing oracle. tools/test_cpu_expert_prefetch.sh reads
-        // the signed counter inside this translation unit (memra#586).
-        *inflight = static_cast<std::uint64_t>(
-            std::max(0, prefetch_inflight().load(std::memory_order_relaxed)));
-    }
-    try {
-        PrefetchAnnex::instance().snapshot(promoted, expired);
-    } catch (...) {
-        // Diagnostic path; the C ABI must never propagate an exception.
-    }
 }
 
 extern "C" void memra_cpu_expert_cache_stats_v2(
