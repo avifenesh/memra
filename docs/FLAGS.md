@@ -2355,8 +2355,9 @@ the RTX 5090 the gate arms pass (arm i twice, arm j and j-vmm; 2.5, 2.6) but the
 serving shape read three of eight boots, the plain route's none. Owner, 2026-11-04: winners
 become defaults keyed to the card each receipt came from, and their switches go. The retry is now
 the default on the full-power Workstation Edition (`batch_oom_recover_default` in `worker.rs`,
-boot line `[admit-oom] batch OOM recovery: ON` or `OFF`); every other card, the 5090 included,
-keeps the error arm. `tools/health-fault-gate.sh` arms i and j no longer set the name and SKIP on
+boot line `[admit-oom] batch OOM recovery: ON` or `OFF`), and since 2026-11-05 on the Max-Q from
+its own pre-registered cell (DAY49 2.7, `pro-maxq-day49f/`: arm j PASS 2/2, every `on` boot 9 of 9
+`200`); every other card, the 5090 included, keeps the error arm. `tools/health-fault-gate.sh` arms i and j no longer set the name and SKIP on
 a card whose boot line reads OFF, and g-batch names the card's state. A stale caller that sets
 the name is refused at boot by the env audit. Decision:
 `docs/decisions/BATCH-OOM-RECOVER-DEFAULT.md`. Ledger:
