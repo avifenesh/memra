@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Exactness gate (RTX 5090 or GB10) for MEMRA_DSPARK_COLD_DRAFTER=1 (memra#1031 second half).
+# Exactness gate (RTX 5090 or GB10) for the cold-drafter conversion (memra#1031 second half).
 #   cold-drafter-gate.sh <memra-server bin> <out dir>
-# Arm: prefix cache + restore/partial/cold-drafter doors. Reference: prefix cache off, so every
-# request cold-primes DFlash. Same model, drafter, seed and requests (tools/dspark-cold-drafter-gate.py).
+# Arm: prefix cache + restore/partial doors (the conversion is on with them).
+# Reference: prefix cache off, so every request cold-primes DFlash. Same model, drafter, seed and requests (tools/dspark-cold-drafter-gate.py).
 set -u
 BIN=$1; O=$2; mkdir -p "$O"
 M=${M:-/data/ai-ml/models/q38-gguf}
@@ -22,7 +22,7 @@ boot() { # tag extra-env...
 }
 stop() { kill -TERM $SP; waitfor --gone $SP --timeout 90s --quiet || kill -KILL $SP; wait $SP 2>/dev/null; }
 boot arm MEMRA_PREFIX_CACHE_MB=4000 MEMRA_DSPARK_PREFIX_RESTORE=1 MEMRA_DSPARK_BOUNDARY_CAPTURE=1 \
-  MEMRA_DSPARK_PARTIAL_RESTORE=1 MEMRA_PREFIX_STABLE_BOUNDARY=1 MEMRA_DSPARK_COLD_DRAFTER=1 \
+  MEMRA_DSPARK_PARTIAL_RESTORE=1 MEMRA_PREFIX_STABLE_BOUNDARY=1 \
   && python3 "$G" http://127.0.0.1:8093 q38 "$O/arm.jsonl"
 stop
 boot ref MEMRA_PREFIX_CACHE_MB=0 && python3 "$G" http://127.0.0.1:8093 q38 "$O/ref.jsonl"
