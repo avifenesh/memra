@@ -775,8 +775,9 @@ is unchanged: it still only records the limit it reads.
   `thermal-<cell>.csv`. It prints one summary line with the maximum temperature and fan and the number of samples
   with each reason active. SW power cap is the normal state of a card running at its limit; it is recorded and not
   judged.
-- Timing: if any sample during the cell shows SW thermal slowdown, HW thermal slowdown or HW power brake, the reading
-  is `no-verdict (thermal throttle)`, because the export times would mix clock states. The integrity checks are read
-  as registered.
+- Timing: throttling does not void the reading. The verdict is on the within-pair ratio, with five alternating pairs
+  in each order, so a slowdown that reaches both arms stays inside the comparison. The throttle summary follows the
+  verdict line, and a default keyed to this reading covers the card at 300 W in this chassis, throttle included. The
+  integrity checks are read as registered.
 - The thermal stop above is unchanged. The runner applies the same rule on its 10 s samples as a
   backstop, and a stopped cell has no verdict.
