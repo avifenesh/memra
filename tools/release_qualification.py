@@ -489,14 +489,20 @@ def docs_only_paths(repo, base, oid):
 EMPTY_TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
 
 
-def impact_base(repo, base, oid):
-    """What a pushed ref is compared against: the remote's old value, or for a new ref its
-    merge base with origin/main. With neither, the empty tree: every path is new."""
-    if set(base) != {"0"}:
+def impact_base(repo, base, oid, remote="refs/heads/main"):
+    """What a pushed ref is compared against. Main compares against its old value. A topic
+    compares against its merge base with origin/main: after a rebase its old tip sits on an
+    older main, and diffing from it charges the topic with everything main gained since.
+    Without origin/main a topic falls back to its old value; a new ref with neither gets the
+    empty tree, so every path is new."""
+    protected = remote in ("refs/heads/main", "refs/heads/master")
+    if protected and set(base) != {"0"}:
         return base
     found = subprocess.run(["git", "-C", str(repo), "merge-base", oid, "refs/remotes/origin/main"],
                            capture_output=True, text=True)
-    return found.stdout.strip() if found.returncode == 0 and found.stdout.strip() else EMPTY_TREE
+    if found.returncode == 0 and found.stdout.strip():
+        return found.stdout.strip()
+    return base if set(base) != {"0"} else EMPTY_TREE
 
 
 def check_push(repo, refs, mode):
@@ -522,7 +528,7 @@ def check_push(repo, refs, mode):
             except ImportError as error:
                 raise GateError(f"cell gate unavailable ({error}); refusing rather than skipping it") from error
             try:
-                cell_evidence.gate(repo, impact_base(repo, base, oid), oid)
+                cell_evidence.gate(repo, impact_base(repo, base, oid, remote), oid)
             except cell_evidence.EvidenceError as error:
                 raise GateError(f"{remote} at {oid[:12]}: {error}") from error
         else:

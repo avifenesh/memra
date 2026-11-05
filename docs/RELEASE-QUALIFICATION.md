@@ -52,6 +52,10 @@ none of the pack's models, the gate names it **UNCOVERED**: the pack's own gate 
 evidence, as for the scoped battery in `AGENTS.md`. Kernels and engine files are never
 pack-local, even when named for one family: shared paths call into `glm5_*` and others.
 
+The push base of main is its old value. The push base of any other branch is its merge
+base with `origin/main`, so a rebased topic answers only for its own commits, not for what
+main gained under it.
+
 The rules in force are the push base's, so a change cannot relax its own requirements
 (`push_gate`, path rules, package classes). A build target that is new in the head takes
 the head's row with `push_gate` forced on. A change to the rules is itself a `gate` cell.

@@ -304,6 +304,22 @@ class CellGate(unittest.TestCase):
         self.f.commit("research only past origin/main")
         self.assertIn("NO PUSH-GATED CELL", self.f.push("refs/heads/topic", base="0" * 40))
 
+    def test_rebased_topic_compares_against_origin_main_not_its_old_tip(self):
+        # The topic was pushed on the seed, then main took a kernel change, then the topic
+        # was rebased onto main. Only the topic's own research change is new; main's kernel
+        # change is main's, and judging it against the old tip demanded evidence for it.
+        self.f.write("research/lane/run.log", "raw\n")
+        old_tip = self.f.commit("topic on the seed")
+        self.f.git("reset", "-q", "--hard", self.f.base)
+        self.f.write("crates/memra-engine/cu/qmatvec.cu", "__global__ void k() { int x = 9; }\n")
+        self.f.git("update-ref", "refs/remotes/origin/main", self.f.commit("main moves"))
+        self.f.write("research/lane/run.log", "raw\n")
+        self.f.commit("topic rebased onto main")
+        self.assertIn("NO PUSH-GATED CELL", self.f.push("refs/heads/topic", base=old_tip))
+        # Main itself still compares against its old value.
+        with self.assertRaisesRegex(q.GateError, "missing evidence"):
+            self.f.push("refs/heads/main", base=self.f.base)
+
 
 if __name__ == "__main__":
     unittest.main()
