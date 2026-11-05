@@ -1,0 +1,3 @@
+waitfor: until grep -q "gap closed" /mnt/Data/work/memra-maxq/gap/status.txt (deadline 480m00s, every 60s)
+waitfor: not yet
+waitfor: MET after 350m03s
