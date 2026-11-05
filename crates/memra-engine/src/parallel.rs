@@ -70,6 +70,14 @@ impl HardwareTarget {
             && name.contains("Workstation")
             && !name.contains("Max-Q")
     }
+
+    /// The RTX PRO 6000 Blackwell Max-Q Workstation Edition (the power-capped sibling of
+    /// [`Self::is_pro6000_workstation`]), by device name. A default keyed here needs its own
+    /// Max-Q receipt; the Workstation receipts do not carry over.
+    pub fn is_pro6000_maxq(name: &str) -> bool {
+        matches!(Self::from_device_name(name), Ok(Self::RtxPro6000Blackwell))
+            && name.contains("Max-Q")
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -2009,6 +2017,26 @@ mod tests {
             "",
         ] {
             assert!(!HardwareTarget::is_pro6000_workstation(name), "{name}");
+        }
+    }
+
+    /// The Max-Q predicate names the Max-Q Workstation Edition only: not the full-power
+    /// Workstation, not the Server Edition, not another class.
+    #[test]
+    fn pro6000_maxq_is_the_maxq_workstation_edition_only() {
+        assert!(HardwareTarget::is_pro6000_maxq(
+            "NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition"
+        ));
+        for name in [
+            "NVIDIA RTX PRO 6000 Blackwell Workstation Edition",
+            "NVIDIA RTX PRO 6000 Blackwell Server Edition",
+            "NVIDIA GeForce RTX 5090",
+            "NVIDIA GeForce RTX 5090 Laptop GPU",
+            "NVIDIA RTX PRO 6000 Ada Generation",
+            "NVIDIA H100 80GB HBM3",
+            "",
+        ] {
+            assert!(!HardwareTarget::is_pro6000_maxq(name), "{name}");
         }
     }
 

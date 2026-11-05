@@ -11465,17 +11465,22 @@ fn batch_oom_reclaim(
 /// prime completes, instead of staying booked for the session's life. Only the books move; no
 /// token path reads them.
 ///
-/// The default on the card its deciding cells ran on (2026-11-04,
-/// `docs/decisions/ADMIT-W-RELEASE-DEFAULT.md`): the full-power RTX PRO 6000 Blackwell
+/// The default on the cards its deciding cells ran on (2026-11-04 and 2026-11-05,
+/// `docs/decisions/ADMIT-W-RELEASE-DEFAULT.md`). The full-power RTX PRO 6000 Blackwell
 /// Workstation Edition, where `research/spill-b-20260919/DAY45.md` 2.2 read every clause PASS
 /// (both books exact at idle, one release or same-tick retire receipt per booked session, equal
 /// digests, no OOM or 503) and `DAY46.md` 2.2 read the enforcing predictive door admitting 11 of
-/// 32 second-wave requests with the release against 1 of 32 without it, P1 to P5 PASS. Keyed by
-/// device name as `park_compact_for_device` keys its Workstation receipt; no other card has a
-/// release cell (the RTX 5090 class's DAY45 and DAY46 enforce-wrel halves never ran), so they
-/// keep the whole-life booking. No environment variable.
+/// 32 second-wave requests with the release against 1 of 32 without it, P1 to P5 PASS. The
+/// Max-Q Workstation Edition, where the same two halves replayed at their deciding trees
+/// (`DAY45.md` 2.3, one card at 280 W beside training) read 12 of 12 and 24 of 24 PASS and the
+/// door admitted 12 of 32 against 1 of 32. Keyed by device name as `park_compact_for_device`
+/// keys its Workstation receipt; no other card has a release cell (the RTX 5090 class's DAY45
+/// and DAY46 enforce-wrel halves never ran), so they keep the whole-life booking. No
+/// environment variable.
 fn w_release_for_device(device_name: &str) -> bool {
-    memra_engine::parallel::HardwareTarget::is_pro6000_workstation(device_name)
+    use memra_engine::parallel::HardwareTarget;
+    HardwareTarget::is_pro6000_workstation(device_name)
+        || HardwareTarget::is_pro6000_maxq(device_name)
 }
 
 /// The prime-completion release (DAY45 1.1): every active session with `prefill_done` and its
@@ -45926,8 +45931,10 @@ mod tests {
     fn w_release_reaches_the_admit_seam_and_one_site() {
         use super::w_release_for_device as on;
         assert!(on("NVIDIA RTX PRO 6000 Blackwell Workstation Edition"));
+        assert!(on(
+            "NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition"
+        ));
         for card in [
-            "NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition",
             "NVIDIA RTX PRO 6000 Blackwell Server Edition",
             "NVIDIA GeForce RTX 5090",
             "NVIDIA GB10",
