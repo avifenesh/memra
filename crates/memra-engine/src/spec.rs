@@ -1619,10 +1619,6 @@ pub struct SpecSession {
     /// commit pass). Non-empty-suffix or sampled turns must flush first (spec_flush_pending);
     /// generate_spec_session_sampled does this at entry, and serve parks only flushed sessions.
     pub pending_tok: Option<u32>,
-    /// EXACT RESUME (`MEMRA_RESUME_EXACT`, WP-B day 44): the absolute grid point the next MTP prime
-    /// walk captures its turn checkpoint at INSIDE the call (`grid_capture`), with no prime stop.
-    /// One-shot, consumed by `mtp_prime_start`; `None` is today's program.
-    pub grid_capture_at: Option<usize>,
     /// SESSION-AFFINITY TURN CHECKPOINT (lane/session-affinity, 2026-08-05): the state at this
     /// turn's PROMPT-END boundary, retained so a later turn can REWIND here. See
     /// [`SpecCheckpoint`]. Refreshed by every non-empty prime; None until the first one, and on
@@ -10831,7 +10827,6 @@ impl HybridModel {
             uctr: 0,
             draft_ctx: None,
             pending_tok: None,
-            grid_capture_at: None,
             turn_ckpt: None,
             telem: SpecTelemetryCounters::default(),
             capture_at: None,
@@ -11519,7 +11514,6 @@ impl HybridModel {
             uctr: 0,
             draft_ctx: None,
             pending_tok: None,
-            grid_capture_at: None,
             // Stable-boundary capture from the split feed above (None on the legacy shape):
             // a restored session previously parked WITHOUT a checkpoint, so the next turn's
             // affinity probe declined ("no turn checkpoint retained") and the conversation
@@ -11598,66 +11592,6 @@ impl HybridModel {
         sess.next_pred = None;
         sess.pending_tok = None;
         Ok(Some(ckpt.pos))
-    }
-
-    /// EXACT RESUME SETTLE (WP-B day 44): prime `tokens` onto the session with the MTP walker's
-    /// trunk and draft fill only (no boundary token, no init feed, no draft preparation), and
-    /// commit them. Every committed row is then a prime-program row, so a later prime from the
-    /// session's end is cold-exact by the grid law when the session ends on the grid.
-    pub fn spec_prime_settle(
-        &self,
-        e: &Engine,
-        sess: &mut SpecSession,
-        tokens: &[u32],
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        let _numeric = self.enter_numeric();
-        if tokens.len() < crate::hybrid_forward::PRIME_MIN_T {
-            return Err("settle prime below PRIME_MIN_T".into());
-        }
-        if sess.pending_tok.is_some() {
-            return Err("settle on a session with a carried pending token".into());
-        }
-        let mut state = Some(self.mtp_prime_start(e, sess, tokens, 1, None, None)?);
-        if let Some(s) = state.as_mut() {
-            s.set_prime_only();
-        }
-        let mut walker = self.mtp_prime_walker(e, sess, &mut state, None);
-        crate::prime_walker::advance_prime(&mut walker, false, |_, _| {})?;
-        crate::prime_walker::finish_prime(walker)?;
-        Ok(())
-    }
-
-    /// `spec_rewind_to_checkpoint` that keeps the turn checkpoint on the session afterwards
-    /// (WP-B day 44, the exact resume): the restore only copies FROM the snapshot, so the same
-    /// checkpoint stays valid for a later rewind until the next prime walk captures a newer one.
-    pub fn spec_rewind_to_checkpoint_retaining(
-        &self,
-        e: &Engine,
-        sess: &mut SpecSession,
-    ) -> Result<Option<usize>, Box<dyn std::error::Error>> {
-        let _numeric = self.enter_numeric();
-        let Some(ckpt) = sess.turn_ckpt.as_ref() else {
-            return Ok(None);
-        };
-        if !sess.cache.can_rollback(&ckpt.snap, 0) || !sess.scratch.can_rewind_to(ckpt.pos) {
-            return Err(
-                "SWA ring rewind checkpoint has been lapped; full re-prime required".into(),
-            );
-        }
-        let pos = ckpt.pos;
-        assert!(
-            pos <= sess.committed.len(),
-            "checkpoint past committed ({pos} > {})",
-            sess.committed.len()
-        );
-        crate::pp::restore_cache_checkpoint(e, self, None, &mut sess.cache, &ckpt.snap)?;
-        debug_assert_eq!(sess.cache.pos, pos, "rollback landed off the checkpoint");
-        sess.scratch.set_len(e, pos)?;
-        sess.committed.truncate(pos);
-        sess.last_h = Some(e.clone_dtod(&ckpt.last_h)?);
-        sess.next_pred = None;
-        sess.pending_tok = None;
-        Ok(Some(pos))
     }
 
     /// Grow a parked speculative session to `target_cap` and rewind it to its retained turn
@@ -13220,7 +13154,6 @@ impl HybridModel {
                     ckpt_at,
                     capture_disabled,
                     prime_ready: _,
-                    grid_capture_at: _,
                 } = sr;
                 sess_capture_disabled = *capture_disabled;
                 sess_capture = Some((capture_at.take(), boundary_captures));

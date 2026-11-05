@@ -6823,10 +6823,6 @@ impl HybridModel {
             seq_end >= base + t,
             "prime_chunk: seq_end must cover this chunk"
         );
-        // GRID CAPTURE (WP-B day 44, `grid_capture`): a capture at this call's start is the live
-        // state; one inside it rides the layer walk below; one at its end is taken after it.
-        crate::grid_capture::note_boundary(e, cache);
-        crate::grid_capture::begin_call(base, t);
         let pos: Vec<i32> = (base as i32..(base + t) as i32).collect();
         let pos_d = e.htod_i32(&pos)?;
 
@@ -6879,9 +6875,7 @@ impl HybridModel {
             cache.qwen_prime_graph = None;
             e.trim_device_graph_mem()?;
         }
-        let out = self.prime_chunk_epilogue(e, x, t, cache)?;
-        crate::grid_capture::note_boundary(e, cache);
-        Ok(out)
+        self.prime_chunk_epilogue(e, x, t, cache)
     }
 
     /// PRIME RANGE SUBGRAPH (lane/pp-leverb, 2026-08-08): layers `[lo, hi)` of the chunked
@@ -9205,14 +9199,6 @@ impl HybridModel {
             hk,
             pad_len,
         )?;
-        // GRID CAPTURE (WP-B day 44, `grid_capture`): the ring at the capture point inside this
-        // call, from this call's own input rows. Unpadded per-sequence primes only.
-        if pad_len.is_none()
-            && let Some(rows) = crate::grid_capture::layer_rel()
-        {
-            let ring = e.ssm_conv_ring_capture(qkv_mixed, conv_dim, rows, d_conv)?;
-            crate::grid_capture::put_conv(il, ring);
-        }
         let mut q_l2 = e.uninit(d_state * hk * t)?;
         // mirror-fold (round 35): q's bf16 twin (wgmma K45/K2 A-operand) in-epilogue too.
         // Emitted only where a consumer exists (the wgmma config) — on other arches the
@@ -9516,21 +9502,13 @@ impl HybridModel {
         // verify keep the sequential kernel).
         let mut o = e.uninit(d_state * num_v * t)?;
         let rl = cache.recur[il].as_mut().unwrap();
-        // GRID CAPTURE (WP-B day 44, `grid_capture`): the scan also writes the state at the
-        // capture point inside this call. Unpadded per-sequence primes only.
-        let capture_rows = if pad_len.is_none() {
-            crate::grid_capture::layer_rel()
-        } else {
-            None
-        };
-        let mut captured: Option<CudaSlice<f32>> = None;
         {
             let crate::cache::RecurLayer {
                 ssm_state,
                 ssm_state_alt,
                 ..
             } = rl;
-            e.gdn_scan_prefill_capture(
+            e.gdn_scan_prefill(
                 &prep.q_l2,
                 &prep.k_l2,
                 &prep.v_g,
@@ -9545,11 +9523,7 @@ impl HybridModel {
                 t,
                 scale,
                 prep.hk,
-                capture_rows.map(|rows| (rows, &mut captured)),
             )?;
-        }
-        if let Some(state) = captured {
-            crate::grid_capture::put_ssm(il, state);
         }
         std::mem::swap(&mut rl.ssm_state, &mut rl.ssm_state_alt);
 
