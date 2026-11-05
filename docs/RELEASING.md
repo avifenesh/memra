@@ -48,9 +48,14 @@ evidence comes from their own family gates: the pack's gate manifest (`memra mod
 the scoped battery's `run-gen` and `run-spec` cells on each family a change reaches
 ([AGENTS.md](../AGENTS.md#match-validation-to-the-changed-behavior)), and the `step-pro`
 hardware gate for Step-3.7 on RTX PRO 6000
-([Testing](TESTING.md#target-aware-release-evidence)). Between changes they are re-run by the
-daily per-device regression run, which is owner policy and has no tracked runner in this repo
-yet. Do not read a tag receipt as a claim about a family the roster does not name.
+([Testing](TESTING.md#target-aware-release-evidence)). Between changes they are re-run by each
+device's daily regression (`tools/daily-regression.py`,
+[Release qualification](RELEASE-QUALIFICATION.md#daily-regression)). Do not read a tag receipt
+as a claim about a family the roster does not name.
+
+A tag PASS carries no served-path evidence either. The battery never starts `memra-server`,
+so serve-smoke, spec-on-cache-hit, accept-gate, health-fault and the other serving gates run
+only in `tools/local-ci.sh` ([Testing](TESTING.md) tier 2) and in scoped-battery cells.
 
 The battery clears `MEMRA_KC_FAST` and `MEMRA_KC_ONLY`, requires the cells in
 `tools/kernel-check-27b.cells` and `tools/kernel-check-step35.cells`, and checks the final

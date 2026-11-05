@@ -12,7 +12,8 @@ per failing device ([daily regression](RELEASE-QUALIFICATION.md#daily-regression
 takes the tag battery, `tools/release-battery.sh` on a non-serving 2x RTX PRO 6000 pair, which
 covers the qwen35 class only: the two `tools/release-roster.tsv` models (owner, 2026-09-27,
 2026-11-02 and 2026-11-03; the rule lives in AGENTS.md and
-[Releasing](RELEASING.md#the-gate-on-the-rig-before-tagging)). Other families get their evidence
+[Releasing](RELEASING.md#the-gate-on-the-rig-before-tagging)). It runs no serving gate, so a tag
+carries no served-path evidence; tier 2 and scoped cells do. Other families get their evidence
 from their own family gates and the daily per-device regression run, not from a tag. Fast-gate
 accelerates development between those checkpoints. A fast-gate green is a *keep going* signal, never model or serving qualification.
 
