@@ -57,3 +57,4 @@ The doors-on boots logged 14 (`1-def/`, every cell) and 11 (`4-def-c1/`) DSPARK 
 - On 24 GB at this context, doors on is faster wherever the card has room, and it runs out of room one step of concurrency sooner.
 - The flip keys on the device name containing "RTX 5090", which also matches the 32 GB desktop card. That card was not measured.
 - Every number above is one run per cell except the c1 ABBA.
+- The doors-off c8 cell on the le8k subset (18:51-18:57) overlapped an 8-thread CPU job of another session from about 18:55 for ~106 s. Its HTTP 408 may owe something to that. No conclusion above rests on that cell, so it was not rerun.
