@@ -135,11 +135,15 @@ kernel-check also runs real-weight oracle cells on the GGUFs in the bound `oracl
 
 A record is therefore no model evidence for any other qwen35-class checkpoint, for any other
 pack (`gemma4_dense`, `gemma4_moe`, `step35`, `glm5_next`, `glm_dsa`, `deepseek_v4`, `hy3` and
-the rest) or for a weight format the two roster files do not carry. Those families get their evidence from their own family
-gates (the pack's gate manifest, the scoped battery's cells on each family a change reaches,
-`step-pro` for Step-3.7) and from the daily per-device regression run, which is owner policy
-and has no tracked runner in this repo yet. [Releasing](RELEASING.md#the-gate-on-the-rig-before-tagging)
-states the same scope for the tag.
+the rest) or for a weight format the two roster files do not carry. Those families get their
+evidence from their own family gates (the pack's gate manifest, the scoped battery's cells on
+each family a change reaches, `step-pro` for Step-3.7) and from each device's
+[daily regression](#daily-regression).
+
+A record carries no served-path evidence either: the battery never starts `memra-server`, and
+the serving gates (serve-smoke, spec-on-cache-hit, accept-gate, health-fault and the rest) run
+only in `tools/local-ci.sh` and in scoped-battery cells.
+[Releasing](RELEASING.md#the-gate-on-the-rig-before-tagging) states the same scope for the tag.
 
 ## Development and publication
 
