@@ -39,7 +39,7 @@ impl HandoffIo {
 
     /// The export writer for a device: `direct` on the RTX PRO 6000 Blackwell Workstation
     /// Edition, full power and Max-Q, each from its own cell (10 pairs per size; export of
-    /// buffered: BOX36 at 600 W 0.917 at 1 GiB and 0.916 at 8 GiB, the Max-Q at a 300 W limit
+    /// buffered: BOX36 at 600 W 0.917 at 1 GiB and 0.916 at 8 GiB, the Max-Q mostly at 250 W
     /// 0.860 and 0.916, `research/spill-f-20260919/pro-maxq-owed18/`), `buffered` on every other
     /// card (the RTX 5090's 1 GiB cell read flat; the Server Edition has no cell).
     pub(crate) fn for_device(device_name: &str) -> HandoffIo {

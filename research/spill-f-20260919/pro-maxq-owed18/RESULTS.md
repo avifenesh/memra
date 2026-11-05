@@ -17,12 +17,20 @@ store, as for BOX36.
 - The slot started with no compute app on any card (`runner/wait-quiet.log`) and ended with GPU 0
   at 2 MiB (`runner/status.txt`). As registered, the runner checked only the card under test during
   the cell; the other three cards were not sampled in between.
-- The runner set GPU 0 to 300 W (from 250 W, max 325 W), read it back (`card.json`, every
-  `card-telemetry.csv` row) and restored 250 W after the cell (`runner/power-set-handoff-direct.log`).
-- Throttle summary (`runner/power-handoff-direct.txt`, 218 samples at 10 s): maximum 83 C, fan
-  54 %; SW power cap active in 109 samples, SW thermal slowdown, HW thermal slowdown and HW power
-  brake in 0; no thermal stop. The power cap is the fill prompts' prefill reaching the 300 W limit;
-  the amendment records it and does not judge it.
+- The runner set GPU 0 to 300 W (from 250 W, max 325 W) and read it back (`card.json`). The box
+  re-applies its own per-card caps every 10 minutes (a system timer, 250 W on this card), and at
+  04:10:12Z it returned the card to 250 W, where it stayed for the rest of the cell; the runner's
+  restore after the cell found 250 W already set (`runner/power-set-handoff-direct.log`). So
+  `handoff-1g` (04:04:42Z to 04:13:43Z) ran its first 5.5 minutes, about 12 of its 20 cycles, at
+  300 W and the rest at 250 W, and `handoff-8g` (04:13:43Z to 04:40:54Z) ran entirely at 250 W. The
+  10 s samples read 34 at 300 W and 184 at 250 W; the 250 ms telemetry 1,326 rows at 300 W and
+  7,333 at 250 W (`card-telemetry.csv`, `runner/thermal-handoff-direct.csv`). The summary line in
+  `runner/power-handoff-direct.txt` reports the limit it read at the start (300 W); the samples
+  are the record. The registered rule reads within-pair ratios and does not depend on the limit.
+- Throttle summary (218 samples at 10 s): maximum 83 C, fan 54 %; SW power cap active in 109
+  samples (9 of the 34 at 300 W, 100 of the 184 at 250 W), SW thermal slowdown, HW thermal
+  slowdown and HW power brake in 0; no thermal stop. The power cap is the fill prompts' prefill
+  reaching the limit; the amendment records it and does not judge it.
 
 ## Verdicts
 
@@ -58,5 +66,6 @@ median ratio. As on the Workstation card at 600 W (BOX36: 0.917 and 0.916), `O_D
 writeback at fsync; here the 1 GiB write is flat instead of slower, and the 8 GiB write is slower
 by less (1.066 against 1.212). `write_ms`, `fsync_ms` and `import_s` decide nothing, as registered.
 
-Scope: this card class on this storage class (ext4 on a local PCIe NVMe), at a 300 W limit in this
-chassis, power cap included. A box whose handoff path is on other storage is outside the receipt.
+Scope: this card class on this storage class (ext4 on a local PCIe NVMe), in this chassis, at the
+box's 250 W cap for all of `handoff-8g` and most of `handoff-1g` (300 W for the first 12 cycles),
+power cap included. A box whose handoff path is on other storage is outside the receipt.
