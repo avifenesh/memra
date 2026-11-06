@@ -3598,7 +3598,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     // `matmul` per weight on the FFN gate/up pair the prime groups. Both must
                     // agree on every f32 bit; at the production prefill shape (T=1024) the
                     // down weight must take the fused route and gate/up the F8F4 entry the scope
-                    // reuses, else the cell compares a path with itself. The cells assume the
+                    // reuses, else the cell compares a path with itself. T=4096 takes the same
+                    // rewrites on the F8F4 v2 tile wherever its route is on (the v2 quantizer
+                    // store, its group scratch). The cells assume the
                     // default MMQ environment (no `MEMRA_RP=0 MEMRA_MMQ=1` W4A4 opt-in, no
                     // CUTLASS operand); those configurations take another prefill GEMM.
                     if let (Some(_), Some(_), Some(_)) = (
@@ -3632,7 +3634,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     .count()
                                     + a.len().abs_diff(b.len())
                             };
-                            for tt in [130usize, 1024] {
+                            for tt in [130usize, 1024, 4096] {
                                 let gate: Vec<f32> =
                                     (0..tt * n_ff).map(|i| pr(i + 101) * 4.0).collect();
                                 let up: Vec<f32> =
@@ -3656,7 +3658,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                             "OK"
                                         }
                                     );
-                                } else if tt == 1024 {
+                                } else if tt >= 1024 {
                                     fails += 1;
                                     println!(
                                         "MMQ-F8F4-SILU-ROUTE blk.0.ffn_down.weight [NVFP4 loaded] T={tt}: \
@@ -3669,7 +3671,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 }
                                 let scoped = e.f8f4_prefill_direct(&wg, tt)
                                     && e.f8f4_prefill_direct(&wu, tt);
-                                if !scoped && tt == 1024 {
+                                if !scoped && tt >= 1024 {
                                     fails += 1;
                                     println!(
                                         "MMQ-F8F4-GROUP blk.0.ffn_gate+ffn_up [NVFP4 loaded] T={tt}: \
@@ -3706,6 +3708,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             "MMQ-F8F4-SILU-ROUTE / MMQ-F8F4-GROUP: SKIP (blk.0 ffn_down/ffn_gate/ffn_up are not all NVFP4 in this model)"
                         );
                     }
+                    // --- F8F4 v2 tile on this model's NVFP4 shapes (see `f8f4_v2_cells`).
+                    if f8f4_v2_cells(&e, &g)? > 0 {
+                        fails += 1;
+                    }
+                    cells.record("mmq-f8f4-v2");
                     // --- STAGE 2: VENDORED llama NVFP4 W4A8 MMQ GEMM vs the f32 dequant oracle. ---
                     // The accuracy-safe rung: weight FP4 is LUT-dequantized to int8 (bit-exact) and the
                     // activation stays q8_1 int8 -> rel MUST sit in the int8-activation band (~1e-3..1e-2),
@@ -4076,6 +4083,36 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         // 27B ffn_down NVFP4 shape probe (in_f=17408 not a clean MMQ_ITER_K_FP4 multiple? T=512)
         // — compare MMQ vs the dp4a oracle to isolate the 27B T=513 mismatch.
+        // F8F4 v2 bit cells on the Qwen3.8-27B GGUF (the GB10 board model): every NVFP4 trunk
+        // shape of the model the v2 route serves, not only the 9B the nvfp4-gemm section prefers.
+        {
+            let q38_path = kc_model(
+                "f8f4-v2",
+                &[(
+                    "Qwen3.8-27B-NVFP4-Q5K-mtp.gguf",
+                    &[
+                        "/home/avifenesh/models/memra-q38/Qwen3.8-27B-NVFP4-MTP-GGUF/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf",
+                    ],
+                )],
+                &gguf_arg,
+                &mut cells,
+                &["mmq-f8f4-v2-q38"],
+            );
+            if let Some(q38_path) = q38_path {
+                if nvfp4_check_capabilities(env!("MEMRA_BUILT_CUDA_ARCH")).1 {
+                    let g38 = memra_gguf::GgufFile::open(&q38_path)?;
+                    if f8f4_v2_cells(&e, &g38)? > 0 {
+                        fails += 1;
+                    }
+                    cells.record("mmq-f8f4-v2-q38");
+                } else {
+                    cells.skip(
+                        "mmq-f8f4-v2-q38",
+                        "static NVFP4 MMQ capability unavailable on this CUDA target",
+                    );
+                }
+            }
+        }
         {
             let g27_path = kc_model(
                 "nvfp4-27b-shape",
@@ -8971,4 +9008,108 @@ mod tests {
         assert!(fp8_blk_mmq_policy_cell_enabled(&mut explicit_cells, true));
         assert!(explicit_cells.skipped.is_empty());
     }
+}
+
+/// F8F4 v2 tile bit cells (GB10 prefill lane, 2026-11-06): the per-call weight image plus the
+/// pipelined mainloop must reproduce the v1 F8F4 tile on every f32 bit, at every NVFP4 GEMM
+/// shape of `g` (in_f % 256 == 0, out_f >= 128), on both weight layouts (GGUF and the A6 split
+/// planes), from a 16-row prompt to a 4,096-row chunk; plus the fused silu(gate) * up v2
+/// quantizer against silu_mul and the v1 tile. Forced arms: the cells judge the kernels whatever
+/// the route picks on this device. Returns the mismatching output count (0 = pass).
+fn f8f4_v2_cells(
+    e: &Engine,
+    g: &memra_gguf::GgufFile,
+) -> Result<usize, Box<dyn std::error::Error>> {
+    use memra_engine::model::repack_nvfp4_split;
+    use memra_gguf::GgmlType;
+    let mut shapes: Vec<(usize, usize, String)> = Vec::new();
+    for t in g.tensors.iter().filter(|t| {
+        t.ggml_type == GgmlType::NVFP4
+            && t.ne.len() == 2
+            && t.ne[1] >= 128
+            && (t.ne[0] as usize).is_multiple_of(256)
+            && t.name.starts_with("blk.")
+    }) {
+        let sh = (t.ne[0] as usize, t.ne[1] as usize);
+        if !shapes.iter().any(|s| (s.0, s.1) == sh) {
+            shapes.push((sh.0, sh.1, t.name.clone()));
+        }
+    }
+    let mut bad = 0usize;
+    for (in_f, out_f, name) in &shapes {
+        let (in_f, out_f) = (*in_f, *out_f);
+        let t = g.find(name).ok_or("v2 cell tensor vanished")?;
+        let raw = g.tensor_data(t);
+        let wd = e.htod_bytes(raw)?;
+        let wd_rp = e.htod_bytes(&repack_nvfp4_split(raw, out_f))?;
+        for tt in [16usize, 130, 1024, 4096] {
+            let x: Vec<f32> = (0..tt * in_f)
+                .map(|i| {
+                    let decade = 10.0f32.powi(((i / in_f) % 5) as i32 - 2);
+                    (pr(i + 101) - 0.5) * decade
+                })
+                .collect();
+            let xd = e.htod(&x)?;
+            let y1 = e.dtoh(
+                &e.qmatvec_mmq_nvfp4_f8f4_arm_raw(&wd, &xd, tt, in_f, out_f, false, false)?,
+            )?;
+            for (rp, w) in [(false, &wd), (true, &wd_rp)] {
+                let y2 =
+                    e.dtoh(&e.qmatvec_mmq_nvfp4_f8f4_arm_raw(w, &xd, tt, in_f, out_f, rp, true)?)?;
+                let nbad = y1
+                    .iter()
+                    .zip(y2.iter())
+                    .filter(|(a, b)| a.to_bits() != b.to_bits())
+                    .count();
+                bad += nbad;
+                println!(
+                    "MMQ-F8F4-V2 {name} [NVFP4 {in_f}x{out_f}] rp={} T={tt}: bit-mismatch {nbad}/{} {}",
+                    rp as u8,
+                    y1.len(),
+                    if nbad == 0 { "OK" } else { "FAIL" }
+                );
+            }
+        }
+    }
+    if let Some(t) = g
+        .find("blk.0.ffn_down.weight")
+        .filter(|t| t.ggml_type == GgmlType::NVFP4)
+        .filter(|t| (t.ne[0] as usize).is_multiple_of(256))
+    {
+        let in_f = t.ne[0] as usize;
+        let out_f = t.ne[1] as usize;
+        let wd = e.htod_bytes(g.tensor_data(t))?;
+        for tt in [16usize, 130, 1024, 4096] {
+            let gate: Vec<f32> = (0..tt * in_f).map(|i| pr(i + 91) * 4.0).collect();
+            let up: Vec<f32> = (0..tt * in_f).map(|i| pr(i + 97) * 0.5).collect();
+            let gd = e.htod(&gate)?;
+            let ud = e.htod(&up)?;
+            let mut act = e.uninit(tt * in_f)?;
+            e.silu_mul(&gd, &ud, &mut act, tt * in_f)?;
+            let ya = e.dtoh(
+                &e.qmatvec_mmq_nvfp4_f8f4_arm_raw(&wd, &act, tt, in_f, out_f, false, false)?,
+            )?;
+            let yb = e.dtoh(
+                &e.qmatvec_mmq_nvfp4_f8f4_silu_arm_raw(&wd, &gd, &ud, tt, in_f, out_f, true)?,
+            )?;
+            let nbad = ya
+                .iter()
+                .zip(yb.iter())
+                .filter(|(a, b)| a.to_bits() != b.to_bits())
+                .count();
+            bad += nbad;
+            println!(
+                "MMQ-F8F4-V2-SILU blk.0.ffn_down.weight [NVFP4] T={tt}: bit-mismatch {nbad}/{} {}",
+                ya.len(),
+                if nbad == 0 { "OK" } else { "FAIL" }
+            );
+        }
+    }
+    println!(
+        "MMQ-F8F4-V2 SUMMARY: {} shapes, {} mismatching outputs {}",
+        shapes.len(),
+        bad,
+        if bad == 0 { "OK" } else { "FAIL" }
+    );
+    Ok(bad)
 }

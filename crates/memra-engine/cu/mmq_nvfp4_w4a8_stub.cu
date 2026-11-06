@@ -22,3 +22,12 @@ extern "C" int memra_mmq_nvfp4_f8f4_preq(
         const void *, const void *, float *, int, int, int, void *, float, int) {
     return 2904;
 }
+
+extern "C" size_t memra_mmq_nvfp4_f8f4_v2_img_bytes(int, int) {
+    return 0;
+}
+
+extern "C" int memra_mmq_nvfp4_f8f4_v2_preq(
+        const void *, const void *, float *, int, int, int, void *, void *, float, int) {
+    return 2905;
+}
