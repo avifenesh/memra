@@ -63,6 +63,29 @@ class ReceiptTests(unittest.TestCase):
             c.verify(self.root, identity, self.contract)
 
 
+class RuntimeLookupTests(unittest.TestCase):
+    def test_runtimes_come_from_the_first_elf_on_path(self):
+        # CI puts an AppArmor-profiled bwrap ahead of /usr/bin/bwrap, so PATH order must hold;
+        # a shell wrapper (one around git, say) is skipped, as are relative and empty entries.
+        with tempfile.TemporaryDirectory() as tmp:
+            wrap, elf, rel = Path(tmp) / "wrap", Path(tmp) / "elf", "relative-dir"
+            wrap.mkdir()
+            elf.mkdir()
+            (wrap / "tool").write_text("#!/bin/sh\nexec /usr/bin/true\n")
+            (wrap / "tool").chmod(0o755)
+            shutil.copy2("/usr/bin/true", elf / "tool")
+            cases = {f"{wrap}:{elf}": str(elf / "tool"), f"{rel}::{elf}": str(elf / "tool"),
+                     f"{wrap}": None, "": None}
+            for path, want in cases.items():
+                with patch.dict(os.environ, {"PATH": path}):
+                    self.assertEqual(c.elf_on_path("tool"), want, path)
+            (elf / "tool").chmod(0o644)
+            with patch.dict(os.environ, {"PATH": f"{wrap}:{elf}"}):
+                self.assertIsNone(c.elf_on_path("tool"))
+            with patch.dict(os.environ, {}, clear=True):
+                self.assertIn(c.elf_on_path("true"), {"/usr/bin/true", "/bin/true"})
+
+
 class IsolationTests(unittest.TestCase):
     def test_actual_isolation_reuse_and_planted_fixture_failure(self):
         # This is deliberately a real bubblewrap execution, not a mock sandbox.
