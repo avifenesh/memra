@@ -1,0 +1,54 @@
+[    0.30] [server] build: memra-0.138.0-64ac3607d1b4 (id: source-tree, git: 8b5f51db3121)
+[    0.30] [server] starting; models config = [("orn", "<models>/hf-models/ornith15-gguf/Ornith-1.5-35B-A3B-NVFP4-Q5K-mtp.gguf", None)]
+[    0.30] [gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[    0.30] [worker-affinity] off (MEMRA_WORKER_CPUSET / MEMRA_WORKER_AFFINITY unset or =0)
+[    0.40] [gpu-watch] on: every 60s, probe deadline 10s, fatal after 3 consecutive misses (MEMRA_GPU_PROBE_MISSES), fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[    0.60] [worker] Engine ready (device=0, MEMRA_FAST=true)
+[    0.60] [spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+[    0.60] [spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2 (K=5 when the loaded MTP head is rank-trimmed)
+[    0.60] [worker] loading model "orn" <- <models>/hf-models/ornith15-gguf/Ornith-1.5-35B-A3B-NVFP4-Q5K-mtp.gguf
+[    0.67] [tensor-contract] bound 753 semantic tensors (pack qwen35_moe, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[    1.61] [moe] resident-experts decision (dev0): experts 18.57GB + trunk 1.60GB vs free 24.52GB (expert budget 20.91GB) -> RESIDENT
+[   25.69] [worker]   loaded "orn": 41 layers, eos=248046, stop=[248046]
+[   25.69] [worker] orn: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false qwen_effort=false gemma_think=false dsv4=false glm5=false ctx=262144 tok="qwen35" instruct=Some("chatml") chat_defaults=None/None
+[   25.69] [route-contract] model="orn" route=hybrid-worker capacity=64 sessions implemented=[capacity,occupancy,progress,fault-ownership,shutdown-ownership,memory-cost,rewrite-qualification,prime-fairness,service-metrics] refused=[]
+[   25.69] [worker] orn: decode wave cap 8; scheduler tick cap 8
+[   25.69] [prefix-cache] on: budget 208MB (207749120 B, derived: 2 x 103874560 B max entry for model "orn" at served ctx 4096 (from MEMRA_CTX; MEMRA_CTX set), requested 207749120 B; boot driver free 5018615808 B, post-reserve clamp 3408003072 B), policy plain-LRU (global oldest unleased entry first; leases untouchable), min prefix 64 tokens, immediate partial restore=off (rollback) (transformer-only; hybrid mid-entry + routed-MoE N/A)
+[   25.70] [admission] "orn": plain 9280 B/token, spec 10208 B/token; fixed residual learns from effective-free deltas
+[   26.89] [moe-sk-form] dev=0 qt=7 sms=82 occ128=1 occ32=7 occt=3 cross=64 xcross=64 bdb=0 in_f=2048 out_f=512 n_active=251 max_m=620
+[   27.53] [fa-pool] grow #0 dev=0 o_len 0 -> 135168 ml_len 0 -> 528 (retired kept, zero=false)
+[   27.57] [fa-pool] grow #1 dev=0 o_len 135168 -> 270336 ml_len 528 -> 1056 (retired kept, zero=false)
+[   27.62] [fa-pool] grow #2 dev=0 o_len 270336 -> 540672 ml_len 1056 -> 2112 (retired kept, zero=false)
+[   27.75] [fa-pool] grow #3 dev=0 o_len 540672 -> 1081344 ml_len 2112 -> 4224 (retired kept, zero=false)
+[   27.93] [fa-pool] grow #4 dev=0 o_len 1081344 -> 2162688 ml_len 4224 -> 8448 (retired kept, zero=false)
+[   34.35] [spec] pre-capture pool trim: released 1856MB cached back to the driver (driver free 2064MB < required 3209MB; instantiate allocates from the driver)
+[   34.35] [func] CAPTURE-TIME kernel lookup (not warmed): embed_gather_u32
+[   34.38] [func] CAPTURE-TIME kernel lookup (not warmed): inc_i32
+[   34.38] [func] CAPTURE-TIME kernel lookup (not warmed): fa_decode_vec_q_v4_deep_dc
+[   34.38] [func] CAPTURE-TIME kernel lookup (not warmed): fa_decode_combine_f32
+[   34.38] [spec] draft-session state high-water: 34MB (max of parked delta 34MB and capture-time pool peak 3MB; charged per spec admission and gating future captures)
+[   34.41] [spec-vg] MTP verify-graph pool ENGAGED (vt_cap=4)
+[   35.85] [device-trim] reason=spec-cost-calibration {"device":0,"reclaimed_bytes":100663296,"still_owned_bytes":20818879996,"pool_reserved_bytes":21072183296,"pool_cached_bytes":253303300,"driver_free_bytes":3766616064,"synchronization_errors":[]}
+[   35.86] [spec-cost] model="orn" depth=2048 pooled=false plain_cap=8 round_overhead=5.30ms pooled_overhead=None verify_ms[1..16]=[10.1 12.1 14.5 16.5 18.6 20.7 22.8 25.0 26.8 28.7 30.6 32.5 34.3 36.1 37.9 39.8] plain_ms[1..]=[9.4 12.5 15.2 18.0 20.4 22.8 25.3 27.7] (10.2s)
+[   35.86] [prime-walk] model="orn" route=mtp supported=true yield_door=true [gdn_dspark_compatible=true mtp_head_loaded=true no_hyper_connections=true no_pipeline_cuts=true]
+[   37.09] [spec] pre-capture pool trim: released 1088MB cached back to the driver (driver free 2184MB < required 3140MB; instantiate allocates from the driver)
+[   37.09] [func] CAPTURE-TIME kernel lookup (not warmed): memra_sctr_inc
+[   37.09] [func] CAPTURE-TIME kernel lookup (not warmed): gumbel_perturb_filtered_ctr_f32
+[   38.08] [device-trim] reason=calibration-complete {"device":0,"reclaimed_bytes":167772160,"still_owned_bytes":21146255196,"pool_reserved_bytes":21508390912,"pool_cached_bytes":362135716,"driver_free_bytes":3319922688,"synchronization_errors":[]}
+[   38.08] [admit-cal] post-probe pool trim: released 160MB cached back to the driver
+[   38.08] [admit-cal] boot calibration done: model="orn" route=mtp transient floor 1536MB (static was 1536MB; measured 84MB; probe kv charge 41MB, draft-state 34MB, drafted 93 accepted 34; [dev0 peak-mapped 20672MB rest-mapped 20512MB charged 75MB -> 84MB]; 2.2s)
+[   38.08] [admit-mem] door=OFF open_output_tokens=8192 defer_budget_ms=8000 (admission charges prompt+output, the reclaim flush demotes to the host tier before dropping, and a memory defer past the budget refuses 429 instead of queueing past the client's deadline)
+[   38.08] [kv-vmm] door=OFF (MEMRA_KV_ALLOCATOR unset or pooled: pooled K/V planes)
+[   38.08] [server] worker ready; serving models: ["orn"]
+[   38.09] [server] listening on http://127.0.0.1:18391
+[   39.20] [meter] admit id=chatcmpl-5301b61a032bdb39b09c0292852a65dd tenant=default lane=interactive model="orn"
+[   39.20] [spec-cost] model="orn" n=1 rung=3 -> K=3 (exploring: no acceptance history yet)
+[   39.20] [admission] per-session draft-state charge: model="orn" +36MB (measured capture high-water)
+[   39.20] [admission] request cost: model="orn" ctx=119 path=spec = 10208 B/token x ctx + 8MB prefill-workspace + 0MB fixed = 9MB
+[   39.20] [admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+[   39.20] [spec-k] model="orn" tenant="" K=3 source=cost-model prompt=23 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[   39.20] [admission] fixed residual high-water: model="orn" 129MB (observed 129MB at ctx 63 path=spec)
+[   39.79] [spec-acc] ctx=23 burst=17/45 cum=17/45=0.378
+[   39.80] [server] SIGTERM: draining (0 in flight, deadline 30s)
+[   39.80] [server] drain complete in 0.0s; exiting
+[   41.58] [server] GPU worker shutdown complete

@@ -1,0 +1,23 @@
+warning: memra-engine@0.138.0: nvcc from MEMRA_NVCC: <work>/cuda-13.1/bin/nvcc
+    Finished `release` profile [optimized] target(s) in 4m 22s
+     Running unittests src/lib.rs (<work>/target/release/deps/memra_server-3a1ff4cec016dc18)
+
+running 2 tests
+test worker::tests::rider_caps_follow_the_device_cost_table ... ok
+test worker::tests::rider_caps_read_a_table_shorter_than_16_rows ... FAILED
+
+failures:
+
+---- worker::tests::rider_caps_read_a_table_shorter_than_16_rows stdout ----
+
+thread 'worker::tests::rider_caps_read_a_table_shorter_than_16_rows' (4058844) panicked at crates/memra-server/src/worker.rs:42068:20:
+index out of bounds: the len is 8 but the index is 8
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    worker::tests::rider_caps_read_a_table_shorter_than_16_rows
+
+test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 1190 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `-p memra-server --lib`

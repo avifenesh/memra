@@ -1,0 +1,62 @@
+test_divergent_text_fails (__main__.ColdDrafterGateScript.test_divergent_text_fails) ... ok
+test_occupied_port_is_refused_before_boot (__main__.ColdDrafterGateScript.test_occupied_port_is_refused_before_boot) ... FAIL
+test_ok_passes_and_names_its_sizes (__main__.ColdDrafterGateScript.test_ok_passes_and_names_its_sizes) ... ok
+test_port_taken_after_the_preflight_is_refused (__main__.ColdDrafterGateScript.test_port_taken_after_the_preflight_is_refused) ... FAIL
+test_refused_requests_fail (__main__.ColdDrafterGateScript.test_refused_requests_fail) ... ok
+test_responder_without_our_listening_line_is_refused (__main__.ColdDrafterGateScript.test_responder_without_our_listening_line_is_refused) ... FAIL
+test_reveto_shape_fails (__main__.ColdDrafterGateScript.test_reveto_shape_fails) ... ok
+
+======================================================================
+FAIL: test_occupied_port_is_refused_before_boot (__main__.ColdDrafterGateScript.test_occupied_port_is_refused_before_boot)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<scratch>/wt/tools/test_dspark_cold_drafter_gate.py", line 211, in test_occupied_port_is_refused_before_boot
+    self.assertIn(f"port {port} is already LISTENing", log)
+    ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 'port 39725 is already LISTENing' not found in 'gate sizes GATE_P_PARAS=10 GATE_S_PARAS=14 memory.total=24463 MiB (GATE_VRAM_MIB override) MEMRA_CTX=16384 DOORS=explicit\nwaitfor: MET after 0m00s\nGATE_RUN_DONE <tmp>/tmpx07vkfoc/ok/arm.jsonl\nwaitfor: MET after 0m00s\nwaitfor: MET after 0m00s\nGATE_RUN_DONE <tmp>/tmpx07vkfoc/ok/ref.jsonl\nwaitfor: MET after 0m00s\nprompt tokens x0=1 a-greedy=1 b-greedy=1\na-greedy: identical=True arm_len=8 ref_len=8\na-sampled: identical=True arm_len=8 ref_len=8\nb-greedy: identical=True arm_len=8 ref_len=8\nb-sampled: identical=True arm_len=8 ref_len=8\nGATE PASS\n[dspark] cache-preferred:=0\nDSPARK cold-drafter restore:=0\nDSPARK restore:=0\ninsert (dspark-boundary):=0\nshape cache-preferred=0 WRONG\nshape cold-drafter restore=0 WRONG\nshape DSPARK restore=0 WRONG\nshape insert (dspark-boundary)=0 WRONG\nSHAPE FAIL\nCOLD-DRAFTER GATE FAIL\n'
+
+======================================================================
+FAIL: test_port_taken_after_the_preflight_is_refused (__main__.ColdDrafterGateScript.test_port_taken_after_the_preflight_is_refused)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<scratch>/wt/tools/test_dspark_cold_drafter_gate.py", line 220, in test_port_taken_after_the_preflight_is_refused
+    self.assertIn("is NOT owned by our server", log)
+    ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 'is NOT owned by our server' not found in 'gate sizes GATE_P_PARAS=10 GATE_S_PARAS=14 memory.total=24463 MiB (GATE_VRAM_MIB override) MEMRA_CTX=16384 DOORS=explicit\nwaitfor: MET after 0m05s\nGATE_RUN_DONE <tmp>/tmp5nwo1foj/squat/arm.jsonl\nwaitfor: MET after 0m00s\nwaitfor: MET after 0m00s\nGATE_RUN_DONE <tmp>/tmp5nwo1foj/squat/ref.jsonl\nwaitfor: MET after 0m00s\nprompt tokens x0=1 a-greedy=1 b-greedy=1\na-greedy: identical=True arm_len=8 ref_len=8\na-sampled: identical=True arm_len=8 ref_len=8\nb-greedy: identical=True arm_len=8 ref_len=8\nb-sampled: identical=True arm_len=8 ref_len=8\nGATE PASS\n[dspark] cache-preferred:=0\nDSPARK cold-drafter restore:=0\nDSPARK restore:=0\ninsert (dspark-boundary):=0\nshape cache-preferred=0 WRONG\nshape cold-drafter restore=0 WRONG\nshape DSPARK restore=0 WRONG\nshape insert (dspark-boundary)=0 WRONG\nSHAPE FAIL\nCOLD-DRAFTER GATE FAIL\n'
+
+======================================================================
+FAIL: test_responder_without_our_listening_line_is_refused (__main__.ColdDrafterGateScript.test_responder_without_our_listening_line_is_refused)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<scratch>/wt/tools/test_dspark_cold_drafter_gate.py", line 226, in test_responder_without_our_listening_line_is_refused
+    self.assertNotEqual(rc, 0, log)
+    ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^
+AssertionError: 0 == 0 : gate sizes GATE_P_PARAS=10 GATE_S_PARAS=14 memory.total=24463 MiB (GATE_VRAM_MIB override) MEMRA_CTX=16384 DOORS=explicit
+waitfor: MET after 0m05s
+GATE_RUN_DONE <tmp>/tmpd8myqae4/quiet/arm.jsonl
+waitfor: MET after 0m00s
+waitfor: MET after 0m05s
+GATE_RUN_DONE <tmp>/tmpd8myqae4/quiet/ref.jsonl
+waitfor: MET after 0m00s
+prompt tokens x0=1359 a-greedy=3277 b-greedy=3289
+a-greedy: identical=True arm_len=25 ref_len=25
+a-sampled: identical=True arm_len=25 ref_len=25
+b-greedy: identical=True arm_len=25 ref_len=25
+b-sampled: identical=True arm_len=25 ref_len=25
+GATE PASS
+[dspark] cache-preferred:=1
+DSPARK cold-drafter restore:=1
+DSPARK restore:=3
+insert (dspark-boundary):=4
+shape cache-preferred=1 ok
+shape cold-drafter restore=1 ok
+shape DSPARK restore=3 ok
+shape insert (dspark-boundary)=4 ok
+SHAPE PASS
+COLD-DRAFTER GATE PASS
+
+
+----------------------------------------------------------------------
+Ran 7 tests in 57.837s
+
+FAILED (failures=3)

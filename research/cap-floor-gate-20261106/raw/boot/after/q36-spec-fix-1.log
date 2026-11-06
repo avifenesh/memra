@@ -1,0 +1,60 @@
+[    0.29] [server] build: memra-0.138.0-64ac3607d1b4 (id: source-tree, git: 8b5f51db3121)
+[    0.29] [server] starting; models config = [("q36", "<models>/hf-models/qwen36-35b-moe/Qwen3.6-35B-A3B-UD-IQ4_XS.gguf", Some("<models>/hf-models/qwen36-35b-moe/draft-35b-owntrim-nvfp4head-q4blk.gguf"))]
+[    0.29] [gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[    0.29] [worker-affinity] off (MEMRA_WORKER_CPUSET / MEMRA_WORKER_AFFINITY unset or =0)
+[    0.39] [gpu-watch] on: every 60s, probe deadline 10s, fatal after 3 consecutive misses (MEMRA_GPU_PROBE_MISSES), fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[    0.62] [worker] Engine ready (device=0, MEMRA_FAST=true)
+[    0.62] [spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+[    0.62] [spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2 (K=5 when the loaded MTP head is rank-trimmed)
+[    0.62] [worker] loading model "q36" <- <models>/hf-models/qwen36-35b-moe/Qwen3.6-35B-A3B-UD-IQ4_XS.gguf
+[    0.72] [tensor-contract] bound 753 semantic tensors (pack qwen35_moe, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[    1.69] [moe] resident-experts decision (dev0): experts 15.60GB + trunk 2.60GB vs free 24.42GB (expert budget 19.82GB) -> RESIDENT
+[   20.79] [mtp-draft] external draft head: blk.40, source=output.weight, head_vocab=32768 (trimmed, d2t map)
+[   21.30] [moe] resident-experts decision (dev0): experts 0.52GB + trunk 0.41GB vs free 7.14GB (expert budget 4.73GB) -> RESIDENT
+[   21.32] [worker] q36: regime draft attached (<models>/hf-models/qwen36-35b-moe/draft-35b-owntrim-nvfp4head-q4blk.gguf)
+[   21.32] [worker] q36: canonical draft plan attached (1 MTP blocks)
+[   21.40] [worker]   loaded "q36": 41 layers, eos=248046, stop=[248046]
+[   21.41] [worker] q36: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false qwen_effort=false gemma_think=false dsv4=false glm5=false ctx=262144 tok="qwen35" instruct=Some("chatml") chat_defaults=None/None
+[   21.41] [route-contract] model="q36" route=hybrid-worker capacity=64 sessions implemented=[capacity,occupancy,progress,fault-ownership,shutdown-ownership,memory-cost,rewrite-qualification,prime-fairness,service-metrics] refused=[]
+[   21.41] [worker] q36: decode wave cap 8; scheduler tick cap 8
+[   21.41] [prefix-cache] on: budget 208MB (207749120 B, derived: 2 x 103874560 B max entry for model "q36" at served ctx 4096 (from MEMRA_CTX; MEMRA_CTX set), requested 207749120 B; boot driver free 6599868416 B, post-reserve clamp 4989255680 B), policy plain-LRU (global oldest unleased entry first; leases untouchable), min prefix 64 tokens, immediate partial restore=off (rollback) (transformer-only; hybrid mid-entry + routed-MoE N/A)
+[   21.41] [admission] "q36": plain 9280 B/token, spec 10208 B/token; fixed residual learns from effective-free deltas
+[   23.32] [moe-sk-form] dev=0 qt=6 sms=82 occ128=1 occ32=6 occt=3 cross=64 xcross=64 bdb=0 in_f=2048 out_f=512 n_active=249 max_m=646
+[   23.32] [moe-sk-form] dev=0 qt=5 sms=82 occ128=1 occ32=7 occt=3 cross=64 xcross=64 bdb=0 in_f=512 out_f=2048 n_active=249 max_m=646
+[   23.86] [moe-sk-form] dev=0 qt=2 sms=82 occ128=1 occ32=7 occt=3 cross=64 xcross=64 bdb=0 in_f=512 out_f=2048 n_active=192 max_m=1993
+[   23.96] [fa-pool] grow #0 dev=0 o_len 0 -> 135168 ml_len 0 -> 528 (retired kept, zero=false)
+[   24.01] [fa-pool] grow #1 dev=0 o_len 135168 -> 270336 ml_len 528 -> 1056 (retired kept, zero=false)
+[   24.07] [fa-pool] grow #2 dev=0 o_len 270336 -> 540672 ml_len 1056 -> 2112 (retired kept, zero=false)
+[   24.21] [fa-pool] grow #3 dev=0 o_len 540672 -> 1081344 ml_len 2112 -> 4224 (retired kept, zero=false)
+[   24.42] [fa-pool] grow #4 dev=0 o_len 1081344 -> 2162688 ml_len 4224 -> 8448 (retired kept, zero=false)
+[   30.84] [func] CAPTURE-TIME kernel lookup (not warmed): embed_gather_u32
+[   30.84] [func] CAPTURE-TIME kernel lookup (not warmed): qmatvec_q4_K_mmvq
+[   30.86] [func] CAPTURE-TIME kernel lookup (not warmed): inc_i32
+[   30.86] [func] CAPTURE-TIME kernel lookup (not warmed): fa_decode_vec_q_v4_deep_dc
+[   30.86] [func] CAPTURE-TIME kernel lookup (not warmed): fa_decode_combine_f32
+[   30.86] [func] CAPTURE-TIME kernel lookup (not warmed): qmatvec_nvfp4_mmvq_mr2_rp
+[   30.86] [spec] draft-session state high-water: 32MB (max of parked delta 32MB and capture-time pool peak 1MB; charged per spec admission and gating future captures)
+[   30.89] [spec-vg] MTP verify-graph pool ENGAGED (vt_cap=4)
+[   31.94] [device-trim] reason=spec-cost-calibration {"device":0,"reclaimed_bytes":1644167168,"still_owned_bytes":18986198364,"pool_reserved_bytes":19226689536,"pool_cached_bytes":240491172,"driver_free_bytes":5616304128,"synchronization_errors":[]}
+[   31.94] [spec-cost] model="q36" depth=2048 pooled=false plain_cap=8 round_overhead=2.32ms pooled_overhead=None verify_ms[1..16]=[11.9 13.9 16.3 18.4 20.9 23.4 25.8 28.2 30.9 33.6 36.3 39.0 41.5 44.0 46.4 48.9] plain_ms[1..]=[11.8 14.2 16.8 19.4 22.2 25.0 27.8 30.5] (10.5s)
+[   31.94] [prime-walk] model="q36" route=mtp supported=true yield_door=true [gdn_dspark_compatible=true mtp_head_loaded=true no_hyper_connections=true no_pipeline_cuts=true]
+[   33.16] [func] CAPTURE-TIME kernel lookup (not warmed): memra_sctr_inc
+[   33.16] [func] CAPTURE-TIME kernel lookup (not warmed): gumbel_perturb_filtered_ctr_f32
+[   33.97] [device-trim] reason=calibration-complete {"device":0,"reclaimed_bytes":1107296256,"still_owned_bytes":19310992924,"pool_reserved_bytes":19595788288,"pool_cached_bytes":284795364,"driver_free_bytes":5236719616,"synchronization_errors":[]}
+[   33.97] [admit-cal] post-probe pool trim: released 1056MB cached back to the driver
+[   33.97] [admit-cal] boot calibration done: model="q36" route=mtp transient floor 1536MB (static was 1536MB; measured 982MB; probe kv charge 41MB, draft-state 32MB, drafted 75 accepted 39; [dev0 peak-mapped 19744MB rest-mapped 18688MB charged 73MB -> 982MB]; 2.0s)
+[   33.97] [admit-mem] door=OFF open_output_tokens=8192 defer_budget_ms=8000 (admission charges prompt+output, the reclaim flush demotes to the host tier before dropping, and a memory defer past the budget refuses 429 instead of queueing past the client's deadline)
+[   33.97] [kv-vmm] door=OFF (MEMRA_KV_ALLOCATOR unset or pooled: pooled K/V planes)
+[   33.98] [server] worker ready; serving models: ["q36"]
+[   33.99] [server] listening on http://127.0.0.1:18391
+[   34.13] [meter] admit id=chatcmpl-b650d4814d71842766373a9d114e6fe5 tenant=default lane=interactive model="q36"
+[   34.13] [spec-cost] model="q36" n=1 rung=3 -> K=3 (exploring: no acceptance history yet)
+[   34.13] [admission] per-session draft-state charge: model="q36" +34MB (measured capture high-water)
+[   34.13] [admission] request cost: model="q36" ctx=119 path=spec = 10208 B/token x ctx + 8MB prefill-workspace + 0MB fixed = 9MB
+[   34.13] [admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+[   34.13] [spec-k] model="q36" tenant="" K=3 source=cost-model prompt=23 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[   34.13] [admission] fixed residual high-water: model="q36" 129MB (observed 129MB at ctx 63 path=spec)
+[   34.53] [spec-acc] ctx=23 burst=23/27 cum=23/27=0.852
+[   34.53] [server] SIGTERM: draining (0 in flight, deadline 30s)
+[   34.53] [server] drain complete in 0.0s; exiting
+[   36.24] [server] GPU worker shutdown complete

@@ -1,0 +1,30 @@
+[    0.09] [server] build: memra-0.138.0-f66068c5e803 (id: source-tree, git: 0a34ce3444e9)
+[    0.09] [server] starting; models config = [("orn", "<models>/hf-models/ornith15-gguf/Ornith-1.5-35B-A3B-NVFP4-Q5K-mtp.gguf", None)]
+[    0.10] [gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[    0.10] [worker-affinity] off (MEMRA_WORKER_CPUSET / MEMRA_WORKER_AFFINITY unset or =0)
+[    0.20] [gpu-watch] on: every 60s, probe deadline 10s, fatal after 3 consecutive misses (MEMRA_GPU_PROBE_MISSES), fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[    0.43] [worker] Engine ready (device=0, MEMRA_FAST=true)
+[    0.43] [spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+[    0.43] [spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2 (K=5 when the loaded MTP head is rank-trimmed)
+[    0.43] [worker] loading model "orn" <- <models>/hf-models/ornith15-gguf/Ornith-1.5-35B-A3B-NVFP4-Q5K-mtp.gguf
+[    0.54] [tensor-contract] bound 753 semantic tensors (pack qwen35_moe, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[    2.17] [moe] resident-experts decision (dev0): experts 18.57GB + trunk 1.60GB vs free 24.52GB (expert budget 20.91GB) -> RESIDENT
+[   24.90] [worker]   loaded "orn": 41 layers, eos=248046, stop=[248046]
+[   24.90] [worker] orn: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false qwen_effort=false gemma_think=false dsv4=false glm5=false ctx=262144 tok="qwen35" instruct=Some("chatml") chat_defaults=None/None
+[   24.90] [route-contract] model="orn" route=hybrid-worker capacity=64 sessions implemented=[capacity,occupancy,progress,fault-ownership,shutdown-ownership,memory-cost,rewrite-qualification,prime-fairness,service-metrics] refused=[]
+[   24.90] [worker] orn: decode wave cap 8; scheduler tick cap 8
+[   24.90] [prefix-cache] on: budget 208MB (207749120 B, derived: 2 x 103874560 B max entry for model "orn" at served ctx 4096 (from MEMRA_CTX; MEMRA_CTX set), requested 207749120 B; boot driver free 5018615808 B, post-reserve clamp 3408003072 B), policy plain-LRU (global oldest unleased entry first; leases untouchable), min prefix 64 tokens, immediate partial restore=off (rollback) (transformer-only; hybrid mid-entry + routed-MoE N/A)
+[   24.90] [admission] "orn": plain 9280 B/token, spec 10208 B/token; fixed residual learns from effective-free deltas
+[   26.32] [moe-sk-form] dev=0 qt=7 sms=82 occ128=1 occ32=7 occt=3 cross=64 xcross=64 bdb=0 in_f=2048 out_f=512 n_active=251 max_m=620
+[   26.97] [fa-pool] grow #0 dev=0 o_len 0 -> 135168 ml_len 0 -> 528 (retired kept, zero=false)
+[   27.02] [fa-pool] grow #1 dev=0 o_len 135168 -> 270336 ml_len 528 -> 1056 (retired kept, zero=false)
+[   27.07] [fa-pool] grow #2 dev=0 o_len 270336 -> 540672 ml_len 1056 -> 2112 (retired kept, zero=false)
+[   27.20] [fa-pool] grow #3 dev=0 o_len 540672 -> 1081344 ml_len 2112 -> 4224 (retired kept, zero=false)
+[   27.38] [fa-pool] grow #4 dev=0 o_len 1081344 -> 2162688 ml_len 4224 -> 8448 (retired kept, zero=false)
+[   38.35] 
+[   38.35] thread 'memra-gpu-worker' (166990) panicked at crates/memra-engine/src/decode_batch.rs:1392:9:
+[   38.35] decode_step_batch: B=16 > cap 8 with no exact tier — refused. Either B>16 (there is NO exact kernel class above 16: m>16 crosses GEMM/dp4a numeric configs; the serve scheduler chunks wider concurrency into <=16 groups instead), or some matmul in this checkpoint has no bit-exact b16 kernel — run with MEMRA_EXACT16_WHY=1 to see which tensor and qtype refuses
+[   38.35] note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+[   40.05] [worker] PANIC in the GPU worker thread: decode_step_batch: B=16 > cap 8 with no exact tier — refused. Either B>16 (there is NO exact kernel class above 16: m>16 crosses GEMM/dp4a numeric configs; the serve scheduler chunks wider concurrency into <=16 groups instead), or some matmul in this checkpoint has no bit-exact b16 kernel — run with MEMRA_EXACT16_WHY=1 to see which tensor and qtype refuses
+[   40.05] [worker] respawn attempt 1/1 in 2s (reloading weights)
+[   40.05] [server] FATAL: worker init failed: worker died during init

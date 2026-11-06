@@ -1,0 +1,23 @@
+== full1-fmt exit 0
+== full1-engine exit 0
+    Finished `release` profile [optimized] target(s) in 0.09s
+test result: ok. 681 passed; 0 failed; 80 ignored; 0 measured; 0 filtered out; finished in 4.86s
+== full1-server exit 0
+    Finished `release` profile [optimized] target(s) in 3m 55s
+test result: ok. 1166 passed; 0 failed; 28 ignored; 0 measured; 0 filtered out; finished in 12.45s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.23s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+== full1-clippy exit 0
+    Finished `release` profile [optimized] target(s) in 4m 29s
+== census lines
+full1-server.log:test string_continuation_tests::the_census_reads_a_lost_continuation_and_nothing_else ... ok
+full1-server.log:test string_continuation_tests::string_literals_keep_their_line_continuations ... ok
+full1-server.log:test worker::tests::rider_caps_follow_the_device_cost_table ... ok
+full1-server.log:test worker::tests::rider_caps_read_a_table_shorter_than_16_rows ... ok
+full1-engine.log:test spec_cost::tests::pooled_overhead_interpolates_from_one_session_to_the_cohort ... ok
+full1-engine.log:test spec_cost::tests::probe_fit_refuses_only_past_what_is_allocatable ... ok
+full1-engine.log:test spec_cost::tests::plain_points_stop_at_the_decode_wave_cap ... ok
+full1-engine.log:test spec_cost::tests::interpolation_keeps_measured_points_and_fills_between ... ok
+full1-engine.log:test spec_cost::tests::boot_probes_check_their_fit_before_timing ... ok

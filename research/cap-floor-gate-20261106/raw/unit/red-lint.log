@@ -1,0 +1,39 @@
+warning: memra-engine@0.138.0: nvcc from MEMRA_NVCC: <work>/cuda-13.1/bin/nvcc
+    Finished `release` profile [optimized] target(s) in 3m 55s
+     Running unittests src/lib.rs (<work>/target/release/deps/memra_server-3a1ff4cec016dc18)
+
+running 2 tests
+test string_continuation_tests::the_census_reads_a_lost_continuation_and_nothing_else ... ok
+test string_continuation_tests::string_literals_keep_their_line_continuations ... FAILED
+
+failures:
+
+---- string_continuation_tests::string_literals_keep_their_line_continuations stdout ----
+
+thread 'string_continuation_tests::string_literals_keep_their_line_continuations' (4134805) panicked at crates/memra-server/src/lib.rs:31590:9:
+16 string literal line(s) lost a line continuation (end the line with a backslash and continue the text on the next line):
+crates/memra-engine/src/dflash.rs:5791: "restored dspark session needs a whole-entry trunk cache: cache.pos {} !=                  prompt {tp}",
+crates/memra-engine/src/dsv4_gpu.rs:24985: "DEFAULT CONFIGURATION CANNOT BOOT: decode path resolves device and              the expert arm resolves bf16; load refuses that pair"
+crates/memra-engine/src/dsv4_gpu.rs:24991: "DEFAULT CONFIGURATION CANNOT BOOT: verify-topk resolves device              without device math"
+crates/memra-engine/src/gemma_spec.rs:1504: "[gemma-spec] rounds={rounds} drafted={drafted} accepted={accepted}                    accept-rate={:.3} tok/round={:.2}",
+crates/memra-engine/src/hybrid_forward.rs:19500: "MEMRA_MOE_F16G=1 is REFUSED on the glm5 sigmoid grouped prefill:                  cublasGemmGroupedBatchedEx issues on cuBLAS-internal streams unordered with                  ours, and on this walk's 283-group shape that race silently destroyed the                  trunk and killed the worker (2026-09-02 boot D, research/glm5-b200-20260902/                 box/prefill/). Use MEMRA_MOE_F16G=2 (the default) or the MEMRA_B200_PRIME_V2                  dequant-once arm",
+crates/memra-engine/src/lib.rs:7066: "{err} [append len={} retain_from={retain_from} append_rows={append_rows}                      base={base_before:?} called from {caller}]",
+crates/memra-engine/src/lib.rs:8377: return Err("moe_router_sigmoid_topk_host was reached inside an open CUDA graph                         capture: the host readback would record an unexecuted DtoH and route on                         uninitialised memory. The captured layer's device-table MoE arm did not                         fire, so the capture-admission predicate (glm5_t1_dev_moe_ready) and the                         dispatch predicate (vrows_fires) disagree"
+crates/memra-engine/src/lib.rs:25198: "qk_norm_rope_append_inc geometry head_dim={head_dim} nh_q={nh_q} nh_k={nh_k}                  kv_k={kv_dim_k} kv_v={kv_dim_v}"
+crates/memra-engine/src/model.rs:1632: "embed gather: token id {tok} at position {ti} is outside this table's                      {rows} rows ({} raw bytes / {row_bytes} B per row, dtype {:?}). An                      out-of-range id is produced UPSTREAM — corrupt logits, a sampler reading                      a stale or non-finite row, or a tokenizer/vocab mismatch — so fix it                      there; this refusal exists so the worker does not die on the slice",
+crates/memra-engine/src/spec.rs:1092: "[kv-plane] layer {il} rank {rank} pos0={pos0} staged={staged}                  K={} V={} - the attended KV history is ALREADY non-finite, so a non-finite                  attention output here is a symptom and not the origin",
+crates/memra-engine/src/tp.rs:13311: "[determ-closure] rank={rank} t={t} csr_tok={:016x} exi={:016x} exoff={:016x}                      ex_off_host={:016x} mg={:016x} mu={:016x} tab={:016x} | n_active={n_active}                      n_pairs={n_pairs} width={width} local_ff={local_ff} n_expert={n_expert}                      qt={bank_qt} rb={}",
+crates/memra-server/src/worker.rs:33653: "[worker] dspark-park REFUSED: cache pos {} != {} fed tokens                          (budget-clamped overshoot); not parked (model {})",
+crates/memra-server/src/worker.rs:37424: "[prefix-cache] dspark restore: tail does not cover the drafter window;                      cold admission required (model {})",
+crates/memra-server/src/worker.rs:38620: "[worker] dspark-reuse: {} committed tokens resumed                          (suffix {} to prime) [sampler={}] (model {})",
+crates/memra-server/src/worker.rs:38643: "[worker] dspark-reuse REFUSED: parked session's sampler                              differs on {field}; serving COLD (model {})",
+crates/memra-server/src/worker.rs:38665: "[worker] dspark-reuse MISS: {} parked, best text overlap {}B                              of {}B prompt; serving COLD (model {})",
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    string_continuation_tests::string_literals_keep_their_line_continuations
+
+test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 1192 filtered out; finished in 0.09s
+
+error: test failed, to rerun pass `-p memra-server --lib`

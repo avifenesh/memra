@@ -1,0 +1,28 @@
+warning: memra-engine@0.138.0: nvcc from MEMRA_NVCC: <work>/cuda-13.1/bin/nvcc
+    Finished `release` profile [optimized] target(s) in 5m 30s
+     Running unittests src/lib.rs (<work>/target/release/deps/memra_engine-b525329c60939511)
+
+running 5 tests
+test spec_cost::tests::pooled_overhead_interpolates_from_one_session_to_the_cohort ... ok
+test spec_cost::tests::interpolation_keeps_measured_points_and_fills_between ... ok
+test spec_cost::tests::probe_fit_refuses_only_past_what_is_allocatable ... ok
+test spec_cost::tests::plain_points_stop_at_the_decode_wave_cap ... FAILED
+test spec_cost::tests::boot_probes_check_their_fit_before_timing ... ok
+
+failures:
+
+---- spec_cost::tests::plain_points_stop_at_the_decode_wave_cap stdout ----
+
+thread 'spec_cost::tests::plain_points_stop_at_the_decode_wave_cap' (4042643) panicked at crates/memra-engine/src/spec_cost.rs:498:9:
+assertion `left == right` failed
+  left: [1, 2, 4, 8, 16]
+ right: [1]
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    spec_cost::tests::plain_points_stop_at_the_decode_wave_cap
+
+test result: FAILED. 4 passed; 1 failed; 0 ignored; 0 measured; 756 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `-p memra-engine --lib`
