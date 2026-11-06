@@ -73,7 +73,8 @@ else
 fi
 : > "$R"
 note "gate sizes GATE_P_PARAS=$GATE_P_PARAS GATE_S_PARAS=$GATE_S_PARAS memory.total=${VRAM:-unknown} MiB${GATE_VRAM_MIB:+ (GATE_VRAM_MIB override)} MEMRA_CTX=$CTX DOORS=${DOORS:-explicit} port=$PORT"
-rm -f "$O/arm.jsonl" "$O/ref.jsonl"
+# A refused boot writes no server log, so a previous run's logs must not be read as this one's.
+rm -f "$O/arm.jsonl" "$O/ref.jsonl" "$O/serve-arm.log" "$O/serve-ref.log"
 rc=0
 # shellcheck disable=SC2086
 if ! { boot arm MEMRA_PREFIX_CACHE_MB=4000 $ARMDOORS MEMRA_PREFIX_STABLE_BOUNDARY=1 \
@@ -86,10 +87,14 @@ if ! { boot ref MEMRA_PREFIX_CACHE_MB=0 && python3 "$G" "http://$ADDR" q38 "$O/r
 fi
 stop
 python3 "$G" --compare "$O/arm.jsonl" "$O/ref.jsonl" | tee -a "$R" || rc=1
-for k in '[dspark] cache-preferred:' 'DSPARK cold-drafter restore:' 'DSPARK restore:' 'insert (dspark-boundary):'; do
-  echo "$k=$(grep -a -c -F "$k" "$O/serve-arm.log")"; done | tee -a "$R"
-# The serving shape: one veto and one conversion, then tail restores (the conversion must publish
-# its tail-carrying boundary entry; before the fix every step converted and none restored).
-python3 "$G" --check-log "$O/serve-arm.log" | tee -a "$R" || rc=1
+if [ -f "$O/serve-arm.log" ]; then
+  for k in '[dspark] cache-preferred:' 'DSPARK cold-drafter restore:' 'DSPARK restore:' 'insert (dspark-boundary):'; do
+    echo "$k=$(grep -a -c -F "$k" "$O/serve-arm.log")"; done | tee -a "$R"
+  # The serving shape: one veto and one conversion, then tail restores (the conversion must publish
+  # its tail-carrying boundary entry; before the fix every step converted and none restored).
+  python3 "$G" --check-log "$O/serve-arm.log" | tee -a "$R" || rc=1
+else
+  note "no serve-arm.log: the arm server never started, so there is no serving shape to check"; rc=1
+fi
 if [ $rc = 0 ]; then note "COLD-DRAFTER GATE PASS"; else note "COLD-DRAFTER GATE FAIL"; fi
 exit $rc

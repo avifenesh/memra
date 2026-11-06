@@ -494,6 +494,35 @@ mod tests {
         assert_eq!(serial_only.overhead_at(8), 4.0);
     }
 
+    /// The calibration's plain table is measured at `plain_points(plain_cap)` and filled to
+    /// exactly `plain_cap` entries: `plain_points_stop_at_the_decode_wave_cap` holds only while
+    /// the production body calls the helper, and a `max(16)` there (547771a2ed's form) measured
+    /// B=16 on a MoE trunk
+    /// whose cap is 8. Anchored on comment-stripped, whitespace-free production text.
+    #[test]
+    fn calibration_measures_the_plain_table_at_the_wave_cap() {
+        let src = include_str!("spec_cost.rs");
+        let code: String = src
+            .lines()
+            .map(|l| l.split("//").next().unwrap_or(""))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let prod = &code[..code.find("\nmod tests").expect("tests module exists")];
+        let flat: String = prod.chars().filter(|c| !c.is_whitespace()).collect();
+        let start = flat.find("pubfnspec_cost_calibrate(").expect("calibration");
+        let rest = &flat[start..];
+        let body = &rest[..rest[1..].find("pubfn").map_or(rest.len(), |e| e + 1)];
+        assert!(
+            body.contains("letplain_points=plain_points(plain_cap);"),
+            "points from the cap"
+        );
+        assert!(
+            body.contains("interpolate_n(&plain,plain_cap)"),
+            "filled to the cap"
+        );
+        assert!(!body.contains(".max(16)"), "no width past the cap");
+    }
+
     /// The plain table measures batch widths only up to the model's decode wave cap, and the
     /// cap itself. `decode_step_batch` refuses a batch above the cap: a qwen35_moe trunk refuses
     /// the exact-16 tier, so its cap is 8, and a default boot of Ornith-1.5-35B-A3B panicked in

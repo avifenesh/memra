@@ -206,12 +206,20 @@ class ColdDrafterGateScript(unittest.TestCase):
 
     def test_occupied_port_is_refused_before_boot(self):
         port = self.foreign_server()
+        # a previous run's passing arm log in the same out dir must not be read as this run's
+        stale = self.dir / "ok"
+        stale.mkdir()
+        (stale / "serve-arm.log").write_text(
+            "[dspark] cache-preferred: old\n[prefix-cache] DSPARK cold-drafter restore: old\n"
+            "[prefix-cache] DSPARK restore: old\n[prefix-cache] insert (dspark-boundary): old\n")
         rc, log, report = self.gate("ok", port=port)
         self.assertNotEqual(rc, 0, log)
         self.assertIn(f"port {port} is already LISTENing", log)
         self.assertIn("GATE_PORT", log)
         self.assertFalse(self.mark.exists(), f"the gate started a server on an occupied port:\n{log}")
         self.assert_nothing_measured("ok", log)
+        self.assertNotIn("SHAPE PASS", report)
+        self.assertIn("no serve-arm.log", report)
         self.assertIn("COLD-DRAFTER GATE FAIL", report)
 
     def test_port_taken_after_the_preflight_is_refused(self):

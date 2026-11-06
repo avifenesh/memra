@@ -31478,12 +31478,15 @@ mod image_fetch_body_bytes_tests {
     }
 }
 
-/// A one-line string literal never holds a run of eight or more spaces between two words. That
-/// run is a line continuation whose trailing backslash was lost, so the message prints the next
-/// line's indentation ("plain hit", 22 spaces, "{plain_len}"). Twenty messages carried it on
-/// 2026-11-06, eighteen in engine and server code. The census reads every crate's `src/` except
-/// `src/bin/` (diagnostic binaries align table columns on purpose); comment lines and lines with
-/// a newline escape (fixture text such as aligned /proc/meminfo lines) are not messages.
+/// No string literal holds a run of eight or more spaces between two of its characters on one
+/// source line, before the first newline in that literal. That run is a line continuation whose
+/// trailing backslash was lost, so the message prints the next line's indentation ("plain hit",
+/// 22 spaces, "{plain_len}"). Twenty messages carried it on 2026-11-06, eighteen in engine and
+/// server code. The census lexes every crate's `src/` except `src/bin/` (diagnostic binaries
+/// align table columns on purpose): comments, raw strings, char literals and lifetimes are not
+/// messages, a literal is followed across `\` continuations onto later lines, and text after an
+/// escaped or real newline inside a literal is multi-line text (aligned fixtures such as
+/// /proc/meminfo lines), so it is exempt.
 #[cfg(test)]
 mod string_continuation_tests {
     use std::path::{Path, PathBuf};
@@ -31501,40 +31504,128 @@ mod string_continuation_tests {
         }
     }
 
-    /// Byte offsets of the space runs on `line` that sit inside a string literal between two
-    /// characters of that literal.
-    fn lost_continuations(line: &str) -> Vec<usize> {
-        if line.trim_start().starts_with("//") || line.contains("\\n") {
-            return Vec::new();
-        }
-        let b = line.as_bytes();
-        let (mut hits, mut quotes, mut i) = (Vec::new(), 0usize, 0usize);
+    fn ident(c: u8) -> bool {
+        c.is_ascii_alphanumeric() || c == b'_'
+    }
+
+    /// End of the non-raw string literal whose opening quote is at `open`; pushes the offset
+    /// of every lost-continuation run inside it.
+    fn string_end(b: &[u8], open: usize, hits: &mut Vec<usize>) -> usize {
+        let mut i = open + 1;
+        let mut multiline = false;
         while i < b.len() {
             match b[i] {
-                b'\\' => i += 1,
-                b'/' if quotes % 2 == 0 && b.get(i + 1) == Some(&b'/') => break,
-                b'"' if !(i > 0 && b[i - 1] == b'\'' && b.get(i + 1) == Some(&b'\'')) => {
-                    quotes += 1
+                b'\\' => match b.get(i + 1) {
+                    Some(b'\n') => {
+                        i += 2;
+                        while i < b.len() && b[i].is_ascii_whitespace() {
+                            i += 1;
+                        }
+                    }
+                    Some(b'n' | b'r') => {
+                        multiline = true;
+                        i += 2;
+                    }
+                    _ => i += 2,
+                },
+                b'"' => return i + 1,
+                b'\n' => {
+                    multiline = true;
+                    i += 1;
                 }
                 b' ' => {
                     let start = i;
                     while i < b.len() && b[i] == b' ' {
                         i += 1;
                     }
+                    let tab_escape = start >= 2 && b[start - 2] == b'\\' && b[start - 1] == b't';
                     if i - start >= 8
-                        && start > 0
+                        && !multiline
+                        && start > open + 1
+                        && !tab_escape
+                        && !matches!(b[start - 1], b'\n' | b'\t')
                         && i < b.len()
-                        && quotes % 2 == 1
-                        && b[start - 1] != b'"'
-                        && b[i] != b'"'
+                        && !matches!(b[i], b'"' | b'\n' | b'\\')
                     {
                         hits.push(start);
                     }
-                    continue;
                 }
-                _ => {}
+                _ => i += 1,
             }
-            i += 1;
+        }
+        i
+    }
+
+    /// Byte offsets of the lost-continuation runs in one Rust source file.
+    fn lost_continuations(src: &str) -> Vec<usize> {
+        let b = src.as_bytes();
+        let mut hits = Vec::new();
+        let mut i = 0;
+        while i < b.len() {
+            let prev_ident = i > 0 && ident(b[i - 1]);
+            match b[i] {
+                b'/' if b.get(i + 1) == Some(&b'/') => {
+                    while i < b.len() && b[i] != b'\n' {
+                        i += 1;
+                    }
+                }
+                b'/' if b.get(i + 1) == Some(&b'*') => {
+                    let mut depth = 1;
+                    i += 2;
+                    while i < b.len() && depth > 0 {
+                        if b[i..].starts_with(b"/*") {
+                            depth += 1;
+                            i += 2;
+                        } else if b[i..].starts_with(b"*/") {
+                            depth -= 1;
+                            i += 2;
+                        } else {
+                            i += 1;
+                        }
+                    }
+                }
+                // raw strings (r"..", r#".."#, br"..", cr".."): no escapes, so no lost continuation
+                b'r' if !prev_ident
+                    || (i >= 1
+                        && matches!(b[i - 1], b'b' | b'c')
+                        && (i < 2 || !ident(b[i - 2]))) =>
+                {
+                    let mut j = i + 1;
+                    while j < b.len() && b[j] == b'#' {
+                        j += 1;
+                    }
+                    if b.get(j) == Some(&b'"') {
+                        let hashes = j - i - 1;
+                        let mut close = Vec::from(&b"\""[..]);
+                        close.extend(std::iter::repeat_n(b'#', hashes));
+                        j += 1;
+                        while j < b.len() && !b[j..].starts_with(&close) {
+                            j += 1;
+                        }
+                        i = j + close.len();
+                    } else {
+                        i += 1;
+                    }
+                }
+                b'\'' => {
+                    if b.get(i + 1) == Some(&b'\\') {
+                        let mut j = i + 3;
+                        while j < b.len() && b[j] != b'\'' {
+                            j += 1;
+                        }
+                        i = j + 1;
+                    } else {
+                        let len = src[i + 1..].chars().next().map_or(1, char::len_utf8);
+                        i += if b.get(i + 1 + len) == Some(&b'\'') {
+                            len + 2
+                        } else {
+                            1
+                        };
+                    }
+                }
+                b'"' => i = string_end(b, i, &mut hits),
+                _ => i += 1,
+            }
         }
         hits
     }
@@ -31542,17 +31633,42 @@ mod string_continuation_tests {
     #[test]
     fn the_census_reads_a_lost_continuation_and_nothing_else() {
         let gap = " ".repeat(22);
-        let lost = format!("        eprintln!(\"plain hit{gap}{{plain_len}} -> hit\", n);");
-        assert_eq!(lost_continuations(&lost), vec![lost.find(&gap).unwrap()]);
-        for clean in [
-            format!("        let x ={gap}5; // aligned code{gap}outside a literal"),
-            format!("        cmp(\"r2 offset\", &a);{gap}// \"quoted{gap}comment\""),
-            format!("    let meminfo = \"MemTotal:{gap}127535104 kB\\nMemFree: 4 kB\";"),
-            format!("        assert!(s.contains(\"{gap}source_request\"));"),
-            format!("        b'\"' => \"a b\",{gap}// a char literal quote"),
-            "        eprintln!(\"plain hit \\".to_string(),
-        ] {
-            assert!(lost_continuations(&clean).is_empty(), "{clean}");
+        let lost = [
+            format!("    eprintln!(\"plain hit{gap}{{plain_len}} -> hit\", n);\n"),
+            // a run on the second line of a continued literal
+            format!(
+                "    eprintln!(\"aaa \\\n              bbb{gap}ccc \\\n              ddd\");\n"
+            ),
+            // a run before the literal's first newline escape
+            format!("    eprintln!(\"plain hit{gap}{{n}} rows\\n\");\n"),
+            format!("    let s = b\"bytes{gap}too\";\n"),
+        ];
+        for src in &lost {
+            assert_eq!(
+                lost_continuations(src),
+                vec![src.find(&gap).unwrap()],
+                "{src}"
+            );
+        }
+        let clean = [
+            format!("    let x ={gap}5; // aligned code{gap}outside a literal\n"),
+            format!("    cmp(\"r2 offset\", &a);{gap}// \"quoted{gap}comment\"\n"),
+            format!("    f(\"tail \\\n       text\",{gap}// note \"x{gap}y\"\n    );\n"),
+            format!(
+                "    let m = \"MemTotal: 1 kB\\nMemFree:{gap}4 kB\\n\\\n        Cached:{gap}2 kB\";\n"
+            ),
+            format!("    let t = \"line one\n        line{gap}two\";\n"),
+            format!("    assert!(s.contains(\"{gap}source_request\"));\n"),
+            format!("    let q = b'\"'; let r = '\\''; let s = \"a b\";{gap}// quotes in chars\n"),
+            format!("    fn f<'a>(x: &'a str) -> &'a str {{ x }}{gap}// lifetimes \"{gap}\"\n"),
+            format!("    let raw = r#\"json {{\"k\":{gap}1}}\"#; let r2 = r\"a{gap}b\";\n"),
+            format!("    /* block \"{gap}x\" /* nested \" */ */ let a = 1;\n"),
+            format!("    let tab = \"col\\t{gap}next\";\n"),
+            format!("    let tail = \"text{gap}\";\n"),
+            "    eprintln!(\"plain hit \\\n               {plain_len}\");\n".to_string(),
+        ];
+        for src in &clean {
+            assert!(lost_continuations(src).is_empty(), "{src}");
         }
     }
 
@@ -31575,21 +31691,16 @@ mod string_continuation_tests {
         let mut found = Vec::new();
         for file in &files {
             let text = std::fs::read_to_string(file).unwrap();
-            for (n, line) in text.lines().enumerate() {
-                if !lost_continuations(line).is_empty() {
-                    let rel = file.strip_prefix(&crates).unwrap_or(file);
-                    found.push(format!(
-                        "crates/{}:{}: {}",
-                        rel.display(),
-                        n + 1,
-                        line.trim()
-                    ));
-                }
+            for at in lost_continuations(&text) {
+                let line = text[..at].matches('\n').count() + 1;
+                let rel = file.strip_prefix(&crates).unwrap_or(file);
+                let body = text.lines().nth(line - 1).unwrap_or("").trim();
+                found.push(format!("crates/{}:{line}: {body}", rel.display()));
             }
         }
         assert!(
             found.is_empty(),
-            "{} string literal line(s) lost a line continuation (end the line with a backslash \
+            "{} string literal run(s) lost a line continuation (end the line with a backslash \
              and continue the text on the next line):\n{}",
             found.len(),
             found.join("\n")
