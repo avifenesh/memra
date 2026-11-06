@@ -1,0 +1,8 @@
+argmax-margin-gate: model=Qwen3.8-27B-NVFP4-Q5K-mtp.gguf prompt=p4-16k.txt window=12 canary=0
+  explained pos=23464 margin=0.0121 < delta=0.0713
+  explained pos=23471 margin=0.0246 < delta=0.0742
+  explained pos=23472 margin=0.0305 < delta=0.1382
+  TOO-MANY-FLIPS 3 > 1
+  SUMMARY flips=3 bad=1
+  FAIL: an argmax flip is NOT explained by the config spread (or flip count exceeded)
+  raw: gate-Qwen3.8-27B-NVFP4-Q5K-mtp-p4-16k.log

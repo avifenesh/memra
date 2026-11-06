@@ -1,0 +1,20 @@
+v2 entry      13.533 ms   107.9 TFLOPS incl. image   bit-mismatch 0/142606336 OK
+c6 256x128 w8x2 k64 s3 1cta    G=4         13.223 ms   110.4 TFLOPS gemm-only  (+image  105.0 TFLOPS)  bit-mismatch 0 OK
+c6 256x128 w8x2 k64 s3 1cta    G=8         13.314 ms   109.7 TFLOPS gemm-only  (+image  104.3 TFLOPS)  bit-mismatch 0 OK
+c6 256x128 w8x2 k64 s3 1cta    G=16        15.430 ms    94.6 TFLOPS gemm-only  (+image   90.6 TFLOPS)  bit-mismatch 0 OK
+c6 256x128 w8x2 k64 s3 1cta    G=32        27.105 ms    53.9 TFLOPS gemm-only  (+image   52.6 TFLOPS)  bit-mismatch 0 OK
+v2 entry      14.025 ms   104.1 TFLOPS incl. image   bit-mismatch 0/142606336 OK
+c8 256x128 w8x2 k32 s6 1cta    G=4         15.721 ms    92.9 TFLOPS gemm-only  (+image   89.0 TFLOPS)  bit-mismatch 0 OK
+c8 256x128 w8x2 k32 s6 1cta    G=8         15.826 ms    92.3 TFLOPS gemm-only  (+image   88.5 TFLOPS)  bit-mismatch 0 OK
+c8 256x128 w8x2 k32 s6 1cta    G=16        22.420 ms    65.1 TFLOPS gemm-only  (+image   63.2 TFLOPS)  bit-mismatch 0 OK
+c8 256x128 w8x2 k32 s6 1cta    G=32        46.110 ms    31.7 TFLOPS gemm-only  (+image   31.2 TFLOPS)  bit-mismatch 0 OK
+v2 entry      13.911 ms   105.0 TFLOPS incl. image   bit-mismatch 0/142606336 OK
+c9 256x128 w8x2 k32 s7 1cta    G=4         15.199 ms    96.1 TFLOPS gemm-only  (+image   91.8 TFLOPS)  bit-mismatch 0 OK
+c9 256x128 w8x2 k32 s7 1cta    G=8         15.500 ms    94.2 TFLOPS gemm-only  (+image   90.1 TFLOPS)  bit-mismatch 0 OK
+c9 256x128 w8x2 k32 s7 1cta    G=16        22.491 ms    64.9 TFLOPS gemm-only  (+image   63.0 TFLOPS)  bit-mismatch 0 OK
+c9 256x128 w8x2 k32 s7 1cta    G=32        48.989 ms    29.8 TFLOPS gemm-only  (+image   29.4 TFLOPS)  bit-mismatch 0 OK
+v2 entry      13.850 ms   105.4 TFLOPS incl. image   bit-mismatch 0/142606336 OK
+c10 128x256 w4x4 k64 s3 1cta   G=4         13.548 ms   107.8 TFLOPS gemm-only  (+image  102.6 TFLOPS)  bit-mismatch 0 OK
+c10 128x256 w4x4 k64 s3 1cta   G=8         13.208 ms   110.6 TFLOPS gemm-only  (+image  105.2 TFLOPS)  bit-mismatch 0 OK
+c10 128x256 w4x4 k64 s3 1cta   G=16        13.640 ms   107.1 TFLOPS gemm-only  (+image  102.0 TFLOPS)  bit-mismatch 0 OK
+c10 128x256 w4x4 k64 s3 1cta   G=32        15.657 ms    93.3 TFLOPS gemm-only  (+image   89.4 TFLOPS)  bit-mismatch 0 OK

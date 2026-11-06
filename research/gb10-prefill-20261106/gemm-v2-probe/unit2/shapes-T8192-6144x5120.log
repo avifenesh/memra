@@ -1,0 +1,24 @@
+shape in=6144 out=5120 T=8192 rp=1
+v1             6.806 ms    75.7 TFLOPS
+image          0.241 ms   220.5 GB/s (read+write)
+v2 entry       4.893 ms   105.3 TFLOPS incl. image   bit-mismatch 0/41943040 OK
+c1 128x128 w4x2 k32 s3 2cta    G=4          6.255 ms    82.4 TFLOPS gemm-only  (+image   79.3 TFLOPS)  bit-mismatch 0 OK
+c1 128x128 w4x2 k32 s3 2cta    G=8          5.034 ms   102.4 TFLOPS gemm-only  (+image   97.7 TFLOPS)  bit-mismatch 0 OK
+c1 128x128 w4x2 k32 s3 2cta    G=16         5.210 ms    98.9 TFLOPS gemm-only  (+image   94.6 TFLOPS)  bit-mismatch 0 OK
+c1 128x128 w4x2 k32 s3 2cta    G=32         7.736 ms    66.6 TFLOPS gemm-only  (+image   64.6 TFLOPS)  bit-mismatch 0 OK
+shape in=6144 out=5120 T=8192 rp=1
+v1             6.824 ms    75.5 TFLOPS
+image          0.239 ms   222.4 GB/s (read+write)
+v2 entry       4.954 ms   104.0 TFLOPS incl. image   bit-mismatch 0/41943040 OK
+c0 128x128 w4x2 k64 s2 2cta    G=4          4.882 ms   105.6 TFLOPS gemm-only  (+image  100.7 TFLOPS)  bit-mismatch 0 OK
+c0 128x128 w4x2 k64 s2 2cta    G=8          4.687 ms   110.0 TFLOPS gemm-only  (+image  104.6 TFLOPS)  bit-mismatch 0 OK
+c0 128x128 w4x2 k64 s2 2cta    G=16         4.616 ms   111.6 TFLOPS gemm-only  (+image  106.2 TFLOPS)  bit-mismatch 0 OK
+c0 128x128 w4x2 k64 s2 2cta    G=32         5.534 ms    93.1 TFLOPS gemm-only  (+image   89.3 TFLOPS)  bit-mismatch 0 OK
+shape in=6144 out=5120 T=8192 rp=1
+v1             6.790 ms    75.9 TFLOPS
+image          0.240 ms   221.6 GB/s (read+write)
+v2 entry       4.878 ms   105.7 TFLOPS incl. image   bit-mismatch 0/41943040 OK
+c10 128x256 w4x4 k64 s3 1cta   G=4          4.738 ms   108.8 TFLOPS gemm-only  (+image  103.5 TFLOPS)  bit-mismatch 0 OK
+c10 128x256 w4x4 k64 s3 1cta   G=8          4.619 ms   111.6 TFLOPS gemm-only  (+image  106.1 TFLOPS)  bit-mismatch 0 OK
+c10 128x256 w4x4 k64 s3 1cta   G=16         4.673 ms   110.3 TFLOPS gemm-only  (+image  104.9 TFLOPS)  bit-mismatch 0 OK
+c10 128x256 w4x4 k64 s3 1cta   G=32         5.360 ms    96.2 TFLOPS gemm-only  (+image   92.0 TFLOPS)  bit-mismatch 0 OK

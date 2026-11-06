@@ -1,0 +1,241 @@
+[server] build: memra-0.138.0-0de024bb3426 (id: source-tree, git: b6d10d41c7d4)
+[server] starting; models config = [("q38", "~/models/memra-q38/Qwen3.8-27B-NVFP4-MTP-GGUF/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf", None)]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[worker-affinity] off (MEMRA_WORKER_CPUSET / MEMRA_WORKER_AFFINITY unset or =0)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal after 3 consecutive misses (MEMRA_GPU_PROBE_MISSES), fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2 (K=5 when the loaded MTP head is rank-trimmed)
+[worker] loading model "q38" <- ~/models/memra-q38/Qwen3.8-27B-NVFP4-MTP-GGUF/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf
+[tensor-contract] bound 866 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[mtp-draft] loading external MTP draft: ~/models/memra-q38/Qwen3.8-27B-NVFP4-MTP-GGUF/mtp-Qwen3.8-27B-NVFP4-frspec-sxc32768.gguf
+[mtp-draft] external draft head: blk.64, source=output.weight, head_vocab=32768 (trimmed, d2t map)
+[frspec-trim] per-head trim: 0 extra chain head(s) gathered from their own blocks
+[prime-chunk] default 8192 rows (serial GDN hybrid trunk, unified-memory 120a device)
+[worker]   loaded "q38": 65 layers, eos=248046, stop=[248046]
+[worker] q38: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false qwen_effort=true gemma_think=false dsv4=false glm5=false ctx=262144 tok="qwen35" instruct=Some("chatml") chat_defaults=None/None
+[route-contract] model="q38" route=hybrid-worker capacity=32 sessions implemented=[capacity,occupancy,progress,fault-ownership,shutdown-ownership,memory-cost,rewrite-qualification,prime-fairness,service-metrics] refused=[]
+[fa-pool] grow #0 dev=0 o_len 0 -> 3244032 ml_len 0 -> 12672 (retired kept, zero=false)
+[fa-pool] grow #1 dev=0 o_len 3244032 -> 6488064 ml_len 12672 -> 25344 (retired kept, zero=false)
+[wave-probe] 32 sessions at depth 2048: two 16-row waves 262.4 ms, one 32-row wave 264.7 ms (tensor-core tier 231.9 ms) -> wave cap 32, tensor-core b32 on (64.6s)
+[worker] q38: decode wave cap 32; scheduler tick cap 32 (exact-32 tier)
+[vision] tower loaded from ~/models/Qwen3.8-27B-NVFP4 (27 blocks, out_width 5120, f32-resident)
+[vision] overlay intake: tower dev0 -> intake dev0 (cross_context=false) publish=Auto servable=true
+[prefix-cache] on: budget 42784MB (42783565824 B, derived: 2 x 7941521408 B max entry for model "q38" at served ctx 262144 (from MEMRA_CTX; MEMRA_CTX set), unified memory: the larger of that and 1/2 of allocatable free after the transient reserve, driver headroom 2147483648 B and host tier 0 B, requested 42783565824 B; boot driver free 89325228032 B, post-reserve clamp 85567131648 B), policy plain-LRU (global oldest unleased entry first; leases untouchable), min prefix 64 tokens, immediate partial restore=off (rollback) (transformer-only; hybrid mid-entry + routed-MoE N/A)
+[admission] "q38": plain 29696 B/token, spec 31552 B/token; fixed residual learns from effective-free deltas
+[func] CAPTURE-TIME kernel lookup (not warmed): embed_gather_u32
+[func] CAPTURE-TIME kernel lookup (not warmed): qmatvec_q4_K_mmvq
+[func] CAPTURE-TIME kernel lookup (not warmed): qmatvec_q6_K_mmvq
+[func] CAPTURE-TIME kernel lookup (not warmed): inc_i32
+[func] CAPTURE-TIME kernel lookup (not warmed): fa_decode_vec_q_v4_deep_dc
+[func] CAPTURE-TIME kernel lookup (not warmed): fa_decode_combine_f32
+[spec] draft-session state high-water: 34MB (max of parked delta 34MB and capture-time pool peak 2MB; charged per spec admission and gating future captures)
+[spec-pool] pooled rows draft engaged: 4 members (arms [GraphGreedy, GraphGreedy, GraphGreedy, GraphGreedy])
+[spec-pool] pooled rows draft engaged: 2 members (arms [GraphGreedy, GraphGreedy])
+[device-trim] reason=spec-cost-calibration {"device":0,"reclaimed_bytes":16877879296,"still_owned_bytes":18490472384,"pool_reserved_bytes":18723373056,"pool_cached_bytes":232900672,"driver_free_bytes":62759706624,"synchronization_errors":[]}
+[spec-cost] model="q38" depth=2048 pooled=true plain_cap=32 round_overhead=13.35ms pooled_overhead=Some((4, 5.567976322916664)) verify_ms[1..16]=[76.8 74.9 75.0 75.8 76.5 77.2 78.9 80.7 82.9 85.2 87.4 89.6 92.0 94.3 96.7 99.0] plain_ms[1..]=[74.7 78.4 82.3 86.1 90.4 94.6 98.8 103.0 107.6 112.2 116.9 121.5 126.1 130.7 135.3 139.9 145.5 151.1 156.7 162.3 167.9 173.5 179.1 184.7 190.3 195.9 201.5 207.1 212.7 218.3 223.9 229.5] (89.6s)
+[prime-walk] model="q38" route=mtp supported=true yield_door=true [gdn_dspark_compatible=true mtp_head_loaded=true no_hyper_connections=true no_pipeline_cuts=true]
+[func] CAPTURE-TIME kernel lookup (not warmed): memra_sctr_inc
+[func] CAPTURE-TIME kernel lookup (not warmed): gumbel_perturb_filtered_ctr_f32
+[device-trim] reason=calibration-complete {"device":0,"reclaimed_bytes":2315255808,"still_owned_bytes":19262224320,"pool_reserved_bytes":19562233856,"pool_cached_bytes":300009536,"driver_free_bytes":61910032384,"synchronization_errors":[]}
+[admit-cal] post-probe pool trim: released 2208MB cached back to the driver
+[admit-cal] boot calibration done: model="q38" route=mtp transient floor 2046MB (static was 1536MB; measured 2046MB; probe kv charge 127MB, draft-state 34MB, drafted 78 accepted 38; [dev0 peak-mapped 20864MB rest-mapped 18656MB charged 161MB -> 2046MB]; 6.4s)
+[admit-mem] door=OFF open_output_tokens=8192 defer_budget_ms=8000 (admission charges prompt+output, the reclaim flush demotes to the host tier before dropping, and a memory defer past the budget refuses 429 instead of queueing past the client's deadline)
+[kv-vmm] door=OFF (MEMRA_KV_ALLOCATOR unset or pooled: pooled K/V planes)
+[deadline] unified memory (48 SMs, served ctx 262144): streaming TTFT default/max 997311 ms (derived), SSE prefill commit 60000 ms; non-streaming default/max 3045311 ms (derived: full-context prefill + 8192 open output tokens at 4 tok/s). MEMRA_SSE_PREFILL_COMMIT_MS=0 restores the shipped 90 s windows
+[server] worker ready; serving models: ["q38"]
+[server] listening on http://127.0.0.1:8090
+[meter] admit id=chatcmpl-7f4a42298fe1eb06b7797f3bdfb30559 tenant=default lane=interactive model="q38"
+[spec-cost] model="q38" n=1 rung=3 -> K=3 (exploring: no acceptance history yet)
+[admission] per-session draft-state charge: model="q38" +36MB (measured capture high-water)
+[admission] request cost: model="q38" ctx=32888 path=spec = 31552 B/token x ctx + 4430MB prefill-workspace + 0MB fixed = 5467MB
+[prefix-cache] stable-boundary capture armed at 32768 of 32784 prompt tokens (model q38)
+[spec-k] model="q38" tenant="" K=3 source=cost-model prompt=32784 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="q38" 388MB (observed 1424MB at ctx 32832 path=spec)
+[prime-yield] count=1 remaining=13 chunks=1 wall_ms=7147.145 max_chunk_ms=7147.145
+[prime-yield] count=2 remaining=12 chunks=1 wall_ms=7352.602 max_chunk_ms=7352.602
+[prime-yield] count=3 remaining=11 chunks=1 wall_ms=7748.324 max_chunk_ms=7748.324
+[prime-yield] count=4 remaining=10 chunks=1 wall_ms=8162.247 max_chunk_ms=8162.247
+[prime-yield] count=5 remaining=9 chunks=1 wall_ms=256.457 max_chunk_ms=256.457
+[prime-yield] count=6 remaining=8 chunks=1 wall_ms=73.274 max_chunk_ms=73.274
+[prime-yield] count=7 remaining=7 chunks=1 wall_ms=74.719 max_chunk_ms=74.719
+[prime-yield] count=8 remaining=6 chunks=1 wall_ms=74.624 max_chunk_ms=74.624
+[prime-yield] count=9 remaining=5 chunks=1 wall_ms=72.166 max_chunk_ms=72.166
+[prime-yield] count=10 remaining=4 chunks=1 wall_ms=72.227 max_chunk_ms=72.227
+[prime-yield] count=11 remaining=3 chunks=1 wall_ms=73.672 max_chunk_ms=73.672
+[prime-yield] count=12 remaining=2 chunks=1 wall_ms=71.276 max_chunk_ms=71.276
+[prime-yield] count=13 remaining=1 chunks=1 wall_ms=73.138 max_chunk_ms=73.138
+[prefix-cache] insert (spec-boundary): 32768 tokens, 1190.8MB (resident 1190.8MB / 42784MB, model q38)
+[spec-acc] ctx=32785 burst=21/30 cum=21/30=0.700
+[spec-acc] ctx=32817 burst=5/9 cum=26/39=0.667
+[meter] admit id=chatcmpl-5b224a0feb784fe6b4c1ae121e77dd98 tenant=default lane=interactive model="q38"
+[admission] per-session draft-state charge: model="q38" +36MB (measured capture high-water)
+[admission] request cost: model="q38" ctx=131155 path=spec = 31552 B/token x ctx + 6442MB prefill-workspace + 388MB fixed = 10968MB
+[prefix-cache] stable-boundary capture armed at 131008 of 131051 prompt tokens (model q38)
+[worker] spec-affinity: declined (history diverged at 11 of checkpoint 32768; 1 parked, 131051 prompt tokens; model q38)
+[spec-k] model="q38" tenant="" K=3 source=cost-model prompt=131051 cached=0 lcp=11 active=1 wave=1 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="q38" 573MB (observed 4709MB at ctx 131099 path=spec)
+[prime-yield] count=1 remaining=48 chunks=1 wall_ms=7058.950 max_chunk_ms=7058.950
+[prime-yield] count=2 remaining=47 chunks=1 wall_ms=7326.269 max_chunk_ms=7326.269
+[prime-yield] count=3 remaining=46 chunks=1 wall_ms=7745.887 max_chunk_ms=7745.887
+[prime-yield] count=4 remaining=45 chunks=1 wall_ms=8138.032 max_chunk_ms=8138.032
+[prime-yield] count=5 remaining=44 chunks=1 wall_ms=8543.677 max_chunk_ms=8543.677
+[prime-yield] count=6 remaining=43 chunks=1 wall_ms=8939.107 max_chunk_ms=8939.107
+[prime-yield] count=7 remaining=42 chunks=1 wall_ms=9314.134 max_chunk_ms=9314.134
+[prime-yield] count=8 remaining=41 chunks=1 wall_ms=9714.313 max_chunk_ms=9714.313
+[prime-yield] count=9 remaining=40 chunks=1 wall_ms=10096.622 max_chunk_ms=10096.622
+[prime-yield] count=10 remaining=39 chunks=1 wall_ms=10513.282 max_chunk_ms=10513.282
+[prime-yield] count=11 remaining=38 chunks=1 wall_ms=10904.324 max_chunk_ms=10904.324
+[prime-yield] count=12 remaining=37 chunks=1 wall_ms=11285.926 max_chunk_ms=11285.926
+[prime-yield] count=13 remaining=36 chunks=1 wall_ms=11688.008 max_chunk_ms=11688.008
+[prime-yield] count=14 remaining=35 chunks=1 wall_ms=12083.942 max_chunk_ms=12083.942
+[prime-yield] count=15 remaining=34 chunks=1 wall_ms=12468.858 max_chunk_ms=12468.858
+[prime-yield] count=16 remaining=33 chunks=1 wall_ms=12820.461 max_chunk_ms=12820.461
+[prime-yield] count=17 remaining=32 chunks=1 wall_ms=460.430 max_chunk_ms=460.430
+[prime-yield] count=18 remaining=31 chunks=1 wall_ms=72.880 max_chunk_ms=72.880
+[prime-yield] count=19 remaining=30 chunks=1 wall_ms=73.651 max_chunk_ms=73.651
+[prime-yield] count=20 remaining=29 chunks=1 wall_ms=73.156 max_chunk_ms=73.156
+[prime-yield] count=21 remaining=28 chunks=1 wall_ms=72.390 max_chunk_ms=72.390
+[prime-yield] count=22 remaining=27 chunks=1 wall_ms=74.272 max_chunk_ms=74.272
+[prime-yield] count=23 remaining=26 chunks=1 wall_ms=71.941 max_chunk_ms=71.941
+[prime-yield] count=24 remaining=25 chunks=1 wall_ms=71.974 max_chunk_ms=71.974
+[prime-yield] count=25 remaining=24 chunks=1 wall_ms=72.686 max_chunk_ms=72.686
+[prime-yield] count=26 remaining=23 chunks=1 wall_ms=72.761 max_chunk_ms=72.761
+[prime-yield] count=27 remaining=22 chunks=1 wall_ms=72.774 max_chunk_ms=72.774
+[prime-yield] count=28 remaining=21 chunks=1 wall_ms=71.888 max_chunk_ms=71.888
+[prime-yield] count=29 remaining=20 chunks=1 wall_ms=72.746 max_chunk_ms=72.746
+[prime-yield] count=30 remaining=19 chunks=1 wall_ms=72.099 max_chunk_ms=72.099
+[prime-yield] count=31 remaining=18 chunks=1 wall_ms=72.699 max_chunk_ms=72.699
+[prime-yield] count=32 remaining=17 chunks=1 wall_ms=72.802 max_chunk_ms=72.802
+[prime-yield] count=33 remaining=16 chunks=1 wall_ms=73.598 max_chunk_ms=73.598
+[prime-yield] count=34 remaining=15 chunks=1 wall_ms=71.892 max_chunk_ms=71.892
+[prime-yield] count=35 remaining=14 chunks=1 wall_ms=72.842 max_chunk_ms=72.842
+[prime-yield] count=36 remaining=13 chunks=1 wall_ms=74.385 max_chunk_ms=74.385
+[prime-yield] count=37 remaining=12 chunks=1 wall_ms=72.010 max_chunk_ms=72.010
+[prime-yield] count=38 remaining=11 chunks=1 wall_ms=73.667 max_chunk_ms=73.667
+[prime-yield] count=39 remaining=10 chunks=1 wall_ms=72.817 max_chunk_ms=72.817
+[prime-yield] count=40 remaining=9 chunks=1 wall_ms=72.652 max_chunk_ms=72.652
+[prime-yield] count=41 remaining=8 chunks=1 wall_ms=72.833 max_chunk_ms=72.833
+[prime-yield] count=42 remaining=7 chunks=1 wall_ms=73.566 max_chunk_ms=73.566
+[prime-yield] count=43 remaining=6 chunks=1 wall_ms=72.669 max_chunk_ms=72.669
+[prime-yield] count=44 remaining=5 chunks=1 wall_ms=73.783 max_chunk_ms=73.783
+[prime-yield] count=45 remaining=4 chunks=1 wall_ms=72.774 max_chunk_ms=72.774
+[prime-yield] count=46 remaining=3 chunks=1 wall_ms=73.515 max_chunk_ms=73.515
+[prime-yield] count=47 remaining=2 chunks=1 wall_ms=73.704 max_chunk_ms=73.704
+[prime-yield] count=48 remaining=1 chunks=1 wall_ms=73.613 max_chunk_ms=73.613
+[prefix-cache] insert (spec-boundary): 131008 tokens, 4290.5MB (resident 5481.3MB / 42784MB, model q38)
+[fa-pool] grow #2 dev=0 o_len 6488064 -> 18874368 ml_len 25344 -> 73728 (retired kept, zero=false)
+[fa-pool] grow #3 dev=0 o_len 18874368 -> 37748736 ml_len 73728 -> 147456 (retired kept, zero=false)
+[spec-acc] ctx=131052 burst=23/33 cum=23/33=0.697
+[spec-acc] ctx=131087 burst=3/6 cum=26/39=0.667
+[meter] admit id=chatcmpl-4b6762dae42ac5c17e8bb508cd599de0 tenant=default lane=interactive model="q38"
+[admission] per-session draft-state charge: model="q38" +36MB (measured capture high-water)
+[admission] request cost: model="q38" ctx=260055 path=spec = 31552 B/token x ctx + 9082MB prefill-workspace + 573MB fixed = 17860MB
+[prefix-cache] stable-boundary capture armed at 259904 of 259951 prompt tokens (model q38)
+[worker] spec-affinity: declined (history diverged at 11 of checkpoint 32768; 2 parked, 259951 prompt tokens; model q38)
+[spec-k] model="q38" tenant="" K=3 source=cost-model prompt=259951 cached=0 lcp=11 active=1 wave=1 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="q38" 921MB (observed 9124MB at ctx 259999 path=spec)
+[prime-yield] count=1 remaining=96 chunks=1 wall_ms=7041.324 max_chunk_ms=7041.324
+[prime-yield] count=2 remaining=95 chunks=1 wall_ms=7334.425 max_chunk_ms=7334.425
+[prime-yield] count=3 remaining=94 chunks=1 wall_ms=7733.777 max_chunk_ms=7733.777
+[prime-yield] count=4 remaining=93 chunks=1 wall_ms=8129.213 max_chunk_ms=8129.213
+[prime-yield] count=5 remaining=92 chunks=1 wall_ms=8533.583 max_chunk_ms=8533.583
+[prime-yield] count=6 remaining=91 chunks=1 wall_ms=8930.206 max_chunk_ms=8930.206
+[prime-yield] count=7 remaining=90 chunks=1 wall_ms=9313.571 max_chunk_ms=9313.571
+[prime-yield] count=8 remaining=89 chunks=1 wall_ms=9703.337 max_chunk_ms=9703.337
+[prime-yield] count=9 remaining=88 chunks=1 wall_ms=10094.288 max_chunk_ms=10094.288
+[prime-yield] count=10 remaining=87 chunks=1 wall_ms=10487.829 max_chunk_ms=10487.829
+[prime-yield] count=11 remaining=86 chunks=1 wall_ms=10882.407 max_chunk_ms=10882.407
+[prime-yield] count=12 remaining=85 chunks=1 wall_ms=11279.264 max_chunk_ms=11279.264
+[prime-yield] count=13 remaining=84 chunks=1 wall_ms=11679.593 max_chunk_ms=11679.593
+[prime-yield] count=14 remaining=83 chunks=1 wall_ms=12061.396 max_chunk_ms=12061.396
+[prime-yield] count=15 remaining=82 chunks=1 wall_ms=12456.260 max_chunk_ms=12456.260
+[prime-yield] count=16 remaining=81 chunks=1 wall_ms=12852.280 max_chunk_ms=12852.280
+[prime-yield] count=17 remaining=80 chunks=1 wall_ms=13259.385 max_chunk_ms=13259.385
+[prime-yield] count=18 remaining=79 chunks=1 wall_ms=13642.399 max_chunk_ms=13642.399
+[prime-yield] count=19 remaining=78 chunks=1 wall_ms=14041.399 max_chunk_ms=14041.399
+[prime-yield] count=20 remaining=77 chunks=1 wall_ms=14420.222 max_chunk_ms=14420.222
+[prime-yield] count=21 remaining=76 chunks=1 wall_ms=14816.056 max_chunk_ms=14816.056
+[prime-yield] count=22 remaining=75 chunks=1 wall_ms=15223.172 max_chunk_ms=15223.172
+[prime-yield] count=23 remaining=74 chunks=1 wall_ms=15594.908 max_chunk_ms=15594.908
+[prime-yield] count=24 remaining=73 chunks=1 wall_ms=15998.185 max_chunk_ms=15998.185
+[prime-yield] count=25 remaining=72 chunks=1 wall_ms=16388.485 max_chunk_ms=16388.485
+[prime-yield] count=26 remaining=71 chunks=1 wall_ms=16789.517 max_chunk_ms=16789.517
+[prime-yield] count=27 remaining=70 chunks=1 wall_ms=17168.827 max_chunk_ms=17168.827
+[prime-yield] count=28 remaining=69 chunks=1 wall_ms=17567.757 max_chunk_ms=17567.757
+[prime-yield] count=29 remaining=68 chunks=1 wall_ms=17944.792 max_chunk_ms=17944.792
+[prime-yield] count=30 remaining=67 chunks=1 wall_ms=18365.527 max_chunk_ms=18365.527
+[prime-yield] count=31 remaining=66 chunks=1 wall_ms=18733.802 max_chunk_ms=18733.802
+[prime-yield] count=32 remaining=65 chunks=1 wall_ms=14308.405 max_chunk_ms=14308.405
+[prime-yield] count=33 remaining=64 chunks=1 wall_ms=718.083 max_chunk_ms=718.083
+[prime-yield] count=34 remaining=63 chunks=1 wall_ms=73.715 max_chunk_ms=73.715
+[prime-yield] count=35 remaining=62 chunks=1 wall_ms=74.402 max_chunk_ms=74.402
+[prime-yield] count=36 remaining=61 chunks=1 wall_ms=74.172 max_chunk_ms=74.172
+[prime-yield] count=37 remaining=60 chunks=1 wall_ms=71.960 max_chunk_ms=71.960
+[prime-yield] count=38 remaining=59 chunks=1 wall_ms=72.710 max_chunk_ms=72.710
+[prime-yield] count=39 remaining=58 chunks=1 wall_ms=73.509 max_chunk_ms=73.509
+[prime-yield] count=40 remaining=57 chunks=1 wall_ms=71.897 max_chunk_ms=71.897
+[prime-yield] count=41 remaining=56 chunks=1 wall_ms=73.501 max_chunk_ms=73.501
+[prime-yield] count=42 remaining=55 chunks=1 wall_ms=72.642 max_chunk_ms=72.642
+[prime-yield] count=43 remaining=54 chunks=1 wall_ms=74.342 max_chunk_ms=74.342
+[prime-yield] count=44 remaining=53 chunks=1 wall_ms=72.938 max_chunk_ms=72.938
+[prime-yield] count=45 remaining=52 chunks=1 wall_ms=73.452 max_chunk_ms=73.452
+[prime-yield] count=46 remaining=51 chunks=1 wall_ms=72.753 max_chunk_ms=72.753
+[prime-yield] count=47 remaining=50 chunks=1 wall_ms=73.592 max_chunk_ms=73.592
+[prime-yield] count=48 remaining=49 chunks=1 wall_ms=74.255 max_chunk_ms=74.255
+[prime-yield] count=49 remaining=48 chunks=1 wall_ms=71.964 max_chunk_ms=71.964
+[prime-yield] count=50 remaining=47 chunks=1 wall_ms=74.332 max_chunk_ms=74.332
+[prime-yield] count=51 remaining=46 chunks=1 wall_ms=72.741 max_chunk_ms=72.741
+[prime-yield] count=52 remaining=45 chunks=1 wall_ms=71.959 max_chunk_ms=71.959
+[prime-yield] count=53 remaining=44 chunks=1 wall_ms=72.807 max_chunk_ms=72.807
+[prime-yield] count=54 remaining=43 chunks=1 wall_ms=73.640 max_chunk_ms=73.640
+[prime-yield] count=55 remaining=42 chunks=1 wall_ms=71.932 max_chunk_ms=71.932
+[prime-yield] count=56 remaining=41 chunks=1 wall_ms=73.522 max_chunk_ms=73.522
+[prime-yield] count=57 remaining=40 chunks=1 wall_ms=73.530 max_chunk_ms=73.530
+[prime-yield] count=58 remaining=39 chunks=1 wall_ms=73.447 max_chunk_ms=73.447
+[prime-yield] count=59 remaining=38 chunks=1 wall_ms=72.829 max_chunk_ms=72.829
+[prime-yield] count=60 remaining=37 chunks=1 wall_ms=72.946 max_chunk_ms=72.946
+[prime-yield] count=61 remaining=36 chunks=1 wall_ms=71.987 max_chunk_ms=71.987
+[prime-yield] count=62 remaining=35 chunks=1 wall_ms=73.618 max_chunk_ms=73.618
+[prime-yield] count=63 remaining=34 chunks=1 wall_ms=74.006 max_chunk_ms=74.006
+[prime-yield] count=64 remaining=33 chunks=1 wall_ms=72.938 max_chunk_ms=72.938
+[prime-yield] count=65 remaining=32 chunks=1 wall_ms=74.533 max_chunk_ms=74.533
+[prime-yield] count=66 remaining=31 chunks=1 wall_ms=71.950 max_chunk_ms=71.950
+[prime-yield] count=67 remaining=30 chunks=1 wall_ms=71.197 max_chunk_ms=71.197
+[prime-yield] count=68 remaining=29 chunks=1 wall_ms=72.845 max_chunk_ms=72.845
+[prime-yield] count=69 remaining=28 chunks=1 wall_ms=71.612 max_chunk_ms=71.612
+[prime-yield] count=70 remaining=27 chunks=1 wall_ms=73.919 max_chunk_ms=73.919
+[prime-yield] count=71 remaining=26 chunks=1 wall_ms=72.883 max_chunk_ms=72.883
+[prime-yield] count=72 remaining=25 chunks=1 wall_ms=71.955 max_chunk_ms=71.955
+[prime-yield] count=73 remaining=24 chunks=1 wall_ms=71.985 max_chunk_ms=71.985
+[prime-yield] count=74 remaining=23 chunks=1 wall_ms=73.709 max_chunk_ms=73.709
+[prime-yield] count=75 remaining=22 chunks=1 wall_ms=73.856 max_chunk_ms=73.856
+[prime-yield] count=76 remaining=21 chunks=1 wall_ms=72.482 max_chunk_ms=72.482
+[prime-yield] count=77 remaining=20 chunks=1 wall_ms=74.282 max_chunk_ms=74.282
+[prime-yield] count=78 remaining=19 chunks=1 wall_ms=72.052 max_chunk_ms=72.052
+[prime-yield] count=79 remaining=18 chunks=1 wall_ms=73.663 max_chunk_ms=73.663
+[prime-yield] count=80 remaining=17 chunks=1 wall_ms=72.831 max_chunk_ms=72.831
+[prime-yield] count=81 remaining=16 chunks=1 wall_ms=73.016 max_chunk_ms=73.016
+[prime-yield] count=82 remaining=15 chunks=1 wall_ms=72.458 max_chunk_ms=72.458
+[prime-yield] count=83 remaining=14 chunks=1 wall_ms=73.624 max_chunk_ms=73.624
+[prime-yield] count=84 remaining=13 chunks=1 wall_ms=74.108 max_chunk_ms=74.108
+[prime-yield] count=85 remaining=12 chunks=1 wall_ms=73.226 max_chunk_ms=73.226
+[prime-yield] count=86 remaining=11 chunks=1 wall_ms=74.497 max_chunk_ms=74.497
+[prime-yield] count=87 remaining=10 chunks=1 wall_ms=72.865 max_chunk_ms=72.865
+[prime-yield] count=88 remaining=9 chunks=1 wall_ms=73.020 max_chunk_ms=73.020
+[prime-yield] count=89 remaining=8 chunks=1 wall_ms=72.070 max_chunk_ms=72.070
+[prime-yield] count=90 remaining=7 chunks=1 wall_ms=73.372 max_chunk_ms=73.372
+[prime-yield] count=91 remaining=6 chunks=1 wall_ms=72.948 max_chunk_ms=72.948
+[prime-yield] count=92 remaining=5 chunks=1 wall_ms=73.689 max_chunk_ms=73.689
+[prime-yield] count=93 remaining=4 chunks=1 wall_ms=72.530 max_chunk_ms=72.530
+[prime-yield] count=94 remaining=3 chunks=1 wall_ms=73.044 max_chunk_ms=73.044
+[prime-yield] count=95 remaining=2 chunks=1 wall_ms=72.867 max_chunk_ms=72.867
+[prime-yield] count=96 remaining=1 chunks=1 wall_ms=74.479 max_chunk_ms=74.479
+[prefix-cache] insert (spec-boundary): 259904 tokens, 8357.4MB (resident 13838.7MB / 42784MB, model q38)
+[fa-pool] grow #4 dev=0 o_len 37748736 -> 75497472 ml_len 147456 -> 294912 (retired kept, zero=false)
+[spec-acc] ctx=259952 burst=20/33 cum=20/33=0.606
+[spec-cost] model="q38" realized n=1 K=3: 18.9 tok/s (now priced from serving)
+[spec-acc] ctx=259984 burst=7/9 cum=27/42=0.643
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting
+[server] GPU worker shutdown complete

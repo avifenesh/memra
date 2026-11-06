@@ -10,6 +10,8 @@ import argparse, collections, json, re, sqlite3
 
 PARTS = [
     ("gemm: NVFP4 F8F4 MMQ", r"mul_mat_q_nvfp4_f8f4"),
+    ("gemm: NVFP4 F8F4 v2 tile", r"mul_mat_f8f4v2"),
+    ("gemm: F8F4 v2 weight image", r"f8f4v2_image"),
     ("gemm: activation e4m3 quantize", r"quantize_mmq_e4m3"),
     ("gemm: other MMQ / matvec", r"mul_mat_q|mmvq|matvec|gemv|qmatvec|cutlass|gemm"),
     ("attention: FA prime kernel", r"fa_prefill|fa_mla"),

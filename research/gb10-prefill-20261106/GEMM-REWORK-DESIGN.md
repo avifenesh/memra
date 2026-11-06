@@ -3,6 +3,14 @@
 Status: proposal for the owner's go. Nothing here is implemented. Numbers are measured on one GB10
 (SM 2,177 MHz under the clock cap) unless marked as an estimate.
 
+> **Built 2026-11-06** (measured as `b6d10d41c7`; `LEVER-LEDGER.md` rows 16-26,
+> `docs/decisions/GB10-F8F4-GEMM-V2.md`). Kept as designed: the per-call pooled image, the
+> pipelined mainloop without ALU staging, the grouped raster, the numeric program. Changed by
+> measurement: the 16 warps per SM come from one 16-warp 256 x 128 CTA (the two 8-warp 128 x 128
+> CTAs reached 128 registers and 36 KB but ran 4-9% slower on the FFN shapes), the activation needed its own layout
+> (reading the 144 B `block_e4m3_mmq` blocks cost 45% excess L2 sectors), and smem rows are
+> XOR-swizzled rather than padded. The design text below is unchanged.
+
 ## Where it stands
 
 At 131,051 tokens on the round-2 stack (`0cb9642b98`, `round2-profile-128k/`), the trunk GEMMs are

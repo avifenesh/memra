@@ -1,0 +1,27 @@
+kernel-check default rc=0 ALL GREEN (115 cells, 5 skipped)
+fa_prefill_view_ws vs inline-dequant T=64 Tkv=192: bitdiff=0 OK
+fa_prefill_view_ws vs inline-dequant T=100 Tkv=100: bitdiff=0 OK
+fa_prefill_view_ws vs inline-dequant T=37 Tkv=297: bitdiff=0 OK
+fa_prefill_view_ws vs inline-dequant T=192 Tkv=4097: bitdiff=0 OK
+fa_prefill_view_ws vs inline-dequant T=1024 Tkv=8224: bitdiff=0 OK
+kernel-check h2off rc=0 ALL GREEN (115 cells, 5 skipped)
+fa_prefill_view_ws vs inline-dequant T=64 Tkv=192: bitdiff=0 OK
+fa_prefill_view_ws vs inline-dequant T=100 Tkv=100: bitdiff=0 OK
+fa_prefill_view_ws vs inline-dequant T=37 Tkv=297: bitdiff=0 OK
+fa_prefill_view_ws vs inline-dequant T=192 Tkv=4097: bitdiff=0 OK
+fa_prefill_view_ws vs inline-dequant T=1024 Tkv=8224: bitdiff=0 OK
+kernel-check t3 rc=0 ALL GREEN (115 cells, 5 skipped)
+fa_prefill_view_ws vs inline-dequant T=64 Tkv=192: bitdiff=0 OK
+fa_prefill_view_ws vs inline-dequant T=100 Tkv=100: bitdiff=0 OK
+fa_prefill_view_ws vs inline-dequant T=37 Tkv=297: bitdiff=0 OK
+fa_prefill_view_ws vs inline-dequant T=192 Tkv=4097: bitdiff=0 OK
+fa_prefill_view_ws vs inline-dequant T=1024 Tkv=8224: bitdiff=0 OK
+argmax rc=0   SUMMARY flips=0 bad=0   PASS: every prefill/decode argmax flip is explained by a margin the config spread covers 
+run-spec rc=0   acceptance: 17/98 = 17.3%   self-consistency: PASS (identical to plain target)   acceptance: 17/112 = 15.2%   self-consistency: PASS (identical to plain target) === SELF-CONSISTENCY PASS === 
+GATES-DONE
+argmax-16k V rc=1   SUMMARY flips=3 bad=1   FAIL: an argmax flip is NOT explained by the config spread (or flip count exceeded) 
+argmax-16k B rc=1   SUMMARY flips=3 bad=1   FAIL: an argmax flip is NOT explained by the config spread (or flip count exceeded) 
+argmax-16k probe table V vs B: IDENTICAL (4800c57de4349345 / 4800c57de4349345)
+rollback on rc=0 pp-only MEDIAN: 3855 tok in 3.6848s = 1046.2 tok/s (pp3855, 3 reps) f81e969042a7e155
+rollback off rc=0 pp-only MEDIAN: 3855 tok in 4.1727s = 923.9 tok/s (pp3855, 3 reps) f81e969042a7e155
+GATES-V2-DONE

@@ -84,7 +84,15 @@ once per GEMM group, and 8,192-row prime chunks, which were then rejected for pe
 did not land; they were worth about 0.6% at 131k), same tokens on every prompt: 44.26 -> 36.16 s
 at 32,784 tokens (-18.3%), 239.0 -> 181.1 s at 131,051 (-24.2%) and 637.5 -> 457.2 s at 259,951
 (-28.3%), two fresh boots per arm in both orders in each of the lane's two campaigns on one unit.
-At 131,051 tokens the remaining time is the F8F4 trunk GEMMs (about 81 s at 78 TFLOPS; the
-tile's epilogue form tops out at 113 TFLOPS at its 8 warps per SM), attention (50.9 s at 66
-TFLOPS) and the Gated DeltaNet kernels (about 20 s). MemAvailable stayed above 65.2 GiB at
-259,951 tokens.
+MemAvailable stayed above 65.2 GiB at 259,951 tokens.
+
+F8F4 GEMM v2 (2026-11-06, same lane, `MEMRA_MMQ_F8F4_V2`): F8F4 GEMMs of at least 2,048 rows fold
+the weight once per call into a pooled e4m3 image and run a pipelined 16-warp 256 x 128 tile,
+bit-identical to the v1 tile (about 111 TFLOPS in the tile against 79 for v1; the epilogue's
+ceiling at 16 warps per SM is 132). Served cold TTFT with the default 4,096-row prime chunks, two
+boots per arm in both orders on each of the two units: 36.25 -> 32.54 s at 32,784 tokens (-10.2%),
+182.6 -> 168.1 s at 131,051 (-7.9%) and 461.3 -> 433.1 s at 259,951 (-6.1%) on unit 1, unit 2
+within 0.5 s, same answers, MemAvailable floor unchanged (66.2 GiB or more at 259,951). With
+8,192-row chunks v2 saves more (-10.7% at 131,051), since it builds each weight image once per
+chunk. At 131,051 tokens attention (50.8 s) is now the largest part, then the GEMMs and the Gated
+DeltaNet kernels (about 20 s).

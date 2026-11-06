@@ -1,0 +1,14 @@
+gap bucket      count     total_s
+<10us          161403       0.341
+<100us            226       0.006
+<1ms              102       0.042
+<10ms              93       0.177
+>=10ms             33       1.259
+
+kernels that follow gaps >= 1 ms
+    1.100 s     31 x  quantize_mmq_q8_1_ds4_kernel
+    0.158 s     32 x  rms_norm_f32_v2
+    0.099 s     48 x  embed_gather_u32_t
+    0.047 s      1 x  gdn_chunk_state_mma
+    0.025 s     13 x  fa_dequant_kv_ws_bf16
+    0.006 s      1 x  gdn_chunk_cumgate_f32
