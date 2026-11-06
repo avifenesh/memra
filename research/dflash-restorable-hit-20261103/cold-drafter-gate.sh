@@ -4,8 +4,11 @@
 # Arm: prefix cache + restore/partial doors (the conversion is on with them).
 # Reference: prefix cache off, so every request cold-primes DFlash. Same model, drafter, seed and requests (tools/dspark-cold-drafter-gate.py).
 # Sizes: GATE_P_PARAS / GATE_S_PARAS (60-word paragraphs). The default follows the card's memory
-# (nvidia-smi memory.total of the first visible device; GATE_VRAM_MIB overrides the reading):
-#   under 32 GB (a 24 GB RTX 5090): 10 / 14, about 1.7k / 4.3k / 4.4k tokens on x0 / a / b, S above
+# (nvidia-smi memory.total of the first visible device; GATE_VRAM_MIB overrides the reading).
+# `nvidia-smi -i` counts in PCI bus order and CUDA_VISIBLE_DEVICES in CUDA_DEVICE_ORDER, so on a
+# box with mixed cards set CUDA_DEVICE_ORDER=PCI_BUS_ID or GATE_VRAM_MIB:
+#   a reading under 32,768 MiB (a 24 GB RTX 5090; a 32 GB card reads a little under its nominal
+#     size and lands here too): 10 / 14, about 1.7k / 4.3k / 4.4k tokens on x0 / a / b, S above
 #     the 2,056-row drafter window (30 / 30, about 10.8k on b, is refused there under the arm's
 #     4,000 MB prefix cache);
 #   GB10 (unified memory, memory.total [N/A]), an RTX PRO 6000 and larger: 70 / 80, about 26k on b.
@@ -48,7 +51,7 @@ else
   ARMDOORS="MEMRA_DSPARK_PREFIX_RESTORE=1 MEMRA_DSPARK_BOUNDARY_CAPTURE=1 MEMRA_DSPARK_PARTIAL_RESTORE=1"
 fi
 : > "$R"
-note "gate sizes GATE_P_PARAS=$GATE_P_PARAS GATE_S_PARAS=$GATE_S_PARAS memory.total=${VRAM:-unknown} MiB MEMRA_CTX=$CTX DOORS=${DOORS:-explicit}"
+note "gate sizes GATE_P_PARAS=$GATE_P_PARAS GATE_S_PARAS=$GATE_S_PARAS memory.total=${VRAM:-unknown} MiB${GATE_VRAM_MIB:+ (GATE_VRAM_MIB override)} MEMRA_CTX=$CTX DOORS=${DOORS:-explicit}"
 rm -f "$O/arm.jsonl" "$O/ref.jsonl"
 rc=0
 # shellcheck disable=SC2086
@@ -62,8 +65,8 @@ if ! { boot ref MEMRA_PREFIX_CACHE_MB=0 && python3 "$G" "http://$ADDR" q38 "$O/r
 fi
 stop
 python3 "$G" --compare "$O/arm.jsonl" "$O/ref.jsonl" | tee -a "$R" || rc=1
-for k in 'cache-preferred' 'cold-drafter restore' 'DSPARK restore' 'dspark-boundary'; do
-  echo "$k=$(grep -a -c "$k" "$O/serve-arm.log")"; done | tee -a "$R"
+for k in '[dspark] cache-preferred:' 'DSPARK cold-drafter restore:' 'DSPARK restore:' 'insert (dspark-boundary):'; do
+  echo "$k=$(grep -a -c -F "$k" "$O/serve-arm.log")"; done | tee -a "$R"
 # The serving shape: one veto and one conversion, then tail restores (the conversion must publish
 # its tail-carrying boundary entry; before the fix every step converted and none restored).
 python3 "$G" --check-log "$O/serve-arm.log" | tee -a "$R" || rc=1

@@ -19,7 +19,8 @@ of being vetoed again (one `cache-preferred` veto, one conversion, at least one 
 and one `insert (dspark-boundary)`).
 GATE_P_PARAS / GATE_S_PARAS size P and S (60-word paragraphs; defaults 10 / 14, about 1.7k / 2.5k
 tokens, which fit the 27B on a 24 GB RTX 5090; cold-drafter-gate.sh picks 70 / 80, about 12k / 14k,
-on GB10 and cards of 32 GB or more); S must stay above the drafter window (2,056 rows on the 27B
+on GB10 and on cards that read 32,768 MiB or more, so a 32 GB card, which reads a little under its
+nominal size, keeps 10 / 14); S must stay above the drafter window (2,056 rows on the 27B
 DFlash2). A refused
 request (an HTTP error) prints its status and body and exits 2; --compare prints the prompt sizes
 and fails on a missing run file."""
@@ -98,10 +99,12 @@ def check_log(log):
     """The serving shape behind the a/b sequence, read from the arm's server log."""
     text = open(log, errors="replace").read()
     counts = {
-        "cache-preferred": text.count("cache-preferred"),
-        "cold-drafter restore": text.count("cold-drafter restore"),
-        "DSPARK restore": text.count("DSPARK restore"),
-        "insert (dspark-boundary)": text.count("insert (dspark-boundary)"),
+        # Exact success prefixes: "DSPARK cold-drafter restore declined (...)" and the glm5
+        # conversion line must not count as a conversion.
+        "cache-preferred": text.count("[dspark] cache-preferred:"),
+        "cold-drafter restore": text.count("DSPARK cold-drafter restore:"),
+        "DSPARK restore": text.count("DSPARK restore:"),
+        "insert (dspark-boundary)": text.count("insert (dspark-boundary):"),
     }
     want = {
         "cache-preferred": lambda n: n == 1,

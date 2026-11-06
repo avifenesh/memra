@@ -59,8 +59,12 @@ STUB = textwrap.dedent('''\
                     log("[prefix-cache] DSPARK cold-drafter restore: stub")
                 else:
                     log("[prefix-cache] DSPARK restore: stub")
+                    # A declined conversion and the glm5 twin are not conversions: the shape
+                    # check must not count them (it would read 2 and fail the passing case).
+                    log("[prefix-cache] DSPARK cold-drafter restore declined (stub); plain hit")
+                    log("[prefix-cache] glm5 cold-drafter restore: stub")
                 if MODE != "noshape":
-                    log("[prefix-cache] insert (dspark-boundary) stub")
+                    log("[prefix-cache] insert (dspark-boundary): stub")
             salt = "arm" if (ARM and MODE == "diverge") else ""
             text = hashlib.sha256((salt + prompt + str(body.get("temperature"))).encode()).hexdigest()[:24]
             self.reply(200, {"choices": [{"text": " " + text}],
@@ -103,6 +107,7 @@ class ColdDrafterGateScript(unittest.TestCase):
         rc, log, report = self.gate("ok")
         self.assertEqual(rc, 0, log)
         self.assertIn("gate sizes GATE_P_PARAS=10 GATE_S_PARAS=14 memory.total=24463 MiB", report)
+        self.assertIn("(GATE_VRAM_MIB override)", report)
         self.assertIn("SHAPE PASS", report)
         self.assertIn("COLD-DRAFTER GATE PASS", report)
 
