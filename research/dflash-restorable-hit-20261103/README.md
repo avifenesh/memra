@@ -116,4 +116,41 @@ Both runs logged 56 `cache-preferred` vetoes. The head converted 15 of them to a
 
 Without the doors the conversion is off, so this PR changes nothing for a boot that does not arm them. The follow-up memra#1069 makes the doors a device default on GB10 and the RTX PRO 6000 Max-Q (the RTX 5090 stays off, owner ruling), with the doors-on vs doors-off A/Bs in `gb10-flip/` and `rig5090-flip/`.
 
+## A converted session captures its tail entry (2026-11-06)
+
+Verdict: on main 3bbdf42ff9 a converted session never published its draft tail, so every later turn was vetoed and converted again. c28fb5ee0e fixes it: on GB10 the third turn of a session now restores the second turn's tail, and its TTFT drops from 8.3 s to 1.4 s.
+
+The bug: `dspark_on` was derived before the conversion's session (`dspark_prefix_restored`) was folded into `dspark_resume`, so it was false for every converted session.
+- The resume ran with `DsparkCapture::Off`, so no tail-carrying boundary entry was published. The next turn hit the same plain entry, was vetoed and converted again.
+- The plain-cache arm (`(None, None)`) allocated a `ctx_cap` session cache that the DFlash session never used.
+- Output stayed correct: dispatch already read `dspark_on || dspark_session_installed`.
+
+`dspark_session_armed` now also counts a prefix-cache restore. The unit test `a_cold_drafter_conversion_runs_as_a_dflash_session` fails on the old derivation. With `dspark_on` true the session-cache match takes its first arm (`None`), so no plain cache is allocated.
+
+**Serving shape** (`tools/dspark-cold-drafter-gate.py --check-log`, now run by `cold-drafter-gate.sh`). The gate's arm log must show one `cache-preferred` veto, one `cold-drafter restore`, then at least one `DSPARK restore` and one `insert (dspark-boundary)`. Every gate receipt banked before this fix fails it with 4 / 4 / 0 / 0 (`cold-drafter-gate/shape-banked-receipts.txt`: GB10 and 5090 at 6561499516 and 2a71203eb7, PRO 6000 Max-Q at c76b8c4678).
+
+| run | completions vs cold reference | veto / conversion / tail restore / boundary insert | shape |
+|---|---|---|---|
+| RTX 5090, main 3bbdf42ff9, doors armed (`5090-capture-main-3bbd/`) | 4/4 identical | 4 / 4 / 0 / 0 | FAIL |
+| RTX 5090, c28fb5ee0e, doors armed (`5090-capture-fix-c28f/`) | 4/4 identical | 1 / 1 / 3 / 3 | PASS |
+| GB10 (spark-b23d), c28fb5ee0e, doors on by device default (`gb10-capture-fix-c28f/`) | 4/4 identical | 1 / 1 / 3 / 3 | PASS |
+
+The two 5090 arms produced completions of the same lengths (428 / 518 / 436 / 469), each identical to its reference.
+
+**GB10 multi-turn persistence** (`gb10-capture/multi-turn/`, spark-b23d, GGUF DFlash2, doors on by device default, `MEMRA_PREFIX_STABLE_BOUNDARY=0`, client on the unit). Order main/fix/fix/main, fresh boot each. Each run has 4 sessions of three turns:
+1. x0: a plain greedy-penalized prime of P (12.2k tokens);
+2. t2: P + S + a question (17.5k tokens), T=1 seed 1234, 256 tokens; the veto fires and the conversion runs;
+3. t3: t2's prompt + t2's text + a follow-up (18.3k tokens).
+
+| run | t2 TTFT s | t3 TTFT s | t3 total s | t3 cached tokens | veto / conversion / tail restore / boundary insert |
+|---|---:|---:|---:|---:|---|
+| 1 main 3bbdf42ff9 | 7.32 | 8.29 | 12.39 | 12,232 | 8 / 8 / 0 / 0 |
+| 2 fix c28fb5ee0e | 7.33 | **1.45** | 7.19 | 17,472 | 4 / 4 / 4 / 8 |
+| 3 fix c28fb5ee0e | 7.33 | **1.35** | 7.62 | 17,472 | 4 / 4 / 4 / 8 |
+| 4 main 3bbdf42ff9 | 7.32 | 8.34 | 12.42 | 12,232 | 8 / 8 / 0 / 0 |
+
+On main, t3 hits P's plain entry again, is vetoed and converted again, and prefills ~6.0k tokens. On the fix, t3 restores t2's tail entry and prefills ~0.8k. t3 decode rate does not move (47.5 / 42.6 main, 47.3 / 43.0 fix tok/s). The prompts carry the run tag, so texts and completion lengths differ between runs; TTFT and cached tokens are the clean signal. Per-turn records: `turns.jsonl`; table: `summary.md`.
+
+**GB10 agentic c1** (`gb10-capture/c1-main-a/`, `c1-fix-a/`, the batch-spec agentic cell, one run each): main 14.26, fix 14.25 tok/s, 48 turns and 18,847 tokens in both. Both logged 28 vetoes and 15 conversions. Boundary inserts went from 13 to 28, but no measured turn requests them: the harness primes every body plain before measuring, so each measured turn's longest hit is its own prime's plain entry. This cell cannot show the persistence, so the ABBA stopped after one pair and the multi-turn shape above replaced it.
+
 Every lever of this lane, with SHAs and receipts: `LEVER-LEDGER.md`.

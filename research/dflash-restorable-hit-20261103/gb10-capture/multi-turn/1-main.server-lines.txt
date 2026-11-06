@@ -1,0 +1,92 @@
+[server] build: memra-0.138.0-19b572b06fea (id: source-tree, git: 3bbdf42ff992)
+[server] starting; models config = [("q38", "~/models/memra-q38/Qwen3.8-27B-NVFP4-MTP-GGUF/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf", None)]
+[spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+[dspark] prefix restore doors default ON on "NVIDIA GB10" (gb10=true): restore=true partial=true capture=true
+[dspark] precision=q4 (MEMRA_DFLASH_PREC unset)
+[dspark] harvest=dflash (checkpoint census dflash2=true strategy_dspark=false, MEMRA_DSPARK_HARVEST unset)
+[dspark] verify-window=Ladder (accept-rate head ABSENT -> ladder, MEMRA_DSPARK_VT unset)
+[worker] q38: DSPARK SPEC route armed (drafter attached (~/models/memra-q38/Qwen3.8-27B-DFlash2-memra); greedy+sampled [T>0 rejection verify, sampled penalties included; greedy penalties verified by penalised argmax (MEMRA_DSPARK_GREEDY_PENALTY=1)]/unconstrained/text-only; greedy LOW-wave admission + HIGH demotion, sampled solo admission; MTP spec DISABLED for this model — refuse-on-ambiguity; MEMRA_DSPARK_SPEC unset = off)
+[dspark] q38: DFlash2 draft head TRIMMED to 32768 rows (FR-Spec d2t; verify stays full-vocab)
+[server] worker ready; serving models: ["q38"]
+[server] listening on http://127.0.0.1:8090
+[dspark] cache-preferred: prompt=17514 decode_budget=256 lcp=12224 — a cold prime would discard a prefix hit that 256 tokens of speculation cannot repay; serving the hit and going plain
+[prefix-cache] DSPARK cold-drafter restore: 12224 of 17514 prompt tokens from a plain hit, drafter born at the boundary (5290 suffix tokens to prime, window 2056) (model q38)
+[dspark-acc] ctx=17514 burst=0/7 cum=0/7=0.000
+[dspark-acc] ctx=17515 burst=20/35 cum=20/42=0.476
+[dspark-acc] ctx=17547 burst=20/37 cum=40/79=0.506
+[dspark-acc] ctx=17581 burst=28/31 cum=68/110=0.618
+[dspark-acc] ctx=17615 burst=17/43 cum=85/153=0.556
+[dspark-acc] ctx=17649 burst=28/35 cum=113/188=0.601
+[dspark-acc] ctx=17687 burst=28/36 cum=141/224=0.629
+[dspark-acc] ctx=17723 burst=32/32 cum=173/256=0.676
+[dspark-acc] ctx=17760 burst=12/16 cum=185/272=0.680
+[dspark] cache-preferred: prompt=18306 decode_budget=256 lcp=12224 — a cold prime would discard a prefix hit that 256 tokens of speculation cannot repay; serving the hit and going plain
+[prefix-cache] DSPARK cold-drafter restore: 12224 of 18306 prompt tokens from a plain hit, drafter born at the boundary (6082 suffix tokens to prime, window 2056) (model q38)
+[dspark-acc] ctx=18306 burst=1/7 cum=1/7=0.143
+[dspark-acc] ctx=18308 burst=25/29 cum=26/36=0.722
+[dspark-acc] ctx=18340 burst=33/34 cum=59/70=0.843
+[dspark-acc] ctx=18378 burst=28/28 cum=87/98=0.888
+[dspark-acc] ctx=18410 burst=33/35 cum=120/133=0.902
+[dspark-acc] ctx=18448 burst=28/35 cum=148/168=0.881
+[dspark-acc] ctx=18483 burst=34/34 cum=182/202=0.901
+[dspark-acc] ctx=18522 burst=29/32 cum=211/234=0.902
+[dspark-acc] ctx=18556 burst=7/7 cum=218/241=0.905
+[dspark] cache-preferred: prompt=17513 decode_budget=256 lcp=12224 — a cold prime would discard a prefix hit that 256 tokens of speculation cannot repay; serving the hit and going plain
+[prefix-cache] DSPARK cold-drafter restore: 12224 of 17513 prompt tokens from a plain hit, drafter born at the boundary (5289 suffix tokens to prime, window 2056) (model q38)
+[dspark-acc] ctx=17513 burst=0/7 cum=0/7=0.000
+[dspark-acc] ctx=17514 burst=22/32 cum=22/39=0.564
+[dspark-acc] ctx=17546 burst=13/41 cum=35/80=0.438
+[dspark-acc] ctx=17578 burst=27/31 cum=62/111=0.559
+[dspark-acc] ctx=17612 burst=21/39 cum=83/150=0.553
+[dspark-acc] ctx=17646 burst=20/34 cum=103/184=0.560
+[dspark-acc] ctx=17678 burst=20/34 cum=123/218=0.564
+[dspark-acc] ctx=17710 burst=15/40 cum=138/258=0.535
+[dspark-acc] ctx=17742 burst=15/30 cum=153/288=0.531
+[dspark] cache-preferred: prompt=18304 decode_budget=256 lcp=12224 — a cold prime would discard a prefix hit that 256 tokens of speculation cannot repay; serving the hit and going plain
+[prefix-cache] DSPARK cold-drafter restore: 12224 of 18304 prompt tokens from a plain hit, drafter born at the boundary (6080 suffix tokens to prime, window 2056) (model q38)
+[dspark-acc] ctx=18304 burst=2/7 cum=2/7=0.286
+[dspark-acc] ctx=18307 burst=32/32 cum=34/39=0.872
+[dspark-acc] ctx=18345 burst=30/35 cum=64/74=0.865
+[dspark-acc] ctx=18380 burst=29/29 cum=93/103=0.903
+[dspark-acc] ctx=18414 burst=28/28 cum=121/131=0.924
+[dspark-acc] ctx=18446 burst=30/38 cum=151/169=0.893
+[dspark-acc] ctx=18484 burst=32/35 cum=183/204=0.897
+[dspark-acc] ctx=18521 burst=29/32 cum=212/236=0.898
+[dspark-acc] ctx=18555 burst=7/7 cum=219/243=0.901
+[dspark] cache-preferred: prompt=17519 decode_budget=256 lcp=12256 — a cold prime would discard a prefix hit that 256 tokens of speculation cannot repay; serving the hit and going plain
+[prefix-cache] DSPARK cold-drafter restore: 12256 of 17519 prompt tokens from a plain hit, drafter born at the boundary (5263 suffix tokens to prime, window 2056) (model q38)
+[dspark-acc] ctx=17519 burst=0/7 cum=0/7=0.000
+[dspark-acc] ctx=17520 burst=21/33 cum=21/40=0.525
+[dspark-acc] ctx=17554 burst=24/36 cum=45/76=0.592
+[dspark-acc] ctx=17587 burst=18/36 cum=63/112=0.562
+[dspark-acc] ctx=17620 burst=12/34 cum=75/146=0.514
+[dspark] cache-preferred: prompt=18185 decode_budget=256 lcp=12256 — a cold prime would discard a prefix hit that 256 tokens of speculation cannot repay; serving the hit and going plain
+[prefix-cache] DSPARK cold-drafter restore: 12256 of 18185 prompt tokens from a plain hit, drafter born at the boundary (5929 suffix tokens to prime, window 2056) (model q38)
+[dspark-acc] ctx=18185 burst=2/7 cum=2/7=0.286
+[dspark-acc] ctx=18188 burst=28/29 cum=30/36=0.833
+[dspark-acc] ctx=18222 burst=10/26 cum=40/62=0.645
+[dspark] cache-preferred: prompt=17497 decode_budget=256 lcp=12224 — a cold prime would discard a prefix hit that 256 tokens of speculation cannot repay; serving the hit and going plain
+[prefix-cache] DSPARK cold-drafter restore: 12224 of 17497 prompt tokens from a plain hit, drafter born at the boundary (5273 suffix tokens to prime, window 2056) (model q38)
+[dspark-acc] ctx=17497 burst=0/7 cum=0/7=0.000
+[dspark-acc] ctx=17498 burst=24/37 cum=24/44=0.545
+[dspark-acc] ctx=17535 burst=21/39 cum=45/83=0.542
+[dspark-acc] ctx=17567 burst=14/41 cum=59/124=0.476
+[dspark-acc] ctx=17599 burst=11/46 cum=70/170=0.412
+[dspark-acc] ctx=17631 burst=22/36 cum=92/206=0.447
+[dspark-acc] ctx=17665 burst=21/35 cum=113/241=0.469
+[dspark-acc] ctx=17699 burst=29/29 cum=142/270=0.526
+[dspark-acc] ctx=17733 burst=14/27 cum=156/297=0.525
+[dspark] cache-preferred: prompt=18290 decode_budget=256 lcp=12224 — a cold prime would discard a prefix hit that 256 tokens of speculation cannot repay; serving the hit and going plain
+[prefix-cache] DSPARK cold-drafter restore: 12224 of 18290 prompt tokens from a plain hit, drafter born at the boundary (6066 suffix tokens to prime, window 2056) (model q38)
+[dspark-acc] ctx=18290 burst=3/7 cum=3/7=0.429
+[dspark-acc] ctx=18294 burst=29/29 cum=32/36=0.889
+[dspark-acc] ctx=18328 burst=28/28 cum=60/64=0.938
+[dspark-acc] ctx=18360 burst=30/33 cum=90/97=0.928
+[dspark-acc] ctx=18395 burst=30/36 cum=120/133=0.902
+[dspark-acc] ctx=18431 burst=25/35 cum=145/168=0.863
+[dspark-acc] ctx=18463 burst=27/27 cum=172/195=0.882
+[dspark-acc] ctx=18496 burst=28/28 cum=200/223=0.897
+[dspark-acc] ctx=18528 burst=21/21 cum=221/244=0.906
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting
+[server] GPU worker shutdown complete
