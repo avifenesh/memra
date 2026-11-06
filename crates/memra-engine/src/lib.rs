@@ -24605,7 +24605,7 @@ impl Engine {
         let x_ptr = {
             let stream = self.gpu.stream();
             let (p, _g) = x.device_ptr(&stream);
-            p as u64
+            p
         };
         *self.f8f4_act_group.lock().unwrap() = Some(F8f4ActGroup {
             x_ptr,
@@ -30057,9 +30057,9 @@ impl Engine {
                 && !triple
                 && head_dim == 256
                 && t >= 128
-                && n_head % 2 == 0
+                && n_head.is_multiple_of(2)
                 && n_head_kv > 0
-                && (n_head / n_head_kv) % 2 == 0
+                && (n_head / n_head_kv).is_multiple_of(2)
                 && self.prime_kv_h2_on();
             let hd_sfx = fa_hd_suffix(head_dim)?;
             let f = self.func(&format!(

@@ -2338,7 +2338,7 @@ impl Engine {
         let x_key = {
             let stream = self.gpu.stream();
             let (p, _g) = x.device_ptr(&stream);
-            p as u64
+            p
         };
         let in_group = f8f4
             && group
