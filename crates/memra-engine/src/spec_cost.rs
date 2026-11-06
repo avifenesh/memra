@@ -100,7 +100,13 @@ impl HybridModel {
     /// bit-identical to the two-wave program, so the faster form is a pure speed choice, and
     /// the margin is small and device-shaped (GB10 27B: one wave 3.8% faster; an RTX 5090
     /// laptop on a 9B: within its thermal drift), hence measured on the serving box. Every
-    /// buffer is dropped on return.
+    /// buffer is dropped on return; the freed blocks stay cached in the async pool, so the
+    /// caller hands them back to the driver.
+    ///
+    /// The probe sizes itself to the device: after the second primed session it measures one
+    /// session's pool footprint (cache plus snapshot; the first session also carries one-time
+    /// scratch) and refuses when the remaining sessions need more than is allocatable, instead
+    /// of priming until the driver runs out (RTX 5090, Qwen3.8-27B: 48.5 s to the OOM).
     pub fn decode_wave_probe(
         &self,
         e: &Engine,
@@ -109,18 +115,42 @@ impl HybridModel {
         const N: usize = 32;
         let vocab = (self.cfg.n_vocab as usize).max(64) - 16;
         let mut caches: Vec<Cache> = Vec::with_capacity(N);
+        let mut snaps = Vec::with_capacity(N);
+        let mut used_after_first = 0usize;
         for i in 0..N {
             let mut c = crate::pp::new_cache(e, &self.cfg, depth + 32)?;
             let p: Vec<u32> = (0..depth as u32)
                 .map(|j| (55 + (i as u32 + 1) * 97 + j * 31) % vocab as u32)
                 .collect();
             let _ = self.prime_cache(e, &p, &mut c, 0)?;
+            snaps.push(c.snapshot(e)?);
             caches.push(c);
+            if i < 2 {
+                // Pool USED counts live allocations only; the sync lands the prime's scratch
+                // frees first. A pool that cannot be queried reads (0, 0) and the probe runs.
+                e.stream().synchronize()?;
+                let (reserved, used) = e.pool_reserved_used();
+                if i == 0 {
+                    used_after_first = used;
+                    continue;
+                }
+                let per_session = used.saturating_sub(used_after_first);
+                let (free, _) = crate::unified_memory::allocatable_mem_info(e.ctx())?;
+                let available = free.saturating_add(reserved.saturating_sub(used));
+                let needed = per_session.saturating_mul(N - 2);
+                if needed > available {
+                    return Err(format!(
+                        "{N} sessions at depth {depth} do not fit: the other {} need {}MB \
+                         ({}MB each), {}MB allocatable",
+                        N - 2,
+                        needed >> 20,
+                        per_session >> 20,
+                        available >> 20,
+                    )
+                    .into());
+                }
+            }
         }
-        let snaps = caches
-            .iter()
-            .map(|c| c.snapshot(e))
-            .collect::<Result<Vec<_>, _>>()?;
         let toks: Vec<u32> = (0..N as u32)
             .map(|j| (4242 + j * 7) % vocab as u32)
             .collect();
