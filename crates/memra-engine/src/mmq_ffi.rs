@@ -889,6 +889,54 @@ unsafe extern "C" {
         s01: i64,
         stream: *mut core::ffi::c_void,
     );
+    /// The F8F4 e4m3 activation quantizer (block_e4m3_mmq layout); x is [n_tokens, s01] f32.
+    pub fn memra_mmq_nvfp4_f8f4_quantize_act(
+        x: *const f32,
+        vy: *mut core::ffi::c_void,
+        in_f: i32,
+        n_tokens: i32,
+        s01: i64,
+        stream: *mut core::ffi::c_void,
+    );
+    /// F8F4 v2 (GB10 prefill lane): bytes of the v2-layout activation scratch for (in_f, rows).
+    pub fn memra_mmq_nvfp4_f8f4_v2_act_bytes(in_f: i32, n_tokens: i32) -> usize;
+    /// The F8F4 activation quantizer with the v2 store: the bytes and scales the block_e4m3_mmq
+    /// quantizer writes, placed row-major plus a k-major scale plane for the v2 GEMM.
+    pub fn memra_mmq_nvfp4_f8f4_v2_quantize_act(
+        x: *const f32,
+        vy: *mut core::ffi::c_void,
+        in_f: i32,
+        n_tokens: i32,
+        s01: i64,
+        stream: *mut core::ffi::c_void,
+    );
+    /// The fused silu(gate) * up twin of `memra_mmq_nvfp4_f8f4_v2_quantize_act`.
+    pub fn memra_mmq_nvfp4_f8f4_v2_quantize_act_silu(
+        gate: *const f32,
+        up: *const f32,
+        vy: *mut core::ffi::c_void,
+        in_f: i32,
+        n_tokens: i32,
+        s01: i64,
+        stream: *mut core::ffi::c_void,
+    );
+    /// Bytes of the per-call weight image the v2 GEMM folds an out_f x in_f NVFP4 weight into.
+    pub fn memra_mmq_nvfp4_f8f4_v2_img_bytes(in_f: i32, out_f: i32) -> usize;
+    /// v2 F8F4 GEMM: image pre-pass into `img`, then the pipelined tile over a v2-layout
+    /// activation. Bit-identical to `memra_mmq_nvfp4_f8f4_preq` on the same activation values.
+    /// Requires in_f % 256 == 0. Returns 0 / 3000+cudaError / 3998 (shape) / 2905 (stub build).
+    pub fn memra_mmq_nvfp4_f8f4_v2_preq(
+        w_nvfp4_blocks: *const core::ffi::c_void,
+        act_scratch: *const core::ffi::c_void,
+        y: *mut f32,
+        in_f: i32,
+        out_f: i32,
+        n_tokens: i32,
+        img: *mut core::ffi::c_void,
+        stream: *mut core::ffi::c_void,
+        out_scale: f32,
+        rp: i32,
+    ) -> i32;
     /// Bytes for the per-block FP8 MMQ activation scratch (delegates to the F8F4 sizing — the
     /// two arms deliberately share ONE activation format, `block_e4m3_mmq`).
     pub fn memra_mmq_fp8_blk_act_bytes(in_f: i32, n_tokens: i32) -> usize;
@@ -2166,6 +2214,172 @@ impl Engine {
         })
     }
 
+    /// Whether an F8F4 GEMM of `m` rows over `in_f` input features runs the v2 tile (per-call
+    /// weight image, cp.async/ldmatrix mainloop, grouped raster), which is bit-identical to the
+    /// v1 tile (kernel-check `MMQ-F8F4-V2`). `MEMRA_MMQ_F8F4_V2` of `1`/`0` decides the route,
+    /// unset follows the device (on for GB10, research/gb10-prefill-20261106); the route then
+    /// applies from `F8F4_V2_MIN_ROWS` rows, where the image pass pays for itself, and only for
+    /// in_f % 256 == 0. It reads only (in_f, m), so every weight of a quantize-once group agrees.
+    pub fn f8f4_v2_on(&self, in_f: usize, m: usize) -> bool {
+        static V2: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+        let route = *V2.get_or_init(|| {
+            f8f4_route_on(
+                std::env::var("MEMRA_MMQ_F8F4_V2").ok().as_deref(),
+                env!("MEMRA_BUILT_CUDA_ARCH") == "120a"
+                    && crate::unified_memory::is_unified(self.ctx()),
+            )
+        });
+        route && f8f4_v2_shape_ok(in_f, m)
+    }
+
+    /// Quantize `x` ([m, in_f] f32) for the F8F4 GEMM: the block_e4m3_mmq layout for v1, the
+    /// v2 layout for v2 (the same e4m3 bytes and scales either way).
+    fn f8f4_quantize(
+        &self,
+        x: &CudaSlice<f32>,
+        m: usize,
+        in_f: usize,
+        v2: bool,
+    ) -> Result<CudaSlice<u8>, Box<dyn std::error::Error>> {
+        let bytes = unsafe {
+            if v2 {
+                memra_mmq_nvfp4_f8f4_v2_act_bytes(in_f as i32, m as i32)
+            } else {
+                memra_mmq_nvfp4_w4a8_act_bytes(in_f as i32, m as i32)
+            }
+        };
+        let mut s = self.alloc_uninit::<u8>(bytes)?;
+        {
+            let stream = self.gpu.stream();
+            let (x_p, _gx) = x.device_ptr(&stream);
+            let (s_p, _gs) = s.device_ptr_mut(&stream);
+            let st = stream.cu_stream() as *mut core::ffi::c_void;
+            unsafe {
+                if v2 {
+                    memra_mmq_nvfp4_f8f4_v2_quantize_act(
+                        x_p as *const f32,
+                        s_p as *mut core::ffi::c_void,
+                        in_f as i32,
+                        m as i32,
+                        in_f as i64,
+                        st,
+                    );
+                } else {
+                    memra_mmq_nvfp4_f8f4_quantize_act(
+                        x_p as *const f32,
+                        s_p as *mut core::ffi::c_void,
+                        in_f as i32,
+                        m as i32,
+                        in_f as i64,
+                        st,
+                    );
+                }
+            }
+        }
+        Ok(s)
+    }
+
+    /// The F8F4 GEMM on an activation `f8f4_quantize` (or a silu twin) wrote in layout `v2`.
+    /// v2 folds the weight into a pooled per-call image first.
+    #[allow(clippy::too_many_arguments)] // allow: mirrors the FFI launch contract
+    fn f8f4_gemm_preq(
+        &self,
+        bytes: &CudaSlice<u8>,
+        act: &CudaSlice<u8>,
+        m: usize,
+        in_f: usize,
+        out_f: usize,
+        scale: f32,
+        rp: bool,
+        v2: bool,
+    ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
+        let mut y = self.alloc_uninit::<f32>(m * out_f)?;
+        let mut img = if v2 {
+            let n = unsafe { memra_mmq_nvfp4_f8f4_v2_img_bytes(in_f as i32, out_f as i32) };
+            Some(self.alloc_uninit::<u8>(n)?)
+        } else {
+            None
+        };
+        let rc = {
+            let stream = self.gpu.stream();
+            let (w_p, _gw) = bytes.device_ptr(&stream);
+            let (s_p, _gs) = act.device_ptr(&stream);
+            let (y_p, _gy) = y.device_ptr_mut(&stream);
+            let st = stream.cu_stream() as *mut core::ffi::c_void;
+            match img.as_mut() {
+                Some(img) => {
+                    let (i_p, _gi) = img.device_ptr_mut(&stream);
+                    unsafe {
+                        memra_mmq_nvfp4_f8f4_v2_preq(
+                            w_p as *const core::ffi::c_void,
+                            s_p as *const core::ffi::c_void,
+                            y_p as *mut f32,
+                            in_f as i32,
+                            out_f as i32,
+                            m as i32,
+                            i_p as *mut core::ffi::c_void,
+                            st,
+                            scale,
+                            rp as i32,
+                        )
+                    }
+                }
+                None => unsafe {
+                    memra_mmq_nvfp4_f8f4_preq(
+                        w_p as *const core::ffi::c_void,
+                        s_p as *const core::ffi::c_void,
+                        y_p as *mut f32,
+                        in_f as i32,
+                        out_f as i32,
+                        m as i32,
+                        st,
+                        scale,
+                        rp as i32,
+                    )
+                },
+            }
+        };
+        if rc != 0 {
+            return Err(format!("F8F4 GEMM (v2={v2}) rc={rc}").into());
+        }
+        Ok(y)
+    }
+
+    /// Bare F8F4 GEMM with the tile forced (`v2` false = v1, true = v2), no macro-scale, for the
+    /// kernel-check `MMQ-F8F4-V2` bit cells. `rp` selects the weight layout `bytes` is in.
+    #[allow(clippy::too_many_arguments)] // allow: mirrors the FFI launch contract
+    pub fn qmatvec_mmq_nvfp4_f8f4_arm_raw(
+        &self,
+        bytes: &CudaSlice<u8>,
+        x: &CudaSlice<f32>,
+        m: usize,
+        in_f: usize,
+        out_f: usize,
+        rp: bool,
+        v2: bool,
+    ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
+        if v2 && !f8f4_v2_kernel_shape_ok(in_f) {
+            return Err(format!("F8F4 v2 needs in_f % 256 == 0, got {in_f}").into());
+        }
+        let act = self.f8f4_quantize(x, m, in_f, v2)?;
+        self.f8f4_gemm_preq(bytes, &act, m, in_f, out_f, 1.0, rp, v2)
+    }
+
+    /// Fused-silu twin of `qmatvec_mmq_nvfp4_f8f4_arm_raw` (GGUF layout).
+    #[allow(clippy::too_many_arguments)] // allow: mirrors the FFI launch contract
+    pub fn qmatvec_mmq_nvfp4_f8f4_silu_arm_raw(
+        &self,
+        bytes: &CudaSlice<u8>,
+        gate: &CudaSlice<f32>,
+        up: &CudaSlice<f32>,
+        m: usize,
+        in_f: usize,
+        out_f: usize,
+        v2: bool,
+    ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
+        self.mmq_nvfp4_f8f4_silu_launch_arm(bytes, gate, up, m, in_f, out_f, 1.0, false, v2)
+    }
+
     /// Whether `matmul_prefill(w, x, m)` runs the NVFP4 F8F4 MMQ entry for this weight, by the
     /// same conditions its dispatch applies: no A4 stamp, no FP8/f16/CUTLASS mirror (so every
     /// earlier arm declines), the MMQ row and width thresholds, `mmq_supports`, the W4A8 tile
@@ -2238,7 +2452,8 @@ impl Engine {
             return Err("matmul_prefill_silu_f8f4: not a Quant tensor".into());
         };
         let (in_f, out_f) = (w.in_features(), w.out_features());
-        self.mmq_nvfp4_f8f4_silu_launch(bytes, gate, up, m, in_f, out_f, *scale, *rp)
+        let v2 = self.f8f4_v2_on(in_f, m);
+        self.mmq_nvfp4_f8f4_silu_launch_arm(bytes, gate, up, m, in_f, out_f, *scale, *rp, v2)
     }
 
     /// Bare fused-silu F8F4 launch (no macro-scale, GGUF layout) for the kernel-check byte cell
@@ -2252,11 +2467,12 @@ impl Engine {
         in_f: usize,
         out_f: usize,
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
-        self.mmq_nvfp4_f8f4_silu_launch(bytes, gate, up, m, in_f, out_f, 1.0, false)
+        let v2 = self.f8f4_v2_on(in_f, m);
+        self.mmq_nvfp4_f8f4_silu_launch_arm(bytes, gate, up, m, in_f, out_f, 1.0, false, v2)
     }
 
     #[allow(clippy::too_many_arguments)] // allow: mirrors the FFI launch contract
-    fn mmq_nvfp4_f8f4_silu_launch(
+    fn mmq_nvfp4_f8f4_silu_launch_arm(
         &self,
         bytes: &CudaSlice<u8>,
         gate: &CudaSlice<f32>,
@@ -2266,45 +2482,47 @@ impl Engine {
         out_f: usize,
         scale: f32,
         rp: bool,
+        v2: bool,
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
-        let act_bytes = unsafe { memra_mmq_nvfp4_w4a8_act_bytes(in_f as i32, m as i32) };
+        let act_bytes = unsafe {
+            if v2 {
+                memra_mmq_nvfp4_f8f4_v2_act_bytes(in_f as i32, m as i32)
+            } else {
+                memra_mmq_nvfp4_w4a8_act_bytes(in_f as i32, m as i32)
+            }
+        };
         let mut scratch = self.alloc_uninit::<u8>(act_bytes)?;
-        let mut y = self.alloc_uninit::<f32>(m * out_f)?;
-        let rc = {
+        {
             let stream = self.gpu.stream();
-            let (w_p, _gw) = bytes.device_ptr(&stream);
             let (g_p, _gg) = gate.device_ptr(&stream);
             let (u_p, _gu) = up.device_ptr(&stream);
-            let (y_p, _gy) = y.device_ptr_mut(&stream);
             let (s_p, _gs) = scratch.device_ptr_mut(&stream);
             let st = stream.cu_stream() as *mut core::ffi::c_void;
             unsafe {
-                memra_mmq_nvfp4_f8f4_quantize_act_silu(
-                    g_p as *const f32,
-                    u_p as *const f32,
-                    s_p as *mut core::ffi::c_void,
-                    in_f as i32,
-                    m as i32,
-                    in_f as i64,
-                    st,
-                );
-                memra_mmq_nvfp4_f8f4_preq(
-                    w_p as *const core::ffi::c_void,
-                    s_p as *const core::ffi::c_void,
-                    y_p as *mut f32,
-                    in_f as i32,
-                    out_f as i32,
-                    m as i32,
-                    st,
-                    scale,
-                    rp as i32,
-                )
+                if v2 {
+                    memra_mmq_nvfp4_f8f4_v2_quantize_act_silu(
+                        g_p as *const f32,
+                        u_p as *const f32,
+                        s_p as *mut core::ffi::c_void,
+                        in_f as i32,
+                        m as i32,
+                        in_f as i64,
+                        st,
+                    );
+                } else {
+                    memra_mmq_nvfp4_f8f4_quantize_act_silu(
+                        g_p as *const f32,
+                        u_p as *const f32,
+                        s_p as *mut core::ffi::c_void,
+                        in_f as i32,
+                        m as i32,
+                        in_f as i64,
+                        st,
+                    );
+                }
             }
-        };
-        if rc != 0 {
-            return Err(format!("memra_mmq_nvfp4_f8f4_preq(silu) rc={rc}").into());
         }
-        Ok(y)
+        self.f8f4_gemm_preq(bytes, &scratch, m, in_f, out_f, scale, rp, v2)
     }
 
     #[allow(clippy::too_many_arguments)] // allow: the parameter list mirrors the kernel/FFI/call contract; bundling into a struct is a refactor, not a lint fix
@@ -2330,7 +2548,6 @@ impl Engine {
             "MMQ NVFP4 W4A8 requires in_f % 64 == 0, got {in_f}"
         );
         let act_bytes = unsafe { memra_mmq_nvfp4_w4a8_act_bytes(in_f as i32, m as i32) };
-        let mut y = self.alloc_uninit::<f32>(m * out_f)?;
         // Quantize-once scope (`Engine::matmul_group`): the same unmodified activation already
         // quantized for an earlier weight of the group reuses that e4m3 scratch, the bytes the
         // quantizer would write again; the first weight keeps its scratch for the rest.
@@ -2340,11 +2557,36 @@ impl Engine {
             let (p, _g) = x.device_ptr(&stream);
             p as u64
         };
+        let v2 = f8f4 && self.f8f4_v2_on(in_f, m);
         let in_group = f8f4
             && group
                 .as_ref()
                 .is_some_and(|g| g.x_ptr == x_key && g.in_f == in_f && g.m == m);
-        if in_group && let Some(prev) = group.as_ref().and_then(|g| g.scratch.as_ref()) {
+        if v2 {
+            // v2 tile: the same activation bytes in the v2 layout, quantized once per group.
+            if in_group
+                && let Some(prev) = group
+                    .as_ref()
+                    .filter(|g| g.v2)
+                    .and_then(|g| g.scratch.as_ref())
+            {
+                return self.f8f4_gemm_preq(bytes, prev, m, in_f, out_f, scale, rp, true);
+            }
+            let act = self.f8f4_quantize(x, m, in_f, true)?;
+            let y = self.f8f4_gemm_preq(bytes, &act, m, in_f, out_f, scale, rp, true)?;
+            if in_group && let Some(g) = group.as_mut() {
+                g.scratch = Some(act);
+                g.v2 = true;
+            }
+            return Ok(y);
+        }
+        let mut y = self.alloc_uninit::<f32>(m * out_f)?;
+        if in_group
+            && let Some(prev) = group
+                .as_ref()
+                .filter(|g| !g.v2)
+                .and_then(|g| g.scratch.as_ref())
+        {
             let rc = {
                 let stream = self.gpu.stream();
                 let (w_p, _gw) = bytes.device_ptr(&stream);
@@ -2412,6 +2654,7 @@ impl Engine {
         }
         if in_group && let Some(g) = group.as_mut() {
             g.scratch = Some(scratch);
+            g.v2 = false;
         }
         Ok(y)
     }
@@ -3502,6 +3745,23 @@ pub fn a4_prefill_slots_reset() -> Vec<u64> {
 
 /// Whether the prefill MMQ takes the F8F4 route: an explicit `MEMRA_MMQ_F8F4` of `1` or `0`
 /// decides; unset, it follows the device (on for a unified-memory 120a-family device, GB10).
+/// Rows from which the v2 F8F4 tile pays for its per-call weight image on GB10
+/// (research/gb10-prefill-20261106, gemm-v2 crossover receipts).
+pub(crate) const F8F4_V2_MIN_ROWS: usize = 2048;
+
+/// The v2 kernel's shape contract: whole 256-value k groups.
+fn f8f4_v2_kernel_shape_ok(in_f: usize) -> bool {
+    in_f > 0 && in_f.is_multiple_of(256)
+}
+
+/// Where the v2 route applies: the kernel contract (whole k groups, 32-bit activation offsets)
+/// plus the image-cost crossover.
+fn f8f4_v2_shape_ok(in_f: usize, m: usize) -> bool {
+    f8f4_v2_kernel_shape_ok(in_f)
+        && m >= F8F4_V2_MIN_ROWS
+        && (m as u64) * (in_f as u64) < (1u64 << 32)
+}
+
 fn f8f4_route_on(env: Option<&str>, gb10: bool) -> bool {
     match env {
         Some("1") => true,
@@ -3521,5 +3781,24 @@ mod f8f4_default_tests {
         assert!(f8f4_route_on(Some("1"), false), "1 opts a discrete card in");
         assert!(!f8f4_route_on(Some("yes"), false));
         assert!(f8f4_route_on(Some("yes"), true));
+    }
+
+    #[test]
+    fn f8f4_v2_applies_from_the_crossover_on_whole_k_groups() {
+        use super::{F8F4_V2_MIN_ROWS, f8f4_v2_shape_ok};
+        assert!(f8f4_v2_shape_ok(5120, F8F4_V2_MIN_ROWS));
+        assert!(f8f4_v2_shape_ok(17408, 8192));
+        assert!(
+            !f8f4_v2_shape_ok(5120, F8F4_V2_MIN_ROWS - 1),
+            "short prompts keep v1"
+        );
+        assert!(
+            !f8f4_v2_shape_ok(5184, 8192),
+            "in_f must be whole 256-value groups"
+        );
+        assert!(
+            !f8f4_v2_shape_ok(17408, 262144),
+            "32-bit activation offsets"
+        );
     }
 }

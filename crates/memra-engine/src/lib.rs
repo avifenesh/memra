@@ -1854,6 +1854,8 @@ pub(crate) struct F8f4ActGroup {
     pub(crate) in_f: usize,
     pub(crate) m: usize,
     pub(crate) scratch: Option<CudaSlice<u8>>,
+    /// The scratch is in the F8F4 v2 activation layout (`Engine::f8f4_v2_on`).
+    pub(crate) v2: bool,
 }
 
 /// Closes the scope (and frees its scratch, stream-ordered) when the group finishes.
@@ -24612,6 +24614,7 @@ impl Engine {
             in_f,
             m,
             scratch: None,
+            v2: false,
         });
         F8f4ActGroupGuard { engine: self }
     }
