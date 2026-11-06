@@ -7025,11 +7025,17 @@ impl HybridModel {
                 {
                     let (_, sm, mslab, _) = seg.as_mut().unwrap();
                     let pre_n = pre.len() / t;
-                    let xh_pre = match pre16 {
-                        Some(x) => x,
-                        None => e.f16_act(&pre, t * pre_n)?,
+                    // Build the f16 operand only for a weight the f16 GEMM can take.
+                    let f16_used = if Engine::f16_mirror_prefill(w_out) {
+                        let xh_pre = match pre16 {
+                            Some(x) => x,
+                            None => e.f16_act(&pre, t * pre_n)?,
+                        };
+                        e.try_f16_gemm_pre_into_prefill(w_out, &xh_pre, t, mslab)?
+                    } else {
+                        false
                     };
-                    if !e.try_f16_gemm_pre_into_prefill(w_out, &xh_pre, t, mslab)? {
+                    if !f16_used {
                         let y = e.matmul_prefill(w_out, &pre, t)?;
                         e.copy_into(mslab, 0, &y, t * n_embd)?;
                     }
@@ -7151,11 +7157,19 @@ impl HybridModel {
                         e.apply_pre_quant_scale(act, pqs.float_data(), ffn_down.in_features(), t)?;
                     }
                     // down GEMM into the ffn_out slab (f16 arm; fallback copies)
-                    let xh_act = match act16 {
-                        Some(x) => x,
-                        None => e.f16_act(act, t * n_ff)?,
+                    // Build the f16 operand only for a weight the f16 GEMM can take: without a
+                    // mirror the conversion's result was never read (GB10 GGUF: one dead
+                    // read-f32/write-f16 pass over [t, n_ff] per layer per chunk).
+                    let f16_used = if Engine::f16_mirror_prefill(ffn_down) {
+                        let xh_act = match act16 {
+                            Some(x) => x,
+                            None => e.f16_act(act, t * n_ff)?,
+                        };
+                        e.try_f16_gemm_pre_into_prefill(ffn_down, &xh_act, t, sl_fo)?
+                    } else {
+                        false
                     };
-                    if !e.try_f16_gemm_pre_into_prefill(ffn_down, &xh_act, t, sl_fo)? {
+                    if !f16_used {
                         // `act` already carries the AWQ scale (applied above), so both the f16
                         // GEMM and this fallback see the same, scaled input.
                         let y = e.matmul_prefill(ffn_down, &*act, t)?;
