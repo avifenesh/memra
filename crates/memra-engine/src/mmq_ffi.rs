@@ -2330,8 +2330,46 @@ impl Engine {
             "MMQ NVFP4 W4A8 requires in_f % 64 == 0, got {in_f}"
         );
         let act_bytes = unsafe { memra_mmq_nvfp4_w4a8_act_bytes(in_f as i32, m as i32) };
-        let mut scratch = self.alloc_uninit::<u8>(act_bytes)?;
         let mut y = self.alloc_uninit::<f32>(m * out_f)?;
+        // Quantize-once scope (`Engine::matmul_group`): the same unmodified activation already
+        // quantized for an earlier weight of the group reuses that e4m3 scratch, the bytes the
+        // quantizer would write again; the first weight keeps its scratch for the rest.
+        let mut group = self.f8f4_act_group.lock().unwrap();
+        let x_key = {
+            let stream = self.gpu.stream();
+            let (p, _g) = x.device_ptr(&stream);
+            p as u64
+        };
+        let in_group = f8f4
+            && group
+                .as_ref()
+                .is_some_and(|g| g.x_ptr == x_key && g.in_f == in_f && g.m == m);
+        if in_group && let Some(prev) = group.as_ref().and_then(|g| g.scratch.as_ref()) {
+            let rc = {
+                let stream = self.gpu.stream();
+                let (w_p, _gw) = bytes.device_ptr(&stream);
+                let (s_p, _gs) = prev.device_ptr(&stream);
+                let (y_p, _gy) = y.device_ptr_mut(&stream);
+                unsafe {
+                    memra_mmq_nvfp4_f8f4_preq(
+                        w_p as *const core::ffi::c_void,
+                        s_p as *const core::ffi::c_void,
+                        y_p as *mut f32,
+                        in_f as i32,
+                        out_f as i32,
+                        m as i32,
+                        stream.cu_stream() as *mut core::ffi::c_void,
+                        scale,
+                        rp as i32,
+                    )
+                }
+            };
+            if rc != 0 {
+                return Err(format!("memra_mmq_nvfp4_f8f4_preq(group) rc={rc}").into());
+            }
+            return Ok(y);
+        }
+        let mut scratch = self.alloc_uninit::<u8>(act_bytes)?;
         {
             let stream = self.gpu.stream();
             let (w_p, _gw) = bytes.device_ptr(&stream);
@@ -2371,6 +2409,9 @@ impl Engine {
             if rc != 0 {
                 return Err(format!("memra_mmq_nvfp4_w4a8(f8f4={f8f4}) rc={rc}").into());
             }
+        }
+        if in_group && let Some(g) = group.as_mut() {
+            g.scratch = Some(scratch);
         }
         Ok(y)
     }
