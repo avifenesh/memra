@@ -4879,6 +4879,12 @@ static __device__ __forceinline__ void fa_prefill_qw_db_body(
     const int warp = threadIdx.y;
     const int lane = threadIdx.x;
     const int wq = (HPC == 1) ? warp : (warp % N_WARPS);
+    // HPC > 1 (h2) PRECONDITIONS, guaranteed by the only dispatch (the h2 eligibility check in
+    // lib.rs: n_head even, n_head_kv > 0, query heads per KV head even): n_head % HPC == 0, so
+    // the early-out below is CTA-uniform (otherwise warps of the last CTA would return while
+    // the others wait at __syncthreads), and every CTA's heads share one KV head, so kv_off is
+    // the same for all its warps (otherwise the halves would stage different KV heads into the
+    // shared planes).
     const int head    = (HPC == 1) ? (int)blockIdx.y : (int)blockIdx.y * HPC + warp / N_WARPS;
     const int kv_head = head / (n_head / n_head_kv);
     const int q_base  = blockIdx.x * BQ;

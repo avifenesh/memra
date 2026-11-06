@@ -879,7 +879,8 @@ unsafe extern "C" {
         rp: i32,
     ) -> i32;
     /// The F8F4 activation quantizer with silu(gate) * up formed in-register exactly as
-    /// `silu_mul_f32` forms it; gate/up are [n_tokens, s01] f32.
+    /// `silu_mul_f32` forms it; gate/up are [n_tokens, s01] f32. Returns 0 / 1000+cudaError,
+    /// the code `memra_mmq_nvfp4_f8f4` reports for its own quantizer launch.
     pub fn memra_mmq_nvfp4_f8f4_quantize_act_silu(
         gate: *const f32,
         up: *const f32,
@@ -888,7 +889,7 @@ unsafe extern "C" {
         n_tokens: i32,
         s01: i64,
         stream: *mut core::ffi::c_void,
-    );
+    ) -> i32;
     /// Bytes for the per-block FP8 MMQ activation scratch (delegates to the F8F4 sizing — the
     /// two arms deliberately share ONE activation format, `block_e4m3_mmq`).
     pub fn memra_mmq_fp8_blk_act_bytes(in_f: i32, n_tokens: i32) -> usize;
@@ -2279,7 +2280,7 @@ impl Engine {
             let (s_p, _gs) = scratch.device_ptr_mut(&stream);
             let st = stream.cu_stream() as *mut core::ffi::c_void;
             unsafe {
-                memra_mmq_nvfp4_f8f4_quantize_act_silu(
+                let rq = memra_mmq_nvfp4_f8f4_quantize_act_silu(
                     g_p as *const f32,
                     u_p as *const f32,
                     s_p as *mut core::ffi::c_void,
@@ -2288,21 +2289,26 @@ impl Engine {
                     in_f as i64,
                     st,
                 );
-                memra_mmq_nvfp4_f8f4_preq(
-                    w_p as *const core::ffi::c_void,
-                    s_p as *const core::ffi::c_void,
-                    y_p as *mut f32,
-                    in_f as i32,
-                    out_f as i32,
-                    m as i32,
-                    st,
-                    scale,
-                    rp as i32,
-                )
+                if rq != 0 {
+                    rq
+                } else {
+                    memra_mmq_nvfp4_f8f4_preq(
+                        w_p as *const core::ffi::c_void,
+                        s_p as *const core::ffi::c_void,
+                        y_p as *mut f32,
+                        in_f as i32,
+                        out_f as i32,
+                        m as i32,
+                        st,
+                        scale,
+                        rp as i32,
+                    )
+                }
             }
         };
         if rc != 0 {
-            return Err(format!("memra_mmq_nvfp4_f8f4_preq(silu) rc={rc}").into());
+            // 1000+e: the fused quantizer launch; 2000+e: the GEMM (2904 on the stub build).
+            return Err(format!("memra_mmq_nvfp4_f8f4 silu quantize/preq rc={rc}").into());
         }
         Ok(y)
     }

@@ -41,8 +41,9 @@ static __device__ __forceinline__ uint16_t cvt_e4m3x2(float lo, float hi) {
 //   (0x7F7F7F7F identity) computes the bit-identical product at 16.06 = 1.994x. This is the
 //   FOURTH site of the same defect the audit's two prior fixes closed (mmq_fp8_blk.cu:256,
 //   mmq_nvfp4_w4a8.cu:1099). Verdict: DEAD-DOOR -- left as-is deliberately. This function is
-//   UNCALLED: the file's only live exports are memra_mmq_nvfp4_f8f4_act_bytes and
-//   memra_mmq_nvfp4_f8f4_quantize_act (the e4m3 activation quantizer); the actual f8f4 GEMM
+//   UNCALLED: the file's only live exports are memra_mmq_nvfp4_f8f4_act_bytes,
+//   memra_mmq_nvfp4_f8f4_quantize_act (the e4m3 activation quantizer) and its fused
+//   silu(gate) * up twin memra_mmq_nvfp4_f8f4_quantize_act_silu; the actual f8f4 GEMM
 //   tile lives in mmq_nvfp4_w4a8.cu, which already runs the fast form. Fixing this changes no
 //   emitted instruction. If this function is ever wired to a kernel, SWAP IT FIRST.
 // A = 16x32 weights (e4m3 containers), B = 32x8 activations, D/C = f32 16x8.
@@ -159,13 +160,16 @@ void memra_mmq_nvfp4_f8f4_quantize_act(
 }
 
 // Same launch geometry as memra_mmq_nvfp4_f8f4_quantize_act; gate/up are [n_tokens, s01] f32.
-void memra_mmq_nvfp4_f8f4_quantize_act_silu(
+// Returns 0 or 1000 + cudaError, the code memra_mmq_nvfp4_f8f4 reports for its quantizer.
+int memra_mmq_nvfp4_f8f4_quantize_act_silu(
         const float * gate, const float * up, void * vy, int in_f, int n_tokens, int64_t s01,
         cudaStream_t st) {
     const int64_t ne0 = GGML_PAD((int64_t) in_f, MATRIX_ROW_PADDING);
     const int block_size = 128;
     const dim3 num_blocks((unsigned) n_tokens, (unsigned) ((ne0 / 4 + block_size - 1) / block_size), 1);
     quantize_mmq_e4m3_d4_silu_kernel<<<num_blocks, block_size, 0, st>>>(gate, up, vy, in_f, s01, ne0, n_tokens);
+    cudaError_t e = cudaGetLastError();
+    return e == cudaSuccess ? 0 : 1000 + (int) e;
 }
 
 } // extern "C"

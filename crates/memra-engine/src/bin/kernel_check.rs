@@ -3589,6 +3589,106 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             println!("MMQ-F8F4-SILU-FUSED: SKIP (F8F4 route off on this device)");
                         }
                     }
+                    // --- The two exact F8F4 prefill rewrites, on the production upload of the
+                    // loaded weights (real scale, rp layout) and through the dispatch itself
+                    // (memra#1073 review). MMQ-F8F4-SILU-ROUTE: `matmul_prefill_silu_f8f4`
+                    // against `matmul_prefill(w, silu_mul(g, u))`, so a dispatch arm that lands
+                    // ahead of the F8F4 entry without `f8f4_prefill_direct` learning it fails
+                    // here. MMQ-F8F4-GROUP: `matmul_group` (the quantize-once scope) against one
+                    // `matmul` per weight on the FFN gate/up pair the prime groups. Both must
+                    // agree on every f32 bit; the production prefill shape (T=1024) must take
+                    // the fused route on a device whose F8F4 route is on.
+                    if let (Some(_), Some(_), Some(_)) = (
+                        g.find("blk.0.ffn_down.weight")
+                            .filter(|t| t.ggml_type == GgmlType::NVFP4),
+                        g.find("blk.0.ffn_gate.weight")
+                            .filter(|t| t.ggml_type == GgmlType::NVFP4),
+                        g.find("blk.0.ffn_up.weight")
+                            .filter(|t| t.ggml_type == GgmlType::NVFP4),
+                    ) {
+                        if e.mmq_f8f4_route() {
+                            use memra_engine::model::GpuTensor;
+                            let src = memra_gguf::source::GgufSource(&g);
+                            let wd =
+                                GpuTensor::load_from_source(&e, &src, "blk.0.ffn_down.weight")?;
+                            let wg =
+                                GpuTensor::load_from_source(&e, &src, "blk.0.ffn_gate.weight")?;
+                            let wu = GpuTensor::load_from_source(&e, &src, "blk.0.ffn_up.weight")?;
+                            let n_ff = wd.in_features();
+                            let n_embd = wg.in_features();
+                            let bit_bad = |a: &[f32], b: &[f32]| {
+                                a.len() != b.len()
+                                    || a.iter()
+                                        .zip(b.iter())
+                                        .any(|(x, y)| x.to_bits() != y.to_bits())
+                            };
+                            let bad_count = |a: &[f32], b: &[f32]| {
+                                a.iter()
+                                    .zip(b.iter())
+                                    .filter(|(x, y)| x.to_bits() != y.to_bits())
+                                    .count()
+                                    + a.len().abs_diff(b.len())
+                            };
+                            for tt in [130usize, 1024] {
+                                let gate: Vec<f32> =
+                                    (0..tt * n_ff).map(|i| pr(i + 101) * 4.0).collect();
+                                let up: Vec<f32> =
+                                    (0..tt * n_ff).map(|i| pr(i + 103) * 0.5).collect();
+                                let gd = e.htod(&gate)?;
+                                let ud = e.htod(&up)?;
+                                if e.f8f4_prefill_direct(&wd, tt) {
+                                    let mut act = e.uninit(tt * n_ff)?;
+                                    e.silu_mul(&gd, &ud, &mut act, tt * n_ff)?;
+                                    let ya = e.dtoh(&e.matmul_prefill(&wd, &act, tt)?)?;
+                                    let yb =
+                                        e.dtoh(&e.matmul_prefill_silu_f8f4(&wd, &gd, &ud, tt)?)?;
+                                    let nbad = bad_count(&ya, &yb);
+                                    println!(
+                                        "MMQ-F8F4-SILU-ROUTE blk.0.ffn_down.weight [NVFP4 loaded] T={tt}: bit-mismatch {nbad}/{} {}",
+                                        ya.len(),
+                                        if bit_bad(&ya, &yb) {
+                                            fails += 1;
+                                            "FAIL"
+                                        } else {
+                                            "OK"
+                                        }
+                                    );
+                                } else if tt == 1024 {
+                                    fails += 1;
+                                    println!(
+                                        "MMQ-F8F4-SILU-ROUTE blk.0.ffn_down.weight [NVFP4 loaded] T={tt}: \
+                                         f8f4_prefill_direct refused the production prefill shape FAIL"
+                                    );
+                                } else {
+                                    println!(
+                                        "MMQ-F8F4-SILU-ROUTE blk.0.ffn_down.weight T={tt}: not on the direct route (informational)"
+                                    );
+                                }
+                                let x: Vec<f32> = (0..tt * n_embd).map(|i| pr(i + 107)).collect();
+                                let xd = e.htod(&x)?;
+                                let grouped = e.matmul_group(&[&wg, &wu], &xd, tt)?;
+                                let y1 = e.dtoh(&e.matmul(&wg, &xd, tt)?)?;
+                                let y2 = e.dtoh(&e.matmul(&wu, &xd, tt)?)?;
+                                let g1 = e.dtoh(&grouped[0])?;
+                                let g2 = e.dtoh(&grouped[1])?;
+                                let nbad = bad_count(&y1, &g1) + bad_count(&y2, &g2);
+                                println!(
+                                    "MMQ-F8F4-GROUP blk.0.ffn_gate+ffn_up [NVFP4 loaded] T={tt}: bit-mismatch {nbad}/{} {}",
+                                    y1.len() + y2.len(),
+                                    if bit_bad(&y1, &g1) || bit_bad(&y2, &g2) {
+                                        fails += 1;
+                                        "FAIL"
+                                    } else {
+                                        "OK"
+                                    }
+                                );
+                            }
+                        } else {
+                            println!(
+                                "MMQ-F8F4-SILU-ROUTE / MMQ-F8F4-GROUP: SKIP (F8F4 route off on this device)"
+                            );
+                        }
+                    }
                     // --- STAGE 2: VENDORED llama NVFP4 W4A8 MMQ GEMM vs the f32 dequant oracle. ---
                     // The accuracy-safe rung: weight FP4 is LUT-dequantized to int8 (bit-exact) and the
                     // activation stays q8_1 int8 -> rel MUST sit in the int8-activation band (~1e-3..1e-2),
