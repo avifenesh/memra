@@ -134,6 +134,7 @@ The bug: `dspark_on` was derived before the conversion's session (`dspark_prefix
 | RTX 5090, main 3bbdf42ff9, doors armed (`5090-capture-main-3bbd/`) | 4/4 identical | 4 / 4 / 0 / 0 | FAIL |
 | RTX 5090, c28fb5ee0e, doors armed (`5090-capture-fix-c28f/`) | 4/4 identical | 1 / 1 / 3 / 3 | PASS |
 | GB10 (spark-b23d), c28fb5ee0e, doors on by device default (`gb10-capture-fix-c28f/`) | 4/4 identical | 1 / 1 / 3 / 3 | PASS |
+| RTX 5090, c28fb5ee0e server, hardened gate d1e57791d0 at its default 10 / 14, doors armed (`5090-capture-fix-default-d1e5/`) | 4/4 identical | 1 / 1 / 3 / 3 | PASS, exit 0 |
 
 The two 5090 arms produced completions of the same lengths (428 / 518 / 436 / 469), each identical to its reference. The 5090 runs used `GATE_P_PARAS=10 GATE_S_PARAS=12` (x0 / a / b prompts 1,745 / 3,857 / 3,961 tokens); the GB10 run used 70 / 80 (12,243 / 26,239 / 26,343).
 
@@ -143,7 +144,7 @@ The two 5090 arms produced completions of the same lengths (428 / 518 / 436 / 46
 - a refused request prints its HTTP status and body;
 - a failed arm run, reference run, compare or shape check sets the exit status, and the last line is `COLD-DRAFTER GATE PASS` or `FAIL`.
 
-`tools/test_dspark_cold_drafter_gate.py` runs the script against a stub server, no GPU. It has four cases: agreeing (24 GB reading, expects 10 / 14), refused, divergent (`[N/A]` reading, expects 70 / 80), and re-vetoed (4 / 4 / 0 / 0). Only the agreeing case may exit 0. Against main's script all four cases fail, because it exits 0 in every one. Every receipt above has its `arm.jsonl` and `ref.jsonl` and a compare that ran.
+`tools/test_dspark_cold_drafter_gate.py` runs the script against a stub server, no GPU. It has four cases: agreeing (24 GB reading, expects 10 / 14), refused, divergent (`[N/A]` reading, expects 70 / 80), and re-vetoed (4 / 4 / 0 / 0). Only the agreeing case may exit 0. Against main's script all four cases fail, because it exits 0 in every one. The hardened gate at its default sizes on the 5090 (prompts 1,745 / 4,205 / 4,309 tokens) passes and exits 0 (`5090-capture-fix-default-d1e5/`). Every receipt above has its `arm.jsonl` and `ref.jsonl` and a compare that ran.
 
 **GB10 multi-turn persistence** (`gb10-capture/multi-turn/`, spark-b23d, GGUF DFlash2, doors on by device default, `MEMRA_PREFIX_STABLE_BOUNDARY=0`, client on the unit). Order main/fix/fix/main, fresh boot each. Each run has 4 sessions of three turns:
 1. x0: a plain greedy-penalized prime of P (12.2k tokens);
