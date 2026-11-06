@@ -7132,57 +7132,80 @@ impl HybridModel {
                     // AWQ (memra#253): the f16out arm writes the down projection's input
                     // straight to f16 from gate/up, so the f32 activation the per-input-channel
                     // scale multiplies never exists. A calibrated artifact takes the f32 arm.
-                    let act16 = if Self::f16out_on(e, t)
+                    // silu(gate)*up fused into the down projection's e4m3 activation quantize when
+                    // the down GEMM is the F8F4 MMQ entry and the activation is plain silu: the same
+                    // e4m3 bytes and scales, without writing and re-reading the f32 [t, n_ff]
+                    // activation (GB10 lane, 2026-11-06).
+                    let fuse_down = !Self::f16out_on(e, t)
                         && self.cfg.m3.is_none()
                         && d_lim.is_none()
                         && ffn_down_pqs.is_none()
-                    {
-                        let mut a16 = e.alloc_u8_uninit(t * n_ff * 2)?;
-                        e.silu_mul_f16out(gate_src, up_src, act, &mut a16, t * n_ff)?;
-                        Some(a16)
-                    } else {
-                        Self::ffn_act_lim(
-                            e,
-                            &self.cfg,
-                            gate_src,
-                            up_src,
-                            1.0,
-                            1.0,
-                            d_lim,
-                            act,
-                            t * n_ff,
-                        )?;
-                        None
-                    };
-                    // Scale BEFORE the f16 conversion: `try_f16_gemm_pre_into` below consumes
-                    // `xh_act`, so a scale applied after it would be skipped entirely whenever an
-                    // f16 mirror exists for this weight (memra#253).
-                    if let Some(pqs) = ffn_down_pqs.as_ref() {
-                        e.apply_pre_quant_scale(act, pqs.float_data(), ffn_down.in_features(), t)?;
-                    }
-                    // down GEMM into the ffn_out slab (f16 arm; fallback copies)
-                    // Build the f16 operand only for a weight the f16 GEMM can take: without a
-                    // mirror the conversion's result was never read (GB10 GGUF: one dead
-                    // read-f32/write-f16 pass over [t, n_ff] per layer per chunk).
-                    let f16_used = if Engine::f16_mirror_prefill(ffn_down) {
-                        let xh_act = match act16 {
-                            Some(x) => x,
-                            None => e.f16_act(act, t * n_ff)?,
-                        };
-                        e.try_f16_gemm_pre_into_prefill(ffn_down, &xh_act, t, sl_fo)?
-                    } else {
-                        false
-                    };
-                    if !f16_used {
-                        // `act` already carries the AWQ scale (applied above), so both the f16
-                        // GEMM and this fallback see the same, scaled input.
-                        let y = e.matmul_prefill(ffn_down, &*act, t)?;
-                        // The captured S-glue segment reads the slab's fixed address; the eager
-                        // tail reads the GEMM output where it already is.
+                        && e.f8f4_prefill_direct(ffn_down, t);
+                    if fuse_down {
+                        let y = e.matmul_prefill_silu_f8f4(ffn_down, gate_src, up_src, t)?;
                         if use_seg {
                             e.copy_into(sl_fo, 0, &y, t * n_embd)?;
                         } else {
                             fo_owned = Some(y);
+                        }
+                    } else {
+                        let act16 = if Self::f16out_on(e, t)
+                            && self.cfg.m3.is_none()
+                            && d_lim.is_none()
+                            && ffn_down_pqs.is_none()
+                        {
+                            let mut a16 = e.alloc_u8_uninit(t * n_ff * 2)?;
+                            e.silu_mul_f16out(gate_src, up_src, act, &mut a16, t * n_ff)?;
+                            Some(a16)
+                        } else {
+                            Self::ffn_act_lim(
+                                e,
+                                &self.cfg,
+                                gate_src,
+                                up_src,
+                                1.0,
+                                1.0,
+                                d_lim,
+                                act,
+                                t * n_ff,
+                            )?;
+                            None
+                        };
+                        // Scale BEFORE the f16 conversion: `try_f16_gemm_pre_into` below consumes
+                        // `xh_act`, so a scale applied after it would be skipped entirely whenever an
+                        // f16 mirror exists for this weight (memra#253).
+                        if let Some(pqs) = ffn_down_pqs.as_ref() {
+                            e.apply_pre_quant_scale(
+                                act,
+                                pqs.float_data(),
+                                ffn_down.in_features(),
+                                t,
+                            )?;
+                        }
+                        // down GEMM into the ffn_out slab (f16 arm; fallback copies)
+                        // Build the f16 operand only for a weight the f16 GEMM can take: without a
+                        // mirror the conversion's result was never read (GB10 GGUF: one dead
+                        // read-f32/write-f16 pass over [t, n_ff] per layer per chunk).
+                        let f16_used = if Engine::f16_mirror_prefill(ffn_down) {
+                            let xh_act = match act16 {
+                                Some(x) => x,
+                                None => e.f16_act(act, t * n_ff)?,
+                            };
+                            e.try_f16_gemm_pre_into_prefill(ffn_down, &xh_act, t, sl_fo)?
+                        } else {
+                            false
+                        };
+                        if !f16_used {
+                            // `act` already carries the AWQ scale (applied above), so both the f16
+                            // GEMM and this fallback see the same, scaled input.
+                            let y = e.matmul_prefill(ffn_down, &*act, t)?;
+                            // The captured S-glue segment reads the slab's fixed address; the eager
+                            // tail reads the GEMM output where it already is.
+                            if use_seg {
+                                e.copy_into(sl_fo, 0, &y, t * n_embd)?;
+                            } else {
+                                fo_owned = Some(y);
+                            }
                         }
                     }
                 }
