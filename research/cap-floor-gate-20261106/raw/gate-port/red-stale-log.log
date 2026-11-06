@@ -1,0 +1,15 @@
+test_occupied_port_is_refused_before_boot (__main__.ColdDrafterGateScript.test_occupied_port_is_refused_before_boot) ... FAIL
+
+======================================================================
+FAIL: test_occupied_port_is_refused_before_boot (__main__.ColdDrafterGateScript.test_occupied_port_is_refused_before_boot)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<scratch>/wt/tools/test_dspark_cold_drafter_gate.py", line 221, in test_occupied_port_is_refused_before_boot
+    self.assertNotIn("SHAPE PASS", report)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 'SHAPE PASS' unexpectedly found in 'gate sizes GATE_P_PARAS=10 GATE_S_PARAS=14 memory.total=24463 MiB (GATE_VRAM_MIB override) MEMRA_CTX=16384 DOORS=explicit port=46347\narm run FAILED (serve-arm.log)\nreference run FAILED (serve-ref.log)\nmissing run file: <tmp>/tmpviyw417n/ok/arm.jsonl <tmp>/tmpviyw417n/ok/ref.jsonl\nGATE FAIL\n[dspark] cache-preferred:=1\nDSPARK cold-drafter restore:=1\nDSPARK restore:=1\ninsert (dspark-boundary):=1\nshape cache-preferred=1 ok\nshape cold-drafter restore=1 ok\nshape DSPARK restore=1 ok\nshape insert (dspark-boundary)=1 ok\nSHAPE PASS\nCOLD-DRAFTER GATE FAIL\n'
+
+----------------------------------------------------------------------
+Ran 1 test in 0.584s
+
+FAILED (failures=1)

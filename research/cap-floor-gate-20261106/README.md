@@ -6,7 +6,7 @@ Verdict: a default boot of a MoE model with a draft head panicked before it list
 
 Mechanism:
 
-- `decode_step_batch` refuses B above the decode batch cap unless the model has the exact-16 tier (`decode_batch_exact16_ok`). A MoE FFN refuses that tier (`[exact16] REFUSED by L0 MoE ffn`), so `chunk_cap_for` gives a qwen35_moe trunk a wave cap of 8.
+- `decode_step_batch` refuses B above the decode batch cap unless the model has the exact-16 tier (`decode_batch_exact16_ok`). A MoE FFN refuses that tier (the predicate requires a non-MoE trunk; `MEMRA_EXACT16_WHY=1` names the refusing layer), so `chunk_cap_for` gives a qwen35_moe trunk a wave cap of 8: both MoE boots log `decode wave cap 8; scheduler tick cap 8`.
 - `spec_cost_calibrate` measured plain points `[1, 2, 4, 8, 16]` whatever the cap: 9fe005013c introduced fixed points up to 16, and 547771a2ed made the table follow the cap upward (32 on the b32 tier) through `b <= plain_cap.max(16)` and `interpolate_n(&plain, plain_cap.max(16))`. The `max(16)` kept the table at the 16 entries it always had; no boot with a cap below 16 ran the calibration before, so nothing caught it.
 - Every MTP-served model on the default env runs the calibration at boot, so a MoE with an embedded MTP head (Ornith-1.5-35B-A3B) or an attached NextN draft (Qwen3.6-35B-A3B + owntrim) panicked in the B=16 step.
 
@@ -16,12 +16,15 @@ Change (`fix(engine,server)`):
 - Downstream readers of `plain_ms`: `spec_plain_ms` already clamps its chunk to the table length. `rider_forward_caps` indexed `plain_ms[min(riders, 16) - 1]`, which panics on an 8-entry table at 9 or more riders; it now prices the marginal plain row inside one full wave, `min(riders, 16, table length)`, which is unchanged for tables of 16 or more.
 - `tools/serve-smoke.sh` arm 13 boots Qwen3.6-35B-A3B + its owntrim draft on the default env and requires the listening line, a `[spec-cost]` line with `plain_cap=8` and 8 plain entries, one greedy answer and no panic.
 
-Tests (CPU, dev desk; `raw/unit/`):
+Tests (CPU host, no GPU; `raw/unit/`):
 
 | test | before the fix | after |
 |---|---|---|
 | `spec_cost::tests::plain_points_stop_at_the_decode_wave_cap` | FAILED: cap 1 measured `[1, 2, 4, 8, 16]` (`red-engine.log`) | ok (`green-engine-unit.log`) |
 | `worker::tests::rider_caps_read_a_table_shorter_than_16_rows` | FAILED: `index out of bounds: the len is 8 but the index is 8` (`red-server.log`) | ok (`green-server-unit.log`) |
+| `spec_cost::tests::calibration_measures_the_plain_table_at_the_wave_cap` (source anchor, added on review) | FAILED on the landing tip's `spec_cost.rs`: no `plain_points(plain_cap)` (`red2-engine.log`) | ok (`cpu-suites.txt`) |
+
+serve-smoke arm 13 on the RTX 5090 (`raw/serve-smoke/`): the landing tip's hashed cell build with this lane's `serve-smoke.sh` (`red-landing-tip/serving.log`) against the lane head's cell-evidence serving run.
 
 Boot cells (RTX 5090, `raw/boot/`): see Results.
 
@@ -39,9 +42,11 @@ On 2026-11-06 the gate's reference boot never came up while a foreign server hel
 
 `tools/test_dspark_cold_drafter_gate.py` gained three cases (`raw/gate-port/`): a foreign server already on the port, a separate process that takes the port after the pre-flight check, and a responder that never logs the listening line. Against the gate before this change (with only `GATE_PORT` swapped in so the test can steer it) all three fail, and the occupied-port case reports `GATE PASS` on the foreign server's texts (`red-before.log`, 3 of 7 failed). With the guard all 7 pass (`green-after.log`).
 
+On review: a refused boot writes no server log, so a rerun into the same out dir read the previous run's `serve-arm.log` and could print `SHAPE PASS` under a failing verdict. The gate now removes both serve logs with the run files and names a missing arm log as a failure. The occupied-port case pre-seeds a passing stale `serve-arm.log`: it fails against the first guarded gate (`red-stale-log.log`) and passes now (`green-after-review.log`, 7 of 7).
+
 ## 4. Lost line continuations
 
-`dspark_prefer_restorable_hit`'s receipt printed 22 spaces inside "plain hit {plain_len}" and before "prime": the backslash that continues a string line was gone. The same shape was in nineteen more messages (eighteen in engine and server code, two in probe binaries). `string_continuation_tests` in memra-server is the census: a one-line literal in any crate's `src/` outside `src/bin/` must not hold a run of eight or more spaces between two of its characters (comment lines and fixture lines with a newline escape are skipped). Red with 16 lines on a tree that had two already fixed (`raw/unit/red-lint.log`), green after.
+`dspark_prefer_restorable_hit`'s receipt printed 22 spaces inside "plain hit {plain_len}" and before "prime": the backslash that continues a string line was gone. The same shape was in nineteen more messages (eighteen in engine and server code, two in probe binaries). `string_continuation_tests` in memra-server is the census. It lexes every crate's `src/` outside `src/bin/` (probe binaries align columns on purpose): no non-raw string literal may hold a run of eight or more spaces between two of its characters on one source line before the literal's first newline. Comments, raw strings, char literals and lifetimes are skipped, a literal is followed across `\` continuations, and text after an escaped or real newline inside a literal is multi-line fixture text (aligned /proc/meminfo lines). The first version read one line at a time; red with 16 lines on a tree that had two already fixed (`raw/unit/red-lint.log`). The review found its blind spots: a run on the second line of a continued literal, and a run before a `\n` escape on the same line. The lexer version's cases fail against the per-line census (`red2-server.log`) and pass now; the tree has no hit.
 
 ## Conditions
 
@@ -51,9 +56,9 @@ RTX 5090 Laptop GPU, 24463 MiB, driver 615.71.09, local rig, 2026-11-06 to 07, u
 |---|---|---|
 | base | main 5d70118b99 (cell-evidence build) | `505ffce123ab3589e2e2c8cb54cef23fb27d01de29ff33dd1b3b5985dcc446ba` |
 | land | landing tip 0a34ce3444 (cell-evidence build) | `9a4a0f78d2c809866e8b19125641457aa740793156736aa096c602ab749ee9ce` |
+| fix | 8b5f51db31, a pre-rebase state of this lane; its non-test engine and server code equals the lane head's | `c81fc06e79a158ed58d92a8d0a71ddb2e9c67fa0fa566e9bda19b1bba354e734` |
 
 ## Results
-| fix | 8b5f51db31, this lane before the FLAGS.md wording was folded in (code identical to the lane head) | `c81fc06e79a158ed58d92a8d0a71ddb2e9c67fa0fa566e9bda19b1bba354e734` |
 
 Cells (`raw/boot/before/cells.txt`, `raw/boot/after/cells.txt`; one JSON row per boot in `rows.jsonl`):
 
@@ -74,6 +79,8 @@ The exact-16 9B measures the same six plain points before and after, so its tabl
 ## Files
 
 - `boot_cells.py`: the boot harness (pre-flight port check, ownership check, one greedy request per boot).
+- `serve_smoke_red.py`: runs this lane's `serve-smoke.sh` against the landing tip's hashed cell build, the way `cell_evidence.py` runs serving.
 - `raw/boot/{before,after}/`: per-boot logs (seconds since spawn on every line), `rows.jsonl`, `cells.txt`, `run.out`, binary hashes.
-- `raw/unit/`: red and green logs of the two Bug 1 unit tests and the continuation census.
+- `raw/unit/`: red and green logs of the Bug 1 unit tests, the calibration source anchor and both census versions; `cpu-suites.txt` is the CPU suite summary.
+- `raw/serve-smoke/`: serve-smoke with arm 13 on the landing tip (red).
 - `raw/gate-port/`: the cold-drafter gate test against the unguarded gate (`red-before.log`) and the guarded one (`green-after.log`).

@@ -1,0 +1,28 @@
+warning: memra-engine@0.138.0: nvcc from MEMRA_NVCC: <work>/cuda-13.1/bin/nvcc
+    Finished `release` profile [optimized] target(s) in 5m 37s
+     Running unittests src/lib.rs (<work>/target/release/deps/memra_server-3a1ff4cec016dc18)
+
+running 2 tests
+test string_continuation_tests::the_census_reads_a_lost_continuation_and_nothing_else ... FAILED
+test string_continuation_tests::string_literals_keep_their_line_continuations ... ok
+
+failures:
+
+---- string_continuation_tests::the_census_reads_a_lost_continuation_and_nothing_else stdout ----
+
+thread 'string_continuation_tests::the_census_reads_a_lost_continuation_and_nothing_else' (266133) panicked at crates/memra-server/src/lib.rs:31569:13:
+assertion `left == right` failed:     eprintln!("aaa \
+              bbb                      ccc \
+              ddd");
+
+  left: []
+ right: [38]
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    string_continuation_tests::the_census_reads_a_lost_continuation_and_nothing_else
+
+test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 1192 filtered out; finished in 0.07s
+
+error: test failed, to rerun pass `-p memra-server --lib`
