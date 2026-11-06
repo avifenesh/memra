@@ -184,7 +184,7 @@ and attention (50.9 s against 42.3 s; 66 TFLOPS against FA2's 82 on BF16 KV).
 All on unit 1 against the round-1 stack `ef37ca487b` (P), fresh boot per cell, both orders,
 same answers in every boot unless noted. Ledger rows 10-14.
 
-### Prime chunk 8192 rows (adopted, GB10 default for the serial GDN hybrid trunk)
+### Prime chunk 8192 rows (measured, then rejected on peer latency; not landed)
 
 `round2-chunk-ab/`, cells S C8 C16 C16 C8 S on the PR binary with `MEMRA_PRIME_CHUNK`:
 
@@ -199,6 +199,14 @@ extra 0.57% at 131k costs 3.8 GB more booking and 7 GiB of MemAvailable per conc
 prime. At 259,951 tokens with 8,192 rows the answer equals base and MemAvailable stayed above
 71.8 GiB (`round2-mem-256k-chunk8192/`; a build ran alongside, so its 473.2 s is not a timing).
 Decision record: `docs/decisions/GB10-PRIME-CHUNK-8192.md`.
+
+**Rejected before landing (review item, fairness cell `fairness-chunk/`).** The prime walker serves
+its peers between chunks, so the chunk is the peer quantum. Beside a cold 131,042-token prime with
+three cold 2,003-token peers at +10/+15/+20 s, cells C4 C8 C8 C4: the long prime 196.42 / 197.39 s
+at 4,096 and 195.21 / 195.18 s at 8,192 (-0.6%), the peers 5.09-8.72 s at 4,096 and 6.83-13.23 s at
+8,192 (worst 8.7 -> 13.2 s), `tick_max_ms` 7,362 / 7,350 against 14,255 / 14,243. The landed lane
+keeps 4,096 rows, so its 131k cold TTFT is about 0.6% above the round-2 stack figures that include
+this lever (ledger rows 14 and 15). Harness: `harness/fairness_cell.py`, `harness/gb10-fairness.sh`.
 
 ### Fused activation quantize, quantize-once groups, four-row L2 norm
 
