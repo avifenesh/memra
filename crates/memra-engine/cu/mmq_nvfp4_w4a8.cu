@@ -999,6 +999,14 @@ static __device__ __forceinline__ void load_tiles_nvfp4_f8f4(
     constexpr int rows_per_warp = warp_size / threads_per_row;  // 8
     const int kbx = threadIdx.x % threads_per_row;
     const int row_in_warp = threadIdx.x / threads_per_row;
+    // The r == 1 LUT (every e2m1 value times 1.0f, the products the per-sub fold forms).
+    int lut_one[4];
+#pragma unroll
+    for (int w = 0; w < 4; ++w) {
+        const uint16_t p0 = memra_cvt_e4m3x2(memra_e2m1_f32[4*w+0] * 1.0f, memra_e2m1_f32[4*w+1] * 1.0f);
+        const uint16_t p1 = memra_cvt_e4m3x2(memra_e2m1_f32[4*w+2] * 1.0f, memra_e2m1_f32[4*w+3] * 1.0f);
+        lut_one[w] = (int) ((uint32_t) p0 | ((uint32_t) p1 << 16));
+    }
 
 #pragma unroll
     for (int i0 = 0; i0 < mmq_y; i0 += rows_per_warp * nwarps) {
@@ -1025,16 +1033,29 @@ static __device__ __forceinline__ void load_tiles_nvfp4_f8f4(
             const float sb = ggml_cuda_ue4m3_to_fp32(src_d[2 * pair + 1]);
             const float s32 = fmaxf(fmaxf(sa, sb), 1e-30f);
             x_df[i * MMQ_MMA_TILE_X_K_F8F4 + 2 * kbx + pair] = s32;
+            // One ratio LUT per pair (GB10 lane, 2026-11-06): a sub whose scale IS the pair max has
+            // r = s/s32 = 1.0f exactly, and its LUT is lut_one (the same products by 1.0f, built
+            // once per thread). Only the other sub's ratio is divided and folded. Both-zero pairs
+            // (s32 = 1e-30, neither scale equal to it) take the divided r = 0 on both subs, as
+            // before. Branch-free selects keep the warp converged; the bytes are unchanged.
+            const bool a_max = (sa == s32);
+            const bool b_one = (sb == s32) && !a_max;
+            const float r_other = (a_max ? sb : sa) / s32;   // in [0, 1]
+            int lut_other[4];
+#pragma unroll
+            for (int w = 0; w < 4; ++w) {
+                const uint16_t p0 = memra_cvt_e4m3x2(memra_e2m1_f32[4*w+0] * r_other, memra_e2m1_f32[4*w+1] * r_other);
+                const uint16_t p1 = memra_cvt_e4m3x2(memra_e2m1_f32[4*w+2] * r_other, memra_e2m1_f32[4*w+3] * r_other);
+                lut_other[w] = (int) ((uint32_t) p0 | ((uint32_t) p1 << 16));
+            }
 #pragma unroll
             for (int half = 0; half < 2; ++half) {
                 const int sub = 2 * pair + half;
-                const float r = (half == 0 ? sa : sb) / s32;   // in (0, 1]
+                const bool use_one = (half == 0) ? a_max : b_one;
                 int lut[4];
 #pragma unroll
                 for (int w = 0; w < 4; ++w) {
-                    const uint16_t p0 = memra_cvt_e4m3x2(memra_e2m1_f32[4*w+0] * r, memra_e2m1_f32[4*w+1] * r);
-                    const uint16_t p1 = memra_cvt_e4m3x2(memra_e2m1_f32[4*w+2] * r, memra_e2m1_f32[4*w+3] * r);
-                    lut[w] = (int) ((uint32_t) p0 | ((uint32_t) p1 << 16));
+                    lut[w] = use_one ? lut_one[w] : lut_other[w];
                 }
                 const int2 q0 = get_int_from_table_16(src_qs[2 * sub + 0], (const int8_t *) lut);
                 const int2 q1 = get_int_from_table_16(src_qs[2 * sub + 1], (const int8_t *) lut);
@@ -1059,6 +1080,14 @@ static __device__ __forceinline__ void dequant_tiles_nvfp4_f8f4(
     constexpr int rows_per_warp = warp_size / threads_per_row;
     const int kbx = threadIdx.x % threads_per_row;
     const int row_in_warp = threadIdx.x / threads_per_row;
+    // The r == 1 LUT (every e2m1 value times 1.0f, the products the per-sub fold forms).
+    int lut_one[4];
+#pragma unroll
+    for (int w = 0; w < 4; ++w) {
+        const uint16_t p0 = memra_cvt_e4m3x2(memra_e2m1_f32[4*w+0] * 1.0f, memra_e2m1_f32[4*w+1] * 1.0f);
+        const uint16_t p1 = memra_cvt_e4m3x2(memra_e2m1_f32[4*w+2] * 1.0f, memra_e2m1_f32[4*w+3] * 1.0f);
+        lut_one[w] = (int) ((uint32_t) p0 | ((uint32_t) p1 << 16));
+    }
 
 #pragma unroll
     for (int i0 = 0; i0 < mmq_y; i0 += rows_per_warp * nwarps) {
@@ -1083,16 +1112,29 @@ static __device__ __forceinline__ void dequant_tiles_nvfp4_f8f4(
             const float sb = ggml_cuda_ue4m3_to_fp32(src_d[2 * pair + 1]);
             const float s32 = fmaxf(fmaxf(sa, sb), 1e-30f);
             x_df[i * MMQ_MMA_TILE_X_K_F8F4 + 2 * kbx + pair] = s32;
+            // One ratio LUT per pair (GB10 lane, 2026-11-06): a sub whose scale IS the pair max has
+            // r = s/s32 = 1.0f exactly, and its LUT is lut_one (the same products by 1.0f, built
+            // once per thread). Only the other sub's ratio is divided and folded. Both-zero pairs
+            // (s32 = 1e-30, neither scale equal to it) take the divided r = 0 on both subs, as
+            // before. Branch-free selects keep the warp converged; the bytes are unchanged.
+            const bool a_max = (sa == s32);
+            const bool b_one = (sb == s32) && !a_max;
+            const float r_other = (a_max ? sb : sa) / s32;   // in [0, 1]
+            int lut_other[4];
+#pragma unroll
+            for (int w = 0; w < 4; ++w) {
+                const uint16_t p0 = memra_cvt_e4m3x2(memra_e2m1_f32[4*w+0] * r_other, memra_e2m1_f32[4*w+1] * r_other);
+                const uint16_t p1 = memra_cvt_e4m3x2(memra_e2m1_f32[4*w+2] * r_other, memra_e2m1_f32[4*w+3] * r_other);
+                lut_other[w] = (int) ((uint32_t) p0 | ((uint32_t) p1 << 16));
+            }
 #pragma unroll
             for (int half = 0; half < 2; ++half) {
                 const int sub = 2 * pair + half;
-                const float r = (half == 0 ? sa : sb) / s32;
+                const bool use_one = (half == 0) ? a_max : b_one;
                 int lut[4];
 #pragma unroll
                 for (int w = 0; w < 4; ++w) {
-                    const uint16_t p0 = memra_cvt_e4m3x2(memra_e2m1_f32[4*w+0] * r, memra_e2m1_f32[4*w+1] * r);
-                    const uint16_t p1 = memra_cvt_e4m3x2(memra_e2m1_f32[4*w+2] * r, memra_e2m1_f32[4*w+3] * r);
-                    lut[w] = (int) ((uint32_t) p0 | ((uint32_t) p1 << 16));
+                    lut[w] = use_one ? lut_one[w] : lut_other[w];
                 }
                 const int2 q0 = get_int_from_table_16(src_qs[2 * sub + 0], (const int8_t *) lut);
                 const int2 q1 = get_int_from_table_16(src_qs[2 * sub + 1], (const int8_t *) lut);
