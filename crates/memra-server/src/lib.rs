@@ -18813,11 +18813,13 @@ default_reasoning_effort = "always"
     }
 
     /// n > 1 (2026-11-06): a choice group reports its outcome to `http_metrics` as n = 1 does.
-    /// A stream whose rows all finish is a clean 200 (not incomplete, truncated or an error); a
-    /// stream whose row fails after the headers is an error and truncated; a non-streaming
-    /// deadline partial (HTTP 200 carrying an error) is an error. Before, `multi_choice` never
-    /// took the observation, so every group stream counted as incomplete, truncated and an
-    /// error, and the partial as clean.
+    /// A stream whose rows all finish is a clean 200 (not incomplete, truncated or an error),
+    /// also when the client closes right after the terminal frame; a stream whose row fails after
+    /// the headers is an error and truncated, also when the client closes right after the error
+    /// frame (not a cancel); a non-streaming deadline partial (HTTP 200 carrying an error) is an
+    /// error. Before, `multi_choice` never took the observation, so every group stream counted as
+    /// incomplete, truncated and an error (a close after the last frame as a 499 cancel), and the
+    /// partial as clean.
     #[tokio::test]
     #[allow(clippy::await_holding_lock)] // allow: serializes real handlers against global counter writers
     async fn http_metrics_count_choice_group_outcomes() {
@@ -18825,7 +18827,8 @@ default_reasoning_effort = "always"
         let _drain = drain_lock();
         for (model, case) in [
             ("http-choices-clean", "clean"),
-            ("http-choices-failed", "failed"),
+            ("http-choices-clean-close", "clean-close"),
+            ("http-choices-failed-close", "failed-close"),
             ("http-choices-partial", "partial"),
         ] {
             let stream = case != "partial";
@@ -18862,7 +18865,7 @@ default_reasoning_effort = "always"
                     text: "row".into(),
                 };
                 match case {
-                    "clean" => {
+                    "clean" | "clean-close" => {
                         for row in &rows {
                             for event in [
                                 usage(),
@@ -18881,7 +18884,7 @@ default_reasoning_effort = "always"
                             }
                         }
                     }
-                    "failed" => {
+                    "failed-close" => {
                         rows[0].tx.send(usage()).unwrap();
                         rows[0].tx.send(token(1)).unwrap();
                         // The headers commit on that token; fail row 1 only after they did.
@@ -18927,20 +18930,41 @@ default_reasoning_effort = "always"
             .expect("the group answers")
             .unwrap();
             assert_eq!(response.status(), StatusCode::OK, "{case}");
-            if case == "failed" {
+            if case == "failed-close" {
                 resume_tx.send(()).unwrap();
             }
-            let bytes = tokio::time::timeout(
-                std::time::Duration::from_secs(5),
-                axum::body::to_bytes(response.into_body(), usize::MAX),
-            )
+            // The close cases read frames until their last one and drop the body without
+            // asking for EOF, as a client that hangs up on the last frame does.
+            let close_after = match case {
+                "clean-close" => Some("[DONE]"),
+                "failed-close" => Some("overloaded"),
+                _ => None,
+            };
+            let wire = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+                let Some(last) = close_after else {
+                    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+                        .await
+                        .unwrap();
+                    return String::from_utf8_lossy(&bytes).into_owned();
+                };
+                use futures_core::Stream;
+                let mut data = response.into_body().into_data_stream();
+                let mut wire = String::new();
+                while let Some(frame) =
+                    std::future::poll_fn(|cx| std::pin::Pin::new(&mut data).poll_next(cx)).await
+                {
+                    wire.push_str(&String::from_utf8_lossy(&frame.unwrap()));
+                    if wire.contains(last) {
+                        return wire;
+                    }
+                }
+                panic!("{case}: the stream ended before {last}: {wire}")
+            })
             .await
-            .expect("the body ends")
-            .unwrap();
-            let wire = String::from_utf8_lossy(&bytes);
+            .expect("the body reaches its last frame");
             match case {
-                "clean" => assert!(wire.contains("[DONE]"), "{wire}"),
-                "failed" => assert!(wire.contains("overloaded"), "{wire}"),
+                "clean" | "clean-close" => assert!(wire.contains("[DONE]"), "{wire}"),
+                "failed-close" => assert!(wire.contains("overloaded"), "{wire}"),
                 _ => assert!(wire.contains("deadline_exceeded"), "{wire}"),
             }
             let rows = held_rx.await.unwrap();
@@ -18948,12 +18972,13 @@ default_reasoning_effort = "always"
             drop(rows);
             let text = http_metrics::render();
             let labels = format!("model=\"{model}\",route=\"hybrid\",lane=\"interactive\"");
-            let clean = usize::from(case == "clean");
-            let failed_stream = usize::from(case == "failed");
+            let clean = usize::from(case.starts_with("clean"));
+            let failed_stream = usize::from(case == "failed-close");
             for (family, want) in [
                 ("memra_streams_incomplete_total", failed_stream),
                 ("memra_streams_truncated_total", failed_stream),
                 ("memra_response_errors_total", 1 - clean),
+                ("memra_requests_cancelled_total", 0),
             ] {
                 assert!(
                     text.contains(&format!("{family}{{{labels}}} {want}\n")),
