@@ -8923,93 +8923,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn parses_repeatable_required_cells_and_model() {
-        let cli = parse_cli([
-            "model.gguf".into(),
-            "--require-cell".into(),
-            "DUAL-BATCHED-AUX".into(),
-            "--require-cell".into(),
-            "attn_head_gate".into(),
-        ])
-        .unwrap();
-        assert_eq!(cli.gguf.as_deref(), Some("model.gguf"));
-        assert_eq!(
-            cli.required,
-            BTreeSet::from(["DUAL-BATCHED-AUX".into(), "attn_head_gate".into()]),
-        );
-    }
-
-    #[test]
-    fn parses_manifest_comments_and_rejects_multiple_names_per_line() {
-        assert_eq!(
-            manifest_cells("# required\nDUAL-BATCHED-AUX\n\nattn_head_gate # step35\n").unwrap(),
-            ["DUAL-BATCHED-AUX", "attn_head_gate"],
-        );
-        assert!(manifest_cells("two cells\n").is_err());
-    }
-
-    #[test]
-    fn skipped_and_absent_required_cells_are_missing() {
-        let mut tracker = CellTracker::default();
-        tracker.record("present");
-        tracker.skip("skipped", "missing model test.gguf");
-        let required = BTreeSet::from([
-            "present".to_string(),
-            "skipped".to_string(),
-            "absent".to_string(),
-        ]);
-        assert_eq!(tracker.missing(&required), ["absent", "skipped"]);
-        assert_eq!(tracker.total(), 2);
-    }
-
-    #[test]
-    fn derives_cell_names_only_from_verdict_lines() {
-        assert_eq!(
-            output_cell_name("DUAL-BATCHED-AUX [NVFP4 rp] bit-bad=0/0 OK").as_deref(),
-            Some("DUAL-BATCHED-AUX"),
-        );
-        assert_eq!(
-            output_cell_name("fa_prefill_view_ws_w_hd128(window=0) bitdiff=0 OK").as_deref(),
-            Some("fa_prefill_view_ws_w_hd128"),
-        );
-        assert_eq!(
-            output_cell_name("SKIP DUAL-BATCHED-AUX (missing model x)"),
-            None
-        );
-        assert_eq!(output_cell_name("GPU: NVIDIA RTX 5090"), None);
-    }
-
-    #[test]
-    fn b200_runs_static_nvfp4_checks_without_the_sm120_fatbin_cell() {
-        assert_eq!(nvfp4_check_capabilities("100a"), (false, true));
-        assert_eq!(nvfp4_check_capabilities("120a"), (true, true));
-        assert_eq!(nvfp4_check_capabilities("90a"), (false, false));
-        assert_eq!(nvfp4_check_capabilities("89"), (false, false));
-    }
-
-    #[test]
-    fn explicit_fp8_mmq_subcell_skips_without_aborting_default_coverage() {
-        let mut default_cells = CellTracker::default();
-        assert!(!fp8_blk_mmq_policy_cell_enabled(&mut default_cells, false));
-        assert_eq!(
-            default_cells
-                .skipped
-                .get(FP8_BLK_MMQ_POLICY_CELL)
-                .map(String::as_str),
-            Some("explicit FP8 MMQ policy is off; default fallback coverage continues")
-        );
-
-        let mut explicit_cells = CellTracker::default();
-        assert!(fp8_blk_mmq_policy_cell_enabled(&mut explicit_cells, true));
-        assert!(explicit_cells.skipped.is_empty());
-    }
-}
-
 /// F8F4 v2 tile bit cells (GB10 prefill lane, 2026-11-06): the per-call weight image plus the
 /// pipelined mainloop must reproduce the v1 F8F4 tile on every f32 bit, at every NVFP4 GEMM
 /// shape of `g` (in_f % 256 == 0, out_f >= 128), on both weight layouts (GGUF and the A6 split
@@ -9112,4 +9025,91 @@ fn f8f4_v2_cells(
         if bad == 0 { "OK" } else { "FAIL" }
     );
     Ok(bad)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_repeatable_required_cells_and_model() {
+        let cli = parse_cli([
+            "model.gguf".into(),
+            "--require-cell".into(),
+            "DUAL-BATCHED-AUX".into(),
+            "--require-cell".into(),
+            "attn_head_gate".into(),
+        ])
+        .unwrap();
+        assert_eq!(cli.gguf.as_deref(), Some("model.gguf"));
+        assert_eq!(
+            cli.required,
+            BTreeSet::from(["DUAL-BATCHED-AUX".into(), "attn_head_gate".into()]),
+        );
+    }
+
+    #[test]
+    fn parses_manifest_comments_and_rejects_multiple_names_per_line() {
+        assert_eq!(
+            manifest_cells("# required\nDUAL-BATCHED-AUX\n\nattn_head_gate # step35\n").unwrap(),
+            ["DUAL-BATCHED-AUX", "attn_head_gate"],
+        );
+        assert!(manifest_cells("two cells\n").is_err());
+    }
+
+    #[test]
+    fn skipped_and_absent_required_cells_are_missing() {
+        let mut tracker = CellTracker::default();
+        tracker.record("present");
+        tracker.skip("skipped", "missing model test.gguf");
+        let required = BTreeSet::from([
+            "present".to_string(),
+            "skipped".to_string(),
+            "absent".to_string(),
+        ]);
+        assert_eq!(tracker.missing(&required), ["absent", "skipped"]);
+        assert_eq!(tracker.total(), 2);
+    }
+
+    #[test]
+    fn derives_cell_names_only_from_verdict_lines() {
+        assert_eq!(
+            output_cell_name("DUAL-BATCHED-AUX [NVFP4 rp] bit-bad=0/0 OK").as_deref(),
+            Some("DUAL-BATCHED-AUX"),
+        );
+        assert_eq!(
+            output_cell_name("fa_prefill_view_ws_w_hd128(window=0) bitdiff=0 OK").as_deref(),
+            Some("fa_prefill_view_ws_w_hd128"),
+        );
+        assert_eq!(
+            output_cell_name("SKIP DUAL-BATCHED-AUX (missing model x)"),
+            None
+        );
+        assert_eq!(output_cell_name("GPU: NVIDIA RTX 5090"), None);
+    }
+
+    #[test]
+    fn b200_runs_static_nvfp4_checks_without_the_sm120_fatbin_cell() {
+        assert_eq!(nvfp4_check_capabilities("100a"), (false, true));
+        assert_eq!(nvfp4_check_capabilities("120a"), (true, true));
+        assert_eq!(nvfp4_check_capabilities("90a"), (false, false));
+        assert_eq!(nvfp4_check_capabilities("89"), (false, false));
+    }
+
+    #[test]
+    fn explicit_fp8_mmq_subcell_skips_without_aborting_default_coverage() {
+        let mut default_cells = CellTracker::default();
+        assert!(!fp8_blk_mmq_policy_cell_enabled(&mut default_cells, false));
+        assert_eq!(
+            default_cells
+                .skipped
+                .get(FP8_BLK_MMQ_POLICY_CELL)
+                .map(String::as_str),
+            Some("explicit FP8 MMQ policy is off; default fallback coverage continues")
+        );
+
+        let mut explicit_cells = CellTracker::default();
+        assert!(fp8_blk_mmq_policy_cell_enabled(&mut explicit_cells, true));
+        assert!(explicit_cells.skipped.is_empty());
+    }
 }
