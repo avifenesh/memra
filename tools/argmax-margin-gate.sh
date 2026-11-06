@@ -149,6 +149,12 @@ fi
 # lane dir when you want a receipt to keep. Same convention as chunk-invariance-gate.sh.
 D="${MEMRA_GATE_LOGDIR:-${TMPDIR:-/tmp}/memra-argmax-margin-gate}"; mkdir -p "$D"
 LOG="$D/gate-$(basename "${MODEL%.gguf}")-$(basename "${PROMPT%.txt}")$([ $CANARY = 1 ] && echo .canary).log"
+# The printed raw-log path is relative to MEMRA_GATE_LOG_ROOT when the log lies under it: the
+# release battery sets it to its evidence dir, so banked evidence names no user or mount.
+LOG_SHOWN="$LOG"
+if [ -n "${MEMRA_GATE_LOG_ROOT:-}" ]; then
+    case "$LOG" in "${MEMRA_GATE_LOG_ROOT%/}"/*) LOG_SHOWN="${LOG#"${MEMRA_GATE_LOG_ROOT%/}"/}" ;; esac
+fi
 
 echo "argmax-margin-gate: model=$(basename "$MODEL") prompt=$(basename "$PROMPT") window=$WINDOW canary=$CANARY"
 # Raw log FIRST, parse second (never let a pipe swallow the failure text).
@@ -184,7 +190,7 @@ if ! awk -v expected="$WINDOW" '
     END { exit (rows != expected || bad != 0) }
 ' "$LOG"; then
     echo "  FAIL: probe table is missing, malformed, non-finite, or has the wrong row count"
-    echo "  raw: $LOG"
+    echo "  raw: $LOG_SHOWN"
     exit 1
 fi
 
@@ -229,15 +235,15 @@ if [ "${bad:-1}" -eq 0 ]; then
         exit 1
     fi
     echo "  PASS: every prefill/decode argmax flip is explained by a margin the config spread covers"
-    echo "  raw: $LOG"
+    echo "  raw: $LOG_SHOWN"
     exit 0
 else
     if [ $CANARY = 1 ]; then
         echo "  CANARY PASS: the injected wide-margin flip broke the assertion as required (teeth)"
-        echo "  raw: $LOG"
+        echo "  raw: $LOG_SHOWN"
         exit 0
     fi
     echo "  FAIL: an argmax flip is NOT explained by the config spread (or flip count exceeded)"
-    echo "  raw: $LOG"
+    echo "  raw: $LOG_SHOWN"
     exit 1
 fi

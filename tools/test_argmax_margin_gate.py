@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """CPU-only wrapper controls; stubs exercise the real parsing and verdict branches."""
+import os
 import pathlib
 import shutil
 import subprocess
@@ -24,12 +25,22 @@ class GateTest(unittest.TestCase):
         self.hf = self.root / "hf-model"
         self.hf.mkdir()
 
-    def run_gate(self, output, model=None, extra=()):
+    def run_gate(self, output, model=None, extra=(), env=None):
         self.probe.write_text("#!/bin/sh\nprintf '%s\\n' '" + output + "'\n")
         self.probe.chmod(0o700)
         return subprocess.run(["bash", str(self.gate), str(model or self.gguf),
             "--prompt", str(self.prompt), "--window", "2", "--logdir", str(self.root / "logs"),
-            *extra], capture_output=True, text=True, timeout=5)
+            *extra], capture_output=True, text=True, timeout=5,
+            env={**os.environ, **(env or {})})
+
+    def test_raw_log_path_is_relative_to_the_evidence_root(self):
+        rows = "10 1 1.0000 1 1.0000 0.1000 yes\n11 2 1.0000 2 1.0000 0.1000 yes"
+        r = self.run_gate(rows, env={"MEMRA_GATE_LOG_ROOT": str(self.root)})
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("  raw: logs/gate-model-prompt.log", r.stdout)
+        self.assertNotIn(str(self.root), r.stdout)
+        r = self.run_gate(rows)
+        self.assertIn(f"  raw: {self.root}/logs/gate-model-prompt.log", r.stdout)
 
     def test_valid_formats_and_canary(self):
         rows = "10 1 1.0000 1 1.0000 0.1000 yes\n11 2 1.0000 2 1.0000 0.1000 yes"

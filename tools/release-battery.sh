@@ -113,6 +113,22 @@ resolve_physical_gpu() {
   }
 }
 resolve_physical_gpu || exit 1
+# Receipts name the card by a digest prefix, never by its raw UUID: the banked battery.log is
+# public, and the cell record seals the same digest (`uuid_sha256` in record.json), so the two
+# still cross-check. Paths are shown relative to the repo root (or `~`), never by user or mount.
+PHYSICAL_GPU_TAG=""
+if [ -n "$PHYSICAL_UUID" ]; then
+  PHYSICAL_GPU_TAG="sha256:$(printf '%s' "$PHYSICAL_UUID" | sha256sum | cut -c1-12)"
+fi
+shown_path() {
+  local root
+  root=$(cd "$HERE/.." && pwd -P)
+  case "$1" in
+    "$root"/*) printf '%s' "${1#"$root"/}" ;;
+    "$HOME"/*) printf '~/%s' "${1#"$HOME"/}" ;;
+    *) printf '%s' "$1" ;;
+  esac
+}
 
 gpu_free_mib() {
   [ -n "$PHYSICAL_UUID" ] || return 0
@@ -251,18 +267,18 @@ while IFS=$'\t' read -r class id path _ || [ -n "${class:-}" ]; do
   # as not-a-defect. The calibrated gate returns flips=0 bad=0 PASS on the same model.
   NEED=$(model_need_mib "$path")
   if ! await_card "$NEED" "$id argmax-margin"; then
-    note "$id  argmax-margin  REFUSED   card cannot seat the model (gpu=${PHYSICAL_UUID:-?} free ${CARD_FREE}MiB, need ${NEED}MiB after ${CARD_WAIT_S}s)"
+    note "$id  argmax-margin  REFUSED   card cannot seat the model (gpu=${PHYSICAL_GPU_TAG:-?} free ${CARD_FREE}MiB, need ${NEED}MiB after ${CARD_WAIT_S}s)"
     gpu_tenants | sed 's/^/    on the card: /'
     FAILED=1
     continue
   fi
-  note "$id  card  gpu=${PHYSICAL_UUID:-?} free=${CARD_FREE:-?}MiB need=${NEED}MiB"
+  note "$id  card  gpu=${PHYSICAL_GPU_TAG:-?} free=${CARD_FREE:-?}MiB need=${NEED}MiB"
   argmax_evidence=()
   if [ -n "$EVIDENCE_DIR" ]; then
     argmax_evidence=(--logdir "$EVIDENCE_DIR/argmax-$EVIDENCE_SEQ")
   fi
   rc=0
-  OUT=$("$HERE/argmax-margin-gate.sh" "$path" "${argmax_evidence[@]}" 2>&1) || rc=$?
+  OUT=$(MEMRA_GATE_LOG_ROOT="$EVIDENCE_DIR" "$HERE/argmax-margin-gate.sh" "$path" "${argmax_evidence[@]}" 2>&1) || rc=$?
   save_evidence argmax "$id" "$rc"
   if [ "$rc" -eq 0 ] && printf '%s' "$OUT" | grep -q "^  PASS:"; then
     note "$id  argmax-margin  PASS  $(printf '%s' "$OUT" | grep -m1 -o 'SUMMARY flips=[0-9]* bad=[0-9]*')"
@@ -280,7 +296,7 @@ while IFS=$'\t' read -r class id path _ || [ -n "${class:-}" ]; do
   # anyway and died with CUDA_ERROR_STREAM_CAPTURE_UNSUPPORTED, which reads like a bug in
   # the engine rather than a bug in the conditions (memra#263).
   if ! await_card "$NEED" "$id run-spec"; then
-    note "$id  run-spec  REFUSED   card cannot seat the model (gpu=${PHYSICAL_UUID:-?} free ${CARD_FREE}MiB, need ${NEED}MiB after ${CARD_WAIT_S}s)"
+    note "$id  run-spec  REFUSED   card cannot seat the model (gpu=${PHYSICAL_GPU_TAG:-?} free ${CARD_FREE}MiB, need ${NEED}MiB after ${CARD_WAIT_S}s)"
     gpu_tenants | sed 's/^/    on the card: /'
     FAILED=1
     continue
@@ -304,7 +320,7 @@ done < "$ROSTER"
 echo
 if [ "$FAILED" = 0 ]; then
   echo "=== RELEASE BATTERY PASS — paste into the tag message ==="
-  echo "  roster: $ROSTER ($OWN_ROWS own)"
+  echo "  roster: $(shown_path "$ROSTER") ($OWN_ROWS own)"
   printf '%s' "$LINES" | sed 's/^/  /'
   exit 0
 fi

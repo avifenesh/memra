@@ -457,6 +457,12 @@ def binary_ids(directory):
             for n in BINARIES}
 
 
+def shown_command(command):
+    """A command as logged into banked evidence: the home directory reads `~`, so a published
+    build.log names no user."""
+    return " ".join(command).replace(str(Path.home()), "~")
+
+
 def build(repo, commit, target, work, log, role="tree", bins=None):
     """Build the six battery binaries in work/<role>-<target> at `commit`; copy them to a
     per-commit cache under `bins` (default work/bins). Returns (tree, cache)."""
@@ -464,7 +470,7 @@ def build(repo, commit, target, work, log, role="tree", bins=None):
     BUILD_LOCK.parent.mkdir(parents=True, exist_ok=True)
     command = ["flock", str(BUILD_LOCK), "nice", "-n", "15", *BUILD_COMMAND]
     with open(log, "ab") as out:
-        out.write(f"$ {' '.join(command)}  (commit {commit}, target {target}, tree {tree.name})\n".encode())
+        out.write(f"$ {shown_command(command)}  (commit {commit}, target {target}, tree {tree.name})\n".encode())
         out.flush()
         result = subprocess.run(command, cwd=tree, env=build_env(target, tree), stdout=out, stderr=subprocess.STDOUT)
     require(result.returncode == 0, f"build failed for {commit[:12]} (see {log})")

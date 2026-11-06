@@ -126,7 +126,14 @@ esac
         # headroom number came from, not just the number. The fake nvidia-smi's device list
         # names one card, GPU-fixture; that UUID must appear in the receipt.
         stdout = self.run_battery()
-        self.assertIn("gpu=GPU-fixture", stdout)
+        import hashlib
+        tag = "sha256:" + hashlib.sha256(b"GPU-fixture").hexdigest()[:12]
+        self.assertIn(f"gpu={tag}", stdout)
+        # The banked battery.log is public: it names the card by the same digest the cell
+        # record seals (uuid_sha256), never by its raw UUID, and the roster by a repo path.
+        self.assertNotIn("GPU-fixture", stdout)
+        self.assertIn("roster: roster.tsv (", stdout)
+        self.assertNotIn(str(self.root), stdout)
 
     def test_evidence_records_each_actual_producer_before_parsing(self):
         for code in ("0", "1"):

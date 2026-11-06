@@ -436,5 +436,16 @@ class DeviceLock(unittest.TestCase):
         self.assertFalse((out / "record.json").exists())
 
 
+
+class ShownCommand(unittest.TestCase):
+    def test_build_log_names_no_home_directory(self):
+        # build.log is banked with the record and published: the build lock lives under
+        # $HOME, so the logged command must show `~`, not the user's home path.
+        command = ["flock", str(Path.home() / ".cache/memra-rig-build.lock"), "nice", "-n", "15", "cargo"]
+        shown = ce.shown_command(command)
+        self.assertEqual(shown, "flock ~/.cache/memra-rig-build.lock nice -n 15 cargo")
+        self.assertNotIn(str(Path.home()), shown)
+
+
 if __name__ == "__main__":
     unittest.main()
