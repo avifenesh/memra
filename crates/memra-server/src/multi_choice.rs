@@ -876,6 +876,10 @@ pub(crate) async fn respond(
                 }
                 let mut body = rows.body(&env, &model, true);
                 body["error"] = crate::deadline_exceeded_error(deadline.ms, false)["error"].clone();
+                // A 200 that carries an error is a failed response, as n = 1 counts it.
+                if let Some(observation) = crate::http_metrics::current() {
+                    observation.failed();
+                }
                 drop(input);
                 drop(guard);
                 return reading.attach(crate::with_request_id(
@@ -981,6 +985,9 @@ fn stream_reply(
 ) -> axum::response::Response {
     use axum::response::sse::{Event as SseEvent, KeepAlive};
     use axum::response::{IntoResponse, Sse};
+    // Report the outcome to the HTTP layer as the n = 1 SSE body does: without it the
+    // middleware saw every group stream end without a terminal, an error and truncated.
+    let http_observation = crate::http_metrics::current();
     let stream = async_stream::stream! {
         let _guard = guard;
         let object = if rows.chat { "chat.completion.chunk" } else { "text_completion" };
@@ -995,6 +1002,7 @@ fn stream_reply(
             let Some((index, event)) = input.next().await else {
                 let error = EngineError::engine("n-choice worker closed before all terminal results");
                 if let Some(r) = receipt.as_mut() { let _ = r.reject(500, "worker_fault"); }
+                if let Some(observation) = &http_observation { observation.failed(); }
                 yield Ok(SseEvent::default().data(crate::engine_error_body(&error).to_string()));
                 return;
             };
@@ -1011,6 +1019,7 @@ fn stream_reply(
                 } else {
                     crate::deadline_exceeded_error(ms, true)
                 };
+                if let Some(observation) = &http_observation { observation.failed(); }
                 yield Ok(SseEvent::default().data(payload.to_string()));
                 return;
             }
@@ -1022,6 +1031,7 @@ fn stream_reply(
 
                 Err(error) => {
                     if let Some(r) = receipt.as_mut() { let _ = r.reject(error.status(), error.code()); }
+                    if let Some(observation) = &http_observation { observation.failed(); }
                     yield Ok(SseEvent::default().data(error.body(&env.id).to_string()));
                     return;
                 }
@@ -1029,9 +1039,12 @@ fn stream_reply(
         }
         if let Some(r) = receipt.as_mut() && r.complete(rows.usage(), rows.elapsed()).is_err() {
             if let Some(r) = receipt.as_mut() { let _ = r.reject(500, "request_ledger_unavailable"); }
+            if let Some(observation) = &http_observation { observation.failed(); }
             yield Ok(SseEvent::default().data(crate::request_ledger_error_body().to_string()));
             return;
         }
+        // Published before the terminal frames: a client may close as soon as it has them.
+        if let Some(observation) = &http_observation { observation.terminal(); }
         for choice in final_packets {
             let final_row = choice.get("finish_reason").is_some_and(|v| !v.is_null());
             let mut value = packet(choice);

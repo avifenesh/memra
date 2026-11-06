@@ -18812,6 +18812,163 @@ default_reasoning_effort = "always"
         }
     }
 
+    /// n > 1 (2026-11-06): a choice group reports its outcome to `http_metrics` as n = 1 does.
+    /// A stream whose rows all finish is a clean 200 (not incomplete, truncated or an error); a
+    /// stream whose row fails after the headers is an error and truncated; a non-streaming
+    /// deadline partial (HTTP 200 carrying an error) is an error. Before, `multi_choice` never
+    /// took the observation, so every group stream counted as incomplete, truncated and an
+    /// error, and the partial as clean.
+    #[tokio::test]
+    #[allow(clippy::await_holding_lock)] // allow: serializes real handlers against global counter writers
+    async fn http_metrics_count_choice_group_outcomes() {
+        use tower::ServiceExt;
+        let _drain = drain_lock();
+        for (model, case) in [
+            ("http-choices-clean", "clean"),
+            ("http-choices-failed", "failed"),
+            ("http-choices-partial", "partial"),
+        ] {
+            let stream = case != "partial";
+            let mut st = fake_worker_state();
+            st.models = Arc::new(vec![model.into()]);
+            st.caps = Arc::new(HashMap::from([(
+                model.into(),
+                ModelCaps {
+                    max_choices: 4,
+                    chat_ok: true,
+                    context_length: 1024,
+                    n_vocab: 32,
+                    ..Default::default()
+                },
+            )]));
+            let (cmd_tx, cmd_rx) = std::sync::mpsc::channel();
+            st.cmd_tx = cmd_tx;
+            let (resume_tx, resume_rx) = std::sync::mpsc::channel::<()>();
+            let (held_tx, held_rx) = tokio::sync::oneshot::channel();
+            let worker = std::thread::spawn(move || {
+                let Ok(Cmd::GenerateChoices(mut rows)) = cmd_rx.recv() else {
+                    panic!("the handler must submit the choice group")
+                };
+                for row in &mut rows {
+                    worker::release_pending_admit();
+                    worker::release_request_reservation(row);
+                }
+                let usage = || Event::PromptUsage {
+                    n_prompt: 5,
+                    n_cached: 0,
+                };
+                let token = |id| Event::Token {
+                    id,
+                    text: "row".into(),
+                };
+                match case {
+                    "clean" => {
+                        for row in &rows {
+                            for event in [
+                                usage(),
+                                token(1),
+                                Event::TokenSnapshot(vec![1]),
+                                Event::Done {
+                                    stop_reason: "MaxNew".into(),
+                                    n_tokens: 1,
+                                    n_prompt: 5,
+                                    n_cached: 0,
+                                    elapsed_s: 0.01,
+                                    spec: None,
+                                },
+                            ] {
+                                row.tx.send(event).unwrap();
+                            }
+                        }
+                    }
+                    "failed" => {
+                        rows[0].tx.send(usage()).unwrap();
+                        rows[0].tx.send(token(1)).unwrap();
+                        // The headers commit on that token; fail row 1 only after they did.
+                        resume_rx
+                            .recv_timeout(std::time::Duration::from_secs(5))
+                            .unwrap();
+                        rows[1]
+                            .tx
+                            .send(Event::Error(worker::EngineError::overloaded("fixture")))
+                            .unwrap();
+                    }
+                    // One token on row 0, then nothing: the 1 s deadline delivers a partial.
+                    _ => {
+                        rows[0].tx.send(usage()).unwrap();
+                        rows[0].tx.send(token(1)).unwrap();
+                    }
+                }
+                // Hold every producer open so EOF cannot stand in for the outcome.
+                let _ = held_tx.send(rows);
+            });
+            let mut body = json!({"model":model,"prompt":"x","n":2,"stream":stream});
+            if !stream {
+                body["timeout_ms"] = json!(1000);
+            } else {
+                body["max_tokens"] = json!(4);
+            }
+            let response = tokio::time::timeout(
+                std::time::Duration::from_secs(5),
+                Router::new()
+                    .route("/v1/completions", post(completions_admitted))
+                    .with_state(st)
+                    .layer(middleware::from_fn(http_metrics::observe))
+                    .oneshot(
+                        axum::http::Request::builder()
+                            .method("POST")
+                            .uri("/v1/completions")
+                            .header("content-type", "application/json")
+                            .body(Body::from(body.to_string()))
+                            .unwrap(),
+                    ),
+            )
+            .await
+            .expect("the group answers")
+            .unwrap();
+            assert_eq!(response.status(), StatusCode::OK, "{case}");
+            if case == "failed" {
+                resume_tx.send(()).unwrap();
+            }
+            let bytes = tokio::time::timeout(
+                std::time::Duration::from_secs(5),
+                axum::body::to_bytes(response.into_body(), usize::MAX),
+            )
+            .await
+            .expect("the body ends")
+            .unwrap();
+            let wire = String::from_utf8_lossy(&bytes);
+            match case {
+                "clean" => assert!(wire.contains("[DONE]"), "{wire}"),
+                "failed" => assert!(wire.contains("overloaded"), "{wire}"),
+                _ => assert!(wire.contains("deadline_exceeded"), "{wire}"),
+            }
+            let rows = held_rx.await.unwrap();
+            worker.join().unwrap();
+            drop(rows);
+            let text = http_metrics::render();
+            let labels = format!("model=\"{model}\",route=\"hybrid\",lane=\"interactive\"");
+            let clean = usize::from(case == "clean");
+            let failed_stream = usize::from(case == "failed");
+            for (family, want) in [
+                ("memra_streams_incomplete_total", failed_stream),
+                ("memra_streams_truncated_total", failed_stream),
+                ("memra_response_errors_total", 1 - clean),
+            ] {
+                assert!(
+                    text.contains(&format!("{family}{{{labels}}} {want}\n")),
+                    "{case}: {family} must be {want}:\n{text}"
+                );
+            }
+            assert!(
+                text.contains(&format!(
+                    "memra_requests_total{{{labels},code=\"200\"}} 1\n"
+                )),
+                "{case}: {text}"
+            );
+        }
+    }
+
     #[tokio::test]
     async fn premature_stream_end_is_a_terminal_error_not_a_successful_finish() {
         let (tx, rx) = worker::event_channel();
