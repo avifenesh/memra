@@ -7086,7 +7086,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // fa_prefill_q stages to smem — and fa_prefill_qw's MMA/softmax/PV code is byte-identical,
         // so O must match BIT-FOR-BIT (this is the chunk-prime token-identity contract). Cases
         // cover a continuation chunk (T < T_kv, the chunk-prime shape) and a BK-unaligned tail.
-        for (t, tkv) in [(64usize, 192usize), (100, 100), (37, 297)] {
+        // The t >= 128 cells reach the selectable workspace twins (MEMRA_PRIME_KV_T3 /
+        // MEMRA_PRIME_KV_H2), so a kernel-check run with either door set byte-checks that twin.
+        for (t, tkv) in [
+            (64usize, 192usize),
+            (100, 100),
+            (37, 297),
+            (192, 4097),
+            (1024, 8224),
+        ] {
             let q: Vec<f32> = (0..hd * nh * t).map(|i| pr(i + 5) * 0.2).collect();
             let k: Vec<f32> = (0..hd * nhkv * tkv).map(|i| pr(i + 7) * 0.2).collect();
             let v: Vec<f32> = (0..hd * nhkv * tkv).map(|i| pr(i + 11) * 0.2).collect();
