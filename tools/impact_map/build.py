@@ -19,6 +19,7 @@ by the item's token hash or its evidence quote; one that cannot be re-anchored i
 makes the map wider, never narrower.
 """
 import argparse
+import json
 import os
 import shutil
 import subprocess
@@ -27,6 +28,8 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parent.parent
+sys.path.insert(0, str(HERE))
+from ingest import tree_stamp  # noqa: E402
 
 
 def run(cmd, env, **kw):
@@ -47,6 +50,9 @@ def main():
     a = ap.parse_args()
     s0 = a.work / "stage0"
     s0.mkdir(parents=True, exist_ok=True)
+    # the tree this stage 0 describes; ingest refuses another one (its hashes pin each claim)
+    stamp = tree_stamp(REPO)
+    (s0 / "tree.json").write_text(json.dumps(stamp) + "\n")
     env = dict(os.environ, MEMRA_IMPACT_WORK=str(a.work), MEMRA_IMPACT_REPO=str(REPO))
     index = s0 / "index.scip"
     if a.run_scip:
@@ -73,6 +79,9 @@ def main():
     observed = REPO / "docs/impact-map/observed.json"  # kernel traces: executed kernels keep their cells
     run([sys.executable, HERE / "assemble.py", REPO / "docs/impact-map/annotations.json", a.out,
          *([observed] if observed.exists() else [])], env)
+    if tree_stamp(REPO) != stamp:
+        (s0 / "tree.json").unlink()
+        sys.exit("the tree moved during the build: stage 0 mixes two trees; build again")
     print(f"wrote {a.out}")
 
 

@@ -8,8 +8,12 @@ marked, so an ingest without verdicts gives a wide map, never a narrow one.
 
 Usage: ingest.py RESULTS.json [VERDICTS.json] > annotations.json
 Env: MEMRA_IMPACT_WORK (stage-0 dir parent), MEMRA_IMPACT_REPO (the tree the agents read).
+Stage 0 and the tree must be the same: ingest refuses when stage0/tree.json (written by build.py)
+names another commit or other uncommitted changes, since the hashes it records pin each claim to
+the code the agents read.
 """
 import collections
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -20,6 +24,30 @@ import sys
 WORK = os.environ.get("MEMRA_IMPACT_WORK", os.path.expanduser("~/.cache/memra-impact-map-build"))
 REPO = os.environ.get("MEMRA_IMPACT_REPO", str(Path(__file__).resolve().parents[2]))
 S0 = os.path.join(WORK, "stage0")
+
+
+def tree_stamp(repo):
+    """The tree a build scans: HEAD plus a digest of the uncommitted changes to tracked files."""
+    def git(*a):
+        return subprocess.run(["git", "-C", str(repo), *a], capture_output=True, check=True).stdout
+    return {"commit": git("rev-parse", "HEAD").decode().strip(),
+            "uncommitted": hashlib.sha256(git("diff", "HEAD", "--binary")).hexdigest()[:20]}
+
+
+def tree_mismatch(s0, repo):
+    """Why stage 0 does not describe the tree the quotes are checked against, or None."""
+    try:
+        want = json.load(open(os.path.join(s0, "tree.json")))
+    except (OSError, ValueError):
+        return f"{s0}/tree.json is missing or unreadable: rebuild stage 0 with build.py on this tree"
+    try:
+        have = tree_stamp(repo)
+    except (OSError, subprocess.CalledProcessError) as e:
+        return f"cannot read the tree at {repo}: {e}"
+    if have != want:
+        return (f"stage 0 was built on {want} but {repo} is at {have}; the recorded hashes would pin claims "
+                "to code the agents did not read. Rebuild stage 0 on the tree the agents read")
+    return None
 
 _lines = {}
 
@@ -61,6 +89,9 @@ def pin(ev):
 
 
 def main():
+    why = tree_mismatch(S0, REPO)
+    if why:
+        sys.exit(f"ingest: {why}")
     res = json.load(open(sys.argv[1]))
     refuted, verified = set(), set()
     if len(sys.argv) > 2 and os.path.exists(sys.argv[2]):
@@ -188,9 +219,13 @@ def main():
             ev = [p for p in (pin(e) for e in x.get("evidence", [])) if p]
             cid = f"{sid}:X{k}"
             # an output-neutral claim narrows to "no test": honored only once a skeptic verified it
-            if ev and cid in verified and cid not in refuted:
+            if x.get("item") not in hash_of:
+                # a file or a name no stage-0 item has: nothing to pin, so nothing to honor
+                print(f"ingest: {cid} names no stage-0 item: {x.get('item')!r}", file=sys.stderr)
+                stats["exact_items_unknown_item"] += 1
+            elif ev and cid in verified and cid not in refuted:
                 # the hash pins the claim to the code the skeptic read (assemble.honored_exact)
-                out["exact_items"].append({"claim": cid, "item": x["item"], "anchor_hash": hash_of.get(x["item"]),
+                out["exact_items"].append({"claim": cid, "item": x["item"], "anchor_hash": hash_of[x["item"]],
                                            "why": x.get("why", "")[:300], "evidence": ev[:2]})
             else:
                 stats["exact_items_not_honored"] += 1

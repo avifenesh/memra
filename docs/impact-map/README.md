@@ -65,7 +65,7 @@ The wide share is mostly real sharing, not missing labels. The server, the token
 | Targets | 57 items: 24 that lost a region, 14 in the DSpark and server files whose code changed under a region kept only by its quote, 13 with a region naming a DSpark restore door (#1069 made their default per device: ON on GB10 and the RTX PRO 6000 Max-Q, OFF on the RTX 5090), and 19 new or changed by #1069. An item can have several reasons |
 | Re-annotation | Four annotators and four skeptics. The 148 old regions on the targets were replaced by 231 new ones: 141 narrowing claims verified, 67 refuted or unverified and widened back to every cell, 23 that narrow nothing |
 | Route check | Route sets were the usual error in the first build, so a second skeptic pass judged only the route set of the 133 verified claims that narrow routes: 41 held, 92 widened to every route (their family, device and door limits stay) |
-| Result | 6,473 regions re-anchored; 2 still dropped (1 out of bounds, 1 item gone). 3 output-neutral claims lapsed because their item changed |
+| Result | 6,473 regions re-anchored; 2 still dropped (1 out of bounds, 1 item gone). 1 output-neutral claim lapsed because its item changed (in a binary no route serves); 2 others name whole files, not items, so they never held |
 | Precision | 17,288 items. 77.4% of items (71.8% of their lines) reach every family, 14.4% exactly one family and 7.9% several. 12.2% are GPU-only and 2.1% run on a narrower device set. 469 items write a process-global static |
 
 The re-annotation also confirmed 17 defects (1 medium, 16 low), listed at the end of `findings.md`.
@@ -157,7 +157,10 @@ That change impact is judged with the push base's rules and map. A rules or map 
 ## Refreshing
 
 - Run `build.py` after merges that move many items. Regions are re-anchored through their items: by token hash when the item is unchanged, otherwise by searching for the evidence quote inside the item. A region that cannot be re-anchored is dropped, which only widens the map.
-- An output-neutral claim records its item's token hash and holds only while the item is unchanged. A rewritten item may compute now, so its claim lapses and the item takes the default effects (`exact_items_stale` in the build stats).
+- An output-neutral claim records its item's token hash and holds only while the item is unchanged. A rewritten item may compute now, so its claim lapses and the item takes the default effects (`exact_items_stale` in the build stats; `exact_items_unknown` counts claims that name no item).
+  - Between rebuilds the delta query keeps the claim only while the base copy is still the map's code and the change names no identifier the base copy did not. Otherwise the change takes every effect (source `+neutral-lapsed`).
+  - The hash comes from stage 0, so `build.py` stamps stage 0 with the commit and uncommitted changes it scanned, and `ingest.py` refuses to run on any other tree.
+  - Known limits: the hash covers the item's own code, not what its callers do with its result. Two same-named items in one file take their ids by position, so deleting the first lets an identical second one inherit its claim (no current claim has such a twin).
 - A failed step stops the build instead of narrowing it: a build.rs replay that exits nonzero or logs no nvcc call, and a device variant whose preprocessing failed or is missing (its kernels would read as dead). The CUTLASS variant sets no device reach and is not checked.
 - When a subsystem is rewritten, re-annotate its slice: `gen_facts.py` writes the agent fact sheets, `ingest.py` turns agent output plus skeptic verdicts into `annotations.json`, then `assemble.py` builds the map. A narrowing claim without a skeptic verdict is widened, so an ingest without verdicts gives a wide map.
 - `tools/impact_map/test_delta.py` covers the delta logic on a synthetic repository.

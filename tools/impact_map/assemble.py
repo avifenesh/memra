@@ -41,17 +41,20 @@ DEVICE_OF_VARIANT = {"120a": ["rtx5090", "rtxpro6000", "gb10"], "100a": ["b200"]
 CFG_DEVICES = {"memra_hopper_mma": {"h100"}, "memra_sm100_tcgen05": {"b200"}, "memra_portable_cuda": {"h100", "sm89"}}
 
 def honored_exact(claims, nodes):
-    """The output-neutral claims that still hold, and how many do not. A claim holds only for the
-    code its skeptic read: the item's token hash must equal the hash recorded with the claim. A
-    rewritten item may compute now, so its claim lapses (the item takes the default effects)."""
-    honored, stale = set(), 0
+    """The output-neutral claims that still hold, how many lapsed and how many name no item. A
+    claim holds only for the code its skeptic read: the item's token hash must equal the hash
+    recorded with the claim. A rewritten item may compute now, so its claim lapses (the item takes
+    the default effects); a claim without a hash cannot be checked and lapses too."""
+    honored, stale, unknown = set(), 0, 0
     for x in claims:
         it = nodes.get(x["item"])
-        if it is not None and x.get("anchor_hash") and it["hash"] == x["anchor_hash"]:
+        if it is None:
+            unknown += 1
+        elif x.get("anchor_hash") and it["hash"] == x["anchor_hash"]:
             honored.add(x["item"])
         else:
             stale += 1
-    return honored, stale
+    return honored, stale, unknown
 
 
 def liveness_failures(live):
@@ -383,7 +386,7 @@ def main():
                     change_extra[c] |= r_st
     stats["static_writers"] = len(change_extra)
 
-    exact, stats["exact_items_stale"] = honored_exact(ann.get("exact_items", []), nodes)
+    exact, stats["exact_items_stale"], stats["exact_items_unknown"] = honored_exact(ann.get("exact_items", []), nodes)
     sets, items = {}, {}
     for i, r in nodes.items():
         # `<outside>` (tokens outside every item) is never placed: a change there keeps the path rule
