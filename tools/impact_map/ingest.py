@@ -67,8 +67,10 @@ def main():
         for v in json.load(open(sys.argv[2])):
             (refuted if v.get("refuted") else verified).add(v["claim"])
     nodes_by_file = collections.defaultdict(list)
+    hash_of = {}
     for l in open(os.path.join(S0, "graph/nodes.jsonl")):
         r = json.loads(l)
+        hash_of[r["id"]] = r["hash"]
         if r["kind"] not in ("impl", "trait", "use"):
             nodes_by_file[r["file"]].append(r)
 
@@ -187,7 +189,9 @@ def main():
             cid = f"{sid}:X{k}"
             # an output-neutral claim narrows to "no test": honored only once a skeptic verified it
             if ev and cid in verified and cid not in refuted:
-                out["exact_items"].append({"claim": cid, "item": x["item"], "why": x.get("why", "")[:300], "evidence": ev[:2]})
+                # the hash pins the claim to the code the skeptic read (assemble.honored_exact)
+                out["exact_items"].append({"claim": cid, "item": x["item"], "anchor_hash": hash_of.get(x["item"]),
+                                           "why": x.get("why", "")[:300], "evidence": ev[:2]})
             else:
                 stats["exact_items_not_honored"] += 1
         for d in a.get("dynamic_edges", []):

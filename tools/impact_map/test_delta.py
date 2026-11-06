@@ -382,6 +382,18 @@ class BuildFailsClosedTest(unittest.TestCase):
         no_device["100a"]["units"][0]["passes"] = {"host": {}}
         self.assertIn("100a cu/a.cu: no device pass", assemble.liveness_failures(no_device))
 
+    def test_an_output_neutral_claim_holds_only_for_the_code_it_was_verified_on(self):
+        import assemble
+        nodes = {"a": {"hash": "h1"}, "b": {"hash": "h2-new"}}
+        claims = [{"item": "a", "anchor_hash": "h1"},   # unchanged since the skeptic verified it
+                  {"item": "b", "anchor_hash": "h2"},   # rewritten since: it may compute now
+                  {"item": "c", "anchor_hash": "h3"},   # gone
+                  {"item": "a2"}]                       # no hash recorded: cannot be checked
+        nodes["a2"] = {"hash": "x"}
+        honored, stale = assemble.honored_exact(claims, nodes)
+        self.assertEqual(honored, {"a"})
+        self.assertEqual(stale, 3)
+
     def test_an_ingest_without_verdicts_widens_every_narrowing_claim(self):
         with tempfile.TemporaryDirectory() as tmp:
             repo, work = Path(tmp) / "repo", Path(tmp) / "work"
