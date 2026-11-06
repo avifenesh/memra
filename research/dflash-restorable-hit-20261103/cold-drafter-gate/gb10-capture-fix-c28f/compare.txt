@@ -1,0 +1,14 @@
+a-greedy: identical=True arm_len=421 ref_len=421
+a-sampled: identical=True arm_len=525 ref_len=525
+b-greedy: identical=True arm_len=477 ref_len=477
+b-sampled: identical=True arm_len=254 ref_len=254
+GATE PASS
+cache-preferred=1
+cold-drafter restore=1
+DSPARK restore=3
+dspark-boundary=3
+shape cache-preferred=1 ok
+shape cold-drafter restore=1 ok
+shape DSPARK restore=3 ok
+shape insert (dspark-boundary)=3 ok
+SHAPE PASS

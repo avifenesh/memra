@@ -1,0 +1,23 @@
+12:49:04 [coldcap] start lease=claude-code-20261106T124813-2101849
+12:49:05 [coldcap] tree at c28fb5ee0e
+12:54:01 [coldcap] binaries fix=8bc23cc7cf24 main=24fc6045841f
+12:59:03 [coldcap] gate: a-greedy: identical=True arm_len=421 ref_len=421 a-sampled: identical=True arm_len=525 ref_len=525 b-greedy: identical=True arm_len=477 ref_len=477 b-sampled: identical=True arm_len=254 ref_len=254 GATE PASS cache-preferred=1 cold-drafter restore=1 DSPARK restore=3 dspark-boundary=3 shape cache-preferred=1 ok shape cold-drafter restore=1 ok shape DSPARK restore=3 ok shape insert (dspark-boundary)=3 ok SHAPE PASS  [dspark] prefix restore doors default ON on "NVIDIA GB10" (gb10=true): restore=true partial=true capture=true
+12:59:03 [spark-b23d] arms_local2 start lease=claude-code-20261106T124813-2101849 serve=~/memra-run/serve-batchspec.sh: c1-main-a:bin-main-3bbdf42ff9:1:DEF c1-fix-a:bin-fix-c28fb5ee0eaf:1:DEF c1-fix-b:bin-fix-c28fb5ee0eaf:1:DEF c1-main-b:bin-main-3bbdf42ff9:1:DEF
+13:00:48 [spark-b23d] start c1-main-a
+13:33:55 [spark-b23d] done c1-main-a
+13:34:00 [spark-b23d] c1-main-a vetoes=28 cold-drafter=15 [dspark] prefix restore doors default ON on "NVIDIA GB10" (gb10=true): restore=true partial=true capture=true
+13:35:45 [spark-b23d] start c1-fix-a
+14:08:54 [spark-b23d] done c1-fix-a
+14:08:59 [spark-b23d] c1-fix-a vetoes=28 cold-drafter=15 [dspark] prefix restore doors default ON on "NVIDIA GB10" (gb10=true): restore=true partial=true capture=true
+14:10:44 [spark-b23d] start c1-fix-b
+14:10:58 [coldcap] c1 ABBA stopped after main-a/fix-a (1+1 identical: the harness primes every body plain first, so measured turns hit their own prime entry; persistence needs a multi-turn shape)
+14:14:56 [mt] start 1-main (24fc6045841f)
+14:17:55 [mt] 1-main veto=8 conv=8 restore=0 boundary=0
+14:19:40 [mt] start 2-fix (8bc23cc7cf24)
+14:22:24 [mt] 2-fix veto=4 conv=4 restore=4 boundary=8
+14:24:09 [mt] start 3-fix (8bc23cc7cf24)
+14:26:42 [mt] 3-fix veto=4 conv=4 restore=4 boundary=8
+14:28:27 [mt] start 4-main (24fc6045841f)
+14:31:29 [mt] 4-main veto=8 conv=8 restore=0 boundary=0
+14:31:29 [mt] MT_DONE
+14:31:41 [coldcap] COLDCAP_DONE (gate-fix, c1 main-a/fix-a, multi-turn main/fix/fix/main)

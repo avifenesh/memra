@@ -1,0 +1,21 @@
+waitfor: MET after 0m25s
+GATE_RUN_DONE ~/.cache/memra-coldcap/gate-5090-fix/arm.jsonl
+waitfor: MET after 0m15s
+waitfor: MET after 0m25s
+GATE_RUN_DONE ~/.cache/memra-coldcap/gate-5090-fix/ref.jsonl
+waitfor: MET after 0m15s
+a-greedy: identical=True arm_len=428 ref_len=428
+a-sampled: identical=True arm_len=518 ref_len=518
+b-greedy: identical=True arm_len=436 ref_len=436
+b-sampled: identical=True arm_len=469 ref_len=469
+GATE PASS
+cache-preferred=1
+cold-drafter restore=1
+DSPARK restore=3
+dspark-boundary=3
+shape cache-preferred=1 ok
+shape cold-drafter restore=1 ok
+shape DSPARK restore=3 ok
+shape insert (dspark-boundary)=3 ok
+SHAPE PASS
+GATE_EXIT=0 arm=fix
