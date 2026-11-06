@@ -1,6 +1,6 @@
 # Boot wave probe: pool residue and device sizing (2026-11-06)
 
-Verdict: the boot wave probe (`decode_wave_probe`, from 80b0d5710a) left its freed pool blocks mapped, so the prefix-cache budget and the admission calibration read a full card. On an RTX 5090 Laptop (24 GB) a naked Qwen3.8-27B boot had no prefix cache, and with DSpark it refused a 161-token request on an idle server. The probe now hands its pool back to the driver on both arms and refuses early when 32 sessions cannot fit. Q38 boots get their prefix cache back, the DSpark floor returns from 4680 MB to 1544 MB, the failed probe drops from 48.5-51.5 s to 5.3-8.0 s, and the 9B probe decides the same cap.
+Verdict: the boot wave probe (`decode_wave_probe`, from 80b0d5710a) left its freed pool blocks mapped, so the prefix-cache budget and the admission calibration read a full card. On an RTX 5090 Laptop (24 GB) a naked Qwen3.8-27B boot had no prefix cache, and with DSpark it refused a 161-token request on an idle server. The probe now hands its pool back to the driver on both arms and refuses early when 32 sessions cannot fit. Q38 boots get their prefix cache back, the DSpark floor returns from 4680 MB to 1544 MB, the failed probe drops from 48.5-51.5 s to 5.3-8.0 s, and the 9B probe decides the same cap. The spec-cost calibration gets the same fit check: on the Q38 plain route it is skipped after 9.7 s instead of running out of memory after 45 s, so boot is ready in 42 s instead of 73-79 s; the 9B calibrates the same tables.
 
 ## Mechanism
 
@@ -12,7 +12,9 @@ Verdict: the boot wave probe (`decode_wave_probe`, from 80b0d5710a) left its fre
 ## Change
 
 1. `fix(server)`: `measured_wave_cap` fences the model devices and calls `trim_model_device_pools(engine, loaded, "wave-probe")` after the probe on both arms, before it decides the cap, the way the spec-cost calibration does. It logs the probe time and the bytes released. `decode_chunk_policy` takes `loaded` for that. A source-order test (`wave_probe_releases_its_pool_before_boot_reads_free_memory`) pins probe, fence, trim, decision, and boot's order of caps, prefix budget and admission calibration. Replayed against main's `worker.rs`, its anchors for the fence, the trim and the new call are missing; it passes on the fix.
-2. `perf(engine)`: the probe primes and snapshots one session at a time. After the second session it reads that session's pool footprint (pool USED delta after a stream sync; the first session also carries one-time scratch) and refuses when the other 30 need more than is allocatable (`allocatable_mem_info` free plus the pool's reusable cache). It only stops a probe whose priming could not complete. The timed waves are unchanged.
+2. `perf(engine)`: the probe primes and snapshots one session at a time. After the second session it reads that session's pool footprint (pool USED delta after a stream sync; the first session also carries one-time scratch) and refuses when the other 30 need more than is allocatable (`allocatable_mem_info` free plus the pool's reusable cache). It refuses only when the measured per-session footprint says priming cannot complete. The timed waves are unchanged.
+3. `perf(engine)`: the spec-cost calibration's plain-batch table (16 sessions, 32 on the b32 tier) gets the same check. Both probes call one helper, `probe_session_fit`, after each primed and snapshotted session; the decision is the pure `sessions_fit_refusal`. A source-order test (`boot_probes_check_their_fit_before_timing`) pins the check between each probe's last prime and its first timed batch step, with the snapshot inside the measured footprint. It failed before this commit and passes after: `raw/cpu/spec-cost-test-red.log` is the test alone on the previous tree (9e3c052a88, then named fd40f2de39), `spec-cost-test-green.log` the commit, `spec-cost-test-head.log` the lane head.
+4. Review fixes: the trim already fences every owning stream, so the extra fence is gone. A refusal is a typed `ProbeDoesNotFit`, logged as `[wave-probe] skipped (...)` and `[spec-cost] calibration skipped`, not as a failure. An unreadable free reading never refuses. The per-session footprint prints with one decimal.
 
 ## Conditions
 
@@ -21,7 +23,8 @@ RTX 5090 Laptop GPU, 24463 MiB, driver 615.71.09, local rig, 2026-11-06. Boots r
 | arm | source | build | memra-server sha256 |
 |---|---|---|---|
 | base | main 5d70118b99 (source-identical to 3bbdf42ff9; source id 19b572b06fea) | cell-evidence build, fat LTO, 1 CGU, `MEMRA_CUDA_ARCH=120a` | `4d5033f3adf7d93a624684d289a27e594f57565d4c7e412bff892b4236d23b76` |
-| fix | c3cd67c93b (source id 91e4dc934ad6) | same settings | `7698cdea2597bd559eda9b7a56398946998ff2cff161f11ab47d3335fe887b49` |
+| fix | 2cf3ad3bbe (source id 91e4dc934ad6; built as c3cd67c93b, the same tree before a message-only rewrite) | same settings | `7698cdea2597bd559eda9b7a56398946998ff2cff161f11ab47d3335fe887b49` |
+| head (`raw/p4` only) | 62f77cdf1b (source id f738908d621d) | same settings | `a4d2c2904ee2999aa2d30662841f10346b9e11385742bc8bc2763e2c442f2551` |
 
 Environment per cell, nothing else (`boot_cells.py` strips inherited `MEMRA_*`): `MEMRA_COMPAT=openai`, `MEMRA_ADDR`, and
 
@@ -56,7 +59,33 @@ The fix boot reads 1.6 GB less driver free at the budget than the no-probe contr
 | base p1 | OOM after 51.5 s | 0 B, disabled | (not logged) | 2138 MB | admitted | 119.1 s |
 | fix p2 | refused after 5.4 s, released 1696 MB | 800 MB | 7956 MiB | 2202 MB | admitted | 75.1 s |
 
-Not changed here: the spec-cost calibration that follows OOMs on both arms (`spec-cost] calibration FAILED ... CUDA_ERROR_OUT_OF_MEMORY; the band serves`, 46 s on base, 45.6 s on fix). It primes 16 sessions at the same depth (16 x 505 MB against about 8.3 GB free), so it is a sizing limit of its own on a 24 GB card, not the residue. Follow-up: the same fit check would make it fail in a few seconds.
+The spec-cost calibration that follows OOMs on both of these arms (`[spec-cost] calibration FAILED ... CUDA_ERROR_OUT_OF_MEMORY; the band serves`, 46 s on base, 45.6 s on fix). It primes 16 sessions at the same depth (16 x 505 MB against about 8.3 GB free), a sizing limit of its own on a 24 GB card, not the residue. Commit 3 gives it the fit check; `raw/p4` measures it.
+
+### Spec-cost fit check, same window, A B B A (`raw/p4`)
+
+prev = 2cf3ad3bbe (the wave-probe fix only), new = the lane head 62f77cdf1b.
+
+Q38 plain route (`q38-plain`):
+
+| run | spec-cost calibration | time in it | prefix cache | floor | request | ready |
+|---|---|---|---|---|---|---|
+| prev #1 | FAILED, `CUDA_ERROR_OUT_OF_MEMORY`; the band serves | 45.2 s | 800 MB | 2202 MB | admitted | 79.1 s |
+| new #1 | skipped: the other 14 need 7081MB (505.8MB each), 6992MB allocatable; the band serves | 9.7 s | 800 MB | 2202 MB | admitted | 42.1 s |
+| new #2 | skipped, same numbers | 9.7 s | 800 MB | 2202 MB | admitted | 42.0 s |
+| prev #2 | FAILED, `CUDA_ERROR_OUT_OF_MEMORY` | 45.4 s | 800 MB | 2202 MB | admitted | 73.1 s |
+
+The verdict is the same on both arms (the band serves); the new arm reaches it about 36 s sooner. The 9.7 s covers the verify table and the two primed sessions before the refusal. The wave probe line on the new arm reads `[wave-probe] skipped (... 505.8MB each ...)`.
+
+Qwen3.5-9B (`q9`), where the calibration fits (plain cap 32, so 32 sessions primed):
+
+| run | verify_ms R=1 / 8 / 16 | plain_ms B=1 / 16 / 32 | round overhead | pooled overhead (4) | calibration | wave probe |
+|---|---|---|---|---|---|---|
+| prev #1 | 13.8 / 27.4 / 48.5 | 13.6 / 51.5 / 97.1 | 9.07 ms | 2.72 ms | 34.5 s | cap 32, b32 on |
+| new #1 | 13.8 / 27.4 / 48.6 | 13.5 / 51.9 / 97.0 | 9.21 ms | 2.73 ms | 34.5 s | cap 32, b32 on |
+| new #2 | 13.8 / 27.4 / 48.5 | 13.6 / 51.8 / 96.6 | 9.25 ms | 2.68 ms | 34.4 s | cap 32, b32 on |
+| prev #2 | 13.8 / 27.6 / 48.6 | 13.6 / 51.6 / 96.9 | 9.09 ms | 2.64 ms | 34.4 s | cap 32, b32 on |
+
+The fit check passes on the 9B and the tables agree within run-to-run spread; full rows are in the logs. Round overhead reads 0.12-0.18 ms higher on both new runs; with two runs per arm that is not separable from noise, and the commit changes nothing in that section (it runs after the plain table, whose caches are dropped). A Q38 DSpark boot on the head (`q38-dspark-new-1`) skips the wave probe the same way, keeps the 800 MB prefix cache and the 1544 MB floor, and is ready in 36.0 s.
 
 ### Q9, same window, A B B A (`q9`)
 
@@ -71,13 +100,15 @@ The successful probe decides the same cap and tier and passes the fit check. It 
 
 ## GB10 (unified memory)
 
-Same code path. `trim_model_device_pools` already runs on GB10 after the spec-cost and admission calibrations, and the fit check reads `allocatable_mem_info`, the page-cache aware sizing read GB10's prefix budget already uses (the larger of the driver reading and `MemAvailable`). On GB10 the 27B probe fits (it ran 32 sessions at 80 s on main), so the check passes and the cap decision is unchanged. Two values move on GB10 and are not measured here:
+Same code path. `trim_model_device_pools` already runs on GB10 after the spec-cost and admission calibrations, and the fit check reads `allocatable_mem_info`, the page-cache aware sizing read GB10's prefix budget already uses (the larger of the driver reading and `MemAvailable`). On GB10 the 27B probes fit (main ran the wave probe's 32 sessions in 80 s and the spec-cost calibration in 108 s), so both checks pass and the cap decision and tables are unchanged.
 
-- The unified-memory prefix budget (the larger of two entries and half of allocatable free after the transient reserve) is now derived after the probe's pool is returned, so it rises by about half the residue. Main's GB10 boot derived 42791 MB from 89.3 GB free, before a spec-cost trim that released 16.9 GB of probe pool.
-- A GB10 DSpark boot skips the spec-cost calibration, so on main its admission floor included the probe residue the same way as on the 5090. The fix removes that.
+Two GB10 values are expected to move. They are not measured here; the combined landing run measures them:
+
+- The unified-memory prefix budget (the larger of two entries and half of allocatable free after the transient reserve) is now derived after the wave probe's pool is returned, so it should rise by about half the residue. The residue should be about 16 GB: 32 sessions x 505 MB (the per-session footprint measured on the 5090 for the same checkpoint and depth) plus wave scratch. Main's GB10 boot derived 42791 MB from 89.3 GB free, before a spec-cost trim that released 16.9 GB of probe pool. Expected: roughly +8 GB of prefix budget.
+- A GB10 DSpark boot skips the spec-cost calibration, so on main its admission calibration reset the high-water mark with that residue mapped and charged it as transient, the same mechanism as the 5090 DSpark cell. Expected: the floor drops from about 17-18 GB to the real transient, about 1.5-2.2 GB, which raises admission capacity on that route.
 
 ## Files
 
 - `boot_cells.py`: the harness (`MODELS=<dir>` names the model root).
-- `raw/p1/`: base Q38 DSpark, s4 control and plain boots. `raw/p2/`: fix and base in one window, Q38 and the Q9 A B B A. Each boot has a log with seconds since spawn on every line, a 250 ms `nvidia-smi` csv, and a row in `rows.jsonl`. Local paths are replaced with `~`, `<models>` and `<bins>`.
+- `raw/p1/`: base Q38 DSpark, s4 control and plain boots. `raw/p2/`: fix and base in one window, Q38 and the Q9 A B B A. `raw/p4/`: the spec-cost fit check, prev vs head, Q38 plain and Q9 A B B A plus one Q38 DSpark boot. `raw/cpu/`: the source-order test red on the previous tree, green on its commit and on the head. Each boot has a log with seconds since spawn on every line, a 250 ms `nvidia-smi` csv, and a row in `rows.jsonl`. Local paths are replaced with `~`, `<models>` and `<bins>`.
 - Harness bugs, kept as recorded: `raw/p1/cells.txt` labels the s4 control FAIL because its prefix check missed the `[prefix-cache]` prefix (the row shows 800 MB and an admitted request). In `raw/p2` the first fix Q38 run's log and csv were overwritten by the second, from a per-invocation counter; its row stays in `rows.jsonl` (8.0 s), `q38-dspark-fix-1.log` is the 7.8 s run and `q38-dspark-fix-2.log` the 5.3 s run.

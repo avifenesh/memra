@@ -129,13 +129,15 @@ def boot(cell, arm, binary, n):
     prefix = first(r"\[prefix-cache\] (on: budget [0-9]+MB|WARNING: derived budget is 0 B)")
     boot_free = first(r"boot driver free \d+ B")
     floor = first(r"transient floor \d+MB \(static[^\]]*\]")
+    spec_cost = first(r"\[spec-cost\] (model=\S+ depth|calibration)[^\n]*")
+    spec_cost_t = first(r"\[ *[0-9.]+\] \[device-trim\] reason=spec-cost-calibration")
     trims = re.findall(r"\[device-trim\] reason=(\S+) (\{[^\n]*\})", text)
     wave_trim = [json.loads(j) for why, j in trims if why == "wave-probe"]
     peak = max((float(l.split(",")[1].split()[0]) for l in open(smi_path).read().splitlines()[1:]
                 if l.count(",") >= 5 and l.split(",")[1].strip().split()[0].isdigit()), default=None)
     row = {"cell": cell, "arm": arm, "n": n, "binary": binary, "build": first(r"build: [^\n]*"),
            "probe": probe, "probe_line_at_s": probe_t, "cap": cap, "prefix": prefix, "boot_free": boot_free,
-           "floor": floor, "wave_trim": wave_trim, "ready_s": round(ready_s, 1), "request": got,
+           "floor": floor, "spec_cost": spec_cost, "spec_cost_trim_at": spec_cost_t, "wave_trim": wave_trim, "ready_s": round(ready_s, 1), "request": got,
            "smi_peak_mem_mib": peak, "apps_before": apps_before, "apps_at_ready": apps_ready,
            "oom_lines": len(re.findall(r"CUDA_ERROR_OUT_OF_MEMORY|out of memory", text)), "log": log_path}
     with open(os.path.join(OUT, "rows.jsonl"), "a") as f:
