@@ -963,6 +963,35 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 "FAIL"
             }
         );
+        // l2_norm_pp (four rows per warp) must match the one-row v2 kernel on every f32 and bf16
+        // bit, including a ragged row count and the nullable bf16 twin.
+        for nr in [4099usize, 65536 + 3] {
+            let xs: Vec<f32> = (0..128 * nr).map(|i| pr(i + 101) * 3.0).collect();
+            let xsd = e.htod(&xs)?;
+            let mut a = e.zeros(128 * nr)?;
+            let mut b = e.zeros(128 * nr)?;
+            let mut a16 = e.alloc_u8(128 * nr * 2)?;
+            let mut b16 = e.alloc_u8(128 * nr * 2)?;
+            e.l2_norm_pp_v2_reference(&xsd, &mut a, Some(&mut a16), 128, nr, eps)?;
+            e.l2_norm_pp(&xsd, &mut b, Some(&mut b16), 128, nr, eps)?;
+            let (ah, bh) = (e.dtoh(&a)?, e.dtoh(&b)?);
+            let (a8, b8) = (e.dtoh_u8(&a16)?, e.dtoh_u8(&b16)?);
+            let bad32 = ah
+                .iter()
+                .zip(&bh)
+                .filter(|(x, y)| x.to_bits() != y.to_bits())
+                .count();
+            let bad16 = a8.iter().zip(&b8).filter(|(x, y)| x != y).count();
+            println!(
+                "l2_norm_pp v2r4 vs v2 rows={nr}: f32 bitdiff={bad32} bf16 bytediff={bad16} {}",
+                if bad32 == 0 && bad16 == 0 {
+                    "OK"
+                } else {
+                    fails += 1;
+                    "FAIL"
+                }
+            );
+        }
     }
 
     // --- RoPE NEOX (full rotary, head_dim=n_dims=128, 1 head, 3 tokens) ---

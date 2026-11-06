@@ -1187,6 +1187,43 @@ extern "C" __global__ void l2_norm_pp_v2_f32(const float* __restrict__ x, float*
     }
 }
 
+// Four rows per warp (GB10 prefill lane, 2026-11-06): the warp issues all its rows' 16-byte loads
+// before the first reduction, so more bytes are in flight per warp (the one-row v2 kernel above
+// measured ~88 GB/s on GB10). Each row keeps v2's lane mapping, sum order, shuffle tree, rsqrtf
+// and RN bf16 rounding (two RN pairs per lane instead of four scalars), so outputs are
+// bit-identical to l2_norm_pp_v2_f32, which stays as kernel-check's byte reference.
+// Launch with 8 warps per block and ceil(nrows / 32) blocks.
+#define L2_PP_V2_ROWS 4
+extern "C" __global__ void l2_norm_pp_v2r4_f32(const float* __restrict__ x, float* __restrict__ dst,
+                                               __nv_bfloat16* __restrict__ dst16,
+                                               int ncols, int nrows, float eps) {
+    const int row0 = (blockIdx.x * (blockDim.x >> 5) + (threadIdx.x >> 5)) * L2_PP_V2_ROWS;
+    if (row0 >= nrows) return;
+    int lane = threadIdx.x & 31;
+    float4 v[L2_PP_V2_ROWS];
+    #pragma unroll
+    for (int r = 0; r < L2_PP_V2_ROWS; ++r) {
+        v[r] = (row0 + r < nrows) ? *(const float4*)(x + (size_t)(row0 + r) * ncols + lane * 4)
+                                  : make_float4(0.0f, 0.0f, 0.0f, 0.0f);
+    }
+    #pragma unroll
+    for (int r = 0; r < L2_PP_V2_ROWS; ++r) {
+        const int row = row0 + r;
+        if (row >= nrows) break;   // warp-uniform
+        float sum = v[r].x * v[r].x + v[r].y * v[r].y + v[r].z * v[r].z + v[r].w * v[r].w;
+        #pragma unroll
+        for (int o = 16; o > 0; o >>= 1) sum += __shfl_xor_sync(0xffffffffu, sum, o);
+        float scale = rsqrtf(sum + eps);
+        float4 o4 = make_float4(v[r].x * scale, v[r].y * scale, v[r].z * scale, v[r].w * scale);
+        *(float4*)(dst + (size_t)row * ncols + lane * 4) = o4;
+        if (dst16 != nullptr) {
+            __nv_bfloat162* h = (__nv_bfloat162*)(dst16 + (size_t)row * ncols + lane * 4);
+            h[0] = __floats2bfloat162_rn(o4.x, o4.y);
+            h[1] = __floats2bfloat162_rn(o4.z, o4.w);
+        }
+    }
+}
+
 // ---- RoPE NEOX (full or partial). Pairs x[i] with x[i+n_dims/2]; dims >= n_dims copied. ----
 // data layout: [head_dim, n_heads, n_tokens] (head_dim fastest). pos: [n_tokens].
 // One thread per (pair i0/2, head, token). grid.x = n_heads*n_tokens, threads = head_dim/2.

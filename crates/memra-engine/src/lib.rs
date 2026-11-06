@@ -17440,8 +17440,47 @@ impl Engine {
         eps: f32,
     ) -> Result<(), Box<dyn std::error::Error>> {
         if Self::l2_v2_on(ncols) {
-            let f = self.func("l2_norm_pp_v2_f32");
-            let rows_per_block = 8u32; // 256 threads = 8 warps = 8 rows
+            return self.l2_norm_pp_v2_launch(
+                "l2_norm_pp_v2r4_f32",
+                32,
+                x,
+                dst,
+                dst16,
+                ncols,
+                nrows,
+                eps,
+            );
+        }
+        self.l2_norm(x, dst, ncols, nrows, eps)
+    }
+
+    /// The one-row-per-warp v2 kernel: kernel-check's byte reference for `l2_norm_pp_v2r4_f32`.
+    pub fn l2_norm_pp_v2_reference(
+        &self,
+        x: &CudaSlice<f32>,
+        dst: &mut CudaSlice<f32>,
+        dst16: Option<&mut CudaSlice<u8>>,
+        ncols: usize,
+        nrows: usize,
+        eps: f32,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        self.l2_norm_pp_v2_launch("l2_norm_pp_v2_f32", 8, x, dst, dst16, ncols, nrows, eps)
+    }
+
+    #[allow(clippy::too_many_arguments)] // allow: mirrors the kernel argument list
+    fn l2_norm_pp_v2_launch(
+        &self,
+        name: &str,
+        rows_per_block: u32,
+        x: &CudaSlice<f32>,
+        dst: &mut CudaSlice<f32>,
+        dst16: Option<&mut CudaSlice<u8>>,
+        ncols: usize,
+        nrows: usize,
+        eps: f32,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        {
+            let f = self.func(name);
             let cfg = LaunchConfig {
                 grid_dim: ((nrows as u32).div_ceil(rows_per_block), 1, 1),
                 block_dim: (256, 1, 1),
@@ -17459,9 +17498,8 @@ impl Engine {
             unsafe {
                 b.launch(cfg)?;
             }
-            return Ok(());
         }
-        self.l2_norm(x, dst, ncols, nrows, eps)
+        Ok(())
     }
 
     pub fn l2_norm(
