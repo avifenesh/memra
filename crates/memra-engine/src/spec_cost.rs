@@ -97,9 +97,10 @@ fn median(mut v: Vec<f64>) -> f64 {
 /// `i == 0` it records the pool's USED bytes; the first session also carries one-time scratch,
 /// so at `i == 1` the delta is one session's footprint, and the probe refuses when the other
 /// `target - 2` need more than is allocatable (driver free, page-cache aware on unified memory,
-/// plus the pool's reusable cache). It stops only a probe whose priming could not complete. The
-/// sync lands the prime's scratch frees first; a pool that cannot be queried reads (0, 0) and
-/// the probe runs.
+/// plus the pool's reusable cache). It refuses only when the measured per-session footprint says
+/// priming cannot complete; the timed steps' own scratch is not counted. The sync lands the
+/// prime's scratch frees first. A pool that cannot be queried reads (0, 0) and an unreadable
+/// free reading counts as unlimited, so neither refuses.
 fn probe_session_fit(
     e: &Engine,
     i: usize,
@@ -116,7 +117,7 @@ fn probe_session_fit(
         *used_after_first = used;
         return Ok(());
     }
-    let (free, _) = crate::unified_memory::allocatable_mem_info(e.ctx())?;
+    let free = crate::unified_memory::allocatable_mem_info(e.ctx()).map_or(usize::MAX, |(f, _)| f);
     let available = free.saturating_add(reserved.saturating_sub(used));
     match sessions_fit_refusal(
         target,
@@ -124,10 +125,23 @@ fn probe_session_fit(
         used.saturating_sub(*used_after_first),
         available,
     ) {
-        Some(why) => Err(why.into()),
+        Some(why) => Err(Box::new(ProbeDoesNotFit(why))),
         None => Ok(()),
     }
 }
+
+/// A boot probe refused by [`probe_session_fit`]: the device cannot hold its sessions. The
+/// caller keeps its fallback (wave cap 16, the spec band) and logs a skip, not a failure.
+#[derive(Debug)]
+pub struct ProbeDoesNotFit(pub String);
+
+impl std::fmt::Display for ProbeDoesNotFit {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl std::error::Error for ProbeDoesNotFit {}
 
 /// The decision of [`probe_session_fit`]: `Some(reason)` when the sessions after the first
 /// two need more than `available` bytes.
@@ -142,9 +156,9 @@ fn sessions_fit_refusal(
     (needed > available).then(|| {
         format!(
             "{target} sessions at depth {depth} do not fit: the other {others} need {}MB \
-             ({}MB each), {}MB allocatable",
+             ({:.1}MB each), {}MB allocatable",
             needed >> 20,
-            per_session >> 20,
+            per_session as f64 / (1u64 << 20) as f64,
             available >> 20,
         )
     })
@@ -422,7 +436,10 @@ mod tests {
             let fit = body[prime..timed]
                 .find("probe_session_fit(")
                 .unwrap_or_else(|| panic!("{probe} checks its fit after priming, before timing"));
-            assert!(prime + fit < timed);
+            assert!(
+                body[prime..prime + fit].contains("snaps.push(c.snapshot(e)?);"),
+                "{probe}: the measured footprint is a cache plus its snapshot"
+            );
         }
     }
 
@@ -439,7 +456,7 @@ mod tests {
             .expect("one byte short refuses");
         assert_eq!(
             why,
-            "32 sessions at depth 2048 do not fit: the other 30 need 15150MB (505MB each), \
+            "32 sessions at depth 2048 do not fit: the other 30 need 15150MB (505.0MB each), \
              15149MB allocatable"
         );
         assert!(super::sessions_fit_refusal(16, 2048, 505 * MB, 7016 * MB).is_some());
