@@ -19977,20 +19977,6 @@ default_reasoning_effort = "always"
                         .route("/v1/chat/completions", post(chat_completions_admitted))
                         .route("/v1/messages", post(anthropic::messages_admitted))
                         .route("/v1/responses", post(responses_api::responses_admitted))
-        // Audio (lane/audio-endpoint-g8). `transcriptions` is the OpenAI-named batch surface
-        // and the target of G7's live half; the `sessions` trio is the streaming lane
-        // lifecycle whose admission is the thing the c4 collapse broke.
-        .route("/v1/audio/transcriptions", post(audio_api::transcriptions))
-        .route("/v1/audio/sessions", post(audio_api::open_session))
-        .route("/v1/audio/sessions", get(audio_api::list_sessions))
-        .route(
-            "/v1/audio/sessions/:id/frames",
-            post(audio_api::append_frames),
-        )
-        .route(
-            "/v1/audio/sessions/:id/close",
-            post(audio_api::close_session),
-        )
                         .with_state(st);
                     let response = tokio::time::timeout(std::time::Duration::from_secs(2),
                         app.oneshot(axum::http::Request::builder().method("POST").uri(path)
