@@ -1,0 +1,15 @@
+CELL floor-old PASS admitted (167 chars) | transient floor 1640MB (static was 1536MB; measured 1640MB; probe kv charge 119MB, draft-state 0MB, drafted 68 accepted 46; [dev0 peak-mapped 20416MB rest-mapped 18656MB charged 119MB -> 1640MB] |
+CELL floor-tip FAIL HTTP 400: b'{"error":{"message":"request context 161 does not fit this model\'s available KV capacity on an idle server. Retrying will not help: send a shorter prompt or a s' | transient floor 4808MB (static was 1536MB; measured 4808MB; probe kv charge 119MB, draft-state 0MB, drafted 68 accepted 46; [dev0 peak-mapped 23712MB rest-mapped 18784MB charged 119MB -> 4808MB] |
+CELL floor-tip-s4 PASS admitted (167 chars) | transient floor 1640MB (static was 1536MB; measured 1640MB; probe kv charge 119MB, draft-state 0MB, drafted 68 accepted 46; [dev0 peak-mapped 20384MB rest-mapped 18624MB charged 119MB -> 1640MB] |
+CELL dflash-demote-line-a PASS [spec-gate] demoted dspark session to batched decode: FORCED at DEMOTE_AT=40 (test door) (model q38, cache rows 134, generated 69, sampled, plain draws from philox event 21); [spec-gate] demoted dspark session to batched decode: FORCED at DEMOTE_AT=40 (test door) (model q38, cache rows 134, generated 69, sampled, plain draws from philox event 21)
+CELL dflash-demote-line-b PASS [spec-gate] demoted dspark session to batched decode: FORCED at DEMOTE_AT=40 (test door) (model q38, cache rows 134, generated 69, sampled, plain draws from philox event 21); [spec-gate] demoted dspark session to batched decode: FORCED at DEMOTE_AT=40 (test door) (model q38, cache rows 134, generated 69, sampled, plain draws from philox event 21)
+CELL dflash-demote-reproducible PASS 1 distinct texts over 2 boots x 2 requests
+CELL mtp-cohort-cost-c2-w0-identity PASS 2 concurrent rows equal solo
+CELL mtp-cohort-cost-c4-w1-identity PASS 4 concurrent rows equal solo
+CELL mtp-cohort-cost-c4-w2-identity PASS 4 concurrent rows equal solo
+CELL mtp-cohort-cost-engaged PASS [spec-pool] pooled MTP cohort engaged: 2 sessions (model q9); [spec-pool] pooled MTP cohort engaged: 4 sessions (model q9) | verdicts K=0 source=cost-model,K=1 source=cost-model,K=2 source=cost-model,K=3 source=cost-model
+CELL mtp-cohort-pinned-c4-w0-identity PASS 4 concurrent rows equal solo
+CELL mtp-cohort-pinned-c6-w1-identity PASS 6 concurrent rows equal solo
+CELL mtp-cohort-pinned-engaged PASS [spec-pool] pooled MTP cohort engaged: 3 sessions (model q9); [spec-pool] pooled MTP cohort engaged: 4 sessions (model q9); [spec-pool] pooled MTP cohort engaged: 6 sessions (model q9) | verdicts K=3 source=operator-pin
+CELL riders-engaged PASS [spec-pool] unified step engaged: 1 spec + 1 plain sessions (model q9); [spec-pool] unified step engaged: 1 spec + 2 plain sessions (model q9) | forced demotions 17
+CELL riders-greedy-identity PASS 6 greedy rows equal solo

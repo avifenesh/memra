@@ -1,0 +1,39 @@
+CELL leftbehind-no-unified PASS engaged=1 unified=0
+CELL leftbehind-with-r6-greedy-solo PASS r0 r2 equal solo
+CELL leftbehind-control-unified PASS [spec-pool] unified step engaged: 2 spec + 3 plain sessions (model q9); [spec-pool] unified step engaged: 2 spec + 4 plain sessions (model q9); [spec-pool] unified step engaged: 1 spec + 4 plain sessi
+CELL leftbehind-control-greedy-solo PASS r0 r2 equal solo
+CELL leftbehind-r2-vs-plain PASS f1ad07bd362c5d6e vs f1ad07bd362c5d6e
+CELL leftbehind-r3-vs-plain PASS 2b57a2ed7a8c368b vs 2b57a2ed7a8c368b
+CELL leftbehind-r4-vs-plain PASS d2a55409074ba7a1 vs d2a55409074ba7a1
+CELL leftbehind-r5-vs-plain PASS c22689be2be51d5a vs c22689be2be51d5a
+CELL leftbehind-r6-vs-plain PASS 94c62d4fb3aa73dc vs 94c62d4fb3aa73dc
+CELL pinned-sampled-a-A-identity FAIL mismatched [1, 2, 3]
+CELL pinned-sampled-a-B-identity FAIL mismatched [0, 2]
+CELL pinned-sampled-a-arms-sampled PASS [spec-pool] pooled rows draft engaged: 4 members (arms [GraphSampled, GraphSampled, GraphSampled, GraphSampled]); [spec-pool] pooled rows draft engaged: 2 members (arms [GraphSampled, GraphSampled]); [spec-pool] pooled rows draft engaged: 3
+CELL pinned-sampled-a-arms-eager FAIL
+CELL pinned-sampled-a-cohort4 PASS
+CELL pinned-sampled-b-A-identity FAIL mismatched [0, 1, 2, 3]
+CELL pinned-sampled-b-B-identity FAIL mismatched [0, 2]
+CELL pinned-sampled-b-arms-sampled PASS [spec-pool] pooled rows draft engaged: 2 members (arms [GraphSampled, GraphSampled]); [spec-pool] pooled rows draft engaged: 4 members (arms [GraphSampled, GraphSampled, GraphSampled, GraphSampled]); [spec-pool] pooled rows draft engaged: 3
+CELL pinned-sampled-b-arms-eager FAIL
+CELL pinned-sampled-b-cohort4 PASS
+CELL pinned-sampled-A-reproducible FAIL 4-row sampled cohort equal across two boots
+CELL bandemote-greedy-line PASS [spec-gate] demoted session to batched decode: 3 active >= HIGH=3 (model q9, committed 202, generated 164, greedy); [spec-gate] demoted session to batched decode: 3 active >= HIGH=3 (model q9, committed 137, generated 98, sampled, plain draws from philox event 165)
+CELL bandemote-sampled-philox PASS
+CELL bandemote-greedy-solo PASS r0 r2 equal solo
+CELL dflash-high-sampled-line PASS [spec-gate] demoted dspark session to batched decode: 4 active, cost model prefers plain (or HIGH=4 without a model) (model q38, cache rows 134, generated 69, sampled, plain draws from philox event 21; [spec-gate] demoted dspark session to batched decode: 4 active, cost model prefers plain (or HIGH=
+CELL dflash-high-greedy-line PASS
+CELL dflash-high-greedy-solo PASS r1..r3 equal solo
+CELL shed-queue-429 PASS 429 {"error":{"message":"choice group exceeds the bounded waiting queue; retry","type":"rate_limit_error","param":null,"code
+CELL shed-queue-line PASS [shed] shed_queue lane=interactive choices=2 queued=0 bound=1
+CELL shed-body-busy-429 PASS HTTP/1.1 429 Too Many Requests
+CELL shed-body-busy-line PASS [shed] body_admission_busy path=/v1/chat/completions pool=large
+CELL shed-wait-429 PASS 429 {"error":{"message":"choice group cannot enter within its queue/deadline budget; not billed","type":"rate_limit_error","
+CELL shed-wait-line PASS [shed] shed_queue_wait lane=interactive choices=2 queued=0 est_wait_s=2
+CELL shed-deadline-429 PASS 429 {"error":{"message":"choice group cannot enter within its queue/deadline budget; not billed","type":"rate_limit_error","
+CELL shed-deadline-line PASS [shed] shed_deadline lane=interactive choices=2 queued=0 est_wait_s=120
+CELL restore-sampled-solo-restores PASS equal=True [spec-cost] model="q9" n=1 rung=2 -> K=2 (exploring: no acceptance history yet)
+CELL restore-sampled-guard-refuses FAIL
+CELL restore-sampled-refused-equals-plain PASS 3794610ebfea7d00 vs 3794610ebfea7d00
+CELL calib-q9-verify-graph-nopool PASS [spec-cost] model="q9" depth=2048 pooled=false plain_cap=32 round_overhead=2.77ms pooled_overhead=None verify_ms[1..16]=[13.8 15.5 17.0 18.7 20.4 22.2 24.7 27.3 30.5 33.7 37.0 40.2 42.2 44.3 46.4 48.5
+CELL calib-q9-verify-graph-cost-verdict PASS
