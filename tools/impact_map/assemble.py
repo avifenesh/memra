@@ -40,6 +40,20 @@ DEVICES = ["rtx5090", "rtxpro6000", "gb10", "b200", "h100", "sm89", "cpu"]
 DEVICE_OF_VARIANT = {"120a": ["rtx5090", "rtxpro6000", "gb10"], "100a": ["b200"], "90a": ["h100"], "89": ["sm89"]}
 CFG_DEVICES = {"memra_hopper_mma": {"h100"}, "memra_sm100_tcgen05": {"b200"}, "memra_portable_cuda": {"h100", "sm89"}}
 
+def honored_exact(claims, nodes):
+    """The output-neutral claims that still hold, and how many do not. A claim holds only for the
+    code its skeptic read: the item's token hash must equal the hash recorded with the claim. A
+    rewritten item may compute now, so its claim lapses (the item takes the default effects)."""
+    honored, stale = set(), 0
+    for x in claims:
+        it = nodes.get(x["item"])
+        if it is not None and x.get("anchor_hash") and it["hash"] == x["anchor_hash"]:
+            honored.add(x["item"])
+        else:
+            stale += 1
+    return honored, stale
+
+
 def liveness_failures(live):
     """Why liveness.json cannot be trusted for the variants that set device reach, or [].
     A missing or empty variant, or a unit whose preprocessing failed, would leave its lines
@@ -369,7 +383,7 @@ def main():
                     change_extra[c] |= r_st
     stats["static_writers"] = len(change_extra)
 
-    exact = {x["item"] for x in ann.get("exact_items", [])}
+    exact, stats["exact_items_stale"] = honored_exact(ann.get("exact_items", []), nodes)
     sets, items = {}, {}
     for i, r in nodes.items():
         # `<outside>` (tokens outside every item) is never placed: a change there keeps the path rule
