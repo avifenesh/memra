@@ -1004,13 +1004,13 @@ fn stream_reply(
                 if let Some(r) = receipt.as_mut() { let _ = r.reject(500, "worker_fault"); }
                 if let Some(observation) = &http_observation { observation.failed(); }
                 yield Ok(SseEvent::default().data(crate::engine_error_body(&error).to_string()));
+                yield Ok(SseEvent::default().data("[DONE]"));
                 return;
             };
             if let Event::DeadlineExceeded { ms } = event {
                 // A committed group's first-token deadline (`commit_until_first_delivery`
-                // already settled the shared receipt; this returns that settlement). The n > 1
-                // wire rule: `[DONE]` follows only successful accounting, so like every error
-                // after the headers the timeout error is the last chunk.
+                // already settled the shared receipt; this returns that settlement). Like every
+                // error after the headers, and like n = 1: a `data:` error, then `[DONE]`.
                 let settled = receipt.as_mut().map_or(Ok(()), |r| {
                     r.settle_unbilled("deadline_exceeded", 408, "deadline_exceeded")
                 });
@@ -1021,6 +1021,7 @@ fn stream_reply(
                 };
                 if let Some(observation) = &http_observation { observation.failed(); }
                 yield Ok(SseEvent::default().data(payload.to_string()));
+                yield Ok(SseEvent::default().data("[DONE]"));
                 return;
             }
             match rows.consume(index, event, &mut receipt) {
@@ -1033,6 +1034,7 @@ fn stream_reply(
                     if let Some(r) = receipt.as_mut() { let _ = r.reject(error.status(), error.code()); }
                     if let Some(observation) = &http_observation { observation.failed(); }
                     yield Ok(SseEvent::default().data(error.body(&env.id).to_string()));
+                    yield Ok(SseEvent::default().data("[DONE]"));
                     return;
                 }
             }
@@ -1041,6 +1043,7 @@ fn stream_reply(
             if let Some(r) = receipt.as_mut() { let _ = r.reject(500, "request_ledger_unavailable"); }
             if let Some(observation) = &http_observation { observation.failed(); }
             yield Ok(SseEvent::default().data(crate::request_ledger_error_body().to_string()));
+            yield Ok(SseEvent::default().data("[DONE]"));
             return;
         }
         // Published before the terminal frames: a client may close as soon as it has them.
@@ -1548,9 +1551,8 @@ mod tests {
 
     /// GB10 n > 1 (2026-11-06): after a group commits headers, its first-token deadline keeps
     /// running. Expiry settles the receipt zero-debit and closes every row even when the body is
-    /// never polled; a polled body ends with the timeout error chunk and no `[DONE]` (n > 1 sends
-    /// `[DONE]` only after successful accounting); the first token of any row disarms the
-    /// deadline; a refusal after the commit is an error event.
+    /// never polled; a polled body ends with the timeout error, then `[DONE]`; the first token of
+    /// any row disarms the deadline; a refusal after the commit is an error event, then `[DONE]`.
     #[tokio::test(start_paused = true)]
     async fn a_committed_group_keeps_its_first_token_deadline() {
         // Unpolled: the deadline settles and cancels with nobody reading the body.
@@ -1571,11 +1573,8 @@ mod tests {
         let (senders, response, log) = committed_group();
         senders[1].send(usage()).unwrap();
         let lines = data_lines(response).await;
-        assert_eq!(
-            lines.len(),
-            1,
-            "the timeout error is the last chunk: {lines:?}"
-        );
+        assert_eq!(lines.len(), 2, "the timeout error, then [DONE]: {lines:?}");
+        assert_eq!(lines[1], "[DONE]");
         let error: Value = serde_json::from_str(&lines[0]).unwrap();
         assert_eq!(error["error"]["type"], "timeout");
         assert_eq!(error["error"]["code"], "deadline_exceeded");
@@ -1625,7 +1624,8 @@ mod tests {
             .send(Event::Error(EngineError::rate_limit("lane full")))
             .unwrap();
         let lines = data_lines(response).await;
-        assert_eq!(lines.len(), 1, "{lines:?}");
+        assert_eq!(lines.len(), 2, "the refusal, then [DONE]: {lines:?}");
+        assert_eq!(lines[1], "[DONE]");
         let error: Value = serde_json::from_str(&lines[0]).unwrap();
         assert_eq!(error["error"]["code"], "rate_limit_exceeded");
         all_closed(&senders).await;

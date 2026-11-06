@@ -20298,11 +20298,8 @@ default_reasoning_effort = "always"
                         )
                         .await
                         .expect("the refused group ends");
-                        assert_eq!(
-                            lines.len(),
-                            1,
-                            "{what}: the error is the last chunk: {lines:?}"
-                        );
+                        assert_eq!(lines.len(), 2, "{what}: the error, then [DONE]: {lines:?}");
+                        assert_eq!(lines[1], "[DONE]", "{what}");
                         let error: serde_json::Value = serde_json::from_str(&lines[0]).unwrap();
                         assert_eq!(error["error"]["code"], "rate_limit_exceeded", "{what}");
                         all_closed(&rows, &what).await;

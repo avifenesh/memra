@@ -244,9 +244,13 @@ async fn choice_http_ledger_callback_failures_are_named_and_release_owned_capaci
                 && worker::ADMISSION_RESERVATIONS
                     .iter()
                     .all(|n| n.load(std::sync::atomic::Ordering::Acquire) == 0);
+            let data: Vec<&str> = wire
+                .lines()
+                .filter_map(|line| line.strip_prefix("data: "))
+                .collect();
             let packets: Vec<serde_json::Value> = if after_header {
-                wire.lines()
-                    .filter_map(|line| line.strip_prefix("data: "))
+                data.iter()
+                    .filter(|line| **line != "[DONE]")
                     .map(|line| serde_json::from_str(line).unwrap())
                     .collect()
             } else {
@@ -258,7 +262,13 @@ async fn choice_http_ledger_callback_failures_are_named_and_release_owned_capaci
                 && errors.len() == 1
                 && errors[0]["code"] == "request_ledger_unavailable"
                 && errors[0]["type"] == "server_error"
-                && !wire.contains("[DONE]")
+                // Since 2026-11-06 a post-header failure ends like n = 1: the error, then
+                // [DONE] (it used to close without [DONE]). Before the headers it is plain JSON.
+                && if after_header {
+                    data.last() == Some(&"[DONE]") && wire.matches("[DONE]").count() == 1
+                } else {
+                    !wire.contains("[DONE]")
+                }
                 && packets
                     .iter()
                     .all(|p| p.get("usage").is_none_or(serde_json::Value::is_null))
