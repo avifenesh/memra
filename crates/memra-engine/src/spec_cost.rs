@@ -92,6 +92,64 @@ fn median(mut v: Vec<f64>) -> f64 {
     v[v.len() / 2]
 }
 
+/// Fit check shared by the boot probes that prime `target` equal sessions at `depth` (a cache
+/// plus its snapshot each). Call it after session `i` (0-based) is primed and snapshotted. At
+/// `i == 0` it records the pool's USED bytes; the first session also carries one-time scratch,
+/// so at `i == 1` the delta is one session's footprint, and the probe refuses when the other
+/// `target - 2` need more than is allocatable (driver free, page-cache aware on unified memory,
+/// plus the pool's reusable cache). It stops only a probe whose priming could not complete. The
+/// sync lands the prime's scratch frees first; a pool that cannot be queried reads (0, 0) and
+/// the probe runs.
+fn probe_session_fit(
+    e: &Engine,
+    i: usize,
+    target: usize,
+    depth: usize,
+    used_after_first: &mut usize,
+) -> Result<(), Box<dyn std::error::Error>> {
+    if i > 1 {
+        return Ok(());
+    }
+    e.stream().synchronize()?;
+    let (reserved, used) = e.pool_reserved_used();
+    if i == 0 {
+        *used_after_first = used;
+        return Ok(());
+    }
+    let (free, _) = crate::unified_memory::allocatable_mem_info(e.ctx())?;
+    let available = free.saturating_add(reserved.saturating_sub(used));
+    match sessions_fit_refusal(
+        target,
+        depth,
+        used.saturating_sub(*used_after_first),
+        available,
+    ) {
+        Some(why) => Err(why.into()),
+        None => Ok(()),
+    }
+}
+
+/// The decision of [`probe_session_fit`]: `Some(reason)` when the sessions after the first
+/// two need more than `available` bytes.
+fn sessions_fit_refusal(
+    target: usize,
+    depth: usize,
+    per_session: usize,
+    available: usize,
+) -> Option<String> {
+    let others = target.saturating_sub(2);
+    let needed = per_session.saturating_mul(others);
+    (needed > available).then(|| {
+        format!(
+            "{target} sessions at depth {depth} do not fit: the other {others} need {}MB \
+             ({}MB each), {}MB allocatable",
+            needed >> 20,
+            per_session >> 20,
+            available >> 20,
+        )
+    })
+}
+
 impl HybridModel {
     /// Boot probe for the 32-row decode wave (batch-spec 2026-11-03): one plain step over 32
     /// sessions in one wave against the same 32 sessions as two 16-row waves, at `depth`,
@@ -125,31 +183,7 @@ impl HybridModel {
             let _ = self.prime_cache(e, &p, &mut c, 0)?;
             snaps.push(c.snapshot(e)?);
             caches.push(c);
-            if i < 2 {
-                // Pool USED counts live allocations only; the sync lands the prime's scratch
-                // frees first. A pool that cannot be queried reads (0, 0) and the probe runs.
-                e.stream().synchronize()?;
-                let (reserved, used) = e.pool_reserved_used();
-                if i == 0 {
-                    used_after_first = used;
-                    continue;
-                }
-                let per_session = used.saturating_sub(used_after_first);
-                let (free, _) = crate::unified_memory::allocatable_mem_info(e.ctx())?;
-                let available = free.saturating_add(reserved.saturating_sub(used));
-                let needed = per_session.saturating_mul(N - 2);
-                if needed > available {
-                    return Err(format!(
-                        "{N} sessions at depth {depth} do not fit: the other {} need {}MB \
-                         ({}MB each), {}MB allocatable",
-                        N - 2,
-                        needed >> 20,
-                        per_session >> 20,
-                        available >> 20,
-                    )
-                    .into());
-                }
-            }
+            probe_session_fit(e, i, N, depth, &mut used_after_first)?;
         }
         let toks: Vec<u32> = (0..N as u32)
             .map(|j| (4242 + j * 7) % vocab as u32)
@@ -205,7 +239,10 @@ impl HybridModel {
     }
 
     /// Measure this model's [`SpecCostTable`] at `depth` (see the module docs). Runs on the
-    /// serving engine before readiness; every buffer it allocates is dropped on return.
+    /// serving engine before readiness; every buffer it allocates is dropped on return. The
+    /// plain-batch table primes up to 16 (or 32) sessions and checks their fit after the second,
+    /// like the wave probe: on an RTX 5090 a Qwen3.8-27B calibration primed until the driver ran
+    /// out (46 s) to fail anyway.
     pub fn spec_cost_calibrate(
         &self,
         e: &Engine,
@@ -256,15 +293,15 @@ impl HybridModel {
         {
             let b_max = *plain_points.last().unwrap();
             let mut caches: Vec<Cache> = Vec::with_capacity(b_max);
+            let mut snaps = Vec::with_capacity(b_max);
+            let mut used_after_first = 0usize;
             for i in 0..b_max {
                 let mut c = crate::pp::new_cache(e, &self.cfg, depth + 32)?;
                 let _ = self.prime_cache(e, &prompt(i as u32 + 1), &mut c, 0)?;
+                snaps.push(c.snapshot(e)?);
                 caches.push(c);
+                probe_session_fit(e, i, b_max, depth, &mut used_after_first)?;
             }
-            let snaps = caches
-                .iter()
-                .map(|c| c.snapshot(e))
-                .collect::<Result<Vec<_>, _>>()?;
             for &b in &plain_points {
                 let toks: Vec<u32> = (0..b as u32)
                     .map(|j| (4242 + j * 7) % vocab as u32)
@@ -358,6 +395,58 @@ impl HybridModel {
 
 #[cfg(test)]
 mod tests {
+    /// Both boot probes check their fit between their last prime and their first timed batch
+    /// step. On an RTX 5090 (24 GB) with Qwen3.8-27B the wave probe primed 32 sessions until
+    /// the driver ran out (48.5 s) and the spec-cost calibration 16 (46 s), both to fail anyway.
+    /// Anchored on comment-stripped, whitespace-free production text.
+    #[test]
+    fn boot_probes_check_their_fit_before_timing() {
+        let src = include_str!("spec_cost.rs");
+        let code: String = src
+            .lines()
+            .map(|l| l.split("//").next().unwrap_or(""))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let prod = &code[..code.find("\nmod tests").expect("tests module exists")];
+        let flat: String = prod.chars().filter(|c| !c.is_whitespace()).collect();
+        for probe in ["pubfndecode_wave_probe(", "pubfnspec_cost_calibrate("] {
+            let start = flat.find(probe).expect(probe);
+            let rest = &flat[start + probe.len()..];
+            let body = &rest[..rest.find("pubfn").unwrap_or(rest.len())];
+            let timed = body
+                .find("self.decode_step_batch_sampled_lean_masked(")
+                .expect("timed batch step");
+            let prime = body[..timed]
+                .rfind("self.prime_cache(")
+                .expect("priming loop");
+            let fit = body[prime..timed]
+                .find("probe_session_fit(")
+                .unwrap_or_else(|| panic!("{probe} checks its fit after priming, before timing"));
+            assert!(prime + fit < timed);
+        }
+    }
+
+    /// The fit decision refuses only when the sessions after the first two cannot fit, and
+    /// names what they need against what is allocatable.
+    #[test]
+    fn probe_fit_refuses_only_past_what_is_allocatable() {
+        const MB: usize = 1 << 20;
+        assert_eq!(
+            super::sessions_fit_refusal(32, 2048, 505 * MB, 30 * 505 * MB),
+            None
+        );
+        let why = super::sessions_fit_refusal(32, 2048, 505 * MB, 30 * 505 * MB - 1)
+            .expect("one byte short refuses");
+        assert_eq!(
+            why,
+            "32 sessions at depth 2048 do not fit: the other 30 need 15150MB (505MB each), \
+             15149MB allocatable"
+        );
+        assert!(super::sessions_fit_refusal(16, 2048, 505 * MB, 7016 * MB).is_some());
+        assert_eq!(super::sessions_fit_refusal(2, 2048, usize::MAX, 0), None);
+        assert_eq!(super::sessions_fit_refusal(16, 2048, 0, 0), None);
+    }
+
     #[test]
     fn pooled_overhead_interpolates_from_one_session_to_the_cohort() {
         let t = super::SpecCostTable {
