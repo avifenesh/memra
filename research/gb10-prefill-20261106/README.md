@@ -194,7 +194,8 @@ same answers in every boot unless noted. Ledger rows 10-14.
 | 8,192 | 38.002, 37.994 s (-0.35%) | 188.544, 189.032 s (-0.64%) | 6,442 MB | 81.3 GiB |
 | 16,384 | 38.066, 37.996 s (-0.26%) | 187.766, 187.639 s (-1.21%) | 10,200 MB | 74.5 GiB |
 
-8,192 is armed at load for this trunk on a unified-memory 120a device (`0cb9642b98`); 16,384's
+8,192 was armed at load for this trunk on a unified-memory 120a device in `0cb9642b98` and removed
+in `09490b0aac` after the fairness cell below; 16,384's
 extra 0.57% at 131k costs 3.8 GB more booking and 7 GiB of MemAvailable per concurrent 131k
 prime. At 259,951 tokens with 8,192 rows the answer equals base and MemAvailable stayed above
 71.8 GiB (`round2-mem-256k-chunk8192/`; a build ran alongside, so its 473.2 s is not a timing).
@@ -207,6 +208,10 @@ at 4,096 and 195.21 / 195.18 s at 8,192 (-0.6%), the peers 5.09-8.72 s at 4,096 
 8,192 (worst 8.7 -> 13.2 s), `tick_max_ms` 7,362 / 7,350 against 14,255 / 14,243. The landed lane
 keeps 4,096 rows, so its 131k cold TTFT is about 0.6% above the round-2 stack figures that include
 this lever (ledger rows 14 and 15). Harness: `harness/fairness_cell.py`, `harness/gb10-fairness.sh`.
+The binary, `b645e05e0b`, is the pre-landing stack: `5d70118b99` with memra#1073 at `3783a79f8a`,
+memra#1074 at `e42c425894` and memra#1075 at `aa309313d4` rebased on it; the ref
+`bank/gb10-batch-b645e05e0b` keeps it fetchable. The 4,096 arm forces the chunk through
+`MEMRA_PRIME_CHUNK`, so both arms ran the same bytes.
 
 ### Fused activation quantize, quantize-once groups, four-row L2 norm
 

@@ -3596,8 +3596,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     // ahead of the F8F4 entry without `f8f4_prefill_direct` learning it fails
                     // here. MMQ-F8F4-GROUP: `matmul_group` (the quantize-once scope) against one
                     // `matmul` per weight on the FFN gate/up pair the prime groups. Both must
-                    // agree on every f32 bit; the production prefill shape (T=1024) must take
-                    // the fused route on a device whose F8F4 route is on.
+                    // agree on every f32 bit; at the production prefill shape (T=1024) the
+                    // down weight must take the fused route and gate/up the F8F4 entry the scope
+                    // reuses, else the cell compares a path with itself. The cells assume the
+                    // default MMQ environment (no `MEMRA_RP=0 MEMRA_MMQ=1` W4A4 opt-in, no
+                    // CUTLASS operand); those configurations take another prefill GEMM.
                     if let (Some(_), Some(_), Some(_)) = (
                         g.find("blk.0.ffn_down.weight")
                             .filter(|t| t.ggml_type == GgmlType::NVFP4),
@@ -3664,6 +3667,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                         "MMQ-F8F4-SILU-ROUTE blk.0.ffn_down.weight T={tt}: not on the direct route (informational)"
                                     );
                                 }
+                                let scoped = e.f8f4_prefill_direct(&wg, tt)
+                                    && e.f8f4_prefill_direct(&wu, tt);
+                                if !scoped && tt == 1024 {
+                                    fails += 1;
+                                    println!(
+                                        "MMQ-F8F4-GROUP blk.0.ffn_gate+ffn_up [NVFP4 loaded] T={tt}: \
+                                         gate/up do not reach the F8F4 entry, the scope is not exercised FAIL"
+                                    );
+                                    continue;
+                                }
                                 let x: Vec<f32> = (0..tt * n_embd).map(|i| pr(i + 107)).collect();
                                 let xd = e.htod(&x)?;
                                 let grouped = e.matmul_group(&[&wg, &wu], &xd, tt)?;
@@ -3688,6 +3701,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 "MMQ-F8F4-SILU-ROUTE / MMQ-F8F4-GROUP: SKIP (F8F4 route off on this device)"
                             );
                         }
+                    } else {
+                        println!(
+                            "MMQ-F8F4-SILU-ROUTE / MMQ-F8F4-GROUP: SKIP (blk.0 ffn_down/ffn_gate/ffn_up are not all NVFP4 in this model)"
+                        );
                     }
                     // --- STAGE 2: VENDORED llama NVFP4 W4A8 MMQ GEMM vs the f32 dequant oracle. ---
                     // The accuracy-safe rung: weight FP4 is LUT-dequantized to int8 (bit-exact) and the
