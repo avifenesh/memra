@@ -384,6 +384,14 @@ def delta(repo, base, head, *, map_ref=None, paths=None, map_data=None, map_obj=
                     cs = m.item_cells(i)
                 eff = set(mi["e"])
                 src = "map-region" if narrowed else "map-item"
+                # An output-neutral item (a verified exact claim) is neutral only for the code its
+                # skeptic read. Between rebuilds the map cannot re-check the claim, so it holds only
+                # while the base copy is still the map's code and the change names nothing the base
+                # copy did not: a new static, call or field can carry the output anywhere.
+                if not eff - {"observability", "none"} and (
+                        mi["h"] != (bh[0] if bh else None) or (bh and hh and hh[6] - bh[6])):
+                    eff = all_eff
+                    src += "+neutral-lapsed"
                 if not cs:
                     src = "map-empty"  # placed nowhere by default (a build-time door): not narrowed
                     cs = m.file_cells(path) or m.cells_of_set_all()

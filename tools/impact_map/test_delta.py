@@ -51,6 +51,16 @@ def run(repo, *cmd):
     return subprocess.run(["git", "-C", str(repo), *cmd], check=True, capture_output=True, text=True).stdout.strip()
 
 
+def stamped_tree(repo, work, files):
+    """A one-commit tree and an empty stage 0 stamped as built on it (ingest refuses any other tree)."""
+    import ingest
+    Path(repo).mkdir(parents=True, exist_ok=True)
+    run(repo, "init", "-q")
+    commit(repo, files, "tree")
+    (Path(work) / "stage0/graph").mkdir(parents=True, exist_ok=True)
+    (Path(work) / "stage0/tree.json").write_text(json.dumps(ingest.tree_stamp(repo)))
+
+
 def commit(repo, files, msg):
     for path, text in files.items():
         p = Path(repo) / path
@@ -390,16 +400,80 @@ class BuildFailsClosedTest(unittest.TestCase):
                   {"item": "c", "anchor_hash": "h3"},   # gone
                   {"item": "a2"}]                       # no hash recorded: cannot be checked
         nodes["a2"] = {"hash": "x"}
-        honored, stale = assemble.honored_exact(claims, nodes)
+        honored, stale, unknown = assemble.honored_exact(claims, nodes)
         self.assertEqual(honored, {"a"})
-        self.assertEqual(stale, 3)
+        self.assertEqual((stale, unknown), (2, 1))
+
+    def test_assemble_takes_default_effects_for_a_lapsed_output_neutral_claim(self):
+        # the wiring, end to end: assemble.py on a stage 0 where one claim still matches its code
+        f = "crates/memra-engine/src/m.rs"
+        with tempfile.TemporaryDirectory() as tmp:
+            work, repo = Path(tmp) / "work", Path(tmp) / "repo"
+            (work / "stage0/graph").mkdir(parents=True)
+            repo.mkdir()
+
+            def node(name, h, a):
+                return {"id": f"{f}::memra_engine::m::{name}", "file": f, "kind": "fn", "lang": "rust", "hash": h,
+                        "lhash": h, "line_start": a, "line_end": a + 2, "cfg": [], "qual": f"memra_engine::m::{name}",
+                        "name": name, "test": False}
+            nodes = [node("fresh", "hF", 1), node("rewritten", "hR-new", 5), node("legacy", "hL", 9)]
+            (work / "stage0/graph/nodes.jsonl").write_text("".join(json.dumps(n) + "\n" for n in nodes))
+            (work / "stage0/graph/edges.tsv").write_text("")
+            unit = {"src": "cu/a.cu", "passes": {"device": {}, "host": {}}}
+            (work / "stage0/liveness.json").write_text(json.dumps({v: {"units": [unit]} for v in ("120a", "100a", "90a", "89")}))
+            ann = {"exact_items": [{"claim": "t:X0", "item": nodes[0]["id"], "anchor_hash": "hF"},
+                                   {"claim": "t:X1", "item": nodes[1]["id"], "anchor_hash": "hR-old"},
+                                   {"claim": "t:X2", "item": nodes[2]["id"]},
+                                   {"claim": "t:X3", "item": f"{f}::memra_engine::m::gone", "anchor_hash": "hG"}]}
+            (work / "ann.json").write_text(json.dumps(ann))
+            out = subprocess.run([sys.executable, str(HERE / "assemble.py"), str(work / "ann.json"), str(work / "map.json")],
+                                 capture_output=True, text=True,
+                                 env=dict(os.environ, MEMRA_IMPACT_WORK=str(work), MEMRA_IMPACT_REPO=str(repo)))
+            self.assertEqual(out.returncode, 0, out.stderr)
+            m = json.loads((work / "map.json").read_text())
+            eff = {i.split("::")[-1]: it["e"] for i, it in m["items"].items()}
+            self.assertEqual(eff["fresh"], ["observability"])
+            self.assertNotEqual(eff["rewritten"], ["observability"])
+            self.assertNotEqual(eff["legacy"], ["observability"])
+            self.assertEqual((m["stats"]["exact_items_stale"], m["stats"]["exact_items_unknown"]), (2, 1))
+
+    def test_an_output_neutral_item_lapses_between_rebuilds(self):
+        # The map is not re-checked between rebuilds: a neutral item stays neutral only while the
+        # base is the map's code and the change names nothing new.
+        f = "crates/memra-engine/src/stats.rs"
+        v0 = 'pub fn render_metrics(n: u64) -> String {\n    format!("requests {n}")\n}\n'
+        v_text = 'pub fn render_metrics(n: u64) -> String {\n    format!("requests: {n}")\n}\n'
+        v1 = 'pub fn render_metrics(n: u64) -> String {\n    BATCH_LIMIT.store(n as usize, Relaxed);\n    format!("requests {n}")\n}\n'
+        v2 = 'pub fn render_metrics(n: u64) -> String {\n    BATCH_LIMIT.store(2 * n as usize, Relaxed);\n    format!("requests {n}")\n}\n'
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            run(repo, "init", "-q")
+            m0 = commit(repo, {f: v0}, "code")
+            items = {i: {"f": f, "a": a, "b": b, "h": h, "l": lh, "k": kind, "r": 0, "e": ["observability"], "s": "test"}
+                     for i, (h, a, b, test, kind, lh, _) in delta.scan(f, delta.blob(repo, m0, f)).items() if kind != "outside"}
+            mp = {"schema": "memra-impact-map-v1", "source_commit": m0,
+                  "vocab": {"families": ["qwen35"], "routes": ["plain"], "devices": ["rtx5090"]},
+                  "reach_sets": ["*"], "items": items, "regions": [], "stats": {}}
+            base = commit(repo, {delta.MAP_PATH: json.dumps(mp), delta.MODELS_PATH: json.dumps({"families": {}})}, "map")
+            text = commit(repo, {f: v_text}, "only the text changes")
+            run(repo, "checkout", "-q", base)
+            p1 = commit(repo, {f: v1}, "the item now writes a scheduling static")
+            p2 = commit(repo, {f: v2}, "edit it again, map not rebuilt")
+
+            def item(b, h):
+                rep = delta.delta(repo, b, h, map_ref=base)
+                return [x for x in rep["files"][0]["items"] if not x["item"].endswith("<outside>")][0]
+            same = item(base, text)
+            self.assertEqual((same["source"], same["effects"]), ("map-item", ["observability"]))
+            for b, h in ((base, p1), (p1, p2)):
+                it = item(b, h)
+                self.assertTrue(it["source"].endswith("+neutral-lapsed"), it)
+                self.assertIn("numeric", it["effects"])
 
     def test_an_ingest_without_verdicts_widens_every_narrowing_claim(self):
         with tempfile.TemporaryDirectory() as tmp:
             repo, work = Path(tmp) / "repo", Path(tmp) / "work"
-            (repo / "src").mkdir(parents=True)
-            (repo / "src/a.rs").write_text("fn a() {\n    if qwen() { k(); }\n}\n")
-            (work / "stage0/graph").mkdir(parents=True)
+            stamped_tree(repo, work, {"src/a.rs": "fn a() {\n    if qwen() { k(); }\n}\n"})
             (work / "stage0/graph/nodes.jsonl").write_text(json.dumps(
                 {"id": "src/a.rs::a", "file": "src/a.rs", "kind": "fn", "line_start": 1, "line_end": 3, "hash": "h"}) + "\n")
             ev = [{"file": "src/a.rs", "line": 2, "quote": "if qwen() { k(); }"}]
@@ -414,6 +488,36 @@ class BuildFailsClosedTest(unittest.TestCase):
             ann = json.loads(out.stdout)
             self.assertEqual([(r["families"], r["verdict"], r["narrowing"]) for r in ann["regions"]], [(["*"], "unverified", False)])
             self.assertEqual([(f["families"], f["verdict"]) for f in ann["file_defaults"]], [(["*"], "unverified")])
+
+    def test_ingest_pins_claims_only_to_the_tree_stage0_was_built_on(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, work = Path(tmp) / "repo", Path(tmp) / "work"
+            stamped_tree(repo, work, {"src/a.rs": "fn a() {\n    log(1);\n}\n"})
+            (work / "stage0/graph/nodes.jsonl").write_text(json.dumps(
+                {"id": "src/a.rs::a", "file": "src/a.rs", "kind": "fn", "line_start": 1, "line_end": 3, "hash": "h"}) + "\n")
+            ev = [{"file": "src/a.rs", "line": 2, "quote": "log(1);"}]
+            res = {"annotated": [{"slice": "S1", "exact_items": [{"item": "src/a.rs::a", "evidence": ev},
+                                                                 {"item": "src/a.rs", "evidence": ev}]}]}
+            (Path(tmp) / "results.json").write_text(json.dumps(res))
+            (Path(tmp) / "verdicts.json").write_text(json.dumps([{"claim": "S1:X0", "refuted": False},
+                                                                 {"claim": "S1:X1", "refuted": False}]))
+
+            def ingest():
+                return subprocess.run([sys.executable, str(HERE / "ingest.py"), str(Path(tmp) / "results.json"),
+                                       str(Path(tmp) / "verdicts.json")], capture_output=True, text=True,
+                                      env=dict(os.environ, MEMRA_IMPACT_WORK=str(work), MEMRA_IMPACT_REPO=str(repo)))
+            out = ingest()
+            self.assertEqual(out.returncode, 0, out.stderr)
+            ann = json.loads(out.stdout)
+            # the verified claim carries the hash of the item stage 0 scanned; a claim naming a file pins nothing
+            self.assertEqual([(x["claim"], x["anchor_hash"]) for x in ann["exact_items"]], [("S1:X0", "h")])
+            self.assertIn("S1:X1 names no stage-0 item", out.stderr)
+            (repo / "src/a.rs").write_text("fn a() {\n    log(1);\n    BATCH.store(1);\n}\n")
+            out = ingest()
+            self.assertNotEqual(out.returncode, 0)
+            self.assertIn("stage 0 was built on", out.stderr)
+            commit(repo, {}, "the tree moves on")
+            self.assertNotEqual(ingest().returncode, 0)
 
     def test_the_family_batch_script_runs(self):
         with tempfile.TemporaryDirectory() as tmp:
