@@ -1,0 +1,25 @@
+{
+ "n": 2,
+ "lines": 4678,
+ "nonce": "memra-1076 live check main 1794002134",
+ "max_tokens": 40,
+ "http": 400,
+ "headers_s": 0.016,
+ "first_token_s": {},
+ "finish": {},
+ "text_sha256": {},
+ "error_events": [],
+ "done": false,
+ "usage": null,
+ "exception": "{\"error\":{\"message\":\"n-choice shared prefill is unavailable for this model/boot above n=1; selected spec, vision, parallel or unsupported state routes require n=1\",\"type\":\"invalid_request_error\",\"param\":\"n\",\"code\":null}}",
+ "total_s": 0.016,
+ "checks": {
+  "http_200": false,
+  "every_choice_streamed": false,
+  "every_choice_finished": false,
+  "no_error_event": false,
+  "done_terminal": false,
+  "first_token_after_commit": false
+ },
+ "verdict": "FAIL"
+}

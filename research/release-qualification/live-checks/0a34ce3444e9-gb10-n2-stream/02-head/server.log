@@ -1,0 +1,41 @@
+[server] build: memra-0.138.0-f66068c5e803 (id: source-tree, git: 0a34ce3444e9)
+[server] starting; models config = [("q38", "~/models/memra-q38/Qwen3.8-27B-NVFP4-MTP-GGUF/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf", None)]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[worker-affinity] off (MEMRA_WORKER_CPUSET / MEMRA_WORKER_AFFINITY unset or =0)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal after 3 consecutive misses (MEMRA_GPU_PROBE_MISSES), fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2 (K=5 when the loaded MTP head is rank-trimmed)
+[worker] loading model "q38" <- ~/models/memra-q38/Qwen3.8-27B-NVFP4-MTP-GGUF/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf
+[tensor-contract] bound 866 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[worker]   loaded "q38": 65 layers, eos=248046, stop=[248046]
+[worker] q38: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false qwen_effort=true gemma_think=false dsv4=false glm5=false ctx=262144 tok="qwen35" instruct=Some("chatml") chat_defaults=None/None
+[route-contract] model="q38" route=hybrid-worker capacity=32 sessions implemented=[capacity,occupancy,progress,fault-ownership,shutdown-ownership,memory-cost,rewrite-qualification,prime-fairness,service-metrics] refused=[]
+[fa-pool] grow #0 dev=0 o_len 0 -> 3244032 ml_len 0 -> 12672 (retired kept, zero=false)
+[fa-pool] grow #1 dev=0 o_len 3244032 -> 6488064 ml_len 12672 -> 25344 (retired kept, zero=false)
+[device-trim] reason=wave-probe {"device":0,"reclaimed_bytes":17515413504,"still_owned_bytes":16539466752,"pool_reserved_bytes":16777216000,"pool_cached_bytes":237749248,"driver_free_bytes":28268376064,"synchronization_errors":[]}
+[wave-probe] 32 sessions at depth 2048: two 16-row waves 262.7 ms, one 32-row wave 264.4 ms (tensor-core tier 228.9 ms) -> wave cap 32, tensor-core b32 on (68.9s; released 16704MB of cached pool to the driver)
+[worker] q38: decode wave cap 32; scheduler tick cap 32 (exact-32 tier)
+[prefix-cache] on: budget 50903MB (50903019520 B, derived: 2 x 7941521408 B max entry for model "q38" at served ctx 262144 (from MEMRA_CTX; MEMRA_CTX set), unified memory: the larger of that and 1/2 of allocatable free after the transient reserve, driver headroom 2147483648 B and host tier 0 B, requested 50903019520 B; boot driver free 105564135424 B, post-reserve clamp 101806039040 B), policy plain-LRU (global oldest unleased entry first; leases untouchable), min prefix 64 tokens, immediate partial restore=off (rollback) (transformer-only; hybrid mid-entry + routed-MoE N/A)
+[admission] "q38": plain 29696 B/token, spec 31552 B/token; fixed residual learns from effective-free deltas
+[spec-cost] calibration skipped: the LOW/HIGH band owns the spec gate
+[admit-cal] boot calibration skipped: spec serving disabled (static floor; the plain transient class is chunk-bounded)
+[admit-mem] door=OFF open_output_tokens=8192 defer_budget_ms=8000 (admission charges prompt+output, the reclaim flush demotes to the host tier before dropping, and a memory defer past the budget refuses 429 instead of queueing past the client's deadline)
+[kv-vmm] door=OFF (MEMRA_KV_ALLOCATOR unset or pooled: pooled K/V planes)
+[deadline] unified memory (48 SMs, served ctx 262144): streaming TTFT default/max 997311 ms (derived), SSE prefill commit 60000 ms; non-streaming default/max 3045311 ms (derived: full-context prefill + 8192 open output tokens at 4 tok/s). MEMRA_SSE_PREFILL_COMMIT_MS=0 restores the shipped 90 s windows
+[server] worker ready; serving models: ["q38"]
+[server] listening on http://127.0.0.1:8090
+[meter] admit id=chatcmpl-2e0fd96a8e8940f340747ebb547dc78d tenant=default lane=interactive model="q38"
+[admission] request cost: model="q38" ctx=131161 path=plain = 29696 B/token x ctx + 4563MB prefill-workspace + 0MB fixed = 8458MB
+[prefix-cache] stable-boundary capture armed at 131040 of 131057 prompt tokens (model q38)
+[spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=131057 cached=0 lcp=0 active=1 wave=2 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="q38" 603MB (observed 4496MB at ctx 131105 path=plain)
+[admission] request cost: model="q38" ctx=131161 path=plain = 29696 B/token x ctx + 4563MB prefill-workspace + 603MB fixed = 9061MB
+[spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=131057 cached=0 lcp=0 active=2 wave=2 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="q38" 641MB (observed 4535MB at ctx 131105 path=plain)
+[prefix-cache] insert (lcp-split): 131040 tokens, 4048.3MB (resident 4048.3MB / 50903MB, model q38)
+[n-choice-prefill] group=chatcmpl-2e0fd96a8e8940f340747ebb547dc78d choices=2 prompt=131057 cached=0 copies=1 bytes=4048761856 leader=0
+[fa-pool] grow #2 dev=0 o_len 6488064 -> 12976128 ml_len 25344 -> 50688 (retired kept, zero=false)
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting
+[server] GPU worker shutdown complete

@@ -1,0 +1,14 @@
+2026-11-07T00:03:32+02:00 arm 1 main: {"verdict": "FAIL", "http": 408, "headers_s": 60.016, "first_token_s": {}, "finish": {}, "error_events": [], "done": false, "total_s": 60.016, "exception": "{\"error\":{\"message\":\"admission did not complete within the 60000 ms pre-header budget (streaming first-token timeout_ms=997311); generation was cancelled and this request is not billed\",\"type\":\"timeout\",\"param\":\"timeout_ms\",\"code\":\"deadline_exceeded\"}}", "checks": {"http_200": false, "every_choice_streamed": false, "every_choice_finished": false, "no_error_event": false, "done_terminal": false, "first_token_after_commit": false}} check rc=1 
+2026-11-07T00:03:32+02:00   [deadline] u
+2026-11-07T00:03:32+02:00   [admission] "q38": plain 29696 B/token, spec 31552 B/token; fixed residual learns from effective-free deltas
+2026-11-07T00:03:32+02:00   [admission] request cost: model="q38" ctx=131161 path=plain = 29696 B/token x ctx + 4563MB prefill-workspace + 0MB fixed = 8458MB
+2026-11-07T00:03:32+02:00   [admission] fixed residual high-water: model="q38" 551MB (observed 4445MB at ctx 131105 path=plain)
+2026-11-07T00:03:32+02:00   [admission] request cost: model="q38" ctx=131161 path=plain = 29696 B/token x ctx + 4563MB prefill-workspace + 551MB fixed = 9009MB
+2026-11-07T00:08:17+02:00 arm 2 head: {"verdict": "PASS", "http": 200, "headers_s": 60.022, "first_token_s": {"0": 186.023, "1": 186.023}, "finish": {"0": "length", "1": "length"}, "error_events": [], "done": true, "total_s": 191.083, "exception": null, "checks": {"http_200": true, "every_choice_streamed": true, "every_choice_finished": true, "no_error_event": true, "done_terminal": true, "first_token_after_commit": true}} check rc=0 
+2026-11-07T00:08:17+02:00   [deadline] u
+2026-11-07T00:08:17+02:00   [admission] "q38": plain 29696 B/token, spec 31552 B/token; fixed residual learns from effective-free deltas
+2026-11-07T00:08:17+02:00   [admission] request cost: model="q38" ctx=131161 path=plain = 29696 B/token x ctx + 4563MB prefill-workspace + 0MB fixed = 8458MB
+2026-11-07T00:08:17+02:00   [admission] fixed residual high-water: model="q38" 603MB (observed 4496MB at ctx 131105 path=plain)
+2026-11-07T00:08:17+02:00   [admission] request cost: model="q38" ctx=131161 path=plain = 29696 B/token x ctx + 4563MB prefill-workspace + 603MB fixed = 9061MB
+2026-11-07T00:08:17+02:00   [admission] fixed residual high-water: model="q38" 641MB (observed 4535MB at ctx 131105 path=plain)
+2026-11-07T00:08:17+02:00 LIVE_1076_DONE

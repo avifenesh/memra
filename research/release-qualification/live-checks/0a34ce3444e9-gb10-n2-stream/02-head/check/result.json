@@ -1,0 +1,46 @@
+{
+ "n": 2,
+ "lines": 4678,
+ "nonce": "memra-1076 live check head 1794002691",
+ "max_tokens": 40,
+ "http": 200,
+ "headers_s": 60.022,
+ "first_token_s": {
+  "0": 186.023,
+  "1": 186.023
+ },
+ "finish": {
+  "0": "length",
+  "1": "length"
+ },
+ "text_sha256": {
+  "0": "2786531e691b897e10083a8125b659fdf12570d5c308fdf48c7879bc82a1d002",
+  "1": "2786531e691b897e10083a8125b659fdf12570d5c308fdf48c7879bc82a1d002"
+ },
+ "error_events": [],
+ "done": true,
+ "usage": {
+  "prompt_tokens": 131057,
+  "completion_tokens": 80,
+  "total_tokens": 131137,
+  "prompt_tokens_details": {
+   "cached_tokens": 0
+  },
+  "elapsed_s": 190.799507478
+ },
+ "exception": null,
+ "total_s": 191.083,
+ "text": {
+  "0": "TANGERINE-4471\nMARIGOLD-9083\n\nThe records consist of a repeating sequence of four-word phrases that cycle through a fixed set of twelve distinct patterns.",
+  "1": "TANGERINE-4471\nMARIGOLD-9083\n\nThe records consist of a repeating sequence of four-word phrases that cycle through a fixed set of twelve distinct patterns."
+ },
+ "checks": {
+  "http_200": true,
+  "every_choice_streamed": true,
+  "every_choice_finished": true,
+  "no_error_event": true,
+  "done_terminal": true,
+  "first_token_after_commit": true
+ },
+ "verdict": "PASS"
+}

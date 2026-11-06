@@ -1,0 +1,25 @@
+{
+ "n": 2,
+ "lines": 4678,
+ "nonce": "memra-1076 live check main 1794002537",
+ "max_tokens": 40,
+ "http": 408,
+ "headers_s": 60.016,
+ "first_token_s": {},
+ "finish": {},
+ "text_sha256": {},
+ "error_events": [],
+ "done": false,
+ "usage": null,
+ "exception": "{\"error\":{\"message\":\"admission did not complete within the 60000 ms pre-header budget (streaming first-token timeout_ms=997311); generation was cancelled and this request is not billed\",\"type\":\"timeout\",\"param\":\"timeout_ms\",\"code\":\"deadline_exceeded\"}}",
+ "total_s": 60.016,
+ "checks": {
+  "http_200": false,
+  "every_choice_streamed": false,
+  "every_choice_finished": false,
+  "no_error_event": false,
+  "done_terminal": false,
+  "first_token_after_commit": false
+ },
+ "verdict": "FAIL"
+}
