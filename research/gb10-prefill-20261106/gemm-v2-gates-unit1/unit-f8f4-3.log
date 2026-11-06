@@ -1,0 +1,12 @@
+   Compiling memra-engine v0.138.0 (~/.cache/memra-gemm-v2/tree-pr/crates/memra-engine)
+warning: memra-engine@0.138.0: nvcc from $CUDA_HOME: /usr/local/cuda/bin/nvcc
+warning: memra-engine@0.138.0: MEMRA_CUDA_ARCH auto-detected 121a (compute_cap 12.1); set MEMRA_CUDA_ARCH to override
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 3m 18s
+     Running unittests src/lib.rs (~/.cache/memra-gemm-v2/target-clippy/debug/deps/memra_engine-dd462b842d934f8e)
+
+running 2 tests
+test mmq_ffi::f8f4_default_tests::f8f4_defaults_on_only_on_gb10_and_the_flag_decides_everywhere ... ok
+test mmq_ffi::f8f4_default_tests::f8f4_v2_applies_from_the_crossover_on_whole_k_groups ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 757 filtered out; finished in 0.00s
+

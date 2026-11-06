@@ -1,0 +1,33 @@
+2026-11-06T17:45:49+02:00 cell 1 arm=P bin=~/.cache/memra-gemm-v2/bins/r2base-1ed40895ec extra=
+2026-11-06T17:45:49+02:00 run_arm OUT=~/.cache/memra-gemm-v2/runs/R3-v2-unit1/01-P BIN=~/.cache/memra-gemm-v2/bins/r2base-1ed40895ec EXTRA= TARGETS=32768 131072 260000 REPS=1 1 1 WRAP=
+2026-11-06T17:49:02+02:00 ready
+2026-11-06T18:00:27+02:00 bench rc=0
+2026-11-06T18:00:42+02:00 done
+P {"tag": "01-P", "target": 32768, "rep": 0, "ttft_s": 36.199, "total_s": 37.776, "prompt_tokens": 32784, "completion_tokens": 40, "needles_ok": true, "error": null, "text_sha256": "cb9da8ae3cecfc7aa768e2345181fc3df508ba01b28b6193fd09c41f72b6d394"}
+P {"tag": "01-P", "target": 131072, "rep": 0, "ttft_s": 181.306, "total_s": 183.925, "prompt_tokens": 131051, "completion_tokens": 40, "needles_ok": true, "error": null, "text_sha256": "84980efddfee6275d79365af174daac933bdd67199a8d14984597b9d99982e5d"}
+P {"tag": "01-P", "target": 260000, "rep": 0, "ttft_s": 457.527, "total_s": 461.834, "prompt_tokens": 259951, "completion_tokens": 40, "needles_ok": true, "error": null, "text_sha256": "3759709dfbe4b215814e193a6144c882d556ee68fcd33070f6d8e3de3abd0f2e"}
+2026-11-06T18:00:42+02:00 cell 2 arm=V bin=~/.cache/memra-gemm-v2/bins/v2-b6d10d41c7 extra=
+2026-11-06T18:00:42+02:00 run_arm OUT=~/.cache/memra-gemm-v2/runs/R3-v2-unit1/02-V BIN=~/.cache/memra-gemm-v2/bins/v2-b6d10d41c7 EXTRA= TARGETS=32768 131072 260000 REPS=1 1 1 WRAP=
+2026-11-06T18:03:34+02:00 ready
+2026-11-06T18:13:55+02:00 bench rc=0
+2026-11-06T18:14:10+02:00 done
+V {"tag": "02-V", "target": 32768, "rep": 0, "ttft_s": 31.376, "total_s": 32.948, "prompt_tokens": 32784, "completion_tokens": 40, "needles_ok": true, "error": null, "text_sha256": "cb9da8ae3cecfc7aa768e2345181fc3df508ba01b28b6193fd09c41f72b6d394"}
+V {"tag": "02-V", "target": 131072, "rep": 0, "ttft_s": 161.785, "total_s": 164.407, "prompt_tokens": 131051, "completion_tokens": 40, "needles_ok": true, "error": null, "text_sha256": "84980efddfee6275d79365af174daac933bdd67199a8d14984597b9d99982e5d"}
+V {"tag": "02-V", "target": 260000, "rep": 0, "ttft_s": 418.932, "total_s": 423.247, "prompt_tokens": 259951, "completion_tokens": 40, "needles_ok": true, "error": null, "text_sha256": "3759709dfbe4b215814e193a6144c882d556ee68fcd33070f6d8e3de3abd0f2e"}
+2026-11-06T18:14:10+02:00 cell 3 arm=V bin=~/.cache/memra-gemm-v2/bins/v2-b6d10d41c7 extra=
+2026-11-06T18:14:10+02:00 run_arm OUT=~/.cache/memra-gemm-v2/runs/R3-v2-unit1/03-V BIN=~/.cache/memra-gemm-v2/bins/v2-b6d10d41c7 EXTRA= TARGETS=32768 131072 260000 REPS=1 1 1 WRAP=
+2026-11-06T18:17:02+02:00 ready
+2026-11-06T18:27:23+02:00 bench rc=0
+2026-11-06T18:27:38+02:00 done
+V {"tag": "03-V", "target": 32768, "rep": 0, "ttft_s": 31.36, "total_s": 32.934, "prompt_tokens": 32784, "completion_tokens": 40, "needles_ok": true, "error": null, "text_sha256": "cb9da8ae3cecfc7aa768e2345181fc3df508ba01b28b6193fd09c41f72b6d394"}
+V {"tag": "03-V", "target": 131072, "rep": 0, "ttft_s": 161.862, "total_s": 164.484, "prompt_tokens": 131051, "completion_tokens": 40, "needles_ok": true, "error": null, "text_sha256": "84980efddfee6275d79365af174daac933bdd67199a8d14984597b9d99982e5d"}
+V {"tag": "03-V", "target": 260000, "rep": 0, "ttft_s": 419.036, "total_s": 423.332, "prompt_tokens": 259951, "completion_tokens": 40, "needles_ok": true, "error": null, "text_sha256": "3759709dfbe4b215814e193a6144c882d556ee68fcd33070f6d8e3de3abd0f2e"}
+2026-11-06T18:27:38+02:00 cell 4 arm=P bin=~/.cache/memra-gemm-v2/bins/r2base-1ed40895ec extra=
+2026-11-06T18:27:38+02:00 run_arm OUT=~/.cache/memra-gemm-v2/runs/R3-v2-unit1/04-P BIN=~/.cache/memra-gemm-v2/bins/r2base-1ed40895ec EXTRA= TARGETS=32768 131072 260000 REPS=1 1 1 WRAP=
+2026-11-06T18:30:41+02:00 ready
+2026-11-06T18:42:05+02:00 bench rc=0
+2026-11-06T18:42:20+02:00 done
+P {"tag": "04-P", "target": 32768, "rep": 0, "ttft_s": 36.238, "total_s": 37.81, "prompt_tokens": 32784, "completion_tokens": 40, "needles_ok": true, "error": null, "text_sha256": "cb9da8ae3cecfc7aa768e2345181fc3df508ba01b28b6193fd09c41f72b6d394"}
+P {"tag": "04-P", "target": 131072, "rep": 0, "ttft_s": 181.239, "total_s": 183.86, "prompt_tokens": 131051, "completion_tokens": 40, "needles_ok": true, "error": null, "text_sha256": "84980efddfee6275d79365af174daac933bdd67199a8d14984597b9d99982e5d"}
+P {"tag": "04-P", "target": 260000, "rep": 0, "ttft_s": 458.321, "total_s": 462.615, "prompt_tokens": 259951, "completion_tokens": 40, "needles_ok": true, "error": null, "text_sha256": "3759709dfbe4b215814e193a6144c882d556ee68fcd33070f6d8e3de3abd0f2e"}
+2026-11-06T18:42:20+02:00 campaign done

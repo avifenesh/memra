@@ -26,6 +26,7 @@ half — "we tried X and it lost by Y% on Z" cannot be reconstructed from the co
 | [SM121-SPARK-TARGET.md](SM121-SPARK-TARGET.md) | GB10 (DGX Spark) builds its own `121a` SASS in the `120a` policy family; the one-binary `120f` family build rejected |
 | [GB10-PRIME-ATTENTION-H2.md](GB10-PRIME-ATTENTION-H2.md) | GB10 primes quantized-KV attention with the two-head (h2) twin by default (exact, -13.9% served 131k TTFT); t3 and the FA2 numerical class rejected there |
 | [GB10-PRIME-CHUNK-8192.md](GB10-PRIME-CHUNK-8192.md) | REJECTED 2026-11-06: an 8,192-row GB10 prime chunk default (exact, -0.64% on a lone 131k prime) doubles the prime walker's peer quantum (worst peer first token 8.7 -> 13.2 s, tick_max 7.4 -> 14.2 s); 4,096 stays. 16,384 was rejected earlier for its admission and memory cost |
+| [GB10-F8F4-GEMM-V2.md](GB10-F8F4-GEMM-V2.md) | GB10 runs F8F4 prefill GEMMs of at least 2,048 rows on the v2 tile (per-call weight image, pipelined 16-warp 256 x 128 tile, grouped raster; exact, -8.0% served 131k TTFT at 4,096-row chunks on both units, -10.7% at 8,192); two 8-warp CTAs per SM and resident images rejected |
 
 Adding one: a decision that changes a default, a format, a target or an arm belongs here, with
 the measurement that settled it. Superseded records get a banner naming what replaced them —

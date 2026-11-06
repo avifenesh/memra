@@ -1,0 +1,27 @@
+campaign R3-v2-unit1: 12 requests, arms ['P', 'V']
+
+target 32768
+  P        ttft 36.199, 36.238                           median 36.218  cells ['01-P', '04-P']
+  V        ttft 31.376, 31.360                           median 31.368  cells ['02-V', '03-V']
+  V vs P: -13.39%
+
+target 131072
+  P        ttft 181.306, 181.239                         median 181.273  cells ['01-P', '04-P']
+  V        ttft 161.785, 161.862                         median 161.823  cells ['02-V', '03-V']
+  V vs P: -10.73%
+
+target 260000
+  P        ttft 457.527, 458.321                         median 457.924  cells ['01-P', '04-P']
+  V        ttft 418.932, 419.036                         median 418.984  cells ['02-V', '03-V']
+  V vs P: -8.50%
+
+fingerprints (text sha256 per target/rep across all cells)
+  target 32768 rep 0: 1 distinct IDENTICAL
+  target 131072 rep 0: 1 distinct IDENTICAL
+  target 260000 rep 0: 1 distinct IDENTICAL
+errors/needle misses: 0
+FINGERPRINTS IDENTICAL
+01-P: MemAvailable floor 65.17 GiB
+02-V: MemAvailable floor 65.32 GiB
+03-V: MemAvailable floor 65.32 GiB
+04-P: MemAvailable floor 65.26 GiB

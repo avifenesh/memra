@@ -1,0 +1,222 @@
+{
+ "window_s": 162.045327584,
+ "busy_s": 160.21993691,
+ "kernel_sum_s": 160.22143988600016,
+ "parts_s": {
+  "glue: norms/adds/act": 8.74084549700002,
+  "gemm: activation e4m3 quantize": 9.398273472000017,
+  "gemm: F8F4 v2 weight image": 3.108302111999996,
+  "gemm: NVFP4 F8F4 v2 tile": 57.560831456000024,
+  "other": 4.382163580000035,
+  "gemm: other MMQ / matvec": 3.8448268129999987,
+  "gdn: conv/l2/gates": 6.228474911999935,
+  "gdn: chunk scan kernels": 13.95079977599998,
+  "attention: rope/qk-norm/gate glue": 1.0209338210000003,
+  "attention: KV append/quantize": 0.39035580800015823,
+  "attention: KV dequant workspace": 0.7397474879999999,
+  "attention: FA prime kernel": 50.762853439999994,
+  "gemm: NVFP4 F8F4 MMQ": 0.09303171100000004
+ },
+ "top": [
+  {
+   "name": "mul_mat_f8f4v2<",
+   "s": 57.560831456,
+   "count": 6400
+  },
+  {
+   "name": "fa_prefill_qw_h2",
+   "s": 50.599153856,
+   "count": 256
+  },
+  {
+   "name": "quantize_mmq_e4m3_d4_silu_kernel<",
+   "s": 6.1232824,
+   "count": 1088
+  },
+  {
+   "name": "add_f32",
+   "s": 4.32071385,
+   "count": 2244
+  },
+  {
+   "name": "gdn_chunk_state_mma",
+   "s": 4.250657184,
+   "count": 816
+  },
+  {
+   "name": "rms_norm_f32_v2",
+   "s": 3.738064383,
+   "count": 2974
+  },
+  {
+   "name": "gdn_chunk_solve32_f32",
+   "s": 3.55493184,
+   "count": 816
+  },
+  {
+   "name": "gdn_chunk_output_mma",
+   "s": 3.473231648,
+   "count": 816
+  },
+  {
+   "name": "qmatvec_nvfp4_dp4a_rp",
+   "s": 3.282763328,
+   "count": 1632
+  },
+  {
+   "name": "quantize_mmq_e4m3_d4_kernel<",
+   "s": 3.274991072,
+   "count": 3264
+  },
+  {
+   "name": "ssm_conv1d_gdn_state_f32",
+   "s": 3.191973664,
+   "count": 816
+  },
+  {
+   "name": "f8f4v2_image_kernel<",
+   "s": 3.108302112,
+   "count": 6400
+  },
+  {
+   "name": "l2_norm_pp_v2_f32",
+   "s": 3.020515616,
+   "count": 1632
+  },
+  {
+   "name": "gdn_chunk_attn_f32",
+   "s": 2.634584,
+   "count": 816
+  },
+  {
+   "name": "gated_rmsnorm_f32",
+   "s": 1.968355008,
+   "count": 816
+  },
+  {
+   "name": "quantize_q8_1",
+   "s": 1.876908765,
+   "count": 1901
+  },
+  {
+   "name": "q_gate_split_f32",
+   "s": 0.869367038,
+   "count": 290
+  },
+  {
+   "name": "fa_dequant_kv_ws_bf16",
+   "s": 0.739747488,
+   "count": 272
+  },
+  {
+   "name": "mul_f32",
+   "s": 0.650686016,
+   "count": 290
+  },
+  {
+   "name": "sigmoid_f32",
+   "s": 0.462294624,
+   "count": 1106
+  },
+  {
+   "name": "append_quantize_kv_q8_0_q5_1",
+   "s": 0.27618512,
+   "count": 126976
+  },
+  {
+   "name": "mul_mat_q_q45k<",
+   "s": 0.273605856,
+   "count": 62
+  },
+  {
+   "name": "fa_prefill_qw_db",
+   "s": 0.163699584,
+   "count": 16
+  },
+  {
+   "name": "rope_neox_f32",
+   "s": 0.151566783,
+   "count": 611
+  },
+  {
+   "name": "qmatvec_gemm_q6_K",
+   "s": 0.125270048,
+   "count": 31
+  },
+  {
+   "name": "append_quantize_kv_q8_0_q5_1_rows",
+   "s": 0.114101408,
+   "count": 272
+  },
+  {
+   "name": "qmatvec_q5_K_mmvq_il",
+   "s": 0.094172256,
+   "count": 18
+  },
+  {
+   "name": "mul_mat_q_nvfp4_f8f4<",
+   "s": 0.093031711,
+   "count": 400
+  },
+  {
+   "name": "qmatvec_nvfp4_mmvq_mr2_rp",
+   "s": 0.066136317,
+   "count": 498
+  },
+  {
+   "name": "quantize_mmq_q8_1_ds4_kernel",
+   "s": 0.046348544,
+   "count": 62
+  },
+  {
+   "name": "gdn_chunk_cumgate_f32",
+   "s": 0.036468864,
+   "count": 816
+  },
+  {
+   "name": "embed_gather_u32_t",
+   "s": 0.030780416,
+   "count": 49
+  },
+  {
+   "name": "fa_decode_vec_q_seqs_v4_deep",
+   "s": 0.021905248,
+   "count": 16
+  },
+  {
+   "name": "gdn_glog_f32",
+   "s": 0.01400976,
+   "count": 816
+  },
+  {
+   "name": "fa_decode_combine_seqs",
+   "s": 0.005831072,
+   "count": 16
+  },
+  {
+   "name": "qmatvec_q4_K_mmvq",
+   "s": 0.001989376,
+   "count": 12
+  },
+  {
+   "name": "ssm_conv_ring_update_f32",
+   "s": 0.001809696,
+   "count": 816
+  },
+  {
+   "name": "qmatvec_q6_K_mmvq",
+   "s": 0.000889632,
+   "count": 4
+  },
+  {
+   "name": "gdn_scan_s128_b",
+   "s": 0.000853056,
+   "count": 48
+  },
+  {
+   "name": "add_rms_norm_f32_v2",
+   "s": 0.0004112,
+   "count": 64
+  }
+ ]
+}

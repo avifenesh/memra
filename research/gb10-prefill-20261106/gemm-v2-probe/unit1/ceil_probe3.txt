@@ -1,0 +1,8 @@
+device NVIDIA GB10 sms 48
+f8tile scalar  warps/SM  8: 113.5 TFLOPS (4 FMUL + 4 FFMA per MMA)
+f8tile f32x2   warps/SM  8: 113.5 TFLOPS (2 mul.f32x2 + 2 fma.f32x2 per MMA)
+f8tile scalar  warps/SM 16: 132.4 TFLOPS (4 FMUL + 4 FFMA per MMA)
+f8tile f32x2   warps/SM 16: 132.4 TFLOPS (2 mul.f32x2 + 2 fma.f32x2 per MMA)
+f8tile scalar  warps/SM 32: 138.3 TFLOPS (4 FMUL + 4 FFMA per MMA)
+f8tile f32x2   warps/SM 32: 137.7 TFLOPS (2 mul.f32x2 + 2 fma.f32x2 per MMA)
+f32x2 vs scalar mul+fma bit mismatches: 0 / 33554432

@@ -283,14 +283,133 @@ not retained; their `parts.txt` / `parts.json` summaries are here.
 
 ### F8F4 GEMM rework
 
-`GEMM-REWORK-DESIGN.md` (design, not built): a faithful probe of the tile's epilogue puts the
+`GEMM-REWORK-DESIGN.md` (design, built below): a faithful probe of the tile's epilogue puts the
 ceiling at 113 TFLOPS at today's 8 warps per SM and 132 at 16; today's tile runs 79. A
 dequantize-once image pass with a pipelined mainloop and an L2-ordered raster is worth about
 11 s at 131k at 8 warps per SM and about 20 s if it reaches 16 warps per SM (181.1 -> ~161 s).
 
+## F8F4 GEMM v2 (built, same day; ledger rows 16-26)
+
+`b6d10d41c7`: a pre-pass folds each NVFP4 weight once per call, with the v1 loader's expressions,
+into a pooled image (e4m3 row-major, per-32 scales k-major, 1.125 B per weight); the F8F4
+quantizers write the same activation bytes in a v2 layout; one 16-warp CTA per SM computes a
+256 x 128 tile from a 3-stage cp.async ring (K 64, XOR-swizzled rows) with ldmatrix for A and B,
+the same block-scale MMA and the same per-k32 epilogue; 4 row tiles per raster group. GB10 default
+from 2,048 rows (`MEMRA_MMQ_F8F4_V2=0` rolls back). Decision record:
+`docs/decisions/GB10-F8F4-GEMM-V2.md`.
+
+How it got there (`gemm-v2-probe/`, `harness/f8f4v2_probe.cu`, gate shape at 8,192 rows):
+
+| step | best config | GEMM TFLOPS (v1 73.5) | what ncu showed next |
+|---|---|---:|---|
+| image + ring + ldmatrix, v1 activation layout, padded rows | one 16-warp 256 x 128 CTA | 92.3 | L2 77.7%, 45% excess sectors from the 144 B activation blocks |
+| + v2 activation layout | two 8-warp 128 x 128 CTAs | 107.3 | L2 87%: cp.async writes 15-way conflicted in padded rows, 6 pointers spilled |
+| + swizzled rows, 32-bit offsets | one 16-warp 256 x 128 CTA, K 64 x 3 | 111.9 | L2 50%, no excess; QMMA math throttle with the tensor pipe 52% busy: the 8 FP32 epilogue instructions per MMA |
+
+The epilogue is the program's (`fma(dA * dB, C, sum)` per element per k32 block); packed f32x2
+does not exist on GB10 (ptxas emits scalar FMUL/FFMA, `ceil_probe3.txt`). Per trunk shape, unit 1
+(unit 2 within 2%):
+
+| in x out | v1 TFLOPS | image pass ms | v2 (one 16-warp CTA) GEMM / with image | two 8-warp CTAs, G 8 |
+|---|---:|---:|---:|---:|
+| 17,408 x 5,120 | 76.6 | 0.688 | 116.3 / 110.2 | 106.4 / 101.4 |
+| 5,120 x 1,024 | 73.1 | 0.034 | 95.5 / 92.0 | 98.5 / 94.9 |
+| 5,120 x 10,240 | 73.6 | 0.405 | 107.8 / 102.6 | 106.5 / 101.4 |
+| 5,120 x 12,288 | 73.5 | 0.482 | 111.7 / 106.2 | 108.5 / 103.3 |
+| 5,120 x 17,408 | 73.1 | 0.678 | 112.1 / 106.5 | 107.4 / 102.3 |
+| 5,120 x 6,144 | 74.0 | 0.245 | 106.8 / 101.7 | 107.7 / 102.4 |
+| 6,144 x 5,120 | 75.2 | 0.244 | 110.4 / 104.9 | 109.8 / 104.4 |
+
+Exactness: kernel-check `MMQ-F8F4-V2` (`gemm-v2-kc-unit1/`, `gemm-v2-gates-unit1/`) compares v2
+with v1 on every f32 bit at all 8 NVFP4 GEMM shapes of this model and 4 of the 9B, T = 16 / 130 /
+1,024 / 4,096, GGUF and split-plane weight layouts, plus the fused silu quantizer: 0 mismatching
+outputs. `run-gen` pp3855 (`gemm-v2-gemm-ab-unit2/`, B V V B): 4.167 -> 3.673 s (-11.8%), the
+same logits sha256 `f81e9690...` as rounds 1 and 2.
+
+### Served A/B
+
+Method of round 2 (`harness/served_ab.sh` over `campaign.sh`): cells P V V P, one fresh boot per
+cell, 32k / 131k / 260k targets in each boot, base = the round-2 stack `1ed40895ec` (binary of
+`0cb9642b98`'s code), V = `b6d10d41c7`.
+
+Unit 1, 8,192-row prime chunks (the round-2 GB10 default, since dropped; `gemm-v2-served-unit1/`):
+
+| prompt tokens | base (round 2, `1ed40895ec`) | F8F4 v2 (`b6d10d41c7`) | change |
+|---:|---|---|---:|
+| 32,784 | 36.199, 36.238 s (median 36.218) | 31.376, 31.360 s (median 31.368) | -13.39% (-4.9 s) |
+| 131,051 | 181.306, 181.239 s (median 181.273) | 161.785, 161.862 s (median 161.823) | -10.73% (-19.4 s) |
+| 259,951 | 457.527, 458.321 s (median 457.924) | 418.932, 419.036 s (median 418.984) | -8.50% (-38.9 s) |
+
+Answer text identical in all four boots at every length, needles found, no request error.
+MemAvailable floor 65.17 / 65.32 / 65.32 / 65.26 GiB (P V V P): the per-call image is pooled
+scratch and moves no floor. The base reproduces round 2 on this unit (36.163 / 181.130 /
+457.177 s then).
+
+Per part at 131,051 tokens, Nsight Systems on unit 1 (`gemm-v2-profile-128k-unit1/`, nsys TTFT
+162.5 s against 161.8 s unprofiled; the report and the three ncu reports of the tile steps are in
+the lab's evidence backup as snapshot `435c2f82`), next to round 2
+(`round2-profile-128k/`):
+
+| part (GPU seconds) | round 2 `0cb9642b98` | v2 `b6d10d41c7` |
+|---|---:|---:|
+| trunk GEMMs, F8F4 | 80.34 (6,800 v1 launches) | 60.76: v2 tile 57.56 (6,400 launches, 8.99 ms each) + image pass 3.11 + v1 0.09 (the short chunk, under 2,048 rows) |
+| e4m3 activation quantize | 9.32 | 9.40 (v2 store) |
+| full attention | 50.79 | 50.76 |
+| GDN kernels | 20.07 | 20.18 |
+| glue (norms, adds, activation) | 8.68 | 8.74 |
+| GPU busy / window | 179.6 / 181.4 | 160.2 / 162.0 |
+
+The v2 tile runs the 6.38 PFLOP at about 111 TFLOPS (105 with its image pass), 84% of the
+132 TFLOPS epilogue ceiling at 16 warps per SM; attention (50.8 s) is now the largest part.
+
+4,096-row prime chunks, both arms with `MEMRA_PRIME_CHUNK=4096` (the GB10 default once #1073
+drops the 8,192 default for peer fairness, `fairness-chunk/`), unit 1 (`gemm-v2-served-4k-unit1/`):
+
+| prompt tokens | base `1ed40895ec` | F8F4 v2 `b6d10d41c7` | change |
+|---:|---|---|---:|
+| 32,784 | 36.286, 36.214 s (median 36.250) | 32.516, 32.562 s (median 32.539) | -10.24% (-3.7 s) |
+| 131,051 | 182.609, 182.540 s (median 182.575) | 168.396, 167.852 s (median 168.124) | -7.91% (-14.5 s) |
+| 259,951 | 461.140, 461.507 s (median 461.323) | 433.077, 433.143 s (median 433.110) | -6.12% (-28.2 s) |
+
+Unit 2 (`gemm-v2-served-4k-unit2/`):
+
+| prompt tokens | base `1ed40895ec` | F8F4 v2 `b6d10d41c7` | change |
+|---:|---|---|---:|
+| 32,784 | 36.250, 36.340 s (median 36.295) | 32.593, 32.595 s (median 32.594) | -10.20% (-3.7 s) |
+| 131,051 | 182.231, 182.374 s (median 182.303) | 167.747, 167.351 s (median 167.549) | -8.09% (-14.8 s) |
+| 259,951 | 459.923, 461.138 s (median 460.530) | 432.283, 432.582 s (median 432.433) | -6.10% (-28.1 s) |
+
+Answer text identical in all eight boots and identical to the 8,192-row boots, needles found, no
+request error. MemAvailable floor 66.8 GiB on unit 1 and 66.2-66.3 GiB on unit 2 in every cell.
+The two units agree within 0.5 s at every length. The saving is smaller at 4,096 rows (14.6 s
+against 19.4 s at 131k) because v2 builds each weight image once per chunk and there are twice as
+many chunks (3.1 s of image passes at 8,192 rows, about 6 s at 4,096).
+
+Exactness battery on the timed v2 binary, unit 1 (`gemm-v2-gates-unit1/`): kernel-check ALL GREEN
+(115 cells, 5 skipped) in default (h2), `MEMRA_PRIME_KV_H2=0` and `MEMRA_PRIME_KV_T3=1` modes, with
+`MMQ-F8F4-V2` 0 mismatching outputs over 8 shapes of this model and 4 of the 9B; argmax-margin gate
+flips=0 bad=0 PASS; run-spec K=1..8 self-consistency PASS (acceptance 17/98 and 17/112, as round 2);
+`MEMRA_MMQ_F8F4_V2=0` rollback: pp3855 logits sha256 `f81e9690...` in both arms (4.173 s off,
+3.685 s on). The default argmax prompt (2,048 tokens) stays under the v2 threshold, so the gate
+also ran on the 16k prompt (`p4-16k`, 23,476 tokens), which primes through v2: it reports
+flips=3 bad=1 FAIL on v2 **and on the base binary**, with byte-identical probe tables
+(`4800c57de4349345`). All three flips are margin-explained near-ties (0.012-0.031 against a
+config spread of 0.071-0.138); the FAIL is the flip budget (1 per 12-position window, calibrated on
+the 2,048-token prompt), so the 16k prompt is not a calibrated gate on this model, and v2 changes
+none of its values.
+
+
 ## Next exact levers
 
-- The F8F4 GEMM rework above (largest; owner's go first).
+- F8F4 v2 follow-ups: run the next GEMM's image pre-pass on a side stream under the current GEMM
+  (the tile reads L2 at 50%, the pre-pass is DRAM-bound; 3.1 s at 131k with 8,192-row chunks,
+  about twice that at 4,096); the tile sits at 84-88% of the 132 TFLOPS epilogue ceiling on the
+  large shapes.
+- A wider prime chunk only while no peer is admitted: v2 builds each weight image once per chunk,
+  so 8,192 rows are worth about 3.5% at 131k with v2 (167.5 s at 4,096 rows on unit 2 against
+  161.8 s at 8,192 on unit 1) where they were worth 0.5% without it; the 8,192 default was dropped
+  for the peer first-token wait beside a 131k prime (worst peer 8.7 s at 4,096 against 13.2 s at
+  8,192), so it needs its own fairness cell.
 - GDN: 20.1 s at 131k against an ~8 s DRAM floor; the four-row L2 norm did not move it, so the
   next step is a per-kernel ncu of the chunk kernels (`gdn_chunk_state_mma`, `gdn_chunk_solve32`,
   `gdn_chunk_output_mma`, `ssm_conv1d_gdn_state`) before any rewrite.
