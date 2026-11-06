@@ -18078,6 +18078,13 @@ impl Engine {
         matches!(w, crate::model::GpuTensor::Quant { a4: Some(_), .. })
     }
 
+    /// Whether `try_f16_gemm_pre_into_prefill` can take `w` at all: the weight has an f16
+    /// mirror and no A4 stamp. Callers test this before building the f16 activation operand,
+    /// so a weight without a mirror skips a conversion pass whose result nothing would read.
+    pub fn f16_mirror_prefill(w: &crate::model::GpuTensor) -> bool {
+        !Self::a4_stamped(w) && matches!(w, crate::model::GpuTensor::Quant { f16: Some(_), .. })
+    }
+
     /// PREFILL-PHASE `try_f16_gemm_pre`. A stamped weight refuses the f16 mirror: that mirror is
     /// a different numerical program from the one its global activation scale was fitted against,
     /// and taking it would silently run two arithmetics for one declared program. Every unstamped
