@@ -1847,11 +1847,15 @@ pub(crate) fn fa_sm_count() -> i32 {
     })
 }
 
-/// `MEMRA_PRIME_KV_H2`: the two-head (h2) quantized-KV prime attention twin. Strict `1`
-/// selects it, `0`/unset keeps the four-plane db twin. Read once per process.
-fn prime_kv_h2_on() -> bool {
-    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| std::env::var("MEMRA_PRIME_KV_H2").as_deref() == Ok("1"))
+/// `MEMRA_PRIME_KV_H2` resolution: `1`/`0` decide; unset follows the device, on for a
+/// unified-memory 120a-family device (GB10), where it measured -13.8% served 131k TTFT with
+/// identical tokens (research/gb10-prefill-20261106). Discrete cards keep the db twin.
+fn prime_kv_h2_route(env: Option<&str>, unified_120a: bool) -> bool {
+    match env {
+        Some("1") => true,
+        Some("0") => false,
+        _ => unified_120a,
+    }
 }
 
 /// FA-prefill kernel-name suffix for a head_dim (the template-stamped twins in flash_attn.cu):
@@ -30001,7 +30005,7 @@ impl Engine {
                 && n_head % 2 == 0
                 && n_head_kv > 0
                 && (n_head / n_head_kv) % 2 == 0
-                && prime_kv_h2_on();
+                && self.prime_kv_h2_on();
             let hd_sfx = fa_hd_suffix(head_dim)?;
             let f = self.func(&format!(
                 "fa_prefill_qw{}{hd_sfx}{}",
@@ -30069,6 +30073,19 @@ impl Engine {
             }
         }
         Ok(())
+    }
+
+    /// Whether the quantized-KV prime takes the two-head (h2) attention twin on this device.
+    /// Read once per process; see `prime_kv_h2_route`.
+    pub fn prime_kv_h2_on(&self) -> bool {
+        static H2: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+        *H2.get_or_init(|| {
+            prime_kv_h2_route(
+                std::env::var("MEMRA_PRIME_KV_H2").ok().as_deref(),
+                env!("MEMRA_BUILT_CUDA_ARCH") == "120a"
+                    && crate::unified_memory::is_unified(self.ctx()),
+            )
+        })
     }
 
     /// The FA2 prefill door. Compile-time architecture first, then the cached SM
@@ -36483,5 +36500,28 @@ mod fused_rope_width_tests {
         assert!(Engine::full_width_rope_only("rms_norm_qkv_rope_append_dc", 64, 128).is_err());
         // and the reverse mismatch (a wider rope than the head) is not "close enough" either.
         assert!(Engine::full_width_rope_only("rms_norm_qkv_rope", 256, 128).is_err());
+    }
+}
+
+#[cfg(test)]
+mod prime_kv_h2_route_tests {
+    #[test]
+    fn h2_defaults_on_only_on_unified_120a_and_the_flag_decides_everywhere() {
+        use super::prime_kv_h2_route;
+        assert!(prime_kv_h2_route(None, true), "GB10 takes h2 by default");
+        assert!(
+            !prime_kv_h2_route(None, false),
+            "discrete cards keep the db twin"
+        );
+        assert!(
+            !prime_kv_h2_route(Some("0"), true),
+            "0 rolls GB10 back to db"
+        );
+        assert!(
+            prime_kv_h2_route(Some("1"), false),
+            "1 opts a discrete card in"
+        );
+        assert!(prime_kv_h2_route(Some("yes"), true));
+        assert!(!prime_kv_h2_route(Some("yes"), false));
     }
 }
