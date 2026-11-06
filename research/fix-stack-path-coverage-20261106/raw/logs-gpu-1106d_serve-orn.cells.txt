@@ -1,0 +1,2 @@
+CELL orn-boot-old PASS served 73 chars ::
+CELL orn-boot-tip FAIL server orn-boot-tip exited 1; see logs-gpu-1106d/serve-orn/server-orn-boot-tip.log :: thread 'memra-gpu-worker' (3281775) panicked at crates/memra-engine/src/decode_batch.rs:1228:9: | decode_step_batch: B=16 > cap 8 with no exact tier — refused. Either B>16 (there is NO exact kernel class above 16: m>16 crosses GEMM/dp4a numeric configs; the serve scheduler chunks wider concurrency
