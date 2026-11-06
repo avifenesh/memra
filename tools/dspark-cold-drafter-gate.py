@@ -17,19 +17,29 @@ The gate passes when every a/b completion is byte-identical between arm and refe
 converts and publishes a tail-carrying boundary entry, every later step restores a tail instead
 of being vetoed again (one `cache-preferred` veto, one conversion, at least one `DSPARK restore`
 and one `insert (dspark-boundary)`).
-GATE_P_PARAS / GATE_S_PARAS size P and S (60-word paragraphs; defaults 70 / 80, about 12k / 14k
-tokens); S must stay above the drafter window (2,056 rows on the 27B DFlash2)."""
+GATE_P_PARAS / GATE_S_PARAS size P and S (60-word paragraphs; defaults 10 / 12, about 1.7k / 2.1k
+tokens, which fit the 27B on a 24 GB RTX 5090; the GB10 receipts before 2026-11-06 ran 70 / 80,
+about 12k / 14k); S must stay above the drafter window (2,056 rows on the 27B DFlash2). A refused
+request (an HTTP error) prints its status and body and exits 2; --compare prints the prompt sizes
+and fails on a missing run file."""
 import json
 import os
 import sys
+import urllib.error
 import urllib.request
 
 
 def post(base, body):
     req = urllib.request.Request(base + "/v1/completions", data=json.dumps(body).encode(),
                                  headers={"Content-Type": "application/json"})
-    with urllib.request.urlopen(req, timeout=1800) as r:
-        return json.loads(r.read())
+    try:
+        with urllib.request.urlopen(req, timeout=1800) as r:
+            return json.loads(r.read())
+    except urllib.error.HTTPError as e:
+        body_text = e.read().decode(errors="replace")[:2000]
+        print(f"REQUEST REFUSED: HTTP {e.code} on a {len(body['prompt'])}-character prompt: {body_text}",
+              file=sys.stderr)
+        sys.exit(2)
 
 
 def para(i, n):
@@ -39,8 +49,8 @@ def para(i, n):
 
 
 def run(base, model, out):
-    P = "Background notes.\n" + "\n".join(para(i, 60) for i in range(int(os.environ.get("GATE_P_PARAS", "70")))) + "\n"
-    S = "Session log.\n" + "\n".join(para(1000 + i, 60) for i in range(int(os.environ.get("GATE_S_PARAS", "80")))) + "\n"
+    P = "Background notes.\n" + "\n".join(para(i, 60) for i in range(int(os.environ.get("GATE_P_PARAS", "10")))) + "\n"
+    S = "Session log.\n" + "\n".join(para(1000 + i, 60) for i in range(int(os.environ.get("GATE_S_PARAS", "12")))) + "\n"
     q = "\nQuestion: summarize the notes above in three sentences.\nAnswer:"
     recs = []
     x0 = post(base, {"model": model, "prompt": P, "max_tokens": 1, "temperature": 0,
@@ -61,11 +71,20 @@ def run(base, model, out):
 
 
 def compare(arm, ref):
+    missing = [f for f in (arm, ref) if not os.path.exists(f)]
+    if missing:
+        print("missing run file:", " ".join(missing))
+        print("GATE FAIL")
+        return False
     A = {json.loads(l)["step"]: json.loads(l) for l in open(arm)}
     R = {json.loads(l)["step"]: json.loads(l) for l in open(ref)}
-    ok = True
+    tokens = {k: (A[k].get("usage") or {}).get("prompt_tokens") for k in ("x0", "a-greedy", "b-greedy") if k in A}
+    print("prompt tokens " + " ".join(f"{k}={v}" for k, v in tokens.items()))
+    ok = set(A) == set(R) and len(A) == 5
+    if not ok:
+        print(f"steps differ: arm {sorted(A)} ref {sorted(R)}")
     for k in sorted(A):
-        if k == "x0":
+        if k == "x0" or k not in R:
             continue
         same = A[k]["text"] == R[k]["text"]
         ok &= same
