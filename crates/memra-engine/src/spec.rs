@@ -14866,7 +14866,9 @@ impl HybridModel {
             // CHUNKED FILL (long-ctx OOM fix, 2026-07-05): mtp_kv_fill's transients scale with its
             // T (concat = T*2*n_embd*4B — 1.5GB at 40k) and its concat loop is 2*T launches. The
             // fill is a pure sequential append, so chunking is exact: each chunk appends its rows
-            // at pos0=base+start with the identical per-row math. Same knob as the trunk prime.
+            // at pos0=base+start with the identical per-row math. Same env knob as the trunk
+            // prime; unset, the fill keeps 4096 rows even where a family/device default widens
+            // the trunk chunk (GB10's 8192 arm was measured with the fill at 4096).
             let tp = prompt.len();
             let fill_chunk: usize = if crate::cache::swa_ring_on() {
                 crate::hybrid_forward::prime_chunk_tokens(tp, self.layers.len())

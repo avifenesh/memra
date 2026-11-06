@@ -335,6 +335,8 @@ impl HybridModel {
                 )
             },
         );
+        // Unset, the fill keeps 4096 rows even where a family/device default widens the trunk
+        // chunk (GB10's 8192 arm was measured with the fill at 4096); chunking a fill is exact.
         let fill_chunk = if crate::cache::swa_ring_on() {
             crate::hybrid_forward::prime_chunk_tokens(tp, self.layers.len())
         } else {

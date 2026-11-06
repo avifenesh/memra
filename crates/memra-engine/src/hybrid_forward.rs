@@ -1371,8 +1371,10 @@ fn prime_pipeline_auto_geometry(n_layers: usize) -> bool {
 /// CUDA launch wall (`PRIME_CHUNK_LAUNCH_CAP`; 0 = monolithic up to that wall — see
 /// `explicit_prime_chunk`).
 /// Pipelined PP primes use the measured PP-2 geometry: up to eight microchunks, never below
-/// 128 tokens, while the legacy 4096-token cap remains the long-context bound. PP-3/4 inherit
-/// only the geometry when their separate MEMRA_PP_WAVE door is explicitly open.
+/// 128 tokens, while `PRIME_CHUNK_MAX_TOKENS` (4096) remains the long-context bound even when a
+/// family/device default is wider: the PP host-bounce slots (`pp.rs`, `host_bounce_capacity`)
+/// are sized for that many rows. PP-3/4 inherit only the geometry when their separate
+/// MEMRA_PP_WAVE door is explicitly open.
 pub fn prime_chunk_tokens(t: usize, n_layers: usize) -> usize {
     if let Ok(value) = std::env::var("MEMRA_PRIME_CHUNK") {
         let parsed = value
@@ -1387,7 +1389,7 @@ pub fn prime_chunk_tokens(t: usize, n_layers: usize) -> usize {
         crate::cache::prime_chunk_default()
     };
     if prime_pipeline_auto_geometry(n_layers) && t >= 2 * PRIME_PIPE_MIN_CHUNK {
-        chunk.min(
+        chunk.min(crate::cache::PRIME_CHUNK_MAX_TOKENS).min(
             t.div_ceil(PRIME_PIPE_MICROBATCHES)
                 .max(PRIME_PIPE_MIN_CHUNK),
         )
