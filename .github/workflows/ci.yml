@@ -583,8 +583,8 @@ jobs:
   # but with `dynamic-loading`, and no test in it constructs an Engine or touches the driver,
   # so it runs on a GPU-less runner. The whole package runs, not only `--lib`: the unit suite is
   # the library target (src/lib.rs), and tests/argv_boot.rs boots the built binary, which
-  # `--lib` would skip. This job is part of the complete inventory; owner PRs take the thin
-  # ci-public.yml path, which runs no server tests.
+  # `--lib` would skip. Owner PRs and main pushes normally route to ci-public.yml's thin jobs,
+  # which run no server tests; its full route calls this workflow.
   server-tests:
     needs: changes
     if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.server != 'false') }}
