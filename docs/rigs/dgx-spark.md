@@ -80,8 +80,9 @@ Long-context prefill (2026-11-06, [research/gb10-prefill-20261106](../../researc
 served cold TTFT of one fresh prompt with the exact levers of that lane (two-head prime attention
 by default on GB10, no dead f16 operand pass, no slab copies of the dense FFN's GEMM outputs,
 silu(gate)*up fused into the down projection's e4m3 quantize, each shared activation quantized
-once per GEMM group, 8,192-row prime chunks), same tokens on every prompt: 44.26 -> 36.16 s at
-32,784 tokens (-18.3%), 239.0 -> 181.1 s at 131,051 (-24.2%) and 637.5 -> 457.2 s at 259,951
+once per GEMM group, and 8,192-row prime chunks, which were then rejected for peer latency and
+did not land; they were worth about 0.6% at 131k), same tokens on every prompt: 44.26 -> 36.16 s
+at 32,784 tokens (-18.3%), 239.0 -> 181.1 s at 131,051 (-24.2%) and 637.5 -> 457.2 s at 259,951
 (-28.3%), two fresh boots per arm in both orders in each of the lane's two campaigns on one unit.
 At 131,051 tokens the remaining time is the F8F4 trunk GEMMs (about 81 s at 78 TFLOPS; the
 tile's epilogue form tops out at 113 TFLOPS at its 8 warps per SM), attention (50.9 s at 66

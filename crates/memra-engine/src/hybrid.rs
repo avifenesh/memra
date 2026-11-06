@@ -6413,40 +6413,6 @@ impl HybridModel {
             test_extra_devices: Vec::new(),
         };
         e.configure_moe_cache_layout(model.moe_cache_block_sizes());
-        // GB10 prime chunk default (2026-11-06): the serial GDN hybrid trunk (no mHC topology,
-        // no KDA/MLA mixers) primes bit-identically at any GDN-grid-aligned chunk, and 8192
-        // rows measured -0.64% served 131k TTFT on a unified-memory 120a device with the same
-        // tokens (16384: -1.21% but +3.8 GB admission booking and -7 GiB MemAvailable per 131k
-        // prime). Only the dense-FFN trunk was measured, so an MoE FFN keeps 4096. An mHC trunk
-        // changes bits with its chunk, so it pins the process default to 4096 in either load
-        // order. An explicit MEMRA_PRIME_CHUNK still decides.
-        if model.hyper.is_some() {
-            crate::cache::pin_prime_chunk_default();
-        } else if env!("MEMRA_BUILT_CUDA_ARCH") == "120a"
-            && crate::unified_memory::is_unified(e.ctx())
-            && model
-                .layers
-                .iter()
-                .any(|l| matches!(l.mixer, Mixer::Linear(_)))
-            && model
-                .layers
-                .iter()
-                .all(|l| matches!(l.mixer, Mixer::Linear(_) | Mixer::Full(_)))
-            && model
-                .layers
-                .iter()
-                .all(|l| matches!(l.ffn, Ffn::Dense { .. }))
-        {
-            if crate::cache::set_prime_chunk_default(8192) {
-                eprintln!(
-                    "[prime-chunk] default 8192 rows (serial GDN hybrid dense trunk, unified-memory 120a device)"
-                );
-            } else {
-                eprintln!(
-                    "[prime-chunk] default stays 4096 rows: an mHC trunk in this process pinned it"
-                );
-            }
-        }
         if force_embd_gpu {
             let _ = model
                 .embd_gpu

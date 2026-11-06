@@ -145,41 +145,6 @@ pub fn swa_ring_on() -> bool {
 /// With the SWA-ring door open, `prime_chunk_tokens` caps every legal chunk at this bound. The
 /// ring carries one whole maximum-size prime chunk in addition to the reader's window.
 pub const PRIME_CHUNK_MAX_TOKENS: usize = 4096;
-
-/// The serial prime's chunk width when `MEMRA_PRIME_CHUNK` is unset and the SWA ring is off.
-/// `PRIME_CHUNK_MAX_TOKENS` unless the loader arms a family/device default (GB10 lane,
-/// 2026-11-06: 8192 for the serial GDN hybrid dense trunk on a unified-memory 120a device,
-/// where chunking is bit-identical and the wider chunk measured -0.64% at 131k).
-///
-/// The value is process-wide. A trunk whose prime bits move with the chunk (the mHC trunk)
-/// pins it to `PRIME_CHUNK_MAX_TOKENS` for the life of the process (`PRIME_CHUNK_PINNED`, the
-/// top bit), so it never runs a widened chunk whichever model loads first; a later arm is
-/// refused.
-static PRIME_CHUNK_DEFAULT: std::sync::atomic::AtomicUsize =
-    std::sync::atomic::AtomicUsize::new(PRIME_CHUNK_MAX_TOKENS);
-const PRIME_CHUNK_PINNED: usize = 1 << (usize::BITS - 1);
-
-/// Arm a wider default. Returns false (and changes nothing) once the default is pinned.
-pub fn set_prime_chunk_default(rows: usize) -> bool {
-    use std::sync::atomic::Ordering;
-    PRIME_CHUNK_DEFAULT
-        .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |cur| {
-            (cur & PRIME_CHUNK_PINNED == 0).then_some(rows & !PRIME_CHUNK_PINNED)
-        })
-        .is_ok()
-}
-
-/// Pin the default to `PRIME_CHUNK_MAX_TOKENS` for the rest of the process.
-pub fn pin_prime_chunk_default() {
-    PRIME_CHUNK_DEFAULT.store(
-        PRIME_CHUNK_PINNED | PRIME_CHUNK_MAX_TOKENS,
-        std::sync::atomic::Ordering::Relaxed,
-    );
-}
-
-pub fn prime_chunk_default() -> usize {
-    PRIME_CHUNK_DEFAULT.load(std::sync::atomic::Ordering::Relaxed) & !PRIME_CHUNK_PINNED
-}
 const SWA_VIEW_ALIGNMENT_ROWS: usize = 32;
 
 /// Physical rows required by the Step35 SWA reader contract. Prime starts at
@@ -3882,34 +3847,6 @@ mod tp_transaction_tests {
             512,
         ));
         assert!(cache.has_swa_ring());
-    }
-}
-
-#[cfg(test)]
-mod prime_chunk_default_tests {
-    use super::{
-        PRIME_CHUNK_MAX_TOKENS, pin_prime_chunk_default, prime_chunk_default,
-        set_prime_chunk_default,
-    };
-
-    /// memra#1073 review: the default is process-wide, so an mHC trunk (whose prime bits move
-    /// with the chunk) pins it. A pin after an arm restores 4096; an arm after a pin is refused.
-    /// The only test in this binary that touches the global.
-    #[test]
-    fn an_mhc_pin_wins_over_a_wider_default_in_either_order() {
-        assert!(set_prime_chunk_default(8192), "an unpinned default arms");
-        assert_eq!(prime_chunk_default(), 8192);
-        pin_prime_chunk_default();
-        assert_eq!(
-            prime_chunk_default(),
-            PRIME_CHUNK_MAX_TOKENS,
-            "a pin after the arm"
-        );
-        assert!(
-            !set_prime_chunk_default(8192),
-            "an arm after the pin is refused"
-        );
-        assert_eq!(prime_chunk_default(), PRIME_CHUNK_MAX_TOKENS);
     }
 }
 
