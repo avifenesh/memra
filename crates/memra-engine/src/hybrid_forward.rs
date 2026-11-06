@@ -1380,7 +1380,12 @@ pub fn prime_chunk_tokens(t: usize, n_layers: usize) -> usize {
             .unwrap_or(crate::cache::PRIME_CHUNK_MAX_TOKENS);
         return explicit_prime_chunk(parsed, crate::cache::swa_ring_on());
     }
-    let chunk = crate::cache::PRIME_CHUNK_MAX_TOKENS;
+    // A ring-on walk keeps the ring's clamp; otherwise the armed family/device default.
+    let chunk = if crate::cache::swa_ring_on() {
+        crate::cache::PRIME_CHUNK_MAX_TOKENS
+    } else {
+        crate::cache::prime_chunk_default()
+    };
     if prime_pipeline_auto_geometry(n_layers) && t >= 2 * PRIME_PIPE_MIN_CHUNK {
         chunk.min(
             t.div_ceil(PRIME_PIPE_MICROBATCHES)

@@ -145,6 +145,21 @@ pub fn swa_ring_on() -> bool {
 /// With the SWA-ring door open, `prime_chunk_tokens` caps every legal chunk at this bound. The
 /// ring carries one whole maximum-size prime chunk in addition to the reader's window.
 pub const PRIME_CHUNK_MAX_TOKENS: usize = 4096;
+
+/// The serial prime's chunk width when `MEMRA_PRIME_CHUNK` is unset and the SWA ring is off.
+/// `PRIME_CHUNK_MAX_TOKENS` unless the loader arms a family/device default (GB10 lane,
+/// 2026-11-06: 8192 for the serial GDN hybrid trunk on a unified-memory 120a device, where
+/// chunking is bit-identical and the wider chunk measured -0.64% at 131k).
+static PRIME_CHUNK_DEFAULT: std::sync::atomic::AtomicUsize =
+    std::sync::atomic::AtomicUsize::new(PRIME_CHUNK_MAX_TOKENS);
+
+pub fn set_prime_chunk_default(rows: usize) {
+    PRIME_CHUNK_DEFAULT.store(rows, std::sync::atomic::Ordering::Relaxed);
+}
+
+pub fn prime_chunk_default() -> usize {
+    PRIME_CHUNK_DEFAULT.load(std::sync::atomic::Ordering::Relaxed)
+}
 const SWA_VIEW_ALIGNMENT_ROWS: usize = 32;
 
 /// Physical rows required by the Step35 SWA reader contract. Prime starts at
