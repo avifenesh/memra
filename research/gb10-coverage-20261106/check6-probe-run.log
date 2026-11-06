@@ -1,0 +1,7 @@
+device: NVIDIA GB10
+compute capability: 12.1  SMs: 48
+vec_add correct: true  (c[7]=21, expect 21)
+mma_fp16_smoke: launched + read back OK (tensor-core path live)
+mma_fp4_blockscale present: true  (headline FP4 weapon compiles in our pipeline)
+
+Phase-0 spine GREEN: cargo->nvcc->fatbin->cudarc->launch->readback all work on sm_120.

@@ -1,0 +1,9 @@
+14:32:33 [coverage] start lease=claude-code-20261106T124813-2101849
+14:36:03 [coverage] server up (24fc6045841f)
+14:40:54 [coverage] check1: {"target_tokens": 150000, "prompt_tokens": 150222, "max_tokens": 16, "status": 200, "headers_s": 60.0, "first_token_s": 289.04, "total_s": 290.23, "data_chunks": 17, "usage": {"prompt_tokens": 150222, "completion_tokens": 16, "total_tokens": 150238, "prompt_tokens_details": {"cached_tokens": 0}, "elapsed_s": 289.924775384, "spec": {"rounds": 5, "drafted": 15, "accepted": 9, "acceptance_rate": 0.6}}, "prefill_over_90s": true, "verdict": "PASS"}
+14:40:56 [coverage] check1 server stopped
+14:40:56 [coverage] check6: clean build at c28fb5ee0e, MEMRA_CUDA_ARCH=unset
+14:44:30 [coverage] check6 engine build rc=0 : warning: memra-engine@0.138.0: MEMRA_CUDA_ARCH auto-detected 121a (compute_cap 12.1); set MEMRA_CUDA_ARCH to override
+14:44:35 [coverage] check6 probe build rc=0
+14:44:36 [coverage] check6 probe run rc=0 : device: NVIDIA GB10 compute capability: 12.1  SMs: 48 vec_add correct: true  (c[7]=21, expect 21)
+14:44:36 [coverage] COVERAGE_DONE
