@@ -1188,6 +1188,16 @@ fn dspark_session_armed(prefers_cold: bool, pool_resume: bool, prefix_restored: 
     prefers_cold || pool_resume || prefix_restored
 }
 
+/// A drafter tail that carries a context floor (the export of a cold-drafter conversion, born
+/// empty at its carrier boundary) holds only the rows above that floor. A prompt that ends
+/// before `floor + window` (`window` = `sliding_window + block_size`) would draft over fewer
+/// rows than a cold prime of the same prompt reads, so q differs and a sampled request is no
+/// longer byte-identical to the cold reference. Such a tail is not restorable; the request
+/// takes cold admission. Same rule as `ColdDrafterRefusal::ShortSuffix` for the conversion.
+fn dspark_floored_tail_too_short(tail_floor: usize, prompt_len: usize, window: usize) -> bool {
+    tail_floor > 0 && prompt_len < tail_floor.saturating_add(window)
+}
+
 fn dspark_prefix_capture_requested(
     dspark_on: bool,
     prefix_on: bool,
@@ -37299,6 +37309,27 @@ fn admit(
             .and_then(|p| px.id_index(p))
             .map(|i| px.entries[&pool_key][i].dspark_draft.is_some())
             .unwrap_or(false);
+        let entry_tail_floor = prefix_pin
+            .as_ref()
+            .and_then(|p| px.id_index(p))
+            .and_then(|i| px.entries[&pool_key][i].dspark_draft.as_ref())
+            .map(|tail| tail.floor)
+            .unwrap_or(0);
+        let tail_floor_short = dspark_floored_tail_too_short(
+            entry_tail_floor,
+            prompt.len(),
+            draft.cfg.sliding_window + draft.cfg.block_size,
+        );
+        if tail_floor_short {
+            eprintln!(
+                "[prefix-cache] dspark restore: the draft tail's context floor {entry_tail_floor} \
+                 leaves fewer than {} drafter rows above it at {} prompt tokens; cold admission \
+                 required (model {})",
+                draft.cfg.sliding_window + draft.cfg.block_size,
+                prompt.len(),
+                req.model,
+            );
+        }
         // Eligibility mirrors the cold route's own shape rules: the drafter must be armed and
         // compatible, the request unconstrained, non-vision, and not penalized-greedy (which is
         // served on the plain path by admission). Anything else keeps the plain hit.
@@ -37308,7 +37339,7 @@ fn admit(
                 || sampler.temperature() > 0.0)
             && memra_engine::plan_backend::gdn_dspark_compatible(&lm.model.plan)
             && serve_spec;
-        if (full_cover || partial_ok) && entry_tail_present && shape_ok {
+        if (full_cover || partial_ok) && entry_tail_present && !tail_floor_short && shape_ok {
             let i = px
                 .id_index(prefix_pin.as_ref().expect("checked above"))
                 .expect("checked above");
@@ -38446,7 +38477,8 @@ fn admit(
     // Reuse the EARLY verdict that guarded prefix lookup. Recomputing here would allow an
     // in-flight gauge change during a prefix restore window to disagree with whether lookup was
     // bypassed. The remaining assertions are consequences of a ready DFlash route: it disables
-    // MTP for this model, is incompatible with gemma, and cold excluded every reuse carrier.
+    // MTP for this model, is incompatible with gemma, and a cold prime, a pool resume or a
+    // prefix restore (the cold-drafter conversion included) consumed every reuse carrier.
     // DSPARK MULTI-TURN RESUME probe (lane/dflash2-session-reuse, 2026-08-25): the MTP
     // pool's EXACT and TEXT extension tiers, applied to parked dspark sessions. Runs only
     // when no other carrier took the request (no spec resume, no gemma arm, no prefix
@@ -38617,7 +38649,7 @@ fn admit(
                 && spec_resumed == 0
                 && seed_fed.is_empty()
                 && cache.is_none()),
-        "early DFlash preference must imply a cold or pool-resumed session",
+        "a DFlash session must be a cold prime, a pool resume or a prefix restore",
     );
     let dspark_exact_key_present =
         dspark_on && prefix_on && px.touch_exact_without_credit(&pool_key, &prompt);
@@ -39104,6 +39136,10 @@ fn admit(
     // follows the suffix: an empty-suffix exact continuation is already primed (the burst
     // emits the parked boundary token), a suffix resume primes in step_dspark_spec.
     let dspark_session_installed = dspark_resume.is_some();
+    debug_assert!(
+        !dspark_session_installed || dspark_on,
+        "an installed DFlash session (pool resume or prefix restore) implies dspark_on",
+    );
     let (dspark_resume_sess, dspark_resume_fed, dspark_resume_suffix) = match dspark_resume {
         Some((sess, fed, sfx)) => (Some(sess), Some(fed), Some(sfx)),
         None => (None, None, None),
@@ -49072,6 +49108,79 @@ mod tests {
             "let alt = px.lookup_where(&pool_key, &prompt, |e| { dspark_hit_is_restorable("
         ));
         assert!(squashed.contains("if dspark_prefer_restorable_hit( plain_len, alt_len, budget, dspark_prefers_cold_over_prefix(with_alt), ) {"));
+    }
+
+    #[test]
+    fn the_dflash_session_decision_reads_the_prefix_restore_after_the_conversion() {
+        // memra#1074 review: the bug lived at the call site. `admit` derived `dspark_on`
+        // before the cold-drafter conversion set `dspark_prefix_restored`, and without the
+        // restore term, so a converted session ran as plain: it captured no tail entry and got
+        // an unused plain cache. The helper's own test cannot see the call site, so anchor it
+        // on comment-stripped source: the binding passes the restore and comes after the
+        // conversion's log site.
+        let src = include_str!("worker.rs");
+        let code: String = src
+            .lines()
+            .map(|l| l.split("//").next().unwrap_or(""))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let binding = code
+            .find("let dspark_on = dspark_session_armed(")
+            .expect("admit derives dspark_on through dspark_session_armed");
+        let args = &code[binding..(binding + 300).min(code.len())];
+        assert!(
+            args.contains("dspark_prefix_restored.is_some()"),
+            "dspark_on must take the prefix restore (the cold-drafter conversion) into account"
+        );
+        let conversion = code
+            .find("DSPARK cold-drafter restore:")
+            .expect("the conversion's log site exists");
+        assert!(
+            conversion < binding,
+            "dspark_on must be derived after the cold-drafter conversion sets the restore"
+        );
+    }
+
+    #[test]
+    fn a_floored_drafter_tail_restores_only_with_the_whole_window_above_its_floor() {
+        // memra#1074 review: a conversion's tail starts at its carrier boundary. Below
+        // floor + window the restored drafter would read fewer rows than a cold prime.
+        let window = 2048 + 16;
+        assert!(
+            !super::dspark_floored_tail_too_short(0, 100, window),
+            "floor 0: the whole history"
+        );
+        assert!(
+            !super::dspark_floored_tail_too_short(0, 0, window),
+            "floor 0, empty prompt"
+        );
+        assert!(
+            super::dspark_floored_tail_too_short(4096, 4096, window),
+            "nothing above the floor"
+        );
+        assert!(
+            super::dspark_floored_tail_too_short(4096, 4096 + window - 1, window),
+            "one row short of the window"
+        );
+        assert!(
+            !super::dspark_floored_tail_too_short(4096, 4096 + window, window),
+            "the whole window above the floor"
+        );
+        assert!(
+            !super::dspark_floored_tail_too_short(usize::MAX, usize::MAX, window),
+            "no overflow"
+        );
+        // The restore block consults it before importing the tail.
+        let src = include_str!("worker.rs");
+        let code: String = src
+            .lines()
+            .map(|l| l.split("//").next().unwrap_or(""))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let squashed = code.split_whitespace().collect::<Vec<_>>().join(" ");
+        assert!(squashed.contains(
+            "if (full_cover || partial_ok) && entry_tail_present && !tail_floor_short && shape_ok {"
+        ));
     }
 
     #[test]
