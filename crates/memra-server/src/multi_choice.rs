@@ -642,25 +642,42 @@ pub(crate) async fn respond(
             )
         }
     };
-    // n > 1 streams have no committed-prefill bridge: their whole wait (queue and prefill) stays
-    // inside the pre-header window, so the queue shed judges against that window too.
-    let mut pending =
-        match crate::reserve_pending_choices(st, lane, &reading, deadline.preheader(stream), count)
-        {
-            Ok(reservations) => reservations,
-            Err((response, outcome)) => {
-                return crate::ledger_unbilled(
-                    receipt,
-                    reading.attach(response),
-                    outcome,
-                    outcome,
-                    &env.id,
-                );
-            }
-        };
+    // An extended stream (first-token deadline past the shipped pre-header window, with an SSE
+    // prefill commit) commits headers at `window` and keeps waiting, queued or prefilling, under
+    // SSE keepalives until its whole first-token deadline, as n = 1 does. So the queue shed
+    // judges the group's wait estimate against that deadline, not the commit.
+    let window = deadline.preheader(stream);
+    let commits_early = window.ms < deadline.ms;
+    let mut pending = match crate::reserve_pending_choices(st, lane, &reading, deadline, count) {
+        Ok(reservations) => reservations,
+        Err((response, outcome)) => {
+            return crate::ledger_unbilled(
+                receipt,
+                reading.attach(response),
+                outcome,
+                outcome,
+                &env.id,
+            );
+        }
+    };
     for (request, reservation) in requests.iter_mut().zip(&mut pending) {
         reservation.bind(request);
     }
+    // A group that may commit before its first token must not commit before its schema
+    // compiled, the n = 1 rule: every constrained row reports its own compile.
+    let constraint_ready: Vec<_> = if commits_early {
+        requests
+            .iter_mut()
+            .filter(|request| request.grammar.is_some())
+            .map(|request| {
+                let (ready_tx, ready_rx) = tokio::sync::oneshot::channel();
+                request.constraint_ready = Some(ready_tx);
+                ready_rx
+            })
+            .collect()
+    } else {
+        Vec::new()
+    };
     crate::meter_admit(&env, tenant, &model, lane);
     if let Some(trace) = requests.first().and_then(|request| request.ttft.as_ref()) {
         trace.mark_submitted();
@@ -680,32 +697,80 @@ pub(crate) async fn respond(
     for reservation in pending {
         reservation.commit();
     }
+    // The compile wait counts against the pre-header window, as on n = 1.
+    let compiled_by = tokio::time::Instant::now()
+        + crate::constrained::CONSTRAINT_COMPILE_TIMEOUT.min(window.remaining());
+    for ready in constraint_ready {
+        match tokio::time::timeout_at(compiled_by, ready).await {
+            Ok(Ok(Ok(()))) => {}
+            Ok(Ok(Err(error))) => {
+                return crate::ledger_rejected(
+                    receipt,
+                    reading.attach(crate::engine_error_response(&error)),
+                    crate::engine_error_code(error.class),
+                    &env.id,
+                );
+            }
+            Ok(Err(_)) => {
+                return crate::ledger_rejected(
+                    receipt,
+                    reading.attach(crate::worker_unavailable_response()),
+                    "worker_unavailable",
+                    &env.id,
+                );
+            }
+            Err(_) if window.remaining().is_zero() => {
+                return crate::ledger_unbilled(
+                    receipt,
+                    reading.attach(crate::admission_deadline_response(deadline, true)),
+                    "deadline_exceeded",
+                    "deadline_exceeded",
+                    &env.id,
+                );
+            }
+            Err(_) => {
+                return crate::ledger_rejected(
+                    receipt,
+                    reading.attach(crate::engine_error_response(
+                        &crate::worker::constraint_timeout_error(),
+                    )),
+                    "constraint_compile_timeout",
+                    &env.id,
+                );
+            }
+        }
+    }
     let mut input = multiplex(receivers);
     let mut rows = Rows::new(chat, parsers, &stop);
     let mut initial = Vec::new();
     if stream {
+        let mut committed = false;
         loop {
-            let event =
-                match tokio::time::timeout_at(deadline.preheader(true).at, input.next()).await {
-                    Ok(Some(event)) => event,
-                    Ok(None) => {
-                        return crate::ledger_rejected(
-                            receipt,
-                            reading.attach(crate::worker_unavailable_response()),
-                            "worker_fault",
-                            &env.id,
-                        );
-                    }
-                    Err(_) => {
-                        return crate::ledger_unbilled(
-                            receipt,
-                            reading.attach(crate::admission_deadline_response(deadline, true)),
-                            "deadline_exceeded",
-                            "deadline_exceeded",
-                            &env.id,
-                        );
-                    }
-                };
+            let event = match tokio::time::timeout_at(window.at, input.next()).await {
+                Ok(Some(event)) => event,
+                Ok(None) => {
+                    return crate::ledger_rejected(
+                        receipt,
+                        reading.attach(crate::worker_unavailable_response()),
+                        "worker_fault",
+                        &env.id,
+                    );
+                }
+                // An extended stream: the window was its commit, not its deadline.
+                Err(_) if commits_early => {
+                    committed = true;
+                    break;
+                }
+                Err(_) => {
+                    return crate::ledger_unbilled(
+                        receipt,
+                        reading.attach(crate::admission_deadline_response(deadline, true)),
+                        "deadline_exceeded",
+                        "deadline_exceeded",
+                        &env.id,
+                    );
+                }
+            };
             let ready = matches!(&event.1, Event::Token { .. } | Event::Done { .. });
             match rows.consume(event.0, event.1, &mut receipt) {
                 Ok(packets) => initial.extend(packets),
@@ -721,6 +786,10 @@ pub(crate) async fn respond(
             if ready {
                 break;
             }
+        }
+        if committed {
+            let shared = crate::prefill_receipt::SharedReceipt::wrap(&mut receipt);
+            input = commit_until_first_delivery(input, deadline, shared);
         }
         let response = stream_reply(
             input,
@@ -806,6 +875,70 @@ pub(crate) async fn respond(
     ))
 }
 
+/// The group twin of `forward_prefill_until_first_delivery`: once an extended group stream has
+/// committed headers before any row produced its first token, its first-token deadline keeps
+/// running whether or not the SSE body is polled. At the deadline the shared receipt settles the
+/// zero-debit `deadline_exceeded` outcome, every row's channel closes (the cancel the worker
+/// retires queued and active rows on), and the stream ends with the synthetic `DeadlineExceeded`
+/// event the body answers in the wire dialect. The first token, terminal or error of any row
+/// disarms the deadline: the stream deadline bounds time to first token only.
+fn commit_until_first_delivery(
+    mut input: IndexedStream,
+    deadline: crate::RequestDeadline,
+    mut receipt: Option<crate::prefill_receipt::SharedReceipt>,
+) -> IndexedStream {
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<(usize, Event)>();
+    tokio::spawn(async move {
+        let expiry = tokio::time::sleep_until(deadline.at);
+        tokio::pin!(expiry);
+        let mut delivered = false;
+        loop {
+            let event = tokio::select! {
+                biased;
+                () = &mut expiry, if !delivered => {
+                    if let Some(mut receipt) = receipt.take()
+                        && let Err(error) =
+                            receipt.settle_unbilled("deadline_exceeded", 408, "deadline_exceeded")
+                    {
+                        eprintln!("[ledger] ERROR: choice deadline settlement failed: {error}");
+                    }
+                    let _ = tx.send((0, Event::DeadlineExceeded { ms: deadline.ms }));
+                    return; // dropping `input` closes every row's channel
+                }
+                () = tx.closed() => return,
+                event = input.next() => event,
+            };
+            let Some((index, event)) = event else { return };
+            if !delivered {
+                if let Event::Error(error) = &event {
+                    // After the commit a refusal or fault reaches the client as an SSE error
+                    // event; log it like the pre-commit refusals.
+                    eprintln!(
+                        "[admission] error after the SSE commit: code={} choice={index} message={:?}",
+                        crate::engine_error_code(error.class),
+                        error.message
+                    );
+                }
+                if matches!(
+                    &event,
+                    Event::Token { .. } | Event::Done { .. } | Event::Error(_)
+                ) {
+                    delivered = true;
+                    receipt = None; // the body owns the terminal settlement from here
+                }
+            }
+            if tx.send((index, event)).is_err() {
+                return;
+            }
+        }
+    });
+    Box::pin(async_stream::stream! {
+        while let Some(event) = rx.recv().await {
+            yield event;
+        }
+    })
+}
+
 #[allow(clippy::too_many_arguments)] // the stream owns all state needed for cancellation/drop
 fn stream_reply(
     mut input: IndexedStream,
@@ -836,6 +969,22 @@ fn stream_reply(
                 yield Ok(SseEvent::default().data(crate::engine_error_body(&error).to_string()));
                 return;
             };
+            if let Event::DeadlineExceeded { ms } = event {
+                // A committed group's first-token deadline (`commit_until_first_delivery`
+                // already settled the shared receipt; this returns that settlement). The
+                // OpenAI dialect's terminal error: a `data:` error, then `[DONE]`.
+                let settled = receipt.as_mut().map_or(Ok(()), |r| {
+                    r.settle_unbilled("deadline_exceeded", 408, "deadline_exceeded")
+                });
+                let payload = if settled.is_err() {
+                    crate::request_ledger_error_body()
+                } else {
+                    crate::deadline_exceeded_error(ms, true)
+                };
+                yield Ok(SseEvent::default().data(payload.to_string()));
+                yield Ok(SseEvent::default().data("[DONE]"));
+                return;
+            }
             match rows.consume(index, event, &mut receipt) {
                 Ok(packets) => {
                     if rows.complete() { final_packets = packets; }
@@ -1228,6 +1377,216 @@ mod tests {
         assert_eq!(first["choices"][1]["message"]["content"], partial);
         assert_eq!(rows.usage().completion_tokens, before);
         assert_eq!(before, 2);
+    }
+
+    /// Terminal settlements a committed group's receipt saw, and whether it died unsettled
+    /// (the billable client-abandon path).
+    #[derive(Default)]
+    struct Settled {
+        terminals: Vec<String>,
+        abandoned: bool,
+    }
+
+    struct SettleReceipt(Arc<std::sync::Mutex<Settled>>, bool);
+
+    impl SettleReceipt {
+        fn settle(&mut self, terminal: String) -> Result<(), String> {
+            self.1 = true;
+            self.0.lock().unwrap().terminals.push(terminal);
+            Ok(())
+        }
+    }
+
+    impl Receipt for SettleReceipt {
+        fn arm_capture(&mut self, _: Value) {}
+        fn capture_completion_delta(&mut self, _: &str) {}
+        fn record_prompt_usage(&mut self, _: u64, _: u64) -> Result<(), String> {
+            Ok(())
+        }
+        fn record_completion_token(&mut self) -> Result<(), String> {
+            Ok(())
+        }
+        fn complete(&mut self, u: UsageCounts, _: f64) -> Result<(), String> {
+            self.settle(format!("complete {}", u.completion_tokens))
+        }
+        fn complete_deadline_partial(&mut self, _: UsageCounts, _: f64) -> Result<(), String> {
+            self.settle("deadline_partial".into())
+        }
+        fn reject(&mut self, status: u16, code: &str) -> Result<(), String> {
+            self.settle(format!("reject {status} {code}"))
+        }
+        fn settle_unbilled(
+            &mut self,
+            outcome: &'static str,
+            status: u16,
+            code: &str,
+        ) -> Result<(), String> {
+            self.settle(format!("unbilled {outcome} {status} {code}"))
+        }
+    }
+
+    impl Drop for SettleReceipt {
+        fn drop(&mut self) {
+            if !self.1 {
+                self.0.lock().unwrap().abandoned = true;
+            }
+        }
+    }
+
+    /// A two-row chat group committed before its first token with a 300 ms first-token
+    /// deadline: the senders, the SSE response and the receipt's settlement log.
+    fn committed_group() -> (
+        Vec<crate::worker::EventSender>,
+        axum::response::Response,
+        Arc<std::sync::Mutex<Settled>>,
+    ) {
+        let (mut senders, mut receivers) = (Vec::new(), Vec::new());
+        for _ in 0..2 {
+            let (tx, rx) = crate::worker::event_channel();
+            senders.push(tx);
+            receivers.push(rx);
+        }
+        let log = Arc::new(std::sync::Mutex::new(Settled::default()));
+        let mut receipt: Option<Box<dyn Receipt>> =
+            Some(Box::new(SettleReceipt(log.clone(), false)));
+        let shared = crate::prefill_receipt::SharedReceipt::wrap(&mut receipt);
+        let input = commit_until_first_delivery(
+            multiplex(receivers),
+            crate::RequestDeadline::starting_now(300),
+            shared,
+        );
+        let counts = Arc::new(std::array::from_fn(|_| AtomicUsize::new(0)));
+        let tenants = Arc::new(std::sync::Mutex::new(std::collections::HashMap::new()));
+        let (parent, _, _) = crate::InflightGuard::try_acquire(
+            counts,
+            crate::lanes::Lane::Interactive,
+            tenants,
+            "tenant",
+            Some(1),
+        )
+        .unwrap();
+        let response = stream_reply(
+            input,
+            Rows::new(true, vec![None, None], &[]),
+            Vec::new(),
+            "m".into(),
+            Envelope::new(true),
+            receipt,
+            Guard::new(parent, 2, None),
+            false,
+        );
+        (senders, response, log)
+    }
+
+    async fn data_lines(response: axum::response::Response) -> Vec<String> {
+        let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        String::from_utf8(bytes.to_vec())
+            .unwrap()
+            .lines()
+            .filter_map(|line| line.strip_prefix("data: ").map(str::to_string))
+            .collect()
+    }
+
+    async fn all_closed(senders: &[crate::worker::EventSender]) {
+        for tx in senders {
+            tokio::time::timeout(std::time::Duration::from_secs(5), tx.closed())
+                .await
+                .expect("every row's channel closes");
+        }
+    }
+
+    fn usage() -> Event {
+        Event::PromptUsage {
+            n_prompt: 10,
+            n_cached: 2,
+        }
+    }
+
+    /// GB10 n > 1 (2026-11-06): after a group commits headers, its first-token deadline keeps
+    /// running. Expiry settles the receipt zero-debit and closes every row even when the body is
+    /// never polled; a polled body ends with the OpenAI-dialect timeout error then `[DONE]`; the
+    /// first token of any row disarms the deadline; a refusal after the commit is an error event.
+    #[tokio::test(start_paused = true)]
+    async fn a_committed_group_keeps_its_first_token_deadline() {
+        // Unpolled: the deadline settles and cancels with nobody reading the body.
+        let (senders, response, log) = committed_group();
+        senders[0].send(usage()).unwrap();
+        all_closed(&senders).await;
+        drop(response);
+        {
+            let settled = log.lock().unwrap();
+            assert_eq!(
+                settled.terminals,
+                ["unbilled deadline_exceeded 408 deadline_exceeded"]
+            );
+            assert!(!settled.abandoned, "a timed-out group is never an abandon");
+        }
+
+        // Polled: the wire's terminal event, and the one settlement.
+        let (senders, response, log) = committed_group();
+        senders[1].send(usage()).unwrap();
+        let lines = data_lines(response).await;
+        assert_eq!(lines.len(), 2, "{lines:?}");
+        assert_eq!(lines[1], "[DONE]");
+        let error: Value = serde_json::from_str(&lines[0]).unwrap();
+        assert_eq!(error["error"]["type"], "timeout");
+        assert_eq!(error["error"]["code"], "deadline_exceeded");
+        let message = error["error"]["message"].as_str().unwrap();
+        assert!(message.contains("deadline of 300 ms"), "{message}");
+        assert!(message.contains("first token"), "{message}");
+        assert!(message.contains("not billed"), "{message}");
+        all_closed(&senders).await;
+        assert_eq!(
+            log.lock().unwrap().terminals,
+            ["unbilled deadline_exceeded 408 deadline_exceeded"]
+        );
+
+        // The first token of one row spends the deadline for the whole group.
+        let (senders, response, log) = committed_group();
+        senders[0].send(usage()).unwrap();
+        senders[0]
+            .send(Event::Token {
+                id: 4,
+                text: "a".into(),
+            })
+            .unwrap();
+        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+        assert!(
+            senders.iter().all(|tx| !tx.is_closed()),
+            "the group runs on"
+        );
+        senders[0].send(Event::TokenSnapshot(vec![4])).unwrap();
+        senders[0].send(done(1)).unwrap();
+        senders[1].send(usage()).unwrap();
+        senders[1]
+            .send(Event::Token {
+                id: 5,
+                text: "b".into(),
+            })
+            .unwrap();
+        senders[1].send(Event::TokenSnapshot(vec![5])).unwrap();
+        senders[1].send(done(1)).unwrap();
+        let lines = data_lines(response).await;
+        assert_eq!(lines.last().map(String::as_str), Some("[DONE]"));
+        assert!(!lines.iter().any(|l| l.contains("\"error\"")), "{lines:?}");
+        assert_eq!(log.lock().unwrap().terminals, ["complete 2"]);
+
+        // A refusal after the commit reaches the client as the group's error event.
+        let (senders, response, log) = committed_group();
+        senders[1]
+            .send(Event::Error(EngineError::rate_limit("lane full")))
+            .unwrap();
+        let lines = data_lines(response).await;
+        assert_eq!(lines.len(), 1, "{lines:?}");
+        let error: Value = serde_json::from_str(&lines[0]).unwrap();
+        assert_eq!(error["error"]["code"], "rate_limit_exceeded");
+        all_closed(&senders).await;
+        assert_eq!(
+            log.lock().unwrap().terminals,
+            ["reject 429 rate_limit_exceeded"]
+        );
     }
 
     #[test]

@@ -19561,19 +19561,44 @@ default_reasoning_effort = "always"
             "the whole first-token deadline absorbs the estimate"
         );
         drop(admitted);
-        // Every ingress hands the queue the whole deadline.
-        for (file, src) in [
-            ("lib.rs", include_str!("lib.rs")),
-            ("surfaces.rs", include_str!("surfaces.rs")),
+        // Every ingress hands the queue the whole deadline, the n > 1 choice group included:
+        // no argument list of a queue reservation names the pre-header window.
+        for (file, src, calls) in [
+            ("lib.rs", include_str!("lib.rs"), 2),
+            ("surfaces.rs", include_str!("surfaces.rs"), 1),
+            ("multi_choice.rs", include_str!("multi_choice.rs"), 1),
+            ("embed_api.rs", include_str!("embed_api.rs"), 1),
         ] {
             let production = src.split("\nmod tests {").next().unwrap();
-            let squashed = production.split_whitespace().collect::<Vec<_>>().join(" ");
-            assert!(
-                !squashed.contains("reserve_pending_admit(st, lane, &rl, deadline.preheader(")
-                    && !squashed
-                        .contains("reserve_pending_admit(&st, lane, &rl, deadline.preheader("),
-                "{file}: an ingress judges the queue against the pre-header window"
-            );
+            let mut seen = 0;
+            for entry in ["reserve_pending_admit(", "reserve_pending_choices("] {
+                for (at, _) in production.match_indices(entry) {
+                    if production[..at].ends_with("fn ") {
+                        continue; // the definition, not a call
+                    }
+                    let args = &production[at + entry.len()..];
+                    let mut depth = 1;
+                    let end = args
+                        .char_indices()
+                        .find(|&(_, c)| {
+                            depth += match c {
+                                '(' => 1,
+                                ')' => -1,
+                                _ => 0,
+                            };
+                            depth == 0
+                        })
+                        .map(|(i, _)| i)
+                        .unwrap_or_else(|| panic!("{file}: unclosed {entry}"));
+                    assert!(
+                        !args[..end].contains("preheader"),
+                        "{file}: {entry}{}) judges the queue against the pre-header window",
+                        &args[..end]
+                    );
+                    seen += 1;
+                }
+            }
+            assert_eq!(seen, calls, "{file}: every queue reservation is scanned");
         }
     }
 
@@ -19849,6 +19874,249 @@ default_reasoning_effort = "always"
                     }
                     worker::release_pending_admit();
                     worker::release_admission_reservation(req.lane);
+                }
+            });
+    }
+
+    /// Marks a test re-run in a fresh process by [`rerun_in_child`]; the value is the test name.
+    const TEST_CHILD: &str = "SERVER_TEST_CHILD";
+
+    fn in_child(name: &str) -> bool {
+        std::env::var_os(TEST_CHILD).is_some_and(|value| value == name)
+    }
+
+    /// Run test `name` of this binary again in a fresh process with `env` set, and return the
+    /// child's stderr. A fresh process reads the OnceLock serving configuration from `env`, and
+    /// its `eprintln!` lines reach the parent, which libtest's in-process capture never shows a
+    /// test. The deadline flags are cleared first so the caller's shell cannot leak into the child.
+    fn rerun_in_child(name: &str, env: &[(&str, &str)]) -> String {
+        let output = std::process::Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", &format!("tests::{name}"), "--nocapture"])
+            .env(TEST_CHILD, name)
+            .env_remove("MEMRA_TIMEOUT_MS_MAX")
+            .env_remove("MEMRA_STREAM_TTFT_MS_MAX")
+            .env_remove("MEMRA_SSE_PREFILL_COMMIT_MS")
+            .env_remove("MEMRA_QUEUE_WAIT_CEILING_S")
+            .envs(env.iter().copied())
+            .output()
+            .unwrap();
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+        assert!(
+            output.status.success(),
+            "child {name} failed:\n{stderr}\n{stdout}"
+        );
+        assert!(
+            stdout.contains("1 passed"),
+            "child {name} ran no test:\n{stdout}"
+        );
+        stderr
+    }
+
+    /// The fake model of the choice-group handler tests: n up to 4 on both public dialects.
+    fn choice_group_state() -> (AppState, std::sync::mpsc::Receiver<Cmd>, Arc<MockMetering>) {
+        let mut st = fake_worker_state();
+        st.caps = Arc::new(HashMap::from([(
+            "m".into(),
+            ModelCaps {
+                max_choices: 4,
+                chat_ok: true,
+                context_length: 1024,
+                n_vocab: 32,
+                ..Default::default()
+            },
+        )]));
+        {
+            // ~387 tokens a request at a 250 ms step: one queued request waits ~97 s.
+            let mut m = st.metrics.lock().unwrap();
+            m.completed = 10;
+            m.tokens_out = 3_870;
+            m.step_p50_ms = 250.0;
+        }
+        let (cmd_tx, cmd_rx) = std::sync::mpsc::channel();
+        st.cmd_tx = cmd_tx;
+        let mock = MockMetering::admit_all();
+        st.metering = Some(mock.clone());
+        (st, cmd_rx, mock)
+    }
+
+    /// GB10 n > 1 (2026-11-06): the choice-group twin of the extended-stream contract, in a fresh
+    /// process with a 300 s first-token deadline and a 100 ms commit (GB10 derives 997 s and
+    /// 60 s). With one request queued ahead and a ~97 s wait estimate an n = 2 stream is not shed
+    /// against its commit window; a group still waiting at its commit commits SSE headers and
+    /// keeps its queued rows; rows admitted after the commit deliver and bill on that stream;
+    /// dropping a committed stream cancels every row; and a constrained group whose schema never
+    /// compiles still answers the pre-header 408, since no stream commits before its schema
+    /// compiled. Before the fix the queued group got 429 `shed_deadline` and an unqueued group a
+    /// pre-header 408 at its commit.
+    #[test]
+    fn an_extended_choice_group_stream_commits_and_is_judged_against_its_whole_deadline() {
+        const NAME: &str =
+            "an_extended_choice_group_stream_commits_and_is_judged_against_its_whole_deadline";
+        if !in_child(NAME) {
+            let stderr = rerun_in_child(
+                NAME,
+                &[
+                    ("MEMRA_STREAM_TTFT_MS_MAX", "300000"),
+                    ("MEMRA_SSE_PREFILL_COMMIT_MS", "100"),
+                ],
+            );
+            assert!(
+                !stderr.contains("[shed]"),
+                "no choice group may be shed here:\n{stderr}"
+            );
+            return;
+        }
+        let _counters = global_counter_writer_guard();
+        validate_stream_prefill_config().unwrap();
+        assert_eq!(parse_timeout_ms(None, true).unwrap(), 300_000);
+        let lane = lanes::Lane::Interactive;
+        let completion = json!({"model":"m","prompt":"t","n":2,"max_tokens":4,"stream":true});
+        let chat = json!({"model":"m","messages":[{"role":"user","content":"t"}],
+            "n":2,"max_tokens":4,"stream":true});
+        let mut constrained = chat.clone();
+        constrained["response_format"] = json!({"type":"json_object"});
+        tokio::runtime::Builder::new_current_thread()
+            .enable_time()
+            .build()
+            .unwrap()
+            .block_on(async {
+                for (path, payload, queued, case) in [
+                    ("/v1/completions", completion, 1, "deliver"),
+                    ("/v1/chat/completions", chat.clone(), 1, "deliver"),
+                    ("/v1/chat/completions", chat, 0, "drop"),
+                    ("/v1/chat/completions", constrained, 0, "constrained"),
+                ] {
+                    let (st, cmd_rx, mock) = choice_group_state();
+                    let counter = &worker::ADMISSION_RESERVATIONS[lane.idx()];
+                    let prev = counter.swap(queued, std::sync::atomic::Ordering::AcqRel);
+                    let _restore = CounterRestore(counter, prev);
+                    let response = tokio::time::timeout(
+                        std::time::Duration::from_secs(2),
+                        bg914_http(bg914_router(st), "POST", path, None, payload),
+                    )
+                    .await
+                    .expect("the group answers by its commit");
+                    let status = response.status();
+                    let Ok(Cmd::GenerateChoices(mut rows)) = cmd_rx.try_recv() else {
+                        panic!(
+                            "{path} {case}: the group never reached the worker: {status} {}",
+                            body_value(response).await
+                        )
+                    };
+                    assert_eq!(rows.len(), 2);
+                    if case == "constrained" {
+                        assert!(rows.iter().all(|row| row.grammar.is_some()));
+                        assert_eq!(status, StatusCode::REQUEST_TIMEOUT, "{path} {case}");
+                        let body = body_value(response).await;
+                        assert!(
+                            body["error"]["message"]
+                                .as_str()
+                                .unwrap()
+                                .contains("pre-header budget"),
+                            "{path} {case}: {body}"
+                        );
+                        assert!(
+                            rows.iter().all(|row| row.tx.is_closed()),
+                            "{path} {case}: the uncompiled group is cancelled"
+                        );
+                        assert!(mock.events().contains(&MeterEvent::Unbilled {
+                            outcome: "deadline_exceeded",
+                            status: 408,
+                            code: "deadline_exceeded".into(),
+                        }));
+                        for row in &mut rows {
+                            worker::release_pending_admit();
+                            worker::release_request_reservation(row);
+                        }
+                        continue;
+                    }
+                    if status != StatusCode::OK {
+                        panic!("{path} {case}: {status} {}", body_value(response).await);
+                    }
+                    assert!(
+                        response.headers()[CONTENT_TYPE]
+                            .to_str()
+                            .unwrap()
+                            .starts_with("text/event-stream"),
+                        "{path} {case}: a committed group answers SSE"
+                    );
+                    assert!(
+                        rows.iter().all(|row| !row.tx.is_closed()),
+                        "{path} {case}: the committed group keeps its queued rows"
+                    );
+                    if case == "drop" {
+                        drop(response);
+                        for row in &rows {
+                            tokio::time::timeout(
+                                std::time::Duration::from_secs(1),
+                                row.tx.closed(),
+                            )
+                            .await
+                            .unwrap_or_else(|_| {
+                                panic!("{path}: dropping the committed group must cancel every row")
+                            });
+                        }
+                        for row in &mut rows {
+                            worker::release_pending_admit();
+                            worker::release_request_reservation(row);
+                        }
+                        continue;
+                    }
+                    // Admission after the commit: each row primes, emits one token and retires.
+                    for (index, row) in rows.iter_mut().enumerate() {
+                        worker::release_pending_admit();
+                        worker::release_request_reservation(row);
+                        let id = index as u32 + 1;
+                        for event in [
+                            Event::PromptUsage {
+                                n_prompt: 5,
+                                n_cached: 0,
+                            },
+                            Event::Token {
+                                id,
+                                text: format!("row{index}"),
+                            },
+                            Event::TokenSnapshot(vec![id]),
+                            Event::Done {
+                                stop_reason: "MaxNew".into(),
+                                n_tokens: 1,
+                                n_prompt: 5,
+                                n_cached: 0,
+                                elapsed_s: 0.01,
+                                spec: None,
+                            },
+                        ] {
+                            row.tx.send(event).unwrap();
+                        }
+                    }
+                    let lines = tokio::time::timeout(
+                        std::time::Duration::from_secs(2),
+                        sse_data_lines(response),
+                    )
+                    .await
+                    .expect("the committed group completes");
+                    assert_eq!(
+                        lines.last().map(String::as_str),
+                        Some("[DONE]"),
+                        "{lines:?}"
+                    );
+                    assert!(!lines.iter().any(|l| l.contains("\"error\"")), "{lines:?}");
+                    for index in 0..2 {
+                        assert!(
+                            lines.iter().any(|l| l.contains(&format!("row{index}"))),
+                            "{path}: row {index} reaches the committed stream: {lines:?}"
+                        );
+                    }
+                    assert!(
+                        mock.events().contains(&MeterEvent::Complete {
+                            prompt: 5,
+                            cached: 0,
+                            completion: 2,
+                        }),
+                        "{path}: the committed group bills its rows: {:?}",
+                        mock.events()
+                    );
                 }
             });
     }
