@@ -521,11 +521,20 @@ def run_battery(src, roster, out, env):
     return result.returncode
 
 
+def shown_bytes(line, src):
+    """One line of banked output with the build tree as `<tree>` and the home directory as `~`
+    (cargo names the crate path it compiles), so a published log names no user or mount."""
+    return line.replace(str(src).encode(), b"<tree>").replace(str(Path.home()).encode(), b"~")
+
+
 def run_serving(src, row, out, env):
     args = [a for a in (row.get("serve_model"), row.get("serve_draft")) if a]
     with open(out / "serving.log", "wb") as log:
-        return subprocess.run(["bash", "tools/serve-smoke.sh", *args], cwd=src, env=env,
-                              stdout=log, stderr=subprocess.STDOUT).returncode
+        proc = subprocess.Popen(["bash", "tools/serve-smoke.sh", *args], cwd=src, env=env,
+                                stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        for line in proc.stdout:
+            log.write(shown_bytes(line, src))
+        return proc.wait()
 
 
 def run_perf(sources, roster_rows, out, env, cwd):
@@ -663,6 +672,12 @@ def produce(repo, commit, device_class, kinds, out, *, base=None, work=None, bin
     started = out / "gpu-phase.started"
     if not started.exists():
         plan.unlink()
+        # gpulock, sparklock and `flock -w` exit 1 when the device stays held; any other code
+        # (sparklock's 2 for an unknown unit, a missing lock command) is a configuration error
+        # that a retry will not fix, so it must not read as "busy, the next run retries".
+        if result.returncode != 1:
+            raise EvidenceError(f"device lock command failed ({' '.join(lock_prefix[:1])} exit "
+                                f"{result.returncode}); nothing ran")
         raise DeviceBusy(f"device lock not obtained ({' '.join(lock_prefix[:1])} exit {result.returncode}); nothing ran")
     started.unlink()
     meta = json.loads(plan.read_text())

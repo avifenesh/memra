@@ -34,7 +34,7 @@ ALLOW_MISSING_VENDOR=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --roster) ROSTER=${2:?}; shift 2 ;;
-    --evidence-dir) EVIDENCE_DIR=${2:?}; shift 2 ;;
+    --evidence-dir) EVIDENCE_DIR=${2:?}; EVIDENCE_DIR=${EVIDENCE_DIR%/}; shift 2 ;;
     --allow-missing-vendor) ALLOW_MISSING_VENDOR=1; shift ;;
     -h|--help) sed -n '1,14p' "$0"; exit 0 ;;
     *) echo "unknown arg: $1" >&2; exit 64 ;;
@@ -121,12 +121,17 @@ if [ -n "$PHYSICAL_UUID" ]; then
   PHYSICAL_GPU_TAG="sha256:$(printf '%s' "$PHYSICAL_UUID" | sha256sum | cut -c1-12)"
 fi
 shown_path() {
-  local root
-  root=$(cd "$HERE/.." && pwd -P)
+  local logical physical resolved
+  logical=${HERE%/tools}
+  physical=$(cd "$HERE/.." && pwd -P)
+  resolved=$(realpath -m -- "$1" 2>/dev/null || printf '%s' "$1")
   case "$1" in
-    "$root"/*) printf '%s' "${1#"$root"/}" ;;
-    "$HOME"/*) printf '~/%s' "${1#"$HOME"/}" ;;
-    *) printf '%s' "$1" ;;
+    "$logical"/*) printf '%s' "${1#"$logical"/}"; return ;;
+  esac
+  case "$resolved" in
+    "$physical"/*) printf '%s' "${resolved#"$physical"/}" ;;
+    "$HOME"/*) printf '~/%s' "${resolved#"$HOME"/}" ;;
+    *) printf '<path>/%s' "$(basename -- "$1")" ;;
   esac
 }
 
@@ -214,7 +219,7 @@ while IFS=$'\t' read -r class id path _ || [ -n "${class:-}" ]; do
   esac
 done < "$ROSTER"
 if [ "$OWN_ROWS" -eq 0 ]; then
-  echo "REFUSED: $ROSTER contains no \`own\` model — an own row is not skippable." >&2
+  echo "REFUSED: $(shown_path "$ROSTER") contains no \`own\` model — an own row is not skippable." >&2
   exit 1
 fi
 
@@ -246,12 +251,12 @@ while IFS=$'\t' read -r class id path _ || [ -n "${class:-}" ]; do
   case "$class" in ''|\#*) continue ;; esac
   if [ ! -f "$path" ]; then
     if [ "$class" = own ]; then
-      note "$id  REFUSED   OWN model absent from this rig: $path"
+      note "$id  REFUSED   OWN model absent from this rig: $(shown_path "$path")"
       MISSING_OWN=1; FAILED=1
     elif [ "$ALLOW_MISSING_VENDOR" = 1 ]; then
       note "$id  SKIPPED   vendor model absent (--allow-missing-vendor)"
     else
-      note "$id  REFUSED   vendor model absent: $path (pass --allow-missing-vendor to accept)"
+      note "$id  REFUSED   vendor model absent: $(shown_path "$path") (pass --allow-missing-vendor to accept)"
       FAILED=1
     fi
     continue
@@ -324,6 +329,6 @@ if [ "$FAILED" = 0 ]; then
   printf '%s' "$LINES" | sed 's/^/  /'
   exit 0
 fi
-[ "$MISSING_OWN" = 1 ] && echo "REFUSED: an OWN model was not tested (absent file, or no own row in $ROSTER). Neither is skippable." >&2
+[ "$MISSING_OWN" = 1 ] && echo "REFUSED: an OWN model was not tested (absent file, or no own row in $(shown_path "$ROSTER")). Neither is skippable." >&2
 echo "RELEASE BATTERY FAILED" >&2
 exit 1

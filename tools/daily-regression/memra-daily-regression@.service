@@ -12,6 +12,9 @@ After=network-online.target
 
 [Service]
 Type=oneshot
+# Default PATH for the device-lock commands and toolchains in the home dir (sparklock and
+# gpulock live in ~/.local/bin); the per-box env file below overrides it.
+Environment=PATH=%h/.local/bin:%h/.cargo/bin:/usr/local/cuda/bin:/usr/local/bin:/usr/bin:/bin
 EnvironmentFile=-%h/.config/memra-daily/%i.env
 Environment=PYTHONDONTWRITEBYTECODE=1
 # Modest CPU: the build runs nice 15 with two jobs under the rig build lock

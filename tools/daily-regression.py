@@ -128,7 +128,7 @@ def summarize(record, head, device, target_name, run_dir):
     return {"date": dt.date.today().isoformat(), "commit": head, "device": device, "target": target_name,
             "status": record["status"], "failing": failing_cells(record),
             "perf": perf.get("verdicts") or perf.get("absolute"), "perf_base": perf.get("base_commit"),
-            "record": str(run_dir)}
+            "record": run_dir.name}
 
 
 def publish(repo, device, run_dir, summary, tools, pusher=None):

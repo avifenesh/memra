@@ -211,6 +211,21 @@ class RunDecisions(unittest.TestCase):
         self.assertTrue((work / "daily-bins" / ("d" * 40 + "-120a")).is_dir())
 
 
+class PublishedNames(unittest.TestCase):
+    def test_summary_names_the_run_not_its_absolute_path(self):
+        # summary.json is pushed to a public branch; the run dir sits under the box's work dir.
+        run_dir = Path.home() / ".cache/memra-daily/gb10/runs/2026-11-06-0123456789ab"
+        summary = dr.summarize({"status": "pass", "kinds": {}}, "0" * 40, "gb10", "sm_121a", run_dir)
+        self.assertEqual(summary["record"], "2026-11-06-0123456789ab")
+        self.assertNotIn(str(Path.home()), json.dumps(summary))
+
+    def test_unit_path_finds_the_home_lock_commands(self):
+        unit = (Path(__file__).with_name("daily-regression") / "memra-daily-regression@.service").read_text()
+        path = next(l for l in unit.splitlines() if l.startswith("Environment=PATH="))
+        self.assertIn("%h/.local/bin", path.split("=", 2)[2].split(":"))
+        self.assertLess(unit.index("Environment=PATH="), unit.index("EnvironmentFile="))
+
+
 class Install(unittest.TestCase):
     def test_install_names_the_lock_variables_a_box_must_set(self):
         import argparse

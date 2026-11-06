@@ -435,9 +435,37 @@ class DeviceLock(unittest.TestCase):
         self.assertFalse((out / "gpu-phase.started").exists())
         self.assertFalse((out / "record.json").exists())
 
+    def test_a_lock_command_error_is_not_busy(self):
+        # sparklock exits 2 for a usage error (an unknown unit). That is a configuration error a
+        # retry will not fix; reporting it as DeviceBusy would read "busy, retry" every day.
+        f = self.fixture()
+        fake = self.root / "bin"
+        fake.mkdir()
+        (fake / "sparklock").write_text("#!/bin/sh\necho 'sparklock: unknown unit: unit-z' >&2\nexit 2\n")
+        (fake / "sparklock").chmod(0o755)
+        tree, bins = self.root / "tree", self.root / "bins"
+        bins.mkdir()
+        for name in ce.BINARIES:
+            (bins / name).write_bytes(b"fixture")
+        out = self.root / "out"
+        with mock.patch.dict(os.environ, {"PATH": f"{fake}{os.pathsep}{os.environ['PATH']}", "MEMRA_SPARK_UNIT": "unit-z"}), \
+                mock.patch.object(ce, "build", return_value=(tree, bins)), \
+                mock.patch.object(ce, "toolchain", return_value={}):
+            with self.assertRaises(ce.EvidenceError) as caught:
+                ce.produce(f.repo, "HEAD", "gb10", ["battery"], out, work=self.root / "work", log=lambda _: None)
+        self.assertNotIsInstance(caught.exception, ce.DeviceBusy)
+        self.assertIn("device lock command failed (sparklock exit 2)", str(caught.exception))
+        self.assertFalse((out / "record.json").exists())
+
 
 
 class ShownCommand(unittest.TestCase):
+    def test_banked_serving_lines_name_no_tree_or_home(self):
+        tree = Path.home() / ".cache/memra-cells/gb10/tree-121a"
+        line = f"   Compiling memra-server v0.138.0 ({tree}/crates/memra-server)\n".encode()
+        self.assertEqual(ce.shown_bytes(line, tree), b"   Compiling memra-server v0.138.0 (<tree>/crates/memra-server)\n")
+        self.assertEqual(ce.shown_bytes(f"cache {Path.home()}/x\n".encode(), tree), b"cache ~/x\n")
+
     def test_build_log_names_no_home_directory(self):
         # build.log is banked with the record and published: the build lock lives under
         # $HOME, so the logged command must show `~`, not the user's home path.
