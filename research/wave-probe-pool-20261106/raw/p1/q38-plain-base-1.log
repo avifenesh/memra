@@ -1,0 +1,50 @@
+[    0.21] [server] build: memra-0.138.0-19b572b06fea (id: source-tree, git: 3bbdf42ff992)
+[    0.21] [server] starting; models config = [("q38", "<models>/models/q38-gguf/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf", None)]
+[    0.21] [gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[    0.21] [worker-affinity] off (MEMRA_WORKER_CPUSET / MEMRA_WORKER_AFFINITY unset or =0)
+[    0.41] [gpu-watch] on: every 60s, probe deadline 10s, fatal after 3 consecutive misses (MEMRA_GPU_PROBE_MISSES), fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[    0.49] [worker] Engine ready (device=0, MEMRA_FAST=true)
+[    0.49] [spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+[    0.49] [spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2 (K=5 when the loaded MTP head is rank-trimmed)
+[    0.49] [worker] loading model "q38" <- <models>/models/q38-gguf/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf
+[    0.54] [tensor-contract] bound 866 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[   14.25] [worker]   loaded "q38": 65 layers, eos=248046, stop=[248046]
+[   14.26] [worker] q38: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false qwen_effort=true gemma_think=false dsv4=false glm5=false ctx=262144 tok="qwen35" instruct=Some("chatml") chat_defaults=None/None
+[   14.26] [route-contract] model="q38" route=hybrid-worker capacity=64 sessions implemented=[capacity,occupancy,progress,fault-ownership,shutdown-ownership,memory-cost,rewrite-qualification,prime-fairness,service-metrics] refused=[]
+[   65.76] [wave-probe] failed (DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")); wave cap 16
+[   65.76] [worker] q38: decode wave cap 16; scheduler tick cap 16 (exact-16 tier)
+[   65.76] [prefix-cache] WARNING: derived budget is 0 B after the boot free-VRAM reserve clamp; prefix caching disabled
+[   65.76] [admission] "q38": plain 29696 B/token, spec 31552 B/token; fixed residual learns from effective-free deltas
+[   68.35] [fa-pool] grow #0 dev=0 o_len 0 -> 202752 ml_len 0 -> 792 (retired kept, zero=false)
+[   68.51] [fa-pool] grow #1 dev=0 o_len 202752 -> 405504 ml_len 792 -> 1584 (retired kept, zero=false)
+[   68.67] [fa-pool] grow #2 dev=0 o_len 405504 -> 811008 ml_len 1584 -> 3168 (retired kept, zero=false)
+[   69.02] [fa-pool] grow #3 dev=0 o_len 811008 -> 1622016 ml_len 3168 -> 6336 (retired kept, zero=false)
+[   69.55] [fa-pool] grow #4 dev=0 o_len 1622016 -> 3244032 ml_len 6336 -> 12672 (retired kept, zero=false)
+[  111.73] [device-trim] reason=spec-cost-calibration {"device":0,"reclaimed_bytes":8120172544,"still_owned_bytes":16525571904,"pool_reserved_bytes":16743661568,"pool_cached_bytes":218089664,"driver_free_bytes":8174829568,"synchronization_errors":[]}
+[  111.73] [spec-cost] calibration FAILED: model="q38" (DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")); the band serves
+[  111.73] [prime-walk] model="q38" route=mtp supported=true yield_door=true [gdn_dspark_compatible=true mtp_head_loaded=true no_hyper_connections=true no_pipeline_cuts=true]
+[  116.98] [func] CAPTURE-TIME kernel lookup (not warmed): embed_gather_u32
+[  117.01] [func] CAPTURE-TIME kernel lookup (not warmed): inc_i32
+[  117.01] [func] CAPTURE-TIME kernel lookup (not warmed): fa_decode_vec_q_v4_deep_dc
+[  117.01] [func] CAPTURE-TIME kernel lookup (not warmed): fa_decode_combine_f32
+[  117.01] [func] CAPTURE-TIME kernel lookup (not warmed): memra_sctr_inc
+[  117.01] [func] CAPTURE-TIME kernel lookup (not warmed): gumbel_perturb_filtered_ctr_f32
+[  117.02] [spec] draft-session state high-water: 38MB (max of parked delta 38MB and capture-time pool peak 6MB; charged per spec admission and gating future captures)
+[  118.42] [device-trim] reason=calibration-complete {"device":0,"reclaimed_bytes":2415919104,"still_owned_bytes":17297323840,"pool_reserved_bytes":17582522368,"pool_cached_bytes":285198528,"driver_free_bytes":7300317184,"synchronization_errors":[]}
+[  118.42] [admit-cal] post-probe pool trim: released 2304MB cached back to the driver
+[  118.42] [admit-cal] boot calibration done: model="q38" route=mtp transient floor 2138MB (static was 1536MB; measured 2138MB; probe kv charge 127MB, draft-state 38MB, drafted 63 accepted 42; [dev0 peak-mapped 19072MB rest-mapped 16768MB charged 165MB -> 2138MB]; 6.7s)
+[  118.42] [admit-mem] door=OFF open_output_tokens=8192 defer_budget_ms=8000 (admission charges prompt+output, the reclaim flush demotes to the host tier before dropping, and a memory defer past the budget refuses 429 instead of queueing past the client's deadline)
+[  118.42] [kv-vmm] door=OFF (MEMRA_KV_ALLOCATOR unset or pooled: pooled K/V planes)
+[  118.42] [server] worker ready; serving models: ["q38"]
+[  118.44] [server] listening on http://127.0.0.1:18297
+[  119.15] [meter] admit id=chatcmpl-289abb8772de7bd709f0075495befc77 tenant=default lane=interactive model="q38"
+[  119.15] [admission] per-session draft-state charge: model="q38" +40MB (measured capture high-water)
+[  119.15] [admission] request cost: model="q38" ctx=161 path=spec = 31552 B/token x ctx + 31MB prefill-workspace + 0MB fixed = 36MB
+[  119.15] [spec-k] model="q38" tenant="" K=3 source=cold-short prompt=65 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[  119.15] [admission] fixed residual high-water: model="q38" 308MB (observed 311MB at ctx 105 path=spec)
+[  120.38] [spec-acc] ctx=65 burst=19/36 cum=19/36=0.528
+[  120.38] [prefix-cache] WARNING: first prefix insert is larger than the entire byte budget; this shape cannot produce cross-request hits. Subsequent refusals remain visible in prefix_cache_skips_budget
+[  120.38] [prefix-cache] insert refused: entry 157923328 exceeds budget 0 (spec-boundary, model q38)
+[  120.38] [server] SIGTERM: draining (0 in flight, deadline 30s)
+[  120.38] [server] drain complete in 0.0s; exiting
+[  120.65] [server] GPU worker shutdown complete
