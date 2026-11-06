@@ -186,7 +186,7 @@ mod native {
             let hex: String = uuid
                 .bytes
                 .iter()
-                .map(|x| format!("{:02x}", *x as u8))
+                .map(|x| format!("{:02x}", x.to_ne_bytes()[0]))
                 .collect();
             let selector = format!(
                 "GPU-{}-{}-{}-{}-{}",
