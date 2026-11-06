@@ -1,0 +1,18 @@
+$ flock ~/.cache/memra-rig-build.lock nice -n 15 cargo build --release --locked --quiet -p memra-engine --bin kernel-check --bin run-gen --bin run-spec --bin argmax-margin-probe -p memra-server --bin memra-server -p memra-tokenizer --bin tok-parity  (commit 3bbdf42ff99201f1b9e783019c183698b6907a54, target 121a, tree tree-121a)
+warning: function `chain` is never used
+  --> crates/memra-engine/src/cpu_probe.rs:51:4
+   |
+51 | fn chain(steps: u64) -> u64 {
+   |    ^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+$ flock ~/.cache/memra-rig-build.lock nice -n 15 cargo build --release --locked --quiet -p memra-engine --bin kernel-check --bin run-gen --bin run-spec --bin argmax-margin-probe -p memra-server --bin memra-server -p memra-tokenizer --bin tok-parity  (commit 9756c6bfe1738bc792a20f69b7b08913ab5bf919, target 121a, tree base-121a)
+warning: function `chain` is never used
+  --> crates/memra-engine/src/cpu_probe.rs:51:4
+   |
+51 | fn chain(steps: u64) -> u64 {
+   |    ^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
