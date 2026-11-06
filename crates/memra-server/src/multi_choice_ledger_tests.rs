@@ -262,10 +262,14 @@ async fn choice_http_ledger_callback_failures_are_named_and_release_owned_capaci
                 && errors.len() == 1
                 && errors[0]["code"] == "request_ledger_unavailable"
                 && errors[0]["type"] == "server_error"
-                // Since 2026-11-06 a post-header failure ends like n = 1: the error, then
-                // [DONE] (it used to close without [DONE]). Before the headers it is plain JSON.
+                // Since 2026-11-06 a post-header failure ends like an OpenAI-shape n = 1 stream:
+                // the error, then [DONE] (it used to close without [DONE]). Before the headers it
+                // is plain JSON.
                 && if after_header {
-                    data.last() == Some(&"[DONE]") && wire.matches("[DONE]").count() == 1
+                    data.last() == Some(&"[DONE]")
+                        && wire.matches("[DONE]").count() == 1
+                        && data.len() >= 2
+                        && data[data.len() - 2].contains("request_ledger_unavailable")
                 } else {
                     !wire.contains("[DONE]")
                 }

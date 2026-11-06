@@ -1010,7 +1010,8 @@ fn stream_reply(
             if let Event::DeadlineExceeded { ms } = event {
                 // A committed group's first-token deadline (`commit_until_first_delivery`
                 // already settled the shared receipt; this returns that settlement). Like every
-                // error after the headers, and like n = 1: a `data:` error, then `[DONE]`.
+                // error after the headers, and like an OpenAI-shape n = 1 stream: a `data:` error, then
+                // `[DONE]` (n > 1 is always OpenAI-shaped).
                 let settled = receipt.as_mut().map_or(Ok(()), |r| {
                     r.settle_unbilled("deadline_exceeded", 408, "deadline_exceeded")
                 });

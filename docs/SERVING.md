@@ -1086,8 +1086,8 @@ wait estimate with the whole first-token deadline, and a refusal after the commi
 a dialect-native error event under HTTP 200. An `n` > 1 stream takes the same path, as one
 group: the shed judges the group against the whole deadline, the group commits once for all its
 rows, the first token of any row spends the deadline, and a constrained group commits only after
-every row's schema compiled. After its commit a group's timeout or refusal ends the way `n` = 1
-does: a `data:` error, then `[DONE]`. Until 2026-11-06 a group
+every row's schema compiled. After its commit a group's timeout or refusal ends the way an
+OpenAI-shape `n` = 1 stream does: a `data:` error, then `[DONE]`. Until 2026-11-06 a group
 kept the pre-header bound for queue and prefill alike, so an `n` = 2 stream whose prefill ran
 past the commit got a pre-header 408, and its queue shed judged the estimate against the
 commit. (Until 2026-11-02 a stream still queued at the
