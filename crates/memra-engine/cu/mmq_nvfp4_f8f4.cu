@@ -91,6 +91,54 @@ static __global__ void quantize_mmq_e4m3_d4_kernel(
     y[ib].d4[iqs / 32] = amax == 0.0f ? 0.0f : amax / 448.0f;
 }
 
+// Fused twin (GB10 prefill lane, 2026-11-06): the activation element is formed in-register as
+// silu_mul_f32 forms it, (g / (1.0f + expf(-g))) * u, with the same compile flags (default
+// precision, no fast-math), then quantized exactly as quantize_mmq_e4m3_d4_kernel does. The
+// e4m3 bytes and d4 scales equal silu_mul_f32 followed by memra_mmq_nvfp4_f8f4_quantize_act;
+// the f32 [n_tokens, in_f] activation is never written or re-read.
+static __global__ void quantize_mmq_e4m3_d4_silu_kernel(
+        const float * __restrict__ gate, const float * __restrict__ up, void * __restrict__ vy,
+        const int64_t ne00, const int64_t s01, const int64_t ne0, const int ne1) {
+    const int64_t i0 = ((int64_t) blockDim.x * blockIdx.y + threadIdx.x) * 4;
+    if (i0 >= ne0) { return; }
+    const int64_t i1 = blockIdx.x;
+
+    const float4 * g4 = (const float4 *) gate;
+    const float4 * u4 = (const float4 *) up;
+    block_e4m3_mmq * y = (block_e4m3_mmq *) vy;
+
+    const int64_t ib  = (i0 / (4 * QK8_1)) * ne1 + i1;
+    const int64_t iqs = i0 % (4 * QK8_1);
+
+    float4 xi = make_float4(0.0f, 0.0f, 0.0f, 0.0f);
+    if (i0 < ne00) {
+        const float4 g = g4[(i1 * s01 + i0) / 4];
+        const float4 u = u4[(i1 * s01 + i0) / 4];
+        xi.x = (g.x / (1.0f + expf(-g.x))) * u.x;
+        xi.y = (g.y / (1.0f + expf(-g.y))) * u.y;
+        xi.z = (g.z / (1.0f + expf(-g.z))) * u.z;
+        xi.w = (g.w / (1.0f + expf(-g.w))) * u.w;
+    }
+    float amax = fabsf(xi.x);
+    amax = fmaxf(amax, fabsf(xi.y));
+    amax = fmaxf(amax, fabsf(xi.z));
+    amax = fmaxf(amax, fabsf(xi.w));
+#pragma unroll
+    for (int offset = 32 / 8; offset > 0; offset >>= 1) {
+        amax = fmaxf(amax, __shfl_xor_sync(0xFFFFFFFF, amax, offset, WARP_SIZE));
+    }
+
+    const float d_inv = amax == 0.0f ? 0.0f : 448.0f / amax;
+    const uint16_t q01 = cvt_e4m3x2(xi.x * d_inv, xi.y * d_inv);
+    const uint16_t q23 = cvt_e4m3x2(xi.z * d_inv, xi.w * d_inv);
+
+    uint32_t * yqs4 = (uint32_t *) y[ib].qs;
+    yqs4[iqs / 4] = (uint32_t) q01 | ((uint32_t) q23 << 16);
+
+    if (iqs % 32 != 0) { return; }
+    y[ib].d4[iqs / 32] = amax == 0.0f ? 0.0f : amax / 448.0f;
+}
+
 extern "C" {
 
 size_t memra_mmq_nvfp4_f8f4_act_bytes(int in_f, int n_tokens) {
@@ -108,6 +156,16 @@ void memra_mmq_nvfp4_f8f4_quantize_act(
     const int block_size = 128;
     const dim3 num_blocks((unsigned) n_tokens, (unsigned) ((ne0 / 4 + block_size - 1) / block_size), 1);
     quantize_mmq_e4m3_d4_kernel<<<num_blocks, block_size, 0, st>>>(x, vy, in_f, s01, ne0, n_tokens);
+}
+
+// Same launch geometry as memra_mmq_nvfp4_f8f4_quantize_act; gate/up are [n_tokens, s01] f32.
+void memra_mmq_nvfp4_f8f4_quantize_act_silu(
+        const float * gate, const float * up, void * vy, int in_f, int n_tokens, int64_t s01,
+        cudaStream_t st) {
+    const int64_t ne0 = GGML_PAD((int64_t) in_f, MATRIX_ROW_PADDING);
+    const int block_size = 128;
+    const dim3 num_blocks((unsigned) n_tokens, (unsigned) ((ne0 / 4 + block_size - 1) / block_size), 1);
+    quantize_mmq_e4m3_d4_silu_kernel<<<num_blocks, block_size, 0, st>>>(gate, up, vy, in_f, s01, ne0, n_tokens);
 }
 
 } // extern "C"

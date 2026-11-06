@@ -17,3 +17,8 @@ extern "C" int memra_mmq_nvfp4_f8f4(
         const void *, const float *, float *, int, int, int, void *, void *, float, int) {
     return 2903;
 }
+
+extern "C" int memra_mmq_nvfp4_f8f4_preq(
+        const void *, const void *, float *, int, int, int, void *, float, int) {
+    return 2904;
+}

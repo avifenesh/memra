@@ -3543,6 +3543,52 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             }
                         }
                     }
+                    // --- FUSED silu x up -> F8F4 activation quantize (GB10 prefill lane): the fused
+                    // kernel must hand the GEMM the exact e4m3 bytes silu_mul_f32 + the F8F4
+                    // quantizer produce, so the two outputs must agree on every f32 bit.
+                    if let Some(t) = g
+                        .find("blk.0.ffn_down.weight")
+                        .filter(|t| t.ggml_type == GgmlType::NVFP4)
+                    {
+                        if e.mmq_f8f4_route() {
+                            let in_f = t.ne[0] as usize;
+                            let out_f = t.ne[1] as usize;
+                            let wd = e.htod_bytes(g.tensor_data(t))?;
+                            for tt in [16usize, 130, 1024] {
+                                let gate: Vec<f32> =
+                                    (0..tt * in_f).map(|i| pr(i + 91) * 4.0).collect();
+                                let up: Vec<f32> =
+                                    (0..tt * in_f).map(|i| pr(i + 97) * 0.5).collect();
+                                let gd = e.htod(&gate)?;
+                                let ud = e.htod(&up)?;
+                                let mut act = e.uninit(tt * in_f)?;
+                                e.silu_mul(&gd, &ud, &mut act, tt * in_f)?;
+                                let ya = e.dtoh(
+                                    &e.qmatvec_mmq_nvfp4_w4a8_raw(&wd, &act, tt, in_f, out_f)?,
+                                )?;
+                                let yb = e.dtoh(&e.qmatvec_mmq_nvfp4_f8f4_silu_raw(
+                                    &wd, &gd, &ud, tt, in_f, out_f,
+                                )?)?;
+                                let nbad = ya
+                                    .iter()
+                                    .zip(yb.iter())
+                                    .filter(|(a, b)| a.to_bits() != b.to_bits())
+                                    .count();
+                                println!(
+                                    "MMQ-F8F4-SILU-FUSED blk.0.ffn_down.weight [NVFP4] T={tt}: bit-mismatch {nbad}/{} {}",
+                                    ya.len(),
+                                    if nbad == 0 {
+                                        "OK"
+                                    } else {
+                                        fails += 1;
+                                        "FAIL"
+                                    }
+                                );
+                            }
+                        } else {
+                            println!("MMQ-F8F4-SILU-FUSED: SKIP (F8F4 route off on this device)");
+                        }
+                    }
                     // --- STAGE 2: VENDORED llama NVFP4 W4A8 MMQ GEMM vs the f32 dequant oracle. ---
                     // The accuracy-safe rung: weight FP4 is LUT-dequantized to int8 (bit-exact) and the
                     // activation stays q8_1 int8 -> rel MUST sit in the int8-activation band (~1e-3..1e-2),

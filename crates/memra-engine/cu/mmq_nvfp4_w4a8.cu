@@ -1355,13 +1355,14 @@ extern "C" {
 void memra_mmq_nvfp4_f8f4_quantize_act(const float * x, void * vy, int in_f, int n_tokens,
                                       int64_t s01, cudaStream_t st);
 
-int memra_mmq_nvfp4_f8f4(const void * W_nvfp4_blocks, const float * act_f32, float * y,
-                        int in_f, int out_f, int n_tokens, void * act_scratch, void * stream,
-                        float out_scale, int rp) {
+// GEMM-only F8F4 entry: the activation is already in act_scratch (block_e4m3_mmq, written by
+// memra_mmq_nvfp4_f8f4_quantize_act or its fused silu twin). memra_mmq_nvfp4_f8f4 below is
+// exactly quantize + this call, so a caller that quantized the same activation once may reuse
+// the scratch across weights (GB10 prefill lane, 2026-11-06).
+int memra_mmq_nvfp4_f8f4_preq(const void * W_nvfp4_blocks, const void * act_scratch, float * y,
+                             int in_f, int out_f, int n_tokens, void * stream,
+                             float out_scale, int rp) {
     cudaStream_t st = reinterpret_cast<cudaStream_t>(stream);
-
-    memra_mmq_nvfp4_f8f4_quantize_act(act_f32, act_scratch, in_f, n_tokens, in_f, st);
-    { cudaError_t e = cudaGetLastError(); if (e != cudaSuccess) { return 1000 + (int) e; } }
 
     const int stride_row_x    = in_f / QK_NVFP4;
     const int blocks_per_ne00 = in_f / QK_NVFP4;
@@ -1403,5 +1404,17 @@ int memra_mmq_nvfp4_f8f4(const void * W_nvfp4_blocks, const float * act_f32, flo
     cudaError_t e = cudaGetLastError();
     if (e != cudaSuccess) { return 2000 + (int) e; }
     return 0;
+}
+
+int memra_mmq_nvfp4_f8f4(const void * W_nvfp4_blocks, const float * act_f32, float * y,
+                        int in_f, int out_f, int n_tokens, void * act_scratch, void * stream,
+                        float out_scale, int rp) {
+    cudaStream_t st = reinterpret_cast<cudaStream_t>(stream);
+
+    memra_mmq_nvfp4_f8f4_quantize_act(act_f32, act_scratch, in_f, n_tokens, in_f, st);
+    { cudaError_t e = cudaGetLastError(); if (e != cudaSuccess) { return 1000 + (int) e; } }
+
+    return memra_mmq_nvfp4_f8f4_preq(W_nvfp4_blocks, act_scratch, y, in_f, out_f, n_tokens, stream,
+                                     out_scale, rp);
 }
 } // extern "C"

@@ -864,6 +864,31 @@ unsafe extern "C" {
         out_scale: f32,
         rp: i32,
     ) -> i32;
+    /// GEMM-only F8F4 entry: `act_scratch` already holds the block_e4m3_mmq activation (written
+    /// by the F8F4 quantizer or its fused silu twin). `memra_mmq_nvfp4_f8f4` is exactly the
+    /// quantizer followed by this call. Returns 0 / 2000+cudaError (2904 on the stub build).
+    pub fn memra_mmq_nvfp4_f8f4_preq(
+        w_nvfp4_blocks: *const core::ffi::c_void,
+        act_scratch: *const core::ffi::c_void,
+        y: *mut f32,
+        in_f: i32,
+        out_f: i32,
+        n_tokens: i32,
+        stream: *mut core::ffi::c_void,
+        out_scale: f32,
+        rp: i32,
+    ) -> i32;
+    /// The F8F4 activation quantizer with silu(gate) * up formed in-register exactly as
+    /// `silu_mul_f32` forms it; gate/up are [n_tokens, s01] f32.
+    pub fn memra_mmq_nvfp4_f8f4_quantize_act_silu(
+        gate: *const f32,
+        up: *const f32,
+        vy: *mut core::ffi::c_void,
+        in_f: i32,
+        n_tokens: i32,
+        s01: i64,
+        stream: *mut core::ffi::c_void,
+    );
     /// Bytes for the per-block FP8 MMQ activation scratch (delegates to the F8F4 sizing — the
     /// two arms deliberately share ONE activation format, `block_e4m3_mmq`).
     pub fn memra_mmq_fp8_blk_act_bytes(in_f: i32, n_tokens: i32) -> usize;
@@ -2139,6 +2164,147 @@ impl Engine {
                     && crate::unified_memory::is_unified(self.ctx()),
             )
         })
+    }
+
+    /// Whether `matmul_prefill(w, x, m)` runs the NVFP4 F8F4 MMQ entry for this weight, by the
+    /// same conditions its dispatch applies: no A4 stamp, no FP8/f16/CUTLASS mirror (so every
+    /// earlier arm declines), the MMQ row and width thresholds, `mmq_supports`, the W4A8 tile
+    /// selection and the F8F4 route. Conservative: any doubt answers false and callers keep the
+    /// ordinary path.
+    pub fn f8f4_prefill_direct(&self, w: &crate::model::GpuTensor, m: usize) -> bool {
+        use crate::model::GpuTensor;
+        if crate::portable_mma_gated() || self.verify_exact_on() || m < 16 || !self.mmq_f8f4_route()
+        {
+            return false;
+        }
+        // A CUTLASS operand (cfg(memra_cutlass) builds only) can take the prefill GEMM instead.
+        #[cfg(memra_cutlass)]
+        if matches!(
+            w,
+            GpuTensor::Quant {
+                cutlass: Some(_),
+                ..
+            }
+        ) {
+            return false;
+        }
+        let GpuTensor::Quant {
+            qtype,
+            rp,
+            fp8,
+            f16,
+            a4,
+            ..
+        } = w
+        else {
+            return false;
+        };
+        let w4a8_explicit = std::env::var("MEMRA_MMQ_W4A8")
+            .map(|v| v != "0")
+            .unwrap_or(false);
+        *qtype == crate::QT_NVFP4
+            && fp8.is_none()
+            && f16.is_none()
+            && a4.is_none()
+            && w.out_features() >= 128
+            && w.in_features().is_multiple_of(64)
+            && self.mmq_supports(w)
+            && nvfp4_use_w4a8(
+                *rp,
+                w4a8_explicit,
+                mmq_w4a8_enabled(),
+                std::env::var("MEMRA_MMQ").is_ok(),
+            )
+    }
+
+    /// `matmul_prefill(w, silu(gate) * up, m)` for a weight `f8f4_prefill_direct` admits, with
+    /// the activation formed inside the F8F4 quantizer: the same e4m3 bytes and scales the
+    /// unfused `silu_mul` + quantize produce, without the f32 [m, in_f] activation pass.
+    pub fn matmul_prefill_silu_f8f4(
+        &self,
+        w: &crate::model::GpuTensor,
+        gate: &CudaSlice<f32>,
+        up: &CudaSlice<f32>,
+        m: usize,
+    ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
+        use crate::model::GpuTensor;
+        if !self.f8f4_prefill_direct(w, m) {
+            return Err("matmul_prefill_silu_f8f4: weight not on the F8F4 prefill route".into());
+        }
+        let GpuTensor::Quant {
+            bytes, scale, rp, ..
+        } = w
+        else {
+            return Err("matmul_prefill_silu_f8f4: not a Quant tensor".into());
+        };
+        let (in_f, out_f) = (w.in_features(), w.out_features());
+        self.mmq_nvfp4_f8f4_silu_launch(bytes, gate, up, m, in_f, out_f, *scale, *rp)
+    }
+
+    /// Bare fused-silu F8F4 launch (no macro-scale, GGUF layout) for the kernel-check byte cell
+    /// against `silu_mul` + `qmatvec_mmq_nvfp4_w4a8_raw` on the F8F4 route.
+    pub fn qmatvec_mmq_nvfp4_f8f4_silu_raw(
+        &self,
+        bytes: &CudaSlice<u8>,
+        gate: &CudaSlice<f32>,
+        up: &CudaSlice<f32>,
+        m: usize,
+        in_f: usize,
+        out_f: usize,
+    ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
+        self.mmq_nvfp4_f8f4_silu_launch(bytes, gate, up, m, in_f, out_f, 1.0, false)
+    }
+
+    #[allow(clippy::too_many_arguments)] // allow: mirrors the FFI launch contract
+    fn mmq_nvfp4_f8f4_silu_launch(
+        &self,
+        bytes: &CudaSlice<u8>,
+        gate: &CudaSlice<f32>,
+        up: &CudaSlice<f32>,
+        m: usize,
+        in_f: usize,
+        out_f: usize,
+        scale: f32,
+        rp: bool,
+    ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
+        let act_bytes = unsafe { memra_mmq_nvfp4_w4a8_act_bytes(in_f as i32, m as i32) };
+        let mut scratch = self.alloc_uninit::<u8>(act_bytes)?;
+        let mut y = self.alloc_uninit::<f32>(m * out_f)?;
+        let rc = {
+            let stream = self.gpu.stream();
+            let (w_p, _gw) = bytes.device_ptr(&stream);
+            let (g_p, _gg) = gate.device_ptr(&stream);
+            let (u_p, _gu) = up.device_ptr(&stream);
+            let (y_p, _gy) = y.device_ptr_mut(&stream);
+            let (s_p, _gs) = scratch.device_ptr_mut(&stream);
+            let st = stream.cu_stream() as *mut core::ffi::c_void;
+            unsafe {
+                memra_mmq_nvfp4_f8f4_quantize_act_silu(
+                    g_p as *const f32,
+                    u_p as *const f32,
+                    s_p as *mut core::ffi::c_void,
+                    in_f as i32,
+                    m as i32,
+                    in_f as i64,
+                    st,
+                );
+                memra_mmq_nvfp4_f8f4_preq(
+                    w_p as *const core::ffi::c_void,
+                    s_p as *const core::ffi::c_void,
+                    y_p as *mut f32,
+                    in_f as i32,
+                    out_f as i32,
+                    m as i32,
+                    st,
+                    scale,
+                    rp as i32,
+                )
+            }
+        };
+        if rc != 0 {
+            return Err(format!("memra_mmq_nvfp4_f8f4_preq(silu) rc={rc}").into());
+        }
+        Ok(y)
     }
 
     #[allow(clippy::too_many_arguments)] // allow: the parameter list mirrors the kernel/FFI/call contract; bundling into a struct is a refactor, not a lint fix
