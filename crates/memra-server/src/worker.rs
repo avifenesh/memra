@@ -769,7 +769,7 @@ struct DsparkColdPrefixAdmission {
     /// drafter's own tail sitting in the entry, unused.
     ///
     /// Scoped to the partial door so a fully shut fleet is byte-identical: with every door
-    /// unset this is false everywhere and the veto keeps its shipped shape.
+    /// OFF this is false everywhere and the veto keeps its shipped shape.
     hit_restorable: bool,
 }
 
@@ -896,10 +896,10 @@ fn dspark_prefers_cold_over_prefix_with(
 /// - every RTX 5090: its gate is green too, but on the 24 GB laptop card the doors' memory
 ///   cost refuses long prompts one concurrency step sooner
 ///   (research/dflash-restorable-hit-20261103/rig5090-flip/);
-/// - the other RTX PRO 6000 editions, which have no gate yet.
+/// - the other RTX PRO 6000 editions, which have no memra#1031 cold-drafter gate yet.
 ///
-/// `1` arms the doors on any device. Unset = OFF, so a boot without DFlash, and every unit
-/// test, keeps the pre-flip behavior.
+/// `1` arms the doors on any device. Until boot sets it the default reads OFF, so a boot
+/// without DFlash, and every unit test, keeps the pre-flip behavior.
 static DSPARK_RESTORE_DEVICE_DEFAULT: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
 
 /// The devices whose restore doors default ON: GB10 (unified-memory 120a family) and the RTX
@@ -910,11 +910,26 @@ fn dspark_restore_default_for_device(device_name: &str, gb10: bool) -> bool {
 
 /// One door: an explicit `1` or `0` decides; anything else follows the device default.
 fn dspark_door(env: Option<&str>, device_default: bool) -> bool {
-    match env {
+    match env.map(str::trim) {
         Some("1") => true,
         Some("0") => false,
         _ => device_default,
     }
+}
+
+/// The three restore doors that follow `DSPARK_RESTORE_DEVICE_DEFAULT`.
+const DSPARK_RESTORE_DOORS: [&str; 3] = [
+    "MEMRA_DSPARK_PREFIX_RESTORE",
+    "MEMRA_DSPARK_PARTIAL_RESTORE",
+    "MEMRA_DSPARK_BOUNDARY_CAPTURE",
+];
+
+/// A door value that is set but is neither `1` nor `0` (`true`, `on`, `yes`). Before the
+/// device default such a value meant OFF; now it follows the default, so the boot names it
+/// for a launcher that meant ON or OFF.
+fn dspark_door_unrecognized(env: Option<&str>) -> Option<&str> {
+    env.map(str::trim)
+        .filter(|v| !v.is_empty() && *v != "1" && *v != "0")
 }
 
 fn dspark_door_env(var: &str) -> bool {
@@ -26461,7 +26476,7 @@ fn publish_dspark_prefix_capture_inner(
     // Publication is gated on the SAME flag as consumption (review round 5): with the flag
     // off there is no possible consumer, and the tail is a real cost charged to the entry's
     // byte budget — a fixed ~85 MB/entry, ~8% on a 30k entry but ~34% on a 7k one — evicting
-    // other entries for nothing. Gating both sides makes the unset env a true rollback: the
+    // other entries for nothing. Gating both sides makes `=0` a true rollback: the
     // cache's memory profile reverts along with the routing. After arming, real long-decode
     // traffic republishes tailed entries within minutes, so no pre-arming is needed.
     let dspark_tail = if dspark_prefix_restore_on() {
@@ -27763,6 +27778,13 @@ pub fn run(
             dspark_door_env("MEMRA_DSPARK_PARTIAL_RESTORE"),
             dspark_door_env("MEMRA_DSPARK_BOUNDARY_CAPTURE"),
         );
+        for var in DSPARK_RESTORE_DOORS {
+            if let Some(value) = dspark_door_unrecognized(std::env::var(var).ok().as_deref()) {
+                eprintln!(
+                    "[dspark] {var}={value:?} is neither 1 nor 0, so it follows the default above"
+                );
+            }
+        }
         if let Some(msg) = dspark_spec_boot_conflict(
             std::env::var("MEMRA_SPEC_DFLASH").is_ok(),
             gemma4_spec_k_env(),
@@ -31447,7 +31469,7 @@ pub fn run(
                             }
                             // WP-A day 24, corrected by revuto on integ40 (#643): the DSPARK
                             // publisher DOES route in the default configuration. Its tail is
-                            // `Some` only under `MEMRA_DSPARK_PREFIX_RESTORE=1` (default OFF);
+                            // `Some` only while the restore door resolves ON (its device default, or `=1`);
                             // with the tail absent a plain, non-latent, non-TP dspark cache
                             // passes the route's by-name refusals and its trunk planes are the
                             // borrowed source of a pending capture on the copy stream. This
@@ -40727,6 +40749,26 @@ mod dspark_restore_default_tests {
         assert!(dspark_door(Some("1"), false), "1 opts any device in");
         assert!(dspark_door(Some("yes"), true));
         assert!(!dspark_door(Some("yes"), false));
+        assert!(
+            dspark_door(Some(" 1 "), false),
+            "padding does not hide an explicit 1"
+        );
+        assert!(!dspark_door(Some("0\n"), true), "nor an explicit 0");
+        assert_eq!(super::dspark_door_unrecognized(Some("true")), Some("true"));
+        assert_eq!(super::dspark_door_unrecognized(Some(" on ")), Some("on"));
+        assert_eq!(super::dspark_door_unrecognized(Some("1")), None);
+        assert_eq!(super::dspark_door_unrecognized(Some("0")), None);
+        assert_eq!(
+            super::dspark_door_unrecognized(Some("")),
+            None,
+            "empty is unset"
+        );
+        assert_eq!(
+            super::dspark_door_unrecognized(Some("  ")),
+            None,
+            "so is whitespace"
+        );
+        assert_eq!(super::dspark_door_unrecognized(None), None);
     }
 }
 
@@ -49018,8 +49060,8 @@ mod tests {
     #[test]
     fn tail_publication_is_gated_on_the_restore_flag() {
         // Review round 5: with MEMRA_DSPARK_PREFIX_RESTORE off there is no possible consumer,
-        // so the ~85 MB/entry tail must not be exported or charged to the byte budget — the
-        // unset env must roll back the memory profile, not just the routing. Comment-stripped
+        // so the ~85 MB/entry tail must not be exported or charged to the byte budget — `=0`
+        // must roll back the memory profile, not just the routing. Comment-stripped
         // so a rationale comment can never satisfy this.
         let src = include_str!("worker.rs");
         let code: String = src
