@@ -1847,6 +1847,26 @@ pub(crate) fn fa_sm_count() -> i32 {
     })
 }
 
+/// One quantize-once scope: the activation buffer it covers and, after the first F8F4 weight,
+/// that activation's e4m3 scratch (block_e4m3_mmq, the bytes the quantizer would write again).
+pub(crate) struct F8f4ActGroup {
+    pub(crate) x_ptr: u64,
+    pub(crate) in_f: usize,
+    pub(crate) m: usize,
+    pub(crate) scratch: Option<CudaSlice<u8>>,
+}
+
+/// Closes the scope (and frees its scratch, stream-ordered) when the group finishes.
+pub(crate) struct F8f4ActGroupGuard<'a> {
+    engine: &'a Engine,
+}
+
+impl Drop for F8f4ActGroupGuard<'_> {
+    fn drop(&mut self) {
+        *self.engine.f8f4_act_group.lock().unwrap() = None;
+    }
+}
+
 /// `MEMRA_PRIME_KV_H2` resolution: `1`/`0` decide; unset follows the device, on for a
 /// unified-memory 120a-family device (GB10), where it measured -13.9% served 131k TTFT with
 /// identical tokens (research/gb10-prefill-20261106). Discrete cards keep the db twin.
@@ -2093,6 +2113,10 @@ pub struct Engine {
     /// (t_kv, kv_dim) seen, REUSED across layers/chunks/calls (contents rewritten per launch —
     /// safe because all compute serializes on the one gpu.stream). ~82MB at 40k ctx on the 27B.
     prime_deqw_ws: Mutex<Option<(CudaSlice<u8>, CudaSlice<u8>)>>,
+    /// Quantize-once scope of `matmul_group` (GB10 prefill lane, 2026-11-06): while a group of
+    /// weights runs over ONE unmodified activation buffer, the NVFP4 F8F4 entry keeps the e4m3
+    /// scratch it quantized for the first weight and hands it to the rest.
+    f8f4_act_group: Mutex<Option<F8f4ActGroup>>,
     /// LAUNCH-STRUCTURE STAGE 1: persistent PINNED (cacheable, flags=0) host staging buffer for the
     /// fused-router sel/w readback — one async DtoH pair + ONE sync instead of two synced dtohs.
     /// Grown lazily; reused every MoE layer (single-threaded decode serializes on the sync).
@@ -3884,6 +3908,7 @@ impl Engine {
             capture_keep: Mutex::new(Vec::new()),
             argmax_partials: Mutex::new(None),
             prime_deqw_ws: Mutex::new(None),
+            f8f4_act_group: Mutex::new(None),
             router_stage: Mutex::new(None),
             hyper_decode_ws: Mutex::new(None),
             mla_seg_ws: Mutex::new(None),
@@ -24562,10 +24587,33 @@ impl Engine {
             }
             return Ok(out);
         }
+        // Every weight below reads the same unmodified `x`: let the F8F4 entry quantize it once.
+        let _scope = (ws.len() > 1).then(|| self.f8f4_act_group_open(x, ws[0].in_features(), m));
         for w in ws {
             out.push(self.matmul(w, x, m)?);
         }
         Ok(out)
+    }
+
+    /// Open the quantize-once scope for `x` ([m, in_f] f32); closed when the guard drops.
+    fn f8f4_act_group_open(
+        &self,
+        x: &CudaSlice<f32>,
+        in_f: usize,
+        m: usize,
+    ) -> F8f4ActGroupGuard<'_> {
+        let x_ptr = {
+            let stream = self.gpu.stream();
+            let (p, _g) = x.device_ptr(&stream);
+            p as u64
+        };
+        *self.f8f4_act_group.lock().unwrap() = Some(F8f4ActGroup {
+            x_ptr,
+            in_f,
+            m,
+            scratch: None,
+        });
+        F8f4ActGroupGuard { engine: self }
     }
 
     /// Cross-request grouped matmul (task #13): run ONE projection group over the
