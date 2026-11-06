@@ -1,0 +1,220 @@
+{
+ "window_s": 240.622490304,
+ "busy_s": 227.256323594,
+ "kernel_sum_s": 227.26035988199973,
+ "parts_s": {
+  "glue: norms/adds/act": 20.306295112000054,
+  "gemm: activation e4m3 quantize": 8.986645919999964,
+  "gemm: NVFP4 F8F4 MMQ": 81.73563603099969,
+  "other": 4.747152177000071,
+  "gemm: other MMQ / matvec": 4.159684853000002,
+  "gdn: conv/l2/gates": 6.195537471999948,
+  "gdn: chunk scan kernels": 13.972829727999965,
+  "attention: rope/qk-norm/gate glue": 1.0236737250000034,
+  "attention: KV append/quantize": 0.4078096960000863,
+  "attention: KV dequant workspace": 1.3952920320000002,
+  "attention: FA prime kernel": 84.32980313599997
+ },
+ "top": [
+  {
+   "name": "fa_prefill_qw_db",
+   "s": 84.329803136,
+   "count": 528
+  },
+  {
+   "name": "mul_mat_q_nvfp4_f8f4<",
+   "s": 81.735636031,
+   "count": 13200
+  },
+  {
+   "name": "quantize_mmq_e4m3_d4_kernel",
+   "s": 8.98664592,
+   "count": 13200
+  },
+  {
+   "name": "silu_mul_f32",
+   "s": 7.44129776,
+   "count": 2251
+  },
+  {
+   "name": "add_f32",
+   "s": 4.335992438,
+   "count": 4566
+  },
+  {
+   "name": "gdn_chunk_state_mma",
+   "s": 4.285144224,
+   "count": 1584
+  },
+  {
+   "name": "memra_f16_cvt_kernel",
+   "s": 4.108981152,
+   "count": 2112
+  },
+  {
+   "name": "rms_norm_f32_v2",
+   "s": 3.736432024,
+   "count": 6015
+  },
+  {
+   "name": "gdn_chunk_solve32_f32",
+   "s": 3.534749856,
+   "count": 1584
+  },
+  {
+   "name": "gdn_chunk_output_mma",
+   "s": 3.456302976,
+   "count": 1584
+  },
+  {
+   "name": "qmatvec_nvfp4_dp4a_rp",
+   "s": 3.198151488,
+   "count": 3168
+  },
+  {
+   "name": "ssm_conv1d_gdn_state_f32",
+   "s": 3.171375776,
+   "count": 1584
+  },
+  {
+   "name": "l2_norm_pp_v2_f32",
+   "s": 3.005192928,
+   "count": 3168
+  },
+  {
+   "name": "gdn_chunk_attn_f32",
+   "s": 2.654611808,
+   "count": 1584
+  },
+  {
+   "name": "gated_rmsnorm_f32",
+   "s": 1.966737184,
+   "count": 1584
+  },
+  {
+   "name": "quantize_q8_1",
+   "s": 1.929889172,
+   "count": 4161
+  },
+  {
+   "name": "fa_dequant_kv_ws_bf16",
+   "s": 1.395292032,
+   "count": 528
+  },
+  {
+   "name": "q_gate_split_f32",
+   "s": 0.868840701,
+   "count": 619
+  },
+  {
+   "name": "mul_f32",
+   "s": 0.650047871,
+   "count": 619
+  },
+  {
+   "name": "sigmoid_f32",
+   "s": 0.456583904,
+   "count": 2203
+  },
+  {
+   "name": "fa_decode_vec_q_seqs_v4_deep",
+   "s": 0.292282112,
+   "count": 80
+  },
+  {
+   "name": "append_quantize_kv_q8_0_q5_1",
+   "s": 0.287028576,
+   "count": 131062
+  },
+  {
+   "name": "mul_mat_q_q45k<",
+   "s": 0.281607424,
+   "count": 64
+  },
+  {
+   "name": "qmatvec_q5_K_mmvq_il",
+   "s": 0.188621344,
+   "count": 35
+  },
+  {
+   "name": "rope_neox_f32",
+   "s": 0.154833024,
+   "count": 1273
+  },
+  {
+   "name": "qmatvec_nvfp4_mmvq_mr2_rp",
+   "s": 0.136952601,
+   "count": 1003
+  },
+  {
+   "name": "qmatvec_gemm_q6_K",
+   "s": 0.12732832,
+   "count": 32
+  },
+  {
+   "name": "append_quantize_kv_q8_0_q5_1_rows",
+   "s": 0.120443808,
+   "count": 528
+  },
+  {
+   "name": "qmatvec_nvfp4_mmvq_dual_b4_rpr2",
+   "s": 0.087093312,
+   "count": 192
+  },
+  {
+   "name": "qmatvec_nvfp4_mmvq_b4_rp",
+   "s": 0.06803174,
+   "count": 384
+  },
+  {
+   "name": "quantize_mmq_q8_1_ds4_kernel",
+   "s": 0.047855456,
+   "count": 64
+  },
+  {
+   "name": "qmatvec_nvfp4_mmvq_group4_b4_rp",
+   "s": 0.040699552,
+   "count": 192
+  },
+  {
+   "name": "fa_decode_combine_seqs",
+   "s": 0.037911392,
+   "count": 80
+  },
+  {
+   "name": "gdn_chunk_cumgate_f32",
+   "s": 0.034837536,
+   "count": 1584
+  },
+  {
+   "name": "embed_gather_u32_t",
+   "s": 0.030618272,
+   "count": 71
+  },
+  {
+   "name": "qmatvec_q5_K_mmvq_b4_r2",
+   "s": 0.015219296,
+   "count": 3
+  },
+  {
+   "name": "gdn_glog_f32",
+   "s": 0.01416112,
+   "count": 1584
+  },
+  {
+   "name": "fa_decode_vec_q_v4_deep_dc",
+   "s": 0.01330144,
+   "count": 11
+  },
+  {
+   "name": "qmatvec_q4_K_mmvq",
+   "s": 0.010523776,
+   "count": 66
+  },
+  {
+   "name": "gdn_scan_s128_tsnap",
+   "s": 0.005025632,
+   "count": 144
+  }
+ ]
+}

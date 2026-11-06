@@ -1,0 +1,14 @@
+2026-11-06 09:27:20 start BIN=~/.cache/memra-prefill/bins/base-5d70118b99 EXTRA= WRAP=/usr/local/cuda/bin/nsys profile -t cuda,nvtx -s none --cpuctxsw=none --cuda-graph-trace=node --force-overwrite=true -o ~/.cache/memra-prefill/runs/P0-nsys-128k/prof
+0212104d2b66a8d4e64859f653b1c9a012ff34355cd0aa392acfef4ebc9672bf  ~/.cache/memra-prefill/bins/base-5d70118b99/memra-server
+MEMRA_ADDR=127.0.0.1:8090
+MEMRA_COMPAT=openai
+MEMRA_CTX=262144
+MEMRA_KV_HOST_MB=0
+MEMRA_MAX_SESSIONS=32
+MEMRA_MODELS=q38=~/models/memra-q38/Qwen3.8-27B-NVFP4-MTP-GGUF/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf
+MEMRA_MTP_DRAFT=~/models/memra-q38/Qwen3.8-27B-NVFP4-MTP-GGUF/mtp-Qwen3.8-27B-NVFP4-frspec-sxc32768.gguf
+MEMRA_PREFIX_STABLE_BOUNDARY=1
+MEMRA_VISION_DIR=~/models/Qwen3.8-27B-NVFP4
+name, driver_version, clocks.max.sm [MHz]
+NVIDIA GB10, 580.178.04, 3003 MHz
+2026-11-06 09:35:07 server exit rc=130 min MemAvailable 83907436kB

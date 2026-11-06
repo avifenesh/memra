@@ -1,0 +1,16 @@
+2026-11-06T08:47:09+02:00 run_arm OUT=~/.cache/memra-prefill/runs/B0-served BIN=~/.cache/memra-prefill/bins/base-5d70118b99 EXTRA= TARGETS=32768 131072 260000 REPS=3 2 1 WRAP=
+waitfor: until curl -sf -o /dev/null http://127.0.0.1:8090/readyz && exit 0 || exit 1 (deadline 15m00s, every 5s)
+waitfor: not yet
+waitfor: MET after 3m40s
+2026-11-06T08:50:51+02:00 ready
+{"tag": "B0-served", "target": 32768, "rep": 0, "ttft_s": 44.199, "total_s": 45.768, "prompt_tokens": 32784, "completion_tokens": 40, "needles_ok": true, "error": null, "text_sha256": "cb9da8ae3cecfc7aa768e2345181fc3df508ba01b28b6193fd09c41f72b6d394"}
+{"tag": "B0-served", "target": 32768, "rep": 1, "ttft_s": 44.302, "total_s": 45.874, "prompt_tokens": 32784, "completion_tokens": 40, "needles_ok": true, "error": null, "text_sha256": "cb9da8ae3cecfc7aa768e2345181fc3df508ba01b28b6193fd09c41f72b6d394"}
+{"tag": "B0-served", "target": 32768, "rep": 2, "ttft_s": 44.289, "total_s": 45.86, "prompt_tokens": 32784, "completion_tokens": 40, "needles_ok": true, "error": null, "text_sha256": "cb9da8ae3cecfc7aa768e2345181fc3df508ba01b28b6193fd09c41f72b6d394"}
+{"tag": "B0-served", "target": 131072, "rep": 0, "ttft_s": 239.13, "total_s": 241.747, "prompt_tokens": 131051, "completion_tokens": 40, "needles_ok": true, "error": null, "text_sha256": "84980efddfee6275d79365af174daac933bdd67199a8d14984597b9d99982e5d"}
+{"tag": "B0-served", "target": 131072, "rep": 1, "ttft_s": 239.077, "total_s": 241.514, "prompt_tokens": 131051, "completion_tokens": 40, "needles_ok": true, "error": null, "text_sha256": "a172b4cce20277007e826caf8ed6b2ab47b0db7b232470861e6d064bd6e544b1"}
+{"tag": "B0-served", "target": 260000, "rep": 0, "ttft_s": 636.901, "total_s": 641.238, "prompt_tokens": 259951, "completion_tokens": 40, "needles_ok": true, "error": null, "text_sha256": "3759709dfbe4b215814e193a6144c882d556ee68fcd33070f6d8e3de3abd0f2e"}
+2026-11-06T09:11:55+02:00 bench rc=0
+waitfor: gone 2511340 (deadline 5m00s, every 15s)
+waitfor: not yet
+waitfor: TIMEOUT after 5m00s, condition not met
+2026-11-06T09:16:56+02:00 done

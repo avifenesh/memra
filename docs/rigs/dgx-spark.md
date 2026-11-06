@@ -75,3 +75,12 @@ monolithic `run-gen` prefill, 43.5 s against 49.3 s of served cold prefill at 32
 greedy acceptance run per arm on three prompts at 0.702 against 0.672, c32 68.21 against 66.45
 tok/s, and the quality panel at 158/164 and 97/100 (W4A8: 158/164 and 98/100). `MEMRA_MMQ_F8F4=0`
 restores W4A8 ([research/gb10-tuning-20261102](../../research/gb10-tuning-20261102/)).
+
+Long-context prefill (2026-11-06, [research/gb10-prefill-20261106](../../research/gb10-prefill-20261106/)):
+served cold TTFT of one fresh prompt, base against the exact levers of that lane (two-head prime
+attention by default on GB10, no dead f16 operand pass, no slab copies of the dense FFN's GEMM
+outputs), same tokens on every prompt: 44.26 -> 38.11 s at 32,784 tokens (-13.9%), 239.0 -> 189.7 s at
+131,051 (-20.6%) and 637.5 -> 475.9 s at 259,951 (-25.4%), two fresh boots per arm in both orders. At 131,051 tokens the remaining time is
+the F8F4 trunk GEMMs (81.4 s at 78 TFLOPS against a 175 TFLOPS ceiling for that numeric program),
+attention (50.9 s at 66 TFLOPS) and the Gated DeltaNet kernels (20.1 s). MemAvailable stayed above
+66.8 GiB at 259,951 tokens in both arms.

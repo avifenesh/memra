@@ -1,0 +1,21 @@
+campaign C1-glue: 12 requests, arms ['B', 'F', 'N']
+
+target 32768
+  B        ttft 44.128, 44.183                           median 44.156  cells ['01-B', '06-B']
+  F        ttft 43.140, 43.605                           median 43.373  cells ['02-F', '05-F']
+  N        ttft 40.184, 40.131                           median 40.157  cells ['03-N', '04-N']
+  F vs B: -1.77%
+  N vs B: -9.05%
+
+target 131072
+  B        ttft 238.892, 238.702                         median 238.797  cells ['01-B', '06-B']
+  F        ttft 234.545, 234.510                         median 234.527  cells ['02-F', '05-F']
+  N        ttft 222.624, 222.787                         median 222.706  cells ['03-N', '04-N']
+  F vs B: -1.79%
+  N vs B: -6.74%
+
+fingerprints (text sha256 per target/rep across all cells)
+  target 32768 rep 0: 1 distinct IDENTICAL
+  target 131072 rep 0: 1 distinct IDENTICAL
+errors/needle misses: 0
+FINGERPRINTS IDENTICAL

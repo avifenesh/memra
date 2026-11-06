@@ -1,0 +1,12 @@
+device NVIDIA GB10 sms 48
+bf16   m16n8k16  warps/blk  4: 101.5 TFLOPS
+f8bs   m16n8k32  warps/blk  4: 202.1 TFLOPS
+f8resc m16n8k32  warps/blk  4: 402.4 TFLOPS (per-k32 C=0 + sum += dA*dB*C)
+bf16   m16n8k16  warps/blk  8: 102.5 TFLOPS
+f8bs   m16n8k32  warps/blk  8: 203.3 TFLOPS
+f8resc m16n8k32  warps/blk  8: 422.9 TFLOPS (per-k32 C=0 + sum += dA*dB*C)
+bf16   m16n8k16  warps/blk 16: 103.3 TFLOPS
+f8bs   m16n8k32  warps/blk 16: 204.7 TFLOPS
+f8resc m16n8k32  warps/blk 16: 453.2 TFLOPS (per-k32 C=0 + sum += dA*dB*C)
+dram read  232.5 GB/s
+dram copy  215.3 GB/s (read+write bytes)

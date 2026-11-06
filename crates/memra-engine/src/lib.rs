@@ -1848,7 +1848,7 @@ pub(crate) fn fa_sm_count() -> i32 {
 }
 
 /// `MEMRA_PRIME_KV_H2` resolution: `1`/`0` decide; unset follows the device, on for a
-/// unified-memory 120a-family device (GB10), where it measured -13.8% served 131k TTFT with
+/// unified-memory 120a-family device (GB10), where it measured -13.9% served 131k TTFT with
 /// identical tokens (research/gb10-prefill-20261106). Discrete cards keep the db twin.
 fn prime_kv_h2_route(env: Option<&str>, unified_120a: bool) -> bool {
     match env {

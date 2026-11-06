@@ -1,0 +1,43 @@
+2026-11-06T09:43:45+02:00 cell 1 arm=B bin=~/.cache/memra-prefill/bins/h2-b795c0a604 extra=
+2026-11-06T09:43:45+02:00 run_arm OUT=~/.cache/memra-prefill/runs/A1-attn/01-B BIN=~/.cache/memra-prefill/bins/h2-b795c0a604 EXTRA= TARGETS=32768 131072 REPS=1 1 WRAP=
+2026-11-06T09:47:12+02:00 ready
+2026-11-06T09:52:00+02:00 bench rc=0
+2026-11-06T09:52:15+02:00 done
+B {"tag": "01-B", "target": 32768, "rep": 0, "ttft_s": 44.198, "total_s": 45.775, "prompt_tokens": 32784, "completion_tokens": 40, "needles_ok": true, "error": null, "text_sha256": "cb9da8ae3cecfc7aa768e2345181fc3df508ba01b28b6193fd09c41f72b6d394"}
+B {"tag": "01-B", "target": 131072, "rep": 0, "ttft_s": 238.836, "total_s": 241.464, "prompt_tokens": 131051, "completion_tokens": 40, "needles_ok": true, "error": null, "text_sha256": "84980efddfee6275d79365af174daac933bdd67199a8d14984597b9d99982e5d"}
+2026-11-06T09:52:15+02:00 cell 2 arm=T3 bin=~/.cache/memra-prefill/bins/h2-b795c0a604 extra=MEMRA_PRIME_KV_T3=1
+2026-11-06T09:52:15+02:00 run_arm OUT=~/.cache/memra-prefill/runs/A1-attn/02-T3 BIN=~/.cache/memra-prefill/bins/h2-b795c0a604 EXTRA=MEMRA_PRIME_KV_T3=1 TARGETS=32768 131072 REPS=1 1 WRAP=
+2026-11-06T09:55:42+02:00 ready
+2026-11-06T09:59:59+02:00 bench rc=0
+2026-11-06T10:00:14+02:00 done
+T3 {"tag": "02-T3", "target": 32768, "rep": 0, "ttft_s": 42.382, "total_s": 43.951, "prompt_tokens": 32784, "completion_tokens": 40, "needles_ok": true, "error": null, "text_sha256": "cb9da8ae3cecfc7aa768e2345181fc3df508ba01b28b6193fd09c41f72b6d394"}
+T3 {"tag": "02-T3", "target": 131072, "rep": 0, "ttft_s": 210.073, "total_s": 212.708, "prompt_tokens": 131051, "completion_tokens": 40, "needles_ok": true, "error": null, "text_sha256": "84980efddfee6275d79365af174daac933bdd67199a8d14984597b9d99982e5d"}
+2026-11-06T10:00:14+02:00 cell 3 arm=H2 bin=~/.cache/memra-prefill/bins/h2-b795c0a604 extra=MEMRA_PRIME_KV_H2=1
+2026-11-06T10:00:14+02:00 run_arm OUT=~/.cache/memra-prefill/runs/A1-attn/03-H2 BIN=~/.cache/memra-prefill/bins/h2-b795c0a604 EXTRA=MEMRA_PRIME_KV_H2=1 TARGETS=32768 131072 REPS=1 1 WRAP=
+2026-11-06T10:03:42+02:00 ready
+2026-11-06T10:07:54+02:00 bench rc=0
+2026-11-06T10:08:09+02:00 done
+H2 {"tag": "03-H2", "target": 32768, "rep": 0, "ttft_s": 42.149, "total_s": 43.722, "prompt_tokens": 32784, "completion_tokens": 40, "needles_ok": true, "error": null, "text_sha256": "cb9da8ae3cecfc7aa768e2345181fc3df508ba01b28b6193fd09c41f72b6d394"}
+H2 {"tag": "03-H2", "target": 131072, "rep": 0, "ttft_s": 205.908, "total_s": 208.527, "prompt_tokens": 131051, "completion_tokens": 40, "needles_ok": true, "error": null, "text_sha256": "84980efddfee6275d79365af174daac933bdd67199a8d14984597b9d99982e5d"}
+2026-11-06T10:08:09+02:00 cell 4 arm=H2 bin=~/.cache/memra-prefill/bins/h2-b795c0a604 extra=MEMRA_PRIME_KV_H2=1
+2026-11-06T10:08:09+02:00 run_arm OUT=~/.cache/memra-prefill/runs/A1-attn/04-H2 BIN=~/.cache/memra-prefill/bins/h2-b795c0a604 EXTRA=MEMRA_PRIME_KV_H2=1 TARGETS=32768 131072 REPS=1 1 WRAP=
+2026-11-06T10:11:37+02:00 ready
+2026-11-06T10:15:48+02:00 bench rc=0
+2026-11-06T10:16:03+02:00 done
+H2 {"tag": "04-H2", "target": 32768, "rep": 0, "ttft_s": 42.077, "total_s": 43.649, "prompt_tokens": 32784, "completion_tokens": 40, "needles_ok": true, "error": null, "text_sha256": "cb9da8ae3cecfc7aa768e2345181fc3df508ba01b28b6193fd09c41f72b6d394"}
+H2 {"tag": "04-H2", "target": 131072, "rep": 0, "ttft_s": 205.495, "total_s": 208.124, "prompt_tokens": 131051, "completion_tokens": 40, "needles_ok": true, "error": null, "text_sha256": "84980efddfee6275d79365af174daac933bdd67199a8d14984597b9d99982e5d"}
+2026-11-06T10:16:04+02:00 cell 5 arm=T3 bin=~/.cache/memra-prefill/bins/h2-b795c0a604 extra=MEMRA_PRIME_KV_T3=1
+2026-11-06T10:16:04+02:00 run_arm OUT=~/.cache/memra-prefill/runs/A1-attn/05-T3 BIN=~/.cache/memra-prefill/bins/h2-b795c0a604 EXTRA=MEMRA_PRIME_KV_T3=1 TARGETS=32768 131072 REPS=1 1 WRAP=
+2026-11-06T10:19:31+02:00 ready
+2026-11-06T10:23:48+02:00 bench rc=0
+2026-11-06T10:24:03+02:00 done
+T3 {"tag": "05-T3", "target": 32768, "rep": 0, "ttft_s": 42.343, "total_s": 43.931, "prompt_tokens": 32784, "completion_tokens": 40, "needles_ok": true, "error": null, "text_sha256": "cb9da8ae3cecfc7aa768e2345181fc3df508ba01b28b6193fd09c41f72b6d394"}
+T3 {"tag": "05-T3", "target": 131072, "rep": 0, "ttft_s": 209.889, "total_s": 212.523, "prompt_tokens": 131051, "completion_tokens": 40, "needles_ok": true, "error": null, "text_sha256": "84980efddfee6275d79365af174daac933bdd67199a8d14984597b9d99982e5d"}
+2026-11-06T10:24:03+02:00 cell 6 arm=B bin=~/.cache/memra-prefill/bins/h2-b795c0a604 extra=
+2026-11-06T10:24:03+02:00 run_arm OUT=~/.cache/memra-prefill/runs/A1-attn/06-B BIN=~/.cache/memra-prefill/bins/h2-b795c0a604 EXTRA= TARGETS=32768 131072 REPS=1 1 WRAP=
+2026-11-06T10:27:30+02:00 ready
+2026-11-06T10:32:18+02:00 bench rc=0
+2026-11-06T10:32:33+02:00 done
+B {"tag": "06-B", "target": 32768, "rep": 0, "ttft_s": 44.232, "total_s": 45.802, "prompt_tokens": 32784, "completion_tokens": 40, "needles_ok": true, "error": null, "text_sha256": "cb9da8ae3cecfc7aa768e2345181fc3df508ba01b28b6193fd09c41f72b6d394"}
+B {"tag": "06-B", "target": 131072, "rep": 0, "ttft_s": 239.106, "total_s": 241.734, "prompt_tokens": 131051, "completion_tokens": 40, "needles_ok": true, "error": null, "text_sha256": "84980efddfee6275d79365af174daac933bdd67199a8d14984597b9d99982e5d"}
+2026-11-06T10:32:33+02:00 campaign done

@@ -24,6 +24,7 @@ half — "we tried X and it lost by Y% on Z" cannot be reconstructed from the co
 | [COMPLETE-RESULT-PATH-V1.md](COMPLETE-RESULT-PATH-V1.md) | the async/background delivery contract for non-streaming requests that outlast the 90 s synchronous deadline: a per-request opt-in, not a conversation-store restore; design frozen, implementation and box verification still owed |
 | [RELEASE-PROFILE.md](RELEASE-PROFILE.md) | the workspace release profile (opt-level 3, fat LTO, one codegen unit): what it can and cannot reach, tokenization 6% faster, other serving flat, results byte-identical, binary 17% smaller, relinks 1.5-6.7x slower |
 | [SM121-SPARK-TARGET.md](SM121-SPARK-TARGET.md) | GB10 (DGX Spark) builds its own `121a` SASS in the `120a` policy family; the one-binary `120f` family build rejected |
+| [GB10-PRIME-ATTENTION-H2.md](GB10-PRIME-ATTENTION-H2.md) | GB10 primes quantized-KV attention with the two-head (h2) twin by default (exact, -13.9% served 131k TTFT); t3 and the FA2 numerical class rejected there |
 
 Adding one: a decision that changes a default, a format, a target or an arm belongs here, with
 the measurement that settled it. Superseded records get a banner naming what replaced them —

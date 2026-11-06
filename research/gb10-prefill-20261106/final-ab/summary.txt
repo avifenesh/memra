@@ -1,0 +1,23 @@
+campaign F1-final: 12 requests, arms ['B', 'S']
+
+target 32768
+  B        ttft 44.269, 44.257                           median 44.263  cells ['01-B', '04-B']
+  S        ttft 38.091, 38.128                           median 38.109  cells ['02-S', '03-S']
+  S vs B: -13.90%
+
+target 131072
+  B        ttft 238.933, 239.086                         median 239.010  cells ['01-B', '04-B']
+  S        ttft 189.871, 189.586                         median 189.728  cells ['02-S', '03-S']
+  S vs B: -20.62%
+
+target 260000
+  B        ttft 637.825, 637.222                         median 637.524  cells ['01-B', '04-B']
+  S        ttft 476.034, 475.744                         median 475.889  cells ['02-S', '03-S']
+  S vs B: -25.35%
+
+fingerprints (text sha256 per target/rep across all cells)
+  target 32768 rep 0: 1 distinct IDENTICAL
+  target 131072 rep 0: 1 distinct IDENTICAL
+  target 260000 rep 0: 1 distinct IDENTICAL
+errors/needle misses: 0
+FINGERPRINTS IDENTICAL

@@ -1,0 +1,55 @@
+segments 2; window 240.622 s wall, GPU busy 227.256 s (94.45%), kernels 207416, kernel-sum 227.260 s
+part                                             s   share
+attention: FA prime kernel                  84.330  37.11%
+gemm: NVFP4 F8F4 MMQ                        81.736  35.97%
+glue: norms/adds/act                        20.306   8.94%
+gdn: chunk scan kernels                     13.973   6.15%
+gemm: activation e4m3 quantize               8.987   3.95%
+gdn: conv/l2/gates                           6.196   2.73%
+other                                        4.747   2.09%
+gemm: other MMQ / matvec                     4.160   1.83%
+attention: KV dequant workspace              1.395   0.61%
+attention: rope/qk-norm/gate glue            1.024   0.45%
+attention: KV append/quantize                0.408   0.18%
+
+top kernels
+   84.330 s     528 x   159.716 ms  [attention: FA prime kernel] fa_prefill_qw_db
+   81.736 s   13200 x     6.192 ms  [gemm: NVFP4 F8F4 MMQ] mul_mat_q_nvfp4_f8f4<
+    8.987 s   13200 x     0.681 ms  [gemm: activation e4m3 quantize] quantize_mmq_e4m3_d4_kernel
+    7.441 s    2251 x     3.306 ms  [glue: norms/adds/act] silu_mul_f32
+    4.336 s    4566 x     0.950 ms  [glue: norms/adds/act] add_f32
+    4.285 s    1584 x     2.705 ms  [gdn: chunk scan kernels] gdn_chunk_state_mma
+    4.109 s    2112 x     1.946 ms  [glue: norms/adds/act] memra_f16_cvt_kernel
+    3.736 s    6015 x     0.621 ms  [glue: norms/adds/act] rms_norm_f32_v2
+    3.535 s    1584 x     2.232 ms  [gdn: chunk scan kernels] gdn_chunk_solve32_f32
+    3.456 s    1584 x     2.182 ms  [gdn: chunk scan kernels] gdn_chunk_output_mma
+    3.198 s    3168 x     1.010 ms  [gemm: other MMQ / matvec] qmatvec_nvfp4_dp4a_rp
+    3.171 s    1584 x     2.002 ms  [gdn: conv/l2/gates] ssm_conv1d_gdn_state_f32
+    3.005 s    3168 x     0.949 ms  [gdn: conv/l2/gates] l2_norm_pp_v2_f32
+    2.655 s    1584 x     1.676 ms  [gdn: chunk scan kernels] gdn_chunk_attn_f32
+    1.967 s    1584 x     1.242 ms  [other] gated_rmsnorm_f32
+    1.930 s    4161 x     0.464 ms  [other] quantize_q8_1
+    1.395 s     528 x     2.643 ms  [attention: KV dequant workspace] fa_dequant_kv_ws_bf16
+    0.869 s     619 x     1.404 ms  [attention: rope/qk-norm/gate glue] q_gate_split_f32
+    0.650 s     619 x     1.050 ms  [glue: norms/adds/act] mul_f32
+    0.457 s    2203 x     0.207 ms  [other] sigmoid_f32
+    0.292 s      80 x     3.654 ms  [other] fa_decode_vec_q_seqs_v4_deep
+    0.287 s  131062 x     0.002 ms  [attention: KV append/quantize] append_quantize_kv_q8_0_q5_1
+    0.282 s      64 x     4.400 ms  [gemm: other MMQ / matvec] mul_mat_q_q45k<
+    0.189 s      35 x     5.389 ms  [gemm: other MMQ / matvec] qmatvec_q5_K_mmvq_il
+    0.155 s    1273 x     0.122 ms  [attention: rope/qk-norm/gate glue] rope_neox_f32
+    0.137 s    1003 x     0.137 ms  [gemm: other MMQ / matvec] qmatvec_nvfp4_mmvq_mr2_rp
+    0.127 s      32 x     3.979 ms  [gemm: other MMQ / matvec] qmatvec_gemm_q6_K
+    0.120 s     528 x     0.228 ms  [attention: KV append/quantize] append_quantize_kv_q8_0_q5_1_rows
+    0.087 s     192 x     0.454 ms  [gemm: other MMQ / matvec] qmatvec_nvfp4_mmvq_dual_b4_rpr2
+    0.068 s     384 x     0.177 ms  [gemm: other MMQ / matvec] qmatvec_nvfp4_mmvq_b4_rp
+    0.048 s      64 x     0.748 ms  [other] quantize_mmq_q8_1_ds4_kernel
+    0.041 s     192 x     0.212 ms  [gemm: other MMQ / matvec] qmatvec_nvfp4_mmvq_group4_b4_rp
+    0.038 s      80 x     0.474 ms  [other] fa_decode_combine_seqs
+    0.035 s    1584 x     0.022 ms  [gdn: chunk scan kernels] gdn_chunk_cumgate_f32
+    0.031 s      71 x     0.431 ms  [glue: norms/adds/act] embed_gather_u32_t
+    0.015 s       3 x     5.073 ms  [gemm: other MMQ / matvec] qmatvec_q5_K_mmvq_b4_r2
+    0.014 s    1584 x     0.009 ms  [gdn: conv/l2/gates] gdn_glog_f32
+    0.013 s      11 x     1.209 ms  [other] fa_decode_vec_q_v4_deep_dc
+    0.011 s      66 x     0.159 ms  [gemm: other MMQ / matvec] qmatvec_q4_K_mmvq
+    0.005 s     144 x     0.035 ms  [gdn: chunk scan kernels] gdn_scan_s128_tsnap

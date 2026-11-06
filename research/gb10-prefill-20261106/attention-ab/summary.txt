@@ -1,0 +1,21 @@
+campaign A1-attn: 12 requests, arms ['B', 'T3', 'H2']
+
+target 32768
+  B        ttft 44.198, 44.232                           median 44.215  cells ['01-B', '06-B']
+  T3       ttft 42.382, 42.343                           median 42.362  cells ['02-T3', '05-T3']
+  H2       ttft 42.149, 42.077                           median 42.113  cells ['03-H2', '04-H2']
+  T3 vs B: -4.19%
+  H2 vs B: -4.75%
+
+target 131072
+  B        ttft 238.836, 239.106                         median 238.971  cells ['01-B', '06-B']
+  T3       ttft 210.073, 209.889                         median 209.981  cells ['02-T3', '05-T3']
+  H2       ttft 205.908, 205.495                         median 205.702  cells ['03-H2', '04-H2']
+  T3 vs B: -12.13%
+  H2 vs B: -13.92%
+
+fingerprints (text sha256 per target/rep across all cells)
+  target 32768 rep 0: 1 distinct IDENTICAL
+  target 131072 rep 0: 1 distinct IDENTICAL
+errors/needle misses: 0
+FINGERPRINTS IDENTICAL
