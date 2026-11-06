@@ -36,3 +36,6 @@ stop
 python3 "$G" --compare "$O/arm.jsonl" "$O/ref.jsonl" | tee "$O/compare.txt"
 for k in 'cache-preferred' 'cold-drafter restore' 'DSPARK restore' 'dspark-boundary'; do
   echo "$k=$(grep -a -c "$k" "$O/serve-arm.log")"; done | tee -a "$O/compare.txt"
+# The serving shape: one veto and one conversion, then tail restores (the conversion must publish
+# its tail-carrying boundary entry; before the fix every step converted and none restored).
+python3 "$G" --check-log "$O/serve-arm.log" | tee -a "$O/compare.txt"

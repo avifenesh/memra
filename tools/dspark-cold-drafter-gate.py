@@ -12,7 +12,11 @@ Sequence (raw /v1/completions, fixed seed):
   a:  P + S (S longer than the drafter window), sampled and greedy, short decode: on the arm the
       cache-preferred veto fires on P's plain hit and the conversion re-arms a cold drafter at |P|;
   b:  a's prompt + a's text + a follow-up, which on the arm restores a's tail-carrying entry.
-The gate passes when every a/b completion is byte-identical between arm and reference.
+The gate passes when every a/b completion is byte-identical between arm and reference, and
+(--check-log on the arm's server log) the arm took the conversion exactly once: the first a step
+converts and publishes a tail-carrying boundary entry, every later step restores a tail instead
+of being vetoed again (one `cache-preferred` veto, one conversion, at least one `DSPARK restore`
+and one `insert (dspark-boundary)`).
 GATE_P_PARAS / GATE_S_PARAS size P and S (60-word paragraphs; defaults 70 / 80, about 12k / 14k
 tokens); S must stay above the drafter window (2,056 rows on the 27B DFlash2)."""
 import json
@@ -70,7 +74,33 @@ def compare(arm, ref):
     return ok
 
 
+def check_log(log):
+    """The serving shape behind the a/b sequence, read from the arm's server log."""
+    text = open(log, errors="replace").read()
+    counts = {
+        "cache-preferred": text.count("cache-preferred"),
+        "cold-drafter restore": text.count("cold-drafter restore"),
+        "DSPARK restore": text.count("DSPARK restore"),
+        "insert (dspark-boundary)": text.count("insert (dspark-boundary)"),
+    }
+    want = {
+        "cache-preferred": lambda n: n == 1,
+        "cold-drafter restore": lambda n: n == 1,
+        "DSPARK restore": lambda n: n >= 1,
+        "insert (dspark-boundary)": lambda n: n >= 1,
+    }
+    ok = True
+    for k, n in counts.items():
+        good = want[k](n)
+        ok &= good
+        print(f"shape {k}={n} {'ok' if good else 'WRONG'}")
+    print("SHAPE", "PASS" if ok else "FAIL")
+    return ok
+
+
 if __name__ == "__main__":
     if sys.argv[1] == "--compare":
         sys.exit(0 if compare(sys.argv[2], sys.argv[3]) else 1)
+    if sys.argv[1] == "--check-log":
+        sys.exit(0 if check_log(sys.argv[2]) else 1)
     run(sys.argv[1], sys.argv[2], sys.argv[3])
