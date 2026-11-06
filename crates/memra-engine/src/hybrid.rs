@@ -6413,6 +6413,28 @@ impl HybridModel {
             test_extra_devices: Vec::new(),
         };
         e.configure_moe_cache_layout(model.moe_cache_block_sizes());
+        // GB10 prime chunk default (2026-11-06): the serial GDN hybrid trunk (no mHC topology,
+        // no KDA/MLA mixers) primes bit-identically at any GDN-grid-aligned chunk, and 8192
+        // rows measured -0.64% served 131k TTFT on a unified-memory 120a device with the same
+        // tokens (16384: -1.21% but +3.8 GB admission booking and -7 GiB MemAvailable per 131k
+        // prime). An explicit MEMRA_PRIME_CHUNK still decides.
+        if model.hyper.is_none()
+            && env!("MEMRA_BUILT_CUDA_ARCH") == "120a"
+            && crate::unified_memory::is_unified(e.ctx())
+            && model
+                .layers
+                .iter()
+                .any(|l| matches!(l.mixer, Mixer::Linear(_)))
+            && model
+                .layers
+                .iter()
+                .all(|l| matches!(l.mixer, Mixer::Linear(_) | Mixer::Full(_)))
+        {
+            crate::cache::set_prime_chunk_default(8192);
+            eprintln!(
+                "[prime-chunk] default 8192 rows (serial GDN hybrid trunk, unified-memory 120a device)"
+            );
+        }
         if force_embd_gpu {
             let _ = model
                 .embd_gpu
