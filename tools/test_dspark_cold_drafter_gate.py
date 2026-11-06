@@ -88,10 +88,12 @@ class ColdDrafterGateScript(unittest.TestCase):
     def tearDown(self):
         self.tmp.cleanup()
 
-    def gate(self, mode):
+    def gate(self, mode, vram="24463"):
         out = self.dir / mode
-        env = dict(os.environ, STUB_MODE=mode, GATE=str(DRIVER),
+        env = dict(os.environ, STUB_MODE=mode, GATE=str(DRIVER), GATE_VRAM_MIB=vram,
                    GATE_ADDR=f"127.0.0.1:{free_port()}")
+        for k in ("GATE_P_PARAS", "GATE_S_PARAS"):
+            env.pop(k, None)
         p = subprocess.run(["bash", str(SCRIPT), str(self.stub), str(out)], env=env,
                            capture_output=True, text=True, timeout=300)
         report = (out / "compare.txt").read_text() if (out / "compare.txt").exists() else ""
@@ -100,7 +102,7 @@ class ColdDrafterGateScript(unittest.TestCase):
     def test_ok_passes_and_names_its_sizes(self):
         rc, log, report = self.gate("ok")
         self.assertEqual(rc, 0, log)
-        self.assertIn("gate sizes GATE_P_PARAS=10 GATE_S_PARAS=12", report)
+        self.assertIn("gate sizes GATE_P_PARAS=10 GATE_S_PARAS=14 memory.total=24463 MiB", report)
         self.assertIn("SHAPE PASS", report)
         self.assertIn("COLD-DRAFTER GATE PASS", report)
 
@@ -112,8 +114,9 @@ class ColdDrafterGateScript(unittest.TestCase):
         self.assertIn("missing run file", report)
 
     def test_divergent_text_fails(self):
-        rc, log, report = self.gate("diverge")
+        rc, log, report = self.gate("diverge", vram="[N/A]")  # GB10 reports no dedicated memory
         self.assertNotEqual(rc, 0, log)
+        self.assertIn("gate sizes GATE_P_PARAS=70 GATE_S_PARAS=80", report)
         self.assertIn("GATE FAIL", report)
 
     def test_reveto_shape_fails(self):
