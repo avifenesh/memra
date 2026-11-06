@@ -1,0 +1,15 @@
+device NVIDIA GB10 sms 48 l2 25165824 bytes smem/SM 102400 smem/block optin 101376 regs/SM 65536
+bf16   m16n8k16  warps/blk  4: 101.3 TFLOPS
+f8bs   m16n8k32  warps/blk  4: 201.3 TFLOPS
+f8resc m16n8k32  warps/blk  4: 170.6 TFLOPS (per-k32 C=0 + sum += dA*dB*C)
+f8tile m16n8k32  warps/blk  4: 113.3 TFLOPS (tile epilogue: 4 FMUL + 4 FFMA per MMA)
+bf16   m16n8k16  warps/blk  8: 102.1 TFLOPS
+f8bs   m16n8k32  warps/blk  8: 202.8 TFLOPS
+f8resc m16n8k32  warps/blk  8: 175.0 TFLOPS (per-k32 C=0 + sum += dA*dB*C)
+f8tile m16n8k32  warps/blk  8: 132.0 TFLOPS (tile epilogue: 4 FMUL + 4 FFMA per MMA)
+bf16   m16n8k16  warps/blk 16: 102.9 TFLOPS
+f8bs   m16n8k32  warps/blk 16: 204.6 TFLOPS
+f8resc m16n8k32  warps/blk 16: 179.0 TFLOPS (per-k32 C=0 + sum += dA*dB*C)
+f8tile m16n8k32  warps/blk 16: 138.1 TFLOPS (tile epilogue: 4 FMUL + 4 FFMA per MMA)
+dram read  232.3 GB/s
+dram copy  213.3 GB/s (read+write bytes)

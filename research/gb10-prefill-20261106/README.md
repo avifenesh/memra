@@ -179,17 +179,107 @@ TTFT to 2.56x / 2.06x / 1.77x. At 131k the gap is now the trunk GEMMs (90.3 s wi
 quantize, against SGLang's 26.5 s of FP4 and FP8 GEMMs), the GDN kernels (20.1 s against 8.7 s)
 and attention (50.9 s against 42.3 s; 66 TFLOPS against FA2's 82 on BF16 KV).
 
-## Next exact levers (not done here)
+## Round 2 (same day): four more exact levers on top of the stack
 
-- F8F4 GEMM, structural (largest): the tile is at one 8-warp CTA per SM with 187-200 registers and
-  any added live state spills. A dequantize-once weight pass with an L2-ordered raster and a deeper
-  cp.async pipeline, or warp-specialized dequant, is the exact route toward the 175 TFLOPS ceiling
-  of the per-k32 program (now 78 TFLOPS, 81 s of 190 s at 131k).
-- Fuse silu*up into the down projection's e4m3 activation quantize (one [t, n_ff] f32 write and
-  read less per layer, about 5 s at 131k) and quantize each shared activation once per GEMM group
-  (gate/up, GDN qkv/z, attention q/k/v: 144 of 400 quantize passes per chunk, about 3 s).
-- GDN: `l2_norm_pp_v2_f32` runs at ~88 GB/s (one row per warp, one 16-byte load per lane); several
-  rows per warp with loads issued first keeps the per-row reduction and is worth about 2 s at 131k.
-  The GDN total is 20.1 s against an ~8 s DRAM floor.
-- `MEMRA_PRIME_CHUNK=8192`: documented bit-identical for grid-aligned boundaries; untested here.
+All on unit 1 against the round-1 stack `ef37ca487b` (P), fresh boot per cell, both orders,
+same answers in every boot unless noted. Ledger rows 10-14.
 
+### Prime chunk 8192 rows (adopted, GB10 default for the serial GDN hybrid trunk)
+
+`round2-chunk-ab/`, cells S C8 C16 C16 C8 S on the PR binary with `MEMRA_PRIME_CHUNK`:
+
+| chunk | 32k TTFT | 131k TTFT | admission workspace (131k) | MemAvailable floor |
+|---|---|---|---|---|
+| 4,096 | 38.118, 38.143 s | 189.959, 190.031 s | 4,563 MB | 81.4 GiB |
+| 8,192 | 38.002, 37.994 s (-0.35%) | 188.544, 189.032 s (-0.64%) | 6,442 MB | 81.3 GiB |
+| 16,384 | 38.066, 37.996 s (-0.26%) | 187.766, 187.639 s (-1.21%) | 10,200 MB | 74.5 GiB |
+
+8,192 is armed at load for this trunk on a unified-memory 120a device (`0cb9642b98`); 16,384's
+extra 0.57% at 131k costs 3.8 GB more booking and 7 GiB of MemAvailable per concurrent 131k
+prime. At 259,951 tokens with 8,192 rows the answer equals base and MemAvailable stayed above
+71.8 GiB (`round2-mem-256k-chunk8192/`; a build ran alongside, so its 473.2 s is not a timing).
+Decision record: `docs/decisions/GB10-PRIME-CHUNK-8192.md`.
+
+### Fused activation quantize, quantize-once groups, four-row L2 norm
+
+`round2-levers-ab/`, stacked: A = silu(gate)*up fused into the down projection's e4m3 quantize
+(`68a8a05730`), B = A + each shared activation quantized once per GEMM group (`873634c010`),
+C = B + `l2_norm_pp` four rows per warp (measured as `253a52c36a` on the A+B base), cells
+P A B C C B A P at 32k and 131k:
+
+| arm | 32k TTFT | 131k TTFT | step |
+|---|---|---|---|
+| P: round-1 stack `ef37ca487b` | 38.107, 38.158 s | 190.063, 190.023 s | |
+| A: fused activation quantize | 36.824, 36.832 s | 184.885, 184.873 s | -3.42% / -2.72% |
+| B: A + quantize-once groups | 36.235, 36.277 s | 182.804, 182.505 s | -1.55% / -1.20% |
+| C: B + four-row L2 norm | 36.250, 36.254 s | 182.616, 182.559 s | -0.01% / -0.04% |
+
+Answer text identical across all eight boots at both lengths.
+
+C is flat (+0.05% at 32k, -0.12% at 131k) and is rejected; it stays on
+`research/gb10-prefill-round2-levers` with its kernel-check byte cell. Kernel-level on unit 2
+(`round2-unit2-profiles/`, one 131k prime per binary): `l2_norm_pp_v2r4_f32` takes 3.050 s
+(0.963 ms per call) against the one-row kernel's 2.960 s (0.934 ms) in the B binary, so the
+one-row kernel's ~90 GB/s was not limited by bytes in flight per warp. The same profiles confirm
+A and B engage: the fused `quantize_mmq_e4m3_d4_silu_kernel` runs 2,112 times (6.06 s),
+`silu_mul_f32` falls to 66 calls (the MTP head), and the plain quantizer runs 6,336 times
+(3.22 s) instead of 13,200 (8.99 s): 400 - 64 fused - 144 shared per chunk.
+
+### Final: round-1 stack against round 2 (`round2-final-ab/`)
+
+Unit 1, cells P S S P, all three lengths per boot, the round-1 stack `ef37ca487b` against
+round 2 `0cb9642b98` (A + B + the 8,192-row chunk default; C left out):
+
+| prompt tokens | round-1 stack | round-2 stack | change | against main `5d70118b99` |
+|---:|---|---|---:|---:|
+| 32,784 | 38.141, 38.162 s (median 38.151) | 36.162, 36.165 s (median 36.163) | -5.21% | 44.263 -> 36.163 s, -18.3% |
+| 131,051 | 189.944, 189.935 s (median 189.940) | 180.949, 181.310 s (median 181.130) | -4.64% | 239.010 -> 181.130 s, -24.2% |
+| 259,951 | 475.384, 475.914 s (median 475.649) | 457.342, 457.011 s (median 457.177) | -3.88% | 637.524 -> 457.177 s, -28.3% |
+
+Answer text identical in all four boots at every length. MemAvailable floor 66.8 GiB (round 1)
+and 65.2 GiB (round 2; the 8,192-row chunk's larger workspace). Unit 2 replication at 259,951
+tokens (`round2-final-256k-unit2/`): 456.213 s against 474.442 s, -3.84%, same answer. The
+exactness battery passes on the timed binary (`round2-gates-unit1/`) and on unit 2's build of the
+same commit (`round2-gates-unit2/`): kernel-check ALL GREEN (113 cells) in h2, db and t3 modes
+with `MMQ-F8F4-SILU-FUSED` 0 mismatches at T = 16, 130, 1,024; argmax-margin flips=0 bad=0;
+run-spec K=1..8 PASS. Against the tuned SGLang profile (14.9 / 92.3 / 269.2 s) memra is now at
+2.43x / 1.96x / 1.70x of its TTFT.
+
+Per part at 131,051 tokens, Nsight Systems on unit 1 (`round2-profile-128k/`, nsys TTFT 181.9 s
+against 181.1 s unprofiled), next to round 1 (`profile-stack2-128k/`):
+
+| part (GPU seconds) | round 1 `5fd85d3513` | round 2 `0cb9642b98` |
+|---|---:|---:|
+| trunk GEMMs, F8F4 MMQ | 81.36 (13,200 launches, 33 chunks) | 80.34 (6,800 launches, 17 chunks) |
+| e4m3 activation quantize | 8.91 | 9.32 (fused silu quantize 6.07, plain 3.25) |
+| full attention | 50.88 | 50.79 |
+| GDN kernels | 20.05 | 20.07 |
+| glue (norms, adds, activation) | 15.93 | 8.68 (`silu_mul_f32` gone) |
+| KV dequant workspace | 1.37 | 0.73 (half the chunks) |
+| device-to-device copies | 0.48 | 0.50 |
+| GPU busy / window | 188.1 / 189.9 | 179.6 / 181.4 |
+
+The fused quantize kernel moves the activation's read into the quantizer (its 6.07 s reads gate and
+up, 570 MB per layer-chunk), so the quantize line grows while the silu pass and its write and
+re-read disappear from the glue line.
+
+Raw Nsight Systems / ncu reports are not in the repo (the pre-push hook refuses nsys blobs): the
+round-1 base and stack reports and the ncu F8F4 report are in the lab's evidence backup as
+snapshot `f53a15ef`, the round-2 stack report as `0d1b56a0`. Unit 2's two round-2 reports were
+not retained; their `parts.txt` / `parts.json` summaries are here.
+
+### F8F4 GEMM rework
+
+`GEMM-REWORK-DESIGN.md` (design, not built): a faithful probe of the tile's epilogue puts the
+ceiling at 113 TFLOPS at today's 8 warps per SM and 132 at 16; today's tile runs 79. A
+dequantize-once image pass with a pipelined mainloop and an L2-ordered raster is worth about
+11 s at 131k at 8 warps per SM and about 20 s if it reaches 16 warps per SM (181.1 -> ~161 s).
+
+## Next exact levers
+
+- The F8F4 GEMM rework above (largest; owner's go first).
+- GDN: 20.1 s at 131k against an ~8 s DRAM floor; the four-row L2 norm did not move it, so the
+  next step is a per-kernel ncu of the chunk kernels (`gdn_chunk_state_mma`, `gdn_chunk_solve32`,
+  `gdn_chunk_output_mma`, `ssm_conv1d_gdn_state`) before any rewrite.
+- The alpha/beta dp4a matvecs (3.2 s) quantize their shared input twice; one dual kernel reading it
+  once keeps both dot products.

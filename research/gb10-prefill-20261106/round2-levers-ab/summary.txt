@@ -1,0 +1,25 @@
+campaign R2-levers: 16 requests, arms ['P', 'A', 'B', 'C']
+
+target 32768
+  P        ttft 38.107, 38.158                           median 38.133  cells ['01-P', '08-P']
+  A        ttft 36.824, 36.832                           median 36.828  cells ['02-A', '07-A']
+  B        ttft 36.235, 36.277                           median 36.256  cells ['03-B', '06-B']
+  C        ttft 36.250, 36.254                           median 36.252  cells ['04-C', '05-C']
+  A vs P: -3.42%
+  B vs P: -4.92%
+  C vs P: -4.93%
+
+target 131072
+  P        ttft 190.063, 190.023                         median 190.043  cells ['01-P', '08-P']
+  A        ttft 184.885, 184.873                         median 184.879  cells ['02-A', '07-A']
+  B        ttft 182.804, 182.505                         median 182.654  cells ['03-B', '06-B']
+  C        ttft 182.616, 182.559                         median 182.588  cells ['04-C', '05-C']
+  A vs P: -2.72%
+  B vs P: -3.89%
+  C vs P: -3.92%
+
+fingerprints (text sha256 per target/rep across all cells)
+  target 32768 rep 0: 1 distinct IDENTICAL
+  target 131072 rep 0: 1 distinct IDENTICAL
+errors/needle misses: 0
+FINGERPRINTS IDENTICAL

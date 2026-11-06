@@ -1,0 +1,220 @@
+{
+ "window_s": 181.938798432,
+ "busy_s": 180.230506315,
+ "kernel_sum_s": 180.2336250669997,
+ "parts_s": {
+  "glue: norms/adds/act": 8.645194999999932,
+  "gemm: activation e4m3 quantize": 9.302483360000043,
+  "gemm: NVFP4 F8F4 MMQ": 80.80512524499969,
+  "other": 4.340441565000007,
+  "gemm: other MMQ / matvec": 3.801539802000002,
+  "gdn: conv/l2/gates": 6.211200127999882,
+  "gdn: chunk scan kernels": 13.722047647999963,
+  "attention: rope/qk-norm/gate glue": 1.0145175350000002,
+  "attention: KV append/quantize": 0.38091020800014364,
+  "attention: KV dequant workspace": 1.3604787519999995,
+  "attention: FA prime kernel": 50.649685824000045
+ },
+ "top": [
+  {
+   "name": "mul_mat_q_nvfp4_f8f4<",
+   "s": 80.805125245,
+   "count": 13200
+  },
+  {
+   "name": "fa_prefill_qw_h2",
+   "s": 50.486142976,
+   "count": 512
+  },
+  {
+   "name": "quantize_mmq_e4m3_d4_silu_kernel",
+   "s": 6.058479264,
+   "count": 2112
+  },
+  {
+   "name": "add_f32",
+   "s": 4.26604761,
+   "count": 4292
+  },
+  {
+   "name": "gdn_chunk_state_mma",
+   "s": 4.206471136,
+   "count": 1584
+  },
+  {
+   "name": "rms_norm_f32_v2",
+   "s": 3.700449407,
+   "count": 5544
+  },
+  {
+   "name": "gdn_chunk_solve32_f32",
+   "s": 3.4937424,
+   "count": 1584
+  },
+  {
+   "name": "gdn_chunk_output_mma",
+   "s": 3.394597568,
+   "count": 1584
+  },
+  {
+   "name": "quantize_mmq_e4m3_d4_kernel",
+   "s": 3.244004096,
+   "count": 6336
+  },
+  {
+   "name": "qmatvec_nvfp4_dp4a_rp",
+   "s": 3.163431422,
+   "count": 3168
+  },
+  {
+   "name": "ssm_conv1d_gdn_state_f32",
+   "s": 3.141676192,
+   "count": 1584
+  },
+  {
+   "name": "l2_norm_pp_v2r4_f32",
+   "s": 3.049620768,
+   "count": 3168
+  },
+  {
+   "name": "gdn_chunk_attn_f32",
+   "s": 2.591506624,
+   "count": 1584
+  },
+  {
+   "name": "gated_rmsnorm_f32",
+   "s": 1.938365792,
+   "count": 1584
+  },
+  {
+   "name": "quantize_q8_1",
+   "s": 1.870235295,
+   "count": 3452
+  },
+  {
+   "name": "fa_dequant_kv_ws_bf16",
+   "s": 1.360478752,
+   "count": 528
+  },
+  {
+   "name": "q_gate_split_f32",
+   "s": 0.862051775,
+   "count": 546
+  },
+  {
+   "name": "mul_f32",
+   "s": 0.649430688,
+   "count": 546
+  },
+  {
+   "name": "sigmoid_f32",
+   "s": 0.459116064,
+   "count": 2130
+  },
+  {
+   "name": "mul_mat_q_q45k<",
+   "s": 0.268113024,
+   "count": 60
+  },
+  {
+   "name": "append_quantize_kv_q8_0_q5_1",
+   "s": 0.263399264,
+   "count": 120989
+  },
+  {
+   "name": "qmatvec_q5_K_mmvq_il",
+   "s": 0.18268592,
+   "count": 34
+  },
+  {
+   "name": "fa_prefill_qw_db",
+   "s": 0.163542848,
+   "count": 16
+  },
+  {
+   "name": "rope_neox_f32",
+   "s": 0.15246576,
+   "count": 1122
+  },
+  {
+   "name": "qmatvec_gemm_q6_K",
+   "s": 0.118374624,
+   "count": 30
+  },
+  {
+   "name": "append_quantize_kv_q8_0_q5_1_rows",
+   "s": 0.117441248,
+   "count": 528
+  },
+  {
+   "name": "qmatvec_nvfp4_mmvq_mr2_rp",
+   "s": 0.066052668,
+   "count": 498
+  },
+  {
+   "name": "quantize_mmq_q8_1_ds4_kernel",
+   "s": 0.044276,
+   "count": 60
+  },
+  {
+   "name": "gdn_chunk_cumgate_f32",
+   "s": 0.03479728,
+   "count": 1584
+  },
+  {
+   "name": "embed_gather_u32_t",
+   "s": 0.028657024,
+   "count": 63
+  },
+  {
+   "name": "fa_decode_vec_q_seqs_v4_deep",
+   "s": 0.022081952,
+   "count": 16
+  },
+  {
+   "name": "gdn_glog_f32",
+   "s": 0.016217088,
+   "count": 1584
+  },
+  {
+   "name": "fa_decode_combine_seqs",
+   "s": 0.005886144,
+   "count": 16
+  },
+  {
+   "name": "ssm_conv_ring_update_f32",
+   "s": 0.003542368,
+   "count": 1584
+  },
+  {
+   "name": "qmatvec_q4_K_mmvq",
+   "s": 0.002003104,
+   "count": 12
+  },
+  {
+   "name": "qmatvec_q6_K_mmvq",
+   "s": 0.00087904,
+   "count": 4
+  },
+  {
+   "name": "gdn_scan_s128_b",
+   "s": 0.000860032,
+   "count": 48
+  },
+  {
+   "name": "add_rms_norm_f32_v2",
+   "s": 0.000416319,
+   "count": 64
+  },
+  {
+   "name": "fa_decode_vec_q_v4_deep_dc",
+   "s": 0.000254624,
+   "count": 2
+  },
+  {
+   "name": "silu_mul_f32",
+   "s": 0.000187616,
+   "count": 66
+  }
+ ]
+}

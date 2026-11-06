@@ -1,0 +1,220 @@
+{
+ "window_s": 181.435238752,
+ "busy_s": 179.564071843,
+ "kernel_sum_s": 179.56584662700018,
+ "parts_s": {
+  "glue: norms/adds/act": 8.679298642999989,
+  "gemm: activation e4m3 quantize": 9.315384512000014,
+  "gemm: NVFP4 F8F4 MMQ": 80.34199660600005,
+  "other": 4.367860602000024,
+  "gemm: other MMQ / matvec": 3.876450360000004,
+  "gdn: conv/l2/gates": 6.138927327999974,
+  "gdn: chunk scan kernels": 13.931759200000002,
+  "attention: rope/qk-norm/gate glue": 1.0066538879999998,
+  "attention: KV append/quantize": 0.38664153600013795,
+  "attention: KV dequant workspace": 0.7290815039999998,
+  "attention: FA prime kernel": 50.791792447999995
+ },
+ "top": [
+  {
+   "name": "mul_mat_q_nvfp4_f8f4<",
+   "s": 80.341996606,
+   "count": 6800
+  },
+  {
+   "name": "fa_prefill_qw_h2",
+   "s": 50.629122464,
+   "count": 256
+  },
+  {
+   "name": "quantize_mmq_e4m3_d4_silu_kernel",
+   "s": 6.069887936,
+   "count": 1088
+  },
+  {
+   "name": "add_f32",
+   "s": 4.272663543,
+   "count": 2244
+  },
+  {
+   "name": "gdn_chunk_state_mma",
+   "s": 4.265531872,
+   "count": 816
+  },
+  {
+   "name": "rms_norm_f32_v2",
+   "s": 3.728093055,
+   "count": 2976
+  },
+  {
+   "name": "gdn_chunk_solve32_f32",
+   "s": 3.538774848,
+   "count": 816
+  },
+  {
+   "name": "gdn_chunk_output_mma",
+   "s": 3.481998752,
+   "count": 816
+  },
+  {
+   "name": "qmatvec_nvfp4_dp4a_rp",
+   "s": 3.291876735,
+   "count": 1632
+  },
+  {
+   "name": "quantize_mmq_e4m3_d4_kernel",
+   "s": 3.245496576,
+   "count": 3264
+  },
+  {
+   "name": "ssm_conv1d_gdn_state_f32",
+   "s": 3.154323744,
+   "count": 816
+  },
+  {
+   "name": "l2_norm_pp_v2_f32",
+   "s": 2.96882896,
+   "count": 1632
+  },
+  {
+   "name": "gdn_chunk_attn_f32",
+   "s": 2.60840816,
+   "count": 816
+  },
+  {
+   "name": "gated_rmsnorm_f32",
+   "s": 1.957959552,
+   "count": 816
+  },
+  {
+   "name": "quantize_q8_1",
+   "s": 1.878092604,
+   "count": 1902
+  },
+  {
+   "name": "q_gate_split_f32",
+   "s": 0.8558096,
+   "count": 290
+  },
+  {
+   "name": "fa_dequant_kv_ws_bf16",
+   "s": 0.729081504,
+   "count": 272
+  },
+  {
+   "name": "mul_f32",
+   "s": 0.64475696,
+   "count": 290
+  },
+  {
+   "name": "sigmoid_f32",
+   "s": 0.455387104,
+   "count": 1106
+  },
+  {
+   "name": "mul_mat_q_q45k<",
+   "s": 0.291183712,
+   "count": 64
+  },
+  {
+   "name": "append_quantize_kv_q8_0_q5_1",
+   "s": 0.272601344,
+   "count": 127809
+  },
+  {
+   "name": "fa_prefill_qw_db",
+   "s": 0.162669984,
+   "count": 16
+  },
+  {
+   "name": "rope_neox_f32",
+   "s": 0.150844288,
+   "count": 612
+  },
+  {
+   "name": "qmatvec_gemm_q6_K",
+   "s": 0.12870704,
+   "count": 32
+  },
+  {
+   "name": "append_quantize_kv_q8_0_q5_1_rows",
+   "s": 0.113953024,
+   "count": 272
+  },
+  {
+   "name": "qmatvec_q5_K_mmvq_il",
+   "s": 0.094850656,
+   "count": 18
+  },
+  {
+   "name": "qmatvec_nvfp4_mmvq_mr2_rp",
+   "s": 0.066973785,
+   "count": 498
+  },
+  {
+   "name": "quantize_mmq_q8_1_ds4_kernel",
+   "s": 0.047725312,
+   "count": 64
+  },
+  {
+   "name": "gdn_chunk_cumgate_f32",
+   "s": 0.036083392,
+   "count": 816
+  },
+  {
+   "name": "embed_gather_u32_t",
+   "s": 0.033171872,
+   "count": 49
+  },
+  {
+   "name": "fa_decode_vec_q_seqs_v4_deep",
+   "s": 0.022373728,
+   "count": 16
+  },
+  {
+   "name": "gdn_glog_f32",
+   "s": 0.01389312,
+   "count": 816
+  },
+  {
+   "name": "fa_decode_combine_seqs",
+   "s": 0.005799968,
+   "count": 16
+  },
+  {
+   "name": "qmatvec_q4_K_mmvq",
+   "s": 0.001989184,
+   "count": 12
+  },
+  {
+   "name": "ssm_conv_ring_update_f32",
+   "s": 0.00171872,
+   "count": 816
+  },
+  {
+   "name": "gdn_scan_s128_b",
+   "s": 0.000887968,
+   "count": 48
+  },
+  {
+   "name": "qmatvec_q6_K_mmvq",
+   "s": 0.000869248,
+   "count": 4
+  },
+  {
+   "name": "add_rms_norm_f32_v2",
+   "s": 0.000431293,
+   "count": 64
+  },
+  {
+   "name": "fa_decode_vec_q_v4_deep_dc",
+   "s": 0.000261696,
+   "count": 2
+  },
+  {
+   "name": "silu_mul_f32",
+   "s": 0.000175648,
+   "count": 66
+  }
+ ]
+}

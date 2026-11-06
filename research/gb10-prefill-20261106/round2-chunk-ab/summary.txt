@@ -1,0 +1,21 @@
+campaign R2-chunk: 12 requests, arms ['S', 'C8', 'C16']
+
+target 32768
+  S        ttft 38.118, 38.143                           median 38.130  cells ['01-S', '06-S']
+  C8       ttft 38.002, 37.994                           median 37.998  cells ['02-C8', '05-C8']
+  C16      ttft 38.066, 37.996                           median 38.031  cells ['03-C16', '04-C16']
+  C8 vs S: -0.35%
+  C16 vs S: -0.26%
+
+target 131072
+  S        ttft 189.959, 190.031                         median 189.995  cells ['01-S', '06-S']
+  C8       ttft 188.544, 189.032                         median 188.788  cells ['02-C8', '05-C8']
+  C16      ttft 187.766, 187.639                         median 187.702  cells ['03-C16', '04-C16']
+  C8 vs S: -0.64%
+  C16 vs S: -1.21%
+
+fingerprints (text sha256 per target/rep across all cells)
+  target 32768 rep 0: 1 distinct IDENTICAL
+  target 131072 rep 0: 1 distinct IDENTICAL
+errors/needle misses: 0
+FINGERPRINTS IDENTICAL

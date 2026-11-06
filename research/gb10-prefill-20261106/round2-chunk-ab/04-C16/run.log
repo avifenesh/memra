@@ -1,0 +1,12 @@
+2026-11-06T13:23:34+02:00 run_arm OUT=~/.cache/memra-prefill/runs/R2-chunk/04-C16 BIN=~/.cache/memra-prefill/bins/pr-ef37ca487b EXTRA=MEMRA_PRIME_CHUNK=16384 TARGETS=32768 131072 REPS=1 1 WRAP=
+waitfor: until curl -sf -o /dev/null http://127.0.0.1:8090/readyz && exit 0 || exit 1 (deadline 15m00s, every 5s)
+waitfor: not yet
+waitfor: MET after 3m05s
+2026-11-06T13:26:41+02:00 ready
+{"tag": "04-C16", "target": 32768, "rep": 0, "ttft_s": 37.996, "total_s": 39.564, "prompt_tokens": 32784, "completion_tokens": 40, "needles_ok": true, "error": null, "text_sha256": "cb9da8ae3cecfc7aa768e2345181fc3df508ba01b28b6193fd09c41f72b6d394"}
+{"tag": "04-C16", "target": 131072, "rep": 0, "ttft_s": 187.639, "total_s": 190.262, "prompt_tokens": 131051, "completion_tokens": 40, "needles_ok": true, "error": null, "text_sha256": "84980efddfee6275d79365af174daac933bdd67199a8d14984597b9d99982e5d"}
+2026-11-06T13:30:31+02:00 bench rc=0
+waitfor: gone 3202384 (deadline 5m00s, every 15s)
+waitfor: not yet
+waitfor: MET after 0m15s
+2026-11-06T13:30:46+02:00 done

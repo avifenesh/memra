@@ -1,0 +1,21 @@
+kernel-check default rc=0 ALL GREEN (113 cells, 5 skipped)
+fa_prefill_view_ws vs inline-dequant T=64 Tkv=192: bitdiff=0 OK
+fa_prefill_view_ws vs inline-dequant T=100 Tkv=100: bitdiff=0 OK
+fa_prefill_view_ws vs inline-dequant T=37 Tkv=297: bitdiff=0 OK
+fa_prefill_view_ws vs inline-dequant T=192 Tkv=4097: bitdiff=0 OK
+fa_prefill_view_ws vs inline-dequant T=1024 Tkv=8224: bitdiff=0 OK
+kernel-check h2off rc=0 ALL GREEN (113 cells, 5 skipped)
+fa_prefill_view_ws vs inline-dequant T=64 Tkv=192: bitdiff=0 OK
+fa_prefill_view_ws vs inline-dequant T=100 Tkv=100: bitdiff=0 OK
+fa_prefill_view_ws vs inline-dequant T=37 Tkv=297: bitdiff=0 OK
+fa_prefill_view_ws vs inline-dequant T=192 Tkv=4097: bitdiff=0 OK
+fa_prefill_view_ws vs inline-dequant T=1024 Tkv=8224: bitdiff=0 OK
+kernel-check t3 rc=0 ALL GREEN (113 cells, 5 skipped)
+fa_prefill_view_ws vs inline-dequant T=64 Tkv=192: bitdiff=0 OK
+fa_prefill_view_ws vs inline-dequant T=100 Tkv=100: bitdiff=0 OK
+fa_prefill_view_ws vs inline-dequant T=37 Tkv=297: bitdiff=0 OK
+fa_prefill_view_ws vs inline-dequant T=192 Tkv=4097: bitdiff=0 OK
+fa_prefill_view_ws vs inline-dequant T=1024 Tkv=8224: bitdiff=0 OK
+argmax rc=0   SUMMARY flips=0 bad=0   PASS: every prefill/decode argmax flip is explained by a margin the config spread covers 
+run-spec rc=0   acceptance: 17/98 = 17.3%   self-consistency: PASS (identical to plain target)   acceptance: 17/112 = 15.2%   self-consistency: PASS (identical to plain target) === SELF-CONSISTENCY PASS === 
+GATES-DONE
