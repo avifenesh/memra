@@ -1178,6 +1178,16 @@ pub fn dspark_cold_drafter_grid_refusals_total() -> u64 {
     DSPARK_COLD_DRAFTER_GRID_REFUSALS_TOTAL.load(std::sync::atomic::Ordering::Relaxed)
 }
 
+/// Whether this request runs as a DFlash session, decided before the capture and the session
+/// cache are chosen: a cold-preferring prime, a pool resume, or a prefix-cache restore. The
+/// restore includes the cold-drafter conversion of a vetoed plain hit (memra#1031), which runs
+/// only when the request did NOT prefer cold. Leaving it out made that session plain to the
+/// code below: it published no tail-carrying boundary entry (so the next turn hit the plain
+/// entry and was vetoed again) and it got a plain session cache it never used.
+fn dspark_session_armed(prefers_cold: bool, pool_resume: bool, prefix_restored: bool) -> bool {
+    prefers_cold || pool_resume || prefix_restored
+}
+
 fn dspark_prefix_capture_requested(
     dspark_on: bool,
     prefix_on: bool,
@@ -38595,7 +38605,11 @@ fn admit(
             }
         }
     }
-    let dspark_on = dspark_prefers_cold || dspark_resume.is_some();
+    let dspark_on = dspark_session_armed(
+        dspark_prefers_cold,
+        dspark_resume.is_some(),
+        dspark_prefix_restored.is_some(),
+    );
     debug_assert!(
         !dspark_on
             || (spec.is_none()
@@ -40663,6 +40677,33 @@ mod dspark_restore_default_tests {
         ColdDrafterRefusal, dspark_cold_drafter_refusal, dspark_door,
         dspark_restore_default_for_device,
     };
+
+    /// A cold-drafter conversion (a vetoed plain hit re-armed as DFlash, `prefers_cold` false,
+    /// no pool resume) is a DFlash session: it must capture its tail-carrying boundary entry and
+    /// must not get a plain session cache. Before the fix it read as plain on both counts.
+    #[test]
+    fn a_cold_drafter_conversion_runs_as_a_dflash_session() {
+        assert!(
+            super::dspark_session_armed(false, false, true),
+            "the conversion"
+        );
+        assert!(
+            super::dspark_session_armed(true, false, false),
+            "a cold prime"
+        );
+        assert!(
+            super::dspark_session_armed(true, false, true),
+            "a cold-preferring restore"
+        );
+        assert!(
+            super::dspark_session_armed(false, true, false),
+            "a pool resume"
+        );
+        assert!(
+            !super::dspark_session_armed(false, false, false),
+            "a plain request"
+        );
+    }
 
     /// A forged off-grid plain carrier (or one whose cache position disagrees with its token
     /// boundary) must never take the cold-drafter conversion; an on-grid one with a long
