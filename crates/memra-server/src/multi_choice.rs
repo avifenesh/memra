@@ -223,6 +223,16 @@ impl Rows {
         self.completed == self.rows.len()
     }
 
+    /// A worker error that reaches a row before its prompt accounting is a refusal or fault
+    /// before admission: log it like n = 1 does.
+    fn log_pre_admission(&self, index: usize, event: &Event) {
+        if let Event::Error(error) = event
+            && self.rows.get(index).is_some_and(|row| row.prompt.is_none())
+        {
+            log_pre_admission_error(index, error);
+        }
+    }
+
     pub(crate) fn consume(
         &mut self,
         index: usize,
@@ -501,6 +511,15 @@ impl Rows {
     }
 }
 
+/// The n = 1 `[admission] error before admission` line, with the row's index.
+fn log_pre_admission_error(index: usize, error: &EngineError) {
+    eprintln!(
+        "[admission] error before admission: code={} choice={index} message={:?}",
+        crate::engine_error_code(error.class),
+        error.message
+    );
+}
+
 /// One HTTP request against the tenant cap, N rows against worker and route capacity.
 struct Guard {
     parent: crate::InflightGuard,
@@ -668,11 +687,12 @@ pub(crate) async fn respond(
     let constraint_ready: Vec<_> = if commits_early {
         requests
             .iter_mut()
-            .filter(|request| request.grammar.is_some())
-            .map(|request| {
+            .enumerate()
+            .filter(|(_, request)| request.grammar.is_some())
+            .map(|(index, request)| {
                 let (ready_tx, ready_rx) = tokio::sync::oneshot::channel();
                 request.constraint_ready = Some(ready_tx);
-                ready_rx
+                (index, ready_rx)
             })
             .collect()
     } else {
@@ -697,13 +717,20 @@ pub(crate) async fn respond(
     for reservation in pending {
         reservation.commit();
     }
-    // The compile wait counts against the pre-header window, as on n = 1.
+    // The compile wait counts against the pre-header window, as on n = 1. The rows compile
+    // independently, so the first refusal answers without waiting for the others.
     let compiled_by = tokio::time::Instant::now()
         + crate::constrained::CONSTRAINT_COMPILE_TIMEOUT.min(window.remaining());
-    for ready in constraint_ready {
-        match tokio::time::timeout_at(compiled_by, ready).await {
-            Ok(Ok(Ok(()))) => {}
-            Ok(Ok(Err(error))) => {
+    let mut compiles: futures_util::stream::FuturesUnordered<_> = constraint_ready
+        .into_iter()
+        .map(|(index, ready)| async move { (index, ready.await) })
+        .collect();
+    loop {
+        match tokio::time::timeout_at(compiled_by, compiles.next()).await {
+            Ok(None) => break,
+            Ok(Some((_, Ok(Ok(()))))) => {}
+            Ok(Some((index, Ok(Err(error))))) => {
+                log_pre_admission_error(index, &error);
                 return crate::ledger_rejected(
                     receipt,
                     reading.attach(crate::engine_error_response(&error)),
@@ -711,7 +738,7 @@ pub(crate) async fn respond(
                     &env.id,
                 );
             }
-            Ok(Err(_)) => {
+            Ok(Some((_, Err(_)))) => {
                 return crate::ledger_rejected(
                     receipt,
                     reading.attach(crate::worker_unavailable_response()),
@@ -772,6 +799,7 @@ pub(crate) async fn respond(
                 }
             };
             let ready = matches!(&event.1, Event::Token { .. } | Event::Done { .. });
+            rows.log_pre_admission(event.0, &event.1);
             match rows.consume(event.0, event.1, &mut receipt) {
                 Ok(packets) => initial.extend(packets),
                 Err(error) => {
@@ -806,6 +834,7 @@ pub(crate) async fn respond(
     while !rows.complete() {
         match tokio::time::timeout_at(deadline.at, input.next()).await {
             Ok(Some((index, event))) => {
+                rows.log_pre_admission(index, &event);
                 if let Err(error) = rows.consume(index, event, &mut receipt) {
                     return crate::ledger_rejected(
                         receipt,
@@ -971,8 +1000,9 @@ fn stream_reply(
             };
             if let Event::DeadlineExceeded { ms } = event {
                 // A committed group's first-token deadline (`commit_until_first_delivery`
-                // already settled the shared receipt; this returns that settlement). The
-                // OpenAI dialect's terminal error: a `data:` error, then `[DONE]`.
+                // already settled the shared receipt; this returns that settlement). The n > 1
+                // wire rule: `[DONE]` follows only successful accounting, so like every error
+                // after the headers the timeout error is the last chunk.
                 let settled = receipt.as_mut().map_or(Ok(()), |r| {
                     r.settle_unbilled("deadline_exceeded", 408, "deadline_exceeded")
                 });
@@ -982,7 +1012,6 @@ fn stream_reply(
                     crate::deadline_exceeded_error(ms, true)
                 };
                 yield Ok(SseEvent::default().data(payload.to_string()));
-                yield Ok(SseEvent::default().data("[DONE]"));
                 return;
             }
             match rows.consume(index, event, &mut receipt) {
@@ -1506,8 +1535,9 @@ mod tests {
 
     /// GB10 n > 1 (2026-11-06): after a group commits headers, its first-token deadline keeps
     /// running. Expiry settles the receipt zero-debit and closes every row even when the body is
-    /// never polled; a polled body ends with the OpenAI-dialect timeout error then `[DONE]`; the
-    /// first token of any row disarms the deadline; a refusal after the commit is an error event.
+    /// never polled; a polled body ends with the timeout error chunk and no `[DONE]` (n > 1 sends
+    /// `[DONE]` only after successful accounting); the first token of any row disarms the
+    /// deadline; a refusal after the commit is an error event.
     #[tokio::test(start_paused = true)]
     async fn a_committed_group_keeps_its_first_token_deadline() {
         // Unpolled: the deadline settles and cancels with nobody reading the body.
@@ -1528,8 +1558,11 @@ mod tests {
         let (senders, response, log) = committed_group();
         senders[1].send(usage()).unwrap();
         let lines = data_lines(response).await;
-        assert_eq!(lines.len(), 2, "{lines:?}");
-        assert_eq!(lines[1], "[DONE]");
+        assert_eq!(
+            lines.len(),
+            1,
+            "the timeout error is the last chunk: {lines:?}"
+        );
         let error: Value = serde_json::from_str(&lines[0]).unwrap();
         assert_eq!(error["error"]["type"], "timeout");
         assert_eq!(error["error"]["code"], "deadline_exceeded");

@@ -1083,12 +1083,15 @@ them. The original TTFT deadline continues to run, and it covers queue waiting t
 still waiting for admission at the commit threshold commits the same way and stays queued
 under keepalives, as vLLM and SGLang keep a queued stream open. The queue shed compares its
 wait estimate with the whole first-token deadline, and a refusal after the commit arrives as
-a dialect-native error event under HTTP 200. A stream with `n` > 1 takes the same path as one
+a dialect-native error event under HTTP 200. An `n` > 1 stream takes the same path, as one
 group: the shed judges the group against the whole deadline, the group commits once for all its
 rows, the first token of any row spends the deadline, and a constrained group commits only after
-every row's schema compiled (until 2026-11-06 a group kept the pre-header bound for queue and
-prefill alike, so an `n` = 2 stream whose prefill ran past the commit got a pre-header 408, and
-its queue shed judged the estimate against the commit). (Until 2026-11-02 a stream still queued at the
+every row's schema compiled. After its commit a group's timeout or refusal is its last `data:`
+chunk with no `[DONE]`, since an `n` > 1 stream sends `[DONE]` only after successful accounting
+(API-SURFACES.md, "Bounded choices on chat and text completions"). Until 2026-11-06 a group
+kept the pre-header bound for queue and prefill alike, so an `n` = 2 stream whose prefill ran
+past the commit got a pre-header 408, and its queue shed judged the estimate against the
+commit. (Until 2026-11-02 a stream still queued at the
 commit got a pre-header 408, and the queue shed judged its estimate against the commit, one
 candidate for the uncaptured HTTP 429 of the first Spark c32 agentic cell; the body-admission,
 queue, per-key and vision 429s now log a `[shed]` line and worker errors before admission an

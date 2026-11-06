@@ -19942,13 +19942,15 @@ default_reasoning_effort = "always"
 
     /// GB10 n > 1 (2026-11-06): the choice-group twin of the extended-stream contract, in a fresh
     /// process with a 300 s first-token deadline and a 100 ms commit (GB10 derives 997 s and
-    /// 60 s). With one request queued ahead and a ~97 s wait estimate an n = 2 stream is not shed
-    /// against its commit window; a group still waiting at its commit commits SSE headers and
-    /// keeps its queued rows; rows admitted after the commit deliver and bill on that stream;
-    /// dropping a committed stream cancels every row; and a constrained group whose schema never
-    /// compiles still answers the pre-header 408, since no stream commits before its schema
-    /// compiled. Before the fix the queued group got 429 `shed_deadline` and an unqueued group a
-    /// pre-header 408 at its commit.
+    /// 60 s), through the real handlers. With one request queued ahead and a ~97 s wait estimate
+    /// an n = 2 stream is not shed against its commit window, commits SSE headers at the commit,
+    /// and its rows, admitted after the commit, deliver and bill on that stream. Dropping a
+    /// committed stream cancels every row, and a refusal after the commit is the group's last
+    /// chunk, rejected and logged. A constrained group commits only once every row compiled: all
+    /// compiled, it commits; one row refused, a pre-header 400 at once, logged; none compiled,
+    /// the pre-header 408. A 1 s stream is not extended: a plain 408 at its deadline. Before the
+    /// fix the queued group got 429 `shed_deadline` and an unqueued group a pre-header 408 at its
+    /// commit.
     #[test]
     fn an_extended_choice_group_stream_commits_and_is_judged_against_its_whole_deadline() {
         const NAME: &str =
@@ -19965,7 +19967,31 @@ default_reasoning_effort = "always"
                 !stderr.contains("[shed]"),
                 "no choice group may be shed here:\n{stderr}"
             );
+            for line in [
+                "[admission] error after the SSE commit: code=rate_limit_exceeded choice=1 ",
+                "[admission] error before admission: code=invalid_request choice=1 ",
+            ] {
+                assert_eq!(
+                    stderr.matches(line).count(),
+                    1,
+                    "{line:?} must be logged once:\n{stderr}"
+                );
+            }
+            assert_eq!(stderr.matches("[admission] ").count(), 2, "{stderr}");
             return;
+        }
+        fn release(rows: &mut [Request]) {
+            for row in rows {
+                worker::release_pending_admit();
+                worker::release_request_reservation(row);
+            }
+        }
+        async fn all_closed(rows: &[Request], what: &str) {
+            for row in rows {
+                tokio::time::timeout(std::time::Duration::from_secs(1), row.tx.closed())
+                    .await
+                    .unwrap_or_else(|_| panic!("{what}: every row is cancelled"));
+            }
         }
         let _counters = global_counter_writer_guard();
         validate_stream_prefill_config().unwrap();
@@ -19976,6 +20002,8 @@ default_reasoning_effort = "always"
             "n":2,"max_tokens":4,"stream":true});
         let mut constrained = chat.clone();
         constrained["response_format"] = json!({"type":"json_object"});
+        let mut short = chat.clone();
+        short["timeout_ms"] = json!(1000);
         tokio::runtime::Builder::new_current_thread()
             .enable_time()
             .build()
@@ -19984,89 +20012,142 @@ default_reasoning_effort = "always"
                 for (path, payload, queued, case) in [
                     ("/v1/completions", completion, 1, "deliver"),
                     ("/v1/chat/completions", chat.clone(), 1, "deliver"),
-                    ("/v1/chat/completions", chat, 0, "drop"),
-                    ("/v1/chat/completions", constrained, 0, "constrained"),
+                    ("/v1/chat/completions", chat.clone(), 0, "drop"),
+                    ("/v1/chat/completions", chat, 0, "refused"),
+                    ("/v1/chat/completions", constrained.clone(), 0, "compiled"),
+                    ("/v1/chat/completions", constrained.clone(), 0, "invalid"),
+                    ("/v1/chat/completions", constrained, 0, "uncompiled"),
+                    ("/v1/chat/completions", short, 0, "short"),
                 ] {
+                    let what = format!("{path} {case}");
                     let (st, cmd_rx, mock) = choice_group_state();
                     let counter = &worker::ADMISSION_RESERVATIONS[lane.idx()];
                     let prev = counter.swap(queued, std::sync::atomic::Ordering::AcqRel);
                     let _restore = CounterRestore(counter, prev);
-                    let response = tokio::time::timeout(
-                        std::time::Duration::from_secs(2),
-                        bg914_http(bg914_router(st), "POST", path, None, payload),
-                    )
-                    .await
-                    .expect("the group answers by its commit");
-                    let status = response.status();
-                    let Ok(Cmd::GenerateChoices(mut rows)) = cmd_rx.try_recv() else {
-                        panic!(
-                            "{path} {case}: the group never reached the worker: {status} {}",
-                            body_value(response).await
-                        )
-                    };
-                    assert_eq!(rows.len(), 2);
-                    if case == "constrained" {
-                        assert!(rows.iter().all(|row| row.grammar.is_some()));
-                        assert_eq!(status, StatusCode::REQUEST_TIMEOUT, "{path} {case}");
-                        let body = body_value(response).await;
-                        assert!(
-                            body["error"]["message"]
-                                .as_str()
-                                .unwrap()
-                                .contains("pre-header budget"),
-                            "{path} {case}: {body}"
-                        );
-                        assert!(
-                            rows.iter().all(|row| row.tx.is_closed()),
-                            "{path} {case}: the uncompiled group is cancelled"
-                        );
-                        assert!(mock.events().contains(&MeterEvent::Unbilled {
-                            outcome: "deadline_exceeded",
-                            status: 408,
-                            code: "deadline_exceeded".into(),
-                        }));
-                        for row in &mut rows {
-                            worker::release_pending_admit();
-                            worker::release_request_reservation(row);
+                    let call =
+                        tokio::spawn(bg914_http(bg914_router(st), "POST", path, None, payload));
+                    let started = tokio::time::Instant::now();
+                    let mut rows = loop {
+                        let finished = call.is_finished();
+                        if let Ok(Cmd::GenerateChoices(rows)) = cmd_rx.try_recv() {
+                            break rows;
                         }
+                        if finished || started.elapsed() > std::time::Duration::from_secs(2) {
+                            let response = call.await.unwrap();
+                            panic!(
+                                "{what}: the group never reached the worker: {} {}",
+                                response.status(),
+                                body_value(response).await
+                            );
+                        }
+                        tokio::time::sleep(std::time::Duration::from_millis(1)).await;
+                    };
+                    assert_eq!(rows.len(), 2, "{what}");
+                    // The fake compiler: every row, one refused row, or none.
+                    let ready = |row: &mut Request| {
+                        row.constraint_ready
+                            .take()
+                            .expect("an extended constrained group waits for each row's compile")
+                    };
+                    match case {
+                        "compiled" => {
+                            for row in &mut rows {
+                                ready(row).send(Ok(())).unwrap();
+                            }
+                        }
+                        "invalid" => ready(&mut rows[1])
+                            .send(Err(worker::EngineError::invalid_param(
+                                "bad schema",
+                                "response_format",
+                            )))
+                            .unwrap(),
+                        _ => {}
+                    }
+                    let response = tokio::time::timeout(std::time::Duration::from_secs(3), call)
+                        .await
+                        .expect("the group answers by its deadline")
+                        .unwrap();
+                    let status = response.status();
+                    if matches!(case, "uncompiled" | "short" | "invalid") {
+                        let body = body_value(response).await;
+                        let message = body["error"]["message"].as_str().unwrap().to_string();
+                        if case == "invalid" {
+                            assert_eq!(status, StatusCode::BAD_REQUEST, "{what}: {body}");
+                            assert_eq!(body["error"]["param"], "response_format", "{what}");
+                            assert!(mock.events().contains(&MeterEvent::Reject {
+                                status: 400,
+                                code: "invalid_request".into(),
+                            }));
+                        } else {
+                            assert_eq!(status, StatusCode::REQUEST_TIMEOUT, "{what}: {body}");
+                            if case == "uncompiled" {
+                                assert!(message.contains("pre-header budget"), "{what}: {message}");
+                            } else {
+                                assert!(
+                                    message.contains("deadline of 1000 ms")
+                                        && !message.contains("pre-header"),
+                                    "{what}: a stream inside 90 s is not extended: {message}"
+                                );
+                            }
+                            assert!(mock.events().contains(&MeterEvent::Unbilled {
+                                outcome: "deadline_exceeded",
+                                status: 408,
+                                code: "deadline_exceeded".into(),
+                            }));
+                        }
+                        all_closed(&rows, &what).await;
+                        release(&mut rows);
                         continue;
                     }
                     if status != StatusCode::OK {
-                        panic!("{path} {case}: {status} {}", body_value(response).await);
+                        panic!("{what}: {status} {}", body_value(response).await);
                     }
                     assert!(
                         response.headers()[CONTENT_TYPE]
                             .to_str()
                             .unwrap()
                             .starts_with("text/event-stream"),
-                        "{path} {case}: a committed group answers SSE"
+                        "{what}: a committed group answers SSE"
                     );
                     assert!(
                         rows.iter().all(|row| !row.tx.is_closed()),
-                        "{path} {case}: the committed group keeps its queued rows"
+                        "{what}: the committed group keeps its queued rows"
                     );
-                    if case == "drop" {
+                    if matches!(case, "drop" | "compiled") {
                         drop(response);
-                        for row in &rows {
-                            tokio::time::timeout(
-                                std::time::Duration::from_secs(1),
-                                row.tx.closed(),
-                            )
-                            .await
-                            .unwrap_or_else(|_| {
-                                panic!("{path}: dropping the committed group must cancel every row")
-                            });
-                        }
-                        for row in &mut rows {
-                            worker::release_pending_admit();
-                            worker::release_request_reservation(row);
-                        }
+                        all_closed(&rows, &what).await;
+                        release(&mut rows);
+                        continue;
+                    }
+                    if case == "refused" {
+                        rows[1]
+                            .tx
+                            .send(Event::Error(worker::EngineError::rate_limit("lane full")))
+                            .unwrap();
+                        let lines = tokio::time::timeout(
+                            std::time::Duration::from_secs(2),
+                            sse_data_lines(response),
+                        )
+                        .await
+                        .expect("the refused group ends");
+                        assert_eq!(
+                            lines.len(),
+                            1,
+                            "{what}: the error is the last chunk: {lines:?}"
+                        );
+                        let error: serde_json::Value = serde_json::from_str(&lines[0]).unwrap();
+                        assert_eq!(error["error"]["code"], "rate_limit_exceeded", "{what}");
+                        all_closed(&rows, &what).await;
+                        assert!(mock.events().contains(&MeterEvent::Reject {
+                            status: 429,
+                            code: "rate_limit_exceeded".into(),
+                        }));
+                        release(&mut rows);
                         continue;
                     }
                     // Admission after the commit: each row primes, emits one token and retires.
-                    for (index, row) in rows.iter_mut().enumerate() {
-                        worker::release_pending_admit();
-                        worker::release_request_reservation(row);
+                    release(&mut rows);
+                    for (index, row) in rows.iter().enumerate() {
                         let id = index as u32 + 1;
                         for event in [
                             Event::PromptUsage {
@@ -20105,7 +20186,7 @@ default_reasoning_effort = "always"
                     for index in 0..2 {
                         assert!(
                             lines.iter().any(|l| l.contains(&format!("row{index}"))),
-                            "{path}: row {index} reaches the committed stream: {lines:?}"
+                            "{what}: row {index} reaches the committed stream: {lines:?}"
                         );
                     }
                     assert!(
@@ -20114,7 +20195,7 @@ default_reasoning_effort = "always"
                             cached: 0,
                             completion: 2,
                         }),
-                        "{path}: the committed group bills its rows: {:?}",
+                        "{what}: the committed group bills its rows: {:?}",
                         mock.events()
                     );
                 }
@@ -20130,13 +20211,16 @@ default_reasoning_effort = "always"
     fn a_choice_group_queue_shed_is_a_logged_429() {
         const NAME: &str = "a_choice_group_queue_shed_is_a_logged_429";
         let lane = lanes::Lane::Interactive;
-        let bound = max_queue_depth(lane_cap(lane).max(1));
+        let cap = lane_cap(lane).max(1);
+        let bound = max_queue_depth(cap);
+        // One queued request ahead: the shed scales the per-request estimate by queued waves.
         let estimate = reset_estimate_s(&worker::Metrics {
             completed: 10,
             tokens_out: 3_870,
             step_p50_ms: 250.0,
             ..Default::default()
-        });
+        })
+        .saturating_mul((1 / cap + 1) as u64);
         if !in_child(NAME) {
             let stderr = rerun_in_child(NAME, &[]);
             for line in [
