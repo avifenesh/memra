@@ -138,12 +138,12 @@ The bug: `dspark_on` was derived before the conversion's session (`dspark_prefix
 The two 5090 arms produced completions of the same lengths (428 / 518 / 436 / 469), each identical to its reference. The 5090 runs used `GATE_P_PARAS=10 GATE_S_PARAS=12` (x0 / a / b prompts 1,745 / 3,857 / 3,961 tokens); the GB10 run used 70 / 80 (12,243 / 26,239 / 26,343).
 
 **Gate exit status.** Until this PR `cold-drafter-gate.sh` exited 0 whatever happened. It had no `pipefail`, the compare and the shape check piped into `tee`, and a failed `boot && run` was never recorded. At the old default sizes (70 / 80, about 26k tokens on b) a 24 GB 5090 refuses every request with HTTP 400. arm.jsonl is then never written, the compare raises, and the script still exits 0. Now:
-- the defaults are 10 / 12, which fit the 27B on a 24 GB 5090; GB10 runs pass 70 / 80 to repeat the long shape;
-- `compare.txt` starts with the sizes, context and doors used;
+- the default sizes follow the card's memory (`nvidia-smi` memory.total of the first visible device): under 32 GB, 10 / 14 (about 4.4k tokens on b, S above the drafter window); GB10 (unified memory, `[N/A]`), an RTX PRO 6000 and larger cards keep 70 / 80. 30 / 30 (about 10.8k on b) is refused on a 24 GB 5090 under the arm's 4,000 MB prefix cache;
+- `compare.txt` starts with the sizes, the memory reading, context and doors used;
 - a refused request prints its HTTP status and body;
 - a failed arm run, reference run, compare or shape check sets the exit status, and the last line is `COLD-DRAFTER GATE PASS` or `FAIL`.
 
-`tools/test_dspark_cold_drafter_gate.py` runs the script against a stub server, no GPU. It has four cases: agreeing, refused, divergent, and re-vetoed (4 / 4 / 0 / 0). Only the agreeing case may exit 0. Against main's script all four cases fail, because it exits 0 in every one. Every receipt above has its `arm.jsonl` and `ref.jsonl` and a compare that ran.
+`tools/test_dspark_cold_drafter_gate.py` runs the script against a stub server, no GPU. It has four cases: agreeing (24 GB reading, expects 10 / 14), refused, divergent (`[N/A]` reading, expects 70 / 80), and re-vetoed (4 / 4 / 0 / 0). Only the agreeing case may exit 0. Against main's script all four cases fail, because it exits 0 in every one. Every receipt above has its `arm.jsonl` and `ref.jsonl` and a compare that ran.
 
 **GB10 multi-turn persistence** (`gb10-capture/multi-turn/`, spark-b23d, GGUF DFlash2, doors on by device default, `MEMRA_PREFIX_STABLE_BOUNDARY=0`, client on the unit). Order main/fix/fix/main, fresh boot each. Each run has 4 sessions of three turns:
 1. x0: a plain greedy-penalized prime of P (12.2k tokens);
