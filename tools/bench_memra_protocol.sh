@@ -16,7 +16,7 @@ done
 
 echo '{"engine":"memra","ngen":'"$NGEN"',"runs":[' > "$OUT"
 for R in $(seq 0 "$RUNS"); do   # run 0 = warmup, discarded
-  LINE=$(MEMRA_NGEN="$NGEN" MEMRA_PROMPT_FILE="$PF" ./target/release/run-gen "$MODEL" 2>&1 \
+  LINE=$(MEMRA_NGEN="$NGEN" MEMRA_PROMPT_FILE="$PF" "${CARGO_TARGET_DIR:-./target}"/release/run-gen "$MODEL" 2>&1 \
          | grep -E "generated [0-9]+ tokens")
   TPS=$(echo "$LINE" | grep -oE '= [0-9.]+ tok/s' | grep -oE '[0-9.]+')
   echo "run $R: $LINE"

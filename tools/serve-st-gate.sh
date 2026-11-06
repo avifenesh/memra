@@ -59,7 +59,7 @@ echo "== serve-st-gate: checkpoint $ST =="
 
 # ---- CLI arm: run-gen ST dir branch, chat-templated greedy decode ----
 CLI_LOG=/tmp/serve-st-cli.log
-MEMRA_CHAT=1 MEMRA_NGEN=$NGEN target/release/run-gen "$ST" --prompt "$PROMPT" \
+MEMRA_CHAT=1 MEMRA_NGEN=$NGEN "${CARGO_TARGET_DIR:-target}"/release/run-gen "$ST" --prompt "$PROMPT" \
   > "$CLI_LOG" 2>&1 \
   || { echo "run-gen failed; log tail:"; tail -5 "$CLI_LOG"; exit 1; }
 CLI_TOKENS=$(grep '^tokens: ' "$CLI_LOG" | tail -1 | sed 's/^tokens: //')
@@ -71,7 +71,7 @@ CLI_TOKENS=$(grep '^tokens: ' "$CLI_LOG" | tail -1 | sed 's/^tokens: //')
 # per burst, so the response `tokens` array is only the per-token stream on the plain
 # tokenwise path (worker contract). Spec-vs-plain identity is gated separately below.
 start_server() {  # $1 = extra env (e.g. "MEMRA_SERVE_SPEC=0"), sets SPID
-  env $1 MEMRA_MODELS="st=$ST" MEMRA_ADDR=$ADDR target/release/memra-server \
+  env $1 MEMRA_MODELS="st=$ST" MEMRA_ADDR=$ADDR "${CARGO_TARGET_DIR:-target}"/release/memra-server \
     > /tmp/serve-st-server.log 2>&1 &
   SPID=$!
   # 27B-class ST dirs CPU-dequant ~29 GB at load (~13 min); 240s was calibrated on the

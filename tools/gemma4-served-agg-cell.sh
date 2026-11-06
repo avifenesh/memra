@@ -28,7 +28,7 @@ start_server() {  # $1 = seam value or "unset" (the shipping default), $2 = log
   local envargs=()
   if [ "$1" != "unset" ]; then envargs=(MEMRA_GEMMA4_BATCH="$1"); fi
   env "${envargs[@]}" MEMRA_COMPAT=openai MEMRA_MODELS="g4=$MODEL" MEMRA_ADDR=$ADDR \
-    target/release/memra-server > "$2" 2>&1 &
+    "${CARGO_TARGET_DIR:-target}"/release/memra-server > "$2" 2>&1 &
   SPID=$!
   for _ in $(seq 240); do curl -sf $BASE/health >/dev/null 2>&1 && return 0; sleep 2; done
   echo "server did not come up; tail:"; tail -8 "$2"; return 1

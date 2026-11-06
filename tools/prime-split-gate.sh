@@ -30,7 +30,7 @@
 # box battery is the authority (AGENTS.md: CI is compile-only, the battery is the real gate).
 set -uo pipefail
 cd "$(dirname "$0")/.." || exit 1
-PROBE=./target/release/concat-prime-probe
+PROBE="${CARGO_TARGET_DIR:-./target}"/release/concat-prime-probe
 MODEL=""
 DEVICES=0,1
 STAGES=2

@@ -31,7 +31,7 @@ rm -f "$KEYS" # --gen-key creates it
 # silently ran a STALE memra-server when one existed (rotted gate, H100 law 3).
 cargo build --release -p memra-server || exit 1
 
-BIN=target/release/memra-server
+BIN="${CARGO_TARGET_DIR:-target}"/release/memra-server
 # Keyring: acme x2 interactive (one to hot-revoke later), blue interactive (the
 # cross-tenant counterparty), bulk (batch class, rate_limit 2), dead (revoked pre-boot).
 KEY_A1=$("$BIN" --gen-key acme --keys "$KEYS") || exit 1

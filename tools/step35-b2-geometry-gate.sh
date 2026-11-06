@@ -60,7 +60,7 @@ fi
 NGPU=$(nvidia-smi --query-gpu=index --format=csv,noheader 2>/dev/null | wc -l)
 [ "$NGPU" -ge 2 ] || {
   echo "step35-b2-geometry-gate: SKIP (needs 2 GPUs for the 105GB PP-2 placement, have $NGPU)"; exit 0; }
-BIN=./target/release/memra-server
+BIN="${CARGO_TARGET_DIR:-./target}"/release/memra-server
 [ -x "$BIN" ] || { echo "step35-b2-geometry-gate: FAIL (no $BIN — build release first)"; exit 1; }
 # PRE-FLIGHT PORT GUARD (GATE-INTEGRITY-20260819 A-16). The headline assertion here is BYTE
 # IDENTITY against a c=1 reference; if a foreign responder holds 8094 the gate compares one

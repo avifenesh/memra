@@ -30,11 +30,11 @@ CYCLES="${2:-10}"
 cargo build --release -p memra-engine --bin graph-warmup-stress || exit 1
 
 echo "== graph-warmup-stress gate: $MODEL cycles=$CYCLES warmups=1 =="
-MEMRA_GRAPH_WARMUPS=1 target/release/graph-warmup-stress "$MODEL" --cycles "$CYCLES" \
+MEMRA_GRAPH_WARMUPS=1 "${CARGO_TARGET_DIR:-target}"/release/graph-warmup-stress "$MODEL" --cycles "$CYCLES" \
   || { echo "GATE FAIL: stress battery (warmups=1 stale-address class reproduced or fault)"; exit 1; }
 
 echo "== canary arm: injected graph-memory corruption must be CAUGHT =="
-MEMRA_GRAPH_WARMUPS=1 target/release/graph-warmup-stress "$MODEL" --cycles 1 --canary \
+MEMRA_GRAPH_WARMUPS=1 "${CARGO_TARGET_DIR:-target}"/release/graph-warmup-stress "$MODEL" --cycles 1 --canary \
   || { echo "GATE FAIL: canary not caught (comparator blind — arm 1 proves nothing)"; exit 1; }
 
 echo "ALL GREEN: graph-warmup-stress gate ($CYCLES cycles + canary)"

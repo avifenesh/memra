@@ -32,7 +32,7 @@
 set -uo pipefail
 cd "$(dirname "$0")/.." || exit 1
 
-PROBE=./target/release/concat-prime-probe
+PROBE="${CARGO_TARGET_DIR:-./target}"/release/concat-prime-probe
 CANARY=0
 MODEL=""
 LOG=""

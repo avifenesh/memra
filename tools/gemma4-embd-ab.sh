@@ -27,7 +27,7 @@ FAIL() { echo "  FAIL: $1"; FAILS=$((FAILS+1)); }
 start_server() {  # $1 = model path, $2 = log
   env MEMRA_COMPAT=openai MEMRA_MODELS="g4=$1" MEMRA_ADDR=$ADDR \
       MEMRA_DRAFT="$DRAFT" MEMRA_GEMMA_DRAFT_RANKS="$RANKS" MEMRA_GEMMA_TRIM_ADAPT=512 \
-      target/release/memra-server > "$2" 2>&1 &
+      "${CARGO_TARGET_DIR:-target}"/release/memra-server > "$2" 2>&1 &
   SPID=$!
   for _ in $(seq 240); do curl -sf $BASE/health >/dev/null 2>&1 && return 0; sleep 2; done
   echo "server did not come up; tail:"; tail -6 "$2"; return 1
