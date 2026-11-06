@@ -55,14 +55,20 @@ A script checks every claim against the tree: its quote must appear on the cited
 
 The wide share is mostly real sharing, not missing labels. The server, the tokenizer and the `Engine` launch helpers run for every model. One exception is called out in `findings.md`: 459 items write a process-global static, which makes their change reach the static's whole reach.
 
-## Rebuild on the code of b86fc497c2 (main at 516ec03e94)
+## Rebuild and re-annotation on the code of 3bbdf42ff9 (main at 5d70118b99)
 
-`build.py --run-scip` re-anchored the first build's annotations; no region was re-annotated.
+`build.py --run-scip` re-anchored the annotations onto the new tree. The items it could not re-anchor, and the ones whose labels a code change could have made wrong, were then re-annotated (2026-11-06; claim ids `R1106W1` to `R1106W4`, listed under `reannotated` in `annotations.json`).
 
 | Step | Result |
 |---|---|
-| Re-anchoring | 6,334 of 6,392 regions re-anchored. 58 were dropped, and their items widen back to every cell: 54 whose evidence quote is no longer in the item, 3 whose shifted span leaves the item, 1 whose item is gone. 38 of them are in `spec.rs` and `dflash.rs`, where main deleted the DSpark doors, so that slice is the one to re-annotate |
-| Precision | 17,275 items. 77.5% of items (71.9% of their lines) reach every family, 14.4% exactly one family and 7.8% several. 12.2% are GPU-only and 1.9% run on a narrower device set. 469 items write a process-global static |
+| Re-anchoring | 6,331 of 6,392 regions re-anchored. 61 were dropped: 57 whose evidence quote is no longer in the item, 3 whose shifted span leaves the item, 1 whose item is gone |
+| Targets | 57 items: 24 that lost a region, 14 in the DSpark and server files whose code changed under a region kept only by its quote, 13 with a region naming a DSpark restore door (#1069 made their default per device: ON on GB10 and the RTX PRO 6000 Max-Q, OFF on the RTX 5090), and 19 new or changed by #1069. An item can have several reasons |
+| Re-annotation | Four annotators and four skeptics. The 148 old regions on the targets were replaced by 231 new ones: 141 narrowing claims verified, 67 refuted or unverified and widened back to every cell, 23 that narrow nothing |
+| Route check | Route sets were the usual error in the first build, so a second skeptic pass judged only the route set of the 133 verified claims that narrow routes: 41 held, 92 widened to every route (their family, device and door limits stay) |
+| Result | 6,473 regions re-anchored; 2 still dropped (1 out of bounds, 1 item gone). 3 output-neutral claims lapsed because their item changed |
+| Precision | 17,288 items. 77.4% of items (71.8% of their lines) reach every family, 14.4% exactly one family and 7.9% several. 12.2% are GPU-only and 2.1% run on a narrower device set. 469 items write a process-global static |
+
+The re-annotation also confirmed 17 defects (1 medium, 16 low), listed at the end of `findings.md`.
 
 Lines are counted once per source line, for the innermost item that holds it. Counted that way, the first build's map gives 71.3%, not the 75% reported above.
 

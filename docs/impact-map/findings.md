@@ -3333,3 +3333,108 @@ Stage 0 listed candidates by script (items with no caller in the graph, identica
 
 - `crates/memra-engine/cu/mmq_q4_0.cu:147`: token-identical in mmq_q4_0.cu and mmq_q8_0.cu; both include mmq_mma_i8.cuh, one copy can live there
 
+## Re-annotation on main 5d70118b99 (2026-11-06)
+
+Found while re-annotating the items the rebuild could not re-anchor (README, "Rebuild and re-annotation"). Each was confirmed by an independent skeptic. Nothing here is fixed by this change.
+
+### medium: A cold-drafter restored session gets dspark_on=false: it publishes no capture and allocates an unused plain cache
+
+- where: `crates/memra-server/src/worker.rs:38598` (R1106W1, Errors (real bugs), confirmed)
+- detail: The cold-drafter conversion (37376-37478) runs only when !dspark_prefers_cold. It stores its session in dspark_prefix_restored, and that is folded into dspark_resume only at 38877. So dspark_on at 38598 is false for that request, with two effects. (1) dspark_capture_prefix (38610, which needs dspark_on, 1188) is false, so step_dspark_spec resumes with DsparkCapture::Off (42903-42906) and never publishes the tail-carrying boundary entry that the comment at 37372-37373 promises. Every later turn falls back to the plain entry and the veto again. (2) The carrier was taken, so cache is None (37680)
+- fix: Compute dspark_on as dspark_prefers_cold || dspark_resume.is_some() || dspark_prefix_restored.is_some() (or move the fold above 38598), so the capture request, the boundary cut and the cache arm see the installed session. Gate it with a serving-shape test: a cold-drafter turn publishes a tail entry that the next turn restores, and allocates no plain cache.
+
+### low: Restore refusal message carries a run of spaces from a lost line continuation
+
+- where: `crates/memra-engine/src/dflash.rs:5791` (R1106W3, Errors (real bugs), confirmed)
+- detail: The format string has about 18 literal spaces between '!=' and 'prompt', apparently a wrapped line whose trailing backslash was lost. Any log grep for 'cache.pos N != prompt M' misses this refusal.
+- fix: Rejoin the literal as "... cache.pos {} != prompt {tp}" or restore the backslash continuation.
+
+### low: unknown compute_cap reported as auto-detected 120a
+
+- where: `crates/memra-engine/build.rs:190` (R1106W4, Errors (real bugs), confirmed)
+- detail: On a box whose first GPU reports an unlisted cap (e.g. 8.6), target_for_compute_cap returns None, the fallback bakes 120a, and the warning claims it was auto-detected; Engine::new then refuses at runtime with a target_runs_on mismatch.
+- fix: In the Some arm, print a distinct 'unrecognized compute_cap {c}, falling back to 120a' warning when the map returns None, or fail the build.
+
+### low: Publication-sweep comment says DFlash restores whole-entry hits only
+
+- where: `crates/memra-server/src/worker.rs:31403` (R1106W1, Stale docs, confirmed)
+- detail: Since #1069, MEMRA_DSPARK_PARTIAL_RESTORE (strict-prefix restore) and MEMRA_DSPARK_BOUNDARY_CAPTURE (render-stable boundary cut) default ON with DFlash armed on GB10 and the RTX PRO 6000 Max-Q. Strict-prefix hits and boundary-cut entries are restorable there.
+- fix: Reword the comment: whole-entry hits restore everywhere; strict-prefix and boundary-cut entries also restore where the partial and boundary doors resolve ON.
+
+### low: DSPARK RESTORE block comment claims whole-entry only; the code admits strict prefixes
+
+- where: `crates/memra-server/src/worker.rs:37255` (R1106W1, Stale docs, confirmed)
+- detail: The block comment (37255-37257) says a partial cover has no restorable trunk and that fed.len() == prompt.len() is the check. The code right below accepts partial_ok (37284-37286) under the partial door, which now defaults ON on gb10 and rtxpro6000, and primes the suffix through step_dspark_spec.
+- fix: Describe both covers: a whole entry always; a strict prefix plus a suffix prime under MEMRA_DSPARK_PARTIAL_RESTORE (device default ON on gb10 and the Max-Q with DFlash armed).
+
+### low: hyper_batched_decode_model doc says MEMRA_HYPER_BATCH is opt-in, default OFF; the engine door is default ON since 2026-08-31
+
+- where: `crates/memra-server/src/worker.rs:40438` (R1106W2, Stale docs, confirmed)
+- detail: HybridModel::hyper_batch_on maps unset to true (decode_batch.rs:2655). A glm5_next model therefore enters batched mHC chunks on a naked launch, which the comment and the impact-map routes table (plain: 'hyper when MEMRA_HYPER_BATCH=1'; batch door 'MEMRA_HYPER_BATCH (opt-in)') both deny. A reader trusting either would exclude the batch route for glm5_next.
+- fix: Doc at worker.rs:40438: 'default ON (MEMRA_HYPER_BATCH=0 rolls back to eager per-session decode)'. Fix the panic message at decode_batch.rs:2657-2658 to 'unset/1 = batched, 0 = eager'. Update the tables' plain/batch route door text.
+
+### low: DecodeChunkPolicy.dual doc claims explicit env only; it is ON by default on PP-2
+
+- where: `crates/memra-server/src/worker.rs:40971` (R1106W2, Stale docs, confirmed)
+- detail: dual_pp_mode_resolve maps unset MEMRA_DUAL_PP to Auto (pp.rs:568) and pp2_overlap_resolve maps unset MEMRA_PP_OVERLAP to true under Auto (pp.rs:876), so resolve_decode_chunk_policy sets dual=true on any PP-2 placement with batch PP and no host bounce. A qualification plan that reads the doc would skip the dual-wave cell on a default PP-2 launch.
+- fix: Doc: 'True on a PP-2 placement when MEMRA_DUAL_PP is unset (Auto) or 1 and MEMRA_PP_OVERLAP resolves on (unset follows Auto), with batch PP ready and no host bounce.'
+
+### low: Non-stream deadline refusal text explains the ceiling as a ~100 s proxy limit even where the ceiling is device-derived
+
+- where: `crates/memra-server/src/lib.rs:2898` (R1106W2, Stale docs, confirmed)
+- detail: The message now prints nonstream_timeout_ms_max(), which on a unified-memory device (GB10) is the derived full-context-prefill-plus-generation bound (thousands of seconds), not 90 s. The sentence 'the fronting proxy fails a non-streaming response whose headers take ~100 s' then contradicts the number it follows.
+- fix: Branch the explanation: when unified_nonstream_timeout_default() is Some, say the ceiling is the derived full-context-prefill-plus-generation bound for this device. Otherwise keep the proxy clause.
+
+### low: Exact-tier refusal message still says no exact class above 16
+
+- where: `crates/memra-engine/src/decode_batch.rs:1395` (R1106W3, Stale docs, confirmed)
+- detail: Since batch-spec 2026-11-03 the tier admits 9..32 (line 1390), with decode-wide for 17..32 (1391). chunk_cap_for returns 32 for unsplit exact models (worker.rs:41142-41144). The assert text still says nothing exact exists above 16 and that the scheduler chunks into <=16 groups. A B=33 refusal or a non-exact model therefore gets a misleading diagnosis.
+- fix: Reword the assert: the exact tier covers 9..32 (17..32 via decode-wide), the unsplit scheduler caps waves at 32 (16 under PP), and MEMRA_EXACT16_WHY=1 names the refusing tensor.
+
+### low: MEMRA_DFLASH_VERIFY_T default documented as 8; code defaults to nd+1
+
+- where: `docs/FLAGS.md:1320` (R1106W3, Stale docs, confirmed)
+- detail: All three reads (dflash.rs:5622-5626, 5829-5833, 6103-6107) use unwrap_or(nd + 1).clamp(2, nd + 1). nd = n_drafts(b) is b-1 (Dflash harvest) or b (Dspark harvest), so a block-16 drafter defaults to 16 or 17, not 8.
+- fix: Make the FLAGS.md row per path: dspark route = n_drafts+1 (harvest-keyed, clamp 2..n_drafts+1); legacy DFlash generate_spec_dflash = 8 (clamp 2..block).
+
+### low: Legacy-replay arm comment claims it also serves j==0 rounds
+
+- where: `crates/memra-engine/src/spec.rs:18153` (R1106W3, Stale docs, confirmed)
+- detail: The base+n_acc==0 case without replay now takes the zero-round fold at 18135 (`} else if !spec_replay {`). The else arm at 18152 runs only when MEMRA_SPEC_REPLAY=1. A reader who trusts the comment would think default traffic reaches the rollback+replay program on round-0 misses.
+- fix: Drop the 'or j==0 ...' clause and state that the arm runs only under MEMRA_SPEC_REPLAY=1.
+
+### low: dspark_boundary_split's doc block is attached to dspark_resume_split
+
+- where: `crates/memra-engine/src/dflash.rs:2883` (R1106W3, Stale docs, confirmed)
+- detail: The doc for the cold-prime split (2883-2896: off-grid refusal, boundary at or past prompt end) sits directly above the resume-split doc (2897) and fn dspark_resume_split (2914). Rustdoc merges both into dspark_resume_split, and dspark_boundary_split at 2941 has no doc.
+- fix: Move lines 2883-2896 above `pub(crate) fn dspark_boundary_split(` at 2941.
+
+### low: group4 door doc still says m=2..16
+
+- where: `crates/memra-engine/src/lib.rs:18998` (R1106W4, Stale docs, confirmed)
+- detail: matmul_decode_exact_group_pre now admits m up to group_tier_max() (32 inside the decode-wide scope) with the b32 tc/rpcs8 arms.
+- fix: Document m=2..=group_tier_max() (16, or 32 inside the decode-wide b32 scope) and name the b32_tc and b32_rpcs8 arms.
+
+### low: fused3/fused4 delegate comments say 9..=16
+
+- where: `crates/memra-engine/src/lib.rs:19524` (R1106W4, Stale docs, confirmed)
+- detail: The code tests (9..=self.group_tier_max()), so 17..32 also delegates inside the decode-wide scope; same text at lib.rs:19907 for fused4.
+- fix: Change both comments to 9..=group_tier_max().
+
+### low: batched_mcols doc misses the 16 and 32 tiers
+
+- where: `crates/memra-engine/src/lib.rs:23623` (R1106W4, Stale docs, confirmed)
+- detail: The function returns 16 for 9..16 and 32 above 16; the doc lists only b2/b4/b8.
+- fix: Add 9..16 -> b16 and 17..32 -> b32 (decode-wide scope only).
+
+### low: decode_batch says B>1 keeps the three singles
+
+- where: `crates/memra-engine/src/decode_batch.rs:3205` (R1106W4, Stale docs, confirmed)
+- detail: matmul_nvfp4_fused3 now serves B=2..8 through fused3_b8_rpsc and B=9..32 through the group3 door; the same stale claim for the quartet sits at decode_batch.rs:3358.
+- fix: Describe the B tiers (1 fused, 2..8 batched twin, 9..group_tier_max group door) or point at the launcher docs.
+
+### low: vision boot comment predates the checkpoint-dir fallback
+
+- where: `crates/memra-server/src/worker.rs:27914` (R1106W4, Stale docs, confirmed)
+- detail: VisionTower::load now opens the directory's own safetensors checkpoint when outside.safetensors is absent.
+- fix: Add that MEMRA_VISION_DIR may name the served checkpoint directory itself.
