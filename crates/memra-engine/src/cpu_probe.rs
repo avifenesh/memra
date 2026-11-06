@@ -48,6 +48,8 @@ fn compute(steps: u64) -> f64 {
 
 /// DAY71: `compute`'s register-only chain without its clock, for `counted_chain`: `steps` xorshift steps, three
 /// dependent shift-and-xor pairs each (`compute` itself is kept as DAY67 and DAY68 ran it).
+/// x86_64 only, like its one caller (aarch64 builds such as GB10 otherwise fail clippy on dead code).
+#[cfg(target_arch = "x86_64")]
 fn chain(steps: u64) -> u64 {
     let mut x: u64 = black_box(0x9E37_79B9_7F4A_7C15);
     for _ in 0..steps {
