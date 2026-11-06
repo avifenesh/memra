@@ -4817,7 +4817,9 @@ static __device__ __forceinline__ void cp_async_wait_0() { asm volatile("cp.asyn
 
 // Issue one KV tile's staging into buffer `sKb`/`sVb` (cp.async 16B lines; tail rows
 // past nk zero-filled with plain stores — visible after the same __syncthreads).
-template<int HD, bool SWIZZLE = false>
+// NT = threads that share the staging loop (the CTA size; 2*N_WARPS*WARP_SZ for the
+// two-head h2 body). The default keeps every existing caller's loop unchanged.
+template<int HD, bool SWIZZLE = false, int NT = N_WARPS*WARP_SZ>
 static __device__ __forceinline__ void stage_kv_tile_async(
         __nv_bfloat16* sKb, __nv_bfloat16* sVb,
         const __nv_bfloat16* __restrict__ Kw, const __nv_bfloat16* __restrict__ Vw,
@@ -4825,7 +4827,7 @@ static __device__ __forceinline__ void stage_kv_tile_async(
 {
     constexpr int HEAD_DIM = HD;
     const uint4 z4 = make_uint4(0u, 0u, 0u, 0u);
-    for (int i = bt; i < BK*(HEAD_DIM/8); i += N_WARPS*WARP_SZ) {
+    for (int i = bt; i < BK*(HEAD_DIM/8); i += NT) {
         int kk = i / (HEAD_DIM/8), dv = i % (HEAD_DIM/8);
         int ds = dv;
         if constexpr (SWIZZLE) ds ^= (kk & 7);
@@ -4840,11 +4842,11 @@ static __device__ __forceinline__ void stage_kv_tile_async(
     cp_async_commit();
 }
 
-template<int HD>
+template<int HD, int NT = N_WARPS * WARP_SZ>
 static __device__ __forceinline__ void stage_kv_plane_async(
         __nv_bfloat16* dst, const __nv_bfloat16* src,
         int k0, int nk, int stride, size_t off, int bt) {
-    for (int i = bt; i < BK * (HD / 8); i += N_WARPS * WARP_SZ) {
+    for (int i = bt; i < BK * (HD / 8); i += NT) {
         const int row = i / (HD / 8), col = i % (HD / 8);
         __nv_bfloat16* target = dst + row * HD + (col ^ (row & 7)) * 8;
         if (row < nk) cp_async_16(target, src + (size_t)(k0 + row) * stride + off + col * 8);
@@ -4853,23 +4855,34 @@ static __device__ __forceinline__ void stage_kv_plane_async(
     cp_async_commit();
 }
 
-template<int HD, bool TRIPLE = false>
+// HPC = query heads per CTA (h2 lane, GB10 2026-11-06). HPC=2 runs two heads of ONE KV
+// head in an 8-warp CTA (warps 0-3 head 2y, warps 4-7 head 2y+1, same 64 query rows), so each
+// staged K/V tile feeds both heads. Every row keeps its head's tile sequence, QK/softmax/PV
+// order and conversions: the rows and tile bounds are the HPC=1 CTA's, so outputs are
+// bit-identical. PREG = P operands from the C fragments in registers (the TRIPLE conversion)
+// with the double-buffered K/V planes; HPC>1 requires PREG (no per-warp sP slots).
+// HPC=1 with PREG=TRIPLE folds to the original expressions.
+template<int HD, bool TRIPLE = false, int HPC = 1, bool PREG = TRIPLE>
 static __device__ __forceinline__ void fa_prefill_qw_db_body(
         const float* __restrict__ Q, const __nv_bfloat16* __restrict__ Kw,
         const __nv_bfloat16* __restrict__ Vw, float* __restrict__ O,
         int head_dim, int n_head, int n_head_kv, int T, int T_kv,
         float scale, int causal, int kv_dim_k, int kv_dim_v, int window = 0)
 {
+    static_assert(HPC == 1 || PREG, "multi-head CTAs keep P in registers");
+    static_assert(!TRIPLE || PREG, "three-plane staging needs register P");
     constexpr int HEAD_DIM  = HD;
     constexpr int BQ = BLOCK_Q;
     constexpr int HD_KTILES = HD / K_STEP;
     constexpr int O_NBLK    = HD / N_KEYS;
+    constexpr int NT = HPC * N_WARPS * WARP_SZ;
     const int warp = threadIdx.y;
     const int lane = threadIdx.x;
-    const int head    = blockIdx.y;
+    const int wq = (HPC == 1) ? warp : (warp % N_WARPS);
+    const int head    = (HPC == 1) ? (int)blockIdx.y : (int)blockIdx.y * HPC + warp / N_WARPS;
     const int kv_head = head / (n_head / n_head_kv);
     const int q_base  = blockIdx.x * BQ;
-    const int qrow_base = q_base + warp*M_ROWS;
+    const int qrow_base = q_base + wq*M_ROWS;
     if (head >= n_head || q_base >= T) return;
     const int nqw = min(M_ROWS, T - qrow_base);
 
@@ -4880,10 +4893,10 @@ static __device__ __forceinline__ void fa_prefill_qw_db_body(
     __nv_bfloat16* sK1 = sK0 + BK*HEAD_DIM;                      // BK*HEAD_DIM
     __nv_bfloat16* sV0 = sK1 + BK*HEAD_DIM;                      // BK*HEAD_DIM
     __nv_bfloat16* sV1 = sV0 + BK*HEAD_DIM;                      // BK*HEAD_DIM
-    __nv_bfloat16* sP  = TRIPLE ? nullptr : sV1 + BK*HEAD_DIM;                      // BQ*BK
-    float* sL = TRIPLE ? nullptr : (float*)(sP + BQ*BK);                        // BQ f32
-    __nv_bfloat16* sPw = TRIPLE ? nullptr : sP + warp*M_ROWS*BK;
-    float* sLw = TRIPLE ? nullptr : sL + warp*M_ROWS;
+    __nv_bfloat16* sP  = PREG ? nullptr : sV1 + BK*HEAD_DIM;                        // BQ*BK
+    float* sL = PREG ? nullptr : (float*)(sP + BQ*BK);                          // BQ f32
+    __nv_bfloat16* sPw = PREG ? nullptr : sP + warp*M_ROWS*BK;
+    float* sLw = PREG ? nullptr : sL + warp*M_ROWS;
     // The initial Q staging uses the two K buffers before the first prefetch.
     __nv_bfloat16* sQstage = sK0 + warp*M_ROWS*HEAD_DIM;
 
@@ -4924,12 +4937,12 @@ static __device__ __forceinline__ void fa_prefill_qw_db_body(
 
         if (nt > t_start) {
             if constexpr (TRIPLE) {
-                stage_kv_plane_async<HD>((t_start & 1) ? sK1 : sK0, Kw,
+                stage_kv_plane_async<HD, NT>((t_start & 1) ? sK1 : sK0, Kw,
                     t_start * BK, min(BK, T_kv - t_start * BK), kv_dim_k, kv_off, bt);
-                stage_kv_plane_async<HD>(sV0, Vw,
+                stage_kv_plane_async<HD, NT>(sV0, Vw,
                     t_start * BK, min(BK, T_kv - t_start * BK), kv_dim_v, kv_off, bt);
             } else {
-                stage_kv_tile_async<HD, true>((t_start & 1) ? sK1 : sK0, (t_start & 1) ? sV1 : sV0,
+                stage_kv_tile_async<HD, true, NT>((t_start & 1) ? sK1 : sK0, (t_start & 1) ? sV1 : sV0,
                     Kw, Vw, t_start * BK, min(BK, T_kv - t_start * BK), kv_dim_k, kv_dim_v, kv_off, bt);
             }
         }
@@ -4942,10 +4955,10 @@ static __device__ __forceinline__ void fa_prefill_qw_db_body(
             if (ti + 1 < nt) {
                 const int k1 = (ti + 1) * BK;
                 if constexpr (TRIPLE) {
-                    stage_kv_plane_async<HD>((ti & 1) ? sK0 : sK1, Kw,
+                    stage_kv_plane_async<HD, NT>((ti & 1) ? sK0 : sK1, Kw,
                         k1, min(BK, T_kv - k1), kv_dim_k, kv_off, bt);
                 } else {
-                    stage_kv_tile_async<HD, true>((ti & 1) ? sK0 : sK1, (ti & 1) ? sV0 : sV1,
+                    stage_kv_tile_async<HD, true, NT>((ti & 1) ? sK0 : sK1, (ti & 1) ? sV0 : sV1,
                         Kw, Vw, k1, min(BK, T_kv - k1), kv_dim_k, kv_dim_v, kv_off, bt);
                 }
                 cp_async_wait_1();
@@ -5021,7 +5034,7 @@ static __device__ __forceinline__ void fa_prefill_qw_db_body(
             m_lo = m_new_lo; m_hi = m_new_hi;
 
             ATile Pf[BK / K_STEP];
-            if constexpr (TRIPLE) {
+            if constexpr (PREG) {
                 // C's adjacent output columns are exactly A's bf16-pair layout.
                 // Preserve each scalar RN conversion; no reduction is introduced.
                 #pragma unroll
@@ -5061,7 +5074,7 @@ static __device__ __forceinline__ void fa_prefill_qw_db_body(
                 #pragma unroll
                 for (int kk = 0; kk < BK; kk += K_STEP) {
                     ATile A; ATile Bt;
-                    if constexpr (TRIPLE) A = Pf[kk / K_STEP];
+                    if constexpr (PREG) A = Pf[kk / K_STEP];
                     else ld_A_sw4(A, sPw, 0, kk/8, BK/8);
                     ld_A_trans_sw(Bt, sV, kk, d0/8, HEAD_DIM/8);
                     BTile Blo; Blo.x[0]=Bt.x[0]; Blo.x[1]=Bt.x[2];
@@ -5078,12 +5091,12 @@ static __device__ __forceinline__ void fa_prefill_qw_db_body(
             if constexpr (TRIPLE) {
                 if (ti + 1 < nt) {
                     const int k1 = (ti + 1) * BK;
-                    stage_kv_plane_async<HD>(sV0, Vw, k1, min(BK, T_kv - k1), kv_dim_v, kv_off, bt);
+                    stage_kv_plane_async<HD, NT>(sV0, Vw, k1, min(BK, T_kv - k1), kv_dim_v, kv_off, bt);
                 }
             }
         }
 
-        if constexpr (!TRIPLE) {
+        if constexpr (!PREG) {
             if (c0 == 0) { sLw[r_lo] = l_lo; sLw[r_hi] = l_hi; }
             __syncwarp();
         }
@@ -5095,7 +5108,7 @@ static __device__ __forceinline__ void fa_prefill_qw_db_body(
                 int r = CTile::get_i(l);
                 int d = c*N_KEYS + CTile::get_j(l);
                 if (r < nqw) {
-                    const float lv = TRIPLE ? ((l < 2) ? l_lo : l_hi) : sLw[r];
+                    const float lv = PREG ? ((l < 2) ? l_lo : l_hi) : sLw[r];
                     float linv = (lv > 0.0f) ? (1.0f / lv) : 0.0f;
                     O[((size_t)(qrow_base + r) * n_head + head) * head_dim + d] = O_acc[c].x[l] * linv;
                 }
@@ -5120,6 +5133,18 @@ extern "C" __global__ void __launch_bounds__(N_WARPS*WARP_SZ, 2) fa_prefill_qw_t
         float scale, int causal, int kv_dim_k, int kv_dim_v) {
     fa_prefill_qw_db_body<256, true>(Q, Kw, Vw, O, head_dim, n_head, n_head_kv, T, T_kv,
                                       scale, causal, kv_dim_k, kv_dim_v);
+}
+
+// h2 (GB10 lane, 2026-11-06): two query heads of one KV head per 8-warp CTA over the
+// double-buffered K/V planes, P from registers. Grid (ceil(T/64), n_head/2), block (32, 8),
+// 64 KB dynamic smem (the four K/V planes; Q staging uses them before the first prefetch).
+// Same per-row program as fa_prefill_qw_db and fa_prefill_qw_t3 (bit-identical output).
+extern "C" __global__ void __launch_bounds__(2*N_WARPS*WARP_SZ, 1) fa_prefill_qw_h2(
+        const float* Q, const __nv_bfloat16* Kw, const __nv_bfloat16* Vw, float* O,
+        int head_dim, int n_head, int n_head_kv, int T, int T_kv,
+        float scale, int causal, int kv_dim_k, int kv_dim_v) {
+    fa_prefill_qw_db_body<256, false, 2, true>(Q, Kw, Vw, O, head_dim, n_head, n_head_kv, T, T_kv,
+                                               scale, causal, kv_dim_k, kv_dim_v);
 }
 
 extern "C" __global__ void __launch_bounds__(N_WARPS*WARP_SZ, 1) fa_prefill_qw_db_hd128(
@@ -9809,6 +9834,15 @@ extern "C" __global__ void __launch_bounds__(N_WARPS*WARP_SZ, 2) fa_prefill_qw_t
     const int T_kv = (int)table[7];
     fa_prefill_qw_db_body<256, true>(Q, Kw, Vw, O, head_dim, n_head, n_head_kv, T, T_kv,
                                       scale, causal, kv_dim_k, kv_dim_v);
+}
+
+extern "C" __global__ void __launch_bounds__(2*N_WARPS*WARP_SZ, 1) fa_prefill_qw_h2_prime_table(
+        const float* Q, const __nv_bfloat16* Kw, const __nv_bfloat16* Vw, float* O,
+        int head_dim, int n_head, int n_head_kv, int T, const unsigned long long* table,
+        float scale, int causal, int kv_dim_k, int kv_dim_v) {
+    const int T_kv = (int)table[7];
+    fa_prefill_qw_db_body<256, false, 2, true>(Q, Kw, Vw, O, head_dim, n_head, n_head_kv, T, T_kv,
+                                               scale, causal, kv_dim_k, kv_dim_v);
 }
 
 // Experimental numeric class: GQA-packed rows, FP32 direct PV accumulation,

@@ -92,6 +92,7 @@ Numerical bodies preserve the corresponding eager entry's operation order.
 | `fa_dequant_kv_ws_bf16_prime_table` | True-depth dequantization into stable BF16 workspace | `Engine::fa_prefill_view_ws` |
 | `fa_prefill_qw_db_prime_table` | Existing four-plane attention with live causal depth | `Engine::fa_prefill_view_ws` |
 | `fa_prefill_qw_t3_prime_table` | Existing three-plane attention with live causal depth | `Engine::fa_prefill_view_ws` |
+| `fa_prefill_qw_h2_prime_table` | Two-head (h2) attention with live causal depth | `Engine::fa_prefill_view_ws` |
 | `ssm_conv1d_gdn_state_f32_prime_table` | Carried convolution reads the live ring | `Engine::ssm_conv1d_gdn_state_pad` |
 | `ssm_conv_ring_update_f32_prime_table` | Publishes the live convolution ring | `Engine::ssm_conv1d_gdn_state_pad` |
 | `gdn_chunk_state_mma_prime_table` | Chunked GDN reads/writes live ping-pong state | `Engine::gdn_scan_chunked` |
@@ -103,6 +104,7 @@ Numerical bodies preserve the corresponding eager entry's operation order.
 | Symbol | Purpose | Types | Architecture | Door | Binding |
 | --- | --- | --- | --- | --- | --- |
 | `fa_prefill_qw_t3` | Two K staging planes plus one V plane, register P operands; unchanged head-dim 256 prime arithmetic | BF16 KV, f32 Q/O | existing warp-MMA support | `MEMRA_PRIME_KV_T3`, default OFF | `Engine::fa_prefill_view_ws` |
+| `fa_prefill_qw_h2` | Two query heads of one KV head per 8-warp CTA over double-buffered K/V planes, register P operands; unchanged head-dim 256 prime arithmetic (2026-11-06) | BF16 KV, f32 Q/O | existing warp-MMA support | `MEMRA_PRIME_KV_H2`, default OFF | `Engine::fa_prefill_view_ws` |
 
 ## GLM TP pool-split indexer, 2026-09-08
 

@@ -1847,6 +1847,13 @@ pub(crate) fn fa_sm_count() -> i32 {
     })
 }
 
+/// `MEMRA_PRIME_KV_H2`: the two-head (h2) quantized-KV prime attention twin. Strict `1`
+/// selects it, `0`/unset keeps the four-plane db twin. Read once per process.
+fn prime_kv_h2_on() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var("MEMRA_PRIME_KV_H2").as_deref() == Ok("1"))
+}
+
 /// FA-prefill kernel-name suffix for a head_dim (the template-stamped twins in flash_attn.cu):
 /// 256 = the original names (qwen35 class, dispatch unchanged), 128 = `_hd128` (MiniMax-M3).
 /// Any other dim errors — callers gate to sdpa_naive before dispatching FA.
@@ -29985,11 +29992,23 @@ impl Engine {
                 && head_dim == 256
                 && t >= 128
                 && std::env::var("MEMRA_PRIME_KV_T3").as_deref() == Ok("1");
+            // Two query heads of one KV head per 8-warp CTA (h2): same per-row program as
+            // the db/t3 twins, each staged K/V tile read once for both heads.
+            let h2 = db
+                && !triple
+                && head_dim == 256
+                && t >= 128
+                && n_head % 2 == 0
+                && n_head_kv > 0
+                && (n_head / n_head_kv) % 2 == 0
+                && prime_kv_h2_on();
             let hd_sfx = fa_hd_suffix(head_dim)?;
             let f = self.func(&format!(
                 "fa_prefill_qw{}{hd_sfx}{}",
                 if triple {
                     "_t3"
+                } else if h2 {
+                    "_h2"
                 } else if db {
                     "_db"
                 } else {
@@ -29999,6 +30018,8 @@ impl Engine {
             ));
             let shmem = if triple {
                 (2 * 3 * BK * head_dim) as u32
+            } else if h2 {
+                (2 * 4 * BK * head_dim) as u32
             } else if db {
                 (2 * (4 * BK * head_dim + BLOCK_Q * BK) + 4 * BLOCK_Q) as u32
             } else {
@@ -30012,10 +30033,10 @@ impl Engine {
             let cfg = LaunchConfig {
                 grid_dim: (
                     (t as u32 + BLOCK_Q as u32 - 1) / BLOCK_Q as u32,
-                    n_head as u32,
+                    if h2 { n_head as u32 / 2 } else { n_head as u32 },
                     1,
                 ),
-                block_dim: (32, 4, 1),
+                block_dim: (32, if h2 { 8 } else { 4 }, 1),
                 shared_mem_bytes: shmem,
             };
             let (hd, nh, nhkv, ti, tkvi, cz) = (

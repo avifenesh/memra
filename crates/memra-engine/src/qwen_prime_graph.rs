@@ -383,6 +383,7 @@ impl Engine {
             "fa_dequant_kv_ws_bf16_prime_table",
             "fa_prefill_qw_db_prime_table",
             "fa_prefill_qw_t3_prime_table",
+            "fa_prefill_qw_h2_prime_table",
             "ssm_conv1d_gdn_state_f32_prime_table",
             "ssm_conv_ring_update_f32_prime_table",
             "gdn_chunk_state_mma_prime_table",
