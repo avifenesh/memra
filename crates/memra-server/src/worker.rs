@@ -1195,7 +1195,23 @@ fn dspark_session_armed(prefers_cold: bool, pool_resume: bool, prefix_restored: 
 /// longer byte-identical to the cold reference. Such a tail is not restorable; the request
 /// takes cold admission. Same rule as `ColdDrafterRefusal::ShortSuffix` for the conversion.
 fn dspark_floored_tail_too_short(tail_floor: usize, prompt_len: usize, window: usize) -> bool {
-    tail_floor > 0 && prompt_len < tail_floor.saturating_add(window)
+    tail_floor > 0 && prompt_len.saturating_sub(tail_floor) < window
+}
+
+/// `dspark_floored_tail_too_short` for a prefix entry's drafter tail and the live drafter's
+/// window (`sliding_window + block_size`). No tail or no drafter answers false: the other
+/// restorable checks already refuse those. Admission, the restorable-hit probe, the
+/// restorable-hit lookup and the restore itself all apply this rule, so a hit admission plans
+/// as a DFlash restore is never refused at consume for its floor.
+fn dspark_entry_tail_floor_short(
+    tail: Option<&memra_engine::dflash::DflashKvTail>,
+    prompt_len: usize,
+    window: Option<usize>,
+) -> bool {
+    match (tail, window) {
+        (Some(tail), Some(window)) => dspark_floored_tail_too_short(tail.floor, prompt_len, window),
+        _ => false,
+    }
 }
 
 fn dspark_prefix_capture_requested(
@@ -10061,6 +10077,11 @@ impl PrefixCache {
             || entry.last_logits.len() != vocab
             || entry.last_logits.iter().any(|v| !v.is_finite())
             || tail.validate_restore(cfg, ctx_cap).is_err()
+            || dspark_floored_tail_too_short(
+                tail.floor,
+                prompt.len(),
+                cfg.sliding_window + cfg.block_size,
+            )
             || !memra_engine::dflash::dspark_spec_prompt_fits(
                 prompt.len(), ctx_cap, cfg.block_size,
                 cfg.sliding_window, is_dflash2,
@@ -36443,11 +36464,19 @@ fn admit(
     // beside the hit itself so the probe gate can distinguish "a hit the conversion will
     // consume" from "a hit that would cost the restore for nothing" (strict-prefix hits — the
     // multi-turn shape — convert never, so they must not buy the carrier).
+    let dspark_tail_window = dspark_draft
+        .as_ref()
+        .map(|d| d.cfg.sliding_window + d.cfg.block_size);
     let mut dspark_restorable_hit = dspark_prefix_restore_on()
         && consumable_hit
             .map(|i| {
                 let en = &px.entries[&pool_key][i];
                 dspark_hit_is_restorable(en.toks.len(), prompt.len(), en.dspark_draft.is_some())
+                    && !dspark_entry_tail_floor_short(
+                        en.dspark_draft.as_ref(),
+                        prompt.len(),
+                        dspark_tail_window,
+                    )
             })
             .unwrap_or(false);
     let cold_prefix_inputs = DsparkColdPrefixAdmission {
@@ -36492,6 +36521,11 @@ fn admit(
         let plain_len = px.entries[&pool_key][plain_i].toks.len();
         let alt = px.lookup_where(&pool_key, &prompt, |e| {
             dspark_hit_is_restorable(e.toks.len(), prompt.len(), e.dspark_draft.is_some())
+                && !dspark_entry_tail_floor_short(
+                    e.dspark_draft.as_ref(),
+                    prompt.len(),
+                    dspark_tail_window,
+                )
         });
         if let Some(alt_i) = alt {
             let alt_len = px.entries[&pool_key][alt_i].toks.len();
@@ -49119,7 +49153,8 @@ mod tests {
         // on comment-stripped source: the binding passes the restore and comes after the
         // conversion's log site.
         let src = include_str!("worker.rs");
-        let code: String = src
+        let production = &src[..src.find("\nmod tests {").expect("the tests module")];
+        let code: String = production
             .lines()
             .map(|l| l.split("//").next().unwrap_or(""))
             .collect::<Vec<_>>()
@@ -49167,20 +49202,34 @@ mod tests {
             "the whole window above the floor"
         );
         assert!(
-            !super::dspark_floored_tail_too_short(usize::MAX, usize::MAX, window),
-            "no overflow"
+            super::dspark_floored_tail_too_short(usize::MAX, usize::MAX, window),
+            "no rows above the floor: short, and no overflow"
         );
-        // The restore block consults it before importing the tail.
+        assert!(
+            !super::dspark_entry_tail_floor_short(None, 10, Some(window)),
+            "no tail"
+        );
+        // Admission, both probe sites and the restore block apply the same rule (production
+        // source only, comment-stripped, so neither this test nor a comment satisfies it).
         let src = include_str!("worker.rs");
-        let code: String = src
+        let production = &src[..src.find("\nmod tests {").expect("the tests module")];
+        let code: String = production
             .lines()
             .map(|l| l.split("//").next().unwrap_or(""))
             .collect::<Vec<_>>()
             .join("\n");
         let squashed = code.split_whitespace().collect::<Vec<_>>().join(" ");
-        assert!(squashed.contains(
-            "if (full_cover || partial_ok) && entry_tail_present && !tail_floor_short && shape_ok {"
-        ));
+        for needle in [
+            "if (full_cover || partial_ok) && entry_tail_present && !tail_floor_short && shape_ok {",
+            "|| tail.validate_restore(cfg, ctx_cap).is_err() || dspark_floored_tail_too_short( tail.floor, prompt.len(), cfg.sliding_window + cfg.block_size, )",
+            "dspark_hit_is_restorable(en.toks.len(), prompt.len(), en.dspark_draft.is_some()) && !dspark_entry_tail_floor_short(",
+            "dspark_hit_is_restorable(e.toks.len(), prompt.len(), e.dspark_draft.is_some()) && !dspark_entry_tail_floor_short(",
+        ] {
+            assert!(
+                squashed.contains(needle),
+                "the floored-tail rule is missing at: {needle}"
+            );
+        }
     }
 
     #[test]
@@ -51162,6 +51211,7 @@ mod tests {
             "boundary",
             "missing-tail",
             "short-tail",
+            "floored-short-tail",
             "storage",
             "tail-position",
             "logits",
@@ -51204,6 +51254,16 @@ mod tests {
                     let tail = en.dspark_draft.as_mut().unwrap();
                     tail.rows -= 1;
                     tail.base += 1;
+                }
+                "floored-short-tail" => {
+                    // A conversion's export: the whole history above floor F is 20 rows, a
+                    // valid geometry, but the window is 24 (16 + 8), so a cold prime of the
+                    // prompt reads rows below F. Admission must not plan it.
+                    let tail = en.dspark_draft.as_mut().unwrap();
+                    tail.floor = rows - 20;
+                    tail.base = rows - 20;
+                    tail.rows = 20;
+                    tail.layers = vec![(engine.zeros(40).unwrap(), engine.zeros(40).unwrap())];
                 }
                 "storage" => {
                     en.dspark_draft.as_mut().unwrap().layers[0].0 = engine.zeros(1).unwrap()
