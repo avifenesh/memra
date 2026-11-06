@@ -854,7 +854,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         let issue_raw = started.elapsed().as_secs_f64();
         e.stream().synchronize()?;
         eprintln!(
-            "[tp-graph-probe] M4 dispatch: builder {:.2}us/launch vs raw-prebuilt {:.2}us/launch              (delta {:.2}us x ~1350 launches/token = {:.2}ms/token reclaimable)",
+            "[tp-graph-probe] M4 dispatch: builder {:.2}us/launch vs raw-prebuilt {:.2}us/launch \
+             (delta {:.2}us x ~1350 launches/token = {:.2}ms/token reclaimable)",
             issue_builder / n as f64 * 1e6,
             issue_raw / n as f64 * 1e6,
             (issue_builder - issue_raw) / n as f64 * 1e6,

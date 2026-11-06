@@ -24982,13 +24982,15 @@ mod verify_topk_tests {
         // `load`: "MEMRA_DSV4_DECODE_PATH=device requires MEMRA_DSV4_EXPERT_ARM=native".
         assert!(
             !on_device || expert_native,
-            "DEFAULT CONFIGURATION CANNOT BOOT: decode path resolves device and              the expert arm resolves bf16; load refuses that pair"
+            "DEFAULT CONFIGURATION CANNOT BOOT: decode path resolves device and \
+             the expert arm resolves bf16; load refuses that pair"
         );
         // `load`: "MEMRA_DSV4_VERIFY_TOPK=device requires device math".
         assert!(
             verify_topk != Dsv4VerifyTopk::Device
                 || matches!(decode_path, DecodePath::Device { host_math: false }),
-            "DEFAULT CONFIGURATION CANNOT BOOT: verify-topk resolves device              without device math"
+            "DEFAULT CONFIGURATION CANNOT BOOT: verify-topk resolves device \
+             without device math"
         );
         // `validate_matrix_program`, which the matrix default must satisfy: the
         // matrix program is unconditional now, so every term it needs from a

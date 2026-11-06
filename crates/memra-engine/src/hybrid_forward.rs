@@ -19497,7 +19497,12 @@ impl HybridModel {
         // dequant-once arm, which runs on OUR stream and cannot take this race.
         if crate::moe_f16g_mode() == 1 {
             decline_once(
-                "MEMRA_MOE_F16G=1 is REFUSED on the glm5 sigmoid grouped prefill:                  cublasGemmGroupedBatchedEx issues on cuBLAS-internal streams unordered with                  ours, and on this walk's 283-group shape that race silently destroyed the                  trunk and killed the worker (2026-09-02 boot D, research/glm5-b200-20260902/                 box/prefill/). Use MEMRA_MOE_F16G=2 (the default) or the MEMRA_B200_PRIME_V2                  dequant-once arm",
+                "MEMRA_MOE_F16G=1 is REFUSED on the glm5 sigmoid grouped prefill: \
+                 cublasGemmGroupedBatchedEx issues on cuBLAS-internal streams unordered with \
+                 ours, and on this walk's 283-group shape that race silently destroyed the \
+                 trunk and killed the worker (2026-09-02 boot D, research/glm5-b200-20260902/ \
+                 box/prefill/). Use MEMRA_MOE_F16G=2 (the default) or the MEMRA_B200_PRIME_V2 \
+                 dequant-once arm",
                 t,
                 il,
             );

@@ -7063,7 +7063,8 @@ impl Engine {
             .transpose()
             .map_err(|err| -> Box<dyn std::error::Error> {
                 format!(
-                    "{err} [append len={} retain_from={retain_from} append_rows={append_rows}                      base={base_before:?} called from {caller}]",
+                    "{err} [append len={} retain_from={retain_from} append_rows={append_rows} \
+                     base={base_before:?} called from {caller}]",
                     kv.len
                 )
                 .into()
@@ -8374,8 +8375,14 @@ impl Engine {
         // turns it into a named capture failure, and the door's contract sends the token down the
         // byte-identical eager walk instead of serving the garbage.
         if glm5_graph_capture_open() {
-            return Err("moe_router_sigmoid_topk_host was reached inside an open CUDA graph                         capture: the host readback would record an unexecuted DtoH and route on                         uninitialised memory. The captured layer's device-table MoE arm did not                         fire, so the capture-admission predicate (glm5_t1_dev_moe_ready) and the                         dispatch predicate (vrows_fires) disagree"
-                .into());
+            return Err(
+                "moe_router_sigmoid_topk_host was reached inside an open CUDA graph \
+                        capture: the host readback would record an unexecuted DtoH and route on \
+                        uninitialised memory. The captured layer's device-table MoE arm did not \
+                        fire, so the capture-admission predicate (glm5_t1_dev_moe_ready) and the \
+                        dispatch predicate (vrows_fires) disagree"
+                    .into(),
+            );
         }
         let (sel_idx, sel_w) = self.moe_router_sigmoid_topk(
             logits,
@@ -25195,7 +25202,8 @@ impl Engine {
             || done_ctr.is_empty()
         {
             return Err(format!(
-                "qk_norm_rope_append_inc geometry head_dim={head_dim} nh_q={nh_q} nh_k={nh_k}                  kv_k={kv_dim_k} kv_v={kv_dim_v}"
+                "qk_norm_rope_append_inc geometry head_dim={head_dim} nh_q={nh_q} nh_k={nh_k} \
+                 kv_k={kv_dim_k} kv_v={kv_dim_v}"
             )
             .into());
         }

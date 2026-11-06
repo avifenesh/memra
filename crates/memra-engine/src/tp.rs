@@ -13308,7 +13308,10 @@ impl TpE4m3HostBounce {
                 let mu_v = engine.dtoh(&mu_d)?;
                 let tab_v = engine.dtoh_u64(tab_d)?;
                 eprintln!(
-                    "[determ-closure] rank={rank} t={t} csr_tok={:016x} exi={:016x} exoff={:016x}                      ex_off_host={:016x} mg={:016x} mu={:016x} tab={:016x} | n_active={n_active}                      n_pairs={n_pairs} width={width} local_ff={local_ff} n_expert={n_expert}                      qt={bank_qt} rb={}",
+                    "[determ-closure] rank={rank} t={t} csr_tok={:016x} exi={:016x} exoff={:016x} \
+                     ex_off_host={:016x} mg={:016x} mu={:016x} tab={:016x} | n_active={n_active} \
+                     n_pairs={n_pairs} width={width} local_ff={local_ff} n_expert={n_expert} \
+                     qt={bank_qt} rb={}",
                     Self::determ_stage_i32(&csr_v),
                     Self::determ_stage_i32(&exi_v),
                     Self::determ_stage_i32(&exo_v),

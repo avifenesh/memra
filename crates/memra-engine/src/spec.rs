@@ -1089,7 +1089,9 @@ pub(crate) fn scan_kv_plane(
                     .unwrap_or_else(|| "clean".into())
             };
             eprintln!(
-                "[kv-plane] layer {il} rank {rank} pos0={pos0} staged={staged}                  K={} V={} - the attended KV history is ALREADY non-finite, so a non-finite                  attention output here is a symptom and not the origin",
+                "[kv-plane] layer {il} rank {rank} pos0={pos0} staged={staged} \
+                 K={} V={} - the attended KV history is ALREADY non-finite, so a non-finite \
+                 attention output here is a symptom and not the origin",
                 row(kbad, ktb),
                 row(vbad, vtb)
             );

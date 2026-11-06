@@ -1501,7 +1501,8 @@ impl HybridModel {
             }
         }
         eprintln!(
-            "[gemma-spec] rounds={rounds} drafted={drafted} accepted={accepted}                    accept-rate={:.3} tok/round={:.2}",
+            "[gemma-spec] rounds={rounds} drafted={drafted} accepted={accepted} \
+             accept-rate={:.3} tok/round={:.2}",
             accepted as f64 / drafted.max(1) as f64,
             out.len() as f64 / rounds.max(1) as f64
         );

@@ -1629,7 +1629,11 @@ impl EmbedHost {
         for (ti, &tok) in tokens.iter().enumerate() {
             if tok as usize >= rows {
                 return Err(format!(
-                    "embed gather: token id {tok} at position {ti} is outside this table's                      {rows} rows ({} raw bytes / {row_bytes} B per row, dtype {:?}). An                      out-of-range id is produced UPSTREAM — corrupt logits, a sampler reading                      a stale or non-finite row, or a tokenizer/vocab mismatch — so fix it                      there; this refusal exists so the worker does not die on the slice",
+                    "embed gather: token id {tok} at position {ti} is outside this table's \
+                     {rows} rows ({} raw bytes / {row_bytes} B per row, dtype {:?}). An \
+                     out-of-range id is produced UPSTREAM — corrupt logits, a sampler reading \
+                     a stale or non-finite row, or a tokenizer/vocab mismatch — so fix it \
+                     there; this refusal exists so the worker does not die on the slice",
                     self.raw.len(),
                     self.ggml_type,
                 ));

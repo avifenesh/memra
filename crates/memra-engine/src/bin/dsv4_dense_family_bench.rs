@@ -186,7 +186,8 @@ fn main() {
                 };
                 let gb = per_call * calls as f64 / 1e9;
                 println!(
-                    "SHAPE rep={rep} arm={} n={n} k={kdim} calls={calls} ms={:.1}                      per_call_us={:.2} GB={gb:.1} GB_per_s={:.0}",
+                    "SHAPE rep={rep} arm={} n={n} k={kdim} calls={calls} ms={:.1} \
+                     per_call_us={:.2} GB={gb:.1} GB_per_s={:.0}",
                     if on { "cutlass" } else { "scalar" },
                     shape_ms[s],
                     shape_ms[s] * 1000.0 / calls as f64,

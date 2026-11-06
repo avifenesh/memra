@@ -1656,7 +1656,8 @@ fn validate_openrouter_metadata(
         && !matches!(sfc, "chat" | "embedding" | "rerank" | "transcription")
     {
         return Err(format!(
-            "model {alias:?}: surface {sfc:?} is not a served surface              (chat|embedding|rerank|transcription)"
+            "model {alias:?}: surface {sfc:?} is not a served surface \
+             (chat|embedding|rerank|transcription)"
         ));
     }
     validate_asr_decode_contract(alias, metadata)?;
@@ -31474,5 +31475,124 @@ mod image_fetch_body_bytes_tests {
             .err()
             .unwrap();
         assert_eq!(error.status(), StatusCode::UNSUPPORTED_MEDIA_TYPE);
+    }
+}
+
+/// A one-line string literal never holds a run of eight or more spaces between two words. That
+/// run is a line continuation whose trailing backslash was lost, so the message prints the next
+/// line's indentation ("plain hit", 22 spaces, "{plain_len}"). Twenty messages carried it on
+/// 2026-11-06, eighteen in engine and server code. The census reads every crate's `src/` except
+/// `src/bin/` (diagnostic binaries align table columns on purpose); comment lines and lines with
+/// a newline escape (fixture text such as aligned /proc/meminfo lines) are not messages.
+#[cfg(test)]
+mod string_continuation_tests {
+    use std::path::{Path, PathBuf};
+
+    fn rust_sources(dir: &Path, out: &mut Vec<PathBuf>) {
+        for entry in std::fs::read_dir(dir).unwrap() {
+            let path = entry.unwrap().path();
+            if path.is_dir() {
+                if !(path.ends_with("bin") && path.parent().is_some_and(|p| p.ends_with("src"))) {
+                    rust_sources(&path, out);
+                }
+            } else if path.extension().is_some_and(|e| e == "rs") {
+                out.push(path);
+            }
+        }
+    }
+
+    /// Byte offsets of the space runs on `line` that sit inside a string literal between two
+    /// characters of that literal.
+    fn lost_continuations(line: &str) -> Vec<usize> {
+        if line.trim_start().starts_with("//") || line.contains("\\n") {
+            return Vec::new();
+        }
+        let b = line.as_bytes();
+        let (mut hits, mut quotes, mut i) = (Vec::new(), 0usize, 0usize);
+        while i < b.len() {
+            match b[i] {
+                b'\\' => i += 1,
+                b'/' if quotes % 2 == 0 && b.get(i + 1) == Some(&b'/') => break,
+                b'"' if !(i > 0 && b[i - 1] == b'\'' && b.get(i + 1) == Some(&b'\'')) => {
+                    quotes += 1
+                }
+                b' ' => {
+                    let start = i;
+                    while i < b.len() && b[i] == b' ' {
+                        i += 1;
+                    }
+                    if i - start >= 8
+                        && start > 0
+                        && i < b.len()
+                        && quotes % 2 == 1
+                        && b[start - 1] != b'"'
+                        && b[i] != b'"'
+                    {
+                        hits.push(start);
+                    }
+                    continue;
+                }
+                _ => {}
+            }
+            i += 1;
+        }
+        hits
+    }
+
+    #[test]
+    fn the_census_reads_a_lost_continuation_and_nothing_else() {
+        let gap = " ".repeat(22);
+        let lost = format!("        eprintln!(\"plain hit{gap}{{plain_len}} -> hit\", n);");
+        assert_eq!(lost_continuations(&lost), vec![lost.find(&gap).unwrap()]);
+        for clean in [
+            format!("        let x ={gap}5; // aligned code{gap}outside a literal"),
+            format!("        cmp(\"r2 offset\", &a);{gap}// \"quoted{gap}comment\""),
+            format!("    let meminfo = \"MemTotal:{gap}127535104 kB\\nMemFree: 4 kB\";"),
+            format!("        assert!(s.contains(\"{gap}source_request\"));"),
+            format!("        b'\"' => \"a b\",{gap}// a char literal quote"),
+            "        eprintln!(\"plain hit \\".to_string(),
+        ] {
+            assert!(lost_continuations(&clean).is_empty(), "{clean}");
+        }
+    }
+
+    #[test]
+    fn string_literals_keep_their_line_continuations() {
+        let crates = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
+        let mut files = Vec::new();
+        for entry in std::fs::read_dir(&crates).unwrap() {
+            let src = entry.unwrap().path().join("src");
+            if src.is_dir() {
+                rust_sources(&src, &mut files);
+            }
+        }
+        files.sort();
+        assert!(
+            files.len() > 100,
+            "the census found {} sources",
+            files.len()
+        );
+        let mut found = Vec::new();
+        for file in &files {
+            let text = std::fs::read_to_string(file).unwrap();
+            for (n, line) in text.lines().enumerate() {
+                if !lost_continuations(line).is_empty() {
+                    let rel = file.strip_prefix(&crates).unwrap_or(file);
+                    found.push(format!(
+                        "crates/{}:{}: {}",
+                        rel.display(),
+                        n + 1,
+                        line.trim()
+                    ));
+                }
+            }
+        }
+        assert!(
+            found.is_empty(),
+            "{} string literal line(s) lost a line continuation (end the line with a backslash \
+             and continue the text on the next line):\n{}",
+            found.len(),
+            found.join("\n")
+        );
     }
 }

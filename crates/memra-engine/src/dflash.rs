@@ -5788,7 +5788,8 @@ impl crate::hybrid::HybridModel {
         }
         if cache.pos != tp {
             return Err(format!(
-                "restored dspark session needs a whole-entry trunk cache: cache.pos {} !=                  prompt {tp}",
+                "restored dspark session needs a whole-entry trunk cache: cache.pos {} != \
+                 prompt {tp}",
                 cache.pos
             )
             .into());

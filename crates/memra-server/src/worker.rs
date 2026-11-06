@@ -33650,7 +33650,8 @@ pub fn run(
                     // the committed prefix. Any remaining mismatch is an invariant failure,
                     // not the normal max-token path, and must stay loud rather than park poison.
                     eprintln!(
-                        "[worker] dspark-park REFUSED: cache pos {} != {} fed tokens                          (budget-clamped overshoot); not parked (model {})",
+                        "[worker] dspark-park REFUSED: cache pos {} != {} fed tokens \
+                         (budget-clamped overshoot); not parked (model {})",
                         sess.pos(),
                         s.fed.len(),
                         s.model
@@ -36540,7 +36541,8 @@ fn admit(
                 dspark_prefers_cold_over_prefix(with_alt),
             ) {
                 eprintln!(
-                    "[dspark] restorable-preferred: prompt={} decode_budget={budget} plain hit                      {plain_len} -> restorable hit {alt_len} (draft tail; {} suffix tokens to                      prime)",
+                    "[dspark] restorable-preferred: prompt={} decode_budget={budget} plain hit \
+                     {plain_len} -> restorable hit {alt_len} (draft tail; {} suffix tokens to prime)",
                     prompt.len(),
                     prompt.len() - alt_len,
                 );
@@ -37420,7 +37422,8 @@ fn admit(
                     }
                 }
                 None => eprintln!(
-                    "[prefix-cache] dspark restore: tail does not cover the drafter window;                      cold admission required (model {})",
+                    "[prefix-cache] dspark restore: tail does not cover the drafter window; \
+                     cold admission required (model {})",
                     req.model,
                 ),
             }
@@ -38616,7 +38619,8 @@ fn admit(
             }
             Some((entry, suffix)) => {
                 eprintln!(
-                    "[worker] dspark-reuse: {} committed tokens resumed                          (suffix {} to prime) [sampler={}] (model {})",
+                    "[worker] dspark-reuse: {} committed tokens resumed \
+                     (suffix {} to prime) [sampler={}] (model {})",
                     entry.fed.len(),
                     suffix.len(),
                     if spec_resume_sampler_predicate_on() {
@@ -38639,7 +38643,8 @@ fn admit(
                 if let Some(field) = refused {
                     reuse_metrics.spec_sampler_refusals += 1;
                     eprintln!(
-                        "[worker] dspark-reuse REFUSED: parked session's sampler                              differs on {field}; serving COLD (model {})",
+                        "[worker] dspark-reuse REFUSED: parked session's sampler \
+                         differs on {field}; serving COLD (model {})",
                         req.model
                     );
                 } else if !pool.is_empty() {
@@ -38661,7 +38666,8 @@ fn admit(
                         .max()
                         .unwrap_or(0);
                     eprintln!(
-                        "[worker] dspark-reuse MISS: {} parked, best text overlap {}B                              of {}B prompt; serving COLD (model {})",
+                        "[worker] dspark-reuse MISS: {} parked, best text overlap {}B \
+                         of {}B prompt; serving COLD (model {})",
                         pool.len(),
                         best,
                         req.prompt_text.len(),
