@@ -1,0 +1,29 @@
+kernel-check           PASS      ALL GREEN (110 cells, 104 executed, 10 required, 6 skipped; budget 11)
+SKIP f16g-kq-direct-ornith (missing model ornith-1.0-35b-Q4_K_M.gguf; 3 candidates tried; set MEMRA_KC_MODELS_DIR)
+SKIP iq4xs-mmq-real (missing model Kwaipilot_KAT-Coder-V2.5-Dev-IQ4_XS.gguf or Step-3.7-flash-IQ4_XS-00001-of-00003.gguf; 6 candidates tried; set MEMRA_KC_MODELS_DIR)
+SKIP nvfp4-27b-shape (missing model Qwen3.6-27B-NVFP4-Q4_K_M-mtp.gguf; 3 candidates tried; set MEMRA_KC_MODELS_DIR)
+SKIP q4_0-mmq (missing model gemma-4-12b-it-qat-q4_0.gguf; 3 candidates tried; set MEMRA_KC_MODELS_DIR)
+SKIP q4_0-sk-arm (missing model gemma-4-26B_q4_0-it.gguf; 3 candidates tried; set MEMRA_KC_MODELS_DIR)
+SKIP sigrouter-served-replay (MEMRA_SIG_ROUTER_REPLAY is not set to a run-gen capture) [Ornith-1.5-35B-A3B-NVFP4-Q5K-mtp.gguf]
+ornith-ai/ornith-1.5-35b-a3b  card  gpu=GPU-9f8ecd14-35a9-f104-1dd9-c4757538bb34 free=97340MiB need=20788MiB
+ornith-ai/ornith-1.5-35b-a3b  argmax-margin  PASS  SUMMARY flips=1 bad=0
+ornith-ai/ornith-1.5-35b-a3b  run-spec  PASS      K=1..8 self-consistency, identical to plain target (8/8)
+qwen/qwen3.8-27b  card  gpu=GPU-9f8ecd14-35a9-f104-1dd9-c4757538bb34 free=97340MiB need=16514MiB
+qwen/qwen3.8-27b  argmax-margin  PASS  SUMMARY flips=0 bad=0
+qwen/qwen3.8-27b  run-spec  PASS      K=1..8 self-consistency, identical to plain target (8/8)
+
+=== RELEASE BATTERY PASS — paste into the tag message ===
+  roster: /mnt/Data/work/memra-maxq/cell-1069/work/tree-120a/tools/release-roster.tsv (1 own)
+  kernel-check           PASS      ALL GREEN (110 cells, 104 executed, 10 required, 6 skipped; budget 11)
+  SKIP f16g-kq-direct-ornith (missing model ornith-1.0-35b-Q4_K_M.gguf; 3 candidates tried; set MEMRA_KC_MODELS_DIR)
+  SKIP iq4xs-mmq-real (missing model Kwaipilot_KAT-Coder-V2.5-Dev-IQ4_XS.gguf or Step-3.7-flash-IQ4_XS-00001-of-00003.gguf; 6 candidates tried; set MEMRA_KC_MODELS_DIR)
+  SKIP nvfp4-27b-shape (missing model Qwen3.6-27B-NVFP4-Q4_K_M-mtp.gguf; 3 candidates tried; set MEMRA_KC_MODELS_DIR)
+  SKIP q4_0-mmq (missing model gemma-4-12b-it-qat-q4_0.gguf; 3 candidates tried; set MEMRA_KC_MODELS_DIR)
+  SKIP q4_0-sk-arm (missing model gemma-4-26B_q4_0-it.gguf; 3 candidates tried; set MEMRA_KC_MODELS_DIR)
+  SKIP sigrouter-served-replay (MEMRA_SIG_ROUTER_REPLAY is not set to a run-gen capture) [Ornith-1.5-35B-A3B-NVFP4-Q5K-mtp.gguf]
+  ornith-ai/ornith-1.5-35b-a3b  card  gpu=GPU-9f8ecd14-35a9-f104-1dd9-c4757538bb34 free=97340MiB need=20788MiB
+  ornith-ai/ornith-1.5-35b-a3b  argmax-margin  PASS  SUMMARY flips=1 bad=0
+  ornith-ai/ornith-1.5-35b-a3b  run-spec  PASS      K=1..8 self-consistency, identical to plain target (8/8)
+  qwen/qwen3.8-27b  card  gpu=GPU-9f8ecd14-35a9-f104-1dd9-c4757538bb34 free=97340MiB need=16514MiB
+  qwen/qwen3.8-27b  argmax-margin  PASS  SUMMARY flips=0 bad=0
+  qwen/qwen3.8-27b  run-spec  PASS      K=1..8 self-consistency, identical to plain target (8/8)
