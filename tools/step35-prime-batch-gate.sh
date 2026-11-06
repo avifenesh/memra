@@ -55,7 +55,7 @@ NGPU=$(nvidia-smi --query-gpu=index --format=csv,noheader 2>/dev/null | wc -l)
     exit 0
 }
 
-BIN=./target/release/prime-batch-gate
+BIN="${CARGO_TARGET_DIR:-./target}"/release/prime-batch-gate
 [ -x "$BIN" ] || {
     echo "step35-prime-batch-gate: FAIL (no $BIN — build release first)"
     exit 1

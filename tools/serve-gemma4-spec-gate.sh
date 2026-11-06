@@ -56,7 +56,7 @@ LOG="$OUT/server-spec.log"
 envs=(MEMRA_COMPAT=openai MEMRA_MODELS="g4=$MODEL" MEMRA_ADDR=$ADDR MEMRA_DRAFT="$DRAFT")
 [ -n "${GATE_K_EXPLICIT:-}" ] && envs+=(MEMRA_GEMMA4_SPEC=$K)
 [ -n "${GATE_RANKS:-}" ] && envs+=(MEMRA_GEMMA_DRAFT_RANKS="$GATE_RANKS" MEMRA_GEMMA_TRIM_ADAPT=512)
-env "${envs[@]}" target/release/memra-server > "$LOG" 2>&1 &
+env "${envs[@]}" "${CARGO_TARGET_DIR:-target}"/release/memra-server > "$LOG" 2>&1 &
 SPID=$!
 stop_server() { kill "${SPID:-0}" 2>/dev/null; wait "${SPID:-0}" 2>/dev/null || true; }
 trap stop_server EXIT

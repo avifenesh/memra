@@ -29,7 +29,7 @@
 # break IS caught (CANARY-OK), 2 if it slid through.
 set -uo pipefail
 cd "$(dirname "$0")/.."
-PROBE=./target/release/iso-gap-probe
+PROBE="${CARGO_TARGET_DIR:-./target}"/release/iso-gap-probe
 MODEL=""
 STEPS=96
 CANARY=0

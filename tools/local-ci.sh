@@ -332,7 +332,7 @@ PROFILE=$(cat /sys/firmware/acpi/platform_profile 2>/dev/null || echo unknown)
 
 echo "== local-ci: correctness stage =="
 python3 tools/test_perf_acceptance_baseline.py
-if ! kc_out=$(target/release/kernel-check \
+if ! kc_out=$("${CARGO_TARGET_DIR:-target}"/release/kernel-check \
         --require-manifest tools/kernel-check-27b.cells \
         --require-manifest tools/kernel-check-step35.cells 2>&1); then
     echo "$kc_out"
@@ -377,7 +377,7 @@ if [ "${MEMRA_CI_SAMPCHECK:-1}" = "1" ]; then
     # Built explicitly (the run-spec/decode-batch-gate precedent below): sample_check has no
     # [[bin]] row in memra-engine/Cargo.toml, so a silent "binary absent" skip would quietly
     # un-wire the gate again.
-    [ -x target/release/sample_check ] \
+    [ -x "${CARGO_TARGET_DIR:-target}"/release/sample_check ] \
         || cargo build --release -p memra-engine --bin sample_check >/dev/null 2>&1 \
         || { echo "sample-check FAIL (binary would not build)"; exit 1; }
     # Same lock discipline as the perf stage's run_gpu_locked (defined later in this file):
@@ -390,7 +390,7 @@ if [ "${MEMRA_CI_SAMPCHECK:-1}" = "1" ]; then
                 "${MEMRA_CI_LOCK:-/tmp/memra-5090.lock}" "$@"
         fi
     }
-    if sc_out=$(run_sampcheck target/release/sample_check 2>&1); then
+    if sc_out=$(run_sampcheck "${CARGO_TARGET_DIR:-target}"/release/sample_check 2>&1); then
         echo "$sc_out" | grep -q '=== sample-check ALL GREEN ===' \
             || { echo "$sc_out" | tail -20; echo "sample-check FAIL (no ALL GREEN line)"; exit 1; }
         echo "sample-check: $(echo "$sc_out" | grep 'composed accept-walk output' | head -1)"
@@ -406,7 +406,7 @@ fi
 Q35="$MODELS/qwen36-35b-moe/Qwen3.6-35B-A3B-UD-IQ4_XS.gguf"
 Q35_DRAFT="$MODELS/qwen36-35b-moe/draft-35b-owntrim-nvfp4head-q4blk.gguf"
 if [ -f "$Q35" ]; then
-    if ! target/release/prime-gate "$Q35" \
+    if ! "${CARGO_TARGET_DIR:-target}"/release/prime-gate "$Q35" \
             --prompts-file research/prime-gate-coverage-20260802/prompts-mixed.txt \
             --steps 0 > /tmp/prime-gate-ci.log 2>&1; then
         echo "prime-gate FAIL (q35)"; tail -3 /tmp/prime-gate-ci.log; exit 1
@@ -425,11 +425,11 @@ fi
 CONT_MODEL=${MEMRA_CI_CONT_MODEL:-$MODELS/qwen35-9b-nvfp4-gguf/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf}
 if [ "${MEMRA_CI_CONTGATE:-1}" = "1" ] && [ -f "$CONT_MODEL" ]; then
     echo "== local-ci: prime continuation gate (one call vs head + tail; tails 16/48/80) =="
-    [ -x target/release/qwen-a4-continuation-gate ] \
+    [ -x "${CARGO_TARGET_DIR:-target}"/release/qwen-a4-continuation-gate ] \
         || cargo build --release -p memra-engine --bin qwen-a4-continuation-gate >/dev/null 2>&1
     CONT_PROMPT=$(mktemp "${TMPDIR:-/tmp}/local-ci-cont-prompt.XXXXXX")
     cat docs/FLAGS.md docs/TESTING.md > "$CONT_PROMPT"
-    out=$(NVIDIA_TF32_OVERRIDE=0 target/release/qwen-a4-continuation-gate "$CONT_MODEL" "$CONT_PROMPT" 9296 16 48 80 2>&1 || true)
+    out=$(NVIDIA_TF32_OVERRIDE=0 "${CARGO_TARGET_DIR:-target}"/release/qwen-a4-continuation-gate "$CONT_MODEL" "$CONT_PROMPT" 9296 16 48 80 2>&1 || true)
     rm -f "$CONT_PROMPT"
     echo "$out" | grep -E '^  [0-9]+ \+ [0-9]+:' || true
     echo "$out" | grep -q "CONTINUATION GATE: PASS" \
@@ -445,7 +445,7 @@ fi
 # stream-agreement check remains on gemma-gate. MEMRA_CI_RUNSPEC=0 skips this sweep.
 if [ "${MEMRA_CI_RUNSPEC:-1}" = "1" ]; then
     if [ -f "$Q35" ] && [ -f "$Q35_DRAFT" ]; then
-        [ -x target/release/run-spec ] \
+        [ -x "${CARGO_TARGET_DIR:-target}"/release/run-spec ] \
             || cargo build --release -p memra-engine --bin run-spec >/dev/null
         RUNSPEC_LOG=/tmp/local-ci-run-spec.log
         runspec_rc=0
@@ -453,7 +453,7 @@ if [ "${MEMRA_CI_RUNSPEC:-1}" = "1" ]; then
             unset MEMRA_PROMPT_DIR MEMRA_SPEC_K MEMRA_GEN_ONLY
             MEMRA_SPEC_TEMP=0 MEMRA_MTP_DRAFT="$Q35_DRAFT" MEMRA_NGEN=32 \
                 MEMRA_PROMPT_FILE=tools/fast-gate/prompts/probe.txt \
-                timeout 900 target/release/run-spec "$Q35"
+                timeout 900 "${CARGO_TARGET_DIR:-target}"/release/run-spec "$Q35"
         ) 2>&1 | tee "$RUNSPEC_LOG" >/dev/null || runspec_rc=$?
         runspec_passes=$(grep -c "self-consistency: PASS" "$RUNSPEC_LOG" || true)
         runspec_ks=$(grep -cE '^\[generate_spec K=[1-8]\]' "$RUNSPEC_LOG" || true)
@@ -510,13 +510,13 @@ if [ -f "$G31" ]; then
     # `out=$(...)` assignment exit the battery before its own verdict line printed (seen
     # 2026-09-21: a decode-batch-gate red left only "LOCAL_CI_RC=1" after the 12B SKIP line).
     # The grep that follows each capture is the verdict; the tail it prints is the evidence.
-    out=$(MEMRA_VERIFY_GATE=7 target/release/gemma-gate "$G31" $(cat "$DEPTH") 2>&1 || true)
+    out=$(MEMRA_VERIFY_GATE=7 "${CARGO_TARGET_DIR:-target}"/release/gemma-gate "$G31" $(cat "$DEPTH") 2>&1 || true)
     echo "$out" | grep -q "VERIFY-GATE K=7: PASS" || { echo "VERIFY-GATE FAIL (31B depth)"; exit 1; }
     echo "VERIFY-GATE K=7 depth: PASS (31B)"
     D31="$MODELS/gemma4-31b-tooluse-gguf/gemma-4-31B-it-Q4_0-MTP.gguf"
     if [ -f "$D31" ]; then
         # shellcheck disable=SC2046
-        out=$(MEMRA_SPEC=6 MEMRA_DRAFT="$D31" MEMRA_NGEN=64 target/release/gemma-gate "$G31" \
+        out=$(MEMRA_SPEC=6 MEMRA_DRAFT="$D31" MEMRA_NGEN=64 "${CARGO_TARGET_DIR:-target}"/release/gemma-gate "$G31" \
             $(cat research/gemma4-bringup/e4b-chat-watercycle-ids.txt) 2>&1 || true)
         echo "$out" | grep -qE "stream agreement 64/64" || { echo "spec self-consistency FAIL (31B)"; exit 1; }
         echo "spec self-consistency 64/64: PASS (31B)"
@@ -529,11 +529,11 @@ fi
 G12="${MEMRA_G12_MODEL:-/data/ai-ml/models/gemma-4-12b-it-qat/gemma-4-12b-it-qat-q4_0.gguf}"
 if [ -f "$G12" ]; then
     # shellcheck disable=SC2046
-    out=$(MEMRA_NGEN=8 target/release/run-gen "$G12" $(cat "$DEPTH") 2>&1 || true)
+    out=$(MEMRA_NGEN=8 "${CARGO_TARGET_DIR:-target}"/release/run-gen "$G12" $(cat "$DEPTH") 2>&1 || true)
     echo "$out" | grep -q "MATCH" || { echo "run-gen argmax FAIL (12B depth)"; exit 1; }
     echo "run-gen argmax depth: MATCH (12B)"
     # shellcheck disable=SC2046
-    out=$(MEMRA_VERIFY_GATE=7 target/release/gemma-gate "$G12" $(cat "$DEPTH") 2>&1 || true)
+    out=$(MEMRA_VERIFY_GATE=7 "${CARGO_TARGET_DIR:-target}"/release/gemma-gate "$G12" $(cat "$DEPTH") 2>&1 || true)
     echo "$out" | grep -q "VERIFY-GATE K=7: PASS" || { echo "VERIFY-GATE FAIL (12B depth)"; exit 1; }
     echo "VERIFY-GATE K=7 depth: PASS (12B)"
 else
@@ -560,16 +560,16 @@ fi
 # a REAL failure now. Q8_0 strict remains (it caught the pre-H3 B=1 deviation, maxdiff 1.591e-1).
 DBG_NVFP4="${MEMRA_CI_DBG_NVFP4:-$MODELS/qwen35-9b-nvfp4-gguf/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf}"
 DBG_Q8="${MEMRA_CI_DBG_Q8:-$MODELS/ornith-1.0-9b-gguf/ornith-1.0-9b-Q8_0.gguf}"
-[ -x target/release/decode-batch-gate ] \
+[ -x "${CARGO_TARGET_DIR:-target}"/release/decode-batch-gate ] \
     || cargo build --release -p memra-engine --bin decode-batch-gate >/dev/null 2>&1
 if [ -f "$DBG_NVFP4" ]; then
-    out=$(target/release/decode-batch-gate "$DBG_NVFP4" --steps 32 --batch 8 --mode config 2>&1 || true)
+    out=$("${CARGO_TARGET_DIR:-target}"/release/decode-batch-gate "$DBG_NVFP4" --steps 32 --batch 8 --mode config 2>&1 || true)
     echo "$out" | grep -q "ALL GREEN" \
         || { echo "$out" | tail -20; echo "decode-batch-gate FAIL (NVFP4 config B=8)"; exit 1; }
     echo "$out" | grep -Eq "global setting = OFF; effective .* = OFF" \
         || { echo "$out" | tail -20; echo "decode-batch-gate default B1 policy FAIL (NVFP4)"; exit 1; }
     echo "decode-batch-gate config B=8: ALL GREEN (9B NVFP4)"
-    out=$(MEMRA_SERVE_B1FAST=1 MEMRA_MMVQ=0 MEMRA_NO_FUSE_NORMQ=1 target/release/decode-batch-gate \
+    out=$(MEMRA_SERVE_B1FAST=1 MEMRA_MMVQ=0 MEMRA_NO_FUSE_NORMQ=1 "${CARGO_TARGET_DIR:-target}"/release/decode-batch-gate \
         "$DBG_NVFP4" --steps 32 --batch 4 --mode strict 2>&1 || true)
     echo "$out" | grep -q "ALL GREEN" \
         || { echo "$out" | tail -20; echo "decode-batch-gate FAIL (NVFP4 strict B=4)"; exit 1; }
@@ -581,14 +581,14 @@ else
     echo "decode-batch-gate NVFP4: SKIP (no model at $DBG_NVFP4)"
 fi
 if [ -f "$DBG_Q8" ]; then
-    out=$(MEMRA_Q8RP=1 target/release/decode-batch-gate "$DBG_Q8" \
+    out=$(MEMRA_Q8RP=1 "${CARGO_TARGET_DIR:-target}"/release/decode-batch-gate "$DBG_Q8" \
         --steps 32 --batch 8 --mode config 2>&1 || true)
     echo "$out" | grep -q "ALL GREEN" \
         || { echo "$out" | tail -20; echo "decode-batch-gate FAIL (Q8_0 config B=8)"; exit 1; }
     echo "$out" | grep -Eq "global setting = OFF; effective .* = OFF" \
         || { echo "$out" | tail -20; echo "decode-batch-gate default B1 policy FAIL (Q8_0)"; exit 1; }
     echo "decode-batch-gate config B=8: ALL GREEN (9B Q8_0)"
-    out=$(MEMRA_Q8RP=1 MEMRA_SERVE_B1FAST=1 MEMRA_MMVQ=0 MEMRA_NO_FUSE_NORMQ=1 target/release/decode-batch-gate \
+    out=$(MEMRA_Q8RP=1 MEMRA_SERVE_B1FAST=1 MEMRA_MMVQ=0 MEMRA_NO_FUSE_NORMQ=1 "${CARGO_TARGET_DIR:-target}"/release/decode-batch-gate \
         "$DBG_Q8" --steps 32 --batch 4 --mode strict 2>&1 || true)
     echo "$out" | grep -q "ALL GREEN" \
         || { echo "$out" | tail -20; echo "decode-batch-gate FAIL (Q8_0 strict B=4)"; exit 1; }
@@ -644,15 +644,15 @@ if [ "${MEMRA_CI_GRAPH:-1}" = "1" ]; then
         cargo build --release -p memra-engine \
             --bin decode-dc-gate --bin graph-decode-gate --bin graph-session-gate \
             || { echo "graph-lane bins BUILD FAIL — refusing to gate on stale binaries"; exit 1; }
-        out=$(target/release/decode-dc-gate "$GRAPH_MODEL" 2>&1 || true)
+        out=$("${CARGO_TARGET_DIR:-target}"/release/decode-dc-gate "$GRAPH_MODEL" 2>&1 || true)
         echo "$out" | tail -1 | grep -q "PASS" \
             || { echo "$out" | tail -5; echo "decode-dc-gate FAIL"; exit 1; }
         echo "decode-dc-gate: PASS"
-        out=$(target/release/graph-decode-gate "$GRAPH_MODEL" 2>&1 || true)
+        out=$("${CARGO_TARGET_DIR:-target}"/release/graph-decode-gate "$GRAPH_MODEL" 2>&1 || true)
         echo "$out" | tail -1 | grep -q "PASS" \
             || { echo "$out" | tail -5; echo "graph-decode-gate FAIL"; exit 1; }
         echo "graph-decode-gate: PASS"
-        out=$(target/release/graph-session-gate "$GRAPH_MODEL" 2>&1 || true)
+        out=$("${CARGO_TARGET_DIR:-target}"/release/graph-session-gate "$GRAPH_MODEL" 2>&1 || true)
         echo "$out" | tail -1 | grep -q "ALL GREEN" \
             || { echo "$out" | tail -5; echo "graph-session-gate FAIL"; exit 1; }
         echo "graph-session-gate: ALL GREEN"
@@ -709,7 +709,7 @@ FAULT_MODEL=${MEMRA_CI_CONT_MODEL:-$MODELS/qwen35-9b-nvfp4-gguf/Qwen3.5-9B-NVFP4
 if [ "${MEMRA_CI_FAULTGATE:-1}" = "1" ] && [ -f "$FAULT_MODEL" ]; then
     echo "== local-ci: request-fault boundary gate (memra#525) =="
     FAULT_OUT=$(mktemp -d -u "${TMPDIR:-/tmp}/local-ci-faultgate.XXXXXX")
-    if python3 tools/request-fault-gate.py --model "$FAULT_MODEL" --bin target/release/memra-server \
+    if python3 tools/request-fault-gate.py --model "$FAULT_MODEL" --bin "${CARGO_TARGET_DIR:-target}"/release/memra-server \
         --out "$FAULT_OUT" --port 18525; then
         rm -rf "$FAULT_OUT"
     else
@@ -735,7 +735,7 @@ EDGE_MODEL=${MEMRA_CI_CONT_MODEL:-$MODELS/qwen35-9b-nvfp4-gguf/Qwen3.5-9B-NVFP4-
 if [ "${MEMRA_CI_SPEC_CTX_EDGE:-1}" = "1" ] && [ -f "$EDGE_MODEL" ]; then
     echo "== local-ci: speculative context-edge gate (memra#659) =="
     EDGE_OUT=$(mktemp -d -u "${TMPDIR:-/tmp}/local-ci-spec-ctx-edge.XXXXXX")
-    if tools/spec-ctx-edge-gate.sh "$EDGE_MODEL" target/release/memra-server "$EDGE_OUT"; then
+    if tools/spec-ctx-edge-gate.sh "$EDGE_MODEL" "${CARGO_TARGET_DIR:-target}"/release/memra-server "$EDGE_OUT"; then
         rm -rf "$EDGE_OUT"
     else
         echo "spec-ctx-edge gate FAIL (receipt kept at $EDGE_OUT)"; exit 1
@@ -757,7 +757,7 @@ AMB_MODEL=${MEMRA_CI_CONT_MODEL:-$MODELS/qwen35-9b-nvfp4-gguf/Qwen3.5-9B-NVFP4-M
 if [ "${MEMRA_CI_ADMIT_MEM_BURST:-1}" = "1" ] && [ -f "$AMB_MODEL" ]; then
     echo "== local-ci: memory-admission burst gate (memra#680) =="
     AMB_OUT=$(mktemp -d -u "${TMPDIR:-/tmp}/local-ci-admit-mem-burst.XXXXXX")
-    if tools/admit-mem-burst-gate.sh "$AMB_MODEL" target/release/memra-server "$AMB_OUT"; then
+    if tools/admit-mem-burst-gate.sh "$AMB_MODEL" "${CARGO_TARGET_DIR:-target}"/release/memra-server "$AMB_OUT"; then
         rm -rf "$AMB_OUT"
     else
         echo "admit-mem-burst gate FAIL (receipt kept at $AMB_OUT)"; exit 1
@@ -773,7 +773,7 @@ FAIR_MODEL=${MEMRA_CI_CONT_MODEL:-$MODELS/qwen35-9b-nvfp4-gguf/Qwen3.5-9B-NVFP4-
 if [ "${MEMRA_CI_FAIRGATE:-1}" = "1" ] && [ -f "$FAIR_MODEL" ]; then
     echo "== local-ci: prime fairness gate (memra#521) =="
     FAIR_OUT=$(mktemp -d -u "${TMPDIR:-/tmp}/local-ci-fairgate.XXXXXX")
-    if python3 tools/prime-fairness-gate.py --model "$FAIR_MODEL" --bin target/release/memra-server \
+    if python3 tools/prime-fairness-gate.py --model "$FAIR_MODEL" --bin "${CARGO_TARGET_DIR:-target}"/release/memra-server \
         --out "$FAIR_OUT" --port 18521; then
         rm -rf "$FAIR_OUT"
     else
@@ -791,7 +791,7 @@ PROBE_MODEL=${MEMRA_CI_CONT_MODEL:-$MODELS/qwen35-9b-nvfp4-gguf/Qwen3.5-9B-NVFP4
 if [ "${MEMRA_CI_GPUPROBEGATE:-1}" = "1" ] && [ -f "$PROBE_MODEL" ]; then
     echo "== local-ci: GPU probe recovery gate (memra#516) =="
     PROBE_OUT=$(mktemp -d -u "${TMPDIR:-/tmp}/local-ci-gpuprobegate.XXXXXX")
-    if python3 tools/gpu-probe-recovery-gate.py --model "$PROBE_MODEL" --bin target/release/memra-server \
+    if python3 tools/gpu-probe-recovery-gate.py --model "$PROBE_MODEL" --bin "${CARGO_TARGET_DIR:-target}"/release/memra-server \
         --out "$PROBE_OUT" --port 18516; then
         rm -rf "$PROBE_OUT"
     else
@@ -884,14 +884,14 @@ if [ "${MEMRA_CI_HITGATE:-1}" = "1" ] && [ -x tools/spec-on-cache-hit-gate.sh ];
     if [ -f "$HITQ" ]; then
         rm -rf "$HITEV/qwen" && mkdir -p "$HITEV/qwen"
         MEMRA_GATE_MTP_DRAFT="$HITQD" \
-        tools/spec-on-cache-hit-gate.sh qwen "$HITQ" target/release/memra-server "$HITEV/qwen" \
+        tools/spec-on-cache-hit-gate.sh qwen "$HITQ" "${CARGO_TARGET_DIR:-target}"/release/memra-server "$HITEV/qwen" \
             || { echo "spec-on-cache-hit (qwen) FAIL — evidence in $HITEV/qwen"; exit 1; }
         rm -rf "$HITEV/qwen" # green: keep /tmp clean (the tmp-hygiene law); a FAIL keeps it
         if [ "${MEMRA_CI_HITGATE_TEETH:-1}" = "1" ]; then
             rm -rf "$HITEV/qwen-teeth" && mkdir -p "$HITEV/qwen-teeth"
             MEMRA_HITGATE_TEETH=1 MEMRA_GATE_MTP_DRAFT="$HITQD" \
             tools/spec-on-cache-hit-gate.sh qwen "$HITQ" \
-                target/release/memra-server "$HITEV/qwen-teeth" \
+                "${CARGO_TARGET_DIR:-target}"/release/memra-server "$HITEV/qwen-teeth" \
                 || {
                     echo "spec-on-cache-hit TEETH (qwen) FAIL — evidence in $HITEV/qwen-teeth"
                     exit 1
@@ -909,7 +909,7 @@ if [ "${MEMRA_CI_HITGATE:-1}" = "1" ] && [ -x tools/spec-on-cache-hit-gate.sh ];
         # banked gemma CERT ran at (worker.rs gemma4_spec_k_env), and pinning a different K
         # would silently stop reproducing it.
         tools/spec-on-cache-hit-gate.sh gemma "$HITG" "$HITGD" \
-            target/release/memra-server "$HITEV/gemma" \
+            "${CARGO_TARGET_DIR:-target}"/release/memra-server "$HITEV/gemma" \
             || { echo "spec-on-cache-hit (gemma) FAIL — evidence in $HITEV/gemma"; exit 1; }
         rm -rf "$HITEV/gemma"
     else
@@ -1008,14 +1008,14 @@ run_cell() {
         if [ "$mode" = "plain" ]; then
             # shellcheck disable=SC2046
             out=$(run_gpu_locked \
-                  env MEMRA_NGEN="$ngen" timeout 420 target/release/run-gen "$mp" $(cat "$pfile") 2>&1 || true)
+                  env MEMRA_NGEN="$ngen" timeout 420 "${CARGO_TARGET_DIR:-target}"/release/run-gen "$mp" $(cat "$pfile") 2>&1 || true)
             toks=$(echo "$out" | grep -oE "= [0-9.]+ tok/s" | tail -1 | grep -oE "[0-9.]+" || echo 0)
         else
             local envs=(MEMRA_SPEC_ONLY=1 "MEMRA_SPEC=$k" "MEMRA_DRAFT=$MODELS/$draft" "MEMRA_NGEN=$ngen")
             [ -n "$ranks" ] && [ "$ranks" != "null" ] && envs+=("MEMRA_GEMMA_DRAFT_RANKS=$ranks")
             # shellcheck disable=SC2046
             out=$(run_gpu_locked \
-                  env "${envs[@]}" timeout 420 target/release/gemma-gate "$mp" $(cat "$pfile") 2>&1 || true)
+                  env "${envs[@]}" timeout 420 "${CARGO_TARGET_DIR:-target}"/release/gemma-gate "$mp" $(cat "$pfile") 2>&1 || true)
             toks=$(echo "$out" | grep -oE "spec: [0-9.]+" | grep -oE "[0-9.]+" || echo 0)
             accept=$(echo "$out" | grep -oE "accept-rate=[0-9.]+" | grep -oE "[0-9.]+" | tail -1 || true)
             tokround=$(echo "$out" | grep -oE "tok/round=[0-9.]+" | grep -oE "[0-9.]+" | tail -1 || true)

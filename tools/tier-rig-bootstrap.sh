@@ -291,7 +291,7 @@ if True:
         run('storage-df', ['df', '-hT'], 'STUB df: no storage qualification\n')
         run('storage-lsblk', ['lsblk', '-J', '-o', 'NAME,TYPE,SIZE,ROTA,TRAN,MOUNTPOINTS'], '{"blockdevices": []}\n')
         report['paths'] = {'persistent_root': str(persistent), 'repo': str(repo),
-                           'build': str(repo/'target'), 'scratch': None, 'nvme': None,
+                           'build': str(repo/os.environ.get('CARGO_TARGET_DIR', 'target')), 'scratch': None, 'nvme': None,
                            'persistence': 'operator/provider contract, not proven by mount name'}
         report['storage'] = {'class': 'not-selected', 'nvme_proven': False,
                              'label': 'storage not selected; no storage claim',
@@ -432,7 +432,8 @@ if True:
             run(f'build-{i}', cmd, 'STUB build; native worker.rs NOT compiled\n', timeout=3600, cwd=None if a.dry_run else repo)
         report['release_binaries'] = {}
         for name in ('storage-bench','pp-transport-smoke','qwen4exp_gpu_gate','run-gen','run-spec','memra-server'):
-            executable = repo/'target/release'/name
+            # cargo ran in repo: a relative CARGO_TARGET_DIR is relative to it, an absolute one replaces it
+            executable = repo/os.environ.get('CARGO_TARGET_DIR', 'target')/'release'/name
             check(a.dry_run or executable.is_file(), 'build did not produce '+str(executable))
             if a.dry_run:
                 report['release_binaries'][name] = {'status':'stubbed-not-built'}

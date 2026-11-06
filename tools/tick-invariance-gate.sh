@@ -42,7 +42,7 @@
 # documented in chunk-invariance-gate.sh, hit twice on that lane).
 set -uo pipefail
 cd "$(dirname "$0")/.."
-PROBE=./target/release/concat-prime-probe
+PROBE="${CARGO_TARGET_DIR:-./target}"/release/concat-prime-probe
 MODEL=""
 BUDGETS=0,1024,513,512,256,64
 SPLITS=""

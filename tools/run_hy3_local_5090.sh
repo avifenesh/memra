@@ -11,7 +11,7 @@ repo_dir=$(cd -- "$script_dir/.." && pwd)
 model_dir=$(realpath -- "$1")
 cpu_expert_lib=$(realpath -- "$2")
 mirror_map=${3:-}
-run_spec=$repo_dir/target/release/run-spec
+run_spec="${CARGO_TARGET_DIR:-$repo_dir/target}"/release/run-spec
 # Serial read-then-compute is the measured local winner: overlapped full-rate O_DIRECT
 # DMA inflates the compute loops themselves ~2.7x (2026-07-22 bisect chain,
 # local-5090-next3/pipeline-bisect-receipt.md), so MEMRA_CPU_EXPERT_PIPELINE stays off

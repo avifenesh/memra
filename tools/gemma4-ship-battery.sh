@@ -33,7 +33,7 @@ start_server() {  # $1 = "default" | "plain", $2 = log
   local envs=(MEMRA_COMPAT=openai MEMRA_MODELS="g4=$MODEL" MEMRA_ADDR=$ADDR
               MEMRA_DRAFT="$DRAFT" MEMRA_GEMMA_DRAFT_RANKS="$RANKS" MEMRA_GEMMA_TRIM_ADAPT=512)
   [ "$1" = "plain" ] && envs+=(MEMRA_GEMMA4_SPEC=0)
-  env "${envs[@]}" target/release/memra-server > "$2" 2>&1 &
+  env "${envs[@]}" "${CARGO_TARGET_DIR:-target}"/release/memra-server > "$2" 2>&1 &
   SPID=$!
   for _ in $(seq 240); do curl -sf $BASE/health >/dev/null 2>&1 && return 0; sleep 2; done
   echo "server did not come up; tail:"; tail -8 "$2"; return 1

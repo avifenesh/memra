@@ -96,7 +96,7 @@ memra_port_guard health-fault-gate "$PORT" HFG_PORT || exit 2
 
 # Build UNCONDITIONALLY (serve-smoke's rule: a gate that can run a stale binary is a rotted gate).
 cargo build --release -p memra-server || { echo "health-fault-gate: build FAILED"; exit 2; }
-BIN=target/release/memra-server
+BIN="${CARGO_TARGET_DIR:-target}"/release/memra-server
 sha256sum "$BIN" > "$OUT/binary.sha256"
 { echo "commit $(git rev-parse HEAD)"; echo "model $MODEL"; "$NVSMI" --query-gpu=name,driver_version,power.limit --format=csv,noheader; date -u +%FT%TZ; } > "$OUT/source.txt"
 
