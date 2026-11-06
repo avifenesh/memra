@@ -7,7 +7,7 @@ Check here BEFORE re-running an experiment; add your lane's row at close. Full r
 live in each dir (jsonl/logs are out of default rg via the repo .ignore — `rg -u` to
 include). `rg '<topic>' research/INDEX.md` = the fast path to any lane's verdict.
 
-dflash-restorable-hit-20261103 | Verdict: on GB10 the cold-drafter conversion lifts GGUF DFlash2 c1 by 17-20% and leaves c2..c32 flat. It acts only with the restore doors armed. | dflash-restorable-hit-20261103/README.md
+dflash-restorable-hit-20261103 | Verdict: on GB10 the cold-drafter conversion lifts GGUF DFlash2 c1 by 17-20% and leaves c2..c32 flat. It acts only with the restore doors armed. ... c28fb5ee0e fixes it: on GB10 the third turn of a session now restores the second turn's tail, and its TTFT drops from 8.3 s to 1.4 s. | dflash-restorable-hit-20261103/README.md
 
 cpu-workflow-selection-990-20261003 | Workflow-only plan labels are delegated to their existing mandatory steps. | cpu-workflow-selection-990-20261003/README.md
 

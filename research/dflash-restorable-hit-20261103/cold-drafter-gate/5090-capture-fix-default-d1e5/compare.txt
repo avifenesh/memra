@@ -1,0 +1,17 @@
+gate sizes GATE_P_PARAS=10 GATE_S_PARAS=14 memory.total=24463 MiB MEMRA_CTX=16384 DOORS=explicit
+prompt tokens x0=1745 a-greedy=4205 b-greedy=4309
+a-greedy: identical=True arm_len=415 ref_len=415
+a-sampled: identical=True arm_len=420 ref_len=420
+b-greedy: identical=True arm_len=466 ref_len=466
+b-sampled: identical=True arm_len=499 ref_len=499
+GATE PASS
+cache-preferred=1
+cold-drafter restore=1
+DSPARK restore=3
+dspark-boundary=3
+shape cache-preferred=1 ok
+shape cold-drafter restore=1 ok
+shape DSPARK restore=3 ok
+shape insert (dspark-boundary)=3 ok
+SHAPE PASS
+COLD-DRAFTER GATE PASS

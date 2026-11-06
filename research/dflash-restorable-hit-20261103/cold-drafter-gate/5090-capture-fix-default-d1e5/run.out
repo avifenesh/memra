@@ -1,0 +1,22 @@
+gpulock: 5090 leased as claude-code-20261106T144834-427456 for 45m
+== fix 745334a40a10 gate script d1e57791d0
+GATE_EXIT=0
+[server] build: memra-0.138.0-04c61687c8a8 (id: source-tree, git: c28fb5ee0eaf)
+gate sizes GATE_P_PARAS=10 GATE_S_PARAS=14 memory.total=24463 MiB MEMRA_CTX=16384 DOORS=explicit
+prompt tokens x0=1745 a-greedy=4205 b-greedy=4309
+a-greedy: identical=True arm_len=415 ref_len=415
+a-sampled: identical=True arm_len=420 ref_len=420
+b-greedy: identical=True arm_len=466 ref_len=466
+b-sampled: identical=True arm_len=499 ref_len=499
+GATE PASS
+cache-preferred=1
+cold-drafter restore=1
+DSPARK restore=3
+dspark-boundary=3
+shape cache-preferred=1 ok
+shape cold-drafter restore=1 ok
+shape DSPARK restore=3 ok
+shape insert (dspark-boundary)=3 ok
+SHAPE PASS
+COLD-DRAFTER GATE PASS
+GATE5090_DEFAULT_DONE
