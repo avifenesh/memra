@@ -44,6 +44,7 @@ BASE=http://$ADDR
 . tools/port-guard.sh
 memra_port_guard serve-smoke "$PORT" MEMRA_SMOKE_PORT || exit 1
 FAILS=0
+SMOKE_BOOT=0
 PASS() { echo "  ok: $1"; }
 FAIL() { echo "  FAIL: $1"; FAILS=$((FAILS+1)); }
 
@@ -55,10 +56,25 @@ FAIL() { echo "  FAIL: $1"; FAILS=$((FAILS+1)); }
 # It runs what this build wrote: under CARGO_TARGET_DIR, not the tree's own target/.
 cargo build --release -p memra-server || { echo "serve-smoke: build FAILED"; exit 1; }
 
+# Scratch and every boot's server log in one run directory (not a fixed /tmp path): each boot
+# moves the previous boot's log aside, so the [spec-pool] and [spec-cost] lines of every arm
+# survive until the verdict. Green removes the directory; red or an early exit keeps it and
+# names it by its basename only (saved stdout never carries a home path). A caller that banks the
+# server logs (a research recipe) sets SMOKE_OUT=<dir>: the logs go there and are never removed.
+if [ -n "${SMOKE_OUT:-}" ]; then
+  mkdir -p "$SMOKE_OUT" || exit 1
+  SMOKE_TMP=$(cd "$SMOKE_OUT" && pwd)
+else
+  SMOKE_TMP=$(mktemp -d "${TMPDIR:-/tmp}/serve-smoke.XXXXXX") || exit 1
+fi
+SMOKE_DONE=0
+
 start_server() {  # extra env via prefix, e.g. start_server "smoke=/path.gguf"
   # MEMRA_COMPAT=openai: this battery tests the OpenAI-compatible surface the README
   # sells (the default native /v1/completions shape is a different contract).
-  MEMRA_COMPAT=openai MEMRA_MODELS="$1" MEMRA_ADDR=$ADDR "${CARGO_TARGET_DIR:-target}"/release/memra-server > /tmp/serve-smoke.log 2>&1 &
+  SMOKE_BOOT=$((SMOKE_BOOT+1))
+  [ -f "$SMOKE_TMP/serve-smoke.log" ] && mv "$SMOKE_TMP/serve-smoke.log" "$SMOKE_TMP/serve-smoke-boot$((SMOKE_BOOT-1)).log"
+  MEMRA_COMPAT=openai MEMRA_MODELS="$1" MEMRA_ADDR=$ADDR "${CARGO_TARGET_DIR:-target}"/release/memra-server > "$SMOKE_TMP/serve-smoke.log" 2>&1 &
   SPID=$!
   # Belt and braces on the pre-flight guard: a process that grabbed the port in the window
   # between the check above and our bind would otherwise be measured as the model under test.
@@ -66,10 +82,14 @@ start_server() {  # extra env via prefix, e.g. start_server "smoke=/path.gguf"
     curl -sf $BASE/health >/dev/null 2>&1 && { memra_port_owned serve-smoke "$PORT" "$SPID" || return 1; return 0; }
     sleep 2
   done
-  echo "server did not come up; log tail:"; tail -5 /tmp/serve-smoke.log; return 1
+  echo "server did not come up; log tail:"; tail -5 "$SMOKE_TMP/serve-smoke.log"; return 1
 }
 stop_server() { kill "${SPID:-0}" 2>/dev/null; wait "${SPID:-0}" 2>/dev/null || true; }
-trap stop_server EXIT
+smoke_exit() {
+  stop_server
+  [ "$SMOKE_DONE" = 1 ] || echo "serve-smoke: stopped early; server logs kept in $(basename "$SMOKE_TMP") under the temp directory"
+}
+trap smoke_exit EXIT
 
 chat() {  # prompt max_tokens [stream] -> body to stdout
   local prompt=$1 maxtok=$2 stream=${3:-false}
@@ -129,7 +149,7 @@ B=$(chat "Explain what a mutex is in one sentence." 64 | say)
 # 6. concurrency: 3 parallel chats all complete non-empty
 pids=(); outs=()
 for i in 1 2 3; do
-  o=/tmp/serve-smoke-conc-$i.json
+  o="$SMOKE_TMP/serve-smoke-conc-$i.json"
   outs+=("$o")
   ( chat "Write one fact about the number $i." 32 > "$o" ) & pids+=($!)
 done
@@ -138,8 +158,9 @@ for i in 0 1 2; do
   wait "${pids[$i]}" 2>/dev/null
   python3 -c "
 import json
-m = json.load(open('${outs[$i]}'))['choices'][0]['message']
-assert ((m.get('reasoning') or '') + (m.get('content') or '')).strip()" 2>/dev/null && okc=$((okc+1))
+import sys
+m = json.load(open(sys.argv[1]))['choices'][0]['message']
+assert ((m.get('reasoning') or '') + (m.get('content') or '')).strip()" "${outs[$i]}" 2>/dev/null && okc=$((okc+1))
 done
 [ $okc -eq 3 ] && PASS "3 concurrent chats" || FAIL "concurrency ($okc/3)"
 
@@ -282,8 +303,8 @@ if [ -f "$DRAFT" ]; then
   # uninterpretable rows).
   # Full 25-turn version + TTFT curve: research/session-affinity-20260805/.
   echo "== serve-smoke: session-affinity resume exactness =="
-  AFFPY=/tmp/serve-smoke-affinity.py
-  cat > $AFFPY <<'PY'
+  AFFPY="$SMOKE_TMP/serve-smoke-affinity.py"
+  cat > "$AFFPY" <<'PY'
 import json, sys, urllib.request
 PORT, MODE, PATHF = sys.argv[1], sys.argv[2], sys.argv[3]
 URL = f"http://127.0.0.1:{PORT}/v1/completions"
@@ -353,18 +374,18 @@ PY
   export MEMRA_AFFINITY=1
   export MEMRA_SPEC_GATE=0
   if start_server "smoke=$MODEL+$DRAFT"; then
-    python3 $AFFPY "$PORT" record /tmp/serve-smoke-affinity.json 2>/dev/null
+    python3 "$AFFPY" "$PORT" record "$SMOKE_TMP/serve-smoke-affinity.json" 2>/dev/null
     # NB: `grep -c` already prints 0 on no-match (and exits 1), so a `|| echo 0` fallback
     # would append a SECOND line and break the integer test. Default only if the file is gone.
-    REWINDS=$(grep -c 'spec-affinity: rewound' /tmp/serve-smoke.log 2>/dev/null)
-    FAILED_REWIND=$(grep -c 'affinity rewind failed' /tmp/serve-smoke.log 2>/dev/null)
+    REWINDS=$(grep -c 'spec-affinity: rewound' "$SMOKE_TMP/serve-smoke.log" 2>/dev/null)
+    FAILED_REWIND=$(grep -c 'affinity rewind failed' "$SMOKE_TMP/serve-smoke.log" 2>/dev/null)
     REWINDS=${REWINDS:-0}; FAILED_REWIND=${FAILED_REWIND:-0}
     stop_server
     # a FRESH server, so the second arm re-primes and re-parks from scratch: the replay
     # cannot be served by state the recording arm left behind.
     if start_server "smoke=$MODEL+$DRAFT"; then
-      VERDICT=$(python3 $AFFPY "$PORT" replay /tmp/serve-smoke-affinity.json 2>/dev/null)
-      REWINDS2=$(grep -c 'spec-affinity: rewound' /tmp/serve-smoke.log 2>/dev/null)
+      VERDICT=$(python3 "$AFFPY" "$PORT" replay "$SMOKE_TMP/serve-smoke-affinity.json" 2>/dev/null)
+      REWINDS2=$(grep -c 'spec-affinity: rewound' "$SMOKE_TMP/serve-smoke.log" 2>/dev/null)
       REWINDS2=${REWINDS2:-0}
       stop_server
       [ "$VERDICT" = IDENTICAL ] \
@@ -489,7 +510,7 @@ assert c.strip(), "thinking-on: empty content"
   || FAIL "gemma4 thought/content separation"
     curl -sf $BASE/health >/dev/null && PASS "gemma4 server alive after both requests" \
       || FAIL "gemma4 server died"
-    if grep -q "panicked" /tmp/serve-smoke.log; then
+    if grep -q "panicked" "$SMOKE_TMP/serve-smoke.log"; then
       FAIL "gemma4 arm: panic in the server log"
     else
       PASS "gemma4 arm: zero panics in the server log"
@@ -517,7 +538,7 @@ if [ -f "$Q35_COLD_MODEL" ]; then
     MEMRA_REUSE_POOL=0 MEMRA_AFFINITY=0 \
     MEMRA_MAX_SESSIONS=96
   if start_server "q35-coldfix=$Q35_COLD_MODEL"; then
-    Q35_GATE_LOG=/tmp/serve-smoke-q35-cold-mixed.log
+    Q35_GATE_LOG="$SMOKE_TMP/serve-smoke-q35-cold-mixed.log"
     if python3 tools/q35-cold-mixed-gate.py --base "$BASE" --model q35-coldfix \
         --namespace serve-smoke-q35-coldfix --timeout 600 >"$Q35_GATE_LOG" 2>&1; then
       PASS "Q35 mixed c=4: 20/20 requests reached exactly 60 tokens"
@@ -544,7 +565,7 @@ for line in lines or []:
         FAIL "Q35 mixed c=4 gate failed without a summary"
       fi
     fi
-    if grep -Eq '^\[prime-batch\].*carried=[1-9]' /tmp/serve-smoke.log; then
+    if grep -Eq '^\[prime-batch\].*carried=[1-9]' "$SMOKE_TMP/serve-smoke.log"; then
       FAIL "Q35 routed-MoE entered a carried prime batch"
     else
       PASS "Q35 routed-MoE carried prime batches remain gated"
@@ -581,20 +602,20 @@ m = re.search(r"plain_cap=(\d+) .*plain_ms\[1\.\.\]=\[([^\]]*)\]", lines[0])
 assert m, lines[0]
 cap, n = int(m.group(1)), len(m.group(2).split())
 assert cap == 8 and n == 8, f"plain_cap={cap}, {n} plain entries"
-' /tmp/serve-smoke.log && PASS "MoE spec-cost calibration: plain_cap=8, 8 plain entries" \
+' "$SMOKE_TMP/serve-smoke.log" && PASS "MoE spec-cost calibration: plain_cap=8, 8 plain entries" \
       || FAIL "MoE spec-cost calibration line (want plain_cap=8 and 8 plain entries)"
     T=$(chat "Explain what a mutex is in one sentence." 32 | say)
     [ -n "$T" ] && PASS "MoE spec request returns text" || FAIL "MoE spec request"
     curl -sf $BASE/health >/dev/null && PASS "MoE spec server alive after the request" \
       || FAIL "MoE spec server died"
-    if grep -q "panicked" /tmp/serve-smoke.log; then
+    if grep -q "panicked" "$SMOKE_TMP/serve-smoke.log"; then
       FAIL "MoE spec arm: panic in the server log"
     else
       PASS "MoE spec arm: zero panics in the server log"
     fi
     stop_server
   else
-    grep -m1 -A1 "panicked" /tmp/serve-smoke.log
+    grep -m1 -A1 "panicked" "$SMOKE_TMP/serve-smoke.log"
     FAIL "MoE spec server did not start"
   fi
   unset MEMRA_CTX
@@ -602,5 +623,13 @@ else
   echo "== serve-smoke: MoE spec arm SKIP (no model at $Q35_COLD_MODEL or no draft at $Q35_SPEC_DRAFT)"
 fi
 
+SMOKE_DONE=1
+if [ $FAILS -eq 0 ] && [ -z "${SMOKE_OUT:-}" ]; then
+  case $SMOKE_TMP in */serve-smoke.??????) rm -rf -- "$SMOKE_TMP" ;; esac
+elif [ -n "${SMOKE_OUT:-}" ]; then
+  echo "serve-smoke: server logs kept in SMOKE_OUT (serve-smoke-boot<N>.log; the last boot in serve-smoke.log)"
+else
+  echo "serve-smoke: server logs kept in $(basename "$SMOKE_TMP") under the temp directory (serve-smoke-boot<N>.log; the last boot in serve-smoke.log)"
+fi
 echo "serve-smoke: $FAILS failed"
 [ $FAILS -eq 0 ]

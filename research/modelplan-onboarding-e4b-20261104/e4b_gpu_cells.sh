@@ -72,9 +72,9 @@ for cell in "${CELLS[@]}"; do
     serve)
       # Same env as the build, so serve-smoke's own cargo build is a no-op.
       env MEMRA_NVCC=/usr/local/cuda/bin/nvcc MEMRA_CUDA_ARCH=120a CARGO_TARGET_DIR="$TGT" CARGO_BUILD_JOBS=2 \
+        SMOKE_OUT="$EV/serve-smoke-server" \
         timeout 1800 tools/serve-smoke.sh "$MODEL" /nonexistent-no-nextn-draft > "$EV/serve-smoke.log" 2>&1
       rc=$?
-      cp /tmp/serve-smoke.log "$EV/serve-smoke-server-last.log" 2>/dev/null
       note "serve-smoke rc=$rc"
       grep -E '^  (ok|FAIL):|^==|SKIP|FAILED|PASS' "$EV/serve-smoke.log" | head -40 | sed 's/^/  /' | tee -a "$SUMMARY"
       ;;
@@ -87,10 +87,9 @@ for cell in "${CELLS[@]}"; do
       # serve-smoke with its gemma4 arm pointed at E4B (GEMMA_MODEL) and the Qwen3.6-35B cold
       # arm off (a different model; its replay script lives under research/).
       env MEMRA_NVCC=/usr/local/cuda/bin/nvcc MEMRA_CUDA_ARCH=120a CARGO_TARGET_DIR="$TGT" CARGO_BUILD_JOBS=2 \
-        GEMMA_MODEL="$MODEL" MEMRA_Q35_COLD_MODEL=/nonexistent-q35 \
+        GEMMA_MODEL="$MODEL" MEMRA_Q35_COLD_MODEL=/nonexistent-q35 SMOKE_OUT="$EV/serve-smoke-gemma-server" \
         timeout 1800 tools/serve-smoke.sh "$MODEL" /nonexistent-no-nextn-draft > "$EV/serve-smoke-gemma.log" 2>&1
       rc=$?
-      cp /tmp/serve-smoke.log "$EV/serve-smoke-gemma-server-last.log" 2>/dev/null
       note "serve-smoke (gemma4 arm on E4B) rc=$rc"
       grep -E '^  (ok|FAIL):|^==|SKIP|FAILED|PASS|failed' "$EV/serve-smoke-gemma.log" | head -60 | sed 's/^/  /' | tee -a "$SUMMARY"
       ;;
