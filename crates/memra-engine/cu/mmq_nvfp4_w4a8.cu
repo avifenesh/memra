@@ -1418,3 +1418,357 @@ int memra_mmq_nvfp4_f8f4(const void * W_nvfp4_blocks, const float * act_f32, flo
                                      out_scale, rp);
 }
 } // extern "C"
+
+// ======================================================================================
+// F8F4 v2 (GB10 prefill lane, 2026-11-06; research/gb10-prefill-20261106/GEMM-REWORK-DESIGN.md):
+// the numeric program of mul_mat_q_nvfp4_f8f4, fed differently.
+//   1. Image pre-pass: every NVFP4 block is folded ONCE per call, by the same device functions and
+//      expressions dequant_tiles_nvfp4_f8f4 runs per tile, into a pooled global image: the e4m3
+//      bytes that tile writes to x_qs and the per-32 f32 scales it writes to x_df.
+//   2. Mainloop: a cp.async ring of image and activation slices (the activation in the v2 layout of
+//      mmq_nvfp4_f8f4.cu: the quantizer's bytes and scales, row-major plus a k-major scale plane),
+//      ldmatrix for A and for B, no ALU
+//      staging; the same block-scale MMA at the ue8m0 identity over a fresh accumulator and the
+//      same epilogue sum += (dA * dB) * C, one k32 block at a time in ascending k.
+//   3. Grouped raster: G row tiles walk every token tile before the next group starts, so the
+//      group's image slab is read from DRAM about once and the activation from L2.
+// Tile shape, warp layout, stage depth and raster decide only which thread computes an output
+// and when its bytes arrive, never the per-element operation sequence, so the output is
+// bit-identical to the v1 tile (kernel-check MMQ-F8F4-V2 cells).
+// ======================================================================================
+
+// Image of an out_f x in_f NVFP4 weight, Mp = round_up(out_f, 256) rows:
+//   vals   : Mp x in_f e4m3 bytes, row-major, natural k order;
+//   scales : (in_f / 32) x Mp f32, k-major. Inside each 32-row group the rows are permuted so the
+//            four scales one lane reads per k32 step (rows g, g+8, g+16, g+24) sit in one float4.
+// Rows >= out_f repeat row out_f - 1 (the v1 loader's i_max clamp); their outputs are dropped.
+#define F8F4V2_ROW_ALIGN 256
+#define F8F4V2_WR 32   // warp row span: two m16 tiles per warp
+
+static __host__ __device__ __forceinline__ int f8f4v2_mp(const int out_f) {
+    return (out_f + F8F4V2_ROW_ALIGN - 1) / F8F4V2_ROW_ALIGN * F8F4V2_ROW_ALIGN;
+}
+
+// Image row -> scale slot: local row m*16 + h*8 + g of a 32-row group -> g*4 + m*2 + h.
+static __device__ __forceinline__ int f8f4v2_scale_slot(const int r) {
+    const int l = r & 31;
+    return (r & ~31) + (l & 7) * 4 + (l >> 4) * 2 + ((l >> 3) & 1);
+}
+
+// One thread per (image row, 64-value NVFP4 block); body token-for-token dequant_tiles_nvfp4_f8f4.
+template <bool is_rp>
+static __global__ void f8f4v2_image_kernel(
+        const char * __restrict__ x, const char * __restrict__ x_sc,
+        uint8_t * __restrict__ vals, float * __restrict__ scales,
+        const int out_f, const int Mp, const int nblk) {
+    const int kb  = blockIdx.x * 32 + threadIdx.x;
+    const int row = blockIdx.y * 8 + threadIdx.y;
+    if (kb >= nblk || row >= Mp) { return; }
+    const int srow = min(row, out_f - 1);
+    const int ib = srow * nblk + kb;
+    const uint32_t * __restrict__ src_qs;
+    const uint8_t  * __restrict__ src_d;
+    if constexpr (is_rp) {
+        src_qs = reinterpret_cast<const uint32_t *>(x    + (size_t) ib * 32);
+        src_d  = reinterpret_cast<const uint8_t  *>(x_sc + (size_t) ib * 4);
+    } else {
+        const block_nvfp4 * bxi = (const block_nvfp4 *) x + ib;
+        src_qs = reinterpret_cast<const uint32_t *>(bxi->qs);
+        src_d  = bxi->d;
+    }
+    int q[16];
+#pragma unroll
+    for (int pair = 0; pair < 2; ++pair) {
+        const float sa = ggml_cuda_ue4m3_to_fp32(src_d[2 * pair + 0]);
+        const float sb = ggml_cuda_ue4m3_to_fp32(src_d[2 * pair + 1]);
+        const float s32 = fmaxf(fmaxf(sa, sb), 1e-30f);
+        scales[(size_t) (2 * kb + pair) * Mp + f8f4v2_scale_slot(row)] = s32;
+#pragma unroll
+        for (int half = 0; half < 2; ++half) {
+            const int sub = 2 * pair + half;
+            const float r = (half == 0 ? sa : sb) / s32;
+            int lut[4];
+#pragma unroll
+            for (int w = 0; w < 4; ++w) {
+                const uint16_t p0 = memra_cvt_e4m3x2(memra_e2m1_f32[4*w+0] * r, memra_e2m1_f32[4*w+1] * r);
+                const uint16_t p1 = memra_cvt_e4m3x2(memra_e2m1_f32[4*w+2] * r, memra_e2m1_f32[4*w+3] * r);
+                lut[w] = (int) ((uint32_t) p0 | ((uint32_t) p1 << 16));
+            }
+            const int2 q0 = get_int_from_table_16(src_qs[2 * sub + 0], (const int8_t *) lut);
+            const int2 q1 = get_int_from_table_16(src_qs[2 * sub + 1], (const int8_t *) lut);
+            q[4 * sub + 0] = q0.x;
+            q[4 * sub + 1] = q1.x;
+            q[4 * sub + 2] = q0.y;
+            q[4 * sub + 3] = q1.y;
+        }
+    }
+    int4 * dst = reinterpret_cast<int4 *>(vals + (size_t) row * nblk * 64 + (size_t) kb * 64);
+    dst[0] = make_int4(q[0],  q[1],  q[2],  q[3]);
+    dst[1] = make_int4(q[4],  q[5],  q[6],  q[7]);
+    dst[2] = make_int4(q[8],  q[9],  q[10], q[11]);
+    dst[3] = make_int4(q[12], q[13], q[14], q[15]);
+}
+
+static __device__ __forceinline__ void f8f4v2_cp16(const unsigned saddr, const void * gsrc) {
+    asm volatile("cp.async.cg.shared.global [%0], [%1], 16;\n" :: "r"(saddr), "l"(gsrc));
+}
+static __device__ __forceinline__ void f8f4v2_ldsm_x4_s(int * r, const unsigned saddr) {
+    asm volatile("ldmatrix.sync.aligned.m8n8.x4.shared.b16 {%0, %1, %2, %3}, [%4];"
+        : "=r"(r[0]), "=r"(r[1]), "=r"(r[2]), "=r"(r[3]) : "r"(saddr));
+}
+
+// Per-stage smem: A image rows and B token rows of KS bytes with the 16-byte chunks XOR-swizzled
+// (chunk c of row r at c ^ ((r / RPB) % CPR)), conflict-free for both the cp.async writes and the
+// ldmatrix reads; then KS/32 x BM A scales (image slot order) and KS/32 x BN B scales.
+template <int BM, int BN, int KS>
+struct f8f4v2_layout {
+    static constexpr int CPR      = KS / 16;                  // 16-byte chunks per row
+    static constexpr int RPB      = CPR >= 8 ? 1 : 8 / CPR;   // rows per 128-byte bank line
+    static constexpr int A_BYTES  = BM * KS;
+    static constexpr int B_BYTES  = BN * KS;
+    static constexpr int SA_BYTES = (KS / 32) * BM * 4;
+    static constexpr int SB_BYTES = (KS / 32) * BN * 4;
+    static constexpr int STAGE    = A_BYTES + B_BYTES + SA_BYTES + SB_BYTES;
+    static __device__ __forceinline__ int swz(const int r, const int c) {
+        return r * KS + 16 * (c ^ ((r / RPB) % CPR));
+    }
+};
+
+// BM x BN output tile (rows x tokens), WM x WN warps of (BM/WM) x (BN/WN), KS k per stage,
+// STAGES-deep cp.async ring, MINB CTAs per SM requested from the register allocator.
+template <int BM, int BN, int WM, int WN, int KS, int STAGES, int MINB>
+__launch_bounds__(WM * WN * 32, MINB)
+static __global__ void mul_mat_f8f4v2(
+        const uint8_t * __restrict__ vals, const float * __restrict__ scales,
+        const uint8_t * __restrict__ act, const float * __restrict__ act_sc, float * __restrict__ dst,
+        const int out_f, const int Mp, const int K, const int n_tokens, const int Tp, const int nty,
+        const float out_scale, const int G) {
+    using LY = f8f4v2_layout<BM, BN, KS>;
+    constexpr int NT  = WM * WN * 32;
+    constexpr int WRS = BM / WM;
+    constexpr int WCS = BN / WN;
+    constexpr int TM  = WRS / 16;
+    constexpr int TN  = WCS / 8;
+    constexpr int KSTEPS = KS / 32;
+    constexpr int CPR = LY::CPR;
+    static_assert(WRS == F8F4V2_WR, "the image scale permutation assumes 32-row warp spans");
+    static_assert(TN % 2 == 0, "B ldmatrix.x4 loads n8 tiles in pairs");
+    static_assert(WCS == 32 || WCS == 64, "the activation scale permutation is per 64 tokens");
+    static_assert(NT % CPR == 0 && ((NT / CPR) / LY::RPB) % CPR == 0,
+                  "every cp.async line a thread issues keeps its swizzle phase");
+    static_assert(KSTEPS * BM / 4 <= NT && KSTEPS * BN / 4 <= NT, "one scale line per thread");
+
+    extern __shared__ __align__(128) uint8_t f8f4v2_smem[];
+
+    // Grouped raster: G row tiles x every token tile, then the next G row tiles.
+    const int ntx = (n_tokens + BN - 1) / BN;
+    const int Lb = blockIdx.x;
+    const int group_size = G * ntx;
+    const int grp = Lb / group_size;
+    const int first = grp * G;
+    const int gsz = min(nty - first, G);
+    const int local = Lb - grp * group_size;
+    const int it = first + local % gsz;
+    const int jt = local / gsz;
+
+    const int tid  = threadIdx.x;
+    const int warp = tid >> 5, lane = tid & 31;
+    const int wm = warp / WN, wn = warp % WN;
+    const int g = lane >> 2, tig = lane & 3;
+    const int row0 = it * BM;
+    const int tok0 = jt * BN;
+    const int nk = K / KS;
+    const unsigned smem0 = (unsigned) __cvta_generic_to_shared(f8f4v2_smem);
+
+    // Per-thread cp.async geometry: line l = tid + i * NT -> row r0 + i * NT / CPR, chunk c0; the
+    // swizzle phase is the same for every i (static_assert above).
+    const int r0 = tid / CPR, c0 = tid % CPR;
+    const unsigned a_soff = (unsigned) LY::swz(r0, c0);
+    const uint32_t a_goff = (uint32_t) (row0 + r0) * (uint32_t) K + (uint32_t) (c0 * 16);
+    const int sc_kb = tid / (BM / 4), sc_q = tid % (BM / 4);      // A scale lines (tid < KSTEPS*BM/4)
+    const int sb_kb = tid / (BN / 4), sb_q = tid % (BN / 4);      // B scale lines (tid < KSTEPS*BN/4)
+
+    float acc[TM][TN][4];
+#pragma unroll
+    for (int m = 0; m < TM; ++m) {
+#pragma unroll
+        for (int p = 0; p < TN; ++p) {
+#pragma unroll
+            for (int l = 0; l < 4; ++l) { acc[m][p][l] = 0.0f; }
+        }
+    }
+
+    auto load_stage = [&](const int slot, const int kt) {
+        const unsigned sA  = smem0 + slot * LY::STAGE;
+        const unsigned sB  = sA + LY::A_BYTES;
+        const unsigned sSA = sB + LY::B_BYTES;
+        const unsigned sSB = sSA + LY::SA_BYTES;
+        const uint32_t k0 = (uint32_t) (kt * KS);
+        constexpr int AL = BM * CPR, BL = BN * CPR;
+#pragma unroll
+        for (int i = 0; i < (AL + NT - 1) / NT; ++i) {
+            if (AL % NT != 0 && tid + i * NT >= AL) { break; }
+            f8f4v2_cp16(sA + a_soff + i * (NT / CPR) * KS,
+                        vals + (a_goff + k0 + (uint32_t) (i * (NT / CPR)) * (uint32_t) K));
+        }
+        // Activation (v2 layout): token rows of K e4m3 bytes; tokens past n_tokens re-read the last
+        // token (their outputs are dropped). Scales: k-major plane of Tp slots, already permuted.
+#pragma unroll
+        for (int i = 0; i < (BL + NT - 1) / NT; ++i) {
+            if (BL % NT != 0 && tid + i * NT >= BL) { break; }
+            const int ts = min(tok0 + r0 + i * (NT / CPR), n_tokens - 1);
+            f8f4v2_cp16(sB + a_soff + i * (NT / CPR) * KS,
+                        act + ((uint32_t) ts * (uint32_t) K + k0 + (uint32_t) (c0 * 16)));
+        }
+        if (tid < KSTEPS * BM / 4) {
+            f8f4v2_cp16(sSA + (sc_kb * BM + 4 * sc_q) * 4,
+                        scales + ((k0 / 32 + sc_kb) * (uint32_t) Mp + (uint32_t) (row0 + 4 * sc_q)));
+        }
+        if (tid < KSTEPS * BN / 4) {
+            f8f4v2_cp16(sSB + (sb_kb * BN + 4 * sb_q) * 4,
+                        act_sc + ((k0 / 32 + sb_kb) * (uint32_t) Tp + (uint32_t) (tok0 + 4 * sb_q)));
+        }
+    };
+
+    // ldmatrix rows: A row wm*WRS + m*16 + (lane & 15), chunk 2*ks + (lane >> 4); B token
+    // wn*WCS + (2*pp + (lane >> 4))*8 + (lane & 7), chunk 2*ks + ((lane >> 3) & 1).
+    const int ar = wm * WRS + (lane & 15), ac = lane >> 4;
+    const int br = wn * WCS + (lane >> 4) * 8 + (lane & 7), bc = (lane >> 3) & 1;
+
+    auto compute_stage = [&](const int slot) {
+        const unsigned sA  = smem0 + slot * LY::STAGE;
+        const unsigned sB  = sA + LY::A_BYTES;
+        const float * sSA = (const float *) (f8f4v2_smem + slot * LY::STAGE + LY::A_BYTES + LY::B_BYTES);
+        const float * sSB = sSA + KSTEPS * BM;
+#pragma unroll
+        for (int ks = 0; ks < KSTEPS; ++ks) {
+            int a[TM][4];
+#pragma unroll
+            for (int m = 0; m < TM; ++m) {
+                f8f4v2_ldsm_x4_s(a[m], sA + LY::swz(ar + m * 16, 2 * ks + ac));
+            }
+            const float4 dav = *(const float4 *) (sSA + ks * BM + wm * WRS + g * 4);
+            const float da[2][2] = {{dav.x, dav.y}, {dav.z, dav.w}};
+#pragma unroll
+            for (int pp = 0; pp < TN / 2; ++pp) {
+                int b[4];
+                f8f4v2_ldsm_x4_s(b, sB + LY::swz(br + pp * 16, 2 * ks + bc));
+                const float4 dbv = *(const float4 *) (sSB + ks * BN + wn * WCS + (pp * 4 + tig) * 4);
+                const float db[2][2] = {{dbv.x, dbv.y}, {dbv.z, dbv.w}};
+#pragma unroll
+                for (int q = 0; q < 2; ++q) {
+#pragma unroll
+                    for (int m = 0; m < TM; ++m) {
+                        float C[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+                        memra_mma_f8f4(C, a[m], b[2 * q + 0], b[2 * q + 1]);
+                        float * s = acc[m][2 * pp + q];
+                        s[0] += da[m][0] * db[q][0] * C[0];
+                        s[1] += da[m][0] * db[q][1] * C[1];
+                        s[2] += da[m][1] * db[q][0] * C[2];
+                        s[3] += da[m][1] * db[q][1] * C[3];
+                    }
+                }
+            }
+        }
+    };
+
+#pragma unroll
+    for (int s = 0; s < STAGES - 1; ++s) {
+        if (s < nk) { load_stage(s, s); }
+        pipe_commit();
+    }
+    for (int kt = 0; kt < nk; ++kt) {
+        pipe_wait<STAGES - 2>();   // stage kt landed
+        __syncthreads();           // publish it; slot (kt - 1) % STAGES is free
+        const int nx = kt + STAGES - 1;
+        if (nx < nk) { load_stage(nx % STAGES, nx); }
+        pipe_commit();
+        compute_stage(kt % STAGES);
+    }
+    pipe_wait<0>();
+
+#pragma unroll
+    for (int m = 0; m < TM; ++m) {
+#pragma unroll
+        for (int p = 0; p < TN; ++p) {
+#pragma unroll
+            for (int l = 0; l < 4; ++l) {
+                const int i = row0 + wm * WRS + m * 16 + (l >> 1) * 8 + g;
+                const int j = tok0 + wn * WCS + p * 8 + 2 * tig + (l & 1);
+                if (i < out_f && j < n_tokens) {
+                    dst[(size_t) j * out_f + i] = acc[m][p][l] * out_scale;
+                }
+            }
+        }
+    }
+}
+
+template <int BM, int BN, int WM, int WN, int KS, int STAGES, int MINB>
+static cudaError_t f8f4v2_launch(
+        const uint8_t * vals, const float * scales, const uint8_t * act, const float * act_sc, float * y,
+        const int out_f, const int Mp, const int K, const int n_tokens, const int Tp,
+        const float out_scale, const int G, cudaStream_t st) {
+    constexpr size_t smem = (size_t) STAGES * f8f4v2_layout<BM, BN, KS>::STAGE;
+    auto kern = mul_mat_f8f4v2<BM, BN, WM, WN, KS, STAGES, MINB>;
+    cudaError_t e = cudaFuncSetAttribute(kern, cudaFuncAttributeMaxDynamicSharedMemorySize, (int) smem);
+    if (e != cudaSuccess) { return e; }
+    const int nty = (out_f + BM - 1) / BM;
+    const int ntx = (n_tokens + BN - 1) / BN;
+    const int g = G < 1 ? 1 : (G > nty ? nty : G);
+    kern<<<(unsigned) (nty * ntx), WM * WN * 32, smem, st>>>(
+        vals, scales, act, act_sc, y, out_f, Mp, K, n_tokens, Tp, nty, out_scale, g);
+    return cudaGetLastError();
+}
+
+extern "C" {
+
+// Bytes of the per-call image scratch for an out_f x in_f NVFP4 weight.
+size_t memra_mmq_nvfp4_f8f4_v2_img_bytes(int in_f, int out_f) {
+    const size_t Mp = (size_t) f8f4v2_mp(out_f);
+    return Mp * (size_t) in_f + (size_t) (in_f / 32) * Mp * sizeof(float);
+}
+
+// v2 F8F4 GEMM on an activation quantized in the v2 layout (memra_mmq_nvfp4_f8f4_v2_quantize_act or
+// its silu twin, memra_mmq_nvfp4_f8f4_v2_act_bytes) plus an image scratch of
+// memra_mmq_nvfp4_f8f4_v2_img_bytes(in_f, out_f) bytes. Bit-identical to memra_mmq_nvfp4_f8f4_preq
+// on the same activation. Requires in_f % 256 == 0 and Mp * in_f, n_tokens * in_f < 2^32. Returns 0,
+// 3000 + cudaError, or 3998 on an unsupported shape.
+int memra_mmq_nvfp4_f8f4_v2_preq(const void * W_nvfp4_blocks, const void * act_scratch, float * y,
+                                int in_f, int out_f, int n_tokens, void * img, void * stream,
+                                float out_scale, int rp) {
+    if (in_f <= 0 || in_f % 256 != 0 || out_f <= 0 || n_tokens <= 0) { return 3998; }
+    const int Mp = f8f4v2_mp(out_f);
+    // The mainloop addresses the image and the activation with 32-bit offsets.
+    if ((uint64_t) Mp * in_f >= (1ull << 32) || (uint64_t) n_tokens * in_f >= (1ull << 32)) { return 3998; }
+    cudaStream_t st = reinterpret_cast<cudaStream_t>(stream);
+    const int nblk = in_f / QK_NVFP4;
+    uint8_t * vals = (uint8_t *) img;
+    float * scales = (float *) (vals + (size_t) Mp * in_f);
+    const char * W  = (const char *) W_nvfp4_blocks;
+    const char * W_sc = W + (size_t) out_f * nblk * 32;
+    {
+        const dim3 grid((unsigned) ((nblk + 31) / 32), (unsigned) (Mp / 8), 1);
+        const dim3 block(32, 8, 1);
+        if (rp) {
+            f8f4v2_image_kernel<true><<<grid, block, 0, st>>>(W, W_sc, vals, scales, out_f, Mp, nblk);
+        } else {
+            f8f4v2_image_kernel<false><<<grid, block, 0, st>>>(W, W_sc, vals, scales, out_f, Mp, nblk);
+        }
+        const cudaError_t e = cudaGetLastError();
+        if (e != cudaSuccess) { return 3000 + (int) e; }
+    }
+    const uint8_t * act = (const uint8_t *) act_scratch;
+    const float * act_sc = (const float *) (act + (size_t) n_tokens * in_f);
+    const int Tp = (n_tokens + 255) / 256 * 256;
+    // Tile: one 16-warp CTA per SM, 256 rows x 128 tokens, warp tile 32 x 64 (64 accumulators,
+    // 128 registers), K = 64 per stage, 3-stage ring (81 KB). Raster: 4 row tiles per group.
+    // Chosen on GB10 over two 8-warp 128 x 128 CTAs per SM (the design's first target), a 16-warp
+    // 128 x 128 CTA, 128 x 256, K = 32 rings of 3-7 stages and groups of 1-32 row tiles
+    // (research/gb10-prefill-20261106/gemm-v2-probe/).
+    const cudaError_t e = f8f4v2_launch<256, 128, 8, 2, 64, 3, 1>(
+        vals, scales, act, act_sc, y, out_f, Mp, in_f, n_tokens, Tp, out_scale, /*G=*/4, st);
+    if (e != cudaSuccess) { return 3000 + (int) e; }
+    return 0;
+}
+
+} // extern "C"

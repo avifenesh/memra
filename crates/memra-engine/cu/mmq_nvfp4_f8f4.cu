@@ -55,20 +55,53 @@ static __device__ __forceinline__ void mma_f8f4_16x8x32(
         : "r"(a[0]), "r"(a[1]), "r"(a[2]), "r"(a[3]), "r"(b[0]), "r"(b[1]));
 }
 
+// v2 activation layout (F8F4 v2 GEMM, mmq_nvfp4_w4a8.cu): the same e4m3 bytes and per-32 scales,
+// stored as vals [n_tokens][in_f] row-major and scales [in_f / 32][Tp] f32 (Tp = n_tokens padded to
+// 256) with tokens permuted inside each 64-token group so one lane's four B scales of an n8 tile
+// pair are one float4: token p*8 + 2*tig + e -> ((p >> 1) * 4 + tig) * 4 + (p & 1) * 2 + e.
+static __device__ __forceinline__ int64_t f8f4v2_act_slot(const int64_t t) {
+    const int lt = (int) (t & 63), p = lt >> 3, r8 = lt & 7;
+    return (t & ~(int64_t) 63) + ((p >> 1) * 4 + (r8 >> 1)) * 4 + (p & 1) * 2 + (r8 & 1);
+}
+static __host__ __device__ __forceinline__ int64_t f8f4v2_act_tp(const int64_t n_tokens) {
+    return (n_tokens + 255) / 256 * 256;   // whole 256-token tiles of scale slots
+}
+
+// Shared store of one thread's four quantized values and, on the first thread of a 32-group, the
+// group scale: V2 = false is the block_e4m3_mmq layout, V2 = true the v2 layout above.
+template <bool V2>
+static __device__ __forceinline__ void f8f4_store_act(
+        void * __restrict__ vy, const int64_t i0, const int64_t i1, const int64_t ne00, const int ne1,
+        const int64_t tp, const uint32_t q, const float amax) {
+    if constexpr (V2) {
+        if (i0 >= ne00) { return; }   // v2 rows hold exactly in_f values
+        uint8_t * vals = (uint8_t *) vy;
+        *(uint32_t *) (vals + i1 * ne00 + i0) = q;
+        if (i0 % 32 != 0) { return; }
+        float * sc = (float *) (vals + (int64_t) ne1 * ne00);
+        sc[(i0 / 32) * tp + f8f4v2_act_slot(i1)] = amax == 0.0f ? 0.0f : amax / 448.0f;
+    } else {
+        block_e4m3_mmq * y = (block_e4m3_mmq *) vy;
+        const int64_t ib  = (i0 / (4 * QK8_1)) * ne1 + i1;
+        const int64_t iqs = i0 % (4 * QK8_1);
+        uint32_t * yqs4 = (uint32_t *) y[ib].qs;
+        yqs4[iqs / 4] = q;
+        if (iqs % 32 != 0) { return; }
+        y[ib].d4[iqs / 32] = amax == 0.0f ? 0.0f : amax / 448.0f;
+    }
+}
+
 // Activation quantize: twin of quantize_mmq_q8_1_d4_kernel with the int8 grid swapped for e4m3.
 // Same launch geometry, same k-major block order, same d4 scale slots.
+template <bool V2>
 static __global__ void quantize_mmq_e4m3_d4_kernel(
         const float * __restrict__ x, void * __restrict__ vy,
-        const int64_t ne00, const int64_t s01, const int64_t ne0, const int ne1) {
+        const int64_t ne00, const int64_t s01, const int64_t ne0, const int ne1, const int64_t tp) {
     const int64_t i0 = ((int64_t) blockDim.x * blockIdx.y + threadIdx.x) * 4;
     if (i0 >= ne0) { return; }
     const int64_t i1 = blockIdx.x;
 
     const float4 * x4 = (const float4 *) x;
-    block_e4m3_mmq * y = (block_e4m3_mmq *) vy;
-
-    const int64_t ib  = (i0 / (4 * QK8_1)) * ne1 + i1;
-    const int64_t iqs = i0 % (4 * QK8_1);
 
     const float4 xi = i0 < ne00 ? x4[(i1 * s01 + i0) / 4] : make_float4(0.0f, 0.0f, 0.0f, 0.0f);
     float amax = fabsf(xi.x);
@@ -85,11 +118,7 @@ static __global__ void quantize_mmq_e4m3_d4_kernel(
     const uint16_t q01 = cvt_e4m3x2(xi.x * d_inv, xi.y * d_inv);
     const uint16_t q23 = cvt_e4m3x2(xi.z * d_inv, xi.w * d_inv);
 
-    uint32_t * yqs4 = (uint32_t *) y[ib].qs;
-    yqs4[iqs / 4] = (uint32_t) q01 | ((uint32_t) q23 << 16);
-
-    if (iqs % 32 != 0) { return; }
-    y[ib].d4[iqs / 32] = amax == 0.0f ? 0.0f : amax / 448.0f;
+    f8f4_store_act<V2>(vy, i0, i1, ne00, ne1, tp, (uint32_t) q01 | ((uint32_t) q23 << 16), amax);
 }
 
 // Fused twin (GB10 prefill lane, 2026-11-06): the activation element is formed in-register as
@@ -97,19 +126,16 @@ static __global__ void quantize_mmq_e4m3_d4_kernel(
 // precision, no fast-math), then quantized exactly as quantize_mmq_e4m3_d4_kernel does. The
 // e4m3 bytes and d4 scales equal silu_mul_f32 followed by memra_mmq_nvfp4_f8f4_quantize_act;
 // the f32 [n_tokens, in_f] activation is never written or re-read.
+template <bool V2>
 static __global__ void quantize_mmq_e4m3_d4_silu_kernel(
         const float * __restrict__ gate, const float * __restrict__ up, void * __restrict__ vy,
-        const int64_t ne00, const int64_t s01, const int64_t ne0, const int ne1) {
+        const int64_t ne00, const int64_t s01, const int64_t ne0, const int ne1, const int64_t tp) {
     const int64_t i0 = ((int64_t) blockDim.x * blockIdx.y + threadIdx.x) * 4;
     if (i0 >= ne0) { return; }
     const int64_t i1 = blockIdx.x;
 
     const float4 * g4 = (const float4 *) gate;
     const float4 * u4 = (const float4 *) up;
-    block_e4m3_mmq * y = (block_e4m3_mmq *) vy;
-
-    const int64_t ib  = (i0 / (4 * QK8_1)) * ne1 + i1;
-    const int64_t iqs = i0 % (4 * QK8_1);
 
     float4 xi = make_float4(0.0f, 0.0f, 0.0f, 0.0f);
     if (i0 < ne00) {
@@ -133,11 +159,7 @@ static __global__ void quantize_mmq_e4m3_d4_silu_kernel(
     const uint16_t q01 = cvt_e4m3x2(xi.x * d_inv, xi.y * d_inv);
     const uint16_t q23 = cvt_e4m3x2(xi.z * d_inv, xi.w * d_inv);
 
-    uint32_t * yqs4 = (uint32_t *) y[ib].qs;
-    yqs4[iqs / 4] = (uint32_t) q01 | ((uint32_t) q23 << 16);
-
-    if (iqs % 32 != 0) { return; }
-    y[ib].d4[iqs / 32] = amax == 0.0f ? 0.0f : amax / 448.0f;
+    f8f4_store_act<V2>(vy, i0, i1, ne00, ne1, tp, (uint32_t) q01 | ((uint32_t) q23 << 16), amax);
 }
 
 extern "C" {
@@ -156,7 +178,7 @@ void memra_mmq_nvfp4_f8f4_quantize_act(
     const int64_t ne0 = GGML_PAD((int64_t) in_f, MATRIX_ROW_PADDING);
     const int block_size = 128;
     const dim3 num_blocks((unsigned) n_tokens, (unsigned) ((ne0 / 4 + block_size - 1) / block_size), 1);
-    quantize_mmq_e4m3_d4_kernel<<<num_blocks, block_size, 0, st>>>(x, vy, in_f, s01, ne0, n_tokens);
+    quantize_mmq_e4m3_d4_kernel<false><<<num_blocks, block_size, 0, st>>>(x, vy, in_f, s01, ne0, n_tokens, 0);
 }
 
 // Same launch geometry as memra_mmq_nvfp4_f8f4_quantize_act; gate/up are [n_tokens, s01] f32.
@@ -167,7 +189,38 @@ int memra_mmq_nvfp4_f8f4_quantize_act_silu(
     const int64_t ne0 = GGML_PAD((int64_t) in_f, MATRIX_ROW_PADDING);
     const int block_size = 128;
     const dim3 num_blocks((unsigned) n_tokens, (unsigned) ((ne0 / 4 + block_size - 1) / block_size), 1);
-    quantize_mmq_e4m3_d4_silu_kernel<<<num_blocks, block_size, 0, st>>>(gate, up, vy, in_f, s01, ne0, n_tokens);
+    quantize_mmq_e4m3_d4_silu_kernel<false><<<num_blocks, block_size, 0, st>>>(gate, up, vy, in_f, s01, ne0, n_tokens, 0);
+    cudaError_t e = cudaGetLastError();
+    return e == cudaSuccess ? 0 : 1000 + (int) e;
+}
+
+// v2 activation layout (f8f4v2_act_slot above): bytes of the scratch for (in_f, n_tokens).
+size_t memra_mmq_nvfp4_f8f4_v2_act_bytes(int in_f, int n_tokens) {
+    return (size_t) n_tokens * in_f + (size_t) (in_f / 32) * f8f4v2_act_tp(n_tokens) * sizeof(float);
+}
+
+// The F8F4 activation quantizer and its fused silu twin with the v2 store: same launch geometry,
+// same per-element math, the bytes the block_e4m3_mmq launchers write, placed for the v2 GEMM.
+// Both return 0 or 1000 + cudaError, like memra_mmq_nvfp4_f8f4_quantize_act_silu.
+int memra_mmq_nvfp4_f8f4_v2_quantize_act(
+        const float * x, void * vy, int in_f, int n_tokens, int64_t s01, cudaStream_t st) {
+    const int64_t ne0 = GGML_PAD((int64_t) in_f, MATRIX_ROW_PADDING);
+    const int block_size = 128;
+    const dim3 num_blocks((unsigned) n_tokens, (unsigned) ((ne0 / 4 + block_size - 1) / block_size), 1);
+    quantize_mmq_e4m3_d4_kernel<true><<<num_blocks, block_size, 0, st>>>(
+        x, vy, in_f, s01, ne0, n_tokens, f8f4v2_act_tp(n_tokens));
+    cudaError_t e = cudaGetLastError();
+    return e == cudaSuccess ? 0 : 1000 + (int) e;
+}
+
+int memra_mmq_nvfp4_f8f4_v2_quantize_act_silu(
+        const float * gate, const float * up, void * vy, int in_f, int n_tokens, int64_t s01,
+        cudaStream_t st) {
+    const int64_t ne0 = GGML_PAD((int64_t) in_f, MATRIX_ROW_PADDING);
+    const int block_size = 128;
+    const dim3 num_blocks((unsigned) n_tokens, (unsigned) ((ne0 / 4 + block_size - 1) / block_size), 1);
+    quantize_mmq_e4m3_d4_silu_kernel<true><<<num_blocks, block_size, 0, st>>>(
+        gate, up, vy, in_f, s01, ne0, n_tokens, f8f4v2_act_tp(n_tokens));
     cudaError_t e = cudaGetLastError();
     return e == cudaSuccess ? 0 : 1000 + (int) e;
 }
