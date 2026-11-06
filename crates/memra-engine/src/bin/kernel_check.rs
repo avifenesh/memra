@@ -4081,8 +4081,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
         }
-        // 27B ffn_down NVFP4 shape probe (in_f=17408 not a clean MMQ_ITER_K_FP4 multiple? T=512)
-        // — compare MMQ vs the dp4a oracle to isolate the 27B T=513 mismatch.
         // F8F4 v2 bit cells on the Qwen3.8-27B GGUF (the GB10 board model): every NVFP4 trunk
         // shape of the model the v2 route serves, not only the 9B the nvfp4-gemm section prefers.
         {
@@ -4113,6 +4111,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
         }
+        // 27B ffn_down NVFP4 shape probe (in_f=17408 not a clean MMQ_ITER_K_FP4 multiple? T=512)
+        // — compare MMQ vs the dp4a oracle to isolate the 27B T=513 mismatch.
         {
             let g27_path = kc_model(
                 "nvfp4-27b-shape",
@@ -8981,6 +8981,47 @@ fn f8f4_v2_cells(
                     y1.len(),
                     if nbad == 0 { "OK" } else { "FAIL" }
                 );
+            }
+        }
+    }
+    // Row tails and a partial raster group: the first N rows of the first shape's weight, with N
+    // off the 256-row image alignment (the image repeats row N-1, the epilogue drops those rows)
+    // and N/256 row tiles that leave the last raster group short.
+    if let Some((in_f, out_f, name)) = shapes.first().cloned() {
+        let t = g.find(&name).ok_or("v2 tail tensor vanished")?;
+        let raw = g.tensor_data(t);
+        let row_bytes = raw.len() / out_f;
+        for rows in [200usize, 1000, 1152] {
+            if rows > out_f {
+                continue;
+            }
+            let part = &raw[..rows * row_bytes];
+            let wd = e.htod_bytes(part)?;
+            let wd_rp = e.htod_bytes(&repack_nvfp4_split(part, rows))?;
+            for tt in [16usize, 130, 1024] {
+                let x: Vec<f32> = (0..tt * in_f).map(|i| pr(i + 113) - 0.5).collect();
+                let xd = e.htod(&x)?;
+                let y1 = e.dtoh(
+                    &e.qmatvec_mmq_nvfp4_f8f4_arm_raw(&wd, &xd, tt, in_f, rows, false, false)?,
+                )?;
+                for (rp, w) in [(false, &wd), (true, &wd_rp)] {
+                    let y2 = e.dtoh(
+                        &e.qmatvec_mmq_nvfp4_f8f4_arm_raw(w, &xd, tt, in_f, rows, rp, true)?,
+                    )?;
+                    let nbad = y1
+                        .iter()
+                        .zip(y2.iter())
+                        .filter(|(a, b)| a.to_bits() != b.to_bits())
+                        .count()
+                        + y1.len().abs_diff(y2.len());
+                    bad += nbad;
+                    println!(
+                        "MMQ-F8F4-V2-TAIL {name}[..{rows}] [NVFP4 {in_f}x{rows}] rp={} T={tt}: bit-mismatch {nbad}/{} {}",
+                        rp as u8,
+                        y1.len(),
+                        if nbad == 0 { "OK" } else { "FAIL" }
+                    );
+                }
             }
         }
     }

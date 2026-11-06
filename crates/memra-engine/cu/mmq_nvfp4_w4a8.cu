@@ -1554,8 +1554,11 @@ static __global__ void mul_mat_f8f4v2(
     static_assert(WRS == F8F4V2_WR, "the image scale permutation assumes 32-row warp spans");
     static_assert(TN % 2 == 0, "B ldmatrix.x4 loads n8 tiles in pairs");
     static_assert(WCS == 32 || WCS == 64, "the activation scale permutation is per 64 tokens");
-    static_assert(NT % CPR == 0 && ((NT / CPR) / LY::RPB) % CPR == 0,
+    static_assert(NT % CPR == 0 && (NT / CPR) % LY::RPB == 0 && ((NT / CPR) / LY::RPB) % CPR == 0,
                   "every cp.async line a thread issues keeps its swizzle phase");
+    static_assert(F8F4V2_ROW_ALIGN % BM == 0, "row tiles stay inside the image's Mp rows");
+    static_assert(256 % BN == 0, "token tiles stay inside the activation scale plane's Tp slots");
+    static_assert(256 % KS == 0, "K (a multiple of 256) splits into whole stages");
     static_assert(KSTEPS * BM / 4 <= NT && KSTEPS * BN / 4 <= NT, "one scale line per thread");
 
     extern __shared__ __align__(128) uint8_t f8f4v2_smem[];

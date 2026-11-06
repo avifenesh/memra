@@ -2215,13 +2215,13 @@ impl Engine {
         })
     }
 
-    /// Whether an F8F4 GEMM of `m` rows over `in_f` input features runs the v2 tile (per-call
+    /// Whether an F8F4 GEMM of `m` rows, `in_f` inputs and `out_f` outputs runs the v2 tile (per-call
     /// weight image, cp.async/ldmatrix mainloop, grouped raster), which is bit-identical to the
     /// v1 tile (kernel-check `MMQ-F8F4-V2`). `MEMRA_MMQ_F8F4_V2` of `1`/`0` decides the route,
     /// unset follows the device (on for GB10, research/gb10-prefill-20261106); the route then
     /// applies from `F8F4_V2_MIN_ROWS` rows, where the image pass pays for itself, and only for
-    /// in_f % 256 == 0. It reads only (in_f, m), so every weight of a quantize-once group agrees.
-    pub fn f8f4_v2_on(&self, in_f: usize, m: usize) -> bool {
+    /// in_f % 256 == 0, for shapes whose image fits the kernel's limits (`f8f4_v2_kernel_shape_ok`).
+    pub fn f8f4_v2_on(&self, in_f: usize, out_f: usize, m: usize) -> bool {
         static V2: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
         let route = *V2.get_or_init(|| {
             f8f4_route_on(
@@ -2230,7 +2230,7 @@ impl Engine {
                     && crate::unified_memory::is_unified(self.ctx()),
             )
         });
-        route && f8f4_v2_shape_ok(in_f, m)
+        route && f8f4_v2_shape_ok(in_f, out_f, m)
     }
 
     /// Quantize `x` ([m, in_f] f32) for the F8F4 GEMM: the block_e4m3_mmq layout for v1, the
@@ -2365,8 +2365,8 @@ impl Engine {
         rp: bool,
         v2: bool,
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
-        if v2 && !f8f4_v2_kernel_shape_ok(in_f) {
-            return Err(format!("F8F4 v2 needs in_f % 256 == 0, got {in_f}").into());
+        if v2 && !f8f4_v2_kernel_shape_ok(in_f, out_f, m) {
+            return Err(format!("F8F4 v2 refuses shape in_f={in_f} out_f={out_f} m={m}").into());
         }
         let act = self.f8f4_quantize(x, m, in_f, v2)?;
         self.f8f4_gemm_preq(bytes, &act, m, in_f, out_f, 1.0, rp, v2)
@@ -2384,6 +2384,9 @@ impl Engine {
         out_f: usize,
         v2: bool,
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
+        if v2 && !f8f4_v2_kernel_shape_ok(in_f, out_f, m) {
+            return Err(format!("F8F4 v2 refuses shape in_f={in_f} out_f={out_f} m={m}").into());
+        }
         self.mmq_nvfp4_f8f4_silu_launch_arm(bytes, gate, up, m, in_f, out_f, 1.0, false, v2)
     }
 
@@ -2459,7 +2462,7 @@ impl Engine {
             return Err("matmul_prefill_silu_f8f4: not a Quant tensor".into());
         };
         let (in_f, out_f) = (w.in_features(), w.out_features());
-        let v2 = self.f8f4_v2_on(in_f, m);
+        let v2 = self.f8f4_v2_on(in_f, out_f, m);
         self.mmq_nvfp4_f8f4_silu_launch_arm(bytes, gate, up, m, in_f, out_f, *scale, *rp, v2)
     }
 
@@ -2474,7 +2477,7 @@ impl Engine {
         in_f: usize,
         out_f: usize,
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
-        let v2 = self.f8f4_v2_on(in_f, m);
+        let v2 = self.f8f4_v2_on(in_f, out_f, m);
         self.mmq_nvfp4_f8f4_silu_launch_arm(bytes, gate, up, m, in_f, out_f, 1.0, false, v2)
     }
 
@@ -2568,7 +2571,7 @@ impl Engine {
             let (p, _g) = x.device_ptr(&stream);
             p
         };
-        let v2 = f8f4 && self.f8f4_v2_on(in_f, m);
+        let v2 = f8f4 && self.f8f4_v2_on(in_f, out_f, m);
         let in_group = f8f4
             && group
                 .as_ref()
@@ -3754,25 +3757,33 @@ pub fn a4_prefill_slots_reset() -> Vec<u64> {
         .collect()
 }
 
-/// Whether the prefill MMQ takes the F8F4 route: an explicit `MEMRA_MMQ_F8F4` of `1` or `0`
-/// decides; unset, it follows the device (on for a unified-memory 120a-family device, GB10).
 /// Rows from which the v2 F8F4 tile pays for its per-call weight image on GB10
 /// (research/gb10-prefill-20261106, gemm-v2 crossover receipts).
 pub(crate) const F8F4_V2_MIN_ROWS: usize = 2048;
 
-/// The v2 kernel's shape contract: whole 256-value k groups.
-fn f8f4_v2_kernel_shape_ok(in_f: usize) -> bool {
-    in_f > 0 && in_f.is_multiple_of(256)
-}
-
-/// Where the v2 route applies: the kernel contract (whole k groups, 32-bit activation offsets)
-/// plus the image-cost crossover.
-fn f8f4_v2_shape_ok(in_f: usize, m: usize) -> bool {
-    f8f4_v2_kernel_shape_ok(in_f)
-        && m >= F8F4_V2_MIN_ROWS
+/// The v2 kernel's shape contract, as `memra_mmq_nvfp4_f8f4_v2_preq` checks it: whole 256-value
+/// k groups, an image of `Mp = round_up(out_f, 256)` rows whose pre-pass grid (`Mp / 8` blocks
+/// in y) fits the 65,535 limit, and 32-bit mainloop offsets into the image (`Mp * in_f`) and the
+/// activation (`m * in_f`).
+fn f8f4_v2_kernel_shape_ok(in_f: usize, out_f: usize, m: usize) -> bool {
+    let mp = out_f.div_ceil(256) * 256;
+    in_f > 0
+        && in_f.is_multiple_of(256)
+        && out_f > 0
+        && mp / 8 <= 65_535
+        && (mp as u64) * (in_f as u64) < (1u64 << 32)
         && (m as u64) * (in_f as u64) < (1u64 << 32)
 }
 
+/// Where the v2 route applies: the kernel contract plus the image-cost crossover. A weight the
+/// contract refuses keeps v1; inside a quantize-once group the scratch records its layout, so a
+/// group whose weights split between v1 and v2 re-quantizes instead of reading the wrong one.
+fn f8f4_v2_shape_ok(in_f: usize, out_f: usize, m: usize) -> bool {
+    f8f4_v2_kernel_shape_ok(in_f, out_f, m) && m >= F8F4_V2_MIN_ROWS
+}
+
+/// Whether the prefill MMQ takes the F8F4 route: an explicit `MEMRA_MMQ_F8F4` of `1` or `0`
+/// decides; unset, it follows the device (on for a unified-memory 120a-family device, GB10).
 fn f8f4_route_on(env: Option<&str>, gb10: bool) -> bool {
     match env {
         Some("1") => true,
@@ -3797,19 +3808,31 @@ mod f8f4_default_tests {
     #[test]
     fn f8f4_v2_applies_from_the_crossover_on_whole_k_groups() {
         use super::{F8F4_V2_MIN_ROWS, f8f4_v2_shape_ok};
-        assert!(f8f4_v2_shape_ok(5120, F8F4_V2_MIN_ROWS));
-        assert!(f8f4_v2_shape_ok(17408, 8192));
+        assert!(f8f4_v2_shape_ok(5120, 17408, F8F4_V2_MIN_ROWS));
+        assert!(f8f4_v2_shape_ok(17408, 5120, 8192));
         assert!(
-            !f8f4_v2_shape_ok(5120, F8F4_V2_MIN_ROWS - 1),
+            !f8f4_v2_shape_ok(5120, 17408, F8F4_V2_MIN_ROWS - 1),
             "short prompts keep v1"
         );
         assert!(
-            !f8f4_v2_shape_ok(5184, 8192),
+            !f8f4_v2_shape_ok(5184, 17408, 8192),
             "in_f must be whole 256-value groups"
         );
         assert!(
-            !f8f4_v2_shape_ok(17408, 262144),
+            !f8f4_v2_shape_ok(17408, 5120, 262144),
             "32-bit activation offsets"
+        );
+        assert!(
+            !f8f4_v2_shape_ok(17408, 248320, 8192),
+            "32-bit image offsets: a vocabulary-sized weight at in_f 17408 keeps v1"
+        );
+        assert!(
+            f8f4_v2_shape_ok(5120, 248320, 8192),
+            "a 5120-wide vocabulary weight fits"
+        );
+        assert!(
+            !f8f4_v2_shape_ok(4096, 600_000, 8192),
+            "the pre-pass grid allows 524,280 image rows"
         );
     }
 }
