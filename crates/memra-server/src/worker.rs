@@ -41202,10 +41202,10 @@ fn chunk_cap_for(lm: &LoadedModel) -> usize {
 /// The probe frees its buffers on return, but the async pool keeps freed blocks mapped, so the
 /// driver still counts them as used. Boot reads driver free memory right after this (the
 /// derived prefix-cache budget), and the admission calibration resets its high-water mark to
-/// the pool's current reservation, so the probe's pool goes back to the driver on both arms
-/// before this returns (RTX 5090, Qwen3.8-27B: the failed probe left about 23.7 GB mapped,
-/// which zeroed the prefix budget and raised the calibrated transient floor from 1640 MB to
-/// 4808 MB).
+/// the pool's current reservation, so the cached pool goes back to the driver on both arms
+/// before this returns (the trim fences every owning stream first). RTX 5090, Qwen3.8-27B +
+/// DSpark, before this: the prefix budget was 0 B and the calibration read peak-mapped 23712 MB
+/// against 20480 MB without the probe, a 4680 MB floor instead of about 1600 MB.
 fn measured_wave_cap(
     lm: &LoadedModel,
     engine: &Engine,
@@ -41232,7 +41232,6 @@ fn measured_wave_cap(
         let t0 = std::time::Instant::now();
         let probe = lm.model.decode_wave_probe(engine, SPEC_COST_DEPTH);
         let probe_s = t0.elapsed().as_secs_f64();
-        oom_teardown_fence(engine, loaded);
         let released = trim_model_device_pools(engine, loaded, "wave-probe")
             .iter()
             .fold(0usize, |total, report| {
@@ -41249,13 +41248,18 @@ fn measured_wave_cap(
             Ok((two, one, one_tc)) => eprintln!(
                 "[wave-probe] 32 sessions at depth {SPEC_COST_DEPTH}: two 16-row waves {two:.1} ms, \
                  one 32-row wave {one:.1} ms (tensor-core tier {one_tc:.1} ms) -> wave cap {c}, \
-                 tensor-core b32 {} ({probe_s:.1}s; released {}MB of probe pool to the driver)",
+                 tensor-core b32 {} ({probe_s:.1}s; released {}MB of cached pool to the driver)",
                 if tc { "on" } else { "off" },
                 released >> 20,
             ),
             Err(err) => eprintln!(
-                "[wave-probe] failed ({err}) after {probe_s:.1}s; wave cap 16; released {}MB of \
-                 probe pool to the driver",
+                "[wave-probe] {} ({err}) after {probe_s:.1}s; wave cap 16; released {}MB of \
+                 cached pool to the driver",
+                if err.is::<memra_engine::spec_cost::ProbeDoesNotFit>() {
+                    "skipped"
+                } else {
+                    "failed"
+                },
                 released >> 20,
             ),
         }
@@ -44029,6 +44033,11 @@ fn run_spec_cost_calibration(
                         realized: HashMap::new(),
                     },
                 );
+            }
+            Err(err) if err.is::<memra_engine::spec_cost::ProbeDoesNotFit>() => {
+                eprintln!(
+                    "[spec-cost] calibration skipped: model={name:?} ({err}); the band serves"
+                )
             }
             Err(err) => {
                 eprintln!("[spec-cost] calibration FAILED: model={name:?} ({err}); the band serves")
@@ -52696,16 +52705,13 @@ mod tests {
         let probe = body
             .find("lm.model.decode_wave_probe(engine,SPEC_COST_DEPTH);")
             .expect("probe");
-        let fence = body
-            .find("oom_teardown_fence(engine,loaded);")
-            .expect("fence");
         let trim = body
             .find("trim_model_device_pools(engine,loaded,\"wave-probe\")")
             .expect("trim");
         let decide = body.find("let(c,tc)=match&probe{").expect("decision");
         assert!(
-            probe < fence && fence < trim && trim < decide,
-            "probe, then fence, then trim, before either arm returns"
+            probe < trim && trim < decide,
+            "probe, then trim, before either arm returns"
         );
         let policies = flat
             .find("decode_chunk_policy(lm,&engine,&loaded)")
