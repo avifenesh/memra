@@ -42062,10 +42062,13 @@ fn rider_forward_caps(model: &str, riders: usize) -> Vec<usize> {
     let Some(t) = reg.get(model).map(|e| &e.table) else {
         return (0..=16).collect();
     };
-    let plain_marginal = if riders <= 1 {
+    // The plain table is as long as the model's decode wave cap (8 on a MoE trunk), so more
+    // riders than that price their marginal row inside one full plain wave.
+    let wave = riders.min(16).min(t.plain_ms.len());
+    let plain_marginal = if wave <= 1 {
         t.plain_ms[0]
     } else {
-        (t.plain_ms[riders.min(16) - 1] - t.plain_ms[0]) / (riders.min(16) - 1) as f64
+        (t.plain_ms[wave - 1] - t.plain_ms[0]) / (wave - 1) as f64
     };
     (0..=16usize)
         .map(|spec_rows| {
@@ -45154,6 +45157,52 @@ mod tests {
         );
         // No table: no riders.
         assert_eq!(super::rider_forward_caps("cap-unknown", 4)[2], 2);
+    }
+
+    /// A model whose decode wave cap is 8 (a MoE trunk refuses the exact-16 tier) gets an
+    /// 8-entry plain table from the boot calibration. More riders than that price their marginal
+    /// row inside one 8-row plain wave instead of indexing past the table.
+    #[test]
+    fn rider_caps_read_a_table_shorter_than_16_rows() {
+        let verify = memra_engine::spec_cost::interpolate_16(&[
+            (1, 20.0),
+            (2, 20.5),
+            (4, 21.5),
+            (8, 26.0),
+            (16, 40.0),
+        ]);
+        let plain = memra_engine::spec_cost::interpolate_n(
+            &[(1, 19.0), (2, 20.0), (4, 22.0), (8, 26.0)],
+            8,
+        );
+        assert_eq!(plain.len(), 8);
+        super::spec_cost_registry().lock().unwrap().insert(
+            "cap-moe8".into(),
+            super::SpecCostEntry {
+                table: memra_engine::spec_cost::SpecCostTable {
+                    depth: 2048,
+                    verify_ms: verify,
+                    plain_ms: plain,
+                    round_overhead_ms: 3.0,
+                    pooled_overhead_ms: None,
+                },
+                pooled: true,
+                plain_cap: 8,
+                accept: None,
+                realized: HashMap::new(),
+            },
+        );
+        for riders in [1usize, 2, 8, 9, 12, 16, 40] {
+            let caps = super::rider_forward_caps("cap-moe8", riders);
+            assert_eq!(caps.len(), 17);
+            for (spec_rows, &cap) in caps.iter().enumerate() {
+                assert!(cap >= spec_rows && cap <= 16 && cap - spec_rows <= riders);
+            }
+        }
+        // marginal plain row inside one 8-row wave: (26 - 19) / 7 = 1.0 ms; verify rows past 4
+        // cost 1.125 ms each, so a 4-row spec forward takes no riders at any rider count.
+        assert_eq!(super::rider_forward_caps("cap-moe8", 12)[4], 4);
+        assert_eq!(super::rider_forward_caps("cap-moe8", 12)[1], 4);
     }
 
     /// A calibrated model with no acceptance history explores speculation while every

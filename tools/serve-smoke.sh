@@ -506,5 +506,48 @@ else
   echo "== serve-smoke: Q35 coldhol arm SKIP (no model at $Q35_COLD_MODEL)"
 fi
 
+# 13. MOE SPEC ARM (2026-11-06). Every arm above serves a MoE with spec off, so no gate booted a
+# MoE with a draft head on the default env, where the boot spec-cost calibration runs. A MoE FFN
+# refuses the exact-16 tier, so its decode wave cap is 8, and the calibration measured plain
+# batched steps up to 16 anyway: decode_step_batch refused B=16 and the worker panicked before
+# the server listened (Ornith-1.5-35B-A3B; Qwen3.6-35B-A3B + its owntrim draft). Assertions:
+#   (a) the default-env boot listens;
+#   (b) the calibration ran at plain_cap=8 and its plain table has exactly 8 entries;
+#   (c) one greedy request returns text, and the server is alive after it with zero panics.
+Q35_SPEC_DRAFT="${MEMRA_Q35_SPEC_DRAFT:-$(dirname "$Q35_COLD_MODEL")/draft-35b-owntrim-nvfp4head-q4blk.gguf}"
+if [ -f "$Q35_COLD_MODEL" ] && [ -f "$Q35_SPEC_DRAFT" ]; then
+  echo "== serve-smoke: MoE spec arm (default env: boot spec-cost calibration at wave cap 8) =="
+  export MEMRA_CTX=4096
+  if start_server "smoke=$Q35_COLD_MODEL+$Q35_SPEC_DRAFT"; then
+    PASS "MoE spec boot listens on the default env"
+    python3 -c '
+import re, sys
+lines = [l for l in open(sys.argv[1], errors="replace") if l.startswith("[spec-cost] model=\"smoke\"")]
+assert lines, "no [spec-cost] calibration line for the model"
+m = re.search(r"plain_cap=(\d+) .*plain_ms\[1\.\.\]=\[([^\]]*)\]", lines[0])
+assert m, lines[0]
+cap, n = int(m.group(1)), len(m.group(2).split())
+assert cap == 8 and n == 8, f"plain_cap={cap}, {n} plain entries"
+' /tmp/serve-smoke.log && PASS "MoE spec-cost calibration: plain_cap=8, 8 plain entries" \
+      || FAIL "MoE spec-cost calibration line (want plain_cap=8 and 8 plain entries)"
+    T=$(chat "Explain what a mutex is in one sentence." 32 | say)
+    [ -n "$T" ] && PASS "MoE spec request returns text" || FAIL "MoE spec request"
+    curl -sf $BASE/health >/dev/null && PASS "MoE spec server alive after the request" \
+      || FAIL "MoE spec server died"
+    if grep -q "panicked" /tmp/serve-smoke.log; then
+      FAIL "MoE spec arm: panic in the server log"
+    else
+      PASS "MoE spec arm: zero panics in the server log"
+    fi
+    stop_server
+  else
+    grep -m1 -A1 "panicked" /tmp/serve-smoke.log
+    FAIL "MoE spec server did not start"
+  fi
+  unset MEMRA_CTX
+else
+  echo "== serve-smoke: MoE spec arm SKIP (no model at $Q35_COLD_MODEL or no draft at $Q35_SPEC_DRAFT)"
+fi
+
 echo "serve-smoke: $FAILS failed"
 [ $FAILS -eq 0 ]

@@ -9,7 +9,8 @@
 //! - `verify_ms[R-1]`: one target verify forward over R rows of one session (R = 1..=16), the
 //!   t-parallel walk every pooled and serial MTP verify runs;
 //! - `plain_ms[B-1]`: one plain batched decode step over B sessions (B = 1..=P, P the model's
-//!   plain wave cap: 16, or 32 on the b32 tier), the serving tick's lean device-sampled step;
+//!   decode wave cap: 8 on a trunk without the exact-16 tier such as a MoE, 16, or 32 on the b32
+//!   tier), the serving tick's lean device-sampled step;
 //! - `round_overhead_ms`: what a speculative round costs a session beyond its verify forward
 //!   (drafting, accept walk, commit, host syncs), from a real session burst.
 //!
@@ -85,6 +86,18 @@ pub fn interpolate_n(points: &[(usize, f64)], n: usize) -> Vec<f64> {
             }
         })
         .collect()
+}
+
+/// Batch widths the plain table measures for a model whose decode wave cap is `cap`: the
+/// [`PLAIN_POINTS`] below the cap, then the cap itself. `decode_step_batch` refuses a batch
+/// above the cap (a MoE trunk refuses the exact-16 tier, so its cap is 8), and the serving tick
+/// never steps more than the cap in one wave, so a wider point is neither runnable nor priced.
+/// A cap between the fixed points (15 on an mHC trunk) is measured rather than held flat.
+fn plain_points(cap: usize) -> Vec<usize> {
+    let cap = cap.clamp(1, 32);
+    let mut points: Vec<usize> = PLAIN_POINTS.iter().copied().filter(|&b| b < cap).collect();
+    points.push(cap);
+    points
 }
 
 fn median(mut v: Vec<f64>) -> f64 {
@@ -254,7 +267,8 @@ impl HybridModel {
 
     /// Measure this model's [`SpecCostTable`] at `depth` (see the module docs). Runs on the
     /// serving engine before readiness; every buffer it allocates is dropped on return. The
-    /// plain-batch table primes up to 16 (or 32) sessions and checks their fit after the second,
+    /// plain-batch table primes `plain_cap` sessions (the decode wave cap: 8, 16 or 32; never a
+    /// batch `decode_step_batch` refuses) and checks their fit after the second,
     /// like the wave probe: on an RTX 5090 a Qwen3.8-27B calibration primed until the driver ran
     /// out (46 s) to fail anyway.
     pub fn spec_cost_calibrate(
@@ -264,11 +278,7 @@ impl HybridModel {
         plain_cap: usize,
     ) -> Result<SpecCostTable, Box<dyn std::error::Error>> {
         let plain_cap = plain_cap.clamp(1, 32);
-        let plain_points: Vec<usize> = PLAIN_POINTS
-            .iter()
-            .copied()
-            .filter(|&b| b <= plain_cap.max(16))
-            .collect();
+        let plain_points = plain_points(plain_cap);
         let vocab = (self.cfg.n_vocab as usize).max(64) - 16;
         let n_vocab = self.cfg.n_vocab as usize;
         let prompt = |salt: u32| -> Vec<u32> {
@@ -340,7 +350,7 @@ impl HybridModel {
             }
         }
         let verify_ms = interpolate_16(&verify);
-        let plain_ms = interpolate_n(&plain, plain_cap.max(16));
+        let plain_ms = interpolate_n(&plain, plain_cap);
         // ---- per-round overhead beyond the verify, from a real session burst ----
         let k = 3usize;
         let mut sess = self.new_session(e, depth + 160)?;
@@ -482,6 +492,30 @@ mod tests {
             ..t
         };
         assert_eq!(serial_only.overhead_at(8), 4.0);
+    }
+
+    /// The plain table measures batch widths only up to the model's decode wave cap, and the
+    /// cap itself. `decode_step_batch` refuses a batch above the cap: a qwen35_moe trunk refuses
+    /// the exact-16 tier, so its cap is 8, and a default boot of Ornith-1.5-35B-A3B panicked in
+    /// the calibration's B=16 step. A cap between the fixed points (15 on an mHC trunk) is
+    /// measured, not extrapolated flat from 8.
+    #[test]
+    fn plain_points_stop_at_the_decode_wave_cap() {
+        assert_eq!(super::plain_points(1), vec![1]);
+        assert_eq!(super::plain_points(8), vec![1, 2, 4, 8]);
+        assert_eq!(super::plain_points(15), vec![1, 2, 4, 8, 15]);
+        assert_eq!(super::plain_points(16), vec![1, 2, 4, 8, 16]);
+        assert_eq!(super::plain_points(32), vec![1, 2, 4, 8, 16, 32]);
+        for cap in 1..=32 {
+            let p = super::plain_points(cap);
+            assert_eq!(p.last(), Some(&cap), "cap {cap} is measured");
+            assert!(p.windows(2).all(|w| w[0] < w[1]), "cap {cap}: {p:?}");
+            assert_eq!(
+                super::interpolate_n(&p.iter().map(|&b| (b, b as f64)).collect::<Vec<_>>(), cap)
+                    .len(),
+                cap
+            );
+        }
     }
 
     #[test]
