@@ -20121,6 +20121,242 @@ default_reasoning_effort = "always"
             });
     }
 
+    /// B11 (2026-11-06): the n > 1 queue sheds through the real handlers. A group that would
+    /// overflow the bounded queue answers 429 `shed_queue`; a group whose wait estimate (~97 s
+    /// for one request queued ahead) cannot fit its 1 s deadline answers 429 `shed_deadline`
+    /// with the retry contract. Neither reaches the worker, both settle unbilled, and each logs
+    /// one `[shed]` line naming the lane, the group size and the backlog.
+    #[test]
+    fn a_choice_group_queue_shed_is_a_logged_429() {
+        const NAME: &str = "a_choice_group_queue_shed_is_a_logged_429";
+        let lane = lanes::Lane::Interactive;
+        let bound = max_queue_depth(lane_cap(lane).max(1));
+        let estimate = reset_estimate_s(&worker::Metrics {
+            completed: 10,
+            tokens_out: 3_870,
+            step_p50_ms: 250.0,
+            ..Default::default()
+        });
+        if !in_child(NAME) {
+            let stderr = rerun_in_child(NAME, &[]);
+            for line in [
+                format!(
+                    "[shed] shed_queue lane=interactive choices=2 queued={} bound={bound}\n",
+                    bound - 1
+                ),
+                format!(
+                    "[shed] shed_deadline lane=interactive choices=2 queued=1 est_wait_s={estimate}\n"
+                ),
+            ] {
+                assert_eq!(
+                    stderr.matches(line.as_str()).count(),
+                    1,
+                    "{line:?} must be logged once:\n{stderr}"
+                );
+            }
+            assert_eq!(stderr.matches("[shed] ").count(), 2, "{stderr}");
+            return;
+        }
+        let _counters = global_counter_writer_guard();
+        tokio::runtime::Builder::new_current_thread()
+            .enable_time()
+            .build()
+            .unwrap()
+            .block_on(async {
+                for (path, payload, queued, code) in [
+                    (
+                        "/v1/completions",
+                        json!({"model":"m","prompt":"t","n":2,"max_tokens":4,"stream":true}),
+                        bound - 1,
+                        "shed_queue",
+                    ),
+                    (
+                        "/v1/chat/completions",
+                        json!({"model":"m","messages":[{"role":"user","content":"t"}],
+                            "n":2,"max_tokens":4,"stream":true,"timeout_ms":1000}),
+                        1,
+                        "shed_deadline",
+                    ),
+                ] {
+                    let (st, cmd_rx, mock) = choice_group_state();
+                    let counter = &worker::ADMISSION_RESERVATIONS[lane.idx()];
+                    let prev = counter.swap(queued, std::sync::atomic::Ordering::AcqRel);
+                    let _restore = CounterRestore(counter, prev);
+                    let response = bg914_http(bg914_router(st), "POST", path, None, payload).await;
+                    assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS, "{path}");
+                    if code == "shed_deadline" {
+                        let secs = estimate.clamp(1, 60);
+                        assert_eq!(response.headers()["retry-after"], secs.to_string());
+                        assert_eq!(
+                            response.headers()["retry-after-ms"],
+                            (secs * 1000).to_string()
+                        );
+                    }
+                    let body = body_value(response).await;
+                    assert_eq!(body["error"]["code"], code, "{path}: {body}");
+                    assert_eq!(body["error"]["type"], "rate_limit_error", "{path}: {body}");
+                    assert!(
+                        cmd_rx.try_recv().is_err(),
+                        "{path}: a shed group never reaches the worker"
+                    );
+                    assert!(
+                        mock.events().contains(&MeterEvent::Unbilled {
+                            outcome: code,
+                            status: 429,
+                            code: code.into(),
+                        }),
+                        "{path}: {:?}",
+                        mock.events()
+                    );
+                    assert_eq!(counter.load(std::sync::atomic::Ordering::Acquire), queued);
+                }
+            });
+    }
+
+    /// B11 (2026-11-06): a busy body-admission pool refuses through the real middleware
+    /// (`authenticate_inference_before_body`) before any extractor reads the body: 429
+    /// `body_admission_busy` with the one-second retry contract, and one `[shed]` line naming
+    /// the path and the pool (small: a declared length up to 1 MiB; large: no declared length).
+    #[test]
+    fn a_busy_body_admission_is_a_logged_429() {
+        const NAME: &str = "a_busy_body_admission_is_a_logged_429";
+        if !in_child(NAME) {
+            let stderr = rerun_in_child(NAME, &[]);
+            for line in [
+                "[shed] body_admission_busy path=/v1/chat/completions pool=small\n",
+                "[shed] body_admission_busy path=/v1/completions pool=large\n",
+            ] {
+                assert_eq!(
+                    stderr.matches(line).count(),
+                    1,
+                    "{line:?} must be logged once:\n{stderr}"
+                );
+            }
+            return;
+        }
+        tokio::runtime::Builder::new_current_thread()
+            .enable_time()
+            .build()
+            .unwrap()
+            .block_on(async {
+                use tower::ServiceExt;
+                let (st, cmd_rx, _mock) = choice_group_state();
+                let app = apply_body_limit(
+                    Router::new()
+                        .route("/v1/completions", post(completions_admitted))
+                        .route("/v1/chat/completions", post(chat_completions_admitted))
+                        .with_state(st.clone()),
+                )
+                .layer(middleware::from_fn_with_state(
+                    st,
+                    authenticate_inference_before_body,
+                ));
+                // This fresh process owns both pools: hold every permit.
+                let _small = small_body_admission_semaphore()
+                    .try_acquire_many_owned(MAX_SMALL_BODY_ADMISSIONS as u32)
+                    .unwrap();
+                let _large = body_admission_semaphore()
+                    .try_acquire_many_owned(MAX_BODY_ADMISSIONS as u32)
+                    .unwrap();
+                for (path, payload, declared) in [
+                    (
+                        "/v1/chat/completions",
+                        json!({"model":"m","messages":[{"role":"user","content":"t"}]}),
+                        true,
+                    ),
+                    ("/v1/completions", json!({"model":"m","prompt":"t"}), false),
+                ] {
+                    let payload = payload.to_string();
+                    let mut request =
+                        axum::http::Request::post(path).header(CONTENT_TYPE, "application/json");
+                    if declared {
+                        request = request.header(CONTENT_LENGTH, payload.len());
+                    }
+                    let response = app
+                        .clone()
+                        .oneshot(request.body(Body::from(payload)).unwrap())
+                        .await
+                        .unwrap();
+                    assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS, "{path}");
+                    assert_eq!(response.headers()["retry-after"], "1", "{path}");
+                    assert_eq!(response.headers()["retry-after-ms"], "1000", "{path}");
+                    assert!(!response.headers()["x-request-id"].is_empty(), "{path}");
+                    let body = body_value(response).await;
+                    assert_eq!(
+                        body["error"]["code"], "body_admission_busy",
+                        "{path}: {body}"
+                    );
+                    assert_eq!(body["error"]["type"], "rate_limit_error", "{path}: {body}");
+                }
+                assert!(
+                    cmd_rx.try_recv().is_err(),
+                    "a refused body never reaches the worker"
+                );
+            });
+    }
+
+    /// B12/B13 (2026-11-06): the cold-drafter grid-refusal counter is an operator row in both
+    /// the JSON `/metrics` body and the Prometheus exposition, carrying its live value; neither a
+    /// keyring tenant nor the single-key completion domain sees it. Only the GPU worker's dspark
+    /// path bumps the counter, so this test's own bump is the whole delta.
+    #[tokio::test]
+    async fn the_cold_drafter_grid_refusal_counter_is_an_operator_metric() {
+        const ROW: &str = "dspark_cold_drafter_grid_refusals_total";
+        const FAMILY: &str = "memra_dspark_cold_drafter_grid_refusals_total";
+        worker::DSPARK_COLD_DRAFTER_GRID_REFUSALS_TOTAL
+            .fetch_add(3, std::sync::atomic::Ordering::Relaxed);
+        let value = worker::dspark_cold_drafter_grid_refusals_total();
+        assert!(value >= 3);
+
+        let operator = metrics_json(
+            multi_key_metrics_state(Some("scrape-secret")),
+            "scrape-secret",
+        )
+        .await;
+        assert_eq!(
+            operator[ROW], value,
+            "the operator JSON carries the live value"
+        );
+        let tenant = metrics_json(multi_key_metrics_state(None), METRICS_KEY_ACME).await;
+        assert!(tenant.get(ROW).is_none(), "a tenant must not see {ROW}");
+        let mut single = fake_worker_state();
+        single.api_auth.single_key = Some(Arc::from("completion-secret"));
+        single.metrics_auth = MetricsAuth::new(true, single.api_auth.configured(), None);
+        let completion = metrics_json(single, "completion-secret").await;
+        assert!(
+            completion.get("admitted").is_some(),
+            "the single-key completion domain keeps its process counters"
+        );
+        assert!(
+            completion.get(ROW).is_none(),
+            "the completion domain must not see {ROW}"
+        );
+
+        let m = worker::Metrics::default();
+        let text = render_prometheus_metrics(&m, &[], &[], &MetricsScope::All);
+        assert_eq!(
+            text.matches(&format!("# HELP {FAMILY} ")).count(),
+            1,
+            "{text}"
+        );
+        assert_eq!(
+            text.matches(&format!("# TYPE {FAMILY} counter\n")).count(),
+            1,
+            "{text}"
+        );
+        assert!(
+            text.contains(&format!("\n{FAMILY} {value}\n")),
+            "the exposition carries the live value: {text}"
+        );
+        for scope in [
+            MetricsScope::Tenant("t:acme".into()),
+            MetricsScope::CompletionDomain,
+        ] {
+            let text = render_prometheus_metrics(&m, &[], &[], &scope);
+            assert!(!text.contains(FAMILY), "{scope:?} must not see {FAMILY}");
+        }
+    }
+
     #[tokio::test]
     async fn committed_prefill_sends_a_real_keepalive_before_any_generated_token() {
         let (tx, rx) = worker::event_channel();
