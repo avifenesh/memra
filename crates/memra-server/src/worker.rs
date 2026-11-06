@@ -41266,8 +41266,8 @@ fn chunk_cap_for(lm: &LoadedModel) -> usize {
 /// one wave 3.8% faster; an RTX 5090 laptop on a 9B: within its thermal drift), so the first
 /// call per model runs
 /// `decode_wave_probe` at the spec-cost depth and keeps 32 only when one wave is faster.
-/// A probe that cannot run (allocation failure, fewer than 17 sessions allowed) keeps 16.
-/// An explicit MEMRA_DECODE_BATCH_CAP skips the probe.
+/// A probe that cannot run (32 sessions do not fit, allocation failure, fewer than 17 sessions
+/// allowed) keeps 16. An explicit MEMRA_DECODE_BATCH_CAP skips the probe.
 ///
 /// The probe frees its buffers on return, but the async pool keeps freed blocks mapped, so the
 /// driver still counts them as used. Boot reads driver free memory right after this (the
