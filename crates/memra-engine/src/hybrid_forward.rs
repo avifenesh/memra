@@ -7098,6 +7098,8 @@ impl HybridModel {
                 anat_mark!(4);
             }
             let zx16 = if f16fuse { Some(&*z16) } else { None };
+            // The down projection's output when it stays where the GEMM wrote it (eager tail).
+            let mut fo_owned: Option<CudaSlice<f32>> = None;
             match &layer.ffn {
                 crate::hybrid::Ffn::Dense {
                     ffn_gate,
@@ -7106,20 +7108,22 @@ impl HybridModel {
                     ffn_down_pqs,
                 } => {
                     let n_ff = ffn_gate.out_features();
-                    // gate/up INTO boundary slabs (piecewise increment 2); fall back to
-                    // the allocating group + copy when a mirror is missing.
+                    // gate/up INTO boundary slabs (piecewise increment 2) when f16 mirrors take
+                    // them. Otherwise the allocating group's outputs feed the activation directly:
+                    // the slabs are read only by the activation below, so the former copy into
+                    // them (two [t, n_ff] f32 device copies per layer) only moved the same values.
                     let mut into_ok = false;
                     if let Some(xh) = zx16 {
                         into_ok = e.try_f16_gemm_pre_into_prefill(ffn_gate, xh, t, sl_gate)?
                             && e.try_f16_gemm_pre_into_prefill(ffn_up, xh, t, sl_up)?;
                     }
-                    if !into_ok {
-                        let mut g2 = e.matmul_group_prefill_xh(&[ffn_gate, ffn_up], z, zx16, t)?;
-                        let up_y = g2.pop().unwrap();
-                        let gate_y = g2.pop().unwrap();
-                        e.copy_into(sl_gate, 0, &gate_y, t * n_ff)?;
-                        e.copy_into(sl_up, 0, &up_y, t * n_ff)?;
-                    }
+                    let g2_owned: Vec<CudaSlice<f32>>;
+                    let (gate_src, up_src): (&CudaSlice<f32>, &CudaSlice<f32>) = if into_ok {
+                        (&*sl_gate, &*sl_up)
+                    } else {
+                        g2_owned = e.matmul_group_prefill_xh(&[ffn_gate, ffn_up], z, zx16, t)?;
+                        (&g2_owned[0], &g2_owned[1])
+                    };
                     // task #17: the silu arm's f16out twin emits the down GEMM's fp16
                     // operand in-epilogue; non-silu activations keep the standalone convert.
                     // silu_mul_f16out is PLAIN silu(gate)*up — a clamped layer (step35 dense
@@ -7134,14 +7138,14 @@ impl HybridModel {
                         && ffn_down_pqs.is_none()
                     {
                         let mut a16 = e.alloc_u8_uninit(t * n_ff * 2)?;
-                        e.silu_mul_f16out(sl_gate, sl_up, act, &mut a16, t * n_ff)?;
+                        e.silu_mul_f16out(gate_src, up_src, act, &mut a16, t * n_ff)?;
                         Some(a16)
                     } else {
                         Self::ffn_act_lim(
                             e,
                             &self.cfg,
-                            sl_gate,
-                            sl_up,
+                            gate_src,
+                            up_src,
                             1.0,
                             1.0,
                             d_lim,
@@ -7173,7 +7177,13 @@ impl HybridModel {
                         // `act` already carries the AWQ scale (applied above), so both the f16
                         // GEMM and this fallback see the same, scaled input.
                         let y = e.matmul_prefill(ffn_down, &*act, t)?;
-                        e.copy_into(sl_fo, 0, &y, t * n_embd)?;
+                        // The captured S-glue segment reads the slab's fixed address; the eager
+                        // tail reads the GEMM output where it already is.
+                        if use_seg {
+                            e.copy_into(sl_fo, 0, &y, t * n_embd)?;
+                        } else {
+                            fo_owned = Some(y);
+                        }
                     }
                 }
                 crate::hybrid::Ffn::Moe(m) => {
@@ -7207,16 +7217,20 @@ impl HybridModel {
                 }
                 sg[il].as_ref().unwrap().launch()?;
             } else {
+                let fo: &CudaSlice<f32> = match fo_owned.as_ref() {
+                    Some(y) => y,
+                    None => &*sl_fo,
+                };
                 if il + 1 < hi {
                     let w_next = self.layers[il + 1].attn_norm.float_data();
                     if f16fuse {
-                        e.add_rms_norm_f16out(x1, sl_fo, w_next, x_nxt, h, h16, n_embd, t, eps)?;
+                        e.add_rms_norm_f16out(x1, fo, w_next, x_nxt, h, h16, n_embd, t, eps)?;
                     } else {
-                        e.add(x1, sl_fo, x_nxt, t * n_embd)?;
+                        e.add(x1, fo, x_nxt, t * n_embd)?;
                         e.rms_norm(x_nxt, w_next, h, n_embd, t, eps)?;
                     }
                 } else {
-                    e.add(x1, sl_fo, x_nxt, t * n_embd)?;
+                    e.add(x1, fo, x_nxt, t * n_embd)?;
                 }
             }
             anat_mark!(4);
