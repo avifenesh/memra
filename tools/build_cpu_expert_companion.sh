@@ -8,7 +8,7 @@ fi
 
 script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 repo_dir=$(cd -- "$script_dir/.." && pwd)
-output=${1:-$repo_dir/target/release/libmemra-cpu-experts.so}
+output=${1:-$repo_dir/target/release/libmemra-cpu-experts.so}  # lint-target-dir: tree (this script's own output, not a cargo product)
 
 mkdir -p -- "$(dirname -- "$output")"
 "${CXX:-c++}" -std=c++17 -O3 -march=native -fPIC -shared -fopenmp \

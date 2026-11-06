@@ -183,6 +183,8 @@ run_probe() {
         [ "$extra" != "-" ] && [ -n "$extra" ] && { local kv; for kv in $extra; do envs+=("$kv"); done; }
         # shellcheck disable=SC2206
         local cmdline=($model); [ "$prompt" != "-" ] && cmdline+=($prompt)
+        # A command under target/ (models.tsv's samp row) is a cargo product: run what the build wrote.
+        [ "${cmdline[0]#target/}" != "${cmdline[0]}" ] && cmdline[0]="${CARGO_TARGET_DIR:-target}/${cmdline[0]#target/}"
         local t0 t1; t0=$(date +%s)
         lockrun env "${envs[@]}" timeout 900 "${cmdline[@]}" > "$log" 2>&1
         local rc=$?; t1=$(date +%s)
@@ -210,9 +212,9 @@ run_probe() {
     [ "$extra" != "-" ] && [ -n "$extra" ] && { local kv; for kv in $extra; do envs+=("$kv"); done; }
     local bin args=()
     case "$kind" in
-        spec)  bin=target/release/run-spec ;;
-        gspec) bin=target/release/gemma-gate ;;
-        *)     bin=target/release/run-gen ;;
+        spec)  bin="${CARGO_TARGET_DIR:-target}"/release/run-spec ;;
+        gspec) bin="${CARGO_TARGET_DIR:-target}"/release/gemma-gate ;;
+        *)     bin="${CARGO_TARGET_DIR:-target}"/release/run-gen ;;
     esac
     if [ "${prompt:0:1}" = "@" ]; then
         envs+=("MEMRA_PROMPT_FILE=$ROOT/${prompt:1}")
@@ -306,7 +308,12 @@ if [ "$REFRESH" = 1 ]; then
         fi
         echo "fast-gate: WARNING — refreshing goldens on a DIRTY tree (--force)."
     fi
-    mkdir -p "$GOLDENS"
+    mkdir -p "$GOLDENS" "$LOGDIR"
+    # The goldens are stamped with HEAD, so they must come from HEAD's binaries: build first,
+    # exactly as tier 0 does (a refresh used to run whatever an older build had left).
+    cargo build --release > "$LOGDIR/build.log" 2>&1 || {
+        echo "fast-gate: REFUSED golden refresh: BUILD FAIL"; tail -12 "$LOGDIR/build.log"; exit 1;
+    }
     SHA=$(git rev-parse --short HEAD); TS=$(date -u +%Y-%m-%dT%H:%M:%SZ)
     ids="${PROBES_OVERRIDE:-$(all_probe_ids | tr '\n' ',' | sed 's/,$//')}"
     echo "== fast-gate: refreshing goldens at $SHA ($TS) =="
@@ -345,15 +352,15 @@ case "$KC_SCOPE" in
     none)
         echo "  kernel-check: SKIP (no matched kernel scope)" ;;
     all)
-        lockrun target/release/kernel-check > "$LOGDIR/kernel-check.log" 2>&1 \
+        lockrun "${CARGO_TARGET_DIR:-target}"/release/kernel-check > "$LOGDIR/kernel-check.log" 2>&1 \
             || { echo "  kernel-check FAIL:"; tail -6 "$LOGDIR/kernel-check.log"; exit 1; }
         echo "  kernel-check (FULL): GREEN ($(( $(date +%s) - T0B ))s)" ;;
     synthetic)
-        lockrun env MEMRA_KC_FAST=1 target/release/kernel-check > "$LOGDIR/kernel-check.log" 2>&1 \
+        lockrun env MEMRA_KC_FAST=1 "${CARGO_TARGET_DIR:-target}"/release/kernel-check > "$LOGDIR/kernel-check.log" 2>&1 \
             || { echo "  kernel-check FAIL:"; tail -6 "$LOGDIR/kernel-check.log"; exit 1; }
         echo "  kernel-check (synthetic arms): GREEN ($(( $(date +%s) - T0B ))s)" ;;
     csv)
-        lockrun env "MEMRA_KC_ONLY=$KC_CSV" target/release/kernel-check > "$LOGDIR/kernel-check.log" 2>&1 \
+        lockrun env "MEMRA_KC_ONLY=$KC_CSV" "${CARGO_TARGET_DIR:-target}"/release/kernel-check > "$LOGDIR/kernel-check.log" 2>&1 \
             || { echo "  kernel-check FAIL:"; tail -6 "$LOGDIR/kernel-check.log"; exit 1; }
         echo "  kernel-check (synthetic + $KC_CSV): GREEN ($(( $(date +%s) - T0B ))s)" ;;
 esac

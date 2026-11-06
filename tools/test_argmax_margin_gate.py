@@ -15,6 +15,10 @@ SERVED_EAGER_ROUTED = "SERVED-ARGMAX: n/a reason=eager-routed"
 BATCH = ("--decode", "batch")
 
 
+# The gate runs "${CARGO_TARGET_DIR:-target}"/release/argmax-margin-probe; the fixture stubs the
+# copy's own target/, so a caller's exported CARGO_TARGET_DIR must not leak in.
+FIXTURE_ENV = {k: v for k, v in os.environ.items() if k != "CARGO_TARGET_DIR"}
+
 class GateTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory(prefix="memra-margin-test-")
@@ -41,7 +45,7 @@ class GateTest(unittest.TestCase):
         return subprocess.run(["bash", str(self.gate), str(model or self.gguf),
             "--prompt", str(self.prompt), "--window", "2", "--logdir", str(self.root / "logs"),
             *extra], capture_output=True, text=True, timeout=5,
-            env={**os.environ, **(env or {})})
+            env={**FIXTURE_ENV, **(env or {})})
 
     def test_raw_log_path_is_relative_to_the_evidence_root(self):
         rows = "10 1 1.0000 1 1.0000 0.1000 yes\n11 2 1.0000 2 1.0000 0.1000 yes"
@@ -210,7 +214,7 @@ class GateTest(unittest.TestCase):
             self.probe.chmod(0o700)
             return subprocess.run(["bash", str(self.gate), str(model), "--prompt", str(prompt),
                 "--window", str(window), "--logdir", str(self.root / "logs"), *extra],
-                capture_output=True, text=True, timeout=5)
+                capture_output=True, text=True, timeout=5, env=FIXTURE_ENV)
 
         r = gate(qwen, long_prompt, 3)
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
@@ -258,9 +262,9 @@ class GateTest(unittest.TestCase):
 
     def test_missing_probe_for_explicit_model_fails(self):
         r = subprocess.run(["bash", str(self.gate), str(self.hf),
-            "--prompt", str(self.prompt)], capture_output=True, text=True, timeout=5)
+            "--prompt", str(self.prompt)], capture_output=True, text=True, timeout=5, env=FIXTURE_ENV)
         self.assertNotEqual(r.returncode, 0)
-        self.assertIn("build target/release/argmax-margin-probe", r.stdout)
+        self.assertIn("build argmax-margin-probe", r.stdout)
 
 
 if __name__ == "__main__":

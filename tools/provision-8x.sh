@@ -36,5 +36,5 @@ cargo build --release 2>&1 | tail -1
 
 # 4. sanity: 8 GPUs visible, kernel-check on a DEV gpu (not GPU 0).
 nvidia-smi --query-gpu=index,name --format=csv,noheader
-CUDA_VISIBLE_DEVICES=7 ./target/release/kernel-check | tail -1
+CUDA_VISIBLE_DEVICES=7 "${CARGO_TARGET_DIR:-./target}"/release/kernel-check | tail -1
 echo "PROVISIONED — GPU 0 reserved for benchmarking; lanes use CUDA_VISIBLE_DEVICES=1..7"

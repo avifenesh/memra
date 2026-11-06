@@ -268,7 +268,9 @@ class CheckoutAndWrapperTests(unittest.TestCase):
         self.git("config", "core.hooksPath", "/dev/null")
         self.commit()
         self.calls = self.root / "calls.log"
-        self.env = {**os.environ, "PATH": str(self.fake_bin) + os.pathsep + os.environ["PATH"],
+        # The stubs live in the fixture repo's own target/: a caller's CARGO_TARGET_DIR must not leak in.
+        base = {k: v for k, v in os.environ.items() if k != "CARGO_TARGET_DIR"}
+        self.env = {**base, "PATH": str(self.fake_bin) + os.pathsep + os.environ["PATH"],
                     "CALLS": str(self.calls), "MEMRA_GATE_LOGDIR": str(self.root / "logs"),
                     "MEMRA_GPU_LOCK": str(self.root / "unused-gpu.lock"),
                     "CUDA_VISIBLE_DEVICES": "", "PYTHONDONTWRITEBYTECODE": "1"}
@@ -440,6 +442,22 @@ class CheckoutAndWrapperTests(unittest.TestCase):
         binary = "gemma-gate" if kind == "gspec" else "run-gen"
         self.script(self.repo / "target/release" / binary, "cat <<'CPU_LOG'\n" + log + "\nCPU_LOG\n")
 
+    def test_a_cmd_probe_under_target_runs_what_the_build_wrote(self):
+        # models.tsv names target/release/sample_check; with CARGO_TARGET_DIR set, cargo writes
+        # there and the tree's own target/ may hold an older build.
+        self.replace_probe("samp", ["cmd", "target/release/sample_check", "-", "-", "-"])
+        alt = self.root / "alt-target"
+        self.script(alt / "release/sample_check", 'printf "alt sample_check\\n" >> "$CALLS"\necho "sample-check: ALL GREEN"\n')
+        self.script(alt / "release/kernel-check", 'printf "kernel stub\\n" >> "$CALLS"\nexit 0\n')
+        self.script(self.repo / "target/release/sample_check", 'printf "stale sample_check\\n" >> "$CALLS"\nexit 3\n')
+        self.commit()
+        self.env["CARGO_TARGET_DIR"] = str(alt)
+        result = self.wrapper("--probes", "samp")
+        self.assertIn("samp: PASS", result.stdout, result.stdout + result.stderr)
+        calls = self.calls.read_text()
+        self.assertIn("alt sample_check", calls)
+        self.assertNotIn("stale sample_check", calls)
+
     def test_zero_stream_agreement_is_vacuous_and_fails(self):
         self.setup_model_probe("g31spec", "gspec", "stream agreement 0/0")
         result = self.wrapper("--probes", "g31spec")
@@ -482,7 +500,17 @@ class CheckoutAndWrapperTests(unittest.TestCase):
         self.assertIn("1 written", result.stdout)
         self.assertIn("unavailable", result.stdout)
         self.assertTrue((self.fg / "goldens/g12.tokens").is_file())
-        self.assertNotIn("cargo stub", self.calls.read_text() if self.calls.exists() else "")
+        # goldens are stamped with HEAD, so the refresh builds HEAD before any probe runs
+        calls = self.calls.read_text().splitlines()
+        self.assertEqual(calls[0], "cargo stub", calls)
+
+    def test_refresh_refuses_when_the_build_fails(self):
+        self.setup_model_probe("g12", "argmax", "argmax=1 decode argmax=1 CPU MATCH\ntokens: [1, 2]")
+        self.script(self.fake_bin / "cargo", 'printf "cargo stub\\n" >> "$CALLS"\nexit 1\n')
+        result = self.wrapper("--refresh-goldens", "--force")
+        self.assertNotEqual(result.returncode, 0, result.stdout)
+        self.assertIn("REFUSED golden refresh: BUILD FAIL", result.stdout)
+        self.assertFalse((self.fg / "goldens/g12.tokens").exists())
 
     def test_refresh_of_only_missing_explicit_model_fails(self):
         self.replace_probe("g12", ["argmax", str(self.root / "absent.gguf"), "@prompt.txt", "20", "-"])

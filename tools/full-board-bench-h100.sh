@@ -17,7 +17,7 @@ OUT="${2:-research/tune-data/h100board-20260730.jsonl}"
 LOGD="${OUT%.jsonl}-logs"; mkdir -p "$LOGD" "$(dirname "$OUT")"
 N_PAIRS="${N_PAIRS:-3}"
 LB=$HOME/llama.cpp/build/bin/llama-bench
-BW=target/release
+BW="${CARGO_TARGET_DIR:-target}"/release
 M=$HOME/models
 GDIR=research/gemma4-bringup
 TS=$(date -u +%Y-%m-%dT%H:%M:%SZ)
@@ -50,10 +50,10 @@ memra_plain() { # cell model promptfile ngen
   local log="$LOGD/$cell-memra.log"
   if echo "$pf" | grep -q 'ids'; then
     # shellcheck disable=SC2046
-    MEMRA_NGEN="$ngen" timeout 900 $BW/run-gen "$model" $(cat "$pf") 2>&1 | tee -a "$log" \
+    MEMRA_NGEN="$ngen" timeout 900 "$BW"/run-gen "$model" $(cat "$pf") 2>&1 | tee -a "$log" \
       | grep -oE "= [0-9.]+ tok/s" | tail -1 | grep -oE "[0-9.]+"
   else
-    MEMRA_NGEN="$ngen" MEMRA_PROMPT_FILE="$pf" timeout 900 $BW/run-gen "$model" 2>&1 | tee -a "$log" \
+    MEMRA_NGEN="$ngen" MEMRA_PROMPT_FILE="$pf" timeout 900 "$BW"/run-gen "$model" 2>&1 | tee -a "$log" \
       | grep -oE "= [0-9.]+ tok/s" | tail -1 | grep -oE "[0-9.]+"
   fi
 }

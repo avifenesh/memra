@@ -307,7 +307,8 @@ run_gate() { # extra env..., then --  then gate args
     while [ $# -gt 0 ] && [ "$1" != "--" ]; do envs+=("$1"); shift; done
     shift || true
     out="$WORK/run-$RANDOM.out"
-    ( cd "$SANDBOX" && env "${GATE_ENV[@]}" "${envs[@]}" "$GATE" "$@" ) > "$out" 2>&1
+    # the fixture stubs the sandbox's own target/: a caller's CARGO_TARGET_DIR must not leak in
+    ( cd "$SANDBOX" && env -u CARGO_TARGET_DIR "${GATE_ENV[@]}" "${envs[@]}" "$GATE" "$@" ) > "$out" 2>&1
     LAST_RC=$?
     LAST_OUT="$out"
 }

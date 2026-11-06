@@ -154,7 +154,7 @@ done
   exit 1
 }
 cd "$ROOT" || exit 1
-BIN=./target/release/memra-server
+BIN="${CARGO_TARGET_DIR:-./target}"/release/memra-server
 [ -x "$BIN" ] || {
   echo "$GATE_NAME: FAIL (no $BIN; build release first)"
   exit 1
