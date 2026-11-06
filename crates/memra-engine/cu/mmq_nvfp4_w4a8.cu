@@ -1038,10 +1038,8 @@ static __device__ __forceinline__ void load_tiles_nvfp4_f8f4(
                 }
                 const int2 q0 = get_int_from_table_16(src_qs[2 * sub + 0], (const int8_t *) lut);
                 const int2 q1 = get_int_from_table_16(src_qs[2 * sub + 1], (const int8_t *) lut);
-                x_qs[i * MMQ_MMA_TILE_X_K_F8F4 + kqs + 4 * sub + 0] = q0.x;
-                x_qs[i * MMQ_MMA_TILE_X_K_F8F4 + kqs + 4 * sub + 1] = q1.x;
-                x_qs[i * MMQ_MMA_TILE_X_K_F8F4 + kqs + 4 * sub + 2] = q0.y;
-                x_qs[i * MMQ_MMA_TILE_X_K_F8F4 + kqs + 4 * sub + 3] = q1.y;
+                // one 16-byte store of the four ints (row stride 304 B, kqs 64 B, sub 16 B: aligned)
+                *(int4 *) (x_qs + i * MMQ_MMA_TILE_X_K_F8F4 + kqs + 4 * sub) = make_int4(q0.x, q1.x, q0.y, q1.y);
             }
         }
     }
@@ -1098,10 +1096,8 @@ static __device__ __forceinline__ void dequant_tiles_nvfp4_f8f4(
                 }
                 const int2 q0 = get_int_from_table_16(src_qs[2 * sub + 0], (const int8_t *) lut);
                 const int2 q1 = get_int_from_table_16(src_qs[2 * sub + 1], (const int8_t *) lut);
-                x_qs[i * MMQ_MMA_TILE_X_K_F8F4 + kqs + 4 * sub + 0] = q0.x;
-                x_qs[i * MMQ_MMA_TILE_X_K_F8F4 + kqs + 4 * sub + 1] = q1.x;
-                x_qs[i * MMQ_MMA_TILE_X_K_F8F4 + kqs + 4 * sub + 2] = q0.y;
-                x_qs[i * MMQ_MMA_TILE_X_K_F8F4 + kqs + 4 * sub + 3] = q1.y;
+                // one 16-byte store of the four ints (row stride 304 B, kqs 64 B, sub 16 B: aligned)
+                *(int4 *) (x_qs + i * MMQ_MMA_TILE_X_K_F8F4 + kqs + 4 * sub) = make_int4(q0.x, q1.x, q0.y, q1.y);
             }
         }
     }
@@ -1155,8 +1151,14 @@ static __device__ __forceinline__ void vec_dot_nvfp4_f8f4_mma(
         for (int k01 = 0; k01 < MMQ_TILE_NE_K; k01 += 8) {
             tile_B B[2];
             float dB[tile_C::ne / 2];
-            load_generic(B[0], y_qs + j0 * MMQ_TILE_Y_K + (k01 + 0),         MMQ_TILE_Y_K);
-            load_generic(B[1], y_qs + j0 * MMQ_TILE_Y_K + (k01 + tile_B::J), MMQ_TILE_Y_K);
+            // One ldmatrix.x2 for both B fragments (GB10 lane, 2026-11-06): matrix 0 is the
+            // k slice k01, matrix 1 is k01 + 4; thread t receives token row t/4, int t%4 of
+            // each, the words load_generic(tile<8,4,int>) read. Same register footprint.
+            {
+                const int * p = y_qs + (j0 + threadIdx.x % 8) * MMQ_TILE_Y_K + k01 + tile_B::J * ((threadIdx.x / 8) % 2);
+                asm volatile("ldmatrix.sync.aligned.m8n8.x2.b16 {%0, %1}, [%2];"
+                    : "=r"(B[0].x[0]), "=r"(B[1].x[0]) : "l"(p));
+            }
 #pragma unroll
             for (int l = 0; l < tile_C::ne / 2; ++l) {
                 const int j = j0 + tile_C::get_j(l);
