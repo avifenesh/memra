@@ -1038,10 +1038,8 @@ static __device__ __forceinline__ void load_tiles_nvfp4_f8f4(
                 }
                 const int2 q0 = get_int_from_table_16(src_qs[2 * sub + 0], (const int8_t *) lut);
                 const int2 q1 = get_int_from_table_16(src_qs[2 * sub + 1], (const int8_t *) lut);
-                x_qs[i * MMQ_MMA_TILE_X_K_F8F4 + kqs + 4 * sub + 0] = q0.x;
-                x_qs[i * MMQ_MMA_TILE_X_K_F8F4 + kqs + 4 * sub + 1] = q1.x;
-                x_qs[i * MMQ_MMA_TILE_X_K_F8F4 + kqs + 4 * sub + 2] = q0.y;
-                x_qs[i * MMQ_MMA_TILE_X_K_F8F4 + kqs + 4 * sub + 3] = q1.y;
+                // one 16-byte store of the four ints (row stride 304 B, kqs 64 B, sub 16 B: aligned)
+                *(int4 *) (x_qs + i * MMQ_MMA_TILE_X_K_F8F4 + kqs + 4 * sub) = make_int4(q0.x, q1.x, q0.y, q1.y);
             }
         }
     }
@@ -1098,10 +1096,8 @@ static __device__ __forceinline__ void dequant_tiles_nvfp4_f8f4(
                 }
                 const int2 q0 = get_int_from_table_16(src_qs[2 * sub + 0], (const int8_t *) lut);
                 const int2 q1 = get_int_from_table_16(src_qs[2 * sub + 1], (const int8_t *) lut);
-                x_qs[i * MMQ_MMA_TILE_X_K_F8F4 + kqs + 4 * sub + 0] = q0.x;
-                x_qs[i * MMQ_MMA_TILE_X_K_F8F4 + kqs + 4 * sub + 1] = q1.x;
-                x_qs[i * MMQ_MMA_TILE_X_K_F8F4 + kqs + 4 * sub + 2] = q0.y;
-                x_qs[i * MMQ_MMA_TILE_X_K_F8F4 + kqs + 4 * sub + 3] = q1.y;
+                // one 16-byte store of the four ints (row stride 304 B, kqs 64 B, sub 16 B: aligned)
+                *(int4 *) (x_qs + i * MMQ_MMA_TILE_X_K_F8F4 + kqs + 4 * sub) = make_int4(q0.x, q1.x, q0.y, q1.y);
             }
         }
     }
@@ -1151,16 +1147,35 @@ static __device__ __forceinline__ void vec_dot_nvfp4_f8f4_mma(
 
 #pragma unroll
     for (int j0 = 0; j0 < mmq_x; j0 += ntx * tile_C::J) {
+        // Operand loads for all four k01 steps of this 8-token column group (GB10 lane,
+        // 2026-11-06). Bq: two ldmatrix.x4 deliver the SAME words load_generic(tile<8,4,int>)
+        // read (thread t: token row t/4, int t%4 of each 16-byte k slice); matrix m of load h
+        // is the k slice 16h + 4m, so k01 = 8*kk takes Bq[2kk] (B[0]) and Bq[2kk+1] (B[1]).
+        // dB4: each token's four per-32 activation scales d4[0..3] in one 16-byte load.
+        // Same MMA operands and scale values in the same order -> bit-identical sums.
+        int Bq[8];
+#pragma unroll
+        for (int h = 0; h < 2; ++h) {
+            const int * p = y_qs + (j0 + threadIdx.x % 8) * MMQ_TILE_Y_K + 16 * h + 4 * (threadIdx.x / 8);
+            asm volatile("ldmatrix.sync.aligned.m8n8.x4.b16 {%0, %1, %2, %3}, [%4];"
+                : "=r"(Bq[4 * h + 0]), "=r"(Bq[4 * h + 1]), "=r"(Bq[4 * h + 2]), "=r"(Bq[4 * h + 3])
+                : "l"(p));
+        }
+        float4 dB4[tile_C::ne / 2];
+#pragma unroll
+        for (int l = 0; l < tile_C::ne / 2; ++l) {
+            const int j = j0 + tile_C::get_j(l);
+            dB4[l] = *(const float4 *) (y_df + j * MMQ_TILE_Y_K);
+        }
 #pragma unroll
         for (int k01 = 0; k01 < MMQ_TILE_NE_K; k01 += 8) {
             tile_B B[2];
             float dB[tile_C::ne / 2];
-            load_generic(B[0], y_qs + j0 * MMQ_TILE_Y_K + (k01 + 0),         MMQ_TILE_Y_K);
-            load_generic(B[1], y_qs + j0 * MMQ_TILE_Y_K + (k01 + tile_B::J), MMQ_TILE_Y_K);
+            B[0].x[0] = Bq[2 * (k01 / 8) + 0];
+            B[1].x[0] = Bq[2 * (k01 / 8) + 1];
 #pragma unroll
             for (int l = 0; l < tile_C::ne / 2; ++l) {
-                const int j = j0 + tile_C::get_j(l);
-                dB[l] = y_df[j * MMQ_TILE_Y_K + k01 / QI8_1];
+                dB[l] = (&dB4[l].x)[k01 / QI8_1];
             }
 #pragma unroll
             for (int n = 0; n < ntx; ++n) {
