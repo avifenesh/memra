@@ -102,13 +102,41 @@ The successful probe decides the same cap and tier and passes the fit check. It 
 
 Same code path. `trim_model_device_pools` already runs on GB10 after the spec-cost and admission calibrations, and the fit check reads `allocatable_mem_info`, the page-cache aware sizing read GB10's prefix budget already uses (the larger of the driver reading and `MemAvailable`). On GB10 the 27B probes fit (main ran the wave probe's 32 sessions in 80 s and the spec-cost calibration in 108 s), so both checks pass and the cap decision and tables are unchanged.
 
-Two GB10 values are expected to move. They are not measured here; the combined landing run measures them:
+Two GB10 values were expected to move (prediction as written before the GB10 run; the measurement follows):
 
 - The unified-memory prefix budget (the larger of two entries and half of allocatable free after the transient reserve) is now derived after the wave probe's pool is returned, so it should rise by about half the residue. The residue should be about 16 GB: 32 sessions x 505 MB (the per-session footprint measured on the 5090 for the same checkpoint and depth) plus wave scratch. Main's GB10 boot derived 42791 MB from 89.3 GB free, before a spec-cost trim that released 16.9 GB of probe pool. Expected: roughly +8 GB of prefix budget.
 - A GB10 DSpark boot skips the spec-cost calibration, so on main its admission calibration reset the high-water mark with that residue mapped and charged it as transient, the same mechanism as the 5090 DSpark cell. Expected: the floor drops from about 17-18 GB to the real transient, about 1.5-2.2 GB, which raises admission capacity on that route.
+
+### GB10 measured (combined landing run, 2026-11-06)
+
+One DGX Spark (GB10, driver 580.178.04), Qwen3.8-27B GGUF (NVFP4+Q5_K trunk), `MEMRA_CTX=262144`, `MEMRA_MAX_SESSIONS=32`, `MEMRA_KV_HOST_MB=0`, derived unified-memory defaults, one fresh boot per cell, order main / fix / fix / main per route, one 32-token greedy request per boot. main = `5d70118b99`; fix = `b645e05e0b` (this PR on main with memra#1073 and memra#1074 below it; this PR's code is byte-identical to `aa309313d4`). Both binaries are the cell-evidence build (two jobs, one codegen unit, fat LTO, `121a`). Harness: `gb10-boot-ab.sh`; raw logs, 250 ms telemetry and per-cell env in `raw/gb10/`.
+
+MTP route (masked sxc32768 MTP draft, so the spec-cost calibration runs):
+
+| cell | wave probe | prefix budget | boot driver free | transient floor (peak / rest mapped) | request | ready |
+|---|---|---|---|---|---|---|
+| main 1 | cap 32 in 81.0 s, nothing released | 42445 MB | 88.65 GB | 2240 MB (19200 / 16800) | 200 | 207.6 s |
+| fix 1 | cap 32 in 69.0 s, 16736 MB released | 51086 MB | 105.93 GB | 2078 MB (19040 / 16800) | 200 | 181.4 s |
+| fix 2 | cap 32 in 69.1 s, 16736 MB released | 51086 MB | 105.93 GB | 2078 MB (19040 / 16800) | 200 | 181.4 s |
+| main 2 | cap 32 in 80.9 s, nothing released | 42448 MB | 88.65 GB | 2238 MB (19200 / 16800) | 200 | 207.5 s |
+
+DSpark route (DFlash2 drafter, FR-Spec trim, `MEMRA_MTP_SKIP=1`, restore doors on, so no spec-cost calibration):
+
+| cell | wave probe | prefix budget | boot driver free | transient floor (peak / rest mapped) | request | ready |
+|---|---|---|---|---|---|---|
+| main 1 | cap 32 in 80.9 s, nothing released | 41861 MB | 87.48 GB | 13064 MB (32000 / 18816) | 200 | 104.8 s |
+| fix 1 | cap 32 in 69.1 s, 16672 MB released | 50314 MB | 104.39 GB | 1576 MB (20384 / 18688) | 200 | 90.6 s |
+| fix 2 | cap 32 in 69.2 s, 16672 MB released | 50300 MB | 104.36 GB | 1576 MB (20384 / 18688) | 200 | 90.7 s |
+| main 2 | cap 32 in 81.2 s, nothing released | 42162 MB | 88.08 GB | 13064 MB (32000 / 18816) | 200 | 104.8 s |
+
+- Prefix budget: +8.6 GB on the MTP route (42445-42448 to 51086 MB) and +8.3 GB on the DSpark route (41861-42162 to 50300-50314 MB), as predicted (about half the 16.7 GB residue the trim now returns before the budget is derived).
+- DSpark transient floor: 13064 MB on main to 1576 MB, inside the predicted 1.5-2.2 GB. The prediction for main (17-18 GB) was high: main measured 13.1 GB. The MTP route's floor moves 2239 to 2078 MB, because its spec-cost calibration already trimmed before the admission calibration.
+- The probes decide the same thing on both binaries: every boot measured two 16-row waves at 262.5-264.2 ms, one 32-row wave at 263.6-265.0 ms and the tensor-core tier at 229.1-230.7 ms, so wave cap 32 with tensor-core b32 on. The spec-cost tables agree within run-to-run spread (round overhead 13.26 / 12.65 ms main, 13.04 / 13.00 ms fix). The wave probe itself takes 12 s less, and boots are ready 26 s sooner on the MTP route and 14 s sooner on the DSpark route.
+- Single boots per cell, two per arm, interleaved; no request failed and no boot logged an out-of-memory line.
 
 ## Files
 
 - `boot_cells.py`: the harness (`MODELS=<dir>` names the model root).
 - `raw/p1/`: base Q38 DSpark, s4 control and plain boots. `raw/p2/`: fix and base in one window, Q38 and the Q9 A B B A. `raw/p4/`: the spec-cost fit check, prev vs head, Q38 plain and Q9 A B B A plus one Q38 DSpark boot. `raw/cpu/`: the source-order test red on the previous tree, green on its commit and on the head. Each boot has a log with seconds since spawn on every line, a 250 ms `nvidia-smi` csv, and a row in `rows.jsonl`. Local paths are replaced with `~`, `<models>` and `<bins>`.
+- `gb10-boot-ab.sh` and `raw/gb10/`: the GB10 boot cells above (`chain.log` is the run's own summary; each cell has `env.txt`, `server.log`, `gpu.csv`, `ready.txt` and the request's reply). The home directory reads `~`.
 - Harness bugs, kept as recorded: `raw/p1/cells.txt` labels the s4 control FAIL because its prefix check missed the `[prefix-cache]` prefix (the row shows 800 MB and an admitted request). In `raw/p2` the first fix Q38 run's log and csv were overwritten by the second, from a per-invocation counter; its row stays in `rows.jsonl` (8.0 s), `q38-dspark-fix-1.log` is the 7.8 s run and `q38-dspark-fix-2.log` the 5.3 s run.
