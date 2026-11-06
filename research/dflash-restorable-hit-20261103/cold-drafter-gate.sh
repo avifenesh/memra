@@ -13,6 +13,11 @@
 #     4,000 MB prefix cache);
 #   GB10 (unified memory, memory.total [N/A]), an RTX PRO 6000 and larger: 70 / 80, about 26k on b.
 # compare.txt starts with the sizes, memory reading, context and doors used.
+# Port: GATE_PORT (default 8093). Each boot refuses a port something already listens on
+# (tools/port-guard.sh), and after the ready wait the listener must be the server this boot
+# started and its log must carry that server's own "[server] listening" line. Without that, on
+# 2026-11-06 the reference boot never came up, the ready wait passed on a foreign server holding
+# 8093, and ref.jsonl recorded that server's answers.
 # Exit 0 only when both runs complete, every a/b completion is byte-identical to the reference
 # and the arm's log has the serving shape (--check-log). Any failed step is named and exits 1.
 set -u -o pipefail
@@ -22,7 +27,11 @@ GGUF=${GGUF:-$M/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf}
 DF=${DF:-$M/Qwen3.8-27B-DFlash2-memra}
 RANKS=${RANKS:-$M/q38-ranks-sxc32768.gguf.txt}
 G=${GATE:-$(dirname "$0")/../../tools/dspark-cold-drafter-gate.py}
-ADDR=${GATE_ADDR:-127.0.0.1:8093}
+PORT=${GATE_PORT:-8093}
+ADDR=127.0.0.1:$PORT
+PG=${PORT_GUARD:-$(dirname "$0")/../../tools/port-guard.sh}
+# shellcheck source=tools/port-guard.sh
+. "$PG" || { echo "cold-drafter-gate: FAIL: cannot load the port guard at $PG (set PORT_GUARD)"; exit 1; }
 CTX=${GATE_CTX:-16384}
 dev=${CUDA_VISIBLE_DEVICES:-0}; dev=${dev%%,*}
 VRAM=${GATE_VRAM_MIB:-$(nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits -i "$dev" 2>/dev/null | head -n 1 | tr -d ' ')}
@@ -33,17 +42,29 @@ esac
 export GATE_P_PARAS=${GATE_P_PARAS:-$dP} GATE_S_PARAS=${GATE_S_PARAS:-$dS}
 R=$O/compare.txt
 note() { echo "$*" | tee -a "$R"; }
+SP=
 boot() { # tag extra-env...
   local tag=$1; shift
+  memra_port_guard cold-drafter-gate "$PORT" GATE_PORT || return 1
   env MEMRA_COMPAT=openai MEMRA_MODELS="q38=$GGUF" MEMRA_ADDR="$ADDR" \
     MEMRA_CTX="$CTX" MEMRA_MAX_SESSIONS=1 MEMRA_KV_HOST_MB=0 \
     MEMRA_MTP_SKIP=1 MEMRA_DSPARK_SPEC=1 MEMRA_DSPARK_DRAFT="$DF" \
     MEMRA_FRSPEC_TRIM="$RANKS" "$@" \
     "$BIN" > "$O/serve-$tag.log" 2>&1 &
   SP=$!
-  waitfor --http "http://$ADDR/v1/models" --timeout 10m --every 5s --fail-after 120 --quiet
+  waitfor --http "http://$ADDR/v1/models" --timeout 10m --every 5s --fail-after 120 --quiet || return 1
+  memra_port_owned cold-drafter-gate "$PORT" "$SP" || return 1
+  grep -a -q -F "[server] listening on http://$ADDR" "$O/serve-$tag.log" || {
+    echo "cold-drafter-gate: FAIL: $ADDR answers, but serve-$tag.log has no \"[server] listening on http://$ADDR\"" \
+      "line: the responder is not the server this boot started."
+    return 1
+  }
 }
-stop() { kill -TERM "$SP" 2>/dev/null; waitfor --gone "$SP" --timeout 90s --quiet || kill -KILL "$SP" 2>/dev/null; wait "$SP" 2>/dev/null; }
+stop() {
+  [ -n "$SP" ] || return 0
+  kill -TERM "$SP" 2>/dev/null; waitfor --gone "$SP" --timeout 90s --quiet || kill -KILL "$SP" 2>/dev/null; wait "$SP" 2>/dev/null
+  SP=
+}
 # DOORS=default leaves the three restore doors unset, so the arm runs on the device default.
 if [ "${DOORS:-explicit}" = default ]; then
   ARMDOORS=""
@@ -51,7 +72,7 @@ else
   ARMDOORS="MEMRA_DSPARK_PREFIX_RESTORE=1 MEMRA_DSPARK_BOUNDARY_CAPTURE=1 MEMRA_DSPARK_PARTIAL_RESTORE=1"
 fi
 : > "$R"
-note "gate sizes GATE_P_PARAS=$GATE_P_PARAS GATE_S_PARAS=$GATE_S_PARAS memory.total=${VRAM:-unknown} MiB${GATE_VRAM_MIB:+ (GATE_VRAM_MIB override)} MEMRA_CTX=$CTX DOORS=${DOORS:-explicit}"
+note "gate sizes GATE_P_PARAS=$GATE_P_PARAS GATE_S_PARAS=$GATE_S_PARAS memory.total=${VRAM:-unknown} MiB${GATE_VRAM_MIB:+ (GATE_VRAM_MIB override)} MEMRA_CTX=$CTX DOORS=${DOORS:-explicit} port=$PORT"
 rm -f "$O/arm.jsonl" "$O/ref.jsonl"
 rc=0
 # shellcheck disable=SC2086
