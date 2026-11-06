@@ -27603,7 +27603,7 @@ pub fn run(
     // default-off dual PP door may combine two such waves into one worker tick.
     let chunk_policies: HashMap<String, DecodeChunkPolicy> = loaded
         .iter()
-        .map(|(n, lm)| (n.clone(), decode_chunk_policy(lm, &engine)))
+        .map(|(n, lm)| (n.clone(), decode_chunk_policy(lm, &engine, &loaded)))
         .collect();
     for (n, policy) in &chunk_policies {
         eprintln!(
@@ -41198,7 +41198,20 @@ fn chunk_cap_for(lm: &LoadedModel) -> usize {
 /// `decode_wave_probe` at the spec-cost depth and keeps 32 only when one wave is faster.
 /// A probe that cannot run (allocation failure, fewer than 17 sessions allowed) keeps 16.
 /// An explicit MEMRA_DECODE_BATCH_CAP skips the probe.
-fn measured_wave_cap(lm: &LoadedModel, engine: &Engine, cap: usize) -> usize {
+///
+/// The probe frees its buffers on return, but the async pool keeps freed blocks mapped, so the
+/// driver still counts them as used. Boot reads driver free memory right after this (the
+/// derived prefix-cache budget), and the admission calibration resets its high-water mark to
+/// the pool's current reservation, so the probe's pool goes back to the driver on both arms
+/// before this returns (RTX 5090, Qwen3.8-27B: the failed probe left about 23.7 GB mapped,
+/// which zeroed the prefix budget and raised the calibrated transient floor from 1640 MB to
+/// 4808 MB).
+fn measured_wave_cap(
+    lm: &LoadedModel,
+    engine: &Engine,
+    loaded: &HashMap<String, LoadedModel>,
+    cap: usize,
+) -> usize {
     if cap <= 16 || std::env::var("MEMRA_DECODE_BATCH_CAP").is_ok() {
         return cap;
     }
@@ -41218,6 +41231,13 @@ fn measured_wave_cap(lm: &LoadedModel, engine: &Engine, cap: usize) -> usize {
     } else {
         let t0 = std::time::Instant::now();
         let probe = lm.model.decode_wave_probe(engine, SPEC_COST_DEPTH);
+        let probe_s = t0.elapsed().as_secs_f64();
+        oom_teardown_fence(engine, loaded);
+        let released = trim_model_device_pools(engine, loaded, "wave-probe")
+            .iter()
+            .fold(0usize, |total, report| {
+                total.saturating_add(report.reclaimed_bytes)
+            });
         // the tensor-core b32 tier is kept only when its single wave is the fastest arm
         let (c, tc) = match &probe {
             Ok((two, one, one_tc)) if one_tc < one && one_tc < two => (32, true),
@@ -41229,11 +41249,15 @@ fn measured_wave_cap(lm: &LoadedModel, engine: &Engine, cap: usize) -> usize {
             Ok((two, one, one_tc)) => eprintln!(
                 "[wave-probe] 32 sessions at depth {SPEC_COST_DEPTH}: two 16-row waves {two:.1} ms, \
                  one 32-row wave {one:.1} ms (tensor-core tier {one_tc:.1} ms) -> wave cap {c}, \
-                 tensor-core b32 {} ({:.1}s)",
+                 tensor-core b32 {} ({probe_s:.1}s; released {}MB of probe pool to the driver)",
                 if tc { "on" } else { "off" },
-                t0.elapsed().as_secs_f64()
+                released >> 20,
             ),
-            Err(err) => eprintln!("[wave-probe] failed ({err}); wave cap 16"),
+            Err(err) => eprintln!(
+                "[wave-probe] failed ({err}) after {probe_s:.1}s; wave cap 16; released {}MB of \
+                 probe pool to the driver",
+                released >> 20,
+            ),
         }
         c
     };
@@ -41241,8 +41265,12 @@ fn measured_wave_cap(lm: &LoadedModel, engine: &Engine, cap: usize) -> usize {
     decided
 }
 
-fn decode_chunk_policy(lm: &LoadedModel, engine: &Engine) -> DecodeChunkPolicy {
-    let wave_cap = measured_wave_cap(lm, engine, chunk_cap_for(lm));
+fn decode_chunk_policy(
+    lm: &LoadedModel,
+    engine: &Engine,
+    loaded: &HashMap<String, LoadedModel>,
+) -> DecodeChunkPolicy {
+    let wave_cap = measured_wave_cap(lm, engine, loaded, chunk_cap_for(lm));
     // mHC hyper trunks form SERIAL ticks only: `decode_step_batch_dual` has no hyper arm
     // and the scheduled entry refuses it by name, so the policy must never hand the engine
     // a dual-wave midpoint for this topology (decode_step_batch_hyper owns the PP-N split
@@ -43965,7 +43993,7 @@ fn run_spec_cost_calibration(
             continue;
         }
         let t0 = Instant::now();
-        let plain_cap = decode_chunk_policy(lm, engine).wave_cap;
+        let plain_cap = decode_chunk_policy(lm, engine, loaded).wave_cap;
         let result = lm
             .model
             .spec_cost_calibrate(engine, SPEC_COST_DEPTH, plain_cap);
@@ -52639,6 +52667,58 @@ mod tests {
         assert!(
             reclaim < fence && fence < trim,
             "reclaim, then fence, then trim"
+        );
+    }
+
+    /// The boot wave probe hands its pool back to the driver on both arms before the cap is
+    /// decided, and boot decides every model's cap before it derives the prefix-cache budget
+    /// from driver free memory and before the admission calibration resets its high-water
+    /// mark. On a 24 GB card the probe's mapped residue zeroed the prefix budget and counted as
+    /// calibration transient. Anchored on comment-stripped, whitespace-free production text.
+    #[test]
+    fn wave_probe_releases_its_pool_before_boot_reads_free_memory() {
+        let src = include_str!("worker.rs");
+        let code: String = src
+            .lines()
+            .map(|l| l.split("//").next().unwrap_or(""))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let prod = &code[..code.find("\nmod tests").expect("tests module exists")];
+        let flat: String = prod.chars().filter(|c| !c.is_whitespace()).collect();
+        let start = flat
+            .find("fnmeasured_wave_cap(")
+            .expect("measured_wave_cap");
+        let end = start
+            + flat[start..]
+                .find("fndecode_chunk_policy(")
+                .expect("next fn");
+        let body = &flat[start..end];
+        let probe = body
+            .find("lm.model.decode_wave_probe(engine,SPEC_COST_DEPTH);")
+            .expect("probe");
+        let fence = body
+            .find("oom_teardown_fence(engine,loaded);")
+            .expect("fence");
+        let trim = body
+            .find("trim_model_device_pools(engine,loaded,\"wave-probe\")")
+            .expect("trim");
+        let decide = body.find("let(c,tc)=match&probe{").expect("decision");
+        assert!(
+            probe < fence && fence < trim && trim < decide,
+            "probe, then fence, then trim, before either arm returns"
+        );
+        let policies = flat
+            .find("decode_chunk_policy(lm,&engine,&loaded)")
+            .expect("boot policies");
+        let budget = flat
+            .find("letprefix_budget=init_prefix_cache_budget(&engine,&loaded);")
+            .expect("prefix budget");
+        let calibration = flat
+            .find("run_boot_calibration(&engine,")
+            .expect("calibration");
+        assert!(
+            policies < budget && budget < calibration,
+            "caps are decided (probe trimmed) before boot reads free memory"
         );
     }
 
