@@ -68,6 +68,17 @@ impl MtpPrimeState {
         self.prime_only = true;
     }
 
+    /// Rows of the session the trunk walk has run so far (the prefix it continues plus every
+    /// finished trunk chunk). Read by memra-server's GDN state census between ticks.
+    pub fn trunk_rows(&self) -> usize {
+        self.base
+            + self
+                .cursor
+                .checked_sub(1)
+                .and_then(|c| self.chunks.get(c))
+                .map_or(0, |c| c.end)
+    }
+
     /// WP-B day 39 addendum B: the walker has not yet run the chunk that ends on its turn
     /// checkpoint row, so that checkpoint's `Cache::snapshot` is still owed.
     pub fn owes_turn_checkpoint(&self) -> bool {

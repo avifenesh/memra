@@ -26566,6 +26566,34 @@ fn vision_spans(
     Ok(spans)
 }
 
+/// research/gdn-state-fp16-20261107: sample one session's GDN states into the census when due.
+/// Reads the target cache between ticks; the numeric program is untouched.
+fn gdn_census_session(census: &mut crate::gdn_census::Census, engine: &Engine, s: &Session) {
+    let decoding = !s.generated.is_empty();
+    let (cache, rows) = if let Some(spec) = s.spec.as_ref() {
+        let rows = match (&s.mtp_prime, decoding) {
+            (Some(p), false) => p.trunk_rows(),
+            _ => spec.committed.len(),
+        };
+        (spec.cache_ref(), rows)
+    } else if let Some(cache) = s.cache.as_ref() {
+        (cache, s.fed.len())
+    } else {
+        return;
+    };
+    if cache.recur.iter().all(Option::is_none) || !census.due(&s.request_id, decoding, rows) {
+        return;
+    }
+    let at = crate::gdn_census::At {
+        id: &s.request_id,
+        decoding,
+        rows,
+        n_prompt: s.n_prompt,
+        generated: s.generated.len(),
+    };
+    census.sample(engine, cache, &at);
+}
+
 struct Session {
     prime_service: crate::prime_fairness::PrimeService,
     model: String,
@@ -28339,6 +28367,9 @@ pub fn run(
 
     // ---- scheduler loop ----
     let mut active: Vec<Session> = Vec::new();
+    // research/gdn-state-fp16-20261107: the GDN state magnitude census (diagnostic, off unless
+    // MEMRA_GDN_STATE_CENSUS names a directory).
+    let mut gdn_census = crate::gdn_census::Census::from_env();
     let mut queue: std::collections::VecDeque<Box<Request>> = std::collections::VecDeque::new();
     let mut pending_constraints: HashMap<u64, PendingConstraintCompile> = HashMap::new();
     let mut next_constraint_id = 0u64;
@@ -33891,6 +33922,11 @@ pub fn run(
                 // guarantees), so under MEMRA_GLM5_DRAFT_PRIME_LAZY=1 a token-1 finish still
                 // publishes nothing rather than a trunk-only entry.
                 drain_glm5_prefix_capture(&engine, &mut px, &mut hpx, s);
+            }
+        }
+        if let Some(census) = gdn_census.as_mut() {
+            for s in &active {
+                gdn_census_session(census, &engine, s);
             }
         }
         // retire finished sessions (reverse order so indices stay valid). Long-enough sessions

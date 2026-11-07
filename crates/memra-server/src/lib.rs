@@ -106,6 +106,7 @@ mod capacity_metrics;
 mod dsv4_admit;
 mod dsv4_serve;
 mod embed_api;
+mod gdn_census;
 mod handoff_io;
 mod histogram;
 mod http_metrics;
