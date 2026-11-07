@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import functools
 import hashlib
 import importlib.util
 import json
@@ -224,6 +225,37 @@ class DirEvidence:
         return path.read_bytes()
 
 
+@functools.lru_cache(maxsize=None)
+def research_drift(repo, old, new):
+    """The source inputs that differ between commits `old` and `new` when every one of them is a
+    path under research/ that no crate reads; None when any differing input is anything else.
+
+    A record bound to `old` then still describes `new`: the compiled program, the battery, its
+    manifests, the roster and the gate are the same bytes. Without this, a research-only commit on
+    main voided every pending landing record (each lane rebases onto it, its inputs digest moves,
+    and it re-runs about an hour of device time for bytes the build never sees). A research file a
+    crate does read (include_str!, a build-script input) counts as code: the CI include census and
+    the literal check (`change_impact.crate_inputs_at`) decide, at both commits.
+    """
+    import release_qualification as q
+    for ref in (old, new):
+        if git(repo, "cat-file", "-t", ref, check=False).strip() != b"commit":
+            return None
+    names = git(repo, "diff", "--name-only", "--no-renames", old, new).decode().splitlines()
+    if any(not n.startswith("research/") for n in names):
+        return None
+    a = q.source_snapshot(repo, old)["files"]
+    b = q.source_snapshot(repo, new)["files"]
+    drift = sorted(p for p in set(a) | set(b) if a.get(p) != b.get(p))
+    if any(not p.startswith("research/") for p in drift):
+        return None
+    for ref in (old, new):
+        inputs, _ = ci.crate_inputs_at(repo, ref, drift)
+        if any(ci._input_match(p, pattern) for p in drift for pattern in inputs):
+            return None
+    return drift
+
+
 def verify_record(record, evidence, repo, candidate, rules, arch, candidate_inputs, push_base=None):
     """Validate one record against the candidate. Returns (target, set(kinds)) it proves."""
     require(record.get("schema") == SCHEMA and record.get("status") == "pass", "record is not a passing cell record")
@@ -237,9 +269,12 @@ def verify_record(record, evidence, repo, candidate, rules, arch, candidate_inpu
         require(name in payloads, f"unmanifested evidence reference: {name}")
         return evidence.read(name).decode(errors="replace")
 
-    require(record["inputs_sha256"] == candidate_inputs, "record is for different source inputs")
     tested = record["tested_commit"]
     require(isinstance(tested, str) and COMMIT.fullmatch(tested), "invalid tested commit")
+    if record["inputs_sha256"] != candidate_inputs:
+        require(research_drift(repo, tested, candidate) is not None,
+                "record is for different source inputs (more changed since its tested commit than "
+                "research paths no crate reads)")
     if tested != candidate:
         require(git(repo, "cat-file", "-t", tested, check=False).strip() == b"commit",
                 f"tested commit {tested[:12]} is not present; fetch it")
@@ -270,10 +305,13 @@ def verify_record(record, evidence, repo, candidate, rules, arch, candidate_inpu
     if "perf" in kinds:
         perf = kinds["perf"]
         base = perf.get("base_commit")
-        # The baseline is the push base itself: an older ancestor or a commit inside the
-        # pushed range would compare against the wrong program.
-        require(isinstance(base, str) and COMMIT.fullmatch(base) and base == push_base,
-                f"perf base {str(base)[:12]} is not this push's base {str(push_base)[:12]}")
+        # The baseline is the push base's program: an older ancestor or a commit inside the
+        # pushed range would compare against the wrong program. A base that differs from the
+        # push base only in research paths no crate reads is that same program.
+        require(isinstance(base, str) and COMMIT.fullmatch(base) and isinstance(push_base, str)
+                and (base == push_base or research_drift(repo, base, push_base) is not None),
+                f"perf base {str(base)[:12]} is not this push's base {str(push_base)[:12]} (or "
+                "differs from it in more than research paths no crate reads)")
         roster = {mid for _, mid in roster_ids(git(repo, "show", f"{candidate}:tools/release-roster.tsv").decode())}
         arms = {"none": {"B": 3}}.get(perf.get("baseline"), {"A": PERF_ORDER.count("A"), "B": PERF_ORDER.count("B")})
         counts = {}
@@ -351,8 +389,15 @@ def proven_cells(repo, candidate, rules, arch, log=print, push_base=None):
         root = path.rsplit("/", 1)[0]
         try:
             record = json.loads(git(repo, "show", f"{candidate}:{path}"))
+            across = None
             if record.get("inputs_sha256") != candidate_inputs:
-                continue
+                # Older records of other inputs are the normal case; only one whose tested commit
+                # differs from the candidate in research paths alone is still evidence for it.
+                tested = record.get("tested_commit")
+                across = (research_drift(repo, tested, candidate)
+                          if isinstance(tested, str) and COMMIT.fullmatch(tested) else None)
+                if across is None:
+                    continue
             target, kinds = verify_record(record, TreeEvidence(repo, candidate, root), repo, candidate,
                                           rules, arch, candidate_inputs, push_base)
         except (EvidenceError, q.GateError, KeyError, TypeError, ValueError, subprocess.SubprocessError) as error:
@@ -361,7 +406,9 @@ def proven_cells(repo, candidate, rules, arch, log=print, push_base=None):
         proven.setdefault(target, set()).update(kinds)
         by_device.setdefault(record["device"]["class"], set()).update(kinds)
         log(f"  record {root}: {ci.target_name(rules, target)} {','.join(sorted(kinds))} "
-            f"on {record['device']['class']}")
+            f"on {record['device']['class']}"
+            + (f" (tested {record['tested_commit'][:12]}; since then only {len(across)} research "
+               f"path{'s' if len(across) != 1 else ''} no crate reads changed)" if across else ""))
     return proven, by_device
 
 

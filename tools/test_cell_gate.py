@@ -335,6 +335,70 @@ class CellGate(unittest.TestCase):
             self.f.push("refs/heads/main", base=self.f.base)
 
 
+    def rebase_onto(self, main_change, *lane):
+        """Move main by `main_change` (path -> text) on the seed, then replay the `lane` commits
+        on it, as a lane rebases before landing. Returns (new main tip, new lane head)."""
+        f = self.f
+        f.git("checkout", "-q", "-b", "moved", f.base)
+        for path, text in main_change.items():
+            f.write(path, text)
+        main_tip = f.commit("main moves")
+        for commit in lane:
+            f.git("cherry-pick", "--allow-empty", commit)
+        return main_tip, f.head()
+
+    def kernel_lane_with_record(self):
+        self.f.write("crates/memra-engine/cu/qmatvec.cu", "__global__ void k() { int x = 4; }\n")
+        code = self.f.commit("kernel")
+        self.f.record(code, ["battery", "perf"])
+        banked = self.f.head()
+        self.assertIn("CELL-QUALIFIED", self.f.push())
+        return code, banked
+
+    def test_a_research_only_main_move_keeps_the_record(self):
+        code, banked = self.kernel_lane_with_record()
+        main_tip, head = self.rebase_onto(
+            {"research/other-lane/README.md": "# another lane\n", "research/INDEX.md": "# Research\nother-lane | ok\n"},
+            code, banked)
+        out = self.f.push(oid=head, base=main_tip)
+        self.assertIn("CELL-QUALIFIED", out)
+        self.assertIn("research path", out)
+
+    def test_a_tools_or_engine_main_move_still_voids_the_record(self):
+        for change in ({"tools/fast-gate/plan.py": "print(2)\n"},
+                       {"crates/memra-engine/src/lib.rs": "pub fn f() { let _ = 1; }\n"},
+                       {"research/other-lane/README.md": "# x\n", "README.md": "# fixture, edited\n"}):
+            with self.subTest(change=sorted(change)):
+                self.setUp()
+                code, banked = self.kernel_lane_with_record()
+                main_tip, head = self.rebase_onto(change, code, banked)
+                with self.assertRaisesRegex(q.GateError, "missing evidence"):
+                    self.f.push(oid=head, base=main_tip)
+                self.tearDown()
+
+    def test_a_research_file_a_crate_reads_still_voids_the_record(self):
+        self.f.write("research/tables/rates.txt", "1\n")
+        self.f.write("crates/memra-engine/src/lib.rs",
+                     "pub fn f() -> &'static str { include_str!(\"../../../research/tables/rates.txt\") }\n")
+        self.f.commit("a crate reads a research table")
+        self.f.git("update-ref", "refs/heads/seed-with-table", self.f.head())
+        self.f.base = self.f.head()
+        code, banked = self.kernel_lane_with_record()
+        main_tip, head = self.rebase_onto({"research/tables/rates.txt": "2\n"}, code, banked)
+        with self.assertRaisesRegex(q.GateError, "missing evidence"):
+            self.f.push(oid=head, base=main_tip)
+
+    def test_research_drift_names_only_unread_research_paths(self):
+        a = self.f.head()
+        self.f.write("research/lane/run.log", "raw\n")
+        b = self.f.commit("research")
+        self.assertEqual(ce.research_drift(self.f.repo, a, b), ["research/lane/run.log"])
+        self.f.write("tools/x.py", "print(1)\n")
+        c = self.f.commit("tools")
+        self.assertIsNone(ce.research_drift(self.f.repo, a, c))
+        self.assertIsNone(ce.research_drift(self.f.repo, a, "0" * 40))
+
+
 class PerfVerdict(unittest.TestCase):
     def verdict(self, a, b):
         runs = [{"arm": "A", "model": "m", "tps": x} for x in a] + [{"arm": "B", "model": "m", "tps": x} for x in b]
