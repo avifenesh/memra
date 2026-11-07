@@ -25188,10 +25188,13 @@ temperature = 0.6
 
     /// Serializes every test that flips `MEMRA_BACKGROUND_RESPONSES`: the on-arm mutates
     /// process-global env and the door-off tests would observe that mutation if they ran in
-    /// parallel. Same shape as `gate_env_lock`, a different flag.
+    /// parallel. Same shape as `gate_env_lock`, a different flag. Most setters return with the
+    /// variable still set and acquiring the lock is what clears it, so every reader takes the lock,
+    /// not only one that runs beside a setter: `responses_api`'s tests that call `translate` (which
+    /// reads the variable) with `background: true` included.
     static BACKGROUND_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
-    fn background_env_lock() -> std::sync::MutexGuard<'static, ()> {
+    pub(crate) fn background_env_lock() -> std::sync::MutexGuard<'static, ()> {
         let guard = BACKGROUND_ENV_LOCK.lock().unwrap_or_else(|poisoned| {
             BACKGROUND_ENV_LOCK.clear_poison();
             poisoned.into_inner()

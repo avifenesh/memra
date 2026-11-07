@@ -2109,6 +2109,10 @@ mod tests {
 
     #[test]
     fn translate_refuses_stateful_features_with_clear_messages() {
+        // `translate` reads MEMRA_BACKGROUND_RESPONSES. lib.rs's background tests set it under this
+        // lock and most leave it set; taking the lock clears it, so the `background` row below
+        // sees the door closed.
+        let _env = crate::tests::background_env_lock();
         let base = |extra: Value| {
             let mut v = json!({ "model": "m", "input": "hi" });
             for (k, val) in extra.as_object().unwrap() {
@@ -2167,8 +2171,10 @@ mod tests {
         assert_eq!(field, Some("background".to_string()));
         assert!(msg.contains("background"), "got: {msg}");
 
-        // The public entry point reads the real env var, which is unset in this test
-        // process by default, so it must land on the same refusal.
+        // The public entry point reads the real env var. lib.rs's background tests set it and
+        // most leave it set, so hold their lock, which clears it: unset, it must land on the same
+        // refusal.
+        let _env = crate::tests::background_env_lock();
         let (msg, field) = translate(&req).unwrap_err();
         assert_eq!(field, Some("background".to_string()));
         assert!(msg.contains("background"), "got: {msg}");
