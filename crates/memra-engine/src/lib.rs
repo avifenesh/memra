@@ -30061,11 +30061,16 @@ impl Engine {
                 && n_head_kv > 0
                 && (n_head / n_head_kv).is_multiple_of(2)
                 && self.prime_kv_h2_on();
+            // The h2 row program on a three-stage mbarrier ring with head B one QK behind head
+            // A (h2p): bit-identical output, the softmax of one head overlaps the other's MMAs.
+            let h2p = h2 && self.prime_kv_h2p_on();
             let hd_sfx = fa_hd_suffix(head_dim)?;
             let f = self.func(&format!(
                 "fa_prefill_qw{}{hd_sfx}{}",
                 if triple {
                     "_t3"
+                } else if h2p {
+                    "_h2p"
                 } else if h2 {
                     "_h2"
                 } else if db {
@@ -30077,6 +30082,9 @@ impl Engine {
             ));
             let shmem = if triple {
                 (2 * 3 * BK * head_dim) as u32
+            } else if h2p {
+                // three stages of K and V planes, then six 8-byte mbarriers (padded to 64)
+                (2 * 6 * BK * head_dim + 64) as u32
             } else if h2 {
                 (2 * 4 * BK * head_dim) as u32
             } else if db {
@@ -30128,6 +30136,21 @@ impl Engine {
             }
         }
         Ok(())
+    }
+
+    /// Whether an h2 prime takes the mbarrier-ring twin (h2p). `MEMRA_PRIME_KV_H2P` resolves like
+    /// `MEMRA_PRIME_KV_H2` (`1`/`0` decide, unset follows the device: on for a unified-memory
+    /// 120a-family device, where the served 131k TTFT measured lower with identical tokens,
+    /// research/gb10-prefill-attn-20261107). Read once per process.
+    pub fn prime_kv_h2p_on(&self) -> bool {
+        static H2P: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+        *H2P.get_or_init(|| {
+            prime_kv_h2_route(
+                std::env::var("MEMRA_PRIME_KV_H2P").ok().as_deref(),
+                env!("MEMRA_BUILT_CUDA_ARCH") == "120a"
+                    && crate::unified_memory::is_unified(self.ctx()),
+            )
+        })
     }
 
     /// Whether the quantized-KV prime takes the two-head (h2) attention twin on this device.
