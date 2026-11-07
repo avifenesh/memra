@@ -639,7 +639,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         set_env("MEMRA_B200_PRIME_V2", "0");
         let gpf_before = MOE_GROUPED_PREFILL_DISPATCHES.load(Ordering::Relaxed);
-        let shipped_ranges = hyper_prime_ranges(t1, LAYERS, m.gdn_prime_grid_on());
+        let shipped_ranges = hyper_prime_ranges(t1, LAYERS, m.gdn_prime_grid_on(), m.swa_ring_on());
         let (ref_logits, ref_stack) = prime_once(&e, &m, &plan, &ids, max_ctx)?;
 
         // RED `schedule`: leave the door shut for the "on" walk too, so the schedules match and
@@ -648,7 +648,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             set_env("MEMRA_B200_PRIME_V2", "1");
         }
         let nat_before = HYPER_PRIME_NATURAL_SCHEDULES.load(Ordering::Relaxed);
-        let door_ranges = hyper_prime_ranges(t1, LAYERS, m.gdn_prime_grid_on());
+        let door_ranges = hyper_prime_ranges(t1, LAYERS, m.gdn_prime_grid_on(), m.swa_ring_on());
         let (got_logits, got_stack) = prime_once(&e, &m, &plan, &ids, max_ctx)?;
         let nat = HYPER_PRIME_NATURAL_SCHEDULES.load(Ordering::Relaxed) - nat_before;
         set_env("MEMRA_B200_PRIME_V2", "0");
@@ -724,7 +724,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // band and argmax keeps an absolute equality — those are what a caller sees.
         set_env("MEMRA_B200_PRIME_V2", "0");
         set_env("MEMRA_PRIME_CHUNK", &(t1 / 2).to_string());
-        let ctrl_ranges = hyper_prime_ranges(t1, LAYERS, m.gdn_prime_grid_on());
+        let ctrl_ranges = hyper_prime_ranges(t1, LAYERS, m.gdn_prime_grid_on(), m.swa_ring_on());
         let (ctrl_logits, ctrl_stack) = prime_once(&e, &m, &plan, &ids, max_ctx)?;
         clear_env("MEMRA_PRIME_CHUNK");
         let ctrl_rel_logits = relative(&ctrl_logits, &ref_logits);
@@ -770,7 +770,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // the ONLY axis under test is the two-host-thread overlap.
         set_env("MEMRA_B200_PRIME_V2", "1");
         set_env("MEMRA_PRIME_CHUNK", &chunk2.to_string());
-        let ranges = hyper_prime_ranges(t2, LAYERS, m.gdn_prime_grid_on());
+        let ranges = hyper_prime_ranges(t2, LAYERS, m.gdn_prime_grid_on(), m.swa_ring_on());
         assert!(
             ranges.len() >= 2,
             "arm 2 needs at least two chunks to overlap: T2={t2} CHUNK2={chunk2} gave \
@@ -870,7 +870,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let ranges = {
             set_env("MEMRA_B200_PRIME_V2", "1");
             set_env("MEMRA_PRIME_CHUNK", &chunk2.to_string());
-            let r = hyper_prime_ranges(t2, LAYERS, m.gdn_prime_grid_on());
+            let r = hyper_prime_ranges(t2, LAYERS, m.gdn_prime_grid_on(), m.swa_ring_on());
             clear_env("MEMRA_PRIME_CHUNK");
             set_env("MEMRA_B200_PRIME_V2", "0");
             r

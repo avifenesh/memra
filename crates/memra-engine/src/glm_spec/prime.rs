@@ -106,6 +106,7 @@ impl Glm5PrimeState {
                     prompt.len(),
                     m.layers.len(),
                     m.gdn_prime_grid_on(),
+                    m.swa_ring_on(),
                 );
                 let dr = m.glm5_dflash.as_ref().ok_or("GLM5 draft vanished")?;
                 let kv = DflashKv::new(eh, &dr.draft.cfg, max_ctx)?;

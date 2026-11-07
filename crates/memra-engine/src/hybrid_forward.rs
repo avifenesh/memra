@@ -1275,7 +1275,7 @@ pub const PRIME_MIN_T: usize = 16;
 pub const CUDA_GRID_YZ_MAX: usize = 65_535;
 
 /// Widest prime range that stays launch-legal through the ring-off tail fold of
-/// `fixed_prime_chunk_ranges_for_ring`: a trailing remainder shorter than `PRIME_MIN_T`
+/// `fixed_prime_chunk_ranges`: a trailing remainder shorter than `PRIME_MIN_T`
 /// folds INTO the previous range, widening it by up to `PRIME_MIN_T - 1` tokens, so the
 /// cap keeps `chunk + PRIME_MIN_T - 1 <= CUDA_GRID_YZ_MAX`. With this value every
 /// t <= 65,535 still schedules as the identical single monolithic range (t <= chunk, or
@@ -1373,12 +1373,16 @@ fn prime_pipeline_auto_geometry(n_layers: usize) -> bool {
 /// Pipelined PP primes use the measured PP-2 geometry: up to eight microchunks, never below
 /// 128 tokens, while the legacy 4096-token cap remains the long-context bound. PP-3/4 inherit
 /// only the geometry when their separate MEMRA_PP_WAVE door is explicitly open.
-pub fn prime_chunk_tokens(t: usize, n_layers: usize) -> usize {
+///
+/// `ring_on` is the MODEL's SWA-ring contract (`HybridModel::swa_ring_on`, i.e.
+/// `cache::swa_ring_on_for_plan`), never the process default: a co-loaded step37 model arms
+/// that default for the whole process, and another family's schedule must not change with it.
+pub fn prime_chunk_tokens(t: usize, n_layers: usize, ring_on: bool) -> usize {
     if let Ok(value) = std::env::var("MEMRA_PRIME_CHUNK") {
         let parsed = value
             .parse::<usize>()
             .unwrap_or(crate::cache::PRIME_CHUNK_MAX_TOKENS);
-        return explicit_prime_chunk(parsed, crate::cache::swa_ring_on());
+        return explicit_prime_chunk(parsed, ring_on);
     }
     let chunk = crate::cache::PRIME_CHUNK_MAX_TOKENS;
     if prime_pipeline_auto_geometry(n_layers) && t >= 2 * PRIME_PIPE_MIN_CHUNK {
@@ -1391,11 +1395,11 @@ pub fn prime_chunk_tokens(t: usize, n_layers: usize) -> usize {
     }
 }
 
-fn fixed_prime_chunk_ranges(t: usize, chunk: usize) -> Vec<(usize, usize)> {
-    fixed_prime_chunk_ranges_for_ring(t, chunk, crate::cache::swa_ring_on())
-}
-
-fn fixed_prime_chunk_ranges_for_ring(t: usize, chunk: usize, ring_on: bool) -> Vec<(usize, usize)> {
+/// Equal-token ranges. A trailing remainder shorter than `PRIME_MIN_T` folds into the previous
+/// range with the ring off; a ring plan (`ring_on`, the model's contract as in
+/// [`prime_chunk_tokens`]) shifts the last boundary back instead, so no range outgrows the
+/// chunk the ring was sized for.
+fn fixed_prime_chunk_ranges(t: usize, chunk: usize, ring_on: bool) -> Vec<(usize, usize)> {
     if chunk == 0 || t <= chunk {
         return vec![(0, t)];
     }
@@ -1473,10 +1477,17 @@ fn dynamic_prime_chunk_ranges(
 /// (`align_prime_ranges_to_gdn`; the spec-longctx grid law, extended from serve splits to
 /// the PP prime microchunks). Explicit MEMRA_PRIME_CHUNK keeps its operator-authoritative
 /// (fixed, unaligned) semantics — the FLAGS caveat documents that identity contract.
-pub fn prime_chunk_ranges(t: usize, n_layers: usize, gdn_grid: bool) -> Vec<(usize, usize)> {
+///
+/// `ring_on`: the model's SWA-ring contract, as in [`prime_chunk_tokens`].
+pub fn prime_chunk_ranges(
+    t: usize,
+    n_layers: usize,
+    gdn_grid: bool,
+    ring_on: bool,
+) -> Vec<(usize, usize)> {
     let explicit_chunk = std::env::var_os("MEMRA_PRIME_CHUNK").is_some();
-    let chunk = prime_chunk_tokens(t, n_layers);
-    let fixed = fixed_prime_chunk_ranges(t, chunk);
+    let chunk = prime_chunk_tokens(t, n_layers, ring_on);
+    let fixed = fixed_prime_chunk_ranges(t, chunk, ring_on);
     let dynamic = match std::env::var("MEMRA_PRIME_CHUNK_SCHED") {
         Ok(value) => value == "dynamic",
         Err(_) => true,
@@ -1551,7 +1562,12 @@ pub fn prime_chunk_ranges(t: usize, n_layers: usize, gdn_grid: bool) -> Vec<(usi
 /// grid.y wall is 65,535 and the old walk always died at launch above it, 08-29 ppN receipts)
 /// — the rollback seam, and the oracle arm the correctness gate compares against, both now
 /// bounded by that cap; longer prompts split at the cap even under `0`.
-pub fn hyper_prime_ranges(t: usize, n_layers: usize, gdn_grid: bool) -> Vec<(usize, usize)> {
+pub fn hyper_prime_ranges(
+    t: usize,
+    n_layers: usize,
+    gdn_grid: bool,
+    ring_on: bool,
+) -> Vec<(usize, usize)> {
     // DOOR `MEMRA_B200_PRIME_V2` arm 1 (default OFF; see the door's header for the arithmetic
     // and the numeric class). The delegation above inherits `PRIME_PIPE_MICROBATCHES` from a
     // pipeline this walk does not run; under the door the mHC prime takes the NATURAL chunk
@@ -1559,9 +1575,9 @@ pub fn hyper_prime_ranges(t: usize, n_layers: usize, gdn_grid: bool) -> Vec<(usi
     // must not be overridden by a door, and `prime_chunk_tokens` already honors it, so the
     // door simply stands aside rather than re-deciding.
     if b200_prime_v2_on() && std::env::var_os("MEMRA_PRIME_CHUNK").is_none() {
-        return hyper_prime_ranges_natural(t, gdn_grid);
+        return hyper_prime_ranges_natural(t, gdn_grid, ring_on);
     }
-    prime_chunk_ranges(t, n_layers, gdn_grid)
+    prime_chunk_ranges(t, n_layers, gdn_grid, ring_on)
 }
 
 /// The mHC prime schedule with the microbatch geometry removed: fixed ranges at
@@ -1570,8 +1586,8 @@ pub fn hyper_prime_ranges(t: usize, n_layers: usize, gdn_grid: bool) -> Vec<(usi
 /// than the 4k one on the same binary). The GDN grid law still applies: `align_prime_ranges_to_gdn`
 /// is the same call the auto schedule makes, kept here so a chunked-KDA prefill twin cannot
 /// acquire a fold grid on one path and not the other.
-fn hyper_prime_ranges_natural(t: usize, gdn_grid: bool) -> Vec<(usize, usize)> {
-    let ranges = fixed_prime_chunk_ranges(t, crate::cache::PRIME_CHUNK_MAX_TOKENS);
+fn hyper_prime_ranges_natural(t: usize, gdn_grid: bool, ring_on: bool) -> Vec<(usize, usize)> {
+    let ranges = fixed_prime_chunk_ranges(t, crate::cache::PRIME_CHUNK_MAX_TOKENS, ring_on);
     let ranges = if gdn_grid {
         align_prime_ranges_to_gdn(&ranges, t, Engine::gdn_chunk_size())
     } else {
@@ -1620,13 +1636,15 @@ pub struct PrimeWorkspaceShape {
     pub prompt_row_bytes: usize,
     /// Trunk depth, for the auto chunk geometry (`prime_chunk_tokens`).
     pub n_layers: usize,
+    /// The model's SWA-ring contract (`HybridModel::swa_ring_on`), the schedule's ring input.
+    pub swa_ring: bool,
 }
 
 impl PrimeWorkspaceShape {
     /// The rows one prime call carries for a `prompt_rows` prime under the deployment's chunking
     /// (WP-B day 39: the admission door books one call's workspace once, not once per session).
     pub fn call_rows(&self, prompt_rows: usize) -> usize {
-        prompt_rows.min(prime_chunk_tokens(prompt_rows, self.n_layers).max(1))
+        prompt_rows.min(prime_chunk_tokens(prompt_rows, self.n_layers, self.swa_ring).max(1))
     }
 
     /// The charge for `prompt_rows` with an explicit per-call row count (pure arithmetic,
@@ -1643,13 +1661,13 @@ impl PrimeWorkspaceShape {
     pub fn admission_bytes(&self, prompt_rows: usize) -> usize {
         self.admission_bytes_with_call_rows(
             prompt_rows,
-            prime_chunk_tokens(prompt_rows, self.n_layers),
+            prime_chunk_tokens(prompt_rows, self.n_layers, self.swa_ring),
         )
     }
 }
 
-pub fn hyper_prime_call_rows(t: usize, n_layers: usize, gdn_grid: bool) -> usize {
-    hyper_prime_ranges(t, n_layers, gdn_grid)
+pub fn hyper_prime_call_rows(t: usize, n_layers: usize, gdn_grid: bool, ring_on: bool) -> usize {
+    hyper_prime_ranges(t, n_layers, gdn_grid, ring_on)
         .iter()
         .map(|&(start, end)| end - start)
         .max()
@@ -1693,6 +1711,8 @@ pub struct HyperPrimeWorkspaceShape {
     pub n_layers: usize,
     /// The model's own GDN grid-alignment input to the schedule.
     pub gdn_grid: bool,
+    /// The model's SWA-ring contract (`HybridModel::swa_ring_on`), the schedule's ring input.
+    pub swa_ring: bool,
 }
 
 impl HyperPrimeWorkspaceShape {
@@ -1707,7 +1727,7 @@ impl HyperPrimeWorkspaceShape {
     /// `prompt` is the full rendered conversation (the suffix optimization is internal
     /// reuse), so the score plane's `t_kv` is covered too.
     pub fn admission_bytes(&self, prompt_rows: usize) -> usize {
-        let rows = hyper_prime_call_rows(prompt_rows, self.n_layers, self.gdn_grid);
+        let rows = hyper_prime_call_rows(prompt_rows, self.n_layers, self.gdn_grid, self.swa_ring);
         let chunk = self.chunk_token_bytes.saturating_mul(rows);
         let score = prompt_rows
             .checked_div(self.kpool_score_pool)
@@ -2280,7 +2300,12 @@ impl HybridModel {
             if cache.pos + t > cache.max_ctx {
                 return Err("prime_cache: prompt exceeds cache max_ctx".into());
             }
-            let ranges = hyper_prime_ranges(t, self.layers.len(), self.gdn_prime_grid_on());
+            let ranges = hyper_prime_ranges(
+                t,
+                self.layers.len(),
+                self.gdn_prime_grid_on(),
+                self.swa_ring_on(),
+            );
             // Device-resident tap ingest hooks (lane/spec-route-depth-20260902): a no-op
             // unless the cache's tap sink carries an ingest consumer; then each completed
             // range's tap rows go straight into the drafter KV at the range boundary, the
@@ -2383,7 +2408,12 @@ impl HybridModel {
         // the same value whatever the chunk size, which is the tick-seg law the serial loop
         // above carries verbatim (`+ queued_after` closes the serve-split axis).
         let seq_end = cache.pos + t + queued_after;
-        let ranges = hyper_prime_ranges(t, self.layers.len(), self.gdn_prime_grid_on());
+        let ranges = hyper_prime_ranges(
+            t,
+            self.layers.len(),
+            self.gdn_prime_grid_on(),
+            self.swa_ring_on(),
+        );
         // Device-resident tap ingest hooks (doc at the ppN twin above).
         if ranges.len() == 1 {
             self.glm5_taps_range_begin(cache, 0);
@@ -2473,6 +2503,7 @@ impl HybridModel {
             call_row_bytes,
             prompt_row_bytes: h * f32b,
             n_layers: self.layers.len(),
+            swa_ring: self.swa_ring_on(),
         })
     }
 
@@ -2505,6 +2536,7 @@ impl HybridModel {
             kpool_score_pool,
             n_layers: self.layers.len(),
             gdn_grid: self.gdn_prime_grid_on(),
+            swa_ring: self.swa_ring_on(),
         })
     }
 
@@ -5831,7 +5863,12 @@ impl HybridModel {
             // `docs/EXECUTION-SURFACES.md`.
             vec![(0, t)]
         } else {
-            prime_chunk_ranges(t, self.layers.len(), self.gdn_prime_grid_on())
+            prime_chunk_ranges(
+                t,
+                self.layers.len(),
+                self.gdn_prime_grid_on(),
+                self.swa_ring_on(),
+            )
         };
         // CHUNK-ORDER INVARIANCE (lane/chunk-invariance, 2026-08-05; vLLM #38561 shape).
         // MEMRA_PRIME_CHUNK is documented as a memory-transient knob, but it also decides
@@ -30280,10 +30317,10 @@ mod prime_chunk_schedule_tests {
         CUDA_GRID_YZ_MAX, PRIME_CHUNK_LAUNCH_CAP, PRIME_MIN_T, PRIME_PIPE_MIN_CHUNK, PrimePpSignal,
         PrimePpStageChannels, PrimePpWaveCredits, PrimePpWaveSlot, active_matrix_values,
         align_prime_ranges_to_gdn, dynamic_prime_chunk_ranges, explicit_prime_chunk,
-        fixed_prime_chunk_ranges, fixed_prime_chunk_ranges_for_ring, move_prime_cache_layers,
-        parse_step_ep_grouped_prefill, parse_step_tp_prefill, prime_cache_stage_for_layer,
-        recv_prime_pp_signal, restore_prime_cache_layers, step_grouped_decode_shape,
-        step_grouped_prefill_shape, step_tp_prefill_shape, validate_step_prime_batch_modes,
+        fixed_prime_chunk_ranges, move_prime_cache_layers, parse_step_ep_grouped_prefill,
+        parse_step_tp_prefill, prime_cache_stage_for_layer, recv_prime_pp_signal,
+        restore_prime_cache_layers, step_grouped_decode_shape, step_grouped_prefill_shape,
+        step_tp_prefill_shape, validate_step_prime_batch_modes,
     };
 
     fn sizes(ranges: &[(usize, usize)]) -> Vec<usize> {
@@ -30307,6 +30344,7 @@ mod prime_chunk_schedule_tests {
             call_row_bytes: 42 * 2048 + 14 * 2048,
             prompt_row_bytes: 4 * 2048,
             n_layers: 41,
+            swa_ring: false,
         };
         let chunked_60k = shape.admission_bytes_with_call_rows(60_000, 4096);
         let chunked_257k = shape.admission_bytes_with_call_rows(257_000, 4096);
@@ -30377,7 +30415,7 @@ mod prime_chunk_schedule_tests {
             CUDA_GRID_YZ_MAX,
         ] {
             assert_eq!(
-                fixed_prime_chunk_ranges_for_ring(t, chunk, false),
+                fixed_prime_chunk_ranges(t, chunk, false),
                 vec![(0, t)],
                 "t={t} must stay a single monolithic range"
             );
@@ -30386,7 +30424,7 @@ mod prime_chunk_schedule_tests {
         // first FAIL, and the boundary — every scheduled range must be launch-legal,
         // contiguous, and full-coverage.
         for t in [65_536, 65_643, 66_045, 79_717, 82_440, 262_144] {
-            let ranges = fixed_prime_chunk_ranges_for_ring(t, chunk, false);
+            let ranges = fixed_prime_chunk_ranges(t, chunk, false);
             assert!(ranges.len() >= 2, "t={t} must chunk");
             let mut cursor = 0usize;
             for &(start, end) in &ranges {
@@ -30407,7 +30445,7 @@ mod prime_chunk_schedule_tests {
         }
         // Dense sweep across the boundary band: no width may ever exceed the limit.
         for t in (CUDA_GRID_YZ_MAX - 64)..=(CUDA_GRID_YZ_MAX + 2 * PRIME_MIN_T + 64) {
-            for &(start, end) in &fixed_prime_chunk_ranges_for_ring(t, chunk, false) {
+            for &(start, end) in &fixed_prime_chunk_ranges(t, chunk, false) {
                 assert!(
                     end - start <= CUDA_GRID_YZ_MAX,
                     "t={t} width {}",
@@ -30558,7 +30596,7 @@ mod prime_chunk_schedule_tests {
         // by 8), every internal boundary off the 32 grid — the falsified-identity arm.
         let t = 9510usize;
         let fill = auto_chunk(t);
-        let fixed = fixed_prime_chunk_ranges(t, fill);
+        let fixed = fixed_prime_chunk_ranges(t, fill, false);
         assert!(
             fixed[..fixed.len() - 1].iter().any(|&(_, e)| e % c != 0),
             "broken arm vanished: fixed auto boundaries all landed on-grid"
@@ -30691,19 +30729,22 @@ mod prime_chunk_schedule_tests {
     #[test]
     fn fixed_schedule_retains_measured_geometry() {
         assert_eq!(
-            sizes(&fixed_prime_chunk_ranges(461, 128)),
+            sizes(&fixed_prime_chunk_ranges(461, 128, false)),
             vec![128, 128, 128, 77]
         );
         assert_eq!(
-            sizes(&fixed_prime_chunk_ranges(1833, 230)),
+            sizes(&fixed_prime_chunk_ranges(1833, 230, false)),
             vec![230, 230, 230, 230, 230, 230, 230, 223]
         );
-        assert_eq!(sizes(&fixed_prime_chunk_ranges(4096, 512)), vec![512; 8]);
-        let capped = sizes(&fixed_prime_chunk_ranges_for_ring(8200, 4096, true));
+        assert_eq!(
+            sizes(&fixed_prime_chunk_ranges(4096, 512, false)),
+            vec![512; 8]
+        );
+        let capped = sizes(&fixed_prime_chunk_ranges(8200, 4096, true));
         assert_eq!(capped, vec![4096, 4088, 16]);
         assert!(capped.iter().all(|&rows| rows <= 4096));
         assert_eq!(
-            sizes(&fixed_prime_chunk_ranges_for_ring(4100, 4096, false)),
+            sizes(&fixed_prime_chunk_ranges(4100, 4096, false)),
             vec![4100],
             "flag-off schedule remains byte-for-byte the legacy monolithic tail",
         );
@@ -30718,7 +30759,7 @@ mod prime_chunk_schedule_tests {
         ];
         for (t, expected) in cases {
             let chunk = auto_chunk(t);
-            let fixed = fixed_prime_chunk_ranges(t, chunk);
+            let fixed = fixed_prime_chunk_ranges(t, chunk, false);
             assert_eq!(
                 sizes(&dynamic_prime_chunk_ranges(t, chunk, &fixed)),
                 expected
@@ -30730,7 +30771,7 @@ mod prime_chunk_schedule_tests {
     fn dynamic_schedule_covers_exactly_and_shrinks_after_fill() {
         for t in 256..=8192 {
             let chunk = auto_chunk(t);
-            let fixed = fixed_prime_chunk_ranges(t, chunk);
+            let fixed = fixed_prime_chunk_ranges(t, chunk, false);
             let dynamic = dynamic_prime_chunk_ranges(t, chunk, &fixed);
             assert_eq!(dynamic.len(), fixed.len(), "T={t}");
             assert_eq!(dynamic.first().unwrap().0, 0, "T={t}");
