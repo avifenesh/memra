@@ -1,0 +1,1295 @@
+[server] build: memra-0.138.0-c97c305a6e0b (id: source-tree, git: unknown)
+[server] starting; models config = [("q38", "/home/avifenesh/models/memra-q38/Qwen3.8-27B-NVFP4-MTP-GGUF/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf", None)]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[worker-affinity] off (MEMRA_WORKER_CPUSET / MEMRA_WORKER_AFFINITY unset or =0)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal after 3 consecutive misses (MEMRA_GPU_PROBE_MISSES), fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2 (K=5 when the loaded MTP head is rank-trimmed)
+[worker] loading model "q38" <- /home/avifenesh/models/memra-q38/Qwen3.8-27B-NVFP4-MTP-GGUF/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf
+[tensor-contract] bound 866 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[mtp-draft] loading external MTP draft: /home/avifenesh/models/memra-q38/Qwen3.8-27B-NVFP4-MTP-GGUF/mtp-Qwen3.8-27B-NVFP4-frspec-sxc32768.gguf
+[mtp-draft] external draft head: blk.64, source=output.weight, head_vocab=32768 (trimmed, d2t map)
+[frspec-trim] per-head trim: 0 extra chain head(s) gathered from their own blocks
+[worker]   loaded "q38": 65 layers, eos=248046, stop=[248046]
+[worker] q38: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false qwen_effort=true gemma_think=false dsv4=false glm5=false ctx=262144 tok="qwen35" instruct=Some("chatml") chat_defaults=None/None
+[route-contract] model="q38" route=hybrid-worker capacity=32 sessions implemented=[capacity,occupancy,progress,fault-ownership,shutdown-ownership,memory-cost,rewrite-qualification,prime-fairness,service-metrics] refused=[]
+[fa-pool] grow #0 dev=0 o_len 0 -> 3244032 ml_len 0 -> 12672 (retired kept, zero=false)
+[fa-pool] grow #1 dev=0 o_len 3244032 -> 6488064 ml_len 12672 -> 25344 (retired kept, zero=false)
+[device-trim] reason=wave-probe {"device":0,"reclaimed_bytes":17582522368,"still_owned_bytes":16658168832,"pool_reserved_bytes":16844324864,"pool_cached_bytes":186156032,"driver_free_bytes":26786537472,"synchronization_errors":[]}
+[wave-probe] 32 sessions at depth 2048: two 16-row waves 262.5 ms, one 32-row wave 262.1 ms (tensor-core tier 227.9 ms) -> wave cap 32, tensor-core b32 on (63.9s; released 16768MB of cached pool to the driver)
+[worker] q38: decode wave cap 32; scheduler tick cap 32 (exact-32 tier)
+[gdn-census] on: dir=/home/avifenesh/.cache/memra-gdnfp16/runs/census/panel prime_every=10.0s decode_stride=128 (diagnostic: copies GDN states to the host between ticks)
+[vision] tower loaded from /home/avifenesh/models/Qwen3.8-27B-NVFP4 (27 blocks, out_width 5120, f32-resident)
+[vision] overlay intake: tower dev0 -> intake dev0 (cross_context=false) publish=Auto servable=true
+[prefix-cache] on: budget 50728MB (50727819264 B, derived: 2 x 7941521408 B max entry for model "q38" at served ctx 262144 (from MEMRA_CTX; MEMRA_CTX set), unified memory: the larger of that and 1/2 of allocatable free after the transient reserve, driver headroom 2147483648 B and host tier 0 B, requested 50727819264 B; boot driver free 105213734912 B, post-reserve clamp 101455638528 B), policy plain-LRU (global oldest unleased entry first; leases untouchable), min prefix 64 tokens, immediate partial restore=off (rollback) (transformer-only; hybrid mid-entry + routed-MoE N/A)
+[admission] "q38": plain 29696 B/token, spec 31552 B/token; fixed residual learns from effective-free deltas
+[func] CAPTURE-TIME kernel lookup (not warmed): embed_gather_u32
+[func] CAPTURE-TIME kernel lookup (not warmed): qmatvec_q4_K_mmvq
+[func] CAPTURE-TIME kernel lookup (not warmed): qmatvec_q6_K_mmvq
+[func] CAPTURE-TIME kernel lookup (not warmed): inc_i32
+[func] CAPTURE-TIME kernel lookup (not warmed): fa_decode_vec_q_v4_deep_dc
+[func] CAPTURE-TIME kernel lookup (not warmed): fa_decode_combine_f32
+[spec] draft-session state high-water: 34MB (max of parked delta 34MB and capture-time pool peak 2MB; charged per spec admission and gating future captures)
+[spec-pool] pooled rows draft engaged: 4 members (arms [GraphGreedy, GraphGreedy, GraphGreedy, GraphGreedy])
+[spec-pool] pooled rows draft engaged: 2 members (arms [GraphGreedy, GraphGreedy])
+[device-trim] reason=spec-cost-calibration {"device":0,"reclaimed_bytes":17750294528,"still_owned_bytes":18490472384,"pool_reserved_bytes":18555600896,"pool_cached_bytes":65128512,"driver_free_bytes":25018814464,"synchronization_errors":[]}
+[spec-cost] model="q38" depth=2048 pooled=true plain_cap=32 round_overhead=12.81ms pooled_overhead=Some((4, 5.530671005208337)) verify_ms[1..16]=[76.2 74.9 74.9 76.0 76.8 77.6 79.1 80.6 82.9 85.3 87.6 89.9 92.1 94.2 96.4 98.6] plain_ms[1..]=[75.6 78.6 82.3 86.1 90.0 94.0 97.9 101.9 106.6 111.4 116.2 121.0 125.8 130.6 135.4 140.2 145.8 151.4 157.0 162.6 168.1 173.7 179.3 184.9 190.5 196.1 201.7 207.3 212.9 218.5 224.1 229.7] (89.2s)
+[prime-walk] model="q38" route=mtp supported=true yield_door=true [gdn_dspark_compatible=true mtp_head_loaded=true no_hyper_connections=true no_pipeline_cuts=true]
+[func] CAPTURE-TIME kernel lookup (not warmed): memra_sctr_inc
+[func] CAPTURE-TIME kernel lookup (not warmed): gumbel_perturb_filtered_ctr_f32
+[device-trim] reason=calibration-complete {"device":0,"reclaimed_bytes":2382364672,"still_owned_bytes":19262224320,"pool_reserved_bytes":19394461696,"pool_cached_bytes":132237376,"driver_free_bytes":24166547456,"synchronization_errors":[]}
+[admit-cal] post-probe pool trim: released 2272MB cached back to the driver
+[admit-cal] boot calibration done: model="q38" route=mtp transient floor 2110MB (static was 1536MB; measured 2110MB; probe kv charge 127MB, draft-state 34MB, drafted 78 accepted 38; [dev0 peak-mapped 20768MB rest-mapped 18496MB charged 161MB -> 2110MB]; 6.3s)
+[admit-mem] door=OFF open_output_tokens=8192 defer_budget_ms=8000 (admission charges prompt+output, the reclaim flush demotes to the host tier before dropping, and a memory defer past the budget refuses 429 instead of queueing past the client's deadline)
+[kv-vmm] door=OFF (MEMRA_KV_ALLOCATOR unset or pooled: pooled K/V planes)
+[deadline] unified memory (48 SMs, served ctx 262144): streaming TTFT default/max 997311 ms (derived), SSE prefill commit 60000 ms; non-streaming default/max 3045311 ms (derived: full-context prefill + 8192 open output tokens at 4 tok/s). MEMRA_SSE_PREFILL_COMMIT_MS=0 restores the shipped 90 s windows
+[server] worker ready; serving models: ["q38"]
+[server] listening on http://127.0.0.1:8090
+[meter] admit id=chatcmpl-7c6e1ed6713dceeacac97d15907419cb tenant=default lane=interactive model="q38"
+[spec-cost] model="q38" n=1 rung=3 -> K=3 (exploring: no acceptance history yet)
+[admission] per-session draft-state charge: model="q38" +36MB (measured capture high-water)
+[admission] request cost: model="q38" ctx=131678 path=spec = 31552 B/token x ctx + 4573MB prefill-workspace + 0MB fixed = 8728MB
+[prefix-cache] stable-boundary capture armed at 131520 of 131550 prompt tokens (model q38)
+[spec-k] model="q38" tenant="55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191" K=3 source=cost-model prompt=131550 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="q38" 646MB (observed 4799MB at ctx 131622 path=spec)
+[prime-yield] count=1 remaining=66 chunks=1 wall_ms=3671.913 max_chunk_ms=3671.913
+[gdn-census] sample 1 chatcmpl-7c6e1ed6713dceeacac97d15907419cb prime rows=4096 copy=972ms total=993ms
+[prime-yield] count=2 remaining=65 chunks=1 wall_ms=3682.182 max_chunk_ms=3682.182
+[prime-yield] count=3 remaining=64 chunks=1 wall_ms=3739.974 max_chunk_ms=3739.974
+[prime-yield] count=4 remaining=63 chunks=1 wall_ms=3837.658 max_chunk_ms=3837.658
+[gdn-census] sample 2 chatcmpl-7c6e1ed6713dceeacac97d15907419cb prime rows=16384 copy=747ms total=766ms
+[prime-yield] count=5 remaining=62 chunks=1 wall_ms=3957.399 max_chunk_ms=3957.399
+[prime-yield] count=6 remaining=61 chunks=1 wall_ms=4029.771 max_chunk_ms=4029.771
+[prime-yield] count=7 remaining=60 chunks=1 wall_ms=4140.052 max_chunk_ms=4140.052
+[gdn-census] sample 3 chatcmpl-7c6e1ed6713dceeacac97d15907419cb prime rows=28672 copy=1010ms total=1029ms
+[prime-yield] count=8 remaining=59 chunks=1 wall_ms=4135.627 max_chunk_ms=4135.627
+[prime-yield] count=9 remaining=58 chunks=1 wall_ms=4276.526 max_chunk_ms=4276.526
+[prime-yield] count=10 remaining=57 chunks=1 wall_ms=4383.991 max_chunk_ms=4383.991
+[gdn-census] sample 4 chatcmpl-7c6e1ed6713dceeacac97d15907419cb prime rows=40960 copy=1058ms total=1079ms
+[prime-yield] count=11 remaining=56 chunks=1 wall_ms=4452.768 max_chunk_ms=4452.768
+[prime-yield] count=12 remaining=55 chunks=1 wall_ms=4471.754 max_chunk_ms=4471.754
+[gdn-census] sample 5 chatcmpl-7c6e1ed6713dceeacac97d15907419cb prime rows=49152 copy=737ms total=759ms
+[prime-yield] count=13 remaining=54 chunks=1 wall_ms=4537.553 max_chunk_ms=4537.553
+[prime-yield] count=14 remaining=53 chunks=1 wall_ms=4688.009 max_chunk_ms=4688.009
+[prime-yield] count=15 remaining=52 chunks=1 wall_ms=4799.362 max_chunk_ms=4799.362
+[gdn-census] sample 6 chatcmpl-7c6e1ed6713dceeacac97d15907419cb prime rows=61440 copy=1024ms total=1044ms
+[prime-yield] count=16 remaining=51 chunks=1 wall_ms=4847.045 max_chunk_ms=4847.045
+[prime-yield] count=17 remaining=50 chunks=1 wall_ms=4872.710 max_chunk_ms=4872.710
+[gdn-census] sample 7 chatcmpl-7c6e1ed6713dceeacac97d15907419cb prime rows=69632 copy=587ms total=609ms
+[prime-yield] count=18 remaining=49 chunks=1 wall_ms=4931.364 max_chunk_ms=4931.364
+[prime-yield] count=19 remaining=48 chunks=1 wall_ms=5016.310 max_chunk_ms=5016.310
+[gdn-census] sample 8 chatcmpl-7c6e1ed6713dceeacac97d15907419cb prime rows=77824 copy=644ms total=665ms
+[prime-yield] count=20 remaining=47 chunks=1 wall_ms=5094.694 max_chunk_ms=5094.694
+[prime-yield] count=21 remaining=46 chunks=1 wall_ms=5177.156 max_chunk_ms=5177.156
+[gdn-census] sample 9 chatcmpl-7c6e1ed6713dceeacac97d15907419cb prime rows=86016 copy=544ms total=565ms
+[prime-yield] count=22 remaining=45 chunks=1 wall_ms=5255.318 max_chunk_ms=5255.318
+[prime-yield] count=23 remaining=44 chunks=1 wall_ms=5340.934 max_chunk_ms=5340.934
+[gdn-census] sample 10 chatcmpl-7c6e1ed6713dceeacac97d15907419cb prime rows=94208 copy=893ms total=914ms
+[prime-yield] count=24 remaining=43 chunks=1 wall_ms=5412.173 max_chunk_ms=5412.173
+[prime-yield] count=25 remaining=42 chunks=1 wall_ms=5503.684 max_chunk_ms=5503.684
+[gdn-census] sample 11 chatcmpl-7c6e1ed6713dceeacac97d15907419cb prime rows=102400 copy=892ms total=912ms
+[prime-yield] count=26 remaining=41 chunks=1 wall_ms=5569.133 max_chunk_ms=5569.133
+[prime-yield] count=27 remaining=40 chunks=1 wall_ms=5671.352 max_chunk_ms=5671.352
+[gdn-census] sample 12 chatcmpl-7c6e1ed6713dceeacac97d15907419cb prime rows=110592 copy=253ms total=272ms
+[prime-yield] count=28 remaining=39 chunks=1 wall_ms=5735.718 max_chunk_ms=5735.718
+[prime-yield] count=29 remaining=38 chunks=1 wall_ms=5802.689 max_chunk_ms=5802.689
+[gdn-census] sample 13 chatcmpl-7c6e1ed6713dceeacac97d15907419cb prime rows=118784 copy=682ms total=703ms
+[prime-yield] count=30 remaining=37 chunks=1 wall_ms=5904.449 max_chunk_ms=5904.449
+[prime-yield] count=31 remaining=36 chunks=1 wall_ms=5984.094 max_chunk_ms=5984.094
+[gdn-census] sample 14 chatcmpl-7c6e1ed6713dceeacac97d15907419cb prime rows=126976 copy=189ms total=210ms
+[prime-yield] count=32 remaining=35 chunks=1 wall_ms=6048.314 max_chunk_ms=6048.314
+[prime-yield] count=33 remaining=34 chunks=1 wall_ms=889.205 max_chunk_ms=889.205
+[prime-yield] count=34 remaining=33 chunks=1 wall_ms=455.468 max_chunk_ms=455.468
+[prime-yield] count=35 remaining=32 chunks=1 wall_ms=73.778 max_chunk_ms=73.778
+[prime-yield] count=36 remaining=31 chunks=1 wall_ms=72.952 max_chunk_ms=72.952
+[prime-yield] count=37 remaining=30 chunks=1 wall_ms=73.814 max_chunk_ms=73.814
+[prime-yield] count=38 remaining=29 chunks=1 wall_ms=72.859 max_chunk_ms=72.859
+[prime-yield] count=39 remaining=28 chunks=1 wall_ms=72.935 max_chunk_ms=72.935
+[prime-yield] count=40 remaining=27 chunks=1 wall_ms=72.223 max_chunk_ms=72.223
+[prime-yield] count=41 remaining=26 chunks=1 wall_ms=72.129 max_chunk_ms=72.129
+[prime-yield] count=42 remaining=25 chunks=1 wall_ms=72.127 max_chunk_ms=72.127
+[prime-yield] count=43 remaining=24 chunks=1 wall_ms=73.768 max_chunk_ms=73.768
+[prime-yield] count=44 remaining=23 chunks=1 wall_ms=72.936 max_chunk_ms=72.936
+[prime-yield] count=45 remaining=22 chunks=1 wall_ms=72.935 max_chunk_ms=72.935
+[prime-yield] count=46 remaining=21 chunks=1 wall_ms=72.016 max_chunk_ms=72.016
+[prime-yield] count=47 remaining=20 chunks=1 wall_ms=72.276 max_chunk_ms=72.276
+[prime-yield] count=48 remaining=19 chunks=1 wall_ms=72.261 max_chunk_ms=72.261
+[prime-yield] count=49 remaining=18 chunks=1 wall_ms=72.142 max_chunk_ms=72.142
+[prime-yield] count=50 remaining=17 chunks=1 wall_ms=72.181 max_chunk_ms=72.181
+[prime-yield] count=51 remaining=16 chunks=1 wall_ms=72.947 max_chunk_ms=72.947
+[prime-yield] count=52 remaining=15 chunks=1 wall_ms=71.277 max_chunk_ms=71.277
+[prime-yield] count=53 remaining=14 chunks=1 wall_ms=73.790 max_chunk_ms=73.790
+[prime-yield] count=54 remaining=13 chunks=1 wall_ms=73.764 max_chunk_ms=73.764
+[prime-yield] count=55 remaining=12 chunks=1 wall_ms=72.148 max_chunk_ms=72.148
+[prime-yield] count=56 remaining=11 chunks=1 wall_ms=72.085 max_chunk_ms=72.085
+[prime-yield] count=57 remaining=10 chunks=1 wall_ms=72.145 max_chunk_ms=72.145
+[prime-yield] count=58 remaining=9 chunks=1 wall_ms=72.205 max_chunk_ms=72.205
+[prime-yield] count=59 remaining=8 chunks=1 wall_ms=72.937 max_chunk_ms=72.937
+[prime-yield] count=60 remaining=7 chunks=1 wall_ms=71.305 max_chunk_ms=71.305
+[prime-yield] count=61 remaining=6 chunks=1 wall_ms=73.793 max_chunk_ms=73.793
+[prime-yield] count=62 remaining=5 chunks=1 wall_ms=74.014 max_chunk_ms=74.014
+[prime-yield] count=63 remaining=4 chunks=1 wall_ms=72.144 max_chunk_ms=72.144
+[prime-yield] count=64 remaining=3 chunks=1 wall_ms=72.100 max_chunk_ms=72.100
+[prime-yield] count=65 remaining=2 chunks=1 wall_ms=72.132 max_chunk_ms=72.132
+[prime-yield] count=66 remaining=1 chunks=1 wall_ms=72.112 max_chunk_ms=72.112
+[gdn-census] sample 15 chatcmpl-7c6e1ed6713dceeacac97d15907419cb decode rows=131551 copy=302ms total=323ms
+[prefix-cache] insert (spec-boundary): 131520 tokens, 4306.6MB (resident 4306.6MB / 50728MB, model q38, ns "55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191")
+[fa-pool] grow #2 dev=0 o_len 6488064 -> 18948096 ml_len 25344 -> 74016 (retired kept, zero=false)
+[fa-pool] grow #3 dev=0 o_len 18948096 -> 37896192 ml_len 74016 -> 148032 (retired kept, zero=false)
+[spec-acc] ctx=131551 burst=24/27 cum=24/27=0.889
+[meter] admit id=chatcmpl-66960eacb39c1ea1cff3b28c762f2909 tenant=default lane=interactive model="q38"
+[admission] per-session draft-state charge: model="q38" +36MB (measured capture high-water)
+[admission] request cost: model="q38" ctx=132824 path=spec = 31552 B/token x ctx + 4577MB prefill-workspace + 646MB fixed = 9414MB
+[meter] admit id=chatcmpl-7f6bb07152c38835b753858f3d56686b tenant=default lane=interactive model="q38"
+[meter] admit id=chatcmpl-46028a0884ff00dd4654c5fb543f034c tenant=default lane=interactive model="q38"
+[prefix-cache] hit: 131520 of 131736 prompt tokens from cache (model q38)
+[spec-cost] model="q38" n=3 rung=2 -> K=2 (exploring: no acceptance history yet)
+[meter] admit id=chatcmpl-ec53a2ef468810f140684b9a5578eec2 tenant=default lane=interactive model="q38"
+[meter] admit id=chatcmpl-9b0bdd3ed71acba9fa6b370bf91cf974 tenant=default lane=interactive model="q38"
+[meter] admit id=chatcmpl-50d2c2fe881f2a01edb57898c67c109d tenant=default lane=interactive model="q38"
+[meter] admit id=chatcmpl-f7f66463257e6d3f05fe7cc2cf59d452 tenant=default lane=interactive model="q38"
+[meter] admit id=chatcmpl-b3e100061dfa410ee78f506fa3296acb tenant=default lane=interactive model="q38"
+[prefix-cache] spec restore: 131520 of 131736 prompt tokens + draft plane from cache [suffix queued] (model q38)
+[spec-cost] model="q38" n=8 rung=5 -> K=0 (far concurrency, no measured spec slot near n: plain)
+[spec-k] model="q38" tenant="55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191" K=1 source=resume-floor(k=0->1) prompt=131736 cached=131520 lcp=131520 active=1 wave=8 placement=single-or-non-pp2
+[spec-cost] model="q38" n=1 rung=1 -> K=1 (exploring: no acceptance history yet)
+[gdn-census] sample 16 chatcmpl-66960eacb39c1ea1cff3b28c762f2909 decode rows=131737 copy=996ms total=1016ms
+[spec-cost] model="q38" n=8 rung=3 -> K=0 (far concurrency, no measured spec slot near n: plain)
+[admission] request cost: model="q38" ctx=132827 path=plain = 29696 B/token x ctx + 4577MB prefill-workspace + 646MB fixed = 9168MB
+[prefix-cache] hit: 131520 of 131739 prompt tokens from cache (model q38)
+[spec-k] model="q38" tenant="55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191" K=0 source=cost-model prompt=131739 cached=131520 lcp=131520 active=2 wave=8 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 131520 tokens, model q38)
+[admission] request cost: model="q38" ctx=132793 path=plain = 29696 B/token x ctx + 4576MB prefill-workspace + 646MB fixed = 9166MB
+[prefix-cache] hit: 131520 of 131705 prompt tokens from cache (model q38)
+[spec-k] model="q38" tenant="55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191" K=0 source=cost-model prompt=131705 cached=131520 lcp=131520 active=3 wave=8 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 131520 tokens, model q38)
+[admission] fixed residual high-water: model="q38" 1000MB (observed 4941MB at ctx 132737 path=plain)
+[admission] request cost: model="q38" ctx=132832 path=plain = 29696 B/token x ctx + 4577MB prefill-workspace + 1000MB fixed = 9521MB
+[prefix-cache] hit: 131520 of 131744 prompt tokens from cache (model q38)
+[spec-k] model="q38" tenant="55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191" K=0 source=cost-model prompt=131744 cached=131520 lcp=131520 active=4 wave=8 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 131520 tokens, model q38)
+[admission] fixed residual high-water: model="q38" 1497MB (observed 5440MB at ctx 132776 path=plain)
+[admission] request cost: model="q38" ctx=132822 path=plain = 29696 B/token x ctx + 4577MB prefill-workspace + 1497MB fixed = 10019MB
+[prefix-cache] hit: 131520 of 131734 prompt tokens from cache (model q38)
+[spec-k] model="q38" tenant="55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191" K=0 source=cost-model prompt=131734 cached=131520 lcp=131520 active=5 wave=8 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 131520 tokens, model q38)
+[admission] request cost: model="q38" ctx=132802 path=plain = 29696 B/token x ctx + 4577MB prefill-workspace + 1497MB fixed = 10018MB
+[prefix-cache] hit: 131520 of 131714 prompt tokens from cache (model q38)
+[spec-k] model="q38" tenant="55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191" K=0 source=cost-model prompt=131714 cached=131520 lcp=131520 active=6 wave=8 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 131520 tokens, model q38)
+[prefix-cache] hit: 131520 of 131714 prompt tokens from cache (model q38)
+[spec-k] model="q38" tenant="55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191" K=0 source=cost-model prompt=131714 cached=131520 lcp=131520 active=7 wave=8 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 131520 tokens, model q38)
+[admission] fixed residual high-water: model="q38" 1545MB (observed 5487MB at ctx 132746 path=plain)
+[admission] request cost: model="q38" ctx=132826 path=plain = 29696 B/token x ctx + 4577MB prefill-workspace + 1545MB fixed = 10066MB
+[prefix-cache] hit: 131520 of 131738 prompt tokens from cache (model q38)
+[spec-k] model="q38" tenant="55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191" K=0 source=cost-model prompt=131738 cached=131520 lcp=131520 active=8 wave=8 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 131520 tokens, model q38)
+[prefix-cache] insert (spec-boundary): 131712 tokens, 4312.7MB (resident 8619.3MB / 50728MB, model q38, ns "55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191")
+[spec-cost] model="q38" n=8 rung=1 -> K=0 (far concurrency, no measured spec slot near n: plain)
+[spec-gate] demoted session to batched decode: 8 active, cost model prefers plain (or HIGH=4 without a model) (model q38, committed 131737, generated 1, greedy)
+[prefix-cache] insert (lcp-split): 131712 tokens, 4068.2MB (resident 12687.5MB / 50728MB, model q38, ns "55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191")
+[prefix-cache] insert (lcp-split): 131680 tokens, 4067.3MB (resident 16754.8MB / 50728MB, model q38, ns "55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191")
+[prefix-cache] insert (lcp-split): 131712 tokens, 4068.2MB (resident 20823.0MB / 50728MB, model q38, ns "55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191")
+[prefix-cache] insert (lcp-split): 131712 tokens, 4068.2MB (resident 24891.2MB / 50728MB, model q38, ns "55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191")
+[prefix-cache] insert (lcp-split): 131680 tokens, 4067.3MB (resident 28958.5MB / 50728MB, model q38, ns "55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191")
+[prefix-cache] insert (lcp-split): 131680 tokens, 4067.3MB (resident 33025.7MB / 50728MB, model q38, ns "55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191")
+[prefix-cache] insert (lcp-split): 131712 tokens, 4068.2MB (resident 37094.0MB / 50728MB, model q38, ns "55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191")
+[gdn-census] sample 17 chatcmpl-7f6bb07152c38835b753858f3d56686b prime rows=131712 copy=780ms total=812ms
+[gdn-census] sample 18 chatcmpl-46028a0884ff00dd4654c5fb543f034c prime rows=131680 copy=3ms total=21ms
+[gdn-census] sample 19 chatcmpl-ec53a2ef468810f140684b9a5578eec2 prime rows=131712 copy=3ms total=21ms
+[gdn-census] sample 20 chatcmpl-9b0bdd3ed71acba9fa6b370bf91cf974 prime rows=131712 copy=3ms total=21ms
+[gdn-census] sample 21 chatcmpl-50d2c2fe881f2a01edb57898c67c109d prime rows=131680 copy=3ms total=23ms
+[gdn-census] sample 22 chatcmpl-f7f66463257e6d3f05fe7cc2cf59d452 prime rows=131680 copy=3ms total=21ms
+[gdn-census] sample 23 chatcmpl-b3e100061dfa410ee78f506fa3296acb prime rows=131712 copy=3ms total=23ms
+[fa-pool] grow #4 dev=0 o_len 37896192 -> 75792384 ml_len 148032 -> 296064 (retired kept, zero=false)
+[gdn-census] sample 24 chatcmpl-7f6bb07152c38835b753858f3d56686b decode rows=131740 copy=3ms total=25ms
+[gdn-census] sample 25 chatcmpl-46028a0884ff00dd4654c5fb543f034c decode rows=131706 copy=3ms total=24ms
+[gdn-census] sample 26 chatcmpl-ec53a2ef468810f140684b9a5578eec2 decode rows=131745 copy=3ms total=25ms
+[gdn-census] sample 27 chatcmpl-9b0bdd3ed71acba9fa6b370bf91cf974 decode rows=131735 copy=4ms total=24ms
+[gdn-census] sample 28 chatcmpl-50d2c2fe881f2a01edb57898c67c109d decode rows=131715 copy=3ms total=22ms
+[gdn-census] sample 29 chatcmpl-f7f66463257e6d3f05fe7cc2cf59d452 decode rows=131715 copy=3ms total=24ms
+[gdn-census] sample 30 chatcmpl-b3e100061dfa410ee78f506fa3296acb decode rows=131739 copy=3ms total=24ms
+[spec-cost] model="q38" realized n=8 K=0: 29.5 tok/s (now priced from serving)
+[meter] admit id=chatcmpl-23c791b6b38cbf9085f129afcd730b04 tenant=default lane=interactive model="q38"
+[admission] request cost: model="q38" ctx=132824 path=plain = 29696 B/token x ctx + 4577MB prefill-workspace + 1545MB fixed = 10066MB
+[admit-oom] reclaim spared the prompt's prefix entry (131520 tokens, model q38)
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=32787329024 pool_cached_gain_bytes=32787308544 trim_released_bytes=32648462336 driver_free_bytes 13637963776 -> 46933266432 pool_reserved_bytes 99656663040 -> 67008200704 pool_used_bytes 99357549028 -> 66570240484 pool_retained_bytes=138846208 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer: evicted 8 prefix entries + 0 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 7980MB -> 41414MB
+[worker] plain-affinity: declined (history diverged at 131610 of checkpoint 131680; 1 parked, 131736 prompt tokens; model q38)
+[prefix-cache] hit: 131520 of 131736 prompt tokens from cache (model q38)
+[spec-k] model="q38" tenant="55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191" K=0 source=cost-model prompt=131736 cached=131520 lcp=131520 active=8 wave=8 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 131520 tokens, model q38)
+[prefix-cache] insert (lcp-split): 131712 tokens, 4068.2MB (resident 8374.8MB / 50728MB, model q38, ns "55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191")
+[gdn-census] sample 31 chatcmpl-23c791b6b38cbf9085f129afcd730b04 prime rows=131712 copy=495ms total=514ms
+[gdn-census] sample 32 chatcmpl-23c791b6b38cbf9085f129afcd730b04 decode rows=131737 copy=335ms total=363ms
+[meter] admit id=chatcmpl-4eb605b050d25019325e64029a26c2ef tenant=default lane=interactive model="q38"
+[admission] request cost: model="q38" ctx=132808 path=plain = 29696 B/token x ctx + 4577MB prefill-workspace + 1545MB fixed = 10065MB
+[admit-oom] reclaim spared the prompt's prefix entry (131520 tokens, model q38)
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=4068212736 pool_cached_gain_bytes=4068212736 trim_released_bytes=4026531840 driver_free_bytes 38177439744 -> 42291564544 pool_reserved_bytes 75531026432 -> 71504494592 pool_used_bytes 75293324088 -> 71225111352 pool_retained_bytes=41680896 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer: evicted 1 prefix entries + 0 plain + 1 spec + 0 dspark parked sessions (global LRU); effective free 3739MB -> 12759MB
+[worker] plain-affinity: declined (history diverged at 131610 of checkpoint 131680; 2 parked, 131720 prompt tokens; model q38)
+[prefix-cache] hit: 131520 of 131720 prompt tokens from cache (model q38)
+[spec-k] model="q38" tenant="55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191" K=0 source=cost-model prompt=131720 cached=131520 lcp=131520 active=8 wave=8 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 131520 tokens, model q38)
+[prefix-cache] insert (lcp-split): 131680 tokens, 4067.3MB (resident 8373.9MB / 50728MB, model q38, ns "55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191")
+[gdn-census] sample 33 chatcmpl-4eb605b050d25019325e64029a26c2ef prime rows=131680 copy=497ms total=525ms
+[gdn-census] sample 34 chatcmpl-4eb605b050d25019325e64029a26c2ef decode rows=131721 copy=760ms total=782ms
+[gdn-census] sample 35 chatcmpl-7f6bb07152c38835b753858f3d56686b decode rows=131868 copy=344ms total=372ms
+[gdn-census] sample 36 chatcmpl-ec53a2ef468810f140684b9a5578eec2 decode rows=131873 copy=657ms total=678ms
+[gdn-census] sample 37 chatcmpl-9b0bdd3ed71acba9fa6b370bf91cf974 decode rows=131863 copy=768ms total=789ms
+[gdn-census] sample 38 chatcmpl-50d2c2fe881f2a01edb57898c67c109d decode rows=131843 copy=771ms total=789ms
+[gdn-census] sample 39 chatcmpl-b3e100061dfa410ee78f506fa3296acb decode rows=131867 copy=761ms total=780ms
+[meter] admit id=chatcmpl-8879c34fa32a942a38d935906d96197c tenant=default lane=interactive model="q38"
+[admission] request cost: model="q38" ctx=132858 path=plain = 29696 B/token x ctx + 4578MB prefill-workspace + 1545MB fixed = 10068MB
+[admit-oom] reclaim spared the prompt's prefix entry (131520 tokens, model q38)
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=4067262464 pool_cached_gain_bytes=4067262464 trim_released_bytes=4060086272 driver_free_bytes 38233309184 -> 42381754368 pool_reserved_bytes 75363254272 -> 71303168000 pool_used_bytes 70429035380 -> 66361772916 pool_retained_bytes=7176192 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer: evicted 1 prefix entries + 0 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 8491MB -> 12647MB
+[worker] plain-affinity: declined (history diverged at 131610 of checkpoint 131680; 2 parked, 131770 prompt tokens; model q38)
+[prefix-cache] hit: 131520 of 131770 prompt tokens from cache (model q38)
+[spec-k] model="q38" tenant="55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191" K=0 source=cost-model prompt=131770 cached=131520 lcp=131520 active=8 wave=8 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 131520 tokens, model q38)
+[prefix-cache] insert (lcp-split): 131744 tokens, 4069.2MB (resident 8375.8MB / 50728MB, model q38, ns "55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191")
+[gdn-census] sample 40 chatcmpl-8879c34fa32a942a38d935906d96197c prime rows=131744 copy=708ms total=730ms
+[gdn-census] sample 41 chatcmpl-8879c34fa32a942a38d935906d96197c decode rows=131771 copy=411ms total=432ms
+[meter] admit id=chatcmpl-357555d2a5b3ea39cc1830649b635f0d tenant=default lane=interactive model="q38"
+[admission] request cost: model="q38" ctx=132791 path=plain = 29696 B/token x ctx + 4576MB prefill-workspace + 1545MB fixed = 10064MB
+[admit-oom] reclaim spared the prompt's prefix entry (131520 tokens, model q38)
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=4069163008 pool_cached_gain_bytes=4069163008 trim_released_bytes=4060086272 driver_free_bytes 37699293184 -> 41849405440 pool_reserved_bytes 75833016320 -> 71772930048 pool_used_bytes 70432809332 -> 66363646324 pool_retained_bytes=9076736 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer: evicted 1 prefix entries + 0 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 8425MB -> 12585MB
+[worker] plain-affinity: declined (history diverged at 131617 of checkpoint 131680; 2 parked, 131703 prompt tokens; model q38)
+[prefix-cache] hit: 131520 of 131703 prompt tokens from cache (model q38)
+[spec-k] model="q38" tenant="55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191" K=0 source=cost-model prompt=131703 cached=131520 lcp=131520 active=8 wave=8 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 131520 tokens, model q38)
+[prefix-cache] insert (lcp-split): 131680 tokens, 4067.3MB (resident 8373.9MB / 50728MB, model q38, ns "55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191")
+[gdn-census] sample 42 chatcmpl-357555d2a5b3ea39cc1830649b635f0d prime rows=131680 copy=614ms total=633ms
+[gdn-census] sample 43 chatcmpl-357555d2a5b3ea39cc1830649b635f0d decode rows=131704 copy=548ms total=569ms
+[meter] admit id=chatcmpl-6329ef00eb6e36ac566807dd58def188 tenant=default lane=interactive model="q38"
+[admission] request cost: model="q38" ctx=132813 path=plain = 29696 B/token x ctx + 4577MB prefill-workspace + 1545MB fixed = 10065MB
+[admit-oom] reclaim spared the prompt's prefix entry (131520 tokens, model q38)
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=4067262464 pool_cached_gain_bytes=4067262464 trim_released_bytes=4060086272 driver_free_bytes 38226509824 -> 42367008768 pool_reserved_bytes 75296145408 -> 71236059136 pool_used_bytes 70430561716 -> 66363299252 pool_retained_bytes=7176192 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer: evicted 1 prefix entries + 0 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 8416MB -> 12564MB
+[worker] plain-affinity: declined (history diverged at 131615 of checkpoint 131712; 2 parked, 131725 prompt tokens; model q38)
+[prefix-cache] hit: 131520 of 131725 prompt tokens from cache (model q38)
+[spec-k] model="q38" tenant="55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191" K=0 source=cost-model prompt=131725 cached=131520 lcp=131520 active=8 wave=8 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 131520 tokens, model q38)
+[prefix-cache] insert (lcp-split): 131680 tokens, 4067.3MB (resident 8373.9MB / 50728MB, model q38, ns "55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191")
+[gdn-census] sample 44 chatcmpl-6329ef00eb6e36ac566807dd58def188 prime rows=131680 copy=241ms total=262ms
+[gdn-census] sample 45 chatcmpl-6329ef00eb6e36ac566807dd58def188 decode rows=131726 copy=784ms total=805ms
+[meter] admit id=chatcmpl-cef8b1370bcd398bf6cc2ecb4b2a568a tenant=default lane=interactive model="q38"
+[admission] request cost: model="q38" ctx=132779 path=plain = 29696 B/token x ctx + 4576MB prefill-workspace + 1545MB fixed = 10064MB
+[admit-oom] reclaim spared the prompt's prefix entry (131520 tokens, model q38)
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=4067262464 pool_cached_gain_bytes=4067262464 trim_released_bytes=4060086272 driver_free_bytes 38157500416 -> 42310856704 pool_reserved_bytes 75296145408 -> 71236059136 pool_used_bytes 70430119988 -> 66362857524 pool_retained_bytes=7176192 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer: evicted 1 prefix entries + 0 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 8348MB -> 12508MB
+[worker] plain-affinity: declined (history diverged at 131610 of checkpoint 131712; 2 parked, 131691 prompt tokens; model q38)
+[prefix-cache] hit: 131520 of 131691 prompt tokens from cache (model q38)
+[spec-k] model="q38" tenant="55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191" K=0 source=cost-model prompt=131691 cached=131520 lcp=131520 active=8 wave=8 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 131520 tokens, model q38)
+[prefix-cache] insert (lcp-split): 131648 tokens, 4066.3MB (resident 8372.9MB / 50728MB, model q38, ns "55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191")
+[gdn-census] sample 46 chatcmpl-cef8b1370bcd398bf6cc2ecb4b2a568a prime rows=131648 copy=673ms total=694ms
+[gdn-census] sample 47 chatcmpl-cef8b1370bcd398bf6cc2ecb4b2a568a decode rows=131692 copy=746ms total=768ms
+[meter] admit id=chatcmpl-c6879460d65754cc628cb562f6025a3e tenant=default lane=interactive model="q38"
+[admission] request cost: model="q38" ctx=132766 path=plain = 29696 B/token x ctx + 4576MB prefill-workspace + 1545MB fixed = 10063MB
+[admit-oom] reclaim spared the prompt's prefix entry (131520 tokens, model q38)
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=4066312192 pool_cached_gain_bytes=4066312192 trim_released_bytes=4060086272 driver_free_bytes 38264434688 -> 42404274176 pool_reserved_bytes 75195482112 -> 71135395840 pool_used_bytes 70427686772 -> 66361374580 pool_retained_bytes=6225920 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer: evicted 1 prefix entries + 0 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 8355MB -> 12501MB
+[worker] plain-affinity: declined (history diverged at 131617 of checkpoint 131712; 2 parked, 131678 prompt tokens; model q38)
+[prefix-cache] hit: 131520 of 131678 prompt tokens from cache (model q38)
+[spec-k] model="q38" tenant="55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191" K=0 source=cost-model prompt=131678 cached=131520 lcp=131520 active=8 wave=8 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 131520 tokens, model q38)
+[prefix-cache] insert (lcp-split): 131648 tokens, 4066.3MB (resident 8372.9MB / 50728MB, model q38, ns "55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191")
+[gdn-census] sample 48 chatcmpl-c6879460d65754cc628cb562f6025a3e prime rows=131648 copy=615ms total=636ms
+[gdn-census] sample 49 chatcmpl-c6879460d65754cc628cb562f6025a3e decode rows=131679 copy=847ms total=868ms
+[meter] admit id=chatcmpl-4b9df4e9933ac92d6afdba7e87d20da2 tenant=default lane=interactive model="q38"
+[admission] request cost: model="q38" ctx=132778 path=plain = 29696 B/token x ctx + 4576MB prefill-workspace + 1545MB fixed = 10064MB
+[admit-oom] reclaim spared the prompt's prefix entry (131520 tokens, model q38)
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=4066312192 pool_cached_gain_bytes=4066312192 trim_released_bytes=4060086272 driver_free_bytes 38323994624 -> 42477920256 pool_reserved_bytes 75195482112 -> 71135395840 pool_used_bytes 70425604340 -> 66359292148 pool_retained_bytes=6225920 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer: evicted 1 prefix entries + 0 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 8417MB -> 12577MB
+[worker] plain-affinity: declined (history diverged at 131610 of checkpoint 131712; 2 parked, 131690 prompt tokens; model q38)
+[prefix-cache] hit: 131520 of 131690 prompt tokens from cache (model q38)
+[spec-k] model="q38" tenant="55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191" K=0 source=cost-model prompt=131690 cached=131520 lcp=131520 active=8 wave=8 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 131520 tokens, model q38)
+[prefix-cache] insert (lcp-split): 131648 tokens, 4066.3MB (resident 8372.9MB / 50728MB, model q38, ns "55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191")
+[gdn-census] sample 50 chatcmpl-4b9df4e9933ac92d6afdba7e87d20da2 prime rows=131648 copy=859ms total=879ms
+[gdn-census] sample 51 chatcmpl-4b9df4e9933ac92d6afdba7e87d20da2 decode rows=131691 copy=888ms total=909ms
+[gdn-census] sample 52 chatcmpl-23c791b6b38cbf9085f129afcd730b04 decode rows=131865 copy=866ms total=886ms
+[gdn-census] sample 53 chatcmpl-4eb605b050d25019325e64029a26c2ef decode rows=131849 copy=868ms total=895ms
+[meter] admit id=chatcmpl-06d40d1cbe64a97b2413e79404d04773 tenant=default lane=interactive model="q38"
+[admission] request cost: model="q38" ctx=132777 path=plain = 29696 B/token x ctx + 4576MB prefill-workspace + 1545MB fixed = 10064MB
+[admit-oom] reclaim spared the prompt's prefix entry (131520 tokens, model q38)
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=4066312192 pool_cached_gain_bytes=4066312192 trim_released_bytes=4060086272 driver_free_bytes 38300028928 -> 42447998976 pool_reserved_bytes 75195482112 -> 71135395840 pool_used_bytes 70424216052 -> 66357903860 pool_retained_bytes=6225920 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer: evicted 1 prefix entries + 0 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 8395MB -> 12549MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 131689 prompt tokens; model q38)
+[prefix-cache] hit: 131520 of 131689 prompt tokens from cache (model q38)
+[spec-k] model="q38" tenant="55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191" K=0 source=cost-model prompt=131689 cached=131520 lcp=131520 active=8 wave=8 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 131520 tokens, model q38)
+[prefix-cache] insert (lcp-split): 131648 tokens, 4066.3MB (resident 8372.9MB / 50728MB, model q38, ns "55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191")
+[gdn-census] sample 54 chatcmpl-06d40d1cbe64a97b2413e79404d04773 prime rows=131648 copy=860ms total=887ms
+[gdn-census] sample 55 chatcmpl-06d40d1cbe64a97b2413e79404d04773 decode rows=131690 copy=884ms total=906ms
+[meter] admit id=chatcmpl-d673fa69f38bf36483b0fd549367ca2c tenant=default lane=interactive model="q38"
+[admission] request cost: model="q38" ctx=132882 path=plain = 29696 B/token x ctx + 4578MB prefill-workspace + 1545MB fixed = 10069MB
+[admit-oom] reclaim spared the prompt's prefix entry (131520 tokens, model q38)
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=4066312192 pool_cached_gain_bytes=4066312192 trim_released_bytes=4060086272 driver_free_bytes 38287998976 -> 42434715648 pool_reserved_bytes 75195482112 -> 71135395840 pool_used_bytes 70579626292 -> 66513314100 pool_retained_bytes=6225920 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer: evicted 1 prefix entries + 0 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 8228MB -> 12381MB
+[worker] plain-affinity: declined (history diverged at 131615 of checkpoint 131712; 2 parked, 131794 prompt tokens; model q38)
+[prefix-cache] hit: 131520 of 131794 prompt tokens from cache (model q38)
+[spec-k] model="q38" tenant="55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191" K=0 source=cost-model prompt=131794 cached=131520 lcp=131520 active=8 wave=8 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 131520 tokens, model q38)
+[prefix-cache] unified memory: insert budget 50713MB (configured 50728MB; live free 46094MB, headroom 3758MB, resident 4307MB, new entry 4070MB)
+[prefix-cache] insert (lcp-split): 131776 tokens, 4070.1MB (resident 8376.7MB / 50713MB, model q38, ns "55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191")
+[gdn-census] sample 56 chatcmpl-d673fa69f38bf36483b0fd549367ca2c prime rows=131776 copy=888ms total=916ms
+[gdn-census] sample 57 chatcmpl-d673fa69f38bf36483b0fd549367ca2c decode rows=131795 copy=823ms total=845ms
+[meter] admit id=chatcmpl-0fa3731c1ee3efe18eb0073cd0c72366 tenant=default lane=interactive model="q38"
+[meter] admit id=chatcmpl-499dfe7b9f5dde9ba208c50059340c56 tenant=default lane=interactive model="q38"
+[admission] request cost: model="q38" ctx=132797 path=plain = 29696 B/token x ctx + 4576MB prefill-workspace + 1545MB fixed = 10065MB
+[worker] plain-affinity: declined (history diverged at 131612 of checkpoint 131648; 2 parked, 131709 prompt tokens; model q38)
+[prefix-cache] hit: 131520 of 131709 prompt tokens from cache (model q38)
+[spec-k] model="q38" tenant="55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191" K=0 source=cost-model prompt=131709 cached=131520 lcp=131610 active=7 wave=8 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 131520 tokens, model q38)
+[admission] request cost: model="q38" ctx=132814 path=plain = 29696 B/token x ctx + 4577MB prefill-workspace + 1545MB fixed = 10066MB
+[admit-oom] reclaim spared the prompt's prefix entry (131520 tokens, model q38)
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=4070113280 pool_cached_gain_bytes=4070113280 trim_released_bytes=4060086272 driver_free_bytes 37588701184 -> 41728479232 pool_reserved_bytes 75866570752 -> 71806484480 pool_used_bytes 70427122164 -> 66357008884 pool_retained_bytes=10027008 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer: evicted 1 prefix entries + 0 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 8356MB -> 12506MB
+[worker] plain-affinity: declined (history diverged at 131610 of checkpoint 131648; 2 parked, 131726 prompt tokens; model q38)
+[prefix-cache] hit: 131520 of 131726 prompt tokens from cache (model q38)
+[spec-k] model="q38" tenant="55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191" K=0 source=cost-model prompt=131726 cached=131520 lcp=131520 active=8 wave=8 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 131520 tokens, model q38)
+[prefix-cache] insert (lcp-split): 131680 tokens, 4067.3MB (resident 8373.9MB / 50728MB, model q38, ns "55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191")
+[prefix-cache] unified memory: insert budget 50696MB (configured 50728MB; live free 46080MB, headroom 3758MB, resident 8374MB, new entry 0MB)
+[prefix-cache] unified memory: insert budget 50618MB (configured 50728MB; live free 41935MB, headroom 3758MB, resident 8374MB, new entry 4067MB)
+[prefix-cache] insert (lcp-split): 131680 tokens, 4067.3MB (resident 12441.2MB / 50618MB, model q38, ns "55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191")
+[gdn-census] sample 58 chatcmpl-0fa3731c1ee3efe18eb0073cd0c72366 prime rows=131680 copy=771ms total=792ms
+[gdn-census] sample 59 chatcmpl-499dfe7b9f5dde9ba208c50059340c56 prime rows=131680 copy=271ms total=292ms
+[gdn-census] sample 60 chatcmpl-0fa3731c1ee3efe18eb0073cd0c72366 decode rows=131710 copy=700ms total=722ms
+[gdn-census] sample 61 chatcmpl-499dfe7b9f5dde9ba208c50059340c56 decode rows=131727 copy=756ms total=777ms
+[gdn-census] sample 62 chatcmpl-8879c34fa32a942a38d935906d96197c decode rows=131899 copy=728ms total=749ms
+[meter] admit id=chatcmpl-ca94596e48a4e4e07a6fa46ce9b5feef tenant=default lane=interactive model="q38"
+[admission] request cost: model="q38" ctx=132876 path=plain = 29696 B/token x ctx + 4578MB prefill-workspace + 1545MB fixed = 10069MB
+[admit-oom] reclaim spared the prompt's prefix entry (131520 tokens, model q38)
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=8134524928 pool_cached_gain_bytes=8134524928 trim_released_bytes=8120172544 driver_free_bytes 33971589120 -> 42259451904 pool_reserved_bytes 79389786112 -> 71269613568 pool_used_bytes 74650524596 -> 66515999668 pool_retained_bytes=14352384 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer: evicted 2 prefix entries + 0 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 8103MB -> 16405MB
+[worker] plain-affinity: declined (history diverged at 131615 of checkpoint 131680; 2 parked, 131788 prompt tokens; model q38)
+[prefix-cache] hit: 131520 of 131788 prompt tokens from cache (model q38)
+[spec-k] model="q38" tenant="55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191" K=0 source=cost-model prompt=131788 cached=131520 lcp=131520 active=8 wave=8 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 131520 tokens, model q38)
+[prefix-cache] unified memory: insert budget 50675MB (configured 50728MB; live free 46058MB, headroom 3758MB, resident 4307MB, new entry 4069MB)
+[prefix-cache] insert (lcp-split): 131744 tokens, 4069.2MB (resident 8375.8MB / 50675MB, model q38, ns "55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191")
+[gdn-census] sample 63 chatcmpl-ca94596e48a4e4e07a6fa46ce9b5feef prime rows=131744 copy=685ms total=707ms
+[gdn-census] sample 64 chatcmpl-ca94596e48a4e4e07a6fa46ce9b5feef decode rows=131789 copy=597ms total=619ms
+[meter] admit id=chatcmpl-c4f2031a4d61cb8deb0bfafa6083432b tenant=default lane=interactive model="q38"
+[admission] request cost: model="q38" ctx=132833 path=plain = 29696 B/token x ctx + 4577MB prefill-workspace + 1545MB fixed = 10066MB
+[admit-oom] reclaim spared the prompt's prefix entry (131520 tokens, model q38)
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=4069163008 pool_cached_gain_bytes=4069163008 trim_released_bytes=4060086272 driver_free_bytes 37990129664 -> 42138611712 pool_reserved_bytes 75463917568 -> 71403831296 pool_used_bytes 70587844596 -> 66518681588 pool_retained_bytes=9076736 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer: evicted 1 prefix entries + 0 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 8193MB -> 12350MB
+[worker] plain-affinity: declined (history diverged at 131617 of checkpoint 131648; 2 parked, 131745 prompt tokens; model q38)
+[prefix-cache] hit: 131520 of 131745 prompt tokens from cache (model q38)
+[spec-k] model="q38" tenant="55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191" K=0 source=cost-model prompt=131745 cached=131520 lcp=131520 active=8 wave=8 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 131520 tokens, model q38)
+[prefix-cache] unified memory: insert budget 50680MB (configured 50728MB; live free 46063MB, headroom 3758MB, resident 4307MB, new entry 4068MB)
+[prefix-cache] insert (lcp-split): 131712 tokens, 4068.2MB (resident 8374.8MB / 50680MB, model q38, ns "55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191")
+[gdn-census] sample 65 chatcmpl-c4f2031a4d61cb8deb0bfafa6083432b prime rows=131712 copy=246ms total=268ms
+[gdn-census] sample 66 chatcmpl-c4f2031a4d61cb8deb0bfafa6083432b decode rows=131746 copy=9ms total=31ms
+[meter] admit id=chatcmpl-3f81f0c278db6481106dcb868bc5dfe9 tenant=default lane=interactive model="q38"
+[admission] request cost: model="q38" ctx=132801 path=plain = 29696 B/token x ctx + 4577MB prefill-workspace + 1545MB fixed = 10065MB
+[admit-oom] reclaim spared the prompt's prefix entry (131520 tokens, model q38)
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=4068212736 pool_cached_gain_bytes=4068212736 trim_released_bytes=4060086272 driver_free_bytes 38013366272 -> 42161070080 pool_reserved_bytes 75430363136 -> 71370276864 pool_used_bytes 70589008308 -> 66520795572 pool_retained_bytes=8126464 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer: evicted 1 prefix entries + 0 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 8180MB -> 12336MB
+[worker] plain-affinity: declined (history diverged at 131616 of checkpoint 131680; 2 parked, 131713 prompt tokens; model q38)
+[prefix-cache] hit: 131520 of 131713 prompt tokens from cache (model q38)
+[spec-k] model="q38" tenant="55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191" K=0 source=cost-model prompt=131713 cached=131520 lcp=131520 active=8 wave=8 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 131520 tokens, model q38)
+[prefix-cache] unified memory: insert budget 50682MB (configured 50728MB; live free 46066MB, headroom 3758MB, resident 4307MB, new entry 4067MB)
+[prefix-cache] insert (lcp-split): 131680 tokens, 4067.3MB (resident 8373.9MB / 50682MB, model q38, ns "55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191")
+[gdn-census] sample 67 chatcmpl-3f81f0c278db6481106dcb868bc5dfe9 prime rows=131680 copy=501ms total=522ms
+[gdn-census] sample 68 chatcmpl-3f81f0c278db6481106dcb868bc5dfe9 decode rows=131714 copy=787ms total=808ms
+[meter] admit id=chatcmpl-ec2c6f540d62eee40a419128d0f0af8e tenant=default lane=interactive model="q38"
+[admission] request cost: model="q38" ctx=132751 path=plain = 29696 B/token x ctx + 4576MB prefill-workspace + 1545MB fixed = 10062MB
+[admit-oom] reclaim spared the prompt's prefix entry (131520 tokens, model q38)
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=4067262464 pool_cached_gain_bytes=4067262464 trim_released_bytes=4060086272 driver_free_bytes 38107496448 -> 42256596992 pool_reserved_bytes 75396808704 -> 71336722432 pool_used_bytes 70587679412 -> 66520416948 pool_retained_bytes=7176192 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer: evicted 1 prefix entries + 0 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 8242MB -> 12398MB
+[worker] plain-affinity: declined (history diverged at 131612 of checkpoint 131648; 2 parked, 131663 prompt tokens; model q38)
+[prefix-cache] hit: 131520 of 131663 prompt tokens from cache (model q38)
+[spec-k] model="q38" tenant="55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191" K=0 source=cost-model prompt=131663 cached=131520 lcp=131520 active=8 wave=8 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 131520 tokens, model q38)
+[prefix-cache] insert (lcp-split): 131616 tokens, 4065.4MB (resident 8372.0MB / 50728MB, model q38, ns "55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191")
+[gdn-census] sample 69 chatcmpl-ec2c6f540d62eee40a419128d0f0af8e prime rows=131616 copy=300ms total=322ms
+[gdn-census] sample 70 chatcmpl-ec2c6f540d62eee40a419128d0f0af8e decode rows=131664 copy=713ms total=734ms
+[meter] admit id=chatcmpl-187d195d461f773091f46f931149080a tenant=default lane=interactive model="q38"
+[admission] request cost: model="q38" ctx=132759 path=plain = 29696 B/token x ctx + 4576MB prefill-workspace + 1545MB fixed = 10063MB
+[admit-oom] reclaim spared the prompt's prefix entry (131520 tokens, model q38)
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=4065361920 pool_cached_gain_bytes=4065361920 trim_released_bytes=4060086272 driver_free_bytes 38109171712 -> 42257543168 pool_reserved_bytes 75363254272 -> 71303168000 pool_used_bytes 70584926964 -> 66519565044 pool_retained_bytes=5275648 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer: evicted 1 prefix entries + 0 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 8211MB -> 12364MB
+[worker] plain-affinity: declined (history diverged at 131612 of checkpoint 131744; 2 parked, 131671 prompt tokens; model q38)
+[prefix-cache] hit: 131520 of 131671 prompt tokens from cache (model q38)
+[spec-k] model="q38" tenant="55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191" K=0 source=cost-model prompt=131671 cached=131520 lcp=131520 active=8 wave=8 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 131520 tokens, model q38)
+[prefix-cache] unified memory: insert budget 50696MB (configured 50728MB; live free 46081MB, headroom 3758MB, resident 4307MB, new entry 4066MB)
+[prefix-cache] insert (lcp-split): 131648 tokens, 4066.3MB (resident 8372.9MB / 50696MB, model q38, ns "55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191")
+[gdn-census] sample 71 chatcmpl-187d195d461f773091f46f931149080a prime rows=131648 copy=291ms total=311ms
+[gdn-census] sample 72 chatcmpl-187d195d461f773091f46f931149080a decode rows=131672 copy=362ms total=384ms
+[meter] admit id=chatcmpl-f8e83761fcfd6e3ec81b39bc569531e4 tenant=default lane=interactive model="q38"
+[admission] request cost: model="q38" ctx=132841 path=plain = 29696 B/token x ctx + 4577MB prefill-workspace + 1545MB fixed = 10067MB
+[admit-oom] reclaim spared the prompt's prefix entry (131520 tokens, model q38)
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=4066312192 pool_cached_gain_bytes=4066312192 trim_released_bytes=4060086272 driver_free_bytes 38224822272 -> 42375901184 pool_reserved_bytes 75363254272 -> 71303168000 pool_used_bytes 70582753588 -> 66516441396 pool_retained_bytes=6225920 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer: evicted 1 prefix entries + 0 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 8329MB -> 12487MB
+[worker] plain-affinity: declined (history diverged at 131610 of checkpoint 131648; 2 parked, 131753 prompt tokens; model q38)
+[prefix-cache] hit: 131520 of 131753 prompt tokens from cache (model q38)
+[spec-k] model="q38" tenant="55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191" K=0 source=cost-model prompt=131753 cached=131520 lcp=131520 active=8 wave=8 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 131520 tokens, model q38)
+[prefix-cache] insert (lcp-split): 131712 tokens, 4068.2MB (resident 8374.8MB / 50728MB, model q38, ns "55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191")
+[gdn-census] sample 73 chatcmpl-f8e83761fcfd6e3ec81b39bc569531e4 prime rows=131712 copy=507ms total=528ms
+[gdn-census] sample 74 chatcmpl-f8e83761fcfd6e3ec81b39bc569531e4 decode rows=131754 copy=771ms total=798ms
+[gdn-census] sample 75 chatcmpl-d673fa69f38bf36483b0fd549367ca2c decode rows=131923 copy=675ms total=697ms
+[gdn-census] sample 76 chatcmpl-0fa3731c1ee3efe18eb0073cd0c72366 decode rows=131838 copy=723ms total=744ms
+[gdn-census] sample 77 chatcmpl-499dfe7b9f5dde9ba208c50059340c56 decode rows=131855 copy=624ms total=645ms
+[gdn-census] sample 78 chatcmpl-ca94596e48a4e4e07a6fa46ce9b5feef decode rows=131917 copy=750ms total=771ms
+[gdn-census] sample 79 chatcmpl-c4f2031a4d61cb8deb0bfafa6083432b decode rows=131874 copy=566ms total=587ms
+[meter] admit id=chatcmpl-3e9eed013f193d5d97eab0ec7c977be8 tenant=default lane=interactive model="q38"
+[admission] request cost: model="q38" ctx=132793 path=plain = 29696 B/token x ctx + 4576MB prefill-workspace + 1545MB fixed = 10064MB
+[admit-oom] reclaim spared the prompt's prefix entry (131520 tokens, model q38)
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=4068212736 pool_cached_gain_bytes=4068212736 trim_released_bytes=4060086272 driver_free_bytes 38140411904 -> 42288988160 pool_reserved_bytes 75396808704 -> 71336722432 pool_used_bytes 70586673460 -> 66518460724 pool_retained_bytes=8126464 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer: evicted 1 prefix entries + 0 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 8277MB -> 12433MB
+[worker] plain-affinity: declined (history diverged at 131610 of checkpoint 131616; 2 parked, 131705 prompt tokens; model q38)
+[prefix-cache] hit: 131520 of 131705 prompt tokens from cache (model q38)
+[spec-k] model="q38" tenant="55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191" K=0 source=cost-model prompt=131705 cached=131520 lcp=131520 active=8 wave=8 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 131520 tokens, model q38)
+[prefix-cache] insert (lcp-split): 131680 tokens, 4067.3MB (resident 8373.9MB / 50728MB, model q38, ns "55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191")
+[meter] admit id=chatcmpl-e8c79b3e22f8adb3870d1ed992f523bf tenant=default lane=interactive model="q38"
+[gdn-census] sample 80 chatcmpl-3e9eed013f193d5d97eab0ec7c977be8 prime rows=131680 copy=438ms total=460ms
+[admission] request cost: model="q38" ctx=132755 path=plain = 29696 B/token x ctx + 4576MB prefill-workspace + 1545MB fixed = 10063MB
+[admit-oom] reclaim spared the prompt's prefix entry (131520 tokens, model q38)
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=4067262464 pool_cached_gain_bytes=4067262464 trim_released_bytes=4060086272 driver_free_bytes 38137155584 -> 42274938880 pool_reserved_bytes 75363254272 -> 71303168000 pool_used_bytes 70586055092 -> 66518792628 pool_retained_bytes=7176192 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer: evicted 1 prefix entries + 0 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 8240MB -> 12384MB
+[worker] plain-affinity: declined (history diverged at 131610 of checkpoint 131680; 2 parked, 131667 prompt tokens; model q38)
+[prefix-cache] hit: 131520 of 131667 prompt tokens from cache (model q38)
+[spec-k] model="q38" tenant="55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191" K=0 source=cost-model prompt=131667 cached=131520 lcp=131520 active=8 wave=8 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 131520 tokens, model q38)
+[prefix-cache] insert (lcp-split): 131648 tokens, 4066.3MB (resident 8372.9MB / 50728MB, model q38, ns "55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191")
+[gdn-census] sample 81 chatcmpl-3e9eed013f193d5d97eab0ec7c977be8 decode rows=131706 copy=683ms total=705ms
+[gdn-census] sample 82 chatcmpl-e8c79b3e22f8adb3870d1ed992f523bf prime rows=131648 copy=690ms total=711ms
+[gdn-census] sample 83 chatcmpl-e8c79b3e22f8adb3870d1ed992f523bf decode rows=131668 copy=714ms total=736ms
+[meter] admit id=chatcmpl-92401a88bd94242e3945cbf926b0720d tenant=default lane=interactive model="q38"
+[admission] request cost: model="q38" ctx=132767 path=plain = 29696 B/token x ctx + 4576MB prefill-workspace + 1545MB fixed = 10063MB
+[admit-oom] reclaim spared the prompt's prefix entry (131520 tokens, model q38)
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=4066312192 pool_cached_gain_bytes=4066312192 trim_released_bytes=4060086272 driver_free_bytes 38068441088 -> 42214973440 pool_reserved_bytes 75430363136 -> 71370276864 pool_used_bytes 70584646708 -> 66518334516 pool_retained_bytes=6225920 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer: evicted 1 prefix entries + 0 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 8238MB -> 12391MB
+[worker] plain-affinity: declined (history diverged at 131610 of checkpoint 131648; 2 parked, 131679 prompt tokens; model q38)
+[prefix-cache] hit: 131520 of 131679 prompt tokens from cache (model q38)
+[spec-k] model="q38" tenant="55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191" K=0 source=cost-model prompt=131679 cached=131520 lcp=131520 active=8 wave=8 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 131520 tokens, model q38)
+[prefix-cache] insert (lcp-split): 131648 tokens, 4066.3MB (resident 8372.9MB / 50728MB, model q38, ns "55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191")
+[gdn-census] sample 84 chatcmpl-92401a88bd94242e3945cbf926b0720d prime rows=131648 copy=431ms total=452ms
+[gdn-census] sample 85 chatcmpl-92401a88bd94242e3945cbf926b0720d decode rows=131680 copy=742ms total=770ms
+[meter] admit id=chatcmpl-d09df1bb8fb6f998ed305131e2cebcf7 tenant=default lane=interactive model="q38"
+[admission] request cost: model="q38" ctx=132797 path=plain = 29696 B/token x ctx + 4576MB prefill-workspace + 1545MB fixed = 10065MB
+[admit-oom] reclaim spared the prompt's prefix entry (131520 tokens, model q38)
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=4066312192 pool_cached_gain_bytes=4066312192 trim_released_bytes=4060086272 driver_free_bytes 38184652800 -> 42332704768 pool_reserved_bytes 75396808704 -> 71336722432 pool_used_bytes 70584899124 -> 66518586932 pool_retained_bytes=6225920 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer: evicted 1 prefix entries + 0 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 8321MB -> 12475MB
+[worker] plain-affinity: declined (history diverged at 131610 of checkpoint 131680; 2 parked, 131709 prompt tokens; model q38)
+[prefix-cache] hit: 131520 of 131709 prompt tokens from cache (model q38)
+[spec-k] model="q38" tenant="55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191" K=0 source=cost-model prompt=131709 cached=131520 lcp=131520 active=8 wave=8 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 131520 tokens, model q38)
+[prefix-cache] insert (lcp-split): 131680 tokens, 4067.3MB (resident 8373.9MB / 50728MB, model q38, ns "55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191")
+[gdn-census] sample 86 chatcmpl-d09df1bb8fb6f998ed305131e2cebcf7 prime rows=131680 copy=702ms total=721ms
+[meter] admit id=chatcmpl-d86a111dc3c7419680a15dfd05c5b75b tenant=default lane=interactive model="q38"
+[gdn-census] sample 87 chatcmpl-d09df1bb8fb6f998ed305131e2cebcf7 decode rows=131710 copy=725ms total=747ms
+[admission] request cost: model="q38" ctx=132828 path=plain = 29696 B/token x ctx + 4577MB prefill-workspace + 1545MB fixed = 10066MB
+[admit-oom] reclaim spared the prompt's prefix entry (131520 tokens, model q38)
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=4067262464 pool_cached_gain_bytes=4067262464 trim_released_bytes=4060086272 driver_free_bytes 38134042624 -> 42273918976 pool_reserved_bytes 75396808704 -> 71336722432 pool_used_bytes 70585849396 -> 66518586932 pool_retained_bytes=7176192 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer: evicted 1 prefix entries + 0 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 8270MB -> 12417MB
+[worker] plain-affinity: declined (history diverged at 131610 of checkpoint 131712; 2 parked, 131740 prompt tokens; model q38)
+[prefix-cache] hit: 131520 of 131740 prompt tokens from cache (model q38)
+[spec-k] model="q38" tenant="55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191" K=0 source=cost-model prompt=131740 cached=131520 lcp=131520 active=8 wave=8 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 131520 tokens, model q38)
+[prefix-cache] insert (lcp-split): 131712 tokens, 4068.2MB (resident 8374.8MB / 50728MB, model q38, ns "55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191")
+[gdn-census] sample 88 chatcmpl-d86a111dc3c7419680a15dfd05c5b75b prime rows=131712 copy=722ms total=742ms
+[gdn-census] sample 89 chatcmpl-d86a111dc3c7419680a15dfd05c5b75b decode rows=131741 copy=771ms total=793ms
+[meter] admit id=chatcmpl-4429ac63992232f338a1a1f40feb8560 tenant=default lane=interactive model="q38"
+[admission] request cost: model="q38" ctx=132819 path=plain = 29696 B/token x ctx + 4577MB prefill-workspace + 1545MB fixed = 10066MB
+[admit-oom] reclaim spared the prompt's prefix entry (131520 tokens, model q38)
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=4068212736 pool_cached_gain_bytes=4068212736 trim_released_bytes=4060086272 driver_free_bytes 38072688640 -> 42214592512 pool_reserved_bytes 75396808704 -> 71336722432 pool_used_bytes 70586641908 -> 66518429172 pool_retained_bytes=8126464 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer: evicted 1 prefix entries + 0 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 8209MB -> 12359MB
+[worker] plain-affinity: declined (history diverged at 131612 of checkpoint 131648; 2 parked, 131731 prompt tokens; model q38)
+[prefix-cache] hit: 131520 of 131731 prompt tokens from cache (model q38)
+[spec-k] model="q38" tenant="55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191" K=0 source=cost-model prompt=131731 cached=131520 lcp=131520 active=8 wave=8 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 131520 tokens, model q38)
+[prefix-cache] unified memory: insert budget 50709MB (configured 50728MB; live free 46092MB, headroom 3758MB, resident 4307MB, new entry 4068MB)
+[prefix-cache] insert (lcp-split): 131712 tokens, 4068.2MB (resident 8374.8MB / 50709MB, model q38, ns "55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191")
+[gdn-census] sample 90 chatcmpl-4429ac63992232f338a1a1f40feb8560 prime rows=131712 copy=604ms total=626ms
+[gdn-census] sample 91 chatcmpl-4429ac63992232f338a1a1f40feb8560 decode rows=131732 copy=752ms total=774ms
+[gdn-census] sample 92 chatcmpl-f8e83761fcfd6e3ec81b39bc569531e4 decode rows=131882 copy=295ms total=315ms
+[gdn-census] sample 93 chatcmpl-d673fa69f38bf36483b0fd549367ca2c decode rows=132051 copy=632ms total=653ms
+[meter] admit id=chatcmpl-201f665a1fe667d9578eac82ebe8ec2d tenant=default lane=interactive model="q38"
+[admission] request cost: model="q38" ctx=132974 path=plain = 29696 B/token x ctx + 4580MB prefill-workspace + 1545MB fixed = 10074MB
+[admit-oom] reclaim spared the prompt's prefix entry (131520 tokens, model q38)
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=4068212736 pool_cached_gain_bytes=4068212736 trim_released_bytes=4060086272 driver_free_bytes 38137847808 -> 42285912064 pool_reserved_bytes 75396808704 -> 71336722432 pool_used_bytes 70588661236 -> 66520448500 pool_retained_bytes=8126464 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer: evicted 1 prefix entries + 0 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 8272MB -> 12429MB
+[worker] plain-affinity: declined (history diverged at 131611 of checkpoint 131648; 2 parked, 131886 prompt tokens; model q38)
+[prefix-cache] hit: 131520 of 131886 prompt tokens from cache (model q38)
+[spec-k] model="q38" tenant="55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191" K=0 source=cost-model prompt=131886 cached=131520 lcp=131520 active=8 wave=8 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 131520 tokens, model q38)
+[prefix-cache] insert (lcp-split): 131840 tokens, 4072.0MB (resident 8378.6MB / 50728MB, model q38, ns "55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191")
+[gdn-census] sample 94 chatcmpl-201f665a1fe667d9578eac82ebe8ec2d prime rows=131840 copy=289ms total=310ms
+[gdn-census] sample 95 chatcmpl-201f665a1fe667d9578eac82ebe8ec2d decode rows=131887 copy=777ms total=799ms
+[gdn-census] sample 96 chatcmpl-499dfe7b9f5dde9ba208c50059340c56 decode rows=131983 copy=731ms total=753ms
+[gdn-census] sample 97 chatcmpl-ca94596e48a4e4e07a6fa46ce9b5feef decode rows=132045 copy=750ms total=771ms
+[meter] admit id=chatcmpl-7d1f7e472fa3ca5d8ba04e36cb0b8fb6 tenant=default lane=interactive model="q38"
+[admission] request cost: model="q38" ctx=132860 path=plain = 29696 B/token x ctx + 4578MB prefill-workspace + 1545MB fixed = 10068MB
+[admit-oom] reclaim spared the prompt's prefix entry (131520 tokens, model q38)
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=4072013824 pool_cached_gain_bytes=4072013824 trim_released_bytes=4060086272 driver_free_bytes 37465292800 -> 41613504512 pool_reserved_bytes 76034342912 -> 71974256640 pool_used_bytes 70599370420 -> 66527356596 pool_retained_bytes=11927552 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer: evicted 1 prefix entries + 0 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 8231MB -> 12391MB
+[worker] plain-affinity: declined (history diverged at 131610 of checkpoint 131776; 2 parked, 131772 prompt tokens; model q38)
+[prefix-cache] hit: 131520 of 131772 prompt tokens from cache (model q38)
+[spec-k] model="q38" tenant="55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191" K=0 source=cost-model prompt=131772 cached=131520 lcp=131520 active=8 wave=8 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 131520 tokens, model q38)
+[prefix-cache] unified memory: insert budget 50719MB (configured 50728MB; live free 46101MB, headroom 3758MB, resident 4307MB, new entry 4069MB)
+[prefix-cache] insert (lcp-split): 131744 tokens, 4069.2MB (resident 8375.8MB / 50719MB, model q38, ns "55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191")
+[gdn-census] sample 98 chatcmpl-7d1f7e472fa3ca5d8ba04e36cb0b8fb6 prime rows=131744 copy=772ms total=793ms
+[meter] admit id=chatcmpl-2fdc79a8b92e34228ac4b708153b250f tenant=default lane=interactive model="q38"
+[gdn-census] sample 99 chatcmpl-7d1f7e472fa3ca5d8ba04e36cb0b8fb6 decode rows=131773 copy=737ms total=759ms
+[admission] request cost: model="q38" ctx=132784 path=plain = 29696 B/token x ctx + 4576MB prefill-workspace + 1545MB fixed = 10064MB
+[admit-oom] reclaim spared the prompt's prefix entry (131520 tokens, model q38)
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=4069163008 pool_cached_gain_bytes=4069163008 trim_released_bytes=4060086272 driver_free_bytes 37838454784 -> 41978765312 pool_reserved_bytes 75631689728 -> 71571603456 pool_used_bytes 70595825460 -> 66526662452 pool_retained_bytes=9076736 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer: evicted 1 prefix entries + 0 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 8202MB -> 12351MB
+[worker] plain-affinity: declined (history diverged at 131610 of checkpoint 131680; 2 parked, 131696 prompt tokens; model q38)
+[prefix-cache] hit: 131520 of 131696 prompt tokens from cache (model q38)
+[spec-k] model="q38" tenant="55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191" K=0 source=cost-model prompt=131696 cached=131520 lcp=131520 active=8 wave=8 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 131520 tokens, model q38)
+[prefix-cache] unified memory: insert budget 50686MB (configured 50728MB; live free 46071MB, headroom 3758MB, resident 4307MB, new entry 4067MB)
+[prefix-cache] insert (lcp-split): 131680 tokens, 4067.3MB (resident 8373.9MB / 50686MB, model q38, ns "55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191")
+[gdn-census] sample 100 chatcmpl-2fdc79a8b92e34228ac4b708153b250f prime rows=131680 copy=595ms total=623ms
+[gdn-census] sample 101 chatcmpl-2fdc79a8b92e34228ac4b708153b250f decode rows=131697 copy=689ms total=708ms
+[meter] admit id=chatcmpl-6742e781ce15abdac40935c7627fbdc6 tenant=default lane=interactive model="q38"
+[admission] request cost: model="q38" ctx=132795 path=plain = 29696 B/token x ctx + 4576MB prefill-workspace + 1545MB fixed = 10065MB
+[admit-oom] reclaim spared the prompt's prefix entry (131520 tokens, model q38)
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=4067262464 pool_cached_gain_bytes=4067262464 trim_released_bytes=4060086272 driver_free_bytes 37941014528 -> 42081394688 pool_reserved_bytes 75531026432 -> 71470940160 pool_used_bytes 70592978356 -> 66525715892 pool_retained_bytes=7176192 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer: evicted 1 prefix entries + 0 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 8205MB -> 12352MB
+[worker] plain-affinity: declined (history diverged at 131610 of checkpoint 131680; 2 parked, 131707 prompt tokens; model q38)
+[prefix-cache] hit: 131520 of 131707 prompt tokens from cache (model q38)
+[spec-k] model="q38" tenant="55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191" K=0 source=cost-model prompt=131707 cached=131520 lcp=131520 active=8 wave=8 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 131520 tokens, model q38)
+[prefix-cache] unified memory: insert budget 50697MB (configured 50728MB; live free 46081MB, headroom 3758MB, resident 4307MB, new entry 4067MB)
+[prefix-cache] insert (lcp-split): 131680 tokens, 4067.3MB (resident 8373.9MB / 50697MB, model q38, ns "55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191")
+[gdn-census] sample 102 chatcmpl-6742e781ce15abdac40935c7627fbdc6 prime rows=131680 copy=834ms total=856ms
+[gdn-census] sample 103 chatcmpl-6742e781ce15abdac40935c7627fbdc6 decode rows=131708 copy=824ms total=846ms
+[meter] admit id=chatcmpl-de69720e51f210a9e53e114e5a8c51a4 tenant=default lane=interactive model="q38"
+[admission] request cost: model="q38" ctx=132793 path=plain = 29696 B/token x ctx + 4576MB prefill-workspace + 1545MB fixed = 10064MB
+[admit-oom] reclaim spared the prompt's prefix entry (131520 tokens, model q38)
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=4067262464 pool_cached_gain_bytes=4067262464 trim_released_bytes=4060086272 driver_free_bytes 37938958336 -> 42078347264 pool_reserved_bytes 75531026432 -> 71470940160 pool_used_bytes 70593041460 -> 66525778996 pool_retained_bytes=7176192 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer: evicted 1 prefix entries + 0 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 8203MB -> 12349MB
+[worker] plain-affinity: declined (history diverged at 131610 of checkpoint 131744; 2 parked, 131705 prompt tokens; model q38)
+[prefix-cache] hit: 131520 of 131705 prompt tokens from cache (model q38)
+[spec-k] model="q38" tenant="55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191" K=0 source=cost-model prompt=131705 cached=131520 lcp=131520 active=8 wave=8 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 131520 tokens, model q38)
+[prefix-cache] unified memory: insert budget 50690MB (configured 50728MB; live free 46074MB, headroom 3758MB, resident 4307MB, new entry 4067MB)
+[prefix-cache] insert (lcp-split): 131680 tokens, 4067.3MB (resident 8373.9MB / 50690MB, model q38, ns "55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191")
+[gdn-census] sample 104 chatcmpl-de69720e51f210a9e53e114e5a8c51a4 prime rows=131680 copy=829ms total=851ms
+[meter] admit id=chatcmpl-e0844a0cc2944fb37aef3b7c56918ce9 tenant=default lane=interactive model="q38"
+[gdn-census] sample 105 chatcmpl-de69720e51f210a9e53e114e5a8c51a4 decode rows=131706 copy=833ms total=861ms
+[admission] request cost: model="q38" ctx=132833 path=plain = 29696 B/token x ctx + 4577MB prefill-workspace + 1545MB fixed = 10066MB
+[admit-oom] reclaim spared the prompt's prefix entry (131520 tokens, model q38)
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=4067262464 pool_cached_gain_bytes=4067262464 trim_released_bytes=4060086272 driver_free_bytes 38017847296 -> 42166046720 pool_reserved_bytes 75430363136 -> 71370276864 pool_used_bytes 70590422644 -> 66523160180 pool_retained_bytes=7176192 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer: evicted 1 prefix entries + 0 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 8184MB -> 12339MB
+[worker] plain-affinity: declined (history diverged at 131610 of checkpoint 131712; 2 parked, 131745 prompt tokens; model q38)
+[prefix-cache] hit: 131520 of 131745 prompt tokens from cache (model q38)
+[spec-k] model="q38" tenant="55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191" K=0 source=cost-model prompt=131745 cached=131520 lcp=131520 active=8 wave=8 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 131520 tokens, model q38)
+[prefix-cache] unified memory: insert budget 50667MB (configured 50728MB; live free 46050MB, headroom 3758MB, resident 4307MB, new entry 4068MB)
+[prefix-cache] insert (lcp-split): 131712 tokens, 4068.2MB (resident 8374.8MB / 50667MB, model q38, ns "55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191")
+[gdn-census] sample 106 chatcmpl-e0844a0cc2944fb37aef3b7c56918ce9 prime rows=131712 copy=841ms total=862ms
+[gdn-census] sample 107 chatcmpl-e0844a0cc2944fb37aef3b7c56918ce9 decode rows=131746 copy=867ms total=889ms
+[gdn-census] sample 108 chatcmpl-d86a111dc3c7419680a15dfd05c5b75b decode rows=131869 copy=825ms total=846ms
+[meter] admit id=chatcmpl-19931222308e37b23c58f2110d2e72ff tenant=default lane=interactive model="q38"
+[admission] request cost: model="q38" ctx=132874 path=plain = 29696 B/token x ctx + 4578MB prefill-workspace + 1545MB fixed = 10069MB
+[admit-oom] reclaim spared the prompt's prefix entry (131520 tokens, model q38)
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=4068212736 pool_cached_gain_bytes=4068212736 trim_released_bytes=4060086272 driver_free_bytes 37945843712 -> 42085761024 pool_reserved_bytes 75463917568 -> 71403831296 pool_used_bytes 70591120500 -> 66522907764 pool_retained_bytes=8126464 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer: evicted 1 prefix entries + 0 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 8146MB -> 12294MB
+[worker] plain-affinity: declined (history diverged at 131610 of checkpoint 131680; 2 parked, 131786 prompt tokens; model q38)
+[prefix-cache] hit: 131520 of 131786 prompt tokens from cache (model q38)
+[spec-k] model="q38" tenant="55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191" K=0 source=cost-model prompt=131786 cached=131520 lcp=131520 active=8 wave=8 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 131520 tokens, model q38)
+[prefix-cache] unified memory: insert budget 50707MB (configured 50728MB; live free 50158MB, headroom 3758MB, resident 4307MB, new entry 0MB)
+[prefix-cache] unified memory: insert budget 50637MB (configured 50728MB; live free 46019MB, headroom 3758MB, resident 4307MB, new entry 4069MB)
+[prefix-cache] insert (lcp-split): 131744 tokens, 4069.2MB (resident 8375.8MB / 50637MB, model q38, ns "55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191")
+[gdn-census] sample 109 chatcmpl-19931222308e37b23c58f2110d2e72ff prime rows=131744 copy=818ms total=840ms
+[gdn-census] sample 110 chatcmpl-19931222308e37b23c58f2110d2e72ff decode rows=131787 copy=821ms total=843ms
+[gdn-census] sample 111 chatcmpl-4429ac63992232f338a1a1f40feb8560 decode rows=131860 copy=821ms total=843ms
+[meter] admit id=chatcmpl-bf053c02647235750324c4fd4b848824 tenant=default lane=interactive model="q38"
+[admission] request cost: model="q38" ctx=132811 path=plain = 29696 B/token x ctx + 4577MB prefill-workspace + 1545MB fixed = 10065MB
+[admit-oom] reclaim spared the prompt's prefix entry (131520 tokens, model q38)
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=4069163008 pool_cached_gain_bytes=4069163008 trim_released_bytes=4060086272 driver_free_bytes 37879533568 -> 42019377152 pool_reserved_bytes 75463917568 -> 71403831296 pool_used_bytes 70594500276 -> 66525337268 pool_retained_bytes=9076736 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer: evicted 1 prefix entries + 1 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 8077MB -> 16881MB
+[worker] plain-affinity: declined (history diverged at 131612 of checkpoint 131680; 1 parked, 131723 prompt tokens; model q38)
+[prefix-cache] hit: 131520 of 131723 prompt tokens from cache (model q38)
+[spec-k] model="q38" tenant="55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191" K=0 source=cost-model prompt=131723 cached=131520 lcp=131520 active=8 wave=8 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 131520 tokens, model q38)
+[prefix-cache] insert (lcp-split): 131680 tokens, 4067.3MB (resident 8373.9MB / 50728MB, model q38, ns "55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191")
+[gdn-census] sample 112 chatcmpl-bf053c02647235750324c4fd4b848824 prime rows=131680 copy=838ms total=865ms
+[gdn-census] sample 113 chatcmpl-bf053c02647235750324c4fd4b848824 decode rows=131724 copy=845ms total=865ms
+[gdn-census] sample 114 chatcmpl-201f665a1fe667d9578eac82ebe8ec2d decode rows=132015 copy=843ms total=864ms
+[meter] admit id=chatcmpl-d317bacd97b45f801d7620b84529eef9 tenant=default lane=interactive model="q38"
+[admission] request cost: model="q38" ctx=132872 path=plain = 29696 B/token x ctx + 4578MB prefill-workspace + 1545MB fixed = 10068MB
+[admit-oom] reclaim spared the prompt's prefix entry (131520 tokens, model q38)
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=4067262464 pool_cached_gain_bytes=4067262464 trim_released_bytes=4060086272 driver_free_bytes 41972125696 -> 46112063488 pool_reserved_bytes 71403831296 -> 67343745024 pool_used_bytes 70592063348 -> 66524800884 pool_retained_bytes=7176192 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer: evicted 1 prefix entries + 1 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 8110MB -> 16911MB
+[worker] plain-affinity: declined (history diverged at 131612 of checkpoint 131680; 1 parked, 131784 prompt tokens; model q38)
+[prefix-cache] hit: 131520 of 131784 prompt tokens from cache (model q38)
+[spec-k] model="q38" tenant="55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191" K=0 source=cost-model prompt=131784 cached=131520 lcp=131520 active=8 wave=8 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 131520 tokens, model q38)
+[prefix-cache] insert (lcp-split): 131744 tokens, 4069.2MB (resident 8375.8MB / 50728MB, model q38, ns "55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191")
+[gdn-census] sample 115 chatcmpl-d317bacd97b45f801d7620b84529eef9 prime rows=131744 copy=837ms total=859ms
+[gdn-census] sample 116 chatcmpl-d317bacd97b45f801d7620b84529eef9 decode rows=131785 copy=829ms total=850ms
+[gdn-census] sample 117 chatcmpl-7d1f7e472fa3ca5d8ba04e36cb0b8fb6 decode rows=131901 copy=842ms total=865ms
+[meter] admit id=chatcmpl-0b1392386ac30cd5b46230d2931b428f tenant=default lane=interactive model="q38"
+[admission] request cost: model="q38" ctx=132861 path=plain = 29696 B/token x ctx + 4578MB prefill-workspace + 1545MB fixed = 10068MB
+[admit-oom] reclaim spared the prompt's prefix entry (131520 tokens, model q38)
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=4069163008 pool_cached_gain_bytes=4069163008 trim_released_bytes=3925868544 driver_free_bytes 42334015488 -> 46337609728 pool_reserved_bytes 71068286976 -> 67142418432 pool_used_bytes 70596740468 -> 66527577460 pool_retained_bytes=143294464 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer: evicted 1 prefix entries + 1 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 8133MB -> 16934MB
+[worker] plain-affinity: declined (history diverged at 131612 of checkpoint 131712; 1 parked, 131773 prompt tokens; model q38)
+[prefix-cache] hit: 131520 of 131773 prompt tokens from cache (model q38)
+[spec-k] model="q38" tenant="55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191" K=0 source=cost-model prompt=131773 cached=131520 lcp=131520 active=8 wave=8 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 131520 tokens, model q38)
+[prefix-cache] insert (lcp-split): 131744 tokens, 4069.2MB (resident 8375.8MB / 50728MB, model q38, ns "55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191")
+[gdn-census] sample 118 chatcmpl-0b1392386ac30cd5b46230d2931b428f prime rows=131744 copy=841ms total=862ms
+[gdn-census] sample 119 chatcmpl-0b1392386ac30cd5b46230d2931b428f decode rows=131774 copy=840ms total=862ms
+[gdn-census] sample 120 chatcmpl-de69720e51f210a9e53e114e5a8c51a4 decode rows=131834 copy=835ms total=857ms
+[gdn-census] sample 121 chatcmpl-e0844a0cc2944fb37aef3b7c56918ce9 decode rows=131874 copy=827ms total=849ms
+[meter] admit id=chatcmpl-af4a0ca92026ba176692b7ab73d893e4 tenant=default lane=interactive model="q38"
+[admission] request cost: model="q38" ctx=132823 path=plain = 29696 B/token x ctx + 4577MB prefill-workspace + 1545MB fixed = 10066MB
+[admit-oom] reclaim spared the prompt's prefix entry (131520 tokens, model q38)
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=4069163008 pool_cached_gain_bytes=4069163008 trim_released_bytes=3791650816 driver_free_bytes 42386948096 -> 46245969920 pool_reserved_bytes 71034732544 -> 67243081728 pool_used_bytes 70598822900 -> 66529659892 pool_retained_bytes=277512192 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer: evicted 1 prefix entries + 0 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 8151MB -> 12287MB
+[worker] plain-affinity: declined (history diverged at 131612 of checkpoint 131712; 2 parked, 131735 prompt tokens; model q38)
+[prefix-cache] hit: 131520 of 131735 prompt tokens from cache (model q38)
+[spec-k] model="q38" tenant="55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191" K=0 source=cost-model prompt=131735 cached=131520 lcp=131520 active=8 wave=8 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 131520 tokens, model q38)
+[prefix-cache] unified memory: insert budget 50615MB (configured 50728MB; live free 50066MB, headroom 3758MB, resident 4307MB, new entry 0MB)
+[prefix-cache] unified memory: insert budget 50539MB (configured 50728MB; live free 45923MB, headroom 3758MB, resident 4307MB, new entry 4068MB)
+[prefix-cache] insert (lcp-split): 131712 tokens, 4068.2MB (resident 8374.8MB / 50539MB, model q38, ns "55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191")
+[gdn-census] sample 122 chatcmpl-af4a0ca92026ba176692b7ab73d893e4 prime rows=131712 copy=828ms total=850ms
+[gdn-census] sample 123 chatcmpl-af4a0ca92026ba176692b7ab73d893e4 decode rows=131736 copy=830ms total=851ms
+[gdn-census] sample 124 chatcmpl-19931222308e37b23c58f2110d2e72ff decode rows=131915 copy=838ms total=859ms
+[gdn-census] sample 125 chatcmpl-bf053c02647235750324c4fd4b848824 decode rows=131852 copy=833ms total=860ms
+[meter] admit id=chatcmpl-dc1204ddef2d7b8dad2dee1799681aae tenant=default lane=interactive model="q38"
+[admission] request cost: model="q38" ctx=132870 path=plain = 29696 B/token x ctx + 4578MB prefill-workspace + 1545MB fixed = 10068MB
+[admit-oom] reclaim spared the prompt's prefix entry (131520 tokens, model q38)
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=4068212736 pool_cached_gain_bytes=4068212736 trim_released_bytes=4060086272 driver_free_bytes 37837516800 -> 41976254464 pool_reserved_bytes 75463917568 -> 71403831296 pool_used_bytes 70597998836 -> 66529786100 pool_retained_bytes=8126464 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer: evicted 1 prefix entries + 1 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 8030MB -> 16831MB
+[worker] plain-affinity: declined (history diverged at 131612 of checkpoint 131744; 1 parked, 131782 prompt tokens; model q38)
+[prefix-cache] hit: 131520 of 131782 prompt tokens from cache (model q38)
+[spec-k] model="q38" tenant="55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191" K=0 source=cost-model prompt=131782 cached=131520 lcp=131520 active=8 wave=8 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 131520 tokens, model q38)
+[prefix-cache] insert (lcp-split): 131744 tokens, 4069.2MB (resident 8375.8MB / 50728MB, model q38, ns "55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191")
+[gdn-census] sample 126 chatcmpl-dc1204ddef2d7b8dad2dee1799681aae prime rows=131744 copy=821ms total=843ms
+[gdn-census] sample 127 chatcmpl-dc1204ddef2d7b8dad2dee1799681aae decode rows=131783 copy=762ms total=783ms
+[meter] admit id=chatcmpl-625f23e92b5624a2c5ad3c160998d06e tenant=default lane=interactive model="q38"
+[admission] request cost: model="q38" ctx=132811 path=plain = 29696 B/token x ctx + 4577MB prefill-workspace + 1545MB fixed = 10065MB
+[admit-oom] reclaim spared the prompt's prefix entry (131520 tokens, model q38)
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=4069163008 pool_cached_gain_bytes=4069163008 trim_released_bytes=4060086272 driver_free_bytes 41934880768 -> 46074593280 pool_reserved_bytes 71403831296 -> 67343745024 pool_used_bytes 70601378612 -> 66532215604 pool_retained_bytes=9076736 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer: evicted 1 prefix entries + 1 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 8065MB -> 16870MB
+[worker] plain-affinity: declined (history diverged at 131612 of checkpoint 131744; 1 parked, 131723 prompt tokens; model q38)
+[prefix-cache] hit: 131520 of 131723 prompt tokens from cache (model q38)
+[spec-k] model="q38" tenant="55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191" K=0 source=cost-model prompt=131723 cached=131520 lcp=131520 active=8 wave=8 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 131520 tokens, model q38)
+[prefix-cache] insert (lcp-split): 131680 tokens, 4067.3MB (resident 8373.9MB / 50728MB, model q38, ns "55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191")
+[gdn-census] sample 128 chatcmpl-625f23e92b5624a2c5ad3c160998d06e prime rows=131680 copy=829ms total=851ms
+[gdn-census] sample 129 chatcmpl-625f23e92b5624a2c5ad3c160998d06e decode rows=131724 copy=814ms total=836ms
+[gdn-census] sample 130 chatcmpl-201f665a1fe667d9578eac82ebe8ec2d decode rows=132143 copy=825ms total=852ms
+[meter] admit id=chatcmpl-1388d7497259e25e944f308fc8db71ba tenant=default lane=interactive model="q38"
+[gdn-census] sample 131 chatcmpl-d317bacd97b45f801d7620b84529eef9 decode rows=131913 copy=843ms total=864ms
+[admission] request cost: model="q38" ctx=132753 path=plain = 29696 B/token x ctx + 4576MB prefill-workspace + 1545MB fixed = 10062MB
+[admit-oom] reclaim spared the prompt's prefix entry (131520 tokens, model q38)
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=4067262464 pool_cached_gain_bytes=4067262464 trim_released_bytes=3825205248 driver_free_bytes 42218033152 -> 46119288832 pool_reserved_bytes 71068286976 -> 67243081728 pool_used_bytes 70597932020 -> 66530669556 pool_retained_bytes=242057216 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer: evicted 1 prefix entries + 1 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 8015MB -> 16814MB
+[worker] plain-affinity: declined (history diverged at 131612 of checkpoint 131712; 1 parked, 131665 prompt tokens; model q38)
+[prefix-cache] hit: 131520 of 131665 prompt tokens from cache (model q38)
+[spec-k] model="q38" tenant="55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191" K=0 source=cost-model prompt=131665 cached=131520 lcp=131520 active=8 wave=8 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 131520 tokens, model q38)
+[prefix-cache] insert (lcp-split): 131648 tokens, 4066.3MB (resident 8372.9MB / 50728MB, model q38, ns "55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191")
+[gdn-census] sample 132 chatcmpl-1388d7497259e25e944f308fc8db71ba prime rows=131648 copy=847ms total=869ms
+[gdn-census] sample 133 chatcmpl-1388d7497259e25e944f308fc8db71ba decode rows=131666 copy=826ms total=854ms
+[gdn-census] sample 134 chatcmpl-0b1392386ac30cd5b46230d2931b428f decode rows=131902 copy=842ms total=863ms
+[meter] admit id=chatcmpl-8e759f75c31b36175f95e4320b774ba9 tenant=default lane=interactive model="q38"
+[admission] request cost: model="q38" ctx=132883 path=plain = 29696 B/token x ctx + 4578MB prefill-workspace + 1545MB fixed = 10069MB
+[admit-oom] reclaim spared the prompt's prefix entry (131520 tokens, model q38)
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=4066312192 pool_cached_gain_bytes=4066312192 trim_released_bytes=3791650816 driver_free_bytes 42275651584 -> 46142930944 pool_reserved_bytes 71068286976 -> 67276636160 pool_used_bytes 70593163956 -> 66526851764 pool_retained_bytes=274661376 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer: evicted 1 prefix entries + 1 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 8076MB -> 16873MB
+[worker] plain-affinity: declined (history diverged at 131612 of checkpoint 131648; 1 parked, 131795 prompt tokens; model q38)
+[prefix-cache] hit: 131520 of 131795 prompt tokens from cache (model q38)
+[spec-k] model="q38" tenant="55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191" K=0 source=cost-model prompt=131795 cached=131520 lcp=131520 active=8 wave=8 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 131520 tokens, model q38)
+[prefix-cache] insert (lcp-split): 131776 tokens, 4070.1MB (resident 8376.7MB / 50728MB, model q38, ns "55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191")
+[gdn-census] sample 135 chatcmpl-8e759f75c31b36175f95e4320b774ba9 prime rows=131776 copy=826ms total=853ms
+[gdn-census] sample 136 chatcmpl-8e759f75c31b36175f95e4320b774ba9 decode rows=131796 copy=830ms total=852ms
+[meter] admit id=chatcmpl-f2d7bf22f78eaed049368af575cb2942 tenant=default lane=interactive model="q38"
+[admission] request cost: model="q38" ctx=132789 path=plain = 29696 B/token x ctx + 4576MB prefill-workspace + 1545MB fixed = 10064MB
+[admit-oom] reclaim spared the prompt's prefix entry (131520 tokens, model q38)
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=4070113280 pool_cached_gain_bytes=4070113280 trim_released_bytes=3791650816 driver_free_bytes 42158792704 -> 46025940992 pool_reserved_bytes 71202504704 -> 67410853888 pool_used_bytes 70598542644 -> 66528429364 pool_retained_bytes=278462464 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer: evicted 1 prefix entries + 1 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 8092MB -> 16890MB
+[worker] plain-affinity: declined (history diverged at 131612 of checkpoint 131744; 1 parked, 131701 prompt tokens; model q38)
+[prefix-cache] hit: 131520 of 131701 prompt tokens from cache (model q38)
+[spec-k] model="q38" tenant="55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191" K=0 source=cost-model prompt=131701 cached=131520 lcp=131520 active=8 wave=8 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 131520 tokens, model q38)
+[prefix-cache] insert (lcp-split): 131680 tokens, 4067.3MB (resident 8373.9MB / 50728MB, model q38, ns "55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191")
+[gdn-census] sample 137 chatcmpl-af4a0ca92026ba176692b7ab73d893e4 decode rows=131864 copy=840ms total=862ms
+[gdn-census] sample 138 chatcmpl-f2d7bf22f78eaed049368af575cb2942 prime rows=131680 copy=810ms total=832ms
+[gdn-census] sample 139 chatcmpl-f2d7bf22f78eaed049368af575cb2942 decode rows=131702 copy=832ms total=854ms
+[meter] admit id=chatcmpl-6bd022d624aafca5ee189e6a8ee5abdd tenant=default lane=interactive model="q38"
+[admission] request cost: model="q38" ctx=132782 path=plain = 29696 B/token x ctx + 4576MB prefill-workspace + 1545MB fixed = 10064MB
+[admit-oom] reclaim spared the prompt's prefix entry (131520 tokens, model q38)
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=4067262464 pool_cached_gain_bytes=4067262464 trim_released_bytes=3791650816 driver_free_bytes 42118328320 -> 45986025472 pool_reserved_bytes 71202504704 -> 67410853888 pool_used_bytes 70596827700 -> 66529565236 pool_retained_bytes=275611648 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer: evicted 1 prefix entries + 1 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 8050MB -> 16850MB
+[worker] plain-affinity: declined (history diverged at 131612 of checkpoint 131712; 1 parked, 131694 prompt tokens; model q38)
+[prefix-cache] hit: 131520 of 131694 prompt tokens from cache (model q38)
+[spec-k] model="q38" tenant="55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191" K=0 source=cost-model prompt=131694 cached=131520 lcp=131520 active=8 wave=8 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 131520 tokens, model q38)
+[prefix-cache] insert (lcp-split): 131648 tokens, 4066.3MB (resident 8372.9MB / 50728MB, model q38, ns "55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191")
+[gdn-census] sample 140 chatcmpl-6bd022d624aafca5ee189e6a8ee5abdd prime rows=131648 copy=822ms total=844ms
+[gdn-census] sample 141 chatcmpl-6bd022d624aafca5ee189e6a8ee5abdd decode rows=131695 copy=831ms total=853ms
+[spec-cost] model="q38" realized n=7 K=0: 27.9 tok/s (now priced from serving)
+[meter] admit id=chatcmpl-1c5a5f73d6b11f167eea668b12731cb8 tenant=default lane=interactive model="q38"
+[admission] request cost: model="q38" ctx=132827 path=plain = 29696 B/token x ctx + 4577MB prefill-workspace + 1545MB fixed = 10066MB
+[admit-oom] reclaim spared the prompt's prefix entry (131520 tokens, model q38)
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=4066312192 pool_cached_gain_bytes=4066312192 trim_released_bytes=3690987520 driver_free_bytes 42191650816 -> 45956595712 pool_reserved_bytes 71135395840 -> 67444408320 pool_used_bytes 70593384820 -> 66527072628 pool_retained_bytes=375324672 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer: evicted 1 prefix entries + 1 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 8059MB -> 16854MB
+[worker] plain-affinity: declined (history diverged at 131610 of checkpoint 131840; 1 parked, 131739 prompt tokens; model q38)
+[prefix-cache] hit: 131520 of 131739 prompt tokens from cache (model q38)
+[spec-k] model="q38" tenant="55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191" K=0 source=cost-model prompt=131739 cached=131520 lcp=131520 active=8 wave=8 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 131520 tokens, model q38)
+[prefix-cache] insert (lcp-split): 131712 tokens, 4068.2MB (resident 8374.8MB / 50728MB, model q38, ns "55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191")
+[gdn-census] sample 142 chatcmpl-1c5a5f73d6b11f167eea668b12731cb8 prime rows=131712 copy=828ms total=847ms
+[gdn-census] sample 143 chatcmpl-1c5a5f73d6b11f167eea668b12731cb8 decode rows=131740 copy=833ms total=855ms
+[meter] admit id=chatcmpl-0e7e81bbc1e2748324e5bb84707eea54 tenant=default lane=interactive model="q38"
+[admission] request cost: model="q38" ctx=132803 path=plain = 29696 B/token x ctx + 4577MB prefill-workspace + 1545MB fixed = 10065MB
+[admit-oom] reclaim spared the prompt's prefix entry (131520 tokens, model q38)
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=4068212736 pool_cached_gain_bytes=4068212736 trim_released_bytes=3791650816 driver_free_bytes 42039382016 -> 45906661376 pool_reserved_bytes 71269613568 -> 67477962752 pool_used_bytes 70595411572 -> 66527198836 pool_retained_bytes=276561920 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer: evicted 1 prefix entries + 1 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 8041MB -> 16844MB
+[worker] plain-affinity: declined (history diverged at 131612 of checkpoint 131680; 1 parked, 131715 prompt tokens; model q38)
+[prefix-cache] hit: 131520 of 131715 prompt tokens from cache (model q38)
+[spec-k] model="q38" tenant="55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191" K=0 source=cost-model prompt=131715 cached=131520 lcp=131520 active=8 wave=8 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 131520 tokens, model q38)
+[prefix-cache] insert (lcp-split): 131680 tokens, 4067.3MB (resident 8373.9MB / 50728MB, model q38, ns "55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191")
+[meter] admit id=chatcmpl-5147cc6902440a320b376f19f8c7baa9 tenant=default lane=interactive model="q38"
+[gdn-census] sample 144 chatcmpl-0e7e81bbc1e2748324e5bb84707eea54 prime rows=131680 copy=834ms total=855ms
+[admission] request cost: model="q38" ctx=132842 path=plain = 29696 B/token x ctx + 4577MB prefill-workspace + 1545MB fixed = 10067MB
+[admit-oom] reclaim spared the prompt's prefix entry (131520 tokens, model q38)
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=4067262464 pool_cached_gain_bytes=4067262464 trim_released_bytes=3724541952 driver_free_bytes 42107420672 -> 45897793536 pool_reserved_bytes 71202504704 -> 67477962752 pool_used_bytes 70588072628 -> 66520810164 pool_retained_bytes=342720512 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer: evicted 1 prefix entries + 1 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 8048MB -> 16836MB
+[worker] plain-affinity: declined (history diverged at 131612 of checkpoint 131744; 1 parked, 131754 prompt tokens; model q38)
+[prefix-cache] hit: 131520 of 131754 prompt tokens from cache (model q38)
+[spec-k] model="q38" tenant="55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191" K=0 source=cost-model prompt=131754 cached=131520 lcp=131520 active=8 wave=8 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 131520 tokens, model q38)
+[prefix-cache] insert (lcp-split): 131712 tokens, 4068.2MB (resident 8374.8MB / 50728MB, model q38, ns "55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191")
+[gdn-census] sample 145 chatcmpl-0e7e81bbc1e2748324e5bb84707eea54 decode rows=131716 copy=834ms total=856ms
+[gdn-census] sample 146 chatcmpl-5147cc6902440a320b376f19f8c7baa9 prime rows=131712 copy=825ms total=852ms
+[gdn-census] sample 147 chatcmpl-5147cc6902440a320b376f19f8c7baa9 decode rows=131755 copy=821ms total=842ms
+[gdn-census] sample 148 chatcmpl-dc1204ddef2d7b8dad2dee1799681aae decode rows=131911 copy=838ms total=859ms
+[gdn-census] sample 149 chatcmpl-625f23e92b5624a2c5ad3c160998d06e decode rows=131852 copy=833ms total=855ms
+[meter] admit id=chatcmpl-70af0df82bbc709f7358a5224942b384 tenant=default lane=interactive model="q38"
+[admission] request cost: model="q38" ctx=132792 path=plain = 29696 B/token x ctx + 4576MB prefill-workspace + 1545MB fixed = 10064MB
+[admit-oom] reclaim spared the prompt's prefix entry (131520 tokens, model q38)
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=4068212736 pool_cached_gain_bytes=4068212736 trim_released_bytes=3724541952 driver_free_bytes 42098851840 -> 45897777152 pool_reserved_bytes 71269613568 -> 67545071616 pool_used_bytes 70590994292 -> 66522781556 pool_retained_bytes=343670784 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer: evicted 1 prefix entries + 1 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 8105MB -> 16904MB
+[worker] plain-affinity: declined (history diverged at 131612 of checkpoint 131680; 1 parked, 131704 prompt tokens; model q38)
+[prefix-cache] hit: 131520 of 131704 prompt tokens from cache (model q38)
+[spec-k] model="q38" tenant="55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191" K=0 source=cost-model prompt=131704 cached=131520 lcp=131520 active=8 wave=8 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 131520 tokens, model q38)
+[prefix-cache] insert (lcp-split): 131680 tokens, 4067.3MB (resident 8373.9MB / 50728MB, model q38, ns "55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191")
+[gdn-census] sample 150 chatcmpl-70af0df82bbc709f7358a5224942b384 prime rows=131680 copy=835ms total=857ms
+[gdn-census] sample 151 chatcmpl-70af0df82bbc709f7358a5224942b384 decode rows=131705 copy=820ms total=848ms
+[meter] admit id=chatcmpl-92a0831f295e0e2feafaca77ff8cf9b9 tenant=default lane=interactive model="q38"
+[admission] request cost: model="q38" ctx=132761 path=plain = 29696 B/token x ctx + 4576MB prefill-workspace + 1545MB fixed = 10063MB
+[admit-oom] reclaim spared the prompt's prefix entry (131520 tokens, model q38)
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=4067262464 pool_cached_gain_bytes=4067262464 trim_released_bytes=3657433088 driver_free_bytes 42150019072 -> 45880852480 pool_reserved_bytes 71236059136 -> 67578626048 pool_used_bytes 70587519860 -> 66520257396 pool_retained_bytes=409829376 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer: evicted 1 prefix entries + 1 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 8125MB -> 16920MB
+[worker] plain-affinity: declined (history diverged at 131612 of checkpoint 131648; 1 parked, 131673 prompt tokens; model q38)
+[prefix-cache] hit: 131520 of 131673 prompt tokens from cache (model q38)
+[spec-k] model="q38" tenant="55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191" K=0 source=cost-model prompt=131673 cached=131520 lcp=131520 active=8 wave=8 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 131520 tokens, model q38)
+[prefix-cache] insert (lcp-split): 131648 tokens, 4066.3MB (resident 8372.9MB / 50728MB, model q38, ns "55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191")
+[gdn-census] sample 152 chatcmpl-92a0831f295e0e2feafaca77ff8cf9b9 prime rows=131648 copy=825ms total=845ms
+[gdn-census] sample 153 chatcmpl-92a0831f295e0e2feafaca77ff8cf9b9 decode rows=131674 copy=829ms total=851ms
+[meter] admit id=chatcmpl-a9f0df58cebabaff18d57bfebda73a33 tenant=default lane=interactive model="q38"
+[admission] request cost: model="q38" ctx=132853 path=plain = 29696 B/token x ctx + 4578MB prefill-workspace + 1545MB fixed = 10067MB
+[admit-oom] reclaim spared the prompt's prefix entry (131520 tokens, model q38)
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=4066312192 pool_cached_gain_bytes=4066312192 trim_released_bytes=3590324224 driver_free_bytes 42193887232 -> 45856825344 pool_reserved_bytes 71168950272 -> 67578626048 pool_used_bytes 70584991988 -> 66518679796 pool_retained_bytes=475987968 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer: evicted 1 prefix entries + 1 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 8103MB -> 16896MB
+[worker] plain-affinity: declined (history diverged at 131612 of checkpoint 131680; 1 parked, 131765 prompt tokens; model q38)
+[prefix-cache] hit: 131520 of 131765 prompt tokens from cache (model q38)
+[spec-k] model="q38" tenant="55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191" K=0 source=cost-model prompt=131765 cached=131520 lcp=131520 active=8 wave=8 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 131520 tokens, model q38)
+[prefix-cache] insert (lcp-split): 131744 tokens, 4069.2MB (resident 8375.8MB / 50728MB, model q38, ns "55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191")
+[gdn-census] sample 154 chatcmpl-a9f0df58cebabaff18d57bfebda73a33 prime rows=131744 copy=822ms total=845ms
+[gdn-census] sample 155 chatcmpl-a9f0df58cebabaff18d57bfebda73a33 decode rows=131766 copy=846ms total=868ms
+[meter] admit id=chatcmpl-81adabadc1248f9dacac74c29c6f7721 tenant=default lane=interactive model="q38"
+[admission] request cost: model="q38" ctx=132764 path=plain = 29696 B/token x ctx + 4576MB prefill-workspace + 1545MB fixed = 10063MB
+[admit-oom] reclaim spared the prompt's prefix entry (131520 tokens, model q38)
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=4069163008 pool_cached_gain_bytes=4069163008 trim_released_bytes=3690987520 driver_free_bytes 42028630016 -> 45794021376 pool_reserved_bytes 71303168000 -> 67612180480 pool_used_bytes 70590082996 -> 66520919988 pool_retained_bytes=378175488 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer: evicted 1 prefix entries + 1 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 8070MB -> 16868MB
+[worker] plain-affinity: declined (history diverged at 131612 of checkpoint 131744; 1 parked, 131676 prompt tokens; model q38)
+[prefix-cache] hit: 131520 of 131676 prompt tokens from cache (model q38)
+[spec-k] model="q38" tenant="55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191" K=0 source=cost-model prompt=131676 cached=131520 lcp=131520 active=8 wave=8 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 131520 tokens, model q38)
+[prefix-cache] insert (lcp-split): 131648 tokens, 4066.3MB (resident 8372.9MB / 50728MB, model q38, ns "55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191")
+[gdn-census] sample 156 chatcmpl-81adabadc1248f9dacac74c29c6f7721 prime rows=131648 copy=833ms total=855ms
+[gdn-census] sample 157 chatcmpl-8e759f75c31b36175f95e4320b774ba9 decode rows=131924 copy=836ms total=856ms
+[gdn-census] sample 158 chatcmpl-81adabadc1248f9dacac74c29c6f7721 decode rows=131677 copy=820ms total=841ms
+[gdn-census] sample 159 chatcmpl-f2d7bf22f78eaed049368af575cb2942 decode rows=131830 copy=820ms total=848ms
+[meter] admit id=chatcmpl-264545cd5abd1c77e0008c01d9d46ecb tenant=default lane=interactive model="q38"
+[admission] request cost: model="q38" ctx=132803 path=plain = 29696 B/token x ctx + 4577MB prefill-workspace + 1545MB fixed = 10065MB
+[admit-oom] reclaim spared the prompt's prefix entry (131520 tokens, model q38)
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=4066312192 pool_cached_gain_bytes=4066312192 trim_released_bytes=3590324224 driver_free_bytes 42019205120 -> 45682143232 pool_reserved_bytes 71236059136 -> 67645734912 pool_used_bytes 70586001652 -> 66519689460 pool_retained_bytes=475987968 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer: evicted 1 prefix entries + 1 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 7995MB -> 16790MB
+[worker] plain-affinity: declined (history diverged at 131612 of checkpoint 131680; 1 parked, 131715 prompt tokens; model q38)
+[prefix-cache] hit: 131520 of 131715 prompt tokens from cache (model q38)
+[spec-k] model="q38" tenant="55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191" K=0 source=cost-model prompt=131715 cached=131520 lcp=131520 active=8 wave=8 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 131520 tokens, model q38)
+[prefix-cache] insert (lcp-split): 131680 tokens, 4067.3MB (resident 8373.9MB / 50728MB, model q38, ns "55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191")
+[gdn-census] sample 160 chatcmpl-1c5a5f73d6b11f167eea668b12731cb8 decode rows=131868 copy=844ms total=865ms
+[gdn-census] sample 161 chatcmpl-264545cd5abd1c77e0008c01d9d46ecb prime rows=131680 copy=816ms total=837ms
+[gdn-census] sample 162 chatcmpl-264545cd5abd1c77e0008c01d9d46ecb decode rows=131716 copy=820ms total=842ms
+[meter] admit id=chatcmpl-bfdc7e71c8d30e5201180a0099e2409e tenant=default lane=interactive model="q38"
+[meter] admit id=chatcmpl-858bc19d6115358da6cf85c20a90ff18 tenant=default lane=interactive model="q38"
+[admission] request cost: model="q38" ctx=132833 path=plain = 29696 B/token x ctx + 4577MB prefill-workspace + 1545MB fixed = 10066MB
+[worker] plain-affinity: declined (history diverged at 131612 of checkpoint 131648; 2 parked, 131745 prompt tokens; model q38)
+[prefix-cache] hit: 131520 of 131745 prompt tokens from cache (model q38)
+[spec-k] model="q38" tenant="55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191" K=0 source=cost-model prompt=131745 cached=131520 lcp=131612 active=7 wave=8 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 131520 tokens, model q38)
+[admission] request cost: model="q38" ctx=132800 path=plain = 29696 B/token x ctx + 4577MB prefill-workspace + 1545MB fixed = 10065MB
+[admit-oom] reclaim spared the prompt's prefix entry (131520 tokens, model q38)
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=4067262464 pool_cached_gain_bytes=4067262464 trim_released_bytes=3825205248 driver_free_bytes 41706438656 -> 45608222720 pool_reserved_bytes 71470940160 -> 67645734912 pool_used_bytes 70428339764 -> 66361077300 pool_retained_bytes=242057216 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer: evicted 1 prefix entries + 1 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 8076MB -> 16872MB
+[worker] plain-affinity: declined (history diverged at 131612 of checkpoint 131712; 1 parked, 131712 prompt tokens; model q38)
+[prefix-cache] hit: 131520 of 131712 prompt tokens from cache (model q38)
+[spec-k] model="q38" tenant="55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191" K=0 source=cost-model prompt=131712 cached=131520 lcp=131520 active=8 wave=8 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 131520 tokens, model q38)
+[prefix-cache] insert (lcp-split): 131712 tokens, 4068.2MB (resident 8374.8MB / 50728MB, model q38, ns "55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191")
+[prefix-cache] insert (lcp-split): 131680 tokens, 4067.3MB (resident 12442.1MB / 50728MB, model q38, ns "55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191")
+[gdn-census] sample 163 chatcmpl-bfdc7e71c8d30e5201180a0099e2409e prime rows=131712 copy=820ms total=851ms
+[gdn-census] sample 164 chatcmpl-858bc19d6115358da6cf85c20a90ff18 prime rows=131680 copy=815ms total=836ms
+[gdn-census] sample 165 chatcmpl-5147cc6902440a320b376f19f8c7baa9 decode rows=131883 copy=821ms total=842ms
+[gdn-census] sample 166 chatcmpl-bfdc7e71c8d30e5201180a0099e2409e decode rows=131746 copy=809ms total=831ms
+[gdn-census] sample 167 chatcmpl-858bc19d6115358da6cf85c20a90ff18 decode rows=131713 copy=806ms total=828ms
+[meter] admit id=chatcmpl-b5824455e72083d6166115c27318d0a4 tenant=default lane=interactive model="q38"
+[admission] request cost: model="q38" ctx=132777 path=plain = 29696 B/token x ctx + 4576MB prefill-workspace + 1545MB fixed = 10064MB
+[admit-oom] reclaim spared the prompt's prefix entry (131520 tokens, model q38)
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=8135475200 pool_cached_gain_bytes=8135475200 trim_released_bytes=7415529472 driver_free_bytes 37783695360 -> 45348573184 pool_reserved_bytes 75262590976 -> 67847061504 pool_used_bytes 74655669492 -> 66520194292 pool_retained_bytes=719945728 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer: evicted 2 prefix entries + 0 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 7786MB -> 16070MB
+[worker] plain-affinity: declined (history diverged at 131612 of checkpoint 131712; 2 parked, 131689 prompt tokens; model q38)
+[prefix-cache] hit: 131520 of 131689 prompt tokens from cache (model q38)
+[spec-k] model="q38" tenant="55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191" K=0 source=cost-model prompt=131689 cached=131520 lcp=131520 active=8 wave=8 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 131520 tokens, model q38)
+[prefix-cache] unified memory: insert budget 50333MB (configured 50728MB; live free 49784MB, headroom 3758MB, resident 4307MB, new entry 0MB)
+[prefix-cache] unified memory: insert budget 50262MB (configured 50728MB; live free 45647MB, headroom 3758MB, resident 4307MB, new entry 4066MB)
+[prefix-cache] insert (lcp-split): 131648 tokens, 4066.3MB (resident 8372.9MB / 50262MB, model q38, ns "55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191")
+[gdn-census] sample 168 chatcmpl-b5824455e72083d6166115c27318d0a4 prime rows=131648 copy=848ms total=869ms
+[gdn-census] sample 169 chatcmpl-b5824455e72083d6166115c27318d0a4 decode rows=131690 copy=837ms total=859ms
+[meter] admit id=chatcmpl-b01bab5e02c54e31d4c36d06b9fbbf63 tenant=default lane=interactive model="q38"
+[admission] request cost: model="q38" ctx=132815 path=plain = 29696 B/token x ctx + 4577MB prefill-workspace + 1545MB fixed = 10066MB
+[admit-oom] reclaim spared the prompt's prefix entry (131520 tokens, model q38)
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=4066312192 pool_cached_gain_bytes=4066312192 trim_released_bytes=4060086272 driver_free_bytes 37379416064 -> 41528074240 pool_reserved_bytes 75665244160 -> 71605157888 pool_used_bytes 70584928884 -> 66518616692 pool_retained_bytes=6225920 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer: evicted 1 prefix entries + 1 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 7786MB -> 16594MB
+[worker] plain-affinity: declined (history diverged at 131612 of checkpoint 131712; 1 parked, 131727 prompt tokens; model q38)
+[prefix-cache] hit: 131520 of 131727 prompt tokens from cache (model q38)
+[spec-k] model="q38" tenant="55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191" K=0 source=cost-model prompt=131727 cached=131520 lcp=131520 active=8 wave=8 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 131520 tokens, model q38)
+[prefix-cache] insert (lcp-split): 131680 tokens, 4067.3MB (resident 8373.9MB / 50728MB, model q38, ns "55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191")
+[gdn-census] sample 170 chatcmpl-b01bab5e02c54e31d4c36d06b9fbbf63 prime rows=131680 copy=825ms total=847ms
+[gdn-census] sample 171 chatcmpl-b01bab5e02c54e31d4c36d06b9fbbf63 decode rows=131728 copy=822ms total=844ms
+[gdn-census] sample 172 chatcmpl-a9f0df58cebabaff18d57bfebda73a33 decode rows=131894 copy=828ms total=849ms
+[meter] admit id=chatcmpl-400eb44e622102abb817857512c51cd7 tenant=default lane=interactive model="q38"
+[admission] request cost: model="q38" ctx=132802 path=plain = 29696 B/token x ctx + 4577MB prefill-workspace + 1545MB fixed = 10065MB
+[admit-oom] reclaim spared the prompt's prefix entry (131520 tokens, model q38)
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=4067262464 pool_cached_gain_bytes=4067262464 trim_released_bytes=3724541952 driver_free_bytes 41587924992 -> 45387194368 pool_reserved_bytes 71605157888 -> 67880615936 pool_used_bytes 70586604852 -> 66519342388 pool_retained_bytes=342720512 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer: evicted 1 prefix entries + 1 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 7933MB -> 16731MB
+[worker] plain-affinity: declined (history diverged at 131612 of checkpoint 131648; 1 parked, 131714 prompt tokens; model q38)
+[prefix-cache] hit: 131520 of 131714 prompt tokens from cache (model q38)
+[spec-k] model="q38" tenant="55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191" K=0 source=cost-model prompt=131714 cached=131520 lcp=131520 active=8 wave=8 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 131520 tokens, model q38)
+[prefix-cache] insert (lcp-split): 131680 tokens, 4067.3MB (resident 8373.9MB / 50728MB, model q38, ns "55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191")
+[gdn-census] sample 173 chatcmpl-400eb44e622102abb817857512c51cd7 prime rows=131680 copy=821ms total=842ms
+[gdn-census] sample 174 chatcmpl-400eb44e622102abb817857512c51cd7 decode rows=131715 copy=815ms total=837ms
+[gdn-census] sample 175 chatcmpl-8e759f75c31b36175f95e4320b774ba9 decode rows=132052 copy=823ms total=844ms
+[meter] admit id=chatcmpl-a5e6bdd0c27fe37432340e7413772c6a tenant=default lane=interactive model="q38"
+[admission] request cost: model="q38" ctx=132821 path=plain = 29696 B/token x ctx + 4577MB prefill-workspace + 1545MB fixed = 10066MB
+[admit-oom] reclaim spared the prompt's prefix entry (131520 tokens, model q38)
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=4067262464 pool_cached_gain_bytes=4067262464 trim_released_bytes=3489660928 driver_free_bytes 41912594432 -> 45473308672 pool_reserved_bytes 71303168000 -> 67813507072 pool_used_bytes 70585342772 -> 66518080308 pool_retained_bytes=577601536 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer: evicted 1 prefix entries + 1 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 7957MB -> 16749MB
+[worker] plain-affinity: declined (history diverged at 131612 of checkpoint 131744; 1 parked, 131733 prompt tokens; model q38)
+[prefix-cache] hit: 131520 of 131733 prompt tokens from cache (model q38)
+[spec-k] model="q38" tenant="55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191" K=0 source=cost-model prompt=131733 cached=131520 lcp=131520 active=8 wave=8 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 131520 tokens, model q38)
+[prefix-cache] insert (lcp-split): 131712 tokens, 4068.2MB (resident 8374.8MB / 50728MB, model q38, ns "55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191")
+[gdn-census] sample 176 chatcmpl-a5e6bdd0c27fe37432340e7413772c6a prime rows=131712 copy=825ms total=856ms
+[gdn-census] sample 177 chatcmpl-a5e6bdd0c27fe37432340e7413772c6a decode rows=131734 copy=832ms total=854ms
+[gdn-census] sample 178 chatcmpl-264545cd5abd1c77e0008c01d9d46ecb decode rows=131844 copy=832ms total=854ms
+[gdn-census] sample 179 chatcmpl-bfdc7e71c8d30e5201180a0099e2409e decode rows=131874 copy=833ms total=855ms
+[gdn-census] sample 180 chatcmpl-858bc19d6115358da6cf85c20a90ff18 decode rows=131841 copy=816ms total=837ms
+[meter] admit id=chatcmpl-603cde9d01dd705b5e902d833980bb7a tenant=default lane=interactive model="q38"
+[admission] request cost: model="q38" ctx=132861 path=plain = 29696 B/token x ctx + 4578MB prefill-workspace + 1545MB fixed = 10068MB
+[admit-oom] reclaim spared the prompt's prefix entry (131520 tokens, model q38)
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=4068212736 pool_cached_gain_bytes=4068212736 trim_released_bytes=3590324224 driver_free_bytes 41774227456 -> 45436846080 pool_reserved_bytes 71470940160 -> 67880615936 pool_used_bytes 70588091508 -> 66519878772 pool_retained_bytes=477888512 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer: evicted 1 prefix entries + 1 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 7985MB -> 16781MB
+[worker] plain-affinity: declined (history diverged at 131613 of checkpoint 131776; 1 parked, 131773 prompt tokens; model q38)
+[prefix-cache] hit: 131520 of 131773 prompt tokens from cache (model q38)
+[spec-k] model="q38" tenant="55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191" K=0 source=cost-model prompt=131773 cached=131520 lcp=131520 active=8 wave=8 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 131520 tokens, model q38)
+[prefix-cache] insert (lcp-split): 131744 tokens, 4069.2MB (resident 8375.8MB / 50728MB, model q38, ns "55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191")
+[gdn-census] sample 181 chatcmpl-603cde9d01dd705b5e902d833980bb7a prime rows=131744 copy=831ms total=851ms
+[meter] admit id=chatcmpl-93764c5b8410e6841c472e63f21fb1ff tenant=default lane=interactive model="q38"
+[gdn-census] sample 182 chatcmpl-603cde9d01dd705b5e902d833980bb7a decode rows=131774 copy=839ms total=861ms
+[admission] request cost: model="q38" ctx=132839 path=plain = 29696 B/token x ctx + 4577MB prefill-workspace + 1545MB fixed = 10067MB
+[admit-oom] reclaim spared the prompt's prefix entry (131520 tokens, model q38)
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=4069163008 pool_cached_gain_bytes=4069163008 trim_released_bytes=3758096384 driver_free_bytes 41621770240 -> 45454950400 pool_reserved_bytes 71605157888 -> 67847061504 pool_used_bytes 70589294196 -> 66520131188 pool_retained_bytes=311066624 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer: evicted 1 prefix entries + 1 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 7967MB -> 16767MB
+[worker] plain-affinity: declined (history diverged at 131610 of checkpoint 131712; 1 parked, 131751 prompt tokens; model q38)
+[prefix-cache] hit: 131520 of 131751 prompt tokens from cache (model q38)
+[spec-k] model="q38" tenant="55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191" K=0 source=cost-model prompt=131751 cached=131520 lcp=131520 active=8 wave=8 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 131520 tokens, model q38)
+[prefix-cache] insert (lcp-split): 131712 tokens, 4068.2MB (resident 8374.8MB / 50728MB, model q38, ns "55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191")
+[gdn-census] sample 183 chatcmpl-b5824455e72083d6166115c27318d0a4 decode rows=131818 copy=827ms total=849ms
+[gdn-census] sample 184 chatcmpl-93764c5b8410e6841c472e63f21fb1ff prime rows=131712 copy=827ms total=849ms
+[gdn-census] sample 185 chatcmpl-93764c5b8410e6841c472e63f21fb1ff decode rows=131752 copy=831ms total=853ms
+[meter] admit id=chatcmpl-66c17e1374c86f4ba1a6098ea348076b tenant=default lane=interactive model="q38"
+[admission] request cost: model="q38" ctx=132797 path=plain = 29696 B/token x ctx + 4576MB prefill-workspace + 1545MB fixed = 10065MB
+[admit-oom] reclaim spared the prompt's prefix entry (131520 tokens, model q38)
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=4068212736 pool_cached_gain_bytes=4068212736 trim_released_bytes=3690987520 driver_free_bytes 41616830464 -> 45382135808 pool_reserved_bytes 71571603456 -> 67880615936 pool_used_bytes 70586955636 -> 66518742900 pool_retained_bytes=377225216 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer: evicted 1 prefix entries + 1 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 7929MB -> 16727MB
+[worker] plain-affinity: declined (history diverged at 131610 of checkpoint 131680; 1 parked, 131709 prompt tokens; model q38)
+[prefix-cache] hit: 131520 of 131709 prompt tokens from cache (model q38)
+[spec-k] model="q38" tenant="55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191" K=0 source=cost-model prompt=131709 cached=131520 lcp=131520 active=8 wave=8 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 131520 tokens, model q38)
+[prefix-cache] insert (lcp-split): 131680 tokens, 4067.3MB (resident 8373.9MB / 50728MB, model q38, ns "55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191")
+[gdn-census] sample 186 chatcmpl-66c17e1374c86f4ba1a6098ea348076b prime rows=131680 copy=848ms total=870ms
+[gdn-census] sample 187 chatcmpl-66c17e1374c86f4ba1a6098ea348076b decode rows=131710 copy=855ms total=874ms
+[meter] admit id=chatcmpl-f5a2ba89bf8f3d812489adeb2fa13098 tenant=default lane=interactive model="q38"
+[admission] request cost: model="q38" ctx=132828 path=plain = 29696 B/token x ctx + 4577MB prefill-workspace + 1545MB fixed = 10066MB
+[admit-oom] reclaim spared the prompt's prefix entry (131520 tokens, model q38)
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=4067262464 pool_cached_gain_bytes=4067262464 trim_released_bytes=3456106496 driver_free_bytes 41863467008 -> 45390024704 pool_reserved_bytes 71336722432 -> 67880615936 pool_used_bytes 70584869492 -> 66517607028 pool_retained_bytes=611155968 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer: evicted 1 prefix entries + 1 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 7942MB -> 16734MB
+[worker] plain-affinity: declined (history diverged at 131610 of checkpoint 131680; 1 parked, 131740 prompt tokens; model q38)
+[prefix-cache] hit: 131520 of 131740 prompt tokens from cache (model q38)
+[spec-k] model="q38" tenant="55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191" K=0 source=cost-model prompt=131740 cached=131520 lcp=131520 active=8 wave=8 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 131520 tokens, model q38)
+[prefix-cache] insert (lcp-split): 131712 tokens, 4068.2MB (resident 8374.8MB / 50728MB, model q38, ns "55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191")
+[gdn-census] sample 188 chatcmpl-f5a2ba89bf8f3d812489adeb2fa13098 prime rows=131712 copy=828ms total=850ms
+[gdn-census] sample 189 chatcmpl-f5a2ba89bf8f3d812489adeb2fa13098 decode rows=131741 copy=813ms total=835ms
+[meter] admit id=chatcmpl-9d78e3ffd3e5aec818c11ff2d3e747dc tenant=default lane=interactive model="q38"
+[admission] request cost: model="q38" ctx=132934 path=plain = 29696 B/token x ctx + 4579MB prefill-workspace + 1545MB fixed = 10072MB
+[admit-oom] reclaim spared the prompt's prefix entry (131520 tokens, model q38)
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=4068212736 pool_cached_gain_bytes=4068212736 trim_released_bytes=3657433088 driver_free_bytes 41647665152 -> 45387608064 pool_reserved_bytes 71504494592 -> 67847061504 pool_used_bytes 70586608564 -> 66518395828 pool_retained_bytes=410779648 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer: evicted 1 prefix entries + 1 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 7894MB -> 16699MB
+[worker] plain-affinity: declined (history diverged at 131610 of checkpoint 131680; 1 parked, 131846 prompt tokens; model q38)
+[prefix-cache] hit: 131520 of 131846 prompt tokens from cache (model q38)
+[spec-k] model="q38" tenant="55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191" K=0 source=cost-model prompt=131846 cached=131520 lcp=131520 active=8 wave=8 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 131520 tokens, model q38)
+[prefix-cache] insert (lcp-split): 131808 tokens, 4071.1MB (resident 8377.7MB / 50728MB, model q38, ns "55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191")
+[gdn-census] sample 190 chatcmpl-9d78e3ffd3e5aec818c11ff2d3e747dc prime rows=131808 copy=818ms total=838ms
+[gdn-census] sample 191 chatcmpl-9d78e3ffd3e5aec818c11ff2d3e747dc decode rows=131847 copy=821ms total=843ms
+[gdn-census] sample 192 chatcmpl-400eb44e622102abb817857512c51cd7 decode rows=131843 copy=828ms total=850ms
+[meter] admit id=chatcmpl-4012cb0d8cb88eb8de19ae7a9cf2f87d tenant=default lane=interactive model="q38"
+[admission] request cost: model="q38" ctx=133041 path=plain = 29696 B/token x ctx + 4581MB prefill-workspace + 1545MB fixed = 10077MB
+[admit-oom] reclaim spared the prompt's prefix entry (131520 tokens, model q38)
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=4071063552 pool_cached_gain_bytes=4071063552 trim_released_bytes=3825205248 driver_free_bytes 41493315584 -> 45394550784 pool_reserved_bytes 71705821184 -> 67880615936 pool_used_bytes 70593214068 -> 66522150516 pool_retained_bytes=245858304 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer: evicted 1 prefix entries + 1 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 7937MB -> 16738MB
+[worker] plain-affinity: declined (history diverged at 131610 of checkpoint 131648; 1 parked, 131953 prompt tokens; model q38)
+[prefix-cache] hit: 131520 of 131953 prompt tokens from cache (model q38)
+[spec-k] model="q38" tenant="55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191" K=0 source=cost-model prompt=131953 cached=131520 lcp=131520 active=8 wave=8 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 131520 tokens, model q38)
+[prefix-cache] insert (lcp-split): 131936 tokens, 4074.9MB (resident 8381.5MB / 50728MB, model q38, ns "55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191")
+[gdn-census] sample 193 chatcmpl-4012cb0d8cb88eb8de19ae7a9cf2f87d prime rows=131936 copy=836ms total=858ms
+[gdn-census] sample 194 chatcmpl-4012cb0d8cb88eb8de19ae7a9cf2f87d decode rows=131954 copy=827ms total=849ms
+[gdn-census] sample 195 chatcmpl-a5e6bdd0c27fe37432340e7413772c6a decode rows=131862 copy=831ms total=853ms
+[meter] admit id=chatcmpl-ed75bb3f816520581523c8dbd46ae257 tenant=default lane=interactive model="q38"
+[admission] request cost: model="q38" ctx=132874 path=plain = 29696 B/token x ctx + 4578MB prefill-workspace + 1545MB fixed = 10069MB
+[admit-oom] reclaim spared the prompt's prefix entry (131520 tokens, model q38)
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=4074864640 pool_cached_gain_bytes=4074864640 trim_released_bytes=4060086272 driver_free_bytes 40882601984 -> 45022380032 pool_reserved_bytes 72309800960 -> 68249714688 pool_used_bytes 70604893620 -> 66530028980 pool_retained_bytes=14778368 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer: evicted 1 prefix entries + 1 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 7923MB -> 16730MB
+[worker] plain-affinity: declined (history diverged at 131610 of checkpoint 131680; 1 parked, 131786 prompt tokens; model q38)
+[prefix-cache] hit: 131520 of 131786 prompt tokens from cache (model q38)
+[spec-k] model="q38" tenant="55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191" K=0 source=cost-model prompt=131786 cached=131520 lcp=131520 active=8 wave=8 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 131520 tokens, model q38)
+[prefix-cache] insert (lcp-split): 131744 tokens, 4069.2MB (resident 8375.8MB / 50728MB, model q38, ns "55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191")
+[gdn-census] sample 196 chatcmpl-ed75bb3f816520581523c8dbd46ae257 prime rows=131744 copy=838ms total=860ms
+[gdn-census] sample 197 chatcmpl-ed75bb3f816520581523c8dbd46ae257 decode rows=131787 copy=814ms total=836ms
+[meter] admit id=chatcmpl-738a0769e583582bed9357abccedd159 tenant=default lane=interactive model="q38"
+[admission] request cost: model="q38" ctx=132837 path=plain = 29696 B/token x ctx + 4577MB prefill-workspace + 1545MB fixed = 10067MB
+[admit-oom] reclaim spared the prompt's prefix entry (131520 tokens, model q38)
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=4069163008 pool_cached_gain_bytes=4069163008 trim_released_bytes=3590324224 driver_free_bytes 41437011968 -> 45100011520 pool_reserved_bytes 71772930048 -> 68182605824 pool_used_bytes 70602252532 -> 66533089524 pool_retained_bytes=478838784 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer: evicted 1 prefix entries + 1 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 7937MB -> 16733MB
+[worker] plain-affinity: declined (history diverged at 131610 of checkpoint 131712; 1 parked, 131749 prompt tokens; model q38)
+[prefix-cache] hit: 131520 of 131749 prompt tokens from cache (model q38)
+[spec-k] model="q38" tenant="55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191" K=0 source=cost-model prompt=131749 cached=131520 lcp=131520 active=8 wave=8 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 131520 tokens, model q38)
+[prefix-cache] insert (lcp-split): 131712 tokens, 4068.2MB (resident 8374.8MB / 50728MB, model q38, ns "55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191")
+[gdn-census] sample 198 chatcmpl-738a0769e583582bed9357abccedd159 prime rows=131712 copy=826ms total=848ms
+[gdn-census] sample 199 chatcmpl-738a0769e583582bed9357abccedd159 decode rows=131750 copy=850ms total=872ms
+[gdn-census] sample 200 chatcmpl-603cde9d01dd705b5e902d833980bb7a decode rows=131902 copy=829ms total=849ms
+[gdn-census] sample 201 chatcmpl-93764c5b8410e6841c472e63f21fb1ff decode rows=131880 copy=835ms total=857ms
+[gdn-census] sample 202 chatcmpl-66c17e1374c86f4ba1a6098ea348076b decode rows=131838 copy=847ms total=869ms
+[gdn-census] sample 203 chatcmpl-f5a2ba89bf8f3d812489adeb2fa13098 decode rows=131869 copy=840ms total=860ms
+[meter] admit id=chatcmpl-325981d23a3abbc8d295f26a913a355b tenant=default lane=interactive model="q38"
+[admission] request cost: model="q38" ctx=132831 path=plain = 29696 B/token x ctx + 4577MB prefill-workspace + 1545MB fixed = 10066MB
+[admit-oom] reclaim spared the prompt's prefix entry (131520 tokens, model q38)
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=4068212736 pool_cached_gain_bytes=4068212736 trim_released_bytes=3388997632 driver_free_bytes 41559035904 -> 45017243648 pool_reserved_bytes 71638712320 -> 68249714688 pool_used_bytes 70602406580 -> 66534193844 pool_retained_bytes=679215104 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer: evicted 1 prefix entries + 1 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 7924MB -> 16716MB
+[worker] plain-affinity: declined (history diverged at 131612 of checkpoint 131680; 1 parked, 131743 prompt tokens; model q38)
+[prefix-cache] hit: 131520 of 131743 prompt tokens from cache (model q38)
+[spec-k] model="q38" tenant="55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191" K=0 source=cost-model prompt=131743 cached=131520 lcp=131520 active=8 wave=8 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 131520 tokens, model q38)
+[prefix-cache] insert (lcp-split): 131712 tokens, 4068.2MB (resident 8374.8MB / 50728MB, model q38, ns "55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191")
+[gdn-census] sample 204 chatcmpl-325981d23a3abbc8d295f26a913a355b prime rows=131712 copy=820ms total=841ms
+[gdn-census] sample 205 chatcmpl-9d78e3ffd3e5aec818c11ff2d3e747dc decode rows=131975 copy=833ms total=855ms
+[gdn-census] sample 206 chatcmpl-325981d23a3abbc8d295f26a913a355b decode rows=131744 copy=817ms total=839ms
+[meter] admit id=chatcmpl-52fb5ac79b789493e2cf7740ceafca8a tenant=default lane=interactive model="q38"
+[admission] request cost: model="q38" ctx=132943 path=plain = 29696 B/token x ctx + 4579MB prefill-workspace + 1545MB fixed = 10072MB
+[admit-oom] reclaim spared the prompt's prefix entry (131520 tokens, model q38)
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=4068212736 pool_cached_gain_bytes=4068212736 trim_released_bytes=3388997632 driver_free_bytes 41512693760 -> 44970897408 pool_reserved_bytes 71638712320 -> 68249714688 pool_used_bytes 70602722100 -> 66534509364 pool_retained_bytes=679215104 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer: evicted 1 prefix entries + 1 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 7877MB -> 16669MB
+[worker] plain-affinity: declined (history diverged at 131612 of checkpoint 131712; 1 parked, 131855 prompt tokens; model q38)
+[prefix-cache] hit: 131520 of 131855 prompt tokens from cache (model q38)
+[spec-k] model="q38" tenant="55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191" K=0 source=cost-model prompt=131855 cached=131520 lcp=131520 active=8 wave=8 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 131520 tokens, model q38)
+[prefix-cache] insert (lcp-split): 131808 tokens, 4071.1MB (resident 8377.7MB / 50728MB, model q38, ns "55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191")
+[gdn-census] sample 207 chatcmpl-52fb5ac79b789493e2cf7740ceafca8a prime rows=131808 copy=830ms total=851ms
+[gdn-census] sample 208 chatcmpl-52fb5ac79b789493e2cf7740ceafca8a decode rows=131856 copy=825ms total=847ms
+[meter] admit id=chatcmpl-e9d6438c193bd0515cb1e9ff8e75ab69 tenant=default lane=interactive model="q38"
+[admission] request cost: model="q38" ctx=132865 path=plain = 29696 B/token x ctx + 4578MB prefill-workspace + 1545MB fixed = 10068MB
+[admit-oom] reclaim spared the prompt's prefix entry (131520 tokens, model q38)
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=4071063552 pool_cached_gain_bytes=4071063552 trim_released_bytes=3623878656 driver_free_bytes 41179750400 -> 44876636160 pool_reserved_bytes 71974256640 -> 68350377984 pool_used_bytes 70610179508 -> 66539115956 pool_retained_bytes=447184896 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer: evicted 1 prefix entries + 1 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 7876MB -> 16675MB
+[worker] plain-affinity: declined (history diverged at 131611 of checkpoint 131712; 1 parked, 131777 prompt tokens; model q38)
+[prefix-cache] hit: 131520 of 131777 prompt tokens from cache (model q38)
+[spec-k] model="q38" tenant="55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191" K=0 source=cost-model prompt=131777 cached=131520 lcp=131520 active=8 wave=8 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 131520 tokens, model q38)
+[prefix-cache] insert (lcp-split): 131744 tokens, 4069.2MB (resident 8375.8MB / 50728MB, model q38, ns "55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191")
+[gdn-census] sample 209 chatcmpl-e9d6438c193bd0515cb1e9ff8e75ab69 prime rows=131744 copy=837ms total=864ms
+[gdn-census] sample 210 chatcmpl-e9d6438c193bd0515cb1e9ff8e75ab69 decode rows=131778 copy=817ms total=839ms
+[gdn-census] sample 211 chatcmpl-4012cb0d8cb88eb8de19ae7a9cf2f87d decode rows=132082 copy=844ms total=866ms
+[gdn-census] sample 212 chatcmpl-ed75bb3f816520581523c8dbd46ae257 decode rows=131915 copy=842ms total=863ms
+[meter] admit id=chatcmpl-59753afeedce44e219b383e28ea17af9 tenant=default lane=interactive model="q38"
+[admission] request cost: model="q38" ctx=132906 path=plain = 29696 B/token x ctx + 4579MB prefill-workspace + 1545MB fixed = 10070MB
+[admit-oom] reclaim spared the prompt's prefix entry (131520 tokens, model q38)
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=4069163008 pool_cached_gain_bytes=4069163008 trim_released_bytes=3590324224 driver_free_bytes 41266913280 -> 44921266176 pool_reserved_bytes 71974256640 -> 68383932416 pool_used_bytes 70609446388 -> 66540283380 pool_retained_bytes=478838784 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer: evicted 1 prefix entries + 1 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 7962MB -> 16750MB
+[worker] plain-affinity: declined (history diverged at 131610 of checkpoint 131744; 1 parked, 131818 prompt tokens; model q38)
+[prefix-cache] hit: 131520 of 131818 prompt tokens from cache (model q38)
+[spec-k] model="q38" tenant="55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191" K=0 source=cost-model prompt=131818 cached=131520 lcp=131520 active=8 wave=8 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 131520 tokens, model q38)
+[prefix-cache] insert (lcp-split): 131776 tokens, 4070.1MB (resident 8376.7MB / 50728MB, model q38, ns "55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191")
+[gdn-census] sample 213 chatcmpl-59753afeedce44e219b383e28ea17af9 prime rows=131776 copy=827ms total=849ms
+[gdn-census] sample 214 chatcmpl-59753afeedce44e219b383e28ea17af9 decode rows=131819 copy=827ms total=848ms
+[gdn-census] sample 215 chatcmpl-738a0769e583582bed9357abccedd159 decode rows=131878 copy=840ms total=862ms
+[gdn-census] sample 216 chatcmpl-9d78e3ffd3e5aec818c11ff2d3e747dc decode rows=132103 copy=823ms total=844ms
+[gdn-census] sample 217 chatcmpl-325981d23a3abbc8d295f26a913a355b decode rows=131872 copy=793ms total=814ms
+[meter] admit id=chatcmpl-07995782560a3eefc708f6881cb5c9e0 tenant=default lane=interactive model="q38"
+[gdn-census] sample 218 chatcmpl-52fb5ac79b789493e2cf7740ceafca8a decode rows=131984 copy=824ms total=845ms
+[admission] request cost: model="q38" ctx=132790 path=plain = 29696 B/token x ctx + 4576MB prefill-workspace + 1545MB fixed = 10064MB
+[admit-oom] reclaim spared the prompt's prefix entry (131520 tokens, model q38)
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=4070113280 pool_cached_gain_bytes=4070113280 trim_released_bytes=3690987520 driver_free_bytes 40994029568 -> 44751101952 pool_reserved_bytes 72209137664 -> 68518150144 pool_used_bytes 70612510644 -> 66542397364 pool_retained_bytes=379125760 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer: evicted 1 prefix entries + 1 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 7922MB -> 16714MB
+[worker] plain-affinity: declined (history diverged at 131612 of checkpoint 131808; 1 parked, 131702 prompt tokens; model q38)
+[prefix-cache] hit: 131520 of 131702 prompt tokens from cache (model q38)
+[spec-k] model="q38" tenant="55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191" K=0 source=cost-model prompt=131702 cached=131520 lcp=131520 active=8 wave=8 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 131520 tokens, model q38)
+[prefix-cache] insert (lcp-split): 131680 tokens, 4067.3MB (resident 8373.9MB / 50728MB, model q38, ns "55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191")
+[gdn-census] sample 219 chatcmpl-07995782560a3eefc708f6881cb5c9e0 prime rows=131680 copy=844ms total=865ms
+[gdn-census] sample 220 chatcmpl-07995782560a3eefc708f6881cb5c9e0 decode rows=131703 copy=824ms total=846ms
+[meter] admit id=chatcmpl-802f37b26839cb2eaf2317f85cc88028 tenant=default lane=interactive model="q38"
+[admission] request cost: model="q38" ctx=132849 path=plain = 29696 B/token x ctx + 4578MB prefill-workspace + 1545MB fixed = 10067MB
+[admit-oom] reclaim spared the prompt's prefix entry (131520 tokens, model q38)
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=4067262464 pool_cached_gain_bytes=4067262464 trim_released_bytes=3388997632 driver_free_bytes 41328140288 -> 44786487296 pool_reserved_bytes 71840038912 -> 68451041280 pool_used_bytes 70607419636 -> 66540157172 pool_retained_bytes=678264832 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer: evicted 1 prefix entries + 1 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 7889MB -> 16684MB
+[worker] plain-affinity: declined (history diverged at 131612 of checkpoint 131712; 1 parked, 131761 prompt tokens; model q38)
+[prefix-cache] hit: 131520 of 131761 prompt tokens from cache (model q38)
+[spec-k] model="q38" tenant="55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191" K=0 source=cost-model prompt=131761 cached=131520 lcp=131520 active=8 wave=8 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 131520 tokens, model q38)
+[prefix-cache] insert (lcp-split): 131744 tokens, 4069.2MB (resident 8375.8MB / 50728MB, model q38, ns "55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191")
+[gdn-census] sample 221 chatcmpl-802f37b26839cb2eaf2317f85cc88028 prime rows=131744 copy=830ms total=851ms
+[gdn-census] sample 222 chatcmpl-802f37b26839cb2eaf2317f85cc88028 decode rows=131762 copy=835ms total=857ms
+[gdn-census] sample 223 chatcmpl-e9d6438c193bd0515cb1e9ff8e75ab69 decode rows=131906 copy=843ms total=865ms
+[meter] admit id=chatcmpl-2c841de247ae2adf4f14380e51147e61 tenant=default lane=interactive model="q38"
+[admission] request cost: model="q38" ctx=132822 path=plain = 29696 B/token x ctx + 4577MB prefill-workspace + 1545MB fixed = 10066MB
+[admit-oom] reclaim spared the prompt's prefix entry (131520 tokens, model q38)
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=4069163008 pool_cached_gain_bytes=4069163008 trim_released_bytes=3523215360 driver_free_bytes 41217994752 -> 44812652544 pool_reserved_bytes 71940702208 -> 68417486848 pool_used_bytes 70606638260 -> 66537475252 pool_retained_bytes=545947648 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer: evicted 1 prefix entries + 1 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 7882MB -> 16678MB
+[worker] plain-affinity: declined (history diverged at 131612 of checkpoint 131744; 1 parked, 131734 prompt tokens; model q38)
+[prefix-cache] hit: 131520 of 131734 prompt tokens from cache (model q38)
+[spec-k] model="q38" tenant="55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191" K=0 source=cost-model prompt=131734 cached=131520 lcp=131520 active=8 wave=8 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 131520 tokens, model q38)
+[prefix-cache] insert (lcp-split): 131712 tokens, 4068.2MB (resident 8374.8MB / 50728MB, model q38, ns "55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191")
+[gdn-census] sample 224 chatcmpl-2c841de247ae2adf4f14380e51147e61 prime rows=131712 copy=830ms total=852ms
+[gdn-census] sample 225 chatcmpl-2c841de247ae2adf4f14380e51147e61 decode rows=131735 copy=825ms total=846ms
+[gdn-census] sample 226 chatcmpl-4012cb0d8cb88eb8de19ae7a9cf2f87d decode rows=132210 copy=860ms total=882ms
+[meter] admit id=chatcmpl-5fd11fd62016733d96fee59f8904e50d tenant=default lane=interactive model="q38"
+[admission] request cost: model="q38" ctx=133031 path=plain = 29696 B/token x ctx + 4581MB prefill-workspace + 1545MB fixed = 10076MB
+[admit-oom] reclaim spared the prompt's prefix entry (131520 tokens, model q38)
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=4068212736 pool_cached_gain_bytes=4068212736 trim_released_bytes=3388997632 driver_free_bytes 41421205504 -> 44871282688 pool_reserved_bytes 71806484480 -> 68417486848 pool_used_bytes 70605214708 -> 66537001972 pool_retained_bytes=679215104 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer: evicted 1 prefix entries + 1 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 7952MB -> 16737MB
+[worker] plain-affinity: declined (history diverged at 131612 of checkpoint 131712; 1 parked, 131943 prompt tokens; model q38)
+[prefix-cache] hit: 131520 of 131943 prompt tokens from cache (model q38)
+[spec-k] model="q38" tenant="55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191" K=0 source=cost-model prompt=131943 cached=131520 lcp=131520 active=8 wave=8 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 131520 tokens, model q38)
+[prefix-cache] insert (lcp-split): 131904 tokens, 4073.9MB (resident 8380.5MB / 50728MB, model q38, ns "55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191")
+[gdn-census] sample 227 chatcmpl-5fd11fd62016733d96fee59f8904e50d prime rows=131904 copy=838ms total=859ms
+[gdn-census] sample 228 chatcmpl-5fd11fd62016733d96fee59f8904e50d decode rows=131944 copy=843ms total=871ms
+[gdn-census] sample 229 chatcmpl-59753afeedce44e219b383e28ea17af9 decode rows=131947 copy=836ms total=857ms
+[meter] admit id=chatcmpl-6fcdd128ced1b36b540fd04c7b6963fd tenant=default lane=interactive model="q38"
+[admission] request cost: model="q38" ctx=132858 path=plain = 29696 B/token x ctx + 4578MB prefill-workspace + 1545MB fixed = 10068MB
+[admit-oom] reclaim spared the prompt's prefix entry (131520 tokens, model q38)
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=4073914368 pool_cached_gain_bytes=4073914368 trim_released_bytes=3724541952 driver_free_bytes 41021771776 -> 44821024768 pool_reserved_bytes 72242692096 -> 68518150144 pool_used_bytes 70615870004 -> 66541955636 pool_retained_bytes=349372416 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer: evicted 1 prefix entries + 1 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 7984MB -> 16787MB
+[worker] plain-affinity: declined (history diverged at 131612 of checkpoint 131744; 1 parked, 131770 prompt tokens; model q38)
+[prefix-cache] hit: 131520 of 131770 prompt tokens from cache (model q38)
+[spec-k] model="q38" tenant="55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191" K=0 source=cost-model prompt=131770 cached=131520 lcp=131520 active=8 wave=8 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 131520 tokens, model q38)
+[prefix-cache] insert (lcp-split): 131744 tokens, 4069.2MB (resident 8375.8MB / 50728MB, model q38, ns "55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191")
+[gdn-census] sample 230 chatcmpl-6fcdd128ced1b36b540fd04c7b6963fd prime rows=131744 copy=825ms total=852ms
+[gdn-census] sample 231 chatcmpl-6fcdd128ced1b36b540fd04c7b6963fd decode rows=131771 copy=829ms total=851ms
+[meter] admit id=chatcmpl-87c2c9fb54a8c3b780d0d833f731bee0 tenant=default lane=interactive model="q38"
+[admission] request cost: model="q38" ctx=132829 path=plain = 29696 B/token x ctx + 4577MB prefill-workspace + 1545MB fixed = 10066MB
+[admit-oom] reclaim spared the prompt's prefix entry (131520 tokens, model q38)
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=4069163008 pool_cached_gain_bytes=4069163008 trim_released_bytes=3456106496 driver_free_bytes 41210695680 -> 44737331200 pool_reserved_bytes 72108474368 -> 68652367872 pool_used_bytes 70611970548 -> 66542807540 pool_retained_bytes=613056512 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer: evicted 1 prefix entries + 1 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 8037MB -> 16833MB
+[worker] plain-affinity: declined (history diverged at 131612 of checkpoint 131808; 1 parked, 131741 prompt tokens; model q38)
+[prefix-cache] hit: 131520 of 131741 prompt tokens from cache (model q38)
+[spec-k] model="q38" tenant="55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191" K=0 source=cost-model prompt=131741 cached=131520 lcp=131520 active=8 wave=8 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 131520 tokens, model q38)
+[prefix-cache] insert (lcp-split): 131712 tokens, 4068.2MB (resident 8374.8MB / 50728MB, model q38, ns "55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191")
+[gdn-census] sample 232 chatcmpl-87c2c9fb54a8c3b780d0d833f731bee0 prime rows=131712 copy=841ms total=862ms
+[gdn-census] sample 233 chatcmpl-87c2c9fb54a8c3b780d0d833f731bee0 decode rows=131742 copy=834ms total=856ms
+[gdn-census] sample 234 chatcmpl-07995782560a3eefc708f6881cb5c9e0 decode rows=131831 copy=830ms total=851ms
+[gdn-census] sample 235 chatcmpl-802f37b26839cb2eaf2317f85cc88028 decode rows=131890 copy=823ms total=845ms
+[gdn-census] sample 236 chatcmpl-2c841de247ae2adf4f14380e51147e61 decode rows=131863 copy=842ms total=864ms
+[gdn-census] sample 237 chatcmpl-4012cb0d8cb88eb8de19ae7a9cf2f87d decode rows=132338 copy=837ms total=858ms
+[meter] admit id=chatcmpl-4aad9887a21d345f99e78384a2f9a48a tenant=default lane=interactive model="q38"
+[meter] admit id=chatcmpl-d1748c05298fab70ff91dd1d12f8a990 tenant=default lane=interactive model="q38"
+[admission] request cost: model="q38" ctx=132986 path=plain = 29696 B/token x ctx + 4580MB prefill-workspace + 1545MB fixed = 10074MB
+[worker] plain-affinity: declined (history diverged at 131612 of checkpoint 131744; 2 parked, 131898 prompt tokens; model q38)
+[prefix-cache] hit: 131520 of 131898 prompt tokens from cache (model q38)
+[spec-k] model="q38" tenant="55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191" K=0 source=cost-model prompt=131898 cached=131520 lcp=131612 active=7 wave=8 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 131520 tokens, model q38)
+[admission] request cost: model="q38" ctx=132786 path=plain = 29696 B/token x ctx + 4576MB prefill-workspace + 1545MB fixed = 10064MB
+[admit-oom] reclaim spared the prompt's prefix entry (131520 tokens, model q38)
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=4068212736 pool_cached_gain_bytes=4068212736 trim_released_bytes=3925868544 driver_free_bytes 40673910784 -> 44672954368 pool_reserved_bytes 72678899712 -> 68753031168 pool_used_bytes 70453354676 -> 66385141940 pool_retained_bytes=142344192 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer: evicted 1 prefix entries + 0 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 8229MB -> 12370MB
+[worker] plain-affinity: declined (history diverged at 131612 of checkpoint 131744; 2 parked, 131698 prompt tokens; model q38)
+[prefix-cache] hit: 131520 of 131698 prompt tokens from cache (model q38)
+[spec-k] model="q38" tenant="55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191" K=0 source=cost-model prompt=131698 cached=131520 lcp=131520 active=8 wave=8 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 131520 tokens, model q38)
+[prefix-cache] unified memory: insert budget 50714MB (configured 50728MB; live free 50166MB, headroom 3758MB, resident 4307MB, new entry 0MB)
+[prefix-cache] unified memory: insert budget 50656MB (configured 50728MB; live free 46035MB, headroom 3758MB, resident 4307MB, new entry 4073MB)
+[prefix-cache] insert (lcp-split): 131872 tokens, 4073.0MB (resident 8379.6MB / 50656MB, model q38, ns "55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191")
+[prefix-cache] unified memory: insert budget 50481MB (configured 50728MB; live free 45859MB, headroom 3758MB, resident 8380MB, new entry 0MB)
+[prefix-cache] unified memory: insert budget 50413MB (configured 50728MB; live free 41724MB, headroom 3758MB, resident 8380MB, new entry 4067MB)
+[prefix-cache] insert (lcp-split): 131680 tokens, 4067.3MB (resident 12446.9MB / 50413MB, model q38, ns "55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191")
+[gdn-census] sample 238 chatcmpl-5fd11fd62016733d96fee59f8904e50d decode rows=132072 copy=835ms total=857ms
+[gdn-census] sample 239 chatcmpl-4aad9887a21d345f99e78384a2f9a48a prime rows=131872 copy=767ms total=788ms
+[gdn-census] sample 240 chatcmpl-d1748c05298fab70ff91dd1d12f8a990 prime rows=131680 copy=813ms total=834ms
+[gdn-census] sample 241 chatcmpl-4aad9887a21d345f99e78384a2f9a48a decode rows=131899 copy=842ms total=863ms
+[gdn-census] sample 242 chatcmpl-d1748c05298fab70ff91dd1d12f8a990 decode rows=131699 copy=809ms total=830ms
+[meter] admit id=chatcmpl-5c5de90c25f69b4df82b60d3381d9336 tenant=default lane=interactive model="q38"
+[admission] request cost: model="q38" ctx=132751 path=plain = 29696 B/token x ctx + 4576MB prefill-workspace + 1545MB fixed = 10062MB
+[admit-oom] reclaim spared the prompt's prefix entry (131520 tokens, model q38)
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=8140226560 pool_cached_gain_bytes=8140226560 trim_released_bytes=8120172544 driver_free_bytes 32909897728 -> 41191931904 pool_reserved_bytes 80195092480 -> 72074919936 pool_used_bytes 74681267188 -> 66541040628 pool_retained_bytes=20054016 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer: evicted 2 prefix entries + 0 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 7826MB -> 16128MB
+[worker] plain-affinity: declined (history diverged at 131612 of checkpoint 131776; 2 parked, 131663 prompt tokens; model q38)
+[prefix-cache] hit: 131520 of 131663 prompt tokens from cache (model q38)
+[spec-k] model="q38" tenant="55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191" K=0 source=cost-model prompt=131663 cached=131520 lcp=131520 active=8 wave=8 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 131520 tokens, model q38)
+[prefix-cache] unified memory: insert budget 50454MB (configured 50728MB; live free 49905MB, headroom 3758MB, resident 4307MB, new entry 0MB)
+[prefix-cache] unified memory: insert budget 50390MB (configured 50728MB; live free 45776MB, headroom 3758MB, resident 4307MB, new entry 4065MB)
+[prefix-cache] insert (lcp-split): 131616 tokens, 4065.4MB (resident 8372.0MB / 50390MB, model q38, ns "55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191")
+[gdn-census] sample 243 chatcmpl-5c5de90c25f69b4df82b60d3381d9336 prime rows=131616 copy=842ms total=863ms
+[meter] admit id=chatcmpl-38b965989b0c48e448844f15ecb1a7c4 tenant=default lane=interactive model="q38"
+[gdn-census] sample 244 chatcmpl-5c5de90c25f69b4df82b60d3381d9336 decode rows=131664 copy=836ms total=858ms
+[admission] request cost: model="q38" ctx=132859 path=plain = 29696 B/token x ctx + 4578MB prefill-workspace + 1545MB fixed = 10068MB
+[admit-oom] reclaim spared the prompt's prefix entry (131520 tokens, model q38)
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=4065361920 pool_cached_gain_bytes=4065361920 trim_released_bytes=4060086272 driver_free_bytes 36955344896 -> 41087401984 pool_reserved_bytes 76202115072 -> 72142028800 pool_used_bytes 70601511988 -> 66536150068 pool_retained_bytes=5275648 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer: evicted 1 prefix entries + 1 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 7883MB -> 16682MB
+[worker] plain-affinity: declined (history diverged at 131612 of checkpoint 131712; 1 parked, 131771 prompt tokens; model q38)
+[prefix-cache] hit: 131520 of 131771 prompt tokens from cache (model q38)
+[spec-k] model="q38" tenant="55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191" K=0 source=cost-model prompt=131771 cached=131520 lcp=131520 active=8 wave=8 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 131520 tokens, model q38)
+[prefix-cache] insert (lcp-split): 131744 tokens, 4069.2MB (resident 8375.8MB / 50728MB, model q38, ns "55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191")
+[gdn-census] sample 245 chatcmpl-38b965989b0c48e448844f15ecb1a7c4 prime rows=131744 copy=834ms total=861ms
+[gdn-census] sample 246 chatcmpl-38b965989b0c48e448844f15ecb1a7c4 decode rows=131772 copy=827ms total=849ms
+[meter] admit id=chatcmpl-ebf7191b29200be4812e6266726d3b51 tenant=default lane=interactive model="q38"
+[admission] request cost: model="q38" ctx=132761 path=plain = 29696 B/token x ctx + 4576MB prefill-workspace + 1545MB fixed = 10063MB
+[admit-oom] reclaim spared the prompt's prefix entry (131520 tokens, model q38)
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=4069163008 pool_cached_gain_bytes=4069163008 trim_released_bytes=3623878656 driver_free_bytes 41094144000 -> 44791062528 pool_reserved_bytes 72142028800 -> 68518150144 pool_used_bytes 70599570612 -> 66530407604 pool_retained_bytes=445284352 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer: evicted 1 prefix entries + 1 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 7967MB -> 16764MB
+[worker] plain-affinity: declined (history diverged at 131612 of checkpoint 131680; 1 parked, 131673 prompt tokens; model q38)
+[prefix-cache] hit: 131520 of 131673 prompt tokens from cache (model q38)
+[spec-k] model="q38" tenant="55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191" K=0 source=cost-model prompt=131673 cached=131520 lcp=131520 active=8 wave=8 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 131520 tokens, model q38)
+[prefix-cache] insert (lcp-split): 131648 tokens, 4066.3MB (resident 8372.9MB / 50728MB, model q38, ns "55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191")
+[gdn-census] sample 247 chatcmpl-ebf7191b29200be4812e6266726d3b51 prime rows=131648 copy=839ms total=858ms
+[gdn-census] sample 248 chatcmpl-ebf7191b29200be4812e6266726d3b51 decode rows=131674 copy=821ms total=843ms
+[gdn-census] sample 249 chatcmpl-6fcdd128ced1b36b540fd04c7b6963fd decode rows=131899 copy=829ms total=850ms
+[gdn-census] sample 250 chatcmpl-87c2c9fb54a8c3b780d0d833f731bee0 decode rows=131870 copy=830ms total=852ms
+[meter] admit id=chatcmpl-6322f9c467f839900e114c5744e2e816 tenant=default lane=interactive model="q38"
+[admission] request cost: model="q38" ctx=132843 path=plain = 29696 B/token x ctx + 4577MB prefill-workspace + 1545MB fixed = 10067MB
+[admit-oom] reclaim spared the prompt's prefix entry (131520 tokens, model q38)
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=4066312192 pool_cached_gain_bytes=4066312192 trim_released_bytes=3456106496 driver_free_bytes 41339043840 -> 44865667072 pool_reserved_bytes 71907147776 -> 68451041280 pool_used_bytes 70594795124 -> 66528482932 pool_retained_bytes=610205696 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer: evicted 1 prefix entries + 1 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 7979MB -> 16770MB
+[worker] plain-affinity: declined (history diverged at 131612 of checkpoint 131744; 1 parked, 131755 prompt tokens; model q38)
+[prefix-cache] hit: 131520 of 131755 prompt tokens from cache (model q38)
+[spec-k] model="q38" tenant="55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191" K=0 source=cost-model prompt=131755 cached=131520 lcp=131520 active=8 wave=8 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 131520 tokens, model q38)
+[prefix-cache] insert (lcp-split): 131712 tokens, 4068.2MB (resident 8374.8MB / 50728MB, model q38, ns "55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191")
+[gdn-census] sample 251 chatcmpl-6322f9c467f839900e114c5744e2e816 prime rows=131712 copy=836ms total=857ms
+[gdn-census] sample 252 chatcmpl-6322f9c467f839900e114c5744e2e816 decode rows=131756 copy=826ms total=848ms
+[meter] admit id=chatcmpl-5f9eaa6d674ca4c3d0c1caef53046879 tenant=default lane=interactive model="q38"
+[admission] request cost: model="q38" ctx=132980 path=plain = 29696 B/token x ctx + 4580MB prefill-workspace + 1545MB fixed = 10074MB
+[admit-oom] reclaim spared the prompt's prefix entry (131520 tokens, model q38)
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=4068212736 pool_cached_gain_bytes=4068212736 trim_released_bytes=3590324224 driver_free_bytes 41182683136 -> 44845293568 pool_reserved_bytes 72041365504 -> 68451041280 pool_used_bytes 70598367924 -> 66530155188 pool_retained_bytes=477888512 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer: evicted 1 prefix entries + 1 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 7956MB -> 16752MB
+[worker] plain-affinity: declined (history diverged at 131612 of checkpoint 131648; 1 parked, 131892 prompt tokens; model q38)
+[prefix-cache] hit: 131520 of 131892 prompt tokens from cache (model q38)
+[spec-k] model="q38" tenant="55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191" K=0 source=cost-model prompt=131892 cached=131520 lcp=131520 active=8 wave=8 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 131520 tokens, model q38)
+[prefix-cache] insert (lcp-split): 131872 tokens, 4073.0MB (resident 8379.6MB / 50728MB, model q38, ns "55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191")
+[gdn-census] sample 253 chatcmpl-5f9eaa6d674ca4c3d0c1caef53046879 prime rows=131872 copy=833ms total=855ms
+[gdn-census] sample 254 chatcmpl-5f9eaa6d674ca4c3d0c1caef53046879 decode rows=131893 copy=839ms total=860ms
+[meter] admit id=chatcmpl-30bddd8b8956ec20f3ec860fe5c3a650 tenant=default lane=interactive model="q38"
+[admission] request cost: model="q38" ctx=132919 path=plain = 29696 B/token x ctx + 4579MB prefill-workspace + 1545MB fixed = 10071MB
+[admit-oom] reclaim spared the prompt's prefix entry (131520 tokens, model q38)
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=4072964096 pool_cached_gain_bytes=4072964096 trim_released_bytes=3556769792 driver_free_bytes 40968335360 -> 44596932608 pool_reserved_bytes 72242692096 -> 68685922304 pool_used_bytes 70606968628 -> 66534004532 pool_retained_bytes=516194304 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer: evicted 1 prefix entries + 1 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 7939MB -> 16736MB
+[worker] plain-affinity: declined (history diverged at 131612 of checkpoint 131712; 1 parked, 131831 prompt tokens; model q38)
+[prefix-cache] hit: 131520 of 131831 prompt tokens from cache (model q38)
+[spec-k] model="q38" tenant="55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191" K=0 source=cost-model prompt=131831 cached=131520 lcp=131520 active=8 wave=8 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 131520 tokens, model q38)
+[prefix-cache] insert (lcp-split): 131808 tokens, 4071.1MB (resident 8377.7MB / 50728MB, model q38, ns "55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191")
+[gdn-census] sample 255 chatcmpl-30bddd8b8956ec20f3ec860fe5c3a650 prime rows=131808 copy=853ms total=874ms
+[gdn-census] sample 256 chatcmpl-30bddd8b8956ec20f3ec860fe5c3a650 decode rows=131832 copy=837ms total=859ms
+[gdn-census] sample 257 chatcmpl-5fd11fd62016733d96fee59f8904e50d decode rows=132200 copy=849ms total=871ms
+[gdn-census] sample 258 chatcmpl-4aad9887a21d345f99e78384a2f9a48a decode rows=132027 copy=819ms total=841ms
+[gdn-census] sample 259 chatcmpl-d1748c05298fab70ff91dd1d12f8a990 decode rows=131827 copy=822ms total=843ms
+[gdn-census] sample 260 chatcmpl-5c5de90c25f69b4df82b60d3381d9336 decode rows=131792 copy=806ms total=827ms
+[gdn-census] sample 261 chatcmpl-38b965989b0c48e448844f15ecb1a7c4 decode rows=131900 copy=786ms total=807ms
+[meter] admit id=chatcmpl-f13ceeb51d34c5ec62dae4791cadc45f tenant=default lane=interactive model="q38"
+[admission] request cost: model="q38" ctx=132821 path=plain = 29696 B/token x ctx + 4577MB prefill-workspace + 1545MB fixed = 10066MB
+[admit-oom] reclaim spared the prompt's prefix entry (131520 tokens, model q38)
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=4071063552 pool_cached_gain_bytes=4071063552 trim_released_bytes=3489660928 driver_free_bytes 40888639488 -> 44449210368 pool_reserved_bytes 72242692096 -> 68753031168 pool_used_bytes 70610053300 -> 66538989748 pool_retained_bytes=581402624 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer: evicted 1 prefix entries + 1 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 7854MB -> 16651MB
+[worker] plain-affinity: declined (history diverged at 131612 of checkpoint 131680; 1 parked, 131733 prompt tokens; model q38)
+[prefix-cache] hit: 131520 of 131733 prompt tokens from cache (model q38)
+[spec-k] model="q38" tenant="55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191" K=0 source=cost-model prompt=131733 cached=131520 lcp=131520 active=8 wave=8 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 131520 tokens, model q38)
+[prefix-cache] insert (lcp-split): 131712 tokens, 4068.2MB (resident 8374.8MB / 50728MB, model q38, ns "55b14da2377ac9fc539e24395913cab17ae330fe53281c3d7db5bb77ca0fa191")
+[gdn-census] sample 262 chatcmpl-f13ceeb51d34c5ec62dae4791cadc45f prime rows=131712 copy=818ms total=840ms
+[gdn-census] sample 263 chatcmpl-f13ceeb51d34c5ec62dae4791cadc45f decode rows=131734 copy=815ms total=837ms
+[abort] client disconnected: model "q38", prompt 131943 (131520 cached, 132256 fed), 313 generated — billed to abort point, 132.68s
+[abort] client disconnected: model "q38", prompt 131898 (131520 cached, 132082 fed), 184 generated — billed to abort point, 84.09s
+[abort] client disconnected: model "q38", prompt 131663 (131520 cached, 131842 fed), 179 generated — billed to abort point, 75.62s
+[abort] client disconnected: model "q38", prompt 131771 (131520 cached, 131948 fed), 177 generated — billed to abort point, 72.29s
+[abort] client disconnected: model "q38", prompt 131755 (131520 cached, 131867 fed), 112 generated — billed to abort point, 47.16s
+[abort] client disconnected: model "q38", prompt 131892 (131520 cached, 131965 fed), 73 generated — billed to abort point, 33.56s
+[abort] client disconnected: model "q38", prompt 131831 (131520 cached, 131893 fed), 62 generated — billed to abort point, 27.35s
+[abort] client disconnected: model "q38", prompt 131733 (131520 cached, 131776 fed), 43 generated — billed to abort point, 14.75s
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting
+[server] GPU worker shutdown complete
