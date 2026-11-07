@@ -1,0 +1,5 @@
+arm=vmm
+kind=stream
+bin_sha256=ca750a06d76220da23c1bbcaa7dc577be320c9d1097a0af84e090ac6c033d244
+arm_env= MEMRA_KV_ALLOCATOR=vmm
+kind_env=-u MEMRA_SERVE_SPEC CLIENT=day37-stream-client.py PARSER=day37-stream-parse.py CLIENT_ARGS=--arm vmm --requests 32 --concurrency 16

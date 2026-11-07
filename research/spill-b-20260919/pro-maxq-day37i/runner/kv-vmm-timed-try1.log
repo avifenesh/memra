@@ -1,0 +1,14 @@
+out: /mnt/Data/work/memra-maxq/kv-vmm/out-20261105T071533Z
+window: FD 9 holds /mnt/Data/work/evals/gpu1.lock
+card 1: NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition, power.limit 300.00 W, 2 MiB used, driver 615.71.09
+model sha256 checked at 2026-11-05 09:15:40 and the file is unchanged since
+model sha256 ok (1facf36c2db359dcf9c2475cf8f85fe84a528d10aaaaff20f7c0db3d561e024a)
+2026-11-07T09:43:27Z run marker kvvmm-timed-20261107T094327Z-3770831; telemetry pid 3770980, watchdog pid 3770981
+2026-11-07T09:43:27Z timed half start card=1 MEMRA_KV_VMM_GROW=inline
+2026-11-07T09:44:44Z stage 0 (a reading) rc=0 GROW-PLACEMENT extent=1 busy_p95_sum_us=171.3 blocks_behind_queue=no rule p95<=100 -> helper RELEASE-PLACEMENT unmap_or_release_blocks_behind_queue=no blocks_owner_from_helper=no -> owner-tick 
+2026-11-07T10:40:11Z stream boots rc=0
+2026-11-07T10:40:11Z MAXQ-KVVMM-TIMED-DONE
+2026-11-07T10:40:11Z timed chain rc=0
+DAY37 VERDICT card=pro6000-maxq rule=1.7 A1=PASS A2=PASS A5=PASS A6=PASS A7=PASS A3-i=PASS A3-ii=PASS A4=PASS(reading) lines=29 reader_cards=pro6000-maxq -> PROMOTE-ELIGIBLE
+out: /mnt/Data/work/memra-maxq/kv-vmm/out-20261105T071533Z
+power GPU 1: limit 300 W (asked 300, was 250, max 300); 340 samples, 334 at 300 W, first sample off it 2026/11/07 11:50:07.459 -> 250 W, re-asserted 6 times; max 88 C, max fan 65 %; sw_thermal 0, hw_thermal 0, hw_power_brake 0, sw_power_cap 287; throttle: no; thermal stop: none; neighbours none max 0 C, drop: none; restored 250 W; rc=0

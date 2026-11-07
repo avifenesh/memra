@@ -1075,3 +1075,34 @@ server or gate log has a `[gpu-watch] CRITICAL` line. Verbatim (`read.log`, `VER
 **Read as registered (M.5): INCOMPLETE.** No correctness clause failed, so the reading waits on the timed half
 (`run-timed.sh` into this root on a quiet box: stage 0, the ten stream pairs, A1-STREAM, A3 (i) and A3 (ii)). No
 default moves until it reads.
+
+### 2.10 Addendum I on the RTX PRO 6000 Blackwell Max-Q, the timed half (`pro-maxq-day37i/`, 2026-11-07 09:43:27Z to 10:40:11Z)
+
+`run-timed.sh` ran into 2.9's root as M.5 registered, on GPU 1 of the same four-card box, with every card of the box
+free of compute processes (the box-wide idle check passed before the part and before every boot; the training session
+held its next job until the half reported). Same sources and pins as 2.9 (lane `c6f9282c26`, main `17dceb9817`, harness
+`3476ea4dca`, `MEMRA_KV_VMM_GROW=inline`). The whole root was mirrored again (`MIRROR-CHECK.txt`: 1764 `OK`; the three
+lines that fail are `preflight/box-compute-apps-end.csv`, `box-end.csv` and `loadavg-end.txt`, which the runner appends
+to after writing the manifest, and each box copy hashes equal to this mirror's) and exported with
+`research/spill-f-20260919/m1-box-sanitize.py`; `kit/` is 2.9's export, unchanged. The timed part's power summary,
+10 s thermal samples and try log are in `runner/` (`*-kv-vmm-timed-try1.*`). An attempt at 09:39Z refused at its start
+(the caller did not hold the card's window lock) and ran no step.
+
+Power: the wrapper set GPU 1 to 300 W (from 250 W, max 300 W) with `REASSERT=1`; the box's cap timer returned the card
+to 250 W six times and the wrapper set 300 W again each time, so 334 of 340 samples read 300 W. Maximum 88 C, fan 65 %;
+SW power cap active in 287 samples, no thermal or power-brake slowdown, no thermal stop; no neighbour rule (the other
+cards were idle). The timed clauses read on that card at that limit (M.4). Verbatim (`read.log`, `VERDICT.txt`):
+
+- stage 0 (a reading, M.3): `GROW-PLACEMENT extent=1 busy_p95_sum_us=171.3 blocks_behind_queue=no rule p95<=100 -> helper`,
+  `RELEASE-PLACEMENT ... -> owner-tick`; reported, not used to choose (the placement stays inline as pinned)
+- `DAY37 A1-STREAM card=pro6000-maxq pairs=10 differing_rows=0 -> PASS`
+- `DAY37 A3-i card=pro6000-maxq placement=inline grow_events N=4420 p50_us=37.0 p99_us=217.8 max_us=6798 waited=0 tick_ensure_walls N=33808 p99_us=42.0 rule N>=20 p99<=500 -> PASS`
+- A3 (ii), both orders, N=10 per arm: TTFT p50 pooled 5934.08 ms, vmm 5009.41 ms (ratio 0.8442, rule <= 1.05); ITL p99
+  49.06 against 49.33 ms (1.0054, rule <= 1.05); TPOT p50 46.94 against 47.20 ms (1.0055, rule <= 1.02); output
+  tokens/s 275.33 against 274.75 (0.9979, rule >= 0.98) `-> PASS`; each order alone also inside every bound
+- `DAY37 VERDICT card=pro6000-maxq rule=1.7 A1=PASS A2=PASS A5=PASS A6=PASS A7=PASS A3-i=PASS A3-ii=PASS A4=PASS(reading) lines=29 reader_cards=pro6000-maxq -> PROMOTE-ELIGIBLE`
+
+**Read as registered (M.1, 1.7): PROMOTE-ELIGIBLE.** The on-demand planes become the serving default on the RTX PRO 6000
+Blackwell Max-Q Workstation Edition with the inline grow placement, keyed to that card with its own source label (M.3),
+as the next commit. The Server Edition and the RTX 5090 class are unchanged.
+

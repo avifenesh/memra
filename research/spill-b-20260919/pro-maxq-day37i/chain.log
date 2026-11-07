@@ -8,3 +8,14 @@
 2026-11-05T09:27:33Z MAXQ-KVVMM-UNTIMED-DONE
 2026-11-05T09:27:33Z untimed chain rc=0
 reader rc=0 (32 clause lines)
+2026-11-07T09:39:36Z run-timed.sh start card=1 out=/mnt/Data/work/memra-maxq/kv-vmm/out-20261105T071533Z resumed=1 window_min=120 deadline=2026-11-07T11:39:36Z dropped_env=[]
+2026-11-07T09:39:36Z REFUSED: FD 9 is 'closed', not /mnt/Data/work/evals/gpu1.lock: run from the session that holds the card's window (exec 9>/mnt/Data/work/evals/gpu1.lock; flock 9)
+2026-11-07T09:43:26Z run-timed.sh start card=1 out=/mnt/Data/work/memra-maxq/kv-vmm/out-20261105T071533Z resumed=1 window_min=120 deadline=2026-11-07T11:43:26Z dropped_env=[]
+2026-11-07T09:43:27Z untimed half card: 2, 300.00; timed half card: 1,300.00
+2026-11-07T09:43:27Z run marker kvvmm-timed-20261107T094327Z-3770831; telemetry pid 3770980, watchdog pid 3770981
+2026-11-07T09:43:27Z timed half start card=1 MEMRA_KV_VMM_GROW=inline
+2026-11-07T09:44:44Z stage 0 (a reading) rc=0 GROW-PLACEMENT extent=1 busy_p95_sum_us=171.3 blocks_behind_queue=no rule p95<=100 -> helper RELEASE-PLACEMENT unmap_or_release_blocks_behind_queue=no blocks_owner_from_helper=no -> owner-tick 
+2026-11-07T10:40:11Z stream boots rc=0
+2026-11-07T10:40:11Z MAXQ-KVVMM-TIMED-DONE
+2026-11-07T10:40:11Z timed chain rc=0
+reader rc=0 (37 clause lines)
