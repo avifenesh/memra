@@ -8,6 +8,7 @@ live in each dir (jsonl/logs are out of default rg via the repo .ignore — `rg 
 include). `rg '<topic>' research/INDEX.md` = the fast path to any lane's verdict.
 
 dflash-restorable-hit-20261103 | Verdict: on GB10 the cold-drafter conversion lifts GGUF DFlash2 c1 by 17-20% and leaves c2..c32 flat. It acts only with the restore doors armed. ... c28fb5ee0e fixes it: on GB10 the third turn of a session now restores the second turn's tail, and its TTFT drops from 8.3 s to 1.4 s. | dflash-restorable-hit-20261103/README.md
+pdl-90a-fatbin-identity-20261103 | Verdict: the PDL entry-wait change (fix(cuda): keep the PDL entry wait on portable sm_90a, 7e8b3673d4) leaves the sm_120a and sm_100a fatbins byte-identical and changes only sm_90a, where it adds the wait (ACQBULK) and nothing else. Its GPU battery is Hopper-only. | pdl-90a-fatbin-identity-20261103/README.md
 
 cpu-workflow-selection-990-20261003 | Workflow-only plan labels are delegated to their existing mandatory steps. | cpu-workflow-selection-990-20261003/README.md
 

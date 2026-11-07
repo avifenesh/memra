@@ -13230,6 +13230,9 @@ impl HybridModel {
             Self::trace_sigmoid_router_logits(e, il, t, n_expert, n_used, &logits, m, sigmoid)?;
             return Self::moe_ffn_sigmoid_dev(e, m, z, zq8, &logits, t, cfg, il, sigmoid);
         }
+        // Step EP/TP and the resident sigmoid route, both above, are the only consumers of a
+        // native block-E4M3 bank; every route below would compute it as zeros.
+        Self::refuse_block_e4m3_off_route(m, il, "moe_ffn")?;
         // GROUPED MoE PREFILL, sigmoid-router class (glm5_next), MEMRA_MOE_GROUPED_PREFILL
         // default ON since 2026-08-29 (owner-accepted flip; =0 rollback seam; receipts on the
         // flag helper). The prefill-gap attribution (research/glm53-flash-bringup-20260827/
@@ -13479,6 +13482,32 @@ impl HybridModel {
             && moe.expert_used_count as usize <= 8
             && matches!(cfg.clamp_exp_at(il as u32), Some(SwigluClamp::Pre(l)) if l > 1e-6)
             && !crate::cpu_experts::configured()
+    }
+
+    /// A native block-E4M3 expert bank (`QT_F8_E4M3_BLK`) has two consumers: Step EP/TP and the
+    /// resident sigmoid route (`moe_ffn_sigmoid_dev`), the only MoE code that reads its block
+    /// scales. Every other route dispatches expert matvecs by qtype with no block-scale operand,
+    /// and qmatvec_f32's `deq` has no QT_F8_E4M3_BLK case, so it would compute the routed
+    /// experts as zeros. Those routes call this first and refuse instead.
+    fn refuse_block_e4m3_off_route(
+        m: &MoeWeights,
+        il: u16,
+        route: &str,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        if m.gate_exps.qtype != crate::QT_F8_E4M3_BLK
+            && m.up_exps.qtype != crate::QT_F8_E4M3_BLK
+            && m.down_exps.qtype != crate::QT_F8_E4M3_BLK
+        {
+            return Ok(());
+        }
+        Err(format!(
+            "layer {il}: native block-E4M3 expert bank reached the {route} route, which has no \
+             block-E4M3 arm. It runs only through Step EP/TP or the resident sigmoid route \
+             (sigmoid_resident_dev_eligible: a sliding-gated sigmoid-router layer whose bank is \
+             resident on this device, the device router and slab doors on, no MoE observation \
+             env, at most 8 experts per token). MEMRA_ST_E4M3=0 loads the Q8_0 diagnostic"
+        )
+        .into())
     }
 
     fn sigmoid_resident_dev_eligible(
@@ -21778,6 +21807,7 @@ impl HybridModel {
         max_block: usize,
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
         use crate::moe_cache::{BlockId, PROJ_DOWN, PROJ_GATE, PROJ_UP};
+        Self::refuse_block_e4m3_off_route(m, il, "lockstep")?;
         let cfg = &self.cfg;
         let moe = cfg.moe.as_ref().unwrap();
         let n_embd = cfg.n_embd as usize;

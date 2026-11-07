@@ -14,8 +14,8 @@
 // PDL entry (same contract as kernels.cu): cudaGridDependencySynchronize() orders this
 // kernel's loads after the producer's writes while the grid launch overlaps the producer's
 // drain. ONLY kernels carrying this macro may be launched with
-// CU_LAUNCH_ATTRIBUTE_PROGRAMMATIC_STREAM_SERIALIZATION. sm_90+ only.
-#if !defined(MEMRA_PORTABLE_CUDA) && defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 900
+// CU_LAUNCH_ATTRIBUTE_PROGRAMMATIC_STREAM_SERIALIZATION. sm_90+ only, portable 90a included.
+#if defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 900
 #define MEMRA_PDL_ENTRY() cudaGridDependencySynchronize()
 #else
 #define MEMRA_PDL_ENTRY()
@@ -3932,12 +3932,6 @@ extern "C" __global__ void qmatvec_q4_0_mmvq_b16(
         const float* __restrict__ ad, float* __restrict__ y,
         int in_f, int out_f, int m, long row_bytes) {
     q4_0_mmvq_batched<16>(W, aq, ad, y, in_f, out_f, m, row_bytes);
-}
-extern "C" __global__ void qmatvec_q4_0_mmvq_b16_r2(
-        const unsigned char* __restrict__ W, const signed char* __restrict__ aq,
-        const float* __restrict__ ad, float* __restrict__ y,
-        int in_f, int out_f, int m, long row_bytes) {
-    q4_0_mmvq_batched_mr2<16>(W, aq, ad, y, in_f, out_f, m, row_bytes);
 }
 
 
@@ -9976,12 +9970,6 @@ extern "C" __global__ void qmatvec_q4_0_mmvq_b16_rp(
         const float* __restrict__ ad, float* __restrict__ y,
         int in_f, int out_f, int m, long row_bytes) {
     q4_0_mmvq_batched_rp<16>(W, aq, ad, y, in_f, out_f, m, row_bytes);
-}
-extern "C" __global__ void qmatvec_q4_0_mmvq_b16_r2_rp(
-        const unsigned char* __restrict__ W, const signed char* __restrict__ aq,
-        const float* __restrict__ ad, float* __restrict__ y,
-        int in_f, int out_f, int m, long row_bytes) {
-    q4_0_mmvq_batched_mr2_rp<16>(W, aq, ad, y, in_f, out_f, m, row_bytes);
 }
 
 
