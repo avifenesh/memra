@@ -1,0 +1,6 @@
+T=4096 layers=4 gemms=24 reps=5 (median)
+images only     12.469 ms
+gemms only     113.107 ms   110.9 TFLOPS
+serial         125.872 ms,  124.732 ms (A B order)
+overlap        124.193 ms  saves 1.109 ms of 12.469 ms image time (0.9% of serial)
+last output bit-mismatch serial vs overlap: 0/20971520 OK

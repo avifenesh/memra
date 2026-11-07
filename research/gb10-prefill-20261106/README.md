@@ -424,10 +424,11 @@ none of its values.
 
 ## Next exact levers
 
-- F8F4 v2 follow-ups: run the next GEMM's image pre-pass on a side stream under the current GEMM
-  (the tile reads L2 at 50%, the pre-pass is DRAM-bound; 3.1 s at 131k with 8,192-row chunks,
-  about twice that at 4,096); the tile sits at 84-88% of the 132 TFLOPS epilogue ceiling on the
-  large shapes.
+- F8F4 v2 image pass on a side stream: measured, flat (ledger row 29, `gemm-v2-overlap-unit2/`).
+  Under a 24-GEMM layer sequence the overlap saves 0.9% at 4,096 rows (inside the serial runs'
+  spread) and 0.8% at 8,192; the tile's one CTA per SM holds the whole register file, so the image
+  kernel only runs in each GEMM's tail wave. The tile sits at 84-88% of the 132 TFLOPS epilogue
+  ceiling on the large shapes.
 - A wider prime chunk only while no peer is admitted: v2 builds each weight image once per chunk,
   so 8,192 rows are worth about 3.5% at 131k with v2 (167.5 s at 4,096 rows on unit 2 against
   161.8 s at 8,192 on unit 1) where they were worth 0.5% without it; the 8,192 default was dropped
