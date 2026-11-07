@@ -47,7 +47,7 @@ start_server() {  # $1 = MEMRA_GEMMA4_BATCH value or "unset" (the shipping defau
   local envargs=()
   if [ "$1" != "unset" ]; then envargs=(MEMRA_GEMMA4_BATCH="$1"); fi
   env "${envargs[@]}" MEMRA_COMPAT=openai MEMRA_MODELS="g4=$MODEL" MEMRA_ADDR=$ADDR \
-    target/release/memra-server > "$2" 2>&1 &
+    "${CARGO_TARGET_DIR:-target}"/release/memra-server > "$2" 2>&1 &
   SPID=$!
   # Belt and braces on the pre-flight guard: the healthy responder must BE our child.
   for _ in $(seq 180); do

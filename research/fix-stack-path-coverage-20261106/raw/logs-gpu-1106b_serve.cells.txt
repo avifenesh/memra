@@ -1,0 +1,12 @@
+CELL spec-cost-boot PASS [spec-cost] model="q9" depth=2048 pooled=true plain_cap=32 round_overhead=4.23ms pooled_overhead=Some((4, 1.1620361041666651)) verify_ms[1..16]=[13.8 15.6 17.2
+CELL wave-probe-boot PASS [wave-probe] 32 sessions at depth 2048: two 16-row waves 104.7 ms, one 32-row wave 100.8 ms (tensor-core tier 96.8 ms) -> wave cap 32, tensor-core b32 on (25.6s
+CELL mtp-c8-identity PASS 8 concurrent greedy rows equal their solo twins
+CELL mtp-pool-engaged FAIL
+CELL mtp-cost-verdicts PASS [spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2 (K=5 when the loaded MTP head is rank; [spec-k] model="q9" tenant="" K=0 source=cost-model prompt=23 cached=0 lcp=0 active=1 wave=8 placement=single-or-non-pp2; [spec-k] model="q9" tenant="" K=0 source=cost-model prompt=23 cached=0 lcp=0 active=2 wave=8 placement=single-or-non-pp2; [spec-k] model
+CELL mtp-prime-terminated-publish PASS cached_tokens=160
+CELL mtp-vs-plain PASS 4 spec greedy texts equal plain
+CELL drain-vs-plain PASS restored-boundary text vs a fresh plain boot
+CELL wave32-c24-identity PASS 24 rows equal solo; [wave-probe] 32 sessions at depth 2048: two 16-row waves 105.2 ms, one 32-row wave 101.8 ms (tensor-core tier 97.0 ms) -> wave cap 32, tensor-core b32 on (25.6s
+CELL wave16-c24-identity PASS 24 rows equal solo;
+CELL wave32-vs-wave16-solo PASS solo texts equal across the two caps
+CELL vision-old-vs-tip PASS The user wants a one-sentence description of the image. I need to look carefully | The user wants a one-sentence description of the image. I need to look carefully

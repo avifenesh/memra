@@ -163,7 +163,7 @@ serve_up() { # serve_up <model> <draft> <k> <ctx> <tag>
     MEMRA_MODELS="$spec" MEMRA_ADDR="127.0.0.1:$PORT" MEMRA_API_KEY=$KEY \
     MEMRA_CTX="$ctx" MEMRA_MAX_SESSIONS=1 MEMRA_REUSE_POOL=1 MEMRA_PRIME_CHUNK=2048 \
     MEMRA_SPEC_K="$k" \
-        target/release/memra-server > "$LOGDIR/server-$tag.log" 2>&1 &
+        "${CARGO_TARGET_DIR:-target}"/release/memra-server > "$LOGDIR/server-$tag.log" 2>&1 &
     SPID=$!
     local tries=180
     while [ "$tries" -gt 0 ]; do

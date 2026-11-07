@@ -18,7 +18,7 @@ gpu-full-power on >/dev/null 2>&1 || true
 M=/data/ai-ml/hf-models
 LB=/home/avifenesh/projects/llama.cpp/build/bin/llama-bench
 LS=/home/avifenesh/projects/llama.cpp/build/bin/llama-server
-BW=./target/release
+BW="${CARGO_TARGET_DIR:-./target}"/release
 PDIR=research/e2e/prompts
 GDIR=research/gemma4-bringup
 LOGD=research/tune-data/fullboard-logs
@@ -74,10 +74,10 @@ memra_plain() {  # cell model promptfile ngen  (pf ending .txt+ids = token ids a
   local log="$LOGD/$cell-memra.log"
   if echo "$pf" | grep -q 'ids'; then
     # shellcheck disable=SC2046
-    MEMRA_NGEN="$ngen" timeout 600 $BW/run-gen "$model" $(cat "$pf") 2>&1 | tee -a "$log" \
+    MEMRA_NGEN="$ngen" timeout 600 "$BW"/run-gen "$model" $(cat "$pf") 2>&1 | tee -a "$log" \
       | grep -oE "= [0-9.]+ tok/s" | tail -1 | grep -oE "[0-9.]+"
   else
-    MEMRA_NGEN="$ngen" MEMRA_PROMPT_FILE="$pf" timeout 600 $BW/run-gen "$model" 2>&1 | tee -a "$log" \
+    MEMRA_NGEN="$ngen" MEMRA_PROMPT_FILE="$pf" timeout 600 "$BW"/run-gen "$model" 2>&1 | tee -a "$log" \
       | grep -oE "= [0-9.]+ tok/s" | tail -1 | grep -oE "[0-9.]+"
   fi
 }
@@ -125,7 +125,7 @@ memra_spec_qwen() {  # cell model trim k promptfile ngen
   local cell=$1 model=$2 trim=$3 k=$4 pf=$5 ngen=$6
   local log="$LOGD/$cell-memra.log"
   MEMRA_MTP_DRAFT="$trim" MEMRA_SPEC_K="$k" MEMRA_NGEN="$ngen" MEMRA_PROMPT="$(cat "$pf")" \
-    timeout 900 $BW/run-spec "$model" 2>&1 | tee -a "$log" \
+    timeout 900 "$BW"/run-spec "$model" 2>&1 | tee -a "$log" \
     | grep -oE "[0-9.]+ tok/s" | tail -1 | grep -oE "[0-9.]+"
 }
 
@@ -135,7 +135,7 @@ memra_spec_gemma() {  # cell model draft k ranks promptfile ngen
   local envs=(MEMRA_SPEC_ONLY=1 "MEMRA_SPEC=$k" "MEMRA_DRAFT=$draft" "MEMRA_NGEN=$ngen")
   [ -n "$ranks" ] && envs+=("MEMRA_GEMMA_DRAFT_RANKS=$ranks")
   # shellcheck disable=SC2046
-  env "${envs[@]}" timeout 900 $BW/gemma-gate "$model" $(cat "$pf") 2>&1 | tee -a "$log" \
+  env "${envs[@]}" timeout 900 "$BW"/gemma-gate "$model" $(cat "$pf") 2>&1 | tee -a "$log" \
     | grep -oE "spec: [0-9.]+" | grep -oE "[0-9.]+" | tail -1
 }
 

@@ -31,7 +31,7 @@
 # mechanism and must itself be fixed.
 set -uo pipefail
 cd "$(dirname "$0")/.." || exit 1
-PROBE=./target/release/concat-prime-probe
+PROBE="${CARGO_TARGET_DIR:-./target}"/release/concat-prime-probe
 MODEL=""
 PROMPT=research/chunk-invariance-20260805/prompt-pp6257.txt
 ALIGNED=2048,2080

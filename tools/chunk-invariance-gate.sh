@@ -36,7 +36,7 @@
 # nothing to compare and always reported CHUNK-INVARIANT.)
 set -uo pipefail
 cd "$(dirname "$0")/.." || exit 1
-PROBE=./target/release/concat-prime-probe
+PROBE="${CARGO_TARGET_DIR:-./target}"/release/concat-prime-probe
 D=research/chunk-invariance-20260805
 MODEL=""
 CHUNKS=2048,64,32

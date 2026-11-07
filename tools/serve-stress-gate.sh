@@ -62,7 +62,7 @@ MODELSPEC="stress=$MODEL"
 [ -f "$DRAFT" ] && MODELSPEC="stress=$MODEL+$DRAFT"
 
 MEMRA_COMPAT=openai MEMRA_MODELS="$MODELSPEC" MEMRA_ADDR=$ADDR MEMRA_CTX=8192 \
-    target/release/memra-server > "$SLOG" 2>&1 &
+    "${CARGO_TARGET_DIR:-target}"/release/memra-server > "$SLOG" 2>&1 &
 SPID=$!
 stop_server() { kill "${SPID:-0}" 2>/dev/null; wait "${SPID:-0}" 2>/dev/null || true; }
 trap stop_server EXIT

@@ -1,0 +1,17 @@
+head 99c65ab0b20e65405c540b2b5c03882dd1a8d873 start 11:03
+build rc=0
+closure: 12 crates, not compiled from this worktree: none
+stamp server=1
+engine-lib rc=0 passed=691 failed=0
+server rc=0 passed=1079 failed=0
+gguf rc=0 passed=417 failed=0
+gpu-tests-build rc=0
+gpu-tests rc=0 passed=99 failed=0 failed-files: 
+dspark-fault-matrix rc=101 passed=0 failed=1
+battery rc=0 RELEASE BATTERY PASS kernel-check           PASS      ALL GREEN (112 cells, 107 executed, 10 required, 5 skipped; budget 11)
+fast-gate rc=0   kernel-check (FULL): GREEN (278s)   e4b: PASS    g26: PASS    g31: PASS    q35: PASS    q35slru: PASS    q9: PASS    q35spec: PASS  
+serve-smoke rc=0 42 ok, 0 FAIL
+serve-smoke-e4b rc=0 48 ok, 0 FAIL, gemma4 FAIL lines: 0
+serve-smoke-g26 rc=0 48 ok, 0 FAIL, gemma4 FAIL lines: 0
+serve-smoke-g31 rc=0 48 ok, 0 FAIL, gemma4 FAIL lines: 0
+census-e4b SUMMARY {"cells": 72, "with_reasoning": 61, "max_reasoning_bytes": 1718, "over_256": 58, "stream_mismatch": [], "stream_leaks": [], "nonstream_leaks": [], "low_effort_thinking_prompts": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23]}

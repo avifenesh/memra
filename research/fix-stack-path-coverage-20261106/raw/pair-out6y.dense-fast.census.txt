@@ -1,0 +1,36 @@
+census rank=0 slot=0 [2675, 2546, 129, 1, 86, 129, 0] (want AR=129)
+census rank=0 slot=2 [3074, 2945, 129, 1, 86, 129, 0] (want AR=129)
+census rank=0 slot=3 [3174, 3045, 129, 1, 86, 129, 0] (want AR=129)
+census rank=1 slot=0 [2675, 2546, 129, 1, 86, 129, 0] (want AR=129)
+census rank=1 slot=2 [3074, 2945, 129, 1, 86, 129, 0] (want AR=129)
+census rank=1 slot=3 [3174, 3045, 129, 1, 86, 129, 0] (want AR=129)
+census rank=0 slot=0 [2675, 2546, 129, 1, 86, 129, 0] (want AR=129)
+census rank=0 slot=2 [3074, 2945, 129, 1, 86, 129, 0] (want AR=129)
+census rank=0 slot=3 [3174, 3045, 129, 1, 86, 129, 0] (want AR=129)
+census rank=1 slot=0 [2675, 2546, 129, 1, 86, 129, 0] (want AR=129)
+census rank=1 slot=2 [3074, 2945, 129, 1, 86, 129, 0] (want AR=129)
+census rank=1 slot=3 [3174, 3045, 129, 1, 86, 129, 0] (want AR=129)
+DENSE_CENSUS on=false rank=0 segment=0 candidate=[0, 0] control=[494, 253] dot_sha256=7d1086dddaa03d9b9340e054540e28b65cd89696224c8e9864a436f16424dbe5
+DENSE_CENSUS on=false rank=0 segment=1 candidate=[0, 0] control=[0, 2] dot_sha256=eee0dcd49970ef5fadc45e4c965bbbb4a09e0273159bf5db41b4bfc9ecf91b20
+DENSE_CENSUS on=false rank=0 segment=2 candidate=[0, 0] control=[494, 253] dot_sha256=3ea6ac1112134706f50a4634a518195e769f202f19697ef9336e28450818fbb3
+DENSE_CENSUS on=false rank=0 segment=3 candidate=[0, 0] control=[494, 253] dot_sha256=ebd85f39650f655e72d614498e7834c3a9d593c01a0c12c0be082a26718ccf68
+DENSE_CENSUS on=false rank=1 segment=0 candidate=[0, 0] control=[494, 253] dot_sha256=983b5fb5e2d14d39b36382159301116fa20279ad17e31a0d31113d9ae984f026
+DENSE_CENSUS on=false rank=1 segment=1 candidate=[0, 0] control=[0, 2] dot_sha256=e8cd004d13122140033d3083f3118bc0306ba7eb32be8a5ca25ba01c1dee4cb6
+DENSE_CENSUS on=false rank=1 segment=2 candidate=[0, 0] control=[494, 253] dot_sha256=31bc55d6fb93c00377b94237e0ae451e1d40e18e0c6eb69f05ca2166eb474409
+DENSE_CENSUS on=false rank=1 segment=3 candidate=[0, 0] control=[494, 253] dot_sha256=e53602733ae90aae34c9a3a1f803299d120e3c4e6a53b6f7b889efd5bc35f658
+census rank=0 slot=0 [2506, 2377, 129, 1, 86, 129, 0] (want AR=129)
+census rank=0 slot=2 [2905, 2776, 129, 1, 86, 129, 0] (want AR=129)
+census rank=0 slot=3 [3005, 2876, 129, 1, 86, 129, 0] (want AR=129)
+census rank=1 slot=0 [2506, 2377, 129, 1, 86, 129, 0] (want AR=129)
+census rank=1 slot=2 [2905, 2776, 129, 1, 86, 129, 0] (want AR=129)
+census rank=1 slot=3 [3005, 2876, 129, 1, 86, 129, 0] (want AR=129)
+census rank=0 slot=0 [2506, 2377, 129, 1, 86, 129, 0] (want AR=129)
+census rank=0 slot=2 [2905, 2776, 129, 1, 86, 129, 0] (want AR=129)
+census rank=0 slot=3 [3005, 2876, 129, 1, 86, 129, 0] (want AR=129)
+census rank=1 slot=0 [2506, 2377, 129, 1, 86, 129, 0] (want AR=129)
+census rank=1 slot=2 [2905, 2776, 129, 1, 86, 129, 0] (want AR=129)
+census rank=1 slot=3 [3005, 2876, 129, 1, 86, 129, 0] (want AR=129)
+thread 'main' (<tid>) panicked at crates/memra-engine/src/bin/dsv4_dense_fast_gate.rs:241:13:
+assertion `left == right` failed: candidate rank=0 segment=0
+  left: [387, 191]
+ right: [494, 253]

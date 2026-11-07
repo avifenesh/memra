@@ -58,6 +58,29 @@ def source_inputs(repo, contract):
     return result
 
 
+def elf_on_path(name):
+    """The first executable `name` on PATH that is an ELF binary. PATH order is kept on purpose:
+    CI puts an AppArmor-profiled bwrap ahead of /usr/bin/bwrap, which is denied user namespaces
+    there. A shell wrapper earlier on PATH (one around git, say) is skipped: mounted at
+    /usr/bin/<name> it would call itself, and ldd refuses it."""
+    path = os.environ.get("PATH")
+    if path is None:  # shutil.which's fallback when PATH is unset
+        path = os.confstr("CS_PATH") or os.defpath
+    for d in path.split(os.pathsep):
+        if not os.path.isabs(d):
+            continue  # never mount a tool found through the current directory
+        p = Path(d) / name
+        if not (p.is_file() and os.access(p, os.X_OK)):
+            continue
+        try:
+            with open(p, "rb") as f:
+                if f.read(4) == b"\x7fELF":
+                    return str(p)
+        except OSError:
+            continue
+    return None
+
+
 def runtime_inputs():
     # The full visible stdlib is hashed, including extension modules and bytecode.
     # No user/site packages are mounted. Symlinks in this tree are refused.
@@ -66,7 +89,7 @@ def runtime_inputs():
     stdlib = Path(sysconfig.get_path("stdlib")).resolve()
     binaries = {"/usr/bin/python3": Path(sys.executable).resolve()}
     for name in ("git", "bwrap", "sh", "bash", "env", "date", "mktemp", "sort", "rm", "sed", "grep", "tr", "dirname"):
-        found = shutil.which(name)
+        found = elf_on_path(name)
         if not found:
             raise ValueError(f"required runtime unavailable: {name}")
         binaries["/usr/bin/" + name] = Path(found).resolve()

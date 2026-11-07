@@ -1,0 +1,8 @@
+DENSE_CENSUS on=false rank=0 segment=0 candidate=[0, 0] control=[494, 253] dot_sha256=e4cc33d8f0d5bd2afbea51fd155b747e6a85ae941fe52d14fab4c8fdbda025f0
+DENSE_CENSUS on=false rank=0 segment=1 candidate=[0, 0] control=[0, 2] dot_sha256=413f08eac26d98beeaa00e7b8c5c2f7633d4cd17954359011a9291ee9079aa11
+DENSE_CENSUS on=false rank=1 segment=0 candidate=[0, 0] control=[494, 253] dot_sha256=fdb3adb99b0de4a30713ac7151465ebad45be7a8f2f6806efab6f810729fe055
+DENSE_CENSUS on=false rank=1 segment=1 candidate=[0, 0] control=[0, 2] dot_sha256=ac4712421323f61f38b0a788a7308d3b38b87f415579e5a0306cf1b0a3ae2cc6
+thread 'main' (<tid>) panicked at crates/memra-engine/src/bin/dsv4_dense_exact_tail_gate.rs:230:9:
+assertion `left == right` failed: host enqueues describe capture, never graph replay
+  left: [988, 510]
+ right: [988, 508]

@@ -507,5 +507,29 @@ class QualificationTests(unittest.TestCase):
         self.assertIn("inputs.publish == true", publish[:publish.index("release_qualification.py verify")])
 
 
+class GateBinaryPathTests(unittest.TestCase):
+    """A gate must run the binary the build wrote. cargo writes under CARGO_TARGET_DIR when it is
+    set, so a hard-coded target/release path runs whatever an older build left in the tree's own
+    target/. That holds for a sub-gate too: local-ci and fast-gate build, then call scripts that
+    only run. Test fixtures (tools/test_*.sh) build their own sandbox target/ and are skipped; a
+    path that is not a cargo product carries `lint-target-dir: tree` on its line."""
+
+    def test_gates_run_the_binary_the_build_wrote(self):
+        import re
+        bad = []
+        scripts = sorted([*(ROOT / "tools").rglob("*.sh"), *(ROOT / "tools").rglob("*.sh.in")])
+        if not (ROOT / "tools/serve-smoke.sh").is_file() or len(scripts) < 50:
+            self.skipTest(f"only {len(scripts)} tools scripts here (a partial tree, such as a component sandbox)")
+        for p in scripts:
+            if p.name.startswith("test_"):
+                continue
+            for n, line in enumerate(p.read_text(errors="replace").split("\n"), 1):
+                # a comment starts a line or follows whitespace (`${#A[@]}` is not one)
+                code = "" if line.lstrip().startswith("#") else re.split(r"(?:^|\s)#", line, maxsplit=1)[0]
+                if "target/release" in code and "CARGO_TARGET_DIR" not in line and "lint-target-dir: tree" not in line:
+                    bad.append(f"{p.relative_to(ROOT)}:{n}: {line.strip()[:120]}")
+        self.assertEqual(bad, [], 'use "${CARGO_TARGET_DIR:-target}"/release, as tools/serve-smoke.sh does')
+
+
 if __name__ == "__main__":
     unittest.main()

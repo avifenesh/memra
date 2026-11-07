@@ -68,7 +68,7 @@ stop_server() { [ -n "$SPID" ] && kill "$SPID" 2>/dev/null; wait "$SPID" 2>/dev/
 trap stop_server EXIT
 start_server() {  # $1 = model path, $2 = ctx, $3 = log
   MEMRA_COMPAT=openai MEMRA_MODELS="g4=$1" MEMRA_ADDR=$ADDR MEMRA_API_KEY="$KEY" \
-    MEMRA_CTX="$2" target/release/memra-server > "$3" 2>&1 &
+    MEMRA_CTX="$2" "${CARGO_TARGET_DIR:-target}"/release/memra-server > "$3" 2>&1 &
   SPID=$!
   # $SPID is the server itself (direct boot, no flock wrapper), so the post-boot ownership
   # check is sound here: the healthy responder must BE our child, closing the check-to-bind race.

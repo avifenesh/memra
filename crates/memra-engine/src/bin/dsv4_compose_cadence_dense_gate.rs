@@ -17,6 +17,12 @@ use std::{
     time::Instant,
 };
 
+// Total-kernel census mismatches, collected rather than fatal so one run prints every arm's and
+// variant's count: the pins below predate paired GEMV kernels, the fused HC finish and attention
+// TP2's second gather, and a program-derived count needs the control arm's reading too. main
+// fails the gate at the end if any was recorded.
+static KERNEL_CENSUS_MISSES: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
+
 const PRIME: usize = 256;
 #[path = "../dsv4_default_engagement_gate.rs"]
 mod default_engagement;
@@ -193,7 +199,14 @@ fn captures_once(gpu: &Dsv4Gpu, state: &DecodeState, on: bool) {
                 "census slot={slot} {:?} (want kernels={kernels} AR={ars})",
                 rank[slot]
             );
-            assert_eq!(rank[slot][1], kernels, "kernel census slot={slot}");
+            if rank[slot][1] != kernels {
+                let miss = format!(
+                    "kernel census on={on} slot={slot}: read {} against the pin {kernels}",
+                    rank[slot][1]
+                );
+                eprintln!("KERNEL-CENSUS MISMATCH {miss}");
+                KERNEL_CENSUS_MISSES.lock().unwrap().push(miss);
+            }
             assert_eq!(
                 [rank[slot][2], rank[slot][3], rank[slot][4], rank[slot][6]],
                 [ars, 1, 86, 0],
@@ -848,6 +861,13 @@ fn main() {
             args.get(4).is_some_and(|arg| arg == "--reverse"),
         );
     }
+    let misses = KERNEL_CENSUS_MISSES.lock().unwrap();
+    assert!(
+        misses.is_empty(),
+        "{} total-kernel census mismatch(es), every other check passed:\n{}",
+        misses.len(),
+        misses.join("\n")
+    );
 }
 
 #[cfg(test)]

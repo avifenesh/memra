@@ -21,7 +21,16 @@
 # usage: dspark-serve-smoke.sh <trunk.gguf> <draft_export_dir> <server_bin> <evidence_dir>
 set -uo pipefail
 MODEL=$1; DRAFT=$2; BIN=$3; EV=$4
-GPU_LOCK=${MEMRA_GPU_LOCK:-/tmp/memra-serve.lock}
+# The RTX 5090 lock (AGENTS.md lock table); MEMRA_GPU_LOCK overrides it, as `gpulock run` does.
+GPU_LOCK=${MEMRA_GPU_LOCK:-/tmp/memra-5090.lock}
+# A caller that already holds the lock on FD 9 (`gpulock run`) boots under it: a second flock
+# on a fresh descriptor would wait on that very lock. flock -n on the inherited FD succeeds only
+# when that open file description owns the lock or the lock is free.
+LOCK_INHERITED=0
+if [ "$(stat -L -c %d:%i /proc/self/fd/9 2>/dev/null)" = "$(stat -L -c %d:%i "$GPU_LOCK" 2>/dev/null)" ] \
+    && flock -n 9 2>/dev/null; then
+    LOCK_INHERITED=1
+fi
 PORT=${MEMRA_GATE_PORT:-18097}
 mkdir -p "$EV"
 SERVER_PID=""
@@ -49,8 +58,10 @@ boot() { # $1 extra-env  $2 log
         echo "port $PORT already serving — refusing to boot over it"; return 1
     fi
     command -v setsid >/dev/null 2>&1 || { echo "setsid is required for PID-scoped cleanup"; return 1; }
+    local hold=(flock -w 300 "$GPU_LOCK")
+    [ "$LOCK_INHERITED" = 1 ] && hold=()
     # shellcheck disable=SC2086
-    setsid flock -w 300 "$GPU_LOCK" env CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-0} \
+    setsid "${hold[@]}" env CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-0} \
         MEMRA_COMPAT=openai "MEMRA_MODELS=gate=$MODEL" \
         "MEMRA_ADDR=127.0.0.1:$PORT" MEMRA_CTX=8192 MEMRA_MAX_SESSIONS=4 \
         $1 "$BIN" >"$2" 2>&1 &
@@ -226,20 +237,54 @@ echo "== boot 1b: LOW=1 negative-control tooth =="
 boot "MEMRA_DSPARK_SPEC=1 MEMRA_DSPARK_DRAFT=$DRAFT MEMRA_SPEC_GATE_LOW=1" \
     "$EV/serve-low1.log" || exit 1
 run_pair low1 || { echo "FAIL: synchronized LOW=1 pair did not complete"; FAIL=1; }
-LOW1_SPEC=0
 for f in low1-c1 low1-c2; do
     L=$(jq -r '((.choices[0].message.reasoning // "") + (.choices[0].message.content // "")) | length' "$EV/$f.json" 2>/dev/null)
     ERR=$(jq -r '.error // empty' "$EV/$f.json" 2>/dev/null)
     if [ -n "$ERR" ] || [ -z "$L" ] || [ "$L" = "null" ] || [ "$L" -eq 0 ]; then
         echo "FAIL: synchronized LOW=1 $f returned an error or no content"; FAIL=1
     fi
-    spec_plain "$EV/$f.json" || LOW1_SPEC=$((LOW1_SPEC+1))
 done
-if [ "$LOW1_SPEC" = 0 ]; then
-    echo "LOW=1 tooth: synchronized c=2 wave admitted zero drafting rows"
-else
-    echo "FAIL: LOW=1 tooth saw $LOW1_SPEC drafting rows (want 0 for projected wave=2)"; FAIL=1
-fi
+# The pair is two shells released by one go-file and polling it every 10 ms, so on a fast card
+# the server can admit and decide the first request before the second has arrived (seen on an
+# RTX PRO 6000 Max-Q: A decided at wave=1, then B's admit line). A row decided alone at wave 1
+# drafts by design (LOW=1 admits a wave of one). The tooth therefore reads the server's own
+# order: the in-flight count is taken before the `[meter] admit` line, so a row whose `[spec-k]`
+# decision comes after BOTH admit lines saw a wave of two and must not draft. At least one row
+# always does (the later arrival), which keeps the tooth from passing vacuously.
+low1_tooth() { # $1 server log, then response files
+    python3 - "$@" <<'PY'
+import json, re, sys
+log = open(sys.argv[1], errors="replace").read().splitlines()
+rows = []
+for f in sys.argv[2:]:
+    r = json.load(open(f))
+    rows.append({"f": f.rsplit("/", 1)[-1], "id": r.get("id"), "prompt": (r.get("usage") or {}).get("prompt_tokens"),
+                 "drafted": (r.get("usage") or {}).get("spec") is not None})
+admit = {row["id"]: next((i for i, l in enumerate(log) if f"[meter] admit id={row['id']}" in l), None) for row in rows}
+if None in admit.values():
+    print(f"FAIL: LOW=1 tooth: an admit line is missing ({admit})"); sys.exit(1)
+both = max(admit.values())
+fails, after_both = 0, 0
+for row in rows:
+    dec = next((i for i, l in enumerate(log) if i > admit[row["id"]] and l.startswith("[spec-k]")
+                and re.search(rf"\bprompt={row['prompt']}\b", l)), None)
+    if dec is None:
+        print(f"FAIL: LOW=1 tooth: no [spec-k] decision line for {row['f']} (prompt={row['prompt']})"); fails += 1
+        continue
+    wave = re.search(r"\bwave=(\d+)", log[dec])
+    seen_both = dec > both
+    after_both += seen_both
+    state = "drafted" if row["drafted"] else "plain"
+    print(f"LOW=1 tooth: {row['f']} decided {'after both admits' if seen_both else 'before the other arrived'} "
+          f"(logged wave={wave.group(1) if wave else '?'}) -> {state}")
+    if seen_both and row["drafted"]:
+        print(f"FAIL: LOW=1 tooth: {row['f']} drafted although its decision saw a wave of two"); fails += 1
+if after_both == 0:
+    print("FAIL: LOW=1 tooth: no row was decided with both requests in flight"); fails += 1
+sys.exit(1 if fails else 0)
+PY
+}
+low1_tooth "$EV/serve-low1.log" "$EV/low1-c1.json" "$EV/low1-c2.json" || FAIL=1
 stop
 
 echo "== boot 2: spec off (plain oracle) =="

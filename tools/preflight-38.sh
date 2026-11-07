@@ -277,10 +277,10 @@ else
     tail -40 "$build_log"
 fi
 for binary in kernel-check run-gen run-spec concat-prime-probe frspec-owngen memra-server; do
-    if [ -x "target/release/$binary" ]; then
-        pass "binary ready: target/release/$binary"
+    if [ -x "${CARGO_TARGET_DIR:-target}/release/$binary" ]; then
+        pass "binary ready: ${CARGO_TARGET_DIR:-target}/release/$binary"
     else
-        fail "binary missing after build: target/release/$binary"
+        fail "binary missing after build: ${CARGO_TARGET_DIR:-target}/release/$binary"
     fi
 done
 

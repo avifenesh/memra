@@ -192,9 +192,9 @@ fi
 [ -f "$PROMPT" ] || { echo "FAIL: prompt $PROMPT missing"; exit 1; }
 if [ ! -x "$PROBE" ]; then
     if [ "$EXPLICIT_MODEL" = 1 ]; then
-        echo "FAIL: build target/release/argmax-margin-probe before running the requested gate"; exit 1
+        echo "FAIL: build argmax-margin-probe (cargo build --release -p memra-engine --bin argmax-margin-probe) before running the requested gate"; exit 1
     fi
-    echo "argmax-margin-gate: SKIP (build target/release/argmax-margin-probe to enable)"; exit 0
+    echo "argmax-margin-gate: SKIP (build argmax-margin-probe to enable)"; exit 0
 fi
 
 # Logs go to a scratch dir, NOT into the tracked research dir: this gate runs on every

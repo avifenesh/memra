@@ -1,0 +1,55 @@
+wait for gpu-1106 serving step 12:52
+gpu-1106 stopped after census 13:30; its steps 6-7 are replaced below
+bins copied from target-cuda (built at the tip by gpu-1106 step 1)
+fault-matrix rc=0 passed=1 failed=0
+kda-onorm rc=0 passed=1 failed=0
+dspark-cell rc=0 DSPARK restores [(2976, 3109), (3072, 3144)]; strict-prefix restores 2 DSPARK-PAIR CELL PASS 
+cold-drafter rc=0 cold-drafter restore=0 
+dspark-smoke rc=0 on-r1: spec rounds=27 drafted=101 accepted=70 
+CELL door-boot-line-present PASS serve-low1.log: [dspark] prefix restore doors default OFF on "NVIDIA GeForce RTX 5090 Laptop GPU" (gb10=false): restore=false partial=false capture=false; serve-on.log: [dspark] prefix restore doors default OFF on "NVIDIA GeForce RTX 5090 Laptop GPU" (gb10=false): restore=false partial=false capture=false
+CELL door-default-off-on-5090 PASS [dspark] prefix restore doors default OFF on "NVIDIA GeForce RTX 5090 Laptop GPU" (gb10=false): restore=false partial=false capture=false
+CELL pooled-on-c1-identity PASS on-c1=8b2990f9ed7f on-r2=8b2990f9ed7f off-r2=8b2990f9ed7f
+CELL pooled-on-c2-identity PASS on-c2=302af3d30ede on-r3=302af3d30ede off-r3=302af3d30ede
+CELL pooled-dflash2-engaged PASS [spec-pool] pooled DFlash2 cohort engaged: 2 sessions (model gate)
+dspark-smoke-mtpskip rc=0 admit lines: 
+identity rc=0   sized: one entry is 53.8MB, so MEMRA_PREFIX_CACHE_MB=81 holds one and not two KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0) 
+identity-dspark rc=0   sized: one entry is 161.4MB, so MEMRA_PREFIX_CACHE_MB=243 holds one and not two KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0) 
+failure rc=0   ok: the promote caught it: VERIFY FAILED, loud and named   ok: digest-draft: the promote caught it: VERIFY FAILED, loud and named   ok: digest-hidden: the promote caught it: VERIFY FAILED, loud and named   ok: digest-logits: the promote caught it: VERIFY FAILED, loud and named KV-HOST-SPILL FAILUR
+serve-mtp-pool rc=1 5 pass, 1 fail: CELL mtp-pool-engaged FAIL 
+serve-plain-ref rc=0 2 pass, 0 fail: 
+serve-wave32 rc=0 3 pass, 0 fail: 
+serve-dflash-demote rc=1 0 pass, 0 fail: 
+serve-vision-ab rc=0 CELL vision-old-vs-tip PASS The user wants a one-sentence description of the image. I need to look carefully | The user wants a one-sentence description of the image. I need to look carefully 
+sampled-demote rc=0 DEMOTE vs SPEC: common prefix 331 chars; demote len 780, spec len 744; identical=False artifacts: <work>/cells-1106/runs/20261106-135539 VERDICT: PASS 
+dbb-q9-pooled-4x4 rc=0 equal=1 bad=0 PASS
+dbb-q9-pooled-ragged rc=0 equal=1 bad=0 PASS
+dbb-q9-pooled-draft rc=0 equal=6 bad=0 PASS
+dbb-q9-pooled-draft-sampled rc=0 equal=6 bad=0 PASS
+dbb-q9-unified-43 rc=0 equal=1 bad=0 PASS
+dbb-q9-unified-333 rc=0 equal=1 bad=0 PASS
+dbb-q9-pooled-plain rc=0 equal=0 bad=0 FAIL
+dbb-q35-pooled rc=0 equal=1 bad=0 PASS
+dbb-q38-pooled rc=0 equal=1 bad=0 PASS
+tokfp q9 tc=0 chunk=32 rc=0 e1eae82ad9b0
+tokfp q9 tc=0 chunk=16 rc=0 e1eae82ad9b0
+tokfp q9 tc=1 chunk=32 rc=0 e1eae82ad9b0
+tokfp q9 tc=1 chunk=16 rc=0 e1eae82ad9b0
+tokfp q38 tc=0 chunk=32 rc=1 e3b0c44298fc
+tokfp q38 tc=0 chunk=16 rc=1 e3b0c44298fc
+tokfp q38 tc=1 chunk=32 rc=1 e3b0c44298fc
+tokfp q38 tc=1 chunk=16 rc=1 e3b0c44298fc
+dbg q9 B=24 rc=0 FAIL-lines=0
+dbg q9 B=32 rc=0 FAIL-lines=0
+dbg q38 B=8 rc=0 FAIL-lines=0
+dbg q38 B=16 rc=1 FAIL-lines=0
+dbg q38 B=24 rc=1 FAIL-lines=0
+dbg q38 B=32 rc=1 FAIL-lines=0
+kernel-check-tc rc=0 sdpa_naive_w_lo[longctx Tkv=16392 win=2048]: legacy_launch=FAILS(expected) clipped_maxdiff=4.19e-9 OK
+f8f4-check unset rc=0 blk.0.ffn_gate.weight [4096x12288 m=128] arm=INT8 rel-vs-f32=3.307e-3 OK === f8f4-check ALL GREEN === 
+f8f4-check 1 rc=0 blk.0.ffn_gate.weight [4096x12288 m=128] arm=F8F4 rel-vs-f32=3.229e-2 OK === f8f4-check ALL GREEN === 
+probe-build rc=0
+probe-120a rc=0 compute capability: 12.0
+probe-build-auto rc=0 
+probe-auto rc=0 compute capability: 12.0
+sstress rc=0 completed 64/64; wall p50=42.0s p95=46.4s max=47.3s; ttfb p50=3.54s p95=31.00s  (informational) serve-stress-gate: ALL GREEN (c=64 complete, streams well-formed, worker alive, log clean) 
+done 14:26

@@ -36,7 +36,7 @@
  mkdir -p "$EV"
 +printf '%s\n' "$LOCK_PROOF" > "$EV/LOCK.json"
  SERVER_PID=""
- CACHE_MB=${MEMRA_HOSTGATE_CACHE_MB:-1024}
+ CACHE_MB=${MEMRA_HOSTGATE_CACHE_MB:-}
  HOST_MB=${MEMRA_HOSTGATE_HOST_MB:-8192}
 @@ -62,7 +85,7 @@
          return 1
@@ -111,7 +111,7 @@
  mkdir -p "$EV"
 +printf '%s\n' "$LOCK_PROOF" > "$EV/LOCK.json"
  SERVER_PID=""
- CACHE_MB=${MEMRA_HOSTGATE_CACHE_MB:-1024}
+ CACHE_MB=${MEMRA_HOSTGATE_CACHE_MB:-}
  HOST_MB=${MEMRA_HOSTGATE_HOST_MB:-8192}
 @@ -50,7 +73,7 @@
          return 1

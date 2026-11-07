@@ -28,7 +28,7 @@
 set -uo pipefail
 cd "$(dirname "$0")/.." || exit 1
 
-BIN=./target/release/prime-batch-gate
+BIN="${CARGO_TARGET_DIR:-./target}"/release/prime-batch-gate
 CANARY=0
 MODEL=""
 LOGDIR=""

@@ -57,7 +57,16 @@ if [ -n "$DRAFT" ] && [ -n "$MTP_DRAFT" ]; then
     echo "different spec programs; pass exactly one" >&2
     exit 2
 fi
-GPU_LOCK=${MEMRA_GPU_LOCK:-/tmp/memra-serve.lock}
+# The RTX 5090 lock (AGENTS.md lock table); MEMRA_GPU_LOCK overrides it, as `gpulock run` does.
+GPU_LOCK=${MEMRA_GPU_LOCK:-/tmp/memra-5090.lock}
+# A caller that already holds the lock on FD 9 (`gpulock run`) boots under it: a second flock
+# on a fresh descriptor would wait on that very lock. flock -n on the inherited FD succeeds only
+# when that open file description owns the lock or the lock is free.
+LOCK_INHERITED=0
+if [ "$(stat -L -c %d:%i /proc/self/fd/9 2>/dev/null)" = "$(stat -L -c %d:%i "$GPU_LOCK" 2>/dev/null)" ] \
+    && flock -n 9 2>/dev/null; then
+    LOCK_INHERITED=1
+fi
 PORT=${MEMRA_GATE_PORT:-18098}
 HERE=$(cd "$(dirname "$0")" && pwd)
 # Port occupancy guard (GATE-INTEGRITY-20260819 A-16, deferred to this file's merge because
@@ -112,6 +121,20 @@ HIT_SEED=${MEMRA_MIXED_HIT_SEED:-4242}
 HIT_FREQ_PEN=${MEMRA_MIXED_HIT_FREQ_PEN:-0.6}
 REPEATS=6
 OUT_TOKENS=60
+# PREFIX BUDGET, the same for both arms. The derived default (2 x the largest entry, 2260MB at
+# ctx 32768 for the 27B) holds about 14 entries, and each c8 batch request publishes a 64-token
+# seed of about 159MB (nearly all recurrent state): on an RTX PRO 6000 Max-Q an entry lived about
+# 5 s, the shared 480-token entry was evicted before the first repeat, and both arms read
+# cached=0 on every repeat, so the restore under load was never asked. 8192MB holds about 50
+# entries (about 17 s at that rate, repeats every ~6 s). The default budget's sizing on a large
+# card is its own question; this gate asks the restore.
+PREFIX_MB=${MEMRA_MIXED_PREFIX_MB:-8192}
+# STREAM WINDOW. At c8 every repeat is decided at a wave above the spec-admission LOW watermark
+# (source=concurrency; even c2 projects a wave of 3 against LOW=2), so engagement cannot be
+# asked there. The c8 window asserts the cache hits, names each demotion, and keeps the
+# batch-tier floor; a second pair of boots at MEMRA_MIXED_ENGAGE_CONC (default 1, a wave the
+# gate admits) asserts >= 2 engaged hit rows and their byte identity.
+STREAM=${MEMRA_MIXED_ENGAGE_CONC:-1}
 mkdir -p "$EV"
 SERVER_PID=""
 
@@ -120,11 +143,13 @@ boot() { # $1 extra-env  $2 log
     local extra="$1"
     [ -n "$DRAFT" ] && extra="MEMRA_DRAFT=$DRAFT $extra"
     [ -n "$MTP_DRAFT" ] && extra="MEMRA_MTP_DRAFT=$MTP_DRAFT $extra"
+    local hold=(flock -w 300 "$GPU_LOCK")
+    [ "$LOCK_INHERITED" = 1 ] && hold=()
     # shellcheck disable=SC2086
-    flock -w 300 "$GPU_LOCK" env CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-0} \
+    "${hold[@]}" env CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-0} \
         MEMRA_COMPAT=openai "MEMRA_MODELS=gate=$MODEL" \
         "MEMRA_ADDR=127.0.0.1:$PORT" MEMRA_CTX=32768 MEMRA_MAX_SESSIONS=$((CONC + 4)) \
-        $extra "$BIN" >"$2" 2>&1 &
+        "MEMRA_PREFIX_CACHE_MB=$PREFIX_MB" $extra "$BIN" >"$2" 2>&1 &
     SERVER_PID=$!
     for _ in $(seq 1 240); do
         if curl -s --max-time 2 "http://127.0.0.1:$PORT/v1/models" >/dev/null 2>&1; then
@@ -209,6 +234,7 @@ def fire(prompt, tag, temp=0.0, seed=None, freq_pen=0.0):
             "freq_pen": freq_pen,
             "wall_s": time.time() - t0,
             "completion_tokens": u["completion_tokens"],
+            "prompt_tokens": u["prompt_tokens"],
             "cached": u["prompt_tokens_details"]["cached_tokens"],
             "spec": u.get("spec"),
             "text": resp["choices"][0]["text"],
@@ -261,28 +287,31 @@ print(f"[{arm}] window {window_s:.1f}s batch agg {agg:.1f} tok/s "
 PY
 }
 
-echo "== mixed arm: production config (spec on) =="
+echo "== mixed arm: production config (spec on, c$CONC) =="
 boot "" "$EV/mixed-on-server.log"
 run_window mixed-on
 stop
-echo "== mixed arm: spec-off reference =="
+echo "== mixed arm: spec-off reference (c$CONC) =="
 boot "MEMRA_SERVE_SPEC=0 MEMRA_GEMMA4_SPEC=0" "$EV/mixed-off-server.log"
 run_window mixed-off
 stop
+CONC_MAIN=$CONC
+if [ "$STREAM" -lt "$CONC_MAIN" ]; then
+    CONC=$STREAM
+    echo "== stream window: spec on (c$CONC) =="
+    boot "" "$EV/stream-on-server.log"
+    run_window stream-on
+    stop
+    echo "== stream window: spec-off reference (c$CONC) =="
+    boot "MEMRA_SERVE_SPEC=0 MEMRA_GEMMA4_SPEC=0" "$EV/stream-off-server.log"
+    run_window stream-off
+    stop
+    CONC=$CONC_MAIN
+fi
 
-python3 - "$EV" <<'PY'
-import json, re, sys
-ev = sys.argv[1]
-on = json.load(open(f"{ev}/mixed-on-rows.json"))
-off = json.load(open(f"{ev}/mixed-off-rows.json"))
-# How many sampled restores the LOAD GUARD refused by name in the spec-on window. Read from the
-# server's own log, because "which mechanism demoted this row" is not recoverable from the
-# response bodies — and it is the difference between a policy working and a mechanism missing.
-try:
-    with open(f"{ev}/mixed-on-server.log", errors="replace") as f:
-        guard_refusal_count = len(re.findall(r"\[spec-restore-guard\].*REFUSED", f.read()))
-except FileNotFoundError:
-    guard_refusal_count = 0
+python3 - "$EV" "$CONC_MAIN" "$STREAM" <<'PY'
+import json, os, re, sys
+ev, conc_main, stream = sys.argv[1], int(sys.argv[2]), int(sys.argv[3])
 fails = 0
 def check(name, ok, detail=""):
     global fails
@@ -290,111 +319,148 @@ def check(name, ok, detail=""):
     if not ok:
         fails += 1
 
-rep_on = [r for r in on["rows"] if r["tag"].startswith("repeat-")]
-rep_off = {r["tag"]: r for r in off["rows"] if r["tag"].startswith("repeat-")}
-engaged = [r for r in rep_on if r["spec"] and r["spec"]["accepted"] > 0 and r["cached"] > 0]
-demoted = [r for r in rep_on if not r["spec"]]
-check("every repeat row took the cache", all(r["cached"] > 0 for r in rep_on),
-      f"cached={[r['cached'] for r in rep_on]}")
-# ENGAGEMENT vs POLICY (2026-08-19, lane/sampled-restore-load-guard). This assertion used to
-# be unconditional, and on a card whose sampled-restore watermark is SOLO it became
-# UNSATISFIABLE: this cell's whole design is a hit row arriving ALONGSIDE batch load, so demand
-# is >= 2 by construction and every sampled hit is refused by the load guard — measured, at
-# MEMRA_MIXED_CONC=1, 12 of 12 rows refused with `demand 2 > SOLO watermark 1`. A gate that can
-# never pass is the same defect as a gate that always passes (see the boundary-probe arithmetic
-# in spec-on-cache-hit-gate.sh), so the assertion is now keyed on which mechanism did the
-# demoting, read out of the server's own log:
-#   * refusals NAMED by the load guard  -> the POLICY is working; require that every demoted
-#     sampled row named itself, and report engagement instead of gating on it. The coexistence
-#     MECHANISM is then measured by re-running this cell with
-#     MEMRA_SPEC_RESTORE_LOAD_GUARD=0, which is a mechanism test, not a throughput claim.
-#   * NO guard refusals -> the original assertion stands unchanged: >= 2 engaged rows, or the
-#     re-arm mechanism this lane exists for is not being exercised at all.
-guard_refusals = guard_refusal_count
-if guard_refusals > 0:
-    check(f"every load-guard demotion NAMED itself ({guard_refusals} refusal lines for "
-          f"{len(demoted)} demoted rows)", guard_refusals >= len(demoted))
-    print(f"     spec-engaged cache-hit rows: {len(engaged)} (not gated — the SOLO watermark "
-          f"refuses by design at this cell's demand; re-run with "
-          f"MEMRA_SPEC_RESTORE_LOAD_GUARD=0 to exercise the re-arm mechanism)")
+def window(prefix, engage, batch_floor):
+  print(f"== {prefix} window ==")
+  on = json.load(open(f"{ev}/{prefix}-on-rows.json"))
+  off = json.load(open(f"{ev}/{prefix}-off-rows.json"))
+  with open(f"{ev}/{prefix}-on-server.log", errors="replace") as f:
+      log = f.read()
+  # How many sampled restores the LOAD GUARD refused by name in the spec-on window. Read from the
+  # server's own log, because "which mechanism demoted this row" is not recoverable from the
+  # response bodies — and it is the difference between a policy working and a mechanism missing.
+  guard_refusal_count = len(re.findall(r"\[spec-restore-guard\].*REFUSED", log))
+  low = re.search(r"\[spec-gate\] policy .*?\bLOW=(\d+)", log)
+  low = int(low.group(1)) if low else None
+
+  rep_on = [r for r in on["rows"] if r["tag"].startswith("repeat-")]
+  rep_off = {r["tag"]: r for r in off["rows"] if r["tag"].startswith("repeat-")}
+  engaged = [r for r in rep_on if r["spec"] and r["spec"]["accepted"] > 0 and r["cached"] > 0]
+  demoted = [r for r in rep_on if not r["spec"]]
+  check("every repeat row took the cache", all(r["cached"] > 0 for r in rep_on),
+        f"cached={[r['cached'] for r in rep_on]}")
+  # ENGAGEMENT vs POLICY (2026-08-19, lane/sampled-restore-load-guard). This assertion used to
+  # be unconditional, and on a card whose sampled-restore watermark is SOLO it became
+  # UNSATISFIABLE: this cell's whole design is a hit row arriving ALONGSIDE batch load, so demand
+  # is >= 2 by construction and every sampled hit is refused by the load guard — measured, at
+  # MEMRA_MIXED_CONC=1, 12 of 12 rows refused with `demand 2 > SOLO watermark 1`. A gate that can
+  # never pass is the same defect as a gate that always passes (see the boundary-probe arithmetic
+  # in spec-on-cache-hit-gate.sh), so the assertion is now keyed on which mechanism did the
+  # demoting, read out of the server's own log:
+  #   * refusals NAMED by the load guard  -> the POLICY is working; require that every demoted
+  #     sampled row named itself, and report engagement instead of gating on it. The coexistence
+  #     MECHANISM is then measured by re-running this cell with
+  #     MEMRA_SPEC_RESTORE_LOAD_GUARD=0, which is a mechanism test, not a throughput claim.
+  #   * NO guard refusals -> the original assertion stands unchanged: >= 2 engaged rows, or the
+  #     re-arm mechanism this lane exists for is not being exercised at all.
+  guard_refusals = guard_refusal_count
+  if not engage:
+      # The c8 window: every demoted repeat must name the load policy in its own decision line
+      # (`[spec-k] ... source=concurrency ... wave=N` with N > LOW, matched by prompt size).
+      named = 0
+      for r in demoted:
+          hits = [m for m in re.finditer(
+              rf"\[spec-k\][^\n]*source=concurrency[^\n]*\bprompt={r.get('prompt_tokens')}\b[^\n]*\bwave=(\d+)", log)
+              if low is not None and int(m.group(1)) > low]
+          named += bool(hits)
+      check(f"every demoted repeat named the concurrency policy at a wave above LOW={low} "
+            f"({named} of {len(demoted)})", low is not None and named == len(demoted))
+      print(f"     spec-engaged cache-hit rows at c{conc_main}: {len(engaged)} (engagement is "
+            f"asked in the c{stream} stream window)")
+  elif guard_refusals > 0:
+      check(f"every load-guard demotion NAMED itself ({guard_refusals} refusal lines for "
+            f"{len(demoted)} demoted rows)", guard_refusals >= len(demoted))
+      print(f"     spec-engaged cache-hit rows: {len(engaged)} (not gated — the SOLO watermark "
+            f"refuses by design at this cell's demand; re-run with "
+            f"MEMRA_SPEC_RESTORE_LOAD_GUARD=0 to exercise the re-arm mechanism)")
+  else:
+      check(f">= 2 spec-engaged cache-hit rows under load (got {len(engaged)}, "
+            f"{len(demoted)} gate-demoted)", len(engaged) >= 2)
+  sampled = any((r.get("temp") or 0) > 0 for r in rep_on)
+  if not sampled:
+      if engaged:
+          ident = all(r["text"] == rep_off[r["tag"]]["text"] for r in engaged if r["tag"] in rep_off)
+          check(f"spec-engaged hit rows byte-identical to spec-off replay ({len(engaged)} rows)", ident)
+      else:
+          print("  UNAVAILABLE: byte identity, no spec-engaged hit row in this window "
+                "(reported rather than passed over an empty set)")
+  else:
+      # Cross-arm byte identity is unavailable under sampling (distributional exactness).
+      # Substitute seeded reproducibility, with the spec-off arm as the declared control.
+      # SAME-PATH GUARD, and it is load-bearing. The load policy demotes cache-hit rows to
+      # plain whenever projected_active exceeds the spec-admission LOW watermark, and that
+      # decision is made per request — so two fires of the SAME seeded request can take
+      # DIFFERENT programs, one spec and one plain. Byte-comparing those two is exactly the
+      # comparison the repo forbids (sampled spec is distributionally exact, not byte-equal to
+      # plain sampling), and it manufactures a "spec != plain under load" finding out of a
+      # scheduling coincidence. Measured on the 27B at c2: 5 same-path pairs byte-identical,
+      # 1 mixed-path pair differing — the only difference in the window.
+      # THE RESTORED PREFIX LENGTH IS PART OF THE PROGRAM TOO (2026-08-19). The first version of
+      # this guard classified pairs by spec-vs-plain only, and the mechanism arm then reported
+      # 2/6 — which looked like "spec is not seed-reproducible under load" and was not. The rows:
+      # every first fire restored 520 tokens and every twin restored 532, because
+      # MEMRA_SPEC_RESTORE_REPUBLISH republishes the restored session's own boundary and the twin
+      # hits the GROWN entry. A different restored boundary is a different burst structure — the
+      # two pairs whose accepted/drafted happened to match were exactly the two that reproduced.
+      # So a pair is only comparable when it took the same program AND restored the same number of
+      # cached tokens; a differing-length pair is excluded BY NAME, like a mixed-path one. (Plain
+      # rows survive the length difference because plain decode from the same committed tokens is
+      # identical no matter how many of them came from cache — which is why the guarded posture
+      # reads 6/6 and this arm does not.)
+      def pairs(rows):
+          d = {r["tag"]: r for r in rows}
+          same, mixed, grown = [], [], []
+          for t in sorted(k for k in d if k.startswith("repeat-") and not k.endswith("-r2")):
+              if t + "-r2" not in d:
+                  continue
+              a, b = d[t], d[t + "-r2"]
+              if (a["spec"] is None) != (b["spec"] is None):
+                  mixed.append((a, b))
+              elif a["spec"] is not None and a["cached"] != b["cached"]:
+                  grown.append((a, b))
+              else:
+                  same.append((a, b))
+          return same, mixed, grown
+      on_pairs, on_mixed, on_grown = pairs(on["rows"])
+      off_pairs, off_mixed, off_grown = pairs(off["rows"])
+      on_ok = [a["text"] == b["text"] for a, b in on_pairs]
+      off_ok = [a["text"] == b["text"] for a, b in off_pairs]
+      print(f"  sampled seeded-reproducibility (same-path pairs only): spec-on "
+            f"{sum(on_ok)}/{len(on_ok)}, spec-off control {sum(off_ok)}/{len(off_ok)}; "
+            f"excluded — mixed-path: on {len(on_mixed)}, off {len(off_mixed)}; "
+            f"grown-entry: on {len(on_grown)}, off {len(off_grown)}")
+      for a, b in on_mixed:
+          print(f"    excluded {a['tag']}: one fire took spec and its twin was demoted to "
+                f"plain — not the same program, so bytes are not comparable")
+      for a, b in on_grown:
+          print(f"    excluded {a['tag']}: spec fires restored {a['cached']} vs {b['cached']} "
+                f"cached tokens (republished/grown entry) — different boundary, so different "
+                f"burst structure; bytes are not comparable")
+      if off_pairs and not all(off_ok):
+          print("  UNAVAILABLE (declared control fired): batched sampled decode is not "
+                "seed-reproducible under this load in the spec-OFF arm either, so the "
+                "identity question is not a property of the restore. Reported, not failed.")
+      elif not on_pairs:
+          print(f"  UNAVAILABLE: no comparable pair in this window (mixed-path "
+                f"{len(on_mixed)}, grown-entry {len(on_grown)}) — reported rather than passed "
+                f"over an empty set.")
+      else:
+          check("sampled hit repeats reproduce byte-for-byte at one seed (same-path)",
+                all(on_ok), f"{sum(on_ok)}/{len(on_ok)}")
+      pen = [r for r in rep_on if r.get("freq_pen")]
+      pen_eng = [r for r in pen if r["spec"] and r["spec"]["accepted"] > 0 and r["cached"] > 0]
+      check(f"penalized sampled hit row present and took the cache ({len(pen)} rows)",
+            bool(pen) and all(r["cached"] > 0 for r in pen))
+      print(f"  penalized sampled rows engaged: {len(pen_eng)}/{len(pen)} "
+            f"(demotion under the c8 load policy is by design, not a failure)")
+  if batch_floor:
+      ratio = on["batch_agg_tok_s"] / off["batch_agg_tok_s"] if off["batch_agg_tok_s"] else 0
+      check(f"batch tier >= 0.9x spec-off ({ratio:.2f}x)", ratio >= 0.9)
+
+if stream < conc_main:
+    window("mixed", engage=False, batch_floor=True)
+    window("stream", engage=True, batch_floor=False)
 else:
-    check(f">= 2 spec-engaged cache-hit rows under load (got {len(engaged)}, "
-          f"{len(demoted)} gate-demoted)", len(engaged) >= 2)
-sampled = any((r.get("temp") or 0) > 0 for r in rep_on)
-if not sampled:
-    ident = all(r["text"] == rep_off[r["tag"]]["text"] for r in engaged if r["tag"] in rep_off)
-    check("spec-engaged hit rows byte-identical to spec-off replay", ident)
-else:
-    # Cross-arm byte identity is unavailable under sampling (distributional exactness).
-    # Substitute seeded reproducibility, with the spec-off arm as the declared control.
-    # SAME-PATH GUARD, and it is load-bearing. The load policy demotes cache-hit rows to
-    # plain whenever projected_active exceeds the spec-admission LOW watermark, and that
-    # decision is made per request — so two fires of the SAME seeded request can take
-    # DIFFERENT programs, one spec and one plain. Byte-comparing those two is exactly the
-    # comparison the repo forbids (sampled spec is distributionally exact, not byte-equal to
-    # plain sampling), and it manufactures a "spec != plain under load" finding out of a
-    # scheduling coincidence. Measured on the 27B at c2: 5 same-path pairs byte-identical,
-    # 1 mixed-path pair differing — the only difference in the window.
-    # THE RESTORED PREFIX LENGTH IS PART OF THE PROGRAM TOO (2026-08-19). The first version of
-    # this guard classified pairs by spec-vs-plain only, and the mechanism arm then reported
-    # 2/6 — which looked like "spec is not seed-reproducible under load" and was not. The rows:
-    # every first fire restored 520 tokens and every twin restored 532, because
-    # MEMRA_SPEC_RESTORE_REPUBLISH republishes the restored session's own boundary and the twin
-    # hits the GROWN entry. A different restored boundary is a different burst structure — the
-    # two pairs whose accepted/drafted happened to match were exactly the two that reproduced.
-    # So a pair is only comparable when it took the same program AND restored the same number of
-    # cached tokens; a differing-length pair is excluded BY NAME, like a mixed-path one. (Plain
-    # rows survive the length difference because plain decode from the same committed tokens is
-    # identical no matter how many of them came from cache — which is why the guarded posture
-    # reads 6/6 and this arm does not.)
-    def pairs(rows):
-        d = {r["tag"]: r for r in rows}
-        same, mixed, grown = [], [], []
-        for t in sorted(k for k in d if k.startswith("repeat-") and not k.endswith("-r2")):
-            if t + "-r2" not in d:
-                continue
-            a, b = d[t], d[t + "-r2"]
-            if (a["spec"] is None) != (b["spec"] is None):
-                mixed.append((a, b))
-            elif a["spec"] is not None and a["cached"] != b["cached"]:
-                grown.append((a, b))
-            else:
-                same.append((a, b))
-        return same, mixed, grown
-    on_pairs, on_mixed, on_grown = pairs(on["rows"])
-    off_pairs, off_mixed, off_grown = pairs(off["rows"])
-    on_ok = [a["text"] == b["text"] for a, b in on_pairs]
-    off_ok = [a["text"] == b["text"] for a, b in off_pairs]
-    print(f"  sampled seeded-reproducibility (same-path pairs only): spec-on "
-          f"{sum(on_ok)}/{len(on_ok)}, spec-off control {sum(off_ok)}/{len(off_ok)}; "
-          f"excluded — mixed-path: on {len(on_mixed)}, off {len(off_mixed)}; "
-          f"grown-entry: on {len(on_grown)}, off {len(off_grown)}")
-    for a, b in on_mixed:
-        print(f"    excluded {a['tag']}: one fire took spec and its twin was demoted to "
-              f"plain — not the same program, so bytes are not comparable")
-    for a, b in on_grown:
-        print(f"    excluded {a['tag']}: spec fires restored {a['cached']} vs {b['cached']} "
-              f"cached tokens (republished/grown entry) — different boundary, so different "
-              f"burst structure; bytes are not comparable")
-    if off_pairs and not all(off_ok):
-        print("  UNAVAILABLE (declared control fired): batched sampled decode is not "
-              "seed-reproducible under this load in the spec-OFF arm either, so the "
-              "identity question is not a property of the restore. Reported, not failed.")
-    elif not on_pairs:
-        print(f"  UNAVAILABLE: no comparable pair in this window (mixed-path "
-              f"{len(on_mixed)}, grown-entry {len(on_grown)}) — reported rather than passed "
-              f"over an empty set.")
-    else:
-        check("sampled hit repeats reproduce byte-for-byte at one seed (same-path)",
-              all(on_ok), f"{sum(on_ok)}/{len(on_ok)}")
-    pen = [r for r in rep_on if r.get("freq_pen")]
-    pen_eng = [r for r in pen if r["spec"] and r["spec"]["accepted"] > 0 and r["cached"] > 0]
-    check(f"penalized sampled hit row present and took the cache ({len(pen)} rows)",
-          bool(pen) and all(r["cached"] > 0 for r in pen))
-    print(f"  penalized sampled rows engaged: {len(pen_eng)}/{len(pen)} "
-          f"(demotion under the c8 load policy is by design, not a failure)")
-ratio = on["batch_agg_tok_s"] / off["batch_agg_tok_s"] if off["batch_agg_tok_s"] else 0
-check(f"batch tier >= 0.9x spec-off ({ratio:.2f}x)", ratio >= 0.9)
+    window("mixed", engage=True, batch_floor=True)
 sys.exit(1 if fails else 0)
 PY
 rc=$?
