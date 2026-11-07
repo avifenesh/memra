@@ -266,11 +266,7 @@ impl TpEpArState {
         if !(self.push && push_ok && self.instrument.is_none()) {
             return Ok(false);
         }
-        if outputs
-            .iter()
-            .zip(self.last_push_out)
-            .any(|(&o, last)| o == last)
-        {
+        if self.wrote_last(outputs) {
             return Err(
                 "TP/EP push join writes the previous push join's output; consecutive push joins \
                  need distinct buffers"
@@ -279,6 +275,38 @@ impl TpEpArState {
         }
         self.last_push_out = outputs;
         Ok(true)
+    }
+
+    /// Whether the previous push join wrote either rank's buffer in `outputs`.
+    fn wrote_last(&self, outputs: [usize; 2]) -> bool {
+        outputs
+            .iter()
+            .zip(self.last_push_out)
+            .any(|(&o, last)| o == last)
+    }
+
+    /// Which of two output plane pairs the next join writes: the first one the previous push
+    /// join did not write. Under replicated attention the expert join is the walk's only push
+    /// join, so it alternates two planes this way. Layer parity would not do: with an odd trunk
+    /// (43 layers) a walk's last layer and the next walk's first layer land on the same plane.
+    pub(crate) fn unwritten_plane(
+        &self,
+        owner: &Gpu,
+        peer: &Gpu,
+        planes: [&[CudaSlice<f32>; 2]; 2],
+    ) -> Res<usize> {
+        for (index, pair) in planes.into_iter().enumerate() {
+            let mut outputs = [0usize; 2];
+            for (rank, gpu) in [owner, peer].into_iter().enumerate() {
+                gpu.ctx.bind_to_thread().map_err(|e| e.to_string())?;
+                let stream = gpu.stream();
+                outputs[rank] = pair[rank].device_ptr(&stream).0 as usize;
+            }
+            if !self.wrote_last(outputs) {
+                return Ok(index);
+            }
+        }
+        Err("TP/EP expert join: the previous push join wrote both output planes".into())
     }
 
     /// Arm the gate-only phase instrument. `capacity` is records PER RANK for one collection

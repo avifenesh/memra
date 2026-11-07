@@ -1,7 +1,10 @@
-//! B-row decode identity gate (memra #667 lever 2).
+//! B-row decode identity gate (memra #667 lever 2, memra #710 B-row).
+//!
+//! Placement is required (S06:F0): `--placement=tp_ep` is the served cell and runs first;
+//! `--placement=pp` is the PP-2 cell (the `MEMRA_DSV4_TOPOLOGY=pp` rollback).
 //!
 //! Four sessions with distinct prompts of distinct lengths decode `steps` greedy tokens
-//! alone, one `decode_step` each (the served one-row matrix program). Each step's full
+//! alone, one `decode_step` each (the one-row program of the placement). Each step's full
 //! logits row is hashed bit for bit. Then fresh copies of the same sessions decode again
 //! through `decode_rows_logits`: session s joins at step `JOIN[s]` and leaves after its
 //! `steps` tokens, so the batch width runs 1, 2, 3, 4 and back down. The row order rotates
@@ -11,10 +14,10 @@
 //! A request must not change numeric program when a peer joins or leaves, or when its row
 //! moves.
 //!
-//! A second identity arm pipelines two groups of two sessions (`decode_rows_enqueue`, `_wait`,
-//! `_complete`): group 0's step is queued, then group 1's behind it, and each is completed and
-//! queued again in turn, so the two cards run different groups' stages. Every row's logits bits
-//! must again equal its solo step.
+//! On PP-2, a second identity arm pipelines two groups of two sessions (`decode_rows_enqueue`,
+//! `_wait`, `_complete`): group 0's step is queued, then group 1's behind it, and each is
+//! completed and queued again in turn, so the two cards run different groups' stages. Every
+//! row's logits bits must again equal its solo step.
 //!
 //! Timing (after the identity arms, decode wall only): the one-row step against B-row steps
 //! of 1, 2 and 4 rows, and two pipelined groups of 2, reported as ms per step and aggregate
@@ -27,23 +30,25 @@
 //! `nsys profile --capture-range=cudaProfilerApi`. Comparing B=1 with B=2 attributes the cost an
 //! added row brings, kernel by kernel.
 //!
-//! TP/EP mode (`DSV4_ROWS_GATE_TOPOLOGY=tp_ep`, memra #710 B-row): the same sessions on the
-//! served TP/EP program (expert-ID EP, attention TP2). The solo reference is the eager one-row
-//! TP/EP step and the batched arm is the TP/EP B-row step. The pipelined arm does not apply (a
-//! TP/EP step uses both cards). Instead a replay arm arms session 0 for greedy full-token
-//! replay and alternates: replayed steps alone, B-row steps beside session 1 while still
-//! armed, then replayed steps again. Every step's logits bits must equal the solo trace.
+//! On `tp_ep` (memra #710 B-row) the same sessions run the served TP/EP program (expert-ID EP,
+//! attention TP2). The solo reference is the eager one-row TP/EP step and the batched arm is
+//! the TP/EP B-row step. The pipelined arm does not apply (a TP/EP step uses both cards).
+//! Instead a replay arm arms session 0 for greedy full-token replay and alternates: replayed
+//! steps alone, B-row steps beside session 1 while still armed, then replayed steps again.
+//! Every step's logits bits must equal the solo trace.
 //!
-//! Also in TP/EP mode, a graph arm runs the batched schedule through `decode_rows_draw`, whose
+//! Also on `tp_ep`, a graph arm runs the batched schedule through `decode_rows_draw`, whose
 //! steps of two or more rows run a captured graph per batch (memra #710 B-row graphs): every
 //! row's logits bits must again equal the solo trace, and the arm must have captured and
 //! replayed. A sampled graph arm draws every row at the vendor default and must give the
 //! eager B-row step's draws. Timing then adds the graph step at B=2 and 4.
 //!
-//! Usage: `dsv4_rows_gate <model-dir> <source.txt> [steps] [timing-steps]`.
+//! Usage: `dsv4_rows_gate <model-dir> <source.txt> [steps] [timing-steps]
+//! --placement=<tp_ep|pp>`.
 //! Rig law: under the box GPU lock, served defaults (no MEMRA_DSV4_* overrides).
 use memra_engine::dsv4_gpu::{DecodeState, Dsv4Gpu, Dsv4RowDraw, Dsv4SampleCfg};
 use memra_engine::dsv4_source_tape::SourceTape;
+use memra_engine::dsv4_topology::Dsv4Placement;
 use memra_gguf::dsv4_forward::ActQuantVariant;
 use memra_tokenizer::Tokenizer;
 use std::{path::Path, time::Instant};
@@ -400,10 +405,16 @@ fn replay_reentry(
 }
 
 fn main() {
-    let args: Vec<String> = std::env::args().collect();
+    let mut args: Vec<String> = std::env::args().collect();
+    // TP/EP B-row groups need attention TP2, so this gate has no replicated-attention cell.
+    let placement =
+        Dsv4Placement::take_gate_arg(&mut args, &[Dsv4Placement::SERVED, Dsv4Placement::Pp])
+            .unwrap_or_else(|err| panic!("{err}"));
+    let tp_ep = placement.is_tp_ep();
     assert!(
         (3..=5).contains(&args.len()),
-        "usage: dsv4_rows_gate <model-dir> <source.txt> [steps] [timing-steps]"
+        "usage: dsv4_rows_gate <model-dir> <source.txt> [steps] [timing-steps] \
+         --placement=<tp_ep|pp>"
     );
     let steps: usize = args.get(3).map_or(24, |v| v.parse().expect("steps"));
     let timing_steps: usize = args.get(4).map_or(64, |v| v.parse().expect("timing steps"));
@@ -418,18 +429,16 @@ fn main() {
         .collect();
     // Replay admits capacities of at least 512.
     let capacity = (LENS.iter().max().unwrap() + steps.max(timing_steps) + 128).max(512);
-    let tp_ep = match std::env::var("DSV4_ROWS_GATE_TOPOLOGY").as_deref() {
-        Err(_) | Ok("pp") => false,
-        Ok("tp_ep") => true,
-        Ok(other) => panic!("DSV4_ROWS_GATE_TOPOLOGY {other:?} must be pp or tp_ep"),
-    };
-    if tp_ep {
-        Dsv4Gpu::set_tp_ep_topology_for_gate(true);
-        Dsv4Gpu::set_attention_tp_for_gate(true);
-    }
-    let gpu = Dsv4Gpu::load(dir, &[0, 1], ActQuantVariant::RefFp8Round, capacity).expect("load");
+    let gpu = Dsv4Gpu::load(
+        dir,
+        &[0, 1],
+        ActQuantVariant::RefFp8Round,
+        capacity,
+        placement,
+    )
+    .expect("load");
     assert_eq!(gpu.topology().is_tp_ep(), tp_ep);
-    println!("TOPOLOGY {}", if tp_ep { "tp_ep" } else { "pp" });
+    println!("TOPOLOGY {}", placement.name());
     println!(
         "PROTOCOL {{\"sessions\":4,\"prompt_tokens\":{LENS:?},\"join_steps\":{JOIN:?},\"steps\":{steps},\"timing_steps\":{timing_steps},\"greedy\":true,\"compare\":\"full logits bits per step\",\"source_sha256\":\"{}\"}}",
         tape.sha256

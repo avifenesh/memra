@@ -2,13 +2,20 @@
 //!
 //! This gate intentionally exercises only the currently implemented shape:
 //! one-token prime followed by teacher-forced single-token continuation. It
-//! arms TP/EP before loading, refuses DSpark/MTP, and requires both replicated
-//! ranks to execute every trunk layer. It is a correctness/engagement gate,
-//! not a throughput benchmark and has no PP comparison arm.
+//! loads the TP/EP placement it is given, refuses DSpark/MTP, and requires both
+//! ranks to execute every trunk layer (TP/EP puts every layer on both cards; only
+//! `tp_ep_replicated` also replicates attention). It is a correctness/engagement
+//! gate, not a throughput benchmark and has no PP comparison arm.
+//!
+//! Placement is required (S06:F0): `--placement=tp_ep` is the served placement (attention
+//! TP2) and runs first; `--placement=tp_ep_replicated` keeps attention replicated.
+//!
+//! Usage: `dsv4_tp_ep_gate <model-dir> <real-source.txt> --placement=<tp_ep|tp_ep_replicated>`
 
 use memra_engine::dsv4_attention_tp::ATTENTION_TP_NUMERIC_CLASS;
 use memra_engine::dsv4_gpu::{Dsv4Gpu, TP_EP_RANK_ORDER_NUMERIC_CLASS};
 use memra_engine::dsv4_source_tape::SourceTape;
+use memra_engine::dsv4_topology::Dsv4Placement;
 use memra_gguf::dsv4_forward::ActQuantVariant;
 use memra_tokenizer::Tokenizer;
 use sha2::{Digest, Sha256};
@@ -193,8 +200,10 @@ fn run_once(gpu: &Dsv4Gpu, tokens: &[u32], source_sha256: &str) -> Receipt {
     );
     assert_eq!(
         gpu.tp_ep_row_gathers() - gathers_before,
-        2 * u64::from(attention_mode) * steps * trunk_layers,
-        "attention TP2 gathers wo_a groups and wo_b rows once each per layer/token"
+        2 * u64::from(attention_mode) * steps * trunk_layers
+            + u64::from(gpu.vocab_parallel_head_for_gate()) * steps,
+        "attention TP2 gathers wo_a groups and wo_b rows once each per layer/token, \
+         and the vocab-parallel head its logits once per token"
     );
     let attention_after = gpu.attention_tp_rank_calls();
     let attention_rank_calls =
@@ -312,20 +321,27 @@ fn main() {
         std::env::set_var("MEMRA_DSV4_AR_PHASE", "0");
     }
 
-    let args: Vec<String> = std::env::args().collect();
+    let mut args: Vec<String> = std::env::args().collect();
+    let placement = Dsv4Placement::take_gate_arg(
+        &mut args,
+        &[
+            Dsv4Placement::SERVED,
+            Dsv4Placement::TpEp {
+                attention_tp: false,
+            },
+        ],
+    )
+    .unwrap_or_else(|err| panic!("{err}"));
     assert!(
         args.len() == 3 || args.len() == 4,
-        "usage: dsv4_tp_ep_gate <model-dir> <real-source.txt>"
+        "usage: dsv4_tp_ep_gate <model-dir> <real-source.txt> \
+         --placement=<tp_ep|tp_ep_replicated>"
     );
     // The three split-K arms this gate carried are gone with the door
     // (memra #461): one expert program, one numeric class.
     assert!(args.len() == 3, "unknown gate arm");
     println!("MOE_PROGRAM numeric_class=existing_m1_f16_mma");
-    let attention_mode = match std::env::var("MEMRA_DSV4_ATTENTION_TP_GATE").as_deref() {
-        Err(std::env::VarError::NotPresent) | Ok("0") => false,
-        Ok("1") => true,
-        _ => panic!("MEMRA_DSV4_ATTENTION_TP_GATE requires 0 or 1"),
-    };
+    let attention_mode = placement == Dsv4Placement::SERVED;
     let numeric_class = if attention_mode {
         ATTENTION_TP_NUMERIC_CLASS
     } else {
@@ -365,12 +381,10 @@ fn main() {
         128,
     );
 
-    Dsv4Gpu::set_tp_ep_topology_for_gate(true);
-    Dsv4Gpu::set_attention_tp_for_gate(attention_mode);
     println!(
         "PROTOCOL {{\"plain_only\":true,\"topology\":\"tp_ep_all_layers\",\"numeric_class\":\"{numeric_class}\",\"attention_tp\":{attention_mode},\"prime_tokens\":1,\"continuation_tokens\":{CONTINUATION_TOKENS},\"source_sha256\":\"{source_sha256}\",\"dspark\":false}}"
     );
-    let gpu = Dsv4Gpu::load(dir, &[0, 1], ActQuantVariant::RefFp8Round, 256)
+    let gpu = Dsv4Gpu::load(dir, &[0, 1], ActQuantVariant::RefFp8Round, 256, placement)
         .expect("plain-only TP/EP load");
     assert!(gpu.topology().is_tp_ep(), "no silent PP fallback");
     assert_eq!(
@@ -424,6 +438,4 @@ fn main() {
             numeric_class
         );
     }
-    Dsv4Gpu::set_attention_tp_for_gate(false);
-    Dsv4Gpu::set_tp_ep_topology_for_gate(false);
 }

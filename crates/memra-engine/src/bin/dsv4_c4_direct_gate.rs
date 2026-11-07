@@ -1,7 +1,11 @@
 //! Fresh/direct-restored active host C4 versus the canonical all-device program.
+//!
+//! Placement: `pp`, a PP-2 cell. Its states keep C4 history in pinned host RAM, which TP/EP
+//! refuses.
 use memra_engine::dsv4_gpu::{
     DecodeState, DsparkState, Dsv4Gpu, Dsv4SampleCfg, Dsv4Vt, dsv4_sample_row,
 };
+use memra_engine::dsv4_topology::Dsv4Placement;
 use memra_gguf::dsv4_forward::ActQuantVariant;
 use memra_tokenizer::Tokenizer;
 use sha2::{Digest, Sha256};
@@ -138,7 +142,14 @@ fn main() {
         0
     };
     let max_seq = if capacity_test { 1_048_576 } else { 8192 };
-    let gpu = Dsv4Gpu::load(dir, &[0, 1], ActQuantVariant::RefFp8Round, max_seq).expect("model");
+    let gpu = Dsv4Gpu::load(
+        dir,
+        &[0, 1],
+        ActQuantVariant::RefFp8Round,
+        max_seq,
+        Dsv4Placement::Pp,
+    )
+    .expect("model");
     assert!(
         gpu.matrix_moe_enabled(),
         "fresh host C4 needs the matrix program"

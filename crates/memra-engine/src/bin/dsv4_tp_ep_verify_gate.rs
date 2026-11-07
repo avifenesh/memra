@@ -13,13 +13,19 @@
 //! - RESTORE: chunked prime, snapshot to pinned host, restore into a fresh state, then
 //!   verify rounds and plain steps, the served host-cache hit.
 //!
-//! `tpep` runs the arms on the TP/EP walk, `pp` on the PP-2 program as the control: an
-//! inequality both programs show is a property of the shared kernels, one only TP/EP shows
-//! is a TP/EP defect. The two programs are different numeric classes (the TP/EP joins sum
-//! rank partials), so rows are never compared across programs.
+//! Placement is required (S06:F0). `--placement=tp_ep` runs the arms on the served placement
+//! (the TP/EP walk with attention TP2) and runs first; `tp_ep_replicated` keeps attention
+//! replicated; `pp` is the PP-2 cell, the control: an inequality both programs show is a
+//! property of the shared kernels, one only TP/EP shows is a TP/EP defect. The programs are
+//! different numeric classes (the TP/EP joins sum rank partials), so rows are never compared
+//! across programs.
+//!
+//! Usage: `dsv4_tp_ep_verify_gate <model-dir> <real-source.txt>
+//! --placement=<tp_ep|tp_ep_replicated|pp>`
 
 use memra_engine::dsv4_gpu::{DecodeState, Dsv4Gpu};
 use memra_engine::dsv4_source_tape::SourceTape;
+use memra_engine::dsv4_topology::Dsv4Placement;
 use memra_gguf::dsv4_forward::ActQuantVariant;
 use memra_tokenizer::Tokenizer;
 use std::path::Path;
@@ -103,12 +109,25 @@ fn compare(arm: &str, pos: usize, got: &[u32], want: &[u32], fails: &mut Vec<Str
 }
 
 fn main() {
-    let args: Vec<String> = std::env::args().collect();
+    let mut args: Vec<String> = std::env::args().collect();
+    let placement = Dsv4Placement::take_gate_arg(
+        &mut args,
+        &[
+            Dsv4Placement::SERVED,
+            Dsv4Placement::TpEp {
+                attention_tp: false,
+            },
+            Dsv4Placement::Pp,
+        ],
+    )
+    .unwrap_or_else(|err| panic!("{err}"));
     assert!(
-        args.len() == 4 && (args[3] == "tpep" || args[3] == "pp"),
-        "usage: dsv4_tp_ep_verify_gate <model-dir> <real-source.txt> <tpep|pp>"
+        args.len() == 3,
+        "usage: dsv4_tp_ep_verify_gate <model-dir> <real-source.txt> \
+         --placement=<tp_ep|tp_ep_replicated|pp>"
     );
-    let tp_ep = args[3] == "tpep";
+    let tp_ep = placement.is_tp_ep();
+    let attention_tp = placement == Dsv4Placement::SERVED;
     assert_eq!(
         std::env::var("MEMRA_DSV4_DECODE_PATH").as_deref(),
         Ok("device"),
@@ -121,11 +140,6 @@ fn main() {
         ),
         "the gate drives verify rounds itself; the drafter stays unloaded"
     );
-    let attention_tp = match std::env::var("MEMRA_DSV4_ATTENTION_TP_GATE").as_deref() {
-        Err(std::env::VarError::NotPresent) | Ok("0") => false,
-        Ok("1") => true,
-        _ => panic!("MEMRA_DSV4_ATTENTION_TP_GATE requires 0 or 1"),
-    };
     let dir = Path::new(&args[1]);
     let source = SourceTape::read(&args[2]).expect("source tape");
     let tokenizer = Tokenizer::from_hf_dir(dir).expect("tokenizer");
@@ -141,15 +155,14 @@ fn main() {
     let committed: usize = ROUNDS.iter().map(|&(_, n)| n).sum();
     assert!(PROMPT_TOKENS + committed + TMAX <= TAPE_TOKENS);
 
-    Dsv4Gpu::set_tp_ep_topology_for_gate(tp_ep);
-    Dsv4Gpu::set_attention_tp_for_gate(tp_ep && attention_tp);
     println!(
         "PROTOCOL {{\"topology\":\"{}\",\"attention_tp\":{},\"prompt\":{PROMPT_TOKENS},\"tape\":{TAPE_TOKENS},\"chunk\":{CHUNK},\"tmax\":{TMAX},\"rounds\":{ROUNDS:?},\"source_sha256\":\"{}\"}}",
-        args[3],
-        tp_ep && attention_tp,
+        placement.name(),
+        attention_tp,
         source.sha256
     );
-    let gpu = Dsv4Gpu::load(dir, &[0, 1], ActQuantVariant::RefFp8Round, 512).expect("load");
+    let gpu =
+        Dsv4Gpu::load(dir, &[0, 1], ActQuantVariant::RefFp8Round, 512, placement).expect("load");
     assert_eq!(
         gpu.topology().is_tp_ep(),
         tp_ep,
@@ -157,7 +170,7 @@ fn main() {
     );
     assert_eq!(
         gpu.attention_tp_geometry().is_some(),
-        tp_ep && attention_tp,
+        attention_tp,
         "no silent attention fallback"
     );
     // Resident weights per stage: the headroom a replicated drafter or a wider KV has to fit.
@@ -310,20 +323,18 @@ fn main() {
         );
         assert_eq!(gpu.tp_ep_ar_refusal_words().expect("refusal words"), [0, 0]);
     }
-    Dsv4Gpu::set_attention_tp_for_gate(false);
-    Dsv4Gpu::set_tp_ep_topology_for_gate(false);
     for fail in fails.iter().take(40) {
         println!("FAIL {fail}");
     }
     if fails.is_empty() {
         println!(
             "PASS topology={} rows chunk={chunk_rows} verify={verify_rows} restore={restore_rows} bit-equal to sequential",
-            args[3]
+            placement.name()
         );
     } else {
         println!(
             "FAILED topology={} mismatched_rows={}",
-            args[3],
+            placement.name(),
             fails.len()
         );
         std::process::exit(1);

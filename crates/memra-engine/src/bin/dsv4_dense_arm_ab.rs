@@ -28,10 +28,19 @@
 //! mistake these three checks exist to make impossible.
 //!
 //! Usage: `dsv4-dense-arm-ab <model-dir> <real-source.txt> [reps]`
+//!
+//! Placement: `tp_ep` (`Dsv4Placement::SERVED`). The cell measures the served shape, so it loads
+//! the served placement; the 2026-09 served A/B it explains ran on PP-2, before the TP/EP default
+//! (memra #710).
+//! No TP/EP receipt exists yet, and its numbers are not comparable to the PP-2 receipts
+//! (dw-ab-gr1, dw-ab-gr2): on TP/EP split-K runs through the rank-local attention planes,
+//! `ws_device_flips` comes from the one host thread alternating ranks, and the lazy bf16
+//! mirror also covers the dense weights replicated on both ranks, so `mirror_MB` grows.
 use memra_engine::dsv4_gpu::{
     Dsv4Gpu, arm_dense_cutlass_for_gate, dense_cutlass_armed_for_gate,
     dense_cutlass_counts_for_gate,
 };
+use memra_engine::dsv4_topology::Dsv4Placement;
 use memra_gguf::dsv4_forward::ActQuantVariant;
 use memra_tokenizer::Tokenizer;
 use sha2::{Digest, Sha256};
@@ -97,7 +106,14 @@ fn main() {
 
     // Served defaults: the matrix expert program (memra #482) is what loads unless a
     // gate arms the reference executor, and nothing here arms it.
-    let mut gpu = Dsv4Gpu::load(dir, &[0, 1], ActQuantVariant::RefFp8Round, 4096).expect("load");
+    let mut gpu = Dsv4Gpu::load(
+        dir,
+        &[0, 1],
+        ActQuantVariant::RefFp8Round,
+        4096,
+        Dsv4Placement::SERVED,
+    )
+    .expect("load");
 
     let prime = |gpu: &mut Dsv4Gpu| -> f64 {
         let mut state = gpu

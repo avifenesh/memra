@@ -47,8 +47,15 @@
 //! An id outside that band dropping out or climbing in is a REAL bug. Raw overlap and
 //! the 20/21 boundary gaps are always printed; the greedy-continuation gate remains the
 //! end-to-end semantic instrument.
+//!
+//! Placement: `pp` is named, but no cell of this gate runs at HEAD (S06:F0). The monolithic prefill
+//! it drives (`forward`) refuses the matrix expert program, which every load resolves unless a gate
+//! arms the reference executor, and this gate does not arm it. So it refuses on every placement,
+//! `pp` included, until it is ported to the chunked prefill or deleted (owner decision owed;
+//! docs/TESTING.md "DSv4 gate placement").
 
 use memra_engine::dsv4_gpu::{Dsv4Gpu, GpuCapture};
+use memra_engine::dsv4_topology::Dsv4Placement;
 use memra_gguf::dsv4_forward::{
     ActQuantVariant, FixtureSpec, drift_coeff, expert_arm_native, quant_depth_of, read_npz,
 };
@@ -574,7 +581,7 @@ fn main() {
             .unwrap_or(0)
             .max(512),
     );
-    let gpu = Dsv4Gpu::load(dir, &devices, spec.variant, max_seq).expect("load");
+    let gpu = Dsv4Gpu::load(dir, &devices, spec.variant, max_seq, Dsv4Placement::Pp).expect("load");
     println!(
         "loaded: split at layer {} (stage0 {} layers, stage1 {} layers), t={:.0}s",
         gpu.split_at,

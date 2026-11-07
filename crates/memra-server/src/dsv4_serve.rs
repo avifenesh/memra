@@ -267,7 +267,7 @@ pub fn sessions_from_env(default: usize) -> Result<usize, String> {
 /// refuses the boot.
 fn resolve_topology(raw: Option<&str>) -> Result<Dsv4Placement, String> {
     match raw.map(str::trim) {
-        None | Some("") | Some("tp_ep") => Ok(Dsv4Placement::TpEp { attention_tp: true }),
+        None | Some("") | Some("tp_ep") => Ok(Dsv4Placement::SERVED),
         Some("pp") => Ok(Dsv4Placement::Pp),
         Some(other) => Err(format!(
             "MEMRA_DSV4_TOPOLOGY {other:?} unknown (tp_ep | pp)"
@@ -921,7 +921,7 @@ pub fn load(name: &str, dir: &Path, tok: Arc<Tokenizer>) -> Result<Dsv4Model, St
     let c4_host_bytes = resolve_c4_host_bytes(c4_host_raw.as_deref())?;
     let topology_raw = configured_env_text("MEMRA_DSV4_TOPOLOGY")?;
     let placement = resolve_topology(topology_raw.as_deref())?;
-    let gpu = Dsv4Gpu::load_placed(dir, &devices, variant, max_seq, placement).map_err(|e| {
+    let gpu = Dsv4Gpu::load(dir, &devices, variant, max_seq, placement).map_err(|e| {
         if placement.is_tp_ep() {
             format!("{e} (TP/EP is the default placement; MEMRA_DSV4_TOPOLOGY=pp loads PP-2)")
         } else {
@@ -4234,7 +4234,7 @@ mod prefill_chunk_flag_tests {
             .expect("load resolves the chunk");
         let weights = resolved
             + src[resolved..]
-                .find("Dsv4Gpu::load_placed(")
+                .find("Dsv4Gpu::load(")
                 .expect("load loads the weights");
         assert!(
             src[resolved..weights].contains("if prefill_chunk == 0 {\n        return Err("),

@@ -29,7 +29,11 @@
 //! them fixed is what makes the expert program the only thing that differs.
 //!
 //! Usage: dsv4_program_accuracy <model> <prompts-dir> <new-out-dir> <REF|MAT>
+//!
+//! Placement: `pp`, a PP-2 cell. The reference expert program loads on PP-2 only; TP/EP requires
+//! the matrix program.
 use memra_engine::dsv4_gpu::Dsv4Gpu;
+use memra_engine::dsv4_topology::Dsv4Placement;
 use memra_gguf::dsv4_forward::ActQuantVariant;
 use memra_tokenizer::Tokenizer;
 use sha2::{Digest, Sha256};
@@ -147,6 +151,7 @@ fn main() {
         &[0, 1],
         ActQuantVariant::RefFp8Round,
         capacity,
+        Dsv4Placement::Pp,
     )
     .expect("native model");
     assert_eq!(

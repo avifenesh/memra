@@ -1,5 +1,8 @@
 //! One-load PP2 -> EP2 comparison on the complete pinned model, not selected experts.
+//!
+//! Placement: `pp`, a PP-2 cell. It compares PP-2 against PP-2 with the whole-expert EP pair.
 use memra_engine::dsv4_gpu::{Dsv4Gpu, Dsv4SampleCfg, Dsv4VerifyTopk, Dsv4Vt, dsv4_sample_row};
+use memra_engine::dsv4_topology::Dsv4Placement;
 use memra_gguf::dsv4_forward::ActQuantVariant;
 use memra_tokenizer::Tokenizer;
 use sha2::{Digest, Sha256};
@@ -170,8 +173,14 @@ fn main() {
         true,
     );
     assert!(tokens.len() > 5000);
-    let mut gpu =
-        Dsv4Gpu::load(dir, &[0, 1], ActQuantVariant::RefFp8Round, 8192).expect("load PP2");
+    let mut gpu = Dsv4Gpu::load(
+        dir,
+        &[0, 1],
+        ActQuantVariant::RefFp8Round,
+        8192,
+        Dsv4Placement::Pp,
+    )
+    .expect("load PP2");
     gpu.set_verify_topk_for_gate(Dsv4VerifyTopk::Device)
         .expect("device selector");
     let cases = [

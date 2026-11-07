@@ -24,8 +24,12 @@
 //! Profile mode (`DSV4_REPLAY_GATE_PROFILE=replay|eager`): after the identity arm, one warm run
 //! of that arm, then one bracketed by cuProfilerStart/Stop, in place of the timing arm.
 //! Rig law: under the box GPU lock, one pair, no other tenant.
+//!
+//! Placement: `tp_ep` (`Dsv4Placement::SERVED`), the served placement: TP/EP with exact attention
+//! TP2.
 use memra_engine::dsv4_gpu::{DecodeState, Dsv4Gpu, Dsv4SampleCfg};
 use memra_engine::dsv4_source_tape::SourceTape;
+use memra_engine::dsv4_topology::Dsv4Placement;
 use memra_gguf::dsv4_forward::ActQuantVariant;
 use memra_tokenizer::Tokenizer;
 use sha2::{Digest, Sha256};
@@ -109,10 +113,14 @@ fn main() {
     let tokenizer = Tokenizer::from_hf_dir(dir).expect("tokenizer");
     let prompt = tape.prompt(&tokenizer, "Review this inference engine source:\n\n", 256);
 
-    Dsv4Gpu::set_tp_ep_topology_for_gate(true);
-    Dsv4Gpu::set_attention_tp_for_gate(true);
-    let gpu =
-        Dsv4Gpu::load(dir, &[0, 1], ActQuantVariant::RefFp8Round, capacity + 64).expect("load");
+    let gpu = Dsv4Gpu::load(
+        dir,
+        &[0, 1],
+        ActQuantVariant::RefFp8Round,
+        capacity + 64,
+        Dsv4Placement::SERVED,
+    )
+    .expect("load");
     assert!(gpu.topology().is_tp_ep() && gpu.attention_tp_geometry().is_some());
     // DSV4_REPLAY_GATE_VALIDATION: `on` (default, the served program: route and mirror checks
     // deferred to device fault words) or `off` (the unchecked arm replay was first qualified on).

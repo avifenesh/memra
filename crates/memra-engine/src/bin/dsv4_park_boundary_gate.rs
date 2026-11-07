@@ -16,7 +16,15 @@
 //!           request path, where this change must cost nothing).
 //!
 //! usage: dsv4_park_boundary_gate <model-dir> <source.txt>
+//!
+//! Placement: `tp_ep` (`Dsv4Placement::SERVED`). The red arm guards the served spec driver, so
+//! it runs the served placement; its memra #495 receipt is a PP-2 cell, taken before the TP/EP
+//! default (memra #710).
+//! No TP/EP receipt exists yet. Owed before this cell counts: the first `tp_ep` run, and one
+//! red-arm run against a reverted driver on `tp_ep`, which shows the arm is not vacuous on the
+//! TP/EP walk (it has only been shown to fail a reverted driver on PP-2).
 use memra_engine::dsv4_gpu::{Dsv4Gpu, Dsv4SampleCfg, Dsv4Vt, RoundTake};
+use memra_engine::dsv4_topology::Dsv4Placement;
 use memra_gguf::dsv4_forward::ActQuantVariant;
 use memra_tokenizer::Tokenizer;
 use sha2::{Digest, Sha256};
@@ -96,7 +104,14 @@ fn main() {
     assert!(all.len() > PROMPT_TOKENS, "source too short for the gate");
     let prompt = &all[..PROMPT_TOKENS];
     println!("SOURCE sha256={:x}", Sha256::digest(source.as_bytes()));
-    let gpu = Dsv4Gpu::load(dir, &[0, 1], ActQuantVariant::RefFp8Round, 8192).expect("model");
+    let gpu = Dsv4Gpu::load(
+        dir,
+        &[0, 1],
+        ActQuantVariant::RefFp8Round,
+        8192,
+        Dsv4Placement::SERVED,
+    )
+    .expect("model");
     let width = 512.min(PROMPT_TOKENS);
 
     // WHOLE: the ordinary request. A callback that takes every round must be identical to no

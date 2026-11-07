@@ -1,8 +1,12 @@
 //! Dense-fast same-class qualification on the default split-K/cadence program.
 //! OFF eager, OFF replay and ON replay must match at every step.
+//!
+//! Placement: `tp_ep` (`Dsv4Placement::SERVED`), the served placement: TP/EP with exact attention
+//! TP2.
 use memra_engine::dsv4_gpu::{DecodeState, Dsv4Gpu, Dsv4SampleCfg, dsv4_pos_uniform, dsv4_prof_on};
 use memra_engine::dsv4_sampler::{Dsv4DeviceSampler, Dsv4Sampler, dsv4_sampler};
 use memra_engine::dsv4_source_tape::SourceTape;
+use memra_engine::dsv4_topology::Dsv4Placement;
 use memra_gguf::dsv4_forward::ActQuantVariant;
 use memra_tokenizer::Tokenizer;
 use sha2::{Digest, Sha256};
@@ -113,16 +117,15 @@ fn epochs(gpu: &Dsv4Gpu, before: &[Vec<u32>; 2], steps: u32) {
     let after = gpu
         .full_token_ar_epochs_for_gate()
         .expect("device AR epochs");
-    let attention = memra_engine::tp_ar::ar_blocks_for(4096) as usize;
-    let expert = memra_engine::tp_ar::ar_blocks_for(6 * 4096) as usize;
+    // Attention TP2's two row gathers, the expert reduce and the vocab-parallel head's gather.
+    let per_step = gpu.tp_ep_ar_epochs_per_step_for_gate();
     for rank in 0..2 {
         assert_eq!(before[rank].len(), 72);
         assert_eq!(after[rank].len(), 72);
         for block in 0..72 {
-            let per_step = 43 * (u32::from(block < attention) + u32::from(block < expert));
             assert_eq!(
                 after[rank][block].wrapping_sub(before[rank][block]),
-                per_step * steps,
+                per_step[block] * steps,
                 "AR epoch rank {rank} block {block}"
             );
         }
@@ -739,8 +742,6 @@ fn main() {
     );
     let output = PathBuf::from(&args[3]);
     std::fs::create_dir(&output).expect("new output directory");
-    Dsv4Gpu::set_tp_ep_topology_for_gate(true);
-    Dsv4Gpu::set_attention_tp_for_gate(true);
     // memra #458: this is a bench process, so it may run the matrix expert program
     // with the default-ON split-K arm; a serving process cannot arm it and refuses
     // that combination at load instead of failing every request.
@@ -750,6 +751,7 @@ fn main() {
             &[0, 1],
             ActQuantVariant::RefFp8Round,
             PRIME + OUTPUT + 32,
+            Dsv4Placement::SERVED,
         )
         .expect("pinned TP2 model"),
     );

@@ -40,21 +40,15 @@ fn eager_step(
 fn epochs(gpu: &Dsv4Gpu, before: &[Vec<u32>; 2], steps: u32) {
     let after = gpu.full_token_ar_epochs_for_gate().expect("AR epochs");
     // The exact attention TP program (memra #679) has no attention all-reduce: each layer
-    // gathers its wo_a rows (4 local groups x 1024) and then its wo_b output rows (half of
-    // hidden 4096), and reduces its experts. Every collective ticks the epoch of each block it
-    // launches.
-    let wo_a_rows = memra_engine::tp_ar::ar_blocks_for(4 * 1024) as usize;
-    let wo_b_rows = memra_engine::tp_ar::ar_blocks_for(4096 / 2) as usize;
-    let expert = memra_engine::tp_ar::ar_blocks_for(6 * 4096) as usize;
+    // gathers its wo_a rows and then its wo_b output rows and reduces its experts, and the
+    // vocab-parallel head gathers its logits once per step. Every collective ticks the epoch
+    // of each block it launches (`tp_ep_ar_epochs_per_step_for_gate`).
+    let per_step = gpu.tp_ep_ar_epochs_per_step_for_gate();
     for rank in 0..2 {
         for block in 0..72 {
-            let per_step = 43
-                * (u32::from(block < wo_a_rows)
-                    + u32::from(block < wo_b_rows)
-                    + u32::from(block < expert));
             assert_eq!(
                 after[rank][block].wrapping_sub(before[rank][block]),
-                per_step * steps,
+                per_step[block] * steps,
                 "AR epoch rank {rank} block {block}"
             );
         }

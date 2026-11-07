@@ -9,8 +9,15 @@
 //! byte-identical logits bins across runs.
 //!
 //! Usage: dsv4-gpu-greedy <model-dir> <fixtures.json> <out-dir> [n_new] [runs] [dev0,dev1]
+//!
+//! Placement: `pp` is named, but no cell of this gate runs at HEAD (S06:F0). The monolithic prefill
+//! it drives (`forward`) refuses the matrix expert program, which every load resolves unless a gate
+//! arms the reference executor, and this gate does not arm it. So it refuses on every placement,
+//! `pp` included, until it is ported to the chunked prefill or deleted (owner decision owed;
+//! docs/TESTING.md "DSv4 gate placement").
 
 use memra_engine::dsv4_gpu::Dsv4Gpu;
+use memra_engine::dsv4_topology::Dsv4Placement;
 use memra_gguf::dsv4_forward::FixtureSpec;
 use std::io::Write;
 use std::path::Path;
@@ -92,7 +99,7 @@ fn main() {
 
     let prompt = spec.tokens_32.clone();
     let max_seq = (prompt.len() + n_new + 32).max(256);
-    let gpu = Dsv4Gpu::load(dir, &devices, spec.variant, max_seq).expect("load");
+    let gpu = Dsv4Gpu::load(dir, &devices, spec.variant, max_seq, Dsv4Placement::Pp).expect("load");
     println!(
         "loaded: split at layer {}, t={:.0}s",
         gpu.split_at,
