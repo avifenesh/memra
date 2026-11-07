@@ -1,35 +1,52 @@
-v3 tma issue-end k32 s6              down 5120x17408      n=1  mean  -21.2%  range  -21.2% ..  -21.2%  bitdiff 0
-v3 tma issue-end k32 s6              gate+up 34816x5120   n=3  mean  -26.1%  range  -38.4% ..  -18.9%  bitdiff 0
-v3 tma issue-end k32 s6              ssm_out 5120x6144    n=1  mean  -18.9%  range  -18.9% ..  -18.9%  bitdiff 0
-v3 tma issue-end k32 s6              wk 1024x5120         n=1  mean  -12.1%  range  -12.1% ..  -12.1%  bitdiff 0
-v3 tma issue-end k32 s6              wqkv 10240x5120      n=1  mean  -17.5%  range  -17.5% ..  -17.5%  bitdiff 0
-v3 tma issue-end k64 s3              down 5120x17408      n=3  mean   +1.8%  range   +1.2% ..   +2.8%  bitdiff 0
-v3 tma issue-end k64 s3              gate+up 34816x5120   n=5  mean   +5.2%  range   +0.9% ..   +7.4%  bitdiff 0
-v3 tma issue-end k64 s3              ssm_out 5120x6144    n=3  mean   +4.5%  range   +4.3% ..   +4.6%  bitdiff 0
-v3 tma issue-end k64 s3              wk 1024x5120         n=3  mean   +5.4%  range   +4.3% ..   +6.8%  bitdiff 0
-v3 tma issue-end k64 s3              wqkv 10240x5120      n=3  mean   +7.1%  range   +6.3% ..   +7.7%  bitdiff 0
-v3 tma issue-mid k64 s3              down 5120x17408      n=2  mean   -1.9%  range   -2.7% ..   -1.1%  bitdiff 0
-v3 tma issue-mid k64 s3              gate+up 34816x5120   n=2  mean   -1.2%  range   -4.0% ..   +1.5%  bitdiff 0
-v3 tma issue-mid k64 s3              ssm_out 5120x6144    n=2  mean   +1.6%  range   +1.5% ..   +1.6%  bitdiff 0
-v3 tma issue-mid k64 s3              wk 1024x5120         n=2  mean   +8.9%  range   +5.8% ..  +12.0%  bitdiff 0
-v3 tma issue-mid k64 s3              wqkv 10240x5120      n=2  mean   +3.1%  range   +2.6% ..   +3.5%  bitdiff 0
-v3 tma issue-mid-rot k64 s3          down 5120x17408      n=2  mean   +2.4%  range   +1.5% ..   +3.3%  bitdiff 0
-v3 tma issue-mid-rot k64 s3          gate+up 34816x5120   n=2  mean   +2.1%  range   -1.2% ..   +5.4%  bitdiff 0
-v3 tma issue-mid-rot k64 s3          ssm_out 5120x6144    n=2  mean   -9.9%  range  -23.9% ..   +4.1%  bitdiff 0
-v3 tma issue-mid-rot k64 s3          wk 1024x5120         n=2  mean  +13.8%  range  +13.5% ..  +14.1%  bitdiff 0
-v3 tma issue-mid-rot k64 s3          wqkv 10240x5120      n=2  mean   +3.0%  range   +2.7% ..   +3.2%  bitdiff 0
-v3 tma issue-top k32 s6              down 5120x17408      n=1  mean  -19.5%  range  -19.5% ..  -19.5%  bitdiff 0
-v3 tma issue-top k32 s6              gate+up 34816x5120   n=3  mean  -24.6%  range  -38.9% ..  -17.1%  bitdiff 0
-v3 tma issue-top k32 s6              ssm_out 5120x6144    n=1  mean  -17.7%  range  -17.7% ..  -17.7%  bitdiff 0
-v3 tma issue-top k32 s6              wk 1024x5120         n=1  mean  -10.3%  range  -10.3% ..  -10.3%  bitdiff 0
-v3 tma issue-top k32 s6              wqkv 10240x5120      n=1  mean  -17.1%  range  -17.1% ..  -17.1%  bitdiff 0
-v3 tma issue-top k32 s7              down 5120x17408      n=1  mean  -20.0%  range  -20.0% ..  -20.0%  bitdiff 0
-v3 tma issue-top k32 s7              gate+up 34816x5120   n=3  mean  -25.2%  range  -40.1% ..  -17.1%  bitdiff 0
-v3 tma issue-top k32 s7              ssm_out 5120x6144    n=1  mean  -19.0%  range  -19.0% ..  -19.0%  bitdiff 0
-v3 tma issue-top k32 s7              wk 1024x5120         n=1  mean   -9.7%  range   -9.7% ..   -9.7%  bitdiff 0
-v3 tma issue-top k32 s7              wqkv 10240x5120      n=1  mean  -17.7%  range  -17.7% ..  -17.7%  bitdiff 0
-v3 tma issue-top k64 s3              down 5120x17408      n=1  mean   -2.0%  range   -2.0% ..   -2.0%  bitdiff 0
-v3 tma issue-top k64 s3              gate+up 34816x5120   n=3  mean   +0.3%  range   -0.6% ..   +2.0%  bitdiff 0
-v3 tma issue-top k64 s3              ssm_out 5120x6144    n=1  mean   +0.9%  range   +0.9% ..   +0.9%  bitdiff 0
-v3 tma issue-top k64 s3              wk 1024x5120         n=1  mean   +5.6%  range   +5.6% ..   +5.6%  bitdiff 0
-v3 tma issue-top k64 s3              wqkv 10240x5120      n=1  mean   +3.9%  range   +3.9% ..   +3.9%  bitdiff 0
+A/A shipped (again)                  T=130   gate+up 34816x5120   n=5  mean   -0.0%  range   -1.0% ..   +1.3%  bitdiff 0
+A/A shipped (again)                  T=1024  gate+up 34816x5120   n=5  mean   -0.7%  range   -2.8% ..   +0.7%  bitdiff 0
+A/A shipped (again)                  T=4096  down 5120x17408      n=5  mean   -1.8%  range   -4.7% ..   +0.3%  bitdiff 0
+A/A shipped (again)                  T=4096  gate+up 34816x5120   n=5  mean   +0.7%  range   -3.7% ..   +2.2%  bitdiff 0
+A/A shipped (again)                  T=4096  ssm_out 5120x6144    n=5  mean   -0.2%  range   -0.3% ..   +0.2%  bitdiff 0
+A/A shipped (again)                  T=4096  wk 1024x5120         n=5  mean   +0.2%  range   -0.4% ..   +0.9%  bitdiff 0
+A/A shipped (again)                  T=4096  wqkv 10240x5120      n=5  mean   +0.5%  range   -0.3% ..   +1.8%  bitdiff 0
+v3 tma issue-end k32 s6              T=130   gate+up 34816x5120   n=1  mean  -38.4%  range  -38.4% ..  -38.4%  bitdiff 0
+v3 tma issue-end k32 s6              T=1024  gate+up 34816x5120   n=1  mean  -18.9%  range  -18.9% ..  -18.9%  bitdiff 0
+v3 tma issue-end k32 s6              T=4096  down 5120x17408      n=1  mean  -21.2%  range  -21.2% ..  -21.2%  bitdiff 0
+v3 tma issue-end k32 s6              T=4096  gate+up 34816x5120   n=1  mean  -21.0%  range  -21.0% ..  -21.0%  bitdiff 0
+v3 tma issue-end k32 s6              T=4096  ssm_out 5120x6144    n=1  mean  -18.9%  range  -18.9% ..  -18.9%  bitdiff 0
+v3 tma issue-end k32 s6              T=4096  wk 1024x5120         n=1  mean  -12.1%  range  -12.1% ..  -12.1%  bitdiff 0
+v3 tma issue-end k32 s6              T=4096  wqkv 10240x5120      n=1  mean  -17.5%  range  -17.5% ..  -17.5%  bitdiff 0
+v3 tma issue-end k64 s3              T=130   gate+up 34816x5120   n=1  mean   +0.9%  range   +0.9% ..   +0.9%  bitdiff 0
+v3 tma issue-end k64 s3              T=1024  gate+up 34816x5120   n=1  mean   +5.2%  range   +5.2% ..   +5.2%  bitdiff 0
+v3 tma issue-end k64 s3              T=4096  down 5120x17408      n=3  mean   +1.8%  range   +1.2% ..   +2.8%  bitdiff 0
+v3 tma issue-end k64 s3              T=4096  gate+up 34816x5120   n=3  mean   +6.7%  range   +5.2% ..   +7.4%  bitdiff 0
+v3 tma issue-end k64 s3              T=4096  ssm_out 5120x6144    n=3  mean   +4.5%  range   +4.3% ..   +4.6%  bitdiff 0
+v3 tma issue-end k64 s3              T=4096  wk 1024x5120         n=3  mean   +5.4%  range   +4.3% ..   +6.8%  bitdiff 0
+v3 tma issue-end k64 s3              T=4096  wqkv 10240x5120      n=3  mean   +7.1%  range   +6.3% ..   +7.7%  bitdiff 0
+v3 tma issue-mid k64 s3              T=4096  down 5120x17408      n=2  mean   -1.9%  range   -2.7% ..   -1.1%  bitdiff 0
+v3 tma issue-mid k64 s3              T=4096  gate+up 34816x5120   n=2  mean   -1.2%  range   -4.0% ..   +1.5%  bitdiff 0
+v3 tma issue-mid k64 s3              T=4096  ssm_out 5120x6144    n=2  mean   +1.6%  range   +1.5% ..   +1.6%  bitdiff 0
+v3 tma issue-mid k64 s3              T=4096  wk 1024x5120         n=2  mean   +8.9%  range   +5.8% ..  +12.0%  bitdiff 0
+v3 tma issue-mid k64 s3              T=4096  wqkv 10240x5120      n=2  mean   +3.1%  range   +2.6% ..   +3.5%  bitdiff 0
+v3 tma issue-mid-rot k64 s3          T=4096  down 5120x17408      n=2  mean   +2.4%  range   +1.5% ..   +3.3%  bitdiff 0
+v3 tma issue-mid-rot k64 s3          T=4096  gate+up 34816x5120   n=2  mean   +2.1%  range   -1.2% ..   +5.4%  bitdiff 0
+v3 tma issue-mid-rot k64 s3          T=4096  ssm_out 5120x6144    n=2  mean   -9.9%  range  -23.9% ..   +4.1%  bitdiff 0
+v3 tma issue-mid-rot k64 s3          T=4096  wk 1024x5120         n=2  mean  +13.8%  range  +13.5% ..  +14.1%  bitdiff 0
+v3 tma issue-mid-rot k64 s3          T=4096  wqkv 10240x5120      n=2  mean   +3.0%  range   +2.7% ..   +3.2%  bitdiff 0
+v3 tma issue-top k32 s6              T=130   gate+up 34816x5120   n=1  mean  -38.9%  range  -38.9% ..  -38.9%  bitdiff 0
+v3 tma issue-top k32 s6              T=1024  gate+up 34816x5120   n=1  mean  -17.8%  range  -17.8% ..  -17.8%  bitdiff 0
+v3 tma issue-top k32 s6              T=4096  down 5120x17408      n=1  mean  -19.5%  range  -19.5% ..  -19.5%  bitdiff 0
+v3 tma issue-top k32 s6              T=4096  gate+up 34816x5120   n=1  mean  -17.1%  range  -17.1% ..  -17.1%  bitdiff 0
+v3 tma issue-top k32 s6              T=4096  ssm_out 5120x6144    n=1  mean  -17.7%  range  -17.7% ..  -17.7%  bitdiff 0
+v3 tma issue-top k32 s6              T=4096  wk 1024x5120         n=1  mean  -10.3%  range  -10.3% ..  -10.3%  bitdiff 0
+v3 tma issue-top k32 s6              T=4096  wqkv 10240x5120      n=1  mean  -17.1%  range  -17.1% ..  -17.1%  bitdiff 0
+v3 tma issue-top k32 s7              T=130   gate+up 34816x5120   n=1  mean  -40.1%  range  -40.1% ..  -40.1%  bitdiff 0
+v3 tma issue-top k32 s7              T=1024  gate+up 34816x5120   n=1  mean  -18.4%  range  -18.4% ..  -18.4%  bitdiff 0
+v3 tma issue-top k32 s7              T=4096  down 5120x17408      n=1  mean  -20.0%  range  -20.0% ..  -20.0%  bitdiff 0
+v3 tma issue-top k32 s7              T=4096  gate+up 34816x5120   n=1  mean  -17.1%  range  -17.1% ..  -17.1%  bitdiff 0
+v3 tma issue-top k32 s7              T=4096  ssm_out 5120x6144    n=1  mean  -19.0%  range  -19.0% ..  -19.0%  bitdiff 0
+v3 tma issue-top k32 s7              T=4096  wk 1024x5120         n=1  mean   -9.7%  range   -9.7% ..   -9.7%  bitdiff 0
+v3 tma issue-top k32 s7              T=4096  wqkv 10240x5120      n=1  mean  -17.7%  range  -17.7% ..  -17.7%  bitdiff 0
+v3 tma issue-top k64 s3              T=130   gate+up 34816x5120   n=1  mean   -0.5%  range   -0.5% ..   -0.5%  bitdiff 0
+v3 tma issue-top k64 s3              T=1024  gate+up 34816x5120   n=1  mean   -0.6%  range   -0.6% ..   -0.6%  bitdiff 0
+v3 tma issue-top k64 s3              T=4096  down 5120x17408      n=1  mean   -2.0%  range   -2.0% ..   -2.0%  bitdiff 0
+v3 tma issue-top k64 s3              T=4096  gate+up 34816x5120   n=1  mean   +2.0%  range   +2.0% ..   +2.0%  bitdiff 0
+v3 tma issue-top k64 s3              T=4096  ssm_out 5120x6144    n=1  mean   +0.9%  range   +0.9% ..   +0.9%  bitdiff 0
+v3 tma issue-top k64 s3              T=4096  wk 1024x5120         n=1  mean   +5.6%  range   +5.6% ..   +5.6%  bitdiff 0
+v3 tma issue-top k64 s3              T=4096  wqkv 10240x5120      n=1  mean   +3.9%  range   +3.9% ..   +3.9%  bitdiff 0

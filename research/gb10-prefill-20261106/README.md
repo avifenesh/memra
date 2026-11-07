@@ -384,6 +384,9 @@ the lab's evidence backup as snapshot `435c2f82`), next to round 2
 
 The v2 tile runs the 6.38 PFLOP at about 111 TFLOPS (105 with its image pass), 84% of the
 132 TFLOPS epilogue ceiling at 16 warps per SM; attention (50.8 s) is now the largest part.
+(Superseded 2026-11-07: that ceiling was pessimistic; ledger row 33 measures the exact epilogue at
+821 MAC/clk/SM on register operands, about 173 TFLOPS, and the tile's loop over resident smem at
+567-664 MAC/clk/SM.)
 
 4,096-row prime chunks, both arms with `MEMRA_PRIME_CHUNK=4096` (the GB10 default once #1073
 drops the 8,192 default for peer fairness, `fairness-chunk/`), unit 1 (`gemm-v2-served-4k-unit1/`):
@@ -431,8 +434,10 @@ model's budget of 1 (`tools/argmax-margin-gate.sh`, `tools/test_argmax_margin_ga
   Under a 24-GEMM layer sequence the overlap saves 0.9% at 4,096 rows (inside the serial runs'
   spread) and 0.8% at 8,192. The likely cause: the tile's one CTA per SM holds the whole register
   file (512 threads x 128 registers, block limit 1, `gemm-v2-probe/ncu/c5g4.txt`), so an image block
-  only gets an SM that a GEMM block has freed; no trace of the overlap was taken. (The 132 TFLOPS
-  epilogue ceiling quoted here was pessimistic; ledger row 33 re-measured it at 821 MAC/clk/SM.)
+  only gets an SM that a GEMM block has freed; no trace of the overlap was taken. The tile sits at 84-88% of the 132 TFLOPS epilogue
+  ceiling on the large shapes. (Superseded 2026-11-07: that ceiling, `ceil_probe3.cu`, rewrites its A
+  operand with a dependent IADD before every MMA; ledger row 33 measures the exact epilogue at 821
+  MAC/clk/SM on register operands, about 173 TFLOPS.)
 - A TMA-fed, warp-specialized tile: measured, not taken to the engine (ledger rows 33-37,
   `GEMM-V3-DESIGN.md`, `gemm-v3-probe-unit2/`). The exact epilogue's register-operand ceiling is
   821 MAC/clk/SM (880 with the scale products hoisted); the shipped tile runs 508-549 and its loop
@@ -440,7 +445,8 @@ model's budget of 1 (`tools/argmax-margin-gate.sh`, `tools/test_argmax_margin_ga
   one elected issuer, bit-identical, gain +7.6% on gate+up, +1.9% on down, +7.8% on wqkv, +5.4% on
   ssm_out (about 3.1 s of 60.3 s at 131k), under the 10% bar. 16 warps x 128 registers is the whole
   register file, so a producer warpgroup leaves the consumers 120 and they spill (-56%); fewer
-  warps with more registers lose (-7..-18%).
+  warps with more registers do no better (192 x 128 at 12 warps: -6.8% with 3 stages, +2.3% with 4;
+  128 x 128 at 8 warps: -18%).
 - Wide prime calls only while the prime is alone: measured, rejected (ledger rows 30-31,
   `prime-wide-fairness-unit2/`, `prime-wide-served-unit2/`). Two adjacent 4,096-row ranges run as
   one 8,192-row call while no other request is active, queued or being admitted. Alone, it is worth

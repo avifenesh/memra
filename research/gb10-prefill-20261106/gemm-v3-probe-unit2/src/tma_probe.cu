@@ -7,13 +7,17 @@
 // f8f4v2_layout<.., 64>::swz, so the ldmatrix addresses do not change. Tokens past n_tokens are
 // zero-filled by TMA instead of repeating the last token; their outputs are dropped either way.
 //
-// Variants (PROD):
-//   0  one elected consumer thread (warp 0 lane 0) issues the TMA for stage kt + S - 1 at the top
-//      of iteration kt, after the slot's empty barrier (all 16 consumer warps done with it);
-//   1  the same thread issues it at the end of iteration kt (shorter lookahead, no wait at the top);
-//   2  a fifth warpgroup (640 threads) is the producer: setmaxnreg.dec to 24 there, the 16 consumer
-//      warps setmaxnreg.inc to 120.
-// build: nvcc -gencode arch=compute_121a,code=sm_121a -O3 -std=c++17 --expt-relaxed-constexpr tma_probe.cu -lcuda
+// Issue schemes (PROD): 0 one elected consumer thread (warp 0 lane 0) issues stage kt + S - 1 at the
+// top of iteration kt after that slot's empty barrier; 1 the same thread issues stage kt + S at the end
+// of iteration kt (issue-end); 2 a fifth warpgroup is the producer (setmaxnreg.dec 24 there, .inc 120
+// for the 16 consumer warps); 3 / 4 after compute kt, stage kt + S - 1 into the slot left one stage
+// earlier, issued by warp 0 / by warp kt % 16; 5 the last warp to leave a slot refills it (an smem
+// counter, no empty wait). HINT: mbarrier waits carry a suspend-time hint (the warp sleeps until the
+// phase flips) instead of spinning on try_wait. SHL: scale loads use 32-bit shared-window addresses.
+// Arms (argv[4], a comma list of ids; default all): see the ARMS table in main().
+// build (this dir holds mmq_probe.cu and mmq_common.cuh):
+//   nvcc -gencode arch=compute_121a,code=sm_121a -O3 -std=c++17 --expt-relaxed-constexpr tma_probe.cu -lcuda
+// usage: tma_probe T REPS SHAPE(-1 all) ARMS
 #include "mmq_probe.cu"
 #include <cuda.h>
 #include <cstdio>
@@ -31,10 +35,17 @@ static __device__ __forceinline__ void v3_expect_tx(unsigned b, unsigned bytes) 
 static __device__ __forceinline__ void v3_arrive(unsigned b) {
     asm volatile("mbarrier.arrive.shared::cta.b64 _, [%0];\n" :: "r"(b) : "memory");
 }
+template <bool HINT>
 static __device__ __forceinline__ void v3_wait(unsigned b, unsigned parity) {
-    asm volatile("{\n .reg .pred p;\n W%=:\n mbarrier.try_wait.parity.shared::cta.b64 p, [%0], %1, %2;\n @!p bra W%=;\n}\n"
-                 :: "r"(b), "r"(parity), "r"(0x989680u) : "memory");
+    if constexpr (HINT) {
+        asm volatile("{\n .reg .pred p;\n W%=:\n mbarrier.try_wait.parity.shared::cta.b64 p, [%0], %1, %2;\n @!p bra W%=;\n}\n"
+                     :: "r"(b), "r"(parity), "r"(0x989680u) : "memory");
+    } else {
+        asm volatile("{\n .reg .pred p;\n W%=:\n mbarrier.try_wait.parity.shared::cta.b64 p, [%0], %1;\n @!p bra W%=;\n}\n"
+                     :: "r"(b), "r"(parity) : "memory");
+    }
 }
+
 static __device__ __forceinline__ void v3_tma2d(unsigned dst, const CUtensorMap * map, int c0, int c1, unsigned bar) {
     asm volatile("cp.async.bulk.tensor.2d.shared::cluster.global.tile.mbarrier::complete_tx::bytes [%0], [%1, {%2, %3}], [%4];\n"
                  :: "r"(dst), "l"(map), "r"(c0), "r"(c1), "r"(bar) : "memory");
@@ -48,7 +59,7 @@ static __device__ __forceinline__ float4 v3_lds4(const unsigned a) {
     return v;
 }
 
-template <int BM, int BN, int WM, int WN, int KS, int STAGES, int PROD, bool SHL = false>
+template <int BM, int BN, int WM, int WN, int KS, int STAGES, int PROD, bool SHL = false, bool HINT = true>
 __launch_bounds__(WM * WN * 32 + (PROD == 2 ? 128 : 0), 1)
 static __global__ void mul_mat_f8f4v3(const __grid_constant__ V3Maps maps, float * __restrict__ dst,
         const int out_f, const int K, const int n_tokens, const int nty, const float out_scale, const int G) {
@@ -109,7 +120,7 @@ static __global__ void mul_mat_f8f4v3(const __grid_constant__ V3Maps maps, float
             if (warp == NC && lane == 0) {
                 for (int kt = 0; kt < nk; ++kt) {
                     const int slot = kt % STAGES;
-                    if (kt >= STAGES) { v3_wait(empty(slot), ((kt / STAGES) - 1) & 1); }
+                    if (kt >= STAGES) { v3_wait<HINT>(empty(slot), ((kt / STAGES) - 1) & 1); }
                     issue(slot, kt);
                 }
             }
@@ -144,13 +155,13 @@ static __global__ void mul_mat_f8f4v3(const __grid_constant__ V3Maps maps, float
                 const int nx = kt + STAGES - 1;
                 if (nx < nk) {
                     const int ns = nx % STAGES;
-                    if (nx >= STAGES) { v3_wait(empty(ns), ((nx / STAGES) - 1) & 1); }
+                    if (nx >= STAGES) { v3_wait<HINT>(empty(ns), ((nx / STAGES) - 1) & 1); }
                     issue(ns, nx);
                 }
             }
             __syncwarp();
         }
-        v3_wait(full(slot), (kt / STAGES) & 1);
+        v3_wait<HINT>(full(slot), (kt / STAGES) & 1);
         const unsigned sA = smem0 + slot * LY::STAGE;
         const unsigned sB = sA + LY::A_BYTES;
         const float * sSA = (const float *) (v3_smem + slot * LY::STAGE + LY::A_BYTES + LY::B_BYTES);
@@ -210,7 +221,7 @@ static __global__ void mul_mat_f8f4v3(const __grid_constant__ V3Maps maps, float
                     const int nx = kt + STAGES - 1;
                     if (nx < nk) {
                         const int ns = nx % STAGES;
-                        if (nx >= STAGES) { v3_wait(empty(ns), ((nx / STAGES) - 1) & 1); }
+                        if (nx >= STAGES) { v3_wait<HINT>(empty(ns), ((nx / STAGES) - 1) & 1); }
                         issue(ns, nx);
                     }
                 }
@@ -222,7 +233,7 @@ static __global__ void mul_mat_f8f4v3(const __grid_constant__ V3Maps maps, float
                 const int nx = kt + STAGES;
                 if (nx < nk) {
                     const int ns = nx % STAGES;          // == slot
-                    v3_wait(empty(ns), ((nx / STAGES) - 1) & 1);
+                    v3_wait<HINT>(empty(ns), ((nx / STAGES) - 1) & 1);
                     issue(ns, nx);
                 }
             }
@@ -256,7 +267,7 @@ static bool map2d(CUtensorMap * m, CUtensorMapDataType ty, int esz, const void *
     return true;
 }
 
-template <int BM, int BN, int WM, int WN, int KS, int STAGES, int PROD, bool SHL = false>
+template <int BM, int BN, int WM, int WN, int KS, int STAGES, int PROD, bool SHL = false, bool HINT = true>
 static cudaError_t v3_launch(const uint8_t * vals, const float * scales, const uint8_t * act, const float * act_sc,
                              float * y, int out_f, int Mp, int K, int n_tokens, int Tp, float out_scale, int G) {
     using LY = f8f4v2_layout<BM, BN, KS>;
@@ -267,7 +278,7 @@ static cudaError_t v3_launch(const uint8_t * vals, const float * scales, const u
     if (!map2d(&mp.sa, CU_TENSOR_MAP_DATA_TYPE_FLOAT32, 4, scales, Mp, K / 32, (uint64_t) Mp * 4, BM, KS / 32, CU_TENSOR_MAP_SWIZZLE_NONE)) { return cudaErrorInvalidValue; }
     if (!map2d(&mp.sb, CU_TENSOR_MAP_DATA_TYPE_FLOAT32, 4, act_sc, Tp, K / 32, (uint64_t) Tp * 4, BN, KS / 32, CU_TENSOR_MAP_SWIZZLE_NONE)) { return cudaErrorInvalidValue; }
     constexpr size_t smem = (size_t) STAGES * LY::STAGE + 16 * STAGES + 4 * STAGES;
-    auto kern = mul_mat_f8f4v3<BM, BN, WM, WN, KS, STAGES, PROD, SHL>;
+    auto kern = mul_mat_f8f4v3<BM, BN, WM, WN, KS, STAGES, PROD, SHL, HINT>;
     cudaError_t e = cudaFuncSetAttribute(kern, cudaFuncAttributeMaxDynamicSharedMemorySize, (int) smem);
     if (e != cudaSuccess) { return e; }
     const int nty = (out_f + BM - 1) / BM, ntx = (n_tokens + BN - 1) / BN;
@@ -291,7 +302,9 @@ int main(int argc, char ** argv) {
     const int T = argc > 1 ? atoi(argv[1]) : 4096;
     const int reps = argc > 2 ? atoi(argv[2]) : 11;
     const int only = argc > 3 ? atoi(argv[3]) : -1;   // shape index, -1 all
-    const int vmask = argc > 4 ? atoi(argv[4]) : 4095;   // bit p runs v3 variant PROD = p
+    bool arm_on[32] = {};
+    if (argc > 4) { for (char * s = strtok(argv[4], ","); s; s = strtok(nullptr, ",")) { const int i = atoi(s); if (i >= 0 && i < 32) arm_on[i] = true; } }
+    else { for (bool & b : arm_on) b = true; }
     int clk_khz = 0; cudaDeviceGetAttribute(&clk_khz, cudaDevAttrClockRate, 0);
     struct Shape { const char * name; int out_f, K; } shapes[] = {
         {"gate+up 34816x5120", 34816, 5120}, {"down 5120x17408", 5120, 17408},
@@ -333,30 +346,28 @@ int main(int argc, char ** argv) {
         double t = timeit([&] { e = f8f4v2_launch<256, 128, 8, 2, 64, 3, 1, 0>(v, sc, a, sa, y0, sh.out_f, Mp, K, T, Tp, 0.83f, 4, 0); return e; }, reps);
         cudaMemcpy(r0.data(), y0, ny * 4, cudaMemcpyDeviceToHost);
         report("v2 shipped 256x128 k64 s3", t, e, true);
-#define V3S(BMV, WMV, PROD, KSV, STV, NAME) { \
-        cudaMemset(y1, 0xff, ny * 4); \
-        t = timeit([&] { e = v3_launch<BMV, 128, WMV, 2, KSV, STV, PROD>(v, sc, a, sa, y1, sh.out_f, Mp, K, T, Tp, 0.83f, 4); return e; }, reps); \
-        e = cudaDeviceSynchronize(); \
-        report(NAME, t, e, false); }
-#define V3(PROD, KSV, STV, NAME) { \
-        cudaMemset(y1, 0xff, ny * 4); \
-        t = timeit([&] { e = v3_launch<256, 128, 8, 2, KSV, STV, PROD>(v, sc, a, sa, y1, sh.out_f, Mp, K, T, Tp, 0.83f, 4); return e; }, reps); \
-        e = cudaDeviceSynchronize(); \
-        report(NAME, t, e, false); }
-        if ((vmask >> 0) & 1) V3(0, 64, 3, "v3 tma issue-top k64 s3")
-        if ((vmask >> 1) & 1) V3(1, 64, 3, "v3 tma issue-end k64 s3")
-        if ((vmask >> 2) & 1) V3(0, 32, 6, "v3 tma issue-top k32 s6")
-        if ((vmask >> 3) & 1) V3(1, 32, 6, "v3 tma issue-end k32 s6")
-        if ((vmask >> 4) & 1) V3(3, 64, 3, "v3 tma issue-mid k64 s3")
-        if ((vmask >> 5) & 1) V3(4, 64, 3, "v3 tma issue-mid-rot k64 s3")
-        if ((vmask >> 6) & 1) V3(5, 64, 3, "v3 tma last-arriver k64 s3")
-        if ((vmask >> 7) & 1) V3S(192, 6, 1, 64, 3, "v3 192x128 w6x2 issue-end s3")
-        if ((vmask >> 8) & 1) V3S(192, 6, 1, 64, 4, "v3 192x128 w6x2 issue-end s4")
-        if ((vmask >> 9) & 1) V3S(192, 6, 5, 64, 4, "v3 192x128 w6x2 last-arr s4")
-        if ((vmask >> 10) & 1) V3S(128, 4, 1, 64, 5, "v3 128x128 w4x2 issue-end s5")
-        if ((vmask >> 11) & 1) { cudaMemset(y1, 0xff, ny * 4);
-            t = timeit([&] { e = v3_launch<256, 128, 8, 2, 64, 3, 1, true>(v, sc, a, sa, y1, sh.out_f, Mp, K, T, Tp, 0.83f, 4); return e; }, reps);
-            e = cudaDeviceSynchronize(); report("v3 tma issue-end k64 s3 lds.shared", t, e, false); }
+#define ARM(ID, BMV, WMV, KSV, STV, PROD, SHLV, HINTV, NAME) \
+        if (arm_on[ID]) { cudaMemset(y1, 0xff, ny * 4); \
+            t = timeit([&] { e = v3_launch<BMV, 128, WMV, 2, KSV, STV, PROD, SHLV, HINTV>(v, sc, a, sa, y1, sh.out_f, Mp, K, T, Tp, 0.83f, 4); return e; }, reps); \
+            e = cudaDeviceSynchronize(); report(NAME, t, e, false); }
+        // ARMS: id, tile rows, warp rows, k per stage, stages, issue scheme, shared-window scales, suspend hint.
+        // The logs name arms without the plain / hint suffix: stage2.log and stage3.log ran the plain waits,
+        // stage4.log to stage6.log the hinted ones (gemm-v3-probe-unit2/README.md maps every log line).
+        ARM(0,  256, 8, 64, 3, 0, false, false, "v3 tma issue-top k64 s3 plain")
+        ARM(1,  256, 8, 64, 3, 1, false, false, "v3 tma issue-end k64 s3 plain")
+        ARM(2,  256, 8, 32, 6, 0, false, false, "v3 tma issue-top k32 s6 plain")
+        ARM(3,  256, 8, 32, 6, 1, false, false, "v3 tma issue-end k32 s6 plain")
+        ARM(4,  256, 8, 32, 7, 0, false, false, "v3 tma issue-top k32 s7 plain")
+        ARM(5,  256, 8, 64, 3, 3, false, false, "v3 tma issue-mid k64 s3 plain")
+        ARM(6,  256, 8, 64, 3, 4, false, false, "v3 tma issue-mid-rot k64 s3 plain")
+        ARM(7,  256, 8, 64, 3, 2, false, false, "v3 tma producer-wg s3 plain")
+        ARM(8,  256, 8, 64, 3, 1, false, true,  "v3 tma issue-end k64 s3 hint")
+        ARM(9,  256, 8, 64, 3, 5, false, true,  "v3 tma last-arriver k64 s3 hint")
+        ARM(10, 192, 6, 64, 3, 1, false, true,  "v3 192x128 w6x2 issue-end s3 hint")
+        ARM(11, 192, 6, 64, 4, 1, false, true,  "v3 192x128 w6x2 issue-end s4 hint")
+        ARM(12, 192, 6, 64, 4, 5, false, true,  "v3 192x128 w6x2 last-arr s4 hint")
+        ARM(13, 128, 4, 64, 5, 1, false, true,  "v3 128x128 w4x2 issue-end s5 hint")
+        ARM(14, 256, 8, 64, 3, 1, true,  true,  "v3 tma issue-end k64 s3 lds.shared hint")
         cudaMemset(y1, 0xff, ny * 4);
         t = timeit([&] { e = f8f4v2_launch<256, 128, 8, 2, 64, 3, 1, 0>(v, sc, a, sa, y1, sh.out_f, Mp, K, T, Tp, 0.83f, 4, 0); return e; }, reps);
         report("v2 shipped (again)", t, e, false);
