@@ -848,6 +848,260 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         );
     }
 
+    // --- NVFP4-DP4A-RP-T4: the token-tiled rp dp4a matvec (prefill rows) must equal the grid
+    //     (out_f, m) kernel bit for bit. The GDN beta/alpha shape (5,120 -> 48) at 300 and 4,096
+    //     rows (a partial 4-token tile), a 2,048-wide weight and a 7,168-wide one (two groups per
+    //     thread on part of the block), random rp bytes with sane micro-scales. ---
+    {
+        for &(in_f, out_f, m) in &[
+            (5120usize, 48usize, 300usize),
+            (5120, 48, 4096),
+            (2048, 64, 77),
+            (7168, 40, 129),
+        ] {
+            let nsb64 = in_f / 64;
+            let nq = out_f * nsb64 * 32;
+            let mut wb = vec![0u8; nq + out_f * nsb64 * 4];
+            for (i, b) in wb.iter_mut().enumerate() {
+                let r = ((i as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15) >> 33) as u32;
+                *b = if i < nq {
+                    (r & 0xff) as u8
+                } else {
+                    0x20 + (r % 0x28) as u8
+                };
+            }
+            let x: Vec<f32> = (0..m * in_f).map(|i| pr(i + 101) * 2.0).collect();
+            let (wd, xd) = (e.htod_bytes(&wb)?, e.htod(&x)?);
+            // SAFETY: single-threaded gate binary; the seam reads the env per call.
+            unsafe {
+                std::env::set_var("MEMRA_DP4A_TILED", "0");
+            }
+            let y0 = e.dtoh(&e.qmatvec_nvfp4_dp4a_rp_raw(&wd, &xd, m, in_f, out_f, in_f / 2)?)?;
+            // force the tiled twin (unset follows the device: GB10 only)
+            unsafe {
+                std::env::set_var("MEMRA_DP4A_TILED", "1");
+            }
+            assert!(
+                e.dp4a_rp_tiled(m, in_f, out_f),
+                "the tiled twin must take this shape"
+            );
+            let y1 = e.dtoh(&e.qmatvec_nvfp4_dp4a_rp_raw(&wd, &xd, m, in_f, out_f, in_f / 2)?)?;
+            unsafe {
+                std::env::remove_var("MEMRA_DP4A_TILED");
+            }
+            let bad = y0
+                .iter()
+                .zip(&y1)
+                .filter(|(a, b)| a.to_bits() != b.to_bits())
+                .count();
+            let nz = y0.iter().filter(|v| **v != 0.0).count();
+            println!(
+                "NVFP4-DP4A-RP-T4 in_f={in_f} out_f={out_f} m={m}: bitdiff={bad} nonzero={nz}/{} {}",
+                y0.len(),
+                if bad == 0 && nz > y0.len() / 2 {
+                    "OK"
+                } else {
+                    fails += 1;
+                    "FAIL"
+                }
+            );
+        }
+    }
+
+    // --- GATED-RMSNORM-E4M3V2: gated_rmsnorm_f8f4v2 (the GDN out-norm with the ssm_out F8F4 v2
+    //     activation quantize fused) must equal gated_rmsnorm_zv then the v2 quantizer: the f32
+    //     values and the e4m3 bytes and every written scale slot, with the f32 output kept and
+    //     skipped. 48 heads x 128, rows of 300 and 1,024 tokens, one all-zero group. ---
+    {
+        let (ncols, nv, eps) = (128usize, 48usize, 1e-6f32);
+        for &t in &[300usize, 1024] {
+            let n = t * nv * ncols;
+            let mut o: Vec<f32> = (0..n).map(|i| pr(i + 107) * 2.0).collect();
+            for v in o.iter_mut().skip(5 * ncols).take(32) {
+                *v = 0.0;
+            }
+            let zg: Vec<f32> = (0..n).map(|i| pr(i + 109) * 3.0).collect();
+            let w: Vec<f32> = (0..ncols).map(|i| 0.5 + pr(i + 113) * 0.4).collect();
+            let (od, zd, wd) = (e.htod(&o)?, e.htod(&zg)?, e.htod(&w)?);
+            let zv = zd.slice(0..n);
+            let mut g_ref = e.zeros(n)?;
+            e.gated_rmsnorm_zv(&od, &wd, &zv, &mut g_ref, ncols, nv * t, eps)?;
+            let q_ref = e.dtoh_u8(&e.f8f4_quantize_v2_raw(&g_ref, t, nv * ncols)?)?;
+            let mut g_f = e.zeros(n)?;
+            let key = e.addr_f32(&g_f);
+            e.gated_rmsnorm_f8f4v2(&od, &wd, &zv, Some(&mut g_f), key, ncols, nv, t, eps)?;
+            let (q_f, _) = e.f8f4_take_seed().ok_or("GATED-RMSNORM-E4M3V2: no seed")?;
+            let q_f = e.dtoh_u8(&q_f.ok_or("GATED-RMSNORM-E4M3V2: no scratch")?)?;
+            e.gated_rmsnorm_f8f4v2(&od, &wd, &zv, None, key, ncols, nv, t, eps)?;
+            let (q_s, _) = e.f8f4_take_seed().ok_or("GATED-RMSNORM-E4M3V2: no seed")?;
+            let q_s = e.dtoh_u8(&q_s.ok_or("GATED-RMSNORM-E4M3V2: no scratch")?)?;
+            let gbad = e
+                .dtoh(&g_ref)?
+                .iter()
+                .zip(&e.dtoh(&g_f)?)
+                .filter(|(a, b)| a.to_bits() != b.to_bits())
+                .count();
+            let in_f = nv * ncols;
+            let nvb = t * in_f;
+            let tp = t.div_ceil(256) * 256;
+            let slot = |tt: usize| -> usize {
+                let (p8, r8) = ((tt & 63) >> 3, tt & 7);
+                (tt & !63) + ((p8 >> 1) * 4 + (r8 >> 1)) * 4 + (p8 & 1) * 2 + (r8 & 1)
+            };
+            let cmp = |x: &[u8]| -> usize {
+                let mut bad = q_ref[..nvb]
+                    .iter()
+                    .zip(&x[..nvb])
+                    .filter(|(a, b)| a != b)
+                    .count();
+                for gq in 0..in_f / 32 {
+                    for tt in 0..t {
+                        let o = nvb + (gq * tp + slot(tt)) * 4;
+                        if q_ref[o..o + 4] != x[o..o + 4] {
+                            bad += 1;
+                        }
+                    }
+                }
+                bad
+            };
+            let (fbad, sbad) = (cmp(&q_f), cmp(&q_s));
+            println!(
+                "GATED-RMSNORM-E4M3V2 T={t}: f32={gbad} e4m3+scales={fbad} (f32 skipped: {sbad}) {}",
+                if gbad == 0 && fbad == 0 && sbad == 0 {
+                    "OK"
+                } else {
+                    fails += 1;
+                    "FAIL"
+                }
+            );
+        }
+    }
+
+    // --- ADD-RMS-NORM-E4M3V2: add_rms_norm_f8f4v2 (the prime's fused residual add + RMSNorm +
+    //     F8F4 v2 activation quantize) must equal add_rms_norm then the v2 quantizer byte for
+    //     byte: residual, f32 norm output, e4m3 values and every written scale slot, and the
+    //     q8_1 pair against quantize_q8_1. Rows 300 (a partial 64-token slot group) and 1,024;
+    //     one 32-group of exact zeros (amax = 0). ---
+    {
+        let (ncols, eps) = (5120usize, 1e-6f32);
+        for &nrows in &[300usize, 1024] {
+            let mut a: Vec<f32> = (0..ncols * nrows).map(|i| pr(i + 83) * 3.0).collect();
+            let b: Vec<f32> = (0..ncols * nrows).map(|i| pr(i + 89) * 0.7).collect();
+            for i in 64..96 {
+                a[7 * ncols + i] = -b[7 * ncols + i];
+            }
+            let w: Vec<f32> = (0..ncols).map(|i| 0.5 + pr(i + 97) * 0.4).collect();
+            let (ad, bd, wd) = (e.htod(&a)?, e.htod(&b)?, e.htod(&w)?);
+            let mut res_ref = e.zeros(ncols * nrows)?;
+            let mut z_ref = e.zeros(ncols * nrows)?;
+            e.add_rms_norm(&ad, &bd, &wd, &mut res_ref, &mut z_ref, ncols, nrows, eps)?;
+            let q_ref = e.f8f4_quantize_v2_raw(&z_ref, nrows, ncols)?;
+            let mut res_f = e.zeros(ncols * nrows)?;
+            let mut z_f = e.zeros(ncols * nrows)?;
+            let key = e.addr_f32(&z_f);
+            e.add_rms_norm_f8f4v2(
+                &ad,
+                &bd,
+                &wd,
+                &mut res_f,
+                Some(&mut z_f),
+                key,
+                true,
+                ncols,
+                nrows,
+                eps,
+            )?;
+            let (q_f, q8_f) = e.f8f4_take_seed().ok_or("ADD-RMS-NORM-E4M3V2: no seed")?;
+            let q_f = q_f.ok_or("ADD-RMS-NORM-E4M3V2: no scratch")?;
+            let (q8q_f, q8d_f) = q8_f.ok_or("ADD-RMS-NORM-E4M3V2: no q8_1 pair")?;
+            let bits = |x: &[f32], y: &[f32]| {
+                x.iter()
+                    .zip(y)
+                    .filter(|(p, q)| p.to_bits() != q.to_bits())
+                    .count()
+            };
+            // the q8_1 pair against quantize_q8_1 of the reference norm output
+            let (q8q_r, q8d_r) = e.quantize_q8_1(&z_ref, nrows, ncols)?;
+            let q8bad = e
+                .dtoh_i8(&q8q_r)?
+                .iter()
+                .zip(&e.dtoh_i8(&q8q_f)?)
+                .filter(|(p, q)| p != q)
+                .count()
+                + bits(&e.dtoh(&q8d_r)?, &e.dtoh(&q8d_f)?);
+            let rbad = bits(&e.dtoh(&res_ref)?, &e.dtoh(&res_f)?);
+            let zbad = bits(&e.dtoh(&z_ref)?, &e.dtoh(&z_f)?);
+            let (qr, qf) = (e.dtoh_u8(&q_ref)?, e.dtoh_u8(&q_f)?);
+            let nv = nrows * ncols;
+            let vbad = qr[..nv]
+                .iter()
+                .zip(&qf[..nv])
+                .filter(|(p, q)| p != q)
+                .count();
+            // scale plane [ncols / 32][tp] f32, token slot permuted inside 64-token groups
+            let tp = nrows.div_ceil(256) * 256;
+            let slot = |t: usize| -> usize {
+                let (lt, p, r8) = (t & 63, (t & 63) >> 3, t & 7);
+                let _ = lt;
+                (t & !63) + ((p >> 1) * 4 + (r8 >> 1)) * 4 + (p & 1) * 2 + (r8 & 1)
+            };
+            let sc = |v: &[u8], g: usize, t: usize| -> u32 {
+                let o = nv + (g * tp + slot(t)) * 4;
+                u32::from_le_bytes([v[o], v[o + 1], v[o + 2], v[o + 3]])
+            };
+            let mut sbad = 0usize;
+            for g in 0..ncols / 32 {
+                for t in 0..nrows {
+                    if sc(&qr, g, t) != sc(&qf, g, t) {
+                        sbad += 1;
+                    }
+                }
+            }
+            // and with the f32 output skipped: the same scratch
+            let mut res_s = e.zeros(ncols * nrows)?;
+            e.add_rms_norm_f8f4v2(
+                &ad, &bd, &wd, &mut res_s, None, key, false, ncols, nrows, eps,
+            )?;
+            let (q_s, q8_s) = e.f8f4_take_seed().ok_or("ADD-RMS-NORM-E4M3V2: no seed")?;
+            let q_s = q_s.ok_or("ADD-RMS-NORM-E4M3V2: no scratch")?;
+            let q8_absent = q8_s.is_none();
+            let skip_rbad = bits(&e.dtoh(&res_ref)?, &e.dtoh(&res_s)?);
+            let qs = e.dtoh_u8(&q_s)?;
+            let skip_vbad = qr[..nv]
+                .iter()
+                .zip(&qs[..nv])
+                .filter(|(p, q)| p != q)
+                .count();
+            let mut skip_sbad = 0usize;
+            for g in 0..ncols / 32 {
+                for t in 0..nrows {
+                    if sc(&qr, g, t) != sc(&qs, g, t) {
+                        skip_sbad += 1;
+                    }
+                }
+            }
+            let ok = rbad == 0
+                && zbad == 0
+                && vbad == 0
+                && sbad == 0
+                && q8bad == 0
+                && skip_vbad == 0
+                && skip_sbad == 0
+                && skip_rbad == 0
+                && q8_absent;
+            println!(
+                "ADD-RMS-NORM-E4M3V2 rows={nrows}: res={rbad} norm={zbad} e4m3={vbad} scales={sbad} \
+                 q8_1={q8bad} (f32 skipped: res={skip_rbad} e4m3={skip_vbad} scales={skip_sbad}) {}",
+                if ok {
+                    "OK"
+                } else {
+                    fails += 1;
+                    "FAIL"
+                }
+            );
+        }
+    }
+
     // --- DECODE GLUE-FUSION: add_rms_norm_q8_1 must be BIT-IDENTICAL to add_rms_norm -> quantize_q8_1
     //     (same residual `res` AND same q8_1 bytes/scales). ---
     {
@@ -1946,6 +2200,112 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
             unsafe {
                 std::env::remove_var("MEMRA_GDN_WGMMA");
+            }
+        }
+    }
+
+    // --- GDN-DB-GQA: the compact q/k layout at a 3:1 value:key head ratio (16 key / 48 value
+    //     heads, Qwen3.5/3.8 dense GDN) against the broadcast layout, BIT-IDENTICAL. The compact
+    //     consumers read q/k head `h % hk`; the broadcast layout stores key head `vh % num_k` at
+    //     value head `vh`. The reference runs the broadcast layout with MEMRA_GDN_TRAFFIC=0
+    //     (chunks-fastest K2/K3/K5 grid, K3's f32 W store) and MEMRA_GDN_K45=0 (the K4/K5 pair);
+    //     the arms run the heads-fastest grid without that store, in both layouts, and the
+    //     fused state+output kernel (gdn_chunk_state_output_mma) against the pair. The mma config
+    //     (C = 32) is the only one that takes the compact layout, so the cell runs where it is
+    //     the default. Covers a tail chunk (T = 200), one partial chunk (T = 20) and a nonzero
+    //     initial state. ---
+    if cfg!(memra_hopper_mma) || env!("MEMRA_BUILT_CUDA_ARCH") == "120a" {
+        let (s_v, h, nk, c) = (128usize, 6usize, 2usize, 32usize);
+        for &t in &[200usize, 64, 20] {
+            let mut qc = vec![0f32; s_v * nk * t];
+            let mut kc = vec![0f32; s_v * nk * t];
+            for row in 0..nk * t {
+                let (mut nq, mut nkk) = (0f32, 0f32);
+                for i in 0..s_v {
+                    let a = pr(row * s_v + i + 41);
+                    let b = pr(row * s_v + i + 43);
+                    qc[row * s_v + i] = a;
+                    kc[row * s_v + i] = b;
+                    nq += a * a;
+                    nkk += b * b;
+                }
+                for i in 0..s_v {
+                    qc[row * s_v + i] /= nq.sqrt();
+                    kc[row * s_v + i] /= nkk.sqrt();
+                }
+            }
+            // broadcast twin: value head vh holds key head vh % nk (the conv scatter's mapping)
+            let mut qb = vec![0f32; s_v * h * t];
+            let mut kb = vec![0f32; s_v * h * t];
+            for tt in 0..t {
+                for vh in 0..h {
+                    let src = (tt * nk + vh % nk) * s_v;
+                    let dst = (tt * h + vh) * s_v;
+                    qb[dst..dst + s_v].copy_from_slice(&qc[src..src + s_v]);
+                    kb[dst..dst + s_v].copy_from_slice(&kc[src..src + s_v]);
+                }
+            }
+            let v: Vec<f32> = (0..s_v * h * t).map(|i| pr(i + 47)).collect();
+            let g: Vec<f32> = (0..h * t).map(|i| -0.02 - pr(i + 53).abs() * 0.5).collect();
+            let beta: Vec<f32> = (0..h * t).map(|i| 0.3 + pr(i + 59).abs() * 0.6).collect();
+            let st0: Vec<f32> = (0..s_v * s_v * h).map(|i| pr(i + 61) * 0.5).collect();
+            let scale = 1.0 / (s_v as f32).sqrt();
+            let (qcd, kcd, qbd, kbd) = (e.htod(&qc)?, e.htod(&kc)?, e.htod(&qb)?, e.htod(&kb)?);
+            let (vd, gd, bd, sid) = (e.htod(&v)?, e.htod(&g)?, e.htod(&beta)?, e.htod(&st0)?);
+            // SAFETY: single-threaded gate binary; the seams read the env per call.
+            let run = |compact: bool,
+                       traffic: &str,
+                       k45: &str|
+             -> Result<(Vec<f32>, Vec<f32>), Box<dyn std::error::Error>> {
+                unsafe {
+                    std::env::set_var("MEMRA_GDN_MMA", "1");
+                    std::env::set_var("MEMRA_GDN_WGMMA", "0");
+                    std::env::set_var("MEMRA_GDN_TRAFFIC", traffic);
+                    std::env::set_var("MEMRA_GDN_K45", k45);
+                }
+                let mut so = e.zeros(s_v * s_v * h)?;
+                let mut o = e.zeros(s_v * h * t)?;
+                let (qd, kd, hk) = if compact {
+                    (&qcd, &kcd, nk)
+                } else {
+                    (&qbd, &kbd, h)
+                };
+                e.gdn_scan_chunked(
+                    qd, kd, &vd, &gd, &bd, None, None, &sid, &mut so, &mut o, h, t, scale, c, hk,
+                )?;
+                unsafe {
+                    std::env::remove_var("MEMRA_GDN_MMA");
+                    std::env::remove_var("MEMRA_GDN_WGMMA");
+                    std::env::remove_var("MEMRA_GDN_TRAFFIC");
+                    std::env::remove_var("MEMRA_GDN_K45");
+                }
+                Ok((e.dtoh(&o)?, e.dtoh(&so)?))
+            };
+            let (o_ref, s_ref) = run(false, "0", "0")?;
+            let bits = |a: &[f32], b: &[f32]| {
+                a.iter()
+                    .zip(b)
+                    .filter(|(x, y)| x.to_bits() != y.to_bits())
+                    .count()
+            };
+            for (name, compact, traffic, k45) in [
+                ("compact, traffic set, fused K4+K5", true, "1", "1"),
+                ("compact, traffic set, K4/K5 pair", true, "1", "0"),
+                ("compact, traffic off, fused K4+K5", true, "0", "1"),
+                ("broadcast, traffic set, fused K4+K5", false, "1", "1"),
+            ] {
+                let (o_x, s_x) = run(compact, traffic, k45)?;
+                let (bo, bs) = (bits(&o_ref, &o_x), bits(&s_ref, &s_x));
+                println!(
+                    "GDN-DB-GQA T={t:3} H={h} hk={} {name}: out bitdiff={bo} state bitdiff={bs} {}",
+                    if compact { nk } else { h },
+                    if bo == 0 && bs == 0 {
+                        "OK"
+                    } else {
+                        fails += 1;
+                        "FAIL"
+                    }
+                );
             }
         }
     }
@@ -9067,6 +9427,67 @@ fn f8f4_v2_cells(
                 ya.len(),
                 if nbad == 0 { "OK" } else { "FAIL" }
             );
+        }
+    }
+    // MMQ-F8F4-V2-GATEUP: the fused gate/up silu launch must write the down GEMM's v2
+    // activation byte for byte as the two plain v2 GEMMs then the v2 silu quantize do (values and
+    // every written scale slot), on the model's own gate and up weights, in the GGUF layout with
+    // unit macro-scales and in the A6 split-plane (rp, the served layout) with distinct ones.
+    if let (Some(tg), Some(tu)) = (
+        g.find("blk.0.ffn_gate.weight")
+            .filter(|t| t.ggml_type == GgmlType::NVFP4),
+        g.find("blk.0.ffn_up.weight")
+            .filter(|t| t.ggml_type == GgmlType::NVFP4),
+    ) {
+        let (in_f, nf) = (tg.ne[0] as usize, tg.ne[1] as usize);
+        if in_f.is_multiple_of(256)
+            && nf.is_multiple_of(32)
+            && tu.ne[0] == tg.ne[0]
+            && tu.ne[1] == tg.ne[1]
+        {
+            let (rg, ru) = (g.tensor_data(tg), g.tensor_data(tu));
+            let gguf = (e.htod_bytes(rg)?, e.htod_bytes(ru)?);
+            let split = (
+                e.htod_bytes(&repack_nvfp4_split(rg, nf))?,
+                e.htod_bytes(&repack_nvfp4_split(ru, nf))?,
+            );
+            for (rp, (wg, wu), scales) in [
+                (false, &gguf, (1.0f32, 1.0f32)),
+                (true, &split, (0.71f32, 1.37f32)),
+            ] {
+                for tt in [130usize, 1024, 4096] {
+                    let x: Vec<f32> = (0..tt * in_f).map(|i| pr(i + 101) * 2.0).collect();
+                    let xd = e.htod(&x)?;
+                    let a = e.dtoh_u8(&e.f8f4_gateup_silu_act_arm_raw(
+                        wg, wu, &xd, tt, in_f, nf, scales, rp, false,
+                    )?)?;
+                    let b = e.dtoh_u8(&e.f8f4_gateup_silu_act_arm_raw(
+                        wg, wu, &xd, tt, in_f, nf, scales, rp, true,
+                    )?)?;
+                    let nv = tt * nf;
+                    let mut nbad = a[..nv].iter().zip(&b[..nv]).filter(|(p, q)| p != q).count();
+                    let tp = tt.div_ceil(256) * 256;
+                    let slot = |t: usize| -> usize {
+                        let (p8, r8) = ((t & 63) >> 3, t & 7);
+                        (t & !63) + ((p8 >> 1) * 4 + (r8 >> 1)) * 4 + (p8 & 1) * 2 + (r8 & 1)
+                    };
+                    for gq in 0..nf / 32 {
+                        for t in 0..tt {
+                            let o = nv + (gq * tp + slot(t)) * 4;
+                            if a[o..o + 4] != b[o..o + 4] {
+                                nbad += 1;
+                            }
+                        }
+                    }
+                    bad += nbad;
+                    println!(
+                        "MMQ-F8F4-V2-GATEUP blk.0.ffn_gate/up [NVFP4 {in_f}x{nf}] rp={} T={tt}: byte-mismatch {nbad}/{} {}",
+                        u8::from(rp),
+                        nv + (nf / 32) * tt,
+                        if nbad == 0 { "OK" } else { "FAIL" }
+                    );
+                }
+            }
         }
     }
     println!(

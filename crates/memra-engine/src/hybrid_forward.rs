@@ -6526,19 +6526,43 @@ impl HybridModel {
     /// One prime chunk: the full layer stack over `tokens`, continuing from the cache's current
     /// state (`cache.pos` = tokens already primed; 0 = fresh). Positions/RoPE are absolute
     /// task #21 de-broadcast: the q/k head count PREP must emit so the scan's consumers
-    /// agree. Compact (num_k) ONLY when the scan will take the chunked+mma route AND
-    /// num_k == num_v/2 (the engine-side hint mirrors this exact formula); everything
-    /// else (s128 verify tier, chunked-off, mma-off) keeps the broadcast layout.
+    /// agree. Compact (num_k) ONLY when the scan will take the chunked+mma route AND num_v is
+    /// a multiple of num_k; everything else (s128 verify tier, chunked-off, mma-off) keeps the
+    /// broadcast layout. Every compact consumer reads q/k head `h % hk`, and the broadcast
+    /// layout stores key head `vh % num_k` at value head `vh`, so both layouts hand each value
+    /// head the same values. The multiple-of form covers 16 key / 48 value heads (Qwen3.5/3.8
+    /// dense GDN, GB10 prefill lane 2026-11-07); `MEMRA_GDN_TRAFFIC=0` keeps the earlier
+    /// `num_v == 2 * num_k` predicate.
     fn gdn_hk(e: &Engine, t: usize, num_v: usize, num_k: usize) -> usize {
+        // the MEMRA_GDN_DIFF oracle runs the broadcast-only sequential scan beside the chunked one
+        if std::env::var_os("MEMRA_GDN_DIFF").is_some() {
+            return num_v;
+        }
+        let compact = if Engine::gdn_traffic_on() {
+            num_k > 0 && num_v.is_multiple_of(num_k)
+        } else {
+            num_k * 2 == num_v
+        };
         if Engine::gdn_chunked_enabled()
             && t >= 16
             && e.gdn_mma_enabled(Engine::gdn_chunk_size())
-            && num_k * 2 == num_v
+            && compact
         {
             num_k
         } else {
             num_v
         }
+    }
+
+    /// The non-f16 eager prime's residual add + RMSNorm sites (GB10 prefill lane, 2026-11-07):
+    /// one `add_rms_norm` kernel (the same values, kernel-check `add_rms_norm fused`), which also
+    /// writes the F8F4 v2 activation scratch (and, before a GDN mixer, the q8_1 pair) of the norm
+    /// output for the GEMM group that reads it when that group takes the v2 tile; the dense FFN's
+    /// f32 norm output is then not written (kernel-check `ADD-RMS-NORM-E4M3V2`).
+    /// `MEMRA_PRIME_NORM_FUSE=0` restores the `add` then `rms_norm` pair (rollback seam).
+    fn prime_norm_fuse_on() -> bool {
+        static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+        *ON.get_or_init(|| std::env::var("MEMRA_PRIME_NORM_FUSE").as_deref() != Ok("0"))
     }
 
     /// task #17: gate for the fused fp16-operand epilogues (silu_mul/gated_rmsnorm/sig_mul
@@ -6795,6 +6819,8 @@ impl HybridModel {
             .max()
             .unwrap_or(n_embd)
             .max(n_embd);
+        // No fused-norm seed survives into or out of this walk (error returns included).
+        let _seed_guard = e.f8f4_seed_guard();
         let use_slabs = std::env::var("MEMRA_PRIME_SLABS").as_deref() != Ok("0");
         let slab = if use_slabs {
             Some(self.prime_slabs_get(e, t, n_embd, n_ff_max)?)
@@ -6999,6 +7025,9 @@ impl HybridModel {
             crate::qwen_prime_graph::set_layer(il);
             let layer = &self.layers[il];
             let hx16 = if f16fuse { Some(&*h16) } else { None };
+            // false once the fused norm below skips the dense FFN's f32 norm output (its seeded
+            // F8F4 activation is then the only form of z)
+            let mut z_written = true;
             if use_seg {
                 // core-split path: projections -> _inner core -> out-GEMM INTO the mixed
                 // slab (no copies) -> S-mid segment [add + post-norm] as one graph launch.
@@ -7017,8 +7046,9 @@ impl HybridModel {
                     Mixer::Linear(la) => {
                         let ws = [&la.wqkv, &la.wqkv_gate, &la.ssm_beta, &la.ssm_alpha];
                         let g4 = e.matmul_group_prefill_xh(&ws, h, hx16, t)?;
-                        let (pre, pre16) =
-                            self.linear_attn_prime_core_pad_inner(e, la, g4, t, cache, il, None)?;
+                        let (pre, pre16) = self.linear_attn_prime_core_pad_inner(
+                            e, la, g4, t, cache, il, None, false,
+                        )?;
                         (pre, pre16, &la.ssm_out)
                     }
                 };
@@ -7092,8 +7122,33 @@ impl HybridModel {
                         eps,
                     )?;
                 } else {
-                    e.add(x_cur, &mixed, x1, t * n_embd)?;
-                    e.rms_norm(x1, layer.post_attn_norm.float_data(), z, n_embd, t, eps)?;
+                    // The residual add and the post-attention norm in one kernel; when the dense
+                    // FFN's gate and up both take the F8F4 v2 tile, that kernel also writes their
+                    // shared activation scratch (the quantize-once scope adopts it). Same values.
+                    let w_post = layer.post_attn_norm.float_data();
+                    let quant = Engine::add_rms_norm_f8f4v2_ok(n_embd)
+                        && match &layer.ffn {
+                            crate::hybrid::Ffn::Dense {
+                                ffn_gate, ffn_up, ..
+                            } => e.f8f4_v2_direct(ffn_gate, t) && e.f8f4_v2_direct(ffn_up, t),
+                            _ => false,
+                        };
+                    if !Self::prime_norm_fuse_on() {
+                        e.f8f4_seed_clear();
+                        e.add(x_cur, &mixed, x1, t * n_embd)?;
+                        e.rms_norm(x1, w_post, z, n_embd, t, eps)?;
+                    } else if quant {
+                        // No f32 norm output: its only readers here are gate and up, and both
+                        // take the seeded scratch.
+                        let key = e.addr_f32(z);
+                        e.add_rms_norm_f8f4v2(
+                            x_cur, &mixed, w_post, x1, None, key, false, n_embd, t, eps,
+                        )?;
+                        z_written = false;
+                    } else {
+                        e.f8f4_seed_clear();
+                        e.add_rms_norm(x_cur, &mixed, w_post, x1, z, n_embd, t, eps)?;
+                    }
                 }
                 anat_mark!(4);
             }
@@ -7106,7 +7161,27 @@ impl HybridModel {
                     ffn_up,
                     ffn_down,
                     ffn_down_pqs,
-                } => {
+                } => 'dense: {
+                    // gate, up and the down GEMM's activation quantize in one F8F4 v2 launch when
+                    // all three weights take the v2 tile and the activation is plain silu: the
+                    // gate/up f32 outputs are never written (GB10 prefill lane, 2026-11-07).
+                    if zx16.is_none()
+                        && !Self::f16out_on(e, t)
+                        && self.cfg.m3.is_none()
+                        && self.cfg.clamp_shexp_at(il as u32).is_none()
+                        && ffn_down_pqs.is_none()
+                        && e.f8f4_ffn_fused_ok(ffn_gate, ffn_up, ffn_down, t)
+                    {
+                        let y = e.matmul_prefill_ffn_f8f4v2(
+                            ffn_gate, ffn_up, ffn_down, z, z_written, t,
+                        )?;
+                        if use_seg {
+                            e.copy_into(sl_fo, 0, &y, t * n_embd)?;
+                        } else {
+                            fo_owned = Some(y);
+                        }
+                        break 'dense;
+                    }
                     let n_ff = ffn_gate.out_features();
                     // gate/up INTO boundary slabs (piecewise increment 2) when f16 mirrors take
                     // them. Otherwise the allocating group's outputs feed the activation directly:
@@ -7121,6 +7196,13 @@ impl HybridModel {
                     let (gate_src, up_src): (&CudaSlice<f32>, &CudaSlice<f32>) = if into_ok {
                         (&*sl_gate, &*sl_up)
                     } else {
+                        // an unwritten z (the fused norm seeded it) is only readable through
+                        // the seed, which this group's quantize-once scope adopts
+                        if !z_written && !e.f8f4_seed_pending(e.addr_f32(z), n_embd, t) {
+                            return Err(
+                                "prime: FFN norm output unwritten and no seed for it".into()
+                            );
+                        }
                         g2_owned = e.matmul_group_prefill_xh(&[ffn_gate, ffn_up], z, zx16, t)?;
                         (&g2_owned[0], &g2_owned[1])
                     };
@@ -7249,8 +7331,42 @@ impl HybridModel {
                     if f16fuse {
                         e.add_rms_norm_f16out(x1, fo, w_next, x_nxt, h, h16, n_embd, t, eps)?;
                     } else {
-                        e.add(x1, fo, x_nxt, t * n_embd)?;
-                        e.rms_norm(x_nxt, w_next, h, n_embd, t, eps)?;
+                        // The residual add and the next layer's attention norm in one kernel;
+                        // when the next mixer's first projection takes the F8F4 v2 tile, the
+                        // kernel also seeds the mixer group's activation scratch. `h` stays
+                        // written in f32: smaller projections of the group read it.
+                        let first = match &self.layers[il + 1].mixer {
+                            Mixer::Full(fa) => Some(&fa.wq),
+                            Mixer::Linear(la) => Some(&la.wqkv),
+                            _ => None,
+                        };
+                        if !Self::prime_norm_fuse_on() {
+                            e.f8f4_seed_clear();
+                            e.add(x1, fo, x_nxt, t * n_embd)?;
+                            e.rms_norm(x_nxt, w_next, h, n_embd, t, eps)?;
+                        } else if Engine::add_rms_norm_f8f4v2_ok(n_embd)
+                            && first.is_some_and(|w| e.f8f4_v2_direct(w, t))
+                        {
+                            let key = e.addr_f32(h);
+                            // A GDN mixer's beta and alpha projections (48 outputs, the dp4a
+                            // matvec) read the q8_1 pair of the same activation.
+                            let q8 = matches!(self.layers[il + 1].mixer, Mixer::Linear(_));
+                            e.add_rms_norm_f8f4v2(
+                                x1,
+                                fo,
+                                w_next,
+                                x_nxt,
+                                Some(&mut *h),
+                                key,
+                                q8,
+                                n_embd,
+                                t,
+                                eps,
+                            )?;
+                        } else {
+                            e.f8f4_seed_clear();
+                            e.add_rms_norm(x1, fo, w_next, x_nxt, h, n_embd, t, eps)?;
+                        }
                     }
                 } else {
                     e.add(x1, fo, x_nxt, t * n_embd)?;
@@ -9145,6 +9261,7 @@ impl HybridModel {
         cache: &mut Cache,
         il: usize,
         pad_len: Option<&CudaSlice<i32>>,
+        seed_out: bool,
     ) -> Result<(CudaSlice<f32>, Option<CudaSlice<u8>>), Box<dyn std::error::Error>> {
         // shim over the view twin (task #16): full-range views of the owned buffers.
         let geometry = la.geometry;
@@ -9169,6 +9286,7 @@ impl HybridModel {
             cache,
             il,
             pad_len,
+            seed_out,
         )
     }
 
@@ -9334,6 +9452,7 @@ impl HybridModel {
                         caches[s],
                         il,
                         None,
+                        false,
                     )
                 })
                 .collect();
@@ -9520,6 +9639,7 @@ impl HybridModel {
         cache: &mut Cache,
         il: usize,
         pad_len: Option<&CudaSlice<i32>>,
+        seed_out: bool,
     ) -> Result<(CudaSlice<f32>, Option<CudaSlice<u8>>), Box<dyn std::error::Error>> {
         let cfg = &self.cfg;
         let geometry = la.geometry;
@@ -9591,6 +9711,26 @@ impl HybridModel {
                 eps,
             )?;
             Some(g16)
+        } else if seed_out
+            && pad_len.is_none()
+            && Self::prime_norm_fuse_on()
+            && e.f8f4_v2_direct(&la.ssm_out, t)
+        {
+            // The gated norm also writes the ssm_out GEMM's F8F4 v2 activation (seeded for
+            // `linear_attn_prime_core_pad`'s scoped GEMM); the f32 output then has no reader.
+            let key = e.addr_f32(&gn);
+            e.gated_rmsnorm_f8f4v2(
+                &o,
+                la.ssm_norm.float_data(),
+                z,
+                None,
+                key,
+                d_state,
+                num_v,
+                t,
+                eps,
+            )?;
+            None
         } else {
             e.gated_rmsnorm_zv(
                 &o,
@@ -9618,13 +9758,15 @@ impl HybridModel {
         il: usize,
         pad_len: Option<&CudaSlice<i32>>,
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
-        let (gn, gn16) = self.linear_attn_prime_core_pad_inner(e, la, g4, t, cache, il, pad_len)?;
+        let (gn, gn16) =
+            self.linear_attn_prime_core_pad_inner(e, la, g4, t, cache, il, pad_len, true)?;
         if let Some(xh) = &gn16
             && let Some(y) = e.try_f16_gemm_pre_prefill(&la.ssm_out, xh, t)?
         {
             return Ok(y);
         }
-        e.matmul_prefill(&la.ssm_out, &gn, t)
+        // a quantize-once scope over gn adopts the gated norm's seed when it left one
+        e.matmul_prefill_scoped(&la.ssm_out, &gn, t)
     }
 
     /// Full-attention mixer with QK-norm, partial RoPE, sigmoid output gate (qwen35 :257-336).

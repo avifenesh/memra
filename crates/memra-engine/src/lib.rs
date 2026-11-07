@@ -1090,6 +1090,15 @@ fn gemm_fatbin_bytes() -> std::borrow::Cow<'static, [u8]> {
 /// `cfg!(memra_portable_cuda)` test this instead; sm_89 keeps the pure-portable behavior.
 /// The sm_120a/sm_100a-only MMA kinds (mxf4nvf4, kind::f8f6f4) are NOT covered — their
 /// launchers stay fail-closed stubs on 90a and their dispatch arms stay arch-gated.
+/// A device-keyed default with an env override: `1`/`0` decide, anything else follows `dev`.
+pub(crate) fn f8f4_route_on_dev(env: Option<&str>, dev: bool) -> bool {
+    match env {
+        Some("1") => true,
+        Some("0") => false,
+        _ => dev,
+    }
+}
+
 pub(crate) const fn portable_mma_gated() -> bool {
     cfg!(memra_portable_cuda) && !cfg!(memra_hopper_mma)
 }
@@ -1856,6 +1865,8 @@ pub(crate) struct F8f4ActGroup {
     pub(crate) scratch: Option<CudaSlice<u8>>,
     /// The scratch is in the F8F4 v2 activation layout (`Engine::f8f4_v2_on`).
     pub(crate) v2: bool,
+    /// The activation's q8_1 pair once a dp4a weight of the group quantized it.
+    pub(crate) q8: Option<(CudaSlice<i8>, CudaSlice<f32>)>,
 }
 
 /// Closes the scope (and frees its scratch, stream-ordered) when the group finishes.
@@ -1866,6 +1877,17 @@ pub(crate) struct F8f4ActGroupGuard<'a> {
 impl Drop for F8f4ActGroupGuard<'_> {
     fn drop(&mut self) {
         *self.engine.f8f4_act_group.lock().unwrap() = None;
+    }
+}
+
+/// See `Engine::f8f4_seed_guard`.
+pub struct F8f4SeedGuard<'a> {
+    engine: &'a Engine,
+}
+
+impl Drop for F8f4SeedGuard<'_> {
+    fn drop(&mut self) {
+        self.engine.f8f4_seed_clear();
     }
 }
 
@@ -2119,6 +2141,11 @@ pub struct Engine {
     /// weights runs over ONE unmodified activation buffer, the NVFP4 F8F4 entry keeps the e4m3
     /// scratch it quantized for the first weight and hands it to the rest.
     f8f4_act_group: Mutex<Option<F8f4ActGroup>>,
+    /// A v2 activation scratch a fused norm kernel already wrote for the activation buffer
+    /// `x_ptr` (`add_rms_norm_f8f4v2`): the next quantize-once scope opened over that same buffer
+    /// adopts it, any other scope drops it. Take-once, so a later write of the buffer can never
+    /// meet a stale scratch.
+    f8f4_act_seed: Mutex<Option<F8f4ActGroup>>,
     /// LAUNCH-STRUCTURE STAGE 1: persistent PINNED (cacheable, flags=0) host staging buffer for the
     /// fused-router sel/w readback — one async DtoH pair + ONE sync instead of two synced dtohs.
     /// Grown lazily; reused every MoE layer (single-threaded decode serializes on the sync).
@@ -3911,6 +3938,7 @@ impl Engine {
             argmax_partials: Mutex::new(None),
             prime_deqw_ws: Mutex::new(None),
             f8f4_act_group: Mutex::new(None),
+            f8f4_act_seed: Mutex::new(None),
             router_stage: Mutex::new(None),
             hyper_decode_ws: Mutex::new(None),
             mla_seg_ws: Mutex::new(None),
@@ -12179,29 +12207,106 @@ impl Engine {
         out_f: usize,
         row_bytes: usize,
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
-        let (aq, ad) = self.quantize_q8_1(x, m, in_f)?;
-        let f = self.func(name);
+        // Quantize-once scope (`matmul_group`): the q8_1 pair of the group's unmodified
+        // activation is quantized for the first dp4a weight (or seeded by the fused norm that
+        // wrote it) and reused by the rest: the same bytes `quantize_q8_1` would write again.
+        let x_key = self.addr_f32(x);
+        let mut group = self.f8f4_act_group.lock().unwrap();
+        let in_group = group
+            .as_ref()
+            .is_some_and(|g| g.x_ptr == x_key && g.in_f == in_f && g.m == m);
+        let owned;
+        let (aq, ad) = if in_group {
+            let g = group.as_mut().unwrap();
+            if g.q8.is_none() {
+                g.q8 = Some(self.quantize_q8_1(x, m, in_f)?);
+            }
+            let (aq, ad) = g.q8.as_ref().unwrap();
+            (aq, ad)
+        } else {
+            owned = self.quantize_q8_1(x, m, in_f)?;
+            (&owned.0, &owned.1)
+        };
         let mut y = self.alloc_uninit::<f32>(m * out_f)?; // full-overwrite output: skip memset
-        let cfg = LaunchConfig {
-            grid_dim: (out_f as u32, m as u32, 1),
-            block_dim: (128, 1, 1),
-            shared_mem_bytes: 0,
+        // Token-tiled twin at prefill row counts (bit-identical per (token, row)).
+        let tiled = name == "qmatvec_nvfp4_dp4a_rp" && self.dp4a_rp_tiled(m, in_f, out_f);
+        let (f, cfg) = if tiled {
+            (
+                self.func("qmatvec_nvfp4_dp4a_rp_t4"),
+                LaunchConfig {
+                    grid_dim: (m.div_ceil(4) as u32, 1, 1),
+                    block_dim: (128, 1, 1),
+                    shared_mem_bytes: 0,
+                },
+            )
+        } else {
+            (
+                self.func(name),
+                LaunchConfig {
+                    grid_dim: (out_f as u32, m as u32, 1),
+                    block_dim: (128, 1, 1),
+                    shared_mem_bytes: 0,
+                },
+            )
         };
         let (inf, outf, mi, rb) = (in_f as i32, out_f as i32, m as i32, row_bytes as i64);
-        let __s_b = self.gpu.stream();
-        let mut b = __s_b.launch_builder(&f);
-        b.arg(w)
-            .arg(&aq)
-            .arg(&ad)
-            .arg(&mut y)
-            .arg(&inf)
-            .arg(&outf)
-            .arg(&mi)
-            .arg(&rb);
-        unsafe {
-            b.launch(cfg)?;
+        {
+            let __s_b = self.gpu.stream();
+            let mut b = __s_b.launch_builder(&f);
+            b.arg(w)
+                .arg(aq)
+                .arg(ad)
+                .arg(&mut y)
+                .arg(&inf)
+                .arg(&outf)
+                .arg(&mi)
+                .arg(&rb);
+            unsafe {
+                b.launch(cfg)?;
+            }
         }
+        drop(group);
         Ok(y)
+    }
+
+    /// Whether the NVFP4 rp dp4a matvec runs its token-tiled twin (`qmatvec_nvfp4_dp4a_rp_t4`):
+    /// from 32 rows, below 128 outputs (every block walks every output row; wider weights take
+    /// the MMQ/GEMM tiers at these row counts), for in_f % 64 == 0 up to 8,192 (two 32-groups
+    /// per thread).
+    /// `MEMRA_DP4A_TILED` of `1`/`0` decides on any device (read per call so kernel-check pins
+    /// both); unset follows the device, on for GB10 (`gb10_class`), where it was measured: it
+    /// trades one block per (row, token) for one per four tokens.
+    pub fn dp4a_rp_tiled(&self, m: usize, in_f: usize, out_f: usize) -> bool {
+        m >= 32
+            && out_f < 128
+            && in_f.is_multiple_of(64)
+            && in_f <= 8192
+            && f8f4_route_on_dev(
+                std::env::var("MEMRA_DP4A_TILED").ok().as_deref(),
+                self.gb10_class(),
+            )
+    }
+
+    /// kernel-check `NVFP4-DP4A-RP-T4`: the rp dp4a matvec through `qmatvec_dp4a_named` (the
+    /// tiled twin or the grid kernel by `MEMRA_DP4A_TILED`).
+    pub fn qmatvec_nvfp4_dp4a_rp_raw(
+        &self,
+        w: &CudaSlice<u8>,
+        x: &CudaSlice<f32>,
+        m: usize,
+        in_f: usize,
+        out_f: usize,
+        row_bytes: usize,
+    ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
+        self.qmatvec_dp4a_named(
+            "qmatvec_nvfp4_dp4a_rp",
+            &w.slice(0..w.len()),
+            x,
+            m,
+            in_f,
+            out_f,
+            row_bytes,
+        )
     }
 
     /// NVFP4 dp4a matvec over PRE-QUANTIZED q8_1 activations, writing a caller-provided output.
@@ -24604,6 +24709,42 @@ impl Engine {
         Ok(out)
     }
 
+    /// Drop any pending fused-norm seed (`f8f4_act_seed`). A writer of a buffer that does not
+    /// seed calls this, and the eager prime clears on entry and exit (`F8f4SeedGuard`), so a seed
+    /// can only be adopted by the scope over the buffer whose write produced it.
+    pub fn f8f4_seed_clear(&self) {
+        *self.f8f4_act_seed.lock().unwrap() = None;
+    }
+
+    /// Whether a fused-norm seed is pending for the buffer at `x_ptr` ([m, in_f]).
+    pub fn f8f4_seed_pending(&self, x_ptr: u64, in_f: usize, m: usize) -> bool {
+        self.f8f4_act_seed
+            .lock()
+            .unwrap()
+            .as_ref()
+            .is_some_and(|g| g.x_ptr == x_ptr && g.in_f == in_f && g.m == m && g.v2)
+    }
+
+    /// Clears the fused-norm seed when dropped (the eager prime's entry and every exit, error
+    /// returns included).
+    pub fn f8f4_seed_guard(&self) -> F8f4SeedGuard<'_> {
+        self.f8f4_seed_clear();
+        F8f4SeedGuard { engine: self }
+    }
+
+    /// `matmul_prefill(w, x, m)` inside a quantize-once scope over `x`, so a single weight adopts
+    /// the F8F4 v2 activation a fused norm seeded for `x` (`gated_rmsnorm_f8f4v2`). Without a seed
+    /// the scope only records the scratch the weight quantizes; the result is the same.
+    pub fn matmul_prefill_scoped(
+        &self,
+        w: &crate::model::GpuTensor,
+        x: &CudaSlice<f32>,
+        m: usize,
+    ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
+        let _scope = self.f8f4_act_group_open(x, w.in_features(), m);
+        self.matmul_prefill(w, x, m)
+    }
+
     /// Open the quantize-once scope for `x` ([m, in_f] f32); closed when the guard drops.
     fn f8f4_act_group_open(
         &self,
@@ -24616,12 +24757,26 @@ impl Engine {
             let (p, _g) = x.device_ptr(&stream);
             p
         };
+        // A seed from the fused norm that wrote `x` (same buffer, width and rows) is this scope's
+        // scratch from the start; a seed for any other buffer is dropped here.
+        let seed = self
+            .f8f4_act_seed
+            .lock()
+            .unwrap()
+            .take()
+            .filter(|g| g.x_ptr == x_ptr && g.in_f == in_f && g.m == m && g.v2);
+        let (scratch, q8) = match seed {
+            Some(g) => (g.scratch, g.q8),
+            None => (None, None),
+        };
+        let v2 = scratch.is_some();
         *self.f8f4_act_group.lock().unwrap() = Some(F8f4ActGroup {
             x_ptr,
             in_f,
             m,
-            scratch: None,
-            v2: false,
+            scratch,
+            v2,
+            q8,
         });
         F8f4ActGroupGuard { engine: self }
     }
@@ -34198,6 +34353,51 @@ impl Engine {
     /// matrices grow with C while the sequential state pass is C-flat, so smaller chunks
     /// win; C=32/64 also get the register-history solve template). Clamped to multiples
     /// of 32 in [32, 128] (kernel row mappings require it).
+    /// The GDN prime traffic set (GB10 prefill lane, 2026-11-07), on by default:
+    /// the compact q/k layout at any value:key head ratio (`HybridModel::gdn_hk`), the
+    /// heads-fastest K2/K3/K5 grid (`gdn_hfast`) and no f32 W store from K3 on the mma path
+    /// (`gdn_w32_keep`). Same values either way (kernel-check `GDN-DB-GQA`).
+    /// `MEMRA_GDN_TRAFFIC=0` restores all three; read per call so kernel-check pins both.
+    pub fn gdn_traffic_on() -> bool {
+        std::env::var("MEMRA_GDN_TRAFFIC").as_deref() != Ok("0")
+    }
+
+    /// Whether the GDN mma chunk path runs the fused state+output kernel
+    /// (`gdn_chunk_state_output_mma`) instead of the K4/K5 pair. `MEMRA_GDN_K45` of `1`/`0`
+    /// decides on any device (read per call so kernel-check pins both); unset follows the device,
+    /// on for a unified-memory 120a-family device (GB10), where it was measured: it runs 96 CTAs
+    /// at 48 heads and folds K5's chunk-parallel work into the sequential state loop, a trade a
+    /// discrete card with 170+ SMs has not been measured on.
+    pub fn gdn_k45_on(&self) -> bool {
+        f8f4_route_on_dev(
+            std::env::var("MEMRA_GDN_K45").ok().as_deref(),
+            self.gb10_class(),
+        )
+    }
+
+    /// A unified-memory 120a-family device (GB10): the device class this lane's parallelism-
+    /// changing defaults were measured on.
+    pub fn gb10_class(&self) -> bool {
+        static GB10: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+        *GB10.get_or_init(|| {
+            env!("MEMRA_BUILT_CUDA_ARCH") == "120a" && crate::unified_memory::is_unified(self.ctx())
+        })
+    }
+
+    /// Grid order of the chunk-parallel GDN kernels K2, K3 and K5: 1 = heads fastest
+    /// (grid (H, NC, ..)), so the value heads that share one compact q/k head are scheduled
+    /// together and read its rows from L2; 0 = chunks fastest (`MEMRA_GDN_TRAFFIC=0`, or NC past
+    /// the grid-y limit). The per-block math is the same.
+    pub fn gdn_hfast(nc: usize) -> i32 {
+        i32::from(Self::gdn_traffic_on() && nc <= 65_535)
+    }
+
+    /// Whether K3 still stores the f32 W on the mma path, where only its bf16 twin has a reader
+    /// (`MEMRA_GDN_TRAFFIC=0`).
+    pub fn gdn_w32_keep() -> bool {
+        !Self::gdn_traffic_on()
+    }
+
     pub fn gdn_chunk_size() -> usize {
         static C: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
         *C.get_or_init(|| {
@@ -34302,8 +34502,13 @@ impl Engine {
             #[allow(clippy::manual_div_ceil)]
             // allow: explicit (n + k - 1) / k is the load-bearing sizing form, kept textually identical to the kernel-side math
             let jt = ((c + 31) / 32) as u32;
+            let hfast = Self::gdn_hfast(nc);
             let cfg = LaunchConfig {
-                grid_dim: (nc as u32, h as u32, jt),
+                grid_dim: if hfast != 0 {
+                    (h as u32, nc as u32, jt)
+                } else {
+                    (nc as u32, h as u32, jt)
+                },
                 block_dim: (256, 1, 1),
                 shared_mem_bytes: GDN_K2_DYNAMIC_SHARED_BYTES,
             };
@@ -34319,7 +34524,8 @@ impl Engine {
                 .arg(&hi)
                 .arg(&ti)
                 .arg(&ci)
-                .arg(&hki);
+                .arg(&hki)
+                .arg(&hfast);
             unsafe {
                 b.launch(cfg)?;
             }
@@ -34364,10 +34570,25 @@ impl Engine {
                     } else {
                         "gdn_chunk_solve64_f32"
                     });
-                    // mirror-fold: W's bf16 twin emitted on store (0 = skip)
+                    // mirror-fold: W's bf16 twin emitted on store (0 = skip). With the twin the
+                    // f32 W has no reader (the mma K4 reads Wb16), so its store is skipped.
                     let wb: u64 = match wb16 {
                         Some(d) => self.addr_u8(d),
                         None => 0,
+                    };
+                    let w_ptr: u64 = if wb != 0 && !Self::gdn_w32_keep() {
+                        0
+                    } else {
+                        self.addr_f32(&w)
+                    };
+                    let hfast = Self::gdn_hfast(nc);
+                    let cfg = if hfast != 0 {
+                        LaunchConfig {
+                            grid_dim: (h as u32, nc as u32, 1),
+                            ..cfg
+                        }
+                    } else {
+                        cfg
                     };
                     let hki = hk as i32;
                     let __s_b = self.gpu.stream();
@@ -34377,11 +34598,12 @@ impl Engine {
                         .arg(&a)
                         .arg(&gcum)
                         .arg(&mut u)
-                        .arg(&mut w)
+                        .arg(&w_ptr)
                         .arg(&wb)
                         .arg(&hi)
                         .arg(&ti)
-                        .arg(&hki);
+                        .arg(&hki)
+                        .arg(&hfast);
                     unsafe {
                         b.launch(cfg)?;
                     }
@@ -35158,8 +35380,6 @@ impl Engine {
         let (gcum, p, u, w) =
             self.gdn_chunk_k123(q, k, v, g, beta, wb16_pre.as_mut(), n_head, t, c, hk, k2w)?;
         let _ = &w;
-        let mut y = self.uninit(nc * h * c * D)?;
-        let mut ssnap = self.uninit(nc * h * D * D)?; // chunk-start state snapshots (K5 phase 1)
         // K4-MMA seam (MEMRA_GDN_MMA; harness verdict 1.75x — tools/bench_gdn_k4.cu, ledger
         // 2026-07-26): M in mma accumulator fragments, bf16 W/k mirrors through a cp.async
         // ring. C==32 only (the kernel's tile). PROMOTED default-ON on the Hopper lane
@@ -35230,6 +35450,82 @@ impl Engine {
                 }
                 return Ok(());
             }
+            // FUSED K4+K5 (GB10 prefill lane, 2026-11-07): the state pass also computes the chunk
+            // output, so Y and Ssnap never reach memory (K4's stores were 1.1 ms of its 2.4 at the
+            // 27B shape, and K5 re-read them). Every element runs the pair's mma chains on the
+            // same values (research/gb10-prefill-next-20261107/probe/probe_gdn.cu; kernel-check
+            // GDN-DB-GQA pins it against the pair). The prime-table graph keeps the pair; the grid
+            // capture re-runs the plain K4 over the prefix as before.
+            if self.gdn_k45_on() && crate::qwen_prime_graph::current().is_none() {
+                let f = self.func("gdn_chunk_state_output_mma");
+                const K45_SMEM: u32 = 40_704;
+                f.set_attribute(
+                    CU_FUNC_ATTRIBUTE_MAX_DYNAMIC_SHARED_SIZE_BYTES,
+                    K45_SMEM as i32,
+                )?;
+                let cfg = LaunchConfig {
+                    grid_dim: (h as u32, (D / 64) as u32, 1),
+                    block_dim: (256, 1, 1),
+                    shared_mem_bytes: K45_SMEM,
+                };
+                let hki = hk as i32;
+                {
+                    let __s_b = self.gpu.stream();
+                    let mut b = __s_b.launch_builder(&f);
+                    b.arg(kb16_ref)
+                        .arg(&gcum)
+                        .arg(beta)
+                        .arg(&u)
+                        .arg(&wb16)
+                        .arg(q)
+                        .arg(&p)
+                        .arg(&mut *o)
+                        .arg(state_in)
+                        .arg(&mut *state_out)
+                        .arg(&hi)
+                        .arg(&ti)
+                        .arg(&ci)
+                        .arg(&scale)
+                        .arg(&hki);
+                    unsafe {
+                        b.launch(cfg)?;
+                    }
+                }
+                if let Some((rows, slot)) = capture {
+                    // the rerun walks rows / c chunks (capture asserts rows % c == 0)
+                    let nr = rows / c;
+                    let mut y16 = self.alloc_u8_uninit(nr * h * c * D * 2)?;
+                    let mut ssnap16 = self.alloc_u8_uninit(nr * h * D * D * 2)?;
+                    let mut st = self.uninit(state_out.len())?;
+                    let f = self.func("gdn_chunk_state_mma");
+                    let cfg = LaunchConfig {
+                        grid_dim: (h as u32, NSPLIT, 1),
+                        block_dim: (256, 1, 1),
+                        shared_mem_bytes: 0,
+                    };
+                    let (hki, ri) = (hk as i32, rows as i32);
+                    let __s_b = self.gpu.stream();
+                    let mut b = __s_b.launch_builder(&f);
+                    b.arg(kb16_ref)
+                        .arg(&gcum)
+                        .arg(beta)
+                        .arg(&u)
+                        .arg(&wb16)
+                        .arg(&mut y16)
+                        .arg(&mut ssnap16)
+                        .arg(state_in)
+                        .arg(&mut st)
+                        .arg(&hi)
+                        .arg(&ri)
+                        .arg(&ci)
+                        .arg(&hki);
+                    unsafe {
+                        b.launch(cfg)?;
+                    }
+                    *slot = Some(st);
+                }
+                return Ok(());
+            }
             // COUPLED PAIR: K4-mma writes Y and Ssnap as bf16 (their only consumer is
             // K5-mma, which rounds to bf16 regardless — identical numerics, half the
             // traffic; harness K5 63.0 -> 35.3us). Fresh bf16 buffers replace the f32 ones.
@@ -35275,8 +35571,13 @@ impl Engine {
                 #[allow(clippy::manual_div_ceil)]
                 // allow: explicit (n + k - 1) / k is the load-bearing sizing form, kept textually identical to the kernel-side math
                 let jt = ((c + 31) / 32) as u32;
+                let hfast = Self::gdn_hfast(nc);
                 let cfg = LaunchConfig {
-                    grid_dim: (nc as u32, h as u32, jt),
+                    grid_dim: if hfast != 0 {
+                        (h as u32, nc as u32, jt)
+                    } else {
+                        (nc as u32, h as u32, jt)
+                    },
                     block_dim: (256, 1, 1),
                     shared_mem_bytes: 0,
                 };
@@ -35293,7 +35594,8 @@ impl Engine {
                     .arg(&ti)
                     .arg(&ci)
                     .arg(&scale)
-                    .arg(&hki);
+                    .arg(&hki)
+                    .arg(&hfast);
                 unsafe {
                     b.launch(cfg)?;
                 }
@@ -35333,6 +35635,9 @@ impl Engine {
             }
             return Ok(());
         }
+        // f32 pair buffers (the mma branches above return before reaching here)
+        let mut y = self.uninit(nc * h * c * D)?;
+        let mut ssnap = self.uninit(nc * h * D * D)?; // chunk-start state snapshots (K5 phase 1)
         {
             // K4 (sequential over chunks inside; blocks col-partition the state)
             let f = self.func("gdn_chunk_state_f32");

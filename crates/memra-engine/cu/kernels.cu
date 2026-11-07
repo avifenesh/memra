@@ -391,6 +391,90 @@ extern "C" __global__ void add_rms_norm_f32_v2(const float* __restrict__ a, cons
     for (; i < ncols; i += bd) dr[i] = rr[i] * scale * w[i];
 }
 
+// ---- add_rms_norm_f32_v2 + the F8F4 v2 activation quantize in ONE kernel (GB10 prefill lane,
+// 2026-11-07). The residual res = a + b and the norm value o = res[i] * scale * w[i] are the
+// add_rms_norm_f32_v2 values (same IEEE add, same per-thread strided sum-of-squares order into one
+// accumulator, the verbatim block reduce, the same per-element expression). `dst` (nullable)
+// receives o in f32 when a consumer still reads it. The quantize is
+// memra_mmq_nvfp4_f8f4_v2_quantize_act's per-element math on the same values: per 32-element
+// group (one warp, one element per lane: needs ncols % 32 == 0 and blockDim % 32 == 0) amax is
+// the max of |o| (a max, so the reduction order cannot change it), d_inv = 448 / amax, the byte is
+// cvt.rn.satfinite e4m3 of o * d_inv, the scale amax / 448 lands in the k-major lane-permuted
+// plane. Same bytes, same scales; the f32 norm output is neither re-read nor (dst null) written.
+// q8 / q8d (nullable): the quantize_q8_1 pair of the same values (the dp4a projections' input).
+static __device__ __forceinline__ uint8_t memra_cvt_e4m3(float v) {
+    uint16_t r;
+    asm("{\n\t.reg .b16 t;\n\tcvt.rn.satfinite.e4m3x2.f32 t, %2, %1;\n\tmov.b16 %0, t;\n}"
+        : "=h"(r) : "f"(v), "f"(0.0f));
+    return (uint8_t)(r & 0xff);
+}
+static __device__ __forceinline__ long long memra_f8f4v2_act_slot(long long t) {
+    const int lt = (int)(t & 63), p = lt >> 3, r8 = lt & 7;
+    return (t & ~(long long)63) + ((p >> 1) * 4 + (r8 >> 1)) * 4 + (p & 1) * 2 + (r8 & 1);
+}
+extern "C" __global__ void add_rms_norm_e4m3v2_f32(const float* __restrict__ a,
+                                                   const float* __restrict__ b,
+                                                   const float* __restrict__ w,
+                                                   float* __restrict__ res, float* __restrict__ dst,
+                                                   uint8_t* __restrict__ vy,
+                                                   signed char* __restrict__ q8,
+                                                   float* __restrict__ q8d, int ncols, int nrows,
+                                                   long long tp, float eps) {
+    MEMRA_PDL_ENTRY();
+    int row = blockIdx.x;
+    int tid = threadIdx.x;
+    int bd = blockDim.x;
+    const float* ar = a + (size_t)row * ncols;
+    const float* br = b + (size_t)row * ncols;
+    float* rr = res + (size_t)row * ncols;
+    float sum = 0.0f;
+    int i = tid;
+    for (; i + 3 * bd < ncols; i += 4 * bd) {
+        float a0 = ar[i], a1 = ar[i + bd], a2 = ar[i + 2 * bd], a3 = ar[i + 3 * bd];
+        float b0 = br[i], b1 = br[i + bd], b2 = br[i + 2 * bd], b3 = br[i + 3 * bd];
+        float v0 = a0 + b0, v1 = a1 + b1, v2 = a2 + b2, v3 = a3 + b3;
+        rr[i] = v0; rr[i + bd] = v1; rr[i + 2 * bd] = v2; rr[i + 3 * bd] = v3;
+        sum += v0 * v0; sum += v1 * v1; sum += v2 * v2; sum += v3 * v3;
+    }
+    for (; i < ncols; i += bd) { float v = ar[i] + br[i]; rr[i] = v; sum += v * v; }
+    __shared__ float s[32];
+    for (int o = 16; o > 0; o >>= 1) sum += __shfl_down_sync(0xffffffff, sum, o);
+    if ((tid & 31) == 0) s[tid >> 5] = sum;
+    __syncthreads();
+    if (tid < 32) {
+        float v = (tid < (bd + 31) / 32) ? s[tid] : 0.0f;
+        for (int o = 16; o > 0; o >>= 1) v += __shfl_down_sync(0xffffffff, v, o);
+        if (tid == 0) s[0] = v;
+    }
+    __syncthreads();
+    float scale = rsqrtf(s[0] / ncols + eps);
+    float* dr = dst != nullptr ? dst + (size_t)row * ncols : nullptr;
+    uint8_t* vals = vy + (size_t)row * ncols;
+    float* sc = (float*)(vy + (size_t)nrows * ncols);
+    const long long slot = memra_f8f4v2_act_slot(row);
+    // every lane of a warp runs the same trip count (ncols and bd are multiples of 32)
+    for (i = tid; i < ncols; i += bd) {
+        // the thread's own res[i] store above: read back exactly as add_rms_norm_f32_v2 does
+        float o = rr[i] * scale * w[i];
+        if (dr != nullptr) dr[i] = o;
+        float amax = fabsf(o);
+        #pragma unroll
+        for (int off = 16; off > 0; off >>= 1)
+            amax = fmaxf(amax, __shfl_xor_sync(0xffffffffu, amax, off));
+        const float d_inv = amax == 0.0f ? 0.0f : 448.0f / amax;
+        vals[i] = memra_cvt_e4m3(o * d_inv);
+        if ((tid & 31) == 0) sc[(long long)(i / 32) * tp + slot] = amax == 0.0f ? 0.0f : amax / 448.0f;
+        if (q8 != nullptr) {
+            // quantize_q8_1's program on the same 32-group (the same amax): d = amax / 127,
+            // id = 1 / d (0 for an all-zero group), q = round-to-nearest-even of o * id
+            const float d = amax / 127.0f;
+            const float id = d > 0.0f ? 1.0f / d : 0.0f;
+            q8[(size_t)row * ncols + i] = (signed char)__float2int_rn(o * id);
+            if ((tid & 31) == 0) q8d[(size_t)row * (ncols / 32) + i / 32] = d;
+        }
+    }
+}
+
 // ---- RANK3 LEVER (add+rmsnorm fuse): residual-add THEN RMSNorm in ONE kernel. ----
 // res = a + b  (the residual, written out for the next residual-add); dst = rms_norm(res) * w.
 // Fuses e.add(a,b,res) + e.rms_norm(res,w,dst) — removes one launch + one HBM read of `res` per

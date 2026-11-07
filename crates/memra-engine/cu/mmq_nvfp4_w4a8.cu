@@ -1456,23 +1456,37 @@ static __device__ __forceinline__ int f8f4v2_scale_slot(const int r) {
 }
 
 // One thread per (image row, 64-value NVFP4 block); body token-for-token dequant_tiles_nvfp4_f8f4.
-template <bool is_rp>
+// PAIR (the gate/up silu epilogue below): two weights of out_f rows each share one image whose
+// 32-row warp spans hold 16 gate rows then the same 16 up rows (image row r -> source row
+// (r / 32) * 16 + r % 16 of x2 when bit 4 of r is set, of x otherwise), so one thread's two m16
+// tiles are the gate and up outputs of the same feature. Per-row values are the plain image's.
+template <bool is_rp, bool PAIR = false>
 static __global__ void f8f4v2_image_kernel(
         const char * __restrict__ x, const char * __restrict__ x_sc,
         uint8_t * __restrict__ vals, float * __restrict__ scales,
-        const int out_f, const int Mp, const int nblk) {
+        const int out_f, const int Mp, const int nblk,
+        const char * __restrict__ x2 = nullptr, const char * __restrict__ x2_sc = nullptr) {
     const int kb  = blockIdx.x * 32 + threadIdx.x;
     const int row = blockIdx.y * 8 + threadIdx.y;
     if (kb >= nblk || row >= Mp) { return; }
-    const int srow = min(row, out_f - 1);
+    int srow;
+    const char * xw = x;
+    const char * xw_sc = x_sc;
+    if constexpr (PAIR) {
+        srow = min((row >> 5) * 16 + (row & 15), out_f - 1);
+        if (row & 16) { xw = x2; xw_sc = x2_sc; }
+    } else {
+        srow = min(row, out_f - 1);
+    }
     const int ib = srow * nblk + kb;
     const uint32_t * __restrict__ src_qs;
     const uint8_t  * __restrict__ src_d;
     if constexpr (is_rp) {
-        src_qs = reinterpret_cast<const uint32_t *>(x    + (size_t) ib * 32);
-        src_d  = reinterpret_cast<const uint8_t  *>(x_sc + (size_t) ib * 4);
+        src_qs = reinterpret_cast<const uint32_t *>(xw    + (size_t) ib * 32);
+        src_d  = reinterpret_cast<const uint8_t  *>(xw_sc + (size_t) ib * 4);
     } else {
-        const block_nvfp4 * bxi = (const block_nvfp4 *) x + ib;
+        (void) xw_sc;
+        const block_nvfp4 * bxi = (const block_nvfp4 *) xw + ib;
         src_qs = reinterpret_cast<const uint32_t *>(bxi->qs);
         src_d  = bxi->d;
     }
@@ -1534,15 +1548,30 @@ struct f8f4v2_layout {
     }
 };
 
+// The v2 activation layout's token slot (mmq_nvfp4_f8f4.cu f8f4v2_act_slot, verbatim).
+static __device__ __forceinline__ int64_t f8f4v2_act_slot_w(const int64_t t) {
+    const int lt = (int) (t & 63), p = lt >> 3, r8 = lt & 7;
+    return (t & ~(int64_t) 63) + ((p >> 1) * 4 + (r8 >> 1)) * 4 + (p & 1) * 2 + (r8 & 1);
+}
+
 // BM x BN output tile (rows x tokens), WM x WN warps of (BM/WM) x (BN/WN), KS k per stage,
 // STAGES-deep cp.async ring, MINB CTAs per SM requested from the register allocator.
-template <int BM, int BN, int WM, int WN, int KS, int STAGES, int MINB>
+// EPI 0: f32 dst [n_tokens, out_f]. EPI 1 (gate/up silu, a PAIR image of out_f = 2 * nf rows):
+// each thread's m = 0 / m = 1 tiles are the gate / up outputs of the same features; the epilogue
+// forms g = acc_gate * out_scale, u = acc_up * out_scale2 (the f32 values the two plain GEMMs
+// write), x = (g / (1 + expf(-g))) * u (quantize_mmq_e4m3_d4_silu_kernel's expression), and
+// stores x quantized exactly as that kernel's v2 store does: per token and 32-feature group,
+// amax of |x| (a max: two warps' halves meet in shared memory), d_inv = 448 / amax, cvt.rn
+// satfinite e4m3 of x * d_inv, and the scale amax / 448 in the k-major lane-permuted plane of
+// act_out ([n_tokens, nf] bytes then (nf / 32) x Tp f32). Needs nf % 32 == 0.
+template <int BM, int BN, int WM, int WN, int KS, int STAGES, int MINB, int EPI = 0>
 __launch_bounds__(WM * WN * 32, MINB)
 static __global__ void mul_mat_f8f4v2(
         const uint8_t * __restrict__ vals, const float * __restrict__ scales,
         const uint8_t * __restrict__ act, const float * __restrict__ act_sc, float * __restrict__ dst,
         const int out_f, const int Mp, const int K, const int n_tokens, const int Tp, const int nty,
-        const float out_scale, const int G) {
+        const float out_scale, const int G,
+        uint8_t * __restrict__ act_out = nullptr, const float out_scale2 = 1.0f) {
     using LY = f8f4v2_layout<BM, BN, KS>;
     constexpr int NT  = WM * WN * 32;
     constexpr int WRS = BM / WM;
@@ -1690,36 +1719,91 @@ static __global__ void mul_mat_f8f4v2(
     }
     pipe_wait<0>();
 
-#pragma unroll
-    for (int m = 0; m < TM; ++m) {
+    if constexpr (EPI == 1) {
+        static_assert(TM == 2, "the gate/up epilogue pairs the warp span's two m16 tiles");
+        const int nf = out_f / 2;
+        __syncthreads();   // every warp is past the mainloop: the ring's smem is free
+        float * amx = (float *) f8f4v2_smem;   // [WM][BN] per-warp-span amax per token
+        // feature of (l >> 1): fb + (l >> 1) * 8 + g, fb = the warp span's first feature
+        const int fb = row0 / 2 + wm * 16;
+        float a16[TN][2];
 #pragma unroll
         for (int p = 0; p < TN; ++p) {
 #pragma unroll
             for (int l = 0; l < 4; ++l) {
-                const int i = row0 + wm * WRS + m * 16 + (l >> 1) * 8 + g;
-                const int j = tok0 + wn * WCS + p * 8 + 2 * tig + (l & 1);
-                if (i < out_f && j < n_tokens) {
-                    dst[(size_t) j * out_f + i] = acc[m][p][l] * out_scale;
+                const float gv = acc[0][p][l] * out_scale;
+                const float uv = acc[1][p][l] * out_scale2;
+                acc[0][p][l] = (gv / (1.0f + expf(-gv))) * uv;
+            }
+#pragma unroll
+            for (int e = 0; e < 2; ++e) {
+                float a = fmaxf(fabsf(acc[0][p][e]), fabsf(acc[0][p][e + 2]));
+                a = fmaxf(a, __shfl_xor_sync(0xFFFFFFFF, a, 4));
+                a = fmaxf(a, __shfl_xor_sync(0xFFFFFFFF, a, 8));
+                a = fmaxf(a, __shfl_xor_sync(0xFFFFFFFF, a, 16));
+                a16[p][e] = a;
+                if (g == 0) { amx[wm * BN + wn * WCS + p * 8 + 2 * tig + e] = a; }
+            }
+        }
+        __syncthreads();
+        float * act_sc_out = (float *) (act_out + (size_t) n_tokens * nf);
+        const int Tp_out = (n_tokens + 255) / 256 * 256;
+#pragma unroll
+        for (int p = 0; p < TN; ++p) {
+#pragma unroll
+            for (int e = 0; e < 2; ++e) {
+                const int tl = wn * WCS + p * 8 + 2 * tig + e;
+                const int j = tok0 + tl;
+                const float amax = fmaxf(a16[p][e], amx[(wm ^ 1) * BN + tl]);
+                const float d_inv = amax == 0.0f ? 0.0f : 448.0f / amax;
+                if (j < n_tokens && fb < nf) {
+#pragma unroll
+                    for (int h = 0; h < 2; ++h) {
+                        const uint16_t q = memra_cvt_e4m3x2(acc[0][p][e + 2 * h] * d_inv, 0.0f);
+                        act_out[(size_t) j * nf + fb + h * 8 + g] = (uint8_t) (q & 0xff);
+                    }
+                    if ((wm & 1) == 0 && g == 0) {
+                        act_sc_out[(size_t) (fb / 32) * Tp_out + f8f4v2_act_slot_w(j)] =
+                            amax == 0.0f ? 0.0f : amax / 448.0f;
+                    }
+                }
+            }
+        }
+    } else {
+#pragma unroll
+        for (int m = 0; m < TM; ++m) {
+#pragma unroll
+            for (int p = 0; p < TN; ++p) {
+#pragma unroll
+                for (int l = 0; l < 4; ++l) {
+                    const int i = row0 + wm * WRS + m * 16 + (l >> 1) * 8 + g;
+                    const int j = tok0 + wn * WCS + p * 8 + 2 * tig + (l & 1);
+                    if (i < out_f && j < n_tokens) {
+                        dst[(size_t) j * out_f + i] = acc[m][p][l] * out_scale;
+                    }
                 }
             }
         }
     }
 }
 
-template <int BM, int BN, int WM, int WN, int KS, int STAGES, int MINB>
+template <int BM, int BN, int WM, int WN, int KS, int STAGES, int MINB, int EPI = 0>
 static cudaError_t f8f4v2_launch(
         const uint8_t * vals, const float * scales, const uint8_t * act, const float * act_sc, float * y,
         const int out_f, const int Mp, const int K, const int n_tokens, const int Tp,
-        const float out_scale, const int G, cudaStream_t st) {
+        const float out_scale, const int G, cudaStream_t st,
+        uint8_t * act_out = nullptr, const float out_scale2 = 1.0f) {
     constexpr size_t smem = (size_t) STAGES * f8f4v2_layout<BM, BN, KS>::STAGE;
-    auto kern = mul_mat_f8f4v2<BM, BN, WM, WN, KS, STAGES, MINB>;
+    static_assert(EPI == 0 || (size_t) WM * BN * sizeof(float) <= smem, "epilogue amax fits the ring");
+    auto kern = mul_mat_f8f4v2<BM, BN, WM, WN, KS, STAGES, MINB, EPI>;
     cudaError_t e = cudaFuncSetAttribute(kern, cudaFuncAttributeMaxDynamicSharedMemorySize, (int) smem);
     if (e != cudaSuccess) { return e; }
     const int nty = (out_f + BM - 1) / BM;
     const int ntx = (n_tokens + BN - 1) / BN;
     const int g = G < 1 ? 1 : (G > nty ? nty : G);
     kern<<<(unsigned) (nty * ntx), WM * WN * 32, smem, st>>>(
-        vals, scales, act, act_sc, y, out_f, Mp, K, n_tokens, Tp, nty, out_scale, g);
+        vals, scales, act, act_sc, y, out_f, Mp, K, n_tokens, Tp, nty, out_scale, g, act_out,
+        out_scale2);
     return cudaGetLastError();
 }
 
@@ -1770,6 +1854,52 @@ int memra_mmq_nvfp4_f8f4_v2_preq(const void * W_nvfp4_blocks, const void * act_s
     // (research/gb10-prefill-20261106/gemm-v2-probe/).
     const cudaError_t e = f8f4v2_launch<256, 128, 8, 2, 64, 3, 1>(
         vals, scales, act, act_sc, y, out_f, Mp, in_f, n_tokens, Tp, out_scale, /*G=*/4, st);
+    if (e != cudaSuccess) { return 3000 + (int) e; }
+    return 0;
+}
+
+// The dense FFN's gate and up GEMMs and the down projection's activation quantize in one launch
+// (GB10 prefill lane, 2026-11-07): one PAIR image of the two nf x in_f weights (scratch of
+// memra_mmq_nvfp4_f8f4_v2_img_bytes(in_f, 2 * nf) bytes), the v2 mainloop on the shared v2
+// activation, and the EPI 1 epilogue writing silu(gate) * up as the down GEMM's v2 activation
+// (memra_mmq_nvfp4_f8f4_v2_act_bytes(nf, n_tokens) bytes at act_out). Same bytes and scales as
+// the two plain v2 GEMMs then memra_mmq_nvfp4_f8f4_v2_quantize_act_silu; gate and up f32 outputs
+// are never written. Requires nf % 32 == 0 plus the v2 shape contract for 2 * nf rows. Returns
+// 0, 3000 + cudaError, or 3998 on an unsupported shape.
+int memra_mmq_nvfp4_f8f4_v2_gateup_silu(const void * W_gate, const void * W_up,
+                                        const void * act_scratch, void * act_out,
+                                        int in_f, int nf, int n_tokens, void * img, void * stream,
+                                        float scale_gate, float scale_up, int rp) {
+    if (in_f <= 0 || in_f % 256 != 0 || nf <= 0 || nf % 32 != 0 || n_tokens <= 0) { return 3998; }
+    const int rows = 2 * nf;
+    const int Mp = f8f4v2_mp(rows);
+    if ((uint64_t) Mp * in_f >= (1ull << 32) || (uint64_t) n_tokens * in_f >= (1ull << 32)) { return 3998; }
+    if ((uint64_t) n_tokens * nf >= (1ull << 32)) { return 3998; }
+    cudaStream_t st = reinterpret_cast<cudaStream_t>(stream);
+    const int nblk = in_f / QK_NVFP4;
+    uint8_t * vals = (uint8_t *) img;
+    float * scales = (float *) (vals + (size_t) Mp * in_f);
+    const char * Wg = (const char *) W_gate;
+    const char * Wu = (const char *) W_up;
+    const char * Wg_sc = Wg + (size_t) nf * nblk * 32;
+    const char * Wu_sc = Wu + (size_t) nf * nblk * 32;
+    {
+        const dim3 grid((unsigned) ((nblk + 31) / 32), (unsigned) (Mp / 8), 1);
+        const dim3 block(32, 8, 1);
+        if (rp) {
+            f8f4v2_image_kernel<true, true><<<grid, block, 0, st>>>(Wg, Wg_sc, vals, scales, nf, Mp, nblk, Wu, Wu_sc);
+        } else {
+            f8f4v2_image_kernel<false, true><<<grid, block, 0, st>>>(Wg, Wg_sc, vals, scales, nf, Mp, nblk, Wu, Wu_sc);
+        }
+        const cudaError_t e = cudaGetLastError();
+        if (e != cudaSuccess) { return 3000 + (int) e; }
+    }
+    const uint8_t * act = (const uint8_t *) act_scratch;
+    const float * act_sc = (const float *) (act + (size_t) n_tokens * in_f);
+    const int Tp = (n_tokens + 255) / 256 * 256;
+    const cudaError_t e = f8f4v2_launch<256, 128, 8, 2, 64, 3, 1, 1>(
+        vals, scales, act, act_sc, nullptr, rows, Mp, in_f, n_tokens, Tp, scale_gate, /*G=*/4, st,
+        (uint8_t *) act_out, scale_up);
     if (e != cudaSuccess) { return 3000 + (int) e; }
     return 0;
 }
