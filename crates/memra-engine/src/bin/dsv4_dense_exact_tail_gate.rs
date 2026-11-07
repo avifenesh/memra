@@ -116,8 +116,9 @@ fn captures_once(gpu: &Dsv4Gpu, state: &DecodeState) {
     );
     for rank in gpu.full_token_replay_census_for_gate(state).unwrap() {
         assert_eq!(
-            rank[0][2], 129,
-            "43 layers: an expert reduction and two attention row gathers each"
+            rank[0][2],
+            gpu.tp_ep_trunk_ar_launches_for_gate(),
+            "per layer an expert reduction, and two attention row gathers under attention TP2"
         );
         assert_eq!(rank[0][3], 1, "embedding");
         assert_eq!(rank[0][4], 86, "HC posts");
@@ -192,6 +193,8 @@ struct Arm {
     state: DecodeState,
     on: bool,
     graph_hashes: Option<[[String; 2]; 2]>,
+    // the dense dots enqueues the vocab-parallel head adds to a first capture (both ranks)
+    head_dots: u64,
 }
 impl Arm {
     fn new(gpu: &Dsv4Gpu, prefix: &DecodeState, cfg: Dsv4SampleCfg, on: bool) -> Self {
@@ -210,6 +213,7 @@ impl Arm {
             state,
             on,
             graph_hashes: None,
+            head_dots: gpu.tp_ep_head_dots_extra_for_gate(),
         }
     }
     fn prepare(&self, gpu: &Dsv4Gpu) -> bool {
@@ -226,7 +230,11 @@ impl Arm {
     }
     fn check_enqueues(&self, before: [u64; 2], first: bool) {
         let after = enqueues();
-        let expected = if first && self.on { [988, 508] } else { [0, 0] };
+        let expected = if first && self.on {
+            [988, 508 + self.head_dots]
+        } else {
+            [0, 0]
+        };
         assert_eq!(
             [after[0] - before[0], after[1] - before[1]],
             expected,

@@ -2768,6 +2768,20 @@ impl Dsv4Gpu {
         self.vocab_parallel_head()
     }
 
+    /// The collectives one full-token trunk graph holds, from the loaded program: per layer the
+    /// routed expert reduce, plus attention TP2's wo_a and wo_b row gathers (replicated attention
+    /// runs none). The head's gather sits in the commit segment, outside this count.
+    pub fn tp_ep_trunk_ar_launches_for_gate(&self) -> u64 {
+        let per_layer = 1 + if self.attention_tp.is_some() { 2 } else { 0 };
+        self.topology.layers as u64 * per_layer
+    }
+
+    /// Dense dots enqueues the vocab-parallel head adds to a first capture: its two dots nodes
+    /// run on both ranks, where the single-rank head ran them on rank 1 only.
+    pub fn tp_ep_head_dots_extra_for_gate(&self) -> u64 {
+        if self.vocab_parallel_head() { 2 } else { 0 }
+    }
+
     /// How far one one-row TP/EP step advances each one-shot block's AR epoch, the count
     /// `full_token_ar_epochs_for_gate` is checked against. Every collective ticks each block it
     /// launches (`tp_ar::ar_blocks_for` of its element count). Per trunk layer, attention TP2
