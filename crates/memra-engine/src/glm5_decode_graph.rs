@@ -82,6 +82,49 @@ use std::sync::atomic::Ordering;
 
 type Res<T> = Result<T, Box<dyn std::error::Error>>;
 
+/// A refused capture or warm walk whose recurrent state could NOT be put back. The eager walk
+/// is the byte-identical twin only on the state the run entered with, so this error fails the
+/// token instead of degrading to eager on torn planes (every other refusal degrades).
+#[derive(Debug)]
+pub(crate) struct StateTorn(String);
+
+impl std::fmt::Display for StateTorn {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "glm5 decode graph: recurrent state torn: {}", self.0)
+    }
+}
+
+impl std::error::Error for StateTorn {}
+
+/// `MEMRA_GLM5_GRAPH_CAPTURE_FAULT=<run>:<phase>`, the fault door of the decode-graph gate's
+/// refused-capture arm (unset by default): the capture of run `<run>` (0-based, stage order) at
+/// ping-pong phase `<phase>` (0 or 1) is refused right after its first piece's body was
+/// recorded, the shape of an end-capture or instantiate refusal (the body's host-side KDA swaps
+/// ran, nothing executed). Read per capture. A value that does not parse is an error, so a gate
+/// arm cannot pass without its fault.
+fn capture_fault() -> Result<Option<(usize, usize)>, String> {
+    capture_fault_from(
+        std::env::var("MEMRA_GLM5_GRAPH_CAPTURE_FAULT")
+            .ok()
+            .as_deref(),
+    )
+}
+
+fn capture_fault_from(v: Option<&str>) -> Result<Option<(usize, usize)>, String> {
+    let Some(v) = v.filter(|v| !v.is_empty()) else {
+        return Ok(None);
+    };
+    let bad =
+        || format!("MEMRA_GLM5_GRAPH_CAPTURE_FAULT={v:?}: expected <run>:<phase>, phase 0 or 1");
+    let (r, p) = v.split_once(':').ok_or_else(bad)?;
+    let run = r.parse::<usize>().map_err(|_| bad())?;
+    let phase = p.parse::<usize>().map_err(|_| bad())?;
+    if phase > 1 {
+        return Err(bad());
+    }
+    Ok(Some((run, phase)))
+}
+
 /// One captured contiguous KDA-layer run, in both recurrent-state ping-pong phases.
 ///
 /// FIELD ORDER IS LOAD-BEARING. Rust drops fields in declaration order, so `graphs` (which
@@ -1113,10 +1156,14 @@ impl HybridModel {
             if let Err(err) = self
                 .glm5_warm_runs_before_capture(e, topology, &x, lo, hi, width, pos_d, pos, cache)
             {
+                self.glm5_graph_pool(cache).failed.push((dev, lo, hi));
+                if err.is::<StateTorn>() {
+                    // the eager twin would read torn planes: fail the token, never degrade
+                    return Err(err);
+                }
                 note(&format!(
                     "eager from here on stage=[{lo}, {hi}) dev={dev}: the pre-capture warm walk failed ({err})"
                 ));
-                self.glm5_graph_pool(cache).failed.push((dev, lo, hi));
                 return self.hyper_range_decode_eager(e, topology, x, lo, hi, pos_d, pos, cache);
             }
         }
@@ -1127,7 +1174,15 @@ impl HybridModel {
             // A CAPTURE FAILURE IS NEVER THE REQUEST'S PROBLEM. This route has a byte-identical
             // eager twin, so a failed capture degrades to it instead of failing the token. The
             // stage is latched off for this session so the next token does not retry (and
-            // re-thrash the stream) forever, and the reason is printed once.
+            // re-thrash the stream) forever, and the reason is printed once. The twin is
+            // byte-identical because `glm5_capture_stage` put the refused run's state back (bytes
+            // and host ping-pong roles); when it could not, it says so with `StateTorn`, and the
+            // token fails instead.
+            if err.is::<StateTorn>() {
+                let _ = e.stream().synchronize();
+                self.glm5_graph_pool(cache).failed.push((dev, lo, hi));
+                return Err(err);
+            }
             note(&format!(
                 "eager from here on stage=[{lo}, {hi}) dev={dev}: capture failed ({err})"
             ));
@@ -1221,7 +1276,9 @@ impl HybridModel {
     /// Capture RECORDS, it does not execute, so the two passes cost no device state — but the
     /// HOST-side swap inside `kda_cached` runs on both passes, which is exactly how phase 1 gets
     /// the opposite pointer assignment. Two passes leave the host fields back where they started,
-    /// so the pool starts at phase 0.
+    /// so the pool starts at phase 0. A refusal partway does not: every run is snapshotted
+    /// (`glm5_run_snapshot`) before its warm walk and restored on any Err, so the caller's eager
+    /// fallback reads the state the run entered with; a restore that fails returns `StateTorn`.
     #[allow(clippy::too_many_arguments)] // allow: the capture's inputs are the stage's identity plus the reusable buffer set
     fn glm5_capture_stage(
         &self,
@@ -1353,92 +1410,128 @@ impl HybridModel {
                 "i32_mirror_store(pos_d)",
                 e.i32_mirror_store(&mut stage.pos_d, pos as i32),
             )?;
+            // read before anything of the session's state is touched: a malformed value refuses
+            // the capture by name rather than letting a gate arm pass without its fault
+            let fault = capture_fault()?;
             for (ri, run) in runs.iter().enumerate() {
                 let (a, b) = (run.lo, run.hi);
                 ctx.run = ri;
                 ctx.a = a;
                 ctx.b = b;
-                // Warm the CAPTURED program itself, once, un-captured: the whole-layer eager warm
-                // above resolves the eager walk's kernels, but the capture body is the SEGMENT
-                // walk (`hyper_range_decode_ws_segments`), and a kernel whose first
-                // `cuModuleGetFunction` happens inside the capture region fails the capture with
-                // CUDA_ERROR_INVALID_VALUE (`Engine::func`'s contract; the 2026-09-05 box
-                // incident: 28 latched runs on a tree whose eager walk no longer shared every
-                // segment kernel). Outputs are discarded; the run's state and `x_io` go back.
-                {
-                    let snap = Self::glm5_run_snapshot(e, &*cache, a, b)?;
-                    let mut x_keep = e.uninit(width)?;
-                    e.copy_into(&mut x_keep, 0, &stage.x_io, width)?;
-                    for piece in &run.pieces {
-                        let PieceSpec::Graph(segs) = piece else {
-                            continue;
-                        };
+                // The run's state as it entered: the warm walk below executes on it and every
+                // capture body runs the host-side KDA ping-pong, so any refusal puts it back.
+                let snap = Self::glm5_run_snapshot(e, &*cache, a, b)?;
+                let recorded = (|| -> Res<Vec<Vec<CudaGraph>>> {
+                    // Warm the CAPTURED program itself, once, un-captured: the whole-layer eager
+                    // warm above resolves the eager walk's kernels, but the capture body is the
+                    // SEGMENT walk (`hyper_range_decode_ws_segments`), and a kernel whose first
+                    // `cuModuleGetFunction` happens inside the capture region fails the capture
+                    // with CUDA_ERROR_INVALID_VALUE (`Engine::func`'s contract; the 2026-09-05 box
+                    // incident: 28 latched runs on a tree whose eager walk no longer shared every
+                    // segment kernel). Outputs are discarded; the run's state and `x_io` go back.
+                    {
+                        let mut x_keep = e.uninit(width)?;
+                        e.copy_into(&mut x_keep, 0, &stage.x_io, width)?;
+                        for piece in &run.pieces {
+                            let PieceSpec::Graph(segs) = piece else {
+                                continue;
+                            };
+                            step(
+                                e,
+                                &ctx,
+                                "warm(segment walk, un-captured)",
+                                self.hyper_range_decode_ws_segments(
+                                    e,
+                                    topology,
+                                    &mut stage.x_io,
+                                    segs,
+                                    &stage.pos_d,
+                                    pos,
+                                    cache,
+                                    &mut stage.ws,
+                                    Some(&mut stage.mixed),
+                                ),
+                            )?;
+                        }
+                        e.copy_into(&mut stage.x_io, 0, &x_keep, width)?;
+                        Self::glm5_run_restore(e, cache, &snap)?;
                         step(
                             e,
                             &ctx,
-                            "warm(segment walk, un-captured)",
-                            self.hyper_range_decode_ws_segments(
-                                e,
-                                topology,
-                                &mut stage.x_io,
-                                segs,
-                                &stage.pos_d,
-                                pos,
-                                cache,
-                                &mut stage.ws,
-                                Some(&mut stage.mixed),
-                            ),
+                            "synchronize(after segment warm)",
+                            e.stream().synchronize().map_err(Into::into),
                         )?;
                     }
-                    e.copy_into(&mut stage.x_io, 0, &x_keep, width)?;
-                    Self::glm5_run_restore(e, cache, &snap)?;
-                    step(
-                        e,
-                        &ctx,
-                        "synchronize(after segment warm)",
-                        e.stream().synchronize().map_err(Into::into),
-                    )?;
-                }
-                // Phase-major: every graph piece of the run at phase 0, then every one at phase
-                // 1, so the host-side KDA ping-pong the capture bodies perform advances the way
-                // one replayed token does (each layer swapped once per phase pass).
-                let mut per_piece: Vec<Vec<CudaGraph>> = Vec::new();
-                for phase in 0..2 {
-                    ctx.phase = phase;
-                    let mut gi = 0usize;
-                    for piece in &run.pieces {
-                        let PieceSpec::Graph(segs) = piece else {
-                            continue;
-                        };
-                        let x_cell = std::cell::RefCell::new(&mut stage.x_io);
-                        let out_cell = std::cell::RefCell::new(&mut stage.x_out);
-                        let ws_cell = std::cell::RefCell::new(&mut stage.ws);
-                        let cache_cell = std::cell::RefCell::new(&mut *cache);
-                        let mixed_cell = std::cell::RefCell::new(&mut stage.mixed);
-                        let pos_d_ref: &CudaSlice<i32> = &stage.pos_d;
-                        let g = capture_one(e, &ctx, |e| {
-                            self.hyper_range_decode_ws_segments(
-                                e,
-                                topology,
-                                &mut x_cell.borrow_mut(),
-                                segs,
-                                pos_d_ref,
-                                pos,
-                                &mut cache_cell.borrow_mut(),
-                                &mut ws_cell.borrow_mut(),
-                                Some(&mut **mixed_cell.borrow_mut()),
-                            )?;
-                            let live = x_cell.borrow();
-                            e.copy_into(&mut out_cell.borrow_mut(), 0, &live, width)
-                        })?;
-                        if phase == 0 {
-                            per_piece.push(vec![g]);
-                        } else {
-                            per_piece[gi].push(g);
+                    // Phase-major: every graph piece of the run at phase 0, then every one at
+                    // phase 1, so the host-side KDA ping-pong the capture bodies perform advances
+                    // the way one replayed token does (each layer swapped once per phase pass).
+                    let mut per_piece: Vec<Vec<CudaGraph>> = Vec::new();
+                    for phase in 0..2 {
+                        ctx.phase = phase;
+                        let mut gi = 0usize;
+                        for piece in &run.pieces {
+                            let PieceSpec::Graph(segs) = piece else {
+                                continue;
+                            };
+                            let x_cell = std::cell::RefCell::new(&mut stage.x_io);
+                            let out_cell = std::cell::RefCell::new(&mut stage.x_out);
+                            let ws_cell = std::cell::RefCell::new(&mut stage.ws);
+                            let cache_cell = std::cell::RefCell::new(&mut *cache);
+                            let mixed_cell = std::cell::RefCell::new(&mut stage.mixed);
+                            let pos_d_ref: &CudaSlice<i32> = &stage.pos_d;
+                            let g = capture_one(e, &ctx, |e| {
+                                self.hyper_range_decode_ws_segments(
+                                    e,
+                                    topology,
+                                    &mut x_cell.borrow_mut(),
+                                    segs,
+                                    pos_d_ref,
+                                    pos,
+                                    &mut cache_cell.borrow_mut(),
+                                    &mut ws_cell.borrow_mut(),
+                                    Some(&mut **mixed_cell.borrow_mut()),
+                                )?;
+                                let live = x_cell.borrow();
+                                e.copy_into(&mut out_cell.borrow_mut(), 0, &live, width)
+                            })?;
+                            if gi == 0 && fault == Some((ri, phase)) {
+                                // the shape of an end-capture or instantiate refusal: the body
+                                // and its host swaps ran, the graph is not kept
+                                drop(g);
+                                crate::GLM5_DECODE_GRAPH_FAULTS.fetch_add(1, Ordering::Relaxed);
+                                return Err(format!(
+                                    "MEMRA_GLM5_GRAPH_CAPTURE_FAULT={ri}:{phase} refused run \
+                                     [{a}, {b}) phase {phase} after its body was recorded"
+                                )
+                                .into());
+                            }
+                            if phase == 0 {
+                                per_piece.push(vec![g]);
+                            } else {
+                                per_piece[gi].push(g);
+                            }
+                            gi += 1;
                         }
-                        gi += 1;
                     }
-                }
+                    Ok(per_piece)
+                })();
+                let per_piece = match recorded {
+                    Ok(p) => p,
+                    Err(err) => {
+                        // The caller falls back to the eager walk next, and that walk is the
+                        // byte-identical twin only on the state this run entered with. A refusal
+                        // inside phase 0, or partway through phase 1, leaves every layer the
+                        // recorded bodies passed swapped an odd number of times; a warm walk that
+                        // failed before its own restore leaves executed bytes too.
+                        if let Err(rerr) = Self::glm5_run_restore(e, cache, &snap) {
+                            return Err(Box::new(StateTorn(format!(
+                                "run [{a}, {b}): the capture refused ({err}) and the run's state \
+                                 could not be put back ({rerr})"
+                            ))));
+                        }
+                        return Err(err);
+                    }
+                };
                 let mut it = per_piece.into_iter();
                 let mut pieces: Vec<RunPiece> = Vec::with_capacity(run.pieces.len());
                 for piece in &run.pieces {
@@ -1618,10 +1711,22 @@ impl HybridModel {
         let runs = kda_runs(self, lo, hi);
         for (a, b) in runs {
             let snap = Self::glm5_run_snapshot(e, cache, a, b)?;
-            let mut xc = e.uninit(width)?;
-            e.copy_into(&mut xc, 0, x, width)?;
-            let _ = self.hyper_range_decode_eager(e, topology, xc, a, b, pos_d, pos, cache)?;
-            Self::glm5_run_restore(e, cache, &snap)?;
+            let walked = (|| -> Res<()> {
+                let mut xc = e.uninit(width)?;
+                e.copy_into(&mut xc, 0, x, width)?;
+                let _ = self.hyper_range_decode_eager(e, topology, xc, a, b, pos_d, pos, cache)?;
+                Ok(())
+            })();
+            // Put the run back on EVERY exit: a walk that failed partway executed some layers and
+            // swapped their host roles, and the caller's eager fallback reads this state next.
+            if let Err(rerr) = Self::glm5_run_restore(e, cache, &snap) {
+                return Err(Box::new(StateTorn(format!(
+                    "run [{a}, {b}): the pre-capture warm walk's state could not be put back \
+                     ({rerr}; walk: {})",
+                    walked.as_ref().err().map_or("ok".into(), |w| w.to_string())
+                ))));
+            }
+            walked?;
             note(&format!(
                 "warmed run [{a}, {b}) before capture (one eager pass on a copy of the input, \
                  state restored): lazily built per-weight caches now exist"
@@ -2314,7 +2419,23 @@ impl HybridModel {
 
 #[cfg(test)]
 mod tests {
-    use super::capturable_runs;
+    use super::{capturable_runs, capture_fault_from};
+
+    // The fault door is a gate's red arm: a value it cannot read must refuse, never pass as
+    // "no fault" (a refused-capture arm that injected nothing would be green and vacuous).
+    #[test]
+    fn capture_fault_parses_run_and_phase_or_refuses() {
+        assert_eq!(capture_fault_from(None), Ok(None));
+        assert_eq!(capture_fault_from(Some("")), Ok(None));
+        assert_eq!(capture_fault_from(Some("1:0")), Ok(Some((1, 0))));
+        assert_eq!(capture_fault_from(Some("0:1")), Ok(Some((0, 1))));
+        for bad in ["1", "1:2", "a:0", "1:x", ":0", "1:0:0", " 1:0"] {
+            assert!(
+                capture_fault_from(Some(bad)).is_err(),
+                "{bad:?} must refuse by name"
+            );
+        }
+    }
 
     // The run splitter IS the capture geometry: a wrong split either captures a layer whose
     // launch geometry depends on `cache.pos` (wrong answers on replay) or drops a run.

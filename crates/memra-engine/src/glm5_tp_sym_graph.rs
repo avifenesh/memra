@@ -30,9 +30,15 @@
 //! KDA layer; a replay runs no host code, so the device alternates between the two pointer
 //! assignments token by token. Like the plain door, every run is captured TWICE back to back
 //! (capture records, it does not execute, but the host swaps run on both passes and leave the
-//! fields where they started), and replays alternate phase per token. Every KDA layer in the
-//! range is inside a run (MLA layers stay eager and own no host swap), so the phase is the token
-//! parity of this state.
+//! fields where they started). After every replay the host swap is MIRRORED for each graphed
+//! KDA layer on every rank, as the plain door does, so `glm5_tp_recur` always names the buffer
+//! the device last wrote: an eager reader between graphed tokens (a t>1 prime on a reuse-pool
+//! continuation, the suffix prime, a prefix snapshot, the eager fallback) reads the current
+//! state. The phase a token replays is not a parity counter: it is read from the planes, by
+//! comparing each graphed layer's live `(conv, ssm, alt)` pointers with the ones the phase-0
+//! capture baked. An eager walk between replays advances the roles by however many tokens it
+//! ran and the next replay follows; a plane that matches neither phase (re-seated buffers) or
+//! layers that disagree latch the state EAGER before anything of the token has run.
 //!
 //! PRECONDITIONS are the plain door's process-level ones (`glm5_graph_process_refusal`): with
 //! `MEMRA_HTOD_DIET` off the shared expert uploads a pageable constant per MoE layer, which a
@@ -43,7 +49,9 @@
 //! ALLOCATIONS INSIDE THE RECORDED RUN become graph memory nodes (the per-layer temporaries drop
 //! before the run ends); the one-shot's stage buffers are pre-sized before the first capture so
 //! nothing allocated inside outlives it. If a capture or instantiate refuses, the state latches
-//! EAGER for the session and says so once; the walk stays byte-identical.
+//! EAGER for the session and says so once; the walk stays byte-identical because the KDA planes'
+//! ping-pong roles are put back first (a refusal inside phase 0, or between the phases, leaves
+//! the layers it passed swapped an odd number of times).
 use crate::Engine;
 use crate::glm5_decode_graph::{CapCtx, capture_error, step};
 use crate::hybrid::{HybridModel, Mixer};
@@ -114,7 +122,9 @@ pub(crate) struct SymGraphState {
     pieces: Vec<Piece>,
     /// The first token of the state ran eager (segment workspaces allocated outside capture).
     warm: bool,
-    phase: usize,
+    /// Every graphed KDA layer's per-rank `(conv, ssm, alt)` pointers as the phase-0 capture
+    /// baked them; `replay_phase` reads each token's phase from the live planes against it.
+    sig: Vec<(usize, Vec<[u64; 3]>)>,
     failed: bool,
 }
 
@@ -170,6 +180,170 @@ fn seg_layer(sg: Seg) -> usize {
     match sg {
         Seg::Kda(il) | Seg::MlaPre(il) | Seg::MlaFfn(il) => il,
     }
+}
+
+/// The graphed KDA layers of a plan: every layer whose host ping-pong a replay must mirror.
+fn graphed_kda_layers(items: &[Item]) -> Vec<usize> {
+    items
+        .iter()
+        .filter_map(|it| match it {
+            Item::Seg(Seg::Kda(il)) => Some(*il),
+            _ => None,
+        })
+        .collect()
+}
+
+/// Layer `il`'s per-rank `(conv_state, ssm_state, ssm_state_alt)` device pointers, or `None`
+/// when the layer carries no TP planes.
+fn plane_ptrs(
+    e: &Engine,
+    rt: &crate::glm5_tp::Glm5TpRt,
+    cache: &Cache,
+    il: usize,
+) -> Res<Option<Vec<[u64; 3]>>> {
+    use cudarc::driver::DevicePtr;
+    let Some(planes) = cache.glm5_tp_recur.get(il).and_then(Option::as_ref) else {
+        return Ok(None);
+    };
+    let mut out = Vec::with_capacity(planes.len());
+    for (r, pl) in planes.iter().enumerate() {
+        let dev = crate::glm5_tp::rank_engine(e, rt, r);
+        let _m = dev.gpu.enter_main()?;
+        let st = dev.stream();
+        let (c, _gc) = pl.conv_state.device_ptr(&st);
+        let (s, _gs) = pl.ssm_state.device_ptr(&st);
+        let (a, _ga) = pl.ssm_state_alt.device_ptr(&st);
+        out.push([c, s, a]);
+    }
+    Ok(Some(out))
+}
+
+/// The phase-0 signature of `layers`: what the capture is about to bake.
+fn kda_sig(
+    e: &Engine,
+    rt: &crate::glm5_tp::Glm5TpRt,
+    cache: &Cache,
+    layers: &[usize],
+) -> Res<Vec<(usize, Vec<[u64; 3]>)>> {
+    let mut out = Vec::with_capacity(layers.len());
+    for &il in layers {
+        let ptrs = plane_ptrs(e, rt, cache, il)?
+            .ok_or_else(|| format!("layer {il}: graphed KDA layer carries no TP planes"))?;
+        out.push((il, ptrs));
+    }
+    Ok(out)
+}
+
+/// Which captured phase matches the live planes: 0 when every graphed layer on every rank holds
+/// the phase-0 `(conv, ssm, alt)` the capture baked, 1 when every one holds it with `ssm` and
+/// `alt` exchanged. Anything else (a plane gone or re-seated, layers or ranks that disagree) is
+/// an error naming the first plane that does not fit: no captured graph reads those buffers.
+fn phase_of(
+    sig: &[(usize, Vec<[u64; 3]>)],
+    live: &[(usize, Option<Vec<[u64; 3]>>)],
+) -> Result<usize, String> {
+    if sig.len() != live.len() {
+        return Err(format!(
+            "{} graphed KDA layer(s) baked, {} read live",
+            sig.len(),
+            live.len()
+        ));
+    }
+    let mut phase: Option<usize> = None;
+    for ((il, want), (il_live, got)) in sig.iter().zip(live) {
+        if il != il_live {
+            return Err(format!("layer order moved: baked {il}, live {il_live}"));
+        }
+        let got = got
+            .as_ref()
+            .ok_or_else(|| format!("layer {il}: TP planes are gone"))?;
+        if got.len() != want.len() {
+            return Err(format!(
+                "layer {il}: {} rank plane(s) baked, {} live",
+                want.len(),
+                got.len()
+            ));
+        }
+        for (r, (w, g)) in want.iter().zip(got).enumerate() {
+            let p = if g == w {
+                0
+            } else if *g == [w[0], w[2], w[1]] {
+                1
+            } else {
+                return Err(format!(
+                    "layer {il} rank {r}: live (conv, ssm, alt) {g:#x?} matches neither baked \
+                     phase of {w:#x?}"
+                ));
+            };
+            match phase {
+                None => phase = Some(p),
+                Some(q) if q == p => {}
+                Some(q) => {
+                    return Err(format!(
+                        "layer {il} rank {r} sits at phase {p}, an earlier plane at {q}"
+                    ));
+                }
+            }
+        }
+    }
+    Ok(phase.unwrap_or(0))
+}
+
+/// The live phase of the graphed layers (see [`phase_of`]).
+fn replay_phase(
+    e: &Engine,
+    rt: &crate::glm5_tp::Glm5TpRt,
+    cache: &Cache,
+    sig: &[(usize, Vec<[u64; 3]>)],
+) -> Res<Result<usize, String>> {
+    let mut live = Vec::with_capacity(sig.len());
+    for (il, _) in sig {
+        live.push((*il, plane_ptrs(e, rt, cache, *il)?));
+    }
+    Ok(phase_of(sig, &live))
+}
+
+/// The host ping-pong a replay of `layers` stands for: swap every rank plane's `ssm_state` and
+/// `ssm_state_alt`, as the eager `kda_tp_partials_sym` does after its kernels, so the host
+/// roles name the buffer the replay wrote.
+fn mirror_swaps(cache: &mut Cache, layers: impl IntoIterator<Item = usize>) -> Res<()> {
+    for il in layers {
+        let planes = cache
+            .glm5_tp_recur
+            .get_mut(il)
+            .and_then(Option::as_mut)
+            .ok_or_else(|| format!("layer {il}: TP recur planes vanished under a replay"))?;
+        for pl in planes.iter_mut() {
+            std::mem::swap(&mut pl.ssm_state, &mut pl.ssm_state_alt);
+        }
+    }
+    Ok(())
+}
+
+/// Swap back every plane whose `ssm_state` no longer holds the pointer the phase-0 signature
+/// saw. A capture body runs the HOST swap of `kda_tp_partials_sym` and executes nothing, so a
+/// capture refused partway (or at end/instantiate after phase 0) leaves the layers it passed
+/// swapped an odd number of times. The bytes need no restore: a capture records and never
+/// executes.
+fn restore_ssm_roles(
+    e: &Engine,
+    rt: &crate::glm5_tp::Glm5TpRt,
+    cache: &mut Cache,
+    sig: &[(usize, Vec<[u64; 3]>)],
+) -> Res<()> {
+    for (il, want) in sig {
+        let live = plane_ptrs(e, rt, cache, *il)?
+            .ok_or_else(|| format!("layer {il}: TP recur planes vanished during capture"))?;
+        let planes = cache.glm5_tp_recur[*il]
+            .as_mut()
+            .ok_or_else(|| format!("layer {il}: TP recur planes vanished during capture"))?;
+        for ((pl, w), g) in planes.iter_mut().zip(want).zip(&live) {
+            if g[1] != w[1] {
+                std::mem::swap(&mut pl.ssm_state, &mut pl.ssm_state_alt);
+            }
+        }
+    }
+    Ok(())
 }
 
 /// Two simultaneous stream captures, one per rank, of one body that issues to both.
@@ -310,7 +484,7 @@ fn take_state(
             .transpose()?,
         pieces: Vec::new(),
         warm: false,
-        phase: 0,
+        sig: Vec::new(),
         failed: false,
     }))
 }
@@ -447,6 +621,7 @@ fn walk_token(
     }
     // the pieces are recorded on first use, both phases back to back
     if st.pieces.is_empty() {
+        let roles = kda_sig(e, rt, cache, &graphed_kda_layers(items))?;
         let runs = group_runs(items);
         let n = runs.len();
         let mut pieces: Vec<Piece> = Vec::with_capacity(items.len());
@@ -540,6 +715,8 @@ fn walk_token(
                         match cap {
                             Ok(g) => phases.push(g),
                             Err(err) => {
+                                // the eager walk reads the planes next: undo the odd swaps first
+                                restore_ssm_roles(e, rt, cache, &roles)?;
                                 eprintln!(
                                     "[glm5-tp-sym-graph] capture refused for run [{a}, {b}) phase {phase}: {err}; \
                                      this session's symmetric walk stays EAGER (byte-identical)"
@@ -582,14 +759,31 @@ fn walk_token(
             })
             .sum();
         st.pieces = pieces;
+        st.sig = roles;
         eprintln!(
             "[glm5-tp-sym-graph] engaged: {n_graph} graph piece(s) over {n_segs} segment(s) recorded \
              per rank in both ping-pong phases over layers [{lo}, {hi}); {n_mid} MLA middle(s) eager \
              between pieces, {n_eager} whole layer(s) eager"
         );
     }
+    // The phase this token replays, read from the planes: the host roles name the buffer the
+    // device last wrote (every replay mirrors its swaps, every eager walk swaps for itself), so
+    // tokens that ran eager in between (a continuation prime, the eager fallback) move it too.
+    // A plane that fits neither baked phase latches EAGER here, before any of the token ran.
+    let phase = match replay_phase(e, rt, cache, &st.sig)? {
+        Ok(p) => p,
+        Err(why) => {
+            eprintln!(
+                "[glm5-tp-sym-graph] the KDA planes no longer fit the recorded graphs ({why}); \
+                 this session's symmetric walk stays EAGER (byte-identical)"
+            );
+            // the execs stay in the state and drop with the cache: a replay of them may still be
+            // in flight on the streams
+            st.failed = true;
+            return Ok(false);
+        }
+    };
     // the token: graph pieces replay, the middles and the whole eager layers run in order
-    let phase = st.phase;
     let SymGraphState {
         x_io,
         x_peer_io,
@@ -603,7 +797,7 @@ fn walk_token(
     } = &mut *st;
     for piece in pieces.iter() {
         match piece {
-            Piece::Graph { graphs, .. } => {
+            Piece::Graph { graphs, segs } => {
                 {
                     let _m = e.gpu.enter_main()?;
                     graphs[phase][0].launch()?;
@@ -612,6 +806,15 @@ fn walk_token(
                     let _m = peer.gpu.enter_main()?;
                     graphs[phase][1].launch()?;
                 }
+                // the replay wrote each KDA layer's alternate buffer, as the eager step would
+                // have: mirror the host swap so every later reader sees the pointers it expects
+                mirror_swaps(
+                    cache,
+                    segs.iter().filter_map(|sg| match sg {
+                        Seg::Kda(il) => Some(*il),
+                        _ => None,
+                    }),
+                )?;
             }
             Piece::MlaMid(il) => {
                 let (ar, ap) = match (mla_a_root.as_mut(), mla_a_peer.as_mut()) {
@@ -653,7 +856,6 @@ fn walk_token(
             }
         }
     }
-    st.phase ^= 1;
     GLM5_TP_SYM_GRAPH_TOKENS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     // residual out
     {
@@ -662,4 +864,89 @@ fn walk_token(
         e.stream().memcpy_dtod(&src, &mut dst)?;
     }
     Ok(true)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Item, Seg, graphed_kda_layers, phase_of};
+
+    /// Two graphed KDA layers on two ranks, phase-0 pointers `(conv, ssm, alt)`.
+    fn sig() -> Vec<(usize, Vec<[u64; 3]>)> {
+        vec![
+            (3, vec![[0x100, 0x200, 0x300], [0x1100, 0x1200, 0x1300]]),
+            (4, vec![[0x400, 0x500, 0x600], [0x1400, 0x1500, 0x1600]]),
+        ]
+    }
+
+    fn live(planes: &[(usize, Vec<[u64; 3]>)]) -> Vec<(usize, Option<Vec<[u64; 3]>>)> {
+        planes
+            .iter()
+            .map(|(il, p)| (*il, Some(p.clone())))
+            .collect()
+    }
+
+    fn swapped(planes: &[(usize, Vec<[u64; 3]>)]) -> Vec<(usize, Vec<[u64; 3]>)> {
+        planes
+            .iter()
+            .map(|(il, p)| (*il, p.iter().map(|w| [w[0], w[2], w[1]]).collect()))
+            .collect()
+    }
+
+    #[test]
+    fn sym_graph_phase_is_read_from_the_planes() {
+        let s = sig();
+        // as captured: phase 0
+        assert_eq!(phase_of(&s, &live(&s)), Ok(0));
+        // one replay mirrored, or an odd number of eager tokens in between: phase 1
+        assert_eq!(phase_of(&s, &live(&swapped(&s))), Ok(1));
+        // an even number of eager tokens after an odd number of replays lands on phase 1 too:
+        // the planes say so, no token count is involved
+        assert_eq!(phase_of(&s, &live(&swapped(&swapped(&swapped(&s))))), Ok(1));
+        // nothing graphed: one phase
+        assert_eq!(phase_of(&[], &[]), Ok(0));
+    }
+
+    #[test]
+    fn sym_graph_phase_refuses_planes_no_graph_baked() {
+        let s = sig();
+        // layers that disagree
+        let mut mixed = live(&s);
+        mixed[1] = live(&swapped(&s))[1].clone();
+        assert!(phase_of(&s, &mixed).unwrap_err().contains("layer 4 rank 0"));
+        // ranks that disagree
+        let mut ranks = live(&s);
+        ranks[0].1.as_mut().unwrap()[1] = [0x1100, 0x1300, 0x1200];
+        assert!(phase_of(&s, &ranks).unwrap_err().contains("layer 3 rank 1"));
+        // a re-seated ssm buffer
+        let mut reseat = live(&s);
+        reseat[0].1.as_mut().unwrap()[0][1] = 0x9900;
+        assert!(
+            phase_of(&s, &reseat)
+                .unwrap_err()
+                .contains("matches neither")
+        );
+        // a re-seated conv ring
+        let mut conv = live(&s);
+        conv[1].1.as_mut().unwrap()[1][0] = 0x9900;
+        assert!(phase_of(&s, &conv).unwrap_err().contains("layer 4 rank 1"));
+        // planes gone
+        let mut gone = live(&s);
+        gone[0].1 = None;
+        assert!(phase_of(&s, &gone).unwrap_err().contains("gone"));
+        // a layer count that moved
+        assert!(phase_of(&s, &live(&s[..1])).is_err());
+    }
+
+    #[test]
+    fn sym_graph_mirrors_only_graphed_kda_layers() {
+        let items = [
+            Item::Seg(Seg::Kda(0)),
+            Item::Seg(Seg::MlaPre(1)),
+            Item::MlaMid(1),
+            Item::Seg(Seg::MlaFfn(1)),
+            Item::Eager(2),
+            Item::Seg(Seg::Kda(3)),
+        ];
+        assert_eq!(graphed_kda_layers(&items), vec![0, 3]);
+    }
 }

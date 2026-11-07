@@ -495,6 +495,80 @@ fn graph_door_decode_matches_eager_bitwise() {
     println!("re-capture arm: {steps} steps bit-identical across {recaptures} forced rebuilds");
 }
 
+/// THE REFUSED-CAPTURE ARM. A capture refused after its body was recorded (end-capture or
+/// instantiate) has run the body's host-side KDA ping-pong once for every layer the run passed,
+/// and the door then latches the eager walk for the session. That walk is the byte-identical
+/// twin only if the refused run's state was put back first: left alone, layers [4, 7) read the
+/// previous buffer from the capture step on. The fault door refuses run 1 (the fixture's second
+/// KDA run) at phase 0 right after its body was recorded, and the tape must equal the
+/// `MEMRA_GLM5_DECODE_GRAPH=0` tape. Non-vacuity: the fault fired, and no stage was captured or
+/// replayed (a session that captured would not be testing the refusal).
+#[test]
+#[ignore = "needs a CUDA device: run under flock /tmp/memra-5090.lock"]
+fn graph_door_refused_capture_matches_eager_bitwise() {
+    let _gpu = gpu_guard();
+    let h = Harness::new();
+    let ids = tokens(40, 0x5EED);
+    let (prompt, steps) = (8usize, 16usize);
+
+    // SAFETY: single-threaded test; the doors are read per call by the engine.
+    unsafe {
+        std::env::set_var("MEMRA_HTOD_DIET", "1");
+        std::env::set_var("MEMRA_GLM5_DECODE_GRAPH", "0");
+    }
+    let (eager, _) = h.decode_bits(&ids, prompt, steps);
+
+    let faults0 = memra_engine::GLM5_DECODE_GRAPH_FAULTS.load(Ordering::Relaxed);
+    let cap0 = memra_engine::GLM5_DECODE_GRAPH_CAPTURES.load(Ordering::Relaxed);
+    let rep0 = memra_engine::GLM5_DECODE_GRAPH_REPLAYS.load(Ordering::Relaxed);
+    // SAFETY: same as above.
+    unsafe {
+        std::env::set_var("MEMRA_GLM5_DECODE_GRAPH", "1");
+        std::env::set_var("MEMRA_GLM5_GRAPH_CAPTURE_FAULT", "1:0");
+    }
+    let (refused, _) = h.decode_bits(&ids, prompt, steps);
+    // SAFETY: same as above.
+    unsafe {
+        std::env::remove_var("MEMRA_GLM5_GRAPH_CAPTURE_FAULT");
+        std::env::set_var("MEMRA_GLM5_DECODE_GRAPH", "0");
+    }
+    let faults = memra_engine::GLM5_DECODE_GRAPH_FAULTS.load(Ordering::Relaxed) - faults0;
+    let captures = memra_engine::GLM5_DECODE_GRAPH_CAPTURES.load(Ordering::Relaxed) - cap0;
+    let replays = memra_engine::GLM5_DECODE_GRAPH_REPLAYS.load(Ordering::Relaxed) - rep0;
+    println!("refused-capture arm: faults={faults} captures={captures} replays={replays}");
+    assert!(
+        faults > 0,
+        "VACUOUS: MEMRA_GLM5_GRAPH_CAPTURE_FAULT=1:0 never fired; either the door refused before \
+         capturing (reason on stderr as `[glm5-decode-graph] eager: ...`) or the fixture no longer \
+         plans a second KDA run"
+    );
+    assert_eq!(
+        (captures, replays),
+        (0, 0),
+        "the refused stage captured or replayed anyway: this arm says nothing about the fallback"
+    );
+    let mut bad = 0usize;
+    for (step, (a, b)) in eager.iter().zip(&refused).enumerate() {
+        if a != b {
+            if bad < 4 {
+                let i = a.iter().zip(b).position(|(x, y)| x != y).unwrap_or(0);
+                println!(
+                    "  REFUSED step {step}: first differing logit {i}: eager {} fallback {}",
+                    f32::from_bits(a[i]),
+                    f32::from_bits(b[i])
+                );
+            }
+            bad += 1;
+        }
+    }
+    assert_eq!(
+        bad, 0,
+        "{bad}/{steps} steps diverge after a refused capture: the eager fallback read KDA planes \
+         the refused capture body left swapped"
+    );
+    println!("refused-capture arm: {steps} steps bit-identical to the eager tape");
+}
+
 /// `MEMRA_GLM5_GRAPH_MLA`: the fixture's layers 3 and 7 are MLA. With the door and the segment
 /// workspace seam on, each MLA layer is captured in halves around an eager middle, and the
 /// tape must equal the eager walk under the same seam. Non-vacuity: at least one MLA half was
