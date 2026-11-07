@@ -1,0 +1,12 @@
+arm c1-gds-r1 workload=agentic:1 start=2026-11-07T20:51:02+02:00 profile=balanced
+5f2b388fa8f2bb3030c6e4f903db6e0781331294d27e517b7a9a03207ca07ede  <bins>/memra-server-cand-c003e4eded
+env: 
+NVIDIA GeForce RTX 5090 Laptop GPU, 75, 180 MHz, [N/A], 48 MiB, 24028 MiB
+device_free_min_mib 1267 samples 2075
+memavailable_min_gib 43.80
+[prefix-cache] on: budget 2260MB (2259943424 B, derived: 2 x 1129971712 B max entry for model "gate" at served ctx 32768 (from MEMRA_CTX; MEMRA_CTX set), discrete card: the larger of that and free after the transient reserve, driver headroom 2147483648 B and a session peak of 90499973120 B (76 resident sessions x 1190789120 B served-context session), requested 2259943424 B; boot driver free 8342601728 B, post-reserve clamp 6731988992 B), policy GDS value-per-byte (lowest clock + prompt tokens per MB first; the clock takes each victim's priority; leases untouchable), min prefix 64 tokens, immed
+evict_lines=73
+oom_lines=0
+reclaim_on_defer_lines=68
+{"users": 1, "temperature": 1.0, "max_tokens": 768, "turns": 29, "prime_wall_s": 148.6, "wall_s": 326.0, "tokens": 8710, "aggregate_gen_tps": 26.95, "per_user_gen_tps_median": 58.28, "measured_hits": 16, "measured_cached_tokens": 33568, "measured_prompt_tokens": 184051, "measured_cached_frac": 0.1824, "ttft_ms_p50": 3410.9, "ttft_ms_p95": 18591.4, "ttft_ms_p99": 19592.0, "ttft_ms_mean": 5903.8, "prime_metrics_delta": {}, "measured_metrics_delta": {}}
+rc=0 end=2026-11-07T20:59:42+02:00
