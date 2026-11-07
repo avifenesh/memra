@@ -7661,6 +7661,8 @@ async fn get_metrics(State(st): State<AppState>, headers: HeaderMap) -> Response
             // declines to a cold prime (no checkpoint, the prime floor, a failed restore).
             "continuation_pool_grid_rewinds": m.continuation_pool_grid_rewinds,
             "continuation_pool_grid_declines": m.continuation_pool_grid_declines,
+            // memra#1093: DSpark-pool hits on a recurrent trunk declined to a cold prime.
+            "dspark_pool_grid_declines": m.dspark_pool_grid_declines,
             "served_dspark": m.served_dspark,
             "served_spec": m.served_spec,
             "served_plain": m.served_plain,

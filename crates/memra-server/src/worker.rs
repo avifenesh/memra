@@ -2622,6 +2622,8 @@ pub struct Metrics {
     /// failed restore). Rewinds are a subset of continuation_pool_hits; declines are not hits.
     pub continuation_pool_grid_rewinds: u64,
     pub continuation_pool_grid_declines: u64,
+    /// DSpark-pool hits on a recurrent trunk declined to a cold prime by the grid law (memra#1093).
+    pub dspark_pool_grid_declines: u64,
     pub spec_pool_hits: u64,
     pub spec_pool_misses: u64,
     pub spec_pool_affinity_rewinds: u64,
@@ -3081,6 +3083,8 @@ struct ReuseMetrics {
     /// (no checkpoint, the floor, or a failed restore). A declined hit is not a continuation hit.
     continuation_grid_rewinds: u64,
     continuation_grid_declines: u64,
+    /// DSpark-pool exact or text hits on a recurrent trunk declined to a cold prime (memra#1093).
+    dspark_grid_declines: u64,
 }
 
 /// Workspace-aware admission for hyper-trunk prefill (lane/glm5-gpf-workspace, 2026-08-30).
@@ -34832,6 +34836,7 @@ pub fn run(
             m.plain_affinity_rewinds = reuse_metrics.plain_affinity_rewinds;
             m.continuation_pool_grid_rewinds = reuse_metrics.continuation_grid_rewinds;
             m.continuation_pool_grid_declines = reuse_metrics.continuation_grid_declines;
+            m.dspark_pool_grid_declines = reuse_metrics.dspark_grid_declines;
             m.spec_pool_hits = reuse_metrics.spec_hits;
             m.spec_pool_misses = reuse_metrics.spec_misses;
             m.spec_pool_affinity_rewinds = reuse_metrics.spec_affinity_rewinds;
@@ -39326,6 +39331,21 @@ fn admit(
                 // A finished stream with nothing new to feed: resuming would re-emit
                 // from a terminal state. Put it back; serve cold.
                 pool.push(entry);
+            }
+            // THE POOL GRID LAW (memra#1093): a DFlash session's rows past its prompt were
+            // written by verify and decode, and its parked end sits off the prime grid, so a
+            // recurrent trunk resumed here primes from state a cold prime never computes. The
+            // session keeps no grid checkpoint to rewind to: the request primes cold (exact) and
+            // the entry goes, since its conversation has moved past it.
+            Some((entry, _)) if cache_carries_recurrent(&entry.sess.cache) => {
+                eprintln!(
+                    "[worker] dspark-reuse DECLINED (grid law): the parked stream's {} rows hold \
+                     verify and decode state off the prime grid; serving COLD (model {})",
+                    entry.fed.len(),
+                    req.model
+                );
+                reuse_metrics.dspark_grid_declines += 1;
+                drop(entry);
             }
             // SHORT-SUFFIX DECLINE (incident 2026-08-25). The resume primes the suffix
             // through `prime_cache`, whose batched prefill arm asserts `T >=
@@ -51772,6 +51792,23 @@ mod tests {
             "active[i].prime_service.peer_quantum = memra_engine::prime_walker::prime_yield_enabled() && crate::prime_fairness::owes_peer_quantum( i, active.iter().map(|s| s.prime_service.pending), );"
         ));
         assert!(!squashed.contains("active.iter().any(|s| s.prime_service.pending)"));
+    }
+
+    /// memra#1093: the DSpark pool never resumes a recurrent trunk on its parked stream (rows the
+    /// verify and decode wrote, off the prime grid); the decline arm precedes the resume arm.
+    #[test]
+    fn the_dspark_pool_declines_a_recurrent_resume() {
+        let src = include_str!("worker.rs");
+        let production = &src[..src.find("\nmod tests {").unwrap()];
+        let squashed = production.split_whitespace().collect::<Vec<_>>().join(" ");
+        let decline = squashed
+            .find("Some((entry, _)) if cache_carries_recurrent(&entry.sess.cache) => {")
+            .expect("the grid-law decline arm");
+        let resume = squashed
+            .find("dspark_resume = Some((entry.sess, entry.fed, suffix));")
+            .expect("the resume arm");
+        assert!(decline < resume);
+        assert!(squashed[decline..resume].contains("reuse_metrics.dspark_grid_declines += 1;"));
     }
 
     /// memra#1091: the continuation pool obeys the restore grid law, in the default test set. The
