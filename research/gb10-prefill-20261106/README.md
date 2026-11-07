@@ -297,8 +297,10 @@ quantizers write the same activation bytes in a v2 layout; one 16-warp CTA per S
 the same block-scale MMA and the same per-k32 epilogue; 4 row tiles per raster group. GB10 default
 from 2,048 rows (`MEMRA_MMQ_F8F4_V2=0` rolls back). Decision record:
 `docs/decisions/GB10-F8F4-GEMM-V2.md`. The timed binary is `b6d10d41c7` on the round-2
-head `1ed40895ec` (kept on `research/gb10-f8f4-gemm-v2-measured`); the PR replays it on main as
-`2ce09cd39b`, with two aarch64 clippy fixes and the review fixes of `c23cd3a158` (ledger row 26).
+head `1ed40895ec` (kept on `research/gb10-f8f4-gemm-v2-measured`). The final-head receipts
+(ledger rows 26-28) name the PR head `c23cd3a158` on main `c2e04719b6`, with two aarch64 clippy
+fixes and the review fixes, kept on `research/gb10-f8f4-gemm-v2-measured-final`; the landed commits
+replay that history on a later main with a byte-identical v2 code diff.
 
 How it got there (`gemm-v2-probe/`, `harness/f8f4v2_probe.cu`, gate shape at 8,192 rows):
 
