@@ -1,0 +1,21 @@
+
+running 5 tests
+test gpu_model_boundary_capture_is_the_live_state ... [gdn-state] bf16 GDN recurrent state (fp32 math)
+[tensor-contract] bound 668 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[q8rp] split-plane decode mirrors built: 92 tensors
+ok
+test gpu_model_capture_equals_split_and_resumes_cold_exact ... [gdn-state] bf16 GDN recurrent state (fp32 math)
+[tensor-contract] bound 668 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[q8rp] split-plane decode mirrors built: 92 tensors
+ok
+test gpu_model_settle_then_resume_is_cold_exact ... [gdn-state] bf16 GDN recurrent state (fp32 math)
+[tensor-contract] bound 668 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[q8rp] split-plane decode mirrors built: 92 tensors
+ok
+test gpu_ring_capture_is_the_rows_before_the_capture_point ... [gdn-state] bf16 GDN recurrent state (fp32 math)
+ok
+test gpu_scan_capture_equals_the_prefix_scan_state ... [gdn-state] bf16 GDN recurrent state (fp32 math)
+ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 7.94s
+

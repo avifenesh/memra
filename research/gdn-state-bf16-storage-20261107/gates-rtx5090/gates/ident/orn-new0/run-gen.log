@@ -1,0 +1,34 @@
+[tensor-contract] bound 753 semantic tensors (pack qwen35_moe, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[moe] resident-experts decision (dev0): experts 18.57GB + trunk 1.60GB vs free 24.52GB (expert budget 20.91GB) -> RESIDENT
+loaded qwen35moe (40 trunk layers; optional MTP skipped)
+chat-templated prompt:
+<|im_start|>user
+Write a Python function that returns the n-th Fibonacci number, then explain its time complexity in two sentences.<|im_end|>
+<|im_start|>assistant
+<think>
+
+prompt text: "Write a Python function that returns the n-th Fibonacci number, then explain its time complexity in two sentences."
+prompt tokens: [248045, 846, 198, 7734, 264, 12654, 709, 421, 4523, 279, 307, 7324, 76938, 1324, 11, 1179, 10033, 1141, 854, 22373, 303, 1330, 22157, 13, 248046, 198, 248045, 74455, 198, 248068, 198]
+[moe-sk-form] dev=0 qt=7 sms=82 occ128=1 occ32=7 occt=3 cross=64 xcross=64 bdb=0 in_f=2048 out_f=512 n_active=154 max_m=5
+[fa-pool] grow #0 dev=0 o_len 0 -> 4096 ml_len 0 -> 16 (retired kept, zero=false)
+prefill argmax=760  decode argmax=760  logit maxdiff=1.482e0  MATCH
+batched-prime argmax=760  tokenwise argmax=760  logit maxdiff=1.254e0  MATCH
+prefill 31 tok in 0.0856s = 362.2 tok/s (pp31)
+[fa-pool] grow #1 dev=0 o_len 4096 -> 49152 ml_len 16 -> 192 (retired kept, zero=false)
+[fa-pool] grow #2 dev=0 o_len 49152 -> 98304 ml_len 192 -> 384 (retired kept, zero=false)
+generated 128 tokens in 1.315s = 97.33 tok/s (Stage-B int8 dp4a decode, gen-only; prime 0.085s) [stop: MaxNew]
+tokens: [760, 1156, 6587, 264, 12654, 709, 421, 4523, 279, 307, 7324, 76938, 1324, 11, 5346, 264, 1330, 1284, 17834, 15673, 314, 1141, 854, 22373, 13, 271, 9764, 728, 3165, 264, 4101, 11, 4252, 7873, 13, 353, 3172, 708, 440, 449, 83876, 5313, 2394, 424, 579, 10727, 318, 46, 1393, 8, 854, 11, 496, 7, 16, 8, 3433, 681, 864, 3520, 364, 264, 30835, 22373, 15673, 13, 353, 1362, 1048, 6088, 279, 29812, 2243, 694, 279, 83876, 799, 369, 2577, 364, 264, 14542, 4087, 13, 271, 9764, 728, 3165, 279, 83876, 2243, 25, 271, 71093, 12305, 198, 727, 73111, 1393, 1590, 198, 262, 413, 307, 361, 220, 15, 25, 198, 285, 4673, 14953, 437, 77, 1902, 381, 264, 2397, 58883, 7308, 871, 198, 262, 413, 307, 361, 220, 17]
+OUTPUT TEXT: "The user wants a Python function that returns the n-th Fibonacci number, plus a two-sentence explanation of its time complexity.\n\nLet me write a clean, correct implementation. I'll go with an iterative approach since it's efficient (O(n) time, O(1) space), which makes for a cleaner complexity explanation. I could also mention the recursive version but the iterative one is better for a practical answer.\n\nLet me write the iterative version:\n\n```python\ndef fibonacci(n):\n    if n < 0:\n        raise ValueError(\"n must be a non-negative integer\")\n    if n < 2"
+--- generated text ---
+The user wants a Python function that returns the n-th Fibonacci number, plus a two-sentence explanation of its time complexity.
+
+Let me write a clean, correct implementation. I'll go with an iterative approach since it's efficient (O(n) time, O(1) space), which makes for a cleaner complexity explanation. I could also mention the recursive version but the iterative one is better for a practical answer.
+
+Let me write the iterative version:
+
+```python
+def fibonacci(n):
+    if n < 0:
+        raise ValueError("n must be a non-negative integer")
+    if n < 2
+rc=0
