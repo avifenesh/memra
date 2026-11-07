@@ -43,8 +43,9 @@ pub(crate) fn armed() -> bool {
 /// Read-once configuration, built at worker start from the worker's device.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct KvVmmConfig {
-    /// The device is the full-power RTX PRO 6000 Blackwell Workstation Edition
-    /// (`memra_engine::parallel::HardwareTarget::is_pro6000_workstation`).
+    /// The device is the full-power RTX PRO 6000 Blackwell Workstation Edition or its Max-Q
+    /// edition (`memra_engine::parallel::HardwareTarget::is_pro6000_workstation`,
+    /// `is_pro6000_maxq`), each from its own deciding cell.
     pub armed: bool,
     /// Where grows run (DAY37 1.5's rule per card class).
     pub placement: VmmGrowPlacement,
@@ -74,7 +75,9 @@ impl KvVmmConfig {
     }
 
     pub(crate) fn from_values(fault: Option<&str>, device_name: &str) -> Result<Self, String> {
-        let armed = memra_engine::parallel::HardwareTarget::is_pro6000_workstation(device_name);
+        use memra_engine::parallel::HardwareTarget;
+        let armed = HardwareTarget::is_pro6000_workstation(device_name)
+            || HardwareTarget::is_pro6000_maxq(device_name);
         let (placement, placement_source) = placement_for_device(device_name);
         let mut faults = None;
         if let Some(f) = fault.map(str::trim).filter(|f| !f.is_empty()) {
@@ -145,7 +148,8 @@ impl KvVmmConfig {
                 }
                 None => format!(
                     "[kv-vmm] door=OFF (pooled K/V planes: the on-demand planes are the default \
-                     on the RTX PRO 6000 Blackwell Workstation Edition only{inert})"
+                     on the RTX PRO 6000 Blackwell Workstation and Max-Q Workstation Editions \
+                     only{inert})"
                 ),
             };
         }
@@ -205,19 +209,27 @@ mod tests {
 
     const PRO_WS: &str = "NVIDIA RTX PRO 6000 Blackwell Workstation Edition";
 
-    /// The planes arm on the card class whose deciding cell read PROMOTE-ELIGIBLE, with the
-    /// placement that cell qualified, and nowhere else.
+    /// The planes arm on the two cards whose deciding cells read PROMOTE-ELIGIBLE (the
+    /// Workstation and Max-Q Workstation editions), each with the placement its cell qualified,
+    /// and nowhere else.
     #[test]
     fn the_planes_follow_the_card_class() {
-        let on = KvVmmConfig::from_values(None, PRO_WS).unwrap();
-        assert!(on.armed);
-        assert_eq!(on.placement, VmmGrowPlacement::Inline);
-        assert_eq!(on.placement_source, "pro6000-ws-receipt");
-        assert!(on.faults.is_none());
+        for (name, source) in [
+            (PRO_WS, "pro6000-ws-receipt"),
+            (
+                "NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition",
+                "pro6000-maxq-receipt",
+            ),
+        ] {
+            let on = KvVmmConfig::from_values(None, name).unwrap();
+            assert!(on.armed, "{name}");
+            assert_eq!(on.placement, VmmGrowPlacement::Inline, "{name}");
+            assert_eq!(on.placement_source, source, "{name}");
+            assert!(on.faults.is_none(), "{name}");
+        }
         for name in [
             "NVIDIA GeForce RTX 5090",
             "NVIDIA GeForce RTX 5090 Laptop GPU",
-            "NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition",
             "NVIDIA RTX PRO 6000 Blackwell Server Edition",
             "NVIDIA H100 80GB HBM3",
             "",
