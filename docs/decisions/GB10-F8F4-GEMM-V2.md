@@ -80,6 +80,16 @@ Identical answers in all eight boots; MemAvailable floor 66.2-66.8 GiB in every 
 on the timed binary (`gemm-v2-gates-unit1/`): kernel-check ALL GREEN in h2/db/t3 modes, argmax-margin
 flips=0 bad=0, run-spec K=1..8 PASS, the `MEMRA_MMQ_F8F4_V2=0` rollback returns the same logits.
 
+On the final commits, main `c2e04719b6` (with #1073-#1076) against main plus this change
+`c23cd3a158`, unit 2
+([`gemm-v2-served-final-unit2/`](../../research/gb10-prefill-20261106/gemm-v2-served-final-unit2/)):
+
+| prompt tokens | main `c2e04719b6` | main + v2 `c23cd3a158` | change |
+|---:|---|---|---:|
+| 32,784 | 36.137, 36.245 s (median 36.191) | 32.525, 32.437 s (median 32.481) | -10.25% (-3.7 s) |
+| 131,051 | 181.768, 182.177 s (median 181.972) | 167.487, 167.682 s (median 167.584) | -7.91% (-14.4 s) |
+| 259,951 | 460.503, 459.085 s (median 459.794) | 431.770, 431.174 s (median 431.472) | -6.16% (-28.3 s) |
+
 ## Rejected
 
 - Two 8-warp 128 x 128 CTAs per SM (the design's first target): reached (128 registers, 36 KB
