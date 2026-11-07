@@ -121,6 +121,20 @@ fi
 # 31B's coin distribution on a 128-expert MoE; expectation ~2.5 flips per 12-window. The runs
 # landed 1 and 2 flips, every one margin-explained; the decision position agreed both times.
 # Budget 3 per 12-window from those margins, same rule as the 31B row above.
+# PER-PROMPT ROWS: a longer prompt is a different tail. Qwen3.8-27B on the 16k prompt (p4-16k,
+# 23,476 tokens; added 2026-11-07, research/gb10-prefill-20261106/gemm-v2-gates-main-unit1/
+# argmax16k-*): 5 of the 12 tail positions are arithmetically flippable (min(margin_p,
+# margin_d) < config spread: 0.0121 < 0.0713, 0.0246 < 0.0742, 0.0305 < 0.1382,
+# 0.0146 < 0.1187, 0.0960 < 0.2410), decode margins p10 0.0146 / p50 0.7378, spreads to
+# 0.3621: an expectation of ~2.5 flips per 12-window. main c2e04719b6 and the F8F4 v2 head land 3
+# flips each with byte-identical probe tables, every one margin-explained, the decision position
+# agreeing. Budget 3 per 12-window from those margins, the gemma rows' rule. The default
+# 2,048-token prompt keeps the model's row.
+if [ -z "$MAX_FLIPS" ]; then
+    case "$(basename "$MODEL")|$(basename "$PROMPT")" in
+        Qwen3.8-27B*"|p4-16k.txt") MAX_FLIPS=$(( (3 * WINDOW + 11) / 12 )) ;;
+    esac
+fi
 if [ -z "$MAX_FLIPS" ]; then
     case "$(basename "$MODEL")" in
         gemma-4-31B*) MAX_FLIPS=$(( (3 * WINDOW + 11) / 12 )) ;;
