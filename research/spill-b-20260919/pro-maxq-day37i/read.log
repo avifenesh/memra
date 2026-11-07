@@ -13,7 +13,12 @@ DAY37 A1-MIX card=pro6000-maxq kind=spec order=O1 compared=45 equal=45 differ=0 
 DAY37 A1-MIX card=pro6000-maxq kind=spec order=O2 compared=45 equal=45 differ=0 excluded=0 differ_tags=[] faults_pooled=0 faults_vmm=0 door_on_vmm=1 -> PASS
 DAY37 A1-MIX card=pro6000-maxq kind=plain order=O1 compared=45 equal=45 differ=0 excluded=0 differ_tags=[] faults_pooled=0 faults_vmm=0 door_on_vmm=1 -> PASS
 DAY37 A1-MIX card=pro6000-maxq kind=plain order=O2 compared=45 equal=45 differ=0 excluded=0 differ_tags=[] faults_pooled=0 faults_vmm=0 door_on_vmm=1 -> PASS
-DAY37 A4 card=pro6000-maxq retires=328 within_bound=328 worst_over_bound_bytes=0 boots_without_granularity=[] rule mapped-used<=planes*granule+slack -> PASS
+DAY37 A1-STREAM card=pro6000-maxq pairs=10 differing_rows=0 -> PASS
+DAY37 A3-ii card=pro6000-maxq order=both ttft_p50 pooled=5934.08(N=10) vmm=5009.41(N=10) ratio=0.8442 rule<=1.05 ok; itl_p99 pooled=49.06(N=10) vmm=49.33(N=10) ratio=1.0054 rule<=1.05 ok; tpot_p50 pooled=46.94(N=10) vmm=47.20(N=10) ratio=1.0055 rule<=1.02 ok; out_tok_per_s pooled=275.33(N=10) vmm=274.75(N=10) ratio=0.9979 rule>=0.98 ok -> PASS
+DAY37 A3-ii card=pro6000-maxq order=O1 ttft_p50 pooled=6592.54(N=5) vmm=5008.20(N=5) ratio=0.7597 rule<=1.05 ok; itl_p99 pooled=49.03(N=5) vmm=49.34(N=5) ratio=1.0063 rule<=1.05 ok; tpot_p50 pooled=46.63(N=5) vmm=47.20(N=5) ratio=1.0122 rule<=1.02 ok; out_tok_per_s pooled=275.43(N=5) vmm=274.69(N=5) ratio=0.9973 rule>=0.98 ok
+DAY37 A3-ii card=pro6000-maxq order=O2 ttft_p50 pooled=5011.67(N=5) vmm=5235.92(N=5) ratio=1.0447 rule<=1.05 ok; itl_p99 pooled=49.23(N=5) vmm=49.31(N=5) ratio=1.0016 rule<=1.05 ok; tpot_p50 pooled=47.16(N=5) vmm=46.59(N=5) ratio=0.9879 rule<=1.02 ok; out_tok_per_s pooled=275.05(N=5) vmm=275.05(N=5) ratio=1.0000 rule>=0.98 ok
+DAY37 A3-i card=pro6000-maxq placement=inline grow_events N=4420 p50_us=37.0 p99_us=217.8 max_us=6798 waited=0 tick_ensure_walls N=33808 p99_us=42.0 rule N>=20 p99<=500 -> PASS
+DAY37 A4 card=pro6000-maxq retires=488 within_bound=488 worst_over_bound_bytes=0 boots_without_granularity=[] rule mapped-used<=planes*granule+slack -> PASS
 DAY37 A4-IDLE card=pro6000-maxq boot=mix-plain-O1-pooled driver_free=45845446656 pool_cached=8767078360 pool_reserved=55633248256 vmm_mapped=0 vmm_reserved=0 spec_pool=0 continuation_pool=2
 DAY37 A4-IDLE card=pro6000-maxq boot=mix-plain-O1-vmm driver_free=69893488640 pool_cached=512688632 pool_reserved=30836523008 vmm_mapped=499122176 vmm_reserved=16684941312 spec_pool=0 continuation_pool=2
 DAY37 A4-IDLE card=pro6000-maxq boot=mix-plain-O2-pooled driver_free=45845446656 pool_cached=8767078360 pool_reserved=55633248256 vmm_mapped=0 vmm_reserved=0 spec_pool=0 continuation_pool=2

@@ -1,8 +1,13 @@
 {
  "source": "raw private mirror (kept outside git)",
- "files": 1829,
+ "files": 1821,
  "placeholders": [
+  "<pci-bus-id>",
+  "<pci-bus-id>",
+  "<pci-bus-id>",
+  "<pci-bus-id>",
   "<local-tz>",
+  "/home/<user>",
   "/home/<user>",
   "<box>"
  ],
@@ -42,6 +47,25 @@
    "original_sha256": "88f95f8bfd873fa320b55cbdd13f9e39e4a1d2f1dc924fd223f92a3314186edf",
    "export_sha256": "b785b6147619ca23c8a760b122065b0b0ccf60fe743736b054fb1abae1750714",
    "change": "rented-box identifier replaced by its placeholder"
+  },
+  {
+   "path": "preflight/box-compute-apps-start.csv",
+   "original_sha256": "6a10ea033fa4deab4567ceb038e23594b4a73b10690982f2c479572a5bb5838f",
+   "export_sha256": "afd68aa27f30ec0ff073acce83035d615400fb7eb03dfa5496167b9447be121b",
+   "change": "rented-box identifier replaced by its placeholder"
+  },
+  {
+   "path": "runner/power-set-kv-vmm-timed-try1.log",
+   "original_sha256": "30a2e82c17129ea8f1e244e2ee832ee858daa6fecc9912f2cda9a037c70bbe14",
+   "export_sha256": "5d1524b41283aa013da85b3325ab81e4c129407887509ebcb2936ff7ba08e5bf",
+   "change": "rented-box identifier replaced by its placeholder"
+  },
+  {
+   "path": "runner/power-set-kv-vmm-untimed-try1.log",
+   "original_sha256": "73b23f14d2c7c7de9bf110d37e23e1d63a498440c315263e0890fc53785e76eb",
+   "export_sha256": "b7a11ceb1bd7ecb57b054250b1efd4a15c07e5f2b411c33ddae9ca9f357f1937",
+   "change": "rented-box identifier replaced by its placeholder"
   }
- ]
+ ],
+ "note": "kit/ as banked 2026-11-05 (pruned harness copy, see kit/harness/NOT-COPIED.txt); its export entries are that export's"
 }

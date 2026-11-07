@@ -1,0 +1,131 @@
+[vmm-call-cost] device 0 "NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition" granularity=2097152 free=100910366720 total=102069305344 queue: 182 x 536870912 B memsets (one 0.331 ms, target 60 ms) reps=20 extents=[1, 4, 16, 64]
+VMM-CALL-COST op=access extent=1 regime=busy N=20 median_us=65.7 p95_us=119.4 max_us=151.2 queued_ms_remaining=59.39
+VMM-CALL-COST op=create extent=1 regime=busy N=20 median_us=15.9 p95_us=48.1 max_us=57.9 queued_ms_remaining=59.39
+VMM-CALL-COST op=free extent=1 regime=busy N=20 median_us=1.3 p95_us=2.2 max_us=3.5 queued_ms_remaining=59.39
+VMM-CALL-COST op=map extent=1 regime=busy N=20 median_us=1.6 p95_us=3.8 max_us=4.1 queued_ms_remaining=59.39
+VMM-CALL-COST op=release extent=1 regime=busy N=20 median_us=21.5 p95_us=65.1 max_us=512.0 queued_ms_remaining=59.39
+VMM-CALL-COST op=reserve extent=1 regime=busy N=20 median_us=1.0 p95_us=1.9 max_us=2.0 queued_ms_remaining=59.39
+VMM-CALL-COST op=unmap extent=1 regime=busy N=20 median_us=58.9 p95_us=81.1 max_us=84.0 queued_ms_remaining=59.39
+VMM-CALL-COST op=zero extent=1 regime=busy N=20 median_us=1.6 p95_us=1.7 max_us=1.7 queued_ms_remaining=59.39
+VMM-CALL-COST op=access extent=1 regime=cross N=20 median_us=94.6 p95_us=186.9 max_us=199.4 queued_ms_remaining=59.39 owner_us=7.0 owner_base_us=4.6
+VMM-CALL-COST op=create extent=1 regime=cross N=20 median_us=31.5 p95_us=92.6 max_us=109.2 queued_ms_remaining=59.39 owner_us=6.9 owner_base_us=4.6
+VMM-CALL-COST op=free extent=1 regime=cross N=20 median_us=4.1 p95_us=5.4 max_us=5.5 queued_ms_remaining=59.39 owner_us=7.2 owner_base_us=4.6
+VMM-CALL-COST op=map extent=1 regime=cross N=20 median_us=4.2 p95_us=10.1 max_us=29.5 queued_ms_remaining=59.39 owner_us=7.2 owner_base_us=4.6
+VMM-CALL-COST op=release extent=1 regime=cross N=20 median_us=36.7 p95_us=54.6 max_us=57.4 queued_ms_remaining=59.39 owner_us=8.4 owner_base_us=4.6
+VMM-CALL-COST op=reserve extent=1 regime=cross N=20 median_us=2.7 p95_us=8.6 max_us=10.6 queued_ms_remaining=59.39 owner_us=6.8 owner_base_us=4.6
+VMM-CALL-COST op=unmap extent=1 regime=cross N=20 median_us=77.2 p95_us=111.0 max_us=149.9 queued_ms_remaining=59.39 owner_us=6.7 owner_base_us=4.6
+VMM-CALL-COST op=zero extent=1 regime=cross N=20 median_us=14.0 p95_us=23.2 max_us=41.2 queued_ms_remaining=59.39 owner_us=8.3 owner_base_us=4.6
+VMM-CALL-COST op=access extent=1 regime=idle N=20 median_us=34.8 p95_us=42.1 max_us=51.7 queued_ms_remaining=0.00
+VMM-CALL-COST op=create extent=1 regime=idle N=20 median_us=5.7 p95_us=8.4 max_us=16.9 queued_ms_remaining=0.00
+VMM-CALL-COST op=free extent=1 regime=idle N=20 median_us=0.2 p95_us=0.4 max_us=2.0 queued_ms_remaining=0.00
+VMM-CALL-COST op=map extent=1 regime=idle N=20 median_us=0.3 p95_us=0.8 max_us=4.3 queued_ms_remaining=0.00
+VMM-CALL-COST op=release extent=1 regime=idle N=20 median_us=14.6 p95_us=15.7 max_us=27.8 queued_ms_remaining=0.00
+VMM-CALL-COST op=reserve extent=1 regime=idle N=20 median_us=0.2 p95_us=0.6 max_us=6.9 queued_ms_remaining=0.00
+VMM-CALL-COST op=unmap extent=1 regime=idle N=20 median_us=19.6 p95_us=49.8 max_us=65.5 queued_ms_remaining=0.00
+VMM-CALL-COST op=zero extent=1 regime=idle N=20 median_us=1.6 p95_us=2.3 max_us=4.2 queued_ms_remaining=0.00
+VMM-CALL-COST op=access extent=4 regime=busy N=20 median_us=59.4 p95_us=83.9 max_us=99.0 queued_ms_remaining=59.39
+VMM-CALL-COST op=create extent=4 regime=busy N=20 median_us=13.3 p95_us=34.3 max_us=42.0 queued_ms_remaining=59.39
+VMM-CALL-COST op=free extent=4 regime=busy N=20 median_us=0.9 p95_us=3.0 max_us=3.5 queued_ms_remaining=59.39
+VMM-CALL-COST op=map extent=4 regime=busy N=20 median_us=0.8 p95_us=3.1 max_us=3.2 queued_ms_remaining=59.39
+VMM-CALL-COST op=release extent=4 regime=busy N=20 median_us=22.2 p95_us=44.6 max_us=59.2 queued_ms_remaining=59.40
+VMM-CALL-COST op=reserve extent=4 regime=busy N=20 median_us=0.6 p95_us=1.7 max_us=2.8 queued_ms_remaining=59.39
+VMM-CALL-COST op=unmap extent=4 regime=busy N=20 median_us=51.6 p95_us=69.8 max_us=84.7 queued_ms_remaining=59.39
+VMM-CALL-COST op=zero extent=4 regime=busy N=20 median_us=1.3 p95_us=1.7 max_us=1.7 queued_ms_remaining=59.39
+VMM-CALL-COST op=access extent=4 regime=cross N=20 median_us=94.6 p95_us=153.7 max_us=181.7 queued_ms_remaining=59.38 owner_us=7.1 owner_base_us=4.6
+VMM-CALL-COST op=create extent=4 regime=cross N=20 median_us=35.2 p95_us=79.5 max_us=96.3 queued_ms_remaining=59.39 owner_us=7.9 owner_base_us=4.6
+VMM-CALL-COST op=free extent=4 regime=cross N=20 median_us=3.1 p95_us=6.4 max_us=10.8 queued_ms_remaining=59.38 owner_us=7.4 owner_base_us=4.6
+VMM-CALL-COST op=map extent=4 regime=cross N=20 median_us=3.6 p95_us=8.0 max_us=9.2 queued_ms_remaining=59.39 owner_us=6.7 owner_base_us=4.6
+VMM-CALL-COST op=release extent=4 regime=cross N=20 median_us=37.5 p95_us=93.6 max_us=2946.1 queued_ms_remaining=59.39 owner_us=8.4 owner_base_us=4.6
+VMM-CALL-COST op=reserve extent=4 regime=cross N=20 median_us=2.8 p95_us=5.2 max_us=5.6 queued_ms_remaining=59.39 owner_us=7.5 owner_base_us=4.6
+VMM-CALL-COST op=unmap extent=4 regime=cross N=20 median_us=67.4 p95_us=140.3 max_us=145.8 queued_ms_remaining=59.39 owner_us=7.3 owner_base_us=4.6
+VMM-CALL-COST op=zero extent=4 regime=cross N=20 median_us=10.7 p95_us=20.9 max_us=22.3 queued_ms_remaining=59.39 owner_us=8.5 owner_base_us=4.6
+VMM-CALL-COST op=access extent=4 regime=idle N=20 median_us=32.7 p95_us=37.0 max_us=101.1 queued_ms_remaining=0.00
+VMM-CALL-COST op=create extent=4 regime=idle N=20 median_us=5.1 p95_us=6.9 max_us=71.3 queued_ms_remaining=0.00
+VMM-CALL-COST op=free extent=4 regime=idle N=20 median_us=0.2 p95_us=0.4 max_us=5.3 queued_ms_remaining=0.00
+VMM-CALL-COST op=map extent=4 regime=idle N=20 median_us=0.3 p95_us=0.6 max_us=4.9 queued_ms_remaining=0.00
+VMM-CALL-COST op=release extent=4 regime=idle N=20 median_us=16.2 p95_us=18.3 max_us=33.3 queued_ms_remaining=0.00
+VMM-CALL-COST op=reserve extent=4 regime=idle N=20 median_us=0.2 p95_us=0.4 max_us=4.8 queued_ms_remaining=0.00
+VMM-CALL-COST op=unmap extent=4 regime=idle N=20 median_us=18.4 p95_us=20.1 max_us=47.8 queued_ms_remaining=0.00
+VMM-CALL-COST op=zero extent=4 regime=idle N=20 median_us=1.4 p95_us=1.8 max_us=3.2 queued_ms_remaining=0.00
+VMM-CALL-COST op=access extent=16 regime=busy N=20 median_us=64.1 p95_us=120.4 max_us=124.7 queued_ms_remaining=59.39
+VMM-CALL-COST op=create extent=16 regime=busy N=20 median_us=23.6 p95_us=69.4 max_us=73.7 queued_ms_remaining=59.39
+VMM-CALL-COST op=free extent=16 regime=busy N=20 median_us=1.9 p95_us=3.4 max_us=5.4 queued_ms_remaining=59.39
+VMM-CALL-COST op=map extent=16 regime=busy N=20 median_us=1.5 p95_us=4.7 max_us=4.8 queued_ms_remaining=59.38
+VMM-CALL-COST op=release extent=16 regime=busy N=20 median_us=33.2 p95_us=56.3 max_us=57.5 queued_ms_remaining=59.41
+VMM-CALL-COST op=reserve extent=16 regime=busy N=20 median_us=1.1 p95_us=2.6 max_us=2.6 queued_ms_remaining=59.39
+VMM-CALL-COST op=unmap extent=16 regime=busy N=20 median_us=59.9 p95_us=75.9 max_us=109.1 queued_ms_remaining=59.38
+VMM-CALL-COST op=zero extent=16 regime=busy N=20 median_us=1.5 p95_us=1.7 max_us=1.7 queued_ms_remaining=59.39
+VMM-CALL-COST op=access extent=16 regime=cross N=20 median_us=92.4 p95_us=203.1 max_us=2891.5 queued_ms_remaining=59.39 owner_us=7.5 owner_base_us=4.6
+VMM-CALL-COST op=create extent=16 regime=cross N=20 median_us=43.0 p95_us=65.2 max_us=80.0 queued_ms_remaining=59.39 owner_us=7.2 owner_base_us=4.6
+VMM-CALL-COST op=free extent=16 regime=cross N=20 median_us=3.5 p95_us=6.9 max_us=7.2 queued_ms_remaining=59.38 owner_us=6.8 owner_base_us=4.6
+VMM-CALL-COST op=map extent=16 regime=cross N=20 median_us=4.2 p95_us=8.1 max_us=11.9 queued_ms_remaining=59.39 owner_us=7.6 owner_base_us=4.6
+VMM-CALL-COST op=release extent=16 regime=cross N=20 median_us=41.1 p95_us=75.2 max_us=113.9 queued_ms_remaining=59.41 owner_us=7.6 owner_base_us=4.6
+VMM-CALL-COST op=reserve extent=16 regime=cross N=20 median_us=2.4 p95_us=4.0 max_us=4.1 queued_ms_remaining=59.38 owner_us=7.5 owner_base_us=4.6
+VMM-CALL-COST op=unmap extent=16 regime=cross N=20 median_us=80.5 p95_us=121.6 max_us=3013.1 queued_ms_remaining=59.38 owner_us=6.9 owner_base_us=4.6
+VMM-CALL-COST op=zero extent=16 regime=cross N=20 median_us=10.2 p95_us=18.0 max_us=21.3 queued_ms_remaining=59.38 owner_us=8.3 owner_base_us=4.6
+VMM-CALL-COST op=access extent=16 regime=idle N=20 median_us=71.2 p95_us=71.5 max_us=71.9 queued_ms_remaining=0.00
+VMM-CALL-COST op=create extent=16 regime=idle N=20 median_us=5.1 p95_us=7.2 max_us=25.4 queued_ms_remaining=0.00
+VMM-CALL-COST op=free extent=16 regime=idle N=20 median_us=0.2 p95_us=0.3 max_us=1.1 queued_ms_remaining=0.00
+VMM-CALL-COST op=map extent=16 regime=idle N=20 median_us=0.3 p95_us=0.6 max_us=1.8 queued_ms_remaining=0.00
+VMM-CALL-COST op=release extent=16 regime=idle N=20 median_us=27.5 p95_us=27.8 max_us=30.4 queued_ms_remaining=0.00
+VMM-CALL-COST op=reserve extent=16 regime=idle N=20 median_us=0.2 p95_us=0.5 max_us=1.7 queued_ms_remaining=0.00
+VMM-CALL-COST op=unmap extent=16 regime=idle N=20 median_us=18.4 p95_us=21.2 max_us=27.6 queued_ms_remaining=0.00
+VMM-CALL-COST op=zero extent=16 regime=idle N=20 median_us=1.4 p95_us=1.7 max_us=2.4 queued_ms_remaining=0.00
+VMM-CALL-COST op=access extent=64 regime=busy N=20 median_us=68.0 p95_us=137.9 max_us=181.5 queued_ms_remaining=59.39
+VMM-CALL-COST op=create extent=64 regime=busy N=20 median_us=37.5 p95_us=59.5 max_us=63.6 queued_ms_remaining=59.39
+VMM-CALL-COST op=free extent=64 regime=busy N=20 median_us=1.3 p95_us=3.2 max_us=3.3 queued_ms_remaining=59.38
+VMM-CALL-COST op=map extent=64 regime=busy N=20 median_us=1.1 p95_us=3.9 max_us=4.4 queued_ms_remaining=59.39
+VMM-CALL-COST op=release extent=64 regime=busy N=20 median_us=62.9 p95_us=87.8 max_us=1603.2 queued_ms_remaining=59.46
+VMM-CALL-COST op=reserve extent=64 regime=busy N=20 median_us=0.9 p95_us=2.5 max_us=2.7 queued_ms_remaining=59.39
+VMM-CALL-COST op=unmap extent=64 regime=busy N=20 median_us=57.6 p95_us=100.5 max_us=123.7 queued_ms_remaining=59.39
+VMM-CALL-COST op=zero extent=64 regime=busy N=20 median_us=1.5 p95_us=1.7 max_us=1.8 queued_ms_remaining=59.39
+VMM-CALL-COST op=access extent=64 regime=cross N=20 median_us=104.0 p95_us=158.5 max_us=175.8 queued_ms_remaining=59.39 owner_us=7.0 owner_base_us=4.6
+VMM-CALL-COST op=create extent=64 regime=cross N=20 median_us=76.2 p95_us=96.0 max_us=120.0 queued_ms_remaining=59.39 owner_us=7.0 owner_base_us=4.6
+VMM-CALL-COST op=free extent=64 regime=cross N=20 median_us=3.8 p95_us=6.5 max_us=10.4 queued_ms_remaining=59.39 owner_us=7.3 owner_base_us=4.6
+VMM-CALL-COST op=map extent=64 regime=cross N=20 median_us=5.3 p95_us=8.8 max_us=13.7 queued_ms_remaining=59.39 owner_us=7.1 owner_base_us=4.6
+VMM-CALL-COST op=release extent=64 regime=cross N=20 median_us=118.6 p95_us=157.2 max_us=196.7 queued_ms_remaining=59.47 owner_us=7.9 owner_base_us=4.6
+VMM-CALL-COST op=reserve extent=64 regime=cross N=20 median_us=3.0 p95_us=4.0 max_us=4.3 queued_ms_remaining=59.39 owner_us=6.8 owner_base_us=4.6
+VMM-CALL-COST op=unmap extent=64 regime=cross N=20 median_us=73.0 p95_us=98.5 max_us=835.3 queued_ms_remaining=59.39 owner_us=6.7 owner_base_us=4.6
+VMM-CALL-COST op=zero extent=64 regime=cross N=20 median_us=14.6 p95_us=20.3 max_us=20.5 queued_ms_remaining=59.39 owner_us=7.5 owner_base_us=4.6
+VMM-CALL-COST op=access extent=64 regime=idle N=20 median_us=258.5 p95_us=259.3 max_us=259.3 queued_ms_remaining=0.00
+VMM-CALL-COST op=create extent=64 regime=idle N=20 median_us=5.3 p95_us=7.3 max_us=25.5 queued_ms_remaining=0.00
+VMM-CALL-COST op=free extent=64 regime=idle N=20 median_us=0.2 p95_us=0.3 max_us=0.9 queued_ms_remaining=0.00
+VMM-CALL-COST op=map extent=64 regime=idle N=20 median_us=0.3 p95_us=0.5 max_us=1.2 queued_ms_remaining=0.00
+VMM-CALL-COST op=release extent=64 regime=idle N=20 median_us=71.8 p95_us=74.1 max_us=74.9 queued_ms_remaining=0.00
+VMM-CALL-COST op=reserve extent=64 regime=idle N=20 median_us=0.2 p95_us=0.4 max_us=1.0 queued_ms_remaining=0.00
+VMM-CALL-COST op=unmap extent=64 regime=idle N=20 median_us=20.5 p95_us=21.9 max_us=26.9 queued_ms_remaining=0.00
+VMM-CALL-COST op=zero extent=64 regime=idle N=20 median_us=1.4 p95_us=1.8 max_us=2.4 queued_ms_remaining=0.00
+VMM-CALL-COST BLOCKS op=reserve extent=1 busy_median_us=1.0 remaining_at_call_us=59389.3 idle_median_us=0.2 behind_queue=no owner_from_helper=no
+VMM-CALL-COST BLOCKS op=reserve extent=4 busy_median_us=0.6 remaining_at_call_us=59393.8 idle_median_us=0.2 behind_queue=no owner_from_helper=no
+VMM-CALL-COST BLOCKS op=reserve extent=16 busy_median_us=1.1 remaining_at_call_us=59386.9 idle_median_us=0.2 behind_queue=no owner_from_helper=no
+VMM-CALL-COST BLOCKS op=reserve extent=64 busy_median_us=0.9 remaining_at_call_us=59386.6 idle_median_us=0.2 behind_queue=no owner_from_helper=no
+VMM-CALL-COST BLOCKS op=create extent=1 busy_median_us=15.9 remaining_at_call_us=59393.5 idle_median_us=5.7 behind_queue=no owner_from_helper=no
+VMM-CALL-COST BLOCKS op=create extent=4 busy_median_us=13.3 remaining_at_call_us=59394.8 idle_median_us=5.1 behind_queue=no owner_from_helper=no
+VMM-CALL-COST BLOCKS op=create extent=16 busy_median_us=23.6 remaining_at_call_us=59388.0 idle_median_us=5.1 behind_queue=no owner_from_helper=no
+VMM-CALL-COST BLOCKS op=create extent=64 busy_median_us=37.5 remaining_at_call_us=59387.5 idle_median_us=5.3 behind_queue=no owner_from_helper=no
+VMM-CALL-COST BLOCKS op=map extent=1 busy_median_us=1.6 remaining_at_call_us=59388.4 idle_median_us=0.3 behind_queue=no owner_from_helper=no
+VMM-CALL-COST BLOCKS op=map extent=4 busy_median_us=0.8 remaining_at_call_us=59390.3 idle_median_us=0.3 behind_queue=no owner_from_helper=no
+VMM-CALL-COST BLOCKS op=map extent=16 busy_median_us=1.5 remaining_at_call_us=59383.9 idle_median_us=0.3 behind_queue=no owner_from_helper=no
+VMM-CALL-COST BLOCKS op=map extent=64 busy_median_us=1.1 remaining_at_call_us=59389.1 idle_median_us=0.3 behind_queue=no owner_from_helper=no
+VMM-CALL-COST BLOCKS op=access extent=1 busy_median_us=65.7 remaining_at_call_us=59391.1 idle_median_us=34.8 behind_queue=no owner_from_helper=no
+VMM-CALL-COST BLOCKS op=access extent=4 busy_median_us=59.4 remaining_at_call_us=59390.1 idle_median_us=32.7 behind_queue=no owner_from_helper=no
+VMM-CALL-COST BLOCKS op=access extent=16 busy_median_us=64.1 remaining_at_call_us=59387.0 idle_median_us=71.2 behind_queue=no owner_from_helper=no
+VMM-CALL-COST BLOCKS op=access extent=64 busy_median_us=68.0 remaining_at_call_us=59387.9 idle_median_us=258.5 behind_queue=no owner_from_helper=no
+VMM-CALL-COST BLOCKS op=zero extent=1 busy_median_us=1.6 remaining_at_call_us=59394.4 idle_median_us=1.6 behind_queue=no owner_from_helper=no
+VMM-CALL-COST BLOCKS op=zero extent=4 busy_median_us=1.3 remaining_at_call_us=59388.5 idle_median_us=1.4 behind_queue=no owner_from_helper=no
+VMM-CALL-COST BLOCKS op=zero extent=16 busy_median_us=1.5 remaining_at_call_us=59387.7 idle_median_us=1.4 behind_queue=no owner_from_helper=no
+VMM-CALL-COST BLOCKS op=zero extent=64 busy_median_us=1.5 remaining_at_call_us=59387.5 idle_median_us=1.4 behind_queue=no owner_from_helper=no
+VMM-CALL-COST BLOCKS op=unmap extent=1 busy_median_us=58.9 remaining_at_call_us=59386.5 idle_median_us=19.6 behind_queue=no owner_from_helper=no
+VMM-CALL-COST BLOCKS op=unmap extent=4 busy_median_us=51.6 remaining_at_call_us=59390.4 idle_median_us=18.4 behind_queue=no owner_from_helper=no
+VMM-CALL-COST BLOCKS op=unmap extent=16 busy_median_us=59.9 remaining_at_call_us=59381.2 idle_median_us=18.4 behind_queue=no owner_from_helper=no
+VMM-CALL-COST BLOCKS op=unmap extent=64 busy_median_us=57.6 remaining_at_call_us=59391.0 idle_median_us=20.5 behind_queue=no owner_from_helper=no
+VMM-CALL-COST BLOCKS op=release extent=1 busy_median_us=21.5 remaining_at_call_us=59387.6 idle_median_us=14.6 behind_queue=no owner_from_helper=no
+VMM-CALL-COST BLOCKS op=release extent=4 busy_median_us=22.2 remaining_at_call_us=59396.8 idle_median_us=16.2 behind_queue=no owner_from_helper=no
+VMM-CALL-COST BLOCKS op=release extent=16 busy_median_us=33.2 remaining_at_call_us=59408.8 idle_median_us=27.5 behind_queue=no owner_from_helper=no
+VMM-CALL-COST BLOCKS op=release extent=64 busy_median_us=62.9 remaining_at_call_us=59463.8 idle_median_us=71.8 behind_queue=no owner_from_helper=no
+VMM-CALL-COST BLOCKS op=free extent=1 busy_median_us=1.3 remaining_at_call_us=59394.6 idle_median_us=0.2 behind_queue=no owner_from_helper=no
+VMM-CALL-COST BLOCKS op=free extent=4 busy_median_us=0.9 remaining_at_call_us=59390.1 idle_median_us=0.2 behind_queue=no owner_from_helper=no
+VMM-CALL-COST BLOCKS op=free extent=16 busy_median_us=1.9 remaining_at_call_us=59388.4 idle_median_us=0.2 behind_queue=no owner_from_helper=no
+VMM-CALL-COST BLOCKS op=free extent=64 busy_median_us=1.3 remaining_at_call_us=59383.0 idle_median_us=0.2 behind_queue=no owner_from_helper=no
+GROW-PLACEMENT extent=1 busy_p95_sum_us=171.3 blocks_behind_queue=no rule p95<=100 -> helper
+RELEASE-PLACEMENT unmap_or_release_blocks_behind_queue=no blocks_owner_from_helper=no -> owner-tick
