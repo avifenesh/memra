@@ -4,6 +4,13 @@
 
 use memra_engine::prime_walker::PrimeProgress;
 
+/// Does row `row` owe its peers a bounded service quantum this tick? Only ANOTHER row's pending
+/// prime counts. A row whose own split prime finishes this tick is not its own peer: counting it
+/// capped the row's first speculative step to one round right after its prime (memra#1085).
+pub fn owes_peer_quantum(row: usize, pending: impl IntoIterator<Item = bool>) -> bool {
+    pending.into_iter().enumerate().any(|(j, p)| j != row && p)
+}
+
 #[derive(Default)]
 pub struct PrimeService {
     pub pending: bool,
@@ -152,6 +159,21 @@ mod tests {
             assert_eq!(order, [0, 1, 2, 3]);
         }
         assert_eq!(heads, [0, 1, 2, 3]);
+    }
+
+    #[test]
+    fn a_row_owes_a_quantum_only_to_another_rows_pending_prime() {
+        // memra#1085: the row's own pending prime (its split prime's last chunk runs this tick)
+        // does not cap its own first speculative step.
+        assert!(!owes_peer_quantum(0, [true]));
+        assert!(!owes_peer_quantum(1, [false, true, false]));
+        // Any other row's pending prime does.
+        assert!(owes_peer_quantum(0, [true, true]));
+        assert!(owes_peer_quantum(2, [true, false, false]));
+        assert!(owes_peer_quantum(1, [false, true, true]));
+        // No pending prime anywhere: no quantum.
+        assert!(!owes_peer_quantum(0, [false, false]));
+        assert!(!owes_peer_quantum(0, []));
     }
 
     #[test]

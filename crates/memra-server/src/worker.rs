@@ -32614,10 +32614,15 @@ pub fn run(
                     continue;
                 }
                 // Re-read after each prime step: a peer later in this same tick already
-                // owes bounded service when an earlier route has just yielded.
+                // owes bounded service when an earlier route has just yielded. Only another
+                // row's pending prime counts: a row finishing its own split prime this tick
+                // owes no quantum to itself (memra#1085).
                 active[i].prime_service.peer_quantum =
                     memra_engine::prime_walker::prime_yield_enabled()
-                        && active.iter().any(|s| s.prime_service.pending);
+                        && crate::prime_fairness::owes_peer_quantum(
+                            i,
+                            active.iter().map(|s| s.prime_service.pending),
+                        );
                 // A pooled cohort member already ran this tick: its progress counts from the
                 // length it had before the cohort (token metrics, lane accounting, the cost
                 // gate's realized-rate samples all read the delta).
@@ -51700,6 +51705,18 @@ mod tests {
 
     fn toks(n: usize) -> Vec<u32> {
         (0..n as u32).collect()
+    }
+
+    /// memra#1085: the spec tick's peer quantum counts only other rows' pending primes.
+    #[test]
+    fn the_spec_tick_peer_quantum_skips_the_rows_own_prime() {
+        let src = include_str!("worker.rs");
+        let production = &src[..src.find("\nmod tests {").unwrap()];
+        let squashed = production.split_whitespace().collect::<Vec<_>>().join(" ");
+        assert!(squashed.contains(
+            "active[i].prime_service.peer_quantum = memra_engine::prime_walker::prime_yield_enabled() && crate::prime_fairness::owes_peer_quantum( i, active.iter().map(|s| s.prime_service.pending), );"
+        ));
+        assert!(!squashed.contains("active.iter().any(|s| s.prime_service.pending)"));
     }
 
     /// memra#1088: the device-side restore grid law, behaviourally, in the default test set.
