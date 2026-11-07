@@ -1188,9 +1188,33 @@ fn dspark_hit_is_restorable_with(
     // numeric program for the request (measured: the restored text left the cold text at its
     // 24th character, `DAY56.md` section 2c). Such a hit serves cold.
     entry_toks == prompt_toks
-        || (partial_on
-            && prompt_toks - entry_toks >= memra_engine::hybrid_forward::PRIME_MIN_T
-            && entry_toks.is_multiple_of(memra_engine::Engine::gdn_chunk_size()))
+        || (partial_on && strict_prefix_restore_on_grid(entry_toks, prompt_toks))
+}
+
+/// A strict-prefix restore at `entry_toks` followed by one suffix prime of the rest of a
+/// `prompt_toks`-token prompt reproduces the cold monolithic prime of that prompt: the entry ends
+/// on the GDN prime grid (`grid_align_boundary`'s measured law: a prime call that starts off the
+/// grid materializes recurrent state the monolithic program never computes) and the suffix clears
+/// `PRIME_MIN_T` (a shorter one runs token by token, `grid_align_boundary_within`'s W1 door).
+fn strict_prefix_restore_on_grid(entry_toks: usize, prompt_toks: usize) -> bool {
+    entry_toks < prompt_toks
+        && prompt_toks - entry_toks >= memra_engine::hybrid_forward::PRIME_MIN_T
+        && entry_toks.is_multiple_of(memra_engine::Engine::gdn_chunk_size())
+}
+
+/// THE RESTORE GRID LAW for every prefix-cache hit (2026-11-07). An entry that carries recurrent
+/// state (GDN conv/ssm planes) restores exactly only at the prompt's end (whole cover) or as a
+/// strict prefix on the grid (`strict_prefix_restore_on_grid`); anywhere else its suffix prime is a
+/// second numeric program next to a cold prime of the same prompt. Measured on the RTX 5090 with
+/// only `MEMRA_DSPARK_PREFIX_RESTORE=1`: turn 1's tail entry sat at its 2,992-token prompt end, turn
+/// 2 restored it plain and primed from 2,992 (off the 32-token grid), and turn 3, resumed from rows
+/// that prime wrote, left the cold text (384 vs 372 characters). Attention-only entries are
+/// split-invariant and keep every whole-entry hit.
+fn prefix_restore_exact(entry_toks: usize, prompt_toks: usize, recurrent: bool) -> bool {
+    entry_toks <= prompt_toks
+        && (!recurrent
+            || entry_toks == prompt_toks
+            || strict_prefix_restore_on_grid(entry_toks, prompt_toks))
 }
 
 /// Why a cache-preferred-vetoed plain hit cannot take the cold-drafter conversion
@@ -9628,6 +9652,14 @@ struct PrefixEntry {
     _tier_charge: Option<memra_engine::cache::tiered::hostprefix::ResidentCharge>,
 }
 
+impl PrefixEntry {
+    /// Does this entry carry recurrent state (GDN conv/ssm planes)? Such an entry restores
+    /// exactly only where `prefix_restore_exact` allows.
+    fn carries_recurrent(&self) -> bool {
+        self.conv.iter().any(Option::is_some) || self.ssm.iter().any(Option::is_some)
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum PartialPrefixDecision {
     Restore,
@@ -10102,9 +10134,10 @@ impl PrefixCache {
         self.entries.values().map(|p| p.len()).sum()
     }
 
-    /// Longest entry whose token key exactly prefixes `prompt` (floor PREFIX_CACHE_MIN_TOKENS).
-    /// Only the caller's own (model, namespace) pool is scanned — cross-namespace entries
-    /// are structurally unreachable (PC-ISO).
+    /// Longest entry whose token key exactly prefixes `prompt` (floor PREFIX_CACHE_MIN_TOKENS)
+    /// and that restores exactly for it (`prefix_restore_exact`: a recurrent entry only as a
+    /// whole cover or an on-grid strict prefix). Only the caller's own (model, namespace) pool is
+    /// scanned — cross-namespace entries are structurally unreachable (PC-ISO).
     fn lookup(&self, key: &PoolKey, prompt: &[u32]) -> Option<usize> {
         let pool = self.entries.get(key)?;
         let mut best: Option<(usize, usize)> = None;
@@ -10113,6 +10146,7 @@ impl PrefixCache {
             if n >= PREFIX_CACHE_MIN_TOKENS
                 && n <= prompt.len()
                 && prompt[..n] == e.toks[..]
+                && prefix_restore_exact(n, prompt.len(), e.carries_recurrent())
                 && best.is_none_or(|(_, bn)| n > bn)
             {
                 best = Some((i, n));
@@ -10122,7 +10156,7 @@ impl PrefixCache {
     }
 
     /// [`Self::lookup`] restricted to entries `keep` accepts: the longest such entry whose token
-    /// key exactly prefixes `prompt` (same floor, same pool scoping).
+    /// key exactly prefixes `prompt` (same floor, same restore grid law, same pool scoping).
     fn lookup_where(
         &self,
         key: &PoolKey,
@@ -10136,6 +10170,7 @@ impl PrefixCache {
             if n >= PREFIX_CACHE_MIN_TOKENS
                 && n <= prompt.len()
                 && prompt[..n] == e.toks[..]
+                && prefix_restore_exact(n, prompt.len(), e.carries_recurrent())
                 && keep(e)
                 && best.is_none_or(|(_, bn)| n > bn)
             {
@@ -10356,6 +10391,7 @@ impl PrefixCache {
             && entry.pos == entry.toks.len()
             && entry.pos >= PREFIX_CACHE_MIN_TOKENS
             && prompt.starts_with(&entry.toks)
+            && prefix_restore_exact(entry.toks.len(), prompt.len(), entry.carries_recurrent())
             && entry.tp.is_none()
             && entry.latent.iter().all(Option::is_none))
         .then_some(entry.pos)
@@ -11652,15 +11688,18 @@ impl HostPrefixCache {
     }
 
     /// Longest entry whose token key exactly prefixes `prompt`: the SAME rules as the device
-    /// `PrefixCache::lookup` (PC-ISO pool key, PREFIX_CACHE_MIN_TOKENS floor, exact tokens).
+    /// `PrefixCache::lookup` (PC-ISO pool key, PREFIX_CACHE_MIN_TOKENS floor, exact tokens, the
+    /// restore grid law), so a promote never brings back an entry the hit site would refuse.
     fn lookup(&self, key: &PoolKey, prompt: &[u32]) -> Option<usize> {
         let pool = self.entries.get(key)?;
         let mut best: Option<(usize, usize)> = None;
         for (i, e) in pool.iter().enumerate() {
             let n = e.toks.len();
+            let recurrent = e.conv.iter().any(Option::is_some) || e.ssm.iter().any(Option::is_some);
             if n >= PREFIX_CACHE_MIN_TOKENS
                 && n <= prompt.len()
                 && prompt[..n] == e.toks[..]
+                && prefix_restore_exact(n, prompt.len(), recurrent)
                 && best.is_none_or(|(_, bn)| n > bn)
             {
                 best = Some((i, n));
@@ -49605,6 +49644,122 @@ mod tests {
         assert!(!super::should_probe_prefix_cache(true, true, true, true));
         // And with no cold preference the arm changes nothing.
         assert!(super::should_probe_prefix_cache(true, false, false, false));
+    }
+
+    /// The restore grid law (2026-11-07). The RTX 5090 single-switch receipt: turn 1's entry at
+    /// its 2,992-token prompt end, turn 2's 3,109-token prompt. 2,992 is off the 32-token grid, so
+    /// a plain restore there plus a suffix prime is a second numeric program: refused for a
+    /// recurrent entry, kept for an attention-only one, and the whole cover stays exact.
+    #[test]
+    fn a_recurrent_prefix_entry_restores_only_on_the_prime_grid() {
+        let grid = memra_engine::Engine::gdn_chunk_size();
+        let floor = memra_engine::hybrid_forward::PRIME_MIN_T;
+        assert_eq!(
+            (grid, floor),
+            (32, 16),
+            "the receipt's grid and prime floor"
+        );
+        assert!(
+            !super::prefix_restore_exact(2_992, 3_109, true),
+            "off-grid strict prefix"
+        );
+        assert!(
+            super::prefix_restore_exact(2_992, 2_992, true),
+            "whole cover"
+        );
+        assert!(
+            super::prefix_restore_exact(2_976, 3_109, true),
+            "on-grid, 133-token suffix"
+        );
+        assert!(
+            !super::prefix_restore_exact(3_104, 3_109, true),
+            "on-grid but a 5-token suffix runs token by token"
+        );
+        assert!(
+            super::prefix_restore_exact(3_104, 3_120, true),
+            "suffix exactly the floor"
+        );
+        assert!(
+            super::prefix_restore_exact(2_992, 3_109, false),
+            "attention-only"
+        );
+        assert!(
+            !super::prefix_restore_exact(3_200, 3_109, false),
+            "longer than the prompt"
+        );
+        // The DFlash strict-prefix predicate is the same grid rule under the restore switch.
+        for (entry, prompt) in [
+            (2_992, 3_109),
+            (2_976, 3_109),
+            (3_104, 3_109),
+            (2_992, 2_992),
+        ] {
+            assert_eq!(
+                super::dspark_hit_is_restorable_with(entry, prompt, true, true),
+                super::prefix_restore_exact(entry, prompt, true),
+                "entry {entry} prompt {prompt}"
+            );
+        }
+        // Every probe that names "the entry the hit site consumes" applies the law: the device
+        // lookup, its filtered form, the host tier's lookup and the retained-plan check.
+        let src = include_str!("worker.rs");
+        let production = &src[..src.find("\nmod tests {").unwrap()];
+        let squashed = production.split_whitespace().collect::<Vec<_>>().join(" ");
+        assert_eq!(
+            squashed
+                .matches("&& prefix_restore_exact(n, prompt.len(), e.carries_recurrent())")
+                .count(),
+            2,
+            "PrefixCache::lookup and lookup_where"
+        );
+        assert!(squashed.contains("&& prefix_restore_exact(n, prompt.len(), recurrent)"));
+        assert!(squashed.contains(
+            "&& prefix_restore_exact(entry.toks.len(), prompt.len(), entry.carries_recurrent())"
+        ));
+    }
+
+    /// GPU form of the law on real recurrent planes: an off-grid recurrent entry is not the hit;
+    /// the longest on-grid one is, and the off-grid entry still serves its own prompt whole.
+    #[test]
+    #[ignore = "requires one CUDA device; run under the rig lock"]
+    fn the_prefix_lookup_skips_an_off_grid_recurrent_entry() {
+        let engine = memra_engine::Engine::new(0).unwrap();
+        let k = key("tenant");
+        let recurrent = |n: usize| {
+            let mut e = entry(&k, toks(n));
+            e.conv = vec![Some(engine.zeros(8).unwrap())];
+            e.ssm = vec![Some(engine.zeros(8).unwrap())];
+            e.pos = n;
+            e
+        };
+        let mut px = PrefixCache::default();
+        px.insert_with_budget(&k, recurrent(2_976), "seed", 10);
+        px.insert_with_budget(&k, recurrent(2_992), "dspark-boundary", 10);
+        let len = |px: &PrefixCache, prompt: &[u32]| {
+            px.lookup(&k, prompt).map(|i| px.entries[&k][i].toks.len())
+        };
+        assert_eq!(
+            len(&px, &toks(3_109)),
+            Some(2_976),
+            "the on-grid entry serves"
+        );
+        assert_eq!(
+            len(&px, &toks(2_992)),
+            Some(2_992),
+            "the whole cover serves"
+        );
+        assert_eq!(
+            px.lookup_where(&k, &toks(3_109), |e| e.toks.len() == 2_992),
+            None,
+            "a filter cannot bring the off-grid entry back"
+        );
+        let mut plain = PrefixCache::default();
+        plain.insert_with_budget(&k, entry(&k, toks(2_992)), "lcp-split", 10);
+        assert_eq!(
+            len(&plain, &toks(3_109)),
+            Some(2_992),
+            "attention-only keeps the hit"
+        );
     }
 
     #[test]
