@@ -30,8 +30,11 @@ the served speculative attach (`MEMRA_DRAFT`) skips it, so the assistant drafter
 `gemma-gate` only. Serving is not qualified. In the record below, serve-smoke's plain surface
 and a solo-versus-concurrent identity check pass, but its gemma4 chat arm fails: on a
 thinking-off chat E4B writes a thought after the template's closed thought channel and ends
-it with a stray `<channel|>`, so the thought and the tag reach `content`. The Serve gate stays
-pending.
+it with a stray `<channel|>`, so the thought and the tag reach `content`. The gemma4 parsers
+now route text before an unopened `<channel|>` to `reasoning`
+([decision](../decisions/GEMMA-UNOPENED-THOUGHT.md)); the arm has not been re-run on it. Its
+thinking-on check also needs a thought, and at `reasoning_effort: low` E4B answered `ok` with
+none. The Serve gate stays pending.
 
 ## Qualification record
 

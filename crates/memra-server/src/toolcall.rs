@@ -58,6 +58,13 @@ enum State {
     Scan,
     /// Inside a `<tool_call>` block, buffering until `</tool_call>`.
     InCall,
+    /// gemma dialects, start of the turn: hold every byte until the opening resolves. Text
+    /// before an unopened `<channel|>` is a thought (E4B writes one after the template's
+    /// closed channel) and goes to `reasoning`; a `<|channel>` or `<|tool_call>` open, or
+    /// the end of the turn, means the turn opened with content and hands over to Scan
+    /// unchanged. A streaming parser also hands over once `GEMMA_STREAM_OPENING_CAP` bytes
+    /// pass with no tag.
+    GemmaOpening,
     /// gemma dialect: just consumed `<|channel>` — the channel-name line (`thought\n`) is
     /// syntax; swallow through its newline, then GemmaThought.
     GemmaLabel,
@@ -84,6 +91,17 @@ const THINK_END: &str = "</think>";
 /// unlike the qwen prompt-open-tail Prethink.
 const GEMMA_OPEN: &str = "<|channel>";
 const GEMMA_CLOSE: &str = "<channel|>";
+/// Bound on a stream's opening hold-back (`State::GemmaOpening`; owner rule 2026-11-04,
+/// docs/decisions/GEMMA-UNOPENED-THOUGHT.md) on a gemma4 model that writes no unopened
+/// `<channel|>`. The 2026-11-04 census read none on the 26B-A4B and the 31B (0 of 24
+/// thinking-off prompts each, every stream equal to its blocking twin), so there the cap only
+/// bounds the first content delta: about 60 tokens, about 0.3 s on the 26B-A4B (194 tok/s
+/// plain) and 1.5 s on the 31B (40 tok/s) at the RTX 5090 engine rates. A close tag that starts
+/// at or past the cap stays content on such a stream, as before the rule. A model that does
+/// write them (E4B: 12 of 24, 81 to 1,027 bytes) arms
+/// [`ToolStreamParser::holding_unopened_thought`] and has no cap. The blocking parser has no
+/// cap either: it holds the whole turn and splits after the fact.
+const GEMMA_STREAM_OPENING_CAP: usize = 256;
 /// gemma tooluse dialect (lane/gemma4-tools, 2026-08-18): the served trunk (official Google
 /// tooluse template) emits `<|tool_call>call:NAME{args}<tool_call|>`. The args are the compact
 /// non-JSON dialect (bare keys, `<|"|>`-wrapped strings, bare numbers/true/false/None, nested
@@ -163,6 +181,16 @@ pub struct ToolStreamParser {
     initial_skip_think: bool,
     /// Only schema-constrained requests use JSON bodies inside the template call frame.
     json_arguments: bool,
+    /// Set by the SSE renderers (`streaming()`): bound the gemma opening hold-back by
+    /// `GEMMA_STREAM_OPENING_CAP`. Unset, the opening resolves on tags and turn end only.
+    stream: bool,
+    /// Set for a model that writes its thought after the template's closed channel (an
+    /// unopened `<channel|>`; `ModelCaps::gemma_unopened_thought`, the E4B pack): a stream's
+    /// opening hold-back has no byte cap and resolves on tags and turn end only, as the
+    /// blocking parser's does.
+    opening_uncapped: bool,
+    /// GemmaOpening: bytes of `buf` already searched with no tag start in them.
+    opening_scanned: usize,
 }
 
 /// AGENT-PAUSE TAIL PREDICATE (lane/kv-pause-demote-20260831, tiering spec Arc E): does a
@@ -234,11 +262,33 @@ impl ToolStreamParser {
             postthink_nl: 0,
             initial_skip_think: skip_think,
             json_arguments: false,
+            stream: false,
+            opening_uncapped: false,
+            opening_scanned: 0,
         }
     }
 
     pub fn with_json_arguments(mut self) -> Self {
         self.json_arguments = true;
+        self
+    }
+
+    /// The parser feeds a stream: the gemma opening hold-back resolves as content after
+    /// `GEMMA_STREAM_OPENING_CAP` bytes with no tag, so a turn without a thought still
+    /// streams. No effect on the other dialects.
+    pub fn streaming(mut self) -> Self {
+        self.stream = true;
+        self
+    }
+
+    /// The model writes unopened thoughts (`ModelCaps::gemma_unopened_thought`): a stream
+    /// holds its opening until a tag or the turn end resolves it, with no byte cap, so it
+    /// splits the turn the way the blocking parser does. The E4B census of 2026-11-04 read
+    /// unopened thoughts of 81 to 1,027 bytes on 12 of 24 thinking-off prompts, and the
+    /// 256-byte cap sent every one of them to content with its tag
+    /// (`research/gemma-unopened-thought-census-20261104/`).
+    pub fn holding_unopened_thought(mut self) -> Self {
+        self.opening_uncapped = true;
         self
     }
 
@@ -280,6 +330,11 @@ impl ToolStreamParser {
         parser.glm5 = self.glm5;
         parser.hy3 = self.hy3;
         parser.json_arguments = self.json_arguments;
+        parser.stream = self.stream;
+        parser.opening_uncapped = self.opening_uncapped;
+        if parser.gemma || parser.gemma_tools {
+            parser.state = State::GemmaOpening;
+        }
         parser
     }
 
@@ -327,10 +382,13 @@ impl ToolStreamParser {
     /// else is content. Channels/calls may open at any stream position (the template's own
     /// strip_thinking law + a call after content). Reasoning-vs-content, never a tool span in
     /// content. `schemas` is unused here — the gemma call dialect is self-describing.
+    /// Text before an unopened `<channel|>` at the start of the turn is reasoning too
+    /// (`State::GemmaOpening`).
     pub fn gemma_tools() -> Self {
         let mut p = Self::new(HashMap::new(), false);
         p.scan_tools = false;
         p.gemma_tools = true;
+        p.state = State::GemmaOpening;
         p
     }
 
@@ -348,11 +406,13 @@ impl ToolStreamParser {
     /// channel label line and the bracketing newlines are syntax); everything outside a
     /// channel is content. Channels can open at any stream position, matching the
     /// template's own `strip_thinking` law. gemma4 templates have no `<tools>` branch,
-    /// so this is reasoning-only by construction.
+    /// so this is reasoning-only by construction. Text before an unopened `<channel|>` at
+    /// the start of the turn is reasoning too (`State::GemmaOpening`).
     pub fn gemma_thought() -> Self {
         let mut p = Self::new(HashMap::new(), false);
         p.scan_tools = false;
         p.gemma = true;
+        p.state = State::GemmaOpening;
         p
     }
 
@@ -564,6 +624,49 @@ impl ToolStreamParser {
                     }
                     continue;
                 }
+                State::GemmaOpening => {
+                    // Search only past the bytes an earlier push already cleared: a tag
+                    // that completes later starts inside the held partial suffix. Every
+                    // tag is ASCII, so each offset here is a char boundary.
+                    let from = self.opening_scanned;
+                    let hay = &self.buf[from..];
+                    let close = hay.find(GEMMA_CLOSE).map(|i| from + i);
+                    let opener = [hay.find(GEMMA_OPEN), hay.find(GEMMA_CALL_OPEN)]
+                        .into_iter()
+                        .flatten()
+                        .min()
+                        .map(|i| from + i);
+                    // The cap is positional, so a stream splits the same way however
+                    // its text is chunked: a close at or past the cap stays content.
+                    let stream = self.stream && !self.opening_uncapped;
+                    let capped = |i: usize| stream && i >= GEMMA_STREAM_OPENING_CAP;
+                    if let Some(i) = close
+                        && opener.is_none_or(|o| i < o)
+                        && !capped(i)
+                    {
+                        // the thought and its optional syntax `\n` before the tag, the same
+                        // law as a thought inside an opened channel.
+                        let text = self.buf[..i].strip_suffix('\n').unwrap_or(&self.buf[..i]);
+                        self.emit_reasoning(&mut out, text.to_string());
+                        self.buf.drain(..i + GEMMA_CLOSE.len());
+                        self.opening_scanned = 0;
+                        self.state = State::Scan;
+                        continue;
+                    }
+                    let close_keep = partial_suffix_len(&self.buf, GEMMA_CLOSE);
+                    if close.is_some() || opener.is_some() || capped(self.buf.len() - close_keep) {
+                        // The turn opened with content: Scan takes the held bytes exactly
+                        // as it takes them without this state.
+                        self.opening_scanned = 0;
+                        self.state = State::Scan;
+                        continue;
+                    }
+                    let keep = close_keep
+                        .max(partial_suffix_len(&self.buf, GEMMA_OPEN))
+                        .max(partial_suffix_len(&self.buf, GEMMA_CALL_OPEN));
+                    self.opening_scanned = self.buf.len() - keep;
+                    break;
+                }
                 State::GemmaLabel => {
                     // the channel-name line (`thought\n`) is syntax — swallow through the
                     // newline. Held back until the newline arrives (label is short).
@@ -664,6 +767,8 @@ impl ToolStreamParser {
             match self.state {
                 State::Prethink => self.emit_reasoning(&mut out, tail),
                 State::InCall => emit_content(&mut out, format!("{OPEN}{tail}")),
+                // the turn ended before any tag resolved the gemma opening: it was content.
+                State::GemmaOpening => emit_content(&mut out, tail),
                 // generation died inside a thought channel: the tail (incl. a held-back
                 // syntax newline) is reasoning, never content.
                 State::GemmaThought => {
@@ -1195,6 +1300,8 @@ Paris\n</parameter>\n<parameter=days>\n3\n</parameter>\n<parameter=metric>\ntrue
             ToolStreamParser::glm5(true, HashMap::new()),
             ToolStreamParser::new(HashMap::new(), false).with_json_arguments(),
             ToolStreamParser::gemma_tools().with_json_arguments(),
+            ToolStreamParser::gemma_thought().streaming(),
+            ToolStreamParser::gemma_tools().streaming(),
         ];
         for mut original in configs {
             let initial = std::mem::discriminant(&original.state);
@@ -1202,11 +1309,14 @@ Paris\n</parameter>\n<parameter=days>\n3\n</parameter>\n<parameter=metric>\ntrue
             original.buf = "partial consumed frame".into();
             original.n_calls = 9;
             original.postthink_nl = 2;
+            original.opening_scanned = 7;
             let fresh = original.fresh();
             assert_eq!(std::mem::discriminant(&fresh.state), initial);
             assert!(fresh.buf.is_empty());
             assert_eq!(fresh.n_calls, 0);
             assert_eq!(fresh.postthink_nl, 0);
+            assert_eq!(fresh.opening_scanned, 0);
+            assert_eq!(fresh.stream, original.stream);
             assert_eq!(fresh.schemas, original.schemas);
             assert_eq!(fresh.initial_skip_think, original.initial_skip_think);
             assert_eq!(fresh.scan_tools, original.scan_tools);
@@ -1672,6 +1782,280 @@ not-a-number\n</parameter>\n</function>\n</tool_call>";
         let (content, reasoning, _) = reassemble3(&pieces);
         assert_eq!(content, "a <|channel of prose");
         assert_eq!(reasoning, "");
+    }
+
+    // ---- gemma4 unopened thought (owner rule, 2026-11-04) ----------------------------------
+    // On a thinking-off chat E4B writes a thought after the template's closed channel and
+    // ends it with a stray `<channel|>`. Text before an unopened close at the start of the
+    // turn is reasoning; a stream holds the opening until it resolves, for at most
+    // GEMMA_STREAM_OPENING_CAP bytes.
+
+    /// The thought from the E4B thinking-off receipt
+    /// (research/modelplan-onboarding-e4b-20261104/serve-09348940b8/probe/probe-chat-off.json).
+    const E4B_THOUGHT: &str =
+        "The user is asking for a specific response: \"ok\". I must reply with exactly that.";
+
+    /// Every gemma parser shape the serve path builds: both dialects, blocking and stream.
+    fn gemma_parsers() -> Vec<(&'static str, ToolStreamParser)> {
+        vec![
+            ("thought", ToolStreamParser::gemma_thought()),
+            (
+                "thought+stream",
+                ToolStreamParser::gemma_thought().streaming(),
+            ),
+            ("tools", ToolStreamParser::gemma_tools()),
+            ("tools+stream", ToolStreamParser::gemma_tools().streaming()),
+        ]
+    }
+
+    /// One char per push (`chunked`) or one push, then the end of the turn.
+    fn feed(p: &mut ToolStreamParser, text: &str, chunked: bool) -> Vec<Piece> {
+        let mut pieces = Vec::new();
+        if chunked {
+            for ch in text.chars() {
+                pieces.extend(p.push(&ch.to_string()));
+            }
+        } else {
+            pieces.extend(p.push(text));
+        }
+        pieces.extend(p.finish());
+        pieces
+    }
+
+    #[test]
+    fn gemma_unopened_thought_routes_to_reasoning_char_by_char() {
+        // the E4B receipt: content was 'The user is asking ... exactly that.<channel|>ok'.
+        let text = format!("{E4B_THOUGHT}<channel|>ok");
+        for chunked in [false, true] {
+            for (name, mut p) in gemma_parsers() {
+                let pieces = feed(&mut p, &text, chunked);
+                let (content, reasoning, calls) = reassemble3(&pieces);
+                assert_eq!(reasoning, E4B_THOUGHT, "{name} chunked={chunked}");
+                assert_eq!(content, "ok", "{name} chunked={chunked}");
+                assert!(calls.is_empty());
+                // the held thought leaves whole and first: no thought byte reached content.
+                assert_eq!(
+                    pieces.first(),
+                    Some(&Piece::Reasoning(E4B_THOUGHT.into())),
+                    "{name} chunked={chunked}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn gemma_dense_turn_keeps_its_content_and_events_past_the_bounded_holdback() {
+        // A dense gemma4 card never writes an unopened close. Against the parser as it was
+        // before the rule (gemma parsers started in Scan): the same content, and the same
+        // events except that the first content delta coalesces the held opening. A
+        // thinking-on turn opens its channel first and keeps every event.
+        let long_answer = "Water evaporates, rises as vapour, cools into clouds and falls as \
+rain. "
+            .repeat(6);
+        assert!(long_answer.len() > GEMMA_STREAM_OPENING_CAP);
+        let cases = [
+            "ok",
+            long_answer.as_str(),
+            "Use <code> and <b>bold</b>; a <|chan is prose, and so is <|tool.",
+            "<|channel>thought\nThe user wants ok.\nSo reply ok.\n<channel|>ok",
+        ];
+        for text in cases {
+            for chunked in [false, true] {
+                for (name, mut now) in gemma_parsers() {
+                    let mut before = now.fresh();
+                    before.state = State::Scan;
+                    let now = feed(&mut now, text, chunked);
+                    let before = feed(&mut before, text, chunked);
+                    let label = format!("{name} chunked={chunked} text={text:?}");
+                    assert_eq!(reassemble3(&now), reassemble3(&before), "{label}");
+                    if text.starts_with(GEMMA_OPEN) {
+                        assert_eq!(now, before, "{label}");
+                        continue;
+                    }
+                    let Some(Piece::Content(first)) = now.first() else {
+                        panic!("{label}: first event {:?}", now.first());
+                    };
+                    let mut covered = String::new();
+                    let mut k = 0;
+                    while covered.len() < first.len() {
+                        let Piece::Content(t) = &before[k] else {
+                            panic!("{label}: {:?}", before[k]);
+                        };
+                        covered.push_str(t);
+                        k += 1;
+                    }
+                    assert_eq!(&covered, first, "{label}");
+                    assert_eq!(&now[1..], &before[k..], "{label}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn gemma_unopened_close_split_across_chunks() {
+        // the stray close arrives in pieces (a detokenizer boundary, or a push that ends
+        // mid-tag): the held partial neither leaks nor loses bytes, and the syntax `\n`
+        // before the tag goes, as it does inside an opened channel.
+        for split in ["<", "<chan", "<channel", "<channel|"] {
+            let rest = &GEMMA_CLOSE[split.len()..];
+            for (name, mut p) in gemma_parsers() {
+                let mut pieces = p.push(&format!("{E4B_THOUGHT}\n{split}"));
+                assert!(pieces.is_empty(), "{name} split={split:?}: {pieces:?}");
+                pieces.extend(p.push(rest));
+                pieces.extend(p.push("ok"));
+                pieces.extend(p.finish());
+                let (content, reasoning, _) = reassemble3(&pieces);
+                assert_eq!(reasoning, E4B_THOUGHT, "{name} split={split:?}");
+                assert_eq!(content, "ok", "{name} split={split:?}");
+            }
+        }
+        // a partial close that turns out to be prose is content, byte for byte.
+        for (name, mut p) in gemma_parsers() {
+            let mut pieces = p.push("a <chan");
+            pieces.extend(p.push("nel| of prose"));
+            pieces.extend(p.finish());
+            let (content, reasoning, _) = reassemble3(&pieces);
+            assert_eq!(content, "a <channel| of prose", "{name}");
+            assert_eq!(reasoning, "", "{name}");
+        }
+    }
+
+    #[test]
+    fn gemma_stream_opening_holdback_is_bounded_and_chunking_independent() {
+        // On a stream a close that starts before the cap ends a thought; at or past the cap
+        // the opening already went to content and the tag stays content, as before the
+        // rule. The blocking parser has no cap. One push and char-by-char agree.
+        let cap = GEMMA_STREAM_OPENING_CAP;
+        for len in [cap - 1, cap, cap + 40] {
+            let thought = "t".repeat(len);
+            let text = format!("{thought}<channel|>ok");
+            for chunked in [false, true] {
+                let label = format!("len={len} chunked={chunked}");
+                let pieces = feed(&mut ToolStreamParser::gemma_thought(), &text, chunked);
+                let (content, reasoning, _) = reassemble3(&pieces);
+                assert_eq!(reasoning, thought, "blocking {label}");
+                assert_eq!(content, "ok", "blocking {label}");
+                let mut p = ToolStreamParser::gemma_thought().streaming();
+                let (content, reasoning, _) = reassemble3(&feed(&mut p, &text, chunked));
+                if len < cap {
+                    assert_eq!(reasoning, thought, "{label}");
+                    assert_eq!(content, "ok", "{label}");
+                } else {
+                    assert_eq!(reasoning, "", "{label}");
+                    assert_eq!(content, text, "{label}");
+                }
+            }
+        }
+        // a turn with no tag: the first delta leaves when the cap fills, then one per push.
+        let mut p = ToolStreamParser::gemma_thought().streaming();
+        let mut events = Vec::new();
+        for _ in 0..cap + 2 {
+            events.push(p.push("x"));
+        }
+        assert!(events[..cap - 1].iter().all(Vec::is_empty));
+        assert_eq!(events[cap - 1], vec![Piece::Content("x".repeat(cap))]);
+        assert_eq!(events[cap], vec![Piece::Content("x".into())]);
+        // the blocking parser holds it all to the turn end.
+        let mut p = ToolStreamParser::gemma_thought();
+        for _ in 0..cap + 2 {
+            assert!(p.push("x").is_empty());
+        }
+        assert_eq!(p.finish(), vec![Piece::Content("x".repeat(cap + 2))]);
+    }
+
+    #[test]
+    fn an_unopened_thought_model_streams_a_long_thought_as_its_blocking_twin() {
+        // E4B writes thoughts well past the cap (census: up to 1,027 bytes thinking-off). With
+        // the hold armed a stream splits them as the blocking parser does, one push or
+        // char-by-char; a turn with no tag still streams, but only at the turn end.
+        let cap = GEMMA_STREAM_OPENING_CAP;
+        let thought = "The user wants a short answer. ".repeat(40);
+        assert!(thought.len() > 4 * cap);
+        let text = format!("{thought}\n<channel|>Answer.");
+        let want = reassemble3(&feed(&mut ToolStreamParser::gemma_thought(), &text, false));
+        assert_eq!(want.1, thought);
+        assert_eq!(want.0, "Answer.");
+        for base in [
+            ToolStreamParser::gemma_thought(),
+            ToolStreamParser::gemma_tools(),
+        ] {
+            for chunked in [false, true] {
+                let mut p = base.fresh().holding_unopened_thought().streaming();
+                let got = reassemble3(&feed(&mut p, &text, chunked));
+                assert_eq!(
+                    (got.0, got.1),
+                    (want.0.clone(), want.1.clone()),
+                    "chunked={chunked}"
+                );
+            }
+        }
+        let mut p = ToolStreamParser::gemma_thought()
+            .holding_unopened_thought()
+            .streaming();
+        for _ in 0..cap + 2 {
+            assert!(p.push("x").is_empty());
+        }
+        assert_eq!(p.finish(), vec![Piece::Content("x".repeat(cap + 2))]);
+        // fresh() keeps the hold.
+        let mut p = ToolStreamParser::gemma_thought()
+            .holding_unopened_thought()
+            .streaming()
+            .fresh();
+        let got = reassemble3(&feed(&mut p, &text, true));
+        assert_eq!(got.1, thought);
+    }
+
+    #[test]
+    fn gemma_opening_rule_covers_only_the_start_of_the_turn() {
+        // once a channel opened, a later stray close is content as it was before the rule.
+        let text = "<|channel>thought\nA\n<channel|>B<channel|>C";
+        for (name, mut p) in gemma_parsers() {
+            let (content, reasoning, _) = reassemble3(&feed(&mut p, text, true));
+            assert_eq!(reasoning, "A", "{name}");
+            assert_eq!(content, "B<channel|>C", "{name}");
+        }
+        // a call open ends the opening on the thought dialect too, where the span is prose.
+        let text = "x<|tool_call>y<channel|>z";
+        for p in [
+            ToolStreamParser::gemma_thought(),
+            ToolStreamParser::gemma_thought().streaming(),
+        ] {
+            for chunked in [false, true] {
+                let (content, reasoning, _) = reassemble3(&feed(&mut p.fresh(), text, chunked));
+                assert_eq!(content, text, "chunked={chunked}");
+                assert_eq!(reasoning, "", "chunked={chunked}");
+            }
+        }
+    }
+
+    #[test]
+    fn gemma_tools_opening_resolves_at_a_call_or_an_unopened_close() {
+        let call = "<|tool_call>call:get_weather{location:<|\"|>Paris<|\"|>}<tool_call|>";
+        for (name, p) in gemma_parsers()
+            .into_iter()
+            .filter(|(n, _)| n.starts_with("tools"))
+        {
+            for chunked in [false, true] {
+                let label = format!("{name} chunked={chunked}");
+                // content, then a call: the call open resolves the opening as content.
+                let pieces = feed(&mut p.fresh(), &format!("On it.{call}"), chunked);
+                let (content, reasoning, calls) = reassemble3(&pieces);
+                assert_eq!(content, "On it.", "{label}");
+                assert_eq!(reasoning, "", "{label}");
+                assert_eq!(calls.len(), 1, "{label}");
+                // an unopened thought, then the call.
+                let pieces = feed(
+                    &mut p.fresh(),
+                    &format!("{E4B_THOUGHT}<channel|>{call}"),
+                    chunked,
+                );
+                let (content, reasoning, calls) = reassemble3(&pieces);
+                assert_eq!(content, "", "{label}");
+                assert_eq!(reasoning, E4B_THOUGHT, "{label}");
+                assert_eq!(calls.len(), 1, "{label}");
+                assert_eq!(calls[0].arguments, r#"{"location":"Paris"}"#, "{label}");
+            }
+        }
     }
 
     // ---- gemma4 tooluse dialect parser (lane/gemma4-tools) --------------------------------
