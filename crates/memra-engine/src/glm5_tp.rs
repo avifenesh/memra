@@ -1184,6 +1184,8 @@ pub(crate) fn ensure_kda_tp_state<'c>(
                 conv_state: dev.zeros(conv_pad)?,
                 ssm_state: dev.zeros(state)?,
                 ssm_state_alt: dev.zeros(state)?,
+                // KDA shards never leave the fp32 class (crate::gdn_state serves GDN layers)
+                ssm_fp16: false,
             })
         };
         let mut planes = Vec::with_capacity(rt.ranks());
@@ -1246,6 +1248,7 @@ fn kda_tp_core(
                 conv_state,
                 ssm_state,
                 ssm_state_alt,
+                ..
             } = &mut states[r];
             let out = crate::kda::kda_core_gated(
                 dev,
@@ -1371,6 +1374,7 @@ pub(crate) fn kda_tp_partials_sym(
             conv_state,
             ssm_state,
             ssm_state_alt,
+            ..
         } = &mut states[r];
         let gated = crate::kda::kda_core_gated(
             dev,

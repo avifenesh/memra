@@ -475,6 +475,33 @@ pub trait KvDev {
     ) -> Result<(), Box<dyn std::error::Error>>;
     fn set_i32_one(&self, d: &mut CudaSlice<i32>, v: i32)
     -> Result<(), Box<dyn std::error::Error>>;
+    /// GDN state class conversion (research/gdn-state-fp16-20261107): widen the fp16 state
+    /// of `n_elems` elements packed in the first half of `src` into fp32 `dst` (exact). Distinct
+    /// buffers, both `n_elems` f32 words. A backend that never converts a state refuses.
+    fn gdn_state_to_f32(
+        &self,
+        _src: &CudaSlice<f32>,
+        _dst: &mut CudaSlice<f32>,
+        _n_elems: usize,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        Err("REFUSED: backend does not implement the GDN state class conversion".into())
+    }
+    /// The other direction: round the fp32 state `src` of `n_elems` elements to fp16 (nearest
+    /// even) into the first half of `dst`. Distinct buffers, both `n_elems` f32 words.
+    fn gdn_state_to_fp16(
+        &self,
+        _src: &CudaSlice<f32>,
+        _dst: &mut CudaSlice<f32>,
+        _n_elems: usize,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        Err("REFUSED: backend does not implement the GDN state class conversion".into())
+    }
+}
+
+/// f32 words a Gated DeltaNet recurrent state of `elems` elements occupies in its storage class:
+/// fp32 one per word, fp16 two per word (element i at byte 2*i).
+pub const fn gdn_state_words(elems: usize, fp16: bool) -> usize {
+    if fp16 { elems.div_ceil(2) } else { elems }
 }
 
 use cudarc::driver::CudaSlice;
@@ -1329,6 +1356,116 @@ pub struct RecurLayer {
     /// buffers (no per-step alloc/free, no pool churn): step writes into the spare, then swaps the
     /// two owned buffers in place. Stable pointers, identical math. Sized like `ssm_state`.
     pub ssm_state_alt: CudaSlice<f32>,
+    /// The storage class `ssm_state` holds right now (research/gdn-state-fp16-20261107).
+    /// Both buffers are always allocated fp32. `false`: fp32, the class every prime, capture,
+    /// snapshot and restore uses. `true`: a decode-class Gated DeltaNet layer that has started
+    /// decoding holds its state as fp16 in the first half of `ssm_state`
+    /// (`ssm_live_words`); only the engine's decode and verify scans read or write that class,
+    /// and only `Engine::gdn_ensure_decode` / `gdn_ensure_prime` change this flag.
+    pub ssm_fp16: bool,
+}
+
+impl RecurLayer {
+    /// f32 words of `ssm_state` that hold the state in its current class (all of it in fp32,
+    /// the first half in fp16). Copies of a live state inside one decode phase size by this.
+    pub fn ssm_live_words(&self) -> usize {
+        gdn_state_words(self.ssm_state.len(), self.ssm_fp16)
+    }
+
+    /// The state as an fp32 plane, whatever class it is in now: a dtod clone in fp32, an exact
+    /// widening in fp16. Every capture that leaves the session (prefix entry, checkpoint,
+    /// snapshot) takes this, so captured planes are fp32 in both decode classes.
+    pub fn ssm_clone_f32(
+        &self,
+        e: &impl KvDev,
+    ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
+        if self.ssm_fp16 {
+            let mut out = e.uninit(self.ssm_state.len())?;
+            e.gdn_state_to_f32(&self.ssm_state, &mut out, self.ssm_state.len())?;
+            Ok(out)
+        } else {
+            e.clone_dtod(&self.ssm_state)
+        }
+    }
+
+    /// A copy of just the words that hold the state in its current class (a verify column
+    /// checkpoint inside one decode phase; `ssm_live_words` long).
+    pub fn ssm_clone_live(
+        &self,
+        e: &impl KvDev,
+    ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
+        let live = self.ssm_live_words();
+        let mut out = e.uninit(live)?;
+        e.copy_into(&mut out, 0, &self.ssm_state, live)?;
+        Ok(out)
+    }
+
+    /// `ssm_clone_f32` into an existing fp32 plane of the same length.
+    pub fn ssm_copy_f32_into(
+        &self,
+        e: &impl KvDev,
+        dst: &mut CudaSlice<f32>,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        if dst.len() != self.ssm_state.len() {
+            return Err(format!(
+                "ssm capture: destination of {} words, the resident state has {}",
+                dst.len(),
+                self.ssm_state.len()
+            )
+            .into());
+        }
+        if self.ssm_fp16 {
+            e.gdn_state_to_f32(&self.ssm_state, dst, self.ssm_state.len())
+        } else {
+            e.copy_into(dst, 0, &self.ssm_state, self.ssm_state.len())
+        }
+    }
+
+    /// Restore a full-length plane that holds a state in class `fp16` (a `CacheSnapshot`
+    /// plane) into the resident state; the layer is in that class afterwards.
+    pub fn ssm_restore_class(
+        &mut self,
+        e: &impl KvDev,
+        src: &CudaSlice<f32>,
+        fp16: bool,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        if src.len() != self.ssm_state.len() {
+            return Err(format!(
+                "ssm restore: plane of {} words, the resident state has {}",
+                src.len(),
+                self.ssm_state.len()
+            )
+            .into());
+        }
+        e.copy_into(
+            &mut self.ssm_state,
+            0,
+            src,
+            gdn_state_words(src.len(), fp16),
+        )?;
+        self.ssm_fp16 = fp16;
+        Ok(())
+    }
+
+    /// Restore an fp32 plane (a capture, snapshot or prefix entry) into the resident state; the
+    /// layer is fp32 afterwards. The way a captured fp32 plane re-enters a session.
+    pub fn ssm_restore_f32(
+        &mut self,
+        e: &impl KvDev,
+        src: &CudaSlice<f32>,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        if src.len() != self.ssm_state.len() {
+            return Err(format!(
+                "ssm restore: fp32 plane of {} words, the resident state has {}",
+                src.len(),
+                self.ssm_state.len()
+            )
+            .into());
+        }
+        e.copy_into(&mut self.ssm_state, 0, src, src.len())?;
+        self.ssm_fp16 = false;
+        Ok(())
+    }
 }
 
 pub struct ResidentTpKvCacheRank {
@@ -2757,8 +2894,39 @@ pub struct CacheSnapshot {
     pub kv_len: Vec<Option<usize>>, // per layer (Some for full-attn layers)
     pub tp_kv_len: Vec<Option<usize>>, // per layer (Some for TP full-attn layers)
     pub conv: Vec<Option<CudaSlice<f32>>>, // per layer (Some for linear-attn layers, D2D copy)
+    /// per layer, a full-length plane holding the live state in the class `ssm_fp16` records
+    /// (research/gdn-state-fp16-20261107): a rollback and a verify commit re-run read it
+    /// in that class. A consumer that keeps a plane outside the session (a prefix entry, a
+    /// receipt) calls `widen_f32` first, so persisted planes are always fp32.
     pub ssm: Vec<Option<CudaSlice<f32>>>,
+    /// per layer, `RecurLayer::ssm_fp16` at the snapshot (a missing entry is fp32: snapshots
+    /// minted inside a prime leave it empty).
+    pub ssm_fp16: Vec<bool>,
     pub pos: usize,
+}
+
+impl CacheSnapshot {
+    /// The class layer `il`'s plane holds (`RecurLayer::ssm_fp16` at the snapshot).
+    pub fn ssm_class(&self, il: usize) -> bool {
+        self.ssm_fp16.get(il).copied().unwrap_or(false)
+    }
+
+    /// Widen every fp16 plane to fp32 in place (exact): the form a plane takes before it
+    /// leaves the session, so prefix entries, receipts and grid captures stay fp32.
+    pub fn widen_f32(&mut self, e: &impl KvDev) -> Result<(), Box<dyn std::error::Error>> {
+        for il in 0..self.ssm.len() {
+            if !self.ssm_class(il) {
+                continue;
+            }
+            if let Some(p) = self.ssm[il].as_ref() {
+                let mut out = e.uninit(p.len())?;
+                e.gdn_state_to_f32(p, &mut out, p.len())?;
+                self.ssm[il] = Some(out);
+            }
+            self.ssm_fp16[il] = false;
+        }
+        Ok(())
+    }
 }
 
 impl Cache {
@@ -3194,6 +3362,7 @@ impl Cache {
                         )?,
                         ssm_state: e.zeros(state_width as usize)?,
                         ssm_state_alt: e.zeros(state_width as usize)?,
+                        ssm_fp16: false,
                     }));
                     latent.push(None);
                 }
@@ -3320,7 +3489,9 @@ impl Cache {
         let mut tp_kv_len = Vec::with_capacity(n);
         let mut conv = Vec::with_capacity(n);
         let mut ssm = Vec::with_capacity(n);
+        let mut ssm_fp16 = Vec::with_capacity(n);
         for il in 0..n {
+            ssm_fp16.push(self.recur[il].as_ref().is_some_and(|rl| rl.ssm_fp16));
             match &self.kv[il] {
                 Some(kvl) => kv_len.push(Some(kvl.len)),
                 None => kv_len.push(None),
@@ -3333,7 +3504,10 @@ impl Cache {
             match &self.recur[il] {
                 Some(rl) => {
                     conv.push(Some(e.clone_dtod(&rl.conv_state)?));
-                    ssm.push(Some(e.clone_dtod(&rl.ssm_state)?));
+                    // in the layer's live class: only the words that hold the state are copied
+                    let mut plane = e.uninit(rl.ssm_state.len())?;
+                    e.copy_into(&mut plane, 0, &rl.ssm_state, rl.ssm_live_words())?;
+                    ssm.push(Some(plane));
                 }
                 None => {
                     conv.push(None);
@@ -3346,6 +3520,7 @@ impl Cache {
             tp_kv_len,
             conv,
             ssm,
+            ssm_fp16,
             pos: self.pos,
         })
     }
@@ -3368,7 +3543,9 @@ impl Cache {
         }
         self.ensure_usable("cache snapshot refresh")?;
         let n = self.kv.len();
+        snap.ssm_fp16.resize(n, false);
         for il in 0..n {
+            snap.ssm_fp16[il] = self.recur[il].as_ref().is_some_and(|rl| rl.ssm_fp16);
             snap.kv_len[il] = self.kv[il].as_ref().map(|kvl| kvl.len);
             snap.tp_kv_len[il] = self.tp_kv[il]
                 .as_ref()
@@ -3380,9 +3557,12 @@ impl Cache {
                 let ds = snap.ssm[il]
                     .as_mut()
                     .expect("snapshot_into: shape mismatch (ssm)");
-                let (cn, sn) = (rl.conv_state.len(), rl.ssm_state.len());
+                let cn = rl.conv_state.len();
                 e.copy_into(dc, 0, &rl.conv_state, cn)?;
-                e.copy_into(ds, 0, &rl.ssm_state, sn)?;
+                if ds.len() != rl.ssm_state.len() {
+                    return Err("snapshot_into: shape mismatch (ssm length)".into());
+                }
+                e.copy_into(ds, 0, &rl.ssm_state, rl.ssm_live_words())?;
             }
         }
         snap.pos = self.pos;
@@ -3425,7 +3605,8 @@ impl Cache {
                     e.copy_into(&mut rl.conv_state, 0, c, c.len())?;
                 }
                 if let Some(s) = &snap.ssm[il] {
-                    e.copy_into(&mut rl.ssm_state, 0, s, s.len())?;
+                    // the plane and its class, exactly as the snapshot found them
+                    rl.ssm_restore_class(e, s, snap.ssm_class(il))?;
                 }
             }
         }

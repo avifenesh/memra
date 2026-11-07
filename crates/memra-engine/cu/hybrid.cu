@@ -5,6 +5,44 @@
 #include <cuda_fp16.h>
 #include <cuda_bf16.h>
 
+// GDN recurrent-state storage class of the sequential scans (research/gdn-state-fp16-20261107).
+// The decode and verify scans (`gdn_scan_s128`, `_dc`, `_b`, `_tsnap`) take `st16`:
+//   st16 == 0: fp32, element i is float i (the original layout, byte for byte);
+//   st16 == 1: fp16, element i is the fp16 at byte 2*i, stored round-to-nearest-even, so a state
+//              of n elements occupies the first n/2 f32 words of its buffer.
+// The element index (h*S*S + col*S + i, the transposed M[col][i] layout) is the same in both
+// classes and the math stays fp32 in registers. The chunked prime kernels have no `st16`: the
+// prime always carries fp32, and an fp16 decode-class layer is rounded once, by
+// `gdn_state_to_fp16`, when its session starts decoding (see the conversion kernels below).
+__device__ __forceinline__ float gdn_ld(const float* base, size_t i, int st16) {
+    return st16 ? __half2float(reinterpret_cast<const __half*>(base)[i]) : base[i];
+}
+__device__ __forceinline__ void gdn_sv(float* base, size_t i, float v, int st16) {
+    if (st16) reinterpret_cast<__half*>(base)[i] = __float2half_rn(v);
+    else base[i] = v;
+}
+// The fp16 class rounds the carried state after every token of a sequential scan, not only at
+// the final store, so a T-row scan equals T chained single-row launches bit for bit (decode ==
+// verify). fp32 (`st16 == 0`) is unchanged.
+__device__ __forceinline__ float gdn_rn(float v) { return __half2float(__float2half_rn(v)); }
+
+// The two GDN state class conversions (research/gdn-state-fp16-20261107): `src` and `dst`
+// are distinct buffers of n_elems fp32 words each. to_fp16 rounds every element to nearest even
+// into the fp16 layout (element i at byte 2*i of dst, the first n/2 words); to_f32 widens an fp16
+// state exactly. to_f32(to_fp16(x)) == round(x), and to_fp16 of an already fp16-representable
+// state is the identity, so a state may cross the two classes any number of times without
+// changing a value after its first rounding.
+extern "C" __global__ void gdn_state_to_fp16(const float* __restrict__ src, float* __restrict__ dst,
+                                             unsigned long long n_elems) {
+    unsigned long long i = (unsigned long long)blockIdx.x * blockDim.x + threadIdx.x;
+    if (i < n_elems) reinterpret_cast<__half*>(dst)[i] = __float2half_rn(src[i]);
+}
+extern "C" __global__ void gdn_state_to_f32(const float* __restrict__ src, float* __restrict__ dst,
+                                            unsigned long long n_elems) {
+    unsigned long long i = (unsigned long long)blockIdx.x * blockDim.x + threadIdx.x;
+    if (i < n_elems) dst[i] = __half2float(reinterpret_cast<const __half*>(src)[i]);
+}
+
 __device__ __forceinline__ float silu(float x) { return x / (1.0f + expf(-x)); }
 
 // All-reduce sum via XOR butterfly: EVERY lane ends with the 32-lane sum in
@@ -338,17 +376,17 @@ __device__ void gdn_scan_kernel(
         const float* __restrict__ q, const float* __restrict__ k, const float* __restrict__ v,
         const float* __restrict__ g, const float* __restrict__ beta,
         const float* __restrict__ state_in, float* __restrict__ state_out,
-        float* __restrict__ o, int H, int T, float scale) {
+        float* __restrict__ o, int H, int T, float scale, int st16) {
     const int h = blockIdx.x;
     const int lane = threadIdx.x;
     const int col = blockIdx.z * blockDim.y + threadIdx.y;
     if (col >= S_v) return;
     constexpr int rows_per_lane = S_v / WARP;
 
-    const float* st = state_in + ((size_t)h * S_v + col) * S_v;  // row `col` contiguous
+    const size_t st_off = ((size_t)h * S_v + col) * S_v;  // row `col` contiguous
     float s_shard[rows_per_lane];
     #pragma unroll
-    for (int r = 0; r < rows_per_lane; r++) s_shard[r] = st[r * WARP + lane];
+    for (int r = 0; r < rows_per_lane; r++) s_shard[r] = gdn_ld(state_in, st_off + r * WARP + lane, st16);
 
     for (int t = 0; t < T; t++) {
         const float* q_t = q + ((size_t)t * H + h) * S_v;
@@ -379,17 +417,20 @@ __device__ void gdn_scan_kernel(
         }
         float attn_col = warp_sum_down<WARP>(attn_partial);   // lane-0-valid only (write below)
         if (lane == 0) o[((size_t)t * H + h) * S_v + col] = attn_col * scale;
+        if (st16) {
+            #pragma unroll
+            for (int r = 0; r < rows_per_lane; r++) s_shard[r] = gdn_rn(s_shard[r]);
+        }
     }
     // write state back
-    float* so = state_out + ((size_t)h * S_v + col) * S_v;
     #pragma unroll
-    for (int r = 0; r < rows_per_lane; r++) so[r * WARP + lane] = s_shard[r];
+    for (int r = 0; r < rows_per_lane; r++) gdn_sv(state_out, st_off + r * WARP + lane, s_shard[r], st16);
 }
 
 extern "C" __global__ void gdn_scan_s128(
         const float* q, const float* k, const float* v, const float* g, const float* beta,
-        const float* state_in, float* state_out, float* o, int H, int T, float scale) {
-    gdn_scan_kernel<128, 32>(q, k, v, g, beta, state_in, state_out, o, H, T, scale);
+        const float* state_in, float* state_out, float* o, int H, int T, float scale, int st16) {
+    gdn_scan_kernel<128, 32>(q, k, v, g, beta, state_in, state_out, o, H, T, scale, st16);
 }
 
 // ROUND-STREAM stage (b) 3b twins: j (the accepted prefix length) from DEVICE (acc[0] = n_acc,
@@ -414,10 +455,10 @@ extern "C" __global__ void ssm_conv_ring_rebuild_f32_dc(
 extern "C" __global__ void gdn_scan_s128_dc(
         const float* q, const float* k, const float* v, const float* g, const float* beta,
         const float* state_in, float* state_out, float* o, int H,
-        const unsigned int* acc, int base, int t_v, float scale) {
+        const unsigned int* acc, int base, int t_v, float scale, int st16) {
     int T = base + (int)acc[0];
     if (T >= t_v) return;
-    gdn_scan_kernel<128, 32>(q, k, v, g, beta, state_in, state_out, o, H, T, scale);
+    gdn_scan_kernel<128, 32>(q, k, v, g, beta, state_in, state_out, o, H, T, scale, st16);
 }
 
 // =====================================================================================
@@ -1488,12 +1529,12 @@ extern "C" __global__ void gdn_prep_decode_b_f32(
 extern "C" __global__ void gdn_scan_s128_b(
         const float* q, const float* k, const float* v, const float* g, const float* beta,
         const float* const* state_ins, float* const* state_outs,
-        float* o, int H, float scale) {
+        float* o, int H, float scale, int st16) {
     int b = blockIdx.y;
     size_t row = (size_t)b * H * 128;      // [B, H*S_v] activation rows (T=1)
     size_t sc = (size_t)b * H;             // [B, H] scalar rows
     gdn_scan_kernel<128, 32>(q + row, k + row, v + row, g + sc, beta + sc,
-                             state_ins[b], state_outs[b], o + row, H, 1, scale);
+                             state_ins[b], state_outs[b], o + row, H, 1, scale, st16);
 }
 
 // ---- PACKED T-ROW twins (lane/dspark-gdn-packed, 2026-09-08) ----
@@ -1550,17 +1591,17 @@ __device__ void gdn_scan_kernel_snap(
         const float* __restrict__ q, const float* __restrict__ k, const float* __restrict__ v,
         const float* __restrict__ g, const float* __restrict__ beta,
         const float* state_in, float* state_out,
-        float* __restrict__ o, int H, int T, float scale, float* __restrict__ snap) {
+        float* __restrict__ o, int H, int T, float scale, float* __restrict__ snap, int st16) {
     const int h = blockIdx.x;
     const int lane = threadIdx.x;
     const int col = blockIdx.z * blockDim.y + threadIdx.y;
     if (col >= S_v) return;
     constexpr int rows_per_lane = S_v / WARP;
 
-    const float* st = state_in + ((size_t)h * S_v + col) * S_v;
+    const size_t st_off = ((size_t)h * S_v + col) * S_v;
     float s_shard[rows_per_lane];
     #pragma unroll
-    for (int r = 0; r < rows_per_lane; r++) s_shard[r] = st[r * WARP + lane];
+    for (int r = 0; r < rows_per_lane; r++) s_shard[r] = gdn_ld(state_in, st_off + r * WARP + lane, st16);
 
     for (int t = 0; t < T; t++) {
         const float* q_t = q + ((size_t)t * H + h) * S_v;
@@ -1588,25 +1629,29 @@ __device__ void gdn_scan_kernel_snap(
         }
         float attn_col = warp_sum_down<WARP>(attn_partial);
         if (lane == 0) o[((size_t)t * H + h) * S_v + col] = attn_col * scale;
-        if (snap != nullptr && t + 1 < T) {
-            float* sr = snap + (size_t)t * H * S_v * S_v + ((size_t)h * S_v + col) * S_v;
+        if (st16) {
             #pragma unroll
-            for (int r = 0; r < rows_per_lane; r++) sr[r * WARP + lane] = s_shard[r];
+            for (int r = 0; r < rows_per_lane; r++) s_shard[r] = gdn_rn(s_shard[r]);
+        }
+        if (snap != nullptr && t + 1 < T) {
+            // ring slot t starts at element t*H*S_v*S_v in the state's own storage class
+            const size_t sr_off = (size_t)t * H * S_v * S_v + st_off;
+            #pragma unroll
+            for (int r = 0; r < rows_per_lane; r++) gdn_sv(snap, sr_off + r * WARP + lane, s_shard[r], st16);
         }
     }
-    float* so = state_out + ((size_t)h * S_v + col) * S_v;
     #pragma unroll
-    for (int r = 0; r < rows_per_lane; r++) so[r * WARP + lane] = s_shard[r];
+    for (int r = 0; r < rows_per_lane; r++) gdn_sv(state_out, st_off + r * WARP + lane, s_shard[r], st16);
 }
 
 extern "C" __global__ void gdn_scan_s128_tsnap(
         const float* q, const float* k, const float* v, const float* g, const float* beta,
         float* const* state_ptrs, float* o, int H, int T, float scale,
-        float* snap) {
+        float* snap, int st16) {
     // Resolve at replay time: cache addresses and canonical/alt parity can both change.
     const float* state_in = state_ptrs[1];
     float* state_out = state_ptrs[(T % 2 == 1) ? 2 : 1];
-    gdn_scan_kernel_snap<128, 32>(q, k, v, g, beta, state_in, state_out, o, H, T, scale, snap);
+    gdn_scan_kernel_snap<128, 32>(q, k, v, g, beta, state_in, state_out, o, H, T, scale, snap, st16);
 }
 
 // MoE grouped-prefill gather/scatter kernels (A2 prototype — RESIDENT case).

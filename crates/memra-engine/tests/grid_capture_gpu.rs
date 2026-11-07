@@ -275,3 +275,129 @@ fn gpu_model_settle_then_resume_is_cold_exact() {
         "settle then resume is cold-exact"
     );
 }
+
+/// The live GDN states of a cache in their own class: (class, the words that hold the state).
+fn live_states(e: &Engine, c: &Cache) -> Vec<(bool, Vec<u32>)> {
+    c.recur
+        .iter()
+        .flatten()
+        .map(|r| {
+            let mut w = e.dtoh(&r.ssm_state).unwrap();
+            w.truncate(r.ssm_live_words());
+            (r.ssm_fp16, bits(&w))
+        })
+        .collect()
+}
+
+/// The GDN decode class (research/gdn-state-fp16-20261107; `MEMRA_GDN_STATE_FP16=1` runs the
+/// fp16 class, unset or `0` the fp32 class). The prime stays fp32 and the decode-start rounding
+/// runs on every path, so: a session restored from a capture inside its prime decodes exactly
+/// like the session that never left (restore == unrestored, through the rounding point); a
+/// decoded state survives a snapshot and rollback in its class; and a widen to the prime class
+/// and back (the next turn's prime entry) changes no bit.
+#[test]
+#[ignore = "needs a CUDA device and MEMRA_TEST_QWEN_GGUF; run under flock /tmp/memra-5090.lock"]
+fn gpu_model_decode_class_restore_and_resume_are_exact() {
+    let Some((e, m)) = model() else {
+        eprintln!("SKIP[MEMRA_TEST_QWEN_GGUF]: model-backed decode-class test not run");
+        return;
+    };
+    let class = m.gdn_decode_fp16;
+    eprintln!(
+        "[decode-class] the model decodes its GDN state as {}",
+        if class { "fp16" } else { "fp32" }
+    );
+    if std::env::var("MEMRA_GDN_STATE_FP16").as_deref() == Ok("1") {
+        assert!(
+            class,
+            "MEMRA_GDN_STATE_FP16=1 must select the fp16 decode class"
+        );
+    }
+    let argmax = |l: &[f32]| -> u32 {
+        l.iter()
+            .enumerate()
+            .fold((0usize, f32::NEG_INFINITY), |b, (i, &x)| {
+                if x > b.1 { (i, x) } else { b }
+            })
+            .0 as u32
+    };
+    let decode = |c: &mut Cache, last: &[f32], steps: usize| -> (Vec<Vec<u32>>, Vec<f32>) {
+        let mut l = last.to_vec();
+        let mut out = Vec::with_capacity(steps);
+        for _ in 0..steps {
+            l = m.decode_step(&e, argmax(&l), c).unwrap();
+            out.push(bits(&l));
+        }
+        (out, l)
+    };
+    let ctx = 4096;
+    let p1 = prompt(700, 31);
+    let mut p2 = p1.clone();
+    p2.extend(prompt(96, 37));
+    let g = 672;
+
+    // A: the cold prime of p2 (fp32), then 12 decode steps from the decode-start rounding.
+    let mut ca = Cache::new(&e, &m.cfg, ctx).unwrap();
+    let (la, _, _) = m.prime_cache(&e, &p2, &mut ca, 0).unwrap();
+    assert!(
+        ca.recur.iter().flatten().all(|r| !r.ssm_fp16),
+        "the prime leaves every layer fp32"
+    );
+    let (da, la2) = decode(&mut ca, &la, 12);
+    assert!(
+        ca.recur.iter().flatten().all(|r| r.ssm_fp16 == class),
+        "decoding brings every layer to the model's class"
+    );
+
+    // B: p1 primed with a capture at g, rewound to it, p2's tail primed, the same 12 steps.
+    let mut cb = Cache::new(&e, &m.cfg, ctx).unwrap();
+    let guard = grid_capture::arm(g, grid_capture::needed_layers(&cb));
+    m.prime_cache(&e, &p1, &mut cb, 0).unwrap();
+    let snap = grid_capture::take().unwrap().into_snapshot(&cb).unwrap();
+    drop(guard);
+    memra_engine::pp::restore_cache_checkpoint(&e, &m, None, &mut cb, &snap).unwrap();
+    let (lb, _, _) = m.prime_cache(&e, &p2[g..], &mut cb, 0).unwrap();
+    assert_eq!(bits(&lb), bits(&la), "the resumed prime is cold-exact");
+    let (db, _) = decode(&mut cb, &lb, 12);
+    assert_eq!(
+        db, da,
+        "the restored session decodes exactly like the unrestored one"
+    );
+    assert_eq!(
+        live_states(&e, &cb),
+        live_states(&e, &ca),
+        "and ends in the same states"
+    );
+
+    // C: a decoded state leaves and re-enters in its class: snapshot, 6 steps, rollback, the
+    // same 6 steps again.
+    let snap_c = ca.snapshot(&e).unwrap();
+    let before = live_states(&e, &ca);
+    let (d1, _) = decode(&mut ca, &la2, 6);
+    ca.rollback(&e, &snap_c, 0).unwrap();
+    assert_eq!(
+        live_states(&e, &ca),
+        before,
+        "rollback restores class and bits"
+    );
+    let (d2, _) = decode(&mut ca, &la2, 6);
+    assert_eq!(
+        d1, d2,
+        "the replay after a rollback decodes the same tokens"
+    );
+
+    // D: the next turn's prime entry widens a decoded state to fp32 and its decode rounds it
+    // back: no bit of the state changes across the round trip.
+    let before = live_states(&e, &ca);
+    e.gdn_ensure_prime_cache(&mut ca).unwrap();
+    assert!(ca.recur.iter().flatten().all(|r| !r.ssm_fp16));
+    e.gdn_ensure_decode_cache(&mut ca, class).unwrap();
+    assert_eq!(
+        live_states(&e, &ca),
+        before,
+        "widen + round is the identity on a decoded state"
+    );
+    eprintln!(
+        "[decode-class] restore == unrestored over 12 steps, rollback and widen round trips exact"
+    );
+}

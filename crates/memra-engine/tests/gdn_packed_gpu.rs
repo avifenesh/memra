@@ -2,6 +2,10 @@
 //! verify's per-row state kernels must be BIT-IDENTICAL to T chained per-row launches: the conv
 //! outputs, the scan outputs, the final recurrent states, and every post-row snapshot the verify
 //! checkpoint reads. Run under flock on the lane box; it needs a CUDA device.
+//!
+//! Both GDN state classes run (research/gdn-state-fp16-20261107): the fp16 decode class
+//! rounds the carried state after every row, so the packed twin must still equal the chained
+//! per-row launches word for word (decode == verify).
 use cudarc::driver::DevicePtr;
 use memra_engine::Engine;
 
@@ -28,24 +32,38 @@ fn bit_diffs(a: &[f32], b: &[f32]) -> usize {
 #[test]
 #[ignore = "needs a CUDA device, run under flock on the lane box"]
 fn gpu_gdn_packed_matches_per_row_bitwise() {
-    packed_matches_per_row(2, 4, false);
+    for fp16 in [false, true] {
+        packed_matches_per_row(2, 4, false, fp16);
+    }
 }
 
 #[test]
 #[ignore = "needs a CUDA device, run under flock on the lane box"]
 fn gpu_gdn_packed_ornith_matches_per_row_bitwise() {
-    packed_matches_per_row(16, 32, false);
+    for fp16 in [false, true] {
+        packed_matches_per_row(16, 32, false, fp16);
+    }
 }
 
 #[test]
 #[ignore = "needs a CUDA device, run under flock on the lane box"]
 fn gpu_gdn_packed_graph_rebind_matches_per_row_bitwise() {
-    packed_matches_per_row(2, 4, true);
-    packed_matches_per_row(16, 32, true);
+    for fp16 in [false, true] {
+        packed_matches_per_row(2, 4, true, fp16);
+        packed_matches_per_row(16, 32, true, fp16);
+    }
 }
 
-fn packed_matches_per_row(num_k: usize, num_v: usize, graph_rebind: bool) {
+fn packed_matches_per_row(num_k: usize, num_v: usize, graph_rebind: bool, fp16: bool) {
     let e = Engine::new(0).expect("CUDA engine on device 0");
+    // raw words of a state in the class under test, and its element values for finiteness
+    let values = |words: &[f32]| -> Vec<f32> {
+        if fp16 {
+            memra_engine::gdn_state::gdn_state_unpack_fp16(words)
+        } else {
+            words.to_vec()
+        }
+    };
     let (d_state, d_conv) = (128usize, 4usize);
     let key_dim = d_state * num_k;
     let value_dim = d_state * num_v;
@@ -53,14 +71,19 @@ fn packed_matches_per_row(num_k: usize, num_v: usize, graph_rebind: bool) {
     let pad = d_conv - 1;
     let eps = 1e-6f32;
     let scale = 1.0 / (d_state as f32).sqrt();
-    let state_words = d_state * d_state * num_v;
+    let state_words = memra_engine::gdn_state::gdn_state_words(d_state * d_state * num_v, fp16);
     let w = e.htod(&varied(conv_dim * d_conv, 1, 0.5)).expect("w");
     let dt_bias = e.htod(&varied(num_v, 2, 0.5)).expect("dt");
     let a = e.htod(&varied(num_v, 3, 1.0)).expect("a");
     let mut cells = 0usize;
     for (ti, &t) in [2usize, 3, 4, 5, 6, 7, 8].iter().enumerate() {
         let conv0 = varied(conv_dim * pad, 10 + ti as u64, 1.0);
-        let ssm0 = varied(state_words, 20 + ti as u64, 0.3);
+        let ssm0_vals = varied(d_state * d_state * num_v, 20 + ti as u64, 0.3);
+        let ssm0 = if fp16 {
+            memra_engine::gdn_state::gdn_state_pack_fp16(&ssm0_vals)
+        } else {
+            ssm0_vals
+        };
         let qkv = e
             .htod(&varied(t * conv_dim, 30 + ti as u64, 1.0))
             .expect("qkv");
@@ -131,7 +154,7 @@ fn packed_matches_per_row(num_k: usize, num_v: usize, graph_rebind: bool) {
                     let mut ov = o_row.slice_mut(0..value_dim);
                     e.gdn_scan_s128_batched_view(
                         &q_l2, &k_l2, &v_g, &g_log, &beta_b, &in_view, &out_view, &mut ov, num_v,
-                        1, scale,
+                        1, scale, fp16,
                     )
                     .expect("scan row");
                 }
@@ -208,6 +231,7 @@ fn packed_matches_per_row(num_k: usize, num_v: usize, graph_rebind: bool) {
                     t,
                     scale,
                     Some(&mut snap_ssm),
+                    fp16,
                 )
                 .expect("scan tsnap");
                 Ok(())
@@ -260,10 +284,13 @@ fn packed_matches_per_row(num_k: usize, num_v: usize, graph_rebind: bool) {
                 ("conv snapshots", &ref_snap_conv, &got_snap_conv),
                 ("ssm snapshots", &ref_snap_ssm, &got_snap_ssm),
             ] {
-                assert!(
-                    r.iter().chain(g.iter()).all(|x| x.is_finite()),
-                    "t={t}: {what} is not finite"
-                );
+                let state = what.contains("ssm");
+                let finite = |x: &Vec<f32>| {
+                    if state { values(x) } else { x.clone() }
+                        .iter()
+                        .all(|v| v.is_finite())
+                };
+                assert!(finite(r) && finite(g), "t={t}: {what} is not finite");
                 let d = bit_diffs(r, g);
                 assert_eq!(d, 0, "t={t}: {what} differs in {d} of {} words", r.len());
                 cells += 1;
@@ -271,7 +298,8 @@ fn packed_matches_per_row(num_k: usize, num_v: usize, graph_rebind: bool) {
         }
     }
     eprintln!(
-        "[gdn-packed] graph_rebind={graph_rebind} num_k={num_k} num_v={num_v}: {cells} cells bit-identical (T in 2..=8)"
+        "[gdn-packed] class={} graph_rebind={graph_rebind} num_k={num_k} num_v={num_v}: {cells} cells bit-identical (T in 2..=8)",
+        if fp16 { "fp16" } else { "fp32" }
     );
 }
 

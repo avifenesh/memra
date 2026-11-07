@@ -1736,7 +1736,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let mut sod = e.zeros(s_v * s_v * h)?;
         let mut od = e.zeros(s_v * h * t)?;
         e.gdn_scan_s128(
-            &qd, &kd, &vd, &gd, &bd, &sid, &mut sod, &mut od, h, t, scale,
+            &qd, &kd, &vd, &gd, &bd, &sid, &mut sod, &mut od, h, t, scale, false,
         )?;
         let gpu_o = e.dtoh(&od)?;
         let d = maxdiff(&cpu_o, &gpu_o);
@@ -1840,7 +1840,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let mut so_s = e.zeros(s_v * s_v * h)?;
             let mut o_s = e.zeros(s_v * h * t)?;
             e.gdn_scan_s128(
-                &qd, &kd, &vd, &gd, &bd, &sid, &mut so_s, &mut o_s, h, t, scale,
+                &qd, &kd, &vd, &gd, &bd, &sid, &mut so_s, &mut o_s, h, t, scale, false,
             )?;
             let mut so_c = e.zeros(s_v * s_v * h)?;
             let mut o_c = e.zeros(s_v * h * t)?;
@@ -1947,6 +1947,420 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             unsafe {
                 std::env::remove_var("MEMRA_GDN_WGMMA");
             }
+        }
+    }
+
+    // --- GDN fp16 decode class (research/gdn-state-fp16-20261107). The prime carries fp32;
+    //     a decode-class layer is rounded to fp16 once, when its session starts decoding
+    //     (`gdn_state_to_fp16`, `Engine::gdn_ensure_decode`), and its decode and verify scans
+    //     then store fp16 and round after every token. Oracle: the fp32 kernel ONE TOKEN PER
+    //     LAUNCH with the state rounded on the host between launches (the rounding arm at T=1).
+    //     Outputs and packed states must match it BIT FOR BIT, so a T-row fp16 scan is also
+    //     proven equal to T chained fp16 decode steps (decode == verify). ---
+    {
+        use memra_engine::gdn_state::{
+            gdn_state_pack_fp16 as pack16, gdn_state_unpack_fp16 as unpack16, gdn_state_words,
+        };
+        // (outputs, the rounded state after every token)
+        type OracleRun = Result<(Vec<f32>, Vec<Vec<f32>>), Box<dyn std::error::Error>>;
+        let rne = |v: &[f32]| unpack16(&pack16(v));
+        let bits_eq = |a: &[f32], b: &[f32]| {
+            a.len() == b.len() && a.iter().zip(b).all(|(x, y)| x.to_bits() == y.to_bits())
+        };
+        let s_v = 128usize;
+        let h = 4usize;
+        let n_state = s_v * s_v * h;
+        let words = gdn_state_words(n_state, true);
+        let scale = 1.0 / (s_v as f32).sqrt();
+        let unit_rows = |rows: usize, seed: usize| -> Vec<f32> {
+            let mut x = vec![0f32; rows * s_v];
+            for r in 0..rows {
+                let mut n = 0f32;
+                for i in 0..s_v {
+                    let a = pr(seed + r * s_v + i);
+                    x[r * s_v + i] = a;
+                    n += a * a;
+                }
+                for i in 0..s_v {
+                    x[r * s_v + i] /= n.sqrt();
+                }
+            }
+            x
+        };
+        // per-token inputs, [T, H, 128] / [T, H] layouts; `st0` an fp32 state
+        let make = |t: usize, seed: usize| {
+            let q = unit_rows(t * h, seed + 11);
+            let k = unit_rows(t * h, seed + 17);
+            let v: Vec<f32> = (0..s_v * h * t).map(|i| pr(seed + i + 23)).collect();
+            let g: Vec<f32> = (0..h * t)
+                .map(|i| -0.02 - pr(seed + i + 29).abs() * 0.5)
+                .collect();
+            let beta: Vec<f32> = (0..h * t)
+                .map(|i| 0.3 + pr(seed + i + 31).abs() * 0.6)
+                .collect();
+            let st0: Vec<f32> = (0..n_state).map(|i| pr(seed + i + 37) * 0.5).collect();
+            (q, k, v, g, beta, st0)
+        };
+        // the oracle: tokens 0..t of (q,k,v,g,beta) from `st` (rounded first: the decode-start
+        // rounding), one fp32 launch per token, host rounding after each; returns the outputs
+        // and the rounded state after every token
+        let oracle = |q: &[f32],
+                      k: &[f32],
+                      v: &[f32],
+                      g: &[f32],
+                      beta: &[f32],
+                      st: &[f32],
+                      t: usize|
+         -> OracleRun {
+            let mut st = rne(st);
+            let mut o = Vec::with_capacity(s_v * h * t);
+            let mut states = Vec::with_capacity(t);
+            for tt in 0..t {
+                let row = |x: &[f32], w: usize| e.htod(&x[tt * w..(tt + 1) * w]);
+                let sid = e.htod(&st)?;
+                let mut sod = e.zeros(n_state)?;
+                let mut od = e.zeros(s_v * h)?;
+                e.gdn_scan_s128(
+                    &row(q, s_v * h)?,
+                    &row(k, s_v * h)?,
+                    &row(v, s_v * h)?,
+                    &row(g, h)?,
+                    &row(beta, h)?,
+                    &sid,
+                    &mut sod,
+                    &mut od,
+                    h,
+                    1,
+                    scale,
+                    false,
+                )?;
+                o.extend(e.dtoh(&od)?);
+                st = rne(&e.dtoh(&sod)?);
+                states.push(st.clone());
+            }
+            Ok((o, states))
+        };
+        let verdict = |ok: bool| if ok { "OK" } else { "FAIL" };
+        // (1) sequential scan, T = 1 (decode), 3 and 7 (verify rows): one fp16 launch.
+        for &t in &[1usize, 3, 7] {
+            let (q, k, v, g, beta, st0) = make(t, 1000 * t);
+            let (o_ref, s_ref) = oracle(&q, &k, &v, &g, &beta, &st0, t)?;
+            let sid = e.htod(&pack16(&st0))?;
+            let mut sod = e.zeros(words)?;
+            let mut od = e.zeros(s_v * h * t)?;
+            e.gdn_scan_s128(
+                &e.htod(&q)?,
+                &e.htod(&k)?,
+                &e.htod(&v)?,
+                &e.htod(&g)?,
+                &e.htod(&beta)?,
+                &sid,
+                &mut sod,
+                &mut od,
+                h,
+                t,
+                scale,
+                true,
+            )?;
+            let ok =
+                bits_eq(&e.dtoh(&od)?, &o_ref) && bits_eq(&e.dtoh(&sod)?, &pack16(&s_ref[t - 1]));
+            if !ok {
+                fails += 1;
+            }
+            println!(
+                "gdn_st16_scan T={t} fp16 decode class == per-token rounding oracle (bitwise out + packed state) {}",
+                verdict(ok)
+            );
+        }
+        // (2) batched decode (3 sessions, pointer arrays), the packed verify twin with its
+        //     snapshot ring, and the device-count twin, against the same oracle.
+        {
+            use cudarc::driver::DevicePtr;
+            let b_n = 3usize;
+            let t = 4usize;
+            let ins: Vec<_> = (0..b_n).map(|b| make(t, 7000 + 100 * b)).collect();
+            let mut o_ref: Vec<Vec<f32>> = Vec::new();
+            let mut s_ref: Vec<Vec<Vec<f32>>> = Vec::new();
+            for (q, k, v, g, beta, st0) in &ins {
+                let (o, s) = oracle(q, k, v, g, beta, st0, t)?;
+                o_ref.push(o);
+                s_ref.push(s);
+            }
+            let s_in: Vec<_> = ins
+                .iter()
+                .map(|x| e.htod(&pack16(&x.5)))
+                .collect::<Result<_, _>>()?;
+            let s_out: Vec<_> = (0..b_n).map(|_| e.zeros(words)).collect::<Result<_, _>>()?;
+            let (mut q0, mut k0, mut v0, mut g0, mut b0) =
+                (Vec::new(), Vec::new(), Vec::new(), Vec::new(), Vec::new());
+            for (q, k, v, g, beta, _) in &ins {
+                q0.extend_from_slice(&q[..s_v * h]);
+                k0.extend_from_slice(&k[..s_v * h]);
+                v0.extend_from_slice(&v[..s_v * h]);
+                g0.extend_from_slice(&g[..h]);
+                b0.extend_from_slice(&beta[..h]);
+            }
+            let stream = e.stream();
+            let in_ptrs: Vec<u64> = s_in.iter().map(|s| s.device_ptr(&stream).0).collect();
+            let out_ptrs: Vec<u64> = s_out.iter().map(|s| s.device_ptr(&stream).0).collect();
+            let (in_d, out_d) = (e.htod_u64(&in_ptrs)?, e.htod_u64(&out_ptrs)?);
+            let mut ob = e.zeros(b_n * s_v * h)?;
+            e.gdn_scan_s128_batched(
+                &e.htod(&q0)?,
+                &e.htod(&k0)?,
+                &e.htod(&v0)?,
+                &e.htod(&g0)?,
+                &e.htod(&b0)?,
+                &in_d.slice(0..b_n),
+                &out_d.slice(0..b_n),
+                &mut ob,
+                h,
+                b_n,
+                scale,
+                true,
+            )?;
+            let ob = e.dtoh(&ob)?;
+            let mut ok = true;
+            for b in 0..b_n {
+                ok &= bits_eq(&ob[b * s_v * h..(b + 1) * s_v * h], &o_ref[b][..s_v * h]);
+                ok &= bits_eq(&e.dtoh(&s_out[b])?, &pack16(&s_ref[b][0]));
+            }
+            if !ok {
+                fails += 1;
+            }
+            println!(
+                "gdn_st16_batched B={b_n} fp16 decode class == oracle (bitwise out + packed state) {}",
+                verdict(ok)
+            );
+            let (q, k, v, g, beta, st0) = &ins[0];
+            let conv = e.zeros(4)?;
+            let canon = e.htod(&pack16(st0))?;
+            let alt = e.zeros(words)?;
+            let table = e.htod_u64(&[
+                conv.device_ptr(&stream).0,
+                canon.device_ptr(&stream).0,
+                alt.device_ptr(&stream).0,
+            ])?;
+            let mut snap = e.zeros((t - 1) * words)?;
+            let mut ot = e.zeros(s_v * h * t)?;
+            e.gdn_scan_s128_tsnap(
+                &e.htod(q)?,
+                &e.htod(k)?,
+                &e.htod(v)?,
+                &e.htod(g)?,
+                &e.htod(beta)?,
+                &table.slice(0..3),
+                &mut ot,
+                h,
+                t,
+                scale,
+                Some(&mut snap),
+                true,
+            )?;
+            // even T runs in place on the canonical buffer, odd T lands in the alternate
+            let fin = e.dtoh(if t % 2 == 1 { &alt } else { &canon })?;
+            let snaps = e.dtoh(&snap)?;
+            let mut ok = bits_eq(&e.dtoh(&ot)?, &o_ref[0])
+                && bits_eq(&fin, &pack16(&s_ref[0][t - 1]))
+                && snaps.len() == (t - 1) * words;
+            for r in 0..t - 1 {
+                ok &= bits_eq(&snaps[r * words..(r + 1) * words], &pack16(&s_ref[0][r]));
+            }
+            if !ok {
+                fails += 1;
+            }
+            println!(
+                "gdn_st16_tsnap T={t} fp16 decode class == oracle (bitwise out + state + {} snapshots) {}",
+                t - 1,
+                verdict(ok)
+            );
+            let acc = e.htod_u32_v(&[2u32])?;
+            let s_dc_in = e.htod(&pack16(st0))?;
+            let (mut s_dc, mut s_pl) = (e.zeros(words)?, e.zeros(words)?);
+            let (mut o_dc, mut o_pl) = (e.zeros(s_v * h * t)?, e.zeros(s_v * h * t)?);
+            let (qd, kd, vd, gd, bd) = (
+                e.htod(q)?,
+                e.htod(k)?,
+                e.htod(v)?,
+                e.htod(g)?,
+                e.htod(beta)?,
+            );
+            e.gdn_scan_s128_dc(
+                &qd,
+                &kd,
+                &vd,
+                &gd,
+                &bd,
+                &s_dc_in,
+                &mut s_dc,
+                &mut o_dc,
+                h,
+                &acc,
+                1,
+                t + 1,
+                scale,
+                true,
+            )?;
+            e.gdn_scan_s128(
+                &qd, &kd, &vd, &gd, &bd, &s_dc_in, &mut s_pl, &mut o_pl, h, 3, scale, true,
+            )?;
+            let ok = bits_eq(&e.dtoh(&s_dc)?, &e.dtoh(&s_pl)?)
+                && bits_eq(&e.dtoh(&s_dc)?, &pack16(&s_ref[0][2]))
+                && bits_eq(&e.dtoh(&o_dc)?[..3 * s_v * h], &o_ref[0][..3 * s_v * h]);
+            if !ok {
+                fails += 1;
+            }
+            println!(
+                "gdn_st16_dc T=1+2 fp16 decode class == plain 3-row scan == oracle {}",
+                verdict(ok)
+            );
+        }
+        // (3) THE ROUNDING POINT. The default chunked prime (fp32) over T rows from an fp32
+        //     state; its state rounded by the device conversion equals the host round-to-nearest-
+        //     even bit for bit, the widening is exact, and a second rounding of a rounded state
+        //     changes nothing.
+        let (tp, c) = (160usize, 32usize);
+        let (q, k, v, g, beta, st0) = make(tp + 3, 50_000);
+        let prime = |st: &[f32],
+                     r0: usize,
+                     rows: usize|
+         -> Result<(Vec<f32>, Vec<f32>), Box<dyn std::error::Error>> {
+            let sl = |x: &[f32], w: usize| e.htod(&x[r0 * w..(r0 + rows) * w]);
+            let sid = e.htod(st)?;
+            let mut sod = e.zeros(n_state)?;
+            let mut od = e.zeros(s_v * h * rows)?;
+            e.gdn_scan_chunked(
+                &sl(&q, s_v * h)?,
+                &sl(&k, s_v * h)?,
+                &sl(&v, s_v * h)?,
+                &sl(&g, h)?,
+                &sl(&beta, h)?,
+                None,
+                None,
+                &sid,
+                &mut sod,
+                &mut od,
+                h,
+                rows,
+                scale,
+                c,
+                h,
+            )?;
+            Ok((e.dtoh(&od)?, e.dtoh(&sod)?))
+        };
+        let (_, s_whole) = prime(&st0, 0, tp)?;
+        let sd = e.htod(&s_whole)?;
+        let mut packed = e.zeros(n_state)?;
+        e.gdn_state_to_fp16_into(&sd, &mut packed, n_state)?;
+        let mut widened = e.zeros(n_state)?;
+        e.gdn_state_to_f32_into(&packed, &mut widened, n_state)?;
+        let mut again = e.zeros(n_state)?;
+        e.gdn_state_to_fp16_into(&widened, &mut again, n_state)?;
+        let packed_h = e.dtoh(&packed)?;
+        let ok = bits_eq(&packed_h[..words], &pack16(&s_whole))
+            && bits_eq(&e.dtoh(&widened)?, &rne(&s_whole))
+            && bits_eq(&e.dtoh(&again)?[..words], &packed_h[..words]);
+        if !ok {
+            fails += 1;
+        }
+        println!(
+            "gdn_st16_round_point T={tp} C={c} fp32 prime -> fp16 == host RNE, widening exact, rounding idempotent {}",
+            verdict(ok)
+        );
+        // (4) restore == unrestored through the rounding point: the prime split at a chunk
+        //     boundary (a capture and a restore, rows 96 + 64) equals the unsplit prime in fp32
+        //     (the premise), and both then round once and decode the same 3 rows to the same
+        //     bits, which are the oracle's.
+        let (o_a, s_a) = prime(&st0, 0, 96)?;
+        let (o_b, s_split) = prime(&s_a, 96, tp - 96)?;
+        let (o_whole, _) = prime(&st0, 0, tp)?;
+        let premise = bits_eq(&s_split, &s_whole) && bits_eq(&[o_a, o_b].concat(), &o_whole);
+        let tail = |x: &[f32], w: usize| x[tp * w..(tp + 3) * w].to_vec();
+        let (qt, kt, vt, gt, bt) = (
+            tail(&q, s_v * h),
+            tail(&k, s_v * h),
+            tail(&v, s_v * h),
+            tail(&g, h),
+            tail(&beta, h),
+        );
+        let (o_ref, s_ref) = oracle(&qt, &kt, &vt, &gt, &bt, &s_whole, 3)?;
+        let mut ok = premise;
+        for st in [&s_whole, &s_split] {
+            let sd = e.htod(st)?;
+            let mut s16 = e.zeros(n_state)?;
+            e.gdn_state_to_fp16_into(&sd, &mut s16, n_state)?;
+            let mut sod = e.zeros(n_state)?;
+            let mut od = e.zeros(s_v * h * 3)?;
+            e.gdn_scan_s128(
+                &e.htod(&qt)?,
+                &e.htod(&kt)?,
+                &e.htod(&vt)?,
+                &e.htod(&gt)?,
+                &e.htod(&bt)?,
+                &s16,
+                &mut sod,
+                &mut od,
+                h,
+                3,
+                scale,
+                true,
+            )?;
+            ok &= bits_eq(&e.dtoh(&od)?, &o_ref)
+                && bits_eq(&e.dtoh(&sod)?[..words], &pack16(&s_ref[2]));
+        }
+        if !ok {
+            fails += 1;
+        }
+        println!(
+            "gdn_st16_prime_then_decode split 96+64 == unsplit (fp32 premise {}), both decode 3 rows == oracle {}",
+            if premise { "holds" } else { "BROKEN" },
+            verdict(ok)
+        );
+        // (5) The engine's class transitions on a resident layer (fp32-sized buffers): the
+        //     decode entry rounds once and keeps the buffer addresses, a second entry is a
+        //     no-op, the prime entry widens exactly, and the round trip returns the same bits.
+        {
+            use cudarc::driver::DevicePtr;
+            let mut rl = memra_engine::cache::RecurLayer {
+                conv_state: e.zeros(4)?,
+                ssm_state: e.htod(&s_whole)?,
+                ssm_state_alt: e.zeros(n_state)?,
+                ssm_fp16: false,
+            };
+            let stream = e.stream();
+            let ptrs = |r: &memra_engine::cache::RecurLayer| {
+                (
+                    r.ssm_state.device_ptr(&stream).0,
+                    r.ssm_state_alt.device_ptr(&stream).0,
+                )
+            };
+            let p0 = ptrs(&rl);
+            let mut ok = e.gdn_ensure_decode(&mut rl, true)? && rl.ssm_fp16;
+            let first = e.dtoh(&rl.ssm_state)?;
+            ok &= bits_eq(&first[..words], &pack16(&s_whole)) && rl.ssm_live_words() == words;
+            ok &= e.gdn_ensure_decode(&mut rl, true)?
+                && bits_eq(&e.dtoh(&rl.ssm_state)?[..words], &first[..words]);
+            e.gdn_ensure_prime(&mut rl)?;
+            ok &= !rl.ssm_fp16 && bits_eq(&e.dtoh(&rl.ssm_state)?, &rne(&s_whole));
+            e.gdn_ensure_decode(&mut rl, true)?;
+            ok &= bits_eq(&e.dtoh(&rl.ssm_state)?[..words], &first[..words]);
+            ok &= ptrs(&rl) == p0;
+            // an fp32-class model never converts
+            let mut rf = memra_engine::cache::RecurLayer {
+                conv_state: e.zeros(4)?,
+                ssm_state: e.htod(&s_whole)?,
+                ssm_state_alt: e.zeros(n_state)?,
+                ssm_fp16: false,
+            };
+            ok &=
+                !e.gdn_ensure_decode(&mut rf, false)? && bits_eq(&e.dtoh(&rf.ssm_state)?, &s_whole);
+            if !ok {
+                fails += 1;
+            }
+            println!(
+                "gdn_st16_ensure decode entry rounds once in place, prime entry widens exactly, round trip identity {}",
+                verdict(ok)
+            );
         }
     }
 

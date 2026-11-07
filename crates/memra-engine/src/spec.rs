@@ -2895,7 +2895,11 @@ pub(crate) struct DsparkVerifyGraphs {
     stash_conv: Vec<CudaSlice<f32>>,
     stash_ssm: Vec<CudaSlice<f32>>,
     conv_words: usize,
+    /// f32 words of one GDN state in the model's decode class (crate::gdn_state): the stash
+    /// row stride the captured `gdn_scan_s128_tsnap` writes and the save/restore length.
     ssm_words: usize,
+    /// The model's GDN decode class the captured scans bake (`HybridModel::gdn_decode_fp16`).
+    gdn_fp16: bool,
     /// Per-vt input/output staging (stable addresses the graphs bake).
     stage: std::collections::HashMap<usize, (CudaSlice<f32>, CudaSlice<f32>)>,
     /// Per-vt dflash tap-sink buffers — the captured segments bake the tap dst address,
@@ -3011,6 +3015,7 @@ impl DsparkVerifyGraphs {
         cache: &Cache,
         t_max: usize,
         n_embd: usize,
+        gdn_fp16: bool,
     ) -> Result<Option<Self>, Box<dyn std::error::Error>> {
         let lin: Vec<usize> = (0..cache.recur.len())
             .filter(|&il| cache.recur[il].is_some())
@@ -3019,13 +3024,14 @@ impl DsparkVerifyGraphs {
             return Ok(None);
         }
         let first = cache.recur[lin[0]].as_ref().unwrap();
-        let (conv_words, ssm_words) = (first.conv_state.len(), first.ssm_state.len());
+        let (conv_words, ssm_len) = (first.conv_state.len(), first.ssm_state.len());
         for &il in &lin {
             let rl = cache.recur[il].as_ref().unwrap();
-            if rl.conv_state.len() != conv_words || rl.ssm_state.len() != ssm_words {
+            if rl.conv_state.len() != conv_words || rl.ssm_state.len() != ssm_len {
                 return Ok(None);
             }
         }
+        let ssm_words = crate::gdn_state::gdn_state_words(ssm_len, gdn_fp16);
         let n = lin.len();
         let mut lin_pos = std::collections::HashMap::with_capacity(n);
         for (k, &il) in lin.iter().enumerate() {
@@ -3085,6 +3091,7 @@ impl DsparkVerifyGraphs {
             stash_ssm,
             conv_words,
             ssm_words,
+            gdn_fp16,
             stage: std::collections::HashMap::new(),
             tap_bufs: std::collections::HashMap::new(),
             graphs: std::collections::HashMap::new(),
@@ -3255,6 +3262,9 @@ impl DsparkVerifyGraphs {
             let (xin, _) = self.stage.get_mut(&t).unwrap();
             e.copy_into(xin, 0, x, t * n_embd)?;
         }
+        // The captured scans bake the decode class: bring the walk's layers to it eagerly,
+        // before the warmup save, the capture and every launch (crate::gdn_state).
+        self.ensure_decode_class(e, cache, lo, hi)?;
         let key = (t, rung, hi);
         if !self.full.contains_key(&key) {
             // The warmups EXECUTE the whole walk on live state — save every linear
@@ -3437,6 +3447,9 @@ impl DsparkVerifyGraphs {
             let (xin, _) = self.stage.get_mut(&t).unwrap();
             e.copy_into(xin, 0, x, t * n_embd)?;
         }
+        // The captured scans bake the decode class: bring the segment's layers to it eagerly,
+        // before the warmup save, the capture and every launch (crate::gdn_state).
+        self.ensure_decode_class(e, cache, start, end)?;
         let key = (start, t);
         if !self.graphs.contains_key(&key) {
             // The 2 warmups EXECUTE the segment on live state — save conv + the canonical
@@ -3603,8 +3616,28 @@ impl DsparkVerifyGraphs {
         self.t_cap
     }
 
+    /// Every linear layer in `[lo, hi)` in the decode class the captured scans bake.
+    fn ensure_decode_class(
+        &self,
+        e: &Engine,
+        cache: &mut Cache,
+        lo: usize,
+        hi: usize,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        for &il in &self.lin {
+            if il < lo || il >= hi {
+                continue;
+            }
+            if let Some(rl) = cache.recur[il].as_mut() {
+                e.gdn_ensure_decode(rl, self.gdn_fp16)?;
+            }
+        }
+        Ok(())
+    }
+
     /// Slab row (conv, ssm) device pointers + lengths for the commit restore of column
-    /// `row` (0-based) of layer `il`. None for non-linear layers.
+    /// `row` (0-based) of layer `il`. None for non-linear layers. The ssm row holds the
+    /// state in the model's decode class (`ssm_words` words).
     pub(crate) fn slab_row(
         &self,
         e: &Engine,
@@ -3622,6 +3655,27 @@ impl DsparkVerifyGraphs {
             self.conv_words,
             self.ssm_words,
         ))
+    }
+}
+
+/// The state a verify-prefix re-run starts from, in the verify's class `st16`
+/// (crate::gdn_state): the snapshot plane itself when it is already in that class, else (a
+/// snapshot taken before the session's first decode, fp32) its decode-start rounding written to
+/// `scratch` (the layer's spare buffer). An fp16 snapshot under an fp32 class cannot exist.
+fn verify_start_state<'a>(
+    e: &Engine,
+    plane: &'a CudaSlice<f32>,
+    plane_fp16: bool,
+    st16: bool,
+    scratch: &'a mut CudaSlice<f32>,
+) -> Result<&'a CudaSlice<f32>, Box<dyn std::error::Error>> {
+    match (plane_fp16, st16) {
+        (false, false) | (true, true) => Ok(plane),
+        (false, true) => {
+            e.gdn_state_to_fp16_into(plane, scratch, plane.len())?;
+            Ok(scratch)
+        }
+        (true, false) => Err("verify commit: an fp16 snapshot under an fp32 decode class".into()),
     }
 }
 
@@ -7065,10 +7119,24 @@ impl HybridModel {
                 kvl.len = saved + keep;
                 e.set_i32_one(&mut kvl.len_d, kvl.len as i32)?;
             }
-            if let Some(rl) = cache.recur[il].as_ref() {
+            if let Some(rl) = cache.recur[il].as_mut() {
                 let (pc, ps, _cw, _sw) = ctx
                     .slab_row(e, il, keep - 1)
                     .ok_or("slab commit: linear layer missing from the graphs ctx")?;
+                // The batched copy has no bounds check: a slab row must fit the resident plane.
+                if rl.conv_state.len() != ctx.conv_words || rl.ssm_state.len() < ctx.ssm_words {
+                    return Err(format!(
+                        "slab commit: layer {il} resident state ({} conv / {} ssm words) does not \
+                         take the graphs ctx slab rows ({} / {})",
+                        rl.conv_state.len(),
+                        rl.ssm_state.len(),
+                        ctx.conv_words,
+                        ctx.ssm_words
+                    )
+                    .into());
+                }
+                // the slab rows hold the verify's own decode class (crate::gdn_state)
+                rl.ssm_fp16 = ctx.gdn_fp16;
                 conv_src.push(pc);
                 ssm_src.push(ps);
                 let st = &e.gpu.stream();
@@ -7206,10 +7274,8 @@ impl HybridModel {
                     let recur = cache.recur[il]
                         .as_ref()
                         .ok_or("Qwen35-MoE linear verify layer has no recurrent state")?;
-                    states.push((
-                        e.clone_dtod(&recur.conv_state)?,
-                        e.clone_dtod(&recur.ssm_state)?,
-                    ));
+                    // a column holds the state in the verify's decode class (crate::gdn_state)
+                    states.push((e.clone_dtod(&recur.conv_state)?, recur.ssm_clone_live(e)?));
                 }
             }
             if let (Some(checkpoint), Some(states)) = (ckpt.as_deref_mut(), col_states) {
@@ -7677,7 +7743,12 @@ impl HybridModel {
                     );
                     let conv_dim = d_state * num_k * 2 + g.value_head_dim as usize * num_v;
                     let conv_words = conv_dim * (g.conv_kernel as usize - 1);
-                    Some((conv_words + d_state * d_state * num_v) * std::mem::size_of::<f32>())
+                    // the ssm copy holds the state in the decode class (crate::gdn_state)
+                    let ssm_words = crate::gdn_state::gdn_state_words(
+                        d_state * d_state * num_v,
+                        self.gdn_decode_fp16,
+                    );
+                    Some((conv_words + ssm_words) * std::mem::size_of::<f32>())
                 }
                 _ => None,
             })
@@ -8989,7 +9060,16 @@ impl HybridModel {
             ),
         };
         let conv_words = conv_dim * (d_conv - 1);
-        let ssm_words = d_state * d_state * num_v;
+        // GDN decode class (crate::gdn_state): every session's verify scans in the model's
+        // class, rounding a just-primed session first; the snapshot ring rows and the column
+        // checkpoints hold the state in that class.
+        let st16 = self.gdn_decode_fp16;
+        let ssm_words = crate::gdn_state::gdn_state_words(d_state * d_state * num_v, st16);
+        for s in segs.iter_mut() {
+            if let Some(rl) = s.cache.recur[il].as_mut() {
+                e.gdn_ensure_decode(rl, st16)?;
+            }
+        }
         let mut conv_outs = e.uninit(t * conv_dim)?;
         let mut q_l2 = e.uninit(t * value_dim)?;
         let mut k_l2 = e.uninit(t * value_dim)?;
@@ -9075,6 +9155,7 @@ impl HybridModel {
                 ts,
                 gdn_scale,
                 snaps[si].as_mut().map(|(_, sst)| sst),
+                st16,
             )?;
             if let (Some(ck), Some((ct, st))) = (s.ckpt.as_deref_mut(), snaps[si].as_ref()) {
                 let mut states = Vec::with_capacity(ts - 1);
@@ -9806,6 +9887,15 @@ impl HybridModel {
         let Mixer::Linear(la) = &layer.mixer else {
             return Err("qwen35_tparallel_linear_layer on a non-linear layer".into());
         };
+        // GDN decode class (crate::gdn_state): the verify scans in the model's class, rounding a
+        // just-primed state first (a no-op inside a captured body: the graph path brings the
+        // layers to the class before capture and launch).
+        let st16 = e.gdn_ensure_decode(
+            cache.recur[il]
+                .as_mut()
+                .ok_or("qwen35 linear verify layer has no recurrent state")?,
+            self.gdn_decode_fp16,
+        )?;
         // ---- attn_norm + q8_1 quantize at m=T (row-indexed == per-row) ----
         let anorm = layer.attn_norm.float_data();
         let mut xn = e.uninit(t * n_embd)?;
@@ -9892,7 +9982,8 @@ impl HybridModel {
             debug_assert_eq!(beta_w, num_v);
             debug_assert_eq!(alpha_w, num_v);
             let conv_words = conv_dim * (d_conv - 1);
-            let ssm_words = d_state * d_state * num_v;
+            // f32 words per state in the decode class (fp16: half); the snapshot ring rows too.
+            let ssm_words = crate::gdn_state::gdn_state_words(d_state * d_state * num_v, st16);
             // Captured graph bodies have no host checkpoint, but rollback still reads stash.
             let want_snap = ckpt.is_some() || stash.is_some();
             let (mut conv_tmp, mut ssm_tmp) = (None, None);
@@ -9956,6 +10047,7 @@ impl HybridModel {
                     t,
                     gdn_scale,
                     ssm_snap,
+                    st16,
                 )?;
             }
             if let (Some(ct), Some(st)) = (conv_tmp.as_ref(), ssm_tmp.as_ref()) {
@@ -10015,7 +10107,7 @@ impl HybridModel {
                 let mut o_row = o_all.slice_mut(r * value_dim..(r + 1) * value_dim);
                 e.gdn_scan_s128_batched_view(
                     &q_l2, &k_l2, &v_gd, &g_log, &beta_b, &in_view, &out_view, &mut o_row, num_v,
-                    1, gdn_scale,
+                    1, gdn_scale, st16,
                 )?;
                 if r + 1 < t {
                     // Row r's out buffer: even rows write s1 (the alt handle — no swaps ran),
@@ -10049,17 +10141,17 @@ impl HybridModel {
                             // wrong parity after any odd-vt round (the slice-3 smoke
                             // divergence). Read the src address from row r's OUT table
                             // entry at run time — the same entry the scan just wrote.
-                            e.copy_indirect_src_f32(
-                                &out_view,
-                                ssm_slab,
-                                r * d_state * d_state * num_v,
-                                d_state * d_state * num_v,
-                            )?;
+                            let ssm_words =
+                                crate::gdn_state::gdn_state_words(d_state * d_state * num_v, st16);
+                            e.copy_indirect_src_f32(&out_view, ssm_slab, r * ssm_words, ssm_words)?;
                         }
                         None => {
                             if let Some(states) = col_states.as_mut() {
-                                states
-                                    .push((e.clone_dtod(&rl.conv_state)?, e.clone_dtod(ssm_src)?));
+                                // the column holds the state in the decode class
+                                let w = crate::gdn_state::gdn_state_words(ssm_src.len(), st16);
+                                let mut sst = e.uninit(w)?;
+                                e.copy_into(&mut sst, 0, ssm_src, w)?;
+                                states.push((e.clone_dtod(&rl.conv_state)?, sst));
                             }
                         }
                     }
@@ -10332,10 +10424,8 @@ impl HybridModel {
                                 && col + 1 < t
                             {
                                 let rl = cache.recur[il].as_ref().unwrap();
-                                cs.push((
-                                    e.clone_dtod(&rl.conv_state)?,
-                                    e.clone_dtod(&rl.ssm_state)?,
-                                ));
+                                // the column holds the state in the verify's decode class
+                                cs.push((e.clone_dtod(&rl.conv_state)?, rl.ssm_clone_live(e)?));
                             }
                         }
                         if let (Some(ck), Some(cs)) = (ckpt.as_deref_mut(), col_states) {
@@ -10709,6 +10799,9 @@ impl HybridModel {
         // conv with CARRIED state + ring roll (T >= pad rides the input-column update kernel;
         // T < pad — the MEMRA_SPEC_M2 t=2 arm — rolls via the pure-copy ring rebuild).
         let rl = cache.recur[il].as_mut().unwrap();
+        // GDN decode class (crate::gdn_state): the T-row verify scans in the model's class,
+        // rounding a just-primed state first, so it equals T decode steps bit for bit.
+        let st16 = e.gdn_ensure_decode(rl, self.gdn_decode_fp16)?;
         let mut conv_out = e.uninit(conv_dim * t)?;
         e.ssm_conv1d_tm_state(
             &qkv_mixed,
@@ -10764,6 +10857,7 @@ impl HybridModel {
                 num_v,
                 t,
                 scale,
+                st16,
             )?;
         }
         std::mem::swap(&mut rl.ssm_state, &mut rl.ssm_state_alt);
@@ -10858,6 +10952,10 @@ impl HybridModel {
                     continue; // missing-ckpt error surfaces in the main loop
                 };
                 let (c, st) = &cols[j - 1];
+                if st.len() > rl.ssm_state.len() {
+                    uniform = false;
+                    break;
+                }
                 if conv_pairs.is_empty() {
                     conv_words = c.len();
                     ssm_words = st.len();
@@ -10918,20 +11016,24 @@ impl HybridModel {
                         d_conv,
                     )?;
                     let mut o = e.uninit(d_state * num_v * j)?; // scan output, discarded
+                    // The prefix re-run is the verify's own program (crate::gdn_state): its class,
+                    // from the state the verify started on.
+                    let st16 = self.gdn_decode_fp16;
+                    let crate::cache::RecurLayer {
+                        ssm_state,
+                        ssm_state_alt,
+                        ..
+                    } = &mut *rl;
+                    let state_in =
+                        verify_start_state(e, state_in, snap.ssm_class(il), st16, ssm_state_alt)?;
                     e.gdn_scan_s128(
-                        &st.q_l2,
-                        &st.k_l2,
-                        &st.v_g,
-                        &st.g_log,
-                        &st.beta,
-                        state_in,
-                        &mut rl.ssm_state,
-                        &mut o,
-                        num_v,
-                        j,
-                        scale,
+                        &st.q_l2, &st.k_l2, &st.v_g, &st.g_log, &st.beta, state_in, ssm_state,
+                        &mut o, num_v, j, scale, st16,
                     )?;
+                    rl.ssm_fp16 = st16;
                 } else if let Some(cols) = &ckpt.cols[il] {
+                    // a column holds the state in the verify's decode class
+                    rl.ssm_fp16 = self.gdn_decode_fp16;
                     if !batched_cols {
                         let (c, s) = &cols[j - 1];
                         e.copy_into(&mut rl.conv_state, 0, c, c.len())?;
@@ -10990,21 +11092,20 @@ impl HybridModel {
                     d_conv,
                 )?;
                 let mut o = e.uninit(d_state * num_v * t_v)?;
+                // the verify's own program, from the state it started on (crate::gdn_state)
+                let st16 = self.gdn_decode_fp16;
+                let crate::cache::RecurLayer {
+                    ssm_state,
+                    ssm_state_alt,
+                    ..
+                } = &mut *rl;
+                let state_in =
+                    verify_start_state(e, state_in, snap.ssm_class(il), st16, ssm_state_alt)?;
                 e.gdn_scan_s128_dc(
-                    &st.q_l2,
-                    &st.k_l2,
-                    &st.v_g,
-                    &st.g_log,
-                    &st.beta,
-                    state_in,
-                    &mut rl.ssm_state,
-                    &mut o,
-                    num_v,
-                    acc,
-                    base,
-                    t_v,
-                    scale,
+                    &st.q_l2, &st.k_l2, &st.v_g, &st.g_log, &st.beta, state_in, ssm_state, &mut o,
+                    num_v, acc, base, t_v, scale, st16,
                 )?;
+                rl.ssm_fp16 = st16;
             }
         }
         Ok(())
@@ -15152,7 +15253,7 @@ impl HybridModel {
                 // from a smaller adaptive cap gets sliced past its stash rows (a `slice_mut`
                 // panic in the sampled ON arm, measured before this line said k+1).
                 let vt_cap = (k.max(k_cap) + 1).max(2);
-                *g = DsparkVerifyGraphs::new(e, cache, vt_cap, n_embd)?;
+                *g = DsparkVerifyGraphs::new(e, cache, vt_cap, n_embd, self.gdn_decode_fp16)?;
                 if g.is_some() {
                     // Engagement receipt (the dead-arm lesson): prove the door is LIVE rather
                     // than trusting that a flag set means a pool built.

@@ -38,12 +38,20 @@ pub(crate) fn capture_digest(
                 hash.update((len.unwrap_or(0) as u64).to_le_bytes());
             }
         }
-        for planes in [&cap.snap.conv, &cap.snap.ssm] {
+        for (ssm, planes) in [(false, &cap.snap.conv), (true, &cap.snap.ssm)] {
             hash.update((planes.len() as u64).to_le_bytes());
-            for plane in planes {
+            for (il, plane) in planes.iter().enumerate() {
                 hash.update([u8::from(plane.is_some())]);
                 if let Some(plane) = plane {
-                    floats(&mut hash, &e.dtoh(plane)?);
+                    let mut words = e.dtoh(plane)?;
+                    // a GDN plane holds its state in the class the snapshot recorded
+                    // (crate::gdn_state): hash only the words that hold it (the hashed length
+                    // tells the classes apart; an fp32 plane hashes whole, as before)
+                    if ssm {
+                        let fp16 = cap.snap.ssm_class(il);
+                        words.truncate(crate::gdn_state::gdn_state_words(words.len(), fp16));
+                    }
+                    floats(&mut hash, &words);
                 }
             }
         }

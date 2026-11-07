@@ -5389,6 +5389,17 @@ fn host_tier_numeric_class() -> String {
     format!("server-prefix-entry-v{PREFIX_ENTRY_LAYOUT_VERSION}-kv-q8_0-{k}B-q5_1-{v}B")
 }
 
+/// A numeric class with the model's GDN decode class folded in (memra_engine::gdn_state,
+/// research/gdn-state-fp16-20261107). The fp32 class keeps the historical strings byte for
+/// byte.
+fn host_tier_numeric_with_gdn(class: String, gdn_fp16: bool) -> String {
+    if gdn_fp16 {
+        format!("{class}+gdn-decode-fp16")
+    } else {
+        class
+    }
+}
+
 /// The program identity of one loaded GGUF model with a ZERO tenant salt; the pool namespace
 /// stamps the salt in `HostTierContext::program`. Every field is a framed contract digest
 /// over what the server holds for the model at load:
@@ -5837,12 +5848,24 @@ fn host_tier_context(
             h.update(plan.as_bytes());
             format!("{:x}", h.finalize())
         };
-        let base = host_tier_program_base(&artifact, &plan, lm.tok.chat_template());
+        // The GDN decode class (memra_engine::gdn_state) is part of the numeric program: an entry
+        // minted after an fp16 decode holds a state the fp32 class never produces, so the two
+        // classes never share a host-tier program. The fp32 class keeps the historical strings.
+        let gdn_fp16 = lm.model.gdn_decode_fp16;
+        let with_gdn = |program: &mut memra_engine::cache::record::ProgramIdentity,
+                        class: String| {
+            program.numeric = memra_engine::cache::record::digest(
+                "numeric",
+                host_tier_numeric_with_gdn(class, gdn_fp16).as_bytes(),
+            );
+        };
+        let mut base = host_tier_program_base(&artifact, &plan, lm.tok.chat_template());
+        with_gdn(&mut base, host_tier_numeric_class());
         eprintln!(
             "[prefix-host] contracts door: model {name} program identity artifact_sha256={artifact} \
              plan_debug_sha256={plan_sha256} numeric={} template={} device={device} \
              ({:.0}ms to hash {path})",
-            host_tier_numeric_class(),
+            host_tier_numeric_with_gdn(host_tier_numeric_class(), gdn_fp16),
             if lm.tok.chat_template().is_some() {
                 "gguf-jinja"
             } else {
@@ -5863,15 +5886,17 @@ fn host_tier_context(
             }
             (true, None, None) => Some(HostTierDraftSource::Embedded),
         };
-        let draft = draft_source
-            .as_ref()
-            .map(|source| host_tier_draft_program(&base, &artifact, &plan, source));
+        let draft = draft_source.as_ref().map(|source| {
+            let mut program = host_tier_draft_program(&base, &artifact, &plan, source);
+            with_gdn(&mut program, host_tier_draft_numeric_class());
+            program
+        });
         match &draft_source {
             Some(source) => eprintln!(
                 "[prefix-host] contracts door: model {name} draft program identity \
                  source={} numeric={} ({:.0}ms)",
                 source.describe(),
-                host_tier_draft_numeric_class(),
+                host_tier_numeric_with_gdn(host_tier_draft_numeric_class(), gdn_fp16),
                 t1.elapsed().as_secs_f64() * 1e3,
             ),
             None => eprintln!(
@@ -5892,9 +5917,11 @@ fn host_tier_context(
                 source.manifest,
                 sha(&source.cfg_debug),
                 source.knobs,
-                host_tier_tail_numeric_class(),
+                host_tier_numeric_with_gdn(host_tier_tail_numeric_class(), gdn_fp16),
             );
-            host_tier_tail_program(&base, &artifact, &plan, source)
+            let mut program = host_tier_tail_program(&base, &artifact, &plan, source);
+            with_gdn(&mut program, host_tier_tail_numeric_class());
+            program
         });
         programs.insert(
             name.clone(),
@@ -20637,10 +20664,8 @@ fn prefix_capture_off_tick(
     for il in 0..n {
         match &cache.recur[il] {
             Some(r) => {
-                let (c, s) = match (
-                    engine.clone_dtod(&r.conv_state),
-                    engine.clone_dtod(&r.ssm_state),
-                ) {
+                // the ssm plane is fp32 in both GDN decode classes (memra_engine::gdn_state)
+                let (c, s) = match (engine.clone_dtod(&r.conv_state), r.ssm_clone_f32(engine)) {
                     (Ok(c), Ok(s)) => (c, s),
                     (Err(err), _) | (_, Err(err)) => {
                         eprintln!(
@@ -22223,8 +22248,7 @@ fn host_restore_submit(
             engine
                 .copy_into(&mut dst.conv_state, 0, c, c.len())
                 .map_err(|err| format!("recurrent conv copy of layer {il} failed: {err}"))?;
-            engine
-                .copy_into(&mut dst.ssm_state, 0, s, s.len())
+            dst.ssm_restore_f32(engine, s)
                 .map_err(|err| format!("recurrent ssm copy of layer {il} failed: {err}"))?;
             bytes += (c.len() + s.len()) * 4;
         }
@@ -22855,6 +22879,20 @@ fn handoff_stamp_matches(a: &HandoffModelStamp, b: &HandoffModelStamp) -> bool {
         && a.files == b.files
         && a.bytes == b.bytes
         && a.max_mtime_ns == b.max_mtime_ns
+}
+
+/// The handoff file's entry layout version: the in-memory entry layout plus whether a loaded model
+/// decodes with an fp16 GDN state (research/gdn-state-fp16-20261107). The entries are fp32
+/// either way, but a state minted after an fp16 decode is one the fp32 class never produces, so a
+/// deploy that changes the class starts cold through the header refusal. The fp32 class keeps
+/// the historical number.
+fn handoff_layout_version() -> u32 {
+    const GDN_DECODE_FP16_BIT: u32 = 1 << 31;
+    if memra_engine::hybrid::gdn_decode_fp16_loaded() {
+        PREFIX_ENTRY_LAYOUT_VERSION | GDN_DECODE_FP16_BIT
+    } else {
+        PREFIX_ENTRY_LAYOUT_VERSION
+    }
 }
 
 #[derive(Debug, PartialEq)]
@@ -23877,7 +23915,7 @@ fn host_handoff_export(
         handoff_write_header(
             &mut w,
             &HandoffHeader {
-                layout_version: PREFIX_ENTRY_LAYOUT_VERSION,
+                layout_version: handoff_layout_version(),
                 created_unix: handoff_now_unix(),
                 models: local_stamps.to_vec(),
                 entries: selected.len() as u64,
@@ -23948,7 +23986,7 @@ fn open_host_handoff_import(
     let (mut reader, max_frame) = crate::handoff_io::HandoffReader::open(path, io_mode)?;
     let header = handoff_read_header(&mut reader)?;
     let now = handoff_now_unix();
-    let refused = handoff_header_verdict(&header, PREFIX_ENTRY_LAYOUT_VERSION, now, local_stamps)?;
+    let refused = handoff_header_verdict(&header, handoff_layout_version(), now, local_stamps)?;
     for (model, why) in &refused {
         eprintln!("[prefix-host] handoff import will SKIP every entry of model {model:?}: {why}");
     }
@@ -24275,7 +24313,24 @@ fn prefix_snapshot_batch(
         let (Some(c), Some(s), Some(r)) = (c.as_mut(), s.as_mut(), cache.recur[il].as_ref()) else {
             continue;
         };
-        for (to, from) in [(c, &r.conv_state), (s, &r.ssm_state)] {
+        // A prefix entry is fp32 in both GDN decode classes (memra_engine::gdn_state): a layer
+        // that has been decoding in fp16 widens straight into the entry plane (exact) on the
+        // same stream instead of riding the byte batch.
+        let planes: Vec<(&mut CudaSlice<f32>, &CudaSlice<f32>)> = if r.ssm_fp16 {
+            if s.len() != r.ssm_state.len() {
+                return Err(format!(
+                    "prefix snapshot recur {il}: {} words into {}",
+                    r.ssm_state.len(),
+                    s.len()
+                )
+                .into());
+            }
+            engine.gdn_state_to_f32_into(&r.ssm_state, s, r.ssm_state.len())?;
+            vec![(c, &r.conv_state)]
+        } else {
+            vec![(c, &r.conv_state), (s, &r.ssm_state)]
+        };
+        for (to, from) in planes {
             if to.len() != from.len() {
                 return Err(format!(
                     "prefix snapshot recur {il}: {} words into {}",
@@ -24808,6 +24863,10 @@ fn prefix_restore_at(
         if let (Some(dst), Some(_)) = (cache.kv[il].as_mut(), &e.kv[il]) {
             dst.len = restore_len;
         }
+        // the entry's ssm planes are fp32 (memra_engine::gdn_state): the restored layer is too
+        if let (Some(dst), Some(_)) = (cache.recur[il].as_mut(), &e.ssm[il]) {
+            dst.ssm_fp16 = false;
+        }
         if let (Some(dst), Some(src)) = (cache.latent[il].as_mut(), &e.latent[il]) {
             dst.restore_plane(engine, src, max_ctx)
                 .map_err(|err| format!("prefix entry latent {il}: {err}"))?;
@@ -25086,7 +25145,8 @@ fn prefix_cache_state_digest(
             Some(recur) => {
                 hasher.update([1]);
                 digest_f32_plane(&mut hasher, &engine.dtoh(&recur.conv_state)?);
-                digest_f32_plane(&mut hasher, &engine.dtoh(&recur.ssm_state)?);
+                // the fp32 values, whatever GDN class the live layer is in (entries are fp32)
+                digest_f32_plane(&mut hasher, &engine.dtoh(&recur.ssm_clone_f32(engine)?)?);
             }
             None => hasher.update([0]),
         }
@@ -25253,7 +25313,8 @@ fn kv_prefix_digest(
             Some(recur) => {
                 hasher.update([1]);
                 digest_f32_plane(&mut hasher, &engine.dtoh(&recur.conv_state)?);
-                digest_f32_plane(&mut hasher, &engine.dtoh(&recur.ssm_state)?);
+                // the fp32 values, whatever GDN class the live layer is in (entries are fp32)
+                digest_f32_plane(&mut hasher, &engine.dtoh(&recur.ssm_clone_f32(engine)?)?);
             }
             None => hasher.update([0]),
         }
@@ -25397,6 +25458,16 @@ fn prefix_insert_from_spec_boundary(
         return;
     }
     if cache.has_swa_ring() {
+        return;
+    }
+    // A prefix entry is fp32 in both GDN decode classes (memra_engine::gdn_state): a capture of a
+    // layer that was decoding in fp16 widens here (exact), before either publish route.
+    let mut cap = cap;
+    if let Err(err) = cap.snap.widen_f32(engine) {
+        eprintln!(
+            "[prefix-cache] spec publish REFUSED: widening the GDN state failed ({err}); \
+             entry dropped"
+        );
         return;
     }
     // WP-A day 24 (memra#536 Move 2 owed item 2, the capture half): under the door the trunk rows

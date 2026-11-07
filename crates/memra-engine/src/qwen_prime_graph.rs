@@ -203,6 +203,9 @@ pub(crate) fn run(
     cache: &mut Cache,
     seq_end: usize,
 ) -> Result<CudaSlice<f32>> {
+    // The captured prime reads and writes the fp32 GDN state class (crate::gdn_state): widen a
+    // session that has been decoding in fp16 eagerly, before capture or replay.
+    e.gdn_ensure_prime_cache(cache)?;
     let hidden = m.cfg.n_embd as usize;
     let nff = m
         .layers

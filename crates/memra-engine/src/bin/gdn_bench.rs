@@ -91,7 +91,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // correctness (vs CPU recurrence)
     e.gdn_scan_s128(
-        &qd, &kd, &vd, &gd, &bd, &sid, &mut sod, &mut od, h, t, scale,
+        &qd, &kd, &vd, &gd, &bd, &sid, &mut sod, &mut od, h, t, scale, false,
     )?;
     let gpu_o = e.dtoh(&od)?;
     let cpu_o = cpu_ref(&q, &k, &v, &g, &beta, s_v, h, t, scale);
@@ -139,7 +139,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
     let seq_med = bench("gdn_scan             ", &mut |e: &Engine| {
         e.gdn_scan_s128(
-            &qd, &kd, &vd, &gd, &bd, &sid, &mut sod, &mut od, h, t, scale,
+            &qd, &kd, &vd, &gd, &bd, &sid, &mut sod, &mut od, h, t, scale, false,
         )
     })?;
     for c in [32usize, 64, 128] {

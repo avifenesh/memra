@@ -3872,7 +3872,8 @@ pub fn restore_cache_checkpoint(
                     );
                 }
                 owner.copy_into(&mut dst.conv_state, 0, conv, conv.len())?;
-                owner.copy_into(&mut dst.ssm_state, 0, ssm, ssm.len())?;
+                // the plane and its GDN class, as the checkpoint recorded them
+                dst.ssm_restore_class(owner, ssm, snap.ssm_class(il))?;
             }
             (None, None, None) => {}
             _ => {

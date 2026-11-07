@@ -2447,6 +2447,10 @@ impl HybridModel {
         let t0 = cache.pos + 1;
         let seg_end = self.fa_segment_end(e, t0, final_max);
         let bucket_max = seg_end;
+        // The captured GDN scans bake the model's decode class (crate::gdn_state): bring every
+        // layer to it eagerly first, so neither the warmups nor the capture change a class and
+        // the rollback below restores the class every replay reads.
+        e.gdn_ensure_decode_cache(cache, self.gdn_decode_fp16)?;
         let snap = cache.snapshot(e)?;
         let pos_save = e.dtoh_i32_one(&gs.pos_d)?;
         let len_save: Vec<Option<i32>> = cache
@@ -3830,6 +3834,10 @@ impl HybridModel {
         // roll the ring — ALL in ONE kernel (`ssm_conv1d_fused_decode`), never materializing conv_in
         // to HBM. Replaces conv_assemble_and_roll + ssm_conv1d. Bit-identical (same accumulation order).
         let rl = cache.recur[il].as_mut().unwrap();
+        // GDN decode class (crate::gdn_state): the first decode of an fp16-class session rounds the
+        // fp32 state once; captured graph bodies find it already rounded (graph paths convert
+        // eagerly before capture and replay).
+        let st16 = e.gdn_ensure_decode(rl, self.gdn_decode_fp16)?;
         let mut conv_out = e.uninit(conv_dim)?; // [conv_dim, 1] channel-major, SiLU
         e.ssm_conv1d_fused_decode(
             &qkv_mixed,
@@ -3900,14 +3908,21 @@ impl HybridModel {
                 num_v,
                 1,
                 scale,
+                st16,
             )?;
         }
         if persistent_state {
             // CAPTURE-safe (graph replay): the canonical state every replay reads must stay at a
             // FIXED pointer (baked into the captured graph). Copy the freshly-written spare BACK
-            // into ssm_state (captured, replays each launch). No host pointer swap.
+            // into ssm_state (captured, replays each launch). No host pointer swap. An fp16-class
+            // state occupies the first half of the buffers, so only that half is copied.
             let alt = std::mem::replace(&mut rl.ssm_state_alt, e.zeros(0)?);
-            e.copy_into(&mut rl.ssm_state, 0, &alt, n_state)?;
+            e.copy_into(
+                &mut rl.ssm_state,
+                0,
+                &alt,
+                crate::gdn_state::gdn_state_words(n_state, st16),
+            )?;
             rl.ssm_state_alt = alt;
         } else {
             // EAGER: swap the two OWNED resident buffers in place (stable pointers, no alloc/free).

@@ -139,6 +139,7 @@ pub mod eagle;
 /// design; glm5 is the first consumer). (LAW:coactivation-expert-placement; maps are
 /// minted by the shared fleet tool from `MEMRA_MOE_WEIGHT_TRACE` traces). No CUDA deps.
 pub mod ep_map;
+pub mod gdn_state;
 pub mod gemma_spec;
 pub mod glm5_decode_graph;
 pub mod glm5_sel_ledger;
@@ -6297,7 +6298,10 @@ impl Engine {
         base: usize,
         t_v: usize,
         scale: f32,
+        st16: bool,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        self.gdn_state_len_check("gdn_scan_s128_dc state_in", state_in.len(), n_head, st16)?;
+        self.gdn_state_len_check("gdn_scan_s128_dc state_out", state_out.len(), n_head, st16)?;
         let f = self.func("gdn_scan_s128_dc");
         const S_V: u32 = 128;
         const WARP: u32 = 32;
@@ -6308,6 +6312,7 @@ impl Engine {
             shared_mem_bytes: 0,
         };
         let (h, b0, tv) = (n_head as i32, base as i32, t_v as i32);
+        let st16 = i32::from(st16);
         let __s_b = self.gpu.stream();
         let mut b = __s_b.launch_builder(&f);
         b.arg(q)
@@ -6322,7 +6327,8 @@ impl Engine {
             .arg(acc)
             .arg(&b0)
             .arg(&tv)
-            .arg(&scale);
+            .arg(&scale)
+            .arg(&st16);
         unsafe {
             b.launch(cfg)?;
         }
@@ -33310,7 +33316,15 @@ impl Engine {
         n_head: usize,
         t: usize,
         scale: f32,
+        st16: bool,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        self.gdn_state_len_check("gdn_scan_s128_view state_in", state_in.len(), n_head, st16)?;
+        self.gdn_state_len_check(
+            "gdn_scan_s128_view state_out",
+            state_out.len(),
+            n_head,
+            st16,
+        )?;
         let f = self.func("gdn_scan_s128");
         const S_V: u32 = 128;
         const WARP: u32 = 32;
@@ -33321,6 +33335,7 @@ impl Engine {
             shared_mem_bytes: 0,
         };
         let (h, ti) = (n_head as i32, t as i32);
+        let st16 = i32::from(st16);
         let __s_b = self.gpu.stream();
         let mut b = __s_b.launch_builder(&f);
         b.arg(q)
@@ -33333,7 +33348,8 @@ impl Engine {
             .arg(o)
             .arg(&h)
             .arg(&ti)
-            .arg(&scale);
+            .arg(&scale)
+            .arg(&st16);
         unsafe {
             b.launch(cfg)?;
         }
@@ -33681,7 +33697,10 @@ impl Engine {
         n_head: usize,
         t: usize,
         scale: f32,
+        st16: bool,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        self.gdn_state_len_check("gdn_scan_s128 state_in", state_in.len(), n_head, st16)?;
+        self.gdn_state_len_check("gdn_scan_s128 state_out", state_out.len(), n_head, st16)?;
         let f = self.func("gdn_scan_s128");
         const S_V: u32 = 128;
         const WARP: u32 = 32;
@@ -33692,6 +33711,7 @@ impl Engine {
             shared_mem_bytes: 0,
         };
         let (h, ti) = (n_head as i32, t as i32);
+        let st16 = i32::from(st16);
         let __s_b = self.gpu.stream();
         let mut b = __s_b.launch_builder(&f);
         b.arg(q)
@@ -33704,7 +33724,8 @@ impl Engine {
             .arg(o)
             .arg(&h)
             .arg(&ti)
-            .arg(&scale);
+            .arg(&scale)
+            .arg(&st16);
         unsafe {
             b.launch(cfg)?;
         }
@@ -33820,6 +33841,7 @@ impl Engine {
         n_head: usize,
         b_n: usize,
         scale: f32,
+        st16: bool,
     ) -> Result<(), Box<dyn std::error::Error>> {
         let f = self.func("gdn_scan_s128_b");
         const S_V: u32 = 128;
@@ -33831,6 +33853,7 @@ impl Engine {
             shared_mem_bytes: 0,
         };
         let h = n_head as i32;
+        let st16 = i32::from(st16);
         let __s_b = self.gpu.stream();
         let mut b = __s_b.launch_builder(&f);
         b.arg(q)
@@ -33842,7 +33865,8 @@ impl Engine {
             .arg(state_out_ptrs)
             .arg(o)
             .arg(&h)
-            .arg(&scale);
+            .arg(&scale)
+            .arg(&st16);
         unsafe {
             b.launch(cfg)?;
         }
@@ -34047,7 +34071,11 @@ impl Engine {
         t: usize,
         scale: f32,
         snap: Option<&mut CudaSlice<f32>>,
+        st16: bool,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        if let Some(sn) = snap.as_ref() {
+            self.gdn_snap_len_check("gdn_scan_s128_tsnap_rows", sn.len(), n_head, t, st16)?;
+        }
         use cudarc::driver::DevicePtr;
         let f = self.func("gdn_scan_s128_tsnap");
         const S_V: u32 = 128;
@@ -34059,6 +34087,7 @@ impl Engine {
             shared_mem_bytes: 0,
         };
         let (h, ti) = (n_head as i32, t as i32);
+        let st16 = i32::from(st16);
         let __s_b = self.gpu.stream();
         let snap_guard = snap.map(|sn| sn.device_ptr(&__s_b));
         let snap_ptr: u64 = snap_guard.as_ref().map(|(p, _)| *p).unwrap_or(0);
@@ -34073,7 +34102,8 @@ impl Engine {
             .arg(&h)
             .arg(&ti)
             .arg(&scale)
-            .arg(&snap_ptr);
+            .arg(&snap_ptr)
+            .arg(&st16);
         unsafe {
             b.launch(cfg)?;
         }
@@ -34098,7 +34128,11 @@ impl Engine {
         t: usize,
         scale: f32,
         snap: Option<&mut CudaSlice<f32>>,
+        st16: bool,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        if let Some(sn) = snap.as_ref() {
+            self.gdn_snap_len_check("gdn_scan_s128_tsnap", sn.len(), n_head, t, st16)?;
+        }
         // Resolve [conv, canonical ssm, alternate ssm] through the refreshed table.
         // Odd T writes alternate; even T writes canonical in place, matching per-row parity.
         use cudarc::driver::DevicePtr;
@@ -34112,6 +34146,7 @@ impl Engine {
             shared_mem_bytes: 0,
         };
         let (h, ti) = (n_head as i32, t as i32);
+        let st16 = i32::from(st16);
         let __s_b = self.gpu.stream();
         let snap_guard = snap.map(|sn| sn.device_ptr(&__s_b));
         let snap_ptr: u64 = snap_guard.as_ref().map(|(p, _)| *p).unwrap_or(0);
@@ -34126,7 +34161,8 @@ impl Engine {
             .arg(&h)
             .arg(&ti)
             .arg(&scale)
-            .arg(&snap_ptr);
+            .arg(&snap_ptr)
+            .arg(&st16);
         unsafe {
             b.launch(cfg)?;
         }
@@ -34148,6 +34184,7 @@ impl Engine {
         n_head: usize,
         b_n: usize,
         scale: f32,
+        st16: bool,
     ) -> Result<(), Box<dyn std::error::Error>> {
         let f = self.func("gdn_scan_s128_b");
         const S_V: u32 = 128;
@@ -34159,6 +34196,7 @@ impl Engine {
             shared_mem_bytes: 0,
         };
         let h = n_head as i32;
+        let st16 = i32::from(st16);
         let __s_b = self.gpu.stream();
         let mut b = __s_b.launch_builder(&f);
         b.arg(q)
@@ -34170,7 +34208,8 @@ impl Engine {
             .arg(state_out_ptrs)
             .arg(o)
             .arg(&h)
-            .arg(&scale);
+            .arg(&scale)
+            .arg(&st16);
         unsafe {
             b.launch(cfg)?;
         }
@@ -35500,7 +35539,10 @@ impl Engine {
                 hk == n_head,
                 "s128 scan is broadcast-only (prep guarantees by predicate)"
             );
-            self.gdn_scan_s128(q, k, v, g, beta, state_in, state_out, o, n_head, t, scale)
+            // the prime is always the fp32 class (crate::gdn_state)
+            self.gdn_scan_s128(
+                q, k, v, g, beta, state_in, state_out, o, n_head, t, scale, false,
+            )
         }
     }
 
@@ -35541,7 +35583,9 @@ impl Engine {
             Self::gdn_chunk_size(),
             n_head,
         )?;
-        self.gdn_scan_s128(q, k, v, g, beta, state_in, state_out, o, n_head, t, scale)?;
+        self.gdn_scan_s128(
+            q, k, v, g, beta, state_in, state_out, o, n_head, t, scale, false,
+        )?;
         let (oh_s, oh_c) = (self.dtoh(o)?, self.dtoh(&o_c)?);
         let (sh_s, sh_c) = (self.dtoh(state_out)?, self.dtoh(&st_c)?);
         let stats = |a: &[f32], b: &[f32]| -> (f32, f32, f64) {
@@ -36363,6 +36407,22 @@ impl memra_kv::KvDev for Engine {
         len: usize,
     ) -> Result<(), Box<dyn std::error::Error>> {
         Engine::copy_range_into(self, dst, dst_off, src, src_off, len)
+    }
+    fn gdn_state_to_f32(
+        &self,
+        src: &CudaSlice<f32>,
+        dst: &mut CudaSlice<f32>,
+        n_elems: usize,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        Engine::gdn_state_to_f32_into(self, src, dst, n_elems)
+    }
+    fn gdn_state_to_fp16(
+        &self,
+        src: &CudaSlice<f32>,
+        dst: &mut CudaSlice<f32>,
+        n_elems: usize,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        Engine::gdn_state_to_fp16_into(self, src, dst, n_elems)
     }
     fn set_i32_one(
         &self,
