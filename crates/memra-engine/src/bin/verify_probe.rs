@@ -7,6 +7,10 @@
 //! Usage: MEMRA_PROMPT='...' verify-probe <model.gguf> <prefix tok ids...> -- <probe tok> [f1 f2]
 //!   The prefix tokens are the GOLD generated tokens up to the divergence; probe tok = the token
 //!   whose next-token logits diverge; f1/f2 = the two competing next-token ids to print.
+//!
+//! step35 (the sliding-gated MoE program) runs the four logit shapes only. Its served verify is
+//! `step35_verify_batch_layers`, entered from `verify_layers`; the per-layer bisect below reads
+//! `decode_step_t_aux2`, which has no twin of it and refuses that arch, so the probe stops there.
 
 use memra_engine::Engine;
 use memra_engine::forward::argmax;
@@ -98,6 +102,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let (l3, _) = model.decode_step_t_h(&e, &[probe, filler, filler], pos, &mut cache)?;
     report("verify T=3 col0", &l3[0..n_vocab], Some(&le));
     cache.rollback(&e, &snap, 0)?;
+    if model.uses_sliding_gated_moe_program() {
+        println!(
+            "per-layer bisect: unsupported on step35 (served verify is \
+             step35_verify_batch_layers; decode_step_t_aux2 has no twin of it)"
+        );
+        return Ok(());
+    }
 
     // E: PER-LAYER bisect — eager aux residuals vs verify(T=1) aux residuals for the same token.
     // First layer with nonzero maxdiff = where the chains stop being bit-identical.
