@@ -1,0 +1,31 @@
+Generating SQLite file ~/.cache/memra-attn-gb10/runs/gates-unit1-final/which-default/rungen.sqlite from ~/.cache/memra-attn-gb10/runs/gates-unit1-final/which-default/rungen.nsys-rep
+Processing [~/.cache/memra-attn-gb10/runs/gates-unit1-final/which-default/rungen.sqlite] with [/opt/nvidia/nsight-systems/2025.3.2/host-linux-armv8/reports/cuda_gpu_kern_sum.py]... 
+Time (%),Total Time (ns),Instances,Avg (ns),Med (ns),Min (ns),Max (ns),StdDev (ns),Name
+50.1,7336853184,1600,4585533.2,4652208.0,460416,7440768,2192653.6,"void mul_mat_f8f4v2<(int)256, (int)128, (int)8, (int)2, (int)64, (int)3, (int)1>(const unsigned char *, const float *, const unsigned char *, const float *, float *, int, int, int, int, int, int, float, int)"
+5.2,760797856,1600,475498.7,479904.0,35200,1116448,239648.0,"void f8f4v2_image_kernel<(bool)1>(const char *, const char *, unsigned char *, float *, int, int, int)"
+5.1,748446784,256,2923620.3,2937824.0,2817248,3091264,56121.7,"void quantize_mmq_e4m3_d4_silu_kernel<(bool)1>(const float *, const float *, void *, long, long, long, int, long)"
+4.7,685140736,64,10705324.0,10847040.0,3289120,17963616,5402684.8,fa_prefill_qw_h2p
+3.7,540866752,512,1056380.4,1055056.0,1013824,1201376,27093.2,add_f32
+3.6,529480512,192,2757711.0,2718128.0,2565376,3260448,140548.2,gdn_chunk_state_mma
+3.1,459083648,644,712862.8,761488.0,137824,1087488,192709.8,rms_norm_f32_v2
+3.0,436864160,192,2275334.2,2254752.0,2156352,2590272,93108.6,gdn_chunk_solve32_f32
+2.9,421855456,192,2197163.8,2171920.0,2069216,2570112,107913.5,gdn_chunk_output_mma
+2.8,405468032,768,527953.2,508448.0,473408,710560,41321.0,"void quantize_mmq_e4m3_d4_kernel<(bool)1>(const float *, void *, long, long, long, int, long)"
+2.7,396613821,384,1032848.5,996000.0,936096,1421056,100812.0,qmatvec_nvfp4_dp4a_rp
+2.7,396353440,192,2064340.8,2028528.0,1930016,2550464,120021.3,ssm_conv1d_gdn_state_f32
+2.6,377129344,384,982107.7,1031856.0,834912,1319040,115951.7,l2_norm_pp_v2_f32
+2.2,327319552,192,1704789.3,1644592.0,1572672,2045824,132525.7,gdn_chunk_attn_f32
+1.7,242286240,192,1261907.5,1246992.0,1187584,1580320,75015.7,gated_rmsnorm_f32
+1.6,237526496,388,612181.7,601328.0,1664,961024,87414.0,quantize_q8_1
+0.7,107409120,64,1678267.5,1677024.0,1600768,1834464,52732.6,q_gate_split_f32
+0.6,80622208,64,1259722.0,1267264.0,1200224,1515040,46867.1,mul_f32
+0.4,59528192,256,232532.0,10368.0,7808,1284320,388643.2,sigmoid_f32
+0.2,23403008,64,365672.0,370720.0,118592,786688,183624.2,fa_dequant_kv_ws_bf16
+0.1,21494528,4,5373632.0,5443200.0,5115200,5492928,174262.0,qmatvec_q5_K_mmvq_il
+0.1,18483392,128,144401.5,146000.0,37856,391744,106968.6,rope_neox_f32
+0.1,14910528,64,232977.0,213728.0,201920,393056,49760.2,append_quantize_kv_q8_0_q5_1_rows
+0.0,4313024,192,22463.7,21952.0,20224,66272,4424.0,gdn_chunk_cumgate_f32
+0.0,2147648,4,536912.0,498448.0,452032,698720,110073.4,embed_gather_u32_t
+0.0,1914368,192,9970.7,9120.0,8000,56192,5025.0,gdn_glog_f32
+0.0,454240,192,2365.8,2080.0,1664,22528,1901.2,ssm_conv_ring_update_f32
+

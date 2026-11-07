@@ -1,0 +1,44 @@
+kernel-check default rc=0 ALL GREEN (117 cells, 5 skipped)
+fa_prefill_view_ws vs inline-dequant T=64 Tkv=192: bitdiff=0 OK
+fa_prefill_view_ws vs inline-dequant T=100 Tkv=100: bitdiff=0 OK
+fa_prefill_view_ws vs inline-dequant T=37 Tkv=297: bitdiff=0 OK
+fa_prefill_view_ws vs inline-dequant T=192 Tkv=4097: bitdiff=0 OK
+fa_prefill_view_ws vs inline-dequant T=1024 Tkv=8224: bitdiff=0 OK
+fa_prefill_view_ws vs inline-dequant T=1000 Tkv=1000: bitdiff=0 OK
+fa_prefill_view_ws vs inline-dequant T=1000 Tkv=1031: bitdiff=0 OK
+fa_prefill_view_ws vs inline-dequant T=4075 Tkv=8171: bitdiff=0 OK
+fa_prefill_view_ws vs inline-dequant T=4096 Tkv=36864: bitdiff=0 OK
+kernel-check h2poff rc=0 ALL GREEN (117 cells, 5 skipped)
+fa_prefill_view_ws vs inline-dequant T=64 Tkv=192: bitdiff=0 OK
+fa_prefill_view_ws vs inline-dequant T=100 Tkv=100: bitdiff=0 OK
+fa_prefill_view_ws vs inline-dequant T=37 Tkv=297: bitdiff=0 OK
+fa_prefill_view_ws vs inline-dequant T=192 Tkv=4097: bitdiff=0 OK
+fa_prefill_view_ws vs inline-dequant T=1024 Tkv=8224: bitdiff=0 OK
+fa_prefill_view_ws vs inline-dequant T=1000 Tkv=1000: bitdiff=0 OK
+fa_prefill_view_ws vs inline-dequant T=1000 Tkv=1031: bitdiff=0 OK
+fa_prefill_view_ws vs inline-dequant T=4075 Tkv=8171: bitdiff=0 OK
+fa_prefill_view_ws vs inline-dequant T=4096 Tkv=36864: bitdiff=0 OK
+kernel-check h2off rc=0 ALL GREEN (117 cells, 5 skipped)
+fa_prefill_view_ws vs inline-dequant T=64 Tkv=192: bitdiff=0 OK
+fa_prefill_view_ws vs inline-dequant T=100 Tkv=100: bitdiff=0 OK
+fa_prefill_view_ws vs inline-dequant T=37 Tkv=297: bitdiff=0 OK
+fa_prefill_view_ws vs inline-dequant T=192 Tkv=4097: bitdiff=0 OK
+fa_prefill_view_ws vs inline-dequant T=1024 Tkv=8224: bitdiff=0 OK
+fa_prefill_view_ws vs inline-dequant T=1000 Tkv=1000: bitdiff=0 OK
+fa_prefill_view_ws vs inline-dequant T=1000 Tkv=1031: bitdiff=0 OK
+fa_prefill_view_ws vs inline-dequant T=4075 Tkv=8171: bitdiff=0 OK
+fa_prefill_view_ws vs inline-dequant T=4096 Tkv=36864: bitdiff=0 OK
+argmax rc=0   SUMMARY flips=0 bad=0   PASS: every prefill/decode argmax flip is explained by a margin the config spread covers 
+run-spec rc=0   acceptance: 17/98 = 17.3%   self-consistency: PASS (identical to plain target)   acceptance: 17/112 = 15.2%   self-consistency: PASS (identical to plain target) === SELF-CONSISTENCY PASS === 
+prime-logits 600 B rc=0 pp-only MEDIAN: 16219 tok in 16.3249s = 993.5 tok/s (pp16219, 3 reps) c89e11f4d79be7e6
+prime-logits 600 C rc=0 pp-only MEDIAN: 16219 tok in 14.6619s = 1106.2 tok/s (pp16219, 3 reps) d1b258408a4030bd
+prime-logits 600 Coff rc=0 pp-only MEDIAN: 16219 tok in 14.8305s = 1093.6 tok/s (pp16219, 3 reps) d1b258408a4030bd
+prime-logits 600 B vs C vs Coff: DIFFER
+prime-logits 1240 B rc=0 pp-only MEDIAN: 33890 tok in 39.3973s = 860.2 tok/s (pp33890, 3 reps) 6f836036471ee99b
+prime-logits 1240 C rc=0 pp-only MEDIAN: 33890 tok in 32.3592s = 1047.3 tok/s (pp33890, 3 reps) 758739bef255cb95
+prime-logits 1240 Coff rc=0 pp-only MEDIAN: 33890 tok in 32.9814s = 1027.5 tok/s (pp33890, 3 reps) 758739bef255cb95
+prime-logits 1240 B vs C vs Coff: DIFFER
+which default: fa_prefill_qw_h2p 
+which h2poff: fa_prefill_qw_h2 
+prime_kv_h2_gpu default rc=0 test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 8.67s
+prime_kv_h2_gpu h2poff rc=0 test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 9.77s

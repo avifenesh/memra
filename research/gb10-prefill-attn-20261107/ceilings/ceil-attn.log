@@ -1,0 +1,13 @@
+2026-11-07T02:07:48+02:00
+device NVIDIA GB10 sms 48
+peak8  warps/SM 4: 84.8 TFLOPS
+chain4 warps/SM 4: 98.9 TFLOPS
+chain2 warps/SM 4: 96.7 TFLOPS
+pv2    warps/SM 4: 404.2 TFLOPS (two-MMA chains from zero + FFMA fold)
+qkldsm warps/SM 4: 89.6 TFLOPS (chain4, B by ldmatrix per MMA pair)
+peak8  warps/SM 8: 101.4 TFLOPS
+chain4 warps/SM 8: 106.8 TFLOPS
+chain2 warps/SM 8: 106.0 TFLOPS
+pv2    warps/SM 8: 467.9 TFLOPS (two-MMA chains from zero + FFMA fold)
+qkldsm warps/SM 8: 102.1 TFLOPS (chain4, B by ldmatrix per MMA pair)
+ceil rc=0

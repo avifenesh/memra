@@ -1,0 +1,31 @@
+Generating SQLite file ~/.cache/memra-attn-gb10/runs/gates-unit1-final/which-h2poff/rungen.sqlite from ~/.cache/memra-attn-gb10/runs/gates-unit1-final/which-h2poff/rungen.nsys-rep
+Processing [~/.cache/memra-attn-gb10/runs/gates-unit1-final/which-h2poff/rungen.sqlite] with [/opt/nvidia/nsight-systems/2025.3.2/host-linux-armv8/reports/cuda_gpu_kern_sum.py]... 
+Time (%),Total Time (ns),Instances,Avg (ns),Med (ns),Min (ns),Max (ns),StdDev (ns),Name
+49.5,7333068096,1600,4583167.6,4639040.0,456928,7394976,2185362.1,"void mul_mat_f8f4v2<(int)256, (int)128, (int)8, (int)2, (int)64, (int)3, (int)1>(const unsigned char *, const float *, const unsigned char *, const float *, float *, int, int, int, int, int, int, float, int)"
+5.7,841588448,64,13149819.5,13311088.0,3896928,22166976,6776819.0,fa_prefill_qw_h2
+5.2,763633344,1600,477270.8,474176.0,35488,989760,239763.9,"void f8f4v2_image_kernel<(bool)1>(const char *, const char *, unsigned char *, float *, int, int, int)"
+5.0,747476768,256,2919831.1,2935424.0,2797152,3095904,63775.8,"void quantize_mmq_e4m3_d4_silu_kernel<(bool)1>(const float *, const float *, void *, long, long, long, int, long)"
+3.7,540982208,512,1056605.9,1052512.0,1010880,1216992,28352.1,add_f32
+3.6,533770464,192,2780054.5,2743488.0,2573216,3379360,143118.3,gdn_chunk_state_mma
+3.1,464097952,644,720649.0,770080.0,137472,1068832,195289.2,rms_norm_f32_v2
+2.9,434136160,192,2261125.8,2239984.0,2149824,2610432,90149.6,gdn_chunk_solve32_f32
+2.9,425168704,192,2214420.3,2181264.0,2086304,2530656,107950.0,gdn_chunk_output_mma
+2.8,407472448,768,530563.1,506256.0,473280,717120,45938.5,"void quantize_mmq_e4m3_d4_kernel<(bool)1>(const float *, void *, long, long, long, int, long)"
+2.7,398809696,384,1038566.9,1002064.0,947392,1413472,98683.3,qmatvec_nvfp4_dp4a_rp
+2.7,397218880,192,2068848.3,2031728.0,1938272,2542944,121259.0,ssm_conv1d_gdn_state_f32
+2.5,376866528,384,981423.3,1039312.0,831136,1283584,117553.4,l2_norm_pp_v2_f32
+2.2,325022848,192,1692827.3,1649408.0,1582976,2049792,112585.3,gdn_chunk_attn_f32
+1.6,242476928,192,1262900.7,1251008.0,1186464,1548224,64636.4,gated_rmsnorm_f32
+1.6,239016640,388,616022.3,600512.0,1632,965312,94433.7,quantize_q8_1
+0.7,107631872,64,1681748.0,1674848.0,1602336,2017984,73041.6,q_gate_split_f32
+0.6,81577664,64,1274651.0,1272448.0,1202496,1487872,55980.0,mul_f32
+0.4,58782912,256,229620.8,10272.0,8736,1141056,381275.8,sigmoid_f32
+0.2,24247712,64,378870.5,424960.0,118976,977280,206509.3,fa_dequant_kv_ws_bf16
+0.1,20849888,4,5212472.0,5130320.0,5117120,5472128,173220.3,qmatvec_q5_K_mmvq_il
+0.1,18532672,128,144786.5,145936.0,35616,367264,105579.9,rope_neox_f32
+0.1,14496224,64,226503.5,214880.0,201792,386080,35886.8,append_quantize_kv_q8_0_q5_1_rows
+0.0,4362976,192,22723.8,22048.0,20608,47680,3621.3,gdn_chunk_cumgate_f32
+0.0,1869632,4,467408.0,483760.0,404480,497632,42462.3,embed_gather_u32_t
+0.0,1822208,192,9490.7,8880.0,8064,48928,3396.3,gdn_glog_f32
+0.0,473888,192,2468.2,2176.0,1696,41024,3206.9,ssm_conv_ring_update_f32
+

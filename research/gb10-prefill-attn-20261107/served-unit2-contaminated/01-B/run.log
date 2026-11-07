@@ -1,0 +1,13 @@
+2026-11-07T02:38:47+02:00 run_arm OUT=~/.cache/memra-attn-gb10/runs/served-unit2/01-B BIN=~/.cache/memra-attn-gb10/bins/base-c2e04719b6 EXTRA= TARGETS=32768 131072 260000 REPS=1 1 1 WRAP=
+waitfor: until curl -sf -o /dev/null http://127.0.0.1:8090/readyz && exit 0 || exit 1 (deadline 15m00s, every 5s)
+waitfor: not yet
+waitfor: MET after 3m01s
+2026-11-07T02:41:50+02:00 ready
+{"tag": "01-B", "target": 32768, "rep": 0, "ttft_s": 40.061, "total_s": 41.658, "prompt_tokens": 32784, "completion_tokens": 40, "needles_ok": true, "error": null, "text_sha256": "cb9da8ae3cecfc7aa768e2345181fc3df508ba01b28b6193fd09c41f72b6d394"}
+{"tag": "01-B", "target": 131072, "rep": 0, "ttft_s": 183.804, "total_s": 186.444, "prompt_tokens": 131051, "completion_tokens": 40, "needles_ok": true, "error": null, "text_sha256": "84980efddfee6275d79365af174daac933bdd67199a8d14984597b9d99982e5d"}
+{"tag": "01-B", "target": 260000, "rep": 0, "ttft_s": 858.664, "total_s": 868.228, "prompt_tokens": 259951, "completion_tokens": 40, "needles_ok": true, "error": null, "text_sha256": "3759709dfbe4b215814e193a6144c882d556ee68fcd33070f6d8e3de3abd0f2e"}
+2026-11-07T03:00:06+02:00 bench rc=0
+waitfor: gone 1143460 (deadline 5m00s, every 15s)
+waitfor: not yet
+waitfor: MET after 0m15s
+2026-11-07T03:00:21+02:00 done

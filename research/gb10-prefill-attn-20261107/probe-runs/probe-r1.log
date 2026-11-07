@@ -1,0 +1,117 @@
+2026-11-07T02:07:49+02:00
+93b4eeacb0705e0b86c287be04ba65602acf9c84aa909b6b918817769226b18b  flash_attn.cu
+0754c0aec0ef01e3ad1aab2d6e5afcd0b8ef00d410eafecd266ebffa00e862a4  attn_cand.cuh
+a472d2b85bdbf3db34a390ffc22636f13d11109d8569c42d05f4e41cbcefafd4  probe_attn.cu
+ptxas info    : Function properties for cand_sbad
+    40 bytes stack frame, 44 bytes spill stores, 40 bytes spill loads
+ptxas info    : Used 255 registers, used 1 barriers, 40 bytes cumulative stack size
+ptxas info    : Function properties for cand_ad
+    40 bytes stack frame, 44 bytes spill stores, 40 bytes spill loads
+ptxas info    : Used 255 registers, used 1 barriers, 40 bytes cumulative stack size
+ptxas info    : Function properties for cand_pp
+    72 bytes stack frame, 136 bytes spill stores, 136 bytes spill loads
+ptxas info    : Used 255 registers, used 2 barriers, 72 bytes cumulative stack size
+ptxas info    : Function properties for cand_fa2s
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 255 registers, used 1 barriers
+ptxas info    : Function properties for diag_qh8ns
+    104 bytes stack frame, 224 bytes spill stores, 164 bytes spill loads
+ptxas info    : Used 255 registers, used 1 barriers, 104 bytes cumulative stack size
+ptxas info    : Function properties for diag_nosm
+    72 bytes stack frame, 144 bytes spill stores, 72 bytes spill loads
+ptxas info    : Used 255 registers, used 1 barriers, 72 bytes cumulative stack size
+ptxas info    : Function properties for diag_nostage
+    80 bytes stack frame, 76 bytes spill stores, 76 bytes spill loads
+ptxas info    : Used 255 registers, used 1 barriers, 80 bytes cumulative stack size
+ptxas info    : Function properties for cand_qh8db
+    8 bytes stack frame, 4 bytes spill stores, 4 bytes spill loads
+ptxas info    : Used 255 registers, used 1 barriers, 8 bytes cumulative stack size
+ptxas info    : Function properties for cand_qh12
+    16 bytes stack frame, 12 bytes spill stores, 12 bytes spill loads
+ptxas info    : Used 255 registers, used 1 barriers, 16 bytes cumulative stack size
+ptxas info    : Function properties for cand_qh8
+    8 bytes stack frame, 4 bytes spill stores, 4 bytes spill loads
+ptxas info    : Used 255 registers, used 1 barriers, 8 bytes cumulative stack size
+ptxas info    : Function properties for cand_sb2
+    8 bytes stack frame, 8 bytes spill stores, 8 bytes spill loads
+ptxas info    : Used 255 registers, used 1 barriers, 8 bytes cumulative stack size
+ptxas info    : Function properties for cand_h2c
+    8 bytes stack frame, 8 bytes spill stores, 8 bytes spill loads
+ptxas info    : Used 255 registers, used 1 barriers, 8 bytes cumulative stack size
+ptxas info    : Function properties for fa_prefill_qw_h2_prime_table
+    8 bytes stack frame, 8 bytes spill stores, 8 bytes spill loads
+ptxas info    : Used 255 registers, used 1 barriers, 8 bytes cumulative stack size
+ptxas info    : Function properties for fa_prefill_qw_h2
+    8 bytes stack frame, 8 bytes spill stores, 8 bytes spill loads
+ptxas info    : Used 255 registers, used 1 barriers, 8 bytes cumulative stack size
+nvcc rc=0
+NVIDIA GB10, 305 MHz, 3003 MHz, 53, 4.70 W
+device NVIDIA GB10 sms 48 T 4096 reps 3
+kernel h2       regs 255 local 8 B smem 65536 B blocks/SM 1
+kernel h2c      regs 255 local 8 B smem 65536 B blocks/SM 1
+kernel sb2      regs 255 local 8 B smem 65536 B blocks/SM 1
+kernel ad       regs 255 local 40 B smem 65536 B blocks/SM 1
+kernel sbad     regs 255 local 40 B smem 65536 B blocks/SM 1
+kernel qh8      regs 255 local 8 B smem 98304 B blocks/SM 1
+kernel qh12     regs 255 local 16 B smem 81920 B blocks/SM 1
+kernel qh8db    regs 255 local 8 B smem 98304 B blocks/SM 1
+kernel fa2s     regs 255 local 0 B smem 98304 B blocks/SM 1
+kernel pp       regs 255 local 72 B smem 98368 B blocks/SM 1
+kernel nostage  regs 255 local 80 B smem 65536 B blocks/SM 1
+kernel nosm     regs 255 local 72 B smem 65536 B blocks/SM 1
+kernel qh8ns    regs 255 local 104 B smem 98304 B blocks/SM 1
+T 4096 Tkv    4096 h2           3.910 ms  52.73 TFLOPS mismatch 0 nonfinite 0 (min 3.909 max 3.910)
+T 4096 Tkv    4096 h2c          3.910 ms  52.73 TFLOPS mismatch 0 nonfinite 0 (min 3.906 max 4.198)
+T 4096 Tkv    4096 sb2          3.905 ms  52.80 TFLOPS mismatch 0 nonfinite 0 (min 3.901 max 4.220)
+T 4096 Tkv    4096 ad           3.984 ms  51.76 TFLOPS mismatch 0 nonfinite 0 (min 3.848 max 3.990)
+T 4096 Tkv    4096 sbad         3.818 ms  54.01 TFLOPS mismatch 0 nonfinite 0 (min 3.817 max 3.824)
+T 4096 Tkv    4096 qh8          3.827 ms  53.88 TFLOPS mismatch 0 nonfinite 0 (min 3.827 max 4.162)
+T 4096 Tkv    4096 qh12         3.776 ms  54.61 TFLOPS mismatch 0 nonfinite 0 (min 3.773 max 3.776)
+T 4096 Tkv    4096 qh8db        4.029 ms  51.18 TFLOPS mismatch 0 nonfinite 0 (min 3.902 max 4.052)
+T 4096 Tkv    4096 fa2s         3.865 ms  53.35 TFLOPS mismatch 0 nonfinite 0 (min 3.865 max 3.907)
+T 4096 Tkv    4096 pp           3.770 ms  54.70 TFLOPS mismatch 0 nonfinite 0 (min 3.759 max 4.133)
+T 4096 Tkv    4096 nostage      3.511 ms  58.73 TFLOPS mismatch 24969216 nonfinite 0 (min 3.503 max 3.644)
+T 4096 Tkv    4096 nosm         2.990 ms  68.97 TFLOPS mismatch 25165823 nonfinite 0 (min 2.971 max 3.297)
+T 4096 Tkv    4096 qh8ns        3.527 ms  58.46 TFLOPS mismatch 24969216 nonfinite 0 (min 3.524 max 3.528)
+T 4096 Tkv   16384 h2          22.795 ms  63.31 TFLOPS mismatch 0 nonfinite 0 (min 22.639 max 22.857)
+T 4096 Tkv   16384 h2c         22.782 ms  63.35 TFLOPS mismatch 0 nonfinite 0 (min 22.669 max 22.792)
+T 4096 Tkv   16384 sb2         22.700 ms  63.58 TFLOPS mismatch 0 nonfinite 0 (min 22.436 max 22.761)
+T 4096 Tkv   16384 ad          22.082 ms  65.35 TFLOPS mismatch 0 nonfinite 0 (min 22.079 max 22.241)
+T 4096 Tkv   16384 sbad        21.910 ms  65.87 TFLOPS mismatch 0 nonfinite 0 (min 21.886 max 22.194)
+T 4096 Tkv   16384 qh8         22.089 ms  65.33 TFLOPS mismatch 0 nonfinite 0 (min 21.991 max 22.122)
+T 4096 Tkv   16384 qh12        21.730 ms  66.41 TFLOPS mismatch 0 nonfinite 0 (min 21.720 max 21.915)
+T 4096 Tkv   16384 qh8db       22.577 ms  63.92 TFLOPS mismatch 0 nonfinite 0 (min 22.382 max 22.757)
+T 4096 Tkv   16384 fa2s        23.210 ms  62.18 TFLOPS mismatch 0 nonfinite 0 (min 23.188 max 23.564)
+T 4096 Tkv   16384 pp          21.714 ms  66.46 TFLOPS mismatch 0 nonfinite 0 (min 21.599 max 21.755)
+T 4096 Tkv   16384 nostage     19.772 ms  72.99 TFLOPS mismatch 25165824 nonfinite 0 (min 19.734 max 19.800)
+T 4096 Tkv   16384 nosm        16.132 ms  89.46 TFLOPS mismatch 25165824 nonfinite 0 (min 16.021 max 16.226)
+T 4096 Tkv   16384 qh8ns       19.768 ms  73.00 TFLOPS mismatch 25165824 nonfinite 0 (min 19.746 max 19.790)
+T 4096 Tkv   65536 h2          95.262 ms  67.09 TFLOPS mismatch 0 nonfinite 0 (min 94.962 max 95.300)
+T 4096 Tkv   65536 h2c         94.957 ms  67.30 TFLOPS mismatch 0 nonfinite 0 (min 94.953 max 94.960)
+T 4096 Tkv   65536 sb2         94.782 ms  67.43 TFLOPS mismatch 0 nonfinite 0 (min 94.524 max 94.929)
+T 4096 Tkv   65536 ad          93.088 ms  68.65 TFLOPS mismatch 0 nonfinite 0 (min 93.069 max 93.416)
+T 4096 Tkv   65536 sbad        92.555 ms  69.05 TFLOPS mismatch 0 nonfinite 0 (min 92.299 max 92.594)
+T 4096 Tkv   65536 qh8         91.924 ms  69.52 TFLOPS mismatch 0 nonfinite 0 (min 91.913 max 92.453)
+T 4096 Tkv   65536 qh12        90.491 ms  70.63 TFLOPS mismatch 0 nonfinite 0 (min 90.395 max 90.733)
+T 4096 Tkv   65536 qh8db       94.244 ms  67.81 TFLOPS mismatch 0 nonfinite 0 (min 94.221 max 94.464)
+T 4096 Tkv   65536 fa2s        98.622 ms  64.80 TFLOPS mismatch 0 nonfinite 0 (min 98.380 max 99.126)
+T 4096 Tkv   65536 pp          87.787 ms  72.80 TFLOPS mismatch 0 nonfinite 0 (min 87.710 max 88.668)
+T 4096 Tkv   65536 nostage     83.019 ms  76.98 TFLOPS mismatch 25165824 nonfinite 0 (min 83.000 max 83.061)
+T 4096 Tkv   65536 nosm        66.805 ms  95.67 TFLOPS mismatch 25165824 nonfinite 0 (min 66.614 max 66.823)
+T 4096 Tkv   65536 qh8ns       82.696 ms  77.28 TFLOPS mismatch 25165824 nonfinite 0 (min 82.510 max 82.736)
+T 4096 Tkv  131072 h2         191.628 ms  67.78 TFLOPS mismatch 0 nonfinite 0 (min 191.377 max 191.939)
+T 4096 Tkv  131072 h2c        191.408 ms  67.86 TFLOPS mismatch 0 nonfinite 0 (min 191.405 max 191.589)
+T 4096 Tkv  131072 sb2        190.519 ms  68.17 TFLOPS mismatch 0 nonfinite 0 (min 190.514 max 191.113)
+T 4096 Tkv  131072 ad         187.551 ms  69.25 TFLOPS mismatch 0 nonfinite 0 (min 187.479 max 187.609)
+T 4096 Tkv  131072 sbad       186.779 ms  69.54 TFLOPS mismatch 0 nonfinite 0 (min 186.131 max 187.072)
+T 4096 Tkv  131072 qh8        185.163 ms  70.14 TFLOPS mismatch 0 nonfinite 0 (min 185.145 max 185.270)
+T 4096 Tkv  131072 qh12       182.182 ms  71.29 TFLOPS mismatch 0 nonfinite 0 (min 182.173 max 182.425)
+T 4096 Tkv  131072 qh8db      190.228 ms  68.28 TFLOPS mismatch 0 nonfinite 0 (min 190.041 max 192.493)
+T 4096 Tkv  131072 fa2s       198.760 ms  65.35 TFLOPS mismatch 0 nonfinite 0 (min 198.488 max 199.504)
+T 4096 Tkv  131072 pp         175.658 ms  73.94 TFLOPS mismatch 0 nonfinite 0 (min 175.634 max 176.319)
+T 4096 Tkv  131072 nostage    167.702 ms  77.45 TFLOPS mismatch 25165824 nonfinite 0 (min 167.251 max 167.726)
+T 4096 Tkv  131072 nosm       134.687 ms  96.43 TFLOPS mismatch 25165824 nonfinite 0 (min 134.366 max 134.832)
+T 4096 Tkv  131072 qh8ns      166.783 ms  77.87 TFLOPS mismatch 25165824 nonfinite 0 (min 166.664 max 166.900)
+probe rc=0
+NVIDIA GB10, 2177 MHz, 63, 70.67 W
+2026-11-07T02:08:24+02:00
