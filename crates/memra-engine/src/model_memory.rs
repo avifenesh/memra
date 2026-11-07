@@ -127,6 +127,7 @@ impl HybridModel {
                         prompt_rows,
                         shape.n_layers,
                         shape.gdn_grid,
+                        shape.swa_ring,
                     ),
                 )
             } else {
@@ -135,9 +136,13 @@ impl HybridModel {
                     .ok_or("missing prime workspace shape")?;
                 (
                     shape.admission_bytes(prompt_rows),
-                    crate::hybrid_forward::prime_chunk_tokens(prompt_rows, shape.n_layers)
-                        .max(1)
-                        .min(prompt_rows),
+                    crate::hybrid_forward::prime_chunk_tokens(
+                        prompt_rows,
+                        shape.n_layers,
+                        shape.swa_ring,
+                    )
+                    .max(1)
+                    .min(prompt_rows),
                 )
             };
         // The non-hyper shape itemizes dense/GDN slabs, not MLA. Its GLM peer

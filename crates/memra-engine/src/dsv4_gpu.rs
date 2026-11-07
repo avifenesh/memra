@@ -3704,7 +3704,7 @@ impl Dsv4Gpu {
         let dspark_tail_reserve = if std::env::var("MEMRA_DSV4_DRAFTER").as_deref() == Ok("dspark")
             && !model.has("mtp.0.e_proj.weight")
         {
-            let cfg = memra_gguf::dsv4_dspark::DsparkConfig::load(dir, &model);
+            let cfg = memra_gguf::dsv4_dspark::DsparkConfig::load(dir, &model)?;
             cfg.n_blocks as u64 * 3_875_000_000u64
         } else {
             0
@@ -4278,7 +4278,7 @@ impl Dsv4Gpu {
                 // 10.27 GB of the drafter's 10.86 (memra #718), so each rank holds the
                 // expert-id half the trunk's EP pair gives it and rank 1 keeps everything else;
                 // `dspark_moe_tp_ep` joins the halves through the trunk's slot all-reduce.
-                let cfg = memra_gguf::dsv4_dspark::DsparkConfig::load(dir, &me.model);
+                let cfg = memra_gguf::dsv4_dspark::DsparkConfig::load(dir, &me.model)?;
                 let hidden = me.model.mc.n_embd as usize;
                 let tp_ep = me.topology.is_tp_ep();
                 if tp_ep && me.dspark_fused_moe {

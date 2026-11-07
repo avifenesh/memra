@@ -3060,14 +3060,18 @@ pub struct Gemma4MoeBits {
 /// zero acceptance cost", tools/make-trimmed-draft.sh), but that builder is a GGUF pipeline, so
 /// safetensors families quantize here. Draft-head precision cannot change served output — verify
 /// arbitrates every drafted token — so acceptance is the only quantity at risk.
+///
+/// `sliding_gated_moe`: the loading model's plan is SlidingGatedMoe. The unset default follows
+/// that plan, not the process, so a model loaded after a step37 load keeps its BF16 head.
 fn load_mtp_head_maybe_nvfp4(
     e: &Engine,
     src: &dyn TensorSource,
     name: &str,
+    sliding_gated_moe: bool,
 ) -> Result<Option<GpuTensor>, Box<dyn std::error::Error>> {
     if !{
         static ENV: std::sync::OnceLock<Option<bool>> = std::sync::OnceLock::new();
-        crate::step37_door(&ENV, "MEMRA_MTP_HEAD_NVFP4")
+        crate::step37_door_for_plan(&ENV, "MEMRA_MTP_HEAD_NVFP4", sliding_gated_moe)
     } {
         return load_opt(e, src, name);
     }
@@ -4186,6 +4190,13 @@ impl HybridModel {
         self.decode_batch_program() == crate::plan_backend::DecodeBatchProgram::SlidingGatedMoe
     }
 
+    /// Does THIS model take ring-backed SWA planes (`cache::swa_ring_on_for_plan`)? The cache,
+    /// admission and the prime schedule (`hybrid_forward::prime_chunk_tokens`) all ask this,
+    /// not the process default a co-loaded step37 model arms.
+    pub fn swa_ring_on(&self) -> bool {
+        crate::cache::swa_ring_on_for_plan(&self.plan)
+    }
+
     pub fn has_plan_operation(&self, operation: memra_gguf::model_plan::OperationKind) -> bool {
         self.plan.trunk_operations().contains(&operation)
     }
@@ -4271,6 +4282,9 @@ impl HybridModel {
         // ring, NVFP4 draft heads, prejoin/head-rows/weight-once verify fixes) default ON for
         // this family. Armed HERE — before any tensor upload, cache sizing, or mirror build reads
         // a door — and only for the SlidingGatedMoe program; every door keeps its =0 kill switch.
+        // The co-load guard runs first: the defaults are process-wide and the W8 hybrid half
+        // reaches generic GEMVs, so a mixed-family process refuses here (lib.rs co-load audit).
+        crate::admit_step37_coload(sliding_gated_moe_program)?;
         if sliding_gated_moe_program {
             crate::arm_step37_serving_defaults();
         }
@@ -5029,6 +5043,7 @@ impl HybridModel {
                         e,
                         src,
                         &p("nextn.shared_head_head.weight"),
+                        sliding_gated_moe_program,
                     )?
                     .or(load_opt(e, src, &p("nextn.shared_head.weight"))?),
                     d2t: None,

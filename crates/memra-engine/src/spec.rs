@@ -2525,10 +2525,7 @@ impl MtpScratch {
         geom: Option<&crate::hybrid::DraftGeom>,
     ) -> Result<MtpScratchPlane, Box<dyn std::error::Error>> {
         let (kv_dim_k, kv_dim_v, k_tok_bytes, v_tok_bytes) = mtp_scratch_layout(cfg, geom);
-        let ring = if crate::cache::swa_ring_on()
-            && crate::plan_backend::decode_batch_program(plan)
-                == crate::plan_backend::DecodeBatchProgram::SlidingGatedMoe
-        {
+        let ring = if crate::cache::swa_ring_on_for_plan(plan) {
             let window = plan
                 .layers
                 .iter()
@@ -14870,8 +14867,8 @@ impl HybridModel {
             // fill is a pure sequential append, so chunking is exact: each chunk appends its rows
             // at pos0=base+start with the identical per-row math. Same knob as the trunk prime.
             let tp = prompt.len();
-            let fill_chunk: usize = if crate::cache::swa_ring_on() {
-                crate::hybrid_forward::prime_chunk_tokens(tp, self.layers.len())
+            let fill_chunk: usize = if self.swa_ring_on() {
+                crate::hybrid_forward::prime_chunk_tokens(tp, self.layers.len(), true)
             } else {
                 // Preserve the flag-OFF schedule byte-for-byte, including the legacy zero value
                 // meaning one monolithic fill.

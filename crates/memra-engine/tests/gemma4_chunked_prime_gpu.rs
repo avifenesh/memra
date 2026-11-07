@@ -513,7 +513,7 @@ fn an_internally_chunked_gemma_prime_matches_the_monolithic_prime() {
     let h = Harness::new();
     let n_layers = h.model.cfg.n_layer as usize;
     set_prime_chunk("32");
-    let ranges = memra_engine::hybrid_forward::prime_chunk_ranges(200, n_layers, false);
+    let ranges = memra_engine::hybrid_forward::prime_chunk_ranges(200, n_layers, false, false);
     assert!(
         ranges.len() >= 4,
         "the chunked arm must schedule several ranges, got {ranges:?}"

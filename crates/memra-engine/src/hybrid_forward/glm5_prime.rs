@@ -88,7 +88,12 @@ impl Glm5TrunkPrime {
         if tokens.is_empty() || cache.pos + tokens.len() > cache.max_ctx {
             return Err("GLM5 trunk prime requires nonempty tokens within capacity".into());
         }
-        let ranges = hyper_prime_ranges(tokens.len(), m.layers.len(), m.gdn_prime_grid_on());
+        let ranges = hyper_prime_ranges(
+            tokens.len(),
+            m.layers.len(),
+            m.gdn_prime_grid_on(),
+            m.swa_ring_on(),
+        );
         let fence = crate::pp::pp_cuts(m.layers.len());
         let pipeline = ranges.len() > 1
             && b200_prime_v2_on()

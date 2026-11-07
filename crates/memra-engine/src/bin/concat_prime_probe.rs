@@ -2200,11 +2200,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             assert!(reps > 0, "pppipeperf --reps must be at least 1");
             let ids = cx.tok.encode(&pa, true);
             let t = ids.len();
-            let chunk = memra_engine::hybrid_forward::prime_chunk_tokens(t, cx.model.layers.len());
+            let chunk = memra_engine::hybrid_forward::prime_chunk_tokens(
+                t,
+                cx.model.layers.len(),
+                cx.model.swa_ring_on(),
+            );
             let ranges = memra_engine::hybrid_forward::prime_chunk_ranges(
                 t,
                 cx.model.layers.len(),
                 cx.model.gdn_prime_grid_on(),
+                cx.model.swa_ring_on(),
             );
             let sizes: Vec<_> = ranges.iter().map(|(start, end)| end - start).collect();
             let expected = ranges.len();
@@ -2351,6 +2356,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     t,
                     cx.model.layers.len(),
                     cx.model.gdn_prime_grid_on(),
+                    cx.model.swa_ring_on(),
                 )
             };
             let fixed_ranges = schedule("fixed");
@@ -2612,7 +2618,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         std::env::remove_var("MEMRA_PRIME_PIPE");
                         std::env::set_var("MEMRA_PRIME_CHUNK_SCHED", "dynamic");
                     }
-                    memra_engine::hybrid_forward::prime_chunk_tokens(t, cx.model.layers.len())
+                    memra_engine::hybrid_forward::prime_chunk_tokens(
+                        t,
+                        cx.model.layers.len(),
+                        cx.model.swa_ring_on(),
+                    )
                 } else {
                     unsafe { std::env::set_var("MEMRA_PRIME_CHUNK", cv) };
                     cv.parse().unwrap_or(0)
@@ -2624,6 +2634,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     t,
                     cx.model.layers.len(),
                     cx.model.gdn_prime_grid_on(),
+                    cx.model.swa_ring_on(),
                 );
                 unsafe {
                     std::env::set_var("MEMRA_PRIME_CHUNK_SCHED", "dynamic");
@@ -2632,6 +2643,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     t,
                     cx.model.layers.len(),
                     cx.model.gdn_prime_grid_on(),
+                    cx.model.swa_ring_on(),
                 );
                 let fixed_sizes: Vec<_> = fixed_ranges
                     .iter()
