@@ -178,6 +178,7 @@ fn captures_once(gpu: &Dsv4Gpu, state: &DecodeState, on: bool) {
         [if on { 3 } else { 1 }, 1],
         "recapture"
     );
+    let ars = gpu.tp_ep_trunk_ar_launches_for_gate();
     for rank in gpu
         .full_token_replay_variant_census_for_gate(state)
         .unwrap()
@@ -188,10 +189,14 @@ fn captures_once(gpu: &Dsv4Gpu, state: &DecodeState, on: bool) {
             &[(0, 3240)]
         };
         for &(slot, kernels) in slots {
+            eprintln!(
+                "census slot={slot} {:?} (want kernels={kernels} AR={ars})",
+                rank[slot]
+            );
             assert_eq!(rank[slot][1], kernels, "kernel census slot={slot}");
             assert_eq!(
                 [rank[slot][2], rank[slot][3], rank[slot][4], rank[slot][6]],
-                [86, 1, 86, 0],
+                [ars, 1, 86, 0],
                 "AR/embedding/HC/unsupported census"
             );
         }
@@ -223,6 +228,13 @@ fn count_kernel(dot: &str, needle: &str) -> usize {
         .filter(|line| line.trim_start().starts_with("| {ID |") && line.contains(needle))
         .count()
 }
+
+/// GEMV launches behind a kernel symbol: one per plain node, two per `<symbol>_pair` node (the
+/// dense-fast program fuses two GEMVs of one input into a pair kernel, e.g. 107 fp8 and 62 dots
+/// pairs per trunk variant under the defaults; 280 + 2 x 107 = 494).
+fn count_launches(dot: &str, symbol: &str) -> usize {
+    count_kernel(dot, symbol) + count_kernel(dot, &format!("{symbol}_pair"))
+}
 fn dense_census(gpu: &Dsv4Gpu, state: &DecodeState, on: bool, dir: &Path) -> GraphHashes {
     captures_once(gpu, state, on);
     std::fs::create_dir_all(dir).expect("graph directory");
@@ -238,12 +250,15 @@ fn dense_census(gpu: &Dsv4Gpu, state: &DecodeState, on: bool, dir: &Path) -> Gra
             let dot = std::fs::read_to_string(path).expect("DOT");
             let expected = if segment != 1 {
                 [494, 253]
-            } else if rank == 1 {
+            } else if rank == 1 || gpu.vocab_parallel_head_for_gate() {
                 [0, 2]
             } else {
                 [0, 0]
             };
-            let candidate = [count_kernel(&dot, FP8_NODES), count_kernel(&dot, DOT_NODES)];
+            let candidate = [
+                count_launches(&dot, FP8_NODES),
+                count_launches(&dot, DOT_NODES),
+            ];
             let control = [
                 count_kernel(&dot, CONTROL_FP8),
                 count_kernel(&dot, CONTROL_DOTS),
@@ -271,6 +286,8 @@ struct Arm {
     program: Program,
     graph_hashes: Option<GraphHashes>,
     environment_default: bool,
+    // the dense dots enqueues the vocab-parallel head adds to a first capture (both ranks)
+    head_dots: u64,
 }
 impl Arm {
     fn new(gpu: &Dsv4Gpu, prefix: &DecodeState, cfg: Dsv4SampleCfg, program: Program) -> Self {
@@ -321,6 +338,7 @@ impl Arm {
             program,
             graph_hashes: None,
             environment_default,
+            head_dots: gpu.tp_ep_head_dots_extra_for_gate(),
         }
     }
     fn prepare(&self, gpu: &Dsv4Gpu) -> bool {
@@ -346,7 +364,7 @@ impl Arm {
     fn check_enqueues(&self, before: [u64; 2], first: bool) {
         let after = enqueues();
         let expected = if first && self.program.dense {
-            [2964, 1520]
+            [2964, 1520 + self.head_dots]
         } else {
             [0, 0]
         };
