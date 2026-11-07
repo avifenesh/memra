@@ -112,7 +112,7 @@ pass in brackets), plus three more arms on the ring:
 | pqk | each warp issues QK(i+1) before softmax(i) (16 more live registers, 32 B stack) | 47.0 | 55.6 | 56.6 | 56.5 |
 
 The skew of one QK is the best measured; a later start costs, and the intra-warp pipelining loses
-26% because tile i+1's copy has a third of a tile less to land while head B lags and the extra
+33.6% at depth 131,072 (24.9% at 4,096) because tile i+1's copy has a third of a tile less to land while head B lags and the extra
 score tile spills. All exact.
 
 What moved it:
@@ -225,8 +225,8 @@ as main: the ring adds 32 KB of shared memory per CTA and no device memory. E2E 
 The 131k saving (9.7 s) matches the attention share: 50.8 s of h2 at 66 TFLOPS becomes about 40 s
 at 84-85. At 260k attention is about 200 s of h2, so the saving there (38.8 s) is the largest.
 
-Confirmation on unit 2 (the same cells, B H H B B H) runs after the cell evidence; its receipts are
-added as `served-unit2-final/` with `CONFIRM.md`.
+Confirmation on unit 2 (the same cells, B H H B B H): `served-unit2-final/` and `ADDENDUM.md`
+(-1.81% / -5.93% / -8.72%, identical answers).
 
 Earlier, not measurements of the landing pair:
 

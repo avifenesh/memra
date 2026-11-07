@@ -1,0 +1,125 @@
+2026-11-07T09:06:59+02:00
+e759f4ac87f1c0fbacd9e0c8778e69d27eac8d1bcab9f102225d1b8f1649fafb  flash_attn.cu
+4c100281af60682fa90a98aabb9e3b17a07ccbcb54a768415b76f1ca2679346d  attn_cand.cuh
+df67f4b43a29f03ae509d15d01d7b53dedea380d54c94e75d40e9156c85ee044  probe_attn.cu
+ptxas info    : Function properties for cand_pqk
+    32 bytes stack frame, 64 bytes spill stores, 64 bytes spill loads
+ptxas info    : Used 255 registers, used 2 barriers, 32 bytes cumulative stack size
+ptxas info    : Function properties for cand_sk2
+    16 bytes stack frame, 20 bytes spill stores, 20 bytes spill loads
+ptxas info    : Used 255 registers, used 2 barriers, 16 bytes cumulative stack size
+ptxas info    : Function properties for cand_sk1
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 255 registers, used 2 barriers
+ptxas info    : Function properties for cand_ppadmz
+    48 bytes stack frame, 88 bytes spill stores, 88 bytes spill loads
+ptxas info    : Used 255 registers, used 2 barriers, 48 bytes cumulative stack size
+ptxas info    : Function properties for cand_ppadz
+    8 bytes stack frame, 4 bytes spill stores, 4 bytes spill loads
+ptxas info    : Used 255 registers, used 2 barriers, 8 bytes cumulative stack size
+ptxas info    : Function properties for cand_ppm
+    104 bytes stack frame, 200 bytes spill stores, 200 bytes spill loads
+ptxas info    : Used 255 registers, used 2 barriers, 104 bytes cumulative stack size
+ptxas info    : Function properties for cand_ppadm
+    48 bytes stack frame, 88 bytes spill stores, 88 bytes spill loads
+ptxas info    : Used 255 registers, used 2 barriers, 48 bytes cumulative stack size
+ptxas info    : Function properties for cand_ppad
+    8 bytes stack frame, 4 bytes spill stores, 4 bytes spill loads
+ptxas info    : Used 255 registers, used 2 barriers, 8 bytes cumulative stack size
+ptxas info    : Function properties for cand_pp2
+    80 bytes stack frame, 160 bytes spill stores, 160 bytes spill loads
+ptxas info    : Used 255 registers, used 2 barriers, 80 bytes cumulative stack size
+ptxas info    : Function properties for cand_sbad
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 255 registers, used 1 barriers
+ptxas info    : Function properties for cand_ad
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 255 registers, used 1 barriers
+ptxas info    : Function properties for cand_pp
+    72 bytes stack frame, 136 bytes spill stores, 136 bytes spill loads
+ptxas info    : Used 255 registers, used 2 barriers, 72 bytes cumulative stack size
+ptxas info    : Function properties for cand_fa2s
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 255 registers, used 1 barriers
+ptxas info    : Function properties for diag_qh8ns
+    104 bytes stack frame, 224 bytes spill stores, 164 bytes spill loads
+ptxas info    : Used 255 registers, used 1 barriers, 104 bytes cumulative stack size
+ptxas info    : Function properties for diag_nosm
+    72 bytes stack frame, 144 bytes spill stores, 72 bytes spill loads
+ptxas info    : Used 255 registers, used 1 barriers, 72 bytes cumulative stack size
+ptxas info    : Function properties for diag_nostage
+    80 bytes stack frame, 76 bytes spill stores, 76 bytes spill loads
+ptxas info    : Used 255 registers, used 1 barriers, 80 bytes cumulative stack size
+ptxas info    : Function properties for cand_qh8db
+    8 bytes stack frame, 4 bytes spill stores, 4 bytes spill loads
+ptxas info    : Used 255 registers, used 1 barriers, 8 bytes cumulative stack size
+ptxas info    : Function properties for cand_qh12
+    16 bytes stack frame, 12 bytes spill stores, 12 bytes spill loads
+ptxas info    : Used 255 registers, used 1 barriers, 16 bytes cumulative stack size
+ptxas info    : Function properties for cand_qh8
+    8 bytes stack frame, 4 bytes spill stores, 4 bytes spill loads
+ptxas info    : Used 255 registers, used 1 barriers, 8 bytes cumulative stack size
+ptxas info    : Function properties for cand_sb2
+    8 bytes stack frame, 8 bytes spill stores, 8 bytes spill loads
+ptxas info    : Used 255 registers, used 1 barriers, 8 bytes cumulative stack size
+ptxas info    : Function properties for cand_h2c
+    8 bytes stack frame, 8 bytes spill stores, 8 bytes spill loads
+ptxas info    : Used 255 registers, used 1 barriers, 8 bytes cumulative stack size
+ptxas info    : Function properties for fa_prefill_qw_h2p_prime_table
+    24 bytes stack frame, 28 bytes spill stores, 28 bytes spill loads
+ptxas info    : Used 255 registers, used 2 barriers, 24 bytes cumulative stack size
+ptxas info    : Function properties for fa_prefill_qw_h2_prime_table
+    8 bytes stack frame, 8 bytes spill stores, 8 bytes spill loads
+ptxas info    : Used 255 registers, used 1 barriers, 8 bytes cumulative stack size
+ptxas info    : Function properties for fa_prefill_qw_h2p
+    8 bytes stack frame, 4 bytes spill stores, 4 bytes spill loads
+ptxas info    : Used 255 registers, used 2 barriers, 8 bytes cumulative stack size
+ptxas info    : Function properties for fa_prefill_qw_h2
+    8 bytes stack frame, 8 bytes spill stores, 8 bytes spill loads
+ptxas info    : Used 255 registers, used 1 barriers, 8 bytes cumulative stack size
+nvcc rc=0
+NVIDIA GB10, 208 MHz, 3003 MHz, 58, 4.95 W
+device NVIDIA GB10 sms 48 T 4096 reps 3
+kernel h2       regs 255 local 8 B smem 65536 B blocks/SM 1
+kernel h2p      regs 255 local 8 B smem 98368 B blocks/SM 1
+kernel ppad     regs 255 local 8 B smem 98368 B blocks/SM 1
+kernel sk1      regs 255 local 0 B smem 98368 B blocks/SM 1
+kernel sk2      regs 255 local 16 B smem 98368 B blocks/SM 1
+kernel pqk      regs 255 local 32 B smem 98368 B blocks/SM 1
+kernel h2       regs 255 local 8 B smem 65536 B blocks/SM 1
+kernel h2p      regs 255 local 8 B smem 98368 B blocks/SM 1
+T 4096 Tkv    4096 h2           3.914 ms  52.68 TFLOPS mismatch 0 nonfinite 0 (min 3.909 max 3.973)
+T 4096 Tkv    4096 h2p          3.294 ms  62.60 TFLOPS mismatch 0 nonfinite 0 (min 3.292 max 3.298)
+T 4096 Tkv    4096 ppad         3.291 ms  62.66 TFLOPS mismatch 0 nonfinite 0 (min 3.279 max 3.476)
+T 4096 Tkv    4096 sk1          3.270 ms  63.05 TFLOPS mismatch 0 nonfinite 0 (min 3.268 max 3.271)
+T 4096 Tkv    4096 sk2          3.472 ms  59.39 TFLOPS mismatch 0 nonfinite 0 (min 3.466 max 3.862)
+T 4096 Tkv    4096 pqk          4.378 ms  47.10 TFLOPS mismatch 0 nonfinite 0 (min 4.376 max 4.832)
+T 4096 Tkv    4096 h2           3.922 ms  52.58 TFLOPS mismatch 0 nonfinite 0 (min 3.909 max 3.958)
+T 4096 Tkv    4096 h2p          3.372 ms  61.16 TFLOPS mismatch 0 nonfinite 0 (min 3.308 max 3.543)
+T 4096 Tkv   16384 h2          22.765 ms  63.39 TFLOPS mismatch 0 nonfinite 0 (min 22.714 max 22.776)
+T 4096 Tkv   16384 h2p         18.426 ms  78.32 TFLOPS mismatch 0 nonfinite 0 (min 18.416 max 18.443)
+T 4096 Tkv   16384 ppad        18.294 ms  78.89 TFLOPS mismatch 0 nonfinite 0 (min 18.277 max 18.371)
+T 4096 Tkv   16384 sk1         18.392 ms  78.47 TFLOPS mismatch 0 nonfinite 0 (min 18.375 max 18.427)
+T 4096 Tkv   16384 sk2         19.964 ms  72.29 TFLOPS mismatch 0 nonfinite 0 (min 19.643 max 19.989)
+T 4096 Tkv   16384 pqk         25.971 ms  55.57 TFLOPS mismatch 0 nonfinite 0 (min 25.812 max 26.286)
+T 4096 Tkv   16384 h2          22.526 ms  64.07 TFLOPS mismatch 0 nonfinite 0 (min 22.525 max 22.742)
+T 4096 Tkv   16384 h2p         18.426 ms  78.32 TFLOPS mismatch 0 nonfinite 0 (min 18.108 max 18.478)
+T 4096 Tkv   65536 h2          94.948 ms  67.31 TFLOPS mismatch 0 nonfinite 0 (min 94.948 max 95.814)
+T 4096 Tkv   65536 h2p         75.965 ms  84.13 TFLOPS mismatch 0 nonfinite 0 (min 75.962 max 75.970)
+T 4096 Tkv   65536 ppad        75.795 ms  84.32 TFLOPS mismatch 0 nonfinite 0 (min 75.556 max 77.124)
+T 4096 Tkv   65536 sk1         76.402 ms  83.65 TFLOPS mismatch 0 nonfinite 0 (min 76.050 max 76.726)
+T 4096 Tkv   65536 sk2         83.025 ms  76.98 TFLOPS mismatch 0 nonfinite 0 (min 82.767 max 83.033)
+T 4096 Tkv   65536 pqk        112.921 ms  56.60 TFLOPS mismatch 0 nonfinite 0 (min 112.774 max 119.163)
+T 4096 Tkv   65536 h2          94.970 ms  67.29 TFLOPS mismatch 0 nonfinite 0 (min 94.958 max 95.662)
+T 4096 Tkv   65536 h2p         76.342 ms  83.71 TFLOPS mismatch 0 nonfinite 0 (min 76.318 max 76.741)
+T 4096 Tkv  131072 h2         191.903 ms  67.68 TFLOPS mismatch 0 nonfinite 0 (min 191.887 max 191.919)
+T 4096 Tkv  131072 h2p        153.529 ms  84.60 TFLOPS mismatch 0 nonfinite 0 (min 153.234 max 153.894)
+T 4096 Tkv  131072 ppad       152.979 ms  84.90 TFLOPS mismatch 0 nonfinite 0 (min 152.476 max 153.376)
+T 4096 Tkv  131072 sk1        153.122 ms  84.82 TFLOPS mismatch 0 nonfinite 0 (min 153.081 max 153.364)
+T 4096 Tkv  131072 sk2        167.092 ms  77.73 TFLOPS mismatch 0 nonfinite 0 (min 166.936 max 167.221)
+T 4096 Tkv  131072 pqk        229.988 ms  56.47 TFLOPS mismatch 0 nonfinite 0 (min 229.931 max 230.058)
+T 4096 Tkv  131072 h2         191.879 ms  67.69 TFLOPS mismatch 0 nonfinite 0 (min 191.852 max 192.013)
+T 4096 Tkv  131072 h2p        153.256 ms  84.75 TFLOPS mismatch 0 nonfinite 0 (min 153.046 max 153.314)
+probe rc=0
+NVIDIA GB10, 2177 MHz, 64, 72.91 W
+2026-11-07T09:07:29+02:00

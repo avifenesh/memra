@@ -1,0 +1,59 @@
+   Compiling cfg-if v1.0.4
+   Compiling proc-macro2 v1.0.106
+   Compiling quote v1.0.46
+   Compiling serde_core v1.0.228
+   Compiling libc v0.2.186
+   Compiling memchr v2.8.2
+   Compiling serde_json v1.0.150
+   Compiling zmij v1.0.21
+   Compiling itoa v1.0.18
+   Compiling libloading v0.9.0
+   Compiling crc32fast v1.5.0
+   Compiling smallvec v1.15.2
+   Compiling regex-syntax v0.8.11
+   Compiling flate2 v1.1.9
+   Compiling aho-corasick v1.1.4
+   Compiling unicode-normalization-alignments v0.1.12
+   Compiling cudarc v0.19.8
+   Compiling cpufeatures v0.2.17
+   Compiling sha2 v0.10.9
+   Compiling memmap2 v0.9.11
+   Compiling syn v2.0.118
+   Compiling png v0.18.1
+   Compiling bytemuck v1.25.2
+warning: memra-engine@0.138.0: nvcc from $CUDA_HOME: /usr/local/cuda/bin/nvcc
+warning: memra-engine@0.138.0: MEMRA_CUDA_ARCH auto-detected 121a (compute_cap 12.1); set MEMRA_CUDA_ARCH to override
+   Compiling image v0.25.10
+   Compiling serde_derive v1.0.228
+   Compiling serde v1.0.228
+   Compiling memra-gguf v0.138.0 (~/.cache/memra-attn-gb10/tree/crates/memra-gguf)
+   Compiling memra-tier v0.138.0 (~/.cache/memra-attn-gb10/tree/crates/memra-tier)
+   Compiling memra-tokenizer v0.138.0 (~/.cache/memra-attn-gb10/tree/crates/memra-tokenizer)
+   Compiling memra-runtime v0.138.0 (~/.cache/memra-attn-gb10/tree/crates/memra-runtime)
+   Compiling memra-kv v0.138.0 (~/.cache/memra-attn-gb10/tree/crates/memra-kv)
+   Compiling memra-reference v0.138.0 (~/.cache/memra-attn-gb10/tree/crates/memra-reference)
+   Compiling memra-engine v0.138.0 (~/.cache/memra-attn-gb10/tree/crates/memra-engine)
+    Finished `release` profile [optimized] target(s) in 8m 50s
+     Running tests/prime_kv_h2_gpu.rs (~/.cache/memra-attn-gb10/target/release/deps/prime_kv_h2_gpu-bcbd2ab6ecb4ebe0)
+
+running 1 test
+kv-h2 t=128 tkv=128 nh=6 nkv=1 causal=true differences=0
+kv-h2 t=128 tkv=128 nh=6 nkv=1 causal=false differences=0
+kv-h2 t=129 tkv=161 nh=6 nkv=1 causal=true differences=0
+kv-h2 t=129 tkv=161 nh=6 nkv=1 causal=false differences=0
+kv-h2 t=192 tkv=4097 nh=6 nkv=1 causal=true differences=0
+kv-h2 t=192 tkv=4097 nh=6 nkv=1 causal=false differences=0
+kv-h2 t=992 tkv=32768 nh=6 nkv=1 causal=true differences=0
+kv-h2 t=992 tkv=32768 nh=6 nkv=1 causal=false differences=0
+kv-h2 t=1024 tkv=131070 nh=6 nkv=1 causal=true differences=0
+kv-h2 t=1024 tkv=131070 nh=6 nkv=1 causal=false differences=0
+kv-h2 t=4096 tkv=8192 nh=24 nkv=4 causal=true differences=0
+kv-h2 t=4096 tkv=8192 nh=24 nkv=4 causal=false differences=0
+kv-h2 t=4096 tkv=131070 nh=24 nkv=4 causal=true differences=0
+kv-h2 t=4096 tkv=131070 nh=24 nkv=4 causal=false differences=0
+kv-h2 t=130 tkv=4226 nh=24 nkv=4 causal=true differences=0
+kv-h2 t=130 tkv=4226 nh=24 nkv=4 causal=false differences=0
+test two_head_ctas_preserve_quantized_attention_bytes ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 7.88s
+

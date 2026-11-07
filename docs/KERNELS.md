@@ -105,7 +105,7 @@ Numerical bodies preserve the corresponding eager entry's operation order.
 | Symbol | Purpose | Types | Architecture | Door | Binding |
 | --- | --- | --- | --- | --- | --- |
 | `fa_prefill_qw_t3` | Two K staging planes plus one V plane, register P operands; unchanged head-dim 256 prime arithmetic | BF16 KV, f32 Q/O | existing warp-MMA support | `MEMRA_PRIME_KV_T3`, default OFF | `Engine::fa_prefill_view_ws` |
-| `fa_prefill_qw_h2` | Two query heads of one KV head per 8-warp CTA over double-buffered K/V planes, register P operands; unchanged head-dim 256 prime arithmetic (2026-11-06) | BF16 KV, f32 Q/O | existing warp-MMA support | `MEMRA_PRIME_KV_H2` on any device; on GB10 the h2 route takes h2p unless `MEMRA_PRIME_KV_H2P=0` | `Engine::fa_prefill_view_ws` |
+| `fa_prefill_qw_h2` | Two query heads of one KV head per 8-warp CTA over double-buffered K/V planes, register P operands; unchanged head-dim 256 prime arithmetic (2026-11-06) | BF16 KV, f32 Q/O | existing warp-MMA support | `MEMRA_PRIME_KV_H2`: the h2 route is ON by default on unified-memory 120a (GB10), OFF elsewhere; on GB10 that route runs h2p unless `MEMRA_PRIME_KV_H2P=0` | `Engine::fa_prefill_view_ws` |
 | `fa_prefill_qw_h2p` | h2's row program on a three-stage K/V ring handed over by per-stage full/empty mbarriers, the second head's warps one QK behind the first so one head's softmax overlaps the other's MMAs; ldmatrix through precomputed `.shared` offsets; bit-identical to h2 (2026-11-07) | BF16 KV, f32 Q/O | mbarrier `try_wait` on sm_90+, `test_wait` below | `MEMRA_PRIME_KV_H2P`, default ON on unified-memory 120a (GB10) inside the h2 route, OFF elsewhere | `Engine::fa_prefill_view_ws` |
 
 ## GLM TP pool-split indexer, 2026-09-08

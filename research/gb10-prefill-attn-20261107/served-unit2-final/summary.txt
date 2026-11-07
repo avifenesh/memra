@@ -1,0 +1,30 @@
+campaign served-unit2-final: 18 requests, arms ['B', 'H']
+
+target 32768
+  B        ttft 32.461, 32.503, 32.493                   median 32.493  cells ['01-B', '04-B', '05-B']
+  H        ttft 31.902, 31.906, 31.917                   median 31.906  cells ['02-H', '03-H', '06-H']
+  H vs B: -1.81%
+
+target 131072
+  B        ttft 166.639, 167.679, 167.666                median 167.666  cells ['01-B', '04-B', '05-B']
+  H        ttft 157.720, 157.377, 157.962                median 157.720  cells ['02-H', '03-H', '06-H']
+  H vs B: -5.93%
+
+target 260000
+  B        ttft 433.586, 430.714, 430.495                median 430.714  cells ['01-B', '04-B', '05-B']
+  H        ttft 393.340, 392.050, 393.173                median 393.173  cells ['02-H', '03-H', '06-H']
+  H vs B: -8.72%
+
+fingerprints (text sha256 per target/rep across all cells)
+  target 32768 rep 0: 1 distinct IDENTICAL
+  target 131072 rep 0: 1 distinct IDENTICAL
+  target 260000 rep 0: 1 distinct IDENTICAL
+errors/needle misses: 0
+FINGERPRINTS IDENTICAL
+01-B: MemAvailable floor 66.33 GiB
+02-H: MemAvailable floor 66.34 GiB
+03-H: MemAvailable floor 63.74 GiB
+04-B: MemAvailable floor 66.23 GiB
+05-B: MemAvailable floor 66.24 GiB
+06-H: MemAvailable floor 66.16 GiB
+SERVED-AB-DONE
