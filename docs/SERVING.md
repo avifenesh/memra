@@ -402,8 +402,9 @@ each states itself at boot.
   the plain route on one device, no SWA ring, no latent planes, no ppN or TP stage ownership)
   reserve their capacity as a fixed virtual range and map granules as the rows grow, inline on
   the owner thread; admission subtracts the reserved-but-unbacked bytes of active sessions. Same
-  kernels, same bytes, fixed addresses. Boot line `[kv-vmm] door=ON ... grow=inline
-  (pro6000-ws-receipt)`; every other card prints `[kv-vmm] door=OFF` and keeps pooled planes, and
+  kernels, same bytes, fixed addresses. This one also covers the Max-Q, which carries its own
+  receipt (2026-11-07, `HardwareTarget::is_pro6000_maxq`). Boot line `[kv-vmm] door=ON ...
+  grow=inline (pro6000-ws-receipt)`, `(pro6000-maxq-receipt)` on the Max-Q; every other card prints `[kv-vmm] door=OFF` and keeps pooled planes, and
   so does that card when its VMM granularity query refuses (`door=OFF (VMM unsupported: ...)`).
   [Decision](decisions/KV-VMM-SERVING-DEFAULT.md).
 - **Batched-chunk OOM retry.** A batched decode chunk whose quoted CUDA OOM came before any

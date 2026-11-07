@@ -77,9 +77,10 @@ impl PinnedKind {
 /// extent=1 busy_p95_sum_us=11330.8 ... -> helper`). A class with no stage-0 receipt takes the
 /// helper arm, which never holds the owner thread across a driver call's tail. Returns the
 /// placement and the name of its source. The planes themselves are the serving default only
-/// where the deciding cell read PROMOTE-ELIGIBLE, the full-power RTX PRO 6000 Blackwell
-/// Workstation Edition (`docs/decisions/KV-VMM-SERVING-DEFAULT.md`); there the placement is
-/// `inline`, the arm that cell qualified. The 5090's `helper` row is kept for its own cell.
+/// where a deciding cell read PROMOTE-ELIGIBLE, the full-power RTX PRO 6000 Blackwell
+/// Workstation Edition and, since 2026-11-07, its Max-Q edition
+/// (`docs/decisions/KV-VMM-SERVING-DEFAULT.md`); on both the placement is `inline`, the arm
+/// each cell qualified. The 5090's `helper` row is kept for its own cell.
 pub fn kv_vmm_placement_for_device(name: &str) -> (memra_kv::VmmGrowPlacement, &'static str) {
     use crate::parallel::HardwareTarget;
     // DAY37 2.5: stage 0 on one RTX PRO 6000 Blackwell Workstation Edition read
@@ -88,6 +89,12 @@ pub fn kv_vmm_placement_for_device(name: &str) -> (memra_kv::VmmGrowPlacement, &
     // default until their own stage 0.
     if HardwareTarget::is_pro6000_workstation(name) {
         return (memra_kv::VmmGrowPlacement::Inline, "pro6000-ws-receipt");
+    }
+    // DAY37 2.10 (addendum I M.3): the Max-Q cell ran inline, pinned, and read PROMOTE-ELIGIBLE;
+    // its stage 0 (busy_p95_sum_us=171.3) is a reading, so the Max-Q keys to the arm it qualified
+    // under its own source label.
+    if HardwareTarget::is_pro6000_maxq(name) {
+        return (memra_kv::VmmGrowPlacement::Inline, "pro6000-maxq-receipt");
     }
     match HardwareTarget::from_device_name(name) {
         Ok(HardwareTarget::Rtx5090) => (memra_kv::VmmGrowPlacement::Helper, "rtx5090-receipt"),
@@ -115,7 +122,7 @@ mod kv_vmm_placement_tests {
         );
         assert_eq!(
             p("NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition"),
-            (Helper, "no-receipt-default")
+            (Inline, "pro6000-maxq-receipt")
         );
         assert_eq!(
             p("NVIDIA RTX PRO 6000 Blackwell Server Edition"),
