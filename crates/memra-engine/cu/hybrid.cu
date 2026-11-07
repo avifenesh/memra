@@ -1,6 +1,7 @@
 // Qwen3.5/3.6 hybrid linear-attention kernels: depthwise causal conv1d + SiLU, and the
 // Gated DeltaNet recurrent scan. Ported from llama.cpp ggml-cuda {ssm-conv.cu, gated_delta_net.cu},
 // simplified to single sequence (n_seqs=1). All f32, no tensor cores → sm_120-native.
+#include <cstdint>
 #include <cuda_runtime.h>
 #include <cuda_fp16.h>
 #include <cuda_bf16.h>
@@ -149,6 +150,102 @@ extern "C" __global__ void ssm_conv1d_gdn_state_f32(
         int vh = cc / d_state;
         int i  = cc % d_state;
         v_g[((size_t)t * num_v + vh) * d_state + i] = val;
+    }
+}
+
+// The state conv with the q/k L2 norms fused (GB10 prefill lane, 2026-11-07), for the compact
+// q/k layout (hk == num_k) at d_state 128. One warp per (token, 128-channel head row); lane l
+// computes channels 4l .. 4l+3 with ssm_conv1d_gdn_state_f32's per-channel program (the same
+// 8-tap ascending accumulation, the same ring reads, the same SiLU). A q or k row is then
+// l2_norm_pp_v2_f32's program on those four values (lane l holds elements 4l .. 4l+3, the same
+// sum expression, the same xor-shuffle tree, rsqrtf(sum + eps), the same products), written as
+// q_l2 / k_l2 plus k's bf16 twin; the raw q_g / k_g rows are never stored. v rows are stored as
+// the plain conv stores them. Bit-identical to ssm_conv1d_gdn_state_f32 then two l2_norm_pp_v2_f32
+// launches (kernel-check GDN-CONV-L2). grid (conv_dim / 128 / 8, T), block 256.
+extern "C" __global__ void ssm_conv1d_gdn_state_l2_f32(
+        const float* __restrict__ qkv_tm, const float* __restrict__ conv_state,
+        const float* __restrict__ w,
+        float* __restrict__ q_l2, float* __restrict__ k_l2, __nv_bfloat16* __restrict__ k16,
+        float* __restrict__ v_g,
+        int conv_dim, int T, int d_conv, int num_v, int num_k, int key_dim, float eps) {
+    const int warp = threadIdx.x >> 5, lane = threadIdx.x & 31;
+    const int grp = blockIdx.x * 8 + warp;          // 128-channel head row
+    const int t = blockIdx.y;
+    if (grp * 128 >= conv_dim || t >= T) return;     // whole warps
+    const int pad = d_conv - 1;
+    float val[4];
+    const int cb = grp * 128 + lane * 4;
+    if (d_conv == 4 && ((reinterpret_cast<uintptr_t>(qkv_tm) | reinterpret_cast<uintptr_t>(w)) & 15) == 0
+        && (conv_dim & 3) == 0) {
+        // d_conv 4 (Qwen3.5/3.8): the lane's four channels per window row and its four weight rows
+        // in 16-byte loads; each channel still accumulates its taps j = 0..3 in ascending order
+        // with the same expression, so the values are the scalar path's
+        float4 wv[4], xr[4];
+        #pragma unroll
+        for (int e4 = 0; e4 < 4; e4++) wv[e4] = *(const float4*)(w + (size_t)(cb + e4) * 4);
+        #pragma unroll
+        for (int j = 0; j < 4; j++) {
+            const int tt = t - 3 + j;
+            if (tt >= 0) {
+                xr[j] = *(const float4*)(qkv_tm + (size_t)tt * conv_dim + cb);
+            } else {
+                const float* st = conv_state + (size_t)cb * 3 + 3 + tt;
+                xr[j] = make_float4(st[0], st[3], st[6], st[9]);
+            }
+        }
+        #pragma unroll
+        for (int e4 = 0; e4 < 4; e4++) {
+            const float w4[4] = {wv[e4].x, wv[e4].y, wv[e4].z, wv[e4].w};
+            float acc = 0.0f;
+            #pragma unroll
+            for (int j = 0; j < 4; j++) {
+                const float xv = e4 == 0 ? xr[j].x : e4 == 1 ? xr[j].y : e4 == 2 ? xr[j].z : xr[j].w;
+                acc += xv * w4[j];
+            }
+            val[e4] = silu(acc);
+        }
+    } else {
+        #pragma unroll
+        for (int e4 = 0; e4 < 4; e4++) {
+            const int c = cb + e4;
+            const float* wc = w + (size_t)c * d_conv;
+            const float* st = conv_state + (size_t)c * pad;
+            float acc = 0.0f;
+            #pragma unroll
+            for (int j = 0; j < 8; j++) {
+                if (j < d_conv) {
+                    int tt = t - pad + j;
+                    float xv = (tt >= 0) ? qkv_tm[(size_t)tt * conv_dim + c] : st[pad + tt];
+                    acc += xv * wc[j];
+                }
+            }
+            val[e4] = silu(acc);
+        }
+    }
+    const int c0 = grp * 128;
+    if (c0 < 2 * key_dim) {
+        const bool is_q = c0 < key_dim;
+        const int kh = (is_q ? c0 : c0 - key_dim) / 128;
+        float4 v = make_float4(val[0], val[1], val[2], val[3]);
+        float sum = v.x * v.x + v.y * v.y + v.z * v.z + v.w * v.w;
+        #pragma unroll
+        for (int o = 16; o > 0; o >>= 1) sum += __shfl_xor_sync(0xffffffffu, sum, o);
+        float scale = rsqrtf(sum + eps);
+        float4 o4 = make_float4(v.x * scale, v.y * scale, v.z * scale, v.w * scale);
+        const size_t row = (size_t)t * num_k + kh;
+        float* dst = is_q ? q_l2 : k_l2;
+        *(float4*)(dst + row * 128 + lane * 4) = o4;
+        if (!is_q && k16 != nullptr) {
+            __nv_bfloat16* hb = k16 + row * 128 + lane * 4;
+            hb[0] = __float2bfloat16(o4.x); hb[1] = __float2bfloat16(o4.y);
+            hb[2] = __float2bfloat16(o4.z); hb[3] = __float2bfloat16(o4.w);
+        }
+    } else {
+        const int cc = c0 - 2 * key_dim;
+        const int vh = cc / 128;
+        #pragma unroll
+        for (int e4 = 0; e4 < 4; e4++)
+            v_g[((size_t)t * num_v + vh) * 128 + lane * 4 + e4] = val[e4];
     }
 }
 
@@ -496,20 +593,19 @@ struct __align__(16) GdnK2Shared {
 };
 static_assert(sizeof(GdnK2Shared) == 67072, "unexpected GDN K2 shared-memory layout");
 
-__device__ __forceinline__ void gdn_k2_body(
+// KJ_ALIAS (C == 32, jb == 0): the j-block's k rows are the chunk's k rows, so kjt is kt (the
+// same values at the same [row][d]) and is neither stored nor loaded twice.
+template <bool KJ_ALIAS>
+__device__ __forceinline__ void gdn_k2_body_t(
         const float* __restrict__ q, const float* __restrict__ k,
         const float* __restrict__ gcum, const float* __restrict__ beta,
         float* __restrict__ A, float* __restrict__ P, int H, int T, int C,
-        int c, int h, int jb, int hk, GdnK2Shared& smem) {
+        int c, int h, int jb, int hk, float (*kt)[GDN_D + 1], float (*qt)[GDN_D + 1],
+        float (*kjt)[GDN_D + 1], float* gct, float* bt) {
     const int hq = h % hk;   // q/k head (task #21 de-broadcast; hk == H reproduces old)
     const int t0 = c * C;
     const int Cc = min(C, T - t0);
     if (jb >= Cc) return;                      // uniform per block (tail chunk)
-    float (&kt)[64][GDN_D + 1] = smem.kt;      // all i-rows of the chunk (C <= 64)
-    float (&qt)[32][GDN_D + 1] = smem.qt;      // this j-block's q rows
-    float (&kjt)[32][GDN_D + 1] = smem.kjt;    // this j-block's k rows
-    float (&gct)[128] = smem.gct;
-    float (&bt)[128] = smem.bt;
     const int tid = threadIdx.x;
     if (tid < Cc) {
         gct[tid] = gcum[(size_t)(t0 + tid) * H + h];
@@ -523,7 +619,9 @@ __device__ __forceinline__ void gdn_k2_body(
     for (int idx = tid; idx < jn * GDN_D; idx += 256) {
         int r = idx / GDN_D, d = idx % GDN_D;
         qt[r][d]  = q[((size_t)(t0 + jb + r) * hk + hq) * GDN_D + d];
-        kjt[r][d] = k[((size_t)(t0 + jb + r) * hk + hq) * GDN_D + d];
+        if constexpr (!KJ_ALIAS) {
+            kjt[r][d] = k[((size_t)(t0 + jb + r) * hk + hq) * GDN_D + d];
+        }
     }
     __syncthreads();
     const int jg = tid / 16, ig = tid % 16;    // 16x2 j-rows x 16x2 i-cols
@@ -567,14 +665,49 @@ __device__ __forceinline__ void gdn_k2_body(
     }
 }
 
+__device__ __forceinline__ void gdn_k2_body(
+        const float* __restrict__ q, const float* __restrict__ k,
+        const float* __restrict__ gcum, const float* __restrict__ beta,
+        float* __restrict__ A, float* __restrict__ P, int H, int T, int C,
+        int c, int h, int jb, int hk, GdnK2Shared& smem) {
+    // kt: all i-rows of the chunk (C <= 64); qt / kjt: this j-block's q and k rows
+    gdn_k2_body_t<false>(q, k, gcum, beta, A, P, H, T, C, c, h, jb, hk, smem.kt, smem.qt,
+                         smem.kjt, smem.gct, smem.bt);
+}
+
+// K2 at C == 32 (GB10 prefill lane, 2026-11-07): gdn_chunk_attn_f32's body on a 33,280-byte
+// layout (the chunk's k rows serve as both kt and kjt, 32-row gate/beta), so two blocks fit an SM
+// where the 64-row layout (67,072 B) allowed one. Same per-thread loads, dot order and stores:
+// bit-identical. grid (NC, H, 1) or heads-fastest (H, NC, 1), block 256.
+struct __align__(16) GdnK2Shared32 {
+    float kt[32][GDN_D + 1];
+    float qt[32][GDN_D + 1];
+    float gct[32];
+    float bt[32];
+};
+static_assert(sizeof(GdnK2Shared32) == 33280, "unexpected GDN K2/32 shared-memory layout");
+
+extern "C" __global__ void __launch_bounds__(256, 2) gdn_chunk_attn32_f32(
+        const float* __restrict__ q, const float* __restrict__ k,
+        const float* __restrict__ gcum, const float* __restrict__ beta,
+        float* __restrict__ A, float* __restrict__ P, int H, int T, int hk, int hfast) {
+    extern __shared__ __align__(16) unsigned char gdn_k2_smem[];
+    auto& smem = *reinterpret_cast<GdnK2Shared32*>(gdn_k2_smem);
+    const int c = hfast ? blockIdx.y : blockIdx.x, h = hfast ? blockIdx.x : blockIdx.y;
+    gdn_k2_body_t<true>(q, k, gcum, beta, A, P, H, T, 32, c, h, 0, hk, smem.kt, smem.qt, smem.kt,
+                        smem.gct, smem.bt);
+}
+
 extern "C" __global__ void gdn_chunk_attn_f32(
         const float* __restrict__ q, const float* __restrict__ k,
         const float* __restrict__ gcum, const float* __restrict__ beta,
-        float* __restrict__ A, float* __restrict__ P, int H, int T, int C, int hk) {
+        float* __restrict__ A, float* __restrict__ P, int H, int T, int C, int hk, int hfast) {
     extern __shared__ __align__(16) unsigned char gdn_k2_smem[];
     auto& smem = *reinterpret_cast<GdnK2Shared*>(gdn_k2_smem);
-    gdn_k2_body(q, k, gcum, beta, A, P, H, T, C, blockIdx.x, blockIdx.y,
-                blockIdx.z * 32, hk, smem);
+    // hfast: grid (H, NC, jt), heads fastest, so the value heads that share one q/k head run
+    // side by side and read its rows from L2. Same per-block math either way.
+    const int c = hfast ? blockIdx.y : blockIdx.x, h = hfast ? blockIdx.x : blockIdx.y;
+    gdn_k2_body(q, k, gcum, beta, A, P, H, T, C, c, h, blockIdx.z * 32, hk, smem);
 }
 #endif
 
@@ -655,9 +788,8 @@ template <int CT>
 __device__ void gdn_chunk_solve_kernel(
         const float* __restrict__ v, const float* __restrict__ k,
         const float* __restrict__ A, const float* __restrict__ gcum,
-        float* __restrict__ U, float* __restrict__ W, int H, int T, int c,
+        float* __restrict__ U, float* __restrict__ W, int H, int T, int c, int h,
         __nv_bfloat16* __restrict__ Wb16, int hk) {
-    const int h = blockIdx.y;
     const int hq = h % hk;   // task #21: k head map (hk == H reproduces old)
     const int t0 = c * CT;
     const int Cc = min(CT, T - t0);
@@ -686,7 +818,7 @@ __device__ void gdn_chunk_solve_kernel(
             #pragma unroll
             for (int i = 0; i < j; i++) acc -= As[j][i] * hist[i];
             hist[j] = acc;
-            R[rbase + (size_t)j * GDN_D + col] = acc;
+            if (R != nullptr) R[rbase + (size_t)j * GDN_D + col] = acc;
             if (is_w && Wb16 != nullptr) Wb16[rbase + (size_t)j * GDN_D + col] = __float2bfloat16(acc);
         }
     } else {
@@ -700,20 +832,23 @@ __device__ void gdn_chunk_solve_kernel(
             }
             for (int i = 0; i < j; i++) acc -= As[j][i] * hist[i];
             hist[j] = acc;
-            R[rbase + (size_t)j * GDN_D + col] = acc;
+            if (R != nullptr) R[rbase + (size_t)j * GDN_D + col] = acc;
             if (is_w && Wb16 != nullptr) Wb16[rbase + (size_t)j * GDN_D + col] = __float2bfloat16(acc);
         }
     }
 }
 extern "C" __global__ void gdn_chunk_solve32_f32(
         const float* v, const float* k, const float* A, const float* gcum,
-        float* U, float* W, __nv_bfloat16* Wb16, int H, int T, int hk) {
-    gdn_chunk_solve_kernel<32>(v, k, A, gcum, U, W, H, T, blockIdx.x, Wb16, hk);
+        float* U, float* W, __nv_bfloat16* Wb16, int H, int T, int hk, int hfast) {
+    // W == nullptr: only the bf16 twin is stored (the mma K4 reads Wb16, never the f32 W).
+    gdn_chunk_solve_kernel<32>(v, k, A, gcum, U, W, H, T, hfast ? blockIdx.y : blockIdx.x,
+                               hfast ? blockIdx.x : blockIdx.y, Wb16, hk);
 }
 extern "C" __global__ void gdn_chunk_solve64_f32(
         const float* v, const float* k, const float* A, const float* gcum,
-        float* U, float* W, __nv_bfloat16* Wb16, int H, int T, int hk) {
-    gdn_chunk_solve_kernel<64>(v, k, A, gcum, U, W, H, T, blockIdx.x, Wb16, hk);
+        float* U, float* W, __nv_bfloat16* Wb16, int H, int T, int hk, int hfast) {
+    gdn_chunk_solve_kernel<64>(v, k, A, gcum, U, W, H, T, hfast ? blockIdx.y : blockIdx.x,
+                               hfast ? blockIdx.x : blockIdx.y, Wb16, hk);
 }
 // Generic (any C <= 128): thread-private history in local memory (L1, lane-interleaved).
 extern "C" __global__ void gdn_chunk_solve_f32(
@@ -996,6 +1131,44 @@ extern "C" __global__ void sig_mul_f16out_f32(const float* __restrict__ a, const
         dst16[i] = __float2half(o);
     }
 }
+// e4m3 cvt and the F8F4 v2 activation token slot (mmq_nvfp4_f8f4.cu's), for the fused quantize epilogues below.
+static __device__ __forceinline__ uint8_t gdn_cvt_e4m3(float v) {
+    uint16_t r;
+    asm("{\n\t.reg .b16 t;\n\tcvt.rn.satfinite.e4m3x2.f32 t, %2, %1;\n\tmov.b16 %0, t;\n}"
+        : "=h"(r) : "f"(v), "f"(0.0f));
+    return (uint8_t)(r & 0xff);
+}
+static __device__ __forceinline__ long long gdn_f8f4v2_act_slot(long long t) {
+    const int lt = (int)(t & 63), p = lt >> 3, r8 = lt & 7;
+    return (t & ~(long long)63) + ((p >> 1) * 4 + (r8 >> 1)) * 4 + (p & 1) * 2 + (r8 & 1);
+}
+// attn out-gate with the wo GEMM's F8F4 v2 activation quantize fused (GB10 prefill lane,
+// 2026-11-07): o = a * sigmoid(g) with sig_mul_f16out_f32's expressions (the values of
+// sigmoid_f32 then mul_f32), then per 32-element group (one warp: in_f % 32 == 0, n % 32 == 0,
+// a warp-multiple block) memra_mmq_nvfp4_f8f4_v2_quantize_act's program: amax of |o|,
+// d_inv = 448 / amax, cvt.rn.satfinite e4m3, the scale amax / 448 in the k-major lane-permuted
+// plane of the [ntok, in_f] activation. `dst` (nullable) still receives the f32 values.
+extern "C" __global__ void sig_mul_e4m3v2_f32(const float* __restrict__ a, const float* __restrict__ g,
+                                              float* __restrict__ dst, uint8_t* __restrict__ vy,
+                                              int in_f, int ntok, long long tp) {
+    const long long n = (long long)in_f * ntok;
+    const long long i = (long long)blockIdx.x * blockDim.x + threadIdx.x;
+    if (i >= n) return;                       // whole warps only (n % 32 == 0)
+    float s = 1.0f / (1.0f + expf(-g[i]));
+    float o = a[i] * s;
+    if (dst != nullptr) dst[i] = o;
+    float amax = fabsf(o);
+    #pragma unroll
+    for (int off = 16; off > 0; off >>= 1)
+        amax = fmaxf(amax, __shfl_xor_sync(0xffffffffu, amax, off));
+    const float d_inv = amax == 0.0f ? 0.0f : 448.0f / amax;
+    const int t = (int)(i / in_f), k = (int)(i % in_f);
+    vy[(size_t)t * in_f + k] = gdn_cvt_e4m3(o * d_inv);
+    if ((threadIdx.x & 31) == 0) {
+        float* sc = (float*)(vy + (size_t)ntok * in_f);
+        sc[(long long)(k / 32) * tp + gdn_f8f4v2_act_slot(t)] = amax == 0.0f ? 0.0f : amax / 448.0f;
+    }
+}
 // step35 (Step-3.7-Flash) SEPARATE head-wise attention gate. Distinct from sig_mul_f16out_f32
 // above: qwen35's gate is FULL WIDTH (one gate value per (head, dim) element, packed into wq), so
 // that kernel is a plain elementwise mul. step35's gate is ONE SCALAR PER HEAD (from its own
@@ -1145,6 +1318,53 @@ extern "C" __global__ void gated_rmsnorm_f32(const float* __restrict__ o, const 
     for (int i = tid; i < ncols; i += blockDim.x) {
         float zz = zrow[i];
         drow[i] = (orow[i] * scale * w[i]) * (zz / (1.0f + expf(-zz)));
+    }
+}
+
+// gated RMSNorm with the F8F4 v2 activation quantize fused (GB10 prefill lane, 2026-11-07): the
+// gated_rmsnorm_f32 values verbatim (same reduce over the 128-thread block, the same
+// (o * scale * w) * silu(z) expression; launch it with gated_rmsnorm's block of 128), and per
+// 32-element group (one warp) the memra_mmq_nvfp4_f8f4_v2_quantize_act program: amax of |x|,
+// d_inv = 448 / amax, cvt.rn.satfinite e4m3 of x * d_inv, the scale amax / 448 in the k-major
+// lane-permuted plane. Row `row` is head row % num_v of token row / num_v of the [T, num_v * ncols]
+// activation the ssm_out GEMM reads. `dst` (nullable) still receives the f32 values.
+extern "C" __global__ void gated_rmsnorm_e4m3v2_f32(const float* __restrict__ o, const float* __restrict__ w,
+                                                    const float* __restrict__ z, float* __restrict__ dst,
+                                                    uint8_t* __restrict__ vy, int ncols, int num_v,
+                                                    int ntok, long long tp, float eps) {
+    int row = blockIdx.x; int tid = threadIdx.x;
+    const float* orow = o + (size_t)row * ncols;
+    const float* zrow = z + (size_t)row * ncols;
+    float sum = 0.0f;
+    for (int i = tid; i < ncols; i += blockDim.x) { float v = orow[i]; sum += v * v; }
+    __shared__ float s[32];
+    for (int o2 = 16; o2 > 0; o2 >>= 1) sum += __shfl_down_sync(0xffffffff, sum, o2);
+    if ((tid & 31) == 0) s[tid >> 5] = sum;
+    __syncthreads();
+    if (tid < 32) {
+        float v = (tid < (blockDim.x + 31) / 32) ? s[tid] : 0.0f;
+        for (int o2 = 16; o2 > 0; o2 >>= 1) v += __shfl_down_sync(0xffffffff, v, o2);
+        if (tid == 0) s[0] = v;
+    }
+    __syncthreads();
+    float scale = rsqrtf(s[0] / ncols + eps);
+    const int t = row / num_v, hcol = (row % num_v) * ncols;
+    const int in_f = num_v * ncols;
+    uint8_t* vals = vy + (size_t)t * in_f;
+    float* sc = (float*)(vy + (size_t)ntok * in_f);
+    const long long slot = gdn_f8f4v2_act_slot(t);
+    // every lane of a warp runs the same trip count (ncols and the block are multiples of 32)
+    for (int i = tid; i < ncols; i += blockDim.x) {
+        float zz = zrow[i];
+        float x = (orow[i] * scale * w[i]) * (zz / (1.0f + expf(-zz)));
+        if (dst != nullptr) dst[(size_t)row * ncols + i] = x;
+        float amax = fabsf(x);
+        #pragma unroll
+        for (int off = 16; off > 0; off >>= 1)
+            amax = fmaxf(amax, __shfl_xor_sync(0xffffffffu, amax, off));
+        const float d_inv = amax == 0.0f ? 0.0f : 448.0f / amax;
+        vals[hcol + i] = gdn_cvt_e4m3(x * d_inv);
+        if ((tid & 31) == 0) sc[(long long)((hcol + i) / 32) * tp + slot] = amax == 0.0f ? 0.0f : amax / 448.0f;
     }
 }
 
@@ -1977,6 +2197,352 @@ gdn_chunk_state_mma_vl(gdnvl_t v, int H, int C, int hk) {
 }
 
 
+// K4+K5 FUSED, mma.sync form (GB10 prefill lane, 2026-11-07; research/gb10-prefill-next-20261107/
+// probe/probe_gdn.cu): 64 state columns per CTA (grid (H, 2), 8 warps, 2 CTAs/SM, 40,704 B dynamic smem): the state pass also
+// computes the chunk output o, so Y and Ssnap never leave the CTA. Every output element runs the
+// shipped kernels' mma chains on the same operand values:
+//   step A  Y[j][col] = U - sum_{k16 = 0..7} mma_bf16(W[j][k16], bf16(S)[k16][col])     (K4)
+//   phase 1 o[j][col] = sum_{k16 = 0..7} mma_f16(f16(q)[j][k16], f16(S)[k16][col])       (K5)
+//           o *= exp(G_j); o += sum_{k16 = 0..1} mma_f16(f16(P)[j][k16], f16(Y)[k16][col]); o *= scale
+//   step B  S[col][i] = bC S + sum_{k16 = 0..1} mma_bf16(bf16(gk y)^T[col][k16], k[k16][i])  (K4)
+// Warp (mh = warp >> 1, nq = warp & 1) holds S^T for cols mh*16 .. +15 and state rows nq*64 .. +63
+// (8 m16n8 tiles). The B fragments of S come straight from those registers (packed exactly as K4's
+// Mb / Ssnap stores round them); the k16 chains of step A and phase 1 run blocks 0..3 on nq = 0 and
+// continue 4..7 on nq = 1 from nq = 0's accumulators through shared memory, so each chain keeps
+// K4's / K5's order. Phase 2 and the output run on nq = 1, with Y's B fragments transposed in
+// registers (movmatrix).
+__device__ __forceinline__ unsigned gdn_k45_pack_bf16(float lo, float hi) {
+    __nv_bfloat162 v = __floats2bfloat162_rn(lo, hi);
+    return *(unsigned*)&v;
+}
+__device__ __forceinline__ unsigned gdn_k45_pack_f16(float lo, float hi) {
+    __half2 v = __floats2half2_rn(lo, hi);
+    return *(unsigned*)&v;
+}
+__device__ __forceinline__ unsigned gdn_k45_trans(unsigned a) {
+    unsigned d;
+    asm volatile("movmatrix.sync.aligned.m8n8.trans.b16 %0, %1;" : "=r"(d) : "r"(a));
+    return d;
+}
+__device__ __forceinline__ void gdn_k45_mma_bf16(CTile& D, const ATile& A, unsigned b0, unsigned b1) {
+    BTile B; *(unsigned*)&B.x[0] = b0; *(unsigned*)&B.x[1] = b1;
+    mma_bf16(D, A, B);
+}
+__device__ __forceinline__ void gdn_k45_mma_f16(CTile& D, const ATile& A, unsigned b0, unsigned b1) {
+    BTile B; *(unsigned*)&B.x[0] = b0; *(unsigned*)&B.x[1] = b1;
+    mma_f16(D, A, B);
+}
+
+constexpr int GDN_K45_QS = GDN_D + 8;     // q tile row stride (halves)
+constexpr int GDN_K45_YS = 64 + 8;        // ys row stride (bf16)
+struct GdnK45Smem {
+    __nv_bfloat16 Wb[32 * GDN_D];      // W tile of the chunk (single buffer)
+    __nv_bfloat16 kb[32 * GDN_D];      // k tile of the chunk (single buffer)
+    __half qs[32 * GDN_K45_QS];            // f16 q rows of the chunk
+    __half ps[32 * 40];                // f16 P rows (masked, zero above the diagonal)
+    __nv_bfloat16 ys[32 * GDN_K45_YS];     // bf16(y * gk) for step B
+    float4 hand[4][4][32];             // chain hand-off: [mh][tile][lane]
+    float gk[32], bj[32];
+};
+
+extern "C" __global__ void __launch_bounds__(256, 2)
+gdn_chunk_state_output_mma(const __nv_bfloat16* __restrict__ kb16, const float* __restrict__ gcum,
+        const float* __restrict__ beta, const float* __restrict__ U,
+        const __nv_bfloat16* __restrict__ Wb16, const float* __restrict__ q,
+        const float* __restrict__ P, float* __restrict__ o,
+        const float* __restrict__ state_in, float* __restrict__ state_out,
+        int H, int T, int C, float scale, int hk) {
+    constexpr int D = GDN_D;
+    extern __shared__ __align__(16) unsigned char gdn_k45_raw[];
+    GdnK45Smem& sm = *reinterpret_cast<GdnK45Smem*>(gdn_k45_raw);
+    const int h = blockIdx.x, col0 = blockIdx.y * 64;
+    const int tid = threadIdx.x, warp = tid >> 5, lane = tid & 31;
+    const int fr = lane >> 2, fc = (lane & 3) * 2;
+    const int mh = warp >> 1, nq = warp & 1;
+    CTile Macc[8];
+    #pragma unroll
+    for (int t = 0; t < 8; t++)
+        #pragma unroll
+        for (int l = 0; l < 4; l++) {
+            int col = mh * 16 + fr + ((l < 2) ? 0 : 8);
+            int i = nq * 64 + t * 8 + fc + (l & 1);
+            Macc[t].x[l] = state_in[((size_t)h * D + col0 + col) * D + i];
+        }
+    const int NC = (T + C - 1) / C;
+    const int hq = h % hk;
+    auto stage_w = [&](int c_) {
+        for (int idx = tid; idx < 32 * D / 8; idx += 256) {
+            int r = idx / (D / 8), seg = idx % (D / 8);
+            cp_async16_g(&sm.Wb[r * D + seg * 8], Wb16 + (((size_t)c_ * H + h) * C + r) * D + seg * 8, 16);
+        }
+    };
+    auto stage_k = [&](int c_) {
+        int t0_ = c_ * C;
+        for (int idx = tid; idx < 32 * D / 8; idx += 256) {
+            int r = idx / (D / 8), seg = idx % (D / 8);
+            cp_async16_g(&sm.kb[r * D + seg * 8], kb16 + ((size_t)(t0_ + r) * hk + hq) * D + seg * 8,
+                         (t0_ + r < T) ? 16 : 0);
+        }
+    };
+    // register prefetch of the next chunk's q (16 floats), P (4) and gate/beta (tid < 32)
+    float4 qpre[4], ppre;
+    float gpre = 0.f, bpre = 0.f, gCpre = 0.f;
+    auto prefetch = [&](int c_) {
+        const int t0_ = c_ * C, Cc_ = min(C, T - t0_);
+        #pragma unroll
+        for (int u = 0; u < 4; u++) {
+            int idx = tid + u * 256;                 // 1024 float4 = 32 rows x 32 float4
+            int r = idx >> 5, d4 = idx & 31;
+            qpre[u] = (r < Cc_) ? *(const float4*)(q + ((size_t)(t0_ + r) * hk + hq) * D + d4 * 4)
+                                : make_float4(0.f, 0.f, 0.f, 0.f);
+        }
+        {
+            int r = tid >> 3, i4 = tid & 7;          // 256 float4 = 32 rows x 8 float4
+            ppre = (r < Cc_) ? *(const float4*)(P + (((size_t)c_ * H + h) * C + r) * C + i4 * 4)
+                             : make_float4(0.f, 0.f, 0.f, 0.f);
+        }
+        gCpre = gcum[(size_t)(t0_ + Cc_ - 1) * H + h];
+        if (tid < Cc_) {
+            gpre = gcum[(size_t)(t0_ + tid) * H + h];
+            bpre = beta[(size_t)(t0_ + tid) * H + h];
+        }
+    };
+    prefetch(0);
+    stage_w(0);
+    cp_commit();
+    for (int c = 0; c < NC; c++) {
+        const int t0 = c * C;
+        const int Cc = min(C, T - t0);
+        // ---- chunk top: q / P tiles (K5's f16 conversions and masks), gk, b_j; k tile for step B
+        #pragma unroll
+        for (int u = 0; u < 4; u++) {
+            int idx = tid + u * 256, r = idx >> 5, d4 = idx & 31;
+            __half* qd = &sm.qs[r * GDN_K45_QS + d4 * 4];
+            qd[0] = __float2half(qpre[u].x); qd[1] = __float2half(qpre[u].y);
+            qd[2] = __float2half(qpre[u].z); qd[3] = __float2half(qpre[u].w);
+        }
+        {
+            int r = tid >> 3, i4 = tid & 7;
+            float pv[4] = {ppre.x, ppre.y, ppre.z, ppre.w};
+            #pragma unroll
+            for (int e = 0; e < 4; e++) {
+                int i = i4 * 4 + e;
+                float v = (r < Cc && i < Cc && i <= r) ? pv[e] : 0.0f;
+                sm.ps[r * 40 + i] = __float2half(v);
+            }
+        }
+        const float gC = gCpre;
+        if (tid < 32) {
+            sm.gk[tid] = (tid < Cc) ? expf(gC - gpre) * bpre : 0.0f;
+            sm.bj[tid] = (tid < Cc) ? expf(gpre) : 0.0f;
+        }
+        stage_k(c);
+        cp_commit();
+        cp_wait<1>();                // W(c) landed; k(c) may still be in flight
+        __syncthreads();             // S1
+        if (c + 1 < NC) prefetch(c + 1);
+
+        // ---- step A and phase 1, k16 blocks 0..3 on nq = 0 (from zero), 4..7 on nq = 1
+        CTile CA[2][2], CP[2][2];
+        #pragma unroll
+        for (int a = 0; a < 2; a++)
+            #pragma unroll
+            for (int b2 = 0; b2 < 2; b2++)
+                #pragma unroll
+                for (int l = 0; l < 4; l++) { CA[a][b2].x[l] = 0.0f; CP[a][b2].x[l] = 0.0f; }
+        float uval[2][2][4];
+        if (nq == 1) {
+            #pragma unroll
+            for (int jt = 0; jt < 2; jt++)
+                #pragma unroll
+                for (int hf = 0; hf < 2; hf++)
+                    #pragma unroll
+                    for (int l = 0; l < 4; l++) {
+                        int j = jt * 16 + fr + ((l < 2) ? 0 : 8);
+                        int col = mh * 16 + hf * 8 + fc + (l & 1);
+                        uval[jt][hf][l] = (j < Cc) ? U[(((size_t)c * H + h) * C + j) * D + col0 + col] : 0.0f;
+                    }
+        }
+        auto chain = [&](int kb0) {
+            #pragma unroll
+            for (int kl = 0; kl < 4; kl++) {
+                const int kb = kb0 + kl;
+                const unsigned bb0 = gdn_k45_pack_bf16(Macc[2 * kl].x[0], Macc[2 * kl].x[1]);
+                const unsigned bb1 = gdn_k45_pack_bf16(Macc[2 * kl + 1].x[0], Macc[2 * kl + 1].x[1]);
+                const unsigned bb2 = gdn_k45_pack_bf16(Macc[2 * kl].x[2], Macc[2 * kl].x[3]);
+                const unsigned bb3 = gdn_k45_pack_bf16(Macc[2 * kl + 1].x[2], Macc[2 * kl + 1].x[3]);
+                const unsigned bh0 = gdn_k45_pack_f16(Macc[2 * kl].x[0], Macc[2 * kl].x[1]);
+                const unsigned bh1 = gdn_k45_pack_f16(Macc[2 * kl + 1].x[0], Macc[2 * kl + 1].x[1]);
+                const unsigned bh2 = gdn_k45_pack_f16(Macc[2 * kl].x[2], Macc[2 * kl].x[3]);
+                const unsigned bh3 = gdn_k45_pack_f16(Macc[2 * kl + 1].x[2], Macc[2 * kl + 1].x[3]);
+                #pragma unroll
+                for (int jt = 0; jt < 2; jt++) {
+                    ATile A;
+                    ld_A(A, sm.Wb + (jt * 16) * D + kb * 16, D / 2, lane);
+                    gdn_k45_mma_bf16(CA[jt][0], A, bb0, bb1);
+                    gdn_k45_mma_bf16(CA[jt][1], A, bb2, bb3);
+                    ATile Aq;
+                    ld_A(Aq, (const __nv_bfloat16*)(sm.qs + (jt * 16) * GDN_K45_QS + kb * 16), GDN_K45_QS / 2, lane);
+                    gdn_k45_mma_f16(CP[jt][0], Aq, bh0, bh1);
+                    gdn_k45_mma_f16(CP[jt][1], Aq, bh2, bh3);
+                }
+            }
+        };
+        if (nq == 0) {
+            chain(0);
+            #pragma unroll
+            for (int jt = 0; jt < 2; jt++)
+                #pragma unroll
+                for (int hf = 0; hf < 2; hf++)
+                    sm.hand[mh][jt * 2 + hf][lane] = make_float4(CA[jt][hf].x[0], CA[jt][hf].x[1], CA[jt][hf].x[2], CA[jt][hf].x[3]);
+        }
+        __syncthreads();             // S2
+        unsigned yh[2][2][2];        // f16 Y pairs (nq = 1): [jt][hf][row half]
+        if (nq == 1) {
+            #pragma unroll
+            for (int jt = 0; jt < 2; jt++)
+                #pragma unroll
+                for (int hf = 0; hf < 2; hf++) {
+                    float4 v = sm.hand[mh][jt * 2 + hf][lane];
+                    CA[jt][hf].x[0] = v.x; CA[jt][hf].x[1] = v.y; CA[jt][hf].x[2] = v.z; CA[jt][hf].x[3] = v.w;
+                }
+            // The chain continues on the hand-off: zero-start CP here would break phase 1's order,
+            // so phase 1's partials come over after this step (below); step A runs blocks 4..7 now.
+            #pragma unroll
+            for (int kl = 0; kl < 4; kl++) {
+                const int kb = 4 + kl;
+                const unsigned bb0 = gdn_k45_pack_bf16(Macc[2 * kl].x[0], Macc[2 * kl].x[1]);
+                const unsigned bb1 = gdn_k45_pack_bf16(Macc[2 * kl + 1].x[0], Macc[2 * kl + 1].x[1]);
+                const unsigned bb2 = gdn_k45_pack_bf16(Macc[2 * kl].x[2], Macc[2 * kl].x[3]);
+                const unsigned bb3 = gdn_k45_pack_bf16(Macc[2 * kl + 1].x[2], Macc[2 * kl + 1].x[3]);
+                #pragma unroll
+                for (int jt = 0; jt < 2; jt++) {
+                    ATile A;
+                    ld_A(A, sm.Wb + (jt * 16) * D + kb * 16, D / 2, lane);
+                    gdn_k45_mma_bf16(CA[jt][0], A, bb0, bb1);
+                    gdn_k45_mma_bf16(CA[jt][1], A, bb2, bb3);
+                }
+            }
+            #pragma unroll
+            for (int jt = 0; jt < 2; jt++)
+                #pragma unroll
+                for (int hf = 0; hf < 2; hf++) {
+                    float yv[4];
+                    #pragma unroll
+                    for (int l = 0; l < 4; l++) {
+                        int j = jt * 16 + fr + ((l < 2) ? 0 : 8);
+                        int col = mh * 16 + hf * 8 + fc + (l & 1);
+                        float y = uval[jt][hf][l] - CA[jt][hf].x[l];
+                        yv[l] = (j < Cc) ? y : 0.0f;
+                        sm.ys[j * GDN_K45_YS + col] = (j < Cc) ? __float2bfloat16(y * sm.gk[j]) : __float2bfloat16(0.0f);
+                    }
+                    // K4 stores Y = __float2half(y); K5 reads rows past Cc as 0 (zero-filled)
+                    yh[jt][hf][0] = gdn_k45_pack_f16(yv[0], yv[1]);
+                    yh[jt][hf][1] = gdn_k45_pack_f16(yv[2], yv[3]);
+                }
+        }
+        cp_wait<0>();                // k(c) landed
+        __syncthreads();             // S3: ys visible, hand free, Wb free
+        if (c + 1 < NC) { stage_w(c + 1); cp_commit(); }
+        if (nq == 0) {
+            #pragma unroll
+            for (int jt = 0; jt < 2; jt++)
+                #pragma unroll
+                for (int hf = 0; hf < 2; hf++)
+                    sm.hand[mh][jt * 2 + hf][lane] = make_float4(CP[jt][hf].x[0], CP[jt][hf].x[1], CP[jt][hf].x[2], CP[jt][hf].x[3]);
+        }
+        __syncthreads();             // S4
+        if (nq == 1) {
+            #pragma unroll
+            for (int jt = 0; jt < 2; jt++)
+                #pragma unroll
+                for (int hf = 0; hf < 2; hf++) {
+                    float4 v = sm.hand[mh][jt * 2 + hf][lane];
+                    CP[jt][hf].x[0] = v.x; CP[jt][hf].x[1] = v.y; CP[jt][hf].x[2] = v.z; CP[jt][hf].x[3] = v.w;
+                }
+            #pragma unroll
+            for (int kl = 0; kl < 4; kl++) {
+                const int kb = 4 + kl;
+                const unsigned bh0 = gdn_k45_pack_f16(Macc[2 * kl].x[0], Macc[2 * kl].x[1]);
+                const unsigned bh1 = gdn_k45_pack_f16(Macc[2 * kl + 1].x[0], Macc[2 * kl + 1].x[1]);
+                const unsigned bh2 = gdn_k45_pack_f16(Macc[2 * kl].x[2], Macc[2 * kl].x[3]);
+                const unsigned bh3 = gdn_k45_pack_f16(Macc[2 * kl + 1].x[2], Macc[2 * kl + 1].x[3]);
+                #pragma unroll
+                for (int jt = 0; jt < 2; jt++) {
+                    ATile Aq;
+                    ld_A(Aq, (const __nv_bfloat16*)(sm.qs + (jt * 16) * GDN_K45_QS + kb * 16), GDN_K45_QS / 2, lane);
+                    gdn_k45_mma_f16(CP[jt][0], Aq, bh0, bh1);
+                    gdn_k45_mma_f16(CP[jt][1], Aq, bh2, bh3);
+                }
+            }
+            // o *= exp(G_j) (rows past Cc scaled by 0, as K5), then the P . Y chain over j' blocks 0, 1
+            #pragma unroll
+            for (int jt = 0; jt < 2; jt++) {
+                const float b_lo = sm.bj[jt * 16 + fr], b_hi = sm.bj[jt * 16 + fr + 8];
+                #pragma unroll
+                for (int hf = 0; hf < 2; hf++) {
+                    CP[jt][hf].x[0] *= b_lo; CP[jt][hf].x[1] *= b_lo;
+                    CP[jt][hf].x[2] *= b_hi; CP[jt][hf].x[3] *= b_hi;
+                }
+            }
+            #pragma unroll
+            for (int k16 = 0; k16 < 2; k16++) {
+                // B[k = j'][n = col] of the j' block k16: the transposes of Y's two 8-row halves
+                const unsigned y00 = gdn_k45_trans(yh[k16][0][0]), y01 = gdn_k45_trans(yh[k16][0][1]);
+                const unsigned y10 = gdn_k45_trans(yh[k16][1][0]), y11 = gdn_k45_trans(yh[k16][1][1]);
+                #pragma unroll
+                for (int jt = 0; jt < 2; jt++) {
+                    ATile Ap;
+                    ld_A(Ap, (const __nv_bfloat16*)(sm.ps + (jt * 16) * 40 + k16 * 16), 20, lane);
+                    gdn_k45_mma_f16(CP[jt][0], Ap, y00, y01);
+                    gdn_k45_mma_f16(CP[jt][1], Ap, y10, y11);
+                }
+            }
+            #pragma unroll
+            for (int jt = 0; jt < 2; jt++)
+                #pragma unroll
+                for (int hf = 0; hf < 2; hf++)
+                    #pragma unroll
+                    for (int l = 0; l < 4; l++) {
+                        int j = jt * 16 + fr + ((l < 2) ? 0 : 8);
+                        int col = mh * 16 + hf * 8 + fc + (l & 1);
+                        if (j < Cc) o[((size_t)(t0 + j) * H + h) * D + col0 + col] = scale * CP[jt][hf].x[l];
+                    }
+        }
+        // ---- step B (all warps): S <- bC S + (gk y)^T k
+        const float bC = expf(gC);
+        #pragma unroll
+        for (int t = 0; t < 8; t++)
+            #pragma unroll
+            for (int l = 0; l < 4; l++) Macc[t].x[l] *= bC;
+        #pragma unroll
+        for (int k16 = 0; k16 < 2; k16++) {
+            ATile A;
+            ld_A_trans(A, sm.ys + (k16 * 16) * GDN_K45_YS + mh * 16, GDN_K45_YS / 2, lane);
+            #pragma unroll
+            for (int p2 = 0; p2 < 4; p2++) {
+                ATile Bt;
+                ld_A_trans(Bt, sm.kb + (k16 * 16) * D + nq * 64 + p2 * 16, D / 2, lane);
+                BTile Blo, Bhi;
+                Blo.x[0] = Bt.x[0]; Blo.x[1] = Bt.x[2];
+                Bhi.x[0] = Bt.x[1]; Bhi.x[1] = Bt.x[3];
+                mma_bf16(Macc[p2 * 2 + 0], A, Blo);
+                mma_bf16(Macc[p2 * 2 + 1], A, Bhi);
+            }
+        }
+        __syncthreads();             // S5 (W(c + 1) is waited on at the next chunk top)
+    }
+    #pragma unroll
+    for (int t = 0; t < 8; t++)
+        #pragma unroll
+        for (int l = 0; l < 4; l++) {
+            int col = mh * 16 + fr + ((l < 2) ? 0 : 8);
+            int i = nq * 64 + t * 8 + fc + (l & 1);
+            state_out[((size_t)h * D + col0 + col) * D + i] = Macc[t].x[l];
+        }
+}
+
+
 // ---- v2: coupled form — St and Y arrive as BF16 (written by K4-mma directly; identical
 // numerics to v1 which rounds them anyway) through a cp.async ring. P stays f32->bf16.
 __device__ __forceinline__ void cp_async16_k5(void* dst, const void* src, int src_size) {
@@ -2131,9 +2697,11 @@ extern "C" __global__ void __launch_bounds__(256, 2)
 gdn_chunk_output_mma(const float* __restrict__ q, const float* __restrict__ gcum,
                       const float* __restrict__ P, const __half* __restrict__ Yb,
                       const __half* __restrict__ Stb, float* __restrict__ o,
-                      int H, int T, int C, float scale, int hk) {
+                      int H, int T, int C, float scale, int hk, int hfast) {
+    // hfast: grid (H, NC, jt), heads fastest (the K2 note); same per-block math.
     gdn_k5_body(q, gcum, P, Yb, Stb, o, H, T, C, scale,
-                blockIdx.x, blockIdx.y, blockIdx.z * 32, hk);
+                hfast ? blockIdx.y : blockIdx.x, hfast ? blockIdx.x : blockIdx.y,
+                blockIdx.z * 32, hk);
 }
 
 // varlen twin (task #18): grid (max_nc, H, B); requires C == 32 (j-tile = 1, the mma
@@ -2173,7 +2741,7 @@ extern "C" __global__ void gdn_chunk_solve32_vl(gdnvl_t v, int H, int C, int hk)
     const gdnseq_t s = v.s[blockIdx.z];
     if (blockIdx.x * 32 >= s.T) return;
     // mirror-fold: W's bf16 twin (the K4 wb16 mirror) is emitted on store
-    gdn_chunk_solve_kernel<32>(s.v, s.k, s.a, s.gcum, s.U, s.w, H, s.T, blockIdx.x,
+    gdn_chunk_solve_kernel<32>(s.v, s.k, s.a, s.gcum, s.U, s.w, H, s.T, blockIdx.x, blockIdx.y,
                                (__nv_bfloat16*)s.Wb16, hk);
 }
 

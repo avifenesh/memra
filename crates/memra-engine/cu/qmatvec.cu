@@ -3613,6 +3613,113 @@ extern "C" __global__ void qmatvec_nvfp4_dp4a_rp(
     }
 }
 
+// Token-tiled twin of qmatvec_nvfp4_dp4a_rp for prefill row counts (GB10 prefill lane,
+// 2026-11-07; the GDN beta/alpha projections, 48 outputs over 4,096 rows). The grid (out_f, m)
+// kernel above runs one 128-thread block per (row, token): 196,608 blocks at that shape, each
+// re-reading its token's activation. Here one block takes TT tokens and walks every output row,
+// so a token's activation is loaded once per block and a weight row once per TT tokens. Per
+// (token, row) the arithmetic is the kernel above verbatim: thread tid owns the 32-groups
+// g = tid, tid + 128, ... in ascending order, the same dp4a chains and partial/acc expressions,
+// the same warp shuffle-down tree, and the same cross-warp tree over the four warp sums (lanes
+// past the fourth contribute 0, as there). Bit-identical y. Needs in_f <= 128 * 32 * NG.
+template <int TT, int NG>
+__device__ __forceinline__ void nvfp4_dp4a_rp_tok(
+        const unsigned char* __restrict__ W, const signed char* __restrict__ aq,
+        const float* __restrict__ ad, float* __restrict__ y,
+        int in_f, int out_f, int m) {
+    constexpr int OB = 32;               // outputs per smem reduce round
+    const int t0 = blockIdx.x * TT;
+    const int tid = threadIdx.x, lane = tid & 31, warp = tid >> 5;
+    const int nsb = in_f >> 5;
+    const int nsb64 = in_f >> 6;
+    int4 a01[TT][NG], a23[TT][NG];
+    float adv[TT][NG];
+    #pragma unroll
+    for (int tt = 0; tt < TT; tt++)
+        #pragma unroll
+        for (int k = 0; k < NG; k++) {
+            const int g = tid + 128 * k, t = t0 + tt;
+            if (g < nsb && t < m) {
+                const int4* aq16 = (const int4*)(aq + (size_t)t * in_f + (size_t)g * 32);
+                a01[tt][k] = aq16[0];
+                a23[tt][k] = aq16[1];
+                adv[tt][k] = ad[(size_t)t * nsb + g];
+            } else {
+                a01[tt][k] = make_int4(0, 0, 0, 0);
+                a23[tt][k] = make_int4(0, 0, 0, 0);
+                adv[tt][k] = 0.0f;
+            }
+        }
+    __shared__ float s[TT][OB][4];
+    for (int ob = 0; ob < out_f; ob += OB) {
+        const int on = min(OB, out_f - ob);
+        #pragma unroll 2
+        for (int oo = 0; oo < on; oo++) {
+            const int o = ob + oo;
+            const unsigned char* rowq = W + (size_t)o * nsb64 * 32;
+            const unsigned char* rows = W + (size_t)out_f * nsb64 * 32 + (size_t)o * nsb64 * 4;
+            float acc[TT];
+            #pragma unroll
+            for (int tt = 0; tt < TT; tt++) acc[tt] = 0.0f;
+            #pragma unroll
+            for (int k = 0; k < NG; k++) {
+                const int g = tid + 128 * k;
+                if (g >= nsb) break;
+                const int sblk = g >> 1;
+                const int s0 = (g & 1) * 2;
+                const int4 qw = *(const int4*)(rowq + (size_t)g * 16);
+                const int cscw = *(const int*)(rows + (size_t)sblk * 4);
+                const int2 va0 = get_int_from_table_16_d(qw.x, kvalues_mxfp4_d);
+                const int2 vb0 = get_int_from_table_16_d(qw.y, kvalues_mxfp4_d);
+                const int2 va1 = get_int_from_table_16_d(qw.z, kvalues_mxfp4_d);
+                const int2 vb1 = get_int_from_table_16_d(qw.w, kvalues_mxfp4_d);
+                const float sc0 = ue4m3_to_f32_d((unsigned char)((cscw >> (8 * (s0 + 0))) & 0xFF));
+                const float sc1 = ue4m3_to_f32_d((unsigned char)((cscw >> (8 * (s0 + 1))) & 0xFF));
+                #pragma unroll
+                for (int tt = 0; tt < TT; tt++) {
+                    const int aq4[8] = { a01[tt][k].x, a01[tt][k].y, a01[tt][k].z, a01[tt][k].w,
+                                         a23[tt][k].x, a23[tt][k].y, a23[tt][k].z, a23[tt][k].w };
+                    float partial = 0.0f;
+                    int sumi = 0;
+                    sumi = dp4a(va0.x, aq4[0], sumi);
+                    sumi = dp4a(vb0.x, aq4[1], sumi);
+                    sumi = dp4a(va0.y, aq4[2], sumi);
+                    sumi = dp4a(vb0.y, aq4[3], sumi);
+                    partial += sc0 * (float)sumi;
+                    sumi = 0;
+                    sumi = dp4a(va1.x, aq4[4], sumi);
+                    sumi = dp4a(vb1.x, aq4[5], sumi);
+                    sumi = dp4a(va1.y, aq4[6], sumi);
+                    sumi = dp4a(vb1.y, aq4[7], sumi);
+                    partial += sc1 * (float)sumi;
+                    acc[tt] += adv[tt][k] * partial;
+                }
+            }
+            #pragma unroll
+            for (int tt = 0; tt < TT; tt++) {
+                float v = acc[tt];
+                for (int off = 16; off > 0; off >>= 1) v += __shfl_down_sync(0xffffffff, v, off);
+                if (lane == 0) s[tt][oo][warp] = v;
+            }
+        }
+        __syncthreads();
+        for (int task = warp; task < TT * on; task += 4) {
+            const int tt = task / on, oo = task % on;
+            float v = (lane < 4) ? s[tt][oo][lane] : 0.0f;
+            for (int off = 16; off > 0; off >>= 1) v += __shfl_down_sync(0xffffffff, v, off);
+            if (lane == 0 && t0 + tt < m) y[(size_t)(t0 + tt) * out_f + ob + oo] = v;
+        }
+        __syncthreads();
+    }
+}
+extern "C" __global__ void __launch_bounds__(128) qmatvec_nvfp4_dp4a_rp_t4(
+        const unsigned char* __restrict__ W, const signed char* __restrict__ aq,
+        const float* __restrict__ ad, float* __restrict__ y,
+        int in_f, int out_f, int m, long row_bytes) {
+    (void)row_bytes;
+    nvfp4_dp4a_rp_tok<4, 2>(W, aq, ad, y, in_f, out_f, m);
+}
+
 // ============================ k-quant BATCHED weight-resident matvec ============================
 // Same structure as nvfp4_mmvq_batched: ONE warp owns ONE output row and walks the weight ONCE,
 // decoding each weight group's quant bytes a SINGLE time and dp4a-ing the decoded weight against

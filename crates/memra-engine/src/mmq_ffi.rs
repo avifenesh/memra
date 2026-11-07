@@ -938,6 +938,41 @@ unsafe extern "C" {
         out_scale: f32,
         rp: i32,
     ) -> i32;
+    /// `memra_mmq_nvfp4_f8f4_v2_preq` with the residual add in the epilogue: `y = res + W x`, the
+    /// bytes the plain GEMM then `add_f32(res, y)` write. `res` and `y` are distinct [n_tokens,
+    /// out_f] f32 buffers. Same returns (3998 also for a null or aliased `res`).
+    pub fn memra_mmq_nvfp4_f8f4_v2_preq_resid(
+        w_nvfp4_blocks: *const core::ffi::c_void,
+        act_scratch: *const core::ffi::c_void,
+        res: *const f32,
+        y: *mut f32,
+        in_f: i32,
+        out_f: i32,
+        n_tokens: i32,
+        img: *mut core::ffi::c_void,
+        stream: *mut core::ffi::c_void,
+        out_scale: f32,
+        rp: i32,
+    ) -> i32;
+    /// The dense FFN's gate and up v2 GEMMs and the down GEMM's activation quantize in one launch:
+    /// writes silu(gate) * up as the v2 activation of an nf-wide input at `act_out`. Bit-identical
+    /// to the two plain v2 GEMMs then `memra_mmq_nvfp4_f8f4_v2_quantize_act_silu`. `img` holds
+    /// `memra_mmq_nvfp4_f8f4_v2_img_bytes(in_f, 2 * nf)` bytes. Returns 0 / 3000+cudaError / 3998
+    /// (shape) / 2905 (stub build).
+    pub fn memra_mmq_nvfp4_f8f4_v2_gateup_silu(
+        w_gate: *const core::ffi::c_void,
+        w_up: *const core::ffi::c_void,
+        act_scratch: *const core::ffi::c_void,
+        act_out: *mut core::ffi::c_void,
+        in_f: i32,
+        nf: i32,
+        n_tokens: i32,
+        img: *mut core::ffi::c_void,
+        stream: *mut core::ffi::c_void,
+        scale_gate: f32,
+        scale_up: f32,
+        rp: i32,
+    ) -> i32;
     /// Bytes for the per-block FP8 MMQ activation scratch (delegates to the F8F4 sizing — the
     /// two arms deliberately share ONE activation format, `block_e4m3_mmq`).
     pub fn memra_mmq_fp8_blk_act_bytes(in_f: i32, n_tokens: i32) -> usize;
@@ -2235,7 +2270,7 @@ impl Engine {
 
     /// Quantize `x` ([m, in_f] f32) for the F8F4 GEMM: the block_e4m3_mmq layout for v1, the
     /// v2 layout for v2 (the same e4m3 bytes and scales either way).
-    fn f8f4_quantize(
+    pub(crate) fn f8f4_quantize(
         &self,
         x: &CudaSlice<f32>,
         m: usize,
@@ -2352,6 +2387,83 @@ impl Engine {
         Ok(y)
     }
 
+    /// The v2 GEMM of `f8f4_gemm_preq(.., v2 = true)` with the residual add in its epilogue: writes
+    /// `[m, out_f]` f32 at `y_p` = the f32 at `res_p` + the GEMM output
+    /// (`memra_mmq_nvfp4_f8f4_v2_preq_resid`). Both device pointers are on this stream, distinct
+    /// and live for the call.
+    #[allow(clippy::too_many_arguments)] // allow: mirrors the FFI launch contract
+    pub(crate) fn f8f4_gemm_preq_resid_raw(
+        &self,
+        bytes: &CudaSlice<u8>,
+        act: &CudaSlice<u8>,
+        m: usize,
+        in_f: usize,
+        out_f: usize,
+        scale: f32,
+        rp: bool,
+        res_p: u64,
+        y_p: u64,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let n = unsafe { memra_mmq_nvfp4_f8f4_v2_img_bytes(in_f as i32, out_f as i32) };
+        let mut img = self.alloc_uninit::<u8>(n)?;
+        let rc = {
+            let stream = self.gpu.stream();
+            let (w_p, _gw) = bytes.device_ptr(&stream);
+            let (s_p, _gs) = act.device_ptr(&stream);
+            let (i_p, _gi) = img.device_ptr_mut(&stream);
+            unsafe {
+                memra_mmq_nvfp4_f8f4_v2_preq_resid(
+                    w_p as *const core::ffi::c_void,
+                    s_p as *const core::ffi::c_void,
+                    res_p as *const f32,
+                    y_p as *mut f32,
+                    in_f as i32,
+                    out_f as i32,
+                    m as i32,
+                    i_p as *mut core::ffi::c_void,
+                    stream.cu_stream() as *mut core::ffi::c_void,
+                    scale,
+                    rp as i32,
+                )
+            }
+        };
+        if rc != 0 {
+            return Err(format!("F8F4 v2 GEMM residual epilogue rc={rc}").into());
+        }
+        Ok(())
+    }
+
+    /// kernel-check `MMQ-F8F4-V2-RESID`: `res + W x` through the residual epilogue (`fused`) or
+    /// the plain v2 GEMM then `add` (bare weight in layout `rp`, macro-scale `scale`).
+    #[allow(clippy::too_many_arguments)] // allow: mirrors the FFI launch contract
+    pub fn f8f4_v2_resid_arm_raw(
+        &self,
+        bytes: &CudaSlice<u8>,
+        x: &CudaSlice<f32>,
+        res: &CudaSlice<f32>,
+        m: usize,
+        in_f: usize,
+        out_f: usize,
+        scale: f32,
+        rp: bool,
+        fused: bool,
+    ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
+        if !f8f4_v2_kernel_shape_ok(in_f, out_f, m) {
+            return Err(format!("F8F4 v2 refuses shape in_f={in_f} out_f={out_f} m={m}").into());
+        }
+        let act = self.f8f4_quantize(x, m, in_f, true)?;
+        if !fused {
+            let y = self.f8f4_gemm_preq(bytes, &act, m, in_f, out_f, scale, rp, true)?;
+            let mut out = self.alloc_uninit::<f32>(m * out_f)?;
+            self.add(res, &y, &mut out, m * out_f)?;
+            return Ok(out);
+        }
+        let mut out = self.alloc_uninit::<f32>(m * out_f)?;
+        let (r_p, o_p) = (self.addr_f32(res), self.addr_f32_mut(&mut out));
+        self.f8f4_gemm_preq_resid_raw(bytes, &act, m, in_f, out_f, scale, rp, r_p, o_p)?;
+        Ok(out)
+    }
+
     /// Bare F8F4 GEMM with the tile forced (`v2` false = v1, true = v2), no macro-scale, for the
     /// kernel-check `MMQ-F8F4-V2` bit cells. `rp` selects the weight layout `bytes` is in.
     #[allow(clippy::too_many_arguments)] // allow: mirrors the FFI launch contract
@@ -2439,6 +2551,520 @@ impl Engine {
                 mmq_w4a8_enabled(),
                 std::env::var("MEMRA_MMQ").is_ok(),
             )
+    }
+
+    /// Whether `matmul_prefill(w, x, m)` runs the F8F4 v2 tile: the entry `f8f4_prefill_direct`
+    /// admits and the v2 route for its shape. Such a weight takes a seeded v2 activation scratch.
+    pub fn f8f4_v2_direct(&self, w: &crate::model::GpuTensor, m: usize) -> bool {
+        self.f8f4_prefill_direct(w, m) && self.f8f4_v2_on(w.in_features(), w.out_features(), m)
+    }
+
+    /// Whether `add_rms_norm_f8f4v2` can run at this width: warp-aligned 32-groups need
+    /// ncols % 32 == 0 and a warp-multiple `rms_block()` (else callers keep `add_rms_norm`).
+    pub fn add_rms_norm_f8f4v2_ok(ncols: usize) -> bool {
+        ncols.is_multiple_of(32) && crate::rms_block().is_multiple_of(32)
+    }
+
+    /// `res = a + b`, `dst = rms_norm(res) * w` (the `add_rms_norm` values) and the F8F4 v2
+    /// activation scratch of `dst` in one kernel (`add_rms_norm_e4m3v2_f32`), seeded for the next
+    /// quantize-once scope over the buffer at `key_ptr` (the one the following GEMM group reads). `dst = None`
+    /// skips the f32 norm output; only a caller whose every consumer takes the seeded scratch may
+    /// pass it. `q8` also writes the activation's `quantize_q8_1` pair into the seed (for dp4a
+    /// projections of the group). Bit-identical to `add_rms_norm` then
+    /// `memra_mmq_nvfp4_f8f4_v2_quantize_act` and `quantize_q8_1` (kernel-check
+    /// `ADD-RMS-NORM-E4M3V2`).
+    #[allow(clippy::too_many_arguments)] // allow: mirrors add_rms_norm plus the seed key
+    pub fn add_rms_norm_f8f4v2(
+        &self,
+        a: &CudaSlice<f32>,
+        b: &CudaSlice<f32>,
+        w: &CudaSlice<f32>,
+        res: &mut CudaSlice<f32>,
+        dst: Option<&mut CudaSlice<f32>>,
+        key_ptr: u64,
+        q8: bool,
+        ncols: usize,
+        nrows: usize,
+        eps: f32,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        self.norm_f8f4v2_launch(a, Some((b, res)), w, dst, key_ptr, q8, ncols, nrows, eps)
+    }
+
+    /// `add_rms_norm_f8f4v2` on a residual `x` another kernel already wrote (the v2 GEMM's
+    /// residual epilogue): the same `dst`, seed and q8 pair as `add_rms_norm_f8f4v2(a, b, ..)`
+    /// for any `a + b == x` (`rms_norm_e4m3v2_f32`; kernel-check `ADD-RMS-NORM-E4M3V2`).
+    #[allow(clippy::too_many_arguments)] // allow: mirrors add_rms_norm_f8f4v2
+    pub fn rms_norm_f8f4v2(
+        &self,
+        x: &CudaSlice<f32>,
+        w: &CudaSlice<f32>,
+        dst: Option<&mut CudaSlice<f32>>,
+        key_ptr: u64,
+        q8: bool,
+        ncols: usize,
+        nrows: usize,
+        eps: f32,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        self.norm_f8f4v2_launch(x, None, w, dst, key_ptr, q8, ncols, nrows, eps)
+    }
+
+    #[allow(clippy::too_many_arguments)] // allow: the two norm entries' shared launch
+    #[allow(clippy::type_complexity)] // allow: the optional (b, res) pair of the add form
+    fn norm_f8f4v2_launch(
+        &self,
+        a: &CudaSlice<f32>,
+        add: Option<(&CudaSlice<f32>, &mut CudaSlice<f32>)>,
+        w: &CudaSlice<f32>,
+        dst: Option<&mut CudaSlice<f32>>,
+        key_ptr: u64,
+        q8: bool,
+        ncols: usize,
+        nrows: usize,
+        eps: f32,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let bd = crate::rms_block();
+        if !ncols.is_multiple_of(32) || !bd.is_multiple_of(32) {
+            return Err(format!(
+                "add_rms_norm_f8f4v2 needs ncols % 32 == 0 and a warp-multiple block, got {ncols}/{bd}"
+            )
+            .into());
+        }
+        let bytes = unsafe { memra_mmq_nvfp4_f8f4_v2_act_bytes(ncols as i32, nrows as i32) };
+        let mut scratch = self.alloc_uninit::<u8>(bytes)?;
+        let tp: i64 = (nrows as i64 + 255) / 256 * 256;
+        let dst_ptr: u64 = match dst {
+            Some(d) => self.addr_f32(d),
+            None => 0,
+        };
+        let q8_pair = if q8 {
+            Some((
+                self.alloc_uninit::<i8>(nrows * ncols)?,
+                self.alloc_uninit::<f32>(nrows * (ncols / 32))?,
+            ))
+        } else {
+            None
+        };
+        let (q8_ptr, q8d_ptr): (u64, u64) = match q8_pair.as_ref() {
+            Some((q, d)) => {
+                let s = self.gpu.stream();
+                let (pq, _gq) = q.device_ptr(&s);
+                let (pd, _gd) = d.device_ptr(&s);
+                (pq, pd)
+            }
+            None => (0, 0),
+        };
+        use cudarc::driver::PushKernelArg;
+        let (nc, nr, e) = (ncols as i32, nrows as i32, eps);
+        let cfg = cudarc::driver::LaunchConfig {
+            grid_dim: (nrows as u32, 1, 1),
+            block_dim: (bd, 1, 1),
+            shared_mem_bytes: 0,
+        };
+        {
+            let s = self.gpu.stream();
+            match add {
+                Some((b, res)) => {
+                    let f = self.func("add_rms_norm_e4m3v2_f32");
+                    let mut lb = s.launch_builder(&f);
+                    lb.arg(a)
+                        .arg(b)
+                        .arg(w)
+                        .arg(&mut *res)
+                        .arg(&dst_ptr)
+                        .arg(&mut scratch)
+                        .arg(&q8_ptr)
+                        .arg(&q8d_ptr)
+                        .arg(&nc)
+                        .arg(&nr)
+                        .arg(&tp)
+                        .arg(&e);
+                    unsafe {
+                        lb.launch(cfg)?;
+                    }
+                }
+                None => {
+                    let f = self.func("rms_norm_e4m3v2_f32");
+                    let mut lb = s.launch_builder(&f);
+                    lb.arg(a)
+                        .arg(w)
+                        .arg(&dst_ptr)
+                        .arg(&mut scratch)
+                        .arg(&q8_ptr)
+                        .arg(&q8d_ptr)
+                        .arg(&nc)
+                        .arg(&nr)
+                        .arg(&tp)
+                        .arg(&e);
+                    unsafe {
+                        lb.launch(cfg)?;
+                    }
+                }
+            }
+        }
+        *self.f8f4_act_seed.lock().unwrap() = Some(crate::F8f4ActGroup {
+            x_ptr: key_ptr,
+            in_f: ncols,
+            m: nrows,
+            scratch: Some(scratch),
+            v2: true,
+            q8: q8_pair,
+        });
+        Ok(())
+    }
+
+    /// The GDN gated RMSNorm (`gated_rmsnorm_zv`'s values, block 128) plus the F8F4 v2 activation
+    /// of its [t, num_v * ncols] output in one kernel (`gated_rmsnorm_e4m3v2_f32`), seeded for the
+    /// next quantize-once scope over the buffer at `key_ptr`. `dst = None` skips the f32 output.
+    /// Bit-identical to `gated_rmsnorm_zv` then the v2 quantizer (kernel-check
+    /// `GATED-RMSNORM-E4M3V2`).
+    #[allow(clippy::too_many_arguments)] // allow: mirrors gated_rmsnorm_zv plus the seed key
+    pub fn gated_rmsnorm_f8f4v2(
+        &self,
+        o: &CudaSlice<f32>,
+        w: &CudaSlice<f32>,
+        z: &cudarc::driver::CudaView<f32>,
+        dst: Option<&mut CudaSlice<f32>>,
+        key_ptr: u64,
+        ncols: usize,
+        num_v: usize,
+        t: usize,
+        eps: f32,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        use cudarc::driver::PushKernelArg;
+        if !ncols.is_multiple_of(32) {
+            return Err(format!("gated_rmsnorm_f8f4v2 needs ncols % 32 == 0, got {ncols}").into());
+        }
+        let in_f = ncols * num_v;
+        let bytes = unsafe { memra_mmq_nvfp4_f8f4_v2_act_bytes(in_f as i32, t as i32) };
+        let mut scratch = self.alloc_uninit::<u8>(bytes)?;
+        let tp: i64 = (t as i64 + 255) / 256 * 256;
+        let dst_ptr: u64 = match dst {
+            Some(d) => self.addr_f32(d),
+            None => 0,
+        };
+        let (nc, nv, nt, e) = (ncols as i32, num_v as i32, t as i32, eps);
+        let f = self.func("gated_rmsnorm_e4m3v2_f32");
+        // block 128: gated_rmsnorm_zv's, which fixes the reduction tree
+        let cfg = cudarc::driver::LaunchConfig {
+            grid_dim: ((num_v * t) as u32, 1, 1),
+            block_dim: (128, 1, 1),
+            shared_mem_bytes: 0,
+        };
+        {
+            let s = self.gpu.stream();
+            let mut lb = s.launch_builder(&f);
+            lb.arg(o)
+                .arg(w)
+                .arg(z)
+                .arg(&dst_ptr)
+                .arg(&mut scratch)
+                .arg(&nc)
+                .arg(&nv)
+                .arg(&nt)
+                .arg(&tp)
+                .arg(&e);
+            unsafe {
+                lb.launch(cfg)?;
+            }
+        }
+        *self.f8f4_act_seed.lock().unwrap() = Some(crate::F8f4ActGroup {
+            x_ptr: key_ptr,
+            in_f,
+            m: t,
+            scratch: Some(scratch),
+            v2: true,
+            q8: None,
+        });
+        Ok(())
+    }
+
+    /// The attention out-gate (`sigmoid` then `mul`'s values) plus the F8F4 v2 activation of the
+    /// [t, in_f] product in one kernel (`sig_mul_e4m3v2_f32`), seeded for the next quantize-once
+    /// scope over the buffer at `key_ptr`. `dst = None` skips the f32 product. Bit-identical to
+    /// `sigmoid` + `mul` then the v2 quantizer (kernel-check `SIG-MUL-E4M3V2`).
+    #[allow(clippy::too_many_arguments)] // allow: the gate inputs plus the seed key
+    pub fn sig_mul_f8f4v2(
+        &self,
+        a: &CudaSlice<f32>,
+        g: &CudaSlice<f32>,
+        dst: Option<&mut CudaSlice<f32>>,
+        key_ptr: u64,
+        in_f: usize,
+        t: usize,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        use cudarc::driver::PushKernelArg;
+        if !in_f.is_multiple_of(32) {
+            return Err(format!("sig_mul_f8f4v2 needs in_f % 32 == 0, got {in_f}").into());
+        }
+        let bytes = unsafe { memra_mmq_nvfp4_f8f4_v2_act_bytes(in_f as i32, t as i32) };
+        let mut scratch = self.alloc_uninit::<u8>(bytes)?;
+        let tp: i64 = (t as i64 + 255) / 256 * 256;
+        let dst_ptr: u64 = match dst {
+            Some(d) => self.addr_f32(d),
+            None => 0,
+        };
+        let n = in_f * t;
+        let (inf, nt) = (in_f as i32, t as i32);
+        let f = self.func("sig_mul_e4m3v2_f32");
+        let cfg = cudarc::driver::LaunchConfig {
+            grid_dim: (n.div_ceil(256) as u32, 1, 1),
+            block_dim: (256, 1, 1),
+            shared_mem_bytes: 0,
+        };
+        {
+            let s = self.gpu.stream();
+            let mut lb = s.launch_builder(&f);
+            lb.arg(a)
+                .arg(g)
+                .arg(&dst_ptr)
+                .arg(&mut scratch)
+                .arg(&inf)
+                .arg(&nt)
+                .arg(&tp);
+            unsafe {
+                lb.launch(cfg)?;
+            }
+        }
+        *self.f8f4_act_seed.lock().unwrap() = Some(crate::F8f4ActGroup {
+            x_ptr: key_ptr,
+            in_f,
+            m: t,
+            scratch: Some(scratch),
+            v2: true,
+            q8: None,
+        });
+        Ok(())
+    }
+
+    /// kernel-check `ADD-RMS-NORM-E4M3V2`: the pending seed's scratch (taken), and the reference
+    /// v2 quantize of an f32 activation.
+    #[allow(clippy::type_complexity)] // allow: test hook returning the seed's parts as they are
+    pub fn f8f4_take_seed(
+        &self,
+    ) -> Option<(
+        Option<CudaSlice<u8>>,
+        Option<(CudaSlice<i8>, CudaSlice<f32>)>,
+    )> {
+        self.f8f4_act_seed
+            .lock()
+            .unwrap()
+            .take()
+            .map(|g| (g.scratch, g.q8))
+    }
+    pub fn f8f4_quantize_v2_raw(
+        &self,
+        x: &CudaSlice<f32>,
+        m: usize,
+        in_f: usize,
+    ) -> Result<CudaSlice<u8>, Box<dyn std::error::Error>> {
+        self.f8f4_quantize(x, m, in_f, true)
+    }
+
+    /// Whether the dense FFN (gate, up, down) runs as the fused gate/up silu launch then the down
+    /// GEMM on its activation (`matmul_prefill_ffn_f8f4v2`): all three on the F8F4 v2 tile, gate
+    /// and up of one shape and rp layout, nf % 32 == 0, the image of 2 * nf rows inside the
+    /// kernel contract. `MEMRA_FFN_GATEUP_FUSE=0` keeps the two GEMMs and the fused-silu quantize.
+    pub fn f8f4_ffn_fused_ok(
+        &self,
+        gate: &crate::model::GpuTensor,
+        up: &crate::model::GpuTensor,
+        down: &crate::model::GpuTensor,
+        m: usize,
+    ) -> bool {
+        use crate::model::GpuTensor;
+        static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+        let on = *ON.get_or_init(|| std::env::var("MEMRA_FFN_GATEUP_FUSE").as_deref() != Ok("0"));
+        let (nf, in_f) = (gate.out_features(), gate.in_features());
+        let same_rp = matches!((gate, up), (GpuTensor::Quant { rp: a, .. }, GpuTensor::Quant { rp: b, .. }) if a == b);
+        on && same_rp
+            && up.out_features() == nf
+            && up.in_features() == in_f
+            && down.in_features() == nf
+            && nf.is_multiple_of(32)
+            && self.f8f4_v2_direct(gate, m)
+            && self.f8f4_v2_direct(up, m)
+            && self.f8f4_v2_direct(down, m)
+            && f8f4_v2_kernel_shape_ok(in_f, 2 * nf, m)
+            && (m as u64) * (nf as u64) < (1u64 << 32)
+    }
+
+    /// `down(silu(gate(z)) * up(z))` for an FFN `f8f4_ffn_fused_ok` admits: z's v2 activation (the
+    /// seed the fused norm left for `key_ptr`, else quantized from `z`), one fused gate/up launch
+    /// writing the down GEMM's v2 activation, then the down GEMM. The same y bytes as the two
+    /// GEMMs, `matmul_prefill_silu_f8f4` (kernel-check `MMQ-F8F4-V2-GATEUP`). `z_written`: whether
+    /// `z` holds the f32 norm output (it may only be false when a seed for `key_ptr` exists).
+    /// `resid = Some((res, dst))`: the down GEMM's residual epilogue writes `dst = res + down(..)`
+    /// (the bits of this function's output then `add(res, y)`) and the call returns `None`.
+    #[allow(clippy::type_complexity)] // allow: the optional (res, dst) pair of the epilogue
+    #[allow(clippy::too_many_arguments)] // allow: the FFN's three weights, input and epilogue
+    pub fn matmul_prefill_ffn_f8f4v2(
+        &self,
+        gate: &crate::model::GpuTensor,
+        up: &crate::model::GpuTensor,
+        down: &crate::model::GpuTensor,
+        z: &CudaSlice<f32>,
+        z_written: bool,
+        m: usize,
+        resid: Option<(&CudaSlice<f32>, &mut CudaSlice<f32>)>,
+    ) -> Result<Option<CudaSlice<f32>>, Box<dyn std::error::Error>> {
+        use crate::model::GpuTensor;
+        let (
+            GpuTensor::Quant {
+                bytes: gb,
+                scale: gs,
+                rp: grp,
+                ..
+            },
+            GpuTensor::Quant {
+                bytes: ub,
+                scale: us,
+                ..
+            },
+            GpuTensor::Quant {
+                bytes: db,
+                scale: ds,
+                rp: drp,
+                ..
+            },
+        ) = (gate, up, down)
+        else {
+            return Err("matmul_prefill_ffn_f8f4v2: not Quant tensors".into());
+        };
+        let (in_f, nf, out_f) = (gate.in_features(), gate.out_features(), down.out_features());
+        let key = self.addr_f32(z);
+        let seed = self
+            .f8f4_act_seed
+            .lock()
+            .unwrap()
+            .take()
+            .filter(|g| g.x_ptr == key && g.in_f == in_f && g.m == m && g.v2)
+            .and_then(|g| g.scratch);
+        let act = match seed {
+            Some(a) => a,
+            None if z_written => self.f8f4_quantize(z, m, in_f, true)?,
+            None => {
+                return Err(
+                    "matmul_prefill_ffn_f8f4v2: no seeded activation for an unwritten z".into(),
+                );
+            }
+        };
+        let out_bytes = unsafe { memra_mmq_nvfp4_f8f4_v2_act_bytes(nf as i32, m as i32) };
+        let mut act_out = self.alloc_uninit::<u8>(out_bytes)?;
+        let img_bytes = unsafe { memra_mmq_nvfp4_f8f4_v2_img_bytes(in_f as i32, (2 * nf) as i32) };
+        let mut img = self.alloc_uninit::<u8>(img_bytes)?;
+        let rc = {
+            let stream = self.gpu.stream();
+            let (g_p, _g1) = gb.device_ptr(&stream);
+            let (u_p, _g2) = ub.device_ptr(&stream);
+            let (a_p, _g3) = act.device_ptr(&stream);
+            let (o_p, _g4) = act_out.device_ptr_mut(&stream);
+            let (i_p, _g5) = img.device_ptr_mut(&stream);
+            unsafe {
+                memra_mmq_nvfp4_f8f4_v2_gateup_silu(
+                    g_p as *const core::ffi::c_void,
+                    u_p as *const core::ffi::c_void,
+                    a_p as *const core::ffi::c_void,
+                    o_p as *mut core::ffi::c_void,
+                    in_f as i32,
+                    nf as i32,
+                    m as i32,
+                    i_p as *mut core::ffi::c_void,
+                    stream.cu_stream() as *mut core::ffi::c_void,
+                    *gs,
+                    *us,
+                    *grp as i32,
+                )
+            }
+        };
+        if rc != 0 {
+            return Err(format!("F8F4 v2 gate/up silu rc={rc}").into());
+        }
+        drop(img);
+        if let Some((res, dst)) = resid {
+            let (r_p, d_p) = (self.addr_f32(res), self.addr_f32_mut(dst));
+            self.f8f4_gemm_preq_resid_raw(db, &act_out, m, nf, out_f, *ds, *drp, r_p, d_p)?;
+            return Ok(None);
+        }
+        Ok(Some(self.f8f4_gemm_preq(
+            db, &act_out, m, nf, out_f, *ds, *drp, true,
+        )?))
+    }
+
+    /// kernel-check `MMQ-F8F4-V2-GATEUP`: the fused gate/up silu launch's down-GEMM activation
+    /// (bare weights in layout `rp`, macro-scales `scales` = (gate, up)), and the reference: the two
+    /// plain v2 GEMMs then the v2 silu quantize.
+    #[allow(clippy::too_many_arguments)] // allow: mirrors the FFI launch contract
+    pub fn f8f4_gateup_silu_act_arm_raw(
+        &self,
+        w_gate: &CudaSlice<u8>,
+        w_up: &CudaSlice<u8>,
+        x: &CudaSlice<f32>,
+        m: usize,
+        in_f: usize,
+        nf: usize,
+        scales: (f32, f32),
+        rp: bool,
+        fused: bool,
+    ) -> Result<CudaSlice<u8>, Box<dyn std::error::Error>> {
+        let act = self.f8f4_quantize(x, m, in_f, true)?;
+        let out_bytes = unsafe { memra_mmq_nvfp4_f8f4_v2_act_bytes(nf as i32, m as i32) };
+        let mut act_out = self.alloc_uninit::<u8>(out_bytes)?;
+        if fused {
+            let img_bytes =
+                unsafe { memra_mmq_nvfp4_f8f4_v2_img_bytes(in_f as i32, (2 * nf) as i32) };
+            let mut img = self.alloc_uninit::<u8>(img_bytes)?;
+            let rc = {
+                let stream = self.gpu.stream();
+                let (g_p, _g1) = w_gate.device_ptr(&stream);
+                let (u_p, _g2) = w_up.device_ptr(&stream);
+                let (a_p, _g3) = act.device_ptr(&stream);
+                let (o_p, _g4) = act_out.device_ptr_mut(&stream);
+                let (i_p, _g5) = img.device_ptr_mut(&stream);
+                unsafe {
+                    memra_mmq_nvfp4_f8f4_v2_gateup_silu(
+                        g_p as *const core::ffi::c_void,
+                        u_p as *const core::ffi::c_void,
+                        a_p as *const core::ffi::c_void,
+                        o_p as *mut core::ffi::c_void,
+                        in_f as i32,
+                        nf as i32,
+                        m as i32,
+                        i_p as *mut core::ffi::c_void,
+                        stream.cu_stream() as *mut core::ffi::c_void,
+                        scales.0,
+                        scales.1,
+                        rp as i32,
+                    )
+                }
+            };
+            if rc != 0 {
+                return Err(format!("F8F4 v2 gate/up silu rc={rc}").into());
+            }
+            return Ok(act_out);
+        }
+        let g = self.f8f4_gemm_preq(w_gate, &act, m, in_f, nf, scales.0, rp, true)?;
+        let u = self.f8f4_gemm_preq(w_up, &act, m, in_f, nf, scales.1, rp, true)?;
+        let rq = {
+            let stream = self.gpu.stream();
+            let (g_p, _g1) = g.device_ptr(&stream);
+            let (u_p, _g2) = u.device_ptr(&stream);
+            let (o_p, _g3) = act_out.device_ptr_mut(&stream);
+            unsafe {
+                memra_mmq_nvfp4_f8f4_v2_quantize_act_silu(
+                    g_p as *const f32,
+                    u_p as *const f32,
+                    o_p as *mut core::ffi::c_void,
+                    nf as i32,
+                    m as i32,
+                    nf as i64,
+                    stream.cu_stream() as *mut core::ffi::c_void,
+                )
+            }
+        };
+        if rq != 0 {
+            return Err(format!("F8F4 v2 silu quantize rc={rq}").into());
+        }
+        Ok(act_out)
     }
 
     /// `matmul_prefill(w, silu(gate) * up, m)` for a weight `f8f4_prefill_direct` admits, with
@@ -3765,7 +4391,7 @@ pub(crate) const F8F4_V2_MIN_ROWS: usize = 2048;
 /// k groups, an image of `Mp = round_up(out_f, 256)` rows whose pre-pass grid (`Mp / 8` blocks
 /// in y) fits the 65,535 limit, and 32-bit mainloop offsets into the image (`Mp * in_f`) and the
 /// activation (`m * in_f`).
-fn f8f4_v2_kernel_shape_ok(in_f: usize, out_f: usize, m: usize) -> bool {
+pub(crate) fn f8f4_v2_kernel_shape_ok(in_f: usize, out_f: usize, m: usize) -> bool {
     let mp = out_f.div_ceil(256) * 256;
     in_f > 0
         && in_f.is_multiple_of(256)

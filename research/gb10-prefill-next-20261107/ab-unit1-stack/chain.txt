@@ -1,0 +1,22 @@
+gdn3=~/.cache/memra-gb10-next/bins/gdn3-5650c30d03 gdn4=~/.cache/memra-gb10-next/bins/gdn4-ebe9cf2a8e BANK gdn3 5650c30d03 ~/.cache/memra-gb10-next/bins/gdn3-5650c30d03 compiled_memra_crates=12 foreign=0 / BANK gdn4 ebe9cf2a8e ~/.cache/memra-gb10-next/bins/gdn4-ebe9cf2a8e compiled_memra_crates=12 foreign=0
+kc-fast rc=0 ALL GREEN (100 cells, 22 skipped)
+NVFP4-DP4A-RP-T4 in_f=5120 out_f=48 m=300: bitdiff=0 nonzero=14400/14400 OK
+NVFP4-DP4A-RP-T4 in_f=5120 out_f=48 m=4096: bitdiff=0 nonzero=196608/196608 OK
+NVFP4-DP4A-RP-T4 in_f=2048 out_f=64 m=77: bitdiff=0 nonzero=4928/4928 OK
+NVFP4-DP4A-RP-T4 in_f=7168 out_f=40 m=129: bitdiff=0 nonzero=5160/5160 OK
+GATED-RMSNORM-E4M3V2 T=300: f32=0 e4m3+scales=0 (f32 skipped: 0) OK
+GATED-RMSNORM-E4M3V2 T=1024: f32=0 e4m3+scales=0 (f32 skipped: 0) OK
+ADD-RMS-NORM-E4M3V2 rows=300: res=0 norm=0 e4m3=0 scales=0 q8_1=0 (f32 skipped: e4m3=0 scales=0) OK
+ADD-RMS-NORM-E4M3V2 rows=1024: res=0 norm=0 e4m3=0 scales=0 q8_1=0 (f32 skipped: e4m3=0 scales=0) OK
+GDN-DB-GQA T=200 H=6 hk=2 compact, traffic set: out bitdiff=0 state bitdiff=0 OK
+GDN-DB-GQA T=200 H=6 hk=2 compact, traffic off: out bitdiff=0 state bitdiff=0 OK
+GDN-DB-GQA T=200 H=6 hk=6 broadcast, traffic set: out bitdiff=0 state bitdiff=0 OK
+GDN-DB-GQA T= 64 H=6 hk=2 compact, traffic set: out bitdiff=0 state bitdiff=0 OK
+GDN-DB-GQA T= 64 H=6 hk=2 compact, traffic off: out bitdiff=0 state bitdiff=0 OK
+GDN-DB-GQA T= 64 H=6 hk=6 broadcast, traffic set: out bitdiff=0 state bitdiff=0 OK
+kc-f8f4 rc=0 ALL GREEN (100 cells, 21 skipped)
+MMQ-F8F4-V2-GATEUP blk.0.ffn_gate/up [NVFP4 5120x17408] T=130: byte-mismatch 0/2333760 OK
+MMQ-F8F4-V2-GATEUP blk.0.ffn_gate/up [NVFP4 5120x17408] T=1024: byte-mismatch 0/18382848 OK
+MMQ-F8F4-V2-GATEUP blk.0.ffn_gate/up [NVFP4 5120x17408] T=4096: byte-mismatch 0/73531392 OK
+MMQ-F8F4-V2 SUMMARY: 8 shapes, 0 mismatching outputs OK
+CB33-CHAIN-DONE

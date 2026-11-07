@@ -1,0 +1,26 @@
+campaign served-glue3-unit2-pair: 6 requests, arms ['B', 'L']
+
+target 32768
+  B        ttft 25.406                                   median 25.406  cells ['01-B']
+  L        ttft 24.402                                   median 24.402  cells ['02-L']
+  L vs B: -3.95%
+
+target 131072
+  B        ttft 131.691                                  median 131.691  cells ['01-B']
+  L        ttft 127.396                                  median 127.396  cells ['02-L']
+  L vs B: -3.26%
+
+target 260000
+  B        ttft 343.880                                  median 343.880  cells ['01-B']
+  L        ttft 332.218                                  median 332.218  cells ['02-L']
+  L vs B: -3.39%
+
+fingerprints (text sha256 per target/rep across all cells)
+  target 32768 rep 0: 1 distinct IDENTICAL
+  target 131072 rep 0: 1 distinct IDENTICAL
+  target 260000 rep 0: 1 distinct IDENTICAL
+errors/needle misses: 0
+FINGERPRINTS IDENTICAL
+01-B: MemAvailable floor 65.72 GiB
+02-L: MemAvailable floor 66.15 GiB
+SERVED-AB-DONE

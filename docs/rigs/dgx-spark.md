@@ -104,3 +104,20 @@ to h2. Device probe at depth 131,072: 85 against 68 TFLOPS (bf16 `mma.sync` ceil
 Served cold TTFT against main `6f6d816757`, B H H B B H on unit 1, three fresh boots per arm:
 32.57 -> 32.06 s at 32,784 tokens (-1.6%), 167.9 -> 158.2 s at 131,051 (-5.8%) and 432.7 ->
 393.9 s at 259,951 (-9.0%), same answers in every boot, MemAvailable floor 66.6 GiB.
+
+GDN traffic, fused norms and gate/up (2026-11-07, [research/gb10-prefill-next-20261107](../../research/gb10-prefill-next-20261107/),
+[decision](../decisions/GB10-PRIME-GDN-GLUE.md)): the GDN compact q/k layout at 3:1 (it had been
+limited to 2:1, so this model's 16 key / 48 value heads ran broadcast), heads-fastest K2/K3/K5, a
+fused K4+K5 state and output pass (`MEMRA_GDN_K45`), one add + RMSNorm kernel per residual site
+writing the next GEMM's F8F4 v2 / q8_1 activation (`MEMRA_PRIME_NORM_FUSE`), a tiled beta/alpha
+dp4a matvec (`MEMRA_DP4A_TILED`) and gate and up in one F8F4 v2 launch writing the down GEMM's silu
+activation (`MEMRA_FFN_GATEUP_FUSE`); all bit-identical. Served cold TTFT against main `6f5e03e74a`,
+B L L B B L on unit 2: 31.89 -> 25.38 s at 32,784 tokens (-20.4%), 157.71 -> 131.69 s at 131,051
+(-16.5%) and 391.24 -> 340.89 s at 259,951 (-12.9%), same answers in every boot, MemAvailable floor
+66.2 GiB; unit 1 within 0.6%.
+
+Second pass (2026-11-07, same receipts, [decision](../decisions/GB10-PRIME-GLUE-2.md)): the residual add
+in the F8F4 v2 GEMM epilogue (`MEMRA_PRIME_RESID_EPI`), K2 at C = 32 in half the shared memory
+(`MEMRA_GDN_K2_32`), the GDN conv with the q/k L2 norms (`MEMRA_GDN_CONV_L2`) and the attention q path in
+one kernel (`MEMRA_PRIME_Q_FUSE`); all bit-identical. Served cold TTFT against the first pass, one boot
+per arm on unit 2: -3.95% / -3.26% / -3.39% at 32,784 / 131,051 / 259,951 tokens. RIG-FINAL-PLACEHOLDER

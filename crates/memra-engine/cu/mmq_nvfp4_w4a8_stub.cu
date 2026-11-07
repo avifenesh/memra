@@ -31,3 +31,15 @@ extern "C" int memra_mmq_nvfp4_f8f4_v2_preq(
         const void *, const void *, float *, int, int, int, void *, void *, float, int) {
     return 2905;
 }
+
+extern "C" int memra_mmq_nvfp4_f8f4_v2_preq_resid(
+        const void *, const void *, const float *, float *, int, int, int, void *, void *, float,
+        int) {
+    return 2905;
+}
+
+extern "C" int memra_mmq_nvfp4_f8f4_v2_gateup_silu(
+        const void *, const void *, const void *, void *, int, int, int, void *, void *, float, float,
+        int) {
+    return 2905;
+}

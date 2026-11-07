@@ -1,0 +1,18 @@
+main: BANK main 6f5e03e74a ~/.cache/memra-gb10-next/bins/main-6f5e03e74a compiled_memra_crates=12 foreign=0 bin=~/.cache/memra-gb10-next/bins/main-6f5e03e74a
+build: BANK gdn3 5650c30d03 ~/.cache/memra-gb10-next/bins/gdn3-5650c30d03 compiled_memra_crates=12 foreign=0 bin=~/.cache/memra-gb10-next/bins/gdn3-5650c30d03
+kc-fast rc=0 ALL GREEN (99 cells, 22 skipped)
+add_rms_norm fused: res_mismatch=0 norm_mismatch=0 OK
+NVFP4-DP4A-RP-T4 in_f=5120 out_f=48 m=300: bitdiff=0 nonzero=14400/14400 OK
+NVFP4-DP4A-RP-T4 in_f=5120 out_f=48 m=4096: bitdiff=0 nonzero=196608/196608 OK
+NVFP4-DP4A-RP-T4 in_f=2048 out_f=64 m=77: bitdiff=0 nonzero=4928/4928 OK
+NVFP4-DP4A-RP-T4 in_f=7168 out_f=40 m=129: bitdiff=0 nonzero=5160/5160 OK
+ADD-RMS-NORM-E4M3V2 rows=300: res=0 norm=0 e4m3=0 scales=0 q8_1=0 (f32 skipped: e4m3=0 scales=0) OK
+ADD-RMS-NORM-E4M3V2 rows=1024: res=0 norm=0 e4m3=0 scales=0 q8_1=0 (f32 skipped: e4m3=0 scales=0) OK
+GDN-DB-GQA T=200 H=6 hk=2 compact, traffic set: out bitdiff=0 state bitdiff=0 OK
+GDN-DB-GQA T=200 H=6 hk=2 compact, traffic off: out bitdiff=0 state bitdiff=0 OK
+GDN-DB-GQA T=200 H=6 hk=6 broadcast, traffic set: out bitdiff=0 state bitdiff=0 OK
+GDN-DB-GQA T= 64 H=6 hk=2 compact, traffic set: out bitdiff=0 state bitdiff=0 OK
+GDN-DB-GQA T= 64 H=6 hk=2 compact, traffic off: out bitdiff=0 state bitdiff=0 OK
+GDN-DB-GQA T= 64 H=6 hk=6 broadcast, traffic set: out bitdiff=0 state bitdiff=0 OK
+gates done
+CHAIN3-DONE

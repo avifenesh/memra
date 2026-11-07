@@ -1,0 +1,78 @@
+  26.731 s   2048 x   13.052 ms  grid       4352x1x1 block   512x1x1  void mul_mat_f8f4v2<
+  18.375 s   4096 x    4.486 ms  grid        640x1x1 block   512x1x1  void mul_mat_f8f4v2<
+   6.281 s   1536 x    4.089 ms  grid       1280x1x1 block   512x1x1  void mul_mat_f8f4v2<
+   5.989 s   3937 x    1.521 ms  grid       4096x1x1 block   256x1x1  add_rms_norm_e4m3v2_f32
+   3.727 s   1536 x    2.427 ms  grid        768x1x1 block   512x1x1  void mul_mat_f8f4v2<
+   3.156 s   1488 x    2.121 ms  grid      10x4096x1 block   256x1x1  ssm_conv1d_gdn_state_l2_f32
+   2.536 s   1584 x    1.601 ms  grid         48x2x1 block   256x1x1  gdn_chunk_state_output_mma
+   2.465 s    512 x    4.815 ms  grid       1536x1x1 block   512x1x1  void mul_mat_f8f4v2<
+   2.100 s   1488 x    1.411 ms  grid       48x128x1 block   256x1x1  gdn_chunk_solve32_f32
+   1.874 s   1488 x    1.259 ms  grid       48x128x1 block   256x1x1  gdn_chunk_attn_f32
+   1.485 s   1488 x    0.998 ms  grid     196608x1x1 block   128x1x1  gated_rmsnorm_e4m3v2_f32
+   1.281 s   2976 x    0.430 ms  grid       1024x1x1 block   128x1x1  qmatvec_nvfp4_dp4a_rp_t4
+   0.827 s    496 x    1.666 ms  grid      24576x1x1 block  1024x1x1  q_gate_split_f32
+   0.499 s   1024 x    0.487 ms  grid        128x1x1 block   512x1x1  void mul_mat_f8f4v2<
+   0.475 s    496 x    0.957 ms  grid      98304x1x1 block   256x1x1  sig_mul_e4m3v2_f32
+   0.432 s    496 x    0.872 ms  grid      98304x1x1 block   256x1x1  rms_norm_f32_v2
+   0.191 s    127 x    1.500 ms  grid       4032x1x1 block   256x1x1  add_rms_norm_e4m3v2_f32
+   0.169 s     32 x    5.288 ms  grid      62080x1x1 block    32x4x1  qmatvec_q5_K_mmvq_il
+   0.123 s    496 x    0.248 ms  grid      98304x1x1 block   128x1x1  rope_neox_f32
+   0.112 s    496 x    0.225 ms  grid      32x4096x1 block    32x1x1  append_quantize_kv_q8_0_q5_1_rows
+   0.100 s     48 x    2.092 ms  grid      10x4032x1 block   256x1x1  ssm_conv1d_gdn_state_l2_f32
+   0.074 s    496 x    0.149 ms  grid      16384x1x1 block   256x1x1  rms_norm_f32_v2
+   0.067 s     48 x    1.388 ms  grid       48x126x1 block   256x1x1  gdn_chunk_solve32_f32
+   0.059 s     48 x    1.234 ms  grid       48x126x1 block   256x1x1  gdn_chunk_attn_f32
+   0.049 s     62 x    0.784 ms  grid       4096x1x1 block   256x1x1  rms_norm_f32_v2
+   0.048 s     48 x    0.996 ms  grid     193536x1x1 block   128x1x1  gated_rmsnorm_e4m3v2_f32
+   0.041 s     96 x    0.432 ms  grid       1008x1x1 block   128x1x1  qmatvec_nvfp4_dp4a_rp_t4
+   0.040 s    126 x    0.316 ms  grid        136x1x1 block    32x8x1  void mul_mat_q_nvfp4_f8f4<
+   0.034 s   1488 x    0.023 ms  grid       128x48x1 block    32x1x1  gdn_chunk_cumgate_f32
+   0.033 s     31 x    1.054 ms  grid       5120x1x1 block  1024x1x1  add_f32
+   0.029 s    126 x    0.228 ms  grid         40x1x1 block    32x8x1  void mul_mat_q_nvfp4_f8f4<
+   0.027 s     16 x    1.664 ms  grid      24192x1x1 block  1024x1x1  q_gate_split_f32
+   0.021 s    496 x    0.042 ms  grid      16384x1x1 block   128x1x1  rope_neox_f32
+   0.020 s     31 x    0.661 ms  grid      20480x1x1 block  1024x1x1  quantize_q8_1
+   0.017 s     31 x    0.552 ms  grid      4096x10x1 block   128x1x1  void quantize_mmq_e4m3_d4_kernel<
+   0.015 s     16 x    0.928 ms  grid      96768x1x1 block   256x1x1  sig_mul_e4m3v2_f32
+   0.014 s   1488 x    0.009 ms  grid        192x1x1 block  1024x1x1  gdn_glog_f32
+   0.014 s     16 x    0.868 ms  grid      96768x1x1 block   256x1x1  rms_norm_f32_v2
+   0.012 s   1488 x    0.008 ms  grid        192x1x1 block  1024x1x1  sigmoid_f32
+   0.010 s     48 x    0.213 ms  grid         80x1x1 block    32x8x1  void mul_mat_q_nvfp4_f8f4<
+   0.007 s     96 x    0.075 ms  grid         11x1x1 block   128x1x1  qmatvec_nvfp4_dp4a_rp_t4
+   0.005 s     48 x    0.109 ms  grid         48x1x1 block    32x8x1  void mul_mat_q_nvfp4_f8f4<
+   0.005 s     16 x    0.289 ms  grid      96768x1x1 block   128x1x1  rope_neox_f32
+   0.004 s     16 x    0.219 ms  grid         96x1x1 block    32x8x1  void mul_mat_q_nvfp4_f8f4<
+   0.003 s     16 x    0.217 ms  grid      32x4032x1 block    32x1x1  append_quantize_kv_q8_0_q5_1_rows
+   0.003 s   1584 x    0.002 ms  grid         30x1x1 block  1024x1x1  ssm_conv_ring_update_f32
+   0.003 s     32 x    0.102 ms  grid          8x1x1 block    32x8x1  void mul_mat_q_nvfp4_f8f4<
+   0.003 s     16 x    0.166 ms  grid      16128x1x1 block   256x1x1  rms_norm_f32_v2
+   0.002 s      2 x    0.808 ms  grid       4032x1x1 block   256x1x1  rms_norm_f32_v2
+   0.001 s     48 x    0.030 ms  grid        10x43x1 block   256x1x1  ssm_conv1d_gdn_state_l2_f32
+   0.001 s    126 x    0.009 ms  grid         43x1x1 block   256x1x1  add_rms_norm_f32_v2
+   0.001 s     48 x    0.023 ms  grid       126x48x1 block    32x1x1  gdn_chunk_cumgate_f32
+   0.001 s      1 x    1.041 ms  grid       5040x1x1 block  1024x1x1  add_f32
+   0.001 s     63 x    0.014 ms  grid        43x34x1 block   128x1x1  void quantize_mmq_e4m3_d4_silu_kernel<
+   0.001 s     16 x    0.048 ms  grid      16128x1x1 block   128x1x1  rope_neox_f32
+   0.001 s      1 x    0.702 ms  grid      20160x1x1 block  1024x1x1  quantize_q8_1
+   0.001 s     48 x    0.014 ms  grid         48x2x1 block   256x1x1  gdn_chunk_attn_f32
+   0.001 s      1 x    0.649 ms  grid      4032x10x1 block   128x1x1  void quantize_mmq_e4m3_d4_kernel<
+   0.001 s     48 x    0.011 ms  grid         48x2x1 block   256x1x1  gdn_chunk_solve32_f32
+   0.000 s     48 x    0.009 ms  grid        189x1x1 block  1024x1x1  sigmoid_f32
+   0.000 s     48 x    0.009 ms  grid        189x1x1 block  1024x1x1  gdn_glog_f32
+   0.000 s     48 x    0.007 ms  grid        215x1x1 block  1024x1x1  quantize_q8_1
+   0.000 s     48 x    0.006 ms  grid       2064x1x1 block   128x1x1  gated_rmsnorm_f32
+   0.000 s    127 x    0.002 ms  grid        43x10x1 block   128x1x1  void quantize_mmq_e4m3_d4_kernel<
+   0.000 s     63 x    0.003 ms  grid        43x12x1 block   128x1x1  void quantize_mmq_e4m3_d4_kernel<
+   0.000 s     32 x    0.004 ms  grid          5x1x1 block  1024x1x1  quantize_q8_1
+   0.000 s     16 x    0.008 ms  grid       1032x1x1 block   256x1x1  rms_norm_f32_v2
+   0.000 s     16 x    0.007 ms  grid        258x1x1 block  1024x1x1  q_gate_split_f32
+   0.000 s     15 x    0.008 ms  grid        258x1x1 block  1024x1x1  sigmoid_f32
+   0.000 s     16 x    0.007 ms  grid        32x43x1 block    32x1x1  append_quantize_kv_q8_0_q5_1_rows
+   0.000 s     16 x    0.006 ms  grid       1032x1x1 block   128x1x1  rope_neox_f32
+   0.000 s     48 x    0.002 ms  grid         2x48x1 block    32x1x1  gdn_chunk_cumgate_f32
+   0.000 s     48 x    0.002 ms  grid          3x1x1 block  1024x1x1  gdn_glog_f32
+   0.000 s     15 x    0.004 ms  grid        258x1x1 block  1024x1x1  mul_f32
+   0.000 s     48 x    0.001 ms  grid          3x1x1 block  1024x1x1  sigmoid_f32
+   0.000 s     16 x    0.002 ms  grid        172x1x1 block   256x1x1  rms_norm_f32_v2
+   0.000 s     16 x    0.002 ms  grid        172x1x1 block   128x1x1  rope_neox_f32
+   0.000 s      1 x    0.011 ms  grid         43x1x1 block   256x1x1  rms_norm_f32_v2

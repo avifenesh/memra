@@ -1,0 +1,42 @@
+kernel-check default rc=0 ALL GREEN (120 cells, 5 skipped)
+add_rms_norm fused: res_mismatch=0 norm_mismatch=0 OK
+NVFP4-DP4A-RP-T4 in_f=5120 out_f=48 m=300: bitdiff=0 nonzero=14400/14400 OK
+NVFP4-DP4A-RP-T4 in_f=5120 out_f=48 m=4096: bitdiff=0 nonzero=196608/196608 OK
+NVFP4-DP4A-RP-T4 in_f=2048 out_f=64 m=77: bitdiff=0 nonzero=4928/4928 OK
+NVFP4-DP4A-RP-T4 in_f=7168 out_f=40 m=129: bitdiff=0 nonzero=5160/5160 OK
+ADD-RMS-NORM-E4M3V2 rows=300: res=0 norm=0 e4m3=0 scales=0 q8_1=0 (f32 skipped: e4m3=0 scales=0) OK
+ADD-RMS-NORM-E4M3V2 rows=1024: res=0 norm=0 e4m3=0 scales=0 q8_1=0 (f32 skipped: e4m3=0 scales=0) OK
+GDN-DB-GQA T=200 H=6 hk=2 compact, traffic set: out bitdiff=0 state bitdiff=0 OK
+GDN-DB-GQA T=200 H=6 hk=2 compact, traffic off: out bitdiff=0 state bitdiff=0 OK
+GDN-DB-GQA T=200 H=6 hk=6 broadcast, traffic set: out bitdiff=0 state bitdiff=0 OK
+GDN-DB-GQA T= 64 H=6 hk=2 compact, traffic set: out bitdiff=0 state bitdiff=0 OK
+GDN-DB-GQA T= 64 H=6 hk=2 compact, traffic off: out bitdiff=0 state bitdiff=0 OK
+GDN-DB-GQA T= 64 H=6 hk=6 broadcast, traffic set: out bitdiff=0 state bitdiff=0 OK
+kernel-check off rc=0 ALL GREEN (120 cells, 5 skipped)
+add_rms_norm fused: res_mismatch=0 norm_mismatch=0 OK
+NVFP4-DP4A-RP-T4 in_f=5120 out_f=48 m=300: bitdiff=0 nonzero=14400/14400 OK
+NVFP4-DP4A-RP-T4 in_f=5120 out_f=48 m=4096: bitdiff=0 nonzero=196608/196608 OK
+NVFP4-DP4A-RP-T4 in_f=2048 out_f=64 m=77: bitdiff=0 nonzero=4928/4928 OK
+NVFP4-DP4A-RP-T4 in_f=7168 out_f=40 m=129: bitdiff=0 nonzero=5160/5160 OK
+ADD-RMS-NORM-E4M3V2 rows=300: res=0 norm=0 e4m3=0 scales=0 q8_1=0 (f32 skipped: e4m3=0 scales=0) OK
+ADD-RMS-NORM-E4M3V2 rows=1024: res=0 norm=0 e4m3=0 scales=0 q8_1=0 (f32 skipped: e4m3=0 scales=0) OK
+GDN-DB-GQA T=200 H=6 hk=2 compact, traffic set: out bitdiff=0 state bitdiff=0 OK
+GDN-DB-GQA T=200 H=6 hk=2 compact, traffic off: out bitdiff=0 state bitdiff=0 OK
+GDN-DB-GQA T=200 H=6 hk=6 broadcast, traffic set: out bitdiff=0 state bitdiff=0 OK
+GDN-DB-GQA T= 64 H=6 hk=2 compact, traffic set: out bitdiff=0 state bitdiff=0 OK
+GDN-DB-GQA T= 64 H=6 hk=2 compact, traffic off: out bitdiff=0 state bitdiff=0 OK
+GDN-DB-GQA T= 64 H=6 hk=6 broadcast, traffic set: out bitdiff=0 state bitdiff=0 OK
+argmax rc=0   SUMMARY flips=0 bad=0   PASS: every prefill/decode argmax flip is explained by a margin the config spread covers
+run-spec rc=0   acceptance: 17/98 = 17.3%   self-consistency: PASS (identical to plain target)   acceptance: 17/112 = 15.2%   self-consistency: PASS (identical to plain target) === SELF-CONSISTENCY PASS ===
+prime logits 600 B rc=0 pp-only MEDIAN: 16219 tok in 14.6343s = 1108.3 tok/s (pp16219, 1 reps) d1b258408a4030bd
+prime logits 600 C rc=0 pp-only MEDIAN: 16219 tok in 13.0958s = 1238.5 tok/s (pp16219, 1 reps) d1b258408a4030bd
+prime logits 600 Coff rc=0 pp-only MEDIAN: 16219 tok in 14.4859s = 1119.6 tok/s (pp16219, 1 reps) d1b258408a4030bd
+prime logits 600 B vs C vs Coff: IDENTICAL
+prime logits 1240 B rc=0 pp-only MEDIAN: 33890 tok in 32.2519s = 1050.8 tok/s (pp33890, 1 reps) 758739bef255cb95
+prime logits 1240 C rc=0 pp-only MEDIAN: 33890 tok in 29.1350s = 1163.2 tok/s (pp33890, 1 reps) 758739bef255cb95
+prime logits 1240 Coff rc=0 pp-only MEDIAN: 33890 tok in 32.0293s = 1058.1 tok/s (pp33890, 1 reps) 758739bef255cb95
+prime logits 1240 B vs C vs Coff: IDENTICAL
+forward logits 600 B rc=0 c89e11f4d79be7e6
+forward logits 600 C rc=0 c89e11f4d79be7e6
+forward logits 600 B vs C: IDENTICAL
+GATES-NEXT-DONE

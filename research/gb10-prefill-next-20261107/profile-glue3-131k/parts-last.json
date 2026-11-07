@@ -1,0 +1,141 @@
+{
+ "window_s": 127.365,
+ "kernel_sum_s": 124.236741086,
+ "parts": {
+  "glue: norms/adds/act": 3.0843129599999974,
+  "gemm: activation e4m3 quantize": 0.01849513600000002,
+  "gemm: F8F4 v2 weight image": 5.935434944000006,
+  "gemm: NVFP4 F8F4 v2 tile": 60.30697542399963,
+  "other": 1.5630272320000025,
+  "gemm: other MMQ / matvec": 1.486303679999997,
+  "gdn: conv/l2/gates": 2.2793906879999986,
+  "gdn: chunk scan kernels": 6.0105794239999755,
+  "attention: rope/qk-norm/gate glue": 1.3704850240000017,
+  "attention: KV append/quantize": 0.10650665600000007,
+  "attention: KV dequant workspace": 1.3575789439999995,
+  "attention: FA prime kernel": 40.627006496000014,
+  "gemm: NVFP4 F8F4 MMQ": 0.09064447799999999
+ },
+ "kernels": {
+  "embed_gather_u32_t|glue: norms/adds/act": [
+   0.015427232,
+   33
+  ],
+  "rms_norm_f32_v2|glue: norms/adds/act": [
+   0.12499555200000001,
+   593
+  ],
+  "void quantize_mmq_e4m3_d4_kernel<|gemm: activation e4m3 quantize": [
+   0.01755801600000002,
+   222
+  ],
+  "void f8f4v2_image_kernel<|gemm: F8F4 v2 weight image": [
+   5.935434944000006,
+   10752
+  ],
+  "void mul_mat_f8f4v2<|gemm: NVFP4 F8F4 v2 tile": [
+   60.30697542399963,
+   10752
+  ],
+  "quantize_q8_1|other": [
+   0.022017856000000006,
+   112
+  ],
+  "qmatvec_nvfp4_dp4a_rp_t4|gemm: other MMQ / matvec": [
+   1.318967808,
+   3168
+  ],
+  "ssm_conv1d_gdn_state_l2_f32|gdn: conv/l2/gates": [
+   2.261789823999999,
+   1584
+  ],
+  "ssm_conv_ring_update_f32|gdn: conv/l2/gates": [
+   0.003589215999999999,
+   1584
+  ],
+  "sigmoid_f32|other": [
+   0.013266240000000009,
+   1599
+  ],
+  "gdn_glog_f32|gdn: conv/l2/gates": [
+   0.014011647999999996,
+   1584
+  ],
+  "gdn_chunk_cumgate_f32|gdn: chunk scan kernels": [
+   0.03470585599999996,
+   1584
+  ],
+  "gdn_chunk_attn32_f32|gdn: chunk scan kernels": [
+   1.2832409919999992,
+   1584
+  ],
+  "gdn_chunk_solve32_f32|gdn: chunk scan kernels": [
+   2.1677994239999974,
+   1584
+  ],
+  "gdn_chunk_state_output_mma|gdn: chunk scan kernels": [
+   2.524833151999999,
+   1584
+  ],
+  "gated_rmsnorm_e4m3v2_f32|other": [
+   1.5274529600000002,
+   1536
+  ],
+  "rms_norm_e4m3v2_f32|glue: norms/adds/act": [
+   2.9426885439999997,
+   4064
+  ],
+  "q_split_norm_rope_f32|attention: rope/qk-norm/gate glue": [
+   0.869365952,
+   528
+  ],
+  "rope_neox_f32|attention: rope/qk-norm/gate glue": [
+   0.015563712000000013,
+   528
+  ],
+  "append_quantize_kv_q8_0_q5_1_rows|attention: KV append/quantize": [
+   0.10650665600000007,
+   528
+  ],
+  "fa_dequant_kv_ws_bf16|attention: KV dequant workspace": [
+   1.3575789439999995,
+   528
+  ],
+  "fa_prefill_qw_h2p|attention: FA prime kernel": [
+   40.46329395200001,
+   512
+  ],
+  "sig_mul_e4m3v2_f32|attention: rope/qk-norm/gate glue": [
+   0.48555536000000016,
+   512
+  ],
+  "qmatvec_q5_K_mmvq_il|gemm: other MMQ / matvec": [
+   0.16733587200000005,
+   32
+  ],
+  "void mul_mat_q_nvfp4_f8f4<|gemm: NVFP4 F8F4 MMQ": [
+   0.09064447799999999,
+   396
+  ],
+  "gated_rmsnorm_f32|other": [
+   0.0002901759999999999,
+   48
+  ],
+  "add_rms_norm_f32_v2|glue: norms/adds/act": [
+   0.001134688,
+   126
+  ],
+  "void quantize_mmq_e4m3_d4_silu_kernel<|gemm: activation e4m3 quantize": [
+   0.0009371199999999998,
+   63
+  ],
+  "fa_prefill_qw_db|attention: FA prime kernel": [
+   0.163712544,
+   16
+  ],
+  "mul_f32|glue: norms/adds/act": [
+   6.694399999999999e-05,
+   15
+  ]
+ }
+}

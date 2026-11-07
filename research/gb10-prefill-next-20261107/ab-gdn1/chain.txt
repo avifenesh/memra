@@ -1,0 +1,17 @@
+kc-fast rc=0 ALL GREEN (97 cells, 22 skipped)
+gdn_chunked  T=200 C= 32 vs f64-truth: out seq=3.93e-6/chunk=2.19e-5 state seq=9.18e-6/chunk=1.85e-5 OK
+gdn_chunked  T=200 C= 32 MMA config pin: out=4.28e-2 state=4.25e-1 OK
+gdn_chunked  T=200 C= 64 vs f64-truth: out seq=3.93e-6/chunk=3.44e-5 state seq=9.18e-6/chunk=1.50e-5 OK
+gdn_chunked  T=200 C=128 vs f64-truth: out seq=3.93e-6/chunk=4.21e-5 state seq=9.18e-6/chunk=9.56e-5 OK
+gdn_chunked  T= 17 C= 64 vs f64-truth: out seq=3.93e-6/chunk=1.97e-5 state seq=1.28e-5/chunk=2.61e-5 OK
+gdn_chunked  T=512 C= 64 vs f64-truth: out seq=4.22e-6/chunk=3.50e-5 state seq=1.21e-5/chunk=1.03e-4 OK
+GDN-DB-GQA T=200 H=6 hk=2 compact hfast nowf32: out bitdiff=0 state bitdiff=0 OK
+GDN-DB-GQA T=200 H=6 hk=2 compact cfast nowf32: out bitdiff=0 state bitdiff=0 OK
+GDN-DB-GQA T=200 H=6 hk=2 compact hfast wf32: out bitdiff=0 state bitdiff=0 OK
+GDN-DB-GQA T=200 H=6 hk=6 broadcast hfast nowf32: out bitdiff=0 state bitdiff=0 OK
+GDN-DB-GQA T= 64 H=6 hk=2 compact hfast nowf32: out bitdiff=0 state bitdiff=0 OK
+GDN-DB-GQA T= 64 H=6 hk=2 compact cfast nowf32: out bitdiff=0 state bitdiff=0 OK
+GDN-DB-GQA T= 64 H=6 hk=2 compact hfast wf32: out bitdiff=0 state bitdiff=0 OK
+GDN-DB-GQA T= 64 H=6 hk=6 broadcast hfast nowf32: out bitdiff=0 state bitdiff=0 OK
+probe done
+CHAIN1-DONE
