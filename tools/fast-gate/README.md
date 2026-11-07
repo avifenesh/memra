@@ -35,7 +35,23 @@ Unknown paths, index-masked inputs, ignored build inputs and broad legacy no-gat
 rows cannot establish independence. They expand the plan. Changed research data
 can be an `include_str!` fixture; a changed gate is also an input. MiMo text,
 vision, audio, MTP and serving requirements stay explicit even though the legacy
-probe registry does not cover all of them.
+probe registry does not cover all of them. The registered probes load only the
+gemma4_dense, gemma4_moe, qwen35, qwen35_moe and step35 packs; every other automatic
+pack, and FP8_BLOCK checkpoints, print as REQUIRED lines (`unprobed-model-packs`).
+
+These lines, like the MiMo ones, are a static list. Any engine, model-plan, build or
+harness change prints all of them: the planner does not compute which packs a change
+reaches, and the plan prints a NOTE saying so. Reach is not a path property here. Pack
+selection is the first match over `PACKS`, so one pack's matcher edit can take another
+pack's configs, and a shared unit serves several packs (`cu/dsv4_gpu.cu` holds the
+deepseek_v4 kernels, the hyper-connection kernels glm5_next runs and the NVFP4 expert
+dequant qwen4_exp runs). Keep the gates of the packs the change reaches and give the reason
+for each one left out.
+
+`test_plan.py` fails when a pack is added to `PACKS` with neither a probe nor a line.
+Its `PROBED_PACKS` is a hand list, because `models.tsv` names no pack: when a probe for
+another pack lands, add the pack there, and the test then fails until its REQUIRED line
+is removed.
 
 Native selection is **shadow-only**. An expanded plan stops before compilation
 unless `--probes` explicitly requests named development diagnostics. At the
