@@ -5,7 +5,7 @@ set -u
 H=/home/avifenesh/.cache/memra-prefix-budget/harness
 L=/home/avifenesh/.cache/memra-prefix-budget
 export NEW_LABEL=${NEW_LABEL:?}
-for ph in phase1a phase1d phase1b phase1c; do
+for ph in ${PHASES:-phase1a phase1b phase1c}; do
   echo "$(TZ=Asia/Jerusalem date +%H:%M:%S) start $ph"
   gpulock run --ttl 2h --wait 3h --for "memra prefix-budget lane: $ph" -- bash $H/$ph.sh > $L/$ph.log 2>&1
   echo "$(TZ=Asia/Jerusalem date +%H:%M:%S) end $ph rc=$?"

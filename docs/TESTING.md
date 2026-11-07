@@ -1474,8 +1474,10 @@ by the snapshot preflight (only probation counted as reclaimable), so a growing 
 conversation ran `cold=1 restored=0` on every turn beside other tenants' promoted entries, and
 the only trace was one once-announced `snapshot skipped` line. The day-14 fix made every unleased
 byte reclaimable for the newest turn (protected LRU oldest first once probation was exhausted);
-since #523 item 2 (day 15, below) the only policy is plain global LRU, the oldest unleased entry
-first, and the newest turn is never its own victim because it is the global newest. The only
+since #523 item 2 (day 15, below) the order was plain global LRU, the oldest unleased entry
+first, and since 2026-11-07 a discrete card evicts by GreedyDual-Size value per byte
+(`MEMRA_PREFIX_EVICT`, `docs/decisions/PREFIX-CACHE-DISCRETE.md`); under either order the insert
+loop never takes the entry it is publishing, so the newest turn is never its own victim. The only
 refusals are typed and in bytes:
 `[prefix-cache] insert refused: entry N exceeds budget M (...)` and
 `[prefix-cache] insert refused: entry N cannot fit beside L leased bytes (budget M, ...)`.
@@ -1497,7 +1499,8 @@ prefix-newest-turn-fits-gate.py [--external-lock FD] --model <gguf> --bin <memra
 
 - Serving shape, one card, two boots of the real `memra-server` per cell, plain path
   (`MEMRA_SERVE_SPEC=0`), a small explicit prefix budget, the DEFAULT policy (the boot line must
-  report `plain-LRU`; the gate never sets a policy). A calibration boot with the cache OFF
+  report it: `GDS value-per-byte` on a discrete card, `plain-LRU` on unified memory; the gate never
+  sets a policy and unsets `MEMRA_PREFIX_EVICT`). A calibration boot with the cache OFF
   (`MEMRA_PREFIX_CACHE_MB=0`) replays the identical request sequence first and records each turn's
   own retained footprint (the bytes a request of that length keeps after it retires with no cache
   activity; 1,111,666,004 B on the 9,200-token turn 1 of the day-14 shape, identical on both
