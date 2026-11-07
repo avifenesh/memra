@@ -419,7 +419,10 @@ flips=3 bad=1 FAIL on v2 **and on the base binary**, with byte-identical probe t
 (`4800c57de4349345`). All three flips are margin-explained near-ties (0.012-0.031 against a
 config spread of 0.071-0.138); the FAIL is the flip budget (1 per 12-position window, calibrated on
 the 2,048-token prompt), so the 16k prompt is not a calibrated gate on this model, and v2 changes
-none of its values.
+none of its values. The gate now carries a (model, prompt) row for this pair: 5 of the 12 tail
+positions are flippable within the config spread, so its budget is 3 per 12-position window (the
+gemma rows' rule), every flip must still be margin-explained, and the default prompt keeps the
+model's budget of 1 (`tools/argmax-margin-gate.sh`, `tools/test_argmax_margin_gate.py`).
 
 
 ## Next exact levers
