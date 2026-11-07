@@ -89,3 +89,30 @@ The card ran both gates at 300 W, peaked at 88 C with no thermal slowdown, and r
 - Reclaim-on-defer evicts the restorable tail entry and keeps only the longest-match plain entry, so the restorable-hit preference cannot run on a 24 GB card with Qwen3.8-27B and DFlash2. A fix is on its own branch.
 - With one DSpark door (prefix restore only), turn 3 of the pair cell differs from a cold prime on main's own binary: turn 2 is served plain from the boundary entry, its prime splits at the prompt end, off the GDN grid, and turn 3 resumes those rows. The three doors pass.
 - fast-gate writes its logs under `/tmp`, not `$TMPDIR`.
+
+## 2026-11-07 evening: the stack on main 72f0e26fba (#1082, #1083, #1086, #1087)
+
+### RTX 5090 at 79d7f2c125 (`cells/gpu-1107v.sh`)
+
+| Row | What ran | Result |
+|---|---|---|
+| A2, A17 | restorable-hit cell at context 8192 and 4096, greedy and sampled (`serve_cells.py restorable`) | covered: r3's admission reclaim spares the restorable entry (2592 tokens, draft tail), drops the longer plain entry (3104 tokens) and r3 restores DFlash from the restorable one (2592 of 3161 tokens, 569 to prime); r3 equals the cache-off reference, greedy and sampled. Fail before: the same cell at 1a6b6eb671 (before #1082), where the reclaim evicted the restorable entry |
+| | DSpark pair cell under the one restore switch (`MEMRA_DSPARK_PREFIX_RESTORE=1`) | warm equals cold on turns 2 and 3, two strict-prefix restores |
+| | the same pair cell at the RTX 5090 default (switch OFF) | turn 3 differs from cold (finding below) |
+| | host-spill identity gate, drafter arm, one switch; serve-smoke; the release battery | ALL GREEN; 47 ok; PASS (kernel-check 114 cells) |
+
+The restorable cell's `preferred` and `restore` rows read FAIL in `raw/logs-gpu-1107v_serve-*.cells.txt`: the cell then looked only for the hit-site swap line. With #1082 the reclaim drops the plain entry first, so the lookup finds the restorable one directly (`raw/logs-gpu-1107v_serve-8192.*-arm.lines.txt`). `cells/serve_cells.py` now credits that route.
+
+### Found on main: a decode-extended recurrent session resumes off the prime grid
+
+The DSpark pair cell on main's own binary (05a8a63503 plus #1085, which touches neither path), at the RTX 5090 default:
+
+| Park compaction | Turn 2 `max_tokens` | Turn 3 resume | Turn 3, warm against cold |
+|---|---|---|---|
+| off | 96 | 3072 of 3144 (the parked session's cap is too small for turn 3) | equal |
+| on | 96 | 3113 of 3144 (compaction grows the parked session) | 373 against 372 characters |
+| off | 256 | 3113 of 3144 (the parked cap now covers turn 3) | 373 against 372 characters |
+
+Both orders, twice each (`raw/parkcompact-status*.txt`). The parked session holds turn 2's prompt and four rows decode wrote; 3113 is off the 32-token prime grid, so the suffix prime runs a second numeric program. The continuation-pool resume checked only the cap (`plain_resume_cap_admits`). Park compaction widens the exposure: #1062 makes it the RTX 5090 default, so #1062 is blocked on the fix.
+
+The fix (memra#1091, PR #1092) rewinds a recurrent session's extension hit to its grid checkpoint. On its binary all four arms equal cold, each rewinding 3113 committed rows to 3072 (`raw/parkcompact-status3.txt`).

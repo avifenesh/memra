@@ -1,0 +1,10 @@
+[dspark] prefix restore switch default OFF on "NVIDIA GeForce RTX 5090 Laptop GPU" (gb10=false): MEMRA_DSPARK_PREFIX_RESTORE resolves OFF (whole-entry restore, strict-prefix restore and boundary capture together)
+[prefix-cache] insert (dspark-boundary): 2976 tokens, 245.3MB (resident 245.3MB / 800MB, model q)
+[prefix-cache] hit: 2976 of 3109 prompt tokens from cache (model q)
+[kv-reuse] park-compact: 3113 of 3213 rows retained in 1.7ms (model q)
+[admit-oom] reclaim spared the prompt's prefix entry (3072 tokens, model q)
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=245268480 pool_cached_gain_bytes=245268480 trim_released_bytes=234881024 driver_free_bytes 2621571072 -> 2856452096 pool_reserved_bytes 21877489664 -> 21642608640 pool_used_bytes 21306963816 -> 21061695336 pool_retained_bytes=10387456 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer: evicted 1 prefix entries + 0 plain + 0 spec + 1 dspark parked sessions (global LRU); effective free 3192MB -> 4127MB
+[kv-reuse] park-compact grow: 3113 -> 3248 rows (request-owned cap; model q)
+[worker] kv-reuse: 3113 of 3144 prompt tokens resumed (model q)
+[kv-reuse] park-compact: 3218 of 3248 rows retained in 1.8ms (model q)

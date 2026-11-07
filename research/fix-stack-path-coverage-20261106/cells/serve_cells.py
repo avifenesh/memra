@@ -707,8 +707,7 @@ def restorable():
     base = {"MEMRA_MODELS": f"q38={Q38}", "MEMRA_CTX": os.environ.get("RCTX", "8192"), "MEMRA_MAX_SESSIONS": "1", "MEMRA_KV_HOST_MB": "0",
             "MEMRA_MTP_SKIP": "1", "MEMRA_DSPARK_SPEC": "1", "MEMRA_DSPARK_DRAFT": DF2,
             "MEMRA_FRSPEC_TRIM": "<models>/q38-gguf/q38-ranks-sxc32768.gguf.txt"}
-    arm = dict(base, MEMRA_PREFIX_CACHE_MB="4000", MEMRA_PREFIX_STABLE_BOUNDARY="1", MEMRA_DSPARK_PREFIX_RESTORE="1",
-               MEMRA_DSPARK_PARTIAL_RESTORE="1", MEMRA_DSPARK_BOUNDARY_CAPTURE="1")
+    arm = dict(base, MEMRA_PREFIX_CACHE_MB="4000", MEMRA_PREFIX_STABLE_BOUNDARY="1", MEMRA_DSPARK_PREFIX_RESTORE="1")
     ref = dict(base, MEMRA_PREFIX_CACHE_MB="0")
     out = {}
     for mode, temp in (("greedy", 0.0), ("sampled", 1.0)):
@@ -728,9 +727,14 @@ def restorable():
                 bnd = lines_with(log, "insert (dspark-boundary)")
                 rest = lines_with(log, "DSPARK restore:")
                 cell(f"restorable-{mode}-boundary", bool(bnd), (bnd[:1] or ["no dspark-boundary insert"])[0][-160:])
-                cell(f"restorable-{mode}-preferred", bool(pref), (pref[:1] or ["no restorable-preferred line"])[0][-200:])
-                cell(f"restorable-{mode}-restore", bool(pref) and bool(rest), (rest[-1:] or ["no DSPARK restore"])[0][-160:])
-                out[f"{mode}/arm-restored"] = bool(pref) and bool(rest)
+                # The preference decides at one of two sites: the hit site swaps a plain hit for the
+                # restorable one ("restorable-preferred"), or (#1082) the admission reclaim spares the
+                # restorable entry and drops the longer plain one, so the lookup finds it directly.
+                spare = [l for l in log.splitlines() if "the restorable entry stays for the restorable-hit preference" in l]
+                cell(f"restorable-{mode}-preferred", bool(pref) or bool(spare),
+                     ((pref or spare)[:1] or ["no restorable-preferred line and no reclaim spare"])[0][-200:])
+                cell(f"restorable-{mode}-restore", (bool(pref) or bool(spare)) and bool(rest), (rest[-1:] or ["no DSPARK restore"])[0][-160:])
+                out[f"{mode}/arm-restored"] = (bool(pref) or bool(spare)) and bool(rest)
                 ev = lines_with(log, "reclaim-on-defer: evicted")
                 if ev:
                     cell(f"restorable-{mode}-reclaim-note", True, ev[-1][-160:])

@@ -1,0 +1,10 @@
+[dspark] prefix restore switch default OFF on "NVIDIA GeForce RTX 5090 Laptop GPU" (gb10=false): MEMRA_DSPARK_PREFIX_RESTORE resolves ON (whole-entry restore, strict-prefix restore and boundary capture together)
+[kv-reuse] park-compact: 3149 of 3157 rows retained in 2.3ms (model q38)
+[prefix-cache] insert (dspark-boundary): 2592 tokens, 318.1MB (resident 567.1MB / 4194MB, model q38)
+[admit-oom] reclaim spared the prompt's restorable entry (2592 tokens, draft tail) and its longer non-restorable entry (3104 tokens); if the arrival is still short, one of the two may go (decode_budget=96, model q38)
+[admit-oom] reclaim dropped the prompt's longer non-restorable entry (3104 tokens): still short by 210MB with both spared after 0 parked sessions; the restorable entry stays for the restorable-hit preference (model q38)
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=249069568 pool_cached_gain_bytes=249069568 trim_released_bytes=234881024 driver_free_bytes 2353135616 -> 2588016640 pool_reserved_bytes 22145925120 -> 21911044096 pool_used_bytes 20990224040 -> 20741154472 pool_retained_bytes=14188544 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer: evicted 1 prefix entries + 0 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 3509MB -> 3758MB
+[prefix-cache] hit: 2592 of 3161 prompt tokens from cache (model q38)
+[prefix-cache] DSPARK restore: 2592 of 3161 prompt tokens + draft tail from cache (569 suffix tokens to prime) (model q38)
+[prefix-cache] insert (dspark-boundary): 3136 tokens, 334.2MB (resident 652.3MB / 4194MB, model q38)
