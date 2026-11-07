@@ -608,16 +608,18 @@ pub fn glm5_q8_fuse_on() -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *ON.get_or_init(|| std::env::var("MEMRA_GLM5_Q8_FUSE").as_deref() == Ok("1"))
 }
-/// `MEMRA_GLM5_Q8_FUSE_ATTN=1` (lane/glm5-attn-norm-zq8-20260904, default OFF): the
-/// ATTENTION-input norm of a plain KDA layer in the glm5_next T=1 walk runs `rms_norm_zq8_f32`
-/// and hands its q8_1 view to the fused six-projection launcher, which then skips its own
-/// `quantize_q8_1_into`. The FFN-input twin is `MEMRA_GLM5_Q8_FUSE`. Read PER CALL. Why and
-/// receipts: docs/FLAGS.md.
-pub fn glm5_q8_fuse_attn_on() -> bool {
-    std::env::var("MEMRA_GLM5_Q8_FUSE_ATTN").as_deref() == Ok("1")
+/// The attention-norm q8_1 fuse (lane/glm5-attn-norm-zq8-20260904): the ATTENTION-input norm
+/// of a plain KDA layer in the glm5_next T=1 walk runs `rms_norm_zq8_f32` and hands its q8_1
+/// view to the fused six-projection launcher, which then skips its own `quantize_q8_1_into`.
+/// Bit-identical by construction. The default on sm_100a builds, with no switch (2026-11-04):
+/// +0.43% at c1 on the 2x B200 pair, every door boot above every base boot
+/// (docs/decisions/GLM5-B200-DOORS.md). Other builds keep the plain norm: no receipt there. The
+/// FFN-input twin is `MEMRA_GLM5_Q8_FUSE`.
+pub fn glm5_q8_fuse_attn_default() -> bool {
+    BUILT_CUDA_ARCH == "100a"
 }
 
-/// Engagement counter for `MEMRA_GLM5_Q8_FUSE_ATTN`; gates take a delta.
+/// Engagement counter for the attention-norm q8_1 fuse; gates take a delta.
 pub static GLM5_Q8_FUSE_ATTN_DISPATCHES: std::sync::atomic::AtomicU64 =
     std::sync::atomic::AtomicU64::new(0);
 
@@ -1359,22 +1361,21 @@ pub(crate) fn mmv_block() -> u32 {
     })
 }
 
-/// MEMRA_B200_MATVEC_ARM=1: the sm_100a occupancy arms for the plain-decode MoE/matvec family
-/// (lane/b200-matvec-occupancy-20260902, docs/FLAGS.md). The B200 census (2026-09-02,
-/// GLM-5.3-Flash NVFP4, PP2 decode) found `moe_gate_up_preclamp8_q8` / `moe_down8_fma_q8` /
+/// The sm_100a occupancy arms for the plain-decode MoE/matvec family
+/// (lane/b200-matvec-occupancy-20260902; `MEMRA_B200_MATVEC_ARM` until 2026-11-04). The B200
+/// census (2026-09-02, GLM-5.3-Flash NVFP4, PP2 decode) found `moe_gate_up_preclamp8_q8` / `moe_down8_fma_q8` /
 /// `matvec_bf16_f32acc_x4_rows` running ~3-9x their roofline byte estimate on 2x B200 — an
 /// occupancy/latency signature from kernels tuned for the RTX PRO 6000's 188-SM/1.8-TB/s shape,
-/// not the B200's 148-SM/8-TB/s one. Restricted to `sm_100a` BUILDS (`MEMRA_BUILT_CUDA_ARCH`,
-/// baked in at compile time): setting the var on an `sm_120a` build is a documented no-op, so
-/// the naked sm_120a defaults stay byte-identical (per-hardware arm selection law, AGENTS.md).
-/// Default OFF everywhere; the arms are BIT-IDENTICAL per-output twins pending their B200 A/B —
-/// see docs/FLAGS.md and research/b200-matvec-occupancy-20260902/LANE.md.
+/// not the B200's 148-SM/8-TB/s one. The arms are BIT-IDENTICAL per-output twins. The default
+/// on `sm_100a` BUILDS (`MEMRA_BUILT_CUDA_ARCH`, baked in at compile time) since 2026-11-04,
+/// with no switch: on the 2x B200 pair their bit-identical kernel A/B read faster on every
+/// kernel (N=5 interleaved: bf16 up 33.4 -> 28.5 us, down 30.65 -> 24.9, MoE gate/up 55.0 -> 53.3,
+/// down 37.6 -> 36.0; `b200_matvec_bench`), the five-door decode bundle they rode in read +5.6%
+/// plain and +8% spec (three interleaved boots), and the `MEMRA_B200_MR1_FILL=16` default's
+/// +2.03% row ran on them (docs/FLAGS.md, docs/decisions/GLM5-B200-DOORS.md). Other builds keep
+/// the shipped kernels (per-hardware arm selection law, AGENTS.md).
 pub(crate) fn b200_matvec_arm_on() -> bool {
-    static V: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *V.get_or_init(|| {
-        env!("MEMRA_BUILT_CUDA_ARCH") == "100a"
-            && std::env::var("MEMRA_B200_MATVEC_ARM").as_deref() == Ok("1")
-    })
+    env!("MEMRA_BUILT_CUDA_ARCH") == "100a"
 }
 
 /// MEMRA_B200_GEMV_V2=1: the sm_100a HBM-speed rewrite of the t=1 decode matvec class
@@ -1399,10 +1400,10 @@ pub(crate) fn b200_matvec_arm_on() -> bool {
 /// numeric class `bf16_gemv_v2_splitk` that only engages when a shape's row grid cannot cover
 /// two waves of CTAs on this die; the shipped GLM-5.3 decode shapes never reach it.
 ///
-/// Restricted to `sm_100a` BUILDS (`MEMRA_BUILT_CUDA_ARCH`, baked in at compile time), like
-/// `MEMRA_B200_MATVEC_ARM`: on an sm_120a build the var is a documented no-op and the naked
-/// sm_120a defaults stay byte-identical, per the per-hardware arm selection law. Default OFF
-/// everywhere pending its B200 A/B.
+/// Restricted to `sm_100a` BUILDS (`MEMRA_BUILT_CUDA_ARCH`, baked in at compile time), like the
+/// matvec occupancy arms (`b200_matvec_arm_on`): on an sm_120a build the var is a documented
+/// no-op and the naked sm_120a defaults stay byte-identical, per the per-hardware arm selection
+/// law. Default OFF everywhere pending its B200 A/B.
 ///
 /// Strict `1` arms the door; unset and every other value are off, deliberately: a typo must
 /// not silently arm a kernel arm. It was a level until 2026-11-04, when level 2 (the
@@ -1495,7 +1496,7 @@ pub fn nvfp4_row_ilp_dispatches() -> u64 {
 /// `MEMRA_B200_MR1_FILL=<blocks per SM>` (lane/glm5-nvfp4-row-ilp-20260904; default 16 since
 /// 2026-09-04, receipt +2.03% alone / +2.55% with the ILP twin on the pair; 2 was the
 /// lane/b200-matvec-occupancy-20260902 threshold): the B200 grid-fill arm of the NVFP4 m=1
-/// decode matvec (under `MEMRA_B200_MATVEC_ARM=1`) forces mr1 (two warps per row pair -> one
+/// decode matvec (one of the matvec occupancy arms, the sm_100a default) forces mr1 (two warps per row pair -> one
 /// warp per row, the shipped `qmatvec_nvfp4_mmvq_rp`) when the mr2 grid would be fewer than
 /// this many four-warp blocks per SM. At 2 the 4096-row shapes (512 blocks, 2,048 warps on a
 /// 148-SM part) stay mr2; 16 is one full wave of four-warp blocks (64 warp slots).
@@ -1556,8 +1557,8 @@ pub(crate) static GEMV_V2_BF16_DISPATCHES: std::sync::atomic::AtomicU64 =
 /// REFERENCE door: default OFF, never a serving default, and it is not a candidate for
 /// promotion without its own argmax/serving acceptance.
 ///
-/// Restricted to `sm_100a` BUILDS (`MEMRA_BUILT_CUDA_ARCH`, baked in at compile time), like
-/// `MEMRA_B200_MATVEC_ARM`: setting it on an sm_120a build is a documented no-op, so the naked
+/// Restricted to `sm_100a` BUILDS (`MEMRA_BUILT_CUDA_ARCH`, baked in at compile time), like the
+/// matvec occupancy arms: setting it on an sm_120a build is a documented no-op, so the naked
 /// sm_120a defaults stay byte-identical.
 pub(crate) fn b200_bf16_gemv_lt_on() -> bool {
     static V: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
@@ -2901,6 +2902,19 @@ pub(crate) fn alias_door_from(
     }
 }
 
+/// [`alias_door_from`] with a default for the unset case: NEITHER name set takes `unset`, the
+/// general name cited; any value set on either name resolves exactly as [`alias_door_from`].
+pub(crate) fn alias_door_or_from(
+    general: (&'static str, Option<&str>),
+    alias: (&'static str, Option<&str>),
+    unset: bool,
+) -> Result<(bool, &'static str), String> {
+    if general.1.is_none() && alias.1.is_none() {
+        return Ok((unset, general.0));
+    }
+    alias_door_from(general, alias)
+}
+
 /// Env-reading wrapper over [`alias_door_from`]. A disagreeing pair FALLS CLOSED (door not
 /// armed = the shipped program) and prints the refusal ONCE PER PROCESS through `latch`.
 ///
@@ -2922,9 +2936,22 @@ fn alias_door(
     alias: &'static str,
     latch: &'static std::sync::atomic::AtomicBool,
 ) -> (bool, &'static str) {
+    alias_door_or(general, alias, latch, false)
+}
+
+/// [`alias_door`] for a door whose default is not OFF everywhere: with NEITHER name set the
+/// door takes `unset` (a card-keyed default); any value set on either name resolves exactly as
+/// [`alias_door_from`] says, so `=0` stays a deliberate pin and a disagreeing pair still falls
+/// closed. Same two lookups per call as [`alias_door`].
+fn alias_door_or(
+    general: &'static str,
+    alias: &'static str,
+    latch: &'static std::sync::atomic::AtomicBool,
+    unset: bool,
+) -> (bool, &'static str) {
     let g = std::env::var(general).ok();
     let a = std::env::var(alias).ok();
-    match alias_door_from((general, g.as_deref()), (alias, a.as_deref())) {
+    match alias_door_or_from((general, g.as_deref()), (alias, a.as_deref()), unset) {
         Ok(resolved) => resolved,
         Err(msg) => {
             if !latch.swap(true, std::sync::atomic::Ordering::Relaxed) {
@@ -2935,10 +2962,10 @@ fn alias_door(
     }
 }
 
-/// `MEMRA_HTOD_DIET=1` (default OFF; generalized from `MEMRA_GLM5_HTOD_DIET`, which stays
-/// honored per the flag-alias law above — door H, lane/glm5-moe-loc): ENGINE-GENERIC HtoD
-/// hygiene. Nothing in either class is family knowledge; both are "the host uploaded bytes
-/// the device already had".
+/// `MEMRA_HTOD_DIET` (the default on sm_100a builds since 2026-11-04, OFF elsewhere; generalized
+/// from `MEMRA_GLM5_HTOD_DIET`, which stays honored per the flag-alias law above; door H,
+/// lane/glm5-moe-loc): ENGINE-GENERIC HtoD hygiene. Nothing in either class is family
+/// knowledge; both are "the host uploaded bytes the device already had".
 ///
 /// 1. The UNGATED shared-expert add re-uploaded a fresh `vec![1.0f32; t]` per MoE layer-call
 ///    (42 pageable HtoD/round to move a CONSTANT) — it now reads a resident ones buffer
@@ -2952,10 +2979,22 @@ fn alias_door(
 ///    Engine method, not a family method).
 ///
 /// Both write identical values to identical buffers and both are stream-ordered, so the arms are
-/// bit-identical by construction. Default OFF because no box timing receipt exists (rig is
-/// exactness-only): 64 driver calls/round of measured count, UNPRICED wall. Read per call.
+/// bit-identical by construction. Its own wall is unpriced (64 driver calls per round of
+/// measured count), but every glm5 decode graph refuses capture without it
+/// (`glm5_graph_process_refusal`: a pageable upload inside a capture replays stale bytes), and
+/// every positive graph receipt on the 2x B200 pair ran with it on: the plain decode graph's
+/// +9.89% (graphab) and the symmetric TP-2 walk's graphs (tpwalk4 v2, tpwalk3 v5). So it is the
+/// sm_100a default with those graphs ([`htod_diet_default_for`]); `=1`/`=0` on either name pick
+/// explicitly on any build, and the gates pin them. Other builds keep it OFF: no graph receipt
+/// there. Read per call.
 pub fn htod_diet_on() -> bool {
     htod_diet_armed().0
+}
+
+/// The door-H default for a build: ON on sm_100a, the card its graph receipts came from. Pure,
+/// so the law is unit-tested without the process environment.
+pub(crate) fn htod_diet_default_for(arch: &str) -> bool {
+    arch == "100a"
 }
 
 /// Once-per-process latch for door H's disagreeing-pair line.
@@ -2964,10 +3003,11 @@ static HTOD_DIET_ALIAS_WARNED: std::sync::atomic::AtomicBool =
 
 /// Resolve door H, returning the armed flag name for refusals/announces.
 pub(crate) fn htod_diet_armed() -> (bool, &'static str) {
-    alias_door(
+    alias_door_or(
         "MEMRA_HTOD_DIET",
         "MEMRA_GLM5_HTOD_DIET",
         &HTOD_DIET_ALIAS_WARNED,
+        htod_diet_default_for(BUILT_CUDA_ARCH),
     )
 }
 
@@ -3031,26 +3071,16 @@ pub(crate) fn ep_diet_armed() -> (bool, &'static str) {
 /// (dieted) sequential EP walk. Numeric class: per-expert GEMMs are the plain grouped arm's;
 /// the ONE reassociation is the per-token root+peer partial add (band-gated, never claimed
 /// byte). Read per call.
-/// `MEMRA_GLM5_TP_SPLIT_GROUPED_PRIME=1` (default OFF in code; a launcher sets it, see its
-/// FLAGS.md row): the grouped prime for the expert-SPLIT TP walk (`moe_ffn_glm5_tp_split_grouped_prime`): the EP grouped
-/// prime's per-rank program run by both ranks over all routed pairs against the half-width
-/// slabs, one partial add per layer per chunk. Read per call; falls closed to the slot walk.
-pub fn glm5_tp_split_grouped_prime_on() -> bool {
-    std::env::var("MEMRA_GLM5_TP_SPLIT_GROUPED_PRIME").as_deref() == Ok("1")
-}
-
-/// `MEMRA_GLM5_TP_SPLIT_PRIME_HOSTDIET=1|2` (lane/glm5-tp-prime-router-20260907, default OFF,
-/// decide-by 2026-09-21): `1` = the TP split grouped prime builds its expert CSR ONCE (counting
-/// sort) instead of once per rank and launches the shared expert before the routing table is
-/// built so the host time hides behind device work; `2` = additionally issues root's pass before
-/// the peers' (measured 9.6% slower at 256k, kept as the explanatory arm). Byte-identical:
-/// launch order and host work only.
-pub fn glm5_tp_split_prime_hostdiet_level() -> u8 {
-    match std::env::var("MEMRA_GLM5_TP_SPLIT_PRIME_HOSTDIET").as_deref() {
-        Ok("1") => 1,
-        Ok("2") => 2,
-        _ => 0,
-    }
+/// The grouped prime for the expert-SPLIT TP walk (`moe_ffn_glm5_tp_split_grouped_prime`), with
+/// its host diet: the EP grouped prime's per-rank program run by both ranks over all routed pairs
+/// against the half-width slabs, one partial add per layer per chunk, the expert CSR built once
+/// per layer-call and the shared expert launched before it. The default on sm_100a builds, with
+/// no switch (2026-11-04): the 2x B200 pair's 256k and 1M primes ran 74.27 -> 59.89 s and
+/// 310.1 -> 251.1 s with the host diet against the grouped prime alone, tapes and ids identical
+/// (docs/decisions/GLM5-B200-DOORS.md). Other builds keep the per-token slot walk: no receipt
+/// there. Falls closed to the slot walk outside the plain grouped arm's admission.
+pub(crate) fn glm5_tp_split_grouped_prime_on() -> bool {
+    BUILT_CUDA_ARCH == "100a"
 }
 
 /// `MEMRA_GLM5_TP_INDEXER_SPLIT_PRIME` (default **ON** since 2026-09-10; `=0` restores the
@@ -3117,21 +3147,21 @@ pub fn topk_shards_dispatches() -> u64 {
     TOPK_SHARDS_DISPATCHES.load(std::sync::atomic::Ordering::Relaxed)
 }
 
-/// `MEMRA_TOPK_WARP=1` (lane/draft-topk-warp-20260905, default OFF, decide-by 2026-11-17 on
-/// the `topkab` cells its FLAGS.md row names; box receipts +1.12% and +4.4% on the PP-2 pair):
-/// `topk_rows` runs the warp-merged exact twin pair (`topk_rows_wshard_k{8,16,32}_f32` +
-/// `topk_rows_wshard_merge_f32`: register lane lists at a compile-time k with an unrolled
-/// insertion, shuffle-argmax merges inside each block and across the shards) instead of the
-/// shipped arms, whose lane lists live in local memory and whose merges each run on ONE thread.
+/// The warp-merged exact top-k twin pair (`topk_rows_wshard_k{8,16,32}_f32` +
+/// `topk_rows_wshard_merge_f32`, lane/draft-topk-warp-20260905): register lane lists at a
+/// compile-time k with an unrolled insertion, shuffle-argmax merges inside each block and across
+/// the shards, where the shipped arms keep lane lists in local memory and merge on ONE thread.
 /// Output-identical by construction (a discrete selection under (value desc, column asc); the
 /// top-k of a union is the top-k of its parts' top-k lists), gated by `glm5_matvec_doors_gpu`.
-/// Read per call; when set it takes precedence over `MEMRA_TOPK_SHARDS` at every column count
-/// for k in {8, 16, 32} (other k fall through to the shipped arms).
-fn topk_warp_on() -> bool {
-    std::env::var("MEMRA_TOPK_WARP").as_deref() == Ok("1")
+/// The default on sm_100a builds, with no switch (2026-11-04): +4.4% on the 2x B200 pair's
+/// DFlash2 spec route, three interleaved boots per arm with disjoint ranges
+/// (docs/decisions/GLM5-B200-DOORS.md). It takes precedence over `MEMRA_TOPK_SHARDS` for k in
+/// {8, 16, 32}; other k fall through to the shipped arms. Other builds have no receipt.
+fn topk_warp_default() -> bool {
+    BUILT_CUDA_ARCH == "100a"
 }
 
-/// Engagement counter for the warp-merged top-k door (`MEMRA_TOPK_WARP`).
+/// Engagement counter for the warp-merged top-k twin pair on the `topk_rows` dispatch.
 pub static TOPK_WARP_DISPATCHES: std::sync::atomic::AtomicU64 =
     std::sync::atomic::AtomicU64::new(0);
 
@@ -3720,7 +3750,7 @@ mod glm5_decode_graph_default_tests {
 
 #[cfg(test)]
 mod alias_door_tests {
-    use super::alias_door_from;
+    use super::{alias_door_from, alias_door_or_from, htod_diet_default_for};
 
     const G: &str = "MEMRA_EP_DIET";
     const A: &str = "MEMRA_GLM5_EP_DIET";
@@ -3742,6 +3772,32 @@ mod alias_door_tests {
         // anything that is not "1" is not an arming (no truthiness guessing)
         assert_eq!(r(None, Some("on")).unwrap(), (false, A));
         assert_eq!(r(Some(""), None).unwrap(), (false, G));
+    }
+
+    /// A card-keyed default (door H): unset takes the default; a set value on either name
+    /// resolves as the plain law, so `=0` pins OFF on the default's card and `=1` arms
+    /// elsewhere, and a disagreeing pair still falls closed.
+    #[test]
+    fn unset_takes_the_card_default_and_set_values_keep_the_law() {
+        for unset in [true, false] {
+            assert_eq!(
+                alias_door_or_from((G, None), (A, None), unset).unwrap(),
+                (unset, G)
+            );
+            assert_eq!(
+                alias_door_or_from((G, Some("0")), (A, None), unset).unwrap(),
+                (false, G)
+            );
+            assert_eq!(
+                alias_door_or_from((G, None), (A, Some("1")), unset).unwrap(),
+                (true, A)
+            );
+            assert!(alias_door_or_from((G, Some("1")), (A, Some("0")), unset).is_err());
+        }
+        assert!(htod_diet_default_for("100a"));
+        for arch in ["120a", "90a", "89"] {
+            assert!(!htod_diet_default_for(arch));
+        }
     }
 
     #[test]
@@ -5495,15 +5551,15 @@ impl Engine {
     ) -> Result<(CudaSlice<f32>, CudaSlice<u32>), Box<dyn std::error::Error>> {
         assert!((1..=32).contains(&k), "topk_rows supports 1..=32, got {k}");
         assert!(k <= n_cols, "topk_rows: k {k} > n_cols {n_cols}");
-        // MEMRA_TOPK_WARP (default OFF): register lane lists at a compile-time k and warp
-        // shuffle merges under the same total order, sharded across blocks (doc at
-        // `topk_warp_on`). Output-identical by construction; gated by glm5_matvec_doors_gpu.
-        if topk_warp_on()
+        // sm_100a builds: register lane lists at a compile-time k and warp shuffle merges under
+        // the same total order, sharded across blocks (doc at `topk_warp_default`).
+        // Output-identical by construction; gated by glm5_matvec_doors_gpu.
+        if topk_warp_default()
             && let Some(out) = self.topk_rows_warp(logits, n_rows, n_cols, k)?
         {
             if TOPK_WARP_DISPATCHES.fetch_add(1, std::sync::atomic::Ordering::Relaxed) == 0 {
                 eprintln!(
-                    "[topk-warp] engaged: rows={n_rows} cols={n_cols} k={k} (MEMRA_TOPK_WARP=1)"
+                    "[topk-warp] engaged: rows={n_rows} cols={n_cols} k={k} (sm_100a default)"
                 );
             }
             return Ok(out);
@@ -5523,6 +5579,20 @@ impl Engine {
             }
             return self.topk_rows_sharded(logits, n_rows, n_cols, k, 16);
         }
+        self.topk_rows_standing(logits, n_rows, n_cols, k)
+    }
+
+    /// The standing one-block-per-row top-k kernel (`topk_rows_f32`), the reference both exact
+    /// twins of [`Self::topk_rows`] are gated against.
+    pub fn topk_rows_standing(
+        &self,
+        logits: &CudaSlice<f32>,
+        n_rows: usize,
+        n_cols: usize,
+        k: usize,
+    ) -> Result<(CudaSlice<f32>, CudaSlice<u32>), Box<dyn std::error::Error>> {
+        assert!((1..=32).contains(&k), "topk_rows supports 1..=32, got {k}");
+        assert!(k <= n_cols, "topk_rows: k {k} > n_cols {n_cols}");
         let f = self.func("topk_rows_f32");
         let nth = 256usize;
         let mut vals = self.uninit(n_rows * k)?;
@@ -5551,8 +5621,9 @@ impl Engine {
     /// per-(row, shard) partial top-k with the standing kernel's insertion/tie rules on
     /// global column indices, then a per-row k-way merge with the standing kernel's merge
     /// rules. Output-identical to `topk_rows_f32` by construction (discrete selection under
-    /// the total order value-desc/index-asc); gated by `glm5_matvec_doors_gpu`.
-    fn topk_rows_sharded(
+    /// the total order value-desc/index-asc); gated by `glm5_matvec_doors_gpu`, which calls it
+    /// directly.
+    pub fn topk_rows_sharded(
         &self,
         logits: &CudaSlice<f32>,
         n_rows: usize,
@@ -5608,14 +5679,14 @@ impl Engine {
         Ok((vals, idxs))
     }
 
-    /// The warp-merged exact twin pair behind `MEMRA_TOPK_WARP` (see [`Self::topk_rows`]):
-    /// stage 1 shards each row across blocks whose lanes keep register lists at a compile-time
-    /// k (8, 16, 32) and merge by shuffle argmax; stage 2 merges the shard lists, one warp per
-    /// row. Output-identical to `topk_rows_f32` by construction; gated by
-    /// `glm5_matvec_doors_gpu`. Returns `None` for a k without an instantiation (the caller
-    /// falls through to the shipped arms).
+    /// The warp-merged exact twin pair (see [`Self::topk_rows`]; the sm_100a default): stage 1
+    /// shards each row across blocks whose lanes keep register lists at a compile-time k (8, 16,
+    /// 32) and merge by shuffle argmax; stage 2 merges the shard lists, one warp per row.
+    /// Output-identical to `topk_rows_f32` by construction; gated by `glm5_matvec_doors_gpu`,
+    /// which calls it directly on every build. Returns `None` for a k without an instantiation
+    /// (the caller falls through to the shipped arms).
     #[allow(clippy::type_complexity)] // allow: one-shot composite type; naming it would hide the shape that matters at the call site
-    fn topk_rows_warp(
+    pub fn topk_rows_warp(
         &self,
         logits: &CudaSlice<f32>,
         n_rows: usize,
@@ -8429,7 +8500,7 @@ impl Engine {
         Ok(())
     }
 
-    /// WARP-PACKED twin of [`Engine::moe_gate_up_preclamp8_q8`] (MEMRA_B200_MATVEC_ARM occupancy
+    /// WARP-PACKED twin of [`Engine::moe_gate_up_preclamp8_q8`] (B200 matvec occupancy
     /// arm, lane/b200-matvec-occupancy-20260902): MEMRA_MMVQ_ROWS warps/block on threadIdx.y
     /// instead of one warp/block, same per-warp body -> bit-identical per (o,j). See
     /// `b200_matvec_arm_on` and docs/FLAGS.md for the door.
@@ -8486,7 +8557,7 @@ impl Engine {
         Ok(act)
     }
 
-    /// WARP-PACKED twin of [`Engine::moe_down8_fma_q8`] (MEMRA_B200_MATVEC_ARM occupancy arm) —
+    /// WARP-PACKED twin of [`Engine::moe_down8_fma_q8`] (B200 matvec occupancy arm) —
     /// see [`Engine::moe_gate_up_preclamp8_q8_w4`].
     #[allow(clippy::too_many_arguments)]
     pub fn moe_down8_fma_q8_w4(
@@ -18721,7 +18792,7 @@ impl Engine {
         const ROWS_PER_BLOCK: u32 = 4; // MEMRA_MMVQ_ROWS
         let mut rpw: u32 = 2;
         let mut kname = "qmatvec_nvfp4_mmvq_fused2_rp";
-        // B200 sub-wave grid-fill (MEMRA_B200_MATVEC_ARM occupancy arm, lane/b200-matvec-
+        // B200 sub-wave grid-fill (B200 matvec occupancy arm, lane/b200-matvec-
         // occupancy-20260902): halves RPW to 1 (doubling the grid) when the RPW=2 grid would
         // leave B200's 148 SMs under a full wave, dispatching the `_g2` twin that
         // instantiates `nvfp4_mmvq_fused_seg_rp<1>` instead of `<2>`. Per (tensor,row) the
@@ -18850,7 +18921,7 @@ impl Engine {
         const ROWS_PER_BLOCK: u32 = 4; // MEMRA_MMVQ_ROWS
         let mut rpw: u32 = 2;
         let mut kname = "qmatvec_nvfp4_mmvq_fused2_rp";
-        // B200 sub-wave grid-fill (MEMRA_B200_MATVEC_ARM occupancy arm) — see
+        // B200 sub-wave grid-fill (B200 matvec occupancy arm) — see
         // `matmul_nvfp4_fused2` above for the full rationale; identical policy, alloc-free
         // caller.
         if b200_matvec_arm_on() {
@@ -21525,7 +21596,7 @@ impl Engine {
                     .unwrap_or(1)
             });
         }
-        // B200 sub-wave grid-fill (MEMRA_B200_MATVEC_ARM occupancy arm, lane/b200-matvec-
+        // B200 sub-wave grid-fill (B200 matvec occupancy arm, lane/b200-matvec-
         // occupancy-20260902): the mr2_rp/RPW=2 default halves the grid vs mr1, which the
         // decode-kernel census (2026-09-02) found under-filling B200's 148 SMs for the
         // NVFP4 m=1 decode shapes (qmatvec_nvfp4_mmvq_mr2_rp: 5.2% of GPU time, 11.5us avg
@@ -21741,8 +21812,8 @@ impl Engine {
 
     /// Bench-only direct arm selector for the NVFP4 split-plane rp m=1 decode pair
     /// (b200_matvec_bench.rs). Bypasses `qmatvec_mmvq_into`'s policy AND the
-    /// `MEMRA_B200_MATVEC_ARM` env door (which is read once into a process-wide `OnceLock` and
-    /// so cannot flip mid-process for an in-process A/B) — `use_arm=false` launches
+    /// build-keyed occupancy arm (`b200_matvec_arm_on`, which cannot flip mid-process for an
+    /// in-process A/B) — `use_arm=false` launches
     /// `qmatvec_nvfp4_mmvq_mr2_rp` (shipped default, RPW=2, half the grid); `true` launches the
     /// already-shipped `qmatvec_nvfp4_mmvq_rp` (RPW=1, full grid) that the B200 grid-fill arm
     /// dispatches to. Per-row arithmetic is IDENTICAL between the two (see qmatvec.cu) — only
@@ -21901,7 +21972,7 @@ impl Engine {
 
     /// Bench-only direct arm selector for `matvec_bf16_f32acc_x4_rows` (b200_matvec_bench.rs) —
     /// same rationale as `qmatvec_nvfp4_rp_arm_raw`: bypasses `matvec_bf16_rows_into`'s policy
-    /// stack and the memoized `MEMRA_B200_MATVEC_ARM` door. `use_arm=false` launches the shipped
+    /// stack and the build-keyed occupancy arm. `use_arm=false` launches the shipped
     /// kernel; `true` launches the software-pipelined `_pf` twin. Bit-identical per (row,token).
     #[allow(clippy::too_many_arguments)]
     pub fn matvec_bf16_f32acc_x4_rows_arm_raw(
@@ -22251,7 +22322,7 @@ impl Engine {
 
     /// [`Engine::kda_proj_fused6_q8rp_raw_arm`] with an optional PRE-QUANTIZED activation
     /// (`pre_q8 = Some((aq, ad))`, the q8_1 view of `x` some producer already emitted, e.g.
-    /// `rms_norm_zq8_f32` under `MEMRA_GLM5_Q8_FUSE_ATTN`): the launcher then skips its own
+    /// `rms_norm_zq8_f32` under the attention-norm q8_1 fuse): the launcher then skips its own
     /// `quantize_q8_1_into` and reads those planes. `quantize_q8_1_into` is `quantize_q8_1`
     /// verbatim and `rms_norm_zq8_f32` is `rms_norm` then `quantize_q8_1` bitwise, so the
     /// bytes are the ones this launcher would have produced (gate `tests/kda_fused_proj_gpu.rs`).
@@ -25529,7 +25600,7 @@ impl Engine {
         if b200_bf16_gemv_lt_on() && self.bf16_gemv_lt_into(w, x, y, in_f, out_f, t)? {
             return Ok(());
         }
-        // MEMRA_B200_MATVEC_ARM occupancy arm (lane/b200-matvec-occupancy-20260902): the
+        // B200 matvec occupancy arm (lane/b200-matvec-occupancy-20260902, the sm_100a default): the
         // software-pipelined `_pf` twin double-buffers the K-loop's weight/activation loads
         // (next iteration's loads issue before the current iteration's fma chain runs) to
         // hide DRAM latency on B200's narrower SM/bandwidth shape. Same grid/block/reduction

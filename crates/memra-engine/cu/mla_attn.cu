@@ -286,8 +286,9 @@ extern "C" int memra_mla_decompress_v_f32(const float* o_lat, const float* wv_b,
 // longer one thread's serial ascending-index dot. It is 32 lane-partial sums (each ascending,
 // stride 32) combined by a shuffle tree. Same terms, same values, different association — so
 // this is NOT bit-identical to the shipped kernels and it is NOT the decode-split twins'
-// contract, which deliberately kept the serial dot so it could claim bit identity. Door
-// MEMRA_MLA_COALESCE, default OFF, and it needs a greedy tape plus an argmax gate.
+// contract, which deliberately kept the serial dot so it could claim bit identity. The sm_100a
+// default whenever a split is in force since 2026-11-04 (host seam mla_ffi.rs, mla_coalesce_on;
+// MEMRA_MLA_COALESCE before), on a served-tape receipt; an ON/OFF argmax gate is still owed.
 //
 // COMPOSES WITH THE SPLIT rather than competing with it: the two fix different halves. The
 // split raises the GRID (t_q*n_head blocks -> ~1024) and leaves the loads uncoalesced; this
@@ -1143,7 +1144,8 @@ extern "C" int memra_mla_kpool_score_f32(const float* q, const float* pool_keys,
 
 // ---------------------------------------------------------------- scoring: the TENSOR-CORE arm
 //
-// `MEMRA_DSA_SCORE_TC` (lane/glm5-dsa-score-tc, 2026-09-07). The prefill scorer above is an f32
+// The sm_100a prefill-chunk scorer (lane/glm5-dsa-score-tc, 2026-09-07; the default on sm_100a
+// builds since 2026-11-04, `MEMRA_DSA_SCORE_TC` before). The prefill scorer above is an f32
 // FFMA program at ~32% of the card's f32 peak, and at long context it IS the prime: on the 2x
 // B200 pair (darklanes research/glm5-b200-mint-20260904, tptrace8) `memra_mla_kpool_score_tiled_kernel`
 // was 32 of the 107 s of a 256k prime, and the stage grows with the square of the context
@@ -1152,29 +1154,26 @@ extern "C" int memra_mla_kpool_score_f32(const float* q, const float* pool_keys,
 // with f32 accumulation and keeps the epilogue (`relu(dot * qk_scale) * (hw * head_scale)`,
 // summed over heads, causal -inf) in f32.
 //
-// TWO PRECISIONS, one kernel template:
-//   * `precision 1` (bf16): q and the keys rounded to bf16, one MMA per product. Relative
-//     error ~1.4e-3 on the scores (harness, random data), top-512 membership 99.8-99.9%. On the
-//     pair it moved one greedy token at 36/64 after a 32k prompt (tpwalk18b), which is a flip.
-//   * `precision 2` (bf16x2): every operand split as `hi = bf16(x)`, `lo = bf16(x - hi)`, and
-//     the product taken as `hi*hi + hi*lo + lo*hi` (three MMAs; the dropped `lo*lo` is 2^-16
-//     relative). f32-class error at three times the tensor-core work, still several times
-//     the f32 FFMA kernel's speed.
-// Neither is bit-identical to the reference scorer (the MMA's contraction order is the
-// unit's own). Admitted like `MEMRA_MLA_TC_PREFILL`: served-prompt ids against the f32 arm.
+// PRECISION: q and the keys rounded to bf16, one MMA per product. Relative error ~1.4e-3 on
+// the scores (harness, random data), top-512 membership 99.8-99.9%. On the pair it moved one
+// greedy token at 36/64 after a 32k prompt (tpwalk18b), which is a flip. Not bit-identical to
+// the reference scorer (the MMA's contraction order is the unit's own). Admitted like
+// `MEMRA_MLA_TC_PREFILL`: served-prompt ids against the f32 arm. A three-MMA hi/lo split arm
+// (f32-class error, slower, the same flips) was the door's precision 2 and is deleted
+// (docs/FLAGS.md, "Removed doors, 2026-11-04").
 //
 // SHAPE. One CTA owns a tile of `MLA_SCORE_TC_BP` pools (its B operand: loaded ONCE from the
-// f32 key plane, split, and held in REGISTERS as MMA fragments for the CTA's whole life) and
-// walks a range of queries in stages of BT queries x all heads (the A operand: the split bf16
-// planes written by `memra_mla_q_split_bf16_kernel`, cp.async double-buffered through shared
-// memory, one ldmatrix per 16-row tile and plane). 8 warps = pool groups x query pairs. The
+// f32 key plane, rounded, and held in REGISTERS as MMA fragments for the CTA's whole life) and
+// walks a range of queries in stages of BT queries x all heads (the A operand: the bf16 plane
+// written by `memra_mla_q_split_bf16_kernel`, cp.async double-buffered through shared memory,
+// one ldmatrix per 16-row tile). 8 warps = pool groups x query pairs. The
 // epilogue reduces the 16 head rows of every m16 tile with three xor-shuffles and carries the
 // per-query partial across the head tiles in registers; each warp stores one contiguous row
 // segment. Causal early-out per stage, per CTA.
 //
 // REFUSALS (40030-40039): `heads % 16`, `d != 128` (the register-resident B fragments are sized
-// for it), `t_q < 8`, no current device, the smem opt-in declined, unknown precision. The
-// caller falls back to the f32 dispatch on any of them.
+// for it), `t_q < 8`, no current device, the smem opt-in declined. The caller falls back to
+// the f32 dispatch on any of them.
 
 #define MLA_SCORE_TC_BP 128
 #define MLA_SCORE_TC_QSPLIT 1024
@@ -1186,9 +1185,6 @@ extern "C" int memra_mla_kpool_score_f32(const float* q, const float* pool_keys,
 __device__ __forceinline__ unsigned mla_tc_pack2(float lo, float hi) {
     __nv_bfloat162 v = __floats2bfloat162_rn(lo, hi);
     return *reinterpret_cast<unsigned*>(&v);
-}
-__device__ __forceinline__ float mla_tc_bf16_residual(float x) {
-    return x - __bfloat162float(__float2bfloat16(x));
 }
 
 __device__ __forceinline__ void mla_tc_cp_async16(void* smem_dst, const void* gmem_src,
@@ -1219,10 +1215,9 @@ __device__ __forceinline__ void mla_tc_mma_bf16(float* c, const unsigned* a, uns
         : "r"(a[0]), "r"(a[1]), "r"(a[2]), "r"(a[3]), "r"(b0), "r"(b1));
 }
 
-// q [n] f32 -> hi [n] bf16 (+ lo [n] bf16 when `lo` is non-null): the A operand's planes.
+// q [n] f32 -> hi [n] bf16: the A operand's plane.
 __global__ void memra_mla_q_split_bf16_kernel(const float* __restrict__ q,
-                                              unsigned short* __restrict__ hi,
-                                              unsigned short* __restrict__ lo, long n) {
+                                              unsigned short* __restrict__ hi, long n) {
     long i = ((long)blockIdx.x * blockDim.x + threadIdx.x) * 4;
     if (i >= n) return;
     float4 v = *reinterpret_cast<const float4*>(q + i);
@@ -1234,31 +1229,19 @@ __global__ void memra_mla_q_split_bf16_kernel(const float* __restrict__ q,
     o.z = __bfloat16_as_ushort(h2);
     o.w = __bfloat16_as_ushort(h3);
     *reinterpret_cast<ushort4*>(hi + i) = o;
-    if (lo) {
-        ushort4 r;
-        r.x = __bfloat16_as_ushort(__float2bfloat16(v.x - __bfloat162float(h0)));
-        r.y = __bfloat16_as_ushort(__float2bfloat16(v.y - __bfloat162float(h1)));
-        r.z = __bfloat16_as_ushort(__float2bfloat16(v.z - __bfloat162float(h2)));
-        r.w = __bfloat16_as_ushort(__float2bfloat16(v.w - __bfloat162float(h3)));
-        *reinterpret_cast<ushort4*>(lo + i) = r;
-    }
 }
 
-// SPLIT=false: NT=8 n-tiles (64 pools) per warp, 2 pool groups x 4 query pairs, BT=8.
-// SPLIT=true:  NT=4 n-tiles (32 pools) per warp, 4 pool groups x 2 query pairs, BT=4, and the
-//              smem stage holds two planes (hi, lo) of the query rows.
-template <bool SPLIT>
+// NT=8 n-tiles (64 pools) per warp, 2 pool groups x 4 query pairs, BT=8.
 __global__ void __launch_bounds__(MLA_SCORE_TC_THREADS, 1) memra_mla_kpool_score_tc_kernel(
-    const unsigned short* __restrict__ q_hi, const unsigned short* __restrict__ q_lo,
-    const float* __restrict__ pool_keys, const float* __restrict__ hw, float* __restrict__ score,
-    int t_q, int heads, int n_pools, int pool, int first_pos, float qk_scale, float head_scale) {
+    const unsigned short* __restrict__ q_hi, const float* __restrict__ pool_keys,
+    const float* __restrict__ hw, float* __restrict__ score, int t_q, int heads, int n_pools,
+    int pool, int first_pos, float qk_scale, float head_scale) {
     constexpr int D = MLA_SCORE_TC_D;
     constexpr int BP = MLA_SCORE_TC_BP;
-    constexpr int NT = SPLIT ? 4 : 8;      // n-tiles per warp
-    constexpr int PG = BP / (NT * 8);      // pool groups per CTA (2 or 4)
-    constexpr int RG = 8 / PG;             // query pairs per stage (4 or 2)
+    constexpr int NT = 8;                  // n-tiles per warp
+    constexpr int PG = BP / (NT * 8);      // pool groups per CTA (2)
+    constexpr int RG = 8 / PG;             // query pairs per stage (4)
     constexpr int BT = RG * 2;             // queries per stage
-    constexpr int PLANES = SPLIT ? 2 : 1;
     constexpr int KS = D / 16;             // k-steps
     constexpr int RS = D + MLA_SCORE_TC_PAD; // smem row stride, bf16 elements
     constexpr int CHUNKS_PER_ROW = D * 2 / 16;
@@ -1271,8 +1254,7 @@ __global__ void __launch_bounds__(MLA_SCORE_TC_THREADS, 1) memra_mla_kpool_score
     const int p0 = (int)blockIdx.x * BP;
     const int pw = p0 + pg * (NT * 8); // this warp's first pool
     const int rows_per_stage = BT * heads;
-    const long plane_elems = (long)rows_per_stage * RS;
-    const long buf_elems = plane_elems * PLANES;
+    const long buf_elems = (long)rows_per_stage * RS;
     const int q_lo_i = (int)blockIdx.y * MLA_SCORE_TC_QSPLIT;
     int q_hi_i = q_lo_i + MLA_SCORE_TC_QSPLIT;
     if (q_hi_i > t_q) q_hi_i = t_q;
@@ -1283,7 +1265,6 @@ __global__ void __launch_bounds__(MLA_SCORE_TC_THREADS, 1) memra_mla_kpool_score
     // ---- B fragments: the warp's pools x D, register-resident for the CTA's life.
     // m16n8k16 .col B: lane holds n = lane/4, k = 2*(lane%4) + {0,1} (b0) and +8 (b1).
     unsigned bh[NT][KS][2];
-    unsigned bl[SPLIT ? NT : 1][SPLIT ? KS : 1][2];
 #pragma unroll
     for (int nt = 0; nt < NT; ++nt) {
         const int p = pw + nt * 8 + (lane >> 2);
@@ -1297,12 +1278,6 @@ __global__ void __launch_bounds__(MLA_SCORE_TC_THREADS, 1) memra_mla_kpool_score
                 ok ? *reinterpret_cast<const float2*>(krow + k0 + 8) : make_float2(0.f, 0.f);
             bh[nt][ks][0] = mla_tc_pack2(lo.x, lo.y);
             bh[nt][ks][1] = mla_tc_pack2(hi.x, hi.y);
-            if constexpr (SPLIT) {
-                bl[nt][ks][0] =
-                    mla_tc_pack2(mla_tc_bf16_residual(lo.x), mla_tc_bf16_residual(lo.y));
-                bl[nt][ks][1] =
-                    mla_tc_pack2(mla_tc_bf16_residual(hi.x), mla_tc_bf16_residual(hi.y));
-            }
         }
     }
 
@@ -1325,7 +1300,7 @@ __global__ void __launch_bounds__(MLA_SCORE_TC_THREADS, 1) memra_mla_kpool_score
     }
     if (s_begin >= n_stages) return;
 
-    // ---- stage loader: BT queries x heads rows of bf16 [D] per plane, 16 B cp.async chunks,
+    // ---- stage loader: BT queries x heads rows of bf16 [D], 16 B cp.async chunks,
     // rows past t_q zero-filled (src-size 0).
     auto issue_load = [&](int s, int b) {
         const int t0 = q_lo_i + s * BT;
@@ -1337,10 +1312,6 @@ __global__ void __launch_bounds__(MLA_SCORE_TC_THREADS, 1) memra_mla_kpool_score
             const long src_off = ((long)t * heads + (row % heads)) * D + ch * 8;
             mla_tc_cp_async16(dst + (long)row * RS + ch * 8, ok ? (q_hi + src_off) : q_hi,
                               ok ? 16 : 0);
-            if constexpr (SPLIT) {
-                mla_tc_cp_async16(dst + plane_elems + (long)row * RS + ch * 8,
-                                  ok ? (q_lo + src_off) : q_lo, ok ? 16 : 0);
-            }
         }
         mla_tc_cp_commit();
     };
@@ -1383,20 +1354,9 @@ __global__ void __launch_bounds__(MLA_SCORE_TC_THREADS, 1) memra_mla_kpool_score
                     for (int ks = 0; ks < KS; ++ks) {
                         unsigned ah[4];
                         mla_tc_ldmatrix_x4(ah, sh + arow + ks * 16);
-                        if constexpr (SPLIT) {
-                            unsigned al[4];
-                            mla_tc_ldmatrix_x4(al, sh + plane_elems + arow + ks * 16);
 #pragma unroll
-                            for (int nt = 0; nt < NT; ++nt) {
-                                mla_tc_mma_bf16(acc[nt], ah, bl[nt][ks][0], bl[nt][ks][1]);
-                                mla_tc_mma_bf16(acc[nt], al, bh[nt][ks][0], bh[nt][ks][1]);
-                                mla_tc_mma_bf16(acc[nt], ah, bh[nt][ks][0], bh[nt][ks][1]);
-                            }
-                        } else {
-#pragma unroll
-                            for (int nt = 0; nt < NT; ++nt)
-                                mla_tc_mma_bf16(acc[nt], ah, bh[nt][ks][0], bh[nt][ks][1]);
-                        }
+                        for (int nt = 0; nt < NT; ++nt)
+                            mla_tc_mma_bf16(acc[nt], ah, bh[nt][ks][0], bh[nt][ks][1]);
                     }
                     // epilogue: c[0],c[1] = row lane/4, cols 2*(lane%4)+{0,1}; c[2],c[3] = row +8
 #pragma unroll
@@ -1446,61 +1406,46 @@ __global__ void __launch_bounds__(MLA_SCORE_TC_THREADS, 1) memra_mla_kpool_score
     }
 }
 
-/// `scratch` holds `precision` planes of `t_q * heads * d` bf16 (2 or 4 bytes per element).
+/// `scratch` holds one plane of `t_q * heads * d` bf16.
 extern "C" int memra_mla_kpool_score_tc_f32(const float* q, unsigned short* scratch,
                                             const float* pool_keys, const float* hw,
                                             float* score, int t_q, int heads, int d,
                                             int n_pools, int pool, int first_pos,
-                                            float qk_scale, float head_scale, int precision,
-                                            void* stream_v) {
+                                            float qk_scale, float head_scale, void* stream_v) {
     if (pool <= 0) return 40010;
     if (heads <= 0 || heads % 16 != 0 || heads > 1024) return 40031;
     if (d != MLA_SCORE_TC_D) return 40032;
     if (t_q < 8) return 40033;
-    if (precision != 1 && precision != 2) return 40037;
     if (n_pools <= 0) return 0;
-    const bool split = precision == 2;
-    const int bt = split ? 4 : 8;
-    const size_t smem = 2ull * (split ? 2 : 1) * (size_t)bt * (size_t)heads *
-                        (MLA_SCORE_TC_D + MLA_SCORE_TC_PAD) * sizeof(unsigned short);
+    const int bt = 8;
+    const size_t smem = 2ull * (size_t)bt * (size_t)heads * (MLA_SCORE_TC_D + MLA_SCORE_TC_PAD) *
+                        sizeof(unsigned short);
     if (smem > (size_t)MLA_SCORE_TC_SMEM) return 40034;
     cudaStream_t stream = (cudaStream_t)stream_v;
     // The opt-in is PER DEVICE (function attributes live in each device's context), and the
     // glm5 TP walk drives two ranks on two cards from one process. A process-wide once-flag
     // here let rank 1 launch 139 KB of dynamic smem against the 48 KB default and fail with
     // cudaErrorInvalidValue on its first MLA layer (tpwalk18, 2026-09-07). Keyed on the device.
-    static bool attr_set[2][64] = {{false}}; // benign race: idempotent per device
+    static bool attr_set[64] = {false}; // benign race: idempotent per device
     int dev = 0;
     if (cudaGetDevice(&dev) != cudaSuccess || dev < 0 || dev >= 64) return 40035;
-    if (!attr_set[split][dev]) {
-        cudaError_t e = split ? cudaFuncSetAttribute(memra_mla_kpool_score_tc_kernel<true>,
-                                                     cudaFuncAttributeMaxDynamicSharedMemorySize,
-                                                     MLA_SCORE_TC_SMEM)
-                              : cudaFuncSetAttribute(memra_mla_kpool_score_tc_kernel<false>,
-                                                     cudaFuncAttributeMaxDynamicSharedMemorySize,
-                                                     MLA_SCORE_TC_SMEM);
+    if (!attr_set[dev]) {
+        cudaError_t e = cudaFuncSetAttribute(memra_mla_kpool_score_tc_kernel,
+                                             cudaFuncAttributeMaxDynamicSharedMemorySize,
+                                             MLA_SCORE_TC_SMEM);
         if (e != cudaSuccess) {
             (void)cudaGetLastError();
             return 40036;
         }
-        attr_set[split][dev] = true;
+        attr_set[dev] = true;
     }
     const long n = (long)t_q * heads * d;
     unsigned short* q_hi = scratch;
-    unsigned short* q_lo = split ? scratch + n : nullptr;
-    memra_mla_q_split_bf16_kernel<<<(unsigned)((n / 4 + 255) / 256), 256, 0, stream>>>(q, q_hi, q_lo,
-                                                                                        n);
+    memra_mla_q_split_bf16_kernel<<<(unsigned)((n / 4 + 255) / 256), 256, 0, stream>>>(q, q_hi, n);
     dim3 grid((unsigned)((n_pools + MLA_SCORE_TC_BP - 1) / MLA_SCORE_TC_BP),
               (unsigned)((t_q + MLA_SCORE_TC_QSPLIT - 1) / MLA_SCORE_TC_QSPLIT));
-    if (split) {
-        memra_mla_kpool_score_tc_kernel<true><<<grid, MLA_SCORE_TC_THREADS, smem, stream>>>(
-            q_hi, q_lo, pool_keys, hw, score, t_q, heads, n_pools, pool, first_pos, qk_scale,
-            head_scale);
-    } else {
-        memra_mla_kpool_score_tc_kernel<false><<<grid, MLA_SCORE_TC_THREADS, smem, stream>>>(
-            q_hi, q_hi, pool_keys, hw, score, t_q, heads, n_pools, pool, first_pos, qk_scale,
-            head_scale);
-    }
+    memra_mla_kpool_score_tc_kernel<<<grid, MLA_SCORE_TC_THREADS, smem, stream>>>(
+        q_hi, pool_keys, hw, score, t_q, heads, n_pools, pool, first_pos, qk_scale, head_scale);
     MLA_ERR();
     return 0;
 }
@@ -1838,7 +1783,7 @@ __device__ __forceinline__ void memra_mla_kpool_select_body(const float* __restr
     }
     for (int j = filled + tid; j < width; j += MLA_THREADS) out[j] = -1;
 }
-// ---- v2 body (lane/kpool-select-v2-20260906, MEMRA_KPOOL_SELECT_V2): the same radix select, the
+// ---- v2 body (lane/kpool-select-v2-20260906, the sm_100a default): the same radix select, the
 // same 64-bit order key, the same rank arithmetic, the same contiguous-range membership and
 // ascending emit, with the three serial spots of the body above made parallel:
 //   1. the per-pass histogram takes ONE shared-memory atomic per distinct bin per warp
@@ -2080,7 +2025,7 @@ extern "C" int memra_mla_kpool_select_f32(const float* score, int* idx, int t_q,
     return 0;
 }
 
-// v2 entries (MEMRA_KPOOL_SELECT_V2): the same audits, the v2 body.
+// v2 entries (the sm_100a default of the single-CTA selector): the same audits, the v2 body.
 extern "C" int memra_mla_kpool_select_v2_f32(const float* score, int* idx, int t_q, int n_pools,
                                              int pool, int select_k, int width, int first_pos,
                                              int always_tail, void* stream_v) {
@@ -2213,7 +2158,8 @@ extern "C" int memra_mla_attn_gathered_f32(const float* q_lat, const float* q_pe
 
 // ------------------------------------------------------- B200 (sm_100a) t<=8 decode arm
 //
-// MEMRA_B200_MLA_DECODE_ARM (host seam mla_ffi.rs, default OFF). Census motivation
+// Host seam mla_ffi.rs (mla_b200_decode_arm_on: sm_100a builds, glm5 TP head shards only, no
+// switch since 2026-11-04; MEMRA_B200_MLA_DECODE_ARM before). Census motivation
 // (nsys, 2x B200 SXM sm_100a, GLM-5.3-Flash NVFP4, plain decode t=1): the 11 MLA/DSA sparse
 // layers' `memra_mla_attn_gathered_kernel` costs 16 x 42.3 us/token. At t_q=1 the grid is
 // `t_q * n_head` = 64 blocks (n_head=64 on the glm5_next/GLM-5.2 geometry) — head-parallel by

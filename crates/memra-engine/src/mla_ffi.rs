@@ -18,20 +18,25 @@ use std::os::raw::c_void;
 pub static MLA_DECODE_SPLIT_DISPATCHES: std::sync::atomic::AtomicU64 =
     std::sync::atomic::AtomicU64::new(0);
 
-/// Engagement counter for the coalesced warp-per-row door (`MEMRA_MLA_COALESCE`).
+/// Engagement counter for the coalesced warp-per-row arm (`mla_coalesce_on`).
 pub static MLA_COALESCE_DISPATCHES: std::sync::atomic::AtomicU64 =
     std::sync::atomic::AtomicU64::new(0);
 
-/// `MEMRA_MLA_COALESCE=1` (default OFF, read per call — the rollback seam is its absence):
-/// dispatch the warp-per-row absorb/decompress kernels instead of the shipped thread-per-row
-/// ones. See `memra_mla_absorb_q_wp_f32` for the defect and the numeric class.
+/// The coalesced warp-per-row absorb/decompress kernels instead of the shipped thread-per-row
+/// ones (lane/mla-coalesce, memra #140). See `memra_mla_absorb_q_wp_f32` for the defect and the
+/// numeric class (`mla_warp_row_reduce`). The default on sm_100a builds, with no switch, since
+/// 2026-11-04 (`MEMRA_MLA_COALESCE` before): on the 2x B200 pair, two interleaved rounds, the
+/// split alone read 59.83 tok/s and coalesce composed with it 60.93 (+1.84%), every range clear
+/// and every arm's tape `9437b599f6b9d2a9` (darklanes `research/glm5-b200-20260902/LANE.md`,
+/// "Coalesce round 2"). Other builds keep the thread-per-row kernels: no receipt there.
 ///
-/// It composes with whichever split door is armed rather than replacing it: the split doors
-/// choose the output-range partition (the GRID), this door chooses how a row is read (the
-/// LOADS), and `split == 1` is simply the unsplit partition. So the dispatch below asks the
-/// existing policy for a split first and passes whatever it returns.
+/// It composes with whichever split is in force rather than replacing it: the splits choose
+/// the output-range partition (the GRID), this arm chooses how a row is read (the LOADS), and
+/// `split == 1` is simply the unsplit partition, where it falls through (alone it read -10.82%).
+/// So the dispatch below asks the existing policy for a split first and passes whatever it
+/// returns: the generic decode split on an unsharded layer, the B200 arm's on a TP head shard.
 fn mla_coalesce_on() -> bool {
-    std::env::var("MEMRA_MLA_COALESCE").as_deref() == Ok("1")
+    crate::BUILT_CUDA_ARCH == "100a"
 }
 
 /// Announce once per boot, naming the kernel and the split it composed with, because a door
@@ -42,7 +47,7 @@ fn mla_coalesce_announce(which: &str, t_q: usize, n_head: usize, split: i32) {
         eprintln!(
             "[mla-coalesce] engaged {which} t_q={t_q} n_head={n_head} split={split} \
              (warp-per-row coalesced loads + shuffle reduction; numeric class \
-             mla_warp_row_reduce; MEMRA_MLA_COALESCE=1)"
+             mla_warp_row_reduce; the sm_100a default)"
         );
     }
 }
@@ -91,11 +96,11 @@ pub fn mla_decode_split_on_from(v: Option<&str>) -> bool {
 pub enum MlaSplitScope {
     /// An unsharded MLA layer: the door's per-call value applies (default ON).
     Full,
-    /// A glm5 TP head shard (`MlaAttnLayer::tp_shard`, root and peer ranks): the door never
-    /// engages, so the TP walk keeps the shipped one-block-per-(token, head) launchers its TP
-    /// byte and band gates ran on. The split's bytes would match there too (they are
-    /// split-invariant at every geometry), but the pair has no composition gate or throughput
-    /// receipt, and the TP contract is that an unproven door does not arm on the sharded walk.
+    /// A glm5 TP head shard (`MlaAttnLayer::tp_shard`, root and peer ranks): the generic door
+    /// never engages. The split's bytes would match there too (they are split-invariant at every
+    /// geometry), but the pair has no composition gate or throughput receipt, and the TP
+    /// contract is that an unproven door does not arm on the sharded walk. On sm_100a the B200
+    /// decode arm splits a shard instead (`mla_b200_decode_arm_on`), on its own TP receipt.
     TpShard,
 }
 
@@ -141,26 +146,28 @@ fn mla_split_announce(kind: &str, t_q: usize, n_head: usize, split: i32) {
     }
 }
 
-/// Engagement counter for the B200 decode arm (`MEMRA_B200_MLA_DECODE_ARM`), announced once
-/// per boot: the receipt a B200 box A/B arm must show.
+/// Engagement counter for the B200 decode arm (`mla_b200_decode_arm_on`), announced once per
+/// boot: the receipt a B200 box A/B arm must show.
 pub static MLA_B200_DECODE_ARM_DISPATCHES: std::sync::atomic::AtomicU64 =
     std::sync::atomic::AtomicU64::new(0);
 
-/// `MEMRA_B200_MLA_DECODE_ARM=1` (default OFF, read per call: the rollback seam), compile-time
-/// gated to sm_100a builds (`cfg!(memra_sm100_tcgen05)`, set by build.rs for
-/// `MEMRA_CUDA_ARCH=100a`): on a 120a/90a/89 build this is `false` unconditionally, so naked
-/// non-B200 commands and the flag census see no behavior change from a var they cannot even
-/// engage. The arch guard is a compile-time fact here, not a per-call detection cost.
+/// The B200 decode arm's output-range split (lane/b200-mla-decode-20260902), on glm5 TP head
+/// shards of sm_100a builds, with no switch, since 2026-11-04 (`MEMRA_B200_MLA_DECODE_ARM`
+/// before). Compile-time gated (`cfg!(memra_sm100_tcgen05)`, set by build.rs for
+/// `MEMRA_CUDA_ARCH=100a`), so other builds see no change.
 ///
-/// Owner order 2026-09-02: "hardly improve the decode on these cards, before the full 1M."
-/// This is a genuinely separate door from `MEMRA_MLA_DECODE_SPLIT` (glm5-decode-diet lever 4,
-/// rig-generic, target ~1024 blocks, PRO6000-tuned) rather than a rename of it, per the
-/// per-hardware-arm-selection law in AGENTS.md: B200 SXM carries more SMs per device than the
-/// PRO6000 pair that door was tuned on, and this arm ALSO covers `attn_gathered`, which the
-/// generic split door never touched (no independent-output split existed for it before this
-/// lane; see `memra_mla_attn_gathered_split_kernel` in cu/mla_attn.cu).
-fn mla_b200_decode_arm_on() -> bool {
-    cfg!(memra_sm100_tcgen05) && std::env::var("MEMRA_B200_MLA_DECODE_ARM").as_deref() == Ok("1")
+/// WHY ONLY ON A TP SHARD. An unsharded layer takes the generic `MEMRA_MLA_DECODE_SPLIT`
+/// (default ON), which beat this arm on all three interleaved rounds of `mlasplit` on the 2x
+/// B200 pair (58.32 against 58.16 tok/s, same tape; darklanes
+/// `research/glm5-b200-20260902/LANE.md`): this arm's t=1 cell (split 4) was tuned on a
+/// microbench, the generic split targets ~1024 blocks. So that reach is deleted. A TP head shard
+/// refuses the generic split (`MlaSplitScope::TpShard`), and there this arm is the split: on the
+/// symmetric TP-2 walk the posture with it read 91.55 / 91.33 tok/s against 84.20 without it
+/// (unsplit and uncoalesced; tpwalk6 v2, darklanes `research/glm5-b200-mint-20260904/LANE.md`),
+/// and every TP-2 receipt from tpwalk3 v5 on carried it. Output-range splits are bit-identical;
+/// the coalesced twins it hands its split to are the named class `mla_warp_row_reduce`.
+fn mla_b200_decode_arm_on(scope: MlaSplitScope) -> bool {
+    cfg!(memra_sm100_tcgen05) && scope == MlaSplitScope::TpShard
 }
 
 /// The three kernels the B200 arm covers. The gate bin (`mla_decode_arm_gate.rs`) walks this
@@ -260,11 +267,12 @@ pub const MLA_B200_ARM_HEADS: usize = 64;
 
 fn mla_b200_split_for(
     kernel: MlaB200Kernel,
+    scope: MlaSplitScope,
     t_q: usize,
     n_head: usize,
     out_dim: usize,
 ) -> Option<i32> {
-    if !mla_b200_decode_arm_on() {
+    if !mla_b200_decode_arm_on(scope) {
         return None;
     }
     let scale = (MLA_B200_ARM_HEADS / n_head.max(1)).max(1) as i32;
@@ -282,7 +290,7 @@ fn mla_b200_split_announce(kind: &str, t_q: usize, n_head: usize, split: i32) {
     if MLA_B200_DECODE_ARM_DISPATCHES.fetch_add(1, Ordering::Relaxed) == 0 {
         eprintln!(
             "[mla-b200-decode-arm] engaged {kind} t={t_q} heads={n_head} split={split} \
-             (sm_100a output-range split; MEMRA_B200_MLA_DECODE_ARM=1)"
+             (sm_100a output-range split on a TP head shard)"
         );
     }
 }
@@ -292,9 +300,22 @@ fn mla_b200_split_announce(kind: &str, t_q: usize, n_head: usize, split: i32) {
 pub static MLA_DSA_DECODE_DISPATCHES: std::sync::atomic::AtomicU64 =
     std::sync::atomic::AtomicU64::new(0);
 
+/// The k-pool scorer of a PREFILL chunk on bf16 `mma.sync` tensor cores (`cu/mla_attn.cu`,
+/// "the TENSOR-CORE arm"; lane/glm5-dsa-score-tc, 2026-09-07): plain bf16 operands, one MMA
+/// per product, ~1e-3 relative on the scores. The default on sm_100a builds, with no switch
+/// (2026-11-04, `MEMRA_DSA_SCORE_TC` before): on the 2x B200 pair the TP-2 1M prime fell from
+/// 782 s to 339.8 s (docs/decisions/GLM5-B200-DOORS.md). Prefill chunks at `t_q >= 8` only:
+/// the rows-exact verify walk and decode keep the f32 scorer, so a verify row stays
+/// bit-identical to the plain decode program it is compared against. Not bit-identical to the
+/// f32 scorer, admitted like `MEMRA_MLA_TC_PREFILL`: served-prompt ids against the f32 arm.
+/// Other builds keep the f32 scorer: no receipt there.
+pub fn dsa_score_tc_default() -> bool {
+    crate::BUILT_CUDA_ARCH == "100a"
+}
+
 /// `MEMRA_B200_DSA_DECODE` (DEFAULT 2 since 2026-09-07 on sm_100a builds; `=0` is the
 /// rollback seam and `=1` the bit-identical level, both read per call), compile-time gated to
-/// sm_100a builds exactly like its sibling `MEMRA_B200_MLA_DECODE_ARM`, so a 120a/90a/89 build
+/// sm_100a builds exactly like its sibling B200 MLA decode arm, so a 120a/90a/89 build
 /// sees no behavior change from a var it cannot engage. The flip's receipts: level 2 served
 /// on the 2x B200 pair since 2026-09-03 (256k sampled 30.07 -> 43.04 tok/s; 1M 22.7 -> 34.9,
 /// 41.07 with the select door) and every B200 posture cell since carries it
@@ -329,21 +350,6 @@ pub static MLA_DSA_DECODE_DISPATCHES: std::sync::atomic::AtomicU64 =
 ///
 /// Rollback seam: unset the var (or set 0). Both arms are read per call, so a rollback is the
 /// next request, not a restart.
-/// `MEMRA_DSA_SCORE_TC=1|2` (lane/glm5-dsa-score-tc, 2026-09-07, default OFF, decide-by
-/// 2026-09-21): the prefill scorer on bf16 `mma.sync` tensor cores (`cu/mla_attn.cu`, "the
-/// TENSOR-CORE arm"). `1` = plain bf16 operands (one MMA per product, ~1e-3 relative);
-/// `2` = every operand split hi/lo bf16, three MMAs (f32-class, ~3e-6 relative). Prefill widths
-/// only (`t_q >= 8`); neither is bit-identical to the f32 scorer, admitted like
-/// `MEMRA_MLA_TC_PREFILL`: served-prompt ids against the f32 arm. 0 = off.
-pub fn dsa_score_tc() -> i32 {
-    static LEVEL: std::sync::OnceLock<i32> = std::sync::OnceLock::new();
-    *LEVEL.get_or_init(|| match std::env::var("MEMRA_DSA_SCORE_TC").as_deref() {
-        Ok("1") => 1,
-        Ok("2") => 2,
-        _ => 0,
-    })
-}
-
 fn mla_dsa_decode_level() -> u32 {
     if !cfg!(memra_sm100_tcgen05) {
         return 0;
@@ -356,7 +362,7 @@ fn mla_dsa_decode_level() -> u32 {
 }
 
 /// Widest query width the DSA decode door keys on. Wider widths fall through untouched: the
-/// `MEMRA_B200_MLA_DECODE_ARM` split door if set, then the shipped kernels (t >= 16 reaches
+/// B200 MLA decode arm's split on a TP head shard, then the shipped kernels (t >= 16 reaches
 /// `MEMRA_MLA_TC_PREFILL` before either).
 pub const MLA_DSA_ARM_T_MAX: usize = 8;
 
@@ -488,18 +494,33 @@ pub fn dsa_score_rp() -> i32 {
 pub static MLA_DSA_SELECT_DISPATCHES: std::sync::atomic::AtomicU64 =
     std::sync::atomic::AtomicU64::new(0);
 
-/// `MEMRA_KPOOL_SELECT_V2=1` (lane/kpool-select-v2-20260906, default OFF, decide-by 2026-11-17,
-/// re-filed with its box receipts; see the FLAGS.md row): the single-CTA k-pool selector runs
-/// the v2 body (warp-aggregated histogram atomics, warp-scan rank walk and emit prefix; the same
-/// key, ranks and emit order). Output bit-identical by construction; gate
-/// `tests/mla_kpool_select_v2_gpu.rs`. Read per call. Below the multi-CTA door's floor this is
-/// the selector every long-context decode step runs (trace 2026-09-05 at 245k tokens: 174 us per
-/// launch at 61,323 pools, 15% of the token).
-pub(crate) fn mla_kpool_select_v2_on() -> bool {
-    std::env::var("MEMRA_KPOOL_SELECT_V2").as_deref() == Ok("1")
+/// The single-CTA k-pool selector's v2 body (lane/kpool-select-v2-20260906: warp 0's
+/// shuffle-scan rank walk, per-warp coalesced membership count and emit; the same key, ranks
+/// and emit order), the default on sm_100a builds with no switch (2026-11-04): `selab2` on the
+/// 2x B200 pair read +1.40% at 256k, three interleaved boots per arm with every v2 boot above
+/// every v1 boot (docs/decisions/GLM5-B200-DOORS.md). Output bit-identical by construction; gate
+/// `tests/mla_kpool_select_v2_gpu.rs`. Below the multi-CTA door's floor this is the selector
+/// every long-context decode step runs (trace 2026-09-05 at 245k tokens: 174 us per launch at
+/// 61,323 pools, 15% of the token). Other builds keep the v1 body: no receipt there.
+fn mla_kpool_select_v2_default() -> bool {
+    crate::BUILT_CUDA_ARCH == "100a"
 }
 
-/// Engagement counter for `MEMRA_KPOOL_SELECT_V2` (both twins).
+/// The single-CTA selector entries' shared signature (v1 and v2 bodies take the same operands).
+type KpoolSelectFn = unsafe extern "C" fn(
+    *const f32,
+    *mut i32,
+    i32,
+    i32,
+    i32,
+    i32,
+    i32,
+    i32,
+    i32,
+    *mut c_void,
+) -> i32;
+
+/// Engagement counter for the v2 single-CTA selector on the `mla_kpool_select` dispatch.
 pub static KPOOL_SELECT_V2_DISPATCHES: std::sync::atomic::AtomicU64 =
     std::sync::atomic::AtomicU64::new(0);
 
@@ -512,7 +533,7 @@ fn kpool_select_v2_announce(twin: &str, t_q: usize, n_pools: usize) {
     if KPOOL_SELECT_V2_DISPATCHES.fetch_add(1, std::sync::atomic::Ordering::Relaxed) == 0 {
         eprintln!(
             "[kpool-select-v2] engaged {twin} t_q={t_q} n_pools={n_pools}: warp-aggregated \
-             histogram + warp scans in the single-CTA selector (MEMRA_KPOOL_SELECT_V2=1; \
+             histogram + warp scans in the single-CTA selector (sm_100a default; \
              bit-identical index lists)"
         );
     }
@@ -695,8 +716,8 @@ unsafe extern "C" {
         kv_rank: i32,
         stream: *mut c_void,
     ) -> i32;
-    /// COALESCED warp-per-row twin of `memra_mla_absorb_q_f32` (`MEMRA_MLA_COALESCE`,
-    /// lane/mla-coalesce). The shipped kernel gives output row `l` to THREAD `l`, which then
+    /// COALESCED warp-per-row twin of `memra_mla_absorb_q_f32` (the coalesced arm,
+    /// `mla_coalesce_on`; lane/mla-coalesce). The shipped kernel gives output row `l` to THREAD `l`, which then
     /// walks its row serially, so at step `p` a warp's 32 lanes read addresses `d_nope` floats
     /// (512 B) apart and pull 32 transactions where one would do. Here a WARP owns a row and
     /// lane `k` reads `row[k], row[k+32], ...`, which is one 128-byte transaction per step,
@@ -741,7 +762,7 @@ unsafe extern "C" {
         split: i32,
         stream: *mut c_void,
     ) -> i32;
-    /// COALESCED warp-per-row twin of `memra_mla_decompress_v_f32` (`MEMRA_MLA_COALESCE`).
+    /// COALESCED warp-per-row twin of `memra_mla_decompress_v_f32` (the coalesced arm, `mla_coalesce_on`).
     /// Same defect and same fix as `memra_mla_absorb_q_wp_f32`, and worse in the shipped form:
     /// the lane stride there is `kv_rank` floats (2 KB), and with `d_v` typically 128 against
     /// `MLA_THREADS` 256 half the block never enters the loop. Numeric class
@@ -850,7 +871,6 @@ unsafe extern "C" {
         first_pos: i32,
         qk_scale: f32,
         head_scale: f32,
-        precision: i32,
         stream: *mut c_void,
     ) -> i32;
     pub fn memra_mla_kpool_score_ref_f32(
@@ -957,7 +977,7 @@ unsafe extern "C" {
         scale: f32,
         stream: *mut c_void,
     ) -> i32;
-    /// B200 decode-arm twin of `memra_mla_attn_gathered_f32` (MEMRA_B200_MLA_DECODE_ARM): same
+    /// B200 decode-arm twin of `memra_mla_attn_gathered_f32` (`mla_b200_decode_arm_on`): same
     /// per-l accumulate chain, its output range [0, kv_rank) split across `split` blocks; the
     /// shared score/softmax tile walk (m, dsum) is recomputed IN FULL, unchanged, by every
     /// split block — bit-identical by construction, gated in `mla_decode_arm_gate.rs`.
@@ -1376,7 +1396,7 @@ impl Engine {
         if !mla_coalesce_on() {
             return Ok(false);
         }
-        let split = mla_b200_split_for(MlaB200Kernel::AbsorbQ, t_q, n_head, kv_rank)
+        let split = mla_b200_split_for(MlaB200Kernel::AbsorbQ, scope, t_q, n_head, kv_rank)
             .or_else(|| mla_decode_split_for(scope, t_q * n_head, kv_rank))
             .unwrap_or(1);
         if split <= 1 {
@@ -1418,7 +1438,7 @@ impl Engine {
         if !mla_coalesce_on() {
             return Ok(false);
         }
-        let split = mla_b200_split_for(MlaB200Kernel::DecompressV, t_q, n_head, d_v)
+        let split = mla_b200_split_for(MlaB200Kernel::DecompressV, scope, t_q, n_head, d_v)
             .or_else(|| mla_decode_split_for(scope, t_q * n_head, d_v))
             .unwrap_or(1);
         if split <= 1 {
@@ -1482,12 +1502,12 @@ impl Engine {
         scope: MlaSplitScope,
     ) -> Res<()> {
         let s = self.stream();
-        // MEMRA_MLA_COALESCE door, checked FIRST because it changes how a row is READ, which
-        // is orthogonal to every door below (they choose the output-range partition). It reuses
-        // their policy rather than replacing it: ask the B200 arm, then the generic split, and
-        // pass whatever split they choose (1 = unsplit). Consulting `mla_decode_split_for` also
-        // ticks that door's own dispatch counter, which is correct — it WAS consulted and its
-        // partition IS the one running.
+        // The coalesced arm (`mla_coalesce_on`), checked FIRST because it changes how a row is
+        // READ, which is orthogonal to every door below (they choose the output-range
+        // partition). It reuses their policy rather than replacing it: ask the B200 arm (TP head
+        // shards), then the generic split, and pass whatever split they choose (1 = unsplit).
+        // Consulting `mla_decode_split_for` also ticks that door's own dispatch counter, which
+        // is correct: it WAS consulted and its partition IS the one running.
         // MEASURED 2026-09-03, 2x B200: at split 1 (64 blocks) warp-per-row REGRESSES -11%
         // (51.01 vs 57.34): one row in flight per warp with a serial shuffle reduction after
         // each replaces 16,384 threads x 1 row with 512 warps x 1 row, a 32x loss of memory
@@ -1495,7 +1515,7 @@ impl Engine {
         // top of the split. So the door only engages when a split door gave it a grid to spend
         // the coalescing on; at split 1 it falls through to the dispatch below, unchanged.
         let coalesce_split = if mla_coalesce_on() {
-            mla_b200_split_for(MlaB200Kernel::AbsorbQ, t_q, n_head, kv_rank)
+            mla_b200_split_for(MlaB200Kernel::AbsorbQ, scope, t_q, n_head, kv_rank)
                 .or_else(|| mla_decode_split_for(scope, t_q * n_head, kv_rank))
                 .unwrap_or(1)
         } else {
@@ -1521,10 +1541,11 @@ impl Engine {
                 )
             };
         }
-        // MEMRA_B200_MLA_DECODE_ARM door (checked first; split from the t_q-keyed table
-        // MLA_B200_ABSORB_Q_SPLIT, a 1 cell falls through to the doors below; the split twin is
-        // the same kernel the generic door launches, so this is only a policy pick).
-        if let Some(split) = mla_b200_split_for(MlaB200Kernel::AbsorbQ, t_q, n_head, kv_rank) {
+        // The B200 arm on a TP head shard (checked first; split from the t_q-keyed table
+        // MLA_B200_ABSORB_Q_SPLIT, a 1 cell falls through below; the split twin is the same
+        // kernel the generic door launches, so this is only a policy pick).
+        if let Some(split) = mla_b200_split_for(MlaB200Kernel::AbsorbQ, scope, t_q, n_head, kv_rank)
+        {
             mla_b200_split_announce("absorb_q", t_q, n_head, split);
             return unsafe {
                 ck(
@@ -1619,12 +1640,12 @@ impl Engine {
         scope: MlaSplitScope,
     ) -> Res<()> {
         let s = self.stream();
-        // MEMRA_MLA_COALESCE door, checked FIRST because it changes how a row is READ, which
-        // is orthogonal to every door below (they choose the output-range partition). It reuses
-        // their policy rather than replacing it: ask the B200 arm, then the generic split, and
-        // pass whatever split they choose (1 = unsplit). Consulting `mla_decode_split_for` also
-        // ticks that door's own dispatch counter, which is correct — it WAS consulted and its
-        // partition IS the one running.
+        // The coalesced arm (`mla_coalesce_on`), checked FIRST because it changes how a row is
+        // READ, which is orthogonal to every door below (they choose the output-range
+        // partition). It reuses their policy rather than replacing it: ask the B200 arm (TP head
+        // shards), then the generic split, and pass whatever split they choose (1 = unsplit).
+        // Consulting `mla_decode_split_for` also ticks that door's own dispatch counter, which
+        // is correct: it WAS consulted and its partition IS the one running.
         // MEASURED 2026-09-03, 2x B200: at split 1 (64 blocks) warp-per-row REGRESSES -11%
         // (51.01 vs 57.34): one row in flight per warp with a serial shuffle reduction after
         // each replaces 16,384 threads x 1 row with 512 warps x 1 row, a 32x loss of memory
@@ -1632,7 +1653,7 @@ impl Engine {
         // top of the split. So the door only engages when a split door gave it a grid to spend
         // the coalescing on; at split 1 it falls through to the dispatch below, unchanged.
         let coalesce_split = if mla_coalesce_on() {
-            mla_b200_split_for(MlaB200Kernel::DecompressV, t_q, n_head, d_v)
+            mla_b200_split_for(MlaB200Kernel::DecompressV, scope, t_q, n_head, d_v)
                 .or_else(|| mla_decode_split_for(scope, t_q * n_head, d_v))
                 .unwrap_or(1)
         } else {
@@ -1658,9 +1679,10 @@ impl Engine {
                 )
             };
         }
-        // MEMRA_B200_MLA_DECODE_ARM door (checked first, table MLA_B200_DECOMPRESS_V_SPLIT; see
-        // mla_absorb_q above).
-        if let Some(split) = mla_b200_split_for(MlaB200Kernel::DecompressV, t_q, n_head, d_v) {
+        // The B200 arm on a TP head shard (checked first, table MLA_B200_DECOMPRESS_V_SPLIT;
+        // see mla_absorb_q above).
+        if let Some(split) = mla_b200_split_for(MlaB200Kernel::DecompressV, scope, t_q, n_head, d_v)
+        {
             mla_b200_split_announce("decompress_v", t_q, n_head, split);
             return unsafe {
                 ck(
@@ -1854,6 +1876,11 @@ impl Engine {
     /// with explicit intrinsics — and gated so
     /// (`gpu_kpool_scoring_is_byte_identical_to_the_reference_kernel`). See the scoring section
     /// of `cu/mla_attn.cu` for why that identity is the requirement and not a nicety.
+    ///
+    /// `prefill` says the caller is a prefill chunk, not a rows-exact verify walk or decode. On
+    /// sm_100a builds a prefill chunk at `t_q >= 8` scores on tensor cores instead
+    /// ([`dsa_score_tc_default`]), which is NOT bit-identical to the reference; `false` always
+    /// takes the f32 scorer above.
     #[allow(clippy::too_many_arguments)]
     pub fn mla_kpool_score(
         &self,
@@ -1869,6 +1896,7 @@ impl Engine {
         first_pos: usize,
         qk_scale: f32,
         head_scale: f32,
+        prefill: bool,
     ) -> Res<()> {
         self.mla_kpool_score_range(
             q,
@@ -1884,11 +1912,14 @@ impl Engine {
             first_pos,
             qk_scale,
             head_scale,
+            prefill,
         )
     }
 
     /// Score a contiguous pool range without copying keys. Moving the key base and subtracting
-    /// pool_start * pool from the causal position preserves each dot product and visibility.
+    /// pool_start * pool from the causal position preserves each dot product and visibility, on
+    /// either scorer (`prefill`, as in [`Self::mla_kpool_score`]): every score is one
+    /// (query, pool) dot, independent of the tile it lands in.
     #[allow(clippy::too_many_arguments)]
     pub fn mla_kpool_score_range(
         &self,
@@ -1905,6 +1936,7 @@ impl Engine {
         first_pos: usize,
         qk_scale: f32,
         head_scale: f32,
+        prefill: bool,
     ) -> Res<()> {
         if pool_start
             .checked_add(n_pools)
@@ -1922,11 +1954,10 @@ impl Engine {
         let relative_pos = i32::try_from(position - offset)
             .map_err(|_| "kpool score relative position exceeds i32")?;
         let s = self.stream();
-        // MEMRA_DSA_SCORE_TC door: the prefill scorer on tensor cores. Refusals (4003x) are the
-        // kernel's own geometry bounds and fall through to the f32 dispatch below.
-        let tc = dsa_score_tc();
-        if tc > 0 && t_q >= 8 {
-            let mut scratch = self.alloc_uninit::<u16>(tc as usize * t_q * heads * d)?;
+        // The sm_100a prefill-chunk scorer on tensor cores (`dsa_score_tc_default`). Refusals
+        // (4003x) are the kernel's own geometry bounds and fall through to the f32 dispatch.
+        if prefill && dsa_score_tc_default() && t_q >= 8 {
+            let mut scratch = self.alloc_uninit::<u16>(t_q * heads * d)?;
             let rc = unsafe {
                 memra_mla_kpool_score_tc_f32(
                     q.device_ptr(&s).0 as *const f32,
@@ -1942,7 +1973,6 @@ impl Engine {
                     relative_pos,
                     qk_scale,
                     head_scale,
-                    tc,
                     s.cu_stream() as *mut c_void,
                 )
             };
@@ -1952,8 +1982,7 @@ impl Engine {
                 if !SAID.swap(true, std::sync::atomic::Ordering::Relaxed) {
                     eprintln!(
                         "[mla-dsa-score-tc] engaged kpool_score t={t_q} heads={heads} \
-                         pools={n_pools} precision={tc} class={} (MEMRA_DSA_SCORE_TC)",
-                        if tc == 2 { "bf16x2-mma" } else { "bf16-mma" }
+                         pools={n_pools} class=bf16-mma (sm_100a prefill default)"
                     );
                 }
                 return ck("kpool_score_tc", rc);
@@ -2218,30 +2247,54 @@ impl Engine {
                 )
             };
         }
-        if mla_kpool_select_v2_on() {
+        let v2 = mla_kpool_select_v2_default();
+        if v2 {
             kpool_select_v2_announce("scalar", t_q, n_pools);
-            return unsafe {
-                ck(
-                    "kpool_select_v2",
-                    memra_mla_kpool_select_v2_f32(
-                        score.device_ptr(&s).0 as *const f32,
-                        idx.device_ptr_mut(&s).0 as *mut i32,
-                        t_q as i32,
-                        n_pools as i32,
-                        pool as i32,
-                        select_k as i32,
-                        width as i32,
-                        first_pos as i32,
-                        i32::from(always_tail),
-                        s.cu_stream() as *mut c_void,
-                    ),
-                )
-            };
         }
+        self.mla_kpool_select_single_cta(
+            score,
+            idx,
+            t_q,
+            n_pools,
+            pool,
+            select_k,
+            width,
+            first_pos,
+            always_tail,
+            v2,
+        )
+    }
+
+    /// The single-CTA k-pool selector with its body named: `v2` picks the v2 body (the sm_100a
+    /// default of [`Self::mla_kpool_select`]), otherwise the v1 body. Bit-identical index lists
+    /// by construction; `tests/mla_kpool_select_v2_gpu.rs` calls both bodies directly.
+    #[allow(clippy::too_many_arguments)]
+    pub fn mla_kpool_select_single_cta(
+        &self,
+        score: &CudaSlice<f32>,
+        idx: &mut CudaSlice<i32>,
+        t_q: usize,
+        n_pools: usize,
+        pool: usize,
+        select_k: usize,
+        width: usize,
+        first_pos: usize,
+        always_tail: bool,
+        v2: bool,
+    ) -> Res<()> {
+        let s = self.stream();
+        let (name, entry) = if v2 {
+            (
+                "kpool_select_v2",
+                memra_mla_kpool_select_v2_f32 as KpoolSelectFn,
+            )
+        } else {
+            ("kpool_select", memra_mla_kpool_select_f32 as KpoolSelectFn)
+        };
         unsafe {
             ck(
-                "kpool_select",
-                memra_mla_kpool_select_f32(
+                name,
+                entry(
                     score.device_ptr(&s).0 as *const f32,
                     idx.device_ptr_mut(&s).0 as *mut i32,
                     t_q as i32,
@@ -2440,6 +2493,40 @@ impl Engine {
         n_slots: usize,
         scale: f32,
     ) -> Res<()> {
+        self.mla_attn_gathered_scoped(
+            q_lat,
+            q_pe,
+            cache,
+            idx,
+            o_lat,
+            n_head,
+            kv_rank,
+            d_rope,
+            t_q,
+            n_slots,
+            scale,
+            MlaSplitScope::Full,
+        )
+    }
+
+    /// [`Engine::mla_attn_gathered`] for a layer of a known [`MlaSplitScope`]: a glm5 TP head
+    /// shard on sm_100a takes the B200 arm's split when DSA declines the geometry.
+    #[allow(clippy::too_many_arguments)]
+    pub fn mla_attn_gathered_scoped(
+        &self,
+        q_lat: &CudaSlice<f32>,
+        q_pe: &CudaSlice<f32>,
+        cache: &CudaSlice<f32>,
+        idx: &CudaSlice<i32>,
+        o_lat: &mut CudaSlice<f32>,
+        n_head: usize,
+        kv_rank: usize,
+        d_rope: usize,
+        t_q: usize,
+        n_slots: usize,
+        scale: f32,
+        scope: MlaSplitScope,
+    ) -> Res<()> {
         let s = self.stream();
         // MEMRA_B200_DSA_DECODE door, checked FIRST: its arms fight the same 64-CTA t_q=1
         // geometry the output-range split below does, without repeating the slot walk.
@@ -2514,11 +2601,13 @@ impl Engine {
                 return ck("attn_gathered_dsa", rc);
             }
         }
-        // MEMRA_B200_MLA_DECODE_ARM door: output-range split from the t_q-keyed table
+        // The B200 arm on a TP head shard: output-range split from the t_q-keyed table
         // MLA_B200_ATTN_GATHERED_SPLIT. This twin repeats the score/softmax walk per split
         // block, unlike the absorb/decompress splits, which is why the B200 run found it a win
         // at t_q=1 only (see the table comment); every other cell is the shipped kernel.
-        if let Some(split) = mla_b200_split_for(MlaB200Kernel::AttnGathered, t_q, n_head, kv_rank) {
+        if let Some(split) =
+            mla_b200_split_for(MlaB200Kernel::AttnGathered, scope, t_q, n_head, kv_rank)
+        {
             mla_b200_split_announce("attn_gathered", t_q, n_head, split);
             return unsafe {
                 ck(

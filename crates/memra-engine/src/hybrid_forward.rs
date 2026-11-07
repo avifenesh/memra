@@ -802,7 +802,7 @@ fn hyper_decode_ws_on() -> bool {
         && std::env::var("MEMRA_HC_DECODE_WS").as_deref() == Ok("1")
 }
 
-/// Symmetric TP walk engagements (`MEMRA_GLM5_TP_SYMMETRIC`; gate non-vacuity, box receipt).
+/// Symmetric TP walk engagements (the sm_100a TP-2 default; gate non-vacuity, box receipt).
 pub static GLM5_TP_SYM_DISPATCHES: std::sync::atomic::AtomicU64 =
     std::sync::atomic::AtomicU64::new(0);
 pub static GLM5_TP_SHEXP_SPLIT_DISPATCHES: std::sync::atomic::AtomicU64 =
@@ -2571,23 +2571,20 @@ impl HybridModel {
     /// launcher's TP-2 exec block (expert split, symmetric walk and graphs) and every accepted
     /// process logged TP graph engagement. Inspect loaded sidecars, not the requested TP
     /// environment string, then apply the symmetric walk's own engagement rule
-    /// (`hyper_range_decode_ws_body`) over every layer. A load that would decline into the
-    /// root-orchestrated walk keeps the host sampler: the +12.22% has no receipt there.
+    /// ([`Self::glm5_tp_sym_walk_rt`], the one its routing applies) over every layer. A load that
+    /// would decline into the root-orchestrated walk keeps the host sampler: the +12.22% has no
+    /// receipt there.
     pub fn glm5_tp_device_sample_supported(&self) -> bool {
         self.hyper.is_some()
             && crate::pp::pp_cuts(self.layers.len()).is_none()
             && self.glm5_tp_symmetric_walk_engages()
     }
 
-    /// Whether a whole-range decode takes the symmetric TP-2 walk: the same rule
-    /// `hyper_range_decode_ws_body` applies before it declines into the root-orchestrated walk,
-    /// over `0..layers.len()`, with exactly two ranks.
+    /// Whether a whole-range decode takes the symmetric TP-2 walk: the rule the walk's routing
+    /// applies (the posture over the split, the glue on every layer, two ranks on the
+    /// device-signal link), over `0..layers.len()`.
     fn glm5_tp_symmetric_walk_engages(&self) -> bool {
-        crate::glm5_tp::glm5_tp_symmetric_on()
-            && crate::glm5_tp::glm5_tp_expert_split_on()
-            && self
-                .glm5_tp_rt_for(0, self.layers.len())
-                .is_some_and(|rt| rt.ranks() == 2 && rt.ar_1stage_available())
+        self.glm5_tp_sym_walk_rt(0, self.layers.len()).is_some()
     }
 
     /// Plain TP-2 decode with the unchanged trunk/head program. Retain the full
@@ -2913,22 +2910,17 @@ impl HybridModel {
             return self.hyper_range_decode_ws(e, topology, x, lo, hi, pos_d, pos, cache);
         }
         // THE SYMMETRIC TP WALK LIVES INSIDE THE WORKSPACE FORM, and the TP walk refuses
-        // MEMRA_HC_DECODE_WS by name, so until 2026-09-07 the symmetric door was unreachable from
+        // MEMRA_HC_DECODE_WS by name, so until 2026-09-07 the symmetric walk was unreachable from
         // every probe and served walk: tpwalk2's "tp2sym" arm (38.94 tok/s) measured the
-        // root-orchestrated walk with the door's LOAD-time effects (row-parallel wo) and never
-        // printed the engaged line. The door now routes itself into the workspace form exactly
-        // when its walk will engage (symmetric + split + a real two-device one-shot); every
-        // other TP posture keeps the eager allocating walk below, which is the one the
-        // workspace body has no TP mixer branches for.
-        if crate::glm5_tp::glm5_tp_symmetric_on()
-            && crate::glm5_tp::glm5_tp_expert_split_on()
-            && self
-                .glm5_tp_rt_for(lo, hi)
-                .map(|rt| rt.ar_1stage_available())
-                .unwrap_or(false)
-        {
+        // root-orchestrated walk with the posture's LOAD-time effects (row-parallel wo) and never
+        // printed the engaged line. The walk now routes itself into the workspace form exactly
+        // when it will engage (`glm5_tp_sym_walk_rt`); every other TP posture keeps the eager
+        // allocating walk below, which is the one the workspace body has no TP mixer branches
+        // for.
+        if self.glm5_tp_sym_walk_rt(lo, hi).is_some() {
             return self.hyper_range_decode_ws(e, topology, x, lo, hi, pos_d, pos, cache);
         }
+        self.glm5_tp_sym_note_decline(lo, hi);
         let n_embd = self.cfg.n_embd as usize;
         let eps = self.cfg.rms_eps;
         for il in lo..hi {
@@ -2939,12 +2931,12 @@ impl HybridModel {
 
             let (y, mix) = crate::hyper::pre(e, topology, &hyper.attn, &x, 1, n_embd)?;
             let mut h = e.uninit(n_embd)?;
-            // MEMRA_GLM5_Q8_FUSE_ATTN (lane/glm5-attn-norm-zq8-20260904, default OFF): on a plain
-            // KDA layer the attention-input norm emits its q8_1 view too, and the fused
-            // six-projection launcher reads it instead of quantizing `h` again. Byte-identical
-            // (rms_norm_zq8_f32 = rms_norm then quantize_q8_1; the launcher's quantize is the
-            // same kernel). Every other mixer keeps the plain norm.
-            let attn_q8 = if crate::glm5_q8_fuse_attn_on()
+            // The attention-norm q8_1 fuse (lane/glm5-attn-norm-zq8-20260904, the sm_100a
+            // default): on a plain KDA layer the attention-input norm emits its q8_1 view too, and
+            // the fused six-projection launcher reads it instead of quantizing `h` again.
+            // Byte-identical (rms_norm_zq8_f32 = rms_norm then quantize_q8_1; the launcher's
+            // quantize is the same kernel). Every other mixer keeps the plain norm.
+            let attn_q8 = if crate::glm5_q8_fuse_attn_default()
                 && matches!(&layer.mixer, Mixer::Kda(la) if la.tp.is_none())
             {
                 let pair =
@@ -3086,36 +3078,37 @@ impl HybridModel {
         ws: &mut crate::hyper::HyperDecodeWs,
     ) -> Result<(), Box<dyn std::error::Error>> {
         let _numeric = self.enter_numeric();
-        // MEMRA_GLM5_TP_SYMMETRIC: every rank runs the layer glue itself and the three sharded
-        // ops meet in one-shot all-reduces, two crossings per layer instead of five. Declines
-        // LOUDLY (once) rather than silently when the one-shot cannot serve, which is the
-        // same-device gate and any single-card pairing.
-        if crate::glm5_tp::glm5_tp_symmetric_on()
-            && let Some(rt) = self.glm5_tp_rt_for(lo, hi)
-        {
-            if rt.ar_1stage_available() && crate::glm5_tp::glm5_tp_expert_split_on() {
-                return self
-                    .hyper_range_decode_ws_sym(e, topology, &rt, x, lo, hi, pos_d, pos, cache, ws);
-            }
-            if !GLM5_TP_SYM_DECLINED.swap(true, std::sync::atomic::Ordering::Relaxed) {
-                eprintln!(
-                    "[glm5-tp-sym] declined: needs MEMRA_GLM5_TP_EXPERT_SPLIT=1 and a real \
-                     two-device group (the one-shot is a kernel peer store); taking the \
-                     root-orchestrated walk"
-                );
-            }
+        // THE SYMMETRIC TP-2 WALK (the sm_100a default over the split): every rank runs the
+        // layer glue itself and the three sharded ops meet in one-shot all-reduces, two
+        // crossings per layer instead of five. `hyper_range_decode` routes a range here only
+        // when the walk will engage, and says once, by name, why it did not otherwise
+        // (`glm5_tp_sym_note_decline`).
+        if let Some(rt) = self.glm5_tp_sym_walk_rt(lo, hi) {
+            return self
+                .hyper_range_decode_ws_sym(e, topology, &rt, x, lo, hi, pos_d, pos, cache, ws);
         }
         let segs: Vec<WsSeg> = (lo..hi).map(WsSeg::Layer).collect();
         self.hyper_range_decode_ws_segments(e, topology, x, &segs, pos_d, pos, cache, ws, None)
     }
 
-    /// True when this model runs the glm5 TP walk (any layer carries a TP sidecar): the
-    /// prefix-cache seams key their per-rank capture on it (`MEMRA_GLM5_TP_PREFIX`).
-    pub fn glm5_tp_prefix_class(&self) -> bool {
-        self.glm5_tp_rt_for(0, self.layers.len()).is_some()
+    /// How this model's TP mixer sidecars cover the trunk (none, some or every layer).
+    pub fn glm5_tp_coverage(&self) -> crate::glm5_tp::Glm5TpCoverage {
+        crate::glm5_tp::glm5_tp_coverage(self.layers.iter().map(|layer| match &layer.mixer {
+            Mixer::Kda(la) => la.tp.is_some(),
+            Mixer::Mla(mla) => mla.tp.is_some(),
+            _ => false,
+        }))
     }
 
-    /// Loaded symmetric GLM TP rank count, independent of requested environment flags.
+    /// True when this model runs the glm5 TP walk on any layer, a partial `MEMRA_GLM5_TP` spec
+    /// included: the prefix-cache seams key their per-rank refusal on it, so an entry without
+    /// rank shards never restores into a cache whose peers hold state (sm_100a builds).
+    pub fn glm5_tp_prefix_class(&self) -> bool {
+        self.glm5_tp_coverage() != crate::glm5_tp::Glm5TpCoverage::Plain
+    }
+
+    /// Loaded GLM TP rank count when every trunk layer carries a TP mixer sidecar, read from the
+    /// loaded sidecars rather than the requested environment flags.
     pub fn glm5_tp_rank_count(&self) -> Option<usize> {
         self.glm5_tp_rt_for(0, self.layers.len())
             .map(|rt| rt.ranks())
@@ -3123,8 +3116,9 @@ impl HybridModel {
 
     /// Capture the per-rank state of a glm5 TP session for a prefix entry: every rank's KDA
     /// shard and every peer's latent plane, each cloned ON ITS OWN DEVICE (lane/glm5-tp-prefix,
-    /// 2026-09-07). `Ok(None)` when the model is not TP-sharded. `pos` is the cache boundary the
-    /// entry represents; a peer latent plane at a different length is a torn capture and errors.
+    /// 2026-09-07). `Ok(None)` when the model is not TP-sharded; an error when only some layers
+    /// are (`glm5_tp::glm5_tp_prefix_capture_shards`). `pos` is the cache boundary the entry
+    /// represents; a peer latent plane at a different length is a torn capture and errors.
     pub fn glm5_tp_prefix_snapshot(
         &self,
         e: &Engine,
@@ -3132,8 +3126,11 @@ impl HybridModel {
         pos: usize,
     ) -> Result<Option<crate::glm5_tp::Glm5TpPrefixShards>, Box<dyn std::error::Error>> {
         let _numeric = self.enter_numeric();
-        let Some(rt) = self.glm5_tp_rt_for(0, self.layers.len()) else {
+        if !crate::glm5_tp::glm5_tp_prefix_capture_shards(self.glm5_tp_coverage())? {
             return Ok(None);
+        }
+        let Some(rt) = self.glm5_tp_rt_for(0, self.layers.len()) else {
+            return Err("glm5-tp prefix: every layer is TP-sharded but no runtime resolved".into());
         };
         let n = self.layers.len();
         if cache.glm5_tp_recur.len() < n || cache.glm5_tp_latent_peer.len() < n {
@@ -3315,9 +3312,8 @@ impl HybridModel {
         Ok(())
     }
 
-    /// The TP runtime the layers in `lo..hi` were sharded with, if every one of them carries
-    /// symmetric glue; `None` means the range is plain or only partly armed, and the symmetric
-    /// walk must not be attempted over it.
+    /// The TP runtime the layers in `lo..hi` were sharded with, if every one of them carries a
+    /// TP mixer sidecar; `None` means the range is plain or only partly sharded.
     fn glm5_tp_rt_for(
         &self,
         lo: usize,
@@ -3326,9 +3322,6 @@ impl HybridModel {
         let mut rt: Option<std::sync::Arc<crate::glm5_tp::Glm5TpRt>> = None;
         for il in lo..hi {
             let layer = self.layers.get(il)?;
-            if layer.tp_glue.is_empty() {
-                return None;
-            }
             let this = match &layer.mixer {
                 Mixer::Kda(la) => la.tp.as_ref().map(|t| t.rt.clone()),
                 Mixer::Mla(mla) => mla.tp.as_ref().map(|t| t.rt.clone()),
@@ -3337,6 +3330,75 @@ impl HybridModel {
             rt.get_or_insert(this);
         }
         rt
+    }
+
+    /// [`Self::glm5_tp_rt_for`] when every layer in `lo..hi` also carries the symmetric glue
+    /// replicated at load (`HybridLayer::tp_glue`); `None` means the symmetric walk must not be
+    /// attempted over the range.
+    fn glm5_tp_glued_rt_for(
+        &self,
+        lo: usize,
+        hi: usize,
+    ) -> Option<std::sync::Arc<crate::glm5_tp::Glm5TpRt>> {
+        let rt = self.glm5_tp_rt_for(lo, hi)?;
+        (lo..hi)
+            .all(|il| self.layers.get(il).is_some_and(|l| !l.tp_glue.is_empty()))
+            .then_some(rt)
+    }
+
+    /// Say once, by name, why a TP range on the symmetric posture takes the root-orchestrated
+    /// walk: the split is off, a layer lacks its glue or its TP sidecar (a partial
+    /// `MEMRA_GLM5_TP` spec), or the device-signal link does not serve it (the same-device gate,
+    /// one card, or a transport other than `device-push`). Silent when the posture is off or no
+    /// layer in range is sharded.
+    fn glm5_tp_sym_note_decline(&self, lo: usize, hi: usize) {
+        use std::sync::atomic::Ordering;
+        if GLM5_TP_SYM_DECLINED.load(Ordering::Relaxed) {
+            return;
+        }
+        // The layer scan first: it is a pointer check per layer and no lock, so a model that
+        // carries no TP sidecar pays no environment read here on any token.
+        let sharded = |il: usize| match self.layers.get(il).map(|l| &l.mixer) {
+            Some(Mixer::Kda(la)) => la.tp.is_some(),
+            Some(Mixer::Mla(mla)) => mla.tp.is_some(),
+            _ => false,
+        };
+        if !(lo..hi).any(sharded) || !crate::glm5_tp::glm5_tp_symmetric_on() {
+            return;
+        }
+        let why = if !crate::glm5_tp::glm5_tp_expert_split_on() {
+            "the expert split is off (MEMRA_GLM5_TP_EXPERT_SPLIT=0)".to_string()
+        } else if self.glm5_tp_rt_for(lo, hi).is_none() {
+            format!("layers {lo}..{hi} are only partly TP-sharded (a partial MEMRA_GLM5_TP spec)")
+        } else if self.glm5_tp_glued_rt_for(lo, hi).is_none() {
+            "the layer glue was not replicated at load".to_string()
+        } else {
+            "the one-shot needs two devices armed on MEMRA_TP_TRANSPORT=device-push (a kernel \
+             peer store; the same-device gate never qualifies)"
+                .to_string()
+        };
+        if !GLM5_TP_SYM_DECLINED.swap(true, Ordering::Relaxed) {
+            eprintln!("[glm5-tp-sym] declined: {why}; taking the root-orchestrated walk");
+        }
+    }
+
+    /// Whether the symmetric TP-2 walk serves `lo..hi`: the posture is selected over the split,
+    /// every layer carries its glue, and the device-signal link serves two ranks
+    /// (`Glm5TpRt::ar_1stage_available`). The one rule the workspace routing, the walk itself and
+    /// the device sampler's eligibility all apply.
+    fn glm5_tp_sym_walk_rt(
+        &self,
+        lo: usize,
+        hi: usize,
+    ) -> Option<std::sync::Arc<crate::glm5_tp::Glm5TpRt>> {
+        // The loaded sidecars first: an unsharded range returns at its first layer without an
+        // environment read, so plain glm5 decode on sm_100a pays nothing for this rule.
+        let rt = self.glm5_tp_glued_rt_for(lo, hi)?;
+        (crate::glm5_tp::glm5_tp_symmetric_on()
+            && crate::glm5_tp::glm5_tp_expert_split_on()
+            && rt.ranks() == 2
+            && rt.ar_1stage_available())
+        .then_some(rt)
     }
 
     /// ONE layer of the symmetric walk, both ranks (lane/glm5-tp-sym-graph-20260907 pulled it
@@ -3885,7 +3947,7 @@ impl HybridModel {
         n_embd: usize,
         eps: f32,
     ) -> Result<Option<Q8Pair>, Box<dyn std::error::Error>> {
-        let want_q8 = crate::glm5_q8_fuse_attn_on()
+        let want_q8 = crate::glm5_q8_fuse_attn_default()
             && matches!(&layer.mixer, Mixer::Kda(la) if la.tp.is_none());
         crate::hyper::pre_t1_ws(e, topology, &hyper.attn, x, ws, n_embd)?;
         let attn_q8 = if want_q8 {
@@ -10103,8 +10165,19 @@ impl HybridModel {
         let q_lat = self.mla_post_absorb(e, mla, q_nope, t, il)?;
         let mut o_lat = e.uninit(t * nh * r)?;
         match &gathered {
-            Some((idx, slots)) => e.mla_attn_gathered(
-                &q_lat, q_pe, latent, idx, &mut o_lat, nh, r, dr, t, *slots, g.scale,
+            Some((idx, slots)) => e.mla_attn_gathered_scoped(
+                &q_lat,
+                q_pe,
+                latent,
+                idx,
+                &mut o_lat,
+                nh,
+                r,
+                dr,
+                t,
+                *slots,
+                g.scale,
+                crate::mla_ffi::MlaSplitScope::of_layer(mla.tp_shard),
             )?,
             None => e.mla_attn_absorbed(
                 &q_lat, q_pe, latent, &mut o_lat, nh, r, dr, t, t_kv, g.scale,
@@ -10127,8 +10200,9 @@ impl HybridModel {
         let (nh, dn, r) = (g.n_head, g.d_nope, g.kv_rank);
         let wk_b = Self::mla_split_operand(&mla.wk_b, "attn_k_b", il);
         let mut q_lat = e.uninit(t * nh * r)?;
-        // A glm5 TP head shard keeps the shipped absorb/decompress partition: the default-ON
-        // MEMRA_MLA_DECODE_SPLIT has no TP composition gate (mla_ffi::MlaSplitScope).
+        // A glm5 TP head shard never takes the default-ON MEMRA_MLA_DECODE_SPLIT, which has no TP
+        // composition gate; on sm_100a it takes the B200 arm's heads-scaled split instead
+        // (mla_ffi::MlaSplitScope, `mla_b200_decode_arm_on`).
         let scope = crate::mla_ffi::MlaSplitScope::of_layer(mla.tp_shard);
         // MEMRA_MLA_ABSORB_BF16: the BF16 copy of the plane on the served `_wp` partition;
         // falls through to the f32 dispatch when the door, the copy or the partition is absent.
@@ -10618,6 +10692,7 @@ impl HybridModel {
                 first_pos,
                 (d as f32).powf(-0.5),
                 (ig.heads as f32).powf(-0.5),
+                !rows_exact,
             )?;
             let mut idx = e.uninit_i32(t_q * width)?;
             e.mla_kpool_select(
@@ -10655,6 +10730,7 @@ impl HybridModel {
                     slot,
                     (d as f32).powf(-0.5),
                     (ig.heads as f32).powf(-0.5),
+                    !rows_exact,
                 )?;
                 let candidates = e.mla_kpool_candidates(&score, t, pools, p0, select_k)?;
                 let check = if crate::glm5_tp_indexer_split_check_on() {
@@ -10900,7 +10976,7 @@ impl HybridModel {
             return false;
         }
         let ready = (|| {
-            if !mla.tp_shard || tp.rt.ranks() != 2 || !tp.rt.ar_1stage_available() {
+            if !mla.tp_shard || !tp.rt.peer_link_available() {
                 return None;
             }
             let ig = mla.index.as_ref()?.geom;
@@ -10949,8 +11025,9 @@ impl HybridModel {
             static SAID: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
             if !SAID.swap(true, std::sync::atomic::Ordering::Relaxed) {
                 eprintln!(
-                    "[glm5-tp-indexer-split] refused: requires two peer-access shards, \
-                    matching resident indexers, >=2 pools, k<=2048; indexer=replicated"
+                    "[glm5-tp-indexer-split] refused: requires two devices armed on \
+                    MEMRA_TP_TRANSPORT=device-push, matching resident indexers, >=2 pools, \
+                    k<=2048; indexer=replicated"
                 );
             }
         }
@@ -11214,8 +11291,8 @@ impl HybridModel {
     /// The SYMMETRIC MLA mixer (lane/tp-symmetric-20260906): every rank already holds the layer
     /// input and the positions, so there is no fan-out; each rank runs its head shard over its own
     /// `h`, multiplies by its ROW-PARALLEL `wo`, and the two partial sums meet in ONE one-shot
-    /// all-reduce that leaves the mixer output on BOTH ranks. Requires the expert-split door (so
-    /// `wo` was K-sliced at load), the symmetric door, and a real two-device group.
+    /// all-reduce that leaves the mixer output on BOTH ranks. Requires the expert split (so `wo`
+    /// was K-sliced at load), the symmetric posture, and the device-signal link.
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn mla_tp_attn_cached_sym(
         &self,
@@ -11242,8 +11319,8 @@ impl HybridModel {
             || !rt.ar_1stage_available()
         {
             return Err(
-                "mla_tp_attn_cached_sym: needs the expert-split and symmetric doors and a \
-                        real two-device group"
+                "mla_tp_attn_cached_sym: needs the expert split, the symmetric posture and two \
+                 devices on device-push"
                     .into(),
             );
         }
@@ -11412,12 +11489,12 @@ impl HybridModel {
                 let wo = if r == 0 { &mla.wo } else { &tp.peers[r - 1].wo };
                 partials.push(dev.matmul(wo, a, t)?);
             }
-            // MEMRA_TP_AR_1STAGE: this is a COLLECTIVE, not a hop. Done as a push plus a fold it
-            // costs 4 launches and 8 cross-context event operations; the one-shot is two launches
-            // and no events. It leaves the sum on both ranks, which is a superset of what this
-            // site needs and is what a symmetric walk will want next.
+            // The one-shot under the symmetric posture (`Glm5TpRt::ar_1stage_available`): this is
+            // a COLLECTIVE, not a hop. Done as a push plus a fold it costs 4 launches and 8
+            // cross-context event operations; the one-shot is two launches and no events. It
+            // leaves the sum on both ranks, a superset of what this site needs.
             let mut y = partials.remove(0);
-            // The door is asked BEFORE the peer's partial is taken out of `partials`. Taking it
+            // The link is asked BEFORE the peer's partial is taken out of `partials`. Taking it
             // first and putting it back on decline drops the peer's contribution entirely
             // whenever the one-shot declines, which is exactly what the same-device gate does:
             // the gate caught that as max_rel 2.9e2 with the tape broken.
@@ -15111,7 +15188,7 @@ impl HybridModel {
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
         let n_embd = cfg.n_embd as usize;
         let lim_shexp = cfg.clamp_shexp_at(il as u32);
-        // Prefill chunks take the grouped prime when the door is on (host sigmoid routing, the
+        // Prefill chunks take the grouped prime on sm_100a builds (host sigmoid routing, the
         // plain grouped arm's admission); otherwise, and at decode, the slot walk below.
         if prefill && t > MOE_DEV_MAX_T && crate::glm5_tp_split_grouped_prime_on() {
             let moe = cfg
@@ -15125,23 +15202,17 @@ impl HybridModel {
             let logits = Self::moe_router_logits(e, m, z, t, cfg)?;
             let (sel_all, w_all) =
                 Self::moe_route_sigmoid_cfg(e, &logits, t, n_expert, n_used, m, sig)?;
-            // DOOR `MEMRA_GLM5_TP_SPLIT_PRIME_HOSTDIET` (lane/glm5-tp-prime-router-20260907,
-            // default OFF): the 256k profile on the pair put 16.2 of root's 74.8 s prime in ONE
-            // gap class, after the z fan-out push and before root's first MoE kernel: the host
-            // built the identical expert CSR once PER RANK, uploaded it, and launched the peer
-            // before root. With the door on the shared expert is launched BEFORE the routing
-            // table is built (its GEMMs cover the host time), the CSR is built once with a
-            // counting sort and uploaded to each rank, and root's pass is issued first (root is
-            // the critical path; the peer has slack). Byte-identical: the same kernels see the
-            // same operands in the same per-device order; only host work and launch order move.
-            let host_diet = crate::glm5_tp_split_prime_hostdiet_level();
-            let shexp_early = if host_diet > 0 {
-                Self::moe_shexp_compute(e, m, z, zq8, t, cfg, lim_shexp)?
-            } else {
-                None
-            };
+            // THE HOST DIET (lane/glm5-tp-prime-router-20260907, the default with the grouped
+            // prime since 2026-11-04): the 256k profile on the pair put 16.2 of root's 74.8 s
+            // prime in ONE gap class, after the z fan-out push and before root's first MoE
+            // kernel, because the host built the identical expert CSR once PER RANK. So the
+            // shared expert is launched BEFORE the routing table is built (its GEMMs cover the
+            // host time) and the CSR is built once with a counting sort and uploaded to each
+            // rank through a pinned arena. Byte-identical to the undieted grouped prime: the
+            // same kernels see the same operands in the same per-device order.
+            let shexp_early = Self::moe_shexp_compute(e, m, z, zq8, t, cfg, lim_shexp)?;
             if let Some(mut out) = Self::moe_ffn_glm5_tp_split_grouped_prime(
-                e, m, xs, z, &sel_all, &w_all, t, cfg, il, host_diet,
+                e, m, xs, z, &sel_all, &w_all, t, cfg, il,
             )? {
                 match shexp_early {
                     Some((sh, g)) => {
@@ -15296,7 +15367,11 @@ impl HybridModel {
             return Err("moe_ffn_glm5_tp_split_sym: this arm is two ranks".into());
         }
         if !rt.ar_1stage_available() {
-            return Err("moe_ffn_glm5_tp_split_sym: needs a real two-device group".into());
+            return Err(
+                "moe_ffn_glm5_tp_split_sym: needs the symmetric posture and two devices on \
+                 device-push"
+                    .into(),
+            );
         }
         let peer = &rt.peers[0];
         let mut out0 = e.zeros(t * n_embd)?;
@@ -15979,7 +16054,7 @@ impl HybridModel {
         Ok(Some(out))
     }
 
-    /// The TP-SPLIT GROUPED PRIME (`MEMRA_GLM5_TP_SPLIT_GROUPED_PRIME`, default OFF): the EP
+    /// The TP-SPLIT GROUPED PRIME (the default on sm_100a builds since 2026-11-04): the EP
     /// grouped prime's per-rank program run by BOTH ranks over ALL routed pairs against the
     /// split slabs (gate/up row halves, down column halves, pointer tables minted at arm time),
     /// so each rank's scatter is a `[t, n_embd]` partial and the root adds the peer's, the same
@@ -15998,7 +16073,6 @@ impl HybridModel {
         t: usize,
         cfg: &ModelConfig,
         il: u16,
-        host_diet: u8,
     ) -> Result<Option<CudaSlice<f32>>, Box<dyn std::error::Error>> {
         use std::sync::atomic::Ordering;
         let moe = cfg
@@ -16049,9 +16123,8 @@ impl HybridModel {
         // 0.0 — the scatter fully overwrites, so partials add cleanly on root).
         // The expert CSR over ALL pairs (every rank holds every expert at half width, so the
         // table is the same on every rank): local pair index l == global pair index p, in
-        // ascending order (per-token slot order == ascending l). The door builds it ONCE per
-        // call; the door-off arm keeps the per-rank build (same values, the bucket order is
-        // the counting sort's order: expert-major, l ascending).
+        // ascending order (per-token slot order == ascending l). Built ONCE per call with a
+        // counting sort (expert-major, l ascending) and uploaded to every rank.
         struct SplitCsr {
             ex_ids: Vec<i32>,
             ex_off: Vec<i32>,
@@ -16136,7 +16209,7 @@ impl HybridModel {
                 n_active,
             }))
         };
-        let shared_csr = if host_diet > 0 { build_csr()? } else { None };
+        let shared_csr = build_csr()?;
         // Page-locked staging for the table uploads (the measured gap: 85% pageable HtoD).
         // One arena per device ordinal, sized for the largest chunk (t x n_used pairs, nine
         // tables), rewound per layer-call after a host wait on the previous call's copies.
@@ -16151,16 +16224,8 @@ impl HybridModel {
                          ptr_row: &CudaSlice<u64>,
                          z_dev: &CudaSlice<f32>|
          -> Result<Option<CudaSlice<f32>>, Box<dyn std::error::Error>> {
-            let own;
-            let csr = match shared_csr.as_ref() {
-                Some(c) => c,
-                None => match build_csr()? {
-                    Some(c) => {
-                        own = c;
-                        &own
-                    }
-                    None => return Ok(None),
-                },
+            let Some(csr) = shared_csr.as_ref() else {
+                return Ok(None);
             };
             let n_owned = csr.n_owned;
             let n_active = csr.n_active;
@@ -16170,40 +16235,16 @@ impl HybridModel {
             if arenas.len() <= ord {
                 arenas.resize_with(ord + 1, || None);
             }
-            let mut arena = if host_diet > 0 {
-                let slot = &mut arenas[ord];
-                let need = slot.as_ref().is_none_or(|a| a.capacity() < arena_bytes);
-                if need {
-                    *slot = Some(crate::PinnedHtodArena::new(arena_bytes)?);
-                }
-                let a = slot.as_mut().expect("just filled");
-                a.begin()?;
-                Some(a)
-            } else {
-                None
-            };
-            let up_i32 = |dev: &Engine,
-                          arena: &mut Option<&mut crate::PinnedHtodArena>,
-                          v: &[i32]|
-             -> Result<CudaSlice<i32>, Box<dyn std::error::Error>> {
-                match arena.as_deref_mut() {
-                    Some(a) => dev.htod_i32_staged(a, v),
-                    None => dev.htod_i32(v),
-                }
-            };
-            let up_f32 = |dev: &Engine,
-                          arena: &mut Option<&mut crate::PinnedHtodArena>,
-                          v: &[f32]|
-             -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
-                match arena.as_deref_mut() {
-                    Some(a) => dev.htod_f32_staged(a, v),
-                    None => dev.htod(v),
-                }
-            };
-            let exi = up_i32(dev, &mut arena, &csr.ex_ids)?;
-            let exo = up_i32(dev, &mut arena, ex_off)?;
-            let exp_d = up_i32(dev, &mut arena, &csr.ex_pairs)?;
-            let csr_tok_d = up_i32(dev, &mut arena, &csr.csr_tok)?;
+            let slot = &mut arenas[ord];
+            if slot.as_ref().is_none_or(|a| a.capacity() < arena_bytes) {
+                *slot = Some(crate::PinnedHtodArena::new(arena_bytes)?);
+            }
+            let arena = slot.as_mut().expect("just filled");
+            arena.begin()?;
+            let exi = dev.htod_i32_staged(arena, &csr.ex_ids)?;
+            let exo = dev.htod_i32_staged(arena, ex_off)?;
+            let exp_d = dev.htod_i32_staged(arena, &csr.ex_pairs)?;
+            let csr_tok_d = dev.htod_i32_staged(arena, &csr.csr_tok)?;
 
             // GATE/UP grouped GEMMs over the rank slab, CSR order end to end.
             let (z16, zs) = dev.moe_f16g_act(z_dev, Some(&csr_tok_d), n_embd, n_owned)?;
@@ -16224,7 +16265,7 @@ impl HybridModel {
                 m.gate_exps.row_bytes,
             )?;
             if let Some(mg) = csr.mg.as_ref() {
-                let mg_d = up_f32(dev, &mut arena, mg)?;
+                let mg_d = dev.htod_f32_staged(arena, mg)?;
                 dev.scale_rows(&mut g, &mg_d, half_ff, n_owned)?;
             }
             let mut u = dev.moe_f16_grouped(
@@ -16244,7 +16285,7 @@ impl HybridModel {
                 m.up_exps.row_bytes,
             )?;
             if let Some(mu) = csr.mu.as_ref() {
-                let mu_d = up_f32(dev, &mut arena, mu)?;
+                let mu_d = dev.htod_f32_staged(arena, mu)?;
                 dev.scale_rows(&mut u, &mu_d, half_ff, n_owned)?;
             }
 
@@ -16286,12 +16327,10 @@ impl HybridModel {
                 xs.down_row_bytes,
             )?;
             let y_local = dev.rows_permute(&d_csr, &exp_d, n_owned, n_embd)?;
-            let pw = up_f32(dev, &mut arena, &csr.local_wd)?;
-            let toff_d = up_i32(dev, &mut arena, &csr.toff)?;
-            let tids_d = up_i32(dev, &mut arena, &csr.tids)?;
-            if let Some(a) = arena {
-                a.end(&dev.stream())?;
-            }
+            let pw = dev.htod_f32_staged(arena, &csr.local_wd)?;
+            let toff_d = dev.htod_i32_staged(arena, &csr.toff)?;
+            let tids_d = dev.htod_i32_staged(arena, &csr.tids)?;
+            arena.end(&dev.stream())?;
             let mut partial = dev.uninit(t * n_embd)?; // scatter fully overwrites
             dev.moe_pairs_scatter(&y_local, &pw, &toff_d, &tids_d, &mut partial, t, n_embd)?;
             Ok(Some(partial))
@@ -16304,14 +16343,9 @@ impl HybridModel {
         let ranks = xs.ranks();
         let hop = xs.rt.hop(e);
         let mut peer_partials: Vec<Option<CudaSlice<f32>>> = (0..ranks).map(|_| None).collect();
-        // Host-diet LEVEL 2: root FIRST. Measured at 256k on the pair (tpwalk27): root first
-        // is 9.6% SLOWER (80.65 vs 73.56 s) because the peer's pass then starts after root's
-        // launches and the combine waits on it; level 1 keeps the peer-first order.
-        let root_first = if host_diet >= 2 {
-            Some(rank_pass(e, 0, &xs.ptr_rows[0], z)?)
-        } else {
-            None
-        };
+        // Peer first, root second: issuing root's pass first measured 9.6% SLOWER at 256k on
+        // the pair (tpwalk27, 80.65 vs 73.56 s), because the peer's pass then starts after
+        // root's launches and the combine waits on it.
         for r in 1..ranks {
             let rank_owns_pairs = true; // every rank holds every expert
             if !rank_owns_pairs {
@@ -16325,10 +16359,7 @@ impl HybridModel {
             e.bind_runtime_device(e.ctx().ordinal() as i32)?;
             peer_partials[r] = res?;
         }
-        let root_partial = match root_first {
-            Some(p) => p,
-            None => rank_pass(e, 0, &xs.ptr_rows[0], z)?,
-        };
+        let root_partial = rank_pass(e, 0, &xs.ptr_rows[0], z)?;
 
         // Root combine: root partial + bulk-returned peer partials (SWAP POINT 2, the named
         // transport shape). One partial add per contributing rank — the same reassociation
@@ -16355,10 +16386,9 @@ impl HybridModel {
             eprintln!(
                 "[glm5-tp-split-grouped-prime] execute layer={il} tokens={t} \
                  provenance=split-half-slabs router=sigmoid-host-oracle epilogue=pre-clamped \
-                 combine=rank-partial-add transport={} host_diet={} performance_claim=false \
+                 combine=rank-partial-add transport={} performance_claim=false \
                  (logged once per layer)",
                 hop.transport.name(),
-                host_diet,
             );
         }
         Ok(Some(out))
@@ -18419,8 +18449,8 @@ impl HybridModel {
             us[j] = m.up_exps.macro_scale(ex);
             wv[j] = w[j] * m.down_exps.macro_scale(ex);
         }
-        // MEMRA_B200_MATVEC_ARM occupancy arm (lane/b200-matvec-occupancy-20260902, sm_100a
-        // only, default OFF): the warp-packed `_w4` twins are bit-identical per (o,j)/(o) to
+        // B200 matvec occupancy arm (lane/b200-matvec-occupancy-20260902, the sm_100a default
+        // since 2026-11-04): the warp-packed `_w4` twins are bit-identical per (o,j)/(o) to
         // the shipped kernels below — packing only changes which block/warp computes an
         // output, never the per-output arithmetic order. See `b200_matvec_arm_on` and
         // docs/FLAGS.md.

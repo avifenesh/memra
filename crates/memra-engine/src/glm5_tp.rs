@@ -183,10 +183,55 @@ pub struct Glm5TpRt {
     /// The peer-pull ordering primitives — `Some` only on the peer-pull arm, and only after
     /// its byte-integrity ladder passed.
     link: Option<crate::tp_transport::PeerPullLink>,
-    /// The one-shot all-reduce's per-rank state (`MEMRA_TP_AR_1STAGE`), built on first use.
+    /// The device-signal link's per-rank state (the one-shot all-reduce and the TP indexer's
+    /// candidate exchange), built on first use.
     /// Behind a mutex because the runtime is shared through an `Arc` and the walk takes it by
     /// `&self`; the lock is uncontended at batch 1 and costs nothing against a 20 us collective.
     ar: std::sync::Mutex<Option<crate::tp_ar::ArLink>>,
+}
+
+/// Whether a TP runtime of `ranks` ranks armed on `transport` may run the device-signal link
+/// ([`crate::tp_ar::ArLink`]). Pure, so the law is unit-tested without a device.
+///
+/// The link's kernels read the peer's buffers and write the peer's signal block from inside a
+/// kernel, so they need peer access granted both ways AND proof that an SM-issued peer store
+/// lands. Only `device-push` gives both: its arm grants peer access and its byte ladder runs the
+/// push primitive, a kernel store into the peer (`tp_transport::arm_transport`).
+/// `host-canonical` grants no peer access at all, and `peer-pull`'s ladder proves
+/// consumer-issued copies, not kernel stores: on a direct-attach host the driver can stage
+/// SM-issued peer access through system memory while copies look healthy. Two contexts on one
+/// card cannot do a kernel peer store either, so the same-device gate never qualifies.
+pub(crate) fn peer_link_admits(
+    ranks: usize,
+    same_device_gate: bool,
+    transport: crate::tp_transport::TpTransport,
+) -> bool {
+    ranks == 2 && !same_device_gate && transport == crate::tp_transport::TpTransport::DevicePush
+}
+
+/// The transport the glm5 TP walk arms when no transport name is set. Pure, so the law is
+/// unit-tested without a device or the process environment.
+///
+/// The symmetric posture on a real group takes `device-push`. Its crossings are the one-shot
+/// all-reduce, kernel loads and stores on the peer's memory, which only `device-push` admits
+/// ([`peer_link_admits`]: its ladder alone proves an SM-issued peer store), and the darklanes
+/// TP-2 launcher armed it with the walk, so the composed-posture receipts (host diet, TP prefix,
+/// device sampler) ran on it. Anything else takes the build's default
+/// (`tp_transport::default_transport`): `peer-pull` on sm_100a, whose receipt is the
+/// root-orchestrated walk against the host bounce, and `host-canonical` elsewhere. That is also
+/// the sm_100a transport with `MEMRA_GLM5_TP_SYMMETRIC=0` or whole experts. The same-device gate
+/// never takes `device-push` here: two
+/// contexts on one card cannot do a kernel peer store, and its arms name their transport.
+pub(crate) fn unset_transport_for(
+    build_default: crate::tp_transport::TpTransport,
+    symmetric: bool,
+    same_device_gate: bool,
+) -> crate::tp_transport::TpTransport {
+    if symmetric && !same_device_gate {
+        crate::tp_transport::TpTransport::DevicePush
+    } else {
+        build_default
+    }
 }
 
 impl Glm5TpRt {
@@ -261,20 +306,30 @@ impl Glm5TpRt {
         })
     }
 
-    /// One-shot all-reduce over `x[r]`, `x[r]` living on rank `r`'s engine, when
-    /// `MEMRA_TP_AR_1STAGE` is armed and the runtime is a real two-device group. Returns `false`
-    /// when it declined, in which case the caller's own return-to-root still owes the work.
-    ///
-    /// WHY THIS EXISTS SEPARATELY from the transport arms: those move bytes hop by hop, and the
-    /// walk's two REDUCE sites are not hops, they are collectives. Doing them as a push plus a
-    /// fold costs 4 launches and 8 cross-context event operations, which measured 20-26 us for
-    /// 16 KB on a 956 GB/s fabric. The one-shot is two launches and no events.
-    /// Whether [`Self::ar_1stage`] can serve this runtime at all: the door, a real two-device
-    /// group, and not the same-device gate. Split out so a caller can ask BEFORE it rearranges the
+    /// Whether the device-signal link ([`crate::tp_ar::ArLink`]) can serve this runtime
+    /// ([`peer_link_admits`]): a real two-device group armed on `device-push`. The TP indexer's
+    /// prime candidate exchange and the one-shot all-reduce ([`Self::ar_1stage_available`]) run
+    /// over it.
+    pub fn peer_link_available(&self) -> bool {
+        peer_link_admits(self.ranks(), self.same_device_gate, self.transport)
+    }
+
+    /// Whether [`Self::ar_1stage`] serves this runtime: the symmetric posture is selected
+    /// ([`glm5_tp_symmetric_on`]) and the device-signal link is available
+    /// ([`Self::peer_link_available`]). Split out so a caller can ask BEFORE it rearranges the
     /// buffers it would hand over, which is the shape that stops a decline from silently dropping
     /// a rank's contribution.
+    ///
+    /// WHY THE ONE-SHOT EXISTS SEPARATELY from the transport arms: those move bytes hop by hop,
+    /// and the walk's REDUCE sites are not hops, they are collectives. Doing them as a push plus
+    /// a fold costs 4 launches and 8 cross-context event operations, which measured 20-26 us for
+    /// 16 KB on a 956 GB/s fabric. The one-shot is two launches and no events. It is the
+    /// symmetric walk's crossing primitive, and with that posture selected it also serves the
+    /// root-orchestrated reduce sites the prime chunks take (the composed posture every TP-2
+    /// sm_100a receipt measured). Bit-identical to the return-to-root sum there: tpwalk2 read the
+    /// same tape with and without it (darklanes `research/glm5-b200-mint-20260904/LANE.md`).
     pub fn ar_1stage_available(&self) -> bool {
-        tp_ar_1stage_on() && self.ranks() == 2 && !self.same_device_gate
+        glm5_tp_symmetric_on() && self.peer_link_available()
     }
 
     /// Size the one-shot's stage buffers for `n` floats BEFORE a graph capture records a walk
@@ -315,15 +370,19 @@ impl Glm5TpRt {
         Ok(true)
     }
 
-    /// Device-side candidate exchange, using the same ordered link as the TP graph pieces.
+    /// Device-side candidate exchange over the device-signal link, the same link the one-shot
+    /// all-reduce and the symmetric graph pieces use.
     pub(crate) fn indexer_gather(
         &self,
         root: &Engine,
         inputs: &[&CudaSlice<i32>],
         n: usize,
     ) -> Result<Vec<CudaSlice<i32>>, Box<dyn std::error::Error>> {
-        if !self.ar_1stage_available() {
-            return Err("TP indexer exchange requires a real peer-access two-device link".into());
+        if !self.peer_link_available() {
+            return Err(
+                "TP indexer exchange requires two devices armed on MEMRA_TP_TRANSPORT=device-push"
+                    .into(),
+            );
         }
         let engines = [root, &self.peers[0]];
         let mut guard = self.ar.lock().map_err(|_| "TP indexer link poisoned")?;
@@ -371,6 +430,7 @@ impl Glm5TpRt {
             .all_reduce_1stage_hcpost(&engines, inputs, residuals, posts, combs, outs, hc, d)?;
         Ok(true)
     }
+
     /// Rank count of this runtime (root + peers).
     pub fn ranks(&self) -> usize {
         self.peers.len() + 1
@@ -398,7 +458,12 @@ impl Glm5TpRt {
         // lane/glm5-tp-transport and lane/glm5-composition banked them, and `armed_flag` is
         // whichever of `MEMRA_TP_TRANSPORT` / `MEMRA_GLM5_TP_TRANSPORT` the operator actually
         // set, so a peer-access or ladder refusal names their flag.
-        let (transport, armed_flag) = crate::tp_transport::transport_env()?;
+        let unset = unset_transport_for(
+            crate::tp_transport::default_transport(),
+            glm5_tp_symmetric_on(),
+            self.same_device_gate,
+        );
+        let (transport, armed_flag) = crate::tp_transport::transport_env_or(unset)?;
         let engines: Vec<&Engine> = std::iter::once(root).chain(self.peers.iter()).collect();
         let link = crate::tp_transport::arm_transport(
             transport,
@@ -725,6 +790,19 @@ pub fn prepare_glm5_tp_load(
     let rt = Arc::new(rt);
     let layers: std::collections::BTreeSet<usize> = specs.iter().map(|s| s.layer).collect();
     let ep_map = load_glm5_ep_map(view, &layers, ranks)?;
+    // A placement map places WHOLE experts; the split has none to place, and `arm_moe_ep` would
+    // drop the map without a word. Since the split became the sm_100a default that pairing is
+    // reachable from a naked command, so it refuses here, before any shard exists.
+    if ep_map.is_some() && glm5_tp_expert_split_on() {
+        return Err(format!(
+            "the placement map (MEMRA_EP_MAP / MEMRA_GLM5_EP_MAP) places whole experts, but \
+             this load shards every expert across the \
+             ranks (the expert split, the default on {} builds); set \
+             MEMRA_GLM5_TP_EXPERT_SPLIT=0 to place whole experts, or unset the map",
+            crate::BUILT_CUDA_ARCH,
+        )
+        .into());
+    }
     let (mut kda_n, mut mla_n, mut moe_n) = (0usize, 0usize, 0usize);
     for &il in &layers {
         match view.layer_class[il] {
@@ -1131,13 +1209,13 @@ pub(crate) fn shard_kda_layer(
             // COLUMN-parallel wo: rank r owns OUT rows [r*hh, (r+1)*hh) over the FULL qkv
             // input — consumed by the join over the gathered gated tensor, never by
             // kda_core_gated itself.
-            // COLUMN-parallel wo (default): out rows over the FULL gathered qkv, so the walk
-            // must all-gather every rank's channels before the multiply and concat the out-row
-            // bands after it. Under the SYMMETRIC door wo is sharded by input columns matching
-            // this rank's own channels instead, so it multiplies only what it just computed and
-            // produces a full-width partial sum: the gather and the concat both disappear and ONE
-            // reduction replaces them. Named class, same reason as the MLA and expert splits: the
-            // K reduction runs two ways instead of one pass.
+            // COLUMN-parallel wo (the root-orchestrated walk): out rows over the FULL gathered
+            // qkv, so the walk must all-gather every rank's channels before the multiply and
+            // concat the out-row bands after it. Under the SYMMETRIC posture wo is sharded by
+            // input columns matching this rank's own channels instead, so it multiplies only what
+            // it just computed and produces a full-width partial sum: the gather and the concat
+            // both disappear and ONE reduction replaces them. Named class, same reason as the MLA
+            // and expert splits: the K reduction runs two ways instead of one pass.
             wo: if glm5_tp_symmetric_on() {
                 shard_cols(e, dst, &la.wo, wr * ql..(wr + 1) * ql)?
             } else {
@@ -1287,7 +1365,7 @@ fn kda_tp_core(
         .map(|g| g.as_ref().expect("filled above"))
         .collect();
 
-    // ROW-PARALLEL wo (`MEMRA_GLM5_TP_SYMMETRIC` K-sliced it at load): each rank multiplies only
+    // ROW-PARALLEL wo (the symmetric posture K-sliced it at load): each rank multiplies only
     // its own channels and produces a FULL-WIDTH partial sum, so the all-gather and the concat
     // both go and one reduction replaces them. This branch is what makes the root-orchestrated
     // walk CORRECT whenever the symmetric walk declines (the same-device gate, any single-card
@@ -1345,7 +1423,7 @@ fn kda_tp_core(
 /// become zero here and one reduction, against the root-orchestrated path's fan-out, all-gather
 /// and concat.
 ///
-/// Requires the symmetric door (so `wo` was K-sliced at load) and a real two-device group (the
+/// Requires the symmetric posture (so `wo` was K-sliced at load) and the device-signal link (the
 /// one-shot needs a kernel peer store). Named class: not byte-identical to the unsharded walk.
 #[allow(clippy::too_many_arguments)] // mirrors the kda entry contract shape
 pub(crate) fn kda_tp_partials_sym(
@@ -1369,7 +1447,7 @@ pub(crate) fn kda_tp_partials_sym(
     }
     if !glm5_tp_symmetric_on() || !rt.ar_1stage_available() {
         return Err(
-            "kda_tp_cached_sym: needs MEMRA_GLM5_TP_SYMMETRIC and a real two-device group".into(),
+            "kda_tp_cached_sym: needs the symmetric posture and two devices on device-push".into(),
         );
     }
     let states = ensure_kda_tp_state(e, rt, la_root, cache, il)?;
@@ -2038,16 +2116,43 @@ pub(crate) fn replicate_layer_glue(
     Ok(out)
 }
 
-/// `MEMRA_GLM5_TP_SYMMETRIC=1` (lane/tp-symmetric-20260906, default OFF in code; the darklanes
-/// TP-2 launcher sets it, docs/FLAGS.md): at load, replicate every TP layer's glue to the peers
-/// and shard the KDA `wo` by input columns (row-parallel); at decode, route the walk through
-/// the symmetric path (`hyper_range_decode_ws_sym`: `kda_tp_partials_sym`,
+/// The symmetric TP-2 posture (lane/tp-symmetric-20260906): at load, replicate every TP layer's
+/// glue to the peers and shard the KDA `wo` by input columns (row-parallel); at decode, route
+/// the walk through the symmetric path (`hyper_range_decode_ws_sym`: `kda_tp_partials_sym`,
 /// `mla_tp_attn_cached_sym` and `moe_ffn_glm5_tp_split_sym`, each ending in a one-shot
-/// all-reduce). The walk needs
-/// `MEMRA_GLM5_TP_EXPERT_SPLIT` and a real two-device group with `MEMRA_TP_AR_1STAGE`;
-/// without them it declines loudly to the root-orchestrated walk.
+/// all-reduce), recorded as per-rank CUDA graphs on sm_100a (`glm5_tp_sym_graph`). The walk
+/// needs the expert split and the device-signal link ([`Glm5TpRt::ar_1stage_available`]: two
+/// devices armed on `device-push`); without them it declines loudly to the root-orchestrated
+/// walk.
+///
+/// The default over the expert split on sm_100a builds since 2026-11-04: on the 2x B200 pair the
+/// eager walk ran at 54.46 / 54.93 tok/s and the graphed walk at 74.65 / 74.87 (tpwalk4 v2, two
+/// reps, tapes equal across reps), against 34.84 / 39.43 for the root-orchestrated split walk an
+/// hour earlier (tpwalk2), and the graph door read 53.30 / 53.38 eager against 82.58 / 82.18
+/// graphed with its MLA halves inside one run (tpwalk3 v5, tapes equal) (darklanes
+/// `research/glm5-b200-mint-20260904/LANE.md`; docs/decisions/GLM5-B200-DOORS.md). Every other
+/// build keeps the root-orchestrated walk: no receipt there. `MEMRA_GLM5_TP_SYMMETRIC` picks
+/// the posture explicitly, `1` on and `0` off, on any build: the one-card rig gate reaches the
+/// posture only through `1` (arm Y), and its other arms pin `0` so the sm_100a default cannot
+/// turn them into symmetric arms.
 pub fn glm5_tp_symmetric_on() -> bool {
-    std::env::var("MEMRA_GLM5_TP_SYMMETRIC").as_deref() == Ok("1")
+    symmetric_for(
+        crate::BUILT_CUDA_ARCH,
+        std::env::var("MEMRA_GLM5_TP_SYMMETRIC").ok().as_deref(),
+        glm5_tp_expert_split_on(),
+    )
+}
+
+/// [`glm5_tp_symmetric_on`] over an explicit build, value and expert placement. Pure, so the
+/// law is unit-tested without touching the process environment. Unset takes the posture only
+/// over the split on sm_100a: a whole-expert load (`MEMRA_GLM5_TP_EXPERT_SPLIT=0`) keeps its
+/// own program there, column-parallel KDA `wo` included, since the walk cannot run on it.
+pub(crate) fn symmetric_for(arch: &str, value: Option<&str>, expert_split: bool) -> bool {
+    match value.map(str::trim) {
+        Some("1") => true,
+        Some("0") => false,
+        _ => arch == "100a" && expert_split,
+    }
 }
 
 // ------------------------------------------------------------------------------------------
@@ -2093,25 +2198,15 @@ impl Glm5TpSplitExps {
     }
 }
 
-/// `MEMRA_TP_AR_1STAGE=1` (lane/tp-ar-1stage-20260906, default OFF in code): the walk's two
-/// REDUCE sites take the one-shot all-reduce (`memra_tp_ar_1stage`) instead of a return-to-root
-/// hop. The darklanes TP-2 launcher sets it, and the symmetric walk runs only with it on
-/// ([`Glm5TpRt::ar_1stage_available`]); keeping it is the owner's call (docs/FLAGS.md).
-///
-/// WHY. A reduce done as a push plus a fold costs 4 kernel launches and 8 cross-context CUDA event
-/// operations, which measured 20-26 us for 16 KB on a pair whose fabric moves 956 GB/s: host
-/// overhead, not bandwidth. vLLM's `cross_device_reduce_1stage` is ONE kernel per rank and NO
-/// events, synchronising through flags in the peer's memory and reading both inputs directly. This
-/// is that shape. Requires a real two-device group; it declines on the same-device gate, where a
-/// kernel peer store is undefined.
-pub fn tp_ar_1stage_on() -> bool {
-    std::env::var("MEMRA_TP_AR_1STAGE").as_deref() == Ok("1")
-}
-
-/// `MEMRA_GLM5_TP_EXPERT_SPLIT=1` (lane/tp-expert-split-20260906, default OFF in code): shard
-/// every expert across the TP ranks instead of assigning whole experts. The darklanes TP-2
-/// launcher sets it, and the symmetric walk runs only with it on; keeping it is the owner's
-/// call (docs/FLAGS.md).
+/// The expert placement of the TP walk (lane/tp-expert-split-20260906): shard every expert
+/// across the ranks (the SPLIT) instead of assigning whole experts. The split is the default
+/// on sm_100a builds since 2026-11-04: on the 2x B200 pair it decoded at 34.84 / 39.43 tok/s
+/// against whole-expert EP's 20.29 / 20.32 (tpwalk2, same window, two reps), and the TP split
+/// grouped prime with its host diet, the sm_100a prefill default, runs only inside it
+/// (docs/decisions/GLM5-B200-DOORS.md). Every other build keeps whole-expert EP: no receipt
+/// there. `MEMRA_GLM5_TP_EXPERT_SPLIT` picks the placement explicitly, `1` the split and `0`
+/// whole experts, on any build: the one-card rig gate reaches the split through it (arm S),
+/// and the gate's whole-expert arms pin `0`.
 ///
 /// NOT byte-identical, and the split is where: `gate`/`up` are row splits, so every output
 /// element stays one full-K dot over the same bytes and that half is bit-identical, as is the
@@ -2119,7 +2214,20 @@ pub fn tp_ar_1stage_on() -> bool {
 /// K range and the ranks' partials are added, which is a 2-way split of a reduction the
 /// unsharded walk does in one pass. Named class, gated as one.
 pub fn glm5_tp_expert_split_on() -> bool {
-    std::env::var("MEMRA_GLM5_TP_EXPERT_SPLIT").as_deref() == Ok("1")
+    expert_split_for(
+        crate::BUILT_CUDA_ARCH,
+        std::env::var("MEMRA_GLM5_TP_EXPERT_SPLIT").ok().as_deref(),
+    )
+}
+
+/// [`glm5_tp_expert_split_on`] over an explicit build and value. Pure, so the law is
+/// unit-tested without touching the process environment.
+pub(crate) fn expert_split_for(arch: &str, value: Option<&str>) -> bool {
+    match value.map(str::trim) {
+        Some("1") => true,
+        Some("0") => false,
+        _ => arch == "100a",
+    }
 }
 
 static SPLIT_MARKED: AtomicBool = AtomicBool::new(false);
@@ -2213,7 +2321,7 @@ pub(crate) fn shard_moe_layer_split(
 }
 
 // ------------------------------------------------------------------------------------------
-// Prefix entries on the TP walk (lane/glm5-tp-prefix, 2026-09-07, `MEMRA_GLM5_TP_PREFIX`)
+// Prefix entries on the TP walk (lane/glm5-tp-prefix, 2026-09-07, sm_100a builds)
 // ------------------------------------------------------------------------------------------
 
 /// The per-rank state a prefix entry must carry for a glm5 session on the TP-2 walk, over and
@@ -2225,6 +2333,52 @@ pub(crate) fn shard_moe_layer_split(
 /// it belongs to, so a restore is one on-device copy per rank and no bytes cross the fabric.
 /// One rank's KDA shard state as a prefix entry holds it: `(conv_state, ssm_state)`.
 pub type KdaShardState = (CudaSlice<f32>, CudaSlice<f32>);
+
+/// How a loaded model's TP mixer sidecars cover its trunk. The `MEMRA_GLM5_TP` grammar admits
+/// partial ranges (`0-2@0,1;4@0,1`), and the prefix seams must tell those apart from a plain
+/// model: a partly sharded cache still holds per-rank planes on its TP layers.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Glm5TpCoverage {
+    /// No layer carries a TP sidecar.
+    Plain,
+    /// Some layers do and some do not.
+    Partial,
+    /// Every trunk layer does.
+    All,
+}
+
+/// Classify per-layer "carries a TP sidecar" flags. An empty trunk is `Plain`.
+pub fn glm5_tp_coverage(layer_is_tp: impl IntoIterator<Item = bool>) -> Glm5TpCoverage {
+    let (mut tp, mut plain) = (false, false);
+    for is_tp in layer_is_tp {
+        if is_tp {
+            tp = true;
+        } else {
+            plain = true;
+        }
+    }
+    match (tp, plain) {
+        (false, _) => Glm5TpCoverage::Plain,
+        (true, true) => Glm5TpCoverage::Partial,
+        (true, false) => Glm5TpCoverage::All,
+    }
+}
+
+/// What a prefix capture does with a model of this coverage: `Ok(false)` captures no rank
+/// shards (a plain model), `Ok(true)` captures every rank's shards (an all-layer spec), and a
+/// partial spec REFUSES. The per-rank snapshot keys on one runtime over the whole trunk, so a
+/// partial spec used to mint an entry without shards, and the restore then admitted it as a
+/// plain entry: rank 0 restored, every peer left at stale or zero state.
+pub fn glm5_tp_prefix_capture_shards(coverage: Glm5TpCoverage) -> Result<bool, &'static str> {
+    match coverage {
+        Glm5TpCoverage::Plain => Ok(false),
+        Glm5TpCoverage::All => Ok(true),
+        Glm5TpCoverage::Partial => Err(
+            "glm5-tp prefix: only some trunk layers are TP-sharded (a partial MEMRA_GLM5_TP \
+             spec); prefix entries carry rank shards only when every layer is sharded",
+        ),
+    }
+}
 
 pub struct Glm5TpPrefixShards {
     /// Per layer, per rank (index 0 = root): the KDA shard's `(conv_state, ssm_state)`.
@@ -2238,6 +2392,108 @@ pub struct Glm5TpPrefixShards {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The device-signal link (the TP indexer's prime candidate exchange) needs a transport
+    /// whose arm granted peer access AND proved an SM-issued peer store: `device-push` alone.
+    /// `host-canonical` maps no peer memory, so a kernel peer read there is an illegal address
+    /// or a barrier trap; `peer-pull` proves copies only.
+    /// A partial `MEMRA_GLM5_TP` spec is TP-class for the prefix seams and refuses capture; only
+    /// an all-layer spec carries rank shards.
+    #[test]
+    fn prefix_capture_refuses_a_partial_tp_spec() {
+        assert_eq!(glm5_tp_coverage([false; 0]), Glm5TpCoverage::Plain);
+        assert_eq!(glm5_tp_coverage([false, false]), Glm5TpCoverage::Plain);
+        assert_eq!(glm5_tp_coverage([true, true, true]), Glm5TpCoverage::All);
+        // `0-2@0,1;4@0,1` over a five-layer trunk: layer 3 stays plain.
+        let partial = glm5_tp_coverage([true, true, true, false, true]);
+        assert_eq!(partial, Glm5TpCoverage::Partial);
+        assert!(glm5_tp_prefix_capture_shards(partial).is_err());
+        assert_eq!(
+            glm5_tp_prefix_capture_shards(Glm5TpCoverage::Plain),
+            Ok(false)
+        );
+        assert_eq!(glm5_tp_prefix_capture_shards(Glm5TpCoverage::All), Ok(true));
+    }
+
+    /// The expert split is the sm_100a placement default; `0`/`1` pick explicitly on any build.
+    #[test]
+    fn expert_split_defaults_on_sm100a_and_honors_explicit_values() {
+        assert!(expert_split_for("100a", None));
+        assert!(expert_split_for("100a", Some("")));
+        assert!(!expert_split_for("100a", Some("0")));
+        assert!(expert_split_for("100a", Some("1")));
+        for arch in ["120a", "90a", "89"] {
+            assert!(!expert_split_for(arch, None));
+            assert!(!expert_split_for(arch, Some("0")));
+            assert!(expert_split_for(arch, Some("1")));
+        }
+    }
+
+    /// The symmetric posture is the sm_100a default over the split only; `0`/`1` pick explicitly
+    /// on any build, whatever the placement.
+    #[test]
+    fn symmetric_defaults_on_sm100a_over_the_split_and_honors_explicit_values() {
+        assert!(symmetric_for("100a", None, true));
+        assert!(symmetric_for("100a", Some(""), true));
+        assert!(!symmetric_for("100a", None, false));
+        assert!(!symmetric_for("100a", Some("0"), true));
+        for arch in ["100a", "120a", "90a", "89"] {
+            for split in [true, false] {
+                assert!(symmetric_for(arch, Some("1"), split));
+                assert!(!symmetric_for(arch, Some("0"), split));
+            }
+        }
+        for arch in ["120a", "90a", "89"] {
+            assert!(!symmetric_for(arch, None, true));
+            assert!(!symmetric_for(arch, None, false));
+        }
+    }
+
+    /// With no transport named, the symmetric posture on a real group arms `device-push`, the
+    /// one arm its link admits; everything else keeps the build's default.
+    #[test]
+    fn unset_transport_follows_the_posture() {
+        use crate::tp_transport::TpTransport::{DevicePush, HostCanonical, PeerPull};
+        for build_default in [HostCanonical, PeerPull] {
+            assert_eq!(unset_transport_for(build_default, true, false), DevicePush);
+            assert_eq!(
+                unset_transport_for(build_default, false, false),
+                build_default
+            );
+            // The same-device gate never takes device-push from the default.
+            assert_eq!(
+                unset_transport_for(build_default, true, true),
+                build_default
+            );
+            assert_eq!(
+                unset_transport_for(build_default, false, true),
+                build_default
+            );
+        }
+        // And what it arms is the transport the link admits.
+        assert!(peer_link_admits(
+            2,
+            false,
+            unset_transport_for(PeerPull, true, false)
+        ));
+    }
+
+    #[test]
+    fn peer_link_needs_device_push_on_two_devices() {
+        use crate::tp_transport::TpTransport::{DevicePush, HostCanonical, PeerPull};
+        assert!(peer_link_admits(2, false, DevicePush));
+        assert!(!peer_link_admits(2, false, HostCanonical));
+        assert!(!peer_link_admits(2, false, PeerPull));
+        // The same-device gate never qualifies, whatever it armed.
+        for transport in [HostCanonical, PeerPull, DevicePush] {
+            assert!(!peer_link_admits(2, true, transport));
+        }
+        // The link is two ranks.
+        for transport in [HostCanonical, PeerPull, DevicePush] {
+            assert!(!peer_link_admits(4, false, transport));
+            assert!(!peer_link_admits(1, false, transport));
+        }
+    }
 
     /// The red arm `tp_expert_split` carries, on the `wo` K slice: Q8_0 at in_f 96 (row_bytes
     /// 102) halves into 48 columns, 1.5 blocks, that still divide into 51 whole bytes. A

@@ -1,12 +1,20 @@
-//! Per-rank CUDA graphs for the SYMMETRIC TP walk (door `MEMRA_GLM5_TP_SYM_GRAPH`, default OFF,
-//! lane/glm5-tp-sym-graph-20260907).
+//! Per-rank CUDA graphs for the SYMMETRIC TP walk (lane/glm5-tp-sym-graph-20260907), with the
+//! MLA layers split into graphed halves around an eager middle. The default on sm_100a builds
+//! whenever the walk engages, since 2026-11-04, with no switch ([`on`]): on the 2x B200 pair the
+//! eager walk read 53.30 / 53.38 tok/s, the KDA runs graphed 71.11 / 78.76, and with the MLA
+//! halves 82.58 / 82.18, every arm's 160-token tape equal to the eager walk's (tpwalk3 v5, two
+//! reps; darklanes `research/glm5-b200-mint-20260904/LANE.md`, ledger
+//! `VERDICT:glm5-tp-sym-graph-byte-identical-1.65x`). Other builds run the walk eager: no receipt
+//! there. The eager arm stays reachable for a tape check through
+//! `MEMRA_GLM5_GRAPH_NO_CAPTURE=1`, which every glm5 graph door declines on
+//! (`glm5_graph_process_refusal`).
 //!
 //! WHY. tpwalk2 on the 2x B200 pair (2026-09-06, main with the split, the one-shot and the
 //! device-routed vrows chain): pp2 59.8 tok/s, tp2s 34.8, tp2s1 (one-shot) 34.6. The split
 //! halved every rank's device work and the reduce cost did not move the number: the wall is the
 //! HOST, one thread issuing both ranks' launches across two contexts, eagerly, while the PP-2
 //! control replays its KDA runs as CUDA graphs (`glm5_decode_graph`, ON since 2026-09-04, which
-//! refuses TP-sharded layers by construction). This door gives the symmetric walk the same
+//! refuses TP-sharded layers by construction). This module gives the symmetric walk the same
 //! mechanism: every contiguous run of KDA layers is recorded ONCE PER RANK as a graph on that
 //! rank's own stream, and a token replays two graphs per run instead of issuing ~40 launches per
 //! layer per rank.
@@ -28,10 +36,10 @@
 //!
 //! THE KDA PING-PONG. `kda_cached` swaps the recurrent state buffers on the HOST after every
 //! KDA layer; a replay runs no host code, so the device alternates between the two pointer
-//! assignments token by token. Like the plain door, every run is captured TWICE back to back
+//! assignments token by token. Like the plain graph door, every run is captured TWICE back to back
 //! (capture records, it does not execute, but the host swaps run on both passes and leave the
 //! fields where they started). After every replay the host swap is MIRRORED for each graphed
-//! KDA layer on every rank, as the plain door does, so `glm5_tp_recur` always names the buffer
+//! KDA layer on every rank, as the plain graph door does, so `glm5_tp_recur` always names the buffer
 //! the device last wrote: an eager reader between graphed tokens (a t>1 prime on a reuse-pool
 //! continuation, the suffix prime, a prefix snapshot, the eager fallback) reads the current
 //! state. The phase a token replays is not a parity counter: it is read from the planes, by
@@ -40,11 +48,11 @@
 //! ran and the next replay follows; a plane that matches neither phase (re-seated buffers) or
 //! layers that disagree latch the state EAGER before anything of the token has run.
 //!
-//! PRECONDITIONS are the plain door's process-level ones (`glm5_graph_process_refusal`): with
+//! PRECONDITIONS are the plain graph door's process-level ones (`glm5_graph_process_refusal`): with
 //! `MEMRA_HTOD_DIET` off the shared expert uploads a pageable constant per MoE layer, which a
 //! capture records as a host pointer and replays as stale bytes; the bare arm of tpwalk4 v2
 //! (2026-09-07 00:56Z) decoded garbage from token 2 that way, tape silently different while the
-//! posture arm (diet on) was byte-identical. The door declines by name instead.
+//! posture arm (diet on) was byte-identical. The graph declines by name instead.
 //!
 //! ALLOCATIONS INSIDE THE RECORDED RUN become graph memory nodes (the per-layer temporaries drop
 //! before the run ends); the one-shot's stage buffers are pre-sized before the first capture so
@@ -61,8 +69,10 @@ use memra_kv::Cache;
 
 type Res<T> = Result<T, Box<dyn std::error::Error>>;
 
+/// Whether the symmetric walk records its per-rank graphs: on sm_100a builds, always (the
+/// receipt's card; module doc). Keyed on `BUILT_CUDA_ARCH` like the other per-device defaults.
 pub fn on() -> bool {
-    std::env::var("MEMRA_GLM5_TP_SYM_GRAPH").as_deref() == Ok("1")
+    crate::BUILT_CUDA_ARCH == "100a"
 }
 
 /// Replays of a whole graphed token (both ranks): the engagement receipt.
@@ -97,10 +107,6 @@ enum Item {
     Eager(usize),
 }
 
-pub fn mla_pieces_on() -> bool {
-    std::env::var("MEMRA_GLM5_TP_SYM_GRAPH_MLA").as_deref() != Ok("0")
-}
-
 // SAFETY (the same reading as `glm5_decode_graph`'s pool): the raw CUgraph/CUgraphExec handles
 // inside `CudaGraph` are CONTEXT-bound, not thread-bound; every launch here enters the owning
 // context first (`enter_main`), and the session cache moves between worker threads only between
@@ -129,10 +135,13 @@ pub(crate) struct SymGraphState {
 }
 
 /// The plan over `[lo, hi)`: TP-sharded KDA+MoE layers are whole segments; TP-sharded MLA+MoE
-/// layers split into PRE / eager middle / FFN when the segment workspace seam is on; everything
-/// else (the dense layers, MLA without the seam) stays a whole eager layer.
+/// layers split into PRE / eager middle / FFN when the segment workspace seam is on (the sm_100a
+/// default; its `MEMRA_MLA_SEG_WS=0` rollback keeps them whole); everything else (the dense
+/// layers without their peer replica, MLA without the seam) stays a whole eager layer. Keeping
+/// every MLA layer whole with the seam on read 71.11 / 78.76 tok/s against the halves' 82.58 /
+/// 82.18 (tpwalk3 v5), so that arm has no switch.
 fn plan_items(m: &HybridModel, lo: usize, hi: usize) -> Vec<Item> {
-    let mla_split = mla_pieces_on() && Engine::mla_seg_ws_on();
+    let mla_split = Engine::mla_seg_ws_on();
     let mut out = Vec::with_capacity(hi.saturating_sub(lo) * 3);
     for il in lo..hi {
         let moe = matches!(&m.layers[il].ffn, crate::hybrid::Ffn::Moe(_));

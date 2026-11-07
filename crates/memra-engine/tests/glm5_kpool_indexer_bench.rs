@@ -231,6 +231,7 @@ fn bench_kpool_indexer_stages() {
                     ctx - t_q,
                     qk_scale,
                     head_scale,
+                    false,
                 )
                 .expect("score");
             });

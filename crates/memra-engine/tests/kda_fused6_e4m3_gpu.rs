@@ -111,7 +111,7 @@ fn e4m3_fused_six_is_bit_identical_to_six_separate_launches() {
     }
 
     // PRE-QUANTIZED PAIR ARM (lane/launch-collapse-20260906): the walk hands the six-group
-    // launcher the norm's q8_1 pair (`MEMRA_GLM5_Q8_FUSE_ATTN`) instead of quantizing `x` again,
+    // launcher the norm's q8_1 pair (the attention-norm q8_1 fuse) instead of quantizing `x` again,
     // through `e4m3_fused6_into`. That entry must read the pair it is given: fed the same pair
     // the reference used it must match the six launches bit for bit, and fed a pair from a
     // DIFFERENT activation it must move (otherwise it quantizes `x` on its own and the fold is
