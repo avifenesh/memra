@@ -3665,6 +3665,31 @@ const FP_MIN_SEGMENTS: usize = 3;
 /// once with `MEMRA_AFFINITY=0`, and requires identical per-turn `text_sha`. Disabling the pool
 /// outright (`MEMRA_REUSE_POOL=0`) would be a different comparison: it also drops the
 /// token/text-prefix resumes, so a divergence could not be attributed to affinity.
+/// Where a continuation-pool resume of a parked plain session may start (memra#1091). The parked
+/// rows past the session's own prompt were written by decode, and its parked end is off the prime
+/// grid in general: a recurrent (GDN) cache resumed there primes its suffix from state a cold prime
+/// never computes (the grid law, docs/SERVING.md), and a later turn can leave the cold text. A
+/// recurrent cache therefore resumes only at its grid checkpoint `ckpt_pos`, with at least
+/// `PRIME_MIN_T` prompt rows to prime past it; `None` means the request primes cold. An
+/// attention-only cache resumes where it stands.
+fn plain_pool_resume_at(
+    fed_len: usize,
+    ckpt_pos: Option<usize>,
+    prompt_len: usize,
+    recurrent: bool,
+) -> Option<usize> {
+    if !recurrent {
+        return Some(fed_len);
+    }
+    let pos = ckpt_pos?;
+    (pos <= fed_len && prompt_len >= pos + memra_engine::hybrid_forward::PRIME_MIN_T).then_some(pos)
+}
+
+/// Does this cache carry recurrent (GDN conv/ssm) state, the state the grid law governs?
+fn cache_carries_recurrent(cache: &Cache) -> bool {
+    cache.recur.iter().any(Option::is_some)
+}
+
 /// The plain pool's grid rewind (DAY41 1.1): restore the entry to its checkpoint in place (the
 /// affinity path's restore), truncate `fed` to it and carry the checkpoint's logits. `None` (the
 /// entry dropped, the request primes cold) when there is no checkpoint, the ring lapped it, the
@@ -3686,9 +3711,12 @@ fn grid_rewind_plain(
         return None;
     }
     let pos = ckpt.pos;
-    if pos > committed || prompt.len() <= pos || prompt[..pos] != e.fed[..pos] {
+    if plain_pool_resume_at(committed, Some(pos), prompt.len(), true) != Some(pos)
+        || prompt[..pos] != e.fed[..pos]
+    {
         eprintln!(
-            "[kv-reuse] grid-rewind: plain declined (prompt diverges before checkpoint {pos}); cold"
+            "[kv-reuse] grid-rewind: plain declined (prompt diverges before checkpoint {pos} or \
+             extends it by fewer than the prime floor); cold"
         );
         return None;
     }
@@ -36725,10 +36753,18 @@ fn admit(
     {
         (reused, exact_carry) = exact_resume_plain(engine, lm, e, &prompt, &req.model);
     }
-    if resume_grid_rewind_on()
+    // THE GRID LAW ON THE POOL (memra#1091): a recurrent cache's parked end holds decode-written,
+    // off-grid state, so its exact-extension resume always rewinds to the grid checkpoint
+    // (`plain_pool_resume_at`), and no usable checkpoint primes cold. MEMRA_RESUME_GRID_REWIND
+    // still forces the rewind for every cache; MEMRA_RESUME_EXACT keeps its own exact resume.
+    if !resume_exact_on()
         && let Some(e) = reused.take()
     {
-        reused = grid_rewind_plain(engine, lm, e, &prompt, &req.model);
+        reused = if resume_grid_rewind_on() || cache_carries_recurrent(&e.cache) {
+            grid_rewind_plain(engine, lm, e, &prompt, &req.model)
+        } else {
+            Some(e)
+        };
     }
     if reused.is_some() {
         reuse_metrics.continuation_hits += 1;
@@ -51719,6 +51755,50 @@ mod tests {
         assert!(!squashed.contains("active.iter().any(|s| s.prime_service.pending)"));
     }
 
+    /// memra#1091: the continuation pool obeys the restore grid law, in the default test set. The
+    /// shape is avifenesh-74's 2026-11-07 receipt: turn 2's 3,109-token prompt plus 4 decoded
+    /// rows parked at 3,113 (off the grid) with its checkpoint at 3,072, and turn 3 (3,144
+    /// tokens) extends it exactly.
+    #[test]
+    fn the_continuation_pool_resume_obeys_the_restore_grid_law() {
+        // A recurrent cache rewinds to its grid checkpoint, never resumes on the decoded rows.
+        assert_eq!(
+            super::plain_pool_resume_at(3_113, Some(3_072), 3_144, true),
+            Some(3_072)
+        );
+        // No checkpoint, or fewer than PRIME_MIN_T rows past it: the request primes cold.
+        assert_eq!(super::plain_pool_resume_at(3_113, None, 3_144, true), None);
+        assert_eq!(
+            super::plain_pool_resume_at(3_113, Some(3_072), 3_087, true),
+            None
+        );
+        assert_eq!(
+            super::plain_pool_resume_at(3_113, Some(3_072), 3_088, true),
+            Some(3_072)
+        );
+        // A checkpoint past the committed rows is not a resume point.
+        assert_eq!(
+            super::plain_pool_resume_at(3_000, Some(3_072), 3_144, true),
+            None
+        );
+        // An attention-only cache resumes where it stands.
+        assert_eq!(
+            super::plain_pool_resume_at(3_113, None, 3_144, false),
+            Some(3_113)
+        );
+        // The admit site routes every recurrent hit through the rewind, and the rewind decides by
+        // the same rule.
+        let src = include_str!("worker.rs");
+        let production = &src[..src.find("\nmod tests {").unwrap()];
+        let squashed = production.split_whitespace().collect::<Vec<_>>().join(" ");
+        assert!(squashed.contains(
+            "reused = if resume_grid_rewind_on() || cache_carries_recurrent(&e.cache) { grid_rewind_plain(engine, lm, e, &prompt, &req.model) } else { Some(e) };"
+        ));
+        assert!(squashed.contains(
+            "if plain_pool_resume_at(committed, Some(pos), prompt.len(), true) != Some(pos) || prompt[..pos] != e.fed[..pos]"
+        ));
+    }
+
     /// memra#1088: the device-side restore grid law, behaviourally, in the default test set.
     /// The shape is the 2026-11-07 receipt's: turn 1's DFlash entry ended at its 2,992-token
     /// prompt, off the 32-token prime grid, and turn 2 (3,109 tokens) restored it plain. Each
@@ -65458,7 +65538,7 @@ mod tests {
         assert!(live.contains("|| plain_ckpt_nominatable(&prompt, &|t| lm.tok.token_is_control(t)) || resume_grid_rewind_on())"));
         assert!(live.contains("|| plain_ckpt_nominatable(&suffix, &|t| lm.tok.token_is_control(t)) || resume_grid_rewind_on())"));
         assert!(live.contains(
-            "if resume_grid_rewind_on() && let Some(e) = reused.take() { reused = grid_rewind_plain(engine, lm, e, &prompt, &req.model); }"
+            "if !resume_exact_on() && let Some(e) = reused.take() { reused = if resume_grid_rewind_on() || cache_carries_recurrent(&e.cache) { grid_rewind_plain(engine, lm, e, &prompt, &req.model) } else { Some(e) }; }"
         ));
         assert!(live.contains("Some(SpecResumeProbe::Exact(index)) if resume_grid_rewind_on() =>"));
         assert!(
@@ -65467,7 +65547,9 @@ mod tests {
             )
         );
         // The rewind precedes the hit count, so a declined rewind is not a hit.
-        let rewind = live.find("reused = grid_rewind_plain(").unwrap();
+        let rewind = live
+            .find("{ grid_rewind_plain(engine, lm, e, &prompt, &req.model) } else { Some(e) };")
+            .unwrap();
         let hit = live[rewind..]
             .find("reuse_metrics.continuation_hits += 1;")
             .unwrap();
@@ -65595,8 +65677,9 @@ mod tests {
         let live = &worker[..worker.find("mod tests").expect("the test module exists")];
         let call = format!("resume_exact_on{}", "()");
         // The definition, 2 park enqueues, the plain hit, the spec exact key, the spec exact and
-        // text arms, the plain arming pair, the spec arming pair.
-        assert_eq!(live.matches(call.as_str()).count(), 11);
+        // text arms, the plain arming pair, the spec arming pair, and the plain hit's grid-law
+        // rewind, which steps aside for the exact resume (memra#1091).
+        assert_eq!(live.matches(call.as_str()).count(), 12);
         assert!(live.contains("let exact_at = (resume_exact_on() && affinity_enabled()"));
         assert!(live.contains("let ckpt_at = if !resume_exact_on() && affinity_enabled()"));
         assert!(live.contains("let boundary = if !resume_exact_on() && !suffix.is_empty()"));

@@ -3034,11 +3034,17 @@ binary and green on the fix on the local RTX 5090, green on the fix on one RTX P
 Blackwell (`research/spill-b-20260919/DAY18.md`, the plain seed; `DAY19.md`, both capture
 sites, with `tools/spec-on-cache-hit-gate.sh qwen` ALL GREEN on the fix and red on the
 pre-fix binary's accounting). What the grid law still does NOT promise:
-verbatim-extension continuation resumes keep decode-computed rows whose arithmetic a cold
-prefill never reproduces (`primepath --hist` measures that arm: bounded logit perturbation,
-flips only at near-ties). That path carries the documented cached-hit-vs-fresh-prime near-tie
-contract above; the valid assertions everywhere are per-program determinism, grid-aligned
-byte-identity, and confinement + near-tie-only flips across programs.
+verbatim-extension continuation resumes of an attention-only cache keep decode-computed rows
+whose arithmetic a cold prefill never reproduces (`primepath --hist` measures that arm: bounded
+logit perturbation, flips only at near-ties). That path carries the documented
+cached-hit-vs-fresh-prime near-tie contract above; the valid assertions everywhere are
+per-program determinism, grid-aligned byte-identity, and confinement + near-tie-only flips across
+programs. A RECURRENT cache in the plain continuation pool no longer resumes on its parked end
+(memra#1091): that end holds decode-written rows and sits off the grid, and on the local RTX 5090
+at the default a three-turn chat whose second turn had room for 256 tokens resumed at 3,113 of
+3,144 tokens and left the cold text. The resume rewinds to the session's grid checkpoint and
+primes the rest (`plain_pool_resume_at`, at least `PRIME_MIN_T` rows), or primes cold when there
+is none, with or without `MEMRA_KV_PARK_COMPACT`.
 
 **The DFlash capture and the hit site follow the same law since 2026-11-07.** The DFlash prompt-end
 capture was the one capture site left off the grid: with no render-stable cut armed, the tail (or
