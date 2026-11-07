@@ -420,7 +420,8 @@ each states itself at boot.
   before dropping; a memory defer past `MEMRA_ADMIT_DEFER_BUDGET_MS` (8 s) answers 429 with
   `Retry-After`; and every headroom reading books what still-priming sessions owe, with a
   prefill OOM on a session that emitted nothing parked and requeued. Boot line
-  `[admit-mem] door=ON` or `door=OFF`, with the reason in parentheses.
+  `[admit-mem] door=ON` or `door=OFF`, with the reason in parentheses. This one also covers the
+  Max-Q, which carries its own receipt (2026-11-07, `HardwareTarget::is_pro6000_maxq`).
   [Decision](decisions/ADMIT-BY-MEMORY-DEFAULT.md).
 - **Direct handoff export.** The host-tier deploy handoff export (`MEMRA_KV_HOST_HANDOFF`)
   writes its file with `O_DIRECT` through one aligned 4 MiB buffer, then `fdatasync`, where every

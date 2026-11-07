@@ -1,7 +1,8 @@
-# Memory-shaped admission is the default on the RTX PRO 6000 Workstation Edition (2026-11-04)
+# Memory-shaped admission is the default on the RTX PRO 6000 Workstation Edition, full power and Max-Q (2026-11-04, Max-Q 2026-11-07)
 
-**Chosen:** on the full-power RTX PRO 6000 Blackwell Workstation Edition, a batched worker that
-serves that one card admits by memory, in four parts. (a) A request that bounds neither `max_tokens` nor `max_ctx` is
+**Chosen:** on the full-power RTX PRO 6000 Blackwell Workstation Edition and, since 2026-11-07, the
+Max-Q Workstation Edition (each from its own cell), a batched worker that serves that one card
+admits by memory, in four parts. (a) A request that bounds neither `max_tokens` nor `max_ctx` is
 charged `prompt + 32768 + 8` (clamped to the trained context) instead of the `MEMRA_CTX`
 envelope, and 32768 is its output budget. The charge never exceeds the envelope the unarmed
 program would charge, so a `MEMRA_CTX` below the open output still bounds a naked request (its
@@ -13,7 +14,8 @@ prefill workspace and the capped prefix seeds that still-priming sessions owe, a
 OOM on a session that emitted nothing parks and requeues. `MEMRA_ADMIT_BY_MEMORY` is deleted;
 `MEMRA_ADMIT_OPEN_OUTPUT_TOKENS` and `MEMRA_ADMIT_DEFER_BUDGET_MS` stay as runtime parameters. The
 boot line `[admit-mem] door=ON` or `door=OFF` states the arm and its reason. Code:
-`MemoryAdmitConfig::for_deployment` in `crates/memra-server/src/admit_memory.rs`.
+`MemoryAdmitConfig::for_deployment` in `crates/memra-server/src/admit_memory.rs` (the card keys:
+`HardwareTarget::is_pro6000_workstation` and `is_pro6000_maxq`).
 
 **Rejected:**
 
@@ -31,8 +33,8 @@ boot line `[admit-mem] door=ON` or `door=OFF` states the arm and its reason. Cod
   the deciding cell ran one card, and no cell measured the open-output cap, the bounded defer or
   the pending-prime booking across devices. It keeps the unarmed program until one does (Step-3.7
   PP on a pair is the first such cell).
-- The Max-Q and Server editions, the B200 route the mechanism was first built for and every other
-  card: no cell in this repo. A launcher that set the retired name is refused at boot; that
+- The Server Edition, the B200 route the mechanism was first built for and every other card: no
+  cell in this repo. A launcher that set the retired name is refused at boot; that
   route needs its own cell before it arms.
 - Keeping the env door as a rollback seam. Owner, 2026-11-04: winners with positive receipts
   become defaults keyed to the card each receipt came from, and their switches go.
@@ -46,6 +48,15 @@ V-TRUNC band and conservation, V-ALLOC, V-RETRY, V-OOM, G-BOOK, PARK) passes on 
 in both orders, in an 80 to 92 s window against `off`'s 150 to 152 s; `on2048` and `on8192` admit
 64 of 64. The seed cap bound on every armed boot. No panic, respawn, fatal or engine error on any
 boot.
+
+The Max-Q row is DAY52 section 2 (`research/spill-b-20260919/pro-maxq-day52/`), pre-registered
+before any Max-Q boot: the same S40 program, model, arms, orders and readers on one RTX PRO 6000
+Blackwell Max-Q Workstation Edition beside training on the box's other cards, its two orders in two
+windows. `V-DOOR ... -> PASS` with no boot excluded; every term passes on all eight boots, and
+`on32768` again admits 46 of the burst and refuses 18 with a typed 429 in both orders. The card held
+300 W for about three minutes of each order before the box's cap timer returned it to 280 W; no term
+reads power. Greedy outputs equal the Workstation receipt on 414 of 416 sequential rows (a reading
+with no bound). The open-output value stays 32768: R3 reads no boot.
 
 **Not measured:** the envelope cap. Every cell ran at a `MEMRA_CTX` wider than its open output
 (65,536 on the 5090, the checkpoint's 262,144 on the target card), where the cap changes nothing.
