@@ -39280,8 +39280,9 @@ fn admit(
     // prefix restore (the cold-drafter conversion included) consumed every reuse carrier.
     // DSPARK MULTI-TURN RESUME probe (lane/dflash2-session-reuse, 2026-08-25): the MTP
     // pool's EXACT and TEXT extension tiers, applied to parked dspark sessions. Since memra#1093
-    // no recurrent session parks (every DFlash target is a GDN hybrid) and the probe refuses a
-    // recurrent hit, so on shipped targets it only ever declines. Runs only
+    // no recurrent session parks (every DFlash target is a GDN hybrid), so on shipped targets the
+    // pool stays empty and the probe never runs; its grid arm refuses a recurrent hit as a
+    // backstop. Runs only
     // when no other carrier took the request (no spec resume, no gemma arm, no prefix
     // restore, no plain-reuse cache) and applies the SAME sampler predicate — a parked
     // session's philox stream position and penalty window were shaped by its sampler.

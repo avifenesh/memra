@@ -3047,9 +3047,11 @@ primes the rest (`plain_pool_resume_at`, at least `PRIME_MIN_T` rows), or primes
 is none, with or without `MEMRA_KV_PARK_COMPACT`. Sessions with no plain checkpoint by default now
 prime such a turn cold: glm5_next hyper trunks (eager-only, latent planes), prompts with no turn
 markers and no `session_id`/`user`, DFlash sessions demoted to plain under load, and boots with
-`MEMRA_AFFINITY=0` or PP host-bounce; that is the accepted price of the exact resume. On the RTX
-5090 that price is about 0.1 s of TTFT on a 3k-token turn: the prefix cache's on-grid seed serves
-the bulk (`research/pool-resume-cost-20261107/`). The DSpark pool follows the same law since
+`MEMRA_AFFINITY=0` or PP host-bounce; that is the accepted price of the exact resume. Measured on
+the RTX 5090 for the default chat and for `MEMRA_AFFINITY=0`, it is about 0.1 s of TTFT on a
+3k-token turn, because the prefix cache's on-grid seed serves the bulk
+(`research/pool-resume-cost-20261107/`); glm5_next and demoted DFlash sessions are not measured.
+The DSpark pool follows the same law since
 memra#1093: a DFlash session's rows past its prompt were written by verify and decode and it keeps
 no grid checkpoint, so every DFlash target (all are GDN hybrids) frees the session at retire
 instead of parking it, and the probe refuses a recurrent hit as a backstop. At the RTX 5090 default
