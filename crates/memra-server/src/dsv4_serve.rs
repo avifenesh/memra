@@ -9,10 +9,12 @@
 //! surface (OpenAI routes, template render inputs, DSML tools parse, streaming SSE)
 //! is untouched: this module only implements the worker side of the contract.
 //!
-//! Routes inside a request, decided by `sampler_cfg` + drafter residency:
-//!   T == 0, drafter resident  -> `spec_greedy_batched_stream` (identity-gated driver)
+//! Routes inside a request, decided by `sampler_cfg` + drafter residency. Every prompt, cold or
+//! restored, primes through the chunked device transactions (`MEMRA_DSV4_PREFILL_CHUNK`, which
+//! load refuses at 0 on the matrix program), and the spec drivers continue from those logits:
+//!   T == 0, drafter resident  -> `spec_greedy_batched_stream_restored` (identity-gated driver)
 //!   T == 0, trunk only        -> plain greedy decode loop
-//!   T  > 0, drafter resident  -> `spec_sampled_batched_stream` (rung-2 gated driver)
+//!   T  > 0, drafter resident  -> `spec_sampled_batched_pen_restored` (rung-2 gated driver)
 //!   T  > 0, trunk only        -> plain sampled loop (position-keyed seeded draws)
 //! The confidence window stays behind its env seam (`MEMRA_DSV4_VT`, default off —
 //! the flip is the owner's ratification call, one env line when it lands).
@@ -51,12 +53,15 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::Instant;
 
-/// Cheap boot-time probe; the engine loader re-validates every field strictly.
+/// Cheap boot-time probe; the engine loader re-validates every field strictly. It resolves the
+/// effective `model_type` (text_config over top level, then `architectures[0]`) and maps it the
+/// way `Dsv4Model::open` does, so a config that only mentions `deepseek_v4` elsewhere (a base
+/// model name, a nested field) loads through `HybridModel` rather than a refusing dsv4 thread.
 pub fn is_dsv4_dir(dir: &Path) -> bool {
-    match std::fs::read_to_string(dir.join("config.json")) {
-        Ok(s) => s.contains("\"model_type\"") && s.contains("\"deepseek_v4\""),
-        Err(_) => false,
-    }
+    std::fs::read_to_string(dir.join("config.json"))
+        .ok()
+        .and_then(|s| memra_gguf::config::HfConfig::try_parse(&s).ok())
+        .is_some_and(|cfg| memra_gguf::config::Arch::from_hf_model_type(&cfg.model_type).is_dsv4())
 }
 
 /// What a checkpoint's `config.json` says about its context, as three distinct facts rather than
@@ -449,8 +454,9 @@ impl Dsv4Model {
 /// The DEFAULT moved from 0 (monolithic) to the kernel width for the same
 /// reason plus a harder one: the matrix expert program is the loaded default now
 /// and it REFUSES a zero chunk, so leaving this at 0 would mean the default
-/// server configuration refusing to boot. `0` stays selectable and stays the
-/// monolithic rollback, and it is still refused in combination with matrix.
+/// server configuration refusing to boot. `0` still parses here, and `load`
+/// refuses it: the served route keeps no monolithic arm, so the monolithic prime
+/// is reachable only from the reference executor's gates.
 fn resolve_prefill_chunk(raw: Option<&str>, max_seq: usize) -> Result<usize, String> {
     let chunk = match raw {
         None => DSV4_BATCH_WIDTH_MAX.min(max_seq),
@@ -469,10 +475,6 @@ fn resolve_prefill_chunk(raw: Option<&str>, max_seq: usize) -> Result<usize, Str
         ));
     }
     Ok(chunk)
-}
-
-fn use_chunked_prefill(chunk: usize, prompt_tokens: usize) -> bool {
-    chunk > 0 && prompt_tokens > chunk
 }
 
 struct ParkedEntry {
@@ -885,11 +887,19 @@ pub fn load(name: &str, dir: &Path, tok: Arc<Tokenizer>) -> Result<Dsv4Model, St
     .map_err(|e| format!("dsv4 model {name:?}: {e}"))?;
     let prefill_chunk_raw = configured_env_text("MEMRA_DSV4_PREFILL_CHUNK")?;
     let prefill_chunk = resolve_prefill_chunk(prefill_chunk_raw.as_deref(), max_seq)?;
+    // Every serve driver here primes chunked with `m.prefill_chunk` (cold, restored and spec
+    // alike) and the route keeps no monolithic arm, so a zero chunk has no program to run. The
+    // module refuses it itself, before any weight loads and whichever expert program loads.
+    if prefill_chunk == 0 {
+        return Err(
+            "MEMRA_DSV4_PREFILL_CHUNK=0 is not servable: the dsv4 route primes every \
+             prompt chunked and keeps no monolithic arm (the monolithic prime is \
+             reachable only from the reference executor's gates)"
+                .into(),
+        );
+    }
     let c4_host_raw = configured_env_text("MEMRA_DSV4_C4_HOST_MB")?;
     let c4_host_bytes = resolve_c4_host_bytes(c4_host_raw.as_deref())?;
-    if c4_host_bytes > 0 && prefill_chunk == 0 {
-        return Err("MEMRA_DSV4_C4_HOST_MB requires nonzero MEMRA_DSV4_PREFILL_CHUNK".into());
-    }
     let topology_raw = configured_env_text("MEMRA_DSV4_TOPOLOGY")?;
     let placement = resolve_topology(topology_raw.as_deref())?;
     let gpu = Dsv4Gpu::load_placed(dir, &devices, variant, max_seq, placement).map_err(|e| {
@@ -913,9 +923,6 @@ pub fn load(name: &str, dir: &Path, tok: Arc<Tokenizer>) -> Result<Dsv4Model, St
         },
         gpu.plain_sampler(),
     );
-    if gpu.matrix_moe_enabled() && prefill_chunk == 0 {
-        return Err("experimental matrix program requires nonzero MEMRA_DSV4_PREFILL_CHUNK".into());
-    }
     if c4_host_bytes > 0 {
         if !gpu.matrix_moe_enabled() {
             return Err(
@@ -930,8 +937,8 @@ pub fn load(name: &str, dir: &Path, tok: Arc<Tokenizer>) -> Result<Dsv4Model, St
     let eos = tok.eos_id();
     eprintln!(
         "[dsv4-serve] {name}: loaded on devices {devices:?}, contract {variant:?}, \
-         max_seq {max_seq}, drafter {}, parked-host-cache {}, chunked-prefill {}, \
-         active-C4-host-budget {c4_host_bytes} bytes (0=OFF; separate from parked cache)",
+         max_seq {max_seq}, drafter {}, parked-host-cache {}, chunked-prefill {prefill_chunk} \
+         tokens, active-C4-host-budget {c4_host_bytes} bytes (0=OFF; separate from parked cache)",
         if spec {
             "RESIDENT (spec route armed)"
         } else {
@@ -941,11 +948,6 @@ pub fn load(name: &str, dir: &Path, tok: Arc<Tokenizer>) -> Result<Dsv4Model, St
             "OFF (MEMRA_DSV4_KV_HOST_MB=0)".to_string()
         } else {
             format!("{host_cache_mb} MiB")
-        },
-        if prefill_chunk == 0 {
-            "OFF (MEMRA_DSV4_PREFILL_CHUNK=0)".to_string()
-        } else {
-            format!("{prefill_chunk} tokens")
         },
     );
     let pipelined = gpu.pipelined_steps_supported();
@@ -2067,16 +2069,12 @@ fn rows_step(
                             },
                         );
                     }
-                    let (rows, am) = if full {
-                        let (rows, am) = m.gpu.decode_rows_full(toks, states, &mut ws.0)?;
-                        (Some(rows), am)
-                    } else {
-                        (None, m.gpu.decode_rows_greedy(toks, states, &mut ws.0)?)
-                    };
-                    let mut rows = rows.map(Vec::into_iter);
+                    // A row asked for its logits (`full`); the argmax/draw case returned above.
+                    let (rows, am) = m.gpu.decode_rows_full(toks, states, &mut ws.0)?;
+                    let mut rows = rows.into_iter();
                     let mut out = Vec::with_capacity(toks.len());
                     for (i, (&tok, ask)) in am.iter().zip(asks).enumerate() {
-                        let row = rows.as_mut().and_then(Iterator::next);
+                        let row = rows.next();
                         out.push(match *ask {
                             RowAsk::Argmax => RowOut { tok, logits: None },
                             RowAsk::Logits => RowOut { tok, logits: row },
@@ -2479,9 +2477,8 @@ struct RestoredPrefix {
     n_cached: usize,
 }
 
-/// Feed the strict suffix after a restored plain trunk boundary. Intermediate rows need no
-/// host logits, so they use the 4-byte device-argmax path and discard the value; only the
-/// final suffix token returns the row that seeds generation.
+/// Feed the strict suffix after a restored plain trunk boundary through the same chunked
+/// transactions a cold prompt takes; the final suffix row seeds generation.
 fn continue_plain_prefix(
     m: &Dsv4Model,
     suffix: &[u32],
@@ -2490,22 +2487,8 @@ fn continue_plain_prefix(
     if suffix.is_empty() {
         return Err("dsv4 restored continuation needs a non-empty suffix".into());
     }
-    if m.prefill_chunk > 0 {
-        return m
-            .gpu
-            .continue_prefix_chunked(suffix, state, m.prefill_chunk);
-    }
-    let mut last = None;
-    for (i, &tok) in suffix.iter().enumerate() {
-        if i + 1 == suffix.len() {
-            last = Some(m.gpu.decode_step(tok, state)?);
-        } else {
-            let _ = m.gpu.decode_step_greedy(tok, state)?;
-        }
-        // Each step read its token or row back: one completed prime row (memra#500).
-        memra_engine::progress::note_prime_rows(1);
-    }
-    Ok(last.expect("non-empty suffix has final logits"))
+    m.gpu
+        .continue_prefix_chunked(suffix, state, m.prefill_chunk)
 }
 
 /// Say the miss out loud. `reuse MISS` is the line a receipt greps for; without it a prompt that
@@ -2559,17 +2542,12 @@ fn try_restore_prefix(
                 .as_ref()
                 .ok_or_else(|| "dsv4 host hit missing required DSpark state".to_string())?;
             let mut dstate = m.gpu.restore_dspark_state(host_dstate)?;
-            let logits = if m.prefill_chunk > 0 {
-                m.gpu.dspark_continue_prefix_chunked(
-                    suffix,
-                    &mut state,
-                    &mut dstate,
-                    m.prefill_chunk,
-                )?
-            } else {
-                m.gpu
-                    .dspark_continue_prefix(suffix, &mut state, &mut dstate)?
-            };
+            let logits = m.gpu.dspark_continue_prefix_chunked(
+                suffix,
+                &mut state,
+                &mut dstate,
+                m.prefill_chunk,
+            )?;
             Ok(RestoredPrefix {
                 state,
                 dstate: Some(dstate),
@@ -2885,15 +2863,9 @@ fn serve_one(
     )? {
         return Ok(turned_away);
     }
-    // In the reference program, a prompt no wider than one configured chunk gets the canonical
-    // monolithic prime. It is deliberately not parked: a later, longer cold prompt
-    // uses the chunked numeric regime, so retaining this state would make cache use
-    // choose a different realization. Once prompts exceed the chunk, cold and restored
-    // paths are both chunked and cache-transparent. The experimental matrix program
-    // instead uses its one batched executor at every width, including position zero.
-    let short_monolithic = !m.gpu.matrix_moe_enabled()
-        && m.prefill_chunk > 0
-        && !use_chunked_prefill(m.prefill_chunk, prompt.len());
+    // The matrix program, the only one a serving process loads, primes every width through its
+    // one batched executor, position zero included, so cold and restored prompts share one
+    // chunked regime and every prompt may park.
     let mut restored =
         try_restore_prefix(m, turn.cache(), req, &prompt, session_capacity, use_spec);
     let n_cached = restored.as_ref().map_or(0, |hit| hit.n_cached);
@@ -2926,27 +2898,17 @@ fn serve_one(
             (
                 hit.state,
                 hit.dstate.expect("DSpark restore returned DSpark state"),
-                Some(hit.logits),
+                hit.logits,
             )
         } else {
             let mut state = m
                 .request_state(session_capacity, None)
                 .map_err(EngineError::engine)?;
             let mut dstate = m.gpu.dspark_alloc_state().map_err(EngineError::engine)?;
-            let initial_logits = if m.prefill_chunk > 0 && !short_monolithic {
-                Some(
-                    m.gpu
-                        .dspark_prefill_prime_chunked(
-                            &prompt,
-                            &mut state,
-                            &mut dstate,
-                            m.prefill_chunk,
-                        )
-                        .map_err(EngineError::engine)?,
-                )
-            } else {
-                None
-            };
+            let initial_logits = m
+                .gpu
+                .dspark_prefill_prime_chunked(&prompt, &mut state, &mut dstate, m.prefill_chunk)
+                .map_err(EngineError::engine)?;
             (state, dstate, initial_logits)
         };
         let mut vstate = m
@@ -2957,43 +2919,10 @@ fn serve_one(
         // inside n_new; Emit owns the exact budget/EOS truncation either way.
         let n_new = budget;
         let mut cb = |new: &[u32]| emit.push_round(new);
-        let run = if let Some(initial_logits) = initial_logits.as_deref() {
-            if greedy {
-                m.gpu.spec_greedy_batched_stream_restored(
-                    prompt.len(),
-                    initial_logits,
-                    n_new,
-                    &mut state,
-                    &mut dstate,
-                    &mut vstate,
-                    depth_cap,
-                    vt,
-                    Some(&mut cb),
-                )
-            } else {
-                let cfg = Dsv4SampleCfg {
-                    temperature: sc.temperature,
-                    top_p: sc.top_p,
-                    top_k: sc.top_k,
-                    seed: sc.seed,
-                };
-                m.gpu.spec_sampled_batched_pen_restored(
-                    &prompt,
-                    initial_logits,
-                    n_new,
-                    &mut state,
-                    &mut dstate,
-                    &mut vstate,
-                    depth_cap,
-                    vt,
-                    &cfg,
-                    pen_cfg.as_ref(),
-                    Some(&mut cb),
-                )
-            }
-        } else if greedy {
-            m.gpu.spec_greedy_batched_stream(
-                &prompt,
+        let run = if greedy {
+            m.gpu.spec_greedy_batched_stream_restored(
+                prompt.len(),
+                &initial_logits,
                 n_new,
                 &mut state,
                 &mut dstate,
@@ -3009,8 +2938,9 @@ fn serve_one(
                 top_k: sc.top_k,
                 seed: sc.seed,
             };
-            m.gpu.spec_sampled_batched_pen(
+            m.gpu.spec_sampled_batched_pen_restored(
                 &prompt,
+                &initial_logits,
                 n_new,
                 &mut state,
                 &mut dstate,
@@ -3047,39 +2977,31 @@ fn serve_one(
             let mut state = m
                 .request_state(session_capacity, None)
                 .map_err(EngineError::engine)?;
-            let logits = if m.prefill_chunk > 0 && !short_monolithic {
-                let mut client_left = false;
-                let tx = &req.tx;
-                let prefilled = m.gpu.prefill_with_cache_chunked_yielding(
-                    &prompt,
-                    &mut state,
-                    m.prefill_chunk,
-                    &mut || {
-                        // A client that left stops its prompt at the next chunk rather than
-                        // holding the GPU (and a graceful shutdown, #739) for the rest of it.
-                        if tx.is_closed() {
-                            client_left = true;
-                            return Err("client left during prefill".into());
-                        }
-                        if m.sessions > 1 {
-                            // Give the turn up so another session's steps keep going.
-                            turn.release();
-                            turn.acquire();
-                        }
-                        Ok(())
-                    },
-                );
-                if client_left {
-                    return Ok(Served::Cancelled);
-                }
-                prefilled.map_err(EngineError::engine)?
-            } else {
-                m.gpu
-                    .prefill_with_cache(&prompt, &mut state)
-                    .map_err(EngineError::engine)?
-                    .logits
-            };
-            (state, logits)
+            let mut client_left = false;
+            let tx = &req.tx;
+            let prefilled = m.gpu.prefill_with_cache_chunked_yielding(
+                &prompt,
+                &mut state,
+                m.prefill_chunk,
+                &mut || {
+                    // A client that left stops its prompt at the next chunk rather than
+                    // holding the GPU (and a graceful shutdown, #739) for the rest of it.
+                    if tx.is_closed() {
+                        client_left = true;
+                        return Err("client left during prefill".into());
+                    }
+                    if m.sessions > 1 {
+                        // Give the turn up so another session's steps keep going.
+                        turn.release();
+                        turn.acquire();
+                    }
+                    Ok(())
+                },
+            );
+            if client_left {
+                return Ok(Served::Cancelled);
+            }
+            (state, prefilled.map_err(EngineError::engine)?)
         };
         let p0 = prompt.len();
         // running penalty window: prompt ++ every committed token (rung-2 slice 2)
@@ -3226,14 +3148,7 @@ fn serve_one(
         state_to_park = state;
     }
 
-    let park_toks = if short_monolithic {
-        eprintln!(
-            "[dsv4-host] skip park: short monolithic prime ({} <= chunk {}); numeric-regime isolation",
-            prompt.len(),
-            m.prefill_chunk
-        );
-        None
-    } else {
+    let park_toks =
         match processed_prefix_tokens(&prompt, &emit.ids, emit.terminal, state_to_park.pos) {
             Ok(toks) => Some(toks),
             Err(err) => {
@@ -3243,8 +3158,7 @@ fn serve_one(
                 eprintln!("[dsv4-host] skip park: {err}");
                 None
             }
-        }
-    };
+        };
     let stats = ServeStats {
         tokens_out: emit.ids.len(),
         n_prompt: prompt.len(),
@@ -3373,6 +3287,41 @@ mod lane_watch_tests {
             board.slots[0].phase.load(Ordering::Relaxed),
             LanePhase::Queue as u8
         );
+    }
+}
+
+#[cfg(test)]
+mod dsv4_dir_probe_tests {
+    use super::is_dsv4_dir;
+
+    fn probe(name: &str, config: &str) -> bool {
+        let dir =
+            std::env::temp_dir().join(format!("memra-dsv4-probe-{name}-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("config.json"), config).unwrap();
+        let routed = is_dsv4_dir(&dir);
+        std::fs::remove_dir_all(&dir).unwrap();
+        routed
+    }
+
+    /// The probe routes on the effective model_type the loader maps, not on the text
+    /// `deepseek_v4` anywhere in config.json: a distill naming its base checkpoint used to
+    /// reach the dsv4 thread, which refuses any non-dsv4 arch, and failed to boot.
+    #[test]
+    fn only_a_deepseek_v4_model_type_routes_to_the_dsv4_thread() {
+        assert!(probe(
+            "v4",
+            r#"{"model_type":"deepseek_v4","num_hidden_layers":2}"#
+        ));
+        assert!(probe(
+            "nested",
+            r#"{"model_type":"wrapper","text_config":{"model_type":"deepseek_v4"}}"#
+        ));
+        assert!(!probe(
+            "distill",
+            r#"{"model_type":"qwen3","base_model":"deepseek_v4","num_hidden_layers":2}"#
+        ));
+        assert!(!probe("broken", r#"{"model_type": "deepseek_v4""#));
     }
 }
 
@@ -4200,7 +4149,7 @@ mod c4_host_budget_tests {
 
 #[cfg(test)]
 mod prefill_chunk_flag_tests {
-    use super::{DSV4_BATCH_WIDTH_MAX, resolve_prefill_chunk, use_chunked_prefill};
+    use super::{DSV4_BATCH_WIDTH_MAX, resolve_prefill_chunk};
 
     #[test]
     fn the_default_is_the_kernel_width_and_values_are_strictly_bounded() {
@@ -4231,12 +4180,23 @@ mod prefill_chunk_flag_tests {
         assert!(resolve_prefill_chunk(Some("65"), 64).is_err());
     }
 
+    /// Every serve driver primes chunked with `m.prefill_chunk`, so `load` refuses a zero chunk
+    /// itself: before the weights load, with no expert-program condition on it.
     #[test]
-    fn prompts_at_or_below_one_chunk_stay_monolithic() {
-        assert!(!use_chunked_prefill(0, 10_000));
-        assert!(!use_chunked_prefill(32, 1));
-        assert!(!use_chunked_prefill(32, 32));
-        assert!(use_chunked_prefill(32, 33));
+    fn load_refuses_a_zero_chunk_before_the_weights_load() {
+        let src = include_str!("dsv4_serve.rs");
+        let resolved = src
+            .find("let prefill_chunk = resolve_prefill_chunk(")
+            .expect("load resolves the chunk");
+        let weights = resolved
+            + src[resolved..]
+                .find("Dsv4Gpu::load_placed(")
+                .expect("load loads the weights");
+        assert!(
+            src[resolved..weights].contains("if prefill_chunk == 0 {\n        return Err("),
+            "the zero-chunk refusal must precede the weight load"
+        );
+        assert!(!src.contains(concat!("matrix_moe_enabled() && ", "prefill_chunk == 0")));
     }
 }
 

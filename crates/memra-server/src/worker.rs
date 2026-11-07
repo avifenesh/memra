@@ -236,6 +236,14 @@ fn prefill_tick_take(q: usize, budget: usize, eager_mono: bool, bound_rem: Optio
     take
 }
 
+/// W1 (two-programs inventory, 2026-08-13): a capture boundary closer than `PRIME_MIN_T`
+/// ahead and still inside the queued prompt vetoes the prime branch, which would walk the
+/// prompt tokens before it through `decode_step`. The prefill tick drops such a boundary
+/// instead: the session loses that capture and keeps one prime program.
+fn sub_floor_capture_boundary(b: usize, fed: usize, queued: usize) -> bool {
+    b > fed && b - fed < memra_engine::hybrid_forward::PRIME_MIN_T && b < fed + queued
+}
+
 fn interactive_prime_batch_take(queued: usize, budget: usize, max_t: usize) -> Option<usize> {
     let take = queued.min(budget).min(max_t);
     (take >= memra_engine::hybrid_forward::PRIME_MIN_T.max(2)).then_some(take)
@@ -250,6 +258,21 @@ fn carried_prime_batch_eligible(plan: &memra_gguf::model_plan::ModelPlan) -> boo
         .trunk_capabilities(plan)
         .batch
         .supported
+}
+
+/// The one gate for a CONTINUATION chunk (cache primed exactly through a non-empty `fed`)
+/// joining a cross-request concat prime, shared by the interactive and dark-lane batches: a
+/// cold session (no cache hit, no source lease) on a plan whose trunk has a batched
+/// carried-prime implementation and whose rewrite bundle allows `CarriedPrime`. Any other
+/// continuation primes alone, on every lane.
+fn carried_prime_chunk_batchable(s: &Session, model: &HybridModel) -> bool {
+    s.n_cached == 0
+        && s.prefix_pin.is_none()
+        && s.cache.as_ref().is_some_and(|c| c.pos == s.fed.len())
+        // P0 coldhol guard: routed-MoE carried batches stay serial until a
+        // realistic multi-chunk + serving-decode gate qualifies the class.
+        && carried_prime_batch_eligible(&model.plan)
+        && model.rewrite_allowed(memra_gguf::execution_manifest::RewriteSurface::CarriedPrime)
 }
 
 fn concat_prime_pp_eligible(model: &HybridModel, engine: &Engine) -> bool {
@@ -2000,9 +2023,11 @@ pub struct Request {
     /// committed, so compile rejection/timeout is a real 400/503 even for streaming calls.
     /// Replays leave it None: the original response already passed preflight.
     pub(crate) constraint_ready: Option<tokio::sync::oneshot::Sender<Result<(), EngineError>>>,
-    /// Worker-owned rendered/tokenized prompt. Admission may revisit a queued request for many
-    /// ticks; cache the result so a 256k request is not re-rendered and re-tokenized per defer.
-    /// HTTP and step-OOM replay requests always start with None.
+    /// Rendered/tokenized prompt, after `append_capture_eos`. `prepare_request` runs the
+    /// vision special-id guard on it whichever render filled it. Admission may revisit a queued
+    /// request for many ticks; cache the result so a 256k request is not re-rendered and
+    /// re-tokenized per defer. Step-OOM replay requests start with None; HTTP requests do
+    /// too unless metered budget admission (`prepare_budget_prompt`) rendered them first.
     pub(crate) prepared_prompt: Option<Vec<u32>>,
     /// Debug-only per-request phase timeline. None unless MEMRA_TTFT_TRACE=1.
     pub ttft: Option<Arc<crate::ttft::Trace>>,
@@ -2177,7 +2202,14 @@ pub fn prompt_source_bytes(req: &Request) -> usize {
             .len()
             .saturating_mul(std::mem::size_of::<u32>());
     }
-    let mut total = req.prompt_text.len();
+    // Every render takes chat_turns ahead of prompt_text, so with turns present prompt_text is
+    // not a source: it holds the template string a chat_turns render published (the worker's
+    // prepare or the budget render), and counting it would double the source on the next check.
+    let mut total = if req.chat_turns.is_empty() {
+        req.prompt_text.len()
+    } else {
+        0
+    };
     for turn in &req.chat_turns {
         total = total.saturating_add(turn.role.len());
         total = total.saturating_add(turn.content.len());
@@ -6711,6 +6743,50 @@ fn dspark_spec_boot_conflict(
     None
 }
 
+/// Boot verdict for the drafter routes (gemma spec, dspark, glm5 spec) under
+/// `MEMRA_SERVE_BATCH=0`. Those routes run only from the batched scheduler's spec dispatch.
+/// The unbatched loop steps every session through `step_session`, which has no route arm and
+/// no cache for a route session (admission leaves it None for the route's first tick), so every
+/// routed request faulted. The pair was never co-gated, so it refuses at boot by name.
+fn drafter_route_batching_conflict(batching: bool, armed: &[&str]) -> Option<String> {
+    if batching || armed.is_empty() {
+        return None;
+    }
+    Some(format!(
+        "MEMRA_SERVE_BATCH=0 with the {} route armed: drafter routes run only under batched \
+         scheduling; unset MEMRA_SERVE_BATCH or disarm the route",
+        armed.join(" and ")
+    ))
+}
+
+/// The drafter routes an operator armed EXPLICITLY, read from the environment alone, so
+/// `run` can refuse them beside `MEMRA_SERVE_BATCH=0` before any weight loads (the post-load
+/// check pays the full trunk and drafter loads first). Each test is the one its route's own
+/// read applies: `MEMRA_DSPARK_SPEC=1`, an explicit `MEMRA_GEMMA4_SPEC` depth K >= 1, and
+/// `MEMRA_GLM5_SPEC=1`. Arms that depend on what loads (the gemma default-on under
+/// `MEMRA_DRAFT` alone, which only a dense gemma4 model takes, and glm5 capability) stay with
+/// the post-load check.
+fn explicit_drafter_route_arms(
+    dspark_spec: Option<&str>,
+    gemma4_spec: Option<&str>,
+    glm5_spec: Option<&str>,
+) -> Vec<&'static str> {
+    let mut armed = Vec::new();
+    if dspark_spec == Some("1") {
+        armed.push("dspark (MEMRA_DSPARK_SPEC=1)");
+    }
+    if gemma4_spec
+        .and_then(|v| v.parse::<usize>().ok())
+        .is_some_and(|k| k > 0)
+    {
+        armed.push("gemma spec (MEMRA_GEMMA4_SPEC)");
+    }
+    if glm5_spec == Some("1") {
+        armed.push("glm5 spec (MEMRA_GLM5_SPEC=1)");
+    }
+    armed
+}
+
 /// Boot verdict for the glm5 TP-2 walk on a serving worker (MEMRA_GLM5_TP,
 /// lane/glm5-tp-serve-20260907). PURE (env values in, verdict out) so the tooth below
 /// exercises every arm without a worker spawn; the caller panics on `Err` and prints the
@@ -7053,6 +7129,8 @@ fn spec_gate_pp2_placement() -> bool {
     exactly_two_stages && memra_engine::pp::pp_sharded_cross_device()
 }
 
+/// Frozen at the first read, so that read must follow the model loads: `MEMRA_PARALLEL=auto`
+/// sets the PP env that `spec_gate_pp2_placement` reads during load.
 fn spec_gate_thresholds() -> &'static SpecGateThresholds {
     static T: std::sync::OnceLock<SpecGateThresholds> = std::sync::OnceLock::new();
     T.get_or_init(|| {
@@ -25692,8 +25770,10 @@ fn prefix_insert_from_session(
     }
     let mut demote = |dead| host_demote_prefix_entry(engine, hpx, dead);
     // The snapshot is not allocated yet: on unified memory the guard reserves its room from the
-    // live reading (allocated = 0).
-    let budget = prefix_insert_budget(engine, prefix_cache_budget_bytes(), px.total_bytes, 0);
+    // live reading (allocated = 0). The budget is the insert wrappers' (floor + flex grant): a
+    // floor-only preflight would evict every borrowed entry before each publish, so MEMRA_KV_FLEX
+    // could never retain one.
+    let budget = prefix_insert_budget(engine, kv_flex_effective_budget(), px.total_bytes, 0);
     if !px.prepare_snapshot(
         &pool_key,
         prefix_snapshot_bytes(cache),
@@ -26616,9 +26696,9 @@ struct Session {
     spec_rounds: u64,
     sampler: Sampler,
     /// Whether penalized SAMPLED rows of this session may take the device penalty path.
-    /// Resolved ONCE at admit from `serve_devpenalty_for(lm.model.cfg.arch)` — the default is
-    /// keyed on the (model class, build arch) pair, so it has to be read where the loaded
-    /// model is in scope, and the value cannot drift mid-request.
+    /// Resolved ONCE at admit from `serve_devpenalty_for(engine, lm.model.cfg.arch)` — the
+    /// default is keyed on the (model class, card class) pair, so it has to be read where the
+    /// loaded model and the device are in scope, and the value cannot drift mid-request.
     devpenalty: bool,
     last_logits: Vec<f32>,
     /// Token pre-sampled ON DEVICE by the last batched tick (decode_step_batch_sampled) —
@@ -27545,7 +27625,6 @@ pub fn run(
         "[worker] Engine ready (device={device}, MEMRA_FAST={})",
         fast
     );
-    log_spec_gate_policy();
 
     let (constraint_result_tx, constraint_result_rx) =
         std::sync::mpsc::channel::<crate::constrained::ConstraintCompileResult>();
@@ -27568,6 +27647,20 @@ pub fn run(
     if let Some(msg) = removed_bank_v2_doors_refusal(
         std::env::var("MEMRA_NVFP4_BANK_V2").ok().as_deref(),
         std::env::var("MEMRA_SEL_DOWN8").ok().as_deref(),
+    ) {
+        let _ = ready_tx.send(Err(msg));
+        return;
+    }
+    // DRAFTER ROUTES UNDER MEMRA_SERVE_BATCH=0, the env-only half: an explicitly armed route
+    // refuses here in milliseconds instead of after the trunk and drafter loads. The post-load
+    // check beside the drafter attach still covers the arms that depend on what loaded.
+    if let Some(msg) = drafter_route_batching_conflict(
+        serve_batching(),
+        &explicit_drafter_route_arms(
+            std::env::var("MEMRA_DSPARK_SPEC").ok().as_deref(),
+            std::env::var("MEMRA_GEMMA4_SPEC").ok().as_deref(),
+            std::env::var("MEMRA_GLM5_SPEC").ok().as_deref(),
+        ),
     ) {
         let _ = ready_tx.send(Err(msg));
         return;
@@ -27896,6 +27989,9 @@ pub fn run(
         );
         order.push(name.clone());
     }
+    // After every load: MEMRA_PARALLEL=auto writes MEMRA_PP_STAGES/MEMRA_PP_DEVICES inside the
+    // load, and this first read freezes the placement-keyed spec-gate thresholds.
+    log_spec_gate_policy();
     // Template capability probe (serve-tools lane): same substring laws the renderer uses.
     // + /v1/models metadata (serve-tail lane): context length from the model config,
     // tokenizer family from the pre-tokenizer name, instruct family from the template's
@@ -28092,6 +28188,12 @@ pub fn run(
         .map(|(n, _)| n.clone())
         .collect();
     for n in &eager_only {
+        // Dense gemma plans with the chunked-prime receipt prime in tick-budget chunks.
+        let prefill = if loaded.get(n).is_some_and(monolithic_prime_model) {
+            "monolithic prefill"
+        } else {
+            "chunked prefill"
+        };
         if eager_decode.contains(n) {
             let class = loaded
                 .get(n)
@@ -28099,8 +28201,7 @@ pub fn run(
                 .map_or("gemma4 class", |_| "hyper-connections residual");
             eprintln!(
                 "[worker] {n}: EAGER-ONLY serving ({class} — no batched decode arm): \
-                   per-session eager decode, monolithic prefill, no graph promotion, \
-                   no prime batching"
+                   per-session eager decode, {prefill}, no prime batching"
             );
         } else if loaded
             .get(n)
@@ -28109,15 +28210,14 @@ pub fn run(
             eprintln!(
                 "[worker] {n}: BATCHED DECODE (mHC hyper arm, opt-in via MEMRA_HYPER_BATCH=1; \
                    unset/0 = eager per-session rollback): batched decode chunks, serial ticks \
-                   only (no dual waves); monolithic prefill, no graph promotion, no prime \
-                   batching (eager-only for every non-decode entry point)"
+                   only (no dual waves); {prefill}, no prime batching (eager-only for every \
+                   non-decode entry point)"
             );
         } else {
             eprintln!(
                 "[worker] {n}: BATCHED DECODE (gemma4 dense arm, default-on; \
                    MEMRA_GEMMA4_BATCH=0 = eager kill switch): batched decode chunks; \
-                   monolithic prefill, no graph promotion, no prime batching \
-                   (eager-only for every non-decode entry point)"
+                   {prefill}, no prime batching (eager-only for every non-decode entry point)"
             );
         }
     }
@@ -28314,6 +28414,19 @@ pub fn run(
         if dspark_drafts.is_empty() {
             panic!("MEMRA_DSPARK_SPEC=1 but no qwen-hybrid (non-gemma) model is loaded");
         }
+    }
+    let mut armed_routes: Vec<&str> = Vec::new();
+    if !gemma_drafts.is_empty() {
+        armed_routes.push("gemma spec (MEMRA_GEMMA4_SPEC)");
+    }
+    if !dspark_drafts.is_empty() {
+        armed_routes.push("dspark (MEMRA_DSPARK_SPEC=1)");
+    }
+    if loaded.values().any(glm5_spec_capable) {
+        armed_routes.push("glm5 spec (MEMRA_GLM5_SPEC=1)");
+    }
+    if let Some(msg) = drafter_route_batching_conflict(serve_batching(), &armed_routes) {
+        panic!("{msg}");
     }
     // MEMRA_MTP_SKIP serving policy (mtp-skip lane 2026-08-30; refuse-loud contract 2026-08-31,
     // hermes finding baf261e2bfdae118). The loader already refused the contradictory
@@ -30340,7 +30453,7 @@ pub fn run(
                 let pending_seed = if admit_memory_cfg.armed {
                     seed_booking_cap(
                         pending_seed_uncapped,
-                        prefix_cache_budget_bytes(),
+                        kv_flex_effective_budget(),
                         px.total_bytes,
                     )
                 } else {
@@ -32971,15 +33084,7 @@ pub fn run(
                         let fresh =
                             s.fed.is_empty() && s.cache.as_ref().is_some_and(|c| c.pos == 0);
                         let whole_fresh = fresh && take == ql;
-                        let cold_chunk = s.n_cached == 0
-                            && s.prefix_pin.is_none()
-                            && s.cache.as_ref().is_some_and(|c| c.pos == s.fed.len())
-                            // P0 coldhol guard: routed-MoE carried batches stay serial until a
-                            // realistic multi-chunk + serving-decode gate qualifies the class.
-                            && carried_prime_batch_eligible(&loaded[&s.model].model.plan)
-                            && loaded[&s.model].model.rewrite_allowed(
-                                memra_gguf::execution_manifest::RewriteSurface::CarriedPrime,
-                            );
+                        let cold_chunk = carried_prime_chunk_batchable(s, &loaded[&s.model].model);
                         if s.spec.is_none() && !s.prefill_done
                             // vision sessions prime alone (mixed-embedding overlay; the
                             // concat prime has no overlay seam); capture sessions too —
@@ -33689,6 +33794,13 @@ pub fn run(
                             s.fed.len() + s.prefill_queue.len(),
                         )
                         || !s.cache.as_ref().is_some_and(|c| c.pos == s.fed.len())
+                    {
+                        continue;
+                    }
+                    // A continuation joins only under the interactive batch's own gate
+                    // (routed-MoE carried batches stay serial; cache hits prime alone).
+                    if !s.fed.is_empty()
+                        && !carried_prime_chunk_batchable(s, &loaded[&s.model].model)
                     {
                         continue;
                     }
@@ -35360,6 +35472,34 @@ fn enforce_prompt_limit(
     Ok(())
 }
 
+/// The post-render step every served prompt takes before it is stored in `prepared_prompt`.
+/// Two renders fill that field: this worker's `prepare_request` and the HTTP budget admission
+/// (`prepare_budget_prompt`, metered deployments), and `prepare_request` skips its render when
+/// the field is already set. Both call this, so neither render serves a prompt without it.
+pub(crate) fn append_capture_eos(prompt: &mut Vec<u32>, eos_id: u32, req: &Request) {
+    // EMBEDDING POOLING POSITION (lane/embed-serve): the Qwen3-Embedding family
+    // pools the hidden state ON a trailing eos token — the vendor tokenizer appends
+    // it, and pooling one position earlier scores ~0.3 cosine against the reference
+    // instead of ~0.998 (measured on DE, 2026-08-27). Hidden-capture requests append
+    // the model's own eos here so the last position is the trained pooling position.
+    if req.capture.as_ref().is_some_and(|c| c.hidden) && prompt.last() != Some(&eos_id) {
+        prompt.push(eos_id);
+    }
+}
+
+/// Vision special-id intake guard (lane/glm5-vision-default-on) on a stored prompt against
+/// the request's own image units. `prepare_request` runs it on every prepared prompt, after
+/// its render block, whichever render filled the field: the budget render runs before
+/// `decode_pending_vision` fills the units the budgets count, so its prompt carries the
+/// planned runs with no units yet, and only the worker sees the prompt and its units together.
+pub(crate) fn guard_prompt_vision_ids(
+    prompt: &[u32],
+    tok: &Tokenizer,
+    req: &Request,
+) -> Result<(), String> {
+    vision_special_id_guard(prompt, &vision_special_budgets(tok, req))
+}
+
 /// Render/tokenize once, then derive the request's exact context allocation shape before the
 /// VRAM gate. `admit` consumes this cached prompt only after the gate passes.
 fn prepare_request(
@@ -35442,26 +35582,23 @@ fn prepare_request(
             ));
         }
         let mut prompt = prompt;
-        // EMBEDDING POOLING POSITION (lane/embed-serve): the Qwen3-Embedding family
-        // pools the hidden state ON a trailing eos token — the vendor tokenizer appends
-        // it, and pooling one position earlier scores ~0.3 cosine against the reference
-        // instead of ~0.998 (measured on DE, 2026-08-27). Hidden-capture requests append
-        // the model's own eos here so the last position is the trained pooling position.
-        if req.capture.as_ref().is_some_and(|c| c.hidden) && prompt.last() != Some(&lm.eos_id) {
-            prompt.push(lm.eos_id);
-        }
+        append_capture_eos(&mut prompt, lm.eos_id, req);
         if let Some(trace) = req.ttft.as_ref() {
             trace.mark_tokenize_end(prompt.len());
         }
-        // Vision special-id intake guard (lane/glm5-vision-default-on): runs at the single
-        // render/tokenize waist so every prompt source is covered, once per request
-        // (prepared_prompt caches the result across admission defers).
-        vision_special_id_guard(&prompt, &vision_special_budgets(&lm.tok, req))
-            .map_err(|e| EngineError::invalid_param(e, "messages"))?;
         req.prepared_prompt = Some(prompt);
     }
 
-    let prompt_len = req.prepared_prompt.as_ref().unwrap().len();
+    let prompt = req
+        .prepared_prompt
+        .as_deref()
+        .expect("prompt prepared above");
+    // Every prompt source and both renders: a metered request arrives here with the budget
+    // render already stored and its image units decoded since. A defer re-runs this pure
+    // count on the same prompt and units.
+    guard_prompt_vision_ids(prompt, &lm.tok, req)
+        .map_err(|e| EngineError::invalid_param(e, "messages"))?;
+    let prompt_len = prompt.len();
     enforce_prompt_limit(prompt_len, req.max_prompt_tokens)?;
     let model_ctx = lm.model.cfg.context_length as usize;
     let server_ctx = resolve_env_ctx(model_ctx).map_err(EngineError::context_length)?;
@@ -35811,17 +35948,24 @@ fn glm5_clamp_spec_k(k: usize) -> usize {
 /// greedy verification and the depth does not move it.) The peak is 6 and it is +14.1% over the
 /// table's 3, so the glm5 route takes 6 where the shared table says cold-short.
 ///
-/// SCOPE. Only the cold-short branch, only this route. The cached-long branch (K=2, or 5 with a
-/// rank-trimmed head) is a different shape with its own receipts and is untouched; so is every
-/// other model's use of the shared table. The operator pin `MEMRA_SPEC_K` still overrides, and
-/// is the rollback seam. The verify knee still clamps afterwards.
+/// SCOPE. Only the cold-short branch, only this route, only `100a` builds (the B200 class the
+/// ladder ran on): any other build keeps the shared table's answer until its own ladder lands
+/// (none on RTX PRO 6000 yet). The cached-long branch (K=2, or 5 with a rank-trimmed head) is a
+/// different shape with its own receipts and is untouched; so is every other model's use of the
+/// shared table. The operator pin `MEMRA_SPEC_K` still overrides, and is the rollback seam. The
+/// verify knee still clamps afterwards.
 const GLM5_SPEC_K_COLD_SHORT: usize = 6;
 
 /// Print-once latch for the depth line above.
 static GLM5_SPEC_K_DEEPENED: std::sync::Once = std::sync::Once::new();
 
 fn glm5_spec_k_cold_short(k: usize, reason: SpecKReason) -> usize {
-    if matches!(reason, SpecKReason::ColdShort) {
+    glm5_spec_k_cold_short_on(memra_engine::BUILT_CUDA_ARCH, k, reason)
+}
+
+/// [`glm5_spec_k_cold_short`] against a named build arch, so the tests drive every build.
+fn glm5_spec_k_cold_short_on(built_arch: &str, k: usize, reason: SpecKReason) -> usize {
+    if built_arch == "100a" && matches!(reason, SpecKReason::ColdShort) {
         GLM5_SPEC_K_COLD_SHORT
     } else {
         k
@@ -39865,7 +40009,7 @@ fn admit(
         lane: req.lane,
         cache,
         sampler,
-        devpenalty: serve_devpenalty_for(&lm.model.cfg.arch),
+        devpenalty: serve_devpenalty_for(engine, &lm.model.cfg.arch),
         spec,
         mtp_prime: None,
         oom_retries: req_oom_retries,
@@ -40853,16 +40997,40 @@ fn prefill_tick(
     // (`ckpt_at`). Taking the MIN keeps both captures landing on their exact fed boundary; the
     // same session rarely carries both, but when it does the earlier boundary is honored first
     // and the later one next tick.
-    // OPEN DEFECT (two-programs inventory W1, 2026-08-13): when a boundary sits CLOSER than
-    // PRIME_MIN_T ahead, the `bound_rem.is_none_or(..)` term below vetoes the whole prime branch
-    // and the remaining PROMPT tokens go through `decode_step` one at a time — a different
-    // numeric program for the same bytes (see the tail-merge comment below). An older note here
-    // called that residual "unreachable at the current PREFILL_TICK_T"; that claim covered only
-    // the tick-budget tail, which is now genuinely merged, and never covered this boundary door.
-    // Correct remedy is to DROP the sub-floor boundary capture (lose a cache seed, keep one
-    // program) rather than degrade to tokenwise; it is not done here because clearing
-    // snapshot_at/ckpt_at interacts with the post-prime capture below. Tracked separately.
+    // SUB-FLOOR BOUNDARY (two-programs inventory W1, 2026-08-13): a boundary CLOSER than
+    // PRIME_MIN_T ahead would make the `bound_rem.is_none_or(..)` term below veto the whole
+    // prime branch, and the PROMPT tokens before it would go through `decode_step` one at a
+    // time, a different numeric program for the same bytes. Admission can arm one there (a
+    // restored prefix ending just short of the checkpoint, two boundaries within the floor),
+    // and so can a tick budget under 2 x PRIME_MIN_T. When that boundary is the only veto, drop
+    // it: the session loses that capture (the post-prime capture checks below see None) and
+    // keeps one program. A boundary at the prompt end is not a stop and is kept.
     let fed_len = s.fed.len();
+    let prime_open = s.glm5_plain_prime.is_none()
+        && !confidence_trace_enabled()
+        && q >= memra_engine::hybrid_forward::PRIME_MIN_T.max(2)
+        && budget >= memra_engine::hybrid_forward::PRIME_MIN_T
+        && !(eager_mono && carried && !suffix_prime);
+    if prime_open {
+        for (kind, slot) in [
+            ("lcp-split", &mut s.snapshot_at),
+            ("checkpoint", &mut s.ckpt_at),
+            ("seed", &mut s.seed_at),
+        ] {
+            if let Some(b) = *slot
+                && sub_floor_capture_boundary(b, fed_len, q)
+            {
+                *slot = None;
+                eprintln!(
+                    "[prefill] {kind} boundary {b} sits {} < {} tokens past fed {fed_len}; \
+                     capture dropped so the prompt keeps the prime program (model {})",
+                    b - fed_len,
+                    memra_engine::hybrid_forward::PRIME_MIN_T,
+                    s.model
+                );
+            }
+        }
+    }
     // `seed_at` is the third boundary of the same class (memra#602): the grid-aligned
     // prompt-end seed stops the prime on the grid exactly like the LCP split does.
     let bound_rem = [s.snapshot_at, s.ckpt_at, s.seed_at]
@@ -40872,11 +41040,7 @@ fn prefill_tick(
         .map(|b| b - fed_len)
         .min();
     if s.glm5_plain_prime.is_some()
-        || (!confidence_trace_enabled()
-            && q >= memra_engine::hybrid_forward::PRIME_MIN_T.max(2)
-            && budget >= memra_engine::hybrid_forward::PRIME_MIN_T
-            && !(eager_mono && carried && !suffix_prime)
-            && bound_rem.is_none_or(|r| r >= memra_engine::hybrid_forward::PRIME_MIN_T))
+        || (prime_open && bound_rem.is_none_or(|r| r >= memra_engine::hybrid_forward::PRIME_MIN_T))
     {
         let take = s.glm5_plain_prime.as_ref().map_or_else(
             || prefill_tick_take(q, budget, eager_mono, bound_rem),
@@ -41379,38 +41543,56 @@ fn advance_token_emit(
 ///
 /// `MEMRA_SERVE_DEVPENALTY` is the rollback seam and always wins: `1` forces the path on for
 /// every model, `0` forces it off. With the variable absent the default follows the
-/// (model class, build arch) pairs that have a serving qualification, because the win is a
+/// (model class, card class) pairs that have a serving qualification, because the win is a
 /// property of the model's vocabulary size and the board's host, not of the code: on an
 /// unqualified pair the default stays off rather than inheriting another board's receipt.
+/// The card class comes from the worker device's name through
+/// `memra_engine::parallel::HardwareTarget::from_device_name`, the rule the parallel planner
+/// and the pinned-host default key on. The build arch is not the key: a `120a` build also
+/// runs GB10, which carries no receipt for this pair.
 ///
 /// Qualified, default ON:
-/// - `Arch::Qwen35` on a `120a` build. `research/devpenalty-qwen35-20260909/`, one RTX 5090
-///   (575 W, driver 580.95.05), interleaved OFF/ON, three boots per arm, five reps, the
-///   vendor NON-THINKING shape (`presence_penalty 1.5`, `top_k 20`): aggregate decode
+/// - `Arch::Qwen35` (Qwen3.8-27B is this class) on the RTX 5090 card class.
+///   `research/devpenalty-qwen35-20260909/`, one
+///   RTX 5090 (575 W, driver 580.95.05), interleaved OFF/ON, three boots per arm, five reps,
+///   the vendor NON-THINKING shape (`presence_penalty 1.5`, `top_k 20`): aggregate decode
 ///   109.6 -> 527.2 tok/s at c=4 (+381.0%) and 115.5 -> 758.0 at c=8 (+556.3%), c=1
 ///   233.5 -> 242.2 (+3.7%). The `presence_penalty 0.0` control moves -2.0% / -0.5% (rows
 ///   with no penalty never enter this path in either arm) and greedy output is
 ///   byte-identical across all six boots in both penalty shapes.
 ///
-/// Still off by default, and deliberately: `Arch::Qwen3Moe` on RTX PRO 6000 has an even
-/// larger measured win (`research/pro-device-penalty-sampling-20260824/`, darklanes verdict
-/// `q38-devpenalty-flip`) but that fleet pins the flag explicitly, so its default change is
-/// a separate lane with its own launcher smoke.
-fn serve_devpenalty_from(v: Option<&str>, built_arch: &str, arch: &Arch) -> bool {
+/// - `Arch::Qwen35` on the RTX PRO 6000 Blackwell card class. Qwen3.8-27B, vendor non-thinking
+///   shape: Server Edition plain c1/c16 46.49 -> 68.66 / 94.95 -> 300.93 tok/s
+///   (`research/pro-device-penalty-sampling-20260824/`, darklanes verdict `q38-devpenalty-flip`);
+///   Workstation Edition aggregate c8 155.16 -> 294.05 tok/s, six interleaved boots (darklanes
+///   `research/qorn-md-single-card-20260910/DEVPENALTY-RESULTS.md`).
+///
+/// Off by default: every other (model class, card class) pair, GB10 included. Ornith
+/// (`Arch::Qwen35Moe`) on the PRO 6000 Server Edition has a measured win in the same receipt
+/// but no default of its own yet.
+fn serve_devpenalty_from(v: Option<&str>, device_name: &str, arch: &Arch) -> bool {
+    use memra_engine::parallel::HardwareTarget;
     match v.map(str::trim) {
         Some("1") => true,
         Some("0") => false,
-        _ => built_arch == "120a" && matches!(arch, Arch::Qwen35),
+        _ => {
+            matches!(arch, Arch::Qwen35)
+                && matches!(
+                    HardwareTarget::from_device_name(device_name),
+                    Ok(HardwareTarget::Rtx5090 | HardwareTarget::RtxPro6000Blackwell)
+                )
+        }
     }
 }
 
-/// [`serve_devpenalty_from`] against this process's environment and build arch. The env read
-/// is cached; the arch match is a discriminant compare, so this is called per session, never
-/// per token.
-fn serve_devpenalty_for(arch: &Arch) -> bool {
+/// [`serve_devpenalty_from`] against this process's environment and the worker's device. The
+/// env read is cached and the device name is one driver query, so this is called per session
+/// at admit, never per token. An unreadable name classifies as no card and keeps the default off.
+fn serve_devpenalty_for(engine: &Engine, arch: &Arch) -> bool {
     static ENV: std::sync::OnceLock<Option<String>> = std::sync::OnceLock::new();
     let env = ENV.get_or_init(|| std::env::var("MEMRA_SERVE_DEVPENALTY").ok());
-    serve_devpenalty_from(env.as_deref(), memra_engine::BUILT_CUDA_ARCH, arch)
+    let device = engine.ctx().name().unwrap_or_default();
+    serve_devpenalty_from(env.as_deref(), &device, arch)
 }
 
 #[cfg(test)]
@@ -41560,28 +41742,42 @@ mod serve_devpenalty_default_tests {
     use super::serve_devpenalty_from as door;
     use memra_gguf::config::Arch;
 
+    const RTX5090: &str = "NVIDIA GeForce RTX 5090";
+    /// Cards with a Qwen3.5-class receipt besides the 5090.
+    const PRO6000: [&str; 2] = [
+        "NVIDIA RTX PRO 6000 Blackwell Workstation Edition",
+        "NVIDIA RTX PRO 6000 Blackwell Server Edition",
+    ];
+    /// Cards a `120a` build also runs (or another build serves) with no Qwen3.5 receipt.
+    const UNQUALIFIED_CARDS: [&str; 4] =
+        ["NVIDIA GB10", "NVIDIA B200", "NVIDIA H100 80GB HBM3", ""];
+
     #[test]
     fn unset_follows_the_qualified_pair() {
-        assert!(door(None, "120a", &Arch::Qwen35));
-        // qualified model class, unqualified board
-        assert!(!door(None, "100a", &Arch::Qwen35));
-        assert!(!door(None, "90a", &Arch::Qwen35));
-        assert!(!door(None, "89", &Arch::Qwen35));
-        // qualified board, unqualified model class
-        assert!(!door(None, "120a", &Arch::Qwen3));
-        assert!(!door(None, "120a", &Arch::Qwen3Moe));
-        assert!(!door(None, "120a", &Arch::Qwen35Moe));
-        assert!(!door(None, "120a", &Arch::Gemma4));
+        assert!(door(None, RTX5090, &Arch::Qwen35));
+        for card in PRO6000 {
+            assert!(door(None, card, &Arch::Qwen35), "{card:?}");
+            assert!(!door(None, card, &Arch::Qwen35Moe), "{card:?}");
+        }
+        // qualified model class, unqualified card
+        for card in UNQUALIFIED_CARDS {
+            assert!(!door(None, card, &Arch::Qwen35), "{card:?}");
+        }
+        // qualified card, unqualified model class
+        assert!(!door(None, RTX5090, &Arch::Qwen3));
+        assert!(!door(None, RTX5090, &Arch::Qwen3Moe));
+        assert!(!door(None, RTX5090, &Arch::Qwen35Moe));
+        assert!(!door(None, RTX5090, &Arch::Gemma4));
     }
 
     #[test]
     fn explicit_values_win_on_every_pair() {
         for arch in [&Arch::Qwen35, &Arch::Qwen3Moe, &Arch::Gemma4] {
-            for built in ["120a", "100a", "90a", "89"] {
-                assert!(door(Some("1"), built, arch));
-                assert!(door(Some(" 1 "), built, arch));
-                assert!(!door(Some("0"), built, arch));
-                assert!(!door(Some(" 0 "), built, arch));
+            for card in std::iter::once(RTX5090).chain(UNQUALIFIED_CARDS) {
+                assert!(door(Some("1"), card, arch));
+                assert!(door(Some(" 1 "), card, arch));
+                assert!(!door(Some("0"), card, arch));
+                assert!(!door(Some(" 0 "), card, arch));
             }
         }
     }
@@ -41589,9 +41785,11 @@ mod serve_devpenalty_default_tests {
     #[test]
     fn other_spellings_fall_back_to_the_pair_default() {
         for v in ["", "true", "on", "yes", "2"] {
-            assert!(door(Some(v), "120a", &Arch::Qwen35));
-            assert!(!door(Some(v), "120a", &Arch::Qwen3Moe));
-            assert!(!door(Some(v), "100a", &Arch::Qwen35));
+            assert!(door(Some(v), RTX5090, &Arch::Qwen35));
+            assert!(!door(Some(v), RTX5090, &Arch::Qwen3Moe));
+            for card in UNQUALIFIED_CARDS {
+                assert!(!door(Some(v), card, &Arch::Qwen35), "{card:?}");
+            }
         }
     }
 }
@@ -48688,6 +48886,36 @@ mod tests {
         }
     }
 
+    /// W1: a boundary 1..PRIME_MIN_T-1 tokens ahead and inside the queued prompt is the one the
+    /// prefill tick drops, since keeping it vetoes the prime branch and walks the tokens
+    /// before it through decode_step. A floor-distant boundary, one at the prompt end, and one
+    /// behind fed all stay.
+    #[test]
+    fn only_a_sub_floor_boundary_inside_the_prompt_is_dropped() {
+        const FLOOR: usize = memra_engine::hybrid_forward::PRIME_MIN_T;
+        let fed = 1000;
+        let q = 200;
+        for r in 1..FLOOR {
+            assert!(super::sub_floor_capture_boundary(fed + r, fed, q), "r={r}");
+        }
+        assert!(!super::sub_floor_capture_boundary(fed + FLOOR, fed, q));
+        assert!(!super::sub_floor_capture_boundary(fed, fed, q));
+        assert!(!super::sub_floor_capture_boundary(fed - 1, fed, q));
+        // At the prompt end it is not a stop: a short remainder rides its own path anyway.
+        assert!(!super::sub_floor_capture_boundary(fed + 10, fed, 10));
+        assert!(!super::sub_floor_capture_boundary(fed + 12, fed, 10));
+        // A tick budget under 2 x FLOOR leaves a sub-floor gap to a boundary in (budget, 2 x
+        // FLOOR); the next tick drops it instead of walking the gap tokenwise.
+        let budget = FLOOR + 2;
+        let r = 2 * FLOOR - 2;
+        let take = prefill_tick_take(q, budget, false, Some(r));
+        assert!(super::sub_floor_capture_boundary(
+            fed + r,
+            fed + take,
+            q - take
+        ));
+    }
+
     #[test]
     fn carried_prime_batch_is_derived_from_trunk_operations() {
         use memra_gguf::config::{HfConfig, ModelConfig};
@@ -48741,6 +48969,42 @@ mod tests {
         assert!(routed_moe_prefix_split(&qwen_next_moe));
         assert!(!carried_prime_batch_eligible(&qwen_next_moe));
         assert!(!carried_prime_batch_eligible(&gemma_swa));
+    }
+
+    /// Both cross-request prime batches gate a continuation chunk on the one shared
+    /// predicate. The dark-lane batch used to admit any session primed through `fed`, so a
+    /// routed-MoE continuation the interactive batch keeps serial (the coldhol EOS-at-26/60
+    /// class) could concat with a harvest-lane peer.
+    #[test]
+    fn both_prime_batches_gate_continuations_on_one_predicate() {
+        let src = include_str!("worker.rs");
+        let interactive = src
+            .find("let whole_fresh = fresh && take == ql;")
+            .expect("the interactive batch's candidate predicate");
+        let cold = interactive
+            + src[interactive..]
+                .find("let cold_chunk = ")
+                .expect("the interactive batch's cold_chunk");
+        assert!(
+            src[cold..].starts_with(
+                "let cold_chunk = carried_prime_chunk_batchable(s, &loaded[&s.model].model);"
+            ),
+            "the interactive batch's cold_chunk is the shared predicate"
+        );
+        let dark = src
+            .find("let mut dark_batched = false;")
+            .expect("the dark-lane batch block");
+        let formed = dark
+            + src[dark..]
+                .find("if dcand.len() >= 2 {")
+                .expect("the dark-lane batch launch");
+        let dark_cands = &src[dark..formed];
+        assert!(
+            dark_cands.contains(
+                "if !s.fed.is_empty()\n                        && !carried_prime_chunk_batchable(s, &loaded[&s.model].model)"
+            ),
+            "dark-lane continuations take the shared predicate before joining"
+        );
     }
 
     #[test]
@@ -48875,6 +49139,28 @@ mod tests {
     fn spec_gate_defaults_follow_placement() {
         assert_eq!(spec_gate_defaults(false), (2, 4));
         assert_eq!(spec_gate_defaults(true), (0, 1));
+    }
+
+    /// The boot policy line is the first read that freezes the spec-gate thresholds, so it
+    /// must run after the model loads: `MEMRA_PARALLEL=auto` writes `MEMRA_PP_STAGES` inside
+    /// the load, and a pre-load read froze an auto PP-2 placement at the single-card 2/4.
+    #[test]
+    fn spec_gate_policy_freezes_after_the_model_loads() {
+        let src = include_str!("worker.rs");
+        let run = src.find("\npub fn run(").expect("the worker run fn");
+        let body = &src[run..run + src[run..].find("\n}\n").expect("run's end")];
+        let last_load = body
+            .rfind("HybridModel::load(")
+            .max(body.rfind("HybridModel::load_from_source("))
+            .expect("run loads models");
+        let policy = body
+            .find("log_spec_gate_policy();")
+            .expect("run logs the spec-gate policy");
+        assert!(
+            policy > last_load,
+            "the spec-gate policy read precedes a model load"
+        );
+        assert_eq!(body.matches("log_spec_gate_policy();").count(), 1);
     }
 
     /// TOOTH for the wave-admission K mismatch (hermes 48ad6c1b66bb2fa6 class): the K
@@ -51245,17 +51531,25 @@ mod tests {
     fn glm5_cold_short_depth_is_the_measured_peak_and_scoped_to_that_branch() {
         use super::{
             GLM5_SPEC_K_COLD_SHORT, SPEC_K_CACHED_LONG, SPEC_K_CACHED_LONG_TRIM, SPEC_K_COLD_LONG,
-            SPEC_K_COLD_SHORT, SpecKReason, glm5_spec_k_cold_short,
+            SPEC_K_COLD_SHORT, SpecKReason, glm5_spec_k_cold_short_on,
         };
         // the ladder's peak, and it must actually differ from the shared table or the
         // change is a no-op dressed as a decision
         assert_eq!(GLM5_SPEC_K_COLD_SHORT, 6);
         assert_ne!(GLM5_SPEC_K_COLD_SHORT, SPEC_K_COLD_SHORT);
         assert_eq!(
-            glm5_spec_k_cold_short(SPEC_K_COLD_SHORT, SpecKReason::ColdShort),
+            glm5_spec_k_cold_short_on("100a", SPEC_K_COLD_SHORT, SpecKReason::ColdShort),
             6,
-            "a cold-short request takes the glm5 depth"
+            "a cold-short request on the B200 build takes the glm5 depth"
         );
+        // the ladder is the B200 pair's: every other build keeps the shared table's depth
+        for built in ["120a", "121a", "90a", "89"] {
+            assert_eq!(
+                glm5_spec_k_cold_short_on(built, SPEC_K_COLD_SHORT, SpecKReason::ColdShort),
+                SPEC_K_COLD_SHORT,
+                "{built} has no glm5 cold-short ladder"
+            );
+        }
         // every other branch keeps the shared table's answer, including an operator pin
         for (k, reason) in [
             (SPEC_K_COLD_LONG, SpecKReason::ColdLong),
@@ -51267,7 +51561,7 @@ mod tests {
             (4, SpecKReason::Replay),
         ] {
             assert_eq!(
-                glm5_spec_k_cold_short(k, reason),
+                glm5_spec_k_cold_short_on("100a", k, reason),
                 k,
                 "{reason:?} must keep its own depth"
             );
@@ -53469,6 +53763,31 @@ mod tests {
                 body.find("prefix_cache_budget_bytes()")
                     .is_none_or(|i| i > 900),
                 "{wrapper} must not read the bare floor beside the flexed budget"
+            );
+        }
+
+        // The snapshot preflight evicts to its budget before every publish, and the admission
+        // seed booking mirrors that budget. A floor-only preflight shed every borrowed entry
+        // first, so flex never retained one on this path.
+        for (site, end) in [
+            (
+                "fn prefix_insert_from_session(",
+                "match prefix_capture_off_tick(",
+            ),
+            (
+                "let pending_seed = if admit_memory_cfg.armed {",
+                "let primary_device",
+            ),
+        ] {
+            let start = prod.find(site).expect("budget site exists");
+            let body = &prod[start..start + prod[start..].find(end).expect("site end")];
+            assert!(
+                body.contains("kv_flex_effective_budget()"),
+                "{site} must use the flexed budget"
+            );
+            assert!(
+                !body.contains("prefix_cache_budget_bytes()"),
+                "{site} must not read the bare floor"
             );
         }
 
@@ -65029,7 +65348,7 @@ mod tests {
         let worker = squash(include_str!("worker.rs"));
         let live = &worker[..worker.find("mod tests").expect("the test module exists")];
         assert!(live.contains(
-            "let pending_seed_uncapped = if admit_memory_cfg.armed { pending_seed_bytes(&active) } else { 0 }; let pending_seed = if admit_memory_cfg.armed { seed_booking_cap( pending_seed_uncapped, prefix_cache_budget_bytes(), px.total_bytes, ) } else { 0 };"
+            "let pending_seed_uncapped = if admit_memory_cfg.armed { pending_seed_bytes(&active) } else { 0 }; let pending_seed = if admit_memory_cfg.armed { seed_booking_cap( pending_seed_uncapped, kv_flex_effective_budget(), px.total_bytes, ) } else { 0 };"
         ));
         assert!(live.contains("let pending_booked = pending_prime.saturating_add(pending_seed);"));
         assert!(live.contains(
@@ -67948,7 +68267,76 @@ mod resume_sampler_door_tests {
 
 #[cfg(test)]
 mod dspark_boot_conflict_tests {
-    use super::dspark_spec_boot_conflict;
+    use super::{
+        drafter_route_batching_conflict, dspark_spec_boot_conflict, explicit_drafter_route_arms,
+    };
+
+    /// `MEMRA_SERVE_BATCH=0` beside an armed drafter route used to boot, then fault every
+    /// routed request in `step_session` (no route arm, no cache). It refuses by name now.
+    #[test]
+    fn unbatched_serving_refuses_an_armed_drafter_route() {
+        assert!(drafter_route_batching_conflict(true, &["dspark (MEMRA_DSPARK_SPEC=1)"]).is_none());
+        assert!(drafter_route_batching_conflict(false, &[]).is_none());
+        let msg = drafter_route_batching_conflict(
+            false,
+            &[
+                "gemma spec (MEMRA_GEMMA4_SPEC)",
+                "glm5 spec (MEMRA_GLM5_SPEC=1)",
+            ],
+        )
+        .expect("an armed route under MEMRA_SERVE_BATCH=0 must refuse");
+        assert!(msg.contains("MEMRA_SERVE_BATCH=0"), "{msg}");
+        assert!(
+            msg.contains("MEMRA_GEMMA4_SPEC") && msg.contains("MEMRA_GLM5_SPEC"),
+            "{msg}"
+        );
+    }
+
+    /// The env-only half: an explicit drafter-route arm is known before any weight loads, so
+    /// `run` refuses it beside `MEMRA_SERVE_BATCH=0` ahead of the load loop. Arms that depend
+    /// on what loads (gemma default-on under MEMRA_DRAFT alone) are not read here.
+    #[test]
+    fn explicit_drafter_route_arms_refuse_before_the_weights_load() {
+        assert!(explicit_drafter_route_arms(None, None, None).is_empty());
+        for (dspark, gemma, glm5) in [
+            (Some("0"), Some("0"), Some("0")),
+            (Some(""), Some("auto"), Some("true")),
+        ] {
+            assert!(
+                explicit_drafter_route_arms(dspark, gemma, glm5).is_empty(),
+                "{dspark:?} {gemma:?} {glm5:?} arms no route"
+            );
+        }
+        assert_eq!(
+            explicit_drafter_route_arms(Some("1"), Some("5"), Some("1")),
+            [
+                "dspark (MEMRA_DSPARK_SPEC=1)",
+                "gemma spec (MEMRA_GEMMA4_SPEC)",
+                "glm5 spec (MEMRA_GLM5_SPEC=1)",
+            ]
+        );
+        let msg = drafter_route_batching_conflict(
+            false,
+            &explicit_drafter_route_arms(None, Some("3"), None),
+        )
+        .expect("an explicit gemma depth under MEMRA_SERVE_BATCH=0 must refuse");
+        assert!(msg.contains("MEMRA_GEMMA4_SPEC"), "{msg}");
+        // The refusal sits before the first model load in `run`.
+        let src = include_str!("worker.rs");
+        let run = src.find("pub fn run(").expect("run exists");
+        let early = run
+            + src[run..]
+                .find("&explicit_drafter_route_arms(")
+                .expect("run reads the explicit arms");
+        let first_load = run
+            + src[run..]
+                .find("for (name, path, draft) in &models {")
+                .expect("run's load loop");
+        assert!(
+            early < first_load,
+            "the env-only refusal must precede the load loop"
+        );
+    }
 
     #[test]
     fn refuse_list_covers_step_tp_and_ep() {
@@ -68145,7 +68533,7 @@ mod stop_string_tests {
 }
 
 #[cfg(test)]
-mod vision_special_guard_tests {
+pub(crate) mod vision_special_guard_tests {
     //! Red/green gates for the vision special-id intake guard
     //! (lane/glm5-vision-default-on, 2026-08-30). Every assertion is on TOKEN IDS, never on
     //! prose: the injection finding (vision-cell arms 20/22) was fluent prose over a
@@ -68233,16 +68621,17 @@ mod vision_special_guard_tests {
         assert!(vision_special_id_guard(&prompt, &glm5_budgets(1, 16)).is_err());
     }
 
-    /// MECHANISM + WIRING, hermetic: a fixture BPE tokenizer whose added_tokens carry the
-    /// glm5 special LITERALS proves at the tokenizer boundary that plain text becomes the
-    /// special id (`st_partition` splits it before BPE), that `token_is_special` sees it,
-    /// and that `vision_special_budgets_inner` + the guard turn that encode into a refusal
-    /// while the exact render budget still admits. Compact ids: `from_hf_dir` refuses a
-    /// vocabulary as sparse as the real 154k ids over a mini vocab, and the guard reads ids
-    /// from the tokenizer (`id_of`), never from constants, so nothing here depends on the
-    /// real id values.
-    #[test]
-    fn text_literal_becomes_special_id_and_guard_refuses() {
+    /// A fixture BPE tokenizer whose added_tokens carry the glm5 special LITERALS and an
+    /// `<|eos|>` eos. Compact ids: `from_hf_dir` refuses a vocabulary as sparse as the real
+    /// 154k ids over a mini vocab, and the guard reads ids from the tokenizer (`id_of`),
+    /// never from constants, so nothing here depends on the real id values. Built once per
+    /// test process, since the build goes through a pid-keyed temp dir.
+    pub(crate) fn glm5_vision_fixture_tokenizer() -> &'static memra_tokenizer::Tokenizer {
+        static TOK: std::sync::OnceLock<memra_tokenizer::Tokenizer> = std::sync::OnceLock::new();
+        TOK.get_or_init(build_glm5_vision_fixture_tokenizer)
+    }
+
+    fn build_glm5_vision_fixture_tokenizer() -> memra_tokenizer::Tokenizer {
         // GPT-2 byte-level base vocab (the standard bytes_to_unicode mapping).
         let mut vocab_entries: Vec<(String, u32)> = Vec::new();
         let mut extra = 0u32;
@@ -68297,6 +68686,16 @@ mod vision_special_guard_tests {
         std::fs::write(dir.join("tokenizer_config.json"), tokenizer_config).unwrap();
         let tok = memra_tokenizer::Tokenizer::from_hf_dir(&dir).expect("fixture tokenizer loads");
         let _ = std::fs::remove_dir_all(&dir);
+        tok
+    }
+
+    /// MECHANISM + WIRING, hermetic: the glm5 fixture tokenizer proves at the tokenizer
+    /// boundary that plain text becomes the special id (`st_partition` splits it before
+    /// BPE), that `token_is_special` sees it, and that `vision_special_budgets_inner` + the
+    /// guard turn that encode into a refusal while the exact render budget still admits.
+    #[test]
+    fn text_literal_becomes_special_id_and_guard_refuses() {
+        let tok = glm5_vision_fixture_tokenizer();
 
         let img_id = tok.id_of("<|image|>").expect("fixture carries <|image|>");
         assert!(tok.token_is_special(img_id));
@@ -68310,7 +68709,7 @@ mod vision_special_guard_tests {
         );
 
         // THE WIRING: budgets from the tokenizer + zero units refuse that encode by name...
-        let budgets = vision_special_budgets_inner(&tok, 0, 0, 0, 0, 0);
+        let budgets = vision_special_budgets_inner(tok, 0, 0, 0, 0, 0);
         assert!(
             budgets.iter().any(|b| b.id == img_id),
             "budgets must guard the tokenizer's own <|image|> id"
@@ -68324,8 +68723,42 @@ mod vision_special_guard_tests {
             "<|image|>".repeat(16)
         );
         let run_ids = tok.encode(&rendered, false);
-        let budgets = vision_special_budgets_inner(&tok, 1, 16, 0, 0, 0);
+        let budgets = vision_special_budgets_inner(tok, 1, 16, 0, 0, 0);
         vision_special_id_guard(&run_ids, &budgets).expect("the rendered run must admit");
+    }
+
+    /// WIRING: `prepare_request` guards the STORED prompt after its render block closes, so a
+    /// prompt the metered budget render stored before `decode_pending_vision` ran is judged
+    /// with its decoded units, and the render block itself runs no guard. Comment-stripped
+    /// source, so a rationale comment cannot satisfy it.
+    #[test]
+    fn prepare_request_guards_every_stored_prompt_after_the_render_block() {
+        let code: String = include_str!("worker.rs")
+            .lines()
+            .map(|l| l.split("//").next().unwrap_or(""))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let start = code
+            .find("fn prepare_request(")
+            .expect("prepare_request exists");
+        let end = start + code[start..].find("\n}\n").expect("prepare_request ends");
+        let body = &code[start..end];
+        let block = body
+            .find("if req.prepared_prompt.is_none() {")
+            .expect("the render block exists");
+        let stored = body
+            .find("req.prepared_prompt = Some(prompt);")
+            .expect("the render block stores its prompt");
+        let guard = body
+            .find("guard_prompt_vision_ids(prompt, &lm.tok, req)")
+            .expect("prepare_request guards the stored prompt");
+        assert!(block < stored && stored < guard);
+        assert!(
+            body[stored..guard].contains("\n    }\n"),
+            "the guard must run after the render block closes, on every stored prompt"
+        );
+        assert_eq!(body.matches("guard_prompt_vision_ids(").count(), 1);
+        assert!(!body.contains("vision_special_id_guard("));
     }
 }
 
