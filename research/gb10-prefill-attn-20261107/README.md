@@ -109,13 +109,13 @@ What moved it:
 - The mask-free interior tiles and the explicit zero C operand did nothing or worse (ptxas
   already uses `RZ` for the zero accumulator); not kept.
 
-ncu on h2p at depth 65,536 (`ncu/r3-ppad*`): tensor pipe 78.7% active (h2 62.8%), 8.24
+ncu on the probe copy of h2p (`cand_ppad`, the same body) at depth 65,536 (`ncu/r3-ppad*`): tensor pipe 78.7% active (h2 62.8%), 8.24
 instructions per MMA, 78.2 ms against h2's 98.4 ms under ncu's clock.
 
-Ragged and long shapes (`probe-runs/edge.log`): T in {128, 130, 192, 1,000, 1,024, 4,033, 4,096}
-with T_kv from T to 262,144, tails not multiples of 32 or 64: h2p equals h2 bit for bit in all
-19 cells; h2p is faster in every cell except the launch-bound T = 128/130 ones (+2 us), and at
-depth 262,144 it runs 305.7 ms against 384.5 ms (85.7 against 68.1 TFLOPS).
+Ragged and long shapes (`probe-runs/edge.log`, the probe copy `ppad` against h2): T in {128, 130,
+192, 1,000, 1,024, 4,033, 4,096} with T_kv from T to 262,144, tails not multiples of 32 or 64:
+equal bit for bit in all 18 cells; faster in every cell except the launch-bound T = 128/130 ones
+(+2 us), and at depth 262,144 305.7 ms against 384.5 ms (85.7 against 68.1 TFLOPS).
 
 Laptop RTX 5090 (82 SMs, the GeForce half-rate f32-accumulate MMA), same probe built `120a`,
 T = 4,096 rows (`probe-runs/probe-rtx5090-laptop.log`): at depth 131,072 db 26.7, h2 33.5 and
@@ -159,8 +159,11 @@ First battery, unit 2, on `b6604e1b90` (the h2p commit on `c2e04719b6`; `gates-u
   arm of `MEMRA_PP_ONLY` runs the monolithic `forward_last`, not `prime_cache` (the FLAGS row said
   otherwise). `MEMRA_PP_PRIME=1` (this lane) runs the warmups, the timed reps and the dump through
   `prime_cache`, so the final battery byte-compares the prime path itself.
-- Probe: every candidate equals h2 bit for bit at every depth and at 19 ragged shapes up to depth
-  262,144.
+- Probe: every candidate equals h2 bit for bit at every depth; the probe copy `ppad` also at 18
+  ragged shapes up to depth 262,144.
+- Killed, not a result: the 16k argmax-margin probe for the lane binary (`argmax-16k C rc=143` in
+  `gates.log`) was stopped after 18 minutes to free the unit, and its base twin never ran. It takes
+  about 36 minutes per binary on GB10; the prime logits compare covers the 16k prime instead.
 
 ## Served
 

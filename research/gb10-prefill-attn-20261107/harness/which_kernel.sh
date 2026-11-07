@@ -14,7 +14,7 @@ WORDS = "alpha river copper lantern orbit meadow cipher harbor violet granite em
 lines = [f"Record {i}: " + " ".join(WORDS[(i * 7 + j * 3) % 12] for j in range(14)) + f" {i % 97}." for i in range(600)]
 open(sys.argv[1], "w").write("\n".join(lines))
 EOF
-env "$@" MEMRA_PROMPT_FILE=$OUT/prompt.txt MEMRA_PP_ONLY=1 MEMRA_PP_REPS=1 MEMRA_PP_WARMUP=0 \
+env "$@" MEMRA_PP_PRIME=1 MEMRA_PROMPT_FILE=$OUT/prompt.txt MEMRA_PP_ONLY=1 MEMRA_PP_REPS=1 MEMRA_PP_WARMUP=0 \
   $NSYS profile -t cuda -s none --cpuctxsw=none --cuda-graph-trace=node --force-overwrite=true -o "$OUT/rungen" \
   "$BIN/run-gen" "$G8" > "$OUT/rungen.log" 2>&1
 $NSYS stats --report cuda_gpu_kern_sum --format csv "$OUT/rungen.nsys-rep" > "$OUT/rungen-kern.csv" 2>&1

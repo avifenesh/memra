@@ -31,7 +31,7 @@ Conventions:
 | A11 | ppad | A10 + A3 | 3 | 68.00 | 76.64 (+12.7%) | | probe-r2 | superseded by A14 |
 | A12 | ppadm / ppm | A11 / A10 + no mask compares on interior tiles | 3 | 68.00 | 76.63 / 70.70 | | probe-r2 | rejected (flat / worse) |
 | A13 | ad, sbad with `ldmatrix.shared` | 32-bit shared offsets, immediates fold, no 64-bit address pairs | 3 | 67.89 | 70.78 / 71.04 (+4.3% / +4.6%) | | probe-r3 | folded into A14 |
-| A14 | **h2p** (ppad with `ldmatrix.shared`) | A11 + A13 | 3 | 67.89 | **85.40 (+25.8%)**; 4k 62.70, 16k 79.19, 64k 84.74; 262,144 depth 305.7 vs 384.5 ms | b6604e1b90 (probe copy in `probe/attn_cand.cuh`), landed body `fa_prefill_qw_h2p` | probe-r3, edge.log | SERVED-VERDICT-PLACEHOLDER |
+| A14 | **h2p** (ppad with `ldmatrix.shared`) | A11 + A13 | 3 | 67.89 | **85.40 (+25.8%)**; 4k 62.70, 16k 79.19, 64k 84.74; 262,144 depth 305.7 vs 384.5 ms | b6604e1b90 (probe copy `cand_ppad` in `probe/attn_h2p.cuh`), landed body `fa_prefill_qw_h2p` | probe-r3, edge.log | SERVED-VERDICT-PLACEHOLDER |
 | A15 | ppadm with `.shared` | A14 + no interior mask compares | 3 | 67.89 | 82.64 (-3.2% vs A14) | | probe-r3 | rejected |
 | A16 | ppadz | A14 + explicit zero C operand on each chain's first MMA | 3 | 67.89 | 85.06 (flat vs A14; ptxas already uses RZ) | | probe-r3 | rejected |
 | A17 | split-KV | partial softmax states merged by rescaling | | | not built: a different float program | | README | rejected (not exact) |

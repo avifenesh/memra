@@ -30151,8 +30151,8 @@ impl Engine {
 
     /// Whether an h2 prime takes the mbarrier-ring twin (h2p). `MEMRA_PRIME_KV_H2P` resolves like
     /// `MEMRA_PRIME_KV_H2` (`1`/`0` decide, unset follows the device: on for a unified-memory
-    /// 120a-family device, where the served 131k TTFT measured lower with identical tokens,
-    /// research/gb10-prefill-attn-20261107). Read once per process.
+    /// 120a-family device; receipts in research/gb10-prefill-attn-20261107). Read once per
+    /// process.
     pub fn prime_kv_h2p_on(&self) -> bool {
         static H2P: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
         *H2P.get_or_init(|| {
