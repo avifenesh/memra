@@ -1,0 +1,16 @@
+block                                         before MB   after MB  saved ms/chunk  note
+add + RMSNorm + e4m3, FFN site (x64)              526.9      275.3           74.81  z f32 not written
+add + RMSNorm + e4m3, mixer site (x64)            526.9      359.1           49.87  h f32 kept for small projections
+q8_1 of h for beta and alpha (x48)                215.0       23.6           42.66  once, from the fused norm
+conv: q/k writes (x48)                            201.3       67.1           29.92  compact layout
+l2 norm q and k + k bf16 twin (x48)               453.0      151.0           67.33  compact layout
+K2 q/k reads (x48)                                201.3       67.1           29.92  heads-fastest grid: L2 shares a key head
+K3 k read (x48)                                   100.7       33.6           14.96  heads-fastest grid
+K3 f32 W store (x48)                              100.7        0.0           22.44  only the bf16 twin has a reader
+K4 k bf16 read (x48)                               50.3       16.8            7.48  compact layout
+K5 q read (x48)                                   100.7       33.6           14.96  heads-fastest grid
+
+per 4,096-row chunk: 135.74 GB -> 59.45 GB, 354.4 ms at 215.3 GB/s
+    32784 tokens ( 8.00 chunks):   2.84 s
+   131051 tokens (31.99 chunks):  11.34 s
+   259951 tokens (63.46 chunks):  22.49 s

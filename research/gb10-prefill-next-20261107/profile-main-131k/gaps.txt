@@ -1,0 +1,23 @@
+gap bucket      count     total_s
+<10us          562950       1.154
+<100us          13903       0.870
+<1ms              558       0.203
+<10ms             358       1.195
+>=10ms            122       4.742
+
+kernels that follow gaps >= 1 ms
+    2.308 s    152 x  embed_gather_u32_t
+    1.334 s     76 x  rms_norm_f32_v2
+    1.222 s     37 x  quantize_mmq_q8_1_ds4_kernel
+    0.726 s     66 x  gdn_chunk_state_mma
+    0.198 s     98 x  embed_gather_u32
+    0.041 s     21 x  fa_dequant_kv_ws_bf16
+    0.033 s     10 x  copy_batch_uniform_f32
+    0.019 s      3 x  f8f4v2_image_kernel<
+    0.017 s      4 x  gdn_chunk_cumgate_f32
+    0.013 s      5 x  l2_norm_pp_v2_f32
+    0.013 s      3 x  ssm_conv1d_gdn_state_f32
+    0.006 s      2 x  fa_decode_vec_q_v4_deep_dc
+    0.004 s      1 x  filter_stats_coop_f32
+    0.002 s      1 x  qmatvec_q6_K_mmvq
+    0.001 s      1 x  append_quantize_kv_q8_0_q5_1_dc

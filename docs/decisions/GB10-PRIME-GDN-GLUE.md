@@ -1,7 +1,7 @@
 # GB10 prime: GDN traffic, fused K4+K5, fused norms and activation quantize, gate/up in one launch (2026-11-07)
 
-**Status:** decided on one device class (unified-memory 120a family, DGX Spark): prime bench on
-both units, served A/B and exactness battery on both. The levers keyed on the F8F4 v2 route (the
+**Status:** decided on one device class (unified-memory 120a family, DGX Spark): prime bench,
+exactness battery and served A/B on both units. The levers keyed on the F8F4 v2 route (the
 norm and gate/up fusions) reach only GB10. The fused K4+K5 and the tiled dp4a matvec change the
 kernels' parallelism, so they are keyed on GB10 and wait for a discrete-card A/B. The rest (the GDN
 compact layout at any dividing head ratio, the K2/K3/K5 grid order, the dropped f32 W store, the
@@ -45,7 +45,20 @@ Exact rewrites, default ON, each with a seam (`docs/FLAGS.md` section 3):
 `research/gb10-prefill-next-20261107/` (README, LEVER-LEDGER): prime bench at 33,890 tokens, main
 32.19 s -> 25.70 s with every cell's last-row prime logits identical; each lever measured on its
 own; the fused K4+K5 probe (4.288 -> 1.703 ms per call at T 4,096, bit-identical); kernel-check bit
-cells for every new kernel; the served A/B on both units.
+cells for every new kernel, run-gen argmax, run-spec, prime-path logits and the batched-prime gate
+on both units.
+
+Served cold TTFT, unit 2, B L L B B L, main `6f5e03e74a` against the lane (medians of three boots):
+
+| prompt tokens | main | lane | change |
+|---:|---:|---:|---:|
+| 32,784 | 31.887 s | 25.382 s | -20.40% |
+| 131,051 | 157.706 s | 131.689 s | -16.50% |
+| 259,951 | 391.238 s | 340.886 s | -12.87% |
+
+Every lane boot is faster than every main boot at every length, the answers are identical, and the
+MemAvailable floor is 66.2 GiB or more in every lane boot. Unit 1, B L L B: -20.45% / -16.40% /
+-12.85%, the same answers.
 
 ## Rejected
 

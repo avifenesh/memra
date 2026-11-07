@@ -1,0 +1,50 @@
+nvcc rc=0
+ptxas info    : Function properties for _Z6k4_tplILi64ELb1ELb0EEvPK13__nv_bfloat16PKfS4_S4_S2_P6__halfS6_S4_Pfiiii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Function properties for _Z6k4_tplILi32ELb1ELb0EEvPK13__nv_bfloat16PKfS4_S4_S2_P6__halfS6_S4_Pfiiii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Function properties for _Z6k4_tplILi32ELb0ELb0EEvPK13__nv_bfloat16PKfS4_S4_S2_P6__halfS6_S4_Pfiiii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Function properties for _Z6k4_tplILi64ELb1ELb1EEvPK13__nv_bfloat16PKfS4_S4_S2_P6__halfS6_S4_Pfiiii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Function properties for _Z6k4_tplILi64ELb0ELb1EEvPK13__nv_bfloat16PKfS4_S4_S2_P6__halfS6_S4_Pfiiii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Function properties for _Z6k4_tplILi32ELb1ELb1EEvPK13__nv_bfloat16PKfS4_S4_S2_P6__halfS6_S4_Pfiiii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Function properties for _Z6k4_tplILi32ELb0ELb1EEvPK13__nv_bfloat16PKfS4_S4_S2_P6__halfS6_S4_Pfiiii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Function properties for gdn_chunk_state_mma_prime_table
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Function properties for gdn_chunk_output_mma_vl
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Function properties for gdn_chunk_output_mma
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Function properties for gdn_chunk_state_mma_vl
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Function properties for gdn_chunk_state_mma
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+T=4096 H=48 hk=16 NC=128 reps=7 (median ms)
+k4 v0          2.429 ms
+k5 cfast       2.135 ms
+k5 hfast       1.786 ms  o bitdiff=0
+k4 c32         2.441 ms  (0.99x v0)  Y=0 Ssnap=0 state=0 o=0 EXACT
+k4 c32pf       2.588 ms  (0.94x v0)  Y=0 Ssnap=0 state=0 o=0 EXACT
+k4 c64         2.123 ms  (1.14x v0)  Y=0 Ssnap=0 state=0 o=0 EXACT
+k4 c64pf       2.411 ms  (1.01x v0)  Y=0 Ssnap=0 state=0 o=0 EXACT
+k4 c32ns       1.287 ms  (1.89x v0)  state=0 (diagnostic, no Y/Ssnap)
+k4 c32pfns     1.200 ms  (2.03x v0)  state=0 (diagnostic, no Y/Ssnap)
+k4 c64pfns     0.920 ms  (2.64x v0)  state=0 (diagnostic, no Y/Ssnap)
+PROBE-GDN-DONE
+T=8192 H=48 hk=16 NC=256 reps=7 (median ms)
+k4 v0          4.842 ms
+k5 cfast       4.390 ms
+k5 hfast       3.567 ms  o bitdiff=0
+k4 c32         4.875 ms  (0.99x v0)  Y=0 Ssnap=0 state=0 o=0 EXACT
+k4 c32pf       5.533 ms  (0.88x v0)  Y=0 Ssnap=0 state=0 o=0 EXACT
+k4 c64         4.268 ms  (1.13x v0)  Y=0 Ssnap=0 state=0 o=0 EXACT
+k4 c64pf       4.934 ms  (0.98x v0)  Y=0 Ssnap=0 state=0 o=0 EXACT
+k4 c32ns       2.606 ms  (1.86x v0)  state=0 (diagnostic, no Y/Ssnap)
+k4 c32pfns     2.392 ms  (2.02x v0)  state=0 (diagnostic, no Y/Ssnap)
+k4 c64pfns     1.791 ms  (2.70x v0)  state=0 (diagnostic, no Y/Ssnap)
+PROBE-GDN-DONE
+RUN-PROBE-GDN-DONE

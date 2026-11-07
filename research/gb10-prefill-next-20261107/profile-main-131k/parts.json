@@ -1,0 +1,222 @@
+{
+ "window_s": 318.791102016,
+ "busy_s": 310.626537342,
+ "kernel_sum_s": 310.64613820600465,
+ "parts_s": {
+  "glue: norms/adds/act": 18.938185891002572,
+  "gemm: activation e4m3 quantize": 19.433277248000078,
+  "gemm: F8F4 v2 weight image": 19.112946527999938,
+  "gemm: NVFP4 F8F4 v2 tile": 127.94359407999995,
+  "other": 10.20007600100217,
+  "gemm: other MMQ / matvec": 24.856283249000064,
+  "gdn: conv/l2/gates": 13.10114403199942,
+  "gdn: chunk scan kernels": 30.754555712000425,
+  "attention: rope/qk-norm/gate glue": 2.1516672420000766,
+  "attention: KV append/quantize": 0.5668225279999437,
+  "attention: KV dequant workspace": 1.4323678399999997,
+  "attention: FA prime kernel": 42.06410729599998,
+  "gemm: NVFP4 F8F4 MMQ": 0.091110559
+ },
+ "top": [
+  {
+   "name": "mul_mat_f8f4v2<",
+   "s": 127.94359408,
+   "count": 41200
+  },
+  {
+   "name": "fa_prefill_qw_h2p",
+   "s": 41.901469024,
+   "count": 1648
+  },
+  {
+   "name": "f8f4v2_image_kernel<",
+   "s": 19.112946528,
+   "count": 41200
+  },
+  {
+   "name": "quantize_mmq_e4m3_d4_silu_kernel<",
+   "s": 12.71185024,
+   "count": 6656
+  },
+  {
+   "name": "add_f32",
+   "s": 9.156221351,
+   "count": 27700
+  },
+  {
+   "name": "gdn_chunk_state_mma",
+   "s": 9.030289632,
+   "count": 4992
+  },
+  {
+   "name": "rms_norm_f32_v2",
+   "s": 7.987956973,
+   "count": 41164
+  },
+  {
+   "name": "gdn_chunk_solve32_f32",
+   "s": 7.451269184,
+   "count": 4992
+  },
+  {
+   "name": "gdn_chunk_output_mma",
+   "s": 7.135854144,
+   "count": 4992
+  },
+  {
+   "name": "quantize_mmq_e4m3_d4_kernel<",
+   "s": 6.721427008,
+   "count": 19968
+  },
+  {
+   "name": "ssm_conv1d_gdn_state_f32",
+   "s": 6.706408704,
+   "count": 4992
+  },
+  {
+   "name": "qmatvec_nvfp4_dp4a_rp",
+   "s": 6.436503993,
+   "count": 9984
+  },
+  {
+   "name": "l2_norm_pp_v2_f32",
+   "s": 6.269213408,
+   "count": 9984
+  },
+  {
+   "name": "gdn_chunk_attn_f32",
+   "s": 5.524084704,
+   "count": 4992
+  },
+  {
+   "name": "quantize_q8_1",
+   "s": 4.18620421,
+   "count": 50224
+  },
+  {
+   "name": "gated_rmsnorm_f32",
+   "s": 4.121369056,
+   "count": 4992
+  },
+  {
+   "name": "qmatvec_nvfp4_mmvq_dual_b4_rpr2",
+   "s": 3.093340416,
+   "count": 6784
+  },
+  {
+   "name": "qmatvec_nvfp4_mmvq_b16_rpscx",
+   "s": 2.509080127,
+   "count": 10240
+  },
+  {
+   "name": "qmatvec_nvfp4_mmvq_b4_rp",
+   "s": 2.472577681,
+   "count": 14080
+  },
+  {
+   "name": "q_gate_split_f32",
+   "s": 1.834245899,
+   "count": 5466
+  },
+  {
+   "name": "fa_dequant_kv_ws_bf16",
+   "s": 1.43236784,
+   "count": 1664
+  },
+  {
+   "name": "qmatvec_nvfp4_mmvq_group4_b4_rp",
+   "s": 1.422038688,
+   "count": 6784
+  },
+  {
+   "name": "mul_f32",
+   "s": 1.395082202,
+   "count": 5466
+  },
+  {
+   "name": "qmatvec_nvfp4_mmvq_mr2_rp",
+   "s": 1.12544125,
+   "count": 7284
+  },
+  {
+   "name": "sigmoid_f32",
+   "s": 1.006509952,
+   "count": 10458
+  },
+  {
+   "name": "qmatvec_nvfp4_mmvq_b8_rpsc",
+   "s": 0.962026955,
+   "count": 4608
+  },
+  {
+   "name": "gdn_scan_s128_b",
+   "s": 0.917008768,
+   "count": 2496
+  },
+  {
+   "name": "qmatvec_nvfp4_mmvq_b32_tc",
+   "s": 0.825346807,
+   "count": 2048
+  },
+  {
+   "name": "qmatvec_nvfp4_mmvq_group4_b16_rp",
+   "s": 0.774858944,
+   "count": 2816
+  },
+  {
+   "name": "fa_decode_vec_q_seqs_v4_deep",
+   "s": 0.660216608,
+   "count": 3392
+  },
+  {
+   "name": "qmatvec_q5_K_mmvq_il",
+   "s": 0.625336736,
+   "count": 120
+  },
+  {
+   "name": "gdn_scan_s128_tsnap",
+   "s": 0.597163616,
+   "count": 11616
+  },
+  {
+   "name": "qmatvec_q5_K_mmvq_b4_r2",
+   "s": 0.551236768,
+   "count": 110
+  },
+  {
+   "name": "qmatvec_nvfp4_mmvq_b32_rpcs8",
+   "s": 0.495041983,
+   "count": 1024
+  },
+  {
+   "name": "qmatvec_q5_K_mmvq_b16",
+   "s": 0.4405328,
+   "count": 68
+  },
+  {
+   "name": "rope_neox_f32",
+   "s": 0.317421343,
+   "count": 11178
+  },
+  {
+   "name": "append_quantize_kv_q8_0_q5_1",
+   "s": 0.311364224,
+   "count": 141891
+  },
+  {
+   "name": "qmatvec_q4_K_mmvq",
+   "s": 0.30721731,
+   "count": 1960
+  },
+  {
+   "name": "mul_mat_q_q45k<",
+   "s": 0.299586879,
+   "count": 74
+  },
+  {
+   "name": "append_quantize_kv_q8_0_q5_1_rows",
+   "s": 0.240990208,
+   "count": 1664
+  }
+ ]
+}
