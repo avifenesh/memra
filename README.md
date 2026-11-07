@@ -151,8 +151,11 @@ states. [docs/MODELS.md](docs/MODELS.md) is the support matrix; each entry in
 Every fast path is promoted only against its own oracle. Kernel-level bit identity
 (`kernel-check`), argmax parity of generation against the reference path (`run-gen`),
 speculative-decode self-consistency across draft lengths (`run-spec`), and served-path
-byte identity (spec versus plain, restored versus cold) are the standing battery; GitHub CI is
-compile-only, so the battery runs on a GPU before a merge or a tag. Greedy decoding is the
+byte identity (spec versus plain, restored versus cold) are the standing gates. GitHub CI is
+compile-only, so they run on a GPU. A merge runs the cells the change reaches, or the full
+battery (`tools/local-ci.sh`), which carries the served-path identity gates. A tag runs the tag
+battery (`tools/release-battery.sh`): `kernel-check`, calibrated argmax and `run-spec` on two
+qwen35-class checkpoints, with no serving gate. Greedy decoding is the
 instrument, not the product: it is what makes byte-level gates possible. The gate catalog and
 what each one proves is [docs/TESTING.md](docs/TESTING.md).
 
