@@ -256,6 +256,29 @@ Config = ["ci:verify-tiny"]
 TinyParity = ["ci:verify-tiny"]
 
 [[record]]
+id = "gemma4_e4b-reference"
+pack = "gemma4_e4b"
+state = "NativeReference"
+artifact = "tiny fixture (text oracle; per-layer inputs and shared KV)"
+numeric_program = "f32 reference executor"
+topology = "cpu"
+route = "memra model verify tiny"
+notes = "The QAT Q4_0 GGUF passes Config, TokenizerTemplate and TensorCensus on inspect (research/modelplan-onboarding-e4b-20261104), and its RTX 5090 engine cells pass there (run-gen, calibrated argmax, gemma-gate spec K=1..8, verify, graph). CheckpointParity and RewriteParity have no receipt. Serve stays pending: on a thinking-off chat E4B writes a thought after the closed channel and leaks a stray <channel|> into content."
+[record.gates]
+Config = "passed"
+TinyParity = "passed"
+TokenizerTemplate = "passed"
+TensorCensus = "passed"
+CheckpointParity = "pending"
+RewriteParity = "pending"
+Serve = "pending"
+[record.evidence]
+Config = ["research/modelplan-onboarding-e4b-20261104/inspect/gates.txt", "ci:verify-tiny"]
+TinyParity = ["ci:verify-tiny"]
+TokenizerTemplate = ["research/modelplan-onboarding-e4b-20261104/inspect/gates.txt"]
+TensorCensus = ["research/modelplan-onboarding-e4b-20261104/inspect/gates.txt"]
+
+[[record]]
 id = "deepseek_v4_dspark-reference"
 pack = "deepseek_v4_dspark"
 state = "NativeReference"

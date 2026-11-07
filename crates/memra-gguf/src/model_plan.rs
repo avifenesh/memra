@@ -28,6 +28,9 @@ pub struct ModelPlan {
     /// tokenizer is not represented by this field.
     pub mimo_audio_patch: Option<MiMoAudioPatchPlan>,
     pub multimodal: Option<VisionTokenInjectionPlan>,
+    /// gemma4 per-layer input embeddings (E4B). `Some` means every trunk layer adds the
+    /// gated per-layer residual after its MLP residual and before its layer scale.
+    pub per_layer_input: Option<PerLayerInputPlan>,
     pub layers: Vec<LayerPlan>,
     pub output_norm: NormPlan,
     /// qwen4_exp: the exit downmix replacing a final norm module (`Some` ⇒ the model has NO
@@ -61,6 +64,9 @@ impl std::fmt::Debug for ModelPlan {
             d.field("mimo_audio_patch", audio);
         }
         d.field("multimodal", &self.multimodal);
+        if let Some(per_layer_input) = &self.per_layer_input {
+            d.field("per_layer_input", per_layer_input);
+        }
         d.field("layers", &self.layers);
         d.field("output_norm", &self.output_norm);
         d.field("exit_mixer", &self.exit_mixer);
@@ -611,6 +617,33 @@ pub struct PleEmbeddingPlan {
     pub eos_token_id: u32,
 }
 
+/// gemma4 per-layer input embeddings (E4B; HF `hidden_size_per_layer_input`, transformers
+/// `get_per_layer_inputs` + `project_per_layer_inputs`, llama.cpp `gemma4.cpp`).
+///
+/// Prologue, once per token `t` with scaled embedding `x = embed(t) * sqrt(hidden)`:
+/// `inp[l] = (rms_norm(W_model . x * projection_scale)[l] + table[t][l] * token_scale)
+/// * combine_scale`, both halves `[layers, width]` and the norm per `width` slice.
+/// Tail, per trunk layer `l`, on the residual `h` after the MLP residual add:
+/// `h += rms_norm(W_proj . (gelu(W_gate . h) * inp[l]))`, then the layer scale.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PerLayerInputPlan {
+    /// Per-layer input width (`n_embd_per_layer`, 256 on E4B).
+    pub width: u32,
+    /// Trunk layers fed; the token table and model projection are `width * layers` wide.
+    pub layers: u32,
+    /// Rows of the per-layer token table (the text vocabulary).
+    pub vocab_size: u32,
+    /// `sqrt(width)` on the gathered table rows.
+    pub token_scale: f32,
+    /// `1/sqrt(hidden)` on the model projection of the scaled token embedding.
+    pub projection_scale: f32,
+    /// `1/sqrt(2)` on the sum of the two halves.
+    pub combine_scale: f32,
+    pub projection_norm: NormPlan,
+    pub gate_activation: ActivationPlan,
+    pub post_norm: NormPlan,
+}
+
 /// Kimi Delta Attention (glm5_next linear-attn layers). Deliberately NOT
 /// `GatedDeltaNetPlan`: heads are symmetric (q=k=v), decay is PER-CHANNEL through a
 /// low-rank forget gate (`f_a`/`f_b` + `dt_bias`, clamped `lower_bound * sigmoid(exp(A_log)*g)`)
@@ -794,6 +827,12 @@ pub enum StatePlan {
         head_dim: u32,
         compressor_ratio: Option<u32>,
         sparse_top_k: Option<u32>,
+    },
+    /// gemma4 KV sharing (E4B `num_kv_shared_layers`): the layer owns no K/V projection and
+    /// no cache. Its queries attend `source_layer`'s cache, the last earlier layer of the same
+    /// attention type that owns one (transformers `kv_shared_layer_index`).
+    SharedKvCache {
+        source_layer: u32,
     },
 }
 
@@ -1050,6 +1089,21 @@ impl ModelPlan {
         for index in 0..trunk_layers {
             layers.push(compile_layer(cfg, index, false, norm)?);
         }
+        let per_layer_input = cfg
+            .gemma4
+            .as_ref()
+            .filter(|gemma| gemma.n_embd_per_layer > 0)
+            .map(|gemma| PerLayerInputPlan {
+                width: gemma.n_embd_per_layer,
+                layers: trunk_layers,
+                vocab_size: cfg.n_vocab,
+                token_scale: (gemma.n_embd_per_layer as f32).sqrt(),
+                projection_scale: 1.0 / (cfg.n_embd as f32).sqrt(),
+                combine_scale: std::f32::consts::FRAC_1_SQRT_2,
+                projection_norm: norm,
+                gate_activation: activation(cfg, 0, false),
+                post_norm: norm,
+            });
 
         let mut mtp_blocks = Vec::with_capacity(cfg.nextn_predict_layers as usize);
         for depth in 0..cfg.nextn_predict_layers {
@@ -1262,6 +1316,7 @@ impl ModelPlan {
             vision,
             mimo_audio_patch,
             multimodal,
+            per_layer_input,
             partition_boundaries: (1..trunk_layers as usize).collect(),
             layers,
             output_norm: norm,
@@ -1391,8 +1446,14 @@ impl ModelPlan {
             operations.push(OperationKind::VisionTokenInjection);
         }
         operations.push(OperationKind::Embedding);
+        if self.per_layer_input.is_some() {
+            operations.push(OperationKind::PerLayerInputEmbedding);
+        }
         for layer in &self.layers {
             layer.operations(&mut operations);
+            if self.per_layer_input.is_some() {
+                operations.push(OperationKind::PerLayerInputGate);
+            }
         }
         if include_mtp {
             for block in &self.mtp_blocks {
@@ -1477,6 +1538,22 @@ impl ModelPlan {
                 .partition_boundaries
                 .iter()
                 .all(|&boundary| boundary > 0 && boundary < self.layers.len())
+    }
+
+    /// The last trunk layer that owns a cache of the given attention class: a sliding-window
+    /// cache when `sliding`, a full-attention cache otherwise. On gemma4 E4B this is the source
+    /// every KV-shared layer of that class reads (`StatePlan::SharedKvCache`, 22 and 23), and on
+    /// every gemma4 plan it is the main layer a gemma4-assistant drafter layer attends.
+    pub fn last_own_kv_layer(&self, sliding: bool) -> Option<u32> {
+        self.layers
+            .iter()
+            .rev()
+            .find(|layer| match layer.state {
+                StatePlan::SlidingKvCache { .. } => sliding,
+                StatePlan::KvCache { .. } => !sliding,
+                _ => false,
+            })
+            .map(|layer| layer.index)
     }
 
     pub fn requires_hybrid_executor(&self) -> bool {
@@ -1875,6 +1952,7 @@ impl LayerPlan {
             StatePlan::Recurrent { .. } => OperationKind::RecurrentState,
             StatePlan::LatentKvCache { .. } => OperationKind::LatentKvState,
             StatePlan::CompressedAttention { .. } => OperationKind::CompressedAttentionState,
+            StatePlan::SharedKvCache { .. } => OperationKind::SharedKvState,
         });
         operations.push(OperationKind::RmsNorm);
         match &self.mlp {
@@ -2234,27 +2312,94 @@ fn compile_attention(
     }
     let key_width = geometry.kv_heads * geometry.key_head_dim;
     let value_width = geometry.kv_heads * geometry.value_head_dim;
-    if let Some(window) = attention_window(cfg, index, mtp) {
-        Ok((
-            AttentionPlan::SlidingWindow {
-                attention: geometry,
-                window,
-            },
-            StatePlan::SlidingKvCache {
-                key_width,
-                value_width,
-                window,
-            },
-        ))
-    } else {
-        Ok((
-            AttentionPlan::Full(geometry),
-            StatePlan::KvCache {
-                key_width,
-                value_width,
-            },
-        ))
+    let window = attention_window(cfg, index, mtp);
+    let shared_source = gemma_shared_kv_source(cfg, index, mtp)?;
+    if let Some(source_layer) = shared_source {
+        let source = attention_geometry(cfg, source_layer)?;
+        if (source.kv_heads, source.key_head_dim, source.value_head_dim)
+            != (
+                geometry.kv_heads,
+                geometry.key_head_dim,
+                geometry.value_head_dim,
+            )
+            || attention_window(cfg, source_layer, mtp) != window
+        {
+            return Err(PlanCompileError::UnsupportedSemantics {
+                field: "gemma4.shared_kv_layers",
+                value: format!(
+                    "layer {index} reads layer {source_layer}'s cache but their KV geometry differs"
+                ),
+            });
+        }
     }
+    let attention = match window {
+        Some(window) => AttentionPlan::SlidingWindow {
+            attention: geometry,
+            window,
+        },
+        None => AttentionPlan::Full(geometry),
+    };
+    let state = match (shared_source, window) {
+        (Some(source_layer), _) => StatePlan::SharedKvCache { source_layer },
+        (None, Some(window)) => StatePlan::SlidingKvCache {
+            key_width,
+            value_width,
+            window,
+        },
+        (None, None) => StatePlan::KvCache {
+            key_width,
+            value_width,
+        },
+    };
+    Ok((attention, state))
+}
+
+/// The cache a gemma4 KV-shared layer reads: layers at or past `n_trunk - shared_kv_layers`
+/// own no K/V and attend the last earlier layer of their own attention type (transformers
+/// `Gemma4TextAttention.kv_shared_layer_index`; on E4B that is layer 22 for sliding and 23 for
+/// global, the same answer as llama.cpp's `n_layer_kv_from_start - (swa ? 2 : 1)`).
+fn gemma_shared_kv_source(
+    cfg: &ModelConfig,
+    index: u32,
+    mtp: bool,
+) -> Result<Option<u32>, PlanCompileError> {
+    let Some(gemma) = cfg
+        .gemma4
+        .as_ref()
+        .filter(|gemma| gemma.shared_kv_layers > 0)
+    else {
+        return Ok(None);
+    };
+    let trunk = cfg.n_layer.saturating_sub(cfg.nextn_predict_layers);
+    let first_shared = trunk
+        .checked_sub(gemma.shared_kv_layers)
+        .filter(|&first| first > 0 && !mtp)
+        .ok_or_else(|| PlanCompileError::UnsupportedSemantics {
+            field: "gemma4.shared_kv_layers",
+            value: format!(
+                "{} shared layers over {trunk} trunk layers{}",
+                gemma.shared_kv_layers,
+                if mtp { " with an MTP block" } else { "" }
+            ),
+        })?;
+    if index < first_shared {
+        return Ok(None);
+    }
+    let swa = |layer: u32| {
+        gemma
+            .swa_pattern
+            .get(layer as usize)
+            .copied()
+            .unwrap_or(false)
+    };
+    (0..first_shared)
+        .rev()
+        .find(|&layer| swa(layer) == swa(index))
+        .map(Some)
+        .ok_or_else(|| PlanCompileError::UnsupportedSemantics {
+            field: "gemma4.shared_kv_layers",
+            value: format!("layer {index} has no earlier layer of its attention type with a cache"),
+        })
 }
 
 fn attention_geometry(
@@ -2303,7 +2448,7 @@ fn attention_geometry(
             qk_norm: TensorPresence::Required,
             output_gate: AttentionGateKind::None,
             scale: AttentionScale::Fixed(1.0),
-            value_projection: if swa {
+            value_projection: if swa || !gemma.attention_k_eq_v {
                 ValueProjection::Separate
             } else {
                 ValueProjection::ReuseKey
@@ -2742,11 +2887,17 @@ pub enum OperationKind {
     GatedResidualMixer,
     /// qwen4_exp PLE n-gram embedding block on its declared layer(s).
     PleNgramEmbedding,
+    /// gemma4 per-layer input prologue: token-table gather plus normed model projection.
+    PerLayerInputEmbedding,
+    /// gemma4 per-layer gated residual on every trunk layer (`PerLayerInputPlan` tail).
+    PerLayerInputGate,
     KvState,
     SlidingKvState,
     RecurrentState,
     LatentKvState,
     CompressedAttentionState,
+    /// gemma4 KV-shared layer: no own cache, reads an earlier layer's.
+    SharedKvState,
     Mtp,
     DraftPlan,
     MtpFusion,

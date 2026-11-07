@@ -3115,8 +3115,9 @@ pub struct Gemma4LayerBits {
 
 /// gemma-4 E4B per-layer bits (see research/gemma4-bringup/e4b-arch-map.md):
 /// tail block  cur += rms_norm(proj . (gelu(inp_gate . cur) * inp_pl[il]), post_norm)
-/// and the KV-share map — layers il >= n_layer-shared_kv_layers have NO own k/v projections
-/// and attend the cache of layer (n_layer-shared) - (swa ? 2 : 1) with their own Q.
+/// and the KV-share target from the plan: a layer whose state is
+/// `StatePlan::SharedKvCache { source_layer }` has NO own k/v projections and attends
+/// `source_layer`'s cache with its own Q (on E4B, layers 24..41 read 22 and 23).
 pub struct Gemma4E4bLayer {
     pub inp_gate: GpuTensor,  // blk.N.inp_gate  [n_embd, n_epl]
     pub proj: GpuTensor,      // blk.N.proj      [n_epl, n_embd]
@@ -4654,10 +4655,13 @@ impl HybridModel {
             let pipeline = crate::plan_backend::PIPELINE
                 .trunk_capabilities(&plan)
                 .pipeline;
-            // Gemma retains its separately gated PP2 program. Every generic PP-N load must be
-            // admitted by ModelPlan operations before the first shard is uploaded; a legacy env
-            // door is not evidence that an arbitrary dense/stateful architecture is splittable.
-            let qualified_gemma_pp2 = gemma_program && fence.len() == 3;
+            // Gemma retains its separately gated PP2 program for the 12B/26B/31B plans. E4B's
+            // per-layer inputs and shared KV cross a stage boundary that program does not carry,
+            // so E4B takes the generic check below and refuses with those operations named.
+            // Every generic PP-N load must be admitted by ModelPlan operations before the first
+            // shard is uploaded; a legacy env door is not evidence that an arbitrary
+            // dense/stateful architecture is splittable.
+            let qualified_gemma_pp2 = crate::plan_backend::gemma_pp2_covers(&plan, fence.len() - 1);
             if !pipeline.supported && !qualified_gemma_pp2 {
                 return Err(format!(
                     "pipeline placement is unsupported for plan operations {:?}; blockers={:?}",
@@ -4924,17 +4928,12 @@ impl HybridModel {
                 mixer: {
                     // E4B KV-shared layers ship NO attn_k/attn_v — load the SHARE TARGET's
                     // k/v tensors for shape symmetry (forward skips k/v compute there and
-                    // reads the target layer's cache; see Gemma4E4bLayer::kv_share).
-                    let g4_shared = cfg.gemma4.as_ref().map(|g| g.shared_kv_layers).unwrap_or(0);
-                    let kv_from = n_trunk as u32 - g4_shared;
-                    if g4_shared > 0
-                        && il >= kv_from
-                        && !src.has(&format!("blk.{il}.attn_k.weight"))
+                    // reads the target layer's cache; see Gemma4E4bLayer::kv_share). The
+                    // plan names the target (`StatePlan::SharedKvCache`).
+                    if let memra_gguf::model_plan::StatePlan::SharedKvCache { source_layer } =
+                        layer_plan.state
                     {
-                        let g4 = cfg.gemma4.as_ref().unwrap();
-                        let swa = g4.swa_pattern.get(il as usize).copied().unwrap_or(true);
-                        let tgt = kv_from - if swa { 2 } else { 1 };
-                        let tp = |s: &str| format!("blk.{tgt}.{s}");
+                        let tp = |s: &str| format!("blk.{source_layer}.{s}");
                         Mixer::Full(FullAttnLayer {
                             wq: load_t(e, src, &p("attn_q.weight"))?,
                             wk: load_t(e, src, &tp("attn_k.weight"))?,
@@ -5003,15 +5002,14 @@ impl HybridModel {
                     } else {
                         None
                     };
-                    // E4B extras (tensor-presence: blk.N.inp_gate only exists on E4B)
-                    let e4b = if src.has(&p("inp_gate.weight")) {
-                        let g4 = cfg.gemma4.as_ref().unwrap();
-                        let kv_from = n_trunk as u32 - g4.shared_kv_layers;
-                        let kv_share = if g4.shared_kv_layers > 0 && il >= kv_from {
-                            let swa = g4.swa_pattern.get(il as usize).copied().unwrap_or(true);
-                            Some(kv_from - if swa { 2 } else { 1 })
-                        } else {
-                            None
+                    // E4B extras: the plan's per-layer input program (the contract bound
+                    // blk.N.inp_gate/proj/post_norm for it) and its KV-share target.
+                    let e4b = if plan.per_layer_input.is_some() {
+                        let kv_share = match layer_plan.state {
+                            memra_gguf::model_plan::StatePlan::SharedKvCache { source_layer } => {
+                                Some(source_layer)
+                            }
+                            _ => None,
                         };
                         Some(crate::hybrid::Gemma4E4bLayer {
                             inp_gate: load_t(e, src, &p("inp_gate.weight"))?,
@@ -5895,20 +5893,29 @@ impl HybridModel {
                     Some(copies)
                 }
             };
-            // E4B per-layer-embedding model tensors (tensor-presence gated).
-            let e4b = match src.find("per_layer_token_embd.weight") {
-                Some(t) => {
-                    let n_epl = cfg
-                        .gemma4
-                        .as_ref()
-                        .map(|g| g.n_embd_per_layer as usize)
-                        .unwrap_or(0);
+            // E4B per-layer-input model tensors. The plan's PerLayerInputPlan says the prologue
+            // exists and how wide it is; the contract bound these three tensors for it.
+            let e4b = match plan.per_layer_input.as_ref() {
+                Some(per_layer) => {
+                    let t = src.find("per_layer_token_embd.weight").ok_or(
+                        "the plan declares per-layer inputs but per_layer_token_embd.weight \
+                         is missing",
+                    )?;
+                    let n_epl = per_layer.width as usize;
                     let row = t.ne[0] as usize; // n_epl * n_layer
+                    if row != n_epl * per_layer.layers as usize {
+                        return Err(format!(
+                            "per_layer_token_embd.weight rows are {row} wide, the plan's \
+                             per-layer input is {n_epl} x {} layers",
+                            per_layer.layers
+                        )
+                        .into());
+                    }
                     let row_bytes = t.bytes.len() / (t.ne[1] as usize);
                     eprintln!(
-                        "[gemma4-e4b] per-layer-embed model detected (n_epl={n_epl}, row {row}) — \
-                               first-light forward (eager decode + prime); dc/graph/spec unwired \
-                               (HANDOVER-E4B.md)"
+                        "[gemma4-e4b] per-layer inputs from the plan (n_epl={n_epl}, row {row}): \
+                         dedicated E4B prime, decode, graph and verify programs; whole-prompt \
+                         prime, no batched decode"
                     );
                     Some(crate::hybrid::Gemma4E4bModel {
                         tok_tbl_gpu: std::sync::OnceLock::new(),

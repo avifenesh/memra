@@ -24437,7 +24437,8 @@ impl HybridModel {
         let _numeric = self.enter_numeric();
         if self.is_gemma4_e4b() {
             return Err(
-                "E4B graph serving is unwired (HANDOVER-E4B.md) — dc-eager is the serving arm"
+                "gemma4_generate_graph is the 26B/31B graph program; E4B runs its own graph-exec \
+                 loop (gemma4_e4b_graph_exec_loop, MEMRA_E4B_GRAPH)"
                     .into(),
             );
         }
@@ -28667,12 +28668,14 @@ impl HybridModel {
 }
 
 // ===================================================================================== //
-//  gemma-4 E4B (per-layer embeddings + KV-sharing) — FIRST-LIGHT forward.               //
-//  Dedicated simple path (Stage-B matmuls, per-row causal attention over the quantized  //
-//  cache) so the tuned 26B/31B paths stay untouched. Arch: research/gemma4-bringup/     //
-//  e4b-arch-map.md; llama reference: src/models/gemma4.cpp (E4B arms). Wired: forward   //
-//  (prefill logits), prime (tokenwise-equivalent batched trunk), eager decode_step_h.   //
-//  NOT wired: dc/graph serving arms, verify/spec, chunked prime (HANDOVER-E4B.md).      //
+//  gemma-4 E4B (per-layer inputs + KV sharing): its dedicated programs.                 //
+//  Simple path (Stage-B matmuls, per-row causal attention over the quantized cache)     //
+//  so the tuned 26B/31B paths stay untouched. Arch: research/gemma4-bringup/            //
+//  e4b-arch-map.md; llama reference: src/models/gemma4.cpp (E4B arms). Wired:           //
+//  forward (prefill logits), whole-prompt prime, eager and dc decode, the graph-exec    //
+//  loop (MEMRA_E4B_GRAPH), and gemma-gate's batched verify and assistant-drafter        //
+//  spec, qualified 2026-11-04 (docs/models/gemma4-e4b.md). NOT wired: chunked prime,    //
+//  batched decode, pipeline stages, memra-server's gspec attach.                        //
 // ===================================================================================== //
 impl HybridModel {
     pub fn is_gemma4_e4b(&self) -> bool {

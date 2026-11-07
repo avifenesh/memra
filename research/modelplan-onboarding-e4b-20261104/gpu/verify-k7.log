@@ -1,0 +1,29 @@
+[tensor-contract] bound 666 semantic tensors (pack gemma4_e4b, Gguf, output head TiedToEmbedding); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[gemma4-e4b] per-layer inputs from the plan (n_epl=256, row 10752): dedicated E4B prime, decode, graph and verify programs; whole-prompt prime, no batched decode
+[q8rp] split-plane decode mirrors built: 1 tensors
+[q4rp] split-plane decode mirrors built: 402 trunk tensors
+[q4f16] prefill program = INT8 MMQ (no f16 mirrors) (reason: model geometry not eligible); free 18100 MiB, mirror mass 7525 MiB, capacity threshold 15717 MiB (mass + 8192 headroom) — SELECTS PREFILL ARITHMETIC
+[q4rp] split-plane IN-PLACE swap: 294 dense trunk tensors
+[fa-pool] grow #0 dev=0 o_len 0 -> 2048 ml_len 0 -> 8 (retired kept, zero=false)
+[fa-pool] grow #1 dev=0 o_len 2048 -> 4096 ml_len 8 -> 16 (retired kept, zero=false)
+[fa-pool] grow #2 dev=0 o_len 4096 -> 8192 ml_len 16 -> 32 (retired kept, zero=false)
+[fa-pool] grow #3 dev=0 o_len 8192 -> 16384 ml_len 32 -> 64 (retired kept, zero=false)
+[fa-pool] grow #4 dev=0 o_len 16384 -> 32768 ml_len 64 -> 128 (retired kept, zero=false)
+[fa-pool] grow #5 dev=0 o_len 32768 -> 65536 ml_len 128 -> 256 (retired kept, zero=false)
+[fa-pool] grow #6 dev=0 o_len 65536 -> 131072 ml_len 256 -> 512 (retired kept, zero=false)
+[fa-pool] grow #7 dev=0 o_len 131072 -> 262144 ml_len 512 -> 1024 (retired kept, zero=false)
+verify pos 0: batched=3847 tokenwise=3847 MATCH
+  pos 0 logit maxdiff=0.000e0
+verify pos 1: batched=623 tokenwise=623 MATCH
+  pos 1 logit maxdiff=0.000e0
+verify pos 2: batched=7412 tokenwise=7412 MATCH
+  pos 2 logit maxdiff=0.000e0
+verify pos 3: batched=1346 tokenwise=1346 MATCH
+  pos 3 logit maxdiff=0.000e0
+verify pos 4: batched=11572 tokenwise=11572 MATCH
+  pos 4 logit maxdiff=0.000e0
+verify pos 5: batched=563 tokenwise=563 MATCH
+  pos 5 logit maxdiff=0.000e0
+verify pos 6: batched=623 tokenwise=623 MATCH
+  pos 6 logit maxdiff=0.000e0
+VERIFY-GATE K=7: PASS

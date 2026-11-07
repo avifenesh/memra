@@ -60,7 +60,9 @@
 //! readback stream) drains the last stage, whose TX-wait chain transitively drains all.
 //!
 //! Scope: plain eager decode only (generic arm N-stage; gemma4 arm 2-stage). NOT wired:
-//! batch/dc/graph/spec loops and the gemma4-E4B eager arm.
+//! batch/dc/graph/spec loops and the gemma4-E4B eager arm. An E4B load under
+//! `MEMRA_PP_STAGES` refuses before any upload (`gemma_pp2_covers` excludes per-layer inputs
+//! and shared KV, and the PIPELINE table names them as blockers).
 //!
 //! CORRECTION (pp2-hardening 2026-08-06): this header used to add "(`warn_unwired_once`
 //! fires)" to that list, which was wrong. `warn_unwired_once` has exactly two call sites

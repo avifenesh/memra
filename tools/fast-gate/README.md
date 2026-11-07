@@ -36,7 +36,7 @@ rows cannot establish independence. They expand the plan. Changed research data
 can be an `include_str!` fixture; a changed gate is also an input. MiMo text,
 vision, audio, MTP and serving requirements stay explicit even though the legacy
 probe registry does not cover all of them. The registered probes load only the
-gemma4_dense, gemma4_moe, qwen35, qwen35_moe and step35 packs; every other automatic
+gemma4_dense, gemma4_e4b, gemma4_moe, qwen35, qwen35_moe and step35 packs; every other automatic
 pack, and FP8_BLOCK checkpoints, print as REQUIRED lines (`unprobed-model-packs`).
 
 These lines, like the MiMo ones, are a static list. Any engine, model-plan, build or

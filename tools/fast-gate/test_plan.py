@@ -22,11 +22,12 @@ CONTEXTS = {"compiler", "build", "runtime", "numeric", "harness", "oracle", "mod
             "binary", "hardware", "topology", "request"}
 MIMO_GATES = {"MiMo text checkpoint parity", "MiMo vision", "MiMo audio", "MiMo MTP",
               "MiMo serving and topology"}
-# The packs a models.tsv probe loads: gemma4 (g12/g31/g26), qwen35 and qwen35_moe (q9, k27, q35,
-# aw35, kat, and Ornith 1.0 o9/o35 per research/onboard-ornith-20260801/gates), and step35 (the
-# *35 command gates). Every other automatic pack must appear as a REQUIRED line. A hand list:
-# models.tsv names no pack, so add a pack here when a probe for it lands.
-PROBED_PACKS = {"gemma4_dense", "gemma4_moe", "qwen35", "qwen35_moe", "step35"}
+# The packs a models.tsv probe loads: gemma4 (g12/g31/g26, and gemma4_e4b through e4b), qwen35
+# and qwen35_moe (q9, k27, q35, aw35, kat, and Ornith 1.0 o9/o35 per
+# research/onboard-ornith-20260801/gates), and step35 (the *35 command gates). Every other
+# automatic pack must appear as a REQUIRED line. A hand list: models.tsv names no pack, so add a
+# pack here when a probe for it lands.
+PROBED_PACKS = {"gemma4_dense", "gemma4_e4b", "gemma4_moe", "qwen35", "qwen35_moe", "step35"}
 PACKS_RS = HERE.parents[1] / "crates/memra-gguf/src/model_packs/mod.rs"
 
 
