@@ -11,13 +11,10 @@
 //! same contract `tp_transport::PeerPullLink::publish` uses. No host boundary, no `synchronize`,
 //! and nothing occupying the device while it waits.
 //!
-//! [`ArLink::broadcast`] and [`ArLink::all_gather`] are the same push under different offsets, and
-//! they matter more than the reduce for the walk as it stands: the glm5 TP MLA layer moves its
-//! bytes in three PURE-MOVEMENT hops (fan out `h` and the positions, all-gather the head parts,
-//! concat the column-parallel `wo` parts back onto root), which is why the current arm is
-//! byte-identical to the unsharded walk by construction. Replacing only the transport keeps that
-//! property exactly: the same bytes arrive in the same places, they just stop crossing PCIe and
-//! stop draining a stream on the way.
+//! The glm5 TP MLA layer's PURE-MOVEMENT hops (fan out `h` and the positions, all-gather the head
+//! parts, concat the column-parallel `wo` parts back onto root) do not use this link: they ride
+//! `tp_transport`'s fan-out and gather hops, which is why that arm is byte-identical to the
+//! unsharded walk by construction. This module carries the all-reduce forms and `gather_i32`.
 use crate::Engine;
 use cudarc::driver::{CudaEvent, CudaSlice, DevicePtr, DevicePtrMut};
 use std::os::raw::c_void;
@@ -269,9 +266,6 @@ impl ArPhaseRecord {
             && (self.span_cycles() > 0) == (self.span_nanos() > 0)
             && self.wait_cycles() + self.reduce_cycles() + self.tail_cycles() == self.span_cycles()
     }
-    pub fn nanos(&self, cycles: u64) -> Option<f64> {
-        self.nanos_per_cycle().map(|scale| cycles as f64 * scale)
-    }
 }
 
 /// Per-rank all-reduce state. `stage[r]` lives on rank `r` and is written by its peer;
@@ -323,9 +317,8 @@ pub struct ArLink {
     /// was byte-exact at 4 B and 4 KiB and lost part of the payload at 64 KiB, where the consumer's
     /// upload was still in flight when the push landed and then overwrote it.
     ready: Vec<CudaEvent>,
-    /// Allocated on first `all_reduce` and grown as needed. The movement hops (`broadcast`,
-    /// `all_gather`) push straight into the caller's buffers and never touch it, which is why the
-    /// link does not need a size at construction: the TP walk's hops are all movement.
+    /// Allocated on first `all_reduce` and grown as needed, so the link does not need a size at
+    /// construction.
     stage: Vec<CudaSlice<f32>>,
     pushed: Vec<CudaEvent>,
     staged: usize,
@@ -402,10 +395,6 @@ impl ArLink {
         Ok(())
     }
 
-    pub fn ranks(&self) -> usize {
-        self.pushed.len()
-    }
-
     /// Order `producer`'s stream after everything `consumer` has already enqueued, so a push into
     /// `consumer`'s buffer cannot land on top of the consumer's own pending writes to it. The
     /// write-after-write half of the contract; `pushed` is the read-after-write half.
@@ -423,116 +412,6 @@ impl ArLink {
         let p = engines[producer];
         let _main = p.gpu.enter_main()?;
         p.stream().wait(&self.ready[consumer])?;
-        Ok(())
-    }
-
-    /// Broadcast rank `from`'s `src` to every other rank's `dst`. Pure movement, so the result is
-    /// byte-identical to the host-bounce fan-out it replaces: the same bytes arrive, they just do
-    /// not cross the PCIe boundary or drain a stream on the way.
-    pub fn broadcast(
-        &mut self,
-        engines: &[&Engine],
-        from: usize,
-        src: &CudaSlice<f32>,
-        dst: &mut CudaSlice<f32>,
-        n: usize,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        if engines.len() != 2 || from > 1 {
-            return Err("tp broadcast: this arm is two ranks".into());
-        }
-        let to = 1 - from;
-        self.wait_for_consumer(engines, from, to)?;
-        let dst_ptr = {
-            let e = engines[to];
-            let _main = e.gpu.enter_main()?;
-            let s = e.stream();
-            dst.device_ptr_mut(&s).0 as *mut f32
-        };
-        {
-            let e = engines[from];
-            let _main = e.gpu.enter_main()?;
-            let s = e.stream();
-            let src_ptr = src.device_ptr(&s).0 as *const f32;
-            // SAFETY: peer access is granted both ways, `dst` holds at least `n` floats on the
-            // peer, and `src` at least `n` here.
-            let rc = unsafe {
-                memra_tp_ar_push(src_ptr, dst_ptr, n as i64, s.cu_stream() as *mut c_void)
-            };
-            if rc != 0 {
-                return Err(format!("memra_tp_ar_push rc {rc}").into());
-            }
-            self.pushed[from].record(&s)?;
-        }
-        {
-            let e = engines[to];
-            let _main = e.gpu.enter_main()?;
-            e.stream().wait(&self.pushed[from])?;
-        }
-        Ok(())
-    }
-
-    /// All-gather: rank `r` holds `part[r]` of `span` floats, and every rank ends with the ranks'
-    /// parts concatenated in rank order into its own `full`. Pure movement and therefore
-    /// byte-identical to the host-bounce gather it replaces.
-    ///
-    /// Each rank writes its OWN part locally and pushes it into the peer's `full` at the same
-    /// offset, so the two directions never touch the same bytes.
-    pub fn all_gather(
-        &mut self,
-        engines: &[&Engine],
-        parts: &[&CudaSlice<f32>],
-        full: &mut [&mut CudaSlice<f32>],
-        span: usize,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        if engines.len() != 2 || parts.len() != 2 || full.len() != 2 {
-            return Err("tp all-gather: this arm is two ranks".into());
-        }
-        let full_ptr: Vec<*mut f32> = {
-            let mut v = Vec::with_capacity(2);
-            for (r, e) in engines.iter().enumerate() {
-                let _main = e.gpu.enter_main()?;
-                let s = e.stream();
-                v.push(full[r].device_ptr_mut(&s).0 as *mut f32);
-            }
-            v
-        };
-        for (from, to) in [(0usize, 1usize), (1, 0)] {
-            self.wait_for_consumer(engines, from, to)?;
-            let e = engines[from];
-            let _main = e.gpu.enter_main()?;
-            let s = e.stream();
-            let src = parts[from].device_ptr(&s).0 as *const f32;
-            // SAFETY: both destinations hold `2 * span` floats and the offset is `from * span`,
-            // so each push writes inside its own rank-slot; `src` holds `span`.
-            let rc_local = unsafe {
-                memra_tp_ar_push(
-                    src,
-                    full_ptr[from].add(from * span),
-                    span as i64,
-                    s.cu_stream() as *mut c_void,
-                )
-            };
-            if rc_local != 0 {
-                return Err(format!("memra_tp_ar_push (local slot) rc {rc_local}").into());
-            }
-            let rc = unsafe {
-                memra_tp_ar_push(
-                    src,
-                    full_ptr[to].add(from * span),
-                    span as i64,
-                    s.cu_stream() as *mut c_void,
-                )
-            };
-            if rc != 0 {
-                return Err(format!("memra_tp_ar_push (peer slot) rc {rc}").into());
-            }
-            self.pushed[from].record(&s)?;
-        }
-        for (r, peer) in [(0usize, 1usize), (1, 0)] {
-            let e = engines[r];
-            let _main = e.gpu.enter_main()?;
-            e.stream().wait(&self.pushed[peer])?;
-        }
         Ok(())
     }
 
@@ -968,7 +847,6 @@ mod ar_phase_record_tests {
         assert_eq!(r.reduce_cycles(), 6_000);
         assert_eq!(r.tail_cycles(), 4_000);
         assert_eq!(r.nanos_per_cycle(), Some(0.4));
-        assert_eq!(r.nanos(r.reduce_cycles()), Some(2_400.0));
     }
 
     #[test]

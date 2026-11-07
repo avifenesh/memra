@@ -551,14 +551,13 @@ extern "C" __global__ void rms_pre_add_rms_norm_q8z_f32(
     }
 }
 
-// ---- E4B glue fusion wave 2: a + b with the sum ALSO emitted q8_1 (resid feeds inp_gate
-// through matmul_pre; f32 resid stays written for the later residual add). ----
 // ---- E4B FFN-tail EXIT fusion (glue wave 5): resid = attn_out + rms(f0, post_ffw), ----
-// emitted f32 + q8_1 pair in ONE launch — replaces rms_norm_f32(f0 -> sn) + add_q8_1_f32(sn,
-// attn_out). BIT-IDENTITY: the rms reduction reads f0 in rms_norm_f32's exact strided order
+// emitted f32 + q8_1 pair in ONE launch — replaces rms_norm_f32(f0 -> sn) + an add-and-q8_1
+// launch over (sn, attn_out). BIT-IDENTITY: the rms reduction reads f0 in rms_norm_f32's exact strided order
 // (same single sum, same block reduce); the per-element value is ((f0[i]*s)*w[i]) + b[i] — the
 // identical op chain of the two-kernel pair (the f32 round-trip of sn is exact, removing it
-// changes no bits); the quantize section is add_q8_1_f32's float4-quad walk verbatim.
+// changes no bits); the quantize section is a float4-quad walk with quantize_q8_1's per-32-block
+// amax, d = amax/127 and __float2int_rn rounding.
 extern "C" __global__ void rms_pre_add_q8_1_f32(
         const float* __restrict__ a,   // f0 (ffn_down output)
         const float* __restrict__ wa,  // post_ffw_norm weight
@@ -588,7 +587,7 @@ extern "C" __global__ void rms_pre_add_q8_1_f32(
     __syncthreads();
     float scale = rsqrtf(s[0] / ncols + eps);
 
-    // phase 2: add_q8_1_f32's quad walk verbatim, with v = ((a*scale)*wa) + b inline.
+    // phase 2: the float4-quad add + q8_1 walk, with v = ((a*scale)*wa) + b inline.
     int lane = tid & 31;
     signed char* base_q = out_q + (size_t)row * ncols;
     float* base_d = out_d + (size_t)row * nblk;
@@ -600,37 +599,6 @@ extern "C" __global__ void rms_pre_add_q8_1_f32(
         const float4 b4 = ((const float4*)br)[i4];
         float4 v = make_float4(a4.x * scale * w4.x + b4.x, a4.y * scale * w4.y + b4.y,
                                a4.z * scale * w4.z + b4.z, a4.w * scale * w4.w + b4.w);
-        ((float4*)rr)[i4] = v;
-        float amax = fmaxf(fmaxf(fabsf(v.x), fabsf(v.y)), fmaxf(fabsf(v.z), fabsf(v.w)));
-        #pragma unroll
-        for (int o = 4; o > 0; o >>= 1) amax = fmaxf(amax, __shfl_xor_sync(0xffffffffu, amax, o));
-        float d = amax / 127.0f;
-        float id = d > 0.0f ? 1.0f / d : 0.0f;
-        char4 qv = make_char4((signed char)__float2int_rn(v.x * id), (signed char)__float2int_rn(v.y * id),
-                              (signed char)__float2int_rn(v.z * id), (signed char)__float2int_rn(v.w * id));
-        ((char4*)base_q)[i4] = qv;
-        if ((lane & 7) == 0) base_d[quad * 4 + (lane >> 3)] = d;
-    }
-}
-
-extern "C" __global__ void add_q8_1_f32(const float* __restrict__ a, const float* __restrict__ b,
-                                        float* __restrict__ res,
-                                        signed char* __restrict__ out_q, float* __restrict__ out_d,
-                                        int ncols) {
-    int row = blockIdx.x;
-    int tid = threadIdx.x;
-    int lane = tid & 31;
-    int nblk = ncols / 32;
-    const float* ar = a + (size_t)row * ncols;
-    const float* br = b + (size_t)row * ncols;
-    float* rr = res + (size_t)row * ncols;
-    signed char* base_q = out_q + (size_t)row * ncols;
-    float* base_d = out_d + (size_t)row * nblk;
-    for (int quad = tid >> 5; quad < nblk / 4; quad += blockDim.x >> 5) {
-        int i4 = quad * 32 + lane;
-        const float4 a4 = ((const float4*)ar)[i4];
-        const float4 b4 = ((const float4*)br)[i4];
-        float4 v = make_float4(a4.x + b4.x, a4.y + b4.y, a4.z + b4.z, a4.w + b4.w);
         ((float4*)rr)[i4] = v;
         float amax = fmaxf(fmaxf(fabsf(v.x), fabsf(v.y)), fmaxf(fabsf(v.z), fabsf(v.w)));
         #pragma unroll
@@ -725,10 +693,9 @@ extern "C" __global__ void rms_norm_q8_1(const float* __restrict__ x, const floa
 // the scale `s = rsqrt(mean(x^2)+eps)` reduction reads x in the same strided order as
 // rms_norm_f32/rms_norm_q8_1 (VERBATIM pass 1); the normed value z[i] = (x[i]*s)*w[i] is the
 // SAME association rms_norm_f32 stores; the per-32-block amax/d=amax/127/id=1/d/
-// __float2int_rn rounding is quantize_q8_1's exactly (VERBATIM the warp-per-block epilogue
-// `add_rms_norm_zq8` uses below, itself pinned bit-identical to quantize_q8_1 there — this
-// kernel is that same epilogue minus the `a+b` residual add). One block per row (decode:
-// nrows=1). ncols must be a multiple of 32 (n_embd always is).
+// __float2int_rn rounding is quantize_q8_1's exactly (a warp-per-block form of quantize_q8_1's
+// per-32-block epilogue: one warp per 32-wide block, the same xor-shuffle amax). One block per
+// row (decode: nrows=1). ncols must be a multiple of 32 (n_embd always is).
 extern "C" __global__ void rms_norm_zq8_f32(const float* __restrict__ x, const float* __restrict__ w,
                                             float* __restrict__ z,
                                             signed char* __restrict__ out_q, float* __restrict__ out_d,
@@ -754,8 +721,7 @@ extern "C" __global__ void rms_norm_zq8_f32(const float* __restrict__ x, const f
     __syncthreads();
     float scale = rsqrtf(s[0] / ncols + eps);
     // pass 2: z = x*scale*w (VERBATIM rms_norm_f32's epilogue expression), then quantize_q8_1's
-    // exact per-32-block amax/127/round epilogue over the SAME z values (VERBATIM
-    // add_rms_norm_zq8's warp-per-block form, below).
+    // exact per-32-block amax/127/round epilogue over the SAME z values, one warp per block.
     signed char* base_q = out_q + (size_t)row * ncols;
     float* base_d = out_d + (size_t)row * nblk;
     int lane = tid & 31;
@@ -953,58 +919,6 @@ extern "C" __global__ void rms_norm_zq8_f32_v2(const float* __restrict__ x, cons
     }
 }
 
-// ---- add+RMSNorm with FUSED q8_1 quantize epilogue. res = a+b (written out for the next residual);
-// then z = rms_norm(res)*w emitted directly as q8_1. Fuses add_rms_norm + quantize_q8_1 for the FFN
-// input path (z feeds ffn_gate/ffn_up matvecs, both q8_1-fast). BIT-IDENTICAL to add_rms_norm_f32
-// then quantize_q8_1: r=a[i]+b[i] same IEEE add (and written to `res` for the post-ffn add), the
-// sum-of-squares reduction reads the same r, z=(r*scale)*w same association, per-32 q8_1 identical.
-// add+RMSNorm emitting BOTH the f32 normed row (z — the MoE router logits input) AND its q8_1
-// quantization (the expert dp4a input) in one launch. The MoE layer needs both views of the same
-// vector; running add_rms_norm_f32 then quantize_q8_1 costs a launch and re-reads z from HBM.
-// BIT-IDENTICAL: z values same IEEE ops as add_rms_norm_f32; q8 blocks same amax/127 rounding as
-// quantize_q8_1 over the same z.
-extern "C" __global__ void add_rms_norm_zq8(const float* __restrict__ a, const float* __restrict__ b,
-                                            const float* __restrict__ w, float* __restrict__ res,
-                                            float* __restrict__ z,
-                                            signed char* __restrict__ out_q, float* __restrict__ out_d,
-                                            int ncols, float eps) {
-    int row = blockIdx.x;
-    int tid = threadIdx.x;
-    const float* ar = a + (size_t)row * ncols;
-    const float* br = b + (size_t)row * ncols;
-    float* rr = res + (size_t)row * ncols;
-    float* zr = z + (size_t)row * ncols;
-    int nblk = ncols / 32;
-    float sum = 0.0f;
-    for (int i = tid; i < ncols; i += blockDim.x) { float v = ar[i] + br[i]; rr[i] = v; sum += v * v; }
-    __shared__ float s[32];
-    for (int o = 16; o > 0; o >>= 1) sum += __shfl_down_sync(0xffffffff, sum, o);
-    if ((tid & 31) == 0) s[tid >> 5] = sum;
-    __syncthreads();
-    if (tid < 32) {
-        float v = (tid < (blockDim.x + 31) / 32) ? s[tid] : 0.0f;
-        for (int o = 16; o > 0; o >>= 1) v += __shfl_down_sync(0xffffffff, v, o);
-        if (tid == 0) s[0] = v;
-    }
-    __syncthreads();
-    float scale = rsqrtf(s[0] / ncols + eps);
-    signed char* base_q = out_q + (size_t)row * ncols;
-    float* base_d = out_d + (size_t)row * nblk;
-    int lane = tid & 31;
-    for (int blk = tid >> 5; blk < nblk; blk += blockDim.x >> 5) {
-        int i = blk * 32 + lane;
-        float v = (rr[i] * scale) * w[i];
-        zr[i] = v;
-        float amax = fabsf(v);
-        #pragma unroll
-        for (int o = 16; o > 0; o >>= 1) amax = fmaxf(amax, __shfl_xor_sync(0xffffffffu, amax, o));
-        float d = amax / 127.0f;
-        float id = d > 0.0f ? 1.0f / d : 0.0f;
-        base_q[i] = (signed char)__float2int_rn(v * id);
-        if (lane == 0) base_d[blk] = d;
-    }
-}
-
 extern "C" __global__ void add_rms_norm_q8_1(const float* __restrict__ a, const float* __restrict__ b,
                                              const float* __restrict__ w, float* __restrict__ res,
                                              signed char* __restrict__ out_q, float* __restrict__ out_d,
@@ -1168,42 +1082,6 @@ extern "C" __global__ void rope_neox_f32(float* __restrict__ x, const int* __res
     float x1 = base[j + half];
     base[j]        = x0 * c - x1 * s;
     base[j + half] = x0 * s + x1 * c;
-}
-
-// ---- gemma4: 3-way rms_norm — ONE reduction over x, three weight vectors/outputs
-// (gemma's attn_out feeds ffn_norm + router-scale + pre_ffw_norm_2). Numerics per output
-// identical to rms_norm_f32 (same block reduction, same scale multiply). ----
-extern "C" __global__ void rms_norm3_f32(const float* __restrict__ x,
-                                         const float* __restrict__ w0, const float* __restrict__ w1,
-                                         const float* __restrict__ w2,
-                                         float* __restrict__ d0, float* __restrict__ d1,
-                                         float* __restrict__ d2, int ncols, float eps) {
-    int row = blockIdx.x;
-    int tid = threadIdx.x;
-    const float* xr = x + (size_t)row * ncols;
-    float sum = 0.0f;
-    for (int i = tid; i < ncols; i += blockDim.x) { float v = xr[i]; sum += v * v; }
-    // block reduce — the rms_norm_f32 shuffle tree VERBATIM (per-output bit-identity).
-    __shared__ float s[32];
-    for (int o = 16; o > 0; o >>= 1) sum += __shfl_down_sync(0xffffffff, sum, o);
-    if ((tid & 31) == 0) s[tid >> 5] = sum;
-    __syncthreads();
-    if (tid < 32) {
-        float v = (tid < (blockDim.x + 31) / 32) ? s[tid] : 0.0f;
-        for (int o = 16; o > 0; o >>= 1) v += __shfl_down_sync(0xffffffff, v, o);
-        if (tid == 0) s[0] = v;
-    }
-    __syncthreads();
-    float scale = rsqrtf(s[0] / ncols + eps);
-    float* o0 = d0 + (size_t)row * ncols;
-    float* o1 = d1 + (size_t)row * ncols;
-    float* o2 = d2 + (size_t)row * ncols;
-    for (int i = tid; i < ncols; i += blockDim.x) {
-        float xh = xr[i] * scale;
-        o0[i] = xh * w0[i];
-        o1[i] = xh * w1[i];
-        o2[i] = xh * w2[i];
-    }
 }
 
 // ---- gemma4: q/k/v head norms in ONE launch — 3 (src,dst,rows) segments of the same width
@@ -1527,8 +1405,9 @@ extern "C" __global__ void add_scale_rms_norm_f32(const float* __restrict__ a, c
     for (int i = tid; i < ncols; i += blockDim.x) dr[i] = rr[i] * scale * w[i];
 }
 
-// ---- gemma4: residual add + the THREE attn_out norms in one launch (add then rms_norm3,
-// per-element chains verbatim). ----
+// ---- gemma4: residual add + the THREE attn_out norms in one launch. Per row: res = a + b
+// (stored), s = rsqrtf(sum(res^2) / ncols + eps) from one strided sum and a two-level warp
+// shuffle reduction, then d_k[i] = (res[i] * s) * w_k[i] for k = 0, 1, 2. ----
 extern "C" __global__ void add_rms_norm3_f32(const float* __restrict__ a, const float* __restrict__ b,
                                              const float* __restrict__ w0, const float* __restrict__ w1,
                                              const float* __restrict__ w2,
@@ -1711,7 +1590,10 @@ extern "C" __global__ void rms_pre_add_scale_rms_norm_q8_1(
 
 // ---- gemma4: residual add + the three attn_out norms with TWO outputs emitted q8_1
 // (zsh -> the quantized gate/up pair input; moe_in -> the quantized expert input) and the
-// router input f32. Chains: add + rms_norm3 + quantize_q8_1 verbatim per element. ----
+// router input f32. Per row: res = a + b and s exactly as add_rms_norm3_f32 computes them;
+// out1[i] = (res[i] * s) * w1[i] in f32; outputs 0 and 2 quantize v = (res[i] * s) * w_k[i]
+// with quantize_q8_1's per-32-block arithmetic (amax over the block, d = amax / 127,
+// id = d > 0 ? 1 / d : 0, q = __float2int_rn(v * id)), one warp per four blocks. ----
 extern "C" __global__ void add_rms_norm3_q8z_f32(const float* __restrict__ a, const float* __restrict__ b,
                                                  const float* __restrict__ w0, const float* __restrict__ w1,
                                                  const float* __restrict__ w2,
@@ -1890,11 +1772,6 @@ extern "C" __global__ void u32_map_k(unsigned int* __restrict__ buf,
 extern "C" __global__ void i32_iota_from(const int* __restrict__ ctr, int* __restrict__ dst, int n) {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i < n) dst[i] = ctr[0] + i;
-}
-
-// counter += v (device-slot append advance for t rows; the +1 twin is inc_seqlen).
-extern "C" __global__ void i32_add_k(int* __restrict__ d, int v) {
-    if (threadIdx.x == 0 && blockIdx.x == 0) d[0] += v;
 }
 
 // i32 twin (device-len counters, graph arc): async single-slot store, value rides the arg.
@@ -3025,26 +2902,6 @@ extern "C" __global__ void gelu_tanh_f32(
     float v = x[i];
     float c = 0.7978845608028654f * (v + 0.044715f * v * v * v);
     y[i] = 0.5f * v * (1.0f + tanhf(c));
-}
-
-// Row softmax in place over [rows, n] (bidirectional attention scores). One block per row.
-extern "C" __global__ void row_softmax_f32(float* __restrict__ x, int n) {
-    const int row = blockIdx.x;
-    float* xr = x + (size_t) row * n;
-    __shared__ float sred[256];
-    float m = -3.4e38f;
-    for (int i = threadIdx.x; i < n; i += blockDim.x) m = fmaxf(m, xr[i]);
-    sred[threadIdx.x] = m; __syncthreads();
-    if (threadIdx.x == 0) { float t = sred[0]; for (int i = 1; i < blockDim.x; ++i) t = fmaxf(t, sred[i]); sred[0] = t; }
-    __syncthreads();
-    const float mx = sred[0]; __syncthreads();
-    float s = 0.0f;
-    for (int i = threadIdx.x; i < n; i += blockDim.x) { float e = __expf(xr[i] - mx); xr[i] = e; s += e; }
-    sred[threadIdx.x] = s; __syncthreads();
-    if (threadIdx.x == 0) { float t = 0; for (int i = 0; i < blockDim.x; ++i) t += sred[i]; sred[0] = t > 0 ? 1.0f / t : 0.0f; }
-    __syncthreads();
-    const float inv = sred[0];
-    for (int i = threadIdx.x; i < n; i += blockDim.x) xr[i] *= inv;
 }
 
 // ---- Batched uniform-size D2D copy (engine-bundle slice 1, DSF-ROUNDCOST-20260820 §1.1) ----

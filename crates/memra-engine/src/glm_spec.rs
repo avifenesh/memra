@@ -1163,9 +1163,7 @@ struct Glm5VerifyPos {
 
 impl Glm5VerifyPos {
     fn new(e: &Engine, pos0: usize, t: usize) -> Res<Self> {
-        let all = if crate::glm5_spec_dev_io_on() {
-            e.i32_iota_dev(pos0 as i32, t)?
-        } else {
+        let all = {
             let v: Vec<i32> = (0..t as i32).map(|r| pos0 as i32 + r).collect();
             e.htod_i32(&v)?
         };
@@ -1806,31 +1804,13 @@ impl HybridModel {
     /// for consumption from the caller's streams after this returns.
     #[allow(clippy::too_many_arguments)]
     // allow: the parameter list mirrors its decode twin's stage-walk contract
-    /// The verify rows' token embeddings: through the device embedding table from device
-    /// token words under `MEMRA_GLM5_SPEC_DEV_IO` (no pageable copy), the host gather +
-    /// upload otherwise. Same rows either way (the device gather is the decode path's).
+    /// The verify rows' token embeddings: the host gather + upload.
     pub(crate) fn glm5_rows_embed(
         &self,
         e: &Engine,
         tokens: &[u32],
         n_embd: usize,
     ) -> Res<CudaSlice<f32>> {
-        if crate::glm5_spec_dev_io_on() {
-            static SAID: std::sync::Once = std::sync::Once::new();
-            SAID.call_once(|| {
-                eprintln!(
-                    "[glm5-spec-dev-io] engaged: verify rows, positions and the drafter block \
-                     reach the device through launches, not pageable copies \
-                     (MEMRA_GLM5_SPEC_DEV_IO=1)"
-                )
-            });
-            let embd_gpu = self
-                .embd_gpu
-                .get_or_init(|| e.upload_u8(&self.embd.raw).expect("embed table upload"));
-            let (qt, rb) = self.embd.qt_and_row_bytes(n_embd);
-            let tok_d = e.u32_words_dev(tokens)?;
-            return e.embed_gather_device_td(embd_gpu, &tok_d, tokens.len(), n_embd, qt, rb);
-        }
         e.htod(&self.embd.try_gather(n_embd, tokens)?)
     }
 
@@ -3487,12 +3467,10 @@ impl HybridModel {
                 let mut draft_logits: Vec<CudaSlice<f32>> = Vec::new(); // sampled route only
                 let mut draft_stats: Vec<(f32, f32, f32)> = Vec::new(); // (mx, th, z), sampled only
                 for ki in 0..k {
-                    let tok_dev: Option<CudaSlice<u32>>;
                     let (idx, sampled_stats) = match sp {
                         Some(sp) => {
-                            let (idx, stats, td) =
+                            let (idx, stats) =
                                 glm5_sampled_draft(eh, &d_logits, d_vocab, sp, &mut sess.sctr)?;
-                            tok_dev = Some(td);
                             (idx, Some(stats))
                         }
                         None => {
@@ -3512,7 +3490,6 @@ impl HybridModel {
                                     sess.rounds
                                 ),
                             )?;
-                            tok_dev = Some(td);
                             (idx, None)
                         }
                     };
@@ -3529,12 +3506,7 @@ impl HybridModel {
                         let p_d = if sampled_stats.is_some() {
                             eh.max_prob_device(&d_logits, d_vocab)?
                         } else {
-                            // MEMRA_GLM5_SPEC_DEV_IO: the probability reads the token from
-                            // the device word the argmax produced; no upload of the host copy.
-                            let tok_d = match tok_dev {
-                                Some(td) if crate::glm5_spec_dev_io_on() => td,
-                                _ => eh.htod_u32_v(&[idx])?,
-                            };
+                            let tok_d = eh.htod_u32_v(&[idx])?;
                             eh.prob_of_token_device(&d_logits, &tok_d, d_vocab)?
                         };
                         let p = eh.dtoh(&p_d)?[0];
@@ -4117,10 +4089,7 @@ impl HybridModel {
         let d_vocab = d2t.map(|m| m.len()).unwrap_or(n_vocab);
         // FILTERED p_j: one batched stats pass over verify rows 0..k-1 (row j is the target
         // distribution at draft j's slot), then one batched gather of the drafted tokens.
-        let dev_io = crate::glm5_spec_dev_io_on();
-        let rows_d = if dev_io {
-            e.i32_iota_dev(0, k)?
-        } else {
+        let rows_d = {
             let rows_i: Vec<i32> = (0..k as i32).collect();
             e.htod_i32(&rows_i)?
         };
@@ -4129,79 +4098,38 @@ impl HybridModel {
             vlogits, n_vocab, &rows_d, &mut th_d, &mut z_d, &mut mx_d, n_vocab, k, sp.temp,
             sp.top_k, sp.top_p, sp.min_p,
         )?;
-        let ids_d = if dev_io {
-            e.u32_words_dev(drafts)?
-        } else {
-            e.htod_u32_v(drafts)?
-        };
+        let ids_d = e.htod_u32_v(drafts)?;
         let mut pj_d = e.zeros(k)?;
         e.softmax_gather_filtered(
             vlogits, n_vocab, &ids_d, &rows_d, &th_d, &z_d, &mut pj_d, n_vocab, k, sp.temp,
         )?;
-        // MEMRA_GLM5_SPEC_DEV_IO: the drafter-side gather for every draft in ONE launch over
-        // the drafts' logits laid out as k contiguous rows, its statistics set by launches;
-        // one readback of the k q values instead of four uploads and a readback per accepted
-        // draft. Per pair the kernel's row program is the per-draft launch's.
-        let (pj, qall) = if dev_io {
-            let mut dl_all = e.uninit(k * d_vocab)?;
-            for (j, dl) in draft_logits.iter().enumerate().take(k) {
-                e.copy_into(&mut dl_all, j * d_vocab, dl, d_vocab)?;
-            }
-            let qth: Vec<f32> = draft_stats.iter().take(k).map(|s| s.1).collect();
-            let qz: Vec<f32> = draft_stats.iter().take(k).map(|s| s.2).collect();
-            let thq = e.f32_words_dev(&qth)?;
-            let zq = e.f32_words_dev(&qz)?;
-            let idq = e.u32_words_dev(&draft_idx[..k])?;
-            let mut q_d = e.zeros(k)?;
-            e.softmax_gather_filtered(
-                &dl_all, d_vocab, &idq, &rows_d, &thq, &zq, &mut q_d, d_vocab, k, sp.temp,
-            )?;
-            let mut packed = e.zeros(2 * k)?;
-            e.copy_into(&mut packed, 0, &pj_d, k)?;
-            e.copy_into(&mut packed, k, &q_d, k)?;
-            let h = e.dtoh(&packed)?;
-            (h[..k].to_vec(), Some(h[k..].to_vec()))
-        } else {
-            (e.dtoh(&pj_d)?, None)
-        };
-        let (thv, zv, mxv) = if dev_io {
-            let mut packed = e.zeros(3 * k)?;
-            e.copy_into(&mut packed, 0, &th_d, k)?;
-            e.copy_into(&mut packed, k, &z_d, k)?;
-            e.copy_into(&mut packed, 2 * k, &mx_d, k)?;
-            let h = e.dtoh(&packed)?;
-            (h[..k].to_vec(), h[k..2 * k].to_vec(), h[2 * k..].to_vec())
-        } else {
-            (e.dtoh(&th_d)?, e.dtoh(&z_d)?, e.dtoh(&mx_d)?)
-        };
+        let pj = e.dtoh(&pj_d)?;
+        let (thv, zv, mxv) = (e.dtoh(&th_d)?, e.dtoh(&z_d)?, e.dtoh(&mx_d)?);
 
         // The walk: FILTERED q_j from the retained draft logits (rank id for trimmed heads),
         // host Philox accept test per slot.
         let mut j = 0usize;
         while j < k {
-            let qj = match &qall {
-                Some(q) => q[j],
-                None => {
-                    let (_qmx, qth, qz) = draft_stats[j];
-                    let idsd = e.htod_u32_v(&[draft_idx[j]])?;
-                    let rows0 = e.htod_i32(&[0])?;
-                    let thd = e.htod(&[qth])?;
-                    let zd = e.htod(&[qz])?;
-                    let mut outd = e.zeros(1)?;
-                    e.softmax_gather_filtered(
-                        &draft_logits[j],
-                        d_vocab,
-                        &idsd,
-                        &rows0,
-                        &thd,
-                        &zd,
-                        &mut outd,
-                        d_vocab,
-                        1,
-                        sp.temp,
-                    )?;
-                    e.dtoh(&outd)?[0]
-                }
+            let qj = {
+                let (_qmx, qth, qz) = draft_stats[j];
+                let idsd = e.htod_u32_v(&[draft_idx[j]])?;
+                let rows0 = e.htod_i32(&[0])?;
+                let thd = e.htod(&[qth])?;
+                let zd = e.htod(&[qz])?;
+                let mut outd = e.zeros(1)?;
+                e.softmax_gather_filtered(
+                    &draft_logits[j],
+                    d_vocab,
+                    &idsd,
+                    &rows0,
+                    &thd,
+                    &zd,
+                    &mut outd,
+                    d_vocab,
+                    1,
+                    sp.temp,
+                )?;
+                e.dtoh(&outd)?[0]
             };
             let u = crate::spec::host_u01(sp.seed, sess.uctr);
             sess.uctr = sess.uctr.wrapping_add(1);
@@ -4234,18 +4162,9 @@ impl HybridModel {
             let mut sample_tok = e.alloc_u32_zeroed(1)?;
             match d2t {
                 Some(map) => {
-                    // MEMRA_GLM5_SPEC_DEV_IO: the trim map is a per-process device resident
-                    // (uploaded once), not a per-round pageable upload of d_vocab words.
-                    let map_own;
-                    let map_d: &CudaSlice<u32> = if crate::glm5_spec_dev_io_on() {
-                        self.d2t_gpu
-                            .get_or_init(|| e.htod_u32_v(map).expect("d2t map upload"))
-                    } else {
-                        map_own = e.htod_u32_v(map)?;
-                        &map_own
-                    };
+                    let map_d = e.htod_u32_v(map)?;
                     let mut q_full = e.zeros(n_vocab)?;
-                    e.scatter_trim_logits(&draft_logits[j], map_d, &mut q_full, d_vocab, n_vocab)?;
+                    e.scatter_trim_logits(&draft_logits[j], &map_d, &mut q_full, d_vocab, n_vocab)?;
                     e.residual_sample_filtered(
                         &col,
                         Some(&q_full),
@@ -4327,9 +4246,8 @@ impl HybridModel {
 /// stats `(row_max, threshold_e, renorm_mass)`, which the accept walk's q gather and the
 /// rejection residual both reuse (the q side must be the distribution the draft was actually
 /// drawn from, or rejection sampling is not exact for the filtered target).
-/// A sampled draft: the drawn rank id, its filter statistics `(mx, th, z)`, and the drawn
-/// token's device word (kept for the p-min probability under `MEMRA_GLM5_SPEC_DEV_IO`).
-type SampledDraw = (u32, (f32, f32, f32), CudaSlice<u32>);
+/// A sampled draft: the drawn rank id and its filter statistics `(mx, th, z)`.
+type SampledDraw = (u32, (f32, f32, f32));
 
 fn glm5_sampled_draft(
     e: &Engine,
@@ -4338,37 +4256,20 @@ fn glm5_sampled_draft(
     sp: &SpecSampling,
     sctr: &mut u32,
 ) -> Res<SampledDraw> {
-    let dev_io = crate::glm5_spec_dev_io_on();
-    // MEMRA_GLM5_SPEC_DEV_IO: the row index is a zeroed device word (a memset, stream-ordered),
-    // and the three filter statistics come back in ONE readback after three device copies
-    // instead of three synchronizing readbacks.
-    let rows0 = if dev_io {
-        e.alloc_i32_zeroed(1)?
-    } else {
-        e.htod_i32(&[0])?
-    };
+    let rows0 = e.htod_i32(&[0])?;
     let (mut th_d, mut z_d, mut mx_d) = (e.zeros(1)?, e.zeros(1)?, e.zeros(1)?);
     e.filter_stats(
         dl, d_vocab, &rows0, &mut th_d, &mut z_d, &mut mx_d, d_vocab, 1, sp.temp, sp.top_k,
         sp.top_p, sp.min_p,
     )?;
-    let (th, z, mx) = if dev_io {
-        let mut packed = e.zeros(3)?;
-        e.copy_into(&mut packed, 0, &th_d, 1)?;
-        e.copy_into(&mut packed, 1, &z_d, 1)?;
-        e.copy_into(&mut packed, 2, &mx_d, 1)?;
-        let h = e.dtoh(&packed)?;
-        (h[0], h[1], h[2])
-    } else {
-        (e.dtoh(&th_d)?[0], e.dtoh(&z_d)?[0], e.dtoh(&mx_d)?[0])
-    };
+    let (th, z, mx) = (e.dtoh(&th_d)?[0], e.dtoh(&z_d)?[0], e.dtoh(&mx_d)?[0]);
     let mut pb = e.zeros(d_vocab)?;
     e.gumbel_perturb_filtered(dl, &mut pb, d_vocab, sp.seed, *sctr, sp.temp, mx, th)?;
     *sctr = sctr.wrapping_add(1);
     let td = e.argmax_token_device(&pb, d_vocab)?;
     let idx =
         crate::spec::guard_vocab_token(e.dtoh_u32_one(&td)?, d_vocab, "glm5 sampled draft draw")?;
-    Ok((idx, (mx, th, z), td))
+    Ok((idx, (mx, th, z)))
 }
 
 /// glm5_next SERVED speculative session (lane/glm5-spec-routing, 2026-08-30): the state one

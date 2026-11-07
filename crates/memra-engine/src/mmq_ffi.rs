@@ -1475,7 +1475,7 @@ pub fn mmq_residual_k() -> i32 {
 /// reverts): routes Q8_0 dense
 /// projections (m>=16) through the vendored int8-MMA MMQ (cu/mmq_q8_0.cu) instead of the hand-rolled
 /// `qmatvec_gemm_q8_0` tiling GEMM. Its own numeric config (MMA f32 reduction order != the tiling
-/// GEMM's) — gated with the full exactness battery. Default OFF until the battery is green.
+/// GEMM's) — gated with the full exactness battery, which promoted it (see below).
 pub fn mmq_q8_enabled() -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     // Promotion battery (2026-07-09): argmax MATCH on 35B p1/p2/p3 + 9B p2/p3 (p4-16k OOMs
@@ -1573,10 +1573,10 @@ impl Engine {
             {
                 (mmq_w4a8_enabled() || mmq_opt_in) && w.in_features().is_multiple_of(256)
             }
-            // Q8_0 dense projections (35B attn/ssm/shexp): opt-in only (MEMRA_PP_Q8MMQ=1), its own
-            // numeric config vs qmatvec_gemm_q8_0. in_f % 256 == 0: MMQ_ITER_K=256 loads 8-block
-            // groups, so a non-multiple row would read a garbage weight tail (fp16 d bytes can be
-            // NaN-pattern, and NaN * 0-padded-activation = NaN — the 26B ffn_down lesson).
+            // Q8_0 dense projections (35B attn/ssm/shexp): default ON, MEMRA_PP_Q8MMQ=0 reverts;
+            // its own numeric config vs qmatvec_gemm_q8_0. in_f % 256 == 0: MMQ_ITER_K=256 loads
+            // 8-block groups, so a non-multiple row would read a garbage weight tail (fp16 d bytes
+            // can be NaN-pattern, and NaN * 0-padded-activation = NaN — the 26B ffn_down lesson).
             GpuTensor::Quant { qtype, .. } if *qtype == crate::QT_Q8_0 => {
                 mmq_q8_enabled() && w.in_features().is_multiple_of(256)
             }
@@ -3163,16 +3163,6 @@ impl Engine {
         Ok((act, scales))
     }
 
-    /// One projection through the grouped f16 lane: dequant the active experts' rows to an
-    /// f16 workspace, then ONE grouped GEMM over the CSR groups (variable m per expert).
-    /// y = f32 [n_pairs, out_f] pair-major — same layout as mmq_iq_experts.
-    /// MEMRA_MOE_F16G=1: cublasGemmGroupedBatchedEx (+ h2f pass + per-projection sync — the
-    /// grouped API runs on internal streams unordered with ours, round-47 ledger).
-    /// MEMRA_MOE_F16G=2: single-kernel grouped GEMM on the engine stream (round 49) — the
-    /// row scale folds into the kernel epilogue; no f16 C, no h2f, NO sync (ordered by
-    /// construction). f16-MIRROR numeric class either way (argmax/spec gated, not
-    /// byte-identity). Errors on unsupported qtype (caller keeps the MMQ arm as fallback).
-    #[allow(clippy::too_many_arguments)]
     /// Bind the RUNTIME API's current device to `ordinal`. Every raw `<<<>>>` launch in the
     /// grouped-MoE FFI follows this, not cudarc's pushed driver context — mandatory before
     /// calling the FFI on a non-root rank engine (the TP2 grouped prime), a mismatch is
@@ -3185,6 +3175,15 @@ impl Engine {
         Ok(())
     }
 
+    /// One projection through the grouped f16 lane: dequant the active experts' rows to an
+    /// f16 workspace, then ONE grouped GEMM over the CSR groups (variable m per expert).
+    /// y = f32 [n_pairs, out_f] pair-major — same layout as mmq_iq_experts.
+    /// MEMRA_MOE_F16G=1: cublasGemmGroupedBatchedEx (+ h2f pass + per-projection sync — the
+    /// grouped API runs on internal streams unordered with ours, round-47 ledger).
+    /// MEMRA_MOE_F16G=2: single-kernel grouped GEMM on the engine stream (round 49) — the
+    /// row scale folds into the kernel epilogue; no f16 C, no h2f, NO sync (ordered by
+    /// construction). f16-MIRROR numeric class either way (argmax/spec gated, not
+    /// byte-identity). Errors on unsupported qtype (caller keeps the MMQ arm as fallback).
     #[allow(clippy::too_many_arguments)]
     // allow: the parameter list mirrors the kernel/FFI/call contract; bundling into a struct is a refactor, not a lint fix
     #[allow(clippy::manual_is_multiple_of)] // allow: divisor is runtime-derived; the modulo form keeps a zero divisor loud (a panic), where is_multiple_of would return false silently
@@ -3653,11 +3652,6 @@ use memra_gguf::model_packs::qwen35::activation::PROGRAM_SLOTS;
 /// reverting any one call site and watching the number drop.
 pub static A4_PREFILL_LAUNCHES: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
-/// Read the calibrated-A4 launch counter.
-pub fn a4_prefill_launches() -> u64 {
-    A4_PREFILL_LAUNCHES.load(std::sync::atomic::Ordering::Relaxed)
-}
-
 /// Reset the calibrated-A4 launch counter and return its previous value.
 pub fn a4_prefill_launches_reset() -> u64 {
     A4_PREFILL_LAUNCHES.swap(0, std::sync::atomic::Ordering::Relaxed)
@@ -3720,13 +3714,6 @@ pub const A4_CLIP_STRIDE: usize = 8;
 pub const A4_STATS_STRIDE: usize = 72;
 
 static A4_STATS: std::sync::Mutex<Option<CudaSlice<u64>>> = std::sync::Mutex::new(None);
-
-/// True when a recalibration pass is collecting operand statistics. While armed, `matmul_prefill`
-/// accumulates the operand and then takes the ORDINARY W4A8 path, so the statistics describe the
-/// activations the SERVED arithmetic produces rather than A4-perturbed ones.
-pub fn a4_stats_armed() -> bool {
-    A4_STATS.lock().unwrap().is_some()
-}
 
 /// The recalibration buffer, for the Engine methods that arm and drain it.
 pub fn a4_stats_buffer() -> &'static std::sync::Mutex<Option<CudaSlice<u64>>> {

@@ -225,13 +225,6 @@ pub fn glm5_prep_image(
     Ok((patches, gh, gw))
 }
 
-/// Prep a data-URI image into a Glm5VisionUnit (decode + smart-resize + patchify).
-pub fn glm5_prep_data_uri(uri: &str) -> Result<Glm5VisionUnit, String> {
-    let bytes = crate::vision_pre::decode_data_uri(uri)?;
-    let (patches, gh, gw) = glm5_prep_image(&bytes).map_err(|e| e.to_string())?;
-    Ok(Glm5VisionUnit { patches, gh, gw })
-}
-
 struct Lin {
     w: CudaSlice<f32>,
     b: Option<CudaSlice<f32>>,

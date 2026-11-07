@@ -78,45 +78,6 @@ thread_local! {
     static DECODE_PHASE: std::cell::Cell<Option<usize>> = const { std::cell::Cell::new(None) };
 }
 
-thread_local! {
-    /// RANK0 STREAM MERGE (step37): while set to a (ctx, stream, blas) binding, enter_main
-    /// on the MATCHING context binds THIS stream instead of the gpu's own main stream —
-    /// the same-device rank's work then rides the model engine's stream and every
-    /// e<->rank0 event hop becomes same-stream program order.
-    #[allow(clippy::type_complexity)] // allow: one-shot composite type; naming it would hide the shape that matters at the call site
-    static RANK0_REDIRECT: std::cell::RefCell<Option<(usize, Arc<CudaStream>, Arc<CudaBlasLT>)>> =
-        const { std::cell::RefCell::new(None) };
-}
-
-/// Install/clear the rank0 redirect (ctx ordinal + stream/blas of the model engine).
-pub fn set_rank0_redirect(binding: Option<(usize, Arc<CudaStream>, Arc<CudaBlasLT>)>) {
-    RANK0_REDIRECT.with(|c| *c.borrow_mut() = binding);
-}
-
-/// RAII scope for the rank0 redirect: clears on drop (panic-safe).
-pub struct Rank0RedirectGuard(());
-pub fn rank0_redirect_scope(
-    ordinal: usize,
-    stream: Arc<CudaStream>,
-    blas: Arc<CudaBlasLT>,
-) -> Rank0RedirectGuard {
-    set_rank0_redirect(Some((ordinal, stream, blas)));
-    Rank0RedirectGuard(())
-}
-impl Drop for Rank0RedirectGuard {
-    fn drop(&mut self) {
-        set_rank0_redirect(None);
-    }
-}
-fn rank0_redirect_for(ordinal: usize) -> Option<(Arc<CudaStream>, Arc<CudaBlasLT>)> {
-    RANK0_REDIRECT.with(|c| {
-        c.borrow()
-            .as_ref()
-            .filter(|(o, ..)| *o == ordinal)
-            .map(|(_, s, b)| (s.clone(), b.clone()))
-    })
-}
-
 /// TOKEN-PIPELINE phase (step37 chain): while `Some(p)`, `enter_main` binds each gpu's
 /// phase-p stream instead of its main stream, so alternate tokens' rank-local work rides
 /// disjoint streams. Cross-stream ordering is the SETTER's job (the multi-stream law
@@ -222,14 +183,10 @@ impl Gpu {
         if rc != cu::CUresult::CUDA_SUCCESS {
             return Err(format!("rank-local CUDA context push failed: {rc:?}").into());
         }
-        // Token-pipeline phase / rank0 redirect: bind the override stream when armed.
-        let (stream, blas) = if let Some(pair) = rank0_redirect_for(self.ctx.ordinal()) {
-            pair
-        } else {
-            match decode_phase() {
-                Some(p) => self.phase_pair(p)?,
-                None => (self.stream.clone(), self.blas.clone()),
-            }
+        // Token-pipeline phase: bind the phase stream when armed.
+        let (stream, blas) = match decode_phase() {
+            Some(p) => self.phase_pair(p)?,
+            None => (self.stream.clone(), self.blas.clone()),
         };
         Ok(GpuMainOverride {
             stream: Some(push_stream_override(stream, blas)),

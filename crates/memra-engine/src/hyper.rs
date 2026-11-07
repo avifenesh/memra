@@ -46,7 +46,6 @@
 //! its collapse are read from the compiled `ModelPlan`. There is nothing here to switch.
 
 use crate::Engine;
-use crate::HC_PRE_NORM_FUSE_DISPATCHES;
 use crate::dsv4_ffi as k;
 use crate::dsv4_ffi::ck;
 use crate::model::GpuTensor;
@@ -314,11 +313,11 @@ pub static HC_FUSED_PRE_DISPATCHES: std::sync::atomic::AtomicU64 =
 pub static HC_FUSED_PRE_V2_DISPATCHES: std::sync::atomic::AtomicU64 =
     std::sync::atomic::AtomicU64::new(0);
 
-/// The three states of `MEMRA_HC_FUSED_PRE` (default OFF): the unfused three-kernel chain,
-/// the `=1` fused kernel (`memra_dsv4_hc_pre_fused`, lane/glm5-decode-diet 2026-08-31), or
-/// the `=2` fused kernel (`memra_dsv4_hc_pre_fused_v2`, lane/b200-sinkhorn-fusion-20260902 —
-/// same stages, warp-scoped Sinkhorn sync). Any other value (unset, `0`, or unrecognized)
-/// stays `Off`, the existing "read per call" rollback-seam contract.
+/// The three states of `MEMRA_HC_FUSED_PRE`: the unfused three-kernel chain, the `=1` fused
+/// kernel (`memra_dsv4_hc_pre_fused`, lane/glm5-decode-diet 2026-08-31), or the `=2` fused
+/// kernel (`memra_dsv4_hc_pre_fused_v2`, lane/b200-sinkhorn-fusion-20260902 — same stages,
+/// warp-scoped Sinkhorn sync). Unset or unrecognized follows the build arch (`V2` on an
+/// sm_100a build, `Off` elsewhere); `0` forces `Off`. See [`hc_fused_pre_arm_from`].
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum HcFusedPreArm {
     Off,
@@ -326,8 +325,9 @@ pub enum HcFusedPreArm {
     V2,
 }
 
-/// `MEMRA_HC_FUSED_PRE` (default OFF, both `1` and `2` opt in): the three-kernel site
-/// pre-chain (rowsq_scale + Sinkhorn + collapse) runs as ONE launch per site — bit-identical
+/// `MEMRA_HC_FUSED_PRE` (unset = `V2` on an sm_100a build and the unfused chain elsewhere;
+/// `1`/`2` pick an arm, `0` forces the unfused chain): the three-kernel site pre-chain
+/// (rowsq_scale + Sinkhorn + collapse) runs as ONE launch per site — bit-identical
 /// to the unfused chain by construction in both arms (verbatim bodies, asserted bytewise in
 /// `hc_fused_pre_gpu.rs` for `=1` and by `hc-fused-gate` for `=1` vs `=2`). Read PER CALL
 /// (the `MEMRA_MOE_FUSED_EPI` rollback-seam precedent), so arms can alternate inside one
@@ -525,57 +525,7 @@ fn pre_finish_into(
                     // MEMRA_HC_PRE_V4: the register schedule first; 40025 (shape does not fit)
                     // falls through to v3, any other non-zero rc is v4's error and is reported
                     // as such rather than masked by a v3 retry.
-                    // MEMRA_HC_PRE_NORM_FUSE: the same kernel with the rms-norm + q8 epilogue
-                    // folded in, which DELETES the `rms_norm_zq8_f32` launch that would otherwise
-                    // run next on the vector this kernel just wrote (~3.9 us x ~79 per token).
-                    // Bit-identical, gated in `tests/hc_pre_norm_fuse_gpu.rs`.
-                    let fuse = PRE_T1_NORM_FUSE.with(|c| c.get());
-                    let v4 = if let (true, Some((nw, zp, norm_eps))) = (crate::hc_pre_v4_on(), fuse)
-                    {
-                        let nblk = hidden / 32;
-                        let mut q = e.htod_i8(&vec![0i8; hidden])?;
-                        let mut dq = e.zeros(nblk)?;
-                        // The enclosing dispatch is already one `unsafe` block; `nw` and `zp` are
-                        // live for this call by construction of `pre_t1_ws_norm`, which sets them
-                        // immediately before it and clears them immediately after.
-                        let rc = {
-                            k::memra_dsv4_hc_pre_v4_norm_zq8(
-                                dpf!(x, &stream),
-                                dpf!(mixes, &stream),
-                                dpf!(site.scale, &stream),
-                                dpf!(site.base, &stream),
-                                dpm!(pre_gates, &stream),
-                                dpm!(post, &stream),
-                                dpm!(comb, &stream),
-                                dpm!(y, &stream),
-                                t as i32,
-                                streams as i32,
-                                hidden as i32,
-                                topology.sinkhorn_iterations as i32,
-                                eps,
-                                std::ptr::null_mut(),
-                                crate::hc_pre_block() as i32,
-                                dpf!(*nw, &stream),
-                                zp,
-                                q.device_ptr_mut(&stream).0 as *mut i8,
-                                dq.device_ptr_mut(&stream).0 as *mut f32,
-                                norm_eps,
-                                sp(&stream),
-                            )
-                        };
-                        if rc == 40025 || rc == 40026 {
-                            None
-                        } else {
-                            if rc == 0 {
-                                HC_PRE_V4_DISPATCHES
-                                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                                HC_PRE_NORM_FUSE_DISPATCHES
-                                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                                PRE_T1_NORM_FUSE_TAKEN.with(|c| c.set(Some((q, dq))));
-                            }
-                            Some(("hc_pre_v4_norm_zq8", rc))
-                        }
-                    } else if crate::hc_pre_v4_on() {
+                    let v4 = if crate::hc_pre_v4_on() {
                         let rc = k::memra_dsv4_hc_pre_v4(
                             dpf!(x, &stream),
                             dpf!(mixes, &stream),
@@ -796,67 +746,6 @@ impl HyperDecodeWs {
 /// input bytes; the `pre_exact` note), then the shared `pre_finish_into` arms. Byte-identical
 /// to `pre(e, topology, site, x, 1, hidden)` with the outputs landing in `ws` instead of
 /// fresh allocations.
-/// [`pre_t1_ws`] with `rms_norm_zq8_f32`'s epilogue folded into the hc-pre launch
-/// (`MEMRA_HC_PRE_NORM_FUSE`, lane/hc-pre-norm-fuse-20260906).
-///
-/// Returns `Some(pair)` when the fusion actually fired, in which case the caller must NOT run its
-/// own norm: the normed vector is already in `ws.h` and the q8 pair is the return. `None` means
-/// the caller's existing norm launch still owes its work, which is the case whenever the door is
-/// off, the shape does not fit, or the dispatch took an arm other than v4.
-///
-/// The fusion is bit-identical to the two launches it replaces (`tests/hc_pre_norm_fuse_gpu.rs`),
-/// and the argument is an index coincidence rather than a tolerance, so it carries two hard
-/// preconditions instead of a fallback: `hidden == 4096` and `rms_block() == 1024`. At any other
-/// block size the unfused reduction walks a different per-thread element set.
-pub fn pre_t1_ws_norm(
-    e: &Engine,
-    topology: &HyperTopology,
-    site: &HyperSite,
-    x: &CudaSlice<f32>,
-    ws: &mut HyperDecodeWs,
-    hidden: usize,
-    norm: Option<(&CudaSlice<f32>, f32)>,
-) -> Res<Option<(CudaSlice<i8>, CudaSlice<f32>)>> {
-    let fuse = norm.filter(|_| {
-        crate::hc_pre_norm_fuse_on()
-            && crate::hc_pre_v4_on()
-            && hidden == 4096
-            && crate::rms_block() == 1024
-    });
-    let zp = if fuse.is_some() {
-        use cudarc::driver::DevicePtrMut;
-        let st = e.stream();
-        // SAFETY-ADJACENT NOTE: the raw pointer outlives this borrow of `ws.h`, which is the same
-        // contract the `dpm!` sites in this file already take. `ws.h` is a workspace buffer that
-        // is neither reallocated nor resized for the duration of the call below.
-        Some(ws.h.device_ptr_mut(&st).0 as *mut f32)
-    } else {
-        None
-    };
-    PRE_T1_NORM_FUSE.with(|c| {
-        c.set(match (fuse, zp) {
-            (Some((w, eps)), Some(z)) => Some((w as *const _, z, eps)),
-            _ => None,
-        })
-    });
-    let r = pre_t1_ws(e, topology, site, x, ws, hidden);
-    let taken = PRE_T1_NORM_FUSE_TAKEN.with(|c| c.take());
-    PRE_T1_NORM_FUSE.with(|c| c.set(None));
-    r?;
-    Ok(taken)
-}
-
-thread_local! {
-    /// The epilogue the current `pre_t1_ws` call may fold in, and the pair it produced. Passed
-    /// this way rather than through the signature because the v4 arm sits inside a dispatch match
-    /// that six other arms share, and threading an Option through all of them would put the
-    /// fusion's shape in front of code that cannot use it.
-    static PRE_T1_NORM_FUSE: std::cell::Cell<Option<(*const CudaSlice<f32>, *mut f32, f32)>> =
-        const { std::cell::Cell::new(None) };
-    static PRE_T1_NORM_FUSE_TAKEN: std::cell::Cell<Option<(CudaSlice<i8>, CudaSlice<f32>)>> =
-        const { std::cell::Cell::new(None) };
-}
-
 pub fn pre_t1_ws(
     e: &Engine,
     topology: &HyperTopology,
