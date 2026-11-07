@@ -77,6 +77,27 @@
         "MiMo serving and topology"
       ]
     },
+    "unprobed-model-packs": {
+      "paths": [],
+      "needs": [
+        "model-plans",
+        "shared-runtime",
+        "harness"
+      ],
+      "required": [
+        "qwen3 pack gates where the change reaches it",
+        "qwen3_moe pack gates where the change reaches it",
+        "glm5_next pack gates where the change reaches it",
+        "glm_dsa pack gates where the change reaches it",
+        "deepseek_v4 pack gates, DSpark drafter pack included, where the change reaches it",
+        "qwen4_exp pack gates where the change reaches it",
+        "hy3 pack gates where the change reaches it",
+        "olmoe pack gates where the change reaches it",
+        "minimax_m3 pack gates where the change reaches it",
+        "llama_dense pack gates where the change reaches it",
+        "FP8_BLOCK checkpoint gates where the change reaches them"
+      ]
+    },
     "native-checkpoint": {
       "paths": [],
       "needs": [

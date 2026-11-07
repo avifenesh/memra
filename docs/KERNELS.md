@@ -54,7 +54,8 @@ in `docs/FLAGS.md` and in darklanes `research/dsv4f-dense-tile-20260910/`.
 
 CUTLASS split-K at the per-128 block-scale granularity (the scale multiplies the f32 block
 partial sum in `scaled_reduce_kernel`; folding it into a bf16 operand is refused on numerics).
-Compiled only under `MEMRA_DSV4_CUTLASS`; the dispatch declares the entry WEAK, so without the
+Compiled only under `MEMRA_DSV4_CUTLASS`, and only for sm_120a: `build.rs` refuses the switch on
+any other `MEMRA_CUDA_ARCH`. The dispatch declares the entry WEAK, so without the
 archive the scalar kernel runs untouched. Gate-armed only (`arm_dense_cutlass_for_gate`); there
 is no env read and no serving caller. Numeric class NEW: mma fragment registers per 128-k block,
 never bit-equal to the shipped 128-leaf smem tree. Drift rows plus the paired accuracy control
