@@ -2326,8 +2326,10 @@ impl Drop for InflightGuard {
 /// The lane's configured admission cap. Interactive is `route_contract::interactive_cap`, the
 /// same derivation the worker's admission gate applies (memra#504; before that this was a second
 /// copy of the arithmetic, and #502 is what a second copy costs); judge/harvest =
-/// `LanePolicy::from_env().max_sessions`. Read once. Still lane-scoped: a per-model cap for the
-/// serial dsv4 route is #501 (`RouteRegistry::capacity_for`).
+/// `LanePolicy::from_env().max_sessions`. Read once. Still lane-scoped: a dedicated route (the
+/// dsv4 thread) caps its own admissions on its `RouteLoad`, registered by
+/// `route_telemetry::register` from the route contract's capacity (memra#501), and a request it
+/// admits holds that route ticket instead of a lane slot.
 fn lane_cap(lane: lanes::Lane) -> usize {
     static CAPS: std::sync::OnceLock<[usize; 3]> = std::sync::OnceLock::new();
     CAPS.get_or_init(|| {
@@ -6147,7 +6149,7 @@ enum MeteringWiring {
 }
 
 /// Deployment wiring for a custom binary. `serve_main` is exactly
-/// `serve_with(ServerWiring::reference())`; a deployment-owned binary substitutes
+/// `serve_with(ServerWiring::stock())`; a deployment-owned binary substitutes
 /// its own metering and hooks the runtime handles it needs.
 pub struct ServerWiring {
     metering: MeteringWiring,

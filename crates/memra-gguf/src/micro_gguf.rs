@@ -931,7 +931,6 @@ mod tests {
             c.nextn_predict_layers, 0,
             "the TRUNK file carries no nextn_predict_layers"
         );
-        assert_eq!(c.n_layer_total, 45);
         assert_eq!(c.n_embd, 4096);
         assert_eq!(c.head_dim_k, 128);
         assert_eq!(c.head_dim_v, 128);

@@ -93,11 +93,14 @@ impl IdentityLease {
 }
 
 /// CPU owned immutable image, not CUDA storage. Copy committed payloads BEFORE sealing
-/// metadata; no mutable borrow or Arc to an active generation is retained.
+/// metadata; no mutable borrow or Arc to an active generation is retained. Test-only scaffolding
+/// with `super::ActiveEpoch` (the module doc says why).
+#[cfg(test)]
 pub struct SealedImage {
     bundle: StateBundle,
     payloads: Vec<Vec<u8>>,
 }
+#[cfg(test)]
 impl SealedImage {
     pub fn copy_committed(
         active: &super::ActiveEpoch,

@@ -67,9 +67,8 @@ mod tests {
     use crate::config::HfConfig;
     use crate::tensor_contract::{LayerTensor, OutputHead, TensorId};
 
-    #[test]
-    fn official_a4b_geometry_compiles_parallel_moe_tensor_contract() {
-        let config = ModelConfig::from_hf(&HfConfig::parse(
+    fn official_a4b_config() -> ModelConfig {
+        ModelConfig::from_hf(&HfConfig::parse(
             r#"{"model_type":"gemma4","text_config":{"model_type":"gemma4_text",
             "num_hidden_layers":30,"hidden_size":2816,"num_attention_heads":16,
             "num_key_value_heads":8,"num_global_key_value_heads":2,"head_dim":256,
@@ -87,7 +86,12 @@ mod tests {
             "sliding_attention","sliding_attention","full_attention"],
             "rope_parameters":{"full_attention":{"rope_theta":1000000,
             "partial_rotary_factor":0.25},"sliding_attention":{"rope_theta":10000}}}}"#,
-        ));
+        ))
+    }
+
+    #[test]
+    fn official_a4b_geometry_compiles_parallel_moe_tensor_contract() {
+        let config = official_a4b_config();
         assert_eq!(config.moe.as_ref().unwrap().expert_used_count, 8);
         assert_eq!(config.moe.as_ref().unwrap().expert_shared_ff_length, 2112);
         assert_eq!(for_config(&config).unwrap().family, "gemma4_moe");
@@ -125,5 +129,100 @@ mod tests {
             requirement(LayerTensor::PostSharedMlpNorm).names,
             ["model.layers.0.post_feedforward_layernorm_1.weight"]
         );
+    }
+    /// The board artifact is the QAT Q4_0 GGUF. Its layer census (read from
+    /// gemma-4-26B_q4_0-it.gguf) names the parallel MoE in GGUF form, and two of its
+    /// `.scale` rows are model tensors, not quant auxiliaries: no auxiliary may claim them,
+    /// or binding refuses the checkpoint.
+    #[test]
+    fn official_a4b_gguf_contract_names_the_q4_0_census() {
+        let config = official_a4b_config();
+        let plan = PACK.compile_plan(&config).unwrap();
+        let contract = PACK
+            .compile_tensor_contract(
+                &config,
+                &plan,
+                CheckpointDialect::Gguf,
+                ContractOptions {
+                    output_head: OutputHead::TiedToEmbedding,
+                },
+            )
+            .unwrap();
+        let requirement = |tensor| {
+            contract
+                .requirements
+                .iter()
+                .find(|requirement| requirement.id == TensorId::Layer { index: 0, tensor })
+                .unwrap()
+        };
+        for (tensor, name, shape) in [
+            (
+                LayerTensor::SharedMlpGate,
+                "blk.0.ffn_gate.weight",
+                &[2816, 2112][..],
+            ),
+            (
+                LayerTensor::SharedMlpUp,
+                "blk.0.ffn_up.weight",
+                &[2816, 2112],
+            ),
+            (
+                LayerTensor::SharedMlpDown,
+                "blk.0.ffn_down.weight",
+                &[2112, 2816],
+            ),
+            (
+                LayerTensor::MoeRouter,
+                "blk.0.ffn_gate_inp.weight",
+                &[2816, 128],
+            ),
+            (
+                LayerTensor::MoeExpertGateUpBank,
+                "blk.0.ffn_gate_up_exps.weight",
+                &[2816, 1408, 128],
+            ),
+            (
+                LayerTensor::MoeExpertDownBank,
+                "blk.0.ffn_down_exps.weight",
+                &[704, 2816, 128],
+            ),
+            (
+                LayerTensor::MoeRouterScale,
+                "blk.0.ffn_gate_inp.scale",
+                &[2816],
+            ),
+            (
+                LayerTensor::MoeExpertOutputScale,
+                "blk.0.ffn_down_exps.scale",
+                &[128],
+            ),
+            (
+                LayerTensor::PostSharedMlpNorm,
+                "blk.0.post_ffw_norm_1.weight",
+                &[2816],
+            ),
+            (
+                LayerTensor::PreRoutedMlpNorm,
+                "blk.0.pre_ffw_norm_2.weight",
+                &[2816],
+            ),
+            (
+                LayerTensor::PostRoutedMlpNorm,
+                "blk.0.post_ffw_norm_2.weight",
+                &[2816],
+            ),
+        ] {
+            let requirement = requirement(tensor);
+            assert_eq!(requirement.names, [name], "{tensor:?}");
+            assert_eq!(requirement.shape, shape, "{tensor:?}");
+        }
+        for name in ["blk.0.ffn_gate_inp.scale", "blk.0.ffn_down_exps.scale"] {
+            let claims = contract
+                .requirements
+                .iter()
+                .filter(|requirement| requirement.names.iter().any(|n| n == name))
+                .count();
+            assert_eq!(claims, 1, "{name} is claimed {claims} times");
+        }
     }
 }

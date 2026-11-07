@@ -26,8 +26,9 @@ pub enum Arch {
     DeepSeekV4, // DeepSeek-V4-Flash: MLA-lineage attention + per-layer KV compressor +
     // DSA lightning indexer (21 of 43 layers), sqrtsoftplus-scored 256-expert MoE with
     // 3 leading HASH-routed layers (tid2eid, still full expert banks — NOT dense FFN),
-    // Sinkhorn hyper-connections (hc_*), 1 NextN/MTP layer. Loader lane only for now:
-    // no forward pass — census-gated safetensors ingest (research/dsv4-flash-loader-20260818).
+    // Sinkhorn hyper-connections (hc_*), 1 NextN/MTP layer. Census-gated safetensors ingest
+    // (research/dsv4-flash-loader-20260818); its dedicated engine is `Dsv4Gpu`, served by
+    // memra-server's dsv4 route (`dsv4_serve`), not by the generic HybridModel forward.
     Qwen4Exp, // Qwen3.8-Flash-Next (HF `qwen4_exp`): hybrid GDN 3:1 QSA (micro-block sparse
     // attention, MQA indexer 4Q/1K over 4-token blocks, budget 512 blocks), 512-expert
     // softmax top-k renormalized router (Qwen3NextTopKRouter — NOT sigmoid; the sigmoid
@@ -178,12 +179,14 @@ impl Arch {
         }
     }
 
-    /// DeepSeek-V4-Flash (HF `deepseek_v4`) — safetensors-first, loader lane only today.
+    /// DeepSeek-V4-Flash (HF `deepseek_v4`) — safetensors-first; runs on its dedicated
+    /// `Dsv4Gpu` engine, which memra-server's `dsv4_serve` route serves.
     pub fn is_dsv4(&self) -> bool {
         matches!(self, Arch::DeepSeekV4)
     }
 
-    /// Qwen3.8-Flash-Next (HF `qwen4_exp`) — safetensors-first, loader lane only today.
+    /// Qwen3.8-Flash-Next (HF `qwen4_exp`) — safetensors-first; runs on its dedicated
+    /// `Qwen4ExpGpu` engine (memra-engine), which memra-server does not serve.
     pub fn is_qwen4exp(&self) -> bool {
         matches!(self, Arch::Qwen4Exp)
     }
@@ -668,7 +671,8 @@ pub struct Glm5VisionConfig {
 #[derive(Debug, Clone)]
 pub struct Step35Config {
     /// Per-layer query-head count — `step35.attention.head_count` is an ARRAY (45 items: 64 on
-    /// full-attn layers, 96 on SWA layers). len == n_layer_total (the MTP GGUF carries 48).
+    /// full-attn layers, 96 on SWA layers). len == n_layer, the GGUF block_count (the MTP GGUF
+    /// carries 48).
     pub head_count: Vec<u32>,
     /// Per-layer KV-head count (`attention.head_count_kv`, uniform 8 on 3.7 — kept as an array
     /// because the key IS an array in the artifact and a future sibling may vary it).
@@ -1291,7 +1295,6 @@ pub struct ModelConfig {
     pub geometry: Option<ArchGeometryTable>,
     // multi-token-predict / NextN
     pub nextn_predict_layers: u32,
-    pub n_layer_total: u32, // includes appended MTP layers
     /// The source's sliding-window key, carried VERBATIM for families whose plan does not
     /// consume it. Every family that serves a window parses it into its own sub-config
     /// (gemma4/step35/dsv4); a config that carries one and lands in a pack with no window
@@ -1428,8 +1431,18 @@ impl ModelConfig {
                 expert_count: expert_count.unwrap_or(0),
                 expert_used_count: u("expert_used_count").unwrap_or(0),
                 expert_ff_length: u("expert_feed_forward_length").unwrap_or(0),
-                // meta_arch tries "qwen35moe.expert_shared_feed_forward_length" first, then bare key
-                expert_shared_ff_length: u("expert_shared_feed_forward_length").unwrap_or(0),
+                // meta_arch tries "qwen35moe.expert_shared_feed_forward_length" first, then bare key.
+                // A gemma4 MoE GGUF names no shared width: its parallel shared MLP is the dense
+                // `feed_forward_length` block, the `intermediate_size` the HF parse takes.
+                expert_shared_ff_length: u("expert_shared_feed_forward_length").unwrap_or_else(
+                    || {
+                        if matches!(arch, Arch::Gemma4) {
+                            u("feed_forward_length").unwrap_or(0)
+                        } else {
+                            0
+                        }
+                    },
+                ),
             })
         } else {
             None
@@ -1767,7 +1780,6 @@ impl ModelConfig {
             glm5: None, // safetensors-first arch: no GGUF artifact exists (bring-up lane)
             geometry,
             nextn_predict_layers: nextn,
-            n_layer_total: n_layer + nextn,
         }
     }
 
@@ -2598,7 +2610,6 @@ impl ModelConfig {
             // `nextn` above equals that expression for every arch EXCEPT deepseek_v4, where the
             // key is vestigial and the depth derives from compress_ratios (0731 trap).
             nextn_predict_layers: nextn,
-            n_layer_total: c.num_hidden_layers + nextn,
         }
     }
 
@@ -4489,7 +4500,6 @@ pub(crate) mod hf_tests {
         let config = pinned_mimo_config();
         assert_eq!(config.arch, Arch::MiMoV2);
         assert_eq!(config.n_layer, 48);
-        assert_eq!(config.n_layer_total, 48);
         assert_eq!(config.nextn_predict_layers, 0);
         assert_eq!(config.head_dim_k, 192);
         assert_eq!(config.head_dim_v, 128);
@@ -4998,6 +5008,46 @@ pub(crate) mod hf_tests {
         let mc = ModelConfig::from_hf(&c);
         assert_eq!(mc.rope_dim_count, 256);
         assert_eq!(mc.layer_geometry(3).unwrap().n_rot, 256);
+    }
+
+    /// A gemma4 MoE GGUF carries no `expert_shared_feed_forward_length`: its parallel shared
+    /// MLP is the dense `feed_forward_length` block. The HF parse takes `intermediate_size`, so
+    /// both loader paths must give the plan the same shared width, or the GGUF plan has no
+    /// shared branch and the tensor contract refuses the board artifact at load.
+    #[test]
+    fn gemma4_moe_gguf_shared_width_matches_the_hf_parse() {
+        use crate::micro_gguf::{GgufWriter, MetaW};
+
+        let path = std::env::temp_dir().join(format!(
+            "memra-gemma4-moe-shared-{}-{:?}.gguf",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        let mut writer = GgufWriter::new();
+        writer.kv("general.architecture", MetaW::Str("gemma4"));
+        writer.kv("gemma4.block_count", MetaW::U32(30));
+        writer.kv("gemma4.embedding_length", MetaW::U32(2816));
+        writer.kv("gemma4.feed_forward_length", MetaW::U32(2112));
+        writer.kv("gemma4.attention.head_count", MetaW::U32(16));
+        writer.kv("gemma4.attention.head_count_kv", MetaW::U32(8));
+        writer.kv("gemma4.expert_count", MetaW::U32(128));
+        writer.kv("gemma4.expert_used_count", MetaW::U32(8));
+        writer.kv("gemma4.expert_feed_forward_length", MetaW::U32(704));
+        writer.write(&path).unwrap();
+        let gguf = GgufFile::open(&path).unwrap();
+        let from_gguf = ModelConfig::from_gguf(&gguf);
+        std::fs::remove_file(&path).ok();
+
+        let from_hf = ModelConfig::from_hf(&HfConfig::parse(
+            r#"{"model_type":"gemma4","text_config":{"model_type":"gemma4_text",
+            "num_hidden_layers":30,"hidden_size":2816,"num_attention_heads":16,
+            "num_key_value_heads":8,"head_dim":256,"intermediate_size":2112,
+            "moe_intermediate_size":704,"num_experts":128,"top_k_experts":8,
+            "vocab_size":262144,"max_position_embeddings":262144}}"#,
+        ));
+        let shared = |cfg: &ModelConfig| cfg.moe.as_ref().unwrap().expert_shared_ff_length;
+        assert_eq!(shared(&from_hf), 2112);
+        assert_eq!(shared(&from_gguf), shared(&from_hf));
     }
 
     #[test]
@@ -5677,7 +5727,6 @@ pub(crate) mod hf_tests {
         let mc = ModelConfig::from_hf(&HfConfig::parse(&dsv4_config_json(3)));
         assert_eq!(mc.nextn_predict_layers, 3, "derived, NOT the vestigial 1");
         assert_eq!(mc.n_layer, 46);
-        assert_eq!(mc.n_layer_total, 46);
         assert_eq!(mc.dsv4.as_ref().unwrap().compress_ratios.len(), 46);
     }
 
@@ -5722,7 +5771,6 @@ pub(crate) mod hf_tests {
         // 45 trunk layers + 1 NextN (HF config convention includes the appended MTP block).
         assert_eq!(mc.nextn_predict_layers, 1);
         assert_eq!(mc.n_layer, 46);
-        assert_eq!(mc.n_layer_total, 46);
         assert_eq!(mc.n_embd, 4096);
         assert_eq!(mc.n_vocab, 154880);
         assert_eq!(mc.context_length, 1048576);

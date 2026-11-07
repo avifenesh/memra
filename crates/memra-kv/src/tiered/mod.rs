@@ -1,18 +1,32 @@
 //! Exact-byte KV coordination, extending the existing native payload owner via KvBacking.
-//! CPU-tested only; no server path is enabled here.
+//!
+//! What the server installs: `hostprefix` (the shared host-tier governor, resident charges and
+//! identity slots) and the re-exported `memra_tier` contracts (`BudgetGovernor`, `TierBudget`,
+//! leases and digests), which the host prefix tier uses when `MEMRA_KV_HOST_MB > 0`; the
+//! `kv-tier-gate` binaries also read `materializer`'s native geometry. What has no serving caller
+//! compiles only under `cfg(test)`: `Hierarchy`, `ActiveEpoch`, `scheduler`, `policy`,
+//! `integration` and `hostprefix::SealedImage` are CPU-tested scaffolding, the native `TierStore`
+//! the conformance schedules run against. A serving path that adopts one lifts its gate.
 pub mod hostprefix;
+#[cfg(test)]
 pub mod integration;
 pub mod materializer;
+#[cfg(test)]
 pub mod policy;
+#[cfg(test)]
 pub mod scheduler;
 #[cfg(test)]
 mod tests;
 
+#[cfg(test)]
 use integration::KvBacking;
 pub use memra_tier::contracts::*;
+#[cfg(test)]
 use std::collections::HashMap;
+#[cfg(test)]
 use std::sync::{Arc, Mutex};
 
+#[cfg(test)]
 struct Entry {
     plan: TierAdmission,
     block: BlockLease,
@@ -23,12 +37,14 @@ struct Entry {
 }
 /// The caller injects the SAME governor used by storage, banks, pools and peers.
 /// No independent capacity ledger exists in the hierarchy.
+#[cfg(test)]
 pub struct Hierarchy<B: KvBacking<T>, T: TransferEngine, G: BudgetGovernor> {
     backing: Option<B>,
     transfer: Option<T>,
     governor: Arc<Mutex<G>>,
     entries: HashMap<(u64, u64), Entry>,
 }
+#[cfg(test)]
 impl<B: KvBacking<T>, T: TransferEngine, G: BudgetGovernor> Hierarchy<B, T, G> {
     pub fn new(backing: B, transfer: T, governor: Arc<Mutex<G>>) -> Self {
         Self {
@@ -141,6 +157,7 @@ impl<B: KvBacking<T>, T: TransferEngine, G: BudgetGovernor> Hierarchy<B, T, G> {
         Ok(submitted.ticket)
     }
 }
+#[cfg(test)]
 fn expected(bundle: &StateBundle) -> Vec<Vec<SegmentExpectation>> {
     bundle
         .layout
@@ -156,6 +173,7 @@ fn expected(bundle: &StateBundle) -> Vec<Vec<SegmentExpectation>> {
         })
         .collect()
 }
+#[cfg(test)]
 impl<B: KvBacking<T>, T: TransferEngine, G: BudgetGovernor> TierStore for Hierarchy<B, T, G> {
     fn lookup(&self, id: &KvBlockId, peers: &[u32], local: u32) -> Result<Option<Lookup>> {
         id.validate()?;
@@ -458,6 +476,7 @@ impl<B: KvBacking<T>, T: TransferEngine, G: BudgetGovernor> TierStore for Hierar
         self.backing.as_mut().unwrap().evict(id)
     }
 }
+#[cfg(test)]
 impl<B: KvBacking<T>, T: TransferEngine, G: BudgetGovernor> Drop for Hierarchy<B, T, G> {
     fn drop(&mut self) {
         // Explicit release is the only credit path. Unknown shutdown retains backend
@@ -478,12 +497,14 @@ impl<B: KvBacking<T>, T: TransferEngine, G: BudgetGovernor> Drop for Hierarchy<B
 
 /// Native owner metadata guard. Every COW/rollback invalidates outstanding state tickets;
 /// allocation generations remain independent. Bytes/recurrent replay are native work.
+#[cfg(test)]
 #[derive(Clone, Debug)]
 pub struct ActiveEpoch {
     epochs: Epochs,
     committed: u64,
     staged: u64,
 }
+#[cfg(test)]
 impl ActiveEpoch {
     pub fn new(epochs: Epochs, committed: u64) -> Self {
         Self {

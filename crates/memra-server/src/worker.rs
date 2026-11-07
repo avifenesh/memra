@@ -8,12 +8,17 @@
 //! `tokio` mpsc Sender back which the worker uses to stream tokens (and a final Done) to that one
 //! request.
 //!
-//! SCHEDULER LOOP: the worker holds a `Vec<Session>` of active generations. Each iteration it
-//! round-robin steps EVERY active session by exactly ONE `decode_step` (one token of prefill OR
-//! one decode token), samples, checks stop, streams the token text back on that session's channel,
-//! and retires finished sessions. Queued admits fill empty slots up to `MAX_ACTIVE`. This is the
-//! interleave: a long generation and a freshly-admitted one make forward progress in the same loop,
-//! so the second produces tokens before the first finishes (not serialized end-to-end).
+//! SCHEDULER LOOP: the worker holds a `Vec<Session>` of active generations. Each tick it primes
+//! every still-prefilling session in chunks under a per-tick token budget (`prefill_tick`:
+//! `PREFILL_TICK_T`, 1024 tokens, or `SOLO_PREFILL_TICK_T`, 8192, for a lone fresh interactive
+//! request; a model with no chunked prime takes its whole prompt in one call), steps the
+//! decoding sessions together in batched decode chunks, samples, checks stop, streams the token
+//! text back on each session's channel, and retires finished sessions. Queued admits fill the
+//! interactive lane up to `MEMRA_MAX_SESSIONS` (default 64; `route_contract::interactive_cap`).
+//! This is the interleave: a long generation and a freshly-admitted one make forward progress in
+//! the same loop, so the second produces tokens before the first finishes (not serialized
+//! end-to-end). `MEMRA_SERVE_BATCH=0` keeps the legacy round-robin loop, one `decode_step` per
+//! session per iteration, capped at `MAX_ACTIVE`.
 
 mod device_memory;
 mod host_glm;
@@ -322,17 +327,6 @@ fn concat_prime_pp_eligibility(
     !pp_open || !streams_enabled || !cross_device
 }
 
-/// Prefix-split qualification follows the selected canonical layers, including mixed dense/MoE
-/// plans, rather than a whole-model family flag.
-fn routed_moe_prefix_split(plan: &memra_gguf::model_plan::ModelPlan) -> bool {
-    plan.layers.iter().any(|layer| {
-        matches!(
-            layer.mlp,
-            memra_gguf::model_plan::MlpPlan::Moe(ref moe) if moe.expert_count > 0
-        )
-    })
-}
-
 /// Can a spec-eligible prefix-cache hit re-arm a SpecSession from the restored carrier
 /// (lane/spec-on-cache-hit; SAMPLED arm lane/sampled-hit-spec 2026-08-19)? Pure decision
 /// half of the conversion at the admit probe. `None` = convert; `Some(reason)` = serve the
@@ -340,8 +334,8 @@ fn routed_moe_prefix_split(plan: &memra_gguf::model_plan::ModelPlan) -> bool {
 /// scope stayed invisible in production (0 restores AND 0 declines in the v0.93.0 DE deploy
 /// window looked identical to a mechanism that was never reached).
 ///   - the entry must carry a draft plane (spec-published entries only);
-///   - WHOLE-entry hits only (`entry_pos == fed_len`) — a (default-off) partial restore
-///     carries fewer trunk rows than the plane and stays on the plain path;
+///   - WHOLE-entry hits only (`entry_pos == fed_len`) — a mid-entry hit carries fewer
+///     trunk rows than the plane and stays on the plain path;
 ///   - a full-cover hit (empty suffix — the pure identical-repeat shape) additionally
 ///     needs the entry's boundary hidden AND logits;
 ///   - GREEDY **and SAMPLED** (v2). Every converted shape becomes an empty-suffix
@@ -650,6 +644,26 @@ fn dspark_blocks_greedy_widening(dspark_on: bool, _greedy: bool, constrained: bo
     dspark_on && constrained
 }
 
+/// K FLOOR FOR RESUMED SPEC CARRIERS (2026-08-25, found by the sampled ladder at c=4):
+/// the late-wave K re-read (PR #37 finding, 2026-08-24) can only move K DOWN, so a
+/// restored/resumed SpecSession that arrived with K>=1 can land here at K=0 — and a
+/// Session holding `spec: Some(..)` with `spec_k == 0` walks straight into the engine's
+/// `assert!(k >= 1)` and kills the GPU worker (observed: `[spec-k] K=0 source=concurrency
+/// wave=4` followed by `PANIC ... k must be >= 1`, every session on the box dead). Clamp
+/// to K=1: the narrowest legal burst. Greedy carriers demote to plain at the very next
+/// gate sweep anyway (the wave that forced K=0 is over HIGH); sampled carriers cannot
+/// demote (session-owned philox) and run narrow until the wave passes — strictly cheaper
+/// than the crash and no wider than the policy feared.
+fn resumed_carrier_spec_k_floor(has_carrier: bool, k: usize) -> (usize, bool) {
+    if has_carrier && k == 0 {
+        (1, true)
+    } else if has_carrier {
+        (k, false)
+    } else {
+        (0, false)
+    }
+}
+
 /// DFlash2 load admission. LOW-band widening is safe only while automatic demotion owns every
 /// live DFlash2 row. A positive operator K pin disables automatic demotion and falls back to
 /// solo; K=0 or an unpinned LOW=0 policy pins plain. Gate-off sessions stay solo. A live
@@ -672,26 +686,6 @@ fn dspark_blocks_greedy_widening(dspark_on: bool, _greedy: bool, constrained: bo
 ///     what the 2026-08-25 DE flip measured live: watchdog + one customer = plain.
 ///
 /// `MEMRA_DSPARK_SAMPLED_WAVE=0` is this lane's rollback seam (restores the solo law).
-/// K FLOOR FOR RESUMED SPEC CARRIERS (2026-08-25, found by the sampled ladder at c=4):
-/// the late-wave K re-read (PR #37 finding, 2026-08-24) can only move K DOWN, so a
-/// restored/resumed SpecSession that arrived with K>=1 can land here at K=0 — and a
-/// Session holding `spec: Some(..)` with `spec_k == 0` walks straight into the engine's
-/// `assert!(k >= 1)` and kills the GPU worker (observed: `[spec-k] K=0 source=concurrency
-/// wave=4` followed by `PANIC ... k must be >= 1`, every session on the box dead). Clamp
-/// to K=1: the narrowest legal burst. Greedy carriers demote to plain at the very next
-/// gate sweep anyway (the wave that forced K=0 is over HIGH); sampled carriers cannot
-/// demote (session-owned philox) and run narrow until the wave passes — strictly cheaper
-/// than the crash and no wider than the policy feared.
-fn resumed_carrier_spec_k_floor(has_carrier: bool, k: usize) -> (usize, bool) {
-    if has_carrier && k == 0 {
-        (1, true)
-    } else if has_carrier {
-        (k, false)
-    } else {
-        (0, false)
-    }
-}
-
 fn dspark_load_admits(
     greedy: bool,
     gate_on: bool,
@@ -785,10 +779,9 @@ struct DsparkColdPrefixAdmission {
     ///
     /// The caller sets this from `px.lookup` — a whole-entry FULL PREFIX of the prompt at or
     /// above `PREFIX_CACHE_MIN_TOKENS` — resolved once and reused by the restore, so the
-    /// decision and the restore cannot disagree. The only other way to consume a hit is the
-    /// mid-entry partial restore, which is default-OFF and refused outright on the hybrid/GDN
-    /// trunk `gdn_dspark_compatible` selects, so on this route a full-prefix entry is the whole
-    /// set.
+    /// decision and the restore cannot disagree. The plain path has no other way to consume a
+    /// hit (its mid-entry partial restore was deleted on a NO-GO receipt), so on this route a
+    /// full-prefix entry is the whole set.
     ///
     /// Review chased this predicate down three granularities, and the two rejected forms are
     /// recorded because each looked right: `prefix_on` alone (cache merely CONFIGURED — a
@@ -1017,12 +1010,6 @@ fn should_probe_prefix_cache(
     prefix_on && !has_prior_reuse && (!dspark_prefers_cold || dspark_restorable_hit)
 }
 
-/// Can this hit actually feed the dspark conversion? Tail present AND whole-entry cover — the
-/// same conditions the conversion checks after the restore has already been paid for
-/// (`full_cover` + `entry_tail_present`), evaluated here BEFORE the probe so a hit that cannot
-/// convert never buys the carrier. A strict-prefix hit (entry shorter than the prompt) fails
-/// this on purpose: the multi-turn shape keeps its pre-lane behavior — `dspark_prefers_cold`
-/// suppresses the probe and the request cold-primes with zero restore cost.
 /// The STRICT-PREFIX half of the restore switch (`dspark_prefix_restore_on`; its own door
 /// `MEMRA_DSPARK_PARTIAL_RESTORE` until 2026-11-07, lane/dspark-partial-restore 2026-09-05).
 /// Let a STRICT-PREFIX prefix-cache hit re-arm a dspark session: restore the
@@ -1041,8 +1028,9 @@ fn should_probe_prefix_cache(
 /// WHY IT CAN WORK: the suffix does NOT ride `decode_step`. A pool resume already primes a
 /// suffix into a restored dspark session (`dspark_resume = Some((sess, fed, suffix))`), so the
 /// path is shipped and gated; this reuses it with a cache carrier instead of a pool entry.
-/// That is what separates it from `MEMRA_PREFIX_PARTIAL_RESTORE` (NO-GO, research/
-/// lcprestore-20260813), whose suffix went through T=1 `decode_step` and byte-diverged.
+/// That is what separates it from the deleted plain partial restore (NO-GO, research/
+/// lcprestore-20260813; docs/FLAGS.md "Removed doors"), whose suffix went through T=1
+/// `decode_step` and byte-diverged.
 ///
 /// Its restored-vs-cold byte-identity gate (memra#1031, `tools/dspark-cold-drafter-gate.py`)
 /// is green on GB10, the RTX 5090 and the RTX PRO 6000 Max-Q. It defaults on with the other
@@ -1082,6 +1070,15 @@ fn dspark_boundary_capture_on() -> bool {
     dspark_prefix_restore_on()
 }
 
+/// Can this hit actually feed the dspark conversion? Tail present AND whole-entry cover — the
+/// same conditions the conversion checks after the restore has already been paid for
+/// (`full_cover` + `entry_tail_present`), evaluated here BEFORE the probe so a hit that cannot
+/// convert never buys the carrier. A strict-prefix hit (entry shorter than the prompt) fails
+/// this on purpose: the multi-turn shape keeps its pre-lane behavior — `dspark_prefers_cold`
+/// suppresses the probe and the request cold-primes with zero restore cost. Only with
+/// the restore switch armed (`dspark_partial_restore_on`, `MEMRA_DSPARK_PREFIX_RESTORE`) does a
+/// strict-prefix hit qualify, and then only when its suffix is at least `PRIME_MIN_T` rows and
+/// the carrier ends on the GDN prime grid.
 #[cfg(test)]
 fn dspark_hit_is_restorable(entry_toks: usize, prompt_toks: usize, entry_has_tail: bool) -> bool {
     dspark_hit_is_restorable_with(
@@ -3023,24 +3020,12 @@ fn plain_resume_cap_admits(entry_cap: usize, ctx_cap: usize, park_compact: bool)
 /// Minimum parked prefix worth reusing (below this, cold prime is cheaper than bookkeeping).
 const REUSE_MIN_PREFIX: usize = 16;
 
-/// ROLLBACK DOOR + A/B ARM for the whole-session sampler predicate
-/// (lane/session-resume-sampler-predicate-20260820).
+/// THE WHOLE-SESSION SAMPLER PREDICATE (lane/session-resume-sampler-predicate-20260820): a
+/// parked spec session resumes only when the incoming sampler is EQUIVALENT to the one that
+/// shaped it ([`SamplerIdentity::mismatch`]); its penalty-window position, Philox stream position
+/// and draft-plane state are all sampler-shaped. `SampledGraphKey` separately refuses to launch a
+/// draft graph captured under a different regime.
 ///
-/// Default ON: a parked spec session resumes only when the incoming sampler is EQUIVALENT to the
-/// one that shaped it ([`SamplerIdentity::mismatch`]). `MEMRA_SPEC_RESUME_SAMPLER=0` selects
-/// `SamplerIdentity::legacy_admits` — the pre-lane probe, which compared prompts and never
-/// samplers — and is the arm the cost measurement A/Bs against inside ONE binary, so a
-/// hit-vs-refuse delta is not a cross-build comparison on a contended host.
-///
-/// The door is a POLICY door, not an exactness door: with it shut, `SampledGraphKey` still refuses
-/// to launch a draft graph captured under a different regime (that fix is unconditional). What the
-/// door restores is the older, weaker posture in which a sampler-differing request keeps a parked
-/// session's penalty-window position, Philox stream position and draft-plane state.
-fn spec_resume_sampler_predicate_on() -> bool {
-    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| std::env::var("MEMRA_SPEC_RESUME_SAMPLER").as_deref() != Ok("0"))
-}
-
 /// Does `req` admit resuming `entry`? On refusal, records the NAMED mismatching field in
 /// `refused` so the caller's downgrade line can say why — a refusal that does not name itself is
 /// indistinguishable from an unwired mechanism.
@@ -3056,7 +3041,7 @@ fn spec_resume_sampler_admits(
     entry: &SpecReuseEntry,
     refused: &mut Option<&'static str>,
 ) -> bool {
-    match spec_resume_sampler_verdict(spec_resume_sampler_predicate_on(), req, &entry.sampler) {
+    match spec_resume_sampler_verdict(req, &entry.sampler) {
         None => true,
         Some(field) => {
             *refused = Some(field);
@@ -3065,19 +3050,12 @@ fn spec_resume_sampler_admits(
     }
 }
 
-/// The predicate AND the door, as one pure function: `None` = admit, `Some(field)` = refuse and
-/// name that field. Split out from [`spec_resume_sampler_admits`] so both door positions have CPU
-/// teeth — `spec_resume_sampler_predicate_on` is a process-lifetime `OnceLock`, so a test that set
-/// the env var would decide the door for every other test in the binary.
+/// The server's one sampler verdict for every resume tier, plain and dspark: `None` = admit,
+/// `Some(field)` = refuse and name that field.
 fn spec_resume_sampler_verdict(
-    predicate_on: bool,
     req: &SamplerIdentity,
     parked: &SamplerIdentity,
 ) -> Option<&'static str> {
-    if !predicate_on {
-        debug_assert!(req.legacy_admits(parked), "legacy_admits must admit all");
-        return None;
-    }
     req.mismatch(parked)
 }
 
@@ -3707,15 +3685,6 @@ const FP_WINDOW: usize = 8;
 /// conversation); nominating on it would cross-link unrelated conversations into one session.
 const FP_MIN_SEGMENTS: usize = 3;
 
-/// ROLLBACK SEAM (flags doctrine: the winner is the default; this exists to *disable* it).
-/// `MEMRA_AFFINITY=0` makes the affinity probe decline every candidate, so admit falls back to
-/// the pre-lane behavior: prefix probes only, cold full prime on a rewritten history.
-///
-/// This is not a tuning knob — it is the exactness A/B arm. The byte-identity gate
-/// (`research/session-affinity-20260805/`) runs the SAME conversation twice, once resuming and
-/// once with `MEMRA_AFFINITY=0`, and requires identical per-turn `text_sha`. Disabling the pool
-/// outright (`MEMRA_REUSE_POOL=0`) would be a different comparison: it also drops the
-/// token/text-prefix resumes, so a divergence could not be attributed to affinity.
 /// The plain pool's grid rewind (DAY41 1.1): restore the entry to its checkpoint in place (the
 /// affinity path's restore), truncate `fed` to it and carry the checkpoint's logits. `None` (the
 /// entry dropped, the request primes cold) when there is no checkpoint, the ring lapped it, the
@@ -3941,13 +3910,6 @@ fn grid_rewind_spec(
     }
 }
 
-/// MEMRA_RESUME_GRID_REWIND (default unset = OFF; WP-B day 41, O11, a measurement door): a pool
-/// resume that exactly extends a parked session's committed tokens rewinds it to the entry's grid
-/// checkpoint and re-primes from there, instead of resuming on the parked state (which holds the
-/// previous turn's DECODED rows, the near-tie residual `docs/SERVING.md` names). By the grid law a
-/// prime split on the grid is bit-identical to the monolithic prime, so the rewound resume is
-/// cold-identical. Armed, every session also arms its checkpoint (`plain_checkpoint_boundary`),
-/// not only a nominatable prompt. Unset, nothing reads it.
 /// MEMRA_SPEC_BUDGET_CLAMP (default unset, WP-B day 43, OWED O13): `1` makes the Qwen MTP
 /// session route truncate a round that would commit accepted drafts past the request's budget
 /// (`memra_engine::spec::budget_clamp_slot`), so a parked spec session equals the public stream
@@ -3996,6 +3958,13 @@ fn resume_exact_fault_settle() -> bool {
 /// The settle's idle grace (DAY44 1.2 (c)): a zero-gap next turn finds no settle in flight.
 const EXACT_SETTLE_GRACE: Duration = Duration::from_millis(100);
 
+/// MEMRA_RESUME_GRID_REWIND (default unset = OFF; WP-B day 41, O11, a measurement door): a pool
+/// resume that exactly extends a parked session's committed tokens rewinds it to the entry's grid
+/// checkpoint and re-primes from there, instead of resuming on the parked state (which holds the
+/// previous turn's DECODED rows, the near-tie residual `docs/SERVING.md` names). By the grid law a
+/// prime split on the grid is bit-identical to the monolithic prime, so the rewound resume is
+/// cold-identical. Armed, every session also arms its checkpoint (`plain_checkpoint_boundary`),
+/// not only a nominatable prompt. Unset, nothing reads it.
 fn resume_grid_rewind_on() -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *ON.get_or_init(|| {
@@ -4011,6 +3980,15 @@ fn resume_grid_rewind_on() -> bool {
     })
 }
 
+/// ROLLBACK SEAM (flags doctrine: the winner is the default; this exists to *disable* it).
+/// `MEMRA_AFFINITY=0` makes the affinity probe decline every candidate, so admit falls back to
+/// the pre-lane behavior: prefix probes only, cold full prime on a rewritten history.
+///
+/// This is not a tuning knob — it is the exactness A/B arm. The byte-identity gate
+/// (`research/session-affinity-20260805/`) runs the SAME conversation twice, once resuming and
+/// once with `MEMRA_AFFINITY=0`, and requires identical per-turn `text_sha`. Disabling the pool
+/// outright (`MEMRA_REUSE_POOL=0`) would be a different comparison: it also drops the
+/// token/text-prefix resumes, so a divergence could not be attributed to affinity.
 fn affinity_enabled() -> bool {
     if memra_engine::pp::pp_host_bounce_active() {
         // Plain-affinity checkpoints call Cache::snapshot through the primary Engine. Hybrid
@@ -4573,11 +4551,11 @@ fn plain_ckpt_nominatable(prompt: &[u32], is_control: &dyn Fn(u32) -> bool) -> b
 // prefix, and are REUSABLE (a hit deep-copies the entry into the new session's cache — one
 // marketplace system prompt serves any number of sessions, unlike the move-out pool).
 //
-// SPLIT LAW: full-attention K/V planes are context-linear token rows, so a transformer-only
-// entry can be copied through an arbitrary LCP boundary and the current request primes only its
-// suffix. Hybrid models (qwen35-class GDN) carry recurrent conv/ssm state that cannot roll back
-// to an arbitrary shorter prefix; routed-MoE mid-entry reuse is also unqualified after the
-// coldfix/fencealias history. Those classes refuse observably and retain boundary learning:
+// SPLIT LAW: a hit restores a WHOLE entry, never a prefix of one. Full-attention K/V rows are
+// context-linear, but the deleted mid-entry restore fed its suffix through a second numeric
+// program and byte-diverged from cold (NO-GO, `research/lcprestore-20260813/`), and hybrid
+// models (qwen35-class GDN) carry recurrent conv/ssm state that cannot roll back to a shorter
+// prefix at all. Every class therefore learns its boundaries:
 //   - SEED: a cold session's full prompt is inserted at prefill-done (before any decode).
 //   - LCP SPLIT (the learning step): a cold miss whose prompt shares >= PREFIX_CACHE_MIN_TOKENS
 //     tokens with an existing entry splits its own prime at the longest-common-prefix point,
@@ -5354,16 +5332,6 @@ impl<S: PartialEq> PrefixRefusalAnnouncer<S> {
     }
 }
 
-/// MEMRA_KV_HOST_MB (lane/kv-host-spill-20260830): pinned-host spill tier for the prefix
-/// cache, in binary MiB. Default 0 = OFF BY DESIGN: the tier is unmeasured on serving
-/// hardware until its pod battery lands (tick-stall, identity, stress, 8-turn cache twin),
-/// and unmeasured behavior does not default on. With MEMRA_KV_HOST_MB=0 the serving path is
-/// byte-identical to today by construction: nothing is ever demoted or promoted.
-///
-/// CO-TENANCY: multiple memra stacks will share one host (fleet direction 2026-08-30), so the
-/// operator sets an explicit per-stack budget; the MemAvailable x 0.6 boot clamp below is a
-/// backstop against a fat-fingered value (the 2026-08-17 swap-storm law), NEVER the sizing
-/// mechanism. Pinned RAM is not reclaimable by the kernel once allocated.
 // Unqualified GLM host images remain opt-in; device-prefix support is independent.
 fn glm5_tp_kv_host_on() -> bool {
     std::env::var("MEMRA_GLM5_TP_KV_HOST").as_deref() == Ok("1")
@@ -6093,6 +6061,16 @@ fn host_staging_lengths<'a>(
     need.into_iter().collect()
 }
 
+/// MEMRA_KV_HOST_MB (lane/kv-host-spill-20260830): pinned-host spill tier for the prefix
+/// cache, in binary MiB. Default 0 = OFF BY DESIGN: the tier is unmeasured on serving
+/// hardware until its pod battery lands (tick-stall, identity, stress, 8-turn cache twin),
+/// and unmeasured behavior does not default on. With MEMRA_KV_HOST_MB=0 the serving path is
+/// byte-identical to today by construction: nothing is ever demoted or promoted.
+///
+/// CO-TENANCY: multiple memra stacks will share one host (fleet direction 2026-08-30), so the
+/// operator sets an explicit per-stack budget; the MemAvailable x 0.6 boot clamp in this
+/// reader is a backstop against a fat-fingered value (the 2026-08-17 swap-storm law), NEVER the
+/// sizing mechanism. Pinned RAM is not reclaimable by the kernel once allocated.
 fn kv_host_budget_bytes() -> usize {
     static B: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
     *B.get_or_init(|| {
@@ -6534,14 +6512,9 @@ impl KvFlex {
     }
 }
 
-/// `MEMRA_PREFIX_LATENT=1` arms latent (MLA/DSA) plane capture + restore in prefix entries
-/// (lane/glm5-prefix-latent, 2026-08-30; docs/FLAGS.md row). DEFAULT OFF BY DESIGN: the failure
-/// class this mechanism replaces was a fluent wrong answer behind a truthful-looking
-/// `cached_tokens` counter, so it ships dark until the box battery banks restored-vs-cold byte
-/// identity on real hardware. OFF is bit-exact the parent lane's guard (capture refuses,
-/// restore refuses, plain-affinity declines); unsetting the flag is the rollback seam.
-/// `MEMRA_GLM5_TP_PREFIX=1` (lane/glm5-tp-prefix, 2026-09-07, default OFF, decide-by
-/// 2026-09-21) arms per-rank capture + restore of glm5 TP-2 sessions in prefix entries: every
+/// `MEMRA_GLM5_TP_PREFIX=1` (lane/glm5-tp-prefix, 2026-09-07; OFF in code, armed `=1` by the 1M
+/// TP-2 launcher since the v0.132.0 promotion, docs/FLAGS.md row) arms per-rank capture +
+/// restore of glm5 TP-2 sessions in prefix entries: every
 /// rank's KDA shard and every peer's latent plane ride the entry on their own devices. With it
 /// off a TP-class cache refuses capture and restore by name (a root-only entry would restore
 /// rank 0 and leave rank 1 at zero state: the same silent-fabrication class the latent gate
@@ -6596,6 +6569,12 @@ fn unsupported_prefix_tp_restore(
     None
 }
 
+/// `MEMRA_PREFIX_LATENT=1` arms latent (MLA/DSA) plane capture + restore in prefix entries
+/// (lane/glm5-prefix-latent, 2026-08-30; docs/FLAGS.md row). DEFAULT OFF BY DESIGN: the failure
+/// class this mechanism replaces was a fluent wrong answer behind a truthful-looking
+/// `cached_tokens` counter, so it ships dark until the box battery banks restored-vs-cold byte
+/// identity on real hardware. OFF is bit-exact the parent lane's guard (capture refuses,
+/// restore refuses, plain-affinity declines); unsetting the flag is the rollback seam.
 fn prefix_latent_planes_on() -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *ON.get_or_init(|| std::env::var("MEMRA_PREFIX_LATENT").as_deref() == Ok("1"))
@@ -6642,17 +6621,6 @@ fn carried_suffix_primes(hyper_trunk: bool, flag_on: bool) -> bool {
     hyper_trunk && flag_on
 }
 
-/// Immediate LCP-boundary restore. **Default OFF**: the lane that built this mechanism
-/// (`research/lcprestore-20260813/`, merged 6249b0096) returned NO-GO — restored K/V state hashes
-/// MATCH at splits 64/512/2048/4374, yet generated output BYTE-DIVERGES from a genuinely-cold
-/// request at splits 512 and 2048, and the cause was never established. Shipping the disproven
-/// path as the default was an integration mistake; it stays off until `cx-eosclass` root-causes
-/// the restored-state divergence class. `=1` arms it for measurement only.
-fn partial_prefix_restore_enabled() -> bool {
-    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ENABLED.get_or_init(|| std::env::var("MEMRA_PREFIX_PARTIAL_RESTORE").as_deref() == Ok("1"))
-}
-
 /// Expensive split-state evidence: D2H-hash every restored K/V byte and len mirror. Diagnostics
 /// only; production pays no copy or synchronization unless explicitly armed.
 fn prefix_split_trace_enabled() -> bool {
@@ -6671,20 +6639,6 @@ fn serve_batching() -> bool {
     })
 }
 
-/// Can this process admit a spec session under the current placement policy?
-///
-/// The admission gate uses this only for the SPEC_SHRINK_RESERVE transient floor
-/// (lane/admit-oom). A sharded PP-2 process at the placement-aware default has LOW=0, so no
-/// request can take spec and the plain path must not pay that reserve. `MEMRA_SPEC_GATE=0`
-/// remains always-spec and therefore still pays it.
-/// GEMMA SPEC seam (lane/gemma-batched stage 2/3, 2026-08-17): DEFAULT ON when a drafter
-/// is attached, since the stage-3 mixed coexistence cell went green (owner law — better
-/// wins by default; receipts in SERVED-SPEC.md: within-boot identity ALL GREEN, served
-/// c1 spec 135.5 prose / 211.3 code tok/s, c8 batch coexists at 169.8 agg under a live
-/// spec stream). Semantics: unset + MEMRA_DRAFT present = armed at the shipping K=5;
-/// unset without a drafter = off (nothing to draft with); `0` = the eager/plain kill
-/// switch; explicit K >= 1 = armed at that depth (and REQUIRES MEMRA_DRAFT — boot
-/// refuses loud). Any other value REFUSES LOUD (the mis-typed-seam law).
 /// A drafter path with the route off (memra #478): `MEMRA_DSPARK_DRAFT` set while
 /// `MEMRA_DSPARK_SPEC` is not `1` loads nothing and boots the MTP route, so the operator's drafter
 /// would be discarded in silence. The reverse pairing already refuses by name; this is its twin.
@@ -7015,6 +6969,14 @@ pub(crate) fn load_verified_tokenizer(
     Ok((tok, n_ids))
 }
 
+/// GEMMA SPEC seam (lane/gemma-batched stage 2/3, 2026-08-17): DEFAULT ON when a drafter
+/// is attached, since the stage-3 mixed coexistence cell went green (owner law — better
+/// wins by default; receipts in SERVED-SPEC.md: within-boot identity ALL GREEN, served
+/// c1 spec 135.5 prose / 211.3 code tok/s, c8 batch coexists at 169.8 agg under a live
+/// spec stream). Semantics: unset + MEMRA_DRAFT present = armed at the shipping K=5;
+/// unset without a drafter = off (nothing to draft with); `0` = the eager/plain kill
+/// switch; explicit K >= 1 = armed at that depth (and REQUIRES MEMRA_DRAFT — boot
+/// refuses loud). Any other value REFUSES LOUD (the mis-typed-seam law).
 fn gemma4_spec_k_env() -> usize {
     static K: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
     *K.get_or_init(|| match std::env::var("MEMRA_GEMMA4_SPEC").as_deref() {
@@ -7036,6 +6998,12 @@ fn gemma4_spec_k_env() -> usize {
     })
 }
 
+/// Can this process admit a spec session under the current placement policy?
+///
+/// The admission gate uses this only for the SPEC_SHRINK_RESERVE transient floor
+/// (lane/admit-oom). A sharded PP-2 process at the placement-aware default has LOW=0, so no
+/// request can take spec and the plain path must not pay that reserve. `MEMRA_SPEC_GATE=0`
+/// remains always-spec and therefore still pays it.
 fn serve_spec_enabled() -> bool {
     if memra_engine::pp::pp_host_bounce_active() {
         // Stream-mode spec exposes primary-device token/position buffers to stage 0 by UVA.
@@ -9268,9 +9236,6 @@ fn step_oom_retries() -> u32 {
     })
 }
 
-/// Is this error a CUDA out-of-memory? Quoted, never inferred (the evidence-discipline law):
-/// the match is on the driver's own error text, so a non-OOM step failure can never be
-/// silently retried as if it were a capacity blip.
 /// The client-facing sentence for an engine fault, by class (memra#143). Stable text: SDKs
 /// and dashboards match on `error.code` (`overloaded` / `engine_error`), and the words here
 /// are the only ones a customer should ever see for a fault whose real description is a
@@ -9289,6 +9254,9 @@ pub(crate) fn engine_client_message(class: ErrClass) -> &'static str {
     }
 }
 
+/// Is this error a CUDA out-of-memory? Quoted, never inferred (the evidence-discipline law):
+/// the match is on the driver's own error text, so a non-OOM step failure can never be
+/// silently retried as if it were a capacity blip.
 fn is_cuda_oom(err: &str) -> bool {
     err.contains("CUDA_ERROR_OUT_OF_MEMORY") || err.contains("out of memory")
 }
@@ -9592,22 +9560,6 @@ fn maybe_inject_fault(cache_ns: &str, request_id: &str) {
 const STEP_OOM_FAULT_MSG: &str =
     "CUDA_ERROR_OUT_OF_MEMORY (synthetic: MEMRA_STEP_OOM_FAULT diagnostic door)";
 
-/// MEMRA_STEP_OOM_FAULT (diagnostic fault door, default absent/0 = OFF): how many phase-(a)
-/// session steps to fail with [`STEP_OOM_FAULT_MSG`] instead of running. THE REASON IT
-/// EXISTS (battery-20260831 tenancy-gates T2, darklanes
-/// `research/kv-fastband-20260830/battery-20260831/tenancy-gates/RESULTS.md`): the step-OOM
-/// PARK branch is unreachable from outside the process: four independent refusal layers
-/// (the KV-capacity 429, the `[admit-oom]` VRAM defer, the TTFT deadline on queued
-/// requests, and the boot-time pool reservation that makes a later ballast invisible) catch
-/// every external pressure shape first, so the branch whose multi-active form was
-/// fleet-fatal before lane/step37-vram-admission had NO executable gate (the
-/// loud-failures / executed-failure-path laws). This is the same posture as
-/// `MEMRA_KV_HOST_FAULT`: the injection forges ONLY the error; the park-vs-honest-error
-/// match, the teardown fence, `park_requeue`, and the retry budget all run un-doctored
-/// production logic. `1` proves the park branch (fresh session parks, requeues, re-primes,
-/// answers 200); a value above `MEMRA_STEP_OOM_RETRIES` walks the same session into the
-/// bounded-retry honest error. Malformed values are OFF with a loud warning. NEVER set on
-/// a serving box.
 /// Where the door may fire (WP-B day 49 addendum D). `Any`: the next step at any of the three
 /// injection points (a plain `<n>`, today's door). `BatchMulti`: only the plain dispatch's
 /// batched decode chunk, and only a chunk carrying at least two sessions (`batch:<n>`).
@@ -9628,6 +9580,22 @@ fn parse_step_oom_fault(raw: &str) -> Option<(StepOomFaultSite, u32)> {
     }
 }
 
+/// MEMRA_STEP_OOM_FAULT (diagnostic fault door, default absent/0 = OFF): how many phase-(a)
+/// session steps to fail with [`STEP_OOM_FAULT_MSG`] instead of running. THE REASON IT
+/// EXISTS (battery-20260831 tenancy-gates T2, darklanes
+/// `research/kv-fastband-20260830/battery-20260831/tenancy-gates/RESULTS.md`): the step-OOM
+/// PARK branch is unreachable from outside the process: four independent refusal layers
+/// (the KV-capacity 429, the `[admit-oom]` VRAM defer, the TTFT deadline on queued
+/// requests, and the boot-time pool reservation that makes a later ballast invisible) catch
+/// every external pressure shape first, so the branch whose multi-active form was
+/// fleet-fatal before lane/step37-vram-admission had NO executable gate (the
+/// loud-failures / executed-failure-path laws). This is the same posture as
+/// `MEMRA_KV_HOST_FAULT`: the injection forges ONLY the error; the park-vs-honest-error
+/// match, the teardown fence, `park_requeue`, and the retry budget all run un-doctored
+/// production logic. `1` proves the park branch (fresh session parks, requeues, re-primes,
+/// answers 200); a value above `MEMRA_STEP_OOM_RETRIES` walks the same session into the
+/// bounded-retry honest error. Malformed values are OFF with a loud warning. NEVER set on
+/// a serving box.
 fn step_oom_fault_state() -> &'static (StepOomFaultSite, std::sync::atomic::AtomicU32) {
     static R: std::sync::OnceLock<(StepOomFaultSite, std::sync::atomic::AtomicU32)> =
         std::sync::OnceLock::new();
@@ -9784,77 +9752,12 @@ impl PrefixEntry {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum PartialPrefixDecision {
-    Restore,
-    RefuseNoSuffix,
-    RefuseRoutedMoe,
-    RefuseRecurrentMidEntry,
-    RefuseRecurrentOffGrid,
-    RefuseLatentMidEntry,
-}
-
-impl PartialPrefixDecision {
-    fn refusal(self) -> Option<&'static str> {
-        match self {
-            Self::Restore => None,
-            Self::RefuseNoSuffix => Some(
-                "request ends at the split and the longer entry has no logits for that boundary",
-            ),
-            Self::RefuseRoutedMoe => Some(
-                "routed-MoE mid-entry split is unqualified (Q35-A3B class stays on cold/snapshot fallback)",
-            ),
-            Self::RefuseRecurrentMidEntry => Some(
-                "hybrid conv/SSM state exists only at the entry endpoint and cannot be truncated",
-            ),
-            Self::RefuseRecurrentOffGrid => Some(
-                "the entry endpoint is off the GDN prime grid or leaves a suffix under PRIME_MIN_T \
-                 (the restore grid law)",
-            ),
-            Self::RefuseLatentMidEntry => Some(
-                "latent (MLA/DSA) planes restore whole-entry only: an interior boundary's index \
-                 tail ring is unrecoverable and the suffix would re-prime through a different \
-                 numeric program",
-            ),
-        }
-    }
-}
-
-/// Decide only the NEW mid-entry path. Whole-entry lookup remains unchanged and already restores
-/// recurrent state exactly at its captured endpoint. For an actual mid-entry split, recurrent
-/// state, latent planes, and routed-MoE are fail-closed until their own boundary exactness
-/// receipts exist. The latent arm exists in its own right (not just via glm5's recurrent
-/// layers): an all-MLA pack (glm_dsa class) has `entry_has_recurrent == false` and must not
-/// slide through that gap when `MEMRA_PREFIX_PARTIAL_RESTORE=1` is armed.
-fn partial_prefix_decision(
-    entry_has_recurrent: bool,
-    entry_has_latent: bool,
-    routed_moe: bool,
-    lcp: usize,
-    entry_pos: usize,
-    prompt_len: usize,
-) -> PartialPrefixDecision {
-    if lcp >= prompt_len {
-        PartialPrefixDecision::RefuseNoSuffix
-    } else if routed_moe {
-        PartialPrefixDecision::RefuseRoutedMoe
-    } else if entry_has_recurrent && lcp != entry_pos {
-        PartialPrefixDecision::RefuseRecurrentMidEntry
-    } else if entry_has_recurrent && !prefix_restore_exact(lcp, prompt_len, true) {
-        PartialPrefixDecision::RefuseRecurrentOffGrid
-    } else if entry_has_latent && lcp != entry_pos {
-        PartialPrefixDecision::RefuseLatentMidEntry
-    } else {
-        PartialPrefixDecision::Restore
-    }
-}
-
 /// Device-independent half of restore preflight. This is deliberately one atomic check so the
 /// corruption gate can exercise every range/layout/version class without constructing CUDA state.
+/// A restore copies the whole entry, so the copy is the entry's own `entry_pos` rows.
 #[allow(clippy::too_many_arguments)]
 fn validate_prefix_plane_shape(
     entry_pos: usize,
-    restore_len: usize,
     src_len: usize,
     src_k_tok_bytes: usize,
     src_v_tok_bytes: usize,
@@ -9887,19 +9790,14 @@ fn validate_prefix_plane_shape(
             expected_v.max(1),
         ));
     }
-    let copy_k = restore_len
-        .checked_mul(dst_k_tok_bytes)
-        .ok_or_else(|| "restore K byte count overflow".to_string())?;
-    let copy_v = restore_len
-        .checked_mul(dst_v_tok_bytes)
-        .ok_or_else(|| "restore V byte count overflow".to_string())?;
-    if dst_k_bytes < copy_k || dst_v_bytes < copy_v {
+    // The layouts match (checked above), so the copy is exactly the source's byte count.
+    if dst_k_bytes < expected_k || dst_v_bytes < expected_v {
         return Err(format!(
-            "destination planes too small: K {dst_k_bytes} < {copy_k}, \
-             V {dst_v_bytes} < {copy_v}",
+            "destination planes too small: K {dst_k_bytes} < {expected_k}, \
+             V {dst_v_bytes} < {expected_v}",
         ));
     }
-    Ok((copy_k, copy_v))
+    Ok((expected_k, expected_v))
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -10422,7 +10320,6 @@ impl PrefixCache {
 
     /// Refresh recency for pool[i] on a demonstrated reuse. This is the ONLY legal unpinned
     /// `last_use` write after insert, so the index never drifts from the entries.
-    #[cfg_attr(not(test), allow(dead_code))]
     fn touch(&mut self, key: &PoolKey, i: usize) {
         let Some((old_lru, pinned)) = self
             .entries
@@ -10663,7 +10560,7 @@ impl PrefixCache {
     }
 
     /// Env-budgeted insert for unit tests (production inserts route through `insert_demoting`).
-    #[cfg_attr(not(test), allow(dead_code))]
+    #[cfg(test)]
     fn insert(&mut self, key: &PoolKey, e: PrefixEntry, why: &str) {
         let _ = self.insert_with_budget_pins(key, e, why, prefix_cache_budget_bytes(), 0, None);
     }
@@ -10737,7 +10634,7 @@ impl PrefixCache {
 
     /// `insert` with the budget as a parameter (the env-independent seam the eviction
     /// unit tests drive).
-    #[cfg_attr(not(test), allow(dead_code))]
+    #[cfg(test)]
     fn insert_with_budget(&mut self, key: &PoolKey, e: PrefixEntry, why: &str, budget: usize) {
         let _ = self.insert_with_budget_pins(key, e, why, budget, 0, None);
     }
@@ -11013,7 +10910,7 @@ fn retire_prefix_pin(px: &mut PrefixCache, prefix_pin: &mut Option<PrefixPin>) {
 // are already q8_0 K / q5_1 V at rest: no requantization anywhere); a later probe that
 // misses the device pool but exactly matches a host entry re-materializes a NORMAL device
 // `PrefixEntry` (alloc_u8 + htod_u8_into), inserts it pinned, and serves through the existing
-// `prefix_restore_at`. Byte-lossless by construction, and `MEMRA_KV_HOST_MB=0` (the default)
+// `prefix_restore`. Byte-lossless by construction, and `MEMRA_KV_HOST_MB=0` (the default)
 // is byte-identical to today because nothing ever reaches the tier.
 //
 // SWA-ring exclusions remain upstream. GLM images are opt-in and process-lifetime;
@@ -22628,7 +22525,7 @@ fn host_restore_park_probe(
     };
     {
         let e = &px.entries[&pool_key][i];
-        if let Err(err) = prefix_restore_validate(&cache, e, &pool_key, e.pos, Some(&lm.model)) {
+        if let Err(err) = prefix_restore_validate(&cache, e, &pool_key, Some(&lm.model)) {
             return refuse(format!("validation failed: {err}"));
         }
     }
@@ -24185,7 +24082,7 @@ fn host_handoff_import_step(imp: &mut HostHandoffImport, hpx: &mut HostPrefixCac
 /// full-attention K/V, copied per token) and `recur` (conv/ssm, copied whole at the endpoint).
 /// A model whose `ModelPlan` declares `StatePlan::LatentKvCache` keeps its FULL-ATTENTION
 /// history in a THIRD plane, `cache.latent`, which `prefix_snapshot` never captured and
-/// `prefix_restore_at` never restored, and neither function so much as mentions it, so nothing
+/// `prefix_restore` never restored, and neither function so much as mentions it, so nothing
 /// failed.
 ///
 /// THE MEASURED CONSEQUENCE (glm5_next, 34 KDA + 11 MLA/DSA layers). Every MLA layer's
@@ -24611,19 +24508,16 @@ fn finish_planned_dflash_conversion(
     Ok(())
 }
 
-/// Deep-copy the first `restore_len` tokens of an entry INTO a freshly allocated session cache:
-/// K/V bytes at [0..restore_len), per-layer len + device mirror, and pos. Recurrent state is
-/// copied only at the entry's captured endpoint; a mid-entry recurrent split fails closed.
-/// The ssm ping-pong spare and last_logits_dev stay as allocated (scratch — overwritten before
-/// any read). All identity/shape/bounds checks precede the first device copy.
 /// Every identity, shape and bounds check of a prefix restore, with no device copy (WP-A day 21
-/// split it out of `prefix_restore_at` so the off-tick route runs exactly the OFF checks before
-/// it submits; the statements are the OFF path's, unchanged).
+/// split it out of `prefix_restore` so the off-tick route runs exactly the OFF checks before it
+/// submits; the statements are the OFF path's, unchanged). A restore is always WHOLE-entry, at
+/// the entry's captured endpoint `e.pos`: the plain mid-entry restore was deleted on its NO-GO
+/// receipt, so no caller can name an interior boundary. That boundary was never restorable for
+/// TP shards, recurrent state or a latent index tail anyway; each exists only at the endpoint.
 fn prefix_restore_validate(
     cache: &Cache,
     e: &PrefixEntry,
     expected_key: &PoolKey,
-    restore_len: usize,
     model: Option<&HybridModel>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     if cache.has_swa_ring() {
@@ -24633,14 +24527,6 @@ fn prefix_restore_validate(
     if let Some(why) = unsupported_prefix_tp_restore(tp_model, glm5_tp_prefix_on(), e.tp.is_some())
     {
         return Err(why.into());
-    }
-    if e.tp.is_some() && restore_len != e.pos {
-        return Err(format!(
-            "TP mid-entry prefix restore refused at {restore_len} of {}: rank shards exist only \
-             at the captured endpoint",
-            e.pos,
-        )
-        .into());
     }
     // Defence in depth for the capture-side gate in `prefix_snapshot`: an entry that does not
     // carry latent planes (minted before the flag flip, or by the spec-boundary publisher) must
@@ -24679,17 +24565,13 @@ fn prefix_restore_validate(
         )
         .into());
     }
-    if restore_len == 0 || restore_len > e.pos {
-        return Err(format!(
-            "prefix restore boundary {restore_len} outside entry [1,{}]",
-            e.pos,
-        )
-        .into());
+    if e.pos == 0 {
+        return Err("prefix entry holds no tokens".into());
     }
-    if restore_len > cache.max_ctx {
+    if e.pos > cache.max_ctx {
         return Err(format!(
-            "prefix restore boundary {restore_len} exceeds cache capacity {}",
-            cache.max_ctx,
+            "prefix entry pos {} exceeds cache capacity {}",
+            e.pos, cache.max_ctx,
         )
         .into());
     }
@@ -24717,25 +24599,7 @@ fn prefix_restore_validate(
         )
         .into());
     }
-    let has_recurrent = e.carries_recurrent();
-    if has_recurrent && restore_len != e.pos {
-        return Err(format!(
-            "hybrid mid-entry prefix restore refused at {restore_len} of {}: recurrent state \
-             exists only at the captured endpoint",
-            e.pos,
-        )
-        .into());
-    }
-    if entry_has_latent && restore_len != e.pos {
-        return Err(format!(
-            "latent mid-entry prefix restore refused at {restore_len} of {}: the index tail \
-             ring for an interior boundary is unrecoverable (rows below the built pools are \
-             overwritten by design)",
-            e.pos,
-        )
-        .into());
-    }
-    if restore_len == e.pos && e.last_logits.is_empty() {
+    if e.last_logits.is_empty() {
         return Err("whole-entry prefix restore has no boundary logits".into());
     }
 
@@ -24746,7 +24610,6 @@ fn prefix_restore_validate(
             (Some(dst), Some(src)) => {
                 validate_prefix_plane_shape(
                     e.pos,
-                    restore_len,
                     src.len,
                     src.k_tok_bytes,
                     src.v_tok_bytes,
@@ -24796,18 +24659,17 @@ fn prefix_restore_validate(
     Ok(())
 }
 
-/// Design B1: a restore's KV copies (`[0, restore_len * tok_bytes)` of each plane), its length
-/// sets and its recurrent copies as ONE launch. A range too long for its source or destination
-/// fails the request with a named error before any device write. Guards as in
-/// [`prefix_snapshot_batch`].
+/// Design B1: a restore's KV copies (`[0, e.pos * tok_bytes)` of each plane), its length sets and
+/// its recurrent copies as ONE launch. A range too long for its source or destination fails the
+/// request with a named error before any device write. Guards as in [`prefix_snapshot_batch`].
 fn prefix_restore_batch(
     engine: &Engine,
     cache: &mut Cache,
     e: &PrefixEntry,
-    restore_len: usize,
 ) -> Result<(), Box<dyn std::error::Error>> {
     use cudarc::driver::{DevicePtr, DevicePtrMut};
     let st = engine.stream();
+    let restore_len = e.pos;
     let len_value = i32::try_from(restore_len).map_err(|_| "prefix restore length exceeds i32")?;
     let mut kv_views = Vec::new();
     let mut lens = Vec::new();
@@ -24889,22 +24751,26 @@ fn prefix_restore_batch(
     Ok(())
 }
 
-fn prefix_restore_at(
+/// Deep-copy a WHOLE entry INTO a freshly allocated session cache: K/V bytes at [0..e.pos),
+/// per-layer len + device mirror, recurrent state, latent planes, TP shards and pos. Every
+/// identity/shape/bounds check (`prefix_restore_validate`) precedes the first device copy. The
+/// ssm ping-pong spare and last_logits_dev stay as allocated (scratch — overwritten before any
+/// read).
+fn prefix_restore(
     engine: &Engine,
     cache: &mut Cache,
     e: &PrefixEntry,
     expected_key: &PoolKey,
-    restore_len: usize,
     model: Option<&HybridModel>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    prefix_restore_validate(cache, e, expected_key, restore_len, model)?;
+    prefix_restore_validate(cache, e, expected_key, model)?;
     let max_ctx = cache.max_ctx;
     // Design B1 (DAY59 section 7): the KV copies, the length sets and the recurrent copies in one
     // launch, checked before any device write.
-    prefix_copy_timed(1, || prefix_restore_batch(engine, cache, e, restore_len))?;
+    prefix_copy_timed(1, || prefix_restore_batch(engine, cache, e))?;
     for il in 0..cache.kv.len() {
         if let (Some(dst), Some(_)) = (cache.kv[il].as_mut(), &e.kv[il]) {
-            dst.len = restore_len;
+            dst.len = e.pos;
         }
         if let (Some(dst), Some(src)) = (cache.latent[il].as_mut(), &e.latent[il]) {
             dst.restore_plane(engine, src, max_ctx)
@@ -24918,18 +24784,8 @@ fn prefix_restore_at(
             .glm5_tp_prefix_restore(engine, cache, shards)
             .map_err(|err| format!("prefix entry TP shards: {err}"))?;
     }
-    cache.pos = restore_len;
+    cache.pos = e.pos;
     Ok(())
-}
-
-fn prefix_restore(
-    engine: &Engine,
-    cache: &mut Cache,
-    e: &PrefixEntry,
-    expected_key: &PoolKey,
-    model: Option<&HybridModel>,
-) -> Result<(), Box<dyn std::error::Error>> {
-    prefix_restore_at(engine, cache, e, expected_key, e.pos, model)
 }
 
 fn digest_usize(hasher: &mut Sha256, value: usize) {
@@ -25133,135 +24989,9 @@ fn prefix_entry_roundtrip_digest(
     Ok(format!("{VERIFY_PROGRAM_SPLIT_V3}:{:x}", hasher.finalize()))
 }
 
-/// Same digest over the actual freshly-restored Cache. Device `len_d` mirrors are read and must
-/// equal the split before a digest can be reported.
-fn prefix_cache_state_digest(
-    engine: &Engine,
-    cache: &Cache,
-    at: usize,
-) -> Result<String, Box<dyn std::error::Error>> {
-    if cache.pos != at {
-        return Err(format!("cache digest pos {} != split {at}", cache.pos).into());
-    }
-    let mut hasher = Sha256::new();
-    hasher.update(b"memra-prefix-split-state-v2");
-    digest_usize(&mut hasher, at);
-    digest_usize(&mut hasher, cache.kv.len());
-    for il in 0..cache.kv.len() {
-        digest_usize(&mut hasher, il);
-        match &cache.kv[il] {
-            Some(plane) => {
-                if plane.len != at {
-                    return Err(
-                        format!("cache digest layer {il} len {} != split {at}", plane.len,).into(),
-                    );
-                }
-                let len_d = engine.dtoh_i32(&plane.len_d)?;
-                if len_d.as_slice() != [at as i32] {
-                    return Err(
-                        format!("cache digest layer {il} len_d {len_d:?} != [{at}]",).into(),
-                    );
-                }
-                hasher.update([1]);
-                digest_usize(&mut hasher, plane.k_tok_bytes);
-                digest_usize(&mut hasher, plane.v_tok_bytes);
-                let kb = at
-                    .checked_mul(plane.k_tok_bytes)
-                    .ok_or("cache digest K byte count overflow")?;
-                let vb = at
-                    .checked_mul(plane.v_tok_bytes)
-                    .ok_or("cache digest V byte count overflow")?;
-                let k = engine.dtoh_u8_view(&plane.k.slice(0..kb))?;
-                let v = engine.dtoh_u8_view(&plane.v.slice(0..vb))?;
-                digest_usize(&mut hasher, k.len());
-                hasher.update(&k);
-                digest_usize(&mut hasher, v.len());
-                hasher.update(&v);
-            }
-            None => hasher.update([0]),
-        }
-        match &cache.recur[il] {
-            Some(recur) => {
-                hasher.update([1]);
-                digest_f32_plane(&mut hasher, &engine.dtoh(&recur.conv_state)?);
-                digest_f32_plane(&mut hasher, &engine.dtoh(&recur.ssm_state)?);
-            }
-            None => hasher.update([0]),
-        }
-        // The latent twin of the entry-side digest: hash the LOGICAL windows a snapshot carries
-        // (rows [0..len*width), keys [0..ready*d), the live tail), so a correctly restored cache
-        // digests byte-identically to its source entry. A layer left at len 0 (MTP, recorded
-        // absent at capture) digests as absent, matching the entry's None slot.
-        match &cache.latent[il] {
-            Some(layer) if layer.len > 0 => {
-                if layer.len != at {
-                    return Err(format!(
-                        "cache digest latent {il} len {} != split {at}",
-                        layer.len,
-                    )
-                    .into());
-                }
-                let len_d = engine.dtoh_i32(&layer.len_d)?;
-                if len_d.as_slice() != [at as i32] {
-                    return Err(
-                        format!("cache digest latent {il} len_d {len_d:?} != [{at}]",).into(),
-                    );
-                }
-                hasher.update([1]);
-                digest_usize(&mut hasher, layer.width);
-                digest_usize(&mut hasher, layer.len);
-                let rows = engine.dtoh_view(&layer.rows.slice(0..layer.len * layer.width))?;
-                digest_f32_plane(&mut hasher, &rows);
-                digest_usize(&mut hasher, layer.index_width);
-                digest_usize(&mut hasher, layer.index_pool);
-                digest_usize(&mut hasher, layer.index_pools_ready);
-                if layer.index_width > 0 && layer.index_pools_ready > 0 {
-                    let d = layer.index_width / 2;
-                    let keys = layer
-                        .index_pool_keys
-                        .as_ref()
-                        .ok_or_else(|| format!("cache digest latent {il} has no key plane"))?;
-                    hasher.update([1]);
-                    let keys = engine.dtoh_view(&keys.slice(0..layer.index_pools_ready * d))?;
-                    digest_f32_plane(&mut hasher, &keys);
-                } else {
-                    hasher.update([0]);
-                }
-                let tail_rows = if layer.index_width > 0 && layer.index_pool > 0 {
-                    layer.len - layer.index_pools_ready * layer.index_pool
-                } else {
-                    0
-                };
-                if tail_rows > 0 {
-                    let ring = layer.index_ring_rows.unwrap_or(0);
-                    let phys = memra_engine::cache::index_plane_physical_row(
-                        ring,
-                        layer.index_pool,
-                        layer.index_pools_ready * layer.index_pool,
-                    );
-                    let plane = layer
-                        .index_rows
-                        .as_ref()
-                        .ok_or_else(|| format!("cache digest latent {il} has no index plane"))?;
-                    hasher.update([1]);
-                    let tail =
-                        engine.dtoh_view(&plane.slice(
-                            phys * layer.index_width..(phys + tail_rows) * layer.index_width,
-                        ))?;
-                    digest_f32_plane(&mut hasher, &tail);
-                } else {
-                    hasher.update([0]);
-                }
-            }
-            _ => hasher.update([0]),
-        }
-    }
-    Ok(format!("{:x}", hasher.finalize()))
-}
-
 /// KVPROBE (lane/gemma-restore-exactness-20260819): digest the FIRST `at` rows of a LIVE
-/// cache, with `at <= cache.pos` allowed. `prefix_cache_state_digest` refuses `at != pos`,
-/// which makes it unable to answer the one question that matters here: are the KV bytes a
+/// cache, with `at <= cache.pos` allowed. A whole-cache digest that refuses `at != pos` cannot
+/// answer the one question that matters here: are the KV bytes a
 /// COLD 1048-row prime writes for rows [0..932) the same bytes a 932-row prime wrote (and
 /// therefore published, and therefore restored)? Diagnostics only; costs nothing unless
 /// MEMRA_KVPROBE_AT is set.
@@ -25284,9 +25014,8 @@ fn kvprobe_layers() -> bool {
     *L.get_or_init(|| std::env::var("MEMRA_KVPROBE_LAYERS").as_deref() == Ok("1"))
 }
 
-/// Whole-state digest over rows [0..at) of a live cache. Same byte-for-byte content as
-/// `prefix_cache_state_digest` when at == cache.pos, but a distinct domain tag so the two
-/// can never be confused in a log.
+/// Whole-state digest over rows [0..at) of a live cache, under its own domain tag so it can
+/// never be confused in a log with the prefix split trace's entry digests.
 #[allow(clippy::type_complexity)] // allow: one-shot composite type; naming it would hide the shape that matters at the call site
 fn kv_prefix_digest(
     engine: &Engine,
@@ -25440,22 +25169,6 @@ fn trace_prefix_entry_state(
                 entry.pos,
             );
         }
-        Err(err) => {
-            eprintln!("[prefix-cache-split-state] ERROR role={role} why={why} split={at}: {err}",)
-        }
-    }
-}
-
-fn trace_prefix_cache_state(engine: &Engine, cache: &Cache, at: usize, role: &str, why: &str) {
-    if !prefix_split_trace_enabled() {
-        return;
-    }
-    match prefix_cache_state_digest(engine, cache, at) {
-        Ok(state) => eprintln!(
-            "[prefix-cache-split-state] role={role} why={why} split={at} cache_pos={} \
-             state_sha256={state} boundary_logits_sha256=n/a-not-consumed",
-            cache.pos,
-        ),
         Err(err) => {
             eprintln!("[prefix-cache-split-state] ERROR role={role} why={why} split={at}: {err}",)
         }
@@ -27525,55 +27238,6 @@ pub fn evaluate_predictive_admission_verdict(
     }
 }
 
-/// Unified outcome of predictive admission and physical headroom evaluation.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[allow(dead_code)]
-pub enum EvaluatedAdmissionOutcome {
-    /// Admitted: predictive check passed (or shadow mode) and physical headroom is sufficient.
-    Admitted,
-    /// Enforced predictive reject: total predicted KV exceeds static budget (and tenant is not exempt).
-    RejectedPredictiveKv,
-    /// Predictive check passed (or exempt/shadow), but physical live headroom is insufficient.
-    InsufficientPhysicalHeadroom,
-    /// Predictive check rejected under enforcement, but tenant is exempt so it was admitted by live headroom.
-    ExemptBypassAdmitted,
-}
-
-/// memra#187: evaluate the decoupled admission decision across both the static predictor
-/// and the subsequent physical live headroom path.
-#[allow(dead_code, clippy::too_many_arguments)]
-pub fn evaluate_decoupled_admission(
-    request_kv_hat: u64,
-    booked_kv_hat: u64,
-    budget_bytes: Option<u64>,
-    enforce: bool,
-    is_exempt: bool,
-    cost: usize,
-    reserve: usize,
-    live_free: u64,
-) -> (crate::admit_predict::Verdict, EvaluatedAdmissionOutcome) {
-    let verdict =
-        evaluate_predictive_admission_verdict(request_kv_hat, booked_kv_hat, budget_bytes);
-    let required = admission_required(cost, reserve) as u64;
-    let physical_sufficient = live_free >= required;
-
-    let outcome = match (enforce, verdict, is_exempt, physical_sufficient) {
-        (true, crate::admit_predict::Verdict::RejectKv, false, _) => {
-            EvaluatedAdmissionOutcome::RejectedPredictiveKv
-        }
-        (true, crate::admit_predict::Verdict::RejectKv, true, true) => {
-            EvaluatedAdmissionOutcome::ExemptBypassAdmitted
-        }
-        (true, crate::admit_predict::Verdict::RejectKv, true, false) => {
-            EvaluatedAdmissionOutcome::InsufficientPhysicalHeadroom
-        }
-        (_, _, _, true) => EvaluatedAdmissionOutcome::Admitted,
-        (_, _, _, false) => EvaluatedAdmissionOutcome::InsufficientPhysicalHeadroom,
-    };
-
-    (verdict, outcome)
-}
-
 /// The worker entry point. Runs on its OWN std::thread. Builds the Engine + loads every model on
 /// THIS thread (CUDA-context affinity), then runs the scheduler loop until the command channel
 /// closes. `models` = (name, gguf_path) pairs. Sends `ready_tx` once load completes (or the error).
@@ -28965,15 +28629,10 @@ pub fn run(
         };
         eprintln!(
             "[prefix-cache] on: budget {:.0}MB ({budget_provenance}), policy plain-LRU (global \
-             oldest unleased entry first; leases untouchable), min prefix {} tokens, immediate \
-             partial restore={} (transformer-only; hybrid mid-entry + routed-MoE N/A)",
+             oldest unleased entry first; leases untouchable), min prefix {} tokens, \
+             whole-entry restores only",
             budget_bytes as f64 / 1e6,
             PREFIX_CACHE_MIN_TOKENS,
-            if partial_prefix_restore_enabled() {
-                "on"
-            } else {
-                "off (rollback)"
-            },
         );
     } else if serve_batching()
         && matches!(prefix_budget, PrefixCacheBudget::Derived { bytes: 0, .. })
@@ -32522,8 +32181,9 @@ pub fn run(
             // residual IS that peer burst). With it: 0.149s median (iter1 receipt). Stable
             // sort: FIFO within cold and warm classes; session order across independent
             // sessions is content-neutral (each owns its cache/scratch — greedy byte-identity
-            // gates verify). Shares the MEMRA_ADMIT_YIELD=0 rollback seam: off restores the
-            // full pre-lane behavior (index order + full-burst holds) in one flag.
+            // gates verify). Shares MEMRA_ADMIT_YIELD: `0` restores the full pre-lane behavior
+            // (index order + full-burst holds) in one flag, for tiers that want lockstep
+            // fairness.
             // BATCHDRAFT ANATOMY (diagnostics only): the original tick trace started below,
             // after this loop, so its `decode_ms` omitted the entire serial spec phase. Start a
             // phase clock here and emit one boundary record per request. This adds no sync and is
@@ -37218,11 +36878,11 @@ fn admit(
     //
     // WHY NOT `policy_lcp > 0`, which stood here for one round: `best_lcp` is the longest
     // common prefix against ANY pool entry with NO floor, so a 5-token overlap satisfied it
-    // while nothing consumable existed. The only other way to consume a hit is the mid-entry
-    // partial restore, which is default-OFF and, when armed, refused outright on the
-    // hybrid/GDN trunk `gdn_dspark_compatible` selects — so for this route a full-prefix entry
-    // is the whole set. Third and final granularity of the defect review chased across three
-    // rounds: the veto must never fire without a hit to take the cold prime's place.
+    // while nothing consumable existed. The plain path has no other way to consume a hit (its
+    // mid-entry partial restore was deleted on a NO-GO receipt), so for this route a
+    // full-prefix entry is the whole set. Third and final granularity of the defect review
+    // chased across three rounds: the veto must never fire without a hit to take the cold
+    // prime's place.
     let mut consumable_hit = if let Some(plan) = admission_restore {
         px.id_index(&plan.pin)
     } else if prefix_on {
@@ -37367,10 +37027,9 @@ fn admit(
 
     // CROSS-REQUEST PREFIX CACHE probe (2026-08-02; module doc at PrefixCache). Only when the
     // continuation pool missed, the session won't go spec, and batched scheduling is live.
-    // A whole-entry hit deep-copies the longest matching entry into a fresh session cache. On a
-    // miss, an eligible mid-entry LCP immediately restores its context-linear K/V rows and primes
-    // only the suffix. Recurrent and routed-MoE mid-entry splits fail closed to the old boundary-
-    // snapshot learning path; cold long prompts arm the seed insert.
+    // A whole-entry hit deep-copies the longest matching entry into a fresh session cache. A miss
+    // primes cold: a long LCP with cached traffic arms the boundary snapshot (the learning path),
+    // and cold long prompts arm the seed insert.
     let mut prefix_hit = false;
     let mut prefix_pin = None;
     let mut snapshot_at: Option<usize> = None;
@@ -37618,130 +37277,10 @@ fn admit(
                 }
             }
         }
-        let mut best_lcp = None;
-        if reused.is_none() {
-            best_lcp = px.best_lcp_entry(&pool_key, &prompt);
-            if partial_prefix_restore_enabled()
-                && best_lcp.is_some_and(|(_, lcp)| lcp >= PREFIX_CACHE_MIN_TOKENS)
-            {
-                let (i, lcp) = best_lcp.unwrap();
-                let (decision, source_len) = {
-                    let e = &px.entries[&pool_key][i];
-                    let has_recurrent = e.carries_recurrent();
-                    let has_latent = e.latent.iter().any(Option::is_some);
-                    let routed_moe = routed_moe_prefix_split(&lm.model.plan);
-                    (
-                        partial_prefix_decision(
-                            has_recurrent,
-                            has_latent,
-                            routed_moe,
-                            lcp,
-                            e.pos,
-                            prompt.len(),
-                        ),
-                        e.toks.len(),
-                    )
-                };
-                if let Some(reason) = decision.refusal() {
-                    eprintln!(
-                        "[prefix-cache] partial restore REFUSED: split {lcp} of source \
-                         {source_len}, prompt {} (model {}{}): {reason}; cold/snapshot fallback",
-                        prompt.len(),
-                        req.model,
-                        ns_suffix(&pool_key.1),
-                    );
-                } else {
-                    let restored = {
-                        let e = &px.entries[&pool_key][i];
-                        trace_prefix_entry_state(engine, e, lcp, "source", "immediate-partial");
-                        match vmm_build_cache(
-                            vmm_scope(engine, lm, ctx_cap, prompt.len(), 0),
-                            || {
-                                memra_engine::pp::new_cache_planned(
-                                    engine,
-                                    &lm.model.cfg,
-                                    &lm.model.plan,
-                                    ctx_cap,
-                                )
-                            },
-                        ) {
-                            Ok(mut c) => match prefix_restore_at(
-                                engine,
-                                &mut c,
-                                e,
-                                &pool_key,
-                                lcp,
-                                Some(&lm.model),
-                            ) {
-                                Ok(()) => {
-                                    trace_prefix_cache_state(
-                                        engine,
-                                        &c,
-                                        lcp,
-                                        "restored",
-                                        "immediate-partial",
-                                    );
-                                    Ok(ReuseEntry {
-                                        fed: e.toks[..lcp].to_vec(),
-                                        cache: c,
-                                        // A supported partial hit always has a non-empty suffix,
-                                        // so the endpoint logits are recomputed by suffix prime.
-                                        last_logits: Vec::new(),
-                                        cap: ctx_cap,
-                                        ckpt: None,
-                                        affinity: None,
-                                        fingerprint: Vec::new(),
-                                        parked_at: Instant::now(),
-                                        id: next_parked_id(),
-                                        settled: false,
-                                    })
-                                }
-                                Err(err) => Err(format!("partial restore failed: {err}")),
-                            },
-                            Err(err) => Err(format!("session cache alloc failed: {err}")),
-                        }
-                    };
-                    match restored {
-                        Ok(entry) => {
-                            prefix_pin = px.pin(&pool_key, i);
-                            debug_assert!(
-                                prefix_pin.is_some(),
-                                "partial lookup entry vanished before pin",
-                            );
-                            px.hits += 1;
-                            px.hit_tokens += lcp as u64;
-                            px.record_lcp(lcp);
-                            prefix_hit = true;
-                            eprintln!(
-                                "[prefix-cache] partial hit: {lcp} of {} prompt tokens from \
-                                 source {source_len} (model {}{}) — priming suffix {} only",
-                                prompt.len(),
-                                req.model,
-                                ns_suffix(&pool_key.1),
-                                prompt.len() - lcp,
-                            );
-                            reused = Some(entry);
-                        }
-                        Err(msg) => {
-                            if msg.starts_with("session cache alloc failed") {
-                                let n = px.evict_all();
-                                eprintln!(
-                                    "[prefix-cache] {msg}; evicted {n} entries, \
-                                     cold/snapshot fallback",
-                                );
-                            } else {
-                                eprintln!("[prefix-cache] {msg}; cold/snapshot fallback");
-                            }
-                        }
-                    }
-                }
-            }
-        }
+
         if reused.is_none() {
             px.misses += 1;
-            let l = best_lcp
-                .map(|(_, lcp)| lcp)
-                .unwrap_or_else(|| px.best_lcp(&pool_key, &prompt));
+            let l = px.best_lcp(&pool_key, &prompt);
             px.record_lcp(l); // histogram: best available LCP on a miss
             prefix_miss_lcp = Some(l);
             // Captures land ON the prime grid (grid_align_boundary): the entry then restores
@@ -37866,8 +37405,8 @@ fn admit(
     // machinery (suffix prime + fill anchored on the entry's boundary hidden).
     // Constraints, verified against the receipts rather than assumed:
     //   * WHOLE-entry hits only — the restore already happened at exactly e.pos through
-    //     the shipping path; mid-entry trunk restores stay behind
-    //     MEMRA_PREFIX_PARTIAL_RESTORE (lcprestore NO-GO / splitiso two-programs class).
+    //     the shipping path; the plain mid-entry trunk restore was deleted on its NO-GO
+    //     receipt (lcprestore / splitiso two-programs class).
     //   * every converted shape becomes an empty-suffix continuation — the engine feeds any
     //     prompt suffix itself through the plain path's exact program selection (the r3
     //     identity finding, research/spec-cache-20260818: handing the suffix to the burst
@@ -39006,21 +38545,15 @@ fn admit(
                         prompt.len() - pos,
                         req.model
                     ),
-                    // The sampler tag is on the line because "a resume happened" is otherwise
-                    // ambiguous between "the predicate matched" and "the predicate is off" — and a
-                    // receipt that cannot tell those apart cannot prove the no-regression half.
+                    // The sampler tag says the resume passed the sampler predicate.
                     None => eprintln!(
-                        "[worker] spec-reuse: {} committed tokens resumed{} [sampler={}] (model {})",
+                        "[worker] spec-reuse: {} committed tokens resumed{} [sampler=equivalent] \
+                         (model {})",
                         spec_resumed,
                         if text_suffix.is_some() {
                             " [text-prefix]"
                         } else {
                             ""
-                        },
-                        if spec_resume_sampler_predicate_on() {
-                            "equivalent"
-                        } else {
-                            "unchecked"
                         },
                         req.model
                     ),
@@ -39060,8 +38593,7 @@ fn admit(
                     eprintln!(
                         "[worker] spec-reuse REFUSED: parked session's sampler differs on \
                          {field}; serving COLD spec (a parked session's penalty window, Philox \
-                         stream position and draft plane were shaped by that sampler; \
-                         MEMRA_SPEC_RESUME_SAMPLER=0 restores the pre-lane resume) (model {})",
+                         stream position and draft plane were shaped by that sampler) (model {})",
                         req.model,
                     );
                 }
@@ -39391,7 +38923,6 @@ fn admit(
     {
         let mut refused: Option<&'static str> = None;
         let mut admits = |e2: &DsparkReuseEntry| match spec_resume_sampler_verdict(
-            spec_resume_sampler_predicate_on(),
             &sampler.identity(),
             &e2.sampler,
         ) {
@@ -39461,14 +38992,9 @@ fn admit(
             Some((entry, suffix)) => {
                 eprintln!(
                     "[worker] dspark-reuse: {} committed tokens resumed \
-                     (suffix {} to prime) [sampler={}] (model {})",
+                     (suffix {} to prime) [sampler=equivalent] (model {})",
                     entry.fed.len(),
                     suffix.len(),
-                    if spec_resume_sampler_predicate_on() {
-                        "equivalent"
-                    } else {
-                        "unchecked"
-                    },
                     req.model
                 );
                 reuse_metrics.spec_hits += 1;
@@ -40915,15 +40441,12 @@ fn dedup_interactive_prefixes(
     advanced
 }
 
-/// One scheduler tick for one session. Returns Ok(true) if still running, Ok(false) if retired.
-/// Decomposes `generate_with`'s loop body into a single per-session step (same semantics):
-///   - prefill phase: consume ONE prompt token via decode_step, accept it into the sampler.
-///   - decode phase: sample from last_logits, accept, stream the token, check EOS/stop/ctx, then
-///     run ONE decode_step to produce the next logits.
-///     One prefill tick for a session under a token budget. Returns tokens consumed.
-///     Same chunking laws as step_session's prefill phase (PRIME_MIN_T floor, tail handling). The
-///     tail-handling half of that claim was FALSE until 2026-08-13 — this site's merge was a no-op
-///     while both sibling sites' worked; see the tail-merge comment inside.
+/// One prefill tick for a session under a token budget. Returns tokens consumed. It primes
+/// budget-sized chunks through `prime_cache` (a model with no chunked prime takes the whole
+/// queued prompt in one call) and reaches tokenwise `decode_step` only on its fallback branch.
+/// Same chunking laws as step_session's prefill phase (PRIME_MIN_T floor, tail handling). The
+/// tail-handling half of that claim was FALSE until 2026-08-13 — this site's merge was a no-op
+/// while both sibling sites' worked; see the tail-merge comment inside.
 #[allow(clippy::too_many_arguments)] // allow: the parameter list mirrors the kernel/FFI/call contract; bundling into a struct is a refactor, not a lint fix
 fn prefill_tick(
     engine: &Engine,
@@ -41340,12 +40863,6 @@ fn prefill_tick(
     Ok(consumed)
 }
 
-/// GRAMMAR MASK STAGING (constrained-full, 2026-08-03): compute the session's current
-/// llguidance token mask and H2D the packed bitset into its STABLE device buffer for the
-/// upcoming batched step. Runs AFTER advance_sample_emit consumed the tick's token — the
-/// mask reflects the post-consume grammar state, exactly the set legal for the NEXT token.
-/// No-op (mask_words = 0 -> host fallback) for unconstrained sessions, unsupported constrained
-/// penalty/filter compositions, and the MEMRA_CONSTRAIN_HOST=1 oracle.
 /// EAGER-ONLY predicate (lane/gemma4-serve-gaps, 2026-08-07): models the batched scheduler
 /// must serve through the per-session eager body. gemma4 (12B/26B/31B and E4B): the batched
 /// decode bodies have no arm for its per-layer swa/global geometry + softcapped head (the
@@ -41428,6 +40945,12 @@ fn hyper_batched_decode_model(lm: &LoadedModel) -> bool {
         && !memra_engine::glm5_tp::glm5_tp_armed()
 }
 
+/// GRAMMAR MASK STAGING (constrained-full, 2026-08-03): compute the session's current
+/// llguidance token mask and H2D the packed bitset into its STABLE device buffer for the
+/// upcoming batched step. Runs AFTER advance_sample_emit consumed the tick's token — the
+/// mask reflects the post-consume grammar state, exactly the set legal for the NEXT token.
+/// No-op (mask_words = 0 -> host fallback) for unconstrained sessions, unsupported constrained
+/// penalty/filter compositions, and the MEMRA_CONSTRAIN_HOST=1 oracle.
 fn stage_grammar_mask(engine: &Engine, s: &mut Session) -> Result<(), String> {
     s.mask_words = 0;
     if s.constraint.is_none() || constrain_host() || devsample_meta(s).is_none() {
@@ -41542,8 +41065,9 @@ fn advance_sample_emit(
     (true, Some(next))
 }
 
-/// Token-driven twin of `advance_sample_emit` for the graph path: the token was produced
-/// by the DEVICE argmax (greedy), so there is no sampling — accept, emit, stop battery.
+/// Token-driven twin of `advance_sample_emit` for the device-chained step
+/// (`step_session_async_chain`): the token came off the DEVICE (an argmax, or the chain's
+/// seeded device draw), so the host does not sample it again — accept, emit, stop battery.
 /// Returns (continue?, ()).
 fn advance_token_emit(
     loaded: &HashMap<String, LoadedModel>,
@@ -42724,7 +42248,6 @@ fn spec_burst_pre(
 /// The MTP spec burst's SSE emission state: one per burst, fed by the engine's round-cadence
 /// `on_commit` hook (`flush`) and settled by `spec_burst_post`.
 struct SpecBurstEmit<'t> {
-    per_burst_emit: bool,
     admit_yield: bool,
     tok: &'t memra_tokenizer::Tokenizer,
     decoded_visible: Vec<u8>,
@@ -42740,7 +42263,6 @@ struct SpecBurstEmit<'t> {
 
 impl<'t> SpecBurstEmit<'t> {
     fn new(lm: &'t LoadedModel, s: &mut Session, request_room: usize) -> Self {
-        let per_burst_emit = std::env::var("MEMRA_SSE_PER_BURST").as_deref() == Ok("1");
         // ADMISSION YIELD (lane/admission-latency, 2026-08-06): a request that arrives while
         // a burst is in flight used to wait the WHOLE burst out before the worker's tick-top
         // admission phase could even see it — contended first-text scaled with
@@ -42749,7 +42271,7 @@ impl<'t> SpecBurstEmit<'t> {
         // in the cmd channel, PENDING_ADMITS > 0) ends the burst at the current round exactly
         // as if burst-count had been reached — burst size is content-neutral (spec-levers
         // battery), so this moves WHEN control returns, never what tokens say.
-        // MEMRA_ADMIT_YIELD=0 = rollback seam (restores full-burst holds).
+        // MEMRA_ADMIT_YIELD=0 trades this back for lockstep fairness (full-burst holds).
         let admit_yield = std::env::var("MEMRA_ADMIT_YIELD").as_deref() != Ok("0");
         let tok = &lm.tok;
         let decoded_visible = std::mem::take(&mut s.decoded_bytes);
@@ -42762,7 +42284,6 @@ impl<'t> SpecBurstEmit<'t> {
         let eos_ids = s.params.eos.clone();
         let stop_ids = s.stop_token_ids.clone();
         SpecBurstEmit {
-            per_burst_emit,
             admit_yield,
             tok,
             decoded_visible,
@@ -42791,9 +42312,9 @@ impl<'t> SpecBurstEmit<'t> {
         // Continue-verdict polled at EVERY round boundary (even empty/post-EOS flushes).
         let keep =
             !self.admit_yield || PENDING_ADMITS.load(std::sync::atomic::Ordering::Acquire) == 0;
-        if self.per_burst_emit || self.eos_seen || self.emit_remaining == 0 || slice.is_empty() {
-            // poll-only boundary: rollback seam / post-EOS (tokens never visible;
-            // accounting happens post-burst) / nothing new committed this round.
+        if self.eos_seen || self.emit_remaining == 0 || slice.is_empty() {
+            // poll-only boundary: post-EOS (tokens never visible; accounting happens
+            // post-burst) / nothing new committed this round.
             return keep;
         }
         if let Some(trace) = ttft {
@@ -42845,14 +42366,10 @@ fn spec_burst_post(
         ..
     } = plan;
     let SpecBurstEmit {
-        per_burst_emit,
-        tok: tok_ref,
-        mut decoded_visible,
-        mut cursor,
-        mut emit_remaining,
-        mut eos_seen,
-        mut send_ok,
-        mut token_events,
+        decoded_visible,
+        cursor,
+        send_ok,
+        token_events,
         eos_ids,
         stop_ids,
         ..
@@ -42893,22 +42410,6 @@ fn spec_burst_post(
     }
     let (public_len, mut stop) = spec_visible_prefix(&burst, request_room, &eos_ids, &stop_ids);
     let public_burst = &burst[..public_len];
-    if per_burst_emit {
-        let emitted = emit_spec_token_events(
-            public_burst,
-            &mut emit_remaining,
-            &mut decoded_visible,
-            &mut cursor,
-            &eos_ids,
-            &stop_ids,
-            &mut eos_seen,
-            |id| tok_ref.decode_bytes_special(&[id], true),
-            |event| send_observed_event(&s.tx, &s.model, s.lane, &mut s.emission_clock, event),
-        );
-        token_events += emitted.sent;
-        s.tokens_emitted += emitted.sent;
-        send_ok = emitted.send_ok;
-    }
     if send_ok {
         debug_assert_eq!(
             token_events, public_len,
@@ -42927,8 +42428,8 @@ fn spec_burst_post(
     // EOS text is never streamed (serve-compat, 2026-08-03), but its empty-text token event
     // keeps the id/event/generated receipt 1:1. Engine-committed budget surplus remains only
     // in SpecSession committed/pending state; it never enters these public worker vectors.
-    // `tokens_emitted` was advanced at each send site above (the round-cadence hook
-    // and the per-burst arm), never here — the park guard reads it mid-burst.
+    // `tokens_emitted` was advanced at the round-cadence hook's sends, never here — the park
+    // guard reads it mid-burst.
     s.emitted_bytes = cursor;
     s.decoded_bytes = decoded_visible;
     if !send_ok {
@@ -43220,7 +42721,6 @@ fn step_spec_pooled(
             let (Some(emit), Some(plan)) = (emit.as_mut(), plan.as_ref()) else {
                 continue;
             };
-            let no_round_hook = emit.per_burst_emit && !emit.admit_yield;
             let Session {
                 spec,
                 ttft,
@@ -43231,9 +42731,7 @@ fn step_spec_pooled(
                 ..
             } = &mut **s;
             let lane = *lane;
-            let on_commit: Option<memra_engine::spec::PooledCommitHook<'_>> = if no_round_hook {
-                None
-            } else {
+            let on_commit: Option<memra_engine::spec::PooledCommitHook<'_>> =
                 Some(Box::new(move |slice: &[u32]| {
                     emit.flush(
                         slice,
@@ -43243,8 +42741,7 @@ fn step_spec_pooled(
                         emission_clock,
                         tokens_emitted,
                     )
-                }))
-            };
+                }));
             reqs.push(memra_engine::spec::PooledBurstReq {
                 sess: spec.as_mut().expect("pool candidates hold a spec session"),
                 max_new: plan.burst_target,
@@ -43276,6 +42773,11 @@ fn step_spec_pooled(
     results
 }
 
+/// One scheduler step for one session. Returns Ok(true) if still running, Ok(false) if retired.
+///   - prefill phase: prime the queued prompt in chunked `prime_cache` calls of up to
+///     `PREFILL_TICK_T` tokens; a tail below `PRIME_MIN_T` takes tokenwise `decode_step`.
+///   - decode phase: sample from last_logits, accept, stream the token, check EOS/stop/ctx, then
+///     produce the next logits.
 fn step_session(
     engine: &Engine,
     loaded: &HashMap<String, LoadedModel>,
@@ -43337,10 +42839,7 @@ fn step_session(
         // SSE CADENCE (lane/sse-cadence, 2026-08-05): publish at ROUND cadence, not burst
         // cadence. Every committed id in the request-owned budget gets its own Event::Token;
         // UTF-8 fragments may make an individual event's text empty, but ids are never coalesced.
-        // MEMRA_SSE_PER_BURST=1 retains the timing rollback (events wait for burst end), not the
-        // old broken one-id-for-many-tokens event shape.
         let mut emit = SpecBurstEmit::new(lm, s, plan.request_room);
-        let no_round_hook = emit.per_burst_emit && !emit.admit_yield;
         let spec = s.spec.as_mut().expect("checked above");
         let mut flush_cb = |slice: &[u32]| -> bool {
             emit.flush(
@@ -43354,11 +42853,7 @@ fn step_session(
         };
         #[allow(clippy::type_complexity)]
         // allow: one-shot composite type; naming it would hide the shape that matters at the call site
-        let on_commit: Option<&mut dyn FnMut(&[u32]) -> bool> = if no_round_hook {
-            None
-        } else {
-            Some(&mut flush_cb)
-        };
+        let on_commit: Option<&mut dyn FnMut(&[u32]) -> bool> = Some(&mut flush_cb);
         let (burst, d, a) = match s.constraint.as_mut() {
             Some(c) => {
                 let mut g = crate::constrained::SpecGrammar::new(c, lm.eos_id);
@@ -44968,8 +44463,8 @@ fn synchronize_model_devices(engine: &Engine, loaded: &HashMap<String, LoadedMod
 /// 2026-09-02 box receipts (FLAGS.md row): the glm5 spec route publishes committed tokens
 /// at ROUND cadence instead of burst cadence (doc at the `step_glm5_spec` call site).
 /// `=0` is the rollback seam (burst-cadence emission, the pre-lane literal). Read per
-/// burst, the `MEMRA_SPEC_BURST` / `MEMRA_SSE_PER_BURST` convention (a few hundred ns;
-/// never a OnceLock, so a gate can flip it between bursts in one process).
+/// burst, the `MEMRA_SPEC_BURST` convention (a few hundred ns; never a OnceLock, so a gate
+/// can flip it between bursts in one process).
 fn spec_first_token_eager_on() -> bool {
     std::env::var("MEMRA_SPEC_FIRST_TOKEN_EAGER").as_deref() != Ok("0")
 }
@@ -46438,8 +45933,7 @@ mod tests {
     use super::step_tp_prefill_walk_refusal;
     use super::worker_device;
     use super::{
-        ADMIT_PREDICT_MULTI_DEVICE_FATAL_MSG, EvaluatedAdmissionOutcome, LoadedModel,
-        evaluate_decoupled_admission, evaluate_predictive_admission_verdict,
+        ADMIT_PREDICT_MULTI_DEVICE_FATAL_MSG, LoadedModel, evaluate_predictive_admission_verdict,
         is_multi_device_deployment, spawn, validate_admit_predict_enforce_deployment,
     };
     use super::{
@@ -46465,17 +45959,15 @@ mod tests {
         Event, async_chain_devsample, cached_hit_needs_first_token, carried_prime_batch_eligible,
         emit_spec_token_events, interactive_prefill_budget, interactive_prime_batch_take,
         legacy_async_chain_width, prefill_tick_take, record_output_progress, record_output_tokens,
-        routed_moe_prefix_split, solo_widen_fresh, spec_visible_prefix, stop_token_reason,
-        summarize_confidence, utf8_delta,
+        solo_widen_fresh, spec_visible_prefix, stop_token_reason, summarize_confidence, utf8_delta,
     };
     use super::{HashMap, METER_TENANT_CAP, meter_account, meter_cached_credit};
     use super::{
         HostPrefixCache, HostPrefixEntry, PREFIX_CACHE_MIN_TOKENS, PREFIX_ENTRY_LAYOUT_VERSION,
-        PREFIX_REFUSAL_REANNOUNCE_EVERY, PartialPrefixDecision, PoolKey, PrefixCache, PrefixEntry,
-        PrefixFanoutCandidate, PrefixFanoutGroup, PrefixRefusalAnnouncer, PrefixRefusalShape,
-        host_promote_candidate, partial_prefix_decision, prefix_fanout_groups,
-        prefix_insert_refused_leased, prefix_insert_refused_oversize, retire_prefix_pin,
-        stable_boundary_arm, validate_prefix_plane_shape,
+        PREFIX_REFUSAL_REANNOUNCE_EVERY, PoolKey, PrefixCache, PrefixEntry, PrefixFanoutCandidate,
+        PrefixFanoutGroup, PrefixRefusalAnnouncer, PrefixRefusalShape, host_promote_candidate,
+        prefix_fanout_groups, prefix_insert_refused_leased, prefix_insert_refused_oversize,
+        retire_prefix_pin, stable_boundary_arm, validate_prefix_plane_shape,
     };
     use super::{KV_FLEX_GRANT, KvFlex, kv_flex_effective_budget, prefix_cache_budget_bytes};
     use super::{MAX_EVENT_QUEUE_EVENTS, event_channel};
@@ -49032,7 +48524,6 @@ mod tests {
             "num_attention_heads":8,"num_key_value_heads":2,"head_dim":32,
             "intermediate_size":512,"vocab_size":1024,"max_position_embeddings":2048}"#,
         );
-        assert!(!routed_moe_prefix_split(&qwen3));
         let llama = config(
             r#"{"model_type":"llama","num_hidden_layers":2,"hidden_size":256,
             "num_attention_heads":8,"num_key_value_heads":2,"head_dim":32,
@@ -49066,7 +48557,6 @@ mod tests {
             "max_position_embeddings":2048,"sliding_window":128,
             "layer_types":["sliding_attention","full_attention"]}"#,
         );
-        assert!(routed_moe_prefix_split(&qwen_next_moe));
         assert!(!carried_prime_batch_eligible(&qwen_next_moe));
         assert!(!carried_prime_batch_eligible(&gemma_swa));
     }
@@ -50252,20 +49742,6 @@ mod tests {
         );
         assert_eq!(super::dspark_cold_capture(3_072), DsparkCapture::PromptEnd);
         assert_eq!(super::dspark_cold_capture(70), DsparkCapture::PromptEnd);
-        // The partial LCP restore cannot take an endpoint the law refuses.
-        assert_eq!(
-            super::partial_prefix_decision(true, false, false, 2_992, 2_992, 3_109),
-            super::PartialPrefixDecision::RefuseRecurrentOffGrid
-        );
-        assert_eq!(
-            super::partial_prefix_decision(true, false, false, 2_976, 2_976, 3_109),
-            super::PartialPrefixDecision::Restore
-        );
-        assert_eq!(
-            super::partial_prefix_decision(false, false, false, 2_992, 2_992, 3_109),
-            super::PartialPrefixDecision::Restore,
-            "attention-only"
-        );
         // The host tier's lookup on real host planes (no device needed): the off-grid recurrent
         // image is skipped for the longer prompt and serves its own prompt whole.
         let hk = key("tenant");
@@ -53425,35 +52901,6 @@ mod tests {
         );
     }
 
-    /// Whole-entry only for latent-bearing entries, in its own right: an all-MLA pack has
-    /// `entry_has_recurrent == false`, so without the latent arm an armed
-    /// MEMRA_PREFIX_PARTIAL_RESTORE would slice latent rows mid-entry while the index tail
-    /// ring for that interior boundary is unrecoverable.
-    #[test]
-    fn a_latent_entry_refuses_a_mid_entry_split_even_without_recurrent_state() {
-        use super::{PartialPrefixDecision, partial_prefix_decision};
-        // Mid-entry split on a latent-only entry: refused by the latent arm.
-        assert_eq!(
-            partial_prefix_decision(false, true, false, 100, 200, 300),
-            PartialPrefixDecision::RefuseLatentMidEntry,
-        );
-        // The split AT the endpoint is not a mid-entry split; the suffix primes ahead.
-        assert_eq!(
-            partial_prefix_decision(false, true, false, 200, 200, 300),
-            PartialPrefixDecision::Restore,
-        );
-        // The recurrent arm keeps precedence for hybrid entries (glm5: both are true).
-        assert_eq!(
-            partial_prefix_decision(true, true, false, 100, 200, 300),
-            PartialPrefixDecision::RefuseRecurrentMidEntry,
-        );
-        // Non-latent entries decide exactly as before.
-        assert_eq!(
-            partial_prefix_decision(false, false, false, 100, 200, 300),
-            PartialPrefixDecision::Restore,
-        );
-    }
-
     #[test]
     fn dspark_exact_transition_touch_refreshes_recency_without_cached_token_credit() {
         let k = key("");
@@ -54295,171 +53742,6 @@ mod tests {
         );
     }
 
-    /// memra#187: multi-session concurrency accounting test.
-    /// Proves that concurrent active sessions do not falsely trigger RejectKv as live_free drops,
-    /// because the static capacity check is decoupled from the physical live headroom check.
-    /// Directly drives the production evaluate_decoupled_admission predicate and headroom outcome.
-    #[test]
-    fn admit_predict_concurrency_decoupled_accounting() {
-        let static_budget = 30_000_000_000u64; // 30 GB static budget
-        let reserve = 2_000_000_000usize; // 2 GB transient reserve
-        let initial_live_free = 32_000_000_000u64; // 32 GB physical free on idle card
-
-        let mut book = crate::admit_predict::AdmissionBook::default();
-        let mut live_free = initial_live_free;
-
-        // Session charge parameters: 8 GB predicted demand per session
-        let prompt_tokens = 4_000u64;
-        let pred_tokens = 4_000u64;
-        let bpt = 1_000_000u64;
-        let ring_bpt = 0u64;
-        let ring_rows = 0u64;
-        let fixed = 0u64;
-
-        let req_hat = crate::admit_predict::kv_hat_ring(
-            prompt_tokens,
-            pred_tokens,
-            bpt,
-            ring_bpt,
-            ring_rows,
-            fixed,
-        );
-        // (4000 + 4000 + 8) * 1_000_000 = 8_008_000_000 bytes (~8 GB)
-        assert_eq!(req_hat, 8_008_000_000);
-        let session_cost = req_hat as usize;
-
-        // --- Session 1 arrives ---
-        let booked_1 = book.shadow_booked_total();
-        assert_eq!(booked_1, 0);
-        let (verdict_1, outcome_1) = evaluate_decoupled_admission(
-            req_hat,
-            booked_1,
-            Some(static_budget),
-            true,  // enforce
-            false, // exempt
-            session_cost,
-            reserve,
-            live_free,
-        );
-        assert_eq!(verdict_1, crate::admit_predict::Verdict::Admit);
-        assert_eq!(outcome_1, EvaluatedAdmissionOutcome::Admitted);
-
-        // Session 1 is admitted and allocates memory
-        book.admit("model", req_hat, req_hat);
-        live_free -= req_hat;
-        assert_eq!(live_free, 23_992_000_000);
-
-        // --- Session 2 arrives ---
-        let booked_2 = book.shadow_booked_total();
-        assert_eq!(booked_2, req_hat);
-        let (verdict_2, outcome_2) = evaluate_decoupled_admission(
-            req_hat,
-            booked_2,
-            Some(static_budget),
-            true,  // enforce
-            false, // exempt
-            session_cost,
-            reserve,
-            live_free,
-        );
-        assert_eq!(verdict_2, crate::admit_predict::Verdict::Admit);
-        assert_eq!(outcome_2, EvaluatedAdmissionOutcome::Admitted);
-
-        // Session 2 is admitted and allocates memory
-        book.admit("model", req_hat, req_hat);
-        live_free -= req_hat;
-        assert_eq!(live_free, 15_984_000_000);
-
-        // --- Session 3 arrives ---
-        let booked_3 = book.shadow_booked_total();
-        assert_eq!(booked_3, req_hat * 2); // 16.016 GB booked
-
-        // Under the old buggy coupled predicate:
-        // arm = min(budget, live_free - reserve) = min(30 GB, ~13.984 GB) = 13.984 GB
-        // and it checked req_hat + booked_3 (24.024 GB) > 13.984 GB -> FALSE REJECT!
-        let old_arm = static_budget.min(live_free.saturating_sub(reserve as u64));
-        assert!(
-            req_hat + booked_3 > old_arm,
-            "proves that the old coupled arm falsely rejects Session 3"
-        );
-
-        // Under the production evaluate_decoupled_admission:
-        let (verdict_3, outcome_3) = evaluate_decoupled_admission(
-            req_hat,
-            booked_3,
-            Some(static_budget),
-            true,  // enforce
-            false, // exempt
-            session_cost,
-            reserve,
-            live_free,
-        );
-        assert_eq!(verdict_3, crate::admit_predict::Verdict::Admit);
-        assert_eq!(outcome_3, EvaluatedAdmissionOutcome::Admitted);
-
-        // Session 3 is admitted and allocates memory
-        book.admit("model", req_hat, req_hat);
-        live_free -= req_hat;
-        assert_eq!(
-            live_free, 7_976_000_000,
-            "live_free drops by candidate demand after admit"
-        );
-
-        // --- Session 4 arrives (exceeds static capacity) ---
-        let booked_4 = book.shadow_booked_total();
-        assert_eq!(booked_4, req_hat * 3); // 24.024 GB booked
-        let (verdict_4, outcome_4) = evaluate_decoupled_admission(
-            req_hat,
-            booked_4,
-            Some(static_budget),
-            true,  // enforce
-            false, // exempt
-            session_cost,
-            reserve,
-            live_free,
-        );
-        assert_eq!(verdict_4, crate::admit_predict::Verdict::RejectKv);
-        assert_eq!(
-            outcome_4,
-            EvaluatedAdmissionOutcome::RejectedPredictiveKv,
-            "Session 4 correctly rejected for exceeding static budget"
-        );
-
-        // --- Case 5: Exempt tenant exceeding static budget is bypassed to live headroom ---
-        let (verdict_exempt, outcome_exempt) = evaluate_decoupled_admission(
-            req_hat,
-            booked_4,
-            Some(static_budget),
-            true, // enforce
-            true, // is_exempt
-            session_cost,
-            reserve,
-            30_000_000_000, // plenty of physical headroom
-        );
-        assert_eq!(verdict_exempt, crate::admit_predict::Verdict::RejectKv);
-        assert_eq!(
-            outcome_exempt,
-            EvaluatedAdmissionOutcome::ExemptBypassAdmitted
-        );
-
-        // --- Case 6: Passes static check but fails physical live headroom ---
-        let (verdict_headroom, outcome_headroom) = evaluate_decoupled_admission(
-            req_hat,
-            0, // no bookings, passes static check
-            Some(static_budget),
-            true,
-            false,
-            session_cost,
-            reserve,
-            5_000_000_000, // 5 GB < 8.008 GB + 2 GB reserve -> insufficient headroom
-        );
-        assert_eq!(verdict_headroom, crate::admit_predict::Verdict::Admit);
-        assert_eq!(
-            outcome_headroom,
-            EvaluatedAdmissionOutcome::InsufficientPhysicalHeadroom
-        );
-    }
-
     /// memra#145: the step-OOM teardown reclaims the parked pools and the prefix cache BEFORE
     /// it fences and trims the pool, and the streak resets on a quiet tick. Anchored on
     /// invocations in comment-stripped production text.
@@ -55257,33 +54539,6 @@ mod tests {
     }
 
     #[test]
-    fn immediate_partial_restore_support_matrix_is_fail_closed() {
-        assert_eq!(
-            partial_prefix_decision(false, false, false, 96, 160, 128),
-            PartialPrefixDecision::Restore,
-            "transformer-only mid-entry splits are the supported first arm",
-        );
-        assert_eq!(
-            partial_prefix_decision(true, false, false, 96, 160, 128),
-            PartialPrefixDecision::RefuseRecurrentMidEntry,
-        );
-        assert_eq!(
-            partial_prefix_decision(true, false, false, 160, 160, 192),
-            PartialPrefixDecision::Restore,
-            "recurrent state is exact at its captured endpoint",
-        );
-        assert_eq!(
-            partial_prefix_decision(false, false, true, 96, 160, 128),
-            PartialPrefixDecision::RefuseRoutedMoe,
-        );
-        assert_eq!(
-            partial_prefix_decision(false, false, false, 128, 160, 128),
-            PartialPrefixDecision::RefuseNoSuffix,
-            "a truncated entry does not carry logits for an interior endpoint",
-        );
-    }
-
-    #[test]
     fn best_lcp_entry_returns_longest_exact_match_inside_namespace() {
         let k = key("tenant-a");
         let mut px = PrefixCache::default();
@@ -55321,26 +54576,31 @@ mod tests {
     #[test]
     fn prefix_restore_plane_preflight_rejects_corrupt_layouts_before_copy() {
         assert_eq!(
-            validate_prefix_plane_shape(128, 96, 128, 16, 16, 2048, 2048, 16, 16, 4096, 4096),
-            Ok((1536, 1536)),
+            validate_prefix_plane_shape(128, 128, 16, 16, 2048, 2048, 16, 16, 4096, 4096),
+            Ok((2048, 2048)),
         );
         assert!(
-            validate_prefix_plane_shape(128, 96, 127, 16, 16, 2032, 2032, 16, 16, 4096, 4096)
+            validate_prefix_plane_shape(128, 127, 16, 16, 2032, 2032, 16, 16, 4096, 4096)
                 .unwrap_err()
                 .contains("source len"),
         );
         assert!(
-            validate_prefix_plane_shape(128, 96, 128, 8, 16, 1024, 2048, 16, 16, 4096, 4096)
+            validate_prefix_plane_shape(128, 128, 8, 16, 1024, 2048, 16, 16, 4096, 4096)
                 .unwrap_err()
                 .contains("KV layout"),
         );
         assert!(
-            validate_prefix_plane_shape(128, 96, 128, 16, 16, 2047, 2048, 16, 16, 4096, 4096)
+            validate_prefix_plane_shape(128, 128, 16, 16, 2047, 2048, 16, 16, 4096, 4096)
                 .unwrap_err()
                 .contains("truncated/corrupt"),
         );
         assert!(
-            validate_prefix_plane_shape(128, 96, 128, 16, 16, 2048, 2048, 16, 16, 1024, 4096)
+            validate_prefix_plane_shape(128, 128, 16, 16, 2048, 2048, 16, 16, 1024, 4096)
+                .unwrap_err()
+                .contains("destination planes too small"),
+        );
+        assert!(
+            validate_prefix_plane_shape(128, 128, 16, 16, 2048, 2048, 16, 16, 4096, 2047)
                 .unwrap_err()
                 .contains("destination planes too small"),
         );
@@ -57304,7 +56564,7 @@ mod tests {
         let probe = body.find("fn host_restore_park_probe(").unwrap();
         let probe_body = &body[probe..probe + body[probe..].find("\n}\n").unwrap()];
         let validate = probe_body
-            .find("prefix_restore_validate(&cache, e, &pool_key, e.pos, Some(&lm.model))")
+            .find("prefix_restore_validate(&cache, e, &pool_key, Some(&lm.model))")
             .unwrap();
         let pin = probe_body.find("px.pin(&pool_key, i)").unwrap();
         let submit = probe_body
@@ -59009,11 +58269,11 @@ mod tests {
             pos.windows(2).all(|w| w[0] < w[1]),
             "the snapshot allocates, then batches, then takes the TP shards"
         );
-        let restore = body("fn prefix_restore_at(");
+        let restore = body("fn prefix_restore(");
         let order = [
             "prefix_restore_validate(",
-            "prefix_copy_timed(1, || prefix_restore_batch(engine, cache, e, restore_len))",
-            "dst.len = restore_len;",
+            "prefix_copy_timed(1, || prefix_restore_batch(engine, cache, e))",
+            "dst.len = e.pos;",
             ".glm5_tp_prefix_restore(",
         ];
         let pos: Vec<usize> = order.iter().map(|n| at(&restore, &squash(n))).collect();
@@ -59035,7 +58295,7 @@ mod tests {
         }
         for f in [
             "fn prefix_snapshot(",
-            "fn prefix_restore_at(",
+            "fn prefix_restore(",
             "fn prefix_snapshot_batch(",
             "fn prefix_restore_batch(",
         ] {
@@ -65513,12 +64773,12 @@ mod tests {
         let live = &worker[..worker.find("mod tests").expect("the test module exists")];
         assert_eq!(
             live.matches("memra_engine::pp::new_cache_planned(").count(),
-            7
+            6
         );
-        // Six wrapped sites plus the helper's own definition.
-        assert_eq!(live.matches("vmm_build_cache(").count(), 7);
-        // Eight sites (six caches, the spec closure, the spec grow) plus the definition.
-        assert_eq!(live.matches("vmm_scope(").count(), 9);
+        // Five wrapped sites plus the helper's own definition.
+        assert_eq!(live.matches("vmm_build_cache(").count(), 6);
+        // Seven sites (five caches, the spec closure, the spec grow) plus the definition.
+        assert_eq!(live.matches("vmm_scope(").count(), 8);
         let compact = live
             .find("fn compact_parked_plain_cache(")
             .expect("the park compaction");
@@ -66476,8 +65736,7 @@ mod tests {
             2,
             "glm5: one add in the hook, one gated post-burst add"
         );
-        // 3. The qwen sse-cadence hook: same marker at the send; the per-burst arm adds
-        //    its own; no unconditional post-burst add remains.
+        // 3. The qwen sse-cadence hook: same marker at the send; no post-burst add remains.
         //    The hook is `SpecBurstEmit::flush`, shared by the serial burst and the pooled
         //    cohort; both pass the session's own marker.
         let flush = live
@@ -68321,13 +67580,12 @@ mod tests {
     }
 }
 
-/// SESSION-RESUME SAMPLER PREDICATE, the door's own teeth
+/// SESSION-RESUME SAMPLER PREDICATE, the server's verdict
 /// (lane/session-resume-sampler-predicate-20260820).
 ///
-/// The pure-predicate contract lives in `memra-sampling` (`resume_sampler_predicate_tests`). What
-/// is tested HERE is the thing only this crate owns: that the rollback door actually selects the
-/// pre-lane behaviour, and that the reproduced collision pair flips verdict across it. Both
-/// directions, on the same pair, so neither arm can be green for an unrelated reason.
+/// The pure-predicate contract lives in `memra-sampling` (`resume_sampler_predicate_tests`, whose
+/// refusal tests also assert that `legacy_admits` would have admitted each pair). What is tested
+/// HERE is the server's verdict on the reproduced collision pair: refused and named.
 #[cfg(test)]
 mod resume_sampler_door_tests {
     use super::spec_resume_sampler_verdict;
@@ -68355,34 +67613,26 @@ mod resume_sampler_door_tests {
     }
 
     #[test]
-    fn door_open_refuses_the_collision_pair_and_names_the_field() {
+    fn the_verdict_refuses_the_collision_pair_and_names_the_field() {
         assert_eq!(
-            spec_resume_sampler_verdict(true, &incoming_vendor_filtered(), &parked_pure_temp()),
+            spec_resume_sampler_verdict(&incoming_vendor_filtered(), &parked_pure_temp()),
             Some("top_k"),
-            "default posture: refuse a sampler-differing resume and name the field",
+            "refuse a sampler-differing resume and name the field",
+        );
+        assert!(
+            incoming_vendor_filtered().legacy_admits(&parked_pure_temp()),
+            "the pre-lane probe admitted this pair, so the refusal is not tautological",
         );
     }
 
     #[test]
-    fn door_shut_reproduces_the_pre_lane_acceptance() {
-        // MEMRA_SPEC_RESUME_SAMPLER=0 == the probe that compared prompts and never samplers.
-        assert_eq!(
-            spec_resume_sampler_verdict(false, &incoming_vendor_filtered(), &parked_pure_temp()),
-            None,
-            "the door must restore the acceptance, or the refusal test is tautological",
-        );
-    }
-
-    #[test]
-    fn a_same_sampler_resume_is_admitted_in_both_arms() {
+    fn a_same_sampler_resume_is_admitted() {
         let s = parked_pure_temp();
-        for on in [true, false] {
-            assert_eq!(
-                spec_resume_sampler_verdict(on, &s, &s),
-                None,
-                "no regression: an unchanged sampler resumes with the door {on}",
-            );
-        }
+        assert_eq!(
+            spec_resume_sampler_verdict(&s, &s),
+            None,
+            "no regression: an unchanged sampler resumes",
+        );
     }
 }
 

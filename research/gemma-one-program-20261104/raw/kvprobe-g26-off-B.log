@@ -1,0 +1,35 @@
+[server] build: memra-0.138.0-e4dc687bf1da (id: source-tree, git: a4d7bf028966)
+[server] starting; models config = [("g4", "/data/ai-ml/hf-models/gemma4-26b-a4b-qat-gguf/gemma-4-26B_q4_0-it.gguf", None)]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[worker-affinity] off (MEMRA_WORKER_CPUSET / MEMRA_WORKER_AFFINITY unset or =0)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal after 3 consecutive misses (MEMRA_GPU_PROBE_MISSES), fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[worker] loading model "g4" <- /data/ai-ml/hf-models/gemma4-26b-a4b-qat-gguf/gemma-4-26B_q4_0-it.gguf
+[tensor-contract] bound 658 semantic tensors (pack gemma4_moe, Gguf, output head TiedToEmbedding); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[moe] resident-experts decision (dev0): experts 12.85GB + trunk 1.58GB vs free 24.25GB (expert budget 20.67GB) -> RESIDENT
+[q8rp] split-plane decode mirrors built: 1 tensors
+[q4rp] split-plane decode mirrors built: 210 trunk tensors
+[q4f16] prefill program = INT8 MMQ (no f16 mirrors) (reason: model geometry not eligible); free 8476 MiB, mirror mass 0 MiB, capacity threshold 8192 MiB (mass + 8192 headroom) — SELECTS PREFILL ARITHMETIC
+[worker]   loaded "g4": 30 layers, eos=1, stop=[1, 106]
+[spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2 (K=5 when the loaded MTP head is rank-trimmed)
+[worker] g4: template caps tools=true think=false think_switch=true chat_ok=true effort_levels=false qwen_effort=false gemma_think=true dsv4=false glm5=false ctx=262144 tok="gemma4" instruct=None chat_defaults=None/None
+[route-contract] model="g4" route=hybrid-worker capacity=64 sessions implemented=[capacity,occupancy,progress,fault-ownership,shutdown-ownership,memory-cost,rewrite-qualification,prime-fairness,service-metrics] refused=[]
+[worker] g4: decode wave cap 8; scheduler tick cap 8
+[worker] g4: BATCHED DECODE (gemma4 dense arm, default-on; MEMRA_GEMMA4_BATCH=0 = eager kill switch): batched decode chunks; chunked prefill, no prime batching (eager-only for every non-decode entry point)
+[prefix-cache] on: budget 6640MB (6639714304 B, derived: 2 x 29527900160 B max entry for model "g4" at served ctx 262144 (from checkpoint; MEMRA_CTX unset), requested 59055800320 B; boot driver free 8250327040 B, post-reserve clamp 6639714304 B), policy plain-LRU (global oldest unleased entry first; leases untouchable), min prefix 64 tokens, whole-entry restores only
+[admission] "g4": plain 112640 B/token, spec 112640 B/token; fixed residual learns from effective-free deltas
+[admit-mem] door=OFF open_output_tokens=8192 defer_budget_ms=8000 (admission charges prompt+output, the reclaim flush demotes to the host tier before dropping, and a memory defer past the budget refuses 429 instead of queueing past the client's deadline)
+[kv-vmm] door=OFF (MEMRA_KV_ALLOCATOR unset or pooled: pooled K/V planes)
+[server] worker ready; serving models: ["g4"]
+[server] listening on http://127.0.0.1:8191
+[meter] admit id=chatcmpl-539516df6fa6e13f6ae1d7d62d45b331 tenant=default lane=interactive model="g4"
+[admission] request cost: model="g4" ctx=1652 path=plain = 112640 B/token x ctx + 732MB prefill-workspace + 0MB fixed = 918MB
+[admission] fixed residual high-water: model="g4" 0MB (observed 180MB at ctx 1596 path=plain)
+[kvprobe] role=prefill-done pos=1584 at=900 kv_sha256=d2bd929c1ae0d1c1a55c710cdae31b6de1b93a10e5c885f492898708cd409ab6 logits_sha256=80d7a55ee42c5b69836d6f5e
+[kvprobe] role=prefill-done pos=1584 at=1584 kv_sha256=9e035917797f3c83eb93c9a4b98758123bba15a6d1e0c5e95e8dbeae4f6f413b logits_sha256=80d7a55ee42c5b69836d6f5e
+[fa-pool] grow #0 dev=0 o_len 0 -> 131072 ml_len 0 -> 512 (retired kept, zero=false)
+[fa-pool] grow #1 dev=0 o_len 131072 -> 262144 ml_len 512 -> 1024 (retired kept, zero=false)
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting
+[server] GPU worker shutdown complete

@@ -464,6 +464,7 @@ pub(crate) fn load_ffn(
     src: &dyn TensorSource,
     cfg: &ModelConfig,
     mlp: &MlpPlan,
+    residual: &memra_gguf::model_plan::ResidualTopology,
     il: u32,
     spill: Option<(&GgufFile, &mut crate::spill::SpillCtx)>,
     resident: &mut ResidentPlan,
@@ -614,7 +615,17 @@ pub(crate) fn load_ffn(
         // ggml->HF map spelled it SINGULAR (`mlp.shared_expert.*`, qwen3moe) while this
         // checkpoint spells it PLURAL, so all three names resolved to absent tensors and the
         // shared branch was dropped from all 42 MoE layers with no diagnostic.
+        // The gemma4 parallel MoE's shared branch is its dense `ffn_gate/up/down` MLP, which the
+        // gemma program loads beside the router (`Gemma4MoeBits`), not a `_shexp` expert.
+        let residual_owns_shared = matches!(
+            residual,
+            memra_gguf::model_plan::ResidualTopology::Gemma {
+                parallel_moe: Some(_),
+                ..
+            }
+        );
         if moe.shared.is_some()
+            && !residual_owns_shared
             && (gate_shexp.is_none() || up_shexp.is_none() || down_shexp.is_none())
         {
             return Err(format!(
@@ -3798,6 +3809,7 @@ impl MtpHead {
                 &src,
                 &dcfg,
                 &draft_block.layer.mlp,
+                &draft_block.layer.residual,
                 n,
                 None,
                 &mut resident,
@@ -4703,6 +4715,7 @@ impl HybridModel {
                     src,
                     &cfg,
                     &layer_plan.mlp,
+                    &layer_plan.residual,
                     il,
                     spill.as_mut().map(|c| (gguf.unwrap(), c)),
                     &mut resident,
@@ -5016,6 +5029,7 @@ impl HybridModel {
                         src,
                         &cfg,
                         &mtp_plan.layer.mlp,
+                        &mtp_plan.layer.residual,
                         n,
                         spill.as_mut().map(|c| (gguf.unwrap(), c)),
                         &mut resident,

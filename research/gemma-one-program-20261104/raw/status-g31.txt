@@ -1,0 +1,46 @@
+head c5b731473474 server-stamp=2
+g31 off argmax rc=0 SUMMARY flips=1 bad=0
+g31 off spec K=1 rc=0 stream agreement 128/128 
+g31 off spec K=2 rc=0 stream agreement 128/128 
+g31 off spec K=3 rc=0 stream agreement 128/128 
+g31 off spec K=4 rc=0 stream agreement 128/128 
+g31 off spec K=5 rc=0 stream agreement 128/128 
+g31 off spec K=6 rc=0 stream agreement 128/128 
+g31 off spec K=7 rc=0 stream agreement 128/128 
+g31 off spec K=8 rc=0 stream agreement 128/128 
+g31 off kvprobe A pos=964 at=900 kv_sha256=5511a66928411c9e9d9bb8e37002205244c7987fce5073f70cc6bf97815a7610
+g31 off kvprobe B pos=1584 at=900 kv_sha256=5511a66928411c9e9d9bb8e37002205244c7987fce5073f70cc6bf97815a7610
+g31 on argmax rc=0 SUMMARY flips=1 bad=0
+g31 on spec K=1 rc=0 stream agreement 128/128 
+g31 on spec K=2 rc=0 stream agreement 128/128 
+g31 on spec K=3 rc=0 stream agreement 128/128 
+g31 on spec K=4 rc=0 stream agreement 128/128 
+g31 on spec K=5 rc=0 stream agreement 128/128 
+g31 on spec K=6 rc=0 stream agreement 128/128 
+g31 on spec K=7 rc=0 stream agreement 128/128 
+g31 on spec K=8 rc=0 stream agreement 128/128 
+g31 on kvprobe A pos=964 at=900 kv_sha256=5511a66928411c9e9d9bb8e37002205244c7987fce5073f70cc6bf97815a7610
+g31 on kvprobe B pos=1584 at=900 kv_sha256=5511a66928411c9e9d9bb8e37002205244c7987fce5073f70cc6bf97815a7610
+g26 off argmax rc=1 
+g26 off spec K=1 rc=1  
+g26 off spec K=2 rc=1  
+g26 off spec K=3 rc=1  
+g26 off spec K=4 rc=1  
+g26 off spec K=5 rc=1  
+g26 off spec K=6 rc=1  
+g26 off spec K=7 rc=1  
+g26 off spec K=8 rc=1  
+g26 off kvprobe A FATAL: worker init failed: load g4: checkpoint refused before upload (pack gemma4_moe, Gguf): the tensor contract does not compile for this plan: no semantic te
+g26 off kvprobe B FATAL: worker init failed: load g4: checkpoint refused before upload (pack gemma4_moe, Gguf): the tensor contract does not compile for this plan: no semantic te
+g26 on argmax rc=1 
+g26 on spec K=1 rc=1  
+g26 on spec K=2 rc=1  
+g26 on spec K=3 rc=1  
+g26 on spec K=4 rc=1  
+g26 on spec K=5 rc=1  
+g26 on spec K=6 rc=1  
+g26 on spec K=7 rc=1  
+g26 on spec K=8 rc=1  
+g26 on kvprobe A FATAL: worker init failed: load g4: checkpoint refused before upload (pack gemma4_moe, Gguf): the tensor contract does not compile for this plan: no semantic te
+g26 on kvprobe B FATAL: worker init failed: load g4: checkpoint refused before upload (pack gemma4_moe, Gguf): the tensor contract does not compile for this plan: no semantic te
+done
