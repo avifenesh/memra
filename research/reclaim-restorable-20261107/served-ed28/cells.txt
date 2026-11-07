@@ -1,0 +1,13 @@
+CELL greedy-base-evicts-tail PASS [admit-oom] reclaim-on-defer: evicted 1 prefix entries + 0 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 3424MB -> 3742MB
+CELL greedy-base-stable PASS r3 sha ['8e25a371633a6ffa']
+CELL greedy-base-bytes-vs-ref PASS ref 8e25a371633a6ffa arm ['8e25a371633a6ffa']
+CELL greedy-fix-spares-tail PASS
+CELL greedy-fix-dflash-restore PASS restorable-preferred [True, True, True] dropped-longer [False, False, False] kept-both [True, True, True] dropped-tail [False, False, False]
+CELL greedy-fix-stable PASS r3 sha ['8e25a371633a6ffa']
+CELL greedy-fix-bytes-vs-ref PASS ref 8e25a371633a6ffa arm ['8e25a371633a6ffa']
+CELL sampled-base-evicts-tail PASS [admit-oom] reclaim-on-defer: evicted 1 prefix entries + 0 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 3424MB -> 3742MB
+CELL sampled-base-stable PASS r3 sha ['1a48e22e76ab09fa']
+CELL sampled-fix-spares-tail PASS
+CELL sampled-fix-dflash-restore PASS restorable-preferred [True, True, True] dropped-longer [False, False, False] kept-both [True, True, True] dropped-tail [False, False, False]
+CELL sampled-fix-stable PASS r3 sha ['5f8db50ab11044f4']
+CELL sampled-fix-bytes-vs-ref PASS ref 5f8db50ab11044f4 arm ['5f8db50ab11044f4']

@@ -1,0 +1,67 @@
+[server] build: memra-0.138.0-3cf95cbcdfba (id: source-tree, git: 1a6b6eb671d0)
+[server] starting; models config = [("q", "/data/ai-ml/models/q38-gguf/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf", None)]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[worker-affinity] off (MEMRA_WORKER_CPUSET / MEMRA_WORKER_AFFINITY unset or =0)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal after 3 consecutive misses (MEMRA_GPU_PROBE_MISSES), fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[worker] loading model "q" <- /data/ai-ml/models/q38-gguf/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf
+[tensor-contract] bound 866 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[worker]   loaded "q": 65 layers, eos=248046, stop=[248046]
+[spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2 (K=5 when the loaded MTP head is rank-trimmed)
+[worker] q: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false qwen_effort=true gemma_think=false dsv4=false glm5=false ctx=262144 tok="qwen35" instruct=Some("chatml") chat_defaults=None/None
+[route-contract] model="q" route=hybrid-worker capacity=2 sessions implemented=[capacity,occupancy,progress,fault-ownership,shutdown-ownership,memory-cost,rewrite-qualification,prime-fairness,service-metrics] refused=[]
+[worker] q: decode wave cap 16; scheduler tick cap 16 (exact-16 tier)
+[dspark] prefix restore doors default OFF on "NVIDIA GeForce RTX 5090 Laptop GPU" (gb10=false): restore=true partial=false capture=false
+[dspark] precision=q4 (MEMRA_DFLASH_PREC unset)
+[dspark] harvest=dflash (checkpoint census dflash2=true strategy_dspark=false, MEMRA_DSPARK_HARVEST unset)
+[dspark] verify-window=Ladder (accept-rate head ABSENT -> ladder, MEMRA_DSPARK_VT unset)
+[worker] q: DSPARK SPEC route armed (drafter attached (~/.cache/memra-fix4/dflash2-q38); greedy+sampled [T>0 rejection verify, sampled penalties included; greedy penalties verified by penalised argmax (MEMRA_DSPARK_GREEDY_PENALTY=1)]/unconstrained/text-only; greedy LOW-wave admission + HIGH demotion, sampled solo admission; MTP spec DISABLED for this model — refuse-on-ambiguity; MEMRA_DSPARK_SPEC unset = off)
+[dspark] q: DFlash2 draft head FULL target vocab (external_mtp_d2t_ignored=false; set MEMRA_FRSPEC_TRIM=<ranks.txt> to trim)
+[prefix-cache] on: budget 800MB (800325632 B, derived: 2 x 400162816 B max entry for model "q" at served ctx 8192 (from MEMRA_CTX; MEMRA_CTX set), requested 800325632 B; boot driver free 9047244800 B, post-reserve clamp 7436632064 B), policy plain-LRU (global oldest unleased entry first; leases untouchable), min prefix 64 tokens, whole-entry restores only
+[admission] "q": dspark owns the spec program: spec coefficient = plain (no MTP scratch term); the draft plane is charged per session, 169MB at a 30k cap (ring on: constant above two windows)
+[admission] "q": plain 29696 B/token, spec 29696 B/token; fixed residual learns from effective-free deltas
+[prime-walk] model="q" route=dspark supported=true yield_door=true [gdn_dspark_compatible=true mtp_head_loaded=true no_hyper_connections=true no_pipeline_cuts=true]
+[dspark-vg] serve pool ENGAGED (vt_cap=8)
+[topk-shards] engaged: rows=7 cols=248320 k=16 shards=16 (MEMRA_TOPK_SHARDS=1)
+[fa-pool] grow #0 dev=0 o_len 0 -> 3194880 ml_len 0 -> 12480 (retired kept, zero=false)
+[dflash-kv-ring] compact keep_from=2064 kept=2056 phys_rows=4120
+[device-trim] reason=calibration-complete {"device":0,"reclaimed_bytes":1845493760,"still_owned_bytes":19475432320,"pool_reserved_bytes":19528679424,"pool_cached_bytes":53247104,"driver_free_bytes":4972478464,"synchronization_errors":[]}
+[admit-cal] post-probe pool trim: released 1760MB cached back to the driver
+[admit-cal] boot calibration done: model="q" route=dspark transient floor 1640MB (static was 1536MB; measured 1640MB; probe kv charge 119MB, draft-state 0MB, drafted 68 accepted 46; [dev0 peak-mapped 20384MB rest-mapped 18624MB charged 119MB -> 1640MB]; 6.4s)
+[admit-mem] door=OFF open_output_tokens=32768 defer_budget_ms=8000 (not the receipted card; the single-card default of the RTX PRO 6000 Blackwell Workstation Edition: armed, admission charges prompt+output, the reclaim flush demotes to the host tier before dropping, and a memory defer past the budget refuses 429 instead of queueing past the client's deadline)
+[admit-oom] batch OOM recovery: OFF (no receipt for this card: a batched chunk's OOM ends the chunk's sessions)
+[kv-vmm] door=OFF (pooled K/V planes: the on-demand planes are the default on the RTX PRO 6000 Blackwell Workstation Edition only)
+[server] worker ready; serving models: ["q"]
+[server] listening on http://127.0.0.1:18171
+[meter] admit id=chatcmpl-8937f63a4a194ed9b07af111458474a5 tenant=default lane=interactive model="q"
+[admission] per-session draft-state charge: model="q" +129MB (DFlash draft plane at this cap)
+[admission] request cost: model="q" ctx=3152 path=spec = 29696 B/token x ctx + 1373MB prefill-workspace + 0MB fixed = 1466MB
+[spec-k] model="q" tenant="" K=0 source=eligibility-fallback prompt=2992 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[dspark-acc] ctx=2992 burst=21/38 cum=21/38=0.553
+[prefix-cache] insert (dspark-boundary): 2992 tokens, 330.0MB (resident 330.0MB / 800MB, model q)
+[dspark-acc] ctx=3025 burst=21/38 cum=42/76=0.553
+[dspark-acc] ctx=3058 burst=15/28 cum=57/104=0.548
+[meter] admit id=chatcmpl-8579aaadb214a9ead0ecf32c5e200619 tenant=default lane=interactive model="q"
+[admission] per-session draft-state charge: model="q" +134MB (DFlash draft plane at this cap)
+[admission] request cost: model="q" ctx=3269 path=spec = 29696 B/token x ctx + 1426MB prefill-workspace + 0MB fixed = 1523MB
+[dspark] cache-preferred: prompt=3109 decode_budget=96 lcp=2992 — a cold prime would discard a prefix hit that 96 tokens of speculation cannot repay; serving the hit and going plain
+[prefix-cache] hit: 2992 of 3109 prompt tokens from cache (model q)
+[spec-k] model="q" tenant="" K=0 source=eligibility-fallback prompt=3109 cached=2992 lcp=2992 active=1 wave=1 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 2992 tokens, model q)
+[admission] fixed residual high-water: model="q" 314MB (observed 409MB at ctx 3213 path=plain)
+[prefix-cache] insert (seed): 3072 tokens, 248.1MB (resident 578.1MB / 800MB, model q)
+[kv-reuse] park-compact: 3113 of 3213 rows retained in 2.9ms (model q)
+[meter] admit id=chatcmpl-b3179847e9cbd70303c70a87914ce789 tenant=default lane=interactive model="q"
+[admission] per-session draft-state charge: model="q" +136MB (DFlash draft plane at this cap)
+[admission] request cost: model="q" ctx=3304 path=spec = 29696 B/token x ctx + 1442MB prefill-workspace + 314MB fixed = 1854MB
+[admit-oom] reclaim spared the prompt's prefix entry (3072 tokens, model q)
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=329957376 pool_cached_gain_bytes=329957376 trim_released_bytes=301989888 driver_free_bytes 2621571072 -> 2923560960 pool_reserved_bytes 21877489664 -> 21575499776 pool_used_bytes 21306734440 -> 20976777064 pool_retained_bytes=27967488 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer: evicted 1 prefix entries + 0 plain + 0 spec + 1 dspark parked sessions (global LRU); effective free 3192MB -> 4212MB
+[kv-reuse] park-compact grow: 3113 -> 3248 rows (request-owned cap; model q)
+[worker] kv-reuse: 3113 of 3144 prompt tokens resumed (model q)
+[spec-k] model="q" tenant="" K=0 source=eligibility-fallback prompt=3144 cached=3113 lcp=3072 active=1 wave=1 placement=single-or-non-pp2
+[kv-reuse] park-compact: 3226 of 3248 rows retained in 2.9ms (model q)
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting
+[server] GPU worker shutdown complete

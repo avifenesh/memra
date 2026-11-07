@@ -1,0 +1,120 @@
+greedy-ref: ttft 2.493s total 3.625s sha 8e25a371633a6ffa {}
+greedy-1-base: ttft 0.233s total 2.534s sha 8e25a371633a6ffa {'tail_insert': True, 'spared_plain_only': True, 'cache_preferred': True}
+greedy-2-fix: ttft 0.686s total 1.820s sha 8e25a371633a6ffa {'tail_insert': True, 'spared_restorable': True, 'kept_both': True, 'restorable_preferred': True, 'dspark_restore': True}
+greedy-3-fix: ttft 0.681s total 1.784s sha 8e25a371633a6ffa {'tail_insert': True, 'spared_restorable': True, 'kept_both': True, 'restorable_preferred': True, 'dspark_restore': True}
+greedy-4-base: ttft 0.234s total 2.408s sha 8e25a371633a6ffa {'tail_insert': True, 'spared_plain_only': True, 'cache_preferred': True}
+greedy-5-base: ttft 0.243s total 2.504s sha 8e25a371633a6ffa {'tail_insert': True, 'spared_plain_only': True, 'cache_preferred': True}
+greedy-6-fix: ttft 0.663s total 1.756s sha 8e25a371633a6ffa {'tail_insert': True, 'spared_restorable': True, 'kept_both': True, 'restorable_preferred': True, 'dspark_restore': True}
+CELL greedy-base-evicts-tail PASS [admit-oom] reclaim-on-defer: evicted 1 prefix entries + 0 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 3424MB -> 3742MB
+CELL greedy-base-stable PASS r3 sha ['8e25a371633a6ffa']
+CELL greedy-base-bytes-vs-ref PASS ref 8e25a371633a6ffa arm ['8e25a371633a6ffa']
+CELL greedy-fix-spares-tail PASS
+CELL greedy-fix-dflash-restore PASS restorable-preferred [True, True, True] dropped-longer [False, False, False] kept-both [True, True, True] dropped-tail [False, False, False]
+CELL greedy-fix-stable PASS r3 sha ['8e25a371633a6ffa']
+CELL greedy-fix-bytes-vs-ref PASS ref 8e25a371633a6ffa arm ['8e25a371633a6ffa']
+sampled-ref: ttft 2.506s total 3.893s sha 5f8db50ab11044f4 {}
+sampled-1-base: ttft 0.229s total 2.483s sha 1a48e22e76ab09fa {'tail_insert': True, 'spared_plain_only': True, 'cache_preferred': True}
+sampled-2-fix: ttft 0.644s total 2.047s sha 5f8db50ab11044f4 {'tail_insert': True, 'spared_restorable': True, 'kept_both': True, 'restorable_preferred': True, 'dspark_restore': True}
+sampled-3-fix: ttft 0.639s total 2.051s sha 5f8db50ab11044f4 {'tail_insert': True, 'spared_restorable': True, 'kept_both': True, 'restorable_preferred': True, 'dspark_restore': True}
+sampled-4-base: ttft 0.230s total 2.517s sha 1a48e22e76ab09fa {'tail_insert': True, 'spared_plain_only': True, 'cache_preferred': True}
+sampled-5-base: ttft 0.234s total 2.466s sha 1a48e22e76ab09fa {'tail_insert': True, 'spared_plain_only': True, 'cache_preferred': True}
+sampled-6-fix: ttft 0.669s total 2.096s sha 5f8db50ab11044f4 {'tail_insert': True, 'spared_restorable': True, 'kept_both': True, 'restorable_preferred': True, 'dspark_restore': True}
+CELL sampled-base-evicts-tail PASS [admit-oom] reclaim-on-defer: evicted 1 prefix entries + 0 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 3424MB -> 3742MB
+CELL sampled-base-stable PASS r3 sha ['1a48e22e76ab09fa']
+CELL sampled-fix-spares-tail PASS
+CELL sampled-fix-dflash-restore PASS restorable-preferred [True, True, True] dropped-longer [False, False, False] kept-both [True, True, True] dropped-tail [False, False, False]
+CELL sampled-fix-stable PASS r3 sha ['5f8db50ab11044f4']
+CELL sampled-fix-bytes-vs-ref PASS ref 5f8db50ab11044f4 arm ['5f8db50ab11044f4']
+{
+ "greedy/base": {
+  "n": 3,
+  "ttft_s": [
+   0.2325,
+   0.2338,
+   0.2428
+  ],
+  "total_s": [
+   2.5336,
+   2.4084,
+   2.5041
+  ],
+  "ttft_median_s": 0.2338,
+  "total_median_s": 2.5041,
+  "completion_tokens": [
+   96,
+   96,
+   96
+  ]
+ },
+ "greedy/fix": {
+  "n": 3,
+  "ttft_s": [
+   0.6857,
+   0.6813,
+   0.6633
+  ],
+  "total_s": [
+   1.8197,
+   1.7842,
+   1.7556
+  ],
+  "ttft_median_s": 0.6813,
+  "total_median_s": 1.7842,
+  "completion_tokens": [
+   96,
+   96,
+   96
+  ]
+ },
+ "greedy/ref": {
+  "ttft_s": 2.4933,
+  "total_s": 3.6252,
+  "sha": "8e25a371633a6ffa"
+ },
+ "sampled/base": {
+  "n": 3,
+  "ttft_s": [
+   0.2288,
+   0.2305,
+   0.2343
+  ],
+  "total_s": [
+   2.4833,
+   2.5174,
+   2.4665
+  ],
+  "ttft_median_s": 0.2305,
+  "total_median_s": 2.4833,
+  "completion_tokens": [
+   96,
+   96,
+   96
+  ]
+ },
+ "sampled/fix": {
+  "n": 3,
+  "ttft_s": [
+   0.6444,
+   0.6388,
+   0.6687
+  ],
+  "total_s": [
+   2.0466,
+   2.0512,
+   2.0962
+  ],
+  "ttft_median_s": 0.6444,
+  "total_median_s": 2.0512,
+  "completion_tokens": [
+   96,
+   96,
+   96
+  ]
+ },
+ "sampled/ref": {
+  "ttft_s": 2.5065,
+  "total_s": 3.893,
+  "sha": "5f8db50ab11044f4"
+ }
+}
+cell exit 0

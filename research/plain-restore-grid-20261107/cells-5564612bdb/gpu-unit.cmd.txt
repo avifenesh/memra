@@ -1,0 +1,7 @@
+commit 5564612bdb04cd318827518f033a662f6c54e20c (the stacked #1082 + #1083 head on main 9805016bb1)
+test binary: target/debug/deps/memra_server-8b9ba32fb6899836 from `cargo test -p memra-server --lib --no-run` at that commit, sha256 e8f6d4febc983a64...
+run on the RTX 5090 Laptop, 2026-11-07 13:29 IST, from crates/memra-server:
+  MEMRA_DSPARK_PREFIX_RESTORE=1 memra_server-8b9ba32fb6899836 --ignored --test-threads 1 \
+    --skip memory_admission_admits_one_900k --skip host_glm_two_device --skip controlled_http_fixture \
+    --skip prefill_proxy_fixture --skip native_glm_peer
+result: 24 passed, 0 failed (the one switch alone arms dflash_retained_gpu_plan_fault_matrix)

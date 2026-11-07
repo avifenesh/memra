@@ -1,0 +1,24 @@
+
+running 1 test
+test worker::tests::admission_reclaim_spares_the_restorable_tail_the_preference_takes ... FAILED
+
+failures:
+
+---- worker::tests::admission_reclaim_spares_the_restorable_tail_the_preference_takes stdout ----
+[prefix-cache] insert (unrelated): 128 tokens, 0.0MB (resident 0.0MB / 0MB, model m, ns "tenant")
+[prefix-cache] insert (dspark-boundary): 2592 tokens, 0.0MB (resident 0.0MB / 0MB, model m, ns "tenant")
+[prefix-cache] insert (lcp-split): 3104 tokens, 0.0MB (resident 0.0MB / 0MB, model m, ns "tenant")
+
+thread 'worker::tests::admission_reclaim_spares_the_restorable_tail_the_preference_takes' (3518258) panicked at crates/memra-server/src/worker.rs:52213:9:
+assertion `left == right` failed
+  left: (3104, 249)
+ right: (2592, 318)
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    worker::tests::admission_reclaim_spares_the_restorable_tail_the_preference_takes
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1194 filtered out; finished in 0.00s
+
+red test exit 101 (expected non-zero)

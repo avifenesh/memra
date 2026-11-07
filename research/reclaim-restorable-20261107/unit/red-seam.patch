@@ -1,0 +1,50 @@
+diff --git a/crates/memra-server/src/worker.rs b/crates/memra-server/src/worker.rs
+index b75d34584f..9f5d92e357 100644
+--- a/crates/memra-server/src/worker.rs
++++ b/crates/memra-server/src/worker.rs
+@@ -10279,38 +10279,13 @@ impl PrefixCache {
+         restorable: impl Fn(&PrefixEntry) -> bool,
+         prefers_restorable: impl Fn(usize, usize) -> bool,
+     ) -> Option<ReclaimPrefixSpare> {
+-        let longest = self.lookup(key, prompt)?;
+-        let shape = |px: &Self, i: usize| {
+-            let e = &px.entries[key][i];
+-            (e.toks.len(), e.bytes)
+-        };
+-        let (longest_tokens, longest_bytes) = shape(self, longest);
+-        let alt = if restorable(&self.entries[key][longest]) {
+-            None
+-        } else {
+-            self.lookup_where(key, prompt, &restorable)
+-                .filter(|&i| prefers_restorable(longest_tokens, shape(self, i).0))
+-        };
+-        if let Some(alt) = alt
+-            && let Some(pin) = self.pin(key, alt)
+-        {
+-            let (tokens, bytes) = shape(self, alt);
+-            let also = self.pin(key, longest).map(|pin| SparedEntry {
+-                pin,
+-                tokens: longest_tokens,
+-                bytes: longest_bytes,
+-            });
+-            return Some(ReclaimPrefixSpare {
+-                keep: SparedEntry { pin, tokens, bytes },
+-                also,
+-            });
+-        }
+-        self.pin(key, longest).map(|pin| ReclaimPrefixSpare {
+-            keep: SparedEntry {
+-                pin,
+-                tokens: longest_tokens,
+-                bytes: longest_bytes,
+-            },
++        // SEAM (fail-before run only): main's reclaim choice, the longest match alone.
++        let _ = (&restorable, &prefers_restorable);
++        let i = self.lookup(key, prompt)?;
++        let bytes = self.entries[key][i].bytes;
++        let (pin, tokens) = self.pin_prompt_prefix(key, prompt)?;
++        Some(ReclaimPrefixSpare {
++            keep: SparedEntry { pin, tokens, bytes },
+             also: None,
+         })
+     }
