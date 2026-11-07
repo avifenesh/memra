@@ -27,6 +27,36 @@ published and are the only endpoint for — is REQUIRED: the battery refuses the
 its GGUF is absent from the rig rather than reporting it skipped.** A `vendor` model is
 required when present and needs an explicit `--allow-missing-vendor` when not.
 
+**The tag battery covers the qwen35 class only, and within it two checkpoints** (owner,
+2026-11-03). The roster has two rows, both NVFP4+Q5_K MTP GGUFs: Ornith-1.5-35B-A3B (`own`,
+`qwen35moe` architecture, the `qwen35_moe` pack) and Qwen3.8-27B (`vendor`, `qwen35`).
+`tools/release_qualification.py` binds the expected cells to exactly those rows: one kernel
+cell plus one argmax and one spec cell per row. kernel-check runs once, with the first roster
+file present as its model argument; its required `kernel-check-step35.cells` are synthetic
+Step kernel and PP-schedule cells, not a Step model run. Its real-weight oracle cells
+(`dtype5`, `q4_0-mmq`, `iq4xs-mmq`, `nvfp4-27b-shape` and the rest) load GGUFs from the
+kernel-oracle directory, `MEMRA_KC_MODELS_DIR`, which `tools/qualify-release.py` sets and the
+record binds as `oracle_directory`. They are kernel-level evidence only. The required
+`DUAL-BATCHED-AUX` cell needs the Qwen3.5-9B NVFP4 oracle; the other oracle cells may skip,
+within the 11-skip ceiling.
+
+A tag PASS therefore carries no model evidence for any other qwen35-class checkpoint (the
+Qwen3.5-9B, Qwen3.6 and Ornith-1.0 files among them), for `gemma4_dense`, `gemma4_moe`,
+`step35`, `glm5_next`, `glm_dsa`, `deepseek_v4`, `hy3` or any other pack, or for weight
+formats those two roster files do not carry (block FP8, Q4_0 and IQ4_XS among them). Their
+evidence comes from their own family gates: the pack's gate manifest (`memra model verify`),
+the scoped battery's `run-gen` and `run-spec` cells on each family a change reaches
+([AGENTS.md](../AGENTS.md#match-validation-to-the-changed-behavior)), and the `step-pro`
+hardware gate for Step-3.7 on RTX PRO 6000
+([Testing](TESTING.md#target-aware-release-evidence)). Between changes they are re-run by each
+device's daily regression (`tools/daily-regression.py`,
+[Release qualification](RELEASE-QUALIFICATION.md#daily-regression)). Do not read a tag receipt
+as a claim about a family the roster does not name.
+
+A tag PASS carries no served-path evidence either. The battery never starts `memra-server`,
+so serve-smoke, spec-on-cache-hit, accept-gate, health-fault and the other serving gates run
+only in `tools/local-ci.sh` ([Testing](TESTING.md) tier 2) and in scoped-battery cells.
+
 The battery clears `MEMRA_KC_FAST` and `MEMRA_KC_ONLY`, requires the cells in
 `tools/kernel-check-27b.cells` and `tools/kernel-check-step35.cells`, and checks the final
 kernel cell/skip summary against the named results. The receipt reports executed and required

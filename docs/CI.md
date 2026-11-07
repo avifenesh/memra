@@ -31,8 +31,10 @@ the other workflow files; `ci.yml` itself is protected by the same census in
 
 `gpu-ci.yml` accepts an explicit full candidate commit through `workflow_dispatch`.
 Its initial supported scope is the existing generic release battery on one physical
-RTX PRO 6000 card, physical GPU0, Ubuntu 24.04. It does not replace additional
-hardware, topology, model-support, HTTP, performance, or release-publication gates.
+RTX PRO 6000 card, physical GPU0, Ubuntu 24.04. That battery covers the qwen35 class only,
+the two `tools/release-roster.tsv` models
+([Release qualification](RELEASE-QUALIFICATION.md#what-a-record-covers)). It does not replace
+additional hardware, topology, model-support, HTTP, performance, or release-publication gates.
 
 1. The CPU job checks out that exact candidate and requires the content-bound
    qualification tooling tracked in [PR #566](https://github.com/avifenesh/memra/pull/566).

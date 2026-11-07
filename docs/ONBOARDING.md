@@ -18,7 +18,8 @@ that the relevant contracts are unchanged.
 
 Canonical supporting documents:
 
-- [Testing](TESTING.md) defines fast-gate versus the full merge/tag battery.
+- [Testing](TESTING.md) defines fast-gate versus the scoped and full merge batteries;
+  [Releasing](RELEASING.md#the-gate-on-the-rig-before-tagging) defines the qwen35-class tag battery.
 - [Flags](FLAGS.md) owns runtime parameters, rollback seams, and diagnostic flags.
 - [Serving](SERVING.md) owns the public API and drafter attach syntax.
 - [Performance](PERFORMANCE.md) owns rig authority and measurement protocol.
