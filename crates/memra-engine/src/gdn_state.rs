@@ -23,7 +23,7 @@
 use crate::Engine;
 use cudarc::driver::{CudaSlice, LaunchConfig, PushKernelArg};
 use memra_gguf::model_plan::{
-    AttentionPlan, GdnGateActivation, MlpPlan, ModelPlan, ResidualTopology, StatePlan,
+    AttentionPlan, GdnGateActivation, ModelPlan, ResidualTopology, StatePlan,
 };
 use memra_kv::RecurLayer;
 
@@ -271,38 +271,12 @@ pub fn plan_gdn_decode_eligible(plan: &ModelPlan) -> bool {
     gdn > 0
 }
 
-/// The shape the bf16 decode class was measured on (Qwen3.8-27B: a dense hybrid of 48 GDN layers
-/// with 48 value heads of 128, research/gdn-state-bf16-decode-20261107). A device default applies
-/// only to this shape; any other eligible plan keeps fp32 unless `MEMRA_GDN_STATE_BF16=1` forces it.
-pub fn plan_gdn_decode_measured(plan: &ModelPlan) -> bool {
-    plan_gdn_decode_eligible(plan)
-        && plan
-            .layers
-            .iter()
-            .all(|l| matches!(l.mlp, MlpPlan::Dense(_)))
-        && plan
-            .layers
-            .iter()
-            .filter_map(|l| match &l.attention {
-                AttentionPlan::GatedDeltaNet(g) => Some(g.value_heads),
-                _ => None,
-            })
-            .fold((0usize, true), |(n, ok), heads| (n + 1, ok && heads == 48))
-            == (48, true)
-}
-
-/// The decode-class decision for one model: `MEMRA_GDN_STATE_BF16=1|0` forces it (only on an
-/// eligible plan; a force on any other plan is ignored with a warning by the caller), unset
-/// follows the device default (bf16 on GB10 for the measured shape, fp32 everywhere else).
-pub fn gdn_decode_bf16_on(env: Option<&str>, eligible: bool, measured: bool, gb10: bool) -> bool {
-    if !eligible {
-        return false;
-    }
-    match env {
-        Some("1") => true,
-        Some("0") => false,
-        _ => gb10 && measured,
-    }
+/// The decode-class decision for one model (a research door, research/gdn-state-bf16-decode-20261107):
+/// `MEMRA_GDN_STATE_BF16=1` turns it on for an eligible plan; anything else, and every ineligible
+/// plan, decodes fp32. The default is fp32 on every device: the GB10 long-context panel scored the
+/// bf16 decode class out of band (`docs/decisions/GDN-STATE-BF16.md`).
+pub fn gdn_decode_bf16_on(env: Option<&str>, eligible: bool) -> bool {
+    eligible && env == Some("1")
 }
 
 #[cfg(test)]
@@ -310,18 +284,13 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_decode_class_is_forced_or_follows_the_measured_gb10_default() {
-        // unset: bf16 only on GB10 for the measured shape
-        assert!(gdn_decode_bf16_on(None, true, true, true));
-        assert!(!gdn_decode_bf16_on(None, true, true, false));
-        assert!(!gdn_decode_bf16_on(None, true, false, true));
-        // a force decides on any eligible plan, either way
-        assert!(gdn_decode_bf16_on(Some("1"), true, false, false));
-        assert!(!gdn_decode_bf16_on(Some("0"), true, true, true));
+    fn the_decode_class_is_a_research_door_off_by_default() {
+        assert!(gdn_decode_bf16_on(Some("1"), true));
+        assert!(!gdn_decode_bf16_on(None, true));
+        assert!(!gdn_decode_bf16_on(Some("0"), true));
+        assert!(!gdn_decode_bf16_on(Some("yes"), true));
         // an ineligible plan is fp32 whatever the env says
-        assert!(!gdn_decode_bf16_on(Some("1"), false, false, true));
-        // anything but 0/1 is unset
-        assert!(gdn_decode_bf16_on(Some("yes"), true, true, true));
+        assert!(!gdn_decode_bf16_on(Some("1"), false));
     }
 
     #[test]
