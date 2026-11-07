@@ -1,0 +1,27 @@
+gpulock: 5090 leased as claude-code-20261104T111220-2839301 for 60m
+fast-gate plan: expand (development only; GPU selection shadow-only)
+  kernel-check: all 
+  probes: e4b,g26,g31,q35,q35slru,q9,q35spec
+  EXPAND: no probe mapping: target
+  EXPAND: unmodelled input: target
+  CPU CI components: build, clippy, server, engine, portable, core, lanes, arch, publish
+  NATIVE EVIDENCE: unmodelled input: target
+  logs: /tmp/fast-gate-20261104-111220
+== fast-gate tier 0 ==
+  build: OK (1s)
+  kernel-check (FULL): GREEN (228s)
+tier 0: requested diagnostics passed (238s total)
+== fast-gate tier 1 ==
+  e4b: PASS (gates green + golden token-identical, 7s)
+  g26: PASS (gates green + golden token-identical, 19s)
+  g31: PASS (gates green + golden token-identical, 19s)
+  q35: PASS (gates green + golden token-identical, 17s)
+  q35slru: PASS (gates green + golden token-identical, 23s)
+  q9: PASS (gates green + golden token-identical, 7s)
+  q35spec: PASS (gates green + golden token-identical, 18s)
+tier 1: requested diagnostics, 0 fail (348s total)
+
+fast-gate is the DEV-LOOP gate only — the full battery (tools/local-ci.sh + perf stage)
+gates the full-battery change classes in AGENTS.md; a tag takes tools/release-battery.sh
+(two qwen35-class checkpoints only).
+CPU-only tooling uses the admission rules in docs/TESTING.md.

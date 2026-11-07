@@ -680,6 +680,12 @@ code is broken. The mapping table encodes the fixes; keep them in mind when addi
   mixups), which it demonstrably catches.
 - **Sampled serving path** (temp>0 end-to-end): `samp` oracles the kernels, but no probe
   runs a sampled generation stream; distribution-level drift stays a battery/eval concern.
+- **GDN scan numeric class**: `MEMRA_GDN_MMA=1` and `=0` launch different chunk-scan kernels
+  (`gdn_chunk_{state,output}_{mma,f32}`, nsys) and give the same 20 greedy ids on `q9` and
+  `q35`, so the qwen35-class token pins cannot tell the two programs apart. The goldens minted
+  2026-08-02..05 still pass after the 2026-08-21 sm_120a flip. `q9` runs without the chat
+  template and its 20 ids are the first 20 ids of its own prompt, a copy; switch it to
+  `MEMRA_CHAT=1` at the next golden refresh (`research/fastgate-goldens-20261104/`).
 
 ## The perf stage's tok/s verdict is a tripwire, not evidence
 

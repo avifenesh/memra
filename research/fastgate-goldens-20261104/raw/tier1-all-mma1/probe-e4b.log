@@ -1,0 +1,18 @@
+[tensor-contract] bound 666 semantic tensors (pack gemma4_e4b, Gguf, output head TiedToEmbedding); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[gemma4-e4b] per-layer inputs from the plan (n_epl=256, row 10752): dedicated E4B prime, decode, graph and verify programs; whole-prompt prime, no batched decode
+[q8rp] split-plane decode mirrors built: 1 tensors
+[q4rp] split-plane decode mirrors built: 402 trunk tensors
+[q4f16] prefill program = INT8 MMQ (no f16 mirrors) (reason: model geometry not eligible); free 18100 MiB, mirror mass 7525 MiB, capacity threshold 15717 MiB (mass + 8192 headroom) — SELECTS PREFILL ARITHMETIC
+[q4rp] split-plane IN-PLACE swap: 294 dense trunk tensors
+loaded gemma4 (42 trunk layers; optional MTP skipped)
+prompt tokens: [2, 105, 2364, 107, 155122, 506, 1813, 8881, 21485, 236761, 106, 107, 105, 4368, 107, 100, 45518, 107, 101]
+[fa-pool] grow #0 dev=0 o_len 0 -> 2048 ml_len 0 -> 8 (retired kept, zero=false)
+[fa-pool] grow #1 dev=0 o_len 2048 -> 4096 ml_len 8 -> 16 (retired kept, zero=false)
+[fa-pool] grow #2 dev=0 o_len 4096 -> 8192 ml_len 16 -> 32 (retired kept, zero=false)
+[fa-pool] grow #3 dev=0 o_len 8192 -> 16384 ml_len 32 -> 64 (retired kept, zero=false)
+prefill argmax=8291  decode argmax=8291  logit maxdiff=2.876e0  MATCH
+batched-prime argmax=8291  tokenwise argmax=8291  logit maxdiff=2.876e0  MATCH
+prefill 19 tok in 0.0350s = 542.1 tok/s (pp19)
+[fa-pool] grow #4 dev=0 o_len 16384 -> 32768 ml_len 64 -> 128 (retired kept, zero=false)
+generated 20 tokens in 0.098s = 203.40 tok/s (Stage-B int8 dp4a decode, gen-only; prime 0.035s) [stop: MaxNew]
+tokens: [8291, 236789, 236751, 496, 6972, 1657, 600, 9025, 531, 506, 10340, 15569, 236787, 108, 236770, 236761, 138, 1018, 115863, 506]

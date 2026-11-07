@@ -1,0 +1,33 @@
+[tensor-contract] bound 753 semantic tensors (pack qwen35_moe, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[moe] resident-experts decision (dev0): experts 15.60GB + trunk 2.60GB vs free 24.40GB (expert budget 19.81GB) -> RESIDENT
+loaded qwen35moe (40 trunk layers; optional MTP skipped)
+chat-templated prompt:
+<|im_start|>user
+The storage-to-compute pipeline moves expert weights from NVMe through pinned host buffers over PCIe into device memory, where quantized matvec kernels consume them. Each stage is measured together with the others, because a faster kernel can hide a data-movement regression. Describe, step by step, how a mixture-of-experts decoder selects and executes its experts for a single token, and explain which stage dominates latency when the expert bank exceeds device memory.<|im_end|>
+<|im_start|>assistant
+<think>
+
+prompt text: "The storage-to-compute pipeline moves expert weights from NVMe through pinned host buffers over PCIe into device memory, where quantized matvec kernels consume them. Each stage is measured together with the others, because a faster kernel can hide a data-movement regression. Describe, step by step, how a mixture-of-experts decoder selects and executes its experts for a single token, and explain which stage dominates latency when the expert bank exceeds device memory.\n"
+prompt tokens: [248045, 846, 198, 760, 5638, 4534, 11147, 8232, 14855, 10480, 6009, 13914, 494, 23683, 7575, 1472, 46120, 3357, 26502, 888, 87567, 1083, 3545, 4779, 11, 1332, 9966, 1452, 5344, 3947, 61369, 23304, 1070, 13, 8618, 6228, 369, 16384, 3658, 440, 279, 3672, 11, 1521, 264, 10281, 9705, 628, 9959, 264, 795, 1395, 14043, 29551, 13, 58737, 11, 2923, 539, 2923, 11, 1204, 264, 20340, 8404, 17830, 15089, 23776, 47493, 321, 49703, 1141, 11312, 364, 264, 3074, 3817, 11, 321, 10033, 864, 6228, 80018, 37972, 948, 279, 6009, 5883, 34105, 3545, 4779, 13, 248046, 198, 248045, 74455, 198, 248068, 198]
+[moe-sk-form] dev=0 qt=6 sms=82 occ128=1 occ32=6 occt=3 cross=64 xcross=64 bdb=0 in_f=2048 out_f=512 n_active=201 max_m=34
+[moe-sk-form] dev=0 qt=5 sms=82 occ128=1 occ32=7 occt=3 cross=64 xcross=64 bdb=0 in_f=512 out_f=2048 n_active=201 max_m=34
+[moe-sk-form] dev=0 qt=2 sms=82 occ128=1 occ32=7 occt=3 cross=64 xcross=64 bdb=0 in_f=512 out_f=2048 n_active=121 max_m=52
+[fa-pool] grow #0 dev=0 o_len 0 -> 4096 ml_len 0 -> 16 (retired kept, zero=false)
+[fa-pool] grow #1 dev=0 o_len 4096 -> 49152 ml_len 16 -> 192 (retired kept, zero=false)
+[fa-pool] grow #2 dev=0 o_len 49152 -> 98304 ml_len 192 -> 384 (retired kept, zero=false)
+prefill argmax=8160  decode argmax=8160  logit maxdiff=7.077e-1  MATCH
+batched-prime argmax=8160  tokenwise argmax=8160  logit maxdiff=9.002e-1  MATCH
+prefill 99 tok in 0.0665s = 1489.6 tok/s (pp99)
+generated 20 tokens in 0.138s = 144.96 tok/s (Stage-B int8 dp4a decode, gen-only; prime 0.069s) [stop: MaxNew]
+tokens: [8160, 579, 264, 7047, 1817, 25, 271, 16, 13, 220, 2972, 1847, 7355, 279, 2570, 57491, 64700, 198, 256, 471]
+OUTPUT TEXT: "Here's a thinking process:\n\n1.  **Deconstruct the User Prompt:**\n   -"
+--- generated text ---
+Here's a thinking process:
+
+1.  **Deconstruct the User Prompt:**
+   -
+Collecting data...
+Generating '/tmp/nsys-avifenesh/nsys-report-d628.qdstrm'
+[1/1] [0%                          ] q35-mma0.nsys-rep[1/1] [0%                          ] q35-mma0.nsys-rep[1/1] [1%                          ] q35-mma0.nsys-rep[1/1] [2%                          ] q35-mma0.nsys-rep[1/1] [5%                          ] q35-mma0.nsys-rep[1/1] [6%                          ] q35-mma0.nsys-rep[1/1] [7%                          ] q35-mma0.nsys-rep[1/1] [8%                          ] q35-mma0.nsys-rep[1/1] [9%                          ] q35-mma0.nsys-rep[1/1] [10%                         ] q35-mma0.nsys-rep[1/1] [11%                         ] q35-mma0.nsys-rep[1/1] [12%                         ] q35-mma0.nsys-rep[1/1] [13%                         ] q35-mma0.nsys-rep[1/1] [14%                         ] q35-mma0.nsys-rep[1/1] [=15%                        ] q35-mma0.nsys-rep[1/1] [=16%                        ] q35-mma0.nsys-rep[1/1] [=17%                        ] q35-mma0.nsys-rep[1/1] [==18%                       ] q35-mma0.nsys-rep[1/1] [==19%                       ] q35-mma0.nsys-rep[1/1] [==20%                       ] q35-mma0.nsys-rep[1/1] [=======================93%  ] q35-mma0.nsys-rep[1/1] [=======================96%  ] q35-mma0.nsys-rep[1/1] [========================98% ] q35-mma0.nsys-rep[1/1] [========================100%] q35-mma0.nsys-rep[1/1] [========================100%] q35-mma0.nsys-rep
+Generated:
+	/home/avifenesh/.cache/memra-fix/logs-fastgate/gdn-nsys/q35-mma0.nsys-rep
