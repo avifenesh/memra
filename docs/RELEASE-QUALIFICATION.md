@@ -45,7 +45,35 @@ only for the `120a` target, `wgmma_common.cuh` only for `90a`. Rules that need n
 - comment-only edits of `.rs`/`.cu` files: every changed line is a `//` comment. Blank
   lines and a `//` line ending in a backslash count as code;
 - a non-crate path counts as a crate input when the CI include census
-  (`tools/validation_plan.py`) says a crate reads it, so `docs/FLAGS.md` is `numeric`.
+  (`tools/validation_plan.py`) says a crate reads it, so `docs/FLAGS.md` is `numeric`. FLAGS.md
+  reaches the engine only through the env registry `build.rs` generates from it (legal names,
+  prefixes, retired doors), so an edit that leaves that registry as it was is `docs`. The
+  classifier carries a port of the generator, pinned to the generator's source hash; when
+  `generate_env_registry` changes, the shortcut is off until the port is re-checked. The
+  literal fallback counts a path only inside a string literal of a compiled source, outside
+  `tests/`, `benches/` and `examples/` (and in crate manifests): a README named in a model's
+  artifact lock is not an input. A path a crate reads that a rule also matches needs both
+  answers: `Cargo.lock` is `build` and, since `memra-server` hashes it into its build id, also
+  serve-smoke.
+
+Evidence follows the binaries a test runs. The battery (`kernel-check`, `run-gen`, `run-spec`
+and `argmax-margin-probe` from `memra-engine`, `tok-parity` from `memra-tokenizer`) and the
+perf A/B (`run-gen`) link only those packages and their dependencies.
+`tools/change_impact.py` reads the workspace manifests at the base and the head and takes that
+link closure. `memra-server` and `memra-lanes` sit above the engine (the server depends on the
+engine, never the reverse), so a change to their code leaves every battery binary as it was.
+Its cells need `tools/serve-smoke.sh`, the one test that runs that code, and no perf A/B; a
+cell that mixes linked and unlinked paths needs both. Exceptions that keep the battery:
+
+- a crate inside the closure, whatever its class: `memra-tier` is `serving`, but the engine
+  links it;
+- a server file another crate inside the closure includes;
+- the manifest of any package the evidence build selects (`memra-engine`, `memra-server`,
+  `memra-tokenizer` and their dependencies): `cell_evidence.py` builds them in one cargo call,
+  which unifies dependency features, so a server feature edit can change the battery
+  binaries.
+
+When the manifests cannot be read, every path counts as linked.
 
 A change inside `model_packs/<pack>/` reaches only that pack. When the device battery runs
 none of the pack's models, the gate names it **UNCOVERED**: the pack's own gate is the
@@ -72,15 +100,47 @@ commits are ignored), and each one needs a reason. It never narrows `build`, `ga
 unknown files. The gate prints the reasons. The daily regression still runs every
 device, so a wrong declaration fails there.
 
+### The impact map
+
+The path rules answer per file. `docs/impact-map/map.json` answers per item. It holds:
+
+- every Rust and CUDA item with its comment-free token hash;
+- each item's reach: the (family, route, device) cells that can execute it;
+- each item's effect kinds;
+- the predicate regions that narrow reach inside a function.
+
+[`docs/impact-map/README.md`](impact-map/README.md) says how it is built and checked. For a Rust or CUDA program file of class `kernel`, `numeric` or `serving` that is not flagged for device-keyed defaults, the gate refines the path rule's answer from the items the diff changed:
+
+- **No item's token hash moved** (comment, doc-comment or format-only edit): the file reaches no cell.
+- **Every changed item is placed by the map:**
+  - the file's targets are intersected with the targets of the devices those items reach;
+  - `perf` is dropped when no changed item has a speed effect;
+  - a `numeric` file whose items reach only families that no battery roster model belongs to is reported UNCOVERED for those families.
+- **Otherwise** (an item the map cannot place, tokens outside every item, a map older than the base whose later commits changed callers or the arch table): the path rule's answer stands, or gains those callers' cells.
+
+The map in force is the push base's, like the rules. The map and its code (`docs/impact-map/map.json`, `annotations.json`, `tools/impact_map/`) are gate-class, and a push that leaves an unloadable map is refused. `change_impact.py` and `cell_evidence.py need` also print the run plan. That is one model per reached family and device, with the routes and tests its cells need, chosen from `docs/impact-map/models.json`. Reached cells no model on hand covers are listed. `--no-map` gives the path-rule answer alone.
+
+A record measured at an older commit still proves its kinds on its target when four things hold:
+
+- its tested commit is an ancestor of the candidate;
+- it verifies against its own commit;
+- the change impact from that commit to the candidate needs none of those kinds on that target (a server-only change since a battery record needs serve-smoke, so the battery still holds);
+- for `perf`, the push base is also equivalent to the record's base on that target.
+
+That change impact is judged by the push base's rules and map, and only the newest such record per target and device class is re-judged.
+
+So a record banked for one push keeps covering later pushes until a change reaches its target.
+
 Evidence per target (`tools/cell_evidence.py`):
 
 | cell scope | evidence |
 |---|---|
 | `kernel`, `build`, `numeric`, `defaults` | device battery: `kernel-check`, calibrated `run-gen` argmax and `run-spec` K=1..8 on the device roster |
 | `serving` | the battery plus `tools/serve-smoke.sh` |
-| `perf` | `run-gen` decode A/B against the push base, A B B A A B for every roster model |
+| any of the above, every path outside the battery binaries' link closure | `tools/serve-smoke.sh` only |
+| `perf` | `run-gen` decode A/B against the push base, A B B A A B for every roster model; none for paths outside the closure |
 | `gate` | all three: a changed gate has to run |
-| `defaults` on a line naming a card | battery and perf from that card's device class |
+| `defaults` on a line naming a card | battery and perf from that card's device class; serve-smoke from it when the line sits outside the closure |
 
 A device counts for the target its compute capability maps to: the RTX 5090 and the RTX
 PRO 6000 both count for `sm_120a`. A default keyed on a card name (`RTX PRO 6000`,

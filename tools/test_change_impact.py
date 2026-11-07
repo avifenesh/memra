@@ -97,7 +97,7 @@ TABLE = [
     ("pack kernel is never pack-local", [change("crates/memra-engine/cu/dsv4_gpu.cu")],
      cells(("kernel", ALL), ("perf", ALL)), set(), MAIN, None),
     ("serving policy", [change("crates/memra-server/src/worker.rs")],
-     cells(("serving", ALL), ("perf", ALL)), set(), MAIN, None),
+     cells(("serving", ALL)), set(), MAIN, None),
     ("lock file", [change("Cargo.lock")], cells(("build", ALL), ("perf", ALL)), set(), MAIN, None),
     ("engine build script", [change("crates/memra-engine/build.rs", ("    let y = 1;",))],
      cells(("build", ALL), ("perf", ALL)), set(), MAIN, None),
@@ -204,6 +204,216 @@ class ClassifierTable(unittest.TestCase):
         self.assertTrue(new_file["cells"], "a new file is a new module, not a comment edit")
         mixed = ci.classify([change("crates/memra-engine/src/x.rs", COMMENT + CODE)], rules, MAIN)
         self.assertTrue(mixed["cells"])
+
+
+class LinkClosure(unittest.TestCase):
+    """Evidence follows the binaries a test runs: the battery and the perf A/B run memra-engine
+    binaries, so code outside memra-engine's link closure needs serve-smoke instead."""
+
+    def setUp(self):
+        self.rules = ci.load_rules(RULES_TEXT, MAIN)
+        self.linked = ci.link_closure(lambda p: (ROOT / p).read_text() if (ROOT / p).exists() else None)
+
+    def needs(self, changes, **kw):
+        impact = ci.classify(changes, self.rules, MAIN, linked=self.linked, **kw)
+        return {t: (n["kinds"], n["device_kinds"]) for t, n in ci.requirements(impact).items()}
+
+    def test_closure_of_this_tree(self):
+        self.assertIn("memra-engine", self.linked)
+        self.assertIn("memra-tokenizer", self.linked)
+        for outside in ("memra-server", "memra-lanes", "memra-cli", "memra-probe"):
+            self.assertNotIn(outside, self.linked)
+
+    def test_server_change_needs_serve_smoke_only(self):
+        needs = self.needs([change("crates/memra-server/src/worker.rs")])
+        self.assertEqual(needs, {t: ({"serving"}, {}) for t in ALL})
+
+    def test_engine_change_still_needs_the_battery(self):
+        needs = self.needs([change("crates/memra-engine/src/decode.rs")])
+        self.assertEqual(needs, {t: ({"battery", "perf"}, {}) for t in ALL})
+
+    def test_tier_is_linked_even_though_its_class_is_serving(self):
+        needs = self.needs([change("crates/memra-tier/src/lib.rs")])
+        self.assertEqual(needs["120a"][0], {"battery", "serving", "perf"})
+
+    def test_server_default_keyed_on_a_card(self):
+        line = ('    if name.contains("RTX 5090") { depth = 4 }',)
+        needs = self.needs([change("crates/memra-server/src/worker.rs", line)])
+        self.assertEqual(needs["120a"], ({"serving"}, {"rtx5090": {"serving"}}))
+
+    def test_unknown_closure_counts_everything_linked(self):
+        impact = ci.classify([change("crates/memra-server/src/worker.rs")], self.rules, MAIN, linked=None)
+        self.assertIn("battery", ci.requirements(impact)["120a"]["kinds"])
+
+    def test_a_lock_file_a_server_reads_is_still_a_build_input(self):
+        # memra-server hashes Cargo.lock into its build id; the lock still versions every crate
+        needs = self.needs([change("Cargo.lock")], crate_inputs={"Cargo.lock": {"memra-server"}})
+        self.assertEqual(needs["120a"][0], {"battery", "perf", "serving"})
+
+    def built(self):
+        return ci.link_closure(lambda p: (ROOT / p).read_text() if (ROOT / p).exists() else None,
+                               ci.EVIDENCE_BUILD_PACKAGES)
+
+    def test_manifests_of_the_evidence_build_stay_linked_build_inputs(self):
+        # cargo unifies features across the packages one build selects: a server feature edit
+        # changes the battery binaries although no server code is linked into them
+        built = self.built()
+        for path in ("crates/memra-server/Cargo.toml", "crates/memra-lanes/Cargo.toml", "crates/memra-net-guard/Cargo.toml"):
+            impact = ci.classify([change(path, ('serde_json = { features = ["preserve_order"] }',))], self.rules, MAIN,
+                                 linked=self.linked, built=built)
+            self.assertTrue({"battery", "perf"} <= ci.requirements(impact)["120a"]["kinds"], path)
+        impact = ci.classify([change("crates/memra-cli/Cargo.toml")], self.rules, MAIN, linked=self.linked, built=built)
+        self.assertEqual(ci.requirements(impact), {}, "memra-cli is not in the evidence build")
+
+    def test_evidence_build_and_battery_packages_match_cell_evidence(self):
+        import cell_evidence as ce
+        selected = {ce.BUILD_COMMAND[i + 1] for i, a in enumerate(ce.BUILD_COMMAND) if a == "-p"}
+        self.assertEqual(selected, set(ci.EVIDENCE_BUILD_PACKAGES))
+        battery_bins = set(ce.BINARIES) - {"memra-server"}
+        owners = set()
+        for i, a in enumerate(ce.BUILD_COMMAND):
+            if a == "--bin" and ce.BUILD_COMMAND[i + 1] in battery_bins:
+                owners.add(next(ce.BUILD_COMMAND[j + 1] for j in range(i, -1, -1) if ce.BUILD_COMMAND[j] == "-p"))
+        self.assertEqual(owners, set(ci.BATTERY_PACKAGES))
+
+    def test_a_cell_mixing_linked_and_unlinked_paths_needs_both(self):
+        needs = self.needs([change("Cargo.lock"), change("crates/memra-server/build.rs", ("    let y = 1;",))])
+        self.assertEqual(needs["120a"][0], {"battery", "perf", "serving"})
+        line = ('    if name.contains("RTX 5090") { depth = 4 }',)
+        needs = self.needs([change("crates/memra-engine/src/lib.rs", line), change("crates/memra-server/src/worker.rs", line)])
+        self.assertEqual(needs["120a"][1], {"rtx5090": {"battery", "perf", "serving"}})
+
+    def test_a_gate_file_a_server_reads_is_still_the_gate(self):
+        needs = self.needs([change("tools/release-roster.tsv")], crate_inputs={"tools/release-roster.tsv": {"memra-server"}})
+        self.assertEqual(needs["120a"][0], {"battery", "perf", "serving"})
+
+    def test_a_server_file_an_engine_crate_includes_is_linked(self):
+        needs = self.needs([change("crates/memra-server/src/shared_table.rs")],
+                           crate_inputs={"crates/memra-server/src/shared_table.rs": {"memra-kv"}})
+        self.assertIn("battery", needs["120a"][0])
+
+    def test_link_closure_follows_every_link_and_fails_closed(self):
+        files = {
+            "Cargo.toml": '[workspace]\nmembers = ["crates/a", "crates/b", "crates/c", "crates/d", "crates/e"]\n'
+                          '[workspace.dependencies]\nrenamed = { path = "crates/c", package = "c-pkg" }\n'
+                          '[patch.crates-io]\npatched = { path = "vendor/patched" }\n',
+            "crates/a/Cargo.toml": '[package]\nname = "memra-engine"\n[build-dependencies]\nb = { path = "../b" }\n'
+                                   '[target.\'cfg(unix)\'.dependencies]\nrenamed = { workspace = true }\n'
+                                   '[dev-dependencies]\ne = { path = "../e" }\n',
+            "crates/b/Cargo.toml": '[package]\nname = "b-pkg"\n',
+            "crates/c/Cargo.toml": '[package]\nname = "c-pkg"\n[dependencies]\nopt = { path = "../d", optional = true }\n',
+            "crates/d/Cargo.toml": '[package]\nname = "d-pkg"\n',
+            "crates/e/Cargo.toml": '[package]\nname = "e-pkg"\n',
+            "vendor/patched/Cargo.toml": '[package]\nname = "patched"\n',
+        }
+        got = ci.link_closure(files.get, ("memra-engine",))
+        self.assertEqual(got, {"memra-engine", "a", "b-pkg", "b", "c-pkg", "c", "d-pkg", "d", "patched"})
+        self.assertNotIn("e-pkg", got, "dev-dependencies link only into tests")
+        broken = {k: v for k, v in files.items() if k != "crates/d/Cargo.toml"}
+        self.assertIsNone(ci.link_closure(broken.get, ("memra-engine",)))
+        self.assertIsNone(ci.link_closure(files.get, ("memra-tokenizer",)), "a missing root is unknown")
+
+    def test_literal_census_reads_compiled_strings_only(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            run = lambda *a: subprocess.run(["git", "-C", tmp, *a], check=True, capture_output=True)
+            run("init", "-q")
+            files = {"crates/memra-gguf/src/model_packs/w/fixtures/source.lock.json": '{"path": "README.md"}\n',
+                     "crates/memra-tier/tests/battery/test_collector.py": "# lock names (AGENTS.md)\nx = 'AGENTS.md'\n",
+                     "crates/memra-server/Cargo.toml": "# built by .github/workflows/release.yml\n",
+                     "crates/memra-engine/src/doc.rs": "/// see docs/KERNELS.md\n// docs/TESTING.md\nfn f() {}\n",
+                     "crates/memra-engine/build.rs": 'let flags = manifest.join("../../docs/FLAGS.md");\n',
+                     "crates/memra-engine/tests/t.rs": 'let _ = include_str!("../../../docs/MODELS.md");\n'}
+            for path, text in files.items():
+                Path(tmp, path).parent.mkdir(parents=True, exist_ok=True)
+                Path(tmp, path).write_text(text)
+            run("add", "."); run("-c", "user.name=f", "-c", "user.email=f@x", "commit", "-qm", "a")
+            wanted = ["README.md", "AGENTS.md", ".github/workflows/release.yml", "docs/KERNELS.md",
+                      "docs/TESTING.md", "docs/FLAGS.md", "docs/MODELS.md"]
+            self.assertEqual(ci.literal_inputs(tmp, "HEAD", wanted), {"docs/FLAGS.md": {"memra-engine"}})
+
+
+FLAGS_FIXTURE = """## Fixture doors
+
+| `MEMRA_FX_LIVE` | on | a live row |
+| `MEMRA_FX_GONE` | **REMOVED 2026-11-01** | marked in its row |
+| `MEMRA_FX_FAM_*` | | a prefix row |
+
+### Removed fixture doors
+
+- `MEMRA_FX_OLD`: deleted with its kernel
+  and `MEMRA_FX_CONT` on a continuation line
+
+  `MEMRA_FX_AFTER_BLANK` after a blank line is not in the ledger
+- `MEMRA_FX_LIVE` is still defined above, so it stays legal
+"""
+
+
+class FlagsRegistry(unittest.TestCase):
+    """docs/FLAGS.md reaches the engine only through the env registry build.rs generates."""
+
+    def test_port_matches_the_generator_on_a_fixture(self):
+        # expected values come from running the real build.rs generator on this text
+        legal, prefixes, retired = ci.flags_registry(FLAGS_FIXTURE)
+        self.assertEqual(legal, ["MEMRA_FX_LIVE"])
+        self.assertEqual(prefixes, ["MEMRA_FX_FAM_"])
+        self.assertEqual(retired, [("MEMRA_FX_CONT", "Removed fixture doors"),
+                                   ("MEMRA_FX_GONE", "row marked REMOVED 2026-11-01"),
+                                   ("MEMRA_FX_OLD", "Removed fixture doors")])
+
+    def test_the_pinned_generator_is_this_trees(self):
+        self.assertEqual(ci.registry_generator_sha((ROOT / ci.BUILD_RS).read_text()), ci.REGISTRY_GENERATOR_SHA,
+                         "build.rs generate_env_registry changed: re-verify flags_registry against it, then re-pin")
+
+    def run_repo(self, tmp, flags_v2, build_rs_v2=None, files=None):
+        run = lambda *a: subprocess.run(["git", "-C", tmp, *a], check=True, capture_output=True)
+        run("init", "-q")
+        build_rs = (ROOT / ci.BUILD_RS).read_text()
+        for path, text in {ci.BUILD_RS: build_rs, ci.FLAGS_MD: FLAGS_FIXTURE, **(files or {})}.items():
+            Path(tmp, path).parent.mkdir(parents=True, exist_ok=True)
+            Path(tmp, path).write_text(text)
+        run("add", "."); run("-c", "user.name=f", "-c", "user.email=f@x", "commit", "-qm", "a")
+        Path(tmp, ci.FLAGS_MD).write_text(flags_v2)
+        if build_rs_v2 is not None:
+            Path(tmp, ci.BUILD_RS).write_text(build_rs_v2)
+        run("add", "."); run("-c", "user.name=f", "-c", "user.email=f@x", "commit", "-qm", "b")
+        return ci.same_flags_registry(tmp, "HEAD~1", "HEAD")
+
+    def test_prose_edit_is_docs_and_a_new_name_is_not(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertTrue(self.run_repo(tmp, FLAGS_FIXTURE.replace("a live row", "the live row, reworded")))
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertFalse(self.run_repo(tmp, FLAGS_FIXTURE + "| `MEMRA_FX_NEW` | off | new |\n"))
+        with tempfile.TemporaryDirectory() as tmp:  # a blank line moves a name out of the ledger
+            self.assertFalse(self.run_repo(tmp, FLAGS_FIXTURE.replace("kernel\n  and", "kernel\n\n  and")))
+        rules = ci.load_rules(RULES_TEXT, MAIN)
+        result = ci.classify_file(change(ci.FLAGS_MD), rules, MAIN, crate_inputs={ci.FLAGS_MD: {"memra-engine"}},
+                                  same_registry=True)
+        self.assertEqual(result["class"], "docs")
+
+    def test_another_reader_of_flags_md_turns_the_shortcut_off(self):
+        import tempfile
+        prose = FLAGS_FIXTURE.replace("a live row", "reworded")
+        extra = {"crates/memra-engine/src/dsv4_doors.rs": '#[cfg(test)]\nmod tests {\n    #[test]\n    fn rows() {\n'
+                 '        let p = std::path::Path::new("x").join("../../docs/FLAGS.md");\n    }\n}\n',
+                 "crates/memra-engine/src/env_audit.rs": 'pub fn msg() -> &\'static str {\n    "see docs/FLAGS.md for the row"\n}\n'}
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertTrue(self.run_repo(tmp, prose, files=extra), "a test reader and a message are not reads")
+        reader = dict(extra, **{"crates/memra-server/src/flags.rs":
+                                'pub const ROWS: &str = include_str!("../../../docs/FLAGS.md");\n'})
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertFalse(self.run_repo(tmp, prose, files=reader))
+        build_rs = (ROOT / ci.BUILD_RS).read_text() + '\nfn other(out: &Path) {\n    let _ = std::fs::read_to_string("../../docs/FLAGS.md");\n}\n'
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertFalse(self.run_repo(tmp, prose, build_rs), "a second build.rs reader")
+
+    def test_a_changed_generator_turns_the_shortcut_off(self):
+        import tempfile
+        build_rs = (ROOT / ci.BUILD_RS).read_text().replace("fn generate_env_registry(out: &Path) {",
+                                                           "fn generate_env_registry(out: &Path) {\n    let _ = 1;", 1)
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertFalse(self.run_repo(tmp, FLAGS_FIXTURE.replace("a live row", "reworded"), build_rs))
 
 
 class DiffParse(unittest.TestCase):

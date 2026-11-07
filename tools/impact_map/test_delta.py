@@ -1,0 +1,536 @@
+#!/usr/bin/env python3
+"""Unit tests for the impact-map delta logic, on a synthetic repository and map.
+
+Run: python3 tools/impact_map/test_delta.py
+"""
+import json
+import os
+import subprocess
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+
+HERE = Path(__file__).resolve().parent
+sys.path.insert(0, str(HERE))
+import delta  # noqa: E402
+import ledger  # noqa: E402
+import rust_items  # noqa: E402
+
+ENGINE = "crates/memra-engine/src/model.rs"
+KERNEL = "crates/memra-engine/cu/k.cu"
+
+RUST_V1 = """\
+pub fn shared(x: u32) -> u32 {
+    x + 1
+}
+
+pub fn forward(family: u32, x: u32) -> u32 {
+    if family == 1 {
+        // qwen35 arm
+        shared(x) * 2
+    } else {
+        // deepseek arm
+        shared(x) * 3
+    }
+}
+
+pub fn only_dsv4(x: u32) -> u32 {
+    x * 7
+}
+"""
+
+CU_V1 = """\
+extern "C" __global__ void k_add(float* y) {
+    y[threadIdx.x] += 1.0f;
+}
+"""
+
+
+def run(repo, *cmd):
+    return subprocess.run(["git", "-C", str(repo), *cmd], check=True, capture_output=True, text=True).stdout.strip()
+
+
+def stamped_tree(repo, work, files):
+    """A one-commit tree and an empty stage 0 stamped as built on it (ingest refuses any other tree)."""
+    import ingest
+    Path(repo).mkdir(parents=True, exist_ok=True)
+    run(repo, "init", "-q")
+    commit(repo, files, "tree")
+    (Path(work) / "stage0/graph").mkdir(parents=True, exist_ok=True)
+    (Path(work) / "stage0/tree.json").write_text(json.dumps(ingest.tree_stamp(repo)))
+
+
+def commit(repo, files, msg):
+    for path, text in files.items():
+        p = Path(repo) / path
+        p.parent.mkdir(parents=True, exist_ok=True)
+        if text is None:
+            p.unlink()
+        else:
+            p.write_text(text)
+    run(repo, "add", "-A")
+    run(repo, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", msg)
+    return run(repo, "rev-parse", "HEAD")
+
+
+def build_map(repo, ref):
+    """A hand-labelled map over the fixture: forward's two arms are family-narrowed regions."""
+    items = {}
+    sets = ["*",
+            {"qwen35": {"plain": ["rtx5090"]}, "deepseek_v4": {"plain": ["rtxpro6000"]}},
+            {"deepseek_v4": {"plain": ["rtxpro6000"]}},
+            {"qwen35": {"plain": ["rtx5090"]}, "deepseek_v4": {"plain": ["rtxpro6000"]}}]
+    reach_of = {"shared": 1, "forward": 1, "only_dsv4": 2, "k_add": 3}
+    for path in (ENGINE, KERNEL):
+        text = delta.blob(repo, ref, path)
+        for i, (h, a, b, test, kind, lh, _) in delta.scan(path, text).items():
+            name = i.split("::")[-1]
+            if kind == "outside":
+                continue  # the generator never places tokens outside items
+            items[i] = {"f": path, "a": a, "b": b, "h": h, "l": lh, "k": kind, "r": reach_of.get(name, 0),
+                        "e": ["numeric", "speed"], "s": "test"}
+    regions = [
+        {"file": ENGINE, "a": 6, "b": 8, "kind": "family", "families": ["qwen35"], "routes": ["*"], "devices": ["*"],
+         "effects": ["numeric"], "claim": "t:R0"},
+        {"file": ENGINE, "a": 9, "b": 12, "kind": "family", "families": ["deepseek_v4"], "routes": ["*"], "devices": ["*"],
+         "effects": ["numeric"], "claim": "t:R1"},
+    ]
+    return {"schema": "memra-impact-map-v1", "source_commit": run(repo, "rev-parse", ref),
+            "vocab": {"families": ["qwen35", "deepseek_v4"], "routes": ["plain", "mtp"], "devices": ["rtx5090", "rtxpro6000"]},
+            "reach_sets": sets, "items": items, "regions": regions, "stats": {}}
+
+
+class DeltaTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.repo = Path(self.tmp.name)
+        run(self.repo, "init", "-q")
+        self.base = commit(self.repo, {ENGINE: RUST_V1, KERNEL: CU_V1, "docs/a.md": "x\n"}, "base")
+        m = build_map(self.repo, self.base)
+        models = {"families": {"qwen35": [{"id": "qwen/qwen3.8-27b", "devices": ["rtx5090"], "routes": ["plain", "mtp"], "class": "vendor"}],
+                               "deepseek_v4": [{"id": "deepseek-v4", "devices": ["rtxpro6000"], "routes": ["plain"], "class": "vendor"}]}}
+        self.base = commit(self.repo, {delta.MAP_PATH: json.dumps(m), delta.MODELS_PATH: json.dumps(models)}, "map")
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def cells(self, head):
+        rep = delta.delta(self.repo, self.base, head)
+        return rep, set(rep["cells"])
+
+    def test_docs_only_reaches_nothing(self):
+        head = commit(self.repo, {"docs/a.md": "y\n"}, "docs")
+        rep, cells = self.cells(head)
+        self.assertEqual(cells, set())
+
+    def test_comment_only_reaches_nothing(self):
+        head = commit(self.repo, {ENGINE: RUST_V1.replace("// qwen35 arm", "// the qwen35 arm, reworded")}, "comment")
+        rep, cells = self.cells(head)
+        self.assertEqual(cells, set())
+
+    def test_rustfmt_only_reaches_nothing(self):
+        head = commit(self.repo, {ENGINE: RUST_V1.replace("x + 1", "x\n        + 1")}, "fmt")
+        _, cells = self.cells(head)
+        self.assertEqual(cells, set())
+
+    def test_change_inside_one_arm_narrows_to_that_family(self):
+        head = commit(self.repo, {ENGINE: RUST_V1.replace("shared(x) * 3", "shared(x) * 4")}, "dsv4 arm")
+        rep, cells = self.cells(head)
+        self.assertEqual(cells, {("deepseek_v4", "plain", "rtxpro6000")})
+        src = [it["source"] for f in rep["files"] for it in f.get("items", [])]
+        self.assertEqual(src, ["map-region"])
+
+    def test_change_outside_arms_takes_item_reach(self):
+        head = commit(self.repo, {ENGINE: RUST_V1.replace("if family == 1", "if family == 2")}, "predicate")
+        _, cells = self.cells(head)
+        self.assertEqual(cells, {("qwen35", "plain", "rtx5090"), ("deepseek_v4", "plain", "rtxpro6000")})
+
+    def test_family_local_item(self):
+        head = commit(self.repo, {ENGINE: RUST_V1.replace("x * 7", "x * 8")}, "dsv4 only")
+        _, cells = self.cells(head)
+        self.assertEqual(cells, {("deepseek_v4", "plain", "rtxpro6000")})
+
+    def test_new_item_takes_file_union(self):
+        head = commit(self.repo, {ENGINE: RUST_V1 + "\npub fn brand_new() -> u32 { 1 }\n"}, "new fn")
+        rep, cells = self.cells(head)
+        self.assertEqual(cells, {("qwen35", "plain", "rtx5090"), ("deepseek_v4", "plain", "rtxpro6000")})
+        self.assertIn("map-file", [it["source"] for f in rep["files"] for it in f.get("items", [])])
+
+    def test_unknown_file_is_wide(self):
+        head = commit(self.repo, {"crates/memra-engine/src/new_mod.rs": "pub fn f() {}\n"}, "new file")
+        _, cells = self.cells(head)
+        self.assertEqual(len(cells), 2 * 2 * 2)
+
+    def test_kernel_change_needs_kernel_check(self):
+        head = commit(self.repo, {KERNEL: CU_V1.replace("1.0f", "2.0f")}, "kernel")
+        rep, cells = self.cells(head)
+        self.assertTrue(rep["kernel"])
+        tests = delta.tests_for(rep)
+        self.assertIn("kernel-check", tests[("qwen35", "plain", "rtx5090")])
+
+    def test_stale_map_does_not_narrow_by_region(self):
+        # a change moves forward's lines first; a later edit inside the dsv4 arm must not use the
+        # stale region lines, so it takes the whole item's reach
+        mid = commit(self.repo, {ENGINE: "\n\n" + RUST_V1}, "shift lines")
+        head = commit(self.repo, {ENGINE: "\n\n" + RUST_V1.replace("shared(x) * 3", "shared(x) * 4")}, "dsv4 arm after shift")
+        rep = delta.delta(self.repo, mid, head, map_ref=self.base)
+        self.assertEqual(set(rep["cells"]), {("qwen35", "plain", "rtx5090"), ("deepseek_v4", "plain", "rtxpro6000")})
+
+    def test_plan_picks_one_model_per_family_and_device(self):
+        head = commit(self.repo, {ENGINE: RUST_V1.replace("x + 1", "x + 2")}, "shared")
+        rep = delta.delta(self.repo, self.base, head)
+        pl = delta.plan(self.repo, self.base, rep)
+        self.assertEqual(sorted(pl["runs"]), ["rtx5090", "rtxpro6000"])
+        self.assertEqual(sorted(pl["runs"]["rtx5090"]), ["qwen/qwen3.8-27b"])
+        self.assertIn("run-gen-argmax", pl["runs"]["rtx5090"]["qwen/qwen3.8-27b"]["tests"])
+        self.assertEqual(pl["runs"]["rtx5090"]["qwen/qwen3.8-27b"]["routes"], ["plain"])
+        self.assertEqual(pl["uncovered"], [])
+
+    def test_fingerprint_moves_only_on_path(self):
+        m = delta.Map(build_map(self.repo, self.base))
+        sc = ledger.TreeScanner(self.repo)
+        dsv4 = ("deepseek_v4", "plain", "rtxpro6000")
+        q35 = ("qwen35", "plain", "rtx5090")
+
+        def fp(ref, cell):
+            return delta.cell_fingerprints(m, sc.hashes(ref), {cell})[cell]
+        fp0 = fp(self.base, dsv4)
+        head = commit(self.repo, {KERNEL: CU_V1.replace("1.0f", "3.0f")}, "kernel only")
+        self.assertNotEqual(fp0, fp(head, dsv4))
+        head2 = commit(self.repo, {"docs/a.md": "z\n"}, "docs")
+        self.assertEqual(fp(head, dsv4), fp(head2, dsv4))
+        q0 = fp(head2, q35)
+        head3 = commit(self.repo, {ENGINE: RUST_V1.replace("x * 7", "x * 9")}, "dsv4-only item")
+        self.assertEqual(q0, fp(head3, q35))
+        self.assertNotEqual(fp(head2, dsv4), fp(head3, dsv4))
+
+
+    def test_plan_covers_routes_with_fewest_models_and_lists_uncovered(self):
+        models = {"families": {"qwen35": [
+            {"id": "a-vendor", "devices": ["rtx5090"], "routes": ["plain", "mtp"], "class": "vendor"},
+            {"id": "b-own", "devices": ["rtx5090"], "routes": ["plain"], "class": "own"}]}}
+        rep = {"cells": {("qwen35", "plain", "rtx5090"): {"why": {"x"}, "effects": {"numeric"}},
+                         ("qwen35", "mtp", "rtx5090"): {"why": {"x"}, "effects": {"numeric"}},
+                         ("qwen35", "vision", "rtx5090"): {"why": {"x"}, "effects": {"numeric"}},
+                         ("deepseek_v4", "plain", "rtx5090"): {"why": {"x"}, "effects": {"speed"}}},
+               "effects": {"numeric", "speed"}, "kernel": False}
+        pl = delta.plan(self.repo, self.base, rep, models=models, ledger={"records": []})
+        self.assertEqual(list(pl["runs"]["rtx5090"]), ["a-vendor"])
+        self.assertEqual(pl["runs"]["rtx5090"]["a-vendor"]["tests"], ["run-gen-argmax", "run-spec"])
+        self.assertEqual(sorted((u["family"], u["route"]) for u in pl["uncovered"]),
+                         [("deepseek_v4", "plain"), ("qwen35", "vision")])
+
+    def test_plan_skips_what_the_ledger_proves_for_the_same_fingerprint(self):
+        models = {"families": {"qwen35": [{"id": "m", "devices": ["rtx5090"], "routes": ["plain"], "class": "own"}]}}
+        rep = {"cells": {("qwen35", "plain", "rtx5090"): {"why": {"x"}, "effects": {"numeric"}}},
+               "effects": {"numeric"}, "kernel": False, "fingerprints": {("qwen35", "plain", "rtx5090"): "fp1"}}
+        led = {"records": [{"model": "m", "route": "plain", "device": "rtx5090", "test": "run-gen-argmax", "fingerprint": "fp1"}]}
+        pl = delta.plan(self.repo, self.base, rep, models=models, ledger=led)
+        self.assertEqual(pl["runs"], {})
+        self.assertEqual(len(pl["proven"]), 1)
+        led["records"][0]["fingerprint"] = "older"
+        pl = delta.plan(self.repo, self.base, rep, models=models, ledger=led)
+        self.assertEqual(pl["runs"]["rtx5090"]["m"]["tests"], ["run-gen-argmax"])
+
+
+    def test_push_tier_is_one_device_per_family_and_push_gated_target(self):
+        models = {"families": {"qwen35": [{"id": "m", "devices": ["rtx5090", "rtxpro6000", "h100"], "routes": ["plain"], "class": "own"}]}}
+        cells = {("qwen35", "plain", d): {"why": {"x"}, "effects": {"numeric"}} for d in ("rtx5090", "rtxpro6000", "h100")}
+        rep = {"cells": cells, "effects": {"numeric"}, "kernel": False}
+        pl = delta.plan(self.repo, self.base, rep, models=models, ledger={"records": []},
+                        device_target={"rtx5090": "120a", "rtxpro6000": "120a", "h100": "90a"}, push_gated={"120a"})
+        self.assertEqual(list(pl["runs"]), ["rtx5090"])
+        self.assertEqual(pl["daily"], {"h100": ["qwen35"], "rtxpro6000": ["qwen35"]})
+
+
+class ScannerTest(unittest.TestCase):
+    def test_raw_strings_and_lifetimes(self):
+        src = 'fn a<\'x>(s: &\'x str) -> &\'x str { let _r = r#"}{"#; s }\nfn b() {}\n'
+        names = [r["name"] for r in rust_items.scan("crates/c/src/lib.rs", src) if r["kind"] == "fn"]
+        self.assertEqual(names, ["a", "b"])
+
+    def test_unsafe_extern_block_decls(self):
+        src = 'unsafe extern "C" {\n    pub fn memra_x(a: i32) -> i32;\n}\nunsafe extern "C" fn cb(p: *mut u8) {}\n'
+        recs = rust_items.scan("crates/c/src/ffi.rs", src)
+        self.assertEqual([(r["name"], r["container"]) for r in recs if r["kind"] == "fn"], [("memra_x", "extern"), ("cb", "mod")])
+
+    def test_items_of_a_test_target_are_test_items(self):
+        src = "#![allow(dead_code)]\nuse memra_server::x;\npub fn helper() -> u32 { 1 }\n"
+        for path in ("crates/memra-engine/tests/dsv4_rows_gpu.rs", "crates/memra-engine/benches/b.rs"):
+            got = rust_items.scan(path, src)
+            self.assertTrue(got and all(r["test"] for r in got if r["kind"] != "outside"), path)
+        self.assertFalse(any(r["test"] for r in rust_items.scan("crates/memra-engine/src/x.rs", src)))
+
+    def test_cfg_test_module_is_test(self):
+        src = "fn live() {}\n#[cfg(test)]\nmod tests {\n    #[test]\n    fn t() {}\n}\n"
+        recs = {r["name"]: r["test"] for r in rust_items.scan("crates/c/src/lib.rs", src) if r["kind"] == "fn"}
+        self.assertEqual(recs, {"live": False, "t": True})
+
+
+
+SERVER = "crates/memra-server/src/api.rs"
+SERVER_V1 = "pub fn route(x: u32) -> u32 {\n    x + 1\n}\n"
+MANIFESTS = {
+    "Cargo.toml": '[workspace]\nmembers = ["crates/memra-engine", "crates/memra-server", "crates/memra-tokenizer"]\n',
+    "crates/memra-engine/Cargo.toml": '[package]\nname = "memra-engine"\n',
+    "crates/memra-tokenizer/Cargo.toml": '[package]\nname = "memra-tokenizer"\n',
+    "crates/memra-server/Cargo.toml": '[package]\nname = "memra-server"\n[dependencies]\nmemra-engine = { path = "../memra-engine" }\n',
+}
+
+
+class ServerSideTest(unittest.TestCase):
+    """memra-server sits above the engine: no battery binary links it, so its change needs
+    serve-smoke on one device, and engine-test fingerprints do not move."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.repo = Path(self.tmp.name)
+        run(self.repo, "init", "-q")
+        self.base = commit(self.repo, {ENGINE: RUST_V1, KERNEL: CU_V1, SERVER: SERVER_V1, **MANIFESTS}, "base")
+        m = build_map(self.repo, self.base)
+        for i, (h, a, b, test, kind, lh, _) in delta.scan(SERVER, SERVER_V1).items():
+            if kind != "outside":
+                m["items"][i] = {"f": SERVER, "a": a, "b": b, "h": h, "l": lh, "k": kind, "r": 0,
+                                 "e": ["memory", "numeric", "policy", "speed"], "s": "test"}
+        self.map = m
+        models = {"families": {"qwen35": [{"id": "qwen/qwen3.8-27b", "devices": ["rtx5090"], "routes": ["plain", "mtp"], "class": "vendor"}],
+                               "deepseek_v4": [{"id": "deepseek-v4", "devices": ["rtxpro6000"], "routes": ["plain", "mtp"], "class": "vendor"}]}}
+        self.base = commit(self.repo, {delta.MAP_PATH: json.dumps(m), delta.MODELS_PATH: json.dumps(models)}, "map")
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_server_change_needs_serve_smoke_on_one_device_per_family(self):
+        head = commit(self.repo, {SERVER: SERVER_V1.replace("x + 1", "x + 2")}, "server")
+        rep = delta.delta(self.repo, self.base, head)
+        self.assertEqual(rep["effects"], {"served"})
+        self.assertEqual({tuple(k) for k in delta.tests_for(rep).values()}, {("serve-smoke",)})
+        pl = delta.plan(self.repo, self.base, rep)
+        self.assertEqual(pl["runs"], {"rtx5090": {"qwen/qwen3.8-27b": {"family": "qwen35", "routes": ["mtp", "plain"], "tests": ["serve-smoke"]}},
+                                      "rtxpro6000": {"deepseek-v4": {"family": "deepseek_v4", "routes": ["mtp", "plain"], "tests": ["serve-smoke"]}}})
+
+    def test_engine_change_still_needs_the_battery_tests(self):
+        head = commit(self.repo, {ENGINE: RUST_V1.replace("x + 1", "x + 2")}, "engine")
+        rep = delta.delta(self.repo, self.base, head)
+        self.assertIn("run-gen-argmax", delta.tests_for(rep)[("qwen35", "plain", "rtx5090")])
+
+    def test_ledger_refresh_and_status_keep_engine_records_across_a_server_change(self):
+        import contextlib, io
+        ledger_path = self.repo / delta.LEDGER_PATH
+        recs = [{"model": "qwen/qwen3.8-27b", "family": "qwen35", "route": "plain", "device": "rtx5090", "test": t,
+                 "commit": self.base, "date": "2026-11-03", "confidence": "record", "source": "fixture"}
+                for t in ("run-gen-argmax", "serve-smoke")]
+        ledger_path.write_text(json.dumps({"schema": ledger.SCHEMA, "records": recs}))
+        map_path = self.repo / delta.MAP_PATH
+        ledger.refresh(self.repo, ledger_path, map_path)
+        commit(self.repo, {delta.LEDGER_PATH: ledger_path.read_text()}, "ledger")
+        head = commit(self.repo, {SERVER: SERVER_V1.replace("x + 1", "x + 4")}, "server")
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            ledger.status(self.repo, head)
+        lines = {l.split()[4]: l.split()[0] for l in out.getvalue().splitlines()}
+        self.assertEqual(lines, {"run-gen-argmax": "HOLDS", "serve-smoke": "stale"})
+
+    def test_server_change_moves_only_the_serving_fingerprint(self):
+        m = delta.Map(self.map)
+        sc = ledger.TreeScanner(self.repo)
+        cell = ("qwen35", "plain", "rtx5090")
+        linked = delta.battery_linked(self.repo, self.base, self.base)
+        self.assertEqual(linked, {"memra-engine", "memra-tokenizer"})
+        head = commit(self.repo, {SERVER: SERVER_V1.replace("x + 1", "x + 3")}, "server")
+        before, after = sc.hashes(self.base), sc.hashes(head)
+        self.assertNotEqual(delta.cell_fingerprints(m, before, {cell})[cell], delta.cell_fingerprints(m, after, {cell})[cell])
+        self.assertEqual(delta.cell_fingerprints(m, before, {cell}, linked=linked)[cell],
+                         delta.cell_fingerprints(m, after, {cell}, linked=linked)[cell])
+
+
+class BuildFailsClosedTest(unittest.TestCase):
+    """A build step that fails must stop the build or widen the map, never narrow it."""
+
+    def test_a_failed_build_rs_replay_fails_the_capture(self):
+        import buildrs_capture as bc
+        from unittest import mock
+
+        def run(cmd, **kw):
+            if cmd[0] == "rustc":
+                return subprocess.CompletedProcess(cmd, 0, "", "")
+            return subprocess.CompletedProcess(cmd, 101, "", "build.rs panicked")
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.object(bc, "ROOT", tmp), \
+                mock.patch.object(bc.subprocess, "run", side_effect=run):
+            with self.assertRaises(SystemExit) as e:
+                bc.main()
+        self.assertIn("build.rs replay failed", str(e.exception.code))
+
+    def test_a_failed_or_empty_nvcc_plan_is_an_error_not_empty_liveness(self):
+        import cu_liveness
+        from unittest import mock
+        args = ["-arch=sm_120a", "-c", "cu/a.cu", "-o", "a.o"]
+        with tempfile.TemporaryDirectory() as tmp:
+            nvcc = Path(tmp) / "nvcc"
+            with mock.patch.dict(os.environ, {"PATH": f"{tmp}:{os.environ['PATH']}"}):
+                nvcc.write_text("#!/bin/sh\necho 'nvcc fatal: unsupported gpu architecture' >&2\nexit 1\n")
+                nvcc.chmod(0o755)
+                self.assertIn("error", cu_liveness.run_unit(args, tmp, None)["passes"].get("plan", {}))
+                nvcc.write_text("#!/bin/sh\nexit 0\n")
+                self.assertIn("error", cu_liveness.run_unit(args, tmp, None)["passes"].get("device", {}))
+
+    def test_incomplete_liveness_for_a_device_variant_is_refused(self):
+        import assemble
+
+        def unit(src, **passes):
+            return {"src": src, "passes": passes or {"device": {"cu/a.cu": [[1, 9]]}}}
+        good = {v: {"units": [unit("cu/a.cu")]} for v in assemble.DEVICE_OF_VARIANT}
+        good["120a-MEMRA_CUTLASS"] = {"units": [unit("cu/c.cu", device={"error": "no cutlass headers"})]}
+        self.assertEqual(assemble.liveness_failures(good), [])  # the CUTLASS door sets no device reach
+        failed = json.loads(json.dumps(good))
+        failed["90a"]["units"][0]["passes"]["host"] = {"error": "x.h: No such file or directory"}
+        self.assertTrue(any(b.startswith("90a cu/a.cu host") for b in assemble.liveness_failures(failed)))
+        missing = {v: d for v, d in good.items() if v != "89"}
+        self.assertIn("89: no units", assemble.liveness_failures(missing))
+        no_device = json.loads(json.dumps(good))
+        no_device["100a"]["units"][0]["passes"] = {"host": {}}
+        self.assertIn("100a cu/a.cu: no device pass", assemble.liveness_failures(no_device))
+
+    def test_an_output_neutral_claim_holds_only_for_the_code_it_was_verified_on(self):
+        import assemble
+        nodes = {"a": {"hash": "h1"}, "b": {"hash": "h2-new"}}
+        claims = [{"item": "a", "anchor_hash": "h1"},   # unchanged since the skeptic verified it
+                  {"item": "b", "anchor_hash": "h2"},   # rewritten since: it may compute now
+                  {"item": "c", "anchor_hash": "h3"},   # gone
+                  {"item": "a2"}]                       # no hash recorded: cannot be checked
+        nodes["a2"] = {"hash": "x"}
+        honored, stale, unknown = assemble.honored_exact(claims, nodes)
+        self.assertEqual(honored, {"a"})
+        self.assertEqual((stale, unknown), (2, 1))
+
+    def test_assemble_takes_default_effects_for_a_lapsed_output_neutral_claim(self):
+        # the wiring, end to end: assemble.py on a stage 0 where one claim still matches its code
+        f = "crates/memra-engine/src/m.rs"
+        with tempfile.TemporaryDirectory() as tmp:
+            work, repo = Path(tmp) / "work", Path(tmp) / "repo"
+            (work / "stage0/graph").mkdir(parents=True)
+            repo.mkdir()
+
+            def node(name, h, a):
+                return {"id": f"{f}::memra_engine::m::{name}", "file": f, "kind": "fn", "lang": "rust", "hash": h,
+                        "lhash": h, "line_start": a, "line_end": a + 2, "cfg": [], "qual": f"memra_engine::m::{name}",
+                        "name": name, "test": False}
+            nodes = [node("fresh", "hF", 1), node("rewritten", "hR-new", 5), node("legacy", "hL", 9)]
+            (work / "stage0/graph/nodes.jsonl").write_text("".join(json.dumps(n) + "\n" for n in nodes))
+            (work / "stage0/graph/edges.tsv").write_text("")
+            unit = {"src": "cu/a.cu", "passes": {"device": {}, "host": {}}}
+            (work / "stage0/liveness.json").write_text(json.dumps({v: {"units": [unit]} for v in ("120a", "100a", "90a", "89")}))
+            ann = {"exact_items": [{"claim": "t:X0", "item": nodes[0]["id"], "anchor_hash": "hF"},
+                                   {"claim": "t:X1", "item": nodes[1]["id"], "anchor_hash": "hR-old"},
+                                   {"claim": "t:X2", "item": nodes[2]["id"]},
+                                   {"claim": "t:X3", "item": f"{f}::memra_engine::m::gone", "anchor_hash": "hG"}]}
+            (work / "ann.json").write_text(json.dumps(ann))
+            out = subprocess.run([sys.executable, str(HERE / "assemble.py"), str(work / "ann.json"), str(work / "map.json")],
+                                 capture_output=True, text=True,
+                                 env=dict(os.environ, MEMRA_IMPACT_WORK=str(work), MEMRA_IMPACT_REPO=str(repo)))
+            self.assertEqual(out.returncode, 0, out.stderr)
+            m = json.loads((work / "map.json").read_text())
+            eff = {i.split("::")[-1]: it["e"] for i, it in m["items"].items()}
+            self.assertEqual(eff["fresh"], ["observability"])
+            self.assertNotEqual(eff["rewritten"], ["observability"])
+            self.assertNotEqual(eff["legacy"], ["observability"])
+            self.assertEqual((m["stats"]["exact_items_stale"], m["stats"]["exact_items_unknown"]), (2, 1))
+
+    def test_an_output_neutral_item_lapses_between_rebuilds(self):
+        # The map is not re-checked between rebuilds: a neutral item stays neutral only while the
+        # base is the map's code and the change names nothing new.
+        f = "crates/memra-engine/src/stats.rs"
+        v0 = 'pub fn render_metrics(n: u64) -> String {\n    format!("requests {n}")\n}\n'
+        v_text = 'pub fn render_metrics(n: u64) -> String {\n    format!("requests: {n}")\n}\n'
+        v1 = 'pub fn render_metrics(n: u64) -> String {\n    BATCH_LIMIT.store(n as usize, Relaxed);\n    format!("requests {n}")\n}\n'
+        v2 = 'pub fn render_metrics(n: u64) -> String {\n    BATCH_LIMIT.store(2 * n as usize, Relaxed);\n    format!("requests {n}")\n}\n'
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            run(repo, "init", "-q")
+            m0 = commit(repo, {f: v0}, "code")
+            items = {i: {"f": f, "a": a, "b": b, "h": h, "l": lh, "k": kind, "r": 0, "e": ["observability"], "s": "test"}
+                     for i, (h, a, b, test, kind, lh, _) in delta.scan(f, delta.blob(repo, m0, f)).items() if kind != "outside"}
+            mp = {"schema": "memra-impact-map-v1", "source_commit": m0,
+                  "vocab": {"families": ["qwen35"], "routes": ["plain"], "devices": ["rtx5090"]},
+                  "reach_sets": ["*"], "items": items, "regions": [], "stats": {}}
+            base = commit(repo, {delta.MAP_PATH: json.dumps(mp), delta.MODELS_PATH: json.dumps({"families": {}})}, "map")
+            text = commit(repo, {f: v_text}, "only the text changes")
+            run(repo, "checkout", "-q", base)
+            p1 = commit(repo, {f: v1}, "the item now writes a scheduling static")
+            p2 = commit(repo, {f: v2}, "edit it again, map not rebuilt")
+
+            def item(b, h):
+                rep = delta.delta(repo, b, h, map_ref=base)
+                return [x for x in rep["files"][0]["items"] if not x["item"].endswith("<outside>")][0]
+            same = item(base, text)
+            self.assertEqual((same["source"], same["effects"]), ("map-item", ["observability"]))
+            for b, h in ((base, p1), (p1, p2)):
+                it = item(b, h)
+                self.assertTrue(it["source"].endswith("+neutral-lapsed"), it)
+                self.assertIn("numeric", it["effects"])
+
+    def test_an_ingest_without_verdicts_widens_every_narrowing_claim(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, work = Path(tmp) / "repo", Path(tmp) / "work"
+            stamped_tree(repo, work, {"src/a.rs": "fn a() {\n    if qwen() { k(); }\n}\n"})
+            (work / "stage0/graph/nodes.jsonl").write_text(json.dumps(
+                {"id": "src/a.rs::a", "file": "src/a.rs", "kind": "fn", "line_start": 1, "line_end": 3, "hash": "h"}) + "\n")
+            ev = [{"file": "src/a.rs", "line": 2, "quote": "if qwen() { k(); }"}]
+            res = {"annotated": [{"slice": "S1",
+                                  "regions": [{"file": "src/a.rs", "line_start": 2, "line_end": 2, "families": ["qwen3"], "evidence": ev}],
+                                  "file_defaults": [{"file": "src/a.rs", "families": ["qwen3"], "evidence": ev}]}]}
+            (Path(tmp) / "results.json").write_text(json.dumps(res))
+            out = subprocess.run([sys.executable, str(HERE / "ingest.py"), str(Path(tmp) / "results.json")],
+                                 capture_output=True, text=True,
+                                 env=dict(os.environ, MEMRA_IMPACT_WORK=str(work), MEMRA_IMPACT_REPO=str(repo)))
+            self.assertEqual(out.returncode, 0, out.stderr)
+            ann = json.loads(out.stdout)
+            self.assertEqual([(r["families"], r["verdict"], r["narrowing"]) for r in ann["regions"]], [(["*"], "unverified", False)])
+            self.assertEqual([(f["families"], f["verdict"]) for f in ann["file_defaults"]], [(["*"], "unverified")])
+
+    def test_ingest_pins_claims_only_to_the_tree_stage0_was_built_on(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, work = Path(tmp) / "repo", Path(tmp) / "work"
+            stamped_tree(repo, work, {"src/a.rs": "fn a() {\n    log(1);\n}\n"})
+            (work / "stage0/graph/nodes.jsonl").write_text(json.dumps(
+                {"id": "src/a.rs::a", "file": "src/a.rs", "kind": "fn", "line_start": 1, "line_end": 3, "hash": "h"}) + "\n")
+            ev = [{"file": "src/a.rs", "line": 2, "quote": "log(1);"}]
+            res = {"annotated": [{"slice": "S1", "exact_items": [{"item": "src/a.rs::a", "evidence": ev},
+                                                                 {"item": "src/a.rs", "evidence": ev}]}]}
+            (Path(tmp) / "results.json").write_text(json.dumps(res))
+            (Path(tmp) / "verdicts.json").write_text(json.dumps([{"claim": "S1:X0", "refuted": False},
+                                                                 {"claim": "S1:X1", "refuted": False}]))
+
+            def ingest():
+                return subprocess.run([sys.executable, str(HERE / "ingest.py"), str(Path(tmp) / "results.json"),
+                                       str(Path(tmp) / "verdicts.json")], capture_output=True, text=True,
+                                      env=dict(os.environ, MEMRA_IMPACT_WORK=str(work), MEMRA_IMPACT_REPO=str(repo)))
+            out = ingest()
+            self.assertEqual(out.returncode, 0, out.stderr)
+            ann = json.loads(out.stdout)
+            # the verified claim carries the hash of the item stage 0 scanned; a claim naming a file pins nothing
+            self.assertEqual([(x["claim"], x["anchor_hash"]) for x in ann["exact_items"]], [("S1:X0", "h")])
+            self.assertIn("S1:X1 names no stage-0 item", out.stderr)
+            (repo / "src/a.rs").write_text("fn a() {\n    log(1);\n    BATCH.store(1);\n}\n")
+            out = ingest()
+            self.assertNotEqual(out.returncode, 0)
+            self.assertIn("stage 0 was built on", out.stderr)
+            commit(repo, {}, "the tree moves on")
+            self.assertNotEqual(ingest().returncode, 0)
+
+    def test_the_family_batch_script_runs(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            for d in ("wave1", "wave2", "verify"):
+                os.makedirs(f"{tmp}/{d}")
+            region = {"file": "src/a.rs", "line_start": 2, "line_end": 2, "families": ["qwen3"]}
+            Path(f"{tmp}/wave1/results.json").write_text(json.dumps({"annotated": [{"slice": "S1", "regions": [region]}]}))
+            Path(f"{tmp}/wave2/verdicts-narrow.json").write_text(json.dumps([{"claim": "S1:R0", "refuted": True, "reason": "gemma too"}]))
+            out = subprocess.run([sys.executable, str(HERE / "make_family_batches.py")], capture_output=True, text=True,
+                                 env=dict(os.environ, MEMRA_IMPACT_WORK=tmp))
+            self.assertEqual(out.returncode, 0, out.stderr)
+            self.assertEqual(json.loads(Path(f"{tmp}/verify/fam-00.json").read_text())[0]["claim"], "S1:R0~fam")
+
+
+if __name__ == "__main__":
+    unittest.main()
