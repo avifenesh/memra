@@ -32009,6 +32009,11 @@ pub fn run(
                 active[i].prime_service.peer_quantum =
                     memra_engine::prime_walker::prime_yield_enabled()
                         && active.iter().any(|s| s.prime_service.pending);
+                // A wider prime call may delay only a peer that does not exist yet: nobody
+                // else admitted, queued in the worker, or in HTTP admission right now.
+                active[i].prime_service.uncontended = active.len() == 1
+                    && queue.is_empty()
+                    && PENDING_ADMITS.load(std::sync::atomic::Ordering::Acquire) == 0;
                 // A pooled cohort member already ran this tick: its progress counts from the
                 // length it had before the cohort (token metrics, lane accounting, the cost
                 // gate's realized-rate samples all read the delta).
@@ -41714,6 +41719,7 @@ fn spec_burst_pre(
                     lm.model
                         .mtp_prime_start(engine, spec, &suffix, k, sampling, prime_split)?,
                 );
+            s.prime_service.wide_armed = lm.model.prime_wide_armed(engine);
         }
         let mut grammar = s
             .constraint

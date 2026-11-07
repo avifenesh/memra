@@ -93,6 +93,47 @@ pub struct MtpPrimeWalker<'a> {
 /// `spec_target_step_h` call uses batched T=1 math, which changes the initial cache/logits
 /// and can flip greedy output before verification (#918). Longer cold primes retain the
 /// legacy override program (target steps without stops, batched non-final segments).
+/// Rows of one merged trunk call: two of the default 4096-row ranges.
+pub(crate) const PRIME_WIDE_ROWS: usize = 2 * crate::cache::PRIME_CHUNK_MAX_TOKENS;
+
+/// The trunk call for the range at `cursor`, merged with the next range when `max_ranges`
+/// allows it and the merge is exact: both batched, neither a target-step override, the same
+/// segment (prime split / checkpoint stops are never crossed), contiguous, at most
+/// `PRIME_WIDE_ROWS` rows, and no grid capture inside the pair. Returns the call and how many
+/// frozen ranges it consumes.
+fn wide_trunk_chunk(
+    chunks: &[TrunkChunk],
+    cursor: usize,
+    max_ranges: usize,
+    grid_rel: Option<usize>,
+) -> (TrunkChunk, usize) {
+    let c0 = chunks[cursor];
+    if max_ranges < 2 || cursor + 1 >= chunks.len() {
+        return (c0, 1);
+    }
+    let c1 = chunks[cursor + 1];
+    let mergeable = c0.batched
+        && c1.batched
+        && !c0.target_step
+        && !c1.target_step
+        && c0.segment_start == c1.segment_start
+        && c0.segment_end == c1.segment_end
+        && c0.end == c1.start
+        && c1.end - c0.start <= PRIME_WIDE_ROWS
+        && !grid_rel.is_some_and(|r| c0.start <= r && r <= c1.end);
+    if !mergeable {
+        return (c0, 1);
+    }
+    (
+        TrunkChunk {
+            start: c0.start,
+            end: c1.end,
+            ..c0
+        },
+        2,
+    )
+}
+
 fn trunk_schedule(
     tp: usize,
     prime_split: Option<usize>,
@@ -677,20 +718,10 @@ impl MtpPrimeWalker<'_> {
     }
 }
 
-impl PrimeWalker for MtpPrimeWalker<'_> {
-    type Output = ();
-
-    fn remaining_chunks(&self) -> usize {
-        self.state.as_ref().map_or(0, |s| {
-            if s.short {
-                usize::from(s.fill_cursor < s.prompt.len())
-            } else {
-                s.chunks.len() - s.cursor + (s.prompt.len() - s.fill_cursor).div_ceil(s.fill_chunk)
-            }
-        })
-    }
-
-    fn advance_chunk(&mut self) -> Result<PrimeChunk, PrimeError> {
+impl MtpPrimeWalker<'_> {
+    /// One walker advance: up to `max_ranges` adjacent trunk ranges as one call
+    /// (`wide_trunk_chunk`), else exactly the one-range advance.
+    fn advance_ranges(&mut self, max_ranges: usize) -> Result<PrimeChunk, PrimeError> {
         let s = self.state.as_ref().ok_or("MTP prime already finalized")?;
         let tracking = s.graph_draft && self.e.ctx().is_event_tracking();
         if tracking {
@@ -706,11 +737,12 @@ impl PrimeWalker for MtpPrimeWalker<'_> {
             if s.cursor < s.chunks.len() {
                 loop {
                     let s = self.state.as_ref().unwrap();
-                    let chunk = s.chunks[s.cursor];
+                    let (chunk, used) =
+                        wide_trunk_chunk(&s.chunks, s.cursor, max_ranges, s.grid_rel);
                     self.trunk(chunk)?;
                     rows += chunk.end - chunk.start;
                     let s = self.state.as_mut().unwrap();
-                    s.cursor += 1;
+                    s.cursor += used;
                     if !short || s.cursor == s.chunks.len() {
                         break;
                     }
@@ -724,7 +756,11 @@ impl PrimeWalker for MtpPrimeWalker<'_> {
                 }
                 self.e.stream().synchronize()?;
                 Ok(PrimeChunk {
-                    phase: "mtp-trunk",
+                    phase: if rows > crate::cache::PRIME_CHUNK_MAX_TOKENS {
+                        "mtp-trunk-wide"
+                    } else {
+                        "mtp-trunk"
+                    },
                     rows,
                 })
             } else {
@@ -745,6 +781,28 @@ impl PrimeWalker for MtpPrimeWalker<'_> {
             s.wall += started.elapsed();
         }
         result
+    }
+}
+
+impl PrimeWalker for MtpPrimeWalker<'_> {
+    type Output = ();
+
+    fn remaining_chunks(&self) -> usize {
+        self.state.as_ref().map_or(0, |s| {
+            if s.short {
+                usize::from(s.fill_cursor < s.prompt.len())
+            } else {
+                s.chunks.len() - s.cursor + (s.prompt.len() - s.fill_cursor).div_ceil(s.fill_chunk)
+            }
+        })
+    }
+
+    fn advance_chunk(&mut self) -> Result<PrimeChunk, PrimeError> {
+        self.advance_ranges(1)
+    }
+
+    fn advance_chunks(&mut self, max_ranges: usize) -> Result<PrimeChunk, PrimeError> {
+        self.advance_ranges(max_ranges)
     }
 
     fn finish(self) -> Result<(), PrimeError> {
@@ -790,6 +848,57 @@ impl PrimeWalker for MtpPrimeWalker<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn batched(start: usize, end: usize, seg: (usize, usize)) -> TrunkChunk {
+        TrunkChunk {
+            start,
+            end,
+            segment_start: seg.0,
+            segment_end: seg.1,
+            batched: true,
+            target_step: false,
+        }
+    }
+
+    #[test]
+    fn wide_trunk_chunk_merges_two_aligned_ranges_of_one_segment_and_nothing_else() {
+        let seg = (0, 20_000);
+        let chunks = [
+            batched(0, 4096, seg),
+            batched(4096, 8192, seg),
+            batched(8192, 12_288, seg),
+            batched(12_288, 20_000, seg),
+        ];
+        // one range allowed: always the plain range
+        let (c, n) = wide_trunk_chunk(&chunks, 0, 1, None);
+        assert_eq!((c.start, c.end, n), (0, 4096, 1));
+        // two allowed: the pair becomes one 8192-row call
+        let (c, n) = wide_trunk_chunk(&chunks, 0, 2, None);
+        assert_eq!((c.start, c.end, n), (0, 8192, 2));
+        assert_eq!((c.segment_start, c.segment_end), seg);
+        // a pair wider than PRIME_WIDE_ROWS stays split
+        let (c, n) = wide_trunk_chunk(&chunks, 2, 2, None);
+        assert_eq!((c.start, c.end, n), (8192, 12_288, 1));
+        // the last range has no partner
+        let (_, n) = wide_trunk_chunk(&chunks, 3, 2, None);
+        assert_eq!(n, 1);
+        // a grid capture inside the pair keeps the ranges apart
+        let (_, n) = wide_trunk_chunk(&chunks, 0, 2, Some(4096));
+        assert_eq!(n, 1);
+        // a prime split / checkpoint stop between the ranges is never crossed
+        let split = [
+            batched(0, 4096, (0, 4096)),
+            batched(4096, 8192, (4096, 8192)),
+        ];
+        assert_eq!(wide_trunk_chunk(&split, 0, 2, None).1, 1);
+        // tokenwise and target-step ranges are never merged
+        let mut tokenwise = chunks;
+        tokenwise[1].batched = false;
+        assert_eq!(wide_trunk_chunk(&tokenwise, 0, 2, None).1, 1);
+        let mut target = chunks;
+        target[0].target_step = true;
+        assert_eq!(wide_trunk_chunk(&target, 0, 2, None).1, 1);
+    }
 
     /// WP-B day 39 addendum B: the walker owes its turn checkpoint's snapshot until it has run
     /// the chunk that ends on the checkpoint row.

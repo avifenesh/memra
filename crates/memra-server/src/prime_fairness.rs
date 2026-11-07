@@ -9,6 +9,12 @@ pub struct PrimeService {
     pub pending: bool,
     pub peer_quantum: bool,
     pub yields: u64,
+    /// The session's trunk may merge two prime ranges into one call
+    /// (`HybridModel::prime_wide_armed`), set when its prime starts.
+    pub wide_armed: bool,
+    /// Set by the worker before each prime step: no other session is admitted and none is
+    /// queued or arriving, so a wider call delays nobody.
+    pub uncontended: bool,
 }
 
 impl PrimeService {
@@ -19,13 +25,26 @@ impl PrimeService {
     ) -> Result<bool, memra_engine::prime_walker::PrimeError> {
         // A partially mutated failing chunk must never become a park candidate.
         self.pending = walker.remaining_chunks() > 0;
-        let progress = memra_engine::prime_walker::advance_prime(
+        let yields = memra_engine::prime_walker::prime_yield_enabled();
+        let progress = memra_engine::prime_walker::advance_prime_wide(
             walker,
-            memra_engine::prime_walker::prime_yield_enabled(),
+            yields,
+            self.max_ranges(yields),
             memra_engine::prime_walker::trace_chunk,
         )?;
         self.record(progress);
         Ok(!self.pending)
+    }
+
+    /// Frozen ranges one advance may run as one call: two for an armed trunk with nobody
+    /// else in the worker, else one. Only the yielding driver merges (the drain arm keeps its
+    /// one-range-per-call tape).
+    pub fn max_ranges(&self, yields: bool) -> usize {
+        if yields && self.wide_armed && self.uncontended {
+            2
+        } else {
+            1
+        }
     }
 
     /// Finalization can still fail (for example a final draft ingestion). Keep its
@@ -96,6 +115,27 @@ impl PrimePolicy {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_prime_merges_ranges_only_when_armed_alone_and_yielding() {
+        let mut s = PrimeService::default();
+        assert_eq!(s.max_ranges(true), 1, "unarmed");
+        s.wide_armed = true;
+        assert_eq!(
+            s.max_ranges(true),
+            1,
+            "armed but a peer is admitted or waiting"
+        );
+        s.uncontended = true;
+        assert_eq!(s.max_ranges(true), 2);
+        assert_eq!(
+            s.max_ranges(false),
+            1,
+            "the drain arm keeps one range per call"
+        );
+        s.wide_armed = false;
+        assert_eq!(s.max_ranges(true), 1);
+    }
 
     #[test]
     fn failed_advance_or_final_ingestion_never_makes_a_park_boundary() {

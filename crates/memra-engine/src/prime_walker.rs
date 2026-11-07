@@ -15,7 +15,8 @@ pub struct PrimeChunk {
 
 /// An adapter owns all state needed between chunks, including any pending 256-row
 /// ingestion carry. Freeze its range list before the first advance. Each successful
-/// advance consumes exactly one range and leaves no live borrow of shared scratch.
+/// advance consumes one range (or, through `advance_chunks`, adjacent ranges run as one exact
+/// call) and leaves no live borrow of shared scratch.
 /// It must fence any device work whose buffers a peer could reuse before returning.
 /// Finalization consumes the state and must reject an incomplete prime. It may perform
 /// once-only boundary sampling/publication, but must not hide another prompt-length loop.
@@ -25,6 +26,16 @@ pub trait PrimeWalker {
     fn advance_chunk(&mut self) -> Result<PrimeChunk, PrimeError>;
     fn remaining_chunks(&self) -> usize;
     fn finish(self) -> Result<Self::Output, PrimeError>;
+
+    /// One advance that may run up to `max_ranges` adjacent frozen ranges as one numerical
+    /// call, for a walker whose trunk computes the same bits at any range split (the serial
+    /// GDN hybrid trunk at GDN-grid-aligned boundaries). The default runs one range. The driver
+    /// passes more than one only when no peer is admitted or waiting, so a wider call never
+    /// lengthens a peer's wait.
+    fn advance_chunks(&mut self, max_ranges: usize) -> Result<PrimeChunk, PrimeError> {
+        let _ = max_ranges;
+        self.advance_chunk()
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -64,16 +75,38 @@ pub fn trace_chunk(chunk: PrimeChunk, wall: Duration) {
 pub fn advance_prime<W: PrimeWalker>(
     walker: &mut W,
     yield_after_chunk: bool,
+    observe: impl FnMut(PrimeChunk, Duration),
+) -> Result<PrimeProgress, PrimeError> {
+    advance_prime_wide(walker, yield_after_chunk, 1, observe)
+}
+
+/// [`advance_prime`] where each advance may merge up to `max_ranges` adjacent frozen ranges
+/// (`PrimeWalker::advance_chunks`). `max_ranges` 1 is `advance_prime` exactly.
+pub fn advance_prime_wide<W: PrimeWalker>(
+    walker: &mut W,
+    yield_after_chunk: bool,
+    max_ranges: usize,
     mut observe: impl FnMut(PrimeChunk, Duration),
 ) -> Result<PrimeProgress, PrimeError> {
+    let max_ranges = max_ranges.max(1);
     let mut progress = PrimeProgress::default();
     while walker.remaining_chunks() > 0 {
         let before = walker.remaining_chunks();
         let start = Instant::now();
-        let chunk = walker.advance_chunk()?;
+        let chunk = if max_ranges > 1 {
+            walker.advance_chunks(max_ranges)?
+        } else {
+            walker.advance_chunk()?
+        };
         let wall = start.elapsed();
-        if walker.remaining_chunks() != before - 1 {
-            return Err("prime walker must consume exactly one frozen chunk per advance".into());
+        let consumed = before.saturating_sub(walker.remaining_chunks());
+        if consumed == 0 || consumed > max_ranges || walker.remaining_chunks() > before {
+            return Err(if max_ranges == 1 {
+                "prime walker must consume exactly one frozen chunk per advance".into()
+            } else {
+                "prime walker must consume between one and max_ranges frozen chunks per advance"
+                    .into()
+            });
         }
         observe(chunk, wall);
         progress.advanced_chunks += 1;

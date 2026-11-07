@@ -6413,6 +6413,16 @@ impl HybridModel {
             test_extra_devices: Vec::new(),
         };
         e.configure_moe_cache_layout(model.moe_cache_block_sizes());
+        // GB10 prefill lane: the cooperative prime may merge two 4096-row ranges into one call
+        // while no peer is admitted or waiting (`prime_wide_armed`); admission books that call.
+        if model.prime_wide_armed(e) {
+            crate::hybrid_forward::set_prime_wide_booking();
+            eprintln!(
+                "[prime-wide] two-range prime calls while no peer waits (serial GDN hybrid dense \
+                 trunk, unified-memory 120a device); admission books {}-row calls",
+                2 * crate::cache::PRIME_CHUNK_MAX_TOKENS
+            );
+        }
         if force_embd_gpu {
             let _ = model
                 .embd_gpu

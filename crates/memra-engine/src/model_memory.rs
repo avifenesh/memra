@@ -135,7 +135,7 @@ impl HybridModel {
                     .ok_or("missing prime workspace shape")?;
                 (
                     shape.admission_bytes(prompt_rows),
-                    crate::hybrid_forward::prime_chunk_tokens(prompt_rows, shape.n_layers)
+                    crate::hybrid_forward::prime_call_rows(prompt_rows, shape.n_layers)
                         .max(1)
                         .min(prompt_rows),
                 )

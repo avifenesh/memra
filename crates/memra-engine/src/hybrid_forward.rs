@@ -1391,6 +1391,27 @@ pub fn prime_chunk_tokens(t: usize, n_layers: usize) -> usize {
     }
 }
 
+/// Set at model load when a loaded trunk may merge two prime ranges into one call
+/// (`HybridModel::prime_wide_armed`): admission then books the merged call's workspace.
+static PRIME_WIDE_BOOKING: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+pub fn set_prime_wide_booking() {
+    PRIME_WIDE_BOOKING.store(true, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// The most rows one prime call of a `t`-row prime can carry: the auto chunk
+/// (`prime_chunk_tokens`), doubled when a loaded trunk merges ranges while no peer waits. An
+/// explicit `MEMRA_PRIME_CHUNK` or the SWA ring keeps the plain chunk (merging is off there).
+pub fn prime_call_rows(t: usize, n_layers: usize) -> usize {
+    let chunk = prime_chunk_tokens(t, n_layers);
+    let wide = PRIME_WIDE_BOOKING.load(std::sync::atomic::Ordering::Relaxed)
+        && std::env::var_os("MEMRA_PRIME_CHUNK").is_none()
+        && !crate::cache::swa_ring_on()
+        && chunk == crate::cache::PRIME_CHUNK_MAX_TOKENS;
+    if wide { 2 * chunk } else { chunk }
+}
+
 fn fixed_prime_chunk_ranges(t: usize, chunk: usize) -> Vec<(usize, usize)> {
     fixed_prime_chunk_ranges_for_ring(t, chunk, crate::cache::swa_ring_on())
 }
@@ -1626,7 +1647,7 @@ impl PrimeWorkspaceShape {
     /// The rows one prime call carries for a `prompt_rows` prime under the deployment's chunking
     /// (WP-B day 39: the admission door books one call's workspace once, not once per session).
     pub fn call_rows(&self, prompt_rows: usize) -> usize {
-        prompt_rows.min(prime_chunk_tokens(prompt_rows, self.n_layers).max(1))
+        prompt_rows.min(prime_call_rows(prompt_rows, self.n_layers).max(1))
     }
 
     /// The charge for `prompt_rows` with an explicit per-call row count (pure arithmetic,
@@ -1643,7 +1664,7 @@ impl PrimeWorkspaceShape {
     pub fn admission_bytes(&self, prompt_rows: usize) -> usize {
         self.admission_bytes_with_call_rows(
             prompt_rows,
-            prime_chunk_tokens(prompt_rows, self.n_layers),
+            prime_call_rows(prompt_rows, self.n_layers),
         )
     }
 }
@@ -1845,6 +1866,38 @@ impl HybridModel {
                 .layers
                 .iter()
                 .any(|l| matches!(l.mixer, crate::hybrid::Mixer::Linear(_)))
+    }
+
+    /// Whether the cooperative prime may run two adjacent frozen ranges as one call while no
+    /// peer is admitted or waiting (GB10 prefill lane). The serial GDN hybrid trunk with dense
+    /// FFN and no mHC primes the same bits at any GDN-grid-aligned split (the chunk-invariance
+    /// contract of `MEMRA_PRIME_CHUNK`), so the merge is exact; a wider call costs a peer only
+    /// if one arrives during it. Device part: on for a unified-memory 120a-family device;
+    /// `MEMRA_PRIME_WIDE` of `1`/`0` decides. Off with an explicit `MEMRA_PRIME_CHUNK` or the
+    /// SWA ring.
+    pub fn prime_wide_armed(&self, e: &Engine) -> bool {
+        use crate::hybrid::{Ffn, Mixer};
+        let device = match std::env::var("MEMRA_PRIME_WIDE").as_deref() {
+            Ok("1") => true,
+            Ok("0") => false,
+            _ => {
+                env!("MEMRA_BUILT_CUDA_ARCH") == "120a"
+                    && crate::unified_memory::is_unified(e.ctx())
+            }
+        };
+        device
+            && self.hyper.is_none()
+            && self.gdn_prime_grid_on()
+            && std::env::var_os("MEMRA_PRIME_CHUNK").is_none()
+            && !crate::cache::swa_ring_on()
+            && self
+                .layers
+                .iter()
+                .all(|l| matches!(l.mixer, Mixer::Linear(_) | Mixer::Full(_)))
+            && self
+                .layers
+                .iter()
+                .all(|l| matches!(l.ffn, Ffn::Dense { .. }))
     }
 
     /// Can the step TP runtime run the DEVICE-RESIDENT activation path from this serving
