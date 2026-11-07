@@ -1,0 +1,14 @@
+arm dspark workload=agentic:8:1.0:768 start=2026-11-07T23:49:20+02:00 profile=balanced
+dab4b8f0717b092dbb5aefb2e6ce508629f4e23b42ab93c3344679ad30cff5bb  /home/avifenesh/.cache/memra-pools/cells-work/bins/c371b5bf98a59f480b304dbb0c533b78533b0404-120a/memra-server
+env: MEMRA_DSPARK_SPEC=1 MEMRA_DSPARK_DRAFT=/data/ai-ml/models/q38-gguf/Qwen3.8-27B-DFlash2-memra
+NVIDIA GeForce RTX 5090 Laptop GPU, 77, 180 MHz, [N/A], 48 MiB, 24028 MiB
+device_free_min_mib 1637 samples 1697
+memavailable_min_gib 42.40
+1794088200.848 [prefix-cache] on: budget 2260MB (2259943424 B, derived: 2 x 1129971712 B max entry for model "gate" at served ctx 32768 (from MEMRA_CTX; MEMRA_CTX set), requested 2259943424 B; boot driver free 7403077632 B, post-reserve clamp 5792464896 B), policy plain-LRU (global oldest unleased entry first; leases untouchable), min prefix 64 tokens, immediate partial restore=off (rollback) (transformer-only; hybrid mid-entry + routed-MoE N/A)
+evict_lines=127
+oom_lines=0
+reclaim_on_defer_lines=127
+vram_defer_lines=4018
+admit_trim_lines=0
+{"args": {"workload": "/home/avifenesh/.cache/memra-1025/ab-workload-5090.json", "out": "/home/avifenesh/.cache/memra-pools/out8/dspark/rows.json", "port": 18187, "users": 8, "think": 1, "temperature": 1.0, "max_tokens": 768, "seed": 1234, "prime_only": false}, "prime": {"rows": 29, "ok": 26, "status_counts": {"200": 26, "408+err": 3}, "wall_s": 144.5, "ttft_ms_p50": 12833.0, "ttft_ms_p95": 71702.9, "ttft_ms_p99": 79922.2, "ttft_ms_max": 79922.2, "tokens": 26, "agg_tok_s": 0.18, "cached_tokens": 4160, "prompt_tokens": 150439, "hits": 20, "per_user_gen_tps_median": null}, "prime_metrics_delta": {}, "measure": {"rows": 29, "ok": 21, "status_counts": {"200": 21, "408+err": 8}, "wall_s": 220.3, "ttft_ms_p50": 16808.4, "ttft_ms_p95": 67660.1, "ttft_ms_p99": 89523.9, "ttft_ms_max": 89523.9, "tokens": 7095, "agg_tok_s": 32.2, "cached_tokens": 2016, "prompt_tokens": 85360, "hits": 21, "per_user_gen_tps_median": 25.32}, "measure_metrics_delta": {}}
+rc=0 end=2026-11-07T23:56:25+02:00
