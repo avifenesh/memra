@@ -1,0 +1,50 @@
+admit-by-memory Max-Q kit, built 2026-11-04 on the laptop (no GPU used; build and dry runs only)
+
+scope:           /home/<user>/.cache/memra-maxq/admit-by-memory/scope.txt (from ~/.cache/memra-fix4/maxq-scope.json,
+                 entry admit-by-memory-maxq-extension)
+fix-stack head:  origin/fix4/gates 2ccb038d1c16358edde65582597e7b840e3f63fb (Workstation receipt and records read there)
+program (S40):   b46ae200e7638f9c55688d2d339de2872f4762a6 (detached worktree, clean, no patches)
+drivers:         50e8cb345279199f9a0bf10d22c1bfc66e3dae70 (detached worktree) + portability.patch
+                 (sha256 ba199a41bff040c3db0760e313dc75b82444423155127b66f9ac296823fa6ea6)
+
+binary
+  bins/s40/memra-server  sha256 7da1db366fbe34ca40440fc8e818b864c2bc9014db7e7330b08a929084e7cc45  70520504 bytes
+  build: flock ~/.cache/memra-rig-build.lock nice -n 15 env MEMRA_CUDA_ARCH=120a
+         CARGO_TARGET_DIR=~/.cache/memra-maxq/target bash ~/.cache/memra-maxq/admit-by-memory/build.sh
+         (build.sh sha256 56e93b94e728169cef671fdad508d9b428c4135d31fe40588aaad09ab8e68594)
+         cargo build --release -j2 -p memra-server --bin memra-server, default features
+         MEMRA_NVCC=/usr/local/cuda-13.1/bin/nvcc (V13.1.115), rustc/cargo 1.97.1, 3m32s, 2026-11-04 19:46-19:49Z
+  NEEDED: libcudart.so.13 libcublasLt.so.13 libcublas.so.13 libstdc++.so.6 libgcc_s.so.1 libm.so.6 libc.so.6;
+          max GLIBC_2.39 (<box> has 2.43)
+  Workstation box binary (same source): c3387e1b7ed5c9b14ba1d00d21549c003c6423a152303ada910ecc2db51d20a0
+
+model (checked by run.sh before each part)
+  /mnt/Data/work/memra-maxq/models/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf
+  sha256 1facf36c2db359dcf9c2475cf8f85fe84a528d10aaaaff20f7c0db3d561e024a  15705922304 bytes
+
+kit files (sha256)
+  a5626dd845f37c639f5c61ec5be3615e9a36bf8612d46a754e1df2b3b0e350d1  research/spill-b-20260919/day31-order.sh       (registered)
+  c7bd40bb7bba87dd922386b1cd3b5fc097fa748c62c2e655889df050395c0aa3  research/spill-b-20260919/run-day26-cell.sh    (registered fad91c06, patched)
+  eb490d6e5f9ff55bfa6d5532647fdf2315e0abbb21455041a75ce38f521e7e6b  research/spill-b-20260919/day31-client.py      (registered 53aa2512, patched)
+  8f27e7f922d2f30238fd33dbcaee67c818fb8d87ea5fbf160a58ebe9d0c07e09  research/spill-b-20260919/day31-parse.py       (registered)
+  c6013822f78e06bc3d4172aedd3e1608f2912e2dfc15673559b9ecdcdeaea5e9  research/spill-b-20260919/day34-compare.py     (registered)
+  1fdaef8b7b0841cec43f4648bbea2bdb2d5ed453f512ffda3f464fce0a7cd6e3  research/spill-b-20260919/day31-faults.py      (at 50e8cb345)
+  0bddafffd22670cd53b80893225437cdf27ed2b0fe6e633c23e208e07827a908  research/spill-b-20260919/day40-read.py        (at 50e8cb345)
+  76fc9eb30fac32bfec876270653d8f186ac8e96fa89f2d54699e0f7966a73000  tools/tier-battery.py                          (50e8cb345 4861050b, patched)
+  91ef0d0a0a09746b8c991e8851630fceaf0aae9e7cf56e1c8e50f2597f7e513a  tools/tier-lock-proof.py                       (at 50e8cb345)
+  022b1d50620f5b34bb6e6127be05ff79184ce3aa294aca618a31a0dd73887cff  docs/SERVING.md                                (registered)
+
+kit runner files (new, sha256)
+  dea8e17791495fd8c0c999fd4f5ccc0baf0294eeb7721d6ed3a22b65c60945e4  run.sh
+  a6c48f4072b9735baf5a4481b2f74056c41b282b1459534f0a08cafb659debfe  run-part1.sh
+  ced113e7e0c5c0c95ccfb9e4298d4b0d0aed1089b8184ff340524478691ea82b  run-part2.sh
+  ae89036be2c02462284467be0f253fea117379a5dfdd2ccf030f09e7487b1a32  readers.sh
+  ca3ca9057de69d2144cc5a6c021cd2b237180dd577ccaf2ceb7e8b9577cbd6d7  selfcheck.sh
+  57c4532b0bcddd18875d27e669c689a69015885e767a0aacfbfec638ead78edd  maxq-vs-ws.py
+  50d4bd1493f71e2ce27fa2851382a3e5e09a37fcb166b5d5ed1c81a6b392cb8f  registered-chain.sh.txt (chain.sh at 50e8cb345, reference only)
+
+reader dry run (laptop, Python 3.14.4, same as <box>): selfcheck/laptop-dryrun.txt
+  day31-parse.py re-run on the 8 Workstation boots: REPORT.txt and rows.jsonl byte-identical on all 8
+  readers.sh: SUMMARY.txt, READINGS.txt, FAULTS.txt (vs FAULTS-local.txt) byte-identical; V-DOOR ... -> PASS
+selfcheck/ws-box: the reader inputs and outputs of research/spill-b-20260919/pro-single-day40/box/ at 2ccb038d1c
+runner rehearsal (laptop, fake nvidia-smi and fake server, no GPU): selfcheck/rehearsal-laptop.txt

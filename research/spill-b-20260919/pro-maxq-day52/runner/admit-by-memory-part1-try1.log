@@ -1,0 +1,18 @@
+2026-11-06T01:19:40Z model sha256 check (15.7 GB) ...
+2026-11-06T01:19:46Z preflight ok: card 2 'NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition' idle, port 18526 free, binary and model sha256 match, MemAvailable 209 GiB
+2026-11-06T01:19:46Z part1 (order O1) start; out=/mnt/Data/work/memra-maxq/admit-by-memory/out-20261106T011946Z
+2026-11-06T01:19:47Z chain start HEAD=50e8cb345279199f9a0bf10d22c1bfc66e3dae70 7da1db366fbe34ca40440fc8e818b864c2bc9014db7e7330b08a929084e7cc45  ./s40/memra-server 
+2026-11-06T01:19:47Z order O1: collector start card=2 NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition, 300.00 W, 97887 MiB budget=13793s
+2026-11-06T04:53:38Z order O1: collector exit=0
+PENDING: part 1 of 2 done (order O1). Next window: CARD=<idx> bash /mnt/Data/work/memra-maxq/admit-by-memory/run.sh part2   (or run.sh next)
+O1-off exit=0 DAY31 V-BOOT boot=O1-off arm=off door_line=present -> PASS
+O1-on2048 exit=0 DAY31 V-BOOT boot=O1-on2048 arm=on2048 door_line=present -> PASS
+O1-on8192 exit=0 DAY31 V-BOOT boot=O1-on8192 arm=on8192 door_line=present -> PASS
+O1-on32768 exit=0 DAY31 V-BOOT boot=O1-on32768 arm=on32768 door_line=present -> PASS
+context (not verdicts): DAY40 target-card cell replayed on an RTX PRO 6000 Blackwell Max-Q Workstation Edition; reader label --card pro6000 kept as registered
+card O1: 2, GPU-<card2-uuid>, <pci-bus-id>, NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition, 300.00 W, 300.00 W, 300.00 W, 97887 MiB, 615.71.09, 77, 3090 MHz
+binary bins/s40/memra-server sha256=7da1db366fbe34ca40440fc8e818b864c2bc9014db7e7330b08a929084e7cc45 (S40 b46ae200e7638f9c55688d2d339de2872f4762a6); drivers 50e8cb345279199f9a0bf10d22c1bfc66e3dae70 + portability.patch
+model Qwen3.8-27B-NVFP4-Q5K-mtp.gguf sha256=1facf36c2db359dcf9c2475cf8f85fe84a528d10aaaaff20f7c0db3d561e024a
+2026-11-06T04:53:41Z part1 done
+OUT=/mnt/Data/work/memra-maxq/admit-by-memory/out-20261106T011946Z
+power GPU 2: limit 300 W (asked 300, was 280, max 300); 1272 samples, 4 at 300 W, first sample off it 2026/11/06 03:20:20.498 -> 280 W; max 91 C, max fan 89 %; sw_thermal 0, hw_thermal 0, hw_power_brake 0, sw_power_cap 1259; throttle: no; thermal stop: none; neighbours 1,3 max 89 C, drop: none; restored 280 W; rc=0

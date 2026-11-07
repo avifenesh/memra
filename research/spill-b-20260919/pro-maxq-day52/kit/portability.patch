@@ -1,0 +1,100 @@
+diff --git a/research/spill-b-20260919/day31-client.py b/research/spill-b-20260919/day31-client.py
+index ea9f232e9d..84c52cce03 100644
+--- a/research/spill-b-20260919/day31-client.py
++++ b/research/spill-b-20260919/day31-client.py
+@@ -68,7 +68,9 @@ def sampler():
+         while not stop.is_set():
+             t = int(time.time() * 1000)
+             try:
+-                used = subprocess.run(["nvidia-smi", "--query-gpu=memory.used", "--format=csv,noheader,nounits"],
++                # Max-Q kit (DEVIATIONS.md P2): the served card only, by its nvidia-smi index.
++                used = subprocess.run(["nvidia-smi", "-i", os.environ["CARD"], "--query-gpu=memory.used",
++                                       "--format=csv,noheader,nounits"],
+                                       capture_output=True, text=True, timeout=2).stdout.strip().splitlines()[0]
+             except Exception:
+                 used = ""
+diff --git a/research/spill-b-20260919/run-day26-cell.sh b/research/spill-b-20260919/run-day26-cell.sh
+index e7f3e32102..169f609029 100755
+--- a/research/spill-b-20260919/run-day26-cell.sh
++++ b/research/spill-b-20260919/run-day26-cell.sh
+@@ -11,6 +11,8 @@
+ #      MEMRA_TIMEOUT_MS_MAX pass through to the server and are recorded in shape.txt. Unset, every default is day 26's.
+ set -uo pipefail
+ cell=${1:?cell}; order=${2:?AB|BA}
++# Max-Q kit (DEVIATIONS.md P1-P3): one card, CARD = its nvidia-smi index; no git on the box.
++: "${CARD:?CARD (nvidia-smi index of the one card this cell may use)}"
+ WT=${WT:-$HOME/projects/wt-spill-b}
+ RIGDIR=${RIGDIR:-$WT/research/spill-b-20260919/rtx5090-day26}
+ BIN=${3:-$WT/target/release/memra-server}
+@@ -26,8 +28,10 @@ else
+ fi
+ cd "$WT" || exit 1
+ [ -f "$MODEL" ] || { echo "model absent: $MODEL"; exit 2; }
++# Max-Q kit guard (DEVIATIONS.md P4): after one boot landed off card $CARD, no later boot of the order starts a server.
++[ -e "$RIGDIR/PLACEMENT-FAILED" ] && { echo "earlier boot was not on card $CARD; cell not run"; echo 7 > "$RIGDIR/$cell.exit"; exit 7; }
+ C=$RIGDIR/$cell; rm -rf "$C"; mkdir -p "$C"
+-sha256sum "$BIN" > "$C/binary.sha256"; git rev-parse HEAD > "$C/source.txt"; git status --short > "$C/dirty.txt"
++sha256sum "$BIN" > "$C/binary.sha256"; cat "$WT/SOURCE_SHA" > "$C/source.txt"; cat "$WT/KIT-DIRTY.txt" > "$C/dirty.txt"
+ sha256sum "$MODEL" > "$C/model.sha256" &
+ echo "order=$order n=$N model_key=$MODEL_KEY ctx=${MEMRA_CTX:-unset} lock=$LOCK warm=${WARM_IMMEDIATE:+immediate}${WARM_IMMEDIATE:-deferred} park_compact=${MEMRA_KV_PARK_COMPACT:-unset} serve_spec=${MEMRA_SERVE_SPEC:-default}${CLIENT:+ client=$CLIENT args=${CLIENT_ARGS:-none} admit_by_memory=${MEMRA_ADMIT_BY_MEMORY:-unset} open_output_tokens=${MEMRA_ADMIT_OPEN_OUTPUT_TOKENS:-unset} timeout_ms_max=${MEMRA_TIMEOUT_MS_MAX:-unset} max_sessions=${MEMRA_MAX_SESSIONS:-unset} kv_host_mb=${MEMRA_KV_HOST_MB:-unset}}" > "$C/shape.txt"
+ [ -n "${CLIENT:-}" ] && sha256sum docs/SERVING.md "research/spill-b-20260919/$CLIENT" "research/spill-b-20260919/${PARSER:-day26-parse.py}" > "$C/inputs.sha256"
+@@ -40,8 +44,8 @@ else
+   echo "$(date -u +%FT%TZ) lock held by the collector (external)" | tee "$C/lock.txt"
+ fi
+ wait
+-nvidia-smi --query-compute-apps=pid,process_name,used_memory --format=csv > "$C/compute-apps-before.csv"
+-nvidia-smi --query-gpu=name,memory.used,memory.total,temperature.gpu,power.draw,power.limit --format=csv > "$C/gpu-before.csv"
++nvidia-smi -i "$CARD" --query-compute-apps=pid,process_name,used_memory --format=csv > "$C/compute-apps-before.csv"
++nvidia-smi -i "$CARD" --query-gpu=name,memory.used,memory.total,temperature.gpu,power.draw,power.limit --format=csv > "$C/gpu-before.csv"
+ ss -ltn | grep -q ":$PORT " && { echo "port $PORT busy"; exit 4; }
+ date -u +%FT%TZ > "$C/started.txt"
+ # server stderr is stamped per line (epoch ms) so log events align with the 250 ms samples.
+@@ -62,6 +66,10 @@ for _ in $(seq 1200); do
+ done
+ [ -n "$ready_ms" ] || { echo "server never ready"; tail -20 "$C/server.log"; echo 5 > "$C.exit"; exit 5; }
+ echo "$ready_ms" > "$C/ready_ms.txt"
++# Max-Q kit guard (DEVIATIONS.md P4): the ready server must be a compute app on card $CARD; otherwise stop it.
++nvidia-smi -i "$CARD" --query-compute-apps=pid --format=csv,noheader > "$C/placement.txt" 2>&1
++placed=0; for p in $(own_server_pid); do grep -qx "$p" "$C/placement.txt" && placed=1; done
++[ "$placed" = 1 ] || { echo "server not on card $CARD: $(tr '\n' ' ' < "$C/placement.txt")" | tee "$RIGDIR/PLACEMENT-FAILED"; echo 6 > "$C.exit"; exit 6; }
+ curl -s -m 5 "$BASE/metrics" > "$C/metrics-ready.json"
+ run python3 "$WT/research/spill-b-20260919/${CLIENT:-day26-client.py}" --base "$BASE" --out "$C" --model "$MODEL_KEY" \
+   --order "$order" --n "$N" ${WARM_IMMEDIATE:+--warm-immediate} ${CLIENT_ARGS:-} > "$C/client.log" 2>&1
+@@ -70,8 +78,8 @@ curl -s -m 5 "$BASE/metrics" > "$C/metrics-end.json"
+ stop_server; trap - EXIT
+ sleep 2
+ date -u +%FT%TZ > "$C/finished.txt"
+-nvidia-smi --query-compute-apps=pid,process_name,used_memory --format=csv > "$C/compute-apps-after.csv"
+-nvidia-smi --query-gpu=name,memory.used,memory.total,temperature.gpu,power.draw,power.limit --format=csv > "$C/gpu-after.csv"
++nvidia-smi -i "$CARD" --query-compute-apps=pid,process_name,used_memory --format=csv > "$C/compute-apps-after.csv"
++nvidia-smi -i "$CARD" --query-gpu=name,memory.used,memory.total,temperature.gpu,power.draw,power.limit --format=csv > "$C/gpu-after.csv"
+ python3 "$WT/research/spill-b-20260919/${PARSER:-day26-parse.py}" "$C" > "$C/REPORT.txt" 2>&1
+ tail -40 "$C/REPORT.txt"
+ exit $rc
+diff --git a/tools/tier-battery.py b/tools/tier-battery.py
+index 35e3760b49..5e60f8e95c 100755
+--- a/tools/tier-battery.py
++++ b/tools/tier-battery.py
+@@ -311,10 +311,12 @@ class SubprocessRunner:
+             cell["lock_proof"] = lock_proof
+         append_cell(root / "CELL.jsonl", {**cell, "event": "start"})
+         smi = shutil.which(self.smi)
++        # Max-Q kit (DEVIATIONS.md P2): with CARD set, every query reads that nvidia-smi index only.
++        card_sel = ["-i", os.environ["CARD"]] if os.environ.get("CARD") else []
+         snapshots = {}
+         def snapshot(label):
+             path = root / f"{stem}.{label}.log"
+-            code, expired = tee_run([smi, "--query-compute-apps=pid,process_name,used_memory",
++            code, expired = tee_run([smi, *card_sel, "--query-compute-apps=pid,process_name,used_memory",
+                                     "--format=csv"], path, timeout=20, echo=False)
+             snapshots[label] = {"exit_code": code, "timed_out": expired,
+                                 "raw_log": descriptor(root, path)}
+@@ -328,7 +330,7 @@ class SubprocessRunner:
+                 snapshot("before")
+                 csv = stack.enter_context(csv_path.open("xb"))
+                 err = stack.enter_context(sampler_log.open("xb"))
+-                argv = [smi, "--query-gpu=timestamp,index,pstate,clocks.sm,clocks.mem,power.draw,power.limit,power.max_limit,temperature.gpu,memory.used,utilization.gpu,pcie.link.gen.current,pcie.link.width.current", "--format=csv", "-lms", "250"]
++                argv = [smi, *card_sel, "--query-gpu=timestamp,index,pstate,clocks.sm,clocks.mem,power.draw,power.limit,power.max_limit,temperature.gpu,memory.used,utilization.gpu,pcie.link.gen.current,pcie.link.width.current", "--format=csv", "-lms", "250"]
+                 try:
+                     sampler = subprocess.Popen(argv, stdout=csv, stderr=err, start_new_session=True)
+                     telemetry = {"status": "started", "interval_ms": 250, "command": argv,
