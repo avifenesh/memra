@@ -29469,15 +29469,9 @@ impl Engine {
         debug_assert_eq!(head_dim, 256, "fa_prefill_w is stamped hd256 only");
         // P1 (2026-07-22 engine study): per-head Br=64 stamp with the FA2 schedule (V-copy
         // over GEMM0, next-K over softmax+GEMM1) + boundary/interior mask split. FP order
-        // preserved -> bit-identical (gated). MEMRA_FAW_P1=0 reverts to the g4/o2 arms.
-        static P1_ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-        let p1 = !floor
-            && !f32_stage
-            && *P1_ON.get_or_init(|| {
-                std::env::var("MEMRA_FAW_P1")
-                    .map(|v| v != "0")
-                    .unwrap_or(true)
-            });
+        // preserved -> bit-identical (gated). Every call off the f32 floor and the f32 stage
+        // takes it; the g4/o2 and bf16_pp arms it replaced are gone with their seams.
+        let p1 = !floor && !f32_stage;
         let hp = p1
             && fa_f16pv_on()
             && faw_hp_on()
@@ -29577,86 +29571,11 @@ impl Engine {
             }
             return Ok(());
         }
-        // MQA head-grouping (MEMRA_FAW_G4=0 reverts): 4 heads/CTA share the staged K/V —
-        // per-(head,row) FP chain identical to the per-head stamp -> bit-identical (gated).
-        static G4_ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-        let g4 = !floor
-            && !f32_stage
-            && n_head_kv == 1
-            && n_head.is_multiple_of(4)
-            && *G4_ON.get_or_init(|| {
-                std::env::var("MEMRA_FAW_G4")
-                    .map(|v| v != "0")
-                    .unwrap_or(true)
-            });
-        if g4 {
-            const SP_M: usize = 16;
-            // Occupancy-2 twin (MEMRA_FAW_O2=0 reverts): one shared K/V buffer inside the dead
-            // Q-stage region -> ~36.5KB smem, 2 CTA/SM (the llama hd256 mechanism). Bit-identical.
-            static O2_ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-            let o2 = *O2_ON.get_or_init(|| {
-                std::env::var("MEMRA_FAW_O2")
-                    .map(|v| v != "0")
-                    .unwrap_or(true)
-            });
-            let f = self.func(if o2 {
-                "fa_prefill_w_bf16_g4o2"
-            } else {
-                "fa_prefill_w_bf16_g4"
-            });
-            let shmem = if o2 {
-                (2 * (4 * SP_M * head_dim + 4 * SP_M * BK) + 4 * (4 * SP_M)) as u32
-            } else {
-                (2 * (2 * BK * head_dim + 4 * SP_M * head_dim + 4 * SP_M * BK) + 4 * (4 * SP_M))
-                    as u32
-            };
-            use cudarc::driver::sys::CUfunction_attribute_enum as A;
-            f.set_attribute(
-                A::CU_FUNC_ATTRIBUTE_MAX_DYNAMIC_SHARED_SIZE_BYTES,
-                shmem as i32,
-            )?;
-            let cfg = LaunchConfig {
-                grid_dim: ((t as u32).div_ceil(SP_M as u32), (n_head / 4) as u32, 1),
-                block_dim: (32, 4, 1),
-                shared_mem_bytes: shmem,
-            };
-            let (hd, nh, nhkv, ti, tkvi, cz, wi) = (
-                head_dim as i32,
-                n_head as i32,
-                n_head_kv as i32,
-                t as i32,
-                t_kv as i32,
-                causal as i32,
-                window as i32,
-            );
-            let qb = self.f32_to_bf16(q, t * n_head * head_dim)?;
-            let kb = self.f32_to_bf16(k, t_kv * n_head_kv * head_dim)?;
-            let vb = self.f32_to_bf16(v, t_kv * n_head_kv * head_dim)?;
-            let __s_b = self.gpu.stream();
-            let mut b = __s_b.launch_builder(&f);
-            b.arg(&qb)
-                .arg(&kb)
-                .arg(&vb)
-                .arg(o)
-                .arg(&hd)
-                .arg(&nh)
-                .arg(&nhkv)
-                .arg(&ti)
-                .arg(&tkvi)
-                .arg(&scale)
-                .arg(&cz)
-                .arg(&wi);
-            unsafe {
-                b.launch(cfg)?;
-            }
-            return Ok(());
-        }
+        // Off the P1 stamp only the f32 kernels remain: the floor stamp, or the f32-staged one.
         let f = self.func(if floor {
             "fa_prefill_w_f32"
-        } else if f32_stage {
-            "fa_prefill_w_f32_pp"
         } else {
-            "fa_prefill_w_bf16_pp"
+            "fa_prefill_w_f32_pp"
         });
         let shmem =
             (2 * (2 * BK * head_dim + BLOCK_Q * BK) + 4 * (BLOCK_Q * BK + 2 * BLOCK_Q)) as u32;
@@ -29683,45 +29602,22 @@ impl Engine {
             causal as i32,
             window as i32,
         );
-        if f32_stage {
-            let __s_b = self.gpu.stream();
-            let mut b = __s_b.launch_builder(&f);
-            b.arg(q)
-                .arg(k)
-                .arg(v)
-                .arg(o)
-                .arg(&hd)
-                .arg(&nh)
-                .arg(&nhkv)
-                .arg(&ti)
-                .arg(&tkvi)
-                .arg(&scale)
-                .arg(&cz)
-                .arg(&wi);
-            unsafe {
-                b.launch(cfg)?;
-            }
-        } else {
-            let qb = self.f32_to_bf16(q, t * n_head * head_dim)?;
-            let kb = self.f32_to_bf16(k, t_kv * n_head_kv * head_dim)?;
-            let vb = self.f32_to_bf16(v, t_kv * n_head_kv * head_dim)?;
-            let __s_b = self.gpu.stream();
-            let mut b = __s_b.launch_builder(&f);
-            b.arg(&qb)
-                .arg(&kb)
-                .arg(&vb)
-                .arg(o)
-                .arg(&hd)
-                .arg(&nh)
-                .arg(&nhkv)
-                .arg(&ti)
-                .arg(&tkvi)
-                .arg(&scale)
-                .arg(&cz)
-                .arg(&wi);
-            unsafe {
-                b.launch(cfg)?;
-            }
+        let __s_b = self.gpu.stream();
+        let mut b = __s_b.launch_builder(&f);
+        b.arg(q)
+            .arg(k)
+            .arg(v)
+            .arg(o)
+            .arg(&hd)
+            .arg(&nh)
+            .arg(&nhkv)
+            .arg(&ti)
+            .arg(&tkvi)
+            .arg(&scale)
+            .arg(&cz)
+            .arg(&wi);
+        unsafe {
+            b.launch(cfg)?;
         }
         Ok(())
     }
@@ -33514,9 +33410,6 @@ impl Engine {
         let (ski, win) = (sp as i32, window as i32);
         let gqa = (n_head / n_head_kv).max(1) as u32;
         let smem = (32 * head_dim * 2) as u32; // sV bf16 [FA_DEC_TILE=32][hd] (v3 uses sV only)
-        // MEMRA_FA_UNROLL=8: the B1-unroll-8 twin (deeper K load pipeline, bit-identical —
-        // see fa_dec_v3_walk_u). Same launch geometry.
-        static U8: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
         // MEMRA_FA_PROF=1: clock64() phase profile of the decode-attention walk. ncu is
         // permission-blocked in this container and the module params are not exposed, so this
         // is how the ~1.18us/key gets localised. Diagnostic only (extra atomics per block);
@@ -33525,29 +33418,14 @@ impl Engine {
         let fprof = *FPROF.get_or_init(|| std::env::var("MEMRA_FA_PROF").as_deref() == Ok("1"));
         static PROF_BUF: std::sync::Mutex<Option<(usize, CudaSlice<u64>)>> =
             std::sync::Mutex::new(None);
-        // MEMRA_FA_HSPLIT=2: split each kv_head's gqa warp group across TWO blocks (2x grid,
-        // duplicated Phase A staging) — bit-identical per (head, split). Tests whether B1's
-        // 59-63% cycle share is occupancy-starved latency (grid is only n_head_kv x n_splits).
-        static HS: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-        let hs2 = *HS.get_or_init(|| std::env::var("MEMRA_FA_HSPLIT").as_deref() == Ok("2"))
-            && (n_head / n_head_kv).is_multiple_of(2)
-            && (n_head / n_head_kv) >= 2;
         let f = if fprof {
             self.func("fa_decode_vec_q_v3_dcw_prof")
-        } else if hs2 {
-            self.func("fa_decode_vec_q_v3_dcw_hs2")
-        } else if *U8.get_or_init(|| std::env::var("MEMRA_FA_UNROLL").as_deref() == Ok("8")) {
-            self.func("fa_decode_vec_q_v3_dcw_u8")
         } else {
             self.func("fa_decode_vec_q_v3_dcw")
         };
         let cfg = LaunchConfig {
-            grid_dim: if hs2 {
-                ((2 * n_head_kv) as u32, n_splits as u32, 1)
-            } else {
-                (n_head_kv as u32, n_splits as u32, 1)
-            },
-            block_dim: if hs2 { (32, gqa / 2, 1) } else { (32, gqa, 1) },
+            grid_dim: (n_head_kv as u32, n_splits as u32, 1),
+            block_dim: (32, gqa, 1),
             shared_mem_bytes: smem,
         };
         let null: u64 = 0;

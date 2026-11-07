@@ -822,17 +822,6 @@ struct GdnStash {
     conv_pre: CudaSlice<f32>,
     /// [k_cap, conv_dim] — the chunk's raw pre-conv qkv rows (rewind rebuild input).
     qkv_rows: CudaSlice<f32>,
-    /// Verify SCAN-CHAIN segment graph (mtp9, `set_verify_graphs`): dwconv + the t
-    /// per-column {scan step, state snapshot} launches + the conv-history roll, captured
-    /// at ONE chunk width. The chain is serially DEPENDENT (every column reads and writes
-    /// the recurrent state), so each launch's issue latency is fully exposed — this is the
-    /// densest all-device launch run in the verify chunk (t=6: 14 launches x 36 GDN
-    /// layers). `Some((t, graph))`; a chunk at a different t invalidates it.
-    scan_graph: Option<(usize, GraphEntry)>,
-    /// Chunk widths already WARMED at: the first chunk of a width runs eager so every
-    /// workspace slot is allocated and parked outside the capture region (allocations
-    /// inside a capture become graph mem nodes — the trunk's draft-graph lesson).
-    scan_warm: Option<usize>,
 }
 
 /// Per-PLE-layer verify-chunk stash: pre-chunk conv history + the chunk's normed
@@ -1448,30 +1437,6 @@ pub fn set_decode_graphs(on: bool) {
 
 fn decode_graphs_on() -> bool {
     DECODE_GRAPHS.load(std::sync::atomic::Ordering::Relaxed)
-}
-
-/// VERIFY scan-chain segment graphs (mtp9): the spec verify chunk's per-GDN-layer
-/// {dwconv, t x (scan step + state snapshot), conv-history roll} run, captured once per
-/// chunk width and replayed. Replay is bit-identical to the eager chain BY CONSTRUCTION
-/// (same kernels, same launch parameters, same baked addresses, same order — only the CPU
-/// issue path changes), so `--verify-bit-gate` must stay 24/24 and `--spec-gate` byte
-/// identity must hold; those are the gates, not a tolerance.
-///
-/// **Default OFF, deliberately** (new-flags law): the trunk's own decode-graph receipt on
-/// this box is +1.3% for an 84-graph, 2,400-launch reduction (PROFILE-2.md), so launch
-/// issue is mostly overlapped here and the expected value is small. This seam exists to
-/// MEASURE the one case the trunk receipt does not cover — a serially dependent chain,
-/// where issue latency cannot overlap — and it flips only on its own interleaved A/B.
-/// Requires the step workspace (address stability) and no section profiler (sync
-/// boundaries cannot cross a replay).
-static VERIFY_GRAPHS: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
-
-pub fn set_verify_graphs(on: bool) {
-    VERIFY_GRAPHS.store(on, std::sync::atomic::Ordering::Relaxed);
-}
-
-fn verify_graphs_on() -> bool {
-    VERIFY_GRAPHS.load(std::sync::atomic::Ordering::Relaxed)
 }
 
 /// v2 grouped sel matvec (perf lane item 3: PROFILE-1 residual §3 — the v1 kernel sits
@@ -2255,7 +2220,10 @@ pub fn set_idx_cache(on: bool) {
 /// Never quote "kvq is faster" at depth. The DECISION stands on memory: 11.08 vs 49.0
 /// KiB/token, and at the 262,144 target window kvq is memory-REQUIRED (the f32 arm does not
 /// allocate that state at all), so there is no alternative to compare against.
-/// The -7.4% is a READ-PATTERN artifact, not the cost of quantization -- see `KV_HOIST_DEFAULT`.
+/// The -7.4% is a READ-PATTERN artifact, not the cost of quantization: the score loop reloads
+/// the fp16 K block scale once per element (`PROFILE-C0.md` section 2). The scale-hoisted twin
+/// that targeted it (`kvhoist`) read positive only in a contended cell and was deleted for want
+/// of an exclusive rerun (docs/FLAGS.md "Removed doors").
 /// Receipts: research/qwen4exp-bringup-20260829/kvq/ + box ~/realgate/kvq.
 pub const KV_QUANT_DEFAULT: bool = true;
 static KV_QUANT: std::sync::atomic::AtomicBool =
@@ -2265,77 +2233,6 @@ fn kv_quant_on() -> bool {
 }
 pub fn set_kv_quant(on: bool) {
     KV_QUANT.store(on, std::sync::atomic::Ordering::Relaxed);
-}
-
-/// HOISTED K block scale in the quantized block-list attention (`kvhoist`, memory lane
-/// 2026-08-31). Selects `q4e_sdpa_blocklist_q8q5_hoist` over `q4e_sdpa_blocklist_q8q5`;
-/// BIT-IDENTICAL by construction (same product, same `acc +=` order, phase 2 and phase 3
-/// verbatim), so this is a pure read-pattern seam and the bar is bit-identity, not a band.
-///
-/// It exists because it is the mechanism behind the kvq perf SIGN FLIP, and the flip turns out
-/// to be a layout artifact rather than a tax. `q4e_deq_q8` recomputes the block pointer from the
-/// element index, so the score loop reloads the fp16 block scale ONCE PER ELEMENT. Measured
-/// statically in the sm_120 SASS (`PROFILE-C0.md` §2), score-phase inner loop per 8 K elements:
-///
-/// | kernel | instrs | KV-cache loads | fp16 scale loads |
-/// |---|---|---|---|
-/// | `sdpa_blocklist_f32` | 37 | 8 | -- |
-/// | `q4e_sdpa_blocklist_q8q5` | **120** | 8 | **8** |
-/// | `q4e_sdpa_blocklist_q8q5_hoist` | **52** | 8 | **0** (1 per 32-elem block) |
-///
-/// Phase 1 is thread-per-position (lanes sit on 32 different tokens, `k_tok_bytes` apart), so
-/// every load instruction replays 32 ways into 32 distinct sectors. The quantized cache
-/// therefore issued 2x the f32 twin's KV transactions while reading 3.76x fewer bytes: the byte
-/// saving cannot land, and the extra instruction stream is a straight loss. That is the -7.4%
-/// at a 100,000-token fill, and it is why the +1.3% shallow flip receipt had the opposite sign
-/// (a shallow fill reads almost no rows, so phase 1 barely runs).
-///
-/// Default OFF at introduction, by design (new-flags law): the correctness receipts land with
-/// the seam and the default flip is a separate change carrying the interleaved A/B. Arm with
-/// `MEMRA_Q4E_SEAMS=kvhoist`; rollback `kvhoist=0`. Mid-run flippable (no layout latch).
-pub const KV_HOIST_DEFAULT: bool = false;
-static KV_HOIST: std::sync::atomic::AtomicBool =
-    std::sync::atomic::AtomicBool::new(KV_HOIST_DEFAULT);
-fn kv_hoist_on() -> bool {
-    KV_HOIST.load(std::sync::atomic::Ordering::Relaxed)
-}
-pub fn set_kv_hoist(on: bool) {
-    KV_HOIST.store(on, std::sync::atomic::Ordering::Relaxed);
-}
-/// For receipt headers, same reason as `kv_quant_is_on`.
-pub fn kv_hoist_is_on() -> bool {
-    kv_hoist_on()
-}
-
-/// DIM-MAJOR pooled-key device plane (`poolT`, memory lane 2026-08-31). Selects
-/// `qsa_index_score_f32_t` over `qsa_index_score_f32` and mirrors the pooled cache transposed;
-/// BIT-IDENTICAL by construction (identical loop order and identical explicit
-/// `__fmul_rn`/`__fadd_rn`/`__fdiv_rn` -- only the address of `pooled` changes).
-///
-/// It targets the SECOND depth-scaling term in the deep decode profile. With `idxsel` armed
-/// (`ladder-r2prof-step-idxsel.tsv`), `qsa.idx_host` is 2.5 ms at 100,000 / 3.0 at 131,072 /
-/// 3.2 at 150,000 -- linear in context, extrapolating to ~5.7 ms at 262,144, behind only
-/// `ple.host_ngram_gather` among the terms that grow. The score kernel is thread-per-block over
-/// the pooled plane, so lane L reads `pooled[(block0+L)*head_dim + d]`: lanes are head_dim*4 =
-/// 512 B apart, one warp's `k[d]` touches 32 DISTINCT sectors and moves 1024 B to use 128 B.
-/// Dim-major makes the same 32 lanes read 32 consecutive floats: 4 sectors, zero waste, 8x less
-/// sector traffic on the one array whose size IS the context.
-///
-/// Default OFF at introduction, by design (new-flags law). Arm `MEMRA_Q4E_SEAMS=poolT`, roll
-/// back `poolT=0`. **Mid-run flippable with NO rebuild**: both layouts are maintained on every
-/// append (see the append site for why), so `**mirrored` is the single truth for both and a flip
-/// can neither read a stale plane nor leave one behind. The seam selects only the kernel.
-pub const POOL_T_DEFAULT: bool = false;
-static POOL_T: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(POOL_T_DEFAULT);
-fn pool_t_on() -> bool {
-    POOL_T.load(std::sync::atomic::Ordering::Relaxed)
-}
-pub fn set_pool_t(on: bool) {
-    POOL_T.store(on, std::sync::atomic::Ordering::Relaxed);
-}
-/// For receipt headers.
-pub fn pool_t_is_on() -> bool {
-    pool_t_on()
 }
 
 /// The live KV cache format, for RECEIPT HEADERS. A receipt that does not record which
@@ -2912,7 +2809,6 @@ pub fn seam_state(name: &str) -> Option<bool> {
         "hcdiet" => hc_diet_on(),
         "gufuse" => sel_gufuse_on(),
         "routerb16" => router_bf16_on(),
-        "vgraph" => verify_graphs_on(),
         "vfuse" => verify_fused_on(),
         "idxdev" => idx_dev_on(),
         "idxsel" => idx_sel_on(),
@@ -2920,8 +2816,6 @@ pub fn seam_state(name: &str) -> Option<bool> {
         "routerdev" => router_dev_on(),
         "idxcache" => idx_cache_on(),
         "kvq" => kv_quant_on(),
-        "kvhoist" => kv_hoist_on(),
-        "poolT" => pool_t_on(),
         // Shape-valued, but it DOES carry a boolean state and must report it: the shared
         // `--ab-seam` / `--ladder-ab-seam` harness restores the entry arm only when
         // `seam_state` answers, and returning None there would leave the ON arm armed for
@@ -2979,7 +2873,6 @@ pub fn seam_names() -> &'static [&'static str] {
         "hcdiet",
         "gufuse",
         "routerb16",
-        "vgraph",
         "vfuse",
         "longatt",
         "idxdev",
@@ -2989,8 +2882,6 @@ pub fn seam_names() -> &'static [&'static str] {
         "idxcache",
         "kvq",
         "idxq",
-        "kvhoist",
-        "poolT",
         "selgroup",
     ]
 }
@@ -3021,7 +2912,6 @@ fn seam_dispatch(name: &str, on: bool, value: Option<&str>, apply: bool) -> bool
         "hcdiet" => seam!(set_hc_diet(on)),
         "gufuse" => seam!(set_sel_gufuse(on)),
         "routerb16" => seam!(set_router_bf16(on)),
-        "vgraph" => seam!(set_verify_graphs(on)),
         // COST INSTRUMENT, no rewind (see VERIFY_FUSED_DEFAULT): a spec loop with this
         // armed refuses at the first `verify_rewind`. Timing probes only.
         "vfuse" => seam!(set_verify_fused(on)),
@@ -3040,10 +2930,6 @@ fn seam_dispatch(name: &str, on: bool, value: Option<&str>, apply: bool) -> bool
         "routerdev" => seam!(set_router_dev(on)),
         "idxcache" => seam!(set_idx_cache(on)),
         "kvq" => seam!(set_kv_quant(on)),
-        // Bit-identical READ-PATTERN seams (memory lane): no layout latch on `kvhoist`,
-        // and `poolT` re-mirrors on flip, so both are sound to flip between timed rounds.
-        "kvhoist" => seam!(set_kv_hoist(on)),
-        "poolT" => seam!(set_pool_t(on)),
         // Three-valued: `idxq=q8`, `idxq=bf16`, `idxq=0`/`idxq=f32` (rollback); bare `idxq`
         // arms the q8 target, and a valueless OFF (`set_seam("idxq", false, None)`, the
         // ladder A/B's OFF arm) arms the f32 rollback, as `longatt` does. Any other value
@@ -3457,22 +3343,12 @@ fn indexer_select_rows(
             let pooled_rows = pooled_keys.len() / head_dim;
             // Grow + fill the device mirror with any rows it does not have yet.
             let want = pooled_rows.max(max_blocks);
-            // POOL_PLANES regions of `cap_rows * head_dim`: the row-major mirror, then the
-            // dim-major `poolT` plane. The pitch of the plane is `cap_rows`, so it is baked at
-            // allocation and a capacity change invalidates the plane's addressing — hence the
-            // full re-mirror below rather than a strided forward copy of the old plane.
-            if mirror
-                .as_ref()
-                .is_none_or(|m| m.len() < want * head_dim * POOL_PLANES)
-            {
+            // Capacity grows by doubling; a grow re-mirrors from the host cache, which holds every
+            // row and is the same source the append already uses (one H2D of the pooled cache per
+            // capacity DOUBLING, log2 times over a fill).
+            if mirror.as_ref().is_none_or(|m| m.len() < want * head_dim) {
                 let cap_rows = want.next_power_of_two().max(1024);
-                let fresh = e.zeros(cap_rows * head_dim * POOL_PLANES)?;
-                // The old growth path copied the mirrored prefix forward and kept `**mirrored`.
-                // That is not sound for the plane (new pitch => every dim lands elsewhere), and a
-                // half-addressed plane scores stale keys silently. Re-mirror from the host cache
-                // instead, which holds every row and is the same source the append already uses.
-                // Costs one H2D of the pooled cache per capacity DOUBLING (log2 times over a
-                // fill), against a class of wrong-value bug this lane has already paid for twice.
+                let fresh = e.zeros(cap_rows * head_dim)?;
                 **mirror = Some(fresh);
                 **mirrored = 0;
             }
@@ -3481,36 +3357,6 @@ fn indexer_select_rows(
                 let delta = &pooled_keys[**mirrored * head_dim..pooled_rows * head_dim];
                 let mut view = m.slice_mut(**mirrored * head_dim..pooled_rows * head_dim);
                 e.gpu.stream().memcpy_htod(delta, &mut view)?;
-                // `poolT`: keep the DIM-MAJOR twin of the same rows in the second half of the
-                // buffer. Both layouts are maintained UNCONDITIONALLY and only the kernel choice
-                // reads the seam. Two reasons, and the second is the important one:
-                //
-                //  - Experimental design. The append is then identical in both A/B arms, so the
-                //    measurement isolates exactly the variable under test (the READ pattern) and
-                //    the transpose cost cannot flatter or penalise either arm.
-                //  - There is no silent-wrong-value mode. A seam that is flippable between timed
-                //    rounds plus a layout that is only maintained while armed means an arm that
-                //    was OFF for a while leaves the plane missing every row appended meanwhile —
-                //    and a stale pooled plane scores stale keys, which reads as plausible output
-                //    rather than as a failure. Maintaining both makes `**mirrored` the single
-                //    truth for BOTH layouts, so a flip needs no rebuild and can leave nothing
-                //    behind. (Same class as the `pooled_dev_rows` truncation trap already
-                //    recorded at the rewind sites.)
-                //
-                // Instrument cost, stated: one pooled plane of extra VRAM (33.5 MB at the 262,144
-                // target geometry, 1.6% of the ~2 GB free there) plus one transpose over the
-                // delta — 512 rows per 2,048-token prefill chunk, 0-1 rows per decode step. When
-                // the A/B verdict lands, the losing layout goes away in the same commit; carrying
-                // both is an A/B instrument, not a shipping design.
-                let cap_rows = m.len() / (head_dim * POOL_PLANES);
-                launch_qsa_pooled_transpose(
-                    e,
-                    m,
-                    **mirrored,
-                    pooled_rows - **mirrored,
-                    head_dim,
-                    cap_rows,
-                )?;
                 **mirrored = pooled_rows;
             }
             // Per-row prepared queries (norm + rope) — the host twin's own preparation.
@@ -3817,20 +3663,7 @@ fn launch_qsa_index_score(
     if rows > 65535 {
         return Err("qsa_index_score_f32: rows exceed grid.y (caller sub-batches)".into());
     }
-    // `poolT`: read the dim-major plane in the second half of the mirror (bit-identical twin —
-    // see POOL_T_DEFAULT). The plane's pitch is the mirror's block CAPACITY, not `n_blocks`:
-    // passing `n_blocks` would read dim d of block b as dim d of some other block for every
-    // d > 0, which is silent wrong values, so the pitch is derived from the allocation.
-    let cap_rows = pooled.len() / (head_dim * POOL_PLANES);
-    let pool_t = pool_t_on();
-    if pool_t && cap_rows < n_blocks {
-        return Err("qsa_index_score_f32_t: pooled plane capacity below n_blocks".into());
-    }
-    let f = e.func(if pool_t {
-        "qsa_index_score_f32_t"
-    } else {
-        "qsa_index_score_f32"
-    });
+    let f = e.func("qsa_index_score_f32");
     const TPB: usize = 128;
     let cfg = LaunchConfig {
         grid_dim: (n_blocks.div_ceil(TPB) as u32, rows as u32, 1),
@@ -3838,27 +3671,7 @@ fn launch_qsa_index_score(
         shared_mem_bytes: 0,
     };
     let (h, hd, nb, r) = (heads as i32, head_dim as i32, n_blocks as i32, rows as i32);
-    let pitch = cap_rows as i64;
     let stream = e.gpu.stream();
-    if pool_t {
-        // The plane starts at `cap_rows * head_dim`; the kernel indexes `pooled_t[d*pitch + b]`
-        // from that base, so the slice is the plane region, not the whole buffer.
-        let plane = pooled.slice(cap_rows * head_dim..cap_rows * head_dim * POOL_PLANES);
-        let mut b = stream.launch_builder(&f);
-        b.arg(q)
-            .arg(&plane)
-            .arg(&mut *out)
-            .arg(&h)
-            .arg(&hd)
-            .arg(&nb)
-            .arg(&r)
-            .arg(&scale)
-            .arg(&pitch);
-        unsafe {
-            b.launch(cfg)?;
-        }
-        return Ok(());
-    }
     let mut b = stream.launch_builder(&f);
     b.arg(q)
         .arg(pooled)
@@ -3868,45 +3681,6 @@ fn launch_qsa_index_score(
         .arg(&nb)
         .arg(&r)
         .arg(&scale);
-    unsafe {
-        b.launch(cfg)?;
-    }
-    Ok(())
-}
-
-/// How many `cap_rows * head_dim` regions the pooled device mirror carries: the row-major
-/// mirror, then the dim-major `poolT` plane. See the append site for why both are maintained
-/// unconditionally (A/B isolation, and no stale-plane failure mode on a mid-run seam flip).
-const POOL_PLANES: usize = 2;
-
-/// Mirror the freshly-appended pooled rows `[r0, r0+rows)` into the dim-major plane. Pure data
-/// movement inside one buffer; `cap_rows` is the plane pitch (the mirror's block capacity).
-fn launch_qsa_pooled_transpose(
-    e: &Engine,
-    buf: &mut CudaSlice<f32>,
-    r0: usize,
-    rows: usize,
-    head_dim: usize,
-    cap_rows: usize,
-) -> Res<()> {
-    if rows == 0 {
-        return Ok(());
-    }
-    if r0 + rows > cap_rows {
-        return Err("qsa_pooled_transpose_f32: delta exceeds the plane capacity".into());
-    }
-    let f = e.func("qsa_pooled_transpose_f32");
-    const TPB: usize = 128;
-    let cfg = LaunchConfig {
-        grid_dim: (rows.div_ceil(TPB) as u32, head_dim as u32, 1),
-        block_dim: (TPB as u32, 1, 1),
-        shared_mem_bytes: 0,
-    };
-    let (r, hd, r0i) = (rows as i32, head_dim as i32, r0 as i32);
-    let cap = cap_rows as i64;
-    let stream = e.gpu.stream();
-    let mut b = stream.launch_builder(&f);
-    b.arg(buf).arg(&r).arg(&hd).arg(&r0i).arg(&cap);
     unsafe {
         b.launch(cfg)?;
     }
@@ -4605,12 +4379,7 @@ fn launch_q4e_sdpa_blocklist_q8q5(
     if smem > 48 * 1024 {
         return Err("q4e_sdpa_blocklist_q8q5: selection exceeds the smem budget".into());
     }
-    // `kvhoist`: the scale-hoisted twin, bit-identical, selected by seam (see KV_HOIST_DEFAULT).
-    let f = e.func(if kv_hoist_on() {
-        "q4e_sdpa_blocklist_q8q5_hoist"
-    } else {
-        "q4e_sdpa_blocklist_q8q5"
-    });
+    let f = e.func("q4e_sdpa_blocklist_q8q5");
     let cfg = LaunchConfig {
         grid_dim: (n_head as u32, t as u32, 1),
         block_dim: (128, 1, 1),
@@ -6443,7 +6212,7 @@ pub fn moe_union_cost_probe(
         });
     }
     // Rep 0 is a warmed throwaway for EVERY arm: the first launch of a width pays workspace
-    // allocation and a cold instruction cache (the scan_warm lesson).
+    // allocation and a cold instruction cache (the first chunk of a width is never timed).
     for rep in 0..(reps + 1) {
         for c in built.iter_mut() {
             let tok_arg = if c.t > 1 {
@@ -6566,7 +6335,7 @@ pub struct SelShapeRow {
 /// Arms are interleaved REP BY REP (LAW:interleaved-ab / TRAP:monotone-sweep-inflates-the-
 /// lever): a shape ladder run as contiguous blocks would let clock/thermal drift over the
 /// run read as a shape effect, and the natural order (baseline first) inflates the payoff.
-/// Rep 0 of every arm is a warmed throwaway (the `scan_warm` lesson).
+/// Rep 0 of every arm is a warmed throwaway (the first run of a width allocates its workspace).
 ///
 /// TIMING ARM: hold `flock -x` around the WHOLE invocation, and never quote a row measured
 /// on the rig (LAW:rig-gpu-exactness-only — the rig is for the exactness arms above).
@@ -8427,64 +8196,6 @@ pub fn gate_kvq_kernels(e: &Engine) -> Res<String> {
                 .into());
             }
         }
-        // ---- (3b) `kvhoist` vs the un-hoisted kernel, SAME real geometry ----
-        // The hoist is a pure read-pattern change (fp16 K block scale loaded once per 32-element
-        // block instead of once per element), so the bar is bit-identity and nothing weaker.
-        //
-        // This arm rides arm (3)'s geometry deliberately: hd=256 is EIGHT 32-element blocks per
-        // head slice and nkv=2 means the second KV head starts at element 256, so the hoisted
-        // loop's block walk and its `e0 = kv_head*head_dim` offset are both genuinely exercised.
-        // At a tiny head_dim the loop would run ONE iteration and the per-block scale advance —
-        // the only thing the seam changes — would never be taken. That is precisely the
-        // tiny-green/real-broken shape this lane has been bitten by twice, so the arm is written
-        // where it cannot happen rather than trusted to a comment.
-        {
-            let was = kv_hoist_on();
-            set_kv_hoist(true);
-            let mut o_hoist = e.zeros(t * nh * hd)?;
-            let launched = launch_q4e_sdpa_blocklist_q8q5(
-                e,
-                &q,
-                &kq,
-                &vq,
-                &mut o_hoist,
-                &pos,
-                &meta_dev,
-                hd,
-                nh,
-                nkv,
-                t,
-                max_count,
-                scale,
-            );
-            set_kv_hoist(was);
-            launched?;
-            let hoist = e.dtoh(&o_hoist)?;
-            let mut worst: Option<(usize, f32, f32)> = None;
-            for (i, (a, b)) in hoist.iter().zip(&fused).enumerate() {
-                if a.to_bits() != b.to_bits() && worst.is_none() {
-                    worst = Some((i, *a, *b));
-                }
-            }
-            if let Some((i, a, b)) = worst {
-                return Err(format!(
-                    "kvhoist vs un-hoisted q8q5 blocklist: bit mismatch at {i}: {a} vs {b} \
-                     (hd={hd} nh={nh} nkv={nkv} t={t} t_kv={t_kv} max_count={max_count})"
-                )
-                .into());
-            }
-            // A no-op arm would also compare equal. Prove the seam actually selected the other
-            // kernel: `kv_hoist_on()` gates the `e.func` name, and an unknown name would have
-            // failed the launch above rather than silently falling through — so a green compare
-            // plus a completed launch under the armed seam is the engagement evidence. State the
-            // count so a zero-value compare cannot pass as a pass.
-            report.push(format!(
-                "kvhoist vs un-hoisted q8q5 blocklist: BIT-IDENTICAL over {} values \
-                 (real geometry hd={hd} nh={nh} nkv={nkv}, {} blocks/head slice, max_count={max_count})",
-                t * nh * hd,
-                hd / 32
-            ));
-        }
         report.push(format!(
             "fused q8q5 blocklist vs dequant+f32 composition: BIT-IDENTICAL over {} values",
             t * nh * hd
@@ -8594,80 +8305,9 @@ pub fn gate_qsa_index_score(e: &Engine) -> Res<String> {
             worst_rows += 1;
         }
     }
-    // ---- `poolT`: the dim-major plane, through the SAME host-twin bar ----
-    // Validates the whole chain, not just the kernel: the transpose kernel writes the plane from
-    // the row-major region on device, and the transposed score kernel reads it. Bit-identity to
-    // the host twin (not merely to the row-major device kernel) is the bar, because the row-major
-    // kernel is itself gated against the host above — comparing only device-to-device would let a
-    // shared mistake pass twice.
-    //
-    // The case is chosen to catch the ONE mistake this layout invites: `cap_rows != n_blocks`.
-    // The plane's pitch is the mirror's block CAPACITY, and the mirror grows to a power of two
-    // while `n_blocks` is whatever the fill happens to be — so `cap_rows == n_blocks` is the
-    // ABNORMAL state, and a kernel handed `n_blocks` as its pitch would read dim d of block b as
-    // dim d of a different block for every d > 0. That is silent wrong values, and it would be
-    // green in any gate where the two numbers happen to coincide. Here they deliberately do not
-    // (1031 blocks in a 4096-block plane), and a second case pins the aligned edge.
-    let mut pool_t_rows = 0usize;
-    for (rows, n_blocks, cap_rows) in [(1usize, 1031usize, 4096usize), (5, 2048, 2048)] {
-        let q_host: Vec<f32> = (0..rows * heads * head_dim).map(|_| next_f32()).collect();
-        let pooled_host: Vec<f32> = (0..n_blocks * head_dim).map(|_| next_f32()).collect();
-        let q = e.htod(&q_host)?;
-        // The mirror as `indexer_select_rows` builds it: POOL_PLANES regions of cap_rows*head_dim,
-        // the row-major rows H2D'd into the first, the plane filled by the transpose kernel.
-        let mut mirror = e.zeros(cap_rows * head_dim * POOL_PLANES)?;
-        {
-            let mut view = mirror.slice_mut(0..n_blocks * head_dim);
-            e.gpu.stream().memcpy_htod(&pooled_host, &mut view)?;
-        }
-        launch_qsa_pooled_transpose(e, &mut mirror, 0, n_blocks, head_dim, cap_rows)?;
-        let was = pool_t_on();
-        set_pool_t(true);
-        let mut scores_dev = e.uninit(rows * n_blocks)?;
-        let launched = launch_qsa_index_score(
-            e,
-            &q,
-            &mirror,
-            &mut scores_dev,
-            heads,
-            head_dim,
-            n_blocks,
-            rows,
-            scale,
-        );
-        set_pool_t(was);
-        launched?;
-        let got = e.dtoh(&scores_dev)?;
-        for row in 0..rows {
-            let qr = &q_host[row * heads * head_dim..(row + 1) * heads * head_dim];
-            let host = score_blocks(qr, &pooled_host, heads, head_dim, n_blocks, scale, 1);
-            for (b, want) in host.iter().enumerate() {
-                let g = got[row * n_blocks + b];
-                if g.to_bits() != want.to_bits() {
-                    return Err(format!(
-                        "poolT qsa_index_score_f32_t: bit mismatch row {row} block {b}: \
-                         {g} vs host {want} (n_blocks={n_blocks} cap_rows={cap_rows})"
-                    )
-                    .into());
-                }
-            }
-            if top_blocks_ascending(&host, budget, 1)
-                != top_blocks_ascending(&got[row * n_blocks..(row + 1) * n_blocks], budget, 1)
-            {
-                return Err(format!(
-                    "poolT qsa_index_score_f32_t: top-{budget} set differs at row {row} \
-                     (n_blocks={n_blocks} cap_rows={cap_rows})"
-                )
-                .into());
-            }
-            pool_t_rows += 1;
-        }
-    }
     Ok(format!(
         "qsa-index-score oracle: device scores BIT-IDENTICAL to the host twin over \
-         {worst_rows} rows (4096 + 1031 blocks, real 4x128 geometry) and top-512 sets equal; \
-         poolT dim-major plane (transpose + transposed kernel) BIT-IDENTICAL to the SAME host \
-         twin over {pool_t_rows} rows, incl. the pitch-trap case cap_rows=4096 != n_blocks=1031"
+         {worst_rows} rows (4096 + 1031 blocks, real 4x128 geometry) and top-512 sets equal"
     ))
 }
 
@@ -12763,66 +12403,7 @@ impl Qwen4ExpGpu {
                 }
                 Ok(())
             };
-            // Segment graph (mtp9, default OFF): only the verify shape is graphed — plain
-            // decode already has its own whole-interior graph, and prefill shapes vary.
-            let graphable = stash.is_some() && verify_graphs_on() && step_ws_on() && !prof::on();
             match stash.as_deref_mut() {
-                Some(st) if graphable => {
-                    // Take the graph out so the snapshot buffer can be borrowed mutably.
-                    // A different chunk width invalidates the capture (baked shapes).
-                    let entry = match st.scan_graph.take() {
-                        Some((gt, g)) if gt == t => Some(g),
-                        _ => None,
-                    };
-                    let warm = st.scan_warm == Some(t);
-                    st.scan_warm = Some(t);
-                    // EXACTLY ONE of the three arms executes the chain once.
-                    let entry = match (warm, entry) {
-                        // First chunk at this width: eager, so every slot is allocated
-                        // and parked before any capture region opens.
-                        (false, _) => {
-                            chain(
-                                e,
-                                conv,
-                                state,
-                                Some(&mut st.states),
-                                &mut conv_out,
-                                &mut o,
-                                tmp.as_mut(),
-                            )?;
-                            None
-                        }
-                        // Captured at this width already: replay, no eager pass.
-                        (true, Some(g)) => {
-                            g.0.launch()?;
-                            Some(g)
-                        }
-                        // Warm but not yet captured: capture WITHOUT executing
-                        // (`nowarm`), then launch once — capture + launch is exactly one
-                        // execution, so the column snapshots and the state advance happen
-                        // exactly once.
-                        (true, None) => {
-                            let states = &mut st.states;
-                            let mut tmp_ref = tmp.as_mut();
-                            let g = e.capture_graph_retained_nowarm(|eng| {
-                                chain(
-                                    eng,
-                                    conv,
-                                    state,
-                                    Some(states),
-                                    &mut conv_out,
-                                    &mut o,
-                                    tmp_ref.as_deref_mut(),
-                                )
-                            })?;
-                            g.0.launch()?;
-                            Some(g)
-                        }
-                    };
-                    if let Some(g) = entry {
-                        st.scan_graph = Some((t, g));
-                    }
-                }
                 Some(st) => chain(
                     e,
                     conv,
@@ -14907,8 +14488,6 @@ impl Qwen4ExpGpu {
                         states: e.zeros(k_cap * nv * hv * hk)?,
                         conv_pre: e.zeros(pad * conv_dim)?,
                         qkv_rows: e.zeros(k_cap * conv_dim)?,
-                        scan_graph: None,
-                        scan_warm: None,
                     })
                 }
                 MixerW::Qsa(_) => None,
