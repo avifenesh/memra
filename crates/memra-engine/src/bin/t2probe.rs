@@ -1,4 +1,8 @@
 //! M3 T=2 divergence bisect: prefill T=2 residuals vs 2-chained-decode residuals per layer.
+//!
+//! step35 (the sliding-gated MoE program) is unsupported and refused at load. Its served verify
+//! is `step35_verify_batch_layers`, entered from `verify_layers`; the per-layer walk this probe
+//! reads (`decode_step_t_aux2`) has no twin of it and refuses that arch.
 use memra_engine::Engine;
 use memra_engine::hybrid::HybridModel;
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -6,6 +10,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let e = Engine::new(0)?;
     let st = memra_gguf::source::SafetensorsSource::open(std::path::Path::new(&path))?;
     let model = HybridModel::load_from_source(&e, &st)?;
+    if model.uses_sliding_gated_moe_program() {
+        return Err("t2probe does not support step35: its served verify is \
+                    step35_verify_batch_layers, and decode_step_t_aux2 has no twin of it"
+            .into());
+    }
     let toks = [9419u32, 11u32];
     let n_layer = model.cfg.n_layer as usize;
     let all: Vec<usize> = (0..n_layer).collect();

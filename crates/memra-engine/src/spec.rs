@@ -19,45 +19,12 @@ use cudarc::driver::CudaSlice;
 use memra_gguf::config::SwigluClamp;
 use std::sync::atomic::{AtomicU64, Ordering};
 
+/// A request's spec sampler. `None` means greedy everywhere in the spec API (temperature 0,
+/// no truncation filter, identity penalties), so the serving path never takes its sampler
+/// from the process environment. The bin entry points read the CLI sampler once through
+/// [`SpecSampling::from_cli_env`] and pass it explicitly.
 fn resolve_spec_sampling(sampling: Option<SpecSampling>) -> SpecSampling {
-    sampling.unwrap_or_else(|| SpecSampling {
-        temp: std::env::var("MEMRA_SPEC_TEMP")
-            .ok()
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(0.0),
-        seed: std::env::var("MEMRA_SEED")
-            .ok()
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(42),
-        top_k: std::env::var("MEMRA_TOP_K")
-            .ok()
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(0),
-        top_p: std::env::var("MEMRA_TOP_P")
-            .ok()
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(1.0),
-        min_p: std::env::var("MEMRA_MIN_P")
-            .ok()
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(0.0),
-        penalty_last_n: std::env::var("MEMRA_PENALTY_LAST_N")
-            .ok()
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(0),
-        penalty_repeat: std::env::var("MEMRA_PENALTY_REPEAT")
-            .ok()
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(1.0),
-        penalty_freq: std::env::var("MEMRA_PENALTY_FREQ")
-            .ok()
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(0.0),
-        penalty_present: std::env::var("MEMRA_PENALTY_PRESENT")
-            .ok()
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(0.0),
-    })
+    sampling.unwrap_or(SpecSampling::GREEDY)
 }
 
 /// Parse the documented `MEMRA_SPEC_REPLAY=1` rollback seam.
@@ -1212,6 +1179,45 @@ pub struct SpecSampling {
 }
 
 impl SpecSampling {
+    /// Greedy: temperature 0, no truncation filter, identity penalties. The seed is the CLI
+    /// default and is never consumed at temperature 0.
+    pub const GREEDY: SpecSampling = SpecSampling {
+        temp: 0.0,
+        seed: 42,
+        top_k: 0,
+        top_p: 1.0,
+        min_p: 0.0,
+        penalty_last_n: 0,
+        penalty_repeat: 1.0,
+        penalty_freq: 0.0,
+        penalty_present: 0.0,
+    };
+
+    /// The CLI sampler: `MEMRA_SPEC_TEMP`, `MEMRA_SEED`, `MEMRA_TOP_K`, `MEMRA_TOP_P`,
+    /// `MEMRA_MIN_P` and `MEMRA_PENALTY_*`, each unset or unparsable field at its
+    /// [`Self::GREEDY`] value. Only the bin entry points `generate_spec` and
+    /// `generate_spec_session` read it. The serving API takes each request's sampler
+    /// explicitly, so a value left in a server's environment cannot sample a greedy request.
+    pub fn from_cli_env() -> SpecSampling {
+        // Each read stays a literal `env::var("MEMRA_*")` call: tools/check-flags.sh finds
+        // runtime reads by that form.
+        fn or<T: std::str::FromStr>(v: Result<String, std::env::VarError>, unset: T) -> T {
+            v.ok().and_then(|v| v.parse().ok()).unwrap_or(unset)
+        }
+        let g = SpecSampling::GREEDY;
+        SpecSampling {
+            temp: or(std::env::var("MEMRA_SPEC_TEMP"), g.temp),
+            seed: or(std::env::var("MEMRA_SEED"), g.seed),
+            top_k: or(std::env::var("MEMRA_TOP_K"), g.top_k),
+            top_p: or(std::env::var("MEMRA_TOP_P"), g.top_p),
+            min_p: or(std::env::var("MEMRA_MIN_P"), g.min_p),
+            penalty_last_n: or(std::env::var("MEMRA_PENALTY_LAST_N"), g.penalty_last_n),
+            penalty_repeat: or(std::env::var("MEMRA_PENALTY_REPEAT"), g.penalty_repeat),
+            penalty_freq: or(std::env::var("MEMRA_PENALTY_FREQ"), g.penalty_freq),
+            penalty_present: or(std::env::var("MEMRA_PENALTY_PRESENT"), g.penalty_present),
+        }
+    }
+
     /// Non-identity penalties requested — THE `pen_on` predicate (one definition; the
     /// same group-off rule `SamplerIdentity::of` canonicalizes: a window with neutral
     /// coefficients is penalties-absent). Both spec routes and the dspark accept walk
@@ -1229,6 +1235,32 @@ impl SpecSampling {
     /// which is what the plain host sampler computes for it, token by token.
     pub fn greedy_penalized(&self) -> bool {
         self.temp <= 0.0 && self.pen_on()
+    }
+}
+
+#[cfg(test)]
+mod spec_sampling_tests {
+    use super::{SpecSampling, resolve_spec_sampling};
+
+    /// The serving API passes `None` for a greedy request. A CLI sampler left in the
+    /// process environment must not turn that request into a sampled one; only the bin
+    /// entry points read it, through `from_cli_env`.
+    #[test]
+    fn a_greedy_request_ignores_the_cli_sampler_env() {
+        // SAFETY: no other test reads these variables; restored immediately below.
+        unsafe {
+            std::env::set_var("MEMRA_SPEC_TEMP", "0.7");
+            std::env::set_var("MEMRA_TOP_K", "20");
+        }
+        let served = resolve_spec_sampling(None);
+        let cli = SpecSampling::from_cli_env();
+        unsafe {
+            std::env::remove_var("MEMRA_SPEC_TEMP");
+            std::env::remove_var("MEMRA_TOP_K");
+        }
+        assert_eq!(served, SpecSampling::GREEDY);
+        assert_eq!(cli.temp, 0.7);
+        assert_eq!(cli.top_k, 20);
     }
 }
 
@@ -5353,8 +5385,8 @@ impl HybridModel {
         // Returning Err (not a panic) is what the capture sites already handle by degrading to
         // the eager chain (`mtp_head_forward_dev` -> `mtp_step35_attn`).
         // ROUND-STREAM stays refused EITHER WAY: the stream VERIFY has no step35 twin (see the
-        // step35_verify refusal), so a stream capture that succeeded here would only move the
-        // failure from capture time (graceful stream-off) to serve time (a failed round).
+        // step35 refusal in `verify_layers`), so a stream capture that succeeded here would only
+        // move the failure from capture time (graceful stream-off) to serve time (a failed round).
         if let Some(g) = mtp.step35.as_ref() {
             if stream_pack.is_some() {
                 return Err(
@@ -7132,9 +7164,9 @@ impl HybridModel {
         // 35B-A3B class: rowwise verify ~= 5.6 ms per drafted token (one full trunk step
         // each) — the same (K+1)-plain-steps wall the dense admission fixed on 2026-08-15.
         // Rollback seam unchanged: MEMRA_SPEC_VERIFY_ROWWISE=1.
-        let rowwise = std::env::var("MEMRA_SPEC_VERIFY_ROWWISE").as_deref() == Ok("1")
-            || !self.batched_serving_numeric_class()
-            || t > 16;
+        // The one caller, `verify_layers`, routes here only for the GatedDeltaNet class.
+        debug_assert!(self.batched_serving_numeric_class());
+        let rowwise = std::env::var("MEMRA_SPEC_VERIFY_ROWWISE").as_deref() == Ok("1") || t > 16;
         if rowwise {
             if stream.is_some() {
                 // rowwise replays per row with host cache.pos — irreconcilable with a
@@ -10214,27 +10246,17 @@ impl HybridModel {
             let mixer_fast = self.mixer_in_q8_1_fast(e, &layer.mixer);
             let norm_fused = std::env::var("MEMRA_NO_FUSE_NORMQ").is_err() && mixer_fast;
             // BATCHED EPILOGUE RE-FUSE (lane/vt-fixes fix 2, 2026-08-03): when the norm is
-            // dispatch-fused AND every consumer of `h` reads only its q8_1 form (Full mixer:
-            // projections only; Linear mixer: the batched arm — the per-column fallback needs
-            // f32 h), emit the attn-input norm DIRECTLY as q8_1 via `rms_norm_q8_1` at nrows=t
-            // (row-indexed kernel — the T-row launch is the per-row m=1 program, kernel-check
-            // pins bit-identity vs rms_norm_decode -> quantize_q8_1). Kills the standalone
-            // quantize launch(es) + the f32 h HBM round-trip that decode never pays.
-            // step35 (Full mixer) is the third case that needs f32 `h`: its verify arm is a
-            // per-ROW replay of the eager decode mixer, whose `pre_q` contract is a single row —
-            // a T-row q8_1 pair cannot be handed to it, and re-deriving per-row q8_1 from the f32
-            // rows is exactly the dispatch being mirrored. Keep step35 on the unfused arm.
-            let lin_q8_only = match &layer.mixer {
-                Mixer::Linear(la) => {
-                    (t >= 3 || (t == 2 && spec_m2())) && e.uses_q8_1_fast(&la.ssm_out)
-                }
-                Mixer::Full(_) if self.sliding_gated_moe_batch_program() => false,
-                _ => true,
-            };
+            // dispatch-fused, every consumer of `h` in this walk (the Full mixer's projections)
+            // reads only its q8_1 form, so emit the attn-input norm DIRECTLY as q8_1 via
+            // `rms_norm_q8_1` at nrows=t (row-indexed kernel — the T-row launch is the per-row
+            // m=1 program, kernel-check pins bit-identity vs rms_norm_decode -> quantize_q8_1).
+            // Kills the standalone quantize launch(es) + the f32 h HBM round-trip that decode
+            // never pays. GatedDeltaNet and step35 layers never reach this walk: the function
+            // head returns them into their own batch walks.
             // NOTE decode.rs's take()-first lesson: take the pending pair BEFORE branching so
             // a non-fused layer still performs the residual add.
             let taken = pending.take();
-            let (h, h_q8) = if norm_fused && lin_q8_only {
+            let (h, h_q8) = if norm_fused {
                 let pair = match taken {
                     // fused add + attn_norm + q8_1: ONE launch resolves the carried residual
                     // AND emits this layer's mixer input pre-quantized. res -> x2 (= new x).
@@ -10285,72 +10307,10 @@ impl HybridModel {
                 )?,
                 Mixer::Mla(_) => crate::hybrid::mla_path_unimplemented("speculative verify"),
                 Mixer::Kda(_) => crate::hybrid::kda_path_unimplemented("speculative verify"),
-                Mixer::Linear(la) => {
-                    // BATCHED linear verify (2026-07-03, the MTP-profit lever): one T-token pass —
-                    // batched projections (weight read ONCE, hits the m=2-4 weight-resident matvec),
-                    // carried-state conv (ssm_conv1d_tm_state), GDN prep on the prefill kernels, and
-                    // ONE gdn_scan whose internal sequential t-loop is the SAME recurrence as T
-                    // chained T=1 steps (bit-identical). Falls back to the sequential per-column
-                    // chain when T < d_conv-1 (conv ring update needs T >= pad) — or when ANY
-                    // projection is off the q8_1 fast path: matmul_decode_exact would route a Float
-                    // tensor to cuBLAS at m=t (different FP accumulation than eager's per-token
-                    // GEMV), so mixed-dtype layers stay on the eager-identical per-column chain.
-                    // MEMRA_SPEC_M2 (lane/spec-m2): the t==2 batch rides the same arm — the conv
-                    // wrapper handles t<pad with a pure-copy ring rebuild; see spec_m2() header.
-                    if (t >= 3 || (t == 2 && spec_m2()))
-                        && mixer_fast
-                        && e.uses_q8_1_fast(&la.ssm_out)
-                    {
-                        let want = ckpt.is_some();
-                        let (out, stash) =
-                            self.linear_attn_verify_t(e, la, &h, h_q8_ref, t, cache, il, want)?;
-                        if let (Some(ck), Some(st)) = (ckpt.as_deref_mut(), stash) {
-                            ck.gdn[il] = Some(st);
-                        }
-                        out
-                    } else {
-                        let mut out = vbuf(e, t * n_embd)?; // every col written by copy_into
-                        let mut col_states: Option<Vec<(CudaSlice<f32>, CudaSlice<f32>)>> =
-                            if ckpt.is_some() && t >= 2 {
-                                Some(Vec::with_capacity(t - 1))
-                            } else {
-                                None
-                            };
-                        for col in 0..t {
-                            let mut h_col = vbuf(e, n_embd)?; // fully written by copy_view_into
-                            let src = h.slice(col * n_embd..(col + 1) * n_embd);
-                            e.copy_view_into(&mut h_col, 0, &src, n_embd)?;
-                            let m_col = self.linear_attn_decode(e, la, &h_col, cache, il)?;
-                            e.copy_into(&mut out, col * n_embd, &m_col, n_embd)?;
-                            // REPLAY-FREE ckpt: clone the chain's ACTUAL state after this column
-                            // (pure dtod — cannot change any computed value). Last column skipped:
-                            // rebuild targets are j <= t-1 columns.
-                            if let Some(cs) = col_states.as_mut()
-                                && col + 1 < t
-                            {
-                                let rl = cache.recur[il].as_ref().unwrap();
-                                cs.push((
-                                    e.clone_dtod(&rl.conv_state)?,
-                                    e.clone_dtod(&rl.ssm_state)?,
-                                ));
-                            }
-                        }
-                        if let (Some(ck), Some(cs)) = (ckpt.as_deref_mut(), col_states) {
-                            // ReplaySSM-assessment instrumentation (2026-07-30): the
-                            // per-column clones are the only true state snapshots left in
-                            // the verify (the batched path stashes INPUTS and replays).
-                            if std::env::var("MEMRA_SPEC_STATS").as_deref() == Ok("1") {
-                                static ONCE: std::sync::Once = std::sync::Once::new();
-                                let bytes: usize =
-                                    cs.iter().map(|(c, s)| (c.len() + s.len()) * 4).sum();
-                                ONCE.call_once(|| eprintln!(
-                                    "[verify-ckpt] per-column layer il={il}: {} clones, {:.2} MB/layer/round",
-                                    cs.len(), bytes as f64 / 1e6));
-                            }
-                            ck.cols[il] = Some(cs);
-                        }
-                        out
-                    }
+                Mixer::Linear(_) => {
+                    return Err("GatedDeltaNet layers verify through \
+                                qwen35_verify_batch_layers, not the generic walk"
+                        .into());
                 }
             };
             if spec_nan_scan_level() >= 2 {
@@ -11026,6 +10986,15 @@ impl HybridModel {
         Box<dyn std::error::Error>,
     > {
         cache.ensure_usable("decode_step_t_aux2")?;
+        // step35's served verify is `step35_verify_batch_layers`; this per-layer walk has no
+        // twin of it, and the generic `full_attn_verify` geometry is wrong for that arch.
+        if self.sliding_gated_moe_batch_program() {
+            return Err(
+                "decode_step_t_aux2 has no step35 arm: step35 verifies through \
+                        step35_verify_batch_layers"
+                    .into(),
+            );
+        }
         let cfg = &self.cfg;
         let n_embd = cfg.n_embd as usize;
         let eps = cfg.rms_eps;
@@ -11163,91 +11132,6 @@ impl HybridModel {
         ))
     }
 
-    /// step35 SPEC-VERIFY attention over T query tokens — a per-row REPLAY of the eager
-    /// `step35_decode_attn`.
-    ///
-    /// WHY A REPLAY AND NOT A BATCHED TWIN. The verify's whole job is to be bit-identical to what
-    /// the eager decode would have computed for the same tokens; that is what makes greedy spec
-    /// decode exact (run-spec asserts token identity for K=1..8). Every other verify arm in this
-    /// file earns that identity by carefully mirroring dispatch (`matmul_decode_exact` to force
-    /// MMVQ at any m, per-layer `ffn_fuse` mirroring, per-row `fa_decode` key bounds). step35
-    /// stacks FOUR more per-layer degrees of freedom on top of that — per-layer `n_head`
-    /// (64 full / 96 SWA), per-layer rotary width (64 full / 128 SWA), per-layer rope base, and a
-    /// SEPARATE `attn_gate` tensor whose projection shares the attn-normed input — and its SWA
-    /// layers attend through a token-OFFSET view whose offset is a function of the ABSOLUTE
-    /// position of each query row. A batched twin would have to reproduce all of that AND the
-    /// per-row offset in one launch; the offset alone rules out the existing rows kernels (they
-    /// take one `base_len`, not a per-row offset).
-    ///
-    /// So this arm calls the eager path itself, once per row, on the same cache. Identity is then
-    /// true BY CONSTRUCTION rather than by mirroring: row r runs exactly the kernel sequence that
-    /// eager decode step r runs (same projections, same q8_1 fusion decision, same append, same
-    /// view arithmetic, same `fa_decode_kvmod`, same gate), because it IS that code. Cost: T x the
-    /// eager decode mixer instead of one batched pass — the same trade the generic arm's `else`
-    /// per-row loop already accepts when `fa_rows_eligible` says no. Correctness first; a batched
-    /// step35 twin is a perf lane's job and must be gated against this arm.
-    ///
-    /// The `h_q8` pre-quantized pair from the caller's fused norm is NOT forwarded: it is a
-    /// T-row buffer and `step35_decode_attn`'s `pre_q` contract is one row. Instead each row's
-    /// f32 `h` slice is handed over and the callee re-derives its own q8_1 exactly as eager decode
-    /// does (`quantize_q8_1(h, 1, n_embd)`) — which is the dispatch being mirrored. Callers that
-    /// took the fused arm therefore MUST still pass a live `h`; `step35_verify` asserts that.
-    #[allow(clippy::too_many_arguments)]
-    fn step35_verify(
-        &self,
-        e: &Engine,
-        fa: &FullAttnLayer,
-        h: &CudaSlice<f32>,
-        h_q8: Option<(&CudaSlice<i8>, &CudaSlice<f32>)>,
-        t: usize,
-        cache: &mut Cache,
-        il: usize,
-    ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
-        let n_embd = self.cfg.n_embd as usize;
-        // The fused (h-less) attn-norm arm hands `h` as a zero-length placeholder. This arm needs
-        // the f32 rows, so the caller must not take that lever for step35 — enforced at the call
-        // site by the sliding-gated-MoE `Mixer::Full(_) => false` arm of
-        // `lin_q8_only` in `decode_step_t_core_stream`, and asserted here so a future caller
-        // cannot regress it into silently reading an empty buffer.
-        assert_eq!(
-            h.len(),
-            t * n_embd,
-            "step35_verify needs the f32 attn-normed rows ([t*n_embd]); the caller took the \
-             fused q8-only norm arm (h_q8={}) — step35 must stay on the unfused arm",
-            h_q8.is_some()
-        );
-        // ROW WIDTH IS n_embd, NOT n_head*head_dim: `step35_decode_attn` returns the mixer output
-        // AFTER `wo`, so a row is [n_embd] — the same contract the generic arm's
-        // `matmul_decode_exact(&fa.wo, &attn_g, t)` return has. Sizing this buffer from the
-        // per-layer head geometry (8192 on full-attn, 12288 on SWA) instead overran the row on the
-        // FIRST copy and panicked inside `copy_into`'s `CudaView::slice` unwrap
-        // (raw/mtp-bt-20260806T212127Z.log frames 12-13).
-        let mut out = vbuf(e, t * n_embd)?; // each row fully written by the copy below
-        for r in 0..t {
-            // Absolute position of this query row. `cache.pos` is the committed length at round
-            // start and every row before r has already been appended by this loop, so the r-th
-            // verify token sits at cache.pos + r — the same position eager decode would give it.
-            let pos_d = e.htod_i32(&[(cache.pos + r) as i32])?;
-            let mut h_row = vbuf(e, n_embd)?; // fully written by copy_view_into
-            e.copy_view_into(
-                &mut h_row,
-                0,
-                &h.slice(r * n_embd..(r + 1) * n_embd),
-                n_embd,
-            )?;
-            // THE eager decode mixer: appends this row's K/V at kvl.len, advances it, then
-            // attends over the (SWA-offset) view. Post-`wo`, same contract as this fn returns.
-            let o = self.step35_decode_attn(e, fa, il, &h_row, None, &pos_d, cache)?;
-            debug_assert_eq!(
-                o.len(),
-                n_embd,
-                "step35_decode_attn returns post-wo [n_embd]"
-            );
-            e.copy_into(&mut out, r * n_embd, &o, n_embd)?;
-        }
-        Ok(out)
-    }
-
     /// Full-attention mixer over T query tokens with a GROWING resident KV (verify path, §D.3).
     /// Appends the T new K/V columns to cache.kv[il] then attends causally over [0..len) via
     /// fa_prefill. Token-major [T, kv_dim] projection layout == cache row layout (single copy).
@@ -11264,23 +11148,6 @@ impl HybridModel {
         il: usize,
         stream_ctr: Option<&CudaSlice<i32>>,
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
-        // step35: the generic geometry below is wrong for this arch (per-layer n_head, partial
-        // per-layer rope, the SWA offset view, and a SEPARATE head-wise gate tensor), so it takes
-        // its own arm. A verify that silently computes different attention than decode defeats the
-        // whole self-consistency gate, so the arm is a per-row REPLAY of `step35_decode_attn`
-        // rather than a batched twin — see `step35_verify` for why that is the exactness-correct
-        // shape and not laziness.
-        if self.sliding_gated_moe_batch_program() {
-            if stream_ctr.is_some() {
-                return Err(
-                    "step35 has no ROUND-STREAM verify arm (the device-counter _dc twins \
-                            cannot express the SWA offset KV view; same root cause as the dc \
-                            decode refusal) — run spec without the stream arm"
-                        .into(),
-                );
-            }
-            return self.step35_verify(e, fa, h, h_q8, t, cache, il);
-        }
         let cfg = &self.cfg;
         let geometry = cfg.full_attention_geometry_at(il as u32);
         let n_head = geometry.n_head as usize;
@@ -12818,7 +12685,8 @@ impl HybridModel {
 
     /// One spec-decode turn on a live session. `suffix` = the NEW tokens only (turn N+1's user
     /// message rendered through the chat template continuation). Returns (new tokens emitted,
-    /// drafted, accepted); session.committed grows by suffix + emitted.
+    /// drafted, accepted); session.committed grows by suffix + emitted. A bin entry point: the
+    /// sampler is the CLI env's (`SpecSampling::from_cli_env`).
     pub fn generate_spec_session(
         &self,
         e: &Engine,
@@ -12827,11 +12695,13 @@ impl HybridModel {
         max_new: usize,
         k: usize,
     ) -> Result<(Vec<u32>, usize, usize), Box<dyn std::error::Error>> {
-        self.generate_spec_session_sampled(e, sess, suffix, max_new, k, None, None)
+        let sampling = Some(SpecSampling::from_cli_env());
+        self.generate_spec_session_sampled(e, sess, suffix, max_new, k, sampling, None)
     }
 
     /// Serve-path sampled spec: routes the burst through the rejection-sampling verify with
-    /// per-SESSION Philox continuity (sess.sctr/uctr). None = env-driven (CLI) or greedy.
+    /// per-SESSION Philox continuity (sess.sctr/uctr). None = greedy; the environment is
+    /// never read here.
     /// Filters (top-k/p/min-p) apply SYMMETRICALLY to draft q and verify p — distribution-exact
     /// for the filtered target (feat/filtered-spec).
     ///
@@ -13045,9 +12915,12 @@ impl HybridModel {
             && self.mtp_graph_capturable()
             && k + 2 < 96
             && !crate::model::full_prec_enabled();
+        // A bin entry point: the sampler is the CLI env's.
+        let sampling = Some(SpecSampling::from_cli_env());
         if !graph_draft {
-            return self
-                .generate_spec_inner2(e, prompt, max_new, k, false, None, None, None, None, None);
+            return self.generate_spec_inner2(
+                e, prompt, max_new, k, false, None, sampling, None, None, None,
+            );
         }
         let was_tracking = e.ctx().is_event_tracking();
         if was_tracking {
@@ -13055,8 +12928,9 @@ impl HybridModel {
                 e.ctx().disable_event_tracking();
             }
         }
-        let r =
-            self.generate_spec_inner2(e, prompt, max_new, k, true, None, None, None, None, None);
+        let r = self.generate_spec_inner2(
+            e, prompt, max_new, k, true, None, sampling, None, None, None,
+        );
         if was_tracking {
             unsafe {
                 e.ctx().enable_event_tracking();
@@ -14021,10 +13895,14 @@ impl HybridModel {
                     .into());
                 }
             }
-            eprintln!(
-                "[mtp-chain] heads={} policy=step-modulo prefix-replay kv=per-head",
-                self.mtp_head_count()
-            );
+            // Once per process: this runs every burst, and a serving session runs thousands.
+            static ANNOUNCED: std::sync::Once = std::sync::Once::new();
+            ANNOUNCED.call_once(|| {
+                eprintln!(
+                    "[mtp-chain] heads={} policy=step-modulo prefix-replay kv=per-head",
+                    self.mtp_head_count()
+                )
+            });
         }
         let n_embd = self.cfg.n_embd as usize;
         // SESSION MODE: reuse the live cache/scratch, prime only the suffix. `base` = tokens
@@ -15578,7 +15456,9 @@ impl HybridModel {
                 (total_accepted + round) as f64 / round.max(1) as f64
             );
         }
-        if constraint.is_some() {
+        // Per burst, so behind the stats gate; the worker prints its own per-request
+        // `[draft-mask]` receipt.
+        if spec_stats && constraint.is_some() {
             eprintln!(
                 "[draft-mask] mask_rounds={dm_rounds} clone_total={:.3}ms \
                  clone_per_round={:.4}ms gram_cuts={dm_cuts}/{round} cut_tokens={dm_cut_tokens}",

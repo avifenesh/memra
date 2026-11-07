@@ -312,6 +312,14 @@ impl GemmaDraft {
                         .filter_map(|l| l.trim().parse().ok())
                         .filter(|&id| (id as usize) < n_vocab)
                         .collect();
+                    // The spare slots and the d2t spare fill copy ids[0].
+                    if ids.is_empty() {
+                        return Err(format!(
+                            "MEMRA_GEMMA_DRAFT_RANKS={path}: no token id below the drafter \
+                             vocab ({n_vocab})"
+                        )
+                        .into());
+                    }
                     let n_spare: usize = std::env::var("MEMRA_GEMMA_TRIM_ADAPT")
                         .ok()
                         .and_then(|v| v.parse().ok())
