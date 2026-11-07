@@ -296,7 +296,9 @@ quantizers write the same activation bytes in a v2 layout; one 16-warp CTA per S
 256 x 128 tile from a 3-stage cp.async ring (K 64, XOR-swizzled rows) with ldmatrix for A and B,
 the same block-scale MMA and the same per-k32 epilogue; 4 row tiles per raster group. GB10 default
 from 2,048 rows (`MEMRA_MMQ_F8F4_V2=0` rolls back). Decision record:
-`docs/decisions/GB10-F8F4-GEMM-V2.md`.
+`docs/decisions/GB10-F8F4-GEMM-V2.md`. The timed binary is `b6d10d41c7` on the round-2
+head `1ed40895ec` (kept on `research/gb10-f8f4-gemm-v2-measured`); the PR replays it on main as
+`2ce09cd39b`, with two aarch64 clippy fixes and the review fixes of `c23cd3a158` (ledger row 26).
 
 How it got there (`gemm-v2-probe/`, `harness/f8f4v2_probe.cu`, gate shape at 8,192 rows):
 
@@ -344,6 +346,19 @@ Answer text identical in all four boots at every length, needles found, no reque
 MemAvailable floor 65.17 / 65.32 / 65.32 / 65.26 GiB (P V V P): the per-call image is pooled
 scratch and moves no floor. The base reproduces round 2 on this unit (36.163 / 181.130 /
 457.177 s then).
+
+On the final commits, after #1073-#1076 landed on main (defaults, 4,096-row chunks), unit 2
+(`gemm-v2-served-final-unit2/`, P V V P):
+
+| prompt tokens | main `c2e04719b6` | main + v2 `c23cd3a158` | change |
+|---:|---|---|---:|
+| 32,784 | 36.137, 36.245 s (median 36.191) | 32.525, 32.437 s (median 32.481) | -10.25% (-3.7 s) |
+| 131,051 | 181.768, 182.177 s (median 181.972) | 167.487, 167.682 s (median 167.584) | -7.91% (-14.4 s) |
+| 259,951 | 460.503, 459.085 s (median 459.794) | 431.770, 431.174 s (median 431.472) | -6.16% (-28.3 s) |
+
+Answer text identical in all four boots and to every earlier boot; MemAvailable floor 65.8-66.7
+GiB. The exactness battery on that PR-head binary, unit 1 (`gemm-v2-gates-main-unit1/`):
+FINALGATES_PLACEHOLDER
 
 Per part at 131,051 tokens, Nsight Systems on unit 1 (`gemm-v2-profile-128k-unit1/`, nsys TTFT
 162.5 s against 161.8 s unprofiled; the report and the three ncu reports of the tile steps are in

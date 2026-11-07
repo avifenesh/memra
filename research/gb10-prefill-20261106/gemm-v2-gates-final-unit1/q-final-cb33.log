@@ -1,0 +1,36 @@
+have d6c2bc0432
+have 534deecedf
+HEADS-DONE
+V=~/.cache/memra-gemm-v2/bins/v2pr-534deecedf B=~/.cache/memra-gemm-v2/bins/lanehead-d6c2bc0432
+534deeced fix(mmq): F8F4 v2 route checks the image limits; tail and partial-group bit cells
+dirty_files=0
+d6c2bc043 test(kernel-check): the group cell fails unless gate and up reach the scope it gates
+dirty_files=0
+error: The following untracked working tree files would be overwritten by checkout:
+	research/gb10-prefill-20261106/harness/ceil_probe3.cu
+	research/gb10-prefill-20261106/harness/f8f4v2_probe.cu
+	research/gb10-prefill-20261106/harness/sass_top.py
+Please move or remove them before you switch branches.
+Aborting
+kernel-check default rc=0 ALL GREEN (117 cells, 5 skipped)
+fa_prefill_view_ws vs inline-dequant T=64 Tkv=192: bitdiff=0 OK
+fa_prefill_view_ws vs inline-dequant T=100 Tkv=100: bitdiff=0 OK
+fa_prefill_view_ws vs inline-dequant T=37 Tkv=297: bitdiff=0 OK
+fa_prefill_view_ws vs inline-dequant T=192 Tkv=4097: bitdiff=0 OK
+fa_prefill_view_ws vs inline-dequant T=1024 Tkv=8224: bitdiff=0 OK
+kernel-check h2off rc=0 ALL GREEN (117 cells, 5 skipped)
+fa_prefill_view_ws vs inline-dequant T=64 Tkv=192: bitdiff=0 OK
+fa_prefill_view_ws vs inline-dequant T=100 Tkv=100: bitdiff=0 OK
+fa_prefill_view_ws vs inline-dequant T=37 Tkv=297: bitdiff=0 OK
+fa_prefill_view_ws vs inline-dequant T=192 Tkv=4097: bitdiff=0 OK
+fa_prefill_view_ws vs inline-dequant T=1024 Tkv=8224: bitdiff=0 OK
+kernel-check t3 rc=0 ALL GREEN (117 cells, 5 skipped)
+fa_prefill_view_ws vs inline-dequant T=64 Tkv=192: bitdiff=0 OK
+fa_prefill_view_ws vs inline-dequant T=100 Tkv=100: bitdiff=0 OK
+fa_prefill_view_ws vs inline-dequant T=37 Tkv=297: bitdiff=0 OK
+fa_prefill_view_ws vs inline-dequant T=192 Tkv=4097: bitdiff=0 OK
+fa_prefill_view_ws vs inline-dequant T=1024 Tkv=8224: bitdiff=0 OK
+argmax rc=0   SUMMARY flips=0 bad=0   PASS: every prefill/decode argmax flip is explained by a margin the config spread covers 
+run-spec rc=0   acceptance: 17/98 = 17.3%   self-consistency: PASS (identical to plain target)   acceptance: 17/112 = 15.2%   self-consistency: PASS (identical to plain target) === SELF-CONSISTENCY PASS === 
+GATES-DONE
+argmax-16k V rc=1   SUMMARY flips=3 bad=1   FAIL: an argmax flip is NOT explained by the config spread (or flip count exceeded) 

@@ -1,0 +1,39 @@
++ set -u
++ D=~/.cache/memra-gemm-v2
++ MODE=served
++ TAG=unit2
++ . ~/.cache/memra-gemm-v2/heads.env
+++ BASE_SHA=c2e04719b6581c557242d3cc4bec26cf2aae542e
+++ V2_SHA=c23cd3a158a27c72ec68627c31057dd6878c70a5
++ bash ~/.cache/memra-gemm-v2/build_heads.sh c2e04719b6581c557242d3cc4bec26cf2aae542e c23cd3a158a27c72ec68627c31057dd6878c70a5
+c2e04719b data(qualification): memra#1076 GB10 live check, an n = 2 stream past the 60 s SSE prefill commit
+BANK base c2e04719b6 ~/.cache/memra-gemm-v2/bins/base-c2e04719b6 compiled_memra_crates=12 foreign=0
+c23cd3a15 fix(mmq): F8F4 v2 route checks the image limits; tail and partial-group bit cells
+BANK v2pr c23cd3a158 ~/.cache/memra-gemm-v2/bins/v2pr-c23cd3a158 compiled_memra_crates=12 foreign=0
+HEADS-DONE
++ B=~/.cache/memra-gemm-v2/bins/base-c2e04719b6
++ V=~/.cache/memra-gemm-v2/bins/v2pr-c23cd3a158
++ '[' -d ~/.cache/memra-gemm-v2/bins/base-c2e04719b6 ']'
++ echo 'V=~/.cache/memra-gemm-v2/bins/v2pr-c23cd3a158 B=~/.cache/memra-gemm-v2/bins/base-c2e04719b6'
+V=~/.cache/memra-gemm-v2/bins/v2pr-c23cd3a158 B=~/.cache/memra-gemm-v2/bins/base-c2e04719b6
++ cat ~/.cache/memra-gemm-v2/bins/v2pr-c23cd3a158/COMMIT ~/.cache/memra-gemm-v2/bins/base-c2e04719b6/COMMIT
+c23cd3a15 fix(mmq): F8F4 v2 route checks the image limits; tail and partial-group bit cells
+dirty_files=0
+c2e04719b data(qualification): memra#1076 GB10 live check, an n = 2 stream past the 60 s SSE prefill commit
+dirty_files=0
++ export TMPDIR=~/.cache/memra-gemm-v2/tmp
++ TMPDIR=~/.cache/memra-gemm-v2/tmp
++ mkdir -p ~/.cache/memra-gemm-v2/tmp
++ '[' served = gates ']'
++ '[' served = both ']'
++ '[' served = served ']'
++ CD=~/.cache/memra-gemm-v2/runs/F-served-unit2
++ bash ~/.cache/memra-gemm-v2/campaign.sh ~/.cache/memra-gemm-v2/runs/F-served-unit2 '32768 131072 260000' '1 1 1' 'P|~/.cache/memra-gemm-v2/bins/base-c2e04719b6|' 'V|~/.cache/memra-gemm-v2/bins/v2pr-c23cd3a158|' 'V|~/.cache/memra-gemm-v2/bins/v2pr-c23cd3a158|' 'P|~/.cache/memra-gemm-v2/bins/base-c2e04719b6|'
+2026-11-07T01:09:47+02:00 cell 1 arm=P bin=~/.cache/memra-gemm-v2/bins/base-c2e04719b6 extra=
+2026-11-07T01:24:31+02:00 cell 2 arm=V bin=~/.cache/memra-gemm-v2/bins/v2pr-c23cd3a158 extra=
+2026-11-07T01:38:19+02:00 cell 3 arm=V bin=~/.cache/memra-gemm-v2/bins/v2pr-c23cd3a158 extra=
+2026-11-07T01:52:06+02:00 cell 4 arm=P bin=~/.cache/memra-gemm-v2/bins/base-c2e04719b6 extra=
+2026-11-07T02:06:50+02:00 campaign done
++ python3 ~/.cache/memra-gemm-v2/summarize.py ~/.cache/memra-gemm-v2/runs/F-served-unit2
++ echo FINAL-DONE
+FINAL-DONE

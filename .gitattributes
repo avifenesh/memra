@@ -23,3 +23,6 @@ research/background-chat-text-20261002/receipts/**/broker-source.diff -whitespac
 
 # SSE events end with a blank line. Preserve hash-pinned native wire receipts.
 research/n-choices-528-20261003/receipts/**/wire.sse -text whitespace=-blank-at-eof
+
+# Raw GB10 F8F4 v2 receipts (ncu pages, gate and probe logs) keep their tool output whitespace.
+research/gb10-prefill-20261106/gemm-v2-*/** -text whitespace=-blank-at-eol,-blank-at-eof
