@@ -1,6 +1,6 @@
 # WP-B day 52: the `admit-by-memory` default's deciding cell (DAY40 2.1) on the RTX PRO 6000 Blackwell Max-Q
 
-Receipts: `pro-maxq-day52/`, after the runs.
+Receipts: `pro-maxq-day52/` (section 2).
 
 ## 1. Pre-registration: the RTX PRO 6000 Blackwell Max-Q (2026-11-04, written before any Max-Q boot)
 
@@ -171,3 +171,46 @@ is unchanged: it still only records the limit it reads.
   changes no clause.
 - The runner applies the Max-Q thermal rule on its 10 s samples: it stops the cell at >= 95 C, or at >= 92 C
   with the fan at >= 95 % on 3 consecutive samples, and a stopped cell has no verdict.
+
+## 2. Results on the RTX PRO 6000 Blackwell Max-Q (`pro-maxq-day52/`)
+
+Part 1 (order O1) ran 2026-11-06 01:19:46Z to 04:53:41Z, part 2 (order O2) 2026-11-07 00:07:52Z to 03:41:30Z, both on
+GPU 2 of the four-card box ("NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition", 97,887 MiB, driver 615.71.09)
+beside training on the other three cards, each in a gap the gap scheduler opened under the GPU 2 lock agreed with the
+training session. Same out dir, binary (`7da1db36...`, S40 as registered) and model (`1facf36c...`, checked before
+each part) in both parts; the readers ran once over all eight boots after part 2 (`chain.log`). Receipts mirrored file
+for file (`MIRROR-CHECK.txt`: 266 `OK`; the one line that fails is `chain.log`, which the runner appends to after
+writing the manifest, and the box's final copy hashes equal to this mirror's), then exported with
+`research/spill-f-20260919/m1-box-sanitize.py`: the card's UUID became `GPU-<card2-uuid>`, its PCI bus id
+`<pci-bus-id>`, local home paths `/home/<user>` and the box name `<box>` (`EXPORT-MANIFEST.json`, 17 files). The kit's
+local dry-run output (`selfcheck/`, 49 MB) is not committed; `selfcheck.sh` and the kit's other files are. The
+scheduler's try logs, power summaries and 10 s thermal samples are in `runner/`.
+
+Power and throttle (1.9 amendment): the runner set GPU 2 to 300 W (from 280 W, max 300 W) before each part, read it
+back (`card-O1.csv`, `card-O2.csv`: 300.00 W) and restored 280 W after. The box re-applies its own per-card caps on a
+timer (280 W on this card), so the card returned to 280 W about three minutes into each part: 4 of 1,272 samples read
+300 W in part 1 and 16 of 1,271 in part 2. In part 2 the neighbour rule also fired once (GPU 3 at 90 C) while the card
+already read 280 W. No clause depends on power. Maximum 91 C at fan 89 % in both parts; SW power cap active in 1,259
+and 1,253 samples (the normal state of a card at its limit, recorded, not judged); no SW or HW thermal slowdown, no HW
+power brake, no thermal stop.
+
+Verbatim (`VERDICT.txt` line 1, `SUMMARY.txt`):
+
+- `DAY34 V-DOOR card=pro6000 boots=8 excluded=0 v_crash_all=True v_id_all=True v_alloc_all=True v_trunc_band_all=True v_trunc_conserved_all=True v_retry_all=True v_oom_all=True g_book_all=True park_all=True -> PASS`
+- every boot: V-BOOT PASS (`door_line=present`, the door line as registered per arm), V-CRASH `lines=0`, V-OOM
+  `oom_lines=0 status_503=0`, PARK no park fired; G-BOOK `admit_lines=116 mem_id_lines=116` on `on2048` and `on8192`,
+  `admit_lines=98 mem_id_lines=134` on `on32768`, 0 on `off`, `est_over_booked_free=0` everywhere
+- V-ALLOC 45 of 45 (`off`) and 47 of 47 (each `on`) judged rows match; V-ID 46, 46 and 47 eligible twins, all equal,
+  in both orders; V-TRUNC conserved with `G_outside_band_v=0`
+- bursts (V-CONC, read, not judged): 64 x 200 at `off`, `on2048` and `on8192`, 46 x 200 and 18 x 429 (each with
+  `Retry-After: 60`, 18 `verdict=refuse` lines) at `on32768`, in both orders: the split 1.8 expected
+- SELECT and G-NATURAL as on the Workstation receipt (stated, not chosen; R3 stays 32768)
+
+Added reading (1.7, no bound): `MAXQ-VS-WS.txt` compared 416 sequential rows with the same boots on the Workstation
+receipt: 414 equal, 2 differ (`iv-a-r1` on `O1-off` and on `O2-off`, the same row on both orders), 0 prompt
+differences, both cards' burst status counts identical on every boot. Greedy outputs match across the two editions
+except that one long-class row under the door OFF; no term reads it.
+
+**Read as registered (1.5): PASS.** The `admit-by-memory` default extends to the RTX PRO 6000 Blackwell Max-Q
+Workstation Edition with the same 32,768-token open-output charge (the scope entry's `extension_change`), as the next
+commit. The Server Edition and the RTX 5090 class are unchanged.

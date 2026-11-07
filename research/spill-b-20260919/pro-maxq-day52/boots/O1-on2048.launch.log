@@ -1,0 +1,41 @@
+2026-11-06T04:05:25Z lock held by the collector (external)
+i-L2-r3 | 200 | stop | 5805 | 443 | 0 | spec | 31552 | 7917 | 247777856 | 197136896 | own | d89b9f6fbe576fd1
+i-L2-r4 | 200 | stop | 5803 | 354 | 0 | spec | 31552 | 7915 | 247714752 | 194265664 | own | 3919c4481fbdf3c6
+ii-L2-r0 | 200 | length | 5706 | 96 | 0 | spec | 31552 | 5866 | 183064704 | 183064704 | own | 8e49ce42eb02d040
+ii-L2-r1 | 200 | length | 5702 | 96 | 0 | spec | 31552 | 5862 | 182938496 | 182938496 | own | e4b5da359af29ee7
+ii-L2-r2 | 200 | length | 5695 | 96 | 0 | spec | 31552 | 5855 | 182717632 | 182717632 | own | c2290618f88eddef
+ii-L2-r3 | 200 | length | 5692 | 96 | 0 | spec | 31552 | 5852 | 182622976 | 182622976 | own | fbc8f08e6584297e
+ii-L2-r4 | 200 | length | 5689 | 96 | 0 | spec | 31552 | 5849 | 182528320 | 182528320 | own | e37d6f3c78f9506b
+iii-L0-r0 | 200 | stop | 1572 | 384 | 1440 | spec | 31552 | 3684 | 114218240 | 61715712 | own | e6cae58d25ec5212
+iii-L0-r1 | 200 | stop | 1565 | 239 | 1440 | spec | 31552 | 3677 | 113997376 | 56919808 | own | 0f597aa12cc2f470
+iii-L0-r2 | 200 | stop | 1595 | 227 | 1440 | spec | 31552 | 3707 | 114943936 | 57487744 | own | 4f0cd8b7196f698e
+iii-L0-r3 | 200 | stop | 1563 | 484 | 1440 | spec | 31552 | 3675 | 113934272 | 64586944 | own | 3762af9db4e1a58e
+iii-L0-r4 | 200 | stop | 1580 | 561 | 1440 | spec | 31552 | 3692 | 114470656 | 67552832 | own | b0f54b1abf597164
+iii-L1-r0 | 200 | stop | 3236 | 564 | 3104 | spec | 31552 | 5348 | 166720768 | 119897600 | own | 8e6d6de047f93756
+iii-L1-r1 | 200 | stop | 3220 | 621 | 3104 | spec | 31552 | 5332 | 166215936 | 121191232 | own | 71887d3de0e24c50
+iii-L1-r2 | 200 | stop | 3228 | 407 | 3104 | spec | 31552 | 5340 | 166468352 | 114691520 | own | 9330813b3077925a
+iii-L1-r3 | 200 | stop | 3234 | 319 | 3104 | spec | 31552 | 5346 | 166657664 | 112104256 | own | a23f01e9c9e1b21f
+iii-L1-r4 | 200 | stop | 3223 | 211 | 3104 | spec | 31552 | 5335 | 166310592 | 108349568 | own | b830e8d33bd74660
+iii-L2-r0 | 200 | stop | 5887 | 345 | 5760 | spec | 31552 | 7999 | 250365120 | 196632064 | own | 4e0d63bf17fb63be
+iii-L2-r1 | 200 | stop | 5884 | 487 | 5760 | spec | 31552 | 7996 | 250270464 | 201017792 | own | 03589d2a7c362004
+iii-L2-r2 | 200 | stop | 5884 | 576 | 5760 | spec | 31552 | 7996 | 250270464 | 203825920 | inherited | 955b094b98f6cb95
+iii-L2-r3 | 200 | stop | 5868 | 354 | 5760 | spec | 31552 | 7980 | 249765632 | 196316544 | own | 87dbcb35db8ba851
+iii-L2-r4 | 200 | stop | 5885 | 539 | 5760 | spec | 31552 | 7997 | 250302016 | 202690048 | own | 00ce778e1f229fb0
+iv-a-r0 | 200 | length | 1661 | 2048 | 0 | spec | 31552 | 3773 | 117026368 | 117026368 | own | 236796fa14853f85
+iv-a-r1 | 200 | length | 1661 | 2048 | 0 | spec | 31552 | 3773 | 117026368 | 117026368 | inherited | 23fd3bdbcdc959fb
+iv-a-r2 | 200 | length | 1662 | 2048 | 0 | spec | 31552 | 3774 | 117057920 | 117057920 | own | c8ecaf67c6639ca3
+iv-b-r0 | 200 | length | 120 | 2048 | 0 | spec | 31552 | 2232 | 68404736 | 68404736 | own | dade4a175398cbff
+iv-b-r1 | 200 | length | 120 | 2048 | 0 | spec | 31552 | 2232 | 68404736 | 68404736 | inherited | e69310412f23e18c
+iv-b-r2 | 200 | length | 120 | 2048 | 0 | spec | 31552 | 2232 | 68404736 | 68404736 | inherited | d5d4b473314fdee5
+== burst
+window_ms=176874 B=64 status={200: 64} finish={'stop': 61, 'length': 3} retry_after={}
+active_sessions_max=64.0 admission_booked_bytes_max=69409081856.0 samples=708 shadow_budget_bytes=65975529168 burst_cost_lines=60 burst_cost_total_mb_median=1084.5 arith_sessions=60
+admit_mem_id_lines=64 by_verdict={'admit': 64} reclaim_lines=0
+[admit-mem] id=chatcmpl-09a5ebd86a63d6482415fc9587e0224c model="q38" verdict=admit prompt=1374 output_bound=- charged_ctx=3486 est_bytes=3387949064 est_context=103520256 est_fixed=3284428808 device_free=69969402296 pending_prime=0 pending_prime_v1=0 pending_seed=0 pending_seed_uncapped=0 host_free=0 demotable=13091303424 short_by=0 inflight=0 cap=64 waited_ms=0 retry_after_s=-
+[admit-mem] id=chatcmpl-6853e2020e1ba0debfd75b95db7b4d48 model="q38" verdict=admit prompt=1378 output_bound=- charged_ctx=3490 est_bytes=3389984776 est_context=103639040 est_fixed=3286345736 device_free=69198978276 pending_prime=614400 pending_prime_v1=14376960 pending_seed=0 pending_seed_uncapped=0 host_free=0 demotable=13288108032 short_by=0 inflight=1 cap=64 waited_ms=0 retry_after_s=-
+[admit-mem] id=chatcmpl-dcc4cde7b35104e9a065f7404bea39a2 model="q38" verdict=admit prompt=1376 output_bound=- charged_ctx=3488 est_bytes=3388966920 est_context=103579648 est_fixed=3285387272 device_free=68398940944 pending_prime=185114624 pending_prime_v1=674758656 pending_seed=199299072 pending_seed_uncapped=199299072 host_free=0 demotable=13288108032 short_by=0 inflight=2 cap=64 waited_ms=0 retry_after_s=-
+[admit-mem] id=chatcmpl-cc9ece6c2831baeb4a53b94fb57fbba6 model="q38" verdict=admit prompt=1374 output_bound=- charged_ctx=3486 est_bytes=3387949064 est_context=103520256 est_fixed=3284428808 device_free=67625564092 pending_prime=342007808 pending_prime_v1=1334181888 pending_seed=399607808 pending_seed_uncapped=399607808 host_free=0 demotable=13288108032 short_by=0 inflight=3 cap=64 waited_ms=0 retry_after_s=-
+[admit-mem] id=chatcmpl-78c00d18056fef7895447dd36ecc0cd5 model="q38" verdict=admit prompt=1373 output_bound=- charged_ctx=3485 est_bytes=3387440136 est_context=103490560 est_fixed=3283949576 device_free=66853260008 pending_prime=498900992 pending_prime_v1=1992646656 pending_seed=598906880 pending_seed_uncapped=598906880 host_free=0 demotable=13288108032 short_by=0 inflight=4 cap=64 waited_ms=0 retry_after_s=-
+[admit-mem] id=chatcmpl-24e96385df6ca8313f489bff71088d12 model="q38" verdict=admit prompt=1372 output_bound=- charged_ctx=3484 est_bytes=3386931208 est_context=103460864 est_fixed=3283470344 device_free=66080987476 pending_prime=655794176 pending_prime_v1=2650632192 pending_seed=798205952 pending_seed_uncapped=798205952 host_free=0 demotable=13288108032 short_by=0 inflight=5 cap=64 waited_ms=0 retry_after_s=-
+... 58 more [admit-mem] id= lines in server.log
+== open-class G (this boot): n=36 min=211 p50=508 max=2048 stop=30 length=6 other=0
