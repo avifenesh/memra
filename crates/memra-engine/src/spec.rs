@@ -6286,8 +6286,8 @@ impl HybridModel {
             let trows_prefill = prime_trows_on() && !crate::step_gemm_prime_on();
             // MEMRA_PRIME_TROWS_T=<w>: chunk width, default 8 = the REAL cap of this walk.
             // The workspace slabs go to 32 rows, but `matvec_bf16_qkvg_tcol_into` refuses
-            // t > 8 (the runtime-T kernel's `acc[8]` holds at most 8 columns; the
-            // compile-time 2/4/8 twins were deleted unlaunched 2026-11-03), so a wider chunk
+            // t > 8 (the runtime-T kernel's `acc[8]` holds at most 8 columns, and the
+            // default-OFF `MEMRA_TCOL_TWINS` twins exist for 2/4/8 only), so a wider chunk
             // fails the request with "matvec_bf16_qkvg_tcol geometry" — which is exactly how
             // the first server-path TROWS arm died. Measured at 193 tokens: w=8 2.459 s,
             // w=4 2.574 s.

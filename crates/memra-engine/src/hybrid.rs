@@ -1943,6 +1943,10 @@ fn build_step_tp_qkv(
     let Some(spec) = step_runtimes.tp_spec(layer).cloned() else {
         return Ok(None);
     };
+    // MEMRA_TCOL_TWINS is read by the step TP tcol launchers this layer's verify and batch
+    // walks reach. Resolve it here so a bad value refuses the load, not a request's first
+    // launch (the cached error would then fail every later step TP tcol launch too).
+    crate::tcol_twins_on()?;
     let contract = crate::parallel::ModelParallelContract::from_model(cfg)?;
     if layer >= contract.trunk_layers {
         return Err(format!(
