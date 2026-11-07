@@ -3851,7 +3851,6 @@ impl HybridModel {
         // churn; the math is byte-identical. `o` is a true per-step output (consumed immediately by
         // gated_rmsnorm below) so it stays a normal scratch.
         let mut o = e.uninit(d_state * num_v)?;
-        let n_state = d_state * d_state * num_v;
         let _ = head_k; // head_k == d_state; the kernels use head_k = d_state internally.
         // GDN PREP, FUSED (2026-07-03): repack + q/k L2-norm + beta sigmoid + g_log in ONE
         // gdn_prep_decode launch (was 5 tiny serialized kernels: qkv_to_gdn_repack, 2x l2_norm,
@@ -3907,7 +3906,7 @@ impl HybridModel {
             // FIXED pointer (baked into the captured graph). Copy the freshly-written spare BACK
             // into ssm_state (captured, replays each launch). No host pointer swap.
             let alt = std::mem::replace(&mut rl.ssm_state_alt, e.zeros(0)?);
-            e.copy_into(&mut rl.ssm_state, 0, &alt, n_state)?;
+            e.copy_into(&mut rl.ssm_state, 0, &alt, alt.len())?;
             rl.ssm_state_alt = alt;
         } else {
             // EAGER: swap the two OWNED resident buffers in place (stable pointers, no alloc/free).

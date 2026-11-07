@@ -3,6 +3,8 @@
 //! GPU-gated (`#[ignore]`, CI is compile-only). Run on the rig under the card's lock:
 //!   flock /tmp/memra-5090.lock cargo test -p memra-engine --test grid_capture_gpu -- --ignored --test-threads=1
 //! The model-level tests read `MEMRA_TEST_QWEN_GGUF` (a Qwen3.5/3.8 hybrid GGUF, e.g. the 9B).
+//! They run in the engine's boot GDN state class; `MEMRA_GDN_STATE_BF16=0/1` picks it
+//! (research/gdn-state-bf16-storage-20261107: restore must be cold-exact in both classes).
 
 use memra_engine::Engine;
 use memra_engine::cache::Cache;
@@ -19,16 +21,18 @@ fn pr(i: usize, seed: u64) -> f32 {
 }
 
 /// The chunked scan's capture at `rows` equals the final state of the same scan over the first
-/// `rows` rows alone, bitwise, on the mma pair and on the f32 pair.
+/// `rows` rows alone, bitwise, on the mma pair and on the f32 pair, in both GDN state classes.
 #[test]
 #[ignore = "needs a CUDA device; run under flock /tmp/memra-5090.lock"]
 fn gpu_scan_capture_equals_the_prefix_scan_state() {
     let e = Engine::new(0).expect("CUDA device 0");
     let (s_v, h, t, c) = (128usize, 4usize, 160usize, 32usize);
     let scale = 1.0 / (s_v as f32).sqrt();
-    for mma in ["1", "0"] {
+    for (mma, bf16) in [("1", false), ("0", false), ("1", true), ("0", true)] {
         // SAFETY: single-threaded test body; the scan reads this env per call.
         unsafe { std::env::set_var("MEMRA_GDN_MMA", mma) };
+        e.set_gdn_state_bf16(bf16);
+        let n_state = e.gdn_state_words(s_v * s_v * h);
         for rows in [32usize, 96, 128] {
             let q: Vec<f32> = (0..s_v * h * t).map(|i| pr(i, 1) * 0.1).collect();
             let k: Vec<f32> = (0..s_v * h * t).map(|i| pr(i, 2) * 0.1).collect();
@@ -37,8 +41,9 @@ fn gpu_scan_capture_equals_the_prefix_scan_state() {
             let beta: Vec<f32> = (0..h * t).map(|i| 0.5 + pr(i, 5) * 0.2).collect();
             let st0: Vec<f32> = (0..s_v * s_v * h).map(|i| pr(i, 6) * 0.01).collect();
             let up = |x: &[f32]| e.htod(x).unwrap();
-            let (qd, kd, vd, gd, bd, sid) = (up(&q), up(&k), up(&v), up(&g), up(&beta), up(&st0));
-            let mut sod = e.zeros(s_v * s_v * h).unwrap();
+            let (qd, kd, vd, gd, bd) = (up(&q), up(&k), up(&v), up(&g), up(&beta));
+            let sid = e.gdn_state_htod_f32(&st0).unwrap();
+            let mut sod = e.zeros(n_state).unwrap();
             let mut od = e.zeros(s_v * h * t).unwrap();
             let mut slot = None;
             e.gdn_scan_chunked_capture(
@@ -68,7 +73,7 @@ fn gpu_scan_capture_equals_the_prefix_scan_state() {
                 up(&v[..s_v * h * rows]),
             );
             let (gp, bp) = (up(&g[..h * rows]), up(&beta[..h * rows]));
-            let mut sp = e.zeros(s_v * s_v * h).unwrap();
+            let mut sp = e.zeros(n_state).unwrap();
             let mut op = e.zeros(s_v * h * rows).unwrap();
             e.gdn_scan_chunked(
                 &qp, &kp, &vp, &gp, &bp, None, None, &sid, &mut sp, &mut op, h, rows, scale, c, h,
@@ -82,10 +87,10 @@ fn gpu_scan_capture_equals_the_prefix_scan_state() {
                 .count();
             assert_eq!(
                 differ, 0,
-                "mma={mma} rows={rows}: {differ} state values differ"
+                "mma={mma} bf16={bf16} rows={rows}: {differ} state words differ"
             );
             // The full scan's own output is unchanged by the capture.
-            let mut sod2 = e.zeros(s_v * s_v * h).unwrap();
+            let mut sod2 = e.zeros(n_state).unwrap();
             let mut od2 = e.zeros(s_v * h * t).unwrap();
             e.gdn_scan_chunked(
                 &qd, &kd, &vd, &gd, &bd, None, None, &sid, &mut sod2, &mut od2, h, t, scale, c, h,

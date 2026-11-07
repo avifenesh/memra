@@ -294,6 +294,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     let e = Engine::new(0)?;
     println!("GPU: {}", e.ctx().name()?);
+    // The GDN cells below pin their state class explicitly: the fp32 oracles run fp32, the
+    // bf16 storage cells toggle it (`gdn_st16_*`). The boot class is restored after them.
+    let gdn_class_at_boot = e.gdn_state_bf16();
+    println!(
+        "GDN state class at boot: {}",
+        if gdn_class_at_boot { "bf16" } else { "fp32" }
+    );
+    e.set_gdn_state_bf16(false);
     let mut fails = 0;
 
     {
@@ -1948,6 +1956,375 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 std::env::remove_var("MEMRA_GDN_WGMMA");
             }
         }
+    }
+
+    // --- GDN bf16 state storage vs the rounding arm (research/gdn-state-bf16-storage-20261107).
+    //     The rounding arm is the fp32 kernel with the stored state rounded to bf16 (nearest
+    //     even). The bf16 class rounds at every step boundary its kernel has (each token in the
+    //     sequential scans, each WY chunk in the chunked pass), so the oracle runs the fp32
+    //     kernel ONE STEP PER LAUNCH (one token, or one C-row chunk) and rounds the state on the
+    //     host between launches. Outputs and packed states must match it BIT FOR BIT; a T-row
+    //     bf16 scan is thereby also proven equal to T chained bf16 decode steps. The fp32 cells
+    //     above ran pinned to the fp32 class. ---
+    {
+        use memra_engine::{gdn_state_pack_bf16 as pack16, gdn_state_unpack_bf16 as unpack16};
+        let rne = |v: &[f32]| unpack16(&pack16(v));
+        let bits_eq = |a: &[f32], b: &[f32]| {
+            a.len() == b.len() && a.iter().zip(b).all(|(x, y)| x.to_bits() == y.to_bits())
+        };
+        let s_v = 128usize;
+        let h = 4usize;
+        let n_state = s_v * s_v * h;
+        let scale = 1.0 / (s_v as f32).sqrt();
+        let unit_rows = |rows: usize, seed: usize| -> Vec<f32> {
+            let mut x = vec![0f32; rows * s_v];
+            for r in 0..rows {
+                let mut n = 0f32;
+                for i in 0..s_v {
+                    let a = pr(seed + r * s_v + i);
+                    x[r * s_v + i] = a;
+                    n += a * a;
+                }
+                for i in 0..s_v {
+                    x[r * s_v + i] /= n.sqrt();
+                }
+            }
+            x
+        };
+        // per-token inputs, [T, H, 128] / [T, H] layouts
+        let make = |t: usize, seed: usize| {
+            let q = unit_rows(t * h, seed + 11);
+            let k = unit_rows(t * h, seed + 17);
+            let v: Vec<f32> = (0..s_v * h * t).map(|i| pr(seed + i + 23)).collect();
+            let g: Vec<f32> = (0..h * t)
+                .map(|i| -0.02 - pr(seed + i + 29).abs() * 0.5)
+                .collect();
+            let beta: Vec<f32> = (0..h * t)
+                .map(|i| 0.3 + pr(seed + i + 31).abs() * 0.6)
+                .collect();
+            let st0 = rne(&(0..n_state)
+                .map(|i| pr(seed + i + 37) * 0.5)
+                .collect::<Vec<f32>>());
+            (q, k, v, g, beta, st0)
+        };
+        // (1) sequential scan, T = 1 (decode: exactly the rounding arm), 3 and 7 (verify rows).
+        for &t in &[1usize, 3, 7] {
+            let (q, k, v, g, beta, st0) = make(t, 1000 * t);
+            // oracle: fp32 kernel, one token per launch, host rounding between tokens
+            e.set_gdn_state_bf16(false);
+            let mut st = st0.clone();
+            let mut o_ref = Vec::with_capacity(s_v * h * t);
+            for tt in 0..t {
+                let row = |x: &[f32], w: usize| e.htod(&x[tt * w..(tt + 1) * w]);
+                let sid = e.htod(&st)?;
+                let mut sod = e.zeros(n_state)?;
+                let mut od = e.zeros(s_v * h)?;
+                e.gdn_scan_s128(
+                    &row(&q, s_v * h)?,
+                    &row(&k, s_v * h)?,
+                    &row(&v, s_v * h)?,
+                    &row(&g, h)?,
+                    &row(&beta, h)?,
+                    &sid,
+                    &mut sod,
+                    &mut od,
+                    h,
+                    1,
+                    scale,
+                )?;
+                o_ref.extend(e.dtoh(&od)?);
+                st = rne(&e.dtoh(&sod)?);
+            }
+            // bf16 class: one T-row launch from the packed state
+            e.set_gdn_state_bf16(true);
+            let sid = e.gdn_state_htod_f32(&st0)?;
+            let mut sod = e.zeros(e.gdn_state_words(n_state))?;
+            let mut od = e.zeros(s_v * h * t)?;
+            e.gdn_scan_s128(
+                &e.htod(&q)?,
+                &e.htod(&k)?,
+                &e.htod(&v)?,
+                &e.htod(&g)?,
+                &e.htod(&beta)?,
+                &sid,
+                &mut sod,
+                &mut od,
+                h,
+                t,
+                scale,
+            )?;
+            let ok = sid.len() * 2 == n_state
+                && bits_eq(&e.dtoh(&od)?, &o_ref)
+                && bits_eq(&e.dtoh(&sod)?, &pack16(&st));
+            println!(
+                "gdn_st16_scan T={t} bf16 storage == rounding arm (bitwise out + packed state) {}",
+                if ok {
+                    "OK"
+                } else {
+                    fails += 1;
+                    "FAIL"
+                }
+            );
+        }
+        // (2) batched decode (3 sessions, pointer arrays) and the packed verify twin with its
+        //     snapshot ring, against the same per-token oracle.
+        {
+            use cudarc::driver::DevicePtr;
+            let b_n = 3usize;
+            let t = 4usize;
+            let ins: Vec<_> = (0..b_n).map(|b| make(t, 7000 + 100 * b)).collect();
+            // oracle per session: tokens 0..t one by one
+            e.set_gdn_state_bf16(false);
+            let mut o_ref: Vec<Vec<f32>> = vec![Vec::new(); b_n];
+            let mut s_ref: Vec<Vec<Vec<f32>>> = vec![Vec::new(); b_n];
+            for (b, (q, k, v, g, beta, st0)) in ins.iter().enumerate() {
+                let mut st = st0.clone();
+                for tt in 0..t {
+                    let row = |x: &[f32], w: usize| e.htod(&x[tt * w..(tt + 1) * w]);
+                    let sid = e.htod(&st)?;
+                    let mut sod = e.zeros(n_state)?;
+                    let mut od = e.zeros(s_v * h)?;
+                    e.gdn_scan_s128(
+                        &row(q, s_v * h)?,
+                        &row(k, s_v * h)?,
+                        &row(v, s_v * h)?,
+                        &row(g, h)?,
+                        &row(beta, h)?,
+                        &sid,
+                        &mut sod,
+                        &mut od,
+                        h,
+                        1,
+                        scale,
+                    )?;
+                    o_ref[b].extend(e.dtoh(&od)?);
+                    st = rne(&e.dtoh(&sod)?);
+                    s_ref[b].push(st.clone());
+                }
+            }
+            e.set_gdn_state_bf16(true);
+            let words = e.gdn_state_words(n_state);
+            // batched T=1: token 0 of every session in one launch
+            let s_in: Vec<_> = ins
+                .iter()
+                .map(|x| e.gdn_state_htod_f32(&x.5))
+                .collect::<Result<_, _>>()?;
+            let s_out: Vec<_> = (0..b_n).map(|_| e.zeros(words)).collect::<Result<_, _>>()?;
+            // token 0 of every session, row-major [B, ...]
+            let (mut q0, mut k0, mut v0, mut g0, mut b0) =
+                (Vec::new(), Vec::new(), Vec::new(), Vec::new(), Vec::new());
+            for (q, k, v, g, beta, _) in &ins {
+                q0.extend_from_slice(&q[..s_v * h]);
+                k0.extend_from_slice(&k[..s_v * h]);
+                v0.extend_from_slice(&v[..s_v * h]);
+                g0.extend_from_slice(&g[..h]);
+                b0.extend_from_slice(&beta[..h]);
+            }
+            let stream = e.stream();
+            let in_ptrs: Vec<u64> = s_in.iter().map(|s| s.device_ptr(&stream).0).collect();
+            let out_ptrs: Vec<u64> = s_out.iter().map(|s| s.device_ptr(&stream).0).collect();
+            let (in_d, out_d) = (e.htod_u64(&in_ptrs)?, e.htod_u64(&out_ptrs)?);
+            let mut ob = e.zeros(b_n * s_v * h)?;
+            e.gdn_scan_s128_batched(
+                &e.htod(&q0)?,
+                &e.htod(&k0)?,
+                &e.htod(&v0)?,
+                &e.htod(&g0)?,
+                &e.htod(&b0)?,
+                &in_d.slice(0..b_n),
+                &out_d.slice(0..b_n),
+                &mut ob,
+                h,
+                b_n,
+                scale,
+            )?;
+            let ob = e.dtoh(&ob)?;
+            let mut ok = true;
+            for b in 0..b_n {
+                ok &= bits_eq(&ob[b * s_v * h..(b + 1) * s_v * h], &o_ref[b][..s_v * h]);
+                ok &= bits_eq(&e.dtoh(&s_out[b])?, &pack16(&s_ref[b][0]));
+            }
+            println!(
+                "gdn_st16_batched B={b_n} bf16 storage == rounding arm (bitwise out + packed state) {}",
+                if ok {
+                    "OK"
+                } else {
+                    fails += 1;
+                    "FAIL"
+                }
+            );
+            // packed verify twin, session 0: T rows, snapshot ring of T-1 states
+            let (q, k, v, g, beta, st0) = &ins[0];
+            let conv = e.zeros(4)?;
+            let canon = e.gdn_state_htod_f32(st0)?;
+            let alt = e.zeros(words)?;
+            let table = e.htod_u64(&[
+                conv.device_ptr(&stream).0,
+                canon.device_ptr(&stream).0,
+                alt.device_ptr(&stream).0,
+            ])?;
+            let mut snap = e.zeros((t - 1) * words)?;
+            let mut ot = e.zeros(s_v * h * t)?;
+            e.gdn_scan_s128_tsnap(
+                &e.htod(q)?,
+                &e.htod(k)?,
+                &e.htod(v)?,
+                &e.htod(g)?,
+                &e.htod(beta)?,
+                &table.slice(0..3),
+                &mut ot,
+                h,
+                t,
+                scale,
+                Some(&mut snap),
+            )?;
+            // even T runs in place on the canonical buffer, odd T lands in the alternate
+            let fin = e.dtoh(if t % 2 == 1 { &alt } else { &canon })?;
+            let snaps = e.dtoh(&snap)?;
+            let mut ok = bits_eq(&e.dtoh(&ot)?, &o_ref[0])
+                && bits_eq(&fin, &pack16(&s_ref[0][t - 1]))
+                && snaps.len() == (t - 1) * words;
+            for r in 0..t - 1 {
+                ok &= bits_eq(&snaps[r * words..(r + 1) * words], &pack16(&s_ref[0][r]));
+            }
+            println!(
+                "gdn_st16_tsnap T={t} bf16 storage == rounding arm (bitwise out + state + {} snapshots) {}",
+                t - 1,
+                if ok {
+                    "OK"
+                } else {
+                    fails += 1;
+                    "FAIL"
+                }
+            );
+            // device-count twin: T = base + acc[0] = 3 rows, the plain bf16 3-row scan bitwise
+            let acc = e.htod_u32_v(&[2u32])?;
+            let s_dc_in = e.gdn_state_htod_f32(st0)?;
+            let mut s_dc = e.zeros(words)?;
+            let mut o_dc = e.zeros(s_v * h * t)?;
+            let mut s_pl = e.zeros(words)?;
+            let mut o_pl = e.zeros(s_v * h * t)?;
+            let (qd, kd, vd, gd, bd) = (
+                e.htod(q)?,
+                e.htod(k)?,
+                e.htod(v)?,
+                e.htod(g)?,
+                e.htod(beta)?,
+            );
+            e.gdn_scan_s128_dc(
+                &qd,
+                &kd,
+                &vd,
+                &gd,
+                &bd,
+                &s_dc_in,
+                &mut s_dc,
+                &mut o_dc,
+                h,
+                &acc,
+                1,
+                t + 1,
+                scale,
+            )?;
+            e.gdn_scan_s128(
+                &qd, &kd, &vd, &gd, &bd, &s_dc_in, &mut s_pl, &mut o_pl, h, 3, scale,
+            )?;
+            let ok = bits_eq(&e.dtoh(&s_dc)?, &e.dtoh(&s_pl)?)
+                && bits_eq(&e.dtoh(&s_dc)?, &pack16(&s_ref[0][2]))
+                && bits_eq(&e.dtoh(&o_dc)?[..3 * s_v * h], &o_ref[0][..3 * s_v * h]);
+            println!(
+                "gdn_st16_dc T=1+2 bf16 storage == rounding arm (bitwise out + packed state) {}",
+                if ok {
+                    "OK"
+                } else {
+                    fails += 1;
+                    "FAIL"
+                }
+            );
+        }
+        // (3) chunked WY prime: the f32 K4/K5 pair (C=64, tail chunk) and, where it is the
+        //     default, the K4-mma pair (C=32). Oracle: the fp32 chunked kernel one C-row chunk
+        //     per launch with host rounding between chunks. Premise cell: in fp32 that split
+        //     equals the unsplit call bit for bit (the state crosses a chunk boundary exactly).
+        let mma_default_arch = cfg!(memra_hopper_mma) || env!("MEMRA_BUILT_CUDA_ARCH") == "120a";
+        for &(t, c, mma) in &[(200usize, 64usize, false), (160, 32, true)] {
+            if mma && !mma_default_arch {
+                continue;
+            }
+            let (q, k, v, g, beta, st0) = make(t, 50_000 + t + c);
+            // SAFETY: single-threaded gate binary; the seams read the env per call.
+            unsafe {
+                std::env::set_var("MEMRA_GDN_MMA", if mma { "1" } else { "0" });
+                std::env::set_var("MEMRA_GDN_WGMMA", "0");
+            }
+            let run = |q: &[f32],
+                       k: &[f32],
+                       v: &[f32],
+                       g: &[f32],
+                       beta: &[f32],
+                       st: &[f32],
+                       rows: usize|
+             -> Result<(Vec<f32>, Vec<f32>), Box<dyn std::error::Error>> {
+                let sid = e.gdn_state_htod_f32(st)?;
+                let mut sod = e.zeros(e.gdn_state_words(n_state))?;
+                let mut od = e.zeros(s_v * h * rows)?;
+                e.gdn_scan_chunked(
+                    &e.htod(q)?,
+                    &e.htod(k)?,
+                    &e.htod(v)?,
+                    &e.htod(g)?,
+                    &e.htod(beta)?,
+                    None,
+                    None,
+                    &sid,
+                    &mut sod,
+                    &mut od,
+                    h,
+                    rows,
+                    scale,
+                    c,
+                    h,
+                )?;
+                Ok((e.dtoh(&od)?, e.gdn_state_dtoh_f32(&sod)?))
+            };
+            e.set_gdn_state_bf16(false);
+            let (o_whole32, s_whole32) = run(&q, &k, &v, &g, &beta, &st0, t)?;
+            let (mut o_split32, mut o_ref) = (Vec::new(), Vec::new());
+            let (mut s_split32, mut s_ref) = (st0.clone(), st0.clone());
+            for c0 in (0..t).step_by(c) {
+                let rows = c.min(t - c0);
+                let sl = |x: &[f32], w: usize| x[c0 * w..(c0 + rows) * w].to_vec();
+                let (qs, ks, vs) = (sl(&q, s_v * h), sl(&k, s_v * h), sl(&v, s_v * h));
+                let (gs, bs) = (sl(&g, h), sl(&beta, h));
+                let (o1, s1) = run(&qs, &ks, &vs, &gs, &bs, &s_split32, rows)?;
+                o_split32.extend(o1);
+                s_split32 = s1;
+                let (o2, s2) = run(&qs, &ks, &vs, &gs, &bs, &s_ref, rows)?;
+                o_ref.extend(o2);
+                s_ref = rne(&s2);
+            }
+            let premise = bits_eq(&o_whole32, &o_split32) && bits_eq(&s_whole32, &s_split32);
+            e.set_gdn_state_bf16(true);
+            let (o16, s16) = run(&q, &k, &v, &g, &beta, &st0, t)?;
+            let ok = premise && bits_eq(&o16, &o_ref) && bits_eq(&s16, &s_ref);
+            println!(
+                "gdn_st16_chunked T={t} C={c} {} bf16 storage == rounding arm per chunk \
+                 (fp32 split premise {}) {}",
+                if mma { "mma" } else { "f32" },
+                if premise { "holds" } else { "BROKEN" },
+                if ok {
+                    "OK"
+                } else {
+                    fails += 1;
+                    "FAIL"
+                }
+            );
+            unsafe {
+                std::env::remove_var("MEMRA_GDN_MMA");
+                std::env::remove_var("MEMRA_GDN_WGMMA");
+            }
+        }
+        e.set_gdn_state_bf16(gdn_class_at_boot);
     }
 
     // --- Q2_K Stage-A GPU path vs the CPU dequant oracle on deterministic synthetic blocks. ---

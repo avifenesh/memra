@@ -118,8 +118,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             .map(|(x, y)| (x - y).abs())
                             .fold(0.0, f32::max),
                     );
-                    let a = e.dtoh(&rs.ssm_state)?;
-                    let b = e.dtoh(&rg.ssm_state)?;
+                    let a = e.gdn_state_dtoh_f32(&rs.ssm_state)?;
+                    let b = e.gdn_state_dtoh_f32(&rg.ssm_state)?;
                     ms2 = ms2.max(
                         a.iter()
                             .zip(&b)
@@ -147,8 +147,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         worst_layer = (il, lm);
                     }
                     mc = mc.max(lm);
-                    let a = e.dtoh(&re.ssm_state)?;
-                    let b = e.dtoh(&rg.ssm_state)?;
+                    let a = e.gdn_state_dtoh_f32(&re.ssm_state)?;
+                    let b = e.gdn_state_dtoh_f32(&rg.ssm_state)?;
                     ms = ms.max(
                         a.iter()
                             .zip(&b)
