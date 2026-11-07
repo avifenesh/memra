@@ -61,9 +61,13 @@
 # The two ENV-DOOR entries. These were the only genuinely reachable ones on sm_89, and only by
 # explicit operator action: `MEMRA_FA3=1` and `MEMRA_FP4=1` had force arms (`Ok("1") => true`)
 # that never consulted the arch, so a forced path reached a kernel the build omits. FIXED
-# 2026-08-23 — all three doors now call refuse_portable_force() and fail at the switch with a
-# named message instead of at the lookup with "kernel <name> not in any fatbin". They stay listed
-# because the lookups still exist in the source; the refusal is what makes them unreachable.
+# 2026-08-23: every such door now fails at the switch with a named message instead of at the
+# lookup with "kernel <name> not in any fatbin". `MEMRA_FP4` calls refuse_portable_force().
+# `MEMRA_FA3=1` (one read site since the hybrid_forward.rs one was removed) asserts an sm_90a
+# build instead, since 2026-11-03: build.rs compiles fa3_prefill.cu as a stub on every other
+# arch, and the portable check was dead there because portable builds return to naive SDPA
+# first. Engine::new runs the same check (fa3_force_verdict), so a server refuses at boot. They
+# stay listed because the lookups still exist in the source; the refusal makes them unreachable.
 89 f32_to_bf16_bulk         # cu/hybrid.cu:1623. Reached only via MEMRA_FA3=1, which now refuses
 89 qmatvec_gemm_nvfp4_fp4   # cu/qmatvec_gemm.cu:1234. Only via MEMRA_FP4, which now refuses
 89 qmatvec_gemm_q8_0_wgmma  # all call sites behind cfg!(memra_hopper_mma) — compiled out on 89

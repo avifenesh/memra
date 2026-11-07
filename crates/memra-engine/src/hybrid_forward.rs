@@ -10266,12 +10266,15 @@ impl HybridModel {
         let (nh, dn, r) = (g.n_head, g.d_nope, g.kv_rank);
         let wk_b = Self::mla_split_operand(&mla.wk_b, "attn_k_b", il);
         let mut q_lat = e.uninit(t * nh * r)?;
+        // A glm5 TP head shard keeps the shipped absorb/decompress partition: the default-ON
+        // MEMRA_MLA_DECODE_SPLIT has no TP composition gate (mla_ffi::MlaSplitScope).
+        let scope = crate::mla_ffi::MlaSplitScope::of_layer(mla.tp_shard);
         // MEMRA_MLA_ABSORB_BF16: the BF16 copy of the plane on the served `_wp` partition;
         // falls through to the f32 dispatch when the door, the copy or the partition is absent.
         let absorbed16 = if crate::mla_absorb_bf16_on()
             && let Some(w16) = mla.wk_b16.as_ref()
         {
-            let hit = e.mla_absorb_q_bf16(q_nope, w16, &mut q_lat, t, nh, dn, r)?;
+            let hit = e.mla_absorb_q_bf16(q_nope, w16, &mut q_lat, t, nh, dn, r, scope)?;
             if hit
                 && MLA_ABSORB_BF16_DISPATCHES.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
                     == 0
@@ -10286,7 +10289,7 @@ impl HybridModel {
             false
         };
         if !absorbed16 {
-            e.mla_absorb_q(q_nope, wk_b, &mut q_lat, t, nh, dn, r)?;
+            e.mla_absorb_q_scoped(q_nope, wk_b, &mut q_lat, t, nh, dn, r, scope)?;
         }
         Ok(q_lat)
     }
@@ -10305,17 +10308,18 @@ impl HybridModel {
         let (nh, dv, r) = (g.n_head, g.d_v, g.kv_rank);
         let wv_b = Self::mla_split_operand(&mla.wv_b, "attn_v_b", il);
         let mut attn = e.uninit(t * nh * dv)?;
+        let scope = crate::mla_ffi::MlaSplitScope::of_layer(mla.tp_shard);
         let bf16_plane = if crate::mla_absorb_bf16_on() {
             mla.wv_b16.as_ref()
         } else {
             None
         };
         let decompressed16 = match bf16_plane {
-            Some(w16) => e.mla_decompress_v_bf16(o_lat, w16, &mut attn, t, nh, dv, r)?,
+            Some(w16) => e.mla_decompress_v_bf16(o_lat, w16, &mut attn, t, nh, dv, r, scope)?,
             None => false,
         };
         if !decompressed16 {
-            e.mla_decompress_v(o_lat, wv_b, &mut attn, t, nh, dv, r)?;
+            e.mla_decompress_v_scoped(o_lat, wv_b, &mut attn, t, nh, dv, r, scope)?;
         }
         Ok(attn)
     }
@@ -22316,8 +22320,9 @@ impl HybridModel {
         crate::debug_assert_tensor_stream_device(ones, &e.stream(), "gemma4_attn_prime.ones");
 
         // quantize-once window: q/k/v share `h` — the MMQ D4 activation quantizes once
-        // (h stays borrowed across the triple, so the cache key can't go stale).
-        e.mmq_act_begin();
+        // (h stays borrowed across the triple, so the cache key can't go stale). The window
+        // closes after v0, before any other activation can reach the cache.
+        let act_window = e.mmq_act_begin();
         let q0 = e.matmul(&fa.wq, h, t)?; // [t, nh*hd]
         if il == 0 && std::env::var("MEMRA_G4_PRIME_TRACE").as_deref() == Ok("1") {
             let v = e.dtoh(&q0)?;
@@ -22336,6 +22341,7 @@ impl HybridModel {
         } else {
             e.clone_dtod(&k0)?
         };
+        drop(act_window);
         if il == 0 && std::env::var("MEMRA_G4_PRIME_TRACE").as_deref() == Ok("1") {
             for (tag, buf) in [("k0", &k0), ("v0", &v0)] {
                 let v = e.dtoh(buf)?;
@@ -22358,7 +22364,10 @@ impl HybridModel {
         static EMIT: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
         // Island primes take the mask-capable naive kernel below; keep the operands f32
         // (the bf16 FA emit path has no island consumer). Text-only keeps emit unchanged.
+        // The portable lane keeps them f32 too: its FA entries fall back to naive SDPA, and
+        // the bf16 `_pre` stamps have no such fallback.
         let emit = island.is_none()
+            && !crate::portable_mma_gated()
             && t >= 16
             && crate::Engine::qkvnorm_w_on_prefill(nh * t + 2 * nkv * t, hd)
             && *EMIT.get_or_init(|| {
@@ -22487,10 +22496,11 @@ impl HybridModel {
             let k_view = e.view_u8(&kvl.k, t_kv * k_tok_bytes);
             let v_view = e.view_u8(&kvl.v, t_kv * v_tok_bytes);
             let w = if swa && t_kv > win { win } else { 0 };
-            if std::env::var("MEMRA_NOFA").is_err() {
+            if std::env::var("MEMRA_NOFA").is_err() && !crate::portable_mma_gated() {
                 // FA-speed twin (dequant-once bf16 workspace + the bf16 FA kernels the fresh
                 // path uses). `qb` is the emitted bf16 query when the emit path ran, else a
-                // one-off conversion of the f32 q (same __float2bfloat16).
+                // one-off conversion of the f32 q (same __float2bfloat16). The portable lane
+                // takes the naive view kernels below, like `fa_prefill_view` does there.
                 let q_bf16: CudaSlice<u8>;
                 let qb_ref: &CudaSlice<u8> = if emit {
                     &qb
@@ -23459,8 +23469,9 @@ impl HybridModel {
                 match fused {
                     Some(p) => p,
                     None => {
-                        // quantize-once window: gate/up share `zsh` (borrowed across the pair).
-                        e.mmq_act_begin();
+                        // quantize-once window: gate/up share `zsh` (borrowed across the pair);
+                        // it closes at the end of this arm.
+                        let _act_window = e.mmq_act_begin();
                         (e.matmul(ffn_gate, &zsh, t)?, e.matmul(ffn_up, &zsh, t)?)
                     }
                 }

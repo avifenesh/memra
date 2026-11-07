@@ -181,13 +181,14 @@ fn detect_arch() -> String {
     // load on 12.1 (arch-specific SASS is tied to one capability and the fatbins carry no PTX),
     // so 12.1 now builds sm_121a: the same 120a-family sources and policy, its own SASS
     // (docs/decisions/SM121-SPARK-TARGET.md).
-    let arch = cap
-        .as_deref()
-        .and_then(arch_table::target_for_compute_cap)
-        .unwrap_or("120a");
+    let target = cap.as_deref().and_then(arch_table::target_for_compute_cap);
+    let arch = target.unwrap_or("120a");
     match cap.as_deref() {
-        Some(c) => println!(
+        Some(c) if target.is_some() => println!(
             "cargo:warning=MEMRA_CUDA_ARCH auto-detected {arch} (compute_cap {c}); set MEMRA_CUDA_ARCH to override"
+        ),
+        Some(c) => println!(
+            "cargo:warning=compute_cap {c} has no memra build target; defaulting MEMRA_CUDA_ARCH=120a (compile-only, will not load on this GPU)"
         ),
         None => {
             println!("cargo:warning=no GPU visible; defaulting MEMRA_CUDA_ARCH=120a (compile-only)")

@@ -117,7 +117,8 @@ class Fixture:
         spec = "".join(f"[generate_spec K={k}] 32 tok\nself-consistency: PASS (identical to plain target)\n"
                        for k in range(1, 9)) + "=== SELF-CONSISTENCY PASS ===\n"
         for name in ("model-a", "model-b"):
-            self.cell("argmax", name, "SUMMARY flips=0 bad=0\n  PASS: CPU MOCK calibrated verdict\n")
+            self.cell("argmax", name, "SUMMARY flips=0 bad=0\n  PRIME-SUMMARY prime=MATCH\n"
+                      "  PASS: CPU MOCK calibrated verdict\n")
             self.cell("spec", name, spec)
         self.refresh()
 
@@ -325,13 +326,21 @@ class QualificationTests(unittest.TestCase):
             f.verify()
 
     def test_missing_failed_duplicated_cells_and_skip_ceiling(self):
-        for mutation in ("missing", "failed", "duplicate", "single-k", "skip-budget"):
+        for mutation in ("missing", "failed", "duplicate", "single-k", "skip-budget",
+                         "no-prime", "prime-structured", "prime-skip-gate-off"):
             original = copy.deepcopy(self.f.run)
             original_files = {cell["log"]["path"]: (self.f.out / cell["log"]["path"]).read_bytes() for cell in original["cells"]}
             with self.subTest(mutation=mutation):
                 if mutation == "missing": self.f.run["cells"].pop()
                 elif mutation == "failed": self.f.run["cells"][0]["exit_code"] = 1
                 elif mutation == "duplicate": self.f.run["cells"].append(copy.deepcopy(self.f.run["cells"][0]))
+                elif mutation.startswith(("no-prime", "prime-")):
+                    cell = self.f.run["cells"][1]; p = self.f.out / cell["log"]["path"]
+                    self.assertEqual(cell["kind"], "argmax")
+                    prime = {"no-prime": "", "prime-structured": "  PRIME-SUMMARY prime=MISMATCH-STRUCTURED\n",
+                             "prime-skip-gate-off": "  PRIME-SUMMARY prime=SKIP:gate-off\n"}[mutation]
+                    p.write_text(p.read_text().replace("  PRIME-SUMMARY prime=MATCH\n", prime))
+                    cell["log"] = self.f.ref(cell["log"]["path"])
                 else:
                     index = 2 if mutation == "single-k" else 0
                     cell = self.f.run["cells"][index]; p = self.f.out / cell["log"]["path"]

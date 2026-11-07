@@ -18,12 +18,6 @@ use std::os::raw::c_void;
 pub static MLA_DECODE_SPLIT_DISPATCHES: std::sync::atomic::AtomicU64 =
     std::sync::atomic::AtomicU64::new(0);
 
-/// `MEMRA_MLA_DECODE_SPLIT=1` (default OFF, read per call — rollback seam): the absorb /
-/// decompress launchers split each (token, head) block's output range across several blocks.
-/// PURE LAUNCH GEOMETRY: every output element keeps the same one-thread serial dot, so the
-/// bytes are identical for every split value (asserted in `tests/mla_decode_split_gpu.rs`);
-/// only occupancy changes — 64 blocks at t=1 on the glm5 geometry is single-digit-percent
-/// occupancy on the serving card class, the census's ~211 us/layer absorb+decompress pair.
 /// Engagement counter for the coalesced warp-per-row door (`MEMRA_MLA_COALESCE`).
 pub static MLA_COALESCE_DISPATCHES: std::sync::atomic::AtomicU64 =
     std::sync::atomic::AtomicU64::new(0);
@@ -53,8 +47,63 @@ fn mla_coalesce_announce(which: &str, t_q: usize, n_head: usize, split: i32) {
     }
 }
 
+/// `MEMRA_MLA_DECODE_SPLIT` (default **ON** since 2026-09-03, `=0` is the rollback seam, read
+/// per call): the absorb / decompress launchers split each (token, head) block's output range
+/// across several blocks. PURE LAUNCH GEOMETRY: every output element keeps the same one-thread
+/// serial dot, so the bytes are identical for every split value (asserted in
+/// `tests/mla_decode_split_gpu.rs`); only occupancy changes — 64 blocks at t=1 on the glm5
+/// geometry is single-digit-percent occupancy on the serving card class, the census's
+/// ~211 us/layer absorb+decompress pair.
+///
+/// DEFAULT FLIPPED TO ON, 2026-09-03 (#137), against this door's own stated flip condition:
+/// "interleaved x3 fresh-boot A/B on the serving card class (x5 on anomaly), greedy +
+/// vendor-default sampled twin, engagement announce in BOTH arms." All four clauses met on the
+/// 2x B200 SXM pair (GLM-5.3-Flash NVFP4, resident PP-2, best posture), 20 reps per arm,
+/// vendor-default sampling, 512-token generations:
+///
+///   round   off      on
+///   1       55.89    58.32
+///   2       55.86    58.29
+///   3       55.89    58.32
+///   median  55.89    58.32     +4.35%, ranges never overlap
+///
+/// The greedy 128-token tape is sha16 `9437b599f6b9d2a9` in BOTH arms. The MEMRA_MLA_COALESCE
+/// lane (#140) measured the split alone again the same day on the same pair, +4.3% (59.80 vs
+/// 57.34). #140 also re-landed its pre-flip copy of this comment and the `== "1"` parse, which
+/// silently reverted the flip with no stated reason while docs/FLAGS.md kept the ON row; the
+/// parse below restores the recorded decision (2026-11-03).
+///
+/// A glm5 TP head shard never takes the split ([`MlaSplitScope::TpShard`]): TP x this door is
+/// an unproven pair (`glm5_tp::GLM5_TP_REFUSED_DOOR_FLAGS`), so the default does not arm it on
+/// the sharded walk, and an explicit value still refuses at the TP preflight.
 fn mla_decode_split_on() -> bool {
-    std::env::var("MEMRA_MLA_DECODE_SPLIT").as_deref() == Ok("1")
+    mla_decode_split_on_from(std::env::var("MEMRA_MLA_DECODE_SPLIT").ok().as_deref())
+}
+
+/// The pure parse behind [`mla_decode_split_on`]: only an explicit `0` disarms (unset, empty,
+/// `1` or any other value keeps the default ON), the same form as `mla_dsa_select_on_from`.
+pub fn mla_decode_split_on_from(v: Option<&str>) -> bool {
+    !matches!(v.map(str::trim), Some("0"))
+}
+
+/// Which layer an absorb/decompress call serves, for the `MEMRA_MLA_DECODE_SPLIT` policy.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MlaSplitScope {
+    /// An unsharded MLA layer: the door's per-call value applies (default ON).
+    Full,
+    /// A glm5 TP head shard (`MlaAttnLayer::tp_shard`, root and peer ranks): the door never
+    /// engages, so the TP walk keeps the shipped one-block-per-(token, head) launchers its TP
+    /// byte and band gates ran on. The split's bytes would match there too (they are
+    /// split-invariant at every geometry), but the pair has no composition gate or throughput
+    /// receipt, and the TP contract is that an unproven door does not arm on the sharded walk.
+    TpShard,
+}
+
+impl MlaSplitScope {
+    /// The scope of a layer from its shard marker.
+    pub fn of_layer(tp_shard: bool) -> Self {
+        if tp_shard { Self::TpShard } else { Self::Full }
+    }
 }
 
 /// The split policy: engage only in the block-starved regime (fewer than 1024 (token, head)
@@ -62,8 +111,17 @@ fn mla_decode_split_on() -> bool {
 /// prefill chain owns them anyway), aiming for ~1024 blocks while keeping at least 32 outputs
 /// per block. The OUTPUT BYTES ARE SPLIT-INVARIANT by construction, so this arithmetic is a
 /// throughput policy, never a numerics decision.
-fn mla_decode_split_for(blocks: usize, out_dim: usize) -> Option<i32> {
-    if !mla_decode_split_on() || blocks == 0 || blocks >= 1024 {
+fn mla_decode_split_for(scope: MlaSplitScope, blocks: usize, out_dim: usize) -> Option<i32> {
+    mla_decode_split_pick(
+        scope == MlaSplitScope::Full && mla_decode_split_on(),
+        blocks,
+        out_dim,
+    )
+}
+
+/// The pure arithmetic behind [`mla_decode_split_for`], `on` already resolved.
+pub fn mla_decode_split_pick(on: bool, blocks: usize, out_dim: usize) -> Option<i32> {
+    if !on || blocks == 0 || blocks >= 1024 {
         return None;
     }
     let want = 1024usize.div_ceil(blocks);
@@ -77,7 +135,8 @@ fn mla_split_announce(kind: &str, t_q: usize, n_head: usize, split: i32) {
     if MLA_DECODE_SPLIT_DISPATCHES.fetch_add(1, Ordering::Relaxed) == 0 {
         eprintln!(
             "[mla-decode-split] engaged {kind} t={t_q} heads={n_head} split={split} \
-             (output-range split of the (token, head) blocks; MEMRA_MLA_DECODE_SPLIT=1)"
+             (output-range split of the (token, head) blocks; default ON since 2026-09-03, \
+             MEMRA_MLA_DECODE_SPLIT=0 to roll back)"
         );
     }
 }
@@ -131,8 +190,8 @@ impl MlaB200Kernel {
 }
 
 /// Widest query width the B200 arm keys on. Wider widths fall through untouched: the generic
-/// `MEMRA_MLA_DECODE_SPLIT` door if set, else the shipped kernels (t >= 16 reaches
-/// `MEMRA_MLA_TC_PREFILL` before either).
+/// `MEMRA_MLA_DECODE_SPLIT` door (default ON) unless it is `=0`, else the shipped kernels
+/// (t >= 16 reaches `MEMRA_MLA_TC_PREFILL` before either).
 pub const MLA_B200_ARM_T_MAX: usize = 8;
 
 /// The B200 arm's split tables, keyed on t_q (index = t_q in 1..=MLA_B200_ARM_T_MAX; index 0
@@ -1478,12 +1537,13 @@ impl Engine {
         n_head: usize,
         d_nope: usize,
         kv_rank: usize,
+        scope: MlaSplitScope,
     ) -> Res<bool> {
         if !mla_coalesce_on() {
             return Ok(false);
         }
         let split = mla_b200_split_for(MlaB200Kernel::AbsorbQ, t_q, n_head, kv_rank)
-            .or_else(|| mla_decode_split_for(t_q * n_head, kv_rank))
+            .or_else(|| mla_decode_split_for(scope, t_q * n_head, kv_rank))
             .unwrap_or(1);
         if split <= 1 {
             return Ok(false);
@@ -1519,12 +1579,13 @@ impl Engine {
         n_head: usize,
         d_v: usize,
         kv_rank: usize,
+        scope: MlaSplitScope,
     ) -> Res<bool> {
         if !mla_coalesce_on() {
             return Ok(false);
         }
         let split = mla_b200_split_for(MlaB200Kernel::DecompressV, t_q, n_head, d_v)
-            .or_else(|| mla_decode_split_for(t_q * n_head, d_v))
+            .or_else(|| mla_decode_split_for(scope, t_q * n_head, d_v))
             .unwrap_or(1);
         if split <= 1 {
             return Ok(false);
@@ -1560,6 +1621,32 @@ impl Engine {
         d_nope: usize,
         kv_rank: usize,
     ) -> Res<()> {
+        self.mla_absorb_q_scoped(
+            q_nope,
+            wk_b,
+            q_lat,
+            t_q,
+            n_head,
+            d_nope,
+            kv_rank,
+            MlaSplitScope::Full,
+        )
+    }
+
+    /// [`Engine::mla_absorb_q`] for a layer of a given [`MlaSplitScope`]: a glm5 TP head shard
+    /// passes `TpShard` and never takes the `MEMRA_MLA_DECODE_SPLIT` partition.
+    #[allow(clippy::too_many_arguments)]
+    pub fn mla_absorb_q_scoped(
+        &self,
+        q_nope: &CudaSlice<f32>,
+        wk_b: &CudaSlice<f32>,
+        q_lat: &mut CudaSlice<f32>,
+        t_q: usize,
+        n_head: usize,
+        d_nope: usize,
+        kv_rank: usize,
+        scope: MlaSplitScope,
+    ) -> Res<()> {
         let s = self.stream();
         // MEMRA_MLA_COALESCE door, checked FIRST because it changes how a row is READ, which
         // is orthogonal to every door below (they choose the output-range partition). It reuses
@@ -1575,7 +1662,7 @@ impl Engine {
         // the coalescing on; at split 1 it falls through to the dispatch below, unchanged.
         let coalesce_split = if mla_coalesce_on() {
             mla_b200_split_for(MlaB200Kernel::AbsorbQ, t_q, n_head, kv_rank)
-                .or_else(|| mla_decode_split_for(t_q * n_head, kv_rank))
+                .or_else(|| mla_decode_split_for(scope, t_q * n_head, kv_rank))
                 .unwrap_or(1)
         } else {
             1
@@ -1623,7 +1710,7 @@ impl Engine {
             };
         }
         // MEMRA_MLA_DECODE_SPLIT door: same bytes at any split (see mla_decode_split_for).
-        if let Some(split) = mla_decode_split_for(t_q * n_head, kv_rank) {
+        if let Some(split) = mla_decode_split_for(scope, t_q * n_head, kv_rank) {
             mla_split_announce("absorb_q", t_q, n_head, split);
             return unsafe {
                 ck(
@@ -1671,6 +1758,32 @@ impl Engine {
         d_v: usize,
         kv_rank: usize,
     ) -> Res<()> {
+        self.mla_decompress_v_scoped(
+            o_lat,
+            wv_b,
+            out,
+            t_q,
+            n_head,
+            d_v,
+            kv_rank,
+            MlaSplitScope::Full,
+        )
+    }
+
+    /// [`Engine::mla_decompress_v`] for a layer of a given [`MlaSplitScope`]; see
+    /// [`Engine::mla_absorb_q_scoped`].
+    #[allow(clippy::too_many_arguments)]
+    pub fn mla_decompress_v_scoped(
+        &self,
+        o_lat: &CudaSlice<f32>,
+        wv_b: &CudaSlice<f32>,
+        out: &mut CudaSlice<f32>,
+        t_q: usize,
+        n_head: usize,
+        d_v: usize,
+        kv_rank: usize,
+        scope: MlaSplitScope,
+    ) -> Res<()> {
         let s = self.stream();
         // MEMRA_MLA_COALESCE door, checked FIRST because it changes how a row is READ, which
         // is orthogonal to every door below (they choose the output-range partition). It reuses
@@ -1686,7 +1799,7 @@ impl Engine {
         // the coalescing on; at split 1 it falls through to the dispatch below, unchanged.
         let coalesce_split = if mla_coalesce_on() {
             mla_b200_split_for(MlaB200Kernel::DecompressV, t_q, n_head, d_v)
-                .or_else(|| mla_decode_split_for(t_q * n_head, d_v))
+                .or_else(|| mla_decode_split_for(scope, t_q * n_head, d_v))
                 .unwrap_or(1)
         } else {
             1
@@ -1733,7 +1846,7 @@ impl Engine {
             };
         }
         // MEMRA_MLA_DECODE_SPLIT door: same bytes at any split (see mla_decode_split_for).
-        if let Some(split) = mla_decode_split_for(t_q * n_head, d_v) {
+        if let Some(split) = mla_decode_split_for(scope, t_q * n_head, d_v) {
             mla_split_announce("decompress_v", t_q, n_head, split);
             return unsafe {
                 ck(
@@ -3007,6 +3120,42 @@ impl Engine {
                 ),
             )
         }
+    }
+}
+
+#[cfg(test)]
+mod decode_split_default_tests {
+    use super::{MlaSplitScope, mla_decode_split_on_from, mla_decode_split_pick};
+
+    /// Default ON since 2026-09-03: only an explicit `0` disarms. A literal `== "1"` read here
+    /// is the regression this pins (#140 re-landed it and silently reverted the flip).
+    #[test]
+    fn default_on_only_zero_disarms() {
+        assert!(mla_decode_split_on_from(None));
+        assert!(mla_decode_split_on_from(Some("1")));
+        assert!(mla_decode_split_on_from(Some("")));
+        assert!(mla_decode_split_on_from(Some("2")));
+        assert!(!mla_decode_split_on_from(Some("0")));
+        assert!(!mla_decode_split_on_from(Some(" 0 ")));
+    }
+
+    /// The policy arithmetic is unchanged by the flip: glm5 t=1 (64 blocks, kv_rank 512) takes
+    /// split 16, the 32-outputs floor caps narrow rows, and the card-filling widths never split.
+    #[test]
+    fn split_pick_policy() {
+        assert_eq!(mla_decode_split_pick(true, 64, 512), Some(16));
+        assert_eq!(mla_decode_split_pick(true, 256, 256), Some(4));
+        assert_eq!(mla_decode_split_pick(true, 64, 64), Some(2));
+        assert_eq!(mla_decode_split_pick(true, 64, 32), None);
+        assert_eq!(mla_decode_split_pick(true, 1024, 512), None);
+        assert_eq!(mla_decode_split_pick(true, 0, 512), None);
+        assert_eq!(mla_decode_split_pick(false, 64, 512), None);
+    }
+
+    #[test]
+    fn tp_shard_scope_is_keyed_on_the_shard_marker() {
+        assert_eq!(MlaSplitScope::of_layer(false), MlaSplitScope::Full);
+        assert_eq!(MlaSplitScope::of_layer(true), MlaSplitScope::TpShard);
     }
 }
 

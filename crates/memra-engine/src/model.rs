@@ -438,7 +438,8 @@ pub enum GpuTensor {
         /// projection, built device-side at load (f16_ffi::build_q8_f16). `bytes` stay Q8_0 so
         /// decode is untouched; the m>=16 prefill dispatch (cuBLASLt FP16 TN, 611-687 TF vs
         /// MMQ's ~200 TF class) reads this. None unless the env is set (VRAM = 2 B/w extra).
-        f16: Option<CudaSlice<u8>>,
+        /// Charged to the owning engine's mirror budget and refunded when it drops.
+        f16: Option<crate::f16_ffi::F16Mirror>,
         /// CALIBRATED PREFILL ACTIVATION MULTIPLIER (qwen35-prefill-nvfp4-a4-v1). `Some` only for
         /// the 400 large trunk projections of an artifact whose header declares the activation
         /// program, and only ever read by the PREFILL dispatch: decode and speculative verify call

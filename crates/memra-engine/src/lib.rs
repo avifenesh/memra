@@ -1338,18 +1338,19 @@ pub fn fa512_min_tkv() -> usize {
 /// numeric-config adoption law). qwen keeps the measured 96; gemma4 (nkv=8 SWA) measured
 /// vec-always fastest: 119.9 (96) / 130.0 (48) / 133.2 (1) tok/s tg128-regime, 2026-07-10.
 pub static FA_VEC_MIN_DEFAULT: std::sync::atomic::AtomicUsize =
-    std::sync::atomic::AtomicUsize::new(FA_VEC_MIN_TKV);
+    std::sync::atomic::AtomicUsize::new(ModelNumericDefaults::PROCESS.fa_vec_min);
 /// Per-model windowed-split default (MEMRA_FA_SPW overrides): gemma MoE (26B, nkv=8) measured
 /// 32 (grid-limited t=1 under the raw-e4m3 sV ceiling, 2026-07-12); dense gemma (31B)
 /// measured 64 (37.13/37.12 vs 36.87/36.86 at 1.7k, N=2 — different attention geometry).
-pub static FA_SPW_DEFAULT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(32);
+pub static FA_SPW_DEFAULT: std::sync::atomic::AtomicUsize =
+    std::sync::atomic::AtomicUsize::new(ModelNumericDefaults::PROCESS.fa_spw);
 /// Per-model hd512 (gemma globals) split default (MEMRA_FA_SP512 overrides): 26B measured 16
 /// (2026-07-11 N=2), dense 31B measured 32 (36.86/36.93 vs 36.73/36.73 at 1.7k, 2026-07-12).
 /// fused t=1 q4_0 pair/triple row mapping: true = mr1 (one row/warp). Per-model default
 /// (dense gemma wins +1.1% short / +0.6% depth on the 31B; MoE 26B REGRESSES −1.2% —
 /// its shared-expert fused2 shapes lose to the finer grid). MEMRA_Q40_MR env still wins.
 pub static FUSED_MR1_DEFAULT: std::sync::atomic::AtomicBool =
-    std::sync::atomic::AtomicBool::new(false);
+    std::sync::atomic::AtomicBool::new(ModelNumericDefaults::PROCESS.fused_mr1);
 /// Per-model router-GEMV form (2026-07-31): the 8-warp twin is +8.8% on the H100 q35
 /// decode step (router was 14.8% of it) with argmax + spec self-consistency green on
 /// qwen-class MoE both rigs. The gemma-4 26B knife-edge block (2026-07-31, single
@@ -1359,19 +1360,325 @@ pub static FUSED_MR1_DEFAULT: std::sync::atomic::AtomicBool =
 pub static ROUTER_W8_DEFAULT: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(true);
 pub static FA_SP512_DEFAULT: std::sync::atomic::AtomicUsize =
-    std::sync::atomic::AtomicUsize::new(16);
+    std::sync::atomic::AtomicUsize::new(ModelNumericDefaults::PROCESS.fa_sp512);
 /// Per-model rms_norm block size (per-model numeric-config law: the per-thread partial-sum
 /// split changes with blockDim -> different FP order -> battery-arbitrated per model).
 /// qwen keeps the shipped 256; gemma4 adopts 1024 (single-row 2816-col norms are one-block
 /// latency-bound at 256 threads — 7us/launch measured).
-pub static RMS_BLOCK_DEFAULT: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(256);
+pub static RMS_BLOCK_DEFAULT: std::sync::atomic::AtomicU32 =
+    std::sync::atomic::AtomicU32::new(ModelNumericDefaults::PROCESS.rms_block);
 /// gemma4 fa split ladder switch (set at model load; see fa_split_keys).
-pub static FA_SP_GEMMA: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+pub static FA_SP_GEMMA: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(ModelNumericDefaults::PROCESS.fa_sp_gemma);
 /// Per-model stream-k entry override for SPEC serving (-1 = unset → env/default;
 /// 0 = force tiling; 1 = admit the deterministic form selector). The former timing
 /// selector made identical boots choose different fold orders; `MEMRA_MMQ_SK_FORM` is the
 /// explicit numerical-form seam. mmq_ffi reads this before the env.
-pub static MMQ_SK_FORCE: std::sync::atomic::AtomicI8 = std::sync::atomic::AtomicI8::new(-1);
+pub static MMQ_SK_FORCE: std::sync::atomic::AtomicI8 =
+    std::sync::atomic::AtomicI8::new(ModelNumericDefaults::PROCESS.mmq_sk_force);
+
+/// The per-model numeric defaults one model's load keys into the process-global statics
+/// above (`HybridModel::load_from_source_impl`). ONE value set serves a whole process: the
+/// launchers read these statics directly, `rms_block`, `fa_vec_min_tkv` and `fa_v4_at` latch
+/// the first value they see in a OnceLock, and nothing resets them for the next model. So two
+/// models in one process that want different sets (a multi-model `MEMRA_MODELS` roster with
+/// gemma4 beside qwen, a dense gemma beside a MoE one, a gqa-16 model beside a gqa-8 one)
+/// cannot both run their own program: one of them runs the other's rms_norm block, FA
+/// crossover, split ladder, fused row mapping, stream-k key, v4 capacity guard or step37 door
+/// defaults, and which one depends on load and first-call order.
+/// [`claim_model_numeric_defaults`] refuses that roster by name at load, before any tensor
+/// upload. Carrying these on the model and passing them to the launchers would lift the
+/// refusal; until then the refusal is the contract.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ModelNumericDefaults {
+    /// `FA_V4_MAX_DEFAULT` (0 = the v4 decode family off: the gqa > 8 capacity guard).
+    pub fa_v4_max: usize,
+    /// `FA_VEC_MIN_DEFAULT`.
+    pub fa_vec_min: usize,
+    /// `FA_SPW_DEFAULT`.
+    pub fa_spw: usize,
+    /// `FA_SP512_DEFAULT`.
+    pub fa_sp512: usize,
+    /// `FUSED_MR1_DEFAULT`.
+    pub fused_mr1: bool,
+    /// `RMS_BLOCK_DEFAULT`.
+    pub rms_block: u32,
+    /// `FA_SP_GEMMA`.
+    pub fa_sp_gemma: bool,
+    /// `MMQ_SK_FORCE` under spec intent (`MEMRA_DRAFT` set, `MEMRA_MMQ_SK` unset); -1 otherwise.
+    pub mmq_sk_force: i8,
+    /// `arm_step37_serving_defaults` (the SlidingGatedMoe program's door defaults).
+    pub step37_serving: bool,
+}
+
+impl ModelNumericDefaults {
+    /// The statics' initial values: what a model that keys nothing runs. The statics are
+    /// initialized FROM this, so the two cannot drift.
+    pub const PROCESS: Self = Self {
+        fa_v4_max: usize::MAX,
+        fa_vec_min: FA_VEC_MIN_TKV,
+        fa_spw: 32,
+        fa_sp512: 16,
+        fused_mr1: false,
+        rms_block: 256,
+        fa_sp_gemma: false,
+        mmq_sk_force: -1,
+        step37_serving: false,
+    };
+
+    /// The set one model's load keys. `gqa` is `n_head / n_head_kv` (0 when `n_head_kv` is 0),
+    /// `gemma_moe` is `Some(real_moe)` for the gemma batch program, `glm5_next_b200` is a
+    /// glm5_next model on an sm_100a build, `spec_mmq_n_embd` is `Some(n_embd)` under spec
+    /// intent. Pure: the loader passes what it already computed, and the stores apply exactly
+    /// these values.
+    pub fn for_model(
+        gqa: u32,
+        gemma_moe: Option<bool>,
+        glm5_next_b200: bool,
+        sliding_gated_moe: bool,
+        spec_mmq_n_embd: Option<u32>,
+    ) -> Self {
+        let mut d = Self::PROCESS;
+        // FA v4 GQA capacity guard: fa_v4_smem's per-warp Q arrays hold gqa <= 8 (see the
+        // loader's comment and research/122b-bringup-20260806/).
+        if gqa > 8 {
+            d.fa_v4_max = 0;
+        }
+        if let Some(real_moe) = gemma_moe {
+            // gemma4 fa-vec crossover (measured sweep 2026-07-10).
+            d.fa_vec_min = 1;
+            // windowed split: MoE 26B = 32, dense 31B = 64 (2026-07-12 sweeps).
+            d.fa_spw = if real_moe { 32 } else { 64 };
+            // hd512 global split: 26B = 16 (2026-07-11), 31B = 32 (2026-07-12).
+            d.fa_sp512 = if real_moe { 16 } else { 32 };
+            // fused t=1 pair/triple mr1: dense +1.1% short / +0.6% depth, MoE -1.2% (2026-07-14).
+            d.fused_mr1 = !real_moe;
+            // rms_norm block 1024 (single-row 2816-col norms; battery-arbitrated per model).
+            d.rms_block = 1024;
+            // gemma4 fa split ladder (d1736 sweep; see fa_split_keys).
+            d.fa_sp_gemma = true;
+        }
+        // GLM-5.3-Flash on sm_100a: rms_norm block 1024 (B200 posture flip 2026-09-06).
+        if glm5_next_b200 {
+            d.rms_block = 1024;
+        }
+        // Spec-serving stream-k key: big dense forces tiling, MoE/small defer to the
+        // fail-closed TILE form (2026-07-27; the timing selector was removed 2026-08-14).
+        if let Some(n_embd) = spec_mmq_n_embd {
+            d.mmq_sk_force = if n_embd >= 3500 { 0 } else { -1 };
+        }
+        d.step37_serving = sliding_gated_moe;
+        d
+    }
+
+    /// Each field where `self` and `other` disagree, as `STATIC=<self> vs <other>`.
+    pub fn differences(&self, other: &Self) -> Vec<String> {
+        let mut d = Vec::new();
+        let mut cmp = |name: &str, a: String, b: String| {
+            if a != b {
+                d.push(format!("{name}={a} vs {b}"));
+            }
+        };
+        let v4 = |v: usize| {
+            if v == usize::MAX {
+                "unbounded".to_string()
+            } else {
+                v.to_string()
+            }
+        };
+        cmp("FA_V4_MAX_DEFAULT", v4(self.fa_v4_max), v4(other.fa_v4_max));
+        cmp(
+            "FA_VEC_MIN_DEFAULT",
+            self.fa_vec_min.to_string(),
+            other.fa_vec_min.to_string(),
+        );
+        cmp(
+            "FA_SPW_DEFAULT",
+            self.fa_spw.to_string(),
+            other.fa_spw.to_string(),
+        );
+        cmp(
+            "FA_SP512_DEFAULT",
+            self.fa_sp512.to_string(),
+            other.fa_sp512.to_string(),
+        );
+        cmp(
+            "FUSED_MR1_DEFAULT",
+            self.fused_mr1.to_string(),
+            other.fused_mr1.to_string(),
+        );
+        cmp(
+            "RMS_BLOCK_DEFAULT",
+            self.rms_block.to_string(),
+            other.rms_block.to_string(),
+        );
+        cmp(
+            "FA_SP_GEMMA",
+            self.fa_sp_gemma.to_string(),
+            other.fa_sp_gemma.to_string(),
+        );
+        cmp(
+            "MMQ_SK_FORCE",
+            self.mmq_sk_force.to_string(),
+            other.mmq_sk_force.to_string(),
+        );
+        cmp(
+            "step37 serving defaults",
+            self.step37_serving.to_string(),
+            other.step37_serving.to_string(),
+        );
+        d
+    }
+}
+
+/// The first model's claim in this process: its set and its label.
+static MODEL_NUMERIC_CLAIM: std::sync::Mutex<Option<(ModelNumericDefaults, String)>> =
+    std::sync::Mutex::new(None);
+
+/// Claim the process's per-model numeric defaults for `model` (a label naming it). The first
+/// claim wins; a later model with the same set passes (the same model loaded twice, two models
+/// of one numeric class); a later model with a different set refuses by name. Never reset:
+/// the latched readers keep the first values for the life of the process, so a reload of a
+/// different model in the same process refuses too, and a load that fails after its claim
+/// keeps it (its stores may already have run).
+pub fn claim_model_numeric_defaults(model: &str, want: ModelNumericDefaults) -> Result<(), String> {
+    let mut claim = MODEL_NUMERIC_CLAIM
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    match claim.as_ref() {
+        Some((have, first)) => model_numeric_claim_verdict(have, first, &want, model),
+        None => {
+            *claim = Some((want, model.to_string()));
+            Ok(())
+        }
+    }
+}
+
+/// The pure verdict behind [`claim_model_numeric_defaults`].
+pub fn model_numeric_claim_verdict(
+    have: &ModelNumericDefaults,
+    first: &str,
+    want: &ModelNumericDefaults,
+    model: &str,
+) -> Result<(), String> {
+    let diff = have.differences(want);
+    if diff.is_empty() {
+        return Ok(());
+    }
+    Err(format!(
+        "model {model} keys per-model numeric defaults that differ from the ones {first} already \
+         keyed into this process ({}; first model vs this one). They live in process-global \
+         statics, some latched on first use, so one of the two models would run the other's \
+         numeric program: serve them from separate processes",
+        diff.join(", ")
+    ))
+}
+
+#[cfg(test)]
+mod fa3_force_tests {
+    use super::fa3_force_verdict;
+
+    #[test]
+    fn only_a_forced_fa3_on_a_non_hopper_build_refuses() {
+        fa3_force_verdict(Some("1"), true).expect("sm_90a carries the kernel");
+        for v in [None, Some("0"), Some("2"), Some("")] {
+            fa3_force_verdict(v, false).expect("not the force arm");
+        }
+        let err = fa3_force_verdict(Some("1"), false).unwrap_err();
+        assert!(
+            err.contains("MEMRA_FA3=1") && err.contains("sm_90a"),
+            "{err}"
+        );
+    }
+}
+
+#[cfg(test)]
+mod fa_ladder_engine_tests {
+    use super::fa_ladder_engine_verdict;
+
+    #[test]
+    fn an_engine_on_a_card_with_another_sm_count_refuses_by_name() {
+        fa_ladder_engine_verdict(1, 188, 188).expect("same SM count joins");
+        let err = fa_ladder_engine_verdict(1, 170, 188).unwrap_err();
+        for needle in ["device 1", "170 SMs", "188 SMs", "separate processes"] {
+            assert!(err.contains(needle), "{needle} missing from {err}");
+        }
+    }
+}
+
+#[cfg(test)]
+mod model_numeric_defaults_tests {
+    use super::{ModelNumericDefaults, model_numeric_claim_verdict};
+
+    #[test]
+    fn qwen_class_keys_nothing_and_matches_the_statics() {
+        assert_eq!(
+            ModelNumericDefaults::for_model(4, None, false, false, None),
+            ModelNumericDefaults::PROCESS
+        );
+        // Small/MoE under spec intent keeps the -1 key.
+        assert_eq!(
+            ModelNumericDefaults::for_model(4, None, false, false, Some(2048)),
+            ModelNumericDefaults::PROCESS
+        );
+    }
+
+    #[test]
+    fn per_model_keys_are_the_loader_values() {
+        let g31 = ModelNumericDefaults::for_model(2, Some(false), false, false, None);
+        assert_eq!(
+            (
+                g31.fa_vec_min,
+                g31.fa_spw,
+                g31.fa_sp512,
+                g31.fused_mr1,
+                g31.rms_block
+            ),
+            (1, 64, 32, true, 1024)
+        );
+        assert!(g31.fa_sp_gemma);
+        let g26 = ModelNumericDefaults::for_model(2, Some(true), false, false, None);
+        assert_eq!((g26.fa_spw, g26.fa_sp512, g26.fused_mr1), (32, 16, false));
+        assert_eq!(
+            ModelNumericDefaults::for_model(16, None, false, false, None).fa_v4_max,
+            0
+        );
+        assert_eq!(
+            ModelNumericDefaults::for_model(1, None, true, false, None).rms_block,
+            1024
+        );
+        assert_eq!(
+            ModelNumericDefaults::for_model(4, None, false, false, Some(5120)).mmq_sk_force,
+            0
+        );
+        assert!(ModelNumericDefaults::for_model(4, None, false, true, None).step37_serving);
+    }
+
+    #[test]
+    fn a_conflicting_roster_refuses_by_name_and_a_matching_one_passes() {
+        let qwen = ModelNumericDefaults::for_model(4, None, false, false, None);
+        let gemma = ModelNumericDefaults::for_model(2, Some(false), false, false, None);
+        model_numeric_claim_verdict(&qwen, "qwen-a", &qwen, "qwen-b").expect("same class");
+        let err = model_numeric_claim_verdict(&gemma, "g31", &qwen, "q27").unwrap_err();
+        for needle in [
+            "g31",
+            "q27",
+            "RMS_BLOCK_DEFAULT=1024 vs 256",
+            "FA_VEC_MIN_DEFAULT=1 vs 96",
+        ] {
+            assert!(err.contains(needle), "{needle} missing from {err}");
+        }
+        // The gqa > 8 v4 guard is a correctness key: a gqa-16 model beside a gqa-8 one refuses.
+        let gqa16 = ModelNumericDefaults::for_model(16, None, false, false, None);
+        let err = model_numeric_claim_verdict(&qwen, "q27", &gqa16, "q122").unwrap_err();
+        assert!(err.contains("FA_V4_MAX_DEFAULT=unbounded vs 0"), "{err}");
+        // Dense and MoE gemma differ in their split and row-mapping keys.
+        let g26 = ModelNumericDefaults::for_model(2, Some(true), false, false, None);
+        let err = model_numeric_claim_verdict(&gemma, "g31", &g26, "g26").unwrap_err();
+        assert!(err.contains("FA_SPW_DEFAULT=64 vs 32"), "{err}");
+        assert!(!err.contains("RMS_BLOCK_DEFAULT"), "{err}");
+    }
+}
 /// bf16 matvec family block size (MEMRA_MMV_BLOCK, default 128, clamped to [64, 256] and a
 /// multiple of 32 — the f32acc twin's shared reduce caps at 256). NUMERIC-CLASS knob: the
 /// per-thread stride and reduction order change with the block, same acceptance class as
@@ -1458,8 +1765,9 @@ pub(crate) fn b200_gemv_v2_on() -> bool {
 /// 2026-09-04, OFF elsewhere, `=0`/`=1` override): the W8-posture q8_0 row
 /// walk (`qmatvec_q8_0_mmvq_rp_v2` at t=1 and the fused `qmatvec_kda6_q8f32_rp_v2`) takes its
 /// `_ilp` twin, the same per-row program with four blocks' loads per lane issued ahead of the
-/// dp4a chains. Read PER CALL (a live rollback seam). Why and receipts: the kernel header in
-/// cu/qmatvec.cu and docs/FLAGS.md.
+/// dp4a chains. Read PER CALL (a live rollback seam). A sub-arm of `MEMRA_B200_GEMV_V2`: both
+/// v2 kernels it twins are dispatched only under `b200_gemv_v2_on()`, so without that door the
+/// default never engages. Why and receipts: the kernel header in cu/qmatvec.cu and docs/FLAGS.md.
 pub(crate) fn q8_row_ilp_on() -> bool {
     q8_row_ilp_on_from(
         std::env::var("MEMRA_Q8_ROW_ILP").ok().as_deref(),
@@ -2039,11 +2347,54 @@ pub(crate) fn fa_split_keys(t_kv: usize, n_head_kv: usize) -> usize {
     }
 }
 
-/// SM count of device 0, cached (used by fa_split_keys' rig-size rung; primary-context query,
-/// same attribute Engine::batched_variant reads).
+/// SM count behind fa_split_keys' rig-size rung: the device of the first Engine this process
+/// built (`Engine::new` records it), so a process serving from a non-zero ordinal follows its
+/// own card. It is one value per process on purpose: split planners and FA dispatch read it
+/// from free functions and must agree. Before any Engine exists it falls back to querying
+/// ordinal 0. `Engine::new` refuses a later engine whose card has a different SM count
+/// (`fa_ladder_engine_verdict`), so no engine runs another card's ladder.
+static FA_SM_COUNT: std::sync::OnceLock<i32> = std::sync::OnceLock::new();
+
+/// `MEMRA_FA3=1` forces the FA3 wgmma prefill, which only an sm_90a build carries: build.rs
+/// compiles fa3_prefill.cu as a stub (rc 3) on every other arch. The prefill switch refuses it,
+/// but only at the first fresh causal hd256 prefill, which in a serving worker is a request.
+/// `Engine::new` runs this once so a server refuses at boot. Pure over the value and the build.
+pub(crate) fn fa3_force_verdict(value: Option<&str>, hopper_build: bool) -> Result<(), String> {
+    if value != Some("1") || hopper_build {
+        return Ok(());
+    }
+    Err(format!(
+        "MEMRA_FA3=1 forces the FA3 wgmma prefill, which only an sm_90a build contains; this is \
+         an sm_{} build, where fa3_prefill.cu is a stub. Unset MEMRA_FA3: the default path \
+         serves this arch.",
+        env!("MEMRA_BUILT_CUDA_ARCH")
+    ))
+}
+
+/// An engine may join the process only on a card whose SM count is the one the FA split ladder
+/// was fixed at (`FA_SM_COUNT`). Otherwise it would run another card's ladder, a different FA
+/// split and so a different numeric class from the same card serving alone, and nothing would
+/// say so. PP/TP topology compares cards by name only; this compares the number the ladder
+/// actually reads. Pure, so the tooth needs no GPU.
+pub(crate) fn fa_ladder_engine_verdict(
+    ordinal: usize,
+    sm_count: i32,
+    ladder_sm_count: i32,
+) -> Result<(), String> {
+    if sm_count == ladder_sm_count {
+        return Ok(());
+    }
+    Err(format!(
+        "device {ordinal} has {sm_count} SMs, but this process fixed its FA split ladder at \
+         {ladder_sm_count} SMs (the first engine built, or device 0 when the ladder was read \
+         before any engine). The ladder is one value per process, so an engine here would run \
+         the other card's FA split class. Serve cards with different SM counts from separate \
+         processes"
+    ))
+}
+
 pub(crate) fn fa_sm_count() -> i32 {
-    static N: std::sync::OnceLock<i32> = std::sync::OnceLock::new();
-    *N.get_or_init(|| {
+    *FA_SM_COUNT.get_or_init(|| {
         cudarc::driver::result::init().ok();
         cudarc::driver::result::device::get(0)
             .and_then(|d| unsafe { cudarc::driver::result::device::get_attribute(
@@ -2196,6 +2547,8 @@ impl SpillStageStats {
 /// Engine device context: CUDA context, stream, loaded kernel modules, cuBLASLt (via runtime::Gpu).
 pub struct Engine {
     pub gpu: memra_runtime::Gpu,
+    /// This engine's own device SM count, read once at construction (`Engine::sm_count`).
+    sm_count: i32,
     module: Arc<CudaModule>,
     hybrid: Arc<CudaModule>,
     /// Kimi Delta Attention kernels (cu/kda.cu) — separate fatbin, resolved through `func`.
@@ -2243,11 +2596,12 @@ pub struct Engine {
     /// SECOND CONSUMER (2026-09-02): `MEMRA_GLM5_W8` reuses this SAME cache for the glm5_next
     /// KDA/MLA decode trunk — independent door, same building block, same key shape.
     w8_mirrors: Mutex<std::collections::HashMap<(u64, u32, u32), CudaSlice<u8>>>,
-    /// Per-`in_f` q8_1 activation scratch for those mirrors (allocating per call would cost
-    /// more than the door saves).
+    /// q8_1 activation scratch for those mirrors (allocating per call would cost more than
+    /// the door saves), keyed by `(in_f, rows)`: the entry holds at least `rows` rows of
+    /// `in_f`, so a t=1 caller and a t-wide caller never share an undersized buffer.
     #[allow(clippy::type_complexity)]
     // allow: one-shot composite type; naming it would hide the shape that matters at the call site
-    w8_act: Mutex<std::collections::HashMap<usize, (CudaSlice<i8>, CudaSlice<f32>)>>,
+    w8_act: Mutex<std::collections::HashMap<(usize, usize), (CudaSlice<i8>, CudaSlice<f32>)>>,
     /// Exact retained expert-block lengths collected after model load. Mixed-layout models use
     /// this inventory to preallocate fixed-address size classes instead of sizing every slot to
     /// the single largest block. The cache still owns every address for its full lifetime.
@@ -2310,6 +2664,11 @@ pub struct Engine {
     /// name -> resolved CudaFunction (capture-safe lookups; see `func`).
     fn_cache: Mutex<std::collections::HashMap<String, CudaFunction>>,
     f16_scratch: Mutex<Option<crate::f16_ffi::F16Scratch>>,
+    /// Bytes of fp16 dequant mirrors this engine holds against `MEMRA_PP_F16_BUDGET_MB`
+    /// (`build_q8_f16`); each `F16Mirror` refunds its share when it drops.
+    f16_mirror_spent: Arc<std::sync::atomic::AtomicUsize>,
+    /// The budget-reached announce fires once per engine.
+    f16_mirror_skip_announced: std::sync::atomic::AtomicBool,
     /// RANK1 LEVER (parallel argmax): resident pass-1 partials scratch (part_v[NB] f32, part_i[NB] i32),
     /// allocated ONCE on first parallel-argmax call and reused. Stable pointers so the 2-pass argmax
     /// is CUDA-graph-capturable (the buffer is referenced by both captured passes; lazy-allocated
@@ -2457,15 +2816,16 @@ pub(crate) fn fa_part_zero_on() -> bool {
 
 /// t_kv-conditional v4 pick (gemma depth lesson 2026-07-10: v4's key-per-lane pipeline starves
 /// at the 1024-window with short splits — the v3 arm measured depth plain 158.0 vs 156.7).
-/// Threshold MEMRA_FA_V4_MAX (default usize::MAX = unchanged behavior; gemma sets 1024 at load
-/// via FA_V4_MAX_DEFAULT). Applied at EVERY dispatch site (eager, rows, rows_w, dc) so verify
-/// stays kernel-family-identical to decode at the same t_kv.
+/// Threshold MEMRA_FA_V4_MAX (default usize::MAX = unchanged behavior; the loader stores 0 via
+/// FA_V4_MAX_DEFAULT for gqa > 8 plans). Applied at EVERY dispatch site (eager, rows, rows_w, dc)
+/// so verify stays kernel-family-identical to decode at the same t_kv; `fa_decode_rows` groups
+/// its rows by this pick.
 /// Per-model deep-ctx smem floor default (MEMRA_FA_SMEM_TKV env overrides): gemma pushes it
 /// above the 1024 window so the windowed decode + verify rows share the REGISTER family.
 pub static FA_SMEM_TKV_DEFAULT: std::sync::atomic::AtomicUsize =
     std::sync::atomic::AtomicUsize::new(1024);
 pub static FA_V4_MAX_DEFAULT: std::sync::atomic::AtomicUsize =
-    std::sync::atomic::AtomicUsize::new(usize::MAX);
+    std::sync::atomic::AtomicUsize::new(ModelNumericDefaults::PROCESS.fa_v4_max);
 pub fn fa_v4_at_pub(t_kv: usize) -> bool {
     fa_v4_at(t_kv)
 }
@@ -4025,19 +4385,37 @@ impl Engine {
                 .unwrap_or((0, 0));
             let built = BUILT_CUDA_TARGET;
             if !cuda_arch::target_runs_on(built, maj, min) {
-                let hint = match cuda_arch::target_for_compute_cap(&format!("{maj}.{min}")) {
-                    Some(t) => format!("MEMRA_CUDA_ARCH={t}"),
-                    None => "no MEMRA_CUDA_ARCH target covers this device".to_string(),
+                let msg = match cuda_arch::target_for_compute_cap(&format!("{maj}.{min}")) {
+                    Some(t) => format!(
+                        "memra was built for sm_{built} but device {ordinal} reports compute \
+                         capability {maj}.{min}, and sm_{built} SASS does not load there. Rebuild \
+                         on this machine (MEMRA_CUDA_ARCH auto-detects the GPU; \
+                         MEMRA_CUDA_ARCH={t}) or set MEMRA_ARCH_CHECK=0 to bypass."
+                    ),
+                    // No bypass hint here: with no target for this capability, skipping the
+                    // guard only reaches the opaque module-load failure the guard names.
+                    None => format!(
+                        "memra was built for sm_{built} but device {ordinal} reports compute \
+                         capability {maj}.{min}, and no MEMRA_CUDA_ARCH target covers this \
+                         device (an sm_*a binary loads only on its exact capability)."
+                    ),
                 };
-                return Err(format!(
-                    "memra was built for sm_{built} but device {ordinal} reports compute \
-                     capability {maj}.{min}, and sm_{built} SASS does not load there. Rebuild \
-                     on this machine (MEMRA_CUDA_ARCH auto-detects the GPU; {hint}) or set \
-                     MEMRA_ARCH_CHECK=0 to bypass."
-                )
-                .into());
+                return Err(msg.into());
             }
         }
+        // This engine's own SM count; the first engine also fixes the process FA split ladder.
+        let sm_count = {
+            use cudarc::driver::sys::CUdevice_attribute_enum as A;
+            gpu.ctx
+                .attribute(A::CU_DEVICE_ATTRIBUTE_MULTIPROCESSOR_COUNT)
+                .unwrap_or(82)
+        };
+        fa_ladder_engine_verdict(ordinal, sm_count, *FA_SM_COUNT.get_or_init(|| sm_count))?;
+        // A force flag this build cannot honor stops the boot, not the first long prompt.
+        fa3_force_verdict(
+            std::env::var("MEMRA_FA3").ok().as_deref(),
+            cfg!(memra_hopper_mma),
+        )?;
         // Default async-pool RELEASE_THRESHOLD is 0: freed blocks return to the OS at every
         // sync, so cuMemAllocAsync NODES inside captured graphs re-map memory on EVERY
         // cuGraphLaunch (measured 226us/launch on the gemma graph door, 2026-07-23 osrt).
@@ -4103,6 +4481,7 @@ impl Engine {
         }
         Ok(Self {
             gpu,
+            sm_count,
             module,
             hybrid,
             kda,
@@ -4142,6 +4521,8 @@ impl Engine {
             fa_part_retired: Mutex::new(Vec::new()),
             fn_cache: Mutex::new(Default::default()),
             f16_scratch: Mutex::new(None),
+            f16_mirror_spent: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+            f16_mirror_skip_announced: std::sync::atomic::AtomicBool::new(false),
             #[cfg(memra_cutlass)]
             cutlass_scratch: Mutex::new(None),
         })
@@ -9475,7 +9856,8 @@ impl Engine {
                 moe_vrows_ilp_refuse("down", qt);
                 false
             };
-        if ilp {
+        // Counted only where the `_ilp` kernel launches: the tmaj grid has no ILP form.
+        if ilp && !tmaj {
             MOE_VROWS_ILP_DISPATCHES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         }
         let (f, cfg) = if tmaj {
@@ -18858,7 +19240,9 @@ impl Engine {
         }
         // Prefill GEMM root fix: if T>1 and the dtype has a GEMM kernel, batch via tensor cores
         // (reuses the already-quantized aq/ad — no extra quantize). m=1 falls through to dp4a.
-        if m >= 16 && self.gemm_supports(w) && !self.verify_exact_on() {
+        // Same out_f >= 128 floor as `matmul` (its GEMM_MIN_OUT_F): a small-out_f tensor takes
+        // the same program through either entry.
+        if m >= 16 && w.out_features() >= 128 && self.gemm_supports(w) && !self.verify_exact_on() {
             return self.qmatvec_gemm(w, aq, ad, m);
         }
         // THE SEVENTH ARM. Every raw-f32 arm above is guarded by `x_raw_ok`; this one — the
@@ -23676,7 +24060,7 @@ impl Engine {
         }
         // ONE activation quantize for all six projections. The unfused W8 path runs this once
         // per projection on the same `x` — six identical launches per layer.
-        let akey = in_f * 64 + t.min(32);
+        let akey = (in_f, t.min(32));
         if pre_q8.is_none() {
             let mut act = self.w8_act.lock().map_err(|_| "w8 act map is poisoned")?;
             if let std::collections::hash_map::Entry::Vacant(slot) = act.entry(akey) {
@@ -23994,14 +24378,7 @@ impl Engine {
     /// (deterministic but k-reduce-order-shifted: rel<1e-3 + run-to-run bit-identity required).
     /// Device SM count (cached) — grid-fill policy input.
     pub fn sm_count(&self) -> i32 {
-        static SMS: std::sync::OnceLock<i32> = std::sync::OnceLock::new();
-        *SMS.get_or_init(|| {
-            use cudarc::driver::sys::CUdevice_attribute_enum as A;
-            self.gpu
-                .ctx
-                .attribute(A::CU_DEVICE_ATTRIBUTE_MULTIPROCESSOR_COUNT)
-                .unwrap_or(82)
-        })
+        self.sm_count
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -24030,14 +24407,7 @@ impl Engine {
         static KS_ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
         let ks_on = *KS_ON.get_or_init(|| std::env::var("MEMRA_KS").as_deref() != Ok("0"));
         let sc_ok = ks_on && qtype == QT_NVFP4 && in_f.is_multiple_of(256) && (in_f / 64 <= 272);
-        static SMS: std::sync::OnceLock<i32> = std::sync::OnceLock::new();
-        let sms = *SMS.get_or_init(|| {
-            use cudarc::driver::sys::CUdevice_attribute_enum as A;
-            self.gpu
-                .ctx
-                .attribute(A::CU_DEVICE_ATTRIBUTE_MULTIPROCESSOR_COUNT)
-                .unwrap_or(82)
-        });
+        let sms = self.sm_count();
         // k-quant r2 port (2026-07-04): q4_K/q5_K/q6_K have _r2/_r2w8 twins. ncu on the DRAM-cold
         // 9B msweep showed q4_K/q5_K b4 memory-latency bound like NVFP4 pre-fix (long_scoreboard
         // 19.6/16.4 per issue, DRAM 47.7/38.2%, L2 weight hit ~13%); q6_K lm_head is the exception
@@ -24201,8 +24571,9 @@ impl Engine {
         const ROWS_PER_BLOCK: u32 = 4;
         // TUNE SEAM (H100 lane): MEMRA_BVAR forces the batched-variant pick for the whole
         // process — the auto heuristics were tuned on sm_120 (82 SMs / 858 GB/s) and the
-        // sm_90a re-tune sweeps this seam empirically. Layout variants stay safe: an rp
-        // weight keeps its rp-layout kernel family regardless of the override.
+        // sm_90a re-tune sweeps this seam empirically. Layout variants stay safe: a forced
+        // variant applies only when its layout matches the weight's (rp variants on rp bytes,
+        // the rest on GGUF-layout bytes); otherwise the auto pick runs.
         let forced: Option<&'static str> = {
             static V: std::sync::OnceLock<Option<String>> = std::sync::OnceLock::new();
             V.get_or_init(|| std::env::var("MEMRA_BVAR").ok())
@@ -24210,7 +24581,7 @@ impl Engine {
                 .map(|s| Box::leak(s.to_string().into_boxed_str()) as &'static str)
         };
         let variant = match forced {
-            Some(v) if !rp || v.contains("rp") => v,
+            Some(v) if v.contains("rp") == rp => v,
             _ => self.batched_variant(m, in_f, out_f, qtype, mcols, rp),
         };
         // EXACT TENSOR-CORE tier (batch-spec 2026-11-03, MEMRA_MMVQ_TC=1 A/B seam): int8
@@ -24674,6 +25045,8 @@ impl Engine {
         xh: &CudaSlice<u8>,
         m: usize,
     ) -> Result<Vec<CudaSlice<f32>>, Box<dyn std::error::Error>> {
+        // Quantize-once window over the siblings (see `matmul_group`).
+        let _act_window = self.mmq_act_begin();
         let mut out = Vec::with_capacity(ws.len());
         let in_f = ws[0].in_features();
         for w in ws {
@@ -24782,6 +25155,8 @@ impl Engine {
         {
             return self.matmul_group(ws, x, m);
         }
+        // Quantize-once window over the siblings (see `matmul_group`).
+        let _act_window = self.mmq_act_begin();
         let mut out = Vec::with_capacity(ws.len());
         for w in ws {
             out.push(self.matmul_prefill(w, x, m)?);
@@ -24796,6 +25171,13 @@ impl Engine {
         m: usize,
     ) -> Result<Vec<CudaSlice<f32>>, Box<dyn std::error::Error>> {
         use crate::model::GpuTensor;
+        // QUANTIZE-ONCE WINDOW over the siblings: every member reads the same `x`, borrowed for
+        // the whole call, so its address cannot be recycled inside the window, and Q4_0 MMQ
+        // members with the same in_f quantize the D4 activation once (`mmq_act_begin`). Before
+        // the window had a close (a4a5ad4e53) these groups got that sharing by accident, from
+        // the slot surviving between calls; the window keeps it by construction and nowhere
+        // else. The quantize is deterministic, so output bytes are the same either way.
+        let _act_window = self.mmq_act_begin();
         let mut out = Vec::with_capacity(ws.len());
         let any_mirror = ws
             .iter()
@@ -26250,7 +26632,7 @@ impl Engine {
         }
         let nblk = in_f / 32;
         // The t-wide activation scratch is keyed by (in_f, t-cap) so a wider walk regrows it.
-        let akey = in_f * 64 + t.min(32);
+        let akey = (in_f, t.min(32));
         {
             let mut act = self.w8_act.lock().map_err(|_| "w8 act map is poisoned")?;
             if let std::collections::hash_map::Entry::Vacant(slot) = act.entry(akey) {
@@ -26390,12 +26772,12 @@ impl Engine {
         let nblk = in_f / 32;
         {
             let mut act = self.w8_act.lock().map_err(|_| "w8 act map is poisoned")?;
-            if !act.contains_key(&in_f) {
+            if !act.contains_key(&(in_f, 1)) {
                 let aq = self.alloc_uninit::<i8>(in_f)?;
                 let ad = self.alloc_uninit::<f32>(nblk)?;
-                act.insert(in_f, (aq, ad));
+                act.insert((in_f, 1), (aq, ad));
             }
-            let (aq, ad) = act.get_mut(&in_f).expect("just inserted");
+            let (aq, ad) = act.get_mut(&(in_f, 1)).expect("just inserted");
             self.quantize_q8_1_into(x, 1, in_f, aq, ad)?;
         }
         let mirrors = self
@@ -26404,7 +26786,7 @@ impl Engine {
             .map_err(|_| "w8 mirror map is poisoned")?;
         let act = self.w8_act.lock().map_err(|_| "w8 act map is poisoned")?;
         let mirror = mirrors.get(&key).expect("built above");
-        let (aq, ad) = act.get(&in_f).expect("built above");
+        let (aq, ad) = act.get(&(in_f, 1)).expect("built above");
         // MEMRA_B200_GEMV_V2 (lane/b200-gemv-hbm-20260902 round 3). THIS is the t=1 decode
         // kernel in the posture we actually serve: the bf16 arms further up
         // `matvec_bf16_rows_into` are unreachable once MEMRA_GLM5_W8 reroutes here, which is
@@ -26655,12 +27037,12 @@ impl Engine {
         let nblk = in_f / 32;
         {
             let mut act = self.w8_act.lock().map_err(|_| "w8 act map is poisoned")?;
-            if !act.contains_key(&in_f) {
+            if !act.contains_key(&(in_f, 1)) {
                 let aq = self.alloc_uninit::<i8>(in_f)?;
                 let ad = self.alloc_uninit::<f32>(nblk)?;
-                act.insert(in_f, (aq, ad));
+                act.insert((in_f, 1), (aq, ad));
             }
-            let (aq, ad) = act.get_mut(&in_f).expect("just inserted");
+            let (aq, ad) = act.get_mut(&(in_f, 1)).expect("just inserted");
             self.quantize_q8_1_into(x, 1, in_f, aq, ad)?;
         }
         let mirrors = self
@@ -26669,7 +27051,7 @@ impl Engine {
             .map_err(|_| "w8 mirror map is poisoned")?;
         let act = self.w8_act.lock().map_err(|_| "w8 act map is poisoned")?;
         let mirror = mirrors.get(&key).expect("built above");
-        let (aq, ad) = act.get(&in_f).expect("built above");
+        let (aq, ad) = act.get(&(in_f, 1)).expect("built above");
         self.qmatvec_mmvq_into(
             mirror,
             aq,
@@ -28715,11 +29097,15 @@ impl Engine {
             && t == t_kv
             && match std::env::var("MEMRA_FA3").as_deref() {
                 Ok("0") => false,
-                // The force arm consults the arch now: the bf16 stage below calls
-                // f32_to_bf16_into -> func("f32_to_bf16_bulk"), which cu/hybrid.cu:1623 omits on
-                // a portable build. Refuse at the switch, not at the lookup.
+                // The force arm consults the arch: build.rs compiles fa3_prefill.cu as a stub
+                // (rc 3) on every arch but 90a, and portable builds already returned to naive
+                // SDPA above. Refuse at the switch, not after the bf16 stage mid-request.
+                // Engine::new refuses the same value at construction (fa3_force_verdict), so a
+                // server stops at boot; this assert covers an env changed after that.
                 Ok("1") => {
-                    refuse_portable_force("MEMRA_FA3=1", "the sm_90a fa3/bf16 kernels");
+                    if let Err(why) = fa3_force_verdict(Some("1"), cfg!(memra_hopper_mma)) {
+                        panic!("{why}");
+                    }
                     true
                 }
                 _ => cfg!(memra_hopper_mma),
@@ -28938,6 +29324,13 @@ impl Engine {
         window: usize,
         v_f16: bool,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        // The portable lane serves naive SDPA (`fa_prefill_w`'s gate); this bf16-MMA stamp takes
+        // pre-converted operands and has no f32 fallback, so it refuses rather than run there.
+        if portable_mma_gated() {
+            return Err(
+                "fa_prefill_w_pre: bf16-MMA prefill is gated off on this portable build".into(),
+            );
+        }
         const BLOCK_Q: usize = 64;
         const BK: usize = 32;
         debug_assert_eq!(head_dim, 256);
@@ -29406,6 +29799,12 @@ impl Engine {
         causal: bool,
         v_f16: bool,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        // Same refusal as `fa_prefill_w_pre`: no f32 fallback for pre-converted operands.
+        if portable_mma_gated() {
+            return Err(
+                "fa_prefill_hd512_pre: bf16-MMA prefill is gated off on this portable build".into(),
+            );
+        }
         debug_assert_eq!(head_dim, 512);
         const SP_M: usize = 16;
         const BKS: usize = 32;
@@ -29518,6 +29917,14 @@ impl Engine {
         width: usize,
         scale: f32,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        // Same refusal as `fa_prefill_w_pre`: a bf16-MMA kernel on pre-converted operands with
+        // no f32 fallback. The glm5 caller already gates MEMRA_MLA_TC_PREFILL on
+        // portable_mma_gated(); this covers every other caller (tests, gates, a future arm).
+        if portable_mma_gated() {
+            return Err(
+                "mla_attn_gathered_tc: bf16-MMA prefill is gated off on this portable build".into(),
+            );
+        }
         if kv_rank != 512 {
             return Err(format!(
                 "mla_attn_gathered_tc is stamped at kv_rank 512 (the glm5_next latent width); \
@@ -31343,25 +31750,34 @@ impl Engine {
         // executes the exact per-row program eager ran. Rungs land once per doubling, so this
         // is 1 launch in the common case and 2 on a crossing round. hd512 keeps one group (its
         // sp override is t_kv-independent by construction).
-        let mut groups: Vec<(usize, usize, usize)> = Vec::new(); // (row0, t_g, sp_g)
-        if head_dim == 512 || fa_split_keys(base_len + 1, n_head_kv) == sp {
-            groups.push((0, t, sp));
+        // The v4/v3 family joins the group key for the same reason: eager decode picks it per row
+        // from fa_v4_at(t_kv_r), so a finite MEMRA_FA_V4_MAX inside the batch splits the group
+        // there instead of running the early rows under the last row's family.
+        // Deep-ctx smem twin for the VERIFY rows (2026-07-05): same threshold + rationale as
+        // fa_decode's dispatch — at 40k the register path's GQA L2-reuse premise is dead and the
+        // verify multiplies the 4x DRAM re-read by T rows. Bit-identical per (row,token,split).
+        let v4_row = |r: usize| fa_v4_at(base_len + r + 1) && head_dim == 256;
+        let mut groups: Vec<(usize, usize, usize, bool)> = Vec::new(); // (row0, t_g, sp_g, v4_g)
+        if head_dim == 512
+            || (fa_split_keys(base_len + 1, n_head_kv) == sp && v4_row(0) == v4_row(t - 1))
+        {
+            groups.push((0, t, sp, v4_row(t - 1)));
         } else {
             let mut r0 = 0usize;
             while r0 < t {
                 let sp_g = fa_split_keys(base_len + r0 + 1, n_head_kv);
+                let v4_g = v4_row(r0);
                 let mut r1 = r0 + 1;
-                while r1 < t && fa_split_keys(base_len + r1 + 1, n_head_kv) == sp_g {
+                while r1 < t
+                    && fa_split_keys(base_len + r1 + 1, n_head_kv) == sp_g
+                    && v4_row(r1) == v4_g
+                {
                     r1 += 1;
                 }
-                groups.push((r0, r1 - r0, sp_g));
+                groups.push((r0, r1 - r0, sp_g, v4_g));
                 r0 = r1;
             }
         }
-        // Deep-ctx smem twin for the VERIFY rows (2026-07-05): same threshold + rationale as
-        // fa_decode's dispatch — at 40k the register path's GQA L2-reuse premise is dead and the
-        // verify multiplies the 4x DRAM re-read by T rows. Bit-identical per (row,token,split).
-        let v4 = fa_v4_at(base_len + t) && head_dim == 256;
         let v3 = fa_v3_active(head_dim);
         // kv_shared twin RETIRED (2026-07-11 depth run-gen gate): the wv:=wk premise fails
         // POST-cache — cached K is k-normed+roped, cached V is not; the twin fed roped keys
@@ -31390,66 +31806,71 @@ impl Engine {
             && sp <= 32
             && n_head / n_head_kv.max(1) <= 16
             && *TB512.get_or_init(|| std::env::var("MEMRA_FA_TB512").as_deref() != Ok("0"));
-        let fname = if tb512 {
-            "fa_decode_vec_q_rows_v4_512_tb"
-        } else if i2 {
-            "fa_decode_vec_q_rows_dpl16_i2"
-        } else if head_dim == 512 {
-            "fa_decode_vec_q_rows_dpl16"
-        }
-        // gemma globals (parity law)
-        else if v4 {
-            "fa_decode_vec_q_rows_v4"
-        } else if v3 {
-            "fa_decode_vec_q_rows_v3"
-        } else {
-            "fa_decode_vec_q_rows_v2"
-        };
-        let f = if head_dim == 512 {
-            self.fa_func(fname, head_dim)
-        } else if g {
-            // FP8-WINDOWED: hd256 rows over an e4m3 cache — kf8vf8 module, SAME symbol
-            // choice as decode's kvmod dispatch (parity law: excluding v4 here paired
-            // g-module rows against decode's g-module v4 — different programs, short-VG
-            // maxdiff 2.0 / spec stream 0/128, 2026-07-12). rows_v4 is format-aware
-            // since fda9790.
-            // hd128 (qwen fp8-KV) lands on the base/register rows via fname — the
-            // dq macros are format-aware.
-            self.func_g(fname)
-        } else {
-            self.func(fname)
-        };
-        let shmem = if tb512 {
-            // fa_v4_smem_512 (q 9KB gqa<=16 + k tile 18KB) + sV 32*512 (e4m3 module halves it)
-            let gk = Self::gkv_on();
-            let sh =
-                (8192 + 1024 + 32 * 512 + 32 * 64 + 32 * head_dim * if gk { 1 } else { 2 }) as u32;
-            use cudarc::driver::sys::CUfunction_attribute_enum as A;
-            f.set_attribute(
-                A::CU_FUNC_ATTRIBUTE_MAX_DYNAMIC_SHARED_SIZE_BYTES,
-                sh as i32,
-            )?;
-            sh
-        } else {
-            // v4: fa_v4_smem (11.5KB) + sV; v3 stages sV only; the v2 twin stages sK+sV.
-            let sh = (if v4 {
-                11520 + 32 * head_dim * if g { 1 } else { 2 }
+        // Kernel and dynamic smem for one group's v4/v3 family (single group in the common case).
+        let kernel_for = |v4: bool| -> Result<(CudaFunction, u32), Box<dyn std::error::Error>> {
+            let fname = if tb512 {
+                "fa_decode_vec_q_rows_v4_512_tb"
+            } else if i2 {
+                "fa_decode_vec_q_rows_dpl16_i2"
+            } else if head_dim == 512 {
+                "fa_decode_vec_q_rows_dpl16"
+            }
+            // gemma globals (parity law)
+            else if v4 {
+                "fa_decode_vec_q_rows_v4"
             } else if v3 {
-                32 * head_dim * 2
+                "fa_decode_vec_q_rows_v3"
             } else {
-                2 * 32 * head_dim * 2
-            }) as u32;
-            use cudarc::driver::sys::CUfunction_attribute_enum as A;
-            f.set_attribute(
-                A::CU_FUNC_ATTRIBUTE_MAX_DYNAMIC_SHARED_SIZE_BYTES,
-                sh as i32,
-            )?;
-            sh
+                "fa_decode_vec_q_rows_v2"
+            };
+            let f = if head_dim == 512 {
+                self.fa_func(fname, head_dim)
+            } else if g {
+                // FP8-WINDOWED: hd256 rows over an e4m3 cache — kf8vf8 module, SAME symbol
+                // choice as decode's kvmod dispatch (parity law: excluding v4 here paired
+                // g-module rows against decode's g-module v4 — different programs, short-VG
+                // maxdiff 2.0 / spec stream 0/128, 2026-07-12). rows_v4 is format-aware
+                // since fda9790.
+                // hd128 (qwen fp8-KV) lands on the base/register rows via fname — the
+                // dq macros are format-aware.
+                self.func_g(fname)
+            } else {
+                self.func(fname)
+            };
+            let shmem = if tb512 {
+                // fa_v4_smem_512 (q 9KB gqa<=16 + k tile 18KB) + sV 32*512 (e4m3 module halves it)
+                let gk = Self::gkv_on();
+                let sh = (8192 + 1024 + 32 * 512 + 32 * 64 + 32 * head_dim * if gk { 1 } else { 2 })
+                    as u32;
+                use cudarc::driver::sys::CUfunction_attribute_enum as A;
+                f.set_attribute(
+                    A::CU_FUNC_ATTRIBUTE_MAX_DYNAMIC_SHARED_SIZE_BYTES,
+                    sh as i32,
+                )?;
+                sh
+            } else {
+                // v4: fa_v4_smem (11.5KB) + sV; v3 stages sV only; the v2 twin stages sK+sV.
+                let sh = (if v4 {
+                    11520 + 32 * head_dim * if g { 1 } else { 2 }
+                } else if v3 {
+                    32 * head_dim * 2
+                } else {
+                    2 * 32 * head_dim * 2
+                }) as u32;
+                use cudarc::driver::sys::CUfunction_attribute_enum as A;
+                f.set_attribute(
+                    A::CU_FUNC_ATTRIBUTE_MAX_DYNAMIC_SHARED_SIZE_BYTES,
+                    sh as i32,
+                )?;
+                sh
+            };
+            Ok((f, shmem))
         };
         // Per-GROUP launches (single group in the common case — identical to the pre-fix
         // single launch there): each group gets its own partials (the rows kernel indexes
         // partials by its LOCAL grid.z row) and q/o row-offset views.
-        for &(r0, t_g, sp_g) in &groups {
+        for &(r0, t_g, sp_g, v4_g) in &groups {
+            let (f, shmem) = kernel_for(v4_g)?;
             let n_splits_g = (base_len + r0 + t_g).div_ceil(sp_g);
             let (nspm, spk) = (n_splits_g as i32, sp_g as i32);
             let base_i = (base_len + r0) as i32;
@@ -32991,15 +33412,16 @@ impl Engine {
         // Per-(row, head) combine+gate: the t=1 combine over t*n_head stacked heads —
         // row r head h reads its own partial bank; splits past a row's ns_eff carry
         // (-inf, 0) partials the NEG_INF guard no-ops bit-exactly.
-        let fc = {
-            static CS: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-            if *CS.get_or_init(|| std::env::var("MEMRA_FA_COMBINE_S").as_deref() == Ok("1")) {
-                self.func("fa_decode_combine_gate_f32_s")
-            } else {
-                self.func("fa_decode_combine_gate_f32")
-            }
+        // One cached read picks the kernel AND sizes its smem, as in `fa_decode_dcw`: the _s
+        // twin launched with 0 dynamic smem would read shared memory out of bounds.
+        static CS: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+        let combine_shared =
+            *CS.get_or_init(|| std::env::var("MEMRA_FA_COMBINE_S").as_deref() == Ok("1"));
+        let fc = if combine_shared {
+            self.func("fa_decode_combine_gate_f32_s")
+        } else {
+            self.func("fa_decode_combine_gate_f32")
         };
-        let combine_shared = std::env::var("MEMRA_FA_COMBINE_S").as_deref() == Ok("1");
         let nht = (t * n_head) as i32;
         let cfg2 = LaunchConfig {
             grid_dim: ((t * n_head) as u32, 1, 1),

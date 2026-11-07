@@ -514,7 +514,8 @@ extern "C" int memra_mla_decompress_v_wp_f32(const float* o_lat, const float* wv
 // computes it changes, so bit identity to the unsplit kernels is by construction and asserted
 // bytewise by crates/memra-engine/tests/mla_decode_split_gpu.rs (including split values that
 // do not divide the output width). The smem stage is the same loads with the same values.
-// Host seam MEMRA_MLA_DECODE_SPLIT (default OFF, read per call in mla_ffi.rs).
+// Host seam MEMRA_MLA_DECODE_SPLIT (default ON since 2026-09-03, =0 rolls back, read per call in
+// mla_ffi.rs; glm5 TP head shards never take it).
 
 extern "C" __global__ void memra_mla_absorb_q_split_kernel(const float* __restrict__ q_nope,
                                                            const float* __restrict__ wk_b,

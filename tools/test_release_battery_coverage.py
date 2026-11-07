@@ -35,6 +35,12 @@ def kernel_output(required=REQUIRED, skips=()):
     )
 
 
+def argmax_output(prime="MATCH"):
+    return ("  SUMMARY flips=0 bad=0\n"
+            + (f"  PRIME-SUMMARY prime={prime}\n" if prime else "")
+            + "  PASS: fixture calibrated margin gate\n")
+
+
 class ReleaseBatteryCoverageTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory(prefix="release-coverage-")
@@ -74,9 +80,11 @@ fi
 exit "${FIXTURE_SPEC_RC:-0}"
 ''')
         self.write_executable(self.bin / "argmax-margin-probe", "#!/bin/sh\nexit 0\n")
+        self.argmax_log = self.root / "argmax.log"
+        self.argmax_log.write_text(argmax_output())
         self.write_executable(self.tools / "argmax-margin-gate.sh", """#!/bin/sh
-echo '  SUMMARY flips=0 bad=0'
-echo '  PASS: fixture calibrated margin gate'
+env > "$FIXTURE_ROOT/argmax.env"
+cat "$FIXTURE_ROOT/argmax.log"
 """)
         # A fake nvidia-smi must answer THREE distinct query shapes now (memra#264 follow-up,
         # PR #898): the physical-GPU resolver's `index,uuid,memory.free` device list, the
@@ -180,6 +188,26 @@ esac
             with self.subTest(case=case):
                 self.spec_log.write_text(output)
                 self.run_battery(expected=1, diagnostic="run-spec  FAIL")
+
+    def test_argmax_arm_requires_the_batched_prime_verdict(self):
+        # The battery runs argmax-margin-gate.sh and not run-gen, and run-spec primes both its
+        # reference and its candidate through prime_cache, so the gate's PRIME-SUMMARY is the
+        # only prime-vs-tokenwise check a release gets. A gate PASS without it cannot pass.
+        for prime in ("MATCH", "FLIP-NEARTIE", "SKIP:tokenwise-served"):
+            with self.subTest(prime=prime):
+                self.argmax_log.write_text(argmax_output(prime))
+                self.assertIn(f"prime={prime}", self.run_battery())
+        for prime in ("", "MISMATCH-STRUCTURED", "SKIP:gate-off", "SKIP:tokenwise-forced", "SKIP:short-prompt"):
+            with self.subTest(prime=prime):
+                self.argmax_log.write_text(argmax_output(prime))
+                self.run_battery(expected=1, diagnostic="batched-prime arm reported prime=")
+
+    def test_argmax_arm_runs_the_default_prime_program(self):
+        self.run_battery(MEMRA_PRIME_GATE="0", MEMRA_PRIME_TOKENWISE="1")
+        argmax_env = dict(line.split("=", 1) for line in (self.root / "argmax.env").read_text().splitlines()
+                          if "=" in line)
+        for name in ("MEMRA_PRIME_GATE", "MEMRA_PRIME_TOKENWISE"):
+            self.assertNotIn(name, argmax_env)
 
     def test_nonzero_exit_cannot_pass(self):
         self.run_battery(expected=1, FIXTURE_SPEC_RC="1")
