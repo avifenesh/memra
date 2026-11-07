@@ -203,6 +203,42 @@ check "cause4: a companion source the build script names but the tree lacks is r
     "$(companion_fixture "" memra_cpu_experts_renamed.cpp)"
 
 # ---------------------------------------------------------------------------
+# cause 5: a build script. crates/*/build.rs reads build-time doors (MEMRA_DSV4_CUTLASS links a
+# whole tensor-core archive) and sits beside src/, not in it, so a src-only census let
+# MEMRA_DSV4_CUTLASS reach KERNELS.md with no docs/FLAGS.md row. Literal and const-indirected.
+# ---------------------------------------------------------------------------
+BUILD_READ='fn main() {
+    if std::env::var("MEMRA_FIXTURE_BUILD_DOOR").is_ok() {
+        println!("cargo:rustc-cfg=fixture_door");
+    }
+}'
+BUILD_CONST_READ='const FIXTURE_BUILD_ENV: &str = "MEMRA_FIXTURE_BUILD_DOOR";
+
+fn main() {
+    let _ = std::env::var(FIXTURE_BUILD_ENV);
+}'
+
+build_fixture() {
+    # build_fixture <build.rs body> <documented flag or empty>
+    local body=$1 documented=${2:-} root
+    root=$(fixture memra-engine "" "$documented")
+    printf '%s\n' "$body" > "$root/crates/memra-engine/build.rs"
+    printf '%s' "$root"
+}
+
+check "cause5: a literal env read in a crate build.rs is CAUGHT" 1 \
+    "MEMRA_FIXTURE_BUILD_DOOR" \
+    "$(build_fixture "$BUILD_READ")"
+
+check "cause5: a const-indirected env read in a crate build.rs is CAUGHT" 1 \
+    "MEMRA_FIXTURE_BUILD_DOOR" \
+    "$(build_fixture "$BUILD_CONST_READ")"
+
+check "cause5: the same build.rs read passes once documented" 0 \
+    "no uncovered runtime names" \
+    "$(build_fixture "$BUILD_READ" MEMRA_FIXTURE_BUILD_DOOR)"
+
+# ---------------------------------------------------------------------------
 # Negative space. Widening detection must not start inventing flags, or the gate
 # becomes noise and gets bypassed — the failure mode the boundary policy documents.
 # ---------------------------------------------------------------------------
@@ -403,8 +439,9 @@ uncovered=$(printf '%s\n' "$live_out" \
 
 # MEMRA_MIMO_SPLIT_STAGE_TIMING is read only in cu/mimo_mixed_attn.cu: the CUDA-side pass.
 # MEMRA_CPU_EXPERT_IO_CPUSET is read only in tools/memra_cpu_experts.cpp: the companion pass.
+# MEMRA_MMQ_X_Q45K is read only in crates/memra-engine/build.rs: the build-script pass.
 for want in MEMRA_ALLOW_UNKNOWN_PRETOKENIZER MEMRA_FATBIN MEMRA_MOE_MMAP_ADVICE \
-    MEMRA_MIMO_SPLIT_STAGE_TIMING MEMRA_CPU_EXPERT_IO_CPUSET; do
+    MEMRA_MIMO_SPLIT_STAGE_TIMING MEMRA_CPU_EXPERT_IO_CPUSET MEMRA_MMQ_X_Q45K; do
     # Feed the captured census directly. Under this script's `pipefail`,
     # `printf ... | rg -q` can invert a successful early match when `rg` closes the large
     # census pipe and `printf` exits on SIGPIPE. Which flag passes then depends on pipe-buffer
@@ -485,10 +522,11 @@ fi
 # + census size + gate-green + baseline-still-absent = 24; + 9 row-shape arms and the live
 # row-shape arm (memra#127, 2026-09-27) = 34; + 3 CUDA-read arms and a fourth live flag
 # (MEMRA_MIMO_SPLIT_STAGE_TIMING, 3 assertions) on 2026-11-03 = 40; + 3 CPU-expert-companion
-# arms and a fifth live flag (MEMRA_CPU_EXPERT_IO_CPUSET, 3 assertions) the same day = 46.
+# arms and a fifth live flag (MEMRA_CPU_EXPERT_IO_CPUSET, 3 assertions) the same day = 46;
+# + 3 build-script arms and a sixth live flag (MEMRA_MMQ_X_Q45K, 3 assertions) the same day = 52.
 # (This constant caught its own first draft: it was written 23 and the run refused at 19. It
 # went 19 -> 24 on 2026-08-23 when the grandfather list was deleted.)
-EXPECTED_ASSERTIONS=46
+EXPECTED_ASSERTIONS=52
 total=$((pass + fail))
 printf '\ntest_check_flags: %d passed, %d failed (%d assertions, expected %d)\n' \
     "$pass" "$fail" "$total" "$EXPECTED_ASSERTIONS"

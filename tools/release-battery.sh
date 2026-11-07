@@ -223,8 +223,9 @@ if [ "$OWN_ROWS" -eq 0 ]; then
   exit 1
 fi
 
-# kernel-check runs once, on the largest present roster model: it exercises kernels, not
-# a model's weights, so one pass covers the arch. It still needs a real GGUF to load.
+# kernel-check runs once, on the first roster row whose file is present (roster order, no
+# size ranking): it exercises kernels, not a model's weights, so one pass covers the arch. It
+# still needs a real GGUF to load.
 KC_MODEL=""
 while IFS=$'\t' read -r class id path _ || [ -n "${class:-}" ]; do
   case "$class" in ''|\#*) continue ;; esac
