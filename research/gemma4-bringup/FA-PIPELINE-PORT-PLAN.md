@@ -71,6 +71,47 @@ variants, the same speed/accuracy-tradeoff door class as BW24_MMQ W4A4 (preceden
 also the FAIRER A/B: llama's fa=1 default IS f16-accum, so exact-class bw24 vs f16 llama
 undercounts us. Gate: full battery in-config (argmax/VERIFY/spec) + explicit flag doc.
 
+## F16ACC vendor-port plan (2026-07-22, moved here from `cu/fattn_vendor.cu` on 2026-11-03)
+
+This plan sat as comments in a skeleton translation unit, `crates/memra-engine/cu/fattn_vendor.cu`,
+from 2026-07-22. The file never held code or joined `build.rs`, and the door it named,
+`MEMRA_FA_F16ACC` (the `BW24_FA_F16ACC` lever above under the current prefix), was never read.
+The file was deleted on 2026-11-03; the plan is kept here. No step below was started.
+
+- Why: the §2 VERDICT. The remaining ~3% 12B prefill gap vs llama is a numeric-class premium.
+  llama's fa=1 default accumulates S/P/O in f16, which halves the register and smem footprint
+  of the same tile on the same silicon. The f32-exact FA cannot fit the wide-tile geometries
+  that close the gap, and every scheduling axis was measured or closed: async ring flat,
+  occupancy-2 +0.7%, tile width/rpb closed, wide tile blocked by the 99KB cap and registers
+  at f32.
+- Approach: the mmq vendor playbook (`mmq_q8_0.cu` precedent). Source: ggml-cuda @ `c818263f2`,
+  `fattn-mma-f16.cuh` (kernel), `fattn-common.cuh` (combine, mask helpers) and `mma.cuh` (tile
+  machinery; the bf16 subset is already proven in-tree in the mmq TUs, and the f16 tile ops get
+  the same treatment). One ggml-decoupled, self-contained TU: everything static or internal,
+  C-ABI launchers only.
+- Instantiations: (DKQ, DV) = (256, 256) with ncols 32/64 (gemma SWA and hd256-global models)
+  and (512, 512) with ncols 32 (gemma4 hd512 globals). type_K = type_V = F16.
+- Inputs: memra prefill Q/K/V are f32, so pre-convert them with `f32_to_f16_flat` (a twin of
+  the existing `f32_to_bf16_flat`). llama expresses causal and SWA masking through the KQ mask
+  tensor, so build the [T, T_kv] f16 mask on device once per prime (`fattn_build_mask`).
+- C-ABI: `memra_fattn_f16(Q, K, V, mask, O, dkq, dv, n_head, n_head_kv, T, T_kv, scale)` and
+  `memra_fattn_f16_mask_build(mask, T, T_kv, pos0, window, causal, stream)`.
+- Gating: `MEMRA_FA_F16ACC` opt-in door, on the `MEMRA_MMQ` W4A4 precedent (an explicit
+  speed/accuracy tradeoff class). It is a new numeric config, so the full battery runs
+  in-config before any default talk: the kernel-check oracle band at the f16 tolerance, run-gen
+  argmax, VERIFY-GATE and spec self-consistency. A/B fairness note for an eventual default:
+  llama's fa=1 is this numeric class, so exact-class memra against f16 llama undercounts memra.
+  Under today's door rules the door also lands with its `docs/FLAGS.md` row and a decide-by
+  date, and the TU goes back into `crates/memra-engine/THIRD-PARTY.md`, `tools/fast-gate/map.tsv`
+  and `docs/KERNELS.md`.
+- Port order. Every piece lands compilable or not at all, and the TU joins `build.rs` at step 5.
+  1. `mma.cuh` f16 tile subset (`tile<I,J,half2>`, ldmatrix, mma m16n8k16 f16-accumulate).
+  2. `fattn-mma-f16` config table (the CONFIG_CASE rows for 256/512, sm_120 branch).
+  3. `flash_attn_ext_f16` kernel body (KQ f16 mma, online softmax in f16, VKQ f16 accumulate).
+  4. `fattn-common` combine (the parallel-blocks fixup), only if nbatch_combine needs it.
+  5. Mask builder, host launcher, FFI and dispatch behind `MEMRA_FA_F16ACC`.
+  6. kernel-check gates (an f16-band oracle against CPU sdpa, not bit gates) and the battery.
+
 ## 31B glue lane (2026-07-23, from g31-glue-verdict): producers emit bf16
 
 31B loses ~70ms/prime of GLUE to llama while winning GEMM and FA. Biggest safe cuts:

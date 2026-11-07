@@ -10,8 +10,11 @@
 //
 // NUMERICS: the f16-mirror class (campaign A / battery-adopted): dequanted weight values
 // round to f16, f32 accumulate. NOT byte-identical to the MMQ path — argmax + spec gates
-// arbitrate, per-model, like every numeric-class promotion. Experimental door
-// MEMRA_MOE_F16G=1 until gated.
+// arbitrate, per-model, like every numeric-class promotion. DEFAULT ON every arch since
+// 2026-08-02: MEMRA_MOE_F16G unset = mode 2, the single-kernel grouped GEMM on the engine
+// stream. `1` is the cublasGemmGroupedBatchedEx lane above, `3` AUTO-KQUANT, and `0` turns
+// the lane off (the rollback). The gemma-MoE (gelu) site stays off unless the variable is set
+// to a non-zero mode (lib.rs `moe_f16g_mode` / `moe_f16g_gemma_on`, docs/FLAGS.md).
 //
 // Column-major mapping (derivation in the round-46 ledger): per group g,
 //   C(m=out_f, n=m_e, k=in_f), opA=T opB=N,
@@ -2222,13 +2225,6 @@ moe_kq_mrow_stream_kernel(
 
 
 extern "C" {
-
-size_t memra_moe_f16g_w_bytes(int n_active, int out_f, int in_f){
-    return (size_t)n_active*out_f*in_f*sizeof(__half);
-}
-size_t memra_moe_f16g_act_bytes(int n_pairs, int in_f){
-    return (size_t)n_pairs*in_f*sizeof(__half);
-}
 
 int memra_moe_f16g_dequant(const unsigned long long* table, int proj, int n_expert,
         const int* ex_ids, void* w_f16, int in_f, int out_f, int n_active,

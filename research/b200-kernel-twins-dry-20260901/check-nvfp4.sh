@@ -18,8 +18,7 @@ COMMON=(-gencode arch=compute_100a,code=sm_100a -O3 -std=c++17 --expt-relaxed-co
 "$NVCC" "${COMMON[@]}" -DMEMRA_F8F4_PLAIN_MMA=1 \
   -c crates/memra-engine/cu/mmq_nvfp4_w4a8.cu -o "$SCRATCH/mmq_nvfp4_w4a8_sm100.o"
 
-for symbol in memra_mmq_nvfp4 memra_mmq_nvfp4_ex memra_mmq_nvfp4_ex2 \
-              memra_mmq_nvfp4_act_bytes; do
+for symbol in memra_mmq_nvfp4_ex2 memra_mmq_nvfp4_act_bytes; do
   nm -g --defined-only "$SCRATCH/mmq_fp4_sm100.o" | grep -Eq "[[:space:]]${symbol}$"
 done
 for symbol in memra_mmq_nvfp4_w4a8 memra_mmq_nvfp4_w4a8_act_bytes \

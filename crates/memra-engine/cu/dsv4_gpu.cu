@@ -2193,6 +2193,10 @@ __global__ void dsv4_fp4_gemm_sel_kernel(
 
 // The native Rust model passes its own arm, allowing an isolated one-load gate
 // to alternate arms without changing the process environment or global state.
+// Batched verify: `a_group` slots share one activation row (T positions x topk).
+// Same kernel, same grid geometry per slot, same per-output accumulation order — the
+// only change is WHICH activation row a slot reads, so every slot's dot is bit-identical
+// to the single-position launch that would have computed it.
 extern "C" int memra_dsv4_fp4_gemm_sel_g_arm(const void* a_codes, const float* a_scales,
                                            const void* w_base, const void* sc_base,
                                            const float* s2, const int* sel, int proj,
@@ -2266,8 +2270,9 @@ extern "C" int memra_dsv4_ep_merge_slots(float* local, const float* peer,
     return 0;
 }
 
-// Preserve the original C interfaces and their process-env behavior for existing
-// callers. Both share the explicit launcher, so launch geometry cannot drift.
+// Preserve the original C interface for existing callers: it pins the block-tree
+// reduction (reduce_arm 0) and shares the explicit launcher, so launch geometry
+// cannot drift.
 extern "C" int memra_dsv4_fp4_gemm_sel(const void* a_codes, const float* a_scales,
                                        const void* w_base, const void* sc_base,
                                        const float* s2, const int* sel, int proj,
@@ -2277,21 +2282,6 @@ extern "C" int memra_dsv4_fp4_gemm_sel(const void* a_codes, const float* a_scale
     return memra_dsv4_fp4_gemm_sel_g_arm(a_codes, a_scales, w_base, sc_base,
         s2, sel, proj, a_stride_rows, kind, out, slots, n, kdim, wstride, sstride,
         0, 0, stream_v);
-}
-
-// Batched-verify twin: `a_group` slots share one activation row (T positions x topk).
-// Same kernel, same grid geometry per slot, same per-output accumulation order — the
-// only change is WHICH activation row a slot reads, so every slot's dot is bit-identical
-// to the single-position launch that would have computed it.
-extern "C" int memra_dsv4_fp4_gemm_sel_g(const void* a_codes, const float* a_scales,
-                                         const void* w_base, const void* sc_base,
-                                         const float* s2, const int* sel, int proj,
-                                         int a_stride_rows, int kind, float* out, int slots,
-                                         int n, int kdim, long wstride, long sstride,
-                                         int a_group, void* stream_v) {
-    return memra_dsv4_fp4_gemm_sel_g_arm(a_codes, a_scales, w_base, sc_base,
-        s2, sel, proj, a_stride_rows, kind, out, slots, n, kdim, wstride, sstride,
-        a_group, 0, stream_v);
 }
 
 // Routed-expert combine: y[i] = sum over slots in ascending-expert-id order (acc starts

@@ -54,7 +54,7 @@
 # break-fa-decode2-*); flipping those seams is battery/A-B territory. docs/TESTING.md.
 # isogap adds the RUNG-CROSSING shape (the seqs_v4/combine_seqs ONE-PARTITION law under a
 # straddle + the per-seq fallback window) that the fixed-depth synthetic pins never reach.
-^crates/memra-engine/cu/(flash_attn|fa3_prefill|fattn_vendor)\.cu$	synthetic	g12d,g31,e4b,q9,q35,isogap	-
+^crates/memra-engine/cu/(flash_attn|fa3_prefill)\.cu$	synthetic	g12d,g31,e4b,q9,q35,isogap	-
 # ptick/ptickc: prefill FA serves both the solo and the batched prime; a kernel edit that moves
 # one program and not the other is the memra#641 class (research/decode-exact-641-20260923).
 ^crates/memra-engine/cu/(flash_attn|fa3_prefill)\.cu$	synthetic	ptick,ptickc,pbg9,pbg9c	-
