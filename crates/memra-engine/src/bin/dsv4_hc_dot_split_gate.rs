@@ -121,6 +121,13 @@ fn count_kernel(dot: &str, needle: &str) -> usize {
         .count()
 }
 
+/// GEMV launches behind a kernel symbol: one per plain node, two per `<symbol>_pair` node (the
+/// dense-fast program fuses two GEMVs of one input into a pair kernel, e.g. 107 fp8 and 62 dots
+/// pairs per trunk variant under the defaults; 280 + 2 x 107 = 494).
+fn count_launches(dot: &str, symbol: &str) -> usize {
+    count_kernel(dot, symbol) + count_kernel(dot, &format!("{symbol}_pair"))
+}
+
 fn census(gpu: &Dsv4Gpu, state: &DecodeState, dir: &Path) -> [[String; 4]; 2] {
     let mut hashes: [[String; 4]; 2] = Default::default();
     let on = hc_on();
@@ -138,10 +145,22 @@ fn census(gpu: &Dsv4Gpu, state: &DecodeState, dir: &Path) -> [[String; 4]; 2] {
             .unwrap();
             let partial = count_kernel(&dot, "dsv4_hc_dot_split_partial_kernel");
             let reduce = count_kernel(&dot, "dsv4_hc_dot_split_reduce_kernel");
-            let expected = if on && segment != 1 { 86 } else { 0 };
+            // Under the small-kernel diet the split dots' slice sum runs inside the fused HC
+            // finish (`dsv4_hc_finish_f32_fixed_order_kernel`, same order and tree as the reduce
+            // kernel it replaces), so the reduce stage is that kernel there.
+            let finish = count_kernel(&dot, "dsv4_hc_finish_f32_fixed_order_kernel");
+            let n = if on && segment != 1 { 86 } else { 0 };
+            let expected = if gpu.small_kernel_diet_enabled() {
+                [n, 0, n]
+            } else {
+                [n, n, 0]
+            };
+            eprintln!(
+                "HC24 census rank={rank} variant={segment} partial={partial} reduce={reduce} finish={finish}"
+            );
             assert_eq!(
-                [partial, reduce],
-                [expected; 2],
+                [partial, reduce, finish],
+                expected,
                 "HC24 census rank={rank} variant={segment}"
             );
             let forward = segment != 1;
@@ -159,14 +178,14 @@ fn census(gpu: &Dsv4Gpu, state: &DecodeState, dir: &Path) -> [[String; 4]; 2] {
                 assert_eq!(count_kernel(&dot, deleted), 0, "{deleted} is deleted");
             }
             assert_eq!(
-                count_kernel(&dot, "dsv4_dense_fast_fp8_kernel"),
+                count_launches(&dot, "dsv4_dense_fast_fp8_kernel"),
                 if forward { 494 } else { 0 }
             );
             assert_eq!(
-                count_kernel(&dot, "dsv4_dense_fast_dots_kernel"),
+                count_launches(&dot, "dsv4_dense_fast_dots_kernel"),
                 if forward {
                     if on { 167 } else { 253 }
-                } else if rank == 1 {
+                } else if rank == 1 || gpu.vocab_parallel_head_for_gate() {
                     2
                 } else {
                     0
