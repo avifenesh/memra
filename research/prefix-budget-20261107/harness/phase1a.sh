@@ -1,23 +1,28 @@
 #!/usr/bin/env bash
-# Phase 1a: spec-cache-mixed shape (c8 unique load + 6 greedy repeats, MEMRA_MAX_SESSIONS=12),
-# three arms interleaved ABC CBA ABC, plus the cache-off reference on the candidate binary.
-#   base = main 6f5e03e74a; lru = candidate with MEMRA_PREFIX_EVICT=lru (session-peak budget +
-#   partial reclaim, LRU order); gds = candidate default.
+# Phase 1a (final candidate, no insert clamp): spec-cache-mixed shape (c8 unique load + 6 greedy
+# repeats, MEMRA_MAX_SESSIONS=12), four arms interleaved in both orders (ABCD DCBA ABCD), then the
+# cache-off reference.
+#   base    main 6f5e03e74a: two-entry budget, plain LRU, reclaim flush
+#   lru     candidate, MEMRA_PREFIX_EVICT=lru: session-peak budget, partial reclaim, plain LRU
+#   gds     candidate (default): + value-per-byte victim order
+#   flush   candidate with the reclaim flush restored (measurement-only build): budget + GDS
 set -u
 H=/home/avifenesh/.cache/memra-prefix-budget/harness
 B=/home/avifenesh/.cache/memra-prefix-budget/bins
 NEW=$B/memra-server-${NEW_LABEL:?}
+FLUSH=$B/memra-server-${FLUSH_LABEL:?}
 O=/home/avifenesh/.cache/memra-prefix-budget/runs/phase1a
 mkdir -p "$O"
 arm() { # name run
   case $1 in
-    base) bash $H/arm.sh "base-r$2" $B/memra-server-base-6f5e03e74a $O mixed MEMRA_MAX_SESSIONS=12 ;;
-    lru)  bash $H/arm.sh "lru-r$2" $NEW $O mixed MEMRA_MAX_SESSIONS=12 MEMRA_PREFIX_EVICT=lru ;;
-    gds)  bash $H/arm.sh "gds-r$2" $NEW $O mixed MEMRA_MAX_SESSIONS=12 ;;
+    base)    bash $H/arm.sh "base-r$2" $B/memra-server-base-6f5e03e74a $O mixed MEMRA_MAX_SESSIONS=12 ;;
+    lru)     bash $H/arm.sh "lru-r$2" $NEW $O mixed MEMRA_MAX_SESSIONS=12 MEMRA_PREFIX_EVICT=lru ;;
+    gds)     bash $H/arm.sh "gds-r$2" $NEW $O mixed MEMRA_MAX_SESSIONS=12 ;;
+    flush)   bash $H/arm.sh "flush-r$2" $FLUSH $O mixed MEMRA_MAX_SESSIONS=12 ;;
   esac
 }
 r=0
-for order in "base lru gds" "gds lru base" "base lru gds"; do
+for order in "base lru gds flush" "flush gds lru base" "base lru gds flush"; do
   r=$((r+1))
   for a in $order; do arm $a $r; done
 done

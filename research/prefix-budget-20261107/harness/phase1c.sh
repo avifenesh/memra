@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Phase 1c: c1 agentic (two runs per arm, ABC CBA), then greedy exactness at c1 (T=0, 256 new
+# Phase 1c: c1 agentic (base and gds, two runs per arm, AB BA), then greedy exactness at c1 (T=0, 256 new
 # tokens) against the cache-off boot of the candidate binary.
 set -u
 H=/home/avifenesh/.cache/memra-prefix-budget/harness
@@ -9,7 +9,7 @@ BASE=$B/memra-server-base-6f5e03e74a
 O=/home/avifenesh/.cache/memra-prefix-budget/runs/phase1c
 mkdir -p "$O"
 r=0
-for order in "base lru gds" "gds lru base"; do
+for order in "base gds" "gds base"; do
   r=$((r+1))
   for a in $order; do
     case $a in
@@ -21,6 +21,5 @@ for order in "base lru gds" "gds lru base"; do
 done
 bash $H/arm.sh exact-off $NEW $O agentic:1:0:256 MEMRA_PREFIX_CACHE_MB=0
 bash $H/arm.sh exact-gds $NEW $O agentic:1:0:256
-bash $H/arm.sh exact-lru $NEW $O agentic:1:0:256 MEMRA_PREFIX_EVICT=lru
 bash $H/arm.sh exact-base $BASE $O agentic:1:0:256
 echo PHASE1C_DONE

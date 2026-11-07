@@ -1,0 +1,37 @@
+Traceback (most recent call last):
+  File "/home/avifenesh/.cache/memra-prefix-budget/harness/agentic.py", line 60, in <module>
+    primes = list(pool.map(prime, bodies))
+  File "/home/avifenesh/.hermes/tools/python-3.14.9+20261021-linux-x64/lib/python3.14/concurrent/futures/_base.py", line 645, in result_iterator
+    yield _result_or_cancel(fs.pop())
+          ~~~~~~~~~~~~~~~~~^^^^^^^^^^
+  File "/home/avifenesh/.hermes/tools/python-3.14.9+20261021-linux-x64/lib/python3.14/concurrent/futures/_base.py", line 312, in _result_or_cancel
+    return fut.result(timeout)
+           ~~~~~~~~~~^^^^^^^^^
+  File "/home/avifenesh/.hermes/tools/python-3.14.9+20261021-linux-x64/lib/python3.14/concurrent/futures/_base.py", line 454, in result
+    return self.__get_result()
+           ~~~~~~~~~~~~~~~~~^^
+  File "/home/avifenesh/.hermes/tools/python-3.14.9+20261021-linux-x64/lib/python3.14/concurrent/futures/_base.py", line 396, in __get_result
+    raise self._exception
+  File "/home/avifenesh/.hermes/tools/python-3.14.9+20261021-linux-x64/lib/python3.14/concurrent/futures/thread.py", line 86, in run
+    result = ctx.run(self.task)
+  File "/home/avifenesh/.hermes/tools/python-3.14.9+20261021-linux-x64/lib/python3.14/concurrent/futures/thread.py", line 73, in run
+    return fn(*args, **kwargs)
+  File "/home/avifenesh/.cache/memra-prefix-budget/harness/agentic.py", line 50, in prime
+    r = client.stream(dict(b, max_tokens=1))
+  File "/home/avifenesh/.cache/spark-cast-qualification-20261024-2250/client.py", line 64, in stream
+    with _curl_response(body) as response:
+         ~~~~~~~~~~~~~~^^^^^^
+  File "/home/avifenesh/.hermes/tools/python-3.14.9+20261021-linux-x64/lib/python3.14/contextlib.py", line 148, in __exit__
+    next(self.gen)
+    ~~~~^^^^^^^^^^
+  File "/home/avifenesh/.cache/model-scout/harness/client.py", line 32, in _curl_response
+    with _orig_curl(body) as out:
+         ~~~~~~~~~~^^^^^^
+  File "/home/avifenesh/.hermes/tools/python-3.14.9+20261021-linux-x64/lib/python3.14/contextlib.py", line 148, in __exit__
+    next(self.gen)
+    ~~~~^^^^^^^^^^
+  File "/home/avifenesh/.cache/spark-cast-qualification-20261024-2250/client.py", line 54, in _curl_response
+    errors.seek(0);raise RuntimeError('curl streaming failure '+str(rc)+': '+errors.read().decode()[-1000:])
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+RuntimeError: curl streaming failure 22: curl: (22) The requested URL returned error: 408
+

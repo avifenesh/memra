@@ -1,0 +1,11 @@
+arm c8-noclamp workload=agentic:8 start=2026-11-07T18:36:59+02:00 profile=balanced
+ea43b1309da1f474dd653a877e464ef0bbe097490f9ad7238fd6a1ac9555edf4  /home/avifenesh/.cache/memra-prefix-budget/bins/memra-server-new-7b385110e4
+env: MEMRA_ENV_AUDIT=warn
+NVIDIA GeForce RTX 5090 Laptop GPU, 75, 180 MHz, [N/A], 48 MiB, 24028 MiB
+device_free_min_mib 1875 samples 703
+memavailable_min_gib 43.47
+[prefix-cache] on: budget 2260MB (2259943424 B, derived: 2 x 1129971712 B max entry for model "gate" at served ctx 32768 (from MEMRA_CTX; MEMRA_CTX set), discrete card: the larger of that and free after the transient reserve, driver headroom 2147483648 B and a session peak of 90499973120 B (76 resident sessions x 1190789120 B served-context session), requested 2259943424 B; boot driver free 8342601728 B, post-reserve clamp 6731988992 B), policy GDS value-per-byte (lowest clock + prompt tokens per MB first; the clock takes each victim's priority; leases untouchable), min prefix 64 tokens, immed
+evict_lines=40
+oom_lines=0
+reclaim_on_defer_lines=38
+rc=1 end=2026-11-07T18:39:55+02:00
