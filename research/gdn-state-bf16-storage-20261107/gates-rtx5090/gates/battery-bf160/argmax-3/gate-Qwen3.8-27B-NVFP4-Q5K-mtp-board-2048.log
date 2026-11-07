@@ -1,5 +1,5 @@
 [tensor-contract] bound 866 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
-argmax-margin-probe: T=2048 window=12 sm_count=82 model=/home/avifenesh/models/q38-gguf/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf
+argmax-margin-probe: T=2048 window=12 sm_count=82 model=~/models/q38-gguf/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf
 env: MEMRA_FA_SPLIT=<unset> MEMRA_Q80_G2=<unset> MEMRA_FAST=<unset> MEMRA_PRIME_CHUNK=<unset>
 [fa-pool] grow #0 dev=0 o_len 0 -> 6144 ml_len 0 -> 24 (retired kept, zero=false)
 [fa-pool] grow #1 dev=0 o_len 6144 -> 73728 ml_len 24 -> 288 (retired kept, zero=false)

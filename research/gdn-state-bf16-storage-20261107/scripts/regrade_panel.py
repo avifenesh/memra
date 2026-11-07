@@ -10,8 +10,8 @@ GSM8K rows are re-scored the same way (string answer extraction, no sandbox)."""
 import json
 import sys
 
-sys.path.insert(0, "/home/avifenesh/.cache/spark-cast-qualification-20261024-2250")
-sys.path.insert(0, "/home/avifenesh/.cache/model-scout/harness")
+sys.path.insert(0, "~/.cache/spark-cast-qualification-20261024-2250")
+sys.path.insert(0, "~/.cache/model-scout/harness")
 import client  # noqa: E402
 from quality_protocol import load_jobs  # noqa: E402
 
