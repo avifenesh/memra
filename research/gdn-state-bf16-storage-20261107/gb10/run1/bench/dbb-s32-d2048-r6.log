@@ -1,0 +1,8 @@
+[gdn-state] bf16 GDN recurrent state (fp32 math)
+[tensor-contract] bound 866 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+loaded qwen35 (64 layers); steps=16 reps=3 batches=[1, 2, 4, 8] primary_dev=0
+[fa-pool] grow #0 dev=0 o_len 0 -> 7077888 ml_len 0 -> 27648 (retired kept, zero=false)
+[fa-pool] grow #1 dev=0 o_len 7077888 -> 14155776 ml_len 27648 -> 55296 (retired kept, zero=false)
+CHUNKSWEEP seqs=32 chunk=32: aggregate 143.4 tok/s (223.14 ms/tick, median of 3)
+TOKFP seqs=32 chunk=32 [f8f2790a5457d465 d06d314d67d22651 5adef894dffab0e4 86079524baac9248 43e27c8db4ed8b0c 423cbdbe206d7440 7f9bb5bb66a7488f 1980e4754e60f725 9a050e17ac6c1c25 7e0fc3941ee812d5 5a740035d0cb458d 21cc6c4afb8e2f25 91d40cccd184f19b 10fce32b4d318595 c8933b26de48f358 da7c6942a0b11d72 acb120210e485d01 190806954a69e6cf ed10952425e04bcf 241997b2823130d4 6d2cb79f558644ec 5bbade91c6a168e0 bbefe7c485faa4a3 58b62eb2b15d3b3c c5b161b818c939cd c1ee05f2d437df24 9550bdd0448bdae5 7be4129e79e00725 76a74aa79928531b ccc439427938dfff 4d802f418b5cdc82 437e80d470fd914c]
+rc=0
