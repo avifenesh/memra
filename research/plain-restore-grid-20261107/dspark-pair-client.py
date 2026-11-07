@@ -4,6 +4,7 @@ usage: dspark-pair-client.py PORT turn N OUT [PRIOR_TURN_JSON...]   send turn N 
        dspark-pair-client.py compare EVDIR                          compare warm and cold answers, read the logs
 """
 import json
+import os
 import pathlib
 import re
 import sys
@@ -35,7 +36,10 @@ def ask(port, n, out, priors):
         prior = json.loads(pathlib.Path(priors[i]).read_text())
         msgs.append({"role": "assistant", "content": prior["choices"][0]["message"].get("content") or ""})
     msgs.append({"role": "user", "content": USERS[n - 1]})
-    body = {"model": "q", "messages": msgs, "max_tokens": 96, "temperature": 0,
+    # MAX_T2: turn 2's max_tokens (96 by default). A larger value leaves the parked turn-2 session's
+    # cap above turn 3's need, so the plain continuation pool takes it (memra#1091).
+    mt = int(os.environ.get("MAX_T2", "96")) if n == 2 else 96
+    body = {"model": "q", "messages": msgs, "max_tokens": mt, "temperature": 0,
             "chat_template_kwargs": {"enable_thinking": False}}
     req = urllib.request.Request(f"http://127.0.0.1:{port}/v1/chat/completions", data=json.dumps(body).encode(),
                                  headers={"Content-Type": "application/json"})

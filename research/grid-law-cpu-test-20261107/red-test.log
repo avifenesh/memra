@@ -1,0 +1,21 @@
+
+running 1 test
+test worker::tests::the_device_prefix_probes_apply_the_restore_grid_law ... FAILED
+
+failures:
+
+---- worker::tests::the_device_prefix_probes_apply_the_restore_grid_law stdout ----
+[prefix-cache] insert (dspark-boundary): 2992 tokens, 0.0MB (resident 0.0MB / 0MB, model m, ns "tenant")
+
+thread 'worker::tests::the_device_prefix_probes_apply_the_restore_grid_law' (2628168) panicked at crates/memra-server/src/worker.rs:50835:9:
+assertion `left == right` failed: lookup: off-grid strict prefix
+  left: Some(2992)
+ right: None
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    worker::tests::the_device_prefix_probes_apply_the_restore_grid_law
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1194 filtered out; finished in 0.03s
+

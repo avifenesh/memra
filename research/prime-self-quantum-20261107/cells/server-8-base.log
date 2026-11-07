@@ -1,0 +1,99 @@
+[server] build: memra-0.138.0-e360fba41e9b (id: source-tree, git: 05a8a6350324)
+[server] starting; models config = [("q", "/data/ai-ml/models/q38-gguf/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf", None)]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[worker-affinity] off (MEMRA_WORKER_CPUSET / MEMRA_WORKER_AFFINITY unset or =0)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal after 3 consecutive misses (MEMRA_GPU_PROBE_MISSES), fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2 (K=5 when the loaded MTP head is rank-trimmed)
+[worker] loading model "q" <- /data/ai-ml/models/q38-gguf/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf
+[tensor-contract] bound 866 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[worker]   loaded "q": 65 layers, eos=248046, stop=[248046]
+[worker] q: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false qwen_effort=true gemma_think=false dsv4=false glm5=false ctx=262144 tok="qwen35" instruct=Some("chatml") chat_defaults=None/None
+[route-contract] model="q" route=hybrid-worker capacity=2 sessions implemented=[capacity,occupancy,progress,fault-ownership,shutdown-ownership,memory-cost,rewrite-qualification,prime-fairness,service-metrics] refused=[]
+[worker] q: decode wave cap 16; scheduler tick cap 16 (exact-16 tier)
+[dspark] prefix restore switch default OFF on "NVIDIA GeForce RTX 5090 Laptop GPU" (gb10=false): MEMRA_DSPARK_PREFIX_RESTORE resolves OFF (whole-entry restore, strict-prefix restore and boundary capture together)
+[dspark] precision=q4 (MEMRA_DFLASH_PREC unset)
+[dspark] harvest=dflash (checkpoint census dflash2=true strategy_dspark=false, MEMRA_DSPARK_HARVEST unset)
+[dspark] verify-window=Ladder (accept-rate head ABSENT -> ladder, MEMRA_DSPARK_VT unset)
+[worker] q: DSPARK SPEC route armed (drafter attached (/data/ai-ml/models/q38-gguf/Qwen3.8-27B-DFlash2-memra); greedy+sampled [T>0 rejection verify, sampled penalties included; greedy penalties verified by penalised argmax (MEMRA_DSPARK_GREEDY_PENALTY=1)]/unconstrained/text-only; greedy LOW-wave admission + HIGH demotion, sampled solo admission; MTP spec DISABLED for this model — refuse-on-ambiguity; MEMRA_DSPARK_SPEC unset = off)
+[dspark] q: DFlash2 draft head FULL target vocab (external_mtp_d2t_ignored=false; set MEMRA_FRSPEC_TRIM=<ranks.txt> to trim)
+[prefix-cache] on: budget 800MB (800325632 B, derived: 2 x 400162816 B max entry for model "q" at served ctx 8192 (from MEMRA_CTX; MEMRA_CTX set), requested 800325632 B; boot driver free 9047244800 B, post-reserve clamp 7436632064 B), policy plain-LRU (global oldest unleased entry first; leases untouchable), min prefix 64 tokens, immediate partial restore=off (rollback) (transformer-only; hybrid mid-entry + routed-MoE N/A)
+[admission] "q": dspark owns the spec program: spec coefficient = plain (no MTP scratch term); the draft plane is charged per session, 169MB at a 30k cap (ring on: constant above two windows)
+[admission] "q": plain 29696 B/token, spec 29696 B/token; fixed residual learns from effective-free deltas
+[prime-walk] model="q" route=dspark supported=true yield_door=true [gdn_dspark_compatible=true mtp_head_loaded=true no_hyper_connections=true no_pipeline_cuts=true]
+[dspark-vg] serve pool ENGAGED (vt_cap=8)
+[topk-shards] engaged: rows=7 cols=248320 k=16 shards=16 (MEMRA_TOPK_SHARDS=1)
+[fa-pool] grow #0 dev=0 o_len 0 -> 3194880 ml_len 0 -> 12480 (retired kept, zero=false)
+[dflash-kv-ring] compact keep_from=2064 kept=2056 phys_rows=4120
+[device-trim] reason=calibration-complete {"device":0,"reclaimed_bytes":1811939328,"still_owned_bytes":19560811392,"pool_reserved_bytes":19662897152,"pool_cached_bytes":102085760,"driver_free_bytes":4838260736,"synchronization_errors":[]}
+[admit-cal] post-probe pool trim: released 1728MB cached back to the driver
+[admit-cal] boot calibration done: model="q" route=dspark transient floor 1608MB (static was 1536MB; measured 1608MB; probe kv charge 119MB, draft-state 0MB, drafted 68 accepted 46; [dev0 peak-mapped 20480MB rest-mapped 18752MB charged 119MB -> 1608MB]; 4.1s)
+[admit-mem] door=OFF open_output_tokens=8192 defer_budget_ms=8000 (admission charges prompt+output, the reclaim flush demotes to the host tier before dropping, and a memory defer past the budget refuses 429 instead of queueing past the client's deadline)
+[kv-vmm] door=OFF (MEMRA_KV_ALLOCATOR unset or pooled: pooled K/V planes)
+[server] worker ready; serving models: ["q"]
+[server] listening on http://127.0.0.1:18173
+[meter] admit id=chatcmpl-484873eb24e43a7e99deea127b15ae01 tenant=default lane=interactive model="q"
+[admission] per-session draft-state charge: model="q" +4MB (DFlash draft plane at this cap)
+[admission] request cost: model="q" ctx=87 path=spec = 29696 B/token x ctx + 7MB prefill-workspace + 0MB fixed = 10MB
+[spec-k] model="q" tenant="" K=0 source=eligibility-fallback prompt=15 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="q" 308MB (observed 309MB at ctx 31 path=plain)
+[meter] admit id=chatcmpl-89c43f09415422d2a9b8e83d3ef4735b tenant=default lane=interactive model="q"
+[admission] per-session draft-state charge: model="q" +125MB (DFlash draft plane at this cap)
+[admission] request cost: model="q" ctx=3038 path=spec = 29696 B/token x ctx + 1379MB prefill-workspace + 308MB fixed = 1777MB
+[worker] plain-affinity: declined (no checkpoint retained; 1 parked, 2878 prompt tokens; model q)
+[spec-k] model="q" tenant="" K=0 source=eligibility-fallback prompt=2878 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=1 chunks=1 wall_ms=2136.390 max_chunk_ms=2136.390
+[dspark-acc] ctx=2878 burst=0/7 cum=0/7=0.000
+[prefix-cache] insert (dspark-boundary): 2848 tokens, 241.5MB (resident 241.5MB / 800MB, model q)
+[dspark-acc] ctx=2879 burst=21/32 cum=21/39=0.538
+[dspark-acc] ctx=2911 burst=20/38 cum=41/77=0.532
+[dspark-acc] ctx=2944 burst=10/12 cum=51/89=0.573
+[meter] admit id=chatcmpl-1ddd9249ed56483df60faeb89f115459 tenant=default lane=interactive model="q"
+[worker] plain-affinity: declined (no checkpoint retained; 1 parked, 2878 prompt tokens; model q)
+[worker] dspark-reuse MISS: 1 parked, best text overlap 28B of 12960B prompt; serving COLD (model q)
+[spec-k] model="q" tenant="" K=0 source=eligibility-fallback prompt=2878 cached=0 lcp=5 active=1 wave=1 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=1 chunks=1 wall_ms=2196.185 max_chunk_ms=2196.185
+[dspark-acc] ctx=2878 burst=0/7 cum=0/7=0.000
+[prefix-cache] insert (dspark-boundary): 2848 tokens, 241.5MB (resident 482.9MB / 800MB, model q)
+[dspark-acc] ctx=2879 burst=25/32 cum=25/39=0.641
+[dspark-acc] ctx=2914 burst=23/35 cum=48/74=0.649
+[dspark-acc] ctx=2948 burst=10/11 cum=58/85=0.682
+[meter] admit id=chatcmpl-f65933bc1ca4740911308c24cab3f9dc tenant=default lane=interactive model="q"
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=482934784 pool_cached_gain_bytes=482934784 trim_released_bytes=469762048 driver_free_bytes 1514274816 -> 1984036864 pool_reserved_bytes 22984785920 -> 22515023872 pool_used_bytes 21716503100 -> 21233568316 pool_retained_bytes=13172736 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer: evicted 2 prefix entries + 1 plain + 0 spec + 1 dspark parked sessions (global LRU); effective free 2783MB -> 4257MB
+[admit-trim] dev0 driver_free_bytes=1984036864 floor_bytes=2147483648 reclaimed_bytes=134217728 still_owned_bytes=20242366804 pool_reserved_bytes=22380806144 driver_free_after=2118254592 before prime
+[worker] dspark-reuse MISS: 1 parked, best text overlap 28B of 12960B prompt; serving COLD (model q)
+[spec-k] model="q" tenant="" K=0 source=eligibility-fallback prompt=2878 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=1 chunks=1 wall_ms=2263.306 max_chunk_ms=2263.306
+[dspark-acc] ctx=2878 burst=0/7 cum=0/7=0.000
+[prefix-cache] insert (dspark-boundary): 2848 tokens, 241.5MB (resident 241.5MB / 800MB, model q)
+[dspark-acc] ctx=2879 burst=23/34 cum=23/41=0.561
+[dspark-acc] ctx=2914 burst=23/35 cum=46/76=0.605
+[dspark-acc] ctx=2948 burst=10/11 cum=56/87=0.644
+[meter] admit id=chatcmpl-e775572a4803de2390dc1342fee23e72 tenant=default lane=interactive model="q"
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=241467392 pool_cached_gain_bytes=241467392 trim_released_bytes=234881024 driver_free_bytes 2017591296 -> 2252472320 pool_reserved_bytes 22481469440 -> 22246588416 pool_used_bytes 21165175848 -> 20923708456 pool_retained_bytes=6586368 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer: evicted 1 prefix entries + 0 plain + 0 spec + 1 dspark parked sessions (global LRU); effective free 3334MB -> 4257MB
+[worker] dspark-reuse MISS: 1 parked, best text overlap 28B of 12960B prompt; serving COLD (model q)
+[spec-k] model="q" tenant="" K=0 source=eligibility-fallback prompt=2878 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=1 chunks=1 wall_ms=2328.167 max_chunk_ms=2328.167
+[dspark-acc] ctx=2878 burst=0/7 cum=0/7=0.000
+[prefix-cache] insert (dspark-boundary): 2848 tokens, 241.5MB (resident 241.5MB / 800MB, model q)
+[dspark-acc] ctx=2879 burst=21/37 cum=21/44=0.477
+[dspark-acc] ctx=2914 burst=24/36 cum=45/80=0.562
+[dspark-acc] ctx=2948 burst=7/9 cum=52/89=0.584
+[meter] admit id=chatcmpl-ce7c75d9b9ec7fb0b93b56164adb81dd tenant=default lane=interactive model="q"
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=241467392 pool_cached_gain_bytes=241467392 trim_released_bytes=234881024 driver_free_bytes 1782710272 -> 2017591296 pool_reserved_bytes 22716350464 -> 22481469440 pool_used_bytes 21165175848 -> 20923708456 pool_retained_bytes=6586368 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer: evicted 1 prefix entries + 0 plain + 0 spec + 1 dspark parked sessions (global LRU); effective free 3334MB -> 4257MB
+[admit-trim] dev0 driver_free_bytes=2017591296 floor_bytes=2147483648 reclaimed_bytes=100663296 still_owned_bytes=20242366804 pool_reserved_bytes=22380806144 driver_free_after=2118254592 before prime
+[worker] dspark-reuse MISS: 1 parked, best text overlap 28B of 12960B prompt; serving COLD (model q)
+[spec-k] model="q" tenant="" K=0 source=eligibility-fallback prompt=2878 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=1 chunks=1 wall_ms=2444.508 max_chunk_ms=2444.508
+[dspark-acc] ctx=2878 burst=0/7 cum=0/7=0.000
+[prefix-cache] insert (dspark-boundary): 2848 tokens, 241.5MB (resident 241.5MB / 800MB, model q)
+[dspark-acc] ctx=2879 burst=20/30 cum=20/37=0.541
+[dspark-acc] ctx=2911 burst=23/34 cum=43/71=0.606
+[dspark-acc] ctx=2943 burst=10/15 cum=53/86=0.616
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting
+[server] GPU worker shutdown complete

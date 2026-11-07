@@ -48,7 +48,10 @@ def judge(ev):
     return {"turns": turns, "bytes": all(v["equal"] for k, v in turns.items() if k != 1),
             "dspark_restores": restores, "strict_prefix_restores": sum(r[0] < r[1] for r in restores),
             "plain_hits": hits, "offgrid_strict_hits": offgrid,
-            "grid_refusals": len(re.findall(r"off the prime grid|restore grid law", log))}
+            "grid_refusals": len(re.findall(r"off the prime grid|restore grid law", log)),
+            "pool_resumes": [tuple(map(int, m.groups())) for m in re.finditer(r"kv-reuse: (\d+) of (\d+) prompt tokens resumed", log)],
+            "grid_rewinds": [tuple(map(int, m.groups())) for m in re.finditer(r"grid-rewind: plain extension of (\d+) committed rows rewound to (\d+)", log)],
+            "max_t2": int(os.environ.get("MAX_T2", "96"))}
 
 
 def main():
