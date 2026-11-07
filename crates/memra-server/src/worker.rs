@@ -5264,6 +5264,19 @@ fn host_tier_numeric_class() -> String {
 /// (research/gdn-state-bf16-storage-20261107). A bf16-class entry holds half-size ssm planes
 /// from a different numeric program, so the two classes never share `numeric`; the fp32 class
 /// keeps the historical strings byte for byte.
+/// Whether a plan carries Cache-backed Gated DeltaNet state (the layers the GDN class sizes).
+fn plan_has_gdn_state(plan: &memra_gguf::model_plan::ModelPlan) -> bool {
+    plan.layers
+        .iter()
+        .chain(plan.mtp_blocks.iter().map(|b| &b.layer))
+        .any(|l| {
+            matches!(
+                l.attention,
+                memra_gguf::model_plan::AttentionPlan::GatedDeltaNet(_)
+            )
+        })
+}
+
 fn host_tier_numeric_with_gdn(class: String, gdn_bf16: bool) -> String {
     if gdn_bf16 {
         format!("{class}+gdn-state-bf16")
@@ -5720,7 +5733,9 @@ fn host_tier_context(
             h.update(plan.as_bytes());
             format!("{:x}", h.finalize())
         };
-        let gdn_bf16 = engine.gdn_state_bf16();
+        // The class only names a model whose plan carries Gated DeltaNet state (a KDA-only
+        // model keeps fp32 planes and its historical identity on a bf16 engine).
+        let gdn_bf16 = engine.gdn_state_bf16() && plan_has_gdn_state(&lm.model.plan);
         let with_gdn = |program: &mut memra_engine::cache::record::ProgramIdentity,
                         class: String| {
             program.numeric = memra_engine::cache::record::digest(
@@ -5799,6 +5814,7 @@ fn host_tier_context(
                 draft,
                 tail,
                 generation,
+                gdn_bf16,
             },
         );
     }
@@ -5861,7 +5877,6 @@ fn host_tier_context(
         hasher: HostHashWorker::spawn(HostHashFault::from_door(kv_host_fault()), reserve)?,
         staging: std::cell::RefCell::new(HostStaging::default()),
         lease_pool,
-        gdn_bf16: engine.gdn_state_bf16(),
     };
     // WP-A day 63 (L2.2, L2.3): the staging set allocated at boot, charged as today; a refusal
     // leaves the set partial (the first demote allocates the rest) and never fails the boot.
@@ -11750,9 +11765,6 @@ struct HostTierContext {
     staging: std::cell::RefCell<HostStaging>,
     /// WP-A day 63 (`DAY63.md` design L1.6): the transfer engine's lease pool, closed at the latch.
     lease_pool: Option<std::rc::Rc<memra_engine::tier_transfer::LeasePool>>,
-    /// The engine's GDN recurrent-state class (`Engine::gdn_state_bf16`): names the ssm
-    /// segments' encoding in a tier image. The programs already carry it in `numeric`.
-    gdn_bf16: bool,
 }
 /// WP-A day 31 (DAY30 owed items: the governor charge of the staging, the staging back on every
 /// post-take refusal): the context's span staging set and its pinned charges. A buffer is
@@ -11801,6 +11813,9 @@ impl HostStaging {
 /// One loaded model's programs under the door: the plain program (day 13) and, for a model with
 /// an MTP head, the draft-bearing program (day 14, `host_tier_draft_program`).
 struct HostTierPrograms {
+    /// The model's GDN recurrent planes are bf16 packed (the engine's class, a GDN model): names
+    /// the ssm segments' encoding in a tier image. `numeric` above already carries it.
+    gdn_bf16: bool,
     plain: memra_engine::cache::record::ProgramIdentity,
     draft: Option<memra_engine::cache::record::ProgramIdentity>,
     /// C day 56: the tail-bearing program, for a model with a DFlash drafter attached.
@@ -12194,7 +12209,11 @@ impl HostPrefixCache {
                 )?;
             }
         }
-        let ssm_encoding: &[u8] = if tier.gdn_bf16 {
+        let gdn_bf16 = tier
+            .programs
+            .get(&entry.pool_key.0)
+            .is_some_and(|p| p.gdn_bf16);
+        let ssm_encoding: &[u8] = if gdn_bf16 {
             b"bf16-packed"
         } else {
             b"f32-native"
@@ -22501,6 +22520,20 @@ fn handoff_stamp_matches(a: &HandoffModelStamp, b: &HandoffModelStamp) -> bool {
         && a.max_mtime_ns == b.max_mtime_ns
 }
 
+/// The handoff file's entry layout version: the in-memory entry layout plus the process's GDN
+/// recurrent-state class (research/gdn-state-bf16-storage-20261107). A bf16-class file holds
+/// half-size ssm planes from a different numeric program, so a deploy that changes the class
+/// starts cold through the header refusal instead of importing entries no restore can take.
+/// The fp32 class keeps the historical number.
+fn handoff_layout_version() -> u32 {
+    const GDN_STATE_BF16_BIT: u32 = 1 << 31;
+    if memra_engine::process_gdn_state_bf16() == Some(true) {
+        PREFIX_ENTRY_LAYOUT_VERSION | GDN_STATE_BF16_BIT
+    } else {
+        PREFIX_ENTRY_LAYOUT_VERSION
+    }
+}
+
 #[derive(Debug, PartialEq)]
 struct HandoffHeader {
     layout_version: u32,
@@ -23521,7 +23554,7 @@ fn host_handoff_export(
         handoff_write_header(
             &mut w,
             &HandoffHeader {
-                layout_version: PREFIX_ENTRY_LAYOUT_VERSION,
+                layout_version: handoff_layout_version(),
                 created_unix: handoff_now_unix(),
                 models: local_stamps.to_vec(),
                 entries: selected.len() as u64,
@@ -23592,7 +23625,7 @@ fn open_host_handoff_import(
     let (mut reader, max_frame) = crate::handoff_io::HandoffReader::open(path, io_mode)?;
     let header = handoff_read_header(&mut reader)?;
     let now = handoff_now_unix();
-    let refused = handoff_header_verdict(&header, PREFIX_ENTRY_LAYOUT_VERSION, now, local_stamps)?;
+    let refused = handoff_header_verdict(&header, handoff_layout_version(), now, local_stamps)?;
     for (model, why) in &refused {
         eprintln!("[prefix-host] handoff import will SKIP every entry of model {model:?}: {why}");
     }
@@ -54231,6 +54264,7 @@ mod tests {
                     draft: Some(draft),
                     tail: None,
                     generation,
+                    gdn_bf16: false,
                 },
             )]),
             device: 0,
@@ -54241,7 +54275,6 @@ mod tests {
                 .unwrap(),
             staging: std::cell::RefCell::new(super::HostStaging::default()),
             lease_pool: None,
-            gdn_bf16: false,
         }
     }
 
@@ -59431,6 +59464,7 @@ mod tests {
                     draft: Some(draft),
                     tail: None,
                     generation,
+                    gdn_bf16: false,
                 },
             )]),
             device: device as u32,
@@ -59441,7 +59475,6 @@ mod tests {
                 .unwrap(),
             staging: std::cell::RefCell::new(super::HostStaging::default()),
             lease_pool: None,
-            gdn_bf16: false,
         }
     }
 

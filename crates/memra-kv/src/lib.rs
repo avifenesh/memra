@@ -428,9 +428,11 @@ pub const fn gdn_state_words(elems: usize, bf16: bool) -> usize {
     if bf16 { elems.div_ceil(2) } else { elems }
 }
 
-/// f32 words a layer's recurrent state occupies: a Gated DeltaNet state takes the device's
-/// storage class (`KvDev::gdn_state_bf16`), every other recurrent mixer (Kimi delta attention)
-/// stays fp32. The cache allocation and every byte estimate share this one rule.
+/// f32 words a Cache-backed layer's recurrent state occupies: a Gated DeltaNet state takes the
+/// device's storage class (`KvDev::gdn_state_bf16`), the other Cache-backed recurrent mixer
+/// (Kimi delta attention) stays fp32. The cache allocation and every byte estimate share this
+/// one rule. qwen4_exp also plans GatedDeltaNet layers but keeps its own fp32 state outside this
+/// crate, so it must never be sized here.
 pub fn recurrent_state_words(
     layer: &memra_gguf::model_plan::LayerPlan,
     state_width: usize,

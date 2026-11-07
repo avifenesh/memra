@@ -1128,13 +1128,22 @@ pub(crate) fn refuse_portable_force(var: &str, needs: &str) {
 /// rigs). A site defaulting differently from its peers arms the mma pre-work while the
 /// scan takes the scalar route — measured as a 0.8% LOSS, the drift this helper kills.
 /// Boot decision for the GDN state class (`Engine::gdn_state_bf16`): `MEMRA_GDN_STATE_BF16=1`
-/// or `=0` forces it; otherwise the device default `gdn_state_bf16_default`.
+/// or `=0` forces it; otherwise the device default `gdn_state_bf16_default` of the FIRST engine
+/// the process builds. One class per process: PP stages, drafter engines and every server-side
+/// byte estimate (prefix budget, host staging, handoff layout) then agree by construction.
 fn gdn_state_bf16_boot(ctx: &CudaContext) -> bool {
-    match std::env::var("MEMRA_GDN_STATE_BF16").as_deref() {
+    *GDN_STATE_BF16_PROCESS.get_or_init(|| match std::env::var("MEMRA_GDN_STATE_BF16").as_deref() {
         Ok("1") => true,
         Ok("0") => false,
         _ => gdn_state_bf16_default(ctx),
-    }
+    })
+}
+
+static GDN_STATE_BF16_PROCESS: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+
+/// The process's GDN state class (`gdn_state_bf16_boot`), `None` before the first engine.
+pub fn process_gdn_state_bf16() -> Option<bool> {
+    GDN_STATE_BF16_PROCESS.get().copied()
 }
 
 /// Device default for the GDN state class. bf16 state is a measured lever per device
@@ -1143,13 +1152,13 @@ fn gdn_state_bf16_default(_ctx: &CudaContext) -> bool {
     false
 }
 
-/// Round fp32 values to bf16 (nearest even, NaN kept quiet) and pack two per f32 word, element
-/// i at byte 2*i: the GDN bf16 state layout on the host.
+/// Round fp32 values to bf16 (nearest even, NaN canonical like the device) and pack two per f32
+/// word, element i at byte 2*i: the GDN bf16 state layout on the host.
 pub fn gdn_state_pack_bf16(vals: &[f32]) -> Vec<f32> {
     let rne = |x: f32| -> u32 {
         let b = x.to_bits();
         if x.is_nan() {
-            (b >> 16) | 0x40
+            0x7fff // the device's canonical NaN (`__float2bfloat16`)
         } else {
             (b + 0x7fff + ((b >> 16) & 1)) >> 16
         }
@@ -4981,6 +4990,31 @@ impl Engine {
         memra_kv::gdn_state_words(elems, self.gdn_state_bf16())
     }
 
+    /// Refuse a GDN state buffer that is not exactly one d_state=128 state of `n_head` value
+    /// heads in this engine's class: a buffer of the other class would be read or written past
+    /// its end (or only half used) by the `st16` kernels.
+    fn gdn_state_len_check(
+        &self,
+        what: &str,
+        len: usize,
+        n_head: usize,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let want = self.gdn_state_words(128 * 128 * n_head);
+        if len != want {
+            return Err(format!(
+                "{what}: GDN state buffer of {len} f32 words; the {} class needs {want} for \
+                 {n_head} heads",
+                if self.gdn_state_bf16() {
+                    "bf16"
+                } else {
+                    "fp32"
+                }
+            )
+            .into());
+        }
+        Ok(())
+    }
+
     /// Pin the GDN state class. Gate and bench binaries only, before any GDN state buffer
     /// exists (kernel-check runs the fp32 and bf16 cells in one process).
     pub fn set_gdn_state_bf16(&self, on: bool) {
@@ -6405,6 +6439,8 @@ impl Engine {
         t_v: usize,
         scale: f32,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        self.gdn_state_len_check("gdn_scan_s128_dc state_in", state_in.len(), n_head)?;
+        self.gdn_state_len_check("gdn_scan_s128_dc state_out", state_out.len(), n_head)?;
         let f = self.func("gdn_scan_s128_dc");
         const S_V: u32 = 128;
         const WARP: u32 = 32;
@@ -33396,6 +33432,8 @@ impl Engine {
         t: usize,
         scale: f32,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        self.gdn_state_len_check("gdn_scan_s128 state_in", state_in.len(), n_head)?;
+        self.gdn_state_len_check("gdn_scan_s128 state_out", state_out.len(), n_head)?;
         let f = self.func("gdn_scan_s128");
         const S_V: u32 = 128;
         const WARP: u32 = 32;
@@ -33769,6 +33807,8 @@ impl Engine {
         t: usize,
         scale: f32,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        self.gdn_state_len_check("gdn_scan_s128 state_in", state_in.len(), n_head)?;
+        self.gdn_state_len_check("gdn_scan_s128 state_out", state_out.len(), n_head)?;
         let f = self.func("gdn_scan_s128");
         const S_V: u32 = 128;
         const WARP: u32 = 32;
@@ -35174,6 +35214,8 @@ impl Engine {
         capture: Option<(usize, &mut Option<CudaSlice<f32>>)>,
     ) -> Result<(), Box<dyn std::error::Error>> {
         const D: usize = 128;
+        self.gdn_state_len_check("gdn_scan_chunked state_in", state_in.len(), n_head)?;
+        self.gdn_state_len_check("gdn_scan_chunked state_out", state_out.len(), n_head)?;
         let capture = capture.filter(|(rows, _)| *rows > 0 && *rows < t && rows.is_multiple_of(c));
         const NSPLIT: u32 = 4;
         assert!(
