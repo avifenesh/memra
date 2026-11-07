@@ -124,8 +124,9 @@ qualifies. A rebase changes the inputs and needs a new record.
 
 A record qualifies the tag battery, `tools/release-battery.sh`, and that battery covers the
 qwen35 class only, and within it two checkpoints (owner, 2026-11-03). The verifier expects
-exactly one kernel cell plus one calibrated argmax cell (with its batched-prime arm) and one
-greedy K=1..8 spec cell per `tools/release-roster.tsv` row. The roster has two rows, both
+exactly one kernel cell plus two calibrated argmax cells (the eager cell with its batched-prime
+arm and the served batch cell, see [Argmax cells](#argmax-cells)) and one greedy K=1..8 spec
+cell per `tools/release-roster.tsv` row. The roster has two rows, both
 NVFP4+Q5_K MTP GGUFs: Ornith-1.5-35B-A3B (`own`, `qwen35_moe`) and Qwen3.8-27B (`vendor`,
 `qwen35`). The kernel cell takes the first roster file present as its model argument; its
 required Step manifest holds synthetic kernel and PP-schedule cells, not a Step model run.
@@ -144,6 +145,44 @@ A record carries no served-path evidence either: the battery never starts `memra
 the serving gates (serve-smoke, spec-on-cache-hit, accept-gate, health-fault and the rest) run
 only in `tools/local-ci.sh` and in scoped-battery cells.
 [Releasing](RELEASING.md#the-gate-on-the-rig-before-tagging) states the same scope for the tag.
+
+## Argmax cells
+
+Each roster model has two calibrated argmax cells. Both run `tools/argmax-margin-gate.sh` with
+the same prompt, window, prefill reference (`forward_last` at each window position), per-model
+flip budget and margin rule: every prefill/decode argmax flip must sit at a top-2 margin the
+config spread covers. They differ in the program on the decode side.
+
+| Cell (`runs.tsv` kind / receipt) | Decode side | Extra requirement |
+|---|---|---|
+| `argmax` / `argmax-margin` | `decode_step`, the eager program (`decode_step_h`) | the batched serving prime: only `prime=MATCH`, `FLIP-NEARTIE` or `SKIP:tokenwise-served` |
+| `argmax-batch` / `argmax-margin-batch` | the served decode program (`--decode batch`): the batched program at B=1, or `decode_step` for an eager-routed model | every window step's device-sampled token equals the host argmax of its row: only `served=MATCH`, or `served=EAGER-ROUTED` |
+
+The second cell exists because the server's batched scheduler decodes every non-speculative row
+of a batch-served model through `decode_step_batch_sampled_lean_masked` at every width, B=1
+included (the B=1 fast path is an opt-in seam), and that body carries a decode-config
+FP-composition gap against `decode_step_h`. The eager cell alone can therefore pass while a
+change to the batched body or its epilogue moves served tokens. Speculative rows are not this
+body: with `MEMRA_SERVE_SPEC` on (the default) and a model that ships a draft head, spec-eligible
+requests decode through the speculative path, which `run-spec` gates. The batched body serves the
+rest: the spec-off posture (the shared-prefix serving posture), requests spec admission declines
+(constrained sampled, penalized greedy, vision) and models without a draft head. The batch cell
+makes the server's own call for one unconstrained greedy row: one token, a planned cache, the
+greedy device sample, no grammar mask, lean logits read back from the cache's device park. The
+probe installs no `MEMRA_REWRITE_BUNDLE`, so the cell gates the default bundle-less served
+program. The battery unsets `MEMRA_SERVE_B1FAST` for it so it runs the default served program. A
+gate run that ignored `--decode` prints no `SERVED-SUMMARY` line and cannot pass.
+
+Both cells are required for every roster model: the checker refuses a record that lacks either
+or reports anything but the accepted classes. Which program serves a model's decode is the
+engine's `HybridModel::served_decode_is_eager`, the predicate the worker's decode scheduling
+sites read. For a model it marks eager-routed (the eager-only class: gemma4 E4B, gemma4 with
+`MEMRA_GEMMA4_BATCH=0`, plans without a batched decode arm such as glm_dsa MLA or MiniMax-M3, and
+HyperConnections trunks with `MEMRA_HYPER_BATCH=0` or under glm5 TP) the scheduler never calls the
+batched body. The probe then steps `decode_step`, the program that does serve it, under the same
+margin rules and prints `SERVED-ARGMAX: n/a reason=eager-routed`; the gate reports
+`served=EAGER-ROUTED`, and the battery and checker accept that value in place of `MATCH`. The
+current roster is batch-served, so its cells report `MATCH`.
 
 ## Development and publication
 

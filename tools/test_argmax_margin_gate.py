@@ -10,6 +10,9 @@ import unittest
 PRIME_MATCH = ("PRIME-GATE: class=MATCH bp_argmax=7 tw_argmax=7 tw_margin=1.5e0 "
                "bp_margin=1.25e0 maxdiff=3.0e-2")
 ROWS = "10 1 1.0000 1 1.0000 0.1000 yes\n11 2 1.0000 2 1.0000 0.1000 yes"
+SERVED_MATCH = "SERVED-ARGMAX: rows=2 device_mismatch=0"
+SERVED_EAGER_ROUTED = "SERVED-ARGMAX: n/a reason=eager-routed"
+BATCH = ("--decode", "batch")
 
 
 class GateTest(unittest.TestCase):
@@ -32,7 +35,8 @@ class GateTest(unittest.TestCase):
     def run_gate(self, output, model=None, extra=(), env=None, prime=PRIME_MATCH):
         if prime is not None:
             output = output + "\n" + prime if output else prime
-        self.probe.write_text("#!/bin/sh\nprintf '%s\\n' '" + output + "'\n")
+        self.probe.write_text("#!/bin/sh\nprintf '%s\\n' \"$@\" > '" + str(self.root / "probe.args")
+                              + "'\nprintf '%s\\n' '" + output + "'\n")
         self.probe.chmod(0o700)
         return subprocess.run(["bash", str(self.gate), str(model or self.gguf),
             "--prompt", str(self.prompt), "--window", "2", "--logdir", str(self.root / "logs"),
@@ -98,6 +102,87 @@ class GateTest(unittest.TestCase):
         r = self.run_gate(ROWS, extra=("--canary",))
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertIn("the reader saw: MISMATCH-STRUCTURED", r.stdout)
+
+    def probe_args(self):
+        return (self.root / "probe.args").read_text().splitlines()
+
+    def test_default_cell_calls_the_probe_as_before(self):
+        r = self.run_gate(ROWS)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual(self.probe_args(), [str(self.gguf), str(self.prompt), "2"])
+        self.assertIn("decode=eager", r.stdout)
+        self.assertNotIn("SERVED-SUMMARY", r.stdout)
+
+    def test_batch_cell_runs_the_served_program_and_reports_it(self):
+        for extra in (BATCH, (*BATCH, "--canary")):
+            with self.subTest(extra=extra):
+                r = self.run_gate(ROWS, extra=extra, prime=SERVED_MATCH)
+                self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+                self.assertEqual(self.probe_args(),
+                                 [str(self.gguf), str(self.prompt), "2", "--decode", "batch"])
+                self.assertIn("decode=batch", r.stdout)
+                self.assertIn("SERVED-SUMMARY served=MATCH", r.stdout)
+                self.assertNotIn("PRIME-SUMMARY", r.stdout)
+                self.assertIn("CANARY PASS:" if "--canary" in extra else "  PASS:", r.stdout)
+                self.assertTrue(list((self.root / "logs").glob("*.batch*.log")), r.stdout)
+
+    def test_batch_cell_device_token_mismatch_fails(self):
+        r = self.run_gate(ROWS, extra=BATCH, prime=SERVED_MATCH.replace("=0", "=1"))
+        self.assertNotEqual(r.returncode, 0, r.stdout)
+        self.assertIn("SERVED-SUMMARY served=MISMATCH", r.stdout)
+        self.assertIn("device-sampled token differs", r.stdout)
+
+    def test_batch_cell_missing_or_malformed_served_line_fails_even_with_canary(self):
+        # A probe that ignores --decode runs the eager program and prints the prime line instead.
+        for served, word in ((None, "MISSING"), (PRIME_MATCH, "MISSING"),
+                             (SERVED_MATCH + "\n" + SERVED_MATCH, "MISSING"),
+                             ("SERVED-ARGMAX: rows=3 device_mismatch=0", "MALFORMED"),
+                             ("SERVED-ARGMAX: rows=2 device_mismatch=x", "MALFORMED"),
+                             ("SERVED-ARGMAX: rows=2", "MALFORMED"),
+                             ("SERVED-ARGMAX: n/a reason=other", "MALFORMED"),
+                             ("SERVED-ARGMAX: n/a", "MALFORMED"),
+                             (SERVED_EAGER_ROUTED + "\n" + SERVED_MATCH, "MISSING")):
+            for extra in (BATCH, (*BATCH, "--canary")):
+                with self.subTest(served=served, extra=extra):
+                    r = self.run_gate(ROWS, extra=extra, prime=served)
+                    self.assertNotEqual(r.returncode, 0, r.stdout)
+                    self.assertIn("SERVED-ARGMAX line is " + word, r.stdout)
+
+    def test_batch_canary_injects_a_served_mismatch_line(self):
+        r = self.run_gate(ROWS, extra=(*BATCH, "--canary"), prime=SERVED_MATCH)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("served-token mismatch line; the reader saw: MISMATCH", r.stdout)
+
+    def test_eager_routed_model_passes_on_the_table_and_says_so(self):
+        # The probe's routing read says the scheduler decodes this model eagerly: the table then
+        # measured decode_step, and the cell reports EAGER-ROUTED instead of a served-token check.
+        for extra in (BATCH, (*BATCH, "--canary")):
+            with self.subTest(extra=extra):
+                r = self.run_gate(ROWS, extra=extra, prime=SERVED_EAGER_ROUTED)
+                self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+                self.assertIn("SERVED-SUMMARY served=EAGER-ROUTED", r.stdout)
+                self.assertIn("CANARY PASS:" if "--canary" in extra else "  PASS:", r.stdout)
+        r = self.run_gate(ROWS, extra=(*BATCH, "--canary"), prime=SERVED_EAGER_ROUTED)
+        self.assertIn("served-token mismatch line; the reader saw: MISMATCH", r.stdout)
+        # EAGER-ROUTED keeps the margin rules: an unexplained flip still fails.
+        r = self.run_gate("10 1 5.0 2 5.0 0.1 NO\n11 2 1.0 2 1.0 0.1 yes", extra=BATCH,
+                          prime=SERVED_EAGER_ROUTED)
+        self.assertNotEqual(r.returncode, 0, r.stdout)
+        self.assertIn("UNEXPLAINED", r.stdout)
+
+    def test_batch_cell_keeps_the_margin_rules(self):
+        r = self.run_gate("10 1 5.0 2 5.0 0.1 NO\n11 2 1.0 2 1.0 0.1 yes", extra=BATCH, prime=SERVED_MATCH)
+        self.assertNotEqual(r.returncode, 0, r.stdout)
+        self.assertIn("UNEXPLAINED", r.stdout)
+        r = self.run_gate("10 1 2.0e-5 2 2.0e-5 3.0e-5 NO\n11 1 2.0e-5 2 2.0e-5 3.0e-5 NO", extra=BATCH,
+                          prime=SERVED_MATCH)
+        self.assertNotEqual(r.returncode, 0, r.stdout)
+        self.assertIn("TOO-MANY-FLIPS 2 > 1", r.stdout)
+
+    def test_bad_decode_value_fails(self):
+        for extra in (("--decode", "dc"), ("--decode",)):
+            with self.subTest(extra=extra):
+                self.assertEqual(self.run_gate("", extra=extra).returncode, 2)
 
     def test_wide_margin_flip_fails(self):
         r = self.run_gate("10 1 5.0 2 5.0 0.1 NO\n11 2 1.0 2 1.0 0.1 yes")

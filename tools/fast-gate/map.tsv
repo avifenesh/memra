@@ -109,6 +109,9 @@
 # amargin compares these exact two arithmetic surfaces: batched forward_last vs tokenwise decode.
 # It does not execute sampled-spec control code; accept remains the served-spec/long-text gate.
 ^crates/memra-engine/src/(decode|forward|hybrid_forward)\.rs$	synthetic	amargin,amarginc	-
+# amarginb compares forward_last against the SERVED batched decode program at B=1 (the batched
+# body, its epilogue and the B=1 fast-path seam in decode_batch.rs; decode_layers_eager in decode.rs).
+^crates/memra-engine/src/(decode|decode_batch|forward|hybrid_forward)\.rs$	synthetic	amarginb,amarginbc	-
 # ptick pins prime_cache_batch (fresh and carried) + the tick loop + the [B, C] wave against the
 # solo prime bitwise (memra#641); hybrid_forward.rs owns every one of those programs.
 ^crates/memra-engine/src/hybrid_forward\.rs$	synthetic	ptick,ptickc,pbg9,pbg9c	-
@@ -117,7 +120,7 @@
 # The representatives above do not cover E4B's PLE/KV-share loader or KAT's IQ4_XS dispatch.
 ^crates/memra-engine/src/(hybrid|model|lib)\.rs$	all	e4b,kat	-
 # --- gate/bench binaries: build-only (they ARE the gates) ---
-^crates/memra-engine/src/bin/argmax_margin_probe\.rs$	none	amargin,amarginc	-
+^crates/memra-engine/src/bin/argmax_margin_probe\.rs$	none	amargin,amarginc,amarginb,amarginbc	-
 ^crates/memra-engine/src/bin/concat_prime_probe\.rs$	none	ptick,ptickc	-
 ^crates/memra-engine/src/bin/prime_batch_gate\.rs$	none	pbg9,pbg9c,pbatch35,pbatch35c	-
 ^crates/memra-engine/src/bin/	none	-	-
@@ -143,7 +146,7 @@
 # both directions.
 ^crates/memra-server/	none	sstress,accept,tickinv35,tickinv35c,b2geo35,b2geo35c	-
 # --- no-gate paths ---
-^tools/argmax-margin-gate\.sh$	none	amargin,amarginc	-
+^tools/argmax-margin-gate\.sh$	none	amargin,amarginc,amarginb,amarginbc	-
 ^tools/prime-tick-exact-gate\.sh$	none	ptick,ptickc	-
 ^tools/prime-batch-exact-gate\.sh$	none	pbg9,pbg9c	-
 ^(docs/|research/|agent-knowledge/|probe/|\.github/|tools/)	none	-	-
