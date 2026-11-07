@@ -140,7 +140,7 @@ resident heads retain the existing graph default. See [the capture receipt](../r
   boundary hidden alongside the trunk KV (`PREFIX_ENTRY_LAYOUT_VERSION` 2; plane + hidden
   bytes counted in the entry budget). On an unconstrained, spec-eligible WHOLE-entry hit the
   worker re-arms a warm spec session instead of downgrading: qwen/MTP via
-  `spec_session_from_restored_ready` or `_deferred` (restored trunk + draft plane + entry
+  `spec_session_from_restored_deferred` (restored trunk + draft plane + entry
   anchor; the engine feeds any prompt suffix itself, mirroring prefill_tick's program arms),
   gemma via `gemma_spec_session_from_restored` (drafter seed regenerated from a non-empty
   suffix feed; full-cover gemma hits stay plain by design). `spec_restore_refusal` refuses
@@ -2254,11 +2254,11 @@ Raw-salt (no-keyring) namespaces carry no tenant and never match. Receipts:
 lane/kv-tenancy-compaction-20260831):** one tenant's maximum share of the
 `MEMRA_KV_HOST_MB` budget, keyed on the same tenant row identity as the `tenants`
 receipt. A demotion that would push the tenant past its share first reclaims that
-tenant's own unleased host entries, oldest first, until it fits (memra#384; another
-tenant's row is never read, a leased entry is skipped, the exact-key twin is spared), so
-a tenant at its cap turns over its own row and one tenant still can never squeeze the
-others out of the pool. Only when the image alone exceeds the share, or the row's
-unleased bytes cannot cover the shortfall, does the demotion evaporate (checked before
+tenant's own host entries, oldest first, until it fits (memra#384; another tenant's row
+is never read, the exact-key twin is spared), so a tenant at its cap turns over its own
+row and one tenant still can never squeeze the others out of the pool. Only when the
+image alone exceeds the share, or the row's bytes cannot cover the shortfall, does the
+demotion evaporate (checked before
 the D2H copy, so it also skips the PCIe trip), with nothing evicted for it. On the
 pageable tier the reclaim runs once the image is built and ready to insert, so a copy,
 digest or charge failure costs the row nothing; on the fixed arena
@@ -2275,17 +2275,18 @@ line with the reclaim's refusal appended (the exact production text; a gate grep
 lines, not a paraphrase: `tools/kv-host-tenant-reclaim-gate.sh`). Full trade discussion
 in the [flag catalog](FLAGS.md) row.
 
-**Continuation-pool park compaction (`MEMRA_KV_PARK_COMPACT`, default 0 = off;
-lane/kv-tenancy-compaction-20260831, tiering spec Arc C1):** a parked plain-pool session
-keeps its full ladder-cap `Cache` allocation today (cap = `cache.max_ctx`, so a 6k-token
-session can park ~1 GB on a 262k-ctx deployment). Armed, the park compacts the cache to
-exactly its committed length through the same snapshot + checkpoint-restore machinery the
-plain-affinity grow uses, and the resume grows it back to the request's own charged cap
-before any suffix primes; failures in either direction fall back to today's behavior
-(full-size park, or cold serve). SPEC/DSPARK pools are out of scope by design (they park
-live engine sessions). Default off until the pod battery lands the resume byte-identity
-gate and the step-OOM adjacency replay; see the [flag catalog](FLAGS.md) row and
-`research/kv-tenancy-20260831/REPORT.md` for the pending cells.
+**Continuation-pool park compaction (lane/kv-tenancy-compaction-20260831, tiering spec Arc
+C1; per-device default since 2026-11-04, no flag):** without it a parked plain-pool session
+keeps its full ladder-cap `Cache` allocation (cap = `cache.max_ctx`, so a 6k-token session
+can park ~1 GB on a 262k-ctx deployment). On the RTX 5090 class and the full-power RTX PRO
+6000 Blackwell Workstation Edition the park compacts the cache to exactly its committed
+length through the same snapshot + checkpoint-restore machinery the plain-affinity grow uses,
+and the resume grows it back to the request's own charged cap before any suffix primes;
+failures in either direction fall back to the full-size park or a cold serve. Other cards,
+the Max-Q and Server Edition variants included, park whole until a cell on them reads the
+same. SPEC/DSPARK pools are out of scope by design (they park live engine sessions). The
+receipts and what the flip rejected are in
+[decisions/KV-PARK-COMPACT-DEFAULT.md](decisions/KV-PARK-COMPACT-DEFAULT.md).
 
 ## Cache-hit metering (lane/cache-metering, 2026-08-07)
 

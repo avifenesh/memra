@@ -45,15 +45,6 @@ pub struct MtpPrimeState {
     logits: Vec<f32>,
     capture_at: Option<usize>,
     ckpt_rel: Option<usize>,
-    /// EXACT RESUME (WP-B day 44): the turn checkpoint's grid point, relative to `base`, taken
-    /// inside the trunk call that contains it (`grid_capture`), never a stop. `grid_requested`
-    /// keeps the legacy prompt-end checkpoint from overwriting it.
-    grid_rel: Option<usize>,
-    grid_requested: bool,
-    /// EXACT RESUME SETTLE (WP-B day 44): trunk and draft fill only; no boundary token, no init
-    /// feed (a T=1 decode row), no draft preparation. `finish` commits the prompt rows to the
-    /// session directly, so every committed row is a prime-program row.
-    prime_only: bool,
     k: usize,
     sampling: SpecSampling,
     graph_draft: bool,
@@ -63,16 +54,10 @@ pub struct MtpPrimeState {
 }
 
 impl MtpPrimeState {
-    /// WP-B day 44: the settle's walk (trunk and fill only).
-    pub(crate) fn set_prime_only(&mut self) {
-        self.prime_only = true;
-    }
-
     /// WP-B day 39 addendum B: the walker has not yet run the chunk that ends on its turn
     /// checkpoint row, so that checkpoint's `Cache::snapshot` is still owed.
     pub fn owes_turn_checkpoint(&self) -> bool {
         self.ckpt_rel
-            .or(self.grid_rel)
             .is_some_and(|r| self.chunks.get(self.cursor).is_some_and(|c| c.start < r))
     }
 }
@@ -310,12 +295,6 @@ impl HybridModel {
             .take()
             .and_then(|b| b.checked_sub(base))
             .filter(|&b| b > 0 && b < tp);
-        let grid_rel = sess
-            .grid_capture_at
-            .take()
-            .and_then(|g| g.checked_sub(base))
-            .filter(|&r| r > 0 && r < tp);
-        let grid_requested = grid_rel.is_some();
         let first = prime_split.into_iter().chain(ckpt_rel).min();
         if first == prime_split && first.is_some_and(|b| b < crate::hybrid_forward::PRIME_MIN_T) {
             return Err("MTP prime split below PRIME_MIN_T".into());
@@ -366,9 +345,6 @@ impl HybridModel {
             logits: Vec::new(),
             capture_at: sess.capture_at.take(),
             ckpt_rel,
-            grid_rel,
-            grid_requested,
-            prime_only: false,
             k,
             sampling: resolve_spec_sampling(sampling),
             graph_draft,
@@ -401,17 +377,6 @@ impl MtpPrimeWalker<'_> {
         let s = self.state.as_mut().ok_or("MTP prime already finalized")?;
         let n = self.model.cfg.n_embd as usize;
         let h_all = s.hiddens.as_mut().ok_or("MTP hidden stack missing")?;
-        // EXACT RESUME (WP-B day 44): the turn checkpoint at the grid point inside this trunk
-        // call, captured by the call itself (no stop).
-        let grid_here = s
-            .grid_rel
-            .filter(|&r| chunk.batched && chunk.start <= r && r <= chunk.end);
-        let _grid_guard = grid_here.map(|r| {
-            crate::grid_capture::arm(
-                s.base + r,
-                crate::grid_capture::needed_layers(&self.sess.cache),
-            )
-        });
         if chunk.batched {
             let (logits, seed, h) = self.model.prime_chunk(
                 self.e,
@@ -430,28 +395,6 @@ impl MtpPrimeWalker<'_> {
                 .copy_into(h_all, chunk.start * n, &h, (chunk.end - chunk.start) * n)?;
             drop(seed);
             s.logits = logits;
-            if let Some(r) = grid_here {
-                s.grid_rel = None;
-                let cap = crate::grid_capture::take()
-                    .ok_or("grid capture not taken")
-                    .and_then(|c| {
-                        c.into_snapshot(&self.sess.cache)
-                            .map_err(|_| "grid capture refused")
-                    });
-                let anchor = self.e.uninit(n).and_then(|mut a| {
-                    self.e
-                        .copy_view_into(&mut a, 0, &h_all.slice((r - 1) * n..r * n), n)?;
-                    Ok(a)
-                });
-                self.sess.turn_ckpt = match (cap, anchor) {
-                    (Ok(snap), Ok(last_h)) => Some(SpecCheckpoint {
-                        snap,
-                        pos: s.base + r,
-                        last_h,
-                    }),
-                    _ => None,
-                };
-            }
         } else {
             for i in chunk.start..chunk.end {
                 let (logits, h) = if chunk.target_step {
@@ -519,9 +462,7 @@ impl MtpPrimeWalker<'_> {
                 latent_tails: Vec::new(),
             });
         }
-        // WP-B day 44 addendum C: the settle's prime-only walk takes no prompt-end checkpoint, so the
-        // turn checkpoint the settle retained (at `g`) survives it for affinity.
-        if s.ckpt_rel.is_none() && !s.grid_requested && !s.prime_only {
+        if s.ckpt_rel.is_none() {
             let anchor = self.e.uninit(n).and_then(|mut a| {
                 self.e
                     .copy_view_into(&mut a, 0, &h.slice((tp - 1) * n..tp * n), n)?;
@@ -535,10 +476,6 @@ impl MtpPrimeWalker<'_> {
                 }),
                 _ => None,
             };
-        }
-        if s.prime_only {
-            // WP-B day 44: the settle's walk ends here: no boundary token, no init feed.
-            return Ok(());
         }
         let sp = s.sampling;
         let pen_on = sp.temp > 0.0
@@ -758,23 +695,6 @@ impl PrimeWalker for MtpPrimeWalker<'_> {
             return Err("MTP prime incomplete".into());
         }
         let mut s = self.state.take().ok_or("MTP prime already finalized")?;
-        if s.prime_only {
-            // WP-B day 44 (the exact resume's settle): commit the primed rows directly. The
-            // session holds exactly `committed` under the prime program; `last_h` is the hidden
-            // of the last row (the next prime's fill anchor), `next_pred` the prime logits' argmax.
-            let n = self.model.cfg.n_embd as usize;
-            let tp = s.prompt.len();
-            let h = s.hiddens.as_ref().ok_or("MTP hidden stack missing")?;
-            let mut last_h = self.e.uninit(n)?;
-            self.e
-                .copy_view_into(&mut last_h, 0, &h.slice((tp - 1) * n..tp * n), n)?;
-            self.sess.committed.extend_from_slice(&s.prompt);
-            self.sess.last_h = Some(last_h);
-            self.sess.next_pred = Some(argmax(&s.logits) as u32);
-            self.sess.pending_tok = None;
-            debug_assert_eq!(self.sess.cache.pos, self.sess.committed.len());
-            return Ok(());
-        }
         let mut ready = s.prepared.take().ok_or("MTP setup incomplete")?;
         ready.hiddens = s.hiddens.take();
         ready.wall = s.wall;
@@ -813,9 +733,6 @@ mod tests {
             logits: Vec::new(),
             capture_at: None,
             ckpt_rel,
-            grid_rel: None,
-            grid_requested: false,
-            prime_only: false,
             k: 1,
             sampling: resolve_spec_sampling(None),
             graph_draft: false,
@@ -830,12 +747,6 @@ mod tests {
         );
         assert!(!state(Some(1024), 2).owes_turn_checkpoint());
         assert!(!state(None, 0).owes_turn_checkpoint());
-        // WP-B day 44: a grid capture the walker has not yet reached is owed the same way.
-        let mut grid = state(None, 0);
-        grid.grid_rel = Some(1024);
-        assert!(grid.owes_turn_checkpoint());
-        grid.cursor = 1;
-        assert!(!grid.owes_turn_checkpoint());
     }
 
     #[test]
