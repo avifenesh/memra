@@ -46,6 +46,17 @@
 # is strictly stronger: it catches the pos-2042 class the current gate sleeps through, while
 # no longer red-flagging a 0.03-margin coin as a "cache threading bug".
 #
+# THE BATCHED SERVING PRIME. The probe also runs `prime_cache` (what seeds generation in
+# generate and serving) over the whole prompt and prints one `PRIME-GATE:` line, the class
+# `forward::prime_gate_verdict` gives its last-position logits against the tokenwise
+# reference: MATCH, FLIP-NEARTIE (a flip at a tokenwise margin inside the calibrated bound,
+# reported and non-fatal, as in run-gen) or MISMATCH-STRUCTURED (drift past the calibrated
+# bounds, or a wide-margin flip), which FAILS here. `SKIP reason=...` passes and is printed.
+# A missing or malformed line fails like a malformed table: the release battery runs this
+# gate and not run-gen, and run-spec primes reference and candidate through the same
+# prime_cache, so this line is the battery's only prime-vs-tokenwise check. The canary also
+# injects a MISMATCH-STRUCTURED line and requires the prime reader to reject it.
+#
 # TEETH: --canary INJECTS A BREAK rather than relabelling an expectation (the trap documented
 # in tools/chunk-invariance-gate.sh's header, learned the hard way on lane/chunkinv-flip).
 # It runs the real probe, then FAULT-INJECTS into a copy of the measured table one row of the
@@ -212,6 +223,30 @@ if ! awk -v expected="$WINDOW" '
     exit 1
 fi
 
+# The batched-prime line: exactly one, class read from it. Prints MATCH, FLIP-NEARTIE,
+# MISMATCH-STRUCTURED, SKIP:<reason>, MISSING or MALFORMED.
+prime_judge() {
+    awk '
+        /^PRIME-GATE: / { n++; line = $0 }
+        END {
+            if (n != 1) { print "MISSING"; exit }
+            if (line ~ /^PRIME-GATE: SKIP reason=[a-z-]+$/) {
+                sub(/^PRIME-GATE: SKIP reason=/, "", line); print "SKIP:" line; exit
+            }
+            if (!match(line, /^PRIME-GATE: class=[A-Z-]+ /)) { print "MALFORMED"; exit }
+            c = substr(line, 19, RLENGTH - 19)
+            if (c == "MATCH" || c == "FLIP-NEARTIE" || c == "MISMATCH-STRUCTURED") print c
+            else print "MALFORMED"
+        }' "$1"
+}
+PRIME=$(prime_judge "$LOG")
+case "$PRIME" in
+    MISSING|MALFORMED)
+        echo "  FAIL: probe PRIME-GATE line is $PRIME (the batched-prime arm did not report)"
+        echo "  raw: $LOG"
+        exit 1 ;;
+esac
+
 # The canary appends ONE synthetic row of the defect class to the table the comparator parses:
 # a flip at margin 5.0 against a config delta of 0.1. No near-tie explanation is available for
 # it, so a comparator that actually reads margin-vs-delta MUST reject it.
@@ -223,6 +258,11 @@ if [ $CANARY = 1 ]; then
         9999 111111 5.0000 222222 5.0000 0.1000 "NO <-- FLIP" >> "$PARSE"
     echo "  [canary] injected a WIDE-margin flip (pos 9999, margin 5.0000, delta 0.1000)"
     echo "           — a disagreement the config spread cannot explain; must be rejected"
+    grep -v '^PRIME-GATE: ' "$LOG" > "$LOG.prime-injected"
+    echo "PRIME-GATE: class=MISMATCH-STRUCTURED bp_argmax=1 tw_argmax=2 tw_margin=5.0e0 bp_margin=5.0e0 maxdiff=9.0e1" \
+        >> "$LOG.prime-injected"
+    CANARY_PRIME=$(prime_judge "$LOG.prime-injected")
+    echo "  [canary] injected a MISMATCH-STRUCTURED batched-prime line; the reader saw: $CANARY_PRIME"
 fi
 
 # Parse the per-position table: pos prefill_top1 margin_p decode_top1 margin_d delta agree...
@@ -244,8 +284,20 @@ verdict=$(awk -v floor="${MARGIN_FLOOR:-}" -v maxflips="$MAX_FLIPS" '
         printf "SUMMARY flips=%d bad=%d\n", flips+0, bad+0
     }' "$PARSE")
 echo "$verdict" | sed 's/^/  /'
+echo "  PRIME-SUMMARY prime=$PRIME"
+grep -m1 '^PRIME-GATE: ' "$LOG" | sed 's/^/    /'
 
 bad=$(echo "$verdict" | awk '/^SUMMARY/ {print $3}' | cut -d= -f2)
+if [ $CANARY = 1 ] && [ "${CANARY_PRIME:-}" != MISMATCH-STRUCTURED ]; then
+    echo "  CANARY FAIL: the injected MISMATCH-STRUCTURED prime line was read as ${CANARY_PRIME:-nothing};"
+    echo "               the batched-prime reader has no teeth."
+    exit 1
+fi
+if [ $CANARY = 0 ] && [ "$PRIME" = MISMATCH-STRUCTURED ]; then
+    echo "  FAIL: the batched serving prime (prime_cache) diverges structurally from the tokenwise reference"
+    echo "  raw: $LOG_SHOWN"
+    exit 1
+fi
 if [ "${bad:-1}" -eq 0 ]; then
     if [ $CANARY = 1 ]; then
         echo "  CANARY FAIL: the injected wide-margin flip did NOT break the assertion — the"

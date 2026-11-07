@@ -52,7 +52,11 @@ Note what the battery does NOT run: raw `run-gen`. Its prefill-vs-decode argmax 
 documented landmine (`tools/argmax-margin-gate.sh:12-47`, and
 `research/q8-argmax-20260806/VERDICT.md`) — batched prefill and the tokenwise decode loop are two
 legitimate arithmetics, so a near-tie position flips between them legitimately.
-`tools/argmax-margin-gate.sh` judges each flip against the prompt's own distribution instead.
+`tools/argmax-margin-gate.sh` judges each flip against the prompt's own distribution instead,
+and also judges the batched serving prime (`prime_cache`) against the tokenwise reference with
+run-gen's calibrated `prime_gate_verdict`: run-spec primes reference and candidate through the
+same `prime_cache`, so without that arm a prime-only regression passed the whole battery. The
+battery accepts only `prime=MATCH`, `FLIP-NEARTIE` or `SKIP:tokenwise-served`.
 On 2026-08-28 the first roster run used raw `run-gen` and was about to file a defect against
 our own model on a position whose prefill top-2 margin was 0.0256 against a config spread of
 0.5540; the calibrated gate returns `flips=0 bad=0 PASS` on the same model.
@@ -186,6 +190,13 @@ operator flipped. Default configuration never reached them.
 message ("`MEMRA_FA3=1` forces a kernel path this build does not contain: it needs the sm_90a
 fa3/bf16 kernels…"). Same idiom as `gemm_fatbin_bytes`'s existing refusal for
 `MEMRA_GEMM_FATBIN` — one shape for "this switch cannot work on this build."
+
+**Update, 2026-11-03:** `MEMRA_FA3=1` no longer calls `refuse_portable_force()`. That check was
+dead for it (portable builds return to naive SDPA before the switch), while every non-sm_90a
+build compiles `fa3_prefill.cu` as a stub that returns rc 3, so the force arm failed mid-request
+on sm_120a and sm_100a. It now refuses unless the build is sm_90a (`fa3_force_verdict`), at
+`Engine::new` (boot) and again at the switch. `MEMRA_FP4` still calls `refuse_portable_force()`.
+The `hybrid_forward.rs` read cited above no longer exists.
 
 **sm_89 shipped from 2026-08-23 to 2026-09-02.** The ruling above ("fix the guard, do not drop
 the arch") answered a FALSE panic claim, and the fix held: v0.107-v0.123 carried working sm_89

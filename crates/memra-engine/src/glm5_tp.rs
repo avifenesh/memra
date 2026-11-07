@@ -566,6 +566,12 @@ fn load_glm5_ep_map(
 /// is absent DELIBERATELY: its walk exists only inside glm5 spec sessions, which are
 /// co-refused on a sharded model unconditionally since the spec x TP composition was
 /// declined (memra #387 NEGATIVE, 2026-09-11): there is no pair left to refuse.
+///
+/// `MEMRA_MLA_DECODE_SPLIT` is default ON (since 2026-09-03), so unset does NOT mean cold for
+/// it. The shard walk keeps its gated program regardless: every rank's shard carries
+/// `MlaAttnLayer::tp_shard`, and `mla_ffi::MlaSplitScope::TpShard` never takes the split. The
+/// refusal below then covers what is left, an operator who sets the door explicitly on a TP
+/// load and would otherwise get a silently ignored value.
 pub const GLM5_TP_REFUSED_DOOR_FLAGS: [(&str, &str); 3] = [
     (
         "MEMRA_HC_FUSED_PRE",
@@ -577,7 +583,8 @@ pub const GLM5_TP_REFUSED_DOOR_FLAGS: [(&str, &str); 3] = [
     ),
     (
         "MEMRA_MLA_DECODE_SPLIT",
-        "the absorb/decompress split is gated on the full-head geometry",
+        "the absorb/decompress split has no TP composition gate, so head shards keep the \
+         shipped launchers whatever its value",
     ),
 ];
 

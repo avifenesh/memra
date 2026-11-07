@@ -419,7 +419,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if std::env::var("MEMRA_PRINT_TEXT").as_deref() == Ok("1") {
         let tok = match &g {
             Some(g) => memra_tokenizer::Tokenizer::from_gguf(g)?,
-            None => memra_tokenizer::Tokenizer::from_hf_dir(std::path::Path::new(&path))
+            None => memra_tokenizer::Tokenizer::from_hf_dir(&tok_dir)
                 .map_err(|err| format!("HF tokenizer init failed: {err}"))?,
         };
         println!("--- generated text ---\n{}\n--- end ---", tok.decode(&gold));
@@ -475,13 +475,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .and_then(|v| v.parse::<f32>().ok())
             .map(|t| t > 0.0)
             .unwrap_or(false);
-        let pass = if sampled {
+        // The stream `spec` is judged against: the seeded rerun when sampled, else the greedy
+        // plain target. The failure report below diffs the same pair.
+        let spec2 = if sampled {
             let (spec2, _, _) = model.generate_spec(&e, &prompt, n_new, k)?;
             e.stream().synchronize()?;
-            first_divergence(&spec, &spec2).is_none()
+            Some(spec2)
         } else {
-            first_divergence(&gold, &spec).is_none()
+            None
         };
+        let reference: &[u32] = spec2.as_deref().unwrap_or(&gold);
+        let divergence = first_divergence(reference, &spec);
+        let pass = divergence.is_none();
         if rewrite_receipt_path.is_some() {
             if sampled {
                 return Err("rewrite qualification requires greedy speculative decoding".into());
@@ -514,12 +519,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         if sampled {
             println!("  sampled tokens: {spec:?}");
         }
-        if !pass {
-            let idx = first_divergence(&gold, &spec).unwrap();
+        if let Some(idx) = divergence {
             println!("  FIRST DIVERGENCE at index {idx}:");
             println!(
-                "    plain target [..]: {:?}",
-                &gold[idx.saturating_sub(2)..(idx + 3).min(gold.len())]
+                "    {} [..]: {:?}",
+                if sampled {
+                    "seeded rerun"
+                } else {
+                    "plain target"
+                },
+                &reference[idx.saturating_sub(2)..(idx + 3).min(reference.len())]
             );
             println!(
                 "    generate_spec[..]: {:?}",
@@ -530,7 +539,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         if sampled && std::env::var("MEMRA_PRINT_TEXT").as_deref() == Ok("1") {
             let tok = match &g {
                 Some(g) => memra_tokenizer::Tokenizer::from_gguf(g)?,
-                None => memra_tokenizer::Tokenizer::from_hf_dir(std::path::Path::new(&path))
+                None => memra_tokenizer::Tokenizer::from_hf_dir(&tok_dir)
                     .map_err(|err| format!("HF tokenizer init failed: {err}"))?,
             };
             println!(

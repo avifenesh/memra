@@ -512,7 +512,16 @@ or deliberate explicit invocation.
 HF directories use the native `SafetensorsSource` loader and their HF tokenizer; GGUF inputs
 retain the GGUF loader and tokenizer. This gate compares batched prefill with tokenwise
 **serial decode** on the same prompt positions, not the server's batched or speculative
-paths, and supplies no performance result. Checkpoint size and placement still determine
+paths, and supplies no performance result. It also runs the **batched serving prime**
+(`prime_cache`, what seeds generation) once over the whole prompt and judges its last-position
+logits against the tokenwise reference with `forward::prime_gate_verdict`, the same cell as
+run-gen's gap #46 arm: the probe prints one `PRIME-GATE:` line, the wrapper prints
+`PRIME-SUMMARY prime=<class>` and fails on `MISMATCH-STRUCTURED` or a missing or malformed
+line (`FLIP-NEARTIE` is reported and passes, `SKIP reason=...` passes with its reason). The
+canary also injects a structured prime line. The release battery unsets `MEMRA_PRIME_GATE`
+and `MEMRA_PRIME_TOKENWISE` for this arm and accepts only `MATCH`, `FLIP-NEARTIE` and
+`SKIP:tokenwise-served`; it is the battery's only prime-vs-tokenwise check, since run-spec
+primes its reference and its candidate through the same `prime_cache`. Checkpoint size and placement still determine
 the required hardware; accepting a directory is not a model qualification receipt.
 The decode cache uses native pipeline placement. Sharded cross-device inputs are accepted
 only for the hyper-connection trunk whose `forward_last` has a pipeline prefill dispatch;
