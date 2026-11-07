@@ -4470,9 +4470,9 @@ fn plain_ckpt_nominatable(prompt: &[u32], is_control: &dyn Fn(u32) -> bool) -> b
 // trunk KV + the MTP draft plane + the boundary hidden (prefix_insert_from_spec_boundary)
 // — greedy and sampled sessions alike, since a prime is sampler-independent; a whole-entry
 // hit on an unconstrained spec-eligible request re-arms a SpecSession from the restored
-// carrier (spec_session_from_restored — the engine feeds any prompt suffix through the
-// plain path's exact program), in BOTH sampling regimes. Hits that cannot re-arm (no draft
-// plane, constrained, sampled-with-active-penalties, partial) serve on the plain path and
+// carrier (spec_session_from_restored_ready/_deferred — the engine feeds any prompt suffix
+// through the plain path's exact program), in BOTH sampling regimes. Hits that cannot re-arm
+// (no draft plane, constrained, sampled-with-active-penalties, partial) serve on the plain path and
 // the downgrade line names which. The spec tier additionally keeps its own continuation
 // pool for extend/affinity shapes. Legacy round-robin mode (MEMRA_SERVE_BATCH=0) bypasses
 // the prefix cache entirely.
@@ -27793,7 +27793,7 @@ pub fn run(
     // Decode-site subset (lane/gemma-batched; extended lane/glm53-batched-decode): eager_only
     // MINUS the models whose batched decode arm is live (dense gemma4 — DEFAULT ON since the
     // 2026-08-16 owner flip, MEMRA_GEMMA4_BATCH=0 is the eager kill switch; mHC hyper trunks —
-    // DEFAULT OFF, MEMRA_HYPER_BATCH=1 is the opt-in until serving-box receipts land).
+    // DEFAULT ON since 2026-08-31, MEMRA_HYPER_BATCH=0 is the eager rollback).
     // Consumed ONLY by the two decode scheduling sites below; all other eager-only exclusions
     // keep the full set.
     let eager_decode: std::collections::HashSet<String> = loaded
@@ -27845,10 +27845,10 @@ pub fn run(
             .is_some_and(|lm| memra_engine::plan_backend::decode_batch_unconverted(&lm.model.plan))
         {
             eprintln!(
-                "[worker] {n}: BATCHED DECODE (mHC hyper arm, opt-in via MEMRA_HYPER_BATCH=1; \
-                   unset/0 = eager per-session rollback): batched decode chunks, serial ticks \
-                   only (no dual waves); {prefill}, no prime batching (eager-only for every \
-                   non-decode entry point)"
+                "[worker] {n}: BATCHED DECODE (mHC hyper arm, default-on; \
+                   MEMRA_HYPER_BATCH=0 = eager per-session rollback): batched decode chunks, \
+                   serial ticks only (no dual waves); {prefill}, no prime batching (eager-only \
+                   for every non-decode entry point)"
             );
         } else {
             eprintln!(
@@ -36577,7 +36577,7 @@ fn admit(
 
     // SPEC x CONSTRAINED (constrained-full, 2026-08-03): greedy constrained sessions ride
     // spec bursts — the grammar truncates acceptance AFTER the exactness verify and forces
-    // the masked argmax at the cut slot (generate_spec_session_constrained). Sampled
+    // the masked argmax at the cut slot (generate_spec_session_constrained_prime_split). Sampled
     // constrained and the MEMRA_CONSTRAIN_HOST oracle keep plain decode.
     // The request-conditioned K policy owns the placement/concurrency decision: K=0 takes
     // plain decode, while positive K remains subject to the correctness eligibility checks.
@@ -40749,8 +40749,8 @@ fn gemma4_batched_decode_model(lm: &LoadedModel) -> bool {
 /// BATCHED-DECODE carve-out for mHC (HyperConnections) trunks (lane/glm53-batched-decode,
 /// 2026-08-28): the engine's `decode_step_batch_hyper` walk — batched hc glue + MoE, per-
 /// session mixers, decode-exact seams, gate `glm5-hyper-batch-gate` — serves these sessions
-/// in batched chunks. OPT-IN (`MEMRA_HYPER_BATCH=1`, default OFF) until serving-box receipts
-/// land; the kill switch returns every session to the eager per-session decode. Like the
+/// in batched chunks. DEFAULT ON since 2026-08-31 (the hbatch-battery box receipts);
+/// `MEMRA_HYPER_BATCH=0` returns every session to the eager per-session decode. Like the
 /// gemma4 carve-out, ONLY the two decode scheduling sites consume this: prime batching,
 /// graph promotion, and every speculative entry point stay eager-only for this topology.
 fn hyper_batched_decode_model(lm: &LoadedModel) -> bool {

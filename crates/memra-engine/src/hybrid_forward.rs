@@ -27,26 +27,15 @@ pub struct PrimeSlabs {
     pub xb: CudaSlice<f32>,
     pub h16: CudaSlice<u8>,
     pub z16: CudaSlice<u8>,
-    /// piecewise boundary slabs (increment 2): GEMM outputs land here so the
-    /// downstream captured segments see fixed addresses.
+    /// piecewise boundary slabs (increment 2): GEMM outputs land here at fixed, retained
+    /// addresses instead of a fresh allocation per call.
     pub gate: CudaSlice<f32>, // t * n_ff_max
     pub up: CudaSlice<f32>,      // t * n_ff_max
     pub ffn_out: CudaSlice<f32>, // t * n_embd
-    /// piecewise increment 3: per-layer S-glue segment graphs (down-add + next
-    /// attn-norm, ALL-slab IO, zero in-graph allocations -> keeperless capture is
-    /// clean). Baked at this t_cap; replay only when t == t_cap. seg_glue[il] fires
-    /// between layer il and il+1 (ping-pong parity is deterministic per il).
-    pub seg_glue: Vec<Option<cudarc::driver::CudaGraph>>,
-    /// increment 5 (core-split edition): the mixer out-GEMM writes _into_ `mixed`
-    /// directly (no staging copy — the increment-4 copy route was refuted), making
-    /// S-mid [add + post-norm] all-slab and capturable.
-    pub mixed: CudaSlice<f32>,
-    pub seg_mid: Vec<Option<cudarc::driver::CudaGraph>>,
-    pub seg_t: usize,
 }
 
-// Split prime ranges cannot enter the full-range segment-graph arm, and every slab access
-// is serialized by its device mutex after binding that device's CUDA context on the thread.
+// Every slab access is serialized by its device mutex after binding that device's CUDA
+// context on the thread.
 unsafe impl Send for PrimeSlabs {}
 
 /// Shared-expert gate+up at t==1: NVFP4 fused2 (the ornith15/qwen35moe NVFP4 mints keep
@@ -813,8 +802,6 @@ fn hyper_decode_ws_on() -> bool {
         && std::env::var("MEMRA_HC_DECODE_WS").as_deref() == Ok("1")
 }
 
-/// Engagement counter for the workspace walk — the receipt the gate and any box A/B arm
-/// must show (engagement lines are receipts, never inferred).
 /// Symmetric TP walk engagements (`MEMRA_GLM5_TP_SYMMETRIC`; gate non-vacuity, box receipt).
 pub static GLM5_TP_SYM_DISPATCHES: std::sync::atomic::AtomicU64 =
     std::sync::atomic::AtomicU64::new(0);
@@ -833,6 +820,8 @@ pub(crate) enum SymMixed<'a> {
 /// afterwards but never silently the first time.
 pub static GLM5_TP_SYM_DECLINED: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(false);
+/// Engagement counter for the workspace walk — the receipt the gate and any box A/B arm
+/// must show (engagement lines are receipts, never inferred).
 pub static HC_DECODE_WS_DISPATCHES: std::sync::atomic::AtomicU64 =
     std::sync::atomic::AtomicU64::new(0);
 
@@ -872,53 +861,6 @@ fn mla_tc_prefill_enabled() -> bool {
         .unwrap_or(true)
 }
 
-/// `MEMRA_HYPER_PRIME_V2` — the mHC PRIME schedule door (lane/b200-prefill-roofline-20260902,
-/// **default OFF**; named `MEMRA_HYPER_PRIME_V2` until 2026-11-03). It is host-side scheduling,
-/// so it is not build-gated like the B200 kernel doors: it runs on any build, and its receipts
-/// are from a B200 pair (the per-hardware law: another rig owes its own A/B before a default
-/// moves there). The old name refuses at server boot (env audit). It arms two changes to the
-/// HyperConnections prime and nothing else; decode, spec, batch and every non-hyper trunk are
-/// untouched by construction (the only two call sites are `hyper_prime_ranges` and
-/// `prime_cache_hyper`'s pp branch).
-///
-/// WHY, measured. `prime_chunk_tokens` applies the `PRIME_PIPE_MICROBATCHES = 8` geometry
-/// whenever a PP-2 stage fence exists, so a 4096-token glm5 prime splits into EIGHT calls. That
-/// geometry belongs to [`HybridModel::prime_cache_pp2_pipelined`], the SERIAL trunk's
-/// microbatched PP-2 prime — the hyper walk has never called it, so glm5 pays the split and
-/// collects none of the overlap. The split is not free: every one of the 288 experts is hit at
-/// any width past a few hundred tokens, so a MoE layer reads its WHOLE 4.08 GB slab once per
-/// CALL. Eight calls read 1,369.8 GB where one reads 171.2 GB; the HBM floor rises 21.4 ->
-/// 171.2 ms, the 4k prime crosses from compute-bound to memory-bound (854 -> 107 FLOP/B against
-/// a B200 ridge of 275), and pairs-per-expert falls 113.8 -> 14.2, under the grouped GEMM's
-/// `MEMRA_F16G_SK_CROSS` 64-row tile crossover. The 41.9k prime, whose chunk clamps at
-/// `PRIME_CHUNK_MAX_TOKENS` instead, runs 3.3x more efficient per FLOP on the same binary
-/// (87.0 vs 26.6 TFLOP/s) — the same fact from the other side. Arithmetic:
-/// `research/b200-prefill-roofline-20260902/roofline.py`.
-///
-/// ARM 1 (schedule): `hyper_prime_ranges` takes the natural chunk
-/// (`PRIME_CHUNK_MAX_TOKENS`, the same clamp the 41.9k prime already gets) instead of the
-/// microbatch geometry. An explicit `MEMRA_PRIME_CHUNK` stays authoritative and turns this arm
-/// off for that call, so the operator override is never overridden.
-/// ARM 2 (pipeline): with two or more chunks the ppN prime runs
-/// [`HybridModel::prime_cache_hyper_pp2_pipelined`] — stage 0 of chunk k+1 on device 0 while
-/// stage 1 of chunk k runs on device 1, on two scoped host threads over disjoint per-stage
-/// caches. Two threads are REQUIRED, not a style choice: the grouped MoE prefill's sigmoid
-/// host-oracle drains the stage stream once per layer, so two CUDA streams on one host thread
-/// serialize however the calls are ordered (the same finding `prime_cache_pp2_pipelined`
-/// records for the serial trunk).
-///
-/// NUMERIC CLASS. Arm 1 is NOT bit-identical and no chunk-size change on this trunk ever was:
-/// `Engine::linear` — the cuBLASLt f32 mixes GEMM in `hyper::pre` — is not m-invariant, the
-/// arms diverge at ROW 0 where no cross-token state can reach, and `hyper_prime_ranges`' own
-/// header documents the near-tie. The bar is the calibrated band
-/// `tests/glm5_chunked_prime_gpu.rs` already holds the chunked prime to (relative maxdiff
-/// <= 2e-5, five orders below the 1.813e0 signature of a real chunk-invariance defect) plus
-/// argmax equality. Arm 2 IS bit-identical by construction: same ranges, same per-chunk
-/// program, same operand bytes — only which host thread issues a stage and when changes.
-///
-/// Read PER CALL (the `MEMRA_MLA_TC_PREFILL` rollback-seam precedent): `glm5-prime-v2-gate`
-/// flips both arms inside one process, and a latched flag would make the second arm a copy of
-/// the first.
 /// Where `hyper_range_prime` finds the DFlash2 hc tap sink for the walk it is running.
 ///
 /// The serial walks read it from the cache, exactly as before. The PIPELINED prime cannot:
@@ -983,19 +925,66 @@ pub(crate) fn hyper_pipe_tap_refusal(
     )
 }
 
+/// `MEMRA_HYPER_PRIME_V2` — the mHC PRIME schedule door (lane/b200-prefill-roofline-20260902,
+/// **default OFF**; named `MEMRA_HYPER_PRIME_V2` until 2026-11-03). It is host-side scheduling,
+/// so it is not build-gated like the B200 kernel doors: it runs on any build, and its receipts
+/// are from a B200 pair (the per-hardware law: another rig owes its own A/B before a default
+/// moves there). The old name refuses at server boot (env audit). It arms two changes to the
+/// HyperConnections prime and nothing else; decode, spec, batch and every non-hyper trunk are
+/// untouched by construction (the only two call sites are `hyper_prime_ranges` and
+/// `prime_cache_hyper`'s pp branch).
+///
+/// WHY, measured. `prime_chunk_tokens` applies the `PRIME_PIPE_MICROBATCHES = 8` geometry
+/// whenever a PP-2 stage fence exists, so a 4096-token glm5 prime splits into EIGHT calls. That
+/// geometry belongs to [`HybridModel::prime_cache_pp2_pipelined`], the SERIAL trunk's
+/// microbatched PP-2 prime — the hyper walk has never called it, so glm5 pays the split and
+/// collects none of the overlap. The split is not free: every one of the 288 experts is hit at
+/// any width past a few hundred tokens, so a MoE layer reads its WHOLE 4.08 GB slab once per
+/// CALL. Eight calls read 1,369.8 GB where one reads 171.2 GB; the HBM floor rises 21.4 ->
+/// 171.2 ms, the 4k prime crosses from compute-bound to memory-bound (854 -> 107 FLOP/B against
+/// a B200 ridge of 275), and pairs-per-expert falls 113.8 -> 14.2, under the grouped GEMM's
+/// `MEMRA_F16G_SK_CROSS` 64-row tile crossover. The 41.9k prime, whose chunk clamps at
+/// `PRIME_CHUNK_MAX_TOKENS` instead, runs 3.3x more efficient per FLOP on the same binary
+/// (87.0 vs 26.6 TFLOP/s) — the same fact from the other side. Arithmetic:
+/// `research/b200-prefill-roofline-20260902/roofline.py`.
+///
+/// ARM 1 (schedule): `hyper_prime_ranges` takes the natural chunk
+/// (`PRIME_CHUNK_MAX_TOKENS`, the same clamp the 41.9k prime already gets) instead of the
+/// microbatch geometry. An explicit `MEMRA_PRIME_CHUNK` stays authoritative and turns this arm
+/// off for that call, so the operator override is never overridden.
+/// ARM 2 (pipeline): with two or more chunks the ppN prime runs
+/// [`HybridModel::prime_cache_hyper_pp2_pipelined`] — stage 0 of chunk k+1 on device 0 while
+/// stage 1 of chunk k runs on device 1, on two scoped host threads over disjoint per-stage
+/// caches. Two threads are REQUIRED, not a style choice: the grouped MoE prefill's sigmoid
+/// host-oracle drains the stage stream once per layer, so two CUDA streams on one host thread
+/// serialize however the calls are ordered (the same finding `prime_cache_pp2_pipelined`
+/// records for the serial trunk).
+///
+/// NUMERIC CLASS. Arm 1 is NOT bit-identical and no chunk-size change on this trunk ever was:
+/// `Engine::linear` — the cuBLASLt f32 mixes GEMM in `hyper::pre` — is not m-invariant, the
+/// arms diverge at ROW 0 where no cross-token state can reach, and `hyper_prime_ranges`' own
+/// header documents the near-tie. The bar is the calibrated band
+/// `tests/glm5_chunked_prime_gpu.rs` already holds the chunked prime to (relative maxdiff
+/// <= 2e-5, five orders below the 1.813e0 signature of a real chunk-invariance defect) plus
+/// argmax equality. Arm 2 IS bit-identical by construction: same ranges, same per-chunk
+/// program, same operand bytes — only which host thread issues a stage and when changes.
+///
+/// Read PER CALL (the `MEMRA_MLA_TC_PREFILL` rollback-seam precedent): `glm5-prime-v2-gate`
+/// flips both arms inside one process, and a latched flag would make the second arm a copy of
+/// the first.
 pub fn hyper_prime_v2_on() -> bool {
     std::env::var("MEMRA_HYPER_PRIME_V2").as_deref() == Ok("1")
 }
 
-/// Chunks primed through the pipelined mHC PP-2 walk. The engagement receipt arm 2's
-/// non-vacuity assertion reads: bit identity between two walks that both ran SERIALLY is
-/// vacuous, so the gate requires this to advance.
 /// Prime calls whose schedule was decided by `MEMRA_HYPER_PRIME_V2` arm 1 (the natural chunk).
 /// The engagement counter the gate reads: an armed door that changed no schedule is the exact
 /// failure this lane was written to catch, so "the flag was set" is never the receipt.
 pub static HYPER_PRIME_NATURAL_SCHEDULES: std::sync::atomic::AtomicU64 =
     std::sync::atomic::AtomicU64::new(0);
 
+/// Chunks primed through the pipelined mHC PP-2 walk. The engagement receipt arm 2's
+/// non-vacuity assertion reads: bit identity between two walks that both ran SERIALLY is
+/// vacuous, so the gate requires this to advance.
 pub static HYPER_PRIME_PIPELINED_CHUNKS: std::sync::atomic::AtomicU64 =
     std::sync::atomic::AtomicU64::new(0);
 
@@ -1135,8 +1124,6 @@ fn moe_dev_enabled() -> bool {
     })
 }
 
-/// Device sigmoid top-k is the default for Step-3.7 / M3 / Hy3 / GLM-DSA. `MEMRA_SIG_ROUTER=0` restores
-/// the full-logit DtoH plus `moe_route_sigmoid_host` oracle without changing expert dispatch.
 /// Where the verify-rows MoE pair's routed selection lives for one layer-call
 /// (lane/glm5-moe-loc door D). `Host` is the shipped arm: the router's pinned readback gave the
 /// host `sel`/`w`, and the host builds the pointer/scale tables. `Dev` is door D's arm: the
@@ -1148,6 +1135,8 @@ enum VrowsSel<'a> {
     Dev(&'a CudaSlice<i32>, &'a CudaSlice<f32>),
 }
 
+/// Device sigmoid top-k is the default for Step-3.7 / M3 / Hy3 / GLM-DSA. `MEMRA_SIG_ROUTER=0` restores
+/// the full-logit DtoH plus `moe_route_sigmoid_host` oracle without changing expert dispatch.
 pub(crate) fn sigmoid_router_enabled() -> bool {
     static E: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *E.get_or_init(|| {
@@ -1645,14 +1634,10 @@ fn hyper_prime_ranges_natural(t: usize, gdn_grid: bool, ring_on: bool) -> Vec<(u
     ranges
 }
 
-/// The largest number of token rows any ONE mHC prime call carries under
-/// [`hyper_prime_ranges`]. Every per-call transient in the walk — the `t*streams*hidden` stream
-/// state, the MLA query planes, and the DSA indexer's `t * n_pools` score plane — is
-/// proportional to this, so it is the single number a capacity assertion needs.
 /// Admission workspace shape of the NON-hyper prime (memra#144): the GDN / dense-MoE trunk
 /// (ornith, qwen-hybrid) and the step-TP trunk (step-3.7). `prime_layers` keeps its trunk
 /// transients in the retained prime slab pool sized by the CALL's row count
-/// (`prime_slabs_get`): seven f32 `[t, n_embd]` planes (h, x1, z, xa, xb, ffn_out, mixed),
+/// (`prime_slabs_get`): six f32 `[t, n_embd]` planes (h, x1, z, xa, xb, ffn_out),
 /// two f16 mirrors (h16, z16), three f32 `[t, n_ff_max]` planes (act, gate, up), plus the
 /// per-call f16 activation (`a16`), the f16 pre-norm operand, and the `x`/`hn` copies the
 /// tail takes. The whole-prompt `hiddens` stack (`[t, n_embd]` f32) lives for the prime.
@@ -1699,6 +1684,10 @@ impl PrimeWorkspaceShape {
     }
 }
 
+/// The largest number of token rows any ONE mHC prime call carries under
+/// [`hyper_prime_ranges`]. Every per-call transient in the walk — the `t*streams*hidden` stream
+/// state, the MLA query planes, and the DSA indexer's `t * n_pools` score plane — is
+/// proportional to this, so it is the single number a capacity assertion needs.
 pub fn hyper_prime_call_rows(t: usize, n_layers: usize, gdn_grid: bool, ring_on: bool) -> usize {
     hyper_prime_ranges(t, n_layers, gdn_grid, ring_on)
         .iter()
@@ -1852,25 +1841,6 @@ static DEV1_ROUTER_REPS: std::sync::Mutex<
     Option<(
         std::collections::HashMap<u16, (CudaSlice<f32>, CudaSlice<f32>, CudaSlice<u8>)>,
         Option<CudaSlice<f32>>,
-    )>,
-> = std::sync::Mutex::new(None);
-
-/// SHEXP-ON-DEV1 workspace (MEMRA_SHEXP_DEV1): replica weights + scratch on rank1, the
-/// down row lands ROOT-resident over P2P (single store pass), and apply adds it on e
-/// behind ev_done. (pins, wg1, wu1, wd1, act1, sh_root, ev_z, ev_done).
-#[allow(clippy::type_complexity)]
-static SHEXP_D1_REPS: std::sync::Mutex<
-    Option<std::collections::HashMap<u16, (CudaSlice<u8>, CudaSlice<u8>, CudaSlice<u8>)>>,
-> = std::sync::Mutex::new(None);
-#[allow(clippy::type_complexity)]
-static SHEXP_D1_WS: std::sync::Mutex<
-    Option<(
-        (usize, usize),
-        CudaSlice<f32>,
-        CudaSlice<f32>,
-        CudaSlice<f32>,
-        cudarc::driver::CudaEvent,
-        cudarc::driver::CudaEvent,
     )>,
 > = std::sync::Mutex::new(None);
 
@@ -2085,7 +2055,7 @@ impl HybridModel {
     /// each prime_layers stage and accumulates wall time per stage class, printed after
     /// every prime_layers call (cumulative across chunks/reps). The per-stage syncs
     /// serialize launch/execute overlap, so the summed total exceeds the naked prime wall —
-    /// attribution ratios only, never a measured default run. Non-seg serial arm only.
+    /// attribution ratios only, never a measured default run.
     fn prime_anatomy_on() -> bool {
         static E: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
         *E.get_or_init(|| std::env::var("MEMRA_PRIME_ANATOMY").as_deref() == Ok("1"))
@@ -2481,6 +2451,48 @@ impl HybridModel {
         Ok((logits, h_seed, hiddens))
     }
 
+    /// memra#144: the workspace shape of the non-hyper prime; `None` on the hyper trunk,
+    /// which publishes `hyper_prime_workspace_shape` instead. Mirrors `prime_layers`'
+    /// `n_ff_max` rule (the widest dense FFN, never below `n_embd`).
+    pub fn prime_workspace_shape(&self) -> Option<PrimeWorkspaceShape> {
+        if self.hyper.is_some() {
+            return None;
+        }
+        let h = self.cfg.n_embd as usize;
+        let n_ff_max = self
+            .layers
+            .iter()
+            .map(|l| match &l.ffn {
+                crate::hybrid::Ffn::Dense { ffn_gate, .. } => ffn_gate.out_features(),
+                _ => h,
+            })
+            .max()
+            .unwrap_or(h)
+            .max(h);
+        let f32b = std::mem::size_of::<f32>();
+        // slab planes: 6 f32 + 2 f16 on n_embd, 3 f32 on n_ff; per-call extras: a16 (f16 ff),
+        // the f16 pre-norm operand (n_embd), and the x / hn copies (2 f32 n_embd).
+        let mut call_row_bytes =
+            (6 + 2) * h * f32b + (2 + 1) * h * 2 + 3 * n_ff_max * f32b + n_ff_max * 2;
+        // Routed-expert staging per row (the grouped f16 GEMM path in `moe_ffn_inner`): the
+        // gathered inputs, three projection planes with f16 mirrors, the down output and
+        // the scatter/partial planes, all sized by the USED expert count and the expert FFN
+        // width. Same term the hyper shape charges. Calibrated 2026-09-04 on ornith (h 2048,
+        // 8 of 256 experts, expert ff 512): the dense planes alone priced 120 KB/row against
+        // a measured 345 KB/row monolithic peak; this term is the missing 221 KB/row.
+        if let Some(moe) = self.cfg.moe.as_ref() {
+            let u = moe.expert_used_count as usize;
+            let f = moe.expert_ff_length as usize;
+            call_row_bytes += u * (10 * h + 14 * f);
+        }
+        Some(PrimeWorkspaceShape {
+            call_row_bytes,
+            prompt_row_bytes: h * f32b,
+            n_layers: self.layers.len(),
+            swa_ring: self.swa_ring_on(),
+        })
+    }
+
     /// Publish this model's prefill-workspace coefficients to admission
     /// (lane/glm5-gpf-workspace, 2026-08-30). `None` for every non-hyper trunk — the server's
     /// admission arithmetic is then byte-identical to the pre-lane behavior for that family.
@@ -2505,48 +2517,6 @@ impl HybridModel {
     /// (vramwatch.csv: +6.3 GiB across the 8,072-token prime) — the formula sits above the
     /// measurement, never below it. The ctx-coupled score plane and the prompt-long hiddens
     /// stack are separate coefficients on the shape; see [`HyperPrimeWorkspaceShape`].
-    /// memra#144: the workspace shape of the non-hyper prime; `None` on the hyper trunk,
-    /// which publishes `hyper_prime_workspace_shape` instead. Mirrors `prime_layers`'
-    /// `n_ff_max` rule (the widest dense FFN, never below `n_embd`).
-    pub fn prime_workspace_shape(&self) -> Option<PrimeWorkspaceShape> {
-        if self.hyper.is_some() {
-            return None;
-        }
-        let h = self.cfg.n_embd as usize;
-        let n_ff_max = self
-            .layers
-            .iter()
-            .map(|l| match &l.ffn {
-                crate::hybrid::Ffn::Dense { ffn_gate, .. } => ffn_gate.out_features(),
-                _ => h,
-            })
-            .max()
-            .unwrap_or(h)
-            .max(h);
-        let f32b = std::mem::size_of::<f32>();
-        // slab planes: 7 f32 + 2 f16 on n_embd, 3 f32 on n_ff; per-call extras: a16 (f16 ff),
-        // the f16 pre-norm operand (n_embd), and the x / hn copies (2 f32 n_embd).
-        let mut call_row_bytes =
-            (7 + 2) * h * f32b + (2 + 1) * h * 2 + 3 * n_ff_max * f32b + n_ff_max * 2;
-        // Routed-expert staging per row (the grouped f16 GEMM path in `moe_ffn_inner`): the
-        // gathered inputs, three projection planes with f16 mirrors, the down output and
-        // the scatter/partial planes, all sized by the USED expert count and the expert FFN
-        // width. Same term the hyper shape charges. Calibrated 2026-09-04 on ornith (h 2048,
-        // 8 of 256 experts, expert ff 512): the dense planes alone priced 120 KB/row against
-        // a measured 345 KB/row monolithic peak; this term is the missing 221 KB/row.
-        if let Some(moe) = self.cfg.moe.as_ref() {
-            let u = moe.expert_used_count as usize;
-            let f = moe.expert_ff_length as usize;
-            call_row_bytes += u * (10 * h + 14 * f);
-        }
-        Some(PrimeWorkspaceShape {
-            call_row_bytes,
-            prompt_row_bytes: h * f32b,
-            n_layers: self.layers.len(),
-            swa_ring: self.swa_ring_on(),
-        })
-    }
-
     pub fn hyper_prime_workspace_shape(&self) -> Option<HyperPrimeWorkspaceShape> {
         let topology = self.hyper.as_ref()?;
         let h = self.cfg.n_embd as usize;
@@ -5478,7 +5448,7 @@ impl HybridModel {
     ///   (a) full-attn layers append their T post-RoPE K/V rows into `cache.kv[il]` via the SAME
     ///       per-row quantize kernel as the decode append (bit-identical cache bytes per row);
     ///   (b) linear layers run STATEFULLY from the cache's current recurrent state (zero at a
-    ///       fresh prime): carried-ring conv (ssm_conv1d_tm_state) + ONE gdn_scan(state_in,
+    ///       fresh prime): carried-ring conv + ONE gdn_scan(state_in,
     ///       state_out) whose internal sequential t-loop equals T chained T=1 steps — but with
     ///       the NORMAL prefill matmul dispatch (GEMM at m>=16), NOT the decode-exact MMVQ the
     ///       spec verify uses (prime is a prefill-regime pass; the run-gen prefill==decode
@@ -6643,8 +6613,7 @@ impl HybridModel {
                 + s.xb.len()
                 + s.gate.len()
                 + s.up.len()
-                + s.ffn_out.len()
-                + s.mixed.len();
+                + s.ffn_out.len();
             f32s * 4 + s.h16.len() + s.z16.len()
         })
     }
@@ -6678,10 +6647,6 @@ impl HybridModel {
                     gate: e.uninit(t * n_ff_max)?,
                     up: e.uninit(t * n_ff_max)?,
                     ffn_out: e.uninit(t * n_embd)?,
-                    seg_glue: Vec::new(),
-                    mixed: e.uninit(t * n_embd)?,
-                    seg_mid: Vec::new(),
-                    seg_t: 0,
                 })),
             );
         }
@@ -6824,9 +6789,7 @@ impl HybridModel {
     ///     kernel-check-pinned `add_rms_norm == add then rms_norm` identity, the same law
     ///     the decode split rests on (`prime-split-gate` arbitrates end-to-end);
     ///   - prime slabs are PER-DEVICE (`prime_slabs_get` keys on the engine ordinal), so
-    ///     each stage walks through its own resident transients;
-    ///   - the S-glue/S-mid capture path requires the FULL range (its lookahead fuses
-    ///     `self.layers[il+1]` unconditionally) — `use_seg` gains `lo == 0 && hi == n_layers`.
+    ///     each stage walks through its own resident transients.
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn prime_layers(
         &self,
@@ -6887,14 +6850,6 @@ impl HybridModel {
             &mut CudaSlice<f32>,
             Option<SlabRefs>,
         );
-        #[allow(clippy::type_complexity)]
-        // allow: one-shot composite type; naming it would hide the shape that matters at the call site
-        let mut seg: Option<(
-            &mut Vec<Option<cudarc::driver::CudaGraph>>,
-            &mut Vec<Option<cudarc::driver::CudaGraph>>,
-            &mut CudaSlice<f32>,
-            &mut usize,
-        )> = None;
         let mut x_own2;
         match slab_guard.as_mut() {
             Some(g) => {
@@ -6912,15 +6867,10 @@ impl HybridModel {
                     gate,
                     up,
                     ffn_out,
-                    seg_glue,
-                    mixed,
-                    seg_mid,
-                    seg_t,
                     ..
                 } = slabs;
                 x_cur = xa;
                 x_nxt = xb;
-                seg = Some((seg_glue, seg_mid, mixed, seg_t));
                 sl = Some((h, x1, z, act, h16, z16, gate, up, ffn_out));
             }
             None => {
@@ -6985,48 +6935,8 @@ impl HybridModel {
                 sl_fo = &mut alloc_fo;
             }
         }
-        // piecewise increment 3: layer-0 norm hoisted; the per-layer tail fuses
-        // [down-add + NEXT layer's attn-norm] into one captured S-glue segment
-        // (all-slab IO, zero in-graph allocations). Capture happens lazily on the
-        // first prime at this t (capture does not execute -> launch right after).
-        let n_layers = self.layers.len();
-        // OPT-IN (2026-07-26 interleaved verdict): 2-kernel segments measured NET
-        // -0.7%-to-neutral under the interleaved A/B protocol — one cuGraphLaunch costs
-        // about what two kernel submissions do. The earlier "+0.9%" was cross-run clock
-        // drift (the repo's interleaved-A/B law exists for exactly this). Larger segments
-        // (S-prep/S-attn, 7-9 kernels) remain the open hypothesis; the core-split
-        // machinery stays (byte-identical) as their foundation.
-        // step35 is excluded: the core-split path calls `full_attn_prime_core_inner`, which is
-        // the GENERIC attn core (uniform n_head, rope_dim_count, no window, no head-wise gate).
-        // step35 rides its own mixer through the normal per-layer arm below.
-        let use_seg = f16fuse
-            && seg.is_some()
-            && !self.uses_sliding_gated_moe_program()
-            && lo == 0
-            && hi == n_layers
-            && std::env::var("MEMRA_PRIME_SEG").as_deref() == Ok("1")
-            // GRAPH-LAUNCH HEADROOM GUARD (see spec::GRAPH_LAUNCH_MIN_FREE): below the
-            // driver-free floor this prime call takes the eager fused else-arm (the
-            // byte-identical twin the opt-in was gated against) instead of replaying
-            // the S-mid/S-glue segment graphs into an exhausted card. Probe runs only
-            // when the opt-in flag is armed (short-circuit order).
-            && {
-                let ok = crate::spec::graph_launch_headroom_ok(e);
-                if !ok {
-                    static NOTED: std::sync::Once = std::sync::Once::new();
-                    NOTED.call_once(|| crate::spec::graph_replay_suspended_note("prime-seg"));
-                }
-                ok
-            };
-        if let Some((sg, sm, _, st)) = seg.as_mut()
-            && **st != t
-        {
-            sg.clear();
-            sg.extend((0..n_layers).map(|_| None));
-            sm.clear();
-            sm.extend((0..n_layers).map(|_| None));
-            **st = t;
-        }
+        // Layer-`lo` norm hoisted; the per-layer tail fuses [down-add + NEXT layer's
+        // attn-norm] into one launch (`add_rms_norm_f16out`).
         {
             let layer_lo = &self.layers[lo];
             if f16fuse {
@@ -7067,104 +6977,43 @@ impl HybridModel {
             crate::qwen_prime_graph::set_layer(il);
             let layer = &self.layers[il];
             let hx16 = if f16fuse { Some(&*h16) } else { None };
-            if use_seg {
-                // core-split path: projections -> _inner core -> out-GEMM INTO the mixed
-                // slab (no copies) -> S-mid segment [add + post-norm] as one graph launch.
-                let (pre, pre16, w_out) = match &layer.mixer {
-                    Mixer::Full(fa) => {
-                        let g3 =
-                            e.matmul_group_prefill_xh(&[&fa.wq, &fa.wk, &fa.wv], h, hx16, t)?;
-                        let (pre, pre16) =
-                            self.full_attn_prime_core_inner(e, fa, g3, pos_d, t, cache, il)?;
-                        (pre, pre16, &fa.wo)
-                    }
-                    Mixer::Mla(_) => crate::hybrid::mla_path_unimplemented("core-split prime"),
-                    Mixer::Kda(_) => {
-                        crate::hybrid::kda_path_unimplemented("core-split captured prime")
-                    }
-                    Mixer::Linear(la) => {
-                        let ws = [&la.wqkv, &la.wqkv_gate, &la.ssm_beta, &la.ssm_alpha];
-                        let g4 = e.matmul_group_prefill_xh(&ws, h, hx16, t)?;
-                        let (pre, pre16) =
-                            self.linear_attn_prime_core_pad_inner(e, la, g4, t, cache, il, None)?;
-                        (pre, pre16, &la.ssm_out)
-                    }
-                };
-                {
-                    let (_, sm, mslab, _) = seg.as_mut().unwrap();
-                    let pre_n = pre.len() / t;
-                    // Build the f16 operand only for a weight the f16 GEMM can take.
-                    let f16_used = if Engine::f16_mirror_prefill(w_out) {
-                        let xh_pre = match pre16 {
-                            Some(x) => x,
-                            None => e.f16_act(&pre, t * pre_n)?,
-                        };
-                        e.try_f16_gemm_pre_into_prefill(w_out, &xh_pre, t, mslab)?
-                    } else {
-                        false
-                    };
-                    if !f16_used {
-                        let y = e.matmul_prefill(w_out, &pre, t)?;
-                        e.copy_into(mslab, 0, &y, t * n_embd)?;
-                    }
-                    if sm[il].is_none() {
-                        use cudarc::driver::sys::{CUgraphInstantiate_flags, CUstreamCaptureMode};
-                        let w_post = layer.post_attn_norm.float_data();
-                        e.stream().synchronize()?;
-                        e.stream()
-                            .begin_capture(CUstreamCaptureMode::CU_STREAM_CAPTURE_MODE_RELAXED)?;
-                        let r = (|| -> Result<(), Box<dyn std::error::Error>> {
-                            e.add(x_cur, mslab, x1, t * n_embd)?;
-                            e.rms_norm_f16out(x1, w_post, z, z16, n_embd, t, eps)?;
-                            Ok(())
-                        })();
-                        let g = e.stream().end_capture(
-                            CUgraphInstantiate_flags::CUDA_GRAPH_INSTANTIATE_FLAG_AUTO_FREE_ON_LAUNCH);
-                        r?;
-                        sm[il] = Some(g?.ok_or("S-mid capture produced no graph")?);
-                    }
-                    sm[il].as_ref().unwrap().launch()?;
+            let mixed = match &layer.mixer {
+                Mixer::Full(fa) => {
+                    let y = self.full_attn_prime(e, fa, h, hx16, pos_d, t, cache, il, seq_end)?;
+                    anat_mark!(0);
+                    y
                 }
+                Mixer::Linear(la) => {
+                    let y = self.linear_attn_prime(e, la, h, hx16, t, cache, il)?;
+                    anat_mark!(1);
+                    y
+                }
+                Mixer::Mla(mla) => self.mla_attn_cached(e, mla, h, pos_d, t, il, cache)?,
+                Mixer::Kda(la) => {
+                    let y = crate::kda::kda_prime_cached(e, la, h, t, eps, cache, il)?;
+                    anat_mark!(1);
+                    y
+                }
+            };
+            if f16fuse {
+                // round 28: residual+norm in ONE kernel (add_rms_norm precedent,
+                // bit-identical) — the standalone add pass disappears.
+                e.add_rms_norm_f16out(
+                    x_cur,
+                    &mixed,
+                    layer.post_attn_norm.float_data(),
+                    x1,
+                    z,
+                    z16,
+                    n_embd,
+                    t,
+                    eps,
+                )?;
             } else {
-                let mixed = match &layer.mixer {
-                    Mixer::Full(fa) => {
-                        let y =
-                            self.full_attn_prime(e, fa, h, hx16, pos_d, t, cache, il, seq_end)?;
-                        anat_mark!(0);
-                        y
-                    }
-                    Mixer::Linear(la) => {
-                        let y = self.linear_attn_prime(e, la, h, hx16, t, cache, il)?;
-                        anat_mark!(1);
-                        y
-                    }
-                    Mixer::Mla(mla) => self.mla_attn_cached(e, mla, h, pos_d, t, il, cache)?,
-                    Mixer::Kda(la) => {
-                        let y = crate::kda::kda_prime_cached(e, la, h, t, eps, cache, il)?;
-                        anat_mark!(1);
-                        y
-                    }
-                };
-                if f16fuse {
-                    // round 28: residual+norm in ONE kernel (add_rms_norm precedent,
-                    // bit-identical) — the standalone add pass disappears.
-                    e.add_rms_norm_f16out(
-                        x_cur,
-                        &mixed,
-                        layer.post_attn_norm.float_data(),
-                        x1,
-                        z,
-                        z16,
-                        n_embd,
-                        t,
-                        eps,
-                    )?;
-                } else {
-                    e.add(x_cur, &mixed, x1, t * n_embd)?;
-                    e.rms_norm(x1, layer.post_attn_norm.float_data(), z, n_embd, t, eps)?;
-                }
-                anat_mark!(4);
+                e.add(x_cur, &mixed, x1, t * n_embd)?;
+                e.rms_norm(x1, layer.post_attn_norm.float_data(), z, n_embd, t, eps)?;
             }
+            anat_mark!(4);
             let zx16 = if f16fuse { Some(&*z16) } else { None };
             // The down projection's output when it stays where the GEMM wrote it (eager tail).
             let mut fo_owned: Option<CudaSlice<f32>> = None;
@@ -7211,11 +7060,7 @@ impl HybridModel {
                         && e.f8f4_prefill_direct(ffn_down, t);
                     if fuse_down {
                         let y = e.matmul_prefill_silu_f8f4(ffn_down, gate_src, up_src, t)?;
-                        if use_seg {
-                            e.copy_into(sl_fo, 0, &y, t * n_embd)?;
-                        } else {
-                            fo_owned = Some(y);
-                        }
+                        fo_owned = Some(y);
                     } else {
                         let act16 = if Self::f16out_on(e, t)
                             && self.cfg.m3.is_none()
@@ -7269,11 +7114,7 @@ impl HybridModel {
                             let y = e.matmul_prefill(ffn_down, &*act, t)?;
                             // The captured S-glue segment reads the slab's fixed address; the eager
                             // tail reads the GEMM output where it already is.
-                            if use_seg {
-                                e.copy_into(sl_fo, 0, &y, t * n_embd)?;
-                            } else {
-                                fo_owned = Some(y);
-                            }
+                            fo_owned = Some(y);
                         }
                     }
                 }
@@ -7286,43 +7127,20 @@ impl HybridModel {
             if let (crate::hybrid::Ffn::Dense { .. }, true) = (&layer.ffn, anat) {
                 anat_mark!(3);
             }
-            if use_seg && il + 1 < hi {
-                // S-glue segment: [add + next attn-norm(+f16out)] — one cuGraphLaunch
+            let fo: &CudaSlice<f32> = match fo_owned.as_ref() {
+                Some(y) => y,
+                None => &*sl_fo,
+            };
+            if il + 1 < hi {
                 let w_next = self.layers[il + 1].attn_norm.float_data();
-                let (sg, _, _, _) = seg.as_mut().unwrap();
-                if sg[il].is_none() {
-                    use cudarc::driver::sys::{CUgraphInstantiate_flags, CUstreamCaptureMode};
-                    e.stream().synchronize()?;
-                    e.stream()
-                        .begin_capture(CUstreamCaptureMode::CU_STREAM_CAPTURE_MODE_RELAXED)?;
-                    let r = (|| -> Result<(), Box<dyn std::error::Error>> {
-                        e.add(x1, sl_fo, x_nxt, t * n_embd)?;
-                        e.rms_norm_f16out(x_nxt, w_next, h, h16, n_embd, t, eps)?;
-                        Ok(())
-                    })();
-                    let g = e.stream().end_capture(
-                        CUgraphInstantiate_flags::CUDA_GRAPH_INSTANTIATE_FLAG_AUTO_FREE_ON_LAUNCH,
-                    );
-                    r?;
-                    sg[il] = Some(g?.ok_or("S-glue capture produced no graph")?);
-                }
-                sg[il].as_ref().unwrap().launch()?;
-            } else {
-                let fo: &CudaSlice<f32> = match fo_owned.as_ref() {
-                    Some(y) => y,
-                    None => &*sl_fo,
-                };
-                if il + 1 < hi {
-                    let w_next = self.layers[il + 1].attn_norm.float_data();
-                    if f16fuse {
-                        e.add_rms_norm_f16out(x1, fo, w_next, x_nxt, h, h16, n_embd, t, eps)?;
-                    } else {
-                        e.add(x1, fo, x_nxt, t * n_embd)?;
-                        e.rms_norm(x_nxt, w_next, h, n_embd, t, eps)?;
-                    }
+                if f16fuse {
+                    e.add_rms_norm_f16out(x1, fo, w_next, x_nxt, h, h16, n_embd, t, eps)?;
                 } else {
                     e.add(x1, fo, x_nxt, t * n_embd)?;
+                    e.rms_norm(x_nxt, w_next, h, n_embd, t, eps)?;
                 }
+            } else {
+                e.add(x1, fo, x_nxt, t * n_embd)?;
             }
             anat_mark!(4);
             // CHUNK-INVARIANCE BISECT SEAM (lane/chunk-invariance, 2026-08-05): dump the
@@ -9146,9 +8964,9 @@ impl HybridModel {
     /// STATEFUL batched linear-attention prime: `linear_attn`'s prefill-dispatch pass (normal
     /// `e.matmul` — GEMM at m>=16 — plus the prefill repack/L2/glog kernels) but with the state
     /// carried THROUGH the cache like the spec verify does: carried-ring conv
-    /// (ssm_conv1d_tm_state writes the final ring back) + ONE gdn_scan from cache.recur[il]'s
+    /// (`ssm_conv1d_gdn_state_pad`, then the ring update) + ONE gdn_scan from cache.recur[il]'s
     /// current state (zero at a fresh prime) whose final state ping-pongs back into the cache.
-    /// Wiring mirrors `linear_attn_verify_t` (spec.rs); dispatch mirrors `linear_attn` (prefill).
+    /// Dispatch mirrors `linear_attn` (prefill).
     #[allow(clippy::too_many_arguments)] // allow: the parameter list mirrors the kernel/FFI/call contract; bundling into a struct is a refactor, not a lint fix
     fn linear_attn_prime(
         &self,
@@ -10198,7 +10016,7 @@ impl HybridModel {
         let wk_b = Self::mla_split_operand(&mla.wk_b, "attn_k_b", il);
         let wv_b = Self::mla_split_operand(&mla.wv_b, "attn_v_b", il);
 
-        // MEMRA_MLA_TC_PREFILL door (default OFF; flag read per call — the rollback seam).
+        // MEMRA_MLA_TC_PREFILL door (default ON; `=0` is the rollback seam, read per call).
         // Engagement conditions, every one load-bearing:
         //   * a gathered selection exists — the door serves the DSA arm only; the dense
         //     absorbed arm (GLM-5.2, no indexer) keeps the f32 kernel it was gated on;
@@ -12637,36 +12455,11 @@ impl HybridModel {
                 static SHEXP_OV: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
                 let shexp_ov = *SHEXP_OV
                     .get_or_init(|| std::env::var("MEMRA_SHEXP_OVERLAP").as_deref() == Ok("1"));
-                // MEMRA_SHEXP_DEV1=1 (supersedes the dev0 overlap): the shared
-                // expert runs on rank1 — the idle device — same kernels, same
-                // split program, down row root-resident: bit-identical.
-                static SHEXP_D1: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-                let shexp_d1 = *SHEXP_D1
-                    .get_or_init(|| std::env::var("MEMRA_SHEXP_DEV1").as_deref() == Ok("1"))
-                    && tp.runtime.rank_engine(1).is_some();
                 // MOE TAIL FUSION M1: pre-arm the overlap ws + ones row and hand their RAW
                 // pointers to the routed run — the join add folds the shexp apply into one launch.
                 let mut ov_issued = false;
-                let mut d1_issued = false;
                 let mut tail_folded = false;
-                let mut output = if shexp_d1 {
-                    let rank1 = tp.runtime.rank_engine(1).expect("checked above");
-                    tp.runtime
-                        .run_tensor_parallel_routes_nvfp4_device_routed_prejoin(
-                            bank,
-                            e,
-                            z,
-                            sel_d,
-                            w_d,
-                            n_used,
-                            tp.activation_limit,
-                            || {
-                                d1_issued =
-                                    Self::shexp_dev1_issue(e, rank1, m, z, cfg, il, n_embd)?;
-                                Ok(())
-                            },
-                        )?
-                } else if shexp_ov {
+                let mut output = if shexp_ov {
                     // Raw sh/ones pointers for the fused tail (persistent statics;
                     // pointers stable, no lock held across the routed call). The
                     // sh CONTENT is written by the prejoin-issued kernels earlier
@@ -12717,8 +12510,6 @@ impl HybridModel {
                 }
                 if tail_folded {
                     // shexp already folded into the join add (MOE TAIL FUSION M1)
-                } else if d1_issued {
-                    Self::shexp_dev1_apply(e, &mut output, n_embd)?;
                 } else if ov_issued {
                     Self::shexp_overlap_apply(e, &mut output, n_embd)?;
                 } else {
@@ -13706,10 +13497,12 @@ impl HybridModel {
         let moe_q8 = uniform_experts && moe_q8_enabled_for_model(cfg, m);
         // Experimental secondary backend: complete experts already resident in the SLRU stay on
         // CUDA; any expert missing one or more projections runs from the original host GGUF bytes
-        // through llama.cpp CPU quant dots. Small-t only keeps decode and speculative verification
-        // in the same numeric/dispatch class; real prefill remains on the established GPU path and
-        // seeds the residency cache. An explicit library path is the build/runtime gate, so naked
-        // commands and CI have no llama.cpp or OpenMP dependency.
+        // through memra's CPU-expert companion (`tools/memra_cpu_experts.cpp`, the v2 C ABI in
+        // cpu_experts.rs: its own decoders and AVX2/AVX-VNNI dots, no external inference runtime).
+        // Small-t only keeps decode and speculative verification in the same numeric/dispatch
+        // class; real prefill remains on the established GPU path and seeds the residency cache.
+        // An explicit library path is the build/runtime gate, so naked commands and CI have no
+        // companion or OpenMP dependency.
         let cpu_expert_requested = crate::cpu_experts::configured();
         if cpu_expert_requested && (cfg.hy3.is_none() || cfg.m3.is_some()) {
             return Err(std::io::Error::other(
@@ -13718,7 +13511,7 @@ impl HybridModel {
             .into());
         }
         let cpu_hybrid = cpu_expert_requested && t < PRIME_MIN_T && m.dev_exps.is_none();
-        // A dynamic SLRU changes which complete experts run on CUDA versus llama.cpp CPU dots.
+        // A dynamic SLRU changes which complete experts run on CUDA versus the CPU companion.
         // Those backends are each deterministic but are different numeric configurations, so a
         // later prefill eviction can change greedy output. Freeze after the first real prefill;
         // decode/spec reads the fixed resident set, while later prefill misses use transient GPU
@@ -16438,14 +16231,6 @@ impl HybridModel {
         Ok(Some(out))
     }
 
-    /// Step 3 of the MoE body — SHARED EXPERT (ALWAYS-ON, no routing) on the SAME z —
-    /// qwen35moe only. OLMoE and most vanilla MoE have NO shared expert (the shexp tensors
-    /// are absent / `None`); skip it then. gate_inp_shexp is OPTIONAL: qwen35moe gates the
-    /// shared expert (sigmoid(gate_inp) x sh); MiniMax-M3 (DeepSeek-V3 class) has NO shexp
-    /// gate — the shared expert adds directly. (Extracted verbatim from the sequential body
-    /// so the glm5 EP-2 walk adds the ROOT-owned shared expert through the identical
-    /// program.)
-    #[allow(clippy::too_many_arguments)] // allow: the walk's operand set plus the routing
     /// The TP-SPLIT GROUPED PRIME (`MEMRA_GLM5_TP_SPLIT_GROUPED_PRIME`, default OFF): the EP
     /// grouped prime's per-rank program run by BOTH ranks over ALL routed pairs against the
     /// split slabs (gate/up row halves, down column halves, pointer tables minted at arm time),
@@ -16830,6 +16615,14 @@ impl HybridModel {
         }
         Ok(Some(out))
     }
+
+    /// Step 3 of the MoE body — SHARED EXPERT (ALWAYS-ON, no routing) on the SAME z —
+    /// qwen35moe only. OLMoE and most vanilla MoE have NO shared expert (the shexp tensors
+    /// are absent / `None`); skip it then. gate_inp_shexp is OPTIONAL: qwen35moe gates the
+    /// shared expert (sigmoid(gate_inp) x sh); MiniMax-M3 (DeepSeek-V3 class) has NO shexp
+    /// gate — the shared expert adds directly. (Extracted verbatim from the sequential body
+    /// so the glm5 EP-2 walk adds the ROOT-owned shared expert through the identical
+    /// program.)
     #[allow(clippy::too_many_arguments)]
     fn moe_shexp_add(
         e: &Engine,
@@ -17853,10 +17646,6 @@ impl HybridModel {
         e.qmatvec_mmq_fp8_blk_view(&weight, &scale, x, m, exps.in_f, exps.out_f)
     }
 
-    /// LAUNCH-STRUCTURE STAGE 3: the ZERO-DtoH fully-resident MoE FFN. Caller guarantees the
-    /// layer's device pointer row exists (checked under the cache lock). Router top-k runs on
-    /// device; sel/w are consumed by the `_dev` matvec twins directly; NOTHING crosses PCIe.
-    /// Same numerics as the fused-router + gdec chain (kernel-level bit-identity, see the
     /// MoE PREFILL PAIR-BATCH: host routing (sel/w like the sequential path), then 5 launches
     /// TOTAL per layer (quantize z, gate-pairs, up-pairs, silu, act-quantize, down-pairs,
     /// scatter) regardless of T or expert count. Bit-identity class: per (pair,row) dot =
@@ -18252,48 +18041,21 @@ impl HybridModel {
         let mut moe_out = e.uninit(t * n_embd)?; // scatter fully overwrites per (token,col)
         e.moe_pairs_scatter(&y_down, &pw, &toff, &tids, &mut moe_out, t, n_embd)?;
 
-        // SHARED EXPERT epilogue — same as the other paths.
+        // SHARED EXPERT epilogue at prefill width. The only caller enters with
+        // t > MOE_DEV_MAX_T and a softmax router (no step35, M3 or Hy3), so the plain batched
+        // matmuls are the whole program here.
         // gate_inp_shexp is OPTIONAL: qwen35moe gates the shared expert (sigmoid(gate_inp) x sh);
-        // MiniMax-M3 (DeepSeek-V3 class) has NO shexp gate — the shared expert adds directly.
+        // a model without the gate tensor adds the shared expert directly.
         if let (Some(gate_shexp), Some(up_shexp), Some(down_shexp)) =
             (&m.gate_shexp, &m.up_shexp, &m.down_shexp)
         {
             let n_ff_sh = gate_shexp.out_features();
-            // These decode-exact forms are required by the new Step resident arm. Keep the
-            // established grouped shared-expert program for every other architecture: widening
-            // this to Gemma changed its speculative acceptance despite green argmax gates.
-            let step_exact = true;
-            let verify_t = step_exact && t > 1 && t < PRIME_MIN_T;
-            let (sg_gate, sg_up) = if step_exact && t == 1 {
-                shexp_gate_up_t1(e, gate_shexp, up_shexp, z, None)?
-            } else if verify_t {
-                let mut fused = None;
-                if crate::spec::spec_fused_t()
-                    && (2..=4).contains(&t)
-                    && e.uses_q8_1_fast(gate_shexp)
-                    && e.uses_q8_1_fast(up_shexp)
-                {
-                    let (zq, zd) = e.quantize_q8_1(z, t, n_embd)?;
-                    fused = e.matmul_q8_fused2_t(gate_shexp, up_shexp, &zq, &zd, t)?;
-                }
-                match fused {
-                    Some(pair) => pair,
-                    None => (
-                        e.matmul_decode_exact(gate_shexp, z, t)?,
-                        e.matmul_decode_exact(up_shexp, z, t)?,
-                    ),
-                }
-            } else {
-                (e.matmul(gate_shexp, z, t)?, e.matmul(up_shexp, z, t)?)
-            };
+            let sg_gate = e.matmul(gate_shexp, z, t)?;
+            let sg_up = e.matmul(up_shexp, z, t)?;
             let mut sa = e.uninit(t * n_ff_sh)?;
             e.silu_mul(&sg_gate, &sg_up, &mut sa, t * n_ff_sh)?;
-            let sh = if verify_t {
-                e.matmul_decode_exact(down_shexp, &sa, t)?
-            } else {
-                e.matmul(down_shexp, &sa, t)?
-            };
-            // shexp gate: qwen35moe sigmoid-gates; M3 has no gate tensor -> weight 1.0.
+            let sh = e.matmul(down_shexp, &sa, t)?;
+            // shexp gate: qwen35moe sigmoid-gates; no gate tensor -> weight 1.0.
             // m-INVARIANT fused sigmoid-dot under router_prefill_exact (serve isolation,
             // lane/concat-prime-exact) — every shexp-gate arm shares the same form so a
             // dispatch choice cannot change bits.
@@ -18308,8 +18070,11 @@ impl HybridModel {
         Ok(moe_out)
     }
 
+    /// LAUNCH-STRUCTURE STAGE 3: the ZERO-DtoH fully-resident MoE FFN. Caller guarantees the
+    /// layer's device pointer row exists (checked under the cache lock). Router top-k runs on
+    /// device; sel/w are consumed by the `_dev` matvec twins directly; NOTHING crosses PCIe.
+    /// Same numerics as the fused-router + gdec chain (kernel-level bit-identity, see the
     /// kernel headers); the shared-expert epilogue is byte-identical to moe_ffn_sequential's.
-    #[allow(clippy::too_many_arguments)]
     #[allow(clippy::too_many_arguments)]
     fn moe_ffn_dev(
         e: &Engine,
@@ -18720,16 +18485,6 @@ impl HybridModel {
         Ok(moe_out)
     }
 
-    /// STAGE-2 GROUPED DECODE (2026-07-04): run ONE token's whole routed-expert FFN in TWO
-    /// launches when every one of its 3*n_used blocks is ALREADY cache-resident. Returns
-    /// Ok(true) if the grouped path ran (caller skips the sequential loop for this token);
-    /// Ok(false) on ANY miss (caller falls through — the sequential loop stages/admits as
-    /// before, so the NEXT occurrence takes the grouped path). Pointer safety: cache slots are
-    /// fixed-address for the engine's lifetime and the pure-HIT path performs no admission, so
-    /// the collected raw pointers cannot move between collection and launch (single-threaded
-    /// decode; the lock is held only for collection, launches are stream-ordered after any
-    /// prior same-stream staging writes).
-    #[allow(clippy::too_many_arguments)]
     /// q8 twin of moe_gdec_token (dp4a arc): same residency check + 2-launch shape; the fused
     /// kernels consume the pre-quantized z-row and re-quantize act per slot batch.
     #[allow(clippy::too_many_arguments)]
@@ -19691,6 +19446,15 @@ impl HybridModel {
         Ok(Some(moe_out))
     }
 
+    /// STAGE-2 GROUPED DECODE (2026-07-04): run ONE token's whole routed-expert FFN in TWO
+    /// launches when every one of its 3*n_used blocks is ALREADY cache-resident. Returns
+    /// Ok(true) if the grouped path ran (caller skips the sequential loop for this token);
+    /// Ok(false) on ANY miss (caller falls through — the sequential loop stages/admits as
+    /// before, so the NEXT occurrence takes the grouped path). Pointer safety: cache slots are
+    /// fixed-address for the engine's lifetime and the pure-HIT path performs no admission, so
+    /// the collected raw pointers cannot move between collection and launch (single-threaded
+    /// decode; the lock is held only for collection, launches are stream-ordered after any
+    /// prior same-stream staging writes).
     #[allow(clippy::too_many_arguments)] // allow: the parameter list mirrors the kernel/FFI/call contract; bundling into a struct is a refactor, not a lint fix
     fn moe_gdec_token(
         e: &Engine,
@@ -20538,160 +20302,6 @@ impl HybridModel {
         Ok(true)
     }
 
-    /// SHEXP ON DEV1 issue (MEMRA_SHEXP_DEV1=1): the shared expert runs on rank1 — the
-    /// idle device — with replica weights (one-time P2P upload), the SAME kernels and the
-    /// SAME split program as the dev0 overlap (dual matvec+SwiGLU, f32acc down), so the
-    /// values are bit-identical. z rides one 16KB P2P pull behind an e-stream event; the
-    /// down row lands root-resident (single P2P store pass); apply waits ev_done on e.
-    #[allow(clippy::too_many_arguments)]
-    #[allow(clippy::map_entry)] // allow: the init body is fallible (`?`); Entry::or_insert_with cannot propagate errors
-    fn shexp_dev1_issue(
-        e: &Engine,
-        rank1: &Engine,
-        m: &MoeWeights,
-        z: &CudaSlice<f32>,
-        cfg: &ModelConfig,
-        il: u16,
-        n_embd: usize,
-    ) -> Result<bool, Box<dyn std::error::Error>> {
-        use cudarc::driver::DevicePtr;
-        if cfg.m3.is_some() || m.gate_inp_shexp.is_some() {
-            return Ok(false);
-        }
-        let (
-            Some(crate::model::GpuTensor::FloatBf16 { data: wg, .. }),
-            Some(crate::model::GpuTensor::FloatBf16 { data: wu, .. }),
-            Some(crate::model::GpuTensor::FloatBf16 { data: wd, .. }),
-        ) = (&m.gate_shexp, &m.up_shexp, &m.down_shexp)
-        else {
-            return Ok(false);
-        };
-        let n_ff_sh = m
-            .gate_shexp
-            .as_ref()
-            .expect("matched Some above")
-            .out_features();
-        // POST-form epilogue only (see `fused_post_limit`): a PRE-clamped layer declines
-        // (Ok(false) = nothing issued, caller falls back per column).
-        let Ok(lim) = Self::fused_post_limit(cfg.clamp_shexp_at(il as u32)) else {
-            return Ok(false);
-        };
-        // Shared scratch, geometry-keyed.
-        let mut ws_guard = SHEXP_D1_WS
-            .lock()
-            .map_err(|_| "shexp dev1 workspace lock is poisoned")?;
-        if ws_guard
-            .as_ref()
-            .is_none_or(|(k, ..)| *k != (n_embd, n_ff_sh))
-        {
-            let (act1, z1, ev_done) = {
-                let _r1 = rank1.gpu.enter_main()?;
-                (
-                    rank1.htod(&vec![0.0f32; n_ff_sh])?,
-                    rank1.htod(&vec![0.0f32; n_embd])?,
-                    rank1.ctx().new_event(None)?,
-                )
-            };
-            let (sh_root, ev_z) = {
-                let _main = e.gpu.enter_main()?;
-                (e.htod(&vec![0.0f32; n_embd])?, e.ctx().new_event(None)?)
-            };
-            *ws_guard = Some(((n_embd, n_ff_sh), act1, z1, sh_root, ev_z, ev_done));
-        }
-        // Per-LAYER weight replicas (gate/up/down differ per layer): one-time P2P upload.
-        let mut reps_guard = SHEXP_D1_REPS
-            .lock()
-            .map_err(|_| "shexp dev1 replica lock is poisoned")?;
-        let reps = reps_guard.get_or_insert_with(Default::default);
-        if !reps.contains_key(&il) {
-            let (wg1, wu1, wd1) = {
-                let _r1 = rank1.gpu.enter_main()?;
-                (
-                    rank1.alloc_u8_uninit(n_ff_sh * n_embd * 2)?,
-                    rank1.alloc_u8_uninit(n_ff_sh * n_embd * 2)?,
-                    rank1.alloc_u8_uninit(n_embd * n_ff_sh * 2)?,
-                )
-            };
-            for (src, dst) in [(wg, &wg1), (wu, &wu1), (wd, &wd1)] {
-                let s_ptr = {
-                    let _main = e.gpu.enter_main()?;
-                    let stream = e.stream();
-                    let (p, _g) = src.device_ptr(&stream);
-                    p
-                };
-                let d_ptr = {
-                    let _r1 = rank1.gpu.enter_main()?;
-                    let stream = rank1.stream();
-                    let (p, _g) = dst.device_ptr(&stream);
-                    p
-                };
-                let _r1 = rank1.gpu.enter_main()?;
-                crate::tp::raw_copy_bytes(d_ptr, s_ptr, src.len(), rank1)?;
-            }
-            {
-                let _r1 = rank1.gpu.enter_main()?;
-                rank1.stream().synchronize()?;
-            }
-            reps.insert(il, (wg1, wu1, wd1));
-        }
-        let (wg1, wu1, wd1) = reps.get(&il).expect("armed above");
-        let (_, act1, z1, sh_root, ev_z, ev_done) = ws_guard.as_mut().expect("armed above");
-        // z ready on e's stream -> rank1 pulls it, runs the split shexp, pushes the down
-        // row root-side (single store pass), rings ev_done.
-        let (raw_z, raw_sh) = {
-            let _main = e.gpu.enter_main()?;
-            let stream = e.stream();
-            let (a, _g0) = z.device_ptr(&stream);
-            let (b, _g1) = sh_root.device_ptr(&stream);
-            ev_z.record(&stream)?;
-            (a, b)
-        };
-        {
-            let _r1 = rank1.gpu.enter_main()?;
-            rank1.stream().wait(ev_z)?;
-            let raw_z1 = {
-                let stream = rank1.stream();
-                let (p, _g) = z1.device_ptr(&stream);
-                p
-            };
-            crate::tp::raw_copy_bytes(raw_z1, raw_z, n_embd * 4, rank1)?;
-            rank1.matvec_bf16_dual_silu_into(wg1, wu1, z1, act1, n_embd, n_ff_sh, lim)?;
-            // down writes the ROOT-resident row over P2P via the raw-output twin of
-            // matvec_bf16_into: reuse the view launcher with a slice view is not possible
-            // cross-device, so launch on the raw pointer.
-            rank1.matvec_bf16_raw_out(wd1, act1, raw_sh, n_ff_sh, n_embd)?;
-            ev_done.record(&rank1.stream())?;
-        }
-        Ok(true)
-    }
-
-    /// Apply the dev1 shared expert: wait ev_done on e, then the exact add_scaled_rows.
-    fn shexp_dev1_apply(
-        e: &Engine,
-        output: &mut CudaSlice<f32>,
-        n_embd: usize,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        let guard = SHEXP_D1_WS
-            .lock()
-            .map_err(|_| "shexp dev1 workspace lock is poisoned")?;
-        let (pin, _, _, sh_root, _, ev_done) =
-            guard.as_ref().ok_or("shexp dev1 apply without issue")?;
-        if pin.0 != n_embd {
-            return Err("shexp dev1 width drifted".into());
-        }
-        let _main = e.gpu.enter_main()?;
-        e.stream().wait(ev_done)?;
-        static ONES_D1: std::sync::Mutex<Option<(usize, CudaSlice<f32>)>> =
-            std::sync::Mutex::new(None);
-        let mut og = ONES_D1.lock().map_err(|_| "ones lock is poisoned")?;
-        if og.as_ref().is_none_or(|(d, _)| *d != e.ctx().ordinal()) {
-            *og = Some((e.ctx().ordinal(), e.htod(&[1.0f32])?));
-        }
-        let ones = &og.as_ref().expect("armed above").1;
-        e.add_scaled_rows(sh_root, ones, output, n_embd, 1)?;
-        Ok(())
-    }
-
     /// MOE TAIL FUSION M1 helper: pre-arm the overlap ws + persistent ones row and
     /// return their RAW pointers (None when the overlap is ineligible — the caller then
     /// takes the split path). Mirrors shexp_overlap_issue's eligibility exactly.
@@ -21097,7 +20707,8 @@ impl HybridModel {
         let n_expert = moe.expert_count as usize;
         let n_used = moe.expert_used_count as usize;
         let n_ff_exp = moe.expert_ff_length as usize;
-        // step35 per-layer SwiGLU clamp; None on every other arch / unclamped layer.
+        // Routed-expert SwiGLU clamp: step35 POST on its clamped layers, glm5_next PRE on every
+        // layer; None elsewhere. `ffn_act_lim` handles both forms.
         let lim_exp = cfg.clamp_exp_at(il as u32);
 
         // 1. ROUTER: exactly the same m-invariant sigmoid selector as the sequential path
@@ -22116,11 +21727,6 @@ impl HybridModel {
         Ok(())
     }
 
-    /// gemma4 attention (R5 geometry, R7 weightless V-norm on the RAW K projection, R9 dual rope).
-    /// `cache`: Some => PRIME mode — append the T post-rope K / normed V rows into the quantized
-    /// KV cache (same per-row quantize math as the decode append) and advance len. Fresh-prompt
-    /// only (v0): attends within `tokens` via the f32 sdpa.
-    #[allow(clippy::too_many_arguments)]
     /// ONE-PROGRAM seam (lane/gemma-restore-exactness-20260819, DEFAULT OFF): route dense
     /// gemma SWA prefill attention through the WINDOWED arm at every prompt length instead of
     /// switching program at `t > sliding_window`. The door is the measured cause of the
@@ -22134,6 +21740,10 @@ impl HybridModel {
         *ON.get_or_init(|| std::env::var("MEMRA_GEMMA_FA_ONE_PROGRAM").as_deref() == Ok("1"))
     }
 
+    /// gemma4 attention (R5 geometry, R7 weightless V-norm on the RAW K projection, R9 dual rope).
+    /// `cache`: Some => PRIME mode — append the T post-rope K / normed V rows into the quantized
+    /// KV cache (same per-row quantize math as the decode append) and advance len. Fresh-prompt
+    /// only (v0): attends within `tokens` via the f32 sdpa.
     #[allow(clippy::too_many_arguments)] // allow: the parameter list mirrors the kernel/FFI/call contract; bundling into a struct is a refactor, not a lint fix
     fn gemma4_attn_prime(
         &self,
@@ -25125,15 +24735,14 @@ impl HybridModel {
         // ALLOC-FREE capture: persistent transient slots — the captured graph carries zero
         // mem nodes (the 226us/launch tax). Slots must outlive every cached graph.
         let mut slots = self.g4_dc_slots(e)?;
-        // Chunked replay ring: tokens park on-device; ONE drain sync per chunk. ring_base is
-        // baked at the door entry (the modulo keeps every capture valid indefinitely).
+        // Replay ring: the token parks on-device and the host reads it after the launch's sync.
+        // ring_base is baked at the door entry (the modulo keeps every capture valid
+        // indefinitely). One launch per sync (2026-07-23): relaunching the SAME graph exec
+        // before its prior launch completes is ILLEGAL (chunk=4 -> ILLEGAL_ADDRESS; chunk=1
+        // clean), pipelining would need alternating exec instances, and the measured payoff
+        // was ~0 (the ~200us cuGraphLaunch host cost already overlaps its own launch's GPU
+        // work; llama pays 885us/launch the same way).
         const RING: usize = 64;
-        // DRAIN pinned at 1 (2026-07-23): relaunching the SAME graph exec before its prior
-        // launch completes is ILLEGAL (chunk=4 -> ILLEGAL_ADDRESS; chunk=1 clean). Pipelining
-        // needs alternating exec instances — and the measured payoff was ~0 (the ~200us
-        // cuGraphLaunch host cost already overlaps its own launch's GPU work; llama pays
-        // 885us/launch the same way). MEMRA_GRAPH_DRAIN raises it only for experiments.
-        const DRAIN: usize = 1;
         let mut ring = e.stream().alloc_zeros::<u32>(RING)?;
         let ring_base = prompt_pos;
         let mut out = Vec::with_capacity(max_new);
@@ -25223,70 +24832,14 @@ impl HybridModel {
                 graphs.insert(key, graph);
                 captures += 1;
             }
-            // CHUNKED REPLAY: enqueue up to DRAIN launches back-to-back (the ~200us host
-            // cost of each cuGraphLaunch overlaps the PREVIOUS launch's ~11ms GPU work),
-            // then ONE sync + ring drain. The chunk must stay inside this bucket key and
-            // the budget; capture warmups already emitted their tokens through the ring.
-            let mut chunk = 1usize;
-            let drain_cap: usize = std::env::var("MEMRA_GRAPH_DRAIN")
-                .ok()
-                .and_then(|v| v.parse().ok())
-                .unwrap_or(DRAIN);
-            while chunk < drain_cap && out.len() + chunk < max_new {
-                let t_next = cache.pos + 1 + chunk;
-                let key_s2 = if t_next > win {
-                    (true, usize::MAX)
-                } else {
-                    e.fa_bucket_key(t_next, hd_s, nkv_s, crate::Engine::wkv_on())
-                };
-                let key_g2 = if t_next >= f512 {
-                    (true, (t_next + 1).next_power_of_two().max(f512 * 2))
-                } else {
-                    e.fa_bucket_key(t_next, hd_g, nkv_g, false)
-                };
-                if (key_s2, key_g2, t_next >= f512, t_next > win) != key {
-                    break;
-                }
-                chunk += 1;
-            }
             let g = &graphs.get(&key).unwrap().0;
-            for _ in 0..chunk {
-                g.launch()?;
-            }
+            g.launch()?;
             e.stream().synchronize()?;
             let ringh = e.dtoh_u32(&ring)?;
-            for j in 0..chunk {
-                let pos_j = cache.pos + j;
-                let tok_j = ringh[(pos_j - ring_base) % RING];
-                cache.pos += 0; // advanced below in one shot
-                if j + 1 == chunk {
-                    next = tok_j;
-                } else {
-                    out.push(tok_j);
-                    if eos.contains(&tok_j) || !on_token(tok_j) {
-                        reason = if eos.contains(&tok_j) {
-                            StopReason::Eos
-                        } else {
-                            StopReason::Callback
-                        };
-                        // roll device/host state back to the stop point.
-                        let keep = cache.pos + j + 1;
-                        e.set_i32_one(&mut pos_d, keep as i32)?;
-                        for kvl in cache.kv.iter_mut().filter_map(|k| k.as_mut()) {
-                            e.set_i32_one(&mut kvl.len_d, keep as i32)?;
-                            kvl.len = keep;
-                        }
-                        cache.pos = keep;
-                        if std::env::var("MEMRA_GRAPH_STATS").is_ok() {
-                            eprintln!("[gemma-graph] captures={captures} buckets={}", graphs.len());
-                        }
-                        return Ok((out, reason));
-                    }
-                }
-            }
-            cache.pos += chunk;
+            next = ringh[(cache.pos - ring_base) % RING];
+            cache.pos += 1;
             for kvl in cache.kv.iter_mut().filter_map(|k| k.as_mut()) {
-                kvl.len += chunk;
+                kvl.len += 1;
             }
         }
         if std::env::var("MEMRA_GRAPH_STATS").is_ok() {
@@ -25466,8 +25019,6 @@ impl HybridModel {
         Ok((vam, hn))
     }
 
-    /// Verify trunk core: returns (UN-softcapped logits device [t, n_vocab], post-output_norm
-    /// hidden stack [t, n_embd]); appends KV rows + advances cache.pos.
     /// DFlash tap write (dflash lane): copy the post-layer residual rows of `x` into the
     /// armed sink at the tap slot for `il` (row-major [t, n_taps*hidden]). Per-row D2D
     /// copies — t <= block_size on verify; prime pays t*n_taps once per prompt (dedicated
@@ -25516,6 +25067,8 @@ impl HybridModel {
         Ok(())
     }
 
+    /// Verify trunk core: returns (UN-softcapped logits device [t, n_vocab], post-output_norm
+    /// hidden stack [t, n_embd]); appends KV rows + advances cache.pos.
     fn gemma4_verify_trunk(
         &self,
         e: &Engine,
@@ -27805,13 +27358,6 @@ impl HybridModel {
         Ok(output)
     }
 
-    /// v2 rank-local decode attention (MEMRA_STEP_TP_DECODE_V2): the same kernels, operand
-    /// values, and canonical reduction order as `step35_tp_decode_attn_resident_inner`,
-    /// restructured onto a persistent per-runtime workspace with evented cross-stream ordering.
-    /// Per layer per token this path performs exactly one cuMemAlloc (the returned e-context
-    /// output row), no host round-trip, and no host stream synchronize — the phase timers
-    /// measured v1 spending 81% of its 1550us/layer wall on those three classes.
-    #[allow(clippy::too_many_arguments)]
     /// T-COLUMN verify precompute for layer `il`: weight-amortized QKV(+gate) over the T
     /// verify columns into the ws slabs (per-column rope/append/fa run later through the
     /// unmodified t=1 program via the col-select door). Ok(false) when the layer is not on
@@ -28500,6 +28046,13 @@ impl HybridModel {
         )
     }
 
+    /// v2 rank-local decode attention (MEMRA_STEP_TP_DECODE_V2): the same kernels, operand
+    /// values, and canonical reduction order as `step35_tp_decode_attn_resident_inner`,
+    /// restructured onto a persistent per-runtime workspace with evented cross-stream ordering.
+    /// Per layer per token this path performs exactly one cuMemAlloc (the returned e-context
+    /// output row), no host round-trip, and no host stream synchronize — the phase timers
+    /// measured v1 spending 81% of its 1550us/layer wall on those three classes.
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn step35_tp_decode_attn_resident_v2(
         &self,
         e: &Engine,
@@ -30796,350 +30349,7 @@ pub struct G4DcSlots {
     logits: CudaSlice<f32>,
 }
 
-/// Whole-token decode graph state (step TP graph increment B). One stitched multi-device
-/// parent per fa bucket, plus the persistent host->graph plumbing: the device token id the
-/// in-graph embed gathers, the device position the ropes read (advanced in-graph), and the
-/// fixed logits stage the head writes.
-pub struct Step35TokenGraphState {
-    /// (bucket_max, graph) — bucket keyed by the fa split geometry (fa_geom_eager).
-    pub graphs: Vec<(usize, crate::tp::TokenGraph)>,
-    pub token_d: cudarc::driver::CudaSlice<u32>,
-    pub pos_d: cudarc::driver::CudaSlice<i32>,
-    pub logits_stage: cudarc::driver::CudaSlice<f32>,
-    /// Cross-child intermediates MUST live at fixed addresses (graph mem nodes remap at
-    /// launch, so an alloc made inside one captured child is not referable from another):
-    /// the running residual, the post-attention pair, the shared-expert row, and the
-    /// e-context mirrors of the root-produced attention output and K/V shadow rows.
-    pub x: cudarc::driver::CudaSlice<f32>,
-    pub x1: cudarc::driver::CudaSlice<f32>,
-    pub mixed_stage: cudarc::driver::CudaSlice<f32>,
-    pub sh_stage: cudarc::driver::CudaSlice<f32>,
-    pub k_shadow_stage: cudarc::driver::CudaSlice<f32>,
-    pub v_shadow_stage: cudarc::driver::CudaSlice<f32>,
-    /// Alloc-free e-section scratch (child graphs cannot contain mem nodes): router logits,
-    /// shared-expert gate/up/act rows + sigmoid scalar, dense-FFN z/gate/up/act, head hidden.
-    pub router_logits: cudarc::driver::CudaSlice<f32>,
-    pub shexp_gate: cudarc::driver::CudaSlice<f32>,
-    pub shexp_up: cudarc::driver::CudaSlice<f32>,
-    pub shexp_act: cudarc::driver::CudaSlice<f32>,
-    pub gate_sig: cudarc::driver::CudaSlice<f32>,
-    pub dense_z: cudarc::driver::CudaSlice<f32>,
-    pub dense_gate: cudarc::driver::CudaSlice<f32>,
-    pub dense_up: cudarc::driver::CudaSlice<f32>,
-    pub dense_act: cudarc::driver::CudaSlice<f32>,
-    pub hn: cudarc::driver::CudaSlice<f32>,
-    /// MEMRA_TG_PROBE_LAYER diagnostics: capture-time copies of layer K's attention output
-    /// and post-FFN residual, dumped after replay for graph-vs-eager layer bisection.
-    pub probe_mixed: cudarc::driver::CudaSlice<f32>,
-    pub probe_x: cudarc::driver::CudaSlice<f32>,
-    /// Chunk-loop (F-lite): device token history ring + its device write index, filled by
-    /// the in-graph tail argmax chain; host reads the ring once per chunk.
-    pub token_hist: cudarc::driver::CudaSlice<u32>,
-    pub hist_idx: cudarc::driver::CudaSlice<i32>,
-}
-
 impl HybridModel {
-    /// Whole-token decode graph (step TP graph increment B): ONE stitched multi-device parent
-    /// replays the entire 45-layer token — the launch-collapse the per-layer minis could not
-    /// reach. Returns Some(logits) when the graph handled the token, None for eager fallback
-    /// (door off, ineligible class, any layer's ring would rebase, or a bucket boundary that
-    /// needs a rebuild this token).
-    ///
-    /// v1 SCOPE (diagnostic door, default OFF): the LOCAL shadow caches advance their lengths
-    /// but not their contents under this door (the TP rank caches are fully maintained
-    /// in-graph via the dcw counters). Sessions relying on shadow CONTENT (save/rollback)
-    /// must not run with the door on until the local-dcw twin lands.
-    #[allow(clippy::type_complexity)] // allow: one-shot composite type; naming it would hide the shape that matters at the call site
-    pub(crate) fn step35_token_graph_step(
-        &self,
-        e: &Engine,
-        token: u32,
-        cache: &mut Cache,
-    ) -> Result<Option<(Vec<f32>, CudaSlice<f32>)>, Box<dyn std::error::Error>> {
-        if !self.uses_sliding_gated_moe_program()
-            || !crate::tp::step_tp_graph_enabled()?
-            || !crate::tp::step_tp_dcw_enabled()?
-            || !crate::tp::step_tp_qkv_fused_enabled()?
-            || !crate::tp::step_tp_dev_router_enabled()?
-            || !crate::tp::step_nvfp4_dev_routes_enabled()?
-        {
-            return Ok(None);
-        }
-        // GRAPH-LAUNCH HEADROOM GUARD (see spec::GRAPH_LAUNCH_MIN_FREE): the eager
-        // token step is this route's byte-identical twin — warmup and rebase tokens
-        // already ride it — so below the driver-free floor the token goes eager
-        // (`Ok(None)` = the caller's eager fallback) instead of feeding cuGraphLaunch
-        // an exhausted card (lane/graph-launch-guard-sweep-20260831).
-        if !crate::spec::graph_launch_headroom_ok(e) {
-            static NOTED: std::sync::Once = std::sync::Once::new();
-            NOTED.call_once(|| crate::spec::graph_replay_suspended_note("step-tp-token"));
-            return Ok(None);
-        }
-        let n_embd = self.cfg.n_embd as usize;
-        let n_vocab = self.cfg.n_vocab as usize;
-        let n_layers = self.layers.len();
-        let pos = cache.pos;
-        let staged_next = pos + 1;
-        if staged_next < 96 {
-            return Ok(None); // sub-vec-floor contexts keep eager (fa kernel-class boundary)
-        }
-
-        // Per-layer eligibility: every TP layer contiguous-appends this token (any rebase ->
-        // eager fallback for the whole token; the host path also updates base_d there).
-        for il in 0..n_layers {
-            let Some(tp_kv) = cache.tp_kv[il].as_ref() else {
-                return Ok(None); // caches not hydrated yet — eager warms them
-            };
-            if tp_kv.peek_append_ring(1)?.1 {
-                return Ok(None);
-            }
-        }
-
-        // Bucket key: the global layers' fa split geometry at this depth (SWA layers cap at
-        // their window and share one bucket forever after ctx > window).
-        let (fa_vec, n_splits) = e.fa_geom_eager(staged_next, 128, 8, false);
-        if !fa_vec {
-            return Ok(None);
-        }
-        let sp = crate::fa_split_keys(staged_next, 8);
-        let bucket_max = (n_splits * sp).max(staged_next);
-
-        let mut state_guard = self
-            .step35_token_graph
-            .lock()
-            .map_err(|_| "step35 token graph lock is poisoned")?;
-        if state_guard.is_none() {
-            let _main = e.gpu.enter_main()?;
-            let n_expert = self
-                .cfg
-                .moe
-                .as_ref()
-                .map(|m| m.expert_count as usize)
-                .unwrap_or(0);
-            let n_ff_sh = self
-                .layers
-                .iter()
-                .find_map(|l| match &l.ffn {
-                    crate::hybrid::Ffn::Moe(m) => m.gate_shexp.as_ref().map(|g| g.out_features()),
-                    _ => None,
-                })
-                .unwrap_or(0);
-            let n_ff_dense = self
-                .layers
-                .iter()
-                .find_map(|l| match &l.ffn {
-                    crate::hybrid::Ffn::Dense { ffn_gate, .. } => Some(ffn_gate.out_features()),
-                    _ => None,
-                })
-                .unwrap_or(0);
-            *state_guard = Some(Step35TokenGraphState {
-                graphs: Vec::new(),
-                token_d: e.stream().clone_htod(&[0u32])?,
-                pos_d: e.htod_i32(&[pos as i32])?,
-                logits_stage: e.htod(&vec![0.0f32; n_vocab])?,
-                x: e.htod(&vec![0.0f32; n_embd])?,
-                x1: e.htod(&vec![0.0f32; n_embd])?,
-                mixed_stage: e.htod(&vec![0.0f32; n_embd])?,
-                sh_stage: e.htod(&vec![0.0f32; n_embd])?,
-                k_shadow_stage: e.htod(&vec![0.0f32; 2048])?,
-                v_shadow_stage: e.htod(&vec![0.0f32; 2048])?,
-                router_logits: e.htod(&vec![0.0f32; n_expert.max(1)])?,
-                shexp_gate: e.htod(&vec![0.0f32; n_ff_sh.max(1)])?,
-                shexp_up: e.htod(&vec![0.0f32; n_ff_sh.max(1)])?,
-                shexp_act: e.htod(&vec![0.0f32; n_ff_sh.max(1)])?,
-                gate_sig: e.htod(&[1.0f32; 1])?,
-                dense_z: e.htod(&vec![0.0f32; n_embd])?,
-                dense_gate: e.htod(&vec![0.0f32; n_ff_dense.max(1)])?,
-                dense_up: e.htod(&vec![0.0f32; n_ff_dense.max(1)])?,
-                dense_act: e.htod(&vec![0.0f32; n_ff_dense.max(1)])?,
-                hn: e.htod(&vec![0.0f32; n_embd])?,
-                probe_mixed: e.htod(&vec![0.0f32; n_embd])?,
-                probe_x: e.htod(&vec![0.0f32; n_embd])?,
-                token_hist: e.stream().clone_htod(&[0u32; 16])?,
-                hist_idx: e.htod_i32(&[0])?,
-            });
-        }
-        let state = state_guard.as_mut().expect("state armed above");
-        // Pre-arm the argmax partials OUTSIDE any capture: the launcher allocates them on
-        // first use, and an alloc inside a captured section is a mem node (child graphs
-        // reject those — the tail argmax chain needs them already resident).
-        {
-            let _main = e.gpu.enter_main()?;
-            let Step35TokenGraphState {
-                logits_stage,
-                token_d,
-                ..
-            } = &mut *state;
-            e.argmax_token_device_into(logits_stage, token_d, n_vocab)?;
-        }
-
-        // ONE graph, retargeted per bucket (increment C): the per-16-token whole rebuild was
-        // ~55ms (3.4ms/token persistent); the M1 exec update path moves nsp/ski/gridDimY and
-        // the partial-pool memset widths in ~1ms. The partial pool is pre-grown to the run
-        // ceiling at build so the baked pointers never move.
-        if state.graphs.is_empty() {
-            // Build the parent at this bucket. Capture executes nothing; correctness is
-            // pinned at replay by the token-identity gate.
-            self.step35_token_graph_build(e, cache, state, bucket_max)?;
-        }
-        {
-            let (b, g) = state.graphs.first_mut().expect("graph built above");
-            if *b != bucket_max {
-                g.retarget_bucket(bucket_max)?;
-                *b = bucket_max;
-            }
-        }
-        let graph = state
-            .graphs
-            .first()
-            .map(|(_, g)| g)
-            .expect("graph built above");
-
-        let tg_timing = std::env::var("MEMRA_STEP_TP_TIMING").as_deref() == Ok("1");
-        let t_fence = tg_timing.then(std::time::Instant::now);
-        // Rank-stream fence: an eager token (warmup, rebase fallback) leaves len-mirror sets
-        // queued on the rank streams, and graph children carry no ordering edge to those
-        // streams. Graph tokens themselves enqueue nothing there (external commit), so this
-        // sync is a no-op between consecutive replays.
-        {
-            let fa0 = match &self.layers[0].mixer {
-                Mixer::Full(fa) => fa,
-                _ => return Err("step35 token graph expects full-attention layers".into()),
-            };
-            let tp0 = fa0
-                .step_tp_qkv
-                .as_ref()
-                .ok_or("step35 token graph lost its TP state")?;
-            for rank in 0..tp0.runtime.devices().len() {
-                let engine = tp0
-                    .runtime
-                    .rank_engine(rank)
-                    .ok_or("step35 token graph lost a rank engine")?;
-                let _main = engine.gpu.enter_main()?;
-                engine.stream().synchronize()?;
-            }
-        }
-
-        // Replay: feed the token, launch, read the logits, mirror the host bookkeeping.
-        {
-            let _main = e.gpu.enter_main()?;
-            e.set_u32_one(&mut state.token_d, token)?;
-            e.set_i32_one(&mut state.pos_d, pos as i32)?;
-        }
-        let t_launch = tg_timing.then(std::time::Instant::now);
-        graph.launch(e)?;
-        let t_book = tg_timing.then(std::time::Instant::now);
-        // Host bookkeeping OVERLAPS the replay (nsys 2026-08-21: the 45-layer txn loop was
-        // 5.4ms/token of inter-token gap when it ran after the sync). Host-only work except
-        // the local len_d set, which is stream-ordered AFTER the graph on e's stream. On a
-        // replay error the counters are already advanced — acceptable: the decode aborts.
-        for il in 0..n_layers {
-            let tp_kv = cache.tp_kv[il].as_mut().expect("eligibility checked above");
-            let transaction = tp_kv.begin_transaction()?;
-            let fa = match &self.layers[il].mixer {
-                Mixer::Full(fa) => fa,
-                _ => return Err("step35 token graph expects full-attention layers".into()),
-            };
-            let tp = fa
-                .step_tp_qkv
-                .as_ref()
-                .ok_or("step35 token graph lost its TP state")?;
-            // Bookkeeping-only txn (external appends; mirror sets skipped — the in-graph
-            // incs own the counters). Shards unused.
-            let empty: [CudaSlice<f32>; 0] = [];
-            tp.runtime.append_tp_kv_transaction_inner(
-                tp_kv,
-                transaction,
-                &empty,
-                &empty,
-                1,
-                true,
-            )?;
-            tp.runtime
-                .commit_tp_kv_transaction_external(tp_kv, transaction, 1)?;
-            // Local shadow: lengths advance (v1 keeps contents stale under the door).
-            if let Some(local) = cache.kv[il].as_mut() {
-                local.len = pos + 1;
-                let _main = e.gpu.enter_main()?;
-                e.set_i32_one(&mut local.len_d, (pos + 1) as i32)?;
-            }
-        }
-        cache.pos = pos + 1;
-        let t_sync = tg_timing.then(std::time::Instant::now);
-        let (logits, h_seed) = {
-            let _main = e.gpu.enter_main()?;
-            e.stream().synchronize()?;
-            (e.dtoh(&state.logits_stage)?, e.clone_dtod(&state.x)?)
-        };
-        if let (Some(f), Some(l), Some(b), Some(sy)) = (t_fence, t_launch, t_book, t_sync) {
-            use std::sync::atomic::{AtomicU64, Ordering};
-            static NS: [AtomicU64; 5] = [
-                AtomicU64::new(0),
-                AtomicU64::new(0),
-                AtomicU64::new(0),
-                AtomicU64::new(0),
-                AtomicU64::new(0),
-            ];
-            static CALLS: AtomicU64 = AtomicU64::new(0);
-            let now = std::time::Instant::now();
-            NS[0].fetch_add((l - f).as_nanos() as u64, Ordering::Relaxed); // fence+set
-            NS[1].fetch_add((b - l).as_nanos() as u64, Ordering::Relaxed); // launch call
-            NS[2].fetch_add((sy - b).as_nanos() as u64, Ordering::Relaxed); // bookkeeping
-            NS[3].fetch_add((now - sy).as_nanos() as u64, Ordering::Relaxed); // sync+dtoh
-            NS[4].fetch_add((now - f).as_nanos() as u64, Ordering::Relaxed); // total
-            let calls = CALLS.fetch_add(1, Ordering::Relaxed) + 1;
-            if calls.is_multiple_of(100) {
-                let avg = |i: usize| NS[i].load(Ordering::Relaxed) as f64 / calls as f64 / 1e3;
-                eprintln!(
-                    "[tg-timing] calls={calls} fence_us={:.0} launch_us={:.0} book_us={:.0} \
-                     syncdtoh_us={:.0} total_us={:.0}",
-                    avg(0),
-                    avg(1),
-                    avg(2),
-                    avg(3),
-                    avg(4)
-                );
-            }
-        }
-        // MEMRA_TG_PROBE_LAYER diagnostics: append the captured layer-K probes.
-        if std::env::var("MEMRA_TG_PROBE_LAYER").is_ok() {
-            use std::io::Write;
-            let (pm, px) = {
-                let _main = e.gpu.enter_main()?;
-                (e.dtoh(&state.probe_mixed)?, e.dtoh(&state.probe_x)?)
-            };
-            for (path, data) in [
-                ("/root/tg-probe-mixed.bin", &pm),
-                ("/root/tg-probe-x.bin", &px),
-            ] {
-                let mut fo = std::fs::OpenOptions::new()
-                    .create(true)
-                    .append(true)
-                    .open(path)?;
-                for v in data {
-                    fo.write_all(&v.to_le_bytes())?;
-                }
-            }
-        }
-        // MEMRA_DUMP_HN twin of the eager tail's dump (same format: appended raw LE f32 rows)
-        // so a graph arm and an eager arm produce position-aligned pre-head hidden streams.
-        if let Ok(path) = std::env::var("MEMRA_DUMP_HN") {
-            let hh = {
-                let _main = e.gpu.enter_main()?;
-                e.dtoh(&state.hn)?
-            };
-            use std::io::Write;
-            let mut fo = std::fs::OpenOptions::new()
-                .create(true)
-                .append(true)
-                .open(path)?;
-            for v in &hh {
-                fo.write_all(&v.to_le_bytes())?;
-            }
-        }
-        Ok(Some((logits, h_seed)))
-    }
-
     /// MEMRA_HEAD_SPLIT worker: dev0 computes lm-head rows [0, half), rank1 computes
     /// [half, n_vocab) concurrently on its otherwise-idle tail, and the halves concatenate
     /// on e — bit-identical per logit to the single-device matvec. Process-static workspace
@@ -31380,643 +30590,6 @@ impl HybridModel {
         let ws = guard.as_ref().ok_or("head split logits not armed")?;
         let _main = e.gpu.enter_main()?;
         e.dtoh(&ws.logits_e)
-    }
-}
-
-impl HybridModel {
-    /// Capture the whole-token parent for one fa bucket. Capture executes nothing; the
-    /// section closures issue the SAME calls the eager dcw path runs (bit-proven), with the
-    /// per-token operands living at the fixed stage addresses. Groups: the two rank sections
-    /// of each phase fork in parallel and merge into the following root section.
-    #[allow(clippy::too_many_arguments)]
-    fn step35_token_graph_build(
-        &self,
-        e: &Engine,
-        cache: &mut Cache,
-        state: &mut Step35TokenGraphState,
-        bucket_max: usize,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        use cudarc::driver::DevicePtr;
-        let n_embd = self.cfg.n_embd as usize;
-        let eps = self.cfg.rms_eps;
-        let n_layers = self.layers.len();
-        let started = std::time::Instant::now();
-        if !Engine::bf16_mmv_on() || !n_embd.is_multiple_of(8) {
-            return Err("step35 token graph requires MEMRA_BF16_MMV bf16-resident matvecs".into());
-        }
-
-        // Device embed table (the spec/graph lanes' lazily-uploaded copy).
-        let embd_gpu = self
-            .embd_gpu_try(e)
-            .ok_or("step35 token graph could not upload the device embed table")?;
-        let embd_qtype = match self.embd.ggml_type {
-            memra_gguf::GgmlType::BF16 => crate::QT_BF16,
-            memra_gguf::GgmlType::Q8_0 => crate::QT_Q8_0,
-            other => return Err(format!("token graph embed dtype {other:?} unhandled").into()),
-        };
-        let embd_row_bytes = self.embd.raw.len() / self.cfg.n_vocab as usize;
-
-        // Fixed-stage pointers the sections reference.
-        let (p_mixed, p_kshadow, p_vshadow) = {
-            let _main = e.gpu.enter_main()?;
-            let stream = e.stream();
-            let (a, _g) = state.mixed_stage.device_ptr(&stream);
-            let (b, _g) = state.k_shadow_stage.device_ptr(&stream);
-            let (c, _g) = state.v_shadow_stage.device_ptr(&stream);
-            (a, b, c)
-        };
-
-        crate::tp::token_graph_build_begin()?;
-        let mut group_id: u32 = 0;
-        for il in 0..n_layers {
-            let layer = &self.layers[il];
-            let fa = match &layer.mixer {
-                Mixer::Full(fa) => fa,
-                _ => return Err("step35 token graph expects full-attention layers".into()),
-            };
-            let tp = fa
-                .step_tp_qkv
-                .as_ref()
-                .ok_or("step35 token graph lost its TP state")?;
-            let attention = tp
-                .attention
-                .as_ref()
-                .ok_or("step35 token graph lost its attention aux")?;
-            let geometry = self.step35_geom(il);
-            let window = geometry.window.map(|w| w as usize);
-            let head_dim = geometry.head_dim_k as usize;
-            let heads = geometry.n_head as usize;
-            let kv_heads = geometry.n_head_kv as usize;
-            let ranks = tp.runtime.devices().len();
-            let local_heads = heads / ranks;
-            let local_kv_heads = kv_heads / ranks;
-            let layer_bucket = window.map(|w| bucket_max.min(w)).unwrap_or(bucket_max);
-            let use_gate_shards =
-                attention.gate_shards.is_some() || attention.gate_shards_bf16.is_some();
-            if !use_gate_shards {
-                return Err("step35 token graph requires the fused gate shards".into());
-            }
-
-            let ws_index = tp
-                .runtime
-                .decode_v2_ensure(e, &tp.q, &tp.k, &tp.v, &tp.o, heads)?;
-            let ws_mutex = tp.runtime.decode_v2_workspace();
-            let mut ws_guard = ws_mutex
-                .lock()
-                .map_err(|_| "step TP decode v2 workspace lock is poisoned")?;
-            let ws = ws_guard
-                .get_mut(ws_index)
-                .ok_or("step TP decode v2 workspace missing after ensure")?;
-            tp.runtime
-                .decode_v2_arm_token_mirrors(ws, p_mixed, (p_kshadow, p_vshadow))?;
-            let mut rope_freqs = Vec::with_capacity(ranks);
-            for rank in 0..ranks {
-                let engine = tp
-                    .runtime
-                    .rank_engine(rank)
-                    .ok_or("step35 token graph lost a rank engine")?;
-                rope_freqs.push(if geometry.rope_factors {
-                    self.step35_aux
-                        .as_ref()
-                        .and_then(|aux| aux.rope_freqs(engine))
-                } else {
-                    None
-                });
-            }
-            let gate_shards_arg = if let Some(shards) = attention.gate_shards.as_deref() {
-                Some(crate::tp::StepTpGateShards::F32(shards))
-            } else {
-                attention
-                    .gate_shards_bf16
-                    .as_deref()
-                    .map(crate::tp::StepTpGateShards::Bf16)
-            };
-
-            // ---- E1: embed (layer 0) / attn norm into h_stage + pos copy ----
-            let decode_input = attention
-                .decode_input
-                .as_ref()
-                .ok_or("step35 token graph requires the replicated decode input")?;
-            let mut decode_input = decode_input
-                .lock()
-                .map_err(|_| "replicated decode input lock is poisoned")?;
-            // Stage arming happens through the eager stage flow once; require it here.
-            if ws.h_stage.is_none() {
-                return Err(
-                    "step35 token graph requires the stage flow armed (run eager dcw first)".into(),
-                );
-            }
-            {
-                let state_x = &mut state.x;
-                let token_d = &state.token_d;
-                let pos_d = &state.pos_d;
-                crate::tp::graph_section(e, None, || {
-                    let _main = e.gpu.enter_main()?;
-                    if il == 0 {
-                        e.embed_gather_device_into(
-                            embd_gpu,
-                            token_d,
-                            state_x,
-                            n_embd,
-                            embd_qtype,
-                            embd_row_bytes,
-                        )?;
-                    }
-                    {
-                        let h_stage = ws.h_stage.as_mut().expect("stage armed checked above");
-                        e.rms_norm(
-                            state_x,
-                            layer.attn_norm.float_data(),
-                            h_stage,
-                            n_embd,
-                            1,
-                            eps,
-                        )?;
-                    }
-                    {
-                        let pos_stage = ws.pos_stage.as_mut().expect("stage armed above");
-                        let mut dst = pos_stage.slice_mut(0..1);
-                        e.stream().memcpy_dtod(&pos_d.slice(0..1), &mut dst)?;
-                    }
-                    Ok(())
-                })?;
-            }
-
-            // ---- R0/R1 (parallel): projections + dcw attention interior ----
-            group_id += 1;
-            for rank in 0..ranks {
-                let engine = tp
-                    .runtime
-                    .rank_engine(rank)
-                    .ok_or("step35 token graph lost a rank engine")?;
-                {
-                    // fa partial pool must reach the RUN CEILING before capture — an
-                    // in-capture grow is a mem node (child graphs reject those), and the
-                    // retarget path (increment C) widens the baked memsets up to the ceiling
-                    // without moving the pool pointers. Two ensures cover both sp rungs.
-                    let ceiling = window
-                        .map(|w| cache.max_ctx.min(w))
-                        .unwrap_or(cache.max_ctx);
-                    let _main = engine.gpu.enter_main()?;
-                    engine.fa_dcw_pool_ensure(
-                        head_dim,
-                        local_heads,
-                        local_kv_heads,
-                        ceiling.min(2048),
-                    )?;
-                    engine.fa_dcw_pool_ensure(head_dim, local_heads, local_kv_heads, ceiling)?;
-                    engine.fa_dcw_pool_ensure(
-                        head_dim,
-                        local_heads,
-                        local_kv_heads,
-                        layer_bucket,
-                    )?;
-                }
-                let runtime = &tp.runtime;
-                let q_norm = &attention.q_norm;
-                let k_norm = &attention.k_norm;
-                let gate_ref = gate_shards_arg.as_ref();
-                crate::tp::graph_section(engine, Some(group_id), || {
-                    runtime.decode_v2_input_qkv_rank(
-                        ws,
-                        &state.pos_d,
-                        &mut decode_input,
-                        &tp.q,
-                        &tp.k,
-                        &tp.v,
-                        q_norm,
-                        k_norm,
-                        head_dim,
-                        geometry.n_rot as usize,
-                        geometry.rope_base,
-                        &rope_freqs,
-                        eps,
-                        gate_ref,
-                        true,
-                        true,
-                        false,
-                        rank,
-                        None,
-                    )?;
-                    // Merged dcw interior at the BUCKET geometry (one-partition law makes the
-                    // replayed values track the live counters).
-                    let distributed = cache.tp_kv[il]
-                        .as_mut()
-                        .ok_or("step35 token graph lost a TP cache")?;
-                    let (kv_dim_k, kv_dim_v) = (distributed.kv_dim_k(), distributed.kv_dim_v());
-                    let (ktb, vtb) = (distributed.k_tok_bytes(), distributed.v_tok_bytes());
-                    let capacity = distributed.physical_capacity();
-                    {
-                        let rank_cache = distributed
-                            .rank_mut(rank)
-                            .ok_or("step35 token graph lost a rank cache")?;
-                        let (k_plane, v_plane, len_d, base_d) =
-                            rank_cache.planes_and_counters_mut();
-                        engine.append_kv_quantized_dcw(
-                            &ws.k[rank],
-                            &ws.v_raw[rank],
-                            k_plane,
-                            v_plane,
-                            len_d,
-                            base_d,
-                            kv_dim_k,
-                            kv_dim_v,
-                            ktb,
-                            vtb,
-                        )?;
-                    }
-                    {
-                        let rank_cache = distributed
-                            .rank_mut(rank)
-                            .ok_or("step35 token graph lost a rank cache")?;
-                        engine.inc_i32(rank_cache.len_d_mut())?;
-                    }
-                    let rank_cache = distributed
-                        .rank(rank)
-                        .ok_or("step35 token graph lost a rank cache")?;
-                    let k_ring = engine.view_u8_range(rank_cache.k(), 0, capacity * ktb);
-                    let v_ring = engine.view_u8_range(rank_cache.v(), 0, capacity * vtb);
-                    // Graph build keeps the UNFUSED combine + gate pair: the bucket
-                    // retarget addresses combine's nsp at arg slot 6, and the fused
-                    // combine_gate kernel shifts it to 7 — bit-identical either way, so
-                    // only the eager arm takes FUSION #2d.
-                    engine.fa_decode_dcw(
-                        &ws.q[rank],
-                        &k_ring,
-                        &v_ring,
-                        &mut ws.attn_out[rank],
-                        head_dim,
-                        local_heads,
-                        local_kv_heads,
-                        rank_cache.len_d(),
-                        rank_cache.base_d(),
-                        window.unwrap_or(0),
-                        layer_bucket,
-                        geometry.attention_scale(),
-                        ktb,
-                        vtb,
-                        None,
-                    )?;
-                    engine.attn_head_gate(
-                        &ws.attn_out[rank],
-                        &ws.gate[rank],
-                        &mut ws.gated[rank],
-                        None,
-                        head_dim,
-                        local_heads,
-                        1,
-                    )?;
-                    runtime.decode_v2_finish_rank_partial(ws, &tp.o, true, rank)?;
-                    Ok(())
-                })?;
-            }
-
-            // ---- ROOT: combine + shadows + e-mirrors ----
-            {
-                let root = tp
-                    .runtime
-                    .rank_engine(0)
-                    .ok_or("step35 token graph lost the root engine")?;
-                let runtime = &tp.runtime;
-                crate::tp::graph_section(root, None, || runtime.decode_v2_finish_root_fused(ws))?;
-            }
-            drop(ws_guard);
-            drop(decode_input);
-
-            let probe_layer: Option<usize> = std::env::var("MEMRA_TG_PROBE_LAYER")
-                .ok()
-                .and_then(|v| v.parse().ok());
-            if probe_layer == Some(il) {
-                let Step35TokenGraphState {
-                    mixed_stage,
-                    probe_mixed,
-                    ..
-                } = &mut *state;
-                crate::tp::graph_section(e, None, || {
-                    let _main = e.gpu.enter_main()?;
-                    let mut dst = probe_mixed.slice_mut(0..n_embd);
-                    e.stream()
-                        .memcpy_dtod(&mixed_stage.slice(0..n_embd), &mut dst)?;
-                    Ok(())
-                })?;
-            }
-
-            // ---- FFN half ----
-            match &layer.ffn {
-                crate::hybrid::Ffn::Dense {
-                    ffn_gate,
-                    ffn_up,
-                    ffn_down,
-                    ffn_down_pqs,
-                } => {
-                    let n_ff = ffn_gate.out_features();
-                    let lim = self.cfg.clamp_shexp_at(il as u32);
-                    // AWQ (memra#253): this graph runs the down projection as a raw bf16
-                    // matvec with no seam to scale its input. The bf16-resident check below
-                    // already excludes every artifact that carries a scale, but say so
-                    // rather than leaving the exclusion implicit.
-                    if ffn_down_pqs.is_some() {
-                        return Err(
-                            "step35 token graph dense FFN cannot apply ffn_down.pre_quant_scale"
-                                .into(),
-                        );
-                    }
-                    // Alloc-free inline of ffn_swiglu_decode's bf16 tail: dual gate/up matvec is
-                    // bit-identical per row to the two matmul-dispatched matvec_bf16 launches.
-                    // A clamped dense layer would take eager's q8_1 branch instead -- refuse.
-                    if lim.is_some() {
-                        return Err("step35 token graph dense FFN with clamp unsupported".into());
-                    }
-                    let (wg_d, wu_d, wd_d) = match (ffn_gate, ffn_up, ffn_down) {
-                        (
-                            crate::model::GpuTensor::FloatBf16 { data: wg, .. },
-                            crate::model::GpuTensor::FloatBf16 { data: wu, .. },
-                            crate::model::GpuTensor::FloatBf16 { data: wd, .. },
-                        ) => (wg, wu, wd),
-                        _ => {
-                            return Err(
-                                "step35 token graph dense FFN requires bf16-resident weights"
-                                    .into(),
-                            );
-                        }
-                    };
-                    crate::tp::graph_section(e, None, || {
-                        let _main = e.gpu.enter_main()?;
-                        let Step35TokenGraphState {
-                            x,
-                            x1,
-                            mixed_stage,
-                            dense_z,
-                            dense_gate,
-                            dense_up,
-                            dense_act,
-                            sh_stage,
-                            ..
-                        } = &mut *state;
-                        e.add_rms_norm(
-                            x,
-                            mixed_stage,
-                            layer.post_attn_norm.float_data(),
-                            x1,
-                            dense_z,
-                            n_embd,
-                            1,
-                            eps,
-                        )?;
-                        // TWO SINGLE matvecs, not the dual: eager dense rides two
-                        // matmul-dispatched matvec_bf16 launches; the dual twin measured a
-                        // ~2e-9 residual difference here (token-graph bisection, 2026-08-21).
-                        e.matvec_bf16_into(wg_d, dense_z, dense_gate, n_embd, n_ff)?;
-                        e.matvec_bf16_into(wu_d, dense_z, dense_up, n_embd, n_ff)?;
-                        Self::ffn_act_lim(
-                            e, &self.cfg, dense_gate, dense_up, 1.0, 1.0, lim, dense_act, n_ff,
-                        )?;
-                        e.matvec_bf16_into(wd_d, dense_act, sh_stage, n_ff, n_embd)?;
-                        e.add(x1, sh_stage, x, n_embd)?;
-                        Ok(())
-                    })?;
-                }
-                crate::hybrid::Ffn::Moe(m) => {
-                    let moe = self
-                        .cfg
-                        .moe
-                        .as_ref()
-                        .ok_or("step35 token graph needs moe cfg")?;
-                    let n_expert = moe.expert_count as usize;
-                    let n_used = moe.expert_used_count as usize;
-                    let sigmoid = self
-                        .cfg
-                        .sigmoid_router()
-                        .ok_or("step35 token graph needs the sigmoid router")?;
-                    let step_tp = m
-                        .step_tp
-                        .as_ref()
-                        .ok_or("step35 token graph needs TP experts")?;
-                    let bank = match &step_tp.experts {
-                        crate::hybrid::StepTpExpertBank::Nvfp4(bank) => bank,
-                        _ => return Err("step35 token graph needs the NVFP4 bank".into()),
-                    };
-                    let routes_ws_mutex = bank.device_workspace_handle();
-                    let mut routes_guard = routes_ws_mutex
-                        .lock()
-                        .map_err(|_| "routes workspace lock is poisoned")?;
-                    let routes_ws = routes_guard
-                        .as_mut()
-                        .ok_or("step35 token graph requires the routes workspace warmed")?;
-                    routes_ws.arm_stages(e, bank.input_width, n_used)?;
-                    step_tp.runtime.routes_arm_raw(bank, routes_ws)?;
-                    let p_z = {
-                        let root = step_tp
-                            .runtime
-                            .rank_engine(0)
-                            .ok_or("routes root engine missing")?;
-                        let _main = root.gpu.enter_main()?;
-                        let stream = root.stream();
-                        let in_stage = routes_ws
-                            .in_stage_handle()
-                            .ok_or("routes in stage not armed")?;
-                        let (a, _g) = in_stage.device_ptr(&stream);
-                        a
-                    };
-                    let local_out = bank.expert_width / ranks;
-
-                    // ---- E2: post-attn norm into the routes in-stage + router + staging ----
-                    crate::tp::graph_section(e, None, || {
-                        let _main = e.gpu.enter_main()?;
-                        {
-                            let in_stage = routes_ws
-                                .in_stage_mut()
-                                .ok_or("routes in stage not armed")?;
-                            let Step35TokenGraphState {
-                                x, x1, mixed_stage, ..
-                            } = &mut *state;
-                            e.add_rms_norm(
-                                x,
-                                mixed_stage,
-                                layer.post_attn_norm.float_data(),
-                                x1,
-                                in_stage,
-                                n_embd,
-                                1,
-                                eps,
-                            )?;
-                        }
-                        {
-                            let z_ref = routes_ws
-                                .in_stage_handle()
-                                .ok_or("routes in stage not armed")?;
-                            e.router_gemv_into(
-                                m.gate_inp.float_data(),
-                                z_ref,
-                                &mut state.router_logits,
-                                n_embd,
-                                n_expert,
-                                1,
-                            )?;
-                        }
-                        let (sel_e, w_e) = routes_ws
-                            .dev_route_e_mut()
-                            .ok_or("routes staging not armed")?;
-                        e.moe_router_sigmoid_topk_into(
-                            &state.router_logits,
-                            1,
-                            n_expert,
-                            n_used,
-                            m.active_count(),
-                            &m.exp_probs_b_dev,
-                            &m.active_experts_dev,
-                            sigmoid.0,
-                            sigmoid.1,
-                            sel_e,
-                            w_e,
-                        )?;
-                        Ok(())
-                    })?;
-
-                    // ---- R0r/R1r (parallel): routes sweeps ----
-                    group_id += 1;
-                    for rank in 0..ranks {
-                        let engine = step_tp
-                            .runtime
-                            .rank_engine(rank)
-                            .ok_or("routes rank engine missing")?;
-                        let runtime = &step_tp.runtime;
-                        crate::tp::graph_section(engine, Some(group_id), || {
-                            runtime.routes_rank_section(
-                                bank,
-                                routes_ws,
-                                p_z,
-                                local_out,
-                                n_used,
-                                step_tp.activation_limit,
-                                rank,
-                            )
-                        })?;
-                    }
-
-                    // ---- ROOTr: combine into the out stage ----
-                    {
-                        let root = step_tp
-                            .runtime
-                            .rank_engine(0)
-                            .ok_or("routes root engine missing")?;
-                        let runtime = &step_tp.runtime;
-                        crate::tp::graph_section(root, None, || {
-                            runtime.routes_root_section(bank, routes_ws)
-                        })?;
-                    }
-
-                    // ---- E3: shexp + add_shared onto the out stage + residual ----
-                    // Alloc-free inline of moe_ffn_grouped_add_shared's bf16_dual arm (the arm
-                    // eager takes under MEMRA_BF16_MMV, guarded at fn entry).
-                    let lim_sh = self.cfg.clamp_shexp_at(il as u32);
-                    let (wg_sh, wu_sh, wd_sh) = match (&m.gate_shexp, &m.up_shexp, &m.down_shexp) {
-                        (
-                            Some(crate::model::GpuTensor::FloatBf16 { data: wg, .. }),
-                            Some(crate::model::GpuTensor::FloatBf16 { data: wu, .. }),
-                            Some(crate::model::GpuTensor::FloatBf16 { data: wd, .. }),
-                        ) => (wg, wu, wd),
-                        _ => {
-                            return Err(
-                                "step35 token graph shexp requires bf16-resident weights".into()
-                            );
-                        }
-                    };
-                    let n_ff_sh = m
-                        .gate_shexp
-                        .as_ref()
-                        .expect("matched Some above")
-                        .out_features();
-                    // No sigmoid gate on this model's shexp -> gate_sig stays at its 1.0
-                    // init, reproducing eager's ones vector without a launch.
-                    let gate_inp_shexp = m.gate_inp_shexp.as_ref();
-                    crate::tp::graph_section(e, None, || {
-                        let _main = e.gpu.enter_main()?;
-                        let (z_ref, out_stage) = routes_ws
-                            .in_and_out_stages_mut()
-                            .ok_or("routes stages not armed")?;
-                        let Step35TokenGraphState {
-                            x,
-                            x1,
-                            sh_stage,
-                            shexp_gate,
-                            shexp_up,
-                            shexp_act,
-                            gate_sig,
-                            ..
-                        } = &mut *state;
-                        e.matvec_bf16_dual_into(
-                            wg_sh, wu_sh, z_ref, shexp_gate, shexp_up, n_embd, n_ff_sh,
-                        )?;
-                        Self::ffn_act_lim(
-                            e, &self.cfg, shexp_gate, shexp_up, 1.0, 1.0, lim_sh, shexp_act,
-                            n_ff_sh,
-                        )?;
-                        e.matvec_bf16_into(wd_sh, shexp_act, sh_stage, n_ff_sh, n_embd)?;
-                        if let Some(gate_w) = gate_inp_shexp {
-                            e.sigmoid_dot_rows_into(
-                                z_ref,
-                                gate_w.float_data(),
-                                gate_sig,
-                                n_embd,
-                                1,
-                            )?;
-                        }
-                        e.add_scaled_rows(sh_stage, gate_sig, out_stage, n_embd, 1)?;
-                        e.add(x1, out_stage, x, n_embd)?;
-                        Ok(())
-                    })?;
-                }
-            }
-            if probe_layer == Some(il) {
-                let Step35TokenGraphState { x, probe_x, .. } = &mut *state;
-                crate::tp::graph_section(e, None, || {
-                    let _main = e.gpu.enter_main()?;
-                    let mut dst = probe_x.slice_mut(0..n_embd);
-                    e.stream().memcpy_dtod(&x.slice(0..n_embd), &mut dst)?;
-                    Ok(())
-                })?;
-            }
-        }
-
-        // ---- Tail: output norm + head into the logits stage ----
-        let head = match &self.output {
-            crate::model::GpuTensor::FloatBf16 { data, .. } => data,
-            _ => return Err("step35 token graph head requires the bf16-resident output".into()),
-        };
-        crate::tp::graph_section(e, None, || {
-            let _main = e.gpu.enter_main()?;
-            let Step35TokenGraphState {
-                x,
-                hn,
-                logits_stage,
-                token_d,
-                pos_d,
-                token_hist,
-                hist_idx,
-                ..
-            } = &mut *state;
-            e.rms_norm(x, self.output_norm.float_data(), hn, n_embd, 1, eps)?;
-            e.matvec_bf16_into(head, hn, logits_stage, n_embd, self.cfg.n_vocab as usize)?;
-            // Chunk-loop tail: greedy argmax feeds token_d (host-identical tie-break,
-            // argmax_gate-validated), the id lands in the history ring, and pos advances on
-            // device — consecutive launches chain with NO host sync. Single-token mode
-            // overwrites token_d/pos_d from the host before each launch, so these nodes are
-            // harmless there.
-            e.argmax_token_device_into(logits_stage, token_d, self.cfg.n_vocab as usize)?;
-            e.u32_hist_append(token_d, token_hist, hist_idx)?;
-            e.inc_i32(pos_d)?;
-            Ok(())
-        })?;
-
-        let graph = crate::tp::token_graph_build_finish()?;
-        state.graphs.push((bucket_max, graph));
-        eprintln!(
-            "[step35-token-graph] built bucket={bucket_max} layers={n_layers} \
-             build_ms={:.0} performance_claim=false",
-            started.elapsed().as_secs_f64() * 1e3
-        );
-        Ok(())
     }
 }
 

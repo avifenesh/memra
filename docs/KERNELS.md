@@ -228,7 +228,7 @@ Facts worth knowing before "cleaning up":
 Legend: FFI binding "fatbin/by-name" = loaded from module by kernel name string;
 "extern in <file>" = Rust `unsafe extern "C"` declaration.
 
-### cu/kernels.cu — 133 symbols (measured `grep -c 'extern "C" __global__'` on 2026-11-03, after `add_q8_1_f32`, `i32_add_k`, `rms_norm3_f32`, `row_softmax_f32` and `add_rms_norm_zq8` left that day with no caller; it was 142 just before, and the heading had drifted to 135 by annotation. Earlier annotations: lane/f32-gemv-rows-20260905 +1: `gemv_f32_rows`; lane/hc-mixes-gemv-20260905 +1: `hc_mixes_gemv_f32`; lane/b200-q8-fuse-20260902 +1: `rms_norm_zq8_f32`; prior recount 2026-09-02, 132, includes the TP verified-prefix batched-copy lane) (fatbin `MEMRA_ENGINE_FATBIN`)
+### cu/kernels.cu — 131 symbols (recount 2026-11-03 of the `extern "C" __global__` definitions: 142 before the 2026-11-03 door sweep, minus `pack_tok_p` and `tok_map_u32` with `MEMRA_SPEC_STREAM`; the header's earlier 135 was stale. Lineage: lane/f32-gemv-rows-20260905 +1: `gemv_f32_rows`; lane/hc-mixes-gemv-20260905 +1: `hc_mixes_gemv_f32`; lane/b200-q8-fuse-20260902 +1: `rms_norm_zq8_f32`; prior recount 2026-09-02, 132, includes the TP verified-prefix batched-copy lane) (fatbin `MEMRA_ENGINE_FATBIN`)
 
 Header: "Stage-1 kernels: correctness-first, all f32, no tensor cores" (kernels.cu:1).
 
@@ -290,7 +290,7 @@ Header: "Stage-1 kernels: correctness-first, all f32, no tensor cores" (kernels.
 | `hc_diet_stage1_mt_f32` | hc-diet MT stage 1: down/inject weight rows read ONCE, tokens iterated inside with INLINE (x*inv)*nw normalization — per-(row,token) fma chain the stage-1 program VERBATIM => BIT-IDENTICAL to the token-grid stage 1; t<=12 | bf16-w/f32 | — | qwen4exp_gpu read gate at verify chunks (set_verify_mt); oracle `gate_hc_diet_kernels` mt mode | fatbin/by-name |
 | `hc_diet_stage3_mt_f32` | hc-diet MT stage 3: up rows read once, ALL T low_act rows resident in smem, per-token lane chains + the stage-3 epilogue with inv[t,s] — BIT-IDENTICAL to the token-grid stage 3 | bf16-w/f32 | — | qwen4exp_gpu read gate at verify chunks (set_verify_mt); oracle `gate_hc_diet_kernels` mt mode | fatbin/by-name |
 
-### cu/hybrid.cu — 72 symbols (measured `grep -c 'extern "C" __global__'` on 2026-11-03, after `transpose_f32`, `repeat_heads_f32`, `conv_left_pad_f32`, `ssm_conv1d_tm_f32`, `moe_pairs_weighted_scatter_f32` and `swiglu_preclamped_mul_scaled_q8_1_f32` left that day; it was 79 just before, against a heading of 67) (fatbin `MEMRA_HYBRID_FATBIN`)
+### cu/hybrid.cu — 67 symbols (recount 2026-11-03 of the `extern "C" __global__` definitions: 79 before the 2026-11-03 door sweep, minus `gdn_scan_s128_dc`, `qkv_to_gdn_repack_f32`, `ssm_conv1d_tm_state_f32`, `ssm_conv_ring_rebuild_f32` and `ssm_conv_ring_rebuild_f32_dc` with `MEMRA_SPEC_STREAM`, and `swiglu_preclamped_mul_scaled_q8_1_f32` with `MEMRA_SHEXP_SWIGLU_ZQ8`) (fatbin `MEMRA_HYBRID_FATBIN`)
 
 Header: "Qwen3.5/3.6 hybrid linear-attention: depthwise causal conv1d + SiLU, Gated
 DeltaNet scan; all f32" (hybrid.cu:1-3).
@@ -298,9 +298,9 @@ DeltaNet scan; all f32" (hybrid.cu:1-3).
 | symbol (family) | purpose | qtype | arch guard | dispatch flag | FFI binding |
 |---|---|---|---|---|---|
 | `ssm_conv1d_*`, `conv_assemble_and_roll_f32`, `ssm_conv_ring_*` | causal conv1d + ring KV state | f32 | — | UNKNOWN | fatbin/by-name |
-| `gdn_*` scan family (prep_decode, scan_s128/_dc/_b, chunk_* incl. `_vl`) | Gated DeltaNet recurrent/chunked scan | f32 | mma-body region `#if !defined(MEMRA_PORTABLE_CUDA) \|\| defined(MEMRA_HOPPER_MMA)` (hybrid.cu:489, 1531, 2192) | MEMRA_GDN_MMA | fatbin/by-name |
+| `gdn_*` scan family (prep_decode, scan_s128/_b, chunk_* incl. `_vl`) | Gated DeltaNet recurrent/chunked scan | f32 | mma-body region `#if !defined(MEMRA_PORTABLE_CUDA) \|\| defined(MEMRA_HOPPER_MMA)` (hybrid.cu:489, 1531, 2192) | MEMRA_GDN_MMA | fatbin/by-name |
 | `gdn_chunk_state_mma[_vl]`, `gdn_chunk_output_mma[_vl]` | fused wgmma K4+K5 chunk kernels | bf16 mirrors, f32 acc | sm_90a-only wgmma via wgmma_common.cuh:9 (include at hybrid.cu:2202) | MEMRA_GDN_WGMMA (hybrid.cu:2195 "env+cfg gated") | fatbin/by-name |
-| glue (~15: sigmoid, gated_rmsnorm incl. f16out/q8_1, axpy, scatter/gather/reduce slots, f32_to_bf16_bulk, q_gate_split, qkv_to_gdn_repack) | hybrid-path glue | f32 | — | UNKNOWN | fatbin/by-name |
+| glue (~14: sigmoid, gated_rmsnorm incl. f16out/q8_1, axpy, scatter/gather/reduce slots, f32_to_bf16_bulk, q_gate_split) | hybrid-path glue | f32 | — | UNKNOWN | fatbin/by-name |
 
 ### cu/qmatvec.cu — 329 symbols (fatbin `MEMRA_QMATVEC_FATBIN`; batch-spec-20261101 +6: `qmatvec_nvfp4_mmvq_b16_rpsc`, `qmatvec_nvfp4_mmvq_b16_rpscx`, `qmatvec_nvfp4_mmvq_b32_rpcs8`, `qmatvec_nvfp4_mmvq_group4_b32_rpcs8`, `qmatvec_nvfp4_mmvq_b32_tc`, `qmatvec_nvfp4_mmvq_group4_b32_tc`; lane/kda-narrow-q8-20260905's `qmatvec_q8_0_mmvq_f32in_narrow` removed 2026-11-03 with its door; the B200 MoE v2 twins removed 2026-11-03 on their neutral and negative receipt; lane/moe-gateup-ilp2-20260905 +2: `moe_gate_up_preclamp8_q8_rows_ilp2`, `_w4_ilp2`; lane/moe-down-ilp2-20260905's `moe_down8_fma_q8_rows_ilp2` / `_w4_ilp2` removed 2026-09-06 on the gemvab receipt; the unreachable `qmatvec_q4_0_mmvq_b16_r2` / `_b16_r2_rp` removed 2026-11-03, since the b16 tier dispatches only base and `_rp`; 14 unlaunched kernels removed 2026-11-03: `moe_w_exscale`, `axpy_rows_seq_md_off_f32`, `qmatvec_nvfp4_bf16_sel_down_fma`, `qmatvec_nvfp4_{bf16,q8}_ep_down_fma`, `qmatvec_nvfp4_bf16_ep_dual_pairs`, `matvec_bf16_f32acc_tcol`, the compile-time-T `matvec_bf16_{qkvg,b4}_tcol_t{2,4,8}` twins and `matvec_bf16_dual_silu_ilv`)
 
@@ -403,7 +403,7 @@ Header: "fused MoE router… bit-identical to host path" (moe_router.cu:1-4).
 | `nvfp4_ep_stage_inputs`, `moe_sel_w_mirror` | one-launch peer-read input BF16 staging and grid-capable route-id/weight mirroring for automatic EP | MEMRA_PARALLEL_EP_DEVICE_ROUTER; MEMRA_PARALLEL_EP_Q8_ACT |
 | `silu_mul_scaled_host_expf_{bf16,q8}_ep_slots` | owner-range SwiGLU using the frozen host-expf transcription; exact BF16 or optional q8_1 emission | MEMRA_PARALLEL_EP_DEVICE_ROUTER; MEMRA_PARALLEL_EP_Q8_ACT |
 
-### cu/spec_sample.cu — 30 symbols (fatbin `MEMRA_SAMPLE_FATBIN`)
+### cu/spec_sample.cu — 28 symbols (2026-11-03: `spec_assemble_verify` and `pos_iota_i32` left with `MEMRA_SPEC_STREAM`) (fatbin `MEMRA_SAMPLE_FATBIN`)
 
 Header: "Sampled speculative decoding — device sampling primitives; Philox4x32-10
 counter-based" (spec_sample.cu:1-5).
@@ -411,7 +411,7 @@ counter-based" (spec_sample.cu:1-5).
 | symbol (family) | purpose | dispatch flag |
 |---|---|---|
 | `gumbel_perturb_*`, `softmax_gather_*`, `residual_sample_*`, `filter_stats_f32`, `scatter_trim_logits_*`, `penalize_logits_*` (including heterogeneous sparse serving rows), `mask_logits_f32`, `memra_sctr_inc` | Gumbel-max sampling, top-k/p filtering, penalties, residual (rejection) sampler | sampling chain via MEMRA_TEMP/TOP_K/TOP_P/MIN_P/PENALTY_* plus batched serving `MEMRA_SERVE_DEVPENALTY` |
-| `spec_accept_greedy_dc`, `spec_seed_gather`, `spec_rollback_stream`, `spec_assemble_verify`, `spec_ring_commit`, `spec_adapt_k`, `plain_tok_ring`, misc int copies | spec-decode accept/rollback/fork machinery | MEMRA_SPEC_* family (MEMRA_SPEC_DUAL_T lib.rs; MEMRA_SPEC_DFLASH FLAGS.md:25) |
+| `spec_accept_greedy_dc`, `spec_seed_gather`, `spec_rollback_stream`, `spec_ring_commit`, `spec_adapt_k`, `plain_tok_ring`, misc int copies | spec-decode accept/rollback/fork machinery | MEMRA_SPEC_* family (MEMRA_SPEC_DUAL_T lib.rs; MEMRA_SPEC_DFLASH FLAGS.md:25) |
 
 ROOFLINE PROBES (lane/b200-roofline-recalibrate, 2026-09-06, BENCH-ONLY, no serving path
 reaches them): `memra_bw_read` (`memra_bw_read_scalar_kernel<ILP>` / `memra_bw_read_v4_kernel<ILP>`)

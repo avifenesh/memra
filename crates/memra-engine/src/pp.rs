@@ -3565,9 +3565,6 @@ pub(crate) enum TpRestoreRefusal {
     SourceAbsent,
     /// Grow path: the freshly allocated target already holds a mirror it should not have.
     GrowTargetNotFresh,
-    /// The whole-token TP CUDA graph door is open. That graph is MODEL-level state which bakes
-    /// the rank-cache pointers, so freeing a mirror under it strands the captured parent.
-    TokenGraphDoorOpen,
 }
 
 /// What a checkpoint restore must do with one layer's distributed (TP) KV mirror.
@@ -3630,7 +3627,6 @@ pub(crate) fn tp_restore_plan(
     snap_len: Option<usize>,
     source_has_tp: Option<bool>,
     target_has_tp: bool,
-    token_graph_door: bool,
 ) -> TpRestore {
     match (source_has_tp, snap_len) {
         (None, Some(len)) => {
@@ -3643,8 +3639,6 @@ pub(crate) fn tp_restore_plan(
         (None, None) => {
             if !target_has_tp {
                 TpRestore::Nothing
-            } else if token_graph_door {
-                TpRestore::Refuse(TpRestoreRefusal::TokenGraphDoorOpen)
             } else {
                 TpRestore::DropMirror
             }
@@ -3716,8 +3710,6 @@ pub fn restore_cache_checkpoint(
     }
 
     let n_trunk = (cfg.n_layer - cfg.nextn_predict_layers) as usize;
-    // Read the door ONCE: the refusal it drives must be uniform across layers within a restore.
-    let token_graph_door = crate::tp::step_tp_graph_enabled().unwrap_or(false);
     let mut dropped_mirrors = 0usize;
     for il in 0..n {
         let owner = layer_engine(e, n_trunk, il)?;
@@ -3833,7 +3825,6 @@ pub fn restore_cache_checkpoint(
             snap.tp_kv_len[il],
             source.map(|s| s.tp_kv[il].is_some()),
             target.tp_kv[il].is_some(),
-            token_graph_door,
         ) {
             TpRestore::Nothing => {}
             TpRestore::Rewind(len) => target.tp_kv[il]
@@ -3872,9 +3863,6 @@ pub fn restore_cache_checkpoint(
                              supply",
                         TpRestoreRefusal::GrowTargetNotFresh =>
                             "the freshly allocated grow target already holds a distributed cache",
-                        TpRestoreRefusal::TokenGraphDoorOpen =>
-                            "MEMRA_STEP_TP_GRAPH is open, and its model-level whole-token graph \
-                             bakes the rank-cache pointers, so the stale mirror cannot be freed",
                     },
                     snap.tp_kv_len[il],
                     snap.kv_len[il],
@@ -3963,47 +3951,29 @@ mod host_bounce_tests {
     #[test]
     fn mismatch_snapshot_predating_lazy_tp_drops_the_mirror_instead_of_refusing() {
         // in-place rewind, snapshot has no distributed length, target materialized one.
-        assert_eq!(
-            tp_restore_plan(None, None, true, false),
-            TpRestore::DropMirror
-        );
+        assert_eq!(tp_restore_plan(None, None, true), TpRestore::DropMirror);
     }
 
     #[test]
     fn mismatch_on_the_grow_path_leaves_the_fresh_target_without_a_mirror() {
         // Grow path, snapshot predates the source's mirror, fresh target has none. Build none and
         // let the next TP use hydrate from the copied local rows. This arm REFUSED before the fix.
-        assert_eq!(
-            tp_restore_plan(None, Some(true), false, false),
-            TpRestore::Nothing
-        );
-    }
-
-    #[test]
-    fn drop_is_refused_while_the_token_graph_door_bakes_rank_pointers() {
-        assert_eq!(
-            tp_restore_plan(None, None, true, true),
-            TpRestore::Refuse(TpRestoreRefusal::TokenGraphDoorOpen)
-        );
+        assert_eq!(tp_restore_plan(None, Some(true), false), TpRestore::Nothing);
     }
 
     #[test]
     fn healthy_arms_are_untouched() {
+        assert_eq!(tp_restore_plan(None, None, false), TpRestore::Nothing);
         assert_eq!(
-            tp_restore_plan(None, None, false, false),
-            TpRestore::Nothing
-        );
-        assert_eq!(tp_restore_plan(None, None, false, true), TpRestore::Nothing);
-        assert_eq!(
-            tp_restore_plan(Some(15222), None, true, false),
+            tp_restore_plan(Some(15222), None, true),
             TpRestore::Rewind(15222)
         );
         assert_eq!(
-            tp_restore_plan(Some(15222), Some(true), false, false),
+            tp_restore_plan(Some(15222), Some(true), false),
             TpRestore::Grow(15222)
         );
         assert_eq!(
-            tp_restore_plan(None, Some(false), false, false),
+            tp_restore_plan(None, Some(false), false),
             TpRestore::Nothing
         );
     }
@@ -4011,7 +3981,7 @@ mod host_bounce_tests {
     #[test]
     fn refuses_a_recorded_distributed_length_with_no_target_mirror() {
         assert_eq!(
-            tp_restore_plan(Some(15222), None, false, false),
+            tp_restore_plan(Some(15222), None, false),
             TpRestore::Refuse(TpRestoreRefusal::TargetAbsent)
         );
     }
@@ -4019,7 +3989,7 @@ mod host_bounce_tests {
     #[test]
     fn refuses_a_recorded_distributed_length_the_source_cannot_supply() {
         assert_eq!(
-            tp_restore_plan(Some(15222), Some(false), false, false),
+            tp_restore_plan(Some(15222), Some(false), false),
             TpRestore::Refuse(TpRestoreRefusal::SourceAbsent)
         );
     }
@@ -4027,11 +3997,11 @@ mod host_bounce_tests {
     #[test]
     fn refuses_a_grow_target_that_is_not_fresh() {
         assert_eq!(
-            tp_restore_plan(Some(15222), Some(true), true, false),
+            tp_restore_plan(Some(15222), Some(true), true),
             TpRestore::Refuse(TpRestoreRefusal::GrowTargetNotFresh)
         );
         assert_eq!(
-            tp_restore_plan(None, Some(true), true, false),
+            tp_restore_plan(None, Some(true), true),
             TpRestore::Refuse(TpRestoreRefusal::GrowTargetNotFresh)
         );
     }
