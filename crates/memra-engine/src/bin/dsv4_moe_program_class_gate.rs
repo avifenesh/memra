@@ -46,7 +46,11 @@
 //! A (door OFF) and arm B (door ON, S=16). Every row carries `"axis"` so a receipt says which.
 //!
 //! Usage: dsv4_moe_program_class_gate <model-dir> <panels.txt> <panels-sha256> <new-out-dir>
+//!
+//! Placement: `pp`, a PP-2 cell. The reference expert program loads on PP-2 only; TP/EP requires
+//! the matrix program.
 use memra_engine::dsv4_gpu::{Dsv4Gpu, Dsv4SampleCfg, dsv4_pos_uniform, dsv4_sample_row};
+use memra_engine::dsv4_topology::Dsv4Placement;
 
 unsafe extern "C" {
     fn memra_dsv4_hc_dot_split_set_for_gate(slices: i32) -> i32;
@@ -630,8 +634,14 @@ fn main() {
     } else {
         memra_engine::arm_reference_expert_program_for_gate();
     }
-    let mut gpu =
-        Dsv4Gpu::load(dir, &[0, 1], ActQuantVariant::RefFp8Round, capacity).expect("load");
+    let mut gpu = Dsv4Gpu::load(
+        dir,
+        &[0, 1],
+        ActQuantVariant::RefFp8Round,
+        capacity,
+        Dsv4Placement::Pp,
+    )
+    .expect("load");
     assert_eq!(
         gpu.matrix_moe_enabled(),
         probe,

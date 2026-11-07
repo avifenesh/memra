@@ -22,8 +22,15 @@
 //!
 //! Usage: dsv4-gpu-decode-gate <model-dir> <fixtures.json> <lane4-greedy.json> <out-dir>
 //!        [n_new] [dev0,dev1]                exit 0 = gates a1/c/d/e PASS
+//!
+//! Placement: `pp` is named, but no cell of this gate runs at HEAD (S06:F0). The monolithic prefill
+//! it drives (`prefill_with_cache`, `forward`) refuses the matrix expert program, which every load
+//! resolves unless a gate arms the reference executor, and this gate does not arm it. So it refuses
+//! on every placement, `pp` included, until it is ported to the chunked prefill or deleted (owner
+//! decision owed; docs/TESTING.md "DSv4 gate placement").
 
 use memra_engine::dsv4_gpu::Dsv4Gpu;
+use memra_engine::dsv4_topology::Dsv4Placement;
 use memra_gguf::config::JsonObj;
 use memra_gguf::dsv4_forward::{FixtureSpec, drift_coeff, expert_arm_native};
 use std::io::Write as _;
@@ -168,7 +175,7 @@ fn main() {
         }
     );
 
-    let gpu = Dsv4Gpu::load(dir, &devices, spec.variant, max_seq).expect("load");
+    let gpu = Dsv4Gpu::load(dir, &devices, spec.variant, max_seq, Dsv4Placement::Pp).expect("load");
     println!(
         "loaded: split at layer {}, t={:.0}s",
         gpu.split_at,

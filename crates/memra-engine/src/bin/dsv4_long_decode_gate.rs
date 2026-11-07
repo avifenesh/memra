@@ -1,6 +1,11 @@
 //! Real-source prompt across the former 16K decode-selector boundary.
 //! One prefill, exact host snapshot/restore, then sampled plain and DSpark walks.
+//!
+//! Placement: `pp`, a PP-2 cell. This historical instrument pins the doors it was taken with (the
+//! startup pins below), and its receipts are PP-2 cells. A TP/EP cell of the same check is a new
+//! cell with its own receipt. The served long-decode cell is `dsv4_tp_replay_long_gate`.
 use memra_engine::dsv4_gpu::{Dsv4Gpu, Dsv4SampleCfg, Dsv4Vt, dsv4_sample_row};
+use memra_engine::dsv4_topology::Dsv4Placement;
 use memra_gguf::dsv4_forward::ActQuantVariant;
 use memra_tokenizer::Tokenizer;
 use sha2::{Digest, Sha256};
@@ -82,8 +87,14 @@ fn main() {
     );
 
     let capacity = count + 32;
-    let gpu = Dsv4Gpu::load(dir, &[0, 1], ActQuantVariant::RefFp8Round, capacity)
-        .expect("load 0731 model");
+    let gpu = Dsv4Gpu::load(
+        dir,
+        &[0, 1],
+        ActQuantVariant::RefFp8Round,
+        capacity,
+        Dsv4Placement::Pp,
+    )
+    .expect("load 0731 model");
     let mut state = if host_c4 {
         gpu.alloc_decode_state_host_c4(capacity, chunk)
     } else {

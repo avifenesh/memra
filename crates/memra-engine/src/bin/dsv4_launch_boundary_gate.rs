@@ -1,10 +1,14 @@
 //! Gate-only launch-boundary instrument. Build with tools/build-dsv4-launch-boundary.sh.
+//!
+//! Placement: `tp_ep` (`Dsv4Placement::SERVED`), the served placement: TP/EP with exact attention
+//! TP2.
 use memra_engine::dsv4_gpu::{
     DecodeState, Dsv4Gpu, Dsv4SampleCfg, dense_exact_tail_enabled_for_gate, dsv4_prof_on,
     dsv4_replay_cadence_default, restore_dense_exact_tail_default_for_gate,
 };
 use memra_engine::dsv4_sampler::{Dsv4Sampler, dsv4_sampler};
 use memra_engine::dsv4_source_tape::SourceTape;
+use memra_engine::dsv4_topology::Dsv4Placement;
 use memra_gguf::dsv4_forward::ActQuantVariant;
 use memra_tokenizer::Tokenizer;
 use sha2::{Digest, Sha256};
@@ -107,13 +111,18 @@ fn main() {
     let tape = SourceTape::read(&args[2]).expect("source tape");
     let tokenizer = Tokenizer::from_hf_dir(dir).unwrap();
     let prompt = tape.prompt(&tokenizer, "Review this inference engine source:\n\n", 256);
-    Dsv4Gpu::set_tp_ep_topology_for_gate(true);
-    Dsv4Gpu::set_attention_tp_for_gate(true);
     // This instrument retains the sktail census and control program.
     // memra #458: this is a bench process, so it may run the matrix expert program
     // with the default-ON split-K arm; a serving process cannot arm it and refuses
     // that combination at load instead of failing every request.
-    let mut gpu = Dsv4Gpu::load(dir, &[0, 1], ActQuantVariant::RefFp8Round, 544).unwrap();
+    let mut gpu = Dsv4Gpu::load(
+        dir,
+        &[0, 1],
+        ActQuantVariant::RefFp8Round,
+        544,
+        Dsv4Placement::SERVED,
+    )
+    .unwrap();
     assert!(gpu.topology().is_tp_ep() && gpu.attention_tp_geometry().is_some());
     gpu.set_grouped_route_validation_for_gate(false);
     gpu.set_grouped_mirror_validation_for_gate(false);

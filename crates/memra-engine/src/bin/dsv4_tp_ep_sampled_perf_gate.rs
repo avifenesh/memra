@@ -6,6 +6,10 @@
 //! path, then 256 vendor-shape sampled tokens are generated. Prefill/prime and
 //! decode are timed separately. No speculative path, PP arm, cache digest, or
 //! hidden-state hash is inside either timed interval.
+//!
+//! Placement is required on every model cell (S06:F0): `--placement=tp_ep` is the served
+//! placement (attention TP2) and runs first; the full-token replay cells exist only there.
+//! `--placement=tp_ep_replicated` keeps attention replicated.
 
 use memra_engine::dsv4_gpu::{
     Dsv4Gpu, Dsv4Phase, Dsv4SampleCfg, Dsv4SamplerOrder, dsv4_prof_on, dsv4_sample_row,
@@ -13,6 +17,7 @@ use memra_engine::dsv4_gpu::{
 };
 use memra_engine::dsv4_sampler::{Dsv4DeviceSampler, Dsv4Sampler, dsv4_sampler};
 use memra_engine::dsv4_source_tape::SourceTape;
+use memra_engine::dsv4_topology::Dsv4Placement;
 use memra_gguf::dsv4_forward::ActQuantVariant;
 use memra_tokenizer::Tokenizer;
 use sha2::{Digest, Sha256};
@@ -197,10 +202,11 @@ fn assert_engagement(gpu: &Dsv4Gpu, c: Counters, prime: usize, decode: usize) {
         (prime + decode) as u64 * layers,
         "one-shot AR engagement: the expert join only; the attention join gathers"
     );
+    let head_steps = u64::from(gpu.vocab_parallel_head_for_gate()) * (prime + decode) as u64;
     assert_eq!(
         c.gathers,
-        2 * attention_steps,
-        "attention TP2 row gathers: wo_a groups and wo_b rows"
+        2 * attention_steps + head_steps,
+        "row gathers: attention TP2 wo_a groups and wo_b rows, and the vocab-parallel head"
     );
     assert_eq!(
         c.attention_rank, [attention_steps; 2],
@@ -518,7 +524,20 @@ fn select_dense_policy(profile: bool) {
 }
 
 fn main() {
-    let args: Vec<String> = std::env::args().collect();
+    let mut args: Vec<String> = std::env::args().collect();
+    // The sampler component cell loads no model, so it names no placement.
+    let placement = (args.get(1).map(String::as_str) != Some("--sampler-component")).then(|| {
+        Dsv4Placement::take_gate_arg(
+            &mut args,
+            &[
+                Dsv4Placement::SERVED,
+                Dsv4Placement::TpEp {
+                    attention_tp: false,
+                },
+            ],
+        )
+        .unwrap_or_else(|err| panic!("{err}"))
+    });
     let replay_profile = args
         .get(3)
         .is_some_and(|a| a == "--full-token-replay-profile");
@@ -552,7 +571,7 @@ fn main() {
     let sampler_abba = args.get(3).is_some_and(|a| a == "--sampler-abba");
     assert!(
         args.len() == 3 || args.len() == 4,
-        "usage: dsv4_tp_ep_sampled_perf_gate <model-dir> <real-source.txt> [--sampler-abba|--small-kernel-components|--small-kernel-abba|--full-token-replay|--full-token-replay-baab|--full-token-replay-profile|--full-token-replay-cadence|--full-token-replay-cadence-baab]"
+        "usage: dsv4_tp_ep_sampled_perf_gate <model-dir> <real-source.txt> [--sampler-abba|--small-kernel-components|--small-kernel-abba|--full-token-replay|--full-token-replay-baab|--full-token-replay-profile|--full-token-replay-cadence|--full-token-replay-cadence-baab] --placement=<tp_ep|tp_ep_replicated>"
     );
     let components = args
         .get(3)
@@ -562,11 +581,8 @@ fn main() {
         args.len() == 3 || sampler_abba || components || small_abba || full_replay,
         "unknown gate arm"
     );
-    let attention_mode = match std::env::var("MEMRA_DSV4_ATTENTION_TP_GATE").as_deref() {
-        Err(std::env::VarError::NotPresent) | Ok("0") => false,
-        Ok("1") => true,
-        _ => panic!("MEMRA_DSV4_ATTENTION_TP_GATE requires 0 or 1"),
-    };
+    let placement = placement.expect("every model cell names its placement");
+    let attention_mode = placement == Dsv4Placement::SERVED;
     let device = dsv4_sampler().expect("sampler door") == Dsv4Sampler::Device;
     let sampler = dsv4_sampler_order().expect("explicit sampler configuration");
     let profiled = dsv4_prof_on();
@@ -631,8 +647,6 @@ fn main() {
         PROMPT_TOKENS,
     );
 
-    Dsv4Gpu::set_tp_ep_topology_for_gate(true);
-    Dsv4Gpu::set_attention_tp_for_gate(attention_mode);
     println!("NUMERIC_CLASS {numeric_class}");
     println!(
         "PROTOCOL {{\"plain_only\":true,\"sampled\":true,\"topology\":\"tp_ep_all_layers\",\"attention_tp\":{attention_mode},\"prompt_tokens\":{PROMPT_TOKENS},\"output_tokens\":{OUTPUT_TOKENS},\"repeats\":{repeats},\"temperature\":1.0,\"top_p\":1.0,\"top_k\":0,\"seed\":20260907,\"sampler_order\":\"{sampler_name}\",\"timing_scope\":\"sample_plus_forward_envelope\",\"sampling_in_timing\":true,\"source_sha256\":\"{}\",\"speculative\":false,\"pp_timing\":false,\"cache_hash_in_timing\":false}}",
@@ -646,6 +660,7 @@ fn main() {
         &[0, 1],
         ActQuantVariant::RefFp8Round,
         PROMPT_TOKENS + OUTPUT_TOKENS + 32,
+        placement,
     )
     .expect("TP/EP model");
     assert!(gpu.topology().is_tp_ep(), "no PP fallback");
@@ -853,8 +868,6 @@ fn main() {
             );
         }
     }
-    Dsv4Gpu::set_attention_tp_for_gate(false);
-    Dsv4Gpu::set_tp_ep_topology_for_gate(false);
 }
 
 #[cfg(test)]

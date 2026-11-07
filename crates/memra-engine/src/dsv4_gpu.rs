@@ -44,7 +44,7 @@ use crate::dsv4_ep::{EpCompute, EpLayer, EpScratch, TpEpArState};
 use crate::dsv4_ffi as k;
 use crate::dsv4_ffi::ck;
 pub use crate::dsv4_graph::Dsv4LayerCapture;
-use crate::dsv4_topology::{self, Dsv4Placement, Dsv4TopologyPlan};
+use crate::dsv4_topology::{Dsv4Placement, Dsv4TopologyPlan};
 
 unsafe extern "C" {
     fn memra_dsv4_hc_dot_split_slices() -> i32;
@@ -2648,19 +2648,6 @@ impl Dsv4Gpu {
         self.plain_sampler
     }
 
-    /// Gate placement selector, read by [`Self::load`] before it places the model: armed, the
-    /// load takes TP/EP (`Dsv4Placement::TpEp`), PP-2 otherwise. Serving passes its placement
-    /// to [`Self::load_placed`] and never reads it.
-    pub fn set_tp_ep_topology_for_gate(enabled: bool) -> bool {
-        dsv4_topology::set_tp_ep_for_gate(enabled)
-    }
-
-    /// Gate selector for attention TP2 under [`Self::load`]; it requires the TP/EP selector
-    /// above. Serving passes its placement to [`Self::load_placed`] and never reads it.
-    pub fn set_attention_tp_for_gate(enabled: bool) -> bool {
-        dsv4_attention_tp::set_for_gate(enabled)
-    }
-
     pub fn attention_tp_geometry(&self) -> Option<AttentionTpGeometry> {
         self.attention_tp
     }
@@ -2766,13 +2753,56 @@ impl Dsv4Gpu {
             .unwrap_or(0)
     }
 
-    /// Row gathers of the exact attention TP join, two per layer per step.
+    /// Row gathers on the TP/EP pair: two per layer per step for the exact attention TP join,
+    /// plus one per one-row step for the vocab-parallel head ([`Self::vocab_parallel_head_for_gate`]).
     pub fn tp_ep_row_gathers(&self) -> u64 {
         self.tp_ep_ar
             .lock()
             .ok()
             .and_then(|ar| ar.as_ref().map(TpEpArState::gathers))
             .unwrap_or(0)
+    }
+
+    /// Whether this load's one-row TP/EP steps take the vocab-parallel head and its row gather.
+    pub fn vocab_parallel_head_for_gate(&self) -> bool {
+        self.vocab_parallel_head()
+    }
+
+    /// How far one one-row TP/EP step advances each one-shot block's AR epoch, the count
+    /// `full_token_ar_epochs_for_gate` is checked against. Every collective ticks each block it
+    /// launches (`tp_ar::ar_blocks_for` of its element count). Per trunk layer, attention TP2
+    /// gathers its wo_a groups and then its wo_b rows (replicated attention runs no attention
+    /// collective) and the expert join reduces the routed rows; once per step the
+    /// vocab-parallel head gathers its logits. The routed width is the gates' one-row decode
+    /// shape, with the shared expert outside the reduce plane.
+    pub fn tp_ep_ar_epochs_per_step_for_gate(&self) -> Vec<u32> {
+        let layers = self.topology.layers as u32;
+        let hidden = self.model.mc.n_embd as usize;
+        let topk = self
+            .model
+            .mc
+            .moe
+            .as_ref()
+            .map_or(0, |moe| moe.expert_used_count as usize);
+        let mut joins = Vec::with_capacity(4);
+        if let Some(plan) = self.attention_tp {
+            joins.push((plan.local_output_width, layers));
+            joins.push((plan.local_hidden, layers));
+        }
+        joins.push((topk * hidden, layers));
+        if self.vocab_parallel_head() {
+            let (info, _) = self.model.st.raw("head.weight").expect("head");
+            joins.push((info.shape[0] as usize / 2, 1));
+        }
+        (0..crate::tp_ar::AR_BLOCKS as usize)
+            .map(|block| {
+                joins
+                    .iter()
+                    .filter(|&&(n, _)| block < crate::tp_ar::ar_blocks_for(n) as usize)
+                    .map(|&(_, per_step)| per_step)
+                    .sum()
+            })
+            .collect()
     }
 
     /// Drain both ranks and read the sticky device-side refusal words. The walk
@@ -3457,31 +3487,11 @@ impl Dsv4Gpu {
         })
     }
 
-    /// Open the artifact and place it across `devices` with the placement the gate switches
-    /// armed (`set_tp_ep_topology_for_gate`, `set_attention_tp_for_gate`), PP-2 when neither
-    /// is. Serving passes its placement to [`Self::load_placed`].
+    /// Open the artifact and place it across `devices` with `placement`. There is no default
+    /// placement (S06:F0): memra-server passes `MEMRA_DSV4_TOPOLOGY`'s placement
+    /// ([`Dsv4Placement::SERVED`] unless `pp`), and every gate names the placement it measures.
+    /// Under PP, `split_at` = first layer of stage 1, derived from per-layer byte math.
     pub fn load(
-        dir: &Path,
-        devices: &[usize],
-        variant: ActQuantVariant,
-        max_seq: usize,
-    ) -> Res<Self> {
-        let attention_tp = dsv4_attention_tp::enabled_for_gate();
-        let placement = if dsv4_topology::tp_ep_for_gate() {
-            Dsv4Placement::TpEp { attention_tp }
-        } else if attention_tp {
-            return Err(
-                "attention TP2 requires the explicit all-layer expert-ID EP topology".into(),
-            );
-        } else {
-            Dsv4Placement::Pp
-        };
-        Self::load_placed(dir, devices, variant, max_seq, placement)
-    }
-
-    /// Open the artifact and place it across `devices`. Under PP, `split_at` = first layer
-    /// of stage 1, derived from per-layer byte math unless overridden.
-    pub fn load_placed(
         dir: &Path,
         devices: &[usize],
         variant: ActQuantVariant,
@@ -3489,6 +3499,10 @@ impl Dsv4Gpu {
         placement: Dsv4Placement,
     ) -> Res<Self> {
         assert_eq!(devices.len(), 2, "lane 4 placement is a 2-card layer split");
+        // Its own token, first, so a refused load names its placement too. "[load] topology:"
+        // keeps its text (receipt parsers count it once per load), and so does the split line
+        // "[load] placement: split_at=...".
+        eprintln!("[load] placing {}", placement.name());
         let pdl_chain = dsv4_pdl_chain_env()?;
         let vocab_head = dsv4_vocab_head_env()?;
         // Before any stream capture: a replay graph records the launch attribute it saw.
@@ -12179,7 +12193,7 @@ impl Dsv4Gpu {
             let (rank0_ws, rank1_ws) = verify.ws.split_at_mut(1);
             let owner_ws = &mut rank0_ws[0];
             let peer_ws = &mut rank1_ws[0];
-            let ar_outputs = verify
+            let mut ar_outputs = verify
                 .tp_ep_ar_outputs
                 .as_mut()
                 .ok_or("TP/EP one-shot output buffers missing")?;
@@ -12313,26 +12327,34 @@ impl Dsv4Gpu {
                 ));
             }
             {
-                let (owner_output, peer_output) = ar_outputs.split_at_mut(1);
                 let mut ar = self
                     .tp_ep_ar
                     .lock()
                     .map_err(|_| "TP/EP one-shot reduction state mutex poisoned")?;
-                ar.as_mut()
-                    .ok_or("TP/EP one-shot reduction state missing")?
-                    .all_reduce_into(
-                        owner_gpu,
-                        peer_gpu,
-                        &owner_ws.contrib,
-                        &peer_ws.contrib,
-                        &mut owner_output[0],
-                        &mut peer_output[0],
-                        t * (topk + usize::from(shared_joined)) * hidden,
-                        capture,
-                        None,
-                        2 * il as u32 + 1,
-                        true,
-                    )?;
+                let ar = ar
+                    .as_mut()
+                    .ok_or("TP/EP one-shot reduction state missing")?;
+                // Replicated attention puts no gather between two expert joins, so this join
+                // takes the plane the previous push join did not write (`tp_ep_ar_outputs_alt`).
+                if let Some(alt) = verify.tp_ep_ar_outputs_alt.as_mut()
+                    && ar.unwritten_plane(owner_gpu, peer_gpu, [&*ar_outputs, &*alt])? == 1
+                {
+                    ar_outputs = alt;
+                }
+                let (owner_output, peer_output) = ar_outputs.split_at_mut(1);
+                ar.all_reduce_into(
+                    owner_gpu,
+                    peer_gpu,
+                    &owner_ws.contrib,
+                    &peer_ws.contrib,
+                    &mut owner_output[0],
+                    &mut peer_output[0],
+                    t * (topk + usize::from(shared_joined)) * hidden,
+                    capture,
+                    None,
+                    2 * il as u32 + 1,
+                    true,
+                )?;
             }
             let layer0 = self.stages[0]
                 .layers
@@ -14756,6 +14778,12 @@ pub struct VerifyState {
     landing: Option<StepLanding>,
     tp_ep_layers: Option<Vec<LayerCkptDev>>,
     tp_ep_ar_outputs: Option<[CudaSlice<f32>; 2]>,
+    /// Replicated attention only: the expert join's second output plane. There the expert join
+    /// is the walk's only push join, and a push join may not write the previous one's output
+    /// (`TpEpArState::push_join`), so the join alternates planes
+    /// (`TpEpArState::unwritten_plane`). Attention TP2 needs none: its two gathers sit between
+    /// consecutive expert joins.
+    tp_ep_ar_outputs_alt: Option<[CudaSlice<f32>; 2]>,
     tp_ep_attention_outputs: Option<[CudaSlice<f32>; 2]>,
     /// Attention TP2: both ranks' wo_a group outputs gathered, [tmax][groups * o_lora].
     tp_ep_attention_og: Option<[CudaSlice<f32>; 2]>,
@@ -15924,7 +15952,12 @@ impl Dsv4Gpu {
         } else {
             None
         };
-        let tp_ep_ar_outputs = if self.topology.is_tp_ep() {
+        // The expert join's output plane, and under replicated attention its second plane
+        // (`VerifyState::tp_ep_ar_outputs_alt`).
+        let mut ar_planes = |wanted: bool| -> Res<Option<[CudaSlice<f32>; 2]>> {
+            if !wanted {
+                return Ok(None);
+            }
             let mut outputs = Vec::with_capacity(2);
             for (stage_i, st) in self.stages.iter().enumerate() {
                 st.gpu
@@ -15941,14 +15974,13 @@ impl Dsv4Gpu {
                 bytes[stage_i] += (plane * 4) as u64;
                 outputs.push(output);
             }
-            Some(
-                outputs
-                    .try_into()
-                    .map_err(|_| "TP/EP AR output rank count mismatch".to_string())?,
-            )
-        } else {
-            None
+            Ok(Some(outputs.try_into().map_err(|_| {
+                "TP/EP AR output rank count mismatch".to_string()
+            })?))
         };
+        let tp_ep_ar_outputs = ar_planes(self.topology.is_tp_ep())?;
+        let tp_ep_ar_outputs_alt =
+            ar_planes(self.topology.is_tp_ep() && self.attention_tp.is_none())?;
         let mut attention_planes = |width: usize| -> Res<Option<[CudaSlice<f32>; 2]>> {
             if self.attention_tp.is_none() {
                 return Ok(None);
@@ -16005,6 +16037,7 @@ impl Dsv4Gpu {
             landing: None,
             tp_ep_layers,
             tp_ep_ar_outputs,
+            tp_ep_ar_outputs_alt,
             tp_ep_attention_outputs,
             tp_ep_attention_og,
             tp_ep_head_half,
@@ -21855,7 +21888,7 @@ impl Dsv4Gpu {
     /// `toks[r]` to `states[r]` at its own position. Both ranks read every weight once for all
     /// rows, each row's attention reads only its own request's caches, and each request
     /// commits its row on both planes as its one-row step would, so every row is bit-identical
-    /// to that request's one-row TP/EP step, replayed or eager (`dsv4_rows_gate --tpep`). A
+    /// to that request's one-row TP/EP step, replayed or eager (`dsv4_rows_gate --placement=tp_ep`). A
     /// request armed for full-token replay may ride the step: the step touches its caches and
     /// checkpoints only, never its graphs or one-row workspace, and the replay refreshes its
     /// host marks from the position when it resumes.
@@ -23795,11 +23828,15 @@ impl Dsv4Gpu {
 }
 
 impl Dsv4Gpu {
-    /// Gate-only digest of the two replicated live cache planes.  It includes
+    /// Gate-only digest of the two live cache planes.  It includes
     /// persistent rings, compressed/indexer stores, and pending rows after the
     /// TP/EP commit; no transient verifier tail is used as evidence.  Equal
-    /// digests are the rank-symmetry check for the replicated attention/cache
-    /// numeric class, not a performance measurement.
+    /// digests are the rank-symmetry check of every replicated plane, not a
+    /// performance measurement.  A position-split C4 store (memra #710) keeps
+    /// each block on one rank, so both ranks digest its logical rows: the same
+    /// values in the same order as a replicated store, which keeps the digest
+    /// equal across the two attention programs.  The split's own exactness is
+    /// `dsv4_kv_split_gate`'s.
     pub fn tp_ep_cache_digest_for_gate(&self, state: &DecodeState) -> Res<[u64; 2]> {
         if !self.topology.is_tp_ep() {
             return Err("TP/EP cache digest requires the all-layer topology".into());
@@ -23810,6 +23847,18 @@ impl Dsv4Gpu {
             .ok_or("TP/EP rank-1 cache plane missing")?;
         if rank1.len() != state.caches.len() {
             return Err("TP/EP cache plane layer count mismatch".into());
+        }
+        let win = self.model.cfg().sliding_window as usize;
+        let hd = self.model.cfg().head_dim as usize;
+        let mut split_rows = Vec::with_capacity(rank1.len());
+        for (cache, peer) in state.caches.iter().zip(rank1) {
+            split_rows.push(if cache.split.is_some() {
+                let mut image = vec![0f32; (win + cache.n_blocks) * hd];
+                self.split_kvc_to_host(cache, peer, cache.n_blocks, &mut image)?;
+                Some(image.split_off(win * hd))
+            } else {
+                None
+            });
         }
         let mut digests = [0xcbf29ce484222325u64; 2];
         let mix = |hash: &mut u64, value: u64| {
@@ -23834,36 +23883,33 @@ impl Dsv4Gpu {
                     .iter()
                     .find(|layer| layer.il == il as u32)
                     .ok_or_else(|| format!("TP/EP cache digest missing rank {rank} layer {il}"))?;
-                let mut read = |plane: cudarc::driver::CudaView<'_, f32>| -> Res<()> {
+                let read = |hash: &mut u64, plane: cudarc::driver::CudaView<'_, f32>| -> Res<()> {
                     let mut values = vec![0f32; plane.len()];
                     stream
                         .memcpy_dtoh(&plane, &mut values)
                         .map_err(e("TP/EP cache digest copy"))?;
                     stream.synchronize().map_err(e("TP/EP cache digest sync"))?;
                     for value in values {
-                        mix(digest, value.to_bits() as u64);
+                        mix(hash, value.to_bits() as u64);
                     }
                     Ok(())
                 };
                 // Only persistent data participates. In particular, exclude
                 // transient verifier rows and n_blocks/i_blocks metadata so a
                 // stale pair cannot pass merely because counters advanced.
-                let win = self.model.cfg().sliding_window as usize;
-                let hd = self.model.cfg().head_dim as usize;
-                read(cache.kvc.slice(..win * hd))?;
-                if let Some(cmp) = &layer.cmp {
-                    // A position-split plane holds its parity of the live blocks (memra #710).
-                    let live = cache.split.as_ref().map_or(cache.n_blocks, |sp_| {
-                        if sp_.rank == 0 {
-                            cache.n_blocks.div_ceil(2)
-                        } else {
-                            cache.n_blocks / 2
-                        }
-                    });
+                read(digest, cache.kvc.slice(..win * hd))?;
+                if let Some(rows) = &split_rows[il] {
+                    // The split store's logical rows, assembled from both ranks above.
+                    for value in rows {
+                        mix(digest, value.to_bits() as u64);
+                    }
+                } else if let Some(cmp) = &layer.cmp {
                     let end = win
                         .checked_mul(hd)
                         .and_then(|start| {
-                            live.checked_mul(cmp.d)
+                            cache
+                                .n_blocks
+                                .checked_mul(cmp.d)
                                 .and_then(|rows| start.checked_add(rows))
                         })
                         .ok_or("TP/EP cache digest compressed range overflow")?;
@@ -23873,13 +23919,13 @@ impl Dsv4Gpu {
                             cache.kvc.len()
                         ));
                     }
-                    read(cache.kvc.slice(win * hd..end))?;
+                    read(digest, cache.kvc.slice(win * hd..end))?;
                 }
                 if let Some(plane) = &cache.pend_kv {
-                    read(plane.slice(..))?;
+                    read(digest, plane.slice(..))?;
                 }
                 if let Some(plane) = &cache.pend_score {
-                    read(plane.slice(..))?;
+                    read(digest, plane.slice(..))?;
                 }
                 if let Some(plane) = &cache.ikvc {
                     let ix = layer
@@ -23896,13 +23942,13 @@ impl Dsv4Gpu {
                             plane.len()
                         ));
                     }
-                    read(plane.slice(..end))?;
+                    read(digest, plane.slice(..end))?;
                 }
                 if let Some(plane) = &cache.ipend_kv {
-                    read(plane.slice(..))?;
+                    read(digest, plane.slice(..))?;
                 }
                 if let Some(plane) = &cache.ipend_score {
-                    read(plane.slice(..))?;
+                    read(digest, plane.slice(..))?;
                 }
             }
         }
@@ -25369,6 +25415,7 @@ mod sampled_path_tests {
                 &[0, 1],
                 super::ActQuantVariant::RefFp8Round,
                 32,
+                super::Dsv4Placement::SERVED,
             ) {
                 Err(err) => err,
                 Ok(_) => panic!("invalid sampler configuration loaded"),

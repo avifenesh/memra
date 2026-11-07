@@ -1,6 +1,14 @@
 //! Corrected grouped-prefill bring-up: complete MoE, FP8-QAT transport, and
 //! same-forced-path logit characterization. No production/performance promotion.
+//!
+//! Placement: `pp` is named, but no cell of this gate runs at HEAD (S06:F0). Its grouped arm,
+//! `set_prefill_grouped_for_gate(true)`, refuses the matrix expert program ("cannot overlay the
+//! matrix request program"), and a `pp` load resolves that program too unless a gate arms the
+//! reference executor, which this gate does not. The probe also refuses EP, which TP/EP requires.
+//! Port or delete is an owner decision owed; kept, it arms the reference executor before load, as
+//! `dsv4_program_accuracy` does.
 use memra_engine::dsv4_gpu::{Dsv4Gpu, Dsv4SampleCfg, dsv4_sample_row};
+use memra_engine::dsv4_topology::Dsv4Placement;
 use memra_gguf::dsv4_forward::FixtureSpec;
 use std::path::Path;
 
@@ -78,7 +86,14 @@ fn main() {
     );
     let fixture = FixtureSpec::load(Path::new(&args[2]));
     let prompt = fixture.tokens_160.as_ref().expect("160-token real fixture");
-    let mut gpu = Dsv4Gpu::load(Path::new(&args[1]), &[0, 1], fixture.variant, 4096).expect("load");
+    let mut gpu = Dsv4Gpu::load(
+        Path::new(&args[1]),
+        &[0, 1],
+        fixture.variant,
+        4096,
+        Dsv4Placement::Pp,
+    )
+    .expect("load");
     for layer in [3, 42] {
         for rows in [1, 32, 64] {
             let input: Vec<f32> = (0..rows * 4096)

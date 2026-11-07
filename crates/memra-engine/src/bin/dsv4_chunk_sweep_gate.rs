@@ -1,6 +1,11 @@
 //! One-load matrix+EP chunk discovery: exact live state and sampled continuation.
 //! Timed section is engine prefill only, not HTTP TTFT or output throughput.
+//!
+//! Placement: `pp`, a PP-2 cell. This historical instrument pins the doors it was taken with (the
+//! startup pins below), and its receipts are PP-2 cells. A TP/EP cell of the same check is a new
+//! cell with its own receipt.
 use memra_engine::dsv4_gpu::{Dsv4Gpu, Dsv4SampleCfg, Dsv4Vt};
+use memra_engine::dsv4_topology::Dsv4Placement;
 use memra_gguf::dsv4_forward::ActQuantVariant;
 use memra_tokenizer::Tokenizer;
 use sha2::{Digest, Sha256};
@@ -222,8 +227,14 @@ fn main() {
     // memra #458: this is a bench process, so it may run the matrix expert program
     // with the default-ON split-K arm; a serving process cannot arm it and refuses
     // that combination at load instead of failing every request.
-    let gpu = Dsv4Gpu::load(dir, &[0, 1], ActQuantVariant::RefFp8Round, count + 32)
-        .expect("matrix/EP load");
+    let gpu = Dsv4Gpu::load(
+        dir,
+        &[0, 1],
+        ActQuantVariant::RefFp8Round,
+        count + 32,
+        Dsv4Placement::Pp,
+    )
+    .expect("matrix/EP load");
     assert!(gpu.matrix_moe_enabled());
     let mut baseline = None;
     for (ordinal, width) in widths.into_iter().enumerate() {

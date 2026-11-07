@@ -1,6 +1,10 @@
 //! Teacher-forced reference/matrix distribution characterization, not quality admission.
 //! Both programs consume the same real source tokens; neither feeds its own predictions.
+//!
+//! Placement: `pp`, a PP-2 cell. The reference expert program loads on PP-2 only; TP/EP requires
+//! the matrix program.
 use memra_engine::dsv4_gpu::{Dsv4Gpu, Dsv4SampleCfg, dsv4_sample_row};
+use memra_engine::dsv4_topology::Dsv4Placement;
 use memra_gguf::dsv4_forward::ActQuantVariant;
 use memra_tokenizer::Tokenizer;
 use sha2::{Digest, Sha256};
@@ -167,8 +171,14 @@ fn main() {
     // The reference executor has no environment door any more (memra #461): this
     // gate loads it through the one arm there is, and then asserts it got it.
     memra_engine::arm_reference_expert_program_for_gate();
-    let mut gpu =
-        Dsv4Gpu::load(dir, &[0, 1], ActQuantVariant::RefFp8Round, capacity).expect("load");
+    let mut gpu = Dsv4Gpu::load(
+        dir,
+        &[0, 1],
+        ActQuantVariant::RefFp8Round,
+        capacity,
+        Dsv4Placement::Pp,
+    )
+    .expect("load");
     assert!(
         !gpu.matrix_moe_enabled(),
         "the gate arm must load reference"

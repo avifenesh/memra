@@ -6,10 +6,17 @@
 //! kv (cache-content instrument).
 //!
 //! Usage: dsv4-decode-probe <model-dir> <fixtures.json> [dev0,dev1]
+//!
+//! Placement: `pp` is named, but no cell of this gate runs at HEAD (S06:F0). The monolithic prefill
+//! it drives (`prefill_with_cache`, `forward`) refuses the matrix expert program, which every load
+//! resolves unless a gate arms the reference executor, and this gate does not arm it. So it refuses
+//! on every placement, `pp` included, until it is ported to the chunked prefill or deleted (owner
+//! decision owed; docs/TESTING.md "DSv4 gate placement").
 
 use cudarc::driver::{DevicePtr, DevicePtrMut};
 use memra_engine::dsv4_ffi as k;
 use memra_engine::dsv4_gpu::{Dsv4Gpu, GpuCapture};
+use memra_engine::dsv4_topology::Dsv4Placement;
 use memra_gguf::dsv4_forward::FixtureSpec;
 use std::os::raw::c_void;
 use std::path::Path;
@@ -137,7 +144,7 @@ fn main() {
         .map(|s| s.split(',').map(|x| x.parse().expect("device")).collect())
         .unwrap_or_else(|| vec![0, 1]);
     let prompt = spec.tokens_32.clone();
-    let gpu = Dsv4Gpu::load(dir, &devices, spec.variant, 256).expect("load");
+    let gpu = Dsv4Gpu::load(dir, &devices, spec.variant, 256, Dsv4Placement::Pp).expect("load");
     println!("loaded, split at {}", gpu.split_at);
 
     let mut state = gpu.alloc_decode_state().expect("alloc");
