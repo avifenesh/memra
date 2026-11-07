@@ -121,7 +121,7 @@ fi
 # 31B's coin distribution on a 128-expert MoE; expectation ~2.5 flips per 12-window. The runs
 # landed 1 and 2 flips, every one margin-explained; the decision position agreed both times.
 # Budget 3 per 12-window from those margins, same rule as the 31B row above.
-# PER-PROMPT ROWS: a longer prompt is a different tail. Qwen3.8-27B on the 16k prompt (p4-16k,
+# PER-PROMPT ROWS: a longer prompt is a different tail. Qwen3.8-27B NVFP4 on the 16k prompt (p4-16k,
 # 23,476 tokens; added 2026-11-07, research/gb10-prefill-20261106/gemm-v2-gates-main-unit1/
 # argmax16k-*): 5 of the 12 tail positions are arithmetically flippable (min(margin_p,
 # margin_d) < config spread: 0.0121 < 0.0713, 0.0246 < 0.0742, 0.0305 < 0.1382,
@@ -129,17 +129,20 @@ fi
 # 0.3621: an expectation of ~2.5 flips per 12-window. main c2e04719b6 and the F8F4 v2 head land 3
 # flips each with byte-identical probe tables, every one margin-explained, the decision position
 # agreeing. Budget 3 per 12-window from those margins, the gemma rows' rule. The default
-# 2,048-token prompt keeps the model's row.
+# 2,048-token prompt keeps the model's row. Measured on the NVFP4-Q5K-mtp artifact only, so the row
+# matches the NVFP4 artifacts. The probe's own VERDICT-INPUT line keeps its default row (as for the
+# 26B); this wrapper's verdict is the gate, and it prints the row it used.
+BUDGET_ROW="--max-flips"
 if [ -z "$MAX_FLIPS" ]; then
     case "$(basename "$MODEL")|$(basename "$PROMPT")" in
-        Qwen3.8-27B*"|p4-16k.txt") MAX_FLIPS=$(( (3 * WINDOW + 11) / 12 )) ;;
+        Qwen3.8-27B-NVFP4*"|p4-16k.txt") MAX_FLIPS=$(( (3 * WINDOW + 11) / 12 )); BUDGET_ROW="Qwen3.8-27B NVFP4 on p4-16k (3/12-window)" ;;
     esac
 fi
 if [ -z "$MAX_FLIPS" ]; then
     case "$(basename "$MODEL")" in
-        gemma-4-31B*) MAX_FLIPS=$(( (3 * WINDOW + 11) / 12 )) ;;
-        gemma-4-26B*) MAX_FLIPS=$(( (3 * WINDOW + 11) / 12 )) ;;
-        *)            MAX_FLIPS=1 ;;
+        gemma-4-31B*) MAX_FLIPS=$(( (3 * WINDOW + 11) / 12 )); BUDGET_ROW="gemma-4-31B (3/12-window)" ;;
+        gemma-4-26B*) MAX_FLIPS=$(( (3 * WINDOW + 11) / 12 )); BUDGET_ROW="gemma-4-26B (3/12-window)" ;;
+        *)            MAX_FLIPS=1; BUDGET_ROW="default" ;;
     esac
 fi
 [[ "$MAX_FLIPS" =~ ^[0-9]+$ ]] || { echo "FAIL: max-flips must be a nonnegative integer"; exit 2; }
@@ -171,6 +174,7 @@ if [ -n "${MEMRA_GATE_LOG_ROOT:-}" ]; then
 fi
 
 echo "argmax-margin-gate: model=$(basename "$MODEL") prompt=$(basename "$PROMPT") window=$WINDOW canary=$CANARY"
+echo "  flip budget: $MAX_FLIPS (row: $BUDGET_ROW)"
 # Raw log FIRST, parse second (never let a pipe swallow the failure text).
 "$PROBE" "$MODEL" "$PROMPT" "$WINDOW" > "$LOG" 2>&1
 rc=$?
