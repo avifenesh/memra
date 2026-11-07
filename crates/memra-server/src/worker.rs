@@ -36743,9 +36743,10 @@ fn admit(
             }
         }
     }
-    // GRID REWIND (MEMRA_RESUME_GRID_REWIND, WP-B day 41): the exact-extension hit resumes from the
-    // entry's grid checkpoint, not from its decoded rows; no usable checkpoint drops the entry and
-    // the request primes cold. Unset, nothing here runs.
+    // GRID REWIND (WP-B day 41): the exact-extension hit resumes from the entry's grid checkpoint,
+    // not from its decoded rows; no usable checkpoint drops the entry and the request primes cold.
+    // A recurrent cache always takes it (memra#1091, below); MEMRA_RESUME_GRID_REWIND adds the
+    // attention-only caches.
     // EXACT RESUME (MEMRA_RESUME_EXACT, WP-B day 44): a settled entry resumes where it stands; an
     // unsettled one restores its grid checkpoint; either way the tail primes in one call.
     if resume_exact_on()

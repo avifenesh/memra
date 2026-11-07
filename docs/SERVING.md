@@ -3044,7 +3044,13 @@ programs. A RECURRENT cache in the plain continuation pool no longer resumes on 
 at the default a three-turn chat whose second turn had room for 256 tokens resumed at 3,113 of
 3,144 tokens and left the cold text. The resume rewinds to the session's grid checkpoint and
 primes the rest (`plain_pool_resume_at`, at least `PRIME_MIN_T` rows), or primes cold when there
-is none, with or without `MEMRA_KV_PARK_COMPACT`.
+is none, with or without `MEMRA_KV_PARK_COMPACT`. Sessions with no plain checkpoint by default now
+prime such a turn cold: glm5_next hyper trunks (eager-only, latent planes), prompts with no turn
+markers and no `session_id`/`user`, DFlash sessions demoted to plain under load, and boots with
+`MEMRA_AFFINITY=0` or PP host-bounce; that is the accepted price of the exact resume. STILL OPEN
+(memra#1093): the spec pool and the DSpark pool resume an exact extension on their parked stream,
+rows written by verify or decode and ending off the grid; the plain-affinity rewind primes a
+suffix of 1..15 rows token by token.
 
 **The DFlash capture and the hit site follow the same law since 2026-11-07.** The DFlash prompt-end
 capture was the one capture site left off the grid: with no render-stable cut armed, the tail (or
@@ -3064,7 +3070,8 @@ tokens and primed from there, and turn 3, resumed from rows that prime wrote, le
   exact re-send of an off-grid prompt restores `capture_len(P)` and re-primes 16..47 tokens, as
   for the plain seed. The cost is a two-call cold prime for an off-grid prompt on every device:
   +0.15 s on a 2,992-token first turn on the RTX 5090 (3.54 to 3.69 s, mean of 2 runs per arm,
-  switch off); the split prime also caps its first burst at one round (memra#1085).
+  switch off). Until memra#1085 the split prime also capped its first speculative step at one
+  round; a row's own pending prime no longer counts toward its peer quantum.
 - The hit site: every probe that names the entry the hit site restores skips an entry that
   carries recurrent state unless it covers the prompt whole, or ends on the grid with at least
   `PRIME_MIN_T` suffix tokens (`prefix_restore_exact`). That is `PrefixCache::lookup` and its
