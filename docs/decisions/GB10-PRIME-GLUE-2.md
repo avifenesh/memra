@@ -53,7 +53,14 @@ the conv + L2 loses 1.00 s, K2 0.65 s and the q path 0.57 s.
 
 Served cold TTFT, unit 2, one fresh boot per arm, the #1089 code against this pass: -3.95% /
 -3.26% / -3.39% at 32,784 / 131,051 / 259,951 tokens, the same answers, MemAvailable floor
-66.15 GiB. SERVED-FINAL-PLACEHOLDER
+66.15 GiB.
+
+The landing campaign, unit 2, B L L B, main `46172c1bac` (before both passes) against the landed
+code: 31.94 -> 24.39 s at 32,784 tokens (-23.6%), 157.42 -> 127.35 s at 131,051 (-19.1%) and
+392.88 -> 332.47 s at 259,951 (-15.4%); every lane boot faster than every main boot, the same
+answers, MemAvailable floor 66.12 GiB or more in every boot (66.21 in the lane boots). Against the
+first pass's three-boot campaign medians, the second pass is -3.9% / -3.3% / -2.5% (the pair above
+used one first-pass boot as its reference).
 
 ## Rejected
 

@@ -1,0 +1,13 @@
+main=46172c1bac pr=c31074195cb292e72401aa7340999ca78ed4bd8b
+cells rc=0 CELLS-GB10-DONE rc=0
+bins main=~/.cache/memra-gb10-next/bins/main2-46172c1bac final=~/.cache/memra-gb10-next/bins/final-c31074195c BANK main2 46172c1bac ~/.cache/memra-gb10-next/bins/main2-46172c1bac compiled_memra_crates=12 foreign=0 / BANK final c31074195c ~/.cache/memra-gb10-next/bins/final-c31074195c compiled_memra_crates=12 foreign=0
+kc-fast rc=0 ALL GREEN (103 cells, 22 skipped)
+GDN-CONV-L2 T=37 16-byte loads: q_l2=0 k_l2=0 k16=0 v=0 ring=0 OK
+GDN-CONV-L2 T=300 16-byte loads: q_l2=0 k_l2=0 k16=0 v=0 ring=0 OK
+GDN-CONV-L2 T=300 scalar (unaligned input): q_l2=0 k_l2=0 k16=0 v=0 ring=0 OK
+Q-SPLIT-NORM-ROPE T=300: q=0 gate=0 OK
+Q-SPLIT-NORM-ROPE T=1024: q=0 gate=0 OK
+sdpa_naive_w_lo[longctx Tkv=16392 win=2048]: legacy_launch=FAILS(expected) clipped_maxdiff=4.19e-9 OK
+sdpa_naive_gmem[longctx Tkv=16392]: legacy_launch=FAILS(expected) gmem_maxdiff=4.19e-9 OK
+served done
+CHAIN15-DONE

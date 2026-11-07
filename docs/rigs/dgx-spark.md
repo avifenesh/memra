@@ -120,4 +120,7 @@ Second pass (2026-11-07, same receipts, [decision](../decisions/GB10-PRIME-GLUE-
 in the F8F4 v2 GEMM epilogue (`MEMRA_PRIME_RESID_EPI`), K2 at C = 32 in half the shared memory
 (`MEMRA_GDN_K2_32`), the GDN conv with the q/k L2 norms (`MEMRA_GDN_CONV_L2`) and the attention q path in
 one kernel (`MEMRA_PRIME_Q_FUSE`); all bit-identical. Served cold TTFT against the first pass, one boot
-per arm on unit 2: -3.95% / -3.26% / -3.39% at 32,784 / 131,051 / 259,951 tokens. RIG-FINAL-PLACEHOLDER
+per arm on unit 2: -3.95% / -3.26% / -3.39% at 32,784 / 131,051 / 259,951 tokens.
+Both passes against main `46172c1bac`, B L L B on unit 2: 31.94 -> 24.39 s at 32,784 tokens (-23.6%),
+157.42 -> 127.35 s at 131,051 (-19.1%) and 392.88 -> 332.47 s at 259,951 (-15.4%), same answers,
+MemAvailable floor 66.2 GiB in the lane boots (66.1 in every boot).

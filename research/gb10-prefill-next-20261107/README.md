@@ -275,6 +275,24 @@ code (`189a887d27`), L = the second-pass code (`c95627db13`); `harness/chain12.s
 
 MemAvailable floor (GiB): 01-B 65.72; 02-L 66.15. The same answers as every earlier boot.
 
+The landing campaign (`served-final-unit2/`, `harness/chain15.sh`): unit 2, B L L B, one fresh boot
+per cell, all three lengths per boot, B = main `46172c1bac` (before both passes), L = the landed code
+(`c31074195c`, the PR head the binary was built from; its code landed as `4c6243ba45`):
+
+| prompt tokens | main | both passes | change (medians) | answer sha256 |
+|---:|---|---|---:|---|
+| 32,784 | 31.909, 31.965 s | 24.417, 24.360 s | -23.64% | cb9da8ae3cec |
+| 131,051 | 157.495, 157.341 s | 127.352, 127.353 s | -19.10% | 84980efddfee |
+| 259,951 | 392.849, 392.912 s | 332.539, 332.408 s | -15.38% | 3759709dfbe4 |
+
+MemAvailable floor (GiB): 01-B 66.41; 02-L 66.21; 03-L 66.29; 04-B 66.12
+
+Every lane boot is faster than every main boot at every length, and the answers are identical in
+all four boots. Against the first pass's unit-2 campaign medians (25.382 / 131.689 / 340.886 s,
+`served-unit2-final/`) the second pass is -3.9% / -3.3% / -2.5%; the pair above compared against a
+single first-pass boot (343.880 s at 259,951), hence its -3.4% there. Unit 1 did not confirm the
+second pass in this window; it confirmed the first pass within 0.7% of unit 2.
+
 
 ## Next
 
