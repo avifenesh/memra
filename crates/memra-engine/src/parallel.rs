@@ -12,7 +12,7 @@ use memra_gguf::config::ModelConfig;
 use memra_gguf::model_plan::{MlpPlan, ModelPlan};
 use memra_gguf::placement::{LayerPlacementCost, PlacementRequest, plan_contiguous_stages};
 use memra_gguf::source::{ExpertActivationPrecision, TensorSource};
-use memra_gguf::tensor_contract::{LayerTensor, TensorId, TensorOwner};
+use memra_gguf::tensor_contract::{TensorId, TensorOwner};
 
 /// The execution planner's supported rank envelope. Hardware qualification and tuned defaults
 /// remain model x rig evidence, but the placement/runtime contract must not stop at earlier
@@ -165,23 +165,6 @@ fn placement_first_stage_tensor(id: &TensorId) -> bool {
     }
 }
 
-fn routed_expert_tensor(id: &TensorId) -> bool {
-    match id {
-        TensorId::Expert { .. } => true,
-        TensorId::Layer {
-            tensor:
-                LayerTensor::MoeExpertGateUpBank
-                | LayerTensor::MoeExpertGateBank
-                | LayerTensor::MoeExpertUpBank
-                | LayerTensor::MoeExpertDownBank
-                | LayerTensor::MoeExpertOutputScale,
-            ..
-        } => true,
-        TensorId::QuantAux { tensor, .. } => routed_expert_tensor(tensor),
-        _ => false,
-    }
-}
-
 fn checked_add_bytes(total: &mut u64, bytes: u64, label: &str) -> Result<(), TopologyError> {
     *total = total
         .checked_add(bytes)
@@ -247,7 +230,7 @@ fn artifact_costs(
             )?,
         }
 
-        let trunk_expert = routed_expert_tensor(id)
+        let trunk_expert = id.is_routed_expert()
             && matches!(
                 tensor.owner,
                 TensorOwner::Layer(layer)

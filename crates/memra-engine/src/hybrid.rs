@@ -5,6 +5,7 @@
 use crate::Engine;
 use crate::model::{EmbedHost, GpuTensor, HostExps};
 use cudarc::driver::CudaSlice;
+use memra_gguf::checkpoint_binding::CheckpointBinding;
 use memra_gguf::config::{ModelConfig, SwigluClamp};
 use memra_gguf::model_plan::{AttentionPlan, MlpPlan, TensorPresence};
 use memra_gguf::source::{GgufSource, TensorSource};
@@ -70,9 +71,26 @@ pub(crate) struct ResidentPlan {
     layer_devices: Vec<usize>,
     layer_counts: HashMap<usize, usize>,
     exact_expert_bytes: Option<HashMap<usize, usize>>,
-    trunk_bytes: usize,
+    trunk: TrunkReserve,
     decisions: HashMap<usize, bool>,
     pp: bool,
+}
+
+/// The trunk bytes an expert decision reserves beside its experts.
+#[derive(Debug)]
+enum TrunkReserve {
+    /// A GGUF header's non-expert bytes, whole, on every device: the 2026-08-02 rule the GGUF
+    /// residency receipts were measured under (research/residency-cap-20260802/).
+    Header(usize),
+    /// A safetensors or manifest source: its binding's trunk at the device format, by owner. A
+    /// decision runs at the device's first local expert layer, when the head and the earlier
+    /// layers are already resident (and so already out of its free memory); it reserves only
+    /// what that device still has to upload (`TrunkResidentBytes::still_to_upload`).
+    Census {
+        bytes: memra_gguf::checkpoint_binding::TrunkResidentBytes,
+        n_trunk_layers: u32,
+        loaded_mtp_blocks: u32,
+    },
 }
 
 /// Model-load-local CUDA rank runtimes, keyed by their ordered device group.
@@ -235,18 +253,31 @@ impl StepParallelRuntimeRegistry {
     }
 }
 
+/// What a loader hands the resident-expert budget of a non-GGUF source: the binding it bound, the
+/// trunk layer count, and how many MTP blocks it loads (blocks past that are never uploaded).
+#[derive(Clone, Copy)]
+pub(crate) struct TrunkCensus<'a> {
+    pub(crate) binding: &'a CheckpointBinding,
+    pub(crate) n_trunk_layers: u32,
+    pub(crate) loaded_mtp_blocks: u32,
+}
+
 impl ResidentPlan {
+    /// A GGUF source may pass no census, since its header carries the expert/trunk split; every
+    /// other source sizes its trunk from the census. Callers build the plan after the output head
+    /// is on the device (both loaders upload it first), so a census reserve never charges it.
     fn from_layout(
         src: &dyn TensorSource,
+        census: Option<TrunkCensus<'_>>,
         primary_device: usize,
         layer_devices: Vec<usize>,
         pp: bool,
-    ) -> Self {
+    ) -> Result<Self, String> {
         let mut layer_counts = HashMap::new();
         for &device in &layer_devices {
             *layer_counts.entry(device).or_default() += 1;
         }
-        let (exact_expert_bytes, trunk_bytes) = match src.gguf() {
+        let (exact_expert_bytes, trunk) = match src.gguf() {
             Some(g) => {
                 let bytes = residency_bytes_by_device(
                     g.tensors
@@ -256,44 +287,110 @@ impl ResidentPlan {
                     primary_device,
                 );
                 if bytes.saw_experts {
-                    (Some(bytes.experts), bytes.rest)
+                    (Some(bytes.experts), TrunkReserve::Header(bytes.rest))
                 } else {
-                    (None, 0)
+                    (None, TrunkReserve::Header(0))
                 }
             }
-            None => (None, 0),
+            // A safetensors or manifest source has no header with the split. Its binding names
+            // the routed experts, and the source sizes every other tensor after its own load
+            // conversion (a BF16 matmul lands as Q8_0, a norm as f32), so the trunk is charged
+            // at the bytes it occupies on the device, not on disk.
+            None => {
+                let census = census.ok_or(
+                    "the resident-expert budget of a non-GGUF source reserves its trunk from the \
+                     checkpoint binding, and none was passed",
+                )?;
+                let bytes = census
+                    .binding
+                    .trunk_resident_bytes(src, crate::model::upload_policy());
+                (
+                    None,
+                    TrunkReserve::Census {
+                        bytes,
+                        n_trunk_layers: census.n_trunk_layers,
+                        loaded_mtp_blocks: census.loaded_mtp_blocks,
+                    },
+                )
+            }
         };
-        Self {
+        Ok(Self {
             primary_device,
             layer_devices,
             layer_counts,
             exact_expert_bytes,
-            trunk_bytes,
+            trunk,
             decisions: HashMap::new(),
             pp,
-        }
+        })
     }
 
-    pub(crate) fn unsharded(e: &Engine, src: &dyn TensorSource, cfg: &ModelConfig) -> Self {
+    pub(crate) fn unsharded(
+        e: &Engine,
+        src: &dyn TensorSource,
+        census: Option<TrunkCensus<'_>>,
+        cfg: &ModelConfig,
+    ) -> Result<Self, String> {
         let device = e.ctx().ordinal();
-        Self::from_layout(src, device, vec![device; cfg.n_layer as usize], false)
+        Self::from_layout(
+            src,
+            census,
+            device,
+            vec![device; cfg.n_layer as usize],
+            false,
+        )
     }
 
     pub(crate) fn pp(
         e: &Engine,
         src: &dyn TensorSource,
+        census: TrunkCensus<'_>,
         cfg: &ModelConfig,
         n_trunk: usize,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         let primary = e.ctx().ordinal();
         let Some(_fence) = crate::pp::pp_cuts(n_trunk) else {
-            return Ok(Self::unsharded(e, src, cfg));
+            return Ok(Self::unsharded(e, src, Some(census), cfg)?);
         };
         let mut layer_devices = vec![primary; cfg.n_layer as usize];
         for (il, device) in layer_devices.iter_mut().take(n_trunk).enumerate() {
             *device = crate::pp::layer_engine(e, n_trunk, il)?.ctx().ordinal();
         }
-        Ok(Self::from_layout(src, primary, layer_devices, true))
+        Ok(Self::from_layout(
+            src,
+            Some(census),
+            primary,
+            layer_devices,
+            true,
+        )?)
+    }
+
+    /// The trunk bytes `device` reserves beside its experts when it decides at layer `il`.
+    fn trunk_bytes(&self, device: usize, il: usize) -> usize {
+        match &self.trunk {
+            TrunkReserve::Header(bytes) => *bytes,
+            TrunkReserve::Census {
+                bytes,
+                n_trunk_layers,
+                loaded_mtp_blocks,
+            } => {
+                let owns = |layer: u32| {
+                    self.layer_devices
+                        .get(layer as usize)
+                        .copied()
+                        .unwrap_or(self.primary_device)
+                        == device
+                };
+                let left = bytes.still_to_upload(
+                    u32::try_from(il).unwrap_or(u32::MAX),
+                    *n_trunk_layers,
+                    *loaded_mtp_blocks,
+                    device == self.primary_device,
+                    owns,
+                );
+                usize::try_from(left).unwrap_or(usize::MAX)
+            }
+        }
     }
 
     /// Distributed expert layers no longer consume the owning stage's local expert slab. Remove
@@ -340,6 +437,7 @@ impl ResidentPlan {
             .as_ref()
             .map(|bytes| bytes.get(&device).copied().unwrap_or(0))
             .unwrap_or(per_layer * self.layer_counts.get(&device).copied().unwrap_or(1));
+        let trunk = self.trunk_bytes(device, il);
         let budget = std::env::var("MEMRA_MOE_RESIDENT_GB")
             .ok()
             .and_then(|v| v.parse::<f64>().ok())
@@ -350,7 +448,7 @@ impl ResidentPlan {
                     .and_then(|v| v.parse::<f64>().ok())
                     .map(|gb| (gb * 1e9) as usize)
                     .unwrap_or(2_000_000_000);
-                free.saturating_sub(self.trunk_bytes + reserve)
+                free.saturating_sub(trunk.saturating_add(reserve))
             });
         let ok = projected <= budget;
         eprintln!(
@@ -358,7 +456,7 @@ impl ResidentPlan {
             if self.pp { "PP " } else { "" },
             device,
             projected as f64 / 1e9,
-            self.trunk_bytes as f64 / 1e9,
+            trunk as f64 / 1e9,
             free as f64 / 1e9,
             budget as f64 / 1e9,
             if ok { "RESIDENT" } else { "SLRU cache" }
@@ -543,10 +641,11 @@ pub(crate) fn load_ffn(
             step_runtimes,
         )?;
         // FITS-VRAM RESIDENT EXPERTS: upload this layer's 3 expert slabs when the owning
-        // device's budget (MEMRA_MOE_RESIDENT_GB override; default = free VRAM minus the file's
-        // non-expert bytes minus a measured headroom reserve) covers the expert bytes assigned
-        // to that device, summed exactly from the GGUF header. Decision is made once per device
-        // (first MoE layer there). Failure to fit => None => the SLRU spill machinery.
+        // device's budget (MEMRA_MOE_RESIDENT_GB override; default = free VRAM minus the trunk
+        // reserve minus a measured headroom reserve) covers the expert bytes assigned to that
+        // device (summed exactly from a GGUF header, or first layer x layers on that device).
+        // Decision is made once per device (first MoE layer there). Failure to fit => None =>
+        // the SLRU spill machinery.
         let dev_exps = if step_ep.is_some() || step_tp.is_some() {
             None
         } else {
@@ -2052,14 +2151,15 @@ fn build_step_tp_qkv(
 /// RESIDENT-IF-FITS (2026-08-02, research/residency-cap-20260802/): the bank is resident when
 /// its EXACT byte total (summed from the GGUF header — UD-quants make per-layer bytes
 /// non-uniform, Ornith-35B blk.0 is +7% over the mean, so first-layer x n_layer misprojects)
-/// plus the file's non-expert bytes plus a measured headroom reserve fits free VRAM. The old
-/// default (0.80 x free vs first-layer x n_layer) reserved 20% of the card (4.8GB on 24GB)
-/// and spilled the Ornith-35B bank that fits — a priced -33% decode / -54% prefill. Measured
-/// need beside the weights at board shape is ~1.7GB (CUDA ctx + KV + workspace); reserve
-/// default 2.0GB, machine-specific override `MEMRA_MOE_RESIDENT_HEADROOM_GB` (VRAM-budget
-/// class). `MEMRA_MOE_RESIDENT_GB` stays the absolute expert-budget override;
-/// MEMRA_MOE_RESIDENT=0 forces the SLRU path. Fits => every subsequent layer on that device
-/// uploads too.
+/// plus the checkpoint's non-expert bytes (a GGUF header's, whole; or, for a safetensors census
+/// sized at its device format, what the device still uploads: `ResidentPlan::trunk_bytes`) plus
+/// a measured headroom reserve fits free VRAM. The old default (0.80 x free vs first-layer x n_layer) reserved 20% of the card
+/// (4.8GB on 24GB) and spilled the Ornith-35B bank that fits — a priced -33% decode / -54%
+/// prefill. Measured need beside the weights at board shape is ~1.7GB (CUDA ctx + KV +
+/// workspace); reserve default 2.0GB, machine-specific override
+/// `MEMRA_MOE_RESIDENT_HEADROOM_GB` (VRAM-budget class). `MEMRA_MOE_RESIDENT_GB` stays the
+/// absolute expert-budget override; MEMRA_MOE_RESIDENT=0 forces the SLRU path. Fits => every
+/// subsequent layer on that device uploads too.
 fn build_dev_exps(
     e: &Engine,
     resident: &mut ResidentPlan,
@@ -3782,7 +3882,7 @@ impl MtpHead {
             }
         );
 
-        let mut resident = ResidentPlan::unsharded(e, &src, &dcfg);
+        let mut resident = ResidentPlan::unsharded(e, &src, None, &dcfg)?;
         let mut step_runtimes = StepParallelRuntimeRegistry::default();
         Ok(MtpHead {
             enorm: load_t(e, &src, &p("nextn.enorm.weight"))?,
@@ -4688,7 +4788,69 @@ impl HybridModel {
                 .map_err(std::io::Error::other)?,
         )?;
         load_mark("output-head", 0);
-        let mut resident = ResidentPlan::pp(e, src, &cfg, n_trunk)?;
+        // Embedded artifacts may carry multiple trained NextN blocks. Preserve their declared
+        // order; the speculative driver decides whether it can serve a chain. A missing first
+        // block still means "external draft", while a hole inside a declared chain is malformed.
+        let external_mtp_requested =
+            load_mtp && std::env::var("MEMRA_MTP_DRAFT").is_ok_and(|path| !path.is_empty());
+        // MEMRA_GLM5_MTP (default OFF): glm5_next's NextN block loads only when asked. The
+        // artifact carries the full MTP layer (a MoE block the size of a trunk layer — 288
+        // routed experts), and until 2026-08-30 the `nextn.*` glue names had no glm5_next
+        // ggml->HF mapping row, so the head silently never loaded and nothing downstream
+        // ever saw one. With the mapping fixed, loading it unconditionally would add a
+        // trunk-layer's VRAM and load time to every glm5 serve with NOTHING consuming it
+        // yet (the spec entry points refuse hc trunks; the MTP_SPEC capability manifest
+        // reports unsupported for this plan, so the worker never routes to it). Default OFF
+        // keeps prod byte-identical; the MTP draft gate and the verify arc opt in.
+        let glm5_mtp_requested =
+            !cfg.arch.is_glm5_next() || std::env::var("MEMRA_GLM5_MTP").as_deref() == Ok("1");
+        // (MEMRA_MTP_SKIP was parsed and refusal-checked right after n_trunk, before any
+        // tensor upload; here it only zeroes the embedded chain.)
+        let embedded_head_count =
+            if external_mtp_requested || !glm5_mtp_requested || mtp_skip_requested {
+                0
+            } else {
+                cfg.nextn_predict_layers
+            };
+        if cfg.arch.is_glm5_next()
+            && glm5_mtp_requested
+            && !mtp_skip_requested
+            && cfg.nextn_predict_layers > 0
+        {
+            eprintln!("[mtp-glm5] MEMRA_GLM5_MTP=1: loading the glm5_next NextN block");
+        }
+        // MEMRA_MTP_HEADS=N caps the embedded chain. It exists so the FR-Spec trim can be
+        // measured HONESTLY: a trim forces the chain down to one head, so trimmed-vs-untrimmed
+        // otherwise mixes the trim's effect with the loss of the chain. With this, the A/B is
+        // 3-head untrimmed -> 1-head untrimmed -> 1-head trimmed and each step is attributable.
+        let embedded_head_count = match std::env::var("MEMRA_MTP_HEADS")
+            .ok()
+            .and_then(|v| v.parse::<u32>().ok())
+            .filter(|&n| n > 0)
+        {
+            Some(cap) if cap < embedded_head_count => {
+                eprintln!(
+                    "[mtp-chain] MEMRA_MTP_HEADS={cap}: capping the embedded chain from \
+                     {embedded_head_count} heads (measurement knob)"
+                );
+                cap
+            }
+            _ => embedded_head_count,
+        };
+        // The resident-expert budget reserves the trunk each device still uploads, MTP blocks
+        // included only when this load uploads them (the audit below counts the same blocks).
+        let loaded_mtp_blocks = if load_mtp { embedded_head_count } else { 0 };
+        let mut resident = ResidentPlan::pp(
+            e,
+            src,
+            TrunkCensus {
+                binding: &binding,
+                n_trunk_layers: n_trunk as u32,
+                loaded_mtp_blocks,
+            },
+            &cfg,
+            n_trunk,
+        )?;
         resident.exclude_distributed_expert_layers(
             step_parallel
                 .ep_specs
@@ -5019,55 +5181,6 @@ impl HybridModel {
             }
         }
 
-        // Embedded artifacts may carry multiple trained NextN blocks. Preserve their declared
-        // order; the speculative driver decides whether it can serve a chain. A missing first
-        // block still means "external draft", while a hole inside a declared chain is malformed.
-        let external_mtp_requested =
-            load_mtp && std::env::var("MEMRA_MTP_DRAFT").is_ok_and(|path| !path.is_empty());
-        // MEMRA_GLM5_MTP (default OFF): glm5_next's NextN block loads only when asked. The
-        // artifact carries the full MTP layer (a MoE block the size of a trunk layer — 288
-        // routed experts), and until 2026-08-30 the `nextn.*` glue names had no glm5_next
-        // ggml->HF mapping row, so the head silently never loaded and nothing downstream
-        // ever saw one. With the mapping fixed, loading it unconditionally would add a
-        // trunk-layer's VRAM and load time to every glm5 serve with NOTHING consuming it
-        // yet (the spec entry points refuse hc trunks; the MTP_SPEC capability manifest
-        // reports unsupported for this plan, so the worker never routes to it). Default OFF
-        // keeps prod byte-identical; the MTP draft gate and the verify arc opt in.
-        let glm5_mtp_requested =
-            !cfg.arch.is_glm5_next() || std::env::var("MEMRA_GLM5_MTP").as_deref() == Ok("1");
-        // (MEMRA_MTP_SKIP was parsed and refusal-checked right after n_trunk, before any
-        // tensor upload; here it only zeroes the embedded chain.)
-        let embedded_head_count =
-            if external_mtp_requested || !glm5_mtp_requested || mtp_skip_requested {
-                0
-            } else {
-                cfg.nextn_predict_layers
-            };
-        if cfg.arch.is_glm5_next()
-            && glm5_mtp_requested
-            && !mtp_skip_requested
-            && cfg.nextn_predict_layers > 0
-        {
-            eprintln!("[mtp-glm5] MEMRA_GLM5_MTP=1: loading the glm5_next NextN block");
-        }
-        // MEMRA_MTP_HEADS=N caps the embedded chain. It exists so the FR-Spec trim can be
-        // measured HONESTLY: a trim forces the chain down to one head, so trimmed-vs-untrimmed
-        // otherwise mixes the trim's effect with the loss of the chain. With this, the A/B is
-        // 3-head untrimmed -> 1-head untrimmed -> 1-head trimmed and each step is attributable.
-        let embedded_head_count = match std::env::var("MEMRA_MTP_HEADS")
-            .ok()
-            .and_then(|v| v.parse::<u32>().ok())
-            .filter(|&n| n > 0)
-        {
-            Some(cap) if cap < embedded_head_count => {
-                eprintln!(
-                    "[mtp-chain] MEMRA_MTP_HEADS={cap}: capping the embedded chain from \
-                     {embedded_head_count} heads (measurement knob)"
-                );
-                cap
-            }
-            _ => embedded_head_count,
-        };
         let mut embedded_mtp = Vec::new();
         if load_mtp && embedded_head_count > 0 {
             for offset in 0..embedded_head_count {
@@ -6454,7 +6567,6 @@ impl HybridModel {
         // through their own owner, and an MTP block the caller did not ask for stays unread.
         // MTP blocks are skipped by what was actually loaded: none on the no-MTP entry points,
         // after MEMRA_MTP_SKIP, with an external MEMRA_MTP_DRAFT, or past a MEMRA_MTP_HEADS cap.
-        let loaded_mtp_blocks = if load_mtp { embedded_head_count } else { 0 };
         let unconsumed = binding.audit_consumption(&recording.requested(), &cfg, |id, tensor| {
             memra_gguf::checkpoint_binding::unread_by_design(id)
                 || memra_gguf::checkpoint_binding::owned_by_vision(tensor)
@@ -6776,6 +6888,90 @@ mod residency_tests {
         assert_eq!(bytes.experts.len(), 1);
     }
 
+    /// A non-GGUF source reserves its trunk from the checkpoint binding, and each decision only
+    /// what its device still has to upload. Over a GGUF-dialect census the binding sizes rows at
+    /// their stored bytes, so the reserve is the GGUF header rule minus what is already resident
+    /// (the head, earlier layers) or never uploaded (MTP blocks this load skips). Without a binding
+    /// the plan refuses rather than reserving nothing (the old zero-trunk budget that let a
+    /// safetensors MoE over-commit).
+    #[test]
+    fn non_gguf_sources_reserve_the_trunk_their_device_still_uploads() {
+        use super::TrunkCensus;
+        use memra_gguf::source::{GgufSource, TensorCensus, TensorSource, TensorView};
+        struct Headerless<'g>(GgufSource<'g>);
+        impl TensorSource for Headerless<'_> {
+            fn config(&self) -> memra_gguf::config::ModelConfig {
+                self.0.config()
+            }
+            fn tensor_census(&self) -> Result<TensorCensus, String> {
+                self.0.tensor_census()
+            }
+            fn find(&self, name: &str) -> Option<TensorView<'_>> {
+                self.0.find(name)
+            }
+        }
+        let path =
+            std::env::temp_dir().join(format!("memra-resident-trunk-{}.gguf", std::process::id()));
+        memra_gguf::micro_gguf::write_glm_dsa_micro(&path, 0x5_05F5).unwrap();
+        let g = memra_gguf::GgufFile::open(&path).unwrap();
+        std::fs::remove_file(&path).ok();
+        let gguf = GgufSource(&g);
+        let (cfg, plan) = memra_gguf::model_packs::compile_for_source(&gguf).unwrap();
+        let binding = memra_gguf::checkpoint_binding::bind_source(&gguf, &cfg, &plan).unwrap();
+        let n_trunk = plan.layers.len();
+        assert!(n_trunk >= 2, "the fixture needs two trunk layers");
+        let census = TrunkCensus {
+            binding: &binding,
+            n_trunk_layers: n_trunk as u32,
+            loaded_mtp_blocks: 0,
+        };
+        let header_bytes = |keep: &dyn Fn(&str) -> bool| -> usize {
+            g.tensors
+                .iter()
+                .filter(|t| !t.name.contains("_exps.") && keep(&t.name))
+                .map(|t| t.n_bytes as usize)
+                .sum()
+        };
+        let layer_of = |name: &str| super::block_index(name);
+        let head = |name: &str| name == "output_norm.weight" || name == "output.weight";
+        let layers = vec![0; cfg.n_layer as usize];
+        let header = ResidentPlan::from_layout(&gguf, None, 0, layers.clone(), false).unwrap();
+        let headerless = Headerless(GgufSource(&g));
+        let unsharded =
+            ResidentPlan::from_layout(&headerless, Some(census), 0, layers.clone(), false).unwrap();
+        assert!(unsharded.exact_expert_bytes.is_none());
+        // The header rule charges every non-expert byte, whatever is already resident.
+        let header_rule = header_bytes(&|_| true);
+        assert_eq!(header.trunk_bytes(0, 1), header_rule);
+        // The census reserve at layer `il`: no head, no earlier layer, no skipped MTP block.
+        let still = |il: usize| {
+            header_bytes(&|name| {
+                !head(name) && layer_of(name).is_none_or(|layer| layer >= il && layer < n_trunk)
+            })
+        };
+        assert!(still(1) < still(0) && still(0) < header_rule);
+        assert_eq!(unsharded.trunk_bytes(0, 0), still(0));
+        assert_eq!(unsharded.trunk_bytes(0, 1), still(1));
+        // PP: device 1 owns layers 1.. and reserves only those; the globals stay on device 0.
+        let mut split = layers.clone();
+        for device in split.iter_mut().skip(1) {
+            *device = 1;
+        }
+        let pp = ResidentPlan::from_layout(&headerless, Some(census), 0, split, true).unwrap();
+        let owned_by_1 =
+            header_bytes(&|name| layer_of(name).is_some_and(|layer| (1..n_trunk).contains(&layer)));
+        assert_eq!(pp.trunk_bytes(1, 1), owned_by_1);
+        assert_eq!(
+            pp.trunk_bytes(0, 0),
+            still(0) - owned_by_1,
+            "device 0 reserves layer 0 and the globals"
+        );
+        let refused = ResidentPlan::from_layout(&headerless, None, 0, layers, false)
+            .err()
+            .expect("a non-GGUF source without its binding must refuse");
+        assert!(refused.contains("checkpoint binding"), "{refused}");
+    }
+
     #[test]
     fn distributed_trunk_layers_do_not_poison_local_mtp_residency_estimates() {
         let mut plan = ResidentPlan {
@@ -6783,7 +6979,7 @@ mod residency_tests {
             layer_devices: vec![0; 81],
             layer_counts: HashMap::from([(0, 81)]),
             exact_expert_bytes: None,
-            trunk_bytes: 0,
+            trunk: super::TrunkReserve::Header(0),
             decisions: HashMap::new(),
             pp: false,
         };

@@ -34,7 +34,8 @@ use crate::model_packs::{ModelPack, OutputHeadContract, TensorConsumption, for_c
 use crate::model_plan::ModelPlan;
 use crate::source::{
     DiskExtent, ExpertActivationPrecision, Fp8Native, Fp8StackedNative, MimoMxfp4Native,
-    Nvfp4Native, Nvfp4StackedNative, TensorCensus, TensorSource, TensorView, canonical_hf_name,
+    Nvfp4Native, Nvfp4StackedNative, TensorCensus, TensorSource, TensorView, UploadPolicy,
+    canonical_hf_name,
 };
 use crate::tensor_contract::{
     BoundTensor, BoundTensorContract, CheckpointDialect, ContractOptions, OutputHead,
@@ -376,6 +377,33 @@ impl CheckpointBinding {
         Ok(tensor.checkpoint_names[0].clone())
     }
 
+    /// Device bytes of the trunk the resident-expert budget reserves: every bound tensor except
+    /// the routed experts, each sized by the source's own load conversion
+    /// ([`TensorSource::resident_bytes`]), split by the owner that uploads it.
+    pub fn trunk_resident_bytes(
+        &self,
+        src: &dyn TensorSource,
+        upload: UploadPolicy,
+    ) -> TrunkResidentBytes {
+        let mut trunk = TrunkResidentBytes::default();
+        for (id, tensor) in &self.bound.tensors {
+            if id.is_routed_expert() {
+                continue;
+            }
+            let bytes = src.resident_bytes(id, tensor, upload);
+            let slot = match (id, tensor.owner) {
+                (TensorId::OutputNorm | TensorId::OutputProjection, _) => &mut trunk.head,
+                (TensorId::TokenEmbedding, _) => &mut trunk.token_embedding,
+                (_, TensorOwner::Vision(_)) => &mut trunk.vision,
+                (_, TensorOwner::Layer(index)) => trunk.layers.entry(index).or_default(),
+                (_, TensorOwner::Mtp(depth)) => trunk.mtp.entry(depth).or_default(),
+                (_, TensorOwner::Global) => &mut trunk.globals,
+            };
+            *slot = slot.saturating_add(bytes);
+        }
+        trunk
+    }
+
     /// The ggml name of the output projection: the bound `OutputProjection`, or the token
     /// embedding when the binding decided the head is tied.
     pub fn output_head_ggml_name(&self) -> Result<String, String> {
@@ -501,6 +529,80 @@ pub fn unloaded_mtp(tensor: &BoundTensor, n_trunk_layers: u32, loaded_mtp_blocks
     }
 }
 
+/// The trunk of a checkpoint at the bytes it occupies on the device
+/// ([`CheckpointBinding::trunk_resident_bytes`]), split by the owner that uploads it, so the
+/// resident-expert budget can reserve what a device has still to upload when it decides.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct TrunkResidentBytes {
+    /// The non-expert tensors of each layer, by layer index: the trunk layers, then the appended
+    /// layers of the MTP blocks.
+    pub layers: BTreeMap<u32, u64>,
+    /// The glue tensors of each MTP block (`TensorOwner::Mtp`), by depth.
+    pub mtp: BTreeMap<u32, u64>,
+    /// The output norm and the output projection.
+    pub head: u64,
+    /// The token embedding: the table `EmbedHost` holds and uploads to the primary device after
+    /// the load, at `find`'s view bytes. A tied head's own copy is the head's upload.
+    pub token_embedding: u64,
+    /// Every other global tensor.
+    pub globals: u64,
+    /// The vision tower. No expert decision reserves it (an open owner decision): the server
+    /// loads a tower after the model, through its own owner and its family's knobs, which the
+    /// model loader does not see.
+    pub vision: u64,
+}
+
+impl TrunkResidentBytes {
+    /// Every non-expert byte the binding sizes.
+    pub fn total(&self) -> u64 {
+        self.layers
+            .values()
+            .chain(self.mtp.values())
+            .chain([
+                &self.head,
+                &self.token_embedding,
+                &self.globals,
+                &self.vision,
+            ])
+            .fold(0, |sum, bytes| sum.saturating_add(*bytes))
+    }
+
+    /// What a device still has to upload when its expert decision runs at `layer`: the non-expert
+    /// tensors of `layer` and of every later layer it `owns`, and, on the primary device, the
+    /// embedding table and the other globals. MTP blocks count only up to `loaded_mtp_blocks` past
+    /// `n_trunk_layers`, the blocks the loader actually loads. The decision layer is charged whole,
+    /// since the hybrid loader uploads its mixer before the expert bank and the plain loader after
+    /// it. The head and every earlier layer are already on the device and in its free memory.
+    pub fn still_to_upload(
+        &self,
+        layer: u32,
+        n_trunk_layers: u32,
+        loaded_mtp_blocks: u32,
+        primary: bool,
+        owns: impl Fn(u32) -> bool,
+    ) -> u64 {
+        let loaded = n_trunk_layers.saturating_add(loaded_mtp_blocks);
+        let layers = self
+            .layers
+            .range(layer..)
+            .filter(|&(&index, _)| index < loaded && owns(index))
+            .map(|(_, &bytes)| bytes);
+        let mtp = self.mtp.iter().filter_map(|(&depth, &bytes)| {
+            let index = n_trunk_layers.saturating_add(depth);
+            (depth < loaded_mtp_blocks && index >= layer && owns(index)).then_some(bytes)
+        });
+        let globals = if primary {
+            [self.token_embedding, self.globals]
+        } else {
+            [0, 0]
+        };
+        layers
+            .chain(mtp)
+            .chain(globals)
+            .fold(0, u64::saturating_add)
+    }
+}
+
 /// A [`TensorSource`] that records the ggml name of every tensor read through it. Probes
 /// (`has`) are not reads; the metadata census is not a read.
 pub struct RecordingSource<'a> {
@@ -541,6 +643,9 @@ impl TensorSource for RecordingSource<'_> {
     }
     fn tensor_census(&self) -> Result<TensorCensus, String> {
         self.inner.tensor_census()
+    }
+    fn resident_bytes(&self, id: &TensorId, tensor: &BoundTensor, upload: UploadPolicy) -> u64 {
+        self.inner.resident_bytes(id, tensor, upload)
     }
     fn expert_activation_precision(&self) -> ExpertActivationPrecision {
         self.inner.expert_activation_precision()
@@ -1040,5 +1145,226 @@ mod tests {
         );
         binding.dialect = CheckpointDialect::Gguf;
         assert!(binding.require_hf(&id).is_err());
+    }
+
+    /// On a GGUF-dialect census the trunk reserve charges the stored bytes of every tensor the
+    /// binding does not name a routed expert: exactly the header rule the GGUF resident-expert
+    /// budget applies (every tensor outside a `blk.*_exps.*` bank).
+    #[test]
+    fn gguf_census_trunk_reserve_matches_the_gguf_header_rule() {
+        let p = micro_path("trunk");
+        write_glm_dsa_micro(&p, 0x6_10AD_0802).unwrap();
+        let g = GgufFile::open(&p).unwrap();
+        let src = GgufSource(&g);
+        let cfg = src.config();
+        let plan = plan_for(&cfg);
+        let binding = bind_source(&src, &cfg, &plan).unwrap();
+        std::fs::remove_file(&p).ok();
+        let expert_bank = |name: &str| name.starts_with("blk.") && name.contains("_exps.");
+        let experts: u64 = g
+            .tensors
+            .iter()
+            .filter(|t| expert_bank(&t.name))
+            .map(|t| t.n_bytes)
+            .sum();
+        let header_rule: u64 = g
+            .tensors
+            .iter()
+            .filter(|t| !expert_bank(&t.name))
+            .map(|t| t.n_bytes)
+            .sum();
+        assert!(experts > 0, "the fixture must carry expert banks");
+        let trunk = binding.trunk_resident_bytes(&src, UploadPolicy::default());
+        assert_eq!(trunk.total(), header_rule);
+    }
+
+    /// A synthetic safetensors census pins the trunk the resident-expert budget reserves. Every
+    /// row is sized at the bytes it occupies on the device after the load conversion and filed by
+    /// its owner; the routed experts (the other side of the budget) are not trunk. A decision
+    /// reserves only what its device still has to upload: never the head (uploaded before any
+    /// decision) or an earlier layer, never an MTP block the loader skips, and the embedding
+    /// table only on the primary device.
+    #[test]
+    fn safetensors_census_trunk_reserve_is_what_the_device_still_uploads() {
+        use crate::source::safetensors_resident_bytes;
+        use crate::tensor_contract::{
+            ExpertTensor, LayerTensor, MtpTensor, QuantConstraint, TensorCensusEntry, TensorMatch,
+            TensorRequirement, TensorTransform, VisionTensor,
+        };
+        /// Sizes rows by the safetensors conversion law; the embedding is a preserved module.
+        struct Source;
+        impl TensorSource for Source {
+            fn config(&self) -> ModelConfig {
+                unreachable!("the trunk reserve reads no config")
+            }
+            fn find(&self, _: &str) -> Option<TensorView<'_>> {
+                None
+            }
+            fn resident_bytes(
+                &self,
+                id: &TensorId,
+                tensor: &BoundTensor,
+                upload: UploadPolicy,
+            ) -> u64 {
+                let preserved = |name: &str| name == "model.embed_tokens.weight";
+                safetensors_resident_bytes(id, tensor, &preserved, &|_| None, upload)
+            }
+        }
+        let layer = |index, tensor| TensorId::Layer { index, tensor };
+        // Two trunk layers (0 dense, 1 MoE) and one MTP block appended as layer 2.
+        let rows: [(TensorId, &str, Vec<u64>, TensorOwner); 11] = [
+            (
+                TensorId::TokenEmbedding,
+                "model.embed_tokens.weight",
+                vec![2048, 1024],
+                TensorOwner::Global,
+            ),
+            (
+                TensorId::OutputProjection,
+                "lm_head.weight",
+                vec![2048, 1024],
+                TensorOwner::Global,
+            ),
+            (
+                TensorId::OutputNorm,
+                "model.norm.weight",
+                vec![1024],
+                TensorOwner::Global,
+            ),
+            (
+                layer(0, LayerTensor::Query),
+                "model.layers.0.self_attn.q_proj.weight",
+                vec![1024, 1024],
+                TensorOwner::Layer(0),
+            ),
+            (
+                layer(1, LayerTensor::Query),
+                "model.layers.1.self_attn.q_proj.weight",
+                vec![1024, 1024],
+                TensorOwner::Layer(1),
+            ),
+            (
+                layer(1, LayerTensor::MoeRouter),
+                "model.layers.1.mlp.gate.weight",
+                vec![64, 1024],
+                TensorOwner::Layer(1),
+            ),
+            (
+                TensorId::Expert {
+                    layer: 1,
+                    expert: 0,
+                    tensor: ExpertTensor::Gate,
+                },
+                "model.layers.1.mlp.experts.0.gate_proj.weight",
+                vec![64, 1024],
+                TensorOwner::Layer(1),
+            ),
+            (
+                layer(1, LayerTensor::MoeExpertDownBank),
+                "model.layers.1.mlp.experts.down_proj",
+                vec![64, 1024, 64],
+                TensorOwner::Layer(1),
+            ),
+            (
+                layer(2, LayerTensor::Query),
+                "model.layers.2.self_attn.q_proj.weight",
+                vec![1024, 1024],
+                TensorOwner::Layer(2),
+            ),
+            (
+                TensorId::Mtp {
+                    depth: 0,
+                    tensor: MtpTensor::FusionProjection,
+                },
+                "model.layers.2.eh_proj.weight",
+                vec![1024, 2048],
+                TensorOwner::Mtp(0),
+            ),
+            (
+                TensorId::Vision {
+                    layer: Some(0),
+                    tensor: VisionTensor::Query,
+                },
+                "model.visual.blocks.0.attn.q.weight",
+                vec![1024, 1024],
+                TensorOwner::Vision(Some(0)),
+            ),
+        ];
+        let census: Vec<TensorCensusEntry> = rows
+            .iter()
+            .map(|(_, name, shape, _)| TensorCensusEntry {
+                name: name.to_string(),
+                shape: shape.clone(),
+                storage: StorageLayout::Float(FloatType::Bf16),
+                physical_bytes: shape.iter().product::<u64>() * 2,
+            })
+            .collect();
+        let contract = TensorContract {
+            dialect: CheckpointDialect::HfSafetensors,
+            requirements: rows
+                .iter()
+                .map(|(id, name, shape, owner)| TensorRequirement {
+                    id: id.clone(),
+                    names: vec![name.to_string()],
+                    match_mode: TensorMatch::OneOf,
+                    shape: shape.clone(),
+                    owner: *owner,
+                    transform: TensorTransform::Identity,
+                    quant: QuantConstraint::Weight,
+                    auxiliaries: None,
+                    required: true,
+                })
+                .collect(),
+        };
+        let bound = contract.bind(&census).unwrap();
+        let binding = CheckpointBinding {
+            pack: None,
+            dialect: CheckpointDialect::HfSafetensors,
+            output_head: OutputHead::Separate,
+            contract,
+            bound,
+            ggml_names: None,
+        };
+        let trunk = binding.trunk_resident_bytes(&Source, UploadPolicy::default());
+        let q8_1m = 1_114_112; // 1Mi BF16 weights re-encoded to Q8_0
+        assert_eq!(
+            trunk,
+            TrunkResidentBytes {
+                layers: BTreeMap::from([(0, q8_1m), (1, q8_1m + 262_144), (2, q8_1m)]),
+                // eh_proj, 2Mi weights as Q8_0
+                mtp: BTreeMap::from([(0, 2 * q8_1m)]),
+                // lm_head as Q5_K, the norm as f32
+                head: 1_441_792 + 4096,
+                // the preserved table stays BF16 in `EmbedHost`: 2 B/weight, not an f32 upload
+                token_embedding: 4_194_304,
+                globals: 0,
+                vision: q8_1m,
+            }
+        );
+        let all = |_: u32| true;
+        // The first MoE layer of a lone device: layer 1 onward, the MTP block, the table.
+        assert_eq!(
+            trunk.still_to_upload(1, 2, 1, true, all),
+            (q8_1m + 262_144) + q8_1m + 2 * q8_1m + 4_194_304
+        );
+        // Without its MTP block the loader never uploads layer 2 or its glue.
+        assert_eq!(
+            trunk.still_to_upload(1, 2, 0, true, all),
+            (q8_1m + 262_144) + 4_194_304
+        );
+        // Step EP/TP: the only local expert layer is the MTP block, after the whole trunk.
+        assert_eq!(
+            trunk.still_to_upload(2, 2, 1, true, all),
+            q8_1m + 2 * q8_1m + 4_194_304
+        );
+        // PP: each device reserves only the layers it owns; the table goes to the primary.
+        assert_eq!(
+            trunk.still_to_upload(0, 2, 1, true, |index| index == 0),
+            q8_1m + 4_194_304
+        );
+        assert_eq!(
+            trunk.still_to_upload(1, 2, 1, false, |index| index >= 1),
+            (q8_1m + 262_144) + q8_1m + 2 * q8_1m
+        );
     }
 }

@@ -74,6 +74,28 @@ pub enum TensorId {
     },
 }
 
+impl TensorId {
+    /// A routed-expert weight: one expert's projection, a stacked expert bank, the per-expert
+    /// output scale, or a quantization plane of one of them. Shared experts and the router are
+    /// not routed experts.
+    pub fn is_routed_expert(&self) -> bool {
+        match self {
+            TensorId::Expert { .. } => true,
+            TensorId::Layer {
+                tensor:
+                    LayerTensor::MoeExpertGateUpBank
+                    | LayerTensor::MoeExpertGateBank
+                    | LayerTensor::MoeExpertUpBank
+                    | LayerTensor::MoeExpertDownBank
+                    | LayerTensor::MoeExpertOutputScale,
+                ..
+            } => true,
+            TensorId::QuantAux { tensor, .. } => tensor.is_routed_expert(),
+            _ => false,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum QuantAuxTensor {
     WeightScale,
