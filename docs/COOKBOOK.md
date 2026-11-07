@@ -102,14 +102,13 @@ greedy instrument numbers (chat 142.9 / agentic 157.2 vs MTP 126.9 / 148.6) rema
 byte-exactness receipts, not the serving verdict. Under load the spec-gate sheds to plain
 batching at c>=4 (aggregate parity).
 
-Multi-turn conversations reuse the parked session by default (`MEMRA_REUSE_POOL`, no extra
-flag): turn N+1 primes only the new suffix onto the parked trunk cache + draft KV instead of
-re-prefilling the whole conversation. Measured on this card, 8-turn conversation: turn-over-turn
-TTFT −16% → −83% vs cold re-prime, growing with depth. Resume receipt in the log:
-`[worker] dspark-reuse: N committed tokens resumed`. EOS and `max_tokens` both clamp the
-committed state to the public stream before park. A request whose context cap outgrew the parked
-allocation still serves cold, named in the log; a max-token-terminated session requires a
-non-empty next-turn suffix to resume rather than re-emitting from its terminal boundary.
+Multi-turn conversations no longer resume a parked DFlash session (memra#1093): its rows past the
+prompt were written by verify and decode, off the prime grid, and resuming them left the cold
+text. A DFlash retire frees the session (`[worker] dspark-park SKIPPED (grid law)`). With
+`MEMRA_DSPARK_PREFIX_RESTORE` on (the GB10 and Max-Q default), turn N+1 restores DFlash from an
+on-grid prefix entry carrying the draft tail and primes the rest, exactly; with it off, a
+long-decode continuation re-prefills the conversation. The old pool resume measured turn-over-turn
+TTFT −16% → −83% vs cold re-prime on an 8-turn conversation; that speed was not exact.
 
 ### NVFP4 safetensors trunk + ranks trim
 

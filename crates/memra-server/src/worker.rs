@@ -996,9 +996,10 @@ fn should_probe_prefix_cache(
 /// prompt, that miss also forces `K=0 source=eligibility-fallback` — no speculation at all on
 /// exactly the traffic that needs it.
 ///
-/// WHY IT CAN WORK: the suffix does NOT ride `decode_step`. A pool resume already primes a
-/// suffix into a restored dspark session (`dspark_resume = Some((sess, fed, suffix))`), so the
-/// path is shipped and gated; this reuses it with a cache carrier instead of a pool entry.
+/// WHY IT CAN WORK: the suffix does NOT ride `decode_step`. The suffix path a pool resume used
+/// (`dspark_resume = Some((sess, fed, suffix))`) is shipped and gated; this reuses it with a cache
+/// carrier instead of a pool entry (the pool itself no longer resumes a recurrent trunk,
+/// memra#1093).
 /// That is what separates it from `MEMRA_PREFIX_PARTIAL_RESTORE` (NO-GO, research/
 /// lcprestore-20260813), whose suffix went through T=1 `decode_step` and byte-diverged.
 ///
@@ -2617,13 +2618,16 @@ pub struct Metrics {
     /// PLAIN-SESSION AFFINITY (lane/plain-affinity): continuation-pool resumes that rewound to a
     /// prompt-end checkpoint on a rewritten-history turn (subset of continuation_pool_hits).
     pub plain_affinity_rewinds: u64,
-    /// THE POOL GRID LAW (memra#1091): recurrent exact-extension hits rewound to their grid
-    /// checkpoint, and those declined to a cold prime (no checkpoint, under the prime floor, or a
-    /// failed restore). Rewinds are a subset of continuation_pool_hits; declines are not hits.
+    /// THE POOL GRID LAW (memra#1091): exact-extension hits rewound to their grid checkpoint, and
+    /// those whose parked end was refused (no checkpoint, under the prime floor, or a failed
+    /// restore). Rewinds are a subset of continuation_pool_hits; refusals are not hits. Recurrent
+    /// caches always, every cache under MEMRA_RESUME_GRID_REWIND=1, none under MEMRA_RESUME_EXACT=1.
     pub continuation_pool_grid_rewinds: u64,
     pub continuation_pool_grid_declines: u64,
-    /// DSpark-pool hits on a recurrent trunk declined to a cold prime by the grid law (memra#1093).
+    /// DSpark-pool hits on a recurrent trunk refused by the grid law (memra#1093), a backstop, and
+    /// DFlash retires whose recurrent session was freed instead of parked.
     pub dspark_pool_grid_declines: u64,
+    pub dspark_pool_grid_park_skips: u64,
     pub spec_pool_hits: u64,
     pub spec_pool_misses: u64,
     pub spec_pool_affinity_rewinds: u64,
@@ -3078,13 +3082,19 @@ struct ReuseMetrics {
     /// resumed via a rewind checkpoint (rewritten-history turn) rather than exact extension.
     /// Subset of `continuation_hits`; the per-turn resume count the affinity gate reads out.
     plain_affinity_rewinds: u64,
-    /// THE POOL GRID LAW (memra#1091, memra#1093 item 6): exact-extension hits of a recurrent
-    /// cache that rewound to the session's grid checkpoint, and those declined to a cold prime
-    /// (no checkpoint, the floor, or a failed restore). A declined hit is not a continuation hit.
+    /// THE POOL GRID LAW (memra#1091, memra#1093 item 6): exact-extension hits that took the grid
+    /// rewind (every recurrent cache, and every cache under MEMRA_RESUME_GRID_REWIND=1) and
+    /// rewound to the session's grid checkpoint, and those whose parked end was refused (no
+    /// checkpoint, the floor, or a failed restore; the affinity tier or the prefix cache may still
+    /// serve the request). A refused hit is not a continuation hit. MEMRA_RESUME_EXACT=1 has its
+    /// own resume and counts here neither way.
     continuation_grid_rewinds: u64,
     continuation_grid_declines: u64,
-    /// DSpark-pool exact or text hits on a recurrent trunk declined to a cold prime (memra#1093).
+    /// DSpark-pool exact or text hits on a recurrent trunk refused (memra#1093); a backstop now
+    /// that recurrent sessions no longer park (`dspark_grid_park_skips`).
     dspark_grid_declines: u64,
+    /// DFlash retires whose recurrent session was freed instead of parked (memra#1093).
+    dspark_grid_park_skips: u64,
 }
 
 /// Workspace-aware admission for hyper-trunk prefill (lane/glm5-gpf-workspace, 2026-08-30).
@@ -34314,6 +34324,21 @@ pub fn run(
                     );
                 } else if reuse_pool_per_namespace() > 0
                     && s.fed.len() >= REUSE_MIN_PREFIX
+                    && cache_carries_recurrent(&sess.cache)
+                {
+                    // THE POOL GRID LAW (memra#1093): every DFlash target is a GDN hybrid, and a
+                    // recurrent trunk's parked stream can never resume exactly (the probe declines
+                    // it), so the session is freed here instead of holding its whole cache, draft
+                    // KV and snapshot buffers in a pool slot until an eviction ladder reaches it.
+                    eprintln!(
+                        "[worker] dspark-park SKIPPED (grid law): a recurrent trunk's {} rows \
+                         cannot resume exactly; session freed (model {})",
+                        s.fed.len(),
+                        s.model
+                    );
+                    reuse_metrics.dspark_grid_park_skips += 1;
+                } else if reuse_pool_per_namespace() > 0
+                    && s.fed.len() >= REUSE_MIN_PREFIX
                     && sess.pos() == s.fed.len()
                 {
                     let toks = &s.fed;
@@ -34837,6 +34862,7 @@ pub fn run(
             m.continuation_pool_grid_rewinds = reuse_metrics.continuation_grid_rewinds;
             m.continuation_pool_grid_declines = reuse_metrics.continuation_grid_declines;
             m.dspark_pool_grid_declines = reuse_metrics.dspark_grid_declines;
+            m.dspark_pool_grid_park_skips = reuse_metrics.dspark_grid_park_skips;
             m.spec_pool_hits = reuse_metrics.spec_hits;
             m.spec_pool_misses = reuse_metrics.spec_misses;
             m.spec_pool_affinity_rewinds = reuse_metrics.spec_affinity_rewinds;
@@ -39253,7 +39279,9 @@ fn admit(
     // MTP for this model, is incompatible with gemma, and a cold prime, a pool resume or a
     // prefix restore (the cold-drafter conversion included) consumed every reuse carrier.
     // DSPARK MULTI-TURN RESUME probe (lane/dflash2-session-reuse, 2026-08-25): the MTP
-    // pool's EXACT and TEXT extension tiers, applied to parked dspark sessions. Runs only
+    // pool's EXACT and TEXT extension tiers, applied to parked dspark sessions. Since memra#1093
+    // no recurrent session parks (every DFlash target is a GDN hybrid) and the probe refuses a
+    // recurrent hit, so on shipped targets it only ever declines. Runs only
     // when no other carrier took the request (no spec resume, no gemma arm, no prefix
     // restore, no plain-reuse cache) and applies the SAME sampler predicate — a parked
     // session's philox stream position and penalty window were shaped by its sampler.
@@ -51809,6 +51837,14 @@ mod tests {
             .expect("the resume arm");
         assert!(decline < resume);
         assert!(squashed[decline..resume].contains("reuse_metrics.dspark_grid_declines += 1;"));
+        // ...and a recurrent session never parks there in the first place.
+        let skip = squashed
+            .find("&& cache_carries_recurrent(&sess.cache) {")
+            .expect("the park skip");
+        let park = squashed
+            .find("dspark_reuse .entry(pool_key) .or_default() .push(DsparkReuseEntry {")
+            .expect("the park");
+        assert!(skip < park);
     }
 
     /// memra#1091: the continuation pool obeys the restore grid law, in the default test set. The
