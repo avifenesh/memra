@@ -1,0 +1,7 @@
+base=~/.cache/memra-gb10-next/bins/glue2-5ea9cc8aa9 lane=~/.cache/memra-gb10-next/bins/resid-cf05643597 BANK resid cf05643597 ~/.cache/memra-gb10-next/bins/resid-cf05643597 compiled_memra_crates=12 foreign=0
+kc-fast rc=0 ALL GREEN (102 cells, 22 skipped)
+ADD-RMS-NORM-E4M3V2 rows=300: res=0 norm=0 e4m3=0 scales=0 q8_1=0 (f32 skipped: res=0 e4m3=0 scales=0) (norm only: 0) OK
+ADD-RMS-NORM-E4M3V2 rows=1024: res=0 norm=0 e4m3=0 scales=0 q8_1=0 (f32 skipped: res=0 e4m3=0 scales=0) (norm only: 0) OK
+sdpa_naive_w_lo[longctx Tkv=16392 win=2048]: legacy_launch=FAILS(expected) clipped_maxdiff=4.19e-9 OK
+sdpa_naive_gmem[longctx Tkv=16392]: legacy_launch=FAILS(expected) gmem_maxdiff=4.19e-9 OK
+CHAIN9-DONE

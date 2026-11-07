@@ -1,0 +1,25 @@
+base=~/.cache/memra-gb10-next/bins/resid-cf05643597 lane=~/.cache/memra-gb10-next/bins/k232-c95627db13 BANK k232 c95627db13 ~/.cache/memra-gb10-next/bins/k232-c95627db13 compiled_memra_crates=12 foreign=0
+probe rc=0
+kc-fast rc=0 ALL GREEN (103 cells, 22 skipped)
+GDN-CONV-L2 T=37: q_l2=0 k_l2=0 k16=0 v=0 ring=0 OK
+GDN-CONV-L2 T=300: q_l2=0 k_l2=0 k16=0 v=0 ring=0 OK
+Q-SPLIT-NORM-ROPE T=300: q=0 gate=0 OK
+Q-SPLIT-NORM-ROPE T=1024: q=0 gate=0 OK
+sdpa_naive_w_lo[longctx Tkv=16392 win=2048]: legacy_launch=FAILS(expected) clipped_maxdiff=4.19e-9 OK
+sdpa_naive_gmem[longctx Tkv=16392]: legacy_launch=FAILS(expected) gmem_maxdiff=4.19e-9 OK
+GDN-DB-GQA T=200 H=6 hk=2 compact, traffic set, fused K4+K5: out bitdiff=0 state bitdiff=0 OK
+GDN-DB-GQA T=200 H=6 hk=2 compact, traffic set, K4/K5 pair: out bitdiff=0 state bitdiff=0 OK
+GDN-DB-GQA T=200 H=6 hk=2 compact, traffic off, fused K4+K5: out bitdiff=0 state bitdiff=0 OK
+GDN-DB-GQA T=200 H=6 hk=6 broadcast, traffic set, fused K4+K5: out bitdiff=0 state bitdiff=0 OK
+GDN-DB-GQA T=200 H=6 hk=2 compact, traffic set, fused K4+K5, K2 64-row: out bitdiff=0 state bitdiff=0 OK
+GDN-DB-GQA T= 64 H=6 hk=2 compact, traffic set, fused K4+K5: out bitdiff=0 state bitdiff=0 OK
+GDN-DB-GQA T= 64 H=6 hk=2 compact, traffic set, K4/K5 pair: out bitdiff=0 state bitdiff=0 OK
+GDN-DB-GQA T= 64 H=6 hk=2 compact, traffic off, fused K4+K5: out bitdiff=0 state bitdiff=0 OK
+GDN-DB-GQA T= 64 H=6 hk=6 broadcast, traffic set, fused K4+K5: out bitdiff=0 state bitdiff=0 OK
+GDN-DB-GQA T= 64 H=6 hk=2 compact, traffic set, fused K4+K5, K2 64-row: out bitdiff=0 state bitdiff=0 OK
+GDN-DB-GQA T= 20 H=6 hk=2 compact, traffic set, fused K4+K5: out bitdiff=0 state bitdiff=0 OK
+GDN-DB-GQA T= 20 H=6 hk=2 compact, traffic set, K4/K5 pair: out bitdiff=0 state bitdiff=0 OK
+GDN-DB-GQA T= 20 H=6 hk=2 compact, traffic off, fused K4+K5: out bitdiff=0 state bitdiff=0 OK
+GDN-DB-GQA T= 20 H=6 hk=6 broadcast, traffic set, fused K4+K5: out bitdiff=0 state bitdiff=0 OK
+GDN-DB-GQA T= 20 H=6 hk=2 compact, traffic set, fused K4+K5, K2 64-row: out bitdiff=0 state bitdiff=0 OK
+CHAIN10-DONE

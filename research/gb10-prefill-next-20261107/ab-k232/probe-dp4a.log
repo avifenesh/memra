@@ -1,0 +1,10 @@
+V0 t4 (shipped)            0.3364 ms
+V1 unroll 4                0.3353 ms  (1.00x)  bitdiff=0 OK
+V1b unroll 8               0.3332 ms  (1.01x)  bitdiff=0 OK
+V2 rows/16 per block       0.3587 ms  (0.94x)  bitdiff=0 OK
+V2b rows/8 per block       0.4386 ms  (0.77x)  bitdiff=0 OK
+V2c rows/24 unroll 4       0.3342 ms  (1.01x)  bitdiff=0 OK
+V3 t8                      0.4480 ms  (0.75x)  bitdiff=0 OK
+V3b t2                     0.3567 ms  (0.94x)  bitdiff=0 OK
+V3c t2 rows/16             0.3355 ms  (1.00x)  bitdiff=0 OK
+cuda: no error

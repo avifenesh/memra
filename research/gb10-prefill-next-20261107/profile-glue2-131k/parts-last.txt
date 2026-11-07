@@ -1,0 +1,48 @@
+window 130.852 s ending at the last prime attention launch; kernels 48839, kernel-sum 127.661 s
+part                                                s  share
+gemm: NVFP4 F8F4 v2 tile                       58.079  45.49%
+attention: FA prime kernel                     40.729  31.90%
+glue: norms/adds/act                            6.804   5.33%
+gdn: chunk scan kernels                         6.671   5.23%
+gemm: F8F4 v2 weight image                      5.976   4.68%
+gdn: conv/l2/gates                              3.276   2.57%
+other                                           1.567   1.23%
+gemm: other MMQ / matvec                        1.499   1.17%
+attention: rope/qk-norm/gate glue               1.492   1.17%
+attention: KV dequant workspace                 1.343   1.05%
+attention: KV append/quantize                   0.115   0.09%
+gemm: NVFP4 F8F4 MMQ                            0.091   0.07%
+gemm: activation e4m3 quantize                  0.019   0.01%
+
+top kernels
+    58.079 s   10752 x     5.402 ms  [gemm: NVFP4 F8F4 v2 tile] void mul_mat_f8f4v2<
+    40.565 s     512 x    79.229 ms  [attention: FA prime kernel] fa_prefill_qw_h2p
+     6.180 s    4064 x     1.521 ms  [glue: norms/adds/act] add_rms_norm_e4m3v2_f32
+     5.976 s   10752 x     0.556 ms  [gemm: F8F4 v2 weight image] void f8f4v2_image_kernel<
+     3.258 s    1584 x     2.057 ms  [gdn: conv/l2/gates] ssm_conv1d_gdn_state_l2_f32
+     2.536 s    1584 x     1.601 ms  [gdn: chunk scan kernels] gdn_chunk_state_output_mma
+     2.167 s    1584 x     1.368 ms  [gdn: chunk scan kernels] gdn_chunk_solve32_f32
+     1.934 s    1584 x     1.221 ms  [gdn: chunk scan kernels] gdn_chunk_attn_f32
+     1.532 s    1536 x     0.998 ms  [other] gated_rmsnorm_e4m3v2_f32
+     1.343 s     528 x     2.544 ms  [attention: KV dequant workspace] fa_dequant_kv_ws_bf16
+     1.329 s    3168 x     0.420 ms  [gemm: other MMQ / matvec] qmatvec_nvfp4_dp4a_rp_t4
+     0.853 s     528 x     1.616 ms  [attention: rope/qk-norm/gate glue] q_gate_split_f32
+     0.573 s    1121 x     0.511 ms  [glue: norms/adds/act] rms_norm_f32_v2
+     0.489 s     512 x     0.956 ms  [attention: rope/qk-norm/gate glue] sig_mul_e4m3v2_f32
+     0.169 s      32 x     5.288 ms  [gemm: other MMQ / matvec] qmatvec_q5_K_mmvq_il
+     0.164 s      16 x    10.236 ms  [attention: FA prime kernel] fa_prefill_qw_db
+     0.150 s    1056 x     0.142 ms  [attention: rope/qk-norm/gate glue] rope_neox_f32
+     0.115 s     528 x     0.218 ms  [attention: KV append/quantize] append_quantize_kv_q8_0_q5_1_rows
+     0.091 s     396 x     0.229 ms  [gemm: NVFP4 F8F4 MMQ] void mul_mat_q_nvfp4_f8f4<
+     0.035 s    1584 x     0.022 ms  [gdn: chunk scan kernels] gdn_chunk_cumgate_f32
+     0.034 s      32 x     1.053 ms  [glue: norms/adds/act] add_f32
+     0.022 s     112 x     0.194 ms  [other] quantize_q8_1
+     0.018 s     222 x     0.082 ms  [gemm: activation e4m3 quantize] void quantize_mmq_e4m3_d4_kernel<
+     0.017 s      33 x     0.503 ms  [glue: norms/adds/act] embed_gather_u32_t
+     0.015 s    1584 x     0.009 ms  [gdn: conv/l2/gates] gdn_glog_f32
+     0.013 s    1599 x     0.008 ms  [other] sigmoid_f32
+     0.003 s    1584 x     0.002 ms  [gdn: conv/l2/gates] ssm_conv_ring_update_f32
+     0.001 s     126 x     0.009 ms  [glue: norms/adds/act] add_rms_norm_f32_v2
+     0.001 s      63 x     0.014 ms  [gemm: activation e4m3 quantize] void quantize_mmq_e4m3_d4_silu_kernel<
+     0.000 s      48 x     0.006 ms  [other] gated_rmsnorm_f32
+     0.000 s      15 x     0.004 ms  [glue: norms/adds/act] mul_f32

@@ -184,10 +184,107 @@ MEMRA_FFN_GATEUP_FUSE=0`; `harness/gates_next2.sh`):
   levers rolled back.
 - unit 2, the first set (`5650c30d03`, `gates-unit2-pr1/`): the same battery, ALL GREEN.
 
+## Second pass (glue 2)
+
+### Where the 131k prime went after the first pass (`profile-glue2-131k/`)
+
+One cold 131,051-token served prefill of the first pass plus the conv + L2 fusion and the out-gate
+seed (`5ea9cc8aa9`): TTFT 130.852 s.
+
+| part | s | main kernels |
+|---|---:|---|
+| F8F4 v2 GEMM tile | 58.08 | 10,752 x 5.40 ms |
+| prime attention (h2p) | 40.73 | 512 x 79.2 ms |
+| glue | 6.80 | `add_rms_norm_e4m3v2_f32` 6.18 (4,064 x 1.52 ms) |
+| GDN chunk scan | 6.67 | fused K4+K5 2.54, solve 2.17, K2 1.93 |
+| F8F4 v2 weight image | 5.98 | |
+| GDN conv + L2 | 3.28 | `ssm_conv1d_gdn_state_l2_f32` 3.26 (1,584 x 2.06 ms) |
+| attention q path and gate | 1.49 | q split 0.85, sig_mul 0.49, rope 0.15 |
+| beta/alpha dp4a | 1.33 | 3,168 x 0.42 ms |
+| e4m3 activation quantize | 0.02 | every GEMM activation but the chunk tails is seeded |
+
+The fused residual + norm kernel moves 273 MB (before a dense FFN) or 378 MB (before a GDN mixer,
+with the f32 norm output and the q8_1 pair) per 4,096-row call in 1.52 ms, about 214 GB/s: the
+floor of its bytes. Its add reads the projection output the GEMM just wrote, so the remaining
+bytes are the projection's f32 round trip. K2 at C = 32 moves about 115 MB per call in 1.22 ms,
+well under the stream rate; its 67,072-byte shared layout fits one block per SM. The fused conv
+moves 336 MB in 2.06 ms (163 GB/s) with 4-byte loads.
+
+### Levers (prime bench, unit 2, 33,890 tokens, interleaved)
+
+| arm | cells | medians | change |
+|---|---|---:|---:|
+| #1089 code (`189a887d27`) | M 25.605, 25.603 | 25.604 | |
+| + conv + L2 in one pass, out-gate seeds wo's activation (`5ea9cc8aa9`) | 25.277, 25.451 | 25.364 | -0.94% |
+| `5ea9cc8aa9` (next session) | M 25.272, 25.271 | 25.272 | |
+| + residual in the GEMM epilogue (`cf05643597`) | 25.078, 25.050 | 25.064 | -0.81% |
+| `cf05643597` (next session) | M 25.054, 25.072 | 25.063 | |
+| + 16-byte conv loads, fused q path, K2 at 32 off (`c95627db13`, `MEMRA_GDN_K2_32=0`) | 24.769, 24.778 | 24.774 | -1.15% |
+| + K2 at C = 32 (the default) | 24.568, 24.562 | 24.565 | -0.83% |
+
+Every cell's last-row prime logits are `758739be...`. The residual epilogue saves less than its
+bytes promise (about 3 s of norm traffic at 131k): the GEMM's epilogue now reads the residual
+tile, and that read sits on the tile's critical path. The dp4a matvec probe (`probe/probe_dp4a.cu`)
+found no exact layout faster than the shipped token-tiled kernel (0.75x to 1.01x).
+
+### The 131k prime after the second pass (`profile-glue3-131k/`)
+
+The second-pass code (`c95627db13`), the same cold 131,051-token served prefill under nsys: TTFT
+127.365 s against 130.852 (-2.7%), kernel time 124.24 s against 127.66. Per kernel, against
+`profile-glue2-131k/`:
+
+| kernel(s) | first pass + conv/L2 | second pass | change |
+|---|---:|---:|---:|
+| residual add + norm (`add_rms_norm_e4m3v2_f32` -> `rms_norm_e4m3v2_f32`), 4,064 calls | 6.18 s (1.52 ms) | 2.94 s (0.72 ms) | -3.24 s |
+| F8F4 v2 GEMM tile (the residual tile read in the epilogue), 10,752 calls | 58.08 s (5.40 ms) | 60.31 s (5.61 ms) | +2.23 s |
+| GDN conv + L2 (16-byte loads), 1,584 calls | 3.26 s (2.06 ms) | 2.26 s (1.43 ms) | -1.00 s |
+| K2 (`gdn_chunk_attn_f32` -> `gdn_chunk_attn32_f32`), 1,584 calls | 1.93 s (1.22 ms) | 1.28 s (0.81 ms) | -0.65 s |
+| attention q path: split + q-norm + RoPE -> `q_split_norm_rope_f32` | 1.44 s | 0.87 s | -0.57 s |
+
+The residual epilogue nets about 1 s at 131k: the norm kernels lose the projection's f32 round
+trip, the GEMM pays most of it back reading the residual tile at the end of every output tile,
+where no mainloop work hides the load.
+
+### Exactness battery (`gates-glue2-unit2/`, `gates-glue3-unit2/`)
+
+On unit 2, the second-pass binaries against the #1089 binary, with every lever of both passes
+rolled back as the off arm (the first pass's seams plus `MEMRA_PRIME_RESID_EPI=0
+MEMRA_GDN_K2_32=0`; `harness/gates_next3.sh`):
+
+- after the conv + L2 fusion and the out-gate seed (`5ea9cc8aa9`, `gates-glue2-unit2/`): kernel-check
+  ALL GREEN (123 cells) in both modes, argmax-margin flips=0 bad=0, run-spec K=1..8 PASS, prime
+  logits identical at 16,219 and 33,890 tokens for the #1089 binary, the lane and the lane rolled
+  back, forward logits identical, `prime-batch-gate --exact` ALL GREEN with its output identical
+  rolled back;
+- the second-pass head's code (`c95627db13`, `gates-glue3-unit2/`): the same battery, kernel-check
+  ALL GREEN (124 cells) in both modes, with the new bit cells MMQ-F8F4-V2-RESID (the model's down and
+  ssm_out weights, GGUF and split-plane layouts, T 130 / 1,024 / 4,096), the norm-only arm of
+  ADD-RMS-NORM-E4M3V2, GDN-CONV-L2, SIG-MUL-E4M3V2, Q-SPLIT-NORM-ROPE and the K2 64-row arms of
+  GDN-DB-GQA at 0 mismatches; the rest as above.
+
+### Served (`served-glue3-unit2-pair/`)
+
+A first served pair on unit 2, one fresh boot per arm, all three lengths per boot, B = the #1089
+code (`189a887d27`), L = the second-pass code (`c95627db13`); `harness/chain12.sh`:
+
+| prompt tokens | #1089 | second pass | change | answer sha256 |
+|---:|---:|---:|---:|---|
+| 32,784 | 25.406 s | 24.402 s | -3.95% | cb9da8ae3cec |
+| 131,051 | 131.691 s | 127.396 s | -3.26% | 84980efddfee |
+| 259,951 | 343.880 s | 332.218 s | -3.39% | 3759709dfbe4 |
+
+MemAvailable floor (GiB): 01-B 65.72; 02-L 66.15. The same answers as every earlier boot.
+
+
 ## Next
 
-What is left in the 131k prime after this lane, by the profile's arithmetic: the F8F4 GEMMs and
-their per-call weight images (about 65 s; resident images were rejected for memory in
-`docs/decisions/GB10-F8F4-GEMM-V2.md`), prime attention (40.8 s), the attention layers' q-gate
-split, q/k norms and sigmoid gate (about 2.4 s, fusable into the wo activation the same way as the
-norms here), and the GDN conv plus its two l2 norms (fusable into one pass).
+What is left in the 131k prime after both passes (`profile-glue3-131k/`, 127.4 s): the F8F4 GEMM
+tile (60.3 s) and its per-call weight images (5.9 s; resident images were rejected for memory in
+`docs/decisions/GB10-F8F4-GEMM-V2.md`), prime attention (40.6 s), and in this lane's blocks about
+14 s, most of it at its DRAM floor: the GDN chunk scan 6.0 s (fused K4+K5 1.59 ms and the solve
+1.37 ms per call move their bytes at the stream rate; K2 0.81 ms), the norm 2.9 s, the conv + L2
+2.3 s, the GDN out-norm 1.5 s, the beta/alpha dp4a 1.3 s and the attention q path and out-gate
+1.4 s. Candidates not built: the f32 norm output before a GDN mixer has no prime reader when every
+weight of the group takes the seeded activation (about 0.8 s at 131k; the GEMM group needs a
+fail-closed check for an unwritten f32 input first); the GDN out-norm inside the fused K4+K5 (Y
+never stored, about 0.8 s; the 128-wide row norm spans the kernel's two 64-column CTAs).

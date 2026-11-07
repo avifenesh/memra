@@ -1,0 +1,4 @@
+01-M bin=189a887d2 wip(prime): review round 2: fused K4+K5 and the tiled dp4a keyed on GB10, single-chunk GDN cell, capture rerun sized to its rows, f32 pair buffers only on the f32 path env=none start 2026-11-07T17:34:03+02:00
+02-A bin=5ea9cc8aa perf(gb10-prime): the attention out-gate writes wo's F8F4 v2 activation; the GDN state conv runs the q/k L2 norms in the same pass env=none start 2026-11-07T17:35:54+02:00
+03-A bin=5ea9cc8aa perf(gb10-prime): the attention out-gate writes wo's F8F4 v2 activation; the GDN state conv runs the q/k L2 norms in the same pass env=none start 2026-11-07T17:37:44+02:00
+04-M bin=189a887d2 wip(prime): review round 2: fused K4+K5 and the tiled dp4a keyed on GB10, single-chunk GDN cell, capture rerun sized to its rows, f32 pair buffers only on the f32 path env=none start 2026-11-07T17:39:34+02:00
