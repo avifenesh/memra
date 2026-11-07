@@ -44,7 +44,15 @@ seeds they will publish) is covered, and empties the rest only if the re-read is
 
 ## Measured
 
-FILL
+All on one RTX 5090 Laptop GPU (24 GB), the same model, receipts in `research/prefix-budget-20261107/rtx5090/`.
+The 5090's session peak exceeds its boot free memory in every measured configuration, so (a) is the two-entry floor
+there and the 5090 cells measure (b) and (c).
+
+**The 2026-09-21 incident replay** (this record's predecessor's own shape, day-20 geometry, AB/BA x 5 pairs):
+value per byte and plain LRU tied 10/10, both 29,600 computed tokens per run, 1,696 cached tokens returned to the
+cohort, 28/28 digests equal to the cold boot (`phase1d/`).
+
+FINAL-ARMS
 
 ## Rejected
 
@@ -61,6 +69,11 @@ FILL
   mixed and agentic shapes, but on the incident replay it refused six cohort returns and computed 30,528 tokens
   against LRU's 28,896: a refusal never advances the clock, so stale dense entries outlived fresh ones (the
   2026-09-21 losing shape). The shipped rule always admits and replays the incident token for token like LRU.
+- **GB10's live-free insert clamp on discrete cards** (every insert held to what the cache holds plus live free
+  memory less the driver headroom and the reserve). Measured, three runs per arm on the mixed shape (`phase1a-clamp/`):
+  with the clamp the shared entry hit 0, 0, 0 (LRU) and 1, 1, 1 (value per byte) of six repeats, against 6, 6, 6
+  without it and 2, 3, 3 on main. Under c8 load it held the cache to about one entry, and an insert never evicts
+  itself, so every new seed displaced the shared entry.
 - **A free-memory share for the discrete budget** (GB10's half). No measurement says what share a discrete card needs;
   the session peak is a bound the scheduler enforces.
 - **The cache taking every free byte above the admission floor**, sessions reclaiming as they arrive. It sizes the
