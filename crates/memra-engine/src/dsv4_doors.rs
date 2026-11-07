@@ -26,10 +26,11 @@
 //! plain and DSpark with the same text on every request. PP-2 stays as the
 //! `MEMRA_DSV4_TOPOLOGY=pp` rollback, so `SERVED_PROGRAM.tp_ep` is true and TP/EP can serve.
 //!
-//! A door admitted only under TP/EP is not "inert today", it is unreachable on
-//! the served path until a TP/EP program wins its served A/B and the server
-//! gains a selector; no door-level change rescues it. `AdmittingProgram` is
-//! that axis and `served_disposition` is where the futures are decided.
+//! Before that flip a door admitted only under TP/EP was not "inert", it was
+//! unreachable on the served path, and no door-level change could rescue it. Since
+//! the flip TP/EP serves, so whether such a door engages is its own predicate's
+//! answer (`AdmittingProgram::TpEpOnly`). `AdmittingProgram` is that axis and
+//! `served_disposition` is where the futures are decided.
 //!
 //! What the two flips did to the counts, written down because the counts are
 //! the claim: six of nine merged default-ON doors were inert, the matrix flip
@@ -68,8 +69,11 @@
 //!    posture; the naked default loads no drafter, see its doc) and
 //!    `TUNED_BENCH_PROGRAM` (what every DSV4 gate binary pins). Since the flip
 //!    they differ on topology and gate-only arms, no longer on expert program.
-//! 2. The door policy functions themselves. `Dsv4Gpu::load` calls exactly these,
-//!    so the gate cannot drift into being a second, kinder model of admission.
+//! 2. The door policy functions themselves. The load path reaches exactly these:
+//!    `Dsv4Gpu::load_placed` resolves the expert program through
+//!    `matrix_expert_program_resolved` and prints every door's disposition through
+//!    `door_receipt_lines`, which runs each row's policy function on the loaded
+//!    program. So the gate cannot drift into being a second, kinder model of admission.
 //! 3. `DSV4_DOORS`, one row per door: the default and the served-path state the
 //!    registries CLAIM, checked by `declaration_violations` against what the
 //!    policy functions actually return. A door whose claim stops being true
@@ -271,7 +275,8 @@ pub const TUNED_BENCH_PROGRAM: Dsv4Program = Dsv4Program {
 };
 
 // ---------------------------------------------------------------------------
-// Policy functions. `Dsv4Gpu::load` calls these; so does the registry below.
+// Policy functions. The registry below calls these; the load path reaches them
+// through it (`door_receipt_lines`) and through `matrix_expert_program_resolved`.
 // ---------------------------------------------------------------------------
 
 /// memra #458, RESOLVED BY DELETION 2026-09-11. The matrix program's plain
@@ -523,8 +528,8 @@ fn resolve_hc_dot_split(p: &Dsv4Program) -> DoorState {
     }
 }
 
-/// The nine merged DSV4F doors, with the default and served-path state the
-/// registries claim for each. A tenth, `MEMRA_DSV4_DENSE_TILE`, existed for one
+/// The seven DSV4F doors still merged, with the default and served-path state the
+/// registries claim for each. Another, `MEMRA_DSV4_DENSE_TILE`, existed for one
 /// afternoon and was REMOVED rather than carried: its receipt was positive
 /// beyond the box's noise on a same-class change, and a same-class win with a
 /// clean receipt becomes the code (owner, 2026-09-10). See the removed-doors
@@ -970,8 +975,9 @@ mod tests {
     /// The count memra #454 reports, pinned. Making a door reachable, or
     /// changing its declared default to match reality, or deleting it, all move
     /// this number, and all three are decisions that must be written down. It
-    /// moved from six to three when the PP-2 norm port took the three norm doors
-    /// off the TP/EP-only list: this assertion is the record of that decision.
+    /// moved from six to four at the matrix flip, and from four to one when the
+    /// PP-2 norm port took the three norm doors off the TP/EP-only list: this
+    /// assertion is the record of those decisions.
     #[test]
     fn one_default_on_door_is_inert_on_the_served_path() {
         // Six before 2026-09-11. The matrix flip removed the two split-K rows
@@ -1068,6 +1074,11 @@ mod tests {
         ("MEMRA_DSV4_SAMPLER", "program selector"),
         ("MEMRA_DSV4_SAMPLE_SORT", "program selector"),
         ("MEMRA_DSV4_SPEC_DEPTH", "spec parameter"),
+        (
+            "MEMRA_DSV4_TOPOLOGY",
+            "topology selector the server reads and passes to Dsv4Gpu::load_placed; \
+             engine sources name it in docs only",
+        ),
         ("MEMRA_DSV4_VERIFY_TOPK", "program selector"),
         ("MEMRA_DSV4_VT", "spec threshold parameter"),
         ("MEMRA_DSV4_VT_FLOOR", "spec threshold parameter"),

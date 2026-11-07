@@ -1,17 +1,11 @@
-//! Rank-local DSV4 FP8 dense-plane packing for the first TP2 attention slice.
+//! Rank-local DSV4 FP8 dense planes for TP2 head-parallel attention.
 //!
-//! This module is deliberately a preparation seam only.  It does not select a runtime path,
-//! launch an attention kernel, or implement the eventual `wo_b` rank reduction.  It owns the
-//! exact storage adapter needed by that path:
-//!
-//! * `wq_b` and `wo_a` use contiguous row partitions;
-//! * `wo_b` uses packed contiguous column partitions, because the current GEMV kernels address
-//!   every weight row as `row * k` and cannot consume a source row stride of the full tensor;
-//! * FP8 code planes are `u8`, while the decoded 128x128 scale planes are explicitly `f32`.
-//!
-//! The eventual `wo_b` partial sum is a separate named numeric class.  Nothing in this adapter
-//! invents an error tolerance or claims that reduction is bit-identical to the full 8192-column
-//! GEMV.
+//! `Dsv4Gpu::load_placed` builds these for every TP/EP load with attention TP, the served
+//! two-card default. Each rank packs a contiguous output-row partition of `wq_b`, `wo_a` and
+//! `wo_b` from the checkpoint plane on its own device ([`DeviceFp8Plane::from_device`]), so
+//! every packed row is the one-card row and the join is an exact row gather
+//! (`dsv4_attention_tp::ATTENTION_TP_NUMERIC_CLASS`). FP8 code planes are `u8`; the decoded
+//! 128x128 scale planes are `f32`.
 
 use cudarc::driver::{CudaSlice, DevicePtr, DevicePtrMut, sys};
 use memra_runtime::Gpu;
@@ -20,120 +14,16 @@ type Res<T> = Result<T, String>;
 
 pub const FP8_BLOCK: usize = 128;
 
-/// Existing-GEMV exact component shapes for the first rank-local attention slice.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum ExistingGemvPlane {
-    Qb,
-    WoA,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct ExistingGemvHalfPlan {
-    pub plane: ExistingGemvPlane,
-    pub rank: usize,
-    pub full_rows: usize,
-    pub full_cols: usize,
-    pub partition: Partition,
-}
-
-impl ExistingGemvHalfPlan {
-    pub const fn q_b(rank: usize) -> Self {
-        Self {
-            plane: ExistingGemvPlane::Qb,
-            rank,
-            full_rows: 32768,
-            full_cols: 1024,
-            partition: Partition::Rows {
-                start: rank * 16384,
-                len: 16384,
-            },
-        }
-    }
-
-    pub const fn wo_a(rank: usize) -> Self {
-        Self {
-            plane: ExistingGemvPlane::WoA,
-            rank,
-            full_rows: 8192,
-            full_cols: 4096,
-            partition: Partition::Rows {
-                start: rank * 4096,
-                len: 4096,
-            },
-        }
-    }
-}
-
-/// Separate numeric class for the eventual wo_b input-column partial reduction.
-pub const WO_B_PARTIAL_SUM_NUMERIC_CLASS: &str = "dsv4_attention_wo_b_input_split_f32_rank_reduce";
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct WoBPartialSumPlan {
-    pub rank: usize,
-    pub full_rows: usize,
-    pub full_cols: usize,
-    pub partition: Partition,
-}
-
-impl WoBPartialSumPlan {
-    pub const fn rank(rank: usize) -> Self {
-        Self {
-            rank,
-            full_rows: 4096,
-            full_cols: 8192,
-            partition: Partition::Columns {
-                start: rank * 4096,
-                len: 4096,
-            },
-        }
-    }
-}
-
-/// Deterministic rank-order FP32 oracle for the named wo_b class. It does not claim equality with
-/// the full-width 8192-column GEMV and introduces no tolerance.
-pub fn wo_b_rank_order_sum_f32(rank0: &[f32], rank1: &[f32], out: &mut [f32]) -> Res<()> {
-    if rank0.len() != 4096 || rank1.len() != 4096 || out.len() != 4096 {
-        return Err(format!(
-            "{WO_B_PARTIAL_SUM_NUMERIC_CLASS} requires 4096-element planes: rank0={} rank1={} out={}",
-            rank0.len(),
-            rank1.len(),
-            out.len()
-        ));
-    }
-    for ((dst, &a), &b) in out.iter_mut().zip(rank0).zip(rank1) {
-        *dst = a + b;
-    }
-    Ok(())
-}
-
 /// Logical location of a rank-local dense plane in the full checkpoint tensor.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Partition {
-    /// Contiguous output rows, used by `wq_b` and `wo_a`.
+    /// Contiguous output rows, used by `wq_b`, `wo_a` and `wo_b`.
     Rows { start: usize, len: usize },
-    /// Contiguous input columns, repacked row by row, used by `wo_b`.
-    Columns { start: usize, len: usize },
 }
 
-impl Partition {
-    pub const fn start(self) -> usize {
-        match self {
-            Self::Rows { start, .. } | Self::Columns { start, .. } => start,
-        }
-    }
-
-    pub const fn len(self) -> usize {
-        match self {
-            Self::Rows { len, .. } | Self::Columns { len, .. } => len,
-        }
-    }
-
-    pub const fn is_empty(self) -> bool {
-        self.len() == 0
-    }
-}
-
-/// Metadata and host-owned packed payload for one logical rank.
+/// Metadata and host-owned packed payload for one logical rank: the host oracle the device
+/// pack gates compare [`DeviceFp8Plane::from_device`] against.
+#[cfg(test)]
 #[derive(Clone, Debug, PartialEq)]
 pub struct PackedFp8Host {
     pub rank: usize,
@@ -148,6 +38,7 @@ pub struct PackedFp8Host {
     pub scales: Vec<f32>,
 }
 
+#[cfg(test)]
 impl PackedFp8Host {
     /// Pack a contiguous output-row partition from a full row-major FP8 tensor.
     pub fn rows_from_full(
@@ -163,7 +54,6 @@ impl PackedFp8Host {
         validate_partition(
             rank,
             full_rows,
-            full_cols,
             Partition::Rows {
                 start: row_start,
                 len: row_len,
@@ -196,57 +86,6 @@ impl PackedFp8Host {
         })
     }
 
-    /// Pack a contiguous input-column partition into a new row-major slab.
-    ///
-    /// This is intentionally a repack, not a pointer offset: every packed row has `cols`
-    /// elements, which is the physical `k` stride expected by the existing GEMV kernels.
-    pub fn columns_from_full(
-        rank: usize,
-        full_rows: usize,
-        full_cols: usize,
-        col_start: usize,
-        col_len: usize,
-        codes: &[u8],
-        scales: &[f32],
-    ) -> Res<Self> {
-        validate_full(full_rows, full_cols, codes, scales)?;
-        validate_partition(
-            rank,
-            full_rows,
-            full_cols,
-            Partition::Columns {
-                start: col_start,
-                len: col_len,
-            },
-        )?;
-        let full_scale_cols = full_cols / FP8_BLOCK;
-        let scale_cols = col_len / FP8_BLOCK;
-        let mut packed_codes = Vec::with_capacity(full_rows * col_len);
-        for row in 0..full_rows {
-            let start = row * full_cols + col_start;
-            packed_codes.extend_from_slice(&codes[start..start + col_len]);
-        }
-        let mut packed_scales = Vec::with_capacity(full_rows / FP8_BLOCK * scale_cols);
-        for row in 0..full_rows / FP8_BLOCK {
-            let start = row * full_scale_cols + col_start / FP8_BLOCK;
-            packed_scales.extend_from_slice(&scales[start..start + scale_cols]);
-        }
-        Ok(Self {
-            rank,
-            full_rows,
-            full_cols,
-            partition: Partition::Columns {
-                start: col_start,
-                len: col_len,
-            },
-            rows: full_rows,
-            cols: col_len,
-            scale_cols,
-            codes: packed_codes,
-            scales: packed_scales,
-        })
-    }
-
     pub fn half_rows(
         rank: usize,
         full_rows: usize,
@@ -265,39 +104,12 @@ impl PackedFp8Host {
         let half = full_rows / 2;
         Self::rows_from_full(rank, full_rows, full_cols, rank * half, half, codes, scales)
     }
-
-    pub fn half_columns(
-        rank: usize,
-        full_rows: usize,
-        full_cols: usize,
-        codes: &[u8],
-        scales: &[f32],
-    ) -> Res<Self> {
-        if rank > 1 {
-            return Err(format!("FP8 pack logical rank {rank} outside TP2"));
-        }
-        if !full_cols.is_multiple_of(2) {
-            return Err(format!(
-                "FP8 TP2 column split requires even full cols, got {full_cols}"
-            ));
-        }
-        let half = full_cols / 2;
-        Self::columns_from_full(rank, full_rows, full_cols, rank * half, half, codes, scales)
-    }
-
-    pub fn code_bytes(&self) -> usize {
-        self.codes.len()
-    }
-
-    pub fn scale_bytes(&self) -> usize {
-        self.scales.len() * std::mem::size_of::<f32>()
-    }
 }
 
 /// Device-owned packed code and decoded FP32 scale planes.
 ///
-/// The metadata is sufficient for a future launcher to pass the local `rows`, `cols`, and
-/// `scale_cols` without reconstructing full-tensor geometry.  No kernel is launched here.
+/// The metadata gives the attention TP launchers the local `rows`, `cols` and `scale_cols`
+/// without reconstructing full-tensor geometry.
 pub struct DeviceFp8Plane {
     pub rank: usize,
     pub full_rows: usize,
@@ -311,6 +123,8 @@ pub struct DeviceFp8Plane {
 }
 
 impl DeviceFp8Plane {
+    /// Upload a host-packed plane (the gates' oracle path).
+    #[cfg(test)]
     pub fn upload(gpu: &Gpu, packed: PackedFp8Host) -> Res<Self> {
         gpu.ctx
             .bind_to_thread()
@@ -335,7 +149,7 @@ impl DeviceFp8Plane {
         })
     }
 
-    /// Device-to-device row/column pack from a full source plane. This is asynchronous on
+    /// Device-to-device row pack from a full source plane. This is asynchronous on
     /// `gpu.stream()`. Both sources must be allocated on that same stream, so their ordered
     /// frees remain after these copies even when CUDA event tracking is disabled.
     pub fn from_device(
@@ -353,7 +167,7 @@ impl DeviceFp8Plane {
             source_codes.len(),
             source_scales.len(),
         )?;
-        validate_partition(rank, full_rows, full_cols, partition)?;
+        validate_partition(rank, full_rows, partition)?;
         gpu.ctx
             .bind_to_thread()
             .map_err(|e| format!("FP8 pack bind: {e}"))?;
@@ -363,10 +177,8 @@ impl DeviceFp8Plane {
         {
             return Err("FP8 pack sources must belong to the copy allocation stream".into());
         }
-        let (rows, cols) = match partition {
-            Partition::Rows { len, .. } => (len, full_cols),
-            Partition::Columns { len, .. } => (full_rows, len),
-        };
+        let Partition::Rows { start, len: rows } = partition;
+        let cols = full_cols;
         let scale_cols = cols / FP8_BLOCK;
         let scale_rows = rows / FP8_BLOCK;
         let mut codes = stream
@@ -375,64 +187,32 @@ impl DeviceFp8Plane {
         let mut scales = stream
             .alloc_zeros::<f32>(scale_rows * scale_cols)
             .map_err(|e| format!("FP8 pack scale allocation: {e}"))?;
-        match partition {
-            Partition::Rows { start, .. } => {
-                copy_2d_device(
-                    &stream,
-                    source_codes,
-                    0,
-                    start,
-                    full_cols,
-                    &mut codes,
-                    0,
-                    0,
-                    cols,
-                    cols,
-                    rows,
-                )?;
-                copy_2d_device(
-                    &stream,
-                    source_scales,
-                    0,
-                    start / FP8_BLOCK,
-                    full_cols / FP8_BLOCK,
-                    &mut scales,
-                    0,
-                    0,
-                    scale_cols,
-                    scale_cols,
-                    scale_rows,
-                )?;
-            }
-            Partition::Columns { start, .. } => {
-                copy_2d_device(
-                    &stream,
-                    source_codes,
-                    start,
-                    0,
-                    full_cols,
-                    &mut codes,
-                    0,
-                    0,
-                    cols,
-                    cols,
-                    rows,
-                )?;
-                copy_2d_device(
-                    &stream,
-                    source_scales,
-                    start / FP8_BLOCK,
-                    0,
-                    full_cols / FP8_BLOCK,
-                    &mut scales,
-                    0,
-                    0,
-                    scale_cols,
-                    scale_cols,
-                    scale_rows,
-                )?;
-            }
-        }
+        copy_2d_device(
+            &stream,
+            source_codes,
+            0,
+            start,
+            full_cols,
+            &mut codes,
+            0,
+            0,
+            cols,
+            cols,
+            rows,
+        )?;
+        copy_2d_device(
+            &stream,
+            source_scales,
+            0,
+            start / FP8_BLOCK,
+            full_cols / FP8_BLOCK,
+            &mut scales,
+            0,
+            0,
+            scale_cols,
+            scale_cols,
+            scale_rows,
+        )?;
         Ok(Self {
             rank,
             full_rows,
@@ -515,6 +295,7 @@ fn copy_2d_device<T>(
         .map_err(|e| format!("FP8 pack 2D copy: {e}"))
 }
 
+#[cfg(test)]
 fn validate_full(rows: usize, cols: usize, codes: &[u8], scales: &[f32]) -> Res<()> {
     validate_full_lengths(rows, cols, codes.len(), scales.len())
 }
@@ -546,43 +327,26 @@ fn validate_full_lengths(rows: usize, cols: usize, code_len: usize, scale_len: u
     Ok(())
 }
 
-fn validate_partition(rank: usize, rows: usize, cols: usize, partition: Partition) -> Res<()> {
+fn validate_partition(rank: usize, rows: usize, partition: Partition) -> Res<()> {
     if rank > 1 {
         return Err(format!("FP8 pack logical rank {rank} outside TP2"));
     }
-    match partition {
-        Partition::Rows { start, len } => {
-            if len == 0
-                || !start.is_multiple_of(FP8_BLOCK)
-                || !len.is_multiple_of(FP8_BLOCK)
-                || start.checked_add(len).is_none_or(|end| end > rows)
-            {
-                return Err(format!(
-                    "FP8 row partition is not 128-aligned/in-bounds: start={start} len={len} rows={rows}"
-                ));
-            }
-        }
-        Partition::Columns { start, len } => {
-            if len == 0
-                || !start.is_multiple_of(FP8_BLOCK)
-                || !len.is_multiple_of(FP8_BLOCK)
-                || start.checked_add(len).is_none_or(|end| end > cols)
-            {
-                return Err(format!(
-                    "FP8 column partition is not 128-aligned/in-bounds: start={start} len={len} cols={cols}"
-                ));
-            }
-        }
+    let Partition::Rows { start, len } = partition;
+    if len == 0
+        || !start.is_multiple_of(FP8_BLOCK)
+        || !len.is_multiple_of(FP8_BLOCK)
+        || start.checked_add(len).is_none_or(|end| end > rows)
+    {
+        return Err(format!(
+            "FP8 row partition is not 128-aligned/in-bounds: start={start} len={len} rows={rows}"
+        ));
     }
     Ok(())
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        DeviceFp8Plane, ExistingGemvHalfPlan, FP8_BLOCK, Gpu, PackedFp8Host, Partition,
-        WO_B_PARTIAL_SUM_NUMERIC_CLASS, WoBPartialSumPlan, copy_2d_device, wo_b_rank_order_sum_f32,
-    };
+    use super::{DeviceFp8Plane, FP8_BLOCK, Gpu, PackedFp8Host, Partition, copy_2d_device};
     use cudarc::driver::{DevicePtr, DevicePtrMut};
     use std::ffi::c_void;
 
@@ -642,23 +406,6 @@ mod tests {
         acc
     }
 
-    fn dot_packed_column_half(
-        packed: &PackedFp8Host,
-        full_cols: usize,
-        col_start: usize,
-        row: usize,
-        input: &[f32],
-    ) -> f32 {
-        let mut acc = 0.0f32;
-        for col in 0..packed.cols {
-            let code = packed.codes[row * packed.cols + col];
-            let scale = packed.scales[(row / FP8_BLOCK) * packed.scale_cols + col / FP8_BLOCK];
-            acc += memra_gguf::nvfp4_repack::fp8_e4m3_to_f32(code) * scale * input[col_start + col];
-        }
-        debug_assert_eq!(input.len(), full_cols);
-        acc
-    }
-
     fn assert_row_partition(
         packed: &PackedFp8Host,
         full_codes: &[u8],
@@ -683,33 +430,9 @@ mod tests {
         }
     }
 
-    fn assert_column_partition(
-        packed: &PackedFp8Host,
-        full_codes: &[u8],
-        full_scales: &[f32],
-        col_start: usize,
-    ) {
-        let full_cols = packed.full_cols;
-        for row in 0..packed.rows {
-            assert_eq!(
-                &packed.codes[row * packed.cols..(row + 1) * packed.cols],
-                &full_codes[row * full_cols + col_start..row * full_cols + col_start + packed.cols]
-            );
-        }
-        let full_scale_cols = full_cols / FP8_BLOCK;
-        let scale_start = col_start / FP8_BLOCK;
-        for row in 0..packed.rows / FP8_BLOCK {
-            assert_eq!(
-                &packed.scales[row * packed.scale_cols..(row + 1) * packed.scale_cols],
-                &full_scales[row * full_scale_cols + scale_start
-                    ..row * full_scale_cols + scale_start + packed.scale_cols]
-            );
-        }
-    }
-
     #[test]
     fn real_dsv4_rank_row_shapes_are_exact_and_scale_planes_are_f32() {
-        let cases = [(32768usize, 1024usize), (8192, 4096)];
+        let cases = [(32768usize, 1024usize), (8192, 4096), (4096, 8192)];
         for (rows, cols) in cases {
             let full_codes = codes(rows * cols, rows as u64 * 17 + cols as u64);
             let full_scales = scales(
@@ -762,200 +485,15 @@ mod tests {
     }
 
     #[test]
-    fn real_dsv4_wob_column_halves_repack_rows_and_f32_scales() {
-        let (rows, cols) = (4096usize, 8192usize);
-        let full_codes = codes(rows * cols, 0xdead_beef);
-        let full_scales = scales(rows / FP8_BLOCK * (cols / FP8_BLOCK), 0x1234_5678);
-        let rank0 = PackedFp8Host::half_columns(0, rows, cols, &full_codes, &full_scales).unwrap();
-        let rank1 = PackedFp8Host::half_columns(1, rows, cols, &full_codes, &full_scales).unwrap();
-        assert_eq!(rank0.rows, rows);
-        assert_eq!(rank0.cols, cols / 2);
-        assert_eq!(rank0.scale_cols, cols / FP8_BLOCK / 2);
-        assert_column_partition(&rank0, &full_codes, &full_scales, 0);
-        assert_column_partition(&rank1, &full_codes, &full_scales, cols / 2);
-        for row in 0..rows {
-            let a = &rank0.codes[row * rank0.cols..(row + 1) * rank0.cols];
-            let b = &rank1.codes[row * rank1.cols..(row + 1) * rank1.cols];
-            assert_eq!([a, b].concat(), full_codes[row * cols..(row + 1) * cols]);
-        }
-        assert_ne!(rank0.scales, rank1.scales);
-        assert_eq!(
-            rank0.scale_bytes(),
-            rows / FP8_BLOCK * (cols / FP8_BLOCK / 2) * 4
-        );
-
-        // Independent nonperiodic FP8*FP32-scale oracle. The halves are checked independently
-        // and then combined in explicit rank order. This intentionally does not compare the
-        // rank-sum class to a full single-pass 8192-column accumulation.
-        let input: Vec<f32> = (0..cols)
-            .map(|i| ((mix(i as u64 * 0x10001 + 7) % 2001) as f32 - 1000.0) / 257.0)
-            .collect();
-        let full_scale_cols = cols / FP8_BLOCK;
-        for &row in &[0usize, 127, 128, 2047, 4095] {
-            let expected0 = dot_packed_column_half(&rank0, cols, 0, row, &input);
-            let expected1 = dot_packed_column_half(&rank1, cols, cols / 2, row, &input);
-            let independent0 = dot_full_range(
-                &full_codes,
-                &full_scales,
-                cols,
-                full_scale_cols,
-                row,
-                0,
-                cols / 2,
-                &input[..cols / 2],
-            );
-            let independent1 = dot_full_range(
-                &full_codes,
-                &full_scales,
-                cols,
-                full_scale_cols,
-                row,
-                cols / 2,
-                cols / 2,
-                &input[cols / 2..],
-            );
-            assert_eq!(
-                expected0.to_bits(),
-                independent0.to_bits(),
-                "rank0 row={row}"
-            );
-            assert_eq!(
-                expected1.to_bits(),
-                independent1.to_bits(),
-                "rank1 row={row}"
-            );
-            assert_eq!(
-                (expected0 + expected1).to_bits(),
-                (independent0 + independent1).to_bits(),
-                "rank-order row={row}"
-            );
-        }
-
-        let row = 2048usize;
-        let before = dot_packed_row(&rank1, row, &input[cols / 2..]);
-        let mut corrupt = rank1.clone();
-        let scale_idx = corrupt.scales.len() / 2;
-        corrupt.scales[scale_idx] *= 2.0;
-        let after = dot_packed_row(&corrupt, row, &input[cols / 2..]);
-        assert_ne!(
-            before.to_bits(),
-            after.to_bits(),
-            "FP32 scale corruption must reach the oracle"
-        );
-    }
-
-    #[test]
-    fn logical_rank_swap_and_scale_corruption_are_rejected_by_identity_teeth() {
-        let (rows, cols) = (4096usize, 8192usize);
-        let full_codes = codes(rows * cols, 0xfeed_face);
-        let full_scales = scales(rows / FP8_BLOCK * (cols / FP8_BLOCK), 0x44aa_9911);
-        let rank0 = PackedFp8Host::half_columns(0, rows, cols, &full_codes, &full_scales).unwrap();
-        let rank1 = PackedFp8Host::half_columns(1, rows, cols, &full_codes, &full_scales).unwrap();
-        let mut reassembled = Vec::with_capacity(full_codes.len());
-        for row in 0..rows {
-            reassembled.extend_from_slice(&rank0.codes[row * rank0.cols..(row + 1) * rank0.cols]);
-            reassembled.extend_from_slice(&rank1.codes[row * rank1.cols..(row + 1) * rank1.cols]);
-        }
-        assert_eq!(reassembled, full_codes);
-
-        let mut swapped = Vec::with_capacity(full_codes.len());
-        for row in 0..rows {
-            swapped.extend_from_slice(&rank1.codes[row * rank1.cols..(row + 1) * rank1.cols]);
-            swapped.extend_from_slice(&rank0.codes[row * rank0.cols..(row + 1) * rank0.cols]);
-        }
-        assert_ne!(
-            swapped, full_codes,
-            "rank swap must not be a silent identity"
-        );
-
-        let mut bad_scales = rank1.scales.clone();
-        let scale_idx = bad_scales.len() / 2;
-        let old_scale = bad_scales[scale_idx];
-        bad_scales[scale_idx] = f32::from_bits(old_scale.to_bits() ^ 1);
-        assert_ne!(
-            bad_scales, rank1.scales,
-            "FP32 scale corruption must be observable"
-        );
-        assert_eq!(rank0.scales.len(), rank1.scales.len());
-    }
-
-    #[test]
     fn malformed_shapes_and_non_aligned_partitions_fail_closed() {
         let codes = vec![0u8; FP8_BLOCK * FP8_BLOCK];
         let scales = vec![1.0f32; 1];
         assert!(PackedFp8Host::rows_from_full(0, 128, 128, 1, 127, &codes, &scales).is_err());
-        assert!(PackedFp8Host::columns_from_full(0, 128, 128, 1, 127, &codes, &scales).is_err());
         assert!(PackedFp8Host::rows_from_full(2, 128, 128, 0, 128, &codes, &scales).is_err());
         assert!(
             PackedFp8Host::rows_from_full(0, 128, 128, 0, 128, &codes[..127], &scales).is_err()
         );
-        assert!(PackedFp8Host::columns_from_full(0, 128, 128, 0, 128, &codes, &[1.0; 2]).is_err());
-    }
-
-    #[test]
-    fn existing_gemv_half_plans_are_exact_qb_woa_components() {
-        assert_eq!(
-            ExistingGemvHalfPlan::q_b(0).partition,
-            Partition::Rows {
-                start: 0,
-                len: 16384
-            }
-        );
-        assert_eq!(
-            ExistingGemvHalfPlan::q_b(1).partition,
-            Partition::Rows {
-                start: 16384,
-                len: 16384
-            }
-        );
-        assert_eq!(ExistingGemvHalfPlan::q_b(0).full_rows, 32768);
-        assert_eq!(ExistingGemvHalfPlan::q_b(0).full_cols, 1024);
-        assert_eq!(
-            ExistingGemvHalfPlan::wo_a(0).partition,
-            Partition::Rows {
-                start: 0,
-                len: 4096
-            }
-        );
-        assert_eq!(
-            ExistingGemvHalfPlan::wo_a(1).partition,
-            Partition::Rows {
-                start: 4096,
-                len: 4096
-            }
-        );
-        assert_eq!(ExistingGemvHalfPlan::wo_a(0).full_rows, 8192);
-        assert_eq!(ExistingGemvHalfPlan::wo_a(0).full_cols, 4096);
-    }
-
-    #[test]
-    fn wob_partial_sum_is_named_and_rank_ordered_without_tolerance() {
-        assert_eq!(
-            WO_B_PARTIAL_SUM_NUMERIC_CLASS,
-            "dsv4_attention_wo_b_input_split_f32_rank_reduce"
-        );
-        assert_eq!(
-            WoBPartialSumPlan::rank(0).partition,
-            Partition::Columns {
-                start: 0,
-                len: 4096
-            }
-        );
-        assert_eq!(
-            WoBPartialSumPlan::rank(1).partition,
-            Partition::Columns {
-                start: 4096,
-                len: 4096
-            }
-        );
-        let rank0: Vec<f32> = (0..4096).map(|i| i as f32 * 0.25 - 7.0).collect();
-        let rank1: Vec<f32> = (0..4096).map(|i| (i as f32 + 3.0) * -0.125).collect();
-        let mut out = vec![0.0f32; 4096];
-        wo_b_rank_order_sum_f32(&rank0, &rank1, &mut out).unwrap();
-        for i in 0..4096 {
-            assert_eq!(out[i].to_bits(), (rank0[i] + rank1[i]).to_bits());
-        }
-        assert!(wo_b_rank_order_sum_f32(&rank0[..1], &rank1, &mut out).is_err());
+        assert!(PackedFp8Host::rows_from_full(0, 128, 128, 0, 128, &codes, &[1.0; 2]).is_err());
     }
 
     fn bf16_input(n: usize, seed: u64) -> Vec<u16> {
@@ -1054,7 +592,11 @@ mod tests {
         let gpu = Gpu::new(0).expect("gpu");
         unsafe { gpu.ctx.disable_event_tracking() };
 
-        for (rows, cols, seed) in [(32768usize, 1024usize, 0x10u64), (8192, 4096, 0x20)] {
+        for (rows, cols, seed) in [
+            (32768usize, 1024usize, 0x10u64),
+            (8192, 4096, 0x20),
+            (4096, 8192, 0x30),
+        ] {
             let full_codes = codes(rows * cols, seed);
             let full_scales = scales(rows / FP8_BLOCK * (cols / FP8_BLOCK), seed + 1);
             if rows == 8192 {
@@ -1149,17 +691,14 @@ mod tests {
                     .unwrap();
             let full_plane = DeviceFp8Plane::upload(&gpu, full_pack).unwrap();
             let input = bf16_input(cols, seed + 2);
+            let name = if rows == 32768 { "Q_b" } else { "wo_b" };
             let full = launch_existing_fp8_gemv(
                 &gpu,
                 &full_plane,
                 &input,
                 rows,
                 cols,
-                if rows == 32768 {
-                    "Q_b full"
-                } else {
-                    "wo_a full"
-                },
+                &format!("{name} full"),
             );
             for rank in 0..2usize {
                 let half = rows / 2;
@@ -1183,11 +722,7 @@ mod tests {
                     &input,
                     half,
                     cols,
-                    if rows == 32768 {
-                        "Q_b half"
-                    } else {
-                        "wo_a half"
-                    },
+                    &format!("{name} half"),
                 );
                 for (i, got) in local_output.iter().enumerate() {
                     assert_eq!(
@@ -1200,85 +735,7 @@ mod tests {
             }
         }
 
-        let (rows, cols) = (4096usize, 8192usize);
-        let full_codes = codes(rows * cols, 0x30);
-        let full_scales = scales(rows / FP8_BLOCK * (cols / FP8_BLOCK), 0x31);
-        let full_pack =
-            PackedFp8Host::columns_from_full(0, rows, cols, 0, cols, &full_codes, &full_scales)
-                .unwrap();
-        let full_plane = DeviceFp8Plane::upload(&gpu, full_pack).unwrap();
-        let input_full = bf16_input(cols, 0x32);
-        let full_width = launch_existing_fp8_gemv(
-            &gpu,
-            &full_plane,
-            &input_full,
-            rows,
-            cols,
-            "wo_b full diagnostic",
-        );
-        let mut rank_outputs = Vec::new();
-        for rank in 0..2usize {
-            let partition = Partition::Columns {
-                start: rank * (cols / 2),
-                len: cols / 2,
-            };
-            let device_half = DeviceFp8Plane::from_device(
-                &gpu,
-                rank,
-                rows,
-                cols,
-                partition,
-                &full_plane.codes,
-                &full_plane.scales,
-            )
-            .unwrap();
-            let host_half = PackedFp8Host::columns_from_full(
-                rank,
-                rows,
-                cols,
-                rank * (cols / 2),
-                cols / 2,
-                &full_codes,
-                &full_scales,
-            )
-            .unwrap();
-            let host_plane = DeviceFp8Plane::upload(&gpu, host_half).unwrap();
-            let input_half = &input_full[rank * (cols / 2)..(rank + 1) * (cols / 2)];
-            let device_output = launch_existing_fp8_gemv(
-                &gpu,
-                &device_half,
-                input_half,
-                rows,
-                cols / 2,
-                "wo_b device half",
-            );
-            let host_output = launch_existing_fp8_gemv(
-                &gpu,
-                &host_plane,
-                input_half,
-                rows,
-                cols / 2,
-                "wo_b host half",
-            );
-            for (i, (device, host)) in device_output.iter().zip(&host_output).enumerate() {
-                assert_eq!(
-                    device.to_bits(),
-                    host.to_bits(),
-                    "wo_b packed half rank={rank} i={i}"
-                );
-            }
-            assert_plane_unchanged(&gpu, &full_plane, &full_codes, &full_scales);
-            rank_outputs.push(device_output);
-        }
-        let mut rank_sum = vec![0.0f32; rows];
-        wo_b_rank_order_sum_f32(&rank_outputs[0], &rank_outputs[1], &mut rank_sum).unwrap();
-        let full_equal = rank_sum
-            .iter()
-            .zip(&full_width)
-            .all(|(a, b)| a.to_bits() == b.to_bits());
-        println!(
-            "PASS existing GEMV Q_b/wo_a exact row halves; wo_b host/device halves exact; class={WO_B_PARTIAL_SUM_NUMERIC_CLASS}; full_width_bit_equal_diagnostic={full_equal}; GPU join not exercised"
-        );
+        println!("PASS existing GEMV Q_b/wo_a/wo_b exact row halves; GPU join not exercised");
     }
 
     #[test]
@@ -1315,51 +772,28 @@ mod tests {
             assert!(error.contains("copy allocation stream"), "{error}");
         }
         other_stream.synchronize().unwrap();
-        for (rows, cols, kind) in [
-            (32768usize, 1024usize, 0usize),
-            (8192usize, 4096usize, 0usize),
-            (4096usize, 8192usize, 1usize),
-        ] {
+        for (rows, cols) in [(32768usize, 1024usize), (8192, 4096), (4096, 8192)] {
             let full_codes = codes(rows * cols, rows as u64 * 19 + cols as u64);
             let full_scales = scales(
                 rows / FP8_BLOCK * (cols / FP8_BLOCK),
                 rows as u64 * 37 + cols as u64,
             );
             for rank in 0..2usize {
-                let half = if kind == 0 { rows / 2 } else { cols / 2 };
-                let partition = if kind == 0 {
-                    Partition::Rows {
-                        start: rank * half,
-                        len: half,
-                    }
-                } else {
-                    Partition::Columns {
-                        start: rank * half,
-                        len: half,
-                    }
+                let half = rows / 2;
+                let partition = Partition::Rows {
+                    start: rank * half,
+                    len: half,
                 };
-                let expected = match partition {
-                    Partition::Rows { start, len } => PackedFp8Host::rows_from_full(
-                        rank,
-                        rows,
-                        cols,
-                        start,
-                        len,
-                        &full_codes,
-                        &full_scales,
-                    )
-                    .unwrap(),
-                    Partition::Columns { start, len } => PackedFp8Host::columns_from_full(
-                        rank,
-                        rows,
-                        cols,
-                        start,
-                        len,
-                        &full_codes,
-                        &full_scales,
-                    )
-                    .unwrap(),
-                };
+                let expected = PackedFp8Host::rows_from_full(
+                    rank,
+                    rows,
+                    cols,
+                    rank * half,
+                    half,
+                    &full_codes,
+                    &full_scales,
+                )
+                .unwrap();
                 let source_codes = stream.clone_htod(&full_codes).unwrap();
                 let source_scales = stream.clone_htod(&full_scales).unwrap();
                 let packed = DeviceFp8Plane::from_device(
@@ -1421,10 +855,8 @@ mod tests {
                 let scale_canary = f32::from_bits(0x7fc0_1234);
                 let mut guarded_scales_host = vec![scale_canary; scale_rows * scale_pitch];
                 let mut guarded_scales = stream.clone_htod(&guarded_scales_host).unwrap();
-                let (code_x, code_y, scale_x, scale_y) = match partition {
-                    Partition::Rows { start, .. } => (0, start, 0, start / FP8_BLOCK),
-                    Partition::Columns { start, .. } => (start, 0, start / FP8_BLOCK, 0),
-                };
+                let (code_x, code_y, scale_x, scale_y) =
+                    (0, rank * half, 0, rank * half / FP8_BLOCK);
                 copy_2d_device(
                     &stream,
                     &source_codes,

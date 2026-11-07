@@ -98,9 +98,9 @@ fn check_expert_nodes(dot: &str, forward: bool) {
 
 fn hc_slices() -> i32 {
     unsafe extern "C" {
-        fn memra_dsv4_hc_dot_split_slices_for_gate() -> i32;
+        fn memra_dsv4_hc_dot_split_slices() -> i32;
     }
-    unsafe { memra_dsv4_hc_dot_split_slices_for_gate() }
+    unsafe { memra_dsv4_hc_dot_split_slices() }
 }
 fn capture_once(gpu: &Dsv4Gpu, state: &DecodeState, cadence: bool) {
     assert_eq!(

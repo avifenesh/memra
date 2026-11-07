@@ -14,10 +14,10 @@ use std::{
 const SLICES: i32 = 16; // Owner accepted 2026-09-09.
 unsafe extern "C" {
     fn memra_dsv4_hc_dot_split_set_for_gate(slices: i32) -> i32;
-    fn memra_dsv4_hc_dot_split_slices_for_gate() -> i32;
+    fn memra_dsv4_hc_dot_split_slices() -> i32;
 }
 fn hc_on() -> bool {
-    unsafe { memra_dsv4_hc_dot_split_slices_for_gate() != 0 }
+    unsafe { memra_dsv4_hc_dot_split_slices() != 0 }
 }
 fn default_program() {
     for name in [
@@ -484,14 +484,14 @@ fn main() {
             "default engagement requires unset or explicit 0"
         );
         assert_eq!(
-            unsafe { memra_dsv4_hc_dot_split_slices_for_gate() },
+            unsafe { memra_dsv4_hc_dot_split_slices() },
             if value.is_none() { SLICES } else { 0 },
             "actual initial HC policy"
         );
         println!(
             "DEFAULT_POLICY before_override=true hc_dot_split={} slices={}",
             hc_on(),
-            unsafe { memra_dsv4_hc_dot_split_slices_for_gate() }
+            unsafe { memra_dsv4_hc_dot_split_slices() }
         );
     } else {
         // Historical comparison arms select S16 explicitly after startup.
@@ -618,16 +618,13 @@ mod tests {
             Some("32") => 32,
             _ => 0,
         };
-        assert_eq!(
-            unsafe { memra_dsv4_hc_dot_split_slices_for_gate() },
-            expected
-        );
+        assert_eq!(unsafe { memra_dsv4_hc_dot_split_slices() }, expected);
         assert_eq!(unsafe { memra_dsv4_hc_dot_split_set_for_gate(0) }, 0);
-        assert_eq!(unsafe { memra_dsv4_hc_dot_split_slices_for_gate() }, 0);
+        assert_eq!(unsafe { memra_dsv4_hc_dot_split_slices() }, 0);
         assert_eq!(unsafe { memra_dsv4_hc_dot_split_set_for_gate(7) }, 40075);
-        assert_eq!(unsafe { memra_dsv4_hc_dot_split_slices_for_gate() }, 0);
+        assert_eq!(unsafe { memra_dsv4_hc_dot_split_slices() }, 0);
         assert_eq!(
-            std::thread::spawn(|| unsafe { memra_dsv4_hc_dot_split_slices_for_gate() })
+            std::thread::spawn(|| unsafe { memra_dsv4_hc_dot_split_slices() })
                 .join()
                 .unwrap(),
             expected

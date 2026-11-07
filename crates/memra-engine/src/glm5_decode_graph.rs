@@ -20,9 +20,16 @@
 //!   3. the MLA/DSA layers' host-derived launch geometry (`let slot = layer.len` at
 //!      `HybridModel::mla_attn_cached_pre_wo`, and the kpool `n_pools`/`select_k`/`width`
 //!      derived from it) plus the synchronizing 4-byte `len_d` mirror store. NOT moved in this
-//!      lane — so MLA/DSA layers stay EAGER and are the reason the capture is per-run rather
-//!      than whole-token. See `research/b200-glm5-graph-20260902/LANE.md` for the file:line
-//!      inventory and what a device-counter (`_dc`) kpool arm would need.
+//!      lane, which is why MLA/DSA layers broke the capture into per-run graphs rather than
+//!      one whole-token graph. See `research/b200-glm5-graph-20260902/LANE.md` for the
+//!      file:line inventory and what a device-counter (`_dc`) kpool arm would need.
+//!
+//! MLA LAYERS SINCE (see `plan_runs`). With `MEMRA_GLM5_GRAPH_MLA` and `MEMRA_MLA_SEG_WS`
+//! (both default ON on `100a` builds through `b200_posture_door_from`, OFF elsewhere) an MLA
+//! layer joins its run in HALVES: the attention-site hc pre + norm + PRE segment close a
+//! graph piece, the position-dependent middle runs eager, and hc post + the FFN half open the
+//! next piece. With the halves door off, MLA/DSA layers stay eager and break the runs. The
+//! KDA pieces are below.
 //!
 //! WHAT IS CAPTURED. Per pipeline stage, the maximal CONTIGUOUS runs of KDA-mixer layers
 //! inside that stage's `[lo, hi)` range: hc pre/post glue, the KDA mixer (projections, conv
@@ -125,12 +132,6 @@ fn capture_fault_from(v: Option<&str>) -> Result<Option<(usize, usize)>, String>
     Ok(Some((run, phase)))
 }
 
-/// One captured contiguous KDA-layer run, in both recurrent-state ping-pong phases.
-///
-/// FIELD ORDER IS LOAD-BEARING. Rust drops fields in declaration order, so `graphs` (which
-/// destroys the instantiated execs) must be declared BEFORE `_keeper` (which frees the buffers
-/// those execs baked). Freeing first and destroying second is a use-after-free inside the driver.
-/// The same reasoning orders `StageGraphs`: `runs` before `x_io`/`ws`/`f16`.
 /// One piece of a captured run: a graph over a segment plan (two ping-pong phases), or the
 /// eager middle of a split MLA layer (`hyper_mla_mid_post_ws`: append, k-pool selection,
 /// attention, decompress, `wo`) that runs between two graph pieces on the stage's own workspace
@@ -158,6 +159,12 @@ struct RunSpec {
     pieces: Vec<PieceSpec>,
 }
 
+/// One captured contiguous KDA-layer run, in both recurrent-state ping-pong phases.
+///
+/// FIELD ORDER IS LOAD-BEARING. Rust drops fields in declaration order, so `graphs` (which
+/// destroys the instantiated execs) must be declared BEFORE `_keeper` (which frees the buffers
+/// those execs baked). Freeing first and destroying second is a use-after-free inside the driver.
+/// The same reasoning orders `StageGraphs`: `runs` before `x_io`/`ws`/`f16`.
 struct RunGraph {
     lo: usize,
     hi: usize,
@@ -255,8 +262,6 @@ struct StageGraphs {
     launched_since_sync: bool,
 }
 
-/// The `(conv, ssm, ssm_alt)` device pointers of one layer's recurrent state, or `None` when the
-/// layer has no recurrent slot.
 /// The buffers a stage's graphs bake, carried across a re-capture unchanged. Splitting them out
 /// is what lets a rebuild destroy ONLY the graphs.
 struct StageBufs {
@@ -306,8 +311,6 @@ fn capturable_runs(
     runs
 }
 
-/// Maximal contiguous runs of KDA-mixer layers inside `[lo, hi)`. A TP-sharded KDA layer is not
-/// on this path at all, so it breaks a run rather than joining one.
 /// The run plan of a stage. Without `MEMRA_GLM5_GRAPH_MLA` (or without the segment
 /// workspace seam it needs) this is exactly `capturable_runs` over the KDA layers, one graph
 /// piece per run. With it, an MLA layer no longer breaks a run: its attention-site hc pre +
@@ -376,7 +379,10 @@ fn plan_runs(m: &HybridModel, lo: usize, hi: usize) -> Vec<RunSpec> {
     runs
 }
 
-/// The layer spans of the stage's runs (what the replay loop walks between eager gaps).
+/// The layer spans of the stage's runs (what the replay loop walks between eager gaps): the
+/// maximal contiguous runs of KDA-mixer layers inside `[lo, hi)`, which MLA layers join when
+/// the halves door is on (`plan_runs`). A TP-sharded KDA layer is not on this path at all, so
+/// it breaks a run rather than joining one.
 fn kda_runs(m: &HybridModel, lo: usize, hi: usize) -> Vec<(usize, usize)> {
     plan_runs(m, lo, hi).iter().map(|r| (r.lo, r.hi)).collect()
 }
@@ -394,6 +400,8 @@ struct LayerSig {
     p_hi: u64,
 }
 
+/// The `(conv, ssm, ssm_alt)` device pointers of one layer's recurrent state, or `None` when the
+/// layer has no recurrent slot.
 fn recur_sig(e: &Engine, cache: &Cache, il: usize) -> Option<LayerSig> {
     use cudarc::driver::DevicePtr;
     let rl = cache.recur.get(il)?.as_ref()?;
@@ -648,21 +656,15 @@ where
     out
 }
 
-/// Node census of a captured graph: the receipt every verify-graph capture prints and the
-/// guard behind it. A memcpy node whose source (or destination) is HOST memory is a capture
+/// Node census of a captured graph: the guard the prime graph checks before it keeps a
+/// capture. A memcpy node whose source (or destination) is HOST memory is a capture
 /// defect by construction: the graph re-reads that host address on every replay, and a
 /// pageable upload's source is a temporary the host freed before the first replay (the
 /// 2026-09-05 shared-expert ones vector: seven 12-byte host-sourced copies, every output word
 /// wrong at 1e21 while the eager walk and the graph were each deterministic against themselves).
 pub(crate) struct GraphCensus {
-    pub nodes: usize,
-    pub kernels: usize,
-    pub memcpys: usize,
-    /// Memcpy nodes with a HOST endpoint, and their byte counts.
+    /// Memcpy nodes with a HOST endpoint.
     pub host_memcpys: usize,
-    pub host_bytes: Vec<usize>,
-    pub mem_allocs: usize,
-    pub mem_frees: usize,
 }
 
 pub(crate) fn graph_census(graph: &CudaGraph) -> Res<GraphCensus> {
@@ -678,42 +680,25 @@ pub(crate) fn graph_census(graph: &CudaGraph) -> Res<GraphCensus> {
     if r != cu::CUresult::CUDA_SUCCESS {
         return Err(format!("cuGraphGetNodes: {r:?}").into());
     }
-    let mut c = GraphCensus {
-        nodes: n,
-        kernels: 0,
-        memcpys: 0,
-        host_memcpys: 0,
-        host_bytes: Vec::new(),
-        mem_allocs: 0,
-        mem_frees: 0,
-    };
+    let mut c = GraphCensus { host_memcpys: 0 };
     for node in nodes.iter().take(n) {
         let mut ty = std::mem::MaybeUninit::<cu::CUgraphNodeType>::uninit();
         let r = unsafe { cu::cuGraphNodeGetType(*node, ty.as_mut_ptr()) };
         if r != cu::CUresult::CUDA_SUCCESS {
             return Err(format!("cuGraphNodeGetType: {r:?}").into());
         }
-        match unsafe { ty.assume_init() } {
-            cu::CUgraphNodeType::CU_GRAPH_NODE_TYPE_KERNEL => c.kernels += 1,
-            cu::CUgraphNodeType::CU_GRAPH_NODE_TYPE_MEM_ALLOC => c.mem_allocs += 1,
-            cu::CUgraphNodeType::CU_GRAPH_NODE_TYPE_MEM_FREE => c.mem_frees += 1,
-            cu::CUgraphNodeType::CU_GRAPH_NODE_TYPE_MEMCPY => {
-                c.memcpys += 1;
-                let mut p = std::mem::MaybeUninit::<cu::CUDA_MEMCPY3D>::zeroed();
-                let r = unsafe { cu::cuGraphMemcpyNodeGetParams(*node, p.as_mut_ptr()) };
-                if r != cu::CUresult::CUDA_SUCCESS {
-                    return Err(format!("cuGraphMemcpyNodeGetParams: {r:?}").into());
-                }
-                let p = unsafe { p.assume_init() };
-                if p.srcMemoryType == cu::CUmemorytype::CU_MEMORYTYPE_HOST
-                    || p.dstMemoryType == cu::CUmemorytype::CU_MEMORYTYPE_HOST
-                {
-                    c.host_memcpys += 1;
-                    c.host_bytes
-                        .push(p.WidthInBytes * p.Height.max(1) * p.Depth.max(1));
-                }
+        if unsafe { ty.assume_init() } == cu::CUgraphNodeType::CU_GRAPH_NODE_TYPE_MEMCPY {
+            let mut p = std::mem::MaybeUninit::<cu::CUDA_MEMCPY3D>::zeroed();
+            let r = unsafe { cu::cuGraphMemcpyNodeGetParams(*node, p.as_mut_ptr()) };
+            if r != cu::CUresult::CUDA_SUCCESS {
+                return Err(format!("cuGraphMemcpyNodeGetParams: {r:?}").into());
             }
-            _ => {}
+            let p = unsafe { p.assume_init() };
+            if p.srcMemoryType == cu::CUmemorytype::CU_MEMORYTYPE_HOST
+                || p.dstMemoryType == cu::CUmemorytype::CU_MEMORYTYPE_HOST
+            {
+                c.host_memcpys += 1;
+            }
         }
     }
     Ok(c)

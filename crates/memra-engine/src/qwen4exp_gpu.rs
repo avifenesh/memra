@@ -1517,7 +1517,7 @@ fn sel_v3_on() -> bool {
 // thing the box A/B has to check at t=1, where the down launch already runs only
 // out_f/4 * selected warps.
 // SCOPE (revuto, PR #27): the `dn` seam reaches ONLY `launch_nvfp4_sel_matvec`. The TP2
-// seg-C tail has a third launcher, `launch_nvfp4_sel_matvec_pack` (below, ~L19840), which
+// seg-C tail has a third launcher, `launch_nvfp4_sel_matvec_pack` (further down), which
 // hardcodes `qmatvec_nvfp4_modelopt_sel_f32_v3c` and never reads the seam — while that
 // same seg C's gate+up goes through the seam-aware `launch_nvfp4_sel_gu_silu`. Deliberate
 // for now: TP2 is not the shipped route on this family (depth regression, receipts in
@@ -1804,8 +1804,12 @@ fn sel_gufuse_on() -> bool {
 /// grouped launch per projection via the gufuse tok_map. Every per-(row,token) fma
 /// chain is the t == 1 program VERBATIM => rows stay BIT-IDENTICAL to per-token
 /// launches (asserted by the bf16-matvec oracle's mt mode and the verify-bit gate);
-/// only weight-read counts and launch counts drop. Engages ONLY at 2 <= t <= 12 exact
-/// chunks (plain decode and prefill untouched). Default ON with the mtp-spec lane's
+/// only weight-read counts and launch counts drop. The arms key on the ROW COUNT, not on
+/// the verify state: the trunk dense mats and hc stages take the mt kernels on every
+/// 2 <= t <= 12 trunk forward, so a short prompt prefill or a 2-12 row `prefill_extend`
+/// tail chunk runs them too (bit-identical per row, so its output does not move), and the
+/// merged MoE columns follow the same switch wherever the MoE runs grouped rows. Plain
+/// t == 1 decode is untouched. Default ON with the mtp-spec lane's
 /// receipts (spec/MTP-SPEC.md: verify-bit-gate bit-identity + interleaved spec A/B);
 /// OFF twin = the per-token grid path, `--ab-seam vmt`.
 pub const VERIFY_MT_DEFAULT: bool = true;
@@ -2415,6 +2419,7 @@ impl LayerPlacement {
         self.local_of[expert] as usize
     }
     /// True when this layer is the plain contiguous even split (the control arm).
+    #[cfg(test)]
     pub fn is_even(&self) -> bool {
         let half = self.rank_of.len() / 2;
         self.card1.len() == half
@@ -3586,7 +3591,8 @@ fn indexer_select_rows(
 }
 
 /// Render row selections as the dense [t, t_kv] u8 mask the smem-bounded masked kernel
-/// consumes — byte-identical to the historical `indexer_mask_rows` output.
+/// consumes: 1 on the whole visible prefix of a `full` row, otherwise 1 on every position
+/// of each selected complete block and on the incomplete tail up to `visible`, 0 elsewhere.
 fn rowsel_to_mask(sels: &[RowSel], block_size: usize, t_kv: usize) -> Vec<u8> {
     let t = sels.len();
     let mut mask = vec![0u8; t * t_kv];
@@ -3961,48 +3967,6 @@ fn route_topk_device(
     ROUTE_AUDIT_ROWS.fetch_add(rows as u64, std::sync::atomic::Ordering::Relaxed);
     ROUTE_AUDIT_MAX_ULP.fetch_max(worst, std::sync::atomic::Ordering::Relaxed);
     Ok(())
-}
-
-/// The historical mask-producing entry point, now select + render (byte-identical mask;
-/// the TP2 decode path and the masked-kernel arm consume it).
-// dead_code: bring-up scaffolding the in-flight qwen4exp lanes still call; not deleted in
-// the clippy-zero lane (bit-neutral by construction).
-#[allow(dead_code)]
-#[allow(clippy::too_many_arguments)]
-fn indexer_mask_rows(
-    overlay: &MicroBlockIndexPlan,
-    rope_base: f32,
-    yarn: Option<(&[f32], f32)>,
-    epsilon: f32,
-    idx_q_norm: &[f32],
-    idx_k_norm: &[f32],
-    proj_rows: &[f32],
-    raw_keys: &IdxRawCache,
-    pooled_keys: &mut Vec<f32>,
-    base_pos: usize,
-    t: usize,
-    t_kv: usize,
-    pos_off: usize,
-) -> Res<Vec<u8>> {
-    let sels = indexer_select_rows(
-        overlay,
-        rope_base,
-        yarn,
-        epsilon,
-        idx_q_norm,
-        idx_k_norm,
-        proj_rows,
-        raw_keys,
-        pooled_keys,
-        // TP2 decode + the reference/mask arm keep the host scorer (TP2's selection runs
-        // on card 0's projection and feeds both halves; its depths are decode-class).
-        None,
-        base_pos,
-        t,
-        t_kv,
-        pos_off,
-    )?;
-    Ok(rowsel_to_mask(&sels, overlay.block_size as usize, t_kv))
 }
 
 /// memra_reference `shift_right_ignore_eos` twin.
@@ -11852,7 +11816,7 @@ impl Qwen4ExpGpu {
         base_pos: usize,
         t: usize,
         // Rope/indexer position offset (0 = trunk; 1 = the MTP draft, see
-        // `indexer_mask_rows`). Causality stays cache-row based either way.
+        // `indexer_select_rows`). Causality stays cache-row based either way.
         pos_off: usize,
         // Verify-exact rows (mtp-spec): per-token indexer-projection launches — the
         // one cuBLASLt op in this path whose m > 1 algorithm may differ from the
@@ -13536,12 +13500,6 @@ pub struct MtpDraftState {
     ws: StepPool,
 }
 
-impl MtpDraftState {
-    pub fn rows(&self) -> usize {
-        self.rows
-    }
-}
-
 /// The draft forward's token source (mtp11): host ids (the mtp10 program), host ids
 /// GATHERED ON DEVICE from the full-vocab chain table (the defer arm's prefill/replay
 /// shape — a 4t-byte htod replaces t 10 KB pageable embed rows, the spec.rs
@@ -13557,12 +13515,6 @@ enum DraftTokSrc<'a> {
 impl Qwen4ExpGpu {
     pub fn has_mtp(&self) -> bool {
         self.mtp.is_some()
-    }
-
-    /// Card-1 draft placement armed? (`load_from_dir_dev1` — the draft's device tensors
-    /// live on `mtp_dev1.dev`, and every draft call must present an engine there.)
-    pub fn mtp_on_dev1(&self) -> bool {
-        self.mtp_dev1.is_some()
     }
 
     /// The draft's device tensors were built on ONE engine; a call presenting another
@@ -14525,10 +14477,6 @@ impl Qwen4ExpGpu {
             last_row_only: false,
         });
         Ok(())
-    }
-
-    pub fn spec_disarm(&self, state: &mut Qwen4ExpState) {
-        state.verify = None;
     }
 
     pub fn set_verify_want_argmax(&self, state: &mut Qwen4ExpState, on: bool) -> Res<()> {
@@ -18024,53 +17972,6 @@ impl Qwen4ExpGpu {
         Ok(partial)
     }
 
-    /// The QSA indexer host twin factored for TP2 (runs on card 0's projection; the mask
-    /// bytes feed BOTH cards' masked SDPA halves).
-    // dead_code: bring-up scaffolding the in-flight qwen4exp lanes still call; not deleted in
-    // the clippy-zero lane (bit-neutral by construction).
-    #[allow(dead_code)]
-    #[allow(clippy::too_many_arguments)]
-    fn qsa_indexer_mask(
-        &self,
-        e: &Engine,
-        ws: &mut StepPool,
-        qsa: &QsaW,
-        eps: f32,
-        mixed: &CudaSlice<f32>,
-        raw_keys: &mut IdxRawCache,
-        pooled_keys: &mut Vec<f32>,
-        base_pos: usize,
-    ) -> Res<Vec<u8>> {
-        let overlay = &qsa.overlay;
-        let idx_dim = overlay.head_dim as usize;
-        let qk_width = (overlay.query_heads as usize + overlay.kv_heads as usize) * idx_dim;
-        let hidden = self.hidden;
-        let mut idx_proj = ws.take_f32(e, "qsa.idxp", qk_width, 0)?;
-        e.linear_device_into(mixed, &qsa.idx_proj, &mut idx_proj, 1, hidden, qk_width)?;
-        let rows = e.dtoh_view(&idx_proj.slice(0..qk_width))?;
-        ws.put_f32("qsa.idxp", idx_proj);
-        raw_keys.append_rows_f32(
-            &rows[overlay.query_heads as usize * idx_dim..qk_width],
-            1,
-            idx_dim,
-        );
-        indexer_mask_rows(
-            overlay,
-            qsa.attn.rope.base,
-            qsa.yarn.as_ref().map(|y| (y.ff_host.as_slice(), y.mscale)),
-            eps,
-            &qsa.idx_q_norm,
-            &qsa.idx_k_norm,
-            &rows,
-            raw_keys,
-            pooled_keys,
-            base_pos,
-            1,
-            base_pos + 1,
-            0,
-        )
-    }
-
     /// Shared-expert half on one card: gate/up rows (card 0 = the resident full twins'
     /// row prefix; card 1 = its suffix copies), silu, compact down columns. Returns the
     /// down PARTIAL and the (replicated-deterministic) input-gate scalar buffer.
@@ -18136,10 +18037,14 @@ impl Qwen4ExpGpu {
 }
 
 impl Qwen4ExpGpu {
-    /// One TP2 decode step (t == 1, eager issue — decode graphs stay off in TP2; the
-    /// joins are the schedule). Prefill stays single-card; the first call migrates the
-    /// state (one-way latch). Requires the bf16-trunk + fused-gate seams ON (replicated
-    /// compute must be deterministic-kernel-only).
+    /// One TP2 decode step (t == 1; the joins are the schedule). With the decode-graph and
+    /// step-workspace seams on (both default ON) each rank runs per-layer SEGMENT GRAPHS for
+    /// the capturable segments, the single-card StepGraphs pattern: the first TP2 step runs
+    /// fully eager to park every slot, the next captures each segment lazily, and later steps
+    /// replay them; the rest of the step issues eagerly. With either seam off every step
+    /// issues eagerly. Prefill stays
+    /// single-card; the first call migrates the state (one-way latch). Requires the
+    /// bf16-trunk + fused-gate seams ON (replicated compute must be deterministic-kernel-only).
     pub fn decode_step_tp2(
         &self,
         e0: &Engine,

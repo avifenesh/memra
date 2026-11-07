@@ -50,7 +50,7 @@ use memra_engine::dsv4_gpu::{Dsv4Gpu, Dsv4SampleCfg, dsv4_pos_uniform, dsv4_samp
 
 unsafe extern "C" {
     fn memra_dsv4_hc_dot_split_set_for_gate(slices: i32) -> i32;
-    fn memra_dsv4_hc_dot_split_slices_for_gate() -> i32;
+    fn memra_dsv4_hc_dot_split_slices() -> i32;
 }
 /// The accepted door's slice count (memra #418, owner accepted 2026-09-09).
 const HC_SLICES: i32 = 16;
@@ -558,7 +558,7 @@ fn main() {
     if hc_axis {
         unsafe {
             assert_eq!(memra_dsv4_hc_dot_split_set_for_gate(0), 0);
-            assert_eq!(memra_dsv4_hc_dot_split_slices_for_gate(), 0);
+            assert_eq!(memra_dsv4_hc_dot_split_slices(), 0);
         }
     }
 
@@ -669,7 +669,7 @@ fn main() {
                 unsafe {
                     assert_eq!(memra_dsv4_hc_dot_split_set_for_gate(want), 0);
                     assert_eq!(
-                        memra_dsv4_hc_dot_split_slices_for_gate(),
+                        memra_dsv4_hc_dot_split_slices(),
                         want,
                         "the HC door setter did not take"
                     );

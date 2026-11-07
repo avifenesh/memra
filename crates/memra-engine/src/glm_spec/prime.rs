@@ -335,7 +335,6 @@ impl Glm5PrimeState {
             sctr,
             uctr: 0,
             snap_pool: Vec::new(),
-            verify_graphs: VerifyGraphPool::default(),
             rounds: 0,
             rank_trimmed_rounds: 0,
             done: false,

@@ -187,7 +187,7 @@ fn main() {
     }
     assert_eq!(gpu.ep_calls(), 0, "PP2 control must not use EP");
     println!("MEMORY before_ep={:?}", gpu.vram_report().expect("VRAM"));
-    gpu.enable_ep_pair_for_gate().expect("shard complete trunk");
+    gpu.enable_ep_pair().expect("shard complete trunk");
     println!("MEMORY after_ep={:?}", gpu.vram_report().expect("VRAM"));
     for serial in [false, true, false] {
         gpu.set_ep_serial_control_for_gate(serial)

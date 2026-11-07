@@ -2855,8 +2855,8 @@ impl HybridModel {
         // 2026-09-04, `=0` disarms, read PER CALL): replay this stage's captured KDA-layer runs
         // instead of issuing them. Every
         // refusal shape returns None and falls through to the eager walk below, byte-identically
-        // — see crates/memra-engine/src/glm5_decode_graph.rs for what is captured and why the
-        // MLA/DSA layers are not.
+        // — see crates/memra-engine/src/glm5_decode_graph.rs for what is captured, including the
+        // MLA halves (default ON on 100a builds).
         if crate::glm5_decode_graph_on() && self.glm5_decode_graph_ready(e, cache, lo, hi) {
             return self.hyper_range_decode_graphed(e, topology, x, lo, hi, pos_d, pos, cache);
         }
@@ -3087,9 +3087,6 @@ impl HybridModel {
         self.hyper_range_decode_ws_segments(e, topology, x, &segs, pos_d, pos, cache, ws, None)
     }
 
-    /// The TP runtime the layers in `lo..hi` were sharded with, if every one of them carries
-    /// symmetric glue; `None` means the range is plain or only partly armed, and the symmetric
-    /// walk must not be attempted over it.
     /// True when this model runs the glm5 TP walk (any layer carries a TP sidecar): the
     /// prefix-cache seams key their per-rank capture on it (`MEMRA_GLM5_TP_PREFIX`).
     pub fn glm5_tp_prefix_class(&self) -> bool {
@@ -3293,6 +3290,9 @@ impl HybridModel {
         Ok(())
     }
 
+    /// The TP runtime the layers in `lo..hi` were sharded with, if every one of them carries
+    /// symmetric glue; `None` means the range is plain or only partly armed, and the symmetric
+    /// walk must not be attempted over it.
     fn glm5_tp_rt_for(
         &self,
         lo: usize,
@@ -3314,15 +3314,6 @@ impl HybridModel {
         rt
     }
 
-    /// The SYMMETRIC workspace walk (lane/tp-symmetric-20260906). Both ranks hold the residual
-    /// stream; each runs the hc glue and the norms from its own copy; the three sharded ops take
-    /// both ranks' inputs and leave their output on both through a one-shot all-reduce. Per
-    /// layer: two crossings, both reductions. Per TOKEN: one fan-out of the entry residual and
-    /// one of the positions, which is what replaces the per-layer fan-outs.
-    ///
-    /// Kept call-for-call with the root walk on the root rank so the named-class gate compares
-    /// the same program: pre -> norm -> mixer -> post -> pre -> norm -> ffn -> post.
-    #[allow(clippy::too_many_arguments)]
     /// ONE layer of the symmetric walk, both ranks (lane/glm5-tp-sym-graph-20260907 pulled it
     /// out of the loop so the graph door can record it): attention-site glue on both ranks, the
     /// sharded mixer meeting in a one-shot all-reduce, FFN-site glue, the split MoE meeting in a
@@ -3734,6 +3725,14 @@ impl HybridModel {
         )
     }
 
+    /// The SYMMETRIC workspace walk (lane/tp-symmetric-20260906). Both ranks hold the residual
+    /// stream; each runs the hc glue and the norms from its own copy; the three sharded ops take
+    /// both ranks' inputs and leave their output on both through a one-shot all-reduce. Per
+    /// layer: two crossings, both reductions. Per TOKEN: one fan-out of the entry residual and
+    /// one of the positions, which is what replaces the per-layer fan-outs.
+    ///
+    /// Kept call-for-call with the root walk on the root rank so the named-class gate compares
+    /// the same program: pre -> norm -> mixer -> post -> pre -> norm -> ffn -> post.
     #[allow(clippy::too_many_arguments)]
     fn hyper_range_decode_ws_sym(
         &self,
@@ -10132,313 +10131,6 @@ impl HybridModel {
             e.mla_decompress_v_scoped(o_lat, wv_b, &mut attn, t, nh, dv, r, scope)?;
         }
         Ok(attn)
-    }
-
-    /// Whether layer `il`'s MLA middle can run as fixed-geometry live twins (the verify walk's
-    /// `MEMRA_GLM5_VERIFY_GRAPH` arm 1, `mla_attn_cached_rows_live`): every launch between the
-    /// PRE half and the FFN half has a live twin under the arms this process dispatches at
-    /// t = 1. `Err` names the first refusal, which `mla_attn_cached_rows_live` returns.
-    pub(crate) fn mla_mid_live_ok(&self, il: usize) -> Result<(), String> {
-        let Mixer::Mla(mla) = &self.layers[il].mixer else {
-            return Err(format!("layer {il} is not an MLA layer"));
-        };
-        if mla.tp.is_some() {
-            return Err(format!("layer {il}: glm5-TP head shard"));
-        }
-        if !Engine::mla_seg_ws_on() {
-            return Err(
-                "MEMRA_MLA_SEG_WS is not set (the live middle reads the PRE workspace)".into(),
-            );
-        }
-        let g = mla.geom;
-        if crate::mla_ffi::mla_gathered_live_arm(1, g.kv_rank).is_none() {
-            return Err(format!(
-                "layer {il}: the gathered-attention arm this process dispatches at t=1 has no \
-                 live-width twin (the single-pass DSA arm or a MEMRA_B200_MLA_DECODE_ARM split)"
-            ));
-        }
-        let Some(ix) = mla.index.as_ref() else {
-            return Err(format!(
-                "layer {il}: dense absorbed arm (no k-pool indexer) is not wired for the live \
-                 middle"
-            ));
-        };
-        let ig = ix.geom;
-        if ig.heads == 0 || ig.heads > 1024 {
-            return Err(format!(
-                "layer {il}: indexer heads {} outside the scorer's bound",
-                ig.heads
-            ));
-        }
-        if ig.pool == 0 || ig.pool > 16 {
-            return Err(format!(
-                "layer {il}: indexer pool {} outside the selector's bound",
-                ig.pool
-            ));
-        }
-        Ok(())
-    }
-
-    /// [`Self::mla_kpool_indices_ex`] at t = 1 with every position-derived scalar read from
-    /// `pos_d` on the device. Returns the capacity-width index row and the device word holding
-    /// the token's true `index_width`.
-    #[allow(clippy::too_many_arguments)]
-    fn mla_kpool_indices_live(
-        &self,
-        e: &Engine,
-        indexer: &crate::hybrid::MlaIndexer,
-        h: &CudaSlice<f32>,
-        q_resid: &CudaSlice<f32>,
-        layer: &mut memra_kv::LatentKvLayer,
-        pos_d: &CudaSlice<i32>,
-        t: usize,
-        capacity_tokens: usize,
-        pairs: (Option<&Q8Pair>, Option<&Q8Pair>),
-        rows_exact: bool,
-        il: usize,
-    ) -> Result<(CudaSlice<i32>, CudaSlice<i32>), Box<dyn std::error::Error>> {
-        const INDEX_NORM_EPS: f32 = 1e-5;
-        let ig = indexer.geom;
-        let d = ig.head_dim;
-        let slot = layer.len;
-        let ring_rows = layer.index_ring_rows.unwrap_or(0);
-        let ring = if ring_rows == 0 {
-            0
-        } else {
-            ring_rows / ig.pool * ig.pool
-        };
-        if ring_rows > 0 && ring == 0 {
-            return Err(format!(
-                "layer {il}: indexer tail ring of {ring_rows} rows cannot hold one pool of {}",
-                ig.pool
-            )
-            .into());
-        }
-        let capacity_pools = capacity_tokens / ig.pool;
-        let need = (capacity_pools * d).max(1);
-        if layer.index_pools_ready != slot / ig.pool {
-            return Err(format!(
-                "layer {il}: resident pool keys cover {} pools but the cache holds {} complete \
-                 pools at slot {slot}; the live middle needs the eager program to have built \
-                 every complete pool first",
-                layer.index_pools_ready,
-                slot / ig.pool
-            )
-            .into());
-        }
-        let plane = layer.index_rows.as_mut().ok_or_else(|| {
-            format!("layer {il}: DSA k-pool indexer without an indexer state plane")
-        })?;
-        let pool_keys = match layer.index_pool_keys.as_mut() {
-            Some(k) if k.len() >= need => k,
-            _ => {
-                return Err(format!(
-                    "layer {il}: the live middle needs the capacity-sized resident pool-key \
-                     plane ({need} floats); the eager token before capture allocates it"
-                )
-                .into());
-            }
-        };
-        // A t-row call must not lap the tail ring: the rows owed to unbuilt pools are the
-        // partial pool before `slot` plus this call's rows (the eager drain loop's bound).
-        if ring > 0 && (slot % ig.pool) + t > ring {
-            return Err(format!(
-                "layer {il}: indexer tail ring of {ring} rows cannot hold {} live rows at slot \
-                 {slot} (t {t})",
-                (slot % ig.pool) + t
-            )
-            .into());
-        }
-        let (h_q8, q_q8) = pairs;
-        let k_raw = mm_with_pair(e, &indexer.wk, h, t, h_q8, rows_exact)?;
-        let mut k_norm = e.uninit(t * d)?;
-        e.layer_norm_bias(
-            &k_raw,
-            indexer.k_norm_w.float_data(),
-            indexer.k_norm_b.float_data(),
-            &mut k_norm,
-            d,
-            t,
-            INDEX_NORM_EPS,
-        )?;
-        let gate = mm_with_pair(e, &indexer.kpool_gate, h, t, h_q8, rows_exact)?;
-        e.mla_index_append_live(plane, &k_norm, &gate, pos_d, t, d, d, ring)?;
-        e.mla_kpool_pool_keys_live(
-            plane,
-            indexer.kpool_ape.float_data(),
-            pool_keys,
-            pos_d,
-            t,
-            ig.pool,
-            d,
-            ring,
-        )?;
-        let q_index = mm_with_pair(e, &indexer.wq_b, q_resid, t, q_q8, rows_exact)?;
-        let head_weights = mm_with_pair(e, &indexer.weights_proj, h, t, h_q8, rows_exact)?;
-        let mut score = e.uninit((t * capacity_pools).max(1))?;
-        e.mla_kpool_score_live(
-            &q_index,
-            pool_keys,
-            &head_weights,
-            &mut score,
-            t,
-            ig.heads,
-            d,
-            pos_d,
-            capacity_pools,
-            ig.pool,
-            (d as f32).powf(-0.5),
-            (ig.heads as f32).powf(-0.5),
-        )?;
-        let width_cap = ig.index_width(capacity_pools);
-        // The cap handed to the live selector must be the SAME clamped `select_k` the width was
-        // built from. `index_width` uses `select_k(capacity_pools)` = `(top_k / pool).min(pools)`,
-        // and the launcher audits `width_cap >= select_k_cap * pool + pool - 1`, so passing the
-        // UNCLAMPED `top_k / pool` makes the two disagree exactly when `capacity_tokens < top_k`:
-        // the launcher then returns 40014, capture fails, and the door latches the WHOLE stage
-        // eager. Measured on the served 2x B200 pair 2026-09-06 (doorscreen `mid` arm): a session
-        // at ctx=386 against `index_topk` 2048 took the mid door from the composed posture's
-        // 86.90 tok/s to 79.33, a 8.71% LOSS that was the lost decode graph, not the middle.
-        // Behaviour-preserving: the kernel takes `select_k = min(select_k_cap, n_pools)` and
-        // `n_pools <= capacity_pools` always (`first_pos + t_q <= capacity_tokens`), so
-        // `min(min(top_k/pool, cap), n_pools)` is `min(top_k/pool, n_pools)`, the scalar
-        // launch's `select_k(n_pools)`, for every reachable call.
-        let select_k_cap = ig.live_select_k_cap(capacity_pools);
-        let mut idx = e.uninit_i32(t * width_cap)?;
-        let mut width_d = e.uninit_i32(1)?;
-        e.mla_kpool_select_live(
-            &score,
-            &mut idx,
-            &mut width_d,
-            t,
-            pos_d,
-            capacity_pools,
-            ig.pool,
-            select_k_cap,
-            width_cap,
-            ig.always_select_tail,
-        )?;
-        Ok((idx, width_d))
-    }
-
-    /// [`Self::mla_seg_post`] at t = 1 over the live-width index row: the attention arm this
-    /// process dispatches (warp-online chunks or the shipped gathered kernel) as its live twin.
-    #[allow(clippy::too_many_arguments)]
-    fn mla_seg_post_live(
-        &self,
-        e: &Engine,
-        mla: &crate::hybrid::MlaAttnLayer,
-        q_nope: &CudaSlice<f32>,
-        q_pe: &CudaSlice<f32>,
-        idx: &CudaSlice<i32>,
-        width_d: &CudaSlice<i32>,
-        latent: &CudaSlice<f32>,
-        t: usize,
-        il: usize,
-    ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
-        let g = mla.geom;
-        let (nh, dr, r) = (g.n_head, g.d_rope, g.kv_rank);
-        let q_lat = self.mla_post_absorb(e, mla, q_nope, t, il)?;
-        let mut o_lat = e.uninit(t * nh * r)?;
-        let idx_stride = idx.len() / t;
-        match crate::mla_ffi::mla_gathered_live_arm(t, r) {
-            Some(chunks) if chunks >= 2 => {
-                let cells = t * nh * chunks;
-                let mut parts = (e.uninit(cells)?, e.uninit(cells)?, e.uninit(cells * r)?);
-                e.mla_dsa_attn_warp_online_live(
-                    &q_lat, q_pe, latent, idx, &mut o_lat, &mut parts, nh, r, dr, t, width_d,
-                    idx_stride, chunks, g.scale,
-                )?;
-            }
-            Some(_) => e.mla_attn_gathered_live(
-                &q_lat, q_pe, latent, idx, &mut o_lat, nh, r, dr, t, width_d, idx_stride, g.scale,
-            )?,
-            None => {
-                return Err(format!(
-                    "layer {il}: the gathered-attention arm has no live twin (mla_mid_live_ok \
-                     admits only the warp-online and shipped gathered arms)"
-                )
-                .into());
-            }
-        }
-        self.mla_post_decompress(e, mla, &o_lat, t, il)
-    }
-
-    /// The verify walk's MLA layer call (`mla_attn_cached_rows_exact` at t = K+1 rows) as
-    /// FIXED-GEOMETRY launches: the PRE segment (rows-exact classes, its own buffers), then
-    /// the live middle at t rows (append, indexer, scorer, selector, gathered attention,
-    /// decompress) and the rows-exact `wo`. Every position-derived scalar comes from the
-    /// device word `pos_d` (row 0's position, rows consecutive), so a graph captured at one
-    /// position replays at any later one. Byte-for-byte the eager rows-exact program.
-    ///
-    /// Host bookkeeping (`len += t`, `index_pools_ready`) is the caller's after a replay; the
-    /// device mirror `len_d` is advanced in-graph.
-    #[allow(clippy::too_many_arguments)]
-    pub fn mla_attn_cached_rows_live(
-        &self,
-        e: &Engine,
-        mla: &crate::hybrid::MlaAttnLayer,
-        h: &CudaSlice<f32>,
-        pos_d: &CudaSlice<i32>,
-        t: usize,
-        il: usize,
-        cache: &mut Cache,
-    ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
-        if let Err(why) = self.mla_mid_live_ok(il) {
-            return Err(why.into());
-        }
-        if crate::mla_ffi::mla_gathered_live_arm(t, mla.geom.kv_rank).is_none() {
-            return Err(format!(
-                "layer {il}: the gathered-attention arm at t={t} has no live-width twin"
-            )
-            .into());
-        }
-        let max_ctx = cache.max_ctx;
-        let layer = cache.latent[il]
-            .as_mut()
-            .ok_or_else(|| format!("layer {il} is Mixer::Mla but the cache has no latent plane"))?;
-        let g = mla.geom;
-        let (dr, r) = (g.d_rope, g.kv_rank);
-        let slot = layer.len;
-        let capacity = layer.rows.len() / layer.width;
-        if slot + t > capacity {
-            return Err(format!(
-                "layer {il}: latent cache overflow — {slot} + {t} rows exceeds capacity {capacity}"
-            )
-            .into());
-        }
-        let indexer = mla.index.as_ref().expect("checked by mla_mid_live_ok");
-        let pre = self
-            .mla_seg_pre(e, mla, h, pos_d, t, il, true, None)?
-            .expect("the ws-free PRE segment always returns its own buffers");
-        e.mla_append_latent_live(&mut layer.rows, &pre.c_kv_n, &pre.k_pe, pos_d, t, r, dr)?;
-        let (idx, width_d) = self.mla_kpool_indices_live(
-            e,
-            indexer,
-            h,
-            &pre.q_an,
-            layer,
-            pos_d,
-            t,
-            max_ctx,
-            (pre.h_q8.as_ref(), pre.q_q8.as_ref()),
-            true,
-            il,
-        )?;
-        let attn = self.mla_seg_post_live(
-            e,
-            mla,
-            &pre.q_nope,
-            &pre.q_pe,
-            &idx,
-            &width_d,
-            &layer.rows,
-            t,
-            il,
-        )?;
-        let out = e.matmul_rows_exact(&mla.wo, &attn, t)?;
-        e.i32_copy_add(pos_d, &mut layer.len_d, t as i32)?;
-        Ok(out)
     }
 
     /// The MEMRA_MLA_TC_PREFILL chain: absorb and decompress as strided-batched bf16
