@@ -57,9 +57,11 @@ them (one k-tile for 8 warps is 4 KB). Both levers therefore need an 80 KB ring.
   included. So a warp waits once per tile, at the top, as in h2p, and both copy points sit where
   h2p's producer sits.
 
-Under ptxas 13.0, every K3V2 arm spills inside the tile loop (11 to 19 local loads per tile:
-ptxas reloads 11 to 16 O accumulators around the mid-tile V wait), while K2V3 removes them
-(`ptxas/registers.txt`, `ptxas/sass-loop-census.txt`). K2V3 is the base of both final levers.
+Under ptxas 13.0, every timed K3V2 arm spills inside the tile loop (12 to 19 local loads per
+tile in r32e, qa12e, pw0e and pw1q15e: ptxas reloads 11 to 16 O accumulators around the mid-tile V
+wait), while K2V3 cuts them to 0 to 5 (rb, qb12 to qb14, pb0, pb0q15; the skewed pair splits keep
+7 to 8) (`ptxas/registers.txt`, `ptxas/sass-loop-census.txt`). K2V3 is the base of both final
+levers.
 
 ### Arms
 
@@ -136,8 +138,12 @@ any candidate's fastest.
 ## The ptxas side arm: the NOPs are not the bottleneck (`probe-runs/probe-x134.log`)
 
 ptxas 13.0 puts a NOP between back-to-back HMMAs: h2p's loop holds 70 NOPs, and they are where the
-profile's 1.7e9 executed NOPs come from (69 per warp-tile). The same PTX assembled by ptxas 13.1 or
-13.4 (here, `ptxas -arch=sm_121a -O3`) has 3 loop NOPs and the same 255 registers and 8 B stack.
+profile's 1.735e9 executed NOPs come from (70 per warp-tile, 41.6% of `wait` samples). The same PTX
+assembled by ptxas 13.1 or 13.4 (here, `ptxas -arch=sm_121a -O3`) keeps 255 registers and the 8 B
+stack and reschedules the loop: 909 instructions against 969 under 13.4, 3 NOPs, and 41 `UIADD3`,
+whose predicated-off no-op form `@!UPT UIADD3 URZ, UPT, UPT, URZ, URZ, URZ` holds 12 of the 14 top
+`wait` instructions of the 13.4 build (`ncu/cb33-xh2p-131072-wait.txt`). So 13.4 still pads, more
+sparsely, with another no-op. Only the 13.4 build was timed; 13.1 builds the same 3-NOP loop.
 Driver 580.178 loads the 13.4 cubin, and its O equals h2p's bit for bit (scheduling only):
 
 | arm | 4,096 | 16,384 | 32,768 | 65,536 | 131,072 | 131k ms (3 rounds) |
@@ -148,7 +154,7 @@ Driver 580.178 loads the 13.4 cubin, and its O equals h2p's bit for bit (schedul
 | xqb12 | 57.51 (-7.9%) | 69.48 (-11.4%) | 72.28 (-12.0%) | 73.57 (-12.2%) | 74.19 (-12.9%) | 175.044, 175.060, 175.082 |
 | xpb0q15 | 43.51 (-30.4%) | 60.46 (-22.9%) | 63.09 (-23.2%) | 64.40 (-23.2%) | 64.70 (-24.0%) | 200.448, 200.755, 200.777 |
 
-On GB10, ptxas 13.0's HMMA, NOP, HMMA pacing is 9.2% faster for h2p than 13.4's dense schedule.
+On GB10, ptxas 13.0's HMMA, NOP, HMMA pacing is 9.2% faster for h2p than 13.4's sparser schedule.
 The `wait` stalls on those NOPs are pacing, not lost work, and an upgraded GB10 toolkit would need
 its own per-kernel A/B before it could become the build's default.
 
@@ -173,7 +179,7 @@ column is cb33's, so compare durations within a unit: rb and qb12 against 157.6 
 | stall `math_pipe_throttle` | 16.5% | 17.5% | 22.5% | 21.6% | 15.8% | 17.0% | 33.9% |
 | stall `selected` | 18.7% | 18.8% | 17.3% | 18.0% | 15.5% | 15.4% | 15.9% |
 | stall `long_scoreboard` / `barrier` | 2.8% / - | 4.4% / - | 3.6% / - | 3.2% / - | 7.8% / 3.4% | 8.1% / 3.1% | 2.3% / - |
-| NOP share of samples / of `wait` | 20.8% / 41.6% | 20.9% / 45.4% | 20.0% / 42.4% | 19.0% / 41.0% | 9.8% / 24.3% | 11.8% / 30.0% | 0 |
+| NOP share of samples / of `wait` | 20.8% / 41.6% | 20.9% / 45.4% | 20.0% / 42.4% | 19.0% / 41.0% | 9.8% / 24.3% | 11.8% / 30.0% | 0 (`UIADD3` no-ops 7.9% / 20.7%) |
 
 - Freeing Q registers (qb12, qb14) removes the spill traffic (qb12: 0 local loads) and leaves the
   instruction count where h2p's is, but `math_pipe_throttle` rises from 16.5% to 22% and the tensor
@@ -183,7 +189,7 @@ column is cb33's, so compare durations within a unit: rb and qb12 against 157.6 
   eligible instead of 0.46, issue 46% instead of 37.5%. But it executes 57% more instructions for
   the same 3.17e9 HMMAs (3.20e9 with the zero rows of the partial last pair), and the tensor pipe
   falls to 62%.
-- Without ptxas 13.0's NOPs (xh2p), 1.5e9 fewer instructions issue, `math_pipe_throttle` doubles to
+- With ptxas 13.4's sparser padding (xh2p), 1.5e9 fewer instructions issue, `math_pipe_throttle` doubles to
   33.9% and the tensor pipe falls to 71.8%. The NOP between two HMMAs paces one warp's HMMA issue
   and so leaves issue slots to the other warp of the scheduler; the `wait` samples on those NOPs
   were that pacing, not idle tensor cycles.
@@ -217,7 +223,8 @@ column is cb33's, so compare durations within a unit: rb and qb12 against 157.6 
   registers give.
 - More warps per scheduler through a pair split is not worth its instruction overhead at this tile
   shape.
-- Dropping ptxas 13.0's NOPs makes h2p slower.
+- ptxas 13.4's schedule (3 NOPs and predicated-off `UIADD3` no-ops in place of 13.0's 70 NOPs)
+  makes h2p slower.
 - Not tried here: a longer key tile (BK 64) that halves the per-tile softmax and barrier overhead
   per MMA (it changes the 32-key online-softmax order, so it is a different float program), and
   split-KV (also a different program; `research/gb10-prefill-attn-20261107/`).
