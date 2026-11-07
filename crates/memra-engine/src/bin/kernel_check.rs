@@ -2247,15 +2247,22 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         //     per launch with host rounding between chunks. Premise cell: in fp32 that split
         //     equals the unsplit call bit for bit (the state crosses a chunk boundary exactly).
         let mma_default_arch = cfg!(memra_hopper_mma) || env!("MEMRA_BUILT_CUDA_ARCH") == "120a";
-        for &(t, c, mma) in &[(200usize, 64usize, false), (160, 32, true)] {
-            if mma && !mma_default_arch {
+        // (rows, chunk, form): the f32 pair, the K4-mma pair where it is the default, and the
+        // Hopper K4+K5 fused wgmma body on a memra_hopper_mma build (its default prime there).
+        for &(t, c, form) in &[
+            (200usize, 64usize, "f32"),
+            (160, 32, "mma"),
+            (160, 32, "wgmma"),
+        ] {
+            if (form == "mma" && !mma_default_arch) || (form == "wgmma" && !cfg!(memra_hopper_mma))
+            {
                 continue;
             }
             let (q, k, v, g, beta, st0) = make(t, 50_000 + t + c);
             // SAFETY: single-threaded gate binary; the seams read the env per call.
             unsafe {
-                std::env::set_var("MEMRA_GDN_MMA", if mma { "1" } else { "0" });
-                std::env::set_var("MEMRA_GDN_WGMMA", "0");
+                std::env::set_var("MEMRA_GDN_MMA", if form == "f32" { "0" } else { "1" });
+                std::env::set_var("MEMRA_GDN_WGMMA", if form == "wgmma" { "1" } else { "0" });
             }
             let run = |q: &[f32],
                        k: &[f32],
@@ -2310,7 +2317,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             println!(
                 "gdn_st16_chunked T={t} C={c} {} bf16 storage == rounding arm per chunk \
                  (fp32 split premise {}) {}",
-                if mma { "mma" } else { "f32" },
+                form,
                 if premise { "holds" } else { "BROKEN" },
                 if ok {
                     "OK"
