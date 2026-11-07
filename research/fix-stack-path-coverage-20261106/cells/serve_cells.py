@@ -33,7 +33,7 @@ import urllib.request
 SCEN, BIN, OUT = sys.argv[1], sys.argv[2], sys.argv[3]
 BIN_OLD = sys.argv[4] if len(sys.argv) > 4 else None
 os.makedirs(OUT, exist_ok=True)
-H = "<models-root>/hf-models"
+H = "<hf-models>"
 Q9 = f"{H}/qwen35-9b-nvfp4-gguf/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf"
 Q9D = f"{H}/qwen35-9b-nvfp4-gguf/draft-9b-owntrim-nvfp4head-q4blk.gguf"
 Q38 = "<models>/q38-gguf/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf"
@@ -678,7 +678,74 @@ def riders_plain_ref():
         s.stop()
 
 
-{"pinned-stagger": pinned_stagger, "orn-boot-ab": orn_boot_ab, "leftbehind": leftbehind, "pinned-sampled": pinned_sampled, "bandemote": bandemote, "dflash-high": dflash_high,
+def para(i, n):
+    # tools/dspark-cold-drafter-gate.py's paragraph text (about 175 tokens per 60-word paragraph)
+    words = ("memory bandwidth decode kernel scheduler prefix cache draft tail verify accept "
+             "token session window boundary restore prime chunk tensor stream").split()
+    return " ".join(f"{words[(i * 7 + k * 3) % len(words)]}{(i * 31 + k) % 97}" for k in range(n))
+
+
+def completion(b):
+    req = urllib.request.Request(BASE + "/v1/completions", data=json.dumps(b).encode(),
+                                 headers={"content-type": "application/json"})
+    with urllib.request.urlopen(req, timeout=1800) as r:
+        return json.loads(r.read())
+
+
+def restorable():
+    # A2/A17(a): the DFlash restorable-hit preference. r1 = P+X served plain (presence_penalty on a
+    # greedy request, max_tokens 1) publishes a plain entry near |P+X|; r2 = P greedy cold-primes
+    # DFlash and the boundary capture publishes a tail-carrying entry at or below |P|; r3 =
+    # P+X+question then has a longer plain hit and a shorter restorable hit, and with
+    # decode_budget >= (plain - restorable) / 8 the worker swaps to the restorable one. One fresh
+    # boot per mode (greedy, then T=1 seed 1234) for the arm and for a PREFIX_CACHE_MB=0 reference.
+    P = "Background notes.\n" + "\n".join(para(i, 60) for i in range(15)) + "\n"
+    X = "Session log.\n" + "\n".join(para(1000 + i, 60) for i in range(3)) + "\n"
+    q = "\nQuestion: summarize the notes above in three sentences.\nAnswer:"
+    # RCTX: 8192 left too little device headroom on a 24 GB card: r3's reclaim-on-defer evicted the
+    # restorable tail entry (it spares only the prompt's longest-LCP entry, the plain hit).
+    base = {"MEMRA_MODELS": f"q38={Q38}", "MEMRA_CTX": os.environ.get("RCTX", "8192"), "MEMRA_MAX_SESSIONS": "1", "MEMRA_KV_HOST_MB": "0",
+            "MEMRA_MTP_SKIP": "1", "MEMRA_DSPARK_SPEC": "1", "MEMRA_DSPARK_DRAFT": DF2,
+            "MEMRA_FRSPEC_TRIM": "<models>/q38-gguf/q38-ranks-sxc32768.gguf.txt"}
+    arm = dict(base, MEMRA_PREFIX_CACHE_MB="4000", MEMRA_PREFIX_STABLE_BOUNDARY="1", MEMRA_DSPARK_PREFIX_RESTORE="1",
+               MEMRA_DSPARK_PARTIAL_RESTORE="1", MEMRA_DSPARK_BOUNDARY_CAPTURE="1")
+    ref = dict(base, MEMRA_PREFIX_CACHE_MB="0")
+    out = {}
+    for mode, temp in (("greedy", 0.0), ("sampled", 1.0)):
+        for tag, env in (("arm", arm), ("ref", ref)):
+            s = Server(f"restorable-{mode}-{tag}", env)
+            try:
+                r1 = completion({"model": "q38", "prompt": P + X, "max_tokens": 1, "temperature": 0, "presence_penalty": 1.5})
+                r2 = completion({"model": "q38", "prompt": P, "max_tokens": 96, "temperature": 0})
+                r3 = completion({"model": "q38", "prompt": P + X + q, "max_tokens": 96, "temperature": temp, "seed": 1234})
+                out[f"{mode}/{tag}"] = {"r3": r3["choices"][0]["text"],
+                                        "tokens": [(r.get("usage") or {}).get("prompt_tokens") for r in (r1, r2, r3)]}
+                log = s.text()
+            finally:
+                s.stop()
+            if tag == "arm":
+                pref = [l for l in log.splitlines() if re.search(r"restorable-preferred: prompt=\d+ decode_budget=\d+ plain hit +\d+ -> restorable hit \d+", l)]
+                bnd = lines_with(log, "insert (dspark-boundary)")
+                rest = lines_with(log, "DSPARK restore:")
+                cell(f"restorable-{mode}-boundary", bool(bnd), (bnd[:1] or ["no dspark-boundary insert"])[0][-160:])
+                cell(f"restorable-{mode}-preferred", bool(pref), (pref[:1] or ["no restorable-preferred line"])[0][-200:])
+                cell(f"restorable-{mode}-restore", bool(pref) and bool(rest), (rest[-1:] or ["no DSPARK restore"])[0][-160:])
+                out[f"{mode}/arm-restored"] = bool(pref) and bool(rest)
+                ev = lines_with(log, "reclaim-on-defer: evicted")
+                if ev:
+                    cell(f"restorable-{mode}-reclaim-note", True, ev[-1][-160:])
+        a, b = out[f"{mode}/arm"], out[f"{mode}/ref"]
+        why = f"tokens {a['tokens']} arm {sha(a['r3'])} ref {sha(b['r3'])} len {len(a['r3'])}/{len(b['r3'])}"
+        if mode == "sampled" and not out.get(f"{mode}/arm-restored"):
+            # the reference cold-primes DFlash; an arm that served r3 plain draws a different sampled
+            # program, so only the greedy rows are comparable then
+            cell(f"restorable-{mode}-bytes-not-comparable", True, "arm r3 did not take the DFlash restore; " + why)
+        else:
+            cell(f"restorable-{mode}-bytes", a["r3"] == b["r3"], why)
+    save("restorable.json", out)
+
+
+{"restorable": restorable, "pinned-stagger": pinned_stagger, "orn-boot-ab": orn_boot_ab, "leftbehind": leftbehind, "pinned-sampled": pinned_sampled, "bandemote": bandemote, "dflash-high": dflash_high,
  "shed": shed, "restore-sampled": restore_sampled, "calib-nopool": calib_nopool,
  "riders-plain-ref": riders_plain_ref, "mtp-pool": mtp_pool, "plain-ref": plain_ref, "wave32": wave32, "dflash-demote": dflash_demote, "vision-ab": vision_ab,
  "mtp-cohort": mtp_cohort, "floor-ab": floor_ab, "riders": riders}[SCEN]()

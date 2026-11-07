@@ -1,0 +1,9 @@
+extra6b armed 11-07 09:29:10
+bin8 staged 09:36:04 (stack top cd63409246, census fix b1470ea8d1 + the head-segment fix)
+extra6b start 09:36:10 bins verified
+SIB-7y-dense-fast rc=101 180s :: [load] lane-8 peer byte-integrity probe PASS: 1 boundaries, 10 copies, ladder [16384, 65536, 524288, 1048576, 67108864] bytes, 285.2ms|thread 'main' (<tid>) panicked at crates/memra-engine/src/bin/dsv4_dense_fast_gate.rs:241:13:|assertion `left == right` failed: candidate rank=0 segment=0| :: census 24
+SIB-7y-dense-exact-tail rc=0 344s :: [load] lane-8 peer byte-integrity probe PASS: 1 boundaries, 10 copies, ladder [16384, 65536, 524288, 1048576, 67108864] bytes, 303.6ms|PASS dense model correctness, two retained resets, and 12 live refusal cells; timing begins| :: census 0
+SIB-7y-compose-cadence rc=101 180s :: [load] lane-8 peer byte-integrity probe PASS: 1 boundaries, 10 copies, ladder [16384, 65536, 524288, 1048576, 67108864] bytes, 299.3ms|thread 'main' (<tid>) panicked at crates/memra-engine/src/bin/dsv4_compose_cadence_dense_gate.rs:196:13:|assertion `left == right` failed: kernel census slot=0| :: census 1
+SIB-7y-hcdot-defaults rc=101 196s :: [load] lane-8 peer byte-integrity probe PASS: 1 boundaries, 10 copies, ladder [16384, 65536, 524288, 1048576, 67108864] bytes, 293.7ms|thread 'main' (<tid>) panicked at crates/memra-engine/src/bin/dsv4_hc_dot_split_gate.rs:173:13:|assertion `left == right` failed| :: census 1
+extra6b done 09:51:10
+extra6b cleaned 09:51:14; 568G free

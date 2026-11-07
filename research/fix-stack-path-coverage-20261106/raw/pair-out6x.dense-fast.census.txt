@@ -1,0 +1,17 @@
+census rank=0 slot=0 [2675, 2546, 129, 1, 86, 129, 0] (want AR=129)
+census rank=0 slot=2 [3074, 2945, 129, 1, 86, 129, 0] (want AR=129)
+census rank=0 slot=3 [3174, 3045, 129, 1, 86, 129, 0] (want AR=129)
+census rank=1 slot=0 [2675, 2546, 129, 1, 86, 129, 0] (want AR=129)
+census rank=1 slot=2 [3074, 2945, 129, 1, 86, 129, 0] (want AR=129)
+census rank=1 slot=3 [3174, 3045, 129, 1, 86, 129, 0] (want AR=129)
+census rank=0 slot=0 [2675, 2546, 129, 1, 86, 129, 0] (want AR=129)
+census rank=0 slot=2 [3074, 2945, 129, 1, 86, 129, 0] (want AR=129)
+census rank=0 slot=3 [3174, 3045, 129, 1, 86, 129, 0] (want AR=129)
+census rank=1 slot=0 [2675, 2546, 129, 1, 86, 129, 0] (want AR=129)
+census rank=1 slot=2 [3074, 2945, 129, 1, 86, 129, 0] (want AR=129)
+census rank=1 slot=3 [3174, 3045, 129, 1, 86, 129, 0] (want AR=129)
+DENSE_CENSUS on=false rank=0 segment=0 candidate=[0, 0] control=[494, 253] dot_sha256=19f9b69179e38fa59471aa72dca00da88b01acf774673c8dcc4999159ccf20b2
+thread 'main' (<tid>) panicked at crates/memra-engine/src/bin/dsv4_dense_fast_gate.rs:246:13:
+assertion `left == right` failed: control rank=0 segment=1
+  left: [0, 2]
+ right: [0, 0]
