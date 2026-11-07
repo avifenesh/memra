@@ -168,11 +168,9 @@ impl SamplerIdentity {
     /// applied no sampler test at all — it compared prompts and nothing else — so every sampler
     /// pair was admitted. Restating it here keeps the refusal tests DECISIVE instead of
     /// tautological: the same pair that `mismatch` names must be admitted by this, or the test is
-    /// asserting against a mechanism that never existed.
-    ///
-    /// It is also what `MEMRA_SPEC_RESUME_SAMPLER=0` selects at runtime (the rollback door and the
-    /// A/B arm the cost measurement needs), so this function is the single definition of "legacy"
-    /// for both the tests and the server.
+    /// asserting against a mechanism that never existed. No runtime path selects it: the server
+    /// always applies `mismatch`, and this stays as the single definition of "legacy" for the
+    /// refusal tests here, the server's verdict test and `dsv4_moe_program_class_gate`.
     pub fn legacy_admits(&self, _parked: &Self) -> bool {
         true
     }

@@ -1,0 +1,24 @@
+head a4d7bf028966 server-stamp=2
+g26 off argmax rc=0 SUMMARY flips=2 bad=0
+g26 off spec K=1 rc=0 stream agreement 128/128 
+g26 off spec K=2 rc=0 stream agreement 128/128 
+g26 off spec K=3 rc=0 stream agreement 128/128 
+g26 off spec K=4 rc=0 stream agreement 128/128 
+g26 off spec K=5 rc=0 stream agreement 128/128 
+g26 off spec K=6 rc=0 stream agreement 128/128 
+g26 off spec K=7 rc=0 stream agreement 128/128 
+g26 off spec K=8 rc=0 stream agreement 128/128 
+g26 off kvprobe A pos=964 at=900 kv_sha256=d2bd929c1ae0d1c1a55c710cdae31b6de1b93a10e5c885f492898708cd409ab6
+g26 off kvprobe B pos=1584 at=900 kv_sha256=d2bd929c1ae0d1c1a55c710cdae31b6de1b93a10e5c885f492898708cd409ab6
+g26 on argmax rc=0 SUMMARY flips=2 bad=0
+g26 on spec K=1 rc=0 stream agreement 128/128 
+g26 on spec K=2 rc=0 stream agreement 128/128 
+g26 on spec K=3 rc=0 stream agreement 128/128 
+g26 on spec K=4 rc=0 stream agreement 128/128 
+g26 on spec K=5 rc=0 stream agreement 128/128 
+g26 on spec K=6 rc=0 stream agreement 128/128 
+g26 on spec K=7 rc=0 stream agreement 128/128 
+g26 on spec K=8 rc=0 stream agreement 128/128 
+g26 on kvprobe A pos=964 at=900 kv_sha256=d2bd929c1ae0d1c1a55c710cdae31b6de1b93a10e5c885f492898708cd409ab6
+g26 on kvprobe B pos=1584 at=900 kv_sha256=d2bd929c1ae0d1c1a55c710cdae31b6de1b93a10e5c885f492898708cd409ab6
+done

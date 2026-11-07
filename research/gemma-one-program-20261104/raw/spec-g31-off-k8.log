@@ -1,0 +1,13 @@
+gpulock: 5090 leased as claude-code-20261104T030411-438104 for 30m
+[tensor-contract] bound 833 semantic tensors (pack gemma4_dense, Gguf, output head TiedToEmbedding); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[q4f16] prefill program = INT8 MMQ (no f16 mirrors) (reason: capacity-keyed auto REFUSED (UNPINNED)); free 6836 MiB, mirror mass 56070 MiB, capacity threshold 64262 MiB (mass + 8192 headroom) — SELECTS PREFILL ARITHMETIC
+[q4rp] split-plane IN-PLACE swap: 420 dense trunk tensors
+spec K=8 n_new=128 prompt=19 toks
+[fa-pool] grow #0 dev=0 o_len 0 -> 8192 ml_len 0 -> 32 (retired kept, zero=false)
+[fa-pool] grow #1 dev=0 o_len 8192 -> 49152 ml_len 32 -> 96 (retired kept, zero=false)
+[fa-pool] grow #2 dev=0 o_len 49152 -> 98304 ml_len 96 -> 192 (retired kept, zero=false)
+[fa-pool] grow #3 dev=0 o_len 98304 -> 196608 ml_len 192 -> 384 (retired kept, zero=false)
+[fa-pool] grow #4 dev=0 o_len 196608 -> 393216 ml_len 384 -> 768 (retired kept, zero=false)
+[fa-pool] grow #5 dev=0 o_len 393216 -> 1048576 ml_len 768 -> 2048 (retired kept, zero=false)
+[gemma-spec] rounds=56 drafted=230 accepted=72                    accept-rate=0.313 tok/round=2.29
+plain: 39.71 tok/s | spec: 60.39 tok/s (1.52x) | stream agreement 128/128

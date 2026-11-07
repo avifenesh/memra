@@ -26,7 +26,8 @@ export CUDA_DEVICE_ORDER=PCI_BUS_ID
 
 HERE=$(cd "$(dirname "$0")" && pwd)
 ROOT=$(cd "$HERE/.." && pwd)
-BIN=$ROOT/target/release
+# The binaries cargo built: CARGO_TARGET_DIR when set, else the tree's own target/.
+BIN=${CARGO_TARGET_DIR:-$ROOT/target}/release
 ROSTER=$HERE/release-roster.tsv
 EVIDENCE_DIR=""
 EVIDENCE_SEQ=0

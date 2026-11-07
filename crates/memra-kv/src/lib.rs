@@ -96,7 +96,8 @@ pub fn tp_kv_rank_allocation_shape(
 }
 
 /// FP8-GLOBALS switch (MEMRA_GEMMA_GKV, default ON): gemma global (hd512) layers keep
-/// their KV in e4m3 — the dequant-latency arc (HANDOVER). Windowed layers stay q8_0/q5_1.
+/// their KV in e4m3 — the dequant-latency arc (HANDOVER). Windowed layers follow
+/// MEMRA_GEMMA_WKV ([`wkv_on`]: e4m3 unless MEMRA_DRAFT is set, else q8_0/q5_1).
 pub fn gkv_on() -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *ON.get_or_init(|| {
@@ -2326,8 +2327,9 @@ pub struct Cache {
 }
 
 /// The context-linear K/V layout for one full-attention layer. This is the single sizing source
-/// used by both `Cache::new_inner` and `cache_bytes_per_token`: admission must never reimplement
-/// Gemma's per-layer geometry or the active KV-format doors independently from the allocator.
+/// used by both `Cache::new_inner` and `cache_bytes_per_token_for_plan`: admission must never
+/// reimplement Gemma's per-layer geometry or the active KV-format doors independently from the
+/// allocator.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum FullAttentionClass {
     Ordinary,
@@ -2414,24 +2416,16 @@ fn kv_plane_allocation_bytes(rows: usize, token_bytes: usize) -> usize {
     rows * token_bytes + 8
 }
 
-/// Context-linear bytes allocated by one trunk cache token.
+/// Context-linear bytes allocated by one trunk cache token in layers `[lo, hi)` of the loaded
+/// plan.
 ///
 /// Fixed allocations (the 8-byte plane tail pads, `len_d`, recurrent state, and optional lazy
 /// buffers) are deliberately excluded. Admission adds their measured high-water residual as a
 /// request-independent activation term; multiplying this coefficient by the request's own
-/// `ctx_cap` exactly mirrors the context-scaled allocations in `Cache::new_inner`.
-pub fn cache_bytes_per_token(cfg: &ModelConfig) -> usize {
-    cache_bytes_per_token_for_layers(cfg, 0, cfg.n_layer as usize)
-}
-
-/// Context-linear cache bytes per token owned by layers in `[lo, hi)`. PP admission uses the
-/// same layer ranges as `Cache::new_ppn`, so each device is charged for exactly the cache planes
-/// it allocates rather than for the aggregate model geometry.
-pub fn cache_bytes_per_token_for_layers(cfg: &ModelConfig, lo: usize, hi: usize) -> usize {
-    let plan = ModelPlan::compile(cfg).expect("cache sizing requires a compilable ModelPlan");
-    cache_bytes_per_token_for_plan(cfg, &plan, lo, hi)
-}
-
+/// `ctx_cap` exactly mirrors the context-scaled allocations in `Cache::new_inner`. PP admission
+/// uses the same layer ranges as `Cache::new_ppn`, so each device is charged for exactly the
+/// cache planes it allocates rather than for the aggregate model geometry. It takes the loaded
+/// plan, never one recompiled from `cfg`: a rewrite bundle or a pack can make the two differ.
 pub fn cache_bytes_per_token_for_plan(
     cfg: &ModelConfig,
     plan: &ModelPlan,
@@ -2524,24 +2518,8 @@ pub fn latent_kv_bytes_per_token_for_plan(
         .sum()
 }
 
-/// Portion of [`cache_bytes_per_token`] whose physical row count is capped by the Step35 SWA
-/// ring. Zero with the flag off and for every non-Step35 architecture.
-pub fn cache_ring_bytes_per_token(cfg: &ModelConfig) -> usize {
-    cache_ring_bytes_per_token_for_layers(cfg, 0, cfg.n_layer as usize)
-}
-
-/// Ring-capped portion of [`cache_bytes_per_token_for_layers`] for `[lo, hi)`.
-pub fn cache_ring_bytes_per_token_for_layers(cfg: &ModelConfig, lo: usize, hi: usize) -> usize {
-    assert!(
-        lo <= hi && hi <= cfg.n_layer as usize,
-        "cache layer range out of bounds"
-    );
-    let Ok(plan) = memra_gguf::model_plan::ModelPlan::compile(cfg) else {
-        return 0;
-    };
-    cache_ring_bytes_per_token_for_plan(cfg, &plan, lo, hi)
-}
-
+/// Portion of [`cache_bytes_per_token_for_plan`] for `[lo, hi)` whose physical row count is
+/// capped by the Step35 SWA ring. Zero with the flag off and for every non-Step35 architecture.
 pub fn cache_ring_bytes_per_token_for_plan(
     cfg: &ModelConfig,
     plan: &ModelPlan,
@@ -2576,13 +2554,6 @@ pub fn cache_ring_bytes_per_token_for_plan(
 }
 
 /// Physical row cap shared by the Step35 SWA trunk and MTP scratch; zero when no ring is active.
-pub fn cache_ring_row_cap(cfg: &ModelConfig) -> usize {
-    let Ok(plan) = memra_gguf::model_plan::ModelPlan::compile(cfg) else {
-        return 0;
-    };
-    cache_ring_row_cap_for_plan(&plan)
-}
-
 pub fn cache_ring_row_cap_for_plan(plan: &memra_gguf::model_plan::ModelPlan) -> usize {
     if !swa_ring_on_for_plan(plan) {
         return 0;
@@ -3004,27 +2975,7 @@ impl Cache {
         Self::new_inner(&|_| e, cfg, Some(plan), max_ctx, KvAllocator::Pooled)
     }
 
-    /// M1-PP2 increment 2 (stage-owned KV): layers [0, split) allocate through `dev0`,
-    /// layers [split, n) through `dev1` — each pipeline stage's cache lives on the
-    /// device that runs the stage. With dev0 == dev1 this is byte-for-byte `new`
-    /// (the single-device plumbing gate). Sizing math is IDENTICAL either way.
-    pub fn new_pp2(
-        dev0: &dyn KvDev,
-        dev1: &dyn KvDev,
-        split: usize,
-        cfg: &ModelConfig,
-        max_ctx: usize,
-    ) -> Result<Self, Box<dyn std::error::Error>> {
-        Self::new_inner(
-            &|il| if il < split { dev0 } else { dev1 },
-            cfg,
-            None,
-            max_ctx,
-            KvAllocator::Pooled,
-        )
-    }
-
-    /// M2 N-stage twin of `new_pp2`: `fence` is the stage map from `memra_engine::pp::
+    /// Stage-owned KV for N pipeline stages: `fence` is the stage map from `memra_engine::pp::
     /// pp_cuts` ([0, c1, .., n_trunk]); layer il allocates through the engine of the
     /// stage that runs it. Layers at/beyond the fence end (MTP/NextN blocks) allocate
     /// through the LAST stage. Sizing math is IDENTICAL to `new` — only the allocating

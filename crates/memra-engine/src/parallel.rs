@@ -1641,7 +1641,6 @@ mod tests {
             }),
             geometry: None,
             nextn_predict_layers: 3,
-            n_layer_total: total_layers,
         }
     }
 

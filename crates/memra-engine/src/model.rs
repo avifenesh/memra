@@ -1700,6 +1700,7 @@ impl Model {
                 src,
                 &cfg,
                 &layer_plan.mlp,
+                &layer_plan.residual,
                 il,
                 None,
                 &mut resident,
