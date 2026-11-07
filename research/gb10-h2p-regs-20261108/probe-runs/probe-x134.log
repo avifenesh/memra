@@ -1,0 +1,141 @@
+# 2026-11-07T23:58:32+02:00 spark-b23d probe_rounds TAG=x134 ROUNDS=3 DEPTHS=4096,16384,32768,65536,131072
+# e759f4ac87f1c0fbacd9e0c8778e69d27eac8d1bcab9f102225d1b8f1649fafb  /home/avifenesh/.cache/memra-attn3/probe/flash_attn.cu
+# 207f61f5f4bfa1ed05049e9cecfd1527531c96bc7b9a3067b6ba9fd0fd7d6497  /home/avifenesh/.cache/memra-attn3/probe/attn3.cuh
+# 888826fefe1d1e95c0eca2cd16c5a056102725ef2b60f45821f5d145d60a5d0a  /home/avifenesh/.cache/memra-attn3/probe/attn3b.cuh
+# 5abf338abbccb02e5c8fee64006d2422b32f4064d1bebd63973405d5407e32e1  /home/avifenesh/.cache/memra-attn3/probe/probe3.cu
+# 42b1a93c6ea3485e8e68c0b3569cba8527e8c7005a9faf65b997b2ebada10543  /home/avifenesh/.cache/memra-attn3/probe/probe3
+# NVIDIA GB10, 580.178.04, 305 MHz, 3003 MHz, 47, 4.18 W
+# round 1 order h2p,xh2p,xh2,xrb,xqb12,xpb0q15,xpb0
+device NVIDIA GB10 sms 48 T 4096 reps 3 data seeded-gauss
+kernel h2p      regs 255 local 8 B smem 98368 B warps 8 bq 64 blocks/SM 1
+kernel xh2p     regs 255 local 8 B smem 98368 B warps 8 bq 64 blocks/SM 1
+kernel xh2      regs 255 local 8 B smem 65536 B warps 8 bq 64 blocks/SM 1
+kernel xrb      regs 255 local 24 B smem 81976 B warps 8 bq 64 blocks/SM 1
+kernel xqb12    regs 255 local 0 B smem 98360 B warps 8 bq 64 blocks/SM 1
+kernel xpb0q15  regs 168 local 48 B smem 98872 B warps 12 bq 48 blocks/SM 1
+kernel xpb0     regs 168 local 24 B smem 92728 B warps 12 bq 48 blocks/SM 1
+T 4096 Tkv    4096 h2p          3.308 ms  62.33 TFLOPS 0.611 of 102 mismatch 0 nonfinite 0 (min 3.303 max 3.311)
+T 4096 Tkv    4096 xh2p         3.442 ms  59.90 TFLOPS 0.587 of 102 mismatch 0 nonfinite 0 (min 3.394 max 3.708)
+T 4096 Tkv    4096 xh2          3.924 ms  52.56 TFLOPS 0.515 of 102 mismatch 0 nonfinite 0 (min 3.920 max 4.129)
+T 4096 Tkv    4096 xrb          3.419 ms  60.32 TFLOPS 0.591 of 102 mismatch 0 nonfinite 0 (min 3.411 max 3.822)
+T 4096 Tkv    4096 xqb12        3.586 ms  57.51 TFLOPS 0.564 of 102 mismatch 0 nonfinite 0 (min 3.572 max 3.826)
+T 4096 Tkv    4096 xpb0q15      4.733 ms  43.57 TFLOPS 0.427 of 102 mismatch 0 nonfinite 0 (min 4.712 max 4.900)
+T 4096 Tkv    4096 xpb0         4.993 ms  41.30 TFLOPS 0.405 of 102 mismatch 0 nonfinite 0 (min 4.807 max 5.034)
+T 4096 Tkv   16384 h2p         18.309 ms  78.82 TFLOPS 0.773 of 102 mismatch 0 nonfinite 0 (min 18.292 max 18.315)
+T 4096 Tkv   16384 xh2p        19.691 ms  73.29 TFLOPS 0.719 of 102 mismatch 0 nonfinite 0 (min 19.514 max 19.724)
+T 4096 Tkv   16384 xh2         22.561 ms  63.97 TFLOPS 0.627 of 102 mismatch 0 nonfinite 0 (min 22.550 max 22.840)
+T 4096 Tkv   16384 xrb         19.176 ms  75.26 TFLOPS 0.738 of 102 mismatch 0 nonfinite 0 (min 18.873 max 19.289)
+T 4096 Tkv   16384 xqb12       20.538 ms  70.27 TFLOPS 0.689 of 102 mismatch 0 nonfinite 0 (min 20.529 max 20.912)
+T 4096 Tkv   16384 xpb0q15     23.800 ms  60.64 TFLOPS 0.594 of 102 mismatch 0 nonfinite 0 (min 23.523 max 23.846)
+T 4096 Tkv   16384 xpb0        24.018 ms  60.09 TFLOPS 0.589 of 102 mismatch 0 nonfinite 0 (min 23.776 max 24.169)
+T 4096 Tkv   32768 h2p         37.638 ms  82.16 TFLOPS 0.806 of 102 mismatch 0 nonfinite 0 (min 37.290 max 38.080)
+T 4096 Tkv   32768 xh2p        40.710 ms  75.96 TFLOPS 0.745 of 102 mismatch 0 nonfinite 0 (min 40.631 max 40.907)
+T 4096 Tkv   32768 xh2         46.896 ms  65.94 TFLOPS 0.646 of 102 mismatch 0 nonfinite 0 (min 46.824 max 47.384)
+T 4096 Tkv   32768 xrb         39.386 ms  78.52 TFLOPS 0.770 of 102 mismatch 0 nonfinite 0 (min 39.168 max 39.691)
+T 4096 Tkv   32768 xqb12       42.782 ms  72.28 TFLOPS 0.709 of 102 mismatch 0 nonfinite 0 (min 42.601 max 43.150)
+T 4096 Tkv   32768 xpb0q15     49.019 ms  63.09 TFLOPS 0.618 of 102 mismatch 0 nonfinite 0 (min 48.564 max 49.439)
+T 4096 Tkv   32768 xpb0        49.260 ms  62.78 TFLOPS 0.615 of 102 mismatch 0 nonfinite 0 (min 48.908 max 49.660)
+T 4096 Tkv   65536 h2p         76.133 ms  83.94 TFLOPS 0.823 of 102 mismatch 0 nonfinite 0 (min 76.004 max 76.796)
+T 4096 Tkv   65536 xh2p        82.928 ms  77.07 TFLOPS 0.756 of 102 mismatch 0 nonfinite 0 (min 82.890 max 83.416)
+T 4096 Tkv   65536 xh2         95.241 ms  67.10 TFLOPS 0.658 of 102 mismatch 0 nonfinite 0 (min 95.162 max 95.388)
+T 4096 Tkv   65536 xrb         79.695 ms  80.19 TFLOPS 0.786 of 102 mismatch 0 nonfinite 0 (min 79.427 max 79.774)
+T 4096 Tkv   65536 xqb12       86.604 ms  73.79 TFLOPS 0.723 of 102 mismatch 0 nonfinite 0 (min 86.552 max 86.870)
+T 4096 Tkv   65536 xpb0q15     99.222 ms  64.41 TFLOPS 0.631 of 102 mismatch 0 nonfinite 0 (min 98.982 max 99.594)
+T 4096 Tkv   65536 xpb0       100.621 ms  63.52 TFLOPS 0.623 of 102 mismatch 0 nonfinite 0 (min 99.930 max 101.736)
+T 4096 Tkv  131072 h2p        152.968 ms  84.91 TFLOPS 0.832 of 102 mismatch 0 nonfinite 0 (min 152.513 max 153.823)
+T 4096 Tkv  131072 xh2p       167.889 ms  77.36 TFLOPS 0.758 of 102 mismatch 0 nonfinite 0 (min 167.885 max 167.919)
+T 4096 Tkv  131072 xh2        192.177 ms  67.58 TFLOPS 0.663 of 102 mismatch 0 nonfinite 0 (min 192.176 max 192.329)
+T 4096 Tkv  131072 xrb        160.268 ms  81.04 TFLOPS 0.795 of 102 mismatch 0 nonfinite 0 (min 160.196 max 160.464)
+T 4096 Tkv  131072 xqb12      175.082 ms  74.18 TFLOPS 0.727 of 102 mismatch 0 nonfinite 0 (min 175.082 max 175.105)
+T 4096 Tkv  131072 xpb0q15    200.777 ms  64.69 TFLOPS 0.634 of 102 mismatch 0 nonfinite 0 (min 200.383 max 200.953)
+T 4096 Tkv  131072 xpb0       201.791 ms  64.36 TFLOPS 0.631 of 102 mismatch 0 nonfinite 0 (min 201.787 max 201.822)
+# round 2 order h2p,xpb0,xpb0q15,xqb12,xrb,xh2,xh2p
+device NVIDIA GB10 sms 48 T 4096 reps 3 data seeded-gauss
+kernel h2p      regs 255 local 8 B smem 98368 B warps 8 bq 64 blocks/SM 1
+kernel xpb0     regs 168 local 24 B smem 92728 B warps 12 bq 48 blocks/SM 1
+kernel xpb0q15  regs 168 local 48 B smem 98872 B warps 12 bq 48 blocks/SM 1
+kernel xqb12    regs 255 local 0 B smem 98360 B warps 8 bq 64 blocks/SM 1
+kernel xrb      regs 255 local 24 B smem 81976 B warps 8 bq 64 blocks/SM 1
+kernel xh2      regs 255 local 8 B smem 65536 B warps 8 bq 64 blocks/SM 1
+kernel xh2p     regs 255 local 8 B smem 98368 B warps 8 bq 64 blocks/SM 1
+T 4096 Tkv    4096 h2p          3.301 ms  62.47 TFLOPS 0.612 of 102 mismatch 0 nonfinite 0 (min 3.300 max 3.301)
+T 4096 Tkv    4096 xpb0         4.792 ms  43.03 TFLOPS 0.422 of 102 mismatch 0 nonfinite 0 (min 4.792 max 4.834)
+T 4096 Tkv    4096 xpb0q15      4.740 ms  43.51 TFLOPS 0.427 of 102 mismatch 0 nonfinite 0 (min 4.725 max 5.159)
+T 4096 Tkv    4096 xqb12        3.590 ms  57.44 TFLOPS 0.563 of 102 mismatch 0 nonfinite 0 (min 3.582 max 3.998)
+T 4096 Tkv    4096 xrb          3.423 ms  60.24 TFLOPS 0.591 of 102 mismatch 0 nonfinite 0 (min 3.411 max 3.599)
+T 4096 Tkv    4096 xh2          3.984 ms  51.75 TFLOPS 0.507 of 102 mismatch 0 nonfinite 0 (min 3.925 max 4.125)
+T 4096 Tkv    4096 xh2p         3.399 ms  60.66 TFLOPS 0.595 of 102 mismatch 0 nonfinite 0 (min 3.397 max 3.401)
+T 4096 Tkv   16384 h2p         18.408 ms  78.40 TFLOPS 0.769 of 102 mismatch 0 nonfinite 0 (min 18.325 max 18.425)
+T 4096 Tkv   16384 xpb0        24.126 ms  59.82 TFLOPS 0.586 of 102 mismatch 0 nonfinite 0 (min 23.821 max 24.587)
+T 4096 Tkv   16384 xpb0q15     23.870 ms  60.46 TFLOPS 0.593 of 102 mismatch 0 nonfinite 0 (min 23.575 max 23.871)
+T 4096 Tkv   16384 xqb12       20.798 ms  69.39 TFLOPS 0.680 of 102 mismatch 0 nonfinite 0 (min 20.577 max 20.842)
+T 4096 Tkv   16384 xrb         19.286 ms  74.83 TFLOPS 0.734 of 102 mismatch 0 nonfinite 0 (min 19.250 max 19.303)
+T 4096 Tkv   16384 xh2         22.827 ms  63.22 TFLOPS 0.620 of 102 mismatch 0 nonfinite 0 (min 22.748 max 22.832)
+T 4096 Tkv   16384 xh2p        19.753 ms  73.06 TFLOPS 0.716 of 102 mismatch 0 nonfinite 0 (min 19.750 max 19.791)
+T 4096 Tkv   32768 h2p         37.590 ms  82.27 TFLOPS 0.807 of 102 mismatch 0 nonfinite 0 (min 37.558 max 37.640)
+T 4096 Tkv   32768 xpb0        49.335 ms  62.68 TFLOPS 0.615 of 102 mismatch 0 nonfinite 0 (min 49.039 max 49.849)
+T 4096 Tkv   32768 xpb0q15     49.324 ms  62.70 TFLOPS 0.615 of 102 mismatch 0 nonfinite 0 (min 48.709 max 49.583)
+T 4096 Tkv   32768 xqb12       43.271 ms  71.47 TFLOPS 0.701 of 102 mismatch 0 nonfinite 0 (min 43.079 max 43.665)
+T 4096 Tkv   32768 xrb         39.689 ms  77.92 TFLOPS 0.764 of 102 mismatch 0 nonfinite 0 (min 39.217 max 39.807)
+T 4096 Tkv   32768 xh2         47.140 ms  65.60 TFLOPS 0.643 of 102 mismatch 0 nonfinite 0 (min 46.939 max 47.643)
+T 4096 Tkv   32768 xh2p        41.659 ms  74.23 TFLOPS 0.728 of 102 mismatch 0 nonfinite 0 (min 41.237 max 41.751)
+T 4096 Tkv   65536 h2p         76.252 ms  83.81 TFLOPS 0.822 of 102 mismatch 0 nonfinite 0 (min 75.761 max 76.305)
+T 4096 Tkv   65536 xpb0        99.595 ms  64.17 TFLOPS 0.629 of 102 mismatch 0 nonfinite 0 (min 99.560 max 100.517)
+T 4096 Tkv   65536 xpb0q15     99.239 ms  64.40 TFLOPS 0.631 of 102 mismatch 0 nonfinite 0 (min 99.022 max 100.336)
+T 4096 Tkv   65536 xqb12       86.875 ms  73.57 TFLOPS 0.721 of 102 mismatch 0 nonfinite 0 (min 86.825 max 87.070)
+T 4096 Tkv   65536 xrb         80.114 ms  79.77 TFLOPS 0.782 of 102 mismatch 0 nonfinite 0 (min 79.793 max 80.128)
+T 4096 Tkv   65536 xh2         95.368 ms  67.01 TFLOPS 0.657 of 102 mismatch 0 nonfinite 0 (min 95.354 max 96.132)
+T 4096 Tkv   65536 xh2p        83.317 ms  76.71 TFLOPS 0.752 of 102 mismatch 0 nonfinite 0 (min 83.246 max 83.667)
+T 4096 Tkv  131072 h2p        152.489 ms  85.17 TFLOPS 0.835 of 102 mismatch 0 nonfinite 0 (min 152.458 max 153.386)
+T 4096 Tkv  131072 xpb0       201.738 ms  64.38 TFLOPS 0.631 of 102 mismatch 0 nonfinite 0 (min 200.985 max 202.394)
+T 4096 Tkv  131072 xpb0q15    200.448 ms  64.80 TFLOPS 0.635 of 102 mismatch 0 nonfinite 0 (min 200.244 max 200.488)
+T 4096 Tkv  131072 xqb12      175.060 ms  74.19 TFLOPS 0.727 of 102 mismatch 0 nonfinite 0 (min 175.016 max 175.390)
+T 4096 Tkv  131072 xrb        160.021 ms  81.16 TFLOPS 0.796 of 102 mismatch 0 nonfinite 0 (min 159.944 max 160.045)
+T 4096 Tkv  131072 xh2        192.178 ms  67.58 TFLOPS 0.663 of 102 mismatch 0 nonfinite 0 (min 192.161 max 192.867)
+T 4096 Tkv  131072 xh2p       167.981 ms  77.32 TFLOPS 0.758 of 102 mismatch 0 nonfinite 0 (min 167.929 max 167.990)
+# round 3 order h2p,xh2p,xh2,xrb,xqb12,xpb0q15,xpb0
+device NVIDIA GB10 sms 48 T 4096 reps 3 data seeded-gauss
+kernel h2p      regs 255 local 8 B smem 98368 B warps 8 bq 64 blocks/SM 1
+kernel xh2p     regs 255 local 8 B smem 98368 B warps 8 bq 64 blocks/SM 1
+kernel xh2      regs 255 local 8 B smem 65536 B warps 8 bq 64 blocks/SM 1
+kernel xrb      regs 255 local 24 B smem 81976 B warps 8 bq 64 blocks/SM 1
+kernel xqb12    regs 255 local 0 B smem 98360 B warps 8 bq 64 blocks/SM 1
+kernel xpb0q15  regs 168 local 48 B smem 98872 B warps 12 bq 48 blocks/SM 1
+kernel xpb0     regs 168 local 24 B smem 92728 B warps 12 bq 48 blocks/SM 1
+T 4096 Tkv    4096 h2p          3.301 ms  62.47 TFLOPS 0.612 of 102 mismatch 0 nonfinite 0 (min 3.300 max 3.305)
+T 4096 Tkv    4096 xh2p         3.399 ms  60.66 TFLOPS 0.595 of 102 mismatch 0 nonfinite 0 (min 3.399 max 3.665)
+T 4096 Tkv    4096 xh2          3.923 ms  52.57 TFLOPS 0.515 of 102 mismatch 0 nonfinite 0 (min 3.920 max 4.157)
+T 4096 Tkv    4096 xrb          3.416 ms  60.37 TFLOPS 0.592 of 102 mismatch 0 nonfinite 0 (min 3.411 max 3.864)
+T 4096 Tkv    4096 xqb12        3.573 ms  57.71 TFLOPS 0.566 of 102 mismatch 0 nonfinite 0 (min 3.562 max 3.573)
+T 4096 Tkv    4096 xpb0q15      4.751 ms  43.40 TFLOPS 0.425 of 102 mismatch 0 nonfinite 0 (min 4.712 max 5.180)
+T 4096 Tkv    4096 xpb0         4.800 ms  42.96 TFLOPS 0.421 of 102 mismatch 0 nonfinite 0 (min 4.799 max 5.282)
+T 4096 Tkv   16384 h2p         18.421 ms  78.34 TFLOPS 0.768 of 102 mismatch 0 nonfinite 0 (min 18.394 max 18.542)
+T 4096 Tkv   16384 xh2p        19.747 ms  73.08 TFLOPS 0.717 of 102 mismatch 0 nonfinite 0 (min 19.676 max 19.757)
+T 4096 Tkv   16384 xh2         22.610 ms  63.83 TFLOPS 0.626 of 102 mismatch 0 nonfinite 0 (min 22.607 max 22.905)
+T 4096 Tkv   16384 xrb         19.234 ms  75.03 TFLOPS 0.736 of 102 mismatch 0 nonfinite 0 (min 19.186 max 19.300)
+T 4096 Tkv   16384 xqb12       20.772 ms  69.48 TFLOPS 0.681 of 102 mismatch 0 nonfinite 0 (min 20.573 max 20.837)
+T 4096 Tkv   16384 xpb0q15     24.111 ms  59.86 TFLOPS 0.587 of 102 mismatch 0 nonfinite 0 (min 23.563 max 24.197)
+T 4096 Tkv   16384 xpb0        24.126 ms  59.82 TFLOPS 0.586 of 102 mismatch 0 nonfinite 0 (min 23.804 max 24.247)
+T 4096 Tkv   32768 h2p         37.629 ms  82.18 TFLOPS 0.806 of 102 mismatch 0 nonfinite 0 (min 37.368 max 37.630)
+T 4096 Tkv   32768 xh2p        40.947 ms  75.52 TFLOPS 0.740 of 102 mismatch 0 nonfinite 0 (min 40.766 max 41.106)
+T 4096 Tkv   32768 xh2         46.942 ms  65.88 TFLOPS 0.646 of 102 mismatch 0 nonfinite 0 (min 46.941 max 46.963)
+T 4096 Tkv   32768 xrb         39.769 ms  77.76 TFLOPS 0.762 of 102 mismatch 0 nonfinite 0 (min 39.224 max 40.111)
+T 4096 Tkv   32768 xqb12       42.780 ms  72.29 TFLOPS 0.709 of 102 mismatch 0 nonfinite 0 (min 42.718 max 43.014)
+T 4096 Tkv   32768 xpb0q15     48.771 ms  63.41 TFLOPS 0.622 of 102 mismatch 0 nonfinite 0 (min 48.658 max 49.734)
+T 4096 Tkv   32768 xpb0        49.045 ms  63.05 TFLOPS 0.618 of 102 mismatch 0 nonfinite 0 (min 49.042 max 49.418)
+T 4096 Tkv   65536 h2p         76.307 ms  83.75 TFLOPS 0.821 of 102 mismatch 0 nonfinite 0 (min 76.219 max 76.878)
+T 4096 Tkv   65536 xh2p        83.545 ms  76.50 TFLOPS 0.750 of 102 mismatch 0 nonfinite 0 (min 83.219 max 83.617)
+T 4096 Tkv   65536 xh2         95.500 ms  66.92 TFLOPS 0.656 of 102 mismatch 0 nonfinite 0 (min 95.372 max 95.785)
+T 4096 Tkv   65536 xrb         79.797 ms  80.09 TFLOPS 0.785 of 102 mismatch 0 nonfinite 0 (min 79.583 max 80.736)
+T 4096 Tkv   65536 xqb12       86.873 ms  73.57 TFLOPS 0.721 of 102 mismatch 0 nonfinite 0 (min 86.768 max 87.233)
+T 4096 Tkv   65536 xpb0q15     99.876 ms  63.99 TFLOPS 0.627 of 102 mismatch 0 nonfinite 0 (min 98.885 max 100.282)
+T 4096 Tkv   65536 xpb0       100.073 ms  63.86 TFLOPS 0.626 of 102 mismatch 0 nonfinite 0 (min 99.553 max 100.522)
+T 4096 Tkv  131072 h2p        152.552 ms  85.14 TFLOPS 0.835 of 102 mismatch 0 nonfinite 0 (min 152.522 max 153.435)
+T 4096 Tkv  131072 xh2p       168.002 ms  77.31 TFLOPS 0.758 of 102 mismatch 0 nonfinite 0 (min 167.898 max 168.490)
+T 4096 Tkv  131072 xh2        192.222 ms  67.57 TFLOPS 0.662 of 102 mismatch 0 nonfinite 0 (min 192.178 max 192.971)
+T 4096 Tkv  131072 xrb        160.313 ms  81.02 TFLOPS 0.794 of 102 mismatch 0 nonfinite 0 (min 160.276 max 160.984)
+T 4096 Tkv  131072 xqb12      175.044 ms  74.20 TFLOPS 0.727 of 102 mismatch 0 nonfinite 0 (min 174.973 max 175.661)
+T 4096 Tkv  131072 xpb0q15    200.755 ms  64.70 TFLOPS 0.634 of 102 mismatch 0 nonfinite 0 (min 199.745 max 201.472)
+T 4096 Tkv  131072 xpb0       202.036 ms  64.29 TFLOPS 0.630 of 102 mismatch 0 nonfinite 0 (min 201.637 max 202.043)
+# end 2184 MHz, 59, 72.46 W
+PROBE-DONE x134

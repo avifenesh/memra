@@ -1,0 +1,66 @@
+diff --git a/crates/memra-engine/src/lib.rs b/crates/memra-engine/src/lib.rs
+index 33a41e169c..66ab53f055 100644
+--- a/crates/memra-engine/src/lib.rs
++++ b/crates/memra-engine/src/lib.rs
+@@ -30418,6 +30418,7 @@ impl Engine {
+             unsafe {
+                 b.launch(cfg)?;
+             }
++            research_attn3_dump(self, q, kw, vw, t, t_kv, n_head, head_dim, kv_dim_k)?;
+         }
+         Ok(())
+     }
+@@ -37203,3 +37204,53 @@ mod prime_kv_h2_route_tests {
+         assert!(!prime_kv_h2_route(Some("yes"), false));
+     }
+ }
++
++/// RESEARCH ONLY (research/gb10-h2p-regs, never landed): with ATTN3_DUMP_DIR set, write the f32 Q
++/// and the bf16 K/V workspace of the eager h2-family prime-attention calls named in ATTN3_DUMP
++/// ("TKV:N,...": the N-th call, 0-based, whose depth is TKV; one call per attention layer per
++/// chunk, so N is the attention layer's order) as DIR/tTKV-nN/{q,k,v}.bin plus meta.txt
++/// "T T_kv", the probe's real-data input.
++#[allow(clippy::too_many_arguments)]
++fn research_attn3_dump(
++    e: &Engine,
++    q: &CudaSlice<f32>,
++    kw: &CudaSlice<u8>,
++    vw: &CudaSlice<u8>,
++    t: usize,
++    t_kv: usize,
++    n_head: usize,
++    head_dim: usize,
++    kv_dim: usize,
++) -> Result<(), Box<dyn std::error::Error>> {
++    static SEEN: Mutex<Option<std::collections::HashMap<usize, usize>>> = Mutex::new(None);
++    let Ok(dir) = std::env::var("ATTN3_DUMP_DIR") else {
++        return Ok(());
++    };
++    let n = {
++        let mut g = SEEN.lock().unwrap();
++        let c = g
++            .get_or_insert_with(Default::default)
++            .entry(t_kv)
++            .or_insert(0);
++        *c += 1;
++        *c - 1
++    };
++    let want = std::env::var("ATTN3_DUMP").unwrap_or_default();
++    if !want.split(',').any(|w| w.trim() == format!("{t_kv}:{n}")) {
++        return Ok(());
++    }
++    let s = e.gpu.stream();
++    s.synchronize()?;
++    let out = std::path::Path::new(&dir).join(format!("t{t_kv}-n{n}"));
++    std::fs::create_dir_all(&out)?;
++    let qv = s.clone_dtoh(&q.slice(0..t * n_head * head_dim))?;
++    let qb: Vec<u8> = qv.iter().flat_map(|x| x.to_le_bytes()).collect();
++    std::fs::write(out.join("q.bin"), qb)?;
++    let kb = s.clone_dtoh(&kw.slice(0..t_kv * kv_dim * 2))?;
++    std::fs::write(out.join("k.bin"), kb)?;
++    let vb = s.clone_dtoh(&vw.slice(0..t_kv * kv_dim * 2))?;
++    std::fs::write(out.join("v.bin"), vb)?;
++    std::fs::write(out.join("meta.txt"), format!("{t} {t_kv}\n"))?;
++    eprintln!("ATTN3_DUMP T {t} T_kv {t_kv} n {n} -> {}", out.display());
++    Ok(())
++}

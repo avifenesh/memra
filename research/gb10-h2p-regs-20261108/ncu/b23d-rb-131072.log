@@ -1,0 +1,11 @@
+==PROF== Connected to process 451952 (/home/avifenesh/.cache/memra-attn3/probe/probe3)
+==PROF== Profiling "cand_rb": 0%
+==WARNING== Launching the workload is taking more time than expected. If this continues to hang, terminate the profile and re-try by profiling the range of all related launches using '--replay-mode range'. See https://docs.nvidia.com/nsight-compute/ProfilingGuide/index.html#replay for more details.
+....50%....100% - 38 passes
+device NVIDIA GB10 sms 48 T 4096 reps 1 data seeded-gauss
+kernel rb       regs 255 local 24 B smem 81976 B warps 8 bq 64 blocks/SM 1
+T 4096 Tkv  131072 rb       109089.680 ms   0.12 TFLOPS 0.001 of 102 mismatch 0 nonfinite 0 (min 109089.680 max 109089.680)
+==PROF== Disconnected from process 451952
+==PROF== Report: /home/avifenesh/.cache/memra-attn3/ncu/rb-131072.ncu-rep
+ncu rc=0
+NCU-DONE rb
