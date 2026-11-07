@@ -558,10 +558,13 @@ this removed the 1024-token segmentation tax without changing concurrent-session
 At the explicit Step trial config, the serve surface measured 0.595 s short TTFT, 6.052 s 4k
 TTFT, 12.2 ms 4k cache-hit TTFT, and 36.5 tok/s per stream at c=4. Its historical `~343 MB`
 entry is a Step-model 4k example, not a sizing receipt for Q27 or Q35; that trial explicitly set
-`MEMRA_PREFIX_CACHE_MB=2048`. With no override, memra now budgets two full-`MEMRA_CTX` entries of
-the largest loaded model from trunk KV/recurrent geometry (excluding MTP/NextN head blocks) and
-clamps that request to post-load driver-free VRAM minus the 1.5 GiB serving-transient reserve. On a
-unified-memory device (GB10) the request is the larger of that and half the post-load pool; see
+`MEMRA_PREFIX_CACHE_MB=2048`. With no override, memra now budgets at least two full-`MEMRA_CTX`
+entries of the largest loaded model from trunk KV/recurrent geometry (excluding MTP/NextN head
+blocks) and clamps that request to post-load driver-free VRAM minus the 1.5 GiB serving-transient
+reserve. On a discrete card the request is the larger of that and the free memory left after the
+reserve, the admission driver headroom and the session peak (every lane's resident-session cap
+times one served-context session); on a unified-memory device (GB10) it is the larger of that and
+half the post-load pool; see
 [Unified-memory devices](#unified-memory-devices-gb10-dgx-spark). An
 explicit `MEMRA_PREFIX_CACHE_MB` remains authoritative and unclamped. Four simultaneous
 different-prefix 4k primes later measured 580.5 tok/s aggregate versus
@@ -2033,11 +2036,13 @@ Two caching tiers serve prompt tokens without recomputing them:
    exact-extension only — a new session that merely shares a system prompt always missed.
 2. **Cross-request prefix cache** (`MEMRA_PREFIX_CACHE_MB`, 0 = off): compact device snapshots
    of primed state at token boundaries, keyed by the exact token-id prefix within each model and
-   cache namespace. All entries share one worker-global byte budget with plain global LRU
-   eviction (the oldest unleased entry first; the segmented policy was retired 2026-09-21,
-   `docs/decisions/PREFIX-CACHE-POLICY.md`). With no override, the budget holds two full-`MEMRA_CTX`
-   entries of the largest loaded model, clamped to post-load driver-free VRAM minus the
-   serving-transient reserve (unified memory: the larger of that and half the post-load pool,
+   cache namespace. All entries share one worker-global byte budget; the victim order is
+   GreedyDual-Size value per byte on a discrete card and plain LRU on unified memory
+   (`MEMRA_PREFIX_EVICT`, `docs/decisions/PREFIX-CACHE-POLICY.md`). With no override, the budget
+   holds at least two full-`MEMRA_CTX` entries of the largest loaded model, clamped to post-load
+   driver-free VRAM minus the serving-transient reserve (a discrete card: the larger of that and
+   the free memory left after the session peak; unified memory: the larger of that and half the
+   post-load pool,
    [below](#unified-memory-devices-gb10-dgx-spark)); an explicit value remains authoritative. Entries are REUSABLE — a hit
    deep-copies the entry into the new session's cache, so one marketplace system prompt serves
    any number of sessions. Learning sequence for a shared-prefix pattern: request 1 seeds its
@@ -2065,13 +2070,20 @@ captures. A request shed to plain at higher load probes and consumes that unchan
 the normal restore path. DFlash does not add an LCP or message-boundary capture arm, and disabling
 the prefix-cache budget disables its capture too. Legacy round-robin mode
 (`MEMRA_SERVE_BATCH=0`) bypasses the prefix cache.
-**Eviction (plain global LRU, memra#523 item 2, 2026-09-21).** Capacity pressure evicts the
-oldest UNLEASED entry first, whatever its history; a hit refreshes the entry's recency and leases
-it for the restore, and the lease ends at the restore fence, before the request publishes its own
-entry. Every unleased byte is reclaimable for a publication that fits the budget, so the newest
-turn of a growing conversation always fits beside other tenants' entries (the newest-turn-fits
-rule, memra#523 item 1: an entry is never its own victim, because it is the global newest while
-any older unleased entry remains). A publication is refused in exactly two cases, both printed in
+**Eviction (GreedyDual-Size value per byte on a discrete card since 2026-11-07; plain global LRU
+on unified memory and under `MEMRA_PREFIX_EVICT=lru`).** Every entry carries a priority: the clock
+plus the prompt tokens it saves per MB it holds, set on insert, on a hit and at the last lease
+release. Capacity pressure evicts the lowest-priority UNLEASED entry (ties: the oldest), and the
+clock takes the victim's priority, so an entry nobody reuses falls behind as later inserts and hits
+are priced above it. Among entries of one density this is plain LRU (memra#523 item 2,
+2026-09-21). Between densities, a short entry whose bytes are mostly fixed recurrent state goes
+first: on Qwen3.8-27B a 64-token seed holds 158.8 MB (156.9 MB of it the GDN state), and under
+c8 unique-prompt load plain LRU let one-off seeds evict a shared 480-token entry before any repeat
+arrived (`research/prefix-budget-20261107/`). A hit leases the entry for the restore, and the
+lease ends at the restore fence, before the request publishes its own entry. Every unleased byte is
+reclaimable for a publication that fits the budget, so the newest turn of a growing conversation
+always fits beside other tenants' entries (the newest-turn-fits rule, memra#523 item 1: the insert
+loop never takes the entry it is publishing, even when that entry holds the lowest priority). A publication is refused in exactly two cases, both printed in
 bytes, never silently: `[prefix-cache] insert refused: entry N exceeds budget M (...)` and
 `[prefix-cache] insert refused: entry N cannot fit beside L leased bytes (budget M, ...)`. A pinned
 fanout snapshot that cannot fit beside the current leases is not retained; participants continue
@@ -2083,9 +2095,11 @@ one RTX PRO 6000 Blackwell (`research/spill-b-20260919/DAY15.md`,
 `docs/decisions/PREFIX-CACHE-POLICY.md`); the earlier hot-set receipt it rested on
 (`research/slrucache-20260813/`) is recorded there as the trade.
 Sessions always win over unpinned cache residency: a failed session-cache allocation evicts every
-unleased entry from the single LRU index and retries before erroring. Entries leased by live
-hit/fanout requests remain pinned until the last participant retires, then re-enter the LRU at
-current recency. The `(model, cache_salt)` visibility boundary, global byte ceiling, and refusal
+unleased entry from the single victim index and retries before erroring. When admission is short
+of memory, the reclaim on a discrete card evicts in victim order only until the arrival's
+shortfall is covered (and the rest only if the re-read is still short), instead of emptying the
+cache for one admission; unified memory keeps the flush. Entries leased by live hit/fanout requests
+remain pinned until the last participant retires, then re-enter the index at a fresh priority. The `(model, cache_salt)` visibility boundary, global byte ceiling, and refusal
 of an entry larger than the entire budget are unchanged.
 
 **Same-window cold fanout (`MEMRA_PREFIX_DEDUP`, default on, 2026-08-08):** immediately before
@@ -2746,18 +2760,21 @@ launches/yields/resumes/preempts, ckpt_kills, last yield-signal micros, job pid,
 A unified-memory device shares system DRAM with the CPU: one pool holds the weights, session KV,
 the prefix cache, this process's host side and the OS. Memra detects it from the device property
 `CU_DEVICE_ATTRIBUTE_INTEGRATED`, never from the name, and only these defaults take a unified arm.
-Discrete cards (RTX 5090, RTX PRO 6000, H100, B200) read none of them. Arithmetic:
+Discrete cards (RTX 5090, RTX PRO 6000, H100, B200) read none of them; the prefix-cache budget,
+its victim order and the admission reclaim have a discrete arm of their own (rows below). Arithmetic:
 [`research/gb10-defaults-20261101/derive.py`](../research/gb10-defaults-20261101/derive.py).
 
 | default | discrete card | unified memory | why |
 |---|---|---|---|
 | free memory for sizing (admission's effective free, prefix-cache boot free, MoE residency) | `cuMemGetInfo` free | the larger of `cuMemGetInfo` free and `/proc/meminfo` MemAvailable | `cuMemGetInfo` leaves out reclaimable page cache, which after a load holds the checkpoint ([NVIDIA DGX Spark known issues](https://docs.nvidia.com/dgx/dgx-spark/known-issues.html)) |
-| `MEMRA_PREFIX_CACHE_MB` | 2 full-context entries, clamped to boot free minus 1.5 GiB | the larger of 2 entries and half of (boot free minus 1.5 GiB, the 2 GiB driver headroom and any host KV tier) | 2 entries (15.9 GB for Qwen3.8-27B at 262,144 tokens) held ~20 of a 48-prompt agentic set; every turn re-primed 14k-42k tokens. Half of ~70 GB is 34,048 MiB, the 32,768 MB the first Spark run set by hand |
+| `MEMRA_PREFIX_CACHE_MB` | the larger of 2 full-context entries and boot free minus 1.5 GiB, the 2 GiB driver headroom and the session peak (lane caps x one served-context session), clamped to boot free minus 1.5 GiB | the larger of 2 entries and half of (boot free minus 1.5 GiB, the 2 GiB driver headroom and any host KV tier) | 2 entries (15.9 GB for Qwen3.8-27B at 262,144 tokens) held ~20 of a 48-prompt agentic set; every turn re-primed 14k-42k tokens. Half of ~70 GB is 34,048 MiB, the 32,768 MB the first Spark run set by hand |
 | `MEMRA_STREAM_TTFT_MS_MAX` | 90,000 ms | one full served context at 4118 tok/s x SMs / 188 / 4, at least 90,000 ms: 997,311 ms on GB10 at 262,144 tokens | four 14k-42k-token prompts prefilling together missed 90 s on the first Spark run and answered 408 |
 | `MEMRA_SSE_PREFILL_COMMIT_MS` | off | 60,000 ms beside the derived deadline | headers and keepalives start inside the shipped 90 s window, so a fronting proxy still sees them; a stream still queued there keeps waiting under the keepalive until its first-token deadline |
 | non-streaming `timeout_ms` default/max | 90,000 ms | the streaming value above plus 8192 open output tokens (admission's open-output charge) at 4 tok/s: 3,045,311 ms on GB10 at 262,144 tokens | a non-streaming deadline bounds the whole response and cannot send headers early; 90 s cannot hold one 131k prompt or four concurrent 32k prompts at GB10's measured prefill (32,768 cold tokens in 45.2 s), and vLLM and SGLang have no such deadline. 4 tok/s floors the measured per-stream decode under concurrent prefill (agentic c4, 4.59 tok/s median) |
-| prefix-cache insert budget | the configured budget | clamped on every insert to what the cache holds plus live allocatable free memory minus the driver headroom and the admission reserve; the insert loop evicts LRU entries or refuses (`[prefix-cache] unified memory: insert budget` line) | the first GB10 quality panel admitted eight 131k sessions while each prefill published a 4 GB entry, and MemAvailable fell to 1.5 GiB; with the guard and the booking below the same panel bottomed at 17.0 GiB; the guard alone was not enough (next row) |
+| prefix-cache insert budget | the same clamp as unified memory, against `cuMemGetInfo` free plus the pool cache (since 2026-11-07: under c8 load on the 24 GB RTX 5090 Laptop the cache refilled what each admission reclaim freed) | clamped on every insert to what the cache holds plus live allocatable free memory minus the driver headroom and the admission reserve; the insert loop evicts in victim order or refuses (`[prefix-cache] live-free clamp: insert budget` line; `unified memory: insert budget` before 2026-11-07) | the first GB10 quality panel admitted eight 131k sessions while each prefill published a 4 GB entry, and MemAvailable fell to 1.5 GiB; with the guard and the booking below the same panel bottomed at 17.0 GiB; the guard alone was not enough (next row) |
 | admission booking of the cache's growth | none | the cache's allowed growth (budget minus resident) is booked as committed | sessions and the cache draw from one pool: with the insert guard alone the same panel fell to 1.02 GiB MemAvailable and the memory guard stopped the server (A/B in `research/gb10-tuning-20261102/booking-ab/`) |
+| prefix-cache victim order (`MEMRA_PREFIX_EVICT`) | GreedyDual-Size value per byte | plain LRU | measured on the RTX 5090 Laptop (`research/prefix-budget-20261107/`); GB10 keeps the 2026-09-21 order until it is measured there |
+| admission reclaim of prefix entries | the arrival's shortfall, in victim order | every unleased entry (the flush) | the flush emptied a 2.26 GB cache 12 times in 47 s under c8 load on the 24 GB RTX 5090 Laptop; unmeasured on GB10 |
 
 Reviewed and unchanged on unified memory, with the reason:
 

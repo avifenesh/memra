@@ -1,0 +1,34 @@
+run 01 AB-0 lru: computed=29600 loop_cold_after_1=0 return_cached=1696 evictions=19 digests==cold 28/28 ttft_loop p50=188.261 p95=189.192 ms wall=78.9s temp 80.0->78.0 C
+run 02 AB-0 gds: computed=29600 loop_cold_after_1=0 return_cached=1696 evictions=20 digests==cold 28/28 ttft_loop p50=188.746 p95=196.524 ms wall=70.3s temp 78.0->78.0 C
+run 03 BA-0 gds: computed=29600 loop_cold_after_1=0 return_cached=1696 evictions=20 digests==cold 28/28 ttft_loop p50=190.544 p95=193.733 ms wall=66.4s temp 78.0->79.0 C
+run 04 BA-0 lru: computed=29600 loop_cold_after_1=0 return_cached=1696 evictions=19 digests==cold 28/28 ttft_loop p50=188.007 p95=190.145 ms wall=63.9s temp 79.0->78.0 C
+run 05 AB-1 lru: computed=29600 loop_cold_after_1=0 return_cached=1696 evictions=19 digests==cold 28/28 ttft_loop p50=188.385 p95=190.235 ms wall=59.7s temp 78.0->78.0 C
+run 06 AB-1 gds: computed=29600 loop_cold_after_1=0 return_cached=1696 evictions=20 digests==cold 28/28 ttft_loop p50=189.333 p95=191.165 ms wall=59.9s temp 78.0->79.0 C
+run 07 BA-1 gds: computed=29600 loop_cold_after_1=0 return_cached=1696 evictions=20 digests==cold 28/28 ttft_loop p50=190.137 p95=195.526 ms wall=61.8s temp 79.0->79.0 C
+run 08 BA-1 lru: computed=29600 loop_cold_after_1=0 return_cached=1696 evictions=19 digests==cold 28/28 ttft_loop p50=189.657 p95=192.298 ms wall=64.1s temp 79.0->79.0 C
+run 09 AB-2 lru: computed=29600 loop_cold_after_1=0 return_cached=1696 evictions=19 digests==cold 28/28 ttft_loop p50=189.813 p95=191.282 ms wall=60.5s temp 79.0->79.0 C
+run 10 AB-2 gds: computed=29600 loop_cold_after_1=0 return_cached=1696 evictions=20 digests==cold 28/28 ttft_loop p50=191.419 p95=194.598 ms wall=61.1s temp 79.0->79.0 C
+run 11 BA-2 gds: computed=29600 loop_cold_after_1=0 return_cached=1696 evictions=20 digests==cold 28/28 ttft_loop p50=192.165 p95=194.222 ms wall=60.8s temp 79.0->79.0 C
+run 12 BA-2 lru: computed=29600 loop_cold_after_1=0 return_cached=1696 evictions=19 digests==cold 28/28 ttft_loop p50=190.944 p95=194.121 ms wall=60.8s temp 79.0->79.0 C
+run 13 AB-3 lru: computed=29600 loop_cold_after_1=0 return_cached=1696 evictions=19 digests==cold 28/28 ttft_loop p50=191.892 p95=197.073 ms wall=60.9s temp 79.0->79.0 C
+run 14 AB-3 gds: computed=29600 loop_cold_after_1=0 return_cached=1696 evictions=20 digests==cold 28/28 ttft_loop p50=190.602 p95=192.848 ms wall=60.8s temp 79.0->79.0 C
+run 15 BA-3 gds: computed=29600 loop_cold_after_1=0 return_cached=1696 evictions=20 digests==cold 28/28 ttft_loop p50=192.857 p95=195.867 ms wall=60.9s temp 79.0->79.0 C
+run 16 BA-3 lru: computed=29600 loop_cold_after_1=0 return_cached=1696 evictions=19 digests==cold 28/28 ttft_loop p50=189.496 p95=193.458 ms wall=60.8s temp 79.0->79.0 C
+run 17 AB-4 lru: computed=29600 loop_cold_after_1=0 return_cached=1696 evictions=19 digests==cold 28/28 ttft_loop p50=189.836 p95=191.82 ms wall=60.9s temp 79.0->79.0 C
+run 18 AB-4 gds: computed=29600 loop_cold_after_1=0 return_cached=1696 evictions=20 digests==cold 28/28 ttft_loop p50=190.763 p95=194.295 ms wall=60.7s temp 79.0->79.0 C
+run 19 BA-4 gds: computed=29600 loop_cold_after_1=0 return_cached=1696 evictions=20 digests==cold 28/28 ttft_loop p50=190.951 p95=197.986 ms wall=61.2s temp 79.0->80.0 C
+run 20 BA-4 lru: computed=29600 loop_cold_after_1=0 return_cached=1696 evictions=19 digests==cold 28/28 ttft_loop p50=193.755 p95=196.724 ms wall=59.2s temp 80.0->80.0 C
+| pair | order | lru computed | gds computed | lru - gds | better | lru return cached | gds return cached | lru loop cold | gds loop cold | lru ttft loop p50/p95 ms | gds ttft loop p50/p95 ms | lru temp C | gds temp C |
+| --- | --- | ---: | ---: | ---: | --- | ---: | ---: | ---: | ---: | --- | --- | --- | --- |
+| AB-0 | AB | 29600 | 29600 | 0 | tie | 1696 | 1696 | 0 | 0 | 188.261/189.192 | 188.746/196.524 | 80.0->78.0 | 78.0->78.0 |
+| BA-0 | BA | 29600 | 29600 | 0 | tie | 1696 | 1696 | 0 | 0 | 188.007/190.145 | 190.544/193.733 | 79.0->78.0 | 78.0->79.0 |
+| AB-1 | AB | 29600 | 29600 | 0 | tie | 1696 | 1696 | 0 | 0 | 188.385/190.235 | 189.333/191.165 | 78.0->78.0 | 78.0->79.0 |
+| BA-1 | BA | 29600 | 29600 | 0 | tie | 1696 | 1696 | 0 | 0 | 189.657/192.298 | 190.137/195.526 | 79.0->79.0 | 79.0->79.0 |
+| AB-2 | AB | 29600 | 29600 | 0 | tie | 1696 | 1696 | 0 | 0 | 189.813/191.282 | 191.419/194.598 | 79.0->79.0 | 79.0->79.0 |
+| BA-2 | BA | 29600 | 29600 | 0 | tie | 1696 | 1696 | 0 | 0 | 190.944/194.121 | 192.165/194.222 | 79.0->79.0 | 79.0->79.0 |
+| AB-3 | AB | 29600 | 29600 | 0 | tie | 1696 | 1696 | 0 | 0 | 191.892/197.073 | 190.602/192.848 | 79.0->79.0 | 79.0->79.0 |
+| BA-3 | BA | 29600 | 29600 | 0 | tie | 1696 | 1696 | 0 | 0 | 189.496/193.458 | 192.857/195.867 | 79.0->79.0 | 79.0->79.0 |
+| AB-4 | AB | 29600 | 29600 | 0 | tie | 1696 | 1696 | 0 | 0 | 189.836/191.82 | 190.763/194.295 | 79.0->79.0 | 79.0->79.0 |
+| BA-4 | BA | 29600 | 29600 | 0 | tie | 1696 | 1696 | 0 | 0 | 193.755/196.724 | 190.951/197.986 | 80.0->80.0 | 79.0->80.0 |
+PREFIX-POLICY-AB: budget_bytes=1073741824 cohort_tenants=4 cohort_bytes=792920064 turns=12 start_tokens=10912 grow=160 return_every=3 pairs_per_order=5 runs=20 requests_per_run=28 digests_identical=28/28 computed_tokens lru_median=29600 gds_median=29600 (N=10 each) pairs_lru_better=0/10 pairs_gds_better=0/10 ties=10/10 return_cached lru_median=1696 gds_median=1696 loop_cold_after_1 lru_max=0 gds_max=0 refusals lru=0 gds=0 temp_c=78.0..80.0 power_limit_w=None -> INCONCLUSIVE
+rc=0

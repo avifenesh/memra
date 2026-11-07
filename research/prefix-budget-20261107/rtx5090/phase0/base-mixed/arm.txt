@@ -1,0 +1,12 @@
+arm base-mixed workload=mixed start=2026-11-07T14:37:07+02:00 profile=balanced
+bd06fe5742523440d3cfdec17e13da7e3fd7e3eebd0933eec6a9ba4d0005dd4f  /home/avifenesh/.cache/memra-prefix-budget/bins/memra-server-base-6f5e03e74a
+env: MEMRA_MAX_SESSIONS=12
+NVIDIA GeForce RTX 5090 Laptop GPU, 62, 180 MHz, [N/A], 48 MiB, 24028 MiB
+device_free_min_mib 1235 samples 399
+memavailable_min_gib 45.44
+[prefix-cache] on: budget 2260MB (2259943424 B, derived: 2 x 1129971712 B max entry for model "gate" at served ctx 32768 (from MEMRA_CTX; MEMRA_CTX set), requested 2259943424 B; boot driver free 10053877760 B, post-reserve clamp 8443265024 B), policy plain-LRU (global oldest unleased entry first; leases untouchable), min prefix 64 tokens, immediate partial restore=off (rollback) (transformer-only; hybrid mid-entry + routed-MoE N/A)
+evict_lines=21
+oom_lines=0
+reclaim_on_defer_lines=12
+{"window_s": 47.31, "batch_rows": 88, "batch_agg_tok_s": 111.6, "repeat_cached": [480, 0, 0, 0, 512, 0], "repeat_hits": 2, "repeat_ttft_ms": [260.1, 601.9, 661.3, 1476.2, 121.4, 619.5], "batch_ttft_ms_p50": 1294.3623065948486, "metrics_delta": {}, "metrics_end": {}}
+rc=0 end=2026-11-07T14:38:48+02:00

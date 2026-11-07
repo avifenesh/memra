@@ -4540,8 +4540,9 @@ fn plain_ckpt_nominatable(prompt: &[u32], is_control: &dyn Fn(u32) -> bool) -> b
 //
 // VRAM: entries compete with session KV under MEMRA_PREFIX_CACHE_MB (0 disables). With no
 // override, the budget is derived from loaded-model geometry and boot free VRAM below. The
-// worker-global pool is byte-budgeted and plain-LRU-evicted (oldest unleased entry first,
-// memra#523 item 2); model/namespace keys scope lookup visibility only. A failed session-cache
+// worker-global pool is byte-budgeted and evicted in victim order (`PrefixEvictOrder`:
+// GreedyDual-Size value per byte on a discrete card, plain LRU on unified memory; memra#523
+// item 2 for LRU); model/namespace keys scope lookup visibility only. A failed session-cache
 // alloc evicts the whole cache and retries (headroom discipline — sessions always win over it).
 //
 // POLICY (lane/spec-prefix-cache 2026-08-14, completed by lane/spec-on-cache-hit
@@ -4935,7 +4936,7 @@ const PREFIX_CACHE_DEFAULT_ENTRIES: usize = 2;
 /// the admission driver-headroom floor and any host KV tier (the same DRAM), and leaves the other
 /// part to sessions. Sessions still win: a failed session allocation evicts the cache. On the
 /// first Spark run (~70 GB free after weights) the half share is ~33 GB, the 32768 MB the run
-/// needed by hand. Discrete cards keep the two-entry rule unchanged.
+/// needed by hand. Discrete cards use the session-peak rule below instead.
 const UNIFIED_PREFIX_CACHE_SHARE_DIV: usize = 2;
 
 /// The unified-memory terms of the derived prefix-cache budget (absent on a discrete card).
@@ -4945,6 +4946,40 @@ struct UnifiedPrefixTerms {
     driver_headroom_bytes: usize,
     /// The host KV tier budget (`MEMRA_KV_HOST_MB`): pinned host bytes come out of the same DRAM.
     host_tier_bytes: usize,
+}
+
+/// DISCRETE-CARD SESSION PEAK (2026-11-07, `research/prefix-budget-20261107/`). On a discrete
+/// card the boot free reading is the card's spare memory after the weights. The two-entry rule
+/// ignored it: one RTX PRO 6000 Max-Q (96 GB) serving Qwen3.8-27B at 32,768 tokens read 86.6 GB
+/// free and held 2.26 GB of prefix entries. The derived request is now what the scheduler can
+/// never need: boot free, less the transient reserve, the admission driver-headroom floor and the
+/// session peak (every lane's resident-session cap times one served-context session), with the
+/// two-entry rule as the floor. No share is assumed. Where the session peak alone fills the card
+/// (the default caps at a long context) the floor is all the cache asks for, and the admission
+/// reclaim frees what a session needs in victim order (`reclaim_prefix_target`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct DiscretePrefixTerms {
+    /// `MEMRA_ADMIT_DRIVER_HEADROOM_MB` in bytes: the floor admission keeps free.
+    driver_headroom_bytes: usize,
+    /// Resident sessions the scheduler admits at once: the interactive cap (`MEMRA_MAX_SESSIONS`,
+    /// 64 when batching) plus the judge and harvest lane caps.
+    sessions: usize,
+    /// One served-context session of the largest loaded model: the spec-path context planes at
+    /// the served context (`AdmissionCostModel::context_bytes`) plus the recurrent state.
+    session_bytes: usize,
+}
+
+impl DiscretePrefixTerms {
+    fn session_peak_bytes(&self) -> usize {
+        self.sessions.saturating_mul(self.session_bytes)
+    }
+}
+
+/// The device terms of a derived prefix-cache budget.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PrefixDeviceTerms {
+    Unified(UnifiedPrefixTerms),
+    Discrete(DiscretePrefixTerms),
 }
 
 #[derive(Debug)]
@@ -4963,8 +4998,9 @@ enum PrefixCacheBudget {
         ctx_source: &'static str,
         boot_free_bytes: usize,
         clamp_bytes: usize,
-        /// `Some` on a unified-memory device: the share rule above sized the request.
-        unified: Option<UnifiedPrefixTerms>,
+        /// The unified share or the discrete session-peak terms that sized the request; `None`
+        /// when the boot free reading failed.
+        device: Option<PrefixDeviceTerms>,
     },
 }
 
@@ -5072,21 +5108,28 @@ fn prefix_budget_ctx(env_ctx: Option<&str>, model_ctx: usize) -> Result<usize, S
 fn derived_prefix_cache_budget(
     entry_bytes: usize,
     boot_free_bytes: usize,
-    unified: Option<UnifiedPrefixTerms>,
+    device: Option<PrefixDeviceTerms>,
 ) -> (usize, usize, usize) {
     let entries_bytes = entry_bytes.saturating_mul(PREFIX_CACHE_DEFAULT_ENTRIES);
     // Keep the serving transient floor free. Unlike an explicit operator budget, the naked
     // default must not claim the last bytes that prefill/FA workspaces or a new session need.
     let mut clamp_bytes = boot_free_bytes.saturating_sub(SPEC_SHRINK_RESERVE);
-    let requested_bytes = match unified {
+    let requested_bytes = match device {
         None => entries_bytes,
-        Some(terms) => {
+        Some(PrefixDeviceTerms::Unified(terms)) => {
             // The same DRAM also holds the admission headroom floor and the host tier.
             clamp_bytes = clamp_bytes
                 .saturating_sub(terms.driver_headroom_bytes)
                 .saturating_sub(terms.host_tier_bytes);
             entries_bytes.max(clamp_bytes / UNIFIED_PREFIX_CACHE_SHARE_DIV)
         }
+        // No resolvable served context: no session bound is known, so only the floor.
+        Some(PrefixDeviceTerms::Discrete(terms)) if terms.session_bytes == 0 => entries_bytes,
+        Some(PrefixDeviceTerms::Discrete(terms)) => entries_bytes.max(
+            clamp_bytes
+                .saturating_sub(terms.driver_headroom_bytes)
+                .saturating_sub(terms.session_peak_bytes()),
+        ),
     };
     (
         requested_bytes.min(clamp_bytes),
@@ -5163,13 +5206,20 @@ fn init_prefix_cache_budget(
                 );
                 0
             });
-        let unified =
-            memra_engine::unified_memory::is_unified(engine.ctx()).then(|| UnifiedPrefixTerms {
+        let device = Some(if memra_engine::unified_memory::is_unified(engine.ctx()) {
+            PrefixDeviceTerms::Unified(UnifiedPrefixTerms {
                 driver_headroom_bytes: admit_driver_headroom_bytes(),
                 host_tier_bytes: kv_host_budget_bytes(),
-            });
+            })
+        } else {
+            PrefixDeviceTerms::Discrete(DiscretePrefixTerms {
+                driver_headroom_bytes: admit_driver_headroom_bytes(),
+                sessions: resident_session_cap(),
+                session_bytes: served_session_peak_bytes(loaded, env_ctx.as_ref().ok()),
+            })
+        });
         let (bytes, requested_bytes, clamp_bytes) =
-            derived_prefix_cache_budget(entry_bytes, boot_free_bytes, unified);
+            derived_prefix_cache_budget(entry_bytes, boot_free_bytes, device);
         PrefixCacheBudget::Derived {
             bytes,
             requested_bytes,
@@ -5179,9 +5229,45 @@ fn init_prefix_cache_budget(
             ctx_source,
             boot_free_bytes,
             clamp_bytes,
-            unified,
+            device,
         }
     })
+}
+
+/// Resident sessions the scheduler can hold at once (the discrete session peak's count): the
+/// interactive cap the admission gate enforces (`route_contract::hybrid_interactive_cap`) plus the
+/// judge and harvest lane caps (`LanePolicy::max_sessions`).
+fn resident_session_cap() -> usize {
+    let lanes = crate::lanes::LanePolicy::from_env();
+    crate::route_contract::hybrid_interactive_cap()
+        .saturating_add(lanes.max_sessions[crate::lanes::Lane::Judge.idx()])
+        .saturating_add(lanes.max_sessions[crate::lanes::Lane::Harvest.idx()])
+}
+
+/// One served-context session's device state, the largest over the loaded models: the context
+/// planes admission books for a spec session at the served context (`context_bytes`, MTP scratch
+/// included) plus the recurrent state at the endpoint. The fixed residual admission learns at
+/// runtime and a drafter's own plane are not in it; when they push a full house past the card,
+/// the admission reclaim frees the difference in victim order. A model whose context does not
+/// resolve contributes nothing (its requests refuse for the same reason).
+fn served_session_peak_bytes(
+    loaded: &HashMap<String, LoadedModel>,
+    env_ctx: Option<&Option<String>>,
+) -> usize {
+    loaded
+        .values()
+        .filter_map(|lm| {
+            let env = env_ctx?;
+            let ctx =
+                prefix_budget_ctx(env.as_deref(), lm.model.cfg.context_length as usize).ok()?;
+            Some(
+                AdmissionCostModel::new(&lm.model, false)
+                    .context_bytes(ctx, true)
+                    .saturating_add(prefix_recurrent_state_bytes(&lm.model.plan)),
+            )
+        })
+        .max()
+        .unwrap_or(0)
 }
 
 /// Resident byte budget for the prefix cache. `MEMRA_PREFIX_CACHE_MB=0` disables it. Before the
@@ -8345,16 +8431,19 @@ fn unified_insert_budget(
     )
 }
 
-/// The insert budget the production wrappers use: unchanged on a discrete card; on unified
-/// memory clamped by [`unified_insert_budget`] against the live reading, with a log line when the
-/// clamp binds.
+/// The insert budget the production wrappers use: the configured budget clamped by
+/// [`unified_insert_budget`] against the live reading, with a log line when the clamp binds.
+/// Unified memory since 2026-11-02; discrete cards since 2026-11-07
+/// (`research/prefix-budget-20261107/`): on a 24 GB RTX 5090 under c8 load the cache refilled the
+/// bytes each admission reclaim had just freed, so the next arrival was short again; with the
+/// clamp an insert replaces bytes instead of taking the headroom the admission floor needs.
 fn prefix_insert_budget(
     engine: &Engine,
     configured: usize,
     resident: usize,
     allocated: usize,
 ) -> usize {
-    if configured == 0 || !device_is_unified(engine) {
+    if configured == 0 {
         return configured;
     }
     let Some((live_free, _)) = effective_free_bytes(engine) else {
@@ -8364,7 +8453,7 @@ fn prefix_insert_budget(
     let budget = unified_insert_budget(configured, resident, allocated, live_free, headroom);
     if budget < configured {
         eprintln!(
-            "[prefix-cache] unified memory: insert budget {:.0}MB (configured {:.0}MB; live \
+            "[prefix-cache] live-free clamp: insert budget {:.0}MB (configured {:.0}MB; live \
              free {:.0}MB, headroom {:.0}MB, resident {:.0}MB, new entry {:.0}MB)",
             budget as f64 / 1e6,
             configured as f64 / 1e6,
@@ -9940,6 +10029,46 @@ fn primary_unbooked_shortfall(
         .and_then(|h| h.primary_shortfall(required.saturating_add(pending_booked)))
 }
 
+/// The admission reclaim's prefix target (2026-11-07): the resident bytes that stay once the
+/// arrival's `shortfall` is freed, in victim order. `0` (empty the unleased cache, the flush
+/// before this date) on unified memory and for a per-device reading (`None`), or when the
+/// shortfall covers everything resident. Evicting an entry returns its bytes to the pool cache,
+/// which effective free counts, and the settle step hands them to the driver.
+fn reclaim_prefix_target(resident: usize, shortfall: Option<usize>) -> usize {
+    shortfall.map_or(0, |short| resident.saturating_sub(short))
+}
+
+/// What the sessions still priming will allocate after this tick reads free memory: their
+/// prefill workspaces (`pending_prime_bytes_v2`) and the seeds they publish
+/// (`pending_seed_bytes`, uncapped: after a reclaim the cache sits under its budget, so a seed
+/// can regrow into the freed bytes). The memory-admission door books both into every reading;
+/// with the door off the reclaim adds them to the arrival's shortfall, so a partial reclaim
+/// never hands one free byte to the arrival and to a priming session at once (the flush it
+/// replaced hid that by freeing everything).
+fn reclaim_owed_bytes(
+    engine: &Engine,
+    loaded: &HashMap<String, LoadedModel>,
+    active: &[Session],
+    admission_costs: &HashMap<String, AdmissionCostModel>,
+) -> usize {
+    pending_prime_bytes_v2(
+        active,
+        admission_costs,
+        &|name| {
+            loaded
+                .get(name)
+                .map_or(0, |lm| lm.model.prime_slab_bytes(engine))
+        },
+        &|name| {
+            memra_engine::prime_walker::prime_yield_enabled()
+                && loaded
+                    .get(name)
+                    .is_some_and(|lm| lm.model.mtp_prime_walk_supported())
+        },
+    )
+    .saturating_add(pending_seed_bytes(active))
+}
+
 /// The restorable spare's climb, after `longer_droppable` said the longer entry may go: evict
 /// parked sessions, oldest first (`evict`, false when none is left), re-reading the unbooked
 /// shortfall after each (`reread`), while the shortfall exceeds the longer entry's bytes.
@@ -9963,23 +10092,101 @@ fn reclaim_climb(
     Ok(short)
 }
 
+/// The prefix-cache victim index key: `(priority bits, last_use, id)`. Priorities are finite and
+/// non-negative, so their IEEE-754 bits order exactly like the values.
+type VictimKey = (u64, Instant, u64);
+
+/// Which unleased entry a full device prefix cache gives up first (2026-11-07,
+/// `docs/decisions/PREFIX-CACHE-POLICY.md`, receipts `research/prefix-budget-20261107/`).
+///
+/// WHY VALUE PER BYTE. On a hybrid (GDN) model every entry carries the full recurrent state of its
+/// endpoint: 156.9 MB on Qwen3.8-27B, against 29.7 KB per cached token. A one-off request's
+/// 64-token seed costs 158.8 MB to save 64 tokens of prefill, and plain LRU ranked it equal to a
+/// shared 480-token entry. Under c8 unique-prompt load on one RTX PRO 6000 the seeds evicted the
+/// shared entry in 4.8 s, before any repeat arrived (cached 0 of 6). GreedyDual-Size (Cao and
+/// Irani, 1997) ranks by tokens saved per byte, aged by a clock instead of a timer.
+///
+/// KEYED ON THE DEVICE: the default on a discrete card, where it was measured (RTX 5090 Laptop;
+/// the RTX PRO 6000 run is owed). A unified-memory device (GB10) keeps plain LRU until it is
+/// measured there; `MEMRA_PREFIX_EVICT` selects either order on any device.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+enum PrefixEvictOrder {
+    /// GreedyDual-Size: priority = clock + prompt tokens per MB held; the victim is the lowest
+    /// priority and the clock takes its priority. Every insert is admitted.
+    ValuePerByte,
+    /// Plain global LRU (`MEMRA_PREFIX_EVICT=lru`; the unified-memory default). Also the order of
+    /// `PrefixCache::default()`, so the unit tests written for plain LRU keep testing it; the
+    /// worker always names its order (`PrefixCache::with_order`).
+    #[default]
+    Lru,
+}
+
+impl PrefixEvictOrder {
+    fn parse(raw: Option<&str>, unified: bool) -> Self {
+        match raw {
+            None | Some("") if unified => Self::Lru,
+            None | Some("") | Some("gds") => Self::ValuePerByte,
+            Some("lru") => Self::Lru,
+            Some(other) => panic!("MEMRA_PREFIX_EVICT={other:?}: expected gds or lru"),
+        }
+    }
+
+    /// The boot line's and the evict lines' name for this order.
+    fn name(self) -> &'static str {
+        match self {
+            Self::ValuePerByte => "GDS",
+            Self::Lru => "LRU",
+        }
+    }
+}
+
+/// `MEMRA_PREFIX_EVICT` (default `gds` on a discrete card, `lru` on unified memory): the device
+/// prefix cache's victim order.
+fn prefix_evict_order(engine: &Engine) -> PrefixEvictOrder {
+    static O: std::sync::OnceLock<PrefixEvictOrder> = std::sync::OnceLock::new();
+    *O.get_or_init(|| {
+        PrefixEvictOrder::parse(
+            std::env::var("MEMRA_PREFIX_EVICT").ok().as_deref(),
+            device_is_unified(engine),
+        )
+    })
+}
+
+/// GreedyDual-Size value of an entry: the prompt tokens a hit saves per MB the entry holds.
+fn prefix_entry_value(tokens: usize, bytes: usize) -> f64 {
+    tokens as f64 * 1e6 / bytes.max(1) as f64
+}
+
 #[derive(Default)]
 struct PrefixCache {
+    /// Victim order (`prefix_evict_order` in the worker; plain LRU for `PrefixCache::default()`).
+    order: PrefixEvictOrder,
     /// per-(model, namespace) entry pools (KV geometry/format is per model; the namespace
     /// is the PC-ISO trust boundary — the equality check is part of the map key, so the
     /// default path pays nothing beyond hashing "" alongside the model id).
     entries: HashMap<PoolKey, Vec<PrefixEntry>>,
-    /// Byte-budgeted recency index over UNLEASED entries, keyed `(last_use, id)` (the Q3
-    /// O(log E) victim lookup with a deterministic tie break). Plain global LRU: the oldest
-    /// unleased entry is the capacity victim (memra#523 item 2, decided 2026-09-21 on the
-    /// incident's shape, `docs/decisions/PREFIX-CACHE-POLICY.md`). The budget is global across
-    /// namespaces because VRAM is global; visibility remains scoped by `entries` above.
+    /// Byte-budgeted victim index over UNLEASED entries, keyed `(priority, last_use, id)` (the
+    /// Q3 O(log E) victim lookup with a deterministic tie break); the first key is the capacity
+    /// victim. The order is GreedyDual-Size (`PrefixEvictOrder::ValuePerByte`, the default since
+    /// 2026-11-07, `docs/decisions/PREFIX-CACHE-POLICY.md`): an entry's priority is the clock
+    /// below plus the prompt tokens it saves per byte it holds, refreshed on every use. Among
+    /// entries of one density this is plain LRU (memra#523 item 2); a short entry whose bytes are
+    /// mostly fixed recurrent state goes before a dense one of the same age. The `lru` rollback
+    /// order keeps every priority at 0, which is exactly the plain-LRU index. The budget is global
+    /// across namespaces because VRAM is global; visibility remains scoped by `entries` above.
     /// PINNING (lane/cx-prefix-dedup): pinned entries are deliberately ABSENT from this index;
-    /// the last lease release returns the entry at current recency. Value = (pool key, index
+    /// the last lease release returns the entry at current priority. Value = (pool key, index
     /// into that pool's Vec), kept exact on removal by swap_remove + moved-entry index fixup.
-    /// Every `last_use` write goes through touch/pin/unpin/insert so index and entries never
-    /// drift.
-    lru: std::collections::BTreeMap<(Instant, u64), (PoolKey, usize)>,
+    /// Every `last_use` and priority write goes through touch/pin/unpin/insert so index and
+    /// entries never drift.
+    lru: std::collections::BTreeMap<VictimKey, (PoolKey, usize)>,
+    /// GreedyDual-Size priority (H) per inserted entry id; absent under the `lru` order, which
+    /// reads every priority as 0.
+    prio: HashMap<u64, f64>,
+    /// GreedyDual-Size clock (L): the priority of the last entry that left the index as its
+    /// minimum. A new or reused entry's priority is `clock + value`, so an entry nobody uses
+    /// falls behind as the clock climbs past it: aging without a timer.
+    clock: f64,
     next_id: u64,
     total_bytes: usize,
     hits: u64,
@@ -10310,38 +10517,54 @@ impl PrefixCache {
             .position(|e| e.id == pin.id)
     }
 
-    fn lru_key(e: &PrefixEntry) -> (Instant, u64) {
-        (e.last_use, e.id)
+    fn with_order(order: PrefixEvictOrder) -> Self {
+        Self {
+            order,
+            ..Self::default()
+        }
     }
 
-    fn remove_lru(&mut self, key: &(Instant, u64)) {
+    fn lru_key(&self, e: &PrefixEntry) -> VictimKey {
+        let prio = self.prio.get(&e.id).copied().unwrap_or(0.0);
+        (prio.to_bits(), e.last_use, e.id)
+    }
+
+    /// Set an entry's priority to `clock + value` (a use: insert, reuse or the last lease
+    /// release). The `lru` order keeps no priorities.
+    fn refresh_prio(&mut self, id: u64, tokens: usize, bytes: usize) {
+        if self.order == PrefixEvictOrder::ValuePerByte {
+            self.prio
+                .insert(id, self.clock + prefix_entry_value(tokens, bytes));
+        }
+    }
+
+    fn remove_lru(&mut self, key: &VictimKey) {
         self.lru.remove(key);
     }
 
-    fn insert_lru(&mut self, lru_key: (Instant, u64), key: PoolKey, i: usize) {
+    fn insert_lru(&mut self, lru_key: VictimKey, key: PoolKey, i: usize) {
         self.lru.insert(lru_key, (key, i));
     }
 
-    /// Refresh recency for pool[i] on a demonstrated reuse. This is the ONLY legal unpinned
-    /// `last_use` write after insert, so the index never drifts from the entries.
+    /// Refresh recency (and the GreedyDual-Size priority) for pool[i] on a demonstrated reuse.
+    /// This is the ONLY legal unpinned `last_use` write after insert, so the index never drifts
+    /// from the entries.
     #[cfg_attr(not(test), allow(dead_code))]
     fn touch(&mut self, key: &PoolKey, i: usize) {
-        let Some((old_lru, pinned)) = self
+        let Some((old_lru, pinned, id, tokens, bytes)) = self
             .entries
             .get(key)
             .and_then(|p| p.get(i))
-            .map(|e| (Self::lru_key(e), e.pins > 0))
+            .map(|e| (self.lru_key(e), e.pins > 0, e.id, e.toks.len(), e.bytes))
         else {
             return;
         };
         if !pinned {
             self.remove_lru(&old_lru);
         }
-        let new_lru = {
-            let e = &mut self.entries.get_mut(key).unwrap()[i];
-            e.last_use = Instant::now();
-            Self::lru_key(e)
-        };
+        self.refresh_prio(id, tokens, bytes);
+        self.entries.get_mut(key).unwrap()[i].last_use = Instant::now();
+        let new_lru = self.lru_key(&self.entries[key][i]);
         if !pinned {
             self.insert_lru(new_lru, key.clone(), i);
         }
@@ -10355,7 +10578,7 @@ impl PrefixCache {
         }
         let (old_lru, id, was_unpinned) = {
             let e = self.entries.get(key)?.get(i)?;
-            (Self::lru_key(e), e.id, e.pins == 0)
+            (self.lru_key(e), e.id, e.pins == 0)
         };
         if was_unpinned {
             self.remove_lru(&old_lru);
@@ -10508,12 +10731,14 @@ impl PrefixCache {
             e.pins -= 1;
             if e.pins == 0 {
                 e.last_use = Instant::now();
-                Some(Self::lru_key(e))
+                Some((e.id, e.toks.len(), e.bytes))
             } else {
                 None
             }
         };
-        if let Some(lru_key) = released {
+        if let Some((id, tokens, bytes)) = released {
+            self.refresh_prio(id, tokens, bytes);
+            let lru_key = self.lru_key(&self.entries[&pin.key][i]);
             self.insert_lru(lru_key, pin.key.clone(), i);
         }
         true
@@ -10539,29 +10764,56 @@ impl PrefixCache {
             return None;
         }
         let dead = pool.swap_remove(i);
-        self.lru.remove(&Self::lru_key(&dead));
-        if let Some(moved) = pool.get(i)
-            && moved.pins == 0
-        {
-            self.lru.insert(Self::lru_key(moved), (key.clone(), i));
+        let prio = self.prio.remove(&dead.id).unwrap_or(0.0);
+        self.lru.remove(&(prio.to_bits(), dead.last_use, dead.id));
+        let moved = self.entries[key]
+            .get(i)
+            .filter(|moved| moved.pins == 0)
+            .map(|moved| self.lru_key(moved));
+        if let Some(moved) = moved {
+            self.lru.insert(moved, (key.clone(), i));
         }
-        if pool.is_empty() {
+        if self.entries[key].is_empty() {
             self.entries.remove(key);
         }
         self.total_bytes = self.total_bytes.saturating_sub(dead.bytes);
         Some(dead)
     }
 
-    /// The capacity victim: the GLOBAL oldest unleased entry. NEWEST-TURN-FITS (memra#523 item
-    /// 1): the entry being published is the global newest, so it is never chosen while another
-    /// unleased entry remains, and the two preflights (`prepare_snapshot`, the insert loop's
-    /// leased check) guarantee that an entry which fits beside the leases never has to evict
-    /// itself. Plain LRU is the only policy (memra#523 item 2, 2026-09-21): on the incident's
-    /// shape the segmented arm cost one growing conversation 300 tokens after every other
-    /// tenant's turn and protected a dead promoted entry over a fresh one, at every pair of a
-    /// ten-pair interleaved A/B (`docs/decisions/PREFIX-CACHE-POLICY.md`).
+    /// The capacity victim: the first unleased entry of the victim order (GreedyDual-Size by
+    /// default, plain LRU under `MEMRA_PREFIX_EVICT=lru`). NEWEST-TURN-FITS (memra#523 item 1):
+    /// the insert loop never takes the entry it is publishing (`victim_except`), and the two
+    /// preflights (`prepare_snapshot`, the insert loop's leased check) guarantee that an entry
+    /// which fits beside the leases never has to evict itself. Plain LRU was the only policy from
+    /// memra#523 item 2 (2026-09-21) to 2026-11-07: on the incident's shape the segmented arm cost
+    /// one growing conversation 300 tokens after every other tenant's turn and protected a dead
+    /// promoted entry over a fresh one (`docs/decisions/PREFIX-CACHE-POLICY.md`); GreedyDual-Size
+    /// replays that shape token for token like LRU (same record).
     fn oldest_evictable(&self) -> Option<(PoolKey, usize)> {
         self.lru.values().next().cloned()
+    }
+
+    /// The first unleased entry of the victim order other than entry `id` (the one being
+    /// published, which under GreedyDual-Size can hold the lowest priority).
+    fn victim_except(&self, id: u64) -> Option<(PoolKey, usize)> {
+        self.lru
+            .values()
+            .find(|(key, i)| self.entries[key][*i].id != id)
+            .cloned()
+    }
+
+    /// Remove a capacity victim: [`Self::remove_at`], then the GreedyDual-Size clock takes the
+    /// victim's priority (L = H(victim)). That step is what ages an entry nobody reuses: every
+    /// later insert or reuse is priced above it. Targeted drops use `remove_at` and leave the
+    /// clock alone.
+    fn evict_at(&mut self, key: &PoolKey, i: usize) -> Option<PrefixEntry> {
+        let id = self.entries.get(key)?.get(i)?.id;
+        let prio = self.prio.get(&id).copied();
+        let dead = self.remove_at(key, i)?;
+        if let Some(prio) = prio {
+            self.clock = self.clock.max(prio);
+        }
+        Some(dead)
     }
 
     /// Env-budgeted insert for unit tests (production inserts route through `insert_demoting`).
@@ -10584,8 +10836,8 @@ impl PrefixCache {
         host: &mut HostPrefixCache,
     ) {
         // Floor + flex grant (lane/kv-flex-20260831); with MEMRA_KV_FLEX off the grant is 0 by
-        // construction and this is exactly prefix_cache_budget_bytes(). On unified memory the
-        // live-free guard clamps it (prefix_insert_budget).
+        // construction and this is exactly prefix_cache_budget_bytes(). The live-free guard
+        // clamps it (prefix_insert_budget).
         let budget = prefix_insert_budget(
             engine,
             kv_flex_effective_budget(),
@@ -10615,8 +10867,8 @@ impl PrefixCache {
         engine: &Engine,
         host: &mut HostPrefixCache,
     ) -> Option<PrefixPin> {
-        // Floor + flex grant (lane/kv-flex-20260831); grant is 0 with the flag off. On unified
-        // memory the live-free guard clamps it (prefix_insert_budget).
+        // Floor + flex grant (lane/kv-flex-20260831); grant is 0 with the flag off. The
+        // live-free guard clamps it (prefix_insert_budget).
         let budget = prefix_insert_budget(
             engine,
             kv_flex_effective_budget(),
@@ -10644,7 +10896,7 @@ impl PrefixCache {
         let _ = self.insert_with_budget_pins(key, e, why, budget, 0, None);
     }
 
-    /// Insert into the byte-budgeted cache, then evict oldest-first back under `budget`.
+    /// Insert into the byte-budgeted cache, then evict in victim order back under `budget`.
     fn insert_with_budget_pins(
         &mut self,
         key: &PoolKey,
@@ -10716,7 +10968,8 @@ impl PrefixCache {
         self.next_id += 1;
         e.pins = initial_pins;
         let inserted_id = e.id;
-        let lk = Self::lru_key(&e);
+        self.refresh_prio(inserted_id, e.toks.len(), e.bytes);
+        let lk = self.lru_key(&e);
         let idx = {
             let pool = self.entries.entry(key.clone()).or_default();
             pool.push(e);
@@ -10726,17 +10979,19 @@ impl PrefixCache {
             self.lru.insert(lk, (key.clone(), idx));
         }
         while self.total_bytes > budget {
-            // Never the entry just inserted: it is the global newest (or leased), and the
-            // preflight above guarantees an older unleased victim exists while over budget.
-            let Some((k, i)) = self.oldest_evictable() else {
+            // Never the entry just inserted (newest-turn-fits; under GreedyDual-Size it can be
+            // the lowest priority): the preflight above guarantees another unleased victim
+            // exists while over budget.
+            let Some((k, i)) = self.victim_except(inserted_id) else {
                 break;
             };
-            let Some(dead) = self.remove_at(&k, i) else {
+            let Some(dead) = self.evict_at(&k, i) else {
                 break;
             };
             self.evictions += 1;
             eprintln!(
-                "[prefix-cache] evict (LRU): {} tokens, {:.1}MB (model {}{})",
+                "[prefix-cache] evict ({}): {} tokens, {:.1}MB (model {}{})",
+                self.order.name(),
                 dead.toks.len(),
                 dead.bytes as f64 / 1e6,
                 k.0,
@@ -10790,12 +11045,13 @@ impl PrefixCache {
             let Some((key, i)) = self.oldest_evictable() else {
                 return false;
             };
-            let Some(dead) = self.remove_at(&key, i) else {
+            let Some(dead) = self.evict_at(&key, i) else {
                 return false;
             };
             self.evictions += 1;
             eprintln!(
-                "[prefix-cache] evict (snapshot preflight, LRU): {} tokens, {:.1}MB (model {}{})",
+                "[prefix-cache] evict (snapshot preflight, {}): {} tokens, {:.1}MB (model {}{})",
+                self.order.name(),
                 dead.toks.len(),
                 dead.bytes as f64 / 1e6,
                 key.0,
@@ -10814,8 +11070,9 @@ impl PrefixCache {
         true
     }
 
-    /// KV-FLEX SHED (lane/kv-flex-20260831) and the step-OOM reclaim (memra#145): evict
-    /// unleased entries oldest first until `total_bytes <= target`, the SAME victim order the
+    /// KV-FLEX SHED (lane/kv-flex-20260831), the step-OOM reclaim (memra#145) and the admission
+    /// reclaim (2026-11-07): evict unleased entries in victim order until `total_bytes <= target`,
+    /// the SAME victim order the
     /// insert loop and the snapshot preflight use, so pressure relief adds no second eviction
     /// policy and can reach every byte `evictable_bytes()` promises the memory-admission door.
     /// Evicted bytes EVAPORATE (deliberately no demote sink, the `evict_all` law: an
@@ -10828,7 +11085,7 @@ impl PrefixCache {
             let Some((key, i)) = self.oldest_evictable() else {
                 break;
             };
-            let Some(dead) = self.remove_at(&key, i) else {
+            let Some(dead) = self.evict_at(&key, i) else {
                 break;
             };
             freed += dead.bytes;
@@ -10843,7 +11100,7 @@ impl PrefixCache {
     fn evict_all(&mut self) -> usize {
         let mut n = 0usize;
         while let Some((key, i)) = self.oldest_evictable() {
-            let Some(_dead) = self.remove_at(&key, i) else {
+            let Some(_dead) = self.evict_at(&key, i) else {
                 break;
             };
             n += 1;
@@ -17268,7 +17525,7 @@ fn reclaim_offtick_pass(
         let (demote, drop) = reclaim_offtick_plan(&oldest, budget - coming);
         for id in &drop {
             if let Some((key, i)) = px_find_evictable(px, *id)
-                && px.remove_at(&key, i).is_some()
+                && px.evict_at(&key, i).is_some()
             {
                 removed += 1;
             }
@@ -17682,7 +17939,7 @@ fn reclaim_queue_drain(
         let Some((key, i)) = px_find_evictable(px, id) else {
             continue;
         };
-        let Some(dead) = px.remove_at(&key, i) else {
+        let Some(dead) = px.evict_at(&key, i) else {
             continue;
         };
         removed += 1;
@@ -17723,15 +17980,22 @@ fn reclaim_queue_drain(
 /// entry the tier refuses (off, latched off, tenant share cap, copy failure), the entry is
 /// DROPPED exactly as today — the flush never fails to free the bytes it was called to free.
 ///
+/// PARTIAL (2026-11-07): the admission reclaim passes `target_bytes`, the resident bytes that
+/// cover the arrival's shortfall, and the flush stops there in victim order instead of emptying
+/// the cache for one admission (`reclaim_prefix_target`). `0` empties it as before.
+///
 /// Returns `(entries removed, entries demoted, bytes demoted)`.
 fn evict_all_demoting(
     engine: &Engine,
     px: &mut PrefixCache,
     host: &mut HostPrefixCache,
     demote_budget_bytes: u64,
+    target_bytes: usize,
 ) -> (usize, usize, u64) {
     let (mut removed, mut demoted, mut demoted_bytes) = (0usize, 0usize, 0u64);
-    while let Some((key, i)) = px.oldest_evictable() {
+    while px.total_bytes > target_bytes
+        && let Some((key, i)) = px.oldest_evictable()
+    {
         if host.armed()
             && demoted_bytes < demote_budget_bytes
             && let Some(entry) = px.entries.get_mut(&key).and_then(|pool| pool.get_mut(i))
@@ -17745,7 +18009,7 @@ fn evict_all_demoting(
                 demoted_bytes = demoted_bytes.saturating_add(bytes);
             }
         }
-        let Some(_dead) = px.remove_at(&key, i) else {
+        let Some(_dead) = px.evict_at(&key, i) else {
             break;
         };
         removed += 1;
@@ -23824,7 +24088,8 @@ fn host_handoff_export(
     }
     let t0 = Instant::now();
     // 1. DRAIN-DEMOTE: pull every evictable device prefix entry through the ordinary
-    //    demote sink, oldest first so host recency stays device-true. The freshest KV
+    //    demote sink in victim order (oldest first under plain LRU), so the host tier's
+    //    recency follows the device's. The freshest KV
     //    state on a draining slot lives on the DEVICE (parked sessions' boundary
     //    entries); without this step the handoff would carry only what pressure had
     //    already spilled. Pinned (leased) entries are absent from the evictable LRU by
@@ -28364,7 +28629,6 @@ pub fn run(
     // F5: learned spec-session sizing (evict-first models + right-sized ctx asks).
     let mut spec_sizing = SpecSizing::default();
     let mut reuse_metrics = ReuseMetrics::default();
-    let prefix_budget = init_prefix_cache_budget(&engine, &loaded);
     // VISION tower (lane/vision): loaded once at spawn from MEMRA_VISION_DIR (a directory
     // carrying the checkpoint's outside.safetensors with model.visual.*). Fail LOUD at boot
     // if configured but unloadable — silently serving text-only would be dishonest.
@@ -28556,8 +28820,11 @@ pub fn run(
         glm5_tower.is_some() && glm5_model_loaded && vision_placement_servable,
         std::sync::atomic::Ordering::Release,
     );
+    // The prefix-cache budget reads boot free memory after every tower has loaded (a step37
+    // tower is ~8 GB), so the derived budget never books bytes a tower already holds.
+    let prefix_budget = init_prefix_cache_budget(&engine, &loaded);
     // Cross-request prefix cache (token-prefix keyed, budget-bound; see the module doc above).
-    let mut px = PrefixCache::default();
+    let mut px = PrefixCache::with_order(prefix_evict_order(&engine));
     // Pinned-host spill tier behind it (lane/kv-host-spill-20260830; default OFF, see
     // kv_host_budget_bytes). Feeds the device cache only: the restore path is untouched.
     let mut hpx = HostPrefixCache::new(kv_host_budget_bytes());
@@ -28777,7 +29044,7 @@ pub fn run(
                 ctx_source,
                 boot_free_bytes,
                 clamp_bytes,
-                unified,
+                device,
             } => (
                 *bytes,
                 format!(
@@ -28791,12 +29058,21 @@ pub fn run(
                     } else {
                         "unset"
                     },
-                    match unified {
-                        Some(terms) => format!(
+                    match device {
+                        Some(PrefixDeviceTerms::Unified(terms)) => format!(
                             ", unified memory: the larger of that and 1/{UNIFIED_PREFIX_CACHE_SHARE_DIV} of \
                              allocatable free after the transient reserve, driver headroom {} B \
                              and host tier {} B",
                             terms.driver_headroom_bytes, terms.host_tier_bytes,
+                        ),
+                        Some(PrefixDeviceTerms::Discrete(terms)) => format!(
+                            ", discrete card: the larger of that and free after the transient \
+                             reserve, driver headroom {} B and a session peak of {} B ({} \
+                             resident sessions x {} B served-context session)",
+                            terms.driver_headroom_bytes,
+                            terms.session_peak_bytes(),
+                            terms.sessions,
+                            terms.session_bytes,
                         ),
                         None => String::new(),
                     },
@@ -28804,10 +29080,17 @@ pub fn run(
             ),
         };
         eprintln!(
-            "[prefix-cache] on: budget {:.0}MB ({budget_provenance}), policy plain-LRU (global \
-             oldest unleased entry first; leases untouchable), min prefix {} tokens, immediate \
-             partial restore={} (transformer-only; hybrid mid-entry + routed-MoE N/A)",
+            "[prefix-cache] on: budget {:.0}MB ({budget_provenance}), policy {}, min prefix {} \
+             tokens, immediate partial restore={} (transformer-only; hybrid mid-entry + \
+             routed-MoE N/A)",
             budget_bytes as f64 / 1e6,
+            match prefix_evict_order(&engine) {
+                PrefixEvictOrder::ValuePerByte =>
+                    "GDS value-per-byte (lowest clock + prompt tokens per MB first; the clock \
+                     takes each victim's priority; leases untouchable)",
+                PrefixEvictOrder::Lru =>
+                    "plain-LRU (global oldest unleased entry first; leases untouchable)",
+            },
             PREFIX_CACHE_MIN_TOKENS,
             if partial_prefix_restore_enabled() {
                 "on"
@@ -30494,13 +30777,47 @@ pub fn run(
                         // MEMORY-ADMISSION DOOR (memra#365): armed, the same entries are
                         // DEMOTED into the pinned host tier on the way out instead of being
                         // dropped, bounded by this arrival's own shortfall so a tick never
-                        // stalls behind more D2H than the admission needs. Off, this is
-                        // byte-identical to `px.evict_all()`.
+                        // stalls behind more D2H than the admission needs.
+                        // PARTIAL (2026-11-07, `reclaim_prefix_target`): both arms free the
+                        // shortfall in victim order and keep the rest of the cache. The flush
+                        // emptied it for one admission: under c8 unique-prompt load on a 24 GB
+                        // RTX 5090 it fired 12 times in 47 s and took the shared entry with it.
                         // RECLAIM SETTLE (memra#346/#445): the readings the receipt line and
                         // the settle step compare against are taken BEFORE the eviction.
                         let free_before_reclaim = headroom.limiting_free_bytes();
                         let prefix_bytes_before_reclaim = px.total_bytes;
                         let pool_before_reclaim = pool_readings(&engine, &loaded);
+                        // Discrete cards, where it was measured; unified memory keeps the flush
+                        // (`None`). The arrival's shortfall is read unbooked (a booked reading
+                        // floors at 0 and would understate it), plus, with the memory door off,
+                        // what the sessions still priming owe (`reclaim_owed_bytes`; armed, the
+                        // door books it into `pending_booked`). Each pass sizes its target
+                        // against the cache as it is then, after the host settles below.
+                        let reclaim_short = if device_is_unified(&engine) {
+                            None
+                        } else {
+                            primary_unbooked_shortfall(
+                                &engine,
+                                &loaded,
+                                &headroom,
+                                required,
+                                pending_booked,
+                            )
+                            .map(|short| {
+                                if admit_memory_cfg.armed {
+                                    short
+                                } else {
+                                    short.saturating_add(reclaim_owed_bytes(
+                                        &engine,
+                                        &loaded,
+                                        &active,
+                                        &admission_costs,
+                                    ))
+                                }
+                            })
+                        };
+                        let mut reclaim_partial = reclaim_short.is_some();
+                        let mut demote_left = 0u64;
                         let (evicted_prefix, demoted_prefix, demoted_prefix_bytes) =
                             if admit_memory_cfg.armed {
                                 // The SAME decision rule the defer site uses, taken here
@@ -30548,9 +30865,22 @@ pub fn run(
                                     ContractWait::Block,
                                     "the admission reclaim",
                                 );
+                                // Partial in victim order unless the off-tick plan runs,
+                                // which keeps its own demote/drop split.
                                 if !offtick_arm {
-                                    evict_all_demoting(&engine, &mut px, &mut hpx, budget)
+                                    let reclaim_target =
+                                        reclaim_prefix_target(px.total_bytes, reclaim_short);
+                                    let out = evict_all_demoting(
+                                        &engine,
+                                        &mut px,
+                                        &mut hpx,
+                                        budget,
+                                        reclaim_target,
+                                    );
+                                    demote_left = budget.saturating_sub(out.2);
+                                    out
                                 } else {
+                                    reclaim_partial = false;
                                     let q = &mut reclaim_queue;
                                     let n = reclaim_offtick_pass(
                                         &engine, &mut px, &mut hpx, q, &mut req, budget,
@@ -30558,7 +30888,9 @@ pub fn run(
                                     (n, 0, 0)
                                 }
                             } else {
-                                (px.evict_all(), 0, 0)
+                                let reclaim_target =
+                                    reclaim_prefix_target(px.total_bytes, reclaim_short);
+                                (px.evict_to_bytes(reclaim_target).0, 0, 0)
                             };
                         // The arrival waits on a landing while its plan is live (DAY42 1.2): the
                         // parked-session ladder is not climbed for bytes already on their way.
@@ -30581,6 +30913,46 @@ pub fn run(
                                 &pool_before_reclaim,
                                 prefix_bytes_before_reclaim.saturating_sub(px.total_bytes),
                                 "reclaim-on-defer",
+                            );
+                            if let Some(next_headroom) =
+                                admission_headroom(&engine, &loaded, device_requirements.as_deref())
+                                    .map(book)
+                            {
+                                headroom = next_headroom;
+                            }
+                        }
+                        // Still short after the partial pass (allocator rounding, a
+                        // neighbour's growth between readings): the rest of the unleased cache
+                        // goes as before, so the spare drop and the parked-session ladder below
+                        // still meet an empty evictable set.
+                        let mut evicted_prefix = evicted_prefix;
+                        if reclaim_partial
+                            && !reclaim_landing
+                            && !headroom.sufficient(required)
+                            && px.evictable_bytes() > 0
+                        {
+                            let pool_before_rest = pool_readings(&engine, &loaded);
+                            let bytes_before_rest = px.total_bytes;
+                            let (rest, rest_demoted, rest_demoted_bytes) = if admit_memory_cfg.armed
+                            {
+                                evict_all_demoting(&engine, &mut px, &mut hpx, demote_left, 0)
+                            } else {
+                                (px.evict_all(), 0, 0)
+                            };
+                            if rest_demoted > 0 {
+                                eprintln!(
+                                    "[admit-mem] reclaim (rest) demoted {rest_demoted} of {rest} \
+                                     device prefix entries to the host tier ({:.0}MB kept warm)",
+                                    rest_demoted_bytes as f64 / 1e6,
+                                );
+                            }
+                            evicted_prefix += rest;
+                            settle_reclaimed_prefix_bytes(
+                                &engine,
+                                &loaded,
+                                &pool_before_rest,
+                                bytes_before_rest.saturating_sub(px.total_bytes),
+                                "reclaim-on-defer (rest)",
                             );
                             if let Some(next_headroom) =
                                 admission_headroom(&engine, &loaded, device_requirements.as_deref())
@@ -45508,6 +45880,8 @@ pub fn spawn(
 
 #[cfg(test)]
 mod tests {
+    use super::PrefixEvictOrder;
+
     fn gb10_entry(accept: [f64; 3]) -> super::SpecCostEntry {
         // GB10 receipts (research/batch-spec-20261101/GB10-CR.md), owner GGUF 27B, depth 2048.
         let verify = memra_engine::spec_cost::interpolate_16(&[
@@ -46163,6 +46537,11 @@ mod tests {
         DecodeChunkPolicy, resolve_decode_chunk_policy, resolve_pp_wave_chunk_policy,
         schedule_decode_chunk,
     };
+    use super::{
+        DiscretePrefixTerms, PREFIX_CACHE_DEFAULT_ENTRIES, PrefixDeviceTerms,
+        UNIFIED_PREFIX_CACHE_SHARE_DIV, UnifiedPrefixTerms, derived_prefix_cache_budget,
+        prefix_budget_ctx, prefix_entry_geometry_bytes,
+    };
     use super::{DraftVerdict, draft_verdict, draft_verdict_message};
     use super::{
         Event, async_chain_devsample, cached_hit_needs_first_token, carried_prime_batch_eligible,
@@ -46182,10 +46561,6 @@ mod tests {
     };
     use super::{KV_FLEX_GRANT, KvFlex, kv_flex_effective_budget, prefix_cache_budget_bytes};
     use super::{MAX_EVENT_QUEUE_EVENTS, event_channel};
-    use super::{
-        PREFIX_CACHE_DEFAULT_ENTRIES, UNIFIED_PREFIX_CACHE_SHARE_DIV, UnifiedPrefixTerms,
-        derived_prefix_cache_budget, prefix_budget_ctx, prefix_entry_geometry_bytes,
-    };
     use super::{PpFreeSnapshot, concat_prime_pp_eligibility};
     use super::{
         RuntimePeerProbeDeferralState, RuntimePeerProbeWorkerAction, peer_probe_spec_admission,
@@ -46598,7 +46973,8 @@ mod tests {
             host_tier_bytes: 0,
         };
 
-        let (budget, requested, clamp) = derived_prefix_cache_budget(entry, boot_free, Some(terms));
+        let (budget, requested, clamp) =
+            derived_prefix_cache_budget(entry, boot_free, Some(PrefixDeviceTerms::Unified(terms)));
         assert_eq!(clamp, boot_free - SPEC_SHRINK_RESERVE - (2048 << 20));
         assert_eq!(requested, clamp / UNIFIED_PREFIX_CACHE_SHARE_DIV);
         assert_eq!(budget, requested);
@@ -46607,7 +46983,8 @@ mod tests {
         assert_eq!(budget, 34_048usize << 20);
         assert!(budget >= 32_768 << 20);
 
-        // The same reading on a discrete card: two entries, as before.
+        // The same reading with no device terms: two entries, as before (the discrete session
+        // peak has its own test below).
         let (budget, requested, _) = derived_prefix_cache_budget(entry, boot_free, None);
         assert_eq!((budget, requested), (2 * entry, 2 * entry));
 
@@ -46616,20 +46993,68 @@ mod tests {
             host_tier_bytes: 8 << 30,
             ..terms
         };
-        let (budget_host, _, clamp_host) =
-            derived_prefix_cache_budget(entry, boot_free, Some(with_host));
+        let (budget_host, _, clamp_host) = derived_prefix_cache_budget(
+            entry,
+            boot_free,
+            Some(PrefixDeviceTerms::Unified(with_host)),
+        );
         assert_eq!(clamp_host, clamp - (8 << 30));
         assert_eq!(budget_host, clamp_host / UNIFIED_PREFIX_CACHE_SHARE_DIV);
 
         // A tight unified box never goes below the two-entry floor, and never past the clamp.
         let tight_free = SPEC_SHRINK_RESERVE + (2048 << 20) + 3 * entry;
         let (budget, requested, clamp) =
-            derived_prefix_cache_budget(entry, tight_free, Some(terms));
+            derived_prefix_cache_budget(entry, tight_free, Some(PrefixDeviceTerms::Unified(terms)));
         assert_eq!(requested, 2 * entry);
         assert_eq!(clamp, 3 * entry);
         assert_eq!(budget, 2 * entry);
         let tighter_free = SPEC_SHRINK_RESERVE + (2048 << 20) + entry;
-        let (budget, _, clamp) = derived_prefix_cache_budget(entry, tighter_free, Some(terms));
+        let (budget, _, clamp) = derived_prefix_cache_budget(
+            entry,
+            tighter_free,
+            Some(PrefixDeviceTerms::Unified(terms)),
+        );
+        assert_eq!(budget, clamp);
+        assert_eq!(budget, entry);
+    }
+
+    /// Discrete card, the finding's boot line (one RTX PRO 6000 Max-Q, Qwen3.8-27B at 32,768 tokens,
+    /// `MEMRA_MAX_SESSIONS=12`): 86,614,081,536 B boot free held a 2,259,943,424 B cache. The
+    /// session-peak rule leaves 24 served-context sessions (12 interactive + 4 judge + 8 harvest,
+    /// each 31,552 B/token x 32,768 + 156,893,184 B recurrent), the driver headroom and the
+    /// transient reserve, and gives the cache the rest. The same model on the 24 GB RTX 5090 Laptop
+    /// (10,053,877,760 B boot free) and the default caps on the 96 GB card keep the two-entry floor.
+    #[test]
+    fn discrete_prefix_budget_leaves_the_session_peak_and_keeps_the_two_entry_floor() {
+        let entry = prefix_entry_geometry_bytes(29_696, 156_893_184, 32_768);
+        assert_eq!(entry, 1_129_971_712);
+        let session = 31_552 * 32_768 + 156_893_184;
+        let terms = |sessions| {
+            Some(PrefixDeviceTerms::Discrete(DiscretePrefixTerms {
+                driver_headroom_bytes: 2048 << 20,
+                sessions,
+                session_bytes: session,
+            }))
+        };
+        let pro_free = 86_614_081_536;
+        let (budget, requested, clamp) = derived_prefix_cache_budget(entry, pro_free, terms(24));
+        assert_eq!(clamp, 85_003_468_800);
+        assert_eq!(requested, clamp - (2048 << 20) - 24 * session);
+        assert_eq!(budget, 54_277_046_272);
+        assert!(budget > 24 * 2 * entry);
+
+        // The default caps (64 interactive + 12 dark-lane) at 32,768 tokens fill the card.
+        let (budget, requested, _) = derived_prefix_cache_budget(entry, pro_free, terms(76));
+        assert_eq!((budget, requested), (2 * entry, 2 * entry));
+
+        // The 24 GB RTX 5090 Laptop, same model and caps: the session peak exceeds the card.
+        let (budget, _, clamp) = derived_prefix_cache_budget(entry, 10_053_877_760, terms(24));
+        assert_eq!(clamp, 8_443_265_024);
+        assert_eq!(budget, 2 * entry);
+
+        // A tight card never goes past the clamp.
+        let tight = SPEC_SHRINK_RESERVE + entry;
+        let (budget, _, clamp) = derived_prefix_cache_budget(entry, tight, terms(1));
         assert_eq!(budget, clamp);
         assert_eq!(budget, entry);
     }
@@ -51787,18 +52212,27 @@ mod tests {
             code.contains("admit_memory_cfg.open_output_charge()"),
             "the open-output charge must be handed to prepare_request"
         );
-        // Gap 2: the reclaim flush demotes before dropping.
+        // Gap 2: the reclaim demotes before dropping. Read from the production text only (the
+        // literals in this test would otherwise match themselves).
+        let production = &code[..code.find("\nmod tests {").expect("tests module exists")];
+        let squashed = production.split_whitespace().collect::<Vec<_>>().join(" ");
         assert!(
-            code.contains("evict_all_demoting(&engine, &mut px, &mut hpx, budget)"),
-            "the reclaim ladder must take the demoting flush when armed"
+            squashed.contains(
+                "let out = evict_all_demoting( &engine, &mut px, &mut hpx, budget, reclaim_target, );"
+            ),
+            "the reclaim ladder must take the demoting pass when armed"
         );
         assert!(
-            code.contains("crate::admit_memory::demote_budget_bytes("),
-            "the flush's D2H budget must come from the door's own decision rule"
+            squashed.contains("crate::admit_memory::demote_budget_bytes("),
+            "the pass's D2H budget must come from the door's own decision rule"
         );
+        // Door off: the partial drop in victim order (2026-11-07; the flush on unified memory,
+        // where `reclaim_prefix_target` is 0).
         assert!(
-            code.contains("(px.evict_all(), 0, 0)"),
-            "and must keep the byte-identical drop when the door is off"
+            squashed.contains(
+                "let reclaim_target = reclaim_prefix_target(px.total_bytes, reclaim_short); (px.evict_to_bytes(reclaim_target).0, 0, 0)"
+            ),
+            "and must take the partial drop when the door is off"
         );
         // Gap 3: the defer is bounded and can refuse.
         let defer = code
@@ -52891,7 +53325,7 @@ mod tests {
         };
         let inputs = at("let dflash_inputs = draft.map(|draft| { admission_dflash_inputs(");
         let pin = at("px.pin_reclaim_spare( &key, prompt,");
-        let flush = at("(px.evict_all(), 0, 0)");
+        let flush = at("(px.evict_to_bytes(reclaim_target).0, 0, 0)");
         let gate = at(
             "if !reclaim_landing && !headroom.sufficient(required) && reclaim_spare.as_ref().is_some_and(|s| s.also.is_some())",
         );
@@ -53394,19 +53828,22 @@ mod tests {
         let shed_at = code
             .find("kv_flex.shed(&mut px, false, \"admission headroom\")")
             .expect("the headroom shed invocation exists");
-        // memra#365 moved the spelling, not the position: the flush is now a door-aware
-        // binding whose OFF arm is `px.evict_all()` verbatim. The invariant this test guards
-        // (borrowed-first shed immediately upstream of the nuclear ladder) is unchanged.
-        let evict_at = code[shed_at..]
+        // memra#365 moved the spelling, not the position: the flush is a door-aware binding,
+        // and since 2026-11-07 its OFF arm is the partial drop in victim order. The invariant
+        // this test guards (borrowed-first shed immediately upstream of the reclaim ladder) is
+        // unchanged. Production text only: the literals in this test would match themselves.
+        let production = &code[..code.find("\nmod tests {").expect("tests module exists")];
+        let evict_at = production[shed_at..]
             .find("let (evicted_prefix, demoted_prefix, demoted_prefix_bytes) =")
             .expect("the reclaim flush exists downstream of the shed");
         assert!(
-            code[shed_at + evict_at..].contains("(px.evict_all(), 0, 0)"),
-            "the door-off arm of the flush must remain the verbatim evict_all ladder"
+            production[shed_at + evict_at..]
+                .contains("(px.evict_to_bytes(reclaim_target).0, 0, 0)"),
+            "the door-off arm of the reclaim must be the partial drop"
         );
         assert!(
-            evict_at < 2500,
-            "the borrowed-first shed must sit immediately upstream of the evict_all ladder"
+            evict_at < 4500,
+            "the borrowed-first shed must sit immediately upstream of the reclaim ladder"
         );
         let gate_at = code[..shed_at]
             .rfind("!headroom.sufficient(required)")
@@ -55148,6 +55585,14 @@ mod tests {
 
     /// Entry with an explicit identity + byte size (identity = the single token, so the
     /// exact-key dedupe never collides and survivors are readable back out of the pools).
+    /// `e` with a `tokens`-long key that still starts with its ident (the GreedyDual-Size value
+    /// is tokens per byte, so geometry tests need the real length).
+    fn with_tokens(mut e: PrefixEntry, tokens: usize) -> PrefixEntry {
+        let ident = e.toks[0];
+        e.toks = std::iter::once(ident).chain(1..tokens as u32).collect();
+        e
+    }
+
     fn entry_b(pool_key: &PoolKey, ident: u32, bytes: usize) -> PrefixEntry {
         PrefixEntry {
             _tier_charge: None,
@@ -56202,9 +56647,7 @@ mod tests {
             .unwrap();
         let victims = purge_body.find("let victims: Vec<PoolKey>").unwrap();
         assert!(settle < drop_at && drop_at < victims);
-        let reclaim = body
-            .find("evict_all_demoting(&engine, &mut px, &mut hpx, budget)")
-            .unwrap();
+        let reclaim = body.find("let out = evict_all_demoting(\n").unwrap();
         assert!(
             body[reclaim - 600..reclaim].contains("\"the admission reclaim\","),
             "the reclaim settles the capture first"
@@ -56785,9 +57228,7 @@ mod tests {
             "admission follows the complete restore park guard"
         );
         // The reclaim and every trim settle it first.
-        let reclaim = body
-            .find("evict_all_demoting(&engine, &mut px, &mut hpx, budget)")
-            .unwrap();
+        let reclaim = body.find("let out = evict_all_demoting(\n").unwrap();
         let reclaim_settle = body[..reclaim]
             .rfind("host_restore_settle_pending(")
             .expect("the reclaim settles the restore first");
@@ -65269,9 +65710,10 @@ mod tests {
         assert!(live.contains(
             "let offtick_arm = admit_reclaim_offtick_on() && hpx.tier.is_some() && (budget > 0 || req.reclaim_offtick.is_some());"
         ));
-        // The site sits inside the armed branch, so unarmed it is today's `px.evict_all()`.
+        // The site sits inside the armed branch; unarmed, the reclaim is the partial
+        // `px.evict_to_bytes(reclaim_target)`.
         assert!(live.contains(
-            "if !offtick_arm { evict_all_demoting(&engine, &mut px, &mut hpx, budget) } else { let q = &mut reclaim_queue; let n = reclaim_offtick_pass( &engine, &mut px, &mut hpx, q, &mut req, budget, ); (n, 0, 0) }"
+            "if !offtick_arm { let reclaim_target = reclaim_prefix_target(px.total_bytes, reclaim_short); let out = evict_all_demoting( &engine, &mut px, &mut hpx, budget, reclaim_target, ); demote_left = budget.saturating_sub(out.2); out } else { reclaim_partial = false; let q = &mut reclaim_queue; let n = reclaim_offtick_pass( &engine, &mut px, &mut hpx, q, &mut req, budget, ); (n, 0, 0) }"
         ));
         let site = live
             .find("reclaim_offtick_pass( &engine, &mut px, &mut hpx, q, &mut req, budget, )")
@@ -66626,7 +67068,7 @@ mod tests {
         );
         for (lru_key, (key, i)) in px.lru.iter() {
             let entry = &px.entries[key][*i];
-            assert_eq!(*lru_key, PrefixCache::lru_key(entry));
+            assert_eq!(*lru_key, px.lru_key(entry));
             assert_eq!(entry.pins, 0);
         }
     }
@@ -66672,6 +67114,128 @@ mod tests {
         assert_prefix_cache_accounting(&px);
     }
 
+    /// 2026-11-07 (`research/prefix-budget-20261107/`): Qwen3.8-27B geometry, 156.9 MB recurrent
+    /// state plus 29.7 KB per token, a 2,260 MB budget (two 32,768-token entries). A shared
+    /// 480-token entry (172.1 MB) is reused after every 14 one-off 64-token seeds (158.8 MB each:
+    /// the c8 rate on one RTX PRO 6000). Plain LRU evicts it before its next reuse every time;
+    /// the value-per-byte order keeps it, evicts only seeds, and once the reuse stops the clock
+    /// ages it out like any other entry.
+    #[test]
+    fn value_per_byte_keeps_a_shared_entry_through_one_off_seeds() {
+        const BUDGET: usize = 2_259_943_424;
+        let geometry = |tokens: usize| 156_893_184 + tokens * 29_696;
+        let k = key("");
+        let mk =
+            |ident: u32, tokens: usize| with_tokens(entry_b(&k, ident, geometry(tokens)), tokens);
+        for (order, kept) in [
+            (PrefixEvictOrder::Lru, false),
+            (PrefixEvictOrder::ValuePerByte, true),
+        ] {
+            let mut px = PrefixCache::with_order(order);
+            px.insert_with_budget(&k, mk(0, 480), "spec-boundary", BUDGET);
+            let mut seed = 1u32;
+            let mut reuses = 0;
+            for _ in 0..6 {
+                for _ in 0..14 {
+                    next_instant();
+                    px.insert_with_budget(&k, mk(seed, 64), "seed", BUDGET);
+                    seed += 1;
+                    assert!(px.total_bytes <= BUDGET);
+                }
+                if reuse_ident(&mut px, 0) {
+                    reuses += 1;
+                }
+            }
+            assert_eq!(
+                reuses == 6,
+                kept,
+                "{order:?}: the shared entry served every reuse"
+            );
+            assert_prefix_cache_accounting(&px);
+            if kept {
+                // No reuse after this: the clock passes it within a few cache turnovers.
+                for _ in 0..14 * 10 {
+                    next_instant();
+                    px.insert_with_budget(&k, mk(seed, 64), "seed", BUDGET);
+                    seed += 1;
+                }
+                assert!(!px_survivors(&px).contains(&0), "an unused entry ages out");
+            }
+        }
+    }
+
+    /// Equal-density entries keep plain LRU order under the value-per-byte order (the victim is
+    /// the oldest unleased entry, reused or not); between densities the sparse entry goes first;
+    /// and the inserted entry is never its own victim, even when it holds the lowest priority.
+    #[test]
+    fn value_per_byte_is_lru_among_equal_density_and_never_evicts_the_newcomer() {
+        const BUDGET: usize = 10;
+        let k = key("");
+        let mut px = PrefixCache::with_order(PrefixEvictOrder::ValuePerByte);
+        for ident in 0..5u32 {
+            next_instant();
+            px.insert_with_budget(&k, entry_b(&k, ident, 2), "test", BUDGET);
+        }
+        assert!(reuse_ident(&mut px, 0));
+        next_instant();
+        px.insert_with_budget(&k, entry_b(&k, 5, 2), "test", BUDGET);
+        assert_eq!(px_survivors(&px), vec![0, 2, 3, 4, 5]);
+        assert_prefix_cache_accounting(&px);
+
+        // Two dense one-byte entries beside a sparse eight-byte one: the sparse one goes, where
+        // LRU would take the two older dense entries first.
+        for (order, survivors) in [
+            (PrefixEvictOrder::ValuePerByte, vec![10, 11, 13]),
+            (PrefixEvictOrder::Lru, vec![13]),
+        ] {
+            let mut px = PrefixCache::with_order(order);
+            for (ident, bytes) in [(10, 1), (11, 1), (12, 8), (13, 8)] {
+                next_instant();
+                px.insert_with_budget(&k, entry_b(&k, ident, bytes), "test", BUDGET);
+            }
+            assert_eq!(px_survivors(&px), survivors, "{order:?}");
+            assert_prefix_cache_accounting(&px);
+        }
+
+        // The newcomer is the lowest priority resident and still gets in.
+        let mut px = PrefixCache::with_order(PrefixEvictOrder::ValuePerByte);
+        for (ident, bytes) in [(20, 1), (21, 1), (22, 9)] {
+            next_instant();
+            px.insert_with_budget(&k, entry_b(&k, ident, bytes), "test", BUDGET);
+        }
+        assert_eq!(px_survivors(&px), vec![21, 22]);
+        assert!(px.total_bytes <= BUDGET);
+        assert_prefix_cache_accounting(&px);
+    }
+
+    #[test]
+    fn prefix_evict_order_is_value_per_byte_on_discrete_and_lru_on_unified() {
+        use PrefixEvictOrder::{Lru, ValuePerByte};
+        assert_eq!(PrefixEvictOrder::parse(None, false), ValuePerByte);
+        assert_eq!(PrefixEvictOrder::parse(Some(""), false), ValuePerByte);
+        assert_eq!(PrefixEvictOrder::parse(None, true), Lru);
+        assert_eq!(PrefixEvictOrder::parse(Some("lru"), false), Lru);
+        assert_eq!(PrefixEvictOrder::parse(Some("gds"), true), ValuePerByte);
+        assert!(std::panic::catch_unwind(|| PrefixEvictOrder::parse(Some("slru"), false)).is_err());
+    }
+
+    #[test]
+    fn admission_reclaim_target_frees_the_shortfall_only() {
+        use super::reclaim_prefix_target;
+        assert_eq!(
+            reclaim_prefix_target(2_236_377_088, Some(300 << 20)),
+            2_236_377_088 - (300 << 20)
+        );
+        assert_eq!(reclaim_prefix_target(100, Some(100)), 0);
+        assert_eq!(reclaim_prefix_target(100, Some(400)), 0);
+        assert_eq!(
+            reclaim_prefix_target(100, None),
+            0,
+            "a per-device reading flushes"
+        );
+        assert_eq!(reclaim_prefix_target(100, Some(0)), 100);
+    }
+
     /// memra#523 item 1, the incident shape in bytes: an 8192 MiB budget, six reused 30k-token
     /// conversations (about 6.1 GB) beside one tenant growing 105k -> 168k tokens by 300 per
     /// turn (entries 2.7 -> 4.3 GB, the incident's own sizes). The plain path's restore lease
@@ -66689,88 +67253,98 @@ mod tests {
             // 2.7 GB at 105k tokens, 4.3 GB at 168k: 25,397 B per token above 105k.
             2_700_000_000 + (tokens - 105_000) * 25_397
         }
-        let cohort = key("cohort");
-        let grow = key("grow");
-        let mut px = PrefixCache::default();
-        let mut victims: Vec<u32> = Vec::new();
-        for ident in 0..6u32 {
-            let mut sink = |dead: PrefixEntry| victims.push(dead.toks[0]);
-            px.insert_with_budget_pins(
-                &cohort,
-                entry_b(&cohort, ident, COHORT_ENTRY),
-                "seed",
-                BUDGET,
-                0,
-                Some(&mut sink),
-            );
-            // The cohort's reuse: a restore lease, released at the fence.
-            let i = px.entries[&cohort]
-                .iter()
-                .position(|e| e.toks[0] == ident)
-                .unwrap();
-            next_instant();
-            let pin = px.pin(&cohort, i).unwrap();
-            assert!(px.unpin(&pin));
-        }
-        assert_eq!(px.total_bytes, 6 * COHORT_ENTRY);
-        assert!(victims.is_empty());
-
-        let mut prev: Option<u32> = None;
-        let mut tokens = 105_000usize;
-        let mut turn = 0u32;
-        while tokens <= 168_000 {
-            let ident = 100 + turn;
-            if let Some(prev_ident) = prev {
-                // The hit on the previous turn: leased for the restore, released at the fence.
-                let i = px.entries[&grow]
+        // Both victim orders, each entry carrying its real token count (30k per cohort
+        // conversation, the turn's length for the tenant), so the GreedyDual-Size values are the
+        // incident's own: the cohort is the sparser class (28 vs 39 tokens per MB) and the
+        // tenant's turns get slightly denser as they grow, so the value-per-byte order takes the
+        // same victims in the same order as plain LRU.
+        for order in [PrefixEvictOrder::Lru, PrefixEvictOrder::ValuePerByte] {
+            let cohort = key("cohort");
+            let grow = key("grow");
+            let mut px = PrefixCache::with_order(order);
+            let mut victims: Vec<u32> = Vec::new();
+            for ident in 0..6u32 {
+                let mut sink = |dead: PrefixEntry| victims.push(dead.toks[0]);
+                px.insert_with_budget_pins(
+                    &cohort,
+                    with_tokens(entry_b(&cohort, ident, COHORT_ENTRY), 30_000),
+                    "seed",
+                    BUDGET,
+                    0,
+                    Some(&mut sink),
+                );
+                // The cohort's reuse: a restore lease, released at the fence.
+                let i = px.entries[&cohort]
                     .iter()
-                    .position(|e| e.toks[0] == prev_ident)
-                    .unwrap_or_else(|| panic!("turn {turn}: the previous turn must be resident"));
+                    .position(|e| e.toks[0] == ident)
+                    .unwrap();
                 next_instant();
-                let pin = px
-                    .pin(&grow, i)
-                    .expect("previous turn leased for the restore");
+                let pin = px.pin(&cohort, i).unwrap();
                 assert!(px.unpin(&pin));
             }
-            let before = victims.len();
-            let mut sink = |dead: PrefixEntry| victims.push(dead.toks[0]);
-            next_instant();
-            let inserted = px.insert_with_budget_pins(
-                &grow,
-                entry_b(&grow, ident, turn_bytes(tokens)),
-                "seed",
-                BUDGET,
-                0,
-                Some(&mut sink),
-            );
-            assert!(
-                inserted.is_some(),
-                "turn {turn} ({tokens} tokens): the newest turn must be resident"
-            );
-            assert!(px_survivors(&px).contains(&ident));
-            assert!(px.total_bytes <= BUDGET);
-            assert!(
-                victims[before..].iter().all(|v| *v != ident),
-                "turn {turn}: an insert must never be its own victim"
-            );
-            if turn == 0 {
-                // Turn 1 in the incident: the old segmented code evicted the newcomer itself;
-                // the OLDEST cohort member goes instead.
-                assert_eq!(victims, vec![0]);
+            assert_eq!(px.total_bytes, 6 * COHORT_ENTRY);
+            assert!(victims.is_empty());
+
+            let mut prev: Option<u32> = None;
+            let mut tokens = 105_000usize;
+            let mut turn = 0u32;
+            while tokens <= 168_000 {
+                let ident = 100 + turn;
+                if let Some(prev_ident) = prev {
+                    // The hit on the previous turn: leased for the restore, released at the fence.
+                    let i = px.entries[&grow]
+                        .iter()
+                        .position(|e| e.toks[0] == prev_ident)
+                        .unwrap_or_else(|| {
+                            panic!("turn {turn}: the previous turn must be resident")
+                        });
+                    next_instant();
+                    let pin = px
+                        .pin(&grow, i)
+                        .expect("previous turn leased for the restore");
+                    assert!(px.unpin(&pin));
+                }
+                let before = victims.len();
+                let mut sink = |dead: PrefixEntry| victims.push(dead.toks[0]);
+                next_instant();
+                let inserted = px.insert_with_budget_pins(
+                    &grow,
+                    with_tokens(entry_b(&grow, ident, turn_bytes(tokens)), tokens),
+                    "seed",
+                    BUDGET,
+                    0,
+                    Some(&mut sink),
+                );
+                assert!(
+                    inserted.is_some(),
+                    "turn {turn} ({tokens} tokens): the newest turn must be resident"
+                );
+                assert!(px_survivors(&px).contains(&ident));
+                assert!(px.total_bytes <= BUDGET);
+                assert!(
+                    victims[before..].iter().all(|v| *v != ident),
+                    "turn {turn}: an insert must never be its own victim"
+                );
+                if turn == 0 {
+                    // Turn 1 in the incident: the old segmented code evicted the newcomer itself;
+                    // the OLDEST cohort member goes instead.
+                    assert_eq!(victims, vec![0]);
+                }
+                assert_prefix_cache_accounting(&px);
+                prev = Some(ident);
+                tokens += 300;
+                turn += 1;
             }
-            assert_prefix_cache_accounting(&px);
-            prev = Some(ident);
-            tokens += 300;
-            turn += 1;
+            assert_eq!(turn, 211);
+            assert_eq!(px.skips_budget + px.skips_pinned, 0, "no turn was refused");
+            // The cohort went first, oldest first, then the tenant's older turns, oldest first.
+            assert_eq!(&victims[..6], &[0, 1, 2, 3, 4, 5], "{order:?}");
+            assert!(victims[6..].windows(2).all(|w| w[0] < w[1]), "{order:?}");
+            assert!(!px.entries.contains_key(&cohort));
+            // 4.3 GB + 4.29 GB exceed the budget: the final turn evicted its predecessor and
+            // stands alone.
+            assert_eq!(px_survivors(&px), vec![100 + 210]);
         }
-        assert_eq!(turn, 211);
-        // The cohort went first, oldest first, then the tenant's older turns, oldest first.
-        assert_eq!(&victims[..6], &[0, 1, 2, 3, 4, 5]);
-        assert!(victims[6..].windows(2).all(|w| w[0] < w[1]));
-        assert!(!px.entries.contains_key(&cohort));
-        // 4.3 GB + 4.29 GB exceed the budget: the final turn evicted its predecessor and stands alone.
-        assert_eq!(px_survivors(&px), vec![100 + 210]);
-        assert_eq!(px.skips_budget + px.skips_pinned, 0, "no turn was refused");
     }
 
     /// memra#523 item 1: an entry larger than the whole budget is refused with the typed line,

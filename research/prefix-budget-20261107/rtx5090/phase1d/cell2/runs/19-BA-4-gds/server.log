@@ -1,0 +1,234 @@
+[server] build: memra-0.138.0-2d42e8ee1db0 (id: source-tree, git: 7b385110e420)
+[env-audit] warning (MEMRA_ENV_AUDIT=warn downgraded a refusal): MEMRA_PREFIX_EVICT: unknown MEMRA_PREFIX_* name (5 documented names in that family, none is this one). Neither a documented name nor a retired one in docs/FLAGS.md: a typo or a name from another tree. It would be read by nothing.
+[server] starting; models config = [("gate", "/data/ai-ml/models/q38-gguf/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf", None)]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[worker-affinity] off (MEMRA_WORKER_CPUSET / MEMRA_WORKER_AFFINITY unset or =0)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal after 3 consecutive misses (MEMRA_GPU_PROBE_MISSES), fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2 (K=5 when the loaded MTP head is rank-trimmed)
+[worker] loading model "gate" <- /data/ai-ml/models/q38-gguf/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf
+[tensor-contract] bound 866 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[worker]   loaded "gate": 65 layers, eos=248046, stop=[248046]
+[worker] gate: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false qwen_effort=true gemma_think=false dsv4=false glm5=false ctx=262144 tok="qwen35" instruct=Some("chatml") chat_defaults=None/None
+[route-contract] model="gate" route=hybrid-worker capacity=4 sessions implemented=[capacity,occupancy,progress,fault-ownership,shutdown-ownership,memory-cost,rewrite-qualification,prime-fairness,service-metrics] refused=[]
+[worker] gate: decode wave cap 16; scheduler tick cap 16 (exact-16 tier)
+[prefix-cache] on: budget 1074MB (1073741824 B, configured by MEMRA_PREFIX_CACHE_MB), policy GDS value-per-byte (lowest clock + prompt tokens per MB first; the clock takes each victim's priority; leases untouchable), min prefix 64 tokens, immediate partial restore=off (rollback) (transformer-only; hybrid mid-entry + routed-MoE N/A)
+[admission] "gate": plain 29696 B/token, spec 31552 B/token; fixed residual learns from effective-free deltas
+[spec-cost] calibration skipped: the LOW/HIGH band owns the spec gate
+[admit-cal] boot calibration skipped: spec serving disabled (static floor; the plain transient class is chunk-bounded)
+[admit-mem] door=OFF open_output_tokens=8192 defer_budget_ms=8000 (admission charges prompt+output, the reclaim flush demotes to the host tier before dropping, and a memory defer past the budget refuses 429 instead of queueing past the client's deadline)
+[kv-vmm] door=OFF (MEMRA_KV_ALLOCATOR unset or pooled: pooled K/V planes)
+[server] worker ready; serving models: ["gate"]
+[server] listening on http://127.0.0.1:18115
+[meter] admit id=cmpl-6e623e7c6df0fa11303a82bd97b01013 tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=1320 path=plain = 29696 B/token x ctx + 598MB prefill-workspace + 0MB fixed = 637MB
+[spec-k] model="gate" tenant="cohort-1" K=0 source=eligibility-fallback prompt=1248 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="gate" 310MB (observed 348MB at ctx 1264 path=plain)
+[prefix-cache] insert (seed): 1248 tokens, 194.0MB (resident 194.0MB / 1074MB, model gate, ns "cohort-1")
+[fa-pool] grow #0 dev=0 o_len 0 -> 122880 ml_len 0 -> 480 (retired kept, zero=false)
+[ttft] id=cmpl-6e623e7c6df0fa11303a82bd97b01013 model="gate" path="/v1/completions" prompt_tokens=1248 outcome=ended_without_sse request_parse_ms=0.135 admission_ms=0.092 queue_wait_ms=0.077 tokenize_ms=0.002 prime_wait_ms=6.864 prime_ms=933.159 decode_wait_ms=0.274 sse_handoff_ms=na request_parse_end_ms=0.135 admission_end_ms=0.227 tokenize_start_ms=0.304 tokenize_end_ms=0.306 prime_start_ms=7.170 prime_end_ms=940.329 first_decode_ms=940.603 first_sse_byte_ms=na total_ms=940.603
+[meter] admit id=cmpl-a66a974203c416c442891631b607904a tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=1320 path=plain = 29696 B/token x ctx + 598MB prefill-workspace + 310MB fixed = 948MB
+[prefix-cache] hit: 1248 of 1248 prompt tokens from cache (model gate)
+[spec-k] model="gate" tenant="cohort-1" K=0 source=eligibility-fallback prompt=1248 cached=1248 lcp=1248 active=1 wave=1 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 1248 tokens, model gate)
+[ttft] id=cmpl-a66a974203c416c442891631b607904a model="gate" path="/v1/completions" prompt_tokens=1248 outcome=ended_without_sse request_parse_ms=0.098 admission_ms=0.055 queue_wait_ms=0.192 tokenize_ms=0.003 prime_wait_ms=1.720 prime_ms=0.000 decode_wait_ms=0.000 sse_handoff_ms=na request_parse_end_ms=0.098 admission_end_ms=0.153 tokenize_start_ms=0.345 tokenize_end_ms=0.348 prime_start_ms=2.068 prime_end_ms=2.068 first_decode_ms=2.068 first_sse_byte_ms=na total_ms=2.068
+[meter] admit id=cmpl-a73886e57418f02171828959d295e79c tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=1416 path=plain = 29696 B/token x ctx + 644MB prefill-workspace + 310MB fixed = 996MB
+[spec-k] model="gate" tenant="cohort-2" K=0 source=eligibility-fallback prompt=1344 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="gate" 310MB (observed 351MB at ctx 1360 path=plain)
+[prefix-cache] insert (seed): 1344 tokens, 196.8MB (resident 390.8MB / 1074MB, model gate, ns "cohort-2")
+[fa-pool] grow #1 dev=0 o_len 122880 -> 245760 ml_len 480 -> 960 (retired kept, zero=false)
+[ttft] id=cmpl-a73886e57418f02171828959d295e79c model="gate" path="/v1/completions" prompt_tokens=1344 outcome=ended_without_sse request_parse_ms=0.064 admission_ms=0.036 queue_wait_ms=0.016 tokenize_ms=0.003 prime_wait_ms=4.814 prime_ms=973.403 decode_wait_ms=0.272 sse_handoff_ms=na request_parse_end_ms=0.064 admission_end_ms=0.100 tokenize_start_ms=0.116 tokenize_end_ms=0.119 prime_start_ms=4.933 prime_end_ms=978.336 first_decode_ms=978.608 first_sse_byte_ms=na total_ms=978.608
+[meter] admit id=cmpl-402ff4cb82623ab5b85fdd2328240914 tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=1416 path=plain = 29696 B/token x ctx + 644MB prefill-workspace + 310MB fixed = 997MB
+[prefix-cache] hit: 1344 of 1344 prompt tokens from cache (model gate)
+[spec-k] model="gate" tenant="cohort-2" K=0 source=eligibility-fallback prompt=1344 cached=1344 lcp=1344 active=1 wave=1 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 1344 tokens, model gate)
+[ttft] id=cmpl-402ff4cb82623ab5b85fdd2328240914 model="gate" path="/v1/completions" prompt_tokens=1344 outcome=ended_without_sse request_parse_ms=0.119 admission_ms=0.076 queue_wait_ms=0.036 tokenize_ms=0.003 prime_wait_ms=2.041 prime_ms=0.000 decode_wait_ms=0.000 sse_handoff_ms=na request_parse_end_ms=0.119 admission_end_ms=0.195 tokenize_start_ms=0.231 tokenize_end_ms=0.234 prime_start_ms=2.275 prime_end_ms=2.275 first_decode_ms=2.275 first_sse_byte_ms=na total_ms=2.275
+[meter] admit id=cmpl-b701284a95354a88e26ea77a91b21a58 tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=1512 path=plain = 29696 B/token x ctx + 690MB prefill-workspace + 310MB fixed = 1045MB
+[spec-k] model="gate" tenant="cohort-3" K=0 source=eligibility-fallback prompt=1440 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="gate" 311MB (observed 354MB at ctx 1456 path=plain)
+[prefix-cache] insert (seed): 1440 tokens, 199.7MB (resident 590.4MB / 1074MB, model gate, ns "cohort-3")
+[ttft] id=cmpl-b701284a95354a88e26ea77a91b21a58 model="gate" path="/v1/completions" prompt_tokens=1440 outcome=ended_without_sse request_parse_ms=0.068 admission_ms=0.051 queue_wait_ms=0.045 tokenize_ms=0.008 prime_wait_ms=5.095 prime_ms=1049.490 decode_wait_ms=0.423 sse_handoff_ms=na request_parse_end_ms=0.068 admission_end_ms=0.119 tokenize_start_ms=0.164 tokenize_end_ms=0.172 prime_start_ms=5.267 prime_end_ms=1054.757 first_decode_ms=1055.180 first_sse_byte_ms=na total_ms=1055.180
+[meter] admit id=cmpl-05558a3e464fb75e9d8a69143c607198 tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=1512 path=plain = 29696 B/token x ctx + 690MB prefill-workspace + 311MB fixed = 1046MB
+[prefix-cache] hit: 1440 of 1440 prompt tokens from cache (model gate)
+[spec-k] model="gate" tenant="cohort-3" K=0 source=eligibility-fallback prompt=1440 cached=1440 lcp=1440 active=1 wave=1 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 1440 tokens, model gate)
+[ttft] id=cmpl-05558a3e464fb75e9d8a69143c607198 model="gate" path="/v1/completions" prompt_tokens=1440 outcome=ended_without_sse request_parse_ms=0.088 admission_ms=0.068 queue_wait_ms=0.028 tokenize_ms=0.002 prime_wait_ms=8.889 prime_ms=0.000 decode_wait_ms=0.000 sse_handoff_ms=na request_parse_end_ms=0.088 admission_end_ms=0.156 tokenize_start_ms=0.184 tokenize_end_ms=0.186 prime_start_ms=9.075 prime_end_ms=9.075 first_decode_ms=9.075 first_sse_byte_ms=na total_ms=9.075
+[meter] admit id=cmpl-ec3bbf9243de37b3b0a8cab66c8d5f94 tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=1608 path=plain = 29696 B/token x ctx + 736MB prefill-workspace + 311MB fixed = 1094MB
+[spec-k] model="gate" tenant="cohort-4" K=0 source=eligibility-fallback prompt=1536 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="gate" 311MB (observed 357MB at ctx 1552 path=plain)
+[prefix-cache] insert (seed): 1536 tokens, 202.5MB (resident 792.9MB / 1074MB, model gate, ns "cohort-4")
+[ttft] id=cmpl-ec3bbf9243de37b3b0a8cab66c8d5f94 model="gate" path="/v1/completions" prompt_tokens=1536 outcome=ended_without_sse request_parse_ms=0.097 admission_ms=0.070 queue_wait_ms=0.024 tokenize_ms=0.002 prime_wait_ms=5.070 prime_ms=1069.440 decode_wait_ms=0.307 sse_handoff_ms=na request_parse_end_ms=0.097 admission_end_ms=0.167 tokenize_start_ms=0.191 tokenize_end_ms=0.193 prime_start_ms=5.263 prime_end_ms=1074.703 first_decode_ms=1075.010 first_sse_byte_ms=na total_ms=1075.010
+[meter] admit id=cmpl-258e4254d5cbfb05ebdc3202806ad4e0 tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=1608 path=plain = 29696 B/token x ctx + 736MB prefill-workspace + 311MB fixed = 1095MB
+[prefix-cache] hit: 1536 of 1536 prompt tokens from cache (model gate)
+[spec-k] model="gate" tenant="cohort-4" K=0 source=eligibility-fallback prompt=1536 cached=1536 lcp=1536 active=1 wave=1 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 1536 tokens, model gate)
+[ttft] id=cmpl-258e4254d5cbfb05ebdc3202806ad4e0 model="gate" path="/v1/completions" prompt_tokens=1536 outcome=ended_without_sse request_parse_ms=0.093 admission_ms=0.052 queue_wait_ms=0.035 tokenize_ms=0.003 prime_wait_ms=1.716 prime_ms=0.000 decode_wait_ms=0.000 sse_handoff_ms=na request_parse_end_ms=0.093 admission_end_ms=0.145 tokenize_start_ms=0.180 tokenize_end_ms=0.183 prime_start_ms=1.899 prime_end_ms=1.899 first_decode_ms=1.899 first_sse_byte_ms=na total_ms=1.899
+[meter] admit id=cmpl-604e73cb8662ff73d5a98811c2639695 tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=10984 path=plain = 29696 B/token x ctx + 2103MB prefill-workspace + 311MB fixed = 2739MB
+[spec-k] model="gate" tenant="grow" K=0 source=eligibility-fallback prompt=10912 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="gate" 328MB (observed 653MB at ctx 10928 path=plain)
+[prefix-cache] evict (snapshot preflight, GDS): 1248 tokens, 194.0MB (model gate, ns "cohort-1")
+[prefix-cache] evict (snapshot preflight, GDS): 1344 tokens, 196.8MB (model gate, ns "cohort-2")
+[prefix-cache] insert (seed): 10912 tokens, 480.9MB (resident 883.1MB / 1074MB, model gate, ns "grow")
+[fa-pool] grow #2 dev=0 o_len 245760 -> 1050624 ml_len 960 -> 4104 (retired kept, zero=false)
+[ttft] id=cmpl-604e73cb8662ff73d5a98811c2639695 model="gate" path="/v1/completions" prompt_tokens=10912 outcome=ended_without_sse request_parse_ms=0.273 admission_ms=0.036 queue_wait_ms=0.023 tokenize_ms=0.005 prime_wait_ms=4.942 prime_ms=9005.923 decode_wait_ms=0.278 sse_handoff_ms=na request_parse_end_ms=0.273 admission_end_ms=0.309 tokenize_start_ms=0.332 tokenize_end_ms=0.337 prime_start_ms=5.279 prime_end_ms=9011.202 first_decode_ms=9011.480 first_sse_byte_ms=na total_ms=9011.480
+[meter] admit id=cmpl-e5716e6815d97d3f3e56641a75750eff tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=11144 path=plain = 29696 B/token x ctx + 2106MB prefill-workspace + 328MB fixed = 2765MB
+[prefix-cache] hit: 10912 of 11072 prompt tokens from cache (model gate)
+[spec-k] model="gate" tenant="grow" K=0 source=eligibility-fallback prompt=11072 cached=10912 lcp=10912 active=1 wave=1 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 10912 tokens, model gate)
+[admission] fixed residual high-water: model="gate" 328MB (observed 658MB at ctx 11088 path=plain)
+[prefix-cache] evict (snapshot preflight, GDS): 1440 tokens, 199.7MB (model gate, ns "cohort-3")
+[prefix-cache] evict (snapshot preflight, GDS): 1536 tokens, 202.5MB (model gate, ns "cohort-4")
+[prefix-cache] insert (seed): 11072 tokens, 485.7MB (resident 966.6MB / 1074MB, model gate, ns "grow")
+[fa-pool] grow #3 dev=0 o_len 1050624 -> 2101248 ml_len 4104 -> 8208 (retired kept, zero=false)
+[ttft] id=cmpl-e5716e6815d97d3f3e56641a75750eff model="gate" path="/v1/completions" prompt_tokens=11072 outcome=ended_without_sse request_parse_ms=0.398 admission_ms=0.080 queue_wait_ms=0.030 tokenize_ms=0.005 prime_wait_ms=2.644 prime_ms=180.370 decode_wait_ms=0.268 sse_handoff_ms=na request_parse_end_ms=0.398 admission_end_ms=0.478 tokenize_start_ms=0.508 tokenize_end_ms=0.513 prime_start_ms=3.157 prime_end_ms=183.527 first_decode_ms=183.795 first_sse_byte_ms=na total_ms=183.795
+[meter] admit id=cmpl-d45023f4c381beb167221a186a3829be tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=11304 path=plain = 29696 B/token x ctx + 2109MB prefill-workspace + 328MB fixed = 2773MB
+[prefix-cache] hit: 11072 of 11232 prompt tokens from cache (model gate)
+[spec-k] model="gate" tenant="grow" K=0 source=eligibility-fallback prompt=11232 cached=11072 lcp=11072 active=1 wave=1 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 11072 tokens, model gate)
+[admission] fixed residual high-water: model="gate" 329MB (observed 663MB at ctx 11248 path=plain)
+[prefix-cache] evict (snapshot preflight, GDS): 10912 tokens, 480.9MB (model gate, ns "grow")
+[prefix-cache] insert (seed): 11232 tokens, 490.4MB (resident 976.1MB / 1074MB, model gate, ns "grow")
+[ttft] id=cmpl-d45023f4c381beb167221a186a3829be model="gate" path="/v1/completions" prompt_tokens=11232 outcome=ended_without_sse request_parse_ms=0.510 admission_ms=0.094 queue_wait_ms=0.033 tokenize_ms=0.005 prime_wait_ms=2.644 prime_ms=187.261 decode_wait_ms=0.301 sse_handoff_ms=na request_parse_end_ms=0.510 admission_end_ms=0.604 tokenize_start_ms=0.637 tokenize_end_ms=0.642 prime_start_ms=3.286 prime_end_ms=190.547 first_decode_ms=190.848 first_sse_byte_ms=na total_ms=190.848
+[meter] admit id=cmpl-e8969ddaf8fca3dd39c1d1a58b8edb29 tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=1480 path=plain = 29696 B/token x ctx + 675MB prefill-workspace + 329MB fixed = 1047MB
+[spec-k] model="gate" tenant="cohort-1" K=0 source=eligibility-fallback prompt=1408 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prefix-cache] evict (snapshot preflight, GDS): 11072 tokens, 485.7MB (model gate, ns "grow")
+[prefix-cache] insert (seed): 1408 tokens, 198.7MB (resident 689.1MB / 1074MB, model gate, ns "cohort-1")
+[ttft] id=cmpl-e8969ddaf8fca3dd39c1d1a58b8edb29 model="gate" path="/v1/completions" prompt_tokens=1408 outcome=ended_without_sse request_parse_ms=0.062 admission_ms=0.036 queue_wait_ms=0.025 tokenize_ms=0.003 prime_wait_ms=5.077 prime_ms=1053.127 decode_wait_ms=0.263 sse_handoff_ms=na request_parse_end_ms=0.062 admission_end_ms=0.098 tokenize_start_ms=0.123 tokenize_end_ms=0.126 prime_start_ms=5.203 prime_end_ms=1058.330 first_decode_ms=1058.593 first_sse_byte_ms=na total_ms=1058.593
+[meter] admit id=cmpl-b218bab292f6e2609b0a458e9c97cc45 tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=11464 path=plain = 29696 B/token x ctx + 2112MB prefill-workspace + 329MB fixed = 2782MB
+[prefix-cache] hit: 11232 of 11392 prompt tokens from cache (model gate)
+[spec-k] model="gate" tenant="grow" K=0 source=eligibility-fallback prompt=11392 cached=11232 lcp=11232 active=1 wave=1 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 11232 tokens, model gate)
+[admission] fixed residual high-water: model="gate" 329MB (observed 668MB at ctx 11408 path=plain)
+[prefix-cache] evict (snapshot preflight, GDS): 1408 tokens, 198.7MB (model gate, ns "cohort-1")
+[prefix-cache] insert (seed): 11392 tokens, 495.2MB (resident 985.6MB / 1074MB, model gate, ns "grow")
+[ttft] id=cmpl-b218bab292f6e2609b0a458e9c97cc45 model="gate" path="/v1/completions" prompt_tokens=11392 outcome=ended_without_sse request_parse_ms=0.383 admission_ms=0.052 queue_wait_ms=0.188 tokenize_ms=0.007 prime_wait_ms=2.792 prime_ms=185.086 decode_wait_ms=0.263 sse_handoff_ms=na request_parse_end_ms=0.383 admission_end_ms=0.435 tokenize_start_ms=0.623 tokenize_end_ms=0.630 prime_start_ms=3.422 prime_end_ms=188.508 first_decode_ms=188.771 first_sse_byte_ms=na total_ms=188.771
+[meter] admit id=cmpl-86c35af6151dec209ceb758f18d8a929 tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=11624 path=plain = 29696 B/token x ctx + 2116MB prefill-workspace + 329MB fixed = 2790MB
+[prefix-cache] hit: 11392 of 11552 prompt tokens from cache (model gate)
+[spec-k] model="gate" tenant="grow" K=0 source=eligibility-fallback prompt=11552 cached=11392 lcp=11392 active=1 wave=1 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 11392 tokens, model gate)
+[admission] fixed residual high-water: model="gate" 329MB (observed 673MB at ctx 11568 path=plain)
+[prefix-cache] evict (snapshot preflight, GDS): 11232 tokens, 490.4MB (model gate, ns "grow")
+[prefix-cache] insert (seed): 11552 tokens, 499.9MB (resident 995.1MB / 1074MB, model gate, ns "grow")
+[ttft] id=cmpl-86c35af6151dec209ceb758f18d8a929 model="gate" path="/v1/completions" prompt_tokens=11552 outcome=ended_without_sse request_parse_ms=0.431 admission_ms=0.066 queue_wait_ms=0.023 tokenize_ms=0.005 prime_wait_ms=2.660 prime_ms=186.295 decode_wait_ms=0.283 sse_handoff_ms=na request_parse_end_ms=0.431 admission_end_ms=0.497 tokenize_start_ms=0.520 tokenize_end_ms=0.525 prime_start_ms=3.185 prime_end_ms=189.480 first_decode_ms=189.763 first_sse_byte_ms=na total_ms=189.763
+[meter] admit id=cmpl-3f913df542bf25a8278ea599f33dfdf7 tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=11784 path=plain = 29696 B/token x ctx + 2119MB prefill-workspace + 329MB fixed = 2798MB
+[prefix-cache] hit: 11552 of 11712 prompt tokens from cache (model gate)
+[spec-k] model="gate" tenant="grow" K=0 source=eligibility-fallback prompt=11712 cached=11552 lcp=11552 active=1 wave=1 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 11552 tokens, model gate)
+[admission] fixed residual high-water: model="gate" 330MB (observed 678MB at ctx 11728 path=plain)
+[prefix-cache] evict (snapshot preflight, GDS): 11392 tokens, 495.2MB (model gate, ns "grow")
+[prefix-cache] insert (seed): 11712 tokens, 504.7MB (resident 1004.6MB / 1074MB, model gate, ns "grow")
+[ttft] id=cmpl-3f913df542bf25a8278ea599f33dfdf7 model="gate" path="/v1/completions" prompt_tokens=11712 outcome=ended_without_sse request_parse_ms=0.433 admission_ms=0.057 queue_wait_ms=0.032 tokenize_ms=0.007 prime_wait_ms=2.611 prime_ms=187.494 decode_wait_ms=0.317 sse_handoff_ms=na request_parse_end_ms=0.433 admission_end_ms=0.490 tokenize_start_ms=0.522 tokenize_end_ms=0.529 prime_start_ms=3.140 prime_end_ms=190.634 first_decode_ms=190.951 first_sse_byte_ms=na total_ms=190.951
+[meter] admit id=cmpl-d06d5e7bd7d6af1f49f7071ba3170ca2 tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=1576 path=plain = 29696 B/token x ctx + 721MB prefill-workspace + 330MB fixed = 1097MB
+[spec-k] model="gate" tenant="cohort-2" K=0 source=eligibility-fallback prompt=1504 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prefix-cache] evict (snapshot preflight, GDS): 11552 tokens, 499.9MB (model gate, ns "grow")
+[prefix-cache] insert (seed): 1504 tokens, 201.6MB (resident 706.2MB / 1074MB, model gate, ns "cohort-2")
+[ttft] id=cmpl-d06d5e7bd7d6af1f49f7071ba3170ca2 model="gate" path="/v1/completions" prompt_tokens=1504 outcome=ended_without_sse request_parse_ms=0.088 admission_ms=0.046 queue_wait_ms=0.029 tokenize_ms=0.007 prime_wait_ms=4.990 prime_ms=1129.957 decode_wait_ms=0.276 sse_handoff_ms=na request_parse_end_ms=0.088 admission_end_ms=0.134 tokenize_start_ms=0.163 tokenize_end_ms=0.170 prime_start_ms=5.160 prime_end_ms=1135.117 first_decode_ms=1135.393 first_sse_byte_ms=na total_ms=1135.393
+[meter] admit id=cmpl-acfc07e9f7357a195a292d91e57cd921 tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=11944 path=plain = 29696 B/token x ctx + 2122MB prefill-workspace + 330MB fixed = 2807MB
+[prefix-cache] hit: 11712 of 11872 prompt tokens from cache (model gate)
+[spec-k] model="gate" tenant="grow" K=0 source=eligibility-fallback prompt=11872 cached=11712 lcp=11712 active=1 wave=1 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 11712 tokens, model gate)
+[admission] fixed residual high-water: model="gate" 330MB (observed 683MB at ctx 11888 path=plain)
+[prefix-cache] evict (snapshot preflight, GDS): 1504 tokens, 201.6MB (model gate, ns "cohort-2")
+[prefix-cache] insert (seed): 11872 tokens, 509.4MB (resident 1014.1MB / 1074MB, model gate, ns "grow")
+[ttft] id=cmpl-acfc07e9f7357a195a292d91e57cd921 model="gate" path="/v1/completions" prompt_tokens=11872 outcome=ended_without_sse request_parse_ms=0.309 admission_ms=0.047 queue_wait_ms=0.029 tokenize_ms=0.008 prime_wait_ms=2.854 prime_ms=187.462 decode_wait_ms=0.280 sse_handoff_ms=na request_parse_end_ms=0.309 admission_end_ms=0.356 tokenize_start_ms=0.385 tokenize_end_ms=0.393 prime_start_ms=3.247 prime_end_ms=190.709 first_decode_ms=190.989 first_sse_byte_ms=na total_ms=190.989
+[meter] admit id=cmpl-4cb7e343018e24a5c07c9c63f363afab tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=12104 path=plain = 29696 B/token x ctx + 2125MB prefill-workspace + 330MB fixed = 2815MB
+[prefix-cache] hit: 11872 of 12032 prompt tokens from cache (model gate)
+[spec-k] model="gate" tenant="grow" K=0 source=eligibility-fallback prompt=12032 cached=11872 lcp=11872 active=1 wave=1 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 11872 tokens, model gate)
+[admission] fixed residual high-water: model="gate" 330MB (observed 688MB at ctx 12048 path=plain)
+[prefix-cache] evict (snapshot preflight, GDS): 11712 tokens, 504.7MB (model gate, ns "grow")
+[prefix-cache] insert (seed): 12032 tokens, 514.2MB (resident 1023.6MB / 1074MB, model gate, ns "grow")
+[ttft] id=cmpl-4cb7e343018e24a5c07c9c63f363afab model="gate" path="/v1/completions" prompt_tokens=12032 outcome=ended_without_sse request_parse_ms=0.226 admission_ms=0.033 queue_wait_ms=0.017 tokenize_ms=0.005 prime_wait_ms=2.877 prime_ms=194.510 decode_wait_ms=0.318 sse_handoff_ms=na request_parse_end_ms=0.226 admission_end_ms=0.259 tokenize_start_ms=0.276 tokenize_end_ms=0.281 prime_start_ms=3.158 prime_end_ms=197.668 first_decode_ms=197.986 first_sse_byte_ms=na total_ms=197.986
+[meter] admit id=cmpl-355a4082b06cc7293cdc6d4381777261 tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=12264 path=plain = 29696 B/token x ctx + 2129MB prefill-workspace + 330MB fixed = 2823MB
+[prefix-cache] hit: 12032 of 12192 prompt tokens from cache (model gate)
+[spec-k] model="gate" tenant="grow" K=0 source=eligibility-fallback prompt=12192 cached=12032 lcp=12032 active=1 wave=1 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 12032 tokens, model gate)
+[admission] fixed residual high-water: model="gate" 331MB (observed 693MB at ctx 12208 path=plain)
+[prefix-cache] evict (snapshot preflight, GDS): 11872 tokens, 509.4MB (model gate, ns "grow")
+[prefix-cache] insert (seed): 12192 tokens, 518.9MB (resident 1033.1MB / 1074MB, model gate, ns "grow")
+[ttft] id=cmpl-355a4082b06cc7293cdc6d4381777261 model="gate" path="/v1/completions" prompt_tokens=12192 outcome=ended_without_sse request_parse_ms=0.475 admission_ms=0.073 queue_wait_ms=0.136 tokenize_ms=0.006 prime_wait_ms=2.584 prime_ms=186.221 decode_wait_ms=0.336 sse_handoff_ms=na request_parse_end_ms=0.475 admission_end_ms=0.548 tokenize_start_ms=0.684 tokenize_end_ms=0.690 prime_start_ms=3.274 prime_end_ms=189.495 first_decode_ms=189.831 first_sse_byte_ms=na total_ms=189.831
+[meter] admit id=cmpl-8962fb909dea835822c83bb7362a02e9 tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=1672 path=plain = 29696 B/token x ctx + 767MB prefill-workspace + 331MB fixed = 1147MB
+[spec-k] model="gate" tenant="cohort-3" K=0 source=eligibility-fallback prompt=1600 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prefix-cache] evict (snapshot preflight, GDS): 12032 tokens, 514.2MB (model gate, ns "grow")
+[prefix-cache] insert (seed): 1600 tokens, 204.4MB (resident 723.4MB / 1074MB, model gate, ns "cohort-3")
+[ttft] id=cmpl-8962fb909dea835822c83bb7362a02e9 model="gate" path="/v1/completions" prompt_tokens=1600 outcome=ended_without_sse request_parse_ms=0.048 admission_ms=0.027 queue_wait_ms=0.017 tokenize_ms=0.001 prime_wait_ms=4.868 prime_ms=1225.656 decode_wait_ms=0.299 sse_handoff_ms=na request_parse_end_ms=0.048 admission_end_ms=0.075 tokenize_start_ms=0.092 tokenize_end_ms=0.093 prime_start_ms=4.961 prime_end_ms=1230.617 first_decode_ms=1230.916 first_sse_byte_ms=na total_ms=1230.916
+[meter] admit id=cmpl-8119636dec143569e4364b983b16bf67 tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=12424 path=plain = 29696 B/token x ctx + 2132MB prefill-workspace + 331MB fixed = 2832MB
+[prefix-cache] hit: 12192 of 12352 prompt tokens from cache (model gate)
+[spec-k] model="gate" tenant="grow" K=0 source=eligibility-fallback prompt=12352 cached=12192 lcp=12192 active=1 wave=1 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 12192 tokens, model gate)
+[admission] fixed residual high-water: model="gate" 331MB (observed 698MB at ctx 12368 path=plain)
+[prefix-cache] evict (snapshot preflight, GDS): 1600 tokens, 204.4MB (model gate, ns "cohort-3")
+[prefix-cache] insert (seed): 12352 tokens, 523.7MB (resident 1042.6MB / 1074MB, model gate, ns "grow")
+[ttft] id=cmpl-8119636dec143569e4364b983b16bf67 model="gate" path="/v1/completions" prompt_tokens=12352 outcome=ended_without_sse request_parse_ms=0.407 admission_ms=0.041 queue_wait_ms=0.020 tokenize_ms=0.006 prime_wait_ms=2.906 prime_ms=188.539 decode_wait_ms=0.294 sse_handoff_ms=na request_parse_end_ms=0.407 admission_end_ms=0.448 tokenize_start_ms=0.468 tokenize_end_ms=0.474 prime_start_ms=3.380 prime_end_ms=191.919 first_decode_ms=192.213 first_sse_byte_ms=na total_ms=192.213
+[meter] admit id=cmpl-ab06d90cc4f97d11ba094db06c465f05 tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=12584 path=plain = 29696 B/token x ctx + 2135MB prefill-workspace + 331MB fixed = 2840MB
+[prefix-cache] hit: 12352 of 12512 prompt tokens from cache (model gate)
+[spec-k] model="gate" tenant="grow" K=0 source=eligibility-fallback prompt=12512 cached=12352 lcp=12352 active=1 wave=1 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 12352 tokens, model gate)
+[admission] fixed residual high-water: model="gate" 331MB (observed 703MB at ctx 12528 path=plain)
+[prefix-cache] evict (snapshot preflight, GDS): 12192 tokens, 518.9MB (model gate, ns "grow")
+[prefix-cache] insert (seed): 12512 tokens, 528.4MB (resident 1052.1MB / 1074MB, model gate, ns "grow")
+[ttft] id=cmpl-ab06d90cc4f97d11ba094db06c465f05 model="gate" path="/v1/completions" prompt_tokens=12512 outcome=ended_without_sse request_parse_ms=0.459 admission_ms=0.058 queue_wait_ms=0.026 tokenize_ms=0.005 prime_wait_ms=2.996 prime_ms=182.881 decode_wait_ms=0.277 sse_handoff_ms=na request_parse_end_ms=0.459 admission_end_ms=0.517 tokenize_start_ms=0.543 tokenize_end_ms=0.548 prime_start_ms=3.544 prime_end_ms=186.425 first_decode_ms=186.702 first_sse_byte_ms=na total_ms=186.702
+[meter] admit id=cmpl-acd61d598481bc633501007d08ca0b0b tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=12744 path=plain = 29696 B/token x ctx + 2139MB prefill-workspace + 331MB fixed = 2848MB
+[prefix-cache] hit: 12512 of 12672 prompt tokens from cache (model gate)
+[spec-k] model="gate" tenant="grow" K=0 source=eligibility-fallback prompt=12672 cached=12512 lcp=12512 active=1 wave=1 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 12512 tokens, model gate)
+[admission] fixed residual high-water: model="gate" 331MB (observed 708MB at ctx 12688 path=plain)
+[prefix-cache] evict (snapshot preflight, GDS): 12352 tokens, 523.7MB (model gate, ns "grow")
+[prefix-cache] insert (seed): 12672 tokens, 533.2MB (resident 1061.7MB / 1074MB, model gate, ns "grow")
+[ttft] id=cmpl-acd61d598481bc633501007d08ca0b0b model="gate" path="/v1/completions" prompt_tokens=12672 outcome=ended_without_sse request_parse_ms=0.441 admission_ms=0.058 queue_wait_ms=0.028 tokenize_ms=0.008 prime_wait_ms=2.948 prime_ms=192.069 decode_wait_ms=0.352 sse_handoff_ms=na request_parse_end_ms=0.441 admission_end_ms=0.499 tokenize_start_ms=0.527 tokenize_end_ms=0.535 prime_start_ms=3.483 prime_end_ms=195.552 first_decode_ms=195.904 first_sse_byte_ms=na total_ms=195.904
+[meter] admit id=cmpl-0c6b58a2a2c51de9ac2bb10d88a5daf1 tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=1768 path=plain = 29696 B/token x ctx + 813MB prefill-workspace + 331MB fixed = 1197MB
+[spec-k] model="gate" tenant="cohort-4" K=0 source=eligibility-fallback prompt=1696 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prefix-cache] evict (snapshot preflight, GDS): 12512 tokens, 528.4MB (model gate, ns "grow")
+[prefix-cache] insert (seed): 1696 tokens, 207.3MB (resident 740.5MB / 1074MB, model gate, ns "cohort-4")
+[ttft] id=cmpl-0c6b58a2a2c51de9ac2bb10d88a5daf1 model="gate" path="/v1/completions" prompt_tokens=1696 outcome=ended_without_sse request_parse_ms=0.069 admission_ms=0.040 queue_wait_ms=0.034 tokenize_ms=0.002 prime_wait_ms=5.829 prime_ms=1323.156 decode_wait_ms=0.294 sse_handoff_ms=na request_parse_end_ms=0.069 admission_end_ms=0.109 tokenize_start_ms=0.143 tokenize_end_ms=0.145 prime_start_ms=5.974 prime_end_ms=1329.130 first_decode_ms=1329.424 first_sse_byte_ms=na total_ms=1329.424
+[meter] admit id=cmpl-62a70e6f94fa60e6fbf3d0d194b10f23 tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=1640 path=plain = 29696 B/token x ctx + 751MB prefill-workspace + 331MB fixed = 1132MB
+[spec-k] model="gate" tenant="cohort-1" K=0 source=eligibility-fallback prompt=1568 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 1568 tokens, 203.5MB (resident 943.9MB / 1074MB, model gate, ns "cohort-1")
+[ttft] id=cmpl-62a70e6f94fa60e6fbf3d0d194b10f23 model="gate" path="/v1/completions" prompt_tokens=1568 outcome=ended_without_sse request_parse_ms=0.107 admission_ms=0.063 queue_wait_ms=0.032 tokenize_ms=0.002 prime_wait_ms=5.220 prime_ms=1257.522 decode_wait_ms=0.287 sse_handoff_ms=na request_parse_end_ms=0.107 admission_end_ms=0.170 tokenize_start_ms=0.202 tokenize_end_ms=0.204 prime_start_ms=5.424 prime_end_ms=1262.946 first_decode_ms=1263.233 first_sse_byte_ms=na total_ms=1263.233
+[meter] admit id=cmpl-9e6c6612c6da83230df48dea72458319 tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=1736 path=plain = 29696 B/token x ctx + 797MB prefill-workspace + 331MB fixed = 1180MB
+[spec-k] model="gate" tenant="cohort-2" K=0 source=eligibility-fallback prompt=1664 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prefix-cache] evict (snapshot preflight, GDS): 1568 tokens, 203.5MB (model gate, ns "cohort-1")
+[prefix-cache] insert (seed): 1664 tokens, 206.3MB (resident 946.8MB / 1074MB, model gate, ns "cohort-2")
+[ttft] id=cmpl-9e6c6612c6da83230df48dea72458319 model="gate" path="/v1/completions" prompt_tokens=1664 outcome=ended_without_sse request_parse_ms=0.098 admission_ms=0.058 queue_wait_ms=0.031 tokenize_ms=0.002 prime_wait_ms=5.161 prime_ms=1259.767 decode_wait_ms=0.286 sse_handoff_ms=na request_parse_end_ms=0.098 admission_end_ms=0.156 tokenize_start_ms=0.187 tokenize_end_ms=0.189 prime_start_ms=5.350 prime_end_ms=1265.117 first_decode_ms=1265.403 first_sse_byte_ms=na total_ms=1265.403
+[meter] admit id=cmpl-aee8e1d6a046e9ac04f16662364de314 tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=1832 path=plain = 29696 B/token x ctx + 843MB prefill-workspace + 331MB fixed = 1229MB
+[spec-k] model="gate" tenant="cohort-3" K=0 source=eligibility-fallback prompt=1760 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prefix-cache] evict (snapshot preflight, GDS): 12672 tokens, 533.2MB (model gate, ns "grow")
+[prefix-cache] insert (seed): 1760 tokens, 209.2MB (resident 622.7MB / 1074MB, model gate, ns "cohort-3")
+[ttft] id=cmpl-aee8e1d6a046e9ac04f16662364de314 model="gate" path="/v1/completions" prompt_tokens=1760 outcome=ended_without_sse request_parse_ms=0.108 admission_ms=0.055 queue_wait_ms=0.025 tokenize_ms=0.002 prime_wait_ms=4.923 prime_ms=1375.648 decode_wait_ms=0.291 sse_handoff_ms=na request_parse_end_ms=0.108 admission_end_ms=0.163 tokenize_start_ms=0.188 tokenize_end_ms=0.190 prime_start_ms=5.113 prime_end_ms=1380.761 first_decode_ms=1381.052 first_sse_byte_ms=na total_ms=1381.052
+[meter] admit id=cmpl-1be291b66654f01d97272477ec9cc2e8 tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=1928 path=plain = 29696 B/token x ctx + 889MB prefill-workspace + 331MB fixed = 1278MB
+[prefix-cache] hit: 1696 of 1856 prompt tokens from cache (model gate)
+[spec-k] model="gate" tenant="cohort-4" K=0 source=eligibility-fallback prompt=1856 cached=1696 lcp=1696 active=1 wave=1 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 1696 tokens, model gate)
+[prefix-cache] insert (seed): 1856 tokens, 212.0MB (resident 834.7MB / 1074MB, model gate, ns "cohort-4")
+[ttft] id=cmpl-1be291b66654f01d97272477ec9cc2e8 model="gate" path="/v1/completions" prompt_tokens=1856 outcome=ended_without_sse request_parse_ms=0.072 admission_ms=0.035 queue_wait_ms=0.020 tokenize_ms=0.002 prime_wait_ms=1.587 prime_ms=169.386 decode_wait_ms=0.284 sse_handoff_ms=na request_parse_end_ms=0.072 admission_end_ms=0.107 tokenize_start_ms=0.127 tokenize_end_ms=0.129 prime_start_ms=1.716 prime_end_ms=171.102 first_decode_ms=171.386 first_sse_byte_ms=na total_ms=171.386
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting
+[server] GPU worker shutdown complete

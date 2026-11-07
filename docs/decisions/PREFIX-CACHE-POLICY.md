@@ -1,5 +1,10 @@
 # Prefix-cache eviction policy: plain LRU, the segmented arm deleted (2026-09-21)
 
+> **Superseded on discrete cards (2026-11-07):** a discrete card now evicts by GreedyDual-Size value per byte
+> ([PREFIX-CACHE-DISCRETE.md](PREFIX-CACHE-DISCRETE.md)); among entries of one density that is this record's plain
+> LRU, and on this record's own incident replay it took the same victims and computed the same tokens. Plain LRU stays
+> the unified-memory (GB10) order and the `MEMRA_PREFIX_EVICT=lru` rollback. The numbers below are unchanged.
+
 **Status:** decided on the target card (one RTX PRO 6000 Blackwell, 600 W); landed as the naked
 default with the `MEMRA_PREFIX_CACHE_POLICY` and `MEMRA_PREFIX_CACHE_PROTECTED_PCT` doors removed
 (memra#523 item 2, lane `research/spill-b-20260919/DAY15.md`). The local RTX 5090 run of the same

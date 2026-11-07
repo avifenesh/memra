@@ -8,8 +8,9 @@ entry. A growing long-context conversation then ran cold on every turn (`cached_
 re-prefill, the incident's 90-130 s ticks and 408s) while other tenants' entries sat protected,
 and the only trace was one once-announced `snapshot skipped` line. `cached_tokens` decides the
 customer's bill and whether the cache engaged at all, so the gate reads it from the response.
-Since memra#523 item 2 (`docs/decisions/PREFIX-CACHE-POLICY.md`) the only policy is plain LRU:
-the gate's subject is the DEFAULT policy, whatever it is, and the boot line must report it.
+Since memra#523 item 2 (`docs/decisions/PREFIX-CACHE-POLICY.md`) the gate's subject is the
+DEFAULT victim order, whatever it is (plain LRU from 2026-09-21, GreedyDual-Size value per byte
+from 2026-11-07), and the boot line must report it.
 
 Serving shape, one card, two boots of the real `memra-server` per cell, plain path
 (`MEMRA_SERVE_SPEC=0`), a SMALL explicit prefix budget, default policy. The CALIBRATION boot
@@ -141,10 +142,11 @@ RE_ON = re.compile(r"\[prefix-cache\] on: budget \d+MB \((\d+) B,.*policy ([^,]+
 # `insert (seed)` since memra#523 item 2; `insert probation (seed)` on the segmented binaries.
 RE_INSERT = re.compile(r"\[prefix-cache\] insert (?:probation )?\(([^)]+)\): (\d+) tokens, ([\d.]+)MB")
 RE_HIT = re.compile(r"\[prefix-cache\] hit: (\d+) of (\d+) prompt tokens from cache")
-# `evict (LRU)`, `evict (snapshot preflight, LRU)`; segmented binaries: `evict (Protected LRU)`,
+# `evict (GDS)` / `evict (snapshot preflight, GDS)` since 2026-11-07 (`evict (LRU)` under
+# MEMRA_PREFIX_EVICT=lru); segmented binaries: `evict (Protected LRU)`,
 # `evict (snapshot preflight, Probation LRU)`; the pre-fix main: `evict (snapshot preflight)`.
 RE_EVICT = re.compile(
-    r"\[prefix-cache\] evict \((?:snapshot preflight(?:, )?)?(Probation|Protected)? ?(?:LRU)?\): (\d+) tokens, ([\d.]+)MB"
+    r"\[prefix-cache\] evict \((?:snapshot preflight(?:, )?)?(Probation|Protected)? ?(?:LRU|GDS)?\): (\d+) tokens, ([\d.]+)MB"
 )
 RE_NS = re.compile(r'ns "([^"]+)"')
 RE_REFUSED = re.compile(r"\[prefix-cache\] insert refused: (.*)$")
@@ -228,6 +230,8 @@ class Server:
         # used to select one (removed 2026-09-21; a binary that still reads them must not see them).
         env.pop("MEMRA_PREFIX_CACHE_POLICY", None)
         env.pop("MEMRA_PREFIX_CACHE_PROTECTED_PCT", None)
+        # Nor the victim-order seam (2026-11-07): the device decides the default order.
+        env.pop("MEMRA_PREFIX_EVICT", None)
         self.log.parent.mkdir(parents=True, exist_ok=True)
         self.card_at_boot = card_listing()
         with self.log.open("wb") as log:
@@ -685,8 +689,8 @@ def main() -> None:
         budget = int(on.group(1))
         policy = on.group(2).strip()
         rec["boot"] = {"budget_bytes": budget, "policy": policy, "line": next(ln.strip() for ln in boot_lines if RE_ON.search(ln)), "card_at_boot": srv.card_at_boot}
-        if "PLAIN-LRU" not in policy.upper():
-            refuse(f"the boot did not report the plain-LRU default (policy {policy!r}); the gate's subject is the default policy")
+        if not any(word in policy.upper() for word in ("GDS VALUE-PER-BYTE", "PLAIN-LRU")):
+            refuse(f"the boot did not report a known victim order (policy {policy!r}); the gate's subject is the default policy")
         if budget != args.budget_mib * MIB:
             refuse(f"budget {budget} B differs from the requested {args.budget_mib} MiB")
         cohort_cap = budget * 80 // 100  # the incident's cohort share of the budget
