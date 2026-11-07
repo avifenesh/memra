@@ -431,8 +431,16 @@ model's budget of 1 (`tools/argmax-margin-gate.sh`, `tools/test_argmax_margin_ga
   Under a 24-GEMM layer sequence the overlap saves 0.9% at 4,096 rows (inside the serial runs'
   spread) and 0.8% at 8,192. The likely cause: the tile's one CTA per SM holds the whole register
   file (512 threads x 128 registers, block limit 1, `gemm-v2-probe/ncu/c5g4.txt`), so an image block
-  only gets an SM that a GEMM block has freed; no trace of the overlap was taken. The tile sits at 84-88% of the 132 TFLOPS epilogue
-  ceiling on the large shapes.
+  only gets an SM that a GEMM block has freed; no trace of the overlap was taken. (The 132 TFLOPS
+  epilogue ceiling quoted here was pessimistic; ledger row 33 re-measured it at 821 MAC/clk/SM.)
+- A TMA-fed, warp-specialized tile: measured, not taken to the engine (ledger rows 33-37,
+  `GEMM-V3-DESIGN.md`, `gemm-v3-probe-unit2/`). The exact epilogue's register-operand ceiling is
+  821 MAC/clk/SM (880 with the scale products hoisted); the shipped tile runs 508-549 and its loop
+  over resident smem without loads or barriers 567-664. TMA operands with full/empty mbarriers and
+  one elected issuer, bit-identical, gain +7.6% on gate+up, +1.9% on down, +7.8% on wqkv, +5.4% on
+  ssm_out (about 3.1 s of 60.3 s at 131k), under the 10% bar. 16 warps x 128 registers is the whole
+  register file, so a producer warpgroup leaves the consumers 120 and they spill (-56%); fewer
+  warps with more registers lose (-7..-18%).
 - Wide prime calls only while the prime is alone: measured, rejected (ledger rows 30-31,
   `prime-wide-fairness-unit2/`, `prime-wide-served-unit2/`). Two adjacent 4,096-row ranges run as
   one 8,192-row call while no other request is active, queued or being admitted. Alone, it is worth

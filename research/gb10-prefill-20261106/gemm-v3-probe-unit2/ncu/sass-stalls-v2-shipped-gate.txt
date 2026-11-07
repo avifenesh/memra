@@ -1,0 +1,35 @@
+samples 657676; instructions executed 2.291e+09
+opcode      samples%  not-issued%     executed exec share
+QMMA            44.0         19.7    1.783e+08       7.8%
+FFMA            11.6          4.5     7.13e+08      31.1%
+BRA              9.5          6.2    1.831e+07       0.8%
+FMUL             7.3          1.8    7.175e+08      31.3%
+LDS              4.0          2.6    7.868e+07       3.4%
+LDGSTS           3.3          2.5     1.88e+07       0.8%
+STG              2.6          2.4    4.456e+06       0.2%
+NOP              2.5          1.5    2.785e+07       1.2%
+LDSM             2.3          1.2    6.685e+07       2.9%
+SHF              2.1          1.3    2.618e+07       1.1%
+S2R              1.7          1.0    1.346e+07       0.6%
+LDGDEPBAR        1.6          1.1     5.71e+06       0.2%
+IADD             1.2          0.3    1.671e+07       0.7%
+IADD3            1.0          0.2    7.262e+07       3.2%
+LDL              0.7          0.4    2.176e+06       0.1%
+LDC              0.7          0.5    6.615e+06       0.3%
+top instructions by samples:
+    9.3%  0x325b67ce0  BRA.U UP0, 0x325b68060
+    5.2%  0x325b68f20  QMMA.SF.16832.F32.E4M3.E4M3.E8 R44, R4, R30, RZ, R119, R119, URZ
+    4.5%  0x325b692b0  QMMA.SF.16832.F32.E4M3.E4M3.E8 R20, R24, R52, RZ, R119, R119, URZ
+    4.4%  0x325b68840  QMMA.SF.16832.F32.E4M3.E4M3.E8 R52, R36, R48, RZ, R98, R98, URZ
+    4.2%  0x325b68da0  QMMA.SF.16832.F32.E4M3.E4M3.E8 R40, R24, R28, RZ, R69, R69, URZ
+    3.9%  0x325b68e00  QMMA.SF.16832.F32.E4M3.E4M3.E8 R44, R4, R28, RZ, R69, R69, URZ
+    3.8%  0x325b685a0  QMMA.SF.16832.F32.E4M3.E4M3.E8 R40, R36, R28, RZ, R98, R98, URZ
+    2.8%  0x325b685c0  QMMA.SF.16832.F32.E4M3.E4M3.E8 R48, R32, R28, RZ, R98, R98, URZ
+    2.4%  0x325b69420  QMMA.SF.16832.F32.E4M3.E4M3.E8 R24, R4, R70, RZ, R119, R119, URZ
+    2.2%  0x325b68330  QMMA.SF.16832.F32.E4M3.E4M3.E8 R24, R36, R52, RZ, R98, R98, URZ
+    1.5%  0x325b68350  QMMA.SF.16832.F32.E4M3.E4M3.E8 R28, R32, R52, RZ, R98, R98, URZ
+    1.5%  0x325b67e30  LDGSTS.E.BYPASS.128 desc[UR10][R24.64], [R23]
+    1.5%  0x325b680d0  LDGDEPBAR
+    1.4%  0x325b69300  QMMA.SF.16832.F32.E4M3.E4M3.E8 R52, R4, R54, RZ, R119, R119, URZ
+    1.3%  0x325b692d0  QMMA.SF.16832.F32.E4M3.E4M3.E8 R32, R24, R68, RZ, R119, R119, URZ
+    1.3%  0x325b67c90  S2R R30, SR_TID.X

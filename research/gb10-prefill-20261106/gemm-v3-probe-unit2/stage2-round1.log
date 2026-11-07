@@ -1,0 +1,201 @@
+2190 MHz, 49
+f8f4v3ILi256ELi128ELi8ELi2ELi64ELi3ELi2EEv6V3MapsPfiiiifi'
+    88 bytes stack frame, 136 bytes spill stores, 136 bytes spill loads
+ptxas info    : Used 96 registers, used 1 barriers, 88 bytes cumulative stack size
+f8f4v3ILi256ELi128ELi8ELi2ELi64ELi3ELi1EEv6V3MapsPfiiiifi'
+    32 bytes stack frame, 20 bytes spill stores, 20 bytes spill loads
+ptxas info    : Used 128 registers, used 1 barriers, 32 bytes cumulative stack size
+f8f4v3ILi256ELi128ELi8ELi2ELi64ELi3ELi0EEv6V3MapsPfiiiifi'
+    16 bytes stack frame, 8 bytes spill stores, 8 bytes spill loads
+ptxas info    : Used 128 registers, used 1 barriers, 16 bytes cumulative stack size
+f8f4v2ILi256ELi128ELi8ELi2ELi64ELi3ELi1ELi0EEvPKhPKfS1_S3_PfiiiiiifiPhfS3_'
+    8 bytes stack frame, 8 bytes spill stores, 16 bytes spill loads
+ptxas info    : Used 128 registers, used 1 barriers, 8 bytes cumulative stack size
+f8f4v2ILi256ELi128ELi8ELi2ELi64ELi3ELi1ELi1EEvPKhPKfS1_S3_PfiiiiiifiPhfS3_'
+    16 bytes stack frame, 12 bytes spill stores, 16 bytes spill loads
+ptxas info    : Used 128 registers, used 1 barriers, 16 bytes cumulative stack size
+f8f4v2ILi256ELi128ELi8ELi2ELi64ELi3ELi1ELi2EEvPKhPKfS1_S3_PfiiiiiifiPhfS3_'
+    8 bytes stack frame, 8 bytes spill stores, 16 bytes spill loads
+ptxas info    : Used 128 registers, used 1 barriers, 8 bytes cumulative stack size
+23:30:43 variant 0, T 4096, all shapes
+T=4096 reps=11 (median)
+gate+up 34816x5120   v2 shipped 256x128 k64 s3            12.965 ms   56.3 TMAC/s  533.3 MAC/clk/SM@2200  bitdiff=0 REF
+gate+up 34816x5120   v3 tma issue-top s3                  12.660 ms   57.7 TMAC/s  546.2 MAC/clk/SM@2200  bitdiff=0 OK
+gate+up 34816x5120   v2 shipped (again)                   13.110 ms   55.7 TMAC/s  527.4 MAC/clk/SM@2200  bitdiff=0 OK
+down 5120x17408      v2 shipped 256x128 k64 s3             6.591 ms   55.4 TMAC/s  524.5 MAC/clk/SM@2200  bitdiff=0 REF
+down 5120x17408      v3 tma issue-top s3                   6.446 ms   56.6 TMAC/s  536.3 MAC/clk/SM@2200  bitdiff=0 OK
+down 5120x17408      v2 shipped (again)                    6.300 ms   57.9 TMAC/s  548.8 MAC/clk/SM@2200  bitdiff=0 OK
+wqkv 10240x5120      v2 shipped 256x128 k64 s3             3.932 ms   54.6 TMAC/s  517.2 MAC/clk/SM@2200  bitdiff=0 REF
+wqkv 10240x5120      v3 tma issue-top s3                   3.833 ms   56.0 TMAC/s  530.5 MAC/clk/SM@2200  bitdiff=0 OK
+wqkv 10240x5120      v2 shipped (again)                    3.934 ms   54.6 TMAC/s  516.9 MAC/clk/SM@2200  bitdiff=0 OK
+ssm_out 5120x6144    v2 shipped 256x128 k64 s3             2.372 ms   54.3 TMAC/s  514.4 MAC/clk/SM@2200  bitdiff=0 REF
+ssm_out 5120x6144    v3 tma issue-top s3                   2.348 ms   54.9 TMAC/s  519.6 MAC/clk/SM@2200  bitdiff=0 OK
+ssm_out 5120x6144    v2 shipped (again)                    2.363 ms   54.5 TMAC/s  516.5 MAC/clk/SM@2200  bitdiff=0 OK
+wk 1024x5120         v2 shipped 256x128 k64 s3             0.455 ms   47.2 TMAC/s  447.0 MAC/clk/SM@2200  bitdiff=0 REF
+wk 1024x5120         v3 tma issue-top s3                   0.441 ms   48.6 TMAC/s  460.6 MAC/clk/SM@2200  bitdiff=0 OK
+wk 1024x5120         v2 shipped (again)                    0.454 ms   47.3 TMAC/s  448.0 MAC/clk/SM@2200  bitdiff=0 OK
+cuda: no error, clock attribute 2418 MHz
+23:30:45 variant 0 rc=0
+23:30:45 variant 1, T 4096, all shapes
+T=4096 reps=11 (median)
+gate+up 34816x5120   v2 shipped 256x128 k64 s3            13.142 ms   55.6 TMAC/s  526.1 MAC/clk/SM@2200  bitdiff=0 REF
+cuTensorMapEncodeTiled failed 719
+cuTensorMapEncodeTiled failed 719
+cuTensorMapEncodeTiled failed 719
+cuTensorMapEncodeTiled failed 719
+cuTensorMapEncodeTiled failed 719
+cuTensorMapEncodeTiled failed 719
+cuTensorMapEncodeTiled failed 719
+cuTensorMapEncodeTiled failed 719
+cuTensorMapEncodeTiled failed 719
+cuTensorMapEncodeTiled failed 719
+cuTensorMapEncodeTiled failed 719
+gate+up 34816x5120   v3 tma issue-end s3                -20243486536105984.000 ms   -0.0 TMAC/s   -0.0 MAC/clk/SM@2200  bitdiff=142606336 FAILunspecified launch failure
+gate+up 34816x5120   v2 shipped (again)                 -33089561919750144.000 ms   -0.0 TMAC/s   -0.0 MAC/clk/SM@2200  bitdiff=142606336 FAILunspecified launch failure
+down 5120x17408      v2 shipped 256x128 k64 s3          -33089561919750144.000 ms   -0.0 TMAC/s   -0.0 MAC/clk/SM@2200  bitdiff=0 REFunspecified launch failure
+cuTensorMapEncodeTiled failed 719
+cuTensorMapEncodeTiled failed 719
+cuTensorMapEncodeTiled failed 719
+cuTensorMapEncodeTiled failed 719
+cuTensorMapEncodeTiled failed 719
+cuTensorMapEncodeTiled failed 719
+cuTensorMapEncodeTiled failed 719
+cuTensorMapEncodeTiled failed 719
+cuTensorMapEncodeTiled failed 719
+cuTensorMapEncodeTiled failed 719
+cuTensorMapEncodeTiled failed 719
+cuTensorMapEncodeTiled failed 719
+down 5120x17408      v3 tma issue-end s3                -20243486536105984.000 ms   -0.0 TMAC/s   -0.0 MAC/clk/SM@2200  bitdiff=0 OKunspecified launch failure
+down 5120x17408      v2 shipped (again)                 -33089561919750144.000 ms   -0.0 TMAC/s   -0.0 MAC/clk/SM@2200  bitdiff=0 OKunspecified launch failure
+wqkv 10240x5120      v2 shipped 256x128 k64 s3          -33089561919750144.000 ms   -0.0 TMAC/s   -0.0 MAC/clk/SM@2200  bitdiff=0 REFunspecified launch failure
+cuTensorMapEncodeTiled failed 719
+cuTensorMapEncodeTiled failed 719
+cuTensorMapEncodeTiled failed 719
+cuTensorMapEncodeTiled failed 719
+cuTensorMapEncodeTiled failed 719
+cuTensorMapEncodeTiled failed 719
+cuTensorMapEncodeTiled failed 719
+cuTensorMapEncodeTiled failed 719
+cuTensorMapEncodeTiled failed 719
+cuTensorMapEncodeTiled failed 719
+cuTensorMapEncodeTiled failed 719
+cuTensorMapEncodeTiled failed 719
+wqkv 10240x5120      v3 tma issue-end s3                -20243486536105984.000 ms   -0.0 TMAC/s   -0.0 MAC/clk/SM@2200  bitdiff=0 OKunspecified launch failure
+wqkv 10240x5120      v2 shipped (again)                 -33089561919750144.000 ms   -0.0 TMAC/s   -0.0 MAC/clk/SM@2200  bitdiff=0 OKunspecified launch failure
+ssm_out 5120x6144    v2 shipped 256x128 k64 s3          -33089561919750144.000 ms   -0.0 TMAC/s   -0.0 MAC/clk/SM@2200  bitdiff=0 REFunspecified launch failure
+cuTensorMapEncodeTiled failed 719
+cuTensorMapEncodeTiled failed 719
+cuTensorMapEncodeTiled failed 719
+cuTensorMapEncodeTiled failed 719
+cuTensorMapEncodeTiled failed 719
+cuTensorMapEncodeTiled failed 719
+cuTensorMapEncodeTiled failed 719
+cuTensorMapEncodeTiled failed 719
+cuTensorMapEncodeTiled failed 719
+cuTensorMapEncodeTiled failed 719
+cuTensorMapEncodeTiled failed 719
+cuTensorMapEncodeTiled failed 719
+ssm_out 5120x6144    v3 tma issue-end s3                -20243486536105984.000 ms   -0.0 TMAC/s   -0.0 MAC/clk/SM@2200  bitdiff=0 OKunspecified launch failure
+ssm_out 5120x6144    v2 shipped (again)                 -33089561919750144.000 ms   -0.0 TMAC/s   -0.0 MAC/clk/SM@2200  bitdiff=0 OKunspecified launch failure
+wk 1024x5120         v2 shipped 256x128 k64 s3          -33089561919750144.000 ms   -0.0 TMAC/s   -0.0 MAC/clk/SM@2200  bitdiff=0 REFunspecified launch failure
+cuTensorMapEncodeTiled failed 719
+cuTensorMapEncodeTiled failed 719
+cuTensorMapEncodeTiled failed 719
+cuTensorMapEncodeTiled failed 719
+cuTensorMapEncodeTiled failed 719
+cuTensorMapEncodeTiled failed 719
+cuTensorMapEncodeTiled failed 719
+cuTensorMapEncodeTiled failed 719
+cuTensorMapEncodeTiled failed 719
+cuTensorMapEncodeTiled failed 719
+cuTensorMapEncodeTiled failed 719
+cuTensorMapEncodeTiled failed 719
+wk 1024x5120         v3 tma issue-end s3                -20243486536105984.000 ms   -0.0 TMAC/s   -0.0 MAC/clk/SM@2200  bitdiff=0 OKunspecified launch failure
+wk 1024x5120         v2 shipped (again)                 -33089561919750144.000 ms   -0.0 TMAC/s   -0.0 MAC/clk/SM@2200  bitdiff=0 OKunspecified launch failure
+cuda: unspecified launch failure, clock attribute 2418 MHz
+23:30:52 variant 1 rc=0
+23:30:52 variant 2, T 4096, all shapes
+T=4096 reps=11 (median)
+gate+up 34816x5120   v2 shipped 256x128 k64 s3            13.117 ms   55.7 TMAC/s  527.1 MAC/clk/SM@2200  bitdiff=0 REF
+gate+up 34816x5120   v3 tma producer-wg s3                30.186 ms   24.2 TMAC/s  229.1 MAC/clk/SM@2200  bitdiff=0 OK
+gate+up 34816x5120   v2 shipped (again)                   13.320 ms   54.8 TMAC/s  519.1 MAC/clk/SM@2200  bitdiff=0 OK
+down 5120x17408      v2 shipped 256x128 k64 s3             6.315 ms   57.8 TMAC/s  547.5 MAC/clk/SM@2200  bitdiff=0 REF
+down 5120x17408      v3 tma producer-wg s3                14.978 ms   24.4 TMAC/s  230.8 MAC/clk/SM@2200  bitdiff=0 OK
+down 5120x17408      v2 shipped (again)                    6.605 ms   55.3 TMAC/s  523.4 MAC/clk/SM@2200  bitdiff=0 OK
+wqkv 10240x5120      v2 shipped 256x128 k64 s3             3.900 ms   55.1 TMAC/s  521.5 MAC/clk/SM@2200  bitdiff=0 REF
+wqkv 10240x5120      v3 tma producer-wg s3                 8.898 ms   24.1 TMAC/s  228.5 MAC/clk/SM@2200  bitdiff=0 OK
+wqkv 10240x5120      v2 shipped (again)                    3.954 ms   54.3 TMAC/s  514.3 MAC/clk/SM@2200  bitdiff=0 OK
+ssm_out 5120x6144    v2 shipped 256x128 k64 s3             2.379 ms   54.2 TMAC/s  512.9 MAC/clk/SM@2200  bitdiff=0 REF
+ssm_out 5120x6144    v3 tma producer-wg s3                 5.374 ms   24.0 TMAC/s  227.0 MAC/clk/SM@2200  bitdiff=0 OK
+ssm_out 5120x6144    v2 shipped (again)                    2.383 ms   54.1 TMAC/s  512.1 MAC/clk/SM@2200  bitdiff=0 OK
+wk 1024x5120         v2 shipped 256x128 k64 s3             0.465 ms   46.2 TMAC/s  437.0 MAC/clk/SM@2200  bitdiff=0 REF
+wk 1024x5120         v3 tma producer-wg s3                 0.972 ms   22.1 TMAC/s  209.2 MAC/clk/SM@2200  bitdiff=0 OK
+wk 1024x5120         v2 shipped (again)                    0.454 ms   47.3 TMAC/s  447.5 MAC/clk/SM@2200  bitdiff=0 OK
+cuda: no error, clock attribute 2418 MHz
+23:30:55 variant 2 rc=0
+T=1024 reps=11 (median)
+gate+up 34816x5120   v2 shipped 256x128 k64 s3             3.289 ms   55.5 TMAC/s  525.6 MAC/clk/SM@2200  bitdiff=0 REF
+gate+up 34816x5120   v3 tma issue-top s3                   3.336 ms   54.7 TMAC/s  518.1 MAC/clk/SM@2200  bitdiff=0 OK
+gate+up 34816x5120   v2 shipped (again)                    3.298 ms   55.3 TMAC/s  524.1 MAC/clk/SM@2200  bitdiff=0 OK
+cuda: no error, clock attribute 2418 MHz
+T=130 reps=11 (median)
+gate+up 34816x5120   v2 shipped 256x128 k64 s3             1.145 ms   20.2 TMAC/s  191.7 MAC/clk/SM@2200  bitdiff=0 REF
+gate+up 34816x5120   v3 tma issue-top s3                   1.145 ms   20.2 TMAC/s  191.6 MAC/clk/SM@2200  bitdiff=0 OK
+gate+up 34816x5120   v2 shipped (again)                    1.148 ms   20.2 TMAC/s  191.2 MAC/clk/SM@2200  bitdiff=0 OK
+cuda: no error, clock attribute 2418 MHz
+T=1024 reps=11 (median)
+gate+up 34816x5120   v2 shipped 256x128 k64 s3             3.321 ms   55.0 TMAC/s  520.5 MAC/clk/SM@2200  bitdiff=0 REF
+cuTensorMapEncodeTiled failed 719
+cuTensorMapEncodeTiled failed 719
+cuTensorMapEncodeTiled failed 719
+cuTensorMapEncodeTiled failed 719
+cuTensorMapEncodeTiled failed 719
+cuTensorMapEncodeTiled failed 719
+cuTensorMapEncodeTiled failed 719
+cuTensorMapEncodeTiled failed 719
+cuTensorMapEncodeTiled failed 719
+cuTensorMapEncodeTiled failed 719
+cuTensorMapEncodeTiled failed 719
+gate+up 34816x5120   v3 tma issue-end s3                  -0.000 ms -23587862851332188.0 TMAC/s -223369913364888160.0 MAC/clk/SM@2200  bitdiff=35651584 FAILunspecified launch failure
+gate+up 34816x5120   v2 shipped (again)                   -0.000 ms -14254555759088956.0 TMAC/s -134986323476221184.0 MAC/clk/SM@2200  bitdiff=35651584 FAILunspecified launch failure
+cuda: unspecified launch failure, clock attribute 2418 MHz
+T=130 reps=11 (median)
+gate+up 34816x5120   v2 shipped 256x128 k64 s3             1.138 ms   20.4 TMAC/s  192.8 MAC/clk/SM@2200  bitdiff=0 REF
+cuTensorMapEncodeTiled failed 719
+cuTensorMapEncodeTiled failed 719
+cuTensorMapEncodeTiled failed 719
+cuTensorMapEncodeTiled failed 719
+cuTensorMapEncodeTiled failed 719
+cuTensorMapEncodeTiled failed 719
+cuTensorMapEncodeTiled failed 719
+cuTensorMapEncodeTiled failed 719
+cuTensorMapEncodeTiled failed 719
+cuTensorMapEncodeTiled failed 719
+cuTensorMapEncodeTiled failed 719
+gate+up 34816x5120   v3 tma issue-end s3                31049318818933908242065890276802560.000 ms    0.0 TMAC/s    0.0 MAC/clk/SM@2200  bitdiff=4526080 FAILunspecified launch failure
+gate+up 34816x5120   v2 shipped (again)                 50188981020561086992732660395147264.000 ms    0.0 TMAC/s    0.0 MAC/clk/SM@2200  bitdiff=4526080 FAILunspecified launch failure
+cuda: unspecified launch failure, clock attribute 2418 MHz
+T=1024 reps=11 (median)
+gate+up 34816x5120   v2 shipped 256x128 k64 s3             3.323 ms   54.9 TMAC/s  520.1 MAC/clk/SM@2200  bitdiff=0 REF
+gate+up 34816x5120   v3 tma producer-wg s3                 7.435 ms   24.5 TMAC/s  232.5 MAC/clk/SM@2200  bitdiff=0 OK
+gate+up 34816x5120   v2 shipped (again)                    3.320 ms   55.0 TMAC/s  520.7 MAC/clk/SM@2200  bitdiff=0 OK
+cuda: no error, clock attribute 2418 MHz
+T=130 reps=11 (median)
+gate+up 34816x5120   v2 shipped 256x128 k64 s3             1.139 ms   20.3 TMAC/s  192.6 MAC/clk/SM@2200  bitdiff=0 REF
+gate+up 34816x5120   v3 tma producer-wg s3                 1.840 ms   12.6 TMAC/s  119.2 MAC/clk/SM@2200  bitdiff=0 OK
+gate+up 34816x5120   v2 shipped (again)                    1.151 ms   20.1 TMAC/s  190.7 MAC/clk/SM@2200  bitdiff=0 OK
+cuda: no error, clock attribute 2418 MHz
+qmma            2.231 ms    17.9 cycles per MMA-slot per SMSP at 2.1 GHz     92.4 TMAC/s (MMA modes)
+fadd4           2.113 ms    16.9 cycles per MMA-slot per SMSP at 2.1 GHz     97.5 TMAC/s (MMA modes)
+fmul4           2.599 ms    20.8 cycles per MMA-slot per SMSP at 2.1 GHz     79.3 TMAC/s (MMA modes)
+ffma4           1.980 ms    15.9 cycles per MMA-slot per SMSP at 2.1 GHz    104.1 TMAC/s (MMA modes)
+tile            2.378 ms    19.0 cycles per MMA-slot per SMSP at 2.1 GHz     86.7 TMAC/s (MMA modes)
+tile-indep      8.541 ms    68.4 cycles per MMA-slot per SMSP at 2.1 GHz     24.1 TMAC/s (MMA modes)
+ffma-only       1.321 ms    10.6 cycles per MMA-slot per SMSP at 2.1 GHz      0.0 TMAC/s (MMA modes)
+split          21.939 ms   351.5 cycles per MMA-slot per SMSP at 2.1 GHz      4.7 TMAC/s (MMA modes)
+cuda: no error
+2190 MHz, 52
+23:31:30 ncu v3 prod 0 rc=0
+23:31:37 ncu v3 prod 1 rc=0
+23:31:58 ncu v3 prod 2 rc=0
+23:32:00 STAGE2-DONE

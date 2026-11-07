@@ -1,0 +1,35 @@
+samples 326869; instructions executed 2.249e+09
+opcode      samples%  not-issued%     executed exec share
+QMMA            41.4         18.5    1.783e+08       7.9%
+SYNCS           14.6         12.8    2.666e+07       1.2%
+FFMA            12.4          4.2     7.13e+08      31.7%
+FMUL             6.9          1.9    7.175e+08      31.9%
+NOP              3.2          1.9    4.464e+07       2.0%
+BRA              3.2          1.8    4.372e+07       1.9%
+S2R              2.8          1.0    3.426e+07       1.5%
+IMAD             2.4          0.8     8.81e+07       3.9%
+STG              1.7          1.4    4.456e+06       0.2%
+ISETP            1.5          0.5    2.482e+07       1.1%
+BSYNC            1.1          0.5    1.966e+07       0.9%
+LOP3             0.9          0.3    5.472e+07       2.4%
+LDSM             0.9          0.2    6.685e+07       3.0%
+LDS              0.8          0.3    5.571e+07       2.5%
+SHF              0.8          0.1    4.175e+07       1.9%
+NANOSLEEP        0.8          0.5    7.405e+06       0.3%
+top instructions by samples:
+   14.2%  0x325b72460  @!P0  SYNCS.PHASECHK.TRANS64 P0, [R3+URZ+0x14400], R0
+    4.7%  0x325b6ec90  QMMA.SF.16832.F32.E4M3.E4M3.E8 R56, R24, R32, RZ, R123, R123, URZ
+    3.6%  0x325b6efb0  QMMA.SF.16832.F32.E4M3.E4M3.E8 R32, R24, R10, RZ, R123, R123, URZ
+    3.3%  0x325b6f270  QMMA.SF.16832.F32.E4M3.E4M3.E8 R52, R24, R62, RZ, R123, R123, URZ
+    3.3%  0x325b6f130  QMMA.SF.16832.F32.E4M3.E4M3.E8 R72, R24, R60, RZ, R123, R123, URZ
+    3.0%  0x325b6e7c0  QMMA.SF.16832.F32.E4M3.E4M3.E8 R52, R8, R32, RZ, R123, R123, URZ
+    2.5%  0x325b6f3f0  QMMA.SF.16832.F32.E4M3.E4M3.E8 R32, R28, R8, RZ, R123, R123, URZ
+    2.4%  0x325b6e520  QMMA.SF.16832.F32.E4M3.E4M3.E8 R32, R8, R28, RZ, R123, R123, URZ
+    2.1%  0x325b6e7a0  QMMA.SF.16832.F32.E4M3.E4M3.E8 R36, R4, R32, RZ, R123, R123, URZ
+    2.0%  0x325b6e2c0  QMMA.SF.16832.F32.E4M3.E4M3.E8 R24, R8, R36, RZ, R123, R123, URZ
+    2.0%  0x325b6e350  QMMA.SF.16832.F32.E4M3.E4M3.E8 R36, R8, R38, RZ, R123, R123, URZ
+    1.7%  0x325b6ecb0  QMMA.SF.16832.F32.E4M3.E4M3.E8 R8, R28, R32, RZ, R123, R123, URZ
+    1.6%  0x325b6dfb0  S2R R4, SR_CgaCtaId
+    1.4%  0x325b6e500  QMMA.SF.16832.F32.E4M3.E4M3.E8 R52, R4, R28, RZ, R123, R123, URZ
+    1.2%  0x325b6eef0  QMMA.SF.16832.F32.E4M3.E4M3.E8 R52, R24, R8, RZ, R123, R123, URZ
+    1.1%  0x325b72470  @!P0  BRA 0x325b72440

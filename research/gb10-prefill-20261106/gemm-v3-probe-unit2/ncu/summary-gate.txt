@@ -1,0 +1,42 @@
+## time / issue / occupancy
+  gpu__time_duration.sum                                                                          13.57          11.07          12.96          13.59           29.4          16.34
+  launch__registers_per_thread                                                                      128            128            128            168             96            128
+  sm__cycles_elapsed.avg.per_second                                                               2.119          2.116          2.117          2.121          2.127          2.121
+  sm__warps_active.avg.pct_of_peak_sustained_active                                               32.35          30.55          29.25          23.98          35.68          31.62
+  smsp__issue_active.avg.pct_of_peak_sustained_active                                              38.8          48.71          42.18           40.6          26.55          35.89
+  smsp__thread_inst_executed_per_inst_executed.ratio                                                 32             32          31.01          30.84          30.18          30.94
+  smsp__warps_active.avg.per_cycle_active                                                         3.762          3.923          3.998          2.929          4.264          3.913
+  smsp__warps_eligible.avg.per_cycle_active                                                      0.7322         0.9536         0.7909         0.6812         0.3382         0.6364
+## pipes (pct of peak, active)
+  sm__pipe_alu_cycles_active.avg.pct_of_peak_sustained_active                                     5.509          4.336          3.315          4.772          5.262          2.642
+  sm__pipe_fma_cycles_active.avg.pct_of_peak_sustained_active                                     27.62          33.77          27.27          28.95          14.38          24.52
+  sm__pipe_fp64_cycles_active.avg.pct_of_peak_sustained_active                                        0              0              0              0              0              0
+  sm__pipe_tensor_cycles_active.avg.pct_of_peak_sustained_active                                  50.49          62.35          48.14          50.39          24.42          41.02
+  sm__pipe_tensor_subpipe_hmma_cycles_active.avg.pct_of_peak_sustained_active                     50.49          62.35          48.14          50.39          24.42          41.02
+  sm__pipe_tensor_subpipe_imma_cycles_active.avg.pct_of_peak_sustained_active                         0              0              0              0              0              0
+  sm__pipe_tma_cycles_active.avg.pct_of_peak_sustained_active                                         0              0         0.2821         0.3937         0.1431         0.4807
+## instructions per pipe (sum)
+## stalls per issued instruction
+  smsp__average_warps_issue_stalled_barrier_per_issue_active.ratio                                1.034         0.0412       0.005732       0.005267       0.001385       0.004971
+  smsp__average_warps_issue_stalled_branch_resolving_per_issue_active.ratio                     0.03575        0.02072         0.2381         0.2233           1.35          1.803
+  smsp__average_warps_issue_stalled_dispatch_stall_per_issue_active.ratio                        0.3622         0.5443         0.4133         0.4155         0.1775         0.3922
+  smsp__average_warps_issue_stalled_lg_throttle_per_issue_active.ratio                            0.427        0.02412        0.09584        0.02234         0.1652         0.3544
+  smsp__average_warps_issue_stalled_long_scoreboard_per_issue_active.ratio                       0.3516         0.4114          0.243         0.1392          9.645          1.474
+  smsp__average_warps_issue_stalled_math_pipe_throttle_per_issue_active.ratio                     3.325          3.252          3.006          1.944         0.3071          2.066
+  smsp__average_warps_issue_stalled_mio_throttle_per_issue_active.ratio                          0.6839         0.1039        0.03886         0.1519         0.2482         0.2718
+  smsp__average_warps_issue_stalled_misc_per_issue_active.ratio                                0.009286        0.01848        0.02094        0.02862        0.05526        0.07905
+  smsp__average_warps_issue_stalled_no_instruction_per_issue_active.ratio                       0.04015        0.03909        0.08321        0.08085         0.1727         0.2011
+  smsp__average_warps_issue_stalled_not_selected_per_issue_active.ratio                          0.8869         0.9606         0.8668         0.6781         0.2886         0.7848
+  smsp__average_warps_issue_stalled_selected_per_issue_active.ratio                                   1              1              1              1          1.005         0.9953
+  smsp__average_warps_issue_stalled_short_scoreboard_per_issue_active.ratio                      0.3209         0.4063         0.5779         0.3282         0.5828          0.318
+  smsp__average_warps_issue_stalled_sleeping_per_issue_active.ratio                                   0              0         0.9641         0.9586              0              0
+  smsp__average_warps_issue_stalled_wait_per_issue_active.ratio                                   1.252          1.267          1.494          1.204          2.169          1.851
+## memory
+  l1tex__data_bank_conflicts_pipe_lsu_mem_shared.sum                                           4.77e+06      3.697e+07      1.124e+07      1.271e+07      2.938e+07      1.229e+05
+  l1tex__data_pipe_lsu_wavefronts_mem_shared.sum                                              5.094e+08      5.615e+08      5.025e+08      5.116e+08      5.149e+08      4.692e+08
+  l1tex__throughput.avg.pct_of_peak_sustained_active                                              37.94          52.92          36.02          37.35          54.26          34.86
+  lts__t_sector_hit_rate.pct                                                                      86.74          82.26          88.23          87.22          96.96          86.57
+  lts__throughput.avg.pct_of_peak_sustained_elapsed                                               38.44          6.863          40.23          42.23          89.94          58.71
+  smsp__sass_inst_executed_op_local_ld.sum                                                    2.176e+06      1.685e+07      1.184e+07              0      1.454e+08              0
+  smsp__sass_inst_executed_op_local_st.sum                                                    1.393e+05      3.482e+05      2.089e+05              0      1.454e+08              0
+columns: shipped mode3 issue_end w12 prodwg k32

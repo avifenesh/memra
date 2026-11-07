@@ -1,0 +1,52 @@
+NVIDIA GB10, 208 MHz, 3003 MHz, 42
+Build cuda_13.0.r13.0/compiler.36424714_0
+m0     8 bytes stack frame, 8 bytes spill stores, 16 bytes spill loads
+m0 ptxas info    : Used 128 registers, used 1 barriers, 8 bytes cumulative stack size
+m1     8 bytes stack frame, 12 bytes spill stores, 8 bytes spill loads
+m1 ptxas info    : Used 128 registers, used 1 barriers, 8 bytes cumulative stack size
+m2     24 bytes stack frame, 20 bytes spill stores, 20 bytes spill loads
+m2 ptxas info    : Used 128 registers, used 1 barriers, 24 bytes cumulative stack size
+m3     24 bytes stack frame, 20 bytes spill stores, 20 bytes spill loads
+m3 ptxas info    : Used 128 registers, used 1 barriers, 24 bytes cumulative stack size
+23:19:30 timing (n=11 per shape and mode)
+mode 0 gate+up 34816x5120      13.207 ms    55.3 TMAC/s   523.5 MAC/clk/SM at 2200 MHz (n=11)
+mode 0 down 5120x17408          6.598 ms    55.3 TMAC/s   524.0 MAC/clk/SM at 2200 MHz (n=11)
+mode 0 wqkv 10240x5120          3.955 ms    54.3 TMAC/s   514.2 MAC/clk/SM at 2200 MHz (n=11)
+mode 0 ssm_out 5120x6144        2.369 ms    54.4 TMAC/s   515.0 MAC/clk/SM at 2200 MHz (n=11)
+mode 1 gate+up 34816x5120      11.317 ms    64.5 TMAC/s   611.0 MAC/clk/SM at 2200 MHz (n=11)
+mode 1 down 5120x17408          5.325 ms    68.6 TMAC/s   649.2 MAC/clk/SM at 2200 MHz (n=11)
+mode 1 wqkv 10240x5120          3.319 ms    64.7 TMAC/s   612.7 MAC/clk/SM at 2200 MHz (n=11)
+mode 1 ssm_out 5120x6144        2.039 ms    63.2 TMAC/s   598.4 MAC/clk/SM at 2200 MHz (n=11)
+mode 2 gate+up 34816x5120      12.322 ms    59.3 TMAC/s   561.1 MAC/clk/SM at 2200 MHz (n=11)
+mode 2 down 5120x17408          6.114 ms    59.7 TMAC/s   565.4 MAC/clk/SM at 2200 MHz (n=11)
+mode 2 wqkv 10240x5120          3.802 ms    56.5 TMAC/s   534.8 MAC/clk/SM at 2200 MHz (n=11)
+mode 2 ssm_out 5120x6144        2.314 ms    55.7 TMAC/s   527.2 MAC/clk/SM at 2200 MHz (n=11)
+mode 3 gate+up 34816x5120      11.235 ms    65.0 TMAC/s   615.4 MAC/clk/SM at 2200 MHz (n=11)
+mode 3 down 5120x17408          5.206 ms    70.1 TMAC/s   664.0 MAC/clk/SM at 2200 MHz (n=11)
+mode 3 wqkv 10240x5120          3.487 ms    61.6 TMAC/s   583.1 MAC/clk/SM at 2200 MHz (n=11)
+mode 3 ssm_out 5120x6144        2.152 ms    59.9 TMAC/s   567.1 MAC/clk/SM at 2200 MHz (n=11)
+device NVIDIA GB10 sms 48
+f8tile scalar  warps/SM  8: 113.6 TFLOPS (4 FMUL + 4 FFMA per MMA)
+f8tile f32x2   warps/SM  8: 113.6 TFLOPS (2 mul.f32x2 + 2 fma.f32x2 per MMA)
+f8tile scalar  warps/SM 16: 132.6 TFLOPS (4 FMUL + 4 FFMA per MMA)
+f8tile f32x2   warps/SM 16: 132.6 TFLOPS (2 mul.f32x2 + 2 fma.f32x2 per MMA)
+f8tile scalar  warps/SM 32: 138.6 TFLOPS (4 FMUL + 4 FFMA per MMA)
+f8tile f32x2   warps/SM 32: 138.2 TFLOPS (2 mul.f32x2 + 2 fma.f32x2 per MMA)
+f32x2 vs scalar mul+fma bit mismatches: 0 / 33554432
+SMs 48, clock attribute 2418 MHz, using 2418 MHz
+chain   block_scale 16w x1            1.917 ms    107.5 TMAC/s    926.5 MAC/clk/SM at 2418 MHz
+add     block_scale 16w x1            1.237 ms    166.7 TMAC/s   1435.9 MAC/clk/SM at 2418 MHz
+scaled  block_scale 16w x1            2.219 ms     92.9 TMAC/s    800.4 MAC/clk/SM at 2418 MHz
+scaled  plain       16w x1            2.182 ms     94.5 TMAC/s    814.2 MAC/clk/SM at 2418 MHz
+chain   plain       16w x1            1.915 ms    107.6 TMAC/s    927.4 MAC/clk/SM at 2418 MHz
+chain   block_scale  8w x2            1.916 ms    107.6 TMAC/s    927.3 MAC/clk/SM at 2418 MHz
+scaled  block_scale  8w x2            2.169 ms     95.0 TMAC/s    818.8 MAC/clk/SM at 2418 MHz
+cuda: no error
+setmaxnreg runtime: no error, producer -1.0 consumer 12432.0000 host 12432.0000 OK
+23:19:41 ncu
+23:19:48 ncu m0 gate rc=0
+23:19:54 ncu m3 gate rc=0
+23:20:00 ncu m0 down rc=0
+23:20:04 ncu ceil rc=0
+208 MHz, 46
+23:20:10 STAGE1-DONE

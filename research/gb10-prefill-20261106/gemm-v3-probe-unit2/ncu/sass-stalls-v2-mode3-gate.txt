@@ -1,0 +1,35 @@
+samples 279051; instructions executed 2.108e+09
+opcode      samples%  not-issued%     executed exec share
+QMMA            48.9         21.1    1.783e+08       8.5%
+FFMA            12.6          2.5     7.13e+08      33.8%
+FMUL             8.8          2.3    7.175e+08      34.0%
+IADD3            4.4          3.6    2.541e+07       1.2%
+NOP              4.3          2.5    3.899e+07       1.9%
+SHF              4.1          1.4    4.589e+07       2.2%
+LEA              2.9          1.4    4.749e+07       2.3%
+LOP3             2.5          0.6    5.487e+07       2.6%
+LDSM             2.2          0.7    6.685e+07       3.2%
+LDS              2.0          0.9    5.628e+07       2.7%
+S2R              1.4          0.8    5.612e+07       2.7%
+LDL              1.2          0.3    1.685e+07       0.8%
+LDC              1.0          0.8    4.648e+06       0.2%
+STG              0.8          0.6    4.456e+06       0.2%
+BAR              0.7          0.7    6.963e+04       0.0%
+BRA              0.3          0.2    1.152e+07       0.5%
+top instructions by samples:
+    3.8%  0x325b68e40  QMMA.SF.16832.F32.E4M3.E4M3.E8 R56, R60, R36, RZ, R125, R125, URZ
+    3.7%  0x325b689e0  QMMA.SF.16832.F32.E4M3.E4M3.E8 R48, R20, R14, RZ, R125, R125, URZ
+    3.4%  0x325b67fd0  QMMA.SF.16832.F32.E4M3.E4M3.E8 R44, R36, R34, RZ, R125, R125, URZ
+    3.3%  0x325b68f00  QMMA.SF.16832.F32.E4M3.E4M3.E8 R32, R20, R34, RZ, R125, R125, URZ
+    3.1%  0x325b682d0  QMMA.SF.16832.F32.E4M3.E4M3.E8 R68, R20, R40, RZ, R125, R125, URZ
+    3.0%  0x325b680e0  QMMA.SF.16832.F32.E4M3.E4M3.E8 R12, R36, R52, RZ, R125, R125, URZ
+    2.8%  0x325b68190  QMMA.SF.16832.F32.E4M3.E4M3.E8 R44, R20, R54, RZ, R125, R125, URZ
+    2.7%  0x325b68450  QMMA.SF.16832.F32.E4M3.E4M3.E8 R64, R36, R42, RZ, R125, R125, URZ
+    2.5%  0x325b68030  QMMA.SF.16832.F32.E4M3.E4M3.E8 R48, R20, R52, RZ, R125, R125, URZ
+    2.3%  0x325b688b0  QMMA.SF.16832.F32.E4M3.E4M3.E8 R52, R20, R12, RZ, R125, R125, URZ
+    2.2%  0x325b67ed0  QMMA.SF.16832.F32.E4M3.E4M3.E8 R48, R36, R32, RZ, R125, R125, URZ
+    1.9%  0x325b67c80  IADD3 R19, PT, PT, R10, UR5, RZ
+    1.9%  0x325b683b0  QMMA.SF.16832.F32.E4M3.E4M3.E8 R20, R36, R40, RZ, R125, R125, URZ
+    1.9%  0x325b68320  QMMA.SF.16832.F32.E4M3.E4M3.E8 R52, R20, R42, RZ, R125, R125, URZ
+    1.8%  0x325b68a10  QMMA.SF.16832.F32.E4M3.E4M3.E8 R36, R60, R40, RZ, R125, R125, URZ
+    1.6%  0x325b686b0  LEA R64, R91, R4, 0x4

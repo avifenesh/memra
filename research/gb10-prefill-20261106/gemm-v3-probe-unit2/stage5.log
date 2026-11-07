@@ -1,0 +1,138 @@
+305 MHz, 45
+23:44:51 variant bit 1
+T=4096 reps=11 (median)
+gate+up 34816x5120   v2 shipped 256x128 k64 s3            13.340 ms   54.7 TMAC/s  518.3 MAC/clk/SM@2200  bitdiff=0 REF
+gate+up 34816x5120   v3 tma issue-end k64 s3              12.481 ms   58.5 TMAC/s  554.0 MAC/clk/SM@2200  bitdiff=0 OK
+down 5120x17408      v2 shipped 256x128 k64 s3             6.315 ms   57.8 TMAC/s  547.4 MAC/clk/SM@2200  bitdiff=0 REF
+down 5120x17408      v3 tma issue-end k64 s3               6.187 ms   59.0 TMAC/s  558.7 MAC/clk/SM@2200  bitdiff=0 OK
+wqkv 10240x5120      v2 shipped 256x128 k64 s3             3.908 ms   55.0 TMAC/s  520.4 MAC/clk/SM@2200  bitdiff=0 REF
+wqkv 10240x5120      v3 tma issue-end k64 s3               3.659 ms   58.7 TMAC/s  555.8 MAC/clk/SM@2200  bitdiff=0 OK
+ssm_out 5120x6144    v2 shipped 256x128 k64 s3             2.366 ms   54.5 TMAC/s  515.8 MAC/clk/SM@2200  bitdiff=0 REF
+ssm_out 5120x6144    v3 tma issue-end k64 s3               2.246 ms   57.4 TMAC/s  543.3 MAC/clk/SM@2200  bitdiff=0 OK
+wk 1024x5120         v2 shipped 256x128 k64 s3             0.455 ms   47.2 TMAC/s  447.2 MAC/clk/SM@2200  bitdiff=0 REF
+wk 1024x5120         v3 tma issue-end k64 s3               0.464 ms   46.3 TMAC/s  438.4 MAC/clk/SM@2200  bitdiff=0 OK
+cuda: no error, clock attribute 2418 MHz
+23:44:54 variant bit 7
+T=4096 reps=11 (median)
+gate+up 34816x5120   v2 shipped 256x128 k64 s3            13.331 ms   54.8 TMAC/s  518.7 MAC/clk/SM@2200  bitdiff=0 REF
+gate+up 34816x5120   v3 192x128 w6x2 issue-end s3         14.249 ms   51.2 TMAC/s  485.2 MAC/clk/SM@2200  bitdiff=0 OK
+down 5120x17408      v2 shipped 256x128 k64 s3             6.319 ms   57.8 TMAC/s  547.1 MAC/clk/SM@2200  bitdiff=0 REF
+down 5120x17408      v3 192x128 w6x2 issue-end s3          6.958 ms   52.5 TMAC/s  496.8 MAC/clk/SM@2200  bitdiff=0 OK
+wqkv 10240x5120      v2 shipped 256x128 k64 s3             3.901 ms   55.1 TMAC/s  521.3 MAC/clk/SM@2200  bitdiff=0 REF
+wqkv 10240x5120      v3 192x128 w6x2 issue-end s3          4.251 ms   50.5 TMAC/s  478.4 MAC/clk/SM@2200  bitdiff=0 OK
+ssm_out 5120x6144    v2 shipped 256x128 k64 s3             2.388 ms   54.0 TMAC/s  510.9 MAC/clk/SM@2200  bitdiff=0 REF
+ssm_out 5120x6144    v3 192x128 w6x2 issue-end s3          2.506 ms   51.4 TMAC/s  486.9 MAC/clk/SM@2200  bitdiff=0 OK
+wk 1024x5120         v2 shipped 256x128 k64 s3             0.465 ms   46.2 TMAC/s  437.2 MAC/clk/SM@2200  bitdiff=0 REF
+wk 1024x5120         v3 192x128 w6x2 issue-end s3          0.481 ms   44.7 TMAC/s  423.2 MAC/clk/SM@2200  bitdiff=0 OK
+cuda: no error, clock attribute 2418 MHz
+23:44:57 variant bit 8
+T=4096 reps=11 (median)
+gate+up 34816x5120   v2 shipped 256x128 k64 s3            13.604 ms   53.7 TMAC/s  508.2 MAC/clk/SM@2200  bitdiff=0 REF
+gate+up 34816x5120   v3 192x128 w6x2 issue-end s4         12.995 ms   56.2 TMAC/s  532.1 MAC/clk/SM@2200  bitdiff=0 OK
+down 5120x17408      v2 shipped 256x128 k64 s3             6.614 ms   55.2 TMAC/s  522.7 MAC/clk/SM@2200  bitdiff=0 REF
+down 5120x17408      v3 192x128 w6x2 issue-end s4          6.458 ms   56.5 TMAC/s  535.3 MAC/clk/SM@2200  bitdiff=0 OK
+wqkv 10240x5120      v2 shipped 256x128 k64 s3             3.951 ms   54.4 TMAC/s  514.7 MAC/clk/SM@2200  bitdiff=0 REF
+wqkv 10240x5120      v3 192x128 w6x2 issue-end s4          3.872 ms   55.5 TMAC/s  525.2 MAC/clk/SM@2200  bitdiff=0 OK
+ssm_out 5120x6144    v2 shipped 256x128 k64 s3             2.373 ms   54.3 TMAC/s  514.2 MAC/clk/SM@2200  bitdiff=0 REF
+ssm_out 5120x6144    v3 192x128 w6x2 issue-end s4          2.330 ms   55.3 TMAC/s  523.7 MAC/clk/SM@2200  bitdiff=0 OK
+wk 1024x5120         v2 shipped 256x128 k64 s3             0.459 ms   46.8 TMAC/s  443.1 MAC/clk/SM@2200  bitdiff=0 REF
+wk 1024x5120         v3 192x128 w6x2 issue-end s4          0.459 ms   46.8 TMAC/s  443.4 MAC/clk/SM@2200  bitdiff=0 OK
+cuda: no error, clock attribute 2418 MHz
+23:45:00 variant bit 9
+T=4096 reps=11 (median)
+gate+up 34816x5120   v2 shipped 256x128 k64 s3            13.395 ms   54.5 TMAC/s  516.2 MAC/clk/SM@2200  bitdiff=0 REF
+gate+up 34816x5120   v3 192x128 w6x2 last-arr s4          13.258 ms   55.1 TMAC/s  521.5 MAC/clk/SM@2200  bitdiff=0 OK
+down 5120x17408      v2 shipped 256x128 k64 s3             6.358 ms   57.4 TMAC/s  543.8 MAC/clk/SM@2200  bitdiff=0 REF
+down 5120x17408      v3 192x128 w6x2 last-arr s4           6.671 ms   54.7 TMAC/s  518.2 MAC/clk/SM@2200  bitdiff=0 OK
+wqkv 10240x5120      v2 shipped 256x128 k64 s3             3.886 ms   55.3 TMAC/s  523.3 MAC/clk/SM@2200  bitdiff=0 REF
+wqkv 10240x5120      v3 192x128 w6x2 last-arr s4           3.912 ms   54.9 TMAC/s  519.9 MAC/clk/SM@2200  bitdiff=0 OK
+ssm_out 5120x6144    v2 shipped 256x128 k64 s3             2.355 ms   54.7 TMAC/s  518.1 MAC/clk/SM@2200  bitdiff=0 REF
+ssm_out 5120x6144    v3 192x128 w6x2 last-arr s4           2.330 ms   55.3 TMAC/s  523.7 MAC/clk/SM@2200  bitdiff=0 OK
+wk 1024x5120         v2 shipped 256x128 k64 s3             0.453 ms   47.4 TMAC/s  449.2 MAC/clk/SM@2200  bitdiff=0 REF
+wk 1024x5120         v3 192x128 w6x2 last-arr s4           0.451 ms   47.6 TMAC/s  451.1 MAC/clk/SM@2200  bitdiff=0 OK
+cuda: no error, clock attribute 2418 MHz
+23:45:03 variant bit 10
+T=4096 reps=11 (median)
+gate+up 34816x5120   v2 shipped 256x128 k64 s3            13.325 ms   54.8 TMAC/s  518.9 MAC/clk/SM@2200  bitdiff=0 REF
+gate+up 34816x5120   v3 128x128 w4x2 issue-end s5         16.435 ms   44.4 TMAC/s  420.7 MAC/clk/SM@2200  bitdiff=0 OK
+down 5120x17408      v2 shipped 256x128 k64 s3             6.323 ms   57.7 TMAC/s  546.7 MAC/clk/SM@2200  bitdiff=0 REF
+down 5120x17408      v3 128x128 w4x2 issue-end s5          7.971 ms   45.8 TMAC/s  433.7 MAC/clk/SM@2200  bitdiff=0 OK
+wqkv 10240x5120      v2 shipped 256x128 k64 s3             3.956 ms   54.3 TMAC/s  514.0 MAC/clk/SM@2200  bitdiff=0 REF
+wqkv 10240x5120      v3 128x128 w4x2 issue-end s5          4.729 ms   45.4 TMAC/s  430.1 MAC/clk/SM@2200  bitdiff=0 OK
+ssm_out 5120x6144    v2 shipped 256x128 k64 s3             2.373 ms   54.3 TMAC/s  514.1 MAC/clk/SM@2200  bitdiff=0 REF
+ssm_out 5120x6144    v3 128x128 w4x2 issue-end s5          2.836 ms   45.4 TMAC/s  430.3 MAC/clk/SM@2200  bitdiff=0 OK
+wk 1024x5120         v2 shipped 256x128 k64 s3             0.463 ms   46.4 TMAC/s  439.2 MAC/clk/SM@2200  bitdiff=0 REF
+wk 1024x5120         v3 128x128 w4x2 issue-end s5          0.531 ms   40.4 TMAC/s  382.7 MAC/clk/SM@2200  bitdiff=0 OK
+cuda: no error, clock attribute 2418 MHz
+23:45:06 variant bit 10
+T=4096 reps=11 (median)
+gate+up 34816x5120   v2 shipped 256x128 k64 s3            13.259 ms   55.1 TMAC/s  521.5 MAC/clk/SM@2200  bitdiff=0 REF
+gate+up 34816x5120   v3 128x128 w4x2 issue-end s5         16.044 ms   45.5 TMAC/s  431.0 MAC/clk/SM@2200  bitdiff=0 OK
+down 5120x17408      v2 shipped 256x128 k64 s3             6.316 ms   57.8 TMAC/s  547.4 MAC/clk/SM@2200  bitdiff=0 REF
+down 5120x17408      v3 128x128 w4x2 issue-end s5          7.970 ms   45.8 TMAC/s  433.8 MAC/clk/SM@2200  bitdiff=0 OK
+wqkv 10240x5120      v2 shipped 256x128 k64 s3             3.925 ms   54.7 TMAC/s  518.1 MAC/clk/SM@2200  bitdiff=0 REF
+wqkv 10240x5120      v3 128x128 w4x2 issue-end s5          4.832 ms   44.4 TMAC/s  420.9 MAC/clk/SM@2200  bitdiff=0 OK
+ssm_out 5120x6144    v2 shipped 256x128 k64 s3             2.385 ms   54.0 TMAC/s  511.6 MAC/clk/SM@2200  bitdiff=0 REF
+ssm_out 5120x6144    v3 128x128 w4x2 issue-end s5          2.836 ms   45.4 TMAC/s  430.2 MAC/clk/SM@2200  bitdiff=0 OK
+wk 1024x5120         v2 shipped 256x128 k64 s3             0.463 ms   46.4 TMAC/s  439.2 MAC/clk/SM@2200  bitdiff=0 REF
+wk 1024x5120         v3 128x128 w4x2 issue-end s5          0.532 ms   40.3 TMAC/s  381.9 MAC/clk/SM@2200  bitdiff=0 OK
+cuda: no error, clock attribute 2418 MHz
+23:45:09 variant bit 9
+T=4096 reps=11 (median)
+gate+up 34816x5120   v2 shipped 256x128 k64 s3            13.327 ms   54.8 TMAC/s  518.8 MAC/clk/SM@2200  bitdiff=0 REF
+gate+up 34816x5120   v3 192x128 w6x2 last-arr s4          13.162 ms   55.5 TMAC/s  525.3 MAC/clk/SM@2200  bitdiff=0 OK
+down 5120x17408      v2 shipped 256x128 k64 s3             6.417 ms   56.9 TMAC/s  538.7 MAC/clk/SM@2200  bitdiff=0 REF
+down 5120x17408      v3 192x128 w6x2 last-arr s4           6.375 ms   57.3 TMAC/s  542.3 MAC/clk/SM@2200  bitdiff=0 OK
+wqkv 10240x5120      v2 shipped 256x128 k64 s3             3.955 ms   54.3 TMAC/s  514.2 MAC/clk/SM@2200  bitdiff=0 REF
+wqkv 10240x5120      v3 192x128 w6x2 last-arr s4           3.888 ms   55.2 TMAC/s  523.0 MAC/clk/SM@2200  bitdiff=0 OK
+ssm_out 5120x6144    v2 shipped 256x128 k64 s3             2.371 ms   54.3 TMAC/s  514.5 MAC/clk/SM@2200  bitdiff=0 REF
+ssm_out 5120x6144    v3 192x128 w6x2 last-arr s4           2.333 ms   55.2 TMAC/s  523.0 MAC/clk/SM@2200  bitdiff=0 OK
+wk 1024x5120         v2 shipped 256x128 k64 s3             0.460 ms   46.7 TMAC/s  442.4 MAC/clk/SM@2200  bitdiff=0 REF
+wk 1024x5120         v3 192x128 w6x2 last-arr s4           0.477 ms   45.0 TMAC/s  426.1 MAC/clk/SM@2200  bitdiff=0 OK
+cuda: no error, clock attribute 2418 MHz
+23:45:12 variant bit 8
+T=4096 reps=11 (median)
+gate+up 34816x5120   v2 shipped 256x128 k64 s3            13.302 ms   54.9 TMAC/s  519.8 MAC/clk/SM@2200  bitdiff=0 REF
+gate+up 34816x5120   v3 192x128 w6x2 issue-end s4         13.312 ms   54.9 TMAC/s  519.4 MAC/clk/SM@2200  bitdiff=0 OK
+down 5120x17408      v2 shipped 256x128 k64 s3             6.308 ms   57.9 TMAC/s  548.0 MAC/clk/SM@2200  bitdiff=0 REF
+down 5120x17408      v3 192x128 w6x2 issue-end s4          6.458 ms   56.5 TMAC/s  535.3 MAC/clk/SM@2200  bitdiff=0 OK
+wqkv 10240x5120      v2 shipped 256x128 k64 s3             3.966 ms   54.2 TMAC/s  512.8 MAC/clk/SM@2200  bitdiff=0 REF
+wqkv 10240x5120      v3 192x128 w6x2 issue-end s4          3.900 ms   55.1 TMAC/s  521.4 MAC/clk/SM@2200  bitdiff=0 OK
+ssm_out 5120x6144    v2 shipped 256x128 k64 s3             2.368 ms   54.4 TMAC/s  515.2 MAC/clk/SM@2200  bitdiff=0 REF
+ssm_out 5120x6144    v3 192x128 w6x2 issue-end s4          2.336 ms   55.2 TMAC/s  522.3 MAC/clk/SM@2200  bitdiff=0 OK
+wk 1024x5120         v2 shipped 256x128 k64 s3             0.456 ms   47.1 TMAC/s  446.1 MAC/clk/SM@2200  bitdiff=0 REF
+wk 1024x5120         v3 192x128 w6x2 issue-end s4          0.452 ms   47.6 TMAC/s  450.3 MAC/clk/SM@2200  bitdiff=0 OK
+cuda: no error, clock attribute 2418 MHz
+23:45:15 variant bit 7
+T=4096 reps=11 (median)
+gate+up 34816x5120   v2 shipped 256x128 k64 s3            13.063 ms   55.9 TMAC/s  529.3 MAC/clk/SM@2200  bitdiff=0 REF
+gate+up 34816x5120   v3 192x128 w6x2 issue-end s3         14.076 ms   51.9 TMAC/s  491.2 MAC/clk/SM@2200  bitdiff=0 OK
+down 5120x17408      v2 shipped 256x128 k64 s3             6.315 ms   57.8 TMAC/s  547.4 MAC/clk/SM@2200  bitdiff=0 REF
+down 5120x17408      v3 192x128 w6x2 issue-end s3          6.964 ms   52.4 TMAC/s  496.4 MAC/clk/SM@2200  bitdiff=0 OK
+wqkv 10240x5120      v2 shipped 256x128 k64 s3             3.956 ms   54.3 TMAC/s  514.1 MAC/clk/SM@2200  bitdiff=0 REF
+wqkv 10240x5120      v3 192x128 w6x2 issue-end s3          4.178 ms   51.4 TMAC/s  486.8 MAC/clk/SM@2200  bitdiff=0 OK
+ssm_out 5120x6144    v2 shipped 256x128 k64 s3             2.383 ms   54.1 TMAC/s  512.0 MAC/clk/SM@2200  bitdiff=0 REF
+ssm_out 5120x6144    v3 192x128 w6x2 issue-end s3          2.516 ms   51.2 TMAC/s  484.9 MAC/clk/SM@2200  bitdiff=0 OK
+wk 1024x5120         v2 shipped 256x128 k64 s3             0.456 ms   47.1 TMAC/s  446.1 MAC/clk/SM@2200  bitdiff=0 REF
+wk 1024x5120         v3 192x128 w6x2 issue-end s3          0.483 ms   44.5 TMAC/s  421.1 MAC/clk/SM@2200  bitdiff=0 OK
+cuda: no error, clock attribute 2418 MHz
+23:45:17 variant bit 1
+T=4096 reps=11 (median)
+gate+up 34816x5120   v2 shipped 256x128 k64 s3            13.124 ms   55.6 TMAC/s  526.8 MAC/clk/SM@2200  bitdiff=0 REF
+gate+up 34816x5120   v3 tma issue-end k64 s3              12.500 ms   58.4 TMAC/s  553.1 MAC/clk/SM@2200  bitdiff=0 OK
+down 5120x17408      v2 shipped 256x128 k64 s3             6.660 ms   54.8 TMAC/s  519.1 MAC/clk/SM@2200  bitdiff=0 REF
+down 5120x17408      v3 tma issue-end k64 s3               6.555 ms   55.7 TMAC/s  527.4 MAC/clk/SM@2200  bitdiff=0 OK
+wqkv 10240x5120      v2 shipped 256x128 k64 s3             3.950 ms   54.4 TMAC/s  514.9 MAC/clk/SM@2200  bitdiff=0 REF
+wqkv 10240x5120      v3 tma issue-end k64 s3               3.681 ms   58.3 TMAC/s  552.4 MAC/clk/SM@2200  bitdiff=0 OK
+ssm_out 5120x6144    v2 shipped 256x128 k64 s3             2.370 ms   54.4 TMAC/s  514.9 MAC/clk/SM@2200  bitdiff=0 REF
+ssm_out 5120x6144    v3 tma issue-end k64 s3               2.263 ms   56.9 TMAC/s  539.1 MAC/clk/SM@2200  bitdiff=0 OK
+wk 1024x5120         v2 shipped 256x128 k64 s3             0.457 ms   47.0 TMAC/s  445.2 MAC/clk/SM@2200  bitdiff=0 REF
+wk 1024x5120         v3 tma issue-end k64 s3               0.429 ms   50.0 TMAC/s  473.9 MAC/clk/SM@2200  bitdiff=0 OK
+cuda: no error, clock attribute 2418 MHz
+2177 MHz, 52
+23:45:36 ncu bit 1 rc=0
+23:45:52 ncu bit 7 rc=0
+23:46:10 ncu bit 8 rc=0
+23:46:26 ncu bit 9 rc=0
+23:46:43 ncu bit 10 rc=0
+23:46:48 STAGE3-DONE
