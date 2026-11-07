@@ -1,0 +1,3910 @@
+{
+  "verdict": "PREFIX-POLICY-AB: budget_bytes=1073741824 cohort_tenants=4 cohort_bytes=792920064 turns=12 start_tokens=10912 grow=160 return_every=3 pairs_per_order=5 runs=20 requests_per_run=28 digests_identical=28/28 computed_tokens lru_median=29600 gds_median=29600 (N=10 each) pairs_lru_better=0/10 pairs_gds_better=0/10 ties=10/10 return_cached lru_median=1696 gds_median=1696 loop_cold_after_1 lru_max=0 gds_max=0 refusals lru=0 gds=0 temp_c=78.0..80.0 power_limit_w=None -> INCONCLUSIVE",
+  "winner": "INCONCLUSIVE",
+  "smoke": false,
+  "digests_identical": true,
+  "digest_mismatches": [],
+  "rule": {
+    "primary": "total computed tokens (prompt_tokens - cached_tokens summed over every request of the replay), lower is better",
+    "secondary": "cohort tenants' cached_tokens on their returns (return and final requests), stated always",
+    "win": "a policy wins only if it is better on the primary at every pair in both orders; a tie at any pair is not better; otherwise inconclusive",
+    "precondition": "every completion digest identical across arms, runs and the cache-off boot"
+  },
+  "binary_sha256": "ea43b1309da1f474dd653a877e464ef0bbe097490f9ad7238fd6a1ac9555edf4",
+  "rig": "NVIDIA GeForce RTX 5090 Laptop GPU, 24463 MiB, [N/A], 175.00 W, 615.71.09",
+  "thermal": {
+    "power_limit_w": null,
+    "temperature_c_min": 78.0,
+    "temperature_c_max": 80.0,
+    "samples": "run boundaries here; the collector's command.gpu.csv is the 250 ms record"
+  },
+  "shape": {
+    "budget_bytes": 1073741824,
+    "protected_share_bytes": 858993459,
+    "cohort_bytes_after_seed": 792920064,
+    "cohort_entries_after_seed": 4,
+    "cohort_evictions_after_seed": 0,
+    "cohort_points": [
+      [
+        1248,
+        194000000.0
+      ],
+      [
+        1344,
+        196800000.0
+      ],
+      [
+        1440,
+        199700000.0
+      ],
+      [
+        1536,
+        202500000.0
+      ]
+    ],
+    "fit_bytes_per_token": 29583.333333333332,
+    "fit_fixed_bytes": 157070000.0,
+    "turn1_entry_estimate_bytes": 479883333.3333333,
+    "last_turn_entry_estimate_bytes": 531950000.0,
+    "cohort_within_protected_share": true,
+    "turn1_exceeds_free_share": true,
+    "every_turn_fits_budget": true,
+    "two_last_turns_fit_together": true,
+    "turn1_share_of_budget": 0.44692618151505786,
+    "last_turn_share_of_budget": 0.4954170435667038,
+    "cohort_share_of_budget": 0.73846435546875
+  },
+  "plan_requests": 28,
+  "schedule": [
+    {
+      "run": 1,
+      "pair_id": "AB-0",
+      "order": "AB",
+      "position": 0,
+      "arm": "lru"
+    },
+    {
+      "run": 2,
+      "pair_id": "AB-0",
+      "order": "AB",
+      "position": 1,
+      "arm": "gds"
+    },
+    {
+      "run": 3,
+      "pair_id": "BA-0",
+      "order": "BA",
+      "position": 0,
+      "arm": "gds"
+    },
+    {
+      "run": 4,
+      "pair_id": "BA-0",
+      "order": "BA",
+      "position": 1,
+      "arm": "lru"
+    },
+    {
+      "run": 5,
+      "pair_id": "AB-1",
+      "order": "AB",
+      "position": 0,
+      "arm": "lru"
+    },
+    {
+      "run": 6,
+      "pair_id": "AB-1",
+      "order": "AB",
+      "position": 1,
+      "arm": "gds"
+    },
+    {
+      "run": 7,
+      "pair_id": "BA-1",
+      "order": "BA",
+      "position": 0,
+      "arm": "gds"
+    },
+    {
+      "run": 8,
+      "pair_id": "BA-1",
+      "order": "BA",
+      "position": 1,
+      "arm": "lru"
+    },
+    {
+      "run": 9,
+      "pair_id": "AB-2",
+      "order": "AB",
+      "position": 0,
+      "arm": "lru"
+    },
+    {
+      "run": 10,
+      "pair_id": "AB-2",
+      "order": "AB",
+      "position": 1,
+      "arm": "gds"
+    },
+    {
+      "run": 11,
+      "pair_id": "BA-2",
+      "order": "BA",
+      "position": 0,
+      "arm": "gds"
+    },
+    {
+      "run": 12,
+      "pair_id": "BA-2",
+      "order": "BA",
+      "position": 1,
+      "arm": "lru"
+    },
+    {
+      "run": 13,
+      "pair_id": "AB-3",
+      "order": "AB",
+      "position": 0,
+      "arm": "lru"
+    },
+    {
+      "run": 14,
+      "pair_id": "AB-3",
+      "order": "AB",
+      "position": 1,
+      "arm": "gds"
+    },
+    {
+      "run": 15,
+      "pair_id": "BA-3",
+      "order": "BA",
+      "position": 0,
+      "arm": "gds"
+    },
+    {
+      "run": 16,
+      "pair_id": "BA-3",
+      "order": "BA",
+      "position": 1,
+      "arm": "lru"
+    },
+    {
+      "run": 17,
+      "pair_id": "AB-4",
+      "order": "AB",
+      "position": 0,
+      "arm": "lru"
+    },
+    {
+      "run": 18,
+      "pair_id": "AB-4",
+      "order": "AB",
+      "position": 1,
+      "arm": "gds"
+    },
+    {
+      "run": 19,
+      "pair_id": "BA-4",
+      "order": "BA",
+      "position": 0,
+      "arm": "gds"
+    },
+    {
+      "run": 20,
+      "pair_id": "BA-4",
+      "order": "BA",
+      "position": 1,
+      "arm": "lru"
+    }
+  ],
+  "arms": {
+    "lru": {
+      "N_runs": 10,
+      "computed_tokens": {
+        "median": 29600.0,
+        "min": 29600,
+        "max": 29600,
+        "values": [
+          29600,
+          29600,
+          29600,
+          29600,
+          29600,
+          29600,
+          29600,
+          29600,
+          29600,
+          29600
+        ]
+      },
+      "return_cached_sum": {
+        "median": 1696.0,
+        "min": 1696,
+        "max": 1696,
+        "values": [
+          1696,
+          1696,
+          1696,
+          1696,
+          1696,
+          1696,
+          1696,
+          1696,
+          1696,
+          1696
+        ]
+      },
+      "loop_cold_after_1": {
+        "median": 0.0,
+        "max": 0,
+        "values": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "ttft_loop_first_decode_ms": {
+        "n": 120,
+        "p50": 189.529,
+        "p95": 8687.306
+      },
+      "ttft_all_first_decode_ms": {
+        "n": 280,
+        "p50": 191.478,
+        "p95": 1348.185
+      },
+      "e2e_all_s": {
+        "n": 280,
+        "p50": 0.387,
+        "p95": 1.536
+      },
+      "temperature_c": {
+        "min": 78.0,
+        "max": 80.0
+      },
+      "evictions": [
+        19,
+        19,
+        19,
+        19,
+        19,
+        19,
+        19,
+        19,
+        19,
+        19
+      ],
+      "protected_evictions": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "refused_or_skipped_lines": 0
+    },
+    "gds": {
+      "N_runs": 10,
+      "computed_tokens": {
+        "median": 29600.0,
+        "min": 29600,
+        "max": 29600,
+        "values": [
+          29600,
+          29600,
+          29600,
+          29600,
+          29600,
+          29600,
+          29600,
+          29600,
+          29600,
+          29600
+        ]
+      },
+      "return_cached_sum": {
+        "median": 1696.0,
+        "min": 1696,
+        "max": 1696,
+        "values": [
+          1696,
+          1696,
+          1696,
+          1696,
+          1696,
+          1696,
+          1696,
+          1696,
+          1696,
+          1696
+        ]
+      },
+      "loop_cold_after_1": {
+        "median": 0.0,
+        "max": 0,
+        "values": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "ttft_loop_first_decode_ms": {
+        "n": 120,
+        "p50": 190.544,
+        "p95": 8577.895
+      },
+      "ttft_all_first_decode_ms": {
+        "n": 280,
+        "p50": 192.482,
+        "p95": 1353.387
+      },
+      "e2e_all_s": {
+        "n": 280,
+        "p50": 0.385,
+        "p95": 1.544
+      },
+      "temperature_c": {
+        "min": 78.0,
+        "max": 80.0
+      },
+      "evictions": [
+        20,
+        20,
+        20,
+        20,
+        20,
+        20,
+        20,
+        20,
+        20,
+        20
+      ],
+      "protected_evictions": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "refused_or_skipped_lines": 0
+    }
+  },
+  "pairs": [
+    {
+      "pair_id": "AB-0",
+      "order": "AB",
+      "lru_computed": 29600,
+      "gds_computed": 29600,
+      "diff_lru_minus_gds": 0,
+      "lru_better": false,
+      "gds_better": false,
+      "lru_return_cached": 1696,
+      "gds_return_cached": 1696,
+      "lru_loop_cold_after_1": 0,
+      "gds_loop_cold_after_1": 0,
+      "lru_ttft_loop_p50_ms": 188.261,
+      "gds_ttft_loop_p50_ms": 188.746,
+      "lru_ttft_loop_p95_ms": 189.192,
+      "gds_ttft_loop_p95_ms": 196.524,
+      "lru_temp_c": [
+        80.0,
+        78.0
+      ],
+      "gds_temp_c": [
+        78.0,
+        78.0
+      ]
+    },
+    {
+      "pair_id": "BA-0",
+      "order": "BA",
+      "lru_computed": 29600,
+      "gds_computed": 29600,
+      "diff_lru_minus_gds": 0,
+      "lru_better": false,
+      "gds_better": false,
+      "lru_return_cached": 1696,
+      "gds_return_cached": 1696,
+      "lru_loop_cold_after_1": 0,
+      "gds_loop_cold_after_1": 0,
+      "lru_ttft_loop_p50_ms": 188.007,
+      "gds_ttft_loop_p50_ms": 190.544,
+      "lru_ttft_loop_p95_ms": 190.145,
+      "gds_ttft_loop_p95_ms": 193.733,
+      "lru_temp_c": [
+        79.0,
+        78.0
+      ],
+      "gds_temp_c": [
+        78.0,
+        79.0
+      ]
+    },
+    {
+      "pair_id": "AB-1",
+      "order": "AB",
+      "lru_computed": 29600,
+      "gds_computed": 29600,
+      "diff_lru_minus_gds": 0,
+      "lru_better": false,
+      "gds_better": false,
+      "lru_return_cached": 1696,
+      "gds_return_cached": 1696,
+      "lru_loop_cold_after_1": 0,
+      "gds_loop_cold_after_1": 0,
+      "lru_ttft_loop_p50_ms": 188.385,
+      "gds_ttft_loop_p50_ms": 189.333,
+      "lru_ttft_loop_p95_ms": 190.235,
+      "gds_ttft_loop_p95_ms": 191.165,
+      "lru_temp_c": [
+        78.0,
+        78.0
+      ],
+      "gds_temp_c": [
+        78.0,
+        79.0
+      ]
+    },
+    {
+      "pair_id": "BA-1",
+      "order": "BA",
+      "lru_computed": 29600,
+      "gds_computed": 29600,
+      "diff_lru_minus_gds": 0,
+      "lru_better": false,
+      "gds_better": false,
+      "lru_return_cached": 1696,
+      "gds_return_cached": 1696,
+      "lru_loop_cold_after_1": 0,
+      "gds_loop_cold_after_1": 0,
+      "lru_ttft_loop_p50_ms": 189.657,
+      "gds_ttft_loop_p50_ms": 190.137,
+      "lru_ttft_loop_p95_ms": 192.298,
+      "gds_ttft_loop_p95_ms": 195.526,
+      "lru_temp_c": [
+        79.0,
+        79.0
+      ],
+      "gds_temp_c": [
+        79.0,
+        79.0
+      ]
+    },
+    {
+      "pair_id": "AB-2",
+      "order": "AB",
+      "lru_computed": 29600,
+      "gds_computed": 29600,
+      "diff_lru_minus_gds": 0,
+      "lru_better": false,
+      "gds_better": false,
+      "lru_return_cached": 1696,
+      "gds_return_cached": 1696,
+      "lru_loop_cold_after_1": 0,
+      "gds_loop_cold_after_1": 0,
+      "lru_ttft_loop_p50_ms": 189.813,
+      "gds_ttft_loop_p50_ms": 191.419,
+      "lru_ttft_loop_p95_ms": 191.282,
+      "gds_ttft_loop_p95_ms": 194.598,
+      "lru_temp_c": [
+        79.0,
+        79.0
+      ],
+      "gds_temp_c": [
+        79.0,
+        79.0
+      ]
+    },
+    {
+      "pair_id": "BA-2",
+      "order": "BA",
+      "lru_computed": 29600,
+      "gds_computed": 29600,
+      "diff_lru_minus_gds": 0,
+      "lru_better": false,
+      "gds_better": false,
+      "lru_return_cached": 1696,
+      "gds_return_cached": 1696,
+      "lru_loop_cold_after_1": 0,
+      "gds_loop_cold_after_1": 0,
+      "lru_ttft_loop_p50_ms": 190.944,
+      "gds_ttft_loop_p50_ms": 192.165,
+      "lru_ttft_loop_p95_ms": 194.121,
+      "gds_ttft_loop_p95_ms": 194.222,
+      "lru_temp_c": [
+        79.0,
+        79.0
+      ],
+      "gds_temp_c": [
+        79.0,
+        79.0
+      ]
+    },
+    {
+      "pair_id": "AB-3",
+      "order": "AB",
+      "lru_computed": 29600,
+      "gds_computed": 29600,
+      "diff_lru_minus_gds": 0,
+      "lru_better": false,
+      "gds_better": false,
+      "lru_return_cached": 1696,
+      "gds_return_cached": 1696,
+      "lru_loop_cold_after_1": 0,
+      "gds_loop_cold_after_1": 0,
+      "lru_ttft_loop_p50_ms": 191.892,
+      "gds_ttft_loop_p50_ms": 190.602,
+      "lru_ttft_loop_p95_ms": 197.073,
+      "gds_ttft_loop_p95_ms": 192.848,
+      "lru_temp_c": [
+        79.0,
+        79.0
+      ],
+      "gds_temp_c": [
+        79.0,
+        79.0
+      ]
+    },
+    {
+      "pair_id": "BA-3",
+      "order": "BA",
+      "lru_computed": 29600,
+      "gds_computed": 29600,
+      "diff_lru_minus_gds": 0,
+      "lru_better": false,
+      "gds_better": false,
+      "lru_return_cached": 1696,
+      "gds_return_cached": 1696,
+      "lru_loop_cold_after_1": 0,
+      "gds_loop_cold_after_1": 0,
+      "lru_ttft_loop_p50_ms": 189.496,
+      "gds_ttft_loop_p50_ms": 192.857,
+      "lru_ttft_loop_p95_ms": 193.458,
+      "gds_ttft_loop_p95_ms": 195.867,
+      "lru_temp_c": [
+        79.0,
+        79.0
+      ],
+      "gds_temp_c": [
+        79.0,
+        79.0
+      ]
+    },
+    {
+      "pair_id": "AB-4",
+      "order": "AB",
+      "lru_computed": 29600,
+      "gds_computed": 29600,
+      "diff_lru_minus_gds": 0,
+      "lru_better": false,
+      "gds_better": false,
+      "lru_return_cached": 1696,
+      "gds_return_cached": 1696,
+      "lru_loop_cold_after_1": 0,
+      "gds_loop_cold_after_1": 0,
+      "lru_ttft_loop_p50_ms": 189.836,
+      "gds_ttft_loop_p50_ms": 190.763,
+      "lru_ttft_loop_p95_ms": 191.82,
+      "gds_ttft_loop_p95_ms": 194.295,
+      "lru_temp_c": [
+        79.0,
+        79.0
+      ],
+      "gds_temp_c": [
+        79.0,
+        79.0
+      ]
+    },
+    {
+      "pair_id": "BA-4",
+      "order": "BA",
+      "lru_computed": 29600,
+      "gds_computed": 29600,
+      "diff_lru_minus_gds": 0,
+      "lru_better": false,
+      "gds_better": false,
+      "lru_return_cached": 1696,
+      "gds_return_cached": 1696,
+      "lru_loop_cold_after_1": 0,
+      "gds_loop_cold_after_1": 0,
+      "lru_ttft_loop_p50_ms": 193.755,
+      "gds_ttft_loop_p50_ms": 190.951,
+      "lru_ttft_loop_p95_ms": 196.724,
+      "gds_ttft_loop_p95_ms": 197.986,
+      "lru_temp_c": [
+        80.0,
+        80.0
+      ],
+      "gds_temp_c": [
+        79.0,
+        80.0
+      ]
+    }
+  ],
+  "runs": [
+    {
+      "run": 1,
+      "pair_id": "AB-0",
+      "order": "AB",
+      "position": 0,
+      "arm": "lru",
+      "policy_line": "[prefix-cache] on: budget 1074MB (1073741824 B, configured by MEMRA_PREFIX_CACHE_MB), policy plain-LRU (global oldest unleased entry first; leases untouchable; MEMRA_PREFIX_EVICT=lru), min prefix 64 tokens, immediate partial restore=off (rollback) (transformer-only; hybrid mid-entry + routed-MoE N/A)",
+      "wall_s": 78.9,
+      "gpu_start": {
+        "utc": "2026-11-07T14:18:07Z",
+        "temperature_c": 80.0,
+        "power_w": 34.51,
+        "power_limit_w": null,
+        "clocks_sm_mhz": 1590.0,
+        "clocks_mem_mhz": 14001.0,
+        "memory_used_mib": 48.0
+      },
+      "gpu_end": {
+        "utc": "2026-11-07T14:19:26Z",
+        "temperature_c": 78.0,
+        "power_w": 33.51,
+        "power_limit_w": null,
+        "clocks_sm_mhz": 1590.0,
+        "clocks_mem_mhz": 14001.0,
+        "memory_used_mib": 48.0
+      },
+      "computed_tokens": 29600,
+      "computed_tokens_loop": 12672,
+      "computed_tokens_returns": 11360,
+      "loop_cached": [
+        0,
+        10912,
+        11072,
+        11232,
+        11392,
+        11552,
+        11712,
+        11872,
+        12032,
+        12192,
+        12352,
+        12512
+      ],
+      "loop_cold_after_1": 0,
+      "return_cached": [
+        {
+          "role": "return",
+          "tenant": 1,
+          "after_turn": 3,
+          "prompt_tokens": 1408,
+          "cached_tokens": 0
+        },
+        {
+          "role": "return",
+          "tenant": 2,
+          "after_turn": 6,
+          "prompt_tokens": 1504,
+          "cached_tokens": 0
+        },
+        {
+          "role": "return",
+          "tenant": 3,
+          "after_turn": 9,
+          "prompt_tokens": 1600,
+          "cached_tokens": 0
+        },
+        {
+          "role": "return",
+          "tenant": 4,
+          "after_turn": 12,
+          "prompt_tokens": 1696,
+          "cached_tokens": 0
+        },
+        {
+          "role": "final",
+          "tenant": 1,
+          "after_turn": 12,
+          "prompt_tokens": 1568,
+          "cached_tokens": 0
+        },
+        {
+          "role": "final",
+          "tenant": 2,
+          "after_turn": 12,
+          "prompt_tokens": 1664,
+          "cached_tokens": 0
+        },
+        {
+          "role": "final",
+          "tenant": 3,
+          "after_turn": 12,
+          "prompt_tokens": 1760,
+          "cached_tokens": 0
+        },
+        {
+          "role": "final",
+          "tenant": 4,
+          "after_turn": 12,
+          "prompt_tokens": 1856,
+          "cached_tokens": 1696
+        }
+      ],
+      "return_cached_sum": 1696,
+      "evictions": 19,
+      "protected_evictions": 0,
+      "demotes": 0,
+      "refused_or_skipped": [],
+      "ttft_loop_ms": {
+        "n": 12,
+        "p50": 188.261,
+        "p95": 189.192
+      },
+      "ttft_all_ms": {
+        "n": 28,
+        "p50": 189.067,
+        "p95": 3684.641
+      },
+      "e2e_all_s": {
+        "n": 28,
+        "p50": 0.39,
+        "p95": 3.936
+      },
+      "digests_identical_to_cold": 28,
+      "final_metrics": {
+        "cuda_driver_free_bytes": 3846307840,
+        "cuda_pool_cached_bytes": 2712689216,
+        "prefix_cache_bytes": 1038188544,
+        "prefix_cache_entries": 5,
+        "prefix_cache_evictions": 19,
+        "prefix_cache_hits": 16,
+        "prefix_cache_misses": 12,
+        "prefix_cache_inserts": 24,
+        "prefix_cache_hit_tokens": 136096,
+        "prefix_cache_skips_budget": 0,
+        "prefix_cache_skips_pinned": 0,
+        "active_sessions": 0,
+        "queued_requests": 0
+      }
+    },
+    {
+      "run": 2,
+      "pair_id": "AB-0",
+      "order": "AB",
+      "position": 1,
+      "arm": "gds",
+      "policy_line": "[prefix-cache] on: budget 1074MB (1073741824 B, configured by MEMRA_PREFIX_CACHE_MB), policy GDS value-per-byte (lowest clock + prompt tokens per MB first; the clock takes each victim's priority; leases untouchable), min prefix 64 tokens, immediate partial restore=off (rollback) (transformer-only; hybrid mid-entry + routed-MoE N/A)",
+      "wall_s": 70.3,
+      "gpu_start": {
+        "utc": "2026-11-07T14:19:26Z",
+        "temperature_c": 78.0,
+        "power_w": 33.51,
+        "power_limit_w": null,
+        "clocks_sm_mhz": 1590.0,
+        "clocks_mem_mhz": 14001.0,
+        "memory_used_mib": 48.0
+      },
+      "gpu_end": {
+        "utc": "2026-11-07T14:20:36Z",
+        "temperature_c": 78.0,
+        "power_w": 33.52,
+        "power_limit_w": null,
+        "clocks_sm_mhz": 1590.0,
+        "clocks_mem_mhz": 14001.0,
+        "memory_used_mib": 48.0
+      },
+      "computed_tokens": 29600,
+      "computed_tokens_loop": 12672,
+      "computed_tokens_returns": 11360,
+      "loop_cached": [
+        0,
+        10912,
+        11072,
+        11232,
+        11392,
+        11552,
+        11712,
+        11872,
+        12032,
+        12192,
+        12352,
+        12512
+      ],
+      "loop_cold_after_1": 0,
+      "return_cached": [
+        {
+          "role": "return",
+          "tenant": 1,
+          "after_turn": 3,
+          "prompt_tokens": 1408,
+          "cached_tokens": 0
+        },
+        {
+          "role": "return",
+          "tenant": 2,
+          "after_turn": 6,
+          "prompt_tokens": 1504,
+          "cached_tokens": 0
+        },
+        {
+          "role": "return",
+          "tenant": 3,
+          "after_turn": 9,
+          "prompt_tokens": 1600,
+          "cached_tokens": 0
+        },
+        {
+          "role": "return",
+          "tenant": 4,
+          "after_turn": 12,
+          "prompt_tokens": 1696,
+          "cached_tokens": 0
+        },
+        {
+          "role": "final",
+          "tenant": 1,
+          "after_turn": 12,
+          "prompt_tokens": 1568,
+          "cached_tokens": 0
+        },
+        {
+          "role": "final",
+          "tenant": 2,
+          "after_turn": 12,
+          "prompt_tokens": 1664,
+          "cached_tokens": 0
+        },
+        {
+          "role": "final",
+          "tenant": 3,
+          "after_turn": 12,
+          "prompt_tokens": 1760,
+          "cached_tokens": 0
+        },
+        {
+          "role": "final",
+          "tenant": 4,
+          "after_turn": 12,
+          "prompt_tokens": 1856,
+          "cached_tokens": 1696
+        }
+      ],
+      "return_cached_sum": 1696,
+      "evictions": 20,
+      "protected_evictions": 0,
+      "demotes": 0,
+      "refused_or_skipped": [],
+      "ttft_loop_ms": {
+        "n": 12,
+        "p50": 188.746,
+        "p95": 196.524
+      },
+      "ttft_all_ms": {
+        "n": 28,
+        "p50": 192.908,
+        "p95": 1256.97
+      },
+      "e2e_all_s": {
+        "n": 28,
+        "p50": 0.38,
+        "p95": 1.439
+      },
+      "digests_identical_to_cold": 28,
+      "final_metrics": {
+        "cuda_driver_free_bytes": 3846307840,
+        "cuda_pool_cached_bytes": 2916145728,
+        "prefix_cache_bytes": 834732032,
+        "prefix_cache_entries": 4,
+        "prefix_cache_evictions": 20,
+        "prefix_cache_hits": 16,
+        "prefix_cache_misses": 12,
+        "prefix_cache_inserts": 24,
+        "prefix_cache_hit_tokens": 136096,
+        "prefix_cache_skips_budget": 0,
+        "prefix_cache_skips_pinned": 0,
+        "active_sessions": 0,
+        "queued_requests": 0
+      }
+    },
+    {
+      "run": 3,
+      "pair_id": "BA-0",
+      "order": "BA",
+      "position": 0,
+      "arm": "gds",
+      "policy_line": "[prefix-cache] on: budget 1074MB (1073741824 B, configured by MEMRA_PREFIX_CACHE_MB), policy GDS value-per-byte (lowest clock + prompt tokens per MB first; the clock takes each victim's priority; leases untouchable), min prefix 64 tokens, immediate partial restore=off (rollback) (transformer-only; hybrid mid-entry + routed-MoE N/A)",
+      "wall_s": 66.4,
+      "gpu_start": {
+        "utc": "2026-11-07T14:20:36Z",
+        "temperature_c": 78.0,
+        "power_w": 33.52,
+        "power_limit_w": null,
+        "clocks_sm_mhz": 1590.0,
+        "clocks_mem_mhz": 14001.0,
+        "memory_used_mib": 48.0
+      },
+      "gpu_end": {
+        "utc": "2026-11-07T14:21:43Z",
+        "temperature_c": 79.0,
+        "power_w": 33.53,
+        "power_limit_w": null,
+        "clocks_sm_mhz": 1590.0,
+        "clocks_mem_mhz": 14001.0,
+        "memory_used_mib": 48.0
+      },
+      "computed_tokens": 29600,
+      "computed_tokens_loop": 12672,
+      "computed_tokens_returns": 11360,
+      "loop_cached": [
+        0,
+        10912,
+        11072,
+        11232,
+        11392,
+        11552,
+        11712,
+        11872,
+        12032,
+        12192,
+        12352,
+        12512
+      ],
+      "loop_cold_after_1": 0,
+      "return_cached": [
+        {
+          "role": "return",
+          "tenant": 1,
+          "after_turn": 3,
+          "prompt_tokens": 1408,
+          "cached_tokens": 0
+        },
+        {
+          "role": "return",
+          "tenant": 2,
+          "after_turn": 6,
+          "prompt_tokens": 1504,
+          "cached_tokens": 0
+        },
+        {
+          "role": "return",
+          "tenant": 3,
+          "after_turn": 9,
+          "prompt_tokens": 1600,
+          "cached_tokens": 0
+        },
+        {
+          "role": "return",
+          "tenant": 4,
+          "after_turn": 12,
+          "prompt_tokens": 1696,
+          "cached_tokens": 0
+        },
+        {
+          "role": "final",
+          "tenant": 1,
+          "after_turn": 12,
+          "prompt_tokens": 1568,
+          "cached_tokens": 0
+        },
+        {
+          "role": "final",
+          "tenant": 2,
+          "after_turn": 12,
+          "prompt_tokens": 1664,
+          "cached_tokens": 0
+        },
+        {
+          "role": "final",
+          "tenant": 3,
+          "after_turn": 12,
+          "prompt_tokens": 1760,
+          "cached_tokens": 0
+        },
+        {
+          "role": "final",
+          "tenant": 4,
+          "after_turn": 12,
+          "prompt_tokens": 1856,
+          "cached_tokens": 1696
+        }
+      ],
+      "return_cached_sum": 1696,
+      "evictions": 20,
+      "protected_evictions": 0,
+      "demotes": 0,
+      "refused_or_skipped": [],
+      "ttft_loop_ms": {
+        "n": 12,
+        "p50": 190.544,
+        "p95": 193.733
+      },
+      "ttft_all_ms": {
+        "n": 28,
+        "p50": 192.479,
+        "p95": 1283.903
+      },
+      "e2e_all_s": {
+        "n": 28,
+        "p50": 0.381,
+        "p95": 1.468
+      },
+      "digests_identical_to_cold": 28,
+      "final_metrics": {
+        "cuda_driver_free_bytes": 3846307840,
+        "cuda_pool_cached_bytes": 2916145728,
+        "prefix_cache_bytes": 834732032,
+        "prefix_cache_entries": 4,
+        "prefix_cache_evictions": 20,
+        "prefix_cache_hits": 16,
+        "prefix_cache_misses": 12,
+        "prefix_cache_inserts": 24,
+        "prefix_cache_hit_tokens": 136096,
+        "prefix_cache_skips_budget": 0,
+        "prefix_cache_skips_pinned": 0,
+        "active_sessions": 0,
+        "queued_requests": 0
+      }
+    },
+    {
+      "run": 4,
+      "pair_id": "BA-0",
+      "order": "BA",
+      "position": 1,
+      "arm": "lru",
+      "policy_line": "[prefix-cache] on: budget 1074MB (1073741824 B, configured by MEMRA_PREFIX_CACHE_MB), policy plain-LRU (global oldest unleased entry first; leases untouchable; MEMRA_PREFIX_EVICT=lru), min prefix 64 tokens, immediate partial restore=off (rollback) (transformer-only; hybrid mid-entry + routed-MoE N/A)",
+      "wall_s": 63.9,
+      "gpu_start": {
+        "utc": "2026-11-07T14:21:43Z",
+        "temperature_c": 79.0,
+        "power_w": 33.53,
+        "power_limit_w": null,
+        "clocks_sm_mhz": 1590.0,
+        "clocks_mem_mhz": 14001.0,
+        "memory_used_mib": 48.0
+      },
+      "gpu_end": {
+        "utc": "2026-11-07T14:22:47Z",
+        "temperature_c": 78.0,
+        "power_w": 33.62,
+        "power_limit_w": null,
+        "clocks_sm_mhz": 1590.0,
+        "clocks_mem_mhz": 14001.0,
+        "memory_used_mib": 48.0
+      },
+      "computed_tokens": 29600,
+      "computed_tokens_loop": 12672,
+      "computed_tokens_returns": 11360,
+      "loop_cached": [
+        0,
+        10912,
+        11072,
+        11232,
+        11392,
+        11552,
+        11712,
+        11872,
+        12032,
+        12192,
+        12352,
+        12512
+      ],
+      "loop_cold_after_1": 0,
+      "return_cached": [
+        {
+          "role": "return",
+          "tenant": 1,
+          "after_turn": 3,
+          "prompt_tokens": 1408,
+          "cached_tokens": 0
+        },
+        {
+          "role": "return",
+          "tenant": 2,
+          "after_turn": 6,
+          "prompt_tokens": 1504,
+          "cached_tokens": 0
+        },
+        {
+          "role": "return",
+          "tenant": 3,
+          "after_turn": 9,
+          "prompt_tokens": 1600,
+          "cached_tokens": 0
+        },
+        {
+          "role": "return",
+          "tenant": 4,
+          "after_turn": 12,
+          "prompt_tokens": 1696,
+          "cached_tokens": 0
+        },
+        {
+          "role": "final",
+          "tenant": 1,
+          "after_turn": 12,
+          "prompt_tokens": 1568,
+          "cached_tokens": 0
+        },
+        {
+          "role": "final",
+          "tenant": 2,
+          "after_turn": 12,
+          "prompt_tokens": 1664,
+          "cached_tokens": 0
+        },
+        {
+          "role": "final",
+          "tenant": 3,
+          "after_turn": 12,
+          "prompt_tokens": 1760,
+          "cached_tokens": 0
+        },
+        {
+          "role": "final",
+          "tenant": 4,
+          "after_turn": 12,
+          "prompt_tokens": 1856,
+          "cached_tokens": 1696
+        }
+      ],
+      "return_cached_sum": 1696,
+      "evictions": 19,
+      "protected_evictions": 0,
+      "demotes": 0,
+      "refused_or_skipped": [],
+      "ttft_loop_ms": {
+        "n": 12,
+        "p50": 188.007,
+        "p95": 190.145
+      },
+      "ttft_all_ms": {
+        "n": 28,
+        "p50": 189.577,
+        "p95": 1278.04
+      },
+      "e2e_all_s": {
+        "n": 28,
+        "p50": 0.396,
+        "p95": 1.461
+      },
+      "digests_identical_to_cold": 28,
+      "final_metrics": {
+        "cuda_driver_free_bytes": 3846307840,
+        "cuda_pool_cached_bytes": 2712689216,
+        "prefix_cache_bytes": 1038188544,
+        "prefix_cache_entries": 5,
+        "prefix_cache_evictions": 19,
+        "prefix_cache_hits": 16,
+        "prefix_cache_misses": 12,
+        "prefix_cache_inserts": 24,
+        "prefix_cache_hit_tokens": 136096,
+        "prefix_cache_skips_budget": 0,
+        "prefix_cache_skips_pinned": 0,
+        "active_sessions": 0,
+        "queued_requests": 0
+      }
+    },
+    {
+      "run": 5,
+      "pair_id": "AB-1",
+      "order": "AB",
+      "position": 0,
+      "arm": "lru",
+      "policy_line": "[prefix-cache] on: budget 1074MB (1073741824 B, configured by MEMRA_PREFIX_CACHE_MB), policy plain-LRU (global oldest unleased entry first; leases untouchable; MEMRA_PREFIX_EVICT=lru), min prefix 64 tokens, immediate partial restore=off (rollback) (transformer-only; hybrid mid-entry + routed-MoE N/A)",
+      "wall_s": 59.7,
+      "gpu_start": {
+        "utc": "2026-11-07T14:22:47Z",
+        "temperature_c": 78.0,
+        "power_w": 33.62,
+        "power_limit_w": null,
+        "clocks_sm_mhz": 1590.0,
+        "clocks_mem_mhz": 14001.0,
+        "memory_used_mib": 48.0
+      },
+      "gpu_end": {
+        "utc": "2026-11-07T14:23:47Z",
+        "temperature_c": 78.0,
+        "power_w": 33.81,
+        "power_limit_w": null,
+        "clocks_sm_mhz": 1590.0,
+        "clocks_mem_mhz": 14001.0,
+        "memory_used_mib": 48.0
+      },
+      "computed_tokens": 29600,
+      "computed_tokens_loop": 12672,
+      "computed_tokens_returns": 11360,
+      "loop_cached": [
+        0,
+        10912,
+        11072,
+        11232,
+        11392,
+        11552,
+        11712,
+        11872,
+        12032,
+        12192,
+        12352,
+        12512
+      ],
+      "loop_cold_after_1": 0,
+      "return_cached": [
+        {
+          "role": "return",
+          "tenant": 1,
+          "after_turn": 3,
+          "prompt_tokens": 1408,
+          "cached_tokens": 0
+        },
+        {
+          "role": "return",
+          "tenant": 2,
+          "after_turn": 6,
+          "prompt_tokens": 1504,
+          "cached_tokens": 0
+        },
+        {
+          "role": "return",
+          "tenant": 3,
+          "after_turn": 9,
+          "prompt_tokens": 1600,
+          "cached_tokens": 0
+        },
+        {
+          "role": "return",
+          "tenant": 4,
+          "after_turn": 12,
+          "prompt_tokens": 1696,
+          "cached_tokens": 0
+        },
+        {
+          "role": "final",
+          "tenant": 1,
+          "after_turn": 12,
+          "prompt_tokens": 1568,
+          "cached_tokens": 0
+        },
+        {
+          "role": "final",
+          "tenant": 2,
+          "after_turn": 12,
+          "prompt_tokens": 1664,
+          "cached_tokens": 0
+        },
+        {
+          "role": "final",
+          "tenant": 3,
+          "after_turn": 12,
+          "prompt_tokens": 1760,
+          "cached_tokens": 0
+        },
+        {
+          "role": "final",
+          "tenant": 4,
+          "after_turn": 12,
+          "prompt_tokens": 1856,
+          "cached_tokens": 1696
+        }
+      ],
+      "return_cached_sum": 1696,
+      "evictions": 19,
+      "protected_evictions": 0,
+      "demotes": 0,
+      "refused_or_skipped": [],
+      "ttft_loop_ms": {
+        "n": 12,
+        "p50": 188.385,
+        "p95": 190.235
+      },
+      "ttft_all_ms": {
+        "n": 28,
+        "p50": 190.054,
+        "p95": 1268.04
+      },
+      "e2e_all_s": {
+        "n": 28,
+        "p50": 0.373,
+        "p95": 1.453
+      },
+      "digests_identical_to_cold": 28,
+      "final_metrics": {
+        "cuda_driver_free_bytes": 3846307840,
+        "cuda_pool_cached_bytes": 2712689216,
+        "prefix_cache_bytes": 1038188544,
+        "prefix_cache_entries": 5,
+        "prefix_cache_evictions": 19,
+        "prefix_cache_hits": 16,
+        "prefix_cache_misses": 12,
+        "prefix_cache_inserts": 24,
+        "prefix_cache_hit_tokens": 136096,
+        "prefix_cache_skips_budget": 0,
+        "prefix_cache_skips_pinned": 0,
+        "active_sessions": 0,
+        "queued_requests": 0
+      }
+    },
+    {
+      "run": 6,
+      "pair_id": "AB-1",
+      "order": "AB",
+      "position": 1,
+      "arm": "gds",
+      "policy_line": "[prefix-cache] on: budget 1074MB (1073741824 B, configured by MEMRA_PREFIX_CACHE_MB), policy GDS value-per-byte (lowest clock + prompt tokens per MB first; the clock takes each victim's priority; leases untouchable), min prefix 64 tokens, immediate partial restore=off (rollback) (transformer-only; hybrid mid-entry + routed-MoE N/A)",
+      "wall_s": 59.9,
+      "gpu_start": {
+        "utc": "2026-11-07T14:23:47Z",
+        "temperature_c": 78.0,
+        "power_w": 33.81,
+        "power_limit_w": null,
+        "clocks_sm_mhz": 1590.0,
+        "clocks_mem_mhz": 14001.0,
+        "memory_used_mib": 48.0
+      },
+      "gpu_end": {
+        "utc": "2026-11-07T14:24:46Z",
+        "temperature_c": 79.0,
+        "power_w": 33.56,
+        "power_limit_w": null,
+        "clocks_sm_mhz": 1590.0,
+        "clocks_mem_mhz": 14001.0,
+        "memory_used_mib": 48.0
+      },
+      "computed_tokens": 29600,
+      "computed_tokens_loop": 12672,
+      "computed_tokens_returns": 11360,
+      "loop_cached": [
+        0,
+        10912,
+        11072,
+        11232,
+        11392,
+        11552,
+        11712,
+        11872,
+        12032,
+        12192,
+        12352,
+        12512
+      ],
+      "loop_cold_after_1": 0,
+      "return_cached": [
+        {
+          "role": "return",
+          "tenant": 1,
+          "after_turn": 3,
+          "prompt_tokens": 1408,
+          "cached_tokens": 0
+        },
+        {
+          "role": "return",
+          "tenant": 2,
+          "after_turn": 6,
+          "prompt_tokens": 1504,
+          "cached_tokens": 0
+        },
+        {
+          "role": "return",
+          "tenant": 3,
+          "after_turn": 9,
+          "prompt_tokens": 1600,
+          "cached_tokens": 0
+        },
+        {
+          "role": "return",
+          "tenant": 4,
+          "after_turn": 12,
+          "prompt_tokens": 1696,
+          "cached_tokens": 0
+        },
+        {
+          "role": "final",
+          "tenant": 1,
+          "after_turn": 12,
+          "prompt_tokens": 1568,
+          "cached_tokens": 0
+        },
+        {
+          "role": "final",
+          "tenant": 2,
+          "after_turn": 12,
+          "prompt_tokens": 1664,
+          "cached_tokens": 0
+        },
+        {
+          "role": "final",
+          "tenant": 3,
+          "after_turn": 12,
+          "prompt_tokens": 1760,
+          "cached_tokens": 0
+        },
+        {
+          "role": "final",
+          "tenant": 4,
+          "after_turn": 12,
+          "prompt_tokens": 1856,
+          "cached_tokens": 1696
+        }
+      ],
+      "return_cached_sum": 1696,
+      "evictions": 20,
+      "protected_evictions": 0,
+      "demotes": 0,
+      "refused_or_skipped": [],
+      "ttft_loop_ms": {
+        "n": 12,
+        "p50": 189.333,
+        "p95": 191.165
+      },
+      "ttft_all_ms": {
+        "n": 28,
+        "p50": 189.861,
+        "p95": 1294.622
+      },
+      "e2e_all_s": {
+        "n": 28,
+        "p50": 0.371,
+        "p95": 1.476
+      },
+      "digests_identical_to_cold": 28,
+      "final_metrics": {
+        "cuda_driver_free_bytes": 3846307840,
+        "cuda_pool_cached_bytes": 2916145728,
+        "prefix_cache_bytes": 834732032,
+        "prefix_cache_entries": 4,
+        "prefix_cache_evictions": 20,
+        "prefix_cache_hits": 16,
+        "prefix_cache_misses": 12,
+        "prefix_cache_inserts": 24,
+        "prefix_cache_hit_tokens": 136096,
+        "prefix_cache_skips_budget": 0,
+        "prefix_cache_skips_pinned": 0,
+        "active_sessions": 0,
+        "queued_requests": 0
+      }
+    },
+    {
+      "run": 7,
+      "pair_id": "BA-1",
+      "order": "BA",
+      "position": 0,
+      "arm": "gds",
+      "policy_line": "[prefix-cache] on: budget 1074MB (1073741824 B, configured by MEMRA_PREFIX_CACHE_MB), policy GDS value-per-byte (lowest clock + prompt tokens per MB first; the clock takes each victim's priority; leases untouchable), min prefix 64 tokens, immediate partial restore=off (rollback) (transformer-only; hybrid mid-entry + routed-MoE N/A)",
+      "wall_s": 61.8,
+      "gpu_start": {
+        "utc": "2026-11-07T14:24:47Z",
+        "temperature_c": 79.0,
+        "power_w": 33.56,
+        "power_limit_w": null,
+        "clocks_sm_mhz": 1590.0,
+        "clocks_mem_mhz": 14001.0,
+        "memory_used_mib": 48.0
+      },
+      "gpu_end": {
+        "utc": "2026-11-07T14:25:48Z",
+        "temperature_c": 79.0,
+        "power_w": 61.73,
+        "power_limit_w": null,
+        "clocks_sm_mhz": 1590.0,
+        "clocks_mem_mhz": 14001.0,
+        "memory_used_mib": 48.0
+      },
+      "computed_tokens": 29600,
+      "computed_tokens_loop": 12672,
+      "computed_tokens_returns": 11360,
+      "loop_cached": [
+        0,
+        10912,
+        11072,
+        11232,
+        11392,
+        11552,
+        11712,
+        11872,
+        12032,
+        12192,
+        12352,
+        12512
+      ],
+      "loop_cold_after_1": 0,
+      "return_cached": [
+        {
+          "role": "return",
+          "tenant": 1,
+          "after_turn": 3,
+          "prompt_tokens": 1408,
+          "cached_tokens": 0
+        },
+        {
+          "role": "return",
+          "tenant": 2,
+          "after_turn": 6,
+          "prompt_tokens": 1504,
+          "cached_tokens": 0
+        },
+        {
+          "role": "return",
+          "tenant": 3,
+          "after_turn": 9,
+          "prompt_tokens": 1600,
+          "cached_tokens": 0
+        },
+        {
+          "role": "return",
+          "tenant": 4,
+          "after_turn": 12,
+          "prompt_tokens": 1696,
+          "cached_tokens": 0
+        },
+        {
+          "role": "final",
+          "tenant": 1,
+          "after_turn": 12,
+          "prompt_tokens": 1568,
+          "cached_tokens": 0
+        },
+        {
+          "role": "final",
+          "tenant": 2,
+          "after_turn": 12,
+          "prompt_tokens": 1664,
+          "cached_tokens": 0
+        },
+        {
+          "role": "final",
+          "tenant": 3,
+          "after_turn": 12,
+          "prompt_tokens": 1760,
+          "cached_tokens": 0
+        },
+        {
+          "role": "final",
+          "tenant": 4,
+          "after_turn": 12,
+          "prompt_tokens": 1856,
+          "cached_tokens": 1696
+        }
+      ],
+      "return_cached_sum": 1696,
+      "evictions": 20,
+      "protected_evictions": 0,
+      "demotes": 0,
+      "refused_or_skipped": [],
+      "ttft_loop_ms": {
+        "n": 12,
+        "p50": 190.137,
+        "p95": 195.526
+      },
+      "ttft_all_ms": {
+        "n": 28,
+        "p50": 193.226,
+        "p95": 1313.064
+      },
+      "e2e_all_s": {
+        "n": 28,
+        "p50": 0.382,
+        "p95": 1.498
+      },
+      "digests_identical_to_cold": 28,
+      "final_metrics": {
+        "cuda_driver_free_bytes": 3846307840,
+        "cuda_pool_cached_bytes": 2916145728,
+        "prefix_cache_bytes": 834732032,
+        "prefix_cache_entries": 4,
+        "prefix_cache_evictions": 20,
+        "prefix_cache_hits": 16,
+        "prefix_cache_misses": 12,
+        "prefix_cache_inserts": 24,
+        "prefix_cache_hit_tokens": 136096,
+        "prefix_cache_skips_budget": 0,
+        "prefix_cache_skips_pinned": 0,
+        "active_sessions": 0,
+        "queued_requests": 0
+      }
+    },
+    {
+      "run": 8,
+      "pair_id": "BA-1",
+      "order": "BA",
+      "position": 1,
+      "arm": "lru",
+      "policy_line": "[prefix-cache] on: budget 1074MB (1073741824 B, configured by MEMRA_PREFIX_CACHE_MB), policy plain-LRU (global oldest unleased entry first; leases untouchable; MEMRA_PREFIX_EVICT=lru), min prefix 64 tokens, immediate partial restore=off (rollback) (transformer-only; hybrid mid-entry + routed-MoE N/A)",
+      "wall_s": 64.1,
+      "gpu_start": {
+        "utc": "2026-11-07T14:25:48Z",
+        "temperature_c": 79.0,
+        "power_w": 34.79,
+        "power_limit_w": null,
+        "clocks_sm_mhz": 1590.0,
+        "clocks_mem_mhz": 14001.0,
+        "memory_used_mib": 48.0
+      },
+      "gpu_end": {
+        "utc": "2026-11-07T14:26:53Z",
+        "temperature_c": 79.0,
+        "power_w": 35.74,
+        "power_limit_w": null,
+        "clocks_sm_mhz": 1597.0,
+        "clocks_mem_mhz": 14001.0,
+        "memory_used_mib": 48.0
+      },
+      "computed_tokens": 29600,
+      "computed_tokens_loop": 12672,
+      "computed_tokens_returns": 11360,
+      "loop_cached": [
+        0,
+        10912,
+        11072,
+        11232,
+        11392,
+        11552,
+        11712,
+        11872,
+        12032,
+        12192,
+        12352,
+        12512
+      ],
+      "loop_cold_after_1": 0,
+      "return_cached": [
+        {
+          "role": "return",
+          "tenant": 1,
+          "after_turn": 3,
+          "prompt_tokens": 1408,
+          "cached_tokens": 0
+        },
+        {
+          "role": "return",
+          "tenant": 2,
+          "after_turn": 6,
+          "prompt_tokens": 1504,
+          "cached_tokens": 0
+        },
+        {
+          "role": "return",
+          "tenant": 3,
+          "after_turn": 9,
+          "prompt_tokens": 1600,
+          "cached_tokens": 0
+        },
+        {
+          "role": "return",
+          "tenant": 4,
+          "after_turn": 12,
+          "prompt_tokens": 1696,
+          "cached_tokens": 0
+        },
+        {
+          "role": "final",
+          "tenant": 1,
+          "after_turn": 12,
+          "prompt_tokens": 1568,
+          "cached_tokens": 0
+        },
+        {
+          "role": "final",
+          "tenant": 2,
+          "after_turn": 12,
+          "prompt_tokens": 1664,
+          "cached_tokens": 0
+        },
+        {
+          "role": "final",
+          "tenant": 3,
+          "after_turn": 12,
+          "prompt_tokens": 1760,
+          "cached_tokens": 0
+        },
+        {
+          "role": "final",
+          "tenant": 4,
+          "after_turn": 12,
+          "prompt_tokens": 1856,
+          "cached_tokens": 1696
+        }
+      ],
+      "return_cached_sum": 1696,
+      "evictions": 19,
+      "protected_evictions": 0,
+      "demotes": 0,
+      "refused_or_skipped": [],
+      "ttft_loop_ms": {
+        "n": 12,
+        "p50": 189.657,
+        "p95": 192.298
+      },
+      "ttft_all_ms": {
+        "n": 28,
+        "p50": 191.313,
+        "p95": 1308.387
+      },
+      "e2e_all_s": {
+        "n": 28,
+        "p50": 0.372,
+        "p95": 1.492
+      },
+      "digests_identical_to_cold": 28,
+      "final_metrics": {
+        "cuda_driver_free_bytes": 3846307840,
+        "cuda_pool_cached_bytes": 2712689216,
+        "prefix_cache_bytes": 1038188544,
+        "prefix_cache_entries": 5,
+        "prefix_cache_evictions": 19,
+        "prefix_cache_hits": 16,
+        "prefix_cache_misses": 12,
+        "prefix_cache_inserts": 24,
+        "prefix_cache_hit_tokens": 136096,
+        "prefix_cache_skips_budget": 0,
+        "prefix_cache_skips_pinned": 0,
+        "active_sessions": 0,
+        "queued_requests": 0
+      }
+    },
+    {
+      "run": 9,
+      "pair_id": "AB-2",
+      "order": "AB",
+      "position": 0,
+      "arm": "lru",
+      "policy_line": "[prefix-cache] on: budget 1074MB (1073741824 B, configured by MEMRA_PREFIX_CACHE_MB), policy plain-LRU (global oldest unleased entry first; leases untouchable; MEMRA_PREFIX_EVICT=lru), min prefix 64 tokens, immediate partial restore=off (rollback) (transformer-only; hybrid mid-entry + routed-MoE N/A)",
+      "wall_s": 60.5,
+      "gpu_start": {
+        "utc": "2026-11-07T14:26:53Z",
+        "temperature_c": 79.0,
+        "power_w": 35.74,
+        "power_limit_w": null,
+        "clocks_sm_mhz": 1597.0,
+        "clocks_mem_mhz": 14001.0,
+        "memory_used_mib": 48.0
+      },
+      "gpu_end": {
+        "utc": "2026-11-07T14:27:53Z",
+        "temperature_c": 79.0,
+        "power_w": 33.85,
+        "power_limit_w": null,
+        "clocks_sm_mhz": 1590.0,
+        "clocks_mem_mhz": 14001.0,
+        "memory_used_mib": 48.0
+      },
+      "computed_tokens": 29600,
+      "computed_tokens_loop": 12672,
+      "computed_tokens_returns": 11360,
+      "loop_cached": [
+        0,
+        10912,
+        11072,
+        11232,
+        11392,
+        11552,
+        11712,
+        11872,
+        12032,
+        12192,
+        12352,
+        12512
+      ],
+      "loop_cold_after_1": 0,
+      "return_cached": [
+        {
+          "role": "return",
+          "tenant": 1,
+          "after_turn": 3,
+          "prompt_tokens": 1408,
+          "cached_tokens": 0
+        },
+        {
+          "role": "return",
+          "tenant": 2,
+          "after_turn": 6,
+          "prompt_tokens": 1504,
+          "cached_tokens": 0
+        },
+        {
+          "role": "return",
+          "tenant": 3,
+          "after_turn": 9,
+          "prompt_tokens": 1600,
+          "cached_tokens": 0
+        },
+        {
+          "role": "return",
+          "tenant": 4,
+          "after_turn": 12,
+          "prompt_tokens": 1696,
+          "cached_tokens": 0
+        },
+        {
+          "role": "final",
+          "tenant": 1,
+          "after_turn": 12,
+          "prompt_tokens": 1568,
+          "cached_tokens": 0
+        },
+        {
+          "role": "final",
+          "tenant": 2,
+          "after_turn": 12,
+          "prompt_tokens": 1664,
+          "cached_tokens": 0
+        },
+        {
+          "role": "final",
+          "tenant": 3,
+          "after_turn": 12,
+          "prompt_tokens": 1760,
+          "cached_tokens": 0
+        },
+        {
+          "role": "final",
+          "tenant": 4,
+          "after_turn": 12,
+          "prompt_tokens": 1856,
+          "cached_tokens": 1696
+        }
+      ],
+      "return_cached_sum": 1696,
+      "evictions": 19,
+      "protected_evictions": 0,
+      "demotes": 0,
+      "refused_or_skipped": [],
+      "ttft_loop_ms": {
+        "n": 12,
+        "p50": 189.813,
+        "p95": 191.282
+      },
+      "ttft_all_ms": {
+        "n": 28,
+        "p50": 190.978,
+        "p95": 1304.091
+      },
+      "e2e_all_s": {
+        "n": 28,
+        "p50": 0.384,
+        "p95": 1.49
+      },
+      "digests_identical_to_cold": 28,
+      "final_metrics": {
+        "cuda_driver_free_bytes": 3846307840,
+        "cuda_pool_cached_bytes": 2712689216,
+        "prefix_cache_bytes": 1038188544,
+        "prefix_cache_entries": 5,
+        "prefix_cache_evictions": 19,
+        "prefix_cache_hits": 16,
+        "prefix_cache_misses": 12,
+        "prefix_cache_inserts": 24,
+        "prefix_cache_hit_tokens": 136096,
+        "prefix_cache_skips_budget": 0,
+        "prefix_cache_skips_pinned": 0,
+        "active_sessions": 0,
+        "queued_requests": 0
+      }
+    },
+    {
+      "run": 10,
+      "pair_id": "AB-2",
+      "order": "AB",
+      "position": 1,
+      "arm": "gds",
+      "policy_line": "[prefix-cache] on: budget 1074MB (1073741824 B, configured by MEMRA_PREFIX_CACHE_MB), policy GDS value-per-byte (lowest clock + prompt tokens per MB first; the clock takes each victim's priority; leases untouchable), min prefix 64 tokens, immediate partial restore=off (rollback) (transformer-only; hybrid mid-entry + routed-MoE N/A)",
+      "wall_s": 61.1,
+      "gpu_start": {
+        "utc": "2026-11-07T14:27:53Z",
+        "temperature_c": 79.0,
+        "power_w": 33.85,
+        "power_limit_w": null,
+        "clocks_sm_mhz": 1590.0,
+        "clocks_mem_mhz": 14001.0,
+        "memory_used_mib": 48.0
+      },
+      "gpu_end": {
+        "utc": "2026-11-07T14:28:54Z",
+        "temperature_c": 79.0,
+        "power_w": 39.35,
+        "power_limit_w": null,
+        "clocks_sm_mhz": 1590.0,
+        "clocks_mem_mhz": 14001.0,
+        "memory_used_mib": 48.0
+      },
+      "computed_tokens": 29600,
+      "computed_tokens_loop": 12672,
+      "computed_tokens_returns": 11360,
+      "loop_cached": [
+        0,
+        10912,
+        11072,
+        11232,
+        11392,
+        11552,
+        11712,
+        11872,
+        12032,
+        12192,
+        12352,
+        12512
+      ],
+      "loop_cold_after_1": 0,
+      "return_cached": [
+        {
+          "role": "return",
+          "tenant": 1,
+          "after_turn": 3,
+          "prompt_tokens": 1408,
+          "cached_tokens": 0
+        },
+        {
+          "role": "return",
+          "tenant": 2,
+          "after_turn": 6,
+          "prompt_tokens": 1504,
+          "cached_tokens": 0
+        },
+        {
+          "role": "return",
+          "tenant": 3,
+          "after_turn": 9,
+          "prompt_tokens": 1600,
+          "cached_tokens": 0
+        },
+        {
+          "role": "return",
+          "tenant": 4,
+          "after_turn": 12,
+          "prompt_tokens": 1696,
+          "cached_tokens": 0
+        },
+        {
+          "role": "final",
+          "tenant": 1,
+          "after_turn": 12,
+          "prompt_tokens": 1568,
+          "cached_tokens": 0
+        },
+        {
+          "role": "final",
+          "tenant": 2,
+          "after_turn": 12,
+          "prompt_tokens": 1664,
+          "cached_tokens": 0
+        },
+        {
+          "role": "final",
+          "tenant": 3,
+          "after_turn": 12,
+          "prompt_tokens": 1760,
+          "cached_tokens": 0
+        },
+        {
+          "role": "final",
+          "tenant": 4,
+          "after_turn": 12,
+          "prompt_tokens": 1856,
+          "cached_tokens": 1696
+        }
+      ],
+      "return_cached_sum": 1696,
+      "evictions": 20,
+      "protected_evictions": 0,
+      "demotes": 0,
+      "refused_or_skipped": [],
+      "ttft_loop_ms": {
+        "n": 12,
+        "p50": 191.419,
+        "p95": 194.598
+      },
+      "ttft_all_ms": {
+        "n": 28,
+        "p50": 193.8,
+        "p95": 1355.381
+      },
+      "e2e_all_s": {
+        "n": 28,
+        "p50": 0.39,
+        "p95": 1.547
+      },
+      "digests_identical_to_cold": 28,
+      "final_metrics": {
+        "cuda_driver_free_bytes": 3846307840,
+        "cuda_pool_cached_bytes": 2916145728,
+        "prefix_cache_bytes": 834732032,
+        "prefix_cache_entries": 4,
+        "prefix_cache_evictions": 20,
+        "prefix_cache_hits": 16,
+        "prefix_cache_misses": 12,
+        "prefix_cache_inserts": 24,
+        "prefix_cache_hit_tokens": 136096,
+        "prefix_cache_skips_budget": 0,
+        "prefix_cache_skips_pinned": 0,
+        "active_sessions": 0,
+        "queued_requests": 0
+      }
+    },
+    {
+      "run": 11,
+      "pair_id": "BA-2",
+      "order": "BA",
+      "position": 0,
+      "arm": "gds",
+      "policy_line": "[prefix-cache] on: budget 1074MB (1073741824 B, configured by MEMRA_PREFIX_CACHE_MB), policy GDS value-per-byte (lowest clock + prompt tokens per MB first; the clock takes each victim's priority; leases untouchable), min prefix 64 tokens, immediate partial restore=off (rollback) (transformer-only; hybrid mid-entry + routed-MoE N/A)",
+      "wall_s": 60.8,
+      "gpu_start": {
+        "utc": "2026-11-07T14:28:54Z",
+        "temperature_c": 79.0,
+        "power_w": 39.35,
+        "power_limit_w": null,
+        "clocks_sm_mhz": 1590.0,
+        "clocks_mem_mhz": 14001.0,
+        "memory_used_mib": 48.0
+      },
+      "gpu_end": {
+        "utc": "2026-11-07T14:29:55Z",
+        "temperature_c": 79.0,
+        "power_w": 34.24,
+        "power_limit_w": null,
+        "clocks_sm_mhz": 1605.0,
+        "clocks_mem_mhz": 14001.0,
+        "memory_used_mib": 48.0
+      },
+      "computed_tokens": 29600,
+      "computed_tokens_loop": 12672,
+      "computed_tokens_returns": 11360,
+      "loop_cached": [
+        0,
+        10912,
+        11072,
+        11232,
+        11392,
+        11552,
+        11712,
+        11872,
+        12032,
+        12192,
+        12352,
+        12512
+      ],
+      "loop_cold_after_1": 0,
+      "return_cached": [
+        {
+          "role": "return",
+          "tenant": 1,
+          "after_turn": 3,
+          "prompt_tokens": 1408,
+          "cached_tokens": 0
+        },
+        {
+          "role": "return",
+          "tenant": 2,
+          "after_turn": 6,
+          "prompt_tokens": 1504,
+          "cached_tokens": 0
+        },
+        {
+          "role": "return",
+          "tenant": 3,
+          "after_turn": 9,
+          "prompt_tokens": 1600,
+          "cached_tokens": 0
+        },
+        {
+          "role": "return",
+          "tenant": 4,
+          "after_turn": 12,
+          "prompt_tokens": 1696,
+          "cached_tokens": 0
+        },
+        {
+          "role": "final",
+          "tenant": 1,
+          "after_turn": 12,
+          "prompt_tokens": 1568,
+          "cached_tokens": 0
+        },
+        {
+          "role": "final",
+          "tenant": 2,
+          "after_turn": 12,
+          "prompt_tokens": 1664,
+          "cached_tokens": 0
+        },
+        {
+          "role": "final",
+          "tenant": 3,
+          "after_turn": 12,
+          "prompt_tokens": 1760,
+          "cached_tokens": 0
+        },
+        {
+          "role": "final",
+          "tenant": 4,
+          "after_turn": 12,
+          "prompt_tokens": 1856,
+          "cached_tokens": 1696
+        }
+      ],
+      "return_cached_sum": 1696,
+      "evictions": 20,
+      "protected_evictions": 0,
+      "demotes": 0,
+      "refused_or_skipped": [],
+      "ttft_loop_ms": {
+        "n": 12,
+        "p50": 192.165,
+        "p95": 194.222
+      },
+      "ttft_all_ms": {
+        "n": 28,
+        "p50": 192.482,
+        "p95": 1353.387
+      },
+      "e2e_all_s": {
+        "n": 28,
+        "p50": 0.397,
+        "p95": 1.544
+      },
+      "digests_identical_to_cold": 28,
+      "final_metrics": {
+        "cuda_driver_free_bytes": 3846307840,
+        "cuda_pool_cached_bytes": 2916145728,
+        "prefix_cache_bytes": 834732032,
+        "prefix_cache_entries": 4,
+        "prefix_cache_evictions": 20,
+        "prefix_cache_hits": 16,
+        "prefix_cache_misses": 12,
+        "prefix_cache_inserts": 24,
+        "prefix_cache_hit_tokens": 136096,
+        "prefix_cache_skips_budget": 0,
+        "prefix_cache_skips_pinned": 0,
+        "active_sessions": 0,
+        "queued_requests": 0
+      }
+    },
+    {
+      "run": 12,
+      "pair_id": "BA-2",
+      "order": "BA",
+      "position": 1,
+      "arm": "lru",
+      "policy_line": "[prefix-cache] on: budget 1074MB (1073741824 B, configured by MEMRA_PREFIX_CACHE_MB), policy plain-LRU (global oldest unleased entry first; leases untouchable; MEMRA_PREFIX_EVICT=lru), min prefix 64 tokens, immediate partial restore=off (rollback) (transformer-only; hybrid mid-entry + routed-MoE N/A)",
+      "wall_s": 60.8,
+      "gpu_start": {
+        "utc": "2026-11-07T14:29:55Z",
+        "temperature_c": 79.0,
+        "power_w": 34.24,
+        "power_limit_w": null,
+        "clocks_sm_mhz": 1605.0,
+        "clocks_mem_mhz": 14001.0,
+        "memory_used_mib": 48.0
+      },
+      "gpu_end": {
+        "utc": "2026-11-07T14:30:56Z",
+        "temperature_c": 79.0,
+        "power_w": 34.04,
+        "power_limit_w": null,
+        "clocks_sm_mhz": 1590.0,
+        "clocks_mem_mhz": 14001.0,
+        "memory_used_mib": 48.0
+      },
+      "computed_tokens": 29600,
+      "computed_tokens_loop": 12672,
+      "computed_tokens_returns": 11360,
+      "loop_cached": [
+        0,
+        10912,
+        11072,
+        11232,
+        11392,
+        11552,
+        11712,
+        11872,
+        12032,
+        12192,
+        12352,
+        12512
+      ],
+      "loop_cold_after_1": 0,
+      "return_cached": [
+        {
+          "role": "return",
+          "tenant": 1,
+          "after_turn": 3,
+          "prompt_tokens": 1408,
+          "cached_tokens": 0
+        },
+        {
+          "role": "return",
+          "tenant": 2,
+          "after_turn": 6,
+          "prompt_tokens": 1504,
+          "cached_tokens": 0
+        },
+        {
+          "role": "return",
+          "tenant": 3,
+          "after_turn": 9,
+          "prompt_tokens": 1600,
+          "cached_tokens": 0
+        },
+        {
+          "role": "return",
+          "tenant": 4,
+          "after_turn": 12,
+          "prompt_tokens": 1696,
+          "cached_tokens": 0
+        },
+        {
+          "role": "final",
+          "tenant": 1,
+          "after_turn": 12,
+          "prompt_tokens": 1568,
+          "cached_tokens": 0
+        },
+        {
+          "role": "final",
+          "tenant": 2,
+          "after_turn": 12,
+          "prompt_tokens": 1664,
+          "cached_tokens": 0
+        },
+        {
+          "role": "final",
+          "tenant": 3,
+          "after_turn": 12,
+          "prompt_tokens": 1760,
+          "cached_tokens": 0
+        },
+        {
+          "role": "final",
+          "tenant": 4,
+          "after_turn": 12,
+          "prompt_tokens": 1856,
+          "cached_tokens": 1696
+        }
+      ],
+      "return_cached_sum": 1696,
+      "evictions": 19,
+      "protected_evictions": 0,
+      "demotes": 0,
+      "refused_or_skipped": [],
+      "ttft_loop_ms": {
+        "n": 12,
+        "p50": 190.944,
+        "p95": 194.121
+      },
+      "ttft_all_ms": {
+        "n": 28,
+        "p50": 193.623,
+        "p95": 1355.596
+      },
+      "e2e_all_s": {
+        "n": 28,
+        "p50": 0.389,
+        "p95": 1.547
+      },
+      "digests_identical_to_cold": 28,
+      "final_metrics": {
+        "cuda_driver_free_bytes": 3846307840,
+        "cuda_pool_cached_bytes": 2712689216,
+        "prefix_cache_bytes": 1038188544,
+        "prefix_cache_entries": 5,
+        "prefix_cache_evictions": 19,
+        "prefix_cache_hits": 16,
+        "prefix_cache_misses": 12,
+        "prefix_cache_inserts": 24,
+        "prefix_cache_hit_tokens": 136096,
+        "prefix_cache_skips_budget": 0,
+        "prefix_cache_skips_pinned": 0,
+        "active_sessions": 0,
+        "queued_requests": 0
+      }
+    },
+    {
+      "run": 13,
+      "pair_id": "AB-3",
+      "order": "AB",
+      "position": 0,
+      "arm": "lru",
+      "policy_line": "[prefix-cache] on: budget 1074MB (1073741824 B, configured by MEMRA_PREFIX_CACHE_MB), policy plain-LRU (global oldest unleased entry first; leases untouchable; MEMRA_PREFIX_EVICT=lru), min prefix 64 tokens, immediate partial restore=off (rollback) (transformer-only; hybrid mid-entry + routed-MoE N/A)",
+      "wall_s": 60.9,
+      "gpu_start": {
+        "utc": "2026-11-07T14:30:56Z",
+        "temperature_c": 79.0,
+        "power_w": 34.04,
+        "power_limit_w": null,
+        "clocks_sm_mhz": 1590.0,
+        "clocks_mem_mhz": 14001.0,
+        "memory_used_mib": 48.0
+      },
+      "gpu_end": {
+        "utc": "2026-11-07T14:31:57Z",
+        "temperature_c": 79.0,
+        "power_w": 68.94,
+        "power_limit_w": null,
+        "clocks_sm_mhz": 1597.0,
+        "clocks_mem_mhz": 14001.0,
+        "memory_used_mib": 48.0
+      },
+      "computed_tokens": 29600,
+      "computed_tokens_loop": 12672,
+      "computed_tokens_returns": 11360,
+      "loop_cached": [
+        0,
+        10912,
+        11072,
+        11232,
+        11392,
+        11552,
+        11712,
+        11872,
+        12032,
+        12192,
+        12352,
+        12512
+      ],
+      "loop_cold_after_1": 0,
+      "return_cached": [
+        {
+          "role": "return",
+          "tenant": 1,
+          "after_turn": 3,
+          "prompt_tokens": 1408,
+          "cached_tokens": 0
+        },
+        {
+          "role": "return",
+          "tenant": 2,
+          "after_turn": 6,
+          "prompt_tokens": 1504,
+          "cached_tokens": 0
+        },
+        {
+          "role": "return",
+          "tenant": 3,
+          "after_turn": 9,
+          "prompt_tokens": 1600,
+          "cached_tokens": 0
+        },
+        {
+          "role": "return",
+          "tenant": 4,
+          "after_turn": 12,
+          "prompt_tokens": 1696,
+          "cached_tokens": 0
+        },
+        {
+          "role": "final",
+          "tenant": 1,
+          "after_turn": 12,
+          "prompt_tokens": 1568,
+          "cached_tokens": 0
+        },
+        {
+          "role": "final",
+          "tenant": 2,
+          "after_turn": 12,
+          "prompt_tokens": 1664,
+          "cached_tokens": 0
+        },
+        {
+          "role": "final",
+          "tenant": 3,
+          "after_turn": 12,
+          "prompt_tokens": 1760,
+          "cached_tokens": 0
+        },
+        {
+          "role": "final",
+          "tenant": 4,
+          "after_turn": 12,
+          "prompt_tokens": 1856,
+          "cached_tokens": 1696
+        }
+      ],
+      "return_cached_sum": 1696,
+      "evictions": 19,
+      "protected_evictions": 0,
+      "demotes": 0,
+      "refused_or_skipped": [],
+      "ttft_loop_ms": {
+        "n": 12,
+        "p50": 191.892,
+        "p95": 197.073
+      },
+      "ttft_all_ms": {
+        "n": 28,
+        "p50": 194.702,
+        "p95": 1362.927
+      },
+      "e2e_all_s": {
+        "n": 28,
+        "p50": 0.395,
+        "p95": 1.554
+      },
+      "digests_identical_to_cold": 28,
+      "final_metrics": {
+        "cuda_driver_free_bytes": 3846307840,
+        "cuda_pool_cached_bytes": 2712689216,
+        "prefix_cache_bytes": 1038188544,
+        "prefix_cache_entries": 5,
+        "prefix_cache_evictions": 19,
+        "prefix_cache_hits": 16,
+        "prefix_cache_misses": 12,
+        "prefix_cache_inserts": 24,
+        "prefix_cache_hit_tokens": 136096,
+        "prefix_cache_skips_budget": 0,
+        "prefix_cache_skips_pinned": 0,
+        "active_sessions": 0,
+        "queued_requests": 0
+      }
+    },
+    {
+      "run": 14,
+      "pair_id": "AB-3",
+      "order": "AB",
+      "position": 1,
+      "arm": "gds",
+      "policy_line": "[prefix-cache] on: budget 1074MB (1073741824 B, configured by MEMRA_PREFIX_CACHE_MB), policy GDS value-per-byte (lowest clock + prompt tokens per MB first; the clock takes each victim's priority; leases untouchable), min prefix 64 tokens, immediate partial restore=off (rollback) (transformer-only; hybrid mid-entry + routed-MoE N/A)",
+      "wall_s": 60.8,
+      "gpu_start": {
+        "utc": "2026-11-07T14:31:57Z",
+        "temperature_c": 79.0,
+        "power_w": 68.94,
+        "power_limit_w": null,
+        "clocks_sm_mhz": 1597.0,
+        "clocks_mem_mhz": 14001.0,
+        "memory_used_mib": 48.0
+      },
+      "gpu_end": {
+        "utc": "2026-11-07T14:32:58Z",
+        "temperature_c": 79.0,
+        "power_w": 33.92,
+        "power_limit_w": null,
+        "clocks_sm_mhz": 1590.0,
+        "clocks_mem_mhz": 14001.0,
+        "memory_used_mib": 48.0
+      },
+      "computed_tokens": 29600,
+      "computed_tokens_loop": 12672,
+      "computed_tokens_returns": 11360,
+      "loop_cached": [
+        0,
+        10912,
+        11072,
+        11232,
+        11392,
+        11552,
+        11712,
+        11872,
+        12032,
+        12192,
+        12352,
+        12512
+      ],
+      "loop_cold_after_1": 0,
+      "return_cached": [
+        {
+          "role": "return",
+          "tenant": 1,
+          "after_turn": 3,
+          "prompt_tokens": 1408,
+          "cached_tokens": 0
+        },
+        {
+          "role": "return",
+          "tenant": 2,
+          "after_turn": 6,
+          "prompt_tokens": 1504,
+          "cached_tokens": 0
+        },
+        {
+          "role": "return",
+          "tenant": 3,
+          "after_turn": 9,
+          "prompt_tokens": 1600,
+          "cached_tokens": 0
+        },
+        {
+          "role": "return",
+          "tenant": 4,
+          "after_turn": 12,
+          "prompt_tokens": 1696,
+          "cached_tokens": 0
+        },
+        {
+          "role": "final",
+          "tenant": 1,
+          "after_turn": 12,
+          "prompt_tokens": 1568,
+          "cached_tokens": 0
+        },
+        {
+          "role": "final",
+          "tenant": 2,
+          "after_turn": 12,
+          "prompt_tokens": 1664,
+          "cached_tokens": 0
+        },
+        {
+          "role": "final",
+          "tenant": 3,
+          "after_turn": 12,
+          "prompt_tokens": 1760,
+          "cached_tokens": 0
+        },
+        {
+          "role": "final",
+          "tenant": 4,
+          "after_turn": 12,
+          "prompt_tokens": 1856,
+          "cached_tokens": 1696
+        }
+      ],
+      "return_cached_sum": 1696,
+      "evictions": 20,
+      "protected_evictions": 0,
+      "demotes": 0,
+      "refused_or_skipped": [],
+      "ttft_loop_ms": {
+        "n": 12,
+        "p50": 190.602,
+        "p95": 192.848
+      },
+      "ttft_all_ms": {
+        "n": 28,
+        "p50": 192.684,
+        "p95": 1355.983
+      },
+      "e2e_all_s": {
+        "n": 28,
+        "p50": 0.386,
+        "p95": 1.548
+      },
+      "digests_identical_to_cold": 28,
+      "final_metrics": {
+        "cuda_driver_free_bytes": 3846307840,
+        "cuda_pool_cached_bytes": 2916145728,
+        "prefix_cache_bytes": 834732032,
+        "prefix_cache_entries": 4,
+        "prefix_cache_evictions": 20,
+        "prefix_cache_hits": 16,
+        "prefix_cache_misses": 12,
+        "prefix_cache_inserts": 24,
+        "prefix_cache_hit_tokens": 136096,
+        "prefix_cache_skips_budget": 0,
+        "prefix_cache_skips_pinned": 0,
+        "active_sessions": 0,
+        "queued_requests": 0
+      }
+    },
+    {
+      "run": 15,
+      "pair_id": "BA-3",
+      "order": "BA",
+      "position": 0,
+      "arm": "gds",
+      "policy_line": "[prefix-cache] on: budget 1074MB (1073741824 B, configured by MEMRA_PREFIX_CACHE_MB), policy GDS value-per-byte (lowest clock + prompt tokens per MB first; the clock takes each victim's priority; leases untouchable), min prefix 64 tokens, immediate partial restore=off (rollback) (transformer-only; hybrid mid-entry + routed-MoE N/A)",
+      "wall_s": 60.9,
+      "gpu_start": {
+        "utc": "2026-11-07T14:32:58Z",
+        "temperature_c": 79.0,
+        "power_w": 33.92,
+        "power_limit_w": null,
+        "clocks_sm_mhz": 1590.0,
+        "clocks_mem_mhz": 14001.0,
+        "memory_used_mib": 48.0
+      },
+      "gpu_end": {
+        "utc": "2026-11-07T14:33:59Z",
+        "temperature_c": 79.0,
+        "power_w": 34.06,
+        "power_limit_w": null,
+        "clocks_sm_mhz": 1590.0,
+        "clocks_mem_mhz": 14001.0,
+        "memory_used_mib": 48.0
+      },
+      "computed_tokens": 29600,
+      "computed_tokens_loop": 12672,
+      "computed_tokens_returns": 11360,
+      "loop_cached": [
+        0,
+        10912,
+        11072,
+        11232,
+        11392,
+        11552,
+        11712,
+        11872,
+        12032,
+        12192,
+        12352,
+        12512
+      ],
+      "loop_cold_after_1": 0,
+      "return_cached": [
+        {
+          "role": "return",
+          "tenant": 1,
+          "after_turn": 3,
+          "prompt_tokens": 1408,
+          "cached_tokens": 0
+        },
+        {
+          "role": "return",
+          "tenant": 2,
+          "after_turn": 6,
+          "prompt_tokens": 1504,
+          "cached_tokens": 0
+        },
+        {
+          "role": "return",
+          "tenant": 3,
+          "after_turn": 9,
+          "prompt_tokens": 1600,
+          "cached_tokens": 0
+        },
+        {
+          "role": "return",
+          "tenant": 4,
+          "after_turn": 12,
+          "prompt_tokens": 1696,
+          "cached_tokens": 0
+        },
+        {
+          "role": "final",
+          "tenant": 1,
+          "after_turn": 12,
+          "prompt_tokens": 1568,
+          "cached_tokens": 0
+        },
+        {
+          "role": "final",
+          "tenant": 2,
+          "after_turn": 12,
+          "prompt_tokens": 1664,
+          "cached_tokens": 0
+        },
+        {
+          "role": "final",
+          "tenant": 3,
+          "after_turn": 12,
+          "prompt_tokens": 1760,
+          "cached_tokens": 0
+        },
+        {
+          "role": "final",
+          "tenant": 4,
+          "after_turn": 12,
+          "prompt_tokens": 1856,
+          "cached_tokens": 1696
+        }
+      ],
+      "return_cached_sum": 1696,
+      "evictions": 20,
+      "protected_evictions": 0,
+      "demotes": 0,
+      "refused_or_skipped": [],
+      "ttft_loop_ms": {
+        "n": 12,
+        "p50": 192.857,
+        "p95": 195.867
+      },
+      "ttft_all_ms": {
+        "n": 28,
+        "p50": 194.766,
+        "p95": 1362.826
+      },
+      "e2e_all_s": {
+        "n": 28,
+        "p50": 0.384,
+        "p95": 1.555
+      },
+      "digests_identical_to_cold": 28,
+      "final_metrics": {
+        "cuda_driver_free_bytes": 3846307840,
+        "cuda_pool_cached_bytes": 2916145728,
+        "prefix_cache_bytes": 834732032,
+        "prefix_cache_entries": 4,
+        "prefix_cache_evictions": 20,
+        "prefix_cache_hits": 16,
+        "prefix_cache_misses": 12,
+        "prefix_cache_inserts": 24,
+        "prefix_cache_hit_tokens": 136096,
+        "prefix_cache_skips_budget": 0,
+        "prefix_cache_skips_pinned": 0,
+        "active_sessions": 0,
+        "queued_requests": 0
+      }
+    },
+    {
+      "run": 16,
+      "pair_id": "BA-3",
+      "order": "BA",
+      "position": 1,
+      "arm": "lru",
+      "policy_line": "[prefix-cache] on: budget 1074MB (1073741824 B, configured by MEMRA_PREFIX_CACHE_MB), policy plain-LRU (global oldest unleased entry first; leases untouchable; MEMRA_PREFIX_EVICT=lru), min prefix 64 tokens, immediate partial restore=off (rollback) (transformer-only; hybrid mid-entry + routed-MoE N/A)",
+      "wall_s": 60.8,
+      "gpu_start": {
+        "utc": "2026-11-07T14:33:59Z",
+        "temperature_c": 79.0,
+        "power_w": 34.06,
+        "power_limit_w": null,
+        "clocks_sm_mhz": 1590.0,
+        "clocks_mem_mhz": 14001.0,
+        "memory_used_mib": 48.0
+      },
+      "gpu_end": {
+        "utc": "2026-11-07T14:34:59Z",
+        "temperature_c": 79.0,
+        "power_w": 33.87,
+        "power_limit_w": null,
+        "clocks_sm_mhz": 1590.0,
+        "clocks_mem_mhz": 14001.0,
+        "memory_used_mib": 48.0
+      },
+      "computed_tokens": 29600,
+      "computed_tokens_loop": 12672,
+      "computed_tokens_returns": 11360,
+      "loop_cached": [
+        0,
+        10912,
+        11072,
+        11232,
+        11392,
+        11552,
+        11712,
+        11872,
+        12032,
+        12192,
+        12352,
+        12512
+      ],
+      "loop_cold_after_1": 0,
+      "return_cached": [
+        {
+          "role": "return",
+          "tenant": 1,
+          "after_turn": 3,
+          "prompt_tokens": 1408,
+          "cached_tokens": 0
+        },
+        {
+          "role": "return",
+          "tenant": 2,
+          "after_turn": 6,
+          "prompt_tokens": 1504,
+          "cached_tokens": 0
+        },
+        {
+          "role": "return",
+          "tenant": 3,
+          "after_turn": 9,
+          "prompt_tokens": 1600,
+          "cached_tokens": 0
+        },
+        {
+          "role": "return",
+          "tenant": 4,
+          "after_turn": 12,
+          "prompt_tokens": 1696,
+          "cached_tokens": 0
+        },
+        {
+          "role": "final",
+          "tenant": 1,
+          "after_turn": 12,
+          "prompt_tokens": 1568,
+          "cached_tokens": 0
+        },
+        {
+          "role": "final",
+          "tenant": 2,
+          "after_turn": 12,
+          "prompt_tokens": 1664,
+          "cached_tokens": 0
+        },
+        {
+          "role": "final",
+          "tenant": 3,
+          "after_turn": 12,
+          "prompt_tokens": 1760,
+          "cached_tokens": 0
+        },
+        {
+          "role": "final",
+          "tenant": 4,
+          "after_turn": 12,
+          "prompt_tokens": 1856,
+          "cached_tokens": 1696
+        }
+      ],
+      "return_cached_sum": 1696,
+      "evictions": 19,
+      "protected_evictions": 0,
+      "demotes": 0,
+      "refused_or_skipped": [],
+      "ttft_loop_ms": {
+        "n": 12,
+        "p50": 189.496,
+        "p95": 193.458
+      },
+      "ttft_all_ms": {
+        "n": 28,
+        "p50": 191.949,
+        "p95": 1331.445
+      },
+      "e2e_all_s": {
+        "n": 28,
+        "p50": 0.383,
+        "p95": 1.522
+      },
+      "digests_identical_to_cold": 28,
+      "final_metrics": {
+        "cuda_driver_free_bytes": 3846307840,
+        "cuda_pool_cached_bytes": 2712689216,
+        "prefix_cache_bytes": 1038188544,
+        "prefix_cache_entries": 5,
+        "prefix_cache_evictions": 19,
+        "prefix_cache_hits": 16,
+        "prefix_cache_misses": 12,
+        "prefix_cache_inserts": 24,
+        "prefix_cache_hit_tokens": 136096,
+        "prefix_cache_skips_budget": 0,
+        "prefix_cache_skips_pinned": 0,
+        "active_sessions": 0,
+        "queued_requests": 0
+      }
+    },
+    {
+      "run": 17,
+      "pair_id": "AB-4",
+      "order": "AB",
+      "position": 0,
+      "arm": "lru",
+      "policy_line": "[prefix-cache] on: budget 1074MB (1073741824 B, configured by MEMRA_PREFIX_CACHE_MB), policy plain-LRU (global oldest unleased entry first; leases untouchable; MEMRA_PREFIX_EVICT=lru), min prefix 64 tokens, immediate partial restore=off (rollback) (transformer-only; hybrid mid-entry + routed-MoE N/A)",
+      "wall_s": 60.9,
+      "gpu_start": {
+        "utc": "2026-11-07T14:34:59Z",
+        "temperature_c": 79.0,
+        "power_w": 52.29,
+        "power_limit_w": null,
+        "clocks_sm_mhz": 1590.0,
+        "clocks_mem_mhz": 14001.0,
+        "memory_used_mib": 48.0
+      },
+      "gpu_end": {
+        "utc": "2026-11-07T14:36:00Z",
+        "temperature_c": 79.0,
+        "power_w": 33.98,
+        "power_limit_w": null,
+        "clocks_sm_mhz": 1590.0,
+        "clocks_mem_mhz": 14001.0,
+        "memory_used_mib": 48.0
+      },
+      "computed_tokens": 29600,
+      "computed_tokens_loop": 12672,
+      "computed_tokens_returns": 11360,
+      "loop_cached": [
+        0,
+        10912,
+        11072,
+        11232,
+        11392,
+        11552,
+        11712,
+        11872,
+        12032,
+        12192,
+        12352,
+        12512
+      ],
+      "loop_cold_after_1": 0,
+      "return_cached": [
+        {
+          "role": "return",
+          "tenant": 1,
+          "after_turn": 3,
+          "prompt_tokens": 1408,
+          "cached_tokens": 0
+        },
+        {
+          "role": "return",
+          "tenant": 2,
+          "after_turn": 6,
+          "prompt_tokens": 1504,
+          "cached_tokens": 0
+        },
+        {
+          "role": "return",
+          "tenant": 3,
+          "after_turn": 9,
+          "prompt_tokens": 1600,
+          "cached_tokens": 0
+        },
+        {
+          "role": "return",
+          "tenant": 4,
+          "after_turn": 12,
+          "prompt_tokens": 1696,
+          "cached_tokens": 0
+        },
+        {
+          "role": "final",
+          "tenant": 1,
+          "after_turn": 12,
+          "prompt_tokens": 1568,
+          "cached_tokens": 0
+        },
+        {
+          "role": "final",
+          "tenant": 2,
+          "after_turn": 12,
+          "prompt_tokens": 1664,
+          "cached_tokens": 0
+        },
+        {
+          "role": "final",
+          "tenant": 3,
+          "after_turn": 12,
+          "prompt_tokens": 1760,
+          "cached_tokens": 0
+        },
+        {
+          "role": "final",
+          "tenant": 4,
+          "after_turn": 12,
+          "prompt_tokens": 1856,
+          "cached_tokens": 1696
+        }
+      ],
+      "return_cached_sum": 1696,
+      "evictions": 19,
+      "protected_evictions": 0,
+      "demotes": 0,
+      "refused_or_skipped": [],
+      "ttft_loop_ms": {
+        "n": 12,
+        "p50": 189.836,
+        "p95": 191.82
+      },
+      "ttft_all_ms": {
+        "n": 28,
+        "p50": 191.478,
+        "p95": 1348.185
+      },
+      "e2e_all_s": {
+        "n": 28,
+        "p50": 0.398,
+        "p95": 1.536
+      },
+      "digests_identical_to_cold": 28,
+      "final_metrics": {
+        "cuda_driver_free_bytes": 3846307840,
+        "cuda_pool_cached_bytes": 2712689216,
+        "prefix_cache_bytes": 1038188544,
+        "prefix_cache_entries": 5,
+        "prefix_cache_evictions": 19,
+        "prefix_cache_hits": 16,
+        "prefix_cache_misses": 12,
+        "prefix_cache_inserts": 24,
+        "prefix_cache_hit_tokens": 136096,
+        "prefix_cache_skips_budget": 0,
+        "prefix_cache_skips_pinned": 0,
+        "active_sessions": 0,
+        "queued_requests": 0
+      }
+    },
+    {
+      "run": 18,
+      "pair_id": "AB-4",
+      "order": "AB",
+      "position": 1,
+      "arm": "gds",
+      "policy_line": "[prefix-cache] on: budget 1074MB (1073741824 B, configured by MEMRA_PREFIX_CACHE_MB), policy GDS value-per-byte (lowest clock + prompt tokens per MB first; the clock takes each victim's priority; leases untouchable), min prefix 64 tokens, immediate partial restore=off (rollback) (transformer-only; hybrid mid-entry + routed-MoE N/A)",
+      "wall_s": 60.7,
+      "gpu_start": {
+        "utc": "2026-11-07T14:36:00Z",
+        "temperature_c": 79.0,
+        "power_w": 33.98,
+        "power_limit_w": null,
+        "clocks_sm_mhz": 1590.0,
+        "clocks_mem_mhz": 14001.0,
+        "memory_used_mib": 48.0
+      },
+      "gpu_end": {
+        "utc": "2026-11-07T14:37:01Z",
+        "temperature_c": 79.0,
+        "power_w": 35.31,
+        "power_limit_w": null,
+        "clocks_sm_mhz": 1590.0,
+        "clocks_mem_mhz": 14001.0,
+        "memory_used_mib": 48.0
+      },
+      "computed_tokens": 29600,
+      "computed_tokens_loop": 12672,
+      "computed_tokens_returns": 11360,
+      "loop_cached": [
+        0,
+        10912,
+        11072,
+        11232,
+        11392,
+        11552,
+        11712,
+        11872,
+        12032,
+        12192,
+        12352,
+        12512
+      ],
+      "loop_cold_after_1": 0,
+      "return_cached": [
+        {
+          "role": "return",
+          "tenant": 1,
+          "after_turn": 3,
+          "prompt_tokens": 1408,
+          "cached_tokens": 0
+        },
+        {
+          "role": "return",
+          "tenant": 2,
+          "after_turn": 6,
+          "prompt_tokens": 1504,
+          "cached_tokens": 0
+        },
+        {
+          "role": "return",
+          "tenant": 3,
+          "after_turn": 9,
+          "prompt_tokens": 1600,
+          "cached_tokens": 0
+        },
+        {
+          "role": "return",
+          "tenant": 4,
+          "after_turn": 12,
+          "prompt_tokens": 1696,
+          "cached_tokens": 0
+        },
+        {
+          "role": "final",
+          "tenant": 1,
+          "after_turn": 12,
+          "prompt_tokens": 1568,
+          "cached_tokens": 0
+        },
+        {
+          "role": "final",
+          "tenant": 2,
+          "after_turn": 12,
+          "prompt_tokens": 1664,
+          "cached_tokens": 0
+        },
+        {
+          "role": "final",
+          "tenant": 3,
+          "after_turn": 12,
+          "prompt_tokens": 1760,
+          "cached_tokens": 0
+        },
+        {
+          "role": "final",
+          "tenant": 4,
+          "after_turn": 12,
+          "prompt_tokens": 1856,
+          "cached_tokens": 1696
+        }
+      ],
+      "return_cached_sum": 1696,
+      "evictions": 20,
+      "protected_evictions": 0,
+      "demotes": 0,
+      "refused_or_skipped": [],
+      "ttft_loop_ms": {
+        "n": 12,
+        "p50": 190.763,
+        "p95": 194.295
+      },
+      "ttft_all_ms": {
+        "n": 28,
+        "p50": 191.808,
+        "p95": 1322.739
+      },
+      "e2e_all_s": {
+        "n": 28,
+        "p50": 0.398,
+        "p95": 1.511
+      },
+      "digests_identical_to_cold": 28,
+      "final_metrics": {
+        "cuda_driver_free_bytes": 3846307840,
+        "cuda_pool_cached_bytes": 2916145728,
+        "prefix_cache_bytes": 834732032,
+        "prefix_cache_entries": 4,
+        "prefix_cache_evictions": 20,
+        "prefix_cache_hits": 16,
+        "prefix_cache_misses": 12,
+        "prefix_cache_inserts": 24,
+        "prefix_cache_hit_tokens": 136096,
+        "prefix_cache_skips_budget": 0,
+        "prefix_cache_skips_pinned": 0,
+        "active_sessions": 0,
+        "queued_requests": 0
+      }
+    },
+    {
+      "run": 19,
+      "pair_id": "BA-4",
+      "order": "BA",
+      "position": 0,
+      "arm": "gds",
+      "policy_line": "[prefix-cache] on: budget 1074MB (1073741824 B, configured by MEMRA_PREFIX_CACHE_MB), policy GDS value-per-byte (lowest clock + prompt tokens per MB first; the clock takes each victim's priority; leases untouchable), min prefix 64 tokens, immediate partial restore=off (rollback) (transformer-only; hybrid mid-entry + routed-MoE N/A)",
+      "wall_s": 61.2,
+      "gpu_start": {
+        "utc": "2026-11-07T14:37:01Z",
+        "temperature_c": 79.0,
+        "power_w": 35.31,
+        "power_limit_w": null,
+        "clocks_sm_mhz": 1590.0,
+        "clocks_mem_mhz": 14001.0,
+        "memory_used_mib": 48.0
+      },
+      "gpu_end": {
+        "utc": "2026-11-07T14:38:02Z",
+        "temperature_c": 80.0,
+        "power_w": 34.03,
+        "power_limit_w": null,
+        "clocks_sm_mhz": 1590.0,
+        "clocks_mem_mhz": 14001.0,
+        "memory_used_mib": 48.0
+      },
+      "computed_tokens": 29600,
+      "computed_tokens_loop": 12672,
+      "computed_tokens_returns": 11360,
+      "loop_cached": [
+        0,
+        10912,
+        11072,
+        11232,
+        11392,
+        11552,
+        11712,
+        11872,
+        12032,
+        12192,
+        12352,
+        12512
+      ],
+      "loop_cold_after_1": 0,
+      "return_cached": [
+        {
+          "role": "return",
+          "tenant": 1,
+          "after_turn": 3,
+          "prompt_tokens": 1408,
+          "cached_tokens": 0
+        },
+        {
+          "role": "return",
+          "tenant": 2,
+          "after_turn": 6,
+          "prompt_tokens": 1504,
+          "cached_tokens": 0
+        },
+        {
+          "role": "return",
+          "tenant": 3,
+          "after_turn": 9,
+          "prompt_tokens": 1600,
+          "cached_tokens": 0
+        },
+        {
+          "role": "return",
+          "tenant": 4,
+          "after_turn": 12,
+          "prompt_tokens": 1696,
+          "cached_tokens": 0
+        },
+        {
+          "role": "final",
+          "tenant": 1,
+          "after_turn": 12,
+          "prompt_tokens": 1568,
+          "cached_tokens": 0
+        },
+        {
+          "role": "final",
+          "tenant": 2,
+          "after_turn": 12,
+          "prompt_tokens": 1664,
+          "cached_tokens": 0
+        },
+        {
+          "role": "final",
+          "tenant": 3,
+          "after_turn": 12,
+          "prompt_tokens": 1760,
+          "cached_tokens": 0
+        },
+        {
+          "role": "final",
+          "tenant": 4,
+          "after_turn": 12,
+          "prompt_tokens": 1856,
+          "cached_tokens": 1696
+        }
+      ],
+      "return_cached_sum": 1696,
+      "evictions": 20,
+      "protected_evictions": 0,
+      "demotes": 0,
+      "refused_or_skipped": [],
+      "ttft_loop_ms": {
+        "n": 12,
+        "p50": 190.951,
+        "p95": 197.986
+      },
+      "ttft_all_ms": {
+        "n": 28,
+        "p50": 195.904,
+        "p95": 1381.052
+      },
+      "e2e_all_s": {
+        "n": 28,
+        "p50": 0.399,
+        "p95": 1.574
+      },
+      "digests_identical_to_cold": 28,
+      "final_metrics": {
+        "cuda_driver_free_bytes": 3846307840,
+        "cuda_pool_cached_bytes": 2916145728,
+        "prefix_cache_bytes": 834732032,
+        "prefix_cache_entries": 4,
+        "prefix_cache_evictions": 20,
+        "prefix_cache_hits": 16,
+        "prefix_cache_misses": 12,
+        "prefix_cache_inserts": 24,
+        "prefix_cache_hit_tokens": 136096,
+        "prefix_cache_skips_budget": 0,
+        "prefix_cache_skips_pinned": 0,
+        "active_sessions": 0,
+        "queued_requests": 0
+      }
+    },
+    {
+      "run": 20,
+      "pair_id": "BA-4",
+      "order": "BA",
+      "position": 1,
+      "arm": "lru",
+      "policy_line": "[prefix-cache] on: budget 1074MB (1073741824 B, configured by MEMRA_PREFIX_CACHE_MB), policy plain-LRU (global oldest unleased entry first; leases untouchable; MEMRA_PREFIX_EVICT=lru), min prefix 64 tokens, immediate partial restore=off (rollback) (transformer-only; hybrid mid-entry + routed-MoE N/A)",
+      "wall_s": 59.2,
+      "gpu_start": {
+        "utc": "2026-11-07T14:38:02Z",
+        "temperature_c": 80.0,
+        "power_w": 34.03,
+        "power_limit_w": null,
+        "clocks_sm_mhz": 1590.0,
+        "clocks_mem_mhz": 14001.0,
+        "memory_used_mib": 48.0
+      },
+      "gpu_end": {
+        "utc": "2026-11-07T14:39:01Z",
+        "temperature_c": 80.0,
+        "power_w": 33.89,
+        "power_limit_w": null,
+        "clocks_sm_mhz": 1590.0,
+        "clocks_mem_mhz": 14001.0,
+        "memory_used_mib": 48.0
+      },
+      "computed_tokens": 29600,
+      "computed_tokens_loop": 12672,
+      "computed_tokens_returns": 11360,
+      "loop_cached": [
+        0,
+        10912,
+        11072,
+        11232,
+        11392,
+        11552,
+        11712,
+        11872,
+        12032,
+        12192,
+        12352,
+        12512
+      ],
+      "loop_cold_after_1": 0,
+      "return_cached": [
+        {
+          "role": "return",
+          "tenant": 1,
+          "after_turn": 3,
+          "prompt_tokens": 1408,
+          "cached_tokens": 0
+        },
+        {
+          "role": "return",
+          "tenant": 2,
+          "after_turn": 6,
+          "prompt_tokens": 1504,
+          "cached_tokens": 0
+        },
+        {
+          "role": "return",
+          "tenant": 3,
+          "after_turn": 9,
+          "prompt_tokens": 1600,
+          "cached_tokens": 0
+        },
+        {
+          "role": "return",
+          "tenant": 4,
+          "after_turn": 12,
+          "prompt_tokens": 1696,
+          "cached_tokens": 0
+        },
+        {
+          "role": "final",
+          "tenant": 1,
+          "after_turn": 12,
+          "prompt_tokens": 1568,
+          "cached_tokens": 0
+        },
+        {
+          "role": "final",
+          "tenant": 2,
+          "after_turn": 12,
+          "prompt_tokens": 1664,
+          "cached_tokens": 0
+        },
+        {
+          "role": "final",
+          "tenant": 3,
+          "after_turn": 12,
+          "prompt_tokens": 1760,
+          "cached_tokens": 0
+        },
+        {
+          "role": "final",
+          "tenant": 4,
+          "after_turn": 12,
+          "prompt_tokens": 1856,
+          "cached_tokens": 1696
+        }
+      ],
+      "return_cached_sum": 1696,
+      "evictions": 19,
+      "protected_evictions": 0,
+      "demotes": 0,
+      "refused_or_skipped": [],
+      "ttft_loop_ms": {
+        "n": 12,
+        "p50": 193.755,
+        "p95": 196.724
+      },
+      "ttft_all_ms": {
+        "n": 28,
+        "p50": 194.53,
+        "p95": 1363.333
+      },
+      "e2e_all_s": {
+        "n": 28,
+        "p50": 0.387,
+        "p95": 1.555
+      },
+      "digests_identical_to_cold": 28,
+      "final_metrics": {
+        "cuda_driver_free_bytes": 3846307840,
+        "cuda_pool_cached_bytes": 2712689216,
+        "prefix_cache_bytes": 1038188544,
+        "prefix_cache_entries": 5,
+        "prefix_cache_evictions": 19,
+        "prefix_cache_hits": 16,
+        "prefix_cache_misses": 12,
+        "prefix_cache_inserts": 24,
+        "prefix_cache_hit_tokens": 136096,
+        "prefix_cache_skips_budget": 0,
+        "prefix_cache_skips_pinned": 0,
+        "active_sessions": 0,
+        "queued_requests": 0
+      }
+    }
+  ],
+  "cold": {
+    "rows": [
+      {
+        "idx": 0,
+        "role": "seed1",
+        "tenant": 1,
+        "salt": "cohort-1",
+        "turn": null,
+        "prompt_ids": 1248,
+        "prompt_tokens": 1248,
+        "cached_tokens": 0,
+        "computed_tokens": 1248,
+        "completion_tokens": 8,
+        "finish_reason": "length",
+        "elapsed_s": 4.373,
+        "text_sha256": "c1e188654046e89293922a4ec59067e77524bd9de532d6be175431d4bf95c575",
+        "ttft_first_decode_ms": 4153.667,
+        "prime_ms": 4140.843
+      },
+      {
+        "idx": 1,
+        "role": "seed2",
+        "tenant": 1,
+        "salt": "cohort-1",
+        "turn": null,
+        "prompt_ids": 1248,
+        "prompt_tokens": 1248,
+        "cached_tokens": 0,
+        "computed_tokens": 1248,
+        "completion_tokens": 8,
+        "finish_reason": "length",
+        "elapsed_s": 0.988,
+        "text_sha256": "c1e188654046e89293922a4ec59067e77524bd9de532d6be175431d4bf95c575",
+        "ttft_first_decode_ms": 778.553,
+        "prime_ms": 772.568
+      },
+      {
+        "idx": 2,
+        "role": "seed1",
+        "tenant": 2,
+        "salt": "cohort-2",
+        "turn": null,
+        "prompt_ids": 1344,
+        "prompt_tokens": 1344,
+        "cached_tokens": 0,
+        "computed_tokens": 1344,
+        "completion_tokens": 8,
+        "finish_reason": "length",
+        "elapsed_s": 1.102,
+        "text_sha256": "3ca9a6e466c2dfb81b503a84c9ebd1055dbb1d148e56922d5ae3a4d8ef55b231",
+        "ttft_first_decode_ms": 881.066,
+        "prime_ms": 875.269
+      },
+      {
+        "idx": 3,
+        "role": "seed2",
+        "tenant": 2,
+        "salt": "cohort-2",
+        "turn": null,
+        "prompt_ids": 1344,
+        "prompt_tokens": 1344,
+        "cached_tokens": 0,
+        "computed_tokens": 1344,
+        "completion_tokens": 8,
+        "finish_reason": "length",
+        "elapsed_s": 1.129,
+        "text_sha256": "3ca9a6e466c2dfb81b503a84c9ebd1055dbb1d148e56922d5ae3a4d8ef55b231",
+        "ttft_first_decode_ms": 898.924,
+        "prime_ms": 893.164
+      },
+      {
+        "idx": 4,
+        "role": "seed1",
+        "tenant": 3,
+        "salt": "cohort-3",
+        "turn": null,
+        "prompt_ids": 1440,
+        "prompt_tokens": 1440,
+        "cached_tokens": 0,
+        "computed_tokens": 1440,
+        "completion_tokens": 8,
+        "finish_reason": "length",
+        "elapsed_s": 1.251,
+        "text_sha256": "1e5e661ff29ee077913228733faca5acc78fb12748ce4c6c1db10ffd18a77b56",
+        "ttft_first_decode_ms": 989.117,
+        "prime_ms": 983.344
+      },
+      {
+        "idx": 5,
+        "role": "seed2",
+        "tenant": 3,
+        "salt": "cohort-3",
+        "turn": null,
+        "prompt_ids": 1440,
+        "prompt_tokens": 1440,
+        "cached_tokens": 0,
+        "computed_tokens": 1440,
+        "completion_tokens": 8,
+        "finish_reason": "length",
+        "elapsed_s": 1.19,
+        "text_sha256": "1e5e661ff29ee077913228733faca5acc78fb12748ce4c6c1db10ffd18a77b56",
+        "ttft_first_decode_ms": 956.973,
+        "prime_ms": 951.297
+      },
+      {
+        "idx": 6,
+        "role": "seed1",
+        "tenant": 4,
+        "salt": "cohort-4",
+        "turn": null,
+        "prompt_ids": 1536,
+        "prompt_tokens": 1536,
+        "cached_tokens": 0,
+        "computed_tokens": 1536,
+        "completion_tokens": 8,
+        "finish_reason": "length",
+        "elapsed_s": 1.216,
+        "text_sha256": "57541e978a9b2efb50155dd35bc6a990040c0e5255a2f048705124f070d971af",
+        "ttft_first_decode_ms": 975.547,
+        "prime_ms": 969.867
+      },
+      {
+        "idx": 7,
+        "role": "seed2",
+        "tenant": 4,
+        "salt": "cohort-4",
+        "turn": null,
+        "prompt_ids": 1536,
+        "prompt_tokens": 1536,
+        "cached_tokens": 0,
+        "computed_tokens": 1536,
+        "completion_tokens": 8,
+        "finish_reason": "length",
+        "elapsed_s": 1.256,
+        "text_sha256": "57541e978a9b2efb50155dd35bc6a990040c0e5255a2f048705124f070d971af",
+        "ttft_first_decode_ms": 994.55,
+        "prime_ms": 988.485
+      },
+      {
+        "idx": 8,
+        "role": "loop",
+        "tenant": 0,
+        "salt": "grow",
+        "turn": 1,
+        "prompt_ids": 10912,
+        "prompt_tokens": 10912,
+        "cached_tokens": 0,
+        "computed_tokens": 10912,
+        "completion_tokens": 8,
+        "finish_reason": "length",
+        "elapsed_s": 8.539,
+        "text_sha256": "006fdb36c6ff0391b4d337026b2abb75e3eff56a2194340f80cacbebbf1eb4dc",
+        "ttft_first_decode_ms": 8342.83,
+        "prime_ms": 8336.229
+      },
+      {
+        "idx": 9,
+        "role": "loop",
+        "tenant": 0,
+        "salt": "grow",
+        "turn": 2,
+        "prompt_ids": 11072,
+        "prompt_tokens": 11072,
+        "cached_tokens": 0,
+        "computed_tokens": 11072,
+        "completion_tokens": 8,
+        "finish_reason": "length",
+        "elapsed_s": 8.748,
+        "text_sha256": "70efa8d085a5531aef77ae42952f3188a2319b83b6b66b48b47d5329201ddddb",
+        "ttft_first_decode_ms": 8554.703,
+        "prime_ms": 8547.576
+      },
+      {
+        "idx": 10,
+        "role": "loop",
+        "tenant": 0,
+        "salt": "grow",
+        "turn": 3,
+        "prompt_ids": 11232,
+        "prompt_tokens": 11232,
+        "cached_tokens": 0,
+        "computed_tokens": 11232,
+        "completion_tokens": 3,
+        "finish_reason": "stop",
+        "elapsed_s": 9.221,
+        "text_sha256": "4b3ad3a092aaa00fb3f57db445445d38b2085adf2fb98b73015b5a160fd31775",
+        "ttft_first_decode_ms": 9167.862,
+        "prime_ms": 9161.748
+      },
+      {
+        "idx": 11,
+        "role": "return",
+        "tenant": 1,
+        "salt": "cohort-1",
+        "turn": 3,
+        "prompt_ids": 1408,
+        "prompt_tokens": 1408,
+        "cached_tokens": 0,
+        "computed_tokens": 1408,
+        "completion_tokens": 8,
+        "finish_reason": "length",
+        "elapsed_s": 1.229,
+        "text_sha256": "f1a33345e94b7e622e18e50b2f8246a65d0e5f31da437a0176de15e7778c67b1",
+        "ttft_first_decode_ms": 1039.226,
+        "prime_ms": 1033.689
+      },
+      {
+        "idx": 12,
+        "role": "loop",
+        "tenant": 0,
+        "salt": "grow",
+        "turn": 4,
+        "prompt_ids": 11392,
+        "prompt_tokens": 11392,
+        "cached_tokens": 0,
+        "computed_tokens": 11392,
+        "completion_tokens": 8,
+        "finish_reason": "length",
+        "elapsed_s": 10.041,
+        "text_sha256": "24a97a2867768b2d1338cb591f7749f093767b6f3af95921b636b2c730e4e1bc",
+        "ttft_first_decode_ms": 9839.622,
+        "prime_ms": 9833.958
+      },
+      {
+        "idx": 13,
+        "role": "loop",
+        "tenant": 0,
+        "salt": "grow",
+        "turn": 5,
+        "prompt_ids": 11552,
+        "prompt_tokens": 11552,
+        "cached_tokens": 0,
+        "computed_tokens": 11552,
+        "completion_tokens": 8,
+        "finish_reason": "length",
+        "elapsed_s": 10.517,
+        "text_sha256": "22f023976ebc22fd5bfc9a699ff63056fb08186f1faec8429537e154a5e07f85",
+        "ttft_first_decode_ms": 10311.574,
+        "prime_ms": 10305.954
+      },
+      {
+        "idx": 14,
+        "role": "loop",
+        "tenant": 0,
+        "salt": "grow",
+        "turn": 6,
+        "prompt_ids": 11712,
+        "prompt_tokens": 11712,
+        "cached_tokens": 0,
+        "computed_tokens": 11712,
+        "completion_tokens": 8,
+        "finish_reason": "length",
+        "elapsed_s": 10.653,
+        "text_sha256": "24a97a2867768b2d1338cb591f7749f093767b6f3af95921b636b2c730e4e1bc",
+        "ttft_first_decode_ms": 10445.717,
+        "prime_ms": 10439.959
+      },
+      {
+        "idx": 15,
+        "role": "return",
+        "tenant": 2,
+        "salt": "cohort-2",
+        "turn": 6,
+        "prompt_ids": 1504,
+        "prompt_tokens": 1504,
+        "cached_tokens": 0,
+        "computed_tokens": 1504,
+        "completion_tokens": 8,
+        "finish_reason": "length",
+        "elapsed_s": 1.385,
+        "text_sha256": "fa08252a46f691945ee7413a6fe1abeb3f6b2d3ad7d68f2d14b33b439ef04357",
+        "ttft_first_decode_ms": 1185.981,
+        "prime_ms": 1180.477
+      },
+      {
+        "idx": 16,
+        "role": "loop",
+        "tenant": 0,
+        "salt": "grow",
+        "turn": 7,
+        "prompt_ids": 11872,
+        "prompt_tokens": 11872,
+        "cached_tokens": 0,
+        "computed_tokens": 11872,
+        "completion_tokens": 8,
+        "finish_reason": "length",
+        "elapsed_s": 10.844,
+        "text_sha256": "8d11831c91ef4dc9d14addd5fd5540b4849aae6db55ac059d6bb3fc534e072e6",
+        "ttft_first_decode_ms": 10635.38,
+        "prime_ms": 10629.691
+      },
+      {
+        "idx": 17,
+        "role": "loop",
+        "tenant": 0,
+        "salt": "grow",
+        "turn": 8,
+        "prompt_ids": 12032,
+        "prompt_tokens": 12032,
+        "cached_tokens": 0,
+        "computed_tokens": 12032,
+        "completion_tokens": 8,
+        "finish_reason": "length",
+        "elapsed_s": 10.948,
+        "text_sha256": "24a97a2867768b2d1338cb591f7749f093767b6f3af95921b636b2c730e4e1bc",
+        "ttft_first_decode_ms": 10733.589,
+        "prime_ms": 10727.148
+      },
+      {
+        "idx": 18,
+        "role": "loop",
+        "tenant": 0,
+        "salt": "grow",
+        "turn": 9,
+        "prompt_ids": 12192,
+        "prompt_tokens": 12192,
+        "cached_tokens": 0,
+        "computed_tokens": 12192,
+        "completion_tokens": 8,
+        "finish_reason": "length",
+        "elapsed_s": 11.223,
+        "text_sha256": "c95fce823d87df23662e9f0040daa0394452a65b99415102dcad063ef4410b9e",
+        "ttft_first_decode_ms": 11011.934,
+        "prime_ms": 11005.424
+      },
+      {
+        "idx": 19,
+        "role": "return",
+        "tenant": 3,
+        "salt": "cohort-3",
+        "turn": 9,
+        "prompt_ids": 1600,
+        "prompt_tokens": 1600,
+        "cached_tokens": 0,
+        "computed_tokens": 1600,
+        "completion_tokens": 8,
+        "finish_reason": "length",
+        "elapsed_s": 1.53,
+        "text_sha256": "7e744a72e7b79cb18a6584374bbe50d65299a2601025ff50db2bf798cd8e9527",
+        "ttft_first_decode_ms": 1330.339,
+        "prime_ms": 1324.689
+      },
+      {
+        "idx": 20,
+        "role": "loop",
+        "tenant": 0,
+        "salt": "grow",
+        "turn": 10,
+        "prompt_ids": 12352,
+        "prompt_tokens": 12352,
+        "cached_tokens": 0,
+        "computed_tokens": 12352,
+        "completion_tokens": 8,
+        "finish_reason": "length",
+        "elapsed_s": 11.507,
+        "text_sha256": "9022af0570f69478c29d489ec5a012ba025b0767507ddd75f905fb5ca3e69c12",
+        "ttft_first_decode_ms": 11303.522,
+        "prime_ms": 11297.083
+      },
+      {
+        "idx": 21,
+        "role": "loop",
+        "tenant": 0,
+        "salt": "grow",
+        "turn": 11,
+        "prompt_ids": 12512,
+        "prompt_tokens": 12512,
+        "cached_tokens": 0,
+        "computed_tokens": 12512,
+        "completion_tokens": 8,
+        "finish_reason": "length",
+        "elapsed_s": 11.615,
+        "text_sha256": "b6b5b760960efe974f6a0d6bd1682894aa206a747d7499239ec7cc7bfcbd506a",
+        "ttft_first_decode_ms": 11405.665,
+        "prime_ms": 11399.655
+      },
+      {
+        "idx": 22,
+        "role": "loop",
+        "tenant": 0,
+        "salt": "grow",
+        "turn": 12,
+        "prompt_ids": 12672,
+        "prompt_tokens": 12672,
+        "cached_tokens": 0,
+        "computed_tokens": 12672,
+        "completion_tokens": 8,
+        "finish_reason": "length",
+        "elapsed_s": 12.178,
+        "text_sha256": "d5b3015fc5c4f9f71c03796a1c4fee0fe6fc12194c5288b8996c887561464ec3",
+        "ttft_first_decode_ms": 11964.15,
+        "prime_ms": 11958.313
+      },
+      {
+        "idx": 23,
+        "role": "return",
+        "tenant": 4,
+        "salt": "cohort-4",
+        "turn": 12,
+        "prompt_ids": 1696,
+        "prompt_tokens": 1696,
+        "cached_tokens": 0,
+        "computed_tokens": 1696,
+        "completion_tokens": 8,
+        "finish_reason": "length",
+        "elapsed_s": 1.698,
+        "text_sha256": "66333786858cc554abd78c4277d39990cb16b50f0c4920a73c212ab0c2cd607a",
+        "ttft_first_decode_ms": 1491.933,
+        "prime_ms": 1486.397
+      },
+      {
+        "idx": 24,
+        "role": "final",
+        "tenant": 1,
+        "salt": "cohort-1",
+        "turn": 12,
+        "prompt_ids": 1568,
+        "prompt_tokens": 1568,
+        "cached_tokens": 0,
+        "computed_tokens": 1568,
+        "completion_tokens": 8,
+        "finish_reason": "length",
+        "elapsed_s": 1.557,
+        "text_sha256": "f1a33345e94b7e622e18e50b2f8246a65d0e5f31da437a0176de15e7778c67b1",
+        "ttft_first_decode_ms": 1353.46,
+        "prime_ms": 1347.851
+      },
+      {
+        "idx": 25,
+        "role": "final",
+        "tenant": 2,
+        "salt": "cohort-2",
+        "turn": 12,
+        "prompt_ids": 1664,
+        "prompt_tokens": 1664,
+        "cached_tokens": 0,
+        "computed_tokens": 1664,
+        "completion_tokens": 8,
+        "finish_reason": "length",
+        "elapsed_s": 1.532,
+        "text_sha256": "777b8b408b746f8fb0ecfb1ce45d337ba406b80d834f26759cf2ebcb2cecb138",
+        "ttft_first_decode_ms": 1327.977,
+        "prime_ms": 1322.523
+      },
+      {
+        "idx": 26,
+        "role": "final",
+        "tenant": 3,
+        "salt": "cohort-3",
+        "turn": 12,
+        "prompt_ids": 1760,
+        "prompt_tokens": 1760,
+        "cached_tokens": 0,
+        "computed_tokens": 1760,
+        "completion_tokens": 8,
+        "finish_reason": "length",
+        "elapsed_s": 1.614,
+        "text_sha256": "4b23c43d6dad79322a1b4b395d98564a4b34ac818043255e851903ed91455306",
+        "ttft_first_decode_ms": 1415.775,
+        "prime_ms": 1410.431
+      },
+      {
+        "idx": 27,
+        "role": "final",
+        "tenant": 4,
+        "salt": "cohort-4",
+        "turn": 12,
+        "prompt_ids": 1856,
+        "prompt_tokens": 1856,
+        "cached_tokens": 0,
+        "computed_tokens": 1856,
+        "completion_tokens": 8,
+        "finish_reason": "length",
+        "elapsed_s": 1.734,
+        "text_sha256": "d130dbcf85337f3dcd94726f66b74f379d009f907576b1c66347fcefc5223e87",
+        "ttft_first_decode_ms": 1531.873,
+        "prime_ms": 1526.184
+      }
+    ]
+  }
+}

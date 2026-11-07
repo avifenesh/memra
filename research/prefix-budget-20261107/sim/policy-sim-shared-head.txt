@@ -1,0 +1,11 @@
+policy simulator, the agentic replay with a 256-token head shared by every session (the measured c1 cell has one),
+plus the mixed and incident shapes; gds = always-admit GreedyDual-Size, gdsf = the same with value x hit count
+mixed-14             lru   budget    2260MB computed   12136 cached       0 evict   77 scored-hits 0/6 scored-cached 0
+mixed-14             gds   budget    2260MB computed    9096 cached    3040 evict   72 scored-hits 6/6 scored-cached 3040
+mixed-14             gdsf  budget    2260MB computed    9096 cached    3040 evict   72 scored-hits 6/6 scored-cached 3040
+incident             lru   budget    1074MB computed   28896 cached  136032 evict   19 scored-hits 1/8 scored-cached 1632
+incident             gds   budget    1074MB computed   28896 cached  136032 evict   20 scored-hits 1/8 scored-cached 1632
+incident             gdsf  budget    1074MB computed   30848 cached  134080 evict   21 scored-hits 0/8 scored-cached 0
+agentic-shared-head  lru   budget    2260MB computed  252830 cached   58752 evict   52 scored-hits 29/29 scored-cached 29632
+agentic-shared-head  gds   budget    2260MB computed  258974 cached   52608 evict   76 scored-hits 15/29 scored-cached 26048
+agentic-shared-head  gdsf  budget    2260MB computed  258974 cached   52608 evict   76 scored-hits 14/29 scored-cached 25792
