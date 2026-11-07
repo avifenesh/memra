@@ -93,6 +93,7 @@ Numerical bodies preserve the corresponding eager entry's operation order.
 | `fa_prefill_qw_db_prime_table` | Existing four-plane attention with live causal depth | `Engine::fa_prefill_view_ws` |
 | `fa_prefill_qw_t3_prime_table` | Existing three-plane attention with live causal depth | `Engine::fa_prefill_view_ws` |
 | `fa_prefill_qw_h2_prime_table` | Two-head (h2) attention with live causal depth | `Engine::fa_prefill_view_ws` |
+| `fa_prefill_qw_h2p_prime_table` | Two-head mbarrier-ring (h2p) attention with live causal depth; reached only on a 170-SM 120a card with `MEMRA_PRIME_KV_H2=1 MEMRA_PRIME_KV_H2P=1` (no default reaches it), ungated | `Engine::fa_prefill_view_ws` |
 | `ssm_conv1d_gdn_state_f32_prime_table` | Carried convolution reads the live ring | `Engine::ssm_conv1d_gdn_state_pad` |
 | `ssm_conv_ring_update_f32_prime_table` | Publishes the live convolution ring | `Engine::ssm_conv1d_gdn_state_pad` |
 | `gdn_chunk_state_mma_prime_table` | Chunked GDN reads/writes live ping-pong state | `Engine::gdn_scan_chunked` |
@@ -104,7 +105,8 @@ Numerical bodies preserve the corresponding eager entry's operation order.
 | Symbol | Purpose | Types | Architecture | Door | Binding |
 | --- | --- | --- | --- | --- | --- |
 | `fa_prefill_qw_t3` | Two K staging planes plus one V plane, register P operands; unchanged head-dim 256 prime arithmetic | BF16 KV, f32 Q/O | existing warp-MMA support | `MEMRA_PRIME_KV_T3`, default OFF | `Engine::fa_prefill_view_ws` |
-| `fa_prefill_qw_h2` | Two query heads of one KV head per 8-warp CTA over double-buffered K/V planes, register P operands; unchanged head-dim 256 prime arithmetic (2026-11-06) | BF16 KV, f32 Q/O | existing warp-MMA support | `MEMRA_PRIME_KV_H2`, default ON on unified-memory 120a (GB10), OFF elsewhere | `Engine::fa_prefill_view_ws` |
+| `fa_prefill_qw_h2` | Two query heads of one KV head per 8-warp CTA over double-buffered K/V planes, register P operands; unchanged head-dim 256 prime arithmetic (2026-11-06) | BF16 KV, f32 Q/O | existing warp-MMA support | `MEMRA_PRIME_KV_H2` on any device; on GB10 the h2 route takes h2p unless `MEMRA_PRIME_KV_H2P=0` | `Engine::fa_prefill_view_ws` |
+| `fa_prefill_qw_h2p` | h2's row program on a three-stage K/V ring handed over by per-stage full/empty mbarriers, the second head's warps one QK behind the first so one head's softmax overlaps the other's MMAs; ldmatrix through precomputed `.shared` offsets; bit-identical to h2 (2026-11-07) | BF16 KV, f32 Q/O | mbarrier `try_wait` on sm_90+, `test_wait` below | `MEMRA_PRIME_KV_H2P`, default ON on unified-memory 120a (GB10) inside the h2 route, OFF elsewhere | `Engine::fa_prefill_view_ws` |
 
 ## GLM TP pool-split indexer, 2026-09-08
 

@@ -7287,31 +7287,41 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // so O must match BIT-FOR-BIT (this is the chunk-prime token-identity contract). Cases
         // cover a continuation chunk (T < T_kv, the chunk-prime shape) and a BK-unaligned tail.
         // The t >= 128 cells reach the selectable workspace twins (MEMRA_PRIME_KV_T3 /
-        // MEMRA_PRIME_KV_H2), so a kernel-check run with either door set byte-checks that twin.
+        // MEMRA_PRIME_KV_H2 / MEMRA_PRIME_KV_H2P), so a kernel-check run with a door set
+        // byte-checks that twin; on GB10 the defaults reach h2p. For h2p: 1000 x 1000 is a fresh
+        // prime whose first CTA has two tiles (the ring never refills), 1000 x 1031 and 4075 x 8171
+        // end in a partial 64-row CTA (a ragged final chunk), and 4096 x 36864 reuses every stage
+        // hundreds of times at a chunk-prime shape.
         for (t, tkv) in [
             (64usize, 192usize),
             (100, 100),
             (37, 297),
             (192, 4097),
             (1024, 8224),
+            (1000, 1000),
+            (1000, 1031),
+            (4075, 8171),
+            (4096, 36864),
         ] {
             let q: Vec<f32> = (0..hd * nh * t).map(|i| pr(i + 5) * 0.2).collect();
             let k: Vec<f32> = (0..hd * nhkv * tkv).map(|i| pr(i + 7) * 0.2).collect();
             let v: Vec<f32> = (0..hd * nhkv * tkv).map(|i| pr(i + 11) * 0.2).collect();
             let qd = e.htod(&q)?;
-            let kd = e.htod(&k)?;
-            let vd = e.htod(&v)?;
             let mut kc = e.alloc_u8(tkv * k_tok_bytes)?;
             let mut vc = e.alloc_u8(tkv * v_tok_bytes)?;
-            for tok in 0..tkv {
-                let k_row = kd.slice(tok * kv_dim_k..(tok + 1) * kv_dim_k);
-                let v_row = vd.slice(tok * kv_dim_v..(tok + 1) * kv_dim_v);
-                e.append_kv_quantized_view(
-                    &k_row,
-                    &v_row,
+            // One rows launch per upload (the append kernel's grid-y bound caps an upload); both
+            // sides of the byte compare read the same cache.
+            for at in (0..tkv).step_by(32768) {
+                let end = (at + 32768).min(tkv);
+                let kd = e.htod(&k[at * kv_dim_k..end * kv_dim_k])?;
+                let vd = e.htod(&v[at * kv_dim_v..end * kv_dim_v])?;
+                e.append_kv_quantized_rows(
+                    &kd,
+                    &vd,
                     &mut kc,
                     &mut vc,
-                    tok,
+                    at,
+                    end - at,
                     kv_dim_k,
                     kv_dim_v,
                     k_tok_bytes,

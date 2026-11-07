@@ -3,6 +3,9 @@
 **Status:** decided on one device class (unified-memory 120a family, measured on one DGX Spark).
 Discrete cards are unmeasured and keep the four-plane db twin.
 
+**Superseded on GB10 (2026-11-07):** [GB10-PRIME-ATTENTION-H2P.md](GB10-PRIME-ATTENTION-H2P.md) keeps h2's row
+program (bit-identical) on a three-stage mbarrier ring; h2 itself now runs with `MEMRA_PRIME_KV_H2P=0`.
+
 ## Question
 
 The quantized-KV prime dequantizes the KV prefix into a BF16 workspace and runs `fa_prefill_qw_db`:

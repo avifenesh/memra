@@ -96,3 +96,11 @@ within 0.5 s, same answers, MemAvailable floor unchanged (66.2 GiB or more at 25
 8,192-row chunks v2 saves more (-10.7% at 131,051), since it builds each weight image once per
 chunk. At 131,051 tokens attention (50.8 s) is now the largest part, then the GEMMs and the Gated
 DeltaNet kernels (about 20 s).
+
+Prime attention ring (2026-11-07, [research/gb10-prefill-attn-20261107](../../research/gb10-prefill-attn-20261107/),
+`MEMRA_PRIME_KV_H2P`): h2's row program on a three-stage K/V ring handed over by mbarriers, the
+second query head one QK behind the first, `ldmatrix.shared` on precomputed offsets; bit-identical
+to h2. Device probe at depth 131,072: 85 against 68 TFLOPS (bf16 `mma.sync` ceiling about 102).
+Served cold TTFT against main `6f6d816757`, B H H B B H on unit 1, three fresh boots per arm:
+32.57 -> 32.06 s at 32,784 tokens (-1.6%), 167.9 -> 158.2 s at 131,051 (-5.8%) and 432.7 ->
+393.9 s at 259,951 (-9.0%), same answers in every boot, MemAvailable floor 66.6 GiB.

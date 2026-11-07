@@ -1,5 +1,8 @@
 //! Byte gate for the two-head (h2) prime attention twin. Run alone with MEMRA_PRIME_KV_H2=1
 //! under the device lease: every cell must match the inline-dequant reference kernel bit for bit.
+//! Inside the h2 route a unified-memory 120a device (GB10) takes the h2p ring by default; run once
+//! more with MEMRA_PRIME_KV_H2P=0 to byte-check h2 itself, or with MEMRA_PRIME_KV_H2P=1 on a
+//! discrete card to reach h2p there.
 use memra_engine::Engine;
 
 fn values(n: usize, seed: u64) -> Vec<f32> {
