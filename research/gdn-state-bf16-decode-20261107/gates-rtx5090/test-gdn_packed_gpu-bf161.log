@@ -1,0 +1,24 @@
+
+running 3 tests
+test gpu_gdn_packed_graph_rebind_matches_per_row_bitwise ... [func] CAPTURE-TIME kernel lookup (not warmed): ssm_conv1d_fused_decode_tloop_f32
+[func] CAPTURE-TIME kernel lookup (not warmed): gdn_scan_s128_tsnap
+[gdn-packed] class=fp32 graph_rebind=true num_k=2 num_v=4: 84 cells bit-identical (T in 2..=8)
+[func] CAPTURE-TIME kernel lookup (not warmed): ssm_conv1d_fused_decode_tloop_f32
+[func] CAPTURE-TIME kernel lookup (not warmed): gdn_scan_s128_tsnap
+[gdn-packed] class=fp32 graph_rebind=true num_k=16 num_v=32: 84 cells bit-identical (T in 2..=8)
+[func] CAPTURE-TIME kernel lookup (not warmed): ssm_conv1d_fused_decode_tloop_f32
+[func] CAPTURE-TIME kernel lookup (not warmed): gdn_scan_s128_tsnap
+[gdn-packed] class=bf16 graph_rebind=true num_k=2 num_v=4: 84 cells bit-identical (T in 2..=8)
+[func] CAPTURE-TIME kernel lookup (not warmed): ssm_conv1d_fused_decode_tloop_f32
+[func] CAPTURE-TIME kernel lookup (not warmed): gdn_scan_s128_tsnap
+[gdn-packed] class=bf16 graph_rebind=true num_k=16 num_v=32: 84 cells bit-identical (T in 2..=8)
+ok
+test gpu_gdn_packed_matches_per_row_bitwise ... [gdn-packed] class=fp32 graph_rebind=false num_k=2 num_v=4: 42 cells bit-identical (T in 2..=8)
+[gdn-packed] class=bf16 graph_rebind=false num_k=2 num_v=4: 42 cells bit-identical (T in 2..=8)
+ok
+test gpu_gdn_packed_ornith_matches_per_row_bitwise ... [gdn-packed] class=fp32 graph_rebind=false num_k=16 num_v=32: 42 cells bit-identical (T in 2..=8)
+[gdn-packed] class=bf16 graph_rebind=false num_k=16 num_v=32: 42 cells bit-identical (T in 2..=8)
+ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.01s
+

@@ -1,0 +1,8 @@
+[tensor-contract] bound 866 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[gdn-state] bf16 GDN decode class: decode and verify store the state as bf16, rounded once at decode start; prime, captures and prefix entries fp32
+loaded qwen35 (64 layers); steps=16 reps=3 batches=[1, 2, 4, 8] primary_dev=0
+[fa-pool] grow #0 dev=0 o_len 0 -> 1622016 ml_len 0 -> 6336 (retired kept, zero=false)
+[fa-pool] grow #1 dev=0 o_len 1622016 -> 3244032 ml_len 6336 -> 12672 (retired kept, zero=false)
+CHUNKSWEEP seqs=8 chunk=8: aggregate 94.6 tok/s (84.61 ms/tick, median of 3)
+TOKFP seqs=8 chunk=8 [3f301508b8dade6c 7b2a4b440b736609 690b6175f63b6a17 eb2baf21a3f8d620 910109a8d222474d 4d52011ffefb2046 1f3e1601e9320c35 1980e4754e60f725]
+rc=0

@@ -1,0 +1,11 @@
+11:28:35 kernel-check fast rc=0 365 OK, 0 FAIL; gdn_st16: 9 OK 0 FAIL
+11:29:16 ident main pp_forward_last=f444f2cb935605cd numeric=7802b4aec0de6e7f class=0 generated 128 tokens in 9.356s = 13.68 tok/s (Stage-B int8 dp4a decode, gen-only
+11:29:48 ident new0 pp_forward_last=f444f2cb935605cd numeric=7802b4aec0de6e7f class=0 generated 128 tokens in 9.340s = 13.70 tok/s (Stage-B int8 dp4a decode, gen-only
+11:30:19 ident new1 pp_forward_last=f444f2cb935605cd numeric=50061107e1828650 class=1 generated 128 tokens in 9.272s = 13.80 tok/s (Stage-B int8 dp4a decode, gen-only
+11:30:46 run-spec bf16=0 rc=0   acceptance: 17/98 = 17.3%   self-consistency: PASS (identical to plain target)   acceptance: 17/112 = 15.2%   self-consistency: PASS (identical to plain target) === SELF-CONSISTENCY PASS === 
+11:31:12 run-spec bf16=1 rc=0   acceptance: 18/98 = 18.4%   self-consistency: PASS (identical to plain target)   acceptance: 18/112 = 16.1%   self-consistency: PASS (identical to plain target) === SELF-CONSISTENCY PASS === 
+11:31:13 test gdn_packed_gpu bf16=0 rc=0 test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.25s
+11:31:15 test gdn_packed_gpu bf16=1 rc=0 test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.51s
+11:31:57 test grid_capture_gpu bf16=0 rc=0 test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 41.44s
+11:32:38 test grid_capture_gpu bf16=1 rc=0 test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 41.12s
+11:32:38 GATES_DONE

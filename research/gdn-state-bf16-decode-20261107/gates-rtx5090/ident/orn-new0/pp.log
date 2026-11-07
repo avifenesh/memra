@@ -1,0 +1,16 @@
+[tensor-contract] bound 753 semantic tensors (pack qwen35_moe, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[moe] resident-experts decision (dev0): experts 18.57GB + trunk 1.60GB vs free 24.52GB (expert budget 20.91GB) -> RESIDENT
+loaded qwen35moe (40 trunk layers; optional MTP skipped)
+chat-templated prompt:
+<|im_start|>user
+Write a Python function that returns the n-th Fibonacci number, then explain its time complexity in two sentences.<|im_end|>
+<|im_start|>assistant
+<think>
+
+prompt text: "Write a Python function that returns the n-th Fibonacci number, then explain its time complexity in two sentences."
+prompt tokens: [248045, 846, 198, 7734, 264, 12654, 709, 421, 4523, 279, 307, 7324, 76938, 1324, 11, 1179, 10033, 1141, 854, 22373, 303, 1330, 22157, 13, 248046, 198, 248045, 74455, 198, 248068, 198]
+[moe-sk-form] dev=0 qt=7 sms=82 occ128=1 occ32=7 occt=3 cross=64 xcross=64 bdb=0 in_f=2048 out_f=512 n_active=154 max_m=5
+pp-only prefill logits -> /home/avifenesh/.cache/memra-gdnbf16-decode/runs/gates-5090-dev1/ident/orn-new0/pp.f32 (248320 f32)
+pp-only rep 0: 0.0828s = 374.3 tok/s
+pp-only MEDIAN: 31 tok in 0.0828s = 374.3 tok/s (pp31, 1 reps)
+rc=0

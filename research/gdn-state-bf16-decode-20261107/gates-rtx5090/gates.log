@@ -1,0 +1,20 @@
+10:06:51 ident q27 main pp_forward_last=a297978ec481bed8 numeric=9970536dec22031c bf16class=0
+10:07:25 ident q27 newd pp_forward_last=a297978ec481bed8 numeric=9970536dec22031c bf16class=0
+10:07:51 ident q27 new0 pp_forward_last=a297978ec481bed8 numeric=9970536dec22031c bf16class=0
+10:08:18 ident q27 new1 pp_forward_last=a297978ec481bed8 numeric=f60f5b6876d6371b bf16class=1
+10:09:16 ident orn main pp_forward_last=9dbe64f55e95174e numeric=ea78b25d4a854a72 bf16class=0
+10:10:11 ident orn newd pp_forward_last=9dbe64f55e95174e numeric=ea78b25d4a854a72 bf16class=0
+10:11:06 ident orn new0 pp_forward_last=9dbe64f55e95174e numeric=ea78b25d4a854a72 bf16class=0
+10:12:02 ident orn new1 pp_forward_last=9dbe64f55e95174e numeric=5682f75a58d46d70 bf16class=1
+10:16:16 kernel-check rc=0 615 OK, 0 FAIL; gdn_st16 9 OK; ALL GREEN (120 cells, 6 skipped)
+10:16:17 test gdn_packed_gpu bf16=0 rc=0 test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.90s
+10:39:55 resume (part 2) after the step-boundary stop
+10:39:57 test gdn_packed_gpu bf16=0 rc=0 test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.96s
+10:39:58 test gdn_packed_gpu bf16=1 rc=0 test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.01s
+10:40:11 test grid_capture_gpu bf16=0 rc=0 test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 13.35s
+10:40:21 test grid_capture_gpu bf16=1 rc=0 test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 9.55s
+10:41:02 run-spec q27 bf16=0 rc=0 K=1..8 self-consistency, identical to plain target (8/8)
+10:41:36 run-spec q27 bf16=1 rc=0 K=1..8 self-consistency, identical to plain target (8/8)
+10:42:09 run-spec orn bf16=0 rc=0 K=1..8 self-consistency, identical to plain target (8/8)
+10:42:35 run-spec orn bf16=1 rc=0 K=1..8 self-consistency, identical to plain target (8/8)
+10:42:35 GATES2_DONE

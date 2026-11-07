@@ -1,0 +1,22 @@
+
+running 6 tests
+test gpu_model_boundary_capture_is_the_live_state ... [tensor-contract] bound 668 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[q8rp] split-plane decode mirrors built: 92 tensors
+ok
+test gpu_model_capture_equals_split_and_resumes_cold_exact ... [tensor-contract] bound 668 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[q8rp] split-plane decode mirrors built: 92 tensors
+ok
+test gpu_model_decode_class_restore_and_resume_are_exact ... [tensor-contract] bound 668 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[q8rp] split-plane decode mirrors built: 92 tensors
+[decode-class] the model decodes its GDN state as fp32
+[fa-pool] grow #0 dev=0 o_len 0 -> 53248 ml_len 0 -> 208 (retired kept, zero=false)
+[decode-class] restore == unrestored over 12 steps, rollback and widen round trips exact
+ok
+test gpu_model_settle_then_resume_is_cold_exact ... [tensor-contract] bound 668 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[q8rp] split-plane decode mirrors built: 92 tensors
+ok
+test gpu_ring_capture_is_the_rows_before_the_capture_point ... ok
+test gpu_scan_capture_equals_the_prefix_scan_state ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 13.35s
+

@@ -1,0 +1,25 @@
+started
+13:41:45 booted coherence-bf160 class=0 
+COHERENCE_DONE /home/avifenesh/.cache/memra-gdnbf16-decode/runs/gb10-dev1-speed/probes/coherence-bf160.jsonl
+13:44:15 stopped coherence-bf160 [prefix-cache] on: budget 51371MB (51371003904 B, derived: 2 x 7941521408 B max entry for model "q38" at served ctx 262144 (from MEMRA_CTX; MEMRA_CTX set), unif
+started
+13:47:23 booted coherence-bf161 class=1 [gdn-state] bf16 GDN decode class: decode and verify store the state as bf16, rounded once
+COHERENCE_DONE /home/avifenesh/.cache/memra-gdnbf16-decode/runs/gb10-dev1-speed/probes/coherence-bf161.jsonl
+13:49:50 stopped coherence-bf161 [prefix-cache] on: budget 51383MB (51383410688 B, derived: 2 x 7941521408 B max entry for model "q38" at served ctx 262144 (from MEMRA_CTX; MEMRA_CTX set), unif
+started
+13:52:57 booted ttft-r1-bf160 class=0 
+14:03:48 ttft ttft-r1-bf160 rc=0 {"size": 32768, "users": 1, "cold_max_s": 32.27, "turn1024": [1.32, 1.32]} {"size": 131072, "users": 1, "cold_max_s": 167.21, "turn1024": [2.31, 2.31]} {"size": 258048, "users": 1, "cold_max_s": 426.65, "turn1024": [3.55, 3.55]} 
+14:04:06 stopped ttft-r1-bf160 [prefix-cache] on: budget 51375MB (51375478784 B, derived: 2 x 7941521408 B max entry for model "q38" at served ctx 262144 (from MEMRA_CTX; MEMRA_CTX set), unif
+started
+14:07:12 booted ttft-r2-bf161 class=1 [gdn-state] bf16 GDN decode class: decode and verify store the state as bf16, rounded once
+14:18:03 ttft ttft-r2-bf161 rc=0 {"size": 32768, "users": 1, "cold_max_s": 32.23, "turn1024": [1.43, 1.43]} {"size": 131072, "users": 1, "cold_max_s": 167.19, "turn1024": [2.31, 2.31]} {"size": 258048, "users": 1, "cold_max_s": 426.69, "turn1024": [3.65, 3.65]} 
+14:18:21 stopped ttft-r2-bf161 [prefix-cache] on: budget 51370MB (51369521152 B, derived: 2 x 7941521408 B max entry for model "q38" at served ctx 262144 (from MEMRA_CTX; MEMRA_CTX set), unif
+started
+14:21:28 booted ttft-r3-bf161 class=1 [gdn-state] bf16 GDN decode class: decode and verify store the state as bf16, rounded once
+14:32:19 ttft ttft-r3-bf161 rc=0 {"size": 32768, "users": 1, "cold_max_s": 32.21, "turn1024": [1.35, 1.35]} {"size": 131072, "users": 1, "cold_max_s": 167.28, "turn1024": [2.31, 2.31]} {"size": 258048, "users": 1, "cold_max_s": 427.26, "turn1024": [3.57, 3.57]} 
+14:32:37 stopped ttft-r3-bf161 [prefix-cache] on: budget 51376MB (51375964160 B, derived: 2 x 7941521408 B max entry for model "q38" at served ctx 262144 (from MEMRA_CTX; MEMRA_CTX set), unif
+started
+14:35:44 booted ttft-r4-bf160 class=0 
+14:46:35 ttft ttft-r4-bf160 rc=0 {"size": 32768, "users": 1, "cold_max_s": 32.27, "turn1024": [1.27, 1.27]} {"size": 131072, "users": 1, "cold_max_s": 168.15, "turn1024": [2.36, 2.36]} {"size": 258048, "users": 1, "cold_max_s": 426.23, "turn1024": [3.56, 3.56]} 
+14:46:53 stopped ttft-r4-bf160 [prefix-cache] on: budget 51361MB (51361363968 B, derived: 2 x 7941521408 B max entry for model "q38" at served ctx 262144 (from MEMRA_CTX; MEMRA_CTX set), unif
+14:46:53 CHAIN_DONE probes
