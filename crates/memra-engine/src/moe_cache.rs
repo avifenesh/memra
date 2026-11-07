@@ -774,7 +774,8 @@ impl MoeSlotCache {
     /// layer's. The 35B-A3B keeps its 256 experts HOST-resident, so the GPU has ~20+ GB free at
     /// decode — empirically a 256-slot cache thrashes (~2-7% hit) while a few-thousand-slot cache
     /// reaches ~85%+ steady-state. So the DEFAULT auto-sizes N to fill `MEMRA_MOE_VRAM_FRAC` (default
-    /// 0.85) of free VRAM, clamped to [256, ~hot-set]. `MEMRA_MOE_SLOTS` forces an exact N.
+    /// 0.85) of free VRAM, clamped to [256, ~hot-set]. `MEMRA_MOE_SLOTS` forces N; a forced N
+    /// above the hard ceiling or below the eight-slot floor is clamped and the line says so.
     pub fn new(e: &Engine, max_block_bytes: usize) -> Result<Self, Box<dyn std::error::Error>> {
         Self::build(e, max_block_bytes, None)
     }
@@ -800,9 +801,7 @@ impl MoeSlotCache {
         let hard_bytes = hard_slot_bytes(free, max_block_bytes);
         let forced_slots = match exact_slots {
             Some(slots) => Some(slots),
-            None => std::env::var("MEMRA_MOE_SLOTS")
-                .ok()
-                .and_then(|s| s.parse::<usize>().ok()),
+            None => parse_moe_slots(std::env::var("MEMRA_MOE_SLOTS").ok().as_deref())?,
         };
         let requested_bytes = if let Some(n) = forced_slots {
             n.saturating_mul(max_block_bytes + SLOT_TAIL_PAD_BYTES)
@@ -812,10 +811,7 @@ impl MoeSlotCache {
             // spill-regime 35B — hit-rate 87.8% -> 99.2%, PCIe 55 -> 3.8 MB/tok; the 0.80
             // hard-headroom cap below still bounds the true allocation, so 0.85 requests the max).
             // Rigs co-running other GPU work should set MEMRA_MOE_VRAM_FRAC lower.
-            let frac = std::env::var("MEMRA_MOE_VRAM_FRAC")
-                .ok()
-                .and_then(|s| s.parse::<f64>().ok())
-                .unwrap_or(0.85);
+            let frac = parse_moe_vram_frac(std::env::var("MEMRA_MOE_VRAM_FRAC").ok().as_deref())?;
             (free as f64 * frac) as usize
         };
         let budget_bytes = requested_bytes.min(hard_bytes);
@@ -848,6 +844,16 @@ impl MoeSlotCache {
             class_plan = vec![(max_block_bytes, n)];
         }
         let n: usize = class_plan.iter().map(|(_, count)| count).sum();
+        if exact_slots.is_none()
+            && let Some(want) = forced_slots
+            && want != n
+        {
+            eprintln!(
+                "[moe-cache] MEMRA_MOE_SLOTS={want} gives {n} slots: clamped to the hard ceiling \
+                 ({:.2} GB of free VRAM, MEMRA_MOE_HARD_VRAM_FRAC) or the eight-slot floor",
+                hard_bytes as f64 / 1e9
+            );
+        }
 
         let mut slots = Vec::with_capacity(n);
         let mut slot_class = Vec::with_capacity(n);
@@ -2818,6 +2824,33 @@ pub(crate) fn hard_slot_bytes(free: usize, max_block_bytes: usize) -> usize {
     ((free as f64 * hard_frac) as usize).saturating_sub(2 * (max_block_bytes + SLOT_TAIL_PAD_BYTES))
 }
 
+/// `MEMRA_MOE_SLOTS`: unset or empty is the auto size, anything else must be a whole slot count.
+/// A value that does not parse refuses the load rather than silently sizing automatically.
+fn parse_moe_slots(raw: Option<&str>) -> Result<Option<usize>, String> {
+    match raw {
+        None | Some("") => Ok(None),
+        Some(s) => s
+            .parse::<usize>()
+            .map(Some)
+            .map_err(|_| format!("MEMRA_MOE_SLOTS={s:?} is not a slot count (unset = auto)")),
+    }
+}
+
+/// `MEMRA_MOE_VRAM_FRAC`: the auto size's share of free VRAM, default 0.85, in (0, 1]. A value
+/// that does not parse, or lies outside that range (0 or a negative value would floor the cache
+/// to eight slots), refuses the load.
+fn parse_moe_vram_frac(raw: Option<&str>) -> Result<f64, String> {
+    let Some(s) = raw.filter(|s| !s.is_empty()) else {
+        return Ok(0.85);
+    };
+    match s.parse::<f64>() {
+        Ok(v) if v.is_finite() && v > 0.0 && v <= 1.0 => Ok(v),
+        _ => Err(format!(
+            "MEMRA_MOE_VRAM_FRAC={s:?} is not a fraction in (0, 1] (default 0.85)"
+        )),
+    }
+}
+
 fn cache_hard_vram_frac() -> f64 {
     const DEFAULT: f64 = 0.80;
     let raw = std::env::var("MEMRA_MOE_HARD_VRAM_FRAC").ok();
@@ -3083,8 +3116,25 @@ mod slru_intrusive_tests {
 mod vram_fraction_tests {
     use super::{
         SLOT_TAIL_PAD_BYTES, parse_cache_hard_vram_frac, parse_cache_lfu_decay,
-        parse_cache_lfu_mtp_weight, size_class_plan,
+        parse_cache_lfu_mtp_weight, parse_moe_slots, parse_moe_vram_frac, size_class_plan,
     };
+
+    #[test]
+    fn slot_count_and_soft_fraction_refuse_typos() {
+        assert_eq!(parse_moe_slots(None), Ok(None));
+        assert_eq!(parse_moe_slots(Some("")), Ok(None));
+        assert_eq!(parse_moe_slots(Some("1024")), Ok(Some(1024)));
+        for value in ["4k", "-1", "1e3", " 64", "auto"] {
+            assert!(parse_moe_slots(Some(value)).is_err(), "{value}");
+        }
+        assert_eq!(parse_moe_vram_frac(None), Ok(0.85));
+        assert_eq!(parse_moe_vram_frac(Some("")), Ok(0.85));
+        assert_eq!(parse_moe_vram_frac(Some("0.35")), Ok(0.35));
+        assert_eq!(parse_moe_vram_frac(Some("1")), Ok(1.0));
+        for value in ["0,85", "0", "-1", "1.5", "NaN", "inf", "bad"] {
+            assert!(parse_moe_vram_frac(Some(value)).is_err(), "{value}");
+        }
+    }
 
     #[test]
     fn hard_vram_fraction_defaults_and_rejects_unsafe_values() {

@@ -257,7 +257,10 @@ pub fn glm5_verify_batch_on() -> bool {
 /// (`prime_cache_hyper_pp2_pipelined`) never calls
 /// `glm5_taps_range_begin`/`glm5_taps_range_done`, and hands each stage-chunk an ABSOLUTE
 /// base, so from the second range on `glm5_hc_tap_slot` slices past the `sink.t * h` slot
-/// buffer: `slice_mut` panics and takes the worker with it. SECOND, the same-`ordinal`
+/// buffer: `slice_mut` panics and takes the worker with it. Until that is fixed the pair is
+/// REFUSED by name at the arm-2 decision, before any chunk runs
+/// (`hybrid_forward::hyper_pipe_tap_refusal`), so the prime fails with a named error instead
+/// of the panic. SECOND, the same-`ordinal`
 /// ingest reads the ring `buf` from the head engine's stream while the next range rewrites
 /// it on the stage engine's stream, with cudarc implicit event tracking disabled in this
 /// repo, so the tap planes can tear into silently wrong drafter ctx KV; verify still

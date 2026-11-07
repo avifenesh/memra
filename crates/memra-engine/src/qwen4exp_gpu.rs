@@ -2369,13 +2369,17 @@ fn idxq_mode() -> IdxQMode {
         _ => IdxQMode::F32,
     }
 }
-pub fn set_idxq(mode: &str) {
+/// `q8`/`1`, `bf16`, or `f32`/`0` (the rollback). Returns false (applying nothing) on any
+/// other value, so `idxq=Q8` fails the seam check instead of measuring the f32 rollback.
+pub fn set_idxq(mode: &str) -> bool {
     let v = match mode {
         "q8" | "1" => 1,
         "bf16" => 2,
-        _ => 0,
+        "f32" | "0" => 0,
+        _ => return false,
     };
     IDXQ_MODE.store(v, std::sync::atomic::Ordering::Relaxed);
+    true
 }
 
 /// The live indexer raw-key cache precision, for RECEIPT HEADERS (see `kv_quant_is_on`).
@@ -2427,13 +2431,24 @@ fn longatt_mode() -> LongAttMode {
         _ => LongAttMode::Auto,
     }
 }
-pub fn set_longatt(mode: &str) {
+/// The live long-attention arm, in the spelling `set_longatt` takes (save/restore and receipts).
+pub fn longatt_mode_name() -> &'static str {
+    match longatt_mode() {
+        LongAttMode::Auto => "auto",
+        LongAttMode::Force => "force",
+        LongAttMode::Off => "off",
+    }
+}
+/// `auto`, `force`/`1` or `off`/`0`. Returns false (applying nothing) on any other value.
+pub fn set_longatt(mode: &str) -> bool {
     let v = match mode {
+        "auto" => 0,
         "force" | "1" => 1,
         "off" | "0" => 2,
-        _ => 0,
+        _ => return false,
     };
     LONGATT_MODE.store(v, std::sync::atomic::Ordering::Relaxed);
+    true
 }
 
 // ------------------------------------------------------------ TP2 MoE expert placement
@@ -2920,6 +2935,18 @@ pub fn seam_state(name: &str) -> Option<bool> {
     })
 }
 
+/// The live arm of a THREE-VALUED seam (`idxq`, `longatt`), spelled as its `name=value` form
+/// takes it, or `None` for every other name. `seam_state` cannot carry these (a bool loses
+/// the third arm), so save/restore around a measurement goes through this:
+/// `set_seam(name, true, seam_value(name))` puts the entry arm back exactly.
+pub fn seam_value(name: &str) -> Option<&'static str> {
+    match name {
+        "idxq" => Some(idxq_mode_name()),
+        "longatt" => Some(longatt_mode_name()),
+        _ => None,
+    }
+}
+
 /// Does this seam name exist? Same table as `set_seam`, applying NOTHING. A harness that
 /// validates a seam name up front (before a 25-80 minute prefill it would otherwise waste on
 /// a typo) must not have to arm or disarm the seam to find out — a validator with a silent
@@ -2998,7 +3025,15 @@ fn seam_dispatch(name: &str, on: bool, value: Option<&str>, apply: bool) -> bool
         // COST INSTRUMENT, no rewind (see VERIFY_FUSED_DEFAULT): a spec loop with this
         // armed refuses at the first `verify_rewind`. Timing probes only.
         "vfuse" => seam!(set_verify_fused(on)),
-        "longatt" => seam!(set_longatt(if on { "force" } else { "off" })),
+        // Three-valued: bare `longatt` forces, `longatt=0` forbids, `longatt=auto` restores the
+        // default; any other value returns false, like `selgroup`.
+        "longatt" => {
+            if apply {
+                set_longatt(value.unwrap_or(if on { "force" } else { "off" }))
+            } else {
+                true
+            }
+        }
         "idxdev" => seam!(set_idx_dev(on)),
         "idxsel" => seam!(set_idx_sel(on)),
         "plecache" => seam!(set_ple_cache(on)),
@@ -3009,9 +3044,17 @@ fn seam_dispatch(name: &str, on: bool, value: Option<&str>, apply: bool) -> bool
         // and `poolT` re-mirrors on flip, so both are sound to flip between timed rounds.
         "kvhoist" => seam!(set_kv_hoist(on)),
         "poolT" => seam!(set_pool_t(on)),
-        // Three-valued: `idxq=q8`, `idxq=bf16`, `idxq=0`/`idxq=f32` (rollback);
-        // bare `idxq` arms the q8 target.
-        "idxq" => seam!(set_idxq(value.unwrap_or("q8"))),
+        // Three-valued: `idxq=q8`, `idxq=bf16`, `idxq=0`/`idxq=f32` (rollback); bare `idxq`
+        // arms the q8 target, and a valueless OFF (`set_seam("idxq", false, None)`, the
+        // ladder A/B's OFF arm) arms the f32 rollback, as `longatt` does. Any other value
+        // returns false, like `selgroup`.
+        "idxq" => {
+            if apply {
+                set_idxq(value.unwrap_or(if on { "q8" } else { "f32" }))
+            } else {
+                true
+            }
+        }
         // SHAPE-valued (see set_sel_group): bare `selgroup` = both families AUTO,
         // `selgroup=dn:4:1+gu:16:2` pins the A/B ladder's arms, `selgroup=0` rolls back.
         // A malformed spec must not read as "seam applied": it returns false here so the
@@ -3043,7 +3086,7 @@ pub fn apply_env_seams() {
             None => (part, true),
         };
         if !set_seam(name, on, part.split_once('=').map(|(_, v)| v)) {
-            eprintln!("MEMRA_Q4E_SEAMS: unknown seam {name:?} ignored");
+            eprintln!("MEMRA_Q4E_SEAMS: unknown seam or bad value {part:?} ignored");
         }
     }
 }
@@ -8850,9 +8893,19 @@ pub fn gate_seam_table() -> Res<String> {
             })
             .collect()
     };
+    // The three-valued seams carry no bool, so their entry ARM is saved by name: the accept loop
+    // below sets every listed seam, and a valueless set would leave `idxq` at f32 and `longatt`
+    // forbidden for whatever runs after this gate.
+    let entry_values: Vec<(&str, &'static str)> = all
+        .iter()
+        .filter_map(|n| seam_value(n).map(|v| (*n, v)))
+        .collect();
     let restore = |v: &[bool]| {
         for (n, &b) in names.iter().zip(v) {
             set_seam(n, b, None);
+        }
+        for (n, val) in &entry_values {
+            set_seam(n, true, Some(val));
         }
     };
     let entry = snapshot()?;
@@ -8902,7 +8955,8 @@ pub fn gate_seam_table() -> Res<String> {
             )
             .into());
         }
-        if !set_seam(name, seam_state(name).unwrap_or(false), None) {
+        // each seam is set to its own current arm, so the accept check moves nothing
+        if !set_seam(name, seam_state(name).unwrap_or(false), seam_value(name)) {
             restore(&entry);
             return Err(format!(
                 "seam-table oracle: seam_names() lists {name:?} but set_seam refuses it"
@@ -8928,6 +8982,13 @@ pub fn gate_seam_table() -> Res<String> {
     restore(&entry);
     if snapshot()? != entry {
         return Err("seam-table oracle: the gate did not restore the entry state".into());
+    }
+    if let Some((n, v)) = entry_values.iter().find(|(n, v)| seam_value(n) != Some(*v)) {
+        return Err(format!(
+            "seam-table oracle: the gate did not restore {n:?} to its entry arm {v:?} (now {:?})",
+            seam_value(n)
+        )
+        .into());
     }
     Ok(format!(
         "seam-table oracle: {} boolean seam names of {} total, {checks} set/read cycles, each \
@@ -20668,6 +20729,80 @@ mod sel_group_tests {
         // Listed name and dispatch arm agree (the drift `seam_names` cannot detect alone).
         assert!(seam_names().contains(&"selgroup"));
         assert!(seam_exists("selgroup"));
+    }
+
+    /// `idxq` takes only its three named arms. A misspelt value must refuse and leave the
+    /// precision where it was, not measure the f32 rollback under a quantized arm's name.
+    #[test]
+    fn idxq_refuses_values_outside_its_arms() {
+        let _g = SEAM.lock().unwrap();
+        let entry = idxq_mode_name();
+        assert!(set_seam("idxq", true, Some("bf16")));
+        assert_eq!(idxq_mode_name(), "bf16");
+        for bad in ["Q8", "bf-16", "fp32", "2", ""] {
+            assert!(!set_seam("idxq", true, Some(bad)), "{bad:?} was accepted");
+            assert_eq!(idxq_mode_name(), "bf16", "{bad:?} mutated state");
+        }
+        assert!(set_seam("idxq", false, Some("0")));
+        assert_eq!(idxq_mode_name(), "f32");
+        assert!(set_seam("idxq", true, None));
+        assert_eq!(idxq_mode_name(), "q8");
+        // A valueless OFF (the ladder A/B's OFF arm) is the f32 rollback; it used to arm q8,
+        // so that A/B measured q8 against q8.
+        assert!(set_seam("idxq", false, None));
+        assert_eq!(idxq_mode_name(), "f32");
+        assert!(set_idxq(entry));
+    }
+
+    /// The three-valued seams carry no bool for `seam_state`, so save/restore goes through
+    /// `seam_value`: every arm read back by name and set again round-trips exactly.
+    #[test]
+    fn three_valued_seams_restore_through_seam_value() {
+        let _g = SEAM.lock().unwrap();
+        let (idxq0, longatt0) = (idxq_mode_name(), longatt_mode_name());
+        for (name, arms) in [
+            ("idxq", &["q8", "bf16", "f32"][..]),
+            ("longatt", &["auto", "force", "off"][..]),
+        ] {
+            assert_eq!(seam_state(name), None, "{name} is three-valued");
+            for &arm in arms {
+                assert!(set_seam(name, true, Some(arm)), "{name}={arm}");
+                let saved = seam_value(name).expect("three-valued seams answer");
+                assert_eq!(saved, arm);
+                assert!(set_seam(name, false, None));
+                assert!(set_seam(name, true, Some(saved)));
+                assert_eq!(
+                    seam_value(name),
+                    Some(arm),
+                    "{name}={arm} did not round-trip"
+                );
+            }
+        }
+        assert_eq!(seam_value("moe"), None);
+        assert_eq!(seam_value("selgroup"), None);
+        assert!(set_idxq(idxq0));
+        assert!(set_longatt(longatt0));
+    }
+
+    /// `longatt=auto` must arm AUTO: the seam used to read any value but `0` as FORCE. A value
+    /// outside the three arms refuses and applies nothing.
+    #[test]
+    fn longatt_value_selects_its_arm() {
+        let _g = SEAM.lock().unwrap();
+        assert!(set_seam("longatt", true, Some("auto")));
+        assert!(longatt_mode() == LongAttMode::Auto);
+        assert!(set_seam("longatt", true, None));
+        assert!(longatt_mode() == LongAttMode::Force);
+        assert!(set_seam("longatt", false, Some("0")));
+        assert!(longatt_mode() == LongAttMode::Off);
+        for bad in ["Auto", "on", "2", ""] {
+            assert!(
+                !set_seam("longatt", true, Some(bad)),
+                "{bad:?} was accepted"
+            );
+            assert!(longatt_mode() == LongAttMode::Off, "{bad:?} mutated state");
+        }
+        assert!(set_longatt("auto"));
     }
 }
 
