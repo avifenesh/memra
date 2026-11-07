@@ -121,8 +121,9 @@ HIT_SEED=${MEMRA_MIXED_HIT_SEED:-4242}
 HIT_FREQ_PEN=${MEMRA_MIXED_HIT_FREQ_PEN:-0.6}
 REPEATS=6
 OUT_TOKENS=60
-# PREFIX BUDGET, the same for both arms. The derived default (2 x the largest entry, 2260MB at
-# ctx 32768 for the 27B) holds about 14 entries, and each c8 batch request publishes a 64-token
+# PREFIX BUDGET, the same for both arms. The derived default's two-entry floor (2 x the largest
+# entry, 2260MB at ctx 32768 for the 27B; the discrete default can be larger, 54GB on a 96 GB card
+# at MEMRA_MAX_SESSIONS=12) holds about 14 entries, and each c8 batch request publishes a 64-token
 # seed of about 159MB (nearly all recurrent state): on an RTX PRO 6000 Max-Q an entry lived about
 # 5 s, the shared 480-token entry was evicted before the first repeat, and both arms read
 # cached=0 on every repeat, so the restore under load was never asked. 8192MB holds about 50
