@@ -121,7 +121,8 @@ impl MemoryAdmitConfig {
     pub(crate) fn boot_line(&self) -> String {
         format!(
             "[admit-mem] door={} open_output_tokens={} defer_budget_ms={} ({}; the \
-             single-card default of the RTX PRO 6000 Blackwell Workstation Edition: armed, \
+             single-card default of the RTX PRO 6000 Blackwell Workstation and Max-Q Workstation \
+             Editions: armed, \
              admission charges prompt+output, the reclaim flush demotes to the host tier before \
              dropping, and a memory defer past the budget refuses 429 instead of queueing \
              past the client's deadline)",
@@ -133,14 +134,20 @@ impl MemoryAdmitConfig {
     }
 }
 
-/// The arm and its source: the receipted card serving alone, or why not.
+/// The arm and its source: a receipted card serving alone, or why not.
 fn arm_for(device_name: &str, multi_device: bool) -> (bool, &'static str) {
-    if !memra_engine::parallel::HardwareTarget::is_pro6000_workstation(device_name) {
-        (false, "not the receipted card")
-    } else if multi_device {
+    use memra_engine::parallel::HardwareTarget;
+    let source = if HardwareTarget::is_pro6000_maxq(device_name) {
+        "pro6000-maxq-receipt"
+    } else if HardwareTarget::is_pro6000_workstation(device_name) {
+        "pro6000-ws-receipt"
+    } else {
+        return (false, "not the receipted card");
+    };
+    if multi_device {
         (false, "multi-device deployment: the receipt is one card")
     } else {
-        (true, "pro6000-ws-receipt")
+        (true, source)
     }
 }
 
@@ -748,28 +755,38 @@ mod tests {
         assert!(deferred.contains(" short_by=42 "), "{deferred}");
     }
 
-    /// Armed on the card class whose deciding cell read, serving alone, and nowhere else: the
-    /// Max-Q and Server editions share the class, not the receipt, and the receipt is one card,
-    /// so a PP, TP or EP deployment on the receipted card keeps the unarmed program.
+    /// Armed on the two cards whose deciding cells read (the Workstation and Max-Q Workstation
+    /// editions), serving alone, and nowhere else: the Server Edition shares the class, not a
+    /// receipt, and each receipt is one card, so a PP, TP or EP deployment keeps the unarmed
+    /// program.
     #[test]
-    fn memory_admission_is_the_single_card_pro6000_workstation_default_only() {
-        const PRO_WS: &str = "NVIDIA RTX PRO 6000 Blackwell Workstation Edition";
-        let on = MemoryAdmitConfig::for_deployment(PRO_WS, false);
-        assert!(on.armed);
-        assert_eq!(on.source, "pro6000-ws-receipt");
-        let multi = MemoryAdmitConfig::for_deployment(PRO_WS, true);
-        assert!(!multi.armed);
-        assert_eq!(multi.open_output_charge(), None);
-        assert!(
-            multi
-                .boot_line()
-                .contains("multi-device deployment: the receipt is one card"),
-            "{}",
-            multi.boot_line()
-        );
+    fn memory_admission_is_the_single_card_pro6000_workstation_and_maxq_default_only() {
+        for (name, source) in [
+            (
+                "NVIDIA RTX PRO 6000 Blackwell Workstation Edition",
+                "pro6000-ws-receipt",
+            ),
+            (
+                "NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition",
+                "pro6000-maxq-receipt",
+            ),
+        ] {
+            let on = MemoryAdmitConfig::for_deployment(name, false);
+            assert!(on.armed, "{name}");
+            assert_eq!(on.source, source, "{name}");
+            let multi = MemoryAdmitConfig::for_deployment(name, true);
+            assert!(!multi.armed, "{name}");
+            assert_eq!(multi.open_output_charge(), None, "{name}");
+            assert!(
+                multi
+                    .boot_line()
+                    .contains("multi-device deployment: the receipt is one card"),
+                "{}",
+                multi.boot_line()
+            );
+        }
         for name in [
             "NVIDIA GeForce RTX 5090",
-            "NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition",
             "NVIDIA RTX PRO 6000 Blackwell Server Edition",
             "NVIDIA B200",
             "",
