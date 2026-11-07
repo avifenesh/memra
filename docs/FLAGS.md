@@ -1649,12 +1649,13 @@ the component test and the DSpark gate's historical arm.
 `MEMRA_DSPARK_PARTIAL_RESTORE` (the strict-prefix DFlash restore, lane/dspark-partial-restore
 2026-09-05) and `MEMRA_DSPARK_BOUNDARY_CAPTURE` (the render-stable capture cut, memra#248) are no
 longer read. Both behaviors follow `MEMRA_DSPARK_PREFIX_RESTORE`, with its device default (ON on
-GB10 and the RTX PRO 6000 Max-Q, OFF elsewhere). Verdict: only the full set was ever gated, and a
-partial combination exposed an off-grid plain restore:
+GB10 and the RTX PRO 6000 Max-Q, OFF elsewhere). Verdict: only the full set was ever gated, and
+both a partial combination and the switch-OFF default exposed an off-grid plain restore:
 
-- RTX 5090, `MEMRA_DSPARK_PREFIX_RESTORE=1` alone: a three-turn chat's third turn left the cold
-  text (384 vs 372 characters on main 65d5887596). Turn 1's tail entry sat at its 2,992-token
-  prompt end with capture off; turn 2 restored it plain off the GDN prime grid and turn 3 resumed
+- RTX 5090, at the device default (OFF) and with `MEMRA_DSPARK_PREFIX_RESTORE=1` alone: a
+  three-turn chat's third turn left the cold text (383 vs 371 characters on main 65d5887596 and
+  on 48e8b3b414). Turn 1's entry sat at its 2,992-token prompt end (the prompt-end trunk capture
+  does not read the switch); turn 2 restored it plain off the GDN prime grid and turn 3 resumed
   rows that prime wrote. All three set: byte-identical.
 - That restore is now closed for every switch value: the cold DFlash capture is cut on the grid
   (`dspark_cold_capture`) and the hit site refuses an off-grid recurrent entry

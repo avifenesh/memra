@@ -3043,10 +3043,11 @@ byte-identity, and confinement + near-tie-only flips across programs.
 **The DFlash capture and the hit site follow the same law since 2026-11-07.** The DFlash prompt-end
 capture was the one capture site left off the grid: with no render-stable cut armed, the tail (or
 trunk-only) entry ended at the prompt end, and a later, longer prompt restored it plain and primed
-from that off-grid start. On the local RTX 5090 with only the restore door set
-(`MEMRA_DSPARK_PREFIX_RESTORE=1`), turn 2 of a three-turn chat restored 2,992 tokens and primed from
-there, and turn 3, resumed from rows that prime wrote, left the cold text (384 vs 372 characters).
-Three changes close it:
+from that off-grid start. The prompt-end trunk capture does not read the restore switch, so this
+was the default on every device where the switch is off, every RTX 5090 included: on the local RTX
+5090, at the device default and with only `MEMRA_DSPARK_PREFIX_RESTORE=1` alike, turn 2 of a
+three-turn chat restored 2,992 tokens and primed from there, and turn 3, resumed from rows that
+prime wrote, left the cold text (383 vs 371 characters). Three changes close it:
 
 - The capture: a cold DFlash prime with no render-stable cut (the restore switch off, or no
   armable boundary in the prompt) cuts its entry at the seed's grid boundary
@@ -3071,10 +3072,11 @@ Known cases this does not change: the `PRIME_MIN_T` floor applies to recurrent e
 attention-only hit that leaves a 1..15-token suffix still primes it token by token, the W1 class);
 the plain-affinity resume checks no suffix floor; the in-batch fanout still takes the raw LCP
 (above); glm5_next KDA entries count as recurrent although KDA prefill is a sequential scan with
-no fold grid, so the glm5 spec route's prompt-end captures now serve only whole covers (no
-exactness gain there, kept conservative). Gate: the warm-vs-cold pair cells in `research/plain-restore-grid-20261107/`
-(`grid_pair_cells.py`, three-turn chat, every warm answer byte-equal to its cold twin), red on the
-base with the single switch and green on the fix with the switch on and off.
+no fold grid, so the glm5 spec route's off-grid prompt-end captures now serve only whole covers
+(no exactness gain there, kept conservative). Gate: the warm-vs-cold pair cells in
+`research/plain-restore-grid-20261107/` (`grid_pair_cells.py`, three-turn chat, every warm answer
+byte-equal to its cold twin), red on the base with the single switch and at the device default,
+green on the fix with the switch at 1, at 0 and at the device default.
 
 
 ## Serving-contract guarantees, and the receipt for each

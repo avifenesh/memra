@@ -894,9 +894,10 @@ fn dspark_prefers_cold_over_prefix_with(
 /// program: the whole-entry restore of a draft tail, the strict-prefix restore
 /// (`dspark_partial_restore_on`) and the render-stable boundary capture
 /// (`dspark_boundary_capture_on`). They were three doors until 2026-11-07: only the full set was
-/// ever gated, and a partial combination (restore alone) was measured to leave the cold text on
-/// the RTX 5090 through an off-grid plain restore, which the hit site now refuses for every
-/// switch value (`prefix_restore_exact`; research/plain-restore-grid-20261107/). ON on
+/// ever gated, and both a partial combination (restore alone) and the switch-OFF default were
+/// measured to leave the cold text on the RTX 5090 through an off-grid plain restore, now closed
+/// at the capture (`dspark_cold_capture`) and at the hit site (`prefix_restore_exact`) for every
+/// switch value (research/plain-restore-grid-20261107/). ON on
 /// GB10 and the RTX PRO 6000 Max-Q, whose restored-vs-cold byte-identity gate is green with the
 /// switch on (memra#1031 cold-drafter gate). OFF everywhere else (owner, 2026-11-05: "Spark +
 /// Max-Q only"), including:
@@ -1205,11 +1206,11 @@ fn strict_prefix_restore_on_grid(entry_toks: usize, prompt_toks: usize) -> bool 
 /// THE RESTORE GRID LAW for every prefix-cache hit (2026-11-07). An entry that carries recurrent
 /// state (GDN conv/ssm planes) restores exactly only at the prompt's end (whole cover) or as a
 /// strict prefix on the grid (`strict_prefix_restore_on_grid`); anywhere else its suffix prime is a
-/// second numeric program next to a cold prime of the same prompt. Measured on the RTX 5090 with
-/// only `MEMRA_DSPARK_PREFIX_RESTORE=1`: turn 1's tail entry sat at its 2,992-token prompt end, turn
-/// 2 restored it plain and primed from 2,992 (off the 32-token grid), and turn 3, resumed from rows
-/// that prime wrote, left the cold text (384 vs 372 characters). Attention-only entries are
-/// split-invariant and keep every whole-entry hit.
+/// second numeric program next to a cold prime of the same prompt. Measured on the RTX 5090 at the
+/// device default and with only `MEMRA_DSPARK_PREFIX_RESTORE=1`: turn 1's entry sat at its
+/// 2,992-token prompt end, turn 2 restored it plain and primed from 2,992 (off the 32-token grid),
+/// and turn 3, resumed from rows that prime wrote, left the cold text (383 vs 371 characters).
+/// Attention-only entries are split-invariant and keep every whole-entry hit.
 fn prefix_restore_exact(entry_toks: usize, prompt_toks: usize, recurrent: bool) -> bool {
     entry_toks <= prompt_toks
         && (!recurrent
@@ -37620,23 +37621,32 @@ fn admit(
     } else if prefix_on
         && reused.is_none()
         && let Some(refused) = px.longest_inexact_cover(&pool_key, &prompt)
+        && refused > consumable_hit.map_or(0, |i| px.entries[&pool_key][i].toks.len())
     {
-        // The probe was skipped (the DFlash route cold-primes): a cover the restore grid law
-        // refused is why no hit could take its place, so the same line and counter name it.
+        // The probe was skipped (the DFlash route cold-primes) and a cover longer than any exact
+        // hit was refused by the restore grid law. Same line and counter; whether the refused
+        // entry would have kept the request off the cold prime depends on the veto, so the line
+        // names the exact hit the route did not take instead of claiming a cause.
+        let exact = consumable_hit.map_or(0, |i| px.entries[&pool_key][i].toks.len());
         px.restore_grid_refusals += 1;
         let line = format!(
             "[prefix-cache] restore grid law: entry {refused} of {} prompt tokens refused \
-             (recurrent state off the {}-token prime grid or a suffix under {}); no exact hit, \
-             the prompt primes cold on the DFlash route (model {}{})",
+             (recurrent state off the {}-token prime grid or a suffix under {}); {}, the prompt \
+             primes cold on the DFlash route (model {}{})",
             prompt.len(),
             memra_engine::Engine::gdn_chunk_size(),
             memra_engine::hybrid_forward::PRIME_MIN_T,
+            if exact > 0 {
+                format!("the {exact}-token exact hit is not taken")
+            } else {
+                "no exact hit".to_string()
+            },
             req.model,
             ns_suffix(&pool_key.1),
         );
         if let Some(line) = px
             .grid_refusals
-            .announce((pool_key.clone(), refused, 0), line)
+            .announce((pool_key.clone(), refused, exact), line)
         {
             eprintln!("{line}");
         }
