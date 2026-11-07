@@ -114,6 +114,46 @@ rg -N 'env::var(_os)?[[:space:]]*\(|(option_)?env![[:space:]]*\(' \
     "${runtime_dirs[@]}" --glob '*.rs' 2>/dev/null \
     | rg -o 'MEMRA_[A-Z0-9_]+' | sort -u > "$literal_file" || true
 
+# Pass A, CUDA/C side. Kernel TUs read doors too (`std::getenv("MEMRA_DSV4_HC_DOT_SPLIT")` in
+# cu/dsv4_dense_m1_exact_tail.cuh), and a `.rs`-only scan let MEMRA_MIMO_SPLIT_STAGE_TIMING land
+# in cu/mimo_mixed_attn.cu with no row. Same shape as the Rust pass: the name on the getenv line.
+# Every crate's cu/ dir is discovered, plus the runtime dirs for a .cu kept next to Rust sources.
+cuda_dirs=("${runtime_dirs[@]}")
+while IFS= read -r cuda_dir; do
+    cuda_dirs+=("$cuda_dir")
+done < <(find crates -mindepth 2 -maxdepth 2 -type d -name cu 2>/dev/null | sort)
+rg -N 'getenv[[:space:]]*\(' "${cuda_dirs[@]}" \
+    --glob '*.cu' --glob '*.cuh' --glob '*.h' --glob '*.hpp' --glob '*.c' --glob '*.cc' \
+    --glob '*.cpp' 2>/dev/null \
+    | rg -o 'MEMRA_[A-Z0-9_]+' | sort -u >> "$literal_file" || true
+
+# Pass A, CPU expert companion. tools/memra_cpu_experts.cpp lives outside crates/ but is runtime
+# code: tools/build_cpu_expert_companion.sh compiles it into the library the engine dlopens via
+# MEMRA_CPU_EXPERT_LIB, and it reads its own MEMRA_CPU_EXPERT_* doors with getenv. The sources
+# come from the build script itself, so a renamed or added companion source cannot fall out of
+# the census, and a build script that resolves to nothing is refused rather than scanned empty.
+companion_build=tools/build_cpu_expert_companion.sh
+if [[ -f "$companion_build" ]]; then
+    companion_sources=()
+    while IFS= read -r companion_source; do
+        companion_sources+=("$companion_source")
+    done < <(rg -o -N --no-filename --replace '$1' \
+        '\$repo_dir/(tools/[A-Za-z0-9_./-]+\.(?:cpp|cxx|cc|hpp|c|h))\b' "$companion_build" \
+        2>/dev/null | sort -u)
+    if (( ${#companion_sources[@]} == 0 )); then
+        echo "check-flags: $companion_build compiles no source the census can find — the companion would be vacuously green" >&2
+        exit 2
+    fi
+    for companion_source in "${companion_sources[@]}"; do
+        if [[ ! -f "$companion_source" ]]; then
+            echo "check-flags: $companion_build compiles $companion_source, which does not exist" >&2
+            exit 2
+        fi
+    done
+    rg -N --no-filename 'getenv[[:space:]]*\(' "${companion_sources[@]}" 2>/dev/null \
+        | rg -o 'MEMRA_[A-Z0-9_]+' | sort -u >> "$literal_file" || true
+fi
+
 # Pass B — CONST-INDIRECTED reads. Pass A matches a MEMRA_ name on the same line as the env
 # call, so `std::env::var(ALLOW_UNKNOWN_PRETOKENIZER_ENV)` — with the name three lines up in a
 # `pub const` — is invisible to it. That is the second half of the v0.94.0 blind spot, and it

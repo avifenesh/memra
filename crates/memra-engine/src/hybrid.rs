@@ -2084,8 +2084,26 @@ fn build_dev_exps(
     }
     let fits = resident.should_reside(e, il, per_layer);
     if !fits {
+        // The SLRU/staged expert routes read no block-scale plane and have no QT_F8_E4M3_BLK
+        // arm, so a native block-E4M3 bank that stays on the host has no route that computes it.
+        if fp8_host.is_some() {
+            return Err(format!(
+                "native block-E4M3 expert bank (layer {il}) is not resident on its device \
+                 (MEMRA_MOE_RESIDENT=0, or the projected expert bytes exceed the device budget; \
+                 this layer holds {per_layer}), and the SLRU/spill expert path has no \
+                 block-E4M3 arm. Run it resident \
+                 (MEMRA_MOE_RESIDENT_GB), through Step EP/TP, or load the Q8_0 diagnostic with \
+                 MEMRA_ST_E4M3=0"
+            )
+            .into());
+        }
         return Ok(None);
     }
+    // A resident block-E4M3 bank runs only through the per-block FP8 MMQ tile
+    // (`moe_resident_fp8_e4m3`). The stacked loader (`load_fp8_stacked_native_with_policy`) owns
+    // the arch decision and refuses a native bank on builds without the tile, for every
+    // residency branch, so none reaches here.
+    debug_assert!(fp8_host.is_none() || crate::fp8_ffi::fp8_blk_mmq_built());
     use cudarc::driver::DevicePtr;
     let n_expert = gate.n_expert;
     let (g, u) = (

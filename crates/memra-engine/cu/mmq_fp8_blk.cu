@@ -850,18 +850,8 @@ static __global__ void mmq_fp8_blk_grouped_kernel(
     }
 }
 
-// ======================= NaN-code scan (dispatch guard) =======================
-// Counts e4m3 bytes with magnitude 0x7F. Those decode to NaN in hardware but to 0.0 in the host /
-// ARM B' convention, so a tensor containing them must NOT ride this kernel.
-static __global__ void fp8_blk_count_nan_kernel(
-        const uint8_t * __restrict__ x, const size_t n, unsigned int * __restrict__ out) {
-    const size_t stride = (size_t) blockDim.x * gridDim.x;
-    unsigned int local = 0;
-    for (size_t i = (size_t) blockIdx.x * blockDim.x + threadIdx.x; i < n; i += stride) {
-        local += ((x[i] & 0x7Fu) == 0x7Fu) ? 1u : 0u;
-    }
-    if (local != 0u) { atomicAdd(out, local); }
-}
+// The NaN-code scan this kernel's dispatch guard calls (memra_fp8_blk_count_nan) is a plain byte
+// count with no MMA, so it lives in fp8_blk_dequant.cu, which every arch builds.
 
 // ======================= C-ABI host launcher =======================
 // SM count of the current device, queried once and cached. The token-tile selection rule below needs
@@ -1135,21 +1125,6 @@ int memra_mmq_fp8_blk(const void * W_e4m3, const float * blk_scales, const float
     cudaError_t e = cudaGetLastError();
     if (e != cudaSuccess) { return 2000 + (int) e; }
     return 0;
-}
-
-// Count e4m3 NaN codes in a device weight buffer. out_count must be a device u32 (zeroed by this
-// call). Returns 0 or a cudaError_t.
-int memra_fp8_blk_count_nan(const void * W_e4m3, size_t nbytes, unsigned int * out_count,
-                            void * stream) {
-    cudaStream_t st = reinterpret_cast<cudaStream_t>(stream);
-    cudaError_t e = cudaMemsetAsync(out_count, 0, sizeof(unsigned int), st);
-    if (e != cudaSuccess) { return (int) e; }
-    if (nbytes == 0) { return 0; }
-    const unsigned int threads = 256;
-    unsigned int blocks = (unsigned int) ((nbytes + threads - 1) / threads);
-    if (blocks > 4096u) { blocks = 4096u; }
-    fp8_blk_count_nan_kernel<<<blocks, threads, 0, st>>>((const uint8_t *) W_e4m3, nbytes, out_count);
-    return (int) cudaGetLastError();
 }
 
 } // extern "C"

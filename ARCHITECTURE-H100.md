@@ -2679,3 +2679,41 @@ request (sm_120a engine replay: logits bitdiff 248319, greedy text diverging at 
 `research/decode-exact-641-20260923/RESULTS.md`). The +5.7% / +2.8% / +0.7% batched-prime wins
 recorded above are given up. No H100 cell was re-measured for this removal; a varlen twin over
 the dequantized cache view is the way back, with its own bit-identity gate.
+
+**PDL entry wait restored on 90a (2026-11-03).** `MEMRA_PDL_ENTRY` in `kernels.cu`,
+`qmatvec.cu` and `flash_attn.cu` was keyed on `!MEMRA_PORTABLE_CUDA && __CUDA_ARCH__ >= 900`.
+build.rs defines `MEMRA_PORTABLE_CUDA` for 90a as well as 89, so the 90a build compiled the
+`cudaGridDependencySynchronize()` out while `launch_pdl` / `launch_pdl_flash` still set the
+programmatic stream serialization attribute (`MEMRA_PDL` is default ON with no arch check). A
+dependent grid could then start before its producer's stores were visible, and after a DSv4
+chain kernel (`memra_pdl_chain.cuh` issues `launch_dependents` at entry) it could run beside
+the producer. The macro is now keyed on `__CUDA_ARCH__ >= 900` alone, as the chain header
+already was. sm_120a and sm_100a compile the same code as before; sm_89 has no PDL and still
+compiles the wait out. That is proven at the byte level, not argued: the `kernels`,
+`qmatvec`, `flash_attn` and `flash_attn_kf8vf8` fatbins built with build.rs's flags at the
+commit and at its parent are byte-identical for sm_120a and sm_100a, while all four differ for
+sm_90a, where the fix adds 14, 25, 8 and 8 `ACQBULK` (the wait) and nothing else
+(`research/pdl-90a-fatbin-identity-20261103/`). The battery for this change is therefore
+Hopper-only. No H100 cell was run. Correctness: kernel-check, decode-dc and graph-decode on
+Hopper. Performance: the wait changes H100 scheduling, and the PERF-H100 board was measured
+with it compiled out, so the change also owes a balanced interleaved H100 decode A/B (parent vs
+commit, both orders, three runs each), with `current-board.json` and PERF-H100 refreshed if
+the numbers move.
+
+**Dense block-128 FP8 checkpoints load on 90a; MoE block-FP8 stays unsupported (2026-11-03).**
+`memra_fp8_blk_count_nan` lived in
+`mmq_fp8_blk.cu`, which build.rs replaces with a refusing stub on every arch but 120a and 100a.
+The stub returned 2905, `fp8_blk_nan_count` turned that into an error, and the default-ON
+native residency arm (`MEMRA_ST_E4M3`) reached it at load, so every block-128 FP8 safetensors
+checkpoint failed to load on 90a and 89 instead of declining to the Q8_0 floor. The scan is a
+byte count with no MMA and now lives in `fp8_blk_dequant.cu`, which every arch builds. The
+per-block MMQ prefill tile stays 120a/100a only: `try_fp8_blk_mmq` now gates on the tile being
+built rather than on `portable_mma_gated()` (false on 90a), so 90a prefill takes the
+dequant-per-call Q8_0 floor and decode the portable `qmatvec_e4m3_blk_mmvq` GEMV. That covers
+dense projections only. A stacked block-128 FP8 MoE expert bank (Step-3.7 FP8, for example) has
+no route on 89/90a: the resident arm, Step EP and Step TP all run the per-block MMQ tile. The
+stacked loader (`load_fp8_stacked_native_with_policy`) therefore refuses the native bank on
+those builds before any residency decision, so spill, `MEMRA_MOE_RESIDENT=0` and the Step EP/TP
+host-bank path cannot pass load and fail on the stub later. The refusal names `MEMRA_ST_E4M3=0`,
+which loads a Q8_0 re-encode: a diagnostic representation, not support. No H100 cell was run: a
+dense block-128 FP8 checkpoint load plus `run-gen` on Hopper is the gate.

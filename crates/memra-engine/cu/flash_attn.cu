@@ -55,8 +55,8 @@
 #include <cstdint>
 
 // PDL entry (same contract as kernels.cu): only kernels carrying this macro may take a
-// CU_LAUNCH_ATTRIBUTE_PROGRAMMATIC_STREAM_SERIALIZATION launch. sm_90+ only.
-#if !defined(MEMRA_PORTABLE_CUDA) && defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 900
+// CU_LAUNCH_ATTRIBUTE_PROGRAMMATIC_STREAM_SERIALIZATION launch. sm_90+, portable 90a too.
+#if defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 900
 #define MEMRA_PDL_ENTRY() cudaGridDependencySynchronize()
 #else
 #define MEMRA_PDL_ENTRY()
