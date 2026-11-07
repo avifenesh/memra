@@ -1,0 +1,36 @@
+have c2e04719b6
+have c23cd3a158
+HEADS-DONE
+V=~/.cache/memra-gemm-v2/bins/v2pr-c23cd3a158 B=~/.cache/memra-gemm-v2/bins/base-c2e04719b6
+c23cd3a15 fix(mmq): F8F4 v2 route checks the image limits; tail and partial-group bit cells
+dirty_files=0
+c2e04719b data(qualification): memra#1076 GB10 live check, an n = 2 stream past the 60 s SSE prefill commit
+dirty_files=0
+kernel-check default rc=0 ALL GREEN (117 cells, 5 skipped)
+fa_prefill_view_ws vs inline-dequant T=64 Tkv=192: bitdiff=0 OK
+fa_prefill_view_ws vs inline-dequant T=100 Tkv=100: bitdiff=0 OK
+fa_prefill_view_ws vs inline-dequant T=37 Tkv=297: bitdiff=0 OK
+fa_prefill_view_ws vs inline-dequant T=192 Tkv=4097: bitdiff=0 OK
+fa_prefill_view_ws vs inline-dequant T=1024 Tkv=8224: bitdiff=0 OK
+kernel-check h2off rc=0 ALL GREEN (117 cells, 5 skipped)
+fa_prefill_view_ws vs inline-dequant T=64 Tkv=192: bitdiff=0 OK
+fa_prefill_view_ws vs inline-dequant T=100 Tkv=100: bitdiff=0 OK
+fa_prefill_view_ws vs inline-dequant T=37 Tkv=297: bitdiff=0 OK
+fa_prefill_view_ws vs inline-dequant T=192 Tkv=4097: bitdiff=0 OK
+fa_prefill_view_ws vs inline-dequant T=1024 Tkv=8224: bitdiff=0 OK
+kernel-check t3 rc=0 ALL GREEN (117 cells, 5 skipped)
+fa_prefill_view_ws vs inline-dequant T=64 Tkv=192: bitdiff=0 OK
+fa_prefill_view_ws vs inline-dequant T=100 Tkv=100: bitdiff=0 OK
+fa_prefill_view_ws vs inline-dequant T=37 Tkv=297: bitdiff=0 OK
+fa_prefill_view_ws vs inline-dequant T=192 Tkv=4097: bitdiff=0 OK
+fa_prefill_view_ws vs inline-dequant T=1024 Tkv=8224: bitdiff=0 OK
+argmax rc=0   SUMMARY flips=0 bad=0   PASS: every prefill/decode argmax flip is explained by a margin the config spread covers 
+run-spec rc=0   acceptance: 17/98 = 17.3%   self-consistency: PASS (identical to plain target)   acceptance: 17/112 = 15.2%   self-consistency: PASS (identical to plain target) === SELF-CONSISTENCY PASS === 
+GATES-DONE
+argmax-16k V rc=1   SUMMARY flips=3 bad=1   FAIL: an argmax flip is NOT explained by the config spread (or flip count exceeded) 
+argmax-16k B rc=1   SUMMARY flips=3 bad=1   FAIL: an argmax flip is NOT explained by the config spread (or flip count exceeded) 
+argmax-16k probe table V vs B: IDENTICAL (a42e74b3f28cbd96 / a42e74b3f28cbd96)
+rollback on rc=0 pp-only MEDIAN: 3855 tok in 3.6700s = 1050.4 tok/s (pp3855, 3 reps) f81e969042a7e155
+rollback off rc=0 pp-only MEDIAN: 3855 tok in 4.1558s = 927.6 tok/s (pp3855, 3 reps) f81e969042a7e155
+GATES-V2-DONE
+FINAL-DONE

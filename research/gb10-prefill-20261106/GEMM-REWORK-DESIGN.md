@@ -3,7 +3,7 @@
 Status: proposal for the owner's go. Nothing here is implemented. Numbers are measured on one GB10
 (SM 2,177 MHz under the clock cap) unless marked as an estimate.
 
-> **Built 2026-11-06** (measured as `b6d10d41c7`; `LEVER-LEDGER.md` rows 16-26,
+> **Built 2026-11-06** (measured as `b6d10d41c7`; `LEVER-LEDGER.md` rows 16-28,
 > `docs/decisions/GB10-F8F4-GEMM-V2.md`). Kept as designed: the per-call pooled image, the
 > pipelined mainloop without ALU staging, the grouped raster, the numeric program. Changed by
 > measurement: the 16 warps per SM come from one 16-warp 256 x 128 CTA (the two 8-warp 128 x 128
