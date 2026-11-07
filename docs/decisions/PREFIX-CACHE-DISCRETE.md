@@ -29,9 +29,7 @@ two-entry floor and boot free less the 1.5 GiB transient reserve, the admission 
 (`MEMRA_ADMIT_DRIVER_HEADROOM_MB`, 2 GiB) and the session peak: every lane's resident-session cap (the interactive cap,
 64 when batching, plus the judge and harvest caps) times one served-context session (the spec-path context planes at
 the served context plus the recurrent state). No share is assumed: the cache gets exactly the memory a full house of
-served-context sessions cannot use, and, as on GB10, every insert is clamped to what the cache holds plus live free
-memory less the driver headroom and the reserve, so an insert replaces bytes rather than taking the headroom the
-admission floor needs. On the finding's box with `MEMRA_MAX_SESSIONS=12` that is 54,277,046,272 B
+served-context sessions cannot use. On the finding's box with `MEMRA_MAX_SESSIONS=12` that is 54,277,046,272 B
 (24 resident sessions x 1,190,789,120 B); at the default caps, or on the 24 GB RTX 5090, the floor (unit test
 `discrete_prefix_budget_leaves_the_session_peak_and_keeps_the_two_entry_floor`).
 
