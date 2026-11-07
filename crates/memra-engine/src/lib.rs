@@ -624,20 +624,6 @@ pub fn glm5_q8_fuse_on() -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *ON.get_or_init(|| std::env::var("MEMRA_GLM5_Q8_FUSE").as_deref() == Ok("1"))
 }
-/// `MEMRA_SHEXP_SWIGLU_ZQ8=1` (lane/launch-collapse-20260906, default OFF, decide-by 2026-09-20):
-/// at decode (t = 1) the shared expert's pre-clamped SwiGLU emits its q8_1 pair directly
-/// (`swiglu_preclamped_mul_scaled_q8_1_f32`) and the down projection rides `matmul_q8_fast`,
-/// dropping the standalone `quantize_q8_1` launch (42 per token on GLM-5.3-Flash, in-graph).
-/// BIT-IDENTICAL (gate `tests/swiglu_zq8_gpu.rs`). Falls back to the two-launch chain when the
-/// down tensor is not MMVQ-fast-eligible or the width is not a multiple of 32. Read per call.
-pub fn shexp_swiglu_zq8_on() -> bool {
-    std::env::var("MEMRA_SHEXP_SWIGLU_ZQ8").as_deref() == Ok("1")
-}
-
-/// Engagement counter for `MEMRA_SHEXP_SWIGLU_ZQ8` (fused launches whose pair the down MMVQ read).
-pub static SHEXP_SWIGLU_ZQ8_DISPATCHES: std::sync::atomic::AtomicU64 =
-    std::sync::atomic::AtomicU64::new(0);
-
 /// `MEMRA_GLM5_Q8_FUSE_ATTN=1` (lane/glm5-attn-norm-zq8-20260904, default OFF): the
 /// ATTENTION-input norm of a plain KDA layer in the glm5_next T=1 walk runs `rms_norm_zq8_f32`
 /// and hands its q8_1 view to the fused six-projection launcher, which then skips its own
@@ -8513,8 +8499,8 @@ impl Engine {
         Ok((sel_idx, sel_w))
     }
 
-    /// gemma4 twin: per-expert output scale folded into the topk renorm write (replaces the
-    /// separate moe_w_exscale launch; value chain identical: (w/ws) * s[sel]).
+    /// gemma4 twin: per-expert output scale folded into the topk renorm write (replaced the
+    /// separate moe_w_exscale launch, since deleted; value chain identical: (w/ws) * s[sel]).
     pub fn moe_router_topk_scaled(
         &self,
         logits: &CudaSlice<f32>,
@@ -11191,26 +11177,6 @@ impl Engine {
         Ok(())
     }
 
-    /// gemma4 R3 device fold: w[i] *= s[sel[i]] over the router's [n] (sel, w) pair.
-    pub fn moe_w_exscale(
-        &self,
-        w: &mut CudaSlice<f32>,
-        sel: &CudaSlice<i32>,
-        s: &CudaSlice<f32>,
-        n: usize,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        let f = self.func("moe_w_exscale");
-        let cfg = LaunchConfig::for_num_elems(n as u32);
-        let ni = n as i32;
-        let __s_b = self.gpu.stream();
-        let mut b = __s_b.launch_builder(&f);
-        b.arg(w).arg(sel).arg(s).arg(&ni);
-        unsafe {
-            b.launch(cfg)?;
-        }
-        Ok(())
-    }
-
     /// Down-projection macro fold: w[i] *= macros[2*n_expert + sel[i]] on the device router
     /// weights (one launch per MoE layer, only for macro-carrying artifacts — see MoeWeights).
     pub fn moe_w_scale_by_expert(
@@ -13830,197 +13796,6 @@ impl Engine {
         Ok(())
     }
 
-    /// W4A16 selected-expert down projection plus owner-local route combine. The destination may
-    /// reside in the model engine's peer-accessible root pool.
-    #[allow(clippy::too_many_arguments)]
-    pub fn qmatvec_nvfp4_bf16_sel_down_fma_into(
-        &self,
-        bank: &CudaSlice<u8>,
-        sel: &CudaSlice<i32>,
-        activation_bf16: &CudaSlice<u8>,
-        route_weights: &CudaSlice<f32>,
-        macros_down: &CudaSlice<f32>,
-        dst: &mut cudarc::driver::CudaViewMut<f32>,
-        n_sel: usize,
-        in_f: usize,
-        out_f: usize,
-        row_bytes: usize,
-        expert_stride: usize,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        if !in_f.is_multiple_of(64)
-            || sel.len() < n_sel
-            || route_weights.len() < n_sel
-            || activation_bf16.len() < 2 * n_sel * in_f
-            || dst.len() < out_f
-        {
-            return Err(format!(
-                "W4A16 NVFP4 down selected geometry sel={} act={} weights={} dst={} \
-                 n_sel={n_sel} in={in_f} out={out_f}",
-                sel.len(),
-                activation_bf16.len(),
-                route_weights.len(),
-                dst.len(),
-            )
-            .into());
-        }
-        let f = self.func("qmatvec_nvfp4_bf16_sel_down_fma");
-        let cfg = LaunchConfig {
-            grid_dim: (out_f as u32, 1, 1),
-            block_dim: (256, 1, 1),
-            shared_mem_bytes: 0,
-        };
-        let (inf, outf, ns) = (in_f as i32, out_f as i32, n_sel as i32);
-        let (rb, es) = (row_bytes as i64, expert_stride as i64);
-        let __s_b = self.gpu.stream();
-        let mut b = __s_b.launch_builder(&f);
-        b.arg(bank)
-            .arg(sel)
-            .arg(activation_bf16)
-            .arg(route_weights)
-            .arg(macros_down)
-            .arg(dst)
-            .arg(&inf)
-            .arg(&outf)
-            .arg(&ns)
-            .arg(&rb)
-            .arg(&es);
-        unsafe {
-            b.launch(cfg)?;
-        }
-        Ok(())
-    }
-
-    /// Device-routed t=1 W4A16 down projection plus owner-local weighted combine.
-    #[allow(clippy::too_many_arguments)]
-    pub fn qmatvec_nvfp4_bf16_ep_down_fma_into(
-        &self,
-        bank: &CudaSlice<u8>,
-        sel: &CudaSlice<i32>,
-        activation_bf16: &CudaSlice<u8>,
-        route_weights: &CudaSlice<f32>,
-        macros_down: &CudaSlice<f32>,
-        dst: &mut cudarc::driver::CudaViewMut<f32>,
-        n_pairs: usize,
-        in_f: usize,
-        out_f: usize,
-        owner_start: usize,
-        owner_end: usize,
-        row_bytes: usize,
-        expert_stride: usize,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        if owner_start >= owner_end
-            || !in_f.is_multiple_of(64)
-            || sel.len() < n_pairs
-            || route_weights.len() < n_pairs
-            || activation_bf16.len() < 2 * n_pairs * in_f
-            || dst.len() < out_f
-        {
-            return Err(format!(
-                "W4A16 device EP down-FMA geometry sel={} act={} weights={} dst={} \
-                 pairs={n_pairs} in={in_f} out={out_f} owner={owner_start}..{owner_end}",
-                sel.len(),
-                activation_bf16.len(),
-                route_weights.len(),
-                dst.len(),
-            )
-            .into());
-        }
-        let f = self.func("qmatvec_nvfp4_bf16_ep_down_fma");
-        let cfg = LaunchConfig {
-            grid_dim: (out_f as u32, 1, 1),
-            block_dim: (256, 1, 1),
-            shared_mem_bytes: 0,
-        };
-        let (inf, outf, np) = (in_f as i32, out_f as i32, n_pairs as i32);
-        let (os, oe) = (owner_start as i32, owner_end as i32);
-        let (rb, es) = (row_bytes as i64, expert_stride as i64);
-        let __s_b = self.gpu.stream();
-        let mut b = __s_b.launch_builder(&f);
-        b.arg(bank)
-            .arg(sel)
-            .arg(activation_bf16)
-            .arg(route_weights)
-            .arg(macros_down)
-            .arg(dst)
-            .arg(&inf)
-            .arg(&outf)
-            .arg(&np)
-            .arg(&os)
-            .arg(&oe)
-            .arg(&rb)
-            .arg(&es);
-        unsafe {
-            b.launch(cfg)?;
-        }
-        Ok(())
-    }
-
-    /// Capture-safe twin of `qmatvec_nvfp4_bf16_ep_down_fma_into`. The destination is one
-    /// rank-owned row inside a persistent root-device slab.
-    #[allow(clippy::too_many_arguments)]
-    pub fn qmatvec_nvfp4_bf16_ep_down_fma_raw(
-        &self,
-        bank: &CudaSlice<u8>,
-        sel: &CudaSlice<i32>,
-        activation_bf16: &CudaSlice<u8>,
-        route_weights: &CudaSlice<f32>,
-        macros_down: &CudaSlice<f32>,
-        dst_raw: u64,
-        n_pairs: usize,
-        in_f: usize,
-        out_f: usize,
-        owner_start: usize,
-        owner_end: usize,
-        row_bytes: usize,
-        expert_stride: usize,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        if dst_raw == 0
-            || owner_start >= owner_end
-            || !in_f.is_multiple_of(64)
-            || sel.len() < n_pairs
-            || route_weights.len() < n_pairs
-            || activation_bf16.len() < 2 * n_pairs * in_f
-        {
-            return Err(format!(
-                "W4A16 device EP raw down-FMA geometry sel={} act={} weights={} \
-                 dst={dst_raw:#x} pairs={n_pairs} in={in_f} out={out_f} \
-                 owner={owner_start}..{owner_end}",
-                sel.len(),
-                activation_bf16.len(),
-                route_weights.len(),
-            )
-            .into());
-        }
-        let f = self.func("qmatvec_nvfp4_bf16_ep_down_fma");
-        let cfg = LaunchConfig {
-            grid_dim: (out_f as u32, 1, 1),
-            block_dim: (256, 1, 1),
-            shared_mem_bytes: 0,
-        };
-        let (inf, outf, np) = (in_f as i32, out_f as i32, n_pairs as i32);
-        let (os, oe) = (owner_start as i32, owner_end as i32);
-        let (rb, es) = (row_bytes as i64, expert_stride as i64);
-        let __s_b = self.gpu.stream();
-        let mut b = __s_b.launch_builder(&f);
-        b.arg(bank)
-            .arg(sel)
-            .arg(activation_bf16)
-            .arg(route_weights)
-            .arg(macros_down)
-            .arg(&dst_raw)
-            .arg(&inf)
-            .arg(&outf)
-            .arg(&np)
-            .arg(&os)
-            .arg(&oe)
-            .arg(&rb)
-            .arg(&es);
-        unsafe {
-            b.launch(cfg)?;
-        }
-        Ok(())
-    }
-
     /// Optional A8 fixed-slot down rows. Each owner rank writes its selected pair rows directly
     /// into the root slot slab; the root applies route weights in canonical token/slot order.
     #[allow(clippy::too_many_arguments)]
@@ -14073,75 +13848,6 @@ impl Engine {
             .arg(sel)
             .arg(aq)
             .arg(ad)
-            .arg(macros_down)
-            .arg(&dst_raw)
-            .arg(&inf)
-            .arg(&outf)
-            .arg(&np)
-            .arg(&os)
-            .arg(&oe)
-            .arg(&rb)
-            .arg(&es);
-        unsafe {
-            b.launch(cfg)?;
-        }
-        Ok(())
-    }
-
-    /// Historical A8 t=1 down + owner-local route combine into a persistent root row.
-    #[allow(clippy::too_many_arguments)]
-    pub fn qmatvec_nvfp4_q8_ep_down_fma_raw(
-        &self,
-        bank: &CudaSlice<u8>,
-        sel: &CudaSlice<i32>,
-        aq: &CudaSlice<i8>,
-        ad: &CudaSlice<f32>,
-        route_weights: &CudaSlice<f32>,
-        macros_down: &CudaSlice<f32>,
-        dst_raw: u64,
-        n_pairs: usize,
-        in_f: usize,
-        out_f: usize,
-        owner_start: usize,
-        owner_end: usize,
-        row_bytes: usize,
-        expert_stride: usize,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        if dst_raw == 0
-            || owner_start >= owner_end
-            || !in_f.is_multiple_of(64)
-            || sel.len() < n_pairs
-            || aq.len() < n_pairs * in_f
-            || ad.len() < n_pairs * (in_f / 32)
-            || route_weights.len() < n_pairs
-        {
-            return Err(format!(
-                "W4A8 device EP raw down-FMA geometry sel={} aq={} ad={} weights={} \
-                 dst={dst_raw:#x} pairs={n_pairs} in={in_f} out={out_f} \
-                 owner={owner_start}..{owner_end}",
-                sel.len(),
-                aq.len(),
-                ad.len(),
-                route_weights.len(),
-            )
-            .into());
-        }
-        let f = self.func("qmatvec_nvfp4_q8_ep_down_fma");
-        let cfg = LaunchConfig {
-            grid_dim: (out_f as u32, 1, 1),
-            block_dim: (256, 1, 1),
-            shared_mem_bytes: 0,
-        };
-        let (inf, outf, np) = (in_f as i32, out_f as i32, n_pairs as i32);
-        let (os, oe) = (owner_start as i32, owner_end as i32);
-        let (rb, es) = (row_bytes as i64, expert_stride as i64);
-        let __s_b = self.gpu.stream();
-        let mut b = __s_b.launch_builder(&f);
-        b.arg(bank)
-            .arg(sel)
-            .arg(aq)
-            .arg(ad)
-            .arg(route_weights)
             .arg(macros_down)
             .arg(&dst_raw)
             .arg(&inf)
@@ -26062,55 +25768,6 @@ impl Engine {
         Ok(())
     }
 
-    /// Row-offset twin of `axpy_rows_seq_md_into` (spec verify t-column combine): the
-    /// accumulation runs over rows [row0, row0+n_rows) of a taller partial slab — the
-    /// exact sequential FP chain of the base kernel over that window.
-    #[allow(clippy::too_many_arguments)]
-    pub fn axpy_rows_seq_md_off_into(
-        &self,
-        x: &CudaSlice<f32>,
-        w_route: &CudaSlice<f32>,
-        md: &CudaSlice<f32>,
-        sel: &CudaSlice<i32>,
-        y: &mut CudaSlice<f32>,
-        width: usize,
-        n_rows: usize,
-        row0: usize,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        if x.len() < (row0 + n_rows) * width
-            || w_route.len() < row0 + n_rows
-            || sel.len() < row0 + n_rows
-            || y.len() < width
-        {
-            return Err(format!(
-                "axpy_rows_seq_md_off geometry x={} w={} sel={} y={} width={width} \
-                 rows={n_rows} row0={row0}",
-                x.len(),
-                w_route.len(),
-                sel.len(),
-                y.len()
-            )
-            .into());
-        }
-        let f = self.func("axpy_rows_seq_md_off_f32");
-        let cfg = LaunchConfig::for_num_elems(width as u32);
-        let (wi, nr, r0) = (width as i32, n_rows as i32, row0 as i32);
-        let __s_b = self.gpu.stream();
-        let mut b = __s_b.launch_builder(&f);
-        b.arg(x)
-            .arg(w_route)
-            .arg(md)
-            .arg(sel)
-            .arg(y)
-            .arg(&wi)
-            .arg(&nr)
-            .arg(&r0);
-        unsafe {
-            b.launch(cfg)?;
-        }
-        Ok(())
-    }
-
     /// Device-routed twin of `axpy_rows_seq_into`: the per-row weight folds in-kernel
     /// (w_route[p] * md[sel[p]] — the same single f32 multiply the host fold performs).
     #[allow(clippy::too_many_arguments)]
@@ -26204,11 +25861,12 @@ impl Engine {
             t as i32,
         );
         let __s_b = self.gpu.stream();
-        // One runtime-T program for every live width. The compile-time 2/4/8 twins are
-        // retained in the fatbin as research controls, but dispatching them by the current
-        // batch width changes kernels inside a request when peers arrive or retire. That is
-        // a load-history numeric-program switch, and their pre-twin TOKFP receipts did not
-        // qualify it (Hermes `64fa2b55baf0d887`).
+        // One runtime-T program for every live width. The compile-time 2/4/8 twins (faster:
+        // this kernel's runtime-t loop spills its accumulators) were deleted unlaunched on
+        // 2026-11-03, because dispatching them by the current batch width changes kernels
+        // inside a request when peers arrive or retire. That is a load-history numeric-program
+        // switch, and their pre-twin TOKFP receipts did not qualify it (Hermes
+        // `64fa2b55baf0d887`).
         let f = self.func("matvec_bf16_qkvg_tcol");
         let mut b = __s_b.launch_builder(&f);
         b.arg(wq)
@@ -26361,8 +26019,8 @@ impl Engine {
             )
             .into());
         }
-        // Keep one runtime-T program at every live width. Compile-time twins remain research
-        // controls only; selecting them from the changing batch width switches programs
+        // Keep one runtime-T program at every live width. The compile-time twins were deleted
+        // unlaunched: selecting them from the changing batch width switches programs
         // mid-request.
         let cfg = LaunchConfig {
             grid_dim: (out_f as u32, 1, 1),
@@ -29089,8 +28747,8 @@ impl Engine {
                 q, k, v, o, head_dim, n_head, n_head_kv, t, t_kv, scale, causal,
             );
         }
-        // FA3 v10 arm (task #20, OPT-IN MEMRA_FA3=1 — harness-proven 883us vs the shipped
-        // kernel's 993us at T=2048): TMA-swizzled wgmma FA, fresh causal hd256 only.
+        // FA3 v10 arm (task #20, default ON under memra_hopper_mma — harness-proven 883us vs
+        // the shipped kernel's 993us at T=2048): TMA-swizzled wgmma FA, fresh causal hd256 only.
         // NEW NUMERIC CONFIG (GDN-mma precedent): online softmax / bf16-P class — the
         // run-gen argmax + greedy-stream batteries arbitrate; not bit-paired.
         // PROMOTED default-ON hopper (2026-07-27): 3-seed 2048-prime -> 128-decode
@@ -36318,50 +35976,6 @@ impl Engine {
             b.launch(cfg)?;
         }
         Ok(())
-    }
-
-    /// `swiglu_preclamped_mul_scaled` and `quantize_q8_1` in one launch: returns the q8_1 pair
-    /// of `silu(min(gate*gs, limit)) * clamp(up*us, ±limit)` without materializing the f32 row.
-    /// Byte-identical to the two-launch chain (kernel header in hybrid.cu; gate
-    /// `tests/swiglu_zq8_gpu.rs`). Refuses `n % 32 != 0` (the kernel quantizes whole warps).
-    pub fn swiglu_preclamped_mul_scaled_q8_1(
-        &self,
-        gate: &CudaSlice<f32>,
-        up: &CudaSlice<f32>,
-        gs: f32,
-        us: f32,
-        limit: f32,
-        n: usize,
-    ) -> Result<(CudaSlice<i8>, CudaSlice<f32>), Box<dyn std::error::Error>> {
-        if !n.is_multiple_of(32) || n == 0 {
-            return Err(format!(
-                "swiglu_preclamped_mul_scaled_q8_1: n={n} is not a multiple of 32"
-            )
-            .into());
-        }
-        debug_assert!(
-            limit > 1e-6,
-            "swiglu_preclamped needs a live limit; use silu_mul_scaled"
-        );
-        let mut q: CudaSlice<i8> = self.uninit_i8(n)?;
-        let mut d: CudaSlice<f32> = self.uninit(n / 32)?;
-        let f = self.func("swiglu_preclamped_mul_scaled_q8_1_f32");
-        let cfg = LaunchConfig::for_num_elems(n as u32);
-        let ni = n as i32;
-        let __s_b = self.gpu.stream();
-        let mut b = __s_b.launch_builder(&f);
-        b.arg(gate)
-            .arg(up)
-            .arg(&gs)
-            .arg(&us)
-            .arg(&limit)
-            .arg(&mut q)
-            .arg(&mut d)
-            .arg(&ni);
-        unsafe {
-            b.launch(cfg)?;
-        }
-        Ok((q, d))
     }
 
     /// gated RMSNorm: dst = RMSNorm(o, w[ncols]) * silu(z), per row of ncols. nrows blocks.

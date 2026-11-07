@@ -5838,7 +5838,7 @@ static __device__ __forceinline__ void fa_dec_v3_qquant(
         }                                                                                     \
     } while (0)
 
-template<int B1_UNROLL, bool HOIST_ALIGN = false, bool CAST_LD = false, bool PROF = false>
+template<int B1_UNROLL, bool PROF = false>
 static __device__ __forceinline__ void fa_dec_v3_walk_u(
         const uint8_t* __restrict__ K, const uint8_t* __restrict__ V,
         __nv_bfloat16* sV, int bt, int bsz,
@@ -5853,19 +5853,6 @@ static __device__ __forceinline__ void fa_dec_v3_walk_u(
     // head's row -> quant block bK = (l*dpl)>>5, byte offset (l*dpl)&31 in qs.
     const int bK   = (lane * dpl) >> 5;
     const int koff = (lane * dpl) & 31;
-    // HOIST_ALIGN (MEMRA_FA_HOIST=1): B1's aligned-word K read derives its alignment CLASS
-    // and the resulting branch structure from a per-key pointer, so the compiler cannot prove
-    // either loop-invariant and serializes the loads — which is why widening the unroll bought
-    // no memory-level parallelism (MEMRA_FA_UNROLL=8 measured -2.2%). The class IS invariant:
-    // k_tok_bytes % 4 == 0, so every key's qs pointer shares this lane's residue (the
-    // REVISION-4b comment states exactly this). Hoisting it here leaves a loop whose loads
-    // differ only by a constant stride. Same bytes, same funnel shifts, same dp4a order:
-    // BIT-IDENTICAL.
-    const unsigned sh8_h = HOIST_ALIGN
-        ? ((unsigned)(size_t)(K + (size_t)t_lo * k_tok_bytes
-                              + (size_t)(kblk0 + bK) * 34 + 2 + koff) & 3u) * 8u
-        : 0u;
-    const bool wide_h = HOIST_ALIGN && (dpl > 4);
     FA_PROF_STAMP(0);
     for (int t0 = t_lo; t0 < t_hi; t0 += FA_DEC_TILE) {
         const int nt = min(FA_DEC_TILE, t_hi - t0);
@@ -5919,36 +5906,14 @@ static __device__ __forceinline__ void fa_dec_v3_walk_u(
             // to fa_ld_int_2a's. The trailing word is loaded ONLY when the class
             // needs it (misaligned lanes) — never reads past the last block.
             const uint8_t* qsp = blk + 2 + koff;
-            const unsigned sh8 = HOIST_ALIGN ? sh8_h : ((unsigned)(size_t)qsp & 3u) * 8u;
+            const unsigned sh8 = ((unsigned)(size_t)qsp & 3u) * 8u;
             const uint8_t* ap  = (const uint8_t*)((size_t)qsp & ~(size_t)3);
             uint32_t w0, w1 = 0, w2 = 0;
-            // CAST_LD: `ap` is masked to a 4-byte boundary by construction, but memcpy from a
-            // uint8_t* leaves the compiler free to lower each word to FOUR byte loads (the rest
-            // of this file uses the typed form — see get_int_b4's __ldcs((const int*)p)). The
-            // typed load names the width; identical bytes either way.
-            if (CAST_LD) {
-                w0 = *reinterpret_cast<const uint32_t*>(ap);
-            } else {
-                memcpy(&w0, ap, 4);
-            }
-            if (HOIST_ALIGN && CAST_LD) {
-                if (wide_h) {
-                    w1 = *reinterpret_cast<const uint32_t*>(ap + 4);
-                    if (sh8_h) w2 = *reinterpret_cast<const uint32_t*>(ap + 8);
-                } else if (sh8_h) {
-                    w1 = *reinterpret_cast<const uint32_t*>(ap + 4);
-                }
-            } else if (HOIST_ALIGN) {
-                // Loop-invariant predicates: the compiler versions the loop instead of
-                // branching per key, so the loads pipeline.
-                if (wide_h) { memcpy(&w1, ap + 4, 4); if (sh8_h) memcpy(&w2, ap + 8, 4); }
-                else if (sh8_h) { memcpy(&w1, ap + 4, 4); }
-            } else {
-                if (dpl > 4) { memcpy(&w1, ap + 4, 4); if (sh8) memcpy(&w2, ap + 8, 4); }
-                else if (sh8) memcpy(&w1, ap + 4, 4);
-            }
+            memcpy(&w0, ap, 4);
+            if (dpl > 4) { memcpy(&w1, ap + 4, 4); if (sh8) memcpy(&w2, ap + 8, 4); }
+            else if (sh8) memcpy(&w1, ap + 4, 4);
             int sumi = __dp4a((int)__funnelshift_r(w0, w1, sh8), qq[0], 0);
-            if (HOIST_ALIGN ? wide_h : (dpl > 4))
+            if (dpl > 4)
                 sumi = __dp4a((int)__funnelshift_r(w1, w2, sh8), qq[1], sumi);
             const float part = __fmul_rn(__fmul_rn(dK, dQ), (float)sumi);
             const float score = warp_reduce_sum(part);
@@ -8174,124 +8139,6 @@ extern "C" __global__ void fa_decode_vec_q_rows_reg_w(
     }
 }
 
-// 2-KEY INTERLEAVE windowed register twin (FP8-WINDOWED lane, 2026-07-11): on q8_0 the
-// register walk lost to v4_w on dq-chain latency; e4m3 dq is a byte cvt, so this is the
-// windowed kernel for fp8 layers (launched from the kf8vf8 module only — dq_K/V_lane are
-// format macros). Two dq chains in flight + fused paired softmax update.
-extern "C" __global__ void fa_decode_vec_q_rows_reg_w_i2(
-        const float* __restrict__ Q,
-        const uint8_t* __restrict__ K,
-        const uint8_t* __restrict__ V,
-        float* __restrict__ partO,
-        float* __restrict__ partM,
-        float* __restrict__ partL,
-        int head_dim, int n_head, int n_head_kv, const int* __restrict__ t_kv_base_dev, int base_plus,
-        float scale, int n_splits_max, int split_keys,
-        long k_tok_bytes, long v_tok_bytes, int window)
-{
-    const int r        = blockIdx.z;
-    const int T_kv     = t_kv_base_dev[0] + base_plus + r + 1;
-    const int start    = T_kv - window;
-    const int n_splits = (window + split_keys - 1) / split_keys;
-    const int kv_head  = blockIdx.x;
-    const int split    = blockIdx.y;
-    if (kv_head >= n_head_kv || split >= n_splits) return;
-    const int gqa     = n_head / n_head_kv;
-    const int wy      = threadIdx.y;
-    const int lane    = threadIdx.x;
-    if (wy >= gqa) return;
-    const int head    = kv_head * gqa + wy;
-    const int dpl     = head_dim >> 5;
-
-    const int per  = (window + n_splits - 1) / n_splits;
-    const int t_lo = start + split * per;
-    const int t_hi = start + min(window, split * per + per);
-
-    float q_reg[FA_DEC_MAX_DPL];
-    #pragma unroll
-    for (int i = 0; i < FA_DEC_MAX_DPL; ++i) {
-        if (i < dpl) {
-            int d = lane + (i << 5);
-            q_reg[i] = Q[((size_t)r * n_head + head) * head_dim + d] * scale;
-        } else q_reg[i] = 0.0f;
-    }
-
-    float m_i = NEG_INF, l_i = 0.0f;
-    float acc[FA_DEC_MAX_DPL];
-    #pragma unroll
-    for (int i = 0; i < FA_DEC_MAX_DPL; ++i) acc[i] = 0.0f;
-
-    const int kblk0 = (kv_head * head_dim) >> 5;
-    int t = t_lo;
-    for (; t + 1 < t_hi; t += 2) {
-        const uint8_t* ka = K + (size_t)t * k_tok_bytes + (size_t)kblk0 * K_BLK_B;
-        const uint8_t* kb = K + (size_t)(t + 1) * k_tok_bytes + (size_t)kblk0 * K_BLK_B;
-        float pa = 0.0f, pb = 0.0f;
-        #pragma unroll
-        for (int i = 0; i < FA_DEC_MAX_DPL; ++i) {
-            if (i < dpl) {
-                pa += q_reg[i] * __bfloat162float(__float2bfloat16(dq_K_lane(ka + i * K_BLK_B, lane)));
-                pb += q_reg[i] * __bfloat162float(__float2bfloat16(dq_K_lane(kb + i * K_BLK_B, lane)));
-            }
-        }
-        float sA = warp_reduce_sum(pa);
-        float sB = warp_reduce_sum(pb);
-        float m_new = fmaxf(m_i, fmaxf(sA, sB));
-        float alpha = (m_i == NEG_INF) ? 0.0f : exp2f((m_i - m_new) * LOG2E);
-        float wA = exp2f((sA - m_new) * LOG2E);
-        float wB = exp2f((sB - m_new) * LOG2E);
-        const uint8_t* va = V + (size_t)t * v_tok_bytes + (size_t)kblk0 * V_BLK_B;
-        const uint8_t* vb = V + (size_t)(t + 1) * v_tok_bytes + (size_t)kblk0 * V_BLK_B;
-        #pragma unroll
-        for (int i = 0; i < FA_DEC_MAX_DPL; ++i) {
-            if (i < dpl) {
-                float vva = __bfloat162float(__float2bfloat16(dq_V_lane(va + i * V_BLK_B, lane)));
-                float vvb = __bfloat162float(__float2bfloat16(dq_V_lane(vb + i * V_BLK_B, lane)));
-                acc[i] = __fmaf_rn(acc[i], alpha, __fmaf_rn(wA, vva, __fmul_rn(wB, vvb)));
-            }
-        }
-        l_i = l_i * alpha + wA + wB;
-        m_i = m_new;
-    }
-    for (; t < t_hi; ++t) {
-        const uint8_t* kt = K + (size_t)t * k_tok_bytes + (size_t)kblk0 * K_BLK_B;
-        float part = 0.0f;
-        #pragma unroll
-        for (int i = 0; i < FA_DEC_MAX_DPL; ++i) {
-            if (i < dpl) {
-                part += q_reg[i] * __bfloat162float(__float2bfloat16(dq_K_lane(kt + i * K_BLK_B, lane)));
-            }
-        }
-        float score = warp_reduce_sum(part);
-        float m_new = fmaxf(m_i, score);
-        float alpha = (m_i == NEG_INF) ? 0.0f : exp2f((m_i - m_new) * LOG2E);
-        float p     = exp2f((score - m_new) * LOG2E);
-        const uint8_t* vt = V + (size_t)t * v_tok_bytes + (size_t)kblk0 * V_BLK_B;
-        #pragma unroll
-        for (int i = 0; i < FA_DEC_MAX_DPL; ++i) {
-            if (i < dpl) {
-                acc[i] = __fmaf_rn(acc[i], alpha, __fmul_rn(p, __bfloat162float(__float2bfloat16(dq_V_lane(vt + i * V_BLK_B, lane)))));
-            }
-        }
-        l_i = l_i * alpha + p;
-        m_i = m_new;
-    }
-
-    #pragma unroll
-    for (int i = 0; i < FA_DEC_MAX_DPL; ++i) {
-        if (i < dpl) {
-            int d = lane + (i << 5);
-            partO[(((size_t)r * n_head + head) * n_splits_max + split) * head_dim + d] = acc[i];
-        }
-    }
-    if (lane == 0) {
-        partM[((size_t)r * n_head + head) * n_splits_max + split] = m_i;
-        partL[((size_t)r * n_head + head) * n_splits_max + split] = l_i;
-    }
-}
-
-
-
 // hd512 ROWS twin (gemma globals verify + decode, parity law): fa_decode_vec_q_dpl16's
 // EXACT walk with the rows frame (r = blockIdx.z causal bound, [T,...] partials). Decode
 // passes t=1 — decode and verify share THIS symbol in the hd512 vec regime, so parity does
@@ -8361,98 +8208,6 @@ extern "C" __global__ void fa_decode_vec_q_rows_dpl16(
                 if (i < dpl) {
                     const uint8_t* blk = vt + i * V_BLK_B;
                     acc[i] = __fmaf_rn(acc[i], alpha, __fmul_rn(p, __bfloat162float(__float2bfloat16(dq_V_lane(blk, lane)))));
-                }
-            }
-            l_i = l_i * alpha + p;
-            m_i = m_new;
-        }
-    }
-
-    #pragma unroll
-    for (int i = 0; i < FA_DEC_MAX_DPL16; ++i) {
-        if (i < dpl) {
-            int d = lane + (i << 5);
-            partO[(((size_t)r * n_head + head) * n_splits_max + split) * head_dim + d] = acc[i];
-        }
-    }
-    if (lane == 0) {
-        partM[((size_t)r * n_head + head) * n_splits_max + split] = m_i;
-        partL[((size_t)r * n_head + head) * n_splits_max + split] = l_i;
-    }
-}
-
-// K=V twin (gemma globals: wv:=wk — the K and V planes hold the same VALUES, but K is q8_0
-// and V is q5_1): reuse the dequantized+bf16-rounded q8_0 key chunk as the value chunk. The
-// separate V walk disappears (the V plane is never read — ~40% less KV traffic + half the dq
-// ALU) and the value vector carries q8_0 precision instead of q5_1 (a strictly finer numeric
-// config — NEW CONFIG, battery-arbitrated). Parity is structural: every hd512 caller shares
-// this symbol via fa_decode_rows. Callers pass kv_shared only when K-values == V-values.
-extern "C" __global__ void fa_decode_vec_q_rows_dpl16_kv(
-        const float* __restrict__ Q,
-        const uint8_t* __restrict__ K,
-        const uint8_t* __restrict__ V,   // unused (kept for launch-arg symmetry)
-        float* __restrict__ partO,
-        float* __restrict__ partM,
-        float* __restrict__ partL,
-        int head_dim, int n_head, int n_head_kv, const int* __restrict__ t_kv_base_dev, int base_plus,
-        float scale, int n_splits_max, int split_keys,
-        long k_tok_bytes, long v_tok_bytes)
-{
-    (void)V; (void)v_tok_bytes;
-    const int r        = blockIdx.z;
-    const int T_kv     = t_kv_base_dev[0] + base_plus + r + 1;
-    const int n_splits = (T_kv + split_keys - 1) / split_keys;
-    const int kv_head  = blockIdx.x;
-    const int split    = blockIdx.y;
-    if (kv_head >= n_head_kv || split >= n_splits) return;
-    const int gqa     = n_head / n_head_kv;
-    const int wy      = threadIdx.y;
-    const int lane    = threadIdx.x;
-    if (wy >= gqa) return;
-    const int head    = kv_head * gqa + wy;
-    const int dpl     = head_dim >> 5;
-
-    const int per  = (T_kv + n_splits - 1) / n_splits;
-    const int t_lo = split * per;
-    const int t_hi = min(T_kv, t_lo + per);
-
-    float q_reg[FA_DEC_MAX_DPL16];
-    #pragma unroll
-    for (int i = 0; i < FA_DEC_MAX_DPL16; ++i) {
-        if (i < dpl) {
-            int d = lane + (i << 5);
-            q_reg[i] = Q[((size_t)r * n_head + head) * head_dim + d] * scale;
-        } else q_reg[i] = 0.0f;
-    }
-
-    float m_i = NEG_INF, l_i = 0.0f;
-    float acc[FA_DEC_MAX_DPL16];
-    #pragma unroll
-    for (int i = 0; i < FA_DEC_MAX_DPL16; ++i) acc[i] = 0.0f;
-
-    {
-        const int kblk0 = (kv_head * head_dim) >> 5;
-        for (int t = t_lo; t < t_hi; ++t) {
-            const uint8_t* kt = K + (size_t)t * k_tok_bytes + (size_t)kblk0 * K_BLK_B;
-            float kv[FA_DEC_MAX_DPL16];
-            float part = 0.0f;
-            #pragma unroll
-            for (int i = 0; i < FA_DEC_MAX_DPL16; ++i) {
-                if (i < dpl) {
-                    const uint8_t* blk = kt + i * K_BLK_B;
-                    kv[i] = __bfloat162float(__float2bfloat16(dq_K_lane(blk, lane)));
-                    part += q_reg[i] * kv[i];
-                } else kv[i] = 0.0f;
-            }
-            float score = warp_reduce_sum(part);
-
-            float m_new = fmaxf(m_i, score);
-            float alpha = (m_i == NEG_INF) ? 0.0f : exp2f((m_i - m_new) * LOG2E);
-            float p     = exp2f((score - m_new) * LOG2E);
-            #pragma unroll
-            for (int i = 0; i < FA_DEC_MAX_DPL16; ++i) {
-                if (i < dpl) {
-                    acc[i] = __fmaf_rn(acc[i], alpha, __fmul_rn(p, kv[i]));
                 }
             }
             l_i = l_i * alpha + p;
@@ -9034,7 +8789,7 @@ extern "C" __global__ void fa_decode_vec_q_v3_dcw_prof(
     const int bt  = wy * WARP_SZ + lane;
     const int bsz = WARP_SZ * gqa;
     const int kblk0 = (kv_head * head_dim) >> 5;
-    fa_dec_v3_walk_u<4, false, false, true>(Kv, Vv, sV, bt, bsz, qq, dQ, dpl, lane, head_dim,
+    fa_dec_v3_walk_u<4, true>(Kv, Vv, sV, bt, bsz, qq, dQ, dpl, lane, head_dim,
                    t_lo, t_hi, kblk0, k_tok_bytes, v_tok_bytes, m_i, l_i, acc, prof);
 
     #pragma unroll

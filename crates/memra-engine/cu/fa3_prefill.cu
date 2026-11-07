@@ -1,9 +1,10 @@
 // FA3 v10 engine shim (task #20, ARCHITECTURE-H100.md round 29): the harness-proven
 // TMA-swizzled wgmma FA (tools/bench_fa3.cu v10, 883us vs the shipped 993us at T=2048,
-// correct at all T vs the online-semantics reference). NEW NUMERIC CONFIG (explicit,
-// opt-in MEMRA_FA3=1 — the GDN-mma precedent): online-softmax + bf16 P at running max,
-// same class as the shipped kernel but not bit-paired; run-gen argmax/stream batteries
-// arbitrate. Fresh causal prefill, head_dim 256 only this increment.
+// correct at all T vs the online-semantics reference). NEW NUMERIC CONFIG (the GDN-mma
+// precedent): online-softmax + bf16 P at running max, same class as the shipped kernel but
+// not bit-paired; run-gen argmax/stream batteries arbitrate. DEFAULT ON on sm_90a builds
+// (memra_hopper_mma) since 2026-07-27; MEMRA_FA3=0 reverts. Fresh causal prefill, head_dim
+// 256 only this increment.
 //
 // Host entry encodes the CUtensorMaps per call (~us) for the caller's PRE-MIRRORED
 // bf16 Q/K buffers and launches the kernel on the caller's stream. Static-lib kind
@@ -13,8 +14,8 @@
 #include <cuda.h>
 #include <cuda_bf16.h>
 
-// wgmma/TMA are sm_90a-only; other arches build a fail-closed stub (the dispatch arm
-// is opt-in + hd256, and gates fail loudly on rc=3).
+// wgmma/TMA are sm_90a-only; other arches build a fail-closed stub (rc=3). The dispatch
+// arm defaults off there, and Engine::new refuses MEMRA_FA3=1 on those builds.
 #if defined(MEMRA_FA3_STUB)
 extern "C" int memra_fa3_prefill(const void*, const void*, const void*, float*,
                                 int, int, int, int, float, void*) { return 3; }
