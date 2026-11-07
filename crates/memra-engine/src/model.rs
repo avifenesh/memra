@@ -2311,7 +2311,7 @@ impl HostExps {
 
     /// The one residency decision for a stacked block-128 E4M3 expert bank. `native_enabled` is
     /// `MEMRA_ST_E4M3`; `native_tile_built` is whether this build carries the per-block FP8 MMQ
-    /// tile (`fp8_blk_mmq_built`), which every native-bank consumer needs: the resident MoE arm,
+    /// tile (`fp8_blk_kernels_built`), which every native-bank consumer needs: the resident MoE arm,
     /// Step EP and Step TP all run `qmatvec_mmq_fp8_blk*`. Without the tile the native bank is
     /// refused here, for every residency branch, before any upload; the Q8_0 rollback stays
     /// reachable as a diagnostic on every arch.
@@ -2456,7 +2456,7 @@ impl HostExps {
             src,
             name,
             crate::fp8_ffi::st_e4m3_blk_enabled(),
-            crate::fp8_ffi::fp8_blk_mmq_built(),
+            crate::fp8_ffi::fp8_blk_kernels_built(),
         )? {
             return Ok(exps);
         }

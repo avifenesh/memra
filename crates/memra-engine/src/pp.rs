@@ -184,6 +184,36 @@ pub fn pp_cuts(n_layers: usize) -> Option<Vec<usize>> {
     Some(fence)
 }
 
+/// True iff `MEMRA_PP_STAGES` parses to N >= 2: the request for a split, before `pp_cuts`
+/// validates the fence. The placement guards (`pp_multi_stream_same_device`,
+/// `pp_sharded_cross_device`) read this env-only form, so a load whose fence is invalid while a
+/// split is requested would leave them disagreeing with `pp_cuts`; the loader refuses that load
+/// (`refuse_invalid_fence`) instead of running unsplit under refusals that blame remote weights.
+pub fn pp_stages_requested() -> bool {
+    std::env::var("MEMRA_PP_STAGES")
+        .map(|v| v.parse::<usize>().map(|n| n >= 2).unwrap_or(false))
+        .unwrap_or(false)
+}
+
+/// Load-time refusal for a requested split with no valid fence over `n_layers` (a bad
+/// `MEMRA_PP_SPLITS` count, `MEMRA_PP_SPLIT` with N > 2, cuts that are not strictly increasing,
+/// or N > `n_layers`). `pp_cuts` keeps the door OFF and warns; this turns that warning into a
+/// named load error, so the model never loads unsplit while the guards still see a split.
+pub fn refuse_invalid_fence(n_layers: usize) -> Result<(), String> {
+    if pp_stages_requested() && pp_cuts(n_layers).is_none() {
+        let env = |name: &str| std::env::var(name).unwrap_or_else(|_| "<unset>".into());
+        return Err(format!(
+            "MEMRA_PP_STAGES={} requests a pipeline split, but no valid stage fence exists over \
+             {n_layers} layers (MEMRA_PP_SPLITS={}, MEMRA_PP_SPLIT={}); fix the cut list or \
+             unset MEMRA_PP_STAGES",
+            env("MEMRA_PP_STAGES"),
+            env("MEMRA_PP_SPLITS"),
+            env("MEMRA_PP_SPLIT"),
+        ));
+    }
+    Ok(())
+}
+
 /// N=2 back-compat view of the door (the gemma4 arm and `pp2-gate` are 2-stage): `Some(cut)`
 /// iff the door is open with EXACTLY two stages.
 pub fn pp2_split(n_layers: usize) -> Option<usize> {
@@ -258,9 +288,7 @@ pub fn pp_exit_publish() -> bool {
 /// [`pp_exit_publish`]. Whether the pipelined arm's remaining flake is the same mechanism
 /// is UNMEASURED; this refusal stands.
 pub fn pp_multi_stream_same_device() -> bool {
-    let stages_open = std::env::var("MEMRA_PP_STAGES")
-        .map(|v| v.parse::<usize>().map(|n| n >= 2).unwrap_or(false))
-        .unwrap_or(false);
+    let stages_open = pp_stages_requested();
     let devices = std::env::var("MEMRA_PP_DEVICES")
         .ok()
         .filter(|v| !v.is_empty());
@@ -303,9 +331,7 @@ fn pp_devices_repeat(raw: &str) -> bool {
 /// return identical bytes and every `decode-batch-gate` gate PASSED on this config, which
 /// is precisely why it needs a refusal rather than a gate.
 pub fn pp_sharded_cross_device() -> bool {
-    let stages_open = std::env::var("MEMRA_PP_STAGES")
-        .map(|v| v.parse::<usize>().map(|n| n >= 2).unwrap_or(false))
-        .unwrap_or(false);
+    let stages_open = pp_stages_requested();
     // MEMRA_PP_STREAMS=0 (2026-08-06, pp2-batch): the same-stream rollback seam ALSO turns
     // the sharded loader off — `layer_engine` returns the primary engine whenever
     // `pp2_streams_off()`, and `new_cache` skips `Cache::new_ppn` on the same condition. So

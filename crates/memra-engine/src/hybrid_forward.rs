@@ -143,6 +143,20 @@ fn step_tp_prefill_enabled() -> Result<bool, String> {
     parse_step_tp_prefill(std::env::var("MEMRA_STEP_TP_PREFILL").ok().as_deref())
 }
 
+/// The refusal `prime_cache_batch` returns for a step35 cross-request batch while
+/// `MEMRA_STEP35_PRIME_BATCH=0`. The pbatch35c canary reads exactly this refusal as its verdict,
+/// so the text is shared with `prime-batch-gate` rather than matched loosely there.
+pub const STEP35_PRIME_BATCH_SEAM_REFUSAL: &str =
+    "step35 batched prime is disabled (MEMRA_STEP35_PRIME_BATCH=0)";
+
+/// The named refusal of a single-session Step prime when `MEMRA_STEP_TP_PREFILL=1` sends it to
+/// the walk but no full-attention layer carries the rank-local Step TP placement the walk's
+/// prefill arm needs.
+pub const STEP_TP_PREFILL_NO_PLACEMENT_REFUSAL: &str = "MEMRA_STEP_TP_PREFILL=1 needs a \
+     rank-local Step TP attention placement (MEMRA_STEP_TP with native P2P), and this model \
+     has none: the walk without it primes at ~57.5 ms/token, so every fresh prompt past ~1500 \
+     tokens would miss the 90 s first-token deadline. Unset the door or add the placement";
+
 fn validate_step_prime_batch_modes(tp_prefill: bool, grouped_prefill: bool) -> Result<(), String> {
     if grouped_prefill && !tp_prefill {
         return Err("MEMRA_STEP_EP_GROUPED_PREFILL=1 requires MEMRA_STEP_TP_PREFILL=1".into());
@@ -862,8 +876,11 @@ fn mla_tc_prefill_enabled() -> bool {
         .unwrap_or(true)
 }
 
-/// `MEMRA_B200_PRIME_V2` — the B200 (sm_100a) mHC PRIME schedule door
-/// (lane/b200-prefill-roofline-20260902, **default OFF**). It arms two changes to the
+/// `MEMRA_HYPER_PRIME_V2` — the mHC PRIME schedule door (lane/b200-prefill-roofline-20260902,
+/// **default OFF**; named `MEMRA_HYPER_PRIME_V2` until 2026-11-03). It is host-side scheduling,
+/// so it is not build-gated like the B200 kernel doors: it runs on any build, and its receipts
+/// are from a B200 pair (the per-hardware law: another rig owes its own A/B before a default
+/// moves there). The old name refuses at server boot (env audit). It arms two changes to the
 /// HyperConnections prime and nothing else; decode, spec, batch and every non-hyper trunk are
 /// untouched by construction (the only two call sites are `hyper_prime_ranges` and
 /// `prime_cache_hyper`'s pp branch).
@@ -945,19 +962,19 @@ fn hyper_pipe_decline_once(reason: &str) {
     if !DECLINED.swap(true, std::sync::atomic::Ordering::Relaxed) {
         eprintln!(
             "[hyper-prime-pipe] DECLINED: {reason} -> the serial per-chunk stage walk serves \
-             this prime (MEMRA_B200_PRIME_V2 arm 1 is unaffected; logged once per process)"
+             this prime (MEMRA_HYPER_PRIME_V2 arm 1 is unaffected; logged once per process)"
         );
     }
 }
 
-pub fn b200_prime_v2_on() -> bool {
-    std::env::var("MEMRA_B200_PRIME_V2").as_deref() == Ok("1")
+pub fn hyper_prime_v2_on() -> bool {
+    std::env::var("MEMRA_HYPER_PRIME_V2").as_deref() == Ok("1")
 }
 
 /// Chunks primed through the pipelined mHC PP-2 walk. The engagement receipt arm 2's
 /// non-vacuity assertion reads: bit identity between two walks that both ran SERIALLY is
 /// vacuous, so the gate requires this to advance.
-/// Prime calls whose schedule was decided by `MEMRA_B200_PRIME_V2` arm 1 (the natural chunk).
+/// Prime calls whose schedule was decided by `MEMRA_HYPER_PRIME_V2` arm 1 (the natural chunk).
 /// The engagement counter the gate reads: an armed door that changed no schedule is the exact
 /// failure this lane was written to catch, so "the flag was set" is never the receipt.
 pub static HYPER_PRIME_NATURAL_SCHEDULES: std::sync::atomic::AtomicU64 =
@@ -1568,13 +1585,13 @@ pub fn hyper_prime_ranges(
     gdn_grid: bool,
     ring_on: bool,
 ) -> Vec<(usize, usize)> {
-    // DOOR `MEMRA_B200_PRIME_V2` arm 1 (default OFF; see the door's header for the arithmetic
+    // DOOR `MEMRA_HYPER_PRIME_V2` arm 1 (default OFF; see the door's header for the arithmetic
     // and the numeric class). The delegation above inherits `PRIME_PIPE_MICROBATCHES` from a
     // pipeline this walk does not run; under the door the mHC prime takes the NATURAL chunk
     // instead. An explicit `MEMRA_PRIME_CHUNK` is still authoritative -- the operator override
     // must not be overridden by a door, and `prime_chunk_tokens` already honors it, so the
     // door simply stands aside rather than re-deciding.
-    if b200_prime_v2_on() && std::env::var_os("MEMRA_PRIME_CHUNK").is_none() {
+    if hyper_prime_v2_on() && std::env::var_os("MEMRA_PRIME_CHUNK").is_none() {
         return hyper_prime_ranges_natural(t, gdn_grid, ring_on);
     }
     prime_chunk_ranges(t, n_layers, gdn_grid, ring_on)
@@ -1602,7 +1619,7 @@ fn hyper_prime_ranges_natural(t: usize, gdn_grid: bool, ring_on: bool) -> Vec<(u
     if !SAID.swap(true, std::sync::atomic::Ordering::Relaxed) {
         eprintln!(
             "[prime-v2] arm1 engaged t={t} chunk={} chunks={} widths={:?} (natural chunk \
-             replaces the PRIME_PIPE_MICROBATCHES geometry; MEMRA_B200_PRIME_V2, logged once \
+             replaces the PRIME_PIPE_MICROBATCHES geometry; MEMRA_HYPER_PRIME_V2, logged once \
              per process)",
             crate::cache::PRIME_CHUNK_MAX_TOKENS,
             ranges.len(),
@@ -2324,11 +2341,11 @@ impl HybridModel {
                 self.glm5_taps_range_done(e, cache, 0, t)?;
                 return Ok(out);
             }
-            // DOOR `MEMRA_B200_PRIME_V2` arm 2 (default OFF): overlap stage 0 of chunk k+1 with
+            // DOOR `MEMRA_HYPER_PRIME_V2` arm 2 (default OFF): overlap stage 0 of chunk k+1 with
             // stage 1 of chunk k. Every conjunct is load-bearing and every decline is named --
             // an arm that quietly did not run is the failure mode this lane's own roofline was
             // written to catch.
-            if b200_prime_v2_on() && !crate::pp::pp2_streams_off() && fence.len() == 3 {
+            if hyper_prime_v2_on() && !crate::pp::pp2_streams_off() && fence.len() == 3 {
                 if !crate::pp::prime_pipe_on() {
                     hyper_pipe_decline_once("MEMRA_PRIME_PIPE=0 (the operator rollback seam)");
                 } else if overlay.is_some() {
@@ -2375,7 +2392,7 @@ impl HybridModel {
             }
             let mut hiddens = e.uninit(t * n_embd)?;
             let mut last: Option<(Vec<f32>, CudaSlice<f32>)> = None;
-            for &(start, end) in &ranges {
+            for (chunk_idx, &(start, end)) in ranges.iter().enumerate() {
                 let ov = overlay.and_then(|o| o.window(start, end - start));
                 self.glm5_taps_range_begin(cache, start);
                 let (l, hs, x) = self.prime_cache_hyper_ppn(
@@ -2394,6 +2411,9 @@ impl HybridModel {
                 // so the device finished it. Stamp the odometer /health reads, so a BUSY
                 // worker mid-long-prefill is never mistaken for a wedged one.
                 crate::progress::note_prime_rows(end - start);
+                // CANCELLATION POINT (memra#536): each range is a whole serial stage walk that
+                // returned host logits, so no stage work is in flight here; see progress.rs.
+                crate::progress::prime_cancel_point(chunk_idx, end, t)?;
             }
             let (logits, h_seed) =
                 last.expect("hyper_prime_ranges never returns an empty schedule");
@@ -4640,7 +4660,7 @@ impl HybridModel {
         }
     }
 
-    /// DOOR `MEMRA_B200_PRIME_V2` arm 2: the PIPELINED mHC PP-2 prime. Stage 0 of chunk k+1
+    /// DOOR `MEMRA_HYPER_PRIME_V2` arm 2: the PIPELINED mHC PP-2 prime. Stage 0 of chunk k+1
     /// runs on device 0 while stage 1 of chunk k runs on device 1, over disjoint per-stage
     /// caches ([`PrimeCacheStages`]), on two scoped host threads.
     ///
@@ -4717,7 +4737,7 @@ impl HybridModel {
             eprintln!(
                 "[prime-v2] arm2 pipelined stages=2 chunks={} overlap={} t={t} devices={:?} \
                  taps={} (stage 0 of chunk k+1 overlaps stage 1 of chunk k on two host \
-                 threads; MEMRA_B200_PRIME_V2, logged once per process)",
+                 threads; MEMRA_HYPER_PRIME_V2, logged once per process)",
                 ranges.len(),
                 ranges.len().saturating_sub(1),
                 (0..2)
@@ -5720,12 +5740,22 @@ impl HybridModel {
         // commit) leaves continuations on the walk while fresh primes stay on the fast path;
         // MEMRA_STEP_GEMM_PRIME=0 is the whole-path seam. The `seq_end` threading above is
         // deliberately NOT behind either door — it is a correctness fix for the fresh path too.
-        if overlay.is_none()
+        // MEMRA_STEP_TP_PREFILL=1 declines this entry: the rank-local prefill arm it opens lives
+        // in the walk (`step35_attn_prime`), and the batched core below refuses the door as a
+        // cross-request mode, so taking this entry would refuse the per-session prime too.
+        // The walk only engages that arm on layers that carry a rank-local Step TP placement.
+        // Without one it is the plain serial walk at ~57.5 ms/token, the dead rollback the
+        // server refuses for MEMRA_STEP_GEMM_PRIME=0, so the door refuses by name instead.
+        let gemm_entry = overlay.is_none()
             && (cache.pos == 0 || step_gemm_prime_suffix_on())
             && t >= PRIME_MIN_T
             && crate::step_gemm_prime_on()
-            && self.uses_sliding_gated_moe_program()
-        {
+            && self.uses_sliding_gated_moe_program();
+        let tp_prefill = gemm_entry && step_tp_prefill_enabled()?;
+        if tp_prefill && !self.has_rank_local_step_tp_attention() {
+            return Err(STEP_TP_PREFILL_NO_PLACEMENT_REFUSAL.into());
+        }
+        if gemm_entry && !tp_prefill {
             let n_embd = self.cfg.n_embd as usize;
             let base = cache.pos;
             let width = crate::cache::PRIME_CHUNK_MAX_TOKENS;
@@ -5913,7 +5943,16 @@ impl HybridModel {
         // PIPELINED PP PRIME. PP-2 retains its independently-qualified two-stage schedule;
         // PP-3/4 require the explicit MEMRA_PP_WAVE=1 persistent-stage wavefront. The serial
         // split stays reachable through MEMRA_PRIME_PIPE=0 and is the exactness oracle.
-        if crate::pp::prime_pipe_on() && crate::pp::prime_pp_on() && !crate::pp::pp2_streams_off() {
+        // Gemma never enters: both pipelined bodies embed without the sqrt(n_embd) scale and
+        // walk `prime_layers` (the serial residual), not `prime_layers_gemma`, so a gemma
+        // prompt of 2+ ranges would prime through the wrong program with no error. Gemma
+        // takes the serial loop below, the same program `prime_chunk` gives its single-range
+        // primes (its ppN arm excludes gemma for the same reason).
+        if !self.uses_gemma_program()
+            && crate::pp::prime_pipe_on()
+            && crate::pp::prime_pp_on()
+            && !crate::pp::pp2_streams_off()
+        {
             if let Some(fence) = crate::pp::pp_cuts(self.layers.len()).filter(|f| f.len() == 3) {
                 // No lift without this family's stage-0 intake seam and substituted-token
                 // bit-identity gate; copying the glm5 overlay fix here is the memra #21 trap.
@@ -8166,9 +8205,6 @@ impl HybridModel {
                     .into(),
             );
         }
-        if !Self::step35_prime_batch_on() {
-            return Err("step35 batched prime is disabled (MEMRA_STEP35_PRIME_BATCH=0)".into());
-        }
         // Continuation chunks are admitted (positions above carry each sequence's base). The
         // remaining restriction is genuine: a CROSS-REQUEST batch mixing sequences at different
         // positions still needs per-request queued_after to place its KV, so B > 1 keeps the
@@ -8474,6 +8510,13 @@ impl HybridModel {
         // Step35 has a dedicated concat walk: the generic core below cannot express its
         // per-layer geometry/SWA/head gate, and under PP the dedicated path is stage-scoped.
         if self.uses_sliding_gated_moe_program() {
+            // MEMRA_STEP35_PRIME_BATCH=0 disables the CROSS-REQUEST concat only, so it refuses
+            // here, at the cross-request entry. The single-session GEMM prime in
+            // `prime_cache_overlaid` calls the same core at B=1 and must keep working: that
+            // single prime is the fallback the seam restores.
+            if !Self::step35_prime_batch_on() {
+                return Err(STEP35_PRIME_BATCH_SEAM_REFUSAL.into());
+            }
             // The cross-request driver hands whole requests (no chunk loop of its own), so each
             // sequence's request-absolute end IS its base plus its prompt length — the value
             // `ts[s]` happened to equal for the fresh B>=1 batches this caller admits, which is
@@ -8737,31 +8780,12 @@ impl HybridModel {
             total,
             eps,
         )?;
-        // batched lm_head (nsys round-26: B sequential m=1 matvecs re-read the 600MB
-        // lm_head weight B times — 2.2ms at B=6): gather the B last rows and run ONE
-        // m=B GEMM (f16 lane; falls back to the per-seq matvec when no mirror). The
-        // f16-vs-mmvq logits delta is the prefill GEMM numeric class — prime_batch_gate's
-        // argmax battery arbitrates, same as every other prefill GEMM change.
-        let mut hcat = e.uninit(b * n_embd)?;
-        for s in 0..b {
-            let last0 = (offs[s] + ts[s] - 1) * n_embd;
-            e.copy_view_into(
-                &mut hcat,
-                s * n_embd,
-                &hn.slice(last0..last0 + n_embd),
-                n_embd,
-            )?;
-        }
-        let logits_cat = if b >= 2 {
-            e.try_f16_gemm(&self.output, &hcat, b)?
-        } else {
-            None
-        };
-        let logits_host: Option<Vec<f32>> = match &logits_cat {
-            Some(lc) => Some(e.dtoh(lc)?),
-            None => None,
-        };
-        let n_vocab = self.output.out_features();
+        // lm_head per sequence at m=1, the head `prime_chunk_epilogue` runs for a solo prime
+        // (ONE numeric program per request). A batched m=B f16 GEMM over the B last rows saved
+        // B-1 reads of the head weight (nsys round-26: 2.2 ms at B=6), but it engaged only where
+        // an f16 mirror exists (Hopper, capacity-admitted PRO 6000 class), so a cold prompt's
+        // first-token logits depended on whether a peer was co-batched; `prime-batch-exact-gate`
+        // compares the two bitwise.
         let mut hidden_all = if crate::spec::spec_hpost() {
             split(e, &hn, n_embd)?
         } else {
@@ -8776,14 +8800,9 @@ impl HybridModel {
             } else {
                 e.copy_view_into(&mut h_seed, 0, &hn.slice(last0..last0 + n_embd), n_embd)?;
             }
-            let logits = match &logits_host {
-                Some(lh) => lh[s * n_vocab..(s + 1) * n_vocab].to_vec(),
-                None => {
-                    let mut hlast = e.uninit(n_embd)?;
-                    e.copy_view_into(&mut hlast, 0, &hn.slice(last0..last0 + n_embd), n_embd)?;
-                    e.dtoh(&e.matmul(&self.output, &hlast, 1)?)?
-                }
-            };
+            let mut hlast = e.uninit(n_embd)?;
+            e.copy_view_into(&mut hlast, 0, &hn.slice(last0..last0 + n_embd), n_embd)?;
+            let logits = e.dtoh(&e.matmul(&self.output, &hlast, 1)?)?;
             caches[s].pos += ts[s];
             out.push((logits, h_seed, hidden_all.remove(0)));
         }
@@ -14511,8 +14530,8 @@ impl HybridModel {
                     n_embd,
                     n_ff_exp,
                     n_used,
-                    m.gate_exps.qtype,
-                    m.up_exps.qtype,
+                    crate::rp_qt(slab_rp, m.gate_exps.qtype), // memra#147: V2 via expert_dot_g
+                    crate::rp_qt(slab_rp, m.up_exps.qtype),
                     m.gate_exps.row_bytes,
                     m.up_exps.row_bytes,
                 )?;
@@ -14527,7 +14546,7 @@ impl HybridModel {
                     n_ff_exp,
                     n_embd,
                     n_used,
-                    m.down_exps.qtype,
+                    crate::rp_qt(slab_rp, m.down_exps.qtype),
                     m.down_exps.row_bytes,
                 )?;
                 continue;
@@ -14740,6 +14759,12 @@ impl HybridModel {
                 // `qmatvec_view`), same ffn_act_lim/macro folds; provenance = slab base +
                 // ex*stride. No dispatch lock, no admission, no prefetch — nothing to miss.
                 if let Some(d) = slab_local {
+                    // memra#147: a repacked (split-plane) slab is read through the q8 dots,
+                    // whose `expert_dot_g` takes the V2 case when told `QT_NVFP4_V2`. The f32
+                    // activation reader (`qmatvec_f32`) has no V2 case and refuses by name.
+                    if !moe_q8 {
+                        crate::moe_rp_refuse(slab_rp, "moe_ffn per-expert slab read (f32)")?;
+                    }
                     let gl = m.gate_exps.expert_layout(ex);
                     let ul = m.up_exps.expert_layout(ex);
                     let dl = m.down_exps.expert_layout(ex);
@@ -14763,7 +14788,7 @@ impl HybridModel {
                                 1,
                                 m.gate_exps.in_f,
                                 m.gate_exps.out_f,
-                                gl.qtype,
+                                crate::rp_qt(slab_rp, gl.qtype),
                                 gl.row_bytes,
                             )?,
                             e.qmatvec_expert_q8(
@@ -14774,7 +14799,7 @@ impl HybridModel {
                                 1,
                                 m.up_exps.in_f,
                                 m.up_exps.out_f,
-                                ul.qtype,
+                                crate::rp_qt(slab_rp, ul.qtype),
                                 ul.row_bytes,
                             )?,
                         )
@@ -14826,7 +14851,7 @@ impl HybridModel {
                             1,
                             m.down_exps.in_f,
                             m.down_exps.out_f,
-                            dl.qtype,
+                            crate::rp_qt(slab_rp, dl.qtype),
                             dl.row_bytes,
                         )?
                     } else {
@@ -19567,7 +19592,7 @@ impl HybridModel {
                  cublasGemmGroupedBatchedEx issues on cuBLAS-internal streams unordered with \
                  ours, and on this walk's 283-group shape that race silently destroyed the \
                  trunk and killed the worker (2026-09-02 boot D, research/glm5-b200-20260902/ \
-                 box/prefill/). Use MEMRA_MOE_F16G=2 (the default) or the MEMRA_B200_PRIME_V2 \
+                 box/prefill/). Use MEMRA_MOE_F16G=2 (the default) or the MEMRA_HYPER_PRIME_V2 \
                  dequant-once arm",
                 t,
                 il,
@@ -21329,6 +21354,13 @@ impl HybridModel {
         // The sequential no-cache/frozen staging oracle is f32. Use q8 only where sequential
         // also does: a local resident slab or a live SLRU dispatch.
         let grouped_q8 = moe_q8 && (slab_local.is_some() || use_cache);
+        // memra#147: a repacked (split-plane) resident slab is read through the q8 dots, whose
+        // `expert_dot_g` takes the V2 case when told `QT_NVFP4_V2`. The f32 activation reader
+        // (`qmatvec_view`) has no V2 case and refuses by name before any expert is dispatched.
+        let slab_rp = slab_local.is_some_and(|d| d.rp);
+        if slab_local.is_some() && !grouped_q8 {
+            crate::moe_rp_refuse(slab_rp, "moe_ffn_grouped per-expert slab read (f32)")?;
+        }
 
         // GPU scratch for staging (only allocated without a local slab or cache).
         let (mut scratch_g, mut scratch_u, mut scratch_d) = if slab_local.is_none() && !use_cache {
@@ -21425,7 +21457,7 @@ impl HybridModel {
                         m_e,
                         m.gate_exps.in_f,
                         m.gate_exps.out_f,
-                        gl.qtype,
+                        crate::rp_qt(slab_rp, gl.qtype),
                         gl.row_bytes,
                     )?;
                     let up = e.qmatvec_expert_q8(
@@ -21436,7 +21468,7 @@ impl HybridModel {
                         m_e,
                         m.up_exps.in_f,
                         m.up_exps.out_f,
-                        ul.qtype,
+                        crate::rp_qt(slab_rp, ul.qtype),
                         ul.row_bytes,
                     )?;
                     let mut act = e.uninit(m_e * n_ff_exp)?;
@@ -21460,7 +21492,7 @@ impl HybridModel {
                         m_e,
                         m.down_exps.in_f,
                         m.down_exps.out_f,
-                        dl.qtype,
+                        crate::rp_qt(slab_rp, dl.qtype),
                         dl.row_bytes,
                     )?
                 } else {

@@ -35,6 +35,7 @@
 #   tools/portable-suites.sh  budget 0 for memra-tier, memra-kv and memra-cli: none of the three
 #                             crates has an artifact-gated test, and a new one must be declared
 #                             here and budgeted there, out loud.
+memra-engine	a_pp2_multi_range_gemma_prime_matches_the_reference_executor	crates/memra-engine/tests/gemma4_chunked_prime_gpu.rs	SKIP[2 CUDA devices]: PP-2 gemma multi-range prime not run
 memra-engine	all_reduce_matches_the_host_sum_bitwise	crates/memra-engine/tests/tp_ar_gpu.rs	SKIP[2 CUDA devices]: multi-GPU test not run
 memra-engine	all_reduce_without_the_peer_push_diverges	crates/memra-engine/tests/tp_ar_gpu.rs	SKIP[2 CUDA devices]: multi-GPU test not run
 memra-engine	batched_drafter_gather_matches_per_draft_bitwise	crates/memra-engine/tests/spec_batched_gather_gpu.rs	SKIP[CUDA device]: GPU test not run

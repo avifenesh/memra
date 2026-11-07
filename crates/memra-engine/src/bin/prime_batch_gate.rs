@@ -123,7 +123,22 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         let prompt_refs: Vec<&[u32]> = batched.iter().map(|p| p.as_slice()).collect();
         let mut cache_refs: Vec<&mut Cache> = caches.iter_mut().collect();
-        let outs = model.prime_cache_batch(&e, &prompt_refs, &mut cache_refs)?;
+        // The step35 canary (MEMRA_STEP35_PRIME_BATCH=0) restores exactly ONE refusal, the
+        // seam's own, and the gate script reads it by this verdict line. Any other
+        // prime_cache_batch error (OOM, a host-bounce or continuation refusal, a CUDA fault)
+        // says nothing about the seam, so it stays a hard error and the canary reads it as
+        // INCONCLUSIVE.
+        let outs = match model.prime_cache_batch(&e, &prompt_refs, &mut cache_refs) {
+            Ok(outs) => outs,
+            Err(err)
+                if err.to_string()
+                    == memra_engine::hybrid_forward::STEP35_PRIME_BATCH_SEAM_REFUSAL =>
+            {
+                println!("batched prime REFUSED (rollback seam): {err}");
+                return Err("prime-batch-gate: batched prime refused by the rollback seam".into());
+            }
+            Err(err) => return Err(err),
+        };
         for (s, (logits, h_seed, hidden)) in outs.iter().enumerate() {
             let a = argmax(logits) as u32;
             let ok = a == ref_argmax[s];

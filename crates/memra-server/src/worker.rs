@@ -111,6 +111,25 @@ fn dead_prime_kill_switch_refusal(
     None
 }
 
+/// The second route to that dead walk: `MEMRA_STEP_TP_PREFILL=1` sends every single-session Step
+/// prime to the walk, because the walk carries the door's rank-local prefill arm. With no
+/// rank-local Step TP placement that arm never engages, and the engine refuses each such prime
+/// by name. The server refuses the configuration at BOOT instead, for the same reason as
+/// `dead_prime_kill_switch_refusal`.
+fn step_tp_prefill_walk_refusal(
+    is_sliding_gated_moe: bool,
+    step_tp_prefill_env: Option<&str>,
+    has_rank_local_step_tp: bool,
+) -> Option<String> {
+    if is_sliding_gated_moe && step_tp_prefill_env == Some("1") && !has_rank_local_step_tp {
+        return Some(format!(
+            "{} (refused at boot for this step37-class model)",
+            memra_engine::hybrid_forward::STEP_TP_PREFILL_NO_PLACEMENT_REFUSAL
+        ));
+    }
+    None
+}
+
 /// `MEMRA_NVFP4_BANK_V2` and `MEMRA_SEL_DOWN8` were REMOVED from the engine on 2026-08-29
 /// (research/step37-bankv2-removal-20260829). The bank-v2 door's ON arm CHANGED GENERATED
 /// TEXT on the step37 serving path: one binary, one boot recipe, greedy, the qualified
@@ -27944,6 +27963,14 @@ pub fn run(
             let _ = ready_tx.send(Err(msg));
             return;
         }
+        if let Some(msg) = step_tp_prefill_walk_refusal(
+            model.uses_sliding_gated_moe_program(),
+            std::env::var("MEMRA_STEP_TP_PREFILL").ok().as_deref(),
+            model.has_rank_local_step_tp_attention(),
+        ) {
+            let _ = ready_tx.send(Err(msg));
+            return;
+        }
         let eos_id = tok.eos_id();
         // The STOP SET, not just the scalar. `eos=154820` alone was the whole visible
         // evidence while GLM-5.3-Flash's other two declared stops (<|user|>, <|observation|>)
@@ -28196,10 +28223,29 @@ pub fn run(
             "chunked prefill"
         };
         if eager_decode.contains(n) {
-            let class = loaded
-                .get(n)
-                .filter(|lm| memra_engine::plan_backend::decode_batch_unconverted(&lm.model.plan))
-                .map_or("gemma4 class", |_| "hyper-connections residual");
+            let class = loaded.get(n).map_or_else(
+                || "gemma4 class".to_string(),
+                |lm| {
+                    if memra_engine::plan_backend::decode_batch_unconverted(&lm.model.plan) {
+                        "hyper-connections residual".to_string()
+                    } else if memra_engine::plan_backend::decode_batch_program(&lm.model.plan)
+                        == memra_engine::plan_backend::DecodeBatchProgram::Gemma
+                        || lm.model.is_gemma4_e4b()
+                    {
+                        "gemma4 class".to_string()
+                    } else {
+                        // Name the operations, so the class is visible per family at boot:
+                        // glm_dsa reads LatentMlaAttention, MiniMax-M3 SwiGluOaiActivation.
+                        format!(
+                            "plan operations without a batched decode arm: {:?}",
+                            memra_engine::plan_backend::DECODE_BATCH
+                                .trunk_capabilities(&lm.model.plan)
+                                .batch
+                                .blockers
+                        )
+                    }
+                },
+            );
             eprintln!(
                 "[worker] {n}: EAGER-ONLY serving ({class} — no batched decode arm): \
                    per-session eager decode, {prefill}, no prime batching"
@@ -41318,6 +41364,23 @@ fn eager_only_model(lm: &LoadedModel) -> bool {
         // `engine_error` after one token. The converted paths — forward, forward_last,
         // prime_cache, decode_step — are exactly the ones the eager-only class uses.
         || memra_engine::plan_backend::decode_batch_unconverted(&lm.model.plan)
+        // NO BATCHED ARM AT ALL: a serial-residual plan with an operation the generic batched
+        // body does not implement (glm_dsa's LatentMlaAttention) panicked in
+        // `decode_batch_layers` (`mla_path_unimplemented`) on every decode chunk, because
+        // `chunk_cap_for` only narrows such a plan to width 1. The manifest is an AND over the
+        // plan, so the same capability read that sets the width also routes the session to the
+        // eager body (`decode_step_h`), which carries the MLA arm. MiniMax-M3 joins the class
+        // by the same read (SwiGluOaiActivation has no decode-batch surface): the batched body
+        // asserts on any of its dense FFN layers ("M3 swigluoai FFN not yet batched"), while
+        // `ffn_swiglu_decode` carries the swigluoai arm. Membership is the whole eager-only
+        // class (monolithic prime, tokenwise carried suffixes, no prefix snapshot), not a
+        // decode-only carve-out: the batched prime, graph capture and snapshot paths carry no
+        // receipt for either family (glm_dsa is NativeReference, MiniMax-M3 has no support
+        // state), so neither is moved onto them without a serve receipt.
+        || !memra_engine::plan_backend::DECODE_BATCH
+            .trunk_capabilities(&lm.model.plan)
+            .batch
+            .supported
 }
 
 /// MONOLITHIC-PRIME class (memra#535 P1a, lane/exec-p1a-gemma-prime): must this model's prime
@@ -46372,6 +46435,7 @@ mod tests {
     use super::dead_prime_kill_switch_refusal;
     use super::plain_chat_render_path;
     use super::removed_bank_v2_doors_refusal;
+    use super::step_tp_prefill_walk_refusal;
     use super::worker_device;
     use super::{
         ADMIT_PREDICT_MULTI_DEVICE_FATAL_MSG, EvaluatedAdmissionOutcome, LoadedModel,
@@ -49063,6 +49127,22 @@ mod tests {
         // the refusal names the measurement, not just the flag
         let msg = dead_prime_kill_switch_refusal(true, Some("0")).unwrap();
         assert!(msg.contains("90 s") && msg.contains("57.5"));
+    }
+
+    #[test]
+    fn step_tp_prefill_without_a_rank_local_placement_cannot_boot_a_serving_step37() {
+        // refused: the door sends every Step prime to the walk, and no layer carries the
+        // rank-local placement the walk's prefill arm runs on
+        assert!(step_tp_prefill_walk_refusal(true, Some("1"), false).is_some());
+        // allowed: the placement is there, the door is shut, or the model is not step37-class
+        assert!(step_tp_prefill_walk_refusal(true, Some("1"), true).is_none());
+        assert!(step_tp_prefill_walk_refusal(true, Some("0"), false).is_none());
+        assert!(step_tp_prefill_walk_refusal(true, None, false).is_none());
+        assert!(step_tp_prefill_walk_refusal(false, Some("1"), false).is_none());
+        // the refusal names the door, the missing placement and the measured walk speed
+        let msg = step_tp_prefill_walk_refusal(true, Some("1"), false).unwrap();
+        assert!(msg.contains("MEMRA_STEP_TP_PREFILL=1") && msg.contains("MEMRA_STEP_TP"));
+        assert!(msg.contains("57.5") && msg.contains("90 s"));
     }
 
     #[test]

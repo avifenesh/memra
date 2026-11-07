@@ -1802,6 +1802,25 @@ impl HybridModel {
         Ok(logits_host)
     }
 
+    /// Guards every device-counter walk shares (`decode_step_dc` and the capture body
+    /// `decode_step_dc_cap_masked`, whose graph records the same chain): no hyper trunk, a usable
+    /// cache, no E4B (no dc step exists), and the PP door fails closed. The dc walk is
+    /// `for (il, layer) in self.layers.iter().enumerate()` on one stream with no stage split, so a
+    /// sharded cross-device placement would peer-read every remote layer's weights per step
+    /// (pp2-hardening 2026-08-06). One helper, so a capture path that does not reach dc first
+    /// still gets the same refusals.
+    fn dc_walk_guards(&self, path: &str, cache: &Cache) -> Result<(), Box<dyn std::error::Error>> {
+        self.refuse_hyper(path)?;
+        cache.ensure_usable(path)?;
+        if self.is_gemma4_e4b() {
+            return Err("e4b has no device-counter decode step (dc/graph unwired)".into());
+        }
+        crate::pp::refuse_unsplit_if_remote(
+            path,
+            "use the eager pp arm (decode_step_h), which IS stage-split",
+        )
+    }
+
     /// DEVICE-COUNTER decode step (CUDA-GRAPH-PLAN Phase 2). A clone of `decode_step_h` that removes
     /// the two per-step VARYING host kernel-args by reading them from device counters:
     ///   1. the KV-append write slot  -> per-layer `kvl.len_d` (device i32[1])
@@ -1826,26 +1845,10 @@ impl HybridModel {
         cache: &mut Cache,
         n_vocab: usize,
     ) -> Result<CudaSlice<u32>, Box<dyn std::error::Error>> {
-        self.refuse_hyper("decode_step_dc")?;
-        cache.ensure_usable("decode_step_dc")?;
+        self.dc_walk_guards("decode_step_dc", cache)?;
         // Route gemma4 to ITS dc twin (mirrors decode_step_h): the generic walk below is the
         // qwen-class layer stack — running gemma weights through it produced the argmax-INIT
         // passthrough the round-45 g12 gate caught (first Hopper gating of this lane).
-        if self.is_gemma4_e4b() {
-            return Err("e4b has no device-counter decode step (dc/graph unwired)".into());
-        }
-        // PP DOOR: fail closed (pp2-hardening 2026-08-06). Same hole the batched path had —
-        // the dc walk below is `for (il, layer) in self.layers.iter().enumerate()` on one
-        // stream, with no stage split, so a sharded cross-device placement would peer-read
-        // every remote layer's weights per step. Sits BEFORE the gemma4 delegate because
-        // that twin has the same unsplit shape. The graph-capture path (`decode_step_dc_cap*`)
-        // is covered transitively: it captures this same kernel chain, and its drivers reach
-        // dc first — but a future capture path that does NOT is why the guard is a shared
-        // helper (`pp::refuse_unsplit_if_remote`) rather than four copies.
-        crate::pp::refuse_unsplit_if_remote(
-            "decode_step_dc",
-            "use the eager pp arm (decode_step_h), which IS stage-split",
-        )?;
         if self.uses_gemma_program() {
             return self.gemma4_decode_step_dc(
                 e,
@@ -1973,8 +1976,18 @@ impl HybridModel {
         bucket_max: usize,
         mask: Option<(&CudaSlice<u32>, usize)>,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        self.refuse_hyper("decode_step_dc_cap_masked")?;
-        cache.ensure_usable("decode_step_dc_cap")?;
+        self.dc_walk_guards("decode_step_dc_cap_masked", cache)?;
+        // The capture records the generic qwen-class stack below. Gemma has a dc twin
+        // (`gemma4_decode_step_dc`) but no captured one, so a gemma session that primed through
+        // `decode_step_dc` would capture the wrong program over gemma weights (the argmax-INIT
+        // passthrough `decode_step_dc` names). Refuse instead of recording it.
+        if self.uses_gemma_program() {
+            return Err(
+                "decode_step_dc_cap_masked: the gemma program has no captured device-counter \
+                 step; decode through decode_step_dc (gemma4_decode_step_dc) instead"
+                    .into(),
+            );
+        }
         let cfg = &self.cfg;
         let n_embd = cfg.n_embd as usize;
         let eps = cfg.rms_eps;
@@ -2838,6 +2851,21 @@ impl HybridModel {
         }
     }
 
+    /// The qwen dc door's plan predicate, shared by `generate` and `generate_with`. Every route
+    /// inside that door (`decode_step_dc`, the `graph_decode_loop` capture) walks the serial
+    /// residual over Full and Linear mixers only: step35 refuses in `full_attn_decode_dc_inner`,
+    /// a hyper trunk refuses in `refuse_hyper`, and an MLA layer panics
+    /// (`mla_path_unimplemented`). Those plans take the host-logits loop instead, whose
+    /// `decode_step_h` serves all three.
+    fn qwen_dc_plan_ok(&self) -> bool {
+        !self.uses_sliding_gated_moe_program()
+            && self.hyper.is_none()
+            && self
+                .layers
+                .iter()
+                .all(|layer| matches!(layer.mixer, Mixer::Full(_) | Mixer::Linear(_)))
+    }
+
     /// Greedy generation: prime with prompt tokens (decode them in sequence to build state),
     /// then generate `max_new` tokens. Returns the generated token ids. (Back-compat: greedy,
     /// no EOS/stop — used by the decode==prefill validation gate. New code uses `generate_with`.)
@@ -2959,7 +2987,7 @@ impl HybridModel {
             *QWEN_DC2.get_or_init(|| std::env::var("MEMRA_QWEN_DC").as_deref() != Ok("0"));
         if qwen_dc
             && max_new > 0
-            && !self.uses_sliding_gated_moe_program()
+            && self.qwen_dc_plan_ok()
             && let Some(embd_gpu) = self.embd_gpu_try(e)
         {
             let n_vocab = self.output.out_features();
@@ -3291,7 +3319,7 @@ impl HybridModel {
             && sampler.is_greedy()
             && sampler.penalty_last_n() == 0
             && budget > 0
-            && !self.uses_sliding_gated_moe_program()
+            && self.qwen_dc_plan_ok()
             && let Some(embd_gpu) = self.embd_gpu_try(e)
         {
             let n_vocab = self.output.out_features();
