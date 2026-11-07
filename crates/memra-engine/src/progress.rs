@@ -175,9 +175,11 @@ impl Drop for ProgressSinkScope {
 // publish nothing from it; the worker retires the session as aborted (no park, the cache returns to
 // the pool at drop) and the capture sites, which run only after an `Ok` prime, are never reached.
 //
-// WHERE THE CHECK IS AND IS NOT (stated, not implied). It sits in the three sequential walks: the
+// WHERE THE CHECK IS AND IS NOT (stated, not implied). It sits in the four sequential walks: the
 // serial chunk walk (`prime_cache_overlaid_inner`), the GEMM chunk loop (`step35_prime_cache_batch`
-// per chunk) and the single-engine hyper range walk. It is NOT in the pipelined walks (the PP-2 split
+// per chunk), the single-engine hyper range walk, and the hyper ppN range walk (one serial stage
+// walk per range, `prime_cache_hyper_ppn`, which returns host logits with no stage work in
+// flight). It is NOT in the pipelined walks (the PP-2 split
 // primes with a `next_slot` in flight, the ppN wave walk): returning at a wave boundary there would
 // leave another stage's work in flight against a cache the caller is about to drop, which is a
 // wider seam (a drain plus the tainted-cache contract) than one check per chunk; those walks keep the
@@ -411,7 +413,7 @@ mod tests {
         );
     }
 
-    /// WIRING GATE for the cancellation point, the odometer gate's twin: the three sequential walks
+    /// WIRING GATE for the cancellation point, the odometer gate's twin: the four sequential walks
     /// must ask `prime_cancel_point` at their chunk boundary, in comment-stripped source. Bound from
     /// below (walks get added); the pipelined walks are deliberately absent (see the module note).
     #[test]
@@ -425,7 +427,7 @@ mod tests {
             .join("\n");
         let calls = code.matches("crate::progress::prime_cancel_point(").count();
         assert!(
-            calls >= 3,
+            calls >= 4,
             "the sequential prime walks must ask the cancellation point at their chunk boundary \
              (memra#536); found {calls} live call sites in hybrid_forward.rs"
         );

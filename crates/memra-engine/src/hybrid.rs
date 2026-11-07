@@ -2103,7 +2103,7 @@ fn build_dev_exps(
     // (`moe_resident_fp8_e4m3`). The stacked loader (`load_fp8_stacked_native_with_policy`) owns
     // the arch decision and refuses a native bank on builds without the tile, for every
     // residency branch, so none reaches here.
-    debug_assert!(fp8_host.is_none() || crate::fp8_ffi::fp8_blk_mmq_built());
+    debug_assert!(fp8_host.is_none() || crate::fp8_ffi::fp8_blk_kernels_built());
     use cudarc::driver::DevicePtr;
     let n_expert = gate.n_expert;
     let (g, u) = (
@@ -4196,6 +4196,13 @@ impl HybridModel {
         Some(tp.runtime.as_ref())
     }
 
+    /// Does any trunk layer carry a rank-local Step TP attention placement? That is what the
+    /// walk's rank-local prefill arm (`MEMRA_STEP_TP_PREFILL=1`, `step35_attn_prime`) runs on;
+    /// a model without one would prime through the plain serial walk instead.
+    pub fn has_rank_local_step_tp_attention(&self) -> bool {
+        (0..self.layers.len()).any(|layer| self.step_tp_runtime_for_layer(layer).is_some())
+    }
+
     pub fn decode_batch_program(&self) -> crate::plan_backend::DecodeBatchProgram {
         crate::plan_backend::decode_batch_program(&self.plan)
     }
@@ -4464,6 +4471,7 @@ impl HybridModel {
         // session engagement line prints it as `src=<sha16>`.
         let mut frspec_src_sha16: Option<String> =
             mtp_skip_trim_d2t.as_ref().map(|(_, s)| s.clone());
+        crate::pp::refuse_invalid_fence(n_trunk)?;
         if let Some(fence) = crate::pp::pp_cuts(n_trunk) {
             let pipeline = crate::plan_backend::PIPELINE
                 .trunk_capabilities(&plan)
@@ -5623,7 +5631,20 @@ impl HybridModel {
         // Explicit MEMRA_FA_V4_MAX env still wins (diagnostic seam). The real v4 gqa16
         // extension is a kernel change gated on its own battery + perf receipts (fix brief
         // in research/122b-bringup-20260806/VERDICT.md).
+        // INTERIM LATCH GUARD (S15:F1): these defaults are still process globals that their
+        // readers latch at first dispatch. A load that comes after another model's first
+        // dispatch cannot apply its own value, so it refuses by name instead of decoding under
+        // the other model's program (for the v4 threshold: all-NaN logits at gqa>8).
         if cfg.n_head_kv > 0 && cfg.n_head / cfg.n_head_kv > 8 {
+            if let Some(msg) = crate::fa_v4_max_default_conflict(
+                0,
+                &format!(
+                    "gqa {} > fa_v4_smem capacity 8; the v4 kernels decode all-NaN past it",
+                    cfg.n_head / cfg.n_head_kv
+                ),
+            ) {
+                return Err(msg.into());
+            }
             crate::FA_V4_MAX_DEFAULT.store(0, std::sync::atomic::Ordering::Relaxed);
             eprintln!(
                 "[fa] v4 decode family disabled: gqa {} > fa_v4_smem capacity 8 (v3 lane serves)",
@@ -5632,6 +5653,11 @@ impl HybridModel {
         }
 
         if gemma_program {
+            if let Some(msg) = crate::fa_vec_min_default_conflict(1, "gemma4 fa-vec crossover")
+                .or_else(|| crate::rms_block_default_conflict(1024, "gemma4 rms_norm block"))
+            {
+                return Err(msg.into());
+            }
             // gemma4 fa-vec crossover default (measured sweep 2026-07-10; env overrides).
             crate::FA_VEC_MIN_DEFAULT.store(1, std::sync::atomic::Ordering::Relaxed);
             // windowed split per gemma variant (2026-07-12 sweeps): MoE 26B = 32 (grid-limited
@@ -5671,6 +5697,11 @@ impl HybridModel {
         // research/glm5-b200-mint-20260904/LANE.md). `MEMRA_RMS_BLOCK=<n>` still overrides;
         // other archs keep the per-model default above.
         if cfg.arch.is_glm5_next() && env!("MEMRA_BUILT_CUDA_ARCH") == "100a" {
+            if let Some(msg) =
+                crate::rms_block_default_conflict(1024, "GLM-5.3-Flash sm_100a rms_norm block")
+            {
+                return Err(msg.into());
+            }
             crate::RMS_BLOCK_DEFAULT.store(1024, std::sync::atomic::Ordering::Relaxed);
         }
         // gemma4: the dc serving loop + spec draft gather read the device embed table every

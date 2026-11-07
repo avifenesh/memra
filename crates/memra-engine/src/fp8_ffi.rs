@@ -75,9 +75,21 @@ pub fn st_e4m3_enabled() -> bool {
     *ON.get_or_init(|| std::env::var("MEMRA_ST_E4M3").as_deref() != Ok("0"))
 }
 
+/// Does this build carry the per-block FP8 MMQ tile of `cu/mmq_fp8_blk.cu`? build.rs compiles the
+/// real file for sm_120a and sm_100a only and swaps in `cu/mmq_fp8_blk_stub.cu`, whose entries
+/// return an error code, everywhere else. Prefill (`try_fp8_blk_mmq`) and the native stacked
+/// expert banks key on this one property; the e4m3 NaN scan lives in `fp8_blk_dequant.cu`,
+/// which every arch builds.
+pub const fn fp8_blk_kernels_built() -> bool {
+    let arch = env!("MEMRA_BUILT_CUDA_ARCH");
+    crate::konst_eq(arch, "120a") || crate::konst_eq(arch, "100a")
+}
+
 /// Native residency for the BLOCK-128 e4m3 scale class (`QT_F8_E4M3_BLK`, lane/fp8-blk128-decode
 /// 2026-08-05): the same mechanism as the per-tensor class, behind the same `MEMRA_ST_E4M3=0`
-/// rollback seam.
+/// rollback seam. Dense block-128 projections are native on every arch (the NaN scan and the
+/// portable decode kernel build everywhere); stacked expert banks also need the per-block MMQ
+/// tile (`fp8_blk_kernels_built`), which the stacked loader checks.
 pub fn st_e4m3_blk_enabled() -> bool {
     st_e4m3_enabled()
 }
@@ -307,6 +319,25 @@ mod b200_dry_policy_tests {
             env!("MEMRA_BUILT_CUDA_ARCH") == "100a"
         );
     }
+
+    /// The block-128 FP8 build key, GPU-free: the arch key the per-block MMQ arms read
+    /// (`fp8_blk_kernels_built`: `try_fp8_blk_mmq` and the native stacked expert banks) must
+    /// agree with the unit build.rs actually compiled for `cu/mmq_fp8_blk.cu`. Dense block-128
+    /// residency does not depend on it (its NaN scan and decode kernel build on every arch). The
+    /// docs-only type-check build compiles no CUDA and exports no unit.
+    #[test]
+    fn block128_fp8_arms_follow_the_compiled_kernel_unit() {
+        use super::fp8_blk_kernels_built;
+        if let Some(unit) = option_env!("MEMRA_FP8_BLK_UNIT") {
+            assert_eq!(
+                fp8_blk_kernels_built(),
+                unit == "cu/mmq_fp8_blk.cu",
+                "build.rs compiled {unit} on {}, but fp8_blk_kernels_built() says {}",
+                env!("MEMRA_BUILT_CUDA_ARCH"),
+                fp8_blk_kernels_built()
+            );
+        }
+    }
 }
 
 /// Per-tensor e4m3-NaN verdicts, keyed by the weight's device pointer. The hardware MMA reads
@@ -315,15 +346,6 @@ mod b200_dry_policy_tests {
 /// ONCE per tensor (first prefill dispatch) and the verdict is cached — never per-GEMM.
 static FP8_MMQ_NAN_OK: std::sync::Mutex<Option<std::collections::HashMap<u64, bool>>> =
     std::sync::Mutex::new(None);
-
-/// The per-block FP8 MMQ tile exists only in sm_120a and sm_100a builds: build.rs swaps
-/// `cu/mmq_fp8_blk_stub.cu` in on every other arch, and its launchers refuse with 2904/2906/2907.
-/// On sm_90a `portable_mma_gated()` is false, so it cannot be the gate here: a native-resident
-/// block-128 tensor would reach the stub on its first prefill instead of the dequant floor.
-pub(crate) const fn fp8_blk_mmq_built() -> bool {
-    crate::konst_eq(env!("MEMRA_BUILT_CUDA_ARCH"), "120a")
-        || crate::konst_eq(env!("MEMRA_BUILT_CUDA_ARCH"), "100a")
-}
 
 impl crate::Engine {
     /// PER-BLOCK FP8 MMQ prefill GEMM for a weight carrying a block-128 fp8 operand:
@@ -340,7 +362,9 @@ impl crate::Engine {
         // Entry counter BEFORE the env gate: a ledger of all zeros is otherwise ambiguous between
         // "the flag was not seen" and "no prefill GEMM ever reached this hook".
         FP8_MMQ_ENTRIES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        if !fp8_blk_mmq_built() {
+        // The per-block MMQ tile is built for sm_120a and sm_100a only; elsewhere the stub would
+        // refuse, so decline here and let prefill take the dequant-per-call floor.
+        if crate::portable_mma_gated() || !fp8_blk_kernels_built() {
             FP8_MMQ_GATE_OFF.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             return Ok(None);
         }
