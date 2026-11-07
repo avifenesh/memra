@@ -71,6 +71,33 @@ class GateTest(unittest.TestCase):
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertIn("SUMMARY flips=1 bad=0", r.stdout)
 
+    def test_per_prompt_budget_covers_only_its_model_and_prompt(self):
+        def table(flips):
+            return "\n".join(f"{10 + i} 1 0.0100 {2 if i < flips else 1} 0.0100 0.0500 "
+                             + ("NO" if i < flips else "yes") for i in range(12))
+        qwen = self.root / "Qwen3.8-27B-test.gguf"
+        qwen.touch()
+        long_prompt = self.root / "p4-16k.txt"
+        long_prompt.write_text("A long prompt fixture.\n")
+
+        def gate(model, prompt, flips):
+            self.probe.write_text("#!/bin/sh\nprintf '%s\\n' '" + table(flips) + "'\n")
+            self.probe.chmod(0o700)
+            return subprocess.run(["bash", str(self.gate), str(model), "--prompt", str(prompt),
+                "--logdir", str(self.root / "logs")], capture_output=True, text=True, timeout=5)
+
+        r = gate(qwen, long_prompt, 3)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("SUMMARY flips=3 bad=0", r.stdout)
+        r = gate(qwen, long_prompt, 4)
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("TOO-MANY-FLIPS 4 > 3", r.stdout)
+        for model, prompt in ((qwen, self.prompt), (self.gguf, long_prompt)):
+            with self.subTest(model=model.name, prompt=prompt.name):
+                r = gate(model, prompt, 3)
+                self.assertNotEqual(r.returncode, 0)
+                self.assertIn("TOO-MANY-FLIPS 3 > 1", r.stdout)
+
     def test_explicit_missing_model_fails(self):
         r = self.run_gate("", self.root / "missing")
         self.assertNotEqual(r.returncode, 0)
