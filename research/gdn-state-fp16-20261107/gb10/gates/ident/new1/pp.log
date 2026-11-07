@@ -1,0 +1,15 @@
+[tensor-contract] bound 866 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[gdn-state] fp16 GDN decode class: decode and verify store the state as fp16, rounded once at decode start; prime, captures and prefix entries fp32
+loaded qwen35 (64 trunk layers; optional MTP skipped)
+chat-templated prompt:
+<|im_start|>user
+Write a Python function that returns the n-th Fibonacci number, then explain its time complexity in two sentences.<|im_end|>
+<|im_start|>assistant
+<think>
+
+prompt text: "Write a Python function that returns the n-th Fibonacci number, then explain its time complexity in two sentences."
+prompt tokens: [248045, 846, 198, 7734, 264, 12654, 709, 421, 4523, 279, 307, 7324, 76938, 1324, 11, 1179, 10033, 1141, 854, 22373, 303, 1330, 22157, 13, 248046, 198, 248045, 74455, 198, 248068, 198]
+pp-only prefill logits -> /home/avifenesh/.cache/memra-gdnfp16/runs/gates-arm-2d6ce42cf5/ident/new1/pp.f32 (248320 f32)
+pp-only rep 0: 0.1124s = 275.8 tok/s
+pp-only MEDIAN: 31 tok in 0.1124s = 275.8 tok/s (pp31, 1 reps)
+rc=0

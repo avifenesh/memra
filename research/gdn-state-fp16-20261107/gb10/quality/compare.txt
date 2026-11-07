@@ -1,0 +1,9 @@
+fp32-control: long HumanEval 158/164 (truncated 0), long GSM8K 97/100; HumanEval fails: 46, 83, 132, 145, 147, 154
+fp16-1: long HumanEval 156/164 (truncated 1), long GSM8K 97/100; HumanEval fails: 46, 83, 91, 129, 132, 145, 147, 154
+fp16-2: long HumanEval 156/164 (truncated 1), long GSM8K 97/100; HumanEval fails: 46, 83, 91, 129, 132, 145, 147, 154
+bf16-decode-1: long HumanEval 155/164 (truncated 1), long GSM8K 97/100; HumanEval fails: 46, 83, 91, 120, 129, 132, 145, 147, 154
+bf16-lane-fp32: long HumanEval 158/164 (truncated 0), long GSM8K 97/100; HumanEval fails: 46, 83, 132, 145, 147, 154
+fp16-1 vs fp32-control: lost ['HumanEval/129', 'HumanEval/91'], gained none, two-sided exact p = 0.500
+fp16-2 vs fp32-control: lost ['HumanEval/129', 'HumanEval/91'], gained none, two-sided exact p = 0.500
+bf16-decode-1 vs fp32-control: lost ['HumanEval/120', 'HumanEval/129', 'HumanEval/91'], gained none, two-sided exact p = 0.250
+bf16-lane-fp32 vs fp32-control: lost none, gained none, two-sided exact p = 1.000
