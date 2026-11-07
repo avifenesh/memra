@@ -9676,12 +9676,21 @@ struct PrefixEntry {
     /// index until the last participating session retires.
     pins: usize,
     _tier_charge: Option<memra_engine::cache::tiered::hostprefix::ResidentCharge>,
+    /// CPU tests cannot allocate the GDN conv/ssm planes, so this marks a test entry as
+    /// carrying them, and the restore grid law's probes run in the default test set
+    /// (memra#1088). It does not exist outside test builds.
+    #[cfg(test)]
+    recurrent_in_test: bool,
 }
 
 impl PrefixEntry {
     /// Does this entry carry recurrent state (GDN conv/ssm planes)? Such an entry restores
     /// exactly only where `prefix_restore_exact` allows.
     fn carries_recurrent(&self) -> bool {
+        #[cfg(test)]
+        if self.recurrent_in_test {
+            return true;
+        }
         self.conv.iter().any(Option::is_some) || self.ssm.iter().any(Option::is_some)
     }
 }
@@ -19474,6 +19483,8 @@ fn device_entry_from_host_parts(
         None => None,
     };
     let entry = PrefixEntry {
+        #[cfg(test)]
+        recurrent_in_test: false,
         _tier_charge: None,
         layout_version: src.layout_version,
         pool_key: src.pool_key.clone(),
@@ -21068,6 +21079,8 @@ fn host_capture_submit(
     drop(t);
     let items = sizes.len();
     let shell = PrefixEntry {
+        #[cfg(test)]
+        recurrent_in_test: false,
         _tier_charge: None,
         layout_version: PREFIX_ENTRY_LAYOUT_VERSION,
         pool_key: pool_key.clone(),
@@ -24431,6 +24444,8 @@ fn prefix_snapshot(
         None
     };
     Ok(PrefixEntry {
+        #[cfg(test)]
+        recurrent_in_test: false,
         _tier_charge: None,
         layout_version: PREFIX_ENTRY_LAYOUT_VERSION,
         pool_key: pool_key.clone(),
@@ -25586,6 +25601,8 @@ fn prefix_insert_from_spec_boundary(
         bytes += tail.bytes();
     }
     let e = PrefixEntry {
+        #[cfg(test)]
+        recurrent_in_test: false,
         _tier_charge: None,
         layout_version: PREFIX_ENTRY_LAYOUT_VERSION,
         pool_key: pool_key.clone(),
@@ -47378,6 +47395,7 @@ mod tests {
         assert_eq!(unified_insert_budget(configured, 0, 0, 0, headroom), 0);
         // The insert loop evicts LRU entries down to the clamped budget (the existing policy).
         let entry = |k: &super::PoolKey, first: u32| PrefixEntry {
+            recurrent_in_test: false,
             _tier_charge: None,
             layout_version: PREFIX_ENTRY_LAYOUT_VERSION,
             dspark_draft: None,
@@ -50053,6 +50071,7 @@ mod tests {
     fn a_dflash_request_prefers_a_restorable_hit_over_a_longer_plain_one() {
         use super::{PREFIX_ENTRY_LAYOUT_VERSION, PrefixCache, PrefixEntry};
         let entry = |k: &super::PoolKey, n: u32| PrefixEntry {
+            recurrent_in_test: false,
             _tier_charge: None,
             layout_version: PREFIX_ENTRY_LAYOUT_VERSION,
             dspark_draft: None,
@@ -51653,6 +51672,7 @@ mod tests {
     /// under test live entirely in the host-side key/toks matching.
     fn entry(pool_key: &PoolKey, toks: Vec<u32>) -> PrefixEntry {
         PrefixEntry {
+            recurrent_in_test: false,
             _tier_charge: None,
             layout_version: PREFIX_ENTRY_LAYOUT_VERSION,
             dspark_draft: None,
@@ -51680,6 +51700,94 @@ mod tests {
 
     fn toks(n: usize) -> Vec<u32> {
         (0..n as u32).collect()
+    }
+
+    /// memra#1088: the device-side restore grid law, behaviourally, in the default test set.
+    /// The shape is the 2026-11-07 receipt's: turn 1's DFlash entry ended at its 2,992-token
+    /// prompt, off the 32-token prime grid, and turn 2 (3,109 tokens) restored it plain. Each
+    /// probe that names the entry the hit site restores must refuse that entry and take an
+    /// on-grid one; attention-only entries and whole covers keep every hit.
+    #[test]
+    fn the_device_prefix_probes_apply_the_restore_grid_law() {
+        let k = key("tenant");
+        let make = |n: usize, recurrent: bool| {
+            let mut e = entry(&k, toks(n));
+            e.pos = n;
+            e.recurrent_in_test = recurrent;
+            e
+        };
+        let len = |px: &PrefixCache, i: Option<usize>| i.map(|i| px.entries[&k][i].toks.len());
+        let turn2 = toks(3_109);
+
+        // The receipt: the only cover is the off-grid recurrent entry.
+        let mut px = PrefixCache::default();
+        px.insert_with_budget(&k, make(2_992, true), "dspark-boundary", 10_000);
+        assert_eq!(
+            len(&px, px.lookup(&k, &turn2)),
+            None,
+            "lookup: off-grid strict prefix"
+        );
+        assert_eq!(
+            len(&px, px.lookup_where(&k, &turn2, |_| true)),
+            None,
+            "lookup_where"
+        );
+        assert_eq!(
+            px.deepest_covering(&k, &turn2),
+            None,
+            "deepest_covering: no seed suppression"
+        );
+        // The same entry is still a whole cover of its own prompt.
+        assert_eq!(len(&px, px.lookup(&k, &toks(2_992))), Some(2_992));
+        let (pin, rows) = px.pin_prompt_prefix(&k, &toks(2_992)).expect("whole cover");
+        assert_eq!(rows, 2_992);
+        assert_eq!(
+            px.admission_restore_rows(&pin, &turn2),
+            None,
+            "the retained-prefix plan refuses the off-grid restore for the longer prompt"
+        );
+        assert_eq!(px.admission_restore_rows(&pin, &toks(2_992)), Some(2_992));
+        assert!(px.unpin(&pin));
+
+        // On the grid with at least PRIME_MIN_T suffix tokens: it serves, and the longer on-grid
+        // entry that would leave a 5-token suffix (under the floor) does not.
+        px.insert_with_budget(&k, make(2_976, true), "seed", 10_000);
+        px.insert_with_budget(&k, make(3_104, true), "seed", 10_000);
+        assert_eq!(
+            len(&px, px.lookup(&k, &turn2)),
+            Some(2_976),
+            "lookup takes the on-grid entry"
+        );
+        assert_eq!(len(&px, px.lookup_where(&k, &turn2, |_| true)), Some(2_976));
+        assert_eq!(
+            len(&px, px.lookup_where(&k, &turn2, |e| e.toks.len() != 2_976)),
+            None,
+            "the filter never falls back to a refused entry"
+        );
+        assert_eq!(px.deepest_covering(&k, &turn2), Some(2_976));
+        let (pin, rows) = px.pin_prompt_prefix(&k, &toks(2_976)).expect("whole cover");
+        assert_eq!(rows, 2_976);
+        assert_eq!(px.admission_restore_rows(&pin, &turn2), Some(2_976));
+        assert!(px.unpin(&pin));
+
+        // A whole cover always serves, on or off the grid.
+        px.insert_with_budget(&k, make(3_109, true), "seed", 10_000);
+        assert_eq!(len(&px, px.lookup(&k, &turn2)), Some(3_109));
+        assert_eq!(px.deepest_covering(&k, &turn2), Some(3_109));
+
+        // Attention-only entries are split-invariant: the off-grid entry serves.
+        let mut attn = PrefixCache::default();
+        attn.insert_with_budget(&k, make(2_992, false), "dspark-boundary", 10_000);
+        attn.insert_with_budget(&k, make(3_104, false), "seed", 10_000);
+        assert_eq!(len(&attn, attn.lookup(&k, &turn2)), Some(3_104));
+        assert_eq!(
+            len(
+                &attn,
+                attn.lookup_where(&k, &turn2, |e| e.toks.len() < 3_000)
+            ),
+            Some(2_992)
+        );
+        assert_eq!(attn.deepest_covering(&k, &turn2), Some(3_104));
     }
 
     #[test]
@@ -55150,6 +55258,7 @@ mod tests {
     /// exact-key dedupe never collides and survivors are readable back out of the pools).
     fn entry_b(pool_key: &PoolKey, ident: u32, bytes: usize) -> PrefixEntry {
         PrefixEntry {
+            recurrent_in_test: false,
             _tier_charge: None,
             layout_version: PREFIX_ENTRY_LAYOUT_VERSION,
             dspark_draft: None,
@@ -59740,6 +59849,7 @@ mod tests {
     #[test]
     fn day47_the_demote_shell_reinstates_only_unpublished_shells() {
         let shell = || super::PrefixEntry {
+            recurrent_in_test: false,
             _tier_charge: None,
             layout_version: super::PREFIX_ENTRY_LAYOUT_VERSION,
             pool_key: ("m".into(), String::new()),
@@ -60576,6 +60686,7 @@ mod tests {
         let (p2, b2) = gpu_plane(engine, 8, 34, 24, 7);
         let (pd, bd) = gpu_plane(engine, 8, 34, 24, 13);
         let entry = super::PrefixEntry {
+            recurrent_in_test: false,
             _tier_charge: None,
             layout_version: super::PREFIX_ENTRY_LAYOUT_VERSION,
             pool_key: ("m".into(), String::new()),
@@ -60731,6 +60842,7 @@ mod tests {
         let tail_k = stream.clone_htod(&word(0.25, 16, flip == "tail")).unwrap();
         let tail_v = stream.clone_htod(&word(0.75, 16, false)).unwrap();
         super::PrefixEntry {
+            recurrent_in_test: false,
             _tier_charge: None,
             layout_version: super::PREFIX_ENTRY_LAYOUT_VERSION,
             pool_key: ("m".into(), String::new()),
