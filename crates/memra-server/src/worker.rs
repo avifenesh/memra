@@ -8431,19 +8431,19 @@ fn unified_insert_budget(
     )
 }
 
-/// The insert budget the production wrappers use: the configured budget clamped by
-/// [`unified_insert_budget`] against the live reading, with a log line when the clamp binds.
-/// Unified memory since 2026-11-02; discrete cards since 2026-11-07
-/// (`research/prefix-budget-20261107/`): on a 24 GB RTX 5090 under c8 load the cache refilled the
-/// bytes each admission reclaim had just freed, so the next arrival was short again; with the
-/// clamp an insert replaces bytes instead of taking the headroom the admission floor needs.
+/// The insert budget the production wrappers use: unchanged on a discrete card; on unified
+/// memory clamped by [`unified_insert_budget`] against the live reading, with a log line when the
+/// clamp binds. MEASURED AND REJECTED ON DISCRETE (2026-11-07,
+/// `research/prefix-budget-20261107/`): on the 24 GB RTX 5090 under c8 load the clamp shrank the
+/// cache to about one entry, so every new seed displaced the shared entry (repeats hit 0-1 of 6
+/// against 6 of 6 without it).
 fn prefix_insert_budget(
     engine: &Engine,
     configured: usize,
     resident: usize,
     allocated: usize,
 ) -> usize {
-    if configured == 0 {
+    if configured == 0 || !device_is_unified(engine) {
         return configured;
     }
     let Some((live_free, _)) = effective_free_bytes(engine) else {
@@ -8453,7 +8453,7 @@ fn prefix_insert_budget(
     let budget = unified_insert_budget(configured, resident, allocated, live_free, headroom);
     if budget < configured {
         eprintln!(
-            "[prefix-cache] live-free clamp: insert budget {:.0}MB (configured {:.0}MB; live \
+            "[prefix-cache] unified memory: insert budget {:.0}MB (configured {:.0}MB; live \
              free {:.0}MB, headroom {:.0}MB, resident {:.0}MB, new entry {:.0}MB)",
             budget as f64 / 1e6,
             configured as f64 / 1e6,
@@ -10836,8 +10836,8 @@ impl PrefixCache {
         host: &mut HostPrefixCache,
     ) {
         // Floor + flex grant (lane/kv-flex-20260831); with MEMRA_KV_FLEX off the grant is 0 by
-        // construction and this is exactly prefix_cache_budget_bytes(). The live-free guard
-        // clamps it (prefix_insert_budget).
+        // construction and this is exactly prefix_cache_budget_bytes(). On unified memory the
+        // live-free guard clamps it (prefix_insert_budget).
         let budget = prefix_insert_budget(
             engine,
             kv_flex_effective_budget(),
@@ -10867,8 +10867,8 @@ impl PrefixCache {
         engine: &Engine,
         host: &mut HostPrefixCache,
     ) -> Option<PrefixPin> {
-        // Floor + flex grant (lane/kv-flex-20260831); grant is 0 with the flag off. The
-        // live-free guard clamps it (prefix_insert_budget).
+        // Floor + flex grant (lane/kv-flex-20260831); grant is 0 with the flag off. On unified
+        // memory the live-free guard clamps it (prefix_insert_budget).
         let budget = prefix_insert_budget(
             engine,
             kv_flex_effective_budget(),
