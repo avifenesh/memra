@@ -332,21 +332,29 @@ worker.rs. Receipts: `research/request-fault-20260922/`.
 
 Speculative context edge (memra#659, `tools/spec-ctx-edge-gate.sh`, in `tools/local-ci.sh`,
 `MEMRA_CI_SPEC_CTX_EDGE=0` skips): three boots of the real server on the 9B's default spec route.
-Door ON with open output 64: four open requests each 200, `finish_reason: length`, exactly 64
-tokens, then a bounded control. The same door with `MEMRA_SERVE_SPEC=0`: one open request whose
-message equals the spec arm's first byte for byte. Door OFF at `MEMRA_CTX=384`: three runaways each
-200 with `finish_reason: length` inside the cap. Every boot: no `panicked`, `argmax sentinel`,
+Memory-shaped admission armed with open output 64: four open requests each 200, `finish_reason:
+length`, exactly 64 tokens, then a bounded control. The narrow envelope at `MEMRA_CTX=384`, on
+every card: three runaways each 200 with `finish_reason: length` inside the bound of the program
+the boot states (the cap less the prompt unarmed; that less the 8 slack rows armed, where the open
+charge is capped at the envelope), then a bounded 64-token request. `MEMRA_SERVE_SPEC=0`, on every
+card: a bounded 64-token request whose message equals the spec boot's bounded one byte for byte,
+and, where admission is armed, one open request whose message equals the armed spec arm's first.
+The admission is a card default (the full-power RTX PRO 6000 Workstation Edition serving one card),
+so each boot reads its `[admit-mem] door=` line: the armed arm SKIPs elsewhere and every other
+verdict names the state it read. Every boot: no `panicked`, `argmax sentinel`,
 `[worker] FATAL`, respawn or `spec verify refused` line, `/health` 200 after the last request. The
 engine side is a CPU source census (`spec::ctx_edge_659_census`) of the round guards in the qwen
 and gemma burst loops and of the verify funnel's refusal. Receipts: `research/spec-ctx-edge-20260923/`.
 
 Memory-admission burst (memra#680, `tools/admit-mem-burst-gate.sh`, in `tools/local-ci.sh`,
-`MEMRA_CI_ADMIT_MEM_BURST=0` skips): one boot of the real server on the 9B with
-`MEMRA_ADMIT_BY_MEMORY=1` at open output 8192 and 64 open requests released on one barrier. No
+`MEMRA_CI_ADMIT_MEM_BURST=0` skips): one boot of the real server on the 9B with memory-shaped
+admission armed at open output 8192 and 64 open requests released on one barrier; on a card where
+the admission is not the default (all but the full-power RTX PRO 6000 Workstation Edition) the
+boot line reads `[admit-mem] door=OFF` and the gate SKIPs. No
 `CUDA_ERROR_OUT_OF_MEMORY` line and no 503; every refusal a 429 with Retry-After in 1..=60, as many
 as the `verdict=refuse` lines; every `verdict=admit` line with `est_bytes <= device_free` (the booked
 reading, `pending_prime=` on the line); no crash line; `/health` 200 after the burst. On the unfixed
-tree 34 of 64 died in prefill as 503s. The door's arithmetic is covered by CPU tests in
+tree 34 of 64 died in prefill as 503s. The admission's arithmetic is covered by CPU tests in
 `admit_memory` and `worker` (the booked reading per decision arm, the pending-prime rows, the
 prefill-OOM park predicate). Receipts: `research/spill-b-20260919/rtx5090-day33/`.
 
@@ -727,7 +735,10 @@ Two holes in this stage were closed by that same red (2026-08-06):
   of the real server asserting `/readyz`, `/health` and the request path across readiness
   before and after the boot probe (`phase=warming` on the respawn window), the three
   probe-skipped boots (recorded as DOCUMENTED, ready without warmup), a `MEMRA_PANIC_AFTER`
-  worker panic and respawn, a latched gpu-watch fault, and a SIGTERM drain with a stream open;
+  worker panic and respawn, a latched gpu-watch fault, and a SIGTERM drain with a stream open
+  (arm k, on the full-power RTX PRO 6000 Workstation Edition only: an injected on-demand KV grow
+  failure retries once and completes byte-equal to its control, and a failed retry ends only its
+  session; elsewhere the control boot reads `[kv-vmm] door=OFF` and the arm SKIPs);
   `HFG_ARMS=d,f` runs a subset, `HFG_OUT` names the receipt dir. Three more serving gates exist
   and are **not** wired into fast-gate or `local-ci.sh`: invoke them by hand for any diff in
   their area:
@@ -1913,21 +1924,22 @@ kv-tier-gate --artifact <gguf> --case baseline|active|prefix|grow --context 8192
 - Naked baseline: any `MEMRA_*` variable other than `MEMRA_NVCC`, `MEMRA_CUDA_ARCH` and
   `MEMRA_GPU_LOCK` refuses (`REFUSED: runtime override <name> must be unset for this naked
   eager baseline`); the gate inspects names only, values never enter a receipt.
-- `--kv-allocator pooled|vmm` (default `pooled`) is a gate-only door with
-  **decide-by: 2026-10-04** ([decision record](decisions/KV-PHYSICAL-RECLAIM.md)). The gate
+- `--kv-allocator pooled|vmm` (default `pooled`) is the gate's allocator arm
+  ([decision record](decisions/KV-PHYSICAL-RECLAIM.md)). The gate
   constructs the cache directly with VMM-backed planes
   (`Cache::new_with_allocator(&e, &model.cfg, args.context, memra_kv::KvAllocator::Vmm)`) and
   records `construction=direct` / `empty_plane_swap=false` in `allocation-construction.txt`; the
   kernels and addresses are unchanged. Containment is a call-site policy, not a structural
   property: `memra-kv` exposes `Cache::new_with_allocator` and `KvAllocator` publicly and
   `impl KvDev for Engine` implements `alloc_vmm_u8`, so any caller *could* construct VMM planes;
-  today only this gate does, and the decide-by decides whether that surface is promoted or
-  deleted. Any other value refuses:
-  `REFUSED: unknown KV allocator (expected pooled, vmm or vmm-ondemand)`. It is a CLI door; its
-  serving arm is `MEMRA_KV_ALLOCATOR` (the `docs/FLAGS.md` row, same decide-by).
+  the server's on-demand planes are the other caller, the default on the RTX PRO 6000
+  Blackwell Workstation Edition ([decision](decisions/KV-VMM-SERVING-DEFAULT.md)). Any other
+  value refuses:
+  `REFUSED: unknown KV allocator (expected pooled, vmm or vmm-ondemand)`. It is a CLI arm of the
+  gate, not an environment door.
 - `--case grow --kv-allocator vmm-ondemand` (WP-B day 37, clause A2 of
   `research/spill-b-20260919/DAY37.md`; the two come together or refuse) is the G1 grow series of
-  the serving arm's on-demand planes: in one process the tokenwise program runs first on pooled
+  the server's on-demand planes: in one process the tokenwise program runs first on pooled
   planes, then on on-demand planes (`memra_kv::with_on_demand_kv`) that back rows only as the
   position grows, every grow read on the driver around a stream sync (grows run inline; no
   mapper thread). It prints `GROW-G1 PASS|FAIL (grows=.. unequal=.. planes=.. planes_crossed=..

@@ -1173,7 +1173,7 @@ fn calibrate_memory(m: &Dsv4Model) -> Result<Dsv4Memory, String> {
 /// under the stall bound.
 fn route_defer_budget_ms() -> u64 {
     dsv4_admit::defer_budget_ms(
-        crate::admit_memory::MemoryAdmitConfig::from_env().defer_budget_ms,
+        crate::admit_memory::defer_budget_ms_from_env(),
         crate::health::stall_threshold_ms(),
     )
 }

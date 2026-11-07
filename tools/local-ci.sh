@@ -681,7 +681,10 @@ fi
 # two consecutive runs on the local RTX 5090 read identically (run1, run2 under
 # research/spill-b-20260919/rtx5090-day25/); its arms are boots and injected faults with
 # fixed doors, not timings, so nothing in them depends on the rig's load. In-battery per the
-# H100 lane law: gates outside the battery rot silently. MEMRA_CI_HEALTH_FAULT=0 skips.
+# H100 lane law: gates outside the battery rot silently. Arm j (the batched chunk's OOM
+# retry) reads the card's default and SKIPs where the boot line says the recovery is OFF, which
+# is every card but the full-power RTX PRO 6000 Workstation Edition. MEMRA_CI_HEALTH_FAULT=0
+# skips.
 if [ "${MEMRA_CI_HEALTH_FAULT:-1}" = "1" ] && [ -x tools/health-fault-gate.sh ]; then
     tools/health-fault-gate.sh || { echo "health-fault-gate FAIL"; exit 1; }
 fi
@@ -717,12 +720,16 @@ else
 fi
 
 # SPECULATIVE CONTEXT EDGE (memra#659): open requests driven to their cap back to back under the
-# default spec route, door ON (open output 64: four open requests and a bounded control) and door
-# OFF (MEMRA_CTX=384: three runaways), plus a plain boot whose message must equal the spec one.
+# default spec route, memory-shaped admission armed (open output 64: four open requests and a
+# bounded control) and the narrow envelope (MEMRA_CTX=384: three runaways inside the bound of the
+# admission program the boot states, then a bounded request), plus a plain boot whose bounded
+# message must equal the spec one (and, where admission is armed, whose open message must too).
 # Before the fix the last speculative round of a request whose budget spans its cap wrote past the
 # session cache: every such request took the #87 NaN trap and a later admission panicked the
 # worker (`mtp_kv_fill: scratch overflow`). Wired after two consecutive green runs on the local
-# RTX 5090 (research/spec-ctx-edge-20260923/). About 20 s on the 9B NVFP4.
+# RTX 5090 (research/spec-ctx-edge-20260923/). About 20 s on the 9B NVFP4. Its `on` arm runs
+# where memory-shaped admission is the default (the full-power RTX PRO 6000 Workstation Edition
+# serving one card) and SKIPs elsewhere; `off` and `plain` run on every card.
 # MEMRA_CI_SPEC_CTX_EDGE=0 skips.
 EDGE_MODEL=${MEMRA_CI_CONT_MODEL:-$MODELS/qwen35-9b-nvfp4-gguf/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf}
 if [ "${MEMRA_CI_SPEC_CTX_EDGE:-1}" = "1" ] && [ -f "$EDGE_MODEL" ]; then
@@ -737,14 +744,15 @@ else
     echo "spec-ctx-edge gate: SKIP (no 9B NVFP4 model at $EDGE_MODEL or MEMRA_CI_SPEC_CTX_EDGE=0)"
 fi
 
-# MEMORY-ADMISSION BURST (memra#680): the door armed (MEMRA_ADMIT_BY_MEMORY=1, open output 8192), 64
+# MEMORY-ADMISSION BURST (memra#680): memory-shaped admission armed (open output 8192), 64
 # open requests released on one barrier. Before the fix the VRAM gate compared each arrival with
 # one live reading, which cannot see the prefill workspace the sessions admitted earlier in the
 # burst still owe, and 34 of 64 died in prefill with CUDA OOM as 503s. Now every request is served
 # or refused with a typed 429, every admission fits the booked reading, and the boot survives.
 # Wired after a red run on the unfixed tree and two consecutive green runs on the local RTX 5090
-# (research/spill-b-20260919/DAY33.md). About 7 minutes on the 9B NVFP4.
-# MEMRA_CI_ADMIT_MEM_BURST=0 skips.
+# (research/spill-b-20260919/DAY33.md). About 7 minutes on the 9B NVFP4. Memory-shaped admission
+# is the default on the full-power RTX PRO 6000 Workstation Edition only, so on any other card
+# the gate boots, reads `[admit-mem] door=OFF` and SKIPs. MEMRA_CI_ADMIT_MEM_BURST=0 skips.
 AMB_MODEL=${MEMRA_CI_CONT_MODEL:-$MODELS/qwen35-9b-nvfp4-gguf/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf}
 if [ "${MEMRA_CI_ADMIT_MEM_BURST:-1}" = "1" ] && [ -f "$AMB_MODEL" ]; then
     echo "== local-ci: memory-admission burst gate (memra#680) =="

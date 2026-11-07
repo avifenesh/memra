@@ -9,24 +9,36 @@
 # server log, its request bodies and `nvidia-smi --query-compute-apps` before and after.
 #
 # Arms:
-#   on     MEMRA_ADMIT_BY_MEMORY=1, MEMRA_ADMIT_OPEN_OUTPUT_TOKENS=$SCE_OPEN (64), default spec.
+#   on     memory-shaped admission armed, MEMRA_ADMIT_OPEN_OUTPUT_TOKENS=$SCE_OPEN (64), default spec.
 #          Four open requests then one bounded control. Each open request: 200, finish_reason
 #          `length`, completion_tokens == $SCE_OPEN (the charged output; the 8 slack rows stay
 #          free). The control: 200, completion_tokens == its max_tokens.
-#   plain  the `on` boot's door with MEMRA_SERVE_SPEC=0: one open request, its message byte-equal
-#          to the `on` arm's first (spec and plain emit the same tokens up to the same bound).
-#   off    door OFF, MEMRA_CTX=$SCE_CTX (384), default spec. Three open requests run away to the
-#          cap: each 200, finish_reason `length`, 0 < completion_tokens <= cap - prompt_tokens.
+#   off    the narrow envelope, MEMRA_CTX=$SCE_CTX (384), default spec, on every card (named for the
+#          unarmed program it first read). Three open requests run away to the cap: each 200,
+#          finish_reason `length`, 0 < completion_tokens <= cap - prompt_tokens where admission
+#          is unarmed, and <= cap - prompt_tokens - 8 where it is armed (the charge is capped at
+#          the envelope and its budget keeps the 8 slack rows free). Then one bounded request,
+#          max_tokens=$SCE_OPEN: 200, completion_tokens == $SCE_OPEN.
+#   plain  MEMRA_SERVE_SPEC=0 with the `on` boot's open output, on every card. One bounded request,
+#          max_tokens=$SCE_OPEN: 200, completion_tokens == $SCE_OPEN, its message byte-equal to the
+#          `off` arm's bounded spec request (spec and plain emit the same tokens up to the same
+#          bound). Where admission is armed, also one open request: completion_tokens == $SCE_OPEN,
+#          its message byte-equal to the `on` arm's first.
+#   Memory-shaped admission is a card default, not a switch: armed on the full-power RTX PRO 6000
+#   Blackwell Workstation Edition serving one card (docs/decisions/ADMIT-BY-MEMORY-DEFAULT.md).
+#   Each boot reads its `[admit-mem] door=` line: `on` SKIPs where admission is unarmed, `off`
+#   asserts the bound of the program the boot states, and `plain` runs its open request only where
+#   admission is armed. Every verdict line names the boot's admission state.
 #   Every arm's boot: no `panicked`, no `argmax sentinel`, no `[worker] FATAL`, no respawn, no
 #   `spec verify refused` line; the server is alive after the last request; `/health` 200; spec
 #   rounds ran (`[spec-acc]` lines) on the spec arms.
 #
 # Usage: tools/spec-ctx-edge-gate.sh <model.gguf> <memra-server binary> [out_dir]
-#   SCE_PORT (8193), SCE_ARMS (on,plain,off), SCE_OPEN (64), SCE_CTX (384).
+#   SCE_PORT (8193), SCE_ARMS (on,off,plain; they run in that order), SCE_OPEN (64), SCE_CTX (384).
 #   The binary is an argument, not built here, so the red arm (the unfixed tree) and the green arm
 #   run the same gate. Run under the rig lock (`flock /tmp/memra-5090.lock`, or the collector on a
 #   PRO box); the gate boots three servers in sequence and never takes the lock itself.
-#   Exit 0 when no verdict FAILED; 1 on any FAIL; 2 on setup.
+#   Exit 0 when no verdict FAILED (SKIP lines do not fail it); 1 on any FAIL; 2 on setup.
 set -uo pipefail
 cd "$(dirname "$0")/.." || exit 2
 
@@ -37,7 +49,7 @@ MODEL="${1:-}"; BIN="${2:-}"
 PORT="${SCE_PORT:-8193}"
 ADDR=127.0.0.1:$PORT
 BASE=http://$ADDR
-ARMS="${SCE_ARMS:-on,plain,off}"
+ARMS="${SCE_ARMS:-on,off,plain}"
 OPEN="${SCE_OPEN:-64}"
 CTX="${SCE_CTX:-384}"
 OUT="${3:-/tmp/spec-ctx-edge-gate-$(date -u +%Y%m%dT%H%M%SZ)}"
@@ -57,7 +69,7 @@ sha256sum "$BIN" > "$OUT/binary.sha256"
 PASSN=0; FAILN=0
 verdict() { # <line ending in -> PASS|FAIL>
   echo "$1" | tee -a "$VERDICTS"
-  case "$1" in *"-> PASS") PASSN=$((PASSN+1));; *) FAILN=$((FAILN+1));; esac
+  case "$1" in *"-> PASS") PASSN=$((PASSN+1));; *"-> SKIP"*) ;; *) FAILN=$((FAILN+1));; esac
 }
 jget() { # <file> <dotted.path> -> value or ""
   python3 - "$1" "$2" <<'PY' 2>/dev/null
@@ -137,13 +149,29 @@ census() {
   verdict "SCE ($label) boot census: alive=$alive health=$health panicked=$panics argmax_sentinel=$sentinels worker_fatal=$fatal respawn=$respawn verify_refused=$refused spec_acc_lines=$specacc (spec expected=$want_spec) -> $v"
 }
 in_arms() { case ",$ARMS," in *",$1,"*) return 0;; *) return 1;; esac; }
+# admission: the state the boot just made states for memory-shaped admission (ON, OFF, or
+# `unstated` when the line is missing, which no assertion below accepts as either).
+admission() {
+  local st
+  st=$(grep -m1 -o '\[admit-mem\] door=[A-Z]*' "$D/server.log" | sed 's/.*door=//')
+  echo "${st:-unstated}"
+}
+# armed_as <ON|OFF> <label>: the boot just made reads memory-shaped admission as that state;
+# otherwise the arm's one SKIP line is written and the caller skips its requests.
+armed_as() {
+  [ "$(admission)" = "$1" ] && return 0
+  verdict "SCE ($2) memory-shaped admission is not door=$1 on this card (door=$(admission)) -> SKIP"
+  return 1
+}
 
 echo "== spec-ctx-edge-gate: arms=$ARMS port=$PORT open=$OPEN ctx=$CTX out=$OUT =="
-ON_SHA=""
+ON_SHA=""; BOUNDED_SHA=""
 
 if in_arms on; then
-  echo "--- arm on: door ON, open output $OPEN, default spec ---"
-  if boot on MEMRA_ADMIT_BY_MEMORY=1 MEMRA_ADMIT_OPEN_OUTPUT_TOKENS="$OPEN"; then
+  echo "--- arm on: memory-shaped admission armed, open output $OPEN, default spec ---"
+  if ! boot on MEMRA_ADMIT_OPEN_OUTPUT_TOKENS="$OPEN"; then
+    verdict "SCE (on) boot failed -> FAIL"
+  elif armed_as ON on; then
     for i in 1 2 3 4; do
       code=$(chat "$D/r$i"); fr=$(jget "$D/r$i.body" choices.0.finish_reason); ct=$(jget "$D/r$i.body" usage.completion_tokens)
       pt=$(jget "$D/r$i.body" usage.prompt_tokens)
@@ -155,45 +183,67 @@ if in_arms on; then
     v=FAIL; [ "$code" = 200 ] && [ "$ct" = 16 ] && v=PASS
     verdict "SCE (on) bounded control: http=$code completion_tokens=$ct expected=16 -> $v"
     census on 1
-  else
-    verdict "SCE (on) boot failed -> FAIL"
   fi
   stop on
 fi
 
-if in_arms plain; then
-  echo "--- arm plain: door ON, open output $OPEN, MEMRA_SERVE_SPEC=0 ---"
-  if boot plain MEMRA_ADMIT_BY_MEMORY=1 MEMRA_ADMIT_OPEN_OUTPUT_TOKENS="$OPEN" MEMRA_SERVE_SPEC=0; then
-    code=$(chat "$D/r1"); fr=$(jget "$D/r1.body" choices.0.finish_reason); ct=$(jget "$D/r1.body" usage.completion_tokens)
-    sha=$(msg_sha "$D/r1.body")
-    v=FAIL; [ "$code" = 200 ] && [ "$fr" = length ] && [ "$ct" = "$OPEN" ] && v=PASS
-    verdict "SCE (plain) r1 open request: http=$code finish_reason=$fr completion_tokens=$ct expected=$OPEN -> $v"
-    if [ -n "$ON_SHA" ]; then
-      v=FAIL; [ -n "$sha" ] && [ "$sha" = "$ON_SHA" ] && v=PASS
-      verdict "SCE (plain) message equals the on arm's r1: plain=${sha:0:16} spec=${ON_SHA:0:16} -> $v"
-    fi
-    census plain 0
-  else
-    verdict "SCE (plain) boot failed -> FAIL"
-  fi
-  stop plain
-fi
-
 if in_arms off; then
-  echo "--- arm off: door OFF, MEMRA_CTX=$CTX, default spec ---"
-  if boot off MEMRA_CTX="$CTX"; then
+  echo "--- arm off: the narrow envelope MEMRA_CTX=$CTX, default spec, the card's admission ---"
+  if ! boot off MEMRA_CTX="$CTX"; then
+    verdict "SCE (off) boot failed -> FAIL"
+  else
+    adm=$(admission)
+    # Armed, the open charge is capped at the envelope and its budget keeps the 8 slack rows free.
+    slack=0; [ "$adm" = ON ] && slack=8
+    # The bounded request runs first, on a cold boot, so the plain arm compares cold with cold.
+    code=$(chat "$D/bounded" "$OPEN"); ct=$(jget "$D/bounded.body" usage.completion_tokens)
+    BOUNDED_SHA=$(msg_sha "$D/bounded.body")
+    v=FAIL; [ "$code" = 200 ] && [ "$ct" = "$OPEN" ] && [ -n "$BOUNDED_SHA" ] && v=PASS
+    verdict "SCE (off) bounded spec request: admission=$adm http=$code completion_tokens=$ct expected=$OPEN -> $v"
     for i in 1 2 3; do
       code=$(chat "$D/r$i"); fr=$(jget "$D/r$i.body" choices.0.finish_reason); ct=$(jget "$D/r$i.body" usage.completion_tokens)
       pt=$(jget "$D/r$i.body" usage.prompt_tokens)
-      room=$(( CTX - ${pt:-0} ))
-      v=FAIL; [ "$code" = 200 ] && [ "$fr" = length ] && [ -n "$ct" ] && [ "$ct" -gt 0 ] 2>/dev/null && [ "$ct" -le "$room" ] && v=PASS
-      verdict "SCE (off) r$i open request to the cap: http=$code finish_reason=$fr prompt_tokens=$pt completion_tokens=$ct room=$room -> $v"
+      room=$(( CTX - ${pt:-0} - slack ))
+      v=FAIL
+      case "$adm" in ON|OFF)
+        [ "$code" = 200 ] && [ "$fr" = length ] && [ -n "$ct" ] && [ "$ct" -gt 0 ] 2>/dev/null && [ "$ct" -le "$room" ] && v=PASS;;
+      esac
+      verdict "SCE (off) r$i open request to the cap: admission=$adm http=$code finish_reason=$fr prompt_tokens=$pt completion_tokens=$ct bound=$room -> $v"
     done
     census off 1
-  else
-    verdict "SCE (off) boot failed -> FAIL"
   fi
   stop off
+fi
+
+if in_arms plain; then
+  echo "--- arm plain: MEMRA_SERVE_SPEC=0, open output $OPEN, the card's admission ---"
+  if ! boot plain MEMRA_ADMIT_OPEN_OUTPUT_TOKENS="$OPEN" MEMRA_SERVE_SPEC=0; then
+    verdict "SCE (plain) boot failed -> FAIL"
+  else
+    adm=$(admission)
+    # Where admission is armed the open request runs first, on a cold boot like the on arm's r1;
+    # elsewhere the bounded request is the boot's first, like the off arm's.
+    if [ "$adm" = ON ]; then
+      code=$(chat "$D/r1"); fr=$(jget "$D/r1.body" choices.0.finish_reason); ct=$(jget "$D/r1.body" usage.completion_tokens)
+      sha=$(msg_sha "$D/r1.body")
+      v=FAIL; [ "$code" = 200 ] && [ "$fr" = length ] && [ "$ct" = "$OPEN" ] && v=PASS
+      verdict "SCE (plain) r1 open request: admission=$adm http=$code finish_reason=$fr completion_tokens=$ct expected=$OPEN -> $v"
+      if [ -n "$ON_SHA" ]; then
+        v=FAIL; [ -n "$sha" ] && [ "$sha" = "$ON_SHA" ] && v=PASS
+        verdict "SCE (plain) open message equals the on arm's r1: plain=${sha:0:16} spec=${ON_SHA:0:16} -> $v"
+      fi
+    fi
+    code=$(chat "$D/bounded" "$OPEN"); ct=$(jget "$D/bounded.body" usage.completion_tokens)
+    sha=$(msg_sha "$D/bounded.body")
+    v=FAIL; [ "$code" = 200 ] && [ "$ct" = "$OPEN" ] && v=PASS
+    verdict "SCE (plain) bounded request: admission=$adm http=$code completion_tokens=$ct expected=$OPEN -> $v"
+    if [ -n "${BOUNDED_SHA:-}" ]; then
+      v=FAIL; [ -n "$sha" ] && [ "$sha" = "$BOUNDED_SHA" ] && v=PASS
+      verdict "SCE (plain) bounded message equals the off arm's bounded spec request: plain=${sha:0:16} spec=${BOUNDED_SHA:0:16} -> $v"
+    fi
+    census plain 0
+  fi
+  stop plain
 fi
 
 echo "== spec-ctx-edge-gate: $PASSN PASS, $FAILN FAIL =="

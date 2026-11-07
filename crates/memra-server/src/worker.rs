@@ -1876,10 +1876,10 @@ pub struct Request {
     /// verdict at its FIRST decisive admission consideration and never again: defer
     /// ticks and step-OOM park replays must not multiply one arrival into many rows.
     pub(crate) admit_predict_logged: bool,
-    /// MEMORY-SHAPED ADMISSION (memra#365, door `MEMRA_ADMIT_BY_MEMORY`): when this request
+    /// MEMORY-SHAPED ADMISSION (memra#365, `crate::admit_memory`): when this request
     /// FIRST deferred on memory. Latched once, never restamped, because the whole point is to
     /// bound the total wait against the client's own pre-header budget; a per-tick stamp would
-    /// reset the budget forever and bound nothing. `None` off the door and until the first
+    /// reset the budget forever and bound nothing. `None` unarmed and until the first
     /// memory defer.
     pub(crate) memory_defer_since: Option<Instant>,
     /// WP-B day 42 (`MEMRA_ADMIT_RECLAIM_OFFTICK`): this arrival's off-tick reclaim plan, made at
@@ -2571,7 +2571,7 @@ pub struct Metrics {
     pub cuda_pool_reserved_bytes: u64,
     pub cuda_pool_used_bytes: u64,
     pub cuda_pool_cached_bytes: u64,
-    /// WP-B day 37 (`MEMRA_KV_ALLOCATOR=vmm`): on-demand K/V planes held by active and parked
+    /// WP-B day 37 (the on-demand KV planes): on-demand K/V planes held by active and parked
     /// sessions, backed and reserved; their owed growth (active only); the graveyard's pending
     /// bytes; process counters. All 0 with the door off.
     pub kv_vmm_mapped_bytes: u64,
@@ -8326,7 +8326,7 @@ fn pending_seed_bytes(active: &[Session]) -> usize {
         .fold(0usize, usize::saturating_add)
 }
 
-/// WP-B day 37 (`MEMRA_KV_ALLOCATOR=vmm`, DAY37 1.3): the routes whose engine calls the tick-top
+/// WP-B day 37 (on-demand KV planes, DAY37 1.3): the routes whose engine calls the tick-top
 /// ensure bounds. A model is covered when it runs on one device (no ppN stage ownership, no
 /// model-owned peer engines) and its plan has no SWA ring and no latent planes; every other
 /// model keeps pooled planes under the door.
@@ -16712,8 +16712,9 @@ fn host_demote_prefix_entry(engine: &Engine, host: &mut HostPrefixCache, mut dea
     // Otherwise `dead` drops here whatever happened: it was already evicted from the device tier.
 }
 
-/// MEMRA_ADMIT_RECLAIM_OFFTICK (default unset = OFF; WP-B day 42, O12): under
-/// `MEMRA_ADMIT_BY_MEMORY` and the host tier's contracts door, the admission reclaim flush drops
+/// MEMRA_ADMIT_RECLAIM_OFFTICK (default unset = OFF; WP-B day 42, O12): where memory-shaped
+/// admission is armed (the full-power RTX PRO 6000 Workstation Edition serving one card) and
+/// under the host tier's contracts door, the admission reclaim flush drops
 /// its drop set at once and demotes its demote set off the tick, one landing at a time, and the
 /// arrival defers on the landings within the door's defer budget
 /// (`research/spill-b-20260919/DAY42.md` 1.2). Unset, today's on-tick flush runs.
@@ -16724,8 +16725,9 @@ fn admit_reclaim_offtick_on() -> bool {
         if on {
             eprintln!(
                 "[admit-mem] MEMRA_ADMIT_RECLAIM_OFFTICK=1: the reclaim flush demotes off the tick \
-                 and the arrival waits on the landings (DAY42 door; needs MEMRA_ADMIT_BY_MEMORY=1 \
-                 and MEMRA_KV_HOST_CONTRACTS=1)"
+                 and the arrival waits on the landings (DAY42 door; read where memory-shaped \
+                 admission is armed, the full-power RTX PRO 6000 Workstation Edition serving one \
+                 card, with MEMRA_KV_HOST_CONTRACTS=1)"
             );
         }
         on
@@ -16890,17 +16892,24 @@ fn reclaim_offtick_pass(
     removed + reclaim_queue_drain(engine, px, hpx, queue, &req.request_id)
 }
 
-/// Submit the worker queue's next demote while the tier's slot is free (DAY42 addendum E): the
-/// admission pass calls it, and so does the tick top after its settle calls, so the whole demote
-/// set reaches the host whether or not the arrival that queued it is still waiting. A queued entry
-/// that is no longer evictable (leased, hit or evicted meanwhile) is skipped; a refused submission
-/// dropped its entry (its bytes free now) and the next is tried. Returns the entries removed.
-/// MEMRA_BATCH_OOM_RECOVER (default unset, WP-B day 49, OWED O14): `1` retries a batched decode
-/// chunk once after one reclaim rung when its quoted CUDA OOM came before any session-state write
-/// (`memra_engine::step_guard`). Unset reads nothing.
-fn batch_oom_recover_on() -> bool {
-    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| std::env::var("MEMRA_BATCH_OOM_RECOVER").as_deref() == Ok("1"))
+/// The batched decode chunk's OOM recovery (WP-B day 49, `research/spill-b-20260919/DAY49.md`,
+/// `docs/decisions/BATCH-OOM-RECOVER-DEFAULT.md`): a chunk whose quoted CUDA OOM came before any
+/// session-state write (`memra_engine::step_guard`) takes one reclaim rung and runs the same
+/// batched step once more. The default on the full-power RTX PRO 6000 Blackwell Workstation
+/// Edition, the card the deciding cell read; every other card keeps the chunk's error arm.
+fn batch_oom_recover_default(device_name: &str) -> bool {
+    memra_engine::parallel::HardwareTarget::is_pro6000_workstation(device_name)
+}
+
+/// The boot receipt of [`batch_oom_recover_default`], one line.
+fn batch_oom_recover_boot_line(on: bool) -> &'static str {
+    if on {
+        "[admit-oom] batch OOM recovery: ON (RTX PRO 6000 Blackwell Workstation Edition: an \
+         untouched batched chunk takes one reclaim rung and retries once)"
+    } else {
+        "[admit-oom] batch OOM recovery: OFF (no receipt for this card: a batched chunk's OOM \
+         ends the chunk's sessions)"
+    }
 }
 
 /// The batch OOM's reclaim rung (DAY49 1.5): the parked sessions of the three pools are dropped,
@@ -17260,6 +17269,11 @@ fn exact_settle_spec(
     Ok(Some((from, to)))
 }
 
+/// Submit the worker queue's next demote while the tier's slot is free (DAY42 addendum E): the
+/// admission pass calls it, and so does the tick top after its settle calls, so the whole demote
+/// set reaches the host whether or not the arrival that queued it is still waiting. A queued entry
+/// that is no longer evictable (leased, hit or evicted meanwhile) is skipped; a refused submission
+/// dropped its entry (its bytes free now) and the next is tried. Returns the entries removed.
 fn reclaim_queue_drain(
     engine: &Engine,
     px: &mut PrefixCache,
@@ -17297,7 +17311,7 @@ fn reclaim_queue_drain(
     removed
 }
 
-/// MEMORY-ADMISSION FLUSH (memra#365, door `MEMRA_ADMIT_BY_MEMORY`): the admission reclaim
+/// MEMORY-ADMISSION FLUSH (memra#365, `crate::admit_memory`): the admission reclaim
 /// ladder's device-prefix flush, DEMOTING into the pinned host tier instead of dropping.
 ///
 /// [`host_demote_prefix_entry`]'s own doc names this seam: "the emergency `evict_all` flush
@@ -23459,13 +23473,18 @@ fn host_handoff_export(
     //    inserts reconstruct true LRU recency.
     let tmp = format!("{path}.tmp");
     // Stage clocks for the handoff's storage cost (lane/spill-f-20260919 B2): serialize and
-    // buffered write, then fsync, measured apart so the durability share is not inferred.
-    // MEMRA_KV_HOST_HANDOFF_IO (OWED 18) picks buffered or O_DIRECT; the bytes are identical.
-    let io_mode = crate::handoff_io::handoff_io_mode()?;
+    // write, then fsync, measured apart so the durability share is not inferred. The writer
+    // follows the card (OWED 18, docs/decisions/HANDOFF-DIRECT-EXPORT.md): O_DIRECT on the
+    // full-power RTX PRO 6000 Workstation Edition, buffered elsewhere; the bytes are identical.
+    let io_mode =
+        crate::handoff_io::HandoffIo::for_device(&engine.ctx().name().unwrap_or_default());
     let (mut write_ms, mut fsync_ms) = (0.0f64, 0.0f64);
+    let (mut io_used, mut io_refused) = (io_mode, None::<String>);
     let write = (|| -> Result<(), String> {
         let t_write = Instant::now();
-        let mut w = crate::handoff_io::HandoffWriter::create(&tmp, io_mode)?;
+        let (mut w, refused) = crate::handoff_io::HandoffWriter::create_for_export(&tmp, io_mode)?;
+        io_used = w.mode();
+        io_refused = refused;
         handoff_write_header(
             &mut w,
             &HandoffHeader {
@@ -23497,10 +23516,13 @@ fn host_handoff_export(
         "[prefix-host] handoff export: {} entries / {:.1}MB to {path} in {ms:.0}ms \
          write_ms={write_ms:.1} fsync_ms={fsync_ms:.1} \
          (drain-demoted {demoted} device entries first; {skipped_over_cap} skipped over \
-         the MEMRA_KV_HOST_HANDOFF_MB cap) io={}",
+         the MEMRA_KV_HOST_HANDOFF_MB cap) io={}{}",
         selected.len(),
         sel_bytes as f64 / 1e6,
-        io_mode.name(),
+        io_used.name(),
+        io_refused.map_or(String::new(), |why| format!(
+            " ({why}; the export buffered)"
+        )),
     );
     Ok(HostHandoffExportReport {
         path: path.to_string(),
@@ -23520,8 +23542,7 @@ fn host_handoff_export(
 /// whole file.
 struct HostHandoffImport {
     path: String,
-    reader: crate::handoff_io::HandoffReader,
-    io_mode: crate::handoff_io::HandoffIo,
+    reader: std::io::BufReader<std::fs::File>,
     max_frame: u64,
     refused_models: std::collections::HashSet<String>,
     header_entries: u64,
@@ -23536,8 +23557,7 @@ fn open_host_handoff_import(
     path: &str,
     local_stamps: &[HandoffModelStamp],
 ) -> Result<(HostHandoffImport, HostHandoffImportStart), String> {
-    let io_mode = crate::handoff_io::handoff_io_mode()?;
-    let (mut reader, max_frame) = crate::handoff_io::HandoffReader::open(path, io_mode)?;
+    let (mut reader, max_frame) = crate::handoff_io::open_import_reader(path)?;
     let header = handoff_read_header(&mut reader)?;
     let now = handoff_now_unix();
     let refused = handoff_header_verdict(&header, PREFIX_ENTRY_LAYOUT_VERSION, now, local_stamps)?;
@@ -23556,7 +23576,6 @@ fn open_host_handoff_import(
         HostHandoffImport {
             path: path.to_string(),
             reader,
-            io_mode,
             max_frame,
             refused_models: refused.into_iter().map(|(m, _)| m).collect(),
             header_entries: header.entries,
@@ -23586,13 +23605,12 @@ fn host_handoff_import_step(imp: &mut HostHandoffImport, hpx: &mut HostPrefixCac
         Ok(None) => {
             eprintln!(
                 "[prefix-host] handoff import DONE: {} entries / {:.1}MB re-materialized, \
-                 {} skipped, in {:.1}s from {} io={}",
+                 {} skipped, in {:.1}s from {}",
                 imp.imported,
                 imp.imported_bytes as f64 / 1e6,
                 imp.skipped,
                 imp.started.elapsed().as_secs_f64(),
                 imp.path,
-                imp.io_mode.name(),
             );
             true
         }
@@ -26182,7 +26200,7 @@ struct Session {
     request_id: String,
     /// The request's `[admit-predict]` one-shot latch, carried across a park replay.
     admit_predict_logged: bool,
-    /// The request's memory-defer stamp (`MEMRA_ADMIT_BY_MEMORY`), carried across a park
+    /// The request's memory-defer stamp (`crate::admit_memory`), carried across a park
     /// replay: a replayed request has already spent that wait, and re-zeroing it would hand
     /// a step-OOM park a fresh defer budget the client never got.
     memory_defer_since: Option<Instant>,
@@ -26199,7 +26217,7 @@ struct Session {
     /// park point (a failed step may have advanced state that `fed` does not describe), and its
     /// length stays out of the completion history, exactly as an abort's does.
     errored: bool,
-    /// WP-B day 37 (`MEMRA_KV_ALLOCATOR=vmm`): the rows this request's prompt occupies, the
+    /// WP-B day 37 (the on-demand KV planes): the rows this request's prompt occupies, the
     /// floor of the tick-top ensure bound for its on-demand K/V planes (`kv_vmm::bound_rows`).
     /// Set at admission, including a resume, to that request's prompt rows.
     vmm_floor_rows: usize,
@@ -28418,35 +28436,38 @@ pub fn run(
         admit_predict_cfg.resolve_budget(derived);
     }
     let admit_predict_cfg = admit_predict_cfg;
-    // MEMORY-SHAPED ADMISSION (memra#365, door MEMRA_ADMIT_BY_MEMORY, default OFF). Read
-    // once here so the door cannot arm or disarm mid-process, and state the resolved policy
-    // in the boot log beside the predictor's own armed line: a launcher that raises
-    // MEMRA_MAX_SESSIONS is trusting THIS door to hold the card, so its knobs belong in the
-    // same receipt the qualification env is derived from.
-    let admit_memory_cfg = crate::admit_memory::MemoryAdmitConfig::from_env();
+    // MEMORY-SHAPED ADMISSION (memra#365): armed on the card class whose deciding cell read
+    // (the RTX PRO 6000 Blackwell Workstation Edition, docs/decisions/ADMIT-BY-MEMORY-DEFAULT.md)
+    // when the worker serves that one card, unarmed elsewhere and on every PP/TP/EP deployment
+    // (the cell ran one card). Resolved once here so it cannot arm or disarm mid-process, and the
+    // resolved policy is stated in the boot log beside the predictor's own armed line: a
+    // launcher that raises MEMRA_MAX_SESSIONS is trusting it to hold the card, so its knobs
+    // belong in the same receipt the qualification env is derived from.
+    let device_name = engine.ctx().name().unwrap_or_default();
+    let admit_memory_cfg = crate::admit_memory::MemoryAdmitConfig::for_deployment(
+        &device_name,
+        is_multi_device_deployment(&loaded),
+    );
     eprintln!("{}", admit_memory_cfg.boot_line());
-    // ON-DEMAND KV PLANES (WP-B day 37, door MEMRA_KV_ALLOCATOR=vmm, decide-by 2026-10-04,
-    // research/spill-b-20260919/DAY37.md). Read once here; an unknown value, or the door armed on
-    // a device without VMM support, refuses the boot instead of serving pooled under an ON line.
-    let kv_vmm_cfg =
-        match crate::kv_vmm::KvVmmConfig::from_env(&engine.ctx().name().unwrap_or_default()) {
-            Ok(cfg) => cfg,
-            Err(why) => {
-                let _ = ready_tx.send(Err(why));
-                return;
-            }
-        };
-    let kv_vmm_granularity = if kv_vmm_cfg.armed {
-        match memra_engine::cache::vmm_granularity_for(&engine.stream()) {
-            Ok(g) => Some(g),
-            Err(err) => {
-                let _ = ready_tx.send(Err(format!("MEMRA_KV_ALLOCATOR=vmm: {err}")));
-                return;
-            }
+    // BATCHED-CHUNK OOM RECOVERY (WP-B day 49): the card's arm, resolved once and stated.
+    let batch_oom_recover = batch_oom_recover_default(&device_name);
+    eprintln!("{}", batch_oom_recover_boot_line(batch_oom_recover));
+    // ON-DEMAND KV PLANES (WP-B day 37, research/spill-b-20260919/DAY37.md): the default on the
+    // card class whose deciding cell read PROMOTE-ELIGIBLE (the RTX PRO 6000 Blackwell
+    // Workstation Edition, docs/decisions/KV-VMM-SERVING-DEFAULT.md), pooled planes elsewhere.
+    // Resolved once here; a bad fault spec refuses the boot. That card without VMM support keeps
+    // pooled planes, the program of every other card, and its boot line quotes the refusal.
+    let kv_vmm_cfg = match crate::kv_vmm::KvVmmConfig::for_device(&device_name) {
+        Ok(cfg) => cfg,
+        Err(why) => {
+            let _ = ready_tx.send(Err(why));
+            return;
         }
-    } else {
-        None
     };
+    let vmm_query = kv_vmm_cfg.armed.then(|| {
+        memra_engine::cache::vmm_granularity_for(&engine.stream()).map_err(|err| err.to_string())
+    });
+    let (kv_vmm_cfg, kv_vmm_granularity) = kv_vmm_cfg.with_granularity(vmm_query);
     if kv_vmm_cfg.armed {
         memra_engine::cache::vmm_set_grow_placement(kv_vmm_cfg.placement);
         memra_engine::cache::vmm_set_faults(kv_vmm_cfg.faults.clone());
@@ -29706,7 +29727,7 @@ pub fn run(
                         .join("; ");
                     eprintln!("[admission] parallel device plan: [{budgets}]");
                 }
-                // PENDING-PRIME BOOKING (memra#680, door MEMRA_ADMIT_BY_MEMORY). The live reading
+                // PENDING-PRIME BOOKING (memra#680, memory-shaped admission). The live reading
                 // sees an admitted session's context KV and learned residual as soon as they are
                 // allocated, but not its prefill workspace: that grows at PRIME time
                 // (`AdmissionCostModel`'s own note), so a burst admitted in one tick saw every
@@ -29776,7 +29797,7 @@ pub fn run(
                 let pending_booked = pending_prime.saturating_add(pending_seed);
                 let pending_booked =
                     pending_booked.saturating_add(unified_growth.saturating_sub(pending_seed));
-                // OWED GROWTH (WP-B day 37, MEMRA_KV_ALLOCATOR=vmm, DAY37 1.4): an admitted
+                // OWED GROWTH (WP-B day 37, on-demand KV planes, DAY37 1.4): an admitted
                 // on-demand session backs only the rows it has reached, so the live reading does
                 // not see the rest of the context the pooled allocator would already hold. Armed,
                 // every reading is reduced by that owed growth too. Unarmed it is 0.
@@ -30364,7 +30385,7 @@ pub fn run(
                                 }
                             }
                         }
-                        // BOUNDED MEMORY DEFER (memra#365, door MEMRA_ADMIT_BY_MEMORY).
+                        // BOUNDED MEMORY DEFER (memra#365, memory-shaped admission).
                         // Today's defer is unbounded: a request the gate cannot fit requeues
                         // FIFO forever unless `active` is empty, so it does not get refused,
                         // it gets to die as a pre-header timeout at the edge (the 2026-09-09
@@ -31002,7 +31023,7 @@ pub fn run(
                 finished.push(i);
             }
         }
-        // ON-DEMAND KV (WP-B day 37, MEMRA_KV_ALLOCATOR=vmm, DAY37 1.2 ensure point 2 and
+        // ON-DEMAND KV (WP-B day 37, on-demand KV planes, DAY37 1.2 ensure point 2 and
         // addendum A): the owner-tick reap, then every active on-demand session backed through
         // its bound before the first engine call of this tick. A grow failure takes the reclaim
         // retry (the graveyard's release events waited once, the prefix cache and one parked
@@ -32699,10 +32720,11 @@ pub fn run(
                     .map(|&i| active[i].request_id.as_str())
                     .collect::<Vec<_>>()
                     .join(",");
-                // WP-B day 49 (O14, MEMRA_BATCH_OOM_RECOVER): a quoted CUDA OOM of a chunk that
-                // wrote no session state (the step guard: before the engine call, or the generic
-                // body before any state write) takes one reclaim rung and runs the same batched
-                // step once more; any other failure is the error arm below, as today.
+                // WP-B day 49 (O14, batch OOM recovery): on a card whose default it is
+                // (`batch_oom_recover`), a quoted CUDA OOM of a chunk that wrote no session state
+                // (the step guard: before the engine call, or the generic body before any state
+                // write) takes one reclaim rung and runs the same batched step once more; any
+                // other failure, and every OOM elsewhere, is the error arm below.
                 let mut batch_attempt = 0usize;
                 let logits = loop {
                     memra_engine::step_guard::arm();
@@ -32768,7 +32790,7 @@ pub fn run(
                     match attempt {
                         Err(err)
                             if batch_attempt == 0
-                                && batch_oom_recover_on()
+                                && batch_oom_recover
                                 && is_cuda_oom(&err.to_string())
                                 && memra_engine::step_guard::recoverable(guard_state) =>
                         {
@@ -32793,7 +32815,7 @@ pub fn run(
                                 eprintln!(
                                     "[admit-oom] batch OOM: retry failed ({err}); ended as today"
                                 );
-                            } else if batch_oom_recover_on() && is_cuda_oom(&err.to_string()) {
+                            } else if batch_oom_recover && is_cuda_oom(&err.to_string()) {
                                 eprintln!(
                                     "[admit-oom] batch OOM: torn ({guard_state:?}); ended as today"
                                 );
@@ -34513,15 +34535,17 @@ pub fn resolve_env_ctx(model_ctx: usize) -> Result<usize, String> {
 }
 
 /// `open_output_tokens` is the memory-admission door's open-output charge
-/// (`MEMRA_ADMIT_BY_MEMORY`, `MemoryAdmitConfig::open_output_charge`): `None` off the door,
-/// which keeps the `MEMRA_CTX` arm below byte-identical. ON, a request that bounds NEITHER
+/// (`MemoryAdmitConfig::open_output_charge`): `None` unarmed, which keeps the `MEMRA_CTX` arm
+/// below byte-identical. Armed, a request that bounds NEITHER
 /// `max_tokens` nor `max_ctx` is charged its prompt plus that output instead of the server's
 /// whole context envelope. On the 1M route the difference is the whole door: `MEMRA_CTX` is
 /// 1,048,576 there, so the naked arm booked ~13 GB of latent KV for a request that emits a few
 /// hundred tokens, and a session cap of 4 was the only thing standing between that charge and
 /// the card. Deployments whose registry pins `default_output_length`/`max_output_length` never
 /// reach this arm (the HTTP layer bounds `max_new` first); this makes the naked path agree with
-/// them instead of disagreeing by two orders of magnitude.
+/// them instead of disagreeing by two orders of magnitude. The armed charge never exceeds the
+/// envelope the unarmed arm would charge: it exists to charge less on a wide `MEMRA_CTX`, and an
+/// operator who sets a `MEMRA_CTX` below the open output keeps that bound.
 fn request_ctx_cap(
     server_ctx: usize,
     model_ctx: usize,
@@ -34534,24 +34558,27 @@ fn request_ctx_cap(
         // A request-supplied hard cap is authoritative. In particular, a 128k request on a
         // 256k-default server must allocate and be charged as 128k, not inherit the default.
         (Some(c), _) => c,
-        (None, MAX_NEW_CTX_BOUNDED) => match open_output_tokens {
-            // Door ON: charge the output this request will plausibly emit, not the envelope.
-            // `charged_ctx_tokens` applies the same `+8` slack and the same model-context
-            // clamp the bounded arm below applies, and never lands under the prompt itself.
-            Some(open) => {
-                return crate::admit_memory::charged_ctx_tokens(prompt_len, None, open, model_ctx);
+        (None, MAX_NEW_CTX_BOUNDED) => {
+            // With no output bound, the server context default. A prompt that does not fit
+            // grows to prompt + one default window of room, capped at the model's trained
+            // context when it is known (below).
+            let mut envelope = server_ctx;
+            if prompt_len.saturating_add(16) > envelope {
+                envelope = prompt_len.saturating_add(server_ctx);
             }
-            // Door OFF: with no output bound, use the server context default. A prompt that
-            // does not fit grows to prompt + one default window of room, capped at the
-            // model's trained context when it is known.
-            None => {
-                let mut cap = server_ctx;
-                if prompt_len.saturating_add(16) > cap {
-                    cap = prompt_len.saturating_add(server_ctx);
+            match open_output_tokens {
+                // Armed: charge the output this request will plausibly emit, capped at that
+                // envelope. `charged_ctx_tokens` applies the same `+8` slack and the same
+                // model-context clamp the bounded arm below applies, and never lands under
+                // the prompt itself; the envelope is past the prompt too.
+                Some(open) => {
+                    crate::admit_memory::charged_ctx_tokens(prompt_len, None, open, model_ctx)
+                        .min(envelope)
                 }
-                cap
+                // Unarmed: the envelope.
+                None => envelope,
             }
-        },
+        }
         (None, max_new) => prompt_len.saturating_add(max_new).saturating_add(8),
     };
     if model_ctx > 0 {
@@ -35433,7 +35460,7 @@ fn device_admission_headroom(
 /// route, the sse-cadence hook on the qwen route), where `generated` is still empty. A
 /// step-time CUDA OOM after any in-burst flush therefore takes the honest error (a
 /// terminal error event on the stream, no replay) instead of re-sending the prefix.
-/// PREFILL-OOM PARK (memra#680, door MEMRA_ADMIT_BY_MEMORY): armed, a prefill CUDA OOM on a
+/// PREFILL-OOM PARK (memra#680, memory-shaped admission): armed, a prefill CUDA OOM on a
 /// session that has emitted nothing is capacity the admission gate should have deferred, so the
 /// session parks and requeues exactly like a step-OOM park and the door's bounded defer or
 /// typed refusal answers it. Unarmed, or on any other error, the prefill arm's honest error
@@ -37994,7 +38021,7 @@ fn admit(
                         req.model
                     );
                 }
-                // WP-B day 37: under `MEMRA_KV_ALLOCATOR=vmm` a covered model's session is built
+                // WP-B day 37: with the on-demand planes on, a covered model's session is built
                 // with on-demand planes (`vmm_build_spec`); unarmed it is this call unchanged.
                 let vmm_new_session = |cap: usize| {
                     vmm_build_spec(
@@ -47473,6 +47500,38 @@ mod tests {
             request_budget(cap, 3_000, None, MAX_NEW_CTX_BOUNDED, Some(2_048)),
             4_096 - 3_000 - slack
         );
+        // Door ON, open, on a MEMRA_CTX below the open output: the unarmed envelope bounds the
+        // charge, and the slack still comes off the room.
+        let cap = request_ctx_cap(
+            8_192,
+            262_144,
+            1_439,
+            None,
+            MAX_NEW_CTX_BOUNDED,
+            Some(32_768),
+        );
+        assert_eq!(cap, 8_192);
+        assert_eq!(
+            request_ctx_cap(8_192, 262_144, 1_439, None, MAX_NEW_CTX_BOUNDED, None),
+            cap,
+            "armed never charges more than unarmed"
+        );
+        assert_eq!(
+            request_budget(cap, 1_439, None, MAX_NEW_CTX_BOUNDED, Some(32_768)),
+            8_192 - 1_439 - slack
+        );
+        // ... and a prompt past that MEMRA_CTX keeps the unarmed growth rule.
+        assert_eq!(
+            request_ctx_cap(
+                8_192,
+                262_144,
+                9_000,
+                None,
+                MAX_NEW_CTX_BOUNDED,
+                Some(32_768)
+            ),
+            9_000 + 8_192
+        );
         // Door ON, open, a room no wider than the slack keeps the room.
         assert_eq!(
             request_budget(3_000 + slack, 3_000, None, MAX_NEW_CTX_BOUNDED, Some(2_048)),
@@ -50743,12 +50802,13 @@ mod tests {
     #[test]
     fn the_memory_admission_door_is_wired_at_the_admission_seam() {
         let code = include_str!("worker.rs");
-        // Read once at worker start, and stated in the boot log.
+        // Resolved once at worker start from its device and its deployment's device count, and
+        // stated in the boot log.
         assert!(
             code.contains(
-                "let admit_memory_cfg = crate::admit_memory::MemoryAdmitConfig::from_env();"
+                "let admit_memory_cfg = crate::admit_memory::MemoryAdmitConfig::for_deployment(\n        &device_name,\n        is_multi_device_deployment(&loaded),\n    );"
             ),
-            "the door must be read once at worker start"
+            "memory-shaped admission must be resolved once at worker start, single-card only"
         );
         assert!(
             code.contains("eprintln!(\"{}\", admit_memory_cfg.boot_line());"),
@@ -50799,11 +50859,10 @@ mod tests {
             defer.contains(".get_or_insert_with(Instant::now)"),
             "the defer stamp must latch on the FIRST memory defer"
         );
-        // And the whole seam is behind the door.
+        // And the whole seam is behind the armed check.
         assert!(
-            defer.starts_with(", door MEMRA_ADMIT_BY_MEMORY)")
-                || defer.contains("if admit_memory_cfg.armed {"),
-            "the bounded defer must be behind the door"
+            defer.contains("if admit_memory_cfg.armed {"),
+            "the bounded defer must be behind the armed check"
         );
     }
 
@@ -63828,20 +63887,43 @@ mod tests {
         assert!(live.contains("match lm.model.spec_rewind_to_checkpoint(engine, &mut sess) {"));
     }
 
-    /// WP-B day 49 (DAY49 1.5): the batch-OOM door is read at the batched chunk only; the retry is
-    /// bounded to one and gated on a quoted CUDA OOM and the step guard's recoverable states.
+    /// WP-B day 49: the batch OOM recovery is the default on the card the deciding cell read and
+    /// nowhere else; the Max-Q and Server editions share the class, not the receipt.
     #[test]
-    fn batch_oom_recover_door_reaches_the_batched_chunk_only() {
+    fn batch_oom_recovery_is_the_pro6000_workstation_default_only() {
+        assert!(super::batch_oom_recover_default(
+            "NVIDIA RTX PRO 6000 Blackwell Workstation Edition"
+        ));
+        for name in [
+            "NVIDIA GeForce RTX 5090",
+            "NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition",
+            "NVIDIA RTX PRO 6000 Blackwell Server Edition",
+            "NVIDIA B200",
+            "",
+        ] {
+            assert!(!super::batch_oom_recover_default(name), "{name}");
+        }
+        assert!(super::batch_oom_recover_boot_line(true).contains("batch OOM recovery: ON"));
+        assert!(super::batch_oom_recover_boot_line(false).contains("batch OOM recovery: OFF"));
+    }
+
+    /// WP-B day 49 (DAY49 1.5): the batch OOM recovery is resolved once at worker start and read
+    /// at the batched chunk only; the retry is bounded to one and gated on a quoted CUDA OOM and
+    /// the step guard's recoverable states.
+    #[test]
+    fn batch_oom_recovery_reaches_the_batched_chunk_only() {
         let squash = |src: &str| -> String { src.split_whitespace().collect::<Vec<_>>().join(" ") };
         let worker = squash(include_str!("worker.rs"));
         let live = &worker[..worker.find("mod tests").expect("the test module exists")];
-        let call = format!("batch_oom_recover_on{}", "()");
+        let call = format!("batch_oom_recover_default{}", "(");
         assert_eq!(
             live.matches(call.as_str()).count(),
-            3,
-            "definition, the retry arm, the torn line"
+            2,
+            "definition, the worker start"
         );
-        assert!(live.contains("if batch_attempt == 0 && batch_oom_recover_on() && is_cuda_oom(&err.to_string()) && memra_engine::step_guard::recoverable(guard_state) =>"));
+        assert!(live.contains("let batch_oom_recover = batch_oom_recover_default(&device_name);"));
+        assert!(live.contains("if batch_attempt == 0 && batch_oom_recover && is_cuda_oom(&err.to_string()) && memra_engine::step_guard::recoverable(guard_state) =>"));
+        assert!(live.contains("} else if batch_oom_recover && is_cuda_oom(&err.to_string()) {"));
         assert_eq!(live.matches("memra_engine::step_guard::arm();").count(), 1);
         assert!(live.contains("let guard_state = memra_engine::step_guard::take();"));
         assert!(live.contains("batch_attempt += 1;"));
@@ -64446,7 +64528,7 @@ mod tests {
         let live_sq = squash(live);
         let pred = format!("step_oom_parkable{}", "(");
         // 1. Exactly one definition, the step guard's call, the memra#680 prefill-OOM
-        //    predicate's call, and the WP-B day 37 on-demand ensure guard (MEMRA_KV_ALLOCATOR=vmm)
+        //    predicate's call, and the WP-B day 37 on-demand ensure guard (the on-demand planes)
         //    in live code.
         assert_eq!(
             live.matches(pred.as_str()).count(),
@@ -67070,12 +67152,12 @@ mod host_handoff_tests {
         assert!(err.contains("exceeds the file-size bound"), "{err}");
     }
 
-    /// OWED 18: the file layer under both `MEMRA_KV_HOST_HANDOFF_IO` arms. Frames written
-    /// through either writer are byte-identical on disk, either reader restores them exactly,
-    /// and a truncated file breaks the stream the same way under both readers.
+    /// OWED 18: the file layer under both export writers. Frames written through either are
+    /// byte-identical on disk, the import reader restores both exactly, and a truncated file
+    /// breaks the stream after the last whole frame.
     #[test]
-    fn host_handoff_file_arms_are_byte_identical_and_cross_readable() {
-        use crate::handoff_io::{HandoffIo, HandoffReader, HandoffWriter};
+    fn host_handoff_file_writers_are_byte_identical_and_the_import_reads_both() {
+        use crate::handoff_io::{HandoffIo, HandoffWriter, open_import_reader};
         let dir =
             std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/handoff-io-tests");
         std::fs::create_dir_all(&dir).unwrap();
@@ -67099,7 +67181,7 @@ mod host_handoff_tests {
         write(&pb, HandoffIo::Buffered).unwrap();
         if let Err(e) = write(&pd, HandoffIo::Direct) {
             assert!(e.contains("O_DIRECT open refused"), "{e}");
-            eprintln!("SKIP[O_DIRECT filesystem]: direct handoff arm not run: {e}");
+            eprintln!("SKIP[O_DIRECT filesystem]: direct handoff writer not run: {e}");
             let _ = std::fs::remove_file(&pb);
             return;
         }
@@ -67107,31 +67189,29 @@ mod host_handoff_tests {
         assert_eq!(
             bytes,
             std::fs::read(&pd).unwrap(),
-            "both arms write the same bytes"
+            "both writers write the same bytes"
         );
         for file in [&pb, &pd] {
-            for mode in [HandoffIo::Buffered, HandoffIo::Direct] {
-                let (mut r, max) = HandoffReader::open(file, mode).unwrap();
-                assert_eq!(max, bytes.len() as u64);
-                assert_eq!(
-                    handoff_read_header(&mut r).unwrap(),
-                    handoff_header_fixture(1000)
-                );
-                assert_eq!(
-                    handoff_read_entry(&mut r, max).unwrap().unwrap().unwrap(),
-                    a
-                );
-                assert_eq!(
-                    handoff_read_entry(&mut r, max).unwrap().unwrap().unwrap(),
-                    b
-                );
-                assert!(
-                    handoff_read_entry(&mut r, max).unwrap().is_none(),
-                    "clean EOF"
-                );
-            }
+            let (mut r, max) = open_import_reader(file).unwrap();
+            assert_eq!(max, bytes.len() as u64);
+            assert_eq!(
+                handoff_read_header(&mut r).unwrap(),
+                handoff_header_fixture(1000)
+            );
+            assert_eq!(
+                handoff_read_entry(&mut r, max).unwrap().unwrap().unwrap(),
+                a
+            );
+            assert_eq!(
+                handoff_read_entry(&mut r, max).unwrap().unwrap().unwrap(),
+                b
+            );
+            assert!(
+                handoff_read_entry(&mut r, max).unwrap().is_none(),
+                "clean EOF"
+            );
         }
-        // Truncate mid-frame B: both readers see a broken stream after frame A.
+        // Truncate mid-frame B: the reader sees a broken stream after frame A.
         let cut = bytes.len() as u64 - 40;
         std::fs::OpenOptions::new()
             .write(true)
@@ -67139,19 +67219,17 @@ mod host_handoff_tests {
             .unwrap()
             .set_len(cut)
             .unwrap();
-        for mode in [HandoffIo::Buffered, HandoffIo::Direct] {
-            let (mut r, _) = HandoffReader::open(&pd, mode).unwrap();
-            handoff_read_header(&mut r).unwrap();
-            assert_eq!(
-                handoff_read_entry(&mut r, 1 << 20)
-                    .unwrap()
-                    .unwrap()
-                    .unwrap(),
-                a
-            );
-            let err = handoff_read_entry(&mut r, 1 << 20).unwrap_err();
-            assert!(err.contains("failed"), "{mode:?}: {err}");
-        }
+        let (mut r, _) = open_import_reader(&pd).unwrap();
+        handoff_read_header(&mut r).unwrap();
+        assert_eq!(
+            handoff_read_entry(&mut r, 1 << 20)
+                .unwrap()
+                .unwrap()
+                .unwrap(),
+            a
+        );
+        let err = handoff_read_entry(&mut r, 1 << 20).unwrap_err();
+        assert!(err.contains("failed"), "{err}");
         let _ = std::fs::remove_file(&pb);
         let _ = std::fs::remove_file(&pd);
     }

@@ -1,4 +1,7 @@
-//! Memory-shaped admission for a high session ceiling (door `MEMRA_ADMIT_BY_MEMORY`).
+//! Memory-shaped admission for a high session ceiling: the default on the full-power RTX PRO
+//! 6000 Blackwell Workstation Edition, where its deciding cell read (WP-B day 40,
+//! `research/spill-b-20260919/DAY40.md`; `docs/decisions/ADMIT-BY-MEMORY-DEFAULT.md`). Every
+//! other card keeps the unarmed program, byte for byte.
 //!
 //! WHY THIS EXISTS. The GLM-5.3-Flash 1M route on the 2x B200 pair serves behind
 //! `MEMRA_MAX_SESSIONS=4` (darklanes `deploy/glm5b200/glm5b200_serve_launch.sh`), and the
@@ -15,7 +18,7 @@
 //! MLA planes and the DSA indexer pool keys included since the prefix-latent lane, see
 //! `memra_kv::latent_kv_bytes_per_token_for_plan`), the VRAM gate compares it against live
 //! effective free VRAM per device, and a reclaim ladder frees space before deciding. What the
-//! slot cap adds on top of that is a SECOND, cruder gate that binds first. This door removes
+//! slot cap adds on top of that is a SECOND, cruder gate that binds first. This module removes
 //! the reasons the cruder gate was needed:
 //!
 //!   1. OPEN-OUTPUT CHARGE. A request with no `max_tokens` and no `max_ctx` charges
@@ -45,13 +48,16 @@
 
 use std::time::Instant;
 
-/// Open-output charge when the door is armed and neither `max_tokens` nor `max_ctx` bounds the
-/// request; since memra#659 it is also that request's output budget (the `CTX_SLACK` rows stay
-/// free). 8192 is a placeholder, not a measured choice: the owner's 2026-09-23 call is to measure
-/// before any value becomes a default, the registries differ (the door's target registry pins
-/// 32768), and every surveyed engine bounds an omitted `max_tokens` by the remaining context
-/// (`research/spill-b-20260919/OPEN-OUTPUT-SURVEY.md`, the `docs/FLAGS.md` row).
-pub(crate) const DEFAULT_OPEN_OUTPUT_TOKENS: usize = 8192;
+/// Open-output charge where memory-shaped admission is armed and neither `max_tokens` nor
+/// `max_ctx` bounds the request; since memra#659 it is also that request's output budget (the
+/// `CTX_SLACK` rows stay free). 32768 is the value DAY40's selection rules read on the card that
+/// arms it: R1 (zero truncation) and R2 (natural cover) select none of 2048, 8192 and 32768
+/// there (the largest natural completion is 193,178 tokens), R3 (registry agreement) reads
+/// 32768, and of the three measured values it truncates the fewest open requests (8 against 10).
+/// Every surveyed engine bounds an omitted `max_tokens` by the remaining context instead
+/// (`research/spill-b-20260919/OPEN-OUTPUT-SURVEY.md`); `MEMRA_ADMIT_OPEN_OUTPUT_TOKENS`
+/// sets a deployment's own value.
+pub(crate) const DEFAULT_OPEN_OUTPUT_TOKENS: usize = 32_768;
 
 /// How long a request may sit in the memory-deferred requeue before the refusal is preferred
 /// to the silence. 8 s sits inside the 10 s pre-header budget the darklanes edge gives a
@@ -67,13 +73,17 @@ pub(crate) const CTX_SLACK: usize = 8;
 pub(crate) const RETRY_AFTER_MIN_S: u64 = 1;
 pub(crate) const RETRY_AFTER_MAX_S: u64 = 60;
 
-/// Read-once door configuration. Built at worker start; the door cannot arm mid-process.
+/// Read-once configuration. Built at worker start from the worker's device and deployment; it
+/// cannot arm mid-process.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct MemoryAdmitConfig {
-    /// `MEMRA_ADMIT_BY_MEMORY=1`. OFF by design: raising the session ceiling is a
-    /// customer-visible capacity act, and this door only becomes true when a box has the
-    /// requalification receipts for the mixed load it must now carry.
+    /// The worker serves one device and that device is the full-power RTX PRO 6000 Blackwell
+    /// Workstation Edition (`memra_engine::parallel::HardwareTarget::is_pro6000_workstation`),
+    /// the card whose deciding cell read V-DOOR PASS on the booking that ships. The cell ran one
+    /// card, so a PP, TP or EP deployment on that card keeps the unarmed program.
     pub armed: bool,
+    /// Why the arm is what it is (the boot line states it).
+    pub source: &'static str,
     /// `MEMRA_ADMIT_OPEN_OUTPUT_TOKENS` (default [`DEFAULT_OPEN_OUTPUT_TOKENS`]).
     pub open_output_tokens: usize,
     /// `MEMRA_ADMIT_DEFER_BUDGET_MS` (default [`DEFAULT_DEFER_BUDGET_MS`]). 0 disables the
@@ -82,26 +92,26 @@ pub(crate) struct MemoryAdmitConfig {
 }
 
 impl MemoryAdmitConfig {
-    pub(crate) fn from_env() -> Self {
-        let armed = std::env::var("MEMRA_ADMIT_BY_MEMORY").is_ok_and(|v| v == "1");
+    /// Arms on the receipted card class when the worker serves that one device
+    /// (`multi_device` is `worker::is_multi_device_deployment`), and reads the two runtime
+    /// parameters (`MEMRA_ADMIT_OPEN_OUTPUT_TOKENS`, `MEMRA_ADMIT_DEFER_BUDGET_MS`).
+    pub(crate) fn for_deployment(device_name: &str, multi_device: bool) -> Self {
         let open_output_tokens = std::env::var("MEMRA_ADMIT_OPEN_OUTPUT_TOKENS")
             .ok()
             .and_then(|v| v.trim().parse::<usize>().ok())
             .filter(|&n| n > 0)
             .unwrap_or(DEFAULT_OPEN_OUTPUT_TOKENS);
-        let defer_budget_ms = std::env::var("MEMRA_ADMIT_DEFER_BUDGET_MS")
-            .ok()
-            .and_then(|v| v.trim().parse::<u64>().ok())
-            .unwrap_or(DEFAULT_DEFER_BUDGET_MS);
+        let (armed, source) = arm_for(device_name, multi_device);
         MemoryAdmitConfig {
             armed,
+            source,
             open_output_tokens,
-            defer_budget_ms,
+            defer_budget_ms: defer_budget_ms_from_env(),
         }
     }
 
-    /// The open-output charge to hand `request_ctx_cap`, or `None` when the door is off (the
-    /// caller then takes today's `MEMRA_CTX` arm, byte-identically).
+    /// The open-output charge to hand `request_ctx_cap`, or `None` when unarmed (the caller then
+    /// takes the `MEMRA_CTX` arm, byte-identically).
     pub(crate) fn open_output_charge(&self) -> Option<usize> {
         self.armed.then_some(self.open_output_tokens)
     }
@@ -110,15 +120,37 @@ impl MemoryAdmitConfig {
     /// from the log without shell access to the box.
     pub(crate) fn boot_line(&self) -> String {
         format!(
-            "[admit-mem] door={} open_output_tokens={} defer_budget_ms={} \
-             (admission charges prompt+output, the reclaim flush demotes to the host tier \
-             before dropping, and a memory defer past the budget refuses 429 instead of \
-             queueing past the client's deadline)",
+            "[admit-mem] door={} open_output_tokens={} defer_budget_ms={} ({}; the \
+             single-card default of the RTX PRO 6000 Blackwell Workstation Edition: armed, \
+             admission charges prompt+output, the reclaim flush demotes to the host tier before \
+             dropping, and a memory defer past the budget refuses 429 instead of queueing \
+             past the client's deadline)",
             if self.armed { "ON" } else { "OFF" },
             self.open_output_tokens,
             self.defer_budget_ms,
+            self.source,
         )
     }
+}
+
+/// The arm and its source: the receipted card serving alone, or why not.
+fn arm_for(device_name: &str, multi_device: bool) -> (bool, &'static str) {
+    if !memra_engine::parallel::HardwareTarget::is_pro6000_workstation(device_name) {
+        (false, "not the receipted card")
+    } else if multi_device {
+        (false, "multi-device deployment: the receipt is one card")
+    } else {
+        (true, "pro6000-ws-receipt")
+    }
+}
+
+/// `MEMRA_ADMIT_DEFER_BUDGET_MS` (default [`DEFAULT_DEFER_BUDGET_MS`]): the batched worker reads
+/// it where memory-shaped admission is armed, the DSv4 route always (memra#503).
+pub(crate) fn defer_budget_ms_from_env() -> u64 {
+    std::env::var("MEMRA_ADMIT_DEFER_BUDGET_MS")
+        .ok()
+        .and_then(|v| v.trim().parse::<u64>().ok())
+        .unwrap_or(DEFAULT_DEFER_BUDGET_MS)
 }
 
 /// The charged context for a request, in tokens.
@@ -443,19 +475,19 @@ mod tests {
         assert!(probe.total_bytes() * 50 < long.total_bytes());
     }
 
-    /// GAP 1: the naked open-output arm. Without the door a request with no `max_tokens` and
-    /// no `max_ctx` is charged the whole `MEMRA_CTX` envelope; with it, the open-output
-    /// charge. On this route that is 13.96 GB versus 0.11 GB for the same request.
+    /// GAP 1: the naked open-output arm. Unarmed, a request with no `max_tokens` and no
+    /// `max_ctx` is charged the whole `MEMRA_CTX` envelope; armed, the open-output charge. On
+    /// this route that is 13.96 GB versus 0.49 GB for the same request.
     #[test]
     fn open_output_charges_the_output_not_the_envelope() {
         let envelope = estimate(1_048_576, GLM_BPT, 0, 0, 0);
         assert_eq!(envelope.total_bytes(), GLM_1M_BYTES);
         let charged = charged_ctx_tokens(4_000, None, DEFAULT_OPEN_OUTPUT_TOKENS, 1_048_576);
-        assert_eq!(charged, 4_000 + 8_192 + 8);
+        assert_eq!(charged, 4_000 + 32_768 + 8);
         let armed = estimate(charged, GLM_BPT, 0, 0, 0);
-        // 1,048,576 / 12,200 = 85.9x less KV booked for the same request.
-        assert_eq!(envelope.charged_ctx / armed.charged_ctx, 85);
-        assert!(armed.total_bytes() * 85 < envelope.total_bytes());
+        // 1,048,576 / 36,776 = 28.5x less KV booked for the same request.
+        assert_eq!(envelope.charged_ctx / armed.charged_ctx, 28);
+        assert!(armed.total_bytes() * 28 < envelope.total_bytes());
         // A given bound always wins over the open-output default, in both directions.
         assert_eq!(
             charged_ctx_tokens(4_000, Some(512), DEFAULT_OPEN_OUTPUT_TOKENS, 1_048_576),
@@ -734,25 +766,64 @@ mod tests {
         assert!(deferred.contains(" short_by=42 "), "{deferred}");
     }
 
-    /// The boot line states the door AND its two knobs: a receipt reader must be able to
+    /// Armed on the card class whose deciding cell read, serving alone, and nowhere else: the
+    /// Max-Q and Server editions share the class, not the receipt, and the receipt is one card,
+    /// so a PP, TP or EP deployment on the receipted card keeps the unarmed program.
+    #[test]
+    fn memory_admission_is_the_single_card_pro6000_workstation_default_only() {
+        const PRO_WS: &str = "NVIDIA RTX PRO 6000 Blackwell Workstation Edition";
+        let on = MemoryAdmitConfig::for_deployment(PRO_WS, false);
+        assert!(on.armed);
+        assert_eq!(on.source, "pro6000-ws-receipt");
+        let multi = MemoryAdmitConfig::for_deployment(PRO_WS, true);
+        assert!(!multi.armed);
+        assert_eq!(multi.open_output_charge(), None);
+        assert!(
+            multi
+                .boot_line()
+                .contains("multi-device deployment: the receipt is one card"),
+            "{}",
+            multi.boot_line()
+        );
+        for name in [
+            "NVIDIA GeForce RTX 5090",
+            "NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition",
+            "NVIDIA RTX PRO 6000 Blackwell Server Edition",
+            "NVIDIA B200",
+            "",
+        ] {
+            for multi_device in [false, true] {
+                let off = MemoryAdmitConfig::for_deployment(name, multi_device);
+                assert!(!off.armed, "{name}");
+                assert_eq!(off.open_output_charge(), None, "{name}");
+                assert_eq!(off.source, "not the receipted card", "{name}");
+            }
+        }
+    }
+
+    /// The boot line states the arm AND its two knobs: a receipt reader must be able to
     /// re-derive the policy from the log alone (the qualification-env law).
     #[test]
-    fn boot_line_states_the_door_and_its_knobs() {
+    fn boot_line_states_the_arm_and_its_knobs() {
         let cfg = MemoryAdmitConfig {
             armed: true,
+            source: "pro6000-ws-receipt",
             open_output_tokens: 8_192,
             defer_budget_ms: 8_000,
         };
         let s = cfg.boot_line();
-        assert!(s.contains("door=ON"), "{s}");
-        assert!(s.contains("open_output_tokens=8192"), "{s}");
-        assert!(s.contains("defer_budget_ms=8000"), "{s}");
+        assert!(
+            s.starts_with("[admit-mem] door=ON open_output_tokens=8192 defer_budget_ms=8000 "),
+            "{s}"
+        );
+        assert!(s.contains("(pro6000-ws-receipt; "), "{s}");
         assert_eq!(cfg.open_output_charge(), Some(8_192));
         let off = MemoryAdmitConfig {
             armed: false,
+            source: "not the receipted card",
             ..cfg
         };
-        assert!(off.boot_line().contains("door=OFF"));
+        assert!(off.boot_line().starts_with("[admit-mem] door=OFF "));
         // OFF hands the caller nothing, so request_ctx_cap keeps today's MEMRA_CTX arm.
         assert_eq!(off.open_output_charge(), None);
     }
