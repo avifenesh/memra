@@ -4963,7 +4963,7 @@ const PREFIX_CACHE_DEFAULT_ENTRIES: usize = 2;
 /// the admission driver-headroom floor and any host KV tier (the same DRAM), and leaves the other
 /// part to sessions. Sessions still win: a failed session allocation evicts the cache. On the
 /// first Spark run (~70 GB free after weights) the half share is ~33 GB, the 32768 MB the run
-/// needed by hand. Discrete cards keep the two-entry rule unchanged.
+/// needed by hand. Discrete cards use the session-peak rule below instead.
 const UNIFIED_PREFIX_CACHE_SHARE_DIV: usize = 2;
 
 /// The unified-memory terms of the derived prefix-cache budget (absent on a discrete card).
@@ -4973,6 +4973,42 @@ struct UnifiedPrefixTerms {
     driver_headroom_bytes: usize,
     /// The host KV tier budget (`MEMRA_KV_HOST_MB`): pinned host bytes come out of the same DRAM.
     host_tier_bytes: usize,
+}
+
+/// DISCRETE-CARD SESSION PEAK (2026-11-07, `research/prefix-budget-20261107/`,
+/// `docs/decisions/PREFIX-CACHE-DISCRETE.md`). On a discrete card the boot free reading is the
+/// card's spare memory after the weights. The two-entry rule ignored it: one RTX PRO 6000 Max-Q
+/// (96 GB) serving Qwen3.8-27B at 32,768 tokens read 86.6 GB free and held 2.26 GB of prefix
+/// entries, so under c8 unique-prompt load a shared entry was evicted before any repeat arrived.
+/// The derived request is now what the scheduler can never need: boot free, less the transient
+/// reserve, the admission driver-headroom floor and the session peak (every lane's
+/// resident-session cap times one served-context session), with the two-entry rule as the floor.
+/// No share is assumed. Where the session peak alone fills the card (the default caps at a long
+/// context, or a 24 GB card) the floor is all the cache asks for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct DiscretePrefixTerms {
+    /// `MEMRA_ADMIT_DRIVER_HEADROOM_MB` in bytes: the floor admission keeps free.
+    driver_headroom_bytes: usize,
+    /// Resident sessions the scheduler admits at once: the interactive cap (`MEMRA_MAX_SESSIONS`,
+    /// 64 when batching) plus the judge and harvest lane caps.
+    sessions: usize,
+    /// One served-context session of the largest loaded model: the spec-path context planes at
+    /// the served context (`AdmissionCostModel::context_bytes`) plus the recurrent state; `0`
+    /// when no model's context resolves (the floor applies).
+    session_bytes: usize,
+}
+
+impl DiscretePrefixTerms {
+    fn session_peak_bytes(&self) -> usize {
+        self.sessions.saturating_mul(self.session_bytes)
+    }
+}
+
+/// The device terms of a derived prefix-cache budget.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PrefixDeviceTerms {
+    Unified(UnifiedPrefixTerms),
+    Discrete(DiscretePrefixTerms),
 }
 
 #[derive(Debug)]
@@ -4991,8 +5027,9 @@ enum PrefixCacheBudget {
         ctx_source: &'static str,
         boot_free_bytes: usize,
         clamp_bytes: usize,
-        /// `Some` on a unified-memory device: the share rule above sized the request.
-        unified: Option<UnifiedPrefixTerms>,
+        /// The unified share or the discrete session-peak terms that sized the request (always
+        /// set by the worker; `None` is the two-entry rule alone).
+        device: Option<PrefixDeviceTerms>,
     },
 }
 
@@ -5100,21 +5137,28 @@ fn prefix_budget_ctx(env_ctx: Option<&str>, model_ctx: usize) -> Result<usize, S
 fn derived_prefix_cache_budget(
     entry_bytes: usize,
     boot_free_bytes: usize,
-    unified: Option<UnifiedPrefixTerms>,
+    device: Option<PrefixDeviceTerms>,
 ) -> (usize, usize, usize) {
     let entries_bytes = entry_bytes.saturating_mul(PREFIX_CACHE_DEFAULT_ENTRIES);
     // Keep the serving transient floor free. Unlike an explicit operator budget, the naked
     // default must not claim the last bytes that prefill/FA workspaces or a new session need.
     let mut clamp_bytes = boot_free_bytes.saturating_sub(SPEC_SHRINK_RESERVE);
-    let requested_bytes = match unified {
+    let requested_bytes = match device {
         None => entries_bytes,
-        Some(terms) => {
+        Some(PrefixDeviceTerms::Unified(terms)) => {
             // The same DRAM also holds the admission headroom floor and the host tier.
             clamp_bytes = clamp_bytes
                 .saturating_sub(terms.driver_headroom_bytes)
                 .saturating_sub(terms.host_tier_bytes);
             entries_bytes.max(clamp_bytes / UNIFIED_PREFIX_CACHE_SHARE_DIV)
         }
+        // No resolvable served context: no session bound is known, so only the floor.
+        Some(PrefixDeviceTerms::Discrete(terms)) if terms.session_bytes == 0 => entries_bytes,
+        Some(PrefixDeviceTerms::Discrete(terms)) => entries_bytes.max(
+            clamp_bytes
+                .saturating_sub(terms.driver_headroom_bytes)
+                .saturating_sub(terms.session_peak_bytes()),
+        ),
     };
     (
         requested_bytes.min(clamp_bytes),
@@ -5191,13 +5235,20 @@ fn init_prefix_cache_budget(
                 );
                 0
             });
-        let unified =
-            memra_engine::unified_memory::is_unified(engine.ctx()).then(|| UnifiedPrefixTerms {
+        let device = Some(if memra_engine::unified_memory::is_unified(engine.ctx()) {
+            PrefixDeviceTerms::Unified(UnifiedPrefixTerms {
                 driver_headroom_bytes: admit_driver_headroom_bytes(),
                 host_tier_bytes: kv_host_budget_bytes(),
-            });
+            })
+        } else {
+            PrefixDeviceTerms::Discrete(DiscretePrefixTerms {
+                driver_headroom_bytes: admit_driver_headroom_bytes(),
+                sessions: resident_session_cap(),
+                session_bytes: served_session_peak_bytes(loaded, env_ctx.as_ref().ok()),
+            })
+        });
         let (bytes, requested_bytes, clamp_bytes) =
-            derived_prefix_cache_budget(entry_bytes, boot_free_bytes, unified);
+            derived_prefix_cache_budget(entry_bytes, boot_free_bytes, device);
         PrefixCacheBudget::Derived {
             bytes,
             requested_bytes,
@@ -5207,9 +5258,45 @@ fn init_prefix_cache_budget(
             ctx_source,
             boot_free_bytes,
             clamp_bytes,
-            unified,
+            device,
         }
     })
+}
+
+/// Resident sessions the scheduler can hold at once (the discrete session peak's count): the
+/// interactive cap the admission gate enforces (`route_contract::hybrid_interactive_cap`) plus the
+/// judge and harvest lane caps (`LanePolicy::max_sessions`).
+fn resident_session_cap() -> usize {
+    let lanes = crate::lanes::LanePolicy::from_env();
+    crate::route_contract::hybrid_interactive_cap()
+        .saturating_add(lanes.max_sessions[crate::lanes::Lane::Judge.idx()])
+        .saturating_add(lanes.max_sessions[crate::lanes::Lane::Harvest.idx()])
+}
+
+/// One served-context session's device state, the largest over the loaded models: the context
+/// planes admission books for a spec session at the served context (`context_bytes`, MTP scratch
+/// included) plus the recurrent state at the endpoint. The fixed residual admission learns at
+/// runtime and a drafter's own plane are not in it (both are small beside a served-context
+/// session). A model whose context does not resolve contributes nothing (its requests refuse for
+/// the same reason).
+fn served_session_peak_bytes(
+    loaded: &HashMap<String, LoadedModel>,
+    env_ctx: Option<&Option<String>>,
+) -> usize {
+    loaded
+        .values()
+        .filter_map(|lm| {
+            let env = env_ctx?;
+            let ctx =
+                prefix_budget_ctx(env.as_deref(), lm.model.cfg.context_length as usize).ok()?;
+            Some(
+                AdmissionCostModel::new(&lm.model, false)
+                    .context_bytes(ctx, true)
+                    .saturating_add(prefix_recurrent_state_bytes(&lm.model.plan)),
+            )
+        })
+        .max()
+        .unwrap_or(0)
 }
 
 /// Resident byte budget for the prefix cache. `MEMRA_PREFIX_CACHE_MB=0` disables it. Before the
@@ -28409,7 +28496,6 @@ pub fn run(
     // F5: learned spec-session sizing (evict-first models + right-sized ctx asks).
     let mut spec_sizing = SpecSizing::default();
     let mut reuse_metrics = ReuseMetrics::default();
-    let prefix_budget = init_prefix_cache_budget(&engine, &loaded);
     // VISION tower (lane/vision): loaded once at spawn from MEMRA_VISION_DIR (a directory
     // carrying the checkpoint's outside.safetensors with model.visual.*). Fail LOUD at boot
     // if configured but unloadable — silently serving text-only would be dishonest.
@@ -28601,6 +28687,9 @@ pub fn run(
         glm5_tower.is_some() && glm5_model_loaded && vision_placement_servable,
         std::sync::atomic::Ordering::Release,
     );
+    // The prefix-cache budget reads boot free memory after every tower has loaded (a step37
+    // tower is ~8 GB), so the derived budget never books bytes a tower already holds.
+    let prefix_budget = init_prefix_cache_budget(&engine, &loaded);
     // Cross-request prefix cache (token-prefix keyed, budget-bound; see the module doc above).
     let mut px = PrefixCache::default();
     // Pinned-host spill tier behind it (lane/kv-host-spill-20260830; default OFF, see
@@ -28822,7 +28911,7 @@ pub fn run(
                 ctx_source,
                 boot_free_bytes,
                 clamp_bytes,
-                unified,
+                device,
             } => (
                 *bytes,
                 format!(
@@ -28836,12 +28925,21 @@ pub fn run(
                     } else {
                         "unset"
                     },
-                    match unified {
-                        Some(terms) => format!(
+                    match device {
+                        Some(PrefixDeviceTerms::Unified(terms)) => format!(
                             ", unified memory: the larger of that and 1/{UNIFIED_PREFIX_CACHE_SHARE_DIV} of \
                              allocatable free after the transient reserve, driver headroom {} B \
                              and host tier {} B",
                             terms.driver_headroom_bytes, terms.host_tier_bytes,
+                        ),
+                        Some(PrefixDeviceTerms::Discrete(terms)) => format!(
+                            ", discrete card: the larger of that and free after the transient \
+                             reserve, driver headroom {} B and a session peak of {} B ({} \
+                             resident sessions x {} B served-context session)",
+                            terms.driver_headroom_bytes,
+                            terms.session_peak_bytes(),
+                            terms.sessions,
+                            terms.session_bytes,
                         ),
                         None => String::new(),
                     },
@@ -46222,6 +46320,11 @@ mod tests {
         DecodeChunkPolicy, resolve_decode_chunk_policy, resolve_pp_wave_chunk_policy,
         schedule_decode_chunk,
     };
+    use super::{
+        DiscretePrefixTerms, PREFIX_CACHE_DEFAULT_ENTRIES, PrefixDeviceTerms,
+        UNIFIED_PREFIX_CACHE_SHARE_DIV, UnifiedPrefixTerms, derived_prefix_cache_budget,
+        prefix_budget_ctx, prefix_entry_geometry_bytes,
+    };
     use super::{DraftVerdict, draft_verdict, draft_verdict_message};
     use super::{
         Event, async_chain_devsample, cached_hit_needs_first_token, carried_prime_batch_eligible,
@@ -46241,10 +46344,6 @@ mod tests {
     };
     use super::{KV_FLEX_GRANT, KvFlex, kv_flex_effective_budget, prefix_cache_budget_bytes};
     use super::{MAX_EVENT_QUEUE_EVENTS, event_channel};
-    use super::{
-        PREFIX_CACHE_DEFAULT_ENTRIES, UNIFIED_PREFIX_CACHE_SHARE_DIV, UnifiedPrefixTerms,
-        derived_prefix_cache_budget, prefix_budget_ctx, prefix_entry_geometry_bytes,
-    };
     use super::{PpFreeSnapshot, concat_prime_pp_eligibility};
     use super::{
         RuntimePeerProbeDeferralState, RuntimePeerProbeWorkerAction, peer_probe_spec_admission,
@@ -46657,7 +46756,8 @@ mod tests {
             host_tier_bytes: 0,
         };
 
-        let (budget, requested, clamp) = derived_prefix_cache_budget(entry, boot_free, Some(terms));
+        let (budget, requested, clamp) =
+            derived_prefix_cache_budget(entry, boot_free, Some(PrefixDeviceTerms::Unified(terms)));
         assert_eq!(clamp, boot_free - SPEC_SHRINK_RESERVE - (2048 << 20));
         assert_eq!(requested, clamp / UNIFIED_PREFIX_CACHE_SHARE_DIV);
         assert_eq!(budget, requested);
@@ -46666,7 +46766,8 @@ mod tests {
         assert_eq!(budget, 34_048usize << 20);
         assert!(budget >= 32_768 << 20);
 
-        // The same reading on a discrete card: two entries, as before.
+        // The same reading with no device terms: two entries, as before (the discrete session
+        // peak has its own test below).
         let (budget, requested, _) = derived_prefix_cache_budget(entry, boot_free, None);
         assert_eq!((budget, requested), (2 * entry, 2 * entry));
 
@@ -46675,20 +46776,76 @@ mod tests {
             host_tier_bytes: 8 << 30,
             ..terms
         };
-        let (budget_host, _, clamp_host) =
-            derived_prefix_cache_budget(entry, boot_free, Some(with_host));
+        let (budget_host, _, clamp_host) = derived_prefix_cache_budget(
+            entry,
+            boot_free,
+            Some(PrefixDeviceTerms::Unified(with_host)),
+        );
         assert_eq!(clamp_host, clamp - (8 << 30));
         assert_eq!(budget_host, clamp_host / UNIFIED_PREFIX_CACHE_SHARE_DIV);
 
         // A tight unified box never goes below the two-entry floor, and never past the clamp.
         let tight_free = SPEC_SHRINK_RESERVE + (2048 << 20) + 3 * entry;
         let (budget, requested, clamp) =
-            derived_prefix_cache_budget(entry, tight_free, Some(terms));
+            derived_prefix_cache_budget(entry, tight_free, Some(PrefixDeviceTerms::Unified(terms)));
         assert_eq!(requested, 2 * entry);
         assert_eq!(clamp, 3 * entry);
         assert_eq!(budget, 2 * entry);
         let tighter_free = SPEC_SHRINK_RESERVE + (2048 << 20) + entry;
-        let (budget, _, clamp) = derived_prefix_cache_budget(entry, tighter_free, Some(terms));
+        let (budget, _, clamp) = derived_prefix_cache_budget(
+            entry,
+            tighter_free,
+            Some(PrefixDeviceTerms::Unified(terms)),
+        );
+        assert_eq!(budget, clamp);
+        assert_eq!(budget, entry);
+    }
+
+    /// Discrete card, the finding's boot line (one RTX PRO 6000 Max-Q, Qwen3.8-27B at 32,768 tokens,
+    /// `MEMRA_MAX_SESSIONS=12`): 86,614,081,536 B boot free held a 2,259,943,424 B cache. The
+    /// session-peak rule leaves 24 served-context sessions (12 interactive + 4 judge + 8 harvest,
+    /// each 31,552 B/token x 32,768 + 156,893,184 B recurrent), the driver headroom and the
+    /// transient reserve, and gives the cache the rest. The same model on the 24 GB RTX 5090 Laptop
+    /// (10,053,877,760 B boot free) and the default caps on the 96 GB card keep the two-entry floor,
+    /// and so does a boot whose served context resolved for no model.
+    #[test]
+    fn discrete_prefix_budget_leaves_the_session_peak_and_keeps_the_two_entry_floor() {
+        let entry = prefix_entry_geometry_bytes(29_696, 156_893_184, 32_768);
+        assert_eq!(entry, 1_129_971_712);
+        let session = 31_552 * 32_768 + 156_893_184;
+        let terms = |sessions, session_bytes| {
+            Some(PrefixDeviceTerms::Discrete(DiscretePrefixTerms {
+                driver_headroom_bytes: 2048 << 20,
+                sessions,
+                session_bytes,
+            }))
+        };
+        let pro_free = 86_614_081_536;
+        let (budget, requested, clamp) =
+            derived_prefix_cache_budget(entry, pro_free, terms(24, session));
+        assert_eq!(clamp, 85_003_468_800);
+        assert_eq!(requested, clamp - (2048 << 20) - 24 * session);
+        assert_eq!(budget, 54_277_046_272);
+        assert!(budget > 24 * 2 * entry);
+
+        // The default caps (64 interactive + 12 dark-lane) at 32,768 tokens fill the card.
+        let (budget, requested, _) =
+            derived_prefix_cache_budget(entry, pro_free, terms(76, session));
+        assert_eq!((budget, requested), (2 * entry, 2 * entry));
+
+        // The 24 GB RTX 5090 Laptop, same model and caps: the session peak exceeds the card.
+        let (budget, _, clamp) =
+            derived_prefix_cache_budget(entry, 10_053_877_760, terms(24, session));
+        assert_eq!(clamp, 8_443_265_024);
+        assert_eq!(budget, 2 * entry);
+
+        // No served context resolved: no session bound, only the floor (never the whole card).
+        let (budget, requested, _) = derived_prefix_cache_budget(entry, pro_free, terms(24, 0));
+        assert_eq!((budget, requested), (2 * entry, 2 * entry));
+
+        // A tight card never goes past the clamp.
+        let tight = SPEC_SHRINK_RESERVE + entry;
+        let (budget, _, clamp) = derived_prefix_cache_budget(entry, tight, terms(1, session));
         assert_eq!(budget, clamp);
         assert_eq!(budget, entry);
     }

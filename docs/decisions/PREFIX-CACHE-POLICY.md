@@ -1,5 +1,10 @@
 # Prefix-cache eviction policy: plain LRU, the segmented arm deleted (2026-09-21)
 
+> **Re-tested 2026-11-07, unchanged:** a GreedyDual-Size value-per-byte order tied plain LRU on this record's own
+> incident replay (10/10 pairs at 29,600 computed tokens) and won a mixed one-off-seed shape, but lost the agentic c1
+> cell's shared 256-token head on the RTX 5090, so plain LRU stays the only order
+> ([PREFIX-CACHE-DISCRETE.md](PREFIX-CACHE-DISCRETE.md)).
+
 **Status:** decided on the target card (one RTX PRO 6000 Blackwell, 600 W); landed as the naked
 default with the `MEMRA_PREFIX_CACHE_POLICY` and `MEMRA_PREFIX_CACHE_PROTECTED_PCT` doors removed
 (memra#523 item 2, lane `research/spill-b-20260919/DAY15.md`). The local RTX 5090 run of the same
