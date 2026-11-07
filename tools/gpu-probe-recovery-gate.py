@@ -15,7 +15,11 @@ Fault injection: a fake `nvidia-smi` first on `PATH`. It answers the canary's ow
 per-boot script (`ok`, `hang` = sleep past the deadline, `ecc` = uncorrected ECC 5) and passes
 every other invocation to the real tool. The real `memra-server` boots the 9B on the plain route
 with `MEMRA_GPU_WATCH_S=2 MEMRA_GPU_PROBE_TIMEOUT_S=2 MEMRA_GPU_PROBE_MISSES=3`; the gate polls
-`/health` every 250 ms and records the sequence it saw.
+`/health` every 250 ms and records the sequence it saw. The script is armed only once the boot is
+ready: until then every canary probe answers `ok`, and the script's first step is the first probe
+after arming. The canary probes from `Engine ready` on, so a script written before the boot ran
+its hangs inside the boot's own calibration whenever that took longer than the script (24 s of
+wave probe on the 9B), and every arm then read its outcome at t=0 or never.
 Arms, each its own boot:
   A recover:  script ok, hang, hang, ok...   -> 200 with degraded=true streak 1 then 2, then
               degraded=false streak 0 with a fresh last_ok_age_ms; latched_reason null throughout.
@@ -55,7 +59,9 @@ DIR="$(cd "$(dirname "$0")" && pwd)"
 case "$*" in
   *ecc.errors*|*memory.used*)
     n=$(cat "$DIR/calls" 2>/dev/null || echo 0); echo $((n+1)) > "$DIR/calls"
-    step=$(sed -n "$((n+1))p" "$DIR/script"); [ -z "$step" ] && step=ok
+    base=$(cat "$DIR/base" 2>/dev/null || echo 0)
+    step=""; [ -f "$DIR/armed" ] && [ $((n+1-base)) -ge 1 ] && step=$(sed -n "$((n+1-base))p" "$DIR/script")
+    [ -z "$step" ] && step=ok
     echo "$(date +%T) call=$((n+1)) step=$step" >> "$DIR/trace"
     case "$step" in
       hang) sleep 30; exit 0 ;;
@@ -115,7 +121,7 @@ class Boot:
             refuse("no real nvidia-smi on PATH (the fake passes non-canary calls to it)")
         (fake / "real").write_text(real)
         (fake / "script").write_text("\n".join(script) + "\n")
-        (fake / "calls").write_text("0")
+        (fake / "calls").write_text("0")  # the script stays unarmed (every probe ok) until arm()
         smi = fake / "nvidia-smi"
         smi.write_text(FAKE_SMI)
         smi.chmod(smi.stat().st_mode | stat.S_IEXEC)
@@ -150,6 +156,15 @@ class Boot:
             time.sleep(0.5)
         self.stop()
         refuse(f"{self.name}: memra-server did not become ready in 600 s")
+
+    def arm(self) -> None:
+        # After readiness: step 1 is the first canary probe from here. `base` first, then `armed`,
+        # so a probe in flight reads either the unarmed `ok` or a step counted from this base.
+        calls = int((self.fake / "calls").read_text().strip() or 0)
+        (self.fake / "base").write_text(str(calls))
+        (self.fake / "armed").write_text("1")
+        with open(self.fake / "trace", "a") as t:
+            t.write(f"{time.strftime('%T')} armed after call={calls}\n")
 
     def observe(self, seconds: float) -> list[dict]:
         seen = []
@@ -189,6 +204,7 @@ def run_arm(a, name, script, seconds) -> list[dict]:
     b = Boot(a, name, script)
     b.boot()
     try:
+        b.arm()
         seen = b.observe(seconds)
     finally:
         b.stop()
