@@ -7287,13 +7287,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // so O must match BIT-FOR-BIT (this is the chunk-prime token-identity contract). Cases
         // cover a continuation chunk (T < T_kv, the chunk-prime shape) and a BK-unaligned tail.
         // The t >= 128 cells reach the selectable workspace twins (MEMRA_PRIME_KV_T3 /
-        // MEMRA_PRIME_KV_H2), so a kernel-check run with either door set byte-checks that twin.
+        // MEMRA_PRIME_KV_H2 / MEMRA_PRIME_KV_H2P), so a kernel-check run with a door set
+        // byte-checks that twin; on GB10 the defaults reach h2p. The 4096 x 36864 cell runs the
+        // h2p ring through hundreds of stage reuses at a 64-row-aligned chunk-prime shape.
         for (t, tkv) in [
             (64usize, 192usize),
             (100, 100),
             (37, 297),
             (192, 4097),
             (1024, 8224),
+            (4096, 36864),
         ] {
             let q: Vec<f32> = (0..hd * nh * t).map(|i| pr(i + 5) * 0.2).collect();
             let k: Vec<f32> = (0..hd * nhkv * tkv).map(|i| pr(i + 7) * 0.2).collect();
