@@ -94,22 +94,6 @@ pub fn st_e4m3_blk_enabled() -> bool {
     st_e4m3_enabled()
 }
 
-/// A block-128 tensor that PASSED every shape precondition for native residency but carried e4m3
-/// NaN codes, so it fell through to the Q8_0 floor. Counted because "0 tensors resident as
-/// F8_E4M3_BLK" is otherwise ambiguous between "not a block-128 checkpoint", "env off", and "the
-/// bytes were ineligible" — three facts demanding three different responses.
-static BLK_NATIVE_NAN_REFUSED: std::sync::atomic::AtomicUsize =
-    std::sync::atomic::AtomicUsize::new(0);
-
-pub fn note_blk_native_nan_refused() {
-    BLK_NATIVE_NAN_REFUSED.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-}
-
-/// Tensors declined by the native block-128 arm's NaN precondition this process.
-pub fn blk_native_nan_refused() -> usize {
-    BLK_NATIVE_NAN_REFUSED.load(std::sync::atomic::Ordering::Relaxed)
-}
-
 /// Resident scratch for the FP8 prefill GEMM (mirrors `CutlassScratch`): the quantized activation
 /// (grown to the largest m*k seen), the 4-float scale block ([0]=amax, [1]=quant mul, [2]=folded
 /// B_SCALE — the GEMM desc holds a POINTER to slot 2, so the buffer must be resident/stable), and

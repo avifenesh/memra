@@ -1,4 +1,8 @@
-//! Fixed, portable pinned storage. Only startup/shutdown allocate/free CUDA host memory.
+//! Pinned host storage in two forms. [`PinnedHostArena`] is one fixed, portable
+//! (`CU_MEMHOSTALLOC_PORTABLE`) reservation made before readiness and freed at shutdown; its
+//! leases never allocate. [`PinnedHostBuf`] is either a lease from such an arena or an owned
+//! buffer from `PinnedHostBuf::new` / `new_unwritten`, which allocate non-portable pinned memory
+//! (flags 0) when called, including mid-serve (staging on demotion, per-load buffers).
 use cudarc::driver::{CudaContext, CudaSlice, CudaStream, DevicePtr, DevicePtrMut, DeviceRepr};
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};

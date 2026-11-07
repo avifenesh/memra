@@ -627,10 +627,10 @@ impl HybridModel {
             crate::hybrid::Ffn::Moe(m) => {
                 let mut x1 = e.uninit(n_embd)?;
                 let mut z = e.uninit(n_embd)?;
-                // z-quantize fuse (add_rms_norm_zq8) measured NEGATIVE here (158.8 vs 160.6:
-                // the fused warp-per-block quantize pass re-reads z slower than the dedicated
-                // coalesced quantize_q8_1). Kernel + threading kept for graph-capture use where
-                // launch count matters more; eager default = unfused (no gain = no change).
+                // z-quantize fuse (an add_rms_norm_zq8 kernel) measured NEGATIVE here (158.8 vs
+                // 160.6: the fused warp-per-block quantize pass re-reads z slower than the
+                // dedicated coalesced quantize_q8_1). No path ever called it and it is deleted;
+                // the norm and quantize stay two launches.
                 // O-PROJ TAIL FUSION M2: when the direct join deferred its add, compose
                 // mixed = a0+a1 in-register inside the norm (verbatim program).
                 if let Some((a0, a1)) = crate::tp::take_oproj_tail() {
@@ -818,18 +818,6 @@ impl HybridModel {
         let pos_d = e.htod_i32(&[pos as i32])?;
         // O-PROJ TAIL deferral eligibility: this walk flows into residual_norm_ffn.
         let _oproj_tail_scope = crate::tp::oproj_tail_scope();
-        // RANK0 STREAM MERGE (MEMRA_RANK0_MERGE=1): rank0 shares dev0's PRIMARY context
-        // with e (cudarc primary_ctx::retain), so its per-layer work can ride e's stream —
-        // every e<->rank0 event hop becomes program order. Scheduling-only: BIT-IDENTICAL.
-        let _r0merge = if crate::tp::rank0_merge_on() && self.uses_sliding_gated_moe_program() {
-            Some(memra_runtime::rank0_redirect_scope(
-                e.ctx().ordinal(),
-                e.gpu.main_stream().clone(),
-                e.gpu.blas(),
-            ))
-        } else {
-            None
-        };
 
         // embed the single token -> [1, n_embd]
         let mut x = e.htod(&self.embd.try_gather(n_embd, &[token])?)?;
@@ -1115,16 +1103,6 @@ impl HybridModel {
 
         // O-PROJ TAIL deferral eligibility (see decode_step_h).
         let _oproj_tail_scope = crate::tp::oproj_tail_scope();
-        // RANK0 STREAM MERGE (see decode_step_h).
-        let _r0merge = if crate::tp::rank0_merge_on() {
-            Some(memra_runtime::rank0_redirect_scope(
-                e.ctx().ordinal(),
-                e.gpu.main_stream().clone(),
-                e.gpu.blas(),
-            ))
-        } else {
-            None
-        };
         // Per-token pos buffers staged BEFORE the chain (the only H2D the chain needs).
         let mut pos_bufs = Vec::with_capacity(k);
         for step in 0..k {

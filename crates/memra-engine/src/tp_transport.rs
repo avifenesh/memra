@@ -110,7 +110,8 @@ pub enum TpTransport {
     /// The difference from `peer-pull` is direction, and it is the whole point. A pull is a
     /// consumer-side read, so the reading rank cannot start until the producing rank has
     /// finished: at ~90 joins per token that keeps the two cards single-file, which is why
-    /// peer-pull measured WORSE than the host bounce rather than better. A push is issued on
+    /// removing every host leg bought peer-pull only +16% over the host bounce on the 2x B200
+    /// pair (16.48 -> 19.11 tok/s) and left TP-2 about 3x slower than PP-2. A push is issued on
     /// the producer's own stream, so each rank hands its bytes over and carries on, and the
     /// consumer's stream is ordered after by the same publication event. Movement only: every
     /// hop this transport serves is a fan-out, a gather or a concat, so the arm is
@@ -332,7 +333,8 @@ fn charge_local_copy() {
 /// repetitions of the same greedy walk diverged — because every per-slot expert row is a
 /// fresh stream-ordered allocation on the peer whose async free was enqueued on the PEER
 /// stream while the ROOT stream's pull was still reading it. The step seam banks the same
-/// hazard as a keepalive comment (`tp.rs:7831-7834`). And note the more valuable half of
+/// hazard as a keepalive comment (`remote_down_keepalive` in `tp.rs`
+/// `run_routed_experts_native_device`). And note the more valuable half of
 /// that gate run: arm X2 (peer-pull composed with the EP dispatch diet) PASSED EVERY BAR on
 /// the same broken build — a VACUOUS GREEN; the undieted arm is the one that can see it,
 /// which is why both arms are gated and why the sequential walk is not retired.
@@ -392,12 +394,13 @@ impl<'a> Hop<'a> {
     /// THE DESIGN DELTA vs the step seam, stated because it is the whole point of this lane.
     /// `tp.rs`'s native-P2P pull sites fence the producer with a host
     /// `engine.stream().synchronize()` — see the "PRODUCER FENCE (2026-08-20 flake fix)"
-    /// comments at `tp.rs:3543` and `tp.rs:2636`. That is correct and it is also a full
-    /// stream drain, i.e. it keeps the exact cost class this lane exists to delete: a
-    /// native-P2P arm built that way still pays one host sync per hop and would read as
-    /// "native P2P did not help". This link instead uses the `pp.rs` `BoundarySlot` ordering
-    /// contract (`ev_tx.record(s_tx)` then `s_rx.wait(&ev_tx)`, `pp.rs:2647`/`pp.rs:2678`),
-    /// which the hy3 PP-4 qualification closed at 50/50 fresh processes and 200/200 runtime
+    /// comments in `tp.rs` (`bf16_column_parallel_resident_device_shards`,
+    /// `gather_native_column_shards_device` and the other sites that carry that tag). That is
+    /// correct and it is also a full stream drain, i.e. it keeps the exact cost class this lane
+    /// exists to delete: a native-P2P arm built that way still pays one host sync per hop and
+    /// would read as "native P2P did not help". This link instead uses the `pp.rs`
+    /// `BoundarySlot` ordering contract (`ev_tx.record(s_tx)` then `s_rx.wait(&ev_tx)`, in
+    /// `tx_slot_path` / `rx_slot_path`), which the hy3 PP-4 qualification closed at 50/50 fresh processes and 200/200 runtime
     /// probes with zero byte mismatch on this exact card class — and which the tp2 lane
     /// already cherry-picked onto this line (`tp2-20260831/LANE.md` stage 1). So: PULL
     /// direction from `tp.rs`, EVENT ordering from `pp.rs`, host syncs from neither.
@@ -738,50 +741,6 @@ pub fn fanout_i32(
         }
     }
     Ok(out)
-}
-
-/// MOVE one rank's i32 buffer to one other rank (any ordered pair): the indexer split's
-/// exchange of `idx` rows (lane/glm5-tp-indexer-split-20260907). The three arms mirror
-/// [`fanout_i32`] byte for byte; the consumer's stream is ordered after the bytes landed.
-pub fn move_i32(
-    hop: &Hop<'_>,
-    from: usize,
-    src: &CudaSlice<i32>,
-    to: usize,
-    n: usize,
-) -> Result<CudaSlice<i32>, Box<dyn std::error::Error>> {
-    if from == to || from >= hop.ranks() || to >= hop.ranks() {
-        return Err("glm5-tp move (i32): ranks must be two distinct members of the group".into());
-    }
-    let bytes = n * std::mem::size_of::<i32>();
-    match hop.transport {
-        TpTransport::HostCanonical => {
-            let host = hop.engine(from).dtoh_i32(src)?;
-            charge_host_leg(bytes, true);
-            let out = hop.engine(to).htod_i32(&host[..n])?;
-            charge_host_leg(bytes, false);
-            Ok(out)
-        }
-        TpTransport::PeerPull => {
-            let mut buf = hop.engine(to).uninit_i32(n)?;
-            hop.publish(from, to)?;
-            {
-                let consumer = hop.engine(to);
-                let _main = consumer.gpu.enter_main()?;
-                let mut view = buf.slice_mut(0..n);
-                consumer.stream().memcpy_dtod(&src.slice(0..n), &mut view)?;
-            }
-            hop.release(from, to)?;
-            charge_peer_pull(bytes);
-            Ok(buf)
-        }
-        TpTransport::DevicePush => {
-            let mut buf = hop.engine(to).uninit_i32(n)?;
-            hop.push_2d_i32(from, src, to, &mut buf, n)?;
-            hop.publish(from, to)?;
-            Ok(buf)
-        }
-    }
 }
 
 /// GATHER: reconstruct the FULL token-major `[t, ranks * part]` tensor on EVERY rank from

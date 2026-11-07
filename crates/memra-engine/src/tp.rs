@@ -35,23 +35,6 @@ fn validate_step_expert_activation_limit(limit: Option<f32>) -> Result<(), Strin
     Ok(())
 }
 
-/// Host-canonical Step routed-expert SwiGLU operation.
-///
-/// Step's final routed layers clamp the linear arm symmetrically and the SiLU arm only above.
-/// Keeping this scalar order explicit also defines the device-host-exact CUDA gate.
-/// Raw stream-ordered device copy for capture-safe cross-context seams (cudarc's slice-use
-/// tracking creates capture-illegal dependencies there). Pointers must be pre-cached with
-/// their owners' streams; bytes flow identically to the tracked copy.
-/// MEMRA_OPROJ_DIRECT=1 (o-proj direct join, default OFF until gated): peer ranks write
-/// their fused O partial OVER P2P into a root-resident buffer (UVA kernel stores), and the
-/// model engine adds the two partials itself — the root stream leaves the join entirely
-/// (no peer pull copy, no root add, no second event hop, no final 16KB ownership copy).
-/// Reduction order and kernel programs are unchanged, so the row is BIT-IDENTICAL.
-/// MEMRA_MOE_DIRECT=1 (moe direct join, default OFF until gated): the o-proj direct-join
-/// recipe on the expert combine — peer ranks' accumulators live root-side (the axpy twin
-/// register-accumulates and stores ONCE, so the P2P cost is a single 16KB store pass), and
-/// the model engine adds the two shard rows itself. Operand order matches root's add:
-/// BIT-IDENTICAL.
 /// MEMRA_ROUTES_PRESTAGE=1 (default OFF until gated): stage the shared layer input to
 /// every rank and quantize it BEFORE the router runs — neither depends on the selection,
 /// so the rank streams' pull+quantize overlaps dev0's router gemv+topk instead of chaining
@@ -62,18 +45,6 @@ pub(crate) fn routes_prestage_on() -> bool {
     *ON.get_or_init(|| std::env::var("MEMRA_ROUTES_PRESTAGE").as_deref() == Ok("1"))
 }
 
-/// MEMRA_FENCE_MEMOPS=1 (default OFF until gated): the moe direct join's two event
-/// fences become cuStreamWriteValue32/cuStreamWaitValue32 doorbells — hardware stream
-/// memops with lower signal->wake latency than cross-device cuStreamWaitEvent. Ordering:
-/// PCIe posted writes from one device arrive in order, so rank1's accumulator stores are
-/// visible before its flag write lands; e's GEQ wait then covers them. Falls back to
-/// events when the device rejects stream memops. Scheduling-only: BIT-IDENTICAL values.
-/// MEMRA_LEN_MIRROR_LAZY=1 (default OFF until gated): skip redundant per-layer 4B len
-/// htods — the local device mirror is unread in TP decode, and under FUSE_ROPE_APPEND the
-/// fused append's atomicInc owns the rank counters. Every one of those tiny copies is a
-/// compute->copy engine turnaround in the middle of the layer stream.
-/// MEMRA_RANK0_MERGE=1 (default OFF until gated): same-device rank0 rides e's stream via
-/// the runtime redirect — see decode_step_h.
 /// MEMRA_OPROJ_TAIL=1 (default OFF until gated): the o-proj direct-join add is DEFERRED —
 /// the finish arm keeps its waits, stores the two partial pointers here, and the residual
 /// add_rms_norm consumer composes mixed = a0+a1 in-register (join_add_rms_norm, verbatim
@@ -159,50 +130,25 @@ pub(crate) fn set_oproj_tail(v: (u64, u64)) {
     OPROJ_TAIL_PENDING.with(|c| c.set(Some(v)));
 }
 
-pub(crate) fn rank0_merge_on() -> bool {
-    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| std::env::var("MEMRA_RANK0_MERGE").as_deref() == Ok("1"))
-}
-
+/// MEMRA_LEN_MIRROR_LAZY=1 (default OFF until gated): skip redundant per-layer 4B len
+/// htods — the local device mirror is unread in TP decode, and under FUSE_ROPE_APPEND the
+/// fused append's atomicInc owns the rank counters. Every one of those tiny copies is a
+/// compute->copy engine turnaround in the middle of the layer stream.
 pub(crate) fn len_mirror_lazy_on() -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *ON.get_or_init(|| std::env::var("MEMRA_LEN_MIRROR_LAZY").as_deref() == Ok("1"))
 }
 
-pub(crate) fn fence_memops_on() -> bool {
-    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| std::env::var("MEMRA_FENCE_MEMOPS").as_deref() == Ok("1"))
-}
-
+/// MEMRA_MOE_DIRECT=1 (moe direct join, default OFF until gated): the o-proj direct-join
+/// recipe on the expert combine — peer ranks' accumulators live root-side (the axpy twin
+/// register-accumulates and stores ONCE, so the P2P cost is a single 16KB store pass), and
+/// the model engine adds the two shard rows itself. Operand order matches root's add:
+/// BIT-IDENTICAL.
 pub(crate) fn moe_direct_on() -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *ON.get_or_init(|| std::env::var("MEMRA_MOE_DIRECT").as_deref() == Ok("1"))
 }
 
-/// MEMRA_SEL_MIRROR=1: the per-rank routed-selection pull runs as ONE `moe_sel_w_mirror`
-/// launch instead of two 32-byte D2D copies, and when every consuming rank shares e's device
-/// the intermediate e-context staging pair is skipped entirely (the caller's sel/route_w rows
-/// are process-persistent, so the ranks read them directly). Bit-identical: same bytes, one
-/// fewer hop. Refused under the graph door, whose captured copies need the fixed staging
-/// addresses. Default OFF until receipted.
-/// MEMRA_SPEC_FA2=1 (the DSpark verify lesson): the verify walk defers each column's
-/// ATTENTION CORE — the dcw arm appends the column's K/V and stashes its post-rope q and
-/// gate rows, then ONE fa_decode_vec_q_v3_dcw_rows per rank attends every stashed row
-/// (each row runs its own t=1 dcw program, bit-identical per row), the per-row combine
-/// writes the gated rows, and the o_proj join runs on the TCOL slabs.
-/// ROW-TABLE RESTAGE (`MEMRA_ROWS_TAB_RESTAGE`, DEFAULT ON since this lane).
-///
-/// ON: `decode_v2_rope_fa_rows` builds the 6-word-per-row pointer table from the caller's
-/// freshly-read live cache pointers and stages it into a persistent per-rank slab before
-/// every launch. OFF (`=0`): the retired process-lifetime `rows_tabs` memo, keyed by a hash
-/// of (k pointer, base pointer, layer, t) that could not see the V or LEN pointers the
-/// entry also carried, and that nothing invalidated when a session's KV cache was dropped.
-///
-/// Default ON because the OFF arm is a proven use-after-free, not a slower correct path:
-/// on step37-flash with MEMRA_FUSE_ROPE_APPEND=1 it made speculative decoding unservable
-/// (whole non-finite verify rows, then CUDA_ERROR_ILLEGAL_ADDRESS). ON is value-neutral on
-/// every fresh lookup by construction: identical bytes reach the same kernels. Rollback
-/// seam: `MEMRA_ROWS_TAB_RESTAGE=0`.
 /// The 6-word-per-row launch table `{k, v, len, base, ctr, back}` the fused rope/append/fa
 /// kernels dereference. Pure so it can be tested: the words come from the caller's live
 /// per-row `[k, v, len, base]` pointers, `ctr` is this rank's counter slab (one shared cell
@@ -248,6 +194,19 @@ pub(crate) fn retired_rows_tab_key(kp: u64, bp: u64, il: usize, t: usize) -> u64
         .wrapping_add(1 << 63)
 }
 
+/// ROW-TABLE RESTAGE (`MEMRA_ROWS_TAB_RESTAGE`, DEFAULT ON since this lane).
+///
+/// ON: `decode_v2_rope_fa_rows` builds the 6-word-per-row pointer table from the caller's
+/// freshly-read live cache pointers and stages it into a persistent per-rank slab before
+/// every launch. OFF (`=0`): the retired process-lifetime `rows_tabs` memo, keyed by a hash
+/// of (k pointer, base pointer, layer, t) that could not see the V or LEN pointers the
+/// entry also carried, and that nothing invalidated when a session's KV cache was dropped.
+///
+/// Default ON because the OFF arm is a proven use-after-free, not a slower correct path:
+/// on step37-flash with MEMRA_FUSE_ROPE_APPEND=1 it made speculative decoding unservable
+/// (whole non-finite verify rows, then CUDA_ERROR_ILLEGAL_ADDRESS). ON is value-neutral on
+/// every fresh lookup by construction: identical bytes reach the same kernels. Rollback
+/// seam: `MEMRA_ROWS_TAB_RESTAGE=0`.
 pub(crate) fn rows_tab_restage_on() -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *ON.get_or_init(|| std::env::var("MEMRA_ROWS_TAB_RESTAGE").as_deref() != Ok("0"))
@@ -271,6 +230,12 @@ pub(crate) static ROWS_TAB_ENGAGED: std::sync::atomic::AtomicU64 =
 pub(crate) static ROWS_TAB_STALE: std::sync::atomic::AtomicU64 =
     std::sync::atomic::AtomicU64::new(0);
 
+/// MEMRA_SPEC_FA2 (the DSpark verify lesson; unset = the step37 family default, `=1` forces,
+/// `=0` kills): the verify walk defers each column's
+/// ATTENTION CORE — the dcw arm appends the column's K/V and stashes its post-rope q and
+/// gate rows, then ONE fa_decode_vec_q_v3_dcw_rows per rank attends every stashed row
+/// (each row runs its own t=1 dcw program, bit-identical per row), the per-row combine
+/// writes the gated rows, and the o_proj join runs on the TCOL slabs.
 pub(crate) fn spec_fa2_on() -> bool {
     static ENV: std::sync::OnceLock<Option<bool>> = std::sync::OnceLock::new();
     crate::step37_door(&ENV, "MEMRA_SPEC_FA2")
@@ -294,11 +259,22 @@ pub(crate) fn take_spec_fa2_stashed() -> bool {
     SPEC_FA2_STASHED.with(|x| x.replace(false))
 }
 
+/// MEMRA_SEL_MIRROR=1: the per-rank routed-selection pull runs as ONE `moe_sel_w_mirror`
+/// launch instead of two 32-byte D2D copies, and when every consuming rank shares e's device
+/// the intermediate e-context staging pair is skipped entirely (the caller's sel/route_w rows
+/// are process-persistent, so the ranks read them directly). Bit-identical: same bytes, one
+/// fewer hop. Refused under the graph door, whose captured copies need the fixed staging
+/// addresses. Default OFF until receipted.
 pub(crate) fn sel_mirror_on() -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *ON.get_or_init(|| std::env::var("MEMRA_SEL_MIRROR").as_deref() == Ok("1"))
 }
 
+/// MEMRA_OPROJ_DIRECT=1 (o-proj direct join, default OFF until gated): peer ranks write
+/// their fused O partial OVER P2P into a root-resident buffer (UVA kernel stores), and the
+/// model engine adds the two partials itself — the root stream leaves the join entirely
+/// (no peer pull copy, no root add, no second event hop, no final 16KB ownership copy).
+/// Reduction order and kernel programs are unchanged, so the row is BIT-IDENTICAL.
 pub(crate) fn oproj_direct_on() -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *ON.get_or_init(|| std::env::var("MEMRA_OPROJ_DIRECT").as_deref() == Ok("1"))
@@ -428,6 +404,9 @@ pub(crate) fn sel_down8_source() -> (bool, &'static str) {
     *ON.get_or_init(|| door_default_on("MEMRA_NVFP4_SEL_DOWN8"))
 }
 
+/// Raw stream-ordered device copy for capture-safe cross-context seams (cudarc's slice-use
+/// tracking creates capture-illegal dependencies there). Pointers must be pre-cached with
+/// their owners' streams; bytes flow identically to the tracked copy.
 pub(crate) fn raw_copy_bytes(
     dst: u64,
     src: u64,
@@ -458,6 +437,10 @@ pub(crate) fn raw_copy_bytes(
     }
 }
 
+/// Host-canonical Step routed-expert SwiGLU operation.
+///
+/// Step's final routed layers clamp the linear arm symmetrically and the SiLU arm only above.
+/// Keeping this scalar order explicit also defines the device-host-exact CUDA gate.
 pub fn step_expert_activation_host(gate: f32, up: f32, limit: Option<f32>) -> f32 {
     let silu = gate / (1.0 + (-gate).exp());
     match limit {
@@ -1223,6 +1206,7 @@ impl E4m3ExpertBank<'_> {
         Ok(())
     }
 
+    #[cfg(test)]
     pub fn expert(&self, expert: usize) -> Result<E4m3BlockMatrix<'_>, String> {
         if expert >= self.expert_count {
             return Err(format!("expert {expert} outside 0..{}", self.expert_count));
@@ -1325,12 +1309,6 @@ pub struct ResidentBf16ColumnParallel {
     out_features: usize,
     in_features: usize,
     canonical_chunk_rows: Option<usize>,
-}
-
-pub struct ResidentBf16RowParallel {
-    ranks: Vec<ResidentBf16Rank>,
-    out_features: usize,
-    in_features: usize,
 }
 
 pub struct ResidentStepBf16RowParallel {
@@ -1638,14 +1616,6 @@ pub struct PreparedPeerWeightedRouteCombine {
 }
 
 impl PreparedPeerWeightedRouteCombine {
-    pub fn tokens(&self) -> usize {
-        self.tokens
-    }
-
-    pub fn pairs(&self) -> usize {
-        self.pairs
-    }
-
     pub fn owner_pair_counts(&self) -> Vec<usize> {
         self.owners.iter().map(|owner| owner.active_pairs).collect()
     }
@@ -3054,13 +3024,6 @@ impl TpE4m3HostBounce {
         })
     }
 
-    pub fn upload_bf16_column_parallel(
-        &self,
-        matrix: Bf16Matrix<'_>,
-    ) -> Result<ResidentBf16ColumnParallel, Box<dyn std::error::Error>> {
-        self.upload_bf16_column_parallel_inner(matrix, None, false)
-    }
-
     /// Step-3.7 column projection with one numerical program across TP1/TP2/TP4/TP8.
     pub fn upload_step_bf16_column_parallel(
         &self,
@@ -3830,66 +3793,6 @@ impl TpE4m3HostBounce {
             outputs.push(engine.dtoh(&rows.ranks[rank])?);
         }
         Ok(outputs)
-    }
-
-    #[allow(clippy::manual_is_multiple_of)] // allow: divisor is runtime-derived; the modulo form keeps a zero divisor loud (a panic), where is_multiple_of would return false silently
-    pub fn upload_bf16_row_parallel(
-        &self,
-        matrix: Bf16Matrix<'_>,
-    ) -> Result<ResidentBf16RowParallel, Box<dyn std::error::Error>> {
-        matrix.validate()?;
-        let tp = self.ranks.len();
-        if matrix.in_features % tp != 0 {
-            return Err(format!(
-                "BF16 row-parallel in_features {} is not divisible by TP={tp}",
-                matrix.in_features
-            )
-            .into());
-        }
-        let mut ranks = Vec::with_capacity(tp);
-        for (rank, engine) in self.ranks.iter().enumerate() {
-            let shard = bf16_row_shard(matrix, tp, rank)?;
-            ranks.push(upload_bf16_rank(
-                engine,
-                Bf16Matrix {
-                    bytes: &shard,
-                    out_features: matrix.out_features,
-                    in_features: matrix.in_features / tp,
-                },
-                false,
-            )?);
-        }
-        Ok(ResidentBf16RowParallel {
-            ranks,
-            out_features: matrix.out_features,
-            in_features: matrix.in_features,
-        })
-    }
-
-    pub fn bf16_row_parallel_resident(
-        &self,
-        matrix: &ResidentBf16RowParallel,
-        activations: &[f32],
-        tokens: usize,
-    ) -> Result<RowParallelResult, Box<dyn std::error::Error>> {
-        validate_resident_bf16_ranks(&self.ranks, &matrix.ranks)?;
-        validate_activations(activations, tokens, matrix.in_features)?;
-        let tp = self.ranks.len();
-        let mut reduced = vec![0.0f32; tokens * matrix.out_features];
-        let mut rank_partials = Vec::with_capacity(tp);
-        for (rank, (engine, shard)) in self.ranks.iter().zip(&matrix.ranks).enumerate() {
-            let local_activations =
-                activation_shard(activations, tokens, matrix.in_features, tp, rank);
-            let partial = run_resident_bf16_rank(engine, shard, &local_activations, tokens, None)?;
-            for (sum, value) in reduced.iter_mut().zip(&partial) {
-                *sum += value;
-            }
-            rank_partials.push(partial);
-        }
-        Ok(RowParallelResult {
-            reduced,
-            rank_partials,
-        })
     }
 
     /// Step-3.7 row projection split into the same eight global K blocks for TP1/TP2/TP4/TP8.
@@ -9132,24 +9035,6 @@ fn bf16_column_shard(
     })
 }
 
-#[allow(clippy::manual_is_multiple_of)] // allow: divisor is runtime-derived; the modulo form keeps a zero divisor loud (a panic), where is_multiple_of would return false silently
-fn bf16_row_shard(matrix: Bf16Matrix<'_>, tp: usize, rank: usize) -> Result<Vec<u8>, String> {
-    matrix.validate()?;
-    if tp == 0 || rank >= tp || matrix.in_features % tp != 0 {
-        return Err(format!(
-            "invalid BF16 row shard in={} TP={tp} rank={rank}",
-            matrix.in_features
-        ));
-    }
-    let local_in = matrix.in_features / tp;
-    let mut bytes = Vec::with_capacity(matrix.out_features * local_in * 2);
-    for row in 0..matrix.out_features {
-        let start = (row * matrix.in_features + rank * local_in) * 2;
-        bytes.extend_from_slice(&matrix.bytes[start..start + local_in * 2]);
-    }
-    Ok(bytes)
-}
-
 fn bf16_row_block(
     matrix: Bf16Matrix<'_>,
     col_start: usize,
@@ -9928,10 +9813,6 @@ impl Nvfp4DeviceRoutesWorkspace {
     pub(crate) fn in_stage_mut(&mut self) -> Option<&mut crate::CudaSlice<f32>> {
         self.in_stage_e.as_mut()
     }
-    #[allow(dead_code)] // allow: accessor twin of in_stage_mut; kept for the workspace API symmetry
-    pub(crate) fn out_stage_mut(&mut self) -> Option<&mut crate::CudaSlice<f32>> {
-        self.out_stage_e.as_mut()
-    }
     /// Arm the e-context stages + router staging pair when absent (token-graph entry).
     pub(crate) fn arm_stages(
         &mut self,
@@ -9998,11 +9879,6 @@ pub struct Nvfp4DeviceRoutesWorkspace {
     /// Peer-router door state: rank1's sel/route_w were computed locally in prestage;
     /// the routed run skips rank1's sel pull. Reset per call.
     rank1_routed: bool,
-    /// Doorbell fences (MEMRA_FENCE_MEMOPS): raw cuMemAlloc'd [rank1_flag, root_flag]
-    /// u32 pair in ROOT memory (async-pool memory is memop-INELIGIBLE — receipted
-    /// CUDA_ERROR_INVALID_VALUE) + the host-side monotonic ticket. 0 = unarmed.
-    fence_flags_raw: u64,
-    fence_ticket: u32,
     /// Prestage input fence, recorded on e after the input's producer.
     ev_input: Option<(CudaEvent, usize)>,
     /// Graph-door staging: persistent e-context input row + output row (fixed addresses the
@@ -10783,85 +10659,6 @@ impl TpE4m3HostBounce {
         }
         apply_macro(&mut reduced, macros[expert]);
         Ok(reduced)
-    }
-
-    /// Upload whole experts per owning rank (NVFP4 expert-parallel: the layout the clamped tail
-    /// layers require — clamp semantics do not distribute across a tensor shard). Each owned
-    /// expert keeps its full gate/up/down as one repacked block buffer on its owner.
-    #[allow(clippy::manual_is_multiple_of)] // allow: divisor is runtime-derived; the modulo form keeps a zero divisor loud (a panic), where is_multiple_of would return false silently
-    pub fn upload_expert_parallel_nvfp4(
-        &self,
-        gate: Nvfp4ExpertBank<'_>,
-        up: Nvfp4ExpertBank<'_>,
-        down: Nvfp4ExpertBank<'_>,
-    ) -> Result<ResidentNvfp4ExpertParallel, Box<dyn std::error::Error>> {
-        gate.validate()?;
-        up.validate()?;
-        down.validate()?;
-        if gate.expert_count != up.expert_count || gate.expert_count != down.expert_count {
-            return Err("NVFP4 EP gate/up/down expert counts differ".into());
-        }
-        if gate.in_features != up.in_features || gate.out_features != up.out_features {
-            return Err("NVFP4 EP gate/up dimensions differ".into());
-        }
-        if down.in_features != gate.out_features || down.out_features != gate.in_features {
-            return Err(format!(
-                "NVFP4 EP down {}x{} does not invert gate/up {}x{}",
-                down.out_features, down.in_features, gate.out_features, gate.in_features
-            )
-            .into());
-        }
-        let world = self.ranks.len();
-        if gate.expert_count % world != 0 {
-            return Err(format!(
-                "NVFP4 EP expert count {} is not divisible by {world} ranks",
-                gate.expert_count
-            )
-            .into());
-        }
-        let experts_per_rank = gate.expert_count / world;
-        let mut ranks = Vec::with_capacity(world);
-        for (rank_index, engine) in self.ranks.iter().enumerate() {
-            let _main = engine.gpu.enter_main()?;
-            let expert_range = rank_index * experts_per_rank..(rank_index + 1) * experts_per_rank;
-            let mut gate_host = Vec::new();
-            let mut up_host = Vec::new();
-            let mut down_host = Vec::new();
-            for expert in expert_range.clone() {
-                gate_host.extend_from_slice(&nvfp4_repack_matrix(gate.expert(expert)?));
-                up_host.extend_from_slice(&nvfp4_repack_matrix(up.expert(expert)?));
-                down_host.extend_from_slice(&nvfp4_repack_matrix(down.expert(expert)?));
-            }
-            let gate_expert_bytes = gate_host.len() / experts_per_rank;
-            let up_expert_bytes = up_host.len() / experts_per_rank;
-            if gate_expert_bytes != up_expert_bytes {
-                return Err("NVFP4 EP gate/up packed expert bytes differ".into());
-            }
-            let down_expert_bytes = down_host.len() / experts_per_rank;
-            ranks.push(ResidentNvfp4EpRank {
-                gate: engine.htod_bytes(&gate_host)?,
-                up: engine.htod_bytes(&up_host)?,
-                down: engine.htod_bytes(&down_host)?,
-                gate_expert_bytes,
-                down_expert_bytes,
-                macros_gate: engine.htod(&gate.macros[expert_range.clone()])?,
-                macros_up: engine.htod(&up.macros[expert_range.clone()])?,
-                macros_down: engine.htod(&down.macros[expert_range.clone()])?,
-                expert_range,
-            });
-        }
-        Ok(ResidentNvfp4ExpertParallel {
-            ranks,
-            macros_gate: gate.macros.to_vec(),
-            macros_up: up.macros.to_vec(),
-            macros_down: down.macros.to_vec(),
-            expert_count: gate.expert_count,
-            input_width: gate.in_features,
-            expert_width: gate.out_features,
-            gate_row_bytes: nvfp4_row_bytes(gate.in_features),
-            down_row_bytes: nvfp4_row_bytes(down.in_features),
-            device_workspace: std::sync::Mutex::new(None),
-        })
     }
 
     /// Upload an already-normalized NVFP4 expert bank.
@@ -12269,8 +12066,6 @@ impl TpE4m3HostBounce {
                 prestaged: false,
                 rank1_routed: false,
                 ev_input: None,
-                fence_flags_raw: 0,
-                fence_ticket: 0,
                 gate_out,
                 up_out,
                 act_q,
@@ -13928,45 +13723,6 @@ impl TpE4m3HostBounce {
             let _main = engine.gpu.enter_main()?;
             workspace.ev_rank[rank_index].record(&engine.stream())?;
         }
-        // Doorbell fences (MEMRA_FENCE_MEMOPS=1): rank1 + root ring their flags; e waits
-        // the tickets instead of the two events. Arm lazily; 0-len = unsupported.
-        let memops = fence_memops_on() && moe_direct_on() && self.ranks.len() == 2;
-        let mut ticket = 0u32;
-        if memops {
-            use cudarc::driver::sys;
-            if workspace.fence_flags_raw == 0 {
-                let root = &self.ranks[0];
-                let _main = root.gpu.enter_main()?;
-                let mut ptr: sys::CUdeviceptr = 0;
-                let r = unsafe { sys::cuMemAlloc_v2(&mut ptr, 8) };
-                if r != sys::CUresult::CUDA_SUCCESS {
-                    return Err(format!("fence flag alloc: {r:?}").into());
-                }
-                let r = unsafe { sys::cuMemsetD8_v2(ptr, 0, 8) };
-                if r != sys::CUresult::CUDA_SUCCESS {
-                    return Err(format!("fence flag memset: {r:?}").into());
-                }
-                workspace.fence_flags_raw = ptr as u64;
-            }
-            workspace.fence_ticket = workspace.fence_ticket.wrapping_add(1).max(1);
-            ticket = workspace.fence_ticket;
-            let base = workspace.fence_flags_raw;
-            {
-                let root = &self.ranks[0];
-                let _main = root.gpu.enter_main()?;
-                let r = unsafe {
-                    sys::cuStreamWriteValue32_v2(
-                        root.stream().cu_stream() as sys::CUstream,
-                        (base + 4) as sys::CUdeviceptr,
-                        ticket,
-                        0,
-                    )
-                };
-                if r != sys::CUresult::CUDA_SUCCESS {
-                    return Err(format!("fence write root: {r:?}").into());
-                }
-            }
-        }
         // PREJOIN hook: rank work is fully issued (dev1 running); independent e-stream
         // kernels queued here execute while the peer rank drains its sweep.
         pre_join()?;
@@ -13979,42 +13735,23 @@ impl TpE4m3HostBounce {
             // e-context row (NOT an alias of ws state — the reverted zero-copy handoff's
             // hazard class does not apply).
             let _main = e.gpu.enter_main()?;
-            if memops {
-                use cudarc::driver::sys;
-                let base = workspace.fence_flags_raw;
-                let r = unsafe {
-                    sys::cuStreamWaitValue32_v2(
-                        e.stream().cu_stream() as sys::CUstream,
-                        (base + 4) as sys::CUdeviceptr,
-                        ticket,
-                        sys::CUstreamWaitValue_flags::CU_STREAM_WAIT_VALUE_GEQ as u32,
-                    )
-                };
-                if r != sys::CUresult::CUDA_SUCCESS {
-                    return Err(format!("fence wait: {r:?}").into());
-                }
-                for ev in workspace.ev_rank.iter().skip(1) {
-                    e.stream().wait(ev)?;
-                }
-            } else {
-                {
-                    let root = &self.ranks[0];
-                    let _rmain = root.gpu.enter_main()?;
-                    workspace
-                        .ev_done
-                        .as_ref()
-                        .expect("device routes done event")
-                        .record(&root.stream())?;
-                }
-                e.stream().wait(
-                    workspace
-                        .ev_done
-                        .as_ref()
-                        .expect("device routes done event"),
-                )?;
-                for ev in workspace.ev_rank.iter().skip(1) {
-                    e.stream().wait(ev)?;
-                }
+            {
+                let root = &self.ranks[0];
+                let _rmain = root.gpu.enter_main()?;
+                workspace
+                    .ev_done
+                    .as_ref()
+                    .expect("device routes done event")
+                    .record(&root.stream())?;
+            }
+            e.stream().wait(
+                workspace
+                    .ev_done
+                    .as_ref()
+                    .expect("device routes done event"),
+            )?;
+            for ev in workspace.ev_rank.iter().skip(1) {
+                e.stream().wait(ev)?;
             }
             let mut output = e.uninit(experts.input_width)?;
             if let Some((sh_raw, scale_raw)) = post_add {
@@ -15047,18 +14784,6 @@ mod tests {
     }
 
     #[test]
-    fn bf16_row_shard_preserves_each_input_column_window() {
-        let bytes = bf16_matrix_bytes(3, 4);
-        let matrix = Bf16Matrix {
-            bytes: &bytes,
-            out_features: 3,
-            in_features: 4,
-        };
-        let shard = bf16_row_shard(matrix, 2, 1).unwrap();
-        assert_eq!(decode_u16(&shard), vec![2, 3, 6, 7, 10, 11]);
-    }
-
-    #[test]
     fn bf16_row_block_preserves_global_column_order() {
         let bytes = bf16_matrix_bytes(3, 8);
         let matrix = Bf16Matrix {
@@ -15451,9 +15176,6 @@ pub struct TokenGraphBuilder {
     /// Nodes every NEXT section must depend on (the frontier): one node for serial flow,
     /// several while a parallel group is open.
     frontier: Vec<cudarc::driver::sys::CUgraphNode>,
-    /// Detached sections: forked from the frontier at issue time, joined ONLY by the next
-    /// non-group section (they never gate a parallel group merge — the SH1 shape).
-    pending_detached: Vec<cudarc::driver::sys::CUgraphNode>,
     /// Open parallel group: sections issued under the same group id fork from the SAME
     /// predecessor set and merge into the frontier together when the group closes.
     group: Option<(
@@ -15478,7 +15200,6 @@ impl TokenGraphBuilder {
             parent,
             children: Vec::new(),
             frontier: Vec::new(),
-            pending_detached: Vec::new(),
             group: None,
         })
     }
@@ -15487,14 +15208,11 @@ impl TokenGraphBuilder {
         &mut self,
         graph: cudarc::driver::CudaGraph,
         parallel_group: Option<u32>,
-        detached: bool,
-        absorb: bool,
         ctx: cudarc::driver::sys::CUcontext,
     ) -> Result<(), Box<dyn std::error::Error>> {
         use cudarc::driver::sys;
         // Resolve the dependency set: serial sections depend on the current frontier; a
-        // parallel-group section depends on the frontier AS OF the group opening; a
-        // DETACHED section forks like a group member but joins only the next serial section.
+        // parallel-group section depends on the frontier AS OF the group opening.
         let deps: Vec<sys::CUgraphNode> = match (&mut self.group, parallel_group) {
             (Some((open, base, _)), Some(group)) if *open == group => base.clone(),
             (state, Some(group)) => {
@@ -15506,19 +15224,11 @@ impl TokenGraphBuilder {
                 *state = Some((group, base.clone(), Vec::new()));
                 base
             }
-            (state, None) if detached => match state.as_ref() {
-                Some((_, base, _)) => base.clone(),
-                None => self.frontier.clone(),
-            },
             (state, None) => {
                 if let Some((_, _, members)) = state.take() {
                     self.frontier = members;
                 }
-                let mut deps = self.frontier.clone();
-                if absorb {
-                    deps.append(&mut self.pending_detached);
-                }
-                deps
+                self.frontier.clone()
             }
         };
         let mut node: sys::CUgraphNode = std::ptr::null_mut();
@@ -15538,9 +15248,8 @@ impl TokenGraphBuilder {
         if r != sys::CUresult::CUDA_SUCCESS {
             return Err(format!("token graph child: {r:?}").into());
         }
-        match (&mut self.group, parallel_group, detached) {
-            (_, None, true) => self.pending_detached.push(node),
-            (Some((_, _, members)), Some(_), _) => members.push(node),
+        match (&mut self.group, parallel_group) {
+            (Some((_, _, members)), Some(_)) => members.push(node),
             _ => self.frontier = vec![node],
         }
         self.children.push(TokenGraphChild { graph, node, ctx });
@@ -15873,36 +15582,6 @@ pub fn graph_section<F>(
 where
     F: FnMut() -> Result<(), Box<dyn std::error::Error>>,
 {
-    graph_section_opts(engine, parallel_group, false, false, f)
-}
-
-/// Serial section that ALSO joins every pending detached section (the SH1 consumer shape).
-pub fn graph_section_absorbing<F>(engine: &Engine, f: F) -> Result<(), Box<dyn std::error::Error>>
-where
-    F: FnMut() -> Result<(), Box<dyn std::error::Error>>,
-{
-    graph_section_opts(engine, None, false, true, f)
-}
-
-/// `graph_section` with the DETACHED shape: forks from the current frontier (or the open
-/// group base) and is joined only by the next serial section — never gates a group merge.
-pub fn graph_section_detached<F>(engine: &Engine, f: F) -> Result<(), Box<dyn std::error::Error>>
-where
-    F: FnMut() -> Result<(), Box<dyn std::error::Error>>,
-{
-    graph_section_opts(engine, None, true, false, f)
-}
-
-pub fn graph_section_opts<F>(
-    engine: &Engine,
-    parallel_group: Option<u32>,
-    detached: bool,
-    absorb: bool,
-    f: F,
-) -> Result<(), Box<dyn std::error::Error>>
-where
-    F: FnMut() -> Result<(), Box<dyn std::error::Error>>,
-{
     let building = token_graph_building();
     if !building {
         let mut f = f;
@@ -15925,6 +15604,6 @@ where
         cell.borrow_mut()
             .as_mut()
             .expect("builder checked above")
-            .push_child(child, parallel_group, detached, absorb, ctx)
+            .push_child(child, parallel_group, ctx)
     })
 }

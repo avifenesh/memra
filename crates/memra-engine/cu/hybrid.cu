@@ -26,48 +26,20 @@ __device__ __forceinline__ float warp_sum_down(float v) {
     return v;
 }
 
-// ---- FUSED prefill conv: token-major input, zero left-state, conv+SiLU in ONE kernel. ----
-// Replaces the transpose -> zeros -> conv_left_pad -> ssm_conv1d chain (was 4 launches + 2
-// scratch buffers + a full channel-major round-trip, ~4.5ms of pp512). Reads the matmul output
-// qkv_mixed DIRECTLY in its native [T, conv_dim] token-major layout; the causal window for time
-// t is rows t-pad..t (rows < 0 are the zero prefill state). Output stays channel-major [conv_dim,
-// T] (what qkv_to_gdn_repack consumes). BIT-IDENTICAL to the old chain: same 8-tap register
-// accumulation order as ssm_conv1d_silu_f32 (j ascending), same silu, same values — only the
-// addressing changed. Token-major reads are coalesced over c (adjacent threads read adjacent
-// channels of the same row). Launch: grid=(ceil(conv_dim/256), T), block=256.
-extern "C" __global__ void ssm_conv1d_tm_f32(
-        const float* __restrict__ qkv_tm,   // [T, conv_dim] token-major (matmul output as-is)
-        const float* __restrict__ w,        // [conv_dim, d_conv] kernel-major
-        float* __restrict__ y,              // [conv_dim, T] channel-major, SiLU applied
-        int conv_dim, int T, int d_conv) {
-    int c = blockIdx.x * blockDim.x + threadIdx.x;
-    int t = blockIdx.y;
-    if (c >= conv_dim || t >= T) return;
-    int pad = d_conv - 1;
-    const float* wc = w + (size_t)c * d_conv;
-    float acc = 0.0f;
-    #pragma unroll
-    for (int j = 0; j < 8; j++) {
-        if (j < d_conv) {
-            int tt = t - pad + j;                       // input time for tap j (zero state if <0)
-            float xv = (tt >= 0) ? qkv_tm[(size_t)tt * conv_dim + c] : 0.0f;
-            acc += xv * wc[j];
-        }
-    }
-    y[(size_t)c * T + t] = silu(acc);
-}
-
 // ---- FUSED conv + GDN repack: one kernel from token-major qkv straight to q_g/k_g/v_g. ----
-// Extends ssm_conv1d_tm_f32: instead of materializing the channel-major conv_out (16MB at T=512)
-// and re-reading it in qkv_to_gdn_repack, each (channel, time) thread computes its conv+SiLU value
-// ONCE and scatters it directly to the GDN [d_state, num_v, T] layout:
+// Reads the matmul output qkv_mixed DIRECTLY in its native [T, conv_dim] token-major layout; the
+// causal window for time t is rows t-pad..t (rows < 0 are the zero prefill state). Replaces the
+// transpose -> zeros -> conv_left_pad -> ssm_conv1d -> qkv_to_gdn_repack chain: instead of
+// materializing the channel-major conv_out (16MB at T=512) and re-reading it in
+// qkv_to_gdn_repack, each (channel, time) thread computes its conv+SiLU value ONCE and scatters
+// it directly to the GDN [d_state, num_v, T] layout:
 //   c in [0, key_dim)          -> q: kh = c/d_state, i = c%d_state, written for EVERY vh with
 //                                 vh % num_k == kh (the ggml_repeat_4d modulo head-repeat,
 //                                 num_v/num_k copies — same VALUE, scatter only).
 //   c in [key_dim, 2*key_dim)  -> k: same mapping.
 //   c >= 2*key_dim             -> v: vh = (c-2key)/d_state, single write.
 // Output index (t*num_v + vh)*d_state + i == qkv_to_gdn_repack's exactly. BIT-IDENTICAL values
-// (same 8-tap accumulation as ssm_conv1d_tm_f32; scatter does not change the float).
+// (same 8-tap ascending-j accumulation as ssm_conv1d_silu_f32; scatter does not change the float).
 // Launch: grid=(ceil(conv_dim/256), T), block=256.
 extern "C" __global__ void ssm_conv1d_gdn_f32(
         const float* __restrict__ qkv_tm,   // [T, conv_dim] token-major
@@ -154,8 +126,9 @@ extern "C" __global__ void ssm_conv1d_gdn_state_f32(
 
 // ---- BATCHED verify conv: token-major input, CARRIED conv state, ring update, T>1. ----
 // The spec verify path runs T=K+1 tokens through a linear-attn layer in one pass. This is
-// ssm_conv1d_tm_f32 with the zero left-pad replaced by the RESIDENT conv ring (window rows
-// t-pad..t; negative rows read conv_state[c*pad + (pad+tt)]), plus the decode kernel's ring roll:
+// the token-major prefill conv (ssm_conv1d_gdn_f32's window walk) with the zero left-pad
+// replaced by the RESIDENT conv ring (window rows t-pad..t; negative rows read
+// conv_state[c*pad + (pad+tt)]), plus the decode kernel's ring roll:
 // after the pass conv_state holds the last `pad` input columns (exactly what T sequential
 // ssm_conv1d_fused_decode steps would leave). Same 8-tap ascending-j accumulation as BOTH the
 // prefill and decode conv kernels -> each output value is BIT-IDENTICAL to the T=1 chain.
@@ -1082,16 +1055,6 @@ extern "C" __global__ void gdn_glog_f32(const float* alpha, const float* dt_bias
     g_log[idx] = a[h] * sp;                          // a holds -exp(A_log) (pre-negated)
 }
 
-// transpose [rows, cols] row-major -> [cols, rows] row-major. (token-major <-> channel-major)
-extern "C" __global__ void transpose_f32(const float* __restrict__ in, float* __restrict__ out,
-                                         int rows, int cols) {
-    long idx = (long)blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx >= (long)rows * cols) return;
-    int r = idx / cols;   // in row
-    int c = idx % cols;   // in col
-    out[(long)c * rows + r] = in[idx];
-}
-
 // gated RMSNorm output: dst = RMSNorm(o, w) * silu(z), per head_dim row.
 // o,z,dst: [head_dim, n_rows] row-major; w: [head_dim]. one block per row.
 extern "C" __global__ void gated_rmsnorm_f32(const float* __restrict__ o, const float* __restrict__ w,
@@ -1198,22 +1161,6 @@ extern "C" __global__ void gated_rmsnorm_q8_1(const float* __restrict__ o, const
     }
 }
 
-// Repeat-interleave heads: in [head_dim, n_in_heads, T] -> out [head_dim, n_out_heads, T],
-// each in-head replicated rep = n_out_heads/n_in_heads times (contiguous in head axis).
-// matches ggml_repeat_4d on the head axis. idx over out elements.
-extern "C" __global__ void repeat_heads_f32(const float* __restrict__ in, float* __restrict__ out,
-                                            int head_dim, int n_in_heads, int n_out_heads, int T) {
-    long idx = (long)blockIdx.x * blockDim.x + threadIdx.x;
-    long total = (long)head_dim * n_out_heads * T;
-    if (idx >= total) return;
-    int d = idx % head_dim;
-    int oh = (idx / head_dim) % n_out_heads;
-    int t = idx / ((long)head_dim * n_out_heads);
-    int rep = n_out_heads / n_in_heads;
-    int ih = oh / rep;
-    out[idx] = in[((long)t * n_in_heads + ih) * head_dim + d];
-}
-
 // dst[i] += alpha * src[i]
 extern "C" __global__ void axpy_f32(const float* src, float* dst, float alpha, int n) {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
@@ -1292,22 +1239,6 @@ extern "C" __global__ void qkv_to_gdn_repack_f32(
     q_g[idx] = conv_out[qc * T + tt];
     k_g[idx] = conv_out[kc * T + tt];
     v_g[idx] = conv_out[vc * T + tt];
-}
-
-// ---- 2b. conv left zero-pad (prefill from zero state). ----
-// src: [conv_dim, T] channel-major (channel c, time tt at c*T + tt).
-// dst: [conv_dim, T+pad] channel-major, cols 0..pad-1 = 0, cols pad..pad+T-1 = src.
-// dst MUST be pre-zeroed (e.zeros) so we only write the data cols. One thread per src element.
-// Matches hybrid_forward.rs conv_in build (conv_in[c*tp + pad + tt] = qkv_cm[c*t + tt]).
-extern "C" __global__ void conv_left_pad_f32(
-        const float* __restrict__ src, float* __restrict__ dst, int conv_dim, int T, int pad) {
-    long idx = (long)blockIdx.x * blockDim.x + threadIdx.x;
-    long total = (long)conv_dim * T;
-    if (idx >= total) return;
-    int tt = idx % T;
-    int c  = idx / T;
-    int tp = T + pad;
-    dst[(long)c * tp + pad + tt] = src[idx];
 }
 
 // ---- 3. conv-state assemble + ring roll (decode T=1). ----
@@ -2723,31 +2654,6 @@ extern "C" __global__ void scale_rows_f32(
     int total = nrows * ncols;
     if (i < total) {
         y[i] *= s[i / ncols];
-    }
-}
-
-// moe_pairs_weighted_scatter_f32: out[t, :] += sum_j w[t*n_used + j] * y[t*n_used + j, :],
-// with the j-sum SEQUENTIAL inside each thread — a fixed per-token reduction order (slot 0..7),
-// never atomics, so the grouped prime stays run-deterministic like every other reduction whose
-// order this repo pins. y is PAIR-ID order (token-major slots); one thread owns one (t, col).
-// Grid: for_num_elems(t*ncols).
-extern "C" __global__ void moe_pairs_weighted_scatter_f32(
-    const float* __restrict__ y,  // [t*n_used, ncols] pair-id order
-    const float* __restrict__ w,  // [t*n_used] route weight (down macro pre-folded host-side)
-    float*       __restrict__ out, // [t, ncols] accumulated in place
-    int ncols, int n_used, int t)
-{
-    int i = blockIdx.x * blockDim.x + threadIdx.x;
-    int total = t * ncols;
-    if (i < total) {
-        int tok = i / ncols;
-        int col = i % ncols;
-        float acc = out[i];
-        for (int j = 0; j < n_used; j++) {
-            int p = tok * n_used + j;
-            acc += w[p] * y[(size_t)p * ncols + col];
-        }
-        out[i] = acc;
     }
 }
 

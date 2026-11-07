@@ -196,36 +196,6 @@ pub fn place_expert(
     }
 }
 
-/// SPILLING-PLAN §3/§5: a single spillable weight block over the same `{Pinned, Mmap}` substrate.
-/// Lifted from the `HostExps` fields so dense weights (dense-70B case) can reuse the disk tier
-/// without the 256-expert stacking. Carried for the requested generalization; the MoE path uses
-/// `HostExps` directly (which now embeds the same tier machinery via `HostBuf`).
-pub struct SpillBlock {
-    pub host: HostBuf,
-    pub qtype: i32,
-    pub in_f: usize,
-    pub out_f: usize,
-    pub row_bytes: usize,
-}
-
-impl SpillBlock {
-    /// The H2D DMA source for this block — resolves the tier (`Pinned` fast / `Mmap` demand-fault).
-    #[inline]
-    pub fn bytes(&self) -> &[u8] {
-        self.host.as_bytes()
-    }
-}
-
-/// SPILLING-PLAN §3: the requested `Tiered` generalization. Structurally it is the existing
-/// `HostExps` (Tier 1/2 host backing, per-block) composed with the existing `MoeSlotCache`
-/// (Tier 0 GPU residency). Both seams are already present and unchanged; this names the composition.
-/// The MoE hot loop drives the two seams directly (`expert_bytes()` + `with_moe_cache`), so this is
-/// a documentation/structural alias, not a new hot path.
-pub struct Tiered {
-    pub host: crate::model::HostExps, // Tier 1/2 (Pinned hot / Mmap cold), per-expert
-    pub slots: crate::moe_cache::MoeSlotCache, // Tier 0 GPU residency (existing slot cache)
-}
-
 #[cfg(all(test, unix))]
 mod tests {
     use super::{

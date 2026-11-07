@@ -563,7 +563,6 @@ impl PrimePpStageChannels {
 /// Engagement counter for `MEMRA_MLA_SEG_WS`; gates take a delta.
 pub static MLA_SEG_WS_DISPATCHES: std::sync::atomic::AtomicU64 =
     std::sync::atomic::AtomicU64::new(0);
-static MLA_MID_LIVE_DISPATCHES: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 /// Decode sites served by the BF16 absorb planes (`MEMRA_MLA_ABSORB_BF16=1`).
 pub static MLA_ABSORB_BF16_DISPATCHES: std::sync::atomic::AtomicU64 =
     std::sync::atomic::AtomicU64::new(0);
@@ -584,9 +583,6 @@ pub(crate) type WsLayerRef<'a> = (&'a crate::hybrid::HybridLayer, &'a crate::hyp
 pub(crate) enum WsSeg {
     Layer(usize),
     MlaPre(usize),
-    /// The MLA middle (append, k-pool selection, attention, decompress, `wo`) as fixed-geometry
-    /// live twins reading the stage's `pos_d` (`MEMRA_GLM5_GRAPH_MLA_MID`); writes `mla_mixed`.
-    MlaMid(usize),
     MlaFfn(usize),
 }
 
@@ -3889,28 +3885,10 @@ impl HybridModel {
         n_embd: usize,
         eps: f32,
     ) -> Result<Option<Q8Pair>, Box<dyn std::error::Error>> {
-        // MEMRA_HC_PRE_NORM_FUSE: when the norm below is the q8 one AND the shape fits, it rides
-        // INSIDE the hc-pre launch and its own launch disappears. `Some` means it already ran.
         let want_q8 = crate::glm5_q8_fuse_attn_on()
             && matches!(&layer.mixer, Mixer::Kda(la) if la.tp.is_none());
-        let fused_pair = crate::hyper::pre_t1_ws_norm(
-            e,
-            topology,
-            &hyper.attn,
-            x,
-            ws,
-            n_embd,
-            want_q8.then(|| (layer.attn_norm.float_data(), eps)),
-        )?;
-        let attn_q8 = if let Some(pair) = fused_pair {
-            if crate::HC_PRE_NORM_FUSE_DISPATCHES.load(std::sync::atomic::Ordering::Relaxed) == 1 {
-                eprintln!(
-                    "[hc-pre-norm-fuse] engaged (rms_norm_zq8_f32 folded into hc_pre_v4, \
-                     hyper_range_decode_ws_body)"
-                );
-            }
-            Some(pair)
-        } else if want_q8 {
+        crate::hyper::pre_t1_ws(e, topology, &hyper.attn, x, ws, n_embd)?;
+        let attn_q8 = if want_q8 {
             let pair = e.rms_norm_zq8_f32(
                 &ws.y,
                 layer.attn_norm.float_data(),
@@ -4008,7 +3986,7 @@ impl HybridModel {
         pos: usize,
         cache: &mut Cache,
         ws: &mut crate::hyper::HyperDecodeWs,
-        mut mla_mixed: Option<&mut CudaSlice<f32>>,
+        mla_mixed: Option<&mut CudaSlice<f32>>,
     ) -> Result<(), Box<dyn std::error::Error>> {
         let n_embd = self.cfg.n_embd as usize;
         let eps = self.cfg.rms_eps;
@@ -4047,16 +4025,6 @@ impl HybridModel {
                     };
                     let _ = self.ws_attn_pre(e, topology, layer, hyper, il, x, ws, n_embd, eps)?;
                     self.mla_seg_pre_into_ws(e, mla, &ws.h, pos_d, il)?;
-                }
-                WsSeg::MlaMid(il) => {
-                    let (layer, _hyper) = self.ws_layer(il)?;
-                    let Mixer::Mla(mla) = &layer.mixer else {
-                        return Err(format!("segment MlaMid({il}) on a non-MLA layer").into());
-                    };
-                    let mixed = mla_mixed
-                        .as_deref_mut()
-                        .ok_or("segment MlaMid needs the mla_mixed handoff")?;
-                    self.mla_mid_post_live(e, mla, &ws.h, pos_d, il, cache, mixed)?;
                 }
                 WsSeg::MlaFfn(il) => {
                     let (layer, hyper) = self.ws_layer(il)?;
@@ -10348,10 +10316,10 @@ impl HybridModel {
         Ok(attn)
     }
 
-    /// Whether layer `il`'s MLA middle can be captured (`WsSeg::MlaMid`, door
-    /// `MEMRA_GLM5_GRAPH_MLA_MID`): every launch between the PRE half and the FFN half has a
-    /// fixed-geometry live twin under the arms this process dispatches at t = 1. `Err` names
-    /// the first refusal; the door then keeps the layer's eager middle.
+    /// Whether layer `il`'s MLA middle can run as fixed-geometry live twins (the verify walk's
+    /// `MEMRA_GLM5_VERIFY_GRAPH` arm 1, `mla_attn_cached_rows_live`): every launch between the
+    /// PRE half and the FFN half has a live twin under the arms this process dispatches at
+    /// t = 1. `Err` names the first refusal, which `mla_attn_cached_rows_live` returns.
     pub(crate) fn mla_mid_live_ok(&self, il: usize) -> Result<(), String> {
         let Mixer::Mla(mla) = &self.layers[il].mixer else {
             return Err(format!("layer {il} is not an MLA layer"));
@@ -10391,87 +10359,6 @@ impl HybridModel {
             ));
         }
         Ok(())
-    }
-
-    /// The MLA middle as FIXED-GEOMETRY launches (segment `WsSeg::MlaMid`, t = 1): the latent
-    /// append, the indexer state append, the pool-key build, the DSA scorer, the selector, the
-    /// gathered attention and the device length mirror all read the stage's `pos_d` instead of
-    /// host scalars, so a captured graph replays correctly at every later position. Byte-for-byte
-    /// the eager middle's program at the token's own width: the selector lays its row out at the
-    /// capacity `index_width` and publishes the true width in a device word the attention twins
-    /// walk to, so their chunking and reduction order are the scalar launch's at that width.
-    ///
-    /// Host bookkeeping (`len`, `index_pools_ready`) is NOT advanced here: the door advances it
-    /// after each replay (`glm5_replay_run`); the eager middle advances its own in
-    /// `mla_attn_cached_pre_wo`. The device mirror `len_d` is advanced by the last launch.
-    #[allow(clippy::too_many_arguments)]
-    pub(crate) fn mla_mid_post_live(
-        &self,
-        e: &Engine,
-        mla: &crate::hybrid::MlaAttnLayer,
-        h: &CudaSlice<f32>,
-        pos_d: &CudaSlice<i32>,
-        il: usize,
-        cache: &mut Cache,
-        mixed_out: &mut CudaSlice<f32>,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        self.mla_mid_live_ok(il)?;
-        let max_ctx = cache.max_ctx;
-        let layer = cache.latent[il]
-            .as_mut()
-            .ok_or_else(|| format!("layer {il} is Mixer::Mla but the cache has no latent plane"))?;
-        let g = mla.geom;
-        let (nh, dn, dr, r) = (g.n_head, g.d_nope, g.d_rope, g.kv_rank);
-        let q_lora = mla.wq_b.in_features();
-        let slot = layer.len;
-        let capacity = layer.rows.len() / layer.width;
-        if slot + 1 > capacity {
-            return Err(format!(
-                "layer {il}: latent cache overflow — {slot} + 1 rows exceeds capacity {capacity}"
-            )
-            .into());
-        }
-        let indexer = mla.index.as_ref().expect("checked by mla_mid_live_ok");
-        let ws = e.mla_seg_ws_take(nh, dn, dr, r, q_lora)?;
-        let out = (|| -> Result<(), Box<dyn std::error::Error>> {
-            if MLA_MID_LIVE_DISPATCHES.fetch_add(1, std::sync::atomic::Ordering::Relaxed) == 0 {
-                eprintln!(
-                    "[mla-mid-live] engaged: the T=1 MLA middle runs as fixed-geometry live \
-                     twins of the eager launches (MEMRA_GLM5_GRAPH_MLA_MID=1)"
-                );
-            }
-            e.mla_append_latent_live(&mut layer.rows, &ws.c_kv_n, &ws.k_pe, pos_d, 1, r, dr)?;
-            let (idx, width_d) = self.mla_kpool_indices_live(
-                e,
-                indexer,
-                h,
-                &ws.q_an,
-                layer,
-                pos_d,
-                1,
-                max_ctx,
-                (ws.h_q8.as_ref(), ws.q_q8.as_ref()),
-                false,
-                il,
-            )?;
-            let attn = self.mla_seg_post_live(
-                e,
-                mla,
-                &ws.q_nope,
-                &ws.q_pe,
-                &idx,
-                &width_d,
-                &layer.rows,
-                1,
-                il,
-            )?;
-            let y = Self::mla_wo(e, mla, &attn, 1)?;
-            let n = self.cfg.n_embd as usize;
-            e.copy_into(mixed_out, 0, &y, n)?;
-            e.i32_copy_add(pos_d, &mut layer.len_d, 1)
-        })();
-        e.mla_seg_ws_put(ws);
-        out
     }
 
     /// [`Self::mla_kpool_indices_ex`] at t = 1 with every position-derived scalar read from
@@ -12189,8 +12076,9 @@ impl HybridModel {
         )
     }
 
-    /// Decode-path twin with a PRE-QUANTIZED z (from add_rms_norm_zq8): threads (zq, zd) into the
-    /// t=1 dev arm so the per-layer standalone quantize_q8_1 launch folds away. Identical bytes
+    /// Decode-path twin with a PRE-QUANTIZED z (the caller's quantize_q8_1, or a fused norm such
+    /// as rms_norm_zq8_f32): threads (zq, zd) into the t=1 dev arm so the per-layer standalone
+    /// quantize_q8_1 launch folds away. Identical bytes
     /// (the fused kernel reproduces quantize_q8_1 exactly); every other path ignores the pair.
     pub fn moe_ffn_il_zq8(
         &self,
@@ -15587,23 +15475,7 @@ impl HybridModel {
             .sigmoid_router()
             .ok_or("glm5 TP expert split requires the sigmoid router")?;
         let (gate_w, bias, active) = router;
-        // MEMRA_ROUTER_FUSED: GEMV and top-k in one launch, bitwise the same selection.
-        let (sel_d, selw_d) = if crate::router_fused_on() && n_expert <= 512 {
-            let (_logits, s, wsel) = dev.router_sigmoid_topk_fused(
-                gate_w,
-                z,
-                t,
-                n_embd,
-                n_expert,
-                n_used,
-                m.active_count(),
-                bias,
-                active,
-                sf,
-                route_norm,
-            )?;
-            (s, wsel)
-        } else {
+        let (sel_d, selw_d) = {
             let logits = dev.router_gemv(gate_w, z, n_embd, n_expert, t)?;
             dev.moe_router_sigmoid_topk(
                 &logits,
@@ -16098,16 +15970,6 @@ impl HybridModel {
         }
 
         crate::glm5_tp::GLM5_EP_DIET_DISPATCHES.fetch_add(1, Ordering::Relaxed);
-        for r in 1..ranks {
-            crate::glm5_tp::GLM5_EP_DIET_FANOUT_UPLOADS_AVOIDED.fetch_add(
-                if per_rank[r] > 0 {
-                    (t - 1) as u64
-                } else {
-                    t as u64
-                },
-                Ordering::Relaxed,
-            );
-        }
         static EP_DIET_MARKED: std::sync::atomic::AtomicBool =
             std::sync::atomic::AtomicBool::new(false);
         if !EP_DIET_MARKED.swap(true, Ordering::Relaxed) {
@@ -19126,9 +18988,9 @@ impl HybridModel {
         // and the shipped kernel's single warp was already covering the latency it was accused
         // of exposing. The gate/up twin is inside noise of `_w4` and its own static receipt
         // predicted that (longest LDG burst moved 18 -> 19; the shipped `sl` unroll already had
-        // the depth). So this call site keeps the shipped/`_w4` pair unconditionally: the v2
-        // kernels stay in the fatbin and in `b200_matvec_bench` as measured arms, and the door
-        // no longer overrides `MEMRA_B200_MATVEC_ARM` here. `MEMRA_B200_GEMV_V2` is a bf16-row
+        // the depth). So this call site keeps the shipped/`_w4` pair unconditionally, the door
+        // no longer overrides `MEMRA_B200_MATVEC_ARM` here, and the v2 kernels were deleted
+        // with their bench arms on that receipt (docs/FLAGS.md "Removed doors, 2026-11-03"). `MEMRA_B200_GEMV_V2` is a bf16-row
         // and kda6 door now; see docs/FLAGS.md and the lane doc's section 4.
         let use_w4 = crate::b200_matvec_arm_on();
         let act = if use_w4 {

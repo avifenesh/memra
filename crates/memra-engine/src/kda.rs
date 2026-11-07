@@ -593,7 +593,7 @@ pub(crate) fn kda_core_gated(
     let forget = if rows_exact {
         e.matmul_rows_exact(&la.f_b, &forget_down, t)?
     } else {
-        matmul_lowrank(e, &la.f_b, &forget_down, t, "f_b")?
+        e.matmul(&la.f_b, &forget_down, t)?
     };
     let mut g_log = if rows_exact {
         e.vws_uninit(t * qkv)?
@@ -668,7 +668,7 @@ pub(crate) fn kda_core_gated(
     let gate = if rows_exact {
         e.matmul_rows_exact(&la.g_b, &gate_down, t)?
     } else {
-        matmul_lowrank(e, &la.g_b, &gate_down, t, "g_b")?
+        e.matmul(&la.g_b, &gate_down, t)?
     };
     let mut gated = if rows_exact {
         e.vws_uninit(t * qkv)?
@@ -948,8 +948,8 @@ pub fn kda_conv3_dispatches() -> u64 {
 /// six-projection launcher (`MEMRA_GLM5_Q8_FUSE_ATTN`, lane/glm5-attn-norm-zq8-20260904).
 pub type KdaPreQ8<'a> = Option<(&'a CudaSlice<i8>, &'a CudaSlice<f32>)>;
 
-/// `MEMRA_KDA_ONORM_ZQ8=1` (lane/kda-onorm-zq8-20260905, default OFF pending its model-scale row):
-/// the decode (t=1, non-rows) KDA core emits the o_norm output's q8_1 pair from the gated-norm
+/// `MEMRA_KDA_ONORM_ZQ8` (lane/kda-onorm-zq8-20260905; default ON on sm_100a builds through the
+/// B200 posture, OFF elsewhere; `=1` / `=0` override): the decode (t=1, non-rows) KDA core emits the o_norm output's q8_1 pair from the gated-norm
 /// launch itself (`memra_kda_gated_rmsnorm_zq8_f32`) and hands it to the `wo` MMVQ through
 /// `matmul_q8_fast`, dropping the standalone `quantize_q8_1` launch (34 per token on
 /// GLM-5.3-Flash, in-graph). BIT-IDENTICAL: same norm bytes, same q8_1 arithmetic as
@@ -968,44 +968,6 @@ pub static KDA_ONORM_ZQ8_DISPATCHES: std::sync::atomic::AtomicU64 =
 
 /// The o_norm q8_1 pair handed from [`kda_core_gated`] to the `wo` projection.
 pub type KdaOnormQ8 = Option<(CudaSlice<i8>, CudaSlice<f32>)>;
-
-/// `MEMRA_KDA_NARROW_Q8=1` (lane/kda-narrow-q8-20260905, default OFF pending its model-scale row):
-/// the decode KDA core's low-rank `f_b` / `g_b` projections (128-wide inputs) ride
-/// `qmatvec_q8_0_mmvq_f32in_narrow`, which quantizes the row inside the launch, instead of
-/// `quantize_q8_1` + `qmatvec_q8_0_mmvq` (two launches per projection, 68 per token, in-graph).
-/// BIT-IDENTICAL: quantize_q8_1's arithmetic then the mmvq body verbatim (gate
-/// `tests/q8_narrow_f32in_gpu.rs`). Shapes or tensors that do not fit keep `matmul`. Read per call.
-pub fn kda_narrow_q8_on() -> bool {
-    std::env::var("MEMRA_KDA_NARROW_Q8").as_deref() == Ok("1")
-}
-
-/// Launches of the narrow in-kernel-quantize MMVQ on the f_b / g_b sites.
-pub static KDA_NARROW_Q8_DISPATCHES: std::sync::atomic::AtomicU64 =
-    std::sync::atomic::AtomicU64::new(0);
-
-/// `matmul` for a decode-arm low-rank projection, through the narrow in-kernel-quantize twin
-/// when the door is on and the shape fits, else the unchanged `matmul`.
-fn matmul_lowrank(
-    e: &Engine,
-    w: &crate::model::GpuTensor,
-    x: &CudaSlice<f32>,
-    t: usize,
-    which: &str,
-) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
-    if kda_narrow_q8_on()
-        && let Some(y) = e.matmul_q8_narrow_f32in(w, x, t)?
-    {
-        if KDA_NARROW_Q8_DISPATCHES.fetch_add(1, std::sync::atomic::Ordering::Relaxed) == 0 {
-            eprintln!(
-                "[kda-narrow-q8] engaged: the KDA {which} projection quantizes its {}-wide input \
-                 inside the MMVQ launch (MEMRA_KDA_NARROW_Q8=1)",
-                w.in_features()
-            );
-        }
-        return Ok(y);
-    }
-    e.matmul(w, x, t)
-}
 
 /// [`kda_decode_cached`] with the mixer input's q8_1 view already emitted by the caller's norm
 /// (`MEMRA_GLM5_Q8_FUSE_ATTN`): identical launches minus the fused launcher's own quantize.
