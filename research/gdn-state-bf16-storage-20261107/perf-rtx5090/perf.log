@@ -1,0 +1,37 @@
+02:39:19 dbb s1-d2048-r1 bf16=0 s=1 d=2048 CHUNKSWEEP seqs=1 chunk=1: aggregate 27.1 tok/s (36.94 ms/tick, median of 3) fp=7f05d165c09e  | 66,937MHz,24.77W
+02:39:37 dbb s1-d2048-r2 bf16=1 s=1 d=2048 CHUNKSWEEP seqs=1 chunk=1: aggregate 27.1 tok/s (36.88 ms/tick, median of 3) fp=22a1478f8243  | 68,982MHz,34.07W
+02:40:02 dbb s1-d2048-r3 bf16=1 s=1 d=2048 CHUNKSWEEP seqs=1 chunk=1: aggregate 27.1 tok/s (36.91 ms/tick, median of 3) fp=22a1478f8243  | 69,1057MHz,64.12W
+02:40:20 dbb s1-d2048-r4 bf16=0 s=1 d=2048 CHUNKSWEEP seqs=1 chunk=1: aggregate 27.0 tok/s (36.97 ms/tick, median of 3) fp=7f05d165c09e  | 70,915MHz,75.93W
+02:40:37 dbb s1-d2048-r5 bf16=0 s=1 d=2048 CHUNKSWEEP seqs=1 chunk=1: aggregate 27.1 tok/s (36.96 ms/tick, median of 3) fp=7f05d165c09e  | 72,885MHz,84.55W
+02:40:50 dbb s1-d2048-r6 bf16=1 s=1 d=2048 CHUNKSWEEP seqs=1 chunk=1: aggregate 27.1 tok/s (36.89 ms/tick, median of 3) fp=22a1478f8243  | 71,892MHz,26.65W
+02:41:10 dbb s4-d2048-r1 bf16=0 s=4 d=2048 CHUNKSWEEP seqs=4 chunk=4: aggregate 84.6 tok/s (47.30 ms/tick, median of 3) fp=e84ff778a862  | 76,817MHz,86.55W
+02:41:32 dbb s4-d2048-r2 bf16=1 s=4 d=2048 CHUNKSWEEP seqs=4 chunk=4: aggregate 85.5 tok/s (46.78 ms/tick, median of 3) fp=f7fa71e1a5d6  | 74,817MHz,41.00W
+02:41:53 dbb s4-d2048-r3 bf16=1 s=4 d=2048 CHUNKSWEEP seqs=4 chunk=4: aggregate 85.6 tok/s (46.71 ms/tick, median of 3) fp=f7fa71e1a5d6  | 74,817MHz,29.14W
+02:42:14 dbb s4-d2048-r4 bf16=0 s=4 d=2048 CHUNKSWEEP seqs=4 chunk=4: aggregate 84.5 tok/s (47.31 ms/tick, median of 3) fp=e84ff778a862  | 75,915MHz,46.58W
+02:42:35 dbb s4-d2048-r5 bf16=0 s=4 d=2048 CHUNKSWEEP seqs=4 chunk=4: aggregate 84.5 tok/s (47.35 ms/tick, median of 3) fp=e84ff778a862  | 77,810MHz,87.52W
+02:42:56 dbb s4-d2048-r6 bf16=1 s=4 d=2048 CHUNKSWEEP seqs=4 chunk=4: aggregate 85.5 tok/s (46.78 ms/tick, median of 3) fp=f7fa71e1a5d6  | 76,885MHz,46.86W
+02:43:29 dbb s8-d2048-r1 bf16=0 s=8 d=2048 CHUNKSWEEP seqs=8 chunk=8: aggregate 107.7 tok/s (74.28 ms/tick, median of 3) fp=415c92573cc9  | 78,855MHz,80.90W
+02:44:03 dbb s8-d2048-r2 bf16=1 s=8 d=2048 CHUNKSWEEP seqs=8 chunk=8: aggregate 109.5 tok/s (73.04 ms/tick, median of 3) fp=269bbce8883a  | 77,885MHz,37.09W
+02:44:37 dbb s8-d2048-r3 bf16=1 s=8 d=2048 CHUNKSWEEP seqs=8 chunk=8: aggregate 109.7 tok/s (72.95 ms/tick, median of 3) fp=269bbce8883a  | 78,862MHz,80.36W
+02:45:12 dbb s8-d2048-r4 bf16=0 s=8 d=2048 CHUNKSWEEP seqs=8 chunk=8: aggregate 107.9 tok/s (74.17 ms/tick, median of 3) fp=415c92573cc9  | 77,847MHz,79.26W
+02:45:46 dbb s8-d2048-r5 bf16=0 s=8 d=2048 CHUNKSWEEP seqs=8 chunk=8: aggregate 107.9 tok/s (74.15 ms/tick, median of 3) fp=415c92573cc9  | 78,847MHz,80.21W
+02:46:20 dbb s8-d2048-r6 bf16=1 s=8 d=2048 CHUNKSWEEP seqs=8 chunk=8: aggregate 109.8 tok/s (72.89 ms/tick, median of 3) fp=269bbce8883a  | 76,907MHz,74.08W
+02:47:17 dbb s16-d2048-r1 bf16=0 s=16 d=2048 CHUNKSWEEP seqs=16 chunk=16: aggregate 131.4 tok/s (121.72 ms/tick, median of 3) fp=d49284987709  | 76,982MHz,28.07W
+02:48:14 dbb s16-d2048-r2 bf16=1 s=16 d=2048 CHUNKSWEEP seqs=16 chunk=16: aggregate 133.6 tok/s (119.75 ms/tick, median of 3) fp=27a748b9c9a6  | 77,930MHz,35.69W
+02:49:13 dbb s16-d2048-r3 bf16=1 s=16 d=2048 CHUNKSWEEP seqs=16 chunk=16: aggregate 133.7 tok/s (119.70 ms/tick, median of 3) fp=27a748b9c9a6  | 77,922MHz,70.67W
+02:50:11 dbb s16-d2048-r4 bf16=0 s=16 d=2048 CHUNKSWEEP seqs=16 chunk=16: aggregate 131.4 tok/s (121.75 ms/tick, median of 3) fp=d49284987709  | 79,915MHz,77.22W
+02:51:09 dbb s16-d2048-r5 bf16=0 s=16 d=2048 CHUNKSWEEP seqs=16 chunk=16: aggregate 131.4 tok/s (121.74 ms/tick, median of 3) fp=d49284987709  | 77,922MHz,29.07W
+02:52:07 dbb s16-d2048-r6 bf16=1 s=16 d=2048 CHUNKSWEEP seqs=16 chunk=16: aggregate 133.8 tok/s (119.61 ms/tick, median of 3) fp=27a748b9c9a6  | 77,967MHz,63.37W
+02:53:22 dbb s4-d12288-r1 bf16=0 s=4 d=12288 CHUNKSWEEP seqs=4 chunk=4: aggregate 73.4 tok/s (54.52 ms/tick, median of 3) fp=d065a9e95b81  | 80,832MHz,52.76W
+02:54:38 dbb s4-d12288-r2 bf16=1 s=4 d=12288 CHUNKSWEEP seqs=4 chunk=4: aggregate 74.0 tok/s (54.04 ms/tick, median of 3) fp=d065a9e95b81  | 80,840MHz,89.22W
+02:55:53 dbb s4-d12288-r3 bf16=1 s=4 d=12288 CHUNKSWEEP seqs=4 chunk=4: aggregate 74.0 tok/s (54.09 ms/tick, median of 3) fp=d065a9e95b81  | 80,840MHz,89.37W
+02:57:08 dbb s4-d12288-r4 bf16=0 s=4 d=12288 CHUNKSWEEP seqs=4 chunk=4: aggregate 73.4 tok/s (54.51 ms/tick, median of 3) fp=d065a9e95b81  | 80,832MHz,89.38W
+02:58:26 dbb s4-d12288-r5 bf16=0 s=4 d=12288 CHUNKSWEEP seqs=4 chunk=4: aggregate 73.3 tok/s (54.58 ms/tick, median of 3) fp=d065a9e95b81  | 78,885MHz,45.03W
+02:59:43 dbb s4-d12288-r6 bf16=1 s=4 d=12288 CHUNKSWEEP seqs=4 chunk=4: aggregate 74.0 tok/s (54.04 ms/tick, median of 3) fp=d065a9e95b81  | 79,840MHz,88.80W
+03:00:00 run-gen r1 bf16=0 generated 128 tokens in 4.819s = 26.56 tok/s (Stage-B int8 dp4a decode, gen-only; prime 0.213s) [stop: MaxNew] | prefill 31 tok in 0.2144s = 144.6 tok/s (pp31) | 74,937MHz,27.48W
+03:00:17 run-gen r2 bf16=1 generated 128 tokens in 4.812s = 26.60 tok/s (Stage-B int8 dp4a decode, gen-only; prime 0.213s) [stop: MaxNew] | prefill 31 tok in 0.2142s = 144.7 tok/s (pp31) | 73,1050MHz,27.48W
+03:00:34 run-gen r3 bf16=1 generated 128 tokens in 4.817s = 26.57 tok/s (Stage-B int8 dp4a decode, gen-only; prime 0.213s) [stop: MaxNew] | prefill 31 tok in 0.2140s = 144.8 tok/s (pp31) | 72,1057MHz,55.28W
+03:00:51 run-gen r4 bf16=0 generated 128 tokens in 4.816s = 26.58 tok/s (Stage-B int8 dp4a decode, gen-only; prime 0.213s) [stop: MaxNew] | prefill 31 tok in 0.2142s = 144.7 tok/s (pp31) | 73,937MHz,75.68W
+03:01:08 run-gen r5 bf16=0 generated 128 tokens in 4.816s = 26.58 tok/s (Stage-B int8 dp4a decode, gen-only; prime 0.213s) [stop: MaxNew] | prefill 31 tok in 0.2139s = 144.9 tok/s (pp31) | 72,1057MHz,27.09W
+03:01:25 run-gen r6 bf16=1 generated 128 tokens in 4.811s = 26.61 tok/s (Stage-B int8 dp4a decode, gen-only; prime 0.213s) [stop: MaxNew] | prefill 31 tok in 0.2141s = 144.8 tok/s (pp31) | 72,1057MHz,58.73W
+03:01:25 PERF_DONE

@@ -1,0 +1,32 @@
+[gdn-state] bf16 GDN recurrent state (fp32 math)
+[tensor-contract] bound 866 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+loaded qwen35 (64 trunk layers; optional MTP skipped)
+chat-templated prompt:
+<|im_start|>user
+Write a Python function that returns the n-th Fibonacci number, then explain its time complexity in two sentences.<|im_end|>
+<|im_start|>assistant
+<think>
+
+prompt text: "Write a Python function that returns the n-th Fibonacci number, then explain its time complexity in two sentences."
+prompt tokens: [248045, 846, 198, 7734, 264, 12654, 709, 421, 4523, 279, 307, 7324, 76938, 1324, 11, 1179, 10033, 1141, 854, 22373, 303, 1330, 22157, 13, 248046, 198, 248045, 74455, 198, 248068, 198]
+[fa-pool] grow #0 dev=0 o_len 0 -> 6144 ml_len 0 -> 24 (retired kept, zero=false)
+prefill argmax=760  decode argmax=760  logit maxdiff=6.754e-1  MATCH
+batched-prime argmax=760  tokenwise argmax=760  logit maxdiff=5.646e-1  MATCH
+prefill 31 tok in 0.2141s = 144.8 tok/s (pp31)
+[fa-pool] grow #1 dev=0 o_len 6144 -> 73728 ml_len 24 -> 288 (retired kept, zero=false)
+[fa-pool] grow #2 dev=0 o_len 73728 -> 147456 ml_len 288 -> 576 (retired kept, zero=false)
+generated 128 tokens in 4.811s = 26.61 tok/s (Stage-B int8 dp4a decode, gen-only; prime 0.213s) [stop: MaxNew]
+tokens: [760, 1156, 6587, 1330, 2433, 25, 198, 16, 13, 357, 12654, 709, 421, 4523, 279, 307, 7324, 76938, 1324, 13, 198, 17, 13, 1473, 15673, 314, 1141, 854, 22373, 303, 6681, 1330, 22157, 13, 271, 9764, 728, 1683, 883, 279, 1786, 5313, 364, 279, 709, 13, 14147, 25, 198, 12, 82930, 318, 3267, 520, 1590, 496, 7, 17, 83193, 8, 854, 11, 496, 1393, 8, 3433, 198, 12, 54312, 1452, 29812, 25, 496, 1393, 8, 854, 11, 496, 1393, 8, 3433, 198, 12, 13310, 1340, 25, 496, 1393, 8, 854, 11, 496, 7, 16, 8, 3433, 198, 12, 11296, 26793, 6880, 25, 496, 12171, 307, 8, 854, 271, 40, 3172, 708, 440, 279, 83876, 5313, 430, 424, 579, 4101, 11, 10727, 11, 321, 3999, 310, 3418, 13, 1049]
+OUTPUT TEXT: "The user wants two things:\n1. A Python function that returns the n-th Fibonacci number.\n2. An explanation of its time complexity in exactly two sentences.\n\nLet me think about the best approach for the function. Options:\n- Recursive (naive): O(2^n) time, O(n) space\n- Memoized recursive: O(n) time, O(n) space\n- Iterative: O(n) time, O(1) space\n- Matrix exponentiation: O(log n) time\n\nI'll go with the iterative approach as it's clean, efficient, and easy to understand. It"
+--- generated text ---
+The user wants two things:
+1. A Python function that returns the n-th Fibonacci number.
+2. An explanation of its time complexity in exactly two sentences.
+
+Let me think about the best approach for the function. Options:
+- Recursive (naive): O(2^n) time, O(n) space
+- Memoized recursive: O(n) time, O(n) space
+- Iterative: O(n) time, O(1) space
+- Matrix exponentiation: O(log n) time
+
+I'll go with the iterative approach as it's clean, efficient, and easy to understand. It

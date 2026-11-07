@@ -1,0 +1,56 @@
+serve-smoke: prebuilt target/release/memra-server (lane copy, no build)
+== serve-smoke: plain serving ==
+  ok: /models lists the model
+  ok: chat non-stream (text + usage + finish_reason)
+  ok: chat stream (SSE chunks + [DONE])
+  ok: /v1/completions
+  ok: greedy determinism (2 runs identical)
+  ok: 3 concurrent chats
+  ok: long generation (>=100 tok)
+== serve-smoke: cache-metering exactness ==
+  ok: A fanout cached_tokens == [0] + [256]x4
+  ok: A-req1 prompt_tokens == 272
+  ok: A-req2 prompt_tokens == 272
+  ok: A-req3 prompt_tokens == 272
+  ok: A-req4 prompt_tokens == 272
+  ok: A-req5 prompt_tokens == 272
+  ok: B-req1 cached_tokens == 0 (cross-salt blindness)
+  ok: B-req1 prompt_tokens == 272
+  ok: prompt_tokens_in == 1632
+  ok: cached_tokens_in == 1024
+  ok: computed_tokens_in == prompt - cached
+  ok: cache_hit_token_ratio matches arithmetic
+  ok: prefix_cache_hits == N-1
+  ok: prefix_cache_misses == 2 (one A leader + cross-salt B)
+  ok: prefix_cache_inserts == 2 (shared A prefix + B seed)
+  ok: prefix_cache_hit_tokens == 1024
+  ok: lcp_histogram: 6 probes total
+  ok: lcp_histogram: 2 cold probes in bucket [0]
+  ok: lcp_histogram: 4 probes in K's bucket (edge 256)
+  ok: tick-seg [64,512) window carries the shared-prefix probes
+  ok: tenants[meter-A] split exact
+  ok: tenants[meter-B] split exact (0 cached)
+  ok: economics revenue_multiplier == 2.6842 (factor 1.0)
+cache-meter-gate: 0 failed
+  ok: cache-metering accounting exact (per-request + /metrics + economics)
+== serve-smoke: spec serving (draft attached) ==
+  ok: spec == plain greedy text (serving exactness)
+== serve-smoke: sampled truncation matrix (spec server) ==
+  (immune baseline: untruncated t0.8 seed=7, bangs=0)
+  ok: trunc top_k=40 (reproducible, bangs=0 <= baseline 0)
+  ok: trunc top_p=0.95 (reproducible, bangs=0 <= baseline 0)
+  ok: trunc min_p=0.05 (reproducible, bangs=0 <= baseline 0)
+  ok: trunc llama-default k40+p0.95+m0.05 (reproducible, bangs=0 <= baseline 0)
+== serve-smoke: session-affinity resume exactness ==
+  ok: affinity resume is deterministic across servers (4 rewritten turns)
+  ok: replay arm resumed too (3 rewind(s))
+  ok: affinity fired (3 rewind(s) on a rewritten history)
+  ok: no failed rewinds
+== serve-smoke: gemma4 arm SKIP (no model at /data/ai-ml/models/gemma-4-12b-it-qat/gemma-4-12b-it-qat-q4_0.gguf)
+== serve-smoke: Q35 mixed c=4 cold-prefill exactness ==
+{"cell_clean": false, "cell_integrity_failures": ["response_failure: 20 requests failed the response check (status, stream end, finish reason, completion length)"], "cold_misses": 2, "concurrency": 4, "expected_completion_tokens": 60, "expected_hit_cached_tokens": 4832, "fail_lines": ["Q35 mixed c=4 exact-token regression", "Q35 mixed c=4 response failure (status, stream end or request id)", "Q35 mixed c=4 hot-set seeding failed"], "failure_classes": ["token_regression", "response_failure", "seed_failure"], "gdn_grid": 32, "hit_requests": 18, "kind": "q35_cold_mixed_gate", "requests": 20, "schema": "memra.q35-cold-mixed-gate.v2", "seed_failures": ["q35 hot template 0: seed failed: None", "q35 hot template 1: seed failed: None", "q35 hot template 2: seed failed: None", "q35 hot template 3: seed failed: None", "q35 hot template 4: seed failed: None", "q35 hot template 5: seed failed: None", "q35 hot template 6: seed failed: None", "q35 hot template 7: seed failed: None"], "short_or_non_length": [{"cache_role": "hit", "completion_tokens": 25, "finish_reason": "stop", "index": 0, "request_id": "cmpl-8df83b9ddc44c60e33639babc8ccdd38", "text_sha256": "0a8260f725e5a0849dee05a9a33a258c845bb3886efa2c1b85f7a37b20ec81ee"}, {"cache_role": "miss", "completion_tokens": 25, "finish_reason": "stop", "index": 1, "request_id": "cmpl-5c344d2fab5b6054f5f9d6b183fc8ccc", "text_sha256": "0a8260f725e5a0849dee05a9a33a258c845bb3886efa2c1b85f7a37b20ec81ee"}, {"cache_role": "hit", "completion_tokens": 25, "finish_reason": "stop", "index": 2, "request_id": "cmpl-1f859061ca0d87f22821f70ab775a393", "text_sha256": "0a8260f725e5a0849dee05a9a33a258c845bb3886efa2c1b85f7a37b20ec81ee"}, {"cache_role": "miss", "completion_tokens": 25, "finish_reason": "stop", "index": 3, "request_id": "cmpl-dcc61ccb02db79cf848324ea954e8b3f", "text_sha256": "0a8260f725e5a0849dee05a9a33a258c845bb3886efa2c1b85f7a37b20ec81ee"}, {"cache_role": "hit", "completion_tokens": 25, "finish_reason": "stop", "index": 4, "request_id": "cmpl-710cbdf156b15b42d4390100bb5c07d4", "text_sha256": "0a8260f725e5a0849dee05a9a33a258c845bb3886efa2c1b85f7a37b20ec81ee"}, {"cache_role": "hit", "completion_tokens": 25, "finish_reason": "stop", "index": 5, "request_id": "cmpl-20e72d086add58ff1e2975a58ded2092", "text_sha256": "0a8260f725e5a0849dee05a9a33a258c845bb3886efa2c1b85f7a37b20ec81ee"}, {"cache_role": "hit", "completion_tokens": 25, "finish_reason": "stop", "index": 6, "request_id": "cmpl-0d919651ab31a4ad72dd3f7d44a61af8", "text_sha256": "0a8260f725e5a0849dee05a9a33a258c845bb3886efa2c1b85f7a37b20ec81ee"}, {"cache_role": "hit", "completion_tokens": 25, "finish_reason": "stop", "index": 7, "request_id": "cmpl-825384ded6cc133918b0bf648862f403", "text_sha256": "0a8260f725e5a0849dee05a9a33a258c845bb3886efa2c1b85f7a37b20ec81ee"}, {"cache_role": "hit", "completion_tokens": 25, "finish_reason": "stop", "index": 8, "request_id": "cmpl-46f0bbaf1b1a958b80c9bf7b66059bff", "text_sha256": "0a8260f725e5a0849dee05a9a33a258c845bb3886efa2c1b85f7a37b20ec81ee"}, {"cache_role": "hit", "completion_tokens": 25, "finish_reason": "stop", "index": 9, "request_id": "cmpl-8c429e7c256ad3ac6d85b90f40f59c47", "text_sha256": "0a8260f725e5a0849dee05a9a33a258c845bb3886efa2c1b85f7a37b20ec81ee"}, {"cache_role": "hit", "completion_tokens": 25, "finish_reason": "stop", "index": 10, "request_id": "cmpl-4e85dffb8277b09f341cf429275be041", "text_sha256": "0a8260f725e5a0849dee05a9a33a258c845bb3886efa2c1b85f7a37b20ec81ee"}, {"cache_role": "hit", "completion_tokens": 25, "finish_reason": "stop", "index": 11, "request_id": "cmpl-dff7334b98d557caea2dc69d028bbc87", "text_sha256": "0a8260f725e5a0849dee05a9a33a258c845bb3886efa2c1b85f7a37b20ec81ee"}, {"cache_role": "hit", "completion_tokens": 25, "finish_reason": "stop", "index": 12, "request_id": "cmpl-c8b4916e772e0d0a638f89f60da74333", "text_sha256": "0a8260f725e5a0849dee05a9a33a258c845bb3886efa2c1b85f7a37b20ec81ee"}, {"cache_role": "hit", "completion_tokens": 25, "finish_reason": "stop", "index": 13, "request_id": "cmpl-65c63146cf69d827277f2f787395dd40", "text_sha256": "0a8260f725e5a0849dee05a9a33a258c845bb3886efa2c1b85f7a37b20ec81ee"}, {"cache_role": "hit", "completion_tokens": 25, "finish_reason": "stop", "index": 14, "request_id": "cmpl-58a683f79ef4cfb1fe5939d59ba4cf39", "text_sha256": "0a8260f725e5a0849dee05a9a33a258c845bb3886efa2c1b85f7a37b20ec81ee"}, {"cache_role": "hit", "completion_tokens": 25, "finish_reason": "stop", "index": 15, "request_id": "cmpl-8b124cd39b406272d58e481daf98ae37", "text_sha256": "0a8260f725e5a0849dee05a9a33a258c845bb3886efa2c1b85f7a37b20ec81ee"}, {"cache_role": "hit", "completion_tokens": 25, "finish_reason": "stop", "index": 16, "request_id": "cmpl-e4a6e5540dd5b121fc3d584309d6728b", "text_sha256": "0a8260f725e5a0849dee05a9a33a258c845bb3886efa2c1b85f7a37b20ec81ee"}, {"cache_role": "hit", "completion_tokens": 25, "finish_reason": "stop", "index": 17, "request_id": "cmpl-2e54c0ec21c85f7a01ba258da844b109", "text_sha256": "0a8260f725e5a0849dee05a9a33a258c845bb3886efa2c1b85f7a37b20ec81ee"}, {"cache_role": "hit", "completion_tokens": 25, "finish_reason": "stop", "index": 18, "request_id": "cmpl-69ab97e5dd00ef1e7cc4568947d76c25", "text_sha256": "0a8260f725e5a0849dee05a9a33a258c845bb3886efa2c1b85f7a37b20ec81ee"}, {"cache_role": "hit", "completion_tokens": 25, "finish_reason": "stop", "index": 19, "request_id": "cmpl-7e056c9ee88a5a76efc48f74243e5a1c", "text_sha256": "0a8260f725e5a0849dee05a9a33a258c845bb3886efa2c1b85f7a37b20ec81ee"}], "verdict": "FAIL"}
+  FAIL: Q35 mixed c=4 exact-token regression
+  FAIL: Q35 mixed c=4 response failure (status, stream end or request id)
+  FAIL: Q35 mixed c=4 hot-set seeding failed
+  ok: Q35 routed-MoE carried prime batches remain gated
+serve-smoke: 3 failed

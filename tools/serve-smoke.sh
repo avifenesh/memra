@@ -455,6 +455,11 @@ fi
 # continuation-capable prime batch made both misses select EOS at token 26 while all hits
 # remained clean. This arm also pins the immediate safety contract: routed-MoE carried
 # chunks stay serial until a multi-chunk + serving-decode gate qualifies that path.
+# The frozen sellgate workload was qualified on the fp32 GDN state class, so the arm pins it
+# (MEMRA_GDN_STATE_BF16=0, research/gdn-state-bf16-storage-20261107): in the bf16 class every
+# request of the cell, hits and cold misses alike, ends with EOS at token 26 on this synthetic
+# periodic prompt and returns byte-identical text. That is a different greedy continuation of
+# a different numeric program, not the miss-only EOS this arm exists to catch.
 Q35_COLD_MODEL="${MEMRA_Q35_COLD_MODEL:-/data/ai-ml/hf-models/qwen36-35b-moe/Qwen3.6-35B-A3B-UD-IQ4_XS.gguf}"
 if [ -f "$Q35_COLD_MODEL" ]; then
   echo "== serve-smoke: Q35 mixed c=4 cold-prefill exactness =="
@@ -463,7 +468,8 @@ if [ -f "$Q35_COLD_MODEL" ]; then
   export MEMRA_SERVE_SPEC=0 MEMRA_CTX=8192 MEMRA_PREFIX_CACHE_MB=4096 \
     MEMRA_REUSE_POOL=0 MEMRA_AFFINITY=0 \
     MEMRA_MAX_SESSIONS=96
-  if start_server "q35-coldfix=$Q35_COLD_MODEL"; then
+  # the class pin is scoped to this server (a prefix assignment on the function call)
+  if MEMRA_GDN_STATE_BF16=0 start_server "q35-coldfix=$Q35_COLD_MODEL"; then
     Q35_GATE_LOG=/tmp/serve-smoke-q35-cold-mixed.log
     if python3 tools/q35-cold-mixed-gate.py --base "$BASE" --model q35-coldfix \
         --namespace serve-smoke-q35-coldfix --timeout 600 >"$Q35_GATE_LOG" 2>&1; then
