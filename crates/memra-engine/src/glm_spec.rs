@@ -800,6 +800,7 @@ impl HybridModel {
         tokens: &[u32],
         cache: &mut Cache,
     ) -> Res<(CudaSlice<f32>, CudaSlice<f32>, Glm5VerifyCkpt)> {
+        let _numeric = self.enter_numeric();
         self.glm5_verify_rows_reusing(e, tokens, cache, Vec::new())
     }
 
@@ -813,6 +814,7 @@ impl HybridModel {
         cache: &mut Cache,
         snap_pool: Vec<Option<CudaSlice<f32>>>,
     ) -> Res<(CudaSlice<f32>, CudaSlice<f32>, Glm5VerifyCkpt)> {
+        let _numeric = self.enter_numeric();
         let topology = *self
             .hyper
             .as_ref()
@@ -1169,6 +1171,7 @@ impl HybridModel {
         x: &CudaSlice<f32>,
         t: usize,
     ) -> Res<()> {
+        let _numeric = self.enter_numeric();
         let Some(sink) = cache.hc_taps.as_mut() else {
             return Ok(());
         };
@@ -1195,6 +1198,7 @@ impl HybridModel {
         x: &CudaSlice<f32>,
         t: usize,
     ) -> Res<()> {
+        let _numeric = self.enter_numeric();
         let Some(slot) = sink.layer_ids.iter().position(|&l| l == il) else {
             return Ok(());
         };
@@ -1338,6 +1342,7 @@ impl HybridModel {
         tokens: &[u32],
         n_embd: usize,
     ) -> Res<CudaSlice<f32>> {
+        let _numeric = self.enter_numeric();
         e.htod(&self.embd.try_gather(n_embd, tokens)?)
     }
 
@@ -1534,6 +1539,7 @@ impl HybridModel {
         ckpt: &Glm5VerifyCkpt,
         keep: usize,
     ) -> Res<()> {
+        let _numeric = self.enter_numeric();
         if keep == 0 || keep > ckpt.rows {
             return Err(format!(
                 "glm5_verify_rollback: keep={keep} outside 1..={} (the anchor row is always \
@@ -1722,6 +1728,7 @@ impl HybridModel {
         max_new: usize,
         k: usize,
     ) -> Res<(Vec<u32>, usize, usize)> {
+        let _numeric = self.enter_numeric();
         self.generate_spec_glm5_gated(e, prompt, max_new, k, Glm5SpecKnobs::default())
     }
 
@@ -1736,6 +1743,7 @@ impl HybridModel {
         k: usize,
         mut knobs: Glm5SpecKnobs<'_>,
     ) -> Res<(Vec<u32>, usize, usize)> {
+        let _numeric = self.enter_numeric();
         let cap = Self::hyper_batch_cap();
         if k == 0 || k + 1 > cap {
             return Err(format!(
@@ -1900,6 +1908,7 @@ impl HybridModel {
         ctx_cap: usize,
         sampling: Option<SpecSampling>,
     ) -> Res<Glm5SpecSession> {
+        let _numeric = self.enter_numeric();
         let mut state = Some(self.glm5_prime_start(e, prompt, ctx_cap, sampling)?);
         let mut walker = self.glm5_prime_walker(e, &mut state);
         crate::prime_walker::advance_prime(&mut walker, false, crate::prime_walker::trace_chunk)?;
@@ -1913,6 +1922,7 @@ impl HybridModel {
         ctx_cap: usize,
         sampling: Option<SpecSampling>,
     ) -> Res<Glm5PrimeState> {
+        let _numeric = self.enter_numeric();
         if self.hyper.is_none() {
             return Err("generate_spec_glm5 requires a HyperConnections trunk".into());
         }
@@ -2097,6 +2107,7 @@ impl HybridModel {
         start: usize,
         end: usize,
     ) -> Res<()> {
+        let _numeric = self.enter_numeric();
         let Some(sink) = cache.hc_taps.as_mut() else {
             return Ok(());
         };
@@ -2398,6 +2409,7 @@ impl HybridModel {
         ctx_cap: usize,
         sampling: Option<SpecSampling>,
     ) -> Res<Glm5SpecSession> {
+        let _numeric = self.enter_numeric();
         let mut state = Some(self.glm5_prime_restored_start(
             e,
             cache,
@@ -2428,6 +2440,7 @@ impl HybridModel {
         ctx_cap: usize,
         sampling: Option<SpecSampling>,
     ) -> Res<Glm5PrimeState> {
+        let _numeric = self.enter_numeric();
         if self.hyper.is_none() {
             return Err("glm5_spec_session_from_restored requires a HyperConnections trunk".into());
         }
@@ -2669,6 +2682,7 @@ impl HybridModel {
         k: usize,
         eos: &[u32],
     ) -> Res<(Vec<u32>, usize, usize)> {
+        let _numeric = self.enter_numeric();
         self.glm5_spec_session_burst_inner(
             e,
             sess,
@@ -2698,6 +2712,7 @@ impl HybridModel {
         eos: &[u32],
         on_commit: CommitHook<'_>,
     ) -> Res<(Vec<u32>, usize, usize)> {
+        let _numeric = self.enter_numeric();
         self.glm5_spec_session_burst_inner(
             e,
             sess,
@@ -2720,6 +2735,7 @@ impl HybridModel {
         eos: &[u32],
         knobs: &mut Glm5SpecKnobs<'_>,
     ) -> Res<(Vec<u32>, usize, usize)> {
+        let _numeric = self.enter_numeric();
         self.glm5_spec_session_burst_inner(e, sess, target, k, eos, knobs, None)
     }
 
@@ -3998,6 +4014,7 @@ impl HybridModel {
         e: &Engine,
         mut sess: Glm5SpecSession,
     ) -> Res<(Cache, u32)> {
+        let _numeric = self.enter_numeric();
         if !sess.demote_eligible() {
             let why = if sess.sampling.is_some() {
                 "sampled sessions stay on spec until they end (session-owned Philox vs the \

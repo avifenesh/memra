@@ -26,6 +26,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let e = Engine::new(0)?;
     let g = GgufFile::open(&path)?;
     let m = HybridModel::load(&e, &g)?;
+    let _numeric = m.enter_numeric();
 
     let mut pinned = 0usize;
     let mut fails = 0usize;

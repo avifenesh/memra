@@ -1988,7 +1988,7 @@ impl Engine {
             // sm_120a keeps the SK entry on (rig-divergence law). MEMRA_MMQ_SK=1 forces
             // entry; MEMRA_MMQ_SK_FORM=sk forces the actual SK numerical form.
             static SK_ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-            let sk = match crate::MMQ_SK_FORCE.load(std::sync::atomic::Ordering::Relaxed) {
+            let sk = match crate::NumericProfile::current().mmq_sk_force {
                 0 => false,
                 1 => true,
                 _ => *SK_ON.get_or_init(|| {

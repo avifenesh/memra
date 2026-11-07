@@ -197,6 +197,7 @@ impl HybridModel {
         e: &Engine,
         depth: usize,
     ) -> Result<(f64, f64, f64), Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         const N: usize = 32;
         let vocab = (self.cfg.n_vocab as usize).max(64) - 16;
         let mut caches: Vec<Cache> = Vec::with_capacity(N);
@@ -277,6 +278,7 @@ impl HybridModel {
         depth: usize,
         plain_cap: usize,
     ) -> Result<SpecCostTable, Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         let plain_cap = plain_cap.clamp(1, 32);
         let plain_points = plain_points(plain_cap);
         let vocab = (self.cfg.n_vocab as usize).max(64) - 16;

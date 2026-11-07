@@ -89,8 +89,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let g = GgufFile::open(&path)?;
     let arch = g.arch().unwrap_or("?").to_string();
     let model = HybridModel::load_without_mtp(&e, &g)?;
+    let _numeric = model.enter_numeric();
     let cfg = &model.cfg;
     let nhkv = cfg.n_head_kv as usize;
+    let nh = cfg.n_head as usize;
     let hd = cfg.head_dim_k as usize;
     if auto {
         // first rung boundary on THIS rig/model: the smallest t_kv in [64, 32768) where the
@@ -173,9 +175,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let tkx = c_x.pos + 1;
         let tkys: Vec<usize> = c_ys.iter().map(|c| c.pos + 1).collect();
         let spx = memra_engine::fa_split_keys_pub(tkx, nhkv);
-        let seqs = memra_engine::fa_seqs_eligible(tkx, hd)
+        let seqs = memra_engine::fa_seqs_eligible(tkx, hd, nh, nhkv)
             && tkys.iter().all(|&t| {
-                memra_engine::fa_seqs_eligible(t, hd)
+                memra_engine::fa_seqs_eligible(t, hd, nh, nhkv)
                     && memra_engine::fa_split_keys_pub(t, nhkv) == spx
             });
         if canary && s == 1 {

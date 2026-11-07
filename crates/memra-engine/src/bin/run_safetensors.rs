@@ -32,6 +32,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let logits = if cfg.uses_hybrid_executor() {
         let model = HybridModel::load_from_source(&e, &src)?;
+        let _numeric = model.enter_numeric();
         let full = model.cfg.n_full_attn_layers();
         println!(
             "loaded hybrid: n_layer={} ({} full-attn, {} linear) n_embd={} n_head={}/{} head_dim={} n_vocab={}",

@@ -301,6 +301,7 @@ impl Eagle3Draft {
         scratch: &mut Eagle3Scratch,
         pos: usize,
     ) -> Result<(Vec<f32>, CudaSlice<f32>), Box<dyn std::error::Error>> {
+        let _numeric = target.enter_numeric();
         let n = self.n_embd;
         let eps = self.eps;
         let pos_d = e.htod_i32(&[pos as i32])?;
@@ -475,6 +476,7 @@ impl HybridModel {
         max_new: usize,
         k: usize,
     ) -> Result<(Vec<u32>, usize, usize), Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         self.refuse_hyper("generate_spec_eagle")?;
         assert!(k >= 1, "k must be >= 1");
         assert!(!prompt.is_empty(), "prompt must be non-empty");

@@ -38,6 +38,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let e = Engine::new(0)?;
     let g = GgufFile::open(&path)?;
     let model = HybridModel::load(&e, &g)?;
+    let _numeric = model.enter_numeric();
     println!(
         "loaded target {} ({} layers, nextn={}, n_embd={})",
         g.arch().unwrap_or("?"),

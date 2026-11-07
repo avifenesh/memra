@@ -55,6 +55,7 @@ impl GraphSession {
         e: &Engine,
         m: &crate::hybrid::HybridModel,
     ) -> Result<u32, Box<dyn std::error::Error>> {
+        let _numeric = m.enter_numeric();
         if self.cache.pos + 1 >= self.bucket_max {
             return Err("GraphSession: past bucket_max (generation budget exceeded)".into());
         }
@@ -94,8 +95,14 @@ impl GraphSession {
 
     /// Profiling decomposition of step() (graph-session-gate MEMRA_GS_PROF): the three
     /// phases exposed separately. prof_launch is ASYNC (no sync) — prof_read carries the
-    /// sync+D2H. Advances the session exactly like step().
-    pub fn prof_apply(&mut self, _e: &Engine) -> Result<(), Box<dyn std::error::Error>> {
+    /// sync+D2H. Advances the session exactly like step(), under the same model profile (the
+    /// split ladder reads it).
+    pub fn prof_apply(
+        &mut self,
+        _e: &Engine,
+        m: &crate::hybrid::HybridModel,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let _numeric = m.enter_numeric();
         crate::graph_update::fa_apply(
             &self.graph,
             &mut self.plan,
@@ -175,6 +182,7 @@ impl HybridModel {
     /// budget, 2026-07-17) — returns None and the caller stays on the host-embd eager loop
     /// instead of panicking. Double-init race is benign (identical bytes, loser dropped).
     pub(crate) fn embd_gpu_try(&self, e: &Engine) -> Option<&cudarc::driver::CudaSlice<u8>> {
+        let _numeric = self.enter_numeric();
         if let Some(v) = self.embd_gpu.get() {
             return Some(v);
         }
@@ -198,6 +206,7 @@ impl HybridModel {
         token: u32,
         cache: &mut Cache,
     ) -> Result<Vec<f32>, Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         Ok(self.decode_step_h(e, token, cache)?.0)
     }
 
@@ -225,6 +234,7 @@ impl HybridModel {
         n_ff: usize,
         lim: Option<SwigluClamp>,
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         // M3 dense layers use swigluoai (clamped) — the silu_mul fused fast paths below encode
         // plain SiLU; route through ffn_act (macro-scales folded via matmul_pre) until clamped
         // fused twins exist. step35's per-layer `lim` is the same problem, same escape hatch:
@@ -349,6 +359,7 @@ impl HybridModel {
     /// True when ALL of a mixer's input projections are on the q8_1 fast path (so the attn-input
     /// rms_norm can emit q8_1 directly and the mixer skips its internal quantize_q8_1).
     pub(crate) fn mixer_in_q8_1_fast(&self, e: &Engine, mixer: &Mixer) -> bool {
+        let _numeric = self.enter_numeric();
         match mixer {
             Mixer::Full(fa) => {
                 if fa.step_tp_qkv.is_some() {
@@ -534,6 +545,7 @@ impl HybridModel {
         il: usize,
         eps: f32,
     ) -> Result<(CudaSlice<f32>, CudaSlice<f32>), Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         let pnorm = layer.post_attn_norm.float_data();
         match &layer.ffn {
             crate::hybrid::Ffn::Dense {
@@ -634,6 +646,7 @@ impl HybridModel {
         cache: &mut Cache,
         aux_layers: &[usize],
     ) -> Result<(Vec<f32>, Vec<CudaSlice<f32>>), Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         self.refuse_hyper("decode_step_aux")?;
         cache.ensure_usable("decode_step_aux")?;
         let (logits, aux, _) = self.decode_step_aux_inner(e, token, cache, aux_layers, false)?;
@@ -649,6 +662,7 @@ impl HybridModel {
         token: u32,
         cache: &mut Cache,
     ) -> Result<(Vec<f32>, Hy3Layer0Stages), Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         self.refuse_hyper("decode_step_hy3_layer0_stages")?;
         cache.ensure_usable("decode_step_hy3_layer0_stages")?;
         if self.cfg.hy3.is_none() {
@@ -729,6 +743,7 @@ impl HybridModel {
         token: u32,
         cache: &mut Cache,
     ) -> Result<(Vec<f32>, CudaSlice<f32>), Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         cache.ensure_usable("decode_step_h")?;
         if self.hyper.is_some() {
             return self.decode_step_hyper(e, token, cache);
@@ -982,6 +997,7 @@ impl HybridModel {
         cache: &mut Cache,
         samp: Option<&crate::decode_batch::DevSamp>,
     ) -> Result<Option<(Vec<u32>, Vec<f32>)>, Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         self.refuse_hyper("decode_step_chain")?;
         cache.ensure_usable("decode_step_chain")?;
         if !self.device_chain_plan_eligible() {
@@ -1173,6 +1189,7 @@ impl HybridModel {
         pos: usize,
         cache: &mut Cache,
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         let n_embd = self.cfg.n_embd as usize;
         let eps = self.cfg.rms_eps;
         let mut pending: Option<(CudaSlice<f32>, CudaSlice<f32>)> = None;
@@ -1425,6 +1442,7 @@ impl HybridModel {
         token: u32,
         cache: &mut Cache,
     ) -> Result<crate::pp::PendingLogits, Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         self.refuse_hyper("decode_step_h_ppn_deferred")?;
         cache.ensure_usable("decode_step_h_ppn_deferred")?;
         let fence = crate::pp::pp_cuts(self.layers.len())
@@ -1513,6 +1531,7 @@ impl HybridModel {
         tokens: &[u32],
         caches: &mut [Cache],
     ) -> Result<Vec<Vec<f32>>, Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         self.refuse_hyper("decode_step_lockstep")?;
         for cache in caches.iter() {
             cache.ensure_usable("decode_step_lockstep")?;
@@ -1715,6 +1734,7 @@ impl HybridModel {
         cache: &mut Cache,
         n_vocab: usize,
     ) -> Result<CudaSlice<u32>, Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         self.dc_walk_guards("decode_step_dc", cache)?;
         // Route gemma4 to ITS dc twin (mirrors decode_step_h): the generic walk below is the
         // qwen-class layer stack — running gemma weights through it produced the argmax-INIT
@@ -1788,6 +1808,7 @@ impl HybridModel {
         n_vocab: usize,
         bucket_max: usize,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         self.dc_walk_guards("decode_step_dc_cap", cache)?;
         // The capture records the generic qwen-class stack below. Gemma has a dc twin
         // (`gemma4_decode_step_dc`) but no captured one, so a gemma session that primed through
@@ -1848,6 +1869,7 @@ impl HybridModel {
         prompt: &[u32],
         max_new: usize,
     ) -> Result<Vec<u32>, Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         self.refuse_hyper("generate_graph")?;
         if !self.rewrite_allowed(memra_gguf::execution_manifest::RewriteSurface::DecodeGraph) {
             if !self.rewrite_allowed(memra_gguf::execution_manifest::RewriteSurface::DecodeEager) {
@@ -1993,6 +2015,7 @@ impl HybridModel {
         max_new: usize,
         mut emit: impl FnMut(u32) -> Option<StopReason>,
     ) -> Result<StopReason, Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         let _ = head_dim;
         let n_vocab = self.output.out_features();
         let final_max = cache.pos + max_new + 1;
@@ -2047,6 +2070,7 @@ impl HybridModel {
         prompt: &[u32],
         max_new: usize,
     ) -> Result<(GraphSession, u32), Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         self.refuse_hyper("graph_session_new")?;
         let n_embd = self.cfg.n_embd as usize;
         let (qt, row_bytes) = self.embd.qt_and_row_bytes(n_embd);
@@ -2114,11 +2138,12 @@ impl HybridModel {
     /// With the rung in the fingerprint a capture never straddles it, so the captured
     /// split_keys equals the live ladder on every replay — bit-exact at every t_kv.
     pub(crate) fn fa_class_of(&self, e: &Engine, t_kv: usize) -> (bool, bool, bool, usize) {
+        let _numeric = self.enter_numeric();
         let head_dim = self.cfg.head_dim_k as usize;
-        let nkv = self.cfg.n_head_kv as usize;
+        let (nh, nkv) = (self.cfg.n_head as usize, self.cfg.n_head_kv as usize);
         (
-            e.fa_geom_eager(t_kv, head_dim, nkv, false).0,
-            crate::fa_v4_at_pub(t_kv),
+            e.fa_geom_eager(t_kv, head_dim, nh, nkv, false).0,
+            crate::fa_v4_at_pub(t_kv, nh, nkv),
             head_dim == 512 && t_kv >= crate::fa512_min_tkv(),
             crate::fa_split_keys_pub(t_kv, nkv),
         )
@@ -2126,6 +2151,7 @@ impl HybridModel {
 
     /// Last t_kv (clamped to `final_max`) sharing `start`'s eager kernel class.
     pub(crate) fn fa_segment_end(&self, e: &Engine, start: usize, final_max: usize) -> usize {
+        let _numeric = self.enter_numeric();
         let cls = self.fa_class_of(e, start);
         let mut end = start;
         while end < final_max && self.fa_class_of(e, end + 1) == cls {
@@ -2156,6 +2182,7 @@ impl HybridModel {
         ),
         Box<dyn std::error::Error>,
     > {
+        let _numeric = self.enter_numeric();
         let t0 = cache.pos + 1;
         let seg_end = self.fa_segment_end(e, t0, final_max);
         let bucket_max = seg_end;
@@ -2208,6 +2235,7 @@ impl HybridModel {
         e: &Engine,
         sess: &mut GraphSession,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         self.graph_session_recapture(e, sess)
     }
 
@@ -2217,6 +2245,7 @@ impl HybridModel {
         e: &Engine,
         sess: &mut GraphSession,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         let (graph, plan, seg_end) = self.graph_capture_segment(
             e,
             &mut sess.cache,
@@ -2283,6 +2312,7 @@ impl HybridModel {
         cache: &mut Cache,
         il: usize,
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         // eager-mirror path: advance host counters and size n_splits from the live t_kv (bit-identical
         // to fa_decode). The capture path uses full_attn_decode_dc_cap (fixed bucket_max, no host
         // advance, full-buffer K/V view).
@@ -2302,6 +2332,7 @@ impl HybridModel {
         cache: &mut Cache,
         il: usize,
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         self.full_attn_decode_dc_inner(e, fa, h, Some((hq, hd)), pos_d, cache, il, None)
     }
 
@@ -2319,6 +2350,7 @@ impl HybridModel {
         il: usize,
         bucket_max: usize,
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         self.full_attn_decode_dc_inner(e, fa, h, Some((hq, hd)), pos_d, cache, il, Some(bucket_max))
     }
 
@@ -2339,6 +2371,7 @@ impl HybridModel {
         il: usize,
         bucket_max: usize,
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         self.full_attn_decode_dc_inner(e, fa, h, None, pos_d, cache, il, Some(bucket_max))
     }
 
@@ -2557,6 +2590,7 @@ impl HybridModel {
         prompt: &[u32],
         max_new: usize,
     ) -> Result<Vec<u32>, Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         let max_ctx = prompt.len() + max_new + 8;
         let mut cache = Cache::new(e, &self.cfg, max_ctx)?;
         let mut last_logits = Vec::new();
@@ -2848,6 +2882,7 @@ impl HybridModel {
         sampler: &mut crate::sampler::Sampler,
         mut on_token: F,
     ) -> Result<GenOutput, Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         // Context guard: prompt + generated must fit max_ctx (caller-supplied or model default).
         let ctx_cap = params.max_ctx.unwrap_or(prompt.len() + params.max_new + 8);
         if prompt.len() >= ctx_cap {
@@ -3183,6 +3218,7 @@ impl HybridModel {
         cache: &mut Cache,
         il: usize,
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         self.full_attn_decode_pre(e, fa, h, None, pos_d, pos, cache, il)
     }
 
@@ -3203,6 +3239,7 @@ impl HybridModel {
         cache: &mut Cache,
         il: usize,
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         if self.uses_sliding_gated_moe_program() {
             return self.step35_decode_attn(e, fa, il, h, pre_q, pos_d, cache);
         }
@@ -3382,6 +3419,7 @@ impl HybridModel {
         cache: &mut Cache,
         il: usize,
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         self.linear_attn_decode_inner(e, la, h, None, cache, il, false)
     }
 
@@ -3402,6 +3440,7 @@ impl HybridModel {
         il: usize,
         persistent: bool,
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         self.linear_attn_decode_inner(e, la, h, Some((hq, hd)), cache, il, persistent)
     }
 
@@ -3420,6 +3459,7 @@ impl HybridModel {
         cache: &mut Cache,
         il: usize,
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         self.linear_attn_decode_inner(e, la, h, None, cache, il, true)
     }
 

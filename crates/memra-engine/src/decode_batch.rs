@@ -894,6 +894,7 @@ impl HybridModel {
         tokens: &[u32],
         caches: &mut [&mut Cache],
     ) -> Result<Vec<Vec<f32>>, Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         let (rows, _) = self.decode_step_batch_sampled(e, tokens, caches, &[])?;
         Ok(rows)
     }
@@ -921,6 +922,7 @@ impl HybridModel {
         caches: &mut [&mut Cache],
         samp: &[Option<DevSamp>],
     ) -> Result<(Vec<Vec<f32>>, Vec<Option<u32>>), Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         self.decode_step_batch_sampled_lean(e, tokens, caches, samp, false)
     }
 
@@ -942,6 +944,7 @@ impl HybridModel {
         samp: &[Option<DevSamp>],
         lean: bool,
     ) -> Result<(Vec<Vec<f32>>, Vec<Option<u32>>), Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         self.decode_step_batch_sampled_lean_masked(e, tokens, caches, samp, &[], lean)
     }
 
@@ -965,6 +968,7 @@ impl HybridModel {
         masks: &[Option<(&CudaSlice<u32>, usize)>],
         lean: bool,
     ) -> Result<(Vec<Vec<f32>>, Vec<Option<u32>>), Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         self.decode_step_batch_sampled_lean_masked_schedule(
             e, tokens, caches, samp, masks, lean, None,
         )
@@ -986,6 +990,7 @@ impl HybridModel {
         lean: bool,
         dual_wave_mid: usize,
     ) -> Result<(Vec<Vec<f32>>, Vec<Option<u32>>), Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         if self.hyper.is_some() {
             return Err(
                 "decode_step_batch_sampled_lean_masked_scheduled: the dual-active PP-2 \
@@ -1508,6 +1513,7 @@ impl HybridModel {
                     .expect("PP wave outgoing endpoint already moved");
                 let wave_states = &waves;
                 workers.push(scope.spawn(move || {
+                    let _numeric = self.enter_numeric();
                     self.decode_step_batch_wave_worker(
                         e,
                         rt,
@@ -1986,6 +1992,7 @@ impl HybridModel {
         let (out_a, out_b, span_b0, span_b1) = std::thread::scope(
             |scope| -> Result<_, Box<dyn std::error::Error>> {
                 let stage0_b = scope.spawn(move || {
+                    let _numeric = self.enter_numeric();
                     let staged = self
                         .decode_step_batch_dual_stage0(
                             e,
@@ -2532,6 +2539,7 @@ impl HybridModel {
         masks: &[Option<(&CudaSlice<u32>, usize)>],
         lean: bool,
     ) -> Result<(Vec<Vec<f32>>, Vec<Option<u32>>), Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         let topology = *self
             .hyper
             .as_ref()
@@ -2826,6 +2834,7 @@ impl HybridModel {
         lo: usize,
         hi: usize,
     ) -> Result<BatchLayerCtx, Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         let cfg = &self.cfg;
         let head_dim = cfg.head_dim_k as usize;
         // Per-step STATE POINTER TABLE (one H2D): for every linear layer, [conv x B]
@@ -2898,10 +2907,11 @@ impl HybridModel {
         let t_kvs: Vec<usize> = caches.iter().map(|c| c.pos + 1).collect();
         let t_kv_max = *t_kvs.iter().max().unwrap();
         let sp0 = crate::fa_split_keys(t_kvs[0], cfg.n_head_kv as usize);
-        let seqs_fa = t_kvs.iter().all(|&t| crate::fa_seqs_eligible(t, head_dim))
-            && t_kvs
-                .iter()
-                .all(|&t| crate::fa_split_keys(t, cfg.n_head_kv as usize) == sp0);
+        let seqs_fa = t_kvs.iter().all(|&t| {
+            crate::fa_seqs_eligible(t, head_dim, cfg.n_head as usize, cfg.n_head_kv as usize)
+        }) && t_kvs
+            .iter()
+            .all(|&t| crate::fa_split_keys(t, cfg.n_head_kv as usize) == sp0);
 
         Ok(BatchLayerCtx {
             lin_base,
@@ -2946,6 +2956,7 @@ impl HybridModel {
         pos_d: &CudaSlice<i32>,
         ph_last: &mut std::time::Instant,
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         let b_n = caches.len();
         let cfg = &self.cfg;
         let n_embd = cfg.n_embd as usize;
@@ -3382,6 +3393,7 @@ impl HybridModel {
         hi: usize,
         ph_last: &mut std::time::Instant,
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         self.step35_decode_rows_layers(e, x, caches, positions, pos_d, None, lo, hi, ph_last)
     }
 
@@ -4322,6 +4334,7 @@ impl HybridModel {
         gamma: usize,
         caches: &mut [&mut Cache],
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         if self.hyper.is_some() {
             return Err(
                 "moesd_target_forward: the MoESD speculative target walk has no \
@@ -4510,6 +4523,7 @@ impl HybridModel {
         logits: CudaSlice<f32>,
         b_n: usize,
     ) -> Result<(Vec<Vec<f32>>, Vec<Option<u32>>), Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         let staged = self.decode_batch_sample_stage(e, caches, samp, &[], lean, logits, b_n)?;
         let rows = self.decode_batch_sample_rows(e, caches, samp, &[], lean, &staged, b_n)?;
         Ok((rows, staged.next))

@@ -4213,8 +4213,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         let cpu = cpu_linear(&x, &w_f32, tt, in_f, out_f);
                         let scale = cpu.iter().map(|v| v.abs()).fold(0.0, f32::max).max(1e-3);
                         for (force, label) in [(0i8, "TILE"), (1, "SK")] {
-                            memra_engine::MMQ_SK_FORCE
-                                .store(force, std::sync::atomic::Ordering::Relaxed);
+                            let _numeric = memra_engine::NumericProfile {
+                                mmq_sk_force: force,
+                                ..memra_engine::NumericProfile::current()
+                            }
+                            .enter();
                             let yb =
                                 e.dtoh(&e.qmatvec_mmq_q4_0_raw(&wd, &xd, tt, in_f, out_f, false)?)?;
                             let rel = maxdiff(&cpu, &yb) / scale;
@@ -4252,8 +4255,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         let cpu = cpu_linear(&x, &w_f32, tt, in_f, out_f);
                         let scale = cpu.iter().map(|v| v.abs()).fold(0.0, f32::max).max(1e-3);
                         for (force, label) in [(0i8, "TILE"), (1, "SK")] {
-                            memra_engine::MMQ_SK_FORCE
-                                .store(force, std::sync::atomic::Ordering::Relaxed);
+                            let _numeric = memra_engine::NumericProfile {
+                                mmq_sk_force: force,
+                                ..memra_engine::NumericProfile::current()
+                            }
+                            .enter();
                             let yb =
                                 e.dtoh(&e.qmatvec_mmq_q4_0_raw(&wd, &xd, tt, in_f, out_f, false)?)?;
                             let rel = maxdiff(&cpu, &yb) / scale;
@@ -7086,7 +7092,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let sp0 = memra_engine::fa_split_keys_pub(depths[0], nhkv);
                 let eligible = depths
                     .iter()
-                    .all(|&t| memra_engine::fa_seqs_eligible(t, hd))
+                    .all(|&t| memra_engine::fa_seqs_eligible(t, hd, nh, nhkv))
                     && depths
                         .iter()
                         .all(|&t| memra_engine::fa_split_keys_pub(t, nhkv) == sp0);

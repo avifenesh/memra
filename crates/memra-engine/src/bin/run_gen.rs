@@ -191,6 +191,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         } else {
             HybridModel::load_from_source_without_mtp(&e, src.as_ref())?
         };
+        let _numeric = model.enter_numeric();
         if load_mtp {
             println!(
                 "loaded MTP chain: {} embedded head(s)",
@@ -1066,6 +1067,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     let g = GgufFile::open(&path)?;
     let model = HybridModel::load_without_mtp(&e, &g)?;
+    let _numeric = model.enter_numeric();
     let expert_bank_owner = match expert_bank {
         Some(budget) => Some(match e.install_expert_bank_gate(&model, &g, budget) {
             Ok(gate) => gate,

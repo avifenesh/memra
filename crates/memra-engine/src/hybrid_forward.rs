@@ -1885,6 +1885,7 @@ impl HybridModel {
         h: &CudaSlice<f32>,
         t: usize,
     ) -> Result<Option<Vec<CudaSlice<f32>>>, Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         let Some(tp) = fa.step_tp_qkv.as_ref() else {
             return Ok(None);
         };
@@ -1987,6 +1988,7 @@ impl HybridModel {
         activation: &CudaSlice<f32>,
         tokens: usize,
     ) -> Result<Option<CudaSlice<f32>>, Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         let Some(tp) = fa.step_tp_qkv.as_ref() else {
             return Ok(None);
         };
@@ -2108,6 +2110,7 @@ impl HybridModel {
         il: usize,
         prefill: bool,
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         let n_ff = ffn_gate.out_features();
         // Phase, not row count: a one-row prefill tail is still prefill, and the calibrated
         // scales were fitted against this program. Decode/verify pass prefill=false and get the
@@ -2160,6 +2163,7 @@ impl HybridModel {
         prefill: bool,
         zq8: Option<&(CudaSlice<i8>, CudaSlice<f32>)>,
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         match &layer.ffn {
             crate::hybrid::Ffn::Dense {
                 ffn_gate,
@@ -2560,6 +2564,7 @@ impl HybridModel {
         token: u32,
         cache: &mut Cache,
     ) -> Result<(Vec<f32>, CudaSlice<f32>), Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         self.decode_step_hyper_output(e, token, cache, false)
     }
 
@@ -2579,6 +2584,7 @@ impl HybridModel {
         token: u32,
         cache: &mut Cache,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         cache.ensure_usable("decode_step_glm5_tp_device_logits")?;
         if !self.glm5_tp_device_sample_supported() {
             return Err("device logits require GLM TP-2 without pipeline stages".into());
@@ -2883,6 +2889,7 @@ impl HybridModel {
         pos: usize,
         cache: &mut Cache,
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         // MEMRA_HC_DECODE_WS=1 (default OFF, read per call — rollback seam): the persistent-
         // workspace twin of this walk. Same kernels, same call order, same operand bytes;
         // only the hc-glue allocations (mixes/gates/comb/y/h/z/post-out, ~12 alloc+free pairs
@@ -3064,6 +3071,7 @@ impl HybridModel {
         cache: &mut Cache,
         ws: &mut crate::hyper::HyperDecodeWs,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         // MEMRA_GLM5_TP_SYMMETRIC: every rank runs the layer glue itself and the three sharded
         // ops meet in one-shot all-reduces, two crossings per layer instead of five. Declines
         // LOUDLY (once) rather than silently when the one-shot cannot serve, which is the
@@ -3109,6 +3117,7 @@ impl HybridModel {
         cache: &Cache,
         pos: usize,
     ) -> Result<Option<crate::glm5_tp::Glm5TpPrefixShards>, Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         let Some(rt) = self.glm5_tp_rt_for(0, self.layers.len()) else {
             return Ok(None);
         };
@@ -3187,6 +3196,7 @@ impl HybridModel {
         cache: &mut Cache,
         shards: &crate::glm5_tp::Glm5TpPrefixShards,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         let Some(rt) = self.glm5_tp_rt_for(0, self.layers.len()) else {
             return Err("glm5-tp prefix restore on a model that is not TP-sharded".into());
         };
@@ -3280,6 +3290,7 @@ impl HybridModel {
     /// Root copies use `e`'s current stream; TP KDA and latent peer copies use each peer's
     /// main stream in `glm5_tp_prefix_restore`. Returning from those copies only enqueues.
     pub fn prefix_restore_fence(&self, e: &Engine) -> Result<(), Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         e.stream().synchronize()?;
         if let Some(rt) = self.glm5_tp_rt_for(0, self.layers.len()) {
             for peer in &rt.peers {
@@ -3336,6 +3347,7 @@ impl HybridModel {
         pos_peer: &CudaSlice<i32>,
         cache: &mut Cache,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         let n_embd = self.cfg.n_embd as usize;
         let eps = self.cfg.rms_eps;
         let (layer, hyper) = self.ws_layer(il)?;
@@ -3434,6 +3446,7 @@ impl HybridModel {
         ws: &mut crate::hyper::HyperDecodeWs,
         ws_peer: &mut crate::hyper::HyperDecodeWs,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         let n_embd = self.cfg.n_embd as usize;
         let eps = self.cfg.rms_eps;
         let (layer, hyper) = self.ws_layer(il)?;
@@ -3472,6 +3485,7 @@ impl HybridModel {
         ws: &mut crate::hyper::HyperDecodeWs,
         ws_peer: &mut crate::hyper::HyperDecodeWs,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         let n_embd = self.cfg.n_embd as usize;
         let eps = self.cfg.rms_eps;
         let (layer, hyper) = self.ws_layer(il)?;
@@ -3596,6 +3610,7 @@ impl HybridModel {
         pos_d: &CudaSlice<i32>,
         pos_peer: &CudaSlice<i32>,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         self.sym_attn_glue(e, peer, topology, il, x, x_peer, ws, ws_peer)?;
         let (layer, _hyper) = self.ws_layer(il)?;
         let Mixer::Mla(mla) = &layer.mixer else {
@@ -3628,6 +3643,7 @@ impl HybridModel {
         a_root: &mut CudaSlice<f32>,
         a_peer: &mut CudaSlice<f32>,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         use std::sync::atomic::Ordering::Relaxed;
         let (layer, _hyper) = self.ws_layer(il)?;
         let Mixer::Mla(mla) = &layer.mixer else {
@@ -3699,6 +3715,7 @@ impl HybridModel {
         ws: &mut crate::hyper::HyperDecodeWs,
         ws_peer: &mut crate::hyper::HyperDecodeWs,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         let n_embd = self.cfg.n_embd as usize;
         let (layer, _hyper) = self.ws_layer(il)?;
         let Mixer::Mla(mla) = &layer.mixer else {
@@ -3957,6 +3974,7 @@ impl HybridModel {
         ws: &mut crate::hyper::HyperDecodeWs,
         mla_mixed: Option<&mut CudaSlice<f32>>,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         let n_embd = self.cfg.n_embd as usize;
         let eps = self.cfg.rms_eps;
         for seg in segs {
@@ -4046,6 +4064,7 @@ impl HybridModel {
         cache: &mut Cache,
         mixed_out: &mut CudaSlice<f32>,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         let layer = &self.layers[il];
         let Mixer::Mla(mla) = &layer.mixer else {
             return Err(format!("hyper_mla_mid_post_ws on a non-MLA layer {il}").into());
@@ -4105,6 +4124,7 @@ impl HybridModel {
         pos_rows: &[CudaSlice<i32>],
         caches: &mut [&mut Cache],
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         let b_n = caches.len();
         assert_eq!(
             pos_rows.len(),
@@ -4217,6 +4237,7 @@ impl HybridModel {
         il: usize,
         vrows: bool,
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         let n_embd = self.cfg.n_embd as usize;
         match &layer.ffn {
             crate::hybrid::Ffn::Dense { .. } => {
@@ -4741,6 +4762,7 @@ impl HybridModel {
                 let cache0_stage = &mut *cache0;
                 std::thread::scope(|scope| -> Result<_, Box<dyn std::error::Error>> {
                     let stage0 = scope.spawn(move || -> Result<usize, String> {
+                        let _numeric = self.enter_numeric();
                         let next = self
                             .prime_hyper_pp2_stage0_enqueue(
                                 e,
@@ -5192,6 +5214,7 @@ impl HybridModel {
         e: &Engine,
         tokens: &[u32],
     ) -> Result<Vec<f32>, Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         if self.hyper.is_some() {
             return self.forward_hyper(e, tokens, false);
         }
@@ -5292,6 +5315,7 @@ impl HybridModel {
         e: &Engine,
         tokens: &[u32],
     ) -> Result<Vec<f32>, Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         if self.hyper.is_some() {
             return self.forward_hyper(e, tokens, true);
         }
@@ -5480,6 +5504,7 @@ impl HybridModel {
         cache: &mut Cache,
         queued_after: usize,
     ) -> Result<(Vec<f32>, CudaSlice<f32>, CudaSlice<f32>), Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         self.prime_cache_overlaid(e, tokens, cache, queued_after, None)
     }
 
@@ -5501,6 +5526,7 @@ impl HybridModel {
         &self,
         e: &'a Engine,
     ) -> Result<&'a Engine, Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         if self.hyper.is_some()
             && !crate::pp::pp2_streams_off()
             && crate::pp::pp_cuts(self.layers.len()).is_some()
@@ -5527,6 +5553,7 @@ impl HybridModel {
         queued_after: usize,
         overlay: Option<&crate::vision::EmbedOverlay>,
     ) -> Result<(Vec<f32>, CudaSlice<f32>, CudaSlice<f32>), Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         // FORWARD PROGRESS (memra#50), the CALL-granularity half. Every chunked walk below
         // stamps `crate::progress` per chunk; a MONOLITHIC walk (a prompt at or under one
         // chunk, `MEMRA_PRIME_CHUNK=0`, gemma4 v0, the E4B arm) stamps nothing on its way
@@ -6066,6 +6093,7 @@ impl HybridModel {
                 // stage 1 consumes slot N while stage 0 produces slot N+1.
                 std::thread::scope(|scope| -> Result<_, Box<dyn std::error::Error>> {
                     let stage0 = scope.spawn(move || -> Result<usize, String> {
+                        let _numeric = self.enter_numeric();
                         let next = self
                             .prime_pp2_stage0_enqueue(
                                 e,
@@ -6243,6 +6271,7 @@ impl HybridModel {
                 let channels = stage_channels[stage].take().unwrap();
                 let cache_state = &stage_caches.stages()[stage];
                 handles.push(scope.spawn(move || -> Result<(), String> {
+                    let _numeric = self.enter_numeric();
                     let result = self.prime_ppn_wave_worker(
                         e,
                         rt,
@@ -6600,6 +6629,7 @@ impl HybridModel {
     /// on `e`'s device, 0 before the first prime. The slab is retained and grow-only, and every prime
     /// call on the device uses it in turn, so the admission door books only its owed growth.
     pub fn prime_slab_bytes(&self, e: &Engine) -> usize {
+        let _numeric = self.enter_numeric();
         let dev = e.ctx().ordinal();
         let slabs = self.prime_slabs.lock().unwrap_or_else(|p| p.into_inner());
         slabs.get(&dev).map_or(0, |sl| {
@@ -6624,6 +6654,7 @@ impl HybridModel {
         n_embd: usize,
         n_ff_max: usize,
     ) -> Result<std::sync::Arc<std::sync::Mutex<PrimeSlabs>>, Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         let mut slabs = self.prime_slabs.lock().unwrap();
         let dev = e.ctx().ordinal();
         let need_new = match slabs.get(&dev) {
@@ -6665,6 +6696,7 @@ impl HybridModel {
         chunk_off: usize,
         overlay: Option<&crate::vision::EmbedOverlay>,
     ) -> Result<(Vec<f32>, CudaSlice<f32>, CudaSlice<f32>), Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         if crate::pp::pp_host_bounce_active()
             && (self.uses_gemma_program() || !crate::pp::prime_pp_on())
         {
@@ -6802,6 +6834,7 @@ impl HybridModel {
         cache: &mut Cache,
         seq_end: usize,
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         let cfg = &self.cfg;
         let n_embd = cfg.n_embd as usize;
         let eps = cfg.rms_eps;
@@ -7223,6 +7256,7 @@ impl HybridModel {
         t: usize,
         cache: &mut Cache,
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         let n_embd = self.cfg.n_embd as usize;
         let eps = self.cfg.rms_eps;
         let mut x = x_in;
@@ -7327,6 +7361,7 @@ impl HybridModel {
         hiddens: &CudaSlice<f32>,
         row: usize,
     ) -> Result<Vec<f32>, Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         let n_embd = self.cfg.n_embd as usize;
         let mut x1 = e.uninit(n_embd)?;
         e.copy_view_into(
@@ -7566,6 +7601,7 @@ impl HybridModel {
         logits_out: &mut CudaSlice<f32>,
         h_seed_out: &mut CudaSlice<f32>,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         self.refuse_hyper("prime_chunk_captured")?;
         cache.ensure_usable("prime_chunk_captured")?;
         let cfg = &self.cfg;
@@ -8229,6 +8265,7 @@ impl HybridModel {
         prompts: &[&[u32]],
         caches: &mut [&mut Cache],
     ) -> Result<Vec<(Vec<f32>, CudaSlice<f32>, CudaSlice<f32>)>, Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         // FORWARD PROGRESS (memra#50, review of #106). This entry does NOT route through
         // `prime_cache_overlaid`, so without this shim the multi-session batched wave prefill
         // (`worker.rs`'s interactive prefill tick) was the one prefill path with zero odometer
@@ -9505,6 +9542,7 @@ impl HybridModel {
         t: usize,
         il: usize,
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         if self.uses_sliding_gated_moe_program() {
             return self.step35_attn(e, fa, h, pos_d, t, il);
         }
@@ -10626,6 +10664,7 @@ impl HybridModel {
         t: usize,
         il: usize,
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         if mla.tp.is_some() {
             return Err(format!(
                 "layer {il}: MLA layer is glm5-TP-sharded (MEMRA_GLM5_TP): the stateless \
@@ -10667,6 +10706,7 @@ impl HybridModel {
         il: usize,
         cache: &mut Cache,
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         self.mla_attn_cached_inner(e, mla, h, pos_d, t, il, cache, false)
     }
 
@@ -10690,6 +10730,7 @@ impl HybridModel {
         il: usize,
         cache: &mut Cache,
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         self.mla_attn_cached_inner(e, mla, h, pos_d, t, il, cache, true)
     }
 
@@ -10754,6 +10795,7 @@ impl HybridModel {
         max_ctx: usize,
         rows_exact: bool,
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         let slot = layer.len;
         let width = layer.width;
         assert_eq!(
@@ -11171,6 +11213,7 @@ impl HybridModel {
         il: usize,
         cache: &mut Cache,
     ) -> Result<Vec<CudaSlice<f32>>, Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         let tp = mla
             .tp
             .as_ref()
@@ -11257,6 +11300,7 @@ impl HybridModel {
         il: usize,
         cache: &mut Cache,
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         let tp = mla
             .tp
             .as_ref()
@@ -11408,6 +11452,7 @@ impl HybridModel {
         h: &CudaSlice<f32>,
         t: usize,
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         let cfg = &self.cfg;
         let _n_embd = cfg.n_embd as usize;
         let geometry = la.geometry;
@@ -11544,6 +11589,7 @@ impl HybridModel {
         t: usize,
         il: u16,
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         Self::moe_ffn_inner(
             e,
             m,
@@ -11570,6 +11616,7 @@ impl HybridModel {
         t: usize,
         il: u16,
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         Self::moe_ffn_inner(
             e,
             m,
@@ -11599,6 +11646,7 @@ impl HybridModel {
         t: usize,
         il: u16,
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         Self::moe_ffn_inner(
             e,
             m,
@@ -11627,6 +11675,7 @@ impl HybridModel {
         t: usize,
         il: u16,
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         Self::moe_ffn_inner(
             e,
             m,
@@ -16593,6 +16642,7 @@ impl HybridModel {
         e: &Engine,
         path: &std::path::Path,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         let Some(ids) = e.export_moe_residency() else {
             return Err("no MoE residency cache to persist".into());
         };
@@ -16623,6 +16673,7 @@ impl HybridModel {
         e: &Engine,
         path: &std::path::Path,
     ) -> Result<bool, Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         use crate::hybrid::Ffn;
         use crate::moe_cache::BlockId;
         let Ok(content) = std::fs::read_to_string(path) else {
@@ -16698,6 +16749,7 @@ impl HybridModel {
         &self,
         e: &Engine,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         e.freeze_moe_cache();
         Ok(())
     }
@@ -16959,6 +17011,7 @@ impl HybridModel {
         e: &Engine,
         cfg: &ModelConfig,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         use crate::hybrid::Ffn;
         let Some(sig) = cfg.sigmoid_router() else {
             return Err("prefetch predictor requires a sigmoid-router arch".into());
@@ -20980,6 +21033,7 @@ impl HybridModel {
         il: u16,
         max_block: usize,
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         use crate::moe_cache::{BlockId, PROJ_DOWN, PROJ_GATE, PROJ_UP};
         Self::refuse_block_e4m3_off_route(m, il, "lockstep")?;
         let cfg = &self.cfg;
@@ -21123,6 +21177,7 @@ impl HybridModel {
         type Tickets = Vec<(CpuPart, crate::cpu_experts::CpuExpertTicket)>;
         let (tickets, mut moe_out) = std::thread::scope(
             |sc| -> Result<(Tickets, CudaSlice<f32>), Box<dyn std::error::Error>> {
+                // numeric-scope: host-only (queues prepared CPU expert jobs, launches nothing)
                 let submitter = sc.spawn(move || -> Result<Tickets, String> {
                     let mut out = Vec::with_capacity(jobs.len());
                     for (part, job) in jobs {
@@ -21403,6 +21458,7 @@ impl HybridModel {
         ld: &mut CudaSlice<f32>,
         t: usize,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         if let Some((ids, n)) = self.gemma4_aux.as_ref().and_then(|a| a.suppress_d.as_ref()) {
             // suppress_d is primary-owned by the audited invariant (serving picks the last/head
             // stage as primary, and this tail runs only after the last stage). The assert turns
@@ -22792,6 +22848,7 @@ impl HybridModel {
         next_norm: Option<&CudaSlice<f32>>,
     ) -> Result<(CudaSlice<f32>, Option<(CudaSlice<i8>, CudaSlice<f32>)>), Box<dyn std::error::Error>>
     {
+        let _numeric = self.enter_numeric();
         let n_embd = self.cfg.n_embd as usize;
         let eps = self.cfg.rms_eps;
         let bits = layer.gemma4.as_ref().unwrap();
@@ -22859,6 +22916,7 @@ impl HybridModel {
         next_norm: Option<&CudaSlice<f32>>,
     ) -> Result<(CudaSlice<f32>, Option<(CudaSlice<i8>, CudaSlice<f32>)>), Box<dyn std::error::Error>>
     {
+        let _numeric = self.enter_numeric();
         let n_embd = self.cfg.n_embd as usize;
         let bits = layer.gemma4.as_ref().unwrap();
         let (sn, attn_out) = self.gemma4_layer_tail_core(e, layer, cur, x, t)?;
@@ -22971,6 +23029,7 @@ impl HybridModel {
         cache: &mut Cache,
         overlay: Option<&crate::vision::EmbedOverlay>,
     ) -> Result<(Vec<f32>, CudaSlice<f32>, CudaSlice<f32>), Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         // Err, not assert (2026-08-07, lane/gemma4-serve-gaps): a served gemma4 prompt longer
         // than the worker's prefill tick used to chunk here, and chunk 2 (pos > 0) killed the
         // whole worker process on this line. The worker now primes gemma4 monolithically and
@@ -23380,6 +23439,7 @@ impl HybridModel {
         n_vocab: usize,
         cap_bucket_max: Option<(usize, usize)>,
     ) -> Result<CudaSlice<u32>, Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         let mut tok_out = e.stream().alloc_zeros::<u32>(1)?;
         self.gemma4_decode_step_dc_into(
             e,
@@ -23412,6 +23472,7 @@ impl HybridModel {
         cap_bucket_max: Option<(usize, usize)>,
         tok_out: &mut CudaSlice<u32>,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         let n_embd = self.cfg.n_embd as usize;
         let eps = self.cfg.rms_eps;
         let mut x = e.embed_gather_device(embd_gpu, token_d, n_embd, embd_qt, embd_rb)?;
@@ -23458,6 +23519,7 @@ impl HybridModel {
 
     /// Build the slot set (call OUTSIDE any capture).
     pub fn g4_dc_slots(&self, e: &Engine) -> Result<G4DcSlots, Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         let n_embd = self.cfg.n_embd as usize;
         let n_vocab = self.output.out_features();
         let n_layers = self.layers.len();
@@ -23562,6 +23624,7 @@ impl HybridModel {
         tok_out: &mut CudaSlice<u32>,
         ring: Option<(&mut CudaSlice<u32>, usize)>,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         let n_embd = self.cfg.n_embd as usize;
         let eps = self.cfg.rms_eps;
         e.embed_gather_device_into(embd_gpu, token_d, &mut sl.x, n_embd, embd_qt, embd_rb)?;
@@ -24371,6 +24434,7 @@ impl HybridModel {
         eos: &[u32],
         mut on_token: impl FnMut(u32) -> bool,
     ) -> Result<(Vec<u32>, crate::decode::StopReason), Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         if self.is_gemma4_e4b() {
             return Err(
                 "E4B graph serving is unwired (HANDOVER-E4B.md) — dc-eager is the serving arm"
@@ -24455,7 +24519,13 @@ impl HybridModel {
             let key_s = if t_kv > win {
                 (true, usize::MAX)
             } else {
-                e.fa_bucket_key(t_kv, hd_s, nkv_s, crate::Engine::wkv_on())
+                e.fa_bucket_key(
+                    t_kv,
+                    hd_s,
+                    self.cfg.n_head as usize,
+                    nkv_s,
+                    crate::Engine::wkv_on(),
+                )
             };
             let (key_g, rung_end) = if t_kv >= f512 {
                 // strict upper bound: the rung must ROLL at exact powers (t_kv==1024 starts
@@ -24463,7 +24533,10 @@ impl HybridModel {
                 let end = (t_kv + 1).next_power_of_two().max(f512 * 2);
                 ((true, end), end)
             } else {
-                (e.fa_bucket_key(t_kv, hd_g, nkv_g, false), t_kv)
+                (
+                    e.fa_bucket_key(t_kv, hd_g, self.cfg.n_head as usize, nkv_g, false),
+                    t_kv,
+                )
             };
             let key = (key_s, key_g, t_kv >= f512, t_kv > win);
             if !graphs.contains_key(&key) {
@@ -24543,6 +24616,7 @@ impl HybridModel {
         pos0: usize,
         cache: &mut Cache,
     ) -> Result<Vec<f32>, Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         Ok(self.gemma4_decode_step_t_h(e, tokens, pos0, cache)?.0)
     }
 
@@ -24556,6 +24630,7 @@ impl HybridModel {
         pos0: usize,
         cache: &mut Cache,
     ) -> Result<(Vec<u32>, CudaSlice<f32>), Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         let (ld, hn) = self.gemma4_verify_trunk(e, tokens, pos0, cache, None)?;
         let t = tokens.len();
         let n_vocab = self.output.out_features();
@@ -24576,6 +24651,7 @@ impl HybridModel {
         pos0: usize,
         cache: &mut Cache,
     ) -> Result<(CudaSlice<u32>, CudaSlice<f32>), Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         let (ld, hn) = self.gemma4_verify_trunk(e, &vec![0u32; t], pos0, cache, Some(tok_d))?;
         let n_vocab = self.output.out_features();
         let mut vam = e.stream().alloc_zeros::<u32>(t)?;
@@ -24598,6 +24674,7 @@ impl HybridModel {
         pos0: usize,
         cache: &mut Cache,
     ) -> Result<(CudaSlice<f32>, CudaSlice<f32>), Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         let (mut ld, hn) = self.gemma4_verify_trunk(e, &vec![0u32; t], pos0, cache, Some(tok_d))?;
         let cap = self.cfg.gemma4.as_ref().unwrap().final_logit_softcapping;
         e.softcap(&mut ld, cap, t * self.output.out_features())?;
@@ -24613,6 +24690,7 @@ impl HybridModel {
         pos0: usize,
         cache: &mut Cache,
     ) -> Result<(Vec<f32>, CudaSlice<f32>), Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         let (mut ld, hn) = self.gemma4_verify_trunk(e, tokens, pos0, cache, None)?;
         let t = tokens.len();
         let cap = self.cfg.gemma4.as_ref().unwrap().final_logit_softcapping;
@@ -24627,6 +24705,7 @@ impl HybridModel {
         e: &Engine,
         cap: usize,
     ) -> Result<VerifyStreamScratch, Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         Ok(VerifyStreamScratch {
             pos_d: e.htod_i32(&vec![0i32; cap])?,
             row_ctrs: (0..cap)
@@ -24653,6 +24732,7 @@ impl HybridModel {
         cache: &mut Cache,
         scr: &mut VerifyStreamScratch,
     ) -> Result<(CudaSlice<u32>, CudaSlice<f32>), Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         let n_embd = self.cfg.n_embd as usize;
         let eps = self.cfg.rms_eps;
         assert!(t <= scr.row_ctrs.len() && t <= 64);
@@ -24714,6 +24794,7 @@ impl HybridModel {
         x: &CudaSlice<f32>,
         t: usize,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         let Some(taps) = cache.dflash_taps.as_mut() else {
             return Ok(());
         };
@@ -25375,6 +25456,7 @@ impl HybridModel {
         token: u32,
         cache: &mut Cache,
     ) -> Result<(Vec<f32>, CudaSlice<f32>), Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         // M1-PP2 door (crate::pp): 2-stage split with an explicit activation handoff.
         // Default OFF — unset env means this branch is never taken. The gemma4 arm stays
         // 2-stage in M2 (the N-stage gate model is the generic-arm 9B); N>2 warns + runs
@@ -25925,6 +26007,7 @@ impl HybridModel {
         t: usize,
         il: usize,
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         let g3 = match self.full_attn_tp_qkv(e, fa, h, t)? {
             Some(g3) => g3,
             None => e.matmul_group(&[&fa.wq, &fa.wk, &fa.wv], h, t)?,
@@ -25953,6 +26036,7 @@ impl HybridModel {
         il: usize,
         seq_end: usize,
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         if step_tp_prefill_enabled()? && fa.step_tp_qkv.is_some() {
             if hx.is_some() {
                 return Err(
@@ -27052,6 +27136,7 @@ impl HybridModel {
         h_t: &CudaSlice<f32>,
         t: usize,
     ) -> Result<bool, Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         let crate::hybrid::Mixer::Full(fa) = &self.layers[il].mixer else {
             return Ok(false);
         };
@@ -27096,6 +27181,7 @@ impl HybridModel {
         il: usize,
         t: usize,
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         let crate::hybrid::Mixer::Full(fa) = &self.layers[il].mixer else {
             return Err("tcol o_proj join expects full attention".into());
         };
@@ -27121,6 +27207,7 @@ impl HybridModel {
         pos0: usize,
         t: usize,
     ) -> Result<bool, Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         let crate::hybrid::Mixer::Full(fa) = &self.layers[il].mixer else {
             return Ok(false);
         };
@@ -27183,6 +27270,7 @@ impl HybridModel {
         pos0: usize,
         t: usize,
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         use cudarc::driver::DevicePtr;
         let crate::hybrid::Mixer::Full(fa) = &self.layers[il].mixer else {
             return Err("fa rows join expects full attention".into());
@@ -27277,6 +27365,7 @@ impl HybridModel {
         positions: &[i32],
         il: usize,
     ) -> Result<bool, Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         let crate::hybrid::Mixer::Full(fa) = &self.layers[il].mixer else {
             return Ok(false);
         };
@@ -27342,6 +27431,7 @@ impl HybridModel {
         t: usize,
         stage_pos: bool,
     ) -> Result<Option<CudaSlice<f32>>, Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         use cudarc::driver::DevicePtr;
         if !crate::tp::fuse_rope_append_on() {
             return Ok(None);
@@ -27492,6 +27582,7 @@ impl HybridModel {
         t: usize,
         stage_pos: bool,
     ) -> Result<Option<CudaSlice<f32>>, Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         use cudarc::driver::DevicePtr;
         if !crate::tp::fuse_rope_append_on() {
             return Ok(None);
@@ -27642,6 +27733,7 @@ impl HybridModel {
         positions: &[i32],
         t: usize,
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         use cudarc::driver::DevicePtr;
         let crate::hybrid::Mixer::Full(fa) = &self.layers[il].mixer else {
             return Err("batch fa rows join expects full attention".into());
@@ -27745,6 +27837,7 @@ impl HybridModel {
         pos_d: &CudaSlice<i32>,
         cache: &mut Cache,
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         let tp = fa
             .step_tp_qkv
             .as_ref()
@@ -28392,6 +28485,7 @@ impl HybridModel {
         pos_d: &CudaSlice<i32>,
         cache: &mut Cache,
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         if fa
             .step_tp_qkv
             .as_ref()
@@ -29289,6 +29383,7 @@ impl HybridModel {
         pos0: usize,
         cache: &mut Cache,
     ) -> Result<(CudaSlice<u32>, CudaSlice<f32>), Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         let n_embd = self.cfg.n_embd as usize;
         let eps = self.cfg.rms_eps;
         let pos: Vec<i32> = (0..t).map(|i| (pos0 + i) as i32).collect();
@@ -29324,6 +29419,7 @@ impl HybridModel {
         pos0: usize,
         cache: &mut Cache,
     ) -> Result<(Vec<f32>, CudaSlice<f32>), Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         let n_embd = self.cfg.n_embd as usize;
         let eps = self.cfg.rms_eps;
         let t = tokens.len();
@@ -29352,6 +29448,7 @@ impl HybridModel {
         n_vocab: usize,
         bucket: usize,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         let n_embd = self.cfg.n_embd as usize;
         let mut x = e.embed_gather_device(embd_gpu, token_d, n_embd, embd_qt, embd_rb)?;
         e.scale_inplace(&mut x, (n_embd as f32).sqrt(), n_embd)?;
@@ -29382,6 +29479,7 @@ impl HybridModel {
         cache: &mut Cache,
         n_vocab: usize,
     ) -> Result<CudaSlice<u32>, Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         let n_embd = self.cfg.n_embd as usize;
         let eps = self.cfg.rms_eps;
         let mut x = e.embed_gather_device(embd_gpu, token_d, n_embd, embd_qt, embd_rb)?;
@@ -29405,6 +29503,7 @@ impl HybridModel {
         token: u32,
         cache: &mut Cache,
     ) -> Result<(Vec<f32>, CudaSlice<f32>), Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         let (ld, x) = self.gemma4_e4b_trunk(e, &[token], cache.pos, cache, false)?;
         let logits = e.dtoh(&ld)?;
         cache.pos += 1;
@@ -29421,6 +29520,7 @@ impl HybridModel {
         tokens: &[u32],
         cache: &mut Cache,
     ) -> Result<(Vec<f32>, CudaSlice<f32>, CudaSlice<f32>), Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         // Err, not assert (2026-08-07, lane/gemma4-serve-gaps): same served-chunked-prompt
         // process-kill as gemma4_prime — refuse per-request.
         if cache.pos != 0 {
@@ -29449,6 +29549,7 @@ impl HybridModel {
         tokens: &[u32],
         last_only: bool,
     ) -> Result<Vec<f32>, Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         let mut cache = Cache::new(e, &self.cfg, tokens.len() + 8)?;
         let (ld, _x) = self.gemma4_e4b_trunk(e, tokens, 0, &mut cache, last_only)?;
         e.dtoh(&ld) // head_last already reduced to the final row when last_only
@@ -30043,6 +30144,7 @@ impl HybridModel {
         e: &Engine,
         hn: &CudaSlice<f32>,
     ) -> Result<Option<Vec<f32>>, Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         if self.head_split_fill_device(e, hn)?.is_none() {
             return Ok(None);
         }
@@ -30193,6 +30295,7 @@ impl HybridModel {
         hn: &CudaSlice<f32>,
         token_d: &mut CudaSlice<u32>,
     ) -> Result<bool, Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         if self.head_split_fill_device(e, hn)?.is_none() {
             return Ok(false);
         }
@@ -30219,6 +30322,7 @@ impl HybridModel {
         samp: &crate::decode_batch::DevSamp,
         ctr: u32,
     ) -> Result<bool, Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         if self.head_split_fill_device(e, hn)?.is_none() {
             return Ok(false);
         }
@@ -30267,6 +30371,7 @@ impl HybridModel {
         &self,
         e: &Engine,
     ) -> Result<Vec<f32>, Box<dyn std::error::Error>> {
+        let _numeric = self.enter_numeric();
         let guard = HEAD_SPLIT_WS
             .lock()
             .map_err(|_| "head split lock is poisoned")?;
