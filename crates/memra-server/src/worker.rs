@@ -321,14 +321,15 @@ fn deadline_prefill_rows(
     Some(out)
 }
 
-/// The tick prefill-rate sample a deadline-aware decision reads: prompt tokens primed in one
-/// tick over the wall from that tick's prefill phase to the next one (decode and admission
-/// included, which is the rate a waiting row actually sees). Ticks under one chunk are
-/// skipped, since fixed per-call cost dominates them.
+/// Smoothing weight of a new tick prefill-rate sample (`prefill_rate_update`).
 const PREFILL_RATE_EWMA_ALPHA: f64 = 0.25;
 
+/// The tick prefill rate the deadline-aware order reads: prompt tokens primed in one tick over
+/// the wall from that tick's prefill phase to the next one (decode and admission included, which
+/// is the rate a waiting row actually sees), smoothed. Ticks under one chunk are skipped, since
+/// fixed per-call cost dominates them; an idle wait clears the pending sample before it can count.
 fn prefill_rate_update(ewma: Option<f64>, tokens: usize, wall_s: f64, chunk: usize) -> Option<f64> {
-    if tokens < chunk || !(wall_s > 0.0) {
+    if tokens < chunk || !wall_s.is_finite() || wall_s <= 0.0 {
         return ewma;
     }
     let sample = tokens as f64 / wall_s;
@@ -4651,21 +4652,44 @@ fn seed_boundary_inside_prompt(seed_at: Option<usize>, prompt_len: usize) -> boo
     seed_at.is_some_and(|b| b < prompt_len)
 }
 
-/// An interactive concat-batch row's take when its grid-aligned seed boundary lies inside the
-/// prompt: the boundary stop of `prefill_tick_take` (stop exactly on the seed, or keep the
-/// boundary chunk primeable), so the row's calls start where a single prime's would and the
-/// seed publishes after the batch call. Rows with no seed ahead keep `take`.
+/// An interactive concat-batch row's take: `prefill_tick_take` of the row's chunk, the take a
+/// single prime of the same row gets. It merges a remainder under `PRIME_MIN_T` into this call
+/// (so no prompt tail rides tokenwise `decode_step` because the row happened to batch), and
+/// when the row's grid-aligned seed lies inside its prompt it stops exactly on the seed, so the
+/// seed publishes after the batch call.
 ///
-/// Until 2026-11-07 such a session left the concat prime for its whole prompt. On the 24 GB
-/// RTX 5090 Laptop at c8 every off-grid cold prompt then primed alone up to its seed, which
-/// doubled batch TTFT against the cache-off arm (`research/c8-serving-20261107/`).
-fn batch_take_to_seed(queued: usize, take: usize, fed: usize, seed_at: Option<usize>) -> usize {
-    match seed_at {
-        Some(b) if b > fed && seed_boundary_inside_prompt(Some(b), fed + queued) => {
-            prefill_tick_take(queued, take, false, Some(b - fed))
-        }
-        _ => take,
+/// Until 2026-11-07 a row with a seed inside its prompt left the concat prime for its whole
+/// prompt. On the 24 GB RTX 5090 Laptop at c8 every off-grid cold prompt then primed alone up to
+/// its seed, which doubled batch TTFT against the cache-off arm (`research/c8-serving-20261107/`).
+/// And a row with no seed took `min(queued, budget)` with no tail merge, so a 1030-token prompt
+/// primed 1024 tokens batched and fed its last 6 through `decode_step`, where a single prime of
+/// the same prompt took all 1030.
+fn batch_row_take(queued: usize, take: usize, fed: usize, seed_at: Option<usize>) -> usize {
+    let seed_rem = seed_at
+        .filter(|&b| b > fed && seed_boundary_inside_prompt(Some(b), fed + queued))
+        .map(|b| b - fed);
+    prefill_tick_take(queued, take, false, seed_rem)
+}
+
+/// The devices a model's weights live on, or the primary device when it reports none: the
+/// head-of-line memory order holds a later request only behind a deferred one it shares a
+/// device with.
+fn model_devices(engine: &Engine, lm: &LoadedModel) -> Vec<usize> {
+    let devices = lm.model.devices();
+    if devices.is_empty() {
+        vec![engine.ctx().ordinal()]
+    } else {
+        devices
     }
+}
+
+/// Can a request the VRAM gate deferred fit once its device's sessions retire and the evictable
+/// prefix entries go? `reclaimable` is those sessions' resident charge (admission charge less any
+/// still-booked prefill workspace) plus the evictable cache bytes; parked sessions are left out,
+/// so the answer errs toward no. A request that cannot does not hold the queue: holding would
+/// stall every later request until the box drained, and then the idle-box check refuses it anyway.
+fn memory_defer_can_fit(required: u64, free: u64, reclaimable: u64) -> bool {
+    required <= free.saturating_add(reclaimable)
 }
 
 /// Conservative guard window for the markerless (raw-completion) path of
@@ -9250,9 +9274,9 @@ fn prefix_headroom_shortfall(effective_free: usize, reserve: usize, resident: us
     reserve.saturating_sub(effective_free).min(resident)
 }
 
-/// THE PREFIX CACHE YIELDS THE TRANSIENT RESERVE (2026-11-07). Called after a tick in which the
-/// prefix cache published an entry, on a discrete card (unified memory has its own insert guard,
-/// `prefix_insert_budget`). Admission admits a request only when effective free covers its cost
+/// THE PREFIX CACHE YIELDS THE TRANSIENT RESERVE (2026-11-07). Called before a decode phase when
+/// the prefix cache published since the last check, on a discrete card (unified memory has its
+/// own insert guard, `prefix_insert_budget`). Admission admits a request only when effective free covers its cost
 /// plus `reserve` (the boot-calibrated transient floor, never below `SPEC_SHRINK_RESERVE`), and it
 /// reclaims the cache when an arrival needs the bytes. An insert made after that admission spends
 /// the reserve the admitted sessions' decode transients rely on, and nothing re-checks it before
@@ -9277,6 +9301,15 @@ fn prefix_yield_transient_reserve(
     if px.total_bytes == 0 || device_is_unified(engine) {
         return (0, 0);
     }
+    let Some((free, _)) = effective_free_bytes(engine) else {
+        return (0, 0);
+    };
+    if prefix_headroom_shortfall(free, reserve, px.total_bytes) == 0 {
+        return (0, 0);
+    }
+    // Frees still in flight read as used until the owning streams drain: fence, then decide on
+    // the settled reading (the evict path's settle pays this fence anyway).
+    synchronize_model_devices(engine, loaded, "prefix reserve check");
     let Some((free, _)) = effective_free_bytes(engine) else {
         return (0, 0);
     };
@@ -29181,6 +29214,10 @@ pub fn run(
     let mut prefill_rate_mark: Option<(Instant, usize)> = None;
     let mut n_prefill_deadline_ticks = 0u64;
     let mut n_prefix_headroom_evictions = 0u64;
+    // The prefix insert count the reserve check last saw: every insert, wherever in the tick it
+    // lands (prefill, the post-decode capture drains, a host promote), is checked before the
+    // next decode step.
+    let mut prefix_inserts_seen = 0u64;
     let mut prefill_deadline_mode = false;
     let mut n_step_oom_parks = 0u64;
     // WP-B day 37 (DAY37 A3 (i)): the owner's wall at the tick-top ensure point, per tick with
@@ -29487,6 +29524,7 @@ pub fn run(
                         // — not the beat age — is what /health reads here. Stamped on BOTH sides
                         // of the block so the beat is already fresh when work arrives.
                         health.set_phase(crate::health::PHASE_IDLE);
+                        prefill_rate_mark = None; // an idle wait is not prefill time
                         match rx.recv() {
                             Ok(cmd) => {
                                 health.set_phase(crate::health::PHASE_BUSY);
@@ -29800,9 +29838,10 @@ pub fn run(
         let mut parked_on_promote: usize = 0;
         // Per-tick count of requests the VRAM gate deferred (logged once per tick).
         let mut vram_defers = 0usize;
-        // Set when the VRAM gate defers an interactive request: the rest of this pass waits
-        // behind it (head-of-line memory order, at the top of the loop).
-        let mut memory_hold = false;
+        // The devices of every interactive request the VRAM gate deferred this pass that can still
+        // fit once its device's sessions retire: later requests on those devices wait behind it
+        // (head-of-line memory order, after the first-token gate).
+        let mut memory_hold: std::collections::HashSet<usize> = Default::default();
         // KV-FLEX GRANT REFRESH (lane/kv-flex-20260831): re-derive the borrowable slice
         // from live effective-free VRAM once per tick, before this tick's admissions and
         // inserts consult it. No-op (no driver call) while disarmed.
@@ -29873,33 +29912,6 @@ pub fn run(
                 continue;
             }
             let lane = req.lane;
-            // HEAD-OF-LINE MEMORY ORDER (2026-11-07). Once the VRAM gate below defers an
-            // interactive request, every later request in this pass waits behind it:
-            // interactive ones keep their queue order, dark-lane ones shed as they do at
-            // capacity. Admitting a smaller later request past the deferred one spends the
-            // memory it waits for, so on a card where free memory hovers under the largest
-            // request's charge that request never admits. The 24 GB RTX 5090 Laptop at agentic
-            // c8 (Qwen3.8-27B, 32,768 ctx) deferred a 17,166-token request for its whole 90 s
-            // first-token window while 15 later requests were admitted past it, then answered
-            // it 408 (`research/c8-serving-20261107/`). A hold only while the deferred request's
-            // deadline looked at risk (its prefill estimate against its slack) was measured and
-            // dropped: during a decode-heavy pass the estimate has no term for the wait until
-            // decoding sessions free memory, so a 13,232-token request was overtaken for ~50 s,
-            // held too late, and still answered 408.
-            if memory_hold {
-                n_vram_hol_holds += 1;
-                if lane == crate::lanes::Lane::Interactive {
-                    requeue.push_back(req); // waits behind the deferred head (FIFO)
-                } else {
-                    lane_shed[lane.idx()] += 1;
-                    release_admission_reservation(req.lane);
-                    let _ = req.tx.send(Event::Error(EngineError::rate_limit(format!(
-                        "lane {} shed: an earlier request is waiting for memory, retry",
-                        lane.as_str()
-                    ))));
-                }
-                continue;
-            }
             let batching_on = std::env::var("MEMRA_SERVE_BATCH")
                 .map(|v| v != "0")
                 .unwrap_or(true);
@@ -30095,6 +30107,39 @@ pub fn run(
                     )));
                     continue;
                 }
+            }
+            // HEAD-OF-LINE MEMORY ORDER (2026-11-07). Once the VRAM gate below defers an
+            // interactive request that could fit once its device's sessions retire, every later
+            // request on a device it shares waits behind it this pass: interactive ones keep their
+            // queue order, dark-lane ones shed as they do at capacity. It sits after every check
+            // that refuses without spending memory (slot capacity, template, first-token gate),
+            // so those still answer at once. Admitting a smaller later request past the deferred
+            // one spends the memory it waits for, so on a card where free memory hovers under the
+            // largest request's charge that request never admits. The 24 GB RTX 5090 Laptop at
+            // agentic c8 (Qwen3.8-27B, 32,768 ctx) deferred a 17,166-token request for its whole
+            // 90 s first-token window while 15 later requests were admitted past it, then
+            // answered it 408 (`research/c8-serving-20261107/`). A hold only while the deferred
+            // request's deadline looked at risk (its prefill estimate against its slack) was
+            // measured and dropped: during a decode-heavy pass the estimate has no term for the
+            // wait until decoding sessions free memory, so a 13,232-token request was overtaken
+            // for ~50 s, held too late, and still answered 408.
+            if !memory_hold.is_empty()
+                && model_devices(&engine, &loaded[&model_key])
+                    .iter()
+                    .any(|d| memory_hold.contains(d))
+            {
+                n_vram_hol_holds += 1;
+                if lane == crate::lanes::Lane::Interactive {
+                    requeue.push_back(req); // waits behind the deferred head (FIFO)
+                } else {
+                    lane_shed[lane.idx()] += 1;
+                    release_admission_reservation(req.lane);
+                    let _ = req.tx.send(Event::Error(EngineError::rate_limit(format!(
+                        "lane {} shed: an earlier request is waiting for memory, retry",
+                        lane.as_str()
+                    ))));
+                }
+                continue;
             }
             let peer_probe_allows_spec = health.peer_probe_allows_spec_admission();
             let estimate_spec = admission_request_may_spec(
@@ -31548,7 +31593,24 @@ pub fn run(
                         vram_defers += 1;
                         n_vram_defers += 1;
                         if lane == crate::lanes::Lane::Interactive {
-                            memory_hold = true;
+                            let devices = model_devices(&engine, &loaded[&model_key]);
+                            let reclaimable = active
+                                .iter()
+                                .filter(|s| {
+                                    model_devices(&engine, &loaded[&s.model])
+                                        .iter()
+                                        .any(|d| devices.contains(d))
+                                })
+                                .map(|s| s.booked_kv_bytes.saturating_sub(s.booked_w_bytes))
+                                .sum::<u64>()
+                                .saturating_add(px.evictable_bytes());
+                            if memory_defer_can_fit(
+                                required as u64,
+                                headroom.limiting_free_bytes() as u64,
+                                reclaimable,
+                            ) {
+                                memory_hold.extend(devices);
+                            }
                         }
                         // WP-B day 42: an arrival waiting on its off-tick reclaim's landing is parked
                         // on the in-flight demote, so it joins the parked-only bounded wait (the
@@ -32028,7 +32090,6 @@ pub fn run(
         //        decode_step_batch over survivors in chunks of <= 8.
         let batching = serve_batching();
         let mut finished: Vec<usize> = Vec::new();
-        let prefix_inserts_at_tick = px.inserts;
         // REALIZED-RATE SAMPLE (lane/batch-spec cost gate): the previous tick and this one
         // starting in the same steady regime give one aggregate tok/s sample for it (the
         // tokens the previous tick emitted over its wall).
@@ -33213,16 +33274,24 @@ pub fn run(
                     budgets[0],
                 );
             }
-            let prefill_allow: Option<std::collections::HashSet<usize>> =
+            // The rows are the sessions this tick can advance: n>1 choice members (the leader
+            // waits for its group, followers are restored from it) and fanout rows still in their
+            // formation window are left out, and a row left out is never held back. A request
+            // without a wire deadline (capture, background) orders by its arrival plus the default
+            // streaming deadline, so it ages like the rest.
+            let prefill_block: Option<std::collections::HashSet<usize>> =
                 if defer_interactive_prefill {
                     None
                 } else {
+                    let default_deadline = Duration::from_millis(crate::stream_ttft_ms_max());
                     let rows: Vec<PrefillDeadlineRow> = active
                         .iter()
                         .enumerate()
                         .filter(|(i, s)| {
                             !finished.contains(i)
                                 && !dedup_advanced.contains(i)
+                                && !dedup_waiting.contains(i)
+                                && s.choice.is_none()
                                 && s.lane == crate::lanes::Lane::Interactive
                                 && !(s.spec.is_some()
                                     || s.gspec_k > 0
@@ -33234,18 +33303,26 @@ pub fn run(
                         .map(|(i, s)| PrefillDeadlineRow {
                             idx: i,
                             queued: s.prefill_queue.len(),
-                            slack_s: s.wire_deadline.map(|d| {
-                                d.saturating_duration_since(t_prefill_phase).as_secs_f64()
-                            }),
+                            slack_s: Some(
+                                s.wire_deadline
+                                    .unwrap_or(s.t0 + default_deadline)
+                                    .saturating_duration_since(t_prefill_phase)
+                                    .as_secs_f64(),
+                            ),
                         })
                         .collect();
-                    let backlog = !queue.is_empty();
+                    let backlog = !queue.is_empty() || !requeue_oom.is_empty();
                     prefill_rate_tok_s
                         .and_then(|rate| deadline_prefill_rows(&rows, rate, budgets[0], backlog))
-                        .map(|v| v.into_iter().collect())
+                        .map(|allow| {
+                            rows.iter()
+                                .map(|r| r.idx)
+                                .filter(|i| !allow.contains(i))
+                                .collect()
+                        })
                 };
-            if prefill_allow.is_some() != prefill_deadline_mode {
-                prefill_deadline_mode = prefill_allow.is_some();
+            if prefill_block.is_some() != prefill_deadline_mode {
+                prefill_deadline_mode = prefill_block.is_some();
                 eprintln!(
                     "[prefill-order] {} (measured prefill {:.0} tok/s)",
                     if prefill_deadline_mode {
@@ -33257,7 +33334,7 @@ pub fn run(
                     prefill_rate_tok_s.unwrap_or(0.0)
                 );
             }
-            if prefill_allow.is_some() {
+            if prefill_block.is_some() {
                 n_prefill_deadline_ticks += 1;
             }
             // FAULT INJECTION (MEMRA_FAULT_INJECT_CACHE_SALT, memra#525; the loop body never runs
@@ -33323,7 +33400,7 @@ pub fn run(
                         if dedup_waiting.contains(&i) {
                             continue;
                         }
-                        if prefill_allow.as_ref().is_some_and(|a| !a.contains(&i)) {
+                        if prefill_block.as_ref().is_some_and(|b| b.contains(&i)) {
                             continue;
                         }
                         let s = &active[i];
@@ -33335,10 +33412,10 @@ pub fn run(
                         else {
                             continue;
                         };
-                        // A grid-aligned seed inside the prompt (memra#602) stops this row on
-                        // the boundary, as `prefill_tick` stops a single prime; the seed then
-                        // publishes after the batch call below.
-                        let take = batch_take_to_seed(ql, take, s.fed.len(), s.seed_at);
+                        // The single prime's take for this chunk: no sub-floor tail, and a
+                        // grid-aligned seed inside the prompt (memra#602) stops the row on the
+                        // boundary; the seed then publishes after the batch call below.
+                        let take = batch_row_take(ql, take, s.fed.len(), s.seed_at);
                         let fresh =
                             s.fed.is_empty() && s.cache.as_ref().is_some_and(|c| c.pos == 0);
                         let whole_fresh = fresh && take == ql;
@@ -33372,7 +33449,7 @@ pub fn run(
                             // WP-B day 44: an in-call grid capture needs the per-sequence prime.
                             && s.exact_at.is_none()
                             // The grid-aligned seed boundary (memra#602) joins the batch: its
-                            // row's take ends on the boundary (`batch_take_to_seed`). A boundary
+                            // row's take ends on the boundary (`batch_row_take`). A boundary
                             // closer than the prime floor leaves `take < min_t` and the single
                             // path serves it, as before.
                             && take >= min_t
@@ -33392,7 +33469,9 @@ pub fn run(
                 // 2026-07-26: without the hold only 25% of a 32-concurrent burst batched
                 // (ticks ~1ms, arrivals staggered). TTFT cost <= hold_ms on a ~40ms prime.
                 let mut held = false;
-                if cand.len() == 1 && pb_hold_ms > 0 {
+                // In deadline mode the lone candidate is the row the deadline needs: nothing is
+                // left to coalesce with, so it does not wait out the formation window.
+                if cand.len() == 1 && pb_hold_ms > 0 && prefill_block.is_none() {
                     let s = &active[cand[0].0];
                     if s.t0.elapsed().as_millis() < pb_hold_ms as u128 {
                         held = true;
@@ -33556,7 +33635,7 @@ pub fn run(
                 if held && cand.first().is_some_and(|&(candidate, _)| candidate == i) {
                     continue; // batch-formation hold
                 }
-                if prefill_allow.as_ref().is_some_and(|a| !a.contains(&i)) {
+                if prefill_block.as_ref().is_some_and(|b| b.contains(&i)) {
                     continue; // deadline-aware order: another row's deadline goes first
                 }
                 let s = &mut active[i];
@@ -33679,15 +33758,17 @@ pub fn run(
             let primed_this_tick = prefill_single_tokens + prefill_batch_tokens;
             prefill_rate_mark =
                 (primed_this_tick > 0).then_some((t_prefill_phase, primed_this_tick));
-            // The cache published this tick: before the decode step allocates, give back the
-            // transient reserve an insert may have spent (`prefix_yield_transient_reserve`).
-            if px.inserts != prefix_inserts_at_tick {
-                let reserve = admission_costs
+            // The cache published since the last check: before the decode step allocates, give
+            // back the transient reserve an insert may have spent (`prefix_yield_transient_reserve`).
+            // The reserve is the one admission charges (`admission_reserve` for a spec-capable
+            // request, the largest calibrated floor), the term the boot budget derivation uses.
+            if px.inserts != prefix_inserts_seen {
+                prefix_inserts_seen = px.inserts;
+                let floor = admission_costs
                     .values()
                     .filter_map(|model| model.transient_floor)
-                    .max()
-                    .unwrap_or(SPEC_SHRINK_RESERVE)
-                    .max(SPEC_SHRINK_RESERVE);
+                    .max();
+                let reserve = admission_reserve(true, 0, floor, admit_reserve_override());
                 let (n, _) = prefix_yield_transient_reserve(&engine, &loaded, &mut px, reserve);
                 n_prefix_headroom_evictions += n as u64;
             }
@@ -55405,8 +55486,9 @@ mod tests {
         assert_eq!(deadline_prefill_rows(&easy, 0.0, 1024, false), None);
         assert_eq!(deadline_prefill_rows(&easy, f64::NAN, 1024, false), None);
         // The c8 shape: a 17k prompt with 70 s left beside four peers. Round robin finishes it
-        // after ~27k tokens (27 s at 1000 tok/s) plus a 5 s tick: fine. At 300 tok/s it needs
-        // ~90 s shared but ~60 s alone, so it goes first and alone (its chunk fills the tick).
+        // after 28,000 tokens (28 s at 1000 tok/s) plus a 5.1 s tick: fine. At 300 tok/s it needs
+        // 93 s plus a 17 s tick shared but 60 s alone, so it goes first and alone (its chunk
+        // fills the tick).
         let c8 = [
             row(0, 3000, Some(85.0)),
             row(1, 17_000, Some(70.0)),
@@ -55450,6 +55532,62 @@ mod tests {
             deadline_prefill_rows(&short, 1000.0, 1024, false),
             Some(vec![2, 1])
         );
+        // Rows the deadline rows leave room for come in class order: those that fit alone by
+        // deadline, then a row its deadline cannot fit, then a row with no deadline.
+        let tail = [
+            row(0, 100, None),
+            row(1, 9000, Some(10.1)),
+            row(2, 100, Some(0.05)),
+            row(3, 100, Some(0.3)),
+        ];
+        // Row 1 is at risk (9,300 shared tokens plus a 1.3 s tick, past its 10.1 s) and fits
+        // alone (10.02 s); it takes the whole chunk, so nothing else advances this tick.
+        assert_eq!(
+            deadline_prefill_rows(&tail, 1000.0, 1024, false),
+            Some(vec![1])
+        );
+        let small = [
+            row(0, 100, None),
+            row(1, 300, Some(0.6)),
+            row(2, 200, Some(0.01)),
+        ];
+        // Row 1 (300 + 1024 tokens alone = 1.3 s) cannot fit 0.6 s, nor row 2: no rescue.
+        assert_eq!(deadline_prefill_rows(&small, 1000.0, 1024, false), None);
+        let mixed2 = [
+            row(0, 100, None),
+            row(1, 700, Some(1.8)),
+            row(2, 200, Some(0.01)),
+        ];
+        // Row 1 fits alone (1.72 s) and is at risk (1.0 s shared plus a 1.0 s tick): it goes
+        // first, then the infeasible row 2, then the no-deadline row 0, until the chunk is used
+        // (700 + 200 + 100 < 1024).
+        assert_eq!(
+            deadline_prefill_rows(&mixed2, 1000.0, 1024, false),
+            Some(vec![1, 2, 0])
+        );
+    }
+
+    /// The head-of-line hold sits after every refusal that needs no memory (slot capacity, the
+    /// template, the first-token gate) and before the cost estimate, so those still answer at
+    /// once and the hold still covers everything that spends memory.
+    #[test]
+    fn the_memory_hold_follows_the_memory_free_refusals() {
+        let worker = include_str!("worker.rs");
+        let live = &worker[..worker
+            .find("\nmod tests {")
+            .expect("the test module exists")];
+        let gate = live
+            .find("if first_token_deadline_gate_on()")
+            .expect("the first-token gate");
+        let hold = live.find("if !memory_hold.is_empty()").expect("the hold");
+        let estimate = live
+            .find("let peer_probe_allows_spec = health.peer_probe_allows_spec_admission();")
+            .expect("the cost estimate");
+        let prepare = live
+            .find("match prepare_request(&loaded, &mut req, admit_memory_cfg.open_output_charge())")
+            .expect("the template step");
+        assert!(prepare < gate && gate < hold && hold < estimate);
+        assert_eq!(live.matches("if !memory_hold.is_empty()").count(), 1);
     }
 
     #[test]
@@ -55485,32 +55623,27 @@ mod tests {
     }
 
     #[test]
-    fn batch_take_to_seed_stops_on_the_seed_like_a_single_prime() {
-        use super::{batch_take_to_seed, prefill_tick_take};
+    fn batch_row_take_is_the_single_prime_take() {
+        use super::batch_row_take;
         // A short cold prompt (the c8 mixed shape: 98 tokens, seed at 64) stops on the seed.
-        assert_eq!(batch_take_to_seed(98, 98, 0, Some(64)), 64);
+        assert_eq!(batch_row_take(98, 98, 0, Some(64)), 64);
         // The remainder after the seed is published primes whole from the grid start.
-        assert_eq!(batch_take_to_seed(34, 34, 64, None), 34);
+        assert_eq!(batch_row_take(34, 34, 64, None), 34);
         // A long prompt keeps its tick chunk until the seed is in reach, then stops on it.
-        assert_eq!(batch_take_to_seed(12_300, 1024, 0, Some(12_288)), 1024);
-        assert_eq!(batch_take_to_seed(1036, 1024, 11_264, Some(12_288)), 1024);
+        assert_eq!(batch_row_take(12_300, 1024, 0, Some(12_288)), 1024);
+        assert_eq!(batch_row_take(1036, 1024, 11_264, Some(12_288)), 1024);
         // A chunk ending under the prime floor short of the seed keeps the boundary chunk
-        // primeable, exactly as the single path does.
-        assert_eq!(
-            batch_take_to_seed(1046, 1024, 11_254, Some(12_288)),
-            prefill_tick_take(1046, 1024, false, Some(1034))
-        );
+        // primeable: it stops 16 tokens short so the boundary chunk is itself a prime call.
+        assert_eq!(batch_row_take(1046, 1024, 11_254, Some(12_288)), 1018);
         // A seed at the prompt end is not a stop.
-        assert_eq!(batch_take_to_seed(128, 128, 0, Some(128)), 128);
+        assert_eq!(batch_row_take(128, 128, 0, Some(128)), 128);
         // A boundary closer than the floor yields a take under it, which leaves the batch.
-        assert!(batch_take_to_seed(40, 40, 0, Some(8)) < 16);
-        // Every take equals the single path's take for the same boundary.
-        for (q, take, fed, seed) in [(98, 98, 0, 64), (5000, 1024, 0, 4992), (300, 300, 0, 256)] {
-            assert_eq!(
-                batch_take_to_seed(q, take, fed, Some(seed)),
-                prefill_tick_take(q, take, false, Some(seed - fed))
-            );
-        }
+        assert!(batch_row_take(40, 40, 0, Some(8)) < 16);
+        // No seed: a remainder under the prime floor merges into this call (1030 = 1024 + 6),
+        // where the batch used to take 1024 and leave 6 tokens for decode_step.
+        assert_eq!(batch_row_take(1030, 1024, 0, None), 1030);
+        assert_eq!(batch_row_take(1040, 1024, 0, None), 1024);
+        assert_eq!(batch_row_take(500, 500, 0, None), 500);
     }
 
     #[test]
