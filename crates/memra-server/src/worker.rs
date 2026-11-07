@@ -4847,7 +4847,9 @@ impl PrefixCacheBudget {
 
 static PREFIX_CACHE_BUDGET: std::sync::OnceLock<PrefixCacheBudget> = std::sync::OnceLock::new();
 
-fn prefix_recurrent_state_bytes(plan: &memra_gguf::model_plan::ModelPlan) -> usize {
+/// Recurrent bytes of one prefix entry: each recurrent layer's conv ring plus its state in the
+/// engine's storage class (`memra_kv::recurrent_state_words`; a bf16 GDN state is half).
+fn prefix_recurrent_state_bytes(plan: &memra_gguf::model_plan::ModelPlan, gdn_bf16: bool) -> usize {
     plan.layers
         .iter()
         .map(|layer| match layer.state {
@@ -4857,7 +4859,11 @@ fn prefix_recurrent_state_bytes(plan: &memra_gguf::model_plan::ModelPlan) -> usi
                 state_width,
             } => (conv_width as usize)
                 .saturating_mul((conv_kernel as usize).saturating_sub(1))
-                .saturating_add(state_width as usize),
+                .saturating_add(memra_engine::cache::recurrent_state_words(
+                    layer,
+                    state_width as usize,
+                    gdn_bf16,
+                )),
             _ => 0,
         })
         .sum::<usize>()
@@ -4909,7 +4915,7 @@ fn prefix_entry_geometry_bytes(
         .saturating_add(recurrent_bytes)
 }
 
-fn model_prefix_entry_bytes(model: &HybridModel, ctx: usize) -> usize {
+fn model_prefix_entry_bytes(model: &HybridModel, ctx: usize, gdn_bf16: bool) -> usize {
     let cfg = &model.cfg;
     let n_trunk = model.plan.layers.len();
     let latent_bpt = if prefix_latent_planes_on() {
@@ -4920,7 +4926,7 @@ fn model_prefix_entry_bytes(model: &HybridModel, ctx: usize) -> usize {
     prefix_entry_geometry_bytes(
         memra_engine::cache::cache_bytes_per_token_for_plan(cfg, &model.plan, 0, n_trunk)
             .saturating_add(latent_bpt),
-        prefix_recurrent_state_bytes(&model.plan),
+        prefix_recurrent_state_bytes(&model.plan, gdn_bf16),
         ctx,
     )
 }
@@ -5004,7 +5010,11 @@ fn init_prefix_cache_budget(
                     .clone()
                     .and_then(|env| prefix_budget_ctx(env.as_deref(), model_ctx))
                 {
-                    Ok(ctx) => (name.as_str(), model_prefix_entry_bytes(&lm.model, ctx), ctx),
+                    Ok(ctx) => (
+                        name.as_str(),
+                        model_prefix_entry_bytes(&lm.model, ctx, engine.gdn_state_bf16()),
+                        ctx,
+                    ),
                     Err(err) => {
                         eprintln!(
                             "[prefix-cache] WARNING: served context unresolved for model \
@@ -5248,6 +5258,18 @@ fn sha256_file_hex(path: &str) -> Result<String, String> {
 fn host_tier_numeric_class() -> String {
     let (k, v) = memra_engine::cache::kv_blk_bytes();
     format!("server-prefix-entry-v{PREFIX_ENTRY_LAYOUT_VERSION}-kv-q8_0-{k}B-q5_1-{v}B")
+}
+
+/// A numeric class with the engine's GDN recurrent-state class folded in
+/// (research/gdn-state-bf16-storage-20261107). A bf16-class entry holds half-size ssm planes
+/// from a different numeric program, so the two classes never share `numeric`; the fp32 class
+/// keeps the historical strings byte for byte.
+fn host_tier_numeric_with_gdn(class: String, gdn_bf16: bool) -> String {
+    if gdn_bf16 {
+        format!("{class}+gdn-state-bf16")
+    } else {
+        class
+    }
 }
 
 /// The program identity of one loaded GGUF model with a ZERO tenant salt; the pool namespace
@@ -5698,12 +5720,21 @@ fn host_tier_context(
             h.update(plan.as_bytes());
             format!("{:x}", h.finalize())
         };
-        let base = host_tier_program_base(&artifact, &plan, lm.tok.chat_template());
+        let gdn_bf16 = engine.gdn_state_bf16();
+        let with_gdn = |program: &mut memra_engine::cache::record::ProgramIdentity,
+                        class: String| {
+            program.numeric = memra_engine::cache::record::digest(
+                "numeric",
+                host_tier_numeric_with_gdn(class, gdn_bf16).as_bytes(),
+            );
+        };
+        let mut base = host_tier_program_base(&artifact, &plan, lm.tok.chat_template());
+        with_gdn(&mut base, host_tier_numeric_class());
         eprintln!(
             "[prefix-host] contracts door: model {name} program identity artifact_sha256={artifact} \
              plan_debug_sha256={plan_sha256} numeric={} template={} device={device} \
              ({:.0}ms to hash {path})",
-            host_tier_numeric_class(),
+            host_tier_numeric_with_gdn(host_tier_numeric_class(), gdn_bf16),
             if lm.tok.chat_template().is_some() {
                 "gguf-jinja"
             } else {
@@ -5724,15 +5755,17 @@ fn host_tier_context(
             }
             (true, None, None) => Some(HostTierDraftSource::Embedded),
         };
-        let draft = draft_source
-            .as_ref()
-            .map(|source| host_tier_draft_program(&base, &artifact, &plan, source));
+        let draft = draft_source.as_ref().map(|source| {
+            let mut program = host_tier_draft_program(&base, &artifact, &plan, source);
+            with_gdn(&mut program, host_tier_draft_numeric_class());
+            program
+        });
         match &draft_source {
             Some(source) => eprintln!(
                 "[prefix-host] contracts door: model {name} draft program identity \
                  source={} numeric={} ({:.0}ms)",
                 source.describe(),
-                host_tier_draft_numeric_class(),
+                host_tier_numeric_with_gdn(host_tier_draft_numeric_class(), gdn_bf16),
                 t1.elapsed().as_secs_f64() * 1e3,
             ),
             None => eprintln!(
@@ -5753,9 +5786,11 @@ fn host_tier_context(
                 source.manifest,
                 sha(&source.cfg_debug),
                 source.knobs,
-                host_tier_tail_numeric_class(),
+                host_tier_numeric_with_gdn(host_tier_tail_numeric_class(), gdn_bf16),
             );
-            host_tier_tail_program(&base, &artifact, &plan, source)
+            let mut program = host_tier_tail_program(&base, &artifact, &plan, source);
+            with_gdn(&mut program, host_tier_tail_numeric_class());
+            program
         });
         programs.insert(
             name.clone(),
@@ -5811,7 +5846,10 @@ fn host_tier_context(
     let lease_pool = Some(transfers.lease_pool());
     // WP-A day 63 (L2.1): the span staging set's lengths, one image's worth over the loaded
     // models (the max count per length, one demote in flight per worker).
-    let staging_lengths = host_staging_lengths(loaded.values().map(|lm| &lm.model.plan));
+    let staging_lengths = host_staging_lengths(
+        loaded.values().map(|lm| &lm.model.plan),
+        engine.gdn_state_bf16(),
+    );
     let ctx = HostTierContext {
         governor,
         programs,
@@ -5823,6 +5861,7 @@ fn host_tier_context(
         hasher: HostHashWorker::spawn(HostHashFault::from_door(kv_host_fault()), reserve)?,
         staging: std::cell::RefCell::new(HostStaging::default()),
         lease_pool,
+        gdn_bf16: engine.gdn_state_bf16(),
     };
     // WP-A day 63 (L2.2, L2.3): the staging set allocated at boot, charged as today; a refusal
     // leaves the set partial (the first demote allocates the rest) and never fails the boot.
@@ -5866,10 +5905,12 @@ fn host_tier_context(
 
 /// WP-A day 63 (`DAY63.md` design L2.1): the span staging lengths of one image over the loaded
 /// models' plans: each recurrent layer's conv plane (`conv_width x (conv_kernel - 1)` f32) and ssm
-/// plane (`state_width` f32), trunk and MTP blocks, as (bytes, count) with each length's count the
-/// maximum over the models (one demote is in flight per worker). Sorted by length.
+/// plane (`state_width` elements in the engine's storage class, `memra_kv::recurrent_state_words`),
+/// trunk and MTP blocks, as (bytes, count) with each length's count the maximum over the models
+/// (one demote is in flight per worker). Sorted by length.
 fn host_staging_lengths<'a>(
     plans: impl Iterator<Item = &'a memra_gguf::model_plan::ModelPlan>,
+    gdn_bf16: bool,
 ) -> Vec<(usize, usize)> {
     use memra_gguf::model_plan::StatePlan;
     let mut need: std::collections::BTreeMap<usize, usize> = std::collections::BTreeMap::new();
@@ -5887,7 +5928,11 @@ fn host_staging_lengths<'a>(
             } = layer.state
             {
                 let conv = conv_width as usize * (conv_kernel as usize).saturating_sub(1) * 4;
-                let ssm = state_width as usize * 4;
+                let ssm = memra_engine::cache::recurrent_state_words(
+                    layer,
+                    state_width as usize,
+                    gdn_bf16,
+                ) * 4;
                 for len in [conv, ssm] {
                     if len > 0 {
                         *here.entry(len).or_default() += 1;
@@ -11705,6 +11750,9 @@ struct HostTierContext {
     staging: std::cell::RefCell<HostStaging>,
     /// WP-A day 63 (`DAY63.md` design L1.6): the transfer engine's lease pool, closed at the latch.
     lease_pool: Option<std::rc::Rc<memra_engine::tier_transfer::LeasePool>>,
+    /// The engine's GDN recurrent-state class (`Engine::gdn_state_bf16`): names the ssm
+    /// segments' encoding in a tier image. The programs already carry it in `numeric`.
+    gdn_bf16: bool,
 }
 /// WP-A day 31 (DAY30 owed items: the governor charge of the staging, the staging back on every
 /// post-take refusal): the context's span staging set and its pinned charges. A buffer is
@@ -12146,12 +12194,17 @@ impl HostPrefixCache {
                 )?;
             }
         }
+        let ssm_encoding: &[u8] = if tier.gdn_bf16 {
+            b"bf16-packed"
+        } else {
+            b"f32-native"
+        };
         for (i, p) in entry.ssm.iter().enumerate() {
             if let Some(p) = p {
                 add(
                     Role::Recurrent,
                     4,
-                    b"f32-native",
+                    ssm_encoding,
                     f32s_as_bytes(p),
                     None,
                     pre(HostHashSlot::Ssm(i)),
@@ -54188,6 +54241,7 @@ mod tests {
                 .unwrap(),
             staging: std::cell::RefCell::new(super::HostStaging::default()),
             lease_pool: None,
+            gdn_bf16: false,
         }
     }
 
@@ -57705,22 +57759,30 @@ mod tests {
                 .filter(|l| matches!(l.state, memra_gguf::model_plan::StatePlan::Recurrent { .. }))
                 .count()
         };
-        let one = super::host_staging_lengths([&a].into_iter());
+        let one = super::host_staging_lengths([&a].into_iter(), false);
         assert_eq!(
             one.iter().map(|&(_, c)| c).sum::<usize>(),
             2 * recurrent(&a),
             "two planes per layer"
         );
         assert!(one.iter().all(|&(len, _)| len > 0 && len % 4 == 0));
+        // bf16 GDN state class: the ssm plane (2 heads x 32 x 32 = 2048 elements) halves, the
+        // conv ring (128 x 2 f32) does not.
+        let lens = |v: &[(usize, usize)]| v.iter().map(|&(len, _)| len).collect::<Vec<_>>();
+        assert_eq!(lens(&one), vec![1024, 8192]);
+        assert_eq!(
+            lens(&super::host_staging_lengths([&a].into_iter(), true)),
+            vec![1024, 4096]
+        );
         let b = plan(8, 2);
-        let two = super::host_staging_lengths([&a, &b].into_iter());
+        let two = super::host_staging_lengths([&a, &b].into_iter(), false);
         assert_eq!(
             two,
-            super::host_staging_lengths([&b].into_iter()),
+            super::host_staging_lengths([&b].into_iter(), false),
             "the max count, never the sum"
         );
         let c = plan(4, 4);
-        let mixed = super::host_staging_lengths([&a, &c].into_iter());
+        let mixed = super::host_staging_lengths([&a, &c].into_iter(), false);
         let total: usize = mixed.iter().map(|&(_, n)| n).sum();
         assert!(total <= 2 * recurrent(&a) + 2 * recurrent(&c));
         assert!(
@@ -59379,6 +59441,7 @@ mod tests {
                 .unwrap(),
             staging: std::cell::RefCell::new(super::HostStaging::default()),
             lease_pool: None,
+            gdn_bf16: false,
         }
     }
 

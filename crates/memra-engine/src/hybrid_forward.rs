@@ -12001,8 +12001,9 @@ impl HybridModel {
         )?;
 
         // GDN scan (A4: gdn_scan_prefill dispatches chunked WY under MEMRA_GDN_CHUNKED)
-        let state_in = e.zeros(d_state * d_state * num_v)?; // zero state (prefill)
-        let mut state_out = e.zeros(d_state * d_state * num_v)?;
+        let state_words = e.gdn_state_words(d_state * d_state * num_v);
+        let state_in = e.zeros(state_words)?; // zero state (prefill)
+        let mut state_out = e.zeros(state_words)?;
         let mut o = e.uninit(d_state * num_v * t)?;
         e.gdn_scan_prefill(
             &q_l2,

@@ -422,7 +422,32 @@ impl KvRing {
 
 /// The 7 device ops the cache needs — nothing more. Implemented by the engine (and by
 /// any future backend); all ops are stream-ordered on the implementor's worker stream.
+/// f32 words a Gated DeltaNet recurrent state of `elems` elements occupies: fp32 one per word,
+/// bf16 two per word (element i at byte 2*i). memra-engine `Engine::gdn_state_words` is this.
+pub const fn gdn_state_words(elems: usize, bf16: bool) -> usize {
+    if bf16 { elems.div_ceil(2) } else { elems }
+}
+
+/// f32 words a layer's recurrent state occupies: a Gated DeltaNet state takes the device's
+/// storage class (`KvDev::gdn_state_bf16`), every other recurrent mixer (Kimi delta attention)
+/// stays fp32. The cache allocation and every byte estimate share this one rule.
+pub fn recurrent_state_words(
+    layer: &memra_gguf::model_plan::LayerPlan,
+    state_width: usize,
+    gdn_bf16: bool,
+) -> usize {
+    match layer.attention {
+        AttentionPlan::GatedDeltaNet(_) => gdn_state_words(state_width, gdn_bf16),
+        _ => state_width,
+    }
+}
+
 pub trait KvDev {
+    /// Whether this device stores Gated DeltaNet recurrent states as bf16 (memra-engine
+    /// `Engine::gdn_state_bf16`). The default is the fp32 class.
+    fn gdn_state_bf16(&self) -> bool {
+        false
+    }
     fn zeros(&self, n: usize) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>>;
     fn uninit(&self, n: usize) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>>;
     fn alloc_u8(&self, n: usize) -> Result<CudaSlice<u8>, Box<dyn std::error::Error>>;
@@ -479,7 +504,7 @@ pub trait KvDev {
 
 use cudarc::driver::CudaSlice;
 use memra_gguf::config::{LayerKind, ModelConfig};
-use memra_gguf::model_plan::{ModelPlan, ResidualTopology, StatePlan};
+use memra_gguf::model_plan::{AttentionPlan, ModelPlan, ResidualTopology, StatePlan};
 
 /// Per-full-attn-layer growing KV cache, resident on GPU. QUANTIZED (KVQUANT-PLAN §B):
 /// K stored q8_0 (34 B/32 elem), V stored q5_1 (24 B/32 elem). Per-token byte layout keeps the
@@ -1318,7 +1343,10 @@ impl LatentKvLayer {
 /// on-device (conv_assemble_and_roll), so there is no per-step dtoh/htod for either.
 pub struct RecurLayer {
     pub conv_state: CudaSlice<f32>, // GPU [conv_dim, d_conv-1] (channel c, tap j at c*pad + j)
-    pub ssm_state: CudaSlice<f32>,  // GPU [d_state, d_state, num_v] transposed M[col][i]
+    /// GPU [d_state, d_state, num_v] transposed M[col][i]. A Gated DeltaNet state is in its
+    /// engine's storage class: fp32 words, or bf16 packed two per word (element i at byte 2*i,
+    /// half the length). Size copies by `.len()`, never by the element count.
+    pub ssm_state: CudaSlice<f32>,
     /// PERSISTENT second SSM-state buffer for the gdn-scan double buffer (DECODE DETERMINISM FIX).
     /// gdn_scan needs DISTINCT in/out state buffers. The old eager path allocated a fresh
     /// `state_scratch` via `e.uninit` every step and swapped its pointer into `ssm_state`; that
@@ -3188,12 +3216,14 @@ impl Cache {
                     state_width,
                 } => {
                     kv.push(None);
+                    let state_words =
+                        recurrent_state_words(layer, state_width as usize, e.gdn_state_bf16());
                     recur.push(Some(RecurLayer {
                         conv_state: e.zeros(
                             conv_width as usize * (conv_kernel as usize).saturating_sub(1),
                         )?,
-                        ssm_state: e.zeros(state_width as usize)?,
-                        ssm_state_alt: e.zeros(state_width as usize)?,
+                        ssm_state: e.zeros(state_words)?,
+                        ssm_state_alt: e.zeros(state_words)?,
                     }));
                     latent.push(None);
                 }

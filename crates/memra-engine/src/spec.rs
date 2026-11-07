@@ -7069,6 +7069,19 @@ impl HybridModel {
                 let (pc, ps, _cw, _sw) = ctx
                     .slab_row(e, il, keep - 1)
                     .ok_or("slab commit: linear layer missing from the graphs ctx")?;
+                // The ctx outlives the Cache and the batched copy has no bounds check: a slab
+                // row must be exactly the resident plane (same storage class) or it refuses.
+                if rl.conv_state.len() != ctx.conv_words || rl.ssm_state.len() != ctx.ssm_words {
+                    return Err(format!(
+                        "slab commit: layer {il} resident state ({} conv / {} ssm words) differs \
+                         from the graphs ctx slab ({} / {})",
+                        rl.conv_state.len(),
+                        rl.ssm_state.len(),
+                        ctx.conv_words,
+                        ctx.ssm_words
+                    )
+                    .into());
+                }
                 conv_src.push(pc);
                 ssm_src.push(ps);
                 let st = &e.gpu.stream();
@@ -7663,8 +7676,9 @@ impl HybridModel {
     }
 
     /// Bytes one verify column adds to a `VerifyCkpt`: the (conv, ssm) state copy of every
-    /// linear layer (`pooled_linear_layer` / the t-parallel walk keep `t - 1` of them).
-    pub(crate) fn dspark_verify_ckpt_col_bytes(&self) -> usize {
+    /// linear layer (`pooled_linear_layer` / the t-parallel walk keep `t - 1` of them), the
+    /// ssm copy in the engine's GDN state class.
+    pub(crate) fn dspark_verify_ckpt_col_bytes(&self, e: &Engine) -> usize {
         self.layers
             .iter()
             .filter_map(|l| match &l.mixer {
@@ -7677,7 +7691,8 @@ impl HybridModel {
                     );
                     let conv_dim = d_state * num_k * 2 + g.value_head_dim as usize * num_v;
                     let conv_words = conv_dim * (g.conv_kernel as usize - 1);
-                    Some((conv_words + d_state * d_state * num_v) * std::mem::size_of::<f32>())
+                    let ssm_words = e.gdn_state_words(d_state * d_state * num_v);
+                    Some((conv_words + ssm_words) * std::mem::size_of::<f32>())
                 }
                 _ => None,
             })
@@ -8989,7 +9004,8 @@ impl HybridModel {
             ),
         };
         let conv_words = conv_dim * (d_conv - 1);
-        let ssm_words = d_state * d_state * num_v;
+        // f32 words per state in the engine's class (bf16: half); the snapshot ring rows too.
+        let ssm_words = e.gdn_state_words(d_state * d_state * num_v);
         let mut conv_outs = e.uninit(t * conv_dim)?;
         let mut q_l2 = e.uninit(t * value_dim)?;
         let mut k_l2 = e.uninit(t * value_dim)?;
@@ -9892,7 +9908,8 @@ impl HybridModel {
             debug_assert_eq!(beta_w, num_v);
             debug_assert_eq!(alpha_w, num_v);
             let conv_words = conv_dim * (d_conv - 1);
-            let ssm_words = d_state * d_state * num_v;
+            // f32 words per state in the engine's class (bf16: half); the snapshot ring rows too.
+            let ssm_words = e.gdn_state_words(d_state * d_state * num_v);
             // Captured graph bodies have no host checkpoint, but rollback still reads stash.
             let want_snap = ckpt.is_some() || stash.is_some();
             let (mut conv_tmp, mut ssm_tmp) = (None, None);
@@ -10049,12 +10066,8 @@ impl HybridModel {
                             // wrong parity after any odd-vt round (the slice-3 smoke
                             // divergence). Read the src address from row r's OUT table
                             // entry at run time — the same entry the scan just wrote.
-                            e.copy_indirect_src_f32(
-                                &out_view,
-                                ssm_slab,
-                                r * d_state * d_state * num_v,
-                                d_state * d_state * num_v,
-                            )?;
+                            let ssm_words = e.gdn_state_words(d_state * d_state * num_v);
+                            e.copy_indirect_src_f32(&out_view, ssm_slab, r * ssm_words, ssm_words)?;
                         }
                         None => {
                             if let Some(states) = col_states.as_mut() {
@@ -10858,6 +10871,19 @@ impl HybridModel {
                     continue; // missing-ckpt error surfaces in the main loop
                 };
                 let (c, st) = &cols[j - 1];
+                // A checkpoint is a whole copy of the resident planes (same storage class); the
+                // batched copy has no bounds check, so a length mismatch refuses here.
+                if c.len() != rl.conv_state.len() || st.len() != rl.ssm_state.len() {
+                    return Err(format!(
+                        "layer {il}: verify checkpoint ({} conv / {} ssm words) differs from the \
+                         resident state ({} / {})",
+                        c.len(),
+                        st.len(),
+                        rl.conv_state.len(),
+                        rl.ssm_state.len()
+                    )
+                    .into());
+                }
                 if conv_pairs.is_empty() {
                     conv_words = c.len();
                     ssm_words = st.len();

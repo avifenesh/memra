@@ -68,6 +68,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let scale = 1.0 / (s_v as f32).sqrt();
 
     let e = Engine::new(0)?;
+    // fp32 oracle bench: its CPU check is the fp32 recurrence, so it pins the fp32 GDN state
+    // class (the bf16 class is gated by kernel-check `gdn_st16_*`).
+    e.set_gdn_state_bf16(false);
     println!(
         "GPU: {}  shape H={h} S_v={s_v} T={t} iters={iters}",
         e.ctx().name()?
