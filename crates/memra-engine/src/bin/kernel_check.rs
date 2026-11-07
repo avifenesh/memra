@@ -7292,12 +7292,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // fa_prefill_q stages to smem — and fa_prefill_qw's MMA/softmax/PV code is byte-identical,
         // so O must match BIT-FOR-BIT (this is the chunk-prime token-identity contract). Cases
         // cover a continuation chunk (T < T_kv, the chunk-prime shape) and a BK-unaligned tail.
-        // The t >= 128 cells reach the selectable workspace twins (MEMRA_PRIME_KV_T3 /
-        // MEMRA_PRIME_KV_H2 / MEMRA_PRIME_KV_H2P), so a kernel-check run with a door set
-        // byte-checks that twin; on GB10 the defaults reach h2p. For h2p: 1000 x 1000 is a fresh
-        // prime whose first CTA has two tiles (the ring never refills), 1000 x 1031 and 4075 x 8171
-        // end in a partial 64-row CTA (a ragged final chunk), and 4096 x 36864 reuses every stage
-        // hundreds of times at a chunk-prime shape.
+        // The t >= 128 cells reach the selectable workspace twins (MEMRA_PRIME_KV_H2 /
+        // MEMRA_PRIME_KV_H2P), so a kernel-check run with a door set byte-checks that twin; on
+        // GB10 the defaults reach h2p. For h2p: 1000 x 1000 is a fresh prime whose first CTA has
+        // two tiles (the ring never refills), 1000 x 1031 and 4075 x 8171 end in a partial 64-row
+        // CTA (a ragged final chunk), and 4096 x 36864 reuses every stage hundreds of times at a
+        // chunk-prime shape.
         for (t, tkv) in [
             (64usize, 192usize),
             (100, 100),

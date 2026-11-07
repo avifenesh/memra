@@ -1023,14 +1023,12 @@ fn moe_grouped_prefill_enabled() -> bool {
         .unwrap_or(true)
 }
 
-/// Deterministic in-token expert prefetch. `MEMRA_MOE_PREFETCH=1` overlaps memory-source H2D on the
-/// copy stream; selecting the opt-in worker spill backend enables the same known-next hook for disk.
-fn moe_prefetch_enabled() -> bool {
-    static E: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *E.get_or_init(|| {
-        std::env::var("MEMRA_MOE_PREFETCH").as_deref() == Ok("1")
-            || crate::spill_pread::worker_enabled()
-    })
+/// Deterministic in-token expert prefetch: overlaps the next routed expert's memory-source H2D on
+/// the copy stream. The default on the cards whose DAY59 cell passed (`Engine::moe_prefetch`,
+/// `moe_cache::in_token_prefetch_for_device`); selecting the opt-in worker spill backend enables
+/// the same known-next hook for disk on any card.
+fn moe_prefetch_enabled(e: &Engine) -> bool {
+    e.moe_prefetch() || crate::spill_pread::worker_enabled()
 }
 
 /// Best-effort OS page-cache prefetch distance for mmap-backed expert ranges. Independent of the
@@ -2568,12 +2566,28 @@ impl HybridModel {
         self.decode_step_hyper_output(e, token, cache, false)
     }
 
-    /// The device sampler is eligible only for the root-owned GLM TP-2 head.
-    /// Inspect loaded sidecars, not the requested TP environment string.
+    /// The device sampler is eligible only for the root-owned GLM TP-2 head, and only on the
+    /// walk its receipt measured: `research/glm5-tp2-gpu-sampler-20260908/RESULTS.md` ran the
+    /// launcher's TP-2 exec block (expert split, symmetric walk and graphs) and every accepted
+    /// process logged TP graph engagement. Inspect loaded sidecars, not the requested TP
+    /// environment string, then apply the symmetric walk's own engagement rule
+    /// (`hyper_range_decode_ws_body`) over every layer. A load that would decline into the
+    /// root-orchestrated walk keeps the host sampler: the +12.22% has no receipt there.
     pub fn glm5_tp_device_sample_supported(&self) -> bool {
         self.hyper.is_some()
-            && self.glm5_tp_rank_count() == Some(2)
             && crate::pp::pp_cuts(self.layers.len()).is_none()
+            && self.glm5_tp_symmetric_walk_engages()
+    }
+
+    /// Whether a whole-range decode takes the symmetric TP-2 walk: the same rule
+    /// `hyper_range_decode_ws_body` applies before it declines into the root-orchestrated walk,
+    /// over `0..layers.len()`, with exactly two ranks.
+    fn glm5_tp_symmetric_walk_engages(&self) -> bool {
+        crate::glm5_tp::glm5_tp_symmetric_on()
+            && crate::glm5_tp::glm5_tp_expert_split_on()
+            && self
+                .glm5_tp_rt_for(0, self.layers.len())
+                .is_some_and(|rt| rt.ranks() == 2 && rt.ar_1stage_available())
     }
 
     /// Plain TP-2 decode with the unchanged trunk/head program. Retain the full
@@ -14175,13 +14189,6 @@ impl HybridModel {
                         cpu_selected.push((expert, route_weight));
                     }
                 }
-                if crate::cpu_experts::predictor_enabled() {
-                    // Fire-and-forget lookahead: the predictor worker scores layers il+1..
-                    // from this layer's MoE input and prefetches predicted-and-missing
-                    // experts into the companion RAM cache. Never blocks this thread.
-                    let row = &host_input[tok * n_embd..(tok + 1) * n_embd];
-                    crate::cpu_experts::predictor_submit(il, row);
-                }
                 if cpu_selected.is_empty() {
                     None
                 } else {
@@ -14343,7 +14350,7 @@ impl HybridModel {
                     }
                 } else if cache_dispatch
                     && !cpu_hybrid
-                    && (moe_prefetch_enabled() || e.expert_bank_prefetch())
+                    && (moe_prefetch_enabled(e) || e.expert_bank_prefetch())
                     && j + 1 < sel.len()
                 {
                     // DAY50: under the MoE slot cache door the prefetch takes its lease through
@@ -17002,66 +17009,7 @@ impl HybridModel {
         Ok((sel, w, input))
     }
 
-    /// Start the prediction-guided prefetch worker (MEMRA_MOE_PREFETCH=depth). Call after
-    /// residency freeze: the worker filters against a static snapshot of the frozen HBM set.
-    /// Builds a fully-owned per-layer table (host router copies via one-time DtoH, bias,
-    /// active mask, prebuilt projection descriptors) so no model reference escapes.
-    pub fn start_moe_prefetch_predictor(
-        &self,
-        e: &Engine,
-        cfg: &ModelConfig,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        let _numeric = self.enter_numeric();
-        use crate::hybrid::Ffn;
-        let Some(sig) = cfg.sigmoid_router() else {
-            return Err("prefetch predictor requires a sigmoid-router arch".into());
-        };
-        let resident: std::collections::HashSet<(u16, u8, u16)> = e
-            .export_moe_residency()
-            .ok_or("prefetch predictor needs the frozen MoE residency cache")?
-            .into_iter()
-            .collect();
-        let mut layers = Vec::new();
-        for (index, layer) in self.layers.iter().enumerate() {
-            let Ffn::Moe(m) = &layer.ffn else { continue };
-            let crate::model::GpuTensor::Float { data, .. } = &m.gate_inp else {
-                continue;
-            };
-            let router = e.dtoh(data)?;
-            let n_expert = m.gate_exps.n_expert;
-            let n_embd = m.gate_exps.in_f;
-            if router.len() != n_embd * n_expert {
-                continue;
-            }
-            let build = |exps: &crate::model::HostExps| {
-                (0..n_expert)
-                    .map(|expert| crate::cpu_experts::predictor_projection(exps, expert))
-                    .collect::<Vec<_>>()
-            };
-            layers.push((
-                index as u16,
-                crate::cpu_experts::PredictLayerInit {
-                    router,
-                    bias: m.exp_probs_b.clone(),
-                    active: m.active_experts.clone(),
-                    n_embd,
-                    n_used: cfg
-                        .moe
-                        .as_ref()
-                        .map(|moe| moe.expert_used_count as usize)
-                        .ok_or("prefetch predictor requires MoE config")?,
-                    sig,
-                    weights_n_expert: n_expert,
-                    gate: build(&m.gate_exps),
-                    up: build(&m.up_exps),
-                    down: build(&m.down_exps),
-                },
-            ));
-        }
-        crate::cpu_experts::start_prefetch_predictor(layers, resident).map_err(|error| error.into())
-    }
-
-    /// Sigmoid-routing oracle shared by the prefetch predictor and `kernel-check`: identical
+    /// Sigmoid-routing oracle for `kernel-check` and the GPU router gates: identical
     /// selection math to the rollback runtime, applied to host-computed logits.
     #[allow(clippy::too_many_arguments)]
     pub fn moe_route_sigmoid_host_public(

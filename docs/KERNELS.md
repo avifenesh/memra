@@ -1,16 +1,19 @@
 # Kernel inventory
 
-## Qwen FA2 attention experiment, 2026-09-09
+## Qwen FA2 prefill attention, 2026-09-09 (default since 2026-11-04)
 
 Both entries carry the same numerical body: BF16 MMA, FP32 direct PV accumulation,
 a BF16-rounded MMA denominator and log2-domain online softmax over 32-key tiles.
-The door is qualified only for the Qwen 24 Q / 4 KV / d256 causal prefill at
-t=16..1039 on the 170-SM sm_120a target with `MEMRA_PRIME_CHUNK=1024`.
+They are the default, with no door, for the Qwen 24 Q / 4 KV / d256 causal prefill
+at t=16..1039 on the 170-SM sm_120a target (the RTX 5090) with
+`MEMRA_PRIME_CHUNK=1024`, the qualified profile. Every other build, SM count, shape
+or chunk setting keeps the existing kernel (`Engine::prime_attn_fa2_enabled`;
+`docs/decisions/QWEN-PRIME-FA2-DEFAULT.md`).
 
 | Symbol | Purpose | Types | Architecture | Door | Binding |
 | --- | --- | --- | --- | --- | --- |
-| `fa_prefill_qw_fa2` | Six query heads share three rotating BF16 KV staging planes; FP32 direct PV and online softmax | BF16 KV, f32 Q/O | sm_120a, 170 SM | `MEMRA_PRIME_ATTN_FA2`, default OFF, decide-by 2026-09-23 | `Engine::fa_prefill_view_ws` |
-| `fa_prefill_qw_fa2_prime_table` | Same numerical body with true causal depth from replay table slot 7 | BF16 KV, f32 Q/O | sm_120a, 170 SM | Same door; the carried graph reuse key includes the attention class | `Engine::fa_prefill_view_ws`, `qwen_prime_graph::run` |
+| `fa_prefill_qw_fa2` | Six query heads share three rotating BF16 KV staging planes; FP32 direct PV and online softmax | BF16 KV, f32 Q/O | sm_120a, 170 SM | no door: default at `MEMRA_PRIME_CHUNK=1024` (`Engine::prime_attn_fa2_enabled`) | `Engine::fa_prefill_view_ws` |
+| `fa_prefill_qw_fa2_prime_table` | Same numerical body with true causal depth from replay table slot 7 | BF16 KV, f32 Q/O | sm_120a, 170 SM | Same selection; the carried graph reuse key includes the attention class | `Engine::fa_prefill_view_ws`, `qwen_prime_graph::run` |
 
 ## Host-tier D2D receipt kernels, 2026-09-22 (memra#536 Move 2 slice 3, WP-A day 22)
 
@@ -95,7 +98,6 @@ Numerical bodies preserve the corresponding eager entry's operation order.
 | `append_quantize_kv_q8_0_q5_1_rows_prime_table` | Quantized KV append and live length publication | `Engine::append_kv_quantized_rows` |
 | `fa_dequant_kv_ws_bf16_prime_table` | True-depth dequantization into stable BF16 workspace | `Engine::fa_prefill_view_ws` |
 | `fa_prefill_qw_db_prime_table` | Existing four-plane attention with live causal depth | `Engine::fa_prefill_view_ws` |
-| `fa_prefill_qw_t3_prime_table` | Existing three-plane attention with live causal depth | `Engine::fa_prefill_view_ws` |
 | `fa_prefill_qw_h2_prime_table` | Two-head (h2) attention with live causal depth | `Engine::fa_prefill_view_ws` |
 | `fa_prefill_qw_h2p_prime_table` | Two-head mbarrier-ring (h2p) attention with live causal depth; reached only on a 170-SM 120a card with `MEMRA_PRIME_KV_H2=1 MEMRA_PRIME_KV_H2P=1` (no default reaches it), ungated | `Engine::fa_prefill_view_ws` |
 | `ssm_conv1d_gdn_state_f32_prime_table` | Carried convolution reads the live ring | `Engine::ssm_conv1d_gdn_state_pad` |
@@ -108,7 +110,6 @@ Numerical bodies preserve the corresponding eager entry's operation order.
 
 | Symbol | Purpose | Types | Architecture | Door | Binding |
 | --- | --- | --- | --- | --- | --- |
-| `fa_prefill_qw_t3` | Two K staging planes plus one V plane, register P operands; unchanged head-dim 256 prime arithmetic | BF16 KV, f32 Q/O | existing warp-MMA support | `MEMRA_PRIME_KV_T3`, default OFF | `Engine::fa_prefill_view_ws` |
 | `fa_prefill_qw_h2` | Two query heads of one KV head per 8-warp CTA over double-buffered K/V planes, register P operands; unchanged head-dim 256 prime arithmetic (2026-11-06) | BF16 KV, f32 Q/O | existing warp-MMA support | `MEMRA_PRIME_KV_H2` on any device; on GB10 the h2 route takes h2p unless `MEMRA_PRIME_KV_H2P=0` | `Engine::fa_prefill_view_ws` |
 | `fa_prefill_qw_h2p` | h2's row program on a three-stage K/V ring handed over by per-stage full/empty mbarriers, the second head's warps one QK behind the first so one head's softmax overlaps the other's MMAs; ldmatrix through precomputed `.shared` offsets; bit-identical to h2 (2026-11-07) | BF16 KV, f32 Q/O | mbarrier `try_wait` on sm_90+, `test_wait` below | `MEMRA_PRIME_KV_H2P`, default ON on unified-memory 120a (GB10) inside the h2 route, OFF elsewhere | `Engine::fa_prefill_view_ws` |
 
@@ -359,7 +360,7 @@ dequantized in-register" (qmatvec.cu:1-2). Guards: PDL sm≥900 (qmatvec.cu:18);
 | `matvec_bf16_f32acc_x1_tcols_rf`, `..._x4_tcols_rf`, `..._x4_tcols16_rf` (lane/glm5-door-r 2026-08-31) | door R fused-reduce-tail twins of the three tcols kernels (designed+sized moe-loc LANE.md §2.2): the standing tail runs t separate strided trees = 9 block-wide barriers per token column (~30 at t=3.34, 135 at the drafter head's t=15) against a 4-trip main loop — barrier/tail-bound at 67.0% of peak on the kda trunk after door X. The `_rf` tail shares ONE barrier sequence across the t columns (`red[t*blockDim]` dynamic shared) and runs levels s<=16 as an intra-warp `__shfl_down_sync` chain at the IDENTICAL pairing and operand order — 9t -> 3 barriers/block (x1 form, 128 threads); main loop verbatim, bit-identical per (row, token). Requires power-of-two blockDim (launcher-enforced) | bf16 weights, f32 acc | — | `MEMRA_BF16_TCOLS_RED_FUSED` (default OFF — no box receipt yet, predicted -1.0 to -2.0 ms/round, box prices the flip) — `glm5_matvec_doors_gpu` bit-gate t=1..=16 both grid forms + shifted-pairing red | fatbin/by-name |
 | `matvec_bf16_f32acc_x1_tcols_rf_redshift` (lane/glm5-door-r 2026-08-31) | GATE-ONLY shifted-pairing RED twin of `..._x1_tcols_rf`: the warp phase runs ASCENDING shuffle offsets (1,2,4,8,16) — the same 32 partials under a different association, so f32 rounding must move and the door-R bit bar must see it. Never dispatched by any route; launched only through `Engine::matvec_bf16_tcols_gate_kernel_into` (an allowlist, not a name proxy) by `glm5_matvec_doors_gpu` | bf16 weights, f32 acc | — | none (gate harness only) | fatbin/by-name |
 
-### cu/flash_attn.cu — 87 symbols (measured `grep -c 'extern "C" __global__'` on 2026-11-03; the heading had read 91) (fatbin `MEMRA_FLASH_FATBIN` + KV-variant fatbins)
+### cu/flash_attn.cu — 89 symbols (measured `grep -c 'extern "C" __global__'` on 2026-11-07, after `fa_prefill_qw_t3` and `fa_prefill_qw_t3_prime_table` left with `MEMRA_PRIME_KV_T3` and the two-head `fa_prefill_qw_h2` and `fa_prefill_qw_h2p` twins came in; the heading had read 91 before 2026-11-03) (fatbin `MEMRA_FLASH_FATBIN` + KV-variant fatbins)
 
 Header: "hand-written FlashAttention for RTX 5090 (sm_120a), m16n8k16 bf16 mma"
 (flash_attn.cu:1-6). PDL sm≥900, portable 90a included (flash_attn.cu:59). Head dims: `template<int
@@ -433,8 +434,10 @@ into the peer's staging buffer over NVLink (peer access from `tp::grant_peer_acc
 pointer is dereferenceable from a kernel in this context) and each rank folds the buffer its peer
 wrote. Ordering is one cross-stream event per direction, the contract
 `tp_transport::PeerPullLink::publish` already uses; no host boundary, no `synchronize`, and
-nothing occupying the device while it waits. EXISTS BECAUSE the TP-2 join costs about 500 us
-today: `tp_transport`'s default `host-canonical` bounces every hop through host and
+nothing occupying the device while it waits. EXISTS BECAUSE the TP-2 join cost about 500 us
+when it landed: `tp_transport`'s `host-canonical` arm (then the default on every build; since
+2026-11-04 the default everywhere but sm_100a, where an armed TP walk takes `peer-pull`,
+`tp_transport::default_transport_for_build`) bounces every hop through host and
 `Engine::dtoh` drains the stream, so each of the ~90 joins per token waits for that layer's
 compute twice, which is the whole reason TP-2 measured 3.1x slower than the pipeline split it
 would replace. NEW `memra_tp_ar_1stage` (`memra_tp_ar_1stage_kernel` + `memra_ar_barrier`, lane/tp-ar-1stage-20260906): the ONE-SHOT arm, and the shape the push-then-fold pipeline above should have been. Taken from vLLM's `cross_device_reduce_1stage` and its `barrier_at_start`/`barrier_at_end` pair: ONE kernel per rank and NO CUDA events, synchronising through flags written into the peer's memory, reading BOTH ranks' inputs directly (peer access makes the peer pointer dereferenceable) and computing the whole sum locally. No staging buffer, no copy, nothing for the host to do per reduce beyond two launches, against the pipeline's 4 launches and 8 cross-context event operations that measured 20-26 us for 16 KB on a 956 GB/s fabric. Operands are indexed by GLOBAL RANK so every rank evaluates the same expression and the result is bitwise identical across ranks by construction. Two alternating counter sets because a peer block can reach the second barrier while this block still spins on the first. The spin is BOUNDED where vLLM's is not, writing a refusal word (40043 entry, 40044 exit) rather than hanging the card. Consumers: `tp_ar::ArLink::all_reduce_1stage` (the glm5 TP walk's reduce sites under `MEMRA_TP_AR_1STAGE`, and the driver `tp-ar-bench`) and `all_reduce_1stage_into`; `ArLink::all_reduce` keeps the push-then-fold pipeline above. The glm5 TP MLA layer's three PURE-MOVEMENT hops (fan out `h` and the positions, all-gather the head parts, concat the column-parallel `wo` parts onto root) do not ride this link: they use `tp_transport`'s fan-out and gather hops, which is why that arm is byte-identical to the unsharded walk by construction. Gate:

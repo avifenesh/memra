@@ -39023,15 +39023,17 @@ fn admit(
         choice: req.choice.clone(),
         is_capture,
     };
-    if memra_engine::glm5_tp_sampler::requested() {
+    // The device sampler's per-request rules apply only to a model whose loaded head can take
+    // it (a GLM TP-2 load on its measured walk). Every other model keeps the host sampler without
+    // building a config, so it logs no per-request refusal.
+    if memra_engine::glm5_tp_sampler::enabled() && lm.model.glm5_tp_device_sample_supported() {
         use memra_engine::glm5_tp_sampler::{Glm5TpDeviceSampler, Glm5TpSampleConfig};
         let plain = s.spec_k == 0
             && s.spec.is_none()
             && s.gspec_k == 0
             && !s.dspark_on
             && !s.glm5_on
-            && s.cache.is_some()
-            && lm.model.glm5_tp_device_sample_supported();
+            && s.cache.is_some();
         // HTTP logprobs requests currently refuse before worker admission.
         // Full-row consumers must always select the host arm here.
         let cfg = Glm5TpSampleConfig::for_request(
@@ -42395,8 +42397,10 @@ fn step_session(
     Ok(true)
 }
 
-/// Sample retained GLM logits or the existing host row. On a sampler refusal,
-/// recover that same row and disable the device arm for the rest of the request.
+/// Sample retained GLM logits or the existing host row. One request draws under one numeric
+/// program: a refusal on the first draw recovers that same row and keeps the request on the host
+/// sampler from its first token, while a refusal after a device draw fails the request, since the
+/// host sampler (f32, stateful RNG) would emit the rest of it under a second program.
 fn sample_glm5_tp_plain(
     engine: &Engine,
     s: &mut Session,
@@ -42414,10 +42418,18 @@ fn sample_glm5_tp_plain(
         };
         match result {
             Ok(token) => return Ok(token),
+            Err(err) if sampler.engagements() > 0 => {
+                return Err(format!(
+                    "GLM device sampler failed after {} draws: {err}; the request ends here \
+                     rather than switch to the host sampler mid-request",
+                    sampler.engagements()
+                )
+                .into());
+            }
             Err(err) => {
                 eprintln!(
-                    "[glm5-tp-device-sample] refused after {} draws: {err}; host fallback request={}",
-                    sampler.engagements(),
+                    "[glm5-tp-device-sample] refused on the first draw: {err}; host fallback \
+                     from the first token request={}",
                     s.request_id
                 );
                 if s.last_logits.is_empty() {

@@ -2064,6 +2064,10 @@ pub struct Engine {
     /// DAY50: the MoE slot cache door is installed and prefetches the next routed expert through
     /// its owner. Set only by the door's installer; false keeps the legacy prefetch condition.
     expert_bank_prefetch: std::sync::atomic::AtomicBool,
+    /// The legacy slot cache's in-token prefetch of the next routed expert, by card class, read
+    /// once from the device name at construction (`moe_cache::in_token_prefetch_for_device`):
+    /// the arm and the name of its source, which the slot cache's boot line states.
+    moe_prefetch: (bool, &'static str),
     /// DAY60: `--moe-dispatch-clock` (a gate binary's log-only flag): every MoE slot cache built
     /// after it is set keeps a dispatch clock (both the legacy program and the door).
     moe_dispatch_clock: std::sync::atomic::AtomicBool,
@@ -3867,6 +3871,10 @@ impl Engine {
                 .unwrap_or(82)
         };
         fa_ladder_engine_verdict(ordinal, sm_count, *FA_SM_COUNT.get_or_init(|| sm_count))?;
+        // The MoE in-token prefetch follows this device's card class. An unreadable name
+        // classifies as no card and keeps it off.
+        let moe_prefetch =
+            crate::moe_cache::in_token_prefetch_for_device(&gpu.ctx.name().unwrap_or_default());
         // A force flag this build cannot honor stops the boot, not the first long prompt.
         fa3_force_verdict(
             std::env::var("MEMRA_FA3").ok().as_deref(),
@@ -3950,6 +3958,7 @@ impl Engine {
             moe_cache: Mutex::new(None),
             expert_host_mapped: std::sync::atomic::AtomicBool::new(false),
             expert_bank_prefetch: std::sync::atomic::AtomicBool::new(false),
+            moe_prefetch,
             moe_dispatch_clock: std::sync::atomic::AtomicBool::new(false),
             a4_clip_stats: Mutex::new(None),
             w8_mirrors: Mutex::new(std::collections::HashMap::new()),
@@ -6687,6 +6696,18 @@ impl Engine {
             .and_then(|cache| cache.dispatch_clock_line())
     }
 
+    /// Whether this device's card class takes the legacy slot cache's in-token prefetch
+    /// (`moe_cache::in_token_prefetch_for_device`).
+    pub(crate) fn moe_prefetch(&self) -> bool {
+        self.moe_prefetch.0
+    }
+
+    /// Why [`Engine::moe_prefetch`] reads as it does: the receipt that keys this card class, or
+    /// `no-receipt-default`.
+    pub(crate) fn moe_prefetch_source(&self) -> &'static str {
+        self.moe_prefetch.1
+    }
+
     /// DAY50: whether the door prefetches through its owner (the forward's prefetch condition).
     pub(crate) fn expert_bank_prefetch(&self) -> bool {
         self.expert_bank_prefetch
@@ -6730,10 +6751,6 @@ impl Engine {
 
     /// Caller-blocked nanoseconds at CPU expert joins. Compare before/after snapshots to measure
     /// the backend tail that resident-GPU expert work did not hide.
-    pub fn cpu_expert_predictor_stats(&self) -> (u64, u64) {
-        crate::cpu_experts::predictor_stats()
-    }
-
     pub fn cpu_expert_exposed_wait_ns(&self) -> Option<u64> {
         crate::cpu_experts::configured().then(crate::cpu_experts::exposed_wait_ns)
     }
@@ -28477,8 +28494,8 @@ impl Engine {
                 b.launch(cfg)?;
             }
         }
-        // Shape first, door last: the door reads the process environment, and every
-        // other model's prefill reaches this line on the same build.
+        // Shape first, class last: the class reads the prime chunk from the process
+        // environment, and every other model's prefill reaches this line on the same build.
         if head_dim == 256
             && n_head == 24
             && n_head_kv == 4
@@ -28528,15 +28545,9 @@ impl Engine {
             .map(|v| v != "0")
             .unwrap_or(true);
         {
-            // Same row program, three KV staging planes and register-resident P operands.
-            let triple = db
-                && head_dim == 256
-                && t >= 128
-                && std::env::var("MEMRA_PRIME_KV_T3").as_deref() == Ok("1");
             // Two query heads of one KV head per 8-warp CTA (h2): same per-row program as
-            // the db/t3 twins, each staged K/V tile read once for both heads.
+            // the db twin, each staged K/V tile read once for both heads.
             let h2 = db
-                && !triple
                 && head_dim == 256
                 && t >= 128
                 && n_head.is_multiple_of(2)
@@ -28549,9 +28560,7 @@ impl Engine {
             let hd_sfx = fa_hd_suffix(head_dim)?;
             let f = self.func(&format!(
                 "fa_prefill_qw{}{hd_sfx}{}",
-                if triple {
-                    "_t3"
-                } else if h2p {
+                if h2p {
                     "_h2p"
                 } else if h2 {
                     "_h2"
@@ -28562,14 +28571,13 @@ impl Engine {
                 },
                 if live.is_some() { "_prime_table" } else { "" }
             ));
-            let shmem = if triple {
-                (2 * 3 * BK * head_dim) as u32
-            } else if h2p {
+            let shmem = if h2p {
                 // three stages of K and V planes, then six 8-byte mbarriers (padded to 64)
                 (2 * 6 * BK * head_dim + 64) as u32
             } else if h2 {
                 (2 * 4 * BK * head_dim) as u32
             } else if db {
+                // 4x KV tile buffers (bf16) + sP (bf16) + sL (f32)
                 (2 * (4 * BK * head_dim + BLOCK_Q * BK) + 4 * BLOCK_Q) as u32
             } else {
                 (2 * (2 * BK * head_dim + BLOCK_Q * BK) + 4 * (BLOCK_Q * BK + 2 * BLOCK_Q)) as u32
@@ -28648,22 +28656,26 @@ impl Engine {
         })
     }
 
-    /// The FA2 prefill door. Compile-time architecture first, then the cached SM
-    /// count, so a build or a card outside the qualified target never reads the
-    /// environment and never leaves the existing kernel.
+    /// Whether the Qwen 24 Q / 4 KV / d256 prime takes the FA2 attention class. It is
+    /// the default on its qualified profile and has no door
+    /// (`docs/decisions/QWEN-PRIME-FA2-DEFAULT.md`; receipt
+    /// `research/qwen-prefill-attn-20260909/FA2.md`). Compile-time architecture first,
+    /// then the cached SM count, so a build or a card outside the qualified target (the
+    /// 170-SM sm_120a RTX 5090) never reads the environment and never leaves the
+    /// existing kernel.
     ///
     /// The qualified profile primes at exactly `MEMRA_PRIME_CHUNK=1024`, and the
     /// dispatch guard admits `PRIME_MIN_T..=1039`. A wider deployment chunk would
     /// leave every full chunk on the legacy class and hand only the folded tail to
     /// FA2, so a single prime would mix numerical classes and a restored suffix
     /// would stop matching its cold twin, the exact defect the first integration hit
-    /// at the t<128 boundary. The door therefore requires its qualified chunk.
-    /// Both env reads stay live because `qwen-fa2-margin-gate` toggles the door
+    /// at the t<128 boundary. The class therefore requires its qualified chunk, and
+    /// every other chunk setting (the naked 4096 cap included) keeps the existing
+    /// kernel. The chunk read stays live, not latched: gates flip `MEMRA_PRIME_CHUNK`
     /// inside one process, and the carried-graph reuse key calls this same helper.
     pub(crate) fn prime_attn_fa2_enabled(&self) -> bool {
         env!("MEMRA_BUILT_CUDA_ARCH") == "120a"
             && self.sm_count() == 170
-            && std::env::var("MEMRA_PRIME_ATTN_FA2").as_deref() == Ok("1")
             && std::env::var("MEMRA_PRIME_CHUNK").as_deref() == Ok("1024")
     }
 
