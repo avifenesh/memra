@@ -166,38 +166,6 @@ extern "C" __global__ void memra_mla_append_latent_kernel(float* __restrict__ ca
     cache[(long)(slot + row) * width + col] = v;
 }
 
-// Live-slot twin (lane/mla-live-len-20260905): the row offset comes from the decode-graph door's
-// device position word (`pos_d[0]`, the same word the KDA runs read) instead of a launch scalar,
-// so the append can sit inside a captured graph and replay at the next slot. Same element
-// mapping, same store: bit-identical to the scalar kernel at slot == pos_d[0].
-extern "C" __global__ void memra_mla_append_latent_live_kernel(float* __restrict__ cache,
-                                                               const float* __restrict__ c_kv,
-                                                               const float* __restrict__ k_pe,
-                                                               const int* __restrict__ pos_d,
-                                                               int t, int kv_rank, int d_rope) {
-    int slot = pos_d[0];
-    int width = kv_rank + d_rope;
-    long i = (long)blockIdx.x * blockDim.x + threadIdx.x;
-    if (i >= (long)t * width) return;
-    int row = (int)(i / width), col = (int)(i % width);
-    float v = (col < kv_rank) ? c_kv[(long)row * kv_rank + col]
-                              : k_pe[(long)row * d_rope + (col - kv_rank)];
-    cache[(long)(slot + row) * width + col] = v;
-}
-extern "C" int memra_mla_append_latent_live_f32(float* cache, const float* c_kv, const float* k_pe,
-                                                const int* pos_d, int t, int kv_rank, int d_rope,
-                                                void* stream_v) {
-    cudaStream_t stream = (cudaStream_t)stream_v;
-    long tot = (long)t * (kv_rank + d_rope);
-    if (tot == 0) return 0;
-    int threads = 256;
-    long blocks = (tot + threads - 1) / threads;
-    memra_mla_append_latent_live_kernel<<<(unsigned)blocks, threads, 0, stream>>>(
-        cache, c_kv, k_pe, pos_d, t, kv_rank, d_rope);
-    MLA_ERR();
-    return 0;
-}
-
 extern "C" int memra_mla_append_latent_f32(float* cache, const float* c_kv, const float* k_pe,
                                            int slot, int t, int kv_rank, int d_rope,
                                            void* stream_v) {
@@ -603,9 +571,7 @@ extern "C" int memra_mla_decompress_v_split_f32(const float* o_lat, const float*
 // The accumulation ORDER differs from the CPU oracle's (tiled + rescaled vs a single left-to-right
 // pass), so parity is a maxdiff bound, never bit-identity. That is the documented bar for this
 // kernel family (DESIGN.md increment 4: "per-layer maxdiff vs mla.rs").
-// Body of the absorbed decode core, shared by the scalar-t_kv entry below and the live-length
-// twin (lane/mla-live-len-20260905) that reads t_kv from the door's device position word. One
-// body, two entries: the live entry is bit-identical to the scalar one at t_kv == pos_d[0] + t_q.
+// Body of the absorbed decode core; its scalar-t_kv entry follows.
 __device__ __forceinline__ void memra_mla_attn_absorbed_body(
     const float* __restrict__ q_lat, const float* __restrict__ q_pe,
     const float* __restrict__ cache, float* __restrict__ o_lat, int n_head, int kv_rank,
@@ -680,14 +646,6 @@ extern "C" __global__ void memra_mla_attn_absorbed_kernel(
     int d_rope, int t_q, int t_kv, float scale) {
     memra_mla_attn_absorbed_body(q_lat, q_pe, cache, o_lat, n_head, kv_rank, d_rope, t_q, t_kv, scale);
 }
-extern "C" __global__ void memra_mla_attn_absorbed_live_kernel(
-    const float* __restrict__ q_lat, const float* __restrict__ q_pe,
-    const float* __restrict__ cache, float* __restrict__ o_lat, int n_head, int kv_rank,
-    int d_rope, int t_q, const int* __restrict__ pos_d, float scale) {
-    int t_kv = pos_d[0] + t_q;
-    memra_mla_attn_absorbed_body(q_lat, q_pe, cache, o_lat, n_head, kv_rank, d_rope, t_q, t_kv, scale);
-}
-
 extern "C" int memra_mla_attn_absorbed_f32(const float* q_lat, const float* q_pe,
                                            const float* cache, float* o_lat, int n_head,
                                            int kv_rank, int d_rope, int t_q, int t_kv,
@@ -700,23 +658,6 @@ extern "C" int memra_mla_attn_absorbed_f32(const float* q_lat, const float* q_pe
     if (blocks == 0) return 0;
     memra_mla_attn_absorbed_kernel<<<(unsigned)blocks, MLA_THREADS, 0, stream>>>(
         q_lat, q_pe, cache, o_lat, n_head, kv_rank, d_rope, t_q, t_kv, scale);
-    MLA_ERR();
-    return 0;
-}
-// Live-length twin: t_kv = pos_d[0] + t_q on the device, so the launch geometry (t_q * n_head
-// blocks) is fixed and the kernel can sit inside a captured graph. The host cannot check
-// t_q <= t_kv here; the door owns that invariant (pos_d is the slot the queries append at).
-extern "C" int memra_mla_attn_absorbed_live_f32(const float* q_lat, const float* q_pe,
-                                                const float* cache, float* o_lat, int n_head,
-                                                int kv_rank, int d_rope, int t_q,
-                                                const int* pos_d, float scale, void* stream_v) {
-    if (kv_rank > MLA_MAX_RANK) return 40002;
-    if (d_rope > MLA_MAX_ROPE) return 40003;
-    cudaStream_t stream = (cudaStream_t)stream_v;
-    long blocks = (long)t_q * n_head;
-    if (blocks == 0) return 0;
-    memra_mla_attn_absorbed_live_kernel<<<(unsigned)blocks, MLA_THREADS, 0, stream>>>(
-        q_lat, q_pe, cache, o_lat, n_head, kv_rank, d_rope, t_q, pos_d, scale);
     MLA_ERR();
     return 0;
 }
@@ -767,37 +708,6 @@ extern "C" __global__ void memra_mla_index_append_ring_kernel(float* __restrict_
     int dst = slot + row;
     if (rows > 0) dst %= rows;
     plane[(long)dst * width + col] = v;
-}
-
-// Live twin (t = 1): the destination row is the door's device position word (`slot == pos`,
-// the latent plane's own invariant that `memra_mla_append_latent_live_kernel` already rests on).
-extern "C" __global__ void memra_mla_index_append_ring_live_kernel(
-    float* __restrict__ plane, const float* __restrict__ a, const float* __restrict__ b,
-    const int* __restrict__ pos_d, int t, int wa, int wb, int rows) {
-    int width = wa + wb;
-    long i = (long)blockIdx.x * blockDim.x + threadIdx.x;
-    if (i >= (long)t * width) return;
-    int row = (int)(i / width), col = (int)(i % width);
-    float v = (col < wa) ? a[(long)row * wa + col] : b[(long)row * wb + (col - wa)];
-    int dst = pos_d[0] + row;
-    if (rows > 0) dst %= rows;
-    plane[(long)dst * width + col] = v;
-}
-
-extern "C" int memra_mla_index_append_ring_live_f32(float* plane, const float* a, const float* b,
-                                                    const int* pos_d, int t, int wa, int wb,
-                                                    int rows, void* stream_v) {
-    if (t < 0 || wa < 0 || wb < 0 || rows < 0) return 40017;
-    if (rows > 0 && t > rows) return 40018;
-    cudaStream_t stream = (cudaStream_t)stream_v;
-    long tot = (long)t * (wa + wb);
-    if (tot == 0) return 0;
-    int threads = 256;
-    long blocks = (tot + threads - 1) / threads;
-    memra_mla_index_append_ring_live_kernel<<<(unsigned)blocks, threads, 0, stream>>>(
-        plane, a, b, pos_d, t, wa, wb, rows);
-    MLA_ERR();
-    return 0;
 }
 
 extern "C" int memra_mla_index_append_ring_f32(float* plane, const float* a, const float* b,
@@ -878,43 +788,6 @@ extern "C" __global__ void memra_mla_kpool_pool_keys_kernel(const float* __restr
     if (i >= span) return;
     i += (long)pool_begin * d;
     memra_mla_kpool_pool_key_cell(state, ape, pool_keys, i, pool, d, state_rows);
-}
-
-// Live twin (t = 1, the state row at pos_d[0] already appended): builds the ONE pool this token
-// completes, if any. `t_kv = pos + 1`; the pool `t_kv / pool - 1` is complete exactly when
-// `t_kv % pool == 0`, and it is the same cell arithmetic the incremental host build runs for
-// `[pools_ready, ready_now)` at t = 1 (a span of one pool or none). Fixed grid over `d`.
-extern "C" __global__ void memra_mla_kpool_pool_keys_live_kernel(
-    const float* __restrict__ state, const float* __restrict__ ape, float* __restrict__ pool_keys,
-    const int* __restrict__ pos_d, int t, int pool, int d, int state_rows) {
-    // The host program builds pools [pos / pool, (pos + t) / pool) for a t-row append at pos:
-    // the pools this call completes. Grid.y spans the most pools t rows can complete; CTAs past
-    // the live count exit.
-    int pos = pos_d[0];
-    int before = pos / pool;
-    int ready_now = (pos + t) / pool;
-    long p = (long)before + (long)blockIdx.y;
-    if (p >= ready_now) return;
-    int c = (int)((long)blockIdx.x * blockDim.x + threadIdx.x);
-    if (c >= d) return;
-    memra_mla_kpool_pool_key_cell(state, ape, pool_keys, p * d + c, pool, d, state_rows);
-}
-
-extern "C" int memra_mla_kpool_pool_keys_live_f32(const float* state, const float* ape,
-                                                  float* pool_keys, const int* pos_d, int t,
-                                                  int pool, int d, int state_rows,
-                                                  void* stream_v) {
-    if (pool <= 0 || pool > MLA_MAX_POOL) return 40010;
-    if (d <= 0 || t <= 0) return 40017;
-    if (state_rows < 0 || (state_rows > 0 && state_rows % pool != 0)) return 40019;
-    cudaStream_t stream = (cudaStream_t)stream_v;
-    int threads = 256;
-    long blocks = ((long)d + threads - 1) / threads;
-    dim3 grid((unsigned)blocks, (unsigned)(t / pool + 1));
-    memra_mla_kpool_pool_keys_live_kernel<<<grid, threads, 0, stream>>>(
-        state, ape, pool_keys, pos_d, t, pool, d, state_rows);
-    MLA_ERR();
-    return 0;
 }
 
 extern "C" int memra_mla_kpool_pool_keys_f32(const float* state, const float* ape,
@@ -1008,65 +881,6 @@ extern "C" __global__ void memra_mla_kpool_score_ref_kernel(
         for (int hh = 0; hh < heads; ++hh) acc += sh[hh];
         score[i] = acc;
     }
-}
-
-// Live twin of the reference scorer (t_q = 1): `first_pos` and `n_pools` from the door's
-// position word; grid over the CAPACITY pool count, CTAs at or past the live count exit. Same
-// per-pool arithmetic, so it is bit-identical to `memra_mla_kpool_score_ref_kernel` (and
-// therefore to the tiled and head-blocked kernels, which are bit-identical to it) on
-// `[0, n_pools)`. Serves the geometries the head-blocked live twin has no instantiation for.
-extern "C" __global__ void memra_mla_kpool_score_ref_live_kernel(
-    const float* __restrict__ q, const float* __restrict__ pool_keys,
-    const float* __restrict__ hw, float* __restrict__ score, int heads, int d,
-    const int* __restrict__ pos_d, int t_q, int n_pools_cap, int pool, float qk_scale,
-    float head_scale) {
-    extern __shared__ float sh[];
-    int first_pos = pos_d[0];
-    int n_pools = (first_pos + t_q) / pool;
-    int p = (int)blockIdx.x;
-    int t = (int)blockIdx.y;
-    if (p >= n_pools) return;
-    float* out = score + (long)t * n_pools_cap;
-    int visible_pools = (first_pos + t + 1) / pool;
-    if (visible_pools > n_pools) visible_pools = n_pools;
-    if (p >= visible_pools) {
-        if (threadIdx.x == 0) out[p] = -INFINITY;
-        return;
-    }
-    int h = threadIdx.x;
-    if (h < heads) {
-        const float* qr = q + ((long)t * heads + h) * d;
-        const float* kr = pool_keys + (long)p * d;
-        float dot = 0.0f;
-        for (int c = 0; c < d; ++c) dot += qr[c] * kr[c];
-        sh[h] = fmaxf(dot * qk_scale, 0.0f) * (hw[(long)t * heads + h] * head_scale);
-    }
-    __syncthreads();
-    if (threadIdx.x == 0) {
-        float acc = 0.0f;
-        for (int hh = 0; hh < heads; ++hh) acc += sh[hh];
-        out[p] = acc;
-    }
-}
-
-extern "C" int memra_mla_kpool_score_ref_live_f32(const float* q, const float* pool_keys,
-                                                  const float* hw, float* score, int t_q,
-                                                  int heads, int d, const int* pos_d,
-                                                  int n_pools_cap, int pool, float qk_scale,
-                                                  float head_scale, void* stream_v) {
-    if (heads <= 0 || heads > 1024) return 40011;
-    if (pool <= 0) return 40010;
-    if (t_q <= 0) return 40030; // live twin: t_q rows at the capacity stride
-    cudaStream_t stream = (cudaStream_t)stream_v;
-    if (n_pools_cap <= 0) return 0;
-    if ((long)n_pools_cap > 2147483647L) return 40012;
-    dim3 grid((unsigned)n_pools_cap, (unsigned)t_q);
-    memra_mla_kpool_score_ref_live_kernel<<<grid, heads, (size_t)heads * sizeof(float),
-                                            stream>>>(q, pool_keys, hw, score, heads, d, pos_d,
-                                                      t_q, n_pools_cap, pool, qk_scale,
-                                                      head_scale);
-    MLA_ERR();
-    return 0;
 }
 
 extern "C" int memra_mla_kpool_score_ref_f32(const float* q, const float* pool_keys,
@@ -1887,9 +1701,7 @@ extern "C" __global__ void memra_mla_kpool_select_ref_kernel(const float* __rest
 //
 // COST: O(8 * n_pools / threads) per query, INDEPENDENT of select_k. At the shipped budget and a
 // 1M context that is 64x fewer block iterations than the ref kernel (8 rather than 512 sweeps).
-// Body of the single-CTA selector, shared by the scalar-n_pools entry and the live-count twin
-// (lane/mla-kpool-live-20260905): the grid is t_q blocks whatever n_pools is, so reading n_pools
-// from the door's device word makes the launch capturable; same scan, same keys, same emit.
+// Body of the single-CTA selector; the grid is t_q blocks whatever n_pools is.
 __device__ __forceinline__ void memra_mla_kpool_select_body(const float* __restrict__ score,
                                                             int* __restrict__ idx, int n_pools,
                                                             int pool, int select_k, int width,
@@ -2234,50 +2046,12 @@ extern "C" __global__ void memra_mla_kpool_select_v2_kernel(const float* __restr
     memra_mla_kpool_select_body_v2(score, idx, n_pools, pool, select_k, width, first_pos,
                                    always_tail, n_pools, width);
 }
-extern "C" __global__ void memra_mla_kpool_select_live_v2_kernel(const float* __restrict__ score,
-                                                                 int* __restrict__ idx,
-                                                                 int* __restrict__ width_d,
-                                                                 const int* __restrict__ pos_d,
-                                                                 int t_q, int n_pools_cap, int pool,
-                                                                 int select_k_cap, int width_cap,
-                                                                 int always_tail) {
-    int first_pos = pos_d[0];
-    int n_pools = (first_pos + t_q) / pool;
-    int select_k = select_k_cap < n_pools ? select_k_cap : n_pools;
-    if (blockIdx.x == 0 && threadIdx.x == 0)
-        width_d[0] = select_k * pool + (always_tail ? pool - 1 : 0);
-    memra_mla_kpool_select_body_v2(score, idx, n_pools, pool, select_k, width_cap, first_pos,
-                                   always_tail, n_pools_cap, width_cap);
-}
 extern "C" __global__ void memra_mla_kpool_select_kernel(const float* __restrict__ score,
                                                          int* __restrict__ idx, int n_pools,
                                                          int pool, int select_k, int width,
                                                          int first_pos, int always_tail) {
     memra_mla_kpool_select_body(score, idx, n_pools, pool, select_k, width, first_pos, always_tail,
                                 n_pools, width);
-}
-extern "C" __global__ void memra_mla_kpool_select_live_kernel(const float* __restrict__ score,
-                                                              int* __restrict__ idx,
-                                                              int* __restrict__ width_d,
-                                                              const int* __restrict__ pos_d,
-                                                              int t_q, int n_pools_cap, int pool,
-                                                              int select_k_cap, int width_cap,
-                                                              int always_tail) {
-    // Row 0 at pos_d[0]: first_pos = pos_d[0], n_pools = (pos + t_q) / pool (call-wide),
-    // select_k = min(cap, n_pools) (the host's IndexGeom::select_k). Rows are laid out at the
-    // CAPACITY width: the body sentinel-fills [filled, width) with -1 and the gathered attention
-    // masks -1 rows, so the first index_width(n_pools) entries of each row are the scalar
-    // launch's and the rest are inert. The score plane is read at its capacity stride.
-    int first_pos = pos_d[0];
-    int n_pools = (first_pos + t_q) / pool;
-    int select_k = select_k_cap < n_pools ? select_k_cap : n_pools;
-    // The call's TRUE index_width, published for the live attention twins: they walk exactly
-    // this many slots per row, so their chunking and reduction order match the scalar launch
-    // at this width rather than the capacity stride.
-    if (blockIdx.x == 0 && threadIdx.x == 0)
-        width_d[0] = select_k * pool + (always_tail ? pool - 1 : 0);
-    memra_mla_kpool_select_body(score, idx, n_pools, pool, select_k, width_cap, first_pos,
-                                always_tail, n_pools_cap, width_cap);
 }
 
 // Shared argument audit for both selection launchers.
@@ -2319,40 +2093,9 @@ extern "C" int memra_mla_kpool_select_v2_f32(const float* score, int* idx, int t
     MLA_ERR();
     return 0;
 }
-extern "C" int memra_mla_kpool_select_live_v2_f32(const float* score, int* idx, int* width_d,
-                                                  int t_q, const int* pos_d, int n_pools_cap,
-                                                  int pool, int select_k_cap, int width_cap,
-                                                  int always_tail, void* stream_v) {
-    int bad = memra_mla_kpool_select_check(pool, select_k_cap, width_cap, always_tail);
-    if (bad) return bad;
-    if (t_q <= 0) return 40030;
-    if (n_pools_cap <= 0) return 40010;
-    cudaStream_t stream = (cudaStream_t)stream_v;
-    memra_mla_kpool_select_live_v2_kernel<<<(unsigned)t_q, MLA_THREADS, 0, stream>>>(
-        score, idx, width_d, pos_d, t_q, n_pools_cap, pool, select_k_cap, width_cap,
-        always_tail);
-    MLA_ERR();
-    return 0;
-}
 
 // The correctness-grade twin. NOT on any serving path: it exists so the gate can prove the radix
 // kernel byte-identical to the order definition at shapes the micro fixture cannot reach.
-extern "C" int memra_mla_kpool_select_live_f32(const float* score, int* idx, int* width_d,
-                                               int t_q, const int* pos_d, int n_pools_cap,
-                                               int pool, int select_k_cap, int width_cap,
-                                               int always_tail, void* stream_v) {
-    int bad = memra_mla_kpool_select_check(pool, select_k_cap, width_cap, always_tail);
-    if (bad) return bad;
-    if (t_q <= 0) return 40030; // live twin: t_q rows, row 0 at pos_d[0]
-    if (n_pools_cap <= 0) return 40010;
-    cudaStream_t stream = (cudaStream_t)stream_v;
-    memra_mla_kpool_select_live_kernel<<<(unsigned)t_q, MLA_THREADS, 0, stream>>>(
-        score, idx, width_d, pos_d, t_q, n_pools_cap, pool, select_k_cap, width_cap,
-        always_tail);
-    MLA_ERR();
-    return 0;
-}
-
 extern "C" int memra_mla_kpool_select_ref_f32(const float* score, int* idx, int t_q, int n_pools,
                                               int pool, int select_k, int width, int first_pos,
                                               int always_tail, void* stream_v) {
@@ -2452,18 +2195,6 @@ extern "C" __global__ void memra_mla_attn_gathered_kernel(
                                  scale, n_slots);
 }
 
-// Live-width twin (t_q = 1): `n_slots` is the token's true index_width published by the live
-// selector (`width_d`), so the slot walk and its reduction order are the scalar launch's at that
-// width; the capacity stride past it is never read.
-extern "C" __global__ void memra_mla_attn_gathered_live_kernel(
-    const float* __restrict__ q_lat, const float* __restrict__ q_pe,
-    const float* __restrict__ cache, const int* __restrict__ idx, float* __restrict__ o_lat,
-    int n_head, int kv_rank, int d_rope, const int* __restrict__ n_slots_d, int idx_stride,
-    float scale) {
-    memra_mla_attn_gathered_body(q_lat, q_pe, cache, idx, o_lat, n_head, kv_rank, d_rope,
-                                 n_slots_d[0], scale, idx_stride);
-}
-
 extern "C" int memra_mla_attn_gathered_f32(const float* q_lat, const float* q_pe,
                                            const float* cache, const int* idx, float* o_lat,
                                            int n_head, int kv_rank, int d_rope, int t_q,
@@ -2476,23 +2207,6 @@ extern "C" int memra_mla_attn_gathered_f32(const float* q_lat, const float* q_pe
     if (blocks == 0) return 0;
     memra_mla_attn_gathered_kernel<<<(unsigned)blocks, MLA_THREADS, 0, stream>>>(
         q_lat, q_pe, cache, idx, o_lat, n_head, kv_rank, d_rope, n_slots, scale);
-    MLA_ERR();
-    return 0;
-}
-
-extern "C" int memra_mla_attn_gathered_live_f32(const float* q_lat, const float* q_pe,
-                                                const float* cache, const int* idx, float* o_lat,
-                                                int n_head, int kv_rank, int d_rope, int t_q,
-                                                const int* n_slots_d, int idx_stride,
-                                                float scale, void* stream_v) {
-    if (kv_rank > MLA_MAX_RANK) return 40002;
-    if (d_rope > MLA_MAX_ROPE) return 40003;
-    if (t_q <= 0 || idx_stride <= 0) return 40030;
-    cudaStream_t stream = (cudaStream_t)stream_v;
-    long blocks = (long)t_q * n_head;
-    if (blocks == 0) return 0;
-    memra_mla_attn_gathered_live_kernel<<<(unsigned)blocks, MLA_THREADS, 0, stream>>>(
-        q_lat, q_pe, cache, idx, o_lat, n_head, kv_rank, d_rope, n_slots_d, idx_stride, scale);
     MLA_ERR();
     return 0;
 }
@@ -2953,25 +2667,6 @@ __global__ __launch_bounds__(MLA_THREADS) void memra_mla_dsa_attn_warp_kernel(
                                         n_slots);
 }
 
-// Live-width twin (t_q = 1): the slot count comes from the live selector's `width_d`, and the
-// chunk span is derived from it ON THE DEVICE with the same `memra_mla_dsa_attn_chunk_span`
-// arithmetic, so every chunk holds exactly the slots the scalar launch gives it at that width
-// and the ascending-chunk combine merges the same partials. The grid is `pairs * chunks`, which
-// does not depend on the width, so the launch is fixed-geometry (capturable).
-template <int J, int JP>
-__global__ __launch_bounds__(MLA_THREADS) void memra_mla_dsa_attn_warp_live_kernel(
-    const float* __restrict__ q_lat, const float* __restrict__ q_pe,
-    const float* __restrict__ cache, const int* __restrict__ idx, float* __restrict__ part_m,
-    float* __restrict__ part_d, float* __restrict__ part_acc, int n_head, int kv_rank,
-    int d_rope, const int* __restrict__ n_slots_d, int idx_stride, int chunks, int pairs,
-    float scale) {
-    const int n_slots = n_slots_d[0];
-    const int per = (n_slots + chunks - 1) / chunks;
-    memra_mla_dsa_attn_warp_body<J, JP>(q_lat, q_pe, cache, idx, part_m, part_d, part_acc, n_head,
-                                        kv_rank, d_rope, n_slots, chunks, per, pairs, scale,
-                                        idx_stride);
-}
-
 // Merge `chunks` partials per (token, head), in ASCENDING chunk order so the class is
 // deterministic across runs.
 extern "C" __global__ void memra_mla_dsa_attn_combine_kernel(const float* __restrict__ part_m,
@@ -3069,58 +2764,6 @@ extern "C" int memra_mla_dsa_attn_split_f32(const float* q_lat, const float* q_p
     return 0;
 }
 
-template <int J, int JP>
-static void memra_dsa_warp_live_launch(const float* q_lat, const float* q_pe, const float* cache,
-                                       const int* idx, float* part_m, float* part_d,
-                                       float* part_acc, int n_head, int kv_rank, int d_rope,
-                                       const int* n_slots_d, int idx_stride, int chunks,
-                                       long pairs, float scale, cudaStream_t stream) {
-    long warps = pairs * chunks;
-    long blocks = (warps + MLA_WARPS - 1) / MLA_WARPS;
-    memra_mla_dsa_attn_warp_live_kernel<J, JP><<<(unsigned)blocks, MLA_THREADS, 0, stream>>>(
-        q_lat, q_pe, cache, idx, part_m, part_d, part_acc, n_head, kv_rank, d_rope, n_slots_d,
-        idx_stride, chunks, (int)pairs, scale);
-}
-
-extern "C" int memra_mla_dsa_attn_split_live_f32(const float* q_lat, const float* q_pe,
-                                            const float* cache, const int* idx, float* o_lat,
-                                            float* part_m, float* part_d, float* part_acc,
-                                            int n_head, int kv_rank, int d_rope, int t_q,
-                                            const int* n_slots_d, int idx_stride, int chunks,
-                                            float scale, void* stream_v) {
-    if (kv_rank > MLA_MAX_RANK) return 40002;
-    if (d_rope > MLA_MAX_ROPE) return 40003;
-    if (t_q <= 0 || idx_stride <= 0) return 40030; // live twin: t_q rows at idx_stride
-    if (chunks < 1 || chunks > MLA_DSA_MAX_CHUNKS) return 40022;
-    if (kv_rank % 32 != 0) return 40023;
-    cudaStream_t stream = (cudaStream_t)stream_v;
-    long pairs = (long)t_q * n_head;
-    if (pairs == 0) return 0;
-
-    const int j = kv_rank / 32;
-    const int jp = (d_rope + 31) / 32;
-    // Instantiations for the shipped geometries: kv_rank 512 (glm5_next, GLM-5.2) and 1024,
-    // crossed with d_rope 0 (NoPE) and 64 (GLM-5.2 rope). Anything else takes the shipped path.
-#define MLA_DSA_WARP_LIVE_CASE(JJ, JPP)                                                             \
-    if (j == (JJ) && jp == (JPP)) {                                                            \
-        memra_dsa_warp_live_launch<JJ, JPP>(q_lat, q_pe, cache, idx, part_m, part_d, part_acc, \
-                                            n_head, kv_rank, d_rope, n_slots_d, idx_stride,     \
-                                            chunks, pairs, scale, stream);                                         \
-    } else
-    MLA_DSA_WARP_LIVE_CASE(16, 0)
-    MLA_DSA_WARP_LIVE_CASE(16, 2)
-    MLA_DSA_WARP_LIVE_CASE(32, 0)
-    MLA_DSA_WARP_LIVE_CASE(32, 2) {
-        return 40023;
-    }
-#undef MLA_DSA_WARP_LIVE_CASE
-    MLA_ERR();
-    memra_mla_dsa_attn_combine_kernel<<<(unsigned)pairs, MLA_THREADS, 0, stream>>>(
-        part_m, part_d, part_acc, o_lat, kv_rank, chunks);
-    MLA_ERR();
-    return 0;
-}
-
 // ------------------------------------------------------- 3. decode pool scoring, head-blocked
 //
 // `memra_mla_kpool_score_dsa_kernel<H, RP, KC>` -- BIT-IDENTICAL to
@@ -3169,10 +2812,8 @@ extern "C" int memra_mla_dsa_attn_split_live_f32(const float* q_lat, const float
 // store) rule are copied from the tiled kernel verbatim.
 #define MLA_DSA_SCORE_TPB 128
 
-// Body of the head-blocked decode scorer, shared by the scalar-n_pools entry and the live-count
-// twin (lane/mla-kpool-live-20260905): the twin reads n_pools from the door's device word and
-// runs on a capacity grid; every block masks `p < n_pools` and `p < vis` per element, so at
-// t_q = 1 (one score row, no stride dependence) it is bit-identical to the scalar launch.
+// Body of the head-blocked decode scorer: every block masks `p < n_pools` and `p < vis` per
+// element.
 template <int H, int RP, int KC>
 __device__ __forceinline__ void memra_mla_kpool_score_dsa_body(
     const float* __restrict__ q, const float* __restrict__ pool_keys,
@@ -3271,20 +2912,6 @@ __global__ __launch_bounds__(MLA_DSA_SCORE_TPB) void memra_mla_kpool_score_dsa_k
     memra_mla_kpool_score_dsa_body<H, RP, KC>(q, pool_keys, hw, score, d, n_pools, pool, first_pos,
                                               qk_scale, head_scale, n_pools);
 }
-template <int H, int RP, int KC>
-__global__ __launch_bounds__(MLA_DSA_SCORE_TPB) void memra_mla_kpool_score_dsa_live_kernel(
-    const float* __restrict__ q, const float* __restrict__ pool_keys,
-    const float* __restrict__ hw, float* __restrict__ score, int d,
-    const int* __restrict__ pos_d, int t_q, int n_pools_cap, int pool, float qk_scale,
-    float head_scale) {
-    // Row 0 sits at pos_d[0] (the host's `first_pos = slot`); the call-wide pool count is
-    // `(slot + t_q) / pool`; the score plane is laid out at the CAPACITY stride so the launch
-    // geometry does not depend on the position. Per-row visibility stays the body's own.
-    int first_pos = pos_d[0];
-    int n_pools = (first_pos + t_q) / pool;
-    memra_mla_kpool_score_dsa_body<H, RP, KC>(q, pool_keys, hw, score, d, n_pools, pool, first_pos,
-                                              qk_scale, head_scale, n_pools_cap);
-}
 
 template <int H, int RP, int KC>
 static int memra_kpool_score_dsa_launch(const float* q, const float* pool_keys, const float* hw,
@@ -3298,21 +2925,6 @@ static int memra_kpool_score_dsa_launch(const float* q, const float* pool_keys, 
     memra_mla_kpool_score_dsa_kernel<H, RP, KC>
         <<<grid, MLA_DSA_SCORE_TPB, smem, stream>>>(q, pool_keys, hw, score, d, n_pools, pool,
                                                     first_pos, qk_scale, head_scale);
-    return 0;
-}
-
-template <int H, int RP, int KC>
-static int memra_kpool_score_dsa_live_launch(const float* q, const float* pool_keys, const float* hw,
-                                        float* score, int t_q, int d, const int* pos_d, int n_pools_cap, int pool,
-                                        float qk_scale, float head_scale,
-                                        cudaStream_t stream) {
-    constexpr int BP = MLA_DSA_SCORE_TPB * RP;
-    const size_t smem = ((size_t)KC * H + (size_t)KC * (BP + 1)) * sizeof(float);
-    if (smem > 48u * 1024u) return 1;
-    dim3 grid((unsigned)((n_pools_cap + BP - 1) / BP), (unsigned)t_q);
-    memra_mla_kpool_score_dsa_live_kernel<H, RP, KC>
-        <<<grid, MLA_DSA_SCORE_TPB, smem, stream>>>(q, pool_keys, hw, score, d, pos_d, t_q,
-                                                    n_pools_cap, pool, qk_scale, head_scale);
     return 0;
 }
 
@@ -3354,44 +2966,6 @@ extern "C" int memra_mla_kpool_score_dsa_f32(const float* q, const float* pool_k
         case 64:
             rc = MEMRA_DSA_SCORE_DISPATCH(memra_kpool_score_dsa_launch, 64, q, pool_keys, hw, score, t_q, d, n_pools,
                                                          pool, first_pos, qk_scale, head_scale,
-                                                         stream);
-            break;
-        default:
-            return 40023;
-    }
-    if (rc != 0) return 40023;
-    MLA_ERR();
-    return 0;
-}
-
-extern "C" int memra_mla_kpool_score_dsa_live_f32(const float* q, const float* pool_keys,
-                                             const float* hw, float* score, int t_q, int heads,
-                                             int d, const int* pos_d, int n_pools_cap, int pool,
-                                             float qk_scale, float head_scale, int rp,
-                                             void* stream_v) {
-    if (rp != 1 && rp != 2) return 40023;
-    if (pool <= 0) return 40010;
-    if (d <= 0) return 40017;
-    if (t_q <= 0) return 40030; // live twin: t_q rows at the capacity stride
-    if (n_pools_cap <= 0) return 0;
-    constexpr int KC = 32;
-    if (d % KC != 0) return 40023; // the slab loop is exact, never zero-padded (see edge rules)
-    cudaStream_t stream = (cudaStream_t)stream_v;
-    int rc;
-    switch (heads) {
-        case 16:
-            rc = MEMRA_DSA_SCORE_DISPATCH(memra_kpool_score_dsa_live_launch, 16, q, pool_keys, hw, score, t_q, d, pos_d, n_pools_cap,
-                                                         pool, qk_scale, head_scale,
-                                                         stream);
-            break;
-        case 32:
-            rc = MEMRA_DSA_SCORE_DISPATCH(memra_kpool_score_dsa_live_launch, 32, q, pool_keys, hw, score, t_q, d, pos_d, n_pools_cap,
-                                                         pool, qk_scale, head_scale,
-                                                         stream);
-            break;
-        case 64:
-            rc = MEMRA_DSA_SCORE_DISPATCH(memra_kpool_score_dsa_live_launch, 64, q, pool_keys, hw, score, t_q, d, pos_d, n_pools_cap,
-                                                         pool, qk_scale, head_scale,
                                                          stream);
             break;
         default:
