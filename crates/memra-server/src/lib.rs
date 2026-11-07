@@ -6805,7 +6805,8 @@ fn validate_model_path(path: &str) -> Result<(), String> {
 }
 
 /// MEMRA_MODELS="name=/path.gguf[+/draft.gguf],name2=hf:owner/repo,name3=/hf_ckpt_dir".
-/// Falls back to the BASE-4 test pair. `+<draft.gguf>` after a model path attaches that
+/// Unset falls back to the BASE-4 test pair; a set value with a malformed entry or no entry
+/// refuses to start. `+<draft.gguf>` after a model path attaches that
 /// model's regime draft (docs/DRAFT-REGIME.md) — per model, not the global MEMRA_MTP_DRAFT
 /// env, so a multi-model server gives each model its own draft. Both parts accept hf: specs.
 /// A model path may also be an HF safetensors checkpoint DIRECTORY (serve-st lane,
@@ -6865,16 +6866,21 @@ fn parse_models_config() -> Vec<(String, String, Option<String>)> {
                 });
                 out.push((name.trim().to_string(), mpath, dpath));
             } else {
+                // Skipping it served the remaining entries, or with none left the BASE-4
+                // default pair below, under a config that named something else.
                 eprintln!(
-                    "[server] WARN: bad MEMRA_MODELS entry {entry:?} (want name=/path[+/draft]); skipping"
+                    "[server] FATAL: bad MEMRA_MODELS entry {entry:?} (want name=/path[+/draft])"
                 );
+                std::process::exit(1);
             }
         }
-        if !out.is_empty() {
-            return out;
+        if out.is_empty() {
+            eprintln!("[server] FATAL: MEMRA_MODELS is set but names no model");
+            std::process::exit(1);
         }
+        return out;
     }
-    // Default: the BASE-4 test pair (main=27B, judge=9B).
+    // Unset: the BASE-4 test pair (main=27B, judge=9B).
     vec![
         (
             "main".into(),
@@ -10231,8 +10237,18 @@ fn render_prompt_ids(
     tokenizer: Option<&Tokenizer>,
     add_generation_prompt: bool,
 ) -> Result<Vec<u32>, String> {
+    render_prompt(request, tokenizer, add_generation_prompt).map(|(prompt, _)| prompt)
+}
+
+/// `render_prompt_ids` plus the rendered template string when the `chat_turns` arm ran: the
+/// string the worker's own `chat_turns` render publishes into `prompt_text`.
+fn render_prompt(
+    request: &Request,
+    tokenizer: Option<&Tokenizer>,
+    add_generation_prompt: bool,
+) -> Result<(Vec<u32>, Option<String>), String> {
     let prompt = if !request.prompt_ids.is_empty() {
-        request.prompt_ids.clone()
+        (request.prompt_ids.clone(), None)
     } else if !request.chat_turns.is_empty() {
         let tokenizer = tokenizer.ok_or("reservation tokenizer is unavailable")?;
         // The SHARED fast-path predicate (worker::plain_chat_render_path) — this is the
@@ -10267,17 +10283,17 @@ fn render_prompt_ids(
                 )
                 .map_err(|err| format!("chat template: {err}"))?
         };
-        tokenizer.encode(&rendered, true)
+        (tokenizer.encode(&rendered, true), Some(rendered))
     } else if request.chat {
         let tokenizer = tokenizer.ok_or("reservation tokenizer is unavailable")?;
         let rendered = tokenizer.apply_chat_template(
             &[("user", request.prompt_text.as_str())],
             add_generation_prompt,
         );
-        tokenizer.encode(&rendered, true)
+        (tokenizer.encode(&rendered, true), None)
     } else {
         let tokenizer = tokenizer.ok_or("reservation tokenizer is unavailable")?;
-        tokenizer.encode(&request.prompt_text, true)
+        (tokenizer.encode(&request.prompt_text, true), None)
     };
     Ok(prompt)
 }
@@ -10289,24 +10305,42 @@ fn prepare_budget_prompt(
     if let Some(error) = worker::prompt_source_limit_error(request) {
         return Err(error);
     }
-    if request.prepared_prompt.is_none() {
+    let prompt_tokens = if let Some(prompt) = request.prepared_prompt.as_ref() {
+        prompt.len()
+    } else {
         if let Some(trace) = request.ttft.as_ref() {
             trace.mark_tokenize_start();
         }
-        let prompt = render_prompt_ids(request, tokenizer, true)?;
+        let (mut prompt, rendered_chat) = render_prompt(request, tokenizer, true)?;
         if prompt.is_empty() {
             return Err("empty prompt after tokenization".into());
         }
-        if let Some(trace) = request.ttft.as_ref() {
-            trace.mark_tokenize_end(prompt.len());
+        // The worker's prepare skips its render once `prepared_prompt` is set, so this
+        // render serves and takes the worker's post-render step (hidden-capture eos). The
+        // vision special-id guard is not run here: the image units it counts are decoded
+        // after budget admission (`decode_pending_vision`), so a planned image's run would
+        // read as smuggled text. The worker's prepare runs it on the stored prompt. Only
+        // explicit prompt_ids render without a tokenizer, and the eos comes from one: those
+        // bill as given and stay unset for the worker to render.
+        match tokenizer {
+            Some(tokenizer) => {
+                worker::append_capture_eos(&mut prompt, tokenizer.eos_id(), request);
+                if let Some(trace) = request.ttft.as_ref() {
+                    trace.mark_tokenize_end(prompt.len());
+                }
+                let prompt_tokens = prompt.len();
+                request.prepared_prompt = Some(prompt);
+                // Publish the rendered chat string as the worker's chat_turns render does: the
+                // reuse pools' TEXT extension tier keys on prompt_text, and the worker skips
+                // that render, and its publish, once prepared_prompt is set.
+                if let Some(rendered) = rendered_chat {
+                    request.prompt_text = rendered;
+                }
+                prompt_tokens
+            }
+            None => prompt.len(),
         }
-        request.prepared_prompt = Some(prompt);
-    }
-    let prompt_tokens = request
-        .prepared_prompt
-        .as_ref()
-        .expect("budget prompt was prepared")
-        .len();
+    };
     if let Some(limit) = request.max_prompt_tokens
         && prompt_tokens > limit
     {
@@ -25013,6 +25047,132 @@ temperature = 0.6
         assert_eq!(response.status(), StatusCode::OK);
         assert!(response.headers().contains_key("x-ratelimit-limit"));
         assert_eq!(token_api_json(response).await["prompt"], "Hello, שלום!");
+    }
+
+    /// Metered budget admission renders the prompt the worker then serves (the worker skips
+    /// its own render once `prepared_prompt` is set), so that render must take the worker's
+    /// post-render step: the hidden-capture eos append (embedding pooling position). Before
+    /// the shared step, this path stored the bare encode.
+    #[test]
+    fn budget_render_takes_the_worker_capture_eos() {
+        let tok = worker::vision_special_guard_tests::glm5_vision_fixture_tokenizer();
+        let completion: CompletionReq =
+            serde_json::from_value(json!({"model":"m", "prompt": "hello"})).unwrap();
+        let (tx, _rx) = worker::event_channel();
+        let mut capture = build_request(&completion, tx, lanes::Lane::Interactive, None);
+        capture.capture = Some(worker::CaptureSpec {
+            hidden: true,
+            logit_pieces: Vec::new(),
+        });
+        let billed = prepare_budget_prompt(&mut capture, Some(tok)).unwrap();
+        let mut sealed = tok.encode("hello", true);
+        assert_ne!(sealed.last(), Some(&tok.eos_id()));
+        sealed.push(tok.eos_id());
+        assert_eq!(capture.prepared_prompt.as_deref(), Some(sealed.as_slice()));
+        assert_eq!(billed, sealed.len());
+    }
+
+    /// The worker's chat_turns render publishes its template string into `prompt_text`, which
+    /// the TEXT reuse tier keys on. On a metered deployment the budget render serves in its
+    /// place, so it publishes the same string, and the source-limit check that runs again on
+    /// every worker consideration does not count that published string as a second source.
+    #[test]
+    fn budget_render_publishes_the_rendered_chat_text() {
+        let (st, tokenizer) = token_api_fixture();
+        let (tx, _rx) = worker::event_channel();
+        let mut plan = build_chat_request(
+            serde_json::from_value(json!({"model":"m", "messages":[
+                {"role":"system", "content":"Be concise."},
+                {"role":"user", "content":"Weather in Paris?"}
+            ]}))
+            .unwrap(),
+            st.caps.get("m"),
+            tx,
+            lanes::Lane::Interactive,
+            None,
+        )
+        .unwrap();
+        assert!(plan.request.prompt_text.is_empty());
+        let source = worker::prompt_source_bytes(&plan.request);
+        prepare_budget_prompt(&mut plan.request, Some(&tokenizer)).unwrap();
+        assert!(plan.request.prompt_text.contains("Weather in Paris?"));
+        assert_eq!(
+            tokenizer.encode(&plan.request.prompt_text, true),
+            plan.request.prepared_prompt.clone().unwrap(),
+            "the published string is the one the served ids encode"
+        );
+        assert_eq!(worker::prompt_source_bytes(&plan.request), source);
+    }
+
+    /// Budget admission runs before `decode_pending_vision` fills a chat's image units, so a
+    /// planned image reaches it as its rendered run with no unit yet. The budget render must
+    /// admit and store that prompt (it refused every metered image chat when it ran the vision
+    /// guard itself). The worker's guard on the stored prompt then judges it against the
+    /// decoded units: the planned run admits, and the same prompt with no unit (the run typed
+    /// as text) refuses by name.
+    #[test]
+    fn budget_render_admits_a_planned_image_and_the_worker_guards_it() {
+        let tok = worker::vision_special_guard_tests::glm5_vision_fixture_tokenizer();
+        // 112x112 24bpp BMP: identity resize, grid 8x8, 16 merged rows (the det112 geometry).
+        let row = (112u32 * 3).div_ceil(4) * 4;
+        let mut bmp = vec![0x42u8, 0x4d];
+        bmp.extend_from_slice(&(54 + row * 112).to_le_bytes());
+        bmp.extend_from_slice(&[0; 4]);
+        bmp.extend_from_slice(&54u32.to_le_bytes());
+        bmp.extend_from_slice(&40u32.to_le_bytes());
+        bmp.extend_from_slice(&112u32.to_le_bytes());
+        bmp.extend_from_slice(&112u32.to_le_bytes());
+        bmp.extend_from_slice(&1u16.to_le_bytes());
+        bmp.extend_from_slice(&24u16.to_le_bytes());
+        bmp.extend_from_slice(&[0u8; 24]);
+        bmp.extend(std::iter::repeat_n(0x7fu8, (row * 112) as usize));
+        let (gh, gw) = memra_engine::vision_glm5::glm5_plan_image(&bmp).unwrap();
+        let rows = memra_engine::vision_glm5::n_merged_for_grid(gh, gw);
+        assert_eq!(rows, 16);
+        // The text `content_to_text_vision` renders for that planned glm5 image part.
+        let run = format!(
+            "<|begin_of_image|>{}<|end_of_image|>",
+            "<|image|>".repeat(rows)
+        );
+        let (tx, _rx) = worker::event_channel();
+        let req: ChatCompletionReq = serde_json::from_value(json!({
+            "model": "m",
+            "messages": [{"role": "user", "content": format!("describe {run} please")}],
+        }))
+        .unwrap();
+        let mut plan = build_chat_request(
+            req,
+            Some(&ModelCaps {
+                chat_ok: true,
+                ..Default::default()
+            }),
+            tx,
+            lanes::Lane::Interactive,
+            None,
+        )
+        .unwrap();
+        plan.pending_glm5
+            .push(PendingGlm5Image { bytes: bmp, gh, gw });
+
+        let billed = prepare_budget_prompt(&mut plan.request, Some(tok))
+            .expect("the budget render must admit a planned image's run before its decode");
+        let prompt = plan
+            .request
+            .prepared_prompt
+            .clone()
+            .expect("the budget render is stored for the worker");
+        assert_eq!(billed, prompt.len());
+        let img = tok.id_of("<|image|>").unwrap();
+        assert_eq!(prompt.iter().filter(|&&t| t == img).count(), rows);
+
+        decode_pending_vision(&mut plan).unwrap();
+        assert_eq!(plan.request.glm5_images.len(), 1);
+        worker::guard_prompt_vision_ids(&prompt, tok, &plan.request)
+            .expect("the stored run admits against its decoded unit");
+        plan.request.glm5_images.clear();
+        let err = worker::guard_prompt_vision_ids(&prompt, tok, &plan.request)
+            .expect_err("the same run with no unit is text smuggling and must refuse");
+        assert!(err.contains("<|image|>"), "{err}");
     }
 
     #[tokio::test]
