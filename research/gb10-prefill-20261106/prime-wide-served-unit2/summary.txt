@@ -1,0 +1,23 @@
+campaign served: 12 requests, arms ['P', 'V']
+
+target 32768
+  P        ttft 32.760, 32.560                           median 32.660  cells ['01-P', '04-P']
+  V        ttft 31.291, 31.254                           median 31.273  cells ['02-V', '03-V']
+  V vs P: -4.25%
+
+target 131072
+  P        ttft 168.257, 167.913                         median 168.085  cells ['01-P', '04-P']
+  V        ttft 161.539, 161.557                         median 161.548  cells ['02-V', '03-V']
+  V vs P: -3.89%
+
+target 260000
+  P        ttft 434.489, 431.313                         median 432.901  cells ['01-P', '04-P']
+  V        ttft 419.192, 417.965                         median 418.578  cells ['02-V', '03-V']
+  V vs P: -3.31%
+
+fingerprints (text sha256 per target/rep across all cells)
+  target 32768 rep 0: 1 distinct IDENTICAL
+  target 131072 rep 0: 1 distinct IDENTICAL
+  target 260000 rep 0: 1 distinct IDENTICAL
+errors/needle misses: 0
+FINGERPRINTS IDENTICAL

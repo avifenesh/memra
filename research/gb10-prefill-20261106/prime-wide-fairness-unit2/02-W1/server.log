@@ -1,0 +1,134 @@
+[server] build: memra-0.138.0-d629c153747a (id: source-tree, git: cc9592a7e4e9)
+[server] starting; models config = [("q38", "~/models/memra-q38/Qwen3.8-27B-NVFP4-MTP-GGUF/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf", None)]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[worker-affinity] off (MEMRA_WORKER_CPUSET / MEMRA_WORKER_AFFINITY unset or =0)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal after 3 consecutive misses (MEMRA_GPU_PROBE_MISSES), fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[spec-gate] policy placement=single-or-non-pp2 LOW=64 HIGH=65 source=env-resolved spec-admission=on
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2 (K=5 when the loaded MTP head is rank-trimmed)
+[worker] loading model "q38" <- ~/models/memra-q38/Qwen3.8-27B-NVFP4-MTP-GGUF/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf
+[tensor-contract] bound 866 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[mtp-draft] loading external MTP draft: ~/models/memra-q38/Qwen3.8-27B-NVFP4-MTP-GGUF/mtp-Qwen3.8-27B-NVFP4-frspec-sxc32768.gguf
+[mtp-draft] external draft head: blk.64, source=output.weight, head_vocab=32768 (trimmed, d2t map)
+[frspec-trim] per-head trim: 0 extra chain head(s) gathered from their own blocks
+[prime-wide] two-range prime calls while no peer waits (serial GDN hybrid dense trunk, unified-memory 120a device); admission books 8192-row calls
+[worker]   loaded "q38": 65 layers, eos=248046, stop=[248046]
+[worker] q38: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false qwen_effort=true gemma_think=false dsv4=false glm5=false ctx=262144 tok="qwen35" instruct=Some("chatml") chat_defaults=None/None
+[route-contract] model="q38" route=hybrid-worker capacity=32 sessions implemented=[capacity,occupancy,progress,fault-ownership,shutdown-ownership,memory-cost,rewrite-qualification,prime-fairness,service-metrics] refused=[]
+[fa-pool] grow #0 dev=0 o_len 0 -> 3244032 ml_len 0 -> 12672 (retired kept, zero=false)
+[fa-pool] grow #1 dev=0 o_len 3244032 -> 6488064 ml_len 12672 -> 25344 (retired kept, zero=false)
+[device-trim] reason=wave-probe {"device":0,"reclaimed_bytes":17582522368,"still_owned_bytes":16658168832,"pool_reserved_bytes":16844324864,"pool_cached_bytes":186156032,"driver_free_bytes":21890473984,"synchronization_errors":[]}
+[wave-probe] 32 sessions at depth 2048: two 16-row waves 261.8 ms, one 32-row wave 262.8 ms (tensor-core tier 229.8 ms) -> wave cap 32, tensor-core b32 on (64.5s; released 16768MB of cached pool to the driver)
+[worker] q38: decode wave cap 32; scheduler tick cap 32 (exact-32 tier)
+[prefix-cache] on: budget 51187MB (51187214336 B, derived: 2 x 7941521408 B max entry for model "q38" at served ctx 262144 (from MEMRA_CTX; MEMRA_CTX set), unified memory: the larger of that and 1/2 of allocatable free after the transient reserve, driver headroom 2147483648 B and host tier 0 B, requested 51187214336 B; boot driver free 106132525056 B, post-reserve clamp 102374428672 B), policy plain-LRU (global oldest unleased entry first; leases untouchable), min prefix 64 tokens, immediate partial restore=off (rollback) (transformer-only; hybrid mid-entry + routed-MoE N/A)
+[admission] "q38": plain 29696 B/token, spec 31552 B/token; fixed residual learns from effective-free deltas
+[spec-cost] calibration skipped: the LOW/HIGH band owns the spec gate
+[prime-walk] model="q38" route=mtp supported=true yield_door=true [gdn_dspark_compatible=true mtp_head_loaded=true no_hyper_connections=true no_pipeline_cuts=true]
+[func] CAPTURE-TIME kernel lookup (not warmed): embed_gather_u32
+[func] CAPTURE-TIME kernel lookup (not warmed): qmatvec_q4_K_mmvq
+[func] CAPTURE-TIME kernel lookup (not warmed): qmatvec_q6_K_mmvq
+[func] CAPTURE-TIME kernel lookup (not warmed): inc_i32
+[func] CAPTURE-TIME kernel lookup (not warmed): fa_decode_vec_q_v4_deep_dc
+[func] CAPTURE-TIME kernel lookup (not warmed): fa_decode_combine_f32
+[func] CAPTURE-TIME kernel lookup (not warmed): memra_sctr_inc
+[func] CAPTURE-TIME kernel lookup (not warmed): gumbel_perturb_filtered_ctr_f32
+[spec] draft-session state high-water: 34MB (max of parked delta 34MB and capture-time pool peak 2MB; charged per spec admission and gating future captures)
+[device-trim] reason=calibration-complete {"device":0,"reclaimed_bytes":2281701376,"still_owned_bytes":17429920768,"pool_reserved_bytes":17683185664,"pool_cached_bytes":253264896,"driver_free_bytes":20961804288,"synchronization_errors":[]}
+[admit-cal] post-probe pool trim: released 2176MB cached back to the driver
+[admit-cal] boot calibration done: model="q38" route=mtp transient floor 2014MB (static was 1536MB; measured 2014MB; probe kv charge 127MB, draft-state 34MB, drafted 78 accepted 38; [dev0 peak-mapped 19040MB rest-mapped 16864MB charged 161MB -> 2014MB]; 6.4s)
+[admit-mem] door=OFF open_output_tokens=8192 defer_budget_ms=8000 (admission charges prompt+output, the reclaim flush demotes to the host tier before dropping, and a memory defer past the budget refuses 429 instead of queueing past the client's deadline)
+[kv-vmm] door=OFF (MEMRA_KV_ALLOCATOR unset or pooled: pooled K/V planes)
+[deadline] unified memory (48 SMs, served ctx 262144): streaming TTFT default/max 997311 ms (derived), SSE prefill commit 60000 ms; non-streaming default/max 3045311 ms (derived: full-context prefill + 8192 open output tokens at 4 tok/s). MEMRA_SSE_PREFILL_COMMIT_MS=0 restores the shipped 90 s windows
+[server] worker ready; serving models: ["q38"]
+[server] listening on http://127.0.0.1:8090
+[meter] admit id=chatcmpl-c7e2f8c65929fc59d78404a1e00ad9d8 tenant=default lane=interactive model="q38"
+[admission] per-session draft-state charge: model="q38" +36MB (measured capture high-water)
+[admission] request cost: model="q38" ctx=131138 path=spec = 31552 B/token x ctx + 6442MB prefill-workspace + 0MB fixed = 10580MB
+[prefix-cache] stable-boundary capture armed at 131008 of 131042 prompt tokens (model q38)
+[spec-k] model="q38" tenant="" K=3 source=cold-long prompt=131042 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="q38" 638MB (observed 4773MB at ctx 131082 path=spec)
+[prime-yield] count=1 remaining=63 chunks=1 wall_ms=7096.238 max_chunk_ms=7096.238
+[meter] admit id=chatcmpl-16fc614e08cef059e3f97bb79381b85e tenant=default lane=interactive model="q38"
+[prime-yield] count=2 remaining=61 chunks=1 wall_ms=7328.373 max_chunk_ms=7328.373
+[admission] per-session draft-state charge: model="q38" +36MB (measured capture high-water)
+[admission] request cost: model="q38" ctx=2099 path=spec = 31552 B/token x ctx + 960MB prefill-workspace + 638MB fixed = 1664MB
+[prefix-cache] stable-boundary capture armed at 1984 of 2003 prompt tokens (model q38)
+[spec-k] model="q38" tenant="" K=3 source=cold-long prompt=2003 cached=0 lcp=0 active=2 wave=2 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-5b47586f1591535da762b06d70a3e5af tenant=default lane=interactive model="q38"
+[meter] admit id=chatcmpl-3dc153023305d0dd3fae87de4aed0761 tenant=default lane=interactive model="q38"
+[prime-yield] count=3 remaining=60 chunks=1 wall_ms=3990.553 max_chunk_ms=3990.553
+[prefix-cache] stable-boundary capture armed at 1984 of 2003 prompt tokens (model q38)
+[spec-k] model="q38" tenant="" K=3 source=cold-long prompt=2003 cached=0 lcp=0 active=3 wave=4 placement=single-or-non-pp2
+[prefix-cache] stable-boundary capture armed at 1984 of 2003 prompt tokens (model q38)
+[spec-k] model="q38" tenant="" K=3 source=cold-long prompt=2003 cached=0 lcp=0 active=4 wave=4 placement=single-or-non-pp2
+[prefix-cache] insert (spec-boundary): 1984 tokens, 219.5MB (resident 219.5MB / 51187MB, model q38)
+[prime-yield] count=4 remaining=59 chunks=1 wall_ms=4092.794 max_chunk_ms=4092.794
+[prefix-cache] insert (spec-boundary): 1984 tokens, 219.5MB (resident 439.0MB / 51187MB, model q38)
+[prefix-cache] insert (spec-boundary): 1984 tokens, 219.5MB (resident 658.5MB / 51187MB, model q38)
+[spec-pool] pooled MTP cohort engaged: 3 sessions (model q38)
+[prime-yield] count=5 remaining=58 chunks=1 wall_ms=4190.531 max_chunk_ms=4190.531
+[prime-yield] count=6 remaining=57 chunks=1 wall_ms=4291.770 max_chunk_ms=4291.770
+[prime-yield] count=7 remaining=56 chunks=1 wall_ms=4398.218 max_chunk_ms=4398.218
+[prime-yield] count=8 remaining=55 chunks=1 wall_ms=4498.485 max_chunk_ms=4498.485
+[prime-yield] count=9 remaining=54 chunks=1 wall_ms=4606.878 max_chunk_ms=4606.878
+[prime-yield] count=10 remaining=53 chunks=1 wall_ms=4698.421 max_chunk_ms=4698.421
+[prime-yield] count=11 remaining=52 chunks=1 wall_ms=4787.223 max_chunk_ms=4787.223
+[prime-yield] count=12 remaining=51 chunks=1 wall_ms=4892.359 max_chunk_ms=4892.359
+[prime-yield] count=13 remaining=50 chunks=1 wall_ms=4998.034 max_chunk_ms=4998.034
+[prime-yield] count=14 remaining=49 chunks=1 wall_ms=5084.861 max_chunk_ms=5084.861
+[prime-yield] count=15 remaining=48 chunks=1 wall_ms=5179.290 max_chunk_ms=5179.290
+[prime-yield] count=16 remaining=47 chunks=1 wall_ms=5274.061 max_chunk_ms=5274.061
+[prime-yield] count=17 remaining=46 chunks=1 wall_ms=5373.656 max_chunk_ms=5373.656
+[prime-yield] count=18 remaining=45 chunks=1 wall_ms=5489.125 max_chunk_ms=5489.125
+[prime-yield] count=19 remaining=44 chunks=1 wall_ms=5569.160 max_chunk_ms=5569.160
+[prime-yield] count=20 remaining=43 chunks=1 wall_ms=5664.348 max_chunk_ms=5664.348
+[prime-yield] count=21 remaining=42 chunks=1 wall_ms=5777.102 max_chunk_ms=5777.102
+[prime-yield] count=22 remaining=41 chunks=1 wall_ms=5881.925 max_chunk_ms=5881.925
+[prime-yield] count=23 remaining=40 chunks=1 wall_ms=5986.574 max_chunk_ms=5986.574
+[prime-yield] count=24 remaining=39 chunks=1 wall_ms=6072.847 max_chunk_ms=6072.847
+[prime-yield] count=25 remaining=38 chunks=1 wall_ms=6169.227 max_chunk_ms=6169.227
+[prime-yield] count=26 remaining=37 chunks=1 wall_ms=6279.414 max_chunk_ms=6279.414
+[prime-yield] count=27 remaining=36 chunks=1 wall_ms=6379.490 max_chunk_ms=6379.490
+[prime-yield] count=28 remaining=35 chunks=1 wall_ms=6465.961 max_chunk_ms=6465.961
+[prime-yield] count=29 remaining=34 chunks=1 wall_ms=6581.110 max_chunk_ms=6581.110
+[prime-yield] count=30 remaining=33 chunks=1 wall_ms=6651.565 max_chunk_ms=6651.565
+[prime-yield] count=31 remaining=32 chunks=1 wall_ms=458.386 max_chunk_ms=458.386
+[prime-yield] count=32 remaining=31 chunks=1 wall_ms=75.051 max_chunk_ms=75.051
+[prime-yield] count=33 remaining=30 chunks=1 wall_ms=74.524 max_chunk_ms=74.524
+[prime-yield] count=34 remaining=29 chunks=1 wall_ms=73.577 max_chunk_ms=73.577
+[spec-pool] pooled MTP cohort engaged: 2 sessions (model q38)
+[prime-yield] count=35 remaining=28 chunks=1 wall_ms=74.403 max_chunk_ms=74.403
+[prime-yield] count=36 remaining=27 chunks=1 wall_ms=73.021 max_chunk_ms=73.021
+[prime-yield] count=37 remaining=26 chunks=1 wall_ms=72.950 max_chunk_ms=72.950
+[prime-yield] count=38 remaining=25 chunks=1 wall_ms=73.677 max_chunk_ms=73.677
+[prime-yield] count=39 remaining=24 chunks=1 wall_ms=72.891 max_chunk_ms=72.891
+[prime-yield] count=40 remaining=23 chunks=1 wall_ms=72.862 max_chunk_ms=72.862
+[prime-yield] count=41 remaining=22 chunks=1 wall_ms=72.060 max_chunk_ms=72.060
+[prime-yield] count=42 remaining=21 chunks=1 wall_ms=72.875 max_chunk_ms=72.875
+[prime-yield] count=43 remaining=20 chunks=1 wall_ms=73.861 max_chunk_ms=73.861
+[prime-yield] count=44 remaining=19 chunks=1 wall_ms=72.094 max_chunk_ms=72.094
+[prime-yield] count=45 remaining=18 chunks=1 wall_ms=71.924 max_chunk_ms=71.924
+[prime-yield] count=46 remaining=17 chunks=1 wall_ms=72.872 max_chunk_ms=72.872
+[prime-yield] count=47 remaining=16 chunks=1 wall_ms=71.160 max_chunk_ms=71.160
+[prime-yield] count=48 remaining=15 chunks=1 wall_ms=73.794 max_chunk_ms=73.794
+[prime-yield] count=49 remaining=14 chunks=1 wall_ms=72.909 max_chunk_ms=72.909
+[prime-yield] count=50 remaining=13 chunks=1 wall_ms=72.005 max_chunk_ms=72.005
+[prime-yield] count=51 remaining=12 chunks=1 wall_ms=72.043 max_chunk_ms=72.043
+[prime-yield] count=52 remaining=11 chunks=1 wall_ms=72.674 max_chunk_ms=72.674
+[prime-yield] count=53 remaining=10 chunks=1 wall_ms=71.171 max_chunk_ms=71.171
+[prime-yield] count=54 remaining=9 chunks=1 wall_ms=73.684 max_chunk_ms=73.684
+[prime-yield] count=55 remaining=8 chunks=1 wall_ms=72.477 max_chunk_ms=72.477
+[prime-yield] count=56 remaining=7 chunks=1 wall_ms=73.316 max_chunk_ms=73.316
+[prime-yield] count=57 remaining=6 chunks=1 wall_ms=73.050 max_chunk_ms=73.050
+[prime-yield] count=58 remaining=5 chunks=1 wall_ms=71.967 max_chunk_ms=71.967
+[prime-yield] count=59 remaining=4 chunks=1 wall_ms=72.644 max_chunk_ms=72.644
+[prime-yield] count=60 remaining=3 chunks=1 wall_ms=72.819 max_chunk_ms=72.819
+[prime-yield] count=61 remaining=2 chunks=1 wall_ms=72.004 max_chunk_ms=72.004
+[prime-yield] count=62 remaining=1 chunks=1 wall_ms=72.866 max_chunk_ms=72.866
+[prefix-cache] insert (spec-boundary): 131008 tokens, 4290.5MB (resident 4949.0MB / 51187MB, model q38)
+[fa-pool] grow #2 dev=0 o_len 6488064 -> 18874368 ml_len 25344 -> 73728 (retired kept, zero=false)
+[fa-pool] grow #3 dev=0 o_len 18874368 -> 37748736 ml_len 73728 -> 147456 (retired kept, zero=false)
+[spec-acc] ctx=131043 burst=20/30 cum=20/30=0.667
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting
+[server] GPU worker shutdown complete

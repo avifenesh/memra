@@ -426,14 +426,18 @@ none of its values.
 
 - F8F4 v2 image pass on a side stream: measured, flat (ledger row 29, `gemm-v2-overlap-unit2/`).
   Under a 24-GEMM layer sequence the overlap saves 0.9% at 4,096 rows (inside the serial runs'
-  spread) and 0.8% at 8,192; the tile's one CTA per SM holds the whole register file, so the image
-  kernel only runs in each GEMM's tail wave. The tile sits at 84-88% of the 132 TFLOPS epilogue
+  spread) and 0.8% at 8,192. The likely cause: the tile's one CTA per SM holds the whole register
+  file (512 threads x 128 registers, block limit 1, `gemm-v2-probe/ncu/c5g4.txt`), so an image block
+  only gets an SM that a GEMM block has freed; no trace of the overlap was taken. The tile sits at 84-88% of the 132 TFLOPS epilogue
   ceiling on the large shapes.
-- A wider prime chunk only while no peer is admitted: v2 builds each weight image once per chunk,
-  so 8,192 rows are worth about 3.5% at 131k with v2 (167.5 s at 4,096 rows on unit 2 against
-  161.8 s at 8,192 on unit 1) where they were worth 0.5% without it; the 8,192 default was dropped
-  for the peer first-token wait beside a 131k prime (worst peer 8.7 s at 4,096 against 13.2 s at
-  8,192), so it needs its own fairness cell.
+- Wide prime calls only while the prime is alone: measured, rejected (ledger rows 30-31,
+  `prime-wide-fairness-unit2/`, `prime-wide-served-unit2/`). Two adjacent 4,096-row ranges run as
+  one 8,192-row call while no other request is active, queued or being admitted. Alone, it is worth
+  -4.25% / -3.89% / -3.31% at 32k/131k/260k with identical text. Beside a 131k prime, though, the
+  first peer arrives inside the second wide call (7.3 s): the first peer's first token goes from 3.8 to 7.1 s
+  and the worst peer's from 6.4 to 8.3 s (+30%) against 4,096 rows on the same binary. The code is
+  kept on `research/gb10-prime-wide-measured` (`cc9592a7e4`, which also carries row 29's probe);
+  decision record `docs/decisions/GB10-PRIME-CHUNK-8192.md`.
 - GDN: 20.1 s at 131k against an ~8 s DRAM floor; the four-row L2 norm did not move it, so the
   next step is a per-kernel ncu of the chunk kernels (`gdn_chunk_state_mma`, `gdn_chunk_solve32`,
   `gdn_chunk_output_mma`, `ssm_conv1d_gdn_state`) before any rewrite.

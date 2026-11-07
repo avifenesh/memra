@@ -1,0 +1,6 @@
+2026-11-07T04:15:35+02:00 start BIN=~/.cache/memra-gemm-v2/bins/wide-cc9592a7e4 SRC=cc9592a7e probe(gb10-prefill): price the F8F4 v2 image pass on a side stream under the previous GEMM
+2026-11-07T04:15:49+02:00 overlap T=4096: T=4096 layers=4 gemms=24 reps=5 (median) images only     12.469 ms gemms only     113.107 ms   110.9 TFLOPS serial         125.872 ms,  124.732 ms (A B order) overlap        124.193 ms  saves 1.109 ms of 12.469 ms image time (0.9% of serial) last output bit-mismatch serial vs overlap: 0/20971520 OK
+2026-11-07T04:15:58+02:00 overlap T=8192: T=8192 layers=4 gemms=24 reps=5 (median) images only     12.387 ms gemms only     216.889 ms   115.6 TFLOPS serial         231.098 ms,  230.465 ms (A B order) overlap        228.955 ms  saves 1.826 ms of 12.387 ms image time (0.8% of serial) last output bit-mismatch serial vs overlap: 0/41943040 OK
+2026-11-07T04:34:34+02:00 fairness done: ~/.cache/memra-gemm-v2/runs/wide-cc9592a7e4/fairness/01-W0/rows.jsonl:4 ~/.cache/memra-gemm-v2/runs/wide-cc9592a7e4/fairness/02-W1/rows.jsonl:4 ~/.cache/memra-gemm-v2/runs/wide-cc9592a7e4/fairness/03-W1/rows.jsonl:4 ~/.cache/memra-gemm-v2/runs/wide-cc9592a7e4/fairness/04-W0/rows.jsonl:4
+2026-11-07T05:29:10+02:00 served done
+WIDE-CELLS-DONE

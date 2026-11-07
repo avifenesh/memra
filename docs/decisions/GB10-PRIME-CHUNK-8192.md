@@ -30,8 +30,53 @@ tokens each
 The long prime gains 0.6%. The worst peer first token goes from 8.7 to 13.2 s (+52%), the first
 peer's from 5.1 to 9.6 s, and the longest worker tick doubles. Every request finished with the same
 text on both arms. A Spark serves many sessions, so the peer cost outweighs the gain: rejected.
-Not tried: arming the wider chunk only while no peer is admitted. It would need its own fairness
-cell, because a peer that arrives mid-prime still waits one wide chunk.
+The variant that arms the wider chunk only while no peer is admitted was measured on 2026-11-07
+(next section) and is rejected too.
+
+## Wide calls only while the prime is alone (2026-11-07, rejected)
+
+F8F4 GEMM v2 (memra#1077) builds each weight image once per prime call, so a wider call saves
+image passes as well as GEMM tails, and the single-request gain grew. The variant: the walker
+merges two adjacent 4,096-row ranges of one trunk segment into one 8,192-row call while the prime
+is the worker's only active request, nothing is queued and no admission is pending. A peer
+admitted or waiting turns merging off at the next call. Admission books the 8,192-row workspace
+(6,442 MB per 131k prime instead of 4,563 MB). The code, armed on a unified-memory 120a device
+for the serial GDN hybrid dense trunk with `MEMRA_PRIME_WIDE=0` as the off arm, is kept on the ref
+`research/gb10-prime-wide-measured` (`cc9592a7e4`); it did not land.
+
+Fairness cell, the same harness as above on that one binary, unit 2, cells W0 W1 W1 W0
+(`MEMRA_PRIME_WIDE=0` against the armed default)
+([`research/gb10-prefill-20261106/prime-wide-fairness-unit2/`](../../research/gb10-prefill-20261106/prime-wide-fairness-unit2/)):
+
+| arm | long prime TTFT | peer TTFT (+10 / +15 / +20 s) | `tick_max_ms` |
+|---|---|---|---|
+| 4,096 only | 181.89, 181.65 s | 3.76 / 4.91 / 6.40 s; 3.77 / 4.92 / 6.41 s | 6,910; 6,899 |
+| wide while alone | 180.94, 181.11 s | 7.07 / 8.30 / 5.54 s; 7.10 / 8.34 / 5.57 s | 8,653; 8,645 |
+
+Every request returned the same text on both arms. The prime is alone for its first 10 s, so it
+runs two wide calls there (7.10 and 7.33 s), and the first peer, at +10 s, arrives inside the
+second: its first token goes from 3.8 to 7.1 s (+88%), the worst peer's from 6.4 to 8.3 s (+30%).
+The long prime itself gains 0.4%, because peers turn merging off for the rest of it.
+
+Single request, the same binary, unit 2, cells P V V P (P = `MEMRA_PRIME_WIDE=0`), one cold
+prompt per length per boot
+([`research/gb10-prefill-20261106/prime-wide-served-unit2/`](../../research/gb10-prefill-20261106/prime-wide-served-unit2/)):
+
+| arm | 32,784 tokens | 131,051 tokens | 259,951 tokens | MemAvailable floor |
+|---|---|---|---|---|
+| 4,096 only | 32.760, 32.560 s | 168.257, 167.913 s | 434.489, 431.313 s | 66.0, 66.4 GiB |
+| wide while alone | 31.291, 31.254 s (-4.25%) | 161.539, 161.557 s (-3.89%) | 419.192, 417.965 s (-3.31%) | 64.7, 64.7 GiB |
+
+The answer text is identical in all four boots and to the landed v2 boots. Alone, the wide calls
+are worth about 4%.
+
+The gate for this variant was that the worst peer beside a 131k prime must not regress against
+4,096 rows. Measured against 4,096 rows on the same binary it regresses by 30%. It stays under
+the 8.7 s that 4,096 rows gave in the 2026-11-06 cell, but that cell ran the pre-v2 binary, whose
+4,096-row calls were slower; measured against that number, the variant would hand back peer
+latency that v2 earned. Any call wider than the quantum keeps a peer that arrives during it
+waiting longer, and a time cap that kept wide calls under the 4,096-row tick at depth would leave
+almost nothing to merge. 4,096 rows stay, and the code did not land.
 
 ## Decision as first written (superseded by the fairness section)
 
