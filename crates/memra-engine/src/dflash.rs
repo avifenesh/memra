@@ -3930,8 +3930,22 @@ impl DsparkSnapBatch {
             }
         }
         e.htod_u64_into(&self.host_ssm, &mut self.ssm_table)?;
+        // Each plane keeps its layer's live GDN class (crate::gdn_state). A round starts with
+        // every layer in one class, so only the words that hold it are copied; a mixed set
+        // (never seen at a round boundary) copies whole buffers, exact for both classes.
+        let mut all_bf16 = true;
+        self.snap.ssm_bf16.resize(cache.recur.len(), false);
+        for &il in &self.lin {
+            let bf16 = cache.recur[il].as_ref().unwrap().ssm_bf16;
+            self.snap.ssm_bf16[il] = bf16;
+            all_bf16 &= bf16;
+        }
         e.copy_batch_uniform_f32(&self.conv_table, n, self.conv_words)?;
-        e.copy_batch_uniform_f32(&self.ssm_table, n, self.ssm_words)?;
+        e.copy_batch_uniform_f32(
+            &self.ssm_table,
+            n,
+            crate::gdn_state::gdn_state_words(self.ssm_words, all_bf16),
+        )?;
         Ok(())
     }
 }
@@ -4101,7 +4115,13 @@ impl crate::hybrid::HybridModel {
         // refreshed pointer tables and ctx-owned slabs. None = eager walk, byte-identical.
         let mut vg_guard = self.dspark_vgraphs.lock().unwrap();
         if vg_guard.is_none() && embd_gpu.is_some() && crate::spec::dspark_verify_graph_on() {
-            *vg_guard = crate::spec::DsparkVerifyGraphs::new(e, &cache, vt_cap, n_embd)?;
+            *vg_guard = crate::spec::DsparkVerifyGraphs::new(
+                e,
+                &cache,
+                vt_cap,
+                n_embd,
+                self.gdn_decode_bf16,
+            )?;
         }
         let vgraphs: &mut Option<crate::spec::DsparkVerifyGraphs> = &mut vg_guard;
         // per-phase economics counters (ns) — the verify-toll dataset
@@ -4524,7 +4544,12 @@ impl crate::hybrid::HybridModel {
                         for il in 0..cache.kv.len() {
                             lens.push(cache.kv[il].as_ref().map(|k| k.len));
                             if let Some(rl) = &cache.recur[il] {
-                                states.push((e.dtoh(&rl.conv_state)?, e.dtoh(&rl.ssm_state)?));
+                                // only the words that hold the state in its class
+                                // (crate::gdn_state); the class itself is compared too
+                                let mut ssm = e.dtoh(&rl.ssm_state)?;
+                                ssm.truncate(rl.ssm_live_words());
+                                ssm.push(f32::from_bits(u32::from(rl.ssm_bf16)));
+                                states.push((e.dtoh(&rl.conv_state)?, ssm));
                             }
                         }
                         Ok((cache.pos, lens, states))
@@ -6193,7 +6218,13 @@ impl crate::hybrid::HybridModel {
         vg: &mut Option<crate::spec::DsparkVerifyGraphs>,
     ) -> Result<(), Box<dyn std::error::Error>> {
         if vg.is_none() && burst.embd_gpu.is_some() && crate::spec::dspark_verify_graph_serve_on() {
-            *vg = crate::spec::DsparkVerifyGraphs::new(e, &sess.cache, burst.vt_cap, burst.n_embd)?;
+            *vg = crate::spec::DsparkVerifyGraphs::new(
+                e,
+                &sess.cache,
+                burst.vt_cap,
+                burst.n_embd,
+                self.gdn_decode_bf16,
+            )?;
             if vg.is_some() {
                 // Engagement receipt (the §8 dead-arm lesson): prove the door is LIVE on
                 // the serve surface — S6b banked the tip server carrying zero door strings.
@@ -6891,7 +6922,7 @@ impl crate::hybrid::HybridModel {
             // forward's rounds before the next forward runs bounds the live verify checkpoints
             // (each round's per-column GDN state copies, ~1 GB per round on a 27B) to one
             // forward's members, where a serial burst holds one round's.
-            let col_bytes = self.dspark_verify_ckpt_col_bytes(e);
+            let col_bytes = self.dspark_verify_ckpt_col_bytes();
             let n_vocab = self.output.out_features();
             let mut j = 0;
             while j < n {
@@ -8906,6 +8937,7 @@ mod dspark_prefix_capture_tests {
                 tp_kv_len: Vec::new(),
                 conv: Vec::new(),
                 ssm: Vec::new(),
+                ssm_bf16: Vec::new(),
                 pos: prompt_len,
             },
             pos: prompt_len,

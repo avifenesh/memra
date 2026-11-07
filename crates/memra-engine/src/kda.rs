@@ -867,6 +867,7 @@ fn kda_cached(
             conv_state,
             ssm_state,
             ssm_state_alt,
+            ..
         } = rl;
         kda_core(
             e,

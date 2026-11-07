@@ -9311,6 +9311,13 @@ impl HybridModel {
         let scale = 1.0 / (d_state as f32).sqrt();
         let b = ts.len();
         let c = Engine::gdn_chunk_size();
+        // The prime runs the fp32 GDN state class (crate::gdn_state): a session that has been
+        // decoding in bf16 widens back first (exact).
+        for cache in caches.iter_mut() {
+            if let Some(rl) = cache.recur[il].as_mut() {
+                e.gdn_ensure_prime(rl)?;
+            }
+        }
         // CONTINUATION batches (increment (b)) take the per-seq stateful pad_view twin
         // below — the varlen K4/K5 chain is fresh-only (zero initial state assumed).
         let carried = caches.iter().any(|c| c.pos > 0);
@@ -9527,6 +9534,11 @@ impl HybridModel {
         let num_v = geometry.value_heads as usize;
         let eps = cfg.rms_eps;
         let scale = 1.0 / (d_state as f32).sqrt();
+        // The prime runs the fp32 GDN state class (crate::gdn_state): a session that has been
+        // decoding in bf16 widens back first (exact).
+        if let Some(rl) = cache.recur[il].as_mut() {
+            e.gdn_ensure_prime(rl)?;
+        }
 
         let prep =
             self.linear_attn_gdn_prep(e, la, qkv_mixed, beta_raw, alpha, t, cache, il, pad_len)?;
@@ -12001,9 +12013,8 @@ impl HybridModel {
         )?;
 
         // GDN scan (A4: gdn_scan_prefill dispatches chunked WY under MEMRA_GDN_CHUNKED)
-        let state_words = e.gdn_state_words(d_state * d_state * num_v);
-        let state_in = e.zeros(state_words)?; // zero state (prefill)
-        let mut state_out = e.zeros(state_words)?;
+        let state_in = e.zeros(d_state * d_state * num_v)?; // zero state (prefill)
+        let mut state_out = e.zeros(d_state * d_state * num_v)?;
         let mut o = e.uninit(d_state * num_v * t)?;
         e.gdn_scan_prefill(
             &q_l2,

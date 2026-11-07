@@ -139,6 +139,7 @@ pub mod eagle;
 /// design; glm5 is the first consumer). (LAW:coactivation-expert-placement; maps are
 /// minted by the shared fleet tool from `MEMRA_MOE_WEIGHT_TRACE` traces). No CUDA deps.
 pub mod ep_map;
+pub mod gdn_state;
 pub mod gemma_spec;
 pub mod glm5_decode_graph;
 pub mod glm5_sel_ledger;
@@ -1127,62 +1128,6 @@ pub(crate) fn refuse_portable_force(var: &str, needs: &str) {
 /// PRO 6000 ornith15 pp14715 +6-8% and the local 5090 q38-27b +1-2%, both orders both
 /// rigs). A site defaulting differently from its peers arms the mma pre-work while the
 /// scan takes the scalar route — measured as a 0.8% LOSS, the drift this helper kills.
-/// Boot decision for the GDN state class (`Engine::gdn_state_bf16`): `MEMRA_GDN_STATE_BF16=1`
-/// or `=0` forces it; otherwise the device default `gdn_state_bf16_default` of the FIRST engine
-/// the process builds. One class per process: PP stages, drafter engines and every server-side
-/// byte estimate (prefix budget, host staging, handoff layout) then agree by construction.
-fn gdn_state_bf16_boot(ctx: &CudaContext) -> bool {
-    *GDN_STATE_BF16_PROCESS.get_or_init(|| match std::env::var("MEMRA_GDN_STATE_BF16").as_deref() {
-        Ok("1") => true,
-        Ok("0") => false,
-        _ => gdn_state_bf16_default(ctx),
-    })
-}
-
-static GDN_STATE_BF16_PROCESS: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-
-/// The process's GDN state class (`gdn_state_bf16_boot`), `None` before the first engine.
-pub fn process_gdn_state_bf16() -> Option<bool> {
-    GDN_STATE_BF16_PROCESS.get().copied()
-}
-
-/// Device default for the GDN state class. bf16 state is a measured lever per device
-/// (research/gdn-state-bf16-storage-20261107); devices without a positive receipt keep fp32.
-fn gdn_state_bf16_default(_ctx: &CudaContext) -> bool {
-    false
-}
-
-/// Round fp32 values to bf16 (nearest even, NaN canonical like the device) and pack two per f32
-/// word, element i at byte 2*i: the GDN bf16 state layout on the host.
-pub fn gdn_state_pack_bf16(vals: &[f32]) -> Vec<f32> {
-    let rne = |x: f32| -> u32 {
-        let b = x.to_bits();
-        if x.is_nan() {
-            0x7fff // the device's canonical NaN (`__float2bfloat16`)
-        } else {
-            (b + 0x7fff + ((b >> 16) & 1)) >> 16
-        }
-    };
-    vals.chunks(2)
-        .map(|p| {
-            let lo = rne(p[0]);
-            let hi = p.get(1).map_or(0, |&x| rne(x));
-            f32::from_bits(lo | (hi << 16))
-        })
-        .collect()
-}
-
-/// Inverse of `gdn_state_pack_bf16`: every packed bf16 widened to fp32 (exact).
-pub fn gdn_state_unpack_bf16(words: &[f32]) -> Vec<f32> {
-    words
-        .iter()
-        .flat_map(|w| {
-            let b = w.to_bits();
-            [f32::from_bits(b << 16), f32::from_bits(b & 0xffff_0000)]
-        })
-        .collect()
-}
-
 pub(crate) const fn gdn_mma_default_on() -> bool {
     cfg!(memra_hopper_mma) || konst_eq(env!("MEMRA_BUILT_CUDA_ARCH"), "120a")
 }
@@ -2120,8 +2065,6 @@ pub struct Engine {
     decode_wide: std::sync::atomic::AtomicBool,
     /// Tensor-core b32 tier selected (see `mmvq_tc_on`).
     tc_b32: std::sync::atomic::AtomicBool,
-    /// GDN recurrent-state storage class (see `gdn_state_bf16`).
-    gdn_state_bf16: std::sync::atomic::AtomicBool,
     capture_keep: Mutex<Vec<Box<dyn std::any::Any + Send>>>,
     /// EDGE-1 §C.2: dedicated H2D copy stream for async prefetch (event-synced to the compute stream).
     pub copy_stream: Arc<CudaStream>,
@@ -3941,10 +3884,6 @@ impl Engine {
                 gpu.ctx.disable_event_tracking();
             }
         }
-        let gdn_state_bf16 = gdn_state_bf16_boot(&gpu.ctx);
-        if gdn_state_bf16 {
-            eprintln!("[gdn-state] bf16 GDN recurrent state (fp32 math)");
-        }
         Ok(Self {
             gpu,
             module,
@@ -3969,7 +3908,6 @@ impl Engine {
             verify_exact: std::sync::atomic::AtomicBool::new(false),
             decode_wide: std::sync::atomic::AtomicBool::new(false),
             tc_b32: std::sync::atomic::AtomicBool::new(false),
-            gdn_state_bf16: std::sync::atomic::AtomicBool::new(gdn_state_bf16),
             capture_keep: Mutex::new(Vec::new()),
             argmax_partials: Mutex::new(None),
             prime_deqw_ws: Mutex::new(None),
@@ -4968,86 +4906,6 @@ impl Engine {
     /// Select the tensor-core b32 tier (the boot probe's decision; see `mmvq_tc_on`).
     pub fn set_tc_b32(&self, on: bool) {
         self.tc_b32.store(on, std::sync::atomic::Ordering::Relaxed);
-    }
-
-    /// Whether this engine stores the GDN recurrent state as bf16 (`cu/hybrid.cu`
-    /// `gdn_ld`/`gdn_sv`; research/gdn-state-bf16-storage-20261107). Decided once at
-    /// construction by `gdn_state_bf16_boot`. The math stays fp32 in registers; only the
-    /// persisted state (resident state, its ping-pong twin, verify snapshot rings, prefix and
-    /// checkpoint copies) changes class. Every GDN state buffer is sized by
-    /// `gdn_state_words`, so the class must not change while one exists.
-    pub fn gdn_state_bf16(&self) -> bool {
-        self.gdn_state_bf16
-            .load(std::sync::atomic::Ordering::Relaxed)
-    }
-
-    /// The `st16` kernel argument of every GDN state kernel.
-    pub(crate) fn gdn_st16(&self) -> i32 {
-        i32::from(self.gdn_state_bf16())
-    }
-
-    /// f32 words a GDN state of `elems` elements occupies in this engine's storage class
-    /// (bf16: two elements per word, element i at byte 2*i).
-    pub fn gdn_state_words(&self, elems: usize) -> usize {
-        memra_kv::gdn_state_words(elems, self.gdn_state_bf16())
-    }
-
-    /// Refuse a GDN state buffer that is not exactly one d_state=128 state of `n_head` value
-    /// heads in this engine's class: a buffer of the other class would be read or written past
-    /// its end (or only half used) by the `st16` kernels.
-    fn gdn_state_len_check(
-        &self,
-        what: &str,
-        len: usize,
-        n_head: usize,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        let want = self.gdn_state_words(128 * 128 * n_head);
-        if len != want {
-            return Err(format!(
-                "{what}: GDN state buffer of {len} f32 words; the {} class needs {want} for \
-                 {n_head} heads",
-                if self.gdn_state_bf16() {
-                    "bf16"
-                } else {
-                    "fp32"
-                }
-            )
-            .into());
-        }
-        Ok(())
-    }
-
-    /// Pin the GDN state class. Gate and bench binaries only, before any GDN state buffer
-    /// exists (kernel-check runs the fp32 and bf16 cells in one process).
-    pub fn set_gdn_state_bf16(&self, on: bool) {
-        self.gdn_state_bf16
-            .store(on, std::sync::atomic::Ordering::Relaxed);
-    }
-
-    /// A GDN state buffer read back as fp32 element values (bf16 storage widens exactly).
-    pub fn gdn_state_dtoh_f32(
-        &self,
-        state: &CudaSlice<f32>,
-    ) -> Result<Vec<f32>, Box<dyn std::error::Error>> {
-        let words = self.dtoh(state)?;
-        Ok(if self.gdn_state_bf16() {
-            gdn_state_unpack_bf16(&words)
-        } else {
-            words
-        })
-    }
-
-    /// Upload fp32 element values as a GDN state buffer in this engine's class (bf16 rounds
-    /// to nearest even, the kernels' `__float2bfloat16`).
-    pub fn gdn_state_htod_f32(
-        &self,
-        vals: &[f32],
-    ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
-        if self.gdn_state_bf16() {
-            self.htod(&gdn_state_pack_bf16(vals))
-        } else {
-            self.htod(vals)
-        }
     }
 
     /// Widest m the group3/group4 doors take: 16, or 32 inside the decode-wide scope.
@@ -6440,9 +6298,10 @@ impl Engine {
         base: usize,
         t_v: usize,
         scale: f32,
+        st16: bool,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        self.gdn_state_len_check("gdn_scan_s128_dc state_in", state_in.len(), n_head)?;
-        self.gdn_state_len_check("gdn_scan_s128_dc state_out", state_out.len(), n_head)?;
+        self.gdn_state_len_check("gdn_scan_s128_dc state_in", state_in.len(), n_head, st16)?;
+        self.gdn_state_len_check("gdn_scan_s128_dc state_out", state_out.len(), n_head, st16)?;
         let f = self.func("gdn_scan_s128_dc");
         const S_V: u32 = 128;
         const WARP: u32 = 32;
@@ -6453,7 +6312,7 @@ impl Engine {
             shared_mem_bytes: 0,
         };
         let (h, b0, tv) = (n_head as i32, base as i32, t_v as i32);
-        let st16 = self.gdn_st16();
+        let st16 = i32::from(st16);
         let __s_b = self.gpu.stream();
         let mut b = __s_b.launch_builder(&f);
         b.arg(q)
@@ -33434,9 +33293,15 @@ impl Engine {
         n_head: usize,
         t: usize,
         scale: f32,
+        st16: bool,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        self.gdn_state_len_check("gdn_scan_s128 state_in", state_in.len(), n_head)?;
-        self.gdn_state_len_check("gdn_scan_s128 state_out", state_out.len(), n_head)?;
+        self.gdn_state_len_check("gdn_scan_s128_view state_in", state_in.len(), n_head, st16)?;
+        self.gdn_state_len_check(
+            "gdn_scan_s128_view state_out",
+            state_out.len(),
+            n_head,
+            st16,
+        )?;
         let f = self.func("gdn_scan_s128");
         const S_V: u32 = 128;
         const WARP: u32 = 32;
@@ -33447,7 +33312,7 @@ impl Engine {
             shared_mem_bytes: 0,
         };
         let (h, ti) = (n_head as i32, t as i32);
-        let st16 = self.gdn_st16();
+        let st16 = i32::from(st16);
         let __s_b = self.gpu.stream();
         let mut b = __s_b.launch_builder(&f);
         b.arg(q)
@@ -33809,9 +33674,10 @@ impl Engine {
         n_head: usize,
         t: usize,
         scale: f32,
+        st16: bool,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        self.gdn_state_len_check("gdn_scan_s128 state_in", state_in.len(), n_head)?;
-        self.gdn_state_len_check("gdn_scan_s128 state_out", state_out.len(), n_head)?;
+        self.gdn_state_len_check("gdn_scan_s128 state_in", state_in.len(), n_head, st16)?;
+        self.gdn_state_len_check("gdn_scan_s128 state_out", state_out.len(), n_head, st16)?;
         let f = self.func("gdn_scan_s128");
         const S_V: u32 = 128;
         const WARP: u32 = 32;
@@ -33822,7 +33688,7 @@ impl Engine {
             shared_mem_bytes: 0,
         };
         let (h, ti) = (n_head as i32, t as i32);
-        let st16 = self.gdn_st16();
+        let st16 = i32::from(st16);
         let __s_b = self.gpu.stream();
         let mut b = __s_b.launch_builder(&f);
         b.arg(q)
@@ -33952,6 +33818,7 @@ impl Engine {
         n_head: usize,
         b_n: usize,
         scale: f32,
+        st16: bool,
     ) -> Result<(), Box<dyn std::error::Error>> {
         let f = self.func("gdn_scan_s128_b");
         const S_V: u32 = 128;
@@ -33963,7 +33830,7 @@ impl Engine {
             shared_mem_bytes: 0,
         };
         let h = n_head as i32;
-        let st16 = self.gdn_st16();
+        let st16 = i32::from(st16);
         let __s_b = self.gpu.stream();
         let mut b = __s_b.launch_builder(&f);
         b.arg(q)
@@ -34181,7 +34048,11 @@ impl Engine {
         t: usize,
         scale: f32,
         snap: Option<&mut CudaSlice<f32>>,
+        st16: bool,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        if let Some(sn) = snap.as_ref() {
+            self.gdn_snap_len_check("gdn_scan_s128_tsnap_rows", sn.len(), n_head, t, st16)?;
+        }
         use cudarc::driver::DevicePtr;
         let f = self.func("gdn_scan_s128_tsnap");
         const S_V: u32 = 128;
@@ -34193,7 +34064,7 @@ impl Engine {
             shared_mem_bytes: 0,
         };
         let (h, ti) = (n_head as i32, t as i32);
-        let st16 = self.gdn_st16();
+        let st16 = i32::from(st16);
         let __s_b = self.gpu.stream();
         let snap_guard = snap.map(|sn| sn.device_ptr(&__s_b));
         let snap_ptr: u64 = snap_guard.as_ref().map(|(p, _)| *p).unwrap_or(0);
@@ -34234,7 +34105,11 @@ impl Engine {
         t: usize,
         scale: f32,
         snap: Option<&mut CudaSlice<f32>>,
+        st16: bool,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        if let Some(sn) = snap.as_ref() {
+            self.gdn_snap_len_check("gdn_scan_s128_tsnap", sn.len(), n_head, t, st16)?;
+        }
         // Resolve [conv, canonical ssm, alternate ssm] through the refreshed table.
         // Odd T writes alternate; even T writes canonical in place, matching per-row parity.
         use cudarc::driver::DevicePtr;
@@ -34248,7 +34123,7 @@ impl Engine {
             shared_mem_bytes: 0,
         };
         let (h, ti) = (n_head as i32, t as i32);
-        let st16 = self.gdn_st16();
+        let st16 = i32::from(st16);
         let __s_b = self.gpu.stream();
         let snap_guard = snap.map(|sn| sn.device_ptr(&__s_b));
         let snap_ptr: u64 = snap_guard.as_ref().map(|(p, _)| *p).unwrap_or(0);
@@ -34286,6 +34161,7 @@ impl Engine {
         n_head: usize,
         b_n: usize,
         scale: f32,
+        st16: bool,
     ) -> Result<(), Box<dyn std::error::Error>> {
         let f = self.func("gdn_scan_s128_b");
         const S_V: u32 = 128;
@@ -34297,7 +34173,7 @@ impl Engine {
             shared_mem_bytes: 0,
         };
         let h = n_head as i32;
-        let st16 = self.gdn_st16();
+        let st16 = i32::from(st16);
         let __s_b = self.gpu.stream();
         let mut b = __s_b.launch_builder(&f);
         b.arg(q)
@@ -35110,7 +34986,6 @@ impl Engine {
         let (hi, ci) = (n_head as i32, 32i32);
         let max_nc = seqs.iter().map(|a| a.nc).max().unwrap() as u32;
         let hki = hk as i32;
-        let st16 = self.gdn_st16();
         if let Some(w) = wq {
             // K4+K5 fused wgmma vl twin: one launch, Y/Ssnap never materialized.
             let f = self.func("gdn_k45_wgmma_vl");
@@ -35121,13 +34996,7 @@ impl Engine {
             };
             let __s_lb = self.gpu.stream();
             let mut lb = __s_lb.launch_builder(&f);
-            lb.arg(&v)
-                .arg(w)
-                .arg(&scale)
-                .arg(&hi)
-                .arg(&ci)
-                .arg(&hki)
-                .arg(&st16);
+            lb.arg(&v).arg(w).arg(&scale).arg(&hi).arg(&ci).arg(&hki);
             unsafe {
                 lb.launch(cfg)?;
             }
@@ -35143,7 +35012,7 @@ impl Engine {
             };
             let __s_lb = self.gpu.stream();
             let mut lb = __s_lb.launch_builder(&f);
-            lb.arg(&v).arg(&hi).arg(&ci).arg(&hki).arg(&st16);
+            lb.arg(&v).arg(&hi).arg(&ci).arg(&hki);
             unsafe {
                 lb.launch(cfg)?;
             }
@@ -35217,8 +35086,6 @@ impl Engine {
         capture: Option<(usize, &mut Option<CudaSlice<f32>>)>,
     ) -> Result<(), Box<dyn std::error::Error>> {
         const D: usize = 128;
-        self.gdn_state_len_check("gdn_scan_chunked state_in", state_in.len(), n_head)?;
-        self.gdn_state_len_check("gdn_scan_chunked state_out", state_out.len(), n_head)?;
         let capture = capture.filter(|(rows, _)| *rows > 0 && *rows < t && rows.is_multiple_of(c));
         const NSPLIT: u32 = 4;
         assert!(
@@ -35230,7 +35097,6 @@ impl Engine {
         // allow: explicit (n + k - 1) / k is the load-bearing sizing form, kept textually identical to the kernel-side math
         let nc = (t + c - 1) / c;
         let (hi, ti, ci) = (h as i32, t as i32, c as i32);
-        let st16 = self.gdn_st16();
         // mirror-fold (round 27): on the mma path W's bf16 twin is emitted by K3's store
         // (wb16 pre-allocated and threaded through k123) and k's by the producer l2 when
         // the caller hands `kb16_pre` — both standalone mirror passes disappear.
@@ -35373,8 +35239,7 @@ impl Engine {
                         .arg(&hi)
                         .arg(&ti)
                         .arg(&ci)
-                        .arg(&hki)
-                        .arg(&st16);
+                        .arg(&hki);
                     unsafe {
                         b.launch(cfg)?;
                     }
@@ -35415,7 +35280,7 @@ impl Engine {
                 } else {
                     b.arg(state_in).arg(&mut *state_out);
                 }
-                b.arg(&hi).arg(&ti).arg(&ci).arg(&hki).arg(&st16);
+                b.arg(&hi).arg(&ti).arg(&ci).arg(&hki);
                 unsafe {
                     b.launch(cfg)?;
                 }
@@ -35476,8 +35341,7 @@ impl Engine {
                     .arg(&hi)
                     .arg(&ri)
                     .arg(&ci)
-                    .arg(&hki)
-                    .arg(&st16);
+                    .arg(&hki);
                 unsafe {
                     b.launch(cfg)?;
                 }
@@ -35506,8 +35370,7 @@ impl Engine {
                 .arg(&mut *state_out)
                 .arg(&hi)
                 .arg(&ti)
-                .arg(&ci)
-                .arg(&st16);
+                .arg(&ci);
             unsafe {
                 b.launch(cfg)?;
             }
@@ -35562,8 +35425,7 @@ impl Engine {
                 .arg(&mut st)
                 .arg(&hi)
                 .arg(&ri)
-                .arg(&ci)
-                .arg(&st16);
+                .arg(&ci);
             unsafe {
                 b.launch(cfg)?;
             }
@@ -35654,7 +35516,10 @@ impl Engine {
                 hk == n_head,
                 "s128 scan is broadcast-only (prep guarantees by predicate)"
             );
-            self.gdn_scan_s128(q, k, v, g, beta, state_in, state_out, o, n_head, t, scale)
+            // the prime is always the fp32 class (crate::gdn_state)
+            self.gdn_scan_s128(
+                q, k, v, g, beta, state_in, state_out, o, n_head, t, scale, false,
+            )
         }
     }
 
@@ -35695,12 +35560,11 @@ impl Engine {
             Self::gdn_chunk_size(),
             n_head,
         )?;
-        self.gdn_scan_s128(q, k, v, g, beta, state_in, state_out, o, n_head, t, scale)?;
+        self.gdn_scan_s128(
+            q, k, v, g, beta, state_in, state_out, o, n_head, t, scale, false,
+        )?;
         let (oh_s, oh_c) = (self.dtoh(o)?, self.dtoh(&o_c)?);
-        let (sh_s, sh_c) = (
-            self.gdn_state_dtoh_f32(state_out)?,
-            self.gdn_state_dtoh_f32(&st_c)?,
-        );
+        let (sh_s, sh_c) = (self.dtoh(state_out)?, self.dtoh(&st_c)?);
         let stats = |a: &[f32], b: &[f32]| -> (f32, f32, f64) {
             let mut max_abs = 0f32;
             let mut max_rel = 0f32;
@@ -36471,9 +36335,6 @@ mod target_dispatch_tests {
 /// The memra-kv device seam (Phase D): the cache's 7 ops delegate to the engine's
 /// inherent methods (inherent methods win name resolution, so no recursion).
 impl memra_kv::KvDev for Engine {
-    fn gdn_state_bf16(&self) -> bool {
-        Engine::gdn_state_bf16(self)
-    }
     fn alloc_vmm_u8(&self, n: usize) -> Result<memra_kv::KvPlane, Box<dyn std::error::Error>> {
         memra_kv::KvPlane::vmm(self.stream(), n)
     }
@@ -36523,6 +36384,22 @@ impl memra_kv::KvDev for Engine {
         len: usize,
     ) -> Result<(), Box<dyn std::error::Error>> {
         Engine::copy_range_into(self, dst, dst_off, src, src_off, len)
+    }
+    fn gdn_state_to_f32(
+        &self,
+        src: &CudaSlice<f32>,
+        dst: &mut CudaSlice<f32>,
+        n_elems: usize,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        Engine::gdn_state_to_f32_into(self, src, dst, n_elems)
+    }
+    fn gdn_state_to_bf16(
+        &self,
+        src: &CudaSlice<f32>,
+        dst: &mut CudaSlice<f32>,
+        n_elems: usize,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        Engine::gdn_state_to_bf16_into(self, src, dst, n_elems)
     }
     fn set_i32_one(
         &self,

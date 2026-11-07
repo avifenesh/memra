@@ -3,7 +3,7 @@
 //! outputs, the scan outputs, the final recurrent states, and every post-row snapshot the verify
 //! checkpoint reads. Run under flock on the lane box; it needs a CUDA device.
 //!
-//! Both GDN state classes run (research/gdn-state-bf16-storage-20261107): the bf16 class
+//! Both GDN state classes run (research/gdn-state-bf16-decode-20261107): the bf16 decode class
 //! rounds the carried state after every row, so the packed twin must still equal the chained
 //! per-row launches word for word (decode == verify).
 use cudarc::driver::DevicePtr;
@@ -56,11 +56,10 @@ fn gpu_gdn_packed_graph_rebind_matches_per_row_bitwise() {
 
 fn packed_matches_per_row(num_k: usize, num_v: usize, graph_rebind: bool, bf16: bool) {
     let e = Engine::new(0).expect("CUDA engine on device 0");
-    e.set_gdn_state_bf16(bf16);
-    // raw words of a state in the engine's class, and its element values for finiteness
+    // raw words of a state in the class under test, and its element values for finiteness
     let values = |words: &[f32]| -> Vec<f32> {
         if bf16 {
-            memra_engine::gdn_state_unpack_bf16(words)
+            memra_engine::gdn_state::gdn_state_unpack_bf16(words)
         } else {
             words.to_vec()
         }
@@ -72,7 +71,7 @@ fn packed_matches_per_row(num_k: usize, num_v: usize, graph_rebind: bool, bf16: 
     let pad = d_conv - 1;
     let eps = 1e-6f32;
     let scale = 1.0 / (d_state as f32).sqrt();
-    let state_words = e.gdn_state_words(d_state * d_state * num_v);
+    let state_words = memra_engine::gdn_state::gdn_state_words(d_state * d_state * num_v, bf16);
     let w = e.htod(&varied(conv_dim * d_conv, 1, 0.5)).expect("w");
     let dt_bias = e.htod(&varied(num_v, 2, 0.5)).expect("dt");
     let a = e.htod(&varied(num_v, 3, 1.0)).expect("a");
@@ -81,7 +80,7 @@ fn packed_matches_per_row(num_k: usize, num_v: usize, graph_rebind: bool, bf16: 
         let conv0 = varied(conv_dim * pad, 10 + ti as u64, 1.0);
         let ssm0_vals = varied(d_state * d_state * num_v, 20 + ti as u64, 0.3);
         let ssm0 = if bf16 {
-            memra_engine::gdn_state_pack_bf16(&ssm0_vals)
+            memra_engine::gdn_state::gdn_state_pack_bf16(&ssm0_vals)
         } else {
             ssm0_vals
         };
@@ -155,7 +154,7 @@ fn packed_matches_per_row(num_k: usize, num_v: usize, graph_rebind: bool, bf16: 
                     let mut ov = o_row.slice_mut(0..value_dim);
                     e.gdn_scan_s128_batched_view(
                         &q_l2, &k_l2, &v_g, &g_log, &beta_b, &in_view, &out_view, &mut ov, num_v,
-                        1, scale,
+                        1, scale, bf16,
                     )
                     .expect("scan row");
                 }
@@ -232,6 +231,7 @@ fn packed_matches_per_row(num_k: usize, num_v: usize, graph_rebind: bool, bf16: 
                     t,
                     scale,
                     Some(&mut snap_ssm),
+                    bf16,
                 )
                 .expect("scan tsnap");
                 Ok(())

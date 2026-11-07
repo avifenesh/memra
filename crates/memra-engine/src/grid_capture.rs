@@ -139,7 +139,13 @@ pub(crate) fn note_boundary(e: &crate::Engine, cache: &crate::cache::Cache) {
     if !want {
         return;
     }
-    let Ok(snap) = cache.snapshot(e) else { return };
+    let Ok(mut snap) = cache.snapshot(e) else {
+        return;
+    };
+    // a grid capture is fp32 (crate::gdn_state): widen a layer that was decoding in bf16
+    if snap.widen_f32(e).is_err() {
+        return;
+    }
     PENDING.with(|p| {
         if let Some(x) = p.borrow_mut().as_mut() {
             x.conv = snap.conv;
@@ -230,6 +236,8 @@ impl GridCapture {
             tp_kv_len,
             conv: self.conv,
             ssm: self.ssm,
+            // captured inside a prime call: every GDN plane is fp32 (crate::gdn_state)
+            ssm_bf16: Vec::new(),
             pos: self.pos,
         })
     }

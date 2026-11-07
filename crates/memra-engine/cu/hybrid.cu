@@ -5,15 +5,15 @@
 #include <cuda_fp16.h>
 #include <cuda_bf16.h>
 
-// GDN recurrent-state storage class (research/gdn-state-bf16-storage-20261107). Every kernel that
-// loads or stores the persisted GDN state (the resident state, its ping-pong twin and the verify
-// snapshot rings) takes `st16`:
+// GDN recurrent-state storage class of the sequential scans (research/gdn-state-bf16-decode-20261107).
+// The decode and verify scans (`gdn_scan_s128`, `_dc`, `_b`, `_tsnap`) take `st16`:
 //   st16 == 0: fp32, element i is float i (the original layout, byte for byte);
 //   st16 == 1: bf16, element i is the bf16 at byte 2*i, stored round-to-nearest-even, so a state
-//              of n elements occupies n/2 f32 words.
+//              of n elements occupies the first n/2 f32 words of its buffer.
 // The element index (h*S*S + col*S + i, the transposed M[col][i] layout) is the same in both
-// classes. The math stays fp32 in registers; chunk-internal scratch (K4/K5 Ssnap and Y, the smem
-// state tile) is not persisted state and keeps its own class.
+// classes and the math stays fp32 in registers. The chunked prime kernels have no `st16`: the
+// prime always carries fp32, and a bf16 decode-class layer is rounded once, by
+// `gdn_state_to_bf16`, when its session starts decoding (see the conversion kernels below).
 __device__ __forceinline__ float gdn_ld(const float* base, size_t i, int st16) {
     return st16 ? __bfloat162float(reinterpret_cast<const __nv_bfloat16*>(base)[i]) : base[i];
 }
@@ -21,12 +21,27 @@ __device__ __forceinline__ void gdn_sv(float* base, size_t i, float v, int st16)
     if (st16) reinterpret_cast<__nv_bfloat16*>(base)[i] = __float2bfloat16(v);
     else base[i] = v;
 }
-// The bf16 class rounds the carried state at every step boundary its kernel has, not only at
-// the final store: after each token in the sequential scans and after each WY chunk in the
-// chunked state pass. A T-row scan therefore equals T chained single-row launches (decode ==
-// verify), and a prime split at any chunk boundary (prefix capture and restore, carried prime
-// calls) equals the unsplit prime, both bit for bit. fp32 (`st16 == 0`) is unchanged.
+// The bf16 class rounds the carried state after every token of a sequential scan, not only at
+// the final store, so a T-row scan equals T chained single-row launches bit for bit (decode ==
+// verify). fp32 (`st16 == 0`) is unchanged.
 __device__ __forceinline__ float gdn_rn(float v) { return __bfloat162float(__float2bfloat16(v)); }
+
+// The two GDN state class conversions (research/gdn-state-bf16-decode-20261107): `src` and `dst`
+// are distinct buffers of n_elems fp32 words each. to_bf16 rounds every element to nearest even
+// into the bf16 layout (element i at byte 2*i of dst, the first n/2 words); to_f32 widens a bf16
+// state exactly. to_f32(to_bf16(x)) == round(x), and to_bf16 of an already bf16-representable
+// state is the identity, so a state may cross the two classes any number of times without
+// changing a value after its first rounding.
+extern "C" __global__ void gdn_state_to_bf16(const float* __restrict__ src, float* __restrict__ dst,
+                                             unsigned long long n_elems) {
+    unsigned long long i = (unsigned long long)blockIdx.x * blockDim.x + threadIdx.x;
+    if (i < n_elems) reinterpret_cast<__nv_bfloat16*>(dst)[i] = __float2bfloat16(src[i]);
+}
+extern "C" __global__ void gdn_state_to_f32(const float* __restrict__ src, float* __restrict__ dst,
+                                            unsigned long long n_elems) {
+    unsigned long long i = (unsigned long long)blockIdx.x * blockDim.x + threadIdx.x;
+    if (i < n_elems) dst[i] = __bfloat162float(reinterpret_cast<const __nv_bfloat16*>(src)[i]);
+}
 
 __device__ __forceinline__ float silu(float x) { return x / (1.0f + expf(-x)); }
 
@@ -784,7 +799,7 @@ extern "C" __global__ void gdn_chunk_state_f32(
         const float* __restrict__ U, const float* __restrict__ W,
         float* __restrict__ Y, float* __restrict__ Ssnap,
         const float* __restrict__ state_in, float* __restrict__ state_out,
-        int H, int T, int C, int st16) {
+        int H, int T, int C) {
     constexpr int COLS = GDN_D / GDN_NSPLIT;   // 32
     const int h = blockIdx.x;
     const int col0 = blockIdx.y * COLS;
@@ -795,7 +810,7 @@ extern "C" __global__ void gdn_chunk_state_f32(
     const int tid = threadIdx.x;
     for (int idx = tid; idx < COLS * GDN_D; idx += 256) {
         int cl2 = idx / GDN_D, i = idx % GDN_D;
-        Ms[cl2][i] = gdn_ld(state_in, ((size_t)h * GDN_D + col0 + cl2) * GDN_D + i, st16);
+        Ms[cl2][i] = state_in[((size_t)h * GDN_D + col0 + cl2) * GDN_D + i];
     }
     __syncthreads();
     const int NC = (T + C - 1) / C;
@@ -879,13 +894,12 @@ extern "C" __global__ void gdn_chunk_state_f32(
         for (int r = 0; r < GDN_D / 8; r++) {
             int i = jr * (GDN_D / 8) + r;
             Ms[cl][i] = bC * Ms[cl][i] + acc[r];
-            if (st16) Ms[cl][i] = gdn_rn(Ms[cl][i]);
         }
         __syncthreads();   // Ms/gk stable before the next chunk rewrites them
     }
     for (int idx = tid; idx < COLS * GDN_D; idx += 256) {
         int cl2 = idx / GDN_D, i = idx % GDN_D;
-        gdn_sv(state_out, ((size_t)h * GDN_D + col0 + cl2) * GDN_D + i, Ms[cl2][i], st16);
+        state_out[((size_t)h * GDN_D + col0 + cl2) * GDN_D + i] = Ms[cl2][i];
     }
 }
 
@@ -1848,7 +1862,7 @@ gdn_k4_body(const __nv_bfloat16* __restrict__ kb16, const float* __restrict__ gc
             const float* __restrict__ U, const __nv_bfloat16* __restrict__ Wb16,
             __half* __restrict__ Y, __half* __restrict__ Ssnap,
             const float* __restrict__ state_in, float* __restrict__ state_out,
-            int H, int T, int C, int h, int col0, int hk, int st16) {
+            int H, int T, int C, int h, int col0, int hk) {
     constexpr int D = GDN_D;
     const int tid = threadIdx.x;
     const int warp = tid / 32, lane = tid % 32;
@@ -1869,7 +1883,7 @@ gdn_k4_body(const __nv_bfloat16* __restrict__ kb16, const float* __restrict__ gc
         for (int l = 0; l < 4; l++) {
             int col = mh * 16 + fr + ((l < 2) ? 0 : 8);
             int i = nq * 32 + t4 * 8 + fc + (l & 1);
-            Macc[t4].x[l] = gdn_ld(state_in, ((size_t)h * D + col0 + col) * D + i, st16);
+            Macc[t4].x[l] = state_in[((size_t)h * D + col0 + col) * D + i];
         }
 
     const int NC = (T + C - 1) / C;
@@ -1975,12 +1989,6 @@ gdn_k4_body(const __nv_bfloat16* __restrict__ kb16, const float* __restrict__ gc
                 mma_bf16(Macc[p2 * 2 + 1], A, Bhi);
             }
         }
-        if (st16) {
-            #pragma unroll
-            for (int t4 = 0; t4 < 4; t4++)
-                #pragma unroll
-                for (int l = 0; l < 4; l++) Macc[t4].x[l] = gdn_rn(Macc[t4].x[l]);
-        }
         __syncthreads();
     }
     #pragma unroll
@@ -1989,7 +1997,7 @@ gdn_k4_body(const __nv_bfloat16* __restrict__ kb16, const float* __restrict__ gc
         for (int l = 0; l < 4; l++) {
             int col = mh * 16 + fr + ((l < 2) ? 0 : 8);
             int i = nq * 32 + t4 * 8 + fc + (l & 1);
-            gdn_sv(state_out, ((size_t)h * D + col0 + col) * D + i, Macc[t4].x[l], st16);
+            state_out[((size_t)h * D + col0 + col) * D + i] = Macc[t4].x[l];
         }
 }
 
@@ -1999,18 +2007,18 @@ gdn_chunk_state_mma(const __nv_bfloat16* __restrict__ kb16, const float* __restr
                      const float* __restrict__ U, const __nv_bfloat16* __restrict__ Wb16,
                      __half* __restrict__ Y, __half* __restrict__ Ssnap,
                      const float* __restrict__ state_in, float* __restrict__ state_out,
-                     int H, int T, int C, int hk, int st16) {
+                     int H, int T, int C, int hk) {
     gdn_k4_body(kb16, gcum, beta, U, Wb16, Y, Ssnap, state_in, state_out,
-                H, T, C, blockIdx.x, blockIdx.y * 32, hk, st16);
+                H, T, C, blockIdx.x, blockIdx.y * 32, hk);
 }
 
 // varlen twin (task #18): grid (H, D/32, B); block (h, col-tile) of seq blockIdx.z runs
 // the EXACT per-seq body on that seq's buffers/state — bit-identical per block.
 extern "C" __global__ void __launch_bounds__(256, 2)
-gdn_chunk_state_mma_vl(gdnvl_t v, int H, int C, int hk, int st16) {
+gdn_chunk_state_mma_vl(gdnvl_t v, int H, int C, int hk) {
     const gdnseq_t a = v.s[blockIdx.z];
     gdn_k4_body(a.kb16, a.gcum, a.beta, a.U, a.Wb16, a.Y, a.Ssnap, a.state_in, a.state_out,
-                H, a.T, C, blockIdx.x, blockIdx.y * 32, hk, st16);
+                H, a.T, C, blockIdx.x, blockIdx.y * 32, hk);
 }
 
 
@@ -2424,7 +2432,7 @@ gdn_k45_wgmma_body(const __nv_bfloat16* __restrict__ kb16, const float* __restri
                    const __nv_bfloat16* __restrict__ qb16, const __nv_bfloat16* __restrict__ Pb16,
                    float* __restrict__ o, float scale,
                    const float* __restrict__ state_in, float* __restrict__ state_out,
-                   int H, int T, int C, int hk, int h, int col0, int st16) {
+                   int H, int T, int C, int hk, int h, int col0) {
 #ifdef MEMRA_K45_REAL
     constexpr int D = GDN_D;
     const int hq = h % hk;
@@ -2450,10 +2458,10 @@ gdn_k45_wgmma_body(const __nv_bfloat16* __restrict__ kb16, const float* __restri
         int cll = warp * 16 + fr;
         int il = fc + n8 * 8;
         bool re0 = cll < 32, re1 = cll + 8 < 32;
-        Macc[q + 0] = re0 ? gdn_ld(state_in, ((size_t)h * D + col0 + cll) * D + ih + il + 0, st16) : 0.0f;
-        Macc[q + 1] = re0 ? gdn_ld(state_in, ((size_t)h * D + col0 + cll) * D + ih + il + 1, st16) : 0.0f;
-        Macc[q + 2] = re1 ? gdn_ld(state_in, ((size_t)h * D + col0 + cll + 8) * D + ih + il + 0, st16) : 0.0f;
-        Macc[q + 3] = re1 ? gdn_ld(state_in, ((size_t)h * D + col0 + cll + 8) * D + ih + il + 1, st16) : 0.0f;
+        Macc[q + 0] = re0 ? state_in[((size_t)h * D + col0 + cll) * D + ih + il + 0] : 0.0f;
+        Macc[q + 1] = re0 ? state_in[((size_t)h * D + col0 + cll) * D + ih + il + 1] : 0.0f;
+        Macc[q + 2] = re1 ? state_in[((size_t)h * D + col0 + cll + 8) * D + ih + il + 0] : 0.0f;
+        Macc[q + 3] = re1 ? state_in[((size_t)h * D + col0 + cll + 8) * D + ih + il + 1] : 0.0f;
     }
 
     const int NC = (T + C - 1) / C;
@@ -2617,10 +2625,6 @@ gdn_k45_wgmma_body(const __nv_bfloat16* __restrict__ kb16, const float* __restri
         }
         k45_commit();
         k45_wait();
-        if (st16) {
-            #pragma unroll
-            for (int q = 0; q < 32; q++) Macc[q] = gdn_rn(Macc[q]);
-        }
         if (wg == 0) {
             const int j0 = warp * 16 + fr;
             #pragma unroll
@@ -2643,12 +2647,12 @@ gdn_k45_wgmma_body(const __nv_bfloat16* __restrict__ kb16, const float* __restri
         int cll = warp * 16 + fr;
         int il = fc + n8 * 8;
         if (cll < 32) {
-            gdn_sv(state_out, ((size_t)h * D + col0 + cll) * D + ih + il + 0, Macc[q + 0], st16);
-            gdn_sv(state_out, ((size_t)h * D + col0 + cll) * D + ih + il + 1, Macc[q + 1], st16);
+            state_out[((size_t)h * D + col0 + cll) * D + ih + il + 0] = Macc[q + 0];
+            state_out[((size_t)h * D + col0 + cll) * D + ih + il + 1] = Macc[q + 1];
         }
         if (cll + 8 < 32) {
-            gdn_sv(state_out, ((size_t)h * D + col0 + cll + 8) * D + ih + il + 0, Macc[q + 2], st16);
-            gdn_sv(state_out, ((size_t)h * D + col0 + cll + 8) * D + ih + il + 1, Macc[q + 3], st16);
+            state_out[((size_t)h * D + col0 + cll + 8) * D + ih + il + 0] = Macc[q + 2];
+            state_out[((size_t)h * D + col0 + cll + 8) * D + ih + il + 1] = Macc[q + 3];
         }
     }
 #endif  // MEMRA_K45_REAL
@@ -2661,9 +2665,9 @@ gdn_k45_wgmma(const __nv_bfloat16* __restrict__ kb16, const float* __restrict__ 
               const __nv_bfloat16* __restrict__ qb16, const __nv_bfloat16* __restrict__ Pb16,
               float* __restrict__ o, float scale,
               const float* __restrict__ state_in, float* __restrict__ state_out,
-              int H, int T, int C, int hk, int st16) {
+              int H, int T, int C, int hk) {
     gdn_k45_wgmma_body(kb16, gcum, beta, U, Wb16, qb16, Pb16, o, scale, state_in, state_out,
-                       H, T, C, hk, blockIdx.x, blockIdx.y * 32, st16);
+                       H, T, C, hk, blockIdx.x, blockIdx.y * 32);
 }
 
 // varlen wgmma args (qb16/pb16 ride NEXT TO gdnseq_t — by value, Rust GdnWVl/GdnWVl8)
@@ -2671,11 +2675,11 @@ typedef struct { const __nv_bfloat16* qb16; __nv_bfloat16* pb16; } gdnw_t;
 typedef struct { gdnw_t s[8]; } gdnwvl_t;
 
 extern "C" __global__ void __launch_bounds__(256, 1)
-gdn_k45_wgmma_vl(gdnvl_t v, gdnwvl_t wq, float scale, int H, int C, int hk, int st16) {
+gdn_k45_wgmma_vl(gdnvl_t v, gdnwvl_t wq, float scale, int H, int C, int hk) {
     const gdnseq_t a = v.s[blockIdx.z];
     const gdnw_t w = wq.s[blockIdx.z];
     gdn_k45_wgmma_body(a.kb16, a.gcum, a.beta, a.U, a.Wb16, w.qb16, w.pb16, a.o, scale,
-                       a.state_in, a.state_out, H, a.T, C, hk, blockIdx.x, blockIdx.y * 32, st16);
+                       a.state_in, a.state_out, H, a.T, C, hk, blockIdx.x, blockIdx.y * 32);
 }
 
 
@@ -2919,11 +2923,11 @@ gdn_chunk_state_mma_prime_table(const __nv_bfloat16* __restrict__ kb16, const fl
                      const float* __restrict__ U, const __nv_bfloat16* __restrict__ Wb16,
                      __half* __restrict__ Y, __half* __restrict__ Ssnap,
                      const unsigned long long* __restrict__ table, unsigned long long unused,
-                     int H, int T, int C, int hk, int st16) {
+                     int H, int T, int C, int hk) {
     const float* state_in = (const float*)table[4];
     float* state_out = (float*)table[5];
     gdn_k4_body(kb16, gcum, beta, U, Wb16, Y, Ssnap, state_in, state_out,
-                H, T, C, blockIdx.x, blockIdx.y * 32, hk, st16);
+                H, T, C, blockIdx.x, blockIdx.y * 32, hk);
 }
 
 extern "C" __global__ void prime_tap_table(const float* x,

@@ -3179,6 +3179,22 @@ impl HybridModel {
             b_n,
             "ctx built for a different batch width"
         );
+        // GDN decode class (crate::gdn_state): every session of the batch scans in the model's
+        // class, so a bf16-class session that has just primed rounds its fp32 state now (once,
+        // pointers unchanged, so `ctx.ptr_table` stays valid). The rounding is the session's
+        // decode-start rounding whether this step completes or is retried, so it does not tear a
+        // step (`crate::step_guard`): a retry finds the layers already rounded and runs the same
+        // program.
+        let st16 = self.gdn_decode_bf16;
+        for cache in caches.iter_mut() {
+            for il in ctx.lo..ctx.hi {
+                if let (Mixer::Linear(_), Some(rl)) =
+                    (&self.layers[il].mixer, cache.recur[il].as_mut())
+                {
+                    e.gdn_ensure_decode(rl, st16)?;
+                }
+            }
+        }
 
         for il in ctx.lo..ctx.hi {
             let layer = &self.layers[il];
@@ -3420,7 +3436,7 @@ impl HybridModel {
                     let mut o_all = e.uninit(b_n * value_dim)?;
                     e.gdn_scan_s128_batched(
                         &q_l2, &k_l2, &v_gd, &g_log, &beta_b, &in_view, &out_view, &mut o_all,
-                        num_v, b_n, gdn_scale,
+                        num_v, b_n, gdn_scale, st16,
                     )?;
                     // ping-pong: scan wrote each seq's alt buffer; swap host handles (the
                     // NEXT step's table rebuild picks up the new canonical pointers).

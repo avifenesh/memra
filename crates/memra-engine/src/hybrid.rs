@@ -3956,6 +3956,50 @@ pub struct HybridModel {
     pub(crate) draft_state_bytes: std::sync::atomic::AtomicUsize,
     /// Test helper: extra device ordinals participating in this model for structural tests.
     pub test_extra_devices: Vec<usize>,
+    /// GDN decode class (research/gdn-state-bf16-decode-20261107): `true` = the decode and verify
+    /// scans store the Gated DeltaNet state as bf16, rounded once when a session starts decoding
+    /// (`crate::gdn_state`); the prime, captures and prefix entries stay fp32 either way. Decided
+    /// at load by `gdn_decode_bf16_for` and constant for the model's lifetime.
+    pub gdn_decode_bf16: bool,
+}
+
+/// Whether any model this process loaded decodes with a bf16 GDN state (the server folds it into
+/// the host-tier numeric identity and the handoff layout, so states minted under one decode
+/// class never restore under the other).
+pub fn gdn_decode_bf16_loaded() -> bool {
+    GDN_DECODE_BF16_LOADED.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+static GDN_DECODE_BF16_LOADED: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+/// The load-time GDN decode-class decision for `plan` on this engine's device:
+/// `MEMRA_GDN_STATE_BF16=1|0` forces it on an eligible plan, unset follows the device default
+/// (bf16 on GB10 for the measured Qwen3.8-27B shape only, research/gdn-state-bf16-decode-20261107).
+pub fn gdn_decode_bf16_for(e: &Engine, plan: &memra_gguf::model_plan::ModelPlan) -> bool {
+    let env = std::env::var("MEMRA_GDN_STATE_BF16").ok();
+    let eligible = crate::gdn_state::plan_gdn_decode_eligible(plan);
+    if env.as_deref() == Some("1") && !eligible {
+        eprintln!(
+            "[gdn-state] MEMRA_GDN_STATE_BF16=1 ignored: the plan is not the Qwen3.5-family GDN \
+             program the bf16 decode class serves (fp32 decode)"
+        );
+    }
+    let gb10 = crate::BUILT_CUDA_ARCH == "120a" && crate::unified_memory::is_unified(e.ctx());
+    let on = crate::gdn_state::gdn_decode_bf16_on(
+        env.as_deref(),
+        eligible,
+        crate::gdn_state::plan_gdn_decode_measured(plan),
+        gb10,
+    );
+    if on {
+        GDN_DECODE_BF16_LOADED.store(true, std::sync::atomic::Ordering::Relaxed);
+        eprintln!(
+            "[gdn-state] bf16 GDN decode class: decode and verify store the state as bf16, \
+             rounded once at decode start; prime, captures and prefix entries fp32"
+        );
+    }
+    on
 }
 
 impl HybridModel {
@@ -6411,7 +6455,10 @@ impl HybridModel {
             glm5_dflash,
             draft_state_bytes: std::sync::atomic::AtomicUsize::new(0),
             test_extra_devices: Vec::new(),
+            gdn_decode_bf16: false,
         };
+        let mut model = model;
+        model.gdn_decode_bf16 = model.hyper.is_none() && gdn_decode_bf16_for(e, &model.plan);
         e.configure_moe_cache_layout(model.moe_cache_block_sizes());
         if force_embd_gpu {
             let _ = model

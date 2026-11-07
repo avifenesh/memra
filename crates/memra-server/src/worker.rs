@@ -4847,9 +4847,7 @@ impl PrefixCacheBudget {
 
 static PREFIX_CACHE_BUDGET: std::sync::OnceLock<PrefixCacheBudget> = std::sync::OnceLock::new();
 
-/// Recurrent bytes of one prefix entry: each recurrent layer's conv ring plus its state in the
-/// engine's storage class (`memra_kv::recurrent_state_words`; a bf16 GDN state is half).
-fn prefix_recurrent_state_bytes(plan: &memra_gguf::model_plan::ModelPlan, gdn_bf16: bool) -> usize {
+fn prefix_recurrent_state_bytes(plan: &memra_gguf::model_plan::ModelPlan) -> usize {
     plan.layers
         .iter()
         .map(|layer| match layer.state {
@@ -4859,11 +4857,7 @@ fn prefix_recurrent_state_bytes(plan: &memra_gguf::model_plan::ModelPlan, gdn_bf
                 state_width,
             } => (conv_width as usize)
                 .saturating_mul((conv_kernel as usize).saturating_sub(1))
-                .saturating_add(memra_engine::cache::recurrent_state_words(
-                    layer,
-                    state_width as usize,
-                    gdn_bf16,
-                )),
+                .saturating_add(state_width as usize),
             _ => 0,
         })
         .sum::<usize>()
@@ -4915,7 +4909,7 @@ fn prefix_entry_geometry_bytes(
         .saturating_add(recurrent_bytes)
 }
 
-fn model_prefix_entry_bytes(model: &HybridModel, ctx: usize, gdn_bf16: bool) -> usize {
+fn model_prefix_entry_bytes(model: &HybridModel, ctx: usize) -> usize {
     let cfg = &model.cfg;
     let n_trunk = model.plan.layers.len();
     let latent_bpt = if prefix_latent_planes_on() {
@@ -4926,7 +4920,7 @@ fn model_prefix_entry_bytes(model: &HybridModel, ctx: usize, gdn_bf16: bool) -> 
     prefix_entry_geometry_bytes(
         memra_engine::cache::cache_bytes_per_token_for_plan(cfg, &model.plan, 0, n_trunk)
             .saturating_add(latent_bpt),
-        prefix_recurrent_state_bytes(&model.plan, gdn_bf16),
+        prefix_recurrent_state_bytes(&model.plan),
         ctx,
     )
 }
@@ -5010,11 +5004,7 @@ fn init_prefix_cache_budget(
                     .clone()
                     .and_then(|env| prefix_budget_ctx(env.as_deref(), model_ctx))
                 {
-                    Ok(ctx) => (
-                        name.as_str(),
-                        model_prefix_entry_bytes(&lm.model, ctx, engine.gdn_state_bf16()),
-                        ctx,
-                    ),
+                    Ok(ctx) => (name.as_str(), model_prefix_entry_bytes(&lm.model, ctx), ctx),
                     Err(err) => {
                         eprintln!(
                             "[prefix-cache] WARNING: served context unresolved for model \
@@ -5260,26 +5250,12 @@ fn host_tier_numeric_class() -> String {
     format!("server-prefix-entry-v{PREFIX_ENTRY_LAYOUT_VERSION}-kv-q8_0-{k}B-q5_1-{v}B")
 }
 
-/// A numeric class with the engine's GDN recurrent-state class folded in
-/// (research/gdn-state-bf16-storage-20261107). A bf16-class entry holds half-size ssm planes
-/// from a different numeric program, so the two classes never share `numeric`; the fp32 class
-/// keeps the historical strings byte for byte.
-/// Whether a plan carries Cache-backed Gated DeltaNet state (the layers the GDN class sizes).
-fn plan_has_gdn_state(plan: &memra_gguf::model_plan::ModelPlan) -> bool {
-    plan.layers
-        .iter()
-        .chain(plan.mtp_blocks.iter().map(|b| &b.layer))
-        .any(|l| {
-            matches!(
-                l.attention,
-                memra_gguf::model_plan::AttentionPlan::GatedDeltaNet(_)
-            )
-        })
-}
-
+/// A numeric class with the model's GDN decode class folded in (memra_engine::gdn_state,
+/// research/gdn-state-bf16-decode-20261107). The fp32 class keeps the historical strings byte for
+/// byte.
 fn host_tier_numeric_with_gdn(class: String, gdn_bf16: bool) -> String {
     if gdn_bf16 {
-        format!("{class}+gdn-state-bf16")
+        format!("{class}+gdn-decode-bf16")
     } else {
         class
     }
@@ -5733,9 +5709,10 @@ fn host_tier_context(
             h.update(plan.as_bytes());
             format!("{:x}", h.finalize())
         };
-        // The class only names a model whose plan carries Gated DeltaNet state (a KDA-only
-        // model keeps fp32 planes and its historical identity on a bf16 engine).
-        let gdn_bf16 = engine.gdn_state_bf16() && plan_has_gdn_state(&lm.model.plan);
+        // The GDN decode class (memra_engine::gdn_state) is part of the numeric program: an entry
+        // minted after a bf16 decode holds a state the fp32 class never produces, so the two
+        // classes never share a host-tier program. The fp32 class keeps the historical strings.
+        let gdn_bf16 = lm.model.gdn_decode_bf16;
         let with_gdn = |program: &mut memra_engine::cache::record::ProgramIdentity,
                         class: String| {
             program.numeric = memra_engine::cache::record::digest(
@@ -5814,7 +5791,6 @@ fn host_tier_context(
                 draft,
                 tail,
                 generation,
-                gdn_bf16,
             },
         );
     }
@@ -5862,10 +5838,7 @@ fn host_tier_context(
     let lease_pool = Some(transfers.lease_pool());
     // WP-A day 63 (L2.1): the span staging set's lengths, one image's worth over the loaded
     // models (the max count per length, one demote in flight per worker).
-    let staging_lengths = host_staging_lengths(
-        loaded.values().map(|lm| &lm.model.plan),
-        engine.gdn_state_bf16(),
-    );
+    let staging_lengths = host_staging_lengths(loaded.values().map(|lm| &lm.model.plan));
     let ctx = HostTierContext {
         governor,
         programs,
@@ -5920,12 +5893,10 @@ fn host_tier_context(
 
 /// WP-A day 63 (`DAY63.md` design L2.1): the span staging lengths of one image over the loaded
 /// models' plans: each recurrent layer's conv plane (`conv_width x (conv_kernel - 1)` f32) and ssm
-/// plane (`state_width` elements in the engine's storage class, `memra_kv::recurrent_state_words`),
-/// trunk and MTP blocks, as (bytes, count) with each length's count the maximum over the models
-/// (one demote is in flight per worker). Sorted by length.
+/// plane (`state_width` f32), trunk and MTP blocks, as (bytes, count) with each length's count the
+/// maximum over the models (one demote is in flight per worker). Sorted by length.
 fn host_staging_lengths<'a>(
     plans: impl Iterator<Item = &'a memra_gguf::model_plan::ModelPlan>,
-    gdn_bf16: bool,
 ) -> Vec<(usize, usize)> {
     use memra_gguf::model_plan::StatePlan;
     let mut need: std::collections::BTreeMap<usize, usize> = std::collections::BTreeMap::new();
@@ -5943,11 +5914,7 @@ fn host_staging_lengths<'a>(
             } = layer.state
             {
                 let conv = conv_width as usize * (conv_kernel as usize).saturating_sub(1) * 4;
-                let ssm = memra_engine::cache::recurrent_state_words(
-                    layer,
-                    state_width as usize,
-                    gdn_bf16,
-                ) * 4;
+                let ssm = state_width as usize * 4;
                 for len in [conv, ssm] {
                     if len > 0 {
                         *here.entry(len).or_default() += 1;
@@ -11813,9 +11780,6 @@ impl HostStaging {
 /// One loaded model's programs under the door: the plain program (day 13) and, for a model with
 /// an MTP head, the draft-bearing program (day 14, `host_tier_draft_program`).
 struct HostTierPrograms {
-    /// The model's GDN recurrent planes are bf16 packed (the engine's class, a GDN model): names
-    /// the ssm segments' encoding in a tier image. `numeric` above already carries it.
-    gdn_bf16: bool,
     plain: memra_engine::cache::record::ProgramIdentity,
     draft: Option<memra_engine::cache::record::ProgramIdentity>,
     /// C day 56: the tail-bearing program, for a model with a DFlash drafter attached.
@@ -12209,21 +12173,12 @@ impl HostPrefixCache {
                 )?;
             }
         }
-        let gdn_bf16 = tier
-            .programs
-            .get(&entry.pool_key.0)
-            .is_some_and(|p| p.gdn_bf16);
-        let ssm_encoding: &[u8] = if gdn_bf16 {
-            b"bf16-packed"
-        } else {
-            b"f32-native"
-        };
         for (i, p) in entry.ssm.iter().enumerate() {
             if let Some(p) = p {
                 add(
                     Role::Recurrent,
                     4,
-                    ssm_encoding,
+                    b"f32-native",
                     f32s_as_bytes(p),
                     None,
                     pre(HostHashSlot::Ssm(i)),
@@ -20300,10 +20255,8 @@ fn prefix_capture_off_tick(
     for il in 0..n {
         match &cache.recur[il] {
             Some(r) => {
-                let (c, s) = match (
-                    engine.clone_dtod(&r.conv_state),
-                    engine.clone_dtod(&r.ssm_state),
-                ) {
+                // the ssm plane is fp32 in both GDN decode classes (memra_engine::gdn_state)
+                let (c, s) = match (engine.clone_dtod(&r.conv_state), r.ssm_clone_f32(engine)) {
                     (Ok(c), Ok(s)) => (c, s),
                     (Err(err), _) | (_, Err(err)) => {
                         eprintln!(
@@ -21886,8 +21839,7 @@ fn host_restore_submit(
             engine
                 .copy_into(&mut dst.conv_state, 0, c, c.len())
                 .map_err(|err| format!("recurrent conv copy of layer {il} failed: {err}"))?;
-            engine
-                .copy_into(&mut dst.ssm_state, 0, s, s.len())
+            dst.ssm_restore_f32(engine, s)
                 .map_err(|err| format!("recurrent ssm copy of layer {il} failed: {err}"))?;
             bytes += (c.len() + s.len()) * 4;
         }
@@ -22520,15 +22472,15 @@ fn handoff_stamp_matches(a: &HandoffModelStamp, b: &HandoffModelStamp) -> bool {
         && a.max_mtime_ns == b.max_mtime_ns
 }
 
-/// The handoff file's entry layout version: the in-memory entry layout plus the process's GDN
-/// recurrent-state class (research/gdn-state-bf16-storage-20261107). A bf16-class file holds
-/// half-size ssm planes from a different numeric program, so a deploy that changes the class
-/// starts cold through the header refusal instead of importing entries no restore can take.
-/// The fp32 class keeps the historical number.
+/// The handoff file's entry layout version: the in-memory entry layout plus whether a loaded model
+/// decodes with a bf16 GDN state (research/gdn-state-bf16-decode-20261107). The entries are fp32
+/// either way, but a state minted after a bf16 decode is one the fp32 class never produces, so a
+/// deploy that changes the class starts cold through the header refusal. The fp32 class keeps
+/// the historical number.
 fn handoff_layout_version() -> u32 {
-    const GDN_STATE_BF16_BIT: u32 = 1 << 31;
-    if memra_engine::process_gdn_state_bf16() == Some(true) {
-        PREFIX_ENTRY_LAYOUT_VERSION | GDN_STATE_BF16_BIT
+    const GDN_DECODE_BF16_BIT: u32 = 1 << 31;
+    if memra_engine::hybrid::gdn_decode_bf16_loaded() {
+        PREFIX_ENTRY_LAYOUT_VERSION | GDN_DECODE_BF16_BIT
     } else {
         PREFIX_ENTRY_LAYOUT_VERSION
     }
@@ -23952,7 +23904,24 @@ fn prefix_snapshot_batch(
         let (Some(c), Some(s), Some(r)) = (c.as_mut(), s.as_mut(), cache.recur[il].as_ref()) else {
             continue;
         };
-        for (to, from) in [(c, &r.conv_state), (s, &r.ssm_state)] {
+        // A prefix entry is fp32 in both GDN decode classes (memra_engine::gdn_state): a layer
+        // that has been decoding in bf16 widens straight into the entry plane (exact) on the
+        // same stream instead of riding the byte batch.
+        let planes: Vec<(&mut CudaSlice<f32>, &CudaSlice<f32>)> = if r.ssm_bf16 {
+            if s.len() != r.ssm_state.len() {
+                return Err(format!(
+                    "prefix snapshot recur {il}: {} words into {}",
+                    r.ssm_state.len(),
+                    s.len()
+                )
+                .into());
+            }
+            engine.gdn_state_to_f32_into(&r.ssm_state, s, r.ssm_state.len())?;
+            vec![(c, &r.conv_state)]
+        } else {
+            vec![(c, &r.conv_state), (s, &r.ssm_state)]
+        };
+        for (to, from) in planes {
             if to.len() != from.len() {
                 return Err(format!(
                     "prefix snapshot recur {il}: {} words into {}",
@@ -24485,6 +24454,10 @@ fn prefix_restore_at(
         if let (Some(dst), Some(_)) = (cache.kv[il].as_mut(), &e.kv[il]) {
             dst.len = restore_len;
         }
+        // the entry's ssm planes are fp32 (memra_engine::gdn_state): the restored layer is too
+        if let (Some(dst), Some(_)) = (cache.recur[il].as_mut(), &e.ssm[il]) {
+            dst.ssm_bf16 = false;
+        }
         if let (Some(dst), Some(src)) = (cache.latent[il].as_mut(), &e.latent[il]) {
             dst.restore_plane(engine, src, max_ctx)
                 .map_err(|err| format!("prefix entry latent {il}: {err}"))?;
@@ -24763,7 +24736,8 @@ fn prefix_cache_state_digest(
             Some(recur) => {
                 hasher.update([1]);
                 digest_f32_plane(&mut hasher, &engine.dtoh(&recur.conv_state)?);
-                digest_f32_plane(&mut hasher, &engine.dtoh(&recur.ssm_state)?);
+                // the fp32 values, whatever GDN class the live layer is in (entries are fp32)
+                digest_f32_plane(&mut hasher, &engine.dtoh(&recur.ssm_clone_f32(engine)?)?);
             }
             None => hasher.update([0]),
         }
@@ -24930,7 +24904,8 @@ fn kv_prefix_digest(
             Some(recur) => {
                 hasher.update([1]);
                 digest_f32_plane(&mut hasher, &engine.dtoh(&recur.conv_state)?);
-                digest_f32_plane(&mut hasher, &engine.dtoh(&recur.ssm_state)?);
+                // the fp32 values, whatever GDN class the live layer is in (entries are fp32)
+                digest_f32_plane(&mut hasher, &engine.dtoh(&recur.ssm_clone_f32(engine)?)?);
             }
             None => hasher.update([0]),
         }
@@ -25074,6 +25049,16 @@ fn prefix_insert_from_spec_boundary(
         return;
     }
     if cache.has_swa_ring() {
+        return;
+    }
+    // A prefix entry is fp32 in both GDN decode classes (memra_engine::gdn_state): a capture of a
+    // layer that was decoding in bf16 widens here (exact), before either publish route.
+    let mut cap = cap;
+    if let Err(err) = cap.snap.widen_f32(engine) {
+        eprintln!(
+            "[prefix-cache] spec publish REFUSED: widening the GDN state failed ({err}); \
+             entry dropped"
+        );
         return;
     }
     // WP-A day 24 (memra#536 Move 2 owed item 2, the capture half): under the door the trunk rows
@@ -54264,7 +54249,6 @@ mod tests {
                     draft: Some(draft),
                     tail: None,
                     generation,
-                    gdn_bf16: false,
                 },
             )]),
             device: 0,
@@ -57792,30 +57776,22 @@ mod tests {
                 .filter(|l| matches!(l.state, memra_gguf::model_plan::StatePlan::Recurrent { .. }))
                 .count()
         };
-        let one = super::host_staging_lengths([&a].into_iter(), false);
+        let one = super::host_staging_lengths([&a].into_iter());
         assert_eq!(
             one.iter().map(|&(_, c)| c).sum::<usize>(),
             2 * recurrent(&a),
             "two planes per layer"
         );
         assert!(one.iter().all(|&(len, _)| len > 0 && len % 4 == 0));
-        // bf16 GDN state class: the ssm plane (2 heads x 32 x 32 = 2048 elements) halves, the
-        // conv ring (128 x 2 f32) does not.
-        let lens = |v: &[(usize, usize)]| v.iter().map(|&(len, _)| len).collect::<Vec<_>>();
-        assert_eq!(lens(&one), vec![1024, 8192]);
-        assert_eq!(
-            lens(&super::host_staging_lengths([&a].into_iter(), true)),
-            vec![1024, 4096]
-        );
         let b = plan(8, 2);
-        let two = super::host_staging_lengths([&a, &b].into_iter(), false);
+        let two = super::host_staging_lengths([&a, &b].into_iter());
         assert_eq!(
             two,
-            super::host_staging_lengths([&b].into_iter(), false),
+            super::host_staging_lengths([&b].into_iter()),
             "the max count, never the sum"
         );
         let c = plan(4, 4);
-        let mixed = super::host_staging_lengths([&a, &c].into_iter(), false);
+        let mixed = super::host_staging_lengths([&a, &c].into_iter());
         let total: usize = mixed.iter().map(|&(_, n)| n).sum();
         assert!(total <= 2 * recurrent(&a) + 2 * recurrent(&c));
         assert!(
@@ -59464,7 +59440,6 @@ mod tests {
                     draft: Some(draft),
                     tail: None,
                     generation,
-                    gdn_bf16: false,
                 },
             )]),
             device: device as u32,

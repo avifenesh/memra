@@ -97,6 +97,7 @@ impl HybridModel {
                 e.stream().memset_zeros(&mut rl.conv_state)?;
                 e.stream().memset_zeros(&mut rl.ssm_state)?;
                 e.stream().memset_zeros(&mut rl.ssm_state_alt)?;
+                rl.ssm_bf16 = false;
             }
             self.prime_chunk_captured(
                 e,
@@ -180,9 +181,9 @@ impl HybridModel {
                 continue;
             };
             let cn = src.conv_state.len();
-            let sn = src.ssm_state.len();
             e.copy_into(&mut dst.conv_state, 0, &src.conv_state, cn)?;
-            e.copy_into(&mut dst.ssm_state, 0, &src.ssm_state, sn)?;
+            // the scratch primed in the fp32 GDN state class; the session is fp32 after it
+            dst.ssm_restore_f32(e, &src.ssm_state)?;
         }
         session.pos = t;
         let logits = e.dtoh(&pg.logits_out)?;
