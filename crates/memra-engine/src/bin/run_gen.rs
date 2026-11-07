@@ -1143,14 +1143,27 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .ok()
             .and_then(|s| s.parse().ok())
             .unwrap_or(1);
+        // MEMRA_PP_PRIME=1: the warmups, the timed reps and the logits dump run the serving
+        // prime (`prime_cache` on a fresh cache, chunked over the quantized KV, the pass a served
+        // prompt primes with) instead of the monolithic `forward_last`, so a prime-path kernel
+        // (the prime attention twins) is timed and byte-compared on the path it serves.
+        let pp_prime = std::env::var("MEMRA_PP_PRIME").as_deref() == Ok("1");
+        let pp_pass = || -> Result<Vec<f32>, Box<dyn std::error::Error>> {
+            if pp_prime {
+                let mut c = new_model_cache(&e, &model.cfg, prompt.len() + 64)?;
+                Ok(model.prime_cache(&e, &prompt, &mut c, 0)?.0)
+            } else {
+                model.forward_last(&e, &prompt)
+            }
+        };
         for _ in 0..warmups {
-            let _ = model.forward_last(&e, &prompt)?;
+            let _ = pp_pass()?;
         }
         // MEMRA_PP_LOGITS=<path>: dump the last-row prefill logits (raw LE f32) — the GGUF twin
         // of the ST branch's dump above. Diagnostic: cross-arm byte-compare of two builds'
         // prefill output (e.g. the iq-k32 MMA-form A/B, research/iq-k32-20260807/).
         if let Ok(f) = std::env::var("MEMRA_PP_LOGITS") {
-            let last = model.forward_last(&e, &prompt)?;
+            let last = pp_pass()?;
             let mut raw = Vec::with_capacity(last.len() * 4);
             for v in &last {
                 raw.extend_from_slice(&v.to_le_bytes());
@@ -1168,8 +1181,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let mut times = Vec::with_capacity(reps);
         for r in 0..reps {
             e.moe_cache_reset_counters();
+            let mut fresh = if pp_prime {
+                Some(new_model_cache(&e, &model.cfg, prompt.len() + 64)?)
+            } else {
+                None
+            };
             let tp = std::time::Instant::now();
-            let _ = model.forward_last(&e, &prompt)?;
+            let _ = match fresh.as_mut() {
+                Some(c) => model.prime_cache(&e, &prompt, c, 0)?.0,
+                None => model.forward_last(&e, &prompt)?,
+            };
             e.stream().synchronize()?;
             let dt = tp.elapsed().as_secs_f64();
             times.push(dt);
