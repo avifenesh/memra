@@ -213,6 +213,18 @@ isogapc	cmd	tools/iso-gap-gate.sh	--canary	-	-
 # for this gate's own wrapper/probe; sampled-spec and served acceptance retain samp/accept.
 amargin	cmd	tools/argmax-margin-gate.sh	-	-	-
 amarginc	cmd	tools/argmax-margin-gate.sh	--canary	-	-
+# amarginb/amarginbc: the same calibrated gate with the SERVED batched decode program at B=1 on
+# its decode side (`--decode batch`, owner decision 2026-11-03). amargin's decode side is
+# decode_step (decode_step_h); the server's batched scheduler decodes every non-speculative row of
+# a batch-served model through decode_step_batch_sampled_lean_masked at every width, B=1 included
+# (speculative rows stay gated by run-spec), and the two carry a decode-config FP-composition
+# gap, so a change to the batched body or its epilogue can leave amargin green and still move
+# served tokens. Same prefill reference, flip budget and margin rules, plus every window step's
+# device-sampled token equal to the host argmax of its row (or served=EAGER-ROUTED for a model
+# the scheduler decodes eagerly). amarginbc injects a wide-margin flip and a served-token
+# mismatch line and PASSES only if both readers reject them.
+amarginb	cmd	tools/argmax-margin-gate.sh	--decode batch	-	-
+amarginbc	cmd	tools/argmax-margin-gate.sh	--decode batch --canary	-	-
 
 
 # c=64 serving concurrency stress (lane/admit-oom, 2026-08-06): 64 staggered streaming clients

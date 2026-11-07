@@ -120,6 +120,8 @@ class Fixture:
             self.cell("argmax", name, "SUMMARY flips=0 bad=0\n  PRIME-SUMMARY prime=MATCH\n"
                       "  PASS: CPU MOCK calibrated verdict\n")
             self.cell("spec", name, spec)
+            self.cell("argmax-batch", name, "SUMMARY flips=0 bad=0\n  SERVED-SUMMARY served=MATCH\n"
+                      "  PASS: CPU MOCK calibrated verdict\n")
         self.refresh()
 
     def git(self, *args):
@@ -327,7 +329,9 @@ class QualificationTests(unittest.TestCase):
 
     def test_missing_failed_duplicated_cells_and_skip_ceiling(self):
         for mutation in ("missing", "failed", "duplicate", "single-k", "skip-budget",
-                         "no-prime", "prime-structured", "prime-skip-gate-off"):
+                         "no-prime", "prime-structured", "prime-skip-gate-off",
+                         "no-served", "served-mismatch", "served-skip", "served-unknown",
+                         "served-twice", "no-batch-cell", "batch-cell-reads-as-eager"):
             original = copy.deepcopy(self.f.run)
             original_files = {cell["log"]["path"]: (self.f.out / cell["log"]["path"]).read_bytes() for cell in original["cells"]}
             with self.subTest(mutation=mutation):
@@ -340,6 +344,23 @@ class QualificationTests(unittest.TestCase):
                     prime = {"no-prime": "", "prime-structured": "  PRIME-SUMMARY prime=MISMATCH-STRUCTURED\n",
                              "prime-skip-gate-off": "  PRIME-SUMMARY prime=SKIP:gate-off\n"}[mutation]
                     p.write_text(p.read_text().replace("  PRIME-SUMMARY prime=MATCH\n", prime))
+                    cell["log"] = self.f.ref(cell["log"]["path"])
+                elif mutation == "no-batch-cell":
+                    # The served-batch cell is required per roster model, like argmax and spec.
+                    self.f.run["cells"].pop(3)
+                elif mutation.startswith(("no-served", "served-", "batch-cell-")):
+                    cell = self.f.run["cells"][3]; p = self.f.out / cell["log"]["path"]
+                    self.assertEqual(cell["kind"], "argmax-batch")
+                    served = {"no-served": "",
+                              "served-mismatch": "  SERVED-SUMMARY served=MISMATCH\n",
+                              "served-skip": "  SERVED-SUMMARY served=MATCH\nargmax-margin-gate: SKIP (x)\n",
+                              "served-unknown": "  SERVED-SUMMARY served=EAGER\n",
+                              "served-twice": "  SERVED-SUMMARY served=MATCH\n"
+                                              "  SERVED-SUMMARY served=EAGER-ROUTED\n",
+                              # The eager cell's log under the batch kind: a gate run that
+                              # ignored --decode cannot qualify the served program.
+                              "batch-cell-reads-as-eager": "  PRIME-SUMMARY prime=MATCH\n"}[mutation]
+                    p.write_text(p.read_text().replace("  SERVED-SUMMARY served=MATCH\n", served))
                     cell["log"] = self.f.ref(cell["log"]["path"])
                 else:
                     index = 2 if mutation == "single-k" else 0
@@ -357,6 +378,19 @@ class QualificationTests(unittest.TestCase):
             self.f.run = original
             for name, data in original_files.items(): (self.f.out / name).write_bytes(data)
             self.f.refresh()
+
+    def test_eager_routed_batch_cell_qualifies_with_its_own_verdict(self):
+        # A model the scheduler decodes eagerly (HybridModel::served_decode_is_eager): the probe
+        # stepped decode_step, the program that serves it, and the gate said EAGER-ROUTED.
+        cell = self.f.run["cells"][3]; p = self.f.out / cell["log"]["path"]
+        self.assertEqual(cell["kind"], "argmax-batch")
+        p.write_text(p.read_text().replace("served=MATCH", "served=EAGER-ROUTED"))
+        cell["log"] = self.f.ref(cell["log"]["path"])
+        self.f.refresh()
+        self.f.verify()
+        verdict = next(v["verdict"] for v in self.f.verdicts
+                       if (v["kind"], v["model"]) == (cell["kind"], cell["model"]))
+        self.assertIn("eager-routed", verdict)
 
     def test_lease_failure_cannot_be_sealed(self):
         for key, value in [("exit_code", 1), ("child_exit_code", 1), ("timed_out", True),

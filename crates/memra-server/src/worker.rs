@@ -4404,8 +4404,8 @@ fn grid_align_boundary_within(b: usize, prompt_len: usize) -> usize {
 }
 
 /// Pure half of the HIT-path LCP-split arming (H11 depth-unfreeze; the stateful `has_key`
-/// dedupe and the `eager_only_model` exclusion stay at the call site). Returns the boundary
-/// to stop the suffix prime at, or `None` when no capture is legal.
+/// dedupe and the `HybridModel::eager_only_class` exclusion stay at the call site). Returns the
+/// boundary to stop the suffix prime at, or `None` when no capture is legal.
 ///
 /// THE FED-START FLOOR (PR #37 review finding, 2026-08-24): `grid_align_boundary_within`
 /// steps the PROMPT-side remainder onto the grid, but nothing checked the FED-side remainder
@@ -25721,7 +25721,7 @@ fn prefix_seed_deepens(deepest_covering: Option<usize>, fed_len: usize) -> bool 
 
 /// Pure half of the H11 hit re-arm (`seed_prefix` for a plain prefix-cache hit session) —
 /// the unit-testable predicate; the call site supplies the EFFECTIVE eager-only bit
-/// (`eager_only_model(lm)` narrowed by the `carried_suffix_primes` carve-out — a hyper
+/// (`HybridModel::eager_only_class` narrowed by the `carried_suffix_primes` carve-out — a hyper
 /// trunk under MEMRA_HYPER_SUFFIX_PRIME is not eager-only for this purpose, its suffix is
 /// prime-provenance) and `spec.is_none()`. The eager-only refusal is R16's hard
 /// prerequisite for this mechanism (research/cacheinval-20260813; full reasoning at the
@@ -27866,7 +27866,7 @@ pub fn run(
     // (research/gemma4-serve-20260807/raw/repro-panic-server-*.log).
     let eager_only: std::collections::HashSet<String> = loaded
         .iter()
-        .filter(|(_, lm)| eager_only_model(lm))
+        .filter(|(_, lm)| lm.model.eager_only_class())
         .map(|(n, _)| n.clone())
         .collect();
     // Decode-site subset (lane/gemma-batched; extended lane/glm53-batched-decode): eager_only
@@ -27877,11 +27877,7 @@ pub fn run(
     // keep the full set.
     let eager_decode: std::collections::HashSet<String> = loaded
         .iter()
-        .filter(|(_, lm)| {
-            eager_only_model(lm)
-                && !gemma4_batched_decode_model(lm)
-                && !hyper_batched_decode_model(lm)
-        })
+        .filter(|(_, lm)| lm.model.served_decode_is_eager())
         .map(|(n, _)| n.clone())
         .collect();
     for n in &eager_only {
@@ -37221,7 +37217,7 @@ fn admit(
                         lcp_taught.unwrap_or(0).max(stable.unwrap_or(0)),
                         hit_len,
                         prompt.len(),
-                    ) && (!eager_only_model(lm)
+                    ) && (!lm.model.eager_only_class()
                         || carried_suffix_primes(
                             memra_engine::plan_backend::decode_batch_unconverted(&lm.model.plan),
                             hyper_suffix_prime_on(),
@@ -39465,7 +39461,7 @@ fn admit(
     if plain_hit_reseed_arms(
         prefix_hit,
         spec.is_none(),
-        eager_only_model(lm)
+        lm.model.eager_only_class()
             && !carried_suffix_primes(
                 memra_engine::plan_backend::decode_batch_unconverted(&lm.model.plan),
                 hyper_suffix_prime_on(),
@@ -39531,7 +39527,7 @@ fn admit(
         && affinity_enabled()
         && spec.is_none()
         && vision_state.is_none()
-        && !eager_only_model(lm)
+        && !lm.model.eager_only_class()
         && !confidence_trace_enabled())
     .then(|| {
         grid_rewind_checkpoint_boundary(&prompt, seed_fed.len(), false, &|t| {
@@ -39543,7 +39539,7 @@ fn admit(
         && affinity_enabled()
         && spec.is_none()
         && vision_state.is_none()
-        && !eager_only_model(lm)
+        && !lm.model.eager_only_class()
         && !confidence_trace_enabled()
         && (req.affinity.is_some()
             || plain_ckpt_nominatable(&prompt, &|t| lm.tok.token_is_control(t))
@@ -40526,7 +40522,7 @@ fn prefill_tick(
     // the generic chunked driver (`prime_layers_gemma`), chunkinv/tickinv bit-identical at
     // model scale, so it takes tick-budget chunks like the serial trunk (26B-A4B included once
     // its router left cuBLAS, memra#562). Still monolithic: E4B (PLE), hyper trunks (own walker).
-    let eager_only = eager_only_model(lm);
+    let eager_only = lm.model.eager_only_class();
     let eager_mono = monolithic_prime_model(lm);
     let carried = s.cache.as_ref().is_some_and(|c| c.pos > 0);
     // CARRIED-SUFFIX PRIME CARVE-OUT (lane/glm5-prefix-latent2, 2026-09-01): hyper trunks
@@ -40877,43 +40873,6 @@ fn prefill_tick(
     Ok(consumed)
 }
 
-/// EAGER-ONLY predicate (lane/gemma4-serve-gaps, 2026-08-07): models the batched scheduler
-/// must serve through the per-session eager body. gemma4 (12B/26B/31B and E4B): the batched
-/// decode bodies have no arm for its per-layer swa/global geometry + softcapped head (the
-/// engine refuses), `prime_cache_batch` has no gemma4 core, `gemma4_prime` is fresh-only
-/// (no chunked/continuation prime), and the step-wise graph capture walks the generic
-/// qwen-class dc step. One predicate, consumed at every batched entry point, so a future
-/// arch with the same gaps joins by predicate rather than scattered call-site checks.
-fn eager_only_model(lm: &LoadedModel) -> bool {
-    memra_engine::plan_backend::decode_batch_program(&lm.model.plan)
-        == memra_engine::plan_backend::DecodeBatchProgram::Gemma
-        || lm.model.is_gemma4_e4b()
-        // HYPER-CONNECTIONS RESIDUAL (lane/glm53-flash-bringup, 2026-08-28): the batched decode
-        // chunks, batched prime core, graph capture and every speculative entry point run a
-        // serial residual and REFUSE this topology (`refuse_hyper`). Before this route, a
-        // GLM-5.3-Flash request reached `decode_step_batch_sampled_lean_masked` and came back as
-        // `engine_error` after one token. The converted paths — forward, forward_last,
-        // prime_cache, decode_step — are exactly the ones the eager-only class uses.
-        || memra_engine::plan_backend::decode_batch_unconverted(&lm.model.plan)
-        // NO BATCHED ARM AT ALL: a serial-residual plan with an operation the generic batched
-        // body does not implement (glm_dsa's LatentMlaAttention) panicked in
-        // `decode_batch_layers` (`mla_path_unimplemented`) on every decode chunk, because
-        // `chunk_cap_for` only narrows such a plan to width 1. The manifest is an AND over the
-        // plan, so the same capability read that sets the width also routes the session to the
-        // eager body (`decode_step_h`), which carries the MLA arm. MiniMax-M3 joins the class
-        // by the same read (SwiGluOaiActivation has no decode-batch surface): the batched body
-        // asserts on any of its dense FFN layers ("M3 swigluoai FFN not yet batched"), while
-        // `ffn_swiglu_decode` carries the swigluoai arm. Membership is the whole eager-only
-        // class (monolithic prime, tokenwise carried suffixes, no prefix snapshot), not a
-        // decode-only carve-out: the batched prime, graph capture and snapshot paths carry no
-        // receipt for either family (glm_dsa is NativeReference, MiniMax-M3 has no support
-        // state), so neither is moved onto them without a serve receipt.
-        || !memra_engine::plan_backend::DECODE_BATCH
-            .trunk_capabilities(&lm.model.plan)
-            .batch
-            .supported
-}
-
 /// MONOLITHIC-PRIME class (memra#535 P1a, lane/exec-p1a-gemma-prime): must this model's prime
 /// take the WHOLE queued prompt in one call? Derived, not asserted: the eager-only class minus
 /// the gemma plans whose every trunk operation carries the generic chunked-prime receipt
@@ -40924,39 +40883,8 @@ fn eager_only_model(lm: &LoadedModel) -> bool {
 /// (memra#562; chunkinv/tickinv EXACT). E4B (PLE prime) and hyper trunks (their own walker
 /// program) keep the whole-prompt take.
 fn monolithic_prime_model(lm: &LoadedModel) -> bool {
-    eager_only_model(lm) && !(lm.model.uses_gemma_program() && lm.model.chunked_prime_supported())
-}
-
-/// BATCHED-DECODE carve-out from the eager-only class (lane/gemma-batched, 2026-08-16):
-/// dense gemma4 (31B class — NOT E4B, which keeps its dedicated decode) has a batched
-/// decode arm (`gemma4_decode_batch`, exactness battery green at B=4/8) that is
-/// DEFAULT ON since the 2026-08-16 owner flip (`MEMRA_GEMMA4_BATCH=0` = the eager
-/// kill switch). When the arm is live, ONLY the two decode
-/// scheduling sites route these sessions into batched chunks; every other eager-only
-/// exclusion (prime batching, concat/fanout prime, graph promotion, checkpoint
-/// nomination, monolithic prefill) stays keyed on the full `eager_only` set — gemma4
-/// still has no batched prime core and no dc graph capture.
-fn gemma4_batched_decode_model(lm: &LoadedModel) -> bool {
-    memra_engine::plan_backend::decode_batch_program(&lm.model.plan)
-        == memra_engine::plan_backend::DecodeBatchProgram::Gemma
-        && !lm.model.is_gemma4_e4b()
-        && HybridModel::gemma4_batch_on()
-}
-
-/// BATCHED-DECODE carve-out for mHC (HyperConnections) trunks (lane/glm53-batched-decode,
-/// 2026-08-28): the engine's `decode_step_batch_hyper` walk — batched hc glue + MoE, per-
-/// session mixers, decode-exact seams, gate `glm5-hyper-batch-gate` — serves these sessions
-/// in batched chunks. DEFAULT ON since 2026-08-31 (the hbatch-battery box receipts);
-/// `MEMRA_HYPER_BATCH=0` returns every session to the eager per-session decode. Like the
-/// gemma4 carve-out, ONLY the two decode scheduling sites consume this: prime batching,
-/// graph promotion, and every speculative entry point stay eager-only for this topology.
-fn hyper_batched_decode_model(lm: &LoadedModel) -> bool {
-    // The glm5 TP walk is eager per session by contract (`glm5_tp_serve_boot_verdict`
-    // refuses MEMRA_HYPER_BATCH=1 at boot); this is the second lock on the same door so a
-    // future env read cannot route a sharded model onto the batched walk.
-    memra_engine::plan_backend::decode_batch_unconverted(&lm.model.plan)
-        && HybridModel::hyper_batch_on()
-        && !memra_engine::glm5_tp::glm5_tp_armed()
+    lm.model.eager_only_class()
+        && !(lm.model.uses_gemma_program() && lm.model.chunked_prime_supported())
 }
 
 /// GRAMMAR MASK STAGING (constrained-full, 2026-08-03): compute the session's current
@@ -41698,7 +41626,7 @@ fn chunk_cap_for(lm: &LoadedModel) -> usize {
     // Kill-switch-off returns 1 (unused: the model stays in eager_decode and never enters
     // the chunks).
     if memra_engine::plan_backend::decode_batch_unconverted(&lm.model.plan) {
-        if !hyper_batched_decode_model(lm) {
+        if !lm.model.hyper_batched_decode() {
             return 1;
         }
         return HybridModel::hyper_batch_cap();
@@ -41738,7 +41666,7 @@ fn chunk_cap_for(lm: &LoadedModel) -> usize {
     // door may narrow BELOW 8, never widen past the proven tier. Kill-switch-off
     // returns 1 (unused: the model stays in eager_decode and never enters the chunks).
     if batch_program == memra_engine::plan_backend::DecodeBatchProgram::Gemma {
-        if !gemma4_batched_decode_model(lm) {
+        if !lm.model.gemma4_batched_decode() {
             return 1;
         }
         let cap = std::env::var("MEMRA_DECODE_BATCH_CAP")
