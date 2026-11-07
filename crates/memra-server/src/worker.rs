@@ -756,8 +756,9 @@ struct DsparkColdPrefixAdmission {
     /// consumable existed).
     hit_available: bool,
     /// Whether that hit can feed the DSPARK CONVERSION rather than only the plain path
-    /// (`dspark_hit_is_restorable`: the entry carries a draft tail, and it covers the prompt
-    /// whole or - under `MEMRA_DSPARK_PARTIAL_RESTORE` - as a strict prefix).
+    /// (`dspark_entry_restorable`: the entry carries a draft tail, it covers the prompt whole
+    /// or - under `MEMRA_DSPARK_PARTIAL_RESTORE` - as a strict prefix, and its tail floor leaves
+    /// the drafter window).
     ///
     /// WHY IT DEFEATS THE SHAPE VETO (lane/dspark-boundary-capture, memra#248). The veto's
     /// premise is a TRADE: taking the hit means going plain, so a cold prime is only worth its
@@ -961,7 +962,7 @@ fn dspark_prefix_restore_on() -> bool {
 /// the conversion only consumes WHOLE-entry covers (the trunk cannot rebuild recurrent state
 /// mid-sequence). Overriding on a strict-prefix hit would pay the full carrier restore
 /// (~1 GB of plane copies at the flagship shape) and inflate the prefix-hit counters, only for
-/// the conversion to drop the carrier and cold-prime anyway. `dspark_hit_is_restorable` is the
+/// the conversion to drop the carrier and cold-prime anyway. `dspark_entry_restorable` is the
 /// shared predicate: the override fires only for hits the restore can actually consume, which
 /// is what keeps "no wasted restore copy" true.
 fn should_probe_prefix_cache(
@@ -1038,6 +1039,7 @@ fn dspark_boundary_capture_on() -> bool {
     *ON.get_or_init(|| dspark_door_env("MEMRA_DSPARK_BOUNDARY_CAPTURE"))
 }
 
+#[cfg(test)]
 fn dspark_hit_is_restorable(entry_toks: usize, prompt_toks: usize, entry_has_tail: bool) -> bool {
     dspark_hit_is_restorable_with(
         entry_toks,
@@ -1066,6 +1068,93 @@ fn dspark_prefer_restorable_hit(
     route_admits_restorable
         && restorable_len < plain_len
         && dspark_cold_prime_repays_prefill_tokens(plain_len - restorable_len, decode_budget)
+}
+
+/// Can this entry re-arm the drafter for a `prompt_len`-token prompt? A draft tail, a restorable
+/// cover (`dspark_hit_is_restorable_with`) and a tail floor that leaves the drafter window
+/// (`dspark_entry_tail_floor_short`). The routing probe, the restorable-hit preference and the
+/// admission reclaim's spare all read this one predicate.
+fn dspark_entry_restorable(e: &PrefixEntry, prompt_len: usize, tail_window: Option<usize>) -> bool {
+    dspark_entry_restorable_with(e, prompt_len, tail_window, dspark_partial_restore_on())
+}
+
+/// Pure form of `dspark_entry_restorable` (the partial door as an argument).
+fn dspark_entry_restorable_with(
+    e: &PrefixEntry,
+    prompt_len: usize,
+    tail_window: Option<usize>,
+    partial_on: bool,
+) -> bool {
+    dspark_hit_is_restorable_with(
+        e.toks.len(),
+        prompt_len,
+        e.dspark_draft.is_some(),
+        partial_on,
+    ) && !dspark_entry_tail_floor_short(e.dspark_draft.as_ref(), prompt_len, tail_window)
+}
+
+/// The DFlash route inputs the admission tick can read before `admit`, with a whole-entry hit in
+/// hand. The #361 retained-prefix plan and the reclaim spare (`PrefixCache::pin_reclaim_spare`)
+/// both decide from these. Exact against `admit`'s own inputs: the sampler and its penalties,
+/// grammar, images, capture, prompt fit at this shape (`dspark_spec_prompt_fits`, `admit`'s
+/// `dspark_prime_feasible`), the load (active sessions, queued arrivals, live non-demotable
+/// DFlash peers) and the decode budget. Assumed: `cold` (a continuation-pool donor, which would
+/// make `admit` take no prefix hit at all; the plan suppresses donors), `hit_restorable` (the
+/// partial door: a strict-prefix DFlash restore exists only under it), and the two gates around
+/// the preference in `admit` that these inputs do not carry: `prefix_on` and no host-tier
+/// promote (the reclaim spare checks the host tier itself).
+fn admission_dflash_inputs(
+    req: &Request,
+    model: &HybridModel,
+    draft: &memra_engine::dflash::DflashDraft,
+    shape: RequestShape,
+    peer_probe_allows_spec: bool,
+    active: &[Session],
+    n_pending: usize,
+) -> DsparkColdPrefixAdmission {
+    let prompt_len = req.prepared_prompt.as_ref().map_or(0, Vec::len);
+    let sampler = Sampler::new(req.sampler_cfg.clone());
+    let greedy = sampler.is_greedy();
+    DsparkColdPrefixAdmission {
+        route_ready: serve_spec_enabled()
+            && !confidence_trace_enabled()
+            && peer_probe_allows_spec
+            && req.capture.is_none()
+            && !memra_engine::pp::pp_host_bounce_active()
+            && memra_engine::plan_backend::gdn_dspark_compatible(&model.plan),
+        prime_feasible: memra_engine::dflash::dspark_spec_prompt_fits(
+            prompt_len,
+            shape.ctx_cap,
+            draft.cfg.block_size,
+            draft.cfg.sliding_window,
+            draft.dflash2.is_some(),
+        ),
+        greedy,
+        greedy_penalized: greedy
+            && (sampler.penalty_repeat() != 1.0
+                || sampler.penalty_freq() != 0.0
+                || sampler.penalty_present() != 0.0),
+        sampled: sampler.temperature() > 0.0,
+        constrained: req.grammar.is_some(),
+        vision: request_has_images(req),
+        cold: true,
+        gate_on: spec_gate_on(),
+        pin: spec_k_pin(),
+        projected_wave: projected_admission_wave(active.len(), n_pending),
+        low: spec_gate_low(),
+        n_active: active.len(),
+        has_live_non_demotable: active.iter().any(|s| {
+            dspark_blocks_greedy_widening(
+                s.dspark_on,
+                s.sampler.is_greedy(),
+                s.constraint.is_some(),
+            )
+        }),
+        prompt_len,
+        decode_budget: shape.budget,
+        hit_available: true,
+        hit_restorable: dspark_partial_restore_on(),
+    }
 }
 
 /// The cold-prime repayment ratio applied to an arbitrary prefill length (no cache floor: the
@@ -9656,6 +9745,159 @@ struct PrefixPin {
     id: u64,
 }
 
+/// One prompt entry the admission reclaim leased, with its length and device bytes.
+#[derive(Debug)]
+struct SparedEntry {
+    pin: PrefixPin,
+    tokens: usize,
+    bytes: usize,
+}
+
+/// The prompt's own entries the admission reclaim leases before its flush (reclaim-on-defer),
+/// from `PrefixCache::pin_reclaim_spare`. `keep` is the entry this request will consume and the
+/// one the #361 retained-prefix plan reads. `also` is the longer entry the restorable-hit
+/// preference passed over (it cannot re-arm the drafter); when the flush leaves the arrival short
+/// with both leased, the site asks `longer_droppable`, climbs the parked-session ladder while it
+/// must, and `drop_one` drops one of the two.
+#[derive(Debug)]
+struct ReclaimPrefixSpare {
+    keep: SparedEntry,
+    also: Option<SparedEntry>,
+}
+
+/// Why `ReclaimPrefixSpare::drop_one` kept the longer entry.
+const RECLAIM_KEPT_NO_READING: &str = "there is no single shortfall reading";
+const RECLAIM_KEPT_LEASED: &str = "another session leases the longer entry";
+const RECLAIM_KEPT_HOST: &str = "a longer host entry would be promoted over the restorable one";
+const RECLAIM_KEPT_LADDER: &str =
+    "the parked-session ladder ran out before the longer entry's bytes covered the rest";
+
+/// What `ReclaimPrefixSpare::drop_one` dropped.
+#[derive(Debug, PartialEq, Eq)]
+struct ReclaimDrop {
+    /// The longer entry went (the restorable one stays); false: the restorable entry went.
+    longer: bool,
+    tokens: usize,
+    /// Device bytes freed; `None` when another session still leases the entry.
+    freed: Option<usize>,
+    /// Why the longer entry stayed (`None` when it went).
+    kept_longer: Option<&'static str>,
+}
+
+impl ReclaimPrefixSpare {
+    /// Still short after the flush with both entries leased. Unless the parked-session ladder
+    /// alone makes room, memory will hold at most one of them, and the one to keep is the one the
+    /// cost model chose (`dspark_prefer_restorable_hit`
+    /// spared the restorable entry because it serves this request faster). Dropping the longer
+    /// entry keeps it, provided the rest of the shortfall can come from the parked-session ladder
+    /// first: dormant sessions rank below the prompt's own entries, as they do in the flush. This
+    /// says whether that plan is open: `Ok(bytes)` = the longer entry's bytes, which the site
+    /// climbs the ladder until they cover the unbooked shortfall (`usize::MAX`: drop it now,
+    /// because dropping the restorable entry would free nothing, another session leasing it).
+    /// `Err(why)` = keep the longer entry and drop the restorable one, the outcome before the
+    /// spare: a longer host-tier entry would be promoted over the restorable hit, there is no
+    /// single shortfall reading (a per-device headroom), or another session also leases the longer
+    /// entry (its bytes stay resident).
+    fn longer_droppable(
+        &self,
+        px: &PrefixCache,
+        shortfall: Option<usize>,
+        host_allows_longer: bool,
+    ) -> Result<usize, &'static str> {
+        let also = self.also.as_ref().ok_or(RECLAIM_KEPT_NO_READING)?;
+        let sole = |pin: &PrefixPin| {
+            px.id_index(pin)
+                .is_some_and(|i| px.entries[&pin.key][i].pins == 1)
+        };
+        if !host_allows_longer {
+            Err(RECLAIM_KEPT_HOST)
+        } else if !sole(&self.keep.pin) {
+            Ok(usize::MAX)
+        } else if shortfall.is_none() {
+            Err(RECLAIM_KEPT_NO_READING)
+        } else if !sole(&also.pin) {
+            Err(RECLAIM_KEPT_LEASED)
+        } else {
+            Ok(also.bytes)
+        }
+    }
+
+    /// Drop one of the two: the longer entry when `kept_longer` is `None` (the restorable one
+    /// stays), the restorable one otherwise (the outcome before the spare). Dropped, not demoted:
+    /// a host copy of the longer entry would be promoted straight back over the restorable hit.
+    /// Under the memory-admission door with a host tier the pre-spare flush could have demoted the
+    /// restorable entry within its budget; under its off-tick route both spared entries sit outside
+    /// the pass's plan, and the drop waits for the arrival's landings like the ladder does.
+    fn drop_one(
+        &mut self,
+        px: &mut PrefixCache,
+        kept_longer: Option<&'static str>,
+    ) -> Option<ReclaimDrop> {
+        let also = self.also.take()?;
+        let longer = kept_longer.is_none();
+        let gone = if longer {
+            also
+        } else {
+            std::mem::replace(&mut self.keep, also)
+        };
+        px.unpin(&gone.pin);
+        let freed = px.evict_entry(&gone.pin);
+        Some(ReclaimDrop {
+            longer,
+            tokens: gone.tokens,
+            freed,
+            kept_longer,
+        })
+    }
+
+    /// The flush is over: release `also` and hand back the lease on the entry the request keeps.
+    fn into_keep(self, px: &mut PrefixCache) -> PrefixPin {
+        if let Some(also) = self.also {
+            px.unpin(&also.pin);
+        }
+        self.keep.pin
+    }
+}
+
+/// The primary device's shortfall against `required` on the UNBOOKED reading plus the pending
+/// bookings (the booked reading saturates at 0 free and would understate it). `None` for a
+/// per-device headroom, which has no single figure.
+fn primary_unbooked_shortfall(
+    engine: &Engine,
+    loaded: &HashMap<String, LoadedModel>,
+    headroom: &AdmissionHeadroom,
+    required: usize,
+    pending_booked: usize,
+) -> Option<usize> {
+    matches!(headroom, AdmissionHeadroom::Primary { .. })
+        .then(|| admission_headroom(engine, loaded, None))
+        .flatten()
+        .and_then(|h| h.primary_shortfall(required.saturating_add(pending_booked)))
+}
+
+/// The restorable spare's climb, after `longer_droppable` said the longer entry may go: evict
+/// parked sessions, oldest first (`evict`, false when none is left), re-reading the unbooked
+/// shortfall after each (`reread`), while the shortfall exceeds the longer entry's bytes.
+/// `Ok(left)`: the longer entry's bytes cover what is left, so it goes, or `left == 0` and the
+/// ladder alone made room, so both entries stay. `Err(RECLAIM_KEPT_LADDER)`: the ladder ran out
+/// first, so the restorable entry goes and the longer one stays (the outcome before the spare;
+/// the climb has then spent parked sessions the old flush kept, under the restorable entry's
+/// extra bytes over the longer one's). `Err(RECLAIM_KEPT_NO_READING)`: the reading was lost.
+fn reclaim_climb(
+    mut short: usize,
+    longer_bytes: usize,
+    mut evict: impl FnMut() -> bool,
+    mut reread: impl FnMut() -> Option<usize>,
+) -> Result<usize, &'static str> {
+    while short > longer_bytes {
+        if !evict() {
+            return Err(RECLAIM_KEPT_LADDER);
+        }
+        short = reread().ok_or(RECLAIM_KEPT_NO_READING)?;
+    }
+    Ok(short)
+}
+
 #[derive(Default)]
 struct PrefixCache {
     /// per-(model, namespace) entry pools (KV geometry/format is per model; the namespace
@@ -10040,10 +10282,70 @@ impl PrefixCache {
     }
 
     /// Lease the same whole-entry match that restore will look up, without crediting a hit.
+    #[cfg(test)]
     fn pin_prompt_prefix(&mut self, key: &PoolKey, prompt: &[u32]) -> Option<(PrefixPin, usize)> {
         let i = self.lookup(key, prompt)?;
         let tokens = self.entries.get(key)?[i].toks.len();
         self.pin(key, i).map(|pin| (pin, tokens))
+    }
+
+    /// Lease what the admission reclaim spares for this prompt (`ReclaimPrefixSpare`). The
+    /// longest whole-entry match (`lookup`) is spared as before the restorable spare. When that entry
+    /// cannot re-arm the drafter, a shorter one can (`restorable`), and
+    /// `prefers_restorable(longest_len, restorable_len)` says the request takes the shorter one
+    /// (the routing site's `dspark_prefer_restorable_hit` on the same inputs), the restorable
+    /// entry is spared too and becomes `keep`. Sparing only the longest match let the flush drop
+    /// the tail the preference would have chosen, and the request then served its plain hit plain.
+    fn pin_reclaim_spare(
+        &mut self,
+        key: &PoolKey,
+        prompt: &[u32],
+        restorable: impl Fn(&PrefixEntry) -> bool,
+        prefers_restorable: impl Fn(usize, usize) -> bool,
+    ) -> Option<ReclaimPrefixSpare> {
+        let longest = self.lookup(key, prompt)?;
+        let shape = |px: &Self, i: usize| {
+            let e = &px.entries[key][i];
+            (e.toks.len(), e.bytes)
+        };
+        let (longest_tokens, longest_bytes) = shape(self, longest);
+        let alt = if restorable(&self.entries[key][longest]) {
+            None
+        } else {
+            self.lookup_where(key, prompt, &restorable)
+                .filter(|&i| prefers_restorable(longest_tokens, shape(self, i).0))
+        };
+        if let Some(alt) = alt
+            && let Some(pin) = self.pin(key, alt)
+        {
+            let (tokens, bytes) = shape(self, alt);
+            let also = self.pin(key, longest).map(|pin| SparedEntry {
+                pin,
+                tokens: longest_tokens,
+                bytes: longest_bytes,
+            });
+            return Some(ReclaimPrefixSpare {
+                keep: SparedEntry { pin, tokens, bytes },
+                also,
+            });
+        }
+        self.pin(key, longest).map(|pin| ReclaimPrefixSpare {
+            keep: SparedEntry {
+                pin,
+                tokens: longest_tokens,
+                bytes: longest_bytes,
+            },
+            also: None,
+        })
+    }
+
+    /// Drop one unleased entry by its lease handle (the reclaim spare's targeted drop). Returns
+    /// the device bytes freed, `None` when the entry is gone or still leased.
+    fn evict_entry(&mut self, pin: &PrefixPin) -> Option<usize> {
+        let i = self.id_index(pin)?;
+        let dead = self.remove_at(&pin.key, i)?;
+        self.evictions += 1;
+        Some(dead.bytes)
     }
 
     fn admission_restore_rows(&self, pin: &PrefixPin, prompt: &[u32]) -> Option<usize> {
@@ -30003,16 +30305,67 @@ pub fn run(
                     // reclaim-on-defer. Cold prefill would have to materialize these prefix
                     // tokens in the request's KV again; dropping the donor does not remove
                     // that requirement. Pool/headroom accounting is separate (memra#346).
-                    let reclaim_prefix_pin = if !headroom.sufficient(required) {
+                    // RESTORABLE SPARE: a DFlash request whose longest match cannot re-arm the
+                    // drafter also keeps the shorter drafter-tail entry the restorable-hit
+                    // preference would take (`pin_reclaim_spare`), decided by the same
+                    // `dspark_prefer_restorable_hit` on `admit`'s inputs. Only where that
+                    // preference runs: DFlash may serve this request and both restore doors are
+                    // open.
+                    let mut reclaim_spare = if !headroom.sufficient(required) {
                         let key = (req.model.clone(), req.cache_ns.clone());
-                        px.pin_prompt_prefix(&key, req.prepared_prompt.as_ref().unwrap())
-                            .map(|(pin, tokens)| {
-                                eprintln!(
-                                    "[admit-oom] reclaim spared the prompt's prefix entry \
-                                     ({tokens} tokens, model {model_key})"
-                                );
-                                pin
-                            })
+                        let prompt = req.prepared_prompt.as_ref().unwrap();
+                        let draft = dspark_drafts.get(&model_key).filter(|_| {
+                            estimate_spec
+                                && dspark_prefix_restore_on()
+                                && dspark_partial_restore_on()
+                        });
+                        let tail_window = draft.map(|d| d.cfg.sliding_window + d.cfg.block_size);
+                        let dflash_inputs = draft.map(|draft| {
+                            admission_dflash_inputs(
+                                &req,
+                                model,
+                                draft,
+                                shape,
+                                peer_probe_allows_spec,
+                                &active,
+                                queue.len() + requeue.len(),
+                            )
+                        });
+                        px.pin_reclaim_spare(
+                            &key,
+                            prompt,
+                            |e| {
+                                tail_window.is_some()
+                                    && dspark_entry_restorable(e, prompt_len, tail_window)
+                            },
+                            |plain_len, restorable_len| {
+                                // A host entry longer than the device's best match is promoted
+                                // in `admit`, which then skips the preference: no spare for it.
+                                host_promote_candidate(&hpx, &key, prompt, plain_len).is_none()
+                                    && dflash_inputs.is_some_and(|inputs| {
+                                        dspark_prefer_restorable_hit(
+                                            plain_len,
+                                            restorable_len,
+                                            shape.budget,
+                                            dspark_prefers_cold_over_prefix(inputs),
+                                        )
+                                    })
+                            },
+                        )
+                        .inspect(|spare| match &spare.also {
+                            None => eprintln!(
+                                "[admit-oom] reclaim spared the prompt's prefix entry \
+                                 ({} tokens, model {model_key})",
+                                spare.keep.tokens,
+                            ),
+                            Some(longer) => eprintln!(
+                                "[admit-oom] reclaim spared the prompt's restorable entry \
+                                 ({} tokens, draft tail) and its longer non-restorable entry \
+                                 ({} tokens); if the arrival is still short, parked sessions go \
+                                 first and then one of the two (decode_budget={}, model {model_key})",
+                                spare.keep.tokens, longer.tokens, shape.budget,
+                            ),
+                        })
                     } else {
                         None
                     };
@@ -30126,14 +30479,165 @@ pub fn run(
                                 headroom = next_headroom;
                             }
                         }
+                        // RESTORABLE SPARE, still short with both entries leased: climb the
+                        // parked-session ladder while the longer entry cannot cover the rest, then
+                        // drop one of the two (`longer_droppable`, `reclaim_climb`, `drop_one`).
+                        // A targeted drop, not a second flush: everything else unleased is
+                        // already gone.
+                        let mut evicted_spared = 0usize;
+                        let mut evicted_plain = 0usize;
+                        let mut evicted_spec = 0usize;
+                        let mut evicted_dspark = 0usize;
+                        if !reclaim_landing
+                            && !headroom.sufficient(required)
+                            && reclaim_spare.as_ref().is_some_and(|s| s.also.is_some())
+                        {
+                            let shortfall = primary_unbooked_shortfall(
+                                &engine,
+                                &loaded,
+                                &headroom,
+                                required,
+                                pending_booked,
+                            );
+                            let key = (req.model.clone(), req.cache_ns.clone());
+                            let prompt = req.prepared_prompt.as_ref().unwrap();
+                            let host_allows_longer = reclaim_spare.as_ref().is_some_and(|s| {
+                                host_promote_candidate(&hpx, &key, prompt, s.keep.tokens).is_none()
+                            });
+                            let verdict = reclaim_spare
+                                .as_ref()
+                                .map_or(Err(RECLAIM_KEPT_NO_READING), |s| {
+                                    s.longer_droppable(&px, shortfall, host_allows_longer)
+                                });
+                            // CLIMB FIRST: dormant sessions go, oldest first, until the longer
+                            // entry's bytes cover what remains (`reclaim_climb`). If the ladder
+                            // runs out first, memory cannot hold the restorable entry, and the
+                            // longer one stays.
+                            let parked_before = evicted_plain + evicted_spec + evicted_dspark;
+                            let climb = verdict.and_then(|longer_bytes| {
+                                reclaim_climb(
+                                    shortfall.unwrap_or(usize::MAX),
+                                    longer_bytes,
+                                    || {
+                                        let pool = evict_oldest_parked(
+                                            &mut reuse,
+                                            &mut spec_reuse,
+                                            &mut dspark_reuse,
+                                            &mut reuse_metrics,
+                                        );
+                                        match pool.as_ref() {
+                                            Some(ParkedPool::Plain) => evicted_plain += 1,
+                                            Some(ParkedPool::Spec) => evicted_spec += 1,
+                                            Some(ParkedPool::Dspark) => evicted_dspark += 1,
+                                            None => {}
+                                        }
+                                        pool.is_some()
+                                    },
+                                    || {
+                                        primary_unbooked_shortfall(
+                                            &engine,
+                                            &loaded,
+                                            &headroom,
+                                            required,
+                                            pending_booked,
+                                        )
+                                    },
+                                )
+                            });
+                            let climbed =
+                                evicted_plain + evicted_spec + evicted_dspark - parked_before;
+                            let at_drop = match climb {
+                                Ok(left) if left != usize::MAX => Some(left),
+                                _ => shortfall,
+                            };
+                            let pool_before_drop = pool_readings(&engine, &loaded);
+                            let dropped = if climb == Ok(0) {
+                                // The ladder alone made room: both entries stay.
+                                eprintln!(
+                                    "[admit-oom] reclaim kept the prompt's restorable and longer \
+                                     entries: {climbed} parked sessions covered the shortfall \
+                                     (model {model_key})"
+                                );
+                                if let Some(next_headroom) = admission_headroom(
+                                    &engine,
+                                    &loaded,
+                                    device_requirements.as_deref(),
+                                )
+                                .map(book)
+                                {
+                                    headroom = next_headroom;
+                                }
+                                None
+                            } else {
+                                reclaim_spare
+                                    .as_mut()
+                                    .and_then(|s| s.drop_one(&mut px, climb.err()))
+                            };
+                            if let Some(dropped) = dropped {
+                                eprintln!(
+                                    "[admit-oom] reclaim {} the prompt's {} entry ({} tokens): \
+                                     still short by {} with both spared after {climbed} parked \
+                                     sessions; {} (model {model_key})",
+                                    if dropped.freed.is_some() {
+                                        "dropped"
+                                    } else {
+                                        "released its lease on"
+                                    },
+                                    if dropped.longer {
+                                        "longer non-restorable"
+                                    } else {
+                                        "restorable"
+                                    },
+                                    dropped.tokens,
+                                    at_drop.map_or_else(
+                                        || "an amount with no single reading".to_string(),
+                                        |b| format!("{:.0}MB", b as f64 / 1e6),
+                                    ),
+                                    match (dropped.freed, dropped.kept_longer) {
+                                        (None, None) => {
+                                            "another session still leases it, nothing freed"
+                                                .to_string()
+                                        }
+                                        (None, Some(why)) => format!(
+                                            "another session still leases it, nothing freed; the \
+                                             longer entry stays as before the restorable spare: \
+                                             {why}"
+                                        ),
+                                        (Some(_), None) => "the restorable entry stays for the \
+                                                            restorable-hit preference"
+                                            .to_string(),
+                                        (Some(_), Some(why)) => format!(
+                                            "the longer entry stays as before the restorable \
+                                             spare: {why}"
+                                        ),
+                                    },
+                                );
+                                if let Some(bytes) = dropped.freed {
+                                    evicted_spared = 1;
+                                    settle_reclaimed_prefix_bytes(
+                                        &engine,
+                                        &loaded,
+                                        &pool_before_drop,
+                                        bytes,
+                                        "reclaim-on-defer",
+                                    );
+                                    if let Some(next_headroom) = admission_headroom(
+                                        &engine,
+                                        &loaded,
+                                        device_requirements.as_deref(),
+                                    )
+                                    .map(book)
+                                    {
+                                        headroom = next_headroom;
+                                    }
+                                }
+                            }
+                        }
                         // Dormant sessions are reclaimable capacity, not a reason to queue live
                         // work. Evict globally oldest across both existing pool maps, re-reading
                         // effective headroom after each drop. This is deliberately only a hook:
                         // pool keys, vectors, identity, checkpoints, and resume selection remain
                         // owned by their respective lanes.
-                        let mut evicted_plain = 0usize;
-                        let mut evicted_spec = 0usize;
-                        let mut evicted_dspark = 0usize;
                         while !reclaim_landing && !headroom.sufficient(required) {
                             match evict_oldest_parked(
                                 &mut reuse,
@@ -30156,6 +30660,7 @@ pub fn run(
                             };
                             headroom = next_headroom;
                         }
+                        let evicted_prefix = evicted_prefix + evicted_spared;
                         if evicted_prefix + evicted_plain + evicted_spec + evicted_dspark > 0 {
                             eprintln!(
                                 "[admit-oom] reclaim-on-defer: evicted {} prefix entries + {} plain \
@@ -30169,7 +30674,10 @@ pub fn run(
                             );
                         }
                     }
-                    if let Some(pin) = reclaim_prefix_pin {
+                    if let Some(spare) = reclaim_spare {
+                        // The passed-over longer entry was spared from the flush only; the plan
+                        // reads the entry this request keeps.
+                        let pin = spare.into_keep(&mut px);
                         // #361: the normal full-cost path has reclaimed every unleased
                         // donor and parked session it needs. Only a concrete retained
                         // single-device restore can now replace the cold workspace charge.
@@ -30212,51 +30720,18 @@ pub fn run(
                                     model.cfg.n_vocab as usize,
                                 )
                                 .and_then(|route| {
-                                    let sampler = Sampler::new(req.sampler_cfg.clone());
-                                    let greedy = sampler.is_greedy();
                                     // Nomination must use the same DFlash decision as consume.
                                     // A route veto leaves the full charge and normal queue/defer
                                     // policy intact, rather than committing a plan that must 429.
-                                    route.with_dflash_admission(DsparkColdPrefixAdmission {
-                                        route_ready: serve_spec_enabled()
-                                            && peer_probe_allows_spec
-                                            && !memra_engine::pp::pp_host_bounce_active()
-                                            && memra_engine::plan_backend::gdn_dspark_compatible(
-                                                &model.plan,
-                                            ),
-                                        // The validated source already proved full-prompt fit.
-                                        prime_feasible: true,
-                                        greedy,
-                                        greedy_penalized: greedy
-                                            && (sampler.penalty_repeat() != 1.0
-                                                || sampler.penalty_freq() != 0.0
-                                                || sampler.penalty_present() != 0.0),
-                                        sampled: sampler.temperature() > 0.0,
-                                        // can_plan excludes these shapes, and a committed plan
-                                        // suppresses every continuation donor.
-                                        constrained: false,
-                                        vision: false,
-                                        cold: true,
-                                        gate_on: spec_gate_on(),
-                                        pin: spec_k_pin(),
-                                        projected_wave: projected_admission_wave(
-                                            active.len(),
-                                            queue.len() + requeue.len(),
-                                        ),
-                                        low: spec_gate_low(),
-                                        n_active: active.len(),
-                                        has_live_non_demotable: active.iter().any(|s| {
-                                            dspark_blocks_greedy_widening(
-                                                s.dspark_on,
-                                                s.sampler.is_greedy(),
-                                                s.constraint.is_some(),
-                                            )
-                                        }),
-                                        prompt_len,
-                                        decode_budget: shape.budget,
-                                        hit_available: true,
-                                        hit_restorable: dspark_partial_restore_on(),
-                                    })
+                                    route.with_dflash_admission(admission_dflash_inputs(
+                                        &req,
+                                        model,
+                                        draft,
+                                        shape,
+                                        peer_probe_allows_spec,
+                                        &active,
+                                        queue.len() + requeue.len(),
+                                    ))
                                 }),
                             Some(_) => None,
                             None => Some(AdmissionRestoreRoute::Native),
@@ -35398,6 +35873,15 @@ impl AdmissionHeadroom {
         }
     }
 
+    /// Bytes the primary device is short of `primary_required`; `None` for a per-device reading,
+    /// which has no single figure.
+    fn primary_shortfall(&self, primary_required: usize) -> Option<usize> {
+        match self {
+            Self::Primary { free_bytes, .. } => Some(primary_required.saturating_sub(*free_bytes)),
+            Self::Devices(_) => None,
+        }
+    }
+
     fn limiting_free_bytes(&self) -> usize {
         match self {
             Self::Primary { free_bytes, .. } => *free_bytes,
@@ -36471,13 +36955,7 @@ fn admit(
     let mut dspark_restorable_hit = dspark_prefix_restore_on()
         && consumable_hit
             .map(|i| {
-                let en = &px.entries[&pool_key][i];
-                dspark_hit_is_restorable(en.toks.len(), prompt.len(), en.dspark_draft.is_some())
-                    && !dspark_entry_tail_floor_short(
-                        en.dspark_draft.as_ref(),
-                        prompt.len(),
-                        dspark_tail_window,
-                    )
+                dspark_entry_restorable(&px.entries[&pool_key][i], prompt.len(), dspark_tail_window)
             })
             .unwrap_or(false);
     let cold_prefix_inputs = DsparkColdPrefixAdmission {
@@ -36521,12 +36999,7 @@ fn admit(
     {
         let plain_len = px.entries[&pool_key][plain_i].toks.len();
         let alt = px.lookup_where(&pool_key, &prompt, |e| {
-            dspark_hit_is_restorable(e.toks.len(), prompt.len(), e.dspark_draft.is_some())
-                && !dspark_entry_tail_floor_short(
-                    e.dspark_draft.as_ref(),
-                    prompt.len(),
-                    dspark_tail_window,
-                )
+            dspark_entry_restorable(e, prompt.len(), dspark_tail_window)
         });
         if let Some(alt_i) = alt {
             let alt_len = px.entries[&pool_key][alt_i].toks.len();
@@ -49156,8 +49629,15 @@ mod tests {
             .find("let mut dspark_restorable_hit = ")
             .expect("the computation site exists");
         assert!(
-            src[site..site + 400].contains("dspark_hit_is_restorable("),
-            "dspark_restorable_hit must be computed via dspark_hit_is_restorable"
+            src[site..site + 400].contains("dspark_entry_restorable("),
+            "dspark_restorable_hit must be computed via dspark_entry_restorable"
+        );
+        let helper = src
+            .find("fn dspark_entry_restorable_with(")
+            .expect("the shared predicate exists");
+        assert!(
+            src[helper..helper + 400].contains("dspark_hit_is_restorable_with("),
+            "dspark_entry_restorable must go through dspark_hit_is_restorable_with"
         );
     }
 
@@ -49231,7 +49711,7 @@ mod tests {
         let production = &src[..src.find("\nmod tests {").unwrap()];
         let squashed = production.split_whitespace().collect::<Vec<_>>().join(" ");
         assert!(squashed.contains(
-            "let alt = px.lookup_where(&pool_key, &prompt, |e| { dspark_hit_is_restorable("
+            "let alt = px.lookup_where(&pool_key, &prompt, |e| { dspark_entry_restorable(e, prompt.len(), dspark_tail_window) });"
         ));
         assert!(squashed.contains("if dspark_prefer_restorable_hit( plain_len, alt_len, budget, dspark_prefers_cold_over_prefix(with_alt), ) {"));
     }
@@ -49301,8 +49781,9 @@ mod tests {
             !super::dspark_entry_tail_floor_short(None, 10, Some(window)),
             "no tail"
         );
-        // Admission, both probe sites and the restore block apply the same rule (production
-        // source only, comment-stripped, so neither this test nor a comment satisfies it).
+        // Admission, both probe sites and the reclaim spare (through the shared predicate) and
+        // the restore block apply the same rule (production source only, comment-stripped, so
+        // neither this test nor a comment satisfies it).
         let src = include_str!("worker.rs");
         let production = &src[..src.find("\nmod tests {").expect("the tests module")];
         let code: String = production
@@ -49314,8 +49795,10 @@ mod tests {
         for needle in [
             "if (full_cover || partial_ok) && entry_tail_present && !tail_floor_short && shape_ok {",
             "|| tail.validate_restore(cfg, ctx_cap).is_err() || dspark_floored_tail_too_short( tail.floor, prompt.len(), cfg.sliding_window + cfg.block_size, )",
-            "dspark_hit_is_restorable(en.toks.len(), prompt.len(), en.dspark_draft.is_some()) && !dspark_entry_tail_floor_short(",
-            "dspark_hit_is_restorable(e.toks.len(), prompt.len(), e.dspark_draft.is_some()) && !dspark_entry_tail_floor_short(",
+            "dspark_hit_is_restorable_with( e.toks.len(), prompt_len, e.dspark_draft.is_some(), partial_on, ) && !dspark_entry_tail_floor_short(e.dspark_draft.as_ref(), prompt_len, tail_window)",
+            "dspark_entry_restorable(&px.entries[&pool_key][i], prompt.len(), dspark_tail_window)",
+            "dspark_entry_restorable(e, prompt.len(), dspark_tail_window)",
+            "dspark_entry_restorable(e, prompt_len, tail_window)",
         ] {
             assert!(
                 squashed.contains(needle),
@@ -51756,6 +52239,277 @@ mod tests {
         assert!(px.unpin(&pin));
         assert_eq!(px.evict_all(), 1, "without the exemption reclaim takes E");
         assert_prefix_cache_accounting(&px);
+    }
+
+    /// The RTX 5090 receipt (Q38 + DFlash2, doors forced on, prefix cache 4000 MB): r1 served P+X
+    /// plain and published a 3,104-token plain entry (249 MB), r2 cold-primed DFlash on P and
+    /// published a 2,592-token tail entry (318 MB, the drafter tail included), and r3 (P+X plus a
+    /// question, 3,161 tokens, 96 decode tokens) hit reclaim-on-defer. Sparing only the longest
+    /// match evicted the tail, so the restorable-hit preference never ran and r3 served plain.
+    /// This covers the spare decision, `longer_droppable` and `drop_one`; the site's climb of the
+    /// parked-session ladder is anchored on production source at the end.
+    #[test]
+    fn admission_reclaim_spares_the_restorable_tail_the_preference_takes() {
+        let k = key("tenant");
+        let prompt = toks(3_161);
+        let window = 2_048 + 8;
+        // The production predicate with the partial door open (the unit-test latch reads it shut).
+        let restorable = |e: &PrefixEntry| {
+            super::dspark_entry_restorable_with(e, prompt.len(), Some(window), true)
+        };
+        let fill_with = |plain_bytes: usize| {
+            let mut px = PrefixCache::default();
+            let mut unrelated = entry(&k, vec![u32::MAX; 128]);
+            unrelated.bytes = 50;
+            px.insert_with_budget(&k, unrelated, "unrelated", 10_000);
+            let mut tail = entry(&k, toks(2_592));
+            tail.bytes = 318;
+            tail.dspark_draft = Some(memra_engine::dflash::DflashKvTail {
+                layers: Vec::new(),
+                base: 2_592 - window,
+                rows: window,
+                len: 2_592,
+                row_bytes: 8,
+                floor: 0,
+            });
+            px.insert_with_budget(&k, tail, "dspark-boundary", 10_000);
+            let mut plain = entry(&k, toks(3_104));
+            plain.bytes = plain_bytes;
+            px.insert_with_budget(&k, plain, "lcp-split", 10_000);
+            px
+        };
+        let fill = || fill_with(249);
+        // 96 decode tokens repay the 512-token extra suffix at the 1/8 cold-prime ratio.
+        let prefers = |plain, alt| super::dspark_prefer_restorable_hit(plain, alt, 96, true);
+        let hit = |px: &PrefixCache| px.lookup(&k, &prompt).map(|i| px.entries[&k][i].toks.len());
+
+        let mut px = fill();
+        let spare = px
+            .pin_reclaim_spare(&k, &prompt, restorable, prefers)
+            .expect("the prompt has a whole-entry match");
+        assert_eq!((spare.keep.tokens, spare.keep.bytes), (2_592, 318));
+        let longer = spare.also.as_ref().expect("the longer entry is spared too");
+        assert_eq!((longer.tokens, longer.bytes), (3_104, 249));
+        assert_eq!(
+            px.evict_all(),
+            1,
+            "the flush takes only the unrelated entry"
+        );
+        assert_eq!(
+            hit(&px),
+            Some(3_104),
+            "memory holds both: the longer hit stays"
+        );
+        let alt = px.lookup_where(&k, &prompt, restorable);
+        assert_eq!(alt.map(|i| px.entries[&k][i].toks.len()), Some(2_592));
+        let keep = spare.into_keep(&mut px);
+        assert!(px.unpin(&keep));
+        assert_eq!(px.evict_all(), 2, "no lease outlives the reclaim");
+        assert_prefix_cache_accounting(&px);
+
+        // Still short with both spared. Whether the longer entry may go (`longer_droppable`):
+        // with both solely leased and a reading it may, and the site climbs the parked ladder
+        // until its 249 bytes cover the rest (the receipt's shape was short by 259 MB).
+        let sole = |px: &mut PrefixCache| {
+            let spare = px
+                .pin_reclaim_spare(&k, &prompt, restorable, prefers)
+                .unwrap();
+            assert_eq!(px.evict_all(), 1);
+            spare
+        };
+        for (shortfall, host_ok, want) in [
+            (Some(130), true, Ok(249)),
+            (Some(259), true, Ok(249)),
+            (None, true, Err(super::RECLAIM_KEPT_NO_READING)),
+            (Some(130), false, Err(super::RECLAIM_KEPT_HOST)),
+        ] {
+            let mut px = fill();
+            let spare = sole(&mut px);
+            assert_eq!(
+                spare.longer_droppable(&px, shortfall, host_ok),
+                want,
+                "{shortfall:?}"
+            );
+            let keep = spare.into_keep(&mut px);
+            assert!(px.unpin(&keep));
+        }
+        // The drop itself: the longer entry (the climb covered it), or the tail (it did not, or
+        // the plan is closed), which is the outcome before the spare.
+        for (kept_longer, freed, left) in [
+            (None, 249, 2_592),
+            (Some(super::RECLAIM_KEPT_LADDER), 318, 3_104),
+        ] {
+            let mut px = fill();
+            let mut spare = sole(&mut px);
+            let dropped = spare
+                .drop_one(&mut px, kept_longer)
+                .expect("two entries spared");
+            assert_eq!(
+                (dropped.longer, dropped.freed, dropped.kept_longer),
+                (kept_longer.is_none(), Some(freed), kept_longer)
+            );
+            assert_eq!(hit(&px), Some(left));
+            assert_eq!(spare.keep.tokens, left);
+            assert!(
+                spare.drop_one(&mut px, None).is_none(),
+                "one drop per reclaim"
+            );
+            let keep = spare.into_keep(&mut px);
+            assert!(px.unpin(&keep));
+            assert_eq!(px.evict_all(), 1);
+            assert_prefix_cache_accounting(&px);
+        }
+
+        // Another session also leases the longer entry: dropping it would free nothing, so the
+        // tail goes, as before the spare.
+        let mut px = fill();
+        let mut spare = sole(&mut px);
+        let other = px.pin_n(&k, px.lookup(&k, &prompt).unwrap(), 1).unwrap();
+        let verdict = spare.longer_droppable(&px, Some(130), true);
+        assert_eq!(verdict, Err(super::RECLAIM_KEPT_LEASED));
+        let dropped = spare.drop_one(&mut px, verdict.err()).unwrap();
+        assert_eq!((dropped.longer, dropped.freed), (false, Some(318)));
+        assert_eq!(hit(&px), Some(3_104));
+        assert!(px.unpin(&other));
+        let keep = spare.into_keep(&mut px);
+        assert!(px.unpin(&keep));
+        // Another session leases the tail: dropping it would free nothing, so the longer entry
+        // goes at once (no climb), with or without a reading, unless a host entry would be
+        // promoted over the tail.
+        for (shortfall, host_ok, want) in [
+            (Some(300), true, Ok(usize::MAX)),
+            (None, true, Ok(usize::MAX)),
+            (Some(300), false, Err(super::RECLAIM_KEPT_HOST)),
+        ] {
+            let mut px = fill();
+            let spare = sole(&mut px);
+            let tail_i = px.lookup_where(&k, &prompt, restorable).unwrap();
+            let other = px.pin_n(&k, tail_i, 1).unwrap();
+            assert_eq!(
+                spare.longer_droppable(&px, shortfall, host_ok),
+                want,
+                "{shortfall:?}"
+            );
+            assert!(px.unpin(&other));
+            let keep = spare.into_keep(&mut px);
+            assert!(px.unpin(&keep));
+        }
+        let mut px = fill();
+        let mut spare = sole(&mut px);
+        let tail_i = px.lookup_where(&k, &prompt, restorable).unwrap();
+        let other = px.pin_n(&k, tail_i, 1).unwrap();
+        let dropped = spare.drop_one(&mut px, None).unwrap();
+        assert_eq!((dropped.longer, dropped.freed), (true, Some(249)));
+        assert_eq!(hit(&px), Some(2_592));
+        assert!(px.unpin(&other));
+        let keep = spare.into_keep(&mut px);
+        assert!(px.unpin(&keep));
+        assert_eq!(px.evict_all(), 1, "the tail, unleased again");
+        assert_prefix_cache_accounting(&px);
+
+        // When the preference does not hold, only the longest match is spared, as before.
+        for (budget, route_admits) in [(63, true), (96, false)] {
+            let mut px = fill();
+            let spare = px
+                .pin_reclaim_spare(&k, &prompt, restorable, |plain, alt| {
+                    super::dspark_prefer_restorable_hit(plain, alt, budget, route_admits)
+                })
+                .unwrap();
+            assert_eq!((spare.keep.tokens, spare.also.is_none()), (3_104, true));
+            assert_eq!(px.evict_all(), 2, "the tail goes with the unrelated entry");
+            let keep = spare.into_keep(&mut px);
+            assert!(px.unpin(&keep));
+        }
+        // A shut door is the same.
+        let mut px = fill();
+        let spare = px
+            .pin_reclaim_spare(&k, &prompt, |_| false, |_, _| true)
+            .unwrap();
+        assert_eq!((spare.keep.tokens, spare.also.is_none()), (3_104, true));
+        let keep = spare.into_keep(&mut px);
+        assert!(px.unpin(&keep));
+        // A longest match that is itself restorable needs no second spare.
+        let mut px = fill();
+        let exact = toks(2_592);
+        let spare = px
+            .pin_reclaim_spare(&k, &exact, |e| e.dspark_draft.is_some(), |_, _| true)
+            .unwrap();
+        assert_eq!((spare.keep.tokens, spare.also.is_none()), (2_592, true));
+        let keep = spare.into_keep(&mut px);
+        assert!(px.unpin(&keep));
+
+        // The climb on the receipt's shape (short by 259 MB, the longer entry 249 MB): parked
+        // sessions go until the longer entry covers the rest; the ladder alone can make room; a
+        // ladder that runs out, or a lost reading, keeps the longer entry.
+        for (parked, want, evicted) in [
+            (vec![], Err(super::RECLAIM_KEPT_LADDER), 0),
+            (vec![5], Err(super::RECLAIM_KEPT_LADDER), 1),
+            (vec![20], Ok(239), 1),
+            (vec![5, 5, 5], Ok(249), 2),
+            (vec![1_000], Ok(0), 1),
+        ] {
+            let mut pool: std::collections::VecDeque<usize> = parked.into();
+            let short = std::cell::Cell::new(259usize);
+            let mut n = 0;
+            let got = super::reclaim_climb(
+                259,
+                249,
+                || match pool.pop_front() {
+                    Some(b) => {
+                        n += 1;
+                        short.set(short.get().saturating_sub(b));
+                        true
+                    }
+                    None => false,
+                },
+                || Some(short.get()),
+            );
+            assert_eq!((got, n), (want, evicted));
+        }
+        assert_eq!(
+            super::reclaim_climb(259, 249, || true, || None),
+            Err(super::RECLAIM_KEPT_NO_READING)
+        );
+        assert_eq!(
+            super::reclaim_climb(100, 249, || unreachable!(), || None),
+            Ok(100)
+        );
+
+        // The reclaim site: the spare is decided before the flush; inside the drop gate the climb
+        // runs before the drop, the ladder alone can keep both, and the main parked ladder comes
+        // after; the preference reads `admit`'s inputs (production source, squashed).
+        let src = include_str!("worker.rs");
+        let production = &src[..src.find("\nmod tests {").unwrap()];
+        let squashed = production.split_whitespace().collect::<Vec<_>>().join(" ");
+        let at = |needle: &str| {
+            squashed
+                .find(needle)
+                .unwrap_or_else(|| panic!("missing: {needle}"))
+        };
+        let inputs = at("let dflash_inputs = draft.map(|draft| { admission_dflash_inputs(");
+        let pin = at("px.pin_reclaim_spare( &key, prompt,");
+        let flush = at("(px.evict_all(), 0, 0)");
+        let gate = at(
+            "if !reclaim_landing && !headroom.sufficient(required) && reclaim_spare.as_ref().is_some_and(|s| s.also.is_some())",
+        );
+        let shortfall = at(
+            "let shortfall = primary_unbooked_shortfall( &engine, &loaded, &headroom, required, pending_booked, );",
+        );
+        let host = at("host_promote_candidate(&hpx, &key, prompt, s.keep.tokens).is_none()");
+        let drop = at(".and_then(|s| s.drop_one(&mut px, climb.err()))");
+        let ladder = at("while !reclaim_landing && !headroom.sufficient(required) {");
+        assert!(inputs < pin && pin < flush && flush < gate && gate < shortfall);
+        assert!(shortfall < host && host < drop && drop < ladder);
+        // The climb runs inside the drop gate, before the drop and the main ladder, and stops
+        // once the longer entry's bytes cover what remains.
+        let climb = at(
+            "let climb = verdict.and_then(|longer_bytes| { reclaim_climb( shortfall.unwrap_or(usize::MAX), longer_bytes,",
+        );
+        let keep_both = at("let dropped = if climb == Ok(0) {");
+        assert!(host < climb && climb < keep_both && keep_both < drop);
+        at(
+            "host_promote_candidate(&hpx, &key, prompt, plain_len).is_none() && dflash_inputs.is_some_and(|inputs| { dspark_prefer_restorable_hit( plain_len, restorable_len, shape.budget, dspark_prefers_cold_over_prefix(inputs), )",
+        );
     }
 
     #[test]
@@ -62634,10 +63388,10 @@ mod tests {
         // it (definition + the one call site).
         assert_eq!(
             prod.matches("host_promote_candidate(").count(),
-            4,
+            6,
             "definition + the promote hook's two consults (before and after its settle-first) + \
-             the admission probe's decision (WP-A day 18, `host_promote_probe_decision`), nothing \
-             else"
+             the admission probe's decision (WP-A day 18, `host_promote_probe_decision`) + the \
+             admission reclaim's restorable spare (the spare and its drop), nothing else"
         );
         let hook = prod
             .find("fn host_promote_prefix_hit(")
