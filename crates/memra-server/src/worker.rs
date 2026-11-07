@@ -10155,6 +10155,23 @@ impl PrefixCache {
         best.map(|(i, _)| i)
     }
 
+    /// The longest whole-entry cover of `prompt` that `lookup` refuses under the restore grid law,
+    /// by length (the hit site's receipt line).
+    fn longest_inexact_cover(&self, key: &PoolKey, prompt: &[u32]) -> Option<usize> {
+        self.entries
+            .get(key)?
+            .iter()
+            .filter(|e| {
+                let n = e.toks.len();
+                n >= PREFIX_CACHE_MIN_TOKENS
+                    && n <= prompt.len()
+                    && prompt[..n] == e.toks[..]
+                    && !prefix_restore_exact(n, prompt.len(), e.carries_recurrent())
+            })
+            .map(|e| e.toks.len())
+            .max()
+    }
+
     /// [`Self::lookup`] restricted to entries `keep` accepts: the longest such entry whose token
     /// key exactly prefixes `prompt` (same floor, same restore grid law, same pool scoping).
     fn lookup_where(
@@ -36964,6 +36981,29 @@ fn admit(
     } else {
         None
     };
+    // The restore grid law at the hit site, made visible: a longer cover `lookup` skipped
+    // because restoring it would split the prime off the grid (`prefix_restore_exact`).
+    if prefix_on
+        && admission_restore.is_none()
+        && let Some(refused) = px.longest_inexact_cover(&pool_key, &prompt)
+    {
+        let served = consumable_hit.map_or(0, |i| px.entries[&pool_key][i].toks.len());
+        if refused > served {
+            eprintln!(
+                "[prefix-cache] restore grid law: entry {refused} of {} prompt tokens refused \
+                 (recurrent state off the {}-token prime grid or a suffix under {}); {} (model {})",
+                prompt.len(),
+                memra_engine::Engine::gdn_chunk_size(),
+                memra_engine::hybrid_forward::PRIME_MIN_T,
+                if served > 0 {
+                    format!("serving the {served}-token exact hit")
+                } else {
+                    "no exact hit, cold".to_string()
+                },
+                req.model,
+            );
+        }
+    }
     // HOST-TIER PROMOTE (lane/kv-host-spill-20260830): the host tier FEEDS the device cache.
     // On a device miss (or a device hit shallower than the host's best exact-prefix entry),
     // the host probe (SAME exact-token / PC-ISO key rules as `lookup` above) re-materializes
@@ -49716,6 +49756,9 @@ mod tests {
         assert!(squashed.contains(
             "&& prefix_restore_exact(entry.toks.len(), prompt.len(), entry.carries_recurrent())"
         ));
+        assert!(
+            squashed.contains("let Some(refused) = px.longest_inexact_cover(&pool_key, &prompt)")
+        );
     }
 
     /// GPU form of the law on real recurrent planes: an off-grid recurrent entry is not the hit;
@@ -49748,6 +49791,12 @@ mod tests {
             Some(2_992),
             "the whole cover serves"
         );
+        assert_eq!(
+            px.longest_inexact_cover(&k, &toks(3_109)),
+            Some(2_992),
+            "the receipt line"
+        );
+        assert_eq!(px.longest_inexact_cover(&k, &toks(2_992)), None);
         assert_eq!(
             px.lookup_where(&k, &toks(3_109), |e| e.toks.len() == 2_992),
             None,
