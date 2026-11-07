@@ -757,7 +757,7 @@ struct DsparkColdPrefixAdmission {
     hit_available: bool,
     /// Whether that hit can feed the DSPARK CONVERSION rather than only the plain path
     /// (`dspark_entry_restorable`: the entry carries a draft tail, it covers the prompt whole
-    /// or - under `MEMRA_DSPARK_PARTIAL_RESTORE` - as a strict prefix, and its tail floor leaves
+    /// or - under the restore switch - as a strict prefix, and its tail floor leaves
     /// the drafter window).
     ///
     /// WHY IT DEFEATS THE SHAPE VETO (lane/dspark-boundary-capture, memra#248). The veto's
@@ -889,27 +889,32 @@ fn dspark_prefers_cold_over_prefix_with(
         )
 }
 
-/// Device default of the three DFlash prefix-restore doors (`MEMRA_DSPARK_PREFIX_RESTORE`,
-/// `MEMRA_DSPARK_PARTIAL_RESTORE`, `MEMRA_DSPARK_BOUNDARY_CAPTURE`), set once at boot when
-/// DFlash is armed (`MEMRA_DSPARK_SPEC=1`). ON on GB10 and the RTX PRO 6000 Max-Q, whose
-/// restored-vs-cold byte-identity gate is green with all three armed (memra#1031 cold-drafter
-/// gate). OFF everywhere else (owner, 2026-11-05: "Spark + Max-Q only"), including:
+/// Device default of the DFlash prefix-restore switch (`MEMRA_DSPARK_PREFIX_RESTORE`), set once
+/// at boot when DFlash is armed (`MEMRA_DSPARK_SPEC=1`). The switch arms three behaviors as one
+/// program: the whole-entry restore of a draft tail, the strict-prefix restore
+/// (`dspark_partial_restore_on`) and the render-stable boundary capture
+/// (`dspark_boundary_capture_on`). They were three doors until 2026-11-07, when a partial
+/// combination (restore alone) was measured to leave the cold text on the RTX 5090
+/// (research/plain-restore-grid-20261107/); only all three together ever passed the gate. ON on
+/// GB10 and the RTX PRO 6000 Max-Q, whose restored-vs-cold byte-identity gate is green with the
+/// switch on (memra#1031 cold-drafter gate). OFF everywhere else (owner, 2026-11-05: "Spark +
+/// Max-Q only"), including:
 /// - every RTX 5090: its gate is green too, but on the 24 GB laptop card the doors' memory
 ///   cost refuses long prompts one concurrency step sooner
 ///   (research/dflash-restorable-hit-20261103/rig5090-flip/);
 /// - the other RTX PRO 6000 editions, which have no memra#1031 cold-drafter gate yet.
 ///
-/// `1` arms the doors on any device. Until boot sets it the default reads OFF, so a boot
+/// `1` arms the switch on any device. Until boot sets it the default reads OFF, so a boot
 /// without DFlash, and every unit test, keeps the pre-flip behavior.
 static DSPARK_RESTORE_DEVICE_DEFAULT: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
 
-/// The devices whose restore doors default ON: GB10 (unified-memory 120a family) and the RTX
+/// The devices whose restore switch defaults ON: GB10 (unified-memory 120a family) and the RTX
 /// PRO 6000 Blackwell Max-Q.
 fn dspark_restore_default_for_device(device_name: &str, gb10: bool) -> bool {
     gb10 || (device_name.contains("RTX PRO 6000") && device_name.contains("Max-Q"))
 }
 
-/// One door: an explicit `1` or `0` decides; anything else follows the device default.
+/// The switch: an explicit `1` or `0` decides; anything else follows the device default.
 fn dspark_door(env: Option<&str>, device_default: bool) -> bool {
     match env.map(str::trim) {
         Some("1") => true,
@@ -918,14 +923,7 @@ fn dspark_door(env: Option<&str>, device_default: bool) -> bool {
     }
 }
 
-/// The three restore doors that follow `DSPARK_RESTORE_DEVICE_DEFAULT`.
-const DSPARK_RESTORE_DOORS: [&str; 3] = [
-    "MEMRA_DSPARK_PREFIX_RESTORE",
-    "MEMRA_DSPARK_PARTIAL_RESTORE",
-    "MEMRA_DSPARK_BOUNDARY_CAPTURE",
-];
-
-/// A door value that is set but is neither `1` nor `0` (`true`, `on`, `yes`). Before the
+/// A switch value that is set but is neither `1` nor `0` (`true`, `on`, `yes`). Before the
 /// device default such a value meant OFF; now it follows the default, so the boot names it
 /// for a launcher that meant ON or OFF.
 fn dspark_door_unrecognized(env: Option<&str>) -> Option<&str> {
@@ -944,7 +942,8 @@ fn dspark_door_env(var: &str) -> bool {
 }
 
 /// DSPARK PREFIX RESTORE (lane/dspark-draft-plane-20260827). Re-arms a speculative session
-/// from cached draft state. Device default (`DSPARK_RESTORE_DEVICE_DEFAULT`); `1`/`0` decide.
+/// from cached draft state. The one restore switch: device default
+/// (`DSPARK_RESTORE_DEVICE_DEFAULT`); `1`/`0` decide.
 fn dspark_prefix_restore_on() -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *ON.get_or_init(|| dspark_door_env("MEMRA_DSPARK_PREFIX_RESTORE"))
@@ -980,8 +979,9 @@ fn should_probe_prefix_cache(
 /// convert never buys the carrier. A strict-prefix hit (entry shorter than the prompt) fails
 /// this on purpose: the multi-turn shape keeps its pre-lane behavior — `dspark_prefers_cold`
 /// suppresses the probe and the request cold-primes with zero restore cost.
-/// MEMRA_DSPARK_PARTIAL_RESTORE (device default, see `DSPARK_RESTORE_DEVICE_DEFAULT`;
-/// lane/dspark-partial-restore 2026-09-05). Let a STRICT-PREFIX prefix-cache hit re-arm a dspark session: restore the
+/// The STRICT-PREFIX half of the restore switch (`dspark_prefix_restore_on`; its own door
+/// `MEMRA_DSPARK_PARTIAL_RESTORE` until 2026-11-07, lane/dspark-partial-restore 2026-09-05).
+/// Let a STRICT-PREFIX prefix-cache hit re-arm a dspark session: restore the
 /// carrier's trunk planes and draft tail at `entry_toks`, then prime only
 /// `prompt[entry_toks..]` through the SAME `step_dspark_spec` suffix path the reuse pool
 /// already uses for a resumed session.
@@ -1006,12 +1006,12 @@ fn should_probe_prefix_cache(
 /// stays off until it passes it (the carve-out law: a route inheriting a restore path re-gates
 /// its own identity).
 fn dspark_partial_restore_on() -> bool {
-    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| dspark_door_env("MEMRA_DSPARK_PARTIAL_RESTORE"))
+    dspark_prefix_restore_on()
 }
 
-/// MEMRA_DSPARK_BOUNDARY_CAPTURE (device default, see `DSPARK_RESTORE_DEVICE_DEFAULT`;
-/// lane/dspark-boundary-capture 2026-09-06, memra#248). Cut the dspark prefix-cache entry at the prompt's RENDER-STABLE
+/// The CAPTURE half of the restore switch (`dspark_prefix_restore_on`; its own door
+/// `MEMRA_DSPARK_BOUNDARY_CAPTURE` until 2026-11-07, lane/dspark-boundary-capture 2026-09-06,
+/// memra#248). Cut the dspark prefix-cache entry at the prompt's RENDER-STABLE
 /// turn boundary (`plain_checkpoint_boundary`) instead of at prompt end: the cold prime stops
 /// there, snapshots the trunk, and then primes the rest of the prompt onto the same cache.
 ///
@@ -1035,8 +1035,7 @@ fn dspark_partial_restore_on() -> bool {
 /// returns a `grid_align_boundary` value, and the engine REFUSES an off-grid boundary), which
 /// is the measured precondition for a two-call prime to be bit-identical to a monolithic one.
 fn dspark_boundary_capture_on() -> bool {
-    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| dspark_door_env("MEMRA_DSPARK_BOUNDARY_CAPTURE"))
+    dspark_prefix_restore_on()
 }
 
 #[cfg(test)]
@@ -28170,19 +28169,23 @@ pub fn run(
         let restore_default = dspark_restore_default_for_device(&device_name, gb10);
         let _ = DSPARK_RESTORE_DEVICE_DEFAULT.set(restore_default);
         eprintln!(
-            "[dspark] prefix restore doors default {} on {device_name:?} (gb10={gb10}): \
-             restore={} partial={} capture={}",
+            "[dspark] prefix restore switch default {} on {device_name:?} (gb10={gb10}): \
+             MEMRA_DSPARK_PREFIX_RESTORE resolves {} (whole-entry restore, strict-prefix \
+             restore and boundary capture together)",
             if restore_default { "ON" } else { "OFF" },
-            dspark_door_env("MEMRA_DSPARK_PREFIX_RESTORE"),
-            dspark_door_env("MEMRA_DSPARK_PARTIAL_RESTORE"),
-            dspark_door_env("MEMRA_DSPARK_BOUNDARY_CAPTURE"),
+            if dspark_door_env("MEMRA_DSPARK_PREFIX_RESTORE") {
+                "ON"
+            } else {
+                "OFF"
+            },
         );
-        for var in DSPARK_RESTORE_DOORS {
-            if let Some(value) = dspark_door_unrecognized(std::env::var(var).ok().as_deref()) {
-                eprintln!(
-                    "[dspark] {var}={value:?} is neither 1 nor 0, so it follows the default above"
-                );
-            }
+        if let Some(value) =
+            dspark_door_unrecognized(std::env::var("MEMRA_DSPARK_PREFIX_RESTORE").ok().as_deref())
+        {
+            eprintln!(
+                "[dspark] MEMRA_DSPARK_PREFIX_RESTORE={value:?} is neither 1 nor 0, so it follows \
+                 the default above"
+            );
         }
         if let Some(msg) = dspark_spec_boot_conflict(
             std::env::var("MEMRA_SPEC_DFLASH").is_ok(),
