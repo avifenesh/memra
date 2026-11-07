@@ -2617,6 +2617,11 @@ pub struct Metrics {
     /// PLAIN-SESSION AFFINITY (lane/plain-affinity): continuation-pool resumes that rewound to a
     /// prompt-end checkpoint on a rewritten-history turn (subset of continuation_pool_hits).
     pub plain_affinity_rewinds: u64,
+    /// THE POOL GRID LAW (memra#1091): recurrent exact-extension hits rewound to their grid
+    /// checkpoint, and those declined to a cold prime (no checkpoint, under the prime floor, or a
+    /// failed restore). Rewinds are a subset of continuation_pool_hits; declines are not hits.
+    pub continuation_pool_grid_rewinds: u64,
+    pub continuation_pool_grid_declines: u64,
     pub spec_pool_hits: u64,
     pub spec_pool_misses: u64,
     pub spec_pool_affinity_rewinds: u64,
@@ -3071,6 +3076,11 @@ struct ReuseMetrics {
     /// resumed via a rewind checkpoint (rewritten-history turn) rather than exact extension.
     /// Subset of `continuation_hits`; the per-turn resume count the affinity gate reads out.
     plain_affinity_rewinds: u64,
+    /// THE POOL GRID LAW (memra#1091, memra#1093 item 6): exact-extension hits of a recurrent
+    /// cache that rewound to the session's grid checkpoint, and those declined to a cold prime
+    /// (no checkpoint, the floor, or a failed restore). A declined hit is not a continuation hit.
+    continuation_grid_rewinds: u64,
+    continuation_grid_declines: u64,
 }
 
 /// Workspace-aware admission for hyper-trunk prefill (lane/glm5-gpf-workspace, 2026-08-30).
@@ -34820,6 +34830,8 @@ pub fn run(
             m.continuation_pool_hits = reuse_metrics.continuation_hits;
             m.continuation_pool_evictions = reuse_metrics.continuation_evictions;
             m.plain_affinity_rewinds = reuse_metrics.plain_affinity_rewinds;
+            m.continuation_pool_grid_rewinds = reuse_metrics.continuation_grid_rewinds;
+            m.continuation_pool_grid_declines = reuse_metrics.continuation_grid_declines;
             m.spec_pool_hits = reuse_metrics.spec_hits;
             m.spec_pool_misses = reuse_metrics.spec_misses;
             m.spec_pool_affinity_rewinds = reuse_metrics.spec_affinity_rewinds;
@@ -36762,7 +36774,13 @@ fn admit(
         && let Some(e) = reused.take()
     {
         reused = if resume_grid_rewind_on() || cache_carries_recurrent(&e.cache) {
-            grid_rewind_plain(engine, lm, e, &prompt, &req.model)
+            let rewound = grid_rewind_plain(engine, lm, e, &prompt, &req.model);
+            if rewound.is_some() {
+                reuse_metrics.continuation_grid_rewinds += 1;
+            } else {
+                reuse_metrics.continuation_grid_declines += 1;
+            }
+            rewound
         } else {
             Some(e)
         };
@@ -51793,7 +51811,7 @@ mod tests {
         let production = &src[..src.find("\nmod tests {").unwrap()];
         let squashed = production.split_whitespace().collect::<Vec<_>>().join(" ");
         assert!(squashed.contains(
-            "reused = if resume_grid_rewind_on() || cache_carries_recurrent(&e.cache) { grid_rewind_plain(engine, lm, e, &prompt, &req.model) } else { Some(e) };"
+            "reused = if resume_grid_rewind_on() || cache_carries_recurrent(&e.cache) { let rewound = grid_rewind_plain(engine, lm, e, &prompt, &req.model); if rewound.is_some() { reuse_metrics.continuation_grid_rewinds += 1; } else { reuse_metrics.continuation_grid_declines += 1; } rewound } else { Some(e) };"
         ));
         assert!(squashed.contains(
             "if plain_pool_resume_at(committed, Some(pos), prompt.len(), true) != Some(pos) || prompt[..pos] != e.fed[..pos]"
@@ -65539,7 +65557,7 @@ mod tests {
         assert!(live.contains("|| plain_ckpt_nominatable(&prompt, &|t| lm.tok.token_is_control(t)) || resume_grid_rewind_on())"));
         assert!(live.contains("|| plain_ckpt_nominatable(&suffix, &|t| lm.tok.token_is_control(t)) || resume_grid_rewind_on())"));
         assert!(live.contains(
-            "if !resume_exact_on() && let Some(e) = reused.take() { reused = if resume_grid_rewind_on() || cache_carries_recurrent(&e.cache) { grid_rewind_plain(engine, lm, e, &prompt, &req.model) } else { Some(e) }; }"
+            "if !resume_exact_on() && let Some(e) = reused.take() { reused = if resume_grid_rewind_on() || cache_carries_recurrent(&e.cache) { let rewound = grid_rewind_plain(engine, lm, e, &prompt, &req.model);"
         ));
         assert!(live.contains("Some(SpecResumeProbe::Exact(index)) if resume_grid_rewind_on() =>"));
         assert!(
@@ -65548,9 +65566,7 @@ mod tests {
             )
         );
         // The rewind precedes the hit count, so a declined rewind is not a hit.
-        let rewind = live
-            .find("{ grid_rewind_plain(engine, lm, e, &prompt, &req.model) } else { Some(e) };")
-            .unwrap();
+        let rewind = live.find("rewound } else { Some(e) };").unwrap();
         let hit = live[rewind..]
             .find("reuse_metrics.continuation_hits += 1;")
             .unwrap();

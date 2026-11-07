@@ -7657,6 +7657,10 @@ async fn get_metrics(State(st): State<AppState>, headers: HeaderMap) -> Response
             "continuation_pool_hits": m.continuation_pool_hits,
             "continuation_pool_evictions": m.continuation_pool_evictions,
             "plain_affinity_rewinds": m.plain_affinity_rewinds,
+            // memra#1091: the pool grid law's rewinds (subset of continuation_pool_hits) and its
+            // declines to a cold prime (no checkpoint, the prime floor, a failed restore).
+            "continuation_pool_grid_rewinds": m.continuation_pool_grid_rewinds,
+            "continuation_pool_grid_declines": m.continuation_pool_grid_declines,
             "served_dspark": m.served_dspark,
             "served_spec": m.served_spec,
             "served_plain": m.served_plain,
