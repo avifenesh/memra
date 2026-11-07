@@ -1,6 +1,6 @@
-# What the pool grid law costs where it sends a resume cold (memra#1093 item 2, 2026-11-07)
+# What the pool grid law costs where it sends a resume cold (memra#1093 items 2 and 5, 2026-11-07)
 
-Verdict: on the RTX 5090 Laptop the pool grid law (memra#1091) costs about +0.1 s of TTFT on a 3k-token chat turn that the continuation pool used to resume at its parked end; the DSpark-pool decline (memra#1093) costs a long-decode DFlash turn its whole re-prime (TTFT 0.163 -> 2.745 s at 3k tokens), which MEMRA_DSPARK_PREFIX_RESTORE=1 wins back exactly (0.277 s). Neither path fired on the 5090-c8 lane's agentic workload. On the default chat the turn now rewinds to the session's grid checkpoint (TTFT 0.114 -> 0.213 s); with MEMRA_AFFINITY=0, which arms no checkpoint, it is declined and served by the prefix cache's on-grid seed (0.110 -> 0.217 s). Raw completions never reached the plain pool in either arm (0.323 vs 0.322 s). The prefix cache's on-grid seeds carry the declined turns, so arming a checkpoint for every recurrent session would win back no more than that 0.1 s.
+Verdict: on the RTX 5090 Laptop the pool grid law (memra#1091) costs about +0.1 s of TTFT on a 3k-token chat turn that the continuation pool used to resume at its parked end; the DSpark-pool decline (memra#1093) costs a long-decode DFlash turn its whole re-prime (TTFT 0.163 -> 2.745 s at 3k tokens), which MEMRA_DSPARK_PREFIX_RESTORE=1 wins back (0.277 s, by the DSPARK restore path #1083's switch-on pair cells found byte-equal on this card). Neither path fired on the 5090-c8 lane's agentic workload (where DFlash never served). On the default chat the turn now rewinds to the session's grid checkpoint (TTFT 0.114 -> 0.213 s); with MEMRA_AFFINITY=0, which arms no checkpoint, it is declined and served by the prefix cache's on-grid seed (0.110 -> 0.217 s). Raw completions never reached the plain pool in either arm (0.323 vs 0.322 s). The prefix cache's on-grid seeds carry the declined turns, so arming a checkpoint for every recurrent session would win back no more than that 0.1 s.
 
 ## Cell
 
@@ -27,8 +27,9 @@ answer differs from the cold one (memra#1091), so its completion lengths differ.
 
 What the rows say:
 
-- The cost is the re-prime from the grid point (3,072, or the prefix seed at 2,944) instead of from the
-  parked end (about 3,113): 40-70 more rows, about 0.1 s.
+- The cost is the re-prime from the grid point (2,944 here: the checkpoint rewind on the default chat,
+  the prefix seed with MEMRA_AFFINITY=0) instead of from the parked end (2,975 to 2,986): 31 to 42 more
+  rows (62 to 73 primed against 31), about 0.1 s.
 - Raw completions re-tokenize the previous completion at the seam, so the plain pool (no text tier)
   never takes the turn; the grid law changes nothing there.
 - With the prefix cache off, turn 2 runs DFlash cold and parks in the DSpark pool, which then resumes
@@ -36,14 +37,14 @@ What the rows say:
 - Not measured here: glm5_next trunks (no glm5_next model fits the 24 GB card) and DFlash sessions
   demoted to plain under load (needs a sustained load shape).
 
-## Item 3, arming a checkpoint for every recurrent session
+## Item 5, arming a checkpoint for every recurrent session
 
 A checkpoint at the session's grid boundary would let the declined MEMRA_AFFINITY=0 turn rewind instead
 of taking the prefix seed. Both re-prime from a grid point a few dozen rows before the prompt end, so the
 win is bounded by the 0.1 s above. Arming costs a recurrent-state snapshot per session (about 157 MB on
 this model) and takes raw-prompt sessions out of the in-batch fanout and prime-batch paths. Not armed.
 
-## The DSpark-pool decline (memra#1093 item 1)
+## The DSpark-pool decline (memra#1093 item 2)
 
 `run-3-dspark-long/`: the chat at the default with max_tokens 96 / 1024 / 512, so turns 2 and 3 run
 DFlash and turn 3 is the DSpark pool's exact extension. Base = main's behavior (05d93be269), fix =
@@ -62,8 +63,9 @@ with `MEMRA_DSPARK_PREFIX_RESTORE=1`, ABBA:
 | switch default (OFF) | 2.608 s | 2.688 s | cold DFlash primes |
 | switch ON | 0.282 s | 0.277 s | DSPARK restore from on-grid entries (2,848, then 2,944) |
 
-With the switch on, the DFlash turn restores exactly from an on-grid prefix entry that carries the
-draft tail and primes the rest; it recovers the speed the decline gave up, and turn 2 too. The 5090
+With the switch on, the DFlash turn restores from an on-grid prefix entry that carries the draft tail
+and primes the rest (the path #1083's switch-on pair cells found byte-equal on this card; this cell
+records timing, not text); it recovers the speed the decline gave up, and turn 2 too. The 5090
 default is OFF for memory (memra#1069); re-pricing that default is the memra#1093 follow-up.
 
 ## How often the paths fire on the agentic workload
@@ -72,5 +74,6 @@ default is OFF for memory (memra#1069); re-pricing that default is the memra#109
 context 32,768) on the fix binary c371b5bf98, once at its own configuration (MTP) and once with DFlash
 armed. `counts.tsv` holds the server-log counts: 0 pool resumes, 0 plain rewinds or refusals, 0 DSpark
 declines in both runs; the prefix cache served 34 and 44 hits. Under that memory pressure DFlash never
-served a request (0 `dspark-acc` lines), and the agentic client re-sends each body with its own history,
-so neither pool sees an exact extension.
+served a request (0 `dspark-acc` lines; 8 of 29 measured requests ended 408), so that arm says nothing
+about DFlash traffic, and the agentic client re-sends each body with its own history, so neither pool
+sees an exact extension.
