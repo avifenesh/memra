@@ -5589,7 +5589,8 @@ impl crate::hybrid::HybridModel {
         // lcp=13468`, off by exactly one token every turn, and a 152,665-token shared prefix
         // re-primed from zero on the long shape. Cutting at the render-stable boundary is
         // what makes the entry a TRUE PREFIX of the next turn, which is the whole
-        // precondition `MEMRA_DSPARK_PARTIAL_RESTORE` (memra#252) waits on.
+        // precondition the strict-prefix restore (memra#252, now part of the one restore switch
+        // `MEMRA_DSPARK_PREFIX_RESTORE`) waits on.
         //
         // Mandatory draft-KV allocation + ingest has already succeeded, so the optional
         // snapshot can no longer turn a session that would have fit into a draft-allocation

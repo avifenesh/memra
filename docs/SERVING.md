@@ -3028,26 +3028,6 @@ start. Operator-visible consequences, stated plainly:
   byte identity hold. Still by inspection only: `prefix_fanout_groups` takes the raw in-batch
   LCP as its capture length.
 
-**The hit site enforces the same law since 2026-11-07.** One capture site still ended at the
-prompt: the DFlash tail entry with its boundary capture off, whose length is the prompt's. A
-later, longer prompt restored it plain and primed from that off-grid start. On the local RTX 5090
-with only the restore door set (`MEMRA_DSPARK_PREFIX_RESTORE=1`), turn 2 of a three-turn chat
-restored 2,992 tokens and primed from there, and turn 3, resumed from rows that prime wrote, left
-the cold text (384 vs 372 characters). Two changes close it:
-
-- Every prefix-cache probe that names the entry the hit site restores (`PrefixCache::lookup` and
-  its filtered form, the host tier's lookup, the retained-prefix admission plan) skips an entry
-  that carries recurrent state unless it covers the prompt whole or ends on the grid with at
-  least `PRIME_MIN_T` suffix tokens (`prefix_restore_exact`, worker.rs). The longest entry that
-  qualifies serves instead, or the request primes cold. The hit site prints
-  `[prefix-cache] restore grid law: entry <N> of <P> prompt tokens refused ...` when a longer
-  cover was skipped. Attention-only entries are split-invariant and keep every whole-entry hit.
-- The three DFlash restore doors are one switch (`MEMRA_DSPARK_PREFIX_RESTORE`, FLAGS.md
-  "Removed doors, 2026-11-07"), so the tail entry is always cut at the render-stable boundary
-  when it is published at all.
-
-Receipts: `research/plain-restore-grid-20261107/`.
-
 Gates: `tools/prefix-newest-turn-fits-gate.py` (V5 identity and V6 grid are verdict clauses)
 and `tools/prefix-restore-identity-gate.py` (the five restore points), red on the pre-fix
 binary and green on the fix on the local RTX 5090, green on the fix on one RTX PRO 6000
@@ -3059,6 +3039,38 @@ prefill never reproduces (`primepath --hist` measures that arm: bounded logit pe
 flips only at near-ties). That path carries the documented cached-hit-vs-fresh-prime near-tie
 contract above; the valid assertions everywhere are per-program determinism, grid-aligned
 byte-identity, and confinement + near-tie-only flips across programs.
+
+**The DFlash capture and the hit site follow the same law since 2026-11-07.** The DFlash prompt-end
+capture was the one capture site left off the grid: with no render-stable cut armed, the tail (or
+trunk-only) entry ended at the prompt end, and a later, longer prompt restored it plain and primed
+from that off-grid start. On the local RTX 5090 with only the restore door set
+(`MEMRA_DSPARK_PREFIX_RESTORE=1`), turn 2 of a three-turn chat restored 2,992 tokens and primed from
+there, and turn 3, resumed from rows that prime wrote, left the cold text (384 vs 372 characters).
+Three changes close it:
+
+- The capture: a cold DFlash prime with no render-stable cut (the restore switch off, or no
+  armable boundary in the prompt) cuts its entry at the seed's grid boundary
+  (`dspark_cold_capture`, `seed_capture_boundary`), not at the prompt end. The prompt end stays the
+  cut only when it is on the grid or the prompt is too short for a grid entry, and such an entry
+  serves only a whole cover.
+- The hit site: every probe that names the entry the hit site restores skips an entry that
+  carries recurrent state unless it covers the prompt whole, or ends on the grid with at least
+  `PRIME_MIN_T` suffix tokens (`prefix_restore_exact`). That is `PrefixCache::lookup` and its
+  filtered form, the seed dedupe (`deepest_covering`), the host tier's lookup and its
+  demoting-entry park, the retained-prefix admission plan, and the partial LCP restore. The
+  longest entry that qualifies serves, else the request primes cold; the hit site prints
+  `[prefix-cache] restore grid law: entry <N> of <P> prompt tokens refused ...` (throttled) and
+  counts it in `/metrics` `prefix_cache_restore_grid_refusals` (operator-only). Attention-only
+  entries are split-invariant and keep every whole-entry hit.
+- The three DFlash restore doors are one switch, `MEMRA_DSPARK_PREFIX_RESTORE` (FLAGS.md
+  "Removed doors, 2026-11-07"), so no partial combination exists.
+
+Known cases this does not change: the `PRIME_MIN_T` floor applies to recurrent entries only (an
+attention-only hit that leaves a 1..15-token suffix still primes it token by token, the W1 class);
+the plain-affinity resume checks no suffix floor; the in-batch fanout still takes the raw LCP
+(above). Gate: the warm-vs-cold pair cells in `research/plain-restore-grid-20261107/`
+(`grid_pair_cells.py`, three-turn chat, every warm answer byte-equal to its cold twin), red on the
+base with the single switch and green on the fix with the switch on and off.
 
 
 ## Serving-contract guarantees, and the receipt for each

@@ -769,8 +769,8 @@ struct DsparkColdPrefixAdmission {
     /// lcp=13440 - serving the hit and going plain` on every restorable turn, with the
     /// drafter's own tail sitting in the entry, unused.
     ///
-    /// Scoped to the partial door so a fully shut fleet is byte-identical: with every door
-    /// OFF this is false everywhere and the veto keeps its shipped shape.
+    /// Scoped to the restore switch so a shut fleet is byte-identical: with the switch OFF this
+    /// is false everywhere and the veto keeps its shipped shape.
     hit_restorable: bool,
 }
 
@@ -893,9 +893,10 @@ fn dspark_prefers_cold_over_prefix_with(
 /// at boot when DFlash is armed (`MEMRA_DSPARK_SPEC=1`). The switch arms three behaviors as one
 /// program: the whole-entry restore of a draft tail, the strict-prefix restore
 /// (`dspark_partial_restore_on`) and the render-stable boundary capture
-/// (`dspark_boundary_capture_on`). They were three doors until 2026-11-07, when a partial
-/// combination (restore alone) was measured to leave the cold text on the RTX 5090
-/// (research/plain-restore-grid-20261107/); only all three together ever passed the gate. ON on
+/// (`dspark_boundary_capture_on`). They were three doors until 2026-11-07: only the full set was
+/// ever gated, and a partial combination (restore alone) was measured to leave the cold text on
+/// the RTX 5090 through an off-grid plain restore, which the hit site now refuses for every
+/// switch value (`prefix_restore_exact`; research/plain-restore-grid-20261107/). ON on
 /// GB10 and the RTX PRO 6000 Max-Q, whose restored-vs-cold byte-identity gate is green with the
 /// switch on (memra#1031 cold-drafter gate). OFF everywhere else (owner, 2026-11-05: "Spark +
 /// Max-Q only"), including:
@@ -1077,7 +1078,7 @@ fn dspark_entry_restorable(e: &PrefixEntry, prompt_len: usize, tail_window: Opti
     dspark_entry_restorable_with(e, prompt_len, tail_window, dspark_partial_restore_on())
 }
 
-/// Pure form of `dspark_entry_restorable` (the partial door as an argument).
+/// Pure form of `dspark_entry_restorable` (the restore switch as an argument).
 fn dspark_entry_restorable_with(
     e: &PrefixEntry,
     prompt_len: usize,
@@ -1099,7 +1100,7 @@ fn dspark_entry_restorable_with(
 /// `dspark_prime_feasible`), the load (active sessions, queued arrivals, live non-demotable
 /// DFlash peers) and the decode budget. Assumed: `cold` (a continuation-pool donor, which would
 /// make `admit` take no prefix hit at all; the plan suppresses donors), `hit_restorable` (the
-/// partial door: a strict-prefix DFlash restore exists only under it), and the two gates around
+/// restore switch: a strict-prefix DFlash restore exists only under it), and the two gates around
 /// the preference in `admit` that these inputs do not carry: `prefix_on` and no host-tier
 /// promote (the reclaim spare checks the host tier itself).
 fn admission_dflash_inputs(
@@ -2536,6 +2537,10 @@ pub struct Metrics {
     /// lines, counted. A nonzero value names prompts whose aligned entry would sit under the
     /// entry floor (or a prime path that skipped the armed boundary), never a silent cold turn.
     pub prefix_seed_grid_refusals: u64,
+    /// Longer covers the hit site skipped under the restore grid law (`prefix_restore_exact`):
+    /// typed `restore grid law` lines (throttled), counted. Nonzero names traffic whose entries
+    /// end off the GDN prime grid, served by a shorter exact entry or cold.
+    pub prefix_restore_grid_refusals: u64,
     pub prefix_hit_tokens: u64,
     /// Pinned-host spill tier behind the prefix cache (lane/kv-host-spill-20260830;
     /// MEMRA_KV_HOST_MB, default 0 = off). Entries/bytes are current gauges; demotions/
@@ -4462,6 +4467,18 @@ fn seed_capture_boundary(prompt_len: usize, hit_len: usize) -> SeedCapture {
     SeedCapture::AtBoundary(b)
 }
 
+/// The cold DFlash prime's capture when no render-stable cut is armed (`dspark_capture_at` is
+/// None): the seed's grid boundary (`seed_capture_boundary`, memra#602's law), so the entry a later,
+/// longer prompt restores never ends off the GDN prime grid. The prompt end stays the cut when it
+/// is itself on the grid or the prompt is too short for a grid entry; such an entry only ever
+/// serves a whole cover, which is exact.
+fn dspark_cold_capture(prompt_len: usize) -> memra_engine::dflash::DsparkCapture {
+    match seed_capture_boundary(prompt_len, 0) {
+        SeedCapture::AtBoundary(b) => memra_engine::dflash::DsparkCapture::Boundary(b),
+        _ => memra_engine::dflash::DsparkCapture::PromptEnd,
+    }
+}
+
 /// Does an armed seed boundary stop the prime INSIDE the prompt? Such a session primes alone:
 /// the concat prime and the in-batch fanout cannot honor a per-session stop (the same reason
 /// `snapshot_at` and `ckpt_at` sessions prime alone). A seed at the prompt end is not a stop.
@@ -5239,17 +5256,25 @@ const PREFIX_REFUSAL_REANNOUNCE_EVERY: u64 = 64;
 /// (same `PrefixRefusalShape`) are suppressed and counted; a changed shape prints at once and
 /// carries the previous shape's suppressed count; every N-th identical repeat prints with its
 /// count. Counting in the `/metrics` skip fields is the caller's and is never throttled.
-#[derive(Default)]
-struct PrefixRefusalAnnouncer {
-    last: Option<PrefixRefusalShape>,
+struct PrefixRefusalAnnouncer<S = PrefixRefusalShape> {
+    last: Option<S>,
     /// Identical repeats not printed since the last printed line.
     suppressed: u64,
 }
 
-impl PrefixRefusalAnnouncer {
+impl<S> Default for PrefixRefusalAnnouncer<S> {
+    fn default() -> Self {
+        Self {
+            last: None,
+            suppressed: 0,
+        }
+    }
+}
+
+impl<S: PartialEq> PrefixRefusalAnnouncer<S> {
     /// The line to print for this refusal, or `None` when it is an identical repeat that is
     /// counted but not printed.
-    fn announce(&mut self, shape: PrefixRefusalShape, line: String) -> Option<String> {
+    fn announce(&mut self, shape: S, line: String) -> Option<String> {
         if self.last.as_ref() == Some(&shape) {
             self.suppressed += 1;
             if !self
@@ -9665,6 +9690,7 @@ enum PartialPrefixDecision {
     RefuseNoSuffix,
     RefuseRoutedMoe,
     RefuseRecurrentMidEntry,
+    RefuseRecurrentOffGrid,
     RefuseLatentMidEntry,
 }
 
@@ -9680,6 +9706,10 @@ impl PartialPrefixDecision {
             ),
             Self::RefuseRecurrentMidEntry => Some(
                 "hybrid conv/SSM state exists only at the entry endpoint and cannot be truncated",
+            ),
+            Self::RefuseRecurrentOffGrid => Some(
+                "the entry endpoint is off the GDN prime grid or leaves a suffix under PRIME_MIN_T \
+                 (the restore grid law)",
             ),
             Self::RefuseLatentMidEntry => Some(
                 "latent (MLA/DSA) planes restore whole-entry only: an interior boundary's index \
@@ -9710,6 +9740,8 @@ fn partial_prefix_decision(
         PartialPrefixDecision::RefuseRoutedMoe
     } else if entry_has_recurrent && lcp != entry_pos {
         PartialPrefixDecision::RefuseRecurrentMidEntry
+    } else if entry_has_recurrent && !prefix_restore_exact(lcp, prompt_len, true) {
+        PartialPrefixDecision::RefuseRecurrentOffGrid
     } else if entry_has_latent && lcp != entry_pos {
         PartialPrefixDecision::RefuseLatentMidEntry
     } else {
@@ -9958,6 +9990,10 @@ struct PrefixCache {
     /// aligned length fell under the entry floor, or the prime did not stop on the armed
     /// boundary. Every refusal prints its typed `seed REFUSED (grid)` line and counts here.
     seed_grid_refusals: u64,
+    /// Longer covers the hit site skipped under the restore grid law (`prefix_restore_exact`).
+    restore_grid_refusals: u64,
+    /// stderr throttle for the restore grid law line, keyed (pool, refused length, served length).
+    grid_refusals: PrefixRefusalAnnouncer<(PoolKey, usize, usize)>,
     /// stderr throttle for the two typed refusal lines; the skip counters above count every
     /// refusal regardless.
     refusals: PrefixRefusalAnnouncer,
@@ -10136,7 +10172,7 @@ impl PrefixCache {
     /// Longest entry whose token key exactly prefixes `prompt` (floor PREFIX_CACHE_MIN_TOKENS)
     /// and that restores exactly for it (`prefix_restore_exact`: a recurrent entry only as a
     /// whole cover or an on-grid strict prefix). Only the caller's own (model, namespace) pool is
-    /// scanned — cross-namespace entries are structurally unreachable (PC-ISO).
+    /// scanned: cross-namespace entries are structurally unreachable (PC-ISO).
     fn lookup(&self, key: &PoolKey, prompt: &[u32]) -> Option<usize> {
         let pool = self.entries.get(key)?;
         let mut best: Option<(usize, usize)> = None;
@@ -10229,8 +10265,13 @@ impl PrefixCache {
             pool.iter()
                 .filter_map(|e| {
                     let n = e.toks.len();
-                    (n >= PREFIX_CACHE_MIN_TOKENS && n <= prompt.len() && prompt[..n] == e.toks[..])
-                        .then_some(n)
+                    // An entry the hit site would refuse (the restore grid law) covers nothing a
+                    // later turn can restore, so it must not suppress a deeper on-grid seed.
+                    (n >= PREFIX_CACHE_MIN_TOKENS
+                        && n <= prompt.len()
+                        && prompt[..n] == e.toks[..]
+                        && prefix_restore_exact(n, prompt.len(), e.carries_recurrent()))
+                    .then_some(n)
                 })
                 .max()
         })
@@ -11065,6 +11106,15 @@ impl HostPrefixEntry {
     fn leased(&self) -> bool {
         self._tier_identity.leased()
     }
+
+    /// Does the promoted device entry carry recurrent state? The conv/ssm planes, or a glm image
+    /// whose KDA state rides `glm` (the promote puts it back into conv/ssm), so the host tier
+    /// applies the restore grid law exactly as the device `lookup` will after the promote.
+    fn carries_recurrent(&self) -> bool {
+        self.conv.iter().any(Option::is_some)
+            || self.ssm.iter().any(Option::is_some)
+            || self.glm.is_some()
+    }
 }
 
 /// What the tenant-share reclaim (memra#384) evicted from the demoting tenant's own row.
@@ -11711,11 +11761,10 @@ impl HostPrefixCache {
         let mut best: Option<(usize, usize)> = None;
         for (i, e) in pool.iter().enumerate() {
             let n = e.toks.len();
-            let recurrent = e.conv.iter().any(Option::is_some) || e.ssm.iter().any(Option::is_some);
             if n >= PREFIX_CACHE_MIN_TOKENS
                 && n <= prompt.len()
                 && prompt[..n] == e.toks[..]
-                && prefix_restore_exact(n, prompt.len(), recurrent)
+                && prefix_restore_exact(n, prompt.len(), e.carries_recurrent())
                 && best.is_none_or(|(_, bn)| n > bn)
             {
                 best = Some((i, n));
@@ -19908,8 +19957,9 @@ fn host_demoting_hit(
         && n >= PREFIX_CACHE_MIN_TOKENS
         && n <= prompt.len()
         && n > device_best_len
-        && prompt[..n] == toks[..])
-        .then_some((n, seq, hashing))
+        && prompt[..n] == toks[..]
+        && prefix_restore_exact(n, prompt.len(), pending.image.carries_recurrent()))
+    .then_some((n, seq, hashing))
 }
 
 /// WP-A day 29 (ruling 40), extended on day 38 (P): PARK the request whose prompt hits the
@@ -24567,7 +24617,7 @@ fn prefix_restore_validate(
         )
         .into());
     }
-    let has_recurrent = e.conv.iter().any(Option::is_some) || e.ssm.iter().any(Option::is_some);
+    let has_recurrent = e.carries_recurrent();
     if has_recurrent && restore_len != e.pos {
         return Err(format!(
             "hybrid mid-entry prefix restore refused at {restore_len} of {}: recurrent state \
@@ -30373,11 +30423,9 @@ pub fn run(
                     let mut reclaim_spare = if !headroom.sufficient(required) {
                         let key = (req.model.clone(), req.cache_ns.clone());
                         let prompt = req.prepared_prompt.as_ref().unwrap();
-                        let draft = dspark_drafts.get(&model_key).filter(|_| {
-                            estimate_spec
-                                && dspark_prefix_restore_on()
-                                && dspark_partial_restore_on()
-                        });
+                        let draft = dspark_drafts
+                            .get(&model_key)
+                            .filter(|_| estimate_spec && dspark_prefix_restore_on());
                         let tail_window = draft.map(|d| d.cfg.sliding_window + d.cfg.block_size);
                         let dflash_inputs = draft.map(|draft| {
                             admission_dflash_inputs(
@@ -34680,6 +34728,7 @@ pub fn run(
             m.prefix_skips_budget = px.skips_budget;
             m.prefix_skips_pinned = px.skips_pinned;
             m.prefix_seed_grid_refusals = px.seed_grid_refusals;
+            m.prefix_restore_grid_refusals = px.restore_grid_refusals;
             m.prefix_hit_tokens = px.hit_tokens;
             m.prefix_host_entries = hpx.n_entries() as u64;
             m.prefix_host_bytes = hpx.total_bytes as u64;
@@ -36984,29 +37033,6 @@ fn admit(
     } else {
         None
     };
-    // The restore grid law at the hit site, made visible: a longer cover `lookup` skipped
-    // because restoring it would split the prime off the grid (`prefix_restore_exact`).
-    if prefix_on
-        && admission_restore.is_none()
-        && let Some(refused) = px.longest_inexact_cover(&pool_key, &prompt)
-    {
-        let served = consumable_hit.map_or(0, |i| px.entries[&pool_key][i].toks.len());
-        if refused > served {
-            eprintln!(
-                "[prefix-cache] restore grid law: entry {refused} of {} prompt tokens refused \
-                 (recurrent state off the {}-token prime grid or a suffix under {}); {} (model {})",
-                prompt.len(),
-                memra_engine::Engine::gdn_chunk_size(),
-                memra_engine::hybrid_forward::PRIME_MIN_T,
-                if served > 0 {
-                    format!("serving the {served}-token exact hit")
-                } else {
-                    "no exact hit, cold".to_string()
-                },
-                req.model,
-            );
-        }
-    }
     // HOST-TIER PROMOTE (lane/kv-host-spill-20260830): the host tier FEEDS the device cache.
     // On a device miss (or a device hit shallower than the host's best exact-prefix entry),
     // the host probe (SAME exact-token / PC-ISO key rules as `lookup` above) re-materializes
@@ -37064,16 +37090,15 @@ fn admit(
         prompt_len: prompt.len(),
         decode_budget: budget,
         hit_available: consumable_hit.is_some(),
-        // Only under the partial door: a shut fleet keeps the veto's shipped shape exactly.
+        // Only under the restore switch: a shut fleet keeps the veto's shipped shape exactly.
         hit_restorable: dspark_restorable_hit && dspark_partial_restore_on(),
     };
     // RESTORABLE-HIT PREFERENCE (`dspark_prefer_restorable_hit`): a longer plain hit must not
-    // shadow a shorter entry that can re-arm the drafter. Under the partial door only, and only
+    // shadow a shorter entry that can re-arm the drafter. Under the restore switch only, and only
     // when the route would admit DFlash on that restorable hit, so every other route, a shut
     // fleet and the plain path keep the longest-hit choice byte for byte.
     let mut cold_prefix_inputs = cold_prefix_inputs;
     if dspark_prefix_restore_on()
-        && dspark_partial_restore_on()
         && !dspark_restorable_hit
         && admission_restore.is_none()
         && host_promote_pin.is_none()
@@ -37362,6 +37387,40 @@ fn admit(
             }
         }
 
+        // The restore grid law at the hit site, made visible: a longer cover that `lookup`
+        // skipped because restoring it would split the prime off the grid (`prefix_restore_exact`).
+        // Printed after the probe resolved, so it names what this request actually took.
+        if let Some(refused) = px.longest_inexact_cover(&pool_key, &prompt) {
+            let served = if prefix_hit {
+                reused.as_ref().map_or(0, |e| e.fed.len())
+            } else {
+                0
+            };
+            if refused > served {
+                px.restore_grid_refusals += 1;
+                let line = format!(
+                    "[prefix-cache] restore grid law: entry {refused} of {} prompt tokens refused \
+                     (recurrent state off the {}-token prime grid or a suffix under {}); {} \
+                     (model {}{})",
+                    prompt.len(),
+                    memra_engine::Engine::gdn_chunk_size(),
+                    memra_engine::hybrid_forward::PRIME_MIN_T,
+                    if served > 0 {
+                        format!("served the {served}-token exact hit")
+                    } else {
+                        "no exact hit, the prompt primes cold".to_string()
+                    },
+                    req.model,
+                    ns_suffix(&pool_key.1),
+                );
+                if let Some(line) = px
+                    .grid_refusals
+                    .announce((pool_key.clone(), refused, served), line)
+                {
+                    eprintln!("{line}");
+                }
+            }
+        }
         let mut best_lcp = None;
         if reused.is_none() {
             best_lcp = px.best_lcp_entry(&pool_key, &prompt);
@@ -37371,8 +37430,7 @@ fn admit(
                 let (i, lcp) = best_lcp.unwrap();
                 let (decision, source_len) = {
                     let e = &px.entries[&pool_key][i];
-                    let has_recurrent =
-                        e.conv.iter().any(Option::is_some) || e.ssm.iter().any(Option::is_some);
+                    let has_recurrent = e.carries_recurrent();
                     let has_latent = e.latent.iter().any(Option::is_some);
                     let routed_moe = routed_moe_prefix_split(&lm.model.plan);
                     (
@@ -37890,7 +37948,7 @@ fn admit(
         && let Some(carrier) = reused.take()
     {
         let full_cover = carrier.fed.len() == prompt.len();
-        // A strict-prefix carrier is usable only under the partial door; the suffix it leaves
+        // A strict-prefix carrier is usable only under the restore switch; the suffix it leaves
         // is primed by `step_dspark_spec`, the same way a pool resume's suffix is.
         let partial_ok = dspark_partial_restore_on()
             && !carrier.fed.is_empty()
@@ -38007,7 +38065,6 @@ fn admit(
     // would read rows it never saw). Every refusal hands the carrier back, so the request is
     // never worse than the plain hit it had.
     if dspark_prefix_restore_on()
-        && dspark_partial_restore_on()
         && !dspark_prefers_cold
         && spec_restored.is_none()
         && dspark_prefix_restored.is_none()
@@ -43557,9 +43614,7 @@ fn step_dspark_spec(
             let capture = match (s.dspark_capture_prefix, s.dspark_capture_at) {
                 (false, _) => memra_engine::dflash::DsparkCapture::Off,
                 (true, Some(b)) => memra_engine::dflash::DsparkCapture::Boundary(b),
-                (true, None) if s.dspark.is_none() => {
-                    memra_engine::dflash::DsparkCapture::PromptEnd
-                }
+                (true, None) if s.dspark.is_none() => dspark_cold_capture(tokens.len()),
                 _ => memra_engine::dflash::DsparkCapture::Off,
             };
             s.dspark_prime = Some(match s.dspark.take() {
@@ -43650,10 +43705,11 @@ fn step_dspark_spec(
             s.gspec_ctx,
             dspark_spec_sampling_for(&s.sampler),
             // The two admission-time decisions ride one argument: whether to keep a capture,
-            // and where to cut it. `dspark_capture_at` is Some only under its own door.
+            // and where to cut it. `dspark_capture_at` is the render-stable cut under the restore
+            // switch; without one the cut is the seed's grid boundary (`dspark_cold_capture`).
             match (s.dspark_capture_prefix, s.dspark_capture_at) {
                 (false, _) => memra_engine::dflash::DsparkCapture::Off,
-                (true, None) => memra_engine::dflash::DsparkCapture::PromptEnd,
+                (true, None) => dspark_cold_capture(prompt.len()),
                 (true, Some(b)) => memra_engine::dflash::DsparkCapture::Boundary(b),
             },
         ) {
@@ -49730,6 +49786,47 @@ mod tests {
             !super::prefix_restore_exact(3_200, 3_109, false),
             "longer than the prompt"
         );
+        // The capture: with no render-stable cut, a cold DFlash prime cuts its entry at the seed's
+        // grid boundary (the receipt's 2,992-token prompt publishes 2,976), keeps the prompt end
+        // when it is on the grid, and keeps it for a prompt too short for a grid entry.
+        use memra_engine::dflash::DsparkCapture;
+        assert_eq!(
+            super::dspark_cold_capture(2_992),
+            DsparkCapture::Boundary(2_976)
+        );
+        assert_eq!(super::dspark_cold_capture(3_072), DsparkCapture::PromptEnd);
+        assert_eq!(super::dspark_cold_capture(70), DsparkCapture::PromptEnd);
+        // The partial LCP restore cannot take an endpoint the law refuses.
+        assert_eq!(
+            super::partial_prefix_decision(true, false, false, 2_992, 2_992, 3_109),
+            super::PartialPrefixDecision::RefuseRecurrentOffGrid
+        );
+        assert_eq!(
+            super::partial_prefix_decision(true, false, false, 2_976, 2_976, 3_109),
+            super::PartialPrefixDecision::Restore
+        );
+        assert_eq!(
+            super::partial_prefix_decision(false, false, false, 2_992, 2_992, 3_109),
+            super::PartialPrefixDecision::Restore,
+            "attention-only"
+        );
+        // The host tier's lookup on real host planes (no device needed): the off-grid recurrent
+        // image is skipped for the longer prompt and serves its own prompt whole.
+        let hk = key("tenant");
+        let host_image = |n: usize| {
+            let mut e = host_entry(&hk, toks(n), 1);
+            e.conv = vec![Some(super::HostF32::Heap(Arc::new(vec![0.0; 4])))];
+            e
+        };
+        let mut host = super::HostPrefixCache::new(1 << 20);
+        host.entries
+            .insert(hk.clone(), vec![host_image(2_976), host_image(2_992)]);
+        let host_len = |prompt: &[u32]| {
+            host.lookup(&hk, prompt)
+                .map(|i| host.entries[&hk][i].toks.len())
+        };
+        assert_eq!(host_len(&toks(3_109)), Some(2_976));
+        assert_eq!(host_len(&toks(2_992)), Some(2_992));
         // The DFlash strict-prefix predicate is the same grid rule under the restore switch.
         for (entry, prompt) in [
             (2_992, 3_109),
@@ -49752,15 +49849,18 @@ mod tests {
             squashed
                 .matches("&& prefix_restore_exact(n, prompt.len(), e.carries_recurrent())")
                 .count(),
-            2,
-            "PrefixCache::lookup and lookup_where"
+            4,
+            "PrefixCache::lookup, lookup_where, deepest_covering and HostPrefixCache::lookup"
         );
-        assert!(squashed.contains("&& prefix_restore_exact(n, prompt.len(), recurrent)"));
+        assert!(squashed.contains(
+            "&& prefix_restore_exact(n, prompt.len(), pending.image.carries_recurrent()))"
+        ));
         assert!(squashed.contains(
             "&& prefix_restore_exact(entry.toks.len(), prompt.len(), entry.carries_recurrent())"
         ));
         assert!(
-            squashed.contains("let Some(refused) = px.longest_inexact_cover(&pool_key, &prompt)")
+            squashed
+                .contains("if let Some(refused) = px.longest_inexact_cover(&pool_key, &prompt) {")
         );
     }
 
@@ -49800,6 +49900,11 @@ mod tests {
             "the receipt line"
         );
         assert_eq!(px.longest_inexact_cover(&k, &toks(2_992)), None);
+        assert_eq!(
+            px.deepest_covering(&k, &toks(3_109)),
+            Some(2_976),
+            "the seed dedupe counts only restorable covers"
+        );
         assert_eq!(
             px.lookup_where(&k, &toks(3_109), |e| e.toks.len() == 2_992),
             None,
@@ -52460,7 +52565,7 @@ mod tests {
         let k = key("tenant");
         let prompt = toks(3_161);
         let window = 2_048 + 8;
-        // The production predicate with the partial door open (the unit-test latch reads it shut).
+        // The production predicate with the restore switch on (the unit-test latch reads it off).
         let restorable = |e: &PrefixEntry| {
             super::dspark_entry_restorable_with(e, prompt.len(), Some(window), true)
         };
@@ -57474,12 +57579,16 @@ mod tests {
     fn hashing_hit_parks_the_request_once_per_id_and_a_miss_does_not() {
         let (mut host, key, jobs, replies) = cpu_door_host_with_channels();
         cpu_pending_hashing(&mut host, &key, 5);
-        let prompt: Vec<u32> = (100..170).collect();
+        // 80 tokens: the 64-token recurrent image leaves a 16-token suffix, the prime floor.
+        let prompt: Vec<u32> = (100..180).collect();
         // The pure decision: depth and ticket of the hit; every miss shape answers None.
         assert_eq!(
             super::host_demoting_hit(&host, &key, &prompt, 0),
             Some((64, 5, true))
         );
+        // A 6-token suffix would prime token by token: the restore grid law refuses the hit.
+        let sub_floor: Vec<u32> = (100..170).collect();
+        assert_eq!(super::host_demoting_hit(&host, &key, &sub_floor, 0), None);
         assert_eq!(
             super::host_demoting_hit(&host, &key, &prompt, 63),
             Some((64, 5, true))
