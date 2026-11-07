@@ -1564,6 +1564,9 @@ static __device__ __forceinline__ int64_t f8f4v2_act_slot_w(const int64_t t) {
 // amax of |x| (a max: two warps' halves meet in shared memory), d_inv = 448 / amax, cvt.rn
 // satfinite e4m3 of x * d_inv, and the scale amax / 448 in the k-major lane-permuted plane of
 // act_out ([n_tokens, nf] bytes then (nf / 32) x Tp f32). Needs nf % 32 == 0.
+// EPI 2 (residual): dst[j, i] = res[j, i] + acc * out_scale, the IEEE add `add_f32` does on
+// the EPI 0 value (both roundings explicit, so no contraction into an FMA); res and dst are
+// distinct [n_tokens, out_f] buffers.
 template <int BM, int BN, int WM, int WN, int KS, int STAGES, int MINB, int EPI = 0>
 __launch_bounds__(WM * WN * 32, MINB)
 static __global__ void mul_mat_f8f4v2(
@@ -1571,7 +1574,8 @@ static __global__ void mul_mat_f8f4v2(
         const uint8_t * __restrict__ act, const float * __restrict__ act_sc, float * __restrict__ dst,
         const int out_f, const int Mp, const int K, const int n_tokens, const int Tp, const int nty,
         const float out_scale, const int G,
-        uint8_t * __restrict__ act_out = nullptr, const float out_scale2 = 1.0f) {
+        uint8_t * __restrict__ act_out = nullptr, const float out_scale2 = 1.0f,
+        const float * __restrict__ res = nullptr) {
     using LY = f8f4v2_layout<BM, BN, KS>;
     constexpr int NT  = WM * WN * 32;
     constexpr int WRS = BM / WM;
@@ -1779,7 +1783,12 @@ static __global__ void mul_mat_f8f4v2(
                     const int i = row0 + wm * WRS + m * 16 + (l >> 1) * 8 + g;
                     const int j = tok0 + wn * WCS + p * 8 + 2 * tig + (l & 1);
                     if (i < out_f && j < n_tokens) {
-                        dst[(size_t) j * out_f + i] = acc[m][p][l] * out_scale;
+                        if constexpr (EPI == 2) {
+                            const size_t o = (size_t) j * out_f + i;
+                            dst[o] = __fadd_rn(res[o], __fmul_rn(acc[m][p][l], out_scale));
+                        } else {
+                            dst[(size_t) j * out_f + i] = acc[m][p][l] * out_scale;
+                        }
                     }
                 }
             }
@@ -1792,9 +1801,9 @@ static cudaError_t f8f4v2_launch(
         const uint8_t * vals, const float * scales, const uint8_t * act, const float * act_sc, float * y,
         const int out_f, const int Mp, const int K, const int n_tokens, const int Tp,
         const float out_scale, const int G, cudaStream_t st,
-        uint8_t * act_out = nullptr, const float out_scale2 = 1.0f) {
+        uint8_t * act_out = nullptr, const float out_scale2 = 1.0f, const float * res = nullptr) {
     constexpr size_t smem = (size_t) STAGES * f8f4v2_layout<BM, BN, KS>::STAGE;
-    static_assert(EPI == 0 || (size_t) WM * BN * sizeof(float) <= smem, "epilogue amax fits the ring");
+    static_assert(EPI != 1 || (size_t) WM * BN * sizeof(float) <= smem, "epilogue amax fits the ring");
     auto kern = mul_mat_f8f4v2<BM, BN, WM, WN, KS, STAGES, MINB, EPI>;
     cudaError_t e = cudaFuncSetAttribute(kern, cudaFuncAttributeMaxDynamicSharedMemorySize, (int) smem);
     if (e != cudaSuccess) { return e; }
@@ -1803,7 +1812,7 @@ static cudaError_t f8f4v2_launch(
     const int g = G < 1 ? 1 : (G > nty ? nty : G);
     kern<<<(unsigned) (nty * ntx), WM * WN * 32, smem, st>>>(
         vals, scales, act, act_sc, y, out_f, Mp, K, n_tokens, Tp, nty, out_scale, g, act_out,
-        out_scale2);
+        out_scale2, res);
     return cudaGetLastError();
 }
 
@@ -1815,14 +1824,13 @@ size_t memra_mmq_nvfp4_f8f4_v2_img_bytes(int in_f, int out_f) {
     return Mp * (size_t) in_f + (size_t) (in_f / 32) * Mp * sizeof(float);
 }
 
-// v2 F8F4 GEMM on an activation quantized in the v2 layout (memra_mmq_nvfp4_f8f4_v2_quantize_act or
-// its silu twin, memra_mmq_nvfp4_f8f4_v2_act_bytes) plus an image scratch of
-// memra_mmq_nvfp4_f8f4_v2_img_bytes(in_f, out_f) bytes. Bit-identical to memra_mmq_nvfp4_f8f4_preq
-// on the same activation. Requires in_f % 256 == 0 and Mp * in_f, n_tokens * in_f < 2^32. Returns 0,
-// 3000 + cudaError, or 3998 on an unsupported shape.
-int memra_mmq_nvfp4_f8f4_v2_preq(const void * W_nvfp4_blocks, const void * act_scratch, float * y,
-                                int in_f, int out_f, int n_tokens, void * img, void * stream,
-                                float out_scale, int rp) {
+} // extern "C"
+
+// The v2 GEMM body of memra_mmq_nvfp4_f8f4_v2_preq (EPI 0) and its residual twin (EPI 2, res).
+template <int EPI>
+static int f8f4v2_preq_run(const void * W_nvfp4_blocks, const void * act_scratch, float * y,
+                           int in_f, int out_f, int n_tokens, void * img, void * stream,
+                           float out_scale, int rp, const float * res) {
     if (in_f <= 0 || in_f % 256 != 0 || out_f <= 0 || n_tokens <= 0) { return 3998; }
     const int Mp = f8f4v2_mp(out_f);
     // The mainloop addresses the image and the activation with 32-bit offsets.
@@ -1852,10 +1860,38 @@ int memra_mmq_nvfp4_f8f4_v2_preq(const void * W_nvfp4_blocks, const void * act_s
     // Chosen on GB10 over two 8-warp 128 x 128 CTAs per SM (the design's first target), a 16-warp
     // 128 x 128 CTA, 128 x 256, K = 32 rings of 3-7 stages and groups of 1-32 row tiles
     // (research/gb10-prefill-20261106/gemm-v2-probe/).
-    const cudaError_t e = f8f4v2_launch<256, 128, 8, 2, 64, 3, 1>(
-        vals, scales, act, act_sc, y, out_f, Mp, in_f, n_tokens, Tp, out_scale, /*G=*/4, st);
+    const cudaError_t e = f8f4v2_launch<256, 128, 8, 2, 64, 3, 1, EPI>(
+        vals, scales, act, act_sc, y, out_f, Mp, in_f, n_tokens, Tp, out_scale, /*G=*/4, st,
+        nullptr, 1.0f, res);
     if (e != cudaSuccess) { return 3000 + (int) e; }
     return 0;
+}
+
+extern "C" {
+
+// v2 F8F4 GEMM on an activation quantized in the v2 layout (memra_mmq_nvfp4_f8f4_v2_quantize_act or
+// its silu twin, memra_mmq_nvfp4_f8f4_v2_act_bytes) plus an image scratch of
+// memra_mmq_nvfp4_f8f4_v2_img_bytes(in_f, out_f) bytes. Bit-identical to memra_mmq_nvfp4_f8f4_preq
+// on the same activation. Requires in_f % 256 == 0 and Mp * in_f, n_tokens * in_f < 2^32. Returns 0,
+// 3000 + cudaError, or 3998 on an unsupported shape.
+int memra_mmq_nvfp4_f8f4_v2_preq(const void * W_nvfp4_blocks, const void * act_scratch, float * y,
+                                int in_f, int out_f, int n_tokens, void * img, void * stream,
+                                float out_scale, int rp) {
+    return f8f4v2_preq_run<0>(W_nvfp4_blocks, act_scratch, y, in_f, out_f, n_tokens, img, stream,
+                              out_scale, rp, nullptr);
+}
+
+// memra_mmq_nvfp4_f8f4_v2_preq with the residual add in the epilogue (GB10 prefill lane,
+// 2026-11-07): y = res + the GEMM output, the bytes memra_mmq_nvfp4_f8f4_v2_preq then add_f32(res,
+// y) write, without the GEMM output's round trip through memory. res and y are distinct
+// [n_tokens, out_f] f32 buffers. Same returns.
+int memra_mmq_nvfp4_f8f4_v2_preq_resid(const void * W_nvfp4_blocks, const void * act_scratch,
+                                       const float * res, float * y, int in_f, int out_f,
+                                       int n_tokens, void * img, void * stream, float out_scale,
+                                       int rp) {
+    if (res == nullptr || res == y) { return 3998; }
+    return f8f4v2_preq_run<2>(W_nvfp4_blocks, act_scratch, y, in_f, out_f, n_tokens, img, stream,
+                              out_scale, rp, res);
 }
 
 // The dense FFN's gate and up GEMMs and the down projection's activation quantize in one launch

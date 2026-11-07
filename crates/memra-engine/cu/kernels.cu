@@ -412,31 +412,39 @@ static __device__ __forceinline__ long long memra_f8f4v2_act_slot(long long t) {
     const int lt = (int)(t & 63), p = lt >> 3, r8 = lt & 7;
     return (t & ~(long long)63) + ((p >> 1) * 4 + (r8 >> 1)) * 4 + (p & 1) * 2 + (r8 & 1);
 }
-extern "C" __global__ void add_rms_norm_e4m3v2_f32(const float* __restrict__ a,
-                                                   const float* __restrict__ b,
-                                                   const float* __restrict__ w,
-                                                   float* __restrict__ res, float* __restrict__ dst,
-                                                   uint8_t* __restrict__ vy,
-                                                   signed char* __restrict__ q8,
-                                                   float* __restrict__ q8d, int ncols, int nrows,
-                                                   long long tp, float eps) {
-    MEMRA_PDL_ENTRY();
+// ADD false (rms_norm_e4m3v2_f32): the residual is already in `a` (the GEMM's residual epilogue
+// wrote it): the same per-thread strided sum of the same values, no add and no res store, and
+// the second pass reads a[i] where the ADD body reads back its own res[i] store.
+template <bool ADD>
+static __device__ __forceinline__ void add_rms_norm_e4m3v2_body(
+        const float* __restrict__ a, const float* __restrict__ b, const float* __restrict__ w,
+        float* __restrict__ res, float* __restrict__ dst, uint8_t* __restrict__ vy,
+        signed char* __restrict__ q8, float* __restrict__ q8d, int ncols, int nrows, long long tp,
+        float eps) {
     int row = blockIdx.x;
     int tid = threadIdx.x;
     int bd = blockDim.x;
     const float* ar = a + (size_t)row * ncols;
-    const float* br = b + (size_t)row * ncols;
-    float* rr = res + (size_t)row * ncols;
+    float* rr = ADD ? res + (size_t)row * ncols : nullptr;
     float sum = 0.0f;
     int i = tid;
-    for (; i + 3 * bd < ncols; i += 4 * bd) {
-        float a0 = ar[i], a1 = ar[i + bd], a2 = ar[i + 2 * bd], a3 = ar[i + 3 * bd];
-        float b0 = br[i], b1 = br[i + bd], b2 = br[i + 2 * bd], b3 = br[i + 3 * bd];
-        float v0 = a0 + b0, v1 = a1 + b1, v2 = a2 + b2, v3 = a3 + b3;
-        rr[i] = v0; rr[i + bd] = v1; rr[i + 2 * bd] = v2; rr[i + 3 * bd] = v3;
-        sum += v0 * v0; sum += v1 * v1; sum += v2 * v2; sum += v3 * v3;
+    if constexpr (ADD) {
+        const float* br = b + (size_t)row * ncols;
+        for (; i + 3 * bd < ncols; i += 4 * bd) {
+            float a0 = ar[i], a1 = ar[i + bd], a2 = ar[i + 2 * bd], a3 = ar[i + 3 * bd];
+            float b0 = br[i], b1 = br[i + bd], b2 = br[i + 2 * bd], b3 = br[i + 3 * bd];
+            float v0 = a0 + b0, v1 = a1 + b1, v2 = a2 + b2, v3 = a3 + b3;
+            rr[i] = v0; rr[i + bd] = v1; rr[i + 2 * bd] = v2; rr[i + 3 * bd] = v3;
+            sum += v0 * v0; sum += v1 * v1; sum += v2 * v2; sum += v3 * v3;
+        }
+        for (; i < ncols; i += bd) { float v = ar[i] + br[i]; rr[i] = v; sum += v * v; }
+    } else {
+        for (; i + 3 * bd < ncols; i += 4 * bd) {
+            float v0 = ar[i], v1 = ar[i + bd], v2 = ar[i + 2 * bd], v3 = ar[i + 3 * bd];
+            sum += v0 * v0; sum += v1 * v1; sum += v2 * v2; sum += v3 * v3;
+        }
+        for (; i < ncols; i += bd) { float v = ar[i]; sum += v * v; }
     }
-    for (; i < ncols; i += bd) { float v = ar[i] + br[i]; rr[i] = v; sum += v * v; }
     __shared__ float s[32];
     for (int o = 16; o > 0; o >>= 1) sum += __shfl_down_sync(0xffffffff, sum, o);
     if ((tid & 31) == 0) s[tid >> 5] = sum;
@@ -455,7 +463,13 @@ extern "C" __global__ void add_rms_norm_e4m3v2_f32(const float* __restrict__ a,
     // every lane of a warp runs the same trip count (ncols and bd are multiples of 32)
     for (i = tid; i < ncols; i += bd) {
         // the thread's own res[i] store above: read back exactly as add_rms_norm_f32_v2 does
-        float o = rr[i] * scale * w[i];
+        // (ADD false: the residual it would have stored, already in a)
+        float o;
+        if constexpr (ADD) {
+            o = rr[i] * scale * w[i];
+        } else {
+            o = ar[i] * scale * w[i];
+        }
         if (dr != nullptr) dr[i] = o;
         float amax = fabsf(o);
         #pragma unroll
@@ -473,6 +487,30 @@ extern "C" __global__ void add_rms_norm_e4m3v2_f32(const float* __restrict__ a,
             if ((tid & 31) == 0) q8d[(size_t)row * (ncols / 32) + i / 32] = d;
         }
     }
+}
+extern "C" __global__ void add_rms_norm_e4m3v2_f32(const float* __restrict__ a,
+                                                   const float* __restrict__ b,
+                                                   const float* __restrict__ w,
+                                                   float* __restrict__ res, float* __restrict__ dst,
+                                                   uint8_t* __restrict__ vy,
+                                                   signed char* __restrict__ q8,
+                                                   float* __restrict__ q8d, int ncols, int nrows,
+                                                   long long tp, float eps) {
+    MEMRA_PDL_ENTRY();
+    add_rms_norm_e4m3v2_body<true>(a, b, w, res, dst, vy, q8, q8d, ncols, nrows, tp, eps);
+}
+// The same norm, quantize and optional dst / q8 outputs on a residual x another kernel already
+// wrote (the v2 GEMM's residual epilogue): bit-identical to add_rms_norm_e4m3v2_f32 on any
+// (a, b) whose IEEE sum is x.
+extern "C" __global__ void rms_norm_e4m3v2_f32(const float* __restrict__ x,
+                                               const float* __restrict__ w,
+                                               float* __restrict__ dst, uint8_t* __restrict__ vy,
+                                               signed char* __restrict__ q8,
+                                               float* __restrict__ q8d, int ncols, int nrows,
+                                               long long tp, float eps) {
+    MEMRA_PDL_ENTRY();
+    add_rms_norm_e4m3v2_body<false>(x, nullptr, w, nullptr, dst, vy, q8, q8d, ncols, nrows, tp,
+                                    eps);
 }
 
 // ---- RANK3 LEVER (add+rmsnorm fuse): residual-add THEN RMSNorm in ONE kernel. ----
@@ -1296,6 +1334,77 @@ extern "C" __global__ void rope_neox_f32(float* __restrict__ x, const int* __res
     float x1 = base[j + half];
     base[j]        = x0 * c - x1 * s;
     base[j + half] = x0 * s + x1 * c;
+}
+
+// The gated-attention q path in one kernel (GB10 prefill lane, 2026-11-07): q_gate_split_f32, then
+// rms_norm_f32_v2 over each q head row, then rope_neox_f32 on the first n_dims dims. One block of
+// blockDim = the rms_norm block per (token, head) row reads the fused [q | gate] head block once:
+// the sum of squares is rms_norm_f32_v2's (the same per-thread strided order into one accumulator,
+// the verbatim block reduce, rsqrtf(s / ncols + eps)), the norm values its x * scale * w, staged in
+// shared memory so the rotation pairs (d, d + n_dims / 2) meet; the rotation is rope_neox_f32's
+// (theta = pos * theta_scale^d * freq_scale, the same cos/sin and products); dims past n_dims pass
+// through. gate is copied as the split copies it. Bit-identical to the three kernels (kernel-check
+// Q-SPLIT-NORM-ROPE). Dynamic shared memory: head_dim floats.
+extern "C" __global__ void q_split_norm_rope_f32(const float* __restrict__ qf, const float* __restrict__ w,
+                                                 const int* __restrict__ pos, float* __restrict__ q_out,
+                                                 float* __restrict__ gate_out, int head_dim, int n_head,
+                                                 int n_dims, float theta_scale, float freq_scale,
+                                                 float eps) {
+    MEMRA_PDL_ENTRY();
+    extern __shared__ float qsnr_buf[];
+    const int row = blockIdx.x;
+    const int hh = row % n_head, tok = row / n_head;
+    const int tid = threadIdx.x, bd = blockDim.x;
+    const int ncols = head_dim;
+    const float* xr = qf + (size_t)tok * n_head * 2 * head_dim + (size_t)hh * 2 * head_dim;
+    const float* gr = xr + head_dim;
+    float* qo = q_out + (size_t)row * head_dim;
+    float* go = gate_out + (size_t)row * head_dim;
+    float sum = 0.0f;
+    int i = tid;
+    for (; i + 3 * bd < ncols; i += 4 * bd) {
+        float v0 = xr[i];
+        float v1 = xr[i + bd];
+        float v2 = xr[i + 2 * bd];
+        float v3 = xr[i + 3 * bd];
+        sum += v0 * v0; sum += v1 * v1; sum += v2 * v2; sum += v3 * v3;
+    }
+    for (; i < ncols; i += bd) { float v = xr[i]; sum += v * v; }
+    __shared__ float s[32];
+    for (int o = 16; o > 0; o >>= 1) sum += __shfl_down_sync(0xffffffff, sum, o);
+    if ((tid & 31) == 0) s[tid >> 5] = sum;
+    __syncthreads();
+    if (tid < 32) {
+        float v = (tid < (bd + 31) / 32) ? s[tid] : 0.0f;
+        for (int o = 16; o > 0; o >>= 1) v += __shfl_down_sync(0xffffffff, v, o);
+        if (tid == 0) s[0] = v;
+    }
+    __syncthreads();
+    float scale = rsqrtf(s[0] / ncols + eps);
+    i = tid;
+    for (; i + 3 * bd < ncols; i += 4 * bd) {
+        float o0 = xr[i] * scale * w[i];
+        float o1 = xr[i + bd] * scale * w[i + bd];
+        float o2 = xr[i + 2 * bd] * scale * w[i + 2 * bd];
+        float o3 = xr[i + 3 * bd] * scale * w[i + 3 * bd];
+        qsnr_buf[i] = o0; qsnr_buf[i + bd] = o1; qsnr_buf[i + 2 * bd] = o2; qsnr_buf[i + 3 * bd] = o3;
+    }
+    for (; i < ncols; i += bd) qsnr_buf[i] = xr[i] * scale * w[i];
+    for (int d = tid; d < ncols; d += bd) go[d] = gr[d];
+    __syncthreads();
+    const int half = n_dims / 2;
+    for (int d = tid; d < ncols; d += bd) {
+        if (d < half) {
+            float theta = (float)pos[tok] * powf(theta_scale, (float)d) * freq_scale;
+            float c = cosf(theta), sn = sinf(theta);
+            float x0 = qsnr_buf[d];
+            float x1 = qsnr_buf[d + half];
+            qo[d]        = x0 * c - x1 * sn;
+            qo[d + half] = x0 * sn + x1 * c;
+        } else if (d >= n_dims) {
+            qo[d] = qsnr_buf[d];
+        }
+    }
 }
 
 // ---- gemma4: 3-way rms_norm — ONE reduction over x, three weight vectors/outputs

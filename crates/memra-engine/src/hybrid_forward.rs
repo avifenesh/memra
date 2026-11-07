@@ -7028,6 +7028,15 @@ impl HybridModel {
             // false once the fused norm below skips the dense FFN's f32 norm output (its seeded
             // F8F4 activation is then the only form of z)
             let mut z_written = true;
+            // The mixer output when its projection's GEMM epilogue added the residual: it then
+            // holds x_cur + mixer (the post-attention residual) in place of x1.
+            let mut x1_mixed: Option<CudaSlice<f32>> = None;
+            // The residual epilogue (MEMRA_PRIME_RESID_EPI) on the eager fp32 prime: the v2 GEMM of
+            // the mixer's output projection, and of the dense FFN's down projection, writes the
+            // residual sum, so the f32 projection output is never written and re-read.
+            let resid_on = !f16fuse
+                && Engine::prime_resid_on()
+                && crate::qwen_prime_graph::current().is_none();
             if use_seg {
                 // core-split path: projections -> _inner core -> out-GEMM INTO the mixed
                 // slab (no copies) -> S-mid segment [add + post-norm] as one graph launch.
@@ -7036,7 +7045,7 @@ impl HybridModel {
                         let g3 =
                             e.matmul_group_prefill_xh(&[&fa.wq, &fa.wk, &fa.wv], h, hx16, t)?;
                         let (pre, pre16) =
-                            self.full_attn_prime_core_inner(e, fa, g3, pos_d, t, cache, il)?;
+                            self.full_attn_prime_core_inner(e, fa, g3, pos_d, t, cache, il, false)?;
                         (pre, pre16, &fa.wo)
                     }
                     Mixer::Mla(_) => crate::hybrid::mla_path_unimplemented("core-split prime"),
@@ -7088,6 +7097,11 @@ impl HybridModel {
                     sm[il].as_ref().unwrap().launch()?;
                 }
             } else {
+                let mixer_resid_armed =
+                    resid_on && matches!(layer.mixer, Mixer::Full(_) | Mixer::Linear(_));
+                if mixer_resid_armed {
+                    e.gemm_resid_request(x_cur, n_embd, t);
+                }
                 let mixed = match &layer.mixer {
                     Mixer::Full(fa) => {
                         let y =
@@ -7107,6 +7121,8 @@ impl HybridModel {
                         y
                     }
                 };
+                // `mixed` holds x_cur + the mixer output when the projection took the residual
+                let mixer_resid = mixer_resid_armed && e.gemm_resid_take();
                 if f16fuse {
                     // round 28: residual+norm in ONE kernel (add_rms_norm precedent,
                     // bit-identical) — the standalone add pass disappears.
@@ -7135,23 +7151,45 @@ impl HybridModel {
                         };
                     if !Self::prime_norm_fuse_on() {
                         e.f8f4_seed_clear();
-                        e.add(x_cur, &mixed, x1, t * n_embd)?;
-                        e.rms_norm(x1, w_post, z, n_embd, t, eps)?;
+                        if !mixer_resid {
+                            e.add(x_cur, &mixed, x1, t * n_embd)?;
+                            e.rms_norm(x1, w_post, z, n_embd, t, eps)?;
+                        } else {
+                            e.rms_norm(&mixed, w_post, z, n_embd, t, eps)?;
+                        }
                     } else if quant {
                         // No f32 norm output: its only readers here are gate and up, and both
                         // take the seeded scratch.
                         let key = e.addr_f32(z);
-                        e.add_rms_norm_f8f4v2(
-                            x_cur, &mixed, w_post, x1, None, key, false, n_embd, t, eps,
-                        )?;
+                        if !mixer_resid {
+                            e.add_rms_norm_f8f4v2(
+                                x_cur, &mixed, w_post, x1, None, key, false, n_embd, t, eps,
+                            )?;
+                        } else {
+                            e.rms_norm_f8f4v2(&mixed, w_post, None, key, false, n_embd, t, eps)?;
+                        }
                         z_written = false;
                     } else {
                         e.f8f4_seed_clear();
-                        e.add_rms_norm(x_cur, &mixed, w_post, x1, z, n_embd, t, eps)?;
+                        if !mixer_resid {
+                            e.add_rms_norm(x_cur, &mixed, w_post, x1, z, n_embd, t, eps)?;
+                        } else {
+                            e.rms_norm(&mixed, w_post, z, n_embd, t, eps)?;
+                        }
                     }
+                }
+                if mixer_resid {
+                    x1_mixed = Some(mixed);
                 }
                 anat_mark!(4);
             }
+            // the post-attention residual: x1, or the mixer output that already holds it
+            let x1: &CudaSlice<f32> = match x1_mixed.as_ref() {
+                Some(m) => m,
+                None => &*x1,
+            };
+            // true once the down projection's epilogue wrote x_nxt = x1 + the FFN output
+            let mut down_resid = false;
             let zx16 = if f16fuse { Some(&*z16) } else { None };
             // The down projection's output when it stays where the GEMM wrote it (eager tail).
             let mut fo_owned: Option<CudaSlice<f32>> = None;
@@ -7172,9 +7210,24 @@ impl HybridModel {
                         && ffn_down_pqs.is_none()
                         && e.f8f4_ffn_fused_ok(ffn_gate, ffn_up, ffn_down, t)
                     {
-                        let y = e.matmul_prefill_ffn_f8f4v2(
-                            ffn_gate, ffn_up, ffn_down, z, z_written, t,
-                        )?;
+                        if resid_on && !use_seg {
+                            e.matmul_prefill_ffn_f8f4v2(
+                                ffn_gate,
+                                ffn_up,
+                                ffn_down,
+                                z,
+                                z_written,
+                                t,
+                                Some((x1, &mut *x_nxt)),
+                            )?;
+                            down_resid = true;
+                            break 'dense;
+                        }
+                        let y = e
+                            .matmul_prefill_ffn_f8f4v2(
+                                ffn_gate, ffn_up, ffn_down, z, z_written, t, None,
+                            )?
+                            .ok_or("matmul_prefill_ffn_f8f4v2: no output")?;
                         if use_seg {
                             e.copy_into(sl_fo, 0, &y, t * n_embd)?;
                         } else {
@@ -7321,6 +7374,29 @@ impl HybridModel {
                     sg[il] = Some(g?.ok_or("S-glue capture produced no graph")?);
                 }
                 sg[il].as_ref().unwrap().launch()?;
+            } else if down_resid {
+                // x_nxt already holds x1 + the FFN output: only the next layer's attention norm
+                // (the values add_rms_norm(x1, fo, ..) gives for that sum, kernel-check
+                // ADD-RMS-NORM-E4M3V2's norm-only arm)
+                if il + 1 < hi {
+                    let w_next = self.layers[il + 1].attn_norm.float_data();
+                    let first = match &self.layers[il + 1].mixer {
+                        Mixer::Full(fa) => Some(&fa.wq),
+                        Mixer::Linear(la) => Some(&la.wqkv),
+                        _ => None,
+                    };
+                    if Self::prime_norm_fuse_on()
+                        && Engine::add_rms_norm_f8f4v2_ok(n_embd)
+                        && first.is_some_and(|w| e.f8f4_v2_direct(w, t))
+                    {
+                        let key = e.addr_f32(h);
+                        let q8 = matches!(self.layers[il + 1].mixer, Mixer::Linear(_));
+                        e.rms_norm_f8f4v2(x_nxt, w_next, Some(&mut *h), key, q8, n_embd, t, eps)?;
+                    } else {
+                        e.f8f4_seed_clear();
+                        e.rms_norm(x_nxt, w_next, h, n_embd, t, eps)?;
+                    }
+                }
             } else {
                 let fo: &CudaSlice<f32> = match fo_owned.as_ref() {
                     Some(y) => y,
@@ -8660,7 +8736,7 @@ impl HybridModel {
                     for (s, g3s) in parts.into_iter().enumerate() {
                         // task #16 gather removal: wo writes into `mixed` at offs[s] directly.
                         let (attn_g, ag16) = self.full_attn_prime_core_inner(
-                            e, fa, g3s, &pos_ds[s], ts[s], caches[s], il,
+                            e, fa, g3s, &pos_ds[s], ts[s], caches[s], il, false,
                         )?;
                         let mut done = false;
                         // AWQ (memra#253), as the solo `full_attn_prime_core`: the f16 epilogue
@@ -8918,7 +8994,20 @@ impl HybridModel {
         cache: &mut Cache,
         il: usize,
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
-        let (attn_g, ag16) = self.full_attn_prime_core_inner(e, fa, g3, pos_d, t, cache, il)?;
+        // the gated attention output writes wo's F8F4 v2 activation (seeded for the scoped GEMM
+        // below) when wo takes the v2 tile and carries no AWQ input scale
+        let seed_wo = fa.wo_pqs.is_none();
+        let (attn_g, ag16) =
+            self.full_attn_prime_core_inner(e, fa, g3, pos_d, t, cache, il, seed_wo)?;
+        // fail closed: a seeded gate left attn_g unwritten, so the scoped wo GEMM must adopt it
+        if seed_wo {
+            let key = e.addr_f32(&attn_g);
+            if e.f8f4_seed_any(key) && !e.f8f4_seed_pending(key, fa.wo.in_features(), t) {
+                return Err(
+                    "full_attn_prime_core: the out-gate seed does not fit wo's input".into(),
+                );
+            }
+        }
         // AWQ (memra#253): the f16 epilogue feeds the GEMM a half activation the
         // scale was never applied to; an artifact carrying one takes the general path.
         if let Some(xh) = &ag16
@@ -8930,7 +9019,9 @@ impl HybridModel {
         {
             // AWQ (memra#253): o_proj carries its own per-input-channel scale.
             let __wpqs = e.pre_quant_scaled(&attn_g, fa.wo_pqs.as_ref(), fa.wo.in_features(), t)?;
-            e.matmul_prefill(&fa.wo, __wpqs.as_ref().unwrap_or(&attn_g), t)
+            // a quantize-once scope over attn_g adopts the gate's seed when it left one; a
+            // residual the prime armed lands in the GEMM's epilogue
+            e.matmul_prefill_scoped_resid(&fa.wo, __wpqs.as_ref().unwrap_or(&attn_g), t)
         }
     }
 
@@ -8945,6 +9036,7 @@ impl HybridModel {
         t: usize,
         cache: &mut Cache,
         il: usize,
+        seed_wo: bool,
     ) -> Result<(CudaSlice<f32>, Option<CudaSlice<u8>>), Box<dyn std::error::Error>> {
         let cfg = &self.cfg;
         let geometry = cfg.full_attention_geometry_at(il as u32);
@@ -8958,7 +9050,8 @@ impl HybridModel {
         self.full_attn_prime_fa_dispatch(
             e, &q, &k, &v, &mut attn, base_len, t, cache, il, head_dim, n_head, n_head_kv, scale,
         )?;
-        self.full_attn_prime_post_fa(e, attn, &gate, t, n_head, head_dim)
+        let wo = if seed_wo { Some(&fa.wo) } else { None };
+        self.full_attn_prime_post_fa(e, attn, &gate, t, n_head, head_dim, wo)
     }
 
     /// task #18 (attn side): projections tail through KV append — everything before the
@@ -8990,7 +9083,33 @@ impl HybridModel {
         let v = g3.pop().unwrap();
         let mut k = g3.pop().unwrap();
         let qf = g3.pop().unwrap();
-        let (mut q, gate) = if gated {
+        let rope_dims = geometry.n_rot as usize;
+        // The split, the q-norm and q's RoPE in one kernel where all three apply
+        // (MEMRA_PRIME_Q_FUSE, GB10-keyed); the same q and gate bits.
+        let q_fused = gated
+            && e.prime_q_fuse_on()
+            && fa.q_norm_w().is_some()
+            && rope_dims.is_multiple_of(2)
+            && rope_dims <= head_dim;
+        let (mut q, gate) = if q_fused {
+            let mut q = e.uninit(t * n_head * head_dim)?;
+            let mut gate = e.uninit(t * n_head * head_dim)?;
+            e.q_split_norm_rope(
+                &qf,
+                fa.q_norm_w().unwrap(),
+                pos_d,
+                &mut q,
+                &mut gate,
+                head_dim,
+                n_head,
+                t,
+                rope_dims,
+                geometry.rope_base,
+                1.0,
+                eps,
+            )?;
+            (q, Some(gate))
+        } else if gated {
             let mut q = e.uninit(t * n_head * head_dim)?;
             let mut gate = e.uninit(t * n_head * head_dim)?;
             e.q_gate_split(&qf, &mut q, &mut gate, head_dim, n_head, t)?;
@@ -8999,23 +9118,26 @@ impl HybridModel {
             (qf, None)
         };
 
-        let mut qn = e.uninit(t * n_head * head_dim)?;
-        e.rms_norm_opt(&q, fa.q_norm_w(), &mut qn, head_dim, n_head * t, eps)?;
-        q = qn;
+        if !q_fused {
+            let mut qn = e.uninit(t * n_head * head_dim)?;
+            e.rms_norm_opt(&q, fa.q_norm_w(), &mut qn, head_dim, n_head * t, eps)?;
+            q = qn;
+        }
         let mut kn = e.uninit(t * n_head_kv * head_dim)?;
         e.rms_norm_opt(&k, fa.k_norm_w(), &mut kn, head_dim, n_head_kv * t, eps)?;
         k = kn;
-        let rope_dims = geometry.n_rot as usize;
-        e.rope_neox(
-            &mut q,
-            pos_d,
-            head_dim,
-            rope_dims,
-            n_head,
-            t,
-            geometry.rope_base,
-            1.0,
-        )?;
+        if !q_fused {
+            e.rope_neox(
+                &mut q,
+                pos_d,
+                head_dim,
+                rope_dims,
+                n_head,
+                t,
+                geometry.rope_base,
+                1.0,
+            )?;
+        }
         e.rope_neox(
             &mut k,
             pos_d,
@@ -9182,6 +9304,7 @@ impl HybridModel {
     /// task #17: sig_mul_f16out fuses [sigmoid + mul + f16 convert] into one launch
     /// (bit-identical composition) and hands wo its fp16 operand directly.
     #[allow(clippy::type_complexity)] // allow: one-shot composite type; naming it would hide the shape that matters at the call site
+    #[allow(clippy::too_many_arguments)] // allow: the post-FA contract plus the optional wo seed target
     fn full_attn_prime_post_fa(
         &self,
         e: &Engine,
@@ -9190,6 +9313,7 @@ impl HybridModel {
         t: usize,
         n_head: usize,
         head_dim: usize,
+        seed_wo: Option<&crate::model::GpuTensor>,
     ) -> Result<(CudaSlice<f32>, Option<CudaSlice<u8>>), Box<dyn std::error::Error>> {
         let (attn_g, ag16) = match gate {
             Some(gate) => {
@@ -9199,6 +9323,15 @@ impl HybridModel {
                     let mut a16 = e.alloc_u8_uninit(n * 2)?;
                     e.sig_mul_f16out(&attn, gate, &mut ag, &mut a16, n)?;
                     (ag, Some(a16))
+                } else if Self::prime_norm_fuse_on()
+                    && (n_head * head_dim).is_multiple_of(32)
+                    && seed_wo.is_some_and(|w| e.f8f4_v2_direct(w, t))
+                {
+                    // attn * sigmoid(gate) and wo's F8F4 v2 activation in one kernel; the f32
+                    // product has no other reader (the caller's scoped wo GEMM adopts the seed)
+                    let key = e.addr_f32(&ag);
+                    e.sig_mul_f8f4v2(&attn, gate, None, key, n_head * head_dim, t)?;
+                    (ag, None)
                 } else {
                     let mut gsig = e.uninit(n)?;
                     e.sigmoid(gate, &mut gsig, n)?;
@@ -9325,6 +9458,77 @@ impl HybridModel {
         // intermediate and its transposed re-read disappear (values bit-identical).
         let rl = cache.recur[il].as_mut().unwrap();
         let hk = Self::gdn_hk(e, t, num_v, num_k);
+        // The conv with the q/k L2 norms fused (GB10 prefill lane, 2026-11-07): on the compact
+        // layout at d_state 128 the raw q_g / k_g rows are never stored (kernel-check
+        // GDN-CONV-L2). MEMRA_GDN_CONV_L2 (GB10-keyed) inside the MEMRA_GDN_TRAFFIC set; the eager
+        // prime only (no table graph).
+        let fused_l2 = Engine::gdn_traffic_on()
+            && e.gdn_conv_l2_on()
+            && hk == num_k
+            && Engine::l2_v2_on(d_state)
+            && !e.gdn_wgmma_on(32)
+            && crate::qwen_prime_graph::current().is_none();
+        if fused_l2 {
+            let mut q_l2 = e.uninit(d_state * hk * t)?;
+            let mut k_l2 = e.uninit(d_state * hk * t)?;
+            let mut kb = e.alloc_u8_uninit(d_state * hk * t * 2)?;
+            let mut v_g = e.uninit(d_state * num_v * t)?;
+            let mut q_unused = e.uninit(1)?;
+            let mut k_unused = e.uninit(1)?;
+            e.ssm_conv1d_gdn_state_pad(
+                qkv_mixed,
+                &mut rl.conv_state,
+                la.ssm_conv1d.float_data(),
+                &mut q_unused,
+                &mut k_unused,
+                &mut v_g,
+                conv_dim,
+                t,
+                d_conv,
+                d_state,
+                num_v,
+                num_k,
+                key_dim,
+                hk,
+                pad_len,
+                Some(crate::GdnConvL2 {
+                    q_l2: &mut q_l2,
+                    k_l2: &mut k_l2,
+                    k16: Some(&mut kb),
+                    eps,
+                }),
+            )?;
+            if pad_len.is_none()
+                && let Some(rows) = crate::grid_capture::layer_rel()
+            {
+                let ring = e.ssm_conv_ring_capture(qkv_mixed, conv_dim, rows, d_conv)?;
+                crate::grid_capture::put_conv(il, ring);
+            }
+            let mut beta = e.uninit(t * num_v)?;
+            e.sigmoid_v(beta_raw, &mut beta, t * num_v)?;
+            let mut g_log = e.uninit(t * num_v)?;
+            e.gdn_glog_v(
+                alpha,
+                la.ssm_dt.float_data(),
+                la.ssm_a.float_data(),
+                &mut g_log,
+                num_v,
+                t,
+            )?;
+            if let Some(len_d) = pad_len {
+                e.gdn_pad_mask(&mut beta, &mut g_log, len_d, num_v, t)?;
+            }
+            return Ok(GdnPrep {
+                hk,
+                q_l2,
+                k_l2,
+                v_g,
+                beta,
+                g_log,
+                kb16: Some(kb),
+                qb16: None,
+            });
+        }
         let mut q_g = e.uninit(d_state * hk * t)?;
         let mut k_g = e.uninit(d_state * hk * t)?;
         let mut v_g = e.uninit(d_state * num_v * t)?;
@@ -9344,6 +9548,7 @@ impl HybridModel {
             key_dim,
             hk,
             pad_len,
+            None,
         )?;
         // GRID CAPTURE (WP-B day 44, `grid_capture`): the ring at the capture point inside this
         // call, from this call's own input rows. Unpadded per-sequence primes only.
@@ -9765,8 +9970,9 @@ impl HybridModel {
         {
             return Ok(y);
         }
-        // a quantize-once scope over gn adopts the gated norm's seed when it left one
-        e.matmul_prefill_scoped(&la.ssm_out, &gn, t)
+        // a quantize-once scope over gn adopts the gated norm's seed when it left one; a residual
+        // the prime armed lands in the GEMM's epilogue
+        e.matmul_prefill_scoped_resid(&la.ssm_out, &gn, t)
     }
 
     /// Full-attention mixer with QK-norm, partial RoPE, sigmoid output gate (qwen35 :257-336).

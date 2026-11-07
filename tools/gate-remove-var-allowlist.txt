@@ -35,6 +35,7 @@ crates/memra-engine/src/bin/kernel_check.rs:MEMRA_MOE_SLOTS # kernel check slots
 crates/memra-engine/src/bin/kernel_check.rs:MEMRA_DP4A_TILED # NVFP4-DP4A-RP-T4 cleanup: each arm pins 1 or 0, the unset restores the device default for later cells
 crates/memra-engine/src/bin/kernel_check.rs:MEMRA_GDN_TRAFFIC # GDN-DB-GQA cleanup: each arm (reference included) pins 1 or 0
 crates/memra-engine/src/bin/kernel_check.rs:MEMRA_GDN_K45 # GDN-DB-GQA cleanup: each arm (reference included) pins 1 or 0
+crates/memra-engine/src/bin/kernel_check.rs:MEMRA_GDN_K2_32 # GDN-DB-GQA cleanup: each arm (reference included) pins 1 or 0
 
 # Test teardown / RAII cleanup of non-boolean / path-based knobs
 crates/memra-engine/tests/mla_tc_prefill_gpu.rs:MEMRA_MLA_TC_PREFILL # RAII Drop guard cleanup

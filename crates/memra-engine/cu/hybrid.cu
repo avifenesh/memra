@@ -153,6 +153,102 @@ extern "C" __global__ void ssm_conv1d_gdn_state_f32(
     }
 }
 
+// The state conv with the q/k L2 norms fused (GB10 prefill lane, 2026-11-07), for the compact
+// q/k layout (hk == num_k) at d_state 128. One warp per (token, 128-channel head row); lane l
+// computes channels 4l .. 4l+3 with ssm_conv1d_gdn_state_f32's per-channel program (the same
+// 8-tap ascending accumulation, the same ring reads, the same SiLU). A q or k row is then
+// l2_norm_pp_v2_f32's program on those four values (lane l holds elements 4l .. 4l+3, the same
+// sum expression, the same xor-shuffle tree, rsqrtf(sum + eps), the same products), written as
+// q_l2 / k_l2 plus k's bf16 twin; the raw q_g / k_g rows are never stored. v rows are stored as
+// the plain conv stores them. Bit-identical to ssm_conv1d_gdn_state_f32 then two l2_norm_pp_v2_f32
+// launches (kernel-check GDN-CONV-L2). grid (conv_dim / 128 / 8, T), block 256.
+extern "C" __global__ void ssm_conv1d_gdn_state_l2_f32(
+        const float* __restrict__ qkv_tm, const float* __restrict__ conv_state,
+        const float* __restrict__ w,
+        float* __restrict__ q_l2, float* __restrict__ k_l2, __nv_bfloat16* __restrict__ k16,
+        float* __restrict__ v_g,
+        int conv_dim, int T, int d_conv, int num_v, int num_k, int key_dim, float eps) {
+    const int warp = threadIdx.x >> 5, lane = threadIdx.x & 31;
+    const int grp = blockIdx.x * 8 + warp;          // 128-channel head row
+    const int t = blockIdx.y;
+    if (grp * 128 >= conv_dim || t >= T) return;     // whole warps
+    const int pad = d_conv - 1;
+    float val[4];
+    const int cb = grp * 128 + lane * 4;
+    if (d_conv == 4 && ((reinterpret_cast<uintptr_t>(qkv_tm) | reinterpret_cast<uintptr_t>(w)) & 15) == 0
+        && (conv_dim & 3) == 0) {
+        // d_conv 4 (Qwen3.5/3.8): the lane's four channels per window row and its four weight rows
+        // in 16-byte loads; each channel still accumulates its taps j = 0..3 in ascending order
+        // with the same expression, so the values are the scalar path's
+        float4 wv[4], xr[4];
+        #pragma unroll
+        for (int e4 = 0; e4 < 4; e4++) wv[e4] = *(const float4*)(w + (size_t)(cb + e4) * 4);
+        #pragma unroll
+        for (int j = 0; j < 4; j++) {
+            const int tt = t - 3 + j;
+            if (tt >= 0) {
+                xr[j] = *(const float4*)(qkv_tm + (size_t)tt * conv_dim + cb);
+            } else {
+                const float* st = conv_state + (size_t)cb * 3 + 3 + tt;
+                xr[j] = make_float4(st[0], st[3], st[6], st[9]);
+            }
+        }
+        #pragma unroll
+        for (int e4 = 0; e4 < 4; e4++) {
+            const float w4[4] = {wv[e4].x, wv[e4].y, wv[e4].z, wv[e4].w};
+            float acc = 0.0f;
+            #pragma unroll
+            for (int j = 0; j < 4; j++) {
+                const float xv = e4 == 0 ? xr[j].x : e4 == 1 ? xr[j].y : e4 == 2 ? xr[j].z : xr[j].w;
+                acc += xv * w4[j];
+            }
+            val[e4] = silu(acc);
+        }
+    } else {
+        #pragma unroll
+        for (int e4 = 0; e4 < 4; e4++) {
+            const int c = cb + e4;
+            const float* wc = w + (size_t)c * d_conv;
+            const float* st = conv_state + (size_t)c * pad;
+            float acc = 0.0f;
+            #pragma unroll
+            for (int j = 0; j < 8; j++) {
+                if (j < d_conv) {
+                    int tt = t - pad + j;
+                    float xv = (tt >= 0) ? qkv_tm[(size_t)tt * conv_dim + c] : st[pad + tt];
+                    acc += xv * wc[j];
+                }
+            }
+            val[e4] = silu(acc);
+        }
+    }
+    const int c0 = grp * 128;
+    if (c0 < 2 * key_dim) {
+        const bool is_q = c0 < key_dim;
+        const int kh = (is_q ? c0 : c0 - key_dim) / 128;
+        float4 v = make_float4(val[0], val[1], val[2], val[3]);
+        float sum = v.x * v.x + v.y * v.y + v.z * v.z + v.w * v.w;
+        #pragma unroll
+        for (int o = 16; o > 0; o >>= 1) sum += __shfl_xor_sync(0xffffffffu, sum, o);
+        float scale = rsqrtf(sum + eps);
+        float4 o4 = make_float4(v.x * scale, v.y * scale, v.z * scale, v.w * scale);
+        const size_t row = (size_t)t * num_k + kh;
+        float* dst = is_q ? q_l2 : k_l2;
+        *(float4*)(dst + row * 128 + lane * 4) = o4;
+        if (!is_q && k16 != nullptr) {
+            __nv_bfloat16* hb = k16 + row * 128 + lane * 4;
+            hb[0] = __float2bfloat16(o4.x); hb[1] = __float2bfloat16(o4.y);
+            hb[2] = __float2bfloat16(o4.z); hb[3] = __float2bfloat16(o4.w);
+        }
+    } else {
+        const int cc = c0 - 2 * key_dim;
+        const int vh = cc / 128;
+        #pragma unroll
+        for (int e4 = 0; e4 < 4; e4++)
+            v_g[((size_t)t * num_v + vh) * 128 + lane * 4 + e4] = val[e4];
+    }
+}
+
 // ---- BATCHED verify conv: token-major input, CARRIED conv state, ring update, T>1. ----
 // The spec verify path runs T=K+1 tokens through a linear-attn layer in one pass. This is
 // ssm_conv1d_tm_f32 with the zero left-pad replaced by the RESIDENT conv ring (window rows
@@ -497,20 +593,19 @@ struct __align__(16) GdnK2Shared {
 };
 static_assert(sizeof(GdnK2Shared) == 67072, "unexpected GDN K2 shared-memory layout");
 
-__device__ __forceinline__ void gdn_k2_body(
+// KJ_ALIAS (C == 32, jb == 0): the j-block's k rows are the chunk's k rows, so kjt is kt (the
+// same values at the same [row][d]) and is neither stored nor loaded twice.
+template <bool KJ_ALIAS>
+__device__ __forceinline__ void gdn_k2_body_t(
         const float* __restrict__ q, const float* __restrict__ k,
         const float* __restrict__ gcum, const float* __restrict__ beta,
         float* __restrict__ A, float* __restrict__ P, int H, int T, int C,
-        int c, int h, int jb, int hk, GdnK2Shared& smem) {
+        int c, int h, int jb, int hk, float (*kt)[GDN_D + 1], float (*qt)[GDN_D + 1],
+        float (*kjt)[GDN_D + 1], float* gct, float* bt) {
     const int hq = h % hk;   // q/k head (task #21 de-broadcast; hk == H reproduces old)
     const int t0 = c * C;
     const int Cc = min(C, T - t0);
     if (jb >= Cc) return;                      // uniform per block (tail chunk)
-    float (&kt)[64][GDN_D + 1] = smem.kt;      // all i-rows of the chunk (C <= 64)
-    float (&qt)[32][GDN_D + 1] = smem.qt;      // this j-block's q rows
-    float (&kjt)[32][GDN_D + 1] = smem.kjt;    // this j-block's k rows
-    float (&gct)[128] = smem.gct;
-    float (&bt)[128] = smem.bt;
     const int tid = threadIdx.x;
     if (tid < Cc) {
         gct[tid] = gcum[(size_t)(t0 + tid) * H + h];
@@ -524,7 +619,9 @@ __device__ __forceinline__ void gdn_k2_body(
     for (int idx = tid; idx < jn * GDN_D; idx += 256) {
         int r = idx / GDN_D, d = idx % GDN_D;
         qt[r][d]  = q[((size_t)(t0 + jb + r) * hk + hq) * GDN_D + d];
-        kjt[r][d] = k[((size_t)(t0 + jb + r) * hk + hq) * GDN_D + d];
+        if constexpr (!KJ_ALIAS) {
+            kjt[r][d] = k[((size_t)(t0 + jb + r) * hk + hq) * GDN_D + d];
+        }
     }
     __syncthreads();
     const int jg = tid / 16, ig = tid % 16;    // 16x2 j-rows x 16x2 i-cols
@@ -566,6 +663,39 @@ __device__ __forceinline__ void gdn_k2_body(
         float* Prow = P + (((size_t)c * H + h) * C + j) * C;
         for (int i = j + 1 + (tid % 32); i < Cc; i += 32) Prow[i] = 0.0f;
     }
+}
+
+__device__ __forceinline__ void gdn_k2_body(
+        const float* __restrict__ q, const float* __restrict__ k,
+        const float* __restrict__ gcum, const float* __restrict__ beta,
+        float* __restrict__ A, float* __restrict__ P, int H, int T, int C,
+        int c, int h, int jb, int hk, GdnK2Shared& smem) {
+    // kt: all i-rows of the chunk (C <= 64); qt / kjt: this j-block's q and k rows
+    gdn_k2_body_t<false>(q, k, gcum, beta, A, P, H, T, C, c, h, jb, hk, smem.kt, smem.qt,
+                         smem.kjt, smem.gct, smem.bt);
+}
+
+// K2 at C == 32 (GB10 prefill lane, 2026-11-07): gdn_chunk_attn_f32's body on a 33,280-byte
+// layout (the chunk's k rows serve as both kt and kjt, 32-row gate/beta), so two blocks fit an SM
+// where the 64-row layout (67,072 B) allowed one. Same per-thread loads, dot order and stores:
+// bit-identical. grid (NC, H, 1) or heads-fastest (H, NC, 1), block 256.
+struct __align__(16) GdnK2Shared32 {
+    float kt[32][GDN_D + 1];
+    float qt[32][GDN_D + 1];
+    float gct[32];
+    float bt[32];
+};
+static_assert(sizeof(GdnK2Shared32) == 33280, "unexpected GDN K2/32 shared-memory layout");
+
+extern "C" __global__ void __launch_bounds__(256, 2) gdn_chunk_attn32_f32(
+        const float* __restrict__ q, const float* __restrict__ k,
+        const float* __restrict__ gcum, const float* __restrict__ beta,
+        float* __restrict__ A, float* __restrict__ P, int H, int T, int hk, int hfast) {
+    extern __shared__ __align__(16) unsigned char gdn_k2_smem[];
+    auto& smem = *reinterpret_cast<GdnK2Shared32*>(gdn_k2_smem);
+    const int c = hfast ? blockIdx.y : blockIdx.x, h = hfast ? blockIdx.x : blockIdx.y;
+    gdn_k2_body_t<true>(q, k, gcum, beta, A, P, H, T, 32, c, h, 0, hk, smem.kt, smem.qt, smem.kt,
+                        smem.gct, smem.bt);
 }
 
 extern "C" __global__ void gdn_chunk_attn_f32(
@@ -1001,6 +1131,44 @@ extern "C" __global__ void sig_mul_f16out_f32(const float* __restrict__ a, const
         dst16[i] = __float2half(o);
     }
 }
+// e4m3 cvt and the F8F4 v2 activation token slot (mmq_nvfp4_f8f4.cu's), for the fused quantize epilogues below.
+static __device__ __forceinline__ uint8_t gdn_cvt_e4m3(float v) {
+    uint16_t r;
+    asm("{\n\t.reg .b16 t;\n\tcvt.rn.satfinite.e4m3x2.f32 t, %2, %1;\n\tmov.b16 %0, t;\n}"
+        : "=h"(r) : "f"(v), "f"(0.0f));
+    return (uint8_t)(r & 0xff);
+}
+static __device__ __forceinline__ long long gdn_f8f4v2_act_slot(long long t) {
+    const int lt = (int)(t & 63), p = lt >> 3, r8 = lt & 7;
+    return (t & ~(long long)63) + ((p >> 1) * 4 + (r8 >> 1)) * 4 + (p & 1) * 2 + (r8 & 1);
+}
+// attn out-gate with the wo GEMM's F8F4 v2 activation quantize fused (GB10 prefill lane,
+// 2026-11-07): o = a * sigmoid(g) with sig_mul_f16out_f32's expressions (the values of
+// sigmoid_f32 then mul_f32), then per 32-element group (one warp: in_f % 32 == 0, n % 32 == 0,
+// a warp-multiple block) memra_mmq_nvfp4_f8f4_v2_quantize_act's program: amax of |o|,
+// d_inv = 448 / amax, cvt.rn.satfinite e4m3, the scale amax / 448 in the k-major lane-permuted
+// plane of the [ntok, in_f] activation. `dst` (nullable) still receives the f32 values.
+extern "C" __global__ void sig_mul_e4m3v2_f32(const float* __restrict__ a, const float* __restrict__ g,
+                                              float* __restrict__ dst, uint8_t* __restrict__ vy,
+                                              int in_f, int ntok, long long tp) {
+    const long long n = (long long)in_f * ntok;
+    const long long i = (long long)blockIdx.x * blockDim.x + threadIdx.x;
+    if (i >= n) return;                       // whole warps only (n % 32 == 0)
+    float s = 1.0f / (1.0f + expf(-g[i]));
+    float o = a[i] * s;
+    if (dst != nullptr) dst[i] = o;
+    float amax = fabsf(o);
+    #pragma unroll
+    for (int off = 16; off > 0; off >>= 1)
+        amax = fmaxf(amax, __shfl_xor_sync(0xffffffffu, amax, off));
+    const float d_inv = amax == 0.0f ? 0.0f : 448.0f / amax;
+    const int t = (int)(i / in_f), k = (int)(i % in_f);
+    vy[(size_t)t * in_f + k] = gdn_cvt_e4m3(o * d_inv);
+    if ((threadIdx.x & 31) == 0) {
+        float* sc = (float*)(vy + (size_t)ntok * in_f);
+        sc[(long long)(k / 32) * tp + gdn_f8f4v2_act_slot(t)] = amax == 0.0f ? 0.0f : amax / 448.0f;
+    }
+}
 // step35 (Step-3.7-Flash) SEPARATE head-wise attention gate. Distinct from sig_mul_f16out_f32
 // above: qwen35's gate is FULL WIDTH (one gate value per (head, dim) element, packed into wq), so
 // that kernel is a plain elementwise mul. step35's gate is ONE SCALAR PER HEAD (from its own
@@ -1160,16 +1328,6 @@ extern "C" __global__ void gated_rmsnorm_f32(const float* __restrict__ o, const 
 // d_inv = 448 / amax, cvt.rn.satfinite e4m3 of x * d_inv, the scale amax / 448 in the k-major
 // lane-permuted plane. Row `row` is head row % num_v of token row / num_v of the [T, num_v * ncols]
 // activation the ssm_out GEMM reads. `dst` (nullable) still receives the f32 values.
-static __device__ __forceinline__ uint8_t gdn_cvt_e4m3(float v) {
-    uint16_t r;
-    asm("{\n\t.reg .b16 t;\n\tcvt.rn.satfinite.e4m3x2.f32 t, %2, %1;\n\tmov.b16 %0, t;\n}"
-        : "=h"(r) : "f"(v), "f"(0.0f));
-    return (uint8_t)(r & 0xff);
-}
-static __device__ __forceinline__ long long gdn_f8f4v2_act_slot(long long t) {
-    const int lt = (int)(t & 63), p = lt >> 3, r8 = lt & 7;
-    return (t & ~(long long)63) + ((p >> 1) * 4 + (r8 >> 1)) * 4 + (p & 1) * 2 + (r8 & 1);
-}
 extern "C" __global__ void gated_rmsnorm_e4m3v2_f32(const float* __restrict__ o, const float* __restrict__ w,
                                                     const float* __restrict__ z, float* __restrict__ dst,
                                                     uint8_t* __restrict__ vy, int ncols, int num_v,

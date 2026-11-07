@@ -12,6 +12,8 @@ use std::sync::{
 };
 
 const GDN_K2_DYNAMIC_SHARED_BYTES: u32 = 67_072;
+/// `gdn_chunk_attn32_f32`'s `GdnK2Shared32` (hybrid.cu).
+const GDN_K2_32_DYNAMIC_SHARED_BYTES: u32 = 33_280;
 
 /// The default dynamic-shared-memory launch bound the naive SDPA family lives under: past
 /// `T_kv * 4 > 48KB` (T_kv > 12288) the smem kernel cannot launch — the measured
@@ -1856,6 +1858,15 @@ pub(crate) fn fa_sm_count() -> i32 {
     })
 }
 
+/// The q/k L2 outputs `Engine::ssm_conv1d_gdn_state_pad` writes when it runs the conv with the
+/// L2 norms fused (`ssm_conv1d_gdn_state_l2_f32`): normalized q and k rows, k's bf16 twin, eps.
+pub struct GdnConvL2<'a> {
+    pub q_l2: &'a mut CudaSlice<f32>,
+    pub k_l2: &'a mut CudaSlice<f32>,
+    pub k16: Option<&'a mut CudaSlice<u8>>,
+    pub eps: f32,
+}
+
 /// One quantize-once scope: the activation buffer it covers and, after the first F8F4 weight,
 /// that activation's e4m3 scratch (block_e4m3_mmq, the bytes the quantizer would write again).
 pub(crate) struct F8f4ActGroup {
@@ -1880,6 +1891,15 @@ impl Drop for F8f4ActGroupGuard<'_> {
     }
 }
 
+/// A residual armed for one mixer output projection (`Engine::gemm_resid_request`): the F8F4 v2
+/// GEMM `matmul_prefill_scoped_resid` runs adds the [m, out_f] f32 at `src` in its epilogue.
+pub(crate) struct GemmResid {
+    src: u64,
+    out_f: usize,
+    m: usize,
+    applied: bool,
+}
+
 /// See `Engine::f8f4_seed_guard`.
 pub struct F8f4SeedGuard<'a> {
     engine: &'a Engine,
@@ -1888,6 +1908,7 @@ pub struct F8f4SeedGuard<'a> {
 impl Drop for F8f4SeedGuard<'_> {
     fn drop(&mut self) {
         self.engine.f8f4_seed_clear();
+        *self.engine.gemm_resid.lock().unwrap() = None;
     }
 }
 
@@ -2146,6 +2167,8 @@ pub struct Engine {
     /// adopts it, any other scope drops it. Take-once, so a later write of the buffer can never
     /// meet a stale scratch.
     f8f4_act_seed: Mutex<Option<F8f4ActGroup>>,
+    /// The residual the prime armed for a mixer's output projection (`gemm_resid_request`).
+    gemm_resid: Mutex<Option<GemmResid>>,
     /// LAUNCH-STRUCTURE STAGE 1: persistent PINNED (cacheable, flags=0) host staging buffer for the
     /// fused-router sel/w readback — one async DtoH pair + ONE sync instead of two synced dtohs.
     /// Grown lazily; reused every MoE layer (single-threaded decode serializes on the sync).
@@ -3939,6 +3962,7 @@ impl Engine {
             prime_deqw_ws: Mutex::new(None),
             f8f4_act_group: Mutex::new(None),
             f8f4_act_seed: Mutex::new(None),
+            gemm_resid: Mutex::new(None),
             router_stage: Mutex::new(None),
             hyper_decode_ws: Mutex::new(None),
             mla_seg_ws: Mutex::new(None),
@@ -24716,6 +24740,15 @@ impl Engine {
         *self.f8f4_act_seed.lock().unwrap() = None;
     }
 
+    /// Whether any fused-norm seed is pending for the buffer at `x_ptr`, whatever its shape.
+    pub fn f8f4_seed_any(&self, x_ptr: u64) -> bool {
+        self.f8f4_act_seed
+            .lock()
+            .unwrap()
+            .as_ref()
+            .is_some_and(|g| g.x_ptr == x_ptr)
+    }
+
     /// Whether a fused-norm seed is pending for the buffer at `x_ptr` ([m, in_f]).
     pub fn f8f4_seed_pending(&self, x_ptr: u64, in_f: usize, m: usize) -> bool {
         self.f8f4_act_seed
@@ -24729,7 +24762,92 @@ impl Engine {
     /// returns included).
     pub fn f8f4_seed_guard(&self) -> F8f4SeedGuard<'_> {
         self.f8f4_seed_clear();
+        *self.gemm_resid.lock().unwrap() = None;
         F8f4SeedGuard { engine: self }
+    }
+
+    /// Arm the residual epilogue for the next `matmul_prefill_scoped_resid` with an [m, out_f]
+    /// output: when its weight takes the F8F4 v2 tile it writes `src + W x` instead of `W x`.
+    /// `src` stays alive and unwritten until `gemm_resid_take` (the prime arms it right before a
+    /// mixer and takes it right after; the seed guard clears it on every exit).
+    pub fn gemm_resid_request(&self, src: &CudaSlice<f32>, out_f: usize, m: usize) {
+        let src = self.addr_f32(src);
+        *self.gemm_resid.lock().unwrap() = Some(GemmResid {
+            src,
+            out_f,
+            m,
+            applied: false,
+        });
+    }
+
+    /// Disarm the residual epilogue: whether a projection added the residual since
+    /// `gemm_resid_request` (its output then holds `src + W x`).
+    pub fn gemm_resid_take(&self) -> bool {
+        self.gemm_resid
+            .lock()
+            .unwrap()
+            .take()
+            .is_some_and(|r| r.applied)
+    }
+
+    /// `MEMRA_PRIME_RESID_EPI`: `0` keeps the residual adds in the norm kernels (rollback seam,
+    /// read per call); unset or anything else lets the eager prime arm the v2 GEMM's residual
+    /// epilogue for the mixers' output projections and the dense FFN's down projection.
+    pub fn prime_resid_on() -> bool {
+        std::env::var("MEMRA_PRIME_RESID_EPI").as_deref() != Ok("0")
+    }
+
+    /// `matmul_prefill_scoped` for a mixer's output projection. With a residual armed for this
+    /// output shape (`gemm_resid_request`) and a weight on the F8F4 v2 tile (`f8f4_v2_direct`, the
+    /// route `matmul_prefill` takes for it), the GEMM's epilogue adds the residual: the output
+    /// holds `src + W x`, the bits of the plain GEMM then `add(src, y)` (kernel-check
+    /// `MMQ-F8F4-V2-RESID`), and the arm records it. Otherwise exactly `matmul_prefill_scoped`.
+    pub fn matmul_prefill_scoped_resid(
+        &self,
+        w: &crate::model::GpuTensor,
+        x: &CudaSlice<f32>,
+        m: usize,
+    ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
+        let (in_f, out_f) = (w.in_features(), w.out_features());
+        let src = self
+            .gemm_resid
+            .lock()
+            .unwrap()
+            .as_ref()
+            .filter(|r| !r.applied && r.out_f == out_f && r.m == m)
+            .map(|r| r.src);
+        let quant = match w {
+            crate::model::GpuTensor::Quant {
+                bytes, scale, rp, ..
+            } => Some((bytes, *scale, *rp)),
+            _ => None,
+        };
+        let (Some(src), Some((bytes, scale, rp))) = (src, quant) else {
+            return self.matmul_prefill_scoped(w, x, m);
+        };
+        if !self.f8f4_v2_direct(w, m) || !crate::mmq_ffi::f8f4_v2_kernel_shape_ok(in_f, out_f, m) {
+            return self.matmul_prefill_scoped(w, x, m);
+        }
+        // the scope adopts the seed a fused writer of x left (x may then be unwritten f32)
+        let _scope = self.f8f4_act_group_open(x, in_f, m);
+        let seeded = self
+            .f8f4_act_group
+            .lock()
+            .unwrap()
+            .as_mut()
+            .filter(|g| g.v2)
+            .and_then(|g| g.scratch.take());
+        let act = match seeded {
+            Some(a) => a,
+            None => self.f8f4_quantize(x, m, in_f, true)?,
+        };
+        let mut y = self.alloc_uninit::<f32>(m * out_f)?;
+        let y_p = self.addr_f32_mut(&mut y);
+        self.f8f4_gemm_preq_resid_raw(bytes, &act, m, in_f, out_f, scale, rp, src, y_p)?;
+        if let Some(r) = self.gemm_resid.lock().unwrap().as_mut() {
+            r.applied = true;
+        }
+        Ok(y)
     }
 
     /// `matmul_prefill(w, x, m)` inside a quantize-once scope over `x`, so a single weight adopts
@@ -34375,6 +34493,39 @@ impl Engine {
         )
     }
 
+    /// Whether K2 at C == 32 runs `gdn_chunk_attn32_f32` (the half-size shared layout, two
+    /// blocks per SM) instead of `gdn_chunk_attn_f32`; the same bits. `MEMRA_GDN_K2_32` of
+    /// `1`/`0` decides on any device (read per call so kernel-check pins both); unset follows the
+    /// device, on for GB10 (`gb10_class`), where it was measured.
+    pub fn gdn_k2_32_on(&self) -> bool {
+        f8f4_route_on_dev(
+            std::env::var("MEMRA_GDN_K2_32").ok().as_deref(),
+            self.gb10_class(),
+        )
+    }
+
+    /// Whether the GDN state conv runs the q/k L2 norms in the same pass
+    /// (`ssm_conv1d_gdn_state_l2_f32`, one warp per 128-channel row) on the compact layout.
+    /// `MEMRA_GDN_CONV_L2` of `1`/`0` decides on any device (read per call); unset follows the
+    /// device, on for GB10 (`gb10_class`), where it was measured. The same bits either way.
+    pub fn gdn_conv_l2_on(&self) -> bool {
+        f8f4_route_on_dev(
+            std::env::var("MEMRA_GDN_CONV_L2").ok().as_deref(),
+            self.gb10_class(),
+        )
+    }
+
+    /// Whether the gated-attention q split, q-norm and q RoPE run as one kernel
+    /// (`q_split_norm_rope`). `MEMRA_PRIME_Q_FUSE` of `1`/`0` decides on any device (read per
+    /// call); unset follows the device, on for GB10 (`gb10_class`), where it was measured. The
+    /// same bits either way.
+    pub fn prime_q_fuse_on(&self) -> bool {
+        f8f4_route_on_dev(
+            std::env::var("MEMRA_PRIME_Q_FUSE").ok().as_deref(),
+            self.gb10_class(),
+        )
+    }
+
     /// A unified-memory 120a-family device (GB10): the device class this lane's parallelism-
     /// changing defaults were measured on.
     pub fn gb10_class(&self) -> bool {
@@ -34489,6 +34640,35 @@ impl Engine {
                 .arg(&ti)
                 .arg(&ci)
                 .arg(&hki);
+            unsafe {
+                b.launch(cfg)?;
+            }
+        } else if c == 32 && !portable_mma_gated() && self.gdn_k2_32_on() {
+            // K2 register-tiled at C == 32 on the half-size shared layout (two blocks per SM)
+            let hfast = Self::gdn_hfast(nc);
+            let cfg = LaunchConfig {
+                grid_dim: if hfast != 0 {
+                    (h as u32, nc as u32, 1)
+                } else {
+                    (nc as u32, h as u32, 1)
+                },
+                block_dim: (256, 1, 1),
+                shared_mem_bytes: GDN_K2_32_DYNAMIC_SHARED_BYTES,
+            };
+            let f = self.func("gdn_chunk_attn32_f32");
+            let hki = hk as i32;
+            let __s_b = self.gpu.stream();
+            let mut b = __s_b.launch_builder(&f);
+            b.arg(q)
+                .arg(k)
+                .arg(&gcum)
+                .arg(beta)
+                .arg(&mut a)
+                .arg(&mut p)
+                .arg(&hi)
+                .arg(&ti)
+                .arg(&hki)
+                .arg(&hfast);
             unsafe {
                 b.launch(cfg)?;
             }
@@ -34710,6 +34890,7 @@ impl Engine {
         key_dim: usize,
         hk: usize,
         pad_len: Option<&CudaSlice<i32>>,
+        l2: Option<GdnConvL2<'_>>,
     ) -> Result<(), Box<dyn std::error::Error>> {
         assert!(
             t >= d_conv - 1,
@@ -34717,7 +34898,51 @@ impl Engine {
         );
         let live = crate::qwen_prime_graph::current();
         let table = live.map_or(0, |a| a.0);
+        if let Some(GdnConvL2 {
+            q_l2,
+            k_l2,
+            k16,
+            eps,
+        }) = l2
         {
+            // the conv with the q/k L2 norms fused: q_g / k_g are not written
+            assert!(
+                live.is_none() && hk == num_k && d_state == 128 && conv_dim.is_multiple_of(128),
+                "ssm_conv1d_gdn_state_l2_f32: compact layout, d_state 128, eager only"
+            );
+            let f = self.func("ssm_conv1d_gdn_state_l2_f32");
+            let cfg = LaunchConfig {
+                grid_dim: ((conv_dim / 128).div_ceil(8) as u32, t as u32, 1),
+                block_dim: (256, 1, 1),
+                shared_mem_bytes: 0,
+            };
+            let k16_ptr: u64 = match k16 {
+                Some(b) => self.addr_u8(b),
+                None => 0,
+            };
+            let (cd, ti, dc) = (conv_dim as i32, t as i32, d_conv as i32);
+            let (nv, nk, kd) = (num_v as i32, num_k as i32, key_dim as i32);
+            let __s_b = self.gpu.stream();
+            let mut b = __s_b.launch_builder(&f);
+            b.arg(qkv_tm)
+                .arg(&*conv_state)
+                .arg(w)
+                .arg(q_l2)
+                .arg(k_l2)
+                .arg(&k16_ptr)
+                .arg(&mut *v_g)
+                .arg(&cd)
+                .arg(&ti)
+                .arg(&dc)
+                .arg(&nv)
+                .arg(&nk)
+                .arg(&kd)
+                .arg(&eps);
+            unsafe {
+                b.launch(cfg)?;
+            }
+            let _ = (&q_g, &k_g);
+        } else {
             let f = self.func(if live.is_some() {
                 "ssm_conv1d_gdn_state_f32_prime_table"
             } else {
@@ -36390,6 +36615,65 @@ impl Engine {
     /// Bounds-checked against `qf` before the launch: the kernel reads `2*head_dim*n_head*t`
     /// floats, and running it on a `wq` output that carries no fused gate reads 2x off the end
     /// (silently, on the device). A layout mismatch is a typed `FusedQGateExtent` here instead.
+    /// `q_gate_split`, then `rms_norm(q, w)` over each [head_dim] q row, then `rope_neox` on q, in
+    /// one kernel (`q_split_norm_rope_f32`): the same q and gate bits (kernel-check
+    /// `Q-SPLIT-NORM-ROPE`) without the split q's and the normed q's round trips through memory.
+    #[allow(clippy::too_many_arguments)] // allow: the three kernels' parameters in one launch
+    pub fn q_split_norm_rope(
+        &self,
+        qf: &CudaSlice<f32>,
+        w: &CudaSlice<f32>,
+        pos: &CudaSlice<i32>,
+        q_out: &mut CudaSlice<f32>,
+        gate_out: &mut CudaSlice<f32>,
+        head_dim: usize,
+        n_head: usize,
+        t: usize,
+        n_dims: usize,
+        freq_base: f32,
+        freq_scale: f32,
+        eps: f32,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        memra_gguf::config::check_fused_q_gate_extent(qf.len(), head_dim, n_head, t)?;
+        let out_need = head_dim * n_head * t;
+        if q_out.len() < out_need
+            || gate_out.len() < out_need
+            || n_dims > head_dim
+            || !n_dims.is_multiple_of(2)
+        {
+            return Err(format!(
+                "q_split_norm_rope: need {out_need} per output and an even n_dims {n_dims} <= {head_dim}"
+            )
+            .into());
+        }
+        // rope_neox's host-side theta scale, verbatim
+        let theta_scale = (freq_base).powf(-2.0 / n_dims as f32);
+        let f = self.func("q_split_norm_rope_f32");
+        let cfg = LaunchConfig {
+            grid_dim: ((n_head * t) as u32, 1, 1),
+            block_dim: (rms_block(), 1, 1),
+            shared_mem_bytes: (head_dim * 4) as u32,
+        };
+        let (hd, nh, nd) = (head_dim as i32, n_head as i32, n_dims as i32);
+        let __s_b = self.gpu.stream();
+        let mut b = __s_b.launch_builder(&f);
+        b.arg(qf)
+            .arg(w)
+            .arg(pos)
+            .arg(q_out)
+            .arg(gate_out)
+            .arg(&hd)
+            .arg(&nh)
+            .arg(&nd)
+            .arg(&theta_scale)
+            .arg(&freq_scale)
+            .arg(&eps);
+        unsafe {
+            b.launch(cfg)?;
+        }
+        Ok(())
+    }
+
     pub fn q_gate_split(
         &self,
         qf: &CudaSlice<f32>,
