@@ -19,6 +19,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let e = memra_engine::Engine::new(0)?;
         let g = memra_gguf::GgufFile::open(&path)?;
         let model = memra_engine::hybrid::HybridModel::load(&e, &g)?;
+        let _numeric = model.enter_numeric();
         let toks: Vec<u32> = std::env::args()
             .skip(2)
             .filter_map(|s| s.parse().ok())
@@ -79,6 +80,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let e = memra_engine::Engine::new(0)?;
         let g = memra_gguf::GgufFile::open(&path)?;
         let model = memra_engine::hybrid::HybridModel::load(&e, &g)?;
+        let _numeric = model.enter_numeric();
         let toks: Vec<u32> = std::env::args()
             .skip(2)
             .filter_map(|s| s.parse().ok())
@@ -124,6 +126,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let e = memra_engine::Engine::new(0)?;
         let g = memra_gguf::GgufFile::open(&path)?;
         let model = memra_engine::hybrid::HybridModel::load(&e, &g)?;
+        let _numeric = model.enter_numeric();
         let toks: Vec<u32> = std::env::args()
             .skip(2)
             .filter_map(|s| s.parse().ok())
@@ -234,6 +237,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let e = memra_engine::Engine::new(0)?;
         let g = memra_gguf::GgufFile::open(&path)?;
         let model = memra_engine::hybrid::HybridModel::load(&e, &g)?;
+        let _numeric = model.enter_numeric();
         let dg = memra_gguf::GgufFile::open(&dpath)?;
         let mut draft = memra_engine::gemma_spec::GemmaDraft::load(&e, &dg)?;
         let tok =
@@ -297,6 +301,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let e = memra_engine::Engine::new(0)?;
         let g = memra_gguf::GgufFile::open(&path)?;
         let model = memra_engine::hybrid::HybridModel::load(&e, &g)?;
+        let _numeric = model.enter_numeric();
         let draft = memra_engine::dflash::DflashDraft::load(&e, std::path::Path::new(&dpath))?;
         let toks: Vec<u32> = std::env::args()
             .skip(2)
@@ -356,6 +361,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let e = memra_engine::Engine::new(0)?;
         let g = memra_gguf::GgufFile::open(&path)?;
         let model = memra_engine::hybrid::HybridModel::load(&e, &g)?;
+        let _numeric = model.enter_numeric();
         let dg = memra_gguf::GgufFile::open(&dpath)?;
         let mut draft = memra_engine::gemma_spec::GemmaDraft::load(&e, &dg)?;
         let toks: Vec<u32> = std::env::args()
@@ -413,6 +419,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let e = memra_engine::Engine::new(0)?;
         let g = memra_gguf::GgufFile::open(&path)?;
         let model = memra_engine::hybrid::HybridModel::load(&e, &g)?;
+        let _numeric = model.enter_numeric();
         let n_vocab = model.output.out_features();
         let toks: Vec<u32> = std::env::args()
             .skip(2)
@@ -473,6 +480,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let e = memra_engine::Engine::new(0)?;
         let g = memra_gguf::GgufFile::open(&path)?;
         let model = memra_engine::hybrid::HybridModel::load(&e, &g)?;
+        let _numeric = model.enter_numeric();
         let n_vocab = model.output.out_features();
         let toks: Vec<u32> = std::env::args()
             .skip(2)
@@ -529,6 +537,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let e = Engine::new(0)?;
     let g = GgufFile::open(&path)?;
     let model = HybridModel::load(&e, &g)?;
+    let _numeric = model.enter_numeric();
     println!(
         "loaded {} ({} layers), prompt {} toks",
         g.arch().unwrap_or("?"),

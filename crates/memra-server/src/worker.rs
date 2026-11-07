@@ -27131,7 +27131,12 @@ pub fn run(
                         return;
                     }
                 };
-                match memra_engine::hybrid::MtpHead::load_draft(&engine, &dg, &model.cfg) {
+                // The draft head's load reads this model's step37 door defaults (the W8 mirrors
+                // of its attention projections), so it runs under the model's numeric profile.
+                let numeric = model.enter_numeric();
+                let head = memra_engine::hybrid::MtpHead::load_draft(&engine, &dg, &model.cfg);
+                drop(numeric);
+                match head {
                     Ok(head) => {
                         let draft_cfg = match memra_gguf::source::GgufSource(&dg).try_config() {
                             Ok(config) => config,
@@ -27556,8 +27561,12 @@ pub fn run(
             {
                 let dg = memra_gguf::GgufFile::open(&dpath)
                     .unwrap_or_else(|e| panic!("MEMRA_DRAFT={dpath}: open failed: {e}"));
+                // The drafter's load reads the target's residency doors (BF16 rows), so it runs
+                // under the target's numeric profile, as the +draft MTP head attach does.
+                let numeric = lm.model.enter_numeric();
                 let d = memra_engine::gemma_spec::GemmaDraft::load(&engine, &dg)
                     .unwrap_or_else(|e| panic!("MEMRA_DRAFT={dpath}: drafter load failed: {e}"));
+                drop(numeric);
                 // The attach line NAMES THE ARTIFACT, like both MTP spellings already do
                 // (`[mtp-draft] loading external MTP draft: {path}`, `regime draft attached
                 // ({dpath})`). Gemma was the one attach of the three that logged only that
@@ -27663,11 +27672,14 @@ pub fn run(
             .unwrap_or_else(|err| panic!("MEMRA_DSPARK_DRAFT={dpath_spec:?}: {err}"));
         for (n, lm) in &loaded {
             if memra_engine::plan_backend::gdn_dspark_compatible(&lm.model.plan) {
+                // Loaded under the target's numeric profile, like every drafter attach.
+                let numeric = lm.model.enter_numeric();
                 let d =
                     memra_engine::dflash::DflashDraft::load(&engine, std::path::Path::new(&dpath))
                         .unwrap_or_else(|e| {
                             panic!("MEMRA_DSPARK_DRAFT={dpath}: drafter load failed: {e}")
                         });
+                drop(numeric);
                 eprintln!(
                     "[worker] {n}: DSPARK SPEC route armed (drafter attached ({dpath}); greedy+sampled \
                      [T>0 rejection verify, sampled penalties included; greedy penalties {}]\
@@ -39821,6 +39833,8 @@ fn prefill_tick(
     if let Some(v) = s.vision.as_mut()
         && v.overlay.is_none()
     {
+        // The tower's launches serve this model's prompt: run them under its numeric profile.
+        let _numeric = lm.model.enter_numeric();
         build_vision_overlay(
             engine,
             lm.model.vision_intake_engine(engine)?,

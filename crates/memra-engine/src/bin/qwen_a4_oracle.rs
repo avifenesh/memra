@@ -116,6 +116,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let g = GgufFile::open(&path)?;
     let tok = memra_tokenizer::Tokenizer::from_gguf(&g)?;
     let model = HybridModel::load(&e, &g)?;
+    let _numeric = model.enter_numeric();
     let program = model
         .cfg
         .prefill_activation

@@ -425,6 +425,7 @@ impl HybridModel {
     /// Pair/PP-1 diagnostic: independent old hyper loop versus a saved prime,
     /// with a plain peer exercising shared transfer slots and decode graphs.
     pub fn check_glm5_prime_walker(&self, e: &Engine, prompt: &[u32]) -> Res<()> {
+        let _numeric = self.enter_numeric();
         let cap = prompt.len() + 128;
         let mut oracle = crate::pp::new_cache_planned(e, &self.cfg, &self.plan, cap)?;
         let (logits, seed, hidden) = self.prime_cache(e, prompt, &mut oracle, 0)?;
@@ -489,6 +490,7 @@ impl HybridModel {
         e: &'a Engine,
         state: &'a mut Option<Glm5PrimeState>,
     ) -> Glm5PrimeWalker<'a> {
+        let _numeric = self.enter_numeric();
         Glm5PrimeWalker {
             model: self,
             e,
@@ -502,6 +504,7 @@ impl PrimeWalker for Glm5PrimeWalker<'_> {
         self.state.as_ref().map_or(0, |s| s.remaining())
     }
     fn advance_chunk(&mut self) -> Res<PrimeChunk> {
+        let _numeric = self.model.enter_numeric();
         let s = self.state.as_mut().ok_or("GLM5 prime already finished")?;
         s.environment.check()?;
         if let Some(t) = s.trunk.as_mut()
@@ -537,6 +540,7 @@ impl PrimeWalker for Glm5PrimeWalker<'_> {
         })
     }
     fn finish(self) -> Res<Self::Output> {
+        let _numeric = self.model.enter_numeric();
         let s = self.state.as_mut().ok_or("GLM5 prime already finished")?;
         s.environment.check()?;
         if s.remaining() != 0 {
@@ -591,6 +595,7 @@ impl HybridModel {
         tokens: &[u32],
         queued_after: usize,
     ) -> Res<Glm5PlainPrimeState> {
+        let _numeric = self.enter_numeric();
         let trunk = Glm5TrunkPrime::new(self, e, tokens, &cache)?.with_queued_after(queued_after);
         Ok(Glm5PlainPrimeState {
             cache,
@@ -603,6 +608,7 @@ impl HybridModel {
         e: &'a Engine,
         state: &'a mut Option<Glm5PlainPrimeState>,
     ) -> Glm5PlainPrimeWalker<'a> {
+        let _numeric = self.enter_numeric();
         Glm5PlainPrimeWalker {
             model: self,
             e,
@@ -616,6 +622,7 @@ impl PrimeWalker for Glm5PlainPrimeWalker<'_> {
         self.state.as_ref().map_or(0, |s| s.trunk.remaining())
     }
     fn advance_chunk(&mut self) -> Res<PrimeChunk> {
+        let _numeric = self.model.enter_numeric();
         let s = self
             .state
             .as_mut()
@@ -628,6 +635,7 @@ impl PrimeWalker for Glm5PlainPrimeWalker<'_> {
         })
     }
     fn finish(self) -> Res<Self::Output> {
+        let _numeric = self.model.enter_numeric();
         let s = self
             .state
             .as_ref()

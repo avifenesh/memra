@@ -202,6 +202,7 @@ pub(crate) fn run(
     cache: &mut Cache,
     seq_end: usize,
 ) -> Result<CudaSlice<f32>> {
+    let _numeric = m.enter_numeric();
     let hidden = m.cfg.n_embd as usize;
     let nff = m
         .layers

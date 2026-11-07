@@ -10,6 +10,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let e = Engine::new(0)?;
     let st = memra_gguf::source::SafetensorsSource::open(std::path::Path::new(&path))?;
     let model = HybridModel::load_from_source(&e, &st)?;
+    let _numeric = model.enter_numeric();
     if model.uses_sliding_gated_moe_program() {
         return Err("t2probe does not support step35: its served verify is \
                     step35_verify_batch_layers, and decode_step_t_aux2 has no twin of it"

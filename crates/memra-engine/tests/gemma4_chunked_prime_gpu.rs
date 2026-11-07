@@ -54,13 +54,23 @@ const VOCAB: u32 = 32;
 const MAX_CTX: usize = 1024;
 /// Shorter than every GPU prompt below, so the sliding layer's window mask is exercised.
 const WINDOW: usize = 64;
+/// Hidden and FFN width of the prime fixture (the truth and split bands are calibrated on it).
+const PRIME_WIDTH: usize = 64;
+/// Hidden and FFN width of the decode fixture (the quantized walk). The q8_1-emitting norm and
+/// GELU kernels of that walk (`rms_norm_q8_1`, `rms_pre_add_rms_norm_q8z_f32`,
+/// `gelu_tanh_mul_q8_1`, `rms_pre_add_scale_rms_norm_q8_1`) cover a row in 128-column quads
+/// (32 lanes x float4) and run `ncols / 128` of them, so at 64 columns they write nothing and
+/// the next matmul reads whatever an earlier allocation left in the buffer: the bytes then
+/// change from one run to the next. Every real gemma4 width is a multiple of 128.
+const DECODE_WIDTH: usize = 128;
+const _: () = assert!(DECODE_WIDTH.is_multiple_of(128));
 
-fn mini_config_json(window: usize) -> String {
+fn mini_config_json(window: usize, width: usize) -> String {
     format!(
         r#"{{"model_type":"gemma4","text_config":{{"model_type":"gemma4_text",
-        "num_hidden_layers":2,"hidden_size":64,"num_attention_heads":2,
+        "num_hidden_layers":2,"hidden_size":{width},"num_attention_heads":2,
         "num_key_value_heads":1,"num_global_key_value_heads":1,"head_dim":256,
-        "global_head_dim":512,"intermediate_size":64,"vocab_size":{VOCAB},
+        "global_head_dim":512,"intermediate_size":{width},"vocab_size":{VOCAB},
         "max_position_embeddings":{MAX_CTX},"rms_norm_eps":0.000001,
         "sliding_window":{window},"final_logit_softcapping":30,"hidden_activation":"gelu_pytorch_tanh",
         "layer_types":["sliding_attention","full_attention"],
@@ -74,7 +84,12 @@ fn mini_config() -> ModelConfig {
 }
 
 fn mini_config_with_window(window: usize) -> ModelConfig {
-    ModelConfig::from_hf(&HfConfig::parse(&mini_config_json(window)))
+    ModelConfig::from_hf(&HfConfig::parse(&mini_config_json(window, PRIME_WIDTH)))
+}
+
+/// The fixture a decode walk runs on: [`DECODE_WIDTH`] columns, same layers and window.
+fn decode_config() -> ModelConfig {
+    ModelConfig::from_hf(&HfConfig::parse(&mini_config_json(WINDOW, DECODE_WIDTH)))
 }
 
 fn mini_plan(config: &ModelConfig) -> ModelPlan {
@@ -87,6 +102,7 @@ fn mini_plan(config: &ModelConfig) -> ModelPlan {
 struct OwnedTensor {
     bytes: Vec<u8>,
     ne: Vec<u64>,
+    ty: GgmlType,
 }
 
 struct FixtureSource {
@@ -102,21 +118,16 @@ impl TensorSource for FixtureSource {
         let t = self.tensors.get(name)?;
         Some(TensorView {
             bytes: Cow::Borrowed(&t.bytes),
-            ggml_type: GgmlType::F32,
+            ggml_type: t.ty,
             ne: t.ne.clone(),
         })
     }
     fn tensor_census(&self) -> Result<memra_gguf::source::TensorCensus, String> {
         // memra#541: the loader binds the contract against this census before any upload.
         Ok(memra_gguf::source::census_from_views(
-            self.tensors.iter().map(|(name, t)| {
-                (
-                    name.as_str(),
-                    GgmlType::F32,
-                    t.ne.as_slice(),
-                    t.bytes.len() as u64,
-                )
-            }),
+            self.tensors
+                .iter()
+                .map(|(name, t)| (name.as_str(), t.ty, t.ne.as_slice(), t.bytes.len() as u64)),
         ))
     }
 }
@@ -154,6 +165,7 @@ fn fixture_source(
                 OwnedTensor {
                     bytes: bytes.clone(),
                     ne: req.shape.clone(),
+                    ty: GgmlType::F32,
                 },
             );
         }
@@ -162,6 +174,30 @@ fn fixture_source(
         config: config.clone(),
         tensors,
     }
+}
+
+/// The same fixture with every layer projection stored as Q8_0. The gemma4 decode arms take a
+/// pre-quantized q8_1 activation and refuse an F32 weight, so a decode walk needs quantized
+/// projections; norms and the tied embedding stay F32. Prime-vs-reference tests keep the F32
+/// source, whose prime is exact against the reference executor.
+fn fixture_source_q8(
+    config: &ModelConfig,
+    plan: &ModelPlan,
+    weights: &BTreeMap<TensorId, ReferenceTensor>,
+) -> FixtureSource {
+    let mut source = fixture_source(config, plan, weights);
+    for (name, t) in source.tensors.iter_mut() {
+        if name.starts_with("blk.") && t.ne.len() == 2 && t.ne[0] % 32 == 0 {
+            let data: Vec<f32> = t
+                .bytes
+                .chunks_exact(4)
+                .map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]]))
+                .collect();
+            t.bytes = memra_gguf::nvfp4_repack::f32_to_q8_0(&data);
+            t.ty = GgmlType::Q8_0;
+        }
+    }
+    source
 }
 
 /// GPU tests serialize on one device AND on the process-wide `MEMRA_PRIME_CHUNK` they flip.
@@ -239,6 +275,7 @@ fn add_partial_rotary_factors(plan: &ModelPlan, weights: &mut BTreeMap<TensorId,
 struct Harness {
     engine: Engine,
     model: HybridModel,
+    config: ModelConfig,
     plan: ModelPlan,
     weights: BTreeMap<TensorId, ReferenceTensor>,
 }
@@ -249,8 +286,16 @@ impl Harness {
     }
 
     fn with_window(window: usize) -> Self {
+        Self::with_config(mini_config_with_window(window))
+    }
+
+    /// The harness on the decode fixture ([`decode_config`]).
+    fn for_decode() -> Self {
+        Self::with_config(decode_config())
+    }
+
+    fn with_config(config: ModelConfig) -> Self {
         force_true_f32();
-        let config = mini_config_with_window(window);
         let plan = mini_plan(&config);
         let mut fixture = deterministic_fixture(&plan).expect("deterministic gemma4 fixture");
         add_partial_rotary_factors(&plan, &mut fixture.weights);
@@ -261,6 +306,7 @@ impl Harness {
         Self {
             engine,
             model,
+            config,
             plan,
             weights: fixture.weights,
         }
@@ -616,4 +662,143 @@ fn a_pp2_multi_range_gemma_prime_matches_the_reference_executor() {
         &got,
         last,
     );
+}
+
+/// One model's greedy run on its own cache: the last-row prime logits, then one decode step per
+/// call, every row kept as raw f32 bits.
+struct GreedyRun<'m> {
+    model: &'m HybridModel,
+    cache: memra_engine::cache::Cache,
+    next: u32,
+    tape: Vec<Vec<u32>>,
+}
+
+impl<'m> GreedyRun<'m> {
+    fn prime(h: &Harness, model: &'m HybridModel, ids: &[u32]) -> Self {
+        let mut cache =
+            memra_engine::cache::Cache::new_planned(&h.engine, &model.cfg, &h.plan, MAX_CTX)
+                .expect("cache for a co-loaded mini gemma4 model");
+        let (logits, _seed, _hiddens) = model
+            .prime_cache(&h.engine, ids, &mut cache, 0)
+            .expect("co-loaded prime");
+        let mut run = Self {
+            model,
+            cache,
+            next: 0,
+            tape: Vec::new(),
+        };
+        run.record(&logits);
+        run
+    }
+
+    fn step(&mut self, h: &Harness) {
+        let logits = self
+            .model
+            .decode_step(&h.engine, self.next, &mut self.cache)
+            .expect("co-loaded decode step");
+        self.record(&logits);
+    }
+
+    fn record(&mut self, logits: &[f32]) {
+        assert!(
+            logits.iter().all(|v| v.is_finite()),
+            "non-finite logits at row {}",
+            self.tape.len()
+        );
+        let (mut best, mut best_v) = (0usize, f32::NEG_INFINITY);
+        for (i, &v) in logits.iter().enumerate() {
+            if v > best_v {
+                (best, best_v) = (i, v);
+            }
+        }
+        self.next = best as u32;
+        self.tape.push(logits.iter().map(|v| v.to_bits()).collect());
+    }
+}
+
+/// THE CO-LOAD ARM (2026-11-04, the per-model numeric profile). Two models in one engine, each
+/// with its own profile, interleaved token by token through their own entry points
+/// (`prime_cache`, `decode_step`), must each give exactly the bytes they give alone. Both load
+/// the fixture with Q8_0 projections (`fixture_source_q8`; the gemma decode arms refuse F32
+/// weights). Model A runs the dense gemma profile it loads with; model B runs the profile a
+/// gemma4 MoE load keys (other windowed and hd512 split widths, the mr2 fused mapping). The arm
+/// runs on the decode fixture ([`DECODE_WIDTH`] columns): at the prime fixture's 64 columns the
+/// q8_1-emitting norm and GELU kernels write nothing, so no tape, solo or not, repeats its own
+/// bytes. The arm first requires each solo run to repeat itself and the two programs to
+/// differ on this fixture; without either it could not see one model's profile reach the
+/// other. The decode walk runs past the 64-key window, so the windowed rows lane is in it.
+/// Before the profile these gemma keys were process globals latched on first read, and the
+/// roster claim refused this pairing at load.
+#[test]
+#[ignore = "needs a CUDA device — run under flock /tmp/memra-5090.lock"]
+fn two_co_loaded_models_with_different_profiles_each_keep_their_own_program() {
+    let _gpu = gpu_guard();
+    set_prime_chunk("0");
+    let h = Harness::for_decode();
+    let load = || {
+        let source = fixture_source_q8(&h.config, &h.plan, &h.weights);
+        HybridModel::load_from_source_without_mtp(&h.engine, &source)
+            .expect("a quantized mini gemma4 model loads into the shared engine")
+    };
+    let dense = load();
+    let mut other = load();
+    // The second program is the one a gemma4 MoE load keys (its windowed and hd512 split
+    // widths and the mr2 fused row mapping), a profile gemma models really run.
+    let gqa = other.cfg.n_head / other.cfg.n_head_kv.max(1);
+    other.numeric =
+        memra_engine::NumericProfile::for_model(gqa, Some(true), false, false, None, false);
+    assert_ne!(
+        dense.numeric, other.numeric,
+        "the two models must carry different profiles"
+    );
+    let ids = tokens(40, 0x6E44_C010);
+    let steps = 40;
+    let solo = |model: &HybridModel| {
+        let mut run = GreedyRun::prime(&h, model, &ids);
+        for _ in 0..steps {
+            run.step(&h);
+        }
+        run.tape
+    };
+    let solo_tapes = [solo(&dense), solo(&other)];
+    for (i, model) in [&dense, &other].into_iter().enumerate() {
+        assert_eq!(
+            solo(model),
+            solo_tapes[i],
+            "model {i} does not repeat its own solo bytes, so no difference below could be \
+             attributed to the other model"
+        );
+    }
+    assert_ne!(
+        solo_tapes[0], solo_tapes[1],
+        "the dense and MoE gemma programs give identical bytes on this fixture, so this arm cannot \
+         see a profile leak; pick a fixture or depth where they differ"
+    );
+    let models = [&dense, &other];
+    for order in [[0usize, 1], [1, 0]] {
+        let mut runs: Vec<GreedyRun> = order
+            .iter()
+            .map(|&i| GreedyRun::prime(&h, models[i], &ids))
+            .collect();
+        for _ in 0..steps {
+            for run in runs.iter_mut() {
+                run.step(&h);
+            }
+        }
+        for (run, &i) in runs.iter().zip(&order) {
+            let first_diff = run
+                .tape
+                .iter()
+                .zip(&solo_tapes[i])
+                .position(|(got, want)| got != want);
+            assert_eq!(
+                first_diff, None,
+                "model {i} interleaved in order {order:?} left its solo bytes at row {first_diff:?}"
+            );
+            assert_eq!(run.tape.len(), solo_tapes[i].len());
+        }
+    }
+    // The solo tapes again, after the interleaving: nothing the other model ran stays behind.
+    assert_eq!(solo(&dense), solo_tapes[0]);
+    assert_eq!(solo(&other), solo_tapes[1]);
 }
