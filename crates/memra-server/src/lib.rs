@@ -7653,6 +7653,9 @@ async fn get_metrics(State(st): State<AppState>, headers: HeaderMap) -> Response
             // counters locate a latency slope; gauges show whether retired state is accumulating.
             "admission_session_defers": m.admission_session_defers,
             "admission_vram_defers": m.admission_vram_defers,
+            "admission_vram_hol_holds": m.admission_vram_hol_holds,
+            "prefill_deadline_ticks": m.prefill_deadline_ticks,
+            "prefix_headroom_evictions": m.prefix_headroom_evictions,
             "step_oom_parks": m.step_oom_parks,
             "continuation_pool_hits": m.continuation_pool_hits,
             "continuation_pool_evictions": m.continuation_pool_evictions,
