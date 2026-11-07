@@ -4470,8 +4470,9 @@ fn seed_capture_boundary(prompt_len: usize, hit_len: usize) -> SeedCapture {
 /// The cold DFlash prime's capture when no render-stable cut is armed (`dspark_capture_at` is
 /// None): the seed's grid boundary (`seed_capture_boundary`, memra#602's law), so the entry a later,
 /// longer prompt restores never ends off the GDN prime grid. The prompt end stays the cut when it
-/// is itself on the grid or the prompt is too short for a grid entry; such an entry only ever
-/// serves a whole cover, which is exact.
+/// is itself on the grid (that entry also serves longer prompts as an on-grid strict prefix) or
+/// the prompt is too short for a grid entry (that entry serves only a whole cover). Either is
+/// exact.
 fn dspark_cold_capture(prompt_len: usize) -> memra_engine::dflash::DsparkCapture {
     match seed_capture_boundary(prompt_len, 0) {
         SeedCapture::AtBoundary(b) => memra_engine::dflash::DsparkCapture::Boundary(b),
@@ -11108,12 +11109,12 @@ impl HostPrefixEntry {
     }
 
     /// Does the promoted device entry carry recurrent state? The conv/ssm planes, or a glm image
-    /// whose KDA state rides `glm` (the promote puts it back into conv/ssm), so the host tier
-    /// applies the restore grid law exactly as the device `lookup` will after the promote.
+    /// whose KDA conv/ssm planes ride `glm` (the promote puts them back into conv/ssm), so the
+    /// host tier applies the restore grid law as the device `lookup` will after the promote.
     fn carries_recurrent(&self) -> bool {
         self.conv.iter().any(Option::is_some)
             || self.ssm.iter().any(Option::is_some)
-            || self.glm.is_some()
+            || self.glm.as_ref().is_some_and(|g| g.carries_recurrent())
     }
 }
 
@@ -26666,14 +26667,15 @@ struct Session {
     /// Marks the session as dspark-routed even before `dspark` exists (the pre-prime
     /// window) — scheduler filters key on this, mirroring gspec_k's role.
     dspark_on: bool,
-    /// Whether the lazy DFlash prime should retain one full-prompt trunk capture for the
-    /// cross-request prefix cache. False preserves the prefix-cache-disabled byte path.
+    /// Whether the lazy DFlash prime should retain one trunk capture for the cross-request prefix
+    /// cache, cut at `dspark_capture_at` or by `dspark_cold_capture`. False preserves the
+    /// prefix-cache-disabled byte path.
     dspark_capture_prefix: bool,
-    /// WHERE that capture is cut (lane/dspark-boundary-capture, memra#248). `None` = prompt
-    /// end, the shipped behaviour. `Some(b)` = the render-stable turn boundary, which stops
-    /// the prime at `b`, snapshots, and primes the rest onto the same cache — the cut that
-    /// makes the entry a true prefix of the session's NEXT turn. Set only under
-    /// `dspark_boundary_capture_on`.
+    /// WHERE that capture is cut (lane/dspark-boundary-capture, memra#248). `Some(b)` = the
+    /// render-stable turn boundary, which stops the prime at `b`, snapshots, and primes the rest
+    /// onto the same cache: the cut that makes the entry a true prefix of the session's NEXT
+    /// turn, set only under the restore switch. `None` = a cold prime cuts at the seed's grid
+    /// boundary (`dspark_cold_capture`), a pool resume captures nothing.
     dspark_capture_at: Option<usize>,
     /// GLM5 SPEC route (lane/glm5-spec-routing, 2026-08-30): the glm5_next twin of
     /// `gspec`/`dspark` — Some = this session decodes in `glm5_spec_session_burst` bursts
@@ -37615,6 +37617,29 @@ fn admit(
                 seed_prefix = true; // re-checked against covering entries at prefill-done
             }
         }
+    } else if prefix_on
+        && reused.is_none()
+        && let Some(refused) = px.longest_inexact_cover(&pool_key, &prompt)
+    {
+        // The probe was skipped (the DFlash route cold-primes): a cover the restore grid law
+        // refused is why no hit could take its place, so the same line and counter name it.
+        px.restore_grid_refusals += 1;
+        let line = format!(
+            "[prefix-cache] restore grid law: entry {refused} of {} prompt tokens refused \
+             (recurrent state off the {}-token prime grid or a suffix under {}); no exact hit, \
+             the prompt primes cold on the DFlash route (model {}{})",
+            prompt.len(),
+            memra_engine::Engine::gdn_chunk_size(),
+            memra_engine::hybrid_forward::PRIME_MIN_T,
+            req.model,
+            ns_suffix(&pool_key.1),
+        );
+        if let Some(line) = px
+            .grid_refusals
+            .announce((pool_key.clone(), refused, 0), line)
+        {
+            eprintln!("{line}");
+        }
     }
     // HOST-TIER PROMOTE pin release (lane/kv-host-spill-20260830): the insertion pin has
     // done its job: on the served-hit route the hit path above holds its OWN pin by now
@@ -39303,8 +39328,28 @@ fn admit(
                 && cache.is_none()),
         "a DFlash session must be a cold prime, a pool resume or a prefix restore",
     );
+    // The render-stable cut, computed from THIS prompt's own turn markers by the same
+    // helper the plain tier's stable boundary uses. `stable_boundary_arm` enforces the
+    // entry floor and `b < prompt.len()`; `plain_checkpoint_boundary` already grid-aligned
+    // it, which is what lets the engine split the prime without changing its numerics.
+    let dspark_stable_cut = if dspark_on && prefix_on && dspark_boundary_capture_on() {
+        stable_boundary_arm(
+            plain_checkpoint_boundary(&prompt, &|t| lm.tok.token_is_control(t)),
+            None,
+            prompt.len(),
+        )
+    } else {
+        None
+    };
+    // The key a cold capture would publish: the render-stable cut, else the grid cut
+    // (`dspark_cold_capture`), else the prompt end. The exact-key dedupe looks for THAT key, so
+    // an exact re-send refreshes the entry it would otherwise republish.
+    let dspark_cut = dspark_stable_cut.unwrap_or_else(|| match dspark_cold_capture(prompt.len()) {
+        memra_engine::dflash::DsparkCapture::Boundary(b) => b,
+        _ => prompt.len(),
+    });
     let dspark_exact_key_present =
-        dspark_on && prefix_on && px.touch_exact_without_credit(&pool_key, &prompt);
+        dspark_on && prefix_on && px.touch_exact_without_credit(&pool_key, &prompt[..dspark_cut]);
     let dspark_capture_prefix = dspark_prefix_capture_requested(
         dspark_on,
         prefix_on,
@@ -39312,16 +39357,8 @@ fn admit(
         dspark_exact_key_present,
         has_exact_preprime_dspark_owner,
     );
-    // The render-stable cut, computed from THIS prompt's own turn markers by the same
-    // helper the plain tier's stable boundary uses. `stable_boundary_arm` enforces the
-    // entry floor and `b < prompt.len()`; `plain_checkpoint_boundary` already grid-aligned
-    // it, which is what lets the engine split the prime without changing its numerics.
-    let dspark_capture_at = if dspark_capture_prefix && dspark_boundary_capture_on() {
-        stable_boundary_arm(
-            plain_checkpoint_boundary(&prompt, &|t| lm.tok.token_is_control(t)),
-            None,
-            prompt.len(),
-        )
+    let dspark_capture_at = if dspark_capture_prefix {
+        dspark_stable_cut
     } else {
         None
     };
@@ -63768,16 +63805,24 @@ mod tests {
         // The derivation is gated on BOTH the door and a requested capture, and it comes
         // from the prompt's own turn markers.
         let d = prod
-            .find("let dspark_capture_at =")
+            .find("let dspark_stable_cut =")
             .expect("the derivation exists");
-        let window = &prod[d..(d + 500).min(prod.len())];
+        let window = &prod[d..(d + 1500).min(prod.len())];
         assert!(
-            window.contains("dspark_capture_prefix && dspark_boundary_capture_on()"),
-            "the cut must require a requested capture AND the door"
+            window.contains("dspark_boundary_capture_on()"),
+            "the render-stable cut is under the restore switch"
         );
         assert!(
             window.contains("plain_checkpoint_boundary(&prompt"),
             "the cut is the render-stable boundary of THIS prompt"
+        );
+        assert!(
+            window.contains("let dspark_capture_at = if dspark_capture_prefix {"),
+            "the cut must require a requested capture"
+        );
+        assert!(
+            window.contains("px.touch_exact_without_credit(&pool_key, &prompt[..dspark_cut])"),
+            "the exact-key dedupe looks for the key the capture would publish"
         );
         // And it reaches the engine: the serving prime call carries it.
         let call = prod

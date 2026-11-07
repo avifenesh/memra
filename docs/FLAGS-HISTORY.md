@@ -193,6 +193,8 @@ The `MEMRA_DSPARK_PREFIX_RESTORE` row before the 2026-11-05 device-default edit 
 
 First gate (2026-08-27, 2x RTX PRO 6000 Server), moved out of the row on 2026-11-07: restored vs cold byte-identical over 24,890 output chars, accept trajectory identical 125/125 bursts, 56.3 s -> 46.8 s; receipts darklanes `research/dspark-trunk-hit-20260827/evidence/restore-gate-run4-PASS.log`, `LONG-ANSWER-DESIGN.md`.
 
+Served device-default A/Bs (2026-11-05), moved out of the row on 2026-11-07: GGUF DFlash2 agentic cell, GB10 doors on vs off c1 +17.1% (same-unit ABBA), c2 +5.9%, c4..c32 within 0.9% (`research/dflash-restorable-hit-20261103/gb10-flip/`); RTX 5090 Laptop (24 GB) c1 +7.6% (ABBA), but c2 refuses the 17.9k-token prompts that doors off serves (the doors raise each request's memory cost), so the 5090 stays OFF (`research/dflash-restorable-hit-20261103/rig5090-flip/`); RTX PRO 6000 Max-Q: exactness gate only, no served A/B.
+
 ## MEMRA_KV_HOST_FAULT
 
 The `MEMRA_KV_HOST_FAULT` row before the 2026-09-27 split:

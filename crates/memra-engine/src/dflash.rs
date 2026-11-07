@@ -2871,8 +2871,8 @@ pub struct DflashKv {
 pub enum DsparkCapture {
     /// No capture. The prefix-cache-disabled byte path: one `prime_cache` call, no snapshot.
     Off,
-    /// Capture at prompt end. The shipped behaviour, and still the right cut for a prompt with
-    /// no render-stable boundary inside it.
+    /// Capture at prompt end. The server asks for it only when the prompt end is itself on the
+    /// prime grid or the prompt is too short for a grid entry (`dspark_cold_capture`).
     PromptEnd,
     /// Capture at this render-stable boundary: stop the prime there, snapshot, then prime the
     /// rest of the prompt onto the same cache. MUST be on the prime grid (the split is

@@ -3051,8 +3051,10 @@ Three changes close it:
 - The capture: a cold DFlash prime with no render-stable cut (the restore switch off, or no
   armable boundary in the prompt) cuts its entry at the seed's grid boundary
   (`dspark_cold_capture`, `seed_capture_boundary`), not at the prompt end. The prompt end stays the
-  cut only when it is on the grid or the prompt is too short for a grid entry, and such an entry
-  serves only a whole cover.
+  cut only when it is on the grid (that entry also serves longer prompts as an on-grid strict
+  prefix) or the prompt is too short for a grid entry (that entry serves only a whole cover). An
+  exact re-send of an off-grid prompt restores `capture_len(P)` and re-primes 16..47 tokens, as
+  for the plain seed.
 - The hit site: every probe that names the entry the hit site restores skips an entry that
   carries recurrent state unless it covers the prompt whole, or ends on the grid with at least
   `PRIME_MIN_T` suffix tokens (`prefix_restore_exact`). That is `PrefixCache::lookup` and its
@@ -3068,7 +3070,9 @@ Three changes close it:
 Known cases this does not change: the `PRIME_MIN_T` floor applies to recurrent entries only (an
 attention-only hit that leaves a 1..15-token suffix still primes it token by token, the W1 class);
 the plain-affinity resume checks no suffix floor; the in-batch fanout still takes the raw LCP
-(above). Gate: the warm-vs-cold pair cells in `research/plain-restore-grid-20261107/`
+(above); glm5_next KDA entries count as recurrent although KDA prefill is a sequential scan with
+no fold grid, so the glm5 spec route's prompt-end captures now serve only whole covers (no
+exactness gain there, kept conservative). Gate: the warm-vs-cold pair cells in `research/plain-restore-grid-20261107/`
 (`grid_pair_cells.py`, three-turn chat, every warm answer byte-equal to its cold twin), red on the
 base with the single switch and green on the fix with the switch on and off.
 

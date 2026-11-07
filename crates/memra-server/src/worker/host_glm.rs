@@ -105,6 +105,11 @@ pub(super) struct HostGlmState {
     draft: Option<Draft>,
 }
 impl HostGlmState {
+    /// Does the image carry recurrent (KDA conv/ssm) planes? An all-latent (MLA) image does not.
+    pub(super) fn carries_recurrent(&self) -> bool {
+        self.conv.iter().any(Option::is_some) || self.ssm.iter().any(Option::is_some)
+    }
+
     pub(super) fn plane_sizes(e: &PrefixEntry) -> Vec<usize> {
         fn latent(p: &LatentPlaneSnapshot, out: &mut Vec<usize>) {
             out.push(p.rows.len() * 4);
