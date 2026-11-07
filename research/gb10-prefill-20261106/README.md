@@ -288,7 +288,7 @@ ceiling at 113 TFLOPS at today's 8 warps per SM and 132 at 16; today's tile runs
 dequantize-once image pass with a pipelined mainloop and an L2-ordered raster is worth about
 11 s at 131k at 8 warps per SM and about 20 s if it reaches 16 warps per SM (181.1 -> ~161 s).
 
-## F8F4 GEMM v2 (built, same day; ledger rows 16-26)
+## F8F4 GEMM v2 (built, same day; ledger rows 16-28)
 
 `b6d10d41c7`: a pre-pass folds each NVFP4 weight once per call, with the v1 loader's expressions,
 into a pooled image (e4m3 row-major, per-32 scales k-major, 1.125 B per weight); the F8F4
@@ -358,7 +358,13 @@ On the final commits, after #1073-#1076 landed on main (defaults, 4,096-row chun
 
 Answer text identical in all four boots and to every earlier boot; MemAvailable floor 65.8-66.7
 GiB. The exactness battery on that PR-head binary, unit 1 (`gemm-v2-gates-main-unit1/`):
-FINALGATES_PLACEHOLDER
+kernel-check ALL GREEN (117 cells, 5 skipped) in h2, db and t3 modes, including
+`MMQ-F8F4-V2` (0 mismatches over 8 + 4 shapes), `MMQ-F8F4-V2-TAIL` (36/36) and the dispatch cells
+`MMQ-F8F4-SILU-ROUTE` / `MMQ-F8F4-GROUP` at T = 4,096 through v2; argmax-margin flips=0 bad=0 PASS;
+run-spec K=1..8 PASS (17/98, 17/112); the 16k prompt flips=3 bad=1 on v2 and on main with
+byte-identical probe tables (`a42e74b3f28cbd96`, the same rows as the timed binary's); the
+`MEMRA_MMQ_F8F4_V2=0` rollback returns the same pp3855 logits (`f81e9690...`) at 4.156 s against
+3.670 s.
 
 Per part at 131,051 tokens, Nsight Systems on unit 1 (`gemm-v2-profile-128k-unit1/`, nsys TTFT
 162.5 s against 161.8 s unprofiled; the report and the three ncu reports of the tile steps are in
