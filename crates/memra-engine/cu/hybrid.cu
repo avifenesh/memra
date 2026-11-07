@@ -81,7 +81,7 @@ extern "C" __global__ void ssm_conv1d_gdn_f32(
 // materialized conv_out [conv_dim, T] (67MB at T=2048) with uncoalesced channel-major
 // writes, then re-read it transposed — 11.8ms of the 86.8ms T=2048 prime. This fuses
 // the CARRIED-ring window conv + SiLU + GDN scatter into one pass: negative window rows
-// read the resident ring (== ssm_conv1d_tm_state_f32's st[pad+tt]), outputs land
+// read the resident ring (conv_state[c*pad + pad+tt]), outputs land
 // directly in q_g/k_g/v_g token-major. BIT-IDENTICAL values (same 8-tap ascending
 // accumulation, same SiLU, same scatter mapping). Ring update stays a separate launch.
 // hk (task #21 de-broadcast): q_g/k_g head count — num_k stores each distinct GQA head
@@ -124,39 +124,7 @@ extern "C" __global__ void ssm_conv1d_gdn_state_f32(
     }
 }
 
-// ---- BATCHED verify conv: token-major input, CARRIED conv state, ring update, T>1. ----
-// The spec verify path runs T=K+1 tokens through a linear-attn layer in one pass. This is
-// the token-major prefill conv (ssm_conv1d_gdn_f32's window walk) with the zero left-pad
-// replaced by the RESIDENT conv ring (window rows t-pad..t; negative rows read
-// conv_state[c*pad + (pad+tt)]), plus the decode kernel's ring roll:
-// after the pass conv_state holds the last `pad` input columns (exactly what T sequential
-// ssm_conv1d_fused_decode steps would leave). Same 8-tap ascending-j accumulation as BOTH the
-// prefill and decode conv kernels -> each output value is BIT-IDENTICAL to the T=1 chain.
-extern "C" __global__ void ssm_conv1d_tm_state_f32(
-        const float* __restrict__ qkv_tm,   // [T, conv_dim] token-major (the batched matmul output)
-        float* __restrict__ conv_state,     // [conv_dim, pad] resident ring (read + rewritten)
-        const float* __restrict__ w,        // [conv_dim, d_conv]
-        float* __restrict__ y,              // [conv_dim, T] channel-major, SiLU applied
-        int conv_dim, int T, int d_conv) {
-    int c = blockIdx.x * blockDim.x + threadIdx.x;
-    int t = blockIdx.y;
-    if (c >= conv_dim || t >= T) return;
-    int pad = d_conv - 1;
-    const float* wc = w + (size_t)c * d_conv;
-    const float* st = conv_state + (size_t)c * pad;
-    float acc = 0.0f;
-    #pragma unroll
-    for (int j = 0; j < 8; j++) {
-        if (j < d_conv) {
-            int tt = t - pad + j;
-            float xv = (tt >= 0) ? qkv_tm[(size_t)tt * conv_dim + c]
-                                 : st[pad + tt];              // carried state column (tt in -pad..-1)
-            acc += xv * wc[j];
-        }
-    }
-    y[(size_t)c * T + t] = silu(acc);
-}
-// Ring roll companion (separate launch so every window read of the pass sees the OLD state):
+// Ring roll (a separate launch, so every window read of the conv pass sees the OLD state):
 // conv_state[c][j] = input column at time T-pad+j. Host guarantees T >= pad, so every source is
 // an INPUT column (tt >= 0) — no in-place state read, no race. (T < pad falls back to the T=1
 // sequential chain host-side.)
@@ -185,23 +153,6 @@ extern "C" __global__ void ssm_conv_ring_update_dev_f32(
     int tt = len_d[0] - pad + j;
     conv_state[(size_t)c * pad + j] = qkv_tm[(size_t)tt * conv_dim + c];
 }
-// PREFIX ring rebuild (spec REPLAY-FREE partial accept): the ring a T=1 chain would hold after
-// processing only the FIRST Tc input columns = the last `pad` entries of [ring_old | cols 0..Tc-1].
-// PURE COPIES (the ring stores raw input columns — no arithmetic, so this cannot perturb any FP
-// order). ring_old = the pre-round snapshot ring; sources fall back to it when Tc < pad.
-extern "C" __global__ void ssm_conv_ring_rebuild_f32(
-        const float* __restrict__ qkv_tm, const float* __restrict__ ring_old,
-        float* __restrict__ conv_state, int conv_dim, int Tc, int d_conv) {
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    int pad = d_conv - 1;
-    if (idx >= conv_dim * pad) return;
-    int c = idx / pad;
-    int j = idx % pad;
-    int tt = Tc - pad + j;                    // may be negative when Tc < pad
-    conv_state[(size_t)c * pad + j] = (tt >= 0) ? qkv_tm[(size_t)tt * conv_dim + c]
-                                               : ring_old[(size_t)c * pad + (pad + tt)];
-}
-
 // ---- FUSED decode GDN prep: repack + q/k L2-norm + beta sigmoid + g_log in ONE kernel (T=1). ----
 // Replaces qkv_to_gdn_repack + 2x l2_norm + sigmoid + gdn_glog (5 launches, ~8.6us/layer of
 // serialized tiny kernels on the decode critical path). One CTA per v-head vh (grid = num_v):
@@ -362,34 +313,6 @@ __device__ void gdn_scan_kernel(
 extern "C" __global__ void gdn_scan_s128(
         const float* q, const float* k, const float* v, const float* g, const float* beta,
         const float* state_in, float* state_out, float* o, int H, int T, float scale) {
-    gdn_scan_kernel<128, 32>(q, k, v, g, beta, state_in, state_out, o, H, T, scale);
-}
-
-// ROUND-STREAM stage (b) 3b twins: j (the accepted prefix length) from DEVICE (acc[0] = n_acc,
-// j = base + n_acc). Full accept (j == t_v) early-exits — the verify already advanced the state
-// to exactly what a j == t_v restore would recompute (same kernel, same order). Bodies are the
-// host-param kernels VERBATIM at Tc/T = j.
-extern "C" __global__ void ssm_conv_ring_rebuild_f32_dc(
-        const float* __restrict__ qkv_tm, const float* __restrict__ ring_old,
-        float* __restrict__ conv_state, int conv_dim,
-        const unsigned int* __restrict__ acc, int base, int t_v, int d_conv) {
-    int Tc = base + (int)acc[0];
-    if (Tc >= t_v) return;
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    int pad = d_conv - 1;
-    if (idx >= conv_dim * pad) return;
-    int c = idx / pad;
-    int j = idx % pad;
-    int tt = Tc - pad + j;                    // may be negative when Tc < pad
-    conv_state[(size_t)c * pad + j] = (tt >= 0) ? qkv_tm[(size_t)tt * conv_dim + c]
-                                               : ring_old[(size_t)c * pad + (pad + tt)];
-}
-extern "C" __global__ void gdn_scan_s128_dc(
-        const float* q, const float* k, const float* v, const float* g, const float* beta,
-        const float* state_in, float* state_out, float* o, int H,
-        const unsigned int* acc, int base, int t_v, float scale) {
-    int T = base + (int)acc[0];
-    if (T >= t_v) return;
     gdn_scan_kernel<128, 32>(q, k, v, g, beta, state_in, state_out, o, H, T, scale);
 }
 
@@ -1212,33 +1135,6 @@ extern "C" __global__ void q_gate_split_f32(
     long src = (long)tok * (n_head * stride) + (long)hh * stride;   // head block base
     q_out[idx]    = qf[src + d];
     gate_out[idx] = qf[src + head_dim + d];
-}
-
-// ---- 2. qkv -> GDN repack (q/k head-repeat via MODULO kh = vh % num_k). ----
-// conv_out: channel-major [conv_dim, T] (channel c, time tt at c*T + tt). For decode T=1 -> index c.
-//   q channels [0,key_dim), k [key_dim,2*key_dim), v [2*key_dim,conv_dim). head_k = d_state.
-// q_g/k_g/v_g: [d_state, num_v, T], dst (tt*num_v+vh)*d_state + i.
-//   kh = vh % num_k ; qc = kh*head_k + i ; kc = key_dim + kh*head_k + i ; vc = 2*key_dim + vh*d_state + i.
-// One thread per output element. idx over [T*num_v*d_state). head_k == d_state.
-// Matches decode.rs:195-206 (T=1) and hybrid_forward.rs:176-190 (general T).
-extern "C" __global__ void qkv_to_gdn_repack_f32(
-        const float* __restrict__ conv_out,
-        float* __restrict__ q_g, float* __restrict__ k_g, float* __restrict__ v_g,
-        int d_state, int num_v, int num_k, int key_dim, int T) {
-    long idx = (long)blockIdx.x * blockDim.x + threadIdx.x;
-    long total = (long)T * num_v * d_state;
-    if (idx >= total) return;
-    int i  = idx % d_state;
-    int vh = (idx / d_state) % num_v;
-    int tt = idx / ((long)d_state * num_v);
-    int head_k = d_state;
-    int kh = vh % num_k;                                   // MODULO head-repeat (validated mapping)
-    long qc = (long)kh * head_k + i;                       // q channel
-    long kc = (long)key_dim + (long)kh * head_k + i;       // k channel
-    long vc = (long)2 * key_dim + (long)vh * d_state + i;  // v channel
-    q_g[idx] = conv_out[qc * T + tt];
-    k_g[idx] = conv_out[kc * T + tt];
-    v_g[idx] = conv_out[vc * T + tt];
 }
 
 // ---- 3. conv-state assemble + ring roll (decode T=1). ----

@@ -3946,10 +3946,6 @@ pub struct HybridModel {
     /// expert banks and clamp policy. Keeping it model-scoped avoids multiplying the large
     /// capacity workspaces by the routed layer count.
     pub(crate) step_grouped_prefill: std::sync::Mutex<StepEpGroupedPrefill>,
-    /// Whole-token decode graph state (step TP graph increment B): the stitched parent per fa
-    /// bucket plus the persistent token/pos/logits plumbing. None until the door builds it.
-    pub(crate) step35_token_graph:
-        std::sync::Mutex<Option<crate::hybrid_forward::Step35TokenGraphState>>,
     /// mHC residual topology (`crate::hyper`), `Some` iff the compiled plan declares
     /// `ResidualTopology::HyperConnections` for the trunk. Every forward path keys on this:
     /// the ones that implement the hc program branch to it, and the ones that do not refuse
@@ -4166,22 +4162,6 @@ impl HybridModel {
         Ok(out)
     }
 
-    /// One engine backed by the default memory pool that owns Step TP allocations on `device`.
-    pub fn step_tp_rank_engine(&self, device: usize) -> Option<&Engine> {
-        self.layers.iter().find_map(|weights| {
-            let Mixer::Full(attention) = &weights.mixer else {
-                return None;
-            };
-            let tp = attention.step_tp_qkv.as_ref()?;
-            let rank = tp
-                .runtime
-                .devices()
-                .iter()
-                .position(|&rank| rank == device)?;
-            tp.runtime.rank_engine(rank)
-        })
-    }
-
     pub(crate) fn step_tp_runtime_for_layer(
         &self,
         layer: usize,
@@ -4218,10 +4198,6 @@ impl HybridModel {
     /// not the process default a co-loaded step37 model arms.
     pub fn swa_ring_on(&self) -> bool {
         crate::cache::swa_ring_on_for_plan(&self.plan)
-    }
-
-    pub fn has_plan_operation(&self, operation: memra_gguf::model_plan::OperationKind) -> bool {
-        self.plan.trunk_operations().contains(&operation)
     }
 
     /// Load a hybrid (qwen35) model from GGUF. Thin byte-identical wrapper over `load_from_source`.
@@ -4960,20 +4936,6 @@ impl HybridModel {
         // block still means "external draft", while a hole inside a declared chain is malformed.
         let external_mtp_requested =
             load_mtp && std::env::var("MEMRA_MTP_DRAFT").is_ok_and(|path| !path.is_empty());
-        let trim_mtp_requested = load_mtp
-            && !crate::model::full_prec_enabled()
-            && std::env::var("MEMRA_FRSPEC_TRIM").is_ok_and(|path| !path.is_empty());
-        // The `trim_mtp_requested => 1` branch is gone, and both lanes wanted it gone:
-        // (a) since the per-head trim (2026-08-27) every loaded head gathers its OWN block's
-        //     trimmed rows, so a trim no longer costs the chain — MEMRA_MTP_HEADS is the only
-        //     chain-width knob; and
-        // (b) a model with no trained NextN block (nextn_predict_layers == 0) can never satisfy
-        //     a trim request, and forcing head_count = 1 made a GLOBAL MEMRA_FRSPEC_TRIM fatal
-        //     for every co-loaded plain model ("ModelPlan has no embedded MTP block") — e.g. an
-        //     embedding model beside a spec'd chat model.
-        // With the branch removed a headless model simply takes nextn_predict_layers = 0 and
-        // loads plain, which is (b)'s fix by construction.
-        let _ = trim_mtp_requested;
         // MEMRA_GLM5_MTP (default OFF): glm5_next's NextN block loads only when asked. The
         // artifact carries the full MTP layer (a MoE block the size of a trunk layer — 288
         // routed experts), and until 2026-08-30 the `nextn.*` glue names had no glm5_next
@@ -5888,8 +5850,9 @@ impl HybridModel {
         // (Qwen3.5-9B class) stream their whole weight mass through the 34B-stride GGUF
         // layout — ncu on H100 held Max Bandwidth at 41-46% (Mem Busy 66-76%) from sector
         // overfetch. Mirrors route the m<=16 mmvq/batched decode family to the aligned-16B
-        // `_rp` twins (bit-identical). VRAM cost == the mirrored trunk (~model size), so
-        // DEFAULT ON only on the Hopper lane (80GB); MEMRA_Q8RP=1/0 overrides either way.
+        // `_rp` twins (bit-identical). VRAM cost == the mirrored trunk (~model size), so the
+        // unset default is ON on the Hopper lane and CAPACITY-KEYED elsewhere (ON iff free VRAM
+        // covers the mirror mass + 8 GiB, below); MEMRA_Q8RP=1/0 overrides either way.
         {
             let q8rp_on = match std::env::var("MEMRA_Q8RP").as_deref() {
                 Ok("0") => false,
@@ -6484,7 +6447,6 @@ impl HybridModel {
             prime_slabs: std::sync::Mutex::new(std::collections::HashMap::new()),
             dspark_vgraphs: std::sync::Mutex::new(None),
             step_grouped_prefill: std::sync::Mutex::new(StepEpGroupedPrefill::default()),
-            step35_token_graph: std::sync::Mutex::new(None),
             hyper,
             hyper_head,
             glm5_dflash,
