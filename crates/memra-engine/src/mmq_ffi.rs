@@ -18,6 +18,8 @@ use cudarc::driver::{CudaSlice, CudaView, DevicePtr, DevicePtrMut};
 /// Quantize-once seam state (see `Engine::mmq_act_begin`): window epoch + one cached
 /// (epoch, act_ptr, m, in_f, D4 scratch) slot. Slot drops (freeing the scratch) on each new window.
 static MMQ_ACT_EPOCH: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+/// kernel-check's override of the v3 F8F4 mainloop route: 0 follows the route, 1 off, 2 on.
+static F8F4_V3_FORCE: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
 #[allow(clippy::type_complexity)]
 static MMQ_ACT_SLOT: std::sync::Mutex<Option<(u64, u64, usize, usize, CudaSlice<u8>)>> =
     std::sync::Mutex::new(None);
@@ -937,6 +939,7 @@ unsafe extern "C" {
         stream: *mut core::ffi::c_void,
         out_scale: f32,
         rp: i32,
+        v3: i32,
     ) -> i32;
     /// `memra_mmq_nvfp4_f8f4_v2_preq` with the residual add in the epilogue: `y = res + W x`, the
     /// bytes the plain GEMM then `add_f32(res, y)` write. `res` and `y` are distinct [n_tokens,
@@ -953,6 +956,7 @@ unsafe extern "C" {
         stream: *mut core::ffi::c_void,
         out_scale: f32,
         rp: i32,
+        v3: i32,
     ) -> i32;
     /// The dense FFN's gate and up v2 GEMMs and the down GEMM's activation quantize in one launch:
     /// writes silu(gate) * up as the v2 activation of an nf-wide input at `act_out`. Bit-identical
@@ -972,6 +976,7 @@ unsafe extern "C" {
         scale_gate: f32,
         scale_up: f32,
         rp: i32,
+        v3: i32,
     ) -> i32;
     /// Bytes for the per-block FP8 MMQ activation scratch (delegates to the F8F4 sizing — the
     /// two arms deliberately share ONE activation format, `block_e4m3_mmq`).
@@ -2268,6 +2273,38 @@ impl Engine {
         route && f8f4_v2_shape_ok(in_f, out_f, m)
     }
 
+    /// Whether a v2 F8F4 GEMM runs the v3 mainloop: the same tile, smem layout, raster and
+    /// epilogues fed by TMA under mbarriers (bit-identical; kernel-check `MMQ-F8F4-V2` runs both
+    /// mainloops against v1). `MEMRA_MMQ_F8F4_V3` of `1`/`0` decides, unset follows the device like
+    /// v2 (on for GB10, research/gb10-prefill-20261106/GEMM-V3-DESIGN.md). `set_f8f4_v3_force`
+    /// overrides it for kernel-check's forced arms.
+    pub fn f8f4_v3_on(&self) -> bool {
+        match F8F4_V3_FORCE.load(std::sync::atomic::Ordering::Relaxed) {
+            1 => return false,
+            2 => return true,
+            _ => {}
+        }
+        static V3: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+        *V3.get_or_init(|| {
+            f8f4_route_on(
+                std::env::var("MEMRA_MMQ_F8F4_V3").ok().as_deref(),
+                env!("MEMRA_BUILT_CUDA_ARCH") == "120a"
+                    && crate::unified_memory::is_unified(self.ctx()),
+            )
+        })
+    }
+
+    /// kernel-check: force the v3 mainloop on (`Some(true)`), off (`Some(false)`), or back to the
+    /// route (`None`) for every following v2 GEMM in this process.
+    pub fn set_f8f4_v3_force(&self, force: Option<bool>) {
+        let v = match force {
+            None => 0,
+            Some(false) => 1,
+            Some(true) => 2,
+        };
+        F8F4_V3_FORCE.store(v, std::sync::atomic::Ordering::Relaxed);
+    }
+
     /// Quantize `x` ([m, in_f] f32) for the F8F4 GEMM: the block_e4m3_mmq layout for v1, the
     /// v2 layout for v2 (the same e4m3 bytes and scales either way).
     pub(crate) fn f8f4_quantize(
@@ -2363,6 +2400,7 @@ impl Engine {
                             st,
                             scale,
                             rp as i32,
+                            self.f8f4_v3_on() as i32,
                         )
                     }
                 }
@@ -2424,6 +2462,7 @@ impl Engine {
                     stream.cu_stream() as *mut core::ffi::c_void,
                     scale,
                     rp as i32,
+                    self.f8f4_v3_on() as i32,
                 )
             }
         };
@@ -2973,6 +3012,7 @@ impl Engine {
                     *gs,
                     *us,
                     *grp as i32,
+                    self.f8f4_v3_on() as i32,
                 )
             }
         };
@@ -3034,6 +3074,7 @@ impl Engine {
                         scales.0,
                         scales.1,
                         rp as i32,
+                        self.f8f4_v3_on() as i32,
                     )
                 }
             };

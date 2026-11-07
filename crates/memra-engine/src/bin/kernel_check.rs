@@ -9549,8 +9549,32 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 /// shape of `g` (in_f % 256 == 0, out_f >= 128), on both weight layouts (GGUF and the A6 split
 /// planes), from a 16-row prompt to a 4,096-row chunk; plus the fused silu(gate) * up v2
 /// quantizer against silu_mul and the v1 tile. Forced arms: the cells judge the kernels whatever
-/// the route picks on this device. Returns the mismatching output count (0 = pass).
+/// the route picks on this device, once with the v2 cp.async mainloop and once with the v3 TMA
+/// mainloop (GEMM-V3-DESIGN.md), so both are held to the v1 bits. Returns the mismatching output
+/// count (0 = pass).
 fn f8f4_v2_cells(
+    e: &Engine,
+    g: &memra_gguf::GgufFile,
+) -> Result<usize, Box<dyn std::error::Error>> {
+    let mut bad = 0usize;
+    for v3 in [false, true] {
+        e.set_f8f4_v3_force(Some(v3));
+        println!(
+            "MMQ-F8F4-V2 mainloop {}",
+            if v3 {
+                "v3 (TMA, mbarriers)"
+            } else {
+                "v2 (cp.async)"
+            }
+        );
+        let r = f8f4_v2_cells_mainloop(e, g);
+        e.set_f8f4_v3_force(None);
+        bad += r?;
+    }
+    Ok(bad)
+}
+
+fn f8f4_v2_cells_mainloop(
     e: &Engine,
     g: &memra_gguf::GgufFile,
 ) -> Result<usize, Box<dyn std::error::Error>> {
