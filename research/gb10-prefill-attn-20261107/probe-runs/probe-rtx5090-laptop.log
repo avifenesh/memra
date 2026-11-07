@@ -1,0 +1,17 @@
+device NVIDIA GeForce RTX 5090 Laptop GPU sms 82 T 4096 reps 3
+kernel h2       regs 255 local 16 B smem 65536 B blocks/SM 1
+kernel db       regs 255 local 0 B smem 69888 B blocks/SM 1
+kernel h2p      regs 255 local 0 B smem 98368 B blocks/SM 1
+T 4096 Tkv    4096 h2           7.140 ms  28.88 TFLOPS mismatch 0 nonfinite 0 (min 7.135 max 7.143)
+T 4096 Tkv    4096 db           9.264 ms  22.26 TFLOPS mismatch 0 nonfinite 0 (min 9.213 max 9.270)
+T 4096 Tkv    4096 h2p          6.359 ms  32.43 TFLOPS mismatch 0 nonfinite 0 (min 6.289 max 6.479)
+T 4096 Tkv   16384 h2          44.053 ms  32.76 TFLOPS mismatch 0 nonfinite 0 (min 43.987 max 44.066)
+T 4096 Tkv   16384 db          55.799 ms  25.86 TFLOPS mismatch 0 nonfinite 0 (min 55.764 max 55.866)
+T 4096 Tkv   16384 h2p         39.160 ms  36.85 TFLOPS mismatch 0 nonfinite 0 (min 39.089 max 39.200)
+T 4096 Tkv   65536 h2         191.216 ms  33.42 TFLOPS mismatch 0 nonfinite 0 (min 191.175 max 191.304)
+T 4096 Tkv   65536 db         240.196 ms  26.61 TFLOPS mismatch 0 nonfinite 0 (min 240.156 max 240.354)
+T 4096 Tkv   65536 h2p        170.628 ms  37.46 TFLOPS mismatch 0 nonfinite 0 (min 170.615 max 170.778)
+T 4096 Tkv  131072 h2         387.564 ms  33.51 TFLOPS mismatch 0 nonfinite 0 (min 387.536 max 387.580)
+T 4096 Tkv  131072 db         486.499 ms  26.70 TFLOPS mismatch 0 nonfinite 0 (min 486.441 max 486.644)
+T 4096 Tkv  131072 h2p        346.063 ms  37.53 TFLOPS mismatch 0 nonfinite 0 (min 345.884 max 346.077)
+rc=0

@@ -1,0 +1,9 @@
+==PROF== Connected to process 1052450 (~/.cache/memra-attn-gb10/probe/probe_attn)
+==PROF== Profiling "cand_ppad": 0%
+==WARNING== Launching the workload is taking more time than expected. If this continues to hang, terminate the profile and re-try by profiling the range of all related launches using '--replay-mode range'. See https://docs.nvidia.com/nsight-compute/ProfilingGuide/index.html#replay for more details.
+....50%....100% - 38 passes
+device NVIDIA GB10 sms 48 T 4096 reps 1
+kernel ppad     regs 255 local 8 B smem 98368 B blocks/SM 1
+T 4096 Tkv   65536 ppad     52536.199 ms   0.12 TFLOPS mismatch 0 nonfinite 0 (min 52536.199 max 52536.199)
+==PROF== Disconnected from process 1052450
+==PROF== Report: ~/.cache/memra-attn-gb10/ncu/r3-ppad.ncu-rep

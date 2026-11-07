@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# edge-shape byte compare: ppad vs h2 at ragged T and T_kv
+set -u
+D=$HOME/.cache/memra-attn-gb10
+cd "$D/probe" || exit 1
+{
+for spec in "128 128,129,160,161" "130 130,4226" "192 192,4097" "1000 1000,1031,33000" "1024 8224,131070" "4033 4033,4097,70001" "4096 4096,262144"; do
+  set -- $spec
+  ./probe_attn "$1" "$2" 1 "h2,ppad" | grep -E "^T " 
+done
+} > "$D/logs/edge.log" 2>&1
+echo EDGE-DONE >> "$D/logs/edge.log"

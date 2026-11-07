@@ -1,0 +1,33 @@
+kernel-check default rc=0 ALL GREEN (115 cells, 5 skipped)
+fa_prefill_view_ws vs inline-dequant T=64 Tkv=192: bitdiff=0 OK
+fa_prefill_view_ws vs inline-dequant T=100 Tkv=100: bitdiff=0 OK
+fa_prefill_view_ws vs inline-dequant T=37 Tkv=297: bitdiff=0 OK
+fa_prefill_view_ws vs inline-dequant T=192 Tkv=4097: bitdiff=0 OK
+fa_prefill_view_ws vs inline-dequant T=1024 Tkv=8224: bitdiff=0 OK
+fa_prefill_view_ws vs inline-dequant T=4096 Tkv=36864: bitdiff=0 OK
+kernel-check h2poff rc=0 ALL GREEN (115 cells, 5 skipped)
+fa_prefill_view_ws vs inline-dequant T=64 Tkv=192: bitdiff=0 OK
+fa_prefill_view_ws vs inline-dequant T=100 Tkv=100: bitdiff=0 OK
+fa_prefill_view_ws vs inline-dequant T=37 Tkv=297: bitdiff=0 OK
+fa_prefill_view_ws vs inline-dequant T=192 Tkv=4097: bitdiff=0 OK
+fa_prefill_view_ws vs inline-dequant T=1024 Tkv=8224: bitdiff=0 OK
+fa_prefill_view_ws vs inline-dequant T=4096 Tkv=36864: bitdiff=0 OK
+kernel-check h2off rc=0 ALL GREEN (115 cells, 5 skipped)
+fa_prefill_view_ws vs inline-dequant T=64 Tkv=192: bitdiff=0 OK
+fa_prefill_view_ws vs inline-dequant T=100 Tkv=100: bitdiff=0 OK
+fa_prefill_view_ws vs inline-dequant T=37 Tkv=297: bitdiff=0 OK
+fa_prefill_view_ws vs inline-dequant T=192 Tkv=4097: bitdiff=0 OK
+fa_prefill_view_ws vs inline-dequant T=1024 Tkv=8224: bitdiff=0 OK
+fa_prefill_view_ws vs inline-dequant T=4096 Tkv=36864: bitdiff=0 OK
+argmax rc=0   SUMMARY flips=0 bad=0   PASS: every prefill/decode argmax flip is explained by a margin the config spread covers 
+run-spec rc=0   acceptance: 17/98 = 17.3%   self-consistency: PASS (identical to plain target)   acceptance: 17/112 = 15.2%   self-consistency: PASS (identical to plain target) === SELF-CONSISTENCY PASS === 
+argmax-16k C rc=143 
+logits 600 B rc=0 pp-only MEDIAN: 16219 tok in 18.9501s = 855.9 tok/s (pp16219, 1 reps) c89e11f4d79be7e6
+logits 600 C rc=0 pp-only MEDIAN: 16219 tok in 18.9599s = 855.4 tok/s (pp16219, 1 reps) c89e11f4d79be7e6
+logits 600 Coff rc=0 pp-only MEDIAN: 16219 tok in 18.9708s = 854.9 tok/s (pp16219, 1 reps) c89e11f4d79be7e6
+logits 600 B vs C vs Coff: IDENTICAL
+logits 1240 B rc=0 pp-only MEDIAN: 33890 tok in 45.2628s = 748.7 tok/s (pp33890, 1 reps) 6f836036471ee99b
+logits 1240 C rc=0 pp-only MEDIAN: 33890 tok in 45.2354s = 749.2 tok/s (pp33890, 1 reps) 6f836036471ee99b
+logits 1240 Coff rc=0 pp-only MEDIAN: 33890 tok in 45.2438s = 749.1 tok/s (pp33890, 1 reps) 6f836036471ee99b
+logits 1240 B vs C vs Coff: IDENTICAL
+2026-11-07T03:21:26+02:00 logits done; campaign served-unit2

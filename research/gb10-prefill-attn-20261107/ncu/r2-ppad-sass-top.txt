@@ -1,0 +1,66 @@
+stall samples by reason (share of all samples):
+  stall_wait                    38.2%
+  stall_math                    22.3%
+  stall_selected                19.5%
+  stall_short_sb                 6.3%
+  stall_not_selected             5.4%
+  stall_dispatch                 2.8%
+  stall_long_sb                  2.5%
+  stall_branch_resolving         1.4%
+  stall_misc                     1.0%
+  stall_no_inst                  0.4%
+  stall_mio                      0.2%
+  stall_lg                       0.1%
+
+top by L2 Theoretical Sectors Global Excessive:  total 3.146e+06
+   2.458e+04        STG.E desc[UR12][R12.64], R145
+   2.458e+04        STG.E desc[UR12][R12.64+0x4], R5
+   2.458e+04        STG.E desc[UR12][R34.64], R147
+   2.458e+04        STG.E desc[UR12][R34.64+0x4], R5
+   2.458e+04        STG.E desc[UR12][R12.64+0x20], R153
+   2.458e+04        STG.E desc[UR12][R12.64+0x24], R5
+   2.458e+04        STG.E desc[UR12][R34.64+0x20], R155
+   2.458e+04        STG.E desc[UR12][R34.64+0x24], R5
+
+top by L1 Wavefronts Shared Excessive:  total 0.000e+00
+
+top by L2 Theoretical Sectors Local:  total 4.393e+08
+   4.878e+07        LDL R19, [R1+0xc]
+   4.878e+07        LDL R17, [R1+0x10]
+   4.878e+07        LDL R13, [R1+0x14]
+   4.878e+07        LDL.LU R149, [R1]
+   4.878e+07        LDL.LU R148, [R1+0x4]
+   4.878e+07        LDL.LU R143, [R1+0x8]
+   4.878e+07        STL [R1], R149
+   4.878e+07        STL [R1+0x4], R148
+
+instruction mix (executed warp instructions):
+  MOV         15.4%
+  FFMA        10.9%
+  HMMA        10.7%
+  IADD3        7.5%
+  FMUL         5.8%
+  LDSM         5.3%
+  NOP          4.7%
+  ISETP        3.4%
+  FADD         3.2%
+  BRA          3.2%
+  FSETP        3.0%
+  PLOP3        3.0%
+  SYNCS        2.9%
+  FSEL         2.7%
+  YIELD        2.5%
+  IMAD         2.1%
+  FMNMX        1.8%
+  LOP3         1.6%
+  total 1.461e+10 warp instructions, 9.36 per MMA
+
+stall samples by opcode (share of all samples), top reasons:
+  HMMA      38.2%  [math 21.5, wait 7.1, short_sb 4.4, selected 2.2]
+  NOP       15.2%  [wait 13.6, selected 1.0, not_selected 0.4, dispatch 0.1]
+  MOV        8.8%  [wait 4.4, selected 3.2, not_selected 0.5, dispatch 0.4]
+  IADD3      6.0%  [wait 3.3, selected 1.6, short_sb 0.4, not_selected 0.3]
+  LDSM       3.5%  [wait 1.8, selected 1.1, not_selected 0.3, dispatch 0.2]
+  FMUL       3.5%  [wait 1.4, selected 1.2, not_selected 0.4, short_sb 0.3]
+  FFMA       3.4%  [selected 2.3, dispatch 0.6, wait 0.4, not_selected 0.0]
+  BRA        2.1%  [long_sb 1.6, wait 0.3, selected 0.1, barrier 0.1]

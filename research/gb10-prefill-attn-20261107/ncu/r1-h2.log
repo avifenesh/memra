@@ -1,0 +1,9 @@
+==PROF== Connected to process 1037503 (~/.cache/memra-attn-gb10/probe/probe_attn)
+==PROF== Profiling "fa_prefill_qw_h2": 0%
+==WARNING== Launching the workload is taking more time than expected. If this continues to hang, terminate the profile and re-try by profiling the range of all related launches using '--replay-mode range'. See https://docs.nvidia.com/nsight-compute/ProfilingGuide/index.html#replay for more details.
+....50%....100% - 38 passes
+device NVIDIA GB10 sms 48 T 4096 reps 1
+kernel h2       regs 255 local 8 B smem 65536 B blocks/SM 1
+T 4096 Tkv   65536 h2       59099.027 ms   0.11 TFLOPS mismatch 0 nonfinite 0 (min 59099.027 max 59099.027)
+==PROF== Disconnected from process 1037503
+==PROF== Report: ~/.cache/memra-attn-gb10/ncu/r1-h2.ncu-rep
