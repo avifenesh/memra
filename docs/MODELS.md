@@ -104,7 +104,7 @@ not create a support commitment; admitted work follows the project scope above.
 | Qwen3.6-35B-A3B | MoE | IQ4_XS | MTP + own-gen trimmed draft | v0.1.0 |
 | Gemma-4 26B-A4B | MoE | QAT Q4_0 | Gemma assistant draft — served since 2026-08-17 via the gspec attach (MEMRA_DRAFT, shipping depth K=5); table spec numbers remain gemma-gate CLI measurements | v0.23.0 |
 | Gemma-4 31B | dense | QAT Q4_0 GGUF (supported + tuned) · NVFP4 safetensors tuning in progress | Gemma assistant draft — served since 2026-08-17 via the gspec attach (MEMRA_DRAFT, shipping depth K=5); table spec numbers remain gemma-gate CLI measurements | v0.35.0 |
-| Gemma-4 E4B | dense | QAT Q4_0 | Gemma assistant draft — served since 2026-08-17 via the gspec attach (MEMRA_DRAFT, shipping depth K=5); table spec numbers remain gemma-gate CLI measurements | v0.35.0 |
+| Gemma-4 E4B | dense | QAT Q4_0 | Gemma assistant draft — gemma-gate CLI only; memra-server's gspec attach skips E4B, so serving runs it without a drafter | v0.35.0 |
 | Gemma-4 12B | dense | QAT Q4_0 | Gemma assistant draft — served since 2026-08-17 via the gspec attach (MEMRA_DRAFT, shipping depth K=5); table spec numbers remain gemma-gate CLI measurements | v0.40.0 |
 | Ornith-1.0-9B | dense | Q8_0 | own-gen donor-block draft | v0.63.0 |
 | Ornith-1.0-35B | MoE | Q4_K_M | own-gen donor-block draft | v0.64.0 |
@@ -176,7 +176,9 @@ loader refuses it (`draft n_embd != model n_embd`). Since 2026-08-17, `memra-ser
 through its own attach path (`gspec`): `MEMRA_DRAFT=<assistant.gguf>` with `MEMRA_GEMMA4_SPEC`
 unset arms served speculative decode at the shipping depth K=5 (`MEMRA_GEMMA4_SPEC=0` is the
 plain kill switch — see docs/FLAGS.md). The speculative numbers in the table above remain
-`gemma-gate` CLI measurements, not serving ones.
+`gemma-gate` CLI measurements, not serving ones. E4B is the exception to the served attach: the
+worker skips it, so its assistant drafter runs through `gemma-gate` only, and `memra-server`
+serving of E4B is not qualified ([E4B card](models/gemma4-e4b.md)).
 
 ## Capture models — embeddings and rerank (v0.116.0)
 

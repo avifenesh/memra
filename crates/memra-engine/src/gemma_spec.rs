@@ -476,19 +476,18 @@ impl GemmaDraft {
 }
 
 impl HybridModel {
-    /// The MAIN layer whose KV cache a drafter layer attends (llama-model.cpp:2139):
-    /// the last OWN-KV layer of the class — `boundary - 2` windowed / `boundary - 1`
-    /// global, where boundary = n_layer - shared_kv_layers. Shared across every
-    /// gemma4-assistant drafter (26B/31B: boundary = n_layer; E4B: 24).
+    /// The MAIN layer whose KV cache a drafter layer attends (llama-model.cpp:2139): the last
+    /// trunk layer that owns a cache of the class, read from the plan
+    /// (`ModelPlan::last_own_kv_layer`). On 26B/31B that is `n_layer - 2` windowed and
+    /// `n_layer - 1` global; on E4B it is 22 and 23, the sources its KV-shared layers read.
+    /// Shared across every gemma4-assistant drafter.
     pub(crate) fn gemma4_draft_kv_target(&self, swa: bool) -> usize {
-        let shared = self
-            .cfg
-            .gemma4
-            .as_ref()
-            .map(|g| g.shared_kv_layers as usize)
-            .unwrap_or(0);
-        let boundary = self.layers.len() - shared;
-        boundary - if swa { 2 } else { 1 }
+        self.plan.last_own_kv_layer(swa).unwrap_or_else(|| {
+            panic!(
+                "gemma4 drafter: the plan has no {} layer that owns a KV cache",
+                if swa { "sliding-window" } else { "global" }
+            )
+        }) as usize
     }
 
     /// One drafter step: (token, h[2816 device]) at absolute position `pos` over the FROZEN main
@@ -965,12 +964,12 @@ impl HybridModel {
             .as_ref()
             .map(|g| g.sliding_window as usize)
             .unwrap_or(0);
-        let g4_shared = self
-            .cfg
-            .gemma4
-            .as_ref()
-            .map(|g| g.shared_kv_layers)
-            .unwrap_or(0);
+        let g4_shares_kv = self.plan.layers.iter().any(|layer| {
+            matches!(
+                layer.state,
+                memra_gguf::model_plan::StatePlan::SharedKvCache { .. }
+            )
+        });
         'outer: while out.len() < max_new {
             let mut kr = if adapt { kc } else { k_cap };
             // power-of-2 rung bucket for the dc arms (shared by eager and captured replays);
@@ -1074,7 +1073,7 @@ impl HybridModel {
             if round_graph_on
                 && dc_bucket.is_some()
                 && pmin == 0.0
-                && g4_shared == 0
+                && !g4_shares_kv
                 && !self.is_gemma4_e4b()
                 && (cache.pos + 2 * (k_cap + 1) + k_cap + 4 < win_main || cache.pos > win_main)
                 && (cache.pos + 2 * (k_cap + 1) + k_cap + 4 < crate::fa512_min_tkv()

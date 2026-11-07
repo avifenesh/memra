@@ -624,7 +624,7 @@ pub const DECODE_GRAPH: KernelManifest =
 /// `GatedDeltaNet` (the qwen35/qwen35_moe/qwen4_exp recurrent mixers have no PP ladder; step35
 /// has no GDN layers), `CompressedMlaAttention`
 /// (the dsv4 class), `SoftmaxRouter`, `GemmaResidual`/`GemmaParallelMoeResidual` (gemma keeps its
-/// separately gated PP2 program, grandfathered in `hybrid.rs` by fence length), `LogitsSoftcap`.
+/// separately gated PP2 program, admitted in `hybrid.rs` by [`gemma_pp2_covers`]), `LogitsSoftcap`.
 /// A family that wants stage splitting brings its own ladder; being architecturally adjacent to
 /// one that has one is not a receipt.
 fn pipeline_support(operation: OperationKind) -> OperationSupport {
@@ -635,6 +635,29 @@ fn pipeline_support(operation: OperationKind) -> OperationSupport {
 
 pub const PIPELINE: KernelManifest =
     KernelManifest::new("pipeline-state-transport", pipeline_support);
+
+/// Does gemma's separately gated PP2 program cover `plan` split into `stages` stages? The load
+/// admits a plan this returns true for without the [`PIPELINE`] table.
+///
+/// That program was qualified on the 12B/26B/31B plans, where the hidden state is the only
+/// tensor crossing a stage boundary and each stage owns its layers' caches. Gemma-4 E4B breaks
+/// both: its per-layer inputs come from one prologue and feed every layer
+/// (`PerLayerInputEmbedding`, `PerLayerInputGate`), and a KV-shared layer reads its source
+/// layer's cache (`SharedKvState`, layers 24..41 read 22 and 23). Its eager walk has no stage
+/// split either. Such a plan is not covered, so the [`PIPELINE`] check refuses it and its
+/// blockers name those operations.
+pub fn gemma_pp2_covers(plan: &ModelPlan, stages: usize) -> bool {
+    stages == 2
+        && decode_batch_program(plan) == DecodeBatchProgram::Gemma
+        && !plan.trunk_operations().iter().any(|operation| {
+            matches!(
+                operation,
+                OperationKind::PerLayerInputEmbedding
+                    | OperationKind::PerLayerInputGate
+                    | OperationKind::SharedKvState
+            )
+        })
+}
 
 fn decode_batch_support(operation: OperationKind) -> OperationSupport {
     let mut support = OperationSupport::none();

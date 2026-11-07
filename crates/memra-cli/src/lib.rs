@@ -2363,6 +2363,7 @@ fn pinned_tiny_oracle(family: &str) -> Option<&'static str> {
             "../tests/fixtures/tiny-oracle/gemma4_dense.tsv"
         )),
         "gemma4_moe" => Some(include_str!("../tests/fixtures/tiny-oracle/gemma4_moe.tsv")),
+        "gemma4_e4b" => Some(include_str!("../tests/fixtures/tiny-oracle/gemma4_e4b.tsv")),
         "hy3" => Some(include_str!("../tests/fixtures/tiny-oracle/hy3.tsv")),
         "hy3_nvfp4" => Some(include_str!("../tests/fixtures/tiny-oracle/hy3_nvfp4.tsv")),
         "llama_dense" => Some(include_str!(
@@ -3017,7 +3018,9 @@ mod tests {
                         .join("reference-oracle.tsv")
                         .is_file()
                 );
-                if pack.family.starts_with("gemma4") {
+                // A tiny plan with a tower pins its vision and multimodal oracles too; the
+                // E4B fixture is text-only.
+                if pack.compile_tiny_plan().unwrap().vision.is_some() {
                     assert!(
                         root.join(pack.family)
                             .join("reference-vision-oracle.tsv")
