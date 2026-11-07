@@ -65,11 +65,13 @@ stop() {
   kill -TERM "$SP" 2>/dev/null; waitfor --gone "$SP" --timeout 90s --quiet || kill -KILL "$SP" 2>/dev/null; wait "$SP" 2>/dev/null
   SP=
 }
-# DOORS=default leaves the three restore doors unset, so the arm runs on the device default.
+# DOORS=default leaves the restore switch unset, so the arm runs on the device default. Since
+# 2026-11-07 the one switch arms what the three doors did; the boot refuses the retired names
+# (MEMRA_DSPARK_BOUNDARY_CAPTURE, MEMRA_DSPARK_PARTIAL_RESTORE), so this run sets only the switch.
 if [ "${DOORS:-explicit}" = default ]; then
   ARMDOORS=""
 else
-  ARMDOORS="MEMRA_DSPARK_PREFIX_RESTORE=1 MEMRA_DSPARK_BOUNDARY_CAPTURE=1 MEMRA_DSPARK_PARTIAL_RESTORE=1"
+  ARMDOORS="MEMRA_DSPARK_PREFIX_RESTORE=1"
 fi
 : > "$R"
 note "gate sizes GATE_P_PARAS=$GATE_P_PARAS GATE_S_PARAS=$GATE_S_PARAS memory.total=${VRAM:-unknown} MiB${GATE_VRAM_MIB:+ (GATE_VRAM_MIB override)} MEMRA_CTX=$CTX DOORS=${DOORS:-explicit} port=$PORT"

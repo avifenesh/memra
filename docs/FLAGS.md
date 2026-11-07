@@ -1656,13 +1656,20 @@ both a partial combination and the switch-OFF default exposed an off-grid plain 
   three-turn chat's third turn left the cold text (383 vs 371 characters on main 65d5887596 and
   on 48e8b3b414). Turn 1's entry sat at its 2,992-token prompt end (the prompt-end trunk capture
   does not read the switch); turn 2 restored it plain off the GDN prime grid and turn 3 resumed
-  rows that prime wrote. All three set: byte-identical.
+  rows that prime wrote. All three set: byte-identical for that prompt; on any device a prompt
+  with no armable render-stable cut still captured at its prompt end, so a later plain-route
+  turn had the same exposure with the switch on.
 - That restore is now closed for every switch value: the cold DFlash capture is cut on the grid
   (`dspark_cold_capture`) and the hit site refuses an off-grid recurrent entry
   (`prefix_restore_exact`, both in `crates/memra-server/src/worker.rs`).
 - Receipts: `research/plain-restore-grid-20261107/`. History:
   [partial restore](FLAGS-HISTORY.md#memra_dspark_partial_restore),
   [boundary capture](FLAGS-HISTORY.md#memra_dspark_boundary_capture).
+- The boot refuses either name (`[env-audit] REFUSED ... retired`): a launcher that still sets
+  one must unset it, and `MEMRA_DSPARK_PREFIX_RESTORE=1` replaces the old three-door set. The
+  memra#1031 gate script (`research/dflash-restorable-hit-20261103/cold-drafter-gate.sh`) sets the
+  one switch; older one-off research launchers that set the retired names are receipts of their
+  runs and need the names removed to run again.
 
 ## Removed doors, 2026-11-05 (DFlash cold drafter on a vetoed plain hit, promoted)
 

@@ -3044,10 +3044,11 @@ byte-identity, and confinement + near-tie-only flips across programs.
 capture was the one capture site left off the grid: with no render-stable cut armed, the tail (or
 trunk-only) entry ended at the prompt end, and a later, longer prompt restored it plain and primed
 from that off-grid start. The prompt-end trunk capture does not read the restore switch, so this
-was the default on every device where the switch is off, every RTX 5090 included: on the local RTX
-5090, at the device default and with only `MEMRA_DSPARK_PREFIX_RESTORE=1` alike, turn 2 of a
-three-turn chat restored 2,992 tokens and primed from there, and turn 3, resumed from rows that
-prime wrote, left the cold text (383 vs 371 characters). Three changes close it:
+was the default on every device where the switch is off, every RTX 5090 included, and on any
+device for a prompt with no armable render-stable cut: on the local RTX 5090, at the device default
+and with only `MEMRA_DSPARK_PREFIX_RESTORE=1` alike, turn 2 of a three-turn chat restored 2,992
+tokens and primed from there, and turn 3, resumed from rows that prime wrote, left the cold text
+(383 vs 371 characters). Three changes close it:
 
 - The capture: a cold DFlash prime with no render-stable cut (the restore switch off, or no
   armable boundary in the prompt) cuts its entry at the seed's grid boundary
@@ -3055,7 +3056,9 @@ prime wrote, left the cold text (383 vs 371 characters). Three changes close it:
   cut only when it is on the grid (that entry also serves longer prompts as an on-grid strict
   prefix) or the prompt is too short for a grid entry (that entry serves only a whole cover). An
   exact re-send of an off-grid prompt restores `capture_len(P)` and re-primes 16..47 tokens, as
-  for the plain seed.
+  for the plain seed. The cost is a two-call cold prime for an off-grid prompt on every device:
+  +0.15 s on a 2,992-token first turn on the RTX 5090 (3.54 to 3.69 s, mean of 2 runs per arm,
+  switch off); the split prime also caps its first burst at one round (memra#1085).
 - The hit site: every probe that names the entry the hit site restores skips an entry that
   carries recurrent state unless it covers the prompt whole, or ends on the grid with at least
   `PRIME_MIN_T` suffix tokens (`prefix_restore_exact`). That is `PrefixCache::lookup` and its

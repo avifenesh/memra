@@ -30421,8 +30421,8 @@ pub fn run(
                     // drafter also keeps the shorter drafter-tail entry the restorable-hit
                     // preference would take (`pin_reclaim_spare`), decided by the same
                     // `dspark_prefer_restorable_hit` on `admit`'s inputs. Only where that
-                    // preference runs: DFlash may serve this request and both restore doors are
-                    // open.
+                    // preference runs: DFlash may serve this request and the restore switch is
+                    // on.
                     let mut reclaim_spare = if !headroom.sufficient(required) {
                         let key = (req.model.clone(), req.cache_ns.clone());
                         let prompt = req.prepared_prompt.as_ref().unwrap();
@@ -30471,8 +30471,8 @@ pub fn run(
                             Some(longer) => eprintln!(
                                 "[admit-oom] reclaim spared the prompt's restorable entry \
                                  ({} tokens, draft tail) and its longer non-restorable entry \
-                                 ({} tokens); if the arrival is still short, parked sessions go \
-                                 first and then one of the two (decode_budget={}, model {model_key})",
+                                 ({} tokens); if the arrival is still short, one of the two may \
+                                 go (decode_budget={}, model {model_key})",
                                 spare.keep.tokens, longer.tokens, shape.budget,
                             ),
                         })
@@ -30624,6 +30624,8 @@ pub fn run(
                             // runs out first, memory cannot hold the restorable entry, and the
                             // longer one stays.
                             let parked_before = evicted_plain + evicted_spec + evicted_dspark;
+                            // The drop line's figure: the last reading the climb took.
+                            let mut last_short = shortfall;
                             let climb = verdict.and_then(|longer_bytes| {
                                 reclaim_climb(
                                     shortfall.unwrap_or(usize::MAX),
@@ -30644,13 +30646,17 @@ pub fn run(
                                         pool.is_some()
                                     },
                                     || {
-                                        primary_unbooked_shortfall(
+                                        let reading = primary_unbooked_shortfall(
                                             &engine,
                                             &loaded,
                                             &headroom,
                                             required,
                                             pending_booked,
-                                        )
+                                        );
+                                        if reading.is_some() {
+                                            last_short = reading;
+                                        }
+                                        reading
                                     },
                                 )
                             });
@@ -30658,7 +30664,8 @@ pub fn run(
                                 evicted_plain + evicted_spec + evicted_dspark - parked_before;
                             let at_drop = match climb {
                                 Ok(left) if left != usize::MAX => Some(left),
-                                _ => shortfall,
+                                Err(RECLAIM_KEPT_NO_READING) => None,
+                                _ => last_short,
                             };
                             let pool_before_drop = pool_readings(&engine, &loaded);
                             let dropped = if climb == Ok(0) {
@@ -38087,7 +38094,7 @@ fn admit(
         }
     }
     // COLD-DRAFTER CONVERSION OF A VETOED HIT (memra#1031 second half; on whenever the restore
-    // and partial-restore doors are, receipts in research/dflash-restorable-hit-20261103/).
+    // switch is, receipts in research/dflash-restorable-hit-20261103/).
     // The cache-preferred veto serves a long prompt's PLAIN hit plain, the session
     // publishes another plain entry, and a multi-turn DFlash session never speculates again
     // (GB10 GGUF DFlash2 c1: 12.0 tok/s, 28 vetoes). When the suffix the hit leaves covers the
@@ -49892,12 +49899,49 @@ mod tests {
         let src = include_str!("worker.rs");
         let production = &src[..src.find("\nmod tests {").unwrap()];
         let squashed = production.split_whitespace().collect::<Vec<_>>().join(" ");
+        // Each probe's own body carries the law (a clause moved from one function to another
+        // fails here): the body runs from the signature to the next `fn`.
+        let fn_body = |scope: &str, sig: &str| -> String {
+            let at = squashed
+                .find(scope)
+                .unwrap_or_else(|| panic!("missing {scope}"));
+            let start = at
+                + squashed[at..]
+                    .find(sig)
+                    .unwrap_or_else(|| panic!("missing {sig} in {scope}"))
+                + sig.len();
+            let rest = &squashed[start..];
+            rest[..rest.find(" fn ").unwrap_or(rest.len())].to_string()
+        };
+        let law = "&& prefix_restore_exact(n, prompt.len(), e.carries_recurrent())";
+        for (scope, sig) in [
+            (
+                "impl PrefixCache {",
+                "fn lookup(&self, key: &PoolKey, prompt: &[u32]) -> Option<usize> {",
+            ),
+            (
+                "impl PrefixCache {",
+                "fn lookup_where( &self, key: &PoolKey, prompt: &[u32], keep: impl Fn(&PrefixEntry) -> bool, ) -> Option<usize> {",
+            ),
+            (
+                "impl PrefixCache {",
+                "fn deepest_covering(&self, key: &PoolKey, prompt: &[u32]) -> Option<usize> {",
+            ),
+            (
+                "impl HostPrefixCache {",
+                "fn lookup(&self, key: &PoolKey, prompt: &[u32]) -> Option<usize> {",
+            ),
+        ] {
+            // The search from `scope` runs to the end of the source: a signature that changed
+            // must not silently land on the other cache's same-named function.
+            let copies = if sig.starts_with("fn lookup(") { 2 } else { 1 };
+            assert_eq!(squashed.matches(sig).count(), copies, "{sig}");
+            assert!(fn_body(scope, sig).contains(law), "{scope} {sig}");
+        }
         assert_eq!(
-            squashed
-                .matches("&& prefix_restore_exact(n, prompt.len(), e.carries_recurrent())")
-                .count(),
+            squashed.matches(law).count(),
             4,
-            "PrefixCache::lookup, lookup_where, deepest_covering and HostPrefixCache::lookup"
+            "no other probe carries the clause"
         );
         assert!(squashed.contains(
             "&& prefix_restore_exact(n, prompt.len(), pending.image.carries_recurrent()))"
@@ -63856,6 +63900,29 @@ mod tests {
         assert!(
             rwin.contains("_ => memra_engine::dflash::DsparkCapture::Off"),
             "PromptEnd never captures on resume (that cut is the #248 bug)"
+        );
+        // memra#1083: with no render-stable cut, both cold-prime sites cut on the prime grid
+        // (`dspark_cold_capture`), never at an off-grid prompt end.
+        let walker = prod
+            .find("s.dspark_prime = Some(match s.dspark.take() {")
+            .expect("the walker prime exists");
+        assert!(
+            prod[walker.saturating_sub(500)..walker].contains(
+                "(true, None) if s.dspark.is_none() => dspark_cold_capture(tokens.len()),"
+            ),
+            "the walker prime's cold cut is the grid cut"
+        );
+        assert!(
+            prod[call..(call + 1500).min(prod.len())]
+                .contains("(true, None) => dspark_cold_capture(prompt.len()),"),
+            "the serving prime's cold cut is the grid cut"
+        );
+        // Comments are stripped, so the one `PromptEnd` left is `dspark_cold_capture`'s own
+        // on-grid or short-prompt arm (any formatting of a reverted prime arm adds one).
+        assert_eq!(
+            prod.matches("DsparkCapture::PromptEnd").count(),
+            1,
+            "only dspark_cold_capture names the prompt-end cut"
         );
     }
 
