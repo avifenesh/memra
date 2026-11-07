@@ -46,3 +46,46 @@ A sampled cohort sent all at once differs from solo and between boots: arrival o
 - A default boot of a MoE model with an MTP head (Ornith-1.5-35B-A3B) panics at worker init: the boot spec-cost calibration measures 16 plain rows on a model whose decode cap is 8 (exact 16-row MoE decode is opt-in). `raw/logs-gpu-1106d_serve-orn.cells.txt`.
 - The boot wave probe leaves its memory mapped: a default 27B boot loses its prefix cache, and with DFlash2 refuses every request; a successful probe also inflates the floor when no calibration trims after it.
 - The cold-drafter conversion publishes no tail entry, and its gate could measure another process's server on its fixed port.
+
+## 2026-11-07: the restacked tip, the PRO 6000 Max-Q pair and the quiet slot
+
+Main moved six times on 2026-11-07 and the stack was restacked onto each move; every layer's delta equaled main's delta. The runs below name the stack commit they built. `<cache>` is the scratch root, `<pair-kit>` and `<maxq-kit>` are the kit directories on the PRO 6000 box, `<box-work>` its work root and `<box-home>` its home; `<tid>` replaces thread ids in panic lines.
+
+### RTX 5090 (`cells/gpu-1107.sh`, `gpu-1107n.sh`, `gpu-1107p.sh`, `gpu-1107s.sh`)
+
+| Row | What ran | Result |
+|---|---|---|
+| A1, A17 | retained-plan route: agent workload, one stream, T=0, the DSpark doors on and off (a0a6816ece) | the plan admits a DFlash2 route over the restored prefix; 29 of 29 turns byte-equal on and off; 11 DSpark restores |
+| A2, A17 | restorable-hit preference (`serve_cells.py restorable`) | not covered: the boundary capture runs (a 2592-token tail entry), then reclaim-on-defer evicts that entry and spares only the plain entry, so the preference never runs; at 4096 context the same (finding below) |
+| | cold-drafter gate with the port guard and the listening-line check | 4 of 4 identical; the cache-preferred route and one cold-drafter restore |
+| | wave-probe floor, the 2026-11-06 binary against the tip | the old binary refuses a 161-token request on an idle server; the tip admits it |
+| | default boot of a MoE model with an MTP head, old binary against the tip | the old binary panics at worker init; the tip serves (plain cap 8) |
+| | DSpark pair cell and the drafter host-spill identity gate, the three doors (1a6b6eb671) | warm equals cold on turns 2 and 3 with two DSpark restores; identity ALL GREEN |
+| | GPU probe recovery gate | fail before (a0a6816ece): the boot's wave probe spent the scripted hangs before readiness, recover FAIL; pass after the gate arms its fake after readiness (1a6b6eb671): recover, latch and fatal PASS |
+| | kernel-check FULL with the F8F4 v2 bit cells; local-ci full; the release battery; serve-smoke | ALL GREEN (113 cells); local-ci rc=0; battery PASS; 47 ok |
+| | fast-gate named probes (1a6b6eb671) | 21 of 22 PASS; accept skips (no cell artifact on this card) |
+| | argmax-margin gate as merged with the stack's decode arm (1dfbaec5e7) | amargin, amarginb, amarginbc, amarginc PASS; battery PASS |
+
+### PRO 6000 Max-Q pair (`cells/stage6.sh`, `pair-cells6.sh`, `pair-extra6.sh`, `pair-extra6b.sh`)
+
+| Row | What ran | Result |
+|---|---|---|
+| B0 | TP/EP placement on two cards, both placements (TP_EP-5, REPL-3) | PASS |
+| B1 | the split-rows branch (TP_EP-7 kvsplit) | PASS |
+| B2 | full-token replay (FIX-6); the four sibling gates (SIB-7) | FIX-6 PASS. The AR epoch fix holds in all four gates (the 2026-11-05 run stopped at an epoch assertion). dense-exact-tail PASS. The other three stopped at count constants written before exact attention TP2, the fused HC finish and the vocab-parallel head; the gates now derive those counts from the loaded program and count a fused pair node as two launches (`raw/pair-out6*.census.txt`). Their rerun with both fixes is owed to the next pair window |
+| | 22 regression cells; ep-pair with the drafter; serving on TP/EP | all rc=0 |
+
+### Quiet slot, one card of the pair (`cells/quiet-1107.sh`, `cells/power-cell.sh` at 300 W)
+
+| Row | What ran | Result |
+|---|---|---|
+| D21 | spec-cache-mixed gate, fixed (prefix budget for the six repeats, a one-stream window) | fail before (pair window, old script): no repeat took the cache; pass after: ALL GREEN, every repeat took the cache, 6 spec-engaged hit rows byte-identical to spec-off (`raw/*spec-cache-mixed.verdicts.txt`) |
+| | DSpark serve smoke, fixed (the LOW=1 tooth decided from the admit and decision order) | fail before: the tooth counted a row decided before its peer arrived; pass after: both rows decided after both admits, plain; r1 to r3 identical |
+
+The card ran both gates at 300 W, peaked at 88 C with no thermal slowdown, and returned to its 280 W limit after (`raw/quiet-outq.power-*.txt`). The kv-vmm timed half that ran first in this slot is banked with its lane.
+
+### Found on main (2026-11-07)
+
+- Reclaim-on-defer evicts the restorable tail entry and keeps only the longest-match plain entry, so the restorable-hit preference cannot run on a 24 GB card with Qwen3.8-27B and DFlash2. A fix is on its own branch.
+- With one DSpark door (prefix restore only), turn 3 of the pair cell differs from a cold prime on main's own binary: turn 2 is served plain from the boundary entry, its prime splits at the prompt end, off the GDN grid, and turn 3 resumes those rows. The three doors pass.
+- fast-gate writes its logs under `/tmp`, not `$TMPDIR`.

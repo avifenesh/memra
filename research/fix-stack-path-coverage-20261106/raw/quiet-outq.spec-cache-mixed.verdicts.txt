@@ -1,0 +1,8 @@
+  ok: every repeat row took the cache
+  ok: every demoted repeat named the concurrency policy at a wave above LOW=2 (6 of 6)
+  UNAVAILABLE: byte identity, no spec-engaged hit row in this window (reported rather than passed over an empty set)
+  ok: batch tier >= 0.9x spec-off (0.99x)
+  ok: every repeat row took the cache
+  ok: >= 2 spec-engaged cache-hit rows under load (got 6, 0 gate-demoted)
+  ok: spec-engaged hit rows byte-identical to spec-off replay (6 rows)
+SPEC-CACHE MIXED GATE: ALL GREEN
