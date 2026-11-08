@@ -1,0 +1,8 @@
+argmax-margin-gate: model=Ornith-1.5-35B-A3B-NVFP4-Q5K-mtp.gguf prompt=board-2048.txt window=12 decode=batch canary=0
+  flip budget: 1 (row: default)
+  explained pos=2041 margin=0.0482 < delta=0.4597
+  SUMMARY flips=1 bad=0
+  SERVED-SUMMARY served=MATCH
+    SERVED-ARGMAX: rows=12 device_mismatch=0
+  PASS: every prefill/decode argmax flip is explained by a margin the config spread covers
+  raw: argmax-batch-2/gate-Ornith-1.5-35B-A3B-NVFP4-Q5K-mtp-board-2048.batch.log
