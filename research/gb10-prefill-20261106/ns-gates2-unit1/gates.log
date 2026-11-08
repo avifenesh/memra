@@ -1,0 +1,20 @@
+kernel-check rc=0 ALL GREEN (126 cells, 5 skipped)
+ADD-RMS-NORM-E4M3V2 rows=300: res=0 norm=0 e4m3=0 scales=0 q8_1=0 (f32 skipped: res=0 e4m3=0 scales=0) (norm only: 0) OK
+ADD-RMS-NORM-E4M3V2 rows=1024: res=0 norm=0 e4m3=0 scales=0 q8_1=0 (f32 skipped: res=0 e4m3=0 scales=0) (norm only: 0) OK
+NORM-SKIP-UNWRITTEN: dst=None seeds (add 0, norm 0) refused (single true, bypass true, no pair true) seeded dp4a outputs 0 mismatching OK
+sdpa_naive_w_lo[longctx Tkv=16392 win=2048]: legacy_launch=FAILS(expected) clipped_maxdiff=4.19e-9 OK
+sdpa_naive_gmem[longctx Tkv=16392]: legacy_launch=FAILS(expected) gmem_maxdiff=4.19e-9 OK
+run-spec rc=0   acceptance: 17/98 = 17.3%   self-consistency: PASS (identical to plain target)   acceptance: 17/112 = 15.2%   self-consistency: PASS (identical to plain target) === SELF-CONSISTENCY PASS ===
+prime logits q27 600 B rc=0 pp-only MEDIAN: 16219 tok in 11.5237s = 1407.5 tok/s (pp16219, 1 reps) d1b258408a4030bd
+prime logits q27 600 C rc=0 pp-only MEDIAN: 16219 tok in 10.2341s = 1584.8 tok/s (pp16219, 1 reps) d1b258408a4030bd
+prime logits q27 600 B vs C: IDENTICAL
+prime logits q27 1240 B rc=0 pp-only MEDIAN: 33890 tok in 23.2948s = 1454.8 tok/s (pp33890, 1 reps) 758739bef255cb95
+prime logits q27 1240 C rc=0 pp-only MEDIAN: 33890 tok in 24.2273s = 1398.8 tok/s (pp33890, 1 reps) 758739bef255cb95
+prime logits q27 1240 B vs C: IDENTICAL
+prime logits ornith 600 B rc=0 pp-only MEDIAN: 16219 tok in 4.8679s = 3331.8 tok/s (pp16219, 1 reps) 0815dcad67b4967d
+prime logits ornith 600 C rc=0 pp-only MEDIAN: 16219 tok in 4.8281s = 3359.3 tok/s (pp16219, 1 reps) 0815dcad67b4967d
+prime logits ornith 600 B vs C: IDENTICAL
+prime logits q9 600 B rc=0 pp-only MEDIAN: 16219 tok in 3.9840s = 4071.0 tok/s (pp16219, 1 reps) cb1299ae9489836e
+prime logits q9 600 C rc=0 pp-only MEDIAN: 16219 tok in 3.9883s = 4066.6 tok/s (pp16219, 1 reps) cb1299ae9489836e
+prime logits q9 600 B vs C: IDENTICAL
+GATES-NS2-DONE

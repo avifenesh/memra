@@ -33,7 +33,9 @@ Exactness: no value changes; the same seeded bytes reach the same GEMMs. The gat
 prime-path last-row logits byte compare at 16k and 33k against the base and the served
 fingerprints. kernel-check's `ADD-RMS-NORM-E4M3V2` does not run the two forms this ships
 (`rms_norm_e4m3v2_f32` with `dst = nullptr`, either entry with `dst = nullptr` and the q8_1 pair),
-and no cell makes a refusal fire yet: both are open before landing.
+and no cell made a refusal fire: kernel-check `NORM-SKIP-UNWRITTEN` (ledger row 54b) now covers
+both null-dst forms with the q8_1 pair and three refusals, and the prime-path logits are identical
+on Qwen3.8-27B, Ornith-1.5-35B-A3B and Qwen3.5-9B.
 
 After the independent review the predicate is narrower: the full-attention arm excludes the
 sliding-gated (step35) program and a separate head gate or TP projections, which read `h` again
