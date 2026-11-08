@@ -118,14 +118,17 @@ commit, the source-input digest, the device class and observation (GPU UUID hash
 binary digests and every raw log. The gate re-judges the raw logs; it never trusts a
 verdict field. Records live under `research/release-qualification/cells/`, which is
 excluded from the source-input digest, so committing one does not change what it
-qualifies. A rebase changes the inputs and needs a new record, with one exception: when every
-input that differs between the record's tested commit and the candidate is a path under
-`research/` that no crate reads (`cell_evidence.research_drift`: the CI include census and the
-literal check, at both commits), the record still proves its cells, and `check` names the drift.
-The same rule admits a perf A/B whose base differs from the push base only that way. Before it, a
-research-only commit on main voided every pending landing record. A change anywhere else (engine,
-server, tools, docs, a research file a crate includes) still voids it. This applies to cell
-records; a tag's full record keeps the stricter source check below.
+qualifies. A rebase changes the inputs and needs a new record, with one exception. Every
+input that differs between the record's tested commit and the candidate may be a path under
+`research/` that the impact classifier calls research (`cell_evidence.research_drift`): no
+crate reads it (the CI include census, which must answer at both commits) and no gate tool reads
+it (a `gate` rule; `tools/test_change_impact.py` keeps those rules complete against the gate
+tools' text). Then the record still proves its cells, and `check` names the drift. The same rule
+admits a perf A/B whose base differs from the push base only that way. Before it, a
+research-only commit on main voided every pending landing record. A change anywhere else
+(engine, server, tools, docs, a research file a crate or a gate tool reads) still voids it. The
+tested commit must be present to compare (fetch it, or keep the pre-rebase tip). This applies to
+cell records; a tag's full record keeps the stricter source check below.
 
 ## Development and publication
 

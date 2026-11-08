@@ -206,6 +206,38 @@ class ClassifierTable(unittest.TestCase):
         self.assertTrue(mixed["cells"])
 
 
+class GateToolResearchInputs(unittest.TestCase):
+    """A research file a gate tool reads when it runs is the gate's input, not a receipt: an edit to
+    it changes what the battery or serve-smoke measures. Every research/ path a gate-class tool
+    spells on a code line must therefore classify as something other than research, or the push
+    gate would let it change with no evidence and a cell record would outlive the change
+    (cell_evidence.research_drift)."""
+
+    def test_every_research_path_a_gate_tool_reads_is_not_classed_research(self):
+        rules = ci.load_rules(RULES_TEXT, MAIN)
+        gate = [r["pattern"] for r in rules["rule"] if r.get("class") == "gate"]
+        tools = subprocess.run(["git", "-C", str(ROOT), "ls-files", "tools"], capture_output=True,
+                               text=True, check=True).stdout.split()
+        missed = []
+        for path in tools:
+            if not any(re.search(p, path) for p in gate) or path.endswith(".toml"):
+                continue
+            text = (ROOT / path).read_text(errors="replace")
+            for line in text.splitlines():
+                code = line.strip()
+                if not code or code.startswith(("#", "//", "///", "*")):
+                    continue
+                for literal in re.findall(r"research/[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)*", line):
+                    literal = literal.rstrip(".")
+                    if literal.startswith(("research/release-qualification", "research/INDEX")):
+                        continue  # the qualification metadata namespace, excluded from inputs
+                    probe = literal if "." in literal.rsplit("/", 1)[-1] else literal + "/x.txt"
+                    item = ci.classify_file(change(probe), rules, MAIN)
+                    if item["class"] == "research":
+                        missed.append(f"{path}: {literal}")
+        self.assertEqual(missed, [], "add a gate rule in tools/change-impact.toml for these")
+
+
 class DiffParse(unittest.TestCase):
     def test_header_lookalike_content_is_still_content(self):
         import tempfile

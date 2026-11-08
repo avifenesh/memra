@@ -8,7 +8,10 @@ run on one physical device of one build target, for one exact source-input diges
     research/release-qualification/cells/<name>/record.json   + its raw logs
 
 That namespace is metadata (excluded from the source-input digest), so committing the
-record does not change what it qualifies. Evidence kinds:
+record does not change what it qualifies. A record also proves its cells for a later commit
+that differs from its tested commit only in research paths no crate or gate tool reads
+(`research_drift`), so a research-only commit on main does not void pending landings.
+Evidence kinds:
 
     battery   tools/release-battery.sh on the device roster (kernel-check, run-gen argmax,
               run-spec K=1..8), raw cell logs re-judged here by tools/release-coverage.py
@@ -227,33 +230,52 @@ class DirEvidence:
 
 @functools.lru_cache(maxsize=None)
 def research_drift(repo, old, new):
-    """The source inputs that differ between commits `old` and `new` when every one of them is a
-    path under research/ that no crate reads; None when any differing input is anything else.
+    """The source inputs that differ between commits `old` and `new`, as a tuple, when every one
+    of them is a research path the impact classifier calls research (no crate reads it and no
+    gate tool reads it); None when any differing input is anything else, or when the crate
+    include census cannot answer at either commit.
 
     A record bound to `old` then still describes `new`: the compiled program, the battery, its
-    manifests, the roster and the gate are the same bytes. Without this, a research-only commit on
-    main voided every pending landing record (each lane rebases onto it, its inputs digest moves,
-    and it re-runs about an hour of device time for bytes the build never sees). A research file a
-    crate does read (include_str!, a build-script input) counts as code: the CI include census and
-    the literal check (`change_impact.crate_inputs_at`) decide, at both commits.
+    manifests, the roster, the gate tools and their research inputs are the same bytes. Without
+    this, a research-only commit on main voided every pending landing record (each lane rebases
+    onto it, its inputs digest moves, and it re-runs about an hour of device time for bytes the
+    build and the gate never see). The classifier decides (`change_impact.impact_between` under
+    the rules in force), so a research file a crate reads (the CI include census) or a gate tool
+    reads (a `gate` rule in tools/change-impact.toml) counts as code. When the census cannot
+    answer, its literal fallback misses directory and runtime reads, so this fails closed.
     """
     import release_qualification as q
     for ref in (old, new):
+        if not (isinstance(ref, str) and COMMIT.fullmatch(ref)):
+            return None
         if git(repo, "cat-file", "-t", ref, check=False).strip() != b"commit":
             return None
-    names = git(repo, "diff", "--name-only", "--no-renames", old, new).decode().splitlines()
+    names = [n for n in git(repo, "diff", "-z", "--name-only", "--no-renames", old, new)
+             .decode(errors="replace").split("\0") if n]
     if any(not n.startswith("research/") for n in names):
         return None
     a = q.source_snapshot(repo, old)["files"]
     b = q.source_snapshot(repo, new)["files"]
-    drift = sorted(p for p in set(a) | set(b) if a.get(p) != b.get(p))
+    drift = tuple(sorted(p for p in set(a) | set(b) if a.get(p) != b.get(p)))
+    if not drift:
+        return drift
     if any(not p.startswith("research/") for p in drift):
         return None
     for ref in (old, new):
-        inputs, _ = ci.crate_inputs_at(repo, ref, drift)
+        inputs, owners = ci.crate_inputs_at(repo, ref, list(drift))
+        if owners is None:
+            return None
         if any(ci._input_match(p, pattern) for p in drift for pattern in inputs):
             return None
+    impact, _, _ = ci.impact_between(repo, old, new)
+    if any(item["class"] != "research" for item in impact["files"]):
+        return None
     return drift
+
+
+def drift_note(paths):
+    shown = ", ".join(paths[:3]) + (f", ... ({len(paths)} paths)" if len(paths) > 3 else "")
+    return f"only research paths no crate or gate tool reads changed: {shown}"
 
 
 def verify_record(record, evidence, repo, candidate, rules, arch, candidate_inputs, push_base=None):
@@ -272,9 +294,12 @@ def verify_record(record, evidence, repo, candidate, rules, arch, candidate_inpu
     tested = record["tested_commit"]
     require(isinstance(tested, str) and COMMIT.fullmatch(tested), "invalid tested commit")
     if record["inputs_sha256"] != candidate_inputs:
+        require(git(repo, "cat-file", "-t", tested, check=False).strip() == b"commit",
+                f"record is for other source inputs and its tested commit {tested[:12]} is not present; "
+                "fetch it to compare")
         require(research_drift(repo, tested, candidate) is not None,
                 "record is for different source inputs (more changed since its tested commit than "
-                "research paths no crate reads)")
+                "research paths no crate or gate tool reads)")
     if tested != candidate:
         require(git(repo, "cat-file", "-t", tested, check=False).strip() == b"commit",
                 f"tested commit {tested[:12]} is not present; fetch it")
@@ -311,7 +336,7 @@ def verify_record(record, evidence, repo, candidate, rules, arch, candidate_inpu
         require(isinstance(base, str) and COMMIT.fullmatch(base) and isinstance(push_base, str)
                 and (base == push_base or research_drift(repo, base, push_base) is not None),
                 f"perf base {str(base)[:12]} is not this push's base {str(push_base)[:12]} (or "
-                "differs from it in more than research paths no crate reads)")
+                "differs from it in more than research paths no crate or gate tool reads)")
         roster = {mid for _, mid in roster_ids(git(repo, "show", f"{candidate}:tools/release-roster.tsv").decode())}
         arms = {"none": {"B": 3}}.get(perf.get("baseline"), {"A": PERF_ORDER.count("A"), "B": PERF_ORDER.count("B")})
         counts = {}
@@ -381,7 +406,8 @@ def proven_full_records(repo, candidate, rules, arch, log=print):
 
 
 def proven_cells(repo, candidate, rules, arch, log=print, push_base=None):
-    """-> ({target: kinds}, {device class: kinds}) proven for the candidate's exact inputs."""
+    """-> ({target: kinds}, {device class: kinds}) proven for the candidate's inputs: a record of
+    the exact inputs, or of a commit that differs from the candidate in `research_drift` alone."""
     import release_qualification as q
     candidate_inputs = inputs_digest(repo, candidate)
     proven, by_device = proven_full_records(repo, candidate, rules, arch, log)
@@ -394,8 +420,13 @@ def proven_cells(repo, candidate, rules, arch, log=print, push_base=None):
                 # Older records of other inputs are the normal case; only one whose tested commit
                 # differs from the candidate in research paths alone is still evidence for it.
                 tested = record.get("tested_commit")
-                across = (research_drift(repo, tested, candidate)
-                          if isinstance(tested, str) and COMMIT.fullmatch(tested) else None)
+                if not (isinstance(tested, str) and COMMIT.fullmatch(tested)):
+                    continue
+                if git(repo, "cat-file", "-t", tested, check=False).strip() != b"commit":
+                    log(f"  record {root}: tested commit {tested[:12]} is not present; fetch it to "
+                        "check whether this record still applies")
+                    continue
+                across = research_drift(repo, tested, candidate)
                 if across is None:
                     continue
             target, kinds = verify_record(record, TreeEvidence(repo, candidate, root), repo, candidate,
@@ -405,10 +436,15 @@ def proven_cells(repo, candidate, rules, arch, log=print, push_base=None):
             continue
         proven.setdefault(target, set()).update(kinds)
         by_device.setdefault(record["device"]["class"], set()).update(kinds)
+        notes = []
+        if across:
+            notes.append(f"tested {record['tested_commit'][:12]}; since then {drift_note(across)}")
+        base = record.get("kinds", {}).get("perf", {}).get("base_commit")
+        if "perf" in kinds and push_base and base and base != push_base:
+            notes.append(f"perf base {base[:12]}: against push base {push_base[:12]}, "
+                         + drift_note(research_drift(repo, base, push_base) or ()))
         log(f"  record {root}: {ci.target_name(rules, target)} {','.join(sorted(kinds))} "
-            f"on {record['device']['class']}"
-            + (f" (tested {record['tested_commit'][:12]}; since then only {len(across)} research "
-               f"path{'s' if len(across) != 1 else ''} no crate reads changed)" if across else ""))
+            f"on {record['device']['class']}" + "".join(f" ({n})" for n in notes))
     return proven, by_device
 
 

@@ -52,7 +52,14 @@ class Repo:
         self.git("config", "user.name", "CPU fixture")
         self.git("config", "user.email", "fixture@example.invalid")
         self.git("config", "core.hooksPath", "/dev/null")
-        files = {"crates/memra-engine/build.rs": BUILD_RS,
+        # A workspace the crate include census (tools/validation_plan.py) can read, so the
+        # research-drift check sees the census answer, as it does on the real tree.
+        files = {"Cargo.toml": '[workspace]\nmembers = ["crates/memra-engine", "crates/memra-server"]\n',
+                 "crates/memra-engine/Cargo.toml":
+                     '[package]\nname = "memra-engine"\nversion = "0.1.0"\nedition = "2021"\nbuild = false\n',
+                 "crates/memra-server/Cargo.toml":
+                     '[package]\nname = "memra-server"\nversion = "0.1.0"\nedition = "2021"\n',
+                 "crates/memra-engine/build.rs": BUILD_RS,
                  "crates/memra-engine/src/lib.rs": "pub fn f() {}\n",
                  "crates/memra-engine/cu/qmatvec.cu": "__global__ void k() {}\n",
                  "crates/memra-engine/cu/mmq_fp4_stub.cu": "__global__ void stub() {}\n",
@@ -364,35 +371,52 @@ class CellGate(unittest.TestCase):
         self.assertIn("CELL-QUALIFIED", out)
         self.assertIn("research path", out)
 
-    def test_a_tools_or_engine_main_move_still_voids_the_record(self):
+    def test_a_non_research_main_move_still_voids_the_record(self):
         for change in ({"tools/fast-gate/plan.py": "print(2)\n"},
                        {"crates/memra-engine/src/lib.rs": "pub fn f() { let _ = 1; }\n"},
                        {"research/other-lane/README.md": "# x\n", "README.md": "# fixture, edited\n"}):
-            with self.subTest(change=sorted(change)):
-                self.setUp()
+            with self.subTest(change=sorted(change)), tempfile.TemporaryDirectory() as root:
+                self.f = Repo(Path(root))
                 code, banked = self.kernel_lane_with_record()
                 main_tip, head = self.rebase_onto(change, code, banked)
-                with self.assertRaisesRegex(q.GateError, "missing evidence"):
+                with self.assertRaisesRegex(q.GateError, r"sm_120a \[kernel,perf\] needs battery\+perf evidence"):
                     self.f.push(oid=head, base=main_tip)
-                self.tearDown()
 
-    def test_a_research_file_a_crate_reads_still_voids_the_record(self):
+    def test_a_research_file_a_gate_tool_reads_still_voids_the_record(self):
+        # tools/argmax-margin-gate.sh reads this prompt when the battery runs: editing it changes
+        # what a new record would measure, so an old record no longer stands for it.
+        self.f.write("research/e2e/prompts/board-2048.txt", "prompt v1\n")
+        self.f.base = self.f.commit("seed the battery prompt")
+        code, banked = self.kernel_lane_with_record()
+        main_tip, head = self.rebase_onto({"research/e2e/prompts/board-2048.txt": "prompt v2\n"}, code, banked)
+        self.assertIsNone(ce.research_drift(self.f.repo, code, head))
+        with self.assertRaisesRegex(q.GateError, "needs battery"):
+            self.f.push(oid=head, base=main_tip)
+
+    def test_a_research_directory_a_crate_reads_at_run_time_still_voids_the_record(self):
+        # Only the include census sees this read: no line spells the changed file's path.
         self.f.write("research/tables/rates.txt", "1\n")
-        self.f.write("crates/memra-engine/src/lib.rs",
-                     "pub fn f() -> &'static str { include_str!(\"../../../research/tables/rates.txt\") }\n")
-        self.f.commit("a crate reads a research table")
-        self.f.git("update-ref", "refs/heads/seed-with-table", self.f.head())
-        self.f.base = self.f.head()
+        self.f.write("crates/memra-server/src/worker.rs",
+                     'pub fn step() { let _ = std::fs::read_dir("research/tables"); }\n')
+        self.f.base = self.f.commit("a crate reads a research directory")
         code, banked = self.kernel_lane_with_record()
         main_tip, head = self.rebase_onto({"research/tables/rates.txt": "2\n"}, code, banked)
-        with self.assertRaisesRegex(q.GateError, "missing evidence"):
+        self.assertIsNone(ce.research_drift(self.f.repo, code, head))
+        with self.assertRaisesRegex(q.GateError, "needs battery"):
             self.f.push(oid=head, base=main_tip)
+
+    def test_research_drift_fails_closed_when_the_census_cannot_answer(self):
+        a = self.f.head()
+        self.f.write("research/lane/run.log", "raw\n")
+        b = self.f.commit("research")
+        with mock.patch.object(ce.ci, "crate_inputs_at", return_value=({}, None)):
+            self.assertIsNone(ce.research_drift(self.f.repo, a, b))
 
     def test_research_drift_names_only_unread_research_paths(self):
         a = self.f.head()
         self.f.write("research/lane/run.log", "raw\n")
         b = self.f.commit("research")
-        self.assertEqual(ce.research_drift(self.f.repo, a, b), ["research/lane/run.log"])
+        self.assertEqual(ce.research_drift(self.f.repo, a, b), ("research/lane/run.log",))
         self.f.write("tools/x.py", "print(1)\n")
         c = self.f.commit("tools")
         self.assertIsNone(ce.research_drift(self.f.repo, a, c))

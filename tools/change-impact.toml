@@ -177,6 +177,16 @@ pattern = '^crates/memra-engine/src/bin/(kernel_check|run_gen|run_spec|argmax_ma
 class = "gate"
 why = "a release battery binary"
 
+# Research files the gate tools read when they run: the argmax gate's default prompt
+# (tools/argmax-margin-gate.sh), the Q35 cold-mixed serve-smoke replay and its workload lock
+# (tools/q35-cold-mixed-gate.py), and the chunk-invariance gate's prompts. An edit to one changes
+# what the battery or serve-smoke measures, so it is the gate's own input, not a receipt.
+# tools/test_change_impact.py keeps this list complete against the gate tools' text.
+[[rule]]
+pattern = '^research/(e2e/prompts/|sellgate-20260812/|chunk-invariance-20260805/)'
+class = "gate"
+why = "research data a gate tool reads at run time"
+
 # --- tests and diagnostics ------------------------------------------------------------
 [[rule]]
 pattern = '^crates/[^/]+/(tests|benches)/'
