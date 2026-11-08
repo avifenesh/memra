@@ -7395,8 +7395,9 @@ impl HybridModel {
                     } else {
                         // The residual add and the next layer's attention norm in one kernel;
                         // when the next mixer's first projection takes the F8F4 v2 tile, the
-                        // kernel also seeds the mixer group's activation scratch. `h` stays
-                        // written in f32: smaller projections of the group read it.
+                        // kernel also seeds the mixer group's activation scratch. `h` is
+                        // written in f32 unless every reader takes the seed
+                        // (`mixer_group_seeded`).
                         let first = match &self.layers[il + 1].mixer {
                             Mixer::Full(fa) => Some(&fa.wq),
                             Mixer::Linear(la) => Some(&la.wqkv),
@@ -9323,15 +9324,30 @@ impl HybridModel {
         // sends the group down a scope-less walk: neither may meet an unwritten input.
         let no_mirror =
             |w: &crate::model::GpuTensor| !Engine::f16_mirror_prefill(w) && !Engine::a4_stamped(w);
+        // beta / alpha read the group's q8_1 pair only on the NVFP4 dp4a arm (Stage-B fast,
+        // below the GEMM output cutoff); every other qtype or MEMRA_FAST=0 quantizes `x` itself.
+        let dp4a_pair = |w: &crate::model::GpuTensor| {
+            no_mirror(w)
+                && std::env::var("MEMRA_FAST").as_deref() != Ok("0")
+                && w.out_features() < 128
+                && matches!(w, crate::model::GpuTensor::Quant { qtype, .. } if *qtype == crate::QT_NVFP4)
+        };
         match &self.layers[il].mixer {
-            Mixer::Full(fa) => [&fa.wq, &fa.wk, &fa.wv]
-                .iter()
-                .all(|w| no_mirror(w) && e.f8f4_v2_direct(w, t)),
+            // The sliding-gated program (step35) and the TP arms read `h` again after the q/k/v
+            // group (the head gate, the TP projections), so they keep the f32 output.
+            Mixer::Full(fa) => {
+                !self.uses_sliding_gated_moe_program()
+                    && fa.attn_gate.is_none()
+                    && fa.step_tp_qkv.is_none()
+                    && [&fa.wq, &fa.wk, &fa.wv]
+                        .iter()
+                        .all(|w| no_mirror(w) && e.f8f4_v2_direct(w, t))
+            }
             Mixer::Linear(la) => {
                 [&la.wqkv, &la.wqkv_gate]
                     .iter()
                     .all(|w| no_mirror(w) && e.f8f4_v2_direct(w, t))
-                    && [&la.ssm_beta, &la.ssm_alpha].iter().all(|w| no_mirror(w))
+                    && [&la.ssm_beta, &la.ssm_alpha].iter().all(|w| dp4a_pair(w))
             }
             _ => false,
         }
@@ -9343,8 +9359,7 @@ impl HybridModel {
     /// (`ssm_conv1d_gdn_state_pad`, then the ring update) + ONE gdn_scan from cache.recur[il]'s
     /// current state (zero at a fresh prime) whose final state ping-pongs back into the cache.
     /// Dispatch mirrors `linear_attn` (prefill).
-    #[allow(clippy::too_many_arguments)]
-    // allow: the parameter list mirrors the kernel/FFI/call contract; bundling into a struct is a refactor, not a lint fix
+    #[allow(clippy::too_many_arguments)] // allow: the parameter list mirrors the kernel/FFI/call contract; bundling into a struct is a refactor, not a lint fix
     fn linear_attn_prime(
         &self,
         e: &Engine,

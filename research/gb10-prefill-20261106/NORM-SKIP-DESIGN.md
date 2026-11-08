@@ -30,8 +30,16 @@ its write is 84 MB per call, about 0.39 ms at the device's copy rate, about 2,04
   error, never a silent read.
 
 Exactness: no value changes; the same seeded bytes reach the same GEMMs. The gate is the
-prime-path logits byte compare at 16k and 33k against the base, the served fingerprints, and
-kernel-check's norm-only arm of `ADD-RMS-NORM-E4M3V2` (the kernel with `dst = None`).
+prime-path last-row logits byte compare at 16k and 33k against the base and the served
+fingerprints. kernel-check's `ADD-RMS-NORM-E4M3V2` does not run the two forms this ships
+(`rms_norm_e4m3v2_f32` with `dst = nullptr`, either entry with `dst = nullptr` and the q8_1 pair),
+and no cell makes a refusal fire yet: both are open before landing.
+
+After the independent review the predicate is narrower: the full-attention arm excludes the
+sliding-gated (step35) program and a separate head gate or TP projections, which read `h` again
+after the group, and beta / alpha must be NVFP4 on the dp4a arm (Stage-B fast, under the GEMM
+output cutoff), the only arm that reads the group's q8_1 pair. The F8F4 v1 branch and the
+A4 and f16 group walks also refuse an unwritten input.
 
 ## Result (unit 1, ledger row 54)
 

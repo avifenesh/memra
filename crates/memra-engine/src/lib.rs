@@ -23564,6 +23564,11 @@ impl Engine {
         xh: Option<&CudaSlice<u8>>,
         m: usize,
     ) -> Result<Vec<CudaSlice<f32>>, Box<dyn std::error::Error>> {
+        if xh.is_some() && self.f8f4_seed_unwritten(self.addr_f32(x)) {
+            return Err(
+                "matmul_group_prefill_xh: an f16 operand for an unwritten seeded input".into(),
+            );
+        }
         use crate::model::GpuTensor;
         if ws
             .iter()
@@ -23589,6 +23594,13 @@ impl Engine {
         x: &CudaSlice<f32>,
         m: usize,
     ) -> Result<Vec<CudaSlice<f32>>, Box<dyn std::error::Error>> {
+        if ws
+            .iter()
+            .any(|w| matches!(w, crate::model::GpuTensor::Quant { a4: Some(_), .. }))
+            && self.f8f4_seed_unwritten(self.addr_f32(x))
+        {
+            return Err("matmul_group_prefill: the A4 walk over an unwritten seeded input".into());
+        }
         use crate::model::GpuTensor;
         if !ws
             .iter()

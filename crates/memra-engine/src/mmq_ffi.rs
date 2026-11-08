@@ -3318,6 +3318,9 @@ impl Engine {
             }
             return Ok(y);
         }
+        if in_group && group.as_ref().is_some_and(|g| !g.x_written) {
+            return Err("F8F4 v1: no seeded scratch for an unwritten activation".into());
+        }
         let mut scratch = self.alloc_uninit::<u8>(act_bytes)?;
         {
             let stream = self.gpu.stream();
