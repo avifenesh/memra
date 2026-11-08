@@ -1,0 +1,505 @@
+HC_DOT_SPLIT_POLICY on=false
+[load] placing tp_ep
+[load] programmatic dependent launch on the decode chain: true
+[load] sampled candidate order: Radix
+[load] placement: split_at=22 trunk_layers=43 dspark_tail_reserve=0.00 GiB
+[load] plain sampler: Device (MEMRA_DSV4_SAMPLER)
+[load] expert arm: Native | decode path: Device { host_math: false } | dots arm: f32x (dots + sink/norm/indexer chains)
+[load] topology: TpEpAllLayers | layers=43 per-rank-resident=all
+[load] indexer score: Knee
+[load] prefill head: All
+[load] prefill DSpark prime: All
+[load] sampled DSpark proposal: Greedy
+[load] prefill MoE: reference
+[load] dspark exit-head dots arm: f32x (rung-4c fork; drafts only, never the emitted stream)
+[load] dspark selected-expert dispatch: per-expert reference
+[load] dense arm: fp8 (iteration-5; fp8 = FP8-blk linears as-stored on the device decode/verify paths, bit-identical twins)
+[load] lane-8 peer byte-integrity probe PASS: 1 boundaries, 10 copies, ladder [16384, 65536, 524288, 1048576, 67108864] bytes, 316.9ms
+[load] lane-8 peer transport enabled (1 boundaries)
+[load] layer 3 -> 2 rank copies done t=17s
+[load] layer 7 -> 2 rank copies done t=35s
+[load] layer 11 -> 2 rank copies done t=52s
+[load] layer 15 -> 2 rank copies done t=69s
+[load] layer 19 -> 2 rank copies done t=86s
+[load] layer 23 -> 2 rank copies done t=103s
+[load] layer 27 -> 2 rank copies done t=120s
+[load] layer 31 -> 2 rank copies done t=137s
+[load] layer 35 -> 2 rank copies done t=154s
+[load] layer 39 -> 2 rank copies done t=171s
+[load] layer 42 -> 2 rank copies done t=184s
+[load] drafter: 3 DSpark block(s) (mtp.0.e_proj absent) — GPU drafter path off (set MEMRA_DSV4_DRAFTER=dspark); trunk-only
+[load] TP/EP push joins: true
+[TP/EP load] local expert banks resident by ID: rank0=0..128, rank1=128..256; peer dispatch disabled
+[load] expert program: matrix (grouped ModelOpt split-plane executor via dsv4_grouped; tensor-core MMA class, the loaded default since 2026-09-11), EP pair (all-layer TP/EP local banks)
+[attention-TP2] packed rank-local Q_b/wo_a/wo_b rows: heads=32 groups=4 wo_b_rows=2048 full_planes_freed=8.06 GiB numeric_class=dsv4_attention_head_split_row_gather_exact
+[load] position-split staging: 68 rows (0 MiB) per rank
+[load] TP/EP vocab-parallel decode head: true
+[dsv4-doors] program=loaded door="push joins" env=MEMRA_DSV4_AR_PUSH merged=#788 declared_default=On resolved=On(AllRoutedShapes) disposition=Engaged
+[dsv4-doors] program=loaded door="vocab-parallel head" env=MEMRA_DSV4_VOCAB_HEAD merged=#783 declared_default=On resolved=On(DecodeOnlyM1) disposition=Engaged
+[dsv4-doors] program=loaded door="PDL chain" env=MEMRA_DSV4_PDL merged=#782 declared_default=On resolved=On(AllRoutedShapes) disposition=Engaged
+[dsv4-doors] program=loaded door="replay cadence" env=MEMRA_DSV4_REPLAY_CADENCE merged=#374 declared_default=On resolved=On(DecodeOnlyM1) disposition=Engaged
+[dsv4-doors] program=loaded door="dense exact-tail transport" env=MEMRA_DSV4_DENSE_EXACT_TAIL merged=#374 declared_default=On resolved=On(DecodeOnlyM1) disposition=Engaged
+[dsv4-doors] program=loaded door="dense-fast" env=MEMRA_DSV4_DENSE_FAST merged=#404 declared_default=On resolved=On(DecodeOnlyM1) disposition=Engaged
+[dsv4-doors] program=loaded door="HC dot split S16" env=MEMRA_DSV4_HC_DOT_SPLIT merged=#418 declared_default=On resolved=On(AllRoutedShapes) disposition=Engaged
+[dsv4-prefill-f16g] GU_FUSE ENGAGED: rows=1 live_slots=6 hidden=4096 inter=2048 ModelOpt NVFP4 f16-MMA class
+ABBA_PROTOCOL reverse=false rows=20 rows_per_arm=10 first_capture_inside_arm_row_0_only=true retained_graphs=true
+HC24 census rank=0 variant=0 partial=86 reduce=0 finish=86
+HC24 kernel census rank=0 variant=0 kernels=2248 want=2248 rmsnorm want=0 rope want=0
+GRAPH_CENSUS on=true rank=0 segment=0 partial=86 reduce=0 sha256=7f96382b0a17a595ea89c0373e53f56f646396132a276bd35b78475f8358f952
+HC24 census rank=0 variant=1 partial=0 reduce=0 finish=0
+GRAPH_CENSUS on=true rank=0 segment=1 partial=0 reduce=0 sha256=fbf3785370397b233e789d5dc6394f106bd4fe431f1c44e381fc0ffb8b83def4
+HC24 census rank=0 variant=2 partial=86 reduce=0 finish=86
+HC24 kernel census rank=0 variant=2 kernels=2647 want=2647 rmsnorm want=42 rope want=0
+GRAPH_CENSUS on=true rank=0 segment=2 partial=86 reduce=0 sha256=95774ff84ce0e87c5e4f959dc8bbc85c8593e2945ad30f19c1979f1074e3084e
+HC24 census rank=0 variant=3 partial=86 reduce=0 finish=86
+HC24 kernel census rank=0 variant=3 kernels=2747 want=2747 rmsnorm want=62 rope want=0
+GRAPH_CENSUS on=true rank=0 segment=3 partial=86 reduce=0 sha256=50f72d100eca773b438f987219be0b92bea42f6686b85f249af1dd6887403237
+HC24 census rank=1 variant=0 partial=86 reduce=0 finish=86
+HC24 kernel census rank=1 variant=0 kernels=2248 want=2248 rmsnorm want=0 rope want=0
+GRAPH_CENSUS on=true rank=1 segment=0 partial=86 reduce=0 sha256=5e5b69b1d242f962474985842c01f4c79ed5cd5c2ef452a0f9bab4167e26694d
+HC24 census rank=1 variant=1 partial=0 reduce=0 finish=0
+GRAPH_CENSUS on=true rank=1 segment=1 partial=0 reduce=0 sha256=822bab3c024e41c499374a03779fec31e0a6272be87344c02cfd84fc52de1bf1
+HC24 census rank=1 variant=2 partial=86 reduce=0 finish=86
+HC24 kernel census rank=1 variant=2 kernels=2647 want=2647 rmsnorm want=42 rope want=0
+GRAPH_CENSUS on=true rank=1 segment=2 partial=86 reduce=0 sha256=e9cf3bbcce8d522f8d083b8e9427bcf8e6610286a8b2e37b2d41f733b574724f
+HC24 census rank=1 variant=3 partial=86 reduce=0 finish=86
+HC24 kernel census rank=1 variant=3 kernels=2747 want=2747 rmsnorm want=62 rope want=0
+GRAPH_CENSUS on=true rank=1 segment=3 partial=86 reduce=0 sha256=69391cecbb4b321604805642b107ca6fc3bf6141653080dec3ce6787d772a173
+MEASURE {"row":0,"arm_row":0,"reverse":false,"hc_dot_split":true,"generated_tokens":256,"decode_wall_ns":4000598362,"decode_tok_s":63.990427639934126,"eligible":true,"looped":false,"generated_sha256":"2a92ebbc14f569f5ce74861652d15284b67c8e02f8e1af5203e5fd47edd9d546","final_logits_sha256":"252a9130f63375789aa569e9540a304a1ca6bd60ddebc2389c1b96535c5af9bb","final_cache_digest":[18007896828816499425, 18007896828816499425],"final_hidden_digest":[16198613815291583495, 16198613815291583495],"first_capture_inside_timing":true,"captures_before":[0, 0],"captures":[3, 1],"device_replays":[[256, 256], [256, 256]]}
+HC24 census rank=0 variant=0 partial=86 reduce=0 finish=86
+HC24 kernel census rank=0 variant=0 kernels=2248 want=2248 rmsnorm want=0 rope want=0
+GRAPH_CENSUS on=true rank=0 segment=0 partial=86 reduce=0 sha256=7f96382b0a17a595ea89c0373e53f56f646396132a276bd35b78475f8358f952
+HC24 census rank=0 variant=1 partial=0 reduce=0 finish=0
+GRAPH_CENSUS on=true rank=0 segment=1 partial=0 reduce=0 sha256=fbf3785370397b233e789d5dc6394f106bd4fe431f1c44e381fc0ffb8b83def4
+HC24 census rank=0 variant=2 partial=86 reduce=0 finish=86
+HC24 kernel census rank=0 variant=2 kernels=2647 want=2647 rmsnorm want=42 rope want=0
+GRAPH_CENSUS on=true rank=0 segment=2 partial=86 reduce=0 sha256=95774ff84ce0e87c5e4f959dc8bbc85c8593e2945ad30f19c1979f1074e3084e
+HC24 census rank=0 variant=3 partial=86 reduce=0 finish=86
+HC24 kernel census rank=0 variant=3 kernels=2747 want=2747 rmsnorm want=62 rope want=0
+GRAPH_CENSUS on=true rank=0 segment=3 partial=86 reduce=0 sha256=50f72d100eca773b438f987219be0b92bea42f6686b85f249af1dd6887403237
+HC24 census rank=1 variant=0 partial=86 reduce=0 finish=86
+HC24 kernel census rank=1 variant=0 kernels=2248 want=2248 rmsnorm want=0 rope want=0
+GRAPH_CENSUS on=true rank=1 segment=0 partial=86 reduce=0 sha256=5e5b69b1d242f962474985842c01f4c79ed5cd5c2ef452a0f9bab4167e26694d
+HC24 census rank=1 variant=1 partial=0 reduce=0 finish=0
+GRAPH_CENSUS on=true rank=1 segment=1 partial=0 reduce=0 sha256=822bab3c024e41c499374a03779fec31e0a6272be87344c02cfd84fc52de1bf1
+HC24 census rank=1 variant=2 partial=86 reduce=0 finish=86
+HC24 kernel census rank=1 variant=2 kernels=2647 want=2647 rmsnorm want=42 rope want=0
+GRAPH_CENSUS on=true rank=1 segment=2 partial=86 reduce=0 sha256=e9cf3bbcce8d522f8d083b8e9427bcf8e6610286a8b2e37b2d41f733b574724f
+HC24 census rank=1 variant=3 partial=86 reduce=0 finish=86
+HC24 kernel census rank=1 variant=3 kernels=2747 want=2747 rmsnorm want=62 rope want=0
+GRAPH_CENSUS on=true rank=1 segment=3 partial=86 reduce=0 sha256=69391cecbb4b321604805642b107ca6fc3bf6141653080dec3ce6787d772a173
+MEASURE {"row":1,"arm_row":1,"reverse":false,"hc_dot_split":true,"generated_tokens":256,"decode_wall_ns":3996493831,"decode_tok_s":64.05614792002415,"eligible":true,"looped":false,"generated_sha256":"2a92ebbc14f569f5ce74861652d15284b67c8e02f8e1af5203e5fd47edd9d546","final_logits_sha256":"252a9130f63375789aa569e9540a304a1ca6bd60ddebc2389c1b96535c5af9bb","final_cache_digest":[18007896828816499425, 18007896828816499425],"final_hidden_digest":[16198613815291583495, 16198613815291583495],"first_capture_inside_timing":false,"captures_before":[3, 1],"captures":[3, 1],"device_replays":[[512, 512], [512, 512]]}
+HC24 census rank=0 variant=0 partial=86 reduce=0 finish=86
+HC24 kernel census rank=0 variant=0 kernels=2248 want=2248 rmsnorm want=0 rope want=0
+GRAPH_CENSUS on=true rank=0 segment=0 partial=86 reduce=0 sha256=7f96382b0a17a595ea89c0373e53f56f646396132a276bd35b78475f8358f952
+HC24 census rank=0 variant=1 partial=0 reduce=0 finish=0
+GRAPH_CENSUS on=true rank=0 segment=1 partial=0 reduce=0 sha256=fbf3785370397b233e789d5dc6394f106bd4fe431f1c44e381fc0ffb8b83def4
+HC24 census rank=0 variant=2 partial=86 reduce=0 finish=86
+HC24 kernel census rank=0 variant=2 kernels=2647 want=2647 rmsnorm want=42 rope want=0
+GRAPH_CENSUS on=true rank=0 segment=2 partial=86 reduce=0 sha256=95774ff84ce0e87c5e4f959dc8bbc85c8593e2945ad30f19c1979f1074e3084e
+HC24 census rank=0 variant=3 partial=86 reduce=0 finish=86
+HC24 kernel census rank=0 variant=3 kernels=2747 want=2747 rmsnorm want=62 rope want=0
+GRAPH_CENSUS on=true rank=0 segment=3 partial=86 reduce=0 sha256=50f72d100eca773b438f987219be0b92bea42f6686b85f249af1dd6887403237
+HC24 census rank=1 variant=0 partial=86 reduce=0 finish=86
+HC24 kernel census rank=1 variant=0 kernels=2248 want=2248 rmsnorm want=0 rope want=0
+GRAPH_CENSUS on=true rank=1 segment=0 partial=86 reduce=0 sha256=5e5b69b1d242f962474985842c01f4c79ed5cd5c2ef452a0f9bab4167e26694d
+HC24 census rank=1 variant=1 partial=0 reduce=0 finish=0
+GRAPH_CENSUS on=true rank=1 segment=1 partial=0 reduce=0 sha256=822bab3c024e41c499374a03779fec31e0a6272be87344c02cfd84fc52de1bf1
+HC24 census rank=1 variant=2 partial=86 reduce=0 finish=86
+HC24 kernel census rank=1 variant=2 kernels=2647 want=2647 rmsnorm want=42 rope want=0
+GRAPH_CENSUS on=true rank=1 segment=2 partial=86 reduce=0 sha256=e9cf3bbcce8d522f8d083b8e9427bcf8e6610286a8b2e37b2d41f733b574724f
+HC24 census rank=1 variant=3 partial=86 reduce=0 finish=86
+HC24 kernel census rank=1 variant=3 kernels=2747 want=2747 rmsnorm want=62 rope want=0
+GRAPH_CENSUS on=true rank=1 segment=3 partial=86 reduce=0 sha256=69391cecbb4b321604805642b107ca6fc3bf6141653080dec3ce6787d772a173
+MEASURE {"row":2,"arm_row":2,"reverse":false,"hc_dot_split":true,"generated_tokens":256,"decode_wall_ns":4011060330,"decode_tok_s":63.82352269430961,"eligible":true,"looped":false,"generated_sha256":"2a92ebbc14f569f5ce74861652d15284b67c8e02f8e1af5203e5fd47edd9d546","final_logits_sha256":"252a9130f63375789aa569e9540a304a1ca6bd60ddebc2389c1b96535c5af9bb","final_cache_digest":[18007896828816499425, 18007896828816499425],"final_hidden_digest":[16198613815291583495, 16198613815291583495],"first_capture_inside_timing":false,"captures_before":[3, 1],"captures":[3, 1],"device_replays":[[768, 768], [768, 768]]}
+HC24 census rank=0 variant=0 partial=86 reduce=0 finish=86
+HC24 kernel census rank=0 variant=0 kernels=2248 want=2248 rmsnorm want=0 rope want=0
+GRAPH_CENSUS on=true rank=0 segment=0 partial=86 reduce=0 sha256=7f96382b0a17a595ea89c0373e53f56f646396132a276bd35b78475f8358f952
+HC24 census rank=0 variant=1 partial=0 reduce=0 finish=0
+GRAPH_CENSUS on=true rank=0 segment=1 partial=0 reduce=0 sha256=fbf3785370397b233e789d5dc6394f106bd4fe431f1c44e381fc0ffb8b83def4
+HC24 census rank=0 variant=2 partial=86 reduce=0 finish=86
+HC24 kernel census rank=0 variant=2 kernels=2647 want=2647 rmsnorm want=42 rope want=0
+GRAPH_CENSUS on=true rank=0 segment=2 partial=86 reduce=0 sha256=95774ff84ce0e87c5e4f959dc8bbc85c8593e2945ad30f19c1979f1074e3084e
+HC24 census rank=0 variant=3 partial=86 reduce=0 finish=86
+HC24 kernel census rank=0 variant=3 kernels=2747 want=2747 rmsnorm want=62 rope want=0
+GRAPH_CENSUS on=true rank=0 segment=3 partial=86 reduce=0 sha256=50f72d100eca773b438f987219be0b92bea42f6686b85f249af1dd6887403237
+HC24 census rank=1 variant=0 partial=86 reduce=0 finish=86
+HC24 kernel census rank=1 variant=0 kernels=2248 want=2248 rmsnorm want=0 rope want=0
+GRAPH_CENSUS on=true rank=1 segment=0 partial=86 reduce=0 sha256=5e5b69b1d242f962474985842c01f4c79ed5cd5c2ef452a0f9bab4167e26694d
+HC24 census rank=1 variant=1 partial=0 reduce=0 finish=0
+GRAPH_CENSUS on=true rank=1 segment=1 partial=0 reduce=0 sha256=822bab3c024e41c499374a03779fec31e0a6272be87344c02cfd84fc52de1bf1
+HC24 census rank=1 variant=2 partial=86 reduce=0 finish=86
+HC24 kernel census rank=1 variant=2 kernels=2647 want=2647 rmsnorm want=42 rope want=0
+GRAPH_CENSUS on=true rank=1 segment=2 partial=86 reduce=0 sha256=e9cf3bbcce8d522f8d083b8e9427bcf8e6610286a8b2e37b2d41f733b574724f
+HC24 census rank=1 variant=3 partial=86 reduce=0 finish=86
+HC24 kernel census rank=1 variant=3 kernels=2747 want=2747 rmsnorm want=62 rope want=0
+GRAPH_CENSUS on=true rank=1 segment=3 partial=86 reduce=0 sha256=69391cecbb4b321604805642b107ca6fc3bf6141653080dec3ce6787d772a173
+MEASURE {"row":3,"arm_row":3,"reverse":false,"hc_dot_split":true,"generated_tokens":256,"decode_wall_ns":4025908640,"decode_tok_s":63.58812951105617,"eligible":true,"looped":false,"generated_sha256":"2a92ebbc14f569f5ce74861652d15284b67c8e02f8e1af5203e5fd47edd9d546","final_logits_sha256":"252a9130f63375789aa569e9540a304a1ca6bd60ddebc2389c1b96535c5af9bb","final_cache_digest":[18007896828816499425, 18007896828816499425],"final_hidden_digest":[16198613815291583495, 16198613815291583495],"first_capture_inside_timing":false,"captures_before":[3, 1],"captures":[3, 1],"device_replays":[[1024, 1024], [1024, 1024]]}
+HC24 census rank=0 variant=0 partial=86 reduce=0 finish=86
+HC24 kernel census rank=0 variant=0 kernels=2248 want=2248 rmsnorm want=0 rope want=0
+GRAPH_CENSUS on=true rank=0 segment=0 partial=86 reduce=0 sha256=7f96382b0a17a595ea89c0373e53f56f646396132a276bd35b78475f8358f952
+HC24 census rank=0 variant=1 partial=0 reduce=0 finish=0
+GRAPH_CENSUS on=true rank=0 segment=1 partial=0 reduce=0 sha256=fbf3785370397b233e789d5dc6394f106bd4fe431f1c44e381fc0ffb8b83def4
+HC24 census rank=0 variant=2 partial=86 reduce=0 finish=86
+HC24 kernel census rank=0 variant=2 kernels=2647 want=2647 rmsnorm want=42 rope want=0
+GRAPH_CENSUS on=true rank=0 segment=2 partial=86 reduce=0 sha256=95774ff84ce0e87c5e4f959dc8bbc85c8593e2945ad30f19c1979f1074e3084e
+HC24 census rank=0 variant=3 partial=86 reduce=0 finish=86
+HC24 kernel census rank=0 variant=3 kernels=2747 want=2747 rmsnorm want=62 rope want=0
+GRAPH_CENSUS on=true rank=0 segment=3 partial=86 reduce=0 sha256=50f72d100eca773b438f987219be0b92bea42f6686b85f249af1dd6887403237
+HC24 census rank=1 variant=0 partial=86 reduce=0 finish=86
+HC24 kernel census rank=1 variant=0 kernels=2248 want=2248 rmsnorm want=0 rope want=0
+GRAPH_CENSUS on=true rank=1 segment=0 partial=86 reduce=0 sha256=5e5b69b1d242f962474985842c01f4c79ed5cd5c2ef452a0f9bab4167e26694d
+HC24 census rank=1 variant=1 partial=0 reduce=0 finish=0
+GRAPH_CENSUS on=true rank=1 segment=1 partial=0 reduce=0 sha256=822bab3c024e41c499374a03779fec31e0a6272be87344c02cfd84fc52de1bf1
+HC24 census rank=1 variant=2 partial=86 reduce=0 finish=86
+HC24 kernel census rank=1 variant=2 kernels=2647 want=2647 rmsnorm want=42 rope want=0
+GRAPH_CENSUS on=true rank=1 segment=2 partial=86 reduce=0 sha256=e9cf3bbcce8d522f8d083b8e9427bcf8e6610286a8b2e37b2d41f733b574724f
+HC24 census rank=1 variant=3 partial=86 reduce=0 finish=86
+HC24 kernel census rank=1 variant=3 kernels=2747 want=2747 rmsnorm want=62 rope want=0
+GRAPH_CENSUS on=true rank=1 segment=3 partial=86 reduce=0 sha256=69391cecbb4b321604805642b107ca6fc3bf6141653080dec3ce6787d772a173
+MEASURE {"row":4,"arm_row":4,"reverse":false,"hc_dot_split":true,"generated_tokens":256,"decode_wall_ns":4036579882,"decode_tok_s":63.420025735539255,"eligible":true,"looped":false,"generated_sha256":"2a92ebbc14f569f5ce74861652d15284b67c8e02f8e1af5203e5fd47edd9d546","final_logits_sha256":"252a9130f63375789aa569e9540a304a1ca6bd60ddebc2389c1b96535c5af9bb","final_cache_digest":[18007896828816499425, 18007896828816499425],"final_hidden_digest":[16198613815291583495, 16198613815291583495],"first_capture_inside_timing":false,"captures_before":[3, 1],"captures":[3, 1],"device_replays":[[1280, 1280], [1280, 1280]]}
+HC24 census rank=0 variant=0 partial=0 reduce=0 finish=0
+HC24 kernel census rank=0 variant=0 kernels=2377 want=2377 rmsnorm want=86 rope want=0
+GRAPH_CENSUS on=false rank=0 segment=0 partial=0 reduce=0 sha256=aad666c5c099900b6440943b5caf3c52b39ea1a36b7007ae2ea3024cb470f2a0
+HC24 census rank=0 variant=1 partial=0 reduce=0 finish=0
+GRAPH_CENSUS on=false rank=0 segment=1 partial=0 reduce=0 sha256=55e40e658a3bc14eb76b6b8b22a55f9b36e3ef1a0398614c30c61c5364892d11
+HC24 census rank=0 variant=2 partial=0 reduce=0 finish=0
+HC24 kernel census rank=0 variant=2 kernels=2776 want=2776 rmsnorm want=128 rope want=0
+GRAPH_CENSUS on=false rank=0 segment=2 partial=0 reduce=0 sha256=50f804b4dbc58647459dde8a4a17357edfbb06cd03448a30f344e29393949f52
+HC24 census rank=0 variant=3 partial=0 reduce=0 finish=0
+HC24 kernel census rank=0 variant=3 kernels=2876 want=2876 rmsnorm want=148 rope want=0
+GRAPH_CENSUS on=false rank=0 segment=3 partial=0 reduce=0 sha256=e028c1e2ad6d68ccb4c99b8a8b0d87cd6d6a74e38030758557adab72d4dec346
+HC24 census rank=1 variant=0 partial=0 reduce=0 finish=0
+HC24 kernel census rank=1 variant=0 kernels=2377 want=2377 rmsnorm want=86 rope want=0
+GRAPH_CENSUS on=false rank=1 segment=0 partial=0 reduce=0 sha256=529e98f4f7acba259fe03909914f18c4ea54057dee9e11baa28a577995b1ac59
+HC24 census rank=1 variant=1 partial=0 reduce=0 finish=0
+GRAPH_CENSUS on=false rank=1 segment=1 partial=0 reduce=0 sha256=c08b9796bcc012e905203b83a450b3fc039f2f635e154f639742634498d34c9c
+HC24 census rank=1 variant=2 partial=0 reduce=0 finish=0
+HC24 kernel census rank=1 variant=2 kernels=2776 want=2776 rmsnorm want=128 rope want=0
+GRAPH_CENSUS on=false rank=1 segment=2 partial=0 reduce=0 sha256=9de5262565492aaccca559cec5bf2695a4b5ab7ed7052b454c85b7cbbd98418e
+HC24 census rank=1 variant=3 partial=0 reduce=0 finish=0
+HC24 kernel census rank=1 variant=3 kernels=2876 want=2876 rmsnorm want=148 rope want=0
+GRAPH_CENSUS on=false rank=1 segment=3 partial=0 reduce=0 sha256=e51805d90d8e8f3798c9923a1c581a8594ea4a659800d7a8f0e24f96544956bb
+MEASURE {"row":5,"arm_row":0,"reverse":false,"hc_dot_split":false,"generated_tokens":256,"decode_wall_ns":4489258954,"decode_tok_s":57.0250018150323,"eligible":true,"looped":false,"generated_sha256":"bccdff713aeb32e4b50812d8810894020d3e65cb4c70b2718bd723535fc16c42","final_logits_sha256":"cdef4644539715975ddb5d8beb3dfd1e18496bf76fc7f4f698c2eb7776511b35","final_cache_digest":[12121420093445539643, 12121420093445539643],"final_hidden_digest":[17933595804021797383, 17933595804021797383],"first_capture_inside_timing":true,"captures_before":[0, 0],"captures":[3, 1],"device_replays":[[256, 256], [256, 256]]}
+HC24 census rank=0 variant=0 partial=0 reduce=0 finish=0
+HC24 kernel census rank=0 variant=0 kernels=2377 want=2377 rmsnorm want=86 rope want=0
+GRAPH_CENSUS on=false rank=0 segment=0 partial=0 reduce=0 sha256=aad666c5c099900b6440943b5caf3c52b39ea1a36b7007ae2ea3024cb470f2a0
+HC24 census rank=0 variant=1 partial=0 reduce=0 finish=0
+GRAPH_CENSUS on=false rank=0 segment=1 partial=0 reduce=0 sha256=55e40e658a3bc14eb76b6b8b22a55f9b36e3ef1a0398614c30c61c5364892d11
+HC24 census rank=0 variant=2 partial=0 reduce=0 finish=0
+HC24 kernel census rank=0 variant=2 kernels=2776 want=2776 rmsnorm want=128 rope want=0
+GRAPH_CENSUS on=false rank=0 segment=2 partial=0 reduce=0 sha256=50f804b4dbc58647459dde8a4a17357edfbb06cd03448a30f344e29393949f52
+HC24 census rank=0 variant=3 partial=0 reduce=0 finish=0
+HC24 kernel census rank=0 variant=3 kernels=2876 want=2876 rmsnorm want=148 rope want=0
+GRAPH_CENSUS on=false rank=0 segment=3 partial=0 reduce=0 sha256=e028c1e2ad6d68ccb4c99b8a8b0d87cd6d6a74e38030758557adab72d4dec346
+HC24 census rank=1 variant=0 partial=0 reduce=0 finish=0
+HC24 kernel census rank=1 variant=0 kernels=2377 want=2377 rmsnorm want=86 rope want=0
+GRAPH_CENSUS on=false rank=1 segment=0 partial=0 reduce=0 sha256=529e98f4f7acba259fe03909914f18c4ea54057dee9e11baa28a577995b1ac59
+HC24 census rank=1 variant=1 partial=0 reduce=0 finish=0
+GRAPH_CENSUS on=false rank=1 segment=1 partial=0 reduce=0 sha256=c08b9796bcc012e905203b83a450b3fc039f2f635e154f639742634498d34c9c
+HC24 census rank=1 variant=2 partial=0 reduce=0 finish=0
+HC24 kernel census rank=1 variant=2 kernels=2776 want=2776 rmsnorm want=128 rope want=0
+GRAPH_CENSUS on=false rank=1 segment=2 partial=0 reduce=0 sha256=9de5262565492aaccca559cec5bf2695a4b5ab7ed7052b454c85b7cbbd98418e
+HC24 census rank=1 variant=3 partial=0 reduce=0 finish=0
+HC24 kernel census rank=1 variant=3 kernels=2876 want=2876 rmsnorm want=148 rope want=0
+GRAPH_CENSUS on=false rank=1 segment=3 partial=0 reduce=0 sha256=e51805d90d8e8f3798c9923a1c581a8594ea4a659800d7a8f0e24f96544956bb
+MEASURE {"row":6,"arm_row":1,"reverse":false,"hc_dot_split":false,"generated_tokens":256,"decode_wall_ns":4462337371,"decode_tok_s":57.3690375057032,"eligible":true,"looped":false,"generated_sha256":"bccdff713aeb32e4b50812d8810894020d3e65cb4c70b2718bd723535fc16c42","final_logits_sha256":"cdef4644539715975ddb5d8beb3dfd1e18496bf76fc7f4f698c2eb7776511b35","final_cache_digest":[12121420093445539643, 12121420093445539643],"final_hidden_digest":[17933595804021797383, 17933595804021797383],"first_capture_inside_timing":false,"captures_before":[3, 1],"captures":[3, 1],"device_replays":[[512, 512], [512, 512]]}
+HC24 census rank=0 variant=0 partial=0 reduce=0 finish=0
+HC24 kernel census rank=0 variant=0 kernels=2377 want=2377 rmsnorm want=86 rope want=0
+GRAPH_CENSUS on=false rank=0 segment=0 partial=0 reduce=0 sha256=aad666c5c099900b6440943b5caf3c52b39ea1a36b7007ae2ea3024cb470f2a0
+HC24 census rank=0 variant=1 partial=0 reduce=0 finish=0
+GRAPH_CENSUS on=false rank=0 segment=1 partial=0 reduce=0 sha256=55e40e658a3bc14eb76b6b8b22a55f9b36e3ef1a0398614c30c61c5364892d11
+HC24 census rank=0 variant=2 partial=0 reduce=0 finish=0
+HC24 kernel census rank=0 variant=2 kernels=2776 want=2776 rmsnorm want=128 rope want=0
+GRAPH_CENSUS on=false rank=0 segment=2 partial=0 reduce=0 sha256=50f804b4dbc58647459dde8a4a17357edfbb06cd03448a30f344e29393949f52
+HC24 census rank=0 variant=3 partial=0 reduce=0 finish=0
+HC24 kernel census rank=0 variant=3 kernels=2876 want=2876 rmsnorm want=148 rope want=0
+GRAPH_CENSUS on=false rank=0 segment=3 partial=0 reduce=0 sha256=e028c1e2ad6d68ccb4c99b8a8b0d87cd6d6a74e38030758557adab72d4dec346
+HC24 census rank=1 variant=0 partial=0 reduce=0 finish=0
+HC24 kernel census rank=1 variant=0 kernels=2377 want=2377 rmsnorm want=86 rope want=0
+GRAPH_CENSUS on=false rank=1 segment=0 partial=0 reduce=0 sha256=529e98f4f7acba259fe03909914f18c4ea54057dee9e11baa28a577995b1ac59
+HC24 census rank=1 variant=1 partial=0 reduce=0 finish=0
+GRAPH_CENSUS on=false rank=1 segment=1 partial=0 reduce=0 sha256=c08b9796bcc012e905203b83a450b3fc039f2f635e154f639742634498d34c9c
+HC24 census rank=1 variant=2 partial=0 reduce=0 finish=0
+HC24 kernel census rank=1 variant=2 kernels=2776 want=2776 rmsnorm want=128 rope want=0
+GRAPH_CENSUS on=false rank=1 segment=2 partial=0 reduce=0 sha256=9de5262565492aaccca559cec5bf2695a4b5ab7ed7052b454c85b7cbbd98418e
+HC24 census rank=1 variant=3 partial=0 reduce=0 finish=0
+HC24 kernel census rank=1 variant=3 kernels=2876 want=2876 rmsnorm want=148 rope want=0
+GRAPH_CENSUS on=false rank=1 segment=3 partial=0 reduce=0 sha256=e51805d90d8e8f3798c9923a1c581a8594ea4a659800d7a8f0e24f96544956bb
+MEASURE {"row":7,"arm_row":2,"reverse":false,"hc_dot_split":false,"generated_tokens":256,"decode_wall_ns":4464539461,"decode_tok_s":57.34074079449603,"eligible":true,"looped":false,"generated_sha256":"bccdff713aeb32e4b50812d8810894020d3e65cb4c70b2718bd723535fc16c42","final_logits_sha256":"cdef4644539715975ddb5d8beb3dfd1e18496bf76fc7f4f698c2eb7776511b35","final_cache_digest":[12121420093445539643, 12121420093445539643],"final_hidden_digest":[17933595804021797383, 17933595804021797383],"first_capture_inside_timing":false,"captures_before":[3, 1],"captures":[3, 1],"device_replays":[[768, 768], [768, 768]]}
+HC24 census rank=0 variant=0 partial=0 reduce=0 finish=0
+HC24 kernel census rank=0 variant=0 kernels=2377 want=2377 rmsnorm want=86 rope want=0
+GRAPH_CENSUS on=false rank=0 segment=0 partial=0 reduce=0 sha256=aad666c5c099900b6440943b5caf3c52b39ea1a36b7007ae2ea3024cb470f2a0
+HC24 census rank=0 variant=1 partial=0 reduce=0 finish=0
+GRAPH_CENSUS on=false rank=0 segment=1 partial=0 reduce=0 sha256=55e40e658a3bc14eb76b6b8b22a55f9b36e3ef1a0398614c30c61c5364892d11
+HC24 census rank=0 variant=2 partial=0 reduce=0 finish=0
+HC24 kernel census rank=0 variant=2 kernels=2776 want=2776 rmsnorm want=128 rope want=0
+GRAPH_CENSUS on=false rank=0 segment=2 partial=0 reduce=0 sha256=50f804b4dbc58647459dde8a4a17357edfbb06cd03448a30f344e29393949f52
+HC24 census rank=0 variant=3 partial=0 reduce=0 finish=0
+HC24 kernel census rank=0 variant=3 kernels=2876 want=2876 rmsnorm want=148 rope want=0
+GRAPH_CENSUS on=false rank=0 segment=3 partial=0 reduce=0 sha256=e028c1e2ad6d68ccb4c99b8a8b0d87cd6d6a74e38030758557adab72d4dec346
+HC24 census rank=1 variant=0 partial=0 reduce=0 finish=0
+HC24 kernel census rank=1 variant=0 kernels=2377 want=2377 rmsnorm want=86 rope want=0
+GRAPH_CENSUS on=false rank=1 segment=0 partial=0 reduce=0 sha256=529e98f4f7acba259fe03909914f18c4ea54057dee9e11baa28a577995b1ac59
+HC24 census rank=1 variant=1 partial=0 reduce=0 finish=0
+GRAPH_CENSUS on=false rank=1 segment=1 partial=0 reduce=0 sha256=c08b9796bcc012e905203b83a450b3fc039f2f635e154f639742634498d34c9c
+HC24 census rank=1 variant=2 partial=0 reduce=0 finish=0
+HC24 kernel census rank=1 variant=2 kernels=2776 want=2776 rmsnorm want=128 rope want=0
+GRAPH_CENSUS on=false rank=1 segment=2 partial=0 reduce=0 sha256=9de5262565492aaccca559cec5bf2695a4b5ab7ed7052b454c85b7cbbd98418e
+HC24 census rank=1 variant=3 partial=0 reduce=0 finish=0
+HC24 kernel census rank=1 variant=3 kernels=2876 want=2876 rmsnorm want=148 rope want=0
+GRAPH_CENSUS on=false rank=1 segment=3 partial=0 reduce=0 sha256=e51805d90d8e8f3798c9923a1c581a8594ea4a659800d7a8f0e24f96544956bb
+MEASURE {"row":8,"arm_row":3,"reverse":false,"hc_dot_split":false,"generated_tokens":256,"decode_wall_ns":4462444352,"decode_tok_s":57.36766216149333,"eligible":true,"looped":false,"generated_sha256":"bccdff713aeb32e4b50812d8810894020d3e65cb4c70b2718bd723535fc16c42","final_logits_sha256":"cdef4644539715975ddb5d8beb3dfd1e18496bf76fc7f4f698c2eb7776511b35","final_cache_digest":[12121420093445539643, 12121420093445539643],"final_hidden_digest":[17933595804021797383, 17933595804021797383],"first_capture_inside_timing":false,"captures_before":[3, 1],"captures":[3, 1],"device_replays":[[1024, 1024], [1024, 1024]]}
+HC24 census rank=0 variant=0 partial=0 reduce=0 finish=0
+HC24 kernel census rank=0 variant=0 kernels=2377 want=2377 rmsnorm want=86 rope want=0
+GRAPH_CENSUS on=false rank=0 segment=0 partial=0 reduce=0 sha256=aad666c5c099900b6440943b5caf3c52b39ea1a36b7007ae2ea3024cb470f2a0
+HC24 census rank=0 variant=1 partial=0 reduce=0 finish=0
+GRAPH_CENSUS on=false rank=0 segment=1 partial=0 reduce=0 sha256=55e40e658a3bc14eb76b6b8b22a55f9b36e3ef1a0398614c30c61c5364892d11
+HC24 census rank=0 variant=2 partial=0 reduce=0 finish=0
+HC24 kernel census rank=0 variant=2 kernels=2776 want=2776 rmsnorm want=128 rope want=0
+GRAPH_CENSUS on=false rank=0 segment=2 partial=0 reduce=0 sha256=50f804b4dbc58647459dde8a4a17357edfbb06cd03448a30f344e29393949f52
+HC24 census rank=0 variant=3 partial=0 reduce=0 finish=0
+HC24 kernel census rank=0 variant=3 kernels=2876 want=2876 rmsnorm want=148 rope want=0
+GRAPH_CENSUS on=false rank=0 segment=3 partial=0 reduce=0 sha256=e028c1e2ad6d68ccb4c99b8a8b0d87cd6d6a74e38030758557adab72d4dec346
+HC24 census rank=1 variant=0 partial=0 reduce=0 finish=0
+HC24 kernel census rank=1 variant=0 kernels=2377 want=2377 rmsnorm want=86 rope want=0
+GRAPH_CENSUS on=false rank=1 segment=0 partial=0 reduce=0 sha256=529e98f4f7acba259fe03909914f18c4ea54057dee9e11baa28a577995b1ac59
+HC24 census rank=1 variant=1 partial=0 reduce=0 finish=0
+GRAPH_CENSUS on=false rank=1 segment=1 partial=0 reduce=0 sha256=c08b9796bcc012e905203b83a450b3fc039f2f635e154f639742634498d34c9c
+HC24 census rank=1 variant=2 partial=0 reduce=0 finish=0
+HC24 kernel census rank=1 variant=2 kernels=2776 want=2776 rmsnorm want=128 rope want=0
+GRAPH_CENSUS on=false rank=1 segment=2 partial=0 reduce=0 sha256=9de5262565492aaccca559cec5bf2695a4b5ab7ed7052b454c85b7cbbd98418e
+HC24 census rank=1 variant=3 partial=0 reduce=0 finish=0
+HC24 kernel census rank=1 variant=3 kernels=2876 want=2876 rmsnorm want=148 rope want=0
+GRAPH_CENSUS on=false rank=1 segment=3 partial=0 reduce=0 sha256=e51805d90d8e8f3798c9923a1c581a8594ea4a659800d7a8f0e24f96544956bb
+MEASURE {"row":9,"arm_row":4,"reverse":false,"hc_dot_split":false,"generated_tokens":256,"decode_wall_ns":4462936228,"decode_tok_s":57.36133946837118,"eligible":true,"looped":false,"generated_sha256":"bccdff713aeb32e4b50812d8810894020d3e65cb4c70b2718bd723535fc16c42","final_logits_sha256":"cdef4644539715975ddb5d8beb3dfd1e18496bf76fc7f4f698c2eb7776511b35","final_cache_digest":[12121420093445539643, 12121420093445539643],"final_hidden_digest":[17933595804021797383, 17933595804021797383],"first_capture_inside_timing":false,"captures_before":[3, 1],"captures":[3, 1],"device_replays":[[1280, 1280], [1280, 1280]]}
+HC24 census rank=0 variant=0 partial=0 reduce=0 finish=0
+HC24 kernel census rank=0 variant=0 kernels=2377 want=2377 rmsnorm want=86 rope want=0
+GRAPH_CENSUS on=false rank=0 segment=0 partial=0 reduce=0 sha256=aad666c5c099900b6440943b5caf3c52b39ea1a36b7007ae2ea3024cb470f2a0
+HC24 census rank=0 variant=1 partial=0 reduce=0 finish=0
+GRAPH_CENSUS on=false rank=0 segment=1 partial=0 reduce=0 sha256=55e40e658a3bc14eb76b6b8b22a55f9b36e3ef1a0398614c30c61c5364892d11
+HC24 census rank=0 variant=2 partial=0 reduce=0 finish=0
+HC24 kernel census rank=0 variant=2 kernels=2776 want=2776 rmsnorm want=128 rope want=0
+GRAPH_CENSUS on=false rank=0 segment=2 partial=0 reduce=0 sha256=50f804b4dbc58647459dde8a4a17357edfbb06cd03448a30f344e29393949f52
+HC24 census rank=0 variant=3 partial=0 reduce=0 finish=0
+HC24 kernel census rank=0 variant=3 kernels=2876 want=2876 rmsnorm want=148 rope want=0
+GRAPH_CENSUS on=false rank=0 segment=3 partial=0 reduce=0 sha256=e028c1e2ad6d68ccb4c99b8a8b0d87cd6d6a74e38030758557adab72d4dec346
+HC24 census rank=1 variant=0 partial=0 reduce=0 finish=0
+HC24 kernel census rank=1 variant=0 kernels=2377 want=2377 rmsnorm want=86 rope want=0
+GRAPH_CENSUS on=false rank=1 segment=0 partial=0 reduce=0 sha256=529e98f4f7acba259fe03909914f18c4ea54057dee9e11baa28a577995b1ac59
+HC24 census rank=1 variant=1 partial=0 reduce=0 finish=0
+GRAPH_CENSUS on=false rank=1 segment=1 partial=0 reduce=0 sha256=c08b9796bcc012e905203b83a450b3fc039f2f635e154f639742634498d34c9c
+HC24 census rank=1 variant=2 partial=0 reduce=0 finish=0
+HC24 kernel census rank=1 variant=2 kernels=2776 want=2776 rmsnorm want=128 rope want=0
+GRAPH_CENSUS on=false rank=1 segment=2 partial=0 reduce=0 sha256=9de5262565492aaccca559cec5bf2695a4b5ab7ed7052b454c85b7cbbd98418e
+HC24 census rank=1 variant=3 partial=0 reduce=0 finish=0
+HC24 kernel census rank=1 variant=3 kernels=2876 want=2876 rmsnorm want=148 rope want=0
+GRAPH_CENSUS on=false rank=1 segment=3 partial=0 reduce=0 sha256=e51805d90d8e8f3798c9923a1c581a8594ea4a659800d7a8f0e24f96544956bb
+MEASURE {"row":10,"arm_row":5,"reverse":false,"hc_dot_split":false,"generated_tokens":256,"decode_wall_ns":4463317330,"decode_tok_s":57.356441649198175,"eligible":true,"looped":false,"generated_sha256":"bccdff713aeb32e4b50812d8810894020d3e65cb4c70b2718bd723535fc16c42","final_logits_sha256":"cdef4644539715975ddb5d8beb3dfd1e18496bf76fc7f4f698c2eb7776511b35","final_cache_digest":[12121420093445539643, 12121420093445539643],"final_hidden_digest":[17933595804021797383, 17933595804021797383],"first_capture_inside_timing":false,"captures_before":[3, 1],"captures":[3, 1],"device_replays":[[1536, 1536], [1536, 1536]]}
+HC24 census rank=0 variant=0 partial=0 reduce=0 finish=0
+HC24 kernel census rank=0 variant=0 kernels=2377 want=2377 rmsnorm want=86 rope want=0
+GRAPH_CENSUS on=false rank=0 segment=0 partial=0 reduce=0 sha256=aad666c5c099900b6440943b5caf3c52b39ea1a36b7007ae2ea3024cb470f2a0
+HC24 census rank=0 variant=1 partial=0 reduce=0 finish=0
+GRAPH_CENSUS on=false rank=0 segment=1 partial=0 reduce=0 sha256=55e40e658a3bc14eb76b6b8b22a55f9b36e3ef1a0398614c30c61c5364892d11
+HC24 census rank=0 variant=2 partial=0 reduce=0 finish=0
+HC24 kernel census rank=0 variant=2 kernels=2776 want=2776 rmsnorm want=128 rope want=0
+GRAPH_CENSUS on=false rank=0 segment=2 partial=0 reduce=0 sha256=50f804b4dbc58647459dde8a4a17357edfbb06cd03448a30f344e29393949f52
+HC24 census rank=0 variant=3 partial=0 reduce=0 finish=0
+HC24 kernel census rank=0 variant=3 kernels=2876 want=2876 rmsnorm want=148 rope want=0
+GRAPH_CENSUS on=false rank=0 segment=3 partial=0 reduce=0 sha256=e028c1e2ad6d68ccb4c99b8a8b0d87cd6d6a74e38030758557adab72d4dec346
+HC24 census rank=1 variant=0 partial=0 reduce=0 finish=0
+HC24 kernel census rank=1 variant=0 kernels=2377 want=2377 rmsnorm want=86 rope want=0
+GRAPH_CENSUS on=false rank=1 segment=0 partial=0 reduce=0 sha256=529e98f4f7acba259fe03909914f18c4ea54057dee9e11baa28a577995b1ac59
+HC24 census rank=1 variant=1 partial=0 reduce=0 finish=0
+GRAPH_CENSUS on=false rank=1 segment=1 partial=0 reduce=0 sha256=c08b9796bcc012e905203b83a450b3fc039f2f635e154f639742634498d34c9c
+HC24 census rank=1 variant=2 partial=0 reduce=0 finish=0
+HC24 kernel census rank=1 variant=2 kernels=2776 want=2776 rmsnorm want=128 rope want=0
+GRAPH_CENSUS on=false rank=1 segment=2 partial=0 reduce=0 sha256=9de5262565492aaccca559cec5bf2695a4b5ab7ed7052b454c85b7cbbd98418e
+HC24 census rank=1 variant=3 partial=0 reduce=0 finish=0
+HC24 kernel census rank=1 variant=3 kernels=2876 want=2876 rmsnorm want=148 rope want=0
+GRAPH_CENSUS on=false rank=1 segment=3 partial=0 reduce=0 sha256=e51805d90d8e8f3798c9923a1c581a8594ea4a659800d7a8f0e24f96544956bb
+MEASURE {"row":11,"arm_row":6,"reverse":false,"hc_dot_split":false,"generated_tokens":256,"decode_wall_ns":4462750660,"decode_tok_s":57.363724640623325,"eligible":true,"looped":false,"generated_sha256":"bccdff713aeb32e4b50812d8810894020d3e65cb4c70b2718bd723535fc16c42","final_logits_sha256":"cdef4644539715975ddb5d8beb3dfd1e18496bf76fc7f4f698c2eb7776511b35","final_cache_digest":[12121420093445539643, 12121420093445539643],"final_hidden_digest":[17933595804021797383, 17933595804021797383],"first_capture_inside_timing":false,"captures_before":[3, 1],"captures":[3, 1],"device_replays":[[1792, 1792], [1792, 1792]]}
+HC24 census rank=0 variant=0 partial=0 reduce=0 finish=0
+HC24 kernel census rank=0 variant=0 kernels=2377 want=2377 rmsnorm want=86 rope want=0
+GRAPH_CENSUS on=false rank=0 segment=0 partial=0 reduce=0 sha256=aad666c5c099900b6440943b5caf3c52b39ea1a36b7007ae2ea3024cb470f2a0
+HC24 census rank=0 variant=1 partial=0 reduce=0 finish=0
+GRAPH_CENSUS on=false rank=0 segment=1 partial=0 reduce=0 sha256=55e40e658a3bc14eb76b6b8b22a55f9b36e3ef1a0398614c30c61c5364892d11
+HC24 census rank=0 variant=2 partial=0 reduce=0 finish=0
+HC24 kernel census rank=0 variant=2 kernels=2776 want=2776 rmsnorm want=128 rope want=0
+GRAPH_CENSUS on=false rank=0 segment=2 partial=0 reduce=0 sha256=50f804b4dbc58647459dde8a4a17357edfbb06cd03448a30f344e29393949f52
+HC24 census rank=0 variant=3 partial=0 reduce=0 finish=0
+HC24 kernel census rank=0 variant=3 kernels=2876 want=2876 rmsnorm want=148 rope want=0
+GRAPH_CENSUS on=false rank=0 segment=3 partial=0 reduce=0 sha256=e028c1e2ad6d68ccb4c99b8a8b0d87cd6d6a74e38030758557adab72d4dec346
+HC24 census rank=1 variant=0 partial=0 reduce=0 finish=0
+HC24 kernel census rank=1 variant=0 kernels=2377 want=2377 rmsnorm want=86 rope want=0
+GRAPH_CENSUS on=false rank=1 segment=0 partial=0 reduce=0 sha256=529e98f4f7acba259fe03909914f18c4ea54057dee9e11baa28a577995b1ac59
+HC24 census rank=1 variant=1 partial=0 reduce=0 finish=0
+GRAPH_CENSUS on=false rank=1 segment=1 partial=0 reduce=0 sha256=c08b9796bcc012e905203b83a450b3fc039f2f635e154f639742634498d34c9c
+HC24 census rank=1 variant=2 partial=0 reduce=0 finish=0
+HC24 kernel census rank=1 variant=2 kernels=2776 want=2776 rmsnorm want=128 rope want=0
+GRAPH_CENSUS on=false rank=1 segment=2 partial=0 reduce=0 sha256=9de5262565492aaccca559cec5bf2695a4b5ab7ed7052b454c85b7cbbd98418e
+HC24 census rank=1 variant=3 partial=0 reduce=0 finish=0
+HC24 kernel census rank=1 variant=3 kernels=2876 want=2876 rmsnorm want=148 rope want=0
+GRAPH_CENSUS on=false rank=1 segment=3 partial=0 reduce=0 sha256=e51805d90d8e8f3798c9923a1c581a8594ea4a659800d7a8f0e24f96544956bb
+MEASURE {"row":12,"arm_row":7,"reverse":false,"hc_dot_split":false,"generated_tokens":256,"decode_wall_ns":4460588060,"decode_tok_s":57.391535949186036,"eligible":true,"looped":false,"generated_sha256":"bccdff713aeb32e4b50812d8810894020d3e65cb4c70b2718bd723535fc16c42","final_logits_sha256":"cdef4644539715975ddb5d8beb3dfd1e18496bf76fc7f4f698c2eb7776511b35","final_cache_digest":[12121420093445539643, 12121420093445539643],"final_hidden_digest":[17933595804021797383, 17933595804021797383],"first_capture_inside_timing":false,"captures_before":[3, 1],"captures":[3, 1],"device_replays":[[2048, 2048], [2048, 2048]]}
+HC24 census rank=0 variant=0 partial=0 reduce=0 finish=0
+HC24 kernel census rank=0 variant=0 kernels=2377 want=2377 rmsnorm want=86 rope want=0
+GRAPH_CENSUS on=false rank=0 segment=0 partial=0 reduce=0 sha256=aad666c5c099900b6440943b5caf3c52b39ea1a36b7007ae2ea3024cb470f2a0
+HC24 census rank=0 variant=1 partial=0 reduce=0 finish=0
+GRAPH_CENSUS on=false rank=0 segment=1 partial=0 reduce=0 sha256=55e40e658a3bc14eb76b6b8b22a55f9b36e3ef1a0398614c30c61c5364892d11
+HC24 census rank=0 variant=2 partial=0 reduce=0 finish=0
+HC24 kernel census rank=0 variant=2 kernels=2776 want=2776 rmsnorm want=128 rope want=0
+GRAPH_CENSUS on=false rank=0 segment=2 partial=0 reduce=0 sha256=50f804b4dbc58647459dde8a4a17357edfbb06cd03448a30f344e29393949f52
+HC24 census rank=0 variant=3 partial=0 reduce=0 finish=0
+HC24 kernel census rank=0 variant=3 kernels=2876 want=2876 rmsnorm want=148 rope want=0
+GRAPH_CENSUS on=false rank=0 segment=3 partial=0 reduce=0 sha256=e028c1e2ad6d68ccb4c99b8a8b0d87cd6d6a74e38030758557adab72d4dec346
+HC24 census rank=1 variant=0 partial=0 reduce=0 finish=0
+HC24 kernel census rank=1 variant=0 kernels=2377 want=2377 rmsnorm want=86 rope want=0
+GRAPH_CENSUS on=false rank=1 segment=0 partial=0 reduce=0 sha256=529e98f4f7acba259fe03909914f18c4ea54057dee9e11baa28a577995b1ac59
+HC24 census rank=1 variant=1 partial=0 reduce=0 finish=0
+GRAPH_CENSUS on=false rank=1 segment=1 partial=0 reduce=0 sha256=c08b9796bcc012e905203b83a450b3fc039f2f635e154f639742634498d34c9c
+HC24 census rank=1 variant=2 partial=0 reduce=0 finish=0
+HC24 kernel census rank=1 variant=2 kernels=2776 want=2776 rmsnorm want=128 rope want=0
+GRAPH_CENSUS on=false rank=1 segment=2 partial=0 reduce=0 sha256=9de5262565492aaccca559cec5bf2695a4b5ab7ed7052b454c85b7cbbd98418e
+HC24 census rank=1 variant=3 partial=0 reduce=0 finish=0
+HC24 kernel census rank=1 variant=3 kernels=2876 want=2876 rmsnorm want=148 rope want=0
+GRAPH_CENSUS on=false rank=1 segment=3 partial=0 reduce=0 sha256=e51805d90d8e8f3798c9923a1c581a8594ea4a659800d7a8f0e24f96544956bb
+MEASURE {"row":13,"arm_row":8,"reverse":false,"hc_dot_split":false,"generated_tokens":256,"decode_wall_ns":4460614910,"decode_tok_s":57.39119048947447,"eligible":true,"looped":false,"generated_sha256":"bccdff713aeb32e4b50812d8810894020d3e65cb4c70b2718bd723535fc16c42","final_logits_sha256":"cdef4644539715975ddb5d8beb3dfd1e18496bf76fc7f4f698c2eb7776511b35","final_cache_digest":[12121420093445539643, 12121420093445539643],"final_hidden_digest":[17933595804021797383, 17933595804021797383],"first_capture_inside_timing":false,"captures_before":[3, 1],"captures":[3, 1],"device_replays":[[2304, 2304], [2304, 2304]]}
+HC24 census rank=0 variant=0 partial=0 reduce=0 finish=0
+HC24 kernel census rank=0 variant=0 kernels=2377 want=2377 rmsnorm want=86 rope want=0
+GRAPH_CENSUS on=false rank=0 segment=0 partial=0 reduce=0 sha256=aad666c5c099900b6440943b5caf3c52b39ea1a36b7007ae2ea3024cb470f2a0
+HC24 census rank=0 variant=1 partial=0 reduce=0 finish=0
+GRAPH_CENSUS on=false rank=0 segment=1 partial=0 reduce=0 sha256=55e40e658a3bc14eb76b6b8b22a55f9b36e3ef1a0398614c30c61c5364892d11
+HC24 census rank=0 variant=2 partial=0 reduce=0 finish=0
+HC24 kernel census rank=0 variant=2 kernels=2776 want=2776 rmsnorm want=128 rope want=0
+GRAPH_CENSUS on=false rank=0 segment=2 partial=0 reduce=0 sha256=50f804b4dbc58647459dde8a4a17357edfbb06cd03448a30f344e29393949f52
+HC24 census rank=0 variant=3 partial=0 reduce=0 finish=0
+HC24 kernel census rank=0 variant=3 kernels=2876 want=2876 rmsnorm want=148 rope want=0
+GRAPH_CENSUS on=false rank=0 segment=3 partial=0 reduce=0 sha256=e028c1e2ad6d68ccb4c99b8a8b0d87cd6d6a74e38030758557adab72d4dec346
+HC24 census rank=1 variant=0 partial=0 reduce=0 finish=0
+HC24 kernel census rank=1 variant=0 kernels=2377 want=2377 rmsnorm want=86 rope want=0
+GRAPH_CENSUS on=false rank=1 segment=0 partial=0 reduce=0 sha256=529e98f4f7acba259fe03909914f18c4ea54057dee9e11baa28a577995b1ac59
+HC24 census rank=1 variant=1 partial=0 reduce=0 finish=0
+GRAPH_CENSUS on=false rank=1 segment=1 partial=0 reduce=0 sha256=c08b9796bcc012e905203b83a450b3fc039f2f635e154f639742634498d34c9c
+HC24 census rank=1 variant=2 partial=0 reduce=0 finish=0
+HC24 kernel census rank=1 variant=2 kernels=2776 want=2776 rmsnorm want=128 rope want=0
+GRAPH_CENSUS on=false rank=1 segment=2 partial=0 reduce=0 sha256=9de5262565492aaccca559cec5bf2695a4b5ab7ed7052b454c85b7cbbd98418e
+HC24 census rank=1 variant=3 partial=0 reduce=0 finish=0
+HC24 kernel census rank=1 variant=3 kernels=2876 want=2876 rmsnorm want=148 rope want=0
+GRAPH_CENSUS on=false rank=1 segment=3 partial=0 reduce=0 sha256=e51805d90d8e8f3798c9923a1c581a8594ea4a659800d7a8f0e24f96544956bb
+MEASURE {"row":14,"arm_row":9,"reverse":false,"hc_dot_split":false,"generated_tokens":256,"decode_wall_ns":4462636228,"decode_tok_s":57.36519557515679,"eligible":true,"looped":false,"generated_sha256":"bccdff713aeb32e4b50812d8810894020d3e65cb4c70b2718bd723535fc16c42","final_logits_sha256":"cdef4644539715975ddb5d8beb3dfd1e18496bf76fc7f4f698c2eb7776511b35","final_cache_digest":[12121420093445539643, 12121420093445539643],"final_hidden_digest":[17933595804021797383, 17933595804021797383],"first_capture_inside_timing":false,"captures_before":[3, 1],"captures":[3, 1],"device_replays":[[2560, 2560], [2560, 2560]]}
+HC24 census rank=0 variant=0 partial=86 reduce=0 finish=86
+HC24 kernel census rank=0 variant=0 kernels=2248 want=2248 rmsnorm want=0 rope want=0
+GRAPH_CENSUS on=true rank=0 segment=0 partial=86 reduce=0 sha256=7f96382b0a17a595ea89c0373e53f56f646396132a276bd35b78475f8358f952
+HC24 census rank=0 variant=1 partial=0 reduce=0 finish=0
+GRAPH_CENSUS on=true rank=0 segment=1 partial=0 reduce=0 sha256=fbf3785370397b233e789d5dc6394f106bd4fe431f1c44e381fc0ffb8b83def4
+HC24 census rank=0 variant=2 partial=86 reduce=0 finish=86
+HC24 kernel census rank=0 variant=2 kernels=2647 want=2647 rmsnorm want=42 rope want=0
+GRAPH_CENSUS on=true rank=0 segment=2 partial=86 reduce=0 sha256=95774ff84ce0e87c5e4f959dc8bbc85c8593e2945ad30f19c1979f1074e3084e
+HC24 census rank=0 variant=3 partial=86 reduce=0 finish=86
+HC24 kernel census rank=0 variant=3 kernels=2747 want=2747 rmsnorm want=62 rope want=0
+GRAPH_CENSUS on=true rank=0 segment=3 partial=86 reduce=0 sha256=50f72d100eca773b438f987219be0b92bea42f6686b85f249af1dd6887403237
+HC24 census rank=1 variant=0 partial=86 reduce=0 finish=86
+HC24 kernel census rank=1 variant=0 kernels=2248 want=2248 rmsnorm want=0 rope want=0
+GRAPH_CENSUS on=true rank=1 segment=0 partial=86 reduce=0 sha256=5e5b69b1d242f962474985842c01f4c79ed5cd5c2ef452a0f9bab4167e26694d
+HC24 census rank=1 variant=1 partial=0 reduce=0 finish=0
+GRAPH_CENSUS on=true rank=1 segment=1 partial=0 reduce=0 sha256=822bab3c024e41c499374a03779fec31e0a6272be87344c02cfd84fc52de1bf1
+HC24 census rank=1 variant=2 partial=86 reduce=0 finish=86
+HC24 kernel census rank=1 variant=2 kernels=2647 want=2647 rmsnorm want=42 rope want=0
+GRAPH_CENSUS on=true rank=1 segment=2 partial=86 reduce=0 sha256=e9cf3bbcce8d522f8d083b8e9427bcf8e6610286a8b2e37b2d41f733b574724f
+HC24 census rank=1 variant=3 partial=86 reduce=0 finish=86
+HC24 kernel census rank=1 variant=3 kernels=2747 want=2747 rmsnorm want=62 rope want=0
+GRAPH_CENSUS on=true rank=1 segment=3 partial=86 reduce=0 sha256=69391cecbb4b321604805642b107ca6fc3bf6141653080dec3ce6787d772a173
+MEASURE {"row":15,"arm_row":5,"reverse":false,"hc_dot_split":true,"generated_tokens":256,"decode_wall_ns":4058021413,"decode_tok_s":63.084930794080066,"eligible":true,"looped":false,"generated_sha256":"2a92ebbc14f569f5ce74861652d15284b67c8e02f8e1af5203e5fd47edd9d546","final_logits_sha256":"252a9130f63375789aa569e9540a304a1ca6bd60ddebc2389c1b96535c5af9bb","final_cache_digest":[18007896828816499425, 18007896828816499425],"final_hidden_digest":[16198613815291583495, 16198613815291583495],"first_capture_inside_timing":false,"captures_before":[3, 1],"captures":[3, 1],"device_replays":[[1536, 1536], [1536, 1536]]}
+HC24 census rank=0 variant=0 partial=86 reduce=0 finish=86
+HC24 kernel census rank=0 variant=0 kernels=2248 want=2248 rmsnorm want=0 rope want=0
+GRAPH_CENSUS on=true rank=0 segment=0 partial=86 reduce=0 sha256=7f96382b0a17a595ea89c0373e53f56f646396132a276bd35b78475f8358f952
+HC24 census rank=0 variant=1 partial=0 reduce=0 finish=0
+GRAPH_CENSUS on=true rank=0 segment=1 partial=0 reduce=0 sha256=fbf3785370397b233e789d5dc6394f106bd4fe431f1c44e381fc0ffb8b83def4
+HC24 census rank=0 variant=2 partial=86 reduce=0 finish=86
+HC24 kernel census rank=0 variant=2 kernels=2647 want=2647 rmsnorm want=42 rope want=0
+GRAPH_CENSUS on=true rank=0 segment=2 partial=86 reduce=0 sha256=95774ff84ce0e87c5e4f959dc8bbc85c8593e2945ad30f19c1979f1074e3084e
+HC24 census rank=0 variant=3 partial=86 reduce=0 finish=86
+HC24 kernel census rank=0 variant=3 kernels=2747 want=2747 rmsnorm want=62 rope want=0
+GRAPH_CENSUS on=true rank=0 segment=3 partial=86 reduce=0 sha256=50f72d100eca773b438f987219be0b92bea42f6686b85f249af1dd6887403237
+HC24 census rank=1 variant=0 partial=86 reduce=0 finish=86
+HC24 kernel census rank=1 variant=0 kernels=2248 want=2248 rmsnorm want=0 rope want=0
+GRAPH_CENSUS on=true rank=1 segment=0 partial=86 reduce=0 sha256=5e5b69b1d242f962474985842c01f4c79ed5cd5c2ef452a0f9bab4167e26694d
+HC24 census rank=1 variant=1 partial=0 reduce=0 finish=0
+GRAPH_CENSUS on=true rank=1 segment=1 partial=0 reduce=0 sha256=822bab3c024e41c499374a03779fec31e0a6272be87344c02cfd84fc52de1bf1
+HC24 census rank=1 variant=2 partial=86 reduce=0 finish=86
+HC24 kernel census rank=1 variant=2 kernels=2647 want=2647 rmsnorm want=42 rope want=0
+GRAPH_CENSUS on=true rank=1 segment=2 partial=86 reduce=0 sha256=e9cf3bbcce8d522f8d083b8e9427bcf8e6610286a8b2e37b2d41f733b574724f
+HC24 census rank=1 variant=3 partial=86 reduce=0 finish=86
+HC24 kernel census rank=1 variant=3 kernels=2747 want=2747 rmsnorm want=62 rope want=0
+GRAPH_CENSUS on=true rank=1 segment=3 partial=86 reduce=0 sha256=69391cecbb4b321604805642b107ca6fc3bf6141653080dec3ce6787d772a173
+MEASURE {"row":16,"arm_row":6,"reverse":false,"hc_dot_split":true,"generated_tokens":256,"decode_wall_ns":4059865956,"decode_tok_s":63.05626904298709,"eligible":true,"looped":false,"generated_sha256":"2a92ebbc14f569f5ce74861652d15284b67c8e02f8e1af5203e5fd47edd9d546","final_logits_sha256":"252a9130f63375789aa569e9540a304a1ca6bd60ddebc2389c1b96535c5af9bb","final_cache_digest":[18007896828816499425, 18007896828816499425],"final_hidden_digest":[16198613815291583495, 16198613815291583495],"first_capture_inside_timing":false,"captures_before":[3, 1],"captures":[3, 1],"device_replays":[[1792, 1792], [1792, 1792]]}
+HC24 census rank=0 variant=0 partial=86 reduce=0 finish=86
+HC24 kernel census rank=0 variant=0 kernels=2248 want=2248 rmsnorm want=0 rope want=0
+GRAPH_CENSUS on=true rank=0 segment=0 partial=86 reduce=0 sha256=7f96382b0a17a595ea89c0373e53f56f646396132a276bd35b78475f8358f952
+HC24 census rank=0 variant=1 partial=0 reduce=0 finish=0
+GRAPH_CENSUS on=true rank=0 segment=1 partial=0 reduce=0 sha256=fbf3785370397b233e789d5dc6394f106bd4fe431f1c44e381fc0ffb8b83def4
+HC24 census rank=0 variant=2 partial=86 reduce=0 finish=86
+HC24 kernel census rank=0 variant=2 kernels=2647 want=2647 rmsnorm want=42 rope want=0
+GRAPH_CENSUS on=true rank=0 segment=2 partial=86 reduce=0 sha256=95774ff84ce0e87c5e4f959dc8bbc85c8593e2945ad30f19c1979f1074e3084e
+HC24 census rank=0 variant=3 partial=86 reduce=0 finish=86
+HC24 kernel census rank=0 variant=3 kernels=2747 want=2747 rmsnorm want=62 rope want=0
+GRAPH_CENSUS on=true rank=0 segment=3 partial=86 reduce=0 sha256=50f72d100eca773b438f987219be0b92bea42f6686b85f249af1dd6887403237
+HC24 census rank=1 variant=0 partial=86 reduce=0 finish=86
+HC24 kernel census rank=1 variant=0 kernels=2248 want=2248 rmsnorm want=0 rope want=0
+GRAPH_CENSUS on=true rank=1 segment=0 partial=86 reduce=0 sha256=5e5b69b1d242f962474985842c01f4c79ed5cd5c2ef452a0f9bab4167e26694d
+HC24 census rank=1 variant=1 partial=0 reduce=0 finish=0
+GRAPH_CENSUS on=true rank=1 segment=1 partial=0 reduce=0 sha256=822bab3c024e41c499374a03779fec31e0a6272be87344c02cfd84fc52de1bf1
+HC24 census rank=1 variant=2 partial=86 reduce=0 finish=86
+HC24 kernel census rank=1 variant=2 kernels=2647 want=2647 rmsnorm want=42 rope want=0
+GRAPH_CENSUS on=true rank=1 segment=2 partial=86 reduce=0 sha256=e9cf3bbcce8d522f8d083b8e9427bcf8e6610286a8b2e37b2d41f733b574724f
+HC24 census rank=1 variant=3 partial=86 reduce=0 finish=86
+HC24 kernel census rank=1 variant=3 kernels=2747 want=2747 rmsnorm want=62 rope want=0
+GRAPH_CENSUS on=true rank=1 segment=3 partial=86 reduce=0 sha256=69391cecbb4b321604805642b107ca6fc3bf6141653080dec3ce6787d772a173
+MEASURE {"row":17,"arm_row":7,"reverse":false,"hc_dot_split":true,"generated_tokens":256,"decode_wall_ns":4062432303,"decode_tok_s":63.016434713496814,"eligible":true,"looped":false,"generated_sha256":"2a92ebbc14f569f5ce74861652d15284b67c8e02f8e1af5203e5fd47edd9d546","final_logits_sha256":"252a9130f63375789aa569e9540a304a1ca6bd60ddebc2389c1b96535c5af9bb","final_cache_digest":[18007896828816499425, 18007896828816499425],"final_hidden_digest":[16198613815291583495, 16198613815291583495],"first_capture_inside_timing":false,"captures_before":[3, 1],"captures":[3, 1],"device_replays":[[2048, 2048], [2048, 2048]]}
+HC24 census rank=0 variant=0 partial=86 reduce=0 finish=86
+HC24 kernel census rank=0 variant=0 kernels=2248 want=2248 rmsnorm want=0 rope want=0
+GRAPH_CENSUS on=true rank=0 segment=0 partial=86 reduce=0 sha256=7f96382b0a17a595ea89c0373e53f56f646396132a276bd35b78475f8358f952
+HC24 census rank=0 variant=1 partial=0 reduce=0 finish=0
+GRAPH_CENSUS on=true rank=0 segment=1 partial=0 reduce=0 sha256=fbf3785370397b233e789d5dc6394f106bd4fe431f1c44e381fc0ffb8b83def4
+HC24 census rank=0 variant=2 partial=86 reduce=0 finish=86
+HC24 kernel census rank=0 variant=2 kernels=2647 want=2647 rmsnorm want=42 rope want=0
+GRAPH_CENSUS on=true rank=0 segment=2 partial=86 reduce=0 sha256=95774ff84ce0e87c5e4f959dc8bbc85c8593e2945ad30f19c1979f1074e3084e
+HC24 census rank=0 variant=3 partial=86 reduce=0 finish=86
+HC24 kernel census rank=0 variant=3 kernels=2747 want=2747 rmsnorm want=62 rope want=0
+GRAPH_CENSUS on=true rank=0 segment=3 partial=86 reduce=0 sha256=50f72d100eca773b438f987219be0b92bea42f6686b85f249af1dd6887403237
+HC24 census rank=1 variant=0 partial=86 reduce=0 finish=86
+HC24 kernel census rank=1 variant=0 kernels=2248 want=2248 rmsnorm want=0 rope want=0
+GRAPH_CENSUS on=true rank=1 segment=0 partial=86 reduce=0 sha256=5e5b69b1d242f962474985842c01f4c79ed5cd5c2ef452a0f9bab4167e26694d
+HC24 census rank=1 variant=1 partial=0 reduce=0 finish=0
+GRAPH_CENSUS on=true rank=1 segment=1 partial=0 reduce=0 sha256=822bab3c024e41c499374a03779fec31e0a6272be87344c02cfd84fc52de1bf1
+HC24 census rank=1 variant=2 partial=86 reduce=0 finish=86
+HC24 kernel census rank=1 variant=2 kernels=2647 want=2647 rmsnorm want=42 rope want=0
+GRAPH_CENSUS on=true rank=1 segment=2 partial=86 reduce=0 sha256=e9cf3bbcce8d522f8d083b8e9427bcf8e6610286a8b2e37b2d41f733b574724f
+HC24 census rank=1 variant=3 partial=86 reduce=0 finish=86
+HC24 kernel census rank=1 variant=3 kernels=2747 want=2747 rmsnorm want=62 rope want=0
+GRAPH_CENSUS on=true rank=1 segment=3 partial=86 reduce=0 sha256=69391cecbb4b321604805642b107ca6fc3bf6141653080dec3ce6787d772a173
+MEASURE {"row":18,"arm_row":8,"reverse":false,"hc_dot_split":true,"generated_tokens":256,"decode_wall_ns":4064266391,"decode_tok_s":62.98799718613228,"eligible":true,"looped":false,"generated_sha256":"2a92ebbc14f569f5ce74861652d15284b67c8e02f8e1af5203e5fd47edd9d546","final_logits_sha256":"252a9130f63375789aa569e9540a304a1ca6bd60ddebc2389c1b96535c5af9bb","final_cache_digest":[18007896828816499425, 18007896828816499425],"final_hidden_digest":[16198613815291583495, 16198613815291583495],"first_capture_inside_timing":false,"captures_before":[3, 1],"captures":[3, 1],"device_replays":[[2304, 2304], [2304, 2304]]}
+HC24 census rank=0 variant=0 partial=86 reduce=0 finish=86
+HC24 kernel census rank=0 variant=0 kernels=2248 want=2248 rmsnorm want=0 rope want=0
+GRAPH_CENSUS on=true rank=0 segment=0 partial=86 reduce=0 sha256=7f96382b0a17a595ea89c0373e53f56f646396132a276bd35b78475f8358f952
+HC24 census rank=0 variant=1 partial=0 reduce=0 finish=0
+GRAPH_CENSUS on=true rank=0 segment=1 partial=0 reduce=0 sha256=fbf3785370397b233e789d5dc6394f106bd4fe431f1c44e381fc0ffb8b83def4
+HC24 census rank=0 variant=2 partial=86 reduce=0 finish=86
+HC24 kernel census rank=0 variant=2 kernels=2647 want=2647 rmsnorm want=42 rope want=0
+GRAPH_CENSUS on=true rank=0 segment=2 partial=86 reduce=0 sha256=95774ff84ce0e87c5e4f959dc8bbc85c8593e2945ad30f19c1979f1074e3084e
+HC24 census rank=0 variant=3 partial=86 reduce=0 finish=86
+HC24 kernel census rank=0 variant=3 kernels=2747 want=2747 rmsnorm want=62 rope want=0
+GRAPH_CENSUS on=true rank=0 segment=3 partial=86 reduce=0 sha256=50f72d100eca773b438f987219be0b92bea42f6686b85f249af1dd6887403237
+HC24 census rank=1 variant=0 partial=86 reduce=0 finish=86
+HC24 kernel census rank=1 variant=0 kernels=2248 want=2248 rmsnorm want=0 rope want=0
+GRAPH_CENSUS on=true rank=1 segment=0 partial=86 reduce=0 sha256=5e5b69b1d242f962474985842c01f4c79ed5cd5c2ef452a0f9bab4167e26694d
+HC24 census rank=1 variant=1 partial=0 reduce=0 finish=0
+GRAPH_CENSUS on=true rank=1 segment=1 partial=0 reduce=0 sha256=822bab3c024e41c499374a03779fec31e0a6272be87344c02cfd84fc52de1bf1
+HC24 census rank=1 variant=2 partial=86 reduce=0 finish=86
+HC24 kernel census rank=1 variant=2 kernels=2647 want=2647 rmsnorm want=42 rope want=0
+GRAPH_CENSUS on=true rank=1 segment=2 partial=86 reduce=0 sha256=e9cf3bbcce8d522f8d083b8e9427bcf8e6610286a8b2e37b2d41f733b574724f
+HC24 census rank=1 variant=3 partial=86 reduce=0 finish=86
+HC24 kernel census rank=1 variant=3 kernels=2747 want=2747 rmsnorm want=62 rope want=0
+GRAPH_CENSUS on=true rank=1 segment=3 partial=86 reduce=0 sha256=69391cecbb4b321604805642b107ca6fc3bf6141653080dec3ce6787d772a173
+MEASURE {"row":19,"arm_row":9,"reverse":false,"hc_dot_split":true,"generated_tokens":256,"decode_wall_ns":4067677804,"decode_tok_s":62.93517145046722,"eligible":true,"looped":false,"generated_sha256":"2a92ebbc14f569f5ce74861652d15284b67c8e02f8e1af5203e5fd47edd9d546","final_logits_sha256":"252a9130f63375789aa569e9540a304a1ca6bd60ddebc2389c1b96535c5af9bb","final_cache_digest":[18007896828816499425, 18007896828816499425],"final_hidden_digest":[16198613815291583495, 16198613815291583495],"first_capture_inside_timing":false,"captures_before":[3, 1],"captures":[3, 1],"device_replays":[[2560, 2560], [2560, 2560]]}

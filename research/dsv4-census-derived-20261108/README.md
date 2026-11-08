@@ -15,27 +15,27 @@ performance claim and no native qualification.
 ## Conditions
 
 - 2x RTX PRO 6000 Blackwell Max-Q, 250 W limit left as found, CUDA 13.4, sm_120a release
-  build, rust 1.97.1. Peak temperatures 88 C and 82 C, fans at most 70 %: no thermal stop.
+  build, rust 1.97.1. Peak 90 C with fans at most 88 %: no thermal stop.
 - The pair cells' environment: `CUDA_DEVICE_ORDER=PCI_BUS_ID CUDA_VISIBLE_DEVICES=0,1
   MEMRA_DSV4_DECODE_PATH=device MEMRA_DSV4_EXPERT_ARM=native MEMRA_DSV4_DENSE_ARM=fp8
   MEMRA_DSV4_EP=pair MEMRA_DSV4_GROUPED_ROUTE=device MEMRA_DSV4_VERIFY_TOPK=device
   MEMRA_DSV4_PREFILL_MOE=reference MEMRA_DSV4_DOTS_ARM=f32x MEMRA_DSV4_DRAFTER=off
-  MEMRA_MOE_F16G=2 MEMRA_F16G_SK=32 MEMRA_DSV4_SAMPLER=device`, the gates run as
-  `<gate> <model> <tape> <new-dir> [--defaults]`.
-- `before-main/`: main 958ae32fed. `after-fix1/`: 958ae32fed plus the change as first built
-  (patch sha256 d39a00a1a316...). It differs from ee524c6dd8 only in the census loop's form,
-  `for il in 0..n_trunk` with `let cache = &caches[il]` where the commit iterates
-  `caches.iter().enumerate()` (clippy `needless_range_loop`); the counts are the same code.
-  Each directory has the raw gate logs, the cell status lines, the binaries' sha256 and the
-  1 s telemetry.
+  MEMRA_MOE_F16G=2 MEMRA_F16G_SK=32 MEMRA_DSV4_SAMPLER=device`. The gates run as
+  `<gate> <model> <tape> <new-dir> [--defaults]`; without `--defaults` the compose gate runs
+  its A/B (candidate and control arms) and the HC gate its ABBA (split on and off).
+- `before-main/`: main 958ae32fed. `after-head/`: 2a0b9d76f1, this branch's code. Each holds
+  the raw gate logs, the cell status lines, the binaries' sha256 and the 1 s telemetry. A first
+  build of the change (before the clippy and review fixes, same counting) gave the same counts;
+  its logs are in 9c47ca9526.
 
 ## Runs
 
-| cell | before (main) | after |
+| cell | before (main) | after (2a0b9d76f1) |
 |---|---|---|
 | compose cadence `--defaults` | rc 101: 1680 total-kernel mismatches, every other check passed. Read 2546/2945/3045 for slots 0/2/3 against 2741/3140/3240 | rc 0: want 2546/2945/3045 |
 | HC dot split `--defaults` | rc 101 at the RMSNorm pin, rank 0 segment 0: read 0 against 129 | rc 0: kernels 2248/2647/2747, RMSNorm 0/42/62, RoPE 0 |
-| compose cadence A/B (both arms) | rc 101: 2288 mismatches; the control arm reads 3045 against 3240 | rc 0: candidate 2546/2945/3045, control 3045 |
+| compose cadence A/B | rc 101: 2288 mismatches; the control arm reads 3045 against 3240 | rc 0: candidate 2546/2945/3045, control 3045 |
+| HC dot split ABBA | rc 101 at the RMSNorm pin: read 0 against 129 | rc 0: split on 2248/2647/2747 and RMSNorm 0/42/62; split off 2377/2776/2876 and RMSNorm 86/128/148 |
 
 The HC gate's RoPE pin (150 per forward variant) was stale too: it is the assert after the
 RMSNorm one, and the graphs hold no `dsv4_rope_kernel` node.
@@ -79,24 +79,29 @@ FP8 QAT (1), the store (the C4 split store or a row copy) and, for the overlappi
 compressors, four shifts of the two pending planes: 3 + 2 + 1 + 4 = 10 for the indexer,
 3 + 1 + 1 + 4 = 9 for the ratio-4 attention compressor, 3 + 1 + 1 = 5 at ratio 128.
 
-| graph | compose program | HC split program |
-|---|---|---|
-| window / ratio-4 / ratio-128 layer | 49 / 65 / 54 | 44 / 57 / 48 |
-| ordinary: 3 + 2 x window + 21 x ratio-4 + 20 x ratio-128 | 2546 | 2248 |
-| C4: + 21 x (10 + 9) | 2945 | 2647 |
-| C4 + C128: + 20 x 5 | 3045 | 2747 |
-| control (no cadence: one forward graph in which every compressor emits) | 3045 | |
-| RMSNorm in ordinary / C4 / C4 + C128 | 86 / 128 / 148: the two HC entries per layer, plus one per emitting compressor | 0 / 42 / 62 |
-| RoPE (`dsv4_rope_kernel`) | 0 | 0 |
+| graph | compose program | HC split program | HC gate, split off |
+|---|---|---|---|
+| window / ratio-4 / ratio-128 layer | 49 / 65 / 54 | 44 / 57 / 48 | 47 / 60 / 51 |
+| ordinary: 3 + 2 x window + 21 x ratio-4 + 20 x ratio-128 | 2546 | 2248 | 2377 |
+| C4: + 21 x (10 + 9) | 2945 | 2647 | 2776 |
+| C4 + C128: + 20 x 5 | 3045 | 2747 | 2876 |
+| control (no cadence: one forward graph in which every compressor emits) | 3045 | | |
+| RMSNorm in ordinary / C4 / C4 + C128 | 86 / 128 / 148: the two HC entries per layer, plus one per emitting compressor | 0 / 42 / 62 | 86 / 128 / 148 |
+| RoPE (`dsv4_rope_kernel`) | 0 | 0 | 0 |
+
+The HC gate's split-off arm keeps dense fast on: its pairs are the HC split program's, its HC
+entries the compose program's (4 + 3 launches instead of 2 + 2).
 
 The q RoPE runs in the head-RMS launch, the latent's in the latent norm launch, the indexer q's
 in its chain, the output's inverse with its pack, and the compressors' as
 `dsv4_rope_at_kernel`. The commit graph holds the head's final norm on both ranks (the
 vocab-parallel head), `full_token_commit_rmsnorm_for_gate`.
 
-`census-compose-on.txt`, `census-compose-off.txt` and `census-hcdot-on.txt` are the per-symbol
-kernel censuses of the after run's qualification dumps (`sym_census.py <dump-dir>`), the
-counts each term above was read against.
+`census-compose-on.txt`, `census-compose-off.txt`, `census-hcdot-on.txt` and
+`census-hcdot-off.txt` are the per-symbol kernel censuses of the after run's graph dumps
+(`sym_census.py <dump-dir>`): the compose A/B's qualification graphs of each arm, the HC
+gate's qualification graphs and its ABBA row 5 (split off). Each term above was read against
+them.
 
 ## Why the pins drifted
 
@@ -116,3 +121,10 @@ fused one-token MoE pair (`moe_fused_eligible`; the gates turn the route and mir
 off and pin the fused gate/up, which rules it out), an unfused gate/up or another down tail, a program without the
 small-kernel diet, a pending small-component cell. A gate that needs one of those adds its
 terms first.
+
+Two more gates hold census pins from the same era and stay out of this change:
+`dsv4_launch_boundary_gate` pins 2741/3140/3240 kernels and 86 joins per variant, where
+attention TP2 launches 129 joins, and the cadence branch of `dsv4_full_token_replay_gate.rs`
+(the `dsv4_tp_ep_sampled_perf_gate` full-token replay) pins 2784/3183/3283 plus 86 with the HC
+split on. Neither ran here: no pair cell runs the first, and the pair cell of the second runs
+it without cadence.
