@@ -1,0 +1,469 @@
+1794136002.869 [server] build: memra-0.138.0-1ed9ac82da43 (id: source-tree, git: 46172c1bacd0)
+1794136002.869 [server] starting; models config = [("gate", "<models>/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf", None)]
+1794136002.869 [gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+1794136002.870 [worker-affinity] off (MEMRA_WORKER_CPUSET / MEMRA_WORKER_AFFINITY unset or =0)
+1794136002.969 [gpu-watch] on: every 60s, probe deadline 10s, fatal after 3 consecutive misses (MEMRA_GPU_PROBE_MISSES), fatal Xid [48, 64, 79, 94, 95, 119, 120]
+1794136003.050 [worker] Engine ready (device=0, MEMRA_FAST=true)
+1794136003.050 [spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+1794136003.050 [spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2 (K=5 when the loaded MTP head is rank-trimmed)
+1794136003.050 [worker] loading model "gate" <- <models>/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf
+1794136003.097 [tensor-contract] bound 866 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+1794136010.542 [worker]   loaded "gate": 65 layers, eos=248046, stop=[248046]
+1794136010.542 [worker] gate: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false qwen_effort=true gemma_think=false dsv4=false glm5=false ctx=262144 tok="qwen35" instruct=Some("chatml") chat_defaults=None/None
+1794136010.542 [route-contract] model="gate" route=hybrid-worker capacity=64 sessions implemented=[capacity,occupancy,progress,fault-ownership,shutdown-ownership,memory-cost,rewrite-qualification,prime-fairness,service-metrics] refused=[]
+1794136013.462 [device-trim] reason=wave-probe {"device":0,"reclaimed_bytes":1778384896,"still_owned_bytes":16500232192,"pool_reserved_bytes":16575889408,"pool_cached_bytes":75657216,"driver_free_bytes":8342601728,"synchronization_errors":[]}
+1794136013.462 [wave-probe] skipped (32 sessions at depth 2048 do not fit: the other 30 need 15175MB (505.8MB each), 7016MB allocatable) after 2.9s; wave cap 16; released 1696MB of cached pool to the driver
+1794136013.462 [worker] gate: decode wave cap 16; scheduler tick cap 16 (exact-16 tier)
+1794136013.462 [prefix-cache] on: budget 2260MB (2259943424 B, derived: 2 x 1129971712 B max entry for model "gate" at served ctx 32768 (from MEMRA_CTX; MEMRA_CTX set), requested 2259943424 B; boot driver free 8342601728 B, post-reserve clamp 6731988992 B), policy plain-LRU (global oldest unleased entry first; leases untouchable), min prefix 64 tokens, immediate partial restore=off (rollback) (transformer-only; hybrid mid-entry + routed-MoE N/A)
+1794136013.462 [admission] "gate": plain 29696 B/token, spec 31552 B/token; fixed residual learns from effective-free deltas
+1794136014.919 [fa-pool] grow #0 dev=0 o_len 0 -> 202752 ml_len 0 -> 792 (retired kept, zero=false)
+1794136015.022 [fa-pool] grow #1 dev=0 o_len 202752 -> 405504 ml_len 792 -> 1584 (retired kept, zero=false)
+1794136015.124 [fa-pool] grow #2 dev=0 o_len 405504 -> 811008 ml_len 1584 -> 3168 (retired kept, zero=false)
+1794136015.340 [fa-pool] grow #3 dev=0 o_len 811008 -> 1622016 ml_len 3168 -> 6336 (retired kept, zero=false)
+1794136015.645 [fa-pool] grow #4 dev=0 o_len 1622016 -> 3244032 ml_len 6336 -> 12672 (retired kept, zero=false)
+1794136019.089 [device-trim] reason=spec-cost-calibration {"device":0,"reclaimed_bytes":1778384896,"still_owned_bytes":16525571904,"pool_reserved_bytes":16710107136,"pool_cached_bytes":184535232,"driver_free_bytes":8208384000,"synchronization_errors":[]}
+1794136019.089 [spec-cost] calibration skipped: model="gate" (16 sessions at depth 2048 do not fit: the other 14 need 7081MB (505.8MB each), 6992MB allocatable); the band serves
+1794136019.089 [prime-walk] model="gate" route=mtp supported=true yield_door=true [gdn_dspark_compatible=true mtp_head_loaded=true no_hyper_connections=true no_pipeline_cuts=true]
+1794136022.105 [func] CAPTURE-TIME kernel lookup (not warmed): embed_gather_u32
+1794136022.106 [func] CAPTURE-TIME kernel lookup (not warmed): inc_i32
+1794136022.106 [func] CAPTURE-TIME kernel lookup (not warmed): fa_decode_vec_q_v4_deep_dc
+1794136022.106 [func] CAPTURE-TIME kernel lookup (not warmed): fa_decode_combine_f32
+1794136022.106 [func] CAPTURE-TIME kernel lookup (not warmed): memra_sctr_inc
+1794136022.106 [func] CAPTURE-TIME kernel lookup (not warmed): gumbel_perturb_filtered_ctr_f32
+1794136022.112 [spec] draft-session state high-water: 38MB (max of parked delta 38MB and capture-time pool peak 6MB; charged per spec admission and gating future captures)
+1794136022.939 [device-trim] reason=calibration-complete {"device":0,"reclaimed_bytes":2147483648,"still_owned_bytes":17297323840,"pool_reserved_bytes":17616076800,"pool_cached_bytes":318752960,"driver_free_bytes":7266762752,"synchronization_errors":[]}
+1794136022.939 [admit-cal] post-probe pool trim: released 2048MB cached back to the driver
+1794136022.939 [admit-cal] boot calibration done: model="gate" route=mtp transient floor 1882MB (static was 1536MB; measured 1882MB; probe kv charge 127MB, draft-state 38MB, drafted 63 accepted 42; [dev0 peak-mapped 18848MB rest-mapped 16800MB charged 165MB -> 1882MB]; 3.8s)
+1794136022.939 [admit-mem] door=OFF open_output_tokens=8192 defer_budget_ms=8000 (admission charges prompt+output, the reclaim flush demotes to the host tier before dropping, and a memory defer past the budget refuses 429 instead of queueing past the client's deadline)
+1794136022.939 [kv-vmm] door=OFF (MEMRA_KV_ALLOCATOR unset or pooled: pooled K/V planes)
+1794136022.939 [server] worker ready; serving models: ["gate"]
+1794136022.939 [server] listening on http://127.0.0.1:18187
+1794136024.084 [meter] admit id=chatcmpl-c62459c919757d378a0d03f99313774c tenant=default lane=interactive model="gate"
+1794136024.084 [meter] admit id=chatcmpl-1038d3a922f4c40d6f266aa44752cbbf tenant=default lane=interactive model="gate"
+1794136024.084 [meter] admit id=chatcmpl-f5472db5a2aa70bd746582eed7e0c21f tenant=default lane=interactive model="gate"
+1794136024.085 [meter] admit id=chatcmpl-83d896291ce1e793fb27f702f53548ef tenant=default lane=interactive model="gate"
+1794136024.088 [admission] request cost: model="gate" ctx=2825 path=plain = 29696 B/token x ctx + 1323MB prefill-workspace + 0MB fixed = 1407MB
+1794136024.088 [spec-k] model="gate" tenant="" K=0 source=concurrency prompt=2760 cached=0 lcp=0 active=1 wave=4 placement=single-or-non-pp2
+1794136024.088 [admission] fixed residual high-water: model="gate" 313MB (observed 395MB at ctx 2769 path=plain)
+1794136026.122 [prefix-cache] insert (seed): 2720 tokens, 237.7MB (resident 237.7MB / 2260MB, model gate)
+1794136026.127 [admission] request cost: model="gate" ctx=4041 path=plain = 29696 B/token x ctx + 1905MB prefill-workspace + 313MB fixed = 2338MB
+1794136026.128 [prefix-cache] hit: 2720 of 3976 prompt tokens from cache (model gate)
+1794136026.128 [spec-k] model="gate" tenant="" K=0 source=concurrency prompt=3976 cached=2720 lcp=2720 active=2 wave=4 placement=single-or-non-pp2
+1794136026.129 [prefix-cache] source lease released after restore fence (entry 2720 tokens, model gate)
+1794136026.129 [admission] fixed residual high-water: model="gate" 315MB (observed 434MB at ctx 3985 path=plain)
+1794136026.132 [admission] request cost: model="gate" ctx=2332 path=plain = 29696 B/token x ctx + 1086MB prefill-workspace + 315MB fixed = 1471MB
+1794136026.133 [spec-k] model="gate" tenant="" K=0 source=concurrency prompt=2267 cached=0 lcp=282 active=3 wave=4 placement=single-or-non-pp2
+1794136026.147 [admission] request cost: model="gate" ctx=14770 path=plain = 29696 B/token x ctx + 2180MB prefill-workspace + 315MB fixed = 2934MB
+1794136026.149 [spec-k] model="gate" tenant="" K=0 source=concurrency prompt=14705 cached=0 lcp=282 active=4 wave=4 placement=single-or-non-pp2
+1794136026.149 [admission] fixed residual high-water: model="gate" 335MB (observed 772MB at ctx 14714 path=plain)
+1794136027.264 [prefix-cache] insert (lcp-split): 256 tokens, 164.5MB (resident 402.2MB / 2260MB, model gate)
+1794136027.704 [prefix-cache] insert (seed): 3936 tokens, 273.8MB (resident 675.9MB / 2260MB, model gate)
+1794136029.296 [meter] admit id=chatcmpl-b99ce86c43458562ce8224f782ef3275 tenant=default lane=interactive model="gate"
+1794136029.300 [admission] request cost: model="gate" ctx=3002 path=plain = 29696 B/token x ctx + 1408MB prefill-workspace + 335MB fixed = 1832MB
+1794136029.300 [worker] plain-affinity: declined (history diverged at 282 of checkpoint 2720; 1 parked, 2937 prompt tokens; model gate)
+1794136029.300 [prefix-cache] hit: 256 of 2937 prompt tokens from cache (model gate)
+1794136029.300 [spec-k] model="gate" tenant="" K=0 source=concurrency prompt=2937 cached=256 lcp=282 active=4 wave=4 placement=single-or-non-pp2
+1794136029.301 [prefix-cache] source lease released after restore fence (entry 256 tokens, model gate)
+1794136030.203 [prefix-cache] insert (seed): 2240 tokens, 223.4MB (resident 899.4MB / 2260MB, model gate)
+1794136033.720 [meter] admit id=chatcmpl-1dd52c784e6268f43984d1ae9d08261a tenant=default lane=interactive model="gate"
+1794136033.766 [admission] request cost: model="gate" ctx=13281 path=plain = 29696 B/token x ctx + 2150MB prefill-workspace + 335MB fixed = 2879MB
+1794136033.766 [admit-oom] reclaim spared the prompt's prefix entry (256 tokens, model gate)
+1794136033.770 [admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=734855168 pool_cached_gain_bytes=734855168 trim_released_bytes=704643072 driver_free_bytes 3340894208 -> 4045537280 pool_reserved_bytes 21541945344 -> 20837302272 pool_used_bytes 21051898980 -> 20317043812 pool_retained_bytes=30212096 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+1794136033.770 [admit-oom] reclaim-on-defer: evicted 3 prefix entries + 1 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 3831MB -> 5119MB
+1794136033.770 [worker] plain-affinity: declined (history diverged at 282 of checkpoint 3936; 1 parked, 13216 prompt tokens; model gate)
+1794136033.771 [prefix-cache] hit: 256 of 13216 prompt tokens from cache (model gate)
+1794136033.771 [spec-k] model="gate" tenant="" K=0 source=concurrency prompt=13216 cached=256 lcp=256 active=4 wave=4 placement=single-or-non-pp2
+1794136033.772 [prefix-cache] source lease released after restore fence (entry 256 tokens, model gate)
+1794136035.172 [prefix-cache] insert (seed): 2912 tokens, 243.4MB (resident 407.9MB / 2260MB, model gate)
+1794136036.042 [meter] admit id=chatcmpl-1ff29459c9da48e24d5429fb33449c42 tenant=default lane=interactive model="gate"
+1794136036.045 [admission] request cost: model="gate" ctx=2468 path=plain = 29696 B/token x ctx + 1152MB prefill-workspace + 335MB fixed = 1560MB
+1794136036.045 [worker] plain-affinity: declined (history diverged at 282 of checkpoint 3936; 2 parked, 2403 prompt tokens; model gate)
+1794136036.046 [prefix-cache] hit: 256 of 2403 prompt tokens from cache (model gate)
+1794136036.046 [spec-k] model="gate" tenant="" K=0 source=concurrency prompt=2403 cached=256 lcp=282 active=4 wave=4 placement=single-or-non-pp2
+1794136036.046 [prefix-cache] source lease released after restore fence (entry 256 tokens, model gate)
+1794136041.557 [meter] admit id=chatcmpl-b71fcaea26663f7a89bf2de68dab6224 tenant=default lane=interactive model="gate"
+1794136041.562 [admission] request cost: model="gate" ctx=3062 path=plain = 29696 B/token x ctx + 1436MB prefill-workspace + 335MB fixed = 1862MB
+1794136041.564 [worker] plain-affinity: declined (history diverged at 282 of checkpoint 2240; 2 parked, 2997 prompt tokens; model gate)
+1794136041.565 [prefix-cache] hit: 256 of 2997 prompt tokens from cache (model gate)
+1794136041.565 [spec-k] model="gate" tenant="" K=0 source=concurrency prompt=2997 cached=256 lcp=282 active=4 wave=4 placement=single-or-non-pp2
+1794136041.565 [prefix-cache] source lease released after restore fence (entry 256 tokens, model gate)
+1794136043.556 [prefix-cache] insert (seed): 2368 tokens, 227.2MB (resident 635.1MB / 2260MB, model gate)
+1794136050.059 [prefix-cache] insert (seed): 2976 tokens, 245.3MB (resident 880.3MB / 2260MB, model gate)
+1794136050.061 [meter] admit id=chatcmpl-55d8afb366aa5d6eb249f082fffc4ae5 tenant=default lane=interactive model="gate"
+1794136050.079 [admission] request cost: model="gate" ctx=17166 path=plain = 29696 B/token x ctx + 2229MB prefill-workspace + 335MB fixed = 3074MB
+1794136050.079 [admit-oom] reclaim spared the prompt's prefix entry (256 tokens, model gate)
+1794136050.083 [admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=715849728 pool_cached_gain_bytes=715849728 trim_released_bytes=704643072 driver_free_bytes 2837577728 -> 3542220800 pool_reserved_bytes 22045261824 -> 21340618752 pool_used_bytes 21357229732 -> 20641380004 pool_retained_bytes=11206656 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+1794136050.083 [admit-oom] reclaim-on-defer: evicted 3 prefix entries + 2 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 3526MB -> 5342MB
+1794136050.084 [prefix-cache] hit: 256 of 17101 prompt tokens from cache (model gate)
+1794136050.084 [spec-k] model="gate" tenant="" K=0 source=concurrency prompt=17101 cached=256 lcp=256 active=4 wave=4 placement=single-or-non-pp2
+1794136050.085 [prefix-cache] source lease released after restore fence (entry 256 tokens, model gate)
+1794136050.085 [admission] fixed residual high-water: model="gate" 340MB (observed 848MB at ctx 17110 path=plain)
+1794136056.092 [meter] admit id=chatcmpl-0cd04e7642a3508f6de00bb02d4ca6d1 tenant=default lane=interactive model="gate"
+1794136056.096 [admission] request cost: model="gate" ctx=2165 path=plain = 29696 B/token x ctx + 1006MB prefill-workspace + 340MB fixed = 1410MB
+1794136056.096 [worker] plain-affinity: declined (history diverged at 282 of checkpoint 2976; 1 parked, 2100 prompt tokens; model gate)
+1794136056.097 [prefix-cache] hit: 256 of 2100 prompt tokens from cache (model gate)
+1794136056.097 [spec-k] model="gate" tenant="" K=0 source=concurrency prompt=2100 cached=256 lcp=256 active=4 wave=4 placement=single-or-non-pp2
+1794136056.097 [prefix-cache] source lease released after restore fence (entry 256 tokens, model gate)
+1794136063.853 [prefix-cache] insert (seed): 2080 tokens, 218.7MB (resident 383.2MB / 2260MB, model gate)
+1794136067.256 [prefix-cache] insert (seed): 14688 tokens, 593.1MB (resident 976.2MB / 2260MB, model gate)
+1794136069.271 [meter] admit id=chatcmpl-39030dcb432d2b51276528aab6db17d6 tenant=default lane=interactive model="gate"
+1794136069.277 [admission] request cost: model="gate" ctx=4907 path=plain = 29696 B/token x ctx + 1978MB prefill-workspace + 340MB fixed = 2464MB
+1794136069.277 [admit-oom] reclaim spared the prompt's prefix entry (2080 tokens, model gate)
+1794136069.280 [admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=757563392 pool_cached_gain_bytes=757563392 trim_released_bytes=738197504 driver_free_bytes 2434924544 -> 3173122048 pool_reserved_bytes 22447915008 -> 21709717504 pool_used_bytes 21911815908 -> 21154252516 pool_retained_bytes=19365888 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+1794136069.281 [admit-oom] reclaim-on-defer: evicted 2 prefix entries + 2 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 2971MB -> 4822MB
+1794136069.282 [prefix-cache] hit: 2080 of 4842 prompt tokens from cache (model gate)
+1794136069.282 [spec-k] model="gate" tenant="" K=0 source=concurrency prompt=4842 cached=2080 lcp=2080 active=4 wave=4 placement=single-or-non-pp2
+1794136069.282 [prefix-cache] source lease released after restore fence (entry 2080 tokens, model gate)
+1794136072.189 [prefix-cache] insert (seed): 13216 tokens, 549.4MB (resident 768.0MB / 2260MB, model gate)
+1794136074.208 [meter] admit id=chatcmpl-06b9544bdc3805249f6834ffe8f42734 tenant=default lane=interactive model="gate"
+1794136074.251 [admission] request cost: model="gate" ctx=10793 path=plain = 29696 B/token x ctx + 2099MB prefill-workspace + 340MB fixed = 2759MB
+1794136074.254 [admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=768016384 pool_cached_gain_bytes=768016384 trim_released_bytes=738197504 driver_free_bytes 2971795456 -> 3709992960 pool_reserved_bytes 21911044096 -> 21172846592 pool_used_bytes 21230566288 -> 20462549904 pool_retained_bytes=29818880 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+1794136074.254 [admit-oom] reclaim-on-defer: evicted 2 prefix entries + 1 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 3652MB -> 5350MB
+1794136074.255 [spec-k] model="gate" tenant="" K=0 source=concurrency prompt=10728 cached=0 lcp=0 active=4 wave=4 placement=single-or-non-pp2
+1794136075.943 [prefix-cache] insert (seed): 4800 tokens, 299.4MB (resident 299.4MB / 2260MB, model gate)
+1794136076.853 [meter] admit id=chatcmpl-6a0a89845c7dc53ff365a8d12bf59060 tenant=default lane=interactive model="gate"
+1794136076.859 [admission] request cost: model="gate" ctx=5009 path=plain = 29696 B/token x ctx + 1980MB prefill-workspace + 340MB fixed = 2469MB
+1794136076.860 [admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=299433984 pool_cached_gain_bytes=299433984 trim_released_bytes=268435456 driver_free_bytes 3508666368 -> 3777101824 pool_reserved_bytes 21374173184 -> 21105737728 pool_used_bytes 20635508304 -> 20336074320 pool_retained_bytes=30998528 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+1794136076.860 [admit-oom] reclaim-on-defer: evicted 1 prefix entries + 0 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 4247MB -> 4547MB
+1794136076.861 [worker] plain-affinity: declined (history diverged at 282 of checkpoint 13184; 1 parked, 4944 prompt tokens; model gate)
+1794136076.861 [spec-k] model="gate" tenant="" K=0 source=concurrency prompt=4944 cached=0 lcp=0 active=4 wave=4 placement=single-or-non-pp2
+1794136083.036 [meter] admit id=chatcmpl-a4c47bd7b3b4b1467fef396a7ed4d2bc tenant=default lane=interactive model="gate"
+1794136083.048 [admission] request cost: model="gate" ctx=8118 path=plain = 29696 B/token x ctx + 2044MB prefill-workspace + 340MB fixed = 2625MB
+1794136083.048 [admit-oom] reclaim-on-defer: evicted 0 prefix entries + 1 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 4082MB -> 4965MB
+1794136083.048 [worker] plain-affinity: declined (history diverged at 324 of checkpoint 4800; 1 parked, 8053 prompt tokens; model gate)
+1794136083.048 [spec-k] model="gate" tenant="" K=0 source=concurrency prompt=8053 cached=0 lcp=0 active=4 wave=4 placement=single-or-non-pp2
+1794136094.140 [prefix-cache] insert (seed): 4928 tokens, 303.2MB (resident 303.2MB / 2260MB, model gate)
+1794136101.673 [meter] admit id=chatcmpl-382f9573f3c8885efe71743c66c5469e tenant=default lane=interactive model="gate"
+1794136101.692 [admission] request cost: model="gate" ctx=12392 path=plain = 29696 B/token x ctx + 2132MB prefill-workspace + 340MB fixed = 2839MB
+1794136101.694 [admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=303235072 pool_cached_gain_bytes=303235072 trim_released_bytes=301989888 driver_free_bytes 3173122048 -> 3475111936 pool_reserved_bytes 21709717504 -> 21407727616 pool_used_bytes 20949490980 -> 20646255908 pool_retained_bytes=1245184 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+1794136101.694 [admit-oom] reclaim-on-defer: evicted 1 prefix entries + 1 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 3933MB -> 4855MB
+1794136101.694 [worker] plain-affinity: declined (history diverged at 282 of checkpoint 4928; 1 parked, 12327 prompt tokens; model gate)
+1794136101.695 [spec-k] model="gate" tenant="" K=0 source=concurrency prompt=12327 cached=0 lcp=0 active=4 wave=4 placement=single-or-non-pp2
+1794136102.278 [prefix-cache] insert (seed): 17056 tokens, 663.4MB (resident 663.4MB / 2260MB, model gate)
+1794136109.589 [prefix-cache] insert (seed): 10688 tokens, 474.3MB (resident 1137.7MB / 2260MB, model gate)
+1794136110.570 [prefix-cache] insert (seed): 8032 tokens, 395.4MB (resident 1533.1MB / 2260MB, model gate)
+1794136111.616 [meter] admit id=chatcmpl-fb724d40512000ff42b8b908bb90120d tenant=default lane=interactive model="gate"
+1794136111.631 [admission] request cost: model="gate" ctx=13297 path=plain = 29696 B/token x ctx + 2150MB prefill-workspace + 340MB fixed = 2885MB
+1794136111.638 [admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=1533083648 pool_cached_gain_bytes=1533083648 trim_released_bytes=1509949440 driver_free_bytes 1562509312 -> 3072458752 pool_reserved_bytes 23320330240 -> 21810380800 pool_used_bytes 22731180900 -> 21198097252 pool_retained_bytes=23134208 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+1794136111.638 [admit-oom] reclaim-on-defer: evicted 3 prefix entries + 2 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 2152MB -> 5312MB
+1794136111.639 [spec-k] model="gate" tenant="" K=0 source=concurrency prompt=13232 cached=0 lcp=0 active=4 wave=4 placement=single-or-non-pp2
+1794136111.840 [prime-batch] B=2 tokens=61 carried=2 partial=0 in 201.1ms
+1794136116.047 [meter] admit id=chatcmpl-ab501297e2726f238b91cabdbe10bf7c tenant=default lane=interactive model="gate"
+1794136116.055 [meter] admit id=chatcmpl-8ed06e01658a0a312551c1e25ceb7569 tenant=default lane=interactive model="gate"
+1794136116.055 [admission] request cost: model="gate" ctx=5297 path=plain = 29696 B/token x ctx + 1986MB prefill-workspace + 340MB fixed = 2483MB
+1794136116.055 [worker] plain-affinity: declined (history diverged at 282 of checkpoint 8032; 2 parked, 5232 prompt tokens; model gate)
+1794136116.056 [spec-k] model="gate" tenant="" K=0 source=concurrency prompt=5232 cached=0 lcp=0 active=3 wave=4 placement=single-or-non-pp2
+1794136119.196 [admission] request cost: model="gate" ctx=2898 path=plain = 29696 B/token x ctx + 1358MB prefill-workspace + 340MB fixed = 1783MB
+1794136119.196 [worker] plain-affinity: declined (history diverged at 282 of checkpoint 8032; 2 parked, 2833 prompt tokens; model gate)
+1794136119.197 [spec-k] model="gate" tenant="" K=0 source=concurrency prompt=2833 cached=0 lcp=0 active=4 wave=4 placement=single-or-non-pp2
+1794136131.693 [prefix-cache] insert (seed): 2816 tokens, 240.5MB (resident 240.5MB / 2260MB, model gate)
+1794136137.597 [prefix-cache] insert (seed): 5216 tokens, 311.8MB (resident 552.3MB / 2260MB, model gate)
+1794136137.599 [meter] admit id=chatcmpl-a199966fd0febc6f56ee70e239a8edb2 tenant=default lane=interactive model="gate"
+1794136137.604 [admission] request cost: model="gate" ctx=1669 path=plain = 29696 B/token x ctx + 769MB prefill-workspace + 340MB fixed = 1158MB
+1794136137.604 [worker] plain-affinity: declined (history diverged at 284 of checkpoint 10688; 2 parked, 1604 prompt tokens; model gate)
+1794136137.605 [spec-k] model="gate" tenant="" K=0 source=concurrency prompt=1604 cached=0 lcp=282 active=4 wave=4 placement=single-or-non-pp2
+1794136138.755 [prefix-cache] insert (seed): 12288 tokens, 521.8MB (resident 1074.1MB / 2260MB, model gate)
+1794136140.294 [prefix-cache] insert (lcp-split): 256 tokens, 164.5MB (resident 1238.6MB / 2260MB, model gate)
+1794136142.651 [meter] admit id=chatcmpl-daad7b30eeb198f72d47afa4ce063a8e tenant=default lane=interactive model="gate"
+1794136142.693 [admission] request cost: model="gate" ctx=5791 path=plain = 29696 B/token x ctx + 1996MB prefill-workspace + 340MB fixed = 2508MB
+1794136142.693 [admit-oom] reclaim spared the prompt's prefix entry (256 tokens, model gate)
+1794136142.698 [admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=1074102272 pool_cached_gain_bytes=1074102272 trim_released_bytes=1073741824 driver_free_bytes 1864499200 -> 2938241024 pool_reserved_bytes 23018340352 -> 21944598528 pool_used_bytes 21715225380 -> 20641123108 pool_retained_bytes=360448 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+1794136142.698 [admit-oom] reclaim-on-defer: evicted 3 prefix entries + 1 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 3168MB -> 4797MB
+1794136142.698 [worker] plain-affinity: declined (history diverged at 282 of checkpoint 5216; 1 parked, 5726 prompt tokens; model gate)
+1794136142.699 [prefix-cache] hit: 256 of 5726 prompt tokens from cache (model gate)
+1794136142.699 [spec-k] model="gate" tenant="" K=0 source=concurrency prompt=5726 cached=256 lcp=256 active=4 wave=4 placement=single-or-non-pp2
+1794136142.700 [prefix-cache] source lease released after restore fence (entry 256 tokens, model gate)
+1794136144.164 [prefix-cache] insert (seed): 1568 tokens, 203.5MB (resident 368.0MB / 2260MB, model gate)
+1794136145.157 [meter] admit id=chatcmpl-7f5b4096ff734cff1436c94abb1c3333 tenant=default lane=interactive model="gate"
+1794136145.162 [admission] request cost: model="gate" ctx=3578 path=plain = 29696 B/token x ctx + 1684MB prefill-workspace + 340MB fixed = 2129MB
+1794136145.162 [admit-oom] reclaim spared the prompt's prefix entry (256 tokens, model gate)
+1794136145.163 [admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=203456512 pool_cached_gain_bytes=203456512 trim_released_bytes=201326592 driver_free_bytes 2938241024 -> 3139567616 pool_reserved_bytes 21944598528 -> 21743271936 pool_used_bytes 20934866276 -> 20731409764 pool_retained_bytes=2129920 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+1794136145.164 [admit-oom] reclaim-on-defer: evicted 1 prefix entries + 0 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 3948MB -> 4151MB
+1794136145.164 [worker] plain-affinity: declined (history diverged at 282 of checkpoint 5216; 2 parked, 3513 prompt tokens; model gate)
+1794136145.164 [prefix-cache] hit: 256 of 3513 prompt tokens from cache (model gate)
+1794136145.164 [spec-k] model="gate" tenant="" K=0 source=concurrency prompt=3513 cached=256 lcp=256 active=4 wave=4 placement=single-or-non-pp2
+1794136145.165 [prefix-cache] source lease released after restore fence (entry 256 tokens, model gate)
+1794136149.727 [prefix-cache] insert (seed): 13216 tokens, 549.4MB (resident 713.9MB / 2260MB, model gate)
+1794136151.834 [meter] admit id=chatcmpl-cffc5c3d56c904efc8512ee23753d81b tenant=default lane=interactive model="gate"
+1794136151.839 [admission] request cost: model="gate" ctx=3970 path=plain = 29696 B/token x ctx + 1871MB prefill-workspace + 340MB fixed = 2329MB
+1794136151.840 [admit-oom] reclaim spared the prompt's prefix entry (256 tokens, model gate)
+1794136151.842 [admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=549355520 pool_cached_gain_bytes=549355520 trim_released_bytes=536870912 driver_free_bytes 2434924544 -> 2971795456 pool_reserved_bytes 22447915008 -> 21911044096 pool_used_bytes 21226527396 -> 20677171876 pool_retained_bytes=12484608 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+1794136151.842 [admit-oom] reclaim-on-defer: evicted 1 prefix entries + 1 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 3656MB -> 5061MB
+1794136151.842 [worker] plain-affinity: declined (history diverged at 282 of checkpoint 1568; 1 parked, 3905 prompt tokens; model gate)
+1794136151.843 [prefix-cache] hit: 256 of 3905 prompt tokens from cache (model gate)
+1794136151.843 [spec-k] model="gate" tenant="" K=0 source=concurrency prompt=3905 cached=256 lcp=256 active=4 wave=4 placement=single-or-non-pp2
+1794136151.844 [prefix-cache] source lease released after restore fence (entry 256 tokens, model gate)
+1794136156.258 [prefix-cache] insert (seed): 3488 tokens, 260.5MB (resident 425.0MB / 2260MB, model gate)
+1794136157.257 [meter] admit id=chatcmpl-89ff76bfba0bbabc4062801f551b0104 tenant=default lane=interactive model="gate"
+1794136157.277 [admission] request cost: model="gate" ctx=16708 path=plain = 29696 B/token x ctx + 2220MB prefill-workspace + 340MB fixed = 3056MB
+1794136157.277 [admit-oom] reclaim spared the prompt's prefix entry (256 tokens, model gate)
+1794136157.279 [admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=260472832 pool_cached_gain_bytes=260472832 trim_released_bytes=234881024 driver_free_bytes 2971795456 -> 3206676480 pool_reserved_bytes 21911044096 -> 21676163072 pool_used_bytes 20671913764 -> 20411440932 pool_retained_bytes=25591808 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+1794136157.280 [admit-oom] reclaim-on-defer: evicted 1 prefix entries + 2 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 4211MB -> 5872MB
+1794136157.281 [prefix-cache] hit: 256 of 16643 prompt tokens from cache (model gate)
+1794136157.281 [spec-k] model="gate" tenant="" K=0 source=concurrency prompt=16643 cached=256 lcp=256 active=4 wave=4 placement=single-or-non-pp2
+1794136157.282 [prefix-cache] source lease released after restore fence (entry 256 tokens, model gate)
+1794136157.673 [prefix-cache] insert (seed): 5696 tokens, 326.0MB (resident 490.5MB / 2260MB, model gate)
+1794136160.473 [prefix-cache] insert (seed): 3872 tokens, 271.9MB (resident 762.4MB / 2260MB, model gate)
+1794136161.513 [meter] admit id=chatcmpl-ac461e22d6e66fc3f3afee9212399901 tenant=default lane=interactive model="gate"
+1794136161.549 [admission] request cost: model="gate" ctx=3665 path=plain = 29696 B/token x ctx + 1725MB prefill-workspace + 340MB fixed = 2174MB
+1794136161.553 [admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=762413056 pool_cached_gain_bytes=762413056 trim_released_bytes=738197504 driver_free_bytes 3206676480 -> 3944873984 pool_reserved_bytes 21676163072 -> 20937965568 pool_used_bytes 20758200656 -> 19995787600 pool_retained_bytes=24215552 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+1794136161.553 [admit-oom] reclaim-on-defer: evicted 3 prefix entries + 0 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 4125MB -> 4887MB
+1794136161.553 [worker] plain-affinity: declined (history diverged at 97 of checkpoint 3488; 1 parked, 3600 prompt tokens; model gate)
+1794136161.553 [spec-k] model="gate" tenant="" K=0 source=concurrency prompt=3600 cached=0 lcp=0 active=4 wave=4 placement=single-or-non-pp2
+1794136163.734 [meter] admit id=chatcmpl-56c3dacaeebc94a6ed4daa774abd8332 tenant=default lane=interactive model="gate"
+1794136163.773 [admission] request cost: model="gate" ctx=7456 path=plain = 29696 B/token x ctx + 2030MB prefill-workspace + 340MB fixed = 2591MB
+1794136163.774 [admit-oom] reclaim-on-defer: evicted 0 prefix entries + 1 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 4464MB -> 5041MB
+1794136163.774 [worker] plain-affinity: declined (history diverged at 97 of checkpoint 5696; 1 parked, 7391 prompt tokens; model gate)
+1794136163.775 [spec-k] model="gate" tenant="" K=0 source=concurrency prompt=7391 cached=0 lcp=0 active=4 wave=4 placement=single-or-non-pp2
+1794136166.626 [meter] admit id=chatcmpl-d378d4e1d74d985f3d0137d80e9840a3 tenant=default lane=interactive model="gate"
+1794136166.630 [admission] request cost: model="gate" ctx=2432 path=plain = 29696 B/token x ctx + 1134MB prefill-workspace + 340MB fixed = 1546MB
+1794136166.630 [worker] plain-affinity: declined (history diverged at 97 of checkpoint 5696; 2 parked, 2367 prompt tokens; model gate)
+1794136166.631 [spec-k] model="gate" tenant="" K=0 source=concurrency prompt=2367 cached=0 lcp=0 active=4 wave=4 placement=single-or-non-pp2
+1794136171.907 [prefix-cache] insert (seed): 3584 tokens, 263.3MB (resident 263.3MB / 2260MB, model gate)
+1794136176.292 [prefix-cache] insert (seed): 2336 tokens, 226.3MB (resident 489.6MB / 2260MB, model gate)
+1794136178.470 [meter] admit id=chatcmpl-9e8a1636b6a71bf4b451430d64e0b10c tenant=default lane=interactive model="gate"
+1794136178.500 [admission] request cost: model="gate" ctx=2697 path=plain = 29696 B/token x ctx + 1261MB prefill-workspace + 340MB fixed = 1681MB
+1794136178.500 [worker] plain-affinity: declined (history diverged at 97 of checkpoint 3872; 2 parked, 2632 prompt tokens; model gate)
+1794136178.501 [prefix-cache] hit: 2336 of 2632 prompt tokens from cache (model gate)
+1794136178.501 [spec-k] model="gate" tenant="" K=0 source=concurrency prompt=2632 cached=2336 lcp=2336 active=4 wave=4 placement=single-or-non-pp2
+1794136178.501 [prefix-cache] source lease released after restore fence (entry 2336 tokens, model gate)
+1794136180.709 [prefix-cache] insert (seed): 2592 tokens, 233.9MB (resident 723.5MB / 2260MB, model gate)
+1794136180.711 [meter] admit id=chatcmpl-c684f2c6c760e5de1109fe8b6b95f125 tenant=default lane=interactive model="gate"
+1794136180.716 [admission] request cost: model="gate" ctx=4377 path=plain = 29696 B/token x ctx + 1967MB prefill-workspace + 340MB fixed = 2437MB
+1794136180.720 [admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=723451904 pool_cached_gain_bytes=723451904 trim_released_bytes=704643072 driver_free_bytes 2804023296 -> 3508666368 pool_reserved_bytes 22078816256 -> 21374173184 pool_used_bytes 21117208932 -> 20393757028 pool_retained_bytes=18808832 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+1794136180.720 [admit-oom] reclaim-on-defer: evicted 3 prefix entries + 0 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 3766MB -> 4489MB
+1794136180.720 [worker] plain-affinity: declined (history diverged at 424 of checkpoint 3584; 2 parked, 4312 prompt tokens; model gate)
+1794136180.721 [spec-k] model="gate" tenant="" K=0 source=concurrency prompt=4312 cached=0 lcp=0 active=4 wave=4 placement=single-or-non-pp2
+1794136185.113 [prefix-cache] insert (seed): 7360 tokens, 375.5MB (resident 375.5MB / 2260MB, model gate)
+1794136186.102 [meter] admit id=chatcmpl-60bc491c6136d0cf296822dec06577f4 tenant=default lane=interactive model="gate"
+1794136186.109 [admission] request cost: model="gate" ctx=5770 path=plain = 29696 B/token x ctx + 1996MB prefill-workspace + 340MB fixed = 2507MB
+1794136186.111 [admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=375455744 pool_cached_gain_bytes=375455744 trim_released_bytes=369098752 driver_free_bytes 2971795456 -> 3340894208 pool_reserved_bytes 21911044096 -> 21541945344 pool_used_bytes 20791677796 -> 20416222052 pool_retained_bytes=6356992 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+1794136186.111 [admit-oom] reclaim-on-defer: evicted 1 prefix entries + 1 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 4091MB -> 5007MB
+1794136186.112 [worker] plain-affinity: declined (history diverged at 138 of checkpoint 2592; 1 parked, 5705 prompt tokens; model gate)
+1794136186.112 [spec-k] model="gate" tenant="" K=0 source=concurrency prompt=5705 cached=0 lcp=0 active=4 wave=4 placement=single-or-non-pp2
+1794136193.626 [prefix-cache] insert (seed): 4288 tokens, 284.2MB (resident 284.2MB / 2260MB, model gate)
+1794136197.922 [prefix-cache] insert (seed): 16608 tokens, 650.1MB (resident 934.3MB / 2260MB, model gate)
+1794136199.693 [prefix-cache] insert (seed): 5664 tokens, 325.1MB (resident 1259.4MB / 2260MB, model gate)
+1794136199.907 [meter] admit id=chatcmpl-a8bd7757f8234cce561809c18de7c35c tenant=default lane=interactive model="gate"
+1794136199.908 [meter] admit id=chatcmpl-8777e46344fa09ac5882abbd69b9ad11 tenant=default lane=interactive model="gate"
+1794136199.908 [meter] admit id=chatcmpl-3b88b419bed7a43c854659259e791693 tenant=default lane=interactive model="gate"
+1794136199.908 [meter] admit id=chatcmpl-fb35171befcc7b4cad6ce898256eb696 tenant=default lane=interactive model="gate"
+1794136199.911 [admission] request cost: model="gate" ctx=3592 path=plain = 29696 B/token x ctx + 1323MB prefill-workspace + 340MB fixed = 1769MB
+1794136199.911 [worker] plain-affinity: declined (history diverged at 282 of checkpoint 16608; 2 parked, 2760 prompt tokens; model gate)
+1794136199.911 [spec-k] model="gate" tenant="" K=0 source=concurrency prompt=2760 cached=0 lcp=282 active=1 wave=4 placement=single-or-non-pp2
+1794136200.154 [prefix-cache] insert (lcp-split): 256 tokens, 164.5MB (resident 1423.9MB / 2260MB, model gate)
+1794136200.159 [admission] request cost: model="gate" ctx=4808 path=plain = 29696 B/token x ctx + 1905MB prefill-workspace + 340MB fixed = 2388MB
+1794136200.159 [admit-oom] reclaim spared the prompt's prefix entry (256 tokens, model gate)
+1794136200.164 [admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=1259405312 pool_cached_gain_bytes=1259405312 trim_released_bytes=1241513984 driver_free_bytes 2636251136 -> 3877765120 pool_reserved_bytes 22246588416 -> 21005074432 pool_used_bytes 20831191228 -> 19571785916 pool_retained_bytes=17891328 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+1794136200.164 [admit-oom] reclaim-on-defer: evicted 3 prefix entries + 0 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 4052MB -> 5311MB
+1794136200.164 [worker] plain-affinity: declined (history diverged at 282 of checkpoint 16608; 2 parked, 3976 prompt tokens; model gate)
+1794136200.165 [prefix-cache] hit: 256 of 3976 prompt tokens from cache (model gate)
+1794136200.165 [spec-k] model="gate" tenant="" K=0 source=concurrency prompt=3976 cached=256 lcp=256 active=2 wave=4 placement=single-or-non-pp2
+1794136200.165 [prefix-cache] source lease released after restore fence (entry 256 tokens, model gate)
+1794136200.169 [admission] request cost: model="gate" ctx=3099 path=plain = 29696 B/token x ctx + 1086MB prefill-workspace + 340MB fixed = 1518MB
+1794136200.169 [worker] plain-affinity: declined (history diverged at 282 of checkpoint 16608; 2 parked, 2267 prompt tokens; model gate)
+1794136200.170 [prefix-cache] hit: 256 of 2267 prompt tokens from cache (model gate)
+1794136200.170 [spec-k] model="gate" tenant="" K=0 source=concurrency prompt=2267 cached=256 lcp=256 active=3 wave=4 placement=single-or-non-pp2
+1794136200.170 [prefix-cache] source lease released after restore fence (entry 256 tokens, model gate)
+1794136200.186 [admission] request cost: model="gate" ctx=15537 path=plain = 29696 B/token x ctx + 2180MB prefill-workspace + 340MB fixed = 2981MB
+1794136200.186 [admit-oom] reclaim spared the prompt's prefix entry (256 tokens, model gate)
+1794136200.187 [admit-oom] reclaim-on-defer: evicted 0 prefix entries + 1 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 4449MB -> 5441MB
+1794136200.187 [worker] plain-affinity: declined (history diverged at 97 of checkpoint 5664; 1 parked, 14705 prompt tokens; model gate)
+1794136200.188 [prefix-cache] hit: 256 of 14705 prompt tokens from cache (model gate)
+1794136200.188 [spec-k] model="gate" tenant="" K=0 source=concurrency prompt=14705 cached=256 lcp=256 active=4 wave=4 placement=single-or-non-pp2
+1794136200.189 [prefix-cache] source lease released after restore fence (entry 256 tokens, model gate)
+1794136206.736 [prefix-cache] insert (seed): 2240 tokens, 223.4MB (resident 387.9MB / 2260MB, model gate)
+1794136208.148 [prefix-cache] insert (seed): 2720 tokens, 237.7MB (resident 625.6MB / 2260MB, model gate)
+1794136210.951 [prefix-cache] insert (seed): 3936 tokens, 273.8MB (resident 899.4MB / 2260MB, model gate)
+1794136222.643 [prefix-cache] insert (seed): 14688 tokens, 593.1MB (resident 1492.4MB / 2260MB, model gate)
+1794136222.836 [fa-pool] grow #5 dev=0 o_len 3244032 -> 6488064 ml_len 12672 -> 25344 (retired kept, zero=false)
+1794136226.609 [meter] admit id=chatcmpl-998bc6d54a0df2db9e0f80c8d3d4f2ae tenant=default lane=interactive model="gate"
+1794136226.642 [admission] request cost: model="gate" ctx=3769 path=plain = 29696 B/token x ctx + 1408MB prefill-workspace + 340MB fixed = 1859MB
+1794136226.642 [admit-oom] reclaim spared the prompt's prefix entry (2240 tokens, model gate)
+1794136226.646 [admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=1269006336 pool_cached_gain_bytes=1269006336 trim_released_bytes=905969664 driver_free_bytes 2602696704 -> 3508666368 pool_reserved_bytes 22280142848 -> 21374173184 pool_used_bytes 22224300900 -> 20955294564 pool_retained_bytes=363036672 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+1794136226.646 [admit-oom] reclaim-on-defer: evicted 4 prefix entries + 0 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 2659MB -> 3928MB
+1794136226.646 [worker] plain-affinity: declined (history diverged at 97 of checkpoint 5664; 2 parked, 2937 prompt tokens; model gate)
+1794136226.647 [prefix-cache] hit: 2240 of 2937 prompt tokens from cache (model gate)
+1794136226.647 [spec-k] model="gate" tenant="" K=0 source=concurrency prompt=2937 cached=2240 lcp=2240 active=4 wave=4 placement=single-or-non-pp2
+1794136226.648 [prefix-cache] source lease released after restore fence (entry 2240 tokens, model gate)
+1794136227.297 [prefix-cache] insert (seed): 2912 tokens, 243.4MB (resident 466.8MB / 2260MB, model gate)
+1794136228.066 [meter] admit id=chatcmpl-93408077c0f14b97b73ded7bb9ccd27b tenant=default lane=interactive model="gate"
+1794136228.111 [admission] request cost: model="gate" ctx=14048 path=plain = 29696 B/token x ctx + 2150MB prefill-workspace + 340MB fixed = 2907MB
+1794136228.113 [admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=466780160 pool_cached_gain_bytes=466780160 trim_released_bytes=436207616 driver_free_bytes 3005349888 -> 3441557504 pool_reserved_bytes 21877489664 -> 21441282048 pool_used_bytes 21135526948 -> 20668746788 pool_retained_bytes=30572544 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+1794136228.114 [admit-oom] reclaim-on-defer: evicted 2 prefix entries + 2 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 3747MB -> 5353MB
+1794136228.115 [spec-k] model="gate" tenant="" K=0 source=concurrency prompt=13216 cached=0 lcp=0 active=4 wave=4 placement=single-or-non-pp2
+1794136241.412 [prefix-cache] insert (seed): 13216 tokens, 549.4MB (resident 549.4MB / 2260MB, model gate)
+1794136245.012 [meter] admit id=chatcmpl-76dbfc54919c7bbf9ce1652ef84de6ac tenant=default lane=interactive model="gate"
+1794136245.047 [admission] request cost: model="gate" ctx=3235 path=plain = 29696 B/token x ctx + 1152MB prefill-workspace + 340MB fixed = 1587MB
+1794136245.047 [worker] plain-affinity: declined (history diverged at 282 of checkpoint 14688; 1 parked, 2403 prompt tokens; model gate)
+1794136245.048 [spec-k] model="gate" tenant="" K=0 source=concurrency prompt=2403 cached=0 lcp=282 active=4 wave=4 placement=single-or-non-pp2
+1794136245.270 [prefix-cache] insert (lcp-split): 256 tokens, 164.5MB (resident 713.9MB / 2260MB, model gate)
+1794136247.475 [prefix-cache] insert (seed): 2368 tokens, 227.2MB (resident 941.1MB / 2260MB, model gate)
+1794136248.924 [meter] admit id=chatcmpl-4a968ed53c5d9dd6fff636b99ad67fd7 tenant=default lane=interactive model="gate"
+1794136248.961 [admission] request cost: model="gate" ctx=3829 path=plain = 29696 B/token x ctx + 1436MB prefill-workspace + 340MB fixed = 1890MB
+1794136248.961 [admit-oom] reclaim spared the prompt's prefix entry (2368 tokens, model gate)
+1794136248.963 [admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=713850880 pool_cached_gain_bytes=713850880 trim_released_bytes=536870912 driver_free_bytes 2669805568 -> 3206676480 pool_reserved_bytes 22213033984 -> 21676163072 pool_used_bytes 21944009764 -> 21230158884 pool_retained_bytes=176979968 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+1794136248.964 [admit-oom] reclaim-on-defer: evicted 2 prefix entries + 1 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 2939MB -> 4607MB
+1794136248.964 [worker] plain-affinity: declined (history diverged at 282 of checkpoint 3936; 1 parked, 2997 prompt tokens; model gate)
+1794136248.964 [prefix-cache] hit: 2368 of 2997 prompt tokens from cache (model gate)
+1794136248.964 [spec-k] model="gate" tenant="" K=0 source=concurrency prompt=2997 cached=2368 lcp=2368 active=4 wave=4 placement=single-or-non-pp2
+1794136248.965 [prefix-cache] source lease released after restore fence (entry 2368 tokens, model gate)
+1794136249.543 [prefix-cache] insert (seed): 2976 tokens, 245.3MB (resident 472.5MB / 2260MB, model gate)
+1794136250.631 [meter] admit id=chatcmpl-f4b3cc1db94c70ab4ea5300859e35e11 tenant=default lane=interactive model="gate"
+1794136250.682 [admission] request cost: model="gate" ctx=17933 path=plain = 29696 B/token x ctx + 2229MB prefill-workspace + 340MB fixed = 3101MB
+1794136250.685 [admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=472481792 pool_cached_gain_bytes=472481792 trim_released_bytes=436207616 driver_free_bytes 3206676480 -> 3642884096 pool_reserved_bytes 21676163072 -> 21239955456 pool_used_bytes 21106016548 -> 20633534756 pool_retained_bytes=36274176 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+1794136250.686 [admit-oom] reclaim-on-defer: evicted 2 prefix entries + 2 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 3777MB -> 5448MB
+1794136250.686 [spec-k] model="gate" tenant="" K=0 source=concurrency prompt=17101 cached=0 lcp=0 active=4 wave=4 placement=single-or-non-pp2
+1794136250.686 [admission] fixed residual high-water: model="gate" 341MB (observed 872MB at ctx 17877 path=plain)
+1794136268.051 [prefix-cache] insert (seed): 17056 tokens, 663.4MB (resident 663.4MB / 2260MB, model gate)
+1794136274.596 [meter] admit id=chatcmpl-2c59bac74238663bc2c061af627c8b2e tenant=default lane=interactive model="gate"
+1794136274.631 [admission] request cost: model="gate" ctx=2932 path=plain = 29696 B/token x ctx + 1006MB prefill-workspace + 341MB fixed = 1435MB
+1794136274.632 [worker] plain-affinity: declined (history diverged at 282 of checkpoint 2976; 1 parked, 2100 prompt tokens; model gate)
+1794136274.633 [spec-k] model="gate" tenant="" K=0 source=concurrency prompt=2100 cached=0 lcp=282 active=4 wave=4 placement=single-or-non-pp2
+1794136274.859 [prefix-cache] insert (lcp-split): 256 tokens, 164.5MB (resident 827.9MB / 2260MB, model gate)
+1794136276.788 [prefix-cache] insert (seed): 2080 tokens, 218.7MB (resident 1046.5MB / 2260MB, model gate)
+1794136279.313 [meter] admit id=chatcmpl-a206b45ae2c336b40eff09b6f68cba57 tenant=default lane=interactive model="gate"
+1794136279.354 [admission] request cost: model="gate" ctx=5674 path=plain = 29696 B/token x ctx + 1978MB prefill-workspace + 341MB fixed = 2488MB
+1794136279.354 [admit-oom] reclaim spared the prompt's prefix entry (2080 tokens, model gate)
+1794136279.357 [admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=827883520 pool_cached_gain_bytes=827883520 trim_released_bytes=671088640 driver_free_bytes 2535587840 -> 3206676480 pool_reserved_bytes 22347251712 -> 21676163072 pool_used_bytes 22067790116 -> 21239906596 pool_retained_bytes=156794880 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+1794136279.358 [admit-oom] reclaim-on-defer: evicted 2 prefix entries + 2 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 2815MB -> 4794MB
+1794136279.359 [prefix-cache] hit: 2080 of 4842 prompt tokens from cache (model gate)
+1794136279.359 [spec-k] model="gate" tenant="" K=0 source=concurrency prompt=4842 cached=2080 lcp=2080 active=4 wave=4 placement=single-or-non-pp2
+1794136279.359 [prefix-cache] source lease released after restore fence (entry 2080 tokens, model gate)
+1794136282.423 [prefix-cache] insert (seed): 4800 tokens, 299.4MB (resident 518.1MB / 2260MB, model gate)
+1794136290.035 [meter] admit id=chatcmpl-ecf72327d7d236fbb6ed1a65a94e20c4 tenant=default lane=interactive model="gate"
+1794136290.084 [admission] request cost: model="gate" ctx=11560 path=plain = 29696 B/token x ctx + 2099MB prefill-workspace + 341MB fixed = 2783MB
+1794136290.086 [admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=518094848 pool_cached_gain_bytes=518094848 trim_released_bytes=402653184 driver_free_bytes 3206676480 -> 3609329664 pool_reserved_bytes 21676163072 -> 21273509888 pool_used_bytes 21031475280 -> 20513380432 pool_retained_bytes=115441664 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+1794136290.087 [admit-oom] reclaim-on-defer: evicted 2 prefix entries + 1 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 3851MB -> 5399MB
+1794136290.088 [spec-k] model="gate" tenant="" K=0 source=concurrency prompt=10728 cached=0 lcp=0 active=4 wave=4 placement=single-or-non-pp2
+1794136302.815 [prefix-cache] insert (seed): 10688 tokens, 474.3MB (resident 474.3MB / 2260MB, model gate)
+1794136310.467 [meter] admit id=chatcmpl-aa14c2b1e544c47e953be9a9535f3e2a tenant=default lane=interactive model="gate"
+1794136310.509 [admission] request cost: model="gate" ctx=5776 path=plain = 29696 B/token x ctx + 1980MB prefill-workspace + 341MB fixed = 2493MB
+1794136310.510 [admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=474284032 pool_cached_gain_bytes=474284032 trim_released_bytes=201326592 driver_free_bytes 3508666368 -> 3709992960 pool_reserved_bytes 21374173184 -> 21172846592 pool_used_bytes 20786583568 -> 20312299536 pool_retained_bytes=272957440 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+1794136310.510 [admit-oom] reclaim-on-defer: evicted 1 prefix entries + 0 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 4096MB -> 4571MB
+1794136310.511 [worker] plain-affinity: declined (history diverged at 282 of checkpoint 13184; 1 parked, 4944 prompt tokens; model gate)
+1794136310.511 [spec-k] model="gate" tenant="" K=0 source=concurrency prompt=4944 cached=0 lcp=0 active=4 wave=4 placement=single-or-non-pp2
+1794136316.497 [prefix-cache] insert (seed): 4928 tokens, 303.2MB (resident 303.2MB / 2260MB, model gate)
+1794136319.126 [meter] admit id=chatcmpl-fcbd1cf97fd3b35b10576a65c6199522 tenant=default lane=interactive model="gate"
+1794136319.173 [admission] request cost: model="gate" ctx=8885 path=plain = 29696 B/token x ctx + 2044MB prefill-workspace + 341MB fixed = 2649MB
+1794136319.174 [admit-oom] reclaim spared the prompt's prefix entry (4928 tokens, model gate)
+1794136319.174 [admit-oom] reclaim-on-defer: evicted 0 prefix entries + 2 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 3621MB -> 5171MB
+1794136319.175 [prefix-cache] hit: 4928 of 8053 prompt tokens from cache (model gate)
+1794136319.175 [spec-k] model="gate" tenant="" K=0 source=concurrency prompt=8053 cached=4928 lcp=4928 active=4 wave=4 placement=single-or-non-pp2
+1794136319.176 [prefix-cache] source lease released after restore fence (entry 4928 tokens, model gate)
+1794136323.357 [prefix-cache] insert (seed): 8032 tokens, 395.4MB (resident 698.6MB / 2260MB, model gate)
+1794136325.175 [meter] admit id=chatcmpl-35c93b99c950da5cfbad3fa12d2fee7e tenant=default lane=interactive model="gate"
+1794136325.228 [admission] request cost: model="gate" ctx=13159 path=plain = 29696 B/token x ctx + 2132MB prefill-workspace + 341MB fixed = 2863MB
+1794136325.231 [admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=698646528 pool_cached_gain_bytes=698646528 trim_released_bytes=603979776 driver_free_bytes 3206676480 -> 3810656256 pool_reserved_bytes 21676163072 -> 21072183296 pool_used_bytes 20851261392 -> 20152614864 pool_retained_bytes=94666752 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+1794136325.231 [admit-oom] reclaim-on-defer: evicted 2 prefix entries + 1 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 4032MB -> 5287MB
+1794136325.232 [spec-k] model="gate" tenant="" K=0 source=concurrency prompt=12327 cached=0 lcp=0 active=4 wave=4 placement=single-or-non-pp2
+1794136339.698 [prefix-cache] insert (seed): 12288 tokens, 521.8MB (resident 521.8MB / 2260MB, model gate)
+1794136345.783 [meter] admit id=chatcmpl-92feb18e6327d1121e4c5faa506037f2 tenant=default lane=interactive model="gate"
+1794136345.849 [admission] request cost: model="gate" ctx=14064 path=plain = 29696 B/token x ctx + 2150MB prefill-workspace + 341MB fixed = 2909MB
+1794136345.851 [admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=521797632 pool_cached_gain_bytes=521797632 trim_released_bytes=268435456 driver_free_bytes 3441557504 -> 3709992960 pool_reserved_bytes 21441282048 -> 21172846592 pool_used_bytes 20997094800 -> 20475297168 pool_retained_bytes=253362176 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+1794136345.851 [admit-oom] reclaim-on-defer: evicted 1 prefix entries + 1 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 3886MB -> 5236MB
+1794136345.852 [spec-k] model="gate" tenant="" K=0 source=concurrency prompt=13232 cached=0 lcp=0 active=4 wave=4 placement=single-or-non-pp2
+1794136361.561 [prefix-cache] insert (seed): 13216 tokens, 549.4MB (resident 549.4MB / 2260MB, model gate)
+1794136362.198 [meter] admit id=chatcmpl-e7b9565fda58fda8447e1bef7d26d935 tenant=default lane=interactive model="gate"
+1794136362.248 [admission] request cost: model="gate" ctx=3665 path=plain = 29696 B/token x ctx + 1358MB prefill-workspace + 341MB fixed = 1808MB
+1794136362.249 [admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=549355520 pool_cached_gain_bytes=549355520 trim_released_bytes=268435456 driver_free_bytes 3340894208 -> 3609329664 pool_reserved_bytes 21541945344 -> 21273509888 pool_used_bytes 21103658896 -> 20554303376 pool_retained_bytes=280920064 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+1794136362.249 [admit-oom] reclaim-on-defer: evicted 1 prefix entries + 0 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 3779MB -> 4329MB
+1794136362.250 [worker] plain-affinity: declined (history diverged at 282 of checkpoint 12288; 1 parked, 2833 prompt tokens; model gate)
+1794136362.251 [spec-k] model="gate" tenant="" K=0 source=concurrency prompt=2833 cached=0 lcp=0 active=4 wave=4 placement=single-or-non-pp2
+1794136365.294 [prefix-cache] insert (seed): 2816 tokens, 240.5MB (resident 240.5MB / 2260MB, model gate)
+1794136368.345 [meter] admit id=chatcmpl-6deedcff9466bcfcb204a1e0c77efcda tenant=default lane=interactive model="gate"
+1794136368.386 [admission] request cost: model="gate" ctx=6064 path=plain = 29696 B/token x ctx + 1986MB prefill-workspace + 341MB fixed = 2507MB
+1794136368.386 [admit-oom] reclaim spared the prompt's prefix entry (2816 tokens, model gate)
+1794136368.387 [admit-oom] reclaim-on-defer: evicted 0 prefix entries + 2 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 3508MB -> 5034MB
+1794136368.389 [prefix-cache] hit: 2816 of 5232 prompt tokens from cache (model gate)
+1794136368.389 [spec-k] model="gate" tenant="" K=0 source=concurrency prompt=5232 cached=2816 lcp=2816 active=4 wave=4 placement=single-or-non-pp2
+1794136368.389 [prefix-cache] source lease released after restore fence (entry 2816 tokens, model gate)
+1794136371.327 [prefix-cache] insert (seed): 5216 tokens, 311.8MB (resident 552.3MB / 2260MB, model gate)
+1794136375.039 [meter] admit id=chatcmpl-9e25b85c1395a3e3604bfbc11d335af4 tenant=default lane=interactive model="gate"
+1794136375.081 [admission] request cost: model="gate" ctx=2436 path=plain = 29696 B/token x ctx + 769MB prefill-workspace + 341MB fixed = 1182MB
+1794136375.081 [worker] plain-affinity: declined (history diverged at 284 of checkpoint 13216; 1 parked, 1604 prompt tokens; model gate)
+1794136375.082 [spec-k] model="gate" tenant="" K=0 source=concurrency prompt=1604 cached=0 lcp=282 active=4 wave=4 placement=single-or-non-pp2
+1794136375.324 [prefix-cache] insert (lcp-split): 256 tokens, 164.5MB (resident 716.8MB / 2260MB, model gate)
+1794136376.932 [prefix-cache] insert (seed): 1568 tokens, 203.5MB (resident 920.3MB / 2260MB, model gate)
+1794136382.900 [meter] admit id=chatcmpl-4b925d25b1e553f55c15b50f8cd0738d tenant=default lane=interactive model="gate"
+1794136382.943 [admission] request cost: model="gate" ctx=6558 path=plain = 29696 B/token x ctx + 1996MB prefill-workspace + 341MB fixed = 2532MB
+1794136382.943 [admit-oom] reclaim spared the prompt's prefix entry (1568 tokens, model gate)
+1794136382.946 [admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=716800000 pool_cached_gain_bytes=716800000 trim_released_bytes=503316480 driver_free_bytes 2871132160 -> 3374448640 pool_reserved_bytes 22011707392 -> 21508390912 pool_used_bytes 21724960868 -> 21008160868 pool_retained_bytes=213483520 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+1794136382.946 [admit-oom] reclaim-on-defer: evicted 3 prefix entries + 1 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 3158MB -> 4782MB
+1794136382.946 [worker] plain-affinity: declined (history diverged at 282 of checkpoint 2816; 1 parked, 5726 prompt tokens; model gate)
+1794136382.947 [prefix-cache] hit: 1568 of 5726 prompt tokens from cache (model gate)
+1794136382.947 [spec-k] model="gate" tenant="" K=0 source=concurrency prompt=5726 cached=1568 lcp=1568 active=4 wave=4 placement=single-or-non-pp2
+1794136382.948 [prefix-cache] source lease released after restore fence (entry 1568 tokens, model gate)
+1794136388.079 [prefix-cache] insert (seed): 5696 tokens, 326.0MB (resident 529.5MB / 2260MB, model gate)
+1794136393.990 [meter] admit id=chatcmpl-e72fac0f6dbd1a7e853abc46582b7508 tenant=default lane=interactive model="gate"
+1794136394.034 [admission] request cost: model="gate" ctx=4345 path=plain = 29696 B/token x ctx + 1684MB prefill-workspace + 341MB fixed = 2154MB
+1794136394.036 [admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=529498112 pool_cached_gain_bytes=529498112 trim_released_bytes=369098752 driver_free_bytes 3206676480 -> 3575775232 pool_reserved_bytes 21676163072 -> 21307064320 pool_used_bytes 21097373156 -> 20567875044 pool_retained_bytes=160399360 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+1794136394.036 [admit-oom] reclaim-on-defer: evicted 2 prefix entries + 0 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 3785MB -> 4315MB
+1794136394.036 [worker] plain-affinity: declined (history diverged at 282 of checkpoint 2816; 2 parked, 3513 prompt tokens; model gate)
+1794136394.037 [spec-k] model="gate" tenant="" K=0 source=concurrency prompt=3513 cached=0 lcp=0 active=4 wave=4 placement=single-or-non-pp2
+1794136398.285 [prefix-cache] insert (seed): 3488 tokens, 260.5MB (resident 260.5MB / 2260MB, model gate)
+1794136400.732 [meter] admit id=chatcmpl-2c4ad47cae6665c3497394831bce52aa tenant=default lane=interactive model="gate"
+1794136400.773 [admission] request cost: model="gate" ctx=4737 path=plain = 29696 B/token x ctx + 1871MB prefill-workspace + 341MB fixed = 2353MB
+1794136400.773 [admit-oom] reclaim spared the prompt's prefix entry (3488 tokens, model gate)
+1794136400.774 [admit-oom] reclaim-on-defer: evicted 0 prefix entries + 1 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 4033MB -> 4574MB
+1794136400.774 [worker] plain-affinity: declined (history diverged at 282 of checkpoint 5216; 1 parked, 3905 prompt tokens; model gate)
+1794136400.774 [prefix-cache] hit: 3488 of 3905 prompt tokens from cache (model gate)
+1794136400.775 [spec-k] model="gate" tenant="" K=0 source=concurrency prompt=3905 cached=3488 lcp=3488 active=4 wave=4 placement=single-or-non-pp2
+1794136400.775 [prefix-cache] source lease released after restore fence (entry 3488 tokens, model gate)
+1794136401.160 [prefix-cache] insert (seed): 3872 tokens, 271.9MB (resident 532.3MB / 2260MB, model gate)
+1794136403.963 [meter] admit id=chatcmpl-1353fe7032a9be288d1642ba9e686cfc tenant=default lane=interactive model="gate"
+1794136404.020 [admission] request cost: model="gate" ctx=17475 path=plain = 29696 B/token x ctx + 2220MB prefill-workspace + 341MB fixed = 3080MB
+1794136404.023 [admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=532348928 pool_cached_gain_bytes=532348928 trim_released_bytes=503316480 driver_free_bytes 3106013184 -> 3609329664 pool_reserved_bytes 21776826368 -> 21273509888 pool_used_bytes 21194280484 -> 20661931556 pool_retained_bytes=29032448 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+1794136404.024 [admit-oom] reclaim-on-defer: evicted 2 prefix entries + 2 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 3689MB -> 5621MB
+1794136404.024 [spec-k] model="gate" tenant="" K=0 source=concurrency prompt=16643 cached=0 lcp=0 active=4 wave=4 placement=single-or-non-pp2
+1794136424.509 [prefix-cache] insert (seed): 16608 tokens, 650.1MB (resident 650.1MB / 2260MB, model gate)
+1794136427.521 [meter] admit id=chatcmpl-ad91b7ad8f791e93a291b7985f22144f tenant=default lane=interactive model="gate"
+1794136427.560 [admission] request cost: model="gate" ctx=4432 path=plain = 29696 B/token x ctx + 1725MB prefill-workspace + 341MB fixed = 2198MB
+1794136427.561 [admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=650084352 pool_cached_gain_bytes=650084352 trim_released_bytes=134217728 driver_free_bytes 3475111936 -> 3609329664 pool_reserved_bytes 21407727616 -> 21273509888 pool_used_bytes 20927708240 -> 20277623888 pool_retained_bytes=515866624 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+1794136427.561 [admit-oom] reclaim-on-defer: evicted 1 prefix entries + 0 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 3955MB -> 4605MB
+1794136427.561 [worker] plain-affinity: declined (history diverged at 97 of checkpoint 5696; 1 parked, 3600 prompt tokens; model gate)
+1794136427.561 [spec-k] model="gate" tenant="" K=0 source=concurrency prompt=3600 cached=0 lcp=0 active=4 wave=4 placement=single-or-non-pp2
+1794136431.836 [prefix-cache] insert (seed): 3584 tokens, 263.3MB (resident 263.3MB / 2260MB, model gate)
+1794136432.625 [meter] admit id=chatcmpl-32fff22e1300cb119c7498bdf2bfc41e tenant=default lane=interactive model="gate"
+1794136432.670 [admission] request cost: model="gate" ctx=8223 path=plain = 29696 B/token x ctx + 2030MB prefill-workspace + 341MB fixed = 2616MB
+1794136432.670 [admit-oom] reclaim spared the prompt's prefix entry (3584 tokens, model gate)
+1794136432.671 [admit-oom] reclaim-on-defer: evicted 0 prefix entries + 2 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 3738MB -> 5010MB
+1794136432.672 [prefix-cache] hit: 3584 of 7391 prompt tokens from cache (model gate)
+1794136432.672 [spec-k] model="gate" tenant="" K=0 source=concurrency prompt=7391 cached=3584 lcp=3584 active=4 wave=4 placement=single-or-non-pp2
+1794136432.673 [prefix-cache] source lease released after restore fence (entry 3584 tokens, model gate)
+1794136437.234 [prefix-cache] insert (seed): 7360 tokens, 375.5MB (resident 638.8MB / 2260MB, model gate)
+1794136438.935 [meter] admit id=chatcmpl-2ae116c54f92ad865acb319db12f38e3 tenant=default lane=interactive model="gate"
+1794136438.974 [admission] request cost: model="gate" ctx=3199 path=plain = 29696 B/token x ctx + 1134MB prefill-workspace + 341MB fixed = 1570MB
+1794136438.974 [worker] plain-affinity: declined (history diverged at 97 of checkpoint 3872; 1 parked, 2367 prompt tokens; model gate)
+1794136438.975 [spec-k] model="gate" tenant="" K=0 source=concurrency prompt=2367 cached=0 lcp=138 active=4 wave=4 placement=single-or-non-pp2
+1794136439.119 [prefix-cache] insert (lcp-split): 128 tokens, 160.7MB (resident 799.5MB / 2260MB, model gate)
+1794136441.658 [prefix-cache] insert (seed): 2336 tokens, 226.3MB (resident 1025.7MB / 2260MB, model gate)
+1794136442.612 [meter] admit id=chatcmpl-a9e90d26228000170eaf9871e460c47d tenant=default lane=interactive model="gate"
+1794136442.651 [admission] request cost: model="gate" ctx=3464 path=plain = 29696 B/token x ctx + 1261MB prefill-workspace + 341MB fixed = 1705MB
+1794136442.651 [admit-oom] reclaim spared the prompt's prefix entry (2336 tokens, model gate)
+1794136442.653 [admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=799473664 pool_cached_gain_bytes=799473664 trim_released_bytes=402653184 driver_free_bytes 2703360000 -> 3106013184 pool_reserved_bytes 22179479552 -> 21776826368 pool_used_bytes 21923582564 -> 21124108900 pool_retained_bytes=396820480 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+1794136442.653 [admit-oom] reclaim-on-defer: evicted 3 prefix entries + 0 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 2959MB -> 3759MB
+1794136442.653 [worker] plain-affinity: declined (history diverged at 97 of checkpoint 3872; 2 parked, 2632 prompt tokens; model gate)
+1794136442.654 [prefix-cache] hit: 2336 of 2632 prompt tokens from cache (model gate)
+1794136442.654 [spec-k] model="gate" tenant="" K=0 source=concurrency prompt=2632 cached=2336 lcp=2336 active=4 wave=4 placement=single-or-non-pp2
+1794136442.655 [prefix-cache] source lease released after restore fence (entry 2336 tokens, model gate)
+1794136442.907 [prefix-cache] insert (seed): 2592 tokens, 233.9MB (resident 460.1MB / 2260MB, model gate)
+1794136448.971 [meter] admit id=chatcmpl-a22bb2241646fe475efc2af673497644 tenant=default lane=interactive model="gate"
+1794136449.014 [admission] request cost: model="gate" ctx=5144 path=plain = 29696 B/token x ctx + 1967MB prefill-workspace + 341MB fixed = 2461MB
+1794136449.017 [admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=460128256 pool_cached_gain_bytes=460128256 trim_released_bytes=436207616 driver_free_bytes 2837577728 -> 3273785344 pool_reserved_bytes 22045261824 -> 21609054208 pool_used_bytes 21317808420 -> 20857680164 pool_retained_bytes=23920640 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+1794136449.017 [admit-oom] reclaim-on-defer: evicted 2 prefix entries + 1 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 3565MB -> 5041MB
+1794136449.017 [worker] plain-affinity: declined (history diverged at 138 of checkpoint 2592; 1 parked, 4312 prompt tokens; model gate)
+1794136449.018 [spec-k] model="gate" tenant="" K=0 source=concurrency prompt=4312 cached=0 lcp=0 active=4 wave=4 placement=single-or-non-pp2
+1794136454.290 [prefix-cache] insert (seed): 4288 tokens, 284.2MB (resident 284.2MB / 2260MB, model gate)
+1794136460.500 [meter] admit id=chatcmpl-eaaf6b4d3c898850f4524efcc4a708a8 tenant=default lane=interactive model="gate"
+1794136460.557 [admission] request cost: model="gate" ctx=6537 path=plain = 29696 B/token x ctx + 1996MB prefill-workspace + 341MB fixed = 2531MB
+1794136460.557 [admit-oom] reclaim spared the prompt's prefix entry (4288 tokens, model gate)
+1794136460.558 [admit-oom] reclaim-on-defer: evicted 0 prefix entries + 1 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 4130MB -> 4703MB
+1794136460.558 [worker] plain-affinity: declined (history diverged at 138 of checkpoint 2336; 1 parked, 5705 prompt tokens; model gate)
+1794136460.559 [prefix-cache] hit: 4288 of 5705 prompt tokens from cache (model gate)
+1794136460.559 [spec-k] model="gate" tenant="" K=0 source=concurrency prompt=5705 cached=4288 lcp=4288 active=4 wave=4 placement=single-or-non-pp2
+1794136460.560 [prefix-cache] source lease released after restore fence (entry 4288 tokens, model gate)
+1794136462.257 [prefix-cache] insert (seed): 5664 tokens, 325.1MB (resident 609.3MB / 2260MB, model gate)
+1794136492.863 [server] SIGTERM: draining (0 in flight, deadline 30s)
+1794136492.863 [server] drain complete in 0.0s; exiting
+1794136493.003 [server] GPU worker shutdown complete

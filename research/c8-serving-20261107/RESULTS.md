@@ -164,9 +164,108 @@ before they landed. They read the same: 5090 q27 +3.6% and -1.4%, GB10 within 0.
 
 ## Not measured here
 
-c4 ABBA, c1 AB and the mixed shape on the final code are queued behind other lanes' landing records on
-the 5090. They follow as an addendum to this file.
-- At c1 none of the four changes can engage: the hold needs a memory defer, which needs a peer; seed batching and the deadline order need two rows; the reserve yield needs effective free under the reserve.
-- The mixed shape's single runs are in [README.md](README.md): batch TTFT p50 1,304 ms on main, 935 ms with seed batching, 736 ms with the cache off.
-
 A PRO 6000 measurement of the effect there is owed (decision record).
+
+## Addendum (2026-11-08 afternoon): c4, c1 and the mixed shape on the final code
+
+These ran after the landing, with the same binaries as the c8 A/B: main `46172c1bac` as A, and the lane on the same base as B. They are in `runs/phaseS4/`, `runs/phaseS1/` and `runs/phaseSM/`. The final code's tree is `1877d4661a` on main. `harness/phaseResume.sh` finished the block after a yield to a landing record at 12:46.
+
+### Agentic c4 (`runs/phaseS4/`, A B B A A B)
+
+The full shape at 4 users. 01-03 ran before the yield, 04-06 after it.
+
+| run | pass | served | 408 | first token p50 s | p99 s | wait p50 s (all) | wait p99 s (all) | tokens | tok/s | free floor MiB | defers | deadline-order ticks | reserve evictions | OOM |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| 01-A | measure | 29/29 | 0 | 3.9 | 22.5 | 3.9 | 22.5 | 10623 | 40.36 | 1555 | 0 | 0 | 0 | 0 |
+| 01-A | prime | 29/29 | 0 | 14.0 | 51.2 | 14.0 | 51.2 | - | - | 1491 |  | | |  |
+| 02-B | measure | 29/29 | 0 | 4.5 | 23.5 | 4.5 | 23.5 | 10623 | 37.33 | 2387 | 0 | 0 | 0 | 0 |
+| 02-B | prime | 29/29 | 0 | 14.9 | 55.0 | 14.9 | 55.0 | - | - | 1491 |  | | |  |
+| 03-B | measure | 29/29 | 0 | 4.6 | 24.2 | 4.6 | 24.2 | 10623 | 36.45 | 2419 | 0 | 0 | 0 | 0 |
+| 03-B | prime | 29/29 | 0 | 15.9 | 60.2 | 15.9 | 60.2 | - | - | 1491 |  | | |  |
+| 04-A | measure | 29/29 | 0 | 4.5 | 22.9 | 4.5 | 22.9 | 10623 | 36.28 | 2419 | 0 | 0 | 0 | 0 |
+| 04-A | prime | 29/29 | 0 | 14.8 | 58.9 | 14.8 | 58.9 | - | - | 1491 |  | | |  |
+| 05-A | measure | 29/29 | 0 | 4.4 | 25.2 | 4.4 | 25.2 | 10623 | 35.7 | 2163 | 0 | 0 | 0 | 0 |
+| 05-A | prime | 29/29 | 0 | 15.4 | 58.8 | 15.4 | 58.8 | - | - | 1587 |  | | |  |
+| 06-B | measure | 29/29 | 0 | 4.3 | 24.8 | 4.3 | 24.8 | 10623 | 36.05 | 2355 | 0 | 0 | 0 | 0 |
+| 06-B | prime | 29/29 | 0 | 15.9 | 64.6 | 15.9 | 64.6 | - | - | 1875 |  | | |  |
+
+| arm | N | pass | served | 408 | first token p50 s | p99 s | wait p50 s (all) | wait p99 s (all) | tokens | tok/s | free floor MiB |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| A | 3 | measure | 29/29 | 0 | 4.4 | 22.9 | 4.4 | 22.9 | 10623 | 36.28 | 2163 |
+| A | 3 | prime | 29/29 | 0 | 14.8 | 58.8 | 14.8 | 58.8 | 29 | 0.16 | 1491 |
+| B | 3 | measure | 29/29 | 0 | 4.5 | 24.2 | 4.5 | 24.2 | 10623 | 36.45 | 2387 |
+| B | 3 | prime | 29/29 | 0 | 15.9 | 60.2 | 15.9 | 60.2 | 29 | 0.16 | 1491 |
+
+- No request failed in either arm.
+- None of the four mechanisms engaged: 0 VRAM defers, 0 deadline-order ticks and 0 reserve yields in all six runs.
+- Pooled over the three runs per arm, the measured-pass wait is p50 4.5 s and p99 25.2 s on main, p50 4.5 s and p99 24.8 s on the lane.
+- The seeded T=1 output is byte-identical between the arms: 58/58 rows, 01-A against 02-B.
+- tok/s follows the GPU's temperature at boot, not the arm:
+  - the first run (01-A) booted at 59 C and measured 40.4 tok/s;
+  - every other run booted at 71-77 C and measured 35.7-37.3 tok/s, both arms.
+- Medians: A 36.3 and B 36.5 tok/s.
+
+### Agentic c1 (`runs/phaseS1/`, A B)
+
+One user, so none of the four changes can engage. Both runs booted hot (77-78 C).
+- Measured pass: p50 3.4 s on both; p99 20.1 s on main, 21.1 s on the lane.
+- tok/s 25.1 on main, 24.6 on the lane.
+- The seeded output is byte-identical: 58/58.
+- No defer, deadline-order tick or reserve yield on either.
+
+| run | pass | served | 408 | first token p50 s | p99 s | wait p50 s (all) | wait p99 s (all) | tokens | tok/s | free floor MiB | defers | deadline-order ticks | reserve evictions | OOM |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| 01-A | measure | 29/29 | 0 | 3.4 | 20.1 | 3.4 | 20.1 | 8509 | 25.12 | 1523 | 0 | 0 | 0 | 0 |
+| 01-A | prime | 29/29 | 0 | 3.1 | 19.2 | 3.1 | 19.2 | - | - | 1683 |  | | |  |
+| 02-B | measure | 29/29 | 0 | 3.4 | 21.1 | 3.4 | 21.1 | 8509 | 24.59 | 1523 | 0 | 0 | 0 | 0 |
+| 02-B | prime | 29/29 | 0 | 3.1 | 19.3 | 3.1 | 19.3 | - | - | 1683 |  | | |  |
+
+| arm | N | pass | served | 408 | first token p50 s | p99 s | wait p50 s (all) | wait p99 s (all) | tokens | tok/s | free floor MiB |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| A | 1 | measure | 29/29 | 0 | 3.4 | 20.1 | 3.4 | 20.1 | 8509 | 25.12 | 1523 |
+| A | 1 | prime | 29/29 | 0 | 3.1 | 19.2 | 3.1 | 19.2 | 29 | 0.18 | 1683 |
+| B | 1 | measure | 29/29 | 0 | 3.4 | 21.1 | 3.4 | 21.1 | 8509 | 24.59 | 1523 |
+| B | 1 | prime | 29/29 | 0 | 3.1 | 19.3 | 3.1 | 19.3 | 29 | 0.18 | 1683 |
+
+### The mixed shape (`runs/phaseSM/`, A B B A A B plus a cache-off run per arm)
+
+Problem 2: the prefix cache cost throughput and batch TTFT on this shape.
+
+| run | batch tok/s | batch first token p50 ms | repeat hits | repeat cached | repeat first token median ms | free floor MiB | OOM |
+|---|---|---|---|---|---|---|---|
+| 01-A | 89.97 | 1548 | 2 | [480, 0, 0, 0, 0, 512] | 753 | 1107 | 0 |
+| 02-B | 102.15 | 1105 | 2 | [480, 0, 0, 0, 512, 0] | 724 | 1267 | 0 |
+| 03-B | 98.07 | 1115 | 2 | [480, 0, 0, 512, 0, 0] | 743 | 1267 | 0 |
+| 04-A | 91.09 | 1475 | 3 | [480, 0, 0, 512, 0, 512] | 752 | 1587 | 0 |
+| 05-A | 90.89 | 1617 | 4 | [480, 0, 512, 0, 512, 512] | 562 | 1267 | 0 |
+| 06-B | 96.2 | 1014 | 2 | [480, 0, 0, 512, 0, 0] | 813 | 1587 | 0 |
+| off-A | 99.98 | 860 | 0 | [0, 0, 0, 0, 0, 0] | 718 | 2931 | 0 |
+| off-B | 100.15 | 638 | 0 | [0, 0, 0, 0, 0, 0] | 767 | 2931 | 0 |
+
+| arm | N | batch tok/s | batch first token p50 ms | repeat hits | repeat first token median ms | free floor MiB |
+|---|---|---|---|---|---|---|
+| A | 3 | 90.9 | 1548 | 3 | 752 | 1267 |
+| B | 3 | 98.1 | 1105 | 2 | 743 | 1267 |
+| off-A | 1 | 100.0 | 860 | 0 | 718 | 2931 |
+| off-B | 1 | 100.2 | 638 | 0 | 767 | 2931 |
+
+| mixed shape, medians of 3 | main | lane | cache off (main / lane, one run each) |
+|---|---|---|---|
+| batch tok/s | 90.9 | 98.1 | 100.0 / 100.2 |
+| batch first token p50 | 1,548 ms | 1,105 ms | 860 / 638 ms |
+| repeat hits of 6 | 3 | 2 | 0 |
+| repeat first token median | 752 ms | 743 ms | 718 / 767 ms |
+
+What the lane changes on this shape:
+- Seed batching takes the cache's throughput cost from 9.1% to 2.1% of the cache-off rate, and cuts batch TTFT by 443 ms (to 1,105 ms, against 638-860 ms with the cache off).
+- The concat prime ran 41 batch calls per lane run against 19-21 on main.
+- The reserve yield fired 9-11 times per lane run and never on main. That costs about one repeat hit of six, but the repeat first token stays at 743 against 752 ms.
+
+Greedy output is identical in every pairing:
+- main against the lane: 87/87;
+- the lane against its cache-off run: 95/95;
+- main against its cache-off run: 87/87;
+- lane against lane and main against main: 95/95 and 87/87;
+- cache-off main against cache-off lane: 95/95.
+
+No OOM in any run.

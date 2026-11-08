@@ -28,7 +28,7 @@ SUBS = [
 KEEP_HARNESS = ['arm2.sh', 'ts.py', 'agentic2.py', 'mixed.py', 'analyze.py', 'exact_cmp.py', 'score.py',
                 'sched_sim.py', 'tick_sim.py', 'agentic-approx.json', 'phaseR.sh', 'phaseH.sh', 'phaseE.sh',
                 'phaseE2.sh', 'phaseE3.sh', 'phaseX.sh', 'phaseS8.sh', 'phaseSM.sh', 'phaseS4.sh',
-                'phaseS1.sh', 'phaseF.sh', 'phaseT.sh', 'phaseT2.sh', 'split_t.py', 'tables.py', 'split_p2a.py', 'patch_guard.py', 'export_receipts.py', 'build.sh']
+                'phaseS1.sh', 'phaseF.sh', 'phaseT.sh', 'phaseResume.sh', 'split_t.py', 'tables.py', 'split_p2a.py', 'patch_guard.py', 'export_receipts.py', 'build.sh']
 
 
 def scrub_text(t):

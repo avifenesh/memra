@@ -8,6 +8,8 @@
 # stderr line prefixed with its unix time.
 set -u
 LABEL=$1; BIN=$2; OUT=$3; WL=$4; shift 4
+# Yield seam: a YIELD file in the lane dir stops a phase at the next arm boundary.
+if [ -e <lane>/YIELD ]; then echo "yield: $LABEL not run"; exit 0; fi
 M=<models>/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf
 H=<harness>
 WORKLOAD=<agentic-workload>
