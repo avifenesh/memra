@@ -524,3 +524,26 @@ The phases of the request (timestamped server log, `ts-probe-main-unit1/`, unpro
   identical in every boot. Decode (40 tokens after the first, total minus TTFT) is flat: 1.480 /
   1.479 / 1.487 / 1.483 s at 32k and 2.726 / 2.726 / 2.722 / 2.722 s at 131k. Thermal regime under
   load, every cell: SM 2,112-2,184 MHz (median 2,151-2,158), mean 78.8-80.8 C, max 86-87 C.
+  Unit 2 on the final head (row 51, partial: 1 B and 2 V boots of a B V V B B V campaign that
+  yielded the unit to a landing record): 23.133 -> 22.729 s at 32k (-1.75%), 122.139 -> 120.544 s
+  at 131k (-1.31%), 322.950 -> 318.940 s at 260k (-1.24%), the same answers.
+
+### Next (round 4)
+
+Measured seconds left outside the trunk at 131k after row 50: the trunk boundary tail chunk 0.46 s,
+the host time before the first kernel 0.45 s (mostly the KV allocation for the request's context),
+the draft fill's own kernels about 0.7 s. Inside the trunk, the exact levers left are small and at
+the DRAM floor except two:
+
+- the KV dequant workspace pass runs at about 150 GB/s (one thread per element, 2-byte stores):
+  1.37 s at 131k and about 5 s at 260k, against about 215 GB/s for its bytes. An
+  eight-elements-per-thread form with 16-byte stores keeps each element's conversion
+  (`attn-r4/probe/probe_ws.cu`, branch `perf/gb10-ws-dequant8`).
+- the f32 norm output before a GDN mixer, which no prime reader needs when every weight of the
+  group takes the seeded activation (about 0.6-0.8 s at 131k); the GEMM groups first need a
+  fail-closed check for an unwritten f32 input, as `matmul_prefill_ffn_f8f4v2` has (`z_written`).
+
+The big parts stay where rows 33-45 and A0-A23 left them: the F8F4 tile at 115 TFLOPS against
+120-140 for its loop over resident smem and 173 for the exact epilogue on register operands, and
+h2p at 83-85 TFLOPS against about 102. Both need the register budget that 16 warps x 128 and
+8 warps x 255 already use (rows 35-36, 47, 49).
