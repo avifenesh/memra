@@ -5,6 +5,7 @@ import copy
 import importlib.util
 import os
 from pathlib import Path
+import re
 import struct
 import tempfile
 import unittest
@@ -30,12 +31,35 @@ def gguf(path, split_count=None, split_no=0):
     path.write_bytes(data)
 
 
+def ancestor_cargo_configs(path):
+    """Every Cargo configuration strictly above `path`: the files the source preflight walks
+    (`release_inputs._cargo_configuration`) and refuses."""
+    found = set()
+    for directory in path.parents:
+        for name in (".cargo/config", ".cargo/config.toml"):
+            config = directory / name
+            if config.exists() or config.is_symlink():
+                found.add(config)
+    return frozenset(found)
+
+
 class ReleaseInputTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory(prefix="memra-547-inputs-")
         self.addCleanup(self.tmp.cleanup)
         self.root = Path(self.tmp.name)
         self.f = Fixture(self.root)
+        # A Cargo configuration above the fixture (TMPDIR under a home that holds
+        # ~/.cargo/config.toml) makes the preflight refuse every fixture before the check a
+        # test aims at. Hide exactly those files from the walk. A config a test writes inside
+        # the fixture stays visible, so the ancestor refusal is still tested.
+        hidden = ancestor_cargo_configs(self.root.resolve())
+        for name in ("exists", "is_symlink") if hidden else ():
+            real = getattr(Path, name)
+            patcher = patch.object(Path, name, lambda path, *a, _real=real, **k:
+                                   False if path in hidden else _real(path, *a, **k))
+            patcher.start()
+            self.addCleanup(patcher.stop)
 
     def test_index_flags_cannot_hide_changed_tracked_bytes(self):
         file = self.f.repo / "crates/memra-engine/src/lib.rs"
@@ -99,7 +123,8 @@ class ReleaseInputTests(unittest.TestCase):
         # The expensive source byte scan cannot make an unsupported configuration
         # admissible. Prove this refusal happens before reading any source bodies.
         with patch.object(capture.release_inputs, "actual_blob", side_effect=AssertionError("late preflight")):
-            with self.assertRaisesRegex(q.GateError, "unrecorded ancestor/Cargo configuration"):
+            with self.assertRaisesRegex(q.GateError, "unrecorded ancestor/Cargo configuration: "
+                                        + re.escape(str(self.root.resolve() / ".cargo/config.toml"))):
                 capture.clean_source(self.f.repo)
         ancestor.unlink()
         with patch.dict(os.environ, {"PATH": "/usr/bin", "DOCS_RS": "1", "CARGO_HOME": "/untrusted",
@@ -137,15 +162,20 @@ class ReleaseInputTests(unittest.TestCase):
     def test_config_created_during_source_scan_still_refuses(self):
         original = capture.release_inputs.actual_blob
         ancestor = self.root / ".cargo/config.toml"
+        written = []
         def read(path, mode):
             result = original(path, mode)
-            if path == self.f.repo / "crates/memra-engine/src/lib.rs":
+            # The preflight resolves the checkout, so compare against the resolved path.
+            if path == self.f.repo.resolve() / "crates/memra-engine/src/lib.rs":
                 ancestor.parent.mkdir(exist_ok=True)
                 ancestor.write_text('[env]\nDOCS_RS={value="1",force=true}\n')
+                written.append(path)
             return result
         with patch.object(capture.release_inputs, "actual_blob", side_effect=read):
-            with self.assertRaisesRegex(q.GateError, "unrecorded ancestor/Cargo configuration"):
+            with self.assertRaisesRegex(q.GateError, "unrecorded ancestor/Cargo configuration: "
+                                        + re.escape(str(self.root.resolve() / ".cargo/config.toml"))):
                 capture.release_inputs.verify_checkout(self.f.repo)
+        self.assertTrue(written, "the config was not created during the source scan")
 
     def test_owned_source_contains_git_bytes_and_omits_ignored_caller_files(self):
         (self.f.repo / ".gitignore").write_text("hidden.bin\n")
