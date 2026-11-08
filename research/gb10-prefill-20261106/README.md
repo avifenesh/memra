@@ -481,7 +481,8 @@ window ends at the last attention launch, so on this route it started 2.7 s befo
 arrived; that "gap" was the server waiting.) The window applies the unprofiled run's 0.446 s of host
 time before the first kernel to the nsys run, whose own is not in the trace; it holds 31 of the 32
 fill chunks, so it closes about one fill chunk (under 0.1 s of kernels) before the first token. The
-phase times below come from the timestamped server log instead.
+phase times below come from the timestamped server log instead. The raw Nsight Systems report and its sqlite export are in
+the lab's evidence backup as snapshot `33ee8f00`.
 
 | part (GPU seconds) | memra main | work | achieved | measured ceiling | time at ceiling | SGLang tuned |
 |---|---:|---|---:|---|---:|---:|
