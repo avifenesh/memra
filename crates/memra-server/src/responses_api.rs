@@ -845,6 +845,7 @@ async fn responses_with_admission(
             ));
         }
         Err(_) => {
+            rx.mark_end(crate::request_log::EndReason::Deadline);
             drop(rx); // the cancel signal: the worker prunes the closed channel
             drop(guard);
             return rl.attach(crate::ledger_unbilled(
@@ -1165,6 +1166,7 @@ async fn run_background_job(
     loop {
         tokio::select! {
             _ = notify.notified() => {
+                rx.mark_end(crate::request_log::EndReason::Cancelled);
                 drop(rx); // the cancel signal: the worker prunes the closed channel
                 let elapsed = started.elapsed().as_secs_f64();
                 let ledger_ok = if n_completion_tokens > 0 {

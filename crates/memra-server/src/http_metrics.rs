@@ -141,6 +141,9 @@ pub(crate) fn current() -> Option<Observation> {
 }
 /// Call only with the result of canonical_model_id, never an unchecked request string.
 pub(crate) fn bind_model(model: Option<String>) {
+    if let Some(model) = model.as_deref() {
+        crate::request_log::note_model(model);
+    }
     if let Some(model) = model
         && let Some(observation) = current()
     {

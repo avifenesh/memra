@@ -131,6 +131,7 @@ pub mod metering;
 mod multi_choice;
 mod prefill_receipt;
 pub mod prime_fairness;
+mod request_log;
 mod request_metrics;
 mod responses_api;
 pub mod route_contract;
@@ -4463,11 +4464,23 @@ fn validate_cache_namespace(
 /// token-diff test in the worker (`affinity_match`), and only within the request's own
 /// (model, cache_ns) pool — so a reused or guessed id can cost a wasted probe, never a wrong
 /// resume and never cross-tenant reach.
+#[cfg(test)]
 fn affinity_key(
     session_id: &Option<String>,
     user: &Option<String>,
     headers: &axum::http::HeaderMap,
 ) -> Result<Option<String>, String> {
+    affinity_identity(session_id, user, headers).map(|identity| identity.map(|(key, _)| key))
+}
+
+/// [`affinity_key`] plus which convention supplied it, for the request log's
+/// `session_key_source` (`request_log`). The one implementation of the priority order.
+fn affinity_identity(
+    session_id: &Option<String>,
+    user: &Option<String>,
+    headers: &axum::http::HeaderMap,
+) -> Result<Option<(String, request_log::SessionSource)>, String> {
+    use request_log::SessionSource;
     let clean = |s: &str| -> Result<Option<String>, String> {
         let t = s.trim();
         if t.is_empty() {
@@ -4485,19 +4498,20 @@ fn affinity_key(
     if let Some(value) = session_id.as_deref()
         && let Some(value) = clean(value)?
     {
-        return Ok(Some(value));
+        return Ok(Some((value, SessionSource::SessionId)));
     }
     if let Some(value) = user.as_deref()
         && let Some(value) = clean(value)?
     {
-        return Ok(Some(value));
+        return Ok(Some((value, SessionSource::User)));
     }
     match headers.get("x-session-id") {
-        Some(value) => clean(
+        Some(value) => Ok(clean(
             value
                 .to_str()
                 .map_err(|_| "x-session-id must contain visible ASCII or UTF-8 text")?,
-        ),
+        )?
+        .map(|value| (value, SessionSource::Header))),
         None => Ok(None),
     }
 }
@@ -6436,6 +6450,15 @@ pub async fn serve_with(wiring: ServerWiring) -> Result<(), Box<dyn std::error::
         }
     };
     let metrics_auth = MetricsAuth::new(bind_loopback, api_auth.configured(), metrics_token);
+    // Per-request timing log (`MEMRA_REQUEST_LOG`, docs/SERVING.md): opened before any model
+    // loads, so a path that cannot be opened stops the boot instead of a served-but-unlogged run.
+    let request_log_sink = match request_log::install_from_env() {
+        Ok(sink) => sink,
+        Err(err) => {
+            eprintln!("[server] FATAL: {err}");
+            std::process::exit(1);
+        }
+    };
 
     let models = parse_models_config();
     // Full boot tuples for the reload handle's alias check (kept before the
@@ -6671,6 +6694,11 @@ pub async fn serve_with(wiring: ServerWiring) -> Result<(), Box<dyn std::error::
     } else {
         app
     };
+    // Outermost, so the arrival stamp precedes every other layer. Not installed when unset.
+    let app = match request_log_sink {
+        Some(sink) => app.layer(middleware::from_fn_with_state(sink, request_log::observe)),
+        None => app,
+    };
 
     let listener = tokio::net::TcpListener::bind(bind_addr).await?;
     eprintln!("[server] listening on http://{bind_addr}");
@@ -6755,6 +6783,7 @@ pub async fn serve_with(wiring: ServerWiring) -> Result<(), Box<dyn std::error::
     // Drain complete: tell every deployment-side surface to end and drop its
     // TrimHandle (see the worker-join note below).
     let _ = drain_shutdown_tx.send(true);
+    request_log::drain_installed(std::time::Duration::from_secs(2));
     serve_result?;
     // Background job cleanup on the graceful path: SIGCONT+SIGTERM(+KILL past grace) the
     // job's process group — a SIGSTOPped orphan would stay frozen forever. The ungraceful
@@ -7404,6 +7433,7 @@ fn render_prometheus_metrics(
         out.push_str(&capacity_metrics::render(m));
         out.push_str(&request_metrics::render());
         out.push_str(&http_metrics::render());
+        out.push_str(&request_log::render_metrics());
         for (name, value, help) in [
             (
                 "memra_prefix_cache_hits_total",
@@ -8829,7 +8859,8 @@ fn admission_outcome(
             Err((engine_error_response(&e), error_code))
         }
         first => {
-            let (tx2, rx2) = worker::event_channel();
+            let (tx2, mut rx2) = worker::event_channel();
+            rx2.link_from(&rx);
             if let Some(ev) = first {
                 let _ = tx2.send(ev);
             }
@@ -9046,7 +9077,8 @@ async fn peek_first_token_with_receipt(
                 return Err(()); // deadline elapsed; dropping rx cancels generation
             }
             Err(_) => {
-                let (tx2, rx2) = worker::event_channel();
+                let (tx2, mut rx2) = worker::event_channel();
+                rx2.link_from(&rx);
                 for ev in buffered {
                     let _ = tx2.send(ev);
                 }
@@ -9068,7 +9100,8 @@ async fn peek_first_token_with_receipt(
             }
         }
     }
-    let (tx2, rx2) = worker::event_channel();
+    let (tx2, mut rx2) = worker::event_channel();
+    rx2.link_from(&rx);
     for ev in buffered {
         let _ = tx2.send(ev);
     }
@@ -10874,7 +10907,7 @@ async fn completions_with_admission(
         Ok(l) => l,
         Err(resp) => return resp,
     };
-    let (tx, rx) = worker::event_channel();
+    let (tx, mut rx) = worker::event_channel();
     let model = req.model.clone();
     let stream = req.stream;
     let include_usage = req
@@ -10882,8 +10915,9 @@ async fn completions_with_admission(
         .as_ref()
         .and_then(|o| o.include_usage)
         .unwrap_or(false);
-    let affinity = match affinity_key(&req.session_id, &req.user, &headers) {
-        Ok(affinity) => affinity,
+    let (affinity, affinity_source) = match affinity_identity(&req.session_id, &req.user, &headers)
+    {
+        Ok(identity) => identity.unzip(),
         Err(msg) => return with_request_id(&env.id, bad_request(&msg, Some("session_id"))),
     };
     // One metadata generation for this admission (memra#76): the defaults
@@ -10902,6 +10936,9 @@ async fn completions_with_admission(
     );
     request.cache_ns = cache_ns;
     request.request_id = env.id.clone();
+    // Request log (`MEMRA_REQUEST_LOG`): a no-op unless the log is set. Raw completions
+    // return text memra does not parse, so the line's tool_calls stay null.
+    request_log::bind(&mut request, &mut rx, None, affinity_source, false);
     // The wire deadline rides to the worker beside the receipt identity, so the
     // first-token deadline gate judges the REMAINING deadline at its own tick.
     request.wire_deadline = if background {
@@ -11561,9 +11598,10 @@ async fn chat_completions_with_admission(
         .as_ref()
         .filter(|m| m.captures(&tenant.tenant))
         .map(|_| capture_chat_messages(&req.messages));
-    let (tx, rx) = worker::event_channel();
-    let affinity = match affinity_key(&req.session_id, &req.user, &headers) {
-        Ok(affinity) => affinity,
+    let (tx, mut rx) = worker::event_channel();
+    let (affinity, affinity_source) = match affinity_identity(&req.session_id, &req.user, &headers)
+    {
+        Ok(identity) => identity.unzip(),
         Err(msg) => return with_request_id(&env.id, bad_request(&msg, Some("session_id"))),
     };
     // One metadata generation for this admission (memra#76): effort, defaults
@@ -11588,6 +11626,14 @@ async fn chat_completions_with_admission(
     };
     plan.request.cache_ns = cache_ns;
     plan.request.request_id = env.id.clone();
+    // Request log (`MEMRA_REQUEST_LOG`): a no-op unless the log is set.
+    request_log::bind(
+        &mut plan.request,
+        &mut rx,
+        plan.parser.as_mut(),
+        affinity_source,
+        true,
+    );
     plan.request.wire_deadline = if background {
         None
     } else {
@@ -12688,6 +12734,7 @@ pub(crate) async fn collect_blocking_response(
                 () = tokio::time::sleep_until(d.at) => {
                     // Stop the worker at its next tick by dropping the channel, then
                     // deliver what we have.
+                    rx.mark_end(request_log::EndReason::Deadline);
                     drop(rx);
                     if seen_tokens == 0 {
                         // NAMED outcome, not `rejected`: every sibling deadline path in
@@ -12772,6 +12819,7 @@ pub(crate) async fn collect_blocking_response(
                 Some(cancel) => tokio::select! {
                     biased;
                     () = cancel.notified() => {
+                        rx.mark_end(request_log::EndReason::Cancelled);
                         drop(rx);
                         if seen_tokens == 0 {
                             if let Some(receipt) = receipt.as_mut()
@@ -27852,6 +27900,455 @@ temperature = 0.6
                 0
             );
         }
+    }
+
+    // ---------------- per-request timing log (MEMRA_REQUEST_LOG) ----------------
+
+    /// Boundary markers of the request-log test worker's stand-in template: 1 opens a turn,
+    /// 2 closes it (the role of `<|im_start|>`/`<|im_end|>`).
+    struct LogTestMarkers;
+    impl request_log::ControlTokens for LogTestMarkers {
+        fn is_control(&self, id: u32) -> bool {
+            id == 1 || id == 2
+        }
+    }
+
+    /// A worker for the request-log tests: deterministic tokenize-then-generate. Each chat turn
+    /// renders as `[1, role, content bytes.., 2]` plus the generation prompt `[1, 12]`; that prompt
+    /// is handed to the log exactly as `prepare_request` hands the real one. A conversation's first
+    /// user turn is answered with text, a later one with a single qwen tool call.
+    fn request_log_test_state() -> AppState {
+        let mut st = fake_worker_state();
+        st.caps = Arc::new(HashMap::from([("m".to_string(), tool_caps())]));
+        let (cmd_tx, cmd_rx) = std::sync::mpsc::channel::<Cmd>();
+        st.cmd_tx = cmd_tx;
+        let markers = Arc::new(LogTestMarkers);
+        std::thread::spawn(move || {
+            while let Ok(Cmd::Generate(mut req)) = cmd_rx.recv() {
+                worker::release_pending_admit();
+                worker::release_request_reservation(&mut req);
+                if let Some(ready) = req.constraint_ready.take() {
+                    let _ = ready.send(Ok(()));
+                }
+                let mut ids: Vec<u32> = Vec::new();
+                if req.chat_turns.is_empty() {
+                    ids.extend(req.prompt_text.bytes().map(|b| 256 + u32::from(b)));
+                } else {
+                    for turn in &req.chat_turns {
+                        ids.push(1);
+                        ids.push(match turn.role.as_str() {
+                            "system" => 10,
+                            "user" => 11,
+                            "assistant" => 12,
+                            _ => 13,
+                        });
+                        ids.extend(turn.content.bytes().map(|b| 256 + u32::from(b)));
+                        ids.push(2);
+                    }
+                    ids.extend([1, 12]);
+                }
+                req.tx.tap_prompt(&ids, &markers);
+                let n_prompt = ids.len();
+                let _ = req.tx.send(Event::PromptUsage {
+                    n_prompt,
+                    n_cached: 3,
+                });
+                let later_turn = req.chat_turns.iter().filter(|t| t.role == "user").count() > 1;
+                let pieces: &[&str] = if later_turn {
+                    &[
+                        "plan</think>\n\n",
+                        "<tool_call>\n<function=get_weather>\n",
+                        "<parameter=city>\nParis\n</parameter>\n</function>\n</tool_call>",
+                    ]
+                } else {
+                    &["plan</think>\n\n", "Sunny", " today."]
+                };
+                for (i, text) in pieces.iter().enumerate() {
+                    let _ = req.tx.send(Event::Token {
+                        id: i as u32 + 1,
+                        text: (*text).into(),
+                    });
+                }
+                let _ = req.tx.send(Event::Done {
+                    stop_reason: "Eos".into(),
+                    n_tokens: pieces.len(),
+                    n_prompt,
+                    n_cached: 3,
+                    elapsed_s: 0.01,
+                    spec: None,
+                });
+            }
+        });
+        st
+    }
+
+    fn request_log_router(sink: Option<Arc<request_log::Sink>>) -> Router {
+        let app = Router::new()
+            .route("/v1/completions", post(completions_admitted))
+            .route("/v1/chat/completions", post(chat_completions_admitted))
+            .with_state(request_log_test_state())
+            .layer(middleware::from_fn(http_metrics::observe));
+        match sink {
+            Some(sink) => app.layer(middleware::from_fn_with_state(sink, request_log::observe)),
+            None => app,
+        }
+    }
+
+    fn weather_tools() -> serde_json::Value {
+        json!([{"type": "function", "function": {
+            "name": "get_weather",
+            "description": "Weather for a city",
+            "parameters": {"type": "object",
+                           "properties": {"city": {"type": "string"}},
+                           "required": ["city"]}}}])
+    }
+
+    fn turn_one(first_user: &str) -> serde_json::Value {
+        json!([{"role": "system", "content": "You answer weather questions."},
+               {"role": "user", "content": first_user}])
+    }
+
+    fn turn_two(first_user: &str) -> serde_json::Value {
+        json!([{"role": "system", "content": "You answer weather questions."},
+               {"role": "user", "content": first_user},
+               {"role": "assistant", "content": "Sunny today."},
+               {"role": "user", "content": "And tomorrow?"}])
+    }
+
+    /// POST one body; return the response's request id, status, content type and body bytes.
+    async fn request_log_post(
+        app: &Router,
+        path: &str,
+        body: serde_json::Value,
+    ) -> (String, u16, String, Vec<u8>) {
+        use tower::ServiceExt as _;
+        let response = app
+            .clone()
+            .oneshot(
+                axum::http::Request::builder()
+                    .method("POST")
+                    .uri(path)
+                    .header("content-type", "application/json")
+                    .body(Body::from(body.to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let id = response.headers()["x-request-id"]
+            .to_str()
+            .unwrap()
+            .to_string();
+        let status = response.status().as_u16();
+        let content_type = response.headers()["content-type"]
+            .to_str()
+            .unwrap()
+            .to_string();
+        let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        (id, status, content_type, bytes.to_vec())
+    }
+
+    fn request_log_lines(path: &std::path::Path) -> HashMap<String, serde_json::Value> {
+        std::fs::read_to_string(path)
+            .unwrap()
+            .lines()
+            .map(|l| serde_json::from_str::<serde_json::Value>(l).unwrap())
+            .map(|v| (v["request_id"].as_str().unwrap().to_string(), v))
+            .collect()
+    }
+
+    fn hex_sha256(bytes: &[u8]) -> String {
+        use sha2::Digest as _;
+        Sha256::digest(bytes)
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect()
+    }
+
+    /// MEMRA_REQUEST_LOG, the integration gate: two turns of one session through the real
+    /// handlers, middleware stack and writer thread, once with an explicit `session_id` and once
+    /// with no identity (the fingerprint tier), plus a raw completion keyed by `user`. Every
+    /// field of every line is checked, and the session key must match across turns.
+    #[tokio::test]
+    #[allow(clippy::await_holding_lock)] // allow: serializes the process-wide admission counters
+    async fn request_log_two_turns_of_one_session_share_a_key_and_fill_every_field() {
+        let _drain = drain_lock();
+        let dir = std::env::temp_dir().join(format!(
+            "memra-request-log-two-turns-{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("requests.jsonl");
+        let _ = std::fs::remove_file(&path);
+        let sink = request_log::Sink::open(&path).unwrap();
+        let app = request_log_router(Some(sink.clone()));
+        let tools = weather_tools();
+        // Line times are whole microseconds; a millisecond of slack keeps truncation out of it.
+        let before = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs_f64()
+            - 1e-3;
+
+        // Explicit session: turn 1 blocking, turn 2 streaming with a tool call in the reply.
+        let (explicit1, status, _, body) = request_log_post(
+            &app,
+            "/v1/chat/completions",
+            json!({"model": "m", "session_id": "agent-7", "messages": turn_one("Weather in Paris?"),
+                   "tools": tools, "temperature": 0}),
+        )
+        .await;
+        assert_eq!(status, 200, "{}", String::from_utf8_lossy(&body));
+        let (explicit2, status, content_type, body) = request_log_post(
+            &app,
+            "/v1/chat/completions",
+            json!({"model": "m", "session_id": "agent-7", "messages": turn_two("Weather in Paris?"),
+                   "tools": tools, "temperature": 0, "stream": true}),
+        )
+        .await;
+        assert_eq!(status, 200);
+        assert!(content_type.starts_with("text/event-stream"));
+        let streamed_arguments: String = String::from_utf8(body)
+            .unwrap()
+            .lines()
+            .filter_map(|l| l.strip_prefix("data: "))
+            .filter_map(|l| serde_json::from_str::<serde_json::Value>(l).ok())
+            .filter_map(|c| {
+                c["choices"][0]["delta"]["tool_calls"][0]["function"]["arguments"]
+                    .as_str()
+                    .map(str::to_string)
+            })
+            .collect();
+        assert_eq!(streamed_arguments, "{\"city\":\"Paris\"}");
+
+        // No identity at all: the implicit fingerprint tier keys the same two turns, and a
+        // conversation with a different first user turn gets a different key.
+        let (implicit1, ..) = request_log_post(
+            &app,
+            "/v1/chat/completions",
+            json!({"model": "m", "messages": turn_one("Weather in Paris?"), "tools": tools,
+                   "temperature": 0}),
+        )
+        .await;
+        let (implicit2, ..) = request_log_post(
+            &app,
+            "/v1/chat/completions",
+            json!({"model": "m", "messages": turn_two("Weather in Paris?"), "tools": tools,
+                   "temperature": 0, "stream": true}),
+        )
+        .await;
+        let (other1, ..) = request_log_post(
+            &app,
+            "/v1/chat/completions",
+            json!({"model": "m", "messages": turn_one("Weather in Oslo?"), "tools": tools,
+                   "temperature": 0}),
+        )
+        .await;
+        // Raw completion: identity from `user`, no tool parsing on this route.
+        let (raw, status, _, _) = request_log_post(
+            &app,
+            "/v1/completions",
+            json!({"model": "m", "prompt": "hello", "user": "u-1", "max_tokens": 8,
+                   "temperature": 0}),
+        )
+        .await;
+        assert_eq!(status, 200);
+        // A refusal is a line too: an unknown model never reaches the worker.
+        let (refused, status, _, _) = request_log_post(
+            &app,
+            "/v1/chat/completions",
+            json!({"model": "not-served", "messages": turn_one("x")}),
+        )
+        .await;
+        assert_eq!(status, 400);
+
+        assert!(
+            sink.wait_for(7, std::time::Duration::from_secs(20)),
+            "the writer did not finish 7 lines"
+        );
+        let after = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs_f64()
+            + 1e-3;
+        let lines = request_log_lines(&path);
+        assert_eq!(lines.len(), 7, "{lines:?}");
+
+        let hex64 = |v: &serde_json::Value| {
+            v.as_str()
+                .is_some_and(|s| s.len() == 64 && s.bytes().all(|b| b.is_ascii_hexdigit()))
+        };
+        for id in [
+            &explicit1, &explicit2, &implicit1, &implicit2, &other1, &raw,
+        ] {
+            let l = &lines[id];
+            assert_eq!(l["v"], 1, "{l}");
+            assert_eq!(l["request_id"], id.as_str());
+            assert_eq!(l["model"], "m");
+            assert_eq!(l["end_reason"], "stop", "{l}");
+            assert_eq!(l["http_status"], 200);
+            let (arrival, first, end) = (
+                l["t_arrival"].as_f64().unwrap(),
+                l["t_first_token"].as_f64().unwrap(),
+                l["t_end"].as_f64().unwrap(),
+            );
+            assert!(
+                before <= arrival && arrival <= first && first <= end && end <= after,
+                "{l}"
+            );
+            assert_eq!(l["cached_tokens"], 3);
+            assert!(l["prompt_tokens"].as_u64().unwrap() > 3, "{l}");
+            assert_eq!(l["generated_tokens"], 3);
+            assert!(hex64(&l["prompt_sha256"]), "{l}");
+            assert!(hex64(&l["session_key"]), "{l}");
+            assert!(!l.to_string().contains("Paris"), "content leaked: {l}");
+        }
+        for id in [&explicit1, &explicit2, &implicit1, &implicit2, &other1] {
+            assert_eq!(lines[id]["route"], "/v1/chat/completions");
+        }
+
+        // The explicit session: one key across both turns, sha256 of the id itself.
+        let (e1, e2) = (&lines[&explicit1], &lines[&explicit2]);
+        assert_eq!(e1["session_key"], hex_sha256(b"agent-7"));
+        assert_eq!(e1["session_key"], e2["session_key"]);
+        assert_eq!(e1["session_key_source"], "session_id");
+        assert_eq!(e2["session_key_source"], "session_id");
+        assert_eq!(e1["stream"], false);
+        assert_eq!(e2["stream"], true);
+        assert_eq!(e1["tool_calls"], json!([]));
+        assert_eq!(
+            e2["tool_calls"],
+            json!([{"name": "get_weather",
+                    "arguments_sha256": hex_sha256(streamed_arguments.as_bytes())}])
+        );
+        assert_ne!(e1["prompt_sha256"], e2["prompt_sha256"]);
+        assert!(e2["prompt_tokens"].as_u64().unwrap() > e1["prompt_tokens"].as_u64().unwrap());
+
+        // The fingerprint session: one key across both turns, distinct from the explicit one and
+        // from a different conversation. Same prompt => same content pointer, whatever the key.
+        let (i1, i2, o1) = (&lines[&implicit1], &lines[&implicit2], &lines[&other1]);
+        assert_eq!(i1["session_key_source"], "fingerprint");
+        assert_eq!(i2["session_key_source"], "fingerprint");
+        assert_eq!(i1["session_key"], i2["session_key"]);
+        assert_ne!(i1["session_key"], e1["session_key"]);
+        assert_ne!(i1["session_key"], o1["session_key"]);
+        assert_eq!(i1["prompt_sha256"], e1["prompt_sha256"]);
+        assert_eq!(i2["prompt_sha256"], e2["prompt_sha256"]);
+
+        // The raw completion: keyed by `user`, and memra does not parse its text for calls.
+        let r = &lines[&raw];
+        assert_eq!(r["route"], "/v1/completions");
+        assert_eq!(r["session_key"], hex_sha256(b"u-1"));
+        assert_eq!(r["session_key_source"], "user");
+        assert_eq!(r["tool_calls"], serde_json::Value::Null);
+
+        // The refusal: status and reason, nothing the worker would have produced.
+        let x = &lines[&refused];
+        assert_eq!(x["http_status"], 400);
+        assert_eq!(x["end_reason"], "error");
+        assert_eq!(x["model"], serde_json::Value::Null);
+        for field in [
+            "t_first_token",
+            "prompt_tokens",
+            "generated_tokens",
+            "prompt_sha256",
+            "session_key",
+        ] {
+            assert_eq!(x[field], serde_json::Value::Null, "{field}: {x}");
+        }
+        drop(app);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// Strip the per-response identity (`id`, `created`) so two runs of the same request compare
+    /// on everything the model produced and the server shaped around it.
+    fn request_log_normalized(content_type: &str, body: &[u8]) -> Vec<String> {
+        let scrub = |mut v: serde_json::Value| {
+            if let Some(o) = v.as_object_mut() {
+                o.remove("id");
+                o.remove("created");
+            }
+            v.to_string()
+        };
+        let text = String::from_utf8(body.to_vec()).unwrap();
+        if content_type.starts_with("text/event-stream") {
+            text.lines()
+                .filter_map(|l| l.strip_prefix("data: "))
+                .map(|l| match serde_json::from_str::<serde_json::Value>(l) {
+                    Ok(v) => scrub(v),
+                    Err(_) => l.to_string(),
+                })
+                .collect()
+        } else {
+            vec![scrub(serde_json::from_str(&text).unwrap())]
+        }
+    }
+
+    /// MEMRA_REQUEST_LOG exactness, HTTP half: the same requests through the same handlers with
+    /// the log installed and not installed produce the same status, content type and bytes
+    /// (identity fields aside), streaming and blocking, plain and tool-calling. The log's hooks
+    /// sit on the event receiver, the tool parser and the response body; this pins that none of
+    /// them changes what it observes. The engine half is the device A/B in
+    /// `research/request-log-20261109/`.
+    #[tokio::test]
+    #[allow(clippy::await_holding_lock)] // allow: serializes the process-wide admission counters
+    async fn request_log_on_and_off_serve_identical_bytes() {
+        let _drain = drain_lock();
+        let dir =
+            std::env::temp_dir().join(format!("memra-request-log-identity-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("requests.jsonl");
+        let _ = std::fs::remove_file(&path);
+        let sink = request_log::Sink::open(&path).unwrap();
+        let tools = weather_tools();
+        let requests = [
+            (
+                "/v1/completions",
+                json!({"model": "m", "prompt": "hello", "max_tokens": 8,
+                                       "temperature": 0}),
+            ),
+            (
+                "/v1/completions",
+                json!({"model": "m", "prompt": "hello", "max_tokens": 8,
+                                       "temperature": 0, "stream": true}),
+            ),
+            (
+                "/v1/chat/completions",
+                json!({"model": "m", "messages": turn_one("Weather in Paris?"),
+                                            "tools": tools, "temperature": 0}),
+            ),
+            (
+                "/v1/chat/completions",
+                json!({"model": "m", "messages": turn_two("Weather in Paris?"),
+                                            "tools": tools, "temperature": 0}),
+            ),
+            (
+                "/v1/chat/completions",
+                json!({"model": "m", "messages": turn_two("Weather in Paris?"),
+                                            "tools": tools, "temperature": 0, "stream": true}),
+            ),
+        ];
+        let mut runs = Vec::new();
+        for sink in [None, Some(sink.clone())] {
+            let app = request_log_router(sink);
+            let mut run = Vec::new();
+            for (path, body) in &requests {
+                let (_, status, content_type, bytes) =
+                    request_log_post(&app, path, body.clone()).await;
+                run.push((
+                    status,
+                    content_type.clone(),
+                    request_log_normalized(&content_type, &bytes),
+                ));
+            }
+            runs.push(run);
+        }
+        assert_eq!(runs[0], runs[1], "the request log changed a response");
+        // And the logged run did log every request.
+        assert!(sink.wait_for(requests.len() as u64, std::time::Duration::from_secs(20)));
+        assert_eq!(request_log_lines(&path).len(), requests.len());
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     fn fake_worker_state() -> AppState {

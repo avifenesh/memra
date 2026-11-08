@@ -167,9 +167,10 @@ pub(crate) async fn admit_translated(
         .as_ref()
         .filter(|m| m.captures(&tenant.tenant))
         .map(|_| crate::capture_chat_messages(&req.messages));
-    let (tx, rx) = worker::event_channel();
-    let affinity = crate::affinity_key(&req.session_id, &req.user, headers)
-        .map_err(|message| crate::bad_request(&message, Some("session_id")))?;
+    let (tx, mut rx) = worker::event_channel();
+    let (affinity, affinity_source) = crate::affinity_identity(&req.session_id, &req.user, headers)
+        .map_err(|message| crate::bad_request(&message, Some("session_id")))?
+        .unzip();
     // One metadata generation for this admission (memra#76): effort, defaults
     // and the limits check below resolve from the same set.
     let md = st.metadata();
@@ -194,6 +195,14 @@ pub(crate) async fn admit_translated(
     };
     plan.request.cache_ns = cache_ns;
     plan.request.request_id = env.id.clone();
+    // Request log (`MEMRA_REQUEST_LOG`): a no-op unless the log is set.
+    crate::request_log::bind(
+        &mut plan.request,
+        &mut rx,
+        plan.parser.as_mut(),
+        affinity_source,
+        true,
+    );
     // `None` for a background job: no HTTP-side component enforces this deadline for a
     // background submission (the spawned task in `responses_api::run_background_job` has
     // no wall-clock bound by design), and leaving it `Some` would let the worker's own

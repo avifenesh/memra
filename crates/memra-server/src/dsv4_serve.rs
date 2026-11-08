@@ -2482,6 +2482,8 @@ fn render_prompt(m: &Dsv4Model, req: &Request) -> Result<Vec<u32>, EngineError> 
     if let Some(t) = req.ttft.as_ref() {
         t.mark_tokenize_end(prompt.len());
     }
+    // Request log: one copy of the fed prompt when the log is bound to this request.
+    req.tx.tap_prompt(&prompt, &m.tok);
     if let Some(limit) = req.max_prompt_tokens
         && prompt.len() > limit
     {

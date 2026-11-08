@@ -1816,12 +1816,18 @@ struct EventQueueState {
 pub struct EventSender {
     inner: tokio::sync::mpsc::UnboundedSender<Event>,
     state: Arc<EventQueueState>,
+    /// The request log's prompt slot (`crate::request_log`); None unless `MEMRA_REQUEST_LOG`
+    /// is set and the handler bound this request.
+    prompt_log: Option<crate::request_log::PromptSlot>,
 }
 
 #[derive(Debug)]
 pub struct EventReceiver {
     inner: tokio::sync::mpsc::UnboundedReceiver<Event>,
     state: Arc<EventQueueState>,
+    /// The request log's tie to this request (`crate::request_log::Link`); None unless the log
+    /// is set. Observation only: no event is changed, held or reordered.
+    log: Option<crate::request_log::Link>,
 }
 
 pub fn event_channel() -> (EventSender, EventReceiver) {
@@ -1835,8 +1841,13 @@ pub fn event_channel() -> (EventSender, EventReceiver) {
         EventSender {
             inner: tx,
             state: state.clone(),
+            prompt_log: None,
         },
-        EventReceiver { inner: rx, state },
+        EventReceiver {
+            inner: rx,
+            state,
+            log: None,
+        },
     )
 }
 
@@ -1893,21 +1904,68 @@ impl EventSender {
     pub async fn closed(&self) {
         self.inner.closed().await;
     }
+
+    /// Request log: carry the slot the worker fills with the prompt it feeds.
+    pub(crate) fn link_prompt(&mut self, slot: crate::request_log::PromptSlot) {
+        self.prompt_log = Some(slot);
+    }
+
+    /// Request log: hand the tokenized prompt to the log. One copy when the log is bound to this
+    /// request, nothing otherwise; the digest is computed on the log's writer thread.
+    pub(crate) fn tap_prompt<C: crate::request_log::ControlTokens + 'static>(
+        &self,
+        ids: &[u32],
+        controls: &Arc<C>,
+    ) {
+        if let Some(slot) = &self.prompt_log {
+            slot.fill(ids, controls);
+        }
+    }
 }
 
 impl EventReceiver {
-    fn received(&self, event: &Event) {
+    fn received(&mut self, event: &Event) {
         use std::sync::atomic::Ordering;
         self.state.events.fetch_sub(1, Ordering::AcqRel);
         self.state
             .bytes
             .fetch_sub(event.retained_bytes(), Ordering::AcqRel);
+        if let Some(log) = self.log.as_mut() {
+            log.observe(event);
+        }
     }
 
     pub async fn recv(&mut self) -> Option<Event> {
-        let event = self.inner.recv().await?;
+        let Some(event) = self.inner.recv().await else {
+            if let Some(log) = self.log.as_mut() {
+                log.closed();
+            }
+            return None;
+        };
         self.received(&event);
         Some(event)
+    }
+
+    /// Request log: this is the request's ORIGINAL receiver, so it observes every worker event.
+    pub(crate) fn link_observer(&mut self, link: crate::request_log::Link) {
+        self.log = Some(link);
+    }
+
+    /// Request log: a receiver bridged off `upstream` (the admission and first-token peeks)
+    /// carries the entry for marks only; `upstream` keeps observing the worker's events.
+    pub(crate) fn link_from(&mut self, upstream: &EventReceiver) {
+        self.log = upstream
+            .log
+            .as_ref()
+            .map(crate::request_log::Link::mark_only);
+    }
+
+    /// Request log: the consumer's own verdict on how the request ended (a deadline it
+    /// enforced, a cancel it honored), recorded before it drops the receiver.
+    pub(crate) fn mark_end(&self, reason: crate::request_log::EndReason) {
+        if let Some(log) = &self.log {
+            log.mark(reason);
+        }
     }
 
     #[cfg(test)]
@@ -4431,6 +4489,21 @@ fn conversation_fingerprint(
 /// and so can never clear the bar — non-chat callers keep the plain prefix probes untouched.
 fn fingerprint_affinity(a: &[u64], b: &[u64]) -> usize {
     a.iter().zip(b).take_while(|(x, y)| x == y).count()
+}
+
+/// The implicit tier's identity as one key, for the request log (`crate::request_log`): the first
+/// `FP_MIN_SEGMENTS` entries of the request's chain (live tail dropped). Two requests get the same
+/// key exactly when their chains share a leading run of at least `FP_MIN_SEGMENTS`, the bar at
+/// which the worker nominates one conversation's parked session for the other. `None` below the
+/// bar, where the worker never nominates either. Never read by the resume decision.
+pub(crate) fn implicit_affinity_key(
+    prompt: &[u32],
+    is_boundary: &dyn Fn(u32) -> bool,
+) -> Option<[u64; FP_MIN_SEGMENTS]> {
+    conversation_fingerprint(prompt, is_boundary, true)
+        .get(..FP_MIN_SEGMENTS)?
+        .try_into()
+        .ok()
 }
 
 /// Verdict of the EXACT token diff run against an affinity-nominated parked session. Identity
@@ -25153,6 +25226,9 @@ fn prepare_request(
         .prepared_prompt
         .as_deref()
         .expect("prompt prepared above");
+    // Request log: one copy of the fed prompt when the log is bound to this request; a no-op
+    // otherwise. After both prepare paths (worker render and the HTTP-side budget render).
+    req.tx.tap_prompt(prompt, &lm.tok);
     // Every prompt source and both renders: a metered request arrives here with the budget
     // render already stored and its image units decoded since. A defer re-runs this pure
     // count on the same prompt and units.
@@ -49550,6 +49626,30 @@ mod tests {
         // a real multi-turn conversation does clear it.
         let long = convo(&[&sys, &body(2, 24), &body(3, 24), &body(9, 8)]);
         assert!(shared(&fp(&long), &fp(&long)) >= super::FP_MIN_SEGMENTS);
+    }
+
+    #[test]
+    fn implicit_affinity_key_is_equal_exactly_at_the_nomination_bar() {
+        // The request log's fingerprint key (`implicit_affinity_key`): two requests share it
+        // exactly when their chains clear FP_MIN_SEGMENTS together, i.e. when the worker would
+        // nominate one conversation's parked session for the other.
+        let key = |t: &[u32]| super::implicit_affinity_key(t, &is_marker);
+        let (sys, user1, asst1, user2) = (body(1, 24), body(2, 24), body(3, 24), body(4, 24));
+        let turn2 = convo(&[&sys, &user1, &asst1, &body(9, 8)]);
+        let turn3 = convo(&[&sys, &user1, &asst1, &user2, &body(3, 30), &body(9, 8)]);
+        assert!(key(&turn2).is_some());
+        assert_eq!(
+            key(&turn2),
+            key(&turn3),
+            "one conversation, one key across turns"
+        );
+        assert!(shared(&fp(&turn2), &fp(&turn3)) >= super::FP_MIN_SEGMENTS);
+        let other = convo(&[&sys, &body(6, 24), &asst1, &body(9, 8)]);
+        assert_ne!(key(&turn2), key(&other));
+        assert!(shared(&fp(&turn2), &fp(&other)) < super::FP_MIN_SEGMENTS);
+        // Below the bar there is no key, as there is no nomination.
+        assert_eq!(key(&convo(&[&sys, &user1, &body(9, 8)])), None);
+        assert_eq!(key(&toks(512)), None);
     }
 
     #[test]

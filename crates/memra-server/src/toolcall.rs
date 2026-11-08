@@ -191,6 +191,9 @@ pub struct ToolStreamParser {
     opening_uncapped: bool,
     /// GemmaOpening: bytes of `buf` already searched with no tag start in them.
     opening_scanned: usize,
+    /// The request log's entry (`crate::request_log`): each emitted call is noted there. None
+    /// unless `MEMRA_REQUEST_LOG` is set; the pieces themselves are never changed.
+    log: Option<crate::request_log::Entry>,
 }
 
 /// AGENT-PAUSE TAIL PREDICATE (lane/kv-pause-demote-20260831, tiering spec Arc E): does a
@@ -265,6 +268,22 @@ impl ToolStreamParser {
             stream: false,
             opening_uncapped: false,
             opening_scanned: 0,
+            log: None,
+        }
+    }
+
+    /// Request log: note every call this parser emits on the request's entry.
+    pub(crate) fn link_request_log(&mut self, entry: crate::request_log::Entry) {
+        self.log = Some(entry);
+    }
+
+    fn note_calls(&self, pieces: &[Piece]) {
+        if let Some(log) = &self.log {
+            for piece in pieces {
+                if let Piece::Call(call) = piece {
+                    log.tool_call(&call.name, &call.arguments);
+                }
+            }
         }
     }
 
@@ -417,6 +436,12 @@ impl ToolStreamParser {
     }
 
     pub fn push(&mut self, text: &str) -> Vec<Piece> {
+        let out = self.push_pieces(text);
+        self.note_calls(&out);
+        out
+    }
+
+    fn push_pieces(&mut self, text: &str) -> Vec<Piece> {
         self.buf.push_str(text);
         let mut out = Vec::new();
         loop {
@@ -761,6 +786,12 @@ impl ToolStreamParser {
     /// surfaced raw (opening tag restored) — same malformed policy. A generation that ended
     /// still inside the think segment flushes the tail as reasoning (never-closed `</think>`).
     pub fn finish(&mut self) -> Vec<Piece> {
+        let out = self.finish_pieces();
+        self.note_calls(&out);
+        out
+    }
+
+    fn finish_pieces(&mut self) -> Vec<Piece> {
         let mut out = Vec::new();
         if !self.buf.is_empty() {
             let tail = std::mem::take(&mut self.buf);

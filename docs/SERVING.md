@@ -1702,6 +1702,10 @@ own `memra_requests_cancelled_total`. A typed terminal error is a failed respons
 including when the client closes immediately after reading that error. These
 observations do not alter response bytes or the JSON metrics schema.
 
+With `MEMRA_REQUEST_LOG` set, `memra_request_log_lines_total{outcome}` counts the
+per-request log's lines: `written`, `dropped_queue_full` and `dropped_write_error`
+(see "Per-request timing log" below). The family is absent when the log is unset.
+
 Operator gauges include `memra_active_sessions`, `memra_queued_sessions`,
 `memra_kv_used_bytes` and `memra_kv_capacity_bytes`, labelled by model/backend.
 The KV gauges count canonical live and parked KV, recurrent, indexer and draft
@@ -2749,6 +2753,78 @@ a right-sized session stays affinity-eligible.
 `MEMRA_AFFINITY=0` turns the mechanism off (rollback seam / exactness A/B arm; the winner is
 the default and needs no flag). Receipts, byte-identity gate, and TTFT curves:
 `research/session-affinity-20260805/`.
+
+## Per-request timing log (`MEMRA_REQUEST_LOG`, 2026-11-09)
+
+`MEMRA_REQUEST_LOG=/path/requests.jsonl` writes one JSON line per request on the four
+generation routes (`/v1/completions`, `/v1/chat/completions`, `/v1/responses`,
+`/v1/messages`), streaming and blocking, refusals included. It exists to train a model that
+predicts when a session's next request arrives, so each line carries the request's timing, its
+token counts, the tool calls in its reply and a session key that holds across turns. Content
+appears only as sha256 digests: no prompt or reply text is written, and the file is safe to
+keep. Unset, the middleware is not installed and nothing is written.
+
+The file is opened for append at boot (created 0640). A path that cannot be opened stops the
+boot. Each line is one `O_APPEND` write, so rotate with `copytruncate` (the server keeps its
+descriptor).
+
+| field | meaning |
+| --- | --- |
+| `v` | line schema version, `1` |
+| `request_id` | the response's `x-request-id`, which is also the body's `id` |
+| `route` | one of the four paths above |
+| `model` | the canonical served model name; `null` when the request named no served model |
+| `stream` | the response was SSE |
+| `session_key` | 64 hex characters, see below; `null` when the request has neither identity |
+| `session_key_source` | `session_id`, `user` or `x-session-id` (the explicit tiers, in the session-affinity priority order), `fingerprint`, or `null` |
+| `t_arrival` | Unix seconds, float with microseconds, when the request reached the server |
+| `t_first_token` | when the first generated token reached the HTTP layer; `null` when none was generated |
+| `t_end` | when the response ended: the last SSE frame, or the blocking body ready to send. A `background` request ends when its generation does |
+| `end_reason` | `stop`, `length`, `error`, `cancelled` or `deadline`, see below |
+| `http_status` | the response status; `499` when the client left before a response head existed |
+| `prompt_tokens`, `cached_tokens` | the worker's prompt accounting, the same numbers as `usage.prompt_tokens` and `usage.prompt_tokens_details.cached_tokens` |
+| `generated_tokens` | the worker's completion count; for a request cut before its terminal event, the tokens it had produced |
+| `tool_calls` | `[{"name", "arguments_sha256"}]` in emission order, the sha256 over the `arguments` string as sent; `[]` when the reply had none; `null` on `/v1/completions`, which returns raw text memra does not parse |
+| `prompt_sha256` | sha256 of the prompt token ids the model was fed (template and tools rendered), as little-endian u32; reproduce it with `/v1/tokenize` |
+
+Fields are `null` when the request never reached the stage that produces them (a 400 has no
+token counts, a request refused before its handler bound a model has `model: null`).
+
+**The session key.** An explicit identity wins: `session_key` is the sha256 of the
+`session_id`, `user` or `x-session-id` value as the server resolved it (trimmed), in the order
+[Session affinity](#session-affinity--resuming-a-rewritten-conversation-lanesession-affinity-2026-08-05)
+honors them. It is hashed, not copied, so a `user` that names a person is not republished; a
+client joins its own ids by hashing them the same way. Without one, the key is the implicit
+affinity tier's identity: the first three entries (`FP_MIN_SEGMENTS`) of the conversation
+fingerprint chain over the fed prompt, live tail dropped, hashed as little-endian u64. Two
+requests share that key exactly when the worker would nominate one's parked session for the
+other. It needs three closed template segments before the turn being generated: on ChatML
+templates that is a system prompt plus the first user turn. A first turn with no system prompt
+has no key yet (`null`); its later turns have one.
+
+**The end reason.** `stop` and `length` come from the worker's terminal stop reason (`length`
+is `max_tokens` or the context, `stop` covers end of turn, stop strings and ids, and a reply that
+ends in tool calls). `deadline` is `timeout_ms`: an HTTP 408, the in-band deadline error of a
+committed stream, or a blocking partial. `error` is any HTTP error status, an engine error or a
+stream the worker closed without a terminal event. `cancelled` means the consumer let go first:
+the client hung up, or a background request was cancelled. With `n` above 1 the line describes
+choice 0.
+
+**What it costs.** Every hook observes; none changes an event, a parsed piece or a frame, and
+generated bytes are identical with the log set and unset
+(`request_log_on_and_off_serve_identical_bytes`; the device A/B is in
+`research/request-log-20261109/`). The GPU worker makes one copy of the prompt ids per request,
+only when the log is set. Per received token event the HTTP side pays one branch and one
+integer add, with no lock, allocation or I/O. Hashing, serialization and the write run on a
+dedicated thread behind a queue bounded at 4096 lines and 64 MiB; a line that does not fit is
+dropped and counted (`memra_request_log_lines_total{outcome="dropped_queue_full"}`) and serving
+never waits for it.
+
+A sample line, two turns into a fingerprint-keyed chat session:
+
+```json
+{"v":1,"request_id":"chatcmpl-5d1c2e0f9a7b4c3d8e6f1a2b3c4d5e6f","route":"/v1/chat/completions","model":"qwen3.8-27b","stream":true,"session_key":"8f0a6c1e93d24b7a5e0c9d8f7a6b5c4d3e2f1a0b9c8d7e6f5a4b3c2d1e0f9a8b","session_key_source":"fingerprint","t_arrival":1762696041.112093,"t_first_token":1762696041.398871,"t_end":1762696043.004417,"end_reason":"stop","http_status":200,"prompt_tokens":1873,"cached_tokens":1536,"generated_tokens":64,"tool_calls":[{"name":"read_file","arguments_sha256":"3b7e1f0c6d2a9e8b5c4f1a0d7e6b3c2a9f8e5d4c1b0a7f6e3d2c9b8a5f4e1d0c"}],"prompt_sha256":"e4c1a9b7d3f2e0c8b6a5d4f3e2c1b0a9f8e7d6c5b4a3f2e1d0c9b8a7f6e5d4c3"}
+```
 
 ## Multi-tenant QoS — the x-lane SLO gate (lane/qos-p95, 2026-08-02)
 

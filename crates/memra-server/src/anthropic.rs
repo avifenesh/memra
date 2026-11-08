@@ -844,6 +844,7 @@ async fn messages_with_admission(
             ));
         }
         Err(_) => {
+            rx.mark_end(crate::request_log::EndReason::Deadline);
             drop(rx); // the cancel signal: the worker prunes the closed channel
             drop(guard);
             return rl.attach(with_anthropic_request_id(
