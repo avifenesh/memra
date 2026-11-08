@@ -1,0 +1,184 @@
+2026-11-08T20:42:10+02:00
+548c0c2c9 fix(attention): review of #1110: the workspace pass's guard refuses a negative depth; comments, KERNELS row, the probe on the tree's own kernels and both formats
+7daf72fe4d62c0cd6286723f81dedb8a5a17ba050a27748f6f19915a57293132  flash_attn.cu
+4de0b964abe67f31830e4c075af960bd27ed26d6df7c7978ccf66251fae45836  probe_ws.cu
+flash_attn.cu(848): warning #177-D: variable "alpha_self" was declared but never referenced
+              float alpha_self = 1.0f;
+                    ^
+
+Remark: The warnings can be suppressed with "-diag-suppress <warning-number>"
+
+flash_attn.cu(1083): warning #177-D: variable "sMw" was declared but never referenced
+      float* sMw = sM + warp*16;
+             ^
+
+flash_attn.cu(4311): warning #177-D: variable "sSw" was declared but never referenced
+      float* sSw = sS + warp*16*32;
+             ^
+
+flash_attn.cu(4312): warning #177-D: variable "sMw" was declared but never referenced
+      float* sMw = sM + warp*16;
+             ^
+
+device NVIDIA GB10 sms 48 kfmt 0 vfmt 0 reps 5
+kv_dim   256 Tkv    4096 ref_ws1    grid     8192    0.031 ms  198.6 GB/s mismatch 0 (min 0.031 max 0.031)
+kv_dim   256 Tkv    4096 engine     grid     1024    0.010 ms  597.1 GB/s mismatch 0 (min 0.010 max 0.010)
+kv_dim   256 Tkv    4096 engine_pt  grid      384    0.010 ms  597.1 GB/s mismatch 0 (min 0.010 max 0.010)
+kv_dim   256 Tkv    4096 ref_ws1    grid     8192    0.031 ms  198.4 GB/s mismatch 0 (min 0.030 max 0.031)
+kv_dim   256 Tkv    4096 engine     grid     1024    0.010 ms  597.1 GB/s mismatch 0 (min 0.010 max 0.010)
+kv_dim   256 Tkv   32768 ref_ws1    grid    65536    0.291 ms  167.7 GB/s mismatch 0 (min 0.290 max 0.291)
+kv_dim   256 Tkv   32768 engine     grid     8192    0.240 ms  203.5 GB/s mismatch 0 (min 0.237 max 0.244)
+kv_dim   256 Tkv   32768 engine_pt  grid      384    0.253 ms  192.9 GB/s mismatch 0 (min 0.250 max 0.255)
+kv_dim   256 Tkv   32768 ref_ws1    grid    65536    0.291 ms  167.7 GB/s mismatch 0 (min 0.291 max 0.291)
+kv_dim   256 Tkv   32768 engine     grid     8192    0.238 ms  205.2 GB/s mismatch 0 (min 0.237 max 0.246)
+kv_dim   256 Tkv  131072 ref_ws1    grid   262144    1.098 ms  177.7 GB/s mismatch 0 (min 1.097 max 1.100)
+kv_dim   256 Tkv  131072 engine     grid    32768    0.892 ms  218.7 GB/s mismatch 0 (min 0.892 max 0.894)
+kv_dim   256 Tkv  131072 engine_pt  grid      384    0.953 ms  204.6 GB/s mismatch 0 (min 0.948 max 0.957)
+kv_dim   256 Tkv  131072 ref_ws1    grid   262144    1.098 ms  177.7 GB/s mismatch 0 (min 1.097 max 1.106)
+kv_dim   256 Tkv  131072 engine     grid    32768    0.892 ms  218.7 GB/s mismatch 0 (min 0.892 max 0.894)
+kv_dim   256 Tkv  262144 ref_ws1    grid   524288    2.174 ms  179.4 GB/s mismatch 0 (min 2.174 max 2.623)
+kv_dim   256 Tkv  262144 engine     grid    65536    1.770 ms  220.3 GB/s mismatch 0 (min 1.766 max 1.780)
+kv_dim   256 Tkv  262144 engine_pt  grid      384    1.897 ms  205.6 GB/s mismatch 0 (min 1.870 max 1.908)
+kv_dim   256 Tkv  262144 ref_ws1    grid   524288    2.175 ms  179.3 GB/s mismatch 0 (min 2.173 max 2.176)
+kv_dim   256 Tkv  262144 engine     grid    65536    1.779 ms  219.3 GB/s mismatch 0 (min 1.767 max 1.790)
+kv_dim   512 Tkv    4096 ref_ws1    grid    16384    0.057 ms  212.6 GB/s mismatch 0 (min 0.057 max 0.057)
+kv_dim   512 Tkv    4096 engine     grid     2048    0.020 ms  596.1 GB/s mismatch 0 (min 0.020 max 0.021)
+kv_dim   512 Tkv    4096 engine_pt  grid      384    0.018 ms  661.3 GB/s mismatch 0 (min 0.018 max 0.019)
+kv_dim   512 Tkv    4096 ref_ws1    grid    16384    0.057 ms  212.7 GB/s mismatch 0 (min 0.057 max 0.057)
+kv_dim   512 Tkv    4096 engine     grid     2048    0.020 ms  596.1 GB/s mismatch 0 (min 0.020 max 0.022)
+kv_dim   512 Tkv   32768 ref_ws1    grid   131072    0.558 ms  174.7 GB/s mismatch 0 (min 0.557 max 0.561)
+kv_dim   512 Tkv   32768 engine     grid    16384    0.457 ms  213.6 GB/s mismatch 0 (min 0.456 max 0.462)
+kv_dim   512 Tkv   32768 engine_pt  grid      384    0.482 ms  202.2 GB/s mismatch 0 (min 0.481 max 0.485)
+kv_dim   512 Tkv   32768 ref_ws1    grid   131072    0.559 ms  174.4 GB/s mismatch 0 (min 0.557 max 0.563)
+kv_dim   512 Tkv   32768 engine     grid    16384    0.463 ms  210.7 GB/s mismatch 0 (min 0.458 max 0.465)
+kv_dim   512 Tkv  131072 ref_ws1    grid   524288    2.178 ms  179.1 GB/s mismatch 0 (min 2.176 max 2.568)
+kv_dim   512 Tkv  131072 engine     grid    65536    1.764 ms  221.1 GB/s mismatch 0 (min 1.761 max 1.775)
+kv_dim   512 Tkv  131072 engine_pt  grid      384    1.905 ms  204.8 GB/s mismatch 0 (min 1.899 max 1.978)
+kv_dim   512 Tkv  131072 ref_ws1    grid   524288    2.177 ms  179.2 GB/s mismatch 0 (min 2.176 max 2.183)
+kv_dim   512 Tkv  131072 engine     grid    65536    1.851 ms  210.7 GB/s mismatch 0 (min 1.789 max 1.953)
+kv_dim   512 Tkv  262144 ref_ws1    grid  1048560    4.338 ms  179.9 GB/s mismatch 0 (min 4.338 max 5.140)
+kv_dim   512 Tkv  262144 engine     grid   131072    3.516 ms  221.9 GB/s mismatch 0 (min 3.506 max 3.854)
+kv_dim   512 Tkv  262144 engine_pt  grid      384    3.749 ms  208.1 GB/s mismatch 0 (min 3.745 max 3.811)
+kv_dim   512 Tkv  262144 ref_ws1    grid  1048560    4.338 ms  179.9 GB/s mismatch 0 (min 4.336 max 5.152)
+kv_dim   512 Tkv  262144 engine     grid   131072    3.524 ms  221.4 GB/s mismatch 0 (min 3.510 max 3.546)
+kv_dim  1024 Tkv    4096 ref_ws1    grid    32768    0.131 ms  186.0 GB/s mismatch 0 (min 0.131 max 0.133)
+kv_dim  1024 Tkv    4096 engine     grid     4096    0.103 ms  235.6 GB/s mismatch 0 (min 0.102 max 0.104)
+kv_dim  1024 Tkv    4096 engine_pt  grid      384    0.101 ms  240.4 GB/s mismatch 0 (min 0.099 max 0.102)
+kv_dim  1024 Tkv    4096 ref_ws1    grid    32768    0.131 ms  186.0 GB/s mismatch 0 (min 0.131 max 0.131)
+kv_dim  1024 Tkv    4096 engine     grid     4096    0.103 ms  235.6 GB/s mismatch 0 (min 0.102 max 0.105)
+kv_dim  1024 Tkv   32768 ref_ws1    grid   262144    1.099 ms  177.5 GB/s mismatch 0 (min 1.098 max 1.100)
+kv_dim  1024 Tkv   32768 engine     grid    32768    0.907 ms  215.0 GB/s mismatch 0 (min 0.902 max 1.047)
+kv_dim  1024 Tkv   32768 engine_pt  grid      384    0.951 ms  205.0 GB/s mismatch 0 (min 0.949 max 0.959)
+kv_dim  1024 Tkv   32768 ref_ws1    grid   262144    1.101 ms  177.2 GB/s mismatch 0 (min 1.100 max 1.234)
+kv_dim  1024 Tkv   32768 engine     grid    32768    0.910 ms  214.3 GB/s mismatch 0 (min 0.897 max 1.086)
+kv_dim  1024 Tkv  131072 ref_ws1    grid  1048560    4.335 ms  180.0 GB/s mismatch 0 (min 4.331 max 5.126)
+kv_dim  1024 Tkv  131072 engine     grid   131072    3.514 ms  222.0 GB/s mismatch 0 (min 3.511 max 3.532)
+kv_dim  1024 Tkv  131072 engine_pt  grid      384    3.759 ms  207.5 GB/s mismatch 0 (min 3.752 max 3.829)
+kv_dim  1024 Tkv  131072 ref_ws1    grid  1048560    4.336 ms  179.9 GB/s mismatch 0 (min 4.329 max 4.865)
+kv_dim  1024 Tkv  131072 engine     grid   131072    3.527 ms  221.2 GB/s mismatch 0 (min 3.514 max 3.870)
+kv_dim  1024 Tkv  262144 ref_ws1    grid  1048560    8.390 ms  186.0 GB/s mismatch 0 (min 8.010 max 8.914)
+kv_dim  1024 Tkv  262144 engine     grid   262144    7.024 ms  222.1 GB/s mismatch 0 (min 7.014 max 7.435)
+kv_dim  1024 Tkv  262144 engine_pt  grid      384    7.626 ms  204.6 GB/s mismatch 0 (min 7.538 max 7.923)
+kv_dim  1024 Tkv  262144 ref_ws1    grid  1048560    8.421 ms  185.3 GB/s mismatch 0 (min 8.008 max 8.937)
+kv_dim  1024 Tkv  262144 engine     grid   262144    7.050 ms  221.3 GB/s mismatch 0 (min 7.028 max 7.458)
+kv_dim  2048 Tkv    4096 ref_ws1    grid    65536    0.291 ms  167.6 GB/s mismatch 0 (min 0.291 max 0.293)
+kv_dim  2048 Tkv    4096 engine     grid     8192    0.239 ms  204.4 GB/s mismatch 0 (min 0.238 max 0.239)
+kv_dim  2048 Tkv    4096 engine_pt  grid      384    0.248 ms  196.6 GB/s mismatch 0 (min 0.247 max 0.251)
+kv_dim  2048 Tkv    4096 ref_ws1    grid    65536    0.293 ms  166.5 GB/s mismatch 0 (min 0.293 max 0.294)
+kv_dim  2048 Tkv    4096 engine     grid     8192    0.238 ms  205.2 GB/s mismatch 0 (min 0.237 max 0.241)
+kv_dim  2048 Tkv   32768 ref_ws1    grid   524288    2.182 ms  178.8 GB/s mismatch 0 (min 2.178 max 2.609)
+kv_dim  2048 Tkv   32768 engine     grid    65536    1.837 ms  212.3 GB/s mismatch 0 (min 1.763 max 2.018)
+kv_dim  2048 Tkv   32768 engine_pt  grid      384    1.909 ms  204.4 GB/s mismatch 0 (min 1.902 max 1.913)
+kv_dim  2048 Tkv   32768 ref_ws1    grid   524288    2.184 ms  178.6 GB/s mismatch 0 (min 2.180 max 2.190)
+kv_dim  2048 Tkv   32768 engine     grid    65536    1.785 ms  218.5 GB/s mismatch 0 (min 1.755 max 1.903)
+kv_dim  2048 Tkv  131072 ref_ws1    grid  1048560    8.437 ms  184.9 GB/s mismatch 0 (min 8.020 max 8.919)
+kv_dim  2048 Tkv  131072 engine     grid   262144    7.000 ms  222.9 GB/s mismatch 0 (min 6.952 max 7.197)
+kv_dim  2048 Tkv  131072 engine_pt  grid      384    7.545 ms  206.8 GB/s mismatch 0 (min 7.522 max 7.823)
+kv_dim  2048 Tkv  131072 ref_ws1    grid  1048560    8.497 ms  183.6 GB/s mismatch 0 (min 8.017 max 8.856)
+kv_dim  2048 Tkv  131072 engine     grid   262144    7.022 ms  222.2 GB/s mismatch 0 (min 6.954 max 7.174)
+kv_dim  2048 Tkv  262144 ref_ws1    grid  1048560   16.607 ms  187.9 GB/s mismatch 0 (min 15.856 max 16.622)
+kv_dim  2048 Tkv  262144 engine     grid   524288   13.879 ms  224.8 GB/s mismatch 0 (min 13.857 max 14.461)
+kv_dim  2048 Tkv  262144 engine_pt  grid      384   15.142 ms  206.1 GB/s mismatch 0 (min 15.112 max 15.492)
+kv_dim  2048 Tkv  262144 ref_ws1    grid  1048560   16.685 ms  187.0 GB/s mismatch 0 (min 16.128 max 16.754)
+kv_dim  2048 Tkv  262144 engine     grid   524288   14.038 ms  222.3 GB/s mismatch 0 (min 13.942 max 14.497)
+probe rc=0
+flash_attn.cu(848): warning #177-D: variable "alpha_self" was declared but never referenced
+              float alpha_self = 1.0f;
+                    ^
+
+Remark: The warnings can be suppressed with "-diag-suppress <warning-number>"
+
+flash_attn.cu(1083): warning #177-D: variable "sMw" was declared but never referenced
+      float* sMw = sM + warp*16;
+             ^
+
+flash_attn.cu(4311): warning #177-D: variable "sSw" was declared but never referenced
+      float* sSw = sS + warp*16*32;
+             ^
+
+flash_attn.cu(4312): warning #177-D: variable "sMw" was declared but never referenced
+      float* sMw = sM + warp*16;
+             ^
+
+device NVIDIA GB10 sms 48 kfmt 1 vfmt 2 reps 3
+kv_dim   256 Tkv    4096 ref_ws1    grid     8192    0.033 ms  192.0 GB/s mismatch 0 (min 0.033 max 0.033)
+kv_dim   256 Tkv    4096 engine     grid     1024    0.008 ms  768.0 GB/s mismatch 0 (min 0.008 max 0.010)
+kv_dim   256 Tkv    4096 engine_pt  grid      384    0.008 ms  768.0 GB/s mismatch 0 (min 0.008 max 0.008)
+kv_dim   256 Tkv    4096 ref_ws1    grid     8192    0.033 ms  192.0 GB/s mismatch 0 (min 0.033 max 0.033)
+kv_dim   256 Tkv    4096 engine     grid     1024    0.008 ms  762.0 GB/s mismatch 0 (min 0.008 max 0.010)
+kv_dim   256 Tkv   32768 ref_ws1    grid    65536    0.301 ms  167.1 GB/s mismatch 0 (min 0.301 max 0.302)
+kv_dim   256 Tkv   32768 engine     grid     8192    0.243 ms  207.4 GB/s mismatch 0 (min 0.243 max 0.245)
+kv_dim   256 Tkv   32768 engine_pt  grid      384    0.255 ms  197.4 GB/s mismatch 0 (min 0.255 max 0.256)
+kv_dim   256 Tkv   32768 ref_ws1    grid    65536    0.303 ms  166.1 GB/s mismatch 0 (min 0.301 max 0.303)
+kv_dim   256 Tkv   32768 engine     grid     8192    0.244 ms  206.5 GB/s mismatch 0 (min 0.243 max 0.245)
+kv_dim   256 Tkv  131072 ref_ws1    grid   262144    1.137 ms  177.1 GB/s mismatch 0 (min 1.136 max 1.137)
+kv_dim   256 Tkv  131072 engine     grid    32768    0.914 ms  220.2 GB/s mismatch 0 (min 0.911 max 0.918)
+kv_dim   256 Tkv  131072 engine_pt  grid      384    0.957 ms  210.3 GB/s mismatch 0 (min 0.954 max 0.958)
+kv_dim   256 Tkv  131072 ref_ws1    grid   262144    1.135 ms  177.4 GB/s mismatch 0 (min 1.134 max 1.143)
+kv_dim   256 Tkv  131072 engine     grid    32768    0.916 ms  219.7 GB/s mismatch 0 (min 0.916 max 0.923)
+kv_dim   512 Tkv    4096 ref_ws1    grid    16384    0.061 ms  204.8 GB/s mismatch 0 (min 0.061 max 0.061)
+kv_dim   512 Tkv    4096 engine     grid     2048    0.016 ms  768.0 GB/s mismatch 0 (min 0.016 max 0.016)
+kv_dim   512 Tkv    4096 engine_pt  grid      384    0.018 ms  682.7 GB/s mismatch 0 (min 0.018 max 0.018)
+kv_dim   512 Tkv    4096 ref_ws1    grid    16384    0.061 ms  204.8 GB/s mismatch 0 (min 0.061 max 0.067)
+kv_dim   512 Tkv    4096 engine     grid     2048    0.016 ms  768.0 GB/s mismatch 0 (min 0.016 max 0.016)
+kv_dim   512 Tkv   32768 ref_ws1    grid   131072    0.575 ms  174.9 GB/s mismatch 0 (min 0.574 max 0.577)
+kv_dim   512 Tkv   32768 engine     grid    16384    0.470 ms  214.2 GB/s mismatch 0 (min 0.468 max 0.472)
+kv_dim   512 Tkv   32768 engine_pt  grid      384    0.492 ms  204.8 GB/s mismatch 0 (min 0.489 max 0.500)
+kv_dim   512 Tkv   32768 ref_ws1    grid   131072    0.577 ms  174.6 GB/s mismatch 0 (min 0.574 max 0.578)
+kv_dim   512 Tkv   32768 engine     grid    16384    0.475 ms  211.9 GB/s mismatch 0 (min 0.472 max 0.482)
+kv_dim   512 Tkv  131072 ref_ws1    grid   524288    2.263 ms  177.9 GB/s mismatch 0 (min 2.260 max 2.264)
+kv_dim   512 Tkv  131072 engine     grid    65536    1.835 ms  219.4 GB/s mismatch 0 (min 1.828 max 1.836)
+kv_dim   512 Tkv  131072 engine_pt  grid      384    1.904 ms  211.4 GB/s mismatch 0 (min 1.903 max 1.906)
+kv_dim   512 Tkv  131072 ref_ws1    grid   524288    2.261 ms  178.1 GB/s mismatch 0 (min 2.255 max 2.540)
+kv_dim   512 Tkv  131072 engine     grid    65536    1.838 ms  219.1 GB/s mismatch 0 (min 1.835 max 1.853)
+kv_dim  1024 Tkv    4096 ref_ws1    grid    32768    0.142 ms  176.8 GB/s mismatch 0 (min 0.142 max 0.143)
+kv_dim  1024 Tkv    4096 engine     grid     4096    0.110 ms  229.7 GB/s mismatch 0 (min 0.109 max 0.111)
+kv_dim  1024 Tkv    4096 engine_pt  grid      384    0.102 ms  245.8 GB/s mismatch 0 (min 0.101 max 0.102)
+kv_dim  1024 Tkv    4096 ref_ws1    grid    32768    0.142 ms  176.8 GB/s mismatch 0 (min 0.141 max 0.142)
+kv_dim  1024 Tkv    4096 engine     grid     4096    0.106 ms  236.3 GB/s mismatch 0 (min 0.104 max 0.108)
+kv_dim  1024 Tkv   32768 ref_ws1    grid   262144    1.139 ms  176.8 GB/s mismatch 0 (min 1.138 max 1.147)
+kv_dim  1024 Tkv   32768 engine     grid    32768    0.925 ms  217.7 GB/s mismatch 0 (min 0.923 max 0.927)
+kv_dim  1024 Tkv   32768 engine_pt  grid      384    0.950 ms  211.9 GB/s mismatch 0 (min 0.950 max 0.952)
+kv_dim  1024 Tkv   32768 ref_ws1    grid   262144    1.139 ms  176.8 GB/s mismatch 0 (min 1.137 max 1.139)
+kv_dim  1024 Tkv   32768 engine     grid    32768    0.927 ms  217.2 GB/s mismatch 0 (min 0.926 max 0.929)
+kv_dim  1024 Tkv  131072 ref_ws1    grid  1048560    4.528 ms  177.8 GB/s mismatch 0 (min 4.508 max 5.177)
+kv_dim  1024 Tkv  131072 engine     grid   131072    3.661 ms  220.0 GB/s mismatch 0 (min 3.661 max 3.668)
+kv_dim  1024 Tkv  131072 engine_pt  grid      384    3.772 ms  213.5 GB/s mismatch 0 (min 3.760 max 3.787)
+kv_dim  1024 Tkv  131072 ref_ws1    grid  1048560    4.524 ms  178.0 GB/s mismatch 0 (min 4.507 max 4.579)
+kv_dim  1024 Tkv  131072 engine     grid   131072    3.818 ms  210.9 GB/s mismatch 0 (min 3.673 max 3.844)
+kv_dim  2048 Tkv    4096 ref_ws1    grid    65536    0.301 ms  167.2 GB/s mismatch 0 (min 0.300 max 0.302)
+kv_dim  2048 Tkv    4096 engine     grid     8192    0.252 ms  199.8 GB/s mismatch 0 (min 0.250 max 0.252)
+kv_dim  2048 Tkv    4096 engine_pt  grid      384    0.255 ms  197.4 GB/s mismatch 0 (min 0.254 max 0.257)
+kv_dim  2048 Tkv    4096 ref_ws1    grid    65536    0.301 ms  167.2 GB/s mismatch 0 (min 0.301 max 0.304)
+kv_dim  2048 Tkv    4096 engine     grid     8192    0.250 ms  201.4 GB/s mismatch 0 (min 0.250 max 0.251)
+kv_dim  2048 Tkv   32768 ref_ws1    grid   524288    2.258 ms  178.3 GB/s mismatch 0 (min 2.257 max 2.265)
+kv_dim  2048 Tkv   32768 engine     grid    65536    1.826 ms  220.5 GB/s mismatch 0 (min 1.824 max 1.826)
+kv_dim  2048 Tkv   32768 engine_pt  grid      384    1.874 ms  214.9 GB/s mismatch 0 (min 1.874 max 1.874)
+kv_dim  2048 Tkv   32768 ref_ws1    grid   524288    2.258 ms  178.3 GB/s mismatch 0 (min 2.257 max 2.264)
+kv_dim  2048 Tkv   32768 engine     grid    65536    1.829 ms  220.2 GB/s mismatch 0 (min 1.823 max 1.841)
+kv_dim  2048 Tkv  131072 ref_ws1    grid  1048560    8.690 ms  185.3 GB/s mismatch 0 (min 8.579 max 9.070)
+kv_dim  2048 Tkv  131072 engine     grid   262144    7.234 ms  222.7 GB/s mismatch 0 (min 7.224 max 7.504)
+kv_dim  2048 Tkv  131072 engine_pt  grid      384    7.453 ms  216.1 GB/s mismatch 0 (min 7.450 max 7.489)
+kv_dim  2048 Tkv  131072 ref_ws1    grid  1048560    8.600 ms  187.3 GB/s mismatch 0 (min 8.193 max 8.971)
+kv_dim  2048 Tkv  131072 engine     grid   262144    7.237 ms  222.6 GB/s mismatch 0 (min 7.234 max 7.467)
+probe-f8 rc=0
