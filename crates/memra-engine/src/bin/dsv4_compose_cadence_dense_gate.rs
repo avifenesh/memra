@@ -196,7 +196,7 @@ fn captures_once(gpu: &Dsv4Gpu, state: &DecodeState, on: bool) {
         let slots: &[usize] = if on { &[0, 2, 3] } else { &[0] };
         for &slot in slots {
             let derived = gpu
-                .full_token_forward_census_for_gate(state, index, slot, on, on)
+                .full_token_forward_census_for_gate(state, index, slot, on)
                 .expect("program-derived kernel census");
             let kernels = derived.kernels;
             eprintln!(
@@ -276,10 +276,14 @@ fn dense_census(gpu: &Dsv4Gpu, state: &DecodeState, on: bool, dir: &Path) -> Gra
             // variants the unfused HC entries' norms and each emitting compressor's, in the
             // commit graph the head's final norm.
             let (norms, ropes) = if segment == 1 {
-                (gpu.full_token_commit_rmsnorm_for_gate(rank), 0)
+                (
+                    gpu.full_token_commit_rmsnorm_for_gate(rank)
+                        .expect("program-derived commit census"),
+                    0,
+                )
             } else {
                 let derived = gpu
-                    .full_token_forward_census_for_gate(state, rank, segment, on, on)
+                    .full_token_forward_census_for_gate(state, rank, segment, on)
                     .expect("program-derived kernel census");
                 (derived.rmsnorm, derived.rope)
             };

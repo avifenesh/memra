@@ -137,7 +137,7 @@ fn census(gpu: &Dsv4Gpu, state: &DecodeState, dir: &Path) -> [[String; 4]; 2] {
         gpu.full_token_replay_captures_for_gate(state).unwrap(),
         [3, 1]
     );
-    // The cadence program (three forward variants), captured under this thread's dense selection.
+    // Captured under this thread's dense selection, which this gate never switches.
     let dense = memra_engine::dsv4_gpu::dense_exact_tail_enabled_for_gate();
     let read = gpu
         .full_token_replay_variant_census_for_gate(state)
@@ -197,13 +197,14 @@ fn census(gpu: &Dsv4Gpu, state: &DecodeState, dir: &Path) -> [[String; 4]; 2] {
                 }
             );
             // The standalone RMSNorm and RoPE nodes and the kernel total the loaded program
-            // launches (`Dsv4Gpu::full_token_forward_census_for_gate`): under the diet the HC
-            // entries' norms run in the fused finish, the q norm in its pack kernel and the
-            // latent norm and RoPE in one launch, so a forward variant keeps only its emitting
-            // compressors' norms; the commit graph holds the head's final norm.
+            // launches (`Dsv4Gpu::full_token_forward_census_for_gate`). Under the diet the q
+            // norm runs in its pack kernel and the latent norm and RoPE in one launch; with the
+            // HC split the HC entries' norms run in the fused finish, so a forward variant keeps
+            // only its emitting compressors' norms, and without it the two entry norms per layer
+            // stay. The commit graph holds the head's final norm.
             let (norms, ropes) = if forward {
                 let derived = gpu
-                    .full_token_forward_census_for_gate(state, rank, segment, true, dense)
+                    .full_token_forward_census_for_gate(state, rank, segment, dense)
                     .expect("program-derived kernel census");
                 eprintln!(
                     "HC24 kernel census rank={rank} variant={segment} kernels={} want={} rmsnorm want={} rope want={}",
@@ -216,7 +217,11 @@ fn census(gpu: &Dsv4Gpu, state: &DecodeState, dir: &Path) -> [[String; 4]; 2] {
                 );
                 (derived.rmsnorm, derived.rope)
             } else {
-                (gpu.full_token_commit_rmsnorm_for_gate(rank), 0)
+                (
+                    gpu.full_token_commit_rmsnorm_for_gate(rank)
+                        .expect("program-derived commit census"),
+                    0,
+                )
             };
             assert_eq!(
                 count_kernel(&dot, "dsv4_rmsnorm_f32acc_kernel") as u64,

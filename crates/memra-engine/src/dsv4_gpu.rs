@@ -2838,27 +2838,41 @@ impl Dsv4Gpu {
     /// standalone RMSNorm and RoPE nodes the graph-census gates count in its DOT dump.
     ///
     /// `slot` is the forward variant (0 ordinary, 2 C4, 3 C4 + C128) of a cadence state, or 0,
-    /// the only forward graph, without cadence. `dense_exact_tail` is the dense selection the
-    /// graph was captured under (gates switch it per arm); the dense-fast and HC split policies
-    /// are read from this thread, so a caller reads the census under the policy it captured.
+    /// the only forward graph, without cadence; the cadence is the armed replay's own. The state
+    /// must have captured its graphs. `dense_exact_tail` is the dense selection the graph was
+    /// captured under (gates switch it per arm). The dense-fast, HC split, grouped wo_a and expert
+    /// policies are read now, so a caller reads the census under the policy it captured with.
     ///
     /// The count walks `decode_step_tp_ep` and `tp_ep_trunk_walk_rows` for one row: the
     /// per-step launches, then each layer's attention, attention TP2 joins, FFN, routed-expert
     /// chain and tail, with the layer's compressors, index list and C4 split read from the loaded
-    /// layer and `state`'s caches. It models the f32x small-kernel-diet program the gates run:
-    /// any branch it does not model (another placement, the fused one-token MoE pair, an unfused
-    /// gate/up) is an error, never a guess.
+    /// layer and `state`'s caches. It models the f32x small-kernel-diet program the gates run and
+    /// refuses another placement, the fused one-token MoE pair, an unfused gate/up or another
+    /// down tail. It takes every DSv4 dense shape as admitted by the dense-fast transport; a
+    /// weight the transport refused would split its pair into two launches and show as a
+    /// mismatch against these terms.
     pub fn full_token_forward_census_for_gate(
         &self,
         state: &DecodeState,
         rank: usize,
         slot: usize,
-        cadence: bool,
         dense_exact_tail: bool,
     ) -> Res<FullTokenForwardCensus> {
         use crate::dsv4_graph::ReplayCadence;
         unsafe extern "C" {
             fn memra_dsv4_dense_fast_enabled_for_gate() -> i32;
+        }
+        let pair = state
+            .matrix_step
+            .as_ref()
+            .and_then(|w| w.replay.as_ref())
+            .ok_or("full-token replay is not armed")?;
+        let cadence = pair.cadence;
+        if pair.captures != [if cadence { 3 } else { 1 }, 1] {
+            return Err(format!(
+                "the census reads captured graphs; this state captured {:?}",
+                pair.captures
+            ));
         }
         let variant = match (cadence, slot) {
             (false, 0) => None,
@@ -3067,10 +3081,14 @@ impl Dsv4Gpu {
         Ok(census)
     }
 
-    /// RMSNorm nodes in the full-token commit graph: the head's final norm, on rank 1, and on
-    /// both ranks with the vocab-parallel head ([`Self::vocab_parallel_head_for_gate`]).
-    pub fn full_token_commit_rmsnorm_for_gate(&self, rank: usize) -> u64 {
-        u64::from(rank == 1 || self.vocab_parallel_head())
+    /// `dsv4_rmsnorm_f32acc_kernel` nodes in the full-token commit graph: the head's final norm,
+    /// on rank 1, and on both ranks with the vocab-parallel head
+    /// ([`Self::vocab_parallel_head_for_gate`]).
+    pub fn full_token_commit_rmsnorm_for_gate(&self, rank: usize) -> Res<u64> {
+        if !self.topology.is_tp_ep() || rank > 1 || !self.chains_f32 {
+            return Err("the commit census models the f32-chain TP/EP ranks".into());
+        }
+        Ok(u64::from(rank == 1 || self.vocab_parallel_head()))
     }
 
     /// Drain both ranks and read the sticky device-side refusal words. The walk
