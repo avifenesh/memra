@@ -10,32 +10,33 @@
   "<gpu-pdi>",
   "<local-tz>",
   "/home/<user>",
-  "<box>"
+  "<box>",
+  "<pci-bus-id>"
  ],
  "exported": [
   {
    "path": "card-q-after.txt",
    "original_sha256": "f12e05e5370aabaf31c2f3d843a55dac7bbf00e0dda1c7515e18520d282980e7",
-   "export_sha256": "daad088f59b52a8fcbab82788f19cf9eb323ef20aa6ba22c43aa55c5726eb457",
-   "change": "rented-box identifier replaced by its placeholder"
+   "export_sha256": "45c7d98aa2684eb660a42b26aefeb44187e2578f99f356a01c5ac52f482aab73",
+   "change": "rented-box identifier replaced by its placeholder; PCI bus ids replaced by <pci-bus-id> (2026-11-08)"
   },
   {
    "path": "card-q-before.txt",
    "original_sha256": "70026e8bd37d8e77338c9fefdfebfe20836c80ae7df17fdbdc7f2bb75f68b619",
-   "export_sha256": "2ce7a55950a05c69515ebbff538712e059d7fe23fadc534ec72eeb8d92edb669",
-   "change": "rented-box identifier replaced by its placeholder"
+   "export_sha256": "4d1014e2aeaca4ddd6bed160aaaca1fa589fa97b37256777b4e826a61c25da7a",
+   "change": "rented-box identifier replaced by its placeholder; PCI bus ids replaced by <pci-bus-id> (2026-11-08)"
   },
   {
    "path": "card.csv",
    "original_sha256": "feb7a42cf834cb1fd1616b3a0b6d132c2e062b9679e5be7f19e27015f840a0c0",
-   "export_sha256": "bf60ba0368d9e8009f7135b87c24badc040d2dc5ff818261426661783bc7ec85",
-   "change": "rented-box identifier replaced by its placeholder"
+   "export_sha256": "bb775db9e4379e39f8456adaa9183f131586ef76eeaaf7bf0bac4ff16aa38a9f",
+   "change": "rented-box identifier replaced by its placeholder; PCI bus ids replaced by <pci-bus-id> (2026-11-08)"
   },
   {
    "path": "env.txt",
    "original_sha256": "a77488aac284703ea869b5fd0452c3c6523a9925ff8dd00f85be519507ab98b0",
-   "export_sha256": "d379eeaead8bb652d702c0ef69fc53844202b29e352bf3b9be1f90515bd058ac",
-   "change": "rented-box identifier replaced by its placeholder"
+   "export_sha256": "0bf791f9eb6aa0c65137204c40da5432211122d38498651495322edc1fa04dd1",
+   "change": "rented-box identifier replaced by its placeholder; PCI bus ids replaced by <pci-bus-id> (2026-11-08)"
   },
   {
    "path": "host.txt",
@@ -88,14 +89,20 @@
   {
    "path": "run.log",
    "original_sha256": "71bf6694647c034547eaec81d971128e3e3df662c1a40c3096a8a4791df5cc09",
-   "export_sha256": "a4b4de9570447ce745d53ca74fb0277f2a24eac32c3edb667cad7127e23669fc",
-   "change": "rented-box identifier replaced by its placeholder"
+   "export_sha256": "f50b28f093df25ddc8c590a4da0aa59621745fb20e2db307a53523cebeb8ecad",
+   "change": "rented-box identifier replaced by its placeholder; PCI bus ids replaced by <pci-bus-id> (2026-11-08)"
   },
   {
    "path": "runner/batch-oom-recover-try1.log",
    "original_sha256": "d1daac1d021d829385f56e398850c35d6fd8ed8c6547e36d5ed5c2506ca8d767",
-   "export_sha256": "93b20fad97dbfab2fdaeeb6580cca96d17f6e14746929ec7aac3c71148c212a2",
-   "change": "rented-box identifier replaced by its placeholder"
+   "export_sha256": "b7005115755739d0947a03693408b3c72f883ccee9a0352f9312dc2bdd9a3c5f",
+   "change": "rented-box identifier replaced by its placeholder; PCI bus ids replaced by <pci-bus-id> (2026-11-08)"
+  },
+  {
+   "path": "runner/power-set-batch-oom-recover-try1.log",
+   "original_sha256": "73b23f14d2c7c7de9bf110d37e23e1d63a498440c315263e0890fc53785e76eb",
+   "export_sha256": "b7a11ceb1bd7ecb57b054250b1efd4a15c07e5f2b411c33ddae9ca9f357f1937",
+   "change": "PCI bus ids replaced by <pci-bus-id> (2026-11-08)"
   }
  ]
 }

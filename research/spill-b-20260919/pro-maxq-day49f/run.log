@@ -1,7 +1,7 @@
 2026-11-05T05:15:55Z batch-oom-recover Max-Q kit: start out=/mnt/Data/work/memra-maxq/batch-oom-recover/out-20261105T051555Z total_timeout=5400s
 2026-11-05T05:15:56Z lock /tmp/memra-gpu.lock held on fd 10
 2026-11-05T05:15:56Z model sha256 check (15705922304 B)
-2026-11-05T05:16:04Z card 2 NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition uuid=GPU-<card2-uuid> bus=00000000:C1:00.0 power.limit=300.00 W used=2 MiB
+2026-11-05T05:16:04Z card 2 NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition uuid=GPU-<card2-uuid> bus=<pci-bus-id> power.limit=300.00 W used=2 MiB
 2026-11-05T05:16:04Z step j1 start cap=1800s
 reap: sigterm=[] sigkill=[]
 2026-11-05T05:16:24Z step j1 rc=0 health-fault-gate: arms=j pass=2 documented=0 skip=0 fail=0 receipts=/mnt/Data/work/memra-maxq/batch-oom-recover/out-20261105T051555Z/gates/j1
