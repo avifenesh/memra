@@ -5076,22 +5076,11 @@ impl HybridModel {
         let mut h_norm = e.zeros(t * n_embd)?;
         e.rms_norm(h, mtp.hnorm.float_data(), &mut h_norm, n_embd, t, eps)?;
 
-        // op 3: per-row [e_norm ; h_norm] concat, token-major [T, 2*n_embd].
+        // op 3: per-row [e_norm ; h_norm] concat, token-major [T, 2*n_embd]: two strided copies
+        // (the same bytes as 2T row copies; a 4,096-row prime fill chunk issued 8,192 of them).
         let mut concat = e.zeros(t * 2 * n_embd)?;
-        for i in 0..t {
-            e.copy_view_into(
-                &mut concat,
-                i * 2 * n_embd,
-                &e_norm.slice(i * n_embd..(i + 1) * n_embd),
-                n_embd,
-            )?;
-            e.copy_view_into(
-                &mut concat,
-                i * 2 * n_embd + n_embd,
-                &h_norm.slice(i * n_embd..(i + 1) * n_embd),
-                n_embd,
-            )?;
-        }
+        e.copy_2d_dtod_async(&mut concat, 0, 2 * n_embd, &e_norm, n_embd, n_embd, t)?;
+        e.copy_2d_dtod_async(&mut concat, n_embd, 2 * n_embd, &h_norm, n_embd, n_embd, t)?;
 
         // ops 4/5: eh_proj + attn_norm, T-wide (at the student inner width when geom is set).
         let di = mtp.geom.as_ref().map(|g| g.d_inner).unwrap_or(n_embd);
@@ -5157,21 +5146,40 @@ impl HybridModel {
             .map(|ring| memra_kv::swa_retain_from(pos0, ring.window(), ring.base()))
             .unwrap_or(0);
         let write_row = e.prepare_kv_append(kv, retain_from, t)?;
-        for i in 0..t {
-            let k_row = k.slice(i * kv.kv_dim_k..(i + 1) * kv.kv_dim_k);
-            let v_row = v.slice(i * kv.kv_dim_v..(i + 1) * kv.kv_dim_v);
-            e.append_kv_quantized_view(
-                &k_row,
-                &v_row,
+        // One launch for the T rows (the batched kernel's grid height bounds T; every prime fill
+        // chunk is under it): each written row is bit-identical to a per-row append
+        // (kernel-check "kv append rows-vs-loop bit-identity"). Longer fills keep the per-row loop.
+        if t <= crate::hybrid_forward::CUDA_GRID_YZ_MAX {
+            e.append_kv_quantized_rows(
+                &k,
+                &v,
                 &mut kv.k,
                 &mut kv.v,
-                write_row + i,
+                write_row,
+                t,
                 kv.kv_dim_k,
                 kv.kv_dim_v,
                 kv.k_tok_bytes,
                 kv.v_tok_bytes,
                 false,
             )?;
+        } else {
+            for i in 0..t {
+                let k_row = k.slice(i * kv.kv_dim_k..(i + 1) * kv.kv_dim_k);
+                let v_row = v.slice(i * kv.kv_dim_v..(i + 1) * kv.kv_dim_v);
+                e.append_kv_quantized_view(
+                    &k_row,
+                    &v_row,
+                    &mut kv.k,
+                    &mut kv.v,
+                    write_row + i,
+                    kv.kv_dim_k,
+                    kv.kv_dim_v,
+                    kv.k_tok_bytes,
+                    kv.v_tok_bytes,
+                    false,
+                )?;
+            }
         }
         kv.len = pos0 + t;
         e.set_i32_one(&mut kv.len_d, kv.len as i32)?;
