@@ -193,12 +193,111 @@ class CellGate(unittest.TestCase):
         self.f.record(code, ["serving"])
         self.assertIn("CELL-QUALIFIED", self.f.push())
 
+    def workspace(self):
+        """Cargo manifests like the real tree's: memra-server depends on memra-engine, never the reverse."""
+        self.f.write("Cargo.toml", '[workspace]\nresolver = "2"\nmembers = ["crates/memra-engine", "crates/memra-server", '
+                     '"crates/memra-tokenizer"]\n[workspace.dependencies]\nmemra-engine = { path = "crates/memra-engine" }\n')
+        self.f.write("crates/memra-engine/Cargo.toml", '[package]\nname = "memra-engine"\n')
+        self.f.write("crates/memra-tokenizer/Cargo.toml", '[package]\nname = "memra-tokenizer"\n')
+        self.f.write("crates/memra-server/Cargo.toml", '[package]\nname = "memra-server"\n'
+                     '[dependencies]\nmemra-engine = { workspace = true }\n')
+        self.f.commit("workspace manifests")
+        self.f.base = self.f.head()
+
+    def test_server_only_change_needs_serve_smoke_not_the_battery(self):
+        # no battery binary links memra-server: its change cannot move a battery or perf result
+        self.workspace()
+        self.f.write("crates/memra-server/src/worker.rs", "pub fn step() { let _ = 9; }\n")
+        code = self.f.commit("server change")
+        with self.assertRaisesRegex(q.GateError, r"sm_120a \[serving\] needs serving evidence"):
+            self.f.push()
+        self.f.record(code, ["serving"])
+        out = self.f.push()
+        self.assertIn("CELL-QUALIFIED", out)
+        self.assertIn("outside the battery binaries", out)
+
+    def test_battery_record_survives_a_later_server_only_change(self):
+        self.workspace()
+        self.f.write("crates/memra-engine/cu/qmatvec.cu", "__global__ void k() { int x = 8; }\n")
+        measured = self.f.commit("kernel")
+        self.f.record(measured, ["battery", "perf"])
+        self.f.write("crates/memra-server/src/worker.rs", "pub fn step() { let _ = 10; }\n")
+        head = self.f.commit("server change")
+        self.f.record(head, ["serving"])
+        out = self.f.push()
+        self.assertIn("still proves battery,perf on sm_120a", out)
+        self.assertIn("CELL-QUALIFIED", out)
+
+    def test_server_default_keyed_on_a_card_needs_serve_smoke_from_that_card(self):
+        self.workspace()
+        self.f.write("crates/memra-server/src/worker.rs",
+                     'pub fn step(n: &str) { if n.contains("RTX PRO 6000 Blackwell") { vmm(); } }\n')
+        code = self.f.commit("PRO 6000 serving default")
+        self.f.record(code, ["serving"])
+        with self.assertRaisesRegex(q.GateError, r"defaults keyed on rtxpro6000\] needs serving evidence from rtxpro6000"):
+            self.f.push()
+        pro = {**DEVICE, "name": "NVIDIA RTX PRO 6000 Blackwell Server Edition"}
+        self.f.record(code, ["serving"], device_class="rtxpro6000", device=pro)
+        self.assertIn("CELL-QUALIFIED", self.f.push())
+
     def test_evidence_for_other_inputs_is_not_admitted(self):
         self.f.write("crates/memra-engine/cu/qmatvec.cu", "__global__ void k() { int x = 3; }\n")
         old = self.f.commit("kernel v1")
         self.f.record(old, ["battery", "perf"])
         self.f.write("crates/memra-engine/cu/qmatvec.cu", "__global__ void k() { int x = 4; }\n")
         self.f.commit("kernel v2")
+        with self.assertRaisesRegex(q.GateError, "missing evidence"):
+            self.f.push()
+
+    def test_older_record_still_proves_when_no_change_since_reaches_its_target(self):
+        # delta against the last measured commit: a later change gated to other targets (the
+        # fail-closed stub reaches only 90a and 89) leaves the sm_120a record valid
+        self.f.write("crates/memra-engine/cu/qmatvec.cu", "__global__ void k() { int x = 5; }\n")
+        measured = self.f.commit("kernel")
+        self.f.record(measured, ["battery", "perf"])
+        self.f.write("crates/memra-engine/cu/mmq_fp4_stub.cu", "__global__ void stub() { __trap(); }\n")
+        self.f.write("README.md", "# fixture, reworded\n")
+        self.f.commit("stub and docs")
+        out = self.f.push()
+        self.assertIn("still proves battery,perf on sm_120a", out)
+        self.assertIn("CELL-QUALIFIED", out)
+
+    def test_older_records_of_different_kinds_on_one_device_each_still_prove(self):
+        # battery measured at one commit, perf at a later one, same target and device: the newer
+        # record must not hide the older one's kind
+        self.f.write("crates/memra-engine/cu/qmatvec.cu", "__global__ void k() { int x = 8; }\n")
+        battery_at = self.f.commit("kernel")
+        self.f.record(battery_at, ["battery"], name="older-battery")
+        self.f.write("crates/memra-engine/cu/mmq_fp4_stub.cu", "__global__ void stub() { __trap(); }\n")
+        perf_at = self.f.commit("stub for other targets")
+        self.f.record(perf_at, ["perf"], name="newer-perf")
+        self.f.write("crates/memra-engine/cu/mmq_fp4_stub.cu", "__global__ void stub() { __trap(); __trap(); }\n")
+        self.f.commit("stub again")
+        out = self.f.push()
+        self.assertIn("still proves battery on sm_120a", out)
+        self.assertIn("still proves perf on sm_120a", out)
+        self.assertIn("CELL-QUALIFIED", out)
+
+    def test_older_record_is_stale_once_a_change_reaches_its_target(self):
+        self.f.write("crates/memra-engine/cu/qmatvec.cu", "__global__ void k() { int x = 6; }\n")
+        measured = self.f.commit("kernel")
+        self.f.record(measured, ["battery", "perf"])
+        self.f.write("crates/memra-engine/src/lib.rs", "pub fn f() { let _ = 2; }\n")
+        self.f.commit("engine numeric change")
+        with self.assertRaisesRegex(q.GateError, "missing evidence"):
+            self.f.push()
+
+    def test_older_record_is_judged_by_the_push_bases_rules(self):
+        # a rules edit inside the pushed range cannot relax what an older record is judged by
+        rules = (self.f.repo / "tools/change-impact.toml").read_text()
+        relaxed = rules.replace("[[rule]]\n", "[[rule]]\npattern = '^crates/memra-engine/src/'\nclass = \"docs\"\n"
+                                "why = \"relaxed inside the pushed range\"\n\n[[rule]]\n", 1)
+        self.f.write("tools/change-impact.toml", relaxed)
+        self.f.write("crates/memra-engine/cu/qmatvec.cu", "__global__ void k() { int x = 7; }\n")
+        measured = self.f.commit("kernel and relaxed rules")
+        self.f.record(measured, ["battery", "serving", "perf"])
+        self.f.write("crates/memra-engine/src/lib.rs", "pub fn f() { let _ = 3; }\n")
+        self.f.commit("engine numeric change, never measured")
         with self.assertRaisesRegex(q.GateError, "missing evidence"):
             self.f.push()
 
