@@ -573,8 +573,8 @@ def research_kept(repo, commit):
     a code line in crates/ spells (comment lines and data files read nothing, as in the census's
     literal check). The rest are receipts no build and no gate reads (the contract
     `research_drift` relies on too). None, so the tree is checked out whole, when the census
-    cannot answer (it needs git 2.45 for `--no-lazy-fetch`) or a kept name cannot be written as
-    a sparse pattern."""
+    cannot answer (for one, an object a partial clone does not hold: the census never fetches,
+    `validation_plan.local_git_command`) or a kept name cannot be written as a sparse pattern."""
     names = [n for n in git(repo, "ls-tree", "-r", "-z", "--name-only", commit, "--", "research")
              .decode("utf-8", errors="replace").split("\0") if n]
     text = ci.read_blob(repo, commit, ci.RULES_PATH)

@@ -115,10 +115,10 @@ and fat LTO, then runs the battery from a detached checkout of the tested commit
 device's lock (`gpulock` on the 5090, the unit's `sparklock` lease on a GB10, the rig flock
 elsewhere). The checkout is sparse: it leaves out the research/ receipts that no gate rule, no
 crate include and no crate code line names (`cell_evidence.research_kept`), 7.1 of the 7.96 GB
-a full checkout took on 2026-11-08. Git before 2.45 has no `--no-lazy-fetch`; there the census
-reads the same local objects without it, unless the clone is partial (a promisor remote can fetch
-lazily). When the census cannot answer, the checkout is whole, and the run says why. The record binds the tested
-commit, the source-input digest, the device class and observation (GPU UUID hashed), the
+a full checkout took on 2026-11-08. The census reads local objects only: with
+`--no-lazy-fetch` on git 2.45 and later, with every transport refused before that (the GB10
+units run 2.43). When it cannot answer, the checkout is whole, and the run says why. The
+record binds the tested commit, the source-input digest, the device class and observation (GPU UUID hashed), the
 binary digests and every raw log. The gate re-judges the raw logs; it never trusts a
 verdict field. Records live under `research/release-qualification/cells/`, which is
 excluded from the source-input digest, so committing one does not change what it

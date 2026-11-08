@@ -1059,24 +1059,35 @@ exec /usr/bin/git "$@"
             return tree.prefetched
 
     def test_older_git_reads_the_same_blobs_without_the_flag(self):
-        self.assertEqual(vp.local_git_argv(self.repo, str(self.fake)),
-                         [str(self.fake), '-C', str(self.repo)])
+        argv, env = vp.local_git_command(self.repo, str(self.fake))
+        self.assertEqual(argv, [str(self.fake), '-C', str(self.repo)])
+        self.assertEqual(env['GIT_ALLOW_PROTOCOL'], 'none')
         older = self.prefetched(str(self.fake))
         self.assertEqual(older, {'a.txt': b'alpha\n', 'b.txt': b'beta\n' * 40})
         if vp.git_version('/usr/bin/git') >= (2, 45):
-            self.assertIn('--no-lazy-fetch', vp.local_git_argv(self.repo))
+            argv, env = vp.local_git_command(self.repo)
+            self.assertIn('--no-lazy-fetch', argv)
+            self.assertIsNone(env)
             self.assertEqual(self.prefetched('/usr/bin/git'), older)
 
-    def test_older_git_refuses_a_partial_clone(self):
-        self.g('config', 'remote.origin.promisor', 'true')
-        with self.assertRaisesRegex(vp.Refused, 'remote.origin.promisor'):
-            vp.local_git_argv(self.repo, str(self.fake))
-        self.g('config', 'remote.origin.promisor', 'false')
-        self.assertEqual(vp.local_git_argv(self.repo, str(self.fake))[1], '-C')
-        self.g('config', 'extensions.partialClone', 'origin')
-        with self.assertRaisesRegex(vp.Refused, 'extensions.partialclone'):
-            vp.local_git_argv(self.repo, str(self.fake))
-
+    def test_older_git_does_not_fetch_a_partial_clone_blob(self):
+        # A blob:none partial clone of a file:// source: its blobs are missing, and a plain
+        # `cat-file --batch` on older git would fetch them from the promisor remote.
+        clone = Path(self.tmp.name) / 'partial'
+        self.g('config', 'uploadpack.allowFilter', 'true')
+        subprocess.run(['/usr/bin/git', 'clone', '-q', '--no-checkout', '--filter=blob:none',
+                        'file://' + str(self.repo), str(clone)], check=True, capture_output=True)
+        blob = self.g('rev-parse', 'HEAD:a.txt')
+        absent = ['/usr/bin/git', '-C', str(clone), 'cat-file', '-e', blob]
+        self.assertNotEqual(subprocess.run(absent, capture_output=True,
+                                           env={**os.environ, 'GIT_NO_LAZY_FETCH': '1'}).returncode, 0)
+        with mock.patch.object(vp, 'GIT', str(self.fake)), self.assertRaises(
+                (vp.Refused, subprocess.CalledProcessError)):
+            tree = vp.Tree(clone, self.head)
+            tree.prefetch_text(['a.txt'])
+        self.assertNotEqual(subprocess.run(absent, capture_output=True,
+                                           env={**os.environ, 'GIT_NO_LAZY_FETCH': '1'}).returncode, 0,
+                            'the blob was fetched')
 
 if __name__ == '__main__':
     unittest.main()
