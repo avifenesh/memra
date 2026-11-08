@@ -2355,13 +2355,15 @@ the RTX 5090 the gate arms pass (arm i twice, arm j and j-vmm; 2.5, 2.6) but the
 serving shape read three of eight boots, the plain route's none. Owner, 2026-11-04: winners
 become defaults keyed to the card each receipt came from, and their switches go. The retry is now
 the default on the full-power Workstation Edition (`batch_oom_recover_default` in `worker.rs`,
-boot line `[admit-oom] batch OOM recovery: ON` or `OFF`); every other card, the 5090 included,
-keeps the error arm. `tools/health-fault-gate.sh` arms i and j no longer set the name and SKIP on
+boot line `[admit-oom] batch OOM recovery: ON` or `OFF`) and, since 2026-11-08, the RTX 5090
+Laptop GPU; every other card keeps the error arm. `tools/health-fault-gate.sh` arms i and j no longer set the name and SKIP on
 a card whose boot line reads OFF, and g-batch names the card's state. A stale caller that sets
 the name is refused at boot by the env audit. Decision:
 `docs/decisions/BATCH-OOM-RECOVER-DEFAULT.md`. Ledger:
 `VERDICT:batch-oom-retry-pro6000-ws-default-door-removed` (darklanes
-`agent-knowledge/gpu/verdicts-ledger.md`).
+`agent-knowledge/gpu/verdicts-ledger.md`). 2026-11-08: the 5090 Laptop's eight serving-shape boots
+read as the target card's (every `on` boot 9 of 9 `200` with one retry; `off` 8 of 9 `503` on three
+boots and 2 of 9 on the fourth; `research/c8-workspace-20261108/runs/oom-main/`).
 
 ## Removed doors, 2026-11-04 (`MEMRA_PRIME_ATTN_FA2`: the winner is the default on its profile, its door goes)
 

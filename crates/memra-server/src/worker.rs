@@ -11607,17 +11607,25 @@ fn host_demote_prefix_entry(engine: &Engine, host: &mut HostPrefixCache, mut dea
 /// The batched decode chunk's OOM recovery (WP-B day 49, `research/spill-b-20260919/DAY49.md`,
 /// `docs/decisions/BATCH-OOM-RECOVER-DEFAULT.md`): a chunk whose quoted CUDA OOM came before any
 /// session-state write (`memra_engine::step_guard`) takes one reclaim rung and runs the same
-/// batched step once more. The default on the full-power RTX PRO 6000 Blackwell Workstation
-/// Edition, the card the deciding cell read; every other card keeps the chunk's error arm.
+/// batched step once more. The default on the cards whose serving cell read: the full-power
+/// RTX PRO 6000 Blackwell Workstation Edition and the RTX 5090 Laptop GPU
+/// (research/c8-workspace-20261108); every other card, the desktop RTX 5090 included, keeps the
+/// chunk's error arm.
 fn batch_oom_recover_default(device_name: &str) -> bool {
-    memra_engine::parallel::HardwareTarget::is_pro6000_workstation(device_name)
+    use memra_engine::parallel::HardwareTarget;
+    HardwareTarget::is_pro6000_workstation(device_name)
+        || (device_name.contains("Laptop")
+            && matches!(
+                HardwareTarget::from_device_name(device_name),
+                Ok(HardwareTarget::Rtx5090)
+            ))
 }
 
 /// The boot receipt of [`batch_oom_recover_default`], one line.
 fn batch_oom_recover_boot_line(on: bool) -> &'static str {
     if on {
-        "[admit-oom] batch OOM recovery: ON (RTX PRO 6000 Blackwell Workstation Edition: an \
-         untouched batched chunk takes one reclaim rung and retries once)"
+        "[admit-oom] batch OOM recovery: ON (a card with a serving receipt: an untouched \
+         batched chunk takes one reclaim rung and retries once)"
     } else {
         "[admit-oom] batch OOM recovery: OFF (no receipt for this card: a batched chunk's OOM \
          ends the chunk's sessions)"
@@ -46345,10 +46353,13 @@ mod tests {
     /// WP-B day 49: the batch OOM recovery is the default on the card the deciding cell read and
     /// nowhere else; the Max-Q and Server editions share the class, not the receipt.
     #[test]
-    fn batch_oom_recovery_is_the_pro6000_workstation_default_only() {
-        assert!(super::batch_oom_recover_default(
-            "NVIDIA RTX PRO 6000 Blackwell Workstation Edition"
-        ));
+    fn batch_oom_recovery_is_the_default_on_the_receipted_cards_only() {
+        for name in [
+            "NVIDIA RTX PRO 6000 Blackwell Workstation Edition",
+            "NVIDIA GeForce RTX 5090 Laptop GPU",
+        ] {
+            assert!(super::batch_oom_recover_default(name), "{name}");
+        }
         for name in [
             "NVIDIA GeForce RTX 5090",
             "NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition",
