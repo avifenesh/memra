@@ -516,6 +516,35 @@ class CellGate(unittest.TestCase):
         ce.research_kept.cache_clear()
         self.assertTrue((tree / "research/lane/run.log").exists())
 
+    def test_a_cell_tree_is_sparse_on_git_before_2_45(self):
+        # GB10 units run git 2.43, which has no `--no-lazy-fetch`: the census answers there too
+        # (a clone with no promisor remote cannot fetch lazily), with the same kept files.
+        f = self.f
+        f.write("research/lane/run.log", "raw receipt\n")
+        f.write("research/tables/rates.txt", "1\n")
+        f.write("crates/memra-server/src/worker.rs",
+                'pub fn step() { let _ = std::fs::read_dir("research/tables"); }\n')
+        commit = f.commit("receipts and a read research directory")
+        fake = f.root / "git-2.43"
+        fake.write_text('#!/bin/sh\n'
+                        'if [ "$1" = "--version" ]; then echo "git version 2.43.0"; exit 0; fi\n'
+                        'for a in "$@"; do [ "$a" = "--no-lazy-fetch" ] && exit 129; done\n'
+                        'exec /usr/bin/git "$@"\n')
+        fake.chmod(0o755)
+        import validation_plan as vp
+        ce.research_kept.cache_clear()
+        current = ce.research_kept(f.repo, commit)
+        ce.research_kept.cache_clear()
+        tree = f.root / "cells" / "tree-121a"
+        with mock.patch.object(vp, "GIT", str(fake)):
+            older = ce.research_kept(f.repo, commit)
+            ce.tree_at(f.repo, commit, tree)
+        ce.research_kept.cache_clear()
+        self.assertEqual(older, current)
+        self.assertIn("research/tables/rates.txt", older)
+        self.assertFalse((tree / "research/lane/run.log").exists())
+        self.assertTrue((tree / "research/tables/rates.txt").exists())
+
     def test_a_full_cell_tree_converts_and_keeps_its_target(self):
         f = self.f
         f.write(".gitignore", "/target/\n")  # as in the repository

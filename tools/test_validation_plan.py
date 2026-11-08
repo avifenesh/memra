@@ -1018,5 +1018,65 @@ class FeatureProgramTests(unittest.TestCase):
         self.assertIn('unavailable', reason)
 
 
+class OlderGitBatchTests(unittest.TestCase):
+    """The pinned batch reader on a Git without `--no-lazy-fetch` (before 2.45, as on GB10)."""
+
+    FAKE = '''#!/bin/sh
+if [ "$1" = "--version" ]; then echo "git version 2.43.0"; exit 0; fi
+for a in "$@"; do
+  if [ "$a" = "--no-lazy-fetch" ]; then echo "unknown option: --no-lazy-fetch" >&2; exit 129; fi
+done
+exec /usr/bin/git "$@"
+'''
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory(prefix='memra-older-git-')
+        self.addCleanup(self.tmp.cleanup)
+        base = Path(self.tmp.name)
+        self.fake = base / 'git-2.43'
+        self.fake.write_text(self.FAKE)
+        self.fake.chmod(0o755)
+        self.repo = base / 'repo'
+        self.repo.mkdir()
+        for args in (('init', '-q'), ('config', 'user.email', 'test@example.invalid'),
+                     ('config', 'user.name', 'Fixture'), ('config', 'commit.gpgsign', 'false'),
+                     ('config', 'core.hooksPath', '/dev/null')):
+            self.g(*args)
+        (self.repo / 'a.txt').write_text('alpha\n')
+        (self.repo / 'b.txt').write_text('beta\n' * 40)
+        self.g('add', 'a.txt', 'b.txt')
+        self.g('commit', '-qm', 'fixture')
+        self.head = self.g('rev-parse', 'HEAD')
+
+    def g(self, *args):
+        return subprocess.check_output(['/usr/bin/git', '-C', str(self.repo), *args],
+                                       stderr=subprocess.PIPE).decode().strip()
+
+    def prefetched(self, git):
+        with mock.patch.object(vp, 'GIT', git):
+            tree = vp.Tree(self.repo, self.head)
+            tree.prefetch_text(['a.txt', 'b.txt'])
+            return tree.prefetched
+
+    def test_older_git_reads_the_same_blobs_without_the_flag(self):
+        self.assertEqual(vp.local_git_argv(self.repo, str(self.fake)),
+                         [str(self.fake), '-C', str(self.repo)])
+        older = self.prefetched(str(self.fake))
+        self.assertEqual(older, {'a.txt': b'alpha\n', 'b.txt': b'beta\n' * 40})
+        if vp.git_version('/usr/bin/git') >= (2, 45):
+            self.assertIn('--no-lazy-fetch', vp.local_git_argv(self.repo))
+            self.assertEqual(self.prefetched('/usr/bin/git'), older)
+
+    def test_older_git_refuses_a_partial_clone(self):
+        self.g('config', 'remote.origin.promisor', 'true')
+        with self.assertRaisesRegex(vp.Refused, 'remote.origin.promisor'):
+            vp.local_git_argv(self.repo, str(self.fake))
+        self.g('config', 'remote.origin.promisor', 'false')
+        self.assertEqual(vp.local_git_argv(self.repo, str(self.fake))[1], '-C')
+        self.g('config', 'extensions.partialClone', 'origin')
+        with self.assertRaisesRegex(vp.Refused, 'extensions.partialclone'):
+            vp.local_git_argv(self.repo, str(self.fake))
+
+
 if __name__ == '__main__':
     unittest.main()

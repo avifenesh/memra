@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 from collections import defaultdict
 import fnmatch
+import functools
 import glob
 import hashlib
 import importlib.util
@@ -624,13 +625,57 @@ def git(repo, *args):
     return subprocess.check_output(['git', '-C', str(repo), *args], stderr=subprocess.PIPE)
 
 
+GIT = '/usr/bin/git'
+
+
+@functools.lru_cache(maxsize=None)
+def git_version(git):
+    """The (major, minor) of a Git binary, or (0, 0) when its version line does not parse."""
+    line = subprocess.check_output([git, '--version'], stderr=subprocess.PIPE, timeout=10)
+    match = re.match(rb'git version (\d+)\.(\d+)', line)
+    return (int(match[1]), int(match[2])) if match else (0, 0)
+
+
+def partial_clone_keys(repo, git):
+    """The config keys that make `repo` a partial clone: a promisor remote that is on, or
+    `extensions.partialClone`. Git fetches a missing object lazily only in such a clone."""
+    result = subprocess.run([git, '-C', str(repo), 'config', '--get-regexp',
+                             r'^(remote\..*\.promisor|extensions\.partialclone)$'],
+                            capture_output=True, timeout=10)
+    if result.returncode not in (0, 1):
+        raise Refused('git config cannot read the partial-clone keys: '
+                      + result.stderr.decode(errors='replace').strip())
+    keys = []
+    for line in result.stdout.decode(errors='replace').splitlines():
+        key, _, value = line.partition(' ')
+        if key.endswith('.promisor') and value.strip().lower() in ('false', 'no', 'off', '0', ''):
+            continue
+        keys.append(key)
+    return keys
+
+
+def local_git_argv(repo, git=None):
+    """`git -C repo` that reads local objects only. Git 2.45 has `--no-lazy-fetch`. Older Git
+    has no switch, but it fetches lazily only in a partial clone, so a clone without one reads
+    the same local objects with no flag; a partial clone there is refused."""
+    git = git or GIT
+    if git_version(git) >= (2, 45):
+        return [git, '--no-lazy-fetch', '-C', str(repo)]
+    keys = partial_clone_keys(repo, git)
+    if keys:
+        raise Refused('a partial clone can fetch lazily and this Git (before 2.45) has no '
+                      '--no-lazy-fetch: ' + ', '.join(keys))
+    return [git, '-C', str(repo)]
+
+
 def git_text_batch(repo, requests):
     """Keep a builtin Git reader inside the existing tracked CLI group.
 
     The 110-second read and two five-second teardown arms derive from its
-    existing 120-second child contract. Local objects never trigger lazy fetch.
+    existing 120-second child contract. Local objects never trigger lazy fetch
+    (`local_git_argv`).
     """
-    command = ['/usr/bin/git', '--no-lazy-fetch', '-C', str(repo), 'cat-file', '--batch']
+    command = [*local_git_argv(repo), 'cat-file', '--batch']
     process = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                                stderr=subprocess.PIPE, start_new_session=False)
     primary_error = None
