@@ -1638,17 +1638,22 @@ fn hyper_prime_ranges_natural(t: usize, gdn_grid: bool, ring_on: bool) -> Vec<(u
 /// (`prime_slabs_get`): six f32 `[t, n_embd]` planes (h, x1, z, xa, xb, ffn_out),
 /// two f16 mirrors (h16, z16), three f32 `[t, n_ff_max]` planes (act, gate, up), plus the
 /// per-call f16 activation (`a16`), the f16 pre-norm operand, and the `x`/`hn` copies the
-/// tail takes. The whole-prompt `hiddens` stack (`[t, n_embd]` f32) lives for the prime.
-/// Before this shape existed the admission line charged `0MB prefill-workspace` on these
+/// tail takes. A prime call returns the `hiddens` of its own rows (`[t, n_embd]` f32); the MTP
+/// walker keeps a whole-prompt stack for the prime. Before this shape existed the admission line
+/// charged `0MB prefill-workspace` on these
 /// paths, which is how a 164k ornith prompt was admitted onto a card that could not hold
 /// its monolithic prime (darklanes research/memra146-ornith-repro-20260904: 22 GB more
 /// resident after a 257k sweep with `MEMRA_PRIME_CHUNK=0` than with 4096) and how a 91k
 /// step37 prompt stepped into a CUDA OOM after admission priced it at 3.1 GB.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PrimeWorkspaceShape {
-    /// Bytes per row of ONE prime call (the slab planes above).
+    /// Bytes per row of ONE prime call (the slab planes and the per-call extras above).
     pub call_row_bytes: usize,
-    /// Bytes per PROMPT row that live for the whole prime (the returned hiddens stack).
+    /// The part of `call_row_bytes` the retained per-device prime slab holds
+    /// (`HybridModel::prime_slab_bytes`): a call allocates it only where the slab is smaller.
+    pub slab_row_bytes: usize,
+    /// Bytes per row of a hiddens stack: the rows a call returns, or the MTP walker's whole
+    /// prompt.
     pub prompt_row_bytes: usize,
     /// Trunk depth, for the auto chunk geometry (`prime_chunk_tokens`).
     pub n_layers: usize,
@@ -1679,6 +1684,63 @@ impl PrimeWorkspaceShape {
             prompt_rows,
             prime_chunk_tokens(prompt_rows, self.n_layers, self.swa_ring),
         )
+    }
+
+    /// What a prime of `prompt_rows` allocates at once beyond the device's resident prime slab
+    /// (`slab_resident` bytes), when one of its calls carries at most `call_rows` rows, it keeps
+    /// at most `stack_rows` rows of hiddens, and (`concat_rows` > 0) a take of `concat_rows`
+    /// rows can join a concat batch prime, whose planes are its own and not the slab's
+    /// (`prime_cache_batch`). A slab call holds the per-call extras beyond the slab. Where the
+    /// slab is smaller than the prompt's widest call (`call_rows(prompt_rows)`), the whole new
+    /// slab is charged, because `prime_slabs_get` allocates it before it drops the old one. Never
+    /// more than the cold charge ([`Self::admission_bytes`]).
+    pub fn held_bytes(
+        &self,
+        prompt_rows: usize,
+        call_rows: usize,
+        stack_rows: usize,
+        concat_rows: usize,
+        slab_resident: usize,
+    ) -> usize {
+        self.held_bytes_with_widest(
+            prompt_rows,
+            self.call_rows(prompt_rows),
+            call_rows,
+            stack_rows,
+            concat_rows,
+            slab_resident,
+        )
+    }
+
+    /// [`Self::held_bytes`] with the prompt's widest slab call given (pure arithmetic, what the
+    /// tests pin).
+    pub fn held_bytes_with_widest(
+        &self,
+        prompt_rows: usize,
+        widest: usize,
+        call_rows: usize,
+        stack_rows: usize,
+        concat_rows: usize,
+        slab_resident: usize,
+    ) -> usize {
+        let widest = prompt_rows.min(widest.max(1));
+        let rows = widest.min(call_rows.max(1));
+        let extras = self.call_row_bytes.saturating_sub(self.slab_row_bytes);
+        let new_slab = self.slab_row_bytes.saturating_mul(widest);
+        let slab_growth = if new_slab > slab_resident {
+            new_slab
+        } else {
+            0
+        };
+        let slab_call = slab_growth.saturating_add(extras.saturating_mul(rows));
+        let concat = self
+            .call_row_bytes
+            .saturating_mul(prompt_rows.min(concat_rows));
+        let held = slab_call.max(concat).saturating_add(
+            self.prompt_row_bytes
+                .saturating_mul(prompt_rows.min(stack_rows)),
+        );
+        held.min(self.admission_bytes_with_call_rows(prompt_rows, widest))
     }
 }
 
@@ -2476,6 +2538,9 @@ impl HybridModel {
         // the f16 pre-norm operand (n_embd), and the x / hn copies (2 f32 n_embd).
         let mut call_row_bytes =
             (6 + 2) * h * f32b + (2 + 1) * h * 2 + 3 * n_ff_max * f32b + n_ff_max * 2;
+        // The slab's share (`prime_slabs_get`): six f32 and two f16 `[t, n_embd]` planes and three
+        // f32 `[t, n_ff_max]` planes.
+        let slab_row_bytes = 6 * h * f32b + 2 * h * 2 + 3 * n_ff_max * f32b;
         // Routed-expert staging per row (the grouped f16 GEMM path in `moe_ffn_inner`): the
         // gathered inputs, three projection planes with f16 mirrors, the down output and
         // the scatter/partial planes, all sized by the USED expert count and the expert FFN
@@ -2489,6 +2554,7 @@ impl HybridModel {
         }
         Some(PrimeWorkspaceShape {
             call_row_bytes,
+            slab_row_bytes,
             prompt_row_bytes: h * f32b,
             n_layers: self.layers.len(),
             swa_ring: self.swa_ring_on(),
@@ -29965,6 +30031,7 @@ mod prime_chunk_schedule_tests {
     fn prime_workspace_shape_is_chunk_bounded_and_prompt_scaled_when_monolithic() {
         let shape = crate::hybrid_forward::PrimeWorkspaceShape {
             call_row_bytes: 42 * 2048 + 14 * 2048,
+            slab_row_bytes: 28 * 2048 + 12 * 2048,
             prompt_row_bytes: 4 * 2048,
             n_layers: 41,
             swa_ring: false,
@@ -29992,6 +30059,61 @@ mod prime_chunk_schedule_tests {
             shape.admission_bytes_with_call_rows(100, 4096),
             100 * (shape.call_row_bytes + shape.prompt_row_bytes)
         );
+    }
+
+    /// What a prime allocates beside the resident slab (research/c8-workspace-20261108), on
+    /// Qwen3.8-27B geometry (n_embd 5120, n_ff 17408): a 17,166-token prompt is charged 2,147 MB
+    /// cold, while each of its 1024-row ticks peaked under 300 MB beside a 4096-row slab.
+    #[test]
+    fn a_prime_is_charged_what_it_allocates_beside_the_resident_slab() {
+        let (h, f) = (5120usize, 17408usize);
+        let shape = crate::hybrid_forward::PrimeWorkspaceShape {
+            call_row_bytes: 38 * h + 14 * f,
+            slab_row_bytes: 28 * h + 12 * f,
+            prompt_row_bytes: 4 * h,
+            n_layers: 64,
+            swa_ring: false,
+        };
+        let (p, w) = (17_166usize, 4096usize);
+        let cold = shape.admission_bytes_with_call_rows(p, w);
+        assert_eq!(cold, (38 * h + 14 * f) * 4096 + 4 * h * p);
+        let extras = shape.call_row_bytes - shape.slab_row_bytes;
+        let slab = shape.slab_row_bytes * 4096;
+        let held = |call, stack, concat, resident| {
+            shape.held_bytes_with_widest(p, w, call, stack, concat, resident)
+        };
+        // The cold inputs (the widest call, a whole-prompt stack, an empty slab) are the cold
+        // charge.
+        assert_eq!(held(w, p, w, 0), cold);
+        // A plain tick beside a peer: a 1039-row take that may join a concat batch, its own
+        // hiddens, the slab resident.
+        assert_eq!(
+            held(1039, 1039, 1039, slab),
+            (38 * h + 14 * f + 4 * h) * 1039
+        );
+        // The same take on an empty slab still owes the whole widest slab, plus that call's
+        // extras.
+        assert_eq!(
+            held(1039, 1039, 1039, 0),
+            slab + extras * 1039 + 4 * h * 1039
+        );
+        // A slab two thirds grown is grown whole: the new slab is allocated before the old goes.
+        assert_eq!(
+            held(1039, 1039, 1039, shape.slab_row_bytes * 2048),
+            slab + extras * 1039 + 4 * h * 1039
+        );
+        // Alone: a 4096-row call beside the slab, the 8192-row take's hiddens, no concat.
+        assert_eq!(held(8207, 8207, 0, slab), extras * 4096 + 4 * h * 8207);
+        // The MTP walker: 4096-row chunks on the slab and a whole-prompt stack.
+        assert_eq!(held(w, p, 0, slab), extras * 4096 + 4 * h * p);
+        // A prompt shorter than one take.
+        assert_eq!(
+            shape.held_bytes_with_widest(700, 700, 1039, 1039, 1039, slab),
+            (38 * h + 14 * f + 4 * h) * 700
+        );
+        // Never above the cold charge, even where every term is at its widest.
+        assert_eq!(held(w, p, p, 0), cold);
+        assert!(held(1039, 1039, 1039, slab) * 4 < cold);
     }
 
     #[test]
