@@ -1,0 +1,13 @@
+arm r6-mixed-off workload=mixed start=2026-11-07T22:34:38+02:00 profile=balanced
+41741f5da6cc67b8eb82442417b73eefe6821c73c0fe4f94b620c69bc89931c8  <bins>/memra-server-base-46172c1bac
+env: MEMRA_TTFT_TRACE=1 MEMRA_MAX_SESSIONS=12 MEMRA_PREFIX_CACHE_MB=0
+NVIDIA GeForce RTX 5090 Laptop GPU, 76, 180 MHz, [N/A], 48 MiB, 24028 MiB
+device_free_min_mib 3155 samples 670
+memavailable_min_gib 43.66
+evict_lines=0
+oom_lines=0
+reclaim_on_defer_lines=0
+vram_defer_lines=0
+admit_trim_lines=0
+{"window_s": 48.63, "batch_rows": 96, "batch_agg_tok_s": 118.45, "repeat_cached": [0, 0, 0, 0, 0, 0], "repeat_hits": 0, "repeat_ttft_ms": [538.5, 536.9, 531.8, 617.3, 603.4, 1102.4], "batch_ttft_ms_p50": 735.8489036560059, "metrics_delta": {}, "metrics_end": {}}
+rc=0 end=2026-11-07T22:37:26+02:00

@@ -1,0 +1,51 @@
+1794086185.695 [server] build: memra-0.138.0-f66ead722e25 (id: source-tree, git: 46172c1bacd0)
+1794086185.695 [server] starting; models config = [("gate", "<models>/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf", None)]
+1794086185.696 [gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+1794086185.696 [worker-affinity] off (MEMRA_WORKER_CPUSET / MEMRA_WORKER_AFFINITY unset or =0)
+1794086185.796 [gpu-watch] on: every 60s, probe deadline 10s, fatal after 3 consecutive misses (MEMRA_GPU_PROBE_MISSES), fatal Xid [48, 64, 79, 94, 95, 119, 120]
+1794086185.996 [worker] Engine ready (device=0, MEMRA_FAST=true)
+1794086185.996 [spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+1794086185.996 [spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2 (K=5 when the loaded MTP head is rank-trimmed)
+1794086185.996 [worker] loading model "gate" <- <models>/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf
+1794086186.065 [tensor-contract] bound 866 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+1794086195.118 [worker]   loaded "gate": 65 layers, eos=248046, stop=[248046]
+1794086195.118 [worker] gate: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false qwen_effort=true gemma_think=false dsv4=false glm5=false ctx=262144 tok="qwen35" instruct=Some("chatml") chat_defaults=None/None
+1794086195.118 [route-contract] model="gate" route=hybrid-worker capacity=64 sessions implemented=[capacity,occupancy,progress,fault-ownership,shutdown-ownership,memory-cost,rewrite-qualification,prime-fairness,service-metrics] refused=[]
+1794086198.059 [device-trim] reason=wave-probe {"device":0,"reclaimed_bytes":1778384896,"still_owned_bytes":16500232192,"pool_reserved_bytes":16575889408,"pool_cached_bytes":75657216,"driver_free_bytes":8342601728,"synchronization_errors":[]}
+1794086198.059 [wave-probe] skipped (32 sessions at depth 2048 do not fit: the other 30 need 15175MB (505.8MB each), 7016MB allocatable) after 2.9s; wave cap 16; released 1696MB of cached pool to the driver
+1794086198.059 [worker] gate: decode wave cap 16; scheduler tick cap 16 (exact-16 tier)
+1794086198.059 [prefix-cache] on: budget 2260MB (2259943424 B, derived: 2 x 1129971712 B max entry for model "gate" at served ctx 32768 (from MEMRA_CTX; MEMRA_CTX set), requested 2259943424 B; boot driver free 8342601728 B, post-reserve clamp 6731988992 B), policy plain-LRU (global oldest unleased entry first; leases untouchable), min prefix 64 tokens, immediate partial restore=off (rollback) (transformer-only; hybrid mid-entry + routed-MoE N/A)
+1794086198.059 [admission] "gate": plain 29696 B/token, spec 31552 B/token; fixed residual learns from effective-free deltas
+1794086199.560 [fa-pool] grow #0 dev=0 o_len 0 -> 202752 ml_len 0 -> 792 (retired kept, zero=false)
+1794086199.661 [fa-pool] grow #1 dev=0 o_len 202752 -> 405504 ml_len 792 -> 1584 (retired kept, zero=false)
+1794086199.764 [fa-pool] grow #2 dev=0 o_len 405504 -> 811008 ml_len 1584 -> 3168 (retired kept, zero=false)
+1794086199.981 [fa-pool] grow #3 dev=0 o_len 811008 -> 1622016 ml_len 3168 -> 6336 (retired kept, zero=false)
+1794086200.295 [fa-pool] grow #4 dev=0 o_len 1622016 -> 3244032 ml_len 6336 -> 12672 (retired kept, zero=false)
+1794086203.886 [device-trim] reason=spec-cost-calibration {"device":0,"reclaimed_bytes":1778384896,"still_owned_bytes":16525571904,"pool_reserved_bytes":16710107136,"pool_cached_bytes":184535232,"driver_free_bytes":8208384000,"synchronization_errors":[]}
+1794086203.886 [spec-cost] calibration skipped: model="gate" (16 sessions at depth 2048 do not fit: the other 14 need 7081MB (505.8MB each), 6992MB allocatable); the band serves
+1794086203.886 [prime-walk] model="gate" route=mtp supported=true yield_door=true [gdn_dspark_compatible=true mtp_head_loaded=true no_hyper_connections=true no_pipeline_cuts=true]
+1794086207.164 [func] CAPTURE-TIME kernel lookup (not warmed): embed_gather_u32
+1794086207.166 [func] CAPTURE-TIME kernel lookup (not warmed): inc_i32
+1794086207.166 [func] CAPTURE-TIME kernel lookup (not warmed): fa_decode_vec_q_v4_deep_dc
+1794086207.166 [func] CAPTURE-TIME kernel lookup (not warmed): fa_decode_combine_f32
+1794086207.166 [func] CAPTURE-TIME kernel lookup (not warmed): memra_sctr_inc
+1794086207.166 [func] CAPTURE-TIME kernel lookup (not warmed): gumbel_perturb_filtered_ctr_f32
+1794086207.171 [spec] draft-session state high-water: 38MB (max of parked delta 38MB and capture-time pool peak 6MB; charged per spec admission and gating future captures)
+1794086208.028 [device-trim] reason=calibration-complete {"device":0,"reclaimed_bytes":2147483648,"still_owned_bytes":17297323840,"pool_reserved_bytes":17616076800,"pool_cached_bytes":318752960,"driver_free_bytes":7266762752,"synchronization_errors":[]}
+1794086208.028 [admit-cal] post-probe pool trim: released 2048MB cached back to the driver
+1794086208.028 [admit-cal] boot calibration done: model="gate" route=mtp transient floor 1882MB (static was 1536MB; measured 1882MB; probe kv charge 127MB, draft-state 38MB, drafted 63 accepted 42; [dev0 peak-mapped 18848MB rest-mapped 16800MB charged 165MB -> 1882MB]; 4.1s)
+1794086208.028 [admit-mem] door=OFF open_output_tokens=8192 defer_budget_ms=8000 (admission charges prompt+output, the reclaim flush demotes to the host tier before dropping, and a memory defer past the budget refuses 429 instead of queueing past the client's deadline)
+1794086208.028 [kv-vmm] door=OFF (MEMRA_KV_ALLOCATOR unset or pooled: pooled K/V planes)
+1794086208.040 [server] worker ready; serving models: ["gate"]
+1794086208.040 [server] listening on http://127.0.0.1:18187
+1794086209.930 [meter] admit id=chatcmpl-3688ef68015ba01c7b2c721aa660bd6b tenant=default lane=interactive model="gate"
+1794086209.930 [meter] admit id=chatcmpl-009ff909a05faeabd13b7c37c1fa98df tenant=default lane=interactive model="gate"
+1794086209.930 [meter] admit id=chatcmpl-3d8d9f7d796e637cab296482d38810dc tenant=default lane=interactive model="gate"
+1794086209.930 [meter] admit id=chatcmpl-8bca80ee79d6a4d883043eca2368f13e tenant=default lane=interactive model="gate"
+1794086209.931 [meter] admit id=chatcmpl-fecb736c7b62b1d6332cddfcdc5eab3c tenant=default lane=interactive model="gate"
+1794086209.932 [admission] request cost: model="gate" ctx=2825 path=plain = 29696 B/token x ctx + 1323MB prefill-workspace + 0MB fixed = 1407MB
+1794086209.932 [meter] admit id=chatcmpl-3cdcfc2c4f5b2f5a671c88091da97e9e tenant=default lane=interactive model="gate"
+1794086209.933 [meter] admit id=chatcmpl-917625d66095c9a15b9b16ac9152d421 tenant=default lane=interactive model="gate"
+1794086209.934 [spec-k] model="gate" tenant="" K=0 source=concurrency prompt=2760 cached=0 lcp=0 active=1 wave=7 placement=single-or-non-pp2
+1794086209.934 [admission] fixed residual high-water: model="gate" 313MB (observed 395MB at ctx 2769 path=plain)
+1794086209.934 [meter] admit id=chatcmpl-43a916251da4624adebcf0d8f18c0b87 tenant=default lane=interactive model="gate"

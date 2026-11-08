@@ -1,0 +1,324 @@
+1794083402.354 [server] build: memra-0.138.0-1ed9ac82da43 (id: source-tree, git: 46172c1bacd0)
+1794083402.355 [server] starting; models config = [("gate", "<models>/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf", None)]
+1794083402.355 [gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+1794083402.356 [worker-affinity] off (MEMRA_WORKER_CPUSET / MEMRA_WORKER_AFFINITY unset or =0)
+1794083402.455 [gpu-watch] on: every 60s, probe deadline 10s, fatal after 3 consecutive misses (MEMRA_GPU_PROBE_MISSES), fatal Xid [48, 64, 79, 94, 95, 119, 120]
+1794083402.546 [worker] Engine ready (device=0, MEMRA_FAST=true)
+1794083402.546 [spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+1794083402.546 [spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2 (K=5 when the loaded MTP head is rank-trimmed)
+1794083402.546 [worker] loading model "gate" <- <models>/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf
+1794083402.593 [tensor-contract] bound 866 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+1794083420.888 [worker]   loaded "gate": 65 layers, eos=248046, stop=[248046]
+1794083420.888 [worker] gate: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false qwen_effort=true gemma_think=false dsv4=false glm5=false ctx=262144 tok="qwen35" instruct=Some("chatml") chat_defaults=None/None
+1794083420.888 [route-contract] model="gate" route=hybrid-worker capacity=64 sessions implemented=[capacity,occupancy,progress,fault-ownership,shutdown-ownership,memory-cost,rewrite-qualification,prime-fairness,service-metrics] refused=[]
+1794083423.812 [device-trim] reason=wave-probe {"device":0,"reclaimed_bytes":1778384896,"still_owned_bytes":16500232192,"pool_reserved_bytes":16575889408,"pool_cached_bytes":75657216,"driver_free_bytes":8342601728,"synchronization_errors":[]}
+1794083423.812 [wave-probe] skipped (32 sessions at depth 2048 do not fit: the other 30 need 15175MB (505.8MB each), 7016MB allocatable) after 2.9s; wave cap 16; released 1696MB of cached pool to the driver
+1794083423.812 [worker] gate: decode wave cap 16; scheduler tick cap 16 (exact-16 tier)
+1794083423.812 [admission] "gate": plain 29696 B/token, spec 31552 B/token; fixed residual learns from effective-free deltas
+1794083425.289 [fa-pool] grow #0 dev=0 o_len 0 -> 202752 ml_len 0 -> 792 (retired kept, zero=false)
+1794083425.384 [fa-pool] grow #1 dev=0 o_len 202752 -> 405504 ml_len 792 -> 1584 (retired kept, zero=false)
+1794083425.480 [fa-pool] grow #2 dev=0 o_len 405504 -> 811008 ml_len 1584 -> 3168 (retired kept, zero=false)
+1794083425.689 [fa-pool] grow #3 dev=0 o_len 811008 -> 1622016 ml_len 3168 -> 6336 (retired kept, zero=false)
+1794083426.007 [fa-pool] grow #4 dev=0 o_len 1622016 -> 3244032 ml_len 6336 -> 12672 (retired kept, zero=false)
+1794083429.396 [device-trim] reason=spec-cost-calibration {"device":0,"reclaimed_bytes":1778384896,"still_owned_bytes":16525571904,"pool_reserved_bytes":16710107136,"pool_cached_bytes":184535232,"driver_free_bytes":8208384000,"synchronization_errors":[]}
+1794083429.396 [spec-cost] calibration skipped: model="gate" (16 sessions at depth 2048 do not fit: the other 14 need 7081MB (505.8MB each), 6992MB allocatable); the band serves
+1794083429.396 [prime-walk] model="gate" route=mtp supported=true yield_door=true [gdn_dspark_compatible=true mtp_head_loaded=true no_hyper_connections=true no_pipeline_cuts=true]
+1794083432.374 [func] CAPTURE-TIME kernel lookup (not warmed): embed_gather_u32
+1794083432.375 [func] CAPTURE-TIME kernel lookup (not warmed): inc_i32
+1794083432.375 [func] CAPTURE-TIME kernel lookup (not warmed): fa_decode_vec_q_v4_deep_dc
+1794083432.375 [func] CAPTURE-TIME kernel lookup (not warmed): fa_decode_combine_f32
+1794083432.375 [func] CAPTURE-TIME kernel lookup (not warmed): memra_sctr_inc
+1794083432.375 [func] CAPTURE-TIME kernel lookup (not warmed): gumbel_perturb_filtered_ctr_f32
+1794083432.388 [spec] draft-session state high-water: 38MB (max of parked delta 38MB and capture-time pool peak 6MB; charged per spec admission and gating future captures)
+1794083433.215 [device-trim] reason=calibration-complete {"device":0,"reclaimed_bytes":2147483648,"still_owned_bytes":17297323840,"pool_reserved_bytes":17616076800,"pool_cached_bytes":318752960,"driver_free_bytes":7266762752,"synchronization_errors":[]}
+1794083433.215 [admit-cal] post-probe pool trim: released 2048MB cached back to the driver
+1794083433.215 [admit-cal] boot calibration done: model="gate" route=mtp transient floor 1882MB (static was 1536MB; measured 1882MB; probe kv charge 127MB, draft-state 38MB, drafted 63 accepted 42; [dev0 peak-mapped 18848MB rest-mapped 16800MB charged 165MB -> 1882MB]; 3.8s)
+1794083433.215 [admit-mem] door=OFF open_output_tokens=8192 defer_budget_ms=8000 (admission charges prompt+output, the reclaim flush demotes to the host tier before dropping, and a memory defer past the budget refuses 429 instead of queueing past the client's deadline)
+1794083433.215 [kv-vmm] door=OFF (MEMRA_KV_ALLOCATOR unset or pooled: pooled K/V planes)
+1794083433.215 [server] worker ready; serving models: ["gate"]
+1794083433.215 [server] listening on http://127.0.0.1:18187
+1794083435.548 [meter] admit id=chatcmpl-94102148be024861b946d938249473b2 tenant=default lane=interactive model="gate"
+1794083435.552 [admission] per-session draft-state charge: model="gate" +40MB (measured capture high-water)
+1794083435.552 [admission] request cost: model="gate" ctx=2825 path=spec = 31552 B/token x ctx + 1323MB prefill-workspace + 0MB fixed = 1412MB
+1794083435.553 [spec-k] model="gate" tenant="" K=3 source=cold-long prompt=2760 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1794083435.554 [admission] fixed residual high-water: model="gate" 313MB (observed 400MB at ctx 2769 path=spec)
+1794083437.659 [func] CAPTURE-TIME kernel lookup (not warmed): gumbel_perturb_ctr_f32
+1794083437.688 [ttft] id=chatcmpl-94102148be024861b946d938249473b2 model="gate" path="/v1/chat/completions" prompt_tokens=2760 outcome=first_sse_byte request_parse_ms=0.169 admission_ms=0.115 queue_wait_ms=0.180 tokenize_ms=3.872 prime_wait_ms=1.699 prime_ms=2134.121 decode_wait_ms=0.000 sse_handoff_ms=0.201 request_parse_end_ms=0.169 admission_end_ms=0.284 tokenize_start_ms=0.464 tokenize_end_ms=4.336 prime_start_ms=6.035 prime_end_ms=2140.156 first_decode_ms=2140.156 first_sse_byte_ms=2140.357 total_ms=2140.357
+1794083437.689 [prefix-cache] WARNING: first prefix insert is larger than the entire byte budget; this shape cannot produce cross-request hits. Subsequent refusals remain visible in prefix_cache_skips_budget
+1794083437.689 [prefix-cache] insert refused: entry 242735104 exceeds budget 0 (spec-boundary, model gate)
+1794083437.690 [meter] admit id=chatcmpl-31daaa7976061df7cfe276f12a7b1895 tenant=default lane=interactive model="gate"
+1794083437.694 [admission] per-session draft-state charge: model="gate" +40MB (measured capture high-water)
+1794083437.694 [admission] request cost: model="gate" ctx=4041 path=spec = 31552 B/token x ctx + 1905MB prefill-workspace + 313MB fixed = 2346MB
+1794083437.695 [worker] spec-affinity: grew parked session 2769 -> 4041 rows (request-owned need)
+1794083437.695 [worker] spec-affinity: rewound to 2720 of 3976 prompt tokens (fingerprint; priming 1256 suffix; model gate)
+1794083437.695 [spec-k] model="gate" tenant="" K=2 source=cached-long prompt=3976 cached=2720 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1794083438.706 [ttft] id=chatcmpl-31daaa7976061df7cfe276f12a7b1895 model="gate" path="/v1/chat/completions" prompt_tokens=3976 outcome=first_sse_byte request_parse_ms=0.113 admission_ms=0.071 queue_wait_ms=0.188 tokenize_ms=3.448 prime_wait_ms=1.733 prime_ms=1006.695 decode_wait_ms=0.000 sse_handoff_ms=3.458 request_parse_end_ms=0.113 admission_end_ms=0.184 tokenize_start_ms=0.372 tokenize_end_ms=3.820 prime_start_ms=5.553 prime_end_ms=1012.248 first_decode_ms=1012.248 first_sse_byte_ms=1015.706 total_ms=1015.706
+1794083438.759 [meter] admit id=chatcmpl-5fdb202e528ba1af94118ace98f96330 tenant=default lane=interactive model="gate"
+1794083438.759 [admission] per-session draft-state charge: model="gate" +40MB (measured capture high-water)
+1794083438.759 [admission] request cost: model="gate" ctx=14770 path=spec = 31552 B/token x ctx + 2180MB prefill-workspace + 313MB fixed = 2959MB
+1794083438.759 [worker] spec-affinity: declined (history diverged at 282 of checkpoint 3936; 1 parked, 14705 prompt tokens; model gate)
+1794083438.759 [spec-k] model="gate" tenant="" K=3 source=cold-long prompt=14705 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1794083438.759 [admission] fixed residual high-water: model="gate" 335MB (observed 799MB at ctx 14714 path=spec)
+1794083441.651 [prime-yield] count=1 remaining=8 chunks=1 wall_ms=2927.848 max_chunk_ms=2927.848
+1794083444.788 [prime-yield] count=2 remaining=7 chunks=1 wall_ms=3137.382 max_chunk_ms=3137.382
+1794083448.068 [prime-yield] count=3 remaining=6 chunks=1 wall_ms=3280.047 max_chunk_ms=3280.047
+1794083450.088 [prime-yield] count=4 remaining=5 chunks=1 wall_ms=2019.202 max_chunk_ms=2019.202
+1794083450.252 [prime-yield] count=5 remaining=4 chunks=1 wall_ms=164.713 max_chunk_ms=164.713
+1794083450.283 [prime-yield] count=6 remaining=3 chunks=1 wall_ms=30.331 max_chunk_ms=30.331
+1794083450.311 [prime-yield] count=7 remaining=2 chunks=1 wall_ms=28.148 max_chunk_ms=28.148
+1794083450.340 [prime-yield] count=8 remaining=1 chunks=1 wall_ms=28.584 max_chunk_ms=28.584
+1794083450.356 [ttft] id=chatcmpl-5fdb202e528ba1af94118ace98f96330 model="gate" path="/v1/chat/completions" prompt_tokens=14705 outcome=first_sse_byte request_parse_ms=0.312 admission_ms=0.088 queue_wait_ms=0.023 tokenize_ms=14.165 prime_wait_ms=1.285 prime_ms=11633.394 decode_wait_ms=0.000 sse_handoff_ms=0.286 request_parse_end_ms=0.312 admission_end_ms=0.400 tokenize_start_ms=0.423 tokenize_end_ms=14.588 prime_start_ms=15.873 prime_end_ms=11649.267 first_decode_ms=11649.267 first_sse_byte_ms=11649.553 total_ms=11649.553
+1794083450.357 [prefix-cache] insert refused: entry 620349440 exceeds budget 0 (spec-boundary, model gate)
+1794083450.358 [meter] admit id=chatcmpl-784461587f1203e242b42d86b2c535bd tenant=default lane=interactive model="gate"
+1794083450.362 [admission] per-session draft-state charge: model="gate" +40MB (measured capture high-water)
+1794083450.362 [admission] request cost: model="gate" ctx=2332 path=spec = 31552 B/token x ctx + 1086MB prefill-workspace + 335MB fixed = 1495MB
+1794083450.362 [worker] spec-affinity: declined (history diverged at 282 of checkpoint 3936; 2 parked, 2267 prompt tokens; model gate)
+1794083450.362 [spec-k] model="gate" tenant="" K=3 source=cold-long prompt=2267 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1794083452.170 [ttft] id=chatcmpl-784461587f1203e242b42d86b2c535bd model="gate" path="/v1/chat/completions" prompt_tokens=2267 outcome=first_sse_byte request_parse_ms=0.087 admission_ms=0.046 queue_wait_ms=0.463 tokenize_ms=3.217 prime_wait_ms=0.765 prime_ms=1806.737 decode_wait_ms=0.000 sse_handoff_ms=0.312 request_parse_end_ms=0.087 admission_end_ms=0.133 tokenize_start_ms=0.596 tokenize_end_ms=3.813 prime_start_ms=4.578 prime_end_ms=1811.315 first_decode_ms=1811.315 first_sse_byte_ms=1811.627 total_ms=1811.627
+1794083452.171 [prefix-cache] insert refused: entry 227590144 exceeds budget 0 (spec-boundary, model gate)
+1794083452.172 [meter] admit id=chatcmpl-7ff73ce57d30778763e443855a229a16 tenant=default lane=interactive model="gate"
+1794083452.176 [admission] per-session draft-state charge: model="gate" +40MB (measured capture high-water)
+1794083452.176 [admission] request cost: model="gate" ctx=3002 path=spec = 31552 B/token x ctx + 1408MB prefill-workspace + 335MB fixed = 1837MB
+1794083452.178 [worker] spec-affinity: grew parked session 2276 -> 3002 rows (request-owned need)
+1794083452.178 [worker] spec-affinity: rewound to 2240 of 2937 prompt tokens (fingerprint; priming 697 suffix; model gate)
+1794083452.178 [spec-k] model="gate" tenant="" K=2 source=cached-long prompt=2937 cached=2240 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1794083452.868 [ttft] id=chatcmpl-7ff73ce57d30778763e443855a229a16 model="gate" path="/v1/chat/completions" prompt_tokens=2937 outcome=first_sse_byte request_parse_ms=0.058 admission_ms=0.048 queue_wait_ms=0.020 tokenize_ms=3.862 prime_wait_ms=2.049 prime_ms=689.704 decode_wait_ms=0.000 sse_handoff_ms=0.179 request_parse_end_ms=0.058 admission_end_ms=0.106 tokenize_start_ms=0.126 tokenize_end_ms=3.988 prime_start_ms=6.037 prime_end_ms=695.741 first_decode_ms=695.741 first_sse_byte_ms=695.920 total_ms=695.920
+1794083452.873 [meter] admit id=chatcmpl-0bbb09dbbff8cad13ed5967012772bcd tenant=default lane=interactive model="gate"
+1794083452.887 [admission] per-session draft-state charge: model="gate" +40MB (measured capture high-water)
+1794083452.887 [admission] request cost: model="gate" ctx=13281 path=spec = 31552 B/token x ctx + 2150MB prefill-workspace + 335MB fixed = 2904MB
+1794083452.888 [worker] spec-affinity: declined (history diverged at 311 of checkpoint 14688; 2 parked, 13216 prompt tokens; model gate)
+1794083452.888 [spec-k] model="gate" tenant="" K=3 source=cold-long prompt=13216 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1794083455.885 [prime-yield] count=1 remaining=8 chunks=1 wall_ms=2997.036 max_chunk_ms=2997.036
+1794083459.007 [prime-yield] count=2 remaining=7 chunks=1 wall_ms=3121.039 max_chunk_ms=3121.039
+1794083462.404 [prime-yield] count=3 remaining=6 chunks=1 wall_ms=3397.154 max_chunk_ms=3397.154
+1794083463.200 [prime-yield] count=4 remaining=5 chunks=1 wall_ms=795.805 max_chunk_ms=795.805
+1794083463.371 [spec] pre-capture pool trim: released 1728MB cached back to the driver (driver free 2706MB < required 3148MB; instantiate allocates from the driver)
+1794083463.374 [prime-yield] count=5 remaining=4 chunks=1 wall_ms=174.341 max_chunk_ms=174.341
+1794083463.409 [prime-yield] count=6 remaining=3 chunks=1 wall_ms=34.516 max_chunk_ms=34.516
+1794083463.436 [prime-yield] count=7 remaining=2 chunks=1 wall_ms=27.069 max_chunk_ms=27.069
+1794083463.465 [prime-yield] count=8 remaining=1 chunks=1 wall_ms=28.577 max_chunk_ms=28.577
+1794083463.473 [ttft] id=chatcmpl-0bbb09dbbff8cad13ed5967012772bcd model="gate" path="/v1/chat/completions" prompt_tokens=13216 outcome=first_sse_byte request_parse_ms=0.255 admission_ms=0.092 queue_wait_ms=0.211 tokenize_ms=13.898 prime_wait_ms=1.013 prime_ms=10583.485 decode_wait_ms=0.000 sse_handoff_ms=0.134 request_parse_end_ms=0.255 admission_end_ms=0.347 tokenize_start_ms=0.558 tokenize_end_ms=14.456 prime_start_ms=15.469 prime_end_ms=10598.954 first_decode_ms=10598.954 first_sse_byte_ms=10599.088 total_ms=10599.088
+1794083463.473 [prefix-cache] insert refused: entry 572895232 exceeds budget 0 (spec-boundary, model gate)
+1794083463.481 [meter] admit id=chatcmpl-036e8546b5d784a8d0f6d18976a977a3 tenant=default lane=interactive model="gate"
+1794083463.485 [admission] per-session draft-state charge: model="gate" +40MB (measured capture high-water)
+1794083463.485 [admission] request cost: model="gate" ctx=2468 path=spec = 31552 B/token x ctx + 1152MB prefill-workspace + 335MB fixed = 1565MB
+1794083463.485 [worker] spec-affinity: declined (history diverged at 282 of checkpoint 2912; 2 parked, 2403 prompt tokens; model gate)
+1794083463.486 [spec-k] model="gate" tenant="" K=3 source=cold-long prompt=2403 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1794083465.471 [ttft] id=chatcmpl-036e8546b5d784a8d0f6d18976a977a3 model="gate" path="/v1/chat/completions" prompt_tokens=2403 outcome=first_sse_byte request_parse_ms=0.091 admission_ms=6.473 queue_wait_ms=0.022 tokenize_ms=4.009 prime_wait_ms=1.050 prime_ms=1984.864 decode_wait_ms=0.001 sse_handoff_ms=0.223 request_parse_end_ms=0.091 admission_end_ms=6.564 tokenize_start_ms=6.586 tokenize_end_ms=10.595 prime_start_ms=11.645 prime_end_ms=1996.509 first_decode_ms=1996.510 first_sse_byte_ms=1996.733 total_ms=1996.733
+1794083465.472 [prefix-cache] insert refused: entry 231628800 exceeds budget 0 (spec-boundary, model gate)
+1794083465.474 [meter] admit id=chatcmpl-d47c42cb03b52d1510a04ceb43ce286a tenant=default lane=interactive model="gate"
+1794083465.478 [admission] per-session draft-state charge: model="gate" +40MB (measured capture high-water)
+1794083465.478 [admission] request cost: model="gate" ctx=3062 path=spec = 31552 B/token x ctx + 1436MB prefill-workspace + 335MB fixed = 1868MB
+1794083465.479 [worker] spec-affinity: grew parked session 2412 -> 3062 rows (request-owned need)
+1794083465.479 [worker] spec-affinity: rewound to 2368 of 2997 prompt tokens (fingerprint; priming 629 suffix; model gate)
+1794083465.479 [spec-k] model="gate" tenant="" K=2 source=cached-long prompt=2997 cached=2368 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1794083466.115 [ttft] id=chatcmpl-d47c42cb03b52d1510a04ceb43ce286a model="gate" path="/v1/chat/completions" prompt_tokens=2997 outcome=first_sse_byte request_parse_ms=0.139 admission_ms=0.075 queue_wait_ms=0.058 tokenize_ms=3.800 prime_wait_ms=1.829 prime_ms=635.022 decode_wait_ms=0.000 sse_handoff_ms=0.365 request_parse_end_ms=0.139 admission_end_ms=0.214 tokenize_start_ms=0.272 tokenize_end_ms=4.072 prime_start_ms=5.901 prime_end_ms=640.923 first_decode_ms=640.923 first_sse_byte_ms=641.288 total_ms=641.288
+1794083466.118 [meter] admit id=chatcmpl-a91535facce834b53d9aaafaccdde115 tenant=default lane=interactive model="gate"
+1794083466.138 [admission] per-session draft-state charge: model="gate" +40MB (measured capture high-water)
+1794083466.138 [admission] request cost: model="gate" ctx=17166 path=spec = 31552 B/token x ctx + 2229MB prefill-workspace + 335MB fixed = 3106MB
+1794083466.139 [worker] spec-affinity: declined (history diverged at 311 of checkpoint 13184; 2 parked, 17101 prompt tokens; model gate)
+1794083466.139 [spec-k] model="gate" tenant="" K=3 source=cold-long prompt=17101 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1794083466.140 [admission] fixed residual high-water: model="gate" 340MB (observed 879MB at ctx 17110 path=spec)
+1794083469.389 [prime-yield] count=1 remaining=10 chunks=1 wall_ms=3249.257 max_chunk_ms=3249.257
+1794083472.721 [prime-yield] count=2 remaining=9 chunks=1 wall_ms=3331.898 max_chunk_ms=3331.898
+1794083476.376 [prime-yield] count=3 remaining=8 chunks=1 wall_ms=3654.665 max_chunk_ms=3654.665
+1794083480.204 [prime-yield] count=4 remaining=7 chunks=1 wall_ms=3827.929 max_chunk_ms=3827.929
+1794083480.928 [prime-yield] count=5 remaining=6 chunks=1 wall_ms=723.834 max_chunk_ms=723.834
+1794083481.126 [spec] pre-capture pool trim: released 1696MB cached back to the driver (driver free 2514MB < required 3148MB; instantiate allocates from the driver)
+1794083481.130 [prime-yield] count=6 remaining=5 chunks=1 wall_ms=202.327 max_chunk_ms=202.327
+1794083481.162 [prime-yield] count=7 remaining=4 chunks=1 wall_ms=31.177 max_chunk_ms=31.177
+1794083481.191 [prime-yield] count=8 remaining=3 chunks=1 wall_ms=29.591 max_chunk_ms=29.591
+1794083481.220 [prime-yield] count=9 remaining=2 chunks=1 wall_ms=28.177 max_chunk_ms=28.177
+1794083481.251 [prime-yield] count=10 remaining=1 chunks=1 wall_ms=31.374 max_chunk_ms=31.374
+1794083481.257 [ttft] id=chatcmpl-a91535facce834b53d9aaafaccdde115 model="gate" path="/v1/chat/completions" prompt_tokens=17101 outcome=first_sse_byte request_parse_ms=0.214 admission_ms=0.094 queue_wait_ms=0.015 tokenize_ms=19.983 prime_wait_ms=1.359 prime_ms=15116.917 decode_wait_ms=0.000 sse_handoff_ms=0.127 request_parse_end_ms=0.214 admission_end_ms=0.308 tokenize_start_ms=0.323 tokenize_end_ms=20.306 prime_start_ms=21.665 prime_end_ms=15138.582 first_decode_ms=15138.582 first_sse_byte_ms=15138.709 total_ms=15138.709
+1794083481.258 [prefix-cache] insert refused: entry 695064576 exceeds budget 0 (spec-boundary, model gate)
+1794083481.259 [meter] admit id=chatcmpl-7c285920611d3728103efd7a363d114f tenant=default lane=interactive model="gate"
+1794083481.263 [admission] per-session draft-state charge: model="gate" +40MB (measured capture high-water)
+1794083481.263 [admission] request cost: model="gate" ctx=2165 path=spec = 31552 B/token x ctx + 1006MB prefill-workspace + 340MB fixed = 1414MB
+1794083481.263 [worker] spec-affinity: declined (history diverged at 282 of checkpoint 2976; 2 parked, 2100 prompt tokens; model gate)
+1794083481.264 [spec-k] model="gate" tenant="" K=3 source=cold-long prompt=2100 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1794083483.152 [ttft] id=chatcmpl-7c285920611d3728103efd7a363d114f model="gate" path="/v1/chat/completions" prompt_tokens=2100 outcome=first_sse_byte request_parse_ms=0.053 admission_ms=0.077 queue_wait_ms=0.205 tokenize_ms=3.411 prime_wait_ms=0.825 prime_ms=1886.702 decode_wait_ms=0.000 sse_handoff_ms=0.156 request_parse_end_ms=0.053 admission_end_ms=0.130 tokenize_start_ms=0.335 tokenize_end_ms=3.746 prime_start_ms=4.571 prime_end_ms=1891.273 first_decode_ms=1891.273 first_sse_byte_ms=1891.429 total_ms=1891.429
+1794083483.153 [prefix-cache] insert refused: entry 222541824 exceeds budget 0 (spec-boundary, model gate)
+1794083483.154 [meter] admit id=chatcmpl-6be7cae76e194a254574995351d1257d tenant=default lane=interactive model="gate"
+1794083483.159 [admission] per-session draft-state charge: model="gate" +40MB (measured capture high-water)
+1794083483.159 [admission] request cost: model="gate" ctx=4907 path=spec = 31552 B/token x ctx + 1978MB prefill-workspace + 340MB fixed = 2473MB
+1794083483.161 [worker] spec-affinity: grew parked session 2109 -> 4907 rows (request-owned need)
+1794083483.161 [worker] spec-affinity: rewound to 2080 of 4842 prompt tokens (fingerprint; priming 2762 suffix; model gate)
+1794083483.161 [spec-k] model="gate" tenant="" K=2 source=cached-long prompt=4842 cached=2080 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1794083485.632 [ttft] id=chatcmpl-6be7cae76e194a254574995351d1257d model="gate" path="/v1/chat/completions" prompt_tokens=4842 outcome=first_sse_byte request_parse_ms=0.073 admission_ms=0.034 queue_wait_ms=0.032 tokenize_ms=5.372 prime_wait_ms=2.179 prime_ms=2470.897 decode_wait_ms=0.000 sse_handoff_ms=0.124 request_parse_end_ms=0.073 admission_end_ms=0.107 tokenize_start_ms=0.139 tokenize_end_ms=5.511 prime_start_ms=7.690 prime_end_ms=2478.587 first_decode_ms=2478.587 first_sse_byte_ms=2478.711 total_ms=2478.711
+1794083485.635 [meter] admit id=chatcmpl-e25276587e0eddb727c7adbbde524ace tenant=default lane=interactive model="gate"
+1794083485.645 [admission] per-session draft-state charge: model="gate" +40MB (measured capture high-water)
+1794083485.645 [admission] request cost: model="gate" ctx=10793 path=spec = 31552 B/token x ctx + 2099MB prefill-workspace + 340MB fixed = 2779MB
+1794083485.646 [worker] spec-affinity: declined (history diverged at 311 of checkpoint 17056; 2 parked, 10728 prompt tokens; model gate)
+1794083485.646 [spec-k] model="gate" tenant="" K=3 source=cold-long prompt=10728 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1794083489.069 [prime-yield] count=1 remaining=6 chunks=1 wall_ms=3422.642 max_chunk_ms=3422.642
+1794083492.575 [prime-yield] count=2 remaining=5 chunks=1 wall_ms=3505.643 max_chunk_ms=3505.643
+1794083494.883 [prime-yield] count=3 remaining=4 chunks=1 wall_ms=2308.016 max_chunk_ms=2308.016
+1794083495.071 [spec] pre-capture pool trim: released 1568MB cached back to the driver (driver free 2770MB < required 3148MB; instantiate allocates from the driver)
+1794083495.075 [prime-yield] count=4 remaining=3 chunks=1 wall_ms=191.401 max_chunk_ms=191.401
+1794083495.107 [prime-yield] count=5 remaining=2 chunks=1 wall_ms=32.451 max_chunk_ms=32.451
+1794083495.137 [prime-yield] count=6 remaining=1 chunks=1 wall_ms=29.495 max_chunk_ms=29.495
+1794083495.155 [ttft] id=chatcmpl-e25276587e0eddb727c7adbbde524ace model="gate" path="/v1/chat/completions" prompt_tokens=10728 outcome=first_sse_byte request_parse_ms=0.243 admission_ms=0.090 queue_wait_ms=0.022 tokenize_ms=10.722 prime_wait_ms=0.964 prime_ms=9508.583 decode_wait_ms=0.000 sse_handoff_ms=0.163 request_parse_end_ms=0.243 admission_end_ms=0.333 tokenize_start_ms=0.355 tokenize_end_ms=11.077 prime_start_ms=12.041 prime_end_ms=9520.624 first_decode_ms=9520.624 first_sse_byte_ms=9520.787 total_ms=9520.787
+1794083495.156 [prefix-cache] insert refused: entry 494141440 exceeds budget 0 (spec-boundary, model gate)
+1794083495.157 [meter] admit id=chatcmpl-c722381fe7a8552f0d883c2021a193a3 tenant=default lane=interactive model="gate"
+1794083495.163 [admission] per-session draft-state charge: model="gate" +40MB (measured capture high-water)
+1794083495.163 [admission] request cost: model="gate" ctx=5009 path=spec = 31552 B/token x ctx + 1980MB prefill-workspace + 340MB fixed = 2478MB
+1794083495.163 [worker] spec-affinity: declined (history diverged at 324 of checkpoint 4800; 2 parked, 4944 prompt tokens; model gate)
+1794083495.164 [spec-k] model="gate" tenant="" K=3 source=cold-long prompt=4944 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1794083498.544 [prime-yield] count=1 remaining=4 chunks=1 wall_ms=3380.501 max_chunk_ms=3380.501
+1794083499.316 [prime-yield] count=2 remaining=3 chunks=1 wall_ms=771.536 max_chunk_ms=771.536
+1794083499.481 [prime-yield] count=3 remaining=2 chunks=1 wall_ms=165.447 max_chunk_ms=165.447
+1794083499.513 [prime-yield] count=4 remaining=1 chunks=1 wall_ms=31.469 max_chunk_ms=31.469
+1794083499.519 [ttft] id=chatcmpl-c722381fe7a8552f0d883c2021a193a3 model="gate" path="/v1/chat/completions" prompt_tokens=4944 outcome=first_sse_byte request_parse_ms=0.059 admission_ms=0.035 queue_wait_ms=0.493 tokenize_ms=5.023 prime_wait_ms=0.924 prime_ms=4355.775 decode_wait_ms=0.000 sse_handoff_ms=0.109 request_parse_end_ms=0.059 admission_end_ms=0.094 tokenize_start_ms=0.587 tokenize_end_ms=5.610 prime_start_ms=6.534 prime_end_ms=4362.309 first_decode_ms=4362.309 first_sse_byte_ms=4362.418 total_ms=4362.418
+1794083499.521 [prefix-cache] insert refused: entry 312401920 exceeds budget 0 (spec-boundary, model gate)
+1794083499.521 [meter] admit id=chatcmpl-cc36fb173b26876c5e081a60ad70bce1 tenant=default lane=interactive model="gate"
+1794083499.529 [admission] per-session draft-state charge: model="gate" +40MB (measured capture high-water)
+1794083499.529 [admission] request cost: model="gate" ctx=8118 path=spec = 31552 B/token x ctx + 2044MB prefill-workspace + 340MB fixed = 2640MB
+1794083499.531 [worker] spec-affinity: grew parked session 4953 -> 8118 rows (request-owned need)
+1794083499.531 [worker] spec-affinity: rewound to 4928 of 8053 prompt tokens (fingerprint; priming 3125 suffix; model gate)
+1794083499.531 [spec-k] model="gate" tenant="" K=2 source=cached-long prompt=8053 cached=4928 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1794083502.519 [ttft] id=chatcmpl-cc36fb173b26876c5e081a60ad70bce1 model="gate" path="/v1/chat/completions" prompt_tokens=8053 outcome=first_sse_byte request_parse_ms=0.078 admission_ms=0.036 queue_wait_ms=0.215 tokenize_ms=7.347 prime_wait_ms=2.132 prime_ms=2987.463 decode_wait_ms=0.001 sse_handoff_ms=0.090 request_parse_end_ms=0.078 admission_end_ms=0.114 tokenize_start_ms=0.329 tokenize_end_ms=7.676 prime_start_ms=9.808 prime_end_ms=2997.271 first_decode_ms=2997.272 first_sse_byte_ms=2997.362 total_ms=2997.362
+1794083502.521 [meter] admit id=chatcmpl-b2c2f4cbe95b1ffc8c7bdc0304a75636 tenant=default lane=interactive model="gate"
+1794083502.535 [admission] per-session draft-state charge: model="gate" +40MB (measured capture high-water)
+1794083502.536 [admission] request cost: model="gate" ctx=12392 path=spec = 31552 B/token x ctx + 2132MB prefill-workspace + 340MB fixed = 2862MB
+1794083502.536 [worker] spec-affinity: declined (history diverged at 310 of checkpoint 10688; 2 parked, 12327 prompt tokens; model gate)
+1794083502.536 [spec-k] model="gate" tenant="" K=3 source=cold-long prompt=12327 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1794083506.015 [prime-yield] count=1 remaining=7 chunks=1 wall_ms=3478.004 max_chunk_ms=3478.004
+1794083509.704 [prime-yield] count=2 remaining=6 chunks=1 wall_ms=3689.690 max_chunk_ms=3689.690
+1794083513.505 [prime-yield] count=3 remaining=5 chunks=1 wall_ms=3800.558 max_chunk_ms=3800.558
+1794083513.702 [spec] pre-capture pool trim: released 1536MB cached back to the driver (driver free 2834MB < required 3148MB; instantiate allocates from the driver)
+1794083513.706 [prime-yield] count=4 remaining=4 chunks=1 wall_ms=200.898 max_chunk_ms=200.898
+1794083513.740 [prime-yield] count=5 remaining=3 chunks=1 wall_ms=33.262 max_chunk_ms=33.262
+1794083513.771 [prime-yield] count=6 remaining=2 chunks=1 wall_ms=31.634 max_chunk_ms=31.634
+1794083513.800 [prime-yield] count=7 remaining=1 chunks=1 wall_ms=28.545 max_chunk_ms=28.545
+1794083513.801 [ttft] id=chatcmpl-b2c2f4cbe95b1ffc8c7bdc0304a75636 model="gate" path="/v1/chat/completions" prompt_tokens=12327 outcome=first_sse_byte request_parse_ms=0.247 admission_ms=0.100 queue_wait_ms=0.022 tokenize_ms=14.656 prime_wait_ms=1.014 prime_ms=11264.178 decode_wait_ms=0.001 sse_handoff_ms=0.244 request_parse_end_ms=0.247 admission_end_ms=0.347 tokenize_start_ms=0.369 tokenize_end_ms=15.025 prime_start_ms=16.039 prime_end_ms=11280.217 first_decode_ms=11280.218 first_sse_byte_ms=11280.462 total_ms=11280.462
+1794083513.802 [prefix-cache] insert refused: entry 544624640 exceeds budget 0 (spec-boundary, model gate)
+1794083513.804 [meter] admit id=chatcmpl-1be2e480e6c9475d29aef783fe87e596 tenant=default lane=interactive model="gate"
+1794083513.818 [admission] per-session draft-state charge: model="gate" +40MB (measured capture high-water)
+1794083513.818 [admission] request cost: model="gate" ctx=13297 path=spec = 31552 B/token x ctx + 2150MB prefill-workspace + 340MB fixed = 2909MB
+1794083513.818 [worker] spec-affinity: declined (history diverged at 282 of checkpoint 8032; 2 parked, 13232 prompt tokens; model gate)
+1794083513.819 [spec-k] model="gate" tenant="" K=3 source=cold-long prompt=13232 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1794083517.263 [prime-yield] count=1 remaining=8 chunks=1 wall_ms=3443.674 max_chunk_ms=3443.674
+1794083520.942 [prime-yield] count=2 remaining=7 chunks=1 wall_ms=3679.250 max_chunk_ms=3679.250
+1794083524.818 [prime-yield] count=3 remaining=6 chunks=1 wall_ms=3875.530 max_chunk_ms=3875.530
+1794083525.778 [prime-yield] count=4 remaining=5 chunks=1 wall_ms=959.536 max_chunk_ms=959.536
+1794083525.964 [spec] pre-capture pool trim: released 1568MB cached back to the driver (driver free 2610MB < required 3148MB; instantiate allocates from the driver)
+1794083525.968 [prime-yield] count=5 remaining=4 chunks=1 wall_ms=190.091 max_chunk_ms=190.091
+1794083525.999 [prime-yield] count=6 remaining=3 chunks=1 wall_ms=31.478 max_chunk_ms=31.478
+1794083526.031 [prime-yield] count=7 remaining=2 chunks=1 wall_ms=31.454 max_chunk_ms=31.454
+1794083526.060 [prime-yield] count=8 remaining=1 chunks=1 wall_ms=28.793 max_chunk_ms=28.793
+1794083526.068 [ttft] id=chatcmpl-1be2e480e6c9475d29aef783fe87e596 model="gate" path="/v1/chat/completions" prompt_tokens=13232 outcome=first_sse_byte request_parse_ms=0.192 admission_ms=0.259 queue_wait_ms=0.021 tokenize_ms=14.472 prime_wait_ms=1.072 prime_ms=12248.361 decode_wait_ms=0.000 sse_handoff_ms=0.291 request_parse_end_ms=0.192 admission_end_ms=0.451 tokenize_start_ms=0.472 tokenize_end_ms=14.944 prime_start_ms=16.016 prime_end_ms=12264.377 first_decode_ms=12264.377 first_sse_byte_ms=12264.668 total_ms=12264.668
+1794083526.069 [prefix-cache] insert refused: entry 573904896 exceeds budget 0 (spec-boundary, model gate)
+1794083526.070 [meter] admit id=chatcmpl-0ba368d71dd70cb155495f0adb306876 tenant=default lane=interactive model="gate"
+1794083526.075 [admission] per-session draft-state charge: model="gate" +40MB (measured capture high-water)
+1794083526.075 [admission] request cost: model="gate" ctx=2898 path=spec = 31552 B/token x ctx + 1358MB prefill-workspace + 340MB fixed = 1789MB
+1794083526.075 [worker] spec-affinity: declined (history diverged at 282 of checkpoint 12288; 2 parked, 2833 prompt tokens; model gate)
+1794083526.076 [spec-k] model="gate" tenant="" K=3 source=cold-long prompt=2833 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1794083528.610 [ttft] id=chatcmpl-0ba368d71dd70cb155495f0adb306876 model="gate" path="/v1/chat/completions" prompt_tokens=2833 outcome=first_sse_byte request_parse_ms=0.118 admission_ms=0.084 queue_wait_ms=0.627 tokenize_ms=4.232 prime_wait_ms=1.035 prime_ms=2534.118 decode_wait_ms=0.000 sse_handoff_ms=0.235 request_parse_end_ms=0.118 admission_end_ms=0.202 tokenize_start_ms=0.829 tokenize_end_ms=5.061 prime_start_ms=6.096 prime_end_ms=2540.214 first_decode_ms=2540.214 first_sse_byte_ms=2540.449 total_ms=2540.449
+1794083528.612 [prefix-cache] insert refused: entry 245764096 exceeds budget 0 (spec-boundary, model gate)
+1794083528.613 [meter] admit id=chatcmpl-cf9380d10616fdf7f56ed7a596469b1e tenant=default lane=interactive model="gate"
+1794083528.618 [admission] per-session draft-state charge: model="gate" +40MB (measured capture high-water)
+1794083528.618 [admission] request cost: model="gate" ctx=5297 path=spec = 31552 B/token x ctx + 1986MB prefill-workspace + 340MB fixed = 2493MB
+1794083528.620 [worker] spec-affinity: grew parked session 2842 -> 5297 rows (request-owned need)
+1794083528.620 [worker] spec-affinity: rewound to 2816 of 5232 prompt tokens (fingerprint; priming 2416 suffix; model gate)
+1794083528.620 [spec-k] model="gate" tenant="" K=2 source=cached-long prompt=5232 cached=2816 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1794083530.923 [ttft] id=chatcmpl-cf9380d10616fdf7f56ed7a596469b1e model="gate" path="/v1/chat/completions" prompt_tokens=5232 outcome=first_sse_byte request_parse_ms=0.076 admission_ms=0.041 queue_wait_ms=0.020 tokenize_ms=5.714 prime_wait_ms=2.100 prime_ms=2302.375 decode_wait_ms=0.000 sse_handoff_ms=0.226 request_parse_end_ms=0.076 admission_end_ms=0.117 tokenize_start_ms=0.137 tokenize_end_ms=5.851 prime_start_ms=7.951 prime_end_ms=2310.326 first_decode_ms=2310.326 first_sse_byte_ms=2310.552 total_ms=2310.552
+1794083530.925 [meter] admit id=chatcmpl-35f377d36f5d5a31a548a35e9020afa7 tenant=default lane=interactive model="gate"
+1794083530.929 [admission] per-session draft-state charge: model="gate" +40MB (measured capture high-water)
+1794083530.929 [admission] request cost: model="gate" ctx=1669 path=spec = 31552 B/token x ctx + 769MB prefill-workspace + 340MB fixed = 1161MB
+1794083530.929 [worker] spec-affinity: declined (history diverged at 284 of checkpoint 13216; 2 parked, 1604 prompt tokens; model gate)
+1794083530.930 [spec-k] model="gate" tenant="" K=3 source=cold-long prompt=1604 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1794083532.500 [ttft] id=chatcmpl-35f377d36f5d5a31a548a35e9020afa7 model="gate" path="/v1/chat/completions" prompt_tokens=1604 outcome=first_sse_byte request_parse_ms=0.087 admission_ms=0.060 queue_wait_ms=0.019 tokenize_ms=4.102 prime_wait_ms=1.121 prime_ms=1569.208 decode_wait_ms=0.000 sse_handoff_ms=0.194 request_parse_end_ms=0.087 admission_end_ms=0.147 tokenize_start_ms=0.166 tokenize_end_ms=4.268 prime_start_ms=5.389 prime_end_ms=1574.597 first_decode_ms=1574.597 first_sse_byte_ms=1574.791 total_ms=1574.791
+1794083532.501 [prefix-cache] insert refused: entry 206387200 exceeds budget 0 (spec-boundary, model gate)
+1794083532.502 [meter] admit id=chatcmpl-5129cac776d2d76f418cbb9ae9ae8f1d tenant=default lane=interactive model="gate"
+1794083532.509 [admission] per-session draft-state charge: model="gate" +40MB (measured capture high-water)
+1794083532.509 [admission] request cost: model="gate" ctx=5791 path=spec = 31552 B/token x ctx + 1996MB prefill-workspace + 340MB fixed = 2519MB
+1794083532.511 [worker] spec-affinity: grew parked session 1613 -> 5791 rows (request-owned need)
+1794083532.511 [worker] spec-affinity: rewound to 1568 of 5726 prompt tokens (fingerprint; priming 4158 suffix; model gate)
+1794083532.511 [spec-k] model="gate" tenant="" K=2 source=cached-long prompt=5726 cached=1568 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1794083536.109 [prime-yield] count=1 remaining=4 chunks=1 wall_ms=3598.263 max_chunk_ms=3598.263
+1794083536.266 [prime-yield] count=2 remaining=3 chunks=1 wall_ms=155.878 max_chunk_ms=155.878
+1794083536.437 [prime-yield] count=3 remaining=2 chunks=1 wall_ms=170.988 max_chunk_ms=170.988
+1794083536.470 [prime-yield] count=4 remaining=1 chunks=1 wall_ms=32.931 max_chunk_ms=32.931
+1794083536.472 [ttft] id=chatcmpl-5129cac776d2d76f418cbb9ae9ae8f1d model="gate" path="/v1/chat/completions" prompt_tokens=5726 outcome=first_sse_byte request_parse_ms=0.136 admission_ms=0.129 queue_wait_ms=0.012 tokenize_ms=6.890 prime_wait_ms=2.027 prime_ms=3959.763 decode_wait_ms=0.000 sse_handoff_ms=0.728 request_parse_end_ms=0.136 admission_end_ms=0.265 tokenize_start_ms=0.277 tokenize_end_ms=7.167 prime_start_ms=9.194 prime_end_ms=3968.957 first_decode_ms=3968.957 first_sse_byte_ms=3969.685 total_ms=3969.685
+1794083536.473 [meter] admit id=chatcmpl-e0747aef02fc2402ddd17e65009c1a69 tenant=default lane=interactive model="gate"
+1794083536.478 [admission] per-session draft-state charge: model="gate" +40MB (measured capture high-water)
+1794083536.478 [admission] request cost: model="gate" ctx=3578 path=spec = 31552 B/token x ctx + 1684MB prefill-workspace + 340MB fixed = 2136MB
+1794083536.478 [worker] spec-affinity: declined (history diverged at 282 of checkpoint 5216; 2 parked, 3513 prompt tokens; model gate)
+1794083536.479 [spec-k] model="gate" tenant="" K=3 source=cold-long prompt=3513 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1794083539.767 [ttft] id=chatcmpl-e0747aef02fc2402ddd17e65009c1a69 model="gate" path="/v1/chat/completions" prompt_tokens=3513 outcome=first_sse_byte request_parse_ms=0.089 admission_ms=0.063 queue_wait_ms=0.016 tokenize_ms=4.590 prime_wait_ms=0.942 prime_ms=3287.411 decode_wait_ms=0.000 sse_handoff_ms=0.261 request_parse_end_ms=0.089 admission_end_ms=0.152 tokenize_start_ms=0.168 tokenize_end_ms=4.758 prime_start_ms=5.700 prime_end_ms=3293.111 first_decode_ms=3293.111 first_sse_byte_ms=3293.372 total_ms=3293.372
+1794083539.768 [prefix-cache] insert refused: entry 266967040 exceeds budget 0 (spec-boundary, model gate)
+1794083539.769 [meter] admit id=chatcmpl-c1585cd03cfa84d81f770a280ca7920b tenant=default lane=interactive model="gate"
+1794083539.774 [admission] per-session draft-state charge: model="gate" +40MB (measured capture high-water)
+1794083539.774 [admission] request cost: model="gate" ctx=3970 path=spec = 31552 B/token x ctx + 1871MB prefill-workspace + 340MB fixed = 2336MB
+1794083539.776 [worker] spec-affinity: grew parked session 3522 -> 3970 rows (request-owned need)
+1794083539.776 [worker] spec-affinity: rewound to 3488 of 3905 prompt tokens (fingerprint; priming 417 suffix; model gate)
+1794083539.776 [spec-k] model="gate" tenant="" K=2 source=cached-long prompt=3905 cached=3488 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1794083540.296 [ttft] id=chatcmpl-c1585cd03cfa84d81f770a280ca7920b model="gate" path="/v1/chat/completions" prompt_tokens=3905 outcome=first_sse_byte request_parse_ms=0.119 admission_ms=0.071 queue_wait_ms=0.013 tokenize_ms=4.697 prime_wait_ms=2.022 prime_ms=520.488 decode_wait_ms=0.000 sse_handoff_ms=0.152 request_parse_end_ms=0.119 admission_end_ms=0.190 tokenize_start_ms=0.203 tokenize_end_ms=4.900 prime_start_ms=6.922 prime_end_ms=527.410 first_decode_ms=527.410 first_sse_byte_ms=527.562 total_ms=527.562
+1794083540.299 [meter] admit id=chatcmpl-e526f3b7997560bcf309290e642b977b tenant=default lane=interactive model="gate"
+1794083540.318 [admission] per-session draft-state charge: model="gate" +40MB (measured capture high-water)
+1794083540.318 [admission] request cost: model="gate" ctx=16708 path=spec = 31552 B/token x ctx + 2220MB prefill-workspace + 340MB fixed = 3087MB
+1794083540.318 [worker] spec-affinity: declined (history diverged at 284 of checkpoint 5696; 2 parked, 16643 prompt tokens; model gate)
+1794083540.319 [spec-k] model="gate" tenant="" K=3 source=cold-long prompt=16643 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1794083543.847 [prime-yield] count=1 remaining=10 chunks=1 wall_ms=3527.542 max_chunk_ms=3527.542
+1794083547.611 [prime-yield] count=2 remaining=9 chunks=1 wall_ms=3764.514 max_chunk_ms=3764.514
+1794083551.602 [prime-yield] count=3 remaining=8 chunks=1 wall_ms=3989.982 max_chunk_ms=3989.982
+1794083555.810 [prime-yield] count=4 remaining=7 chunks=1 wall_ms=4208.359 max_chunk_ms=4208.359
+1794083556.106 [prime-yield] count=5 remaining=6 chunks=1 wall_ms=295.806 max_chunk_ms=295.806
+1794083556.304 [spec] pre-capture pool trim: released 1408MB cached back to the driver (driver free 2866MB < required 3148MB; instantiate allocates from the driver)
+1794083556.308 [prime-yield] count=6 remaining=5 chunks=1 wall_ms=202.081 max_chunk_ms=202.081
+1794083556.346 [prime-yield] count=7 remaining=4 chunks=1 wall_ms=37.485 max_chunk_ms=37.485
+1794083556.380 [prime-yield] count=8 remaining=3 chunks=1 wall_ms=34.121 max_chunk_ms=34.121
+1794083556.413 [prime-yield] count=9 remaining=2 chunks=1 wall_ms=33.217 max_chunk_ms=33.217
+1794083556.443 [prime-yield] count=10 remaining=1 chunks=1 wall_ms=30.211 max_chunk_ms=30.211
+1794083556.446 [ttft] id=chatcmpl-e526f3b7997560bcf309290e642b977b model="gate" path="/v1/chat/completions" prompt_tokens=16643 outcome=first_sse_byte request_parse_ms=0.236 admission_ms=0.099 queue_wait_ms=0.024 tokenize_ms=18.152 prime_wait_ms=1.562 prime_ms=16126.897 decode_wait_ms=0.000 sse_handoff_ms=0.096 request_parse_end_ms=0.236 admission_end_ms=0.335 tokenize_start_ms=0.359 tokenize_end_ms=18.511 prime_start_ms=20.073 prime_end_ms=16146.970 first_decode_ms=16146.970 first_sse_byte_ms=16147.066 total_ms=16147.066
+1794083556.447 [prefix-cache] insert refused: entry 680929280 exceeds budget 0 (spec-boundary, model gate)
+1794083556.449 [meter] admit id=chatcmpl-bde1f88d39203c52b22a09ea7ba07514 tenant=default lane=interactive model="gate"
+1794083556.454 [admission] per-session draft-state charge: model="gate" +40MB (measured capture high-water)
+1794083556.454 [admission] request cost: model="gate" ctx=3665 path=spec = 31552 B/token x ctx + 1725MB prefill-workspace + 340MB fixed = 2181MB
+1794083556.454 [worker] spec-affinity: declined (history diverged at 97 of checkpoint 3872; 2 parked, 3600 prompt tokens; model gate)
+1794083556.455 [spec-k] model="gate" tenant="" K=3 source=cold-long prompt=3600 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1794083559.989 [ttft] id=chatcmpl-bde1f88d39203c52b22a09ea7ba07514 model="gate" path="/v1/chat/completions" prompt_tokens=3600 outcome=first_sse_byte request_parse_ms=0.068 admission_ms=0.045 queue_wait_ms=0.527 tokenize_ms=4.560 prime_wait_ms=0.954 prime_ms=3533.673 decode_wait_ms=0.000 sse_handoff_ms=0.094 request_parse_end_ms=0.068 admission_end_ms=0.113 tokenize_start_ms=0.640 tokenize_end_ms=5.200 prime_start_ms=6.154 prime_end_ms=3539.827 first_decode_ms=3539.827 first_sse_byte_ms=3539.921 total_ms=3539.921
+1794083559.990 [prefix-cache] insert refused: entry 269996032 exceeds budget 0 (spec-boundary, model gate)
+1794083559.993 [meter] admit id=chatcmpl-719bb6dafc24fe2fa74a10e67df8ed3e tenant=default lane=interactive model="gate"
+1794083560.002 [admission] per-session draft-state charge: model="gate" +40MB (measured capture high-water)
+1794083560.002 [admission] request cost: model="gate" ctx=7456 path=spec = 31552 B/token x ctx + 2030MB prefill-workspace + 340MB fixed = 2605MB
+1794083560.004 [worker] spec-affinity: grew parked session 3609 -> 7456 rows (request-owned need)
+1794083560.004 [worker] spec-affinity: rewound to 3584 of 7391 prompt tokens (fingerprint; priming 3807 suffix; model gate)
+1794083560.004 [spec-k] model="gate" tenant="" K=2 source=cached-long prompt=7391 cached=3584 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1794083563.607 [ttft] id=chatcmpl-719bb6dafc24fe2fa74a10e67df8ed3e model="gate" path="/v1/chat/completions" prompt_tokens=7391 outcome=first_sse_byte request_parse_ms=0.156 admission_ms=0.239 queue_wait_ms=1.984 tokenize_ms=6.693 prime_wait_ms=2.345 prime_ms=3602.475 decode_wait_ms=0.000 sse_handoff_ms=0.125 request_parse_end_ms=0.156 admission_end_ms=0.395 tokenize_start_ms=2.379 tokenize_end_ms=9.072 prime_start_ms=11.417 prime_end_ms=3613.892 first_decode_ms=3613.892 first_sse_byte_ms=3614.017 total_ms=3614.017
+1794083563.609 [meter] admit id=chatcmpl-fda121d57b1f4c95c83d31d519012342 tenant=default lane=interactive model="gate"
+1794083563.612 [admission] per-session draft-state charge: model="gate" +40MB (measured capture high-water)
+1794083563.612 [admission] request cost: model="gate" ctx=2432 path=spec = 31552 B/token x ctx + 1134MB prefill-workspace + 340MB fixed = 1551MB
+1794083563.612 [worker] spec-affinity: declined (history diverged at 97 of checkpoint 16608; 2 parked, 2367 prompt tokens; model gate)
+1794083563.613 [spec-k] model="gate" tenant="" K=3 source=cold-long prompt=2367 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1794083565.882 [ttft] id=chatcmpl-fda121d57b1f4c95c83d31d519012342 model="gate" path="/v1/chat/completions" prompt_tokens=2367 outcome=first_sse_byte request_parse_ms=0.101 admission_ms=0.067 queue_wait_ms=0.016 tokenize_ms=3.277 prime_wait_ms=1.140 prime_ms=2268.298 decode_wait_ms=0.000 sse_handoff_ms=0.237 request_parse_end_ms=0.101 admission_end_ms=0.168 tokenize_start_ms=0.184 tokenize_end_ms=3.461 prime_start_ms=4.601 prime_end_ms=2272.899 first_decode_ms=2272.899 first_sse_byte_ms=2273.136 total_ms=2273.136
+1794083565.883 [prefix-cache] insert refused: entry 230619136 exceeds budget 0 (spec-boundary, model gate)
+1794083565.884 [meter] admit id=chatcmpl-14a447706f8d430b1c0baaa3153043d6 tenant=default lane=interactive model="gate"
+1794083565.888 [admission] per-session draft-state charge: model="gate" +40MB (measured capture high-water)
+1794083565.888 [admission] request cost: model="gate" ctx=2697 path=spec = 31552 B/token x ctx + 1261MB prefill-workspace + 340MB fixed = 1686MB
+1794083565.889 [worker] spec-affinity: grew parked session 2376 -> 2697 rows (request-owned need)
+1794083565.889 [worker] spec-affinity: rewound to 2336 of 2632 prompt tokens (fingerprint; priming 296 suffix; model gate)
+1794083565.889 [spec-k] model="gate" tenant="" K=2 source=cached-long prompt=2632 cached=2336 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1794083566.281 [ttft] id=chatcmpl-14a447706f8d430b1c0baaa3153043d6 model="gate" path="/v1/chat/completions" prompt_tokens=2632 outcome=first_sse_byte request_parse_ms=0.066 admission_ms=0.328 queue_wait_ms=0.136 tokenize_ms=3.534 prime_wait_ms=1.847 prime_ms=391.087 decode_wait_ms=0.000 sse_handoff_ms=0.260 request_parse_end_ms=0.066 admission_end_ms=0.394 tokenize_start_ms=0.530 tokenize_end_ms=4.064 prime_start_ms=5.911 prime_end_ms=396.998 first_decode_ms=396.998 first_sse_byte_ms=397.258 total_ms=397.258
+1794083566.283 [meter] admit id=chatcmpl-896555cd769f7c0f6adb93fdac4c39e8 tenant=default lane=interactive model="gate"
+1794083566.288 [admission] per-session draft-state charge: model="gate" +40MB (measured capture high-water)
+1794083566.288 [admission] request cost: model="gate" ctx=4377 path=spec = 31552 B/token x ctx + 1967MB prefill-workspace + 340MB fixed = 2445MB
+1794083566.288 [worker] spec-affinity: declined (history diverged at 424 of checkpoint 7360; 2 parked, 4312 prompt tokens; model gate)
+1794083566.289 [spec-k] model="gate" tenant="" K=3 source=cold-long prompt=4312 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1794083569.817 [prime-yield] count=1 remaining=4 chunks=1 wall_ms=3528.526 max_chunk_ms=3528.526
+1794083570.058 [prime-yield] count=2 remaining=3 chunks=1 wall_ms=241.068 max_chunk_ms=241.068
+1794083570.231 [prime-yield] count=3 remaining=2 chunks=1 wall_ms=172.320 max_chunk_ms=172.320
+1794083570.265 [prime-yield] count=4 remaining=1 chunks=1 wall_ms=34.412 max_chunk_ms=34.412
+1794083570.268 [ttft] id=chatcmpl-896555cd769f7c0f6adb93fdac4c39e8 model="gate" path="/v1/chat/completions" prompt_tokens=4312 outcome=first_sse_byte request_parse_ms=0.077 admission_ms=0.048 queue_wait_ms=0.176 tokenize_ms=4.644 prime_wait_ms=0.835 prime_ms=3979.358 decode_wait_ms=0.000 sse_handoff_ms=0.153 request_parse_end_ms=0.077 admission_end_ms=0.125 tokenize_start_ms=0.301 tokenize_end_ms=4.945 prime_start_ms=5.780 prime_end_ms=3985.138 first_decode_ms=3985.138 first_sse_byte_ms=3985.291 total_ms=3985.291
+1794083570.269 [prefix-cache] insert refused: entry 292208640 exceeds budget 0 (spec-boundary, model gate)
+1794083570.270 [meter] admit id=chatcmpl-a526c2f9800729eb0e3c61c471be299e tenant=default lane=interactive model="gate"
+1794083570.277 [admission] per-session draft-state charge: model="gate" +40MB (measured capture high-water)
+1794083570.277 [admission] request cost: model="gate" ctx=5770 path=spec = 31552 B/token x ctx + 1996MB prefill-workspace + 340MB fixed = 2518MB
+1794083570.279 [worker] spec-affinity: grew parked session 4321 -> 5770 rows (request-owned need)
+1794083570.279 [worker] spec-affinity: rewound to 4288 of 5705 prompt tokens (fingerprint; priming 1417 suffix; model gate)
+1794083570.279 [spec-k] model="gate" tenant="" K=2 source=cached-long prompt=5705 cached=4288 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1794083571.746 [ttft] id=chatcmpl-a526c2f9800729eb0e3c61c471be299e model="gate" path="/v1/chat/completions" prompt_tokens=5705 outcome=first_sse_byte request_parse_ms=0.089 admission_ms=0.049 queue_wait_ms=0.193 tokenize_ms=6.449 prime_wait_ms=2.080 prime_ms=1466.996 decode_wait_ms=0.000 sse_handoff_ms=0.121 request_parse_end_ms=0.089 admission_end_ms=0.138 tokenize_start_ms=0.331 tokenize_end_ms=6.780 prime_start_ms=8.860 prime_end_ms=1475.856 first_decode_ms=1475.856 first_sse_byte_ms=1475.977 total_ms=1475.977
+1794083571.890 [server] SIGTERM: draining (0 in flight, deadline 30s)
+1794083571.890 [server] drain complete in 0.0s; exiting
+1794083572.021 [server] GPU worker shutdown complete

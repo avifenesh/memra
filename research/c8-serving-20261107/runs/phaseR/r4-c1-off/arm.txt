@@ -1,0 +1,13 @@
+arm r4-c1-off workload=agentic:1:1.0:768:prime start=2026-11-07T22:30:02+02:00 profile=balanced
+41741f5da6cc67b8eb82442417b73eefe6821c73c0fe4f94b620c69bc89931c8  <bins>/memra-server-base-46172c1bac
+env: MEMRA_TTFT_TRACE=1 MEMRA_PREFIX_CACHE_MB=0
+NVIDIA GeForce RTX 5090 Laptop GPU, 59, 180 MHz, [N/A], 48 MiB, 24028 MiB
+device_free_min_mib 2515 samples 737
+memavailable_min_gib 44.58
+evict_lines=0
+oom_lines=0
+reclaim_on_defer_lines=0
+vram_defer_lines=0
+admit_trim_lines=0
+{"args": {"workload": "<agentic-workload>", "out": "<runs>/phaseR/r4-c1-off/rows.json", "port": 18187, "users": 1, "think": 1, "temperature": 1.0, "max_tokens": 768, "seed": 1234, "prime_only": true}, "prime": {"rows": 29, "ok": 29, "status_counts": {"200": 29}, "wall_s": 136.2, "ttft_ms_p50": 2541.5, "ttft_ms_p95": 15140.0, "ttft_ms_p99": 16148.6, "ttft_ms_max": 16148.6, "tokens": 29, "agg_tok_s": 0.21, "cached_tokens": 32416, "prompt_tokens": 184051, "hits": 11, "per_user_gen_tps_median": null}, "prime_metrics_delta": {}}
+rc=0 end=2026-11-07T22:33:07+02:00

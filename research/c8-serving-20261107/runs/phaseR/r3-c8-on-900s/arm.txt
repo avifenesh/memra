@@ -1,0 +1,14 @@
+arm r3-c8-on-900s workload=agentic:8:1.0:768:prime start=2026-11-07T22:22:01+02:00 profile=balanced
+41741f5da6cc67b8eb82442417b73eefe6821c73c0fe4f94b620c69bc89931c8  <bins>/memra-server-base-46172c1bac
+env: MEMRA_TTFT_TRACE=1 MEMRA_STREAM_TTFT_MS_MAX=900000
+NVIDIA GeForce RTX 5090 Laptop GPU, 75, 180 MHz, [N/A], 48 MiB, 24028 MiB
+boot FAILED
+1794082921.603 Error: Custom { kind: InvalidInput, error: "streaming prefill config: MEMRA_STREAM_TTFT_MS_MAX=900000 extends streaming TTFT past the shipped 90000 ms pre-header window, but MEMRA_SSE_PREFILL_COMMIT_MS is unset or zero; refusing a customer promise that cannot start SSE keepalives" }
+device_free_min_mib 24028 samples 1916
+memavailable_min_gib 43.92
+evict_lines=0
+oom_lines=0
+reclaim_on_defer_lines=0
+vram_defer_lines=0
+admit_trim_lines=0
+rc=3 end=2026-11-07T22:30:02+02:00

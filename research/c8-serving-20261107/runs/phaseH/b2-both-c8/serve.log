@@ -1,0 +1,518 @@
+1794084774.876 [server] build: memra-0.138.0-9abb62092ef5 (id: source-tree, git: 46172c1bacd0)
+1794084774.876 [server] starting; models config = [("gate", "<models>/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf", None)]
+1794084774.877 [gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+1794084774.877 [worker-affinity] off (MEMRA_WORKER_CPUSET / MEMRA_WORKER_AFFINITY unset or =0)
+1794084774.977 [gpu-watch] on: every 60s, probe deadline 10s, fatal after 3 consecutive misses (MEMRA_GPU_PROBE_MISSES), fatal Xid [48, 64, 79, 94, 95, 119, 120]
+1794084775.165 [worker] Engine ready (device=0, MEMRA_FAST=true)
+1794084775.165 [spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+1794084775.165 [spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2 (K=5 when the loaded MTP head is rank-trimmed)
+1794084775.165 [worker] loading model "gate" <- <models>/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf
+1794084775.238 [tensor-contract] bound 866 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+1794084784.295 [worker]   loaded "gate": 65 layers, eos=248046, stop=[248046]
+1794084784.295 [worker] gate: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false qwen_effort=true gemma_think=false dsv4=false glm5=false ctx=262144 tok="qwen35" instruct=Some("chatml") chat_defaults=None/None
+1794084784.295 [route-contract] model="gate" route=hybrid-worker capacity=64 sessions implemented=[capacity,occupancy,progress,fault-ownership,shutdown-ownership,memory-cost,rewrite-qualification,prime-fairness,service-metrics] refused=[]
+1794084787.132 [device-trim] reason=wave-probe {"device":0,"reclaimed_bytes":1778384896,"still_owned_bytes":16500232192,"pool_reserved_bytes":16575889408,"pool_cached_bytes":75657216,"driver_free_bytes":8342601728,"synchronization_errors":[]}
+1794084787.132 [wave-probe] skipped (32 sessions at depth 2048 do not fit: the other 30 need 15175MB (505.8MB each), 7016MB allocatable) after 2.8s; wave cap 16; released 1696MB of cached pool to the driver
+1794084787.132 [worker] gate: decode wave cap 16; scheduler tick cap 16 (exact-16 tier)
+1794084787.132 [prefix-cache] on: budget 2260MB (2259943424 B, derived: 2 x 1129971712 B max entry for model "gate" at served ctx 32768 (from MEMRA_CTX; MEMRA_CTX set), requested 2259943424 B; boot driver free 8342601728 B, post-reserve clamp 6731988992 B), policy plain-LRU (global oldest unleased entry first; leases untouchable), min prefix 64 tokens, immediate partial restore=off (rollback) (transformer-only; hybrid mid-entry + routed-MoE N/A)
+1794084787.132 [admission] "gate": plain 29696 B/token, spec 31552 B/token; fixed residual learns from effective-free deltas
+1794084788.565 [fa-pool] grow #0 dev=0 o_len 0 -> 202752 ml_len 0 -> 792 (retired kept, zero=false)
+1794084788.665 [fa-pool] grow #1 dev=0 o_len 202752 -> 405504 ml_len 792 -> 1584 (retired kept, zero=false)
+1794084788.765 [fa-pool] grow #2 dev=0 o_len 405504 -> 811008 ml_len 1584 -> 3168 (retired kept, zero=false)
+1794084788.974 [fa-pool] grow #3 dev=0 o_len 811008 -> 1622016 ml_len 3168 -> 6336 (retired kept, zero=false)
+1794084789.271 [fa-pool] grow #4 dev=0 o_len 1622016 -> 3244032 ml_len 6336 -> 12672 (retired kept, zero=false)
+1794084792.601 [device-trim] reason=spec-cost-calibration {"device":0,"reclaimed_bytes":1778384896,"still_owned_bytes":16525571904,"pool_reserved_bytes":16710107136,"pool_cached_bytes":184535232,"driver_free_bytes":8208384000,"synchronization_errors":[]}
+1794084792.601 [spec-cost] calibration skipped: model="gate" (16 sessions at depth 2048 do not fit: the other 14 need 7081MB (505.8MB each), 6992MB allocatable); the band serves
+1794084792.601 [prime-walk] model="gate" route=mtp supported=true yield_door=true [gdn_dspark_compatible=true mtp_head_loaded=true no_hyper_connections=true no_pipeline_cuts=true]
+1794084795.639 [func] CAPTURE-TIME kernel lookup (not warmed): embed_gather_u32
+1794084795.640 [func] CAPTURE-TIME kernel lookup (not warmed): inc_i32
+1794084795.640 [func] CAPTURE-TIME kernel lookup (not warmed): fa_decode_vec_q_v4_deep_dc
+1794084795.640 [func] CAPTURE-TIME kernel lookup (not warmed): fa_decode_combine_f32
+1794084795.640 [func] CAPTURE-TIME kernel lookup (not warmed): memra_sctr_inc
+1794084795.640 [func] CAPTURE-TIME kernel lookup (not warmed): gumbel_perturb_filtered_ctr_f32
+1794084795.645 [spec] draft-session state high-water: 38MB (max of parked delta 38MB and capture-time pool peak 6MB; charged per spec admission and gating future captures)
+1794084796.438 [device-trim] reason=calibration-complete {"device":0,"reclaimed_bytes":2147483648,"still_owned_bytes":17297323840,"pool_reserved_bytes":17616076800,"pool_cached_bytes":318752960,"driver_free_bytes":7266762752,"synchronization_errors":[]}
+1794084796.438 [admit-cal] post-probe pool trim: released 2048MB cached back to the driver
+1794084796.438 [admit-cal] boot calibration done: model="gate" route=mtp transient floor 1882MB (static was 1536MB; measured 1882MB; probe kv charge 127MB, draft-state 38MB, drafted 63 accepted 42; [dev0 peak-mapped 18848MB rest-mapped 16800MB charged 165MB -> 1882MB]; 3.8s)
+1794084796.438 [admit-mem] door=OFF open_output_tokens=8192 defer_budget_ms=8000 (admission charges prompt+output, the reclaim flush demotes to the host tier before dropping, and a memory defer past the budget refuses 429 instead of queueing past the client's deadline)
+1794084796.438 [kv-vmm] door=OFF (MEMRA_KV_ALLOCATOR unset or pooled: pooled K/V planes)
+1794084796.439 [server] worker ready; serving models: ["gate"]
+1794084796.439 [server] listening on http://127.0.0.1:18187
+1794084799.106 [meter] admit id=chatcmpl-2b60ab49a1648c2625d5dec15dbdfa94 tenant=default lane=interactive model="gate"
+1794084799.107 [meter] admit id=chatcmpl-5ebe61e61892a4adc71bf1a91c3427d8 tenant=default lane=interactive model="gate"
+1794084799.107 [meter] admit id=chatcmpl-3952ac4da73817aff9a8c47479b31a1e tenant=default lane=interactive model="gate"
+1794084799.108 [meter] admit id=chatcmpl-1cd1583e2b575603b422b9bbf3af6ff3 tenant=default lane=interactive model="gate"
+1794084799.109 [admission] request cost: model="gate" ctx=2825 path=plain = 29696 B/token x ctx + 1323MB prefill-workspace + 0MB fixed = 1407MB
+1794084799.109 [meter] admit id=chatcmpl-ab6f6d629f891137956d378017918d09 tenant=default lane=interactive model="gate"
+1794084799.109 [meter] admit id=chatcmpl-727a36ac0d90b63f70f98d080e40e2b6 tenant=default lane=interactive model="gate"
+1794084799.109 [meter] admit id=chatcmpl-732b03e14233622608e6ed41519de73a tenant=default lane=interactive model="gate"
+1794084799.109 [meter] admit id=chatcmpl-cf2a4c8f837c1566251e99bf233e66ca tenant=default lane=interactive model="gate"
+1794084799.110 [spec-k] model="gate" tenant="" K=0 source=concurrency prompt=2760 cached=0 lcp=0 active=1 wave=8 placement=single-or-non-pp2
+1794084799.110 [admission] fixed residual high-water: model="gate" 313MB (observed 395MB at ctx 2769 path=plain)
+1794084801.056 [prefix-cache] insert (seed): 2720 tokens, 237.7MB (resident 237.7MB / 2260MB, model gate)
+1794084801.071 [admission] request cost: model="gate" ctx=14770 path=plain = 29696 B/token x ctx + 2180MB prefill-workspace + 313MB fixed = 2932MB
+1794084801.072 [spec-k] model="gate" tenant="" K=0 source=concurrency prompt=14705 cached=0 lcp=282 active=2 wave=8 placement=single-or-non-pp2
+1794084801.072 [admission] fixed residual high-water: model="gate" 335MB (observed 772MB at ctx 14714 path=plain)
+1794084801.075 [admission] request cost: model="gate" ctx=2332 path=plain = 29696 B/token x ctx + 1086MB prefill-workspace + 335MB fixed = 1491MB
+1794084801.076 [spec-k] model="gate" tenant="" K=0 source=concurrency prompt=2267 cached=0 lcp=282 active=3 wave=8 placement=single-or-non-pp2
+1794084801.079 [admission] request cost: model="gate" ctx=3002 path=plain = 29696 B/token x ctx + 1408MB prefill-workspace + 335MB fixed = 1832MB
+1794084801.080 [spec-k] model="gate" tenant="" K=0 source=concurrency prompt=2937 cached=0 lcp=282 active=4 wave=8 placement=single-or-non-pp2
+1794084801.082 [admission] request cost: model="gate" ctx=2468 path=plain = 29696 B/token x ctx + 1152MB prefill-workspace + 335MB fixed = 1560MB
+1794084801.083 [spec-k] model="gate" tenant="" K=0 source=concurrency prompt=2403 cached=0 lcp=282 active=5 wave=8 placement=single-or-non-pp2
+1794084801.086 [admission] request cost: model="gate" ctx=4041 path=plain = 29696 B/token x ctx + 1905MB prefill-workspace + 335MB fixed = 2361MB
+1794084801.087 [prefix-cache] hit: 2720 of 3976 prompt tokens from cache (model gate)
+1794084801.087 [spec-k] model="gate" tenant="" K=0 source=concurrency prompt=3976 cached=2720 lcp=2720 active=6 wave=8 placement=single-or-non-pp2
+1794084801.088 [prefix-cache] source lease released after restore fence (entry 2720 tokens, model gate)
+1794084801.091 [admission] request cost: model="gate" ctx=3062 path=plain = 29696 B/token x ctx + 1436MB prefill-workspace + 335MB fixed = 1862MB
+1794084801.092 [spec-k] model="gate" tenant="" K=0 source=concurrency prompt=2997 cached=0 lcp=282 active=7 wave=8 placement=single-or-non-pp2
+1794084801.104 [admission] request cost: model="gate" ctx=13281 path=plain = 29696 B/token x ctx + 2150MB prefill-workspace + 335MB fixed = 2879MB
+1794084801.105 [admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=237666304 pool_cached_gain_bytes=237666304 trim_released_bytes=134217728 driver_free_bytes 4011982848 -> 4146200576 pool_reserved_bytes 20870856704 -> 20736638976 pool_used_bytes 20860174220 -> 20622507916 pool_retained_bytes=103448576 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+1794084801.105 [admit-oom] reclaim-on-defer: evicted 1 prefix entries + 0 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 4023MB -> 4260MB
+1794084801.105 [admit-oom] VRAM defer: 7 active, effective free 4260MB (driver + 114MB pool-cached) < cost 2879MB + reserve 1974MB — queueing (FIFO) [pool res 20737MB used 20623MB; parked spec sessions 0; plain reuse 0; queue 0]
+1794084801.407 [prefix-cache] insert (lcp-split): 256 tokens, 164.5MB (resident 164.5MB / 2260MB, model gate)
+1794084802.998 [ttft] id=chatcmpl-2b60ab49a1648c2625d5dec15dbdfa94 model="gate" path="/v1/chat/completions" prompt_tokens=2760 outcome=first_sse_byte request_parse_ms=0.147 admission_ms=0.123 queue_wait_ms=0.166 tokenize_ms=2.605 prime_wait_ms=1.199 prime_ms=2101.305 decode_wait_ms=1786.213 sse_handoff_ms=0.248 request_parse_end_ms=0.147 admission_end_ms=0.270 tokenize_start_ms=0.436 tokenize_end_ms=3.041 prime_start_ms=4.240 prime_end_ms=2105.545 first_decode_ms=3891.758 first_sse_byte_ms=3892.006 total_ms=3892.006
+1794084803.022 [admit-oom] reclaim spared the prompt's prefix entry (256 tokens, model gate)
+1794084803.022 [admit-oom] VRAM defer: 7 active, effective free 4095MB (driver + 519MB pool-cached) < cost 2879MB + reserve 1974MB — queueing (FIFO) [pool res 21307MB used 20788MB; parked spec sessions 0; plain reuse 0; queue 0]
+1794084806.327 [prefix-cache] insert (seed): 3936 tokens, 273.8MB (resident 438.3MB / 2260MB, model gate)
+1794084807.107 [admit-oom] reclaim spared the prompt's prefix entry (256 tokens, model gate)
+1794084807.108 [admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=273776640 pool_cached_gain_bytes=273776640 trim_released_bytes=268435456 driver_free_bytes 3173122048 -> 3441557504 pool_reserved_bytes 21709717504 -> 21441282048 pool_used_bytes 21218666380 -> 20944889740 pool_retained_bytes=5341184 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+1794084807.108 [admit-oom] reclaim-on-defer: evicted 1 prefix entries + 1 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 3664MB -> 4491MB
+1794084807.108 [admit-oom] VRAM defer: 6 active, effective free 4491MB (driver + 1050MB pool-cached) < cost 2879MB + reserve 1974MB — queueing (FIFO) [pool res 21441MB used 20392MB; parked spec sessions 0; plain reuse 0; queue 0]
+1794084807.108 [admit-oom] reclaim spared the prompt's prefix entry (256 tokens, model gate)
+1794084807.108 [admit-oom] VRAM defer: 6 active, effective free 4491MB (driver + 1050MB pool-cached) < cost 2879MB + reserve 1974MB — queueing (FIFO) [pool res 21441MB used 20392MB; parked spec sessions 0; plain reuse 0; queue 0]
+1794084807.108 [admit-oom] reclaim spared the prompt's prefix entry (256 tokens, model gate)
+1794084807.108 [admit-oom] VRAM defer: 6 active, effective free 4491MB (driver + 1050MB pool-cached) < cost 2879MB + reserve 1974MB — queueing (FIFO) [pool res 21441MB used 20392MB; parked spec sessions 0; plain reuse 0; queue 0]
+1794084807.109 [admit-oom] reclaim spared the prompt's prefix entry (256 tokens, model gate)
+1794084807.109 [meter] admit id=chatcmpl-154f6466675157ba0fa5aaf0b16db1b8 tenant=default lane=interactive model="gate"
+1794084807.109 [admit-oom] VRAM defer: 6 active, effective free 4491MB (driver + 1050MB pool-cached) < cost 2879MB + reserve 1974MB — queueing (FIFO) [pool res 21441MB used 20392MB; parked spec sessions 0; plain reuse 0; queue 0]
+1794084807.109 [admit-oom] reclaim spared the prompt's prefix entry (256 tokens, model gate)
+1794084807.109 [admit-oom] VRAM defer: 6 active, effective free 4491MB (driver + 1050MB pool-cached) < cost 2879MB + reserve 1974MB — queueing (FIFO) [pool res 21441MB used 20392MB; parked spec sessions 0; plain reuse 0; queue 1]
+1794084807.109 [admit-oom] reclaim spared the prompt's prefix entry (256 tokens, model gate)
+1794084807.109 [admit-oom] VRAM defer: 6 active, effective free 4491MB (driver + 1050MB pool-cached) < cost 2879MB + reserve 1974MB — queueing (FIFO) [pool res 21441MB used 20392MB; parked spec sessions 0; plain reuse 0; queue 1]
+1794084807.109 [admit-oom] reclaim spared the prompt's prefix entry (256 tokens, model gate)
+1794084807.109 [admit-oom] VRAM defer: 6 active, effective free 4491MB (driver + 1050MB pool-cached) < cost 2879MB + reserve 1974MB — queueing (FIFO) [pool res 21441MB used 20392MB; parked spec sessions 0; plain reuse 0; queue 1]
+1794084807.109 [admit-oom] reclaim spared the prompt's prefix entry (256 tokens, model gate)
+1794084807.109 [admit-oom] VRAM defer: 6 active, effective free 4491MB (driver + 1050MB pool-cached) < cost 2879MB + reserve 1974MB — queueing (FIFO) [pool res 21441MB used 20392MB; parked spec sessions 0; plain reuse 0; queue 1]
+1794084807.109 [admit-oom] reclaim spared the prompt's prefix entry (256 tokens, model gate)
+1794084807.109 [admit-oom] VRAM defer: 6 active, effective free 4491MB (driver + 1050MB pool-cached) < cost 2879MB + reserve 1974MB — queueing (FIFO) [pool res 21441MB used 20392MB; parked spec sessions 0; plain reuse 0; queue 1]
+1794084807.109 [admit-oom] reclaim spared the prompt's prefix entry (256 tokens, model gate)
+1794084807.109 [admit-oom] VRAM defer: 6 active, effective free 4491MB (driver + 1050MB pool-cached) < cost 2879MB + reserve 1974MB — queueing (FIFO) [pool res 21441MB used 20392MB; parked spec sessions 0; plain reuse 0; queue 1]
+1794084807.109 [admit-oom] reclaim spared the prompt's prefix entry (256 tokens, model gate)
+1794084807.109 [admit-oom] VRAM defer: 6 active, effective free 4491MB (driver + 1050MB pool-cached) < cost 2879MB + reserve 1974MB — queueing (FIFO) [pool res 21441MB used 20392MB; parked spec sessions 0; plain reuse 0; queue 1]
+1794084807.109 [admit-oom] reclaim spared the prompt's prefix entry (256 tokens, model gate)
+1794084807.109 [admit-oom] VRAM defer: 6 active, effective free 4491MB (driver + 1050MB pool-cached) < cost 2879MB + reserve 1974MB — queueing (FIFO) [pool res 21441MB used 20392MB; parked spec sessions 0; plain reuse 0; queue 1]
+1794084807.109 [admit-oom] reclaim spared the prompt's prefix entry (256 tokens, model gate)
+1794084807.109 [admit-oom] VRAM defer: 6 active, effective free 4491MB (driver + 1050MB pool-cached) < cost 2879MB + reserve 1974MB — queueing (FIFO) [pool res 21441MB used 20392MB; parked spec sessions 0; plain reuse 0; queue 1]
+1794084807.109 [admit-oom] reclaim spared the prompt's prefix entry (256 tokens, model gate)
+1794084807.109 [admit-oom] VRAM defer: 6 active, effective free 4491MB (driver + 1050MB pool-cached) < cost 2879MB + reserve 1974MB — queueing (FIFO) [pool res 21441MB used 20392MB; parked spec sessions 0; plain reuse 0; queue 1]
+1794084807.109 [admit-oom] reclaim spared the prompt's prefix entry (256 tokens, model gate)
+1794084807.109 [admit-oom] VRAM defer: 6 active, effective free 4491MB (driver + 1050MB pool-cached) < cost 2879MB + reserve 1974MB — queueing (FIFO) [pool res 21441MB used 20392MB; parked spec sessions 0; plain reuse 0; queue 1]
+1794084807.109 [admit-oom] reclaim spared the prompt's prefix entry (256 tokens, model gate)
+1794084807.109 [admit-oom] VRAM defer: 6 active, effective free 4491MB (driver + 1050MB pool-cached) < cost 2879MB + reserve 1974MB — queueing (FIFO) [pool res 21441MB used 20392MB; parked spec sessions 0; plain reuse 0; queue 1]
+1794084807.109 [admit-oom] reclaim spared the prompt's prefix entry (256 tokens, model gate)
+1794084807.109 [admit-oom] VRAM defer: 6 active, effective free 4491MB (driver + 1050MB pool-cached) < cost 2879MB + reserve 1974MB — queueing (FIFO) [pool res 21441MB used 20392MB; parked spec sessions 0; plain reuse 0; queue 1]
+1794084807.109 [admit-oom] reclaim spared the prompt's prefix entry (256 tokens, model gate)
+1794084807.110 [admit-oom] VRAM defer: 6 active, effective free 4491MB (driver + 1050MB pool-cached) < cost 2879MB + reserve 1974MB — queueing (FIFO) [pool res 21441MB used 20392MB; parked spec sessions 0; plain reuse 0; queue 1]
+1794084807.110 [admit-oom] reclaim spared the prompt's prefix entry (256 tokens, model gate)
+1794084807.110 [admit-oom] VRAM defer: 6 active, effective free 4491MB (driver + 1050MB pool-cached) < cost 2879MB + reserve 1974MB — queueing (FIFO) [pool res 21441MB used 20392MB; parked spec sessions 0; plain reuse 0; queue 1]
+1794084807.110 [admit-oom] reclaim spared the prompt's prefix entry (256 tokens, model gate)
+1794084807.110 [admit-oom] VRAM defer: 6 active, effective free 4491MB (driver + 1050MB pool-cached) < cost 2879MB + reserve 1974MB — queueing (FIFO) [pool res 21441MB used 20392MB; parked spec sessions 0; plain reuse 0; queue 1]
+1794084807.110 [admit-oom] reclaim spared the prompt's prefix entry (256 tokens, model gate)
+1794084807.110 [admit-oom] VRAM defer: 6 active, effective free 4491MB (driver + 1050MB pool-cached) < cost 2879MB + reserve 1974MB — queueing (FIFO) [pool res 21441MB used 20392MB; parked spec sessions 0; plain reuse 0; queue 1]
+1794084807.110 [admit-oom] reclaim spared the prompt's prefix entry (256 tokens, model gate)
+1794084807.110 [admit-oom] VRAM defer: 6 active, effective free 4491MB (driver + 1050MB pool-cached) < cost 2879MB + reserve 1974MB — queueing (FIFO) [pool res 21441MB used 20392MB; parked spec sessions 0; plain reuse 0; queue 1]
+1794084807.110 [admit-oom] reclaim spared the prompt's prefix entry (256 tokens, model gate)
+1794084807.110 [admit-oom] VRAM defer: 6 active, effective free 4491MB (driver + 1050MB pool-cached) < cost 2879MB + reserve 1974MB — queueing (FIFO) [pool res 21441MB used 20392MB; parked spec sessions 0; plain reuse 0; queue 1]
+1794084807.110 [admit-oom] reclaim spared the prompt's prefix entry (256 tokens, model gate)
+1794084807.110 [admit-oom] VRAM defer: 6 active, effective free 4491MB (driver + 1050MB pool-cached) < cost 2879MB + reserve 1974MB — queueing (FIFO) [pool res 21441MB used 20392MB; parked spec sessions 0; plain reuse 0; queue 1]
+1794084807.110 [admit-oom] reclaim spared the prompt's prefix entry (256 tokens, model gate)
+1794084807.110 [admit-oom] VRAM defer: 6 active, effective free 4491MB (driver + 1050MB pool-cached) < cost 2879MB + reserve 1974MB — queueing (FIFO) [pool res 21441MB used 20392MB; parked spec sessions 0; plain reuse 0; queue 1]
+1794084807.110 [admit-oom] reclaim spared the prompt's prefix entry (256 tokens, model gate)
+1794084807.110 [admit-oom] VRAM defer: 6 active, effective free 4491MB (driver + 1050MB pool-cached) < cost 2879MB + reserve 1974MB — queueing (FIFO) [pool res 21441MB used 20392MB; parked spec sessions 0; plain reuse 0; queue 1]
+1794084807.110 [admit-oom] reclaim spared the prompt's prefix entry (256 tokens, model gate)
+1794084807.110 [admit-oom] VRAM defer: 6 active, effective free 4491MB (driver + 1050MB pool-cached) < cost 2879MB + reserve 1974MB — queueing (FIFO) [pool res 21441MB used 20392MB; parked spec sessions 0; plain reuse 0; queue 1]
+1794084807.110 [admit-oom] reclaim spared the prompt's prefix entry (256 tokens, model gate)
+1794084807.110 [admit-oom] VRAM defer: 6 active, effective free 4491MB (driver + 1050MB pool-cached) < cost 2879MB + reserve 1974MB — queueing (FIFO) [pool res 21441MB used 20392MB; parked spec sessions 0; plain reuse 0; queue 1]
+1794084807.110 [admit-oom] reclaim spared the prompt's prefix entry (256 tokens, model gate)
+1794084807.110 [admit-oom] VRAM defer: 6 active, effective free 4491MB (driver + 1050MB pool-cached) < cost 2879MB + reserve 1974MB — queueing (FIFO) [pool res 21441MB used 20392MB; parked spec sessions 0; plain reuse 0; queue 1]
+1794084807.110 [admit-oom] reclaim spared the prompt's prefix entry (256 tokens, model gate)
+1794084807.111 [admit-oom] VRAM defer: 6 active, effective free 4491MB (driver + 1050MB pool-cached) < cost 2879MB + reserve 1974MB — queueing (FIFO) [pool res 21441MB used 20392MB; parked spec sessions 0; plain reuse 0; queue 1]
+1794084807.111 [admit-oom] reclaim spared the prompt's prefix entry (256 tokens, model gate)
+1794084807.111 [admit-oom] VRAM defer: 6 active, effective free 4491MB (driver + 1050MB pool-cached) < cost 2879MB + reserve 1974MB — queueing (FIFO) [pool res 21441MB used 20392MB; parked spec sessions 0; plain reuse 0; queue 1]
+1794084808.719 [prefix-cache] insert (seed): 2240 tokens, 223.4MB (resident 387.9MB / 2260MB, model gate)
+1794084811.271 [ttft] id=chatcmpl-727a36ac0d90b63f70f98d080e40e2b6 model="gate" path="/v1/chat/completions" prompt_tokens=3976 outcome=first_sse_byte request_parse_ms=1.815 admission_ms=0.037 queue_wait_ms=1974.199 tokenize_ms=3.059 prime_wait_ms=914.769 prime_ms=8471.163 decode_wait_ms=798.514 sse_handoff_ms=0.209 request_parse_end_ms=1.815 admission_end_ms=1.852 tokenize_start_ms=1976.051 tokenize_end_ms=1979.110 prime_start_ms=2893.879 prime_end_ms=11365.042 first_decode_ms=12163.556 first_sse_byte_ms=12163.765 total_ms=12163.765
+1794084811.296 [admit-oom] reclaim spared the prompt's prefix entry (256 tokens, model gate)
+1794084811.297 [admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=223412224 pool_cached_gain_bytes=223412224 trim_released_bytes=201326592 driver_free_bytes 3441557504 -> 3642884096 pool_reserved_bytes 21441282048 -> 21239955456 pool_used_bytes 20773046008 -> 20549633784 pool_retained_bytes=22085632 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+1794084811.297 [admit-oom] reclaim-on-defer: evicted 1 prefix entries + 0 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 4110MB -> 4333MB
+1794084811.297 [admit-oom] VRAM defer: 6 active, effective free 4333MB (driver + 690MB pool-cached) < cost 2879MB + reserve 1974MB — queueing (FIFO) [pool res 21240MB used 20550MB; parked spec sessions 0; plain reuse 0; queue 1]
+1794084812.765 [prefix-cache] insert (seed): 2912 tokens, 243.4MB (resident 407.9MB / 2260MB, model gate)
+1794084812.898 [prefix-cache] insert (seed): 2368 tokens, 227.2MB (resident 635.1MB / 2260MB, model gate)
+1794084813.495 [prefix-cache] insert (seed): 2976 tokens, 245.3MB (resident 880.3MB / 2260MB, model gate)
+1794084813.499 [ttft] id=chatcmpl-3952ac4da73817aff9a8c47479b31a1e model="gate" path="/v1/chat/completions" prompt_tokens=2267 outcome=first_sse_byte request_parse_ms=0.074 admission_ms=0.032 queue_wait_ms=1965.358 tokenize_ms=2.703 prime_wait_ms=331.971 prime_ms=10834.020 decode_wait_ms=1257.690 sse_handoff_ms=0.250 request_parse_end_ms=0.074 admission_end_ms=0.106 tokenize_start_ms=1965.464 tokenize_end_ms=1968.167 prime_start_ms=2300.138 prime_end_ms=13134.158 first_decode_ms=14391.848 first_sse_byte_ms=14392.098 total_ms=14392.098
+1794084813.501 [meter] admit id=chatcmpl-a94c6c8df05f269c8b1699b549a6c107 tenant=default lane=interactive model="gate"
+1794084813.525 [admit-oom] reclaim spared the prompt's prefix entry (256 tokens, model gate)
+1794084813.527 [admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=715849728 pool_cached_gain_bytes=715849728 trim_released_bytes=469762048 driver_free_bytes 3139567616 -> 3609329664 pool_reserved_bytes 21743271936 -> 21273509888 pool_used_bytes 21737156344 -> 21021306616 pool_retained_bytes=246087680 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+1794084813.527 [admit-oom] reclaim-on-defer: evicted 3 prefix entries + 1 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 3146MB -> 4453MB
+1794084813.527 [admit-oom] VRAM defer: 5 active, effective free 4453MB (driver + 844MB pool-cached) < cost 2879MB + reserve 1974MB — queueing (FIFO) [pool res 21274MB used 20430MB; parked spec sessions 0; plain reuse 0; queue 2]
+1794084813.527 [admit-oom] reclaim spared the prompt's prefix entry (256 tokens, model gate)
+1794084813.527 [admit-oom] reclaim-on-defer: evicted 0 prefix entries + 1 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 4453MB -> 4991MB
+1794084813.528 [prefix-cache] hit: 256 of 13216 prompt tokens from cache (model gate)
+1794084813.528 [spec-k] model="gate" tenant="" K=0 source=concurrency prompt=13216 cached=256 lcp=256 active=5 wave=7 placement=single-or-non-pp2
+1794084813.528 [meter] admit id=chatcmpl-56f138355fed6525fc05d01efd0a6641 tenant=default lane=interactive model="gate"
+1794084813.529 [prefix-cache] source lease released after restore fence (entry 256 tokens, model gate)
+1794084813.546 [admission] request cost: model="gate" ctx=17166 path=plain = 29696 B/token x ctx + 2229MB prefill-workspace + 335MB fixed = 3074MB
+1794084813.546 [admit-oom] reclaim spared the prompt's prefix entry (256 tokens, model gate)
+1794084813.546 [admit-oom] VRAM defer: 5 active, effective free 4265MB (driver + 656MB pool-cached) < cost 3074MB + reserve 1974MB — queueing (FIFO) [pool res 21274MB used 20617MB; parked spec sessions 0; plain reuse 0; queue 1]
+1794084813.718 [prime-batch] B=3 tokens=81 carried=3 partial=0 in 171.7ms
+1794084815.372 [ttft] id=chatcmpl-1cd1583e2b575603b422b9bbf3af6ff3 model="gate" path="/v1/chat/completions" prompt_tokens=2937 outcome=first_sse_byte request_parse_ms=0.109 admission_ms=0.057 queue_wait_ms=1968.511 tokenize_ms=2.721 prime_wait_ms=526.249 prime_ms=12112.510 decode_wait_ms=1654.556 sse_handoff_ms=0.247 request_parse_end_ms=0.109 admission_end_ms=0.166 tokenize_start_ms=1968.677 tokenize_end_ms=1971.398 prime_start_ms=2497.647 prime_end_ms=14610.157 first_decode_ms=16264.713 first_sse_byte_ms=16264.960 total_ms=16264.960
+1794084815.373 [ttft] id=chatcmpl-ab6f6d629f891137956d378017918d09 model="gate" path="/v1/chat/completions" prompt_tokens=2403 outcome=first_sse_byte request_parse_ms=0.080 admission_ms=0.044 queue_wait_ms=1970.960 tokenize_ms=2.379 prime_wait_ms=720.701 prime_ms=11914.654 decode_wait_ms=1655.591 sse_handoff_ms=0.122 request_parse_end_ms=0.080 admission_end_ms=0.124 tokenize_start_ms=1971.084 tokenize_end_ms=1973.463 prime_start_ms=2694.164 prime_end_ms=14608.818 first_decode_ms=16264.409 first_sse_byte_ms=16264.531 total_ms=16264.531
+1794084815.374 [ttft] id=chatcmpl-732b03e14233622608e6ed41519de73a model="gate" path="/v1/chat/completions" prompt_tokens=2997 outcome=first_sse_byte request_parse_ms=0.060 admission_ms=0.024 queue_wait_ms=1978.921 tokenize_ms=2.713 prime_wait_ms=1696.450 prime_ms=10930.398 decode_wait_ms=1656.618 sse_handoff_ms=0.156 request_parse_end_ms=0.060 admission_end_ms=0.084 tokenize_start_ms=1979.005 tokenize_end_ms=1981.718 prime_start_ms=3678.168 prime_end_ms=14608.566 first_decode_ms=16265.184 first_sse_byte_ms=16265.340 total_ms=16265.340
+1794084815.404 [admit-oom] reclaim spared the prompt's prefix entry (256 tokens, model gate)
+1794084815.404 [admit-oom] VRAM defer: 5 active, effective free 4261MB (driver + 652MB pool-cached) < cost 3074MB + reserve 1974MB — queueing (FIFO) [pool res 21274MB used 20621MB; parked spec sessions 0; plain reuse 0; queue 2]
+1794084817.105 [admit-oom] reclaim spared the prompt's prefix entry (256 tokens, model gate)
+1794084817.105 [admit-oom] reclaim-on-defer: evicted 0 prefix entries + 1 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 4818MB -> 5360MB
+1794084817.105 [worker] plain-affinity: declined (history diverged at 282 of checkpoint 2912; 1 parked, 17101 prompt tokens; model gate)
+1794084817.105 [meter] admit id=chatcmpl-e970b68a32edd0e6419322291a3aaba9 tenant=default lane=interactive model="gate"
+1794084817.105 [meter] admit id=chatcmpl-cf9ef55c66d0796aa3dd4a7338a4ea3a tenant=default lane=interactive model="gate"
+1794084817.105 [prefix-cache] hit: 256 of 17101 prompt tokens from cache (model gate)
+1794084817.105 [spec-k] model="gate" tenant="" K=0 source=concurrency prompt=17101 cached=256 lcp=256 active=3 wave=7 placement=single-or-non-pp2
+1794084817.106 [meter] admit id=chatcmpl-c7980b5dd449f898d883f67f470fce71 tenant=default lane=interactive model="gate"
+1794084817.107 [prefix-cache] source lease released after restore fence (entry 256 tokens, model gate)
+1794084817.107 [admission] fixed residual high-water: model="gate" 340MB (observed 848MB at ctx 17110 path=plain)
+1794084817.110 [admission] request cost: model="gate" ctx=2165 path=plain = 29696 B/token x ctx + 1006MB prefill-workspace + 340MB fixed = 1410MB
+1794084817.110 [worker] plain-affinity: declined (history diverged at 282 of checkpoint 2912; 1 parked, 2100 prompt tokens; model gate)
+1794084817.111 [prefix-cache] hit: 256 of 2100 prompt tokens from cache (model gate)
+1794084817.111 [spec-k] model="gate" tenant="" K=0 source=concurrency prompt=2100 cached=256 lcp=256 active=4 wave=8 placement=single-or-non-pp2
+1794084817.111 [prefix-cache] source lease released after restore fence (entry 256 tokens, model gate)
+1794084817.115 [admission] request cost: model="gate" ctx=4907 path=plain = 29696 B/token x ctx + 1978MB prefill-workspace + 340MB fixed = 2464MB
+1794084817.116 [admit-oom] reclaim spared the prompt's prefix entry (256 tokens, model gate)
+1794084817.117 [admit-oom] reclaim-on-defer: evicted 0 prefix entries + 1 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 4138MB -> 4696MB
+1794084817.118 [prefix-cache] hit: 256 of 4842 prompt tokens from cache (model gate)
+1794084817.118 [spec-k] model="gate" tenant="" K=0 source=concurrency prompt=4842 cached=256 lcp=256 active=5 wave=8 placement=single-or-non-pp2
+1794084817.118 [prefix-cache] source lease released after restore fence (entry 256 tokens, model gate)
+1794084821.352 [admission] request cost: model="gate" ctx=10793 path=plain = 29696 B/token x ctx + 2099MB prefill-workspace + 340MB fixed = 2759MB
+1794084821.352 [admit-oom] reclaim spared the prompt's prefix entry (256 tokens, model gate)
+1794084821.352 [admit-oom] VRAM defer: 5 active, effective free 4231MB (driver + 655MB pool-cached) < cost 2759MB + reserve 1974MB — queueing (FIFO) [pool res 21307MB used 20652MB; parked spec sessions 0; plain reuse 0; queue 2]
+1794084824.757 [prefix-cache] insert (seed): 2080 tokens, 218.7MB (resident 383.2MB / 2260MB, model gate)
+1794084825.616 [admit-oom] reclaim spared the prompt's prefix entry (256 tokens, model gate)
+1794084825.617 [admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=218660864 pool_cached_gain_bytes=218660864 trim_released_bytes=201326592 driver_free_bytes 3273785344 -> 3475111936 pool_reserved_bytes 21609054208 -> 21407727616 pool_used_bytes 21031435044 -> 20812774180 pool_retained_bytes=17334272 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+1794084825.617 [admit-oom] reclaim-on-defer: evicted 1 prefix entries + 0 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 3851MB -> 4070MB
+1794084825.617 [admit-oom] VRAM defer: 5 active, effective free 4070MB (driver + 595MB pool-cached) < cost 2759MB + reserve 1974MB — queueing (FIFO) [pool res 21408MB used 20813MB; parked spec sessions 0; plain reuse 0; queue 2]
+1794084829.391 [ttft] id=chatcmpl-a94c6c8df05f269c8b1699b549a6c107 model="gate" path="/v1/chat/completions" prompt_tokens=2100 outcome=first_sse_byte request_parse_ms=0.102 admission_ms=0.062 queue_wait_ms=3606.036 tokenize_ms=3.190 prime_wait_ms=2556.523 prime_ms=8838.310 decode_wait_ms=885.956 sse_handoff_ms=0.217 request_parse_end_ms=0.102 admission_end_ms=0.164 tokenize_start_ms=3606.200 tokenize_end_ms=3609.390 prime_start_ms=6165.913 prime_end_ms=15004.223 first_decode_ms=15890.179 first_sse_byte_ms=15890.396 total_ms=15890.396
+1794084829.417 [admit-oom] reclaim spared the prompt's prefix entry (256 tokens, model gate)
+1794084829.417 [admit-oom] VRAM defer: 5 active, effective free 4065MB (driver + 657MB pool-cached) < cost 2759MB + reserve 1974MB — queueing (FIFO) [pool res 21475MB used 20818MB; parked spec sessions 0; plain reuse 0; queue 2]
+1794084833.105 [admit-oom] reclaim spared the prompt's prefix entry (256 tokens, model gate)
+1794084833.105 [admit-oom] reclaim-on-defer: evicted 0 prefix entries + 1 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 4061MB -> 4593MB
+1794084833.105 [admit-oom] VRAM defer: 4 active, effective free 4593MB (driver + 1185MB pool-cached) < cost 2759MB + reserve 1974MB — queueing (FIFO) [pool res 21475MB used 20290MB; parked spec sessions 0; plain reuse 0; queue 2]
+1794084833.105 [admit-oom] reclaim spared the prompt's prefix entry (256 tokens, model gate)
+1794084833.105 [admit-oom] VRAM defer: 4 active, effective free 4593MB (driver + 1185MB pool-cached) < cost 2759MB + reserve 1974MB — queueing (FIFO) [pool res 21475MB used 20290MB; parked spec sessions 0; plain reuse 0; queue 2]
+1794084833.105 [admit-oom] reclaim spared the prompt's prefix entry (256 tokens, model gate)
+1794084833.105 [admit-oom] VRAM defer: 4 active, effective free 4593MB (driver + 1185MB pool-cached) < cost 2759MB + reserve 1974MB — queueing (FIFO) [pool res 21475MB used 20290MB; parked spec sessions 0; plain reuse 0; queue 2]
+1794084833.105 [admit-oom] reclaim spared the prompt's prefix entry (256 tokens, model gate)
+1794084833.105 [admit-oom] VRAM defer: 4 active, effective free 4593MB (driver + 1185MB pool-cached) < cost 2759MB + reserve 1974MB — queueing (FIFO) [pool res 21475MB used 20290MB; parked spec sessions 0; plain reuse 0; queue 2]
+1794084833.105 [admit-oom] reclaim spared the prompt's prefix entry (256 tokens, model gate)
+1794084833.105 [admit-oom] VRAM defer: 4 active, effective free 4593MB (driver + 1185MB pool-cached) < cost 2759MB + reserve 1974MB — queueing (FIFO) [pool res 21475MB used 20290MB; parked spec sessions 0; plain reuse 0; queue 2]
+1794084833.105 [admit-oom] reclaim spared the prompt's prefix entry (256 tokens, model gate)
+1794084833.105 [admit-oom] VRAM defer: 4 active, effective free 4593MB (driver + 1185MB pool-cached) < cost 2759MB + reserve 1974MB — queueing (FIFO) [pool res 21475MB used 20290MB; parked spec sessions 0; plain reuse 0; queue 2]
+1794084833.105 [admit-oom] reclaim spared the prompt's prefix entry (256 tokens, model gate)
+1794084833.105 [admit-oom] VRAM defer: 4 active, effective free 4593MB (driver + 1185MB pool-cached) < cost 2759MB + reserve 1974MB — queueing (FIFO) [pool res 21475MB used 20290MB; parked spec sessions 0; plain reuse 0; queue 2]
+1794084833.106 [admit-oom] reclaim spared the prompt's prefix entry (256 tokens, model gate)
+1794084833.106 [admit-oom] VRAM defer: 4 active, effective free 4593MB (driver + 1185MB pool-cached) < cost 2759MB + reserve 1974MB — queueing (FIFO) [pool res 21475MB used 20290MB; parked spec sessions 0; plain reuse 0; queue 2]
+1794084833.106 [admit-oom] reclaim spared the prompt's prefix entry (256 tokens, model gate)
+1794084833.106 [admit-oom] VRAM defer: 4 active, effective free 4593MB (driver + 1185MB pool-cached) < cost 2759MB + reserve 1974MB — queueing (FIFO) [pool res 21475MB used 20290MB; parked spec sessions 0; plain reuse 0; queue 2]
+1794084833.106 [admit-oom] reclaim spared the prompt's prefix entry (256 tokens, model gate)
+1794084833.106 [meter] admit id=chatcmpl-0504c516443a14b12b8208ce4c26ba4a tenant=default lane=interactive model="gate"
+1794084833.106 [admit-oom] VRAM defer: 4 active, effective free 4593MB (driver + 1185MB pool-cached) < cost 2759MB + reserve 1974MB — queueing (FIFO) [pool res 21475MB used 20290MB; parked spec sessions 0; plain reuse 0; queue 2]
+1794084833.106 [admit-oom] reclaim spared the prompt's prefix entry (256 tokens, model gate)
+1794084833.106 [admit-oom] VRAM defer: 4 active, effective free 4593MB (driver + 1185MB pool-cached) < cost 2759MB + reserve 1974MB — queueing (FIFO) [pool res 21475MB used 20290MB; parked spec sessions 0; plain reuse 0; queue 3]
+1794084833.106 [admit-oom] reclaim spared the prompt's prefix entry (256 tokens, model gate)
+1794084833.106 [admit-oom] VRAM defer: 4 active, effective free 4593MB (driver + 1185MB pool-cached) < cost 2759MB + reserve 1974MB — queueing (FIFO) [pool res 21475MB used 20290MB; parked spec sessions 0; plain reuse 0; queue 3]
+1794084833.106 [admit-oom] reclaim spared the prompt's prefix entry (256 tokens, model gate)
+1794084833.106 [admit-oom] VRAM defer: 4 active, effective free 4593MB (driver + 1185MB pool-cached) < cost 2759MB + reserve 1974MB — queueing (FIFO) [pool res 21475MB used 20290MB; parked spec sessions 0; plain reuse 0; queue 3]
+1794084833.106 [admit-oom] reclaim spared the prompt's prefix entry (256 tokens, model gate)
+1794084833.106 [admit-oom] VRAM defer: 4 active, effective free 4593MB (driver + 1185MB pool-cached) < cost 2759MB + reserve 1974MB — queueing (FIFO) [pool res 21475MB used 20290MB; parked spec sessions 0; plain reuse 0; queue 3]
+1794084833.106 [admit-oom] reclaim spared the prompt's prefix entry (256 tokens, model gate)
+1794084833.106 [admit-oom] VRAM defer: 4 active, effective free 4593MB (driver + 1185MB pool-cached) < cost 2759MB + reserve 1974MB — queueing (FIFO) [pool res 21475MB used 20290MB; parked spec sessions 0; plain reuse 0; queue 3]
+1794084833.106 [admit-oom] reclaim spared the prompt's prefix entry (256 tokens, model gate)
+1794084833.106 [admit-oom] VRAM defer: 4 active, effective free 4593MB (driver + 1185MB pool-cached) < cost 2759MB + reserve 1974MB — queueing (FIFO) [pool res 21475MB used 20290MB; parked spec sessions 0; plain reuse 0; queue 3]
+1794084833.106 [admit-oom] reclaim spared the prompt's prefix entry (256 tokens, model gate)
+1794084833.106 [admit-oom] VRAM defer: 4 active, effective free 4593MB (driver + 1185MB pool-cached) < cost 2759MB + reserve 1974MB — queueing (FIFO) [pool res 21475MB used 20290MB; parked spec sessions 0; plain reuse 0; queue 3]
+1794084833.106 [admit-oom] reclaim spared the prompt's prefix entry (256 tokens, model gate)
+1794084833.106 [admit-oom] VRAM defer: 4 active, effective free 4593MB (driver + 1185MB pool-cached) < cost 2759MB + reserve 1974MB — queueing (FIFO) [pool res 21475MB used 20290MB; parked spec sessions 0; plain reuse 0; queue 3]
+1794084833.106 [admit-oom] reclaim spared the prompt's prefix entry (256 tokens, model gate)
+1794084833.106 [admit-oom] VRAM defer: 4 active, effective free 4593MB (driver + 1185MB pool-cached) < cost 2759MB + reserve 1974MB — queueing (FIFO) [pool res 21475MB used 20290MB; parked spec sessions 0; plain reuse 0; queue 3]
+1794084833.107 [admit-oom] reclaim spared the prompt's prefix entry (256 tokens, model gate)
+1794084833.107 [admit-oom] VRAM defer: 4 active, effective free 4593MB (driver + 1185MB pool-cached) < cost 2759MB + reserve 1974MB — queueing (FIFO) [pool res 21475MB used 20290MB; parked spec sessions 0; plain reuse 0; queue 3]
+1794084833.107 [admit-oom] reclaim spared the prompt's prefix entry (256 tokens, model gate)
+1794084833.107 [admit-oom] VRAM defer: 4 active, effective free 4593MB (driver + 1185MB pool-cached) < cost 2759MB + reserve 1974MB — queueing (FIFO) [pool res 21475MB used 20290MB; parked spec sessions 0; plain reuse 0; queue 3]
+1794084833.107 [admit-oom] reclaim spared the prompt's prefix entry (256 tokens, model gate)
+1794084833.107 [admit-oom] VRAM defer: 4 active, effective free 4593MB (driver + 1185MB pool-cached) < cost 2759MB + reserve 1974MB — queueing (FIFO) [pool res 21475MB used 20290MB; parked spec sessions 0; plain reuse 0; queue 3]
+1794084833.107 [admit-oom] reclaim spared the prompt's prefix entry (256 tokens, model gate)
+1794084833.107 [admit-oom] VRAM defer: 4 active, effective free 4593MB (driver + 1185MB pool-cached) < cost 2759MB + reserve 1974MB — queueing (FIFO) [pool res 21475MB used 20290MB; parked spec sessions 0; plain reuse 0; queue 3]
+1794084833.107 [admit-oom] reclaim spared the prompt's prefix entry (256 tokens, model gate)
+1794084833.107 [admit-oom] VRAM defer: 4 active, effective free 4593MB (driver + 1185MB pool-cached) < cost 2759MB + reserve 1974MB — queueing (FIFO) [pool res 21475MB used 20290MB; parked spec sessions 0; plain reuse 0; queue 3]
+1794084833.107 [admit-oom] reclaim spared the prompt's prefix entry (256 tokens, model gate)
+1794084833.107 [admit-oom] VRAM defer: 4 active, effective free 4593MB (driver + 1185MB pool-cached) < cost 2759MB + reserve 1974MB — queueing (FIFO) [pool res 21475MB used 20290MB; parked spec sessions 0; plain reuse 0; queue 3]
+1794084833.107 [admit-oom] reclaim spared the prompt's prefix entry (256 tokens, model gate)
+1794084833.107 [admit-oom] VRAM defer: 4 active, effective free 4593MB (driver + 1185MB pool-cached) < cost 2759MB + reserve 1974MB — queueing (FIFO) [pool res 21475MB used 20290MB; parked spec sessions 0; plain reuse 0; queue 3]
+1794084833.107 [admit-oom] reclaim spared the prompt's prefix entry (256 tokens, model gate)
+1794084833.107 [admit-oom] VRAM defer: 4 active, effective free 4593MB (driver + 1185MB pool-cached) < cost 2759MB + reserve 1974MB — queueing (FIFO) [pool res 21475MB used 20290MB; parked spec sessions 0; plain reuse 0; queue 3]
+1794084833.107 [admit-oom] reclaim spared the prompt's prefix entry (256 tokens, model gate)
+1794084833.107 [admit-oom] VRAM defer: 4 active, effective free 4593MB (driver + 1185MB pool-cached) < cost 2759MB + reserve 1974MB — queueing (FIFO) [pool res 21475MB used 20290MB; parked spec sessions 0; plain reuse 0; queue 3]
+1794084833.107 [admit-oom] reclaim spared the prompt's prefix entry (256 tokens, model gate)
+1794084833.107 [admit-oom] VRAM defer: 4 active, effective free 4593MB (driver + 1185MB pool-cached) < cost 2759MB + reserve 1974MB — queueing (FIFO) [pool res 21475MB used 20290MB; parked spec sessions 0; plain reuse 0; queue 3]
+1794084833.107 [admit-oom] reclaim spared the prompt's prefix entry (256 tokens, model gate)
+1794084833.107 [admit-oom] VRAM defer: 4 active, effective free 4593MB (driver + 1185MB pool-cached) < cost 2759MB + reserve 1974MB — queueing (FIFO) [pool res 21475MB used 20290MB; parked spec sessions 0; plain reuse 0; queue 3]
+1794084833.108 [admit-oom] reclaim spared the prompt's prefix entry (256 tokens, model gate)
+1794084833.108 [admit-oom] VRAM defer: 4 active, effective free 4593MB (driver + 1185MB pool-cached) < cost 2759MB + reserve 1974MB — queueing (FIFO) [pool res 21475MB used 20290MB; parked spec sessions 0; plain reuse 0; queue 3]
+1794084833.108 [admit-oom] reclaim spared the prompt's prefix entry (256 tokens, model gate)
+1794084833.108 [admit-oom] VRAM defer: 4 active, effective free 4593MB (driver + 1185MB pool-cached) < cost 2759MB + reserve 1974MB — queueing (FIFO) [pool res 21475MB used 20290MB; parked spec sessions 0; plain reuse 0; queue 3]
+1794084833.108 [admit-oom] reclaim spared the prompt's prefix entry (256 tokens, model gate)
+1794084833.108 [admit-oom] VRAM defer: 4 active, effective free 4593MB (driver + 1185MB pool-cached) < cost 2759MB + reserve 1974MB — queueing (FIFO) [pool res 21475MB used 20290MB; parked spec sessions 0; plain reuse 0; queue 3]
+1794084833.108 [admit-oom] reclaim spared the prompt's prefix entry (256 tokens, model gate)
+1794084833.108 [admit-oom] VRAM defer: 4 active, effective free 4593MB (driver + 1185MB pool-cached) < cost 2759MB + reserve 1974MB — queueing (FIFO) [pool res 21475MB used 20290MB; parked spec sessions 0; plain reuse 0; queue 3]
+1794084833.108 [admit-oom] reclaim spared the prompt's prefix entry (256 tokens, model gate)
+1794084833.108 [admit-oom] VRAM defer: 4 active, effective free 4593MB (driver + 1185MB pool-cached) < cost 2759MB + reserve 1974MB — queueing (FIFO) [pool res 21475MB used 20290MB; parked spec sessions 0; plain reuse 0; queue 3]
+1794084833.108 [admit-oom] reclaim spared the prompt's prefix entry (256 tokens, model gate)
+1794084833.108 [admit-oom] VRAM defer: 4 active, effective free 4593MB (driver + 1185MB pool-cached) < cost 2759MB + reserve 1974MB — queueing (FIFO) [pool res 21475MB used 20290MB; parked spec sessions 0; plain reuse 0; queue 3]
+1794084833.108 [admit-oom] reclaim spared the prompt's prefix entry (256 tokens, model gate)
+1794084833.108 [admit-oom] VRAM defer: 4 active, effective free 4593MB (driver + 1185MB pool-cached) < cost 2759MB + reserve 1974MB — queueing (FIFO) [pool res 21475MB used 20290MB; parked spec sessions 0; plain reuse 0; queue 3]
+1794084833.108 [admit-oom] reclaim spared the prompt's prefix entry (256 tokens, model gate)
+1794084833.108 [admit-oom] VRAM defer: 4 active, effective free 4593MB (driver + 1185MB pool-cached) < cost 2759MB + reserve 1974MB — queueing (FIFO) [pool res 21475MB used 20290MB; parked spec sessions 0; plain reuse 0; queue 3]
+1794084833.108 [admit-oom] reclaim spared the prompt's prefix entry (256 tokens, model gate)
+1794084833.108 [admit-oom] VRAM defer: 4 active, effective free 4593MB (driver + 1185MB pool-cached) < cost 2759MB + reserve 1974MB — queueing (FIFO) [pool res 21475MB used 20290MB; parked spec sessions 0; plain reuse 0; queue 3]
+1794084833.108 [admit-oom] reclaim spared the prompt's prefix entry (256 tokens, model gate)
+1794084833.108 [admit-oom] VRAM defer: 4 active, effective free 4593MB (driver + 1185MB pool-cached) < cost 2759MB + reserve 1974MB — queueing (FIFO) [pool res 21475MB used 20290MB; parked spec sessions 0; plain reuse 0; queue 3]
+1794084833.108 [admit-oom] reclaim spared the prompt's prefix entry (256 tokens, model gate)
+1794084833.108 [admit-oom] VRAM defer: 4 active, effective free 4593MB (driver + 1185MB pool-cached) < cost 2759MB + reserve 1974MB — queueing (FIFO) [pool res 21475MB used 20290MB; parked spec sessions 0; plain reuse 0; queue 3]
+1794084833.108 [admit-oom] reclaim spared the prompt's prefix entry (256 tokens, model gate)
+1794084833.108 [admit-oom] VRAM defer: 4 active, effective free 4593MB (driver + 1185MB pool-cached) < cost 2759MB + reserve 1974MB — queueing (FIFO) [pool res 21475MB used 20290MB; parked spec sessions 0; plain reuse 0; queue 3]
+1794084833.109 [admit-oom] reclaim spared the prompt's prefix entry (256 tokens, model gate)
+1794084833.109 [admit-oom] VRAM defer: 4 active, effective free 4593MB (driver + 1185MB pool-cached) < cost 2759MB + reserve 1974MB — queueing (FIFO) [pool res 21475MB used 20290MB; parked spec sessions 0; plain reuse 0; queue 3]
+1794084836.384 [prefix-cache] insert (seed): 4800 tokens, 299.4MB (resident 463.9MB / 2260MB, model gate)
+1794084836.385 [admit-oom] reclaim spared the prompt's prefix entry (256 tokens, model gate)
+1794084836.386 [admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=299433984 pool_cached_gain_bytes=299433984 trim_released_bytes=268435456 driver_free_bytes 3408003072 -> 3676438528 pool_reserved_bytes 21474836480 -> 21206401024 pool_used_bytes 20750359440 -> 20450925456 pool_retained_bytes=30998528 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+1794084836.386 [admit-oom] reclaim-on-defer: evicted 1 prefix entries + 0 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 4132MB -> 4432MB
+1794084836.386 [admit-oom] VRAM defer: 4 active, effective free 4432MB (driver + 755MB pool-cached) < cost 2759MB + reserve 1974MB — queueing (FIFO) [pool res 21206MB used 20451MB; parked spec sessions 0; plain reuse 0; queue 3]
+1794084839.393 [ttft] id=chatcmpl-56f138355fed6525fc05d01efd0a6641 model="gate" path="/v1/chat/completions" prompt_tokens=4842 outcome=first_sse_byte request_parse_ms=0.155 admission_ms=0.089 queue_wait_ms=3582.939 tokenize_ms=4.315 prime_wait_ms=3380.441 prime_ms=18895.845 decode_wait_ms=1.313 sse_handoff_ms=0.282 request_parse_end_ms=0.155 admission_end_ms=0.244 tokenize_start_ms=3583.183 tokenize_end_ms=3587.498 prime_start_ms=6967.939 prime_end_ms=25863.784 first_decode_ms=25865.097 first_sse_byte_ms=25865.379 total_ms=25865.379
+1794084839.424 [admit-oom] reclaim spared the prompt's prefix entry (256 tokens, model gate)
+1794084839.424 [admit-oom] VRAM defer: 4 active, effective free 4427MB (driver + 750MB pool-cached) < cost 2759MB + reserve 1974MB — queueing (FIFO) [pool res 21206MB used 20456MB; parked spec sessions 0; plain reuse 0; queue 3]
+1794084842.313 [admit-oom] reclaim spared the prompt's prefix entry (256 tokens, model gate)
+1794084842.314 [admit-oom] reclaim-on-defer: evicted 0 prefix entries + 1 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 4423MB -> 5041MB
+1794084842.314 [prefix-cache] hit: 256 of 10728 prompt tokens from cache (model gate)
+1794084842.314 [spec-k] model="gate" tenant="" K=0 source=concurrency prompt=10728 cached=256 lcp=256 active=4 wave=7 placement=single-or-non-pp2
+1794084842.315 [meter] admit id=chatcmpl-d4730edf32cd20d40b1841d875a9f412 tenant=default lane=interactive model="gate"
+1794084842.315 [prefix-cache] source lease released after restore fence (entry 256 tokens, model gate)
+1794084842.320 [admission] request cost: model="gate" ctx=5009 path=plain = 29696 B/token x ctx + 1980MB prefill-workspace + 340MB fixed = 2469MB
+1794084842.320 [admit-oom] reclaim spared the prompt's prefix entry (256 tokens, model gate)
+1794084842.320 [admit-oom] VRAM defer: 4 active, effective free 4395MB (driver + 718MB pool-cached) < cost 2469MB + reserve 1974MB — queueing (FIFO) [pool res 21206MB used 20488MB; parked spec sessions 0; plain reuse 0; queue 2]
+1794084846.115 [admit-oom] reclaim spared the prompt's prefix entry (256 tokens, model gate)
+1794084846.115 [admit-oom] VRAM defer: 4 active, effective free 4391MB (driver + 714MB pool-cached) < cost 2469MB + reserve 1974MB — queueing (FIFO) [pool res 21206MB used 20492MB; parked spec sessions 0; plain reuse 0; queue 3]
+1794084849.957 [admit-oom] reclaim spared the prompt's prefix entry (256 tokens, model gate)
+1794084849.957 [admit-oom] VRAM defer: 4 active, effective free 4386MB (driver + 710MB pool-cached) < cost 2469MB + reserve 1974MB — queueing (FIFO) [pool res 21206MB used 20497MB; parked spec sessions 0; plain reuse 0; queue 3]
+1794084850.130 [prefix-cache] insert (seed): 14688 tokens, 593.1MB (resident 757.6MB / 2260MB, model gate)
+1794084853.019 [admit-oom] reclaim spared the prompt's prefix entry (256 tokens, model gate)
+1794084853.024 [admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=593068032 pool_cached_gain_bytes=593068032 trim_released_bytes=570425344 driver_free_bytes 3005349888 -> 3575775232 pool_reserved_bytes 21877489664 -> 21307064320 pool_used_bytes 21246878992 -> 20653810960 pool_retained_bytes=22642688 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+1794084853.024 [admit-oom] reclaim-on-defer: evicted 1 prefix entries + 0 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 3636MB -> 4229MB
+1794084853.024 [admit-oom] VRAM defer: 4 active, effective free 4229MB (driver + 653MB pool-cached) < cost 2469MB + reserve 1974MB — queueing (FIFO) [pool res 21307MB used 20654MB; parked spec sessions 0; plain reuse 0; queue 3]
+1794084855.760 [ttft] id=chatcmpl-5ebe61e61892a4adc71bf1a91c3427d8 model="gate" path="/v1/chat/completions" prompt_tokens=14705 outcome=first_sse_byte request_parse_ms=0.284 admission_ms=0.064 queue_wait_ms=1949.880 tokenize_ms=14.789 prime_wait_ms=139.801 prime_ms=51973.067 decode_wait_ms=2574.780 sse_handoff_ms=0.638 request_parse_end_ms=0.284 admission_end_ms=0.348 tokenize_start_ms=1950.228 tokenize_end_ms=1965.017 prime_start_ms=2104.818 prime_end_ms=54077.885 first_decode_ms=56652.665 first_sse_byte_ms=56653.303 total_ms=56653.303
+1794084855.789 [admit-oom] reclaim spared the prompt's prefix entry (256 tokens, model gate)
+1794084855.789 [admit-oom] VRAM defer: 4 active, effective free 4071MB (driver + 663MB pool-cached) < cost 2469MB + reserve 1974MB — queueing (FIFO) [pool res 21475MB used 20812MB; parked spec sessions 0; plain reuse 0; queue 3]
+1794084855.950 [prefix-cache] insert (seed): 13216 tokens, 549.4MB (resident 713.9MB / 2260MB, model gate)
+1794084857.862 [ttft] id=chatcmpl-cf2a4c8f837c1566251e99bf233e66ca model="gate" path="/v1/chat/completions" prompt_tokens=13216 outcome=first_sse_byte request_parse_ms=0.820 admission_ms=0.073 queue_wait_ms=1982.600 tokenize_ms=12.535 prime_wait_ms=13444.736 prime_ms=41400.957 decode_wait_ms=1909.401 sse_handoff_ms=2.133 request_parse_end_ms=0.820 admission_end_ms=0.893 tokenize_start_ms=1983.493 tokenize_end_ms=1996.028 prime_start_ms=15440.764 prime_end_ms=56841.721 first_decode_ms=58751.122 first_sse_byte_ms=58753.255 total_ms=58753.255
+1794084857.862 [meter] admit id=chatcmpl-f4277c75073886a69599e6d4c994917f tenant=default lane=interactive model="gate"
+1794084857.889 [admit-oom] reclaim spared the prompt's prefix entry (256 tokens, model gate)
+1794084857.891 [admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=549355520 pool_cached_gain_bytes=549355520 trim_released_bytes=536870912 driver_free_bytes 2938241024 -> 3475111936 pool_reserved_bytes 21944598528 -> 21407727616 pool_used_bytes 21362115856 -> 20812760336 pool_retained_bytes=12484608 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+1794084857.891 [admit-oom] reclaim-on-defer: evicted 1 prefix entries + 1 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 3521MB -> 5000MB
+1794084857.892 [prefix-cache] hit: 256 of 4944 prompt tokens from cache (model gate)
+1794084857.892 [spec-k] model="gate" tenant="" K=0 source=concurrency prompt=4944 cached=256 lcp=256 active=4 wave=8 placement=single-or-non-pp2
+1794084857.893 [prefix-cache] source lease released after restore fence (entry 256 tokens, model gate)
+1794084857.902 [admission] request cost: model="gate" ctx=8118 path=plain = 29696 B/token x ctx + 2044MB prefill-workspace + 340MB fixed = 2625MB
+1794084857.902 [admit-oom] reclaim spared the prompt's prefix entry (256 tokens, model gate)
+1794084857.902 [admit-oom] VRAM defer: 4 active, effective free 4536MB (driver + 1061MB pool-cached) < cost 2625MB + reserve 1974MB — queueing (FIFO) [pool res 21408MB used 20347MB; parked spec sessions 0; plain reuse 0; queue 3]
+1794084860.701 [admit-oom] reclaim spared the prompt's prefix entry (256 tokens, model gate)
+1794084860.701 [admit-oom] reclaim-on-defer: evicted 0 prefix entries + 1 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 4536MB -> 5419MB
+1794084860.702 [prefix-cache] hit: 256 of 8053 prompt tokens from cache (model gate)
+1794084860.702 [spec-k] model="gate" tenant="" K=0 source=concurrency prompt=8053 cached=256 lcp=256 active=4 wave=7 placement=single-or-non-pp2
+1794084860.702 [meter] admit id=chatcmpl-43d3e0d2d0dd508f26f3896b78c76a7f tenant=default lane=interactive model="gate"
+1794084860.703 [prefix-cache] source lease released after restore fence (entry 256 tokens, model gate)
+1794084860.716 [admission] request cost: model="gate" ctx=12392 path=plain = 29696 B/token x ctx + 2132MB prefill-workspace + 340MB fixed = 2839MB
+1794084860.717 [prefix-cache] hit: 256 of 12327 prompt tokens from cache (model gate)
+1794084860.717 [spec-k] model="gate" tenant="" K=0 source=concurrency prompt=12327 cached=256 lcp=256 active=5 wave=8 placement=single-or-non-pp2
+1794084860.718 [prefix-cache] source lease released after restore fence (entry 256 tokens, model gate)
+1794084860.731 [admission] request cost: model="gate" ctx=13297 path=plain = 29696 B/token x ctx + 2150MB prefill-workspace + 340MB fixed = 2885MB
+1794084860.731 [admit-oom] reclaim spared the prompt's prefix entry (256 tokens, model gate)
+1794084860.731 [admit-oom] VRAM defer: 5 active, effective free 4160MB (driver + 685MB pool-cached) < cost 2885MB + reserve 1974MB — queueing (FIFO) [pool res 21408MB used 20723MB; parked spec sessions 0; plain reuse 0; queue 1]
+1794084865.406 [admit-oom] reclaim spared the prompt's prefix entry (256 tokens, model gate)
+1794084865.406 [admit-oom] VRAM defer: 5 active, effective free 4160MB (driver + 685MB pool-cached) < cost 2885MB + reserve 1974MB — queueing (FIFO) [pool res 21408MB used 20723MB; parked spec sessions 0; plain reuse 0; queue 2]
+1794084870.130 [admit-oom] reclaim spared the prompt's prefix entry (256 tokens, model gate)
+1794084870.130 [admit-oom] VRAM defer: 5 active, effective free 4156MB (driver + 681MB pool-cached) < cost 2885MB + reserve 1974MB — queueing (FIFO) [pool res 21408MB used 20727MB; parked spec sessions 0; plain reuse 0; queue 2]
+1794084874.922 [admit-oom] reclaim spared the prompt's prefix entry (256 tokens, model gate)
+1794084874.922 [admit-oom] VRAM defer: 5 active, effective free 4152MB (driver + 677MB pool-cached) < cost 2885MB + reserve 1974MB — queueing (FIFO) [pool res 21408MB used 20731MB; parked spec sessions 0; plain reuse 0; queue 2]
+1794084875.459 [prefix-cache] insert (seed): 17056 tokens, 663.4MB (resident 827.9MB / 2260MB, model gate)
+1794084877.048 [prefix-cache] insert (seed): 4928 tokens, 303.2MB (resident 1131.1MB / 2260MB, model gate)
+1794084878.914 [admit-oom] reclaim spared the prompt's prefix entry (256 tokens, model gate)
+1794084878.919 [admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=966623232 pool_cached_gain_bytes=966623232 trim_released_bytes=939524096 driver_free_bytes 2300706816 -> 3240230912 pool_reserved_bytes 22582132736 -> 21642608640 pool_used_bytes 22013258596 -> 21046635364 pool_retained_bytes=27099136 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+1794084878.919 [admit-oom] reclaim-on-defer: evicted 2 prefix entries + 0 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 2870MB -> 3836MB
+1794084878.919 [admit-oom] VRAM defer: 5 active, effective free 3836MB (driver + 596MB pool-cached) < cost 2885MB + reserve 1974MB — queueing (FIFO) [pool res 21643MB used 21047MB; parked spec sessions 0; plain reuse 0; queue 2]
+1794084879.336 [prefix-cache] insert (seed): 10688 tokens, 474.3MB (resident 638.8MB / 2260MB, model gate)
+1794084881.368 [ttft] id=chatcmpl-154f6466675157ba0fa5aaf0b16db1b8 model="gate" path="/v1/chat/completions" prompt_tokens=17101 outcome=first_sse_byte request_parse_ms=0.180 admission_ms=0.044 queue_wait_ms=6420.661 tokenize_ms=16.465 prime_wait_ms=5297.205 prime_ms=60251.775 decode_wait_ms=2273.216 sse_handoff_ms=0.127 request_parse_end_ms=0.180 admission_end_ms=0.224 tokenize_start_ms=6420.885 tokenize_end_ms=6437.350 prime_start_ms=11734.555 prime_end_ms=71986.330 first_decode_ms=74259.546 first_sse_byte_ms=74259.673 total_ms=74259.673
+1794084881.369 [ttft] id=chatcmpl-cf9ef55c66d0796aa3dd4a7338a4ea3a model="gate" path="/v1/chat/completions" prompt_tokens=4944 outcome=first_sse_byte request_parse_ms=0.099 admission_ms=0.023 queue_wait_ms=25209.966 tokenize_ms=5.130 prime_wait_ms=17493.265 prime_ms=19667.938 decode_wait_ms=1887.295 sse_handoff_ms=0.030 request_parse_end_ms=0.099 admission_end_ms=0.122 tokenize_start_ms=25210.088 tokenize_end_ms=25215.218 prime_start_ms=42708.483 prime_end_ms=62376.421 first_decode_ms=64263.716 first_sse_byte_ms=64263.746 total_ms=64263.746
+1794084881.402 [admit-oom] reclaim spared the prompt's prefix entry (256 tokens, model gate)
+1794084881.405 [admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=474284032 pool_cached_gain_bytes=474284032 trim_released_bytes=469762048 driver_free_bytes 2602696704 -> 3072458752 pool_reserved_bytes 22280142848 -> 21810380800 pool_used_bytes 21679983460 -> 21205699428 pool_retained_bytes=4521984 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+1794084881.405 [admit-oom] reclaim-on-defer: evicted 1 prefix entries + 0 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 3203MB -> 3677MB
+1794084881.405 [admit-oom] VRAM defer: 5 active, effective free 3677MB (driver + 605MB pool-cached) < cost 2885MB + reserve 1974MB — queueing (FIFO) [pool res 21810MB used 21206MB; parked spec sessions 0; plain reuse 0; queue 2]
+1794084883.472 [ttft] id=chatcmpl-e970b68a32edd0e6419322291a3aaba9 model="gate" path="/v1/chat/completions" prompt_tokens=10728 outcome=first_sse_byte request_parse_ms=0.223 admission_ms=0.101 queue_wait_ms=4236.228 tokenize_ms=10.982 prime_wait_ms=23895.141 prime_ms=36314.567 decode_wait_ms=1910.125 sse_handoff_ms=0.117 request_parse_end_ms=0.223 admission_end_ms=0.324 tokenize_start_ms=4236.552 tokenize_end_ms=4247.534 prime_start_ms=28142.675 prime_end_ms=64457.242 first_decode_ms=66367.367 first_sse_byte_ms=66367.484 total_ms=66367.484
+1794084883.472 [meter] admit id=chatcmpl-98679db96f6c26bda652bd189bde6a24 tenant=default lane=interactive model="gate"
+1794084883.473 [meter] admit id=chatcmpl-fa006a5f9623a7c2f8a59ab001c5fa01 tenant=default lane=interactive model="gate"
+1794084883.501 [admit-oom] reclaim spared the prompt's prefix entry (256 tokens, model gate)
+1794084883.502 [admit-oom] reclaim-on-defer: evicted 0 prefix entries + 2 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 3676MB -> 5304MB
+1794084883.503 [prefix-cache] hit: 256 of 13232 prompt tokens from cache (model gate)
+1794084883.503 [spec-k] model="gate" tenant="" K=0 source=concurrency prompt=13232 cached=256 lcp=256 active=4 wave=8 placement=single-or-non-pp2
+1794084883.504 [prefix-cache] source lease released after restore fence (entry 256 tokens, model gate)
+1794084883.508 [admission] request cost: model="gate" ctx=2898 path=plain = 29696 B/token x ctx + 1358MB prefill-workspace + 340MB fixed = 1783MB
+1794084883.510 [prefix-cache] hit: 256 of 2833 prompt tokens from cache (model gate)
+1794084883.510 [spec-k] model="gate" tenant="" K=0 source=concurrency prompt=2833 cached=256 lcp=256 active=5 wave=8 placement=single-or-non-pp2
+1794084883.510 [prefix-cache] source lease released after restore fence (entry 256 tokens, model gate)
+1794084883.516 [admission] request cost: model="gate" ctx=5297 path=plain = 29696 B/token x ctx + 1986MB prefill-workspace + 340MB fixed = 2483MB
+1794084883.516 [admit-oom] reclaim spared the prompt's prefix entry (256 tokens, model gate)
+1794084883.516 [admit-oom] VRAM defer: 5 active, effective free 4181MB (driver + 1175MB pool-cached) < cost 2483MB + reserve 1974MB — queueing (FIFO) [pool res 21877MB used 20702MB; parked spec sessions 0; plain reuse 0; queue 2]
+1794084887.247 [admit-oom] reclaim spared the prompt's prefix entry (256 tokens, model gate)
+1794084887.248 [admit-oom] reclaim-on-defer: evicted 0 prefix entries + 1 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 4181MB -> 4985MB
+1794084887.248 [meter] admit id=chatcmpl-2a019b19f37459bf944e05867677eda8 tenant=default lane=interactive model="gate"
+1794084887.249 [prefix-cache] hit: 256 of 5232 prompt tokens from cache (model gate)
+1794084887.249 [spec-k] model="gate" tenant="" K=0 source=concurrency prompt=5232 cached=256 lcp=256 active=5 wave=8 placement=single-or-non-pp2
+1794084887.249 [prefix-cache] source lease released after restore fence (entry 256 tokens, model gate)
+1794084887.253 [admission] request cost: model="gate" ctx=1669 path=plain = 29696 B/token x ctx + 769MB prefill-workspace + 340MB fixed = 1158MB
+1794084887.254 [prefix-cache] hit: 256 of 1604 prompt tokens from cache (model gate)
+1794084887.254 [spec-k] model="gate" tenant="" K=0 source=concurrency prompt=1604 cached=256 lcp=256 active=6 wave=8 placement=single-or-non-pp2
+1794084887.254 [prefix-cache] source lease released after restore fence (entry 256 tokens, model gate)
+1794084887.262 [admission] request cost: model="gate" ctx=5791 path=plain = 29696 B/token x ctx + 1996MB prefill-workspace + 340MB fixed = 2508MB
+1794084887.262 [admit-oom] reclaim spared the prompt's prefix entry (256 tokens, model gate)
+1794084887.262 [admit-oom] VRAM defer: 6 active, effective free 4153MB (driver + 1148MB pool-cached) < cost 2508MB + reserve 1974MB — queueing (FIFO) [pool res 21877MB used 20730MB; parked spec sessions 0; plain reuse 0; queue 0]
+1794084887.881 [prefix-cache] insert (seed): 8032 tokens, 395.4MB (resident 559.9MB / 2260MB, model gate)
+1794084892.485 [admit-oom] reclaim spared the prompt's prefix entry (256 tokens, model gate)
+1794084892.487 [admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=395411456 pool_cached_gain_bytes=395411456 trim_released_bytes=369098752 driver_free_bytes 3005349888 -> 3374448640 pool_reserved_bytes 21877489664 -> 21508390912 pool_used_bytes 21282029048 -> 20886617592 pool_retained_bytes=26312704 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+1794084892.487 [admit-oom] reclaim-on-defer: evicted 1 prefix entries + 0 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 3601MB -> 3996MB
+1794084892.487 [admit-oom] VRAM defer: 6 active, effective free 3996MB (driver + 622MB pool-cached) < cost 2508MB + reserve 1974MB — queueing (FIFO) [pool res 21508MB used 20887MB; parked spec sessions 0; plain reuse 0; queue 1]
+1794084894.935 [prefix-cache] insert (seed): 2816 tokens, 240.5MB (resident 405.0MB / 2260MB, model gate)
+1794084896.188 [prefix-cache] insert (seed): 1568 tokens, 203.5MB (resident 608.5MB / 2260MB, model gate)
+1794084896.190 [ttft] id=chatcmpl-c7980b5dd449f898d883f67f470fce71 model="gate" path="/v1/chat/completions" prompt_tokens=8053 outcome=first_sse_byte request_parse_ms=0.074 admission_ms=0.014 queue_wait_ms=40787.055 tokenize_ms=9.442 prime_wait_ms=5720.945 prime_ms=29017.475 decode_wait_ms=3549.666 sse_handoff_ms=0.127 request_parse_end_ms=0.074 admission_end_ms=0.088 tokenize_start_ms=40787.143 tokenize_end_ms=40796.585 prime_start_ms=46517.530 prime_end_ms=75535.005 first_decode_ms=79084.671 first_sse_byte_ms=79084.798 total_ms=79084.798
+1794084896.218 [admit-oom] reclaim spared the prompt's prefix entry (1568 tokens, model gate)
+1794084896.220 [admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=405012480 pool_cached_gain_bytes=405012480 trim_released_bytes=402653184 driver_free_bytes 2971795456 -> 3374448640 pool_reserved_bytes 21911044096 -> 21508390912 pool_used_bytes 21645370872 -> 21240358392 pool_retained_bytes=2359296 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+1794084896.220 [admit-oom] reclaim-on-defer: evicted 2 prefix entries + 0 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 3237MB -> 3642MB
+1794084896.220 [admit-oom] VRAM defer: 6 active, effective free 3642MB (driver + 268MB pool-cached) < cost 2508MB + reserve 1974MB — queueing (FIFO) [pool res 21508MB used 21240MB; parked spec sessions 0; plain reuse 0; queue 1]
+1794084899.341 [ttft] id=chatcmpl-f4277c75073886a69599e6d4c994917f model="gate" path="/v1/chat/completions" prompt_tokens=2833 outcome=first_sse_byte request_parse_ms=0.145 admission_ms=0.134 queue_wait_ms=25641.973 tokenize_ms=4.565 prime_wait_ms=2836.919 prime_ms=11939.547 decode_wait_ms=1055.639 sse_handoff_ms=0.097 request_parse_end_ms=0.145 admission_end_ms=0.279 tokenize_start_ms=25642.252 tokenize_end_ms=25646.817 prime_start_ms=28483.736 prime_end_ms=40423.283 first_decode_ms=41478.922 first_sse_byte_ms=41479.019 total_ms=41479.019
+1794084899.341 [meter] admit id=chatcmpl-c9af114a37a9ef120e7f221f49938780 tenant=default lane=interactive model="gate"
+1794084899.342 [ttft] id=chatcmpl-98679db96f6c26bda652bd189bde6a24 model="gate" path="/v1/chat/completions" prompt_tokens=1604 outcome=first_sse_byte request_parse_ms=0.073 admission_ms=0.045 queue_wait_ms=3776.907 tokenize_ms=3.844 prime_wait_ms=4331.837 prime_ms=7754.623 decode_wait_ms=2.207 sse_handoff_ms=0.039 request_parse_end_ms=0.073 admission_end_ms=0.118 tokenize_start_ms=3777.025 tokenize_end_ms=3780.869 prime_start_ms=8112.706 prime_end_ms=15867.329 first_decode_ms=15869.536 first_sse_byte_ms=15869.575 total_ms=15869.575
+1794084899.368 [admit-oom] reclaim spared the prompt's prefix entry (1568 tokens, model gate)
+1794084899.369 [admit-oom] reclaim-on-defer: evicted 0 prefix entries + 1 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 3640MB -> 4361MB
+1794084899.369 [admit-oom] VRAM defer: 5 active, effective free 4361MB (driver + 1322MB pool-cached) < cost 2508MB + reserve 1974MB — queueing (FIFO) [pool res 21844MB used 20522MB; parked spec sessions 0; plain reuse 0; queue 2]
+1794084899.369 [admit-oom] reclaim spared the prompt's prefix entry (1568 tokens, model gate)
+1794084899.369 [admit-oom] reclaim-on-defer: evicted 0 prefix entries + 1 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 4361MB -> 4877MB
+1794084899.369 [worker] plain-affinity: declined (history diverged at 282 of checkpoint 2816; 1 parked, 5726 prompt tokens; model gate)
+1794084899.370 [prefix-cache] hit: 1568 of 5726 prompt tokens from cache (model gate)
+1794084899.370 [spec-k] model="gate" tenant="" K=0 source=concurrency prompt=5726 cached=1568 lcp=1568 active=4 wave=6 placement=single-or-non-pp2
+1794084899.370 [meter] admit id=chatcmpl-1d8c8360f9b2849bcfda94a8b602b48d tenant=default lane=interactive model="gate"
+1794084899.370 [meter] admit id=chatcmpl-f967cb58bba4daaccaf2601b20ce44e2 tenant=default lane=interactive model="gate"
+1794084899.371 [prefix-cache] source lease released after restore fence (entry 1568 tokens, model gate)
+1794084899.375 [admission] request cost: model="gate" ctx=3578 path=plain = 29696 B/token x ctx + 1684MB prefill-workspace + 340MB fixed = 2129MB
+1794084899.376 [worker] plain-affinity: declined (history diverged at 282 of checkpoint 2816; 1 parked, 3513 prompt tokens; model gate)
+1794084899.376 [spec-k] model="gate" tenant="" K=0 source=concurrency prompt=3513 cached=0 lcp=282 active=5 wave=8 placement=single-or-non-pp2
+1794084899.381 [admission] request cost: model="gate" ctx=3970 path=plain = 29696 B/token x ctx + 1871MB prefill-workspace + 340MB fixed = 2329MB
+1794084899.382 [admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=203456512 pool_cached_gain_bytes=203456512 trim_released_bytes=201326592 driver_free_bytes 3038904320 -> 3240230912 pool_reserved_bytes 21843935232 -> 21642608640 pool_used_bytes 20913383288 -> 20709926776 pool_retained_bytes=2129920 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+1794084899.382 [admit-oom] reclaim-on-defer: evicted 1 prefix entries + 1 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 3969MB -> 4728MB
+1794084899.383 [spec-k] model="gate" tenant="" K=0 source=concurrency prompt=3905 cached=0 lcp=0 active=6 wave=8 placement=single-or-non-pp2
+1794084903.409 [prefix-cache] insert (lcp-split): 256 tokens, 164.5MB (resident 164.5MB / 2260MB, model gate)
+1794084904.306 [admission] request cost: model="gate" ctx=3665 path=plain = 29696 B/token x ctx + 1725MB prefill-workspace + 340MB fixed = 2174MB
+1794084904.307 [admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=164495360 pool_cached_gain_bytes=164495360 trim_released_bytes=134217728 driver_free_bytes 3240230912 -> 3374448640 pool_reserved_bytes 21642608640 -> 21508390912 pool_used_bytes 20750359416 -> 20585864056 pool_retained_bytes=30277632 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+1794084904.307 [admit-oom] reclaim-on-defer: evicted 1 prefix entries + 0 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 4132MB -> 4297MB
+1794084904.308 [spec-k] model="gate" tenant="" K=0 source=concurrency prompt=3600 cached=0 lcp=0 active=7 wave=8 placement=single-or-non-pp2
+1794084904.327 [admission] request cost: model="gate" ctx=16708 path=plain = 29696 B/token x ctx + 2220MB prefill-workspace + 340MB fixed = 3056MB
+1794084904.327 [admit-oom] VRAM defer: 7 active, effective free 3875MB (driver + 501MB pool-cached) < cost 3056MB + reserve 1974MB — queueing (FIFO) [pool res 21508MB used 21008MB; parked spec sessions 0; plain reuse 0; queue 0]
+1794084905.090 [prefix-cache] insert (seed): 12288 tokens, 521.8MB (resident 521.8MB / 2260MB, model gate)
+1794084906.883 [prefix-cache] insert (seed): 5216 tokens, 311.8MB (resident 833.6MB / 2260MB, model gate)
+1794084910.449 [admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=833585152 pool_cached_gain_bytes=833585152 trim_released_bytes=805306368 driver_free_bytes 2166489088 -> 2971795456 pool_reserved_bytes 22716350464 -> 21911044096 pool_used_bytes 22154995212 -> 21321410060 pool_retained_bytes=28278784 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+1794084910.449 [admit-oom] reclaim-on-defer: evicted 2 prefix entries + 0 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 2728MB -> 3561MB
+1794084910.449 [admit-oom] VRAM defer: 7 active, effective free 3561MB (driver + 590MB pool-cached) < cost 3056MB + reserve 1974MB — queueing (FIFO) [pool res 21911MB used 21321MB; parked spec sessions 0; plain reuse 0; queue 0]
+1794084915.327 [ttft] id=chatcmpl-0504c516443a14b12b8208ce4c26ba4a model="gate" path="/v1/chat/completions" prompt_tokens=12327 outcome=first_sse_byte request_parse_ms=0.169 admission_ms=0.071 queue_wait_ms=27596.910 tokenize_ms=13.597 prime_wait_ms=3798.065 prime_ms=46094.443 decode_wait_ms=4717.557 sse_handoff_ms=0.259 request_parse_end_ms=0.169 admission_end_ms=0.240 tokenize_start_ms=27597.150 tokenize_end_ms=27610.747 prime_start_ms=31408.812 prime_end_ms=77503.255 first_decode_ms=82220.812 first_sse_byte_ms=82221.071 total_ms=82221.071
+1794084915.328 [ttft] id=chatcmpl-43d3e0d2d0dd508f26f3896b78c76a7f model="gate" path="/v1/chat/completions" prompt_tokens=5232 outcome=first_sse_byte request_parse_ms=0.187 admission_ms=0.087 queue_wait_ms=22807.869 tokenize_ms=6.039 prime_wait_ms=7169.086 prime_ms=20987.046 decode_wait_ms=3655.269 sse_handoff_ms=0.166 request_parse_end_ms=0.187 admission_end_ms=0.274 tokenize_start_ms=22808.143 tokenize_end_ms=22814.182 prime_start_ms=29983.268 prime_end_ms=50970.314 first_decode_ms=54625.583 first_sse_byte_ms=54625.749 total_ms=54625.749
+1794084915.359 [admit-oom] VRAM defer: 7 active, effective free 3559MB (driver + 722MB pool-cached) < cost 3056MB + reserve 1974MB — queueing (FIFO) [pool res 22045MB used 21323MB; parked spec sessions 0; plain reuse 0; queue 0]
+1794084919.000 [prefix-cache] insert (seed): 3872 tokens, 271.9MB (resident 271.9MB / 2260MB, model gate)
+1794084919.920 [meter] admit id=chatcmpl-cc37199f2db9e1d5acb5130a45c76ac8 tenant=default lane=interactive model="gate"
+1794084919.920 [meter] admit id=chatcmpl-d1f40e6a446dbd4139afc32423a90cc8 tenant=default lane=interactive model="gate"
+1794084919.920 [admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=271876096 pool_cached_gain_bytes=271876096 trim_released_bytes=268435456 driver_free_bytes 2569142272 -> 2837577728 pool_reserved_bytes 22313697280 -> 22045261824 pool_used_bytes 21752165900 -> 21480289804 pool_retained_bytes=3440640 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+1794084919.921 [admit-oom] reclaim-on-defer: evicted 1 prefix entries + 2 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 3131MB -> 4889MB
+1794084919.921 [admit-oom] VRAM defer: 5 active, effective free 4889MB (driver + 2051MB pool-cached) < cost 3056MB + reserve 1974MB — queueing (FIFO) [pool res 22045MB used 19994MB; parked spec sessions 0; plain reuse 0; queue 0]
+1794084919.921 [admit-oom] VRAM defer: 5 active, effective free 4889MB (driver + 2051MB pool-cached) < cost 3056MB + reserve 1974MB — queueing (FIFO) [pool res 22045MB used 19994MB; parked spec sessions 0; plain reuse 0; queue 2]
+1794084919.921 [admit-oom] VRAM defer: 5 active, effective free 4889MB (driver + 2051MB pool-cached) < cost 3056MB + reserve 1974MB — queueing (FIFO) [pool res 22045MB used 19994MB; parked spec sessions 0; plain reuse 0; queue 2]
+1794084919.921 [admit-oom] VRAM defer: 5 active, effective free 4889MB (driver + 2051MB pool-cached) < cost 3056MB + reserve 1974MB — queueing (FIFO) [pool res 22045MB used 19994MB; parked spec sessions 0; plain reuse 0; queue 2]
+1794084919.921 [admit-oom] VRAM defer: 5 active, effective free 4889MB (driver + 2051MB pool-cached) < cost 3056MB + reserve 1974MB — queueing (FIFO) [pool res 22045MB used 19994MB; parked spec sessions 0; plain reuse 0; queue 2]
+1794084919.921 [admit-oom] VRAM defer: 5 active, effective free 4889MB (driver + 2051MB pool-cached) < cost 3056MB + reserve 1974MB — queueing (FIFO) [pool res 22045MB used 19994MB; parked spec sessions 0; plain reuse 0; queue 2]
+1794084919.921 [admit-oom] VRAM defer: 5 active, effective free 4889MB (driver + 2051MB pool-cached) < cost 3056MB + reserve 1974MB — queueing (FIFO) [pool res 22045MB used 19994MB; parked spec sessions 0; plain reuse 0; queue 2]
+1794084919.921 [admit-oom] VRAM defer: 5 active, effective free 4889MB (driver + 2051MB pool-cached) < cost 3056MB + reserve 1974MB — queueing (FIFO) [pool res 22045MB used 19994MB; parked spec sessions 0; plain reuse 0; queue 2]
+1794084919.922 [admit-oom] VRAM defer: 5 active, effective free 4889MB (driver + 2051MB pool-cached) < cost 3056MB + reserve 1974MB — queueing (FIFO) [pool res 22045MB used 19994MB; parked spec sessions 0; plain reuse 0; queue 2]
+1794084919.922 [admit-oom] VRAM defer: 5 active, effective free 4889MB (driver + 2051MB pool-cached) < cost 3056MB + reserve 1974MB — queueing (FIFO) [pool res 22045MB used 19994MB; parked spec sessions 0; plain reuse 0; queue 2]
+1794084919.922 [admit-oom] VRAM defer: 5 active, effective free 4889MB (driver + 2051MB pool-cached) < cost 3056MB + reserve 1974MB — queueing (FIFO) [pool res 22045MB used 19994MB; parked spec sessions 0; plain reuse 0; queue 2]
+1794084919.922 [admit-oom] VRAM defer: 5 active, effective free 4889MB (driver + 2051MB pool-cached) < cost 3056MB + reserve 1974MB — queueing (FIFO) [pool res 22045MB used 19994MB; parked spec sessions 0; plain reuse 0; queue 2]
+1794084919.922 [admit-oom] VRAM defer: 5 active, effective free 4889MB (driver + 2051MB pool-cached) < cost 3056MB + reserve 1974MB — queueing (FIFO) [pool res 22045MB used 19994MB; parked spec sessions 0; plain reuse 0; queue 2]
+1794084919.924 [admit-oom] VRAM defer: 5 active, effective free 4889MB (driver + 2051MB pool-cached) < cost 3056MB + reserve 1974MB — queueing (FIFO) [pool res 22045MB used 19994MB; parked spec sessions 0; plain reuse 0; queue 2]
+1794084919.924 [admit-oom] VRAM defer: 5 active, effective free 4889MB (driver + 2051MB pool-cached) < cost 3056MB + reserve 1974MB — queueing (FIFO) [pool res 22045MB used 19994MB; parked spec sessions 0; plain reuse 0; queue 2]
+1794084919.924 [admit-oom] VRAM defer: 5 active, effective free 4889MB (driver + 2051MB pool-cached) < cost 3056MB + reserve 1974MB — queueing (FIFO) [pool res 22045MB used 19994MB; parked spec sessions 0; plain reuse 0; queue 2]
+1794084919.924 [admit-oom] VRAM defer: 5 active, effective free 4889MB (driver + 2051MB pool-cached) < cost 3056MB + reserve 1974MB — queueing (FIFO) [pool res 22045MB used 19994MB; parked spec sessions 0; plain reuse 0; queue 2]
+1794084919.924 [admit-oom] VRAM defer: 5 active, effective free 4889MB (driver + 2051MB pool-cached) < cost 3056MB + reserve 1974MB — queueing (FIFO) [pool res 22045MB used 19994MB; parked spec sessions 0; plain reuse 0; queue 2]
+1794084919.924 [admit-oom] VRAM defer: 5 active, effective free 4889MB (driver + 2051MB pool-cached) < cost 3056MB + reserve 1974MB — queueing (FIFO) [pool res 22045MB used 19994MB; parked spec sessions 0; plain reuse 0; queue 2]
+1794084921.059 [prefix-cache] insert (seed): 5696 tokens, 326.0MB (resident 326.0MB / 2260MB, model gate)
+1794084921.283 [prefix-cache] insert (seed): 3488 tokens, 260.5MB (resident 586.5MB / 2260MB, model gate)
+1794084921.897 [prefix-cache] insert (seed): 3584 tokens, 263.3MB (resident 849.8MB / 2260MB, model gate)
+1794084921.899 [ttft] id=chatcmpl-c9af114a37a9ef120e7f221f49938780 model="gate" path="/v1/chat/completions" prompt_tokens=3905 outcome=first_sse_byte request_parse_ms=0.104 admission_ms=0.075 queue_wait_ms=35.165 tokenize_ms=4.549 prime_wait_ms=4028.499 prime_ms=18017.197 decode_wait_ms=472.152 sse_handoff_ms=0.183 request_parse_end_ms=0.104 admission_end_ms=0.179 tokenize_start_ms=35.344 tokenize_end_ms=39.893 prime_start_ms=4068.392 prime_end_ms=22085.589 first_decode_ms=22557.741 first_sse_byte_ms=22557.924 total_ms=22557.924
+1794084921.930 [admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=849838080 pool_cached_gain_bytes=849838080 trim_released_bytes=838860800 driver_free_bytes 2837577728 -> 3676438528 pool_reserved_bytes 22045261824 -> 21206401024 pool_used_bytes 21315661348 -> 20465823268 pool_retained_bytes=10977280 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+1794084921.930 [admit-oom] reclaim-on-defer: evicted 3 prefix entries + 0 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 3567MB -> 4417MB
+1794084921.930 [admit-oom] VRAM defer: 5 active, effective free 4417MB (driver + 741MB pool-cached) < cost 3056MB + reserve 1974MB — queueing (FIFO) [pool res 21206MB used 20466MB; parked spec sessions 0; plain reuse 0; queue 2]
+1794084922.098 [prime-batch] B=2 tokens=41 carried=2 partial=0 in 168.1ms
+1794084923.197 [ttft] id=chatcmpl-fa006a5f9623a7c2f8a59ab001c5fa01 model="gate" path="/v1/chat/completions" prompt_tokens=5726 outcome=first_sse_byte request_parse_ms=0.112 admission_ms=0.068 queue_wait_ms=3781.048 tokenize_ms=7.807 prime_wait_ms=14994.706 prime_ms=20939.034 decode_wait_ms=1.150 sse_handoff_ms=0.238 request_parse_end_ms=0.112 admission_end_ms=0.180 tokenize_start_ms=3781.228 tokenize_end_ms=3789.035 prime_start_ms=18783.741 prime_end_ms=39722.775 first_decode_ms=39723.925 first_sse_byte_ms=39724.163 total_ms=39724.163
+1794084923.198 [ttft] id=chatcmpl-2a019b19f37459bf944e05867677eda8 model="gate" path="/v1/chat/completions" prompt_tokens=3513 outcome=first_sse_byte request_parse_ms=0.100 admission_ms=0.063 queue_wait_ms=12122.433 tokenize_ms=4.638 prime_wait_ms=3794.231 prime_ms=18928.697 decode_wait_ms=1099.968 sse_handoff_ms=0.165 request_parse_end_ms=0.100 admission_end_ms=0.163 tokenize_start_ms=12122.596 tokenize_end_ms=12127.234 prime_start_ms=15921.465 prime_end_ms=34850.162 first_decode_ms=35950.130 first_sse_byte_ms=35950.295 total_ms=35950.295
+1794084923.200 [ttft] id=chatcmpl-1d8c8360f9b2849bcfda94a8b602b48d model="gate" path="/v1/chat/completions" prompt_tokens=3600 outcome=first_sse_byte request_parse_ms=0.052 admission_ms=0.037 queue_wait_ms=4929.905 tokenize_ms=5.599 prime_wait_ms=5282.930 prime_ms=12509.571 decode_wait_ms=1101.117 sse_handoff_ms=0.290 request_parse_end_ms=0.052 admission_end_ms=0.089 tokenize_start_ms=4929.994 tokenize_end_ms=4935.593 prime_start_ms=10218.523 prime_end_ms=22728.094 first_decode_ms=23829.211 first_sse_byte_ms=23829.501 total_ms=23829.501
+1794084923.200 [meter] admit id=chatcmpl-89c1e5a970c43e197c10479827d7891c tenant=default lane=interactive model="gate"
+1794084923.228 [admit-oom] reclaim-on-defer: evicted 0 prefix entries + 1 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 4414MB -> 5003MB
+1794084923.228 [admit-oom] VRAM defer: 4 active, effective free 5003MB (driver + 1495MB pool-cached) < cost 3056MB + reserve 1974MB — queueing (FIFO) [pool res 21374MB used 19880MB; parked spec sessions 0; plain reuse 0; queue 3]
+1794084923.229 [worker] plain-affinity: declined (history diverged at 282 of checkpoint 3488; 2 parked, 16643 prompt tokens; model gate)
+1794084923.230 [spec-k] model="gate" tenant="" K=0 source=concurrency prompt=16643 cached=0 lcp=0 active=2 wave=5 placement=single-or-non-pp2
+1794084923.231 [meter] admit id=chatcmpl-5c5159f007678dd2fc9068d1a480e0d4 tenant=default lane=interactive model="gate"
+1794084923.231 [meter] admit id=chatcmpl-5c7dd4ee5c15c1f8da5bc05441358d12 tenant=default lane=interactive model="gate"
+1794084923.237 [admission] request cost: model="gate" ctx=7456 path=plain = 29696 B/token x ctx + 2030MB prefill-workspace + 340MB fixed = 2591MB
+1794084923.237 [worker] plain-affinity: declined (history diverged at 97 of checkpoint 3488; 2 parked, 7391 prompt tokens; model gate)
+1794084923.238 [spec-k] model="gate" tenant="" K=0 source=concurrency prompt=7391 cached=0 lcp=0 active=3 wave=7 placement=single-or-non-pp2
+1794084923.241 [admission] request cost: model="gate" ctx=2432 path=plain = 29696 B/token x ctx + 1134MB prefill-workspace + 340MB fixed = 1546MB
+1794084923.241 [worker] plain-affinity: declined (history diverged at 97 of checkpoint 3488; 2 parked, 2367 prompt tokens; model gate)
+1794084923.241 [spec-k] model="gate" tenant="" K=0 source=concurrency prompt=2367 cached=0 lcp=0 active=4 wave=7 placement=single-or-non-pp2
+1794084923.244 [admission] request cost: model="gate" ctx=2697 path=plain = 29696 B/token x ctx + 1261MB prefill-workspace + 340MB fixed = 1681MB
+1794084923.244 [worker] plain-affinity: declined (history diverged at 97 of checkpoint 3488; 2 parked, 2632 prompt tokens; model gate)
+1794084923.245 [spec-k] model="gate" tenant="" K=0 source=concurrency prompt=2632 cached=0 lcp=0 active=5 wave=7 placement=single-or-non-pp2
+1794084927.787 [admission] request cost: model="gate" ctx=4377 path=plain = 29696 B/token x ctx + 1967MB prefill-workspace + 340MB fixed = 2437MB
+1794084927.788 [admit-oom] reclaim-on-defer: evicted 0 prefix entries + 2 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 3434MB -> 4658MB
+1794084927.789 [spec-k] model="gate" tenant="" K=0 source=concurrency prompt=4312 cached=0 lcp=0 active=6 wave=7 placement=single-or-non-pp2
+1794084927.795 [admission] request cost: model="gate" ctx=5770 path=plain = 29696 B/token x ctx + 1996MB prefill-workspace + 340MB fixed = 2507MB
+1794084927.795 [admit-oom] VRAM defer: 6 active, effective free 4214MB (driver + 1309MB pool-cached) < cost 2507MB + reserve 1974MB — queueing (FIFO) [pool res 21978MB used 20669MB; parked spec sessions 0; plain reuse 0; queue 0]
+1794084933.276 [admit-oom] VRAM defer: 6 active, effective free 4214MB (driver + 1309MB pool-cached) < cost 2507MB + reserve 1974MB — queueing (FIFO) [pool res 21978MB used 20669MB; parked spec sessions 0; plain reuse 0; queue 0]
+1794084933.276 [abort] client disconnected: model "gate", prompt 13232 (256 cached, 12544 fed), 0 generated — billed to abort point, 49.77s
+1794084935.474 [prefix-cache] insert (seed): 2336 tokens, 226.3MB (resident 226.3MB / 2260MB, model gate)
+1794084936.052 [prefix-cache] insert (seed): 2592 tokens, 233.9MB (resident 460.1MB / 2260MB, model gate)
+1794084936.965 [ttft] id=chatcmpl-d4730edf32cd20d40b1841d875a9f412 model="gate" path="/v1/chat/completions" prompt_tokens=13232 outcome=ended_without_sse request_parse_ms=0.136 admission_ms=0.033 queue_wait_ms=18403.548 tokenize_ms=12.464 prime_wait_ms=24713.891 prime_ms=na decode_wait_ms=na sse_handoff_ms=na request_parse_end_ms=0.136 admission_end_ms=0.169 tokenize_start_ms=18403.717 tokenize_end_ms=18416.181 prime_start_ms=43130.072 prime_end_ms=na first_decode_ms=na first_sse_byte_ms=na total_ms=18416.181
+1794084936.968 [admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=460128256 pool_cached_gain_bytes=460128256 trim_released_bytes=436207616 driver_free_bytes 2904686592 -> 3340894208 pool_reserved_bytes 21978152960 -> 21541945344 pool_used_bytes 20717470564 -> 20257342308 pool_retained_bytes=23920640 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+1794084936.968 [admit-oom] reclaim-on-defer: evicted 2 prefix entries + 0 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 4165MB -> 4625MB
+1794084936.969 [spec-k] model="gate" tenant="" K=0 source=concurrency prompt=5705 cached=0 lcp=0 active=6 wave=6 placement=single-or-non-pp2
+1794084937.137 [prime-batch] B=2 tokens=71 carried=2 partial=0 in 167.1ms
+1794084940.815 [ttft] id=chatcmpl-d1f40e6a446dbd4139afc32423a90cc8 model="gate" path="/v1/chat/completions" prompt_tokens=2367 outcome=first_sse_byte request_parse_ms=0.064 admission_ms=0.035 queue_wait_ms=3317.800 tokenize_ms=2.964 prime_wait_ms=2737.466 prime_ms=11158.301 decode_wait_ms=3678.298 sse_handoff_ms=0.270 request_parse_end_ms=0.064 admission_end_ms=0.099 tokenize_start_ms=3317.899 tokenize_end_ms=3320.863 prime_start_ms=6058.329 prime_end_ms=17216.630 first_decode_ms=20894.928 first_sse_byte_ms=20895.198 total_ms=20895.198
+1794084940.816 [ttft] id=chatcmpl-89c1e5a970c43e197c10479827d7891c model="gate" path="/v1/chat/completions" prompt_tokens=2632 outcome=first_sse_byte request_parse_ms=0.108 admission_ms=0.078 queue_wait_ms=41.240 tokenize_ms=2.611 prime_wait_ms=3635.512 prime_ms=10256.900 decode_wait_ms=3679.388 sse_handoff_ms=0.092 request_parse_end_ms=0.108 admission_end_ms=0.186 tokenize_start_ms=41.426 tokenize_end_ms=44.037 prime_start_ms=3679.549 prime_end_ms=13936.449 first_decode_ms=17615.837 first_sse_byte_ms=17615.929 total_ms=17615.929
+1794084946.739 [prefix-cache] insert (seed): 4288 tokens, 284.2MB (resident 284.2MB / 2260MB, model gate)
+1794084950.671 [ttft] id=chatcmpl-5c5159f007678dd2fc9068d1a480e0d4 model="gate" path="/v1/chat/completions" prompt_tokens=4312 outcome=first_sse_byte request_parse_ms=0.121 admission_ms=0.081 queue_wait_ms=4551.081 tokenize_ms=5.486 prime_wait_ms=4586.694 prime_ms=17363.855 decode_wait_ms=933.133 sse_handoff_ms=0.195 request_parse_end_ms=0.121 admission_end_ms=0.202 tokenize_start_ms=4551.283 tokenize_end_ms=4556.769 prime_start_ms=9143.463 prime_end_ms=26507.318 first_decode_ms=27440.451 first_sse_byte_ms=27440.646 total_ms=27440.646
+1794084951.925 [prefix-cache] insert (seed): 7360 tokens, 375.5MB (resident 659.7MB / 2260MB, model gate)
+1794084954.602 [prefix-cache] insert (seed): 5664 tokens, 325.1MB (resident 984.8MB / 2260MB, model gate)
+1794084954.604 [ttft] id=chatcmpl-cc37199f2db9e1d5acb5130a45c76ac8 model="gate" path="/v1/chat/completions" prompt_tokens=7391 outcome=first_sse_byte request_parse_ms=0.155 admission_ms=0.095 queue_wait_ms=3310.513 tokenize_ms=6.680 prime_wait_ms=1840.657 prime_ms=28934.369 decode_wait_ms=591.992 sse_handoff_ms=0.128 request_parse_end_ms=0.155 admission_end_ms=0.250 tokenize_start_ms=3310.763 tokenize_end_ms=3317.443 prime_start_ms=5158.100 prime_end_ms=34092.469 first_decode_ms=34684.461 first_sse_byte_ms=34684.589 total_ms=34684.589
+1794084955.820 [ttft] id=chatcmpl-5c7dd4ee5c15c1f8da5bc05441358d12 model="gate" path="/v1/chat/completions" prompt_tokens=5705 outcome=first_sse_byte request_parse_ms=0.122 admission_ms=0.067 queue_wait_ms=4558.081 tokenize_ms=5.957 prime_wait_ms=12119.774 prime_ms=15903.487 decode_wait_ms=1.162 sse_handoff_ms=0.234 request_parse_end_ms=0.122 admission_end_ms=0.189 tokenize_start_ms=4558.270 tokenize_end_ms=4564.227 prime_start_ms=16684.001 prime_end_ms=32587.488 first_decode_ms=32588.650 first_sse_byte_ms=32588.884 total_ms=32588.884
+1794084962.386 [prefix-cache] insert (seed): 16608 tokens, 650.1MB (resident 1634.9MB / 2260MB, model gate)
+1794084962.558 [ttft] id=chatcmpl-f967cb58bba4daaccaf2601b20ce44e2 model="gate" path="/v1/chat/completions" prompt_tokens=16643 outcome=first_sse_byte request_parse_ms=0.281 admission_ms=0.084 queue_wait_ms=4937.399 tokenize_ms=18.970 prime_wait_ms=19887.070 prime_ms=38342.283 decode_wait_ms=1.190 sse_handoff_ms=0.239 request_parse_end_ms=0.281 admission_end_ms=0.365 tokenize_start_ms=4937.764 tokenize_end_ms=4956.734 prime_start_ms=24843.804 prime_end_ms=63186.087 first_decode_ms=63187.277 first_sse_byte_ms=63187.516 total_ms=63187.516
+1794084962.743 [server] SIGTERM: draining (0 in flight, deadline 30s)
+1794084962.743 [server] drain complete in 0.0s; exiting
+1794084962.888 [server] GPU worker shutdown complete
