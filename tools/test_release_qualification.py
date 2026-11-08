@@ -17,6 +17,59 @@ import release_qualification as q
 import release_input_view as view
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def ancestor_cargo_configs(path):
+    """Every Cargo configuration strictly above `path`: the files the source preflight walks
+    (`release_inputs._cargo_configuration`) and refuses."""
+    found = set()
+    for directory in path.parents:
+        for name in (".cargo/config", ".cargo/config.toml"):
+            config = directory / name
+            if config.exists() or config.is_symlink():
+                found.add(config)
+    return frozenset(found)
+
+
+def hide_ancestor_cargo_configs(case, root):
+    """Hide the Cargo configurations above the fixture `root` from this process's preflight walk.
+
+    With TMPDIR under a home that holds ~/.cargo/config.toml, the preflight refuses every fixture
+    before the check a test aims at ("unrecorded ancestor/Cargo configuration"). Path.exists and
+    Path.is_symlink answer False for exactly those files, until the test ends. A config a test
+    writes inside the fixture stays visible, so the ancestor refusal is still tested."""
+    hidden = ancestor_cargo_configs(Path(root).resolve())
+    for name in ("exists", "is_symlink") if hidden else ():
+        real = getattr(Path, name)
+        patcher = patch.object(Path, name, lambda path, *a, _real=real, **k:
+                               False if path in hidden else _real(path, *a, **k))
+        patcher.start()
+        case.addCleanup(patcher.stop)
+    return hidden
+
+
+HIDE_SHIM = """import os
+from pathlib import Path
+_hidden = frozenset(Path(p) for p in os.environ.get("RELEASE_TEST_HIDDEN_PATHS", "").split(os.pathsep) if p)
+for _name in ("exists", "is_symlink") if _hidden else ():
+    _real = getattr(Path, _name)
+    setattr(Path, _name, lambda self, *a, _real=_real, **k: False if self in _hidden else _real(self, *a, **k))
+"""
+
+
+def hidden_child_env(case, hidden, env=None):
+    """`env` (default: this process's) for a child Python that hides the same `hidden` files: a
+    sitecustomize shim on PYTHONPATH reads them from RELEASE_TEST_HIDDEN_PATHS. With nothing to
+    hide it is `env` unchanged."""
+    env = dict(os.environ if env is None else env)
+    if not hidden:
+        return env
+    shim = Path(tempfile.mkdtemp(prefix="memra-hide-cargo-"))
+    case.addCleanup(shutil.rmtree, shim, ignore_errors=True)
+    (shim / "sitecustomize.py").write_text(HIDE_SHIM)
+    env["PYTHONPATH"] = os.pathsep.join(filter(None, (str(shim), env.get("PYTHONPATH"))))
+    env["RELEASE_TEST_HIDDEN_PATHS"] = os.pathsep.join(sorted(map(str, hidden)))
+    return env
 UUID = "GPU-00000000-0000-0000-0000-000000000001"
 
 

@@ -12,7 +12,7 @@ import unittest
 from unittest.mock import patch
 
 import release_qualification as q
-from test_release_qualification import Fixture
+from test_release_qualification import Fixture, hide_ancestor_cargo_configs
 
 spec = importlib.util.spec_from_file_location("release_capture_inputs", Path(__file__).with_name("qualify-release.py"))
 capture = importlib.util.module_from_spec(spec)
@@ -31,35 +31,13 @@ def gguf(path, split_count=None, split_no=0):
     path.write_bytes(data)
 
 
-def ancestor_cargo_configs(path):
-    """Every Cargo configuration strictly above `path`: the files the source preflight walks
-    (`release_inputs._cargo_configuration`) and refuses."""
-    found = set()
-    for directory in path.parents:
-        for name in (".cargo/config", ".cargo/config.toml"):
-            config = directory / name
-            if config.exists() or config.is_symlink():
-                found.add(config)
-    return frozenset(found)
-
-
 class ReleaseInputTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory(prefix="memra-547-inputs-")
         self.addCleanup(self.tmp.cleanup)
         self.root = Path(self.tmp.name)
         self.f = Fixture(self.root)
-        # A Cargo configuration above the fixture (TMPDIR under a home that holds
-        # ~/.cargo/config.toml) makes the preflight refuse every fixture before the check a
-        # test aims at. Hide exactly those files from the walk. A config a test writes inside
-        # the fixture stays visible, so the ancestor refusal is still tested.
-        hidden = ancestor_cargo_configs(self.root.resolve())
-        for name in ("exists", "is_symlink") if hidden else ():
-            real = getattr(Path, name)
-            patcher = patch.object(Path, name, lambda path, *a, _real=real, **k:
-                                   False if path in hidden else _real(path, *a, **k))
-            patcher.start()
-            self.addCleanup(patcher.stop)
+        hide_ancestor_cargo_configs(self, self.root)
 
     def test_index_flags_cannot_hide_changed_tracked_bytes(self):
         file = self.f.repo / "crates/memra-engine/src/lib.rs"

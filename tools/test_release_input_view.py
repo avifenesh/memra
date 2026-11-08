@@ -16,7 +16,7 @@ from unittest.mock import patch
 
 import release_input_view as view
 import release_qualification as q
-from test_release_qualification import Fixture
+from test_release_qualification import Fixture, hide_ancestor_cargo_configs
 
 SPEC = importlib.util.spec_from_file_location("capture_view", Path(__file__).with_name("qualify-release.py"))
 capture = importlib.util.module_from_spec(SPEC)
@@ -29,6 +29,7 @@ class InputViewTests(unittest.TestCase):
         self.addCleanup(self.tmp.cleanup)
         # rustc records the canonical cwd; macOS /var is an alias of /private/var.
         self.root = Path(self.tmp.name).resolve()
+        hide_ancestor_cargo_configs(self, self.root)
         self.f = Fixture(self.root)
         self.payload = self.f.repo / q.PUBLICATION / "direct/value.txt"
         self.payload.parent.mkdir(parents=True)

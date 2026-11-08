@@ -16,7 +16,7 @@ import unittest
 import local_build_cache as cache
 import release_qualification as q
 import release_input_view as view
-from test_release_qualification import Fixture, ROOT
+from test_release_qualification import Fixture, ROOT, hidden_child_env, hide_ancestor_cargo_configs
 
 
 class BuildCacheTests(unittest.TestCase):
@@ -24,6 +24,7 @@ class BuildCacheTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory(prefix="memra-cache-test-")
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
+        self.hidden = hide_ancestor_cargo_configs(self, self.root)
         self.fixture = Fixture(self.root)
         self.repo, self.build = self.fixture.repo, self.fixture.out
         for name in (*cache.ci.REQUIRED_TOOLS, "check_hardware_gate.py"):
@@ -82,7 +83,7 @@ class BuildCacheTests(unittest.TestCase):
         self.assertIn("STALE_PROJECT_BYTECODE_USED", control.stderr)
         result = subprocess.run([sys.executable, str(controller / "local_build_cache.py"), "describe",
             "--repo", str(self.repo), "--build", str(self.build), "--out", str(self.root / "described.json")],
-            env=env, text=True, capture_output=True)
+            env=hidden_child_env(self, self.hidden, env), text=True, capture_output=True)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertNotIn("STALE_PROJECT_BYTECODE_USED", result.stdout + result.stderr)
         self.assertEqual(json.loads(result.stdout)["status"], "described")
@@ -292,7 +293,7 @@ class BuildCacheTests(unittest.TestCase):
         for arguments in commands:
             result = subprocess.run([sys.executable, str(ROOT / "tools/local_build_cache.py"), *arguments,
                                      "--repo", str(self.repo), "--cache", str(self.storage)],
-                                    text=True, capture_output=True)
+                                    env=hidden_child_env(self, self.hidden), text=True, capture_output=True)
             self.assertEqual(result.returncode, 0, result.stderr)
             row = json.loads(result.stdout)
             self.assertGreater(row["seconds"], 0)
