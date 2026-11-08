@@ -1968,6 +1968,18 @@ fn prime_kv_h2_route(env: Option<&str>, unified_120a: bool) -> bool {
     }
 }
 
+/// Work items of one `fa_dequant_kv_ws_bf16` launch (its grid-stride loop's index space): groups of
+/// eight elements of one token row when both widths are multiples of 8 and the count fits the
+/// kernel's 32-bit form, single elements otherwise. Mirrors the kernel's branch.
+fn fa_dequant_ws_items(t_kv: usize, kv_dim_k: usize, kv_dim_v: usize) -> u64 {
+    let groups = (t_kv * ((kv_dim_k + kv_dim_v) / 8)) as u64;
+    if (kv_dim_k | kv_dim_v).is_multiple_of(8) && groups < (1u64 << 31) {
+        groups
+    } else {
+        (t_kv * (kv_dim_k + kv_dim_v)) as u64
+    }
+}
+
 /// FA-prefill kernel-name suffix for a head_dim (the template-stamped twins in flash_attn.cu):
 /// 256 = the original names (qwen35 class, dispatch unchanged), 128 = `_hd128` (MiniMax-M3).
 /// Any other dim errors — callers gate to sdpa_naive before dispatching FA.
@@ -28778,7 +28790,7 @@ impl Engine {
             } else {
                 self.func("fa_dequant_kv_ws_bf16")
             };
-            let total = (t_kv * (kv_dim_k + kv_dim_v)) as u64;
+            let total = fa_dequant_ws_items(t_kv, kv_dim_k, kv_dim_v);
             let nblk = total.div_ceil(256).min(65535 * 16) as u32;
             let cfg = LaunchConfig {
                 grid_dim: (nblk.max(1), 1, 1),
@@ -28901,7 +28913,7 @@ impl Engine {
             } else {
                 self.func("fa_dequant_kv_ws_bf16")
             };
-            let total = (live.map_or(t_kv, |a| a.1) * (kv_dim_k + kv_dim_v)) as u64;
+            let total = fa_dequant_ws_items(live.map_or(t_kv, |a| a.1), kv_dim_k, kv_dim_v);
             #[allow(clippy::manual_div_ceil)]
             // allow: explicit (n + k - 1) / k is the load-bearing sizing form, kept textually identical to the kernel-side math
             let nblk = if live.is_some() {
@@ -29204,7 +29216,7 @@ impl Engine {
         // the workspace bytes are the SAME __float2bfloat16(dq(...)) values either way).
         {
             let f = self.func("fa_dequant_kv_ws_bf16");
-            let total = (t_kv * (kv_dim_k + kv_dim_v)) as u64;
+            let total = fa_dequant_ws_items(t_kv, kv_dim_k, kv_dim_v);
             #[allow(clippy::manual_div_ceil)]
             // allow: explicit (n + k - 1) / k is the load-bearing sizing form, kept textually identical to the kernel-side math
             let nblk = ((total + 255) / 256).min(65535 * 16) as u32;

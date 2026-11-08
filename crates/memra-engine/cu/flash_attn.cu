@@ -3859,12 +3859,45 @@ extern "C" __global__ void __launch_bounds__(N_WARPS*WARP_SZ, 2) fa_prefill_q_hd
 //  is bit-identical (kernel_check pins ws-vs-inline bitdiff=0).         //
 //  One thread per element, grid-stride over K elems then V elems.      //
 // ===================================================================== //
-extern "C" __global__ void fa_dequant_kv_ws_bf16(
+// Eight consecutive elements of one token row per thread when both widths are multiples of 8 (one
+// 16-byte store; the block's scale bytes are read once for the eight): each element is still
+// __float2bfloat16(DQ_*_ELEM(...)), so the workspace bytes are unchanged (kernel_check ARC B
+// cells). The grid is sized by fa_dequant_ws_items: groups of 8, or elements otherwise.
+static __device__ __forceinline__ uint4 fa_ws_pack8(const float* f) {
+    uint4 u;
+    __nv_bfloat162 p0 = __halves2bfloat162(__float2bfloat16(f[0]), __float2bfloat16(f[1]));
+    __nv_bfloat162 p1 = __halves2bfloat162(__float2bfloat16(f[2]), __float2bfloat16(f[3]));
+    __nv_bfloat162 p2 = __halves2bfloat162(__float2bfloat16(f[4]), __float2bfloat16(f[5]));
+    __nv_bfloat162 p3 = __halves2bfloat162(__float2bfloat16(f[6]), __float2bfloat16(f[7]));
+    u.x = *(uint32_t*)&p0; u.y = *(uint32_t*)&p1; u.z = *(uint32_t*)&p2; u.w = *(uint32_t*)&p3;
+    return u;
+}
+static __device__ __forceinline__ void fa_dequant_kv_ws_body(
         const uint8_t* __restrict__ K, const uint8_t* __restrict__ V,
         __nv_bfloat16* __restrict__ Kw, __nv_bfloat16* __restrict__ Vw,
         int kv_dim_k, int kv_dim_v, int t_kv,
         long k_tok_bytes, long v_tok_bytes)
 {
+    if (((kv_dim_k | kv_dim_v) & 7) == 0 && (long)t_kv * ((kv_dim_k + kv_dim_v) / 8) < (1L << 31)) {
+        const unsigned gk = (unsigned)kv_dim_k / 8u, gv = (unsigned)kv_dim_v / 8u;
+        const unsigned nk = (unsigned)t_kv * gk, total = nk + (unsigned)t_kv * gv;
+        for (unsigned g = blockIdx.x * blockDim.x + threadIdx.x; g < total; g += gridDim.x * blockDim.x) {
+            float f[8];
+            if (g < nk) {
+                const unsigned t = g / gk; const int e0 = (int)(g - t * gk) * 8;
+                #pragma unroll
+                for (int i = 0; i < 8; ++i) f[i] = DQ_K_ELEM(K, (long)t, k_tok_bytes, e0 + i);
+                *(uint4*)(Kw + (size_t)t * kv_dim_k + e0) = fa_ws_pack8(f);
+            } else {
+                const unsigned j = g - nk;
+                const unsigned t = j / gv; const int e0 = (int)(j - t * gv) * 8;
+                #pragma unroll
+                for (int i = 0; i < 8; ++i) f[i] = DQ_V_ELEM(V, (long)t, v_tok_bytes, e0 + i);
+                *(uint4*)(Vw + (size_t)t * kv_dim_v + e0) = fa_ws_pack8(f);
+            }
+        }
+        return;
+    }
     const long nk = (long)t_kv * kv_dim_k;
     const long nv = (long)t_kv * kv_dim_v;
     const long total = nk + nv;
@@ -3879,6 +3912,14 @@ extern "C" __global__ void fa_dequant_kv_ws_bf16(
             Vw[j] = __float2bfloat16(DQ_V_ELEM(V, t, v_tok_bytes, e));
         }
     }
+}
+extern "C" __global__ void fa_dequant_kv_ws_bf16(
+        const uint8_t* __restrict__ K, const uint8_t* __restrict__ V,
+        __nv_bfloat16* __restrict__ Kw, __nv_bfloat16* __restrict__ Vw,
+        int kv_dim_k, int kv_dim_v, int t_kv,
+        long k_tok_bytes, long v_tok_bytes)
+{
+    fa_dequant_kv_ws_body(K, V, Kw, Vw, kv_dim_k, kv_dim_v, t_kv, k_tok_bytes, v_tok_bytes);
 }
 
 // Correctness fallback: dequantize the resident KV cache to f32 once so it can be consumed by
@@ -9053,20 +9094,7 @@ extern "C" __global__ void fa_dequant_kv_ws_bf16_prime_table(
     const uint8_t* K = (const uint8_t*)table[0];
     const uint8_t* V = (const uint8_t*)table[1];
     const int t_kv = (int)table[7];
-    const long nk = (long)t_kv * kv_dim_k;
-    const long nv = (long)t_kv * kv_dim_v;
-    const long total = nk + nv;
-    for (long idx = (long)blockIdx.x * blockDim.x + threadIdx.x; idx < total;
-         idx += (long)gridDim.x * blockDim.x) {
-        if (idx < nk) {
-            const long t = idx / kv_dim_k; const int e = (int)(idx % kv_dim_k);
-            Kw[idx] = __float2bfloat16(DQ_K_ELEM(K, t, k_tok_bytes, e));
-        } else {
-            const long j = idx - nk;
-            const long t = j / kv_dim_v; const int e = (int)(j % kv_dim_v);
-            Vw[j] = __float2bfloat16(DQ_V_ELEM(V, t, v_tok_bytes, e));
-        }
-    }
+    fa_dequant_kv_ws_body(K, V, Kw, Vw, kv_dim_k, kv_dim_v, t_kv, k_tok_bytes, v_tok_bytes);
 }
 
 extern "C" __global__ void __launch_bounds__(N_WARPS*WARP_SZ, 1) fa_prefill_qw_db_prime_table(
