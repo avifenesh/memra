@@ -7376,7 +7376,8 @@ impl HybridModel {
                     {
                         let key = e.addr_f32(h);
                         let q8 = matches!(self.layers[il + 1].mixer, Mixer::Linear(_));
-                        e.rms_norm_f8f4v2(x_nxt, w_next, Some(&mut *h), key, q8, n_embd, t, eps)?;
+                        let dst = (!self.mixer_group_seeded(e, il + 1, t)).then_some(&mut *h);
+                        e.rms_norm_f8f4v2(x_nxt, w_next, dst, key, q8, n_embd, t, eps)?;
                     } else {
                         e.f8f4_seed_clear();
                         e.rms_norm(x_nxt, w_next, h, n_embd, t, eps)?;
@@ -7417,7 +7418,7 @@ impl HybridModel {
                                 fo,
                                 w_next,
                                 x_nxt,
-                                Some(&mut *h),
+                                (!self.mixer_group_seeded(e, il + 1, t)).then_some(&mut *h),
                                 key,
                                 q8,
                                 n_embd,
@@ -9313,13 +9314,37 @@ impl HybridModel {
         Ok((attn_g, ag16))
     }
 
+    /// Whether every prime reader of layer `il`'s mixer input takes the seed its fused input
+    /// norm leaves (the F8F4 v2 activation for the projections, the q8_1 pair for a GDN mixer's
+    /// beta and alpha), so the norm may skip the f32 output. A reader that would still read the
+    /// f32 input is an error in the quantize-once scope (`F8f4ActGroup::x_written`).
+    fn mixer_group_seeded(&self, e: &Engine, il: usize, t: usize) -> bool {
+        // An f16 mirror reads the f32 input through its f16 operand, and an A4-stamped weight
+        // sends the group down a scope-less walk: neither may meet an unwritten input.
+        let no_mirror =
+            |w: &crate::model::GpuTensor| !Engine::f16_mirror_prefill(w) && !Engine::a4_stamped(w);
+        match &self.layers[il].mixer {
+            Mixer::Full(fa) => [&fa.wq, &fa.wk, &fa.wv]
+                .iter()
+                .all(|w| no_mirror(w) && e.f8f4_v2_direct(w, t)),
+            Mixer::Linear(la) => {
+                [&la.wqkv, &la.wqkv_gate]
+                    .iter()
+                    .all(|w| no_mirror(w) && e.f8f4_v2_direct(w, t))
+                    && [&la.ssm_beta, &la.ssm_alpha].iter().all(|w| no_mirror(w))
+            }
+            _ => false,
+        }
+    }
+
     /// STATEFUL batched linear-attention prime: `linear_attn`'s prefill-dispatch pass (normal
     /// `e.matmul` — GEMM at m>=16 — plus the prefill repack/L2/glog kernels) but with the state
     /// carried THROUGH the cache like the spec verify does: carried-ring conv
     /// (`ssm_conv1d_gdn_state_pad`, then the ring update) + ONE gdn_scan from cache.recur[il]'s
     /// current state (zero at a fresh prime) whose final state ping-pongs back into the cache.
     /// Dispatch mirrors `linear_attn` (prefill).
-    #[allow(clippy::too_many_arguments)] // allow: the parameter list mirrors the kernel/FFI/call contract; bundling into a struct is a refactor, not a lint fix
+    #[allow(clippy::too_many_arguments)]
+    // allow: the parameter list mirrors the kernel/FFI/call contract; bundling into a struct is a refactor, not a lint fix
     fn linear_attn_prime(
         &self,
         e: &Engine,

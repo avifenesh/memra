@@ -2760,6 +2760,8 @@ impl Engine {
             scratch: Some(scratch),
             v2: true,
             q8: q8_pair,
+            x_written: dst_ptr != 0,
+            seeded_uses: 0,
         });
         Ok(())
     }
@@ -2826,6 +2828,8 @@ impl Engine {
             scratch: Some(scratch),
             v2: true,
             q8: None,
+            x_written: dst_ptr != 0,
+            seeded_uses: 0,
         });
         Ok(())
     }
@@ -2884,6 +2888,8 @@ impl Engine {
             scratch: Some(scratch),
             v2: true,
             q8: None,
+            x_written: dst_ptr != 0,
+            seeded_uses: 0,
         });
         Ok(())
     }
@@ -3264,7 +3270,14 @@ impl Engine {
                     .filter(|g| g.v2)
                     .and_then(|g| g.scratch.as_ref())
             {
-                return self.f8f4_gemm_preq(bytes, prev, m, in_f, out_f, scale, rp, true);
+                let y = self.f8f4_gemm_preq(bytes, prev, m, in_f, out_f, scale, rp, true)?;
+                if let Some(g) = group.as_mut() {
+                    g.seeded_uses += 1;
+                }
+                return Ok(y);
+            }
+            if in_group && group.as_ref().is_some_and(|g| !g.x_written) {
+                return Err("F8F4 v2: no seeded scratch for an unwritten activation".into());
             }
             let act = self.f8f4_quantize(x, m, in_f, true)?;
             let y = self.f8f4_gemm_preq(bytes, &act, m, in_f, out_f, scale, rp, true)?;

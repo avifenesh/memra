@@ -1923,6 +1923,12 @@ pub(crate) struct F8f4ActGroup {
     pub(crate) v2: bool,
     /// The activation's q8_1 pair once a dp4a weight of the group quantized it.
     pub(crate) q8: Option<(CudaSlice<i8>, CudaSlice<f32>)>,
+    /// The f32 activation itself was written. A fused norm that seeds every consumer of its
+    /// output may skip that write; then a weight of the scope that would read the f32 input (no
+    /// seeded scratch or q8_1 pair for it, an f16 operand, any other route) is an error.
+    pub(crate) x_written: bool,
+    /// Weights of the scope that took the seeded scratch or q8_1 pair (the fail-closed count).
+    pub(crate) seeded_uses: usize,
 }
 
 /// Closes the scope (and frees its scratch, stream-ordered) when the group finishes.
@@ -12018,7 +12024,14 @@ impl Engine {
         let (aq, ad) = if in_group {
             let g = group.as_mut().unwrap();
             if g.q8.is_none() {
+                if !g.x_written {
+                    return Err(
+                        "qmatvec_dp4a: no q8_1 pair for an unwritten seeded activation".into(),
+                    );
+                }
                 g.q8 = Some(self.quantize_q8_1(x, m, in_f)?);
+            } else {
+                g.seeded_uses += 1;
             }
             let (aq, ad) = g.q8.as_ref().unwrap();
             (aq, ad)
@@ -23610,6 +23623,11 @@ impl Engine {
         let any_mirror = ws
             .iter()
             .any(|w| matches!(w, GpuTensor::Quant { f16: Some(_), .. }));
+        if (any_mirror || ws.len() < 2) && self.f8f4_seed_unwritten(self.addr_f32(x)) {
+            return Err(
+                "matmul_group: the seeded activation of an unwritten input needs a scope".into(),
+            );
+        }
         if m >= 16 && any_mirror && !self.verify_exact_on() {
             let in_f = ws[0].in_features();
             let xh = self.f16_act(x, m * in_f)?;
@@ -23627,7 +23645,16 @@ impl Engine {
         // Every weight below reads the same unmodified `x`: let the F8F4 entry quantize it once.
         let _scope = (ws.len() > 1).then(|| self.f8f4_act_group_open(x, ws[0].in_features(), m));
         for w in ws {
+            let before = self.f8f4_group_seeded_uses();
             out.push(self.matmul(w, x, m)?);
+            if let Some((false, used)) = self.f8f4_group_unwritten_uses()
+                && Some(used) == before
+            {
+                return Err(
+                    "matmul_group: a weight bypassed the seeded activation of an unwritten input"
+                        .into(),
+                );
+            }
         }
         Ok(out)
     }
@@ -23646,6 +23673,33 @@ impl Engine {
             .unwrap()
             .as_ref()
             .is_some_and(|g| g.x_ptr == x_ptr)
+    }
+
+    /// Whether a pending fused-norm seed for the buffer at `x_ptr` skipped the f32 write.
+    pub fn f8f4_seed_unwritten(&self, x_ptr: u64) -> bool {
+        self.f8f4_act_seed
+            .lock()
+            .unwrap()
+            .as_ref()
+            .is_some_and(|g| g.x_ptr == x_ptr && !g.x_written)
+    }
+
+    /// The open quantize-once scope's seeded-use count.
+    fn f8f4_group_seeded_uses(&self) -> Option<usize> {
+        self.f8f4_act_group
+            .lock()
+            .unwrap()
+            .as_ref()
+            .map(|g| g.seeded_uses)
+    }
+
+    /// The open scope's (x_written, seeded-use count).
+    fn f8f4_group_unwritten_uses(&self) -> Option<(bool, usize)> {
+        self.f8f4_act_group
+            .lock()
+            .unwrap()
+            .as_ref()
+            .map(|g| (g.x_written, g.seeded_uses))
     }
 
     /// Whether a fused-norm seed is pending for the buffer at `x_ptr` ([m, in_f]).
@@ -23782,9 +23836,9 @@ impl Engine {
             .unwrap()
             .take()
             .filter(|g| g.x_ptr == x_ptr && g.in_f == in_f && g.m == m && g.v2);
-        let (scratch, q8) = match seed {
-            Some(g) => (g.scratch, g.q8),
-            None => (None, None),
+        let (scratch, q8, x_written) = match seed {
+            Some(g) => (g.scratch, g.q8, g.x_written),
+            None => (None, None, true),
         };
         let v2 = scratch.is_some();
         *self.f8f4_act_group.lock().unwrap() = Some(F8f4ActGroup {
@@ -23794,6 +23848,8 @@ impl Engine {
             scratch,
             v2,
             q8,
+            x_written,
+            seeded_uses: 0,
         });
         F8f4ActGroupGuard { engine: self }
     }
