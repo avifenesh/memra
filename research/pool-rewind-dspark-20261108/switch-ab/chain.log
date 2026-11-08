@@ -1,0 +1,38 @@
+03:04:49 switch A/B start bddf1f1a5d19
+03:05:19 start 1-on [dspark] prefix restore switch default OFF on "NVIDIA GeForce RTX 5090 Laptop GPU" (gb10=false): MEMRA_DSPARK_PREFIX_RESTORE resolves ON (whole-entry restore, s
+03:13:33 1-on c1 {"arm": "1-on", "users": 1, "max_tokens": 768, "seed": 1234, "think": 1, "temperature": 1.0, "turns": 29, "tokens": 10818, "wall_s": 349.8, "aggregate_gen_tps": 31.17, "per_user_gen_tps_median": 63.87
+03:18:02 1-on c2 rc=1
+03:18:02 1-on c2 
+03:18:35 1-on c4 rc=1
+03:18:35 1-on c4 
+03:20:39 1-on c8 rc=1
+03:20:39 1-on c8 
+03:20:54 1-on done: end 2026-11-08T03:20:54+02:00 load=22.12 25.09 23.48 cache-preferred=0 dspark-restore=14 cold-drafter-restore=0 dspark-park-skipped=39 oom-lines=0 floor: [admit-cal] boot calibration done: model="q38" route=dspark transient floor 1544MB (static was 1536MB; measured 1544MB; probe kv charge 119MB, dra
+03:21:40 start 2-off [dspark] prefix restore switch default OFF on "NVIDIA GeForce RTX 5090 Laptop GPU" (gb10=false): MEMRA_DSPARK_PREFIX_RESTORE resolves OFF (whole-entry restore, 
+03:30:50 2-off c1 {"arm": "2-off", "users": 1, "max_tokens": 768, "seed": 1234, "think": 1, "temperature": 1.0, "turns": 29, "tokens": 11549, "wall_s": 407.1, "aggregate_gen_tps": 28.58, "per_user_gen_tps_median": 61.8
+03:39:58 2-off c2 {"arm": "2-off", "users": 2, "max_tokens": 768, "seed": 1234, "think": 1, "temperature": 1.0, "turns": 29, "tokens": 11549, "wall_s": 392.3, "aggregate_gen_tps": 29.93, "per_user_gen_tps_median": 43.5
+03:41:13 2-off c4 rc=1
+03:41:13 2-off c4 
+03:43:12 2-off c8 rc=1
+03:43:12 2-off c8 
+03:43:27 2-off done: end 2026-11-08T03:43:27+02:00 load=36.14 21.66 21.12 cache-preferred=4 dspark-restore=0 cold-drafter-restore=0 dspark-park-skipped=54 oom-lines=0 floor: [admit-cal] boot calibration done: model="q38" route=dspark transient floor 1544MB (static was 1536MB; measured 1544MB; probe kv charge 119MB, draf
+03:44:17 start 3-off-c1 [dspark] prefix restore switch default OFF on "NVIDIA GeForce RTX 5090 Laptop GPU" (gb10=false): MEMRA_DSPARK_PREFIX_RESTORE resolves OFF (whole-entry restore, 
+03:53:21 3-off-c1 c1 {"arm": "3-off-c1", "users": 1, "max_tokens": 768, "seed": 1234, "think": 1, "temperature": 1.0, "turns": 29, "tokens": 11549, "wall_s": 399.6, "aggregate_gen_tps": 29.09, "per_user_gen_tps_median": 6
+03:53:36 3-off-c1 done: end 2026-11-08T03:53:36+02:00 load=13.42 18.35 20.46 cache-preferred=2 dspark-restore=0 cold-drafter-restore=0 dspark-park-skipped=27 oom-lines=0 floor: [admit-cal] boot calibration done: model="q38" route=dspark transient floor 1544MB (static was 1536MB; measured 1544MB; probe kv charge 119MB, draf
+03:54:12 start 4-on-c1 [dspark] prefix restore switch default OFF on "NVIDIA GeForce RTX 5090 Laptop GPU" (gb10=false): MEMRA_DSPARK_PREFIX_RESTORE resolves ON (whole-entry restore, s
+04:02:21 4-on-c1 c1 {"arm": "4-on-c1", "users": 1, "max_tokens": 768, "seed": 1234, "think": 1, "temperature": 1.0, "turns": 29, "tokens": 10818, "wall_s": 346.5, "aggregate_gen_tps": 31.48, "per_user_gen_tps_median": 62
+04:02:37 4-on-c1 done: end 2026-11-08T04:02:36+02:00 load=22.81 22.57 21.71 cache-preferred=0 dspark-restore=11 cold-drafter-restore=0 dspark-park-skipped=29 oom-lines=0 floor: [admit-cal] boot calibration done: model="q38" route=dspark transient floor 1544MB (static was 1536MB; measured 1544MB; probe kv charge 119MB, dra
+04:03:17 start 5-on-le8k [dspark] prefix restore switch default OFF on "NVIDIA GeForce RTX 5090 Laptop GPU" (gb10=false): MEMRA_DSPARK_PREFIX_RESTORE resolves ON (whole-entry restore, s
+04:07:09 5-on-le8k c2 {"arm": "5-on-le8k", "users": 2, "max_tokens": 768, "seed": 1234, "think": 1, "temperature": 1.0, "turns": 22, "tokens": 7052, "wall_s": 172.1, "aggregate_gen_tps": 42.46, "per_user_gen_tps_median": 4
+04:11:28 5-on-le8k c4 rc=1
+04:11:28 5-on-le8k c4 
+04:15:40 5-on-le8k c8 rc=1
+04:15:40 5-on-le8k c8 
+04:15:55 5-on-le8k done: end 2026-11-08T04:15:55+02:00 load=16.34 24.80 24.38 cache-preferred=0 dspark-restore=9 cold-drafter-restore=0 dspark-park-skipped=24 oom-lines=0 floor: [admit-cal] boot calibration done: model="q38" route=dspark transient floor 1544MB (static was 1536MB; measured 1544MB; probe kv charge 119MB, draf
+04:16:35 start 6-off-le8k [dspark] prefix restore switch default OFF on "NVIDIA GeForce RTX 5090 Laptop GPU" (gb10=false): MEMRA_DSPARK_PREFIX_RESTORE resolves OFF (whole-entry restore, 
+04:21:21 6-off-le8k c2 {"arm": "6-off-le8k", "users": 2, "max_tokens": 768, "seed": 1234, "think": 1, "temperature": 1.0, "turns": 22, "tokens": 7742, "wall_s": 221.4, "aggregate_gen_tps": 36.05, "per_user_gen_tps_median": 
+04:26:21 6-off-le8k c4 {"arm": "6-off-le8k", "users": 4, "max_tokens": 768, "seed": 1234, "think": 1, "temperature": 1.0, "turns": 22, "tokens": 7721, "wall_s": 212.2, "aggregate_gen_tps": 37.28, "per_user_gen_tps_median": 
+04:30:54 6-off-le8k c8 rc=1
+04:30:54 6-off-le8k c8 
+04:31:09 6-off-le8k done: end 2026-11-08T04:31:09+02:00 load=32.73 31.14 29.17 cache-preferred=2 dspark-restore=0 cold-drafter-restore=0 dspark-park-skipped=21 oom-lines=0 floor: [admit-cal] boot calibration done: model="q38" route=dspark transient floor 1544MB (static was 1536MB; measured 1544MB; probe kv charge 119MB, draf
+04:31:09 SWITCH_AB_DONE
