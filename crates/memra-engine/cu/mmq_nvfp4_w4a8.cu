@@ -1558,11 +1558,21 @@ static __device__ __forceinline__ int64_t f8f4v2_act_slot_w(const int64_t t) {
 
 // One smem stage of the v2/v3 mainloop: per k32 step, ldmatrix of the warp's A and B fragments, the
 // block-scale MMA into a fresh accumulator, then acc += (dA * dB) * C per element, in ascending k.
-// SHL loads the scale planes through 32-bit shared-window addresses (v3), else generic pointers.
+// sSA is the stage's A scale plane (the B plane follows it). SHL loads the scale planes through
+// 32-bit shared-window addresses (v3), else through sSA's generic address (v2).
 static __device__ __forceinline__ float4 f8f4v2_lds4(const unsigned a) {
     float4 v;
     asm volatile("ld.shared.v4.f32 {%0, %1, %2, %3}, [%4];\n" : "=f"(v.x), "=f"(v.y), "=f"(v.z), "=f"(v.w) : "r"(a));
     return v;
+}
+
+template <bool SHL>
+static __device__ __forceinline__ float4 f8f4v2_scale4(const unsigned base, const float * gbase, const int i) {
+    if constexpr (SHL) {
+        return f8f4v2_lds4(base + 4u * (unsigned) i);
+    } else {
+        return *(const float4 *) (gbase + i);
+    }
 }
 
 template <int BM, int BN, int WM, int WN, int KS, bool SHL>
@@ -1577,8 +1587,7 @@ static __device__ __forceinline__ void f8f4v2_compute_stage(
     constexpr int TN  = WCS / 8;
     constexpr int KSTEPS = KS / 32;
     const unsigned sB = sA + LY::A_BYTES;
-    const float * sSB = sSA + KSTEPS * BM;
-    const unsigned uSA = sB + LY::B_BYTES, uSB = uSA + KSTEPS * BM * 4;
+    const unsigned uSA = sB + LY::B_BYTES;
 #pragma unroll
     for (int ks = 0; ks < KSTEPS; ++ks) {
         int a[TM][4];
@@ -1586,15 +1595,13 @@ static __device__ __forceinline__ void f8f4v2_compute_stage(
         for (int m = 0; m < TM; ++m) {
             f8f4v2_ldsm_x4_s(a[m], sA + LY::swz(ar + m * 16, 2 * ks + ac));
         }
-        const float4 dav = SHL ? f8f4v2_lds4(uSA + 4u * (unsigned) (ks * BM + wm * WRS + g * 4))
-                               : *(const float4 *) (sSA + ks * BM + wm * WRS + g * 4);
+        const float4 dav = f8f4v2_scale4<SHL>(uSA, sSA, ks * BM + wm * WRS + g * 4);
         const float da[2][2] = {{dav.x, dav.y}, {dav.z, dav.w}};
 #pragma unroll
         for (int pp = 0; pp < TN / 2; ++pp) {
             int b[4];
             f8f4v2_ldsm_x4_s(b, sB + LY::swz(br + pp * 16, 2 * ks + bc));
-            const float4 dbv = SHL ? f8f4v2_lds4(uSB + 4u * (unsigned) (ks * BN + wn * WCS + (pp * 4 + tig) * 4))
-                                   : *(const float4 *) (sSB + ks * BN + wn * WCS + (pp * 4 + tig) * 4);
+            const float4 dbv = f8f4v2_scale4<SHL>(uSA, sSA, KSTEPS * BM + ks * BN + wn * WCS + (pp * 4 + tig) * 4);
             const float db[2][2] = {{dbv.x, dbv.y}, {dbv.z, dbv.w}};
 #pragma unroll
             for (int q = 0; q < 2; ++q) {
@@ -1816,40 +1823,10 @@ static __global__ void mul_mat_f8f4v2(
     const int br = wn * WCS + (lane >> 4) * 8 + (lane & 7), bc = (lane >> 3) & 1;
 
     auto compute_stage = [&](const int slot) {
-        const unsigned sA  = smem0 + slot * LY::STAGE;
-        const unsigned sB  = sA + LY::A_BYTES;
-        const float * sSA = (const float *) (f8f4v2_smem + slot * LY::STAGE + LY::A_BYTES + LY::B_BYTES);
-        const float * sSB = sSA + KSTEPS * BM;
-#pragma unroll
-        for (int ks = 0; ks < KSTEPS; ++ks) {
-            int a[TM][4];
-#pragma unroll
-            for (int m = 0; m < TM; ++m) {
-                f8f4v2_ldsm_x4_s(a[m], sA + LY::swz(ar + m * 16, 2 * ks + ac));
-            }
-            const float4 dav = *(const float4 *) (sSA + ks * BM + wm * WRS + g * 4);
-            const float da[2][2] = {{dav.x, dav.y}, {dav.z, dav.w}};
-#pragma unroll
-            for (int pp = 0; pp < TN / 2; ++pp) {
-                int b[4];
-                f8f4v2_ldsm_x4_s(b, sB + LY::swz(br + pp * 16, 2 * ks + bc));
-                const float4 dbv = *(const float4 *) (sSB + ks * BN + wn * WCS + (pp * 4 + tig) * 4);
-                const float db[2][2] = {{dbv.x, dbv.y}, {dbv.z, dbv.w}};
-#pragma unroll
-                for (int q = 0; q < 2; ++q) {
-#pragma unroll
-                    for (int m = 0; m < TM; ++m) {
-                        float C[4] = {0.0f, 0.0f, 0.0f, 0.0f};
-                        memra_mma_f8f4(C, a[m], b[2 * q + 0], b[2 * q + 1]);
-                        float * s = acc[m][2 * pp + q];
-                        s[0] += da[m][0] * db[q][0] * C[0];
-                        s[1] += da[m][0] * db[q][1] * C[1];
-                        s[2] += da[m][1] * db[q][0] * C[2];
-                        s[3] += da[m][1] * db[q][1] * C[3];
-                    }
-                }
-            }
-        }
+        f8f4v2_compute_stage<BM, BN, WM, WN, KS, false>(
+            acc, smem0 + slot * LY::STAGE,
+            (const float *) (f8f4v2_smem + slot * LY::STAGE + LY::A_BYTES + LY::B_BYTES),
+            ar, ac, br, bc, wm, wn, g, tig);
     };
 
 #pragma unroll
@@ -1866,78 +1843,8 @@ static __global__ void mul_mat_f8f4v2(
         compute_stage(kt % STAGES);
     }
     pipe_wait<0>();
-
-    if constexpr (EPI == 1) {
-        static_assert(TM == 2, "the gate/up epilogue pairs the warp span's two m16 tiles");
-        const int nf = out_f / 2;
-        __syncthreads();   // every warp is past the mainloop: the ring's smem is free
-        float * amx = (float *) f8f4v2_smem;   // [WM][BN] per-warp-span amax per token
-        // feature of (l >> 1): fb + (l >> 1) * 8 + g, fb = the warp span's first feature
-        const int fb = row0 / 2 + wm * 16;
-        float a16[TN][2];
-#pragma unroll
-        for (int p = 0; p < TN; ++p) {
-#pragma unroll
-            for (int l = 0; l < 4; ++l) {
-                const float gv = acc[0][p][l] * out_scale;
-                const float uv = acc[1][p][l] * out_scale2;
-                acc[0][p][l] = (gv / (1.0f + expf(-gv))) * uv;
-            }
-#pragma unroll
-            for (int e = 0; e < 2; ++e) {
-                float a = fmaxf(fabsf(acc[0][p][e]), fabsf(acc[0][p][e + 2]));
-                a = fmaxf(a, __shfl_xor_sync(0xFFFFFFFF, a, 4));
-                a = fmaxf(a, __shfl_xor_sync(0xFFFFFFFF, a, 8));
-                a = fmaxf(a, __shfl_xor_sync(0xFFFFFFFF, a, 16));
-                a16[p][e] = a;
-                if (g == 0) { amx[wm * BN + wn * WCS + p * 8 + 2 * tig + e] = a; }
-            }
-        }
-        __syncthreads();
-        float * act_sc_out = (float *) (act_out + (size_t) n_tokens * nf);
-        const int Tp_out = (n_tokens + 255) / 256 * 256;
-#pragma unroll
-        for (int p = 0; p < TN; ++p) {
-#pragma unroll
-            for (int e = 0; e < 2; ++e) {
-                const int tl = wn * WCS + p * 8 + 2 * tig + e;
-                const int j = tok0 + tl;
-                const float amax = fmaxf(a16[p][e], amx[(wm ^ 1) * BN + tl]);
-                const float d_inv = amax == 0.0f ? 0.0f : 448.0f / amax;
-                if (j < n_tokens && fb < nf) {
-#pragma unroll
-                    for (int h = 0; h < 2; ++h) {
-                        const uint16_t q = memra_cvt_e4m3x2(acc[0][p][e + 2 * h] * d_inv, 0.0f);
-                        act_out[(size_t) j * nf + fb + h * 8 + g] = (uint8_t) (q & 0xff);
-                    }
-                    if ((wm & 1) == 0 && g == 0) {
-                        act_sc_out[(size_t) (fb / 32) * Tp_out + f8f4v2_act_slot_w(j)] =
-                            amax == 0.0f ? 0.0f : amax / 448.0f;
-                    }
-                }
-            }
-        }
-    } else {
-#pragma unroll
-        for (int m = 0; m < TM; ++m) {
-#pragma unroll
-            for (int p = 0; p < TN; ++p) {
-#pragma unroll
-                for (int l = 0; l < 4; ++l) {
-                    const int i = row0 + wm * WRS + m * 16 + (l >> 1) * 8 + g;
-                    const int j = tok0 + wn * WCS + p * 8 + 2 * tig + (l & 1);
-                    if (i < out_f && j < n_tokens) {
-                        if constexpr (EPI == 2) {
-                            const size_t o = (size_t) j * out_f + i;
-                            dst[o] = __fadd_rn(res[o], __fmul_rn(acc[m][p][l], out_scale));
-                        } else {
-                            dst[(size_t) j * out_f + i] = acc[m][p][l] * out_scale;
-                        }
-                    }
-                }
-            }
-        }
-    }
+    f8f4v2_epilogue<BM, BN, WM, WN, EPI>(acc, f8f4v2_smem, row0, tok0, wm, wn, g, tig, out_f, n_tokens,
+                                          dst, out_scale, act_out, out_scale2, res);
 }
 
 template <int BM, int BN, int WM, int WN, int KS, int STAGES, int MINB, int EPI = 0>
@@ -1962,7 +1869,7 @@ static cudaError_t f8f4v2_launch(
 
 // ======================================================================================
 // F8F4 v3 (GB10 prefill lane, 2026-11-08; research/gb10-prefill-20261106/GEMM-V3-DESIGN.md): the v2
-// tile's numeric program, smem layout, raster and plain / residual epilogues, fed by TMA instead of per-thread
+// tile's numeric program, smem layout, raster and epilogues, fed by TMA instead of per-thread
 // cp.async and synchronized by mbarriers instead of a CTA-wide __syncthreads per stage.
 //   - The four stage operands (image rows, activation rows, both scale planes) arrive by
 //     cp.async.bulk.tensor.2d. SWIZZLE_64B on 64-byte rows puts 16-byte chunk c of row r at
@@ -1973,8 +1880,10 @@ static cudaError_t f8f4v2_launch(
 //     issues the 3-stage prologue, then at the end of iteration kt waits for every warp to leave the
 //     slot and refills it with stage kt + 3. Waits carry a suspend hint, so waiting warps sleep.
 //   - The scale planes are read through 32-bit shared-window addresses.
-// Per output element the operation sequence is v2's (f8f4v2_compute_stage, f8f4v2_epilogue), so the
-// output is bit-identical (kernel-check MMQ-F8F4-V2 cells run both mainloops against v1).
+//   - The copies name a CTA-local destination (.shared::cta): the .shared::cluster form made the
+//     compiler wrap every copy in a CTA-id check and a call slow path in the issuing thread.
+// Both mainloops run the same stage compute and epilogues (f8f4v2_compute_stage, f8f4v2_epilogue), so
+// the output is bit-identical (kernel-check MMQ-F8F4-V2* cells run both mainloops against v1).
 // ======================================================================================
 struct F8F4V3Maps { CUtensorMap a, b, sa, sb; };
 
@@ -1984,7 +1893,7 @@ static __device__ __forceinline__ void f8f4v3_wait(const unsigned b, const unsig
 }
 static __device__ __forceinline__ void f8f4v3_tma2d(const unsigned dst, const CUtensorMap * map, const int c0,
                                                     const int c1, const unsigned bar) {
-    asm volatile("cp.async.bulk.tensor.2d.shared::cluster.global.tile.mbarrier::complete_tx::bytes [%0], [%1, {%2, %3}], [%4];\n"
+    asm volatile("cp.async.bulk.tensor.2d.shared::cta.global.tile.mbarrier::complete_tx::bytes [%0], [%1, {%2, %3}], [%4];\n"
                  :: "r"(dst), "l"(map), "r"(c0), "r"(c1), "r"(bar) : "memory");
 }
 
@@ -2009,6 +1918,8 @@ static __global__ void mul_mat_f8f4v3(
     static_assert(256 % BN == 0, "token tiles stay inside the activation scale plane's Tp slots");
     static_assert(LY::STAGE % 512 == 0, "every stage starts on a 64-byte swizzle period");
 
+    // SWIZZLE_64B repeats every 512 bytes from a 512-byte-aligned stage base; the dynamic window is
+    // declared 1024-aligned (the compiler folds a runtime check of it away).
     extern __shared__ __align__(1024) uint8_t f8f4v3_smem[];
     const unsigned smem0 = (unsigned) __cvta_generic_to_shared(f8f4v3_smem);
     const unsigned bars = smem0 + STAGES * LY::STAGE;   // full[STAGES] then empty[STAGES]
@@ -2032,7 +1943,6 @@ static __global__ void mul_mat_f8f4v3(
     const int g = lane >> 2, tig = lane & 3;
 
     if (tid == 0) {
-        if ((smem0 & 1023u) != 0) { __trap(); }   // the swizzle needs 512-byte stage bases
 #pragma unroll
         for (int s = 0; s < STAGES; ++s) {
             asm volatile("mbarrier.init.shared::cta.b64 [%0], %1;\n" :: "r"(bars + 8u * s), "r"(1));
@@ -2075,8 +1985,10 @@ static __global__ void mul_mat_f8f4v3(
     for (int kt = 0; kt < nk; ++kt) {
         const int slot = kt % STAGES;
         f8f4v3_wait(bars + 8u * slot, (unsigned) (kt / STAGES) & 1u);
-        f8f4v2_compute_stage<BM, BN, WM, WN, KS, true>(acc, smem0 + slot * LY::STAGE, nullptr,
-                                                       ar, ac, br, bc, wm, wn, g, tig);
+        f8f4v2_compute_stage<BM, BN, WM, WN, KS, true>(
+            acc, smem0 + slot * LY::STAGE,
+            (const float *) (f8f4v3_smem + slot * LY::STAGE + LY::A_BYTES + LY::B_BYTES),
+            ar, ac, br, bc, wm, wn, g, tig);
         __syncwarp();
         if (lane == 0) {
             asm volatile("mbarrier.arrive.shared::cta.b64 _, [%0];\n" :: "r"(bars + 8u * (STAGES + slot)) : "memory");
@@ -2124,27 +2036,27 @@ static bool f8f4v3_map2d(CUtensorMap * m, const CUtensorMapDataType ty, const vo
                   CU_TENSOR_MAP_L2_PROMOTION_L2_256B, CU_TENSOR_MAP_FLOAT_OOB_FILL_NONE) == CUDA_SUCCESS;
 }
 
-// v3 launch with v2's arguments. Four tensor maps per call (host-side descriptor encodes, no device
-// work): image Mp x K bytes, activation n_tokens x K bytes, and the two k-major scale planes.
-// Returns cudaErrorInvalidValue when a map cannot be encoded.
+// The four tensor maps of a v3 call (host-side descriptor encodes, no device work): image Mp x K bytes,
+// activation n_tokens x K bytes, and the two k-major scale planes. False when a map cannot be
+// encoded; the caller then runs the v2 mainloop, which gives the same bits.
+template <int BM, int BN, int KS>
+static bool f8f4v3_maps(F8F4V3Maps * mp, const uint8_t * vals, const float * scales, const uint8_t * act,
+                        const float * act_sc, const int Mp, const int K, const int n_tokens, const int Tp) {
+    return f8f4v3_map2d(&mp->a, CU_TENSOR_MAP_DATA_TYPE_UINT8, vals, (uint64_t) K, (uint64_t) Mp, (uint64_t) K,
+                        KS, BM, CU_TENSOR_MAP_SWIZZLE_64B) &&
+           f8f4v3_map2d(&mp->b, CU_TENSOR_MAP_DATA_TYPE_UINT8, act, (uint64_t) K, (uint64_t) n_tokens,
+                        (uint64_t) K, KS, BN, CU_TENSOR_MAP_SWIZZLE_64B) &&
+           f8f4v3_map2d(&mp->sa, CU_TENSOR_MAP_DATA_TYPE_FLOAT32, scales, (uint64_t) Mp, (uint64_t) (K / 32),
+                        (uint64_t) Mp * 4, BM, KS / 32, CU_TENSOR_MAP_SWIZZLE_NONE) &&
+           f8f4v3_map2d(&mp->sb, CU_TENSOR_MAP_DATA_TYPE_FLOAT32, act_sc, (uint64_t) Tp, (uint64_t) (K / 32),
+                        (uint64_t) Tp * 4, BN, KS / 32, CU_TENSOR_MAP_SWIZZLE_NONE);
+}
+
 template <int BM, int BN, int WM, int WN, int KS, int STAGES, int EPI>
-static cudaError_t f8f4v3_launch(
-        const uint8_t * vals, const float * scales, const uint8_t * act, const float * act_sc, float * y,
-        const int out_f, const int Mp, const int K, const int n_tokens, const int Tp,
-        const float out_scale, const int G, cudaStream_t st,
-        uint8_t * act_out = nullptr, const float out_scale2 = 1.0f, const float * res = nullptr) {
+static cudaError_t f8f4v3_launch(const F8F4V3Maps & mp, float * y, const int out_f, const int K,
+                                 const int n_tokens, const float out_scale, const int G, cudaStream_t st,
+                                 uint8_t * act_out, const float out_scale2, const float * res) {
     using LY = f8f4v2_layout<BM, BN, KS>;
-    F8F4V3Maps mp;
-    const bool ok =
-        f8f4v3_map2d(&mp.a, CU_TENSOR_MAP_DATA_TYPE_UINT8, vals, (uint64_t) K, (uint64_t) Mp, (uint64_t) K,
-                     KS, BM, CU_TENSOR_MAP_SWIZZLE_64B) &&
-        f8f4v3_map2d(&mp.b, CU_TENSOR_MAP_DATA_TYPE_UINT8, act, (uint64_t) K, (uint64_t) n_tokens, (uint64_t) K,
-                     KS, BN, CU_TENSOR_MAP_SWIZZLE_64B) &&
-        f8f4v3_map2d(&mp.sa, CU_TENSOR_MAP_DATA_TYPE_FLOAT32, scales, (uint64_t) Mp, (uint64_t) (K / 32),
-                     (uint64_t) Mp * 4, BM, KS / 32, CU_TENSOR_MAP_SWIZZLE_NONE) &&
-        f8f4v3_map2d(&mp.sb, CU_TENSOR_MAP_DATA_TYPE_FLOAT32, act_sc, (uint64_t) Tp, (uint64_t) (K / 32),
-                     (uint64_t) Tp * 4, BN, KS / 32, CU_TENSOR_MAP_SWIZZLE_NONE);
-    if (!ok) { return cudaErrorInvalidValue; }
     constexpr size_t smem = (size_t) STAGES * LY::STAGE + 16 * STAGES;
     static_assert(EPI != 1 || (size_t) WM * BN * sizeof(float) <= (size_t) STAGES * LY::STAGE, "epilogue amax fits the ring");
     auto kern = mul_mat_f8f4v3<BM, BN, WM, WN, KS, STAGES, EPI>;
@@ -2203,11 +2115,13 @@ static int f8f4v2_preq_run(const void * W_nvfp4_blocks, const void * act_scratch
     // 128 x 128 CTA, 128 x 256, K = 32 rings of 3-7 stages and groups of 1-32 row tiles
     // (research/gb10-prefill-20261106/gemm-v2-probe/).
     // v3 (GB10): the same tile fed by TMA under mbarriers (research/gb10-prefill-20261106/
-    // GEMM-V3-DESIGN.md); bit-identical to this v2 mainloop.
-    const cudaError_t e = v3
-        ? f8f4v3_launch<256, 128, 8, 2, 64, 3, EPI>(
-              vals, scales, act, act_sc, y, out_f, Mp, in_f, n_tokens, Tp, out_scale, /*G=*/4, st,
-              nullptr, 1.0f, res)
+    // GEMM-V3-DESIGN.md); bit-identical to this v2 mainloop, which also runs when a tensor map
+    // cannot be encoded.
+    F8F4V3Maps mp;
+    const bool tma = v3 && f8f4v3_maps<256, 128, 64>(&mp, vals, scales, act, act_sc, Mp, in_f, n_tokens, Tp);
+    const cudaError_t e = tma
+        ? f8f4v3_launch<256, 128, 8, 2, 64, 3, EPI>(mp, y, out_f, in_f, n_tokens, out_scale, /*G=*/4, st, nullptr,
+                                                    1.0f, res)
         : f8f4v2_launch<256, 128, 8, 2, 64, 3, 1, EPI>(
               vals, scales, act, act_sc, y, out_f, Mp, in_f, n_tokens, Tp, out_scale, /*G=*/4, st,
               nullptr, 1.0f, res);
@@ -2244,8 +2158,8 @@ int memra_mmq_nvfp4_f8f4_v2_preq_resid(const void * W_nvfp4_blocks, const void *
 
 // The dense FFN's gate and up GEMMs and the down projection's activation quantize in one launch
 // (GB10 prefill lane, 2026-11-07): one PAIR image of the two nf x in_f weights (scratch of
-// memra_mmq_nvfp4_f8f4_v2_img_bytes(in_f, 2 * nf) bytes), the v2 mainloop on the shared v2
-// activation, and the EPI 1 epilogue writing silu(gate) * up as the down GEMM's v2 activation
+// memra_mmq_nvfp4_f8f4_v2_img_bytes(in_f, 2 * nf) bytes), the v2 mainloop (v3 != 0: the v3 mainloop,
+// same bits) on the shared v2 activation, and the EPI 1 epilogue writing silu(gate) * up as the down GEMM's v2 activation
 // (memra_mmq_nvfp4_f8f4_v2_act_bytes(nf, n_tokens) bytes at act_out). Same bytes and scales as
 // the two plain v2 GEMMs then memra_mmq_nvfp4_f8f4_v2_quantize_act_silu; gate and up f32 outputs
 // are never written. Requires nf % 32 == 0 plus the v2 shape contract for 2 * nf rows. Returns
@@ -2253,7 +2167,7 @@ int memra_mmq_nvfp4_f8f4_v2_preq_resid(const void * W_nvfp4_blocks, const void *
 int memra_mmq_nvfp4_f8f4_v2_gateup_silu(const void * W_gate, const void * W_up,
                                         const void * act_scratch, void * act_out,
                                         int in_f, int nf, int n_tokens, void * img, void * stream,
-                                        float scale_gate, float scale_up, int rp) {
+                                        float scale_gate, float scale_up, int rp, int v3) {
     if (in_f <= 0 || in_f % 256 != 0 || nf <= 0 || nf % 32 != 0 || n_tokens <= 0) { return 3998; }
     const int rows = 2 * nf;
     const int Mp = f8f4v2_mp(rows);
@@ -2281,12 +2195,15 @@ int memra_mmq_nvfp4_f8f4_v2_gateup_silu(const void * W_gate, const void * W_up,
     const uint8_t * act = (const uint8_t *) act_scratch;
     const float * act_sc = (const float *) (act + (size_t) n_tokens * in_f);
     const int Tp = (n_tokens + 255) / 256 * 256;
-    // The gate/up launch keeps the v2 mainloop: under v3 its silu epilogue's register pressure
-    // makes the mainloop spill, and it measured 0.2-1.9% slower on GB10 (in the served 32k trace
-    // 13.11 -> 13.33 ms per launch; research/gb10-prefill-20261106/gemm-v3-engine-nsys-unit1/).
-    const cudaError_t e = f8f4v2_launch<256, 128, 8, 2, 64, 3, 1, 1>(
-        vals, scales, act, act_sc, nullptr, rows, Mp, in_f, n_tokens, Tp, scale_gate, /*G=*/4, st,
-        (uint8_t *) act_out, scale_up);
+    // v3 (GB10) as in f8f4v2_preq_run; v2 when a tensor map cannot be encoded.
+    F8F4V3Maps mp;
+    const bool tma = v3 && f8f4v3_maps<256, 128, 64>(&mp, vals, scales, act, act_sc, Mp, in_f, n_tokens, Tp);
+    const cudaError_t e = tma
+        ? f8f4v3_launch<256, 128, 8, 2, 64, 3, 1>(mp, nullptr, rows, in_f, n_tokens, scale_gate, /*G=*/4, st,
+                                                  (uint8_t *) act_out, scale_up, nullptr)
+        : f8f4v2_launch<256, 128, 8, 2, 64, 3, 1, 1>(
+              vals, scales, act, act_sc, nullptr, rows, Mp, in_f, n_tokens, Tp, scale_gate, /*G=*/4, st,
+              (uint8_t *) act_out, scale_up);
     if (e != cudaSuccess) { return 3000 + (int) e; }
     return 0;
 }

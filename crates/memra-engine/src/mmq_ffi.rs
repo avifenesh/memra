@@ -976,6 +976,7 @@ unsafe extern "C" {
         scale_gate: f32,
         scale_up: f32,
         rp: i32,
+        v3: i32,
     ) -> i32;
     /// Bytes for the per-block FP8 MMQ activation scratch (delegates to the F8F4 sizing — the
     /// two arms deliberately share ONE activation format, `block_e4m3_mmq`).
@@ -3011,6 +3012,7 @@ impl Engine {
                     *gs,
                     *us,
                     *grp as i32,
+                    self.f8f4_v3_on() as i32,
                 )
             }
         };
@@ -3072,6 +3074,7 @@ impl Engine {
                         scales.0,
                         scales.1,
                         rp as i32,
+                        self.f8f4_v3_on() as i32,
                     )
                 }
             };
