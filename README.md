@@ -24,12 +24,16 @@ per-device defaults, native model support and measured serving improvements. Sup
 performance claims land with their own gates and raw receipts, not from a successful model
 load or a shared architecture name.
 
-The installer uses tagged releases. `main` can contain newer work that has not yet been
+The x86_64 installer uses tagged releases. `main` can contain newer work that has not yet been
 released or qualified on every target.
 
 ## Quick start
 
-Prebuilt binaries require Linux x86_64, glibc 2.35 or newer, an NVIDIA driver 580 or newer,
+This quick start uses the x86_64 prebuilt installer. **DGX Spark GB10 is ARM64 (`aarch64`):
+do not use this installer.** [Build from source on the GB10 host](docs/INSTALLATION.md#build-from-source);
+no GB10 prebuilt is published. The [GB10 card](docs/rigs/dgx-spark.md) has the target details.
+
+The x86_64 prebuilt binaries require Linux, glibc 2.35 or newer, an NVIDIA driver 580 or newer,
 and the CUDA 13 runtime libraries (`cudart`, `cublas` and `cublasLt`). The installer selects
 the GPU build and checks its SHA-256 digest. You do not need the CUDA toolkit or `nvcc`.
 
