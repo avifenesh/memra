@@ -22,7 +22,8 @@ follow-on: the exact extension a prompt-replaying client sends, which the pools'
 takes.
 
 usage: pool_pair_cells.py OUT CASE...   CASE = name=BINARY|ROUTE|T1,T2,T3|ENV
-  ENV may carry _TEMP=x and _SEED=n (request sampling; not server environment) and _EXPECT=rewind:P:R
+  ENV may carry _TEMP=x, _SEED=n, _FREQ=x and _PRES=x (request sampling and penalties; not server
+  environment) and _EXPECT=rewind:P:R
   (the warm boot must log at least P rewound parks, at least R resumes at the prime boundary, every
   boundary on the 32-token grid and no grid-law decline, else the case fails even when its bytes
   match) or _EXPECT=skip (it must free the session and never resume from the pool).
@@ -173,6 +174,10 @@ def case(name, binary, route, maxt, extra):
             SAMPLING["temperature"] = float(v)
         elif k == "_SEED":
             SAMPLING["seed"] = int(v)
+        elif k == "_FREQ":
+            SAMPLING["frequency_penalty"] = float(v)
+        elif k == "_PRES":
+            SAMPLING["presence_penalty"] = float(v)
         elif k == "_EXPECT":
             expect = v
         else:

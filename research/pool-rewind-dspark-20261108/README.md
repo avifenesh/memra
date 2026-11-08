@@ -46,6 +46,65 @@ is what pushes the long contexts over the idle-box limit. That is the 11-05 cell
 today's main: +8.6% at c1 and +18% at c2 le8k, and the first refusal one concurrency step sooner on
 both workloads. (b) fails the no-memory-regression bar; the device default stays OFF.
 
-## (a) The DSpark-pool rewind
+## (a) The DSpark-pool rewind (PR #1103)
 
-PENDING.
+With the restore switch off, a retiring recurrent DFlash session parks rewound to a prime-boundary
+capture it published itself: trunk KV lengths cut to `g`, the recurrent state copied from the
+prefix-cache entry that publish inserted (matched by id), the drafter cut to `g` with its window
+below `g` held by a soft keep that never grows the ring. The exact token tier resumes it, seated for
+the new request as a cold prime seats a session (sampler and seed, fresh Philox counters, penalty
+window, verify ladder, the request's round guard), and primes the rest from `g`. A resumed prime
+captures the new prompt's grid cut, so the next turn has a target. Binary 608404e003 (sm_120a,
+sha256 a0c652bc8656), base main c347e782d2 (bddf1f1a5d19).
+
+### Exactness (`pairs/`, 2026-11-08 08:47-09:11)
+
+`pool_pair_cells.py` (this directory's copy adds sampled and penalized requests and a path check):
+one warm boot serves a three-turn chat in order, one cold boot per turn 2 and turn 3. Qwen3.8-27B
+NVFP4 + Q5_K GGUF + DFlash2, context 8,192, two sessions, prefix cache at its derived size, device
+defaults; thinking off. A case passes only if turns 2 and 3 are byte-equal to cold AND the warm log
+shows the expected path (`_EXPECT=rewind:P:R`: at least P rewound parks, R prime-boundary resumes,
+every boundary on the 32-token grid, no grid-law decline; `_EXPECT=skip`: every park skipped, no
+pool resume).
+
+| case | route | max_tokens | sampling / env | turn 3 warm / cold chars | bytes | rewound parks (fed -> g) | prime-boundary resumes (g) | skips |
+|---|---|---|---|---:|---|---|---|---:|
+| dspark-1024-rw | chat | 96 / 1024 / 512 | greedy | 371 / 371 | pass | 3082->2976, 3114->3072, 3219->3104 | 3072 (parked 3114) | 0 |
+| dspark-1024-t1-rw | chat | 96 / 1024 / 512 | T=1 seed 1234 | 651 / 651 | pass | 3073->2976, 3105->3072, 3281->3104 | 3072 (parked 3105) | 0 |
+| dspark-chain-rw | chat | 1536 / 448 / 448 | greedy | 371 / 371 | pass | 3082->2976, 3114->3072, 3219->3104 | 2976 (parked 3082), 3072 (parked 3114) | 0 |
+| dspark-chain-t1-rw | chat | 1536 / 448 / 448 | T=1 seed 1234 | 651 / 651 | pass | 3073->2976, 3105->3072, 3281->3104 | 2976 (parked 3073), 3072 (parked 3105) | 0 |
+| dspark-1024-t1-pen-rw | chat | 96 / 1024 / 512 | T=1, frequency 0.3, presence 0.2 | 1372 / 1372 | pass | 3088->2976, 3131->3072, 3371->3136 | 3072 (parked 3131) | 0 |
+| dspark-chain-t1-pen-rw | chat | 1536 / 448 / 448 | T=1, frequency 0.3, presence 0.2 | 330 / 330 | pass | 3101->2976, 3143->3104, 3228->3136 | 2976 (parked 3101), 3104 (parked 3143) | 0 |
+| dspark-raw-1024-rw | raw | 96 / 1024 / 512 | greedy | 157 / 157 | pass | 3068->2944, 3099->3040, 3144->3072 | 3040 (parked 3099) | 0 |
+| dspark-raw-chain-t1-rw | raw | 1536 / 448 / 448 | T=1 seed 1234 | 131 / 131 | pass | 3003->2944, 3067->2976, 3097->3040 | 2944 (parked 3003), 2976 (parked 3067) | 0 |
+| dspark-256-nopc-aff0-rw | chat | 96 / 256 / 96 | prefix cache off, MEMRA_AFFINITY=0 | 371 / 371 | pass | - | - | 3 |
+
+Turn 2 is byte-equal in every case too. In the chain cases turn 3 resumes the session turn 2 itself
+resumed and parked again (rewound to its resume-capture cut): the second-generation path. The
+96 / 1024 / 512 shape is the one that left the cold text before memra#1093 (383 vs 371 characters at
+3,114 of 3,144); it now resumes at 3,072 and primes 72 rows. With the prefix cache off no entry
+exists to rewind to, so the session is freed (`dspark-park SKIPPED`), as on main.
+
+### What it wins back (`ttft/`, 09:01-09:06)
+
+`../pool-resume-cost-20261107/cost_cell.py`, shape `chat-dspark-long` (the chat at 96 / 1024 / 512,
+3 distinct conversations per boot, greedy, thinking off, streamed), base main against the fix, ABBA,
+one boot per call. Host load 25 from other sessions.
+
+| turn 3 | TTFT median (range), 6 requests | path |
+|---|---:|---|
+| main (c347e782d2) | 2.462 s (2.335-2.754) | cold DFlash prime of the 3,006-3,017-token prompt |
+| fix (608404e003) | 0.275 s (0.265-0.284) | `dspark-reuse: 2944 committed tokens resumed at the prime boundary` |
+
+Completion lengths are the same in both arms (69, 117 and 79 tokens per conversation). Turn 2 is a
+cold prime in both arms (turn 1's park is too small for its cap): 2.354 s against 2.571 s, ranges
+overlapping (2.27-2.70 and 2.35-2.74). The inexact parked-end resume this replaces measured 0.163 s
+(`../pool-resume-cost-20261107/run-3-dspark-long/`): the exact rewind primes from the turn's grid cut
+(2,944) instead of the parked end, about 70 rows against 30. With the switch on the same turn
+measured 0.277 s by DSPARK restore (`../pool-resume-cost-20261107/run-4-switch/`), so (a) wins back
+the same speed as (b) on this shape, on the switch-off default.
+
+### Memory (`mem/`)
+
+PENDING: the full and le8k agentic workloads at c1..c8, main against the fix, single runs per arm
+(`mem_ab.sh`).
