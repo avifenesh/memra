@@ -7379,6 +7379,11 @@ impl Engine {
     ) -> Result<(), Box<dyn std::error::Error>> {
         let kc = &mut kc.kv_view_mut();
         let vc = &mut vc.kv_view_mut();
+        let stream = self.gpu.stream();
+        ensure_tensor_stream_device(k_rows, &stream, "append_kv_quantized_rows.k_rows")?;
+        ensure_tensor_stream_device(v_rows, &stream, "append_kv_quantized_rows.v_rows")?;
+        ensure_tensor_stream_device(kc, &stream, "append_kv_quantized_rows.k_cache")?;
+        ensure_tensor_stream_device(vc, &stream, "append_kv_quantized_rows.v_cache")?;
 
         if std::env::var("MEMRA_PRIME_APPEND_LOOP").is_ok() {
             for i in 0..t {

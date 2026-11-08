@@ -5088,7 +5088,7 @@ impl HybridModel {
         let mut a_norm = e.zeros(t * di)?;
         e.rms_norm(&inp_sa, mtp.attn_norm.float_data(), &mut a_norm, di, t, eps)?;
 
-        // op 6 (K/V half): wk/wv + k_norm + rope + per-row quantized append. No wq/attention —
+        // op 6 (K/V half): wk/wv + k_norm + rope + one batched quantized append. No wq/attention —
         // the fill only has to leave correct K/V rows behind for later chains to attend over.
         let n_head_kv = mtp
             .geom
@@ -5146,10 +5146,32 @@ impl HybridModel {
             .map(|ring| memra_kv::swa_retain_from(pos0, ring.window(), ring.base()))
             .unwrap_or(0);
         let write_row = e.prepare_kv_append(kv, retain_from, t)?;
-        // One launch for the T rows (the batched kernel's grid height bounds T; every prime fill
-        // chunk is under it): each written row is bit-identical to a per-row append
-        // (kernel-check "kv append rows-vs-loop bit-identity"). Longer fills keep the per-row loop.
-        if t <= crate::hybrid_forward::CUDA_GRID_YZ_MAX {
+        // One launch for the T rows: each written row is bit-identical to a per-row append
+        // (kernel-check "kv append rows-vs-loop bit-identity"). The batched kernel's grid height
+        // bounds T (prime and restore fills are capped below it); it reads k/v by row index, so
+        // their widths must be the plane's (the per-row slices used to fail on a mismatch).
+        if t > crate::hybrid_forward::CUDA_GRID_YZ_MAX {
+            return Err(format!(
+                "mtp_kv_fill: {t} rows exceed the batched append's grid height {}",
+                crate::hybrid_forward::CUDA_GRID_YZ_MAX
+            )
+            .into());
+        }
+        if k.len() != t * kv.kv_dim_k || v.len() != t * kv.kv_dim_v {
+            return Err(format!(
+                "mtp_kv_fill: K/V rows {}x{} / {}x{} do not match the plane widths {} / {}",
+                t,
+                k.len() / t.max(1),
+                t,
+                v.len() / t.max(1),
+                kv.kv_dim_k,
+                kv.kv_dim_v
+            )
+            .into());
+        }
+        // A live prime-graph capture would route the rows kernel through the trunk's table.
+        debug_assert!(crate::qwen_prime_graph::current().is_none());
+        if t > 0 {
             e.append_kv_quantized_rows(
                 &k,
                 &v,
@@ -5163,23 +5185,6 @@ impl HybridModel {
                 kv.v_tok_bytes,
                 false,
             )?;
-        } else {
-            for i in 0..t {
-                let k_row = k.slice(i * kv.kv_dim_k..(i + 1) * kv.kv_dim_k);
-                let v_row = v.slice(i * kv.kv_dim_v..(i + 1) * kv.kv_dim_v);
-                e.append_kv_quantized_view(
-                    &k_row,
-                    &v_row,
-                    &mut kv.k,
-                    &mut kv.v,
-                    write_row + i,
-                    kv.kv_dim_k,
-                    kv.kv_dim_v,
-                    kv.k_tok_bytes,
-                    kv.v_tok_bytes,
-                    false,
-                )?;
-            }
         }
         kv.len = pos0 + t;
         e.set_i32_one(&mut kv.len_d, kv.len as i32)?;

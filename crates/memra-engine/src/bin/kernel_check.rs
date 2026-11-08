@@ -8567,15 +8567,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // --- BATCHED PROMPT PRIME: batched-rows KV append vs T sequential per-token appends must be
     // BYTE-IDENTICAL (same warp program per (block,token); this pins the (b,tt) grid mapping +
-    // token-major row addressing against refactors). Non-trivial T and a non-zero slot base t0.
-    {
-        let nblk = 4usize;
+    // token-major row addressing against refactors). Non-trivial T and a non-zero slot base t0;
+    // the second case is the MTP prime fill's shape (4,096 rows of kv_dim 1,024 at a 260k slot).
+    for (nblk, t0, t) in [(4usize, 3usize, 7usize), (32, 255_855, 4096)] {
         let kv_dim_k = nblk * 32;
         let kv_dim_v = nblk * 32;
         let (kbb, vbb) = memra_engine::kv_blk_bytes();
         let k_tok_bytes = (kv_dim_k / 32) * kbb;
         let v_tok_bytes = (kv_dim_v / 32) * vbb;
-        let (t0, t) = (3usize, 7usize);
         let cap = t0 + t;
         let kin: Vec<f32> = (0..t * kv_dim_k).map(|i| pr(i + 301) * 1.1).collect();
         let vin: Vec<f32> = (0..t * kv_dim_v).map(|i| pr(i + 401) * 0.6 - 0.1).collect();
@@ -8626,8 +8625,44 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .filter(|&i| vr[i] != vb[i])
             .count();
         println!(
-            "kv append rows-vs-loop bit-identity (T={t}, t0={t0}): k_mismatch={kmis} v_mismatch={vmis} {}",
+            "kv append rows-vs-loop bit-identity (T={t}, t0={t0}, kv_dim={kv_dim_k}): k_mismatch={kmis} v_mismatch={vmis} {}",
             if kmis == 0 && vmis == 0 {
+                "OK"
+            } else {
+                fails += 1;
+                "FAIL"
+            }
+        );
+    }
+
+    // --- MTP prime fill concat: two strided copies (`copy_2d_dtod_async`) vs 2T row copies
+    // (`copy_view_into`) into the token-major [T, 2n] [e_norm ; h_norm] buffer: BYTE-IDENTICAL at
+    // the fill's shape (n_embd 5,120, 4,096 rows).
+    {
+        let (n, t) = (5120usize, 4096usize);
+        let a = e.htod(
+            &(0..t * n)
+                .map(|i| pr(i + 501) * 3.0 - 1.0)
+                .collect::<Vec<f32>>(),
+        )?;
+        let b = e.htod(&(0..t * n).map(|i| pr(i + 601) * 0.5).collect::<Vec<f32>>())?;
+        let mut rows = e.zeros(t * 2 * n)?;
+        for i in 0..t {
+            e.copy_view_into(&mut rows, i * 2 * n, &a.slice(i * n..(i + 1) * n), n)?;
+            e.copy_view_into(&mut rows, i * 2 * n + n, &b.slice(i * n..(i + 1) * n), n)?;
+        }
+        let mut strided = e.zeros(t * 2 * n)?;
+        e.copy_2d_dtod_async(&mut strided, 0, 2 * n, &a, n, n, t)?;
+        e.copy_2d_dtod_async(&mut strided, n, 2 * n, &b, n, n, t)?;
+        let (r, s2) = (e.dtoh(&rows)?, e.dtoh(&strided)?);
+        let mis = r
+            .iter()
+            .zip(&s2)
+            .filter(|(x, y)| x.to_bits() != y.to_bits())
+            .count();
+        println!(
+            "mtp fill concat strided-vs-rows bit-identity (T={t}, n={n}): mismatch={mis} {}",
+            if mis == 0 {
                 "OK"
             } else {
                 fails += 1;
