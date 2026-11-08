@@ -13,4 +13,5 @@ and the fused gate/up silu launch runs v3 again. No timing runs happened in this
   single runs: 3.258 / 3.395 / 3.899 s. The landed binary measured 3.361 / 3.429 / 3.926 s in its own
   window.
 - **16k argmax-margin gate:** stopped at the lease end before its v3 arm finished (`stop-gates.sh`,
-  `stop-gates.out`). It runs again with the served A/B (ledger row 45).
+  `stop-gates.out`). It ran again on unit 2 with the served campaign and passed, with a probe table
+  byte-identical to #1102's (`gemm-v3-cta-served-unit2/argmax16k-v3/`).

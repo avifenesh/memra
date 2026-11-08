@@ -1,9 +1,10 @@
 # GB10 F8F4 prefill GEMM v3: the v2 tile fed by TMA under mbarriers (2026-11-08)
 
-**Status:** decided on one device class (unified-memory 120a family), measured on DGX Spark
-unit 1; the unit 2 confirmation follows as ledger row 43. The plain and residual-epilogue GEMMs that take the v2 tile run the v3 mainloop; the fused
-gate/up silu launch keeps v2. `MEMRA_MMQ_F8F4_V3=0` is the rollback seam. Discrete cards keep v1
-(v2 is off there).
+**Status:** decided on one device class (unified-memory 120a family), measured on both DGX Spark
+units. Every GEMM that takes the v2 tile runs the v3 mainloop, the fused gate/up silu launch
+included, with CTA-local TMA copies (the follow-up below; #1102 first shipped v3 for the plain and
+residual launches only). `MEMRA_MMQ_F8F4_V3=0` is the rollback seam. Discrete cards keep v1 (v2 is
+off there).
 
 ## Question
 
@@ -16,25 +17,26 @@ same numeric program?
 
 ## Decision
 
-`mul_mat_f8f4v3` replaces the v2 mainloop in `memra_mmq_nvfp4_f8f4_v2_preq` and
-`_v2_preq_resid` (both take `v3`, from `MEMRA_MMQ_F8F4_V3`, on for GB10):
+`mul_mat_f8f4v3` replaces the v2 mainloop in `memra_mmq_nvfp4_f8f4_v2_preq`,
+`_v2_gateup_silu` and `_v2_preq_resid` (all take `v3`, from `MEMRA_MMQ_F8F4_V3`, on for GB10):
 
 - the same 256 x 128 tile, 16 warps, K = 64 x 3 stages, 4-row-tile raster groups, image pre-pass and
   activation layout;
 - per stage, thread 0 loads the image rows, activation rows and both scale planes with
-  `cp.async.bulk.tensor.2d` into v2's swizzled smem (SWIZZLE_64B on 64-byte rows is
+  `cp.async.bulk.tensor.2d` (CTA-local destination) into v2's swizzled smem (SWIZZLE_64B on 64-byte rows is
   `f8f4v2_layout<.., 64>::swz`); four tensor maps are encoded per call on the host;
 - one full (expect_tx) and one empty (one arrival per warp) mbarrier per slot replace the per-stage
   `__syncthreads`; thread 0 refills a slot with stage kt + 3 once every warp has left it; waits carry a
   suspend hint;
 - the scale planes load through shared-window addresses;
-- the stage compute and the plain and residual epilogues are shared device functions
-  (`f8f4v2_compute_stage`, `f8f4v2_epilogue`) holding v2's operation sequence, so every output is
-  bit-identical; the v2 kernels' SASS is unchanged (per-function compare).
+- both mainloops run the same stage compute and epilogues (`f8f4v2_compute_stage`,
+  `f8f4v2_epilogue`), so every output is bit-identical; a call whose tensor maps cannot be encoded
+  runs v2; the map encoder is resolved through the runtime (`cudaGetDriverEntryPointByVersion`), so
+  no engine binary links libcuda.
 
-`memra_mmq_nvfp4_f8f4_v2_gateup_silu` keeps the v2 mainloop: under v3 its silu epilogue raises the
-register pressure until the mainloop spills (CUDA 13.0: 28 / 32 B against none for the plain
-epilogue), and it ran slower (below).
+#1102 kept `memra_mmq_nvfp4_f8f4_v2_gateup_silu` on v2: with `.shared::cluster` copies, its silu
+epilogue raised the register pressure until the mainloop spilled (CUDA 13.0: 28 / 32 B against none
+for the plain epilogue), and it ran slower (below). The CTA-local copies reversed that (follow-up).
 
 ## Evidence
 
@@ -50,7 +52,9 @@ per boot ([`gemm-v3-engine-final-unit1/served/`](../../research/gb10-prefill-202
 
 The answer text is identical in all four boots, needles found, no request error. The gains (0.37 /
 1.29 / 2.97 s) are at least six times the largest within-arm spread at each length (0.035 / 0.12 /
-0.48 s). The second unit's confirmation is ledger row 43.
+0.48 s). On unit 2 (ledger row 43, cells 1 and 6 against 2 and 5 of the campaign below) the same
+binary gave 24.388 -> 24.050 s (-1.38%), 127.532 -> 126.141 s (-1.09%) and 333.484 -> 330.406 s
+(-0.92%).
 
 First campaign, every v2 entry on v3 including gate/up (unit 1, `3146763781` on main `e7b375532d`,
 [`gemm-v3-engine-served-unit1/`](../../research/gb10-prefill-20261106/gemm-v3-engine-served-unit1/)):
@@ -80,9 +84,52 @@ PASS; run-spec K=1..8 self-consistency PASS (acceptance 17/98 and 17/112, as bef
 byte-identical (`a42e74b3f28cbd96`); run-gen pp3855 logits are identical with v3, `MEMRA_MMQ_F8F4_V3=0`
 and `MEMRA_MMQ_F8F4_V2=0` (`f81e969042a7e155`), at 3.361 / 3.429 / 3.926 s.
 
+## Follow-up: CTA-local copies, gate/up on v3 (2026-11-08, ledger rows 44-45)
+
+The independent review of #1102 traced the issuing thread's cost to the copy form. With a
+`.shared::cluster` destination, the compiler wraps every copy in a CTA-id check and a call slow path
+(16 local stores). The `.shared::cta` form compiles without either: the v3 plain kernel drops from
+1,688 to 1,152 instructions with the same 128 FFMA, 192 FMUL and 32 QMMA (CUDA 13.4 SASS).
+
+Per launch on unit 1, drivers over the engine entries with the image pass included, 4 runs per cell
+([`gemm-v3-cta-probe-unit1/`](../../research/gb10-prefill-20261106/gemm-v3-cta-probe-unit1/)):
+
+- The plain and residual launches gain another 1.7-7.1% over the landed v3. down gains the most:
+  +6.2 / +7.1% at T 2,048 / 4,096.
+- The fused gate/up silu launch on the CTA form runs 12.6 / 11.4% faster than on v2. The cluster form
+  was 1.2 / 0.2% slower.
+
+So the follow-up puts gate/up back on v3. Under CUDA 13.0 its v3 kernel spills 12 / 12 B. The cluster
+form spilled 28 / 32 B, and v2's gate/up kernel spills 12 / 16 B. v2 now calls the same stage
+compute and epilogues, so one copy of the numeric program serves both mainloops. A call whose
+tensor maps cannot be encoded runs v2.
+
+Exactness on unit 1 ([`gemm-v3-cta-engine-unit1/`](../../research/gb10-prefill-20261106/gemm-v3-cta-engine-unit1/)):
+- kernel-check is ALL GREEN, with GATEUP under both mainloops.
+- pp3855 logits are identical with v3, `V3=0` and `V2=0`, and to #1102's (`f81e969042a7e155`).
+
+- The 16k argmax-margin gate PASSES on unit 2: flips 3, budget 3, every flip margin-explained. Its
+  probe table is byte-identical to #1102's (`a42e74b3f28cbd96`, `gemm-v3-cta-served-unit2/argmax16k-v3/`).
+
+Served on unit 2, one campaign, cells B L N N L B, one fresh boot per cell
+([`gemm-v3-cta-served-unit2/`](../../research/gb10-prefill-20261106/gemm-v3-cta-served-unit2/)).
+B and L are #1102's binary (B = `MEMRA_MMQ_F8F4_V3=0`), and N is the follow-up's binary, with the
+same server code:
+
+| arm | 32,784 tokens | 131,051 tokens | 259,951 tokens |
+|---|---|---|---|
+| v2 mainloop (B) | 24.405, 24.371 s | 127.080, 127.985 s | 333.763, 333.204 s |
+| #1102 (L) | 24.054, 24.047 s | 126.137, 126.144 s | 330.659, 330.153 s |
+| follow-up (N) | 23.054, 23.019 s (-4.22% vs L) | 121.990, 121.979 s (-3.29%) | 322.052, 322.270 s (-2.50%) |
+
+Against the v2 mainloop, N is -5.54 / -4.35 / -3.40%. The answer text is identical in all six
+boots, needles found, no request error. The gains over L (1.01 / 4.16 / 8.25 s) are at least 16 times
+the largest within-arm spread at each length (0.035 / 0.011 / 0.506 s).
+
 ## Rejected
 
-- v3 for the fused gate/up silu launch: slower than v2 (above).
+- v3 for the fused gate/up silu launch with `.shared::cluster` copies: slower than v2 (above);
+  superseded by the CTA-local copies.
 - From the design lane (ledger rows 34-37): issuing at the top of the iteration (+2.0% in the probe),
   the last warp out refilling the slot (+2.8%), issuing after compute into the older slot (-1.2 / +2.1%),
   a producer warpgroup with `setmaxnreg` (the 16 consumer warps keep only 120 registers and spill:
