@@ -1,0 +1,11 @@
+kernel-check rc=0 ALL GREEN (125 cells, 5 skipped)
+sdpa_naive_w_lo[longctx Tkv=16392 win=2048]: legacy_launch=FAILS(expected) clipped_maxdiff=4.19e-9 OK
+sdpa_naive_gmem[longctx Tkv=16392]: legacy_launch=FAILS(expected) gmem_maxdiff=4.19e-9 OK
+kv append rows-vs-loop bit-identity (T=7, t0=3, kv_dim=128): k_mismatch=0 v_mismatch=0 OK
+kv append rows-vs-loop bit-identity (T=4096, t0=255855, kv_dim=1024): k_mismatch=0 v_mismatch=0 OK
+mtp fill concat strided-vs-rows bit-identity (T=4096, n=5120): mismatch=0 OK
+argmax rc=0   SUMMARY flips=0 bad=0   PASS: every prefill/decode argmax flip is explained by a margin the config spread covers 
+run-spec B rc=0   acceptance: 17/98 = 17.3%   self-consistency: PASS (identical to plain target)   acceptance: 17/112 = 15.2%   self-consistency: PASS (identical to plain target) === SELF-CONSISTENCY PASS === 
+run-spec C rc=0   acceptance: 17/98 = 17.3%   self-consistency: PASS (identical to plain target)   acceptance: 17/112 = 15.2%   self-consistency: PASS (identical to plain target) === SELF-CONSISTENCY PASS === 
+run-spec acceptance B vs C: IDENTICAL
+GATES-FILL-DONE

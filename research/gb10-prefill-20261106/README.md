@@ -524,9 +524,10 @@ The phases of the request (timestamped server log, `ts-probe-main-unit1/`, unpro
   identical in every boot. Decode (40 tokens after the first, total minus TTFT) is flat: 1.480 /
   1.479 / 1.487 / 1.483 s at 32k and 2.726 / 2.726 / 2.722 / 2.722 s at 131k. Thermal regime under
   load, every cell: SM 2,112-2,184 MHz (median 2,151-2,158), mean 78.8-80.8 C, max 86-87 C.
-  Unit 2 on the final head (row 51, partial: 1 B and 2 V boots of a B V V B B V campaign that
-  yielded the unit to a landing record): 23.133 -> 22.729 s at 32k (-1.75%), 122.139 -> 120.544 s
-  at 131k (-1.31%), 322.950 -> 318.940 s at 260k (-1.24%), the same answers.
+  Unit 2 on the final head (row 51, B V V B B V, 3 boots per arm, complete separation):
+  23.133 -> 22.728 s at 32k (-1.75%), 122.112 -> 120.453 s at 131k (-1.36%), 322.021 -> 318.783 s
+  at 260k (-1.01%), the same answers; kernel-check ALL GREEN with the new fill-shape cells,
+  argmax-margin PASS, run-spec acceptance identical to the base.
 
 ### Next (round 4)
 
