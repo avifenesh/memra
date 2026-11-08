@@ -238,6 +238,65 @@ class GateToolResearchInputs(unittest.TestCase):
         self.assertEqual(missed, [], "add a gate rule in tools/change-impact.toml for these")
 
 
+DOCS_LITERAL = re.compile(r"(?:[A-Za-z0-9_.-]+/)*[A-Za-z0-9_.-]+\.md|\b(?:LICENSE[A-Za-z0-9_.-]*|NOTICE)\b|"
+                          r"(?<![A-Za-z0-9_.-])\.(?:gitignore|ignore|gitattributes)\b")
+
+
+def docs_reads(path, text, docs):
+    """The tracked docs-class files a tool's code lines name: a literal equal to one, or a trailing
+    path of one (`Path("docs") / "FLAGS.md"` names `docs/FLAGS.md`). Comment lines and Python
+    docstrings are left out."""
+    found, in_doc = [], False
+    for line in text.splitlines():
+        code = line.strip()
+        if path.endswith(".py") and code.count('"""') % 2:
+            in_doc = not in_doc
+            continue
+        if in_doc or not code or code.startswith(("#", "//", "///", "*")):
+            continue
+        for literal in DOCS_LITERAL.findall(line):
+            literal = literal.lstrip("./") if literal.startswith("./") else literal
+            hits = [d for d in docs if d == literal or d.endswith("/" + literal)]
+            found.extend(f"{path}: {d}" for d in hits)
+    return found
+
+
+class GateToolDocsInputs(unittest.TestCase):
+    """The docs counterpart (cell_evidence.research_drift admits docs drift too): a tracked docs-class
+    file that a gate tool reads when a device record is produced would change what the record
+    measured. Left out: the pre-push hook (its docs reads are the flags and registry censuses, run on
+    the pushed tree at every push), the tag-only qualify-release.py and the Step PRO gate."""
+
+    PUSH_TIME = ("tools/hooks/pre-push", "tools/qualify-release.py", "tools/check_hardware_gate.py")
+    # Literals that name a docs file without reading it.
+    NOT_READS = {"tools/cell_evidence.py: .gitattributes": "the DRIFT_NEVER entry"}
+
+    def test_the_scan_sees_the_read_forms(self):
+        docs = {"docs/FLAGS.md", "docs/decisions/PINNED.md", "README.md", "LICENSE", ".gitattributes"}
+        lines = ['cat docs/FLAGS.md', 'p = Path("docs") / "FLAGS.md"', "cat docs/decisions/PINNED.md",
+                 "open('README.md')", "cat LICENSE", "git check-attr -a -- x  # .gitattributes",
+                 "x = open('.gitattributes')", "# cat docs/FLAGS.md", "echo VERDICT.md"]
+        found = docs_reads("tools/x.sh", "\n".join(lines), docs)
+        self.assertEqual(sorted(set(found)), sorted({
+            "tools/x.sh: docs/FLAGS.md", "tools/x.sh: docs/decisions/PINNED.md", "tools/x.sh: README.md",
+            "tools/x.sh: LICENSE", "tools/x.sh: .gitattributes"}))
+
+    def test_no_device_phase_gate_tool_reads_a_tracked_docs_file(self):
+        rules = ci.load_rules(RULES_TEXT, MAIN)
+        gate = [r["pattern"] for r in rules["rule"] if r.get("class") == "gate"]
+        tracked = subprocess.run(["git", "-C", str(ROOT), "ls-files"], capture_output=True,
+                                 text=True, check=True).stdout.split()
+        docs = {p for p in tracked if ci.classify_file(change(p), rules, MAIN)["class"] == "docs"
+                or re.search(r"^(docs/.*|[^/]+)\.md$|^(LICENSE[^/]*|NOTICE|\.gitignore|\.ignore|\.gitattributes)$", p)}
+        missed = []
+        for path in sorted(p for p in tracked if p.startswith("tools/")):
+            if path in self.PUSH_TIME or path.endswith(".toml") or not any(re.search(g, path) for g in gate):
+                continue
+            missed += [m for m in docs_reads(path, (ROOT / path).read_text(errors="replace"), docs)
+                       if m not in self.NOT_READS]
+        self.assertEqual(sorted(set(missed)), [], "add a gate rule in tools/change-impact.toml for these")
+
+
 class DiffParse(unittest.TestCase):
     def test_header_lookalike_content_is_still_content(self):
         import tempfile

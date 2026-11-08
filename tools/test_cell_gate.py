@@ -369,12 +369,38 @@ class CellGate(unittest.TestCase):
             code, banked)
         out = self.f.push(oid=head, base=main_tip)
         self.assertIn("CELL-QUALIFIED", out)
-        self.assertIn("research path", out)
+        self.assertIn("research or docs paths", out)
+
+    def test_a_docs_only_main_move_keeps_the_record(self):
+        # 2026-11-08: a README commit on main voided two pending landing records.
+        code, banked = self.kernel_lane_with_record()
+        main_tip, head = self.rebase_onto(
+            {"README.md": "# fixture, edited\n", "docs/guide.md": "# a guide\n",
+             "research/other-lane/README.md": "# x\n"},
+            code, banked)
+        out = self.f.push(oid=head, base=main_tip)
+        self.assertIn("CELL-QUALIFIED", out)
+        self.assertIn("research or docs paths", out)
+        self.assertEqual(ce.research_drift(self.f.repo, code, head),
+                         ("README.md", "docs/guide.md", "research/other-lane/README.md"))
+
+    def test_a_docs_file_a_crate_reads_still_voids_the_record(self):
+        # build.rs reading docs/FLAGS.md is the real case; the include census sees the read.
+        self.f.write("docs/table.md", "| a |\n")
+        self.f.write("crates/memra-server/src/worker.rs",
+                     'pub fn step() { let _ = include_str!("../../../docs/table.md"); }\n')
+        self.f.base = self.f.commit("a crate reads a docs file")
+        code, banked = self.kernel_lane_with_record()
+        main_tip, head = self.rebase_onto({"docs/table.md": "| b |\n"}, code, banked)
+        self.assertIsNone(ce.research_drift(self.f.repo, code, head))
+        with self.assertRaisesRegex(q.GateError, "needs battery"):
+            self.f.push(oid=head, base=main_tip)
 
     def test_a_non_research_main_move_still_voids_the_record(self):
         for change in ({"tools/fast-gate/plan.py": "print(2)\n"},
                        {"crates/memra-engine/src/lib.rs": "pub fn f() { let _ = 1; }\n"},
-                       {"research/other-lane/README.md": "# x\n", "README.md": "# fixture, edited\n"}):
+                       {"research/other-lane/README.md": "# x\n", "docs/data.toml": "x = 1\n"},
+                       {".gitattributes": "*.rs text eol=crlf\n"}):
             with self.subTest(change=sorted(change)), tempfile.TemporaryDirectory() as root:
                 self.f = Repo(Path(root))
                 code, banked = self.kernel_lane_with_record()
@@ -411,6 +437,18 @@ class CellGate(unittest.TestCase):
         b = self.f.commit("research")
         with mock.patch.object(ce.ci, "crate_inputs_at", return_value=({}, None)):
             self.assertIsNone(ce.research_drift(self.f.repo, a, b))
+
+    def test_the_name_prefilter_refuses_code_before_the_classifier_runs(self):
+        # A stale record must not cost the include census on every push: a changed name whose
+        # rule is not research or docs refuses before `impact_between` is asked.
+        a = self.f.head()
+        self.f.write("tools/x.py", "print(1)\n")
+        b = self.f.commit("tools")
+        with mock.patch.object(ce.ci, "impact_between", side_effect=AssertionError("classifier ran")):
+            self.assertIsNone(ce.research_drift(self.f.repo, a, b))
+        self.f.write("docs/guide.md", "# guide\n")
+        c = self.f.commit("docs")
+        self.assertEqual(ce.research_drift(self.f.repo, b, c), ("docs/guide.md",))
 
     def test_research_drift_names_only_unread_research_paths(self):
         a = self.f.head()

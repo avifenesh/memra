@@ -119,16 +119,20 @@ binary digests and every raw log. The gate re-judges the raw logs; it never trus
 verdict field. Records live under `research/release-qualification/cells/`, which is
 excluded from the source-input digest, so committing one does not change what it
 qualifies. A rebase changes the inputs and needs a new record, with one exception. Every
-input that differs between the record's tested commit and the candidate may be a path under
-`research/` that the impact classifier calls research (`cell_evidence.research_drift`): no
-crate reads it (the CI include census, which must answer at both commits) and no gate tool reads
-it (a `gate` rule; `tools/test_change_impact.py` keeps those rules complete against the gate
-tools' text). Then the record still proves its cells, and `check` names the drift. The same rule
-admits a perf A/B whose base differs from the push base only that way. Before it, a
-research-only commit on main voided every pending landing record. A change anywhere else
-(engine, server, tools, docs, a research file a crate or a gate tool reads) still voids it. The
-tested commit must be present to compare (fetch it, or keep the pre-rebase tip). This applies to
-cell records; a tag's full record keeps the stricter source check below.
+input that differs between the record's tested commit and the candidate may be a research or
+documentation path that the impact classifier calls research or docs
+(`cell_evidence.research_drift`; `.gitattributes` never, since it can change the bytes a checkout
+gives the build): no crate reads it (the CI include census, which must answer at both commits;
+build.rs reading `docs/FLAGS.md` makes that file code) and no gate tool reads it (a
+`gate` rule; `tools/test_change_impact.py` keeps those rules complete against the research paths
+the gate tools spell, and scans the gate tools run for a device record for any tracked docs file
+their code names). Then the record still proves its cells, and `check` names the drift. The same rule admits a
+perf A/B whose base differs from the push base only that way. Before it, a research-only or
+docs-only commit on main voided every pending landing record (a README commit did that to two
+landings on 2026-11-08). A change anywhere else (engine, server, tools, docs data a census reads, a
+file a crate or a gate tool reads) still voids it. The tested commit must be present to compare
+(fetch it, or keep the pre-rebase tip). This applies to cell records; a tag's full record keeps the
+stricter source check below.
 
 ## Development and publication
 

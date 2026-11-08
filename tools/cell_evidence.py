@@ -9,8 +9,9 @@ run on one physical device of one build target, for one exact source-input diges
 
 That namespace is metadata (excluded from the source-input digest), so committing the
 record does not change what it qualifies. A record also proves its cells for a later commit
-that differs from its tested commit only in research paths no crate or gate tool reads
-(`research_drift`), so a research-only commit on main does not void pending landings.
+that differs from its tested commit only in research or docs paths no crate or gate tool
+reads (`research_drift`), so a research-only or docs-only commit on main does not void pending
+landings.
 Evidence kinds:
 
     battery   tools/release-battery.sh on the device roster (kernel-check, run-gen argmax,
@@ -228,21 +229,31 @@ class DirEvidence:
         return path.read_bytes()
 
 
+# Impact classes whose files a cell record may outlive: research receipts and documentation that no
+# crate and no gate tool reads (a file either reads is classified code or gate, not these).
+# .gitattributes is docs-class but can change the bytes a checkout gives the build (eol, filters),
+# so it never drifts under a record.
+DRIFT_CLASSES = ("research", "docs")
+DRIFT_NEVER = (".gitattributes",)
+
+
 @functools.lru_cache(maxsize=None)
 def research_drift(repo, old, new):
     """The source inputs that differ between commits `old` and `new`, as a tuple, when every one
-    of them is a research path the impact classifier calls research (no crate reads it and no
-    gate tool reads it); None when any differing input is anything else, or when the crate
-    include census cannot answer at either commit.
+    of them is a research or documentation path the impact classifier calls research or docs (no
+    crate reads it and no gate tool reads it); None when any differing input is anything else,
+    or when the crate include census cannot answer at either commit.
 
     A record bound to `old` then still describes `new`: the compiled program, the battery, its
-    manifests, the roster, the gate tools and their research inputs are the same bytes. Without
-    this, a research-only commit on main voided every pending landing record (each lane rebases
-    onto it, its inputs digest moves, and it re-runs about an hour of device time for bytes the
-    build and the gate never see). The classifier decides (`change_impact.impact_between` under
-    the rules in force), so a research file a crate reads (the CI include census) or a gate tool
-    reads (a `gate` rule in tools/change-impact.toml) counts as code. When the census cannot
-    answer, its literal fallback misses directory and runtime reads, so this fails closed.
+    manifests, the roster, the gate tools and their inputs are the same bytes. Without this, a
+    research-only or docs-only commit on main voided every pending landing record (each lane
+    rebases onto it, its inputs digest moves, and it re-runs about an hour of device time for
+    bytes the build and the gate never see; a README edit on main did that to two landings on
+    2026-11-08). The classifier decides (`change_impact.impact_between` under the rules in
+    force), so a file a crate reads (the CI include census, e.g. build.rs reading docs/FLAGS.md)
+    or a gate tool reads (a `gate` rule in tools/change-impact.toml) counts as code. When the
+    census cannot answer, its literal fallback misses directory and runtime reads, so this fails
+    closed.
     """
     import release_qualification as q
     for ref in (old, new):
@@ -252,30 +263,50 @@ def research_drift(repo, old, new):
             return None
     names = [n for n in git(repo, "diff", "-z", "--name-only", "--no-renames", old, new)
              .decode(errors="replace").split("\0") if n]
-    if any(not n.startswith("research/") for n in names):
+    if not _drift_names_may_pass(repo, old, names):
+        return None
+    impact, _, _ = ci.impact_between(repo, old, new)
+    if any(item["class"] not in DRIFT_CLASSES or item["path"].rsplit("/", 1)[-1] in DRIFT_NEVER
+           for item in impact["files"]):
         return None
     a = q.source_snapshot(repo, old)["files"]
     b = q.source_snapshot(repo, new)["files"]
     drift = tuple(sorted(p for p in set(a) | set(b) if a.get(p) != b.get(p)))
     if not drift:
         return drift
-    if any(not p.startswith("research/") for p in drift):
-        return None
     for ref in (old, new):
         inputs, owners = ci.crate_inputs_at(repo, ref, list(drift))
         if owners is None:
             return None
         if any(ci._input_match(p, pattern) for p in drift for pattern in inputs):
             return None
-    impact, _, _ = ci.impact_between(repo, old, new)
-    if any(item["class"] != "research" for item in impact["files"]):
-        return None
     return drift
+
+
+def _drift_names_may_pass(repo, old, names):
+    """A cheap necessary condition for `research_drift`: each changed name's first matching rule
+    (the tested commit's) is research or docs. The full classifier can only strengthen a class (a
+    crate read, a symlink), never weaken it, so a name this refuses can never drift; and it keeps
+    a stale record from costing the census (about 13 s a pair) on every push."""
+    text = ci.read_blob(repo, old, ci.RULES_PATH)
+    if text is None:
+        return False
+    try:
+        rules = ci.load_rules(text)
+    except ci.ImpactError:
+        return False
+    for name in names:
+        if name.startswith(ci.PUBLICATION) or name == "research/INDEX.md":
+            continue  # qualification metadata, excluded from the inputs
+        rule, _ = ci._match_rule(rules, name)
+        if rule is None or rule["class"] not in DRIFT_CLASSES or name.rsplit("/", 1)[-1] in DRIFT_NEVER:
+            return False
+    return True
 
 
 def drift_note(paths):
     shown = ", ".join(paths[:3]) + (f", ... ({len(paths)} paths)" if len(paths) > 3 else "")
-    return f"only research paths no crate or gate tool reads changed: {shown}"
+    return f"only research or docs paths no crate or gate tool reads changed: {shown}"
 
 
 def verify_record(record, evidence, repo, candidate, rules, arch, candidate_inputs, push_base=None):
@@ -299,7 +330,7 @@ def verify_record(record, evidence, repo, candidate, rules, arch, candidate_inpu
                 "fetch it to compare")
         require(research_drift(repo, tested, candidate) is not None,
                 "record is for different source inputs (more changed since its tested commit than "
-                "research paths no crate or gate tool reads)")
+                "research or docs paths no crate or gate tool reads)")
     if tested != candidate:
         require(git(repo, "cat-file", "-t", tested, check=False).strip() == b"commit",
                 f"tested commit {tested[:12]} is not present; fetch it")
@@ -332,11 +363,11 @@ def verify_record(record, evidence, repo, candidate, rules, arch, candidate_inpu
         base = perf.get("base_commit")
         # The baseline is the push base's program: an older ancestor or a commit inside the
         # pushed range would compare against the wrong program. A base that differs from the
-        # push base only in research paths no crate reads is that same program.
+        # push base only in research or docs paths no crate reads is that same program.
         require(isinstance(base, str) and COMMIT.fullmatch(base) and isinstance(push_base, str)
                 and (base == push_base or research_drift(repo, base, push_base) is not None),
                 f"perf base {str(base)[:12]} is not this push's base {str(push_base)[:12]} (or "
-                "differs from it in more than research paths no crate or gate tool reads)")
+                "differs from it in more than research or docs paths no crate or gate tool reads)")
         roster = {mid for _, mid in roster_ids(git(repo, "show", f"{candidate}:tools/release-roster.tsv").decode())}
         arms = {"none": {"B": 3}}.get(perf.get("baseline"), {"A": PERF_ORDER.count("A"), "B": PERF_ORDER.count("B")})
         counts = {}
@@ -418,7 +449,7 @@ def proven_cells(repo, candidate, rules, arch, log=print, push_base=None):
             across = None
             if record.get("inputs_sha256") != candidate_inputs:
                 # Older records of other inputs are the normal case; only one whose tested commit
-                # differs from the candidate in research paths alone is still evidence for it.
+                # differs from the candidate in research or docs paths alone is still evidence for it.
                 tested = record.get("tested_commit")
                 if not (isinstance(tested, str) and COMMIT.fullmatch(tested)):
                     continue
