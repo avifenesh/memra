@@ -46,6 +46,7 @@
 // same per-output k-accumulation order — Y-tiling only partitions output rows.
 
 #include <cuda.h>
+#include <cudaTypedefs.h>
 #include <cuda_runtime.h>
 #include <cuda_fp16.h>
 #include <cuda_fp8.h>
@@ -2094,16 +2095,33 @@ static __global__ void mul_mat_f8f4v3(
                                           dst, out_scale, act_out, out_scale2, res);
 }
 
+// The driver's cuTensorMapEncodeTiled, resolved once through the runtime. A direct call would make
+// every engine binary need libcuda.so.1 at load time (build.rs links -lcuda as needed), and
+// GPU-less hosts could not start them.
+static PFN_cuTensorMapEncodeTiled_v12000 f8f4v3_encode_fn() {
+    static const PFN_cuTensorMapEncodeTiled_v12000 fn = [] {
+        void * p = nullptr;
+        cudaDriverEntryPointQueryResult q = cudaDriverEntryPointSymbolNotFound;
+        if (cudaGetDriverEntryPointByVersion("cuTensorMapEncodeTiled", &p, 12000, cudaEnableDefault, &q) != cudaSuccess ||
+            q != cudaDriverEntryPointSuccess) {
+            p = nullptr;
+        }
+        return reinterpret_cast<PFN_cuTensorMapEncodeTiled_v12000>(p);
+    }();
+    return fn;
+}
+
 static bool f8f4v3_map2d(CUtensorMap * m, const CUtensorMapDataType ty, const void * base, const uint64_t inner,
                          const uint64_t outer, const uint64_t row_bytes, const uint32_t box_inner,
                          const uint32_t box_outer, const CUtensorMapSwizzle swz) {
+    const PFN_cuTensorMapEncodeTiled_v12000 encode = f8f4v3_encode_fn();
+    if (encode == nullptr) { return false; }
     const cuuint64_t dims[2]    = {inner, outer};
     const cuuint64_t strides[1] = {row_bytes};
     const cuuint32_t box[2]     = {box_inner, box_outer};
     const cuuint32_t estr[2]    = {1, 1};
-    return cuTensorMapEncodeTiled(m, ty, 2, const_cast<void *>(base), dims, strides, box, estr,
-                                  CU_TENSOR_MAP_INTERLEAVE_NONE, swz, CU_TENSOR_MAP_L2_PROMOTION_L2_256B,
-                                  CU_TENSOR_MAP_FLOAT_OOB_FILL_NONE) == CUDA_SUCCESS;
+    return encode(m, ty, 2, const_cast<void *>(base), dims, strides, box, estr, CU_TENSOR_MAP_INTERLEAVE_NONE, swz,
+                  CU_TENSOR_MAP_L2_PROMOTION_L2_256B, CU_TENSOR_MAP_FLOAT_OOB_FILL_NONE) == CUDA_SUCCESS;
 }
 
 // v3 launch with v2's arguments. Four tensor maps per call (host-side descriptor encodes, no device
