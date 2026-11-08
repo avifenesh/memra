@@ -1961,7 +1961,7 @@ static cudaError_t f8f4v2_launch(
 
 // ======================================================================================
 // F8F4 v3 (GB10 prefill lane, 2026-11-08; research/gb10-prefill-20261106/GEMM-V3-DESIGN.md): the v2
-// tile's numeric program, smem layout, raster and epilogues, fed by TMA instead of per-thread
+// tile's numeric program, smem layout, raster and plain / residual epilogues, fed by TMA instead of per-thread
 // cp.async and synchronized by mbarriers instead of a CTA-wide __syncthreads per stage.
 //   - The four stage operands (image rows, activation rows, both scale planes) arrive by
 //     cp.async.bulk.tensor.2d. SWIZZLE_64B on 64-byte rows puts 16-byte chunk c of row r at
@@ -2235,7 +2235,7 @@ int memra_mmq_nvfp4_f8f4_v2_preq_resid(const void * W_nvfp4_blocks, const void *
 int memra_mmq_nvfp4_f8f4_v2_gateup_silu(const void * W_gate, const void * W_up,
                                         const void * act_scratch, void * act_out,
                                         int in_f, int nf, int n_tokens, void * img, void * stream,
-                                        float scale_gate, float scale_up, int rp, int v3) {
+                                        float scale_gate, float scale_up, int rp) {
     if (in_f <= 0 || in_f % 256 != 0 || nf <= 0 || nf % 32 != 0 || n_tokens <= 0) { return 3998; }
     const int rows = 2 * nf;
     const int Mp = f8f4v2_mp(rows);
@@ -2263,13 +2263,12 @@ int memra_mmq_nvfp4_f8f4_v2_gateup_silu(const void * W_gate, const void * W_up,
     const uint8_t * act = (const uint8_t *) act_scratch;
     const float * act_sc = (const float *) (act + (size_t) n_tokens * in_f);
     const int Tp = (n_tokens + 255) / 256 * 256;
-    const cudaError_t e = v3
-        ? f8f4v3_launch<256, 128, 8, 2, 64, 3, 1>(
-              vals, scales, act, act_sc, nullptr, rows, Mp, in_f, n_tokens, Tp, scale_gate, /*G=*/4, st,
-              (uint8_t *) act_out, scale_up)
-        : f8f4v2_launch<256, 128, 8, 2, 64, 3, 1, 1>(
-              vals, scales, act, act_sc, nullptr, rows, Mp, in_f, n_tokens, Tp, scale_gate, /*G=*/4, st,
-              (uint8_t *) act_out, scale_up);
+    // The gate/up launch keeps the v2 mainloop: under v3 its silu epilogue's register pressure
+    // makes the mainloop spill, and it measured 0.2-1.9% slower on GB10 (in the served 32k trace
+    // 13.11 -> 13.33 ms per launch; research/gb10-prefill-20261106/gemm-v3-engine-nsys-unit1/).
+    const cudaError_t e = f8f4v2_launch<256, 128, 8, 2, 64, 3, 1, 1>(
+        vals, scales, act, act_sc, nullptr, rows, Mp, in_f, n_tokens, Tp, scale_gate, /*G=*/4, st,
+        (uint8_t *) act_out, scale_up);
     if (e != cudaSuccess) { return 3000 + (int) e; }
     return 0;
 }
