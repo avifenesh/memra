@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-"""gaps_api.py prof.sqlite TTFT_S [--min-ms 1]: GPU idle gaps inside the last served prefill (the
-window parts_last.py uses: TTFT_S ending at the last prime attention launch), and what the host's
-CUDA runtime/driver calls were doing during each gap of at least MIN_MS.
+"""gaps_api.py prof.sqlite TTFT_S [--min-ms 1] [--pre PRE_S]: GPU idle gaps inside the last served
+prefill, and what the host's CUDA runtime/driver calls were doing during each gap of at least
+MIN_MS. The window is parts_last.py's (TTFT_S ending at the last prime attention launch), or with
+--pre parts_req.py's (from PRE_S before the prime's first kernel, for TTFT_S).
 
 Per gap: its start relative to the window, length, the kernel before and after, and the API calls
 that overlap it (name, overlap). Aggregates: total gap time per (kernel before -> kernel after) pair
@@ -13,12 +14,23 @@ ap.add_argument("db")
 ap.add_argument("ttft", type=float)
 ap.add_argument("--min-ms", type=float, default=1.0)
 ap.add_argument("--show", type=int, default=12)
+ap.add_argument("--pre", type=float)
 a = ap.parse_args()
 con = sqlite3.connect(a.db)
 rows = con.execute("SELECT k.start, k.end, s.value FROM CUPTI_ACTIVITY_KIND_KERNEL k "
                    "JOIN StringIds s ON s.id = COALESCE(k.demangledName, k.shortName) ORDER BY k.start").fetchall()
 t1 = max(e for s, e, n in rows if n.startswith("fa_prefill_qw"))
 t0 = t1 - int(a.ttft * 1e9)
+if a.pre is not None:
+    first, prev = None, None
+    for s, e, n in rows:
+        if s > t1:
+            break
+        if prev is not None and s - prev > 1e9:
+            first = s
+        prev = e if prev is None else max(prev, e)
+    t0 = first - int(a.pre * 1e9)
+    t1 = t0 + int(a.ttft * 1e9)
 win = [(s, e, n) for s, e, n in rows if t0 <= s <= t1]
 api = []
 for tab in ("CUPTI_ACTIVITY_KIND_RUNTIME", "CUPTI_ACTIVITY_KIND_DRIVER"):

@@ -22,10 +22,11 @@ server log (`ts-probe-main-unit1/`, every line stamped by `harness/r4/tsrun.py`)
 
 The draft fill costs 72-74 ms per 4,096-row chunk at every depth: it computes only the MTP
 block's K/V (eh_proj, wk, wv, k-norm, RoPE and the quantized append; no attention). In the nsys
-trace each fill chunk opens with a 36 ms GPU-idle gap, and in that gap the host issues 8,193
-`cuMemcpyDtoDAsync` calls (34.6 ms of API time) and about 1,000 launches; the chunk then runs
-4,096 single-row `append_quantize_kv_q8_0_q5_1` launches. The source, `mtp_kv_fill_at` in
-`crates/memra-engine/src/spec.rs`:
+trace each fill chunk opens with a 35-38 ms GPU-idle gap (`profile-r4-main-131k/gaps-api-req.txt`:
+31 such gaps in the request window, 1.110 s, with 0.946 s of `cuMemcpyDtoDAsync` and 0.104 s of
+`cuLaunchKernel` API time inside them; `memcpy.txt`: 254,490 device-to-device copies), and the
+chunk then runs 4,096 single-row `append_quantize_kv_q8_0_q5_1` launches. The source,
+`mtp_kv_fill_at` in `crates/memra-engine/src/spec.rs`:
 
 - op 3 builds the `[e_norm ; h_norm]` concat with two `copy_view_into` calls per row;
 - op 6 appends each row's K/V with one `append_kv_quantized_view` launch.
@@ -36,16 +37,25 @@ trace each fill chunk opens with a 36 ms GPU-idle gap, and in that gap the host 
   in the sources): the same bytes in the same places.
 - The append is one `append_kv_quantized_rows` launch over the T rows. That kernel's per-(block,
   token) warp program is the per-token append verbatim, and kernel-check pins it against the
-  per-row loop ("kv append rows-vs-loop bit-identity"). A fill longer than the kernel's grid
-  height (65,535 rows; every prime fill chunk is 4,096 or smaller) keeps the loop.
+  per-row loop ("kv append rows-vs-loop bit-identity", now also at the fill's shape: 4,096 rows of
+  kv_dim 1,024 at slot 255,855; and "mtp fill concat strided-vs-rows bit-identity" for the copies).
+- The per-row slices used to fail on a K/V width that did not match the plane; the batched call
+  checks the widths, the device (the PP guard the per-row append ran) and a T above the kernel's
+  grid height (65,535 rows) instead, and returns an error. Prime fill chunks default to 4,096 rows
+  (`MEMRA_PRIME_CHUNK` and the SWA ring's chunk size can raise them to 65,535).
 
 Exactness class: identical bytes in the draft KV and the concat, so the drafts, the acceptance and
 every served token are unchanged by construction; the served fingerprint must match.
 
 Expected: per fill chunk the 36 ms gap and most of the 9 ms of single-row appends go, so about 45
-ms per chunk: 0.36 s at 32k (1.6% of TTFT), 1.4 s at 131k (1.2%), 2.9 s at 260k (0.9%). The same
-function runs at every spec round boundary with a handful of rows, where it changes nothing
-measurable.
+ms per chunk: 0.36 s at 32k (1.6% of TTFT), 1.4 s at 131k (1.2%), 2.9 s at 260k (0.9%).
+
+The same function also runs in every speculative round: the verify refresh over the round's rows,
+the one-row boundary fills, the restore suffix fill and `replay_acceptance`. Those fills are a
+handful of rows, so decode should not move; the served cells check it (40 decoded tokens after the
+first: total minus TTFT). It is a mechanism change (fewer host calls, the same bytes) and applies on
+every target; the sm_120a perf cell (plain `run-gen` decode) does not reach the MTP fill, so the
+GB10 TTFT numbers are the measurement and no per-device key is needed.
 
 ## Left for later, from the same timeline
 

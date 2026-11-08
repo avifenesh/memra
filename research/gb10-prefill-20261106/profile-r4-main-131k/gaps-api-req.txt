@@ -1,0 +1,49 @@
+window 122.731 s; gaps 174318 totalling 1.740 s; >= 10.0 ms: 32 totalling 1.125 s
+
+gap time by (kernel before -> kernel after)
+     1.110 s    31 x  rms_norm_f32_v2 -> quantize_mmq_q8_1_ds4_kernel
+     0.015 s     1 x  gdn_glog_f32 -> gdn_chunk_cumgate_f32
+
+CUDA API time overlapping those gaps
+     0.946 s  cuMemcpyDtoDAsync_v2
+     0.104 s  cuLaunchKernel
+     0.027 s  cuMemAllocAsync
+     0.001 s  cudaLaunchKernel_v7000
+     0.000 s  cuMemsetD8Async
+     0.000 s  cuLaunchKernelEx
+     0.000 s  cuMemFreeAsync
+     0.000 s  cuKernelGetName
+
+first 40 large gaps
+  at    0.471 s    14.57 ms  gdn_glog_f32 -> gdn_chunk_cumgate_f32  [cuMemAllocAsync 3.42, cuMemAllocAsync 1.27, cuMemAllocAsync 0.00, cuMemAllocAsync 1.26, cuMemAllocAsync 1.26, cuMemAllocAsync 3.64]
+  at  120.382 s    35.23 ms  rms_norm_f32_v2 -> quantize_mmq_q8_1_ds4_kernel  [cuMemcpyDtoDAsync_v2 0.00, cuMemcpyDtoDAsync_v2 0.00, cuMemcpyDtoDAsync_v2 0.00, cuMemcpyDtoDAsync_v2 0.00, cuMemcpyDtoDAsync_v2 0.00, cuMemcpyDtoDAsync_v2 0.00]
+  at  120.456 s    35.20 ms  rms_norm_f32_v2 -> quantize_mmq_q8_1_ds4_kernel  [cuMemcpyDtoDAsync_v2 0.01, cuMemcpyDtoDAsync_v2 0.84, cuMemcpyDtoDAsync_v2 0.00, cuMemcpyDtoDAsync_v2 0.00, cuMemcpyDtoDAsync_v2 0.00, cuMemcpyDtoDAsync_v2 0.00]
+  at  120.528 s    36.33 ms  rms_norm_f32_v2 -> quantize_mmq_q8_1_ds4_kernel  [cuMemcpyDtoDAsync_v2 0.01, cuMemcpyDtoDAsync_v2 0.84, cuMemcpyDtoDAsync_v2 0.00, cuMemcpyDtoDAsync_v2 0.00, cuMemcpyDtoDAsync_v2 0.00, cuMemcpyDtoDAsync_v2 0.00]
+  at  120.603 s    36.08 ms  rms_norm_f32_v2 -> quantize_mmq_q8_1_ds4_kernel  [cuMemcpyDtoDAsync_v2 0.01, cuMemcpyDtoDAsync_v2 0.84, cuMemcpyDtoDAsync_v2 0.00, cuMemcpyDtoDAsync_v2 0.00, cuMemcpyDtoDAsync_v2 0.00, cuMemcpyDtoDAsync_v2 0.00]
+  at  120.678 s    35.23 ms  rms_norm_f32_v2 -> quantize_mmq_q8_1_ds4_kernel  [cuMemcpyDtoDAsync_v2 0.01, cuMemcpyDtoDAsync_v2 0.84, cuMemcpyDtoDAsync_v2 0.00, cuMemcpyDtoDAsync_v2 0.00, cuMemcpyDtoDAsync_v2 0.00, cuMemcpyDtoDAsync_v2 0.00]
+  at  120.751 s    38.48 ms  rms_norm_f32_v2 -> quantize_mmq_q8_1_ds4_kernel  [cuMemcpyDtoDAsync_v2 0.01, cuMemcpyDtoDAsync_v2 0.94, cuMemcpyDtoDAsync_v2 0.00, cuMemcpyDtoDAsync_v2 0.00, cuMemcpyDtoDAsync_v2 0.00, cuMemcpyDtoDAsync_v2 0.00]
+  at  120.827 s    36.69 ms  rms_norm_f32_v2 -> quantize_mmq_q8_1_ds4_kernel  [cuMemcpyDtoDAsync_v2 0.01, cuMemcpyDtoDAsync_v2 0.88, cuMemcpyDtoDAsync_v2 0.00, cuMemcpyDtoDAsync_v2 0.00, cuMemcpyDtoDAsync_v2 0.00, cuMemcpyDtoDAsync_v2 0.00]
+  at  120.903 s    35.23 ms  rms_norm_f32_v2 -> quantize_mmq_q8_1_ds4_kernel  [cuMemcpyDtoDAsync_v2 0.01, cuMemcpyDtoDAsync_v2 0.84, cuMemcpyDtoDAsync_v2 0.00, cuMemcpyDtoDAsync_v2 0.00, cuMemcpyDtoDAsync_v2 0.00, cuMemcpyDtoDAsync_v2 0.00]
+  at  120.977 s    35.34 ms  rms_norm_f32_v2 -> quantize_mmq_q8_1_ds4_kernel  [cuMemcpyDtoDAsync_v2 0.00, cuMemcpyDtoDAsync_v2 0.00, cuMemcpyDtoDAsync_v2 0.01, cuMemcpyDtoDAsync_v2 0.00, cuMemcpyDtoDAsync_v2 0.00, cuMemcpyDtoDAsync_v2 0.00]
+  at  121.052 s    34.75 ms  rms_norm_f32_v2 -> quantize_mmq_q8_1_ds4_kernel  [cuMemcpyDtoDAsync_v2 0.01, cuMemcpyDtoDAsync_v2 0.85, cuMemcpyDtoDAsync_v2 0.00, cuMemcpyDtoDAsync_v2 0.00, cuMemcpyDtoDAsync_v2 0.00, cuMemcpyDtoDAsync_v2 0.00]
+  at  121.125 s    36.10 ms  rms_norm_f32_v2 -> quantize_mmq_q8_1_ds4_kernel  [cuMemcpyDtoDAsync_v2 0.01, cuMemcpyDtoDAsync_v2 0.84, cuMemcpyDtoDAsync_v2 0.00, cuMemcpyDtoDAsync_v2 0.00, cuMemcpyDtoDAsync_v2 0.00, cuMemcpyDtoDAsync_v2 0.00]
+  at  121.203 s    36.14 ms  rms_norm_f32_v2 -> quantize_mmq_q8_1_ds4_kernel  [cuMemcpyDtoDAsync_v2 0.00, cuMemcpyDtoDAsync_v2 0.00, cuMemcpyDtoDAsync_v2 0.00, cuMemcpyDtoDAsync_v2 0.00, cuMemcpyDtoDAsync_v2 0.00, cuMemcpyDtoDAsync_v2 0.00]
+  at  121.276 s    35.25 ms  rms_norm_f32_v2 -> quantize_mmq_q8_1_ds4_kernel  [cuMemcpyDtoDAsync_v2 0.01, cuMemcpyDtoDAsync_v2 0.84, cuMemcpyDtoDAsync_v2 0.00, cuMemcpyDtoDAsync_v2 0.00, cuMemcpyDtoDAsync_v2 0.00, cuMemcpyDtoDAsync_v2 0.00]
+  at  121.350 s    36.07 ms  rms_norm_f32_v2 -> quantize_mmq_q8_1_ds4_kernel  [cuMemcpyDtoDAsync_v2 0.01, cuMemcpyDtoDAsync_v2 1.06, cuMemcpyDtoDAsync_v2 0.00, cuMemcpyDtoDAsync_v2 0.01, cuMemcpyDtoDAsync_v2 0.00, cuMemcpyDtoDAsync_v2 0.00]
+  at  121.429 s    36.00 ms  rms_norm_f32_v2 -> quantize_mmq_q8_1_ds4_kernel  [cuMemcpyDtoDAsync_v2 0.01, cuMemcpyDtoDAsync_v2 0.91, cuMemcpyDtoDAsync_v2 0.03, cuMemcpyDtoDAsync_v2 0.02, cuMemcpyDtoDAsync_v2 0.03, cuMemcpyDtoDAsync_v2 0.00]
+  at  121.503 s    35.26 ms  rms_norm_f32_v2 -> quantize_mmq_q8_1_ds4_kernel  [cuMemcpyDtoDAsync_v2 0.01, cuMemcpyDtoDAsync_v2 0.84, cuMemcpyDtoDAsync_v2 0.00, cuMemcpyDtoDAsync_v2 0.00, cuMemcpyDtoDAsync_v2 0.00, cuMemcpyDtoDAsync_v2 0.00]
+  at  121.576 s    35.29 ms  rms_norm_f32_v2 -> quantize_mmq_q8_1_ds4_kernel  [cuMemcpyDtoDAsync_v2 0.01, cuMemcpyDtoDAsync_v2 0.84, cuMemcpyDtoDAsync_v2 0.00, cuMemcpyDtoDAsync_v2 0.00, cuMemcpyDtoDAsync_v2 0.00, cuMemcpyDtoDAsync_v2 0.00]
+  at  121.654 s    34.88 ms  rms_norm_f32_v2 -> quantize_mmq_q8_1_ds4_kernel  [cuMemcpyDtoDAsync_v2 0.00, cuMemcpyDtoDAsync_v2 0.00, cuMemcpyDtoDAsync_v2 0.00, cuMemcpyDtoDAsync_v2 0.00, cuMemcpyDtoDAsync_v2 0.00, cuMemcpyDtoDAsync_v2 0.00]
+  at  121.727 s    36.19 ms  rms_norm_f32_v2 -> quantize_mmq_q8_1_ds4_kernel  [cuMemcpyDtoDAsync_v2 0.01, cuMemcpyDtoDAsync_v2 0.91, cuMemcpyDtoDAsync_v2 0.00, cuMemcpyDtoDAsync_v2 0.00, cuMemcpyDtoDAsync_v2 0.00, cuMemcpyDtoDAsync_v2 0.00]
+  at  121.800 s    37.01 ms  rms_norm_f32_v2 -> quantize_mmq_q8_1_ds4_kernel  [cuMemcpyDtoDAsync_v2 0.01, cuMemcpyDtoDAsync_v2 0.83, cuMemcpyDtoDAsync_v2 0.00, cuMemcpyDtoDAsync_v2 0.00, cuMemcpyDtoDAsync_v2 0.00, cuMemcpyDtoDAsync_v2 0.00]
+  at  121.877 s    35.26 ms  rms_norm_f32_v2 -> quantize_mmq_q8_1_ds4_kernel  [cuMemcpyDtoDAsync_v2 0.01, cuMemcpyDtoDAsync_v2 0.84, cuMemcpyDtoDAsync_v2 0.00, cuMemcpyDtoDAsync_v2 0.00, cuMemcpyDtoDAsync_v2 0.00, cuMemcpyDtoDAsync_v2 0.00]
+  at  121.951 s    35.84 ms  rms_norm_f32_v2 -> quantize_mmq_q8_1_ds4_kernel  [cuMemcpyDtoDAsync_v2 0.01, cuMemcpyDtoDAsync_v2 1.04, cuMemcpyDtoDAsync_v2 0.00, cuMemcpyDtoDAsync_v2 0.00, cuMemcpyDtoDAsync_v2 0.00, cuMemcpyDtoDAsync_v2 0.00]
+  at  122.024 s    35.27 ms  rms_norm_f32_v2 -> quantize_mmq_q8_1_ds4_kernel  [cuMemcpyDtoDAsync_v2 0.01, cuMemcpyDtoDAsync_v2 0.84, cuMemcpyDtoDAsync_v2 0.00, cuMemcpyDtoDAsync_v2 0.00, cuMemcpyDtoDAsync_v2 0.00, cuMemcpyDtoDAsync_v2 0.00]
+  at  122.098 s    35.25 ms  rms_norm_f32_v2 -> quantize_mmq_q8_1_ds4_kernel  [cuMemcpyDtoDAsync_v2 0.01, cuMemcpyDtoDAsync_v2 0.84, cuMemcpyDtoDAsync_v2 0.00, cuMemcpyDtoDAsync_v2 0.00, cuMemcpyDtoDAsync_v2 0.00, cuMemcpyDtoDAsync_v2 0.00]
+  at  122.170 s    35.84 ms  rms_norm_f32_v2 -> quantize_mmq_q8_1_ds4_kernel  [cuMemcpyDtoDAsync_v2 0.01, cuMemcpyDtoDAsync_v2 1.02, cuMemcpyDtoDAsync_v2 0.04, cuMemcpyDtoDAsync_v2 0.00, cuMemcpyDtoDAsync_v2 0.00, cuMemcpyDtoDAsync_v2 0.00]
+  at  122.244 s    36.67 ms  rms_norm_f32_v2 -> quantize_mmq_q8_1_ds4_kernel  [cuMemcpyDtoDAsync_v2 0.01, cuMemcpyDtoDAsync_v2 0.84, cuMemcpyDtoDAsync_v2 0.00, cuMemcpyDtoDAsync_v2 0.00, cuMemcpyDtoDAsync_v2 0.00, cuMemcpyDtoDAsync_v2 0.00]
+  at  122.318 s    36.00 ms  rms_norm_f32_v2 -> quantize_mmq_q8_1_ds4_kernel  [cuMemcpyDtoDAsync_v2 0.01, cuMemcpyDtoDAsync_v2 0.92, cuMemcpyDtoDAsync_v2 0.00, cuMemcpyDtoDAsync_v2 0.00, cuMemcpyDtoDAsync_v2 0.00, cuMemcpyDtoDAsync_v2 0.00]
+  at  122.392 s    35.67 ms  rms_norm_f32_v2 -> quantize_mmq_q8_1_ds4_kernel  [cuMemcpyDtoDAsync_v2 0.01, cuMemcpyDtoDAsync_v2 0.84, cuMemcpyDtoDAsync_v2 0.00, cuMemcpyDtoDAsync_v2 0.00, cuMemcpyDtoDAsync_v2 0.00, cuMemcpyDtoDAsync_v2 0.00]
+  at  122.465 s    36.38 ms  rms_norm_f32_v2 -> quantize_mmq_q8_1_ds4_kernel  [cuMemcpyDtoDAsync_v2 0.01, cuMemcpyDtoDAsync_v2 0.85, cuMemcpyDtoDAsync_v2 0.01, cuMemcpyDtoDAsync_v2 0.00, cuMemcpyDtoDAsync_v2 0.00, cuMemcpyDtoDAsync_v2 0.00]
+  at  122.540 s    35.29 ms  rms_norm_f32_v2 -> quantize_mmq_q8_1_ds4_kernel  [cuMemcpyDtoDAsync_v2 0.01, cuMemcpyDtoDAsync_v2 0.84, cuMemcpyDtoDAsync_v2 0.00, cuMemcpyDtoDAsync_v2 0.00, cuMemcpyDtoDAsync_v2 0.00, cuMemcpyDtoDAsync_v2 0.00]
+  at  122.613 s    36.08 ms  rms_norm_f32_v2 -> quantize_mmq_q8_1_ds4_kernel  [cuMemcpyDtoDAsync_v2 0.01, cuMemcpyDtoDAsync_v2 1.05, cuMemcpyDtoDAsync_v2 0.00, cuMemcpyDtoDAsync_v2 0.00, cuMemcpyDtoDAsync_v2 0.00, cuMemcpyDtoDAsync_v2 0.00]

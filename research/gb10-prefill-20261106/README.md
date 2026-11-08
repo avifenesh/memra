@@ -476,9 +476,12 @@ rejected) and `MTP-FILL-DESIGN.md` (the landed lever). Harness: `harness/r4/`.
 
 Unit 1, Nsight Systems, TTFT 122.731 s (122.416 / 122.606 s unprofiled). The window is the request
 itself (`parts_req.py`): the trunk runs 119.43 s from the prime's first kernel to its last prime
-attention launch, then the boundary tail chunk and the MTP draft fill take 2.86 s before the first
-token. (`parts_last.py`'s window ends at the last attention launch, so on this route it started
-2.7 s before the request arrived; that "gap" was the server waiting.)
+attention launch, then come the boundary tail chunk and the MTP draft fill. (`parts_last.py`'s
+window ends at the last attention launch, so on this route it started 2.7 s before the request
+arrived; that "gap" was the server waiting.) The window applies the unprofiled run's 0.446 s of host
+time before the first kernel to the nsys run, whose own is not in the trace; it holds 31 of the 32
+fill chunks, so it closes about one fill chunk (under 0.1 s of kernels) before the first token. The
+phase times below come from the timestamped server log instead.
 
 | part (GPU seconds) | memra main | work | achieved | measured ceiling | time at ceiling | SGLang tuned |
 |---|---:|---|---:|---|---:|---:|
@@ -516,5 +519,8 @@ The phases of the request (timestamped server log, `ts-probe-main-unit1/`, unpro
   spills the 255-register body.
 - **MTP draft fill batched** (row 50, adopted): each 4,096-row fill chunk issued 8,192 row copies and
   4,096 single-row appends from the host (a 36 ms GPU-idle gap per chunk). Two strided copies and the
-  batched append write the same bytes. Served on unit 1, B V V B: 23.108 -> 22.698 s at 32k (-1.77%),
-  122.511 -> 120.990 s at 131k (-1.24%), answers and speculative acceptance identical in every boot.
+  batched append write the same bytes. Served on unit 1, B V V B (2 boots per arm): 23.108 -> 22.698 s
+  at 32k (-1.77%), 122.511 -> 120.990 s at 131k (-1.24%), answers and speculative acceptance
+  identical in every boot. Decode (40 tokens after the first, total minus TTFT) is flat: 1.480 /
+  1.479 / 1.487 / 1.483 s at 32k and 2.726 / 2.726 / 2.722 / 2.722 s at 131k. Thermal regime under
+  load, every cell: SM 2,112-2,184 MHz (median 2,151-2,158), mean 78.8-80.8 C, max 86-87 C.
