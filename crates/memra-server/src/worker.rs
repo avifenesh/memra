@@ -11825,9 +11825,21 @@ fn host_demote_prefix_entry(engine: &Engine, host: &mut HostPrefixCache, mut dea
 /// `docs/decisions/BATCH-OOM-RECOVER-DEFAULT.md`): a chunk whose quoted CUDA OOM came before any
 /// session-state write (`memra_engine::step_guard`) takes one reclaim rung and runs the same
 /// batched step once more. The default on the full-power RTX PRO 6000 Blackwell Workstation
-/// Edition, the card the deciding cell read; every other card keeps the chunk's error arm.
+/// Edition, the card the deciding cell read, and on the RTX 5090 Laptop GPU, whose serving boots
+/// read the same on 2026-11-08 (research/c8-workspace-20261108); every other card, the desktop
+/// RTX 5090 included, keeps the chunk's error arm.
 fn batch_oom_recover_default(device_name: &str) -> bool {
     memra_engine::parallel::HardwareTarget::is_pro6000_workstation(device_name)
+        || batch_oom_recover_laptop(device_name)
+}
+
+/// The RTX 5090 Laptop GPU arm of [`batch_oom_recover_default`].
+fn batch_oom_recover_laptop(device_name: &str) -> bool {
+    device_name.contains("Laptop")
+        && matches!(
+            memra_engine::parallel::HardwareTarget::from_device_name(device_name),
+            Ok(memra_engine::parallel::HardwareTarget::Rtx5090)
+        )
 }
 
 /// The boot receipt of [`batch_oom_recover_default`], one line.
@@ -11840,6 +11852,10 @@ fn batch_oom_recover_boot_line(on: bool) -> &'static str {
          ends the chunk's sessions)"
     }
 }
+
+/// The boot receipt on the RTX 5090 Laptop GPU arm.
+const BATCH_OOM_RECOVER_LAPTOP_LINE: &str = "[admit-oom] batch OOM recovery: ON (RTX 5090 Laptop \
+     GPU: an untouched batched chunk takes one reclaim rung and retries once)";
 
 /// The batch OOM's reclaim rung (DAY49 1.5): the parked sessions of the three pools are dropped,
 /// the device prefix cache is evicted to half its bytes, the teardown fence runs and the model
@@ -18501,7 +18517,14 @@ pub fn run(
     eprintln!("{}", admit_memory_cfg.boot_line());
     // BATCHED-CHUNK OOM RECOVERY (WP-B day 49): the card's arm, resolved once and stated.
     let batch_oom_recover = batch_oom_recover_default(&device_name);
-    eprintln!("{}", batch_oom_recover_boot_line(batch_oom_recover));
+    eprintln!(
+        "{}",
+        if batch_oom_recover_laptop(&device_name) {
+            BATCH_OOM_RECOVER_LAPTOP_LINE
+        } else {
+            batch_oom_recover_boot_line(batch_oom_recover)
+        }
+    );
     // PREFILL WORKSPACE HELD (research/c8-workspace-20261108): the card's arm, resolved once.
     let prefill_held = prefill_held_for_device(&device_name, device_is_unified(&engine));
     eprintln!("{}", prefill_held_boot_line(prefill_held));
@@ -47010,9 +47033,12 @@ mod tests {
     /// WP-B day 49: the batch OOM recovery is the default on the card the deciding cell read and
     /// nowhere else; the Max-Q and Server editions share the class, not the receipt.
     #[test]
-    fn batch_oom_recovery_is_the_pro6000_workstation_default_only() {
+    fn batch_oom_recovery_is_the_default_on_the_receipted_cards_only() {
         assert!(super::batch_oom_recover_default(
             "NVIDIA RTX PRO 6000 Blackwell Workstation Edition"
+        ));
+        assert!(super::batch_oom_recover_default(
+            "NVIDIA GeForce RTX 5090 Laptop GPU"
         ));
         for name in [
             "NVIDIA GeForce RTX 5090",
@@ -47025,6 +47051,7 @@ mod tests {
         }
         assert!(super::batch_oom_recover_boot_line(true).contains("batch OOM recovery: ON"));
         assert!(super::batch_oom_recover_boot_line(false).contains("batch OOM recovery: OFF"));
+        assert!(super::BATCH_OOM_RECOVER_LAPTOP_LINE.contains("batch OOM recovery: ON"));
     }
 
     /// WP-B day 49 (DAY49 1.5): the batch OOM recovery is resolved once at worker start and read
