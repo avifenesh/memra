@@ -6,7 +6,7 @@
 # Qwen3.8-27B NVFP4+Q5_K + DFlash2 q4 + FR-Spec trim, MEMRA_MTP_SKIP=1, ctx 32,768, 8 sessions,
 # prefix cache 4,000 MB, no host tier, T=1 seed 1234, thinking on, 768 tokens.
 # Workloads: full (29 agentic bodies, 5fe1afe2afdc) and le8k (the 22 shortest, 331f269100d2).
-# Order: FIX full c1 c2 c4 c8, BASE full, BASE le8k c2 c4 c8, FIX le8k.
+# Order: FIX full c1 c2 c4 c8, BASE full, BASE le8k c2 c4 c8, FIX le8k. Single runs per arm.
 # usage: mem_ab.sh BASE_BIN FIX_BIN OUT
 set -u
 BASE=$1 FIX=$2 O=$3
@@ -58,9 +58,14 @@ arm() { # tag BIN workload users
     grep -a -m1 'transient floor' "$D/serve.log" | cut -c1-200 | sed 's/^/floor: /'; } >> "$D/arm.txt"
   log "$tag done: $(tail -n 11 "$D/arm.txt" | tr '\n' ' ' | cut -c1-400)"
 }
-log "mem A/B start base $(sha256sum "$BASE" | cut -c1-12) fix $(sha256sum "$FIX" | cut -c1-12)"
-arm 1-fix-full "$FIX" "$WF" "1 2 4 8"
-arm 2-base-full "$BASE" "$WF" "1 2 4 8"
-arm 3-base-le8k "$BASE" "$WL" "2 4 8"
-arm 4-fix-le8k "$FIX" "$WL" "2 4 8"
+log "mem A/B start base $(sha256sum "$BASE" | cut -c1-12) fix $(sha256sum "$FIX" | cut -c1-12) arms ${MEM_ARMS:-1 2 3 4}"
+# MEM_ARMS picks a subset (the run yielded the card between arms 1 and 2 once and resumed).
+for a in ${MEM_ARMS:-1 2 3 4}; do
+  case $a in
+    1) arm 1-fix-full "$FIX" "$WF" "1 2 4 8" ;;
+    2) arm 2-base-full "$BASE" "$WF" "1 2 4 8" ;;
+    3) arm 3-base-le8k "$BASE" "$WL" "2 4 8" ;;
+    4) arm 4-fix-le8k "$FIX" "$WL" "2 4 8" ;;
+  esac
+done
 log MEM_AB_DONE
