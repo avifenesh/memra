@@ -1,0 +1,19 @@
+gpulock: 5090 leased as claude-code-20261108T114754-506778 for 50m
+11:47:54 mem A/B start base bddf1f1a5d19 fix a0c652bc8656 arms 3 4
+waitfor: MET after 0m25s
+11:48:20 start 3-base-le8k
+11:53:06 3-base-le8k c2 {"arm": "3-base-le8k", "users": 2, "max_tokens": 768, "seed": 1234, "think": 1, "temperature": 1.0, "turns": 22, "tokens": 7742, "wall_s": 219.8, "aggregate_gen_tps": 36.3, "per_user_gen_tps_median": 
+11:58:00 3-base-le8k c4 {"arm": "3-base-le8k", "users": 4, "max_tokens": 768, "seed": 1234, "think": 1, "temperature": 1.0, "turns": 22, "tokens": 7721, "wall_s": 213.3, "aggregate_gen_tps": 38.2, "per_user_gen_tps_median": 
+12:02:31 3-base-le8k c8 rc=1
+12:02:31 3-base-le8k c8 
+waitfor: MET after 0m15s
+12:02:46 3-base-le8k done: capacity-rejects=0 vram-defer-lines=7669 reclaim-lines=164 dspark-park-rewound=0 dspark-park-skipped=22 dspark-rewound-resumes=0 oom-lines=0 fixed:   14755 MB prefill-workspace + 324MB fixed fixed:      22 MB prefill-workspace + 323MB fixed fixed:       7 MB prefill-workspace + 315MB fixed floor: [admit-cal] boot calibration done: model="q38" route=dspark transient floor 1544MB (static was 1536MB;
+waitfor: MET after 0m40s
+12:03:27 start 4-fix-le8k
+12:08:12 4-fix-le8k c2 {"arm": "4-fix-le8k", "users": 2, "max_tokens": 768, "seed": 1234, "think": 1, "temperature": 1.0, "turns": 22, "tokens": 7742, "wall_s": 223.8, "aggregate_gen_tps": 35.62, "per_user_gen_tps_median": 
+12:13:09 4-fix-le8k c4 {"arm": "4-fix-le8k", "users": 4, "max_tokens": 768, "seed": 1234, "think": 1, "temperature": 1.0, "turns": 22, "tokens": 7721, "wall_s": 212.1, "aggregate_gen_tps": 37.83, "per_user_gen_tps_median": 
+12:17:37 4-fix-le8k c8 {"arm": "4-fix-le8k", "users": 8, "max_tokens": 768, "seed": 1234, "think": 1, "temperature": 1.0, "turns": 22, "tokens": 7737, "wall_s": 188.5, "aggregate_gen_tps": 41.67, "per_user_gen_tps_median": 
+waitfor: MET after 0m15s
+12:17:52 4-fix-le8k done: capacity-rejects=0 vram-defer-lines=7773 reclaim-lines=181 dspark-park-rewound=19 dspark-park-skipped=3 dspark-rewound-resumes=0 oom-lines=0 fixed:   13399 MB prefill-workspace + 324MB fixed fixed:      22 MB prefill-workspace + 323MB fixed fixed:       6 MB prefill-workspace + 315MB fixed floor: [admit-cal] boot calibration done: model="q38" route=dspark transient floor 1544MB (static was 1536MB;
+12:17:52 MEM_AB_DONE
+window-mem-arm exit 0

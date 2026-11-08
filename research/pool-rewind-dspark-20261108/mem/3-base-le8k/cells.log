@@ -1,0 +1,40 @@
+{"arm": "3-base-le8k", "users": 2, "max_tokens": 768, "seed": 1234, "think": 1, "temperature": 1.0, "turns": 22, "tokens": 7742, "wall_s": 219.8, "aggregate_gen_tps": 36.3, "per_user_gen_tps_median": 34.38, "accepted_per_step": 0.0, "steps": null, "pos_rate": []}
+{"arm": "3-base-le8k", "users": 4, "max_tokens": 768, "seed": 1234, "think": 1, "temperature": 1.0, "turns": 22, "tokens": 7721, "wall_s": 213.3, "aggregate_gen_tps": 38.2, "per_user_gen_tps_median": 21.08, "accepted_per_step": 0.0, "steps": null, "pos_rate": []}
+Traceback (most recent call last):
+  File "/home/avifenesh/.cache/model-scout/harness/ab_agent.py", line 124, in <module>
+    build(a) if a.cmd == 'build' else run(a)
+                                      ~~~^^^
+  File "/home/avifenesh/.cache/model-scout/harness/ab_agent.py", line 89, in run
+    rs = list(pool.map(client.stream, bodies))
+  File "/home/avifenesh/.hermes/tools/python-3.14.9+20261021-linux-x64/lib/python3.14/concurrent/futures/_base.py", line 645, in result_iterator
+    yield _result_or_cancel(fs.pop())
+          ~~~~~~~~~~~~~~~~~^^^^^^^^^^
+  File "/home/avifenesh/.hermes/tools/python-3.14.9+20261021-linux-x64/lib/python3.14/concurrent/futures/_base.py", line 312, in _result_or_cancel
+    return fut.result(timeout)
+           ~~~~~~~~~~^^^^^^^^^
+  File "/home/avifenesh/.hermes/tools/python-3.14.9+20261021-linux-x64/lib/python3.14/concurrent/futures/_base.py", line 447, in result
+    return self.__get_result()
+           ~~~~~~~~~~~~~~~~~^^
+  File "/home/avifenesh/.hermes/tools/python-3.14.9+20261021-linux-x64/lib/python3.14/concurrent/futures/_base.py", line 396, in __get_result
+    raise self._exception
+  File "/home/avifenesh/.hermes/tools/python-3.14.9+20261021-linux-x64/lib/python3.14/concurrent/futures/thread.py", line 86, in run
+    result = ctx.run(self.task)
+  File "/home/avifenesh/.hermes/tools/python-3.14.9+20261021-linux-x64/lib/python3.14/concurrent/futures/thread.py", line 73, in run
+    return fn(*args, **kwargs)
+  File "/home/avifenesh/.cache/spark-cast-qualification-20261024-2250/client.py", line 64, in stream
+    with _curl_response(body) as response:
+         ~~~~~~~~~~~~~~^^^^^^
+  File "/home/avifenesh/.hermes/tools/python-3.14.9+20261021-linux-x64/lib/python3.14/contextlib.py", line 148, in __exit__
+    next(self.gen)
+    ~~~~^^^^^^^^^^
+  File "/home/avifenesh/.cache/model-scout/harness/client.py", line 32, in _curl_response
+    with _orig_curl(body) as out:
+         ~~~~~~~~~~^^^^^^
+  File "/home/avifenesh/.hermes/tools/python-3.14.9+20261021-linux-x64/lib/python3.14/contextlib.py", line 148, in __exit__
+    next(self.gen)
+    ~~~~^^^^^^^^^^
+  File "/home/avifenesh/.cache/spark-cast-qualification-20261024-2250/client.py", line 54, in _curl_response
+    errors.seek(0);raise RuntimeError('curl streaming failure '+str(rc)+': '+errors.read().decode()[-1000:])
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+RuntimeError: curl streaming failure 22: curl: (22) The requested URL returned error: 408
+

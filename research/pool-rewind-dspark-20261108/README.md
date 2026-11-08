@@ -1,8 +1,12 @@
 # Winning the DFlash multi-turn speed back exactly (memra#1093 follow-up, 2026-11-08)
 
-Verdict: PENDING the (a) cells. (b) is rejected: turning `MEMRA_DSPARK_PREFIX_RESTORE` on for the
-RTX 5090 Laptop again wins where the card has room and runs out of room one concurrency step
-sooner.
+Verdict: (a), the DSpark-pool rewind, wins the speed back exactly with no memory regression, and
+ships (PR #1103). On the RTX 5090 Laptop at its device default the long-decode DFlash continuation's
+turn-3 TTFT goes from 2.462 s (main, a cold re-prime) to 0.275 s, byte-equal to cold in 9 of 9 pair
+cells (greedy, T=1 and penalized; chat, raw and second-generation chains), and the agentic memory
+A/B against main refuses and times out in the same cells with the same output. (b) is rejected:
+turning `MEMRA_DSPARK_PREFIX_RESTORE` on for the 5090 wins where the card has room and runs out of
+room one concurrency step sooner, as the 2026-11-05 decision cell found.
 
 Since memra#1093 (PR #1098) a recurrent DFlash session is freed at retire: its rows past the prompt
 were written by verify and decode, off the prime grid, so the pool resume at the parked end left the
@@ -104,7 +108,47 @@ overlapping (2.27-2.70 and 2.35-2.74). The inexact parked-end resume this replac
 measured 0.277 s by DSPARK restore (`../pool-resume-cost-20261107/run-4-switch/`), so (a) wins back
 the same speed as (b) on this shape, on the switch-off default.
 
-### Memory (`mem/`)
+### Memory (`mem/`, 09:21-12:18)
 
-PENDING: the full and le8k agentic workloads at c1..c8, main against the fix, single runs per arm
-(`mem_ab.sh`).
+`mem_ab.sh`: the (b) cell's harness and config (above), main (b30d0b92ad code, sha256 bddf1f1a5d19)
+against the fix (608404e003, a0c652bc8656), both at the device default (switch off). One run per arm
+and workload; the arms yielded the card twice between arms to landing records (`window-*.log`), so
+they ran in the order fix full, main full, main le8k, fix le8k. Host load average at each arm's start:
+40-46, 6-7, 13 and 6.
+
+| cell | main | fix |
+|---|---:|---:|
+| c1, full | 31.83 tok/s | 30.02 tok/s |
+| c2, full | 32.13 tok/s | 31.84 tok/s |
+| c4, full | 1 request HTTP 400: 17,166 context, largest admissible 15,961 | 1 request HTTP 400: 17,166 context, largest admissible 16,162 |
+| c8, full | 1 request HTTP 408 | 1 request HTTP 408 |
+| c2, le8k | 36.30 tok/s | 35.62 tok/s |
+| c4, le8k | 38.20 tok/s | 37.83 tok/s |
+| c8, le8k | 1 request HTTP 408 | 41.67 tok/s (completed) |
+
+- The output is the same: every completed cell generated the same tokens in both arms (11,549 at c1
+  and c2 full, 7,742 and 7,721 at c2 and c4 le8k), and the generated texts are identical, 29 of 29
+  and 22 of 22 per cell (compared before the texts were dropped from the receipts).
+- The memory floor is the same: the learned fixed residual reads 340 MB on the full workload and
+  323-324 MB on le8k in both arms, the idle-box capacity check refuses the same 17,166-token context
+  at c4 (the fix's admissible ceiling is 201 tokens higher), and no `out of memory` line appears.
+- The fix parked 43 sessions rewound on the full workload and 19 on le8k (11 and 3 freed: the
+  boundary's prefix entry had been evicted under the 4,000 MB budget), and
+  resumed none: the agentic client's caps grow every turn, so no parked session covers the next
+  turn's cap. Reclaim never evicted a DSpark session (0 in both arms); prefix-entry evictions were
+  157 against 193 (full) and 140 against 139 (le8k).
+- The le8k c8 HTTP 408 in main and the fix's completed c8 are one request's queue deadline, at
+  different host load; one run each, so the fix's c8 is not claimed as a gain.
+- The throughput differences are under 6%, from single runs under shifting host load (the fix's
+  full arm started at load 40-46, main's at 6-7); they are not a measured effect of the change.
+
+## Scope
+
+- One card (RTX 5090 Laptop), one model (Qwen3.8-27B NVFP4 + Q5_K with the DFlash2 drafter), the
+  device default. Switch-on devices (GB10, the Max-Q) free a recurrent session at retire exactly as
+  main does, and record no rewind target, so their ring compaction is main's too.
+- The rewind serves exact token extensions whose cap fits the parked allocation. A client whose turn
+  caps grow past the parked session's (the agentic shape above) gets no resume; growing a parked
+  DFlash session before the rewind is memra#1093's open grow-order item.
+- The prefix cache must be on, and the boundary's entry must still be resident at park: with the
+  cache off (`dspark-256-nopc-aff0-rw`) or the entry evicted, the session is freed as on main.

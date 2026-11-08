@@ -1,0 +1,13 @@
+gpulock: 5090 leased as claude-code-20261108T092151-2340619 for 110m
+09:21:52 mem A/B start base bddf1f1a5d19 fix a0c652bc8656
+waitfor: MET after 0m30s
+09:22:22 start 1-fix-full
+09:31:10 1-fix-full c1 {"arm": "1-fix-full", "users": 1, "max_tokens": 768, "seed": 1234, "think": 1, "temperature": 1.0, "turns": 29, "tokens": 11549, "wall_s": 387.5, "aggregate_gen_tps": 30.02, "per_user_gen_tps_median":
+09:39:48 1-fix-full c2 {"arm": "1-fix-full", "users": 2, "max_tokens": 768, "seed": 1234, "think": 1, "temperature": 1.0, "turns": 29, "tokens": 11549, "wall_s": 368.9, "aggregate_gen_tps": 31.84, "per_user_gen_tps_median":
+09:40:58 1-fix-full c4 rc=1
+09:40:58 1-fix-full c4 
+09:43:11 1-fix-full c8 rc=1
+09:43:11 1-fix-full c8 
+waitfor: MET after 0m15s
+09:43:26 1-fix-full done: capacity-rejects=1 vram-defer-lines=1976 reclaim-lines=174 dspark-park-rewound=43 dspark-park-skipped=11 dspark-rewound-resumes=0 oom-lines=0 fixed:    1554 MB prefill-workspace + 340MB fixed fixed:       6 MB prefill-workspace + 335MB fixed fixed:       2 MB prefill-workspace + 313MB fixed floor: [admit-cal] boot calibration done: model="q38" route=dspark transient floor 1544MB (static was 1536MB
+window-mem exit 143
