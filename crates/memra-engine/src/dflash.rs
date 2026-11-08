@@ -3054,7 +3054,8 @@ pub(crate) fn ring_keep_plan(
 }
 
 /// Why a drafter cannot rewind to `pos` and still equal a cold prime of the first `pos` tokens,
-/// or `None` when it can. A round at any later context reads rows `>= pos - window_rows` and the
+/// or `None` when it can. A round at any later context reads rows `>= pos - window_rows` (every
+/// DFlash2 draft layer is sliding; a windowless drafter never compacts, its `base` stays 0) and the
 /// suffix prime rewrites everything from `pos` up, so the rows `[pos - window_rows, pos)` the
 /// prime of those tokens wrote are all the cold drafter has that matters. They must still be
 /// resident (`base`), and they must all exist (`floor`: a cold-drafter KV owns no rows below its
@@ -4795,11 +4796,12 @@ pub struct DsparkSpecSession {
     /// same events as the cold one (memra#1031 gate: before this, every sampled partial
     /// restore was shifted by one Philox event from its first token).
     restored_boundary_pending: bool,
-    /// THE POOL REWIND TARGET (memra#1093): the position of the last prime-boundary capture the
-    /// worker drained (`take_prefix_capture`). Its prefix entry holds the trunk's recurrent state
-    /// there and the drafter keeps that window softly (`DflashKv::keep`), so a parked session can
-    /// rewind to it (`rewind_to_boundary`) instead of resuming from decode-written rows.
-    boundary: Option<usize>,
+    /// THE POOL REWIND TARGET (memra#1093): the position of a prime-boundary capture this session
+    /// published, and the worker's identity for the prefix entry that holds it
+    /// (`set_rewind_boundary`). That entry holds the trunk's recurrent state there and the drafter
+    /// keeps that window softly (`DflashKv::keep`), so a parked session can rewind to it
+    /// (`rewind_to_boundary`) instead of resuming from decode-written rows.
+    boundary: Option<(usize, u64)>,
 }
 
 /// The verify-width ladder's starting value for a drafter: anchor plus every draft
@@ -5120,11 +5122,13 @@ impl DsparkSpecSession {
         // The ring pin outlives the capture until the worker has exported the tail (the
         // export happens in the same publish, right after this take); `release_capture_pin`
         // lets the ring compact past those rows again.
-        let cap = take_dspark_prefix_capture(&mut self.prefix_capture);
-        if let Some(c) = cap.as_ref() {
-            self.boundary = Some(c.pos);
-        }
-        cap
+        take_dspark_prefix_capture(&mut self.prefix_capture)
+    }
+
+    /// The worker published this session's capture at `pos` as the prefix entry it knows as
+    /// `entry`: that boundary becomes the session's rewind target (replacing any earlier one).
+    pub fn set_rewind_boundary(&mut self, pos: usize, entry: u64) {
+        self.boundary = Some((pos, entry));
     }
 
     /// Called by the worker once the published tail is exported (or the publish was refused).
@@ -5132,11 +5136,11 @@ impl DsparkSpecSession {
     /// costs nothing and is what a later `rewind_to_boundary` needs.
     pub fn release_capture_pin(&mut self) {
         self.dkv.set_pin(None);
-        self.dkv.set_keep(self.boundary);
+        self.dkv.set_keep(self.boundary.map(|(pos, _)| pos));
     }
 
-    /// The position `rewind_to_boundary` would rewind to: the last drained capture.
-    pub fn rewind_boundary(&self) -> Option<usize> {
+    /// Where `rewind_to_boundary` would rewind to, and the prefix entry holding that state.
+    pub fn rewind_boundary(&self) -> Option<(usize, u64)> {
         self.boundary
     }
 
@@ -5150,9 +5154,9 @@ impl DsparkSpecSession {
     /// THE DSPARK-POOL REWIND (memra#1093). A DFlash target is a GDN hybrid, and a retired
     /// session's rows past its prompt were written by verify and decode, off the prime grid, so
     /// resuming at the parked end would prime the next turn from state no cold prime computes
-    /// (the pool grid law, docs/SERVING.md). This cuts the session back to its last drained
-    /// prime-boundary capture `g`, with `conv`/`ssm` the recurrent planes the prefix entry
-    /// published from that capture holds:
+    /// (the pool grid law, docs/SERVING.md). This cuts the session back to its rewind target `g`
+    /// (`set_rewind_boundary`), with `conv`/`ssm` the recurrent planes of the prefix entry the
+    /// worker published from that capture:
     /// * trunk: full-attention rows `[0, g)` are the prime's own (append-only), and the
     ///   recurrent state is the prime's state at `g` (`Cache::rewind_recurrent_from`);
     /// * drafter: rows `[g - window, g)` are the prime's own and still resident
@@ -5168,7 +5172,7 @@ impl DsparkSpecSession {
         conv: &[Option<CudaSlice<f32>>],
         ssm: &[Option<CudaSlice<f32>>],
     ) -> Result<usize, String> {
-        let g = self.boundary.ok_or("no drained prime-boundary capture")?;
+        let (g, _) = self.boundary.ok_or("no published prime-boundary capture")?;
         if self.prefix_capture.is_some() {
             return Err("a capture is still pending publication".into());
         }

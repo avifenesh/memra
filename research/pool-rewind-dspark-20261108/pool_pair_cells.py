@@ -22,9 +22,10 @@ follow-on: the exact extension a prompt-replaying client sends, which the pools'
 takes.
 
 usage: pool_pair_cells.py OUT CASE...   CASE = name=BINARY|ROUTE|T1,T2,T3|ENV
-  ENV may carry _TEMP=x and _SEED=n (request sampling; not server environment) and _EXPECT=rewind
-  (the warm boot must park rewound and resume at the prime boundary, else the case fails even when
-  its bytes match) or _EXPECT=skip (it must free the session and never resume from the pool).
+  ENV may carry _TEMP=x and _SEED=n (request sampling; not server environment) and _EXPECT=rewind:P:R
+  (the warm boot must log at least P rewound parks, at least R resumes at the prime boundary, every
+  boundary on the 32-token grid and no grid-law decline, else the case fails even when its bytes
+  match) or _EXPECT=skip (it must free the session and never resume from the pool).
   ROUTE: dspark, mtp, dspark-raw or mtp-raw. ENV: space-separated VAR=VALUE for every boot of the
   case (empty = none).
 Writes OUT/<name>/ (per-turn JSON, server logs), OUT/verdicts.jsonl; exit 1 if any case's bytes differ.
@@ -197,8 +198,12 @@ def case(name, binary, route, maxt, extra):
              for t in (2, 3)}
     turns[1] = {"warm_sha": hashlib.sha256(warm[0].encode()).hexdigest()[:10], "warm_len": len(warm[0]) - 1}
     warm_log = resumes(ev / "warm-server.log")
-    if expect == "rewind":
-        path_ok = bool(warm_log["dspark_park_rewound"]) and bool(warm_log["dspark_rewound_resume"])
+    if expect and expect.startswith("rewind"):
+        _, parks, resumes_min = expect.split(":")
+        path_ok = (len(warm_log["dspark_park_rewound"]) >= int(parks)
+                   and len(warm_log["dspark_rewound_resume"]) >= int(resumes_min)
+                   and all(g % 32 == 0 for _, g in warm_log["dspark_park_rewound"])
+                   and not warm_log["dspark_decline"])
     elif expect == "skip":
         path_ok = bool(warm_log["dspark_park_skipped"]) and not warm_log["dspark_pool"]
     else:

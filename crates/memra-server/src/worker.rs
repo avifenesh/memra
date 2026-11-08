@@ -2736,7 +2736,8 @@ pub struct Metrics {
     /// caches always, every cache under MEMRA_RESUME_GRID_REWIND=1, none under MEMRA_RESUME_EXACT=1.
     pub continuation_pool_grid_rewinds: u64,
     pub continuation_pool_grid_declines: u64,
-    /// DSpark-pool hits on a recurrent trunk refused by the grid law (memra#1093), a backstop;
+    /// DSpark-pool hits refused by the grid law (memra#1093): a recurrent trunk not rewound (a
+    /// backstop) or a rewound one that could not be seated;
     /// DFlash retires rewound to their prime boundary and parked; those freed instead (no boundary
     /// entry or drafter window to rewind to); and resumes of a rewound session (a subset of
     /// spec_pool_hits).
@@ -3214,8 +3215,9 @@ struct ReuseMetrics {
     /// own resume and counts here neither way.
     continuation_grid_rewinds: u64,
     continuation_grid_declines: u64,
-    /// DSpark-pool exact or text hits on a recurrent trunk that was not rewound, refused
-    /// (memra#1093); a backstop, since a recurrent session parks only rewound.
+    /// DSpark-pool exact or text hits refused under the grid law (memra#1093): a recurrent trunk
+    /// that was not rewound (a backstop, since a recurrent session parks only rewound) or a rewound
+    /// one that could not be seated for the request.
     dspark_grid_declines: u64,
     /// DFlash retires whose recurrent session was rewound to its prime boundary and parked, and
     /// those freed instead because no boundary entry or drafter window was left to rewind to.
@@ -3860,16 +3862,15 @@ fn dspark_park_rewind_refusal(
     }
 }
 
-/// THE DSPARK-POOL REWIND at park (memra#1093). A retiring DFlash session's last drained prime
-/// boundary `g` (`rewind_boundary`, on the grid) was published to the prefix cache, whose entry
-/// for `fed[..g]` holds the trunk's recurrent state there (an entry under that exact key holds
-/// the prime state of those tokens: every default publisher captures a prime, on the grid). The
-/// session rewinds in place to `g` from it (`DsparkSpecSession::rewind_to_boundary`), so it parks
-/// as the state a cold prime of `fed[..g]` leaves and holds nothing it did not already hold.
-/// `Err` names what was missing: no capture, the entry evicted, or the drafter window compacted
-/// away; the caller frees the session. Refused outright under `MEMRA_KV_PAUSE_DEMOTE`, whose
-/// fed-end snapshots break the "prime state under that key" premise, and with the restore switch
-/// on, where the prefix cache serves the next turn and the pool probe never runs for it.
+/// THE DSPARK-POOL REWIND at park (memra#1093). A retiring DFlash session's rewind target `g`
+/// (`rewind_boundary`, on the grid) is a capture this session itself published: the prefix entry
+/// that publish inserted (matched by its id, not only its key) holds the trunk's recurrent state
+/// from this session's own prime at `g`. The session rewinds in place to `g` from it
+/// (`DsparkSpecSession::rewind_to_boundary`), so it parks as the state a cold prime of
+/// `fed[..g]` leaves. `Err` names what was missing: no published capture of its own, the entry
+/// evicted, or the drafter window compacted away; the caller frees the session. Refused outright
+/// with the restore switch on or under `MEMRA_KV_PAUSE_DEMOTE` (`dspark_park_rewind_refusal`); no
+/// target is recorded there either (`dspark_rewind_target`), so this is a backstop.
 fn dspark_park_rewind(
     engine: &Engine,
     px: &PrefixCache,
@@ -3881,9 +3882,9 @@ fn dspark_park_rewind(
     {
         return Err(why.into());
     }
-    let g = sess
+    let (g, entry_id) = sess
         .rewind_boundary()
-        .ok_or("no prime boundary was captured")?;
+        .ok_or("no prime boundary of its own was published")?;
     if g > fed.len() {
         return Err(format!(
             "the boundary {g} is past the {} fed tokens",
@@ -3893,7 +3894,10 @@ fn dspark_park_rewind(
     let entry = px
         .entries
         .get(pool_key)
-        .and_then(|pool| pool.iter().find(|e| e.toks[..] == fed[..g]))
+        .and_then(|pool| {
+            pool.iter()
+                .find(|e| e.id == entry_id && e.toks[..] == fed[..g])
+        })
         .ok_or("the boundary's prefix entry is gone")?;
     if entry.pos != g || !entry.carries_recurrent() {
         return Err(format!(
@@ -4726,9 +4730,10 @@ fn dspark_cold_capture(prompt_len: usize) -> memra_engine::dflash::DsparkCapture
 /// render-stable cut is armed and the only DFlash resume is the pool's: the cold capture's grid
 /// cut of the whole new prompt (`grid_align_boundary_within`), so the session publishes this
 /// turn's on-grid entry and parks with a rewind target inside this turn rather than the last one
-/// (`dspark_park_rewind`). With the switch on, a resume keeps its render-stable cut or none. `Off` unless the cut falls strictly inside the
-/// suffix with a prime-floor half on each side (`dspark_resume_split`'s rule) and the entry clears
-/// the cache floor. Never the prompt end: a resume does not capture there (memra#248).
+/// (`dspark_park_rewind`). With the switch on, a resume keeps its render-stable cut or none.
+/// `Off` unless the cut falls strictly inside the suffix with a prime-floor half on each side
+/// (`dspark_resume_split`'s rule) and the entry clears the cache floor. Never the prompt end: a
+/// resume does not capture there (memra#248).
 fn dspark_resume_capture(
     resume_at: usize,
     suffix_len: usize,
@@ -27277,7 +27282,15 @@ fn publish_dspark_prefix_capture(
     s: &mut Session,
     cap: memra_engine::spec::SpecBoundaryCapture,
 ) {
-    publish_dspark_prefix_capture_inner(engine, px, hpx, s, cap);
+    let published = publish_dspark_prefix_capture_inner(engine, px, hpx, s, cap);
+    // THE POOL REWIND TARGET (memra#1093): only an entry this very publish inserted holds this
+    // session's own prime state under that key (a deduped key may belong to another publisher),
+    // and only where the session could later park rewound (`dspark_rewind_target`).
+    if let Some((pos, entry)) = published.filter(|&(pos, _)| dspark_rewind_target(pos))
+        && let Some(dspark) = s.dspark.as_mut()
+    {
+        dspark.set_rewind_boundary(pos, entry);
+    }
     // The capture is consumed on every path above (published, refused, or trunk-only), so
     // the draft-KV ring may compact past the capture's rows again (memra#249 lever 13).
     if let Some(dspark) = s.dspark.as_mut() {
@@ -27285,26 +27298,37 @@ fn publish_dspark_prefix_capture(
     }
 }
 
+/// Can a capture published at `pos` become a DFlash session's rewind target? Not where a retire
+/// never rewinds (`dspark_park_rewind_refusal`), and only on the prime grid, at or above the prime
+/// floor: the state there is cold-prime state for any longer prompt.
+fn dspark_rewind_target(pos: usize) -> bool {
+    dspark_park_rewind_refusal(dspark_prefix_restore_on(), kv_pause_demote_on()).is_none()
+        && pos >= memra_engine::hybrid_forward::PRIME_MIN_T
+        && pos.is_multiple_of(memra_engine::Engine::gdn_chunk_size())
+}
+
+/// Publishes the capture; returns `(pos, entry id)` when this call inserted the entry for
+/// `fed[..pos]` at the capture's own position (an on-tick publish), `None` when the key was
+/// already present, the publish was refused, or it was routed off the tick.
 fn publish_dspark_prefix_capture_inner(
     engine: &Engine,
     px: &mut PrefixCache,
     hpx: &mut HostPrefixCache,
     s: &Session,
     cap: memra_engine::spec::SpecBoundaryCapture,
-) {
-    let Some(dspark) = s.dspark.as_ref() else {
-        return;
-    };
+) -> Option<(usize, u64)> {
+    let dspark = s.dspark.as_ref()?;
     let end = cap.pos.min(s.fed.len());
     if end == 0 {
-        return;
+        return None;
     }
     // Clone the namespace key only after a real capture exists. Most active rows have no
     // capture, so the scheduler's fallback sweep remains allocation-free for them.
     let pool_key = s.pool_key();
     if px.has_key(&pool_key, &s.fed[..end]) {
-        return;
+        return None;
     }
+    let at_capture = end == cap.pos;
     // Publish the drafter's readable tail alongside the trunk planes. This is what turns a
     // dspark hit from "trunk-only, so a speculating request must cold-prime anyway" into a
     // restore: the draft state cannot be recomputed from restored KV (it derives from trunk
@@ -27344,6 +27368,10 @@ fn publish_dspark_prefix_capture_inner(
         "dspark-boundary",
         &s.request_id,
     );
+    // The key was absent above, so an entry under it now is the one this call inserted.
+    px.key_index(&pool_key, &s.fed[..end])
+        .filter(|_| at_capture)
+        .map(|i| (end, px.entries[&pool_key][i].id))
 }
 
 fn drain_dspark_prefix_capture(
@@ -52479,6 +52507,18 @@ mod tests {
                 .count(),
             2
         );
+        // The rewind target is recorded only from an entry this publish inserted, and the park
+        // matches that entry by its id, not only its key (another publisher's planes never mix in).
+        assert!(squashed.contains(
+            "let published = publish_dspark_prefix_capture_inner(engine, px, hpx, s, cap);"
+        ));
+        assert!(squashed.contains(
+            "published.filter(|&(pos, _)| dspark_rewind_target(pos)) && let Some(dspark) = s.dspark.as_mut() { dspark.set_rewind_boundary(pos, entry); }"
+        ));
+        assert!(squashed.contains(
+            "px.key_index(&pool_key, &s.fed[..end]) .filter(|_| at_capture) .map(|i| (end, px.entries[&pool_key][i].id))"
+        ));
+        assert!(squashed.contains(".find(|e| e.id == entry_id && e.toks[..] == fed[..g])"));
         // The park rewind refuses with the restore switch on and under pause-demote.
         let park_fn = squashed
             .find("fn dspark_park_rewind(")
