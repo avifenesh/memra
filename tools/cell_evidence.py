@@ -106,8 +106,8 @@ def digest(data):
     return hashlib.sha256(data).hexdigest()
 
 
-def git(repo, *args, check=True):
-    result = subprocess.run(["git", "-C", str(repo), *args], capture_output=True)
+def git(repo, *args, check=True, input=None):
+    result = subprocess.run(["git", "-C", str(repo), *args], capture_output=True, input=input)
     if check and result.returncode != 0:
         raise EvidenceError("git " + " ".join(args[:3]) + ": " + result.stderr.decode(errors="replace").strip())
     return result.stdout
@@ -545,18 +545,120 @@ def clean_env(extra=None):
     return env
 
 
+# A research path as code spells it: up to a quote, a space or a delimiter.
+RESEARCH_PATH = re.compile(r"research/[^\s\"'`<>(),;]+")
+
+
+@functools.lru_cache(maxsize=None)
+def research_kept(repo, commit):
+    """The research/ files a cell tree at `commit` checks out, as a tuple: those the impact
+    rules at that commit classify as anything but research (a `gate` rule: a gate tool reads
+    them), those the CI include census counts as crate inputs, and those under a research path
+    a code line in crates/ spells (comment lines and data files read nothing, as in the census's
+    literal check). The rest are receipts no build and no gate reads (the contract
+    `research_drift` relies on too). None, so the tree is checked out whole, when the census
+    cannot answer (it needs git 2.45 for `--no-lazy-fetch`) or a kept name cannot be written as
+    a sparse pattern."""
+    names = [n for n in git(repo, "ls-tree", "-r", "-z", "--name-only", commit, "--", "research")
+             .decode("utf-8", errors="replace").split("\0") if n]
+    text = ci.read_blob(repo, commit, ci.RULES_PATH)
+    if text is None:
+        return _whole("no impact rules at the commit")
+    try:
+        rules = ci.load_rules(text)
+        import validation_plan as vp
+        tree = vp.Tree(repo, commit)
+        _, owners = vp.workspace(tree)
+        census = [k for k in vp.included_inputs(tree, owners) if k.startswith("research/")]
+    except (ImportError, subprocess.SubprocessError, OSError, ValueError, KeyError) as error:
+        return _whole(f"the include census cannot answer ({type(error).__name__}: {error})")
+    grep = subprocess.run(["git", "-C", str(repo), "grep", "-n", "-I", "-F", "-e", "research/", commit,
+                           "--", "crates"], capture_output=True)
+    if grep.returncode not in (0, 1):
+        return _whole("git grep failed: " + grep.stderr.decode(errors="replace").strip())
+    spelled = set()
+    for line in grep.stdout.decode(errors="replace").splitlines():
+        _, source, _, code = line.split(":", 3)
+        # The census's own literal rule: comment lines and data files read nothing.
+        if ci._comment_line(code) or not ci._may_read(source, code):
+            continue
+        spelled.update(literal.rstrip(".") for literal in RESEARCH_PATH.findall(code))
+    kept = []
+    for name in names:
+        rule, _ = ci._match_rule(rules, name)
+        if ((rule is not None and rule["class"] != "research")
+                or any(ci._input_match(name, pattern) for pattern in census)
+                or any(name == p or name.startswith(p.rstrip("/") + "/") for p in spelled)):
+            if "\n" in name or name != name.rstrip() or "\ufffd" in name:
+                return _whole(f"a kept name cannot be a sparse pattern: {name!r}")
+            kept.append(name)
+    return tuple(kept)
+
+
+def _whole(reason):
+    print(f"  cell tree: whole checkout ({reason})", file=sys.stderr)
+    return None
+
+
+def sparse_patterns(names, kept):
+    """Non-cone sparse-checkout patterns: everything but research/, plus the kept research files,
+    as the highest directories whose tracked files are all kept (`/dir/**`) and single files
+    otherwise. Per-file patterns cost minutes: git matches every path against every pattern."""
+    total, held = {}, {}
+    for name in names:
+        for d in _research_dirs(name):
+            total[d] = total.get(d, 0) + 1
+    for name in kept:
+        for d in _research_dirs(name):
+            held[d] = held.get(d, 0) + 1
+    patterns = set()
+    for name in kept:
+        full = [d for d in _research_dirs(name) if held.get(d) == total.get(d)]
+        patterns.add(f"/{glob_escape(full[0])}/**" if full else "/" + glob_escape(name))
+    return ["/*", "!/research/**", *sorted(patterns)]
+
+
+def _research_dirs(name):
+    """The directories of `name` below research/, outermost first."""
+    parts = name.split("/")
+    return ["/".join(parts[:i]) for i in range(2, len(parts))]
+
+
+def glob_escape(path):
+    return re.sub(r"([\\*?\[\]!#])", r"\\\1", path)
+
+
 def tree_at(repo, commit, path):
     """A stable per-device worktree checked out clean at `commit`. Its in-tree target/ stays,
     so builds are incremental and the battery and serve-smoke (which runs its own no-op
-    `cargo build`) use the very binaries that were hashed, at a fixed source path."""
-    if (path / ".git").exists():
-        git(path, "checkout", "-q", "--detach", "--force", commit)
-        git(path, "clean", "-qffdx", "-e", "/target")
-    else:
+    `cargo build`) use the very binaries that were hashed, at a fixed source path.
+
+    The checkout is sparse: research/ receipts no build and no gate reads are left out
+    (`research_kept`). They were 7.1 of the 7.96 GB a full checkout took on 2026-11-08, and
+    each lane keeps two to four such trees. The record does not change: its inputs digest comes
+    from git objects (`inputs_digest`), not from the checkout. A sparse cell tree is for building
+    and running cells; the pre-push censuses read research/ and run on a full checkout."""
+    kept = research_kept(repo, commit)
+    if not (path / ".git").exists():
         if path.exists():
             shutil.rmtree(path)
         git(repo, "worktree", "prune")
-        git(repo, "worktree", "add", "--detach", str(path), commit)
+        git(repo, "worktree", "add", "--no-checkout", "--detach", str(path), commit)
+    # Sparse checkout in a worktree needs per-worktree config; set it once, not racing two runs.
+    if git(repo, "config", "--get", "extensions.worktreeConfig", check=False).strip() != b"true":
+        git(repo, "config", "extensions.worktreeConfig", "true")
+    if kept is not None:
+        names = [n for n in git(repo, "ls-tree", "-r", "-z", "--name-only", commit, "--", "research")
+                 .decode("utf-8", errors="replace").split("\0") if n]
+        patterns = "\n".join(sparse_patterns(names, kept)) + "\n"
+        result = subprocess.run(["git", "-C", str(path), "sparse-checkout", "set", "--no-cone", "--stdin"],
+                                input=patterns.encode("utf-8"), capture_output=True)
+        if result.returncode != 0:  # `set --no-cone` needs git 2.35
+            kept = _whole("sparse-checkout set refused: " + result.stderr.decode(errors="replace").strip())
+    if kept is None:
+        git(path, "sparse-checkout", "disable")
+    git(path, "checkout", "-q", "--detach", "--force", commit)
+    git(path, "clean", "-qffdx", "-e", "/target")
     require(git(path, "rev-parse", "HEAD").decode().strip() == commit, f"{path} is not at {commit[:12]}")
     require(not git(path, "status", "--porcelain", "--untracked-files=normal").strip(), f"{path} is not clean")
     return path

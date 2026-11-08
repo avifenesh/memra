@@ -455,6 +455,77 @@ class CellGate(unittest.TestCase):
         with self.assertRaisesRegex(q.GateError, "needs battery"):
             self.f.push(oid=head, base=main_tip)
 
+    def test_a_cell_tree_leaves_out_the_research_receipts_only(self):
+        # The receipts were 8.0 of a checkout's 8.1 GB (2026-11-08); the build and the battery
+        # never read them, and what a gate tool or a crate reads stays.
+        f = self.f
+        f.write("research/lane/run.log", "raw receipt\n")
+        f.write("research/e2e/prompts/board-2048.txt", "prompt\n")
+        f.write("research/tables/rates.txt", "1\n")
+        f.write("crates/memra-server/src/worker.rs",
+                'pub fn step() { let _ = std::fs::read_dir("research/tables"); }\n')
+        commit = f.commit("receipts and read research files")
+        tree = f.root / "cells" / "tree-120a"
+        ce.tree_at(f.repo, commit, tree)
+        self.assertFalse((tree / "research/lane/run.log").exists())
+        for kept in ("research/e2e/prompts/board-2048.txt", "research/tables/rates.txt",
+                     "crates/memra-server/src/worker.rs", "tools/change-impact.toml", "README.md"):
+            self.assertTrue((tree / kept).exists(), kept)
+        # Reused at the next commit, and still clean (tree_at refuses a dirty tree).
+        f.write("research/lane/run2.log", "more\n")
+        nxt = f.commit("more receipts")
+        ce.tree_at(f.repo, nxt, tree)
+        self.assertFalse((tree / "research/lane/run2.log").exists())
+        self.assertEqual(ce.git(tree, "rev-parse", "HEAD").decode().strip(), nxt)
+
+    def test_a_cell_tree_is_whole_when_the_census_cannot_answer(self):
+        f = self.f
+        f.write("research/lane/run.log", "raw receipt\n")
+        commit = f.commit("a receipt")
+        tree = f.root / "cells" / "tree-120a"
+        ce.research_kept.cache_clear()
+        import validation_plan as vp
+        with mock.patch.object(vp, "included_inputs", side_effect=vp.Refused("census down")):
+            ce.tree_at(f.repo, commit, tree)
+        ce.research_kept.cache_clear()
+        self.assertTrue((tree / "research/lane/run.log").exists())
+
+    def test_a_full_cell_tree_converts_and_keeps_its_target(self):
+        f = self.f
+        f.write(".gitignore", "/target/\n")  # as in the repository
+        f.write("research/lane/run.log", "raw receipt\n")
+        commit = f.commit("a receipt")
+        tree = f.root / "cells" / "tree-120a"
+        f.git("worktree", "add", "--detach", str(tree), commit)  # a tree from before this change
+        (tree / "target").mkdir()
+        (tree / "target" / "kept.bin").write_text("artifact\n")
+        self.assertTrue((tree / "research/lane/run.log").exists())
+        ce.tree_at(f.repo, commit, tree)
+        self.assertFalse((tree / "research/lane/run.log").exists())
+        self.assertTrue((tree / "target" / "kept.bin").exists())
+
+    def test_a_path_only_crate_code_spells_is_kept(self):
+        f = self.f
+        f.write("research/only-spelled/table.txt", "1\n")
+        f.write("crates/memra-server/src/worker.rs",
+                'pub fn step() { let _ = std::fs::read("research/only-spelled/table.txt"); }\n')
+        commit = f.commit("a crate reads a research file")
+        ce.research_kept.cache_clear()
+        import validation_plan as vp
+        with mock.patch.object(vp, "included_inputs", return_value={}):
+            kept = ce.research_kept(f.repo, commit)
+        ce.research_kept.cache_clear()
+        self.assertIn("research/only-spelled/table.txt", kept)
+
+    def test_sparse_patterns_collapse_whole_directories(self):
+        names = ["research/a/x.txt", "research/a/y.txt", "research/b/x.txt", "research/b/y.txt",
+                 "research/c/d/x.txt", "research/c/e.txt", "research/[w]/z.txt"]
+        kept = ["research/a/x.txt", "research/a/y.txt", "research/b/x.txt", "research/c/d/x.txt",
+                "research/[w]/z.txt"]
+        self.assertEqual(ce.sparse_patterns(names, kept), [
+            "/*", "!/research/**", "/research/\\[w\\]/**", "/research/a/**", "/research/b/x.txt",
+            "/research/c/d/**"])
+
     def test_research_drift_fails_closed_when_the_census_cannot_answer(self):
         a = self.f.head()
         self.f.write("research/lane/run.log", "raw\n")
