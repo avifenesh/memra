@@ -4,43 +4,62 @@
 [![License: FSL-1.1-ALv2](https://img.shields.io/badge/license-FSL--1.1--ALv2-blue.svg)](LICENSE)
 [![release](https://img.shields.io/github/v/release/avifenesh/memra)](https://github.com/avifenesh/memra/releases/latest)
 
-Rust + CUDA LLM inference engine for Blackwell (Tuned specifically on RTX PRO 6000, RTX 5090, B200): OpenAI-compatible (+converse and ant) serving, per-model X hardware exactness gates. NVFP4/mixed (fp8 hybrid, 4o6, etc - correctness, performance, hardware specific adapted) main quant support.
+**Memra is a Rust + CUDA LLM inference engine with hand-written kernels, NVFP4 and
+mixed-precision execution, and correctness gates scoped to each model and GPU.**
+
+The primary tuned targets are RTX PRO 6000 Blackwell and RTX 5090. One server provides
+OpenAI chat, completions and Responses APIs, plus Anthropic Messages, without Python in
+the serving path.
+
+Built by [Avi Fenesh](https://github.com/avifenesh) at [tiyuvta](https://tiyuvta.ai).
+
+[Install](docs/INSTALLATION.md) · [Models](docs/MODELS.md) ·
+[Serving](docs/SERVING.md) · [Cookbook](docs/COOKBOOK.md) ·
+[Performance](docs/PERFORMANCE.md)
 
 ## Project status
 
-General engine development and routine model bring-ups are paused. Work is limited
-to specific research questions with an owner, baseline, authorized budget and stopping
-criteria, plus maintenance required by existing commitments. Choose the runtime for
-the question; results need no automatic Memra port. Existing qualification rules apply.
+Memra is under active development. Current work focuses on model-specific correctness,
+per-device defaults, native model support and measured serving improvements. Support and
+performance claims land with their own gates and raw receipts, not from a successful model
+load or a shared architecture name.
 
-[Install](docs/INSTALLATION.md) · [Models](docs/MODELS.md) ·
-[Serving](docs/SERVING.md) · [Performance](docs/PERFORMANCE.md)
-
-> memra is my research engine: kernels, quantization arithmetic, speculative decoding and
-> serving written from scratch for Blackwell, with exactness gates and receipts for every
-> published number.
+The installer uses tagged releases. `main` can contain newer work that has not yet been
+released or qualified on every target.
 
 ## Quick start
 
-Prebuilt binaries require Linux x86_64, an NVIDIA driver with CUDA 13 runtime support, and the
-CUDA runtime libraries. The installer selects the GPU build, verifies its checksum, and does not
-require `nvcc`.
+Prebuilt binaries require Linux x86_64, glibc 2.35 or newer, an NVIDIA driver 580 or newer,
+and the CUDA 13 runtime libraries (`cudart`, `cublas` and `cublasLt`). The installer selects
+the GPU build and checks its SHA-256 digest. You do not need the CUDA toolkit or `nvcc`.
+
+### 1. Install and check the CUDA path
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/avifenesh/memra/main/tools/install.sh | sh
 export PATH="$HOME/.local/bin:$PATH"
-kernel-check                  # expect: ALL GREEN
+kernel-check
 ```
 
-Start a server with a supported public checkpoint. The first run downloads and caches the model
-through the `hf` CLI (`pip install -U 'huggingface_hub[cli]'`):
+A successful run ends with `ALL GREEN`. Optional model-backed cells can report `SKIP` when
+their artifacts are not installed.
+
+### 2. Start a local server
+
+This example uses Qwen3.8-27B NVFP4 with its MTP head. The first run downloads and caches
+the model through the `hf` CLI:
 
 ```bash
+pip install -U 'huggingface_hub[cli]'
 MEMRA_MODELS="q38=hf:Avifenesh/Qwen3.8-27B-NVFP4-MTP-GGUF:Q5K-mtp" \
 memra-server
 ```
 
-The server listens on `127.0.0.1:8080`. Send a streaming chat completion from another terminal:
+The server listens on `127.0.0.1:8080`.
+
+### 3. Send a request
+
+From another terminal:
 
 ```bash
 curl -sS -N http://127.0.0.1:8080/v1/chat/completions \
@@ -54,163 +73,121 @@ curl -sS -N http://127.0.0.1:8080/v1/chat/completions \
 ```
 
 Use the [cookbook](docs/COOKBOOK.md) for qualified model-and-card configurations. See
-[installation](docs/INSTALLATION.md) for source builds and platform requirements.
+[installation](docs/INSTALLATION.md) for source builds, other GPU targets and troubleshooting.
 
-## Project spirit
+## Why Memra
 
-Memra is narrow on purpose. The best execution path depends on the model, checkpoint, hardware,
-and workload, so Memra measures those combinations separately instead of promising that one loader
-or one default supports everything. A fast path is promoted only when its own correctness and
-performance evidence is current.
+- **Support is specific.** A model, quantization, drafter and GPU combination earns its own
+  support state. A checkpoint loading is not enough.
+- **Correctness comes before speed.** Kernel, generation, speculative-decoding and serving
+  gates compare each optimized path with its designated reference before promotion.
+- **Defaults fit the device.** RTX PRO 6000 and RTX 5090 keep separate measured defaults
+  where their best execution paths differ.
+- **The serving path is native.** A Rust runtime drives ahead-of-time compiled CUDA kernels,
+  with no Python framework between the HTTP request and the model.
 
-The project favors explicit support, reproducible receipts, and useful failures over silent
-fallbacks. Research uses the runtime that best fits the question, including established engines
-or offline harnesses. A result need not be ported into Memra. Issues, hardware reports, and
-evidence-backed pull requests within the current research scope are welcome.
-Look elsewhere if you need broad hardware coverage, a large architecture catalog, or a Python
-library embedded in your application.
+Speculative decoding, prefix caching, tool calls, structured output, embeddings and rerank
+are part of the same serving surface. See [Serving](docs/SERVING.md) and
+[API surfaces](docs/API-SURFACES.md) for the contracts and their limits.
+
+### When Memra is not the right fit
+
+Look elsewhere if you need broad hardware coverage, a large architecture catalog, or a
+Python library embedded in your application. Memra is deliberately narrow: it favors a
+smaller set of measured model-and-hardware paths over universal claims.
 
 ## Choose a path
 
-**By model:** [Qwen3.8 27B](docs/models/qwen38-27b.md) ·
-[Qwen3.8 Flash Next](docs/models/qwen38-flash-next.md) (bring-up only) ·
-[Qwen3.5 9B](docs/models/qwen35-9b.md) · [Qwen3.6 27B](docs/models/qwen36-27b.md) ·
-[Qwen3.6 35B-A3B](docs/models/qwen36-35b-a3b.md) ·
-[Qwen-AgentWorld 35B-A3B](docs/models/qwen-agentworld-35b-a3b.md) ·
-[Ornith 1.5 35B-A3B](docs/models/ornith15-35b-a3b.md) ·
-[Ornith 1.0 9B](docs/models/ornith10-9b.md) ·
-[Ornith 1.0 35B](docs/models/ornith10-35b.md) ·
-[Gemma 4 12B](docs/models/gemma4-12b.md) ·
-[Gemma 4 26B-A4B](docs/models/gemma4-26b-a4b.md) ·
-[Gemma 4 31B](docs/models/gemma4-31b.md) ·
-[Gemma 4 E4B](docs/models/gemma4-e4b.md) ·
+**Start with a model:** [Qwen3.8 27B](docs/models/qwen38-27b.md) ·
+[Qwen3.5 9B](docs/models/qwen35-9b.md) · [Gemma 4 31B](docs/models/gemma4-31b.md) ·
 [Step 3.7 Flash](docs/models/step37-flash.md) ·
-[DeepSeek V4 Flash](docs/models/deepseek-v4-flash.md) ·
-[GLM-5.3 Flash](docs/models/glm53-flash.md) (NativeReference) <!-- support: glm5_next-reference --> ·
-[Hy3](docs/models/hy3.md) (NativeReference) <!-- support: hy3-bf16-reference,hy3_nvfp4-modelopt-w4a16 -->
+[DeepSeek V4 Flash](docs/models/deepseek-v4-flash.md) (experimental) ·
+[all model cards](docs/models/)
 
-**By hardware:** [RTX PRO 6000 Blackwell](docs/rigs/rtx-pro-6000-blackwell.md) ·
-[RTX 5090 / 50-series](docs/rigs/rtx-5090.md) · [H100](docs/rigs/h100.md) ·
-[Ada](docs/rigs/ada.md) · [B200](docs/rigs/b200.md)
+**Browse by hardware:** [RTX PRO 6000 Blackwell](docs/rigs/rtx-pro-6000-blackwell.md) ·
+[RTX 5090 / 50-series](docs/rigs/rtx-5090.md) ·
+[DGX Spark GB10](docs/rigs/dgx-spark.md) (measured bring-up) ·
+[H100](docs/rigs/h100.md) · [Ada](docs/rigs/ada.md) ·
+[B200](docs/rigs/b200.md) (runtime-qualified source backend; source builds only)
 
-**By workload:** [interactive agents](docs/workloads/interactive-agents.md) ·
-[long-context and prefix reuse](docs/workloads/long-context.md) ·
+**Browse by workload:** [interactive agents](docs/workloads/interactive-agents.md) ·
+[long context and prefix reuse](docs/workloads/long-context.md) ·
 [batch throughput](docs/workloads/batch-throughput.md) ·
 [multimodal](docs/workloads/multimodal.md) ·
 [large models on multiple GPUs](docs/workloads/multi-gpu.md)
 
-## Overview
+## How it works
 
-memra is a from-scratch LLM inference engine: a Rust host runtime driving hand-written CUDA
-kernels, compiled ahead of time into fatbins embedded in the binary, with no Python and no
-framework in the serving path. It targets one card class at a time and is tuned separately for
-RTX PRO 6000 Blackwell and RTX 5090 (sm_120a), with B200 (sm_100a) as a runtime-qualified
-source lane and Hopper/Ada supported via source builds.
-The design constraints and the decisions they forced are in [ARCHITECTURE.md](ARCHITECTURE.md).
-
-### Crates
-
-| Crate | Owns |
-|---|---|
-| `memra-engine` | The CUDA engine: kernels, model programs, KV cache, speculative decoding, multi-GPU placement |
-| `memra-server` | OpenAI-compatible HTTP serving (chat, completions, Messages, Responses, embeddings, rerank, audio transcriptions), admission, prefix cache |
-| `memra-gguf` | GGUF and safetensors loading, quant-format decode, tensor inventory, model packs and the support-state enum |
-| `memra-tokenizer` | GGUF-native BPE and SPM tokenizer with chat templates |
-| `memra-sampling` | Host-side sampler chain (temperature, top-k, top-p, penalties) |
-| `memra-kv` | KV-cache format policy (q8_0, q5_1, q4_0, fp8 block layouts) |
-| `memra-tier` | Exact-byte tiering contracts |
-| `memra-lanes` | Serving-lane types, SLO admission policy, engine-truth step stats |
-| `memra-reference` | Portable unfused reference executor for correctness gates |
-| `memra-runtime` | CUDA runtime scaffolding (context, GEMM checks) |
-| `memra-validate` | Numeric validation helpers (reference comparisons, tolerance gates) |
-| `memra-cli` | Model onboarding compiler: `memra model inspect`, `model scaffold`, `model verify` |
-| `memra-net-guard` | SSRF address-range checks for server-initiated outbound fetches |
-| `memra-probe` | Unpublished dev spike (`publish = false`) |
+Memra compiles a model into a typed execution plan, binds the checkpoint tensors to that
+plan, and validates optimized rewrites against a portable reference executor. The Rust host
+runtime drives hand-written CUDA kernels embedded in the binary. Model packs, support
+records and gate receipts keep each claim tied to the artifact and hardware that produced it.
+See [Architecture](ARCHITECTURE.md) for the design and its decision ledger.
 
 ### Support states
 
-Support is specific to a model, quantization, and drafter combination, never to a format. There
-are exactly three positive states, the enum `NativeSupport` in
-`crates/memra-gguf/src/model_packs/mod.rs`:
+There are three positive support states:
 
-- **NativeReference**: the plan compiles and runs in memra's reference executor. Bring-up <!-- support: none; not NativeReference -->
-  evidence only.
+- **NativeReference**: the plan compiles and runs in Memra's reference executor. This is <!-- support: none; not NativeReference -->
+  bring-up evidence, not serving qualification.
 - **NativeQualified**: the required checkpoint and serving gates pass. <!-- support: none; not NativeQualified -->
-- **NativeTuned**: qualified, plus current receipts for the optimized rewrites the deployment <!-- support: none; not NativeTuned -->
-  selects.
+- **NativeTuned**: the path is qualified and has current receipts for the optimized <!-- support: none; not NativeTuned -->
+  rewrites it selects.
 
-Each pack's state is backed by a record in [`docs/support-records.toml`](docs/support-records.toml),
-and `tools/check-support-states.py` fails CI when a pack or a doc claims more than its records.
-
-"Loads", "shares an architecture name", and "works through another engine" are not support
-states. [docs/MODELS.md](docs/MODELS.md) is the support matrix; each entry in
-[docs/models/](docs/models/) is the shortest recommended path for one model.
+Each pack's state is backed by [`docs/support-records.toml`](docs/support-records.toml), and
+CI rejects claims that go beyond those records. [Models and hardware](docs/MODELS.md) is the
+full support matrix.
 
 ### Correctness gates
 
-Every fast path is promoted only against its own oracle. Kernel-level bit identity
-(`kernel-check`), argmax parity of generation against the reference path (`run-gen`),
-speculative-decode self-consistency across draft lengths (`run-spec`), and served-path
-byte identity (spec versus plain, restored versus cold) are the standing battery; GitHub CI is
-compile-only, so the battery runs on a GPU before a merge or a tag. Greedy decoding is the
-instrument, not the product: it is what makes byte-level gates possible. The gate catalog and
-what each one proves is [docs/TESTING.md](docs/TESTING.md).
+`kernel-check` compares kernel outputs with each cell's reference implementation and declared
+tolerance. `run-gen` compares greedy tokens with the native reference path and requires the
+same tokens. `run-spec` compares greedy outputs across draft lengths K=1..8 and requires
+identical results. Serving gates compare named route pairs, such as speculative versus plain
+decoding and restored versus cold sessions, under each gate's stated identity rule.
 
-### Releases
-
-Tagged releases carry prebuilt binaries (the installer above reads them) and publish the
-workspace to crates.io. The repository history was rebuilt from a content snapshot on
-2026-09-01 (a zero-history swap), so the GitHub Releases list here starts again with the first
-tag cut on this history; crates.io is continuous, with `memra-engine 0.123.0` published
-2026-09-01T04:59Z from old-history commit `bc0952fe5`, which is tag `v0.123.0`. The notes for
-v0.122.0 and v0.123.0 are kept in
-[docs/archive/RELEASE-NOTES-v0.122.0-v0.123.0.md](docs/archive/RELEASE-NOTES-v0.122.0-v0.123.0.md).
-Release mechanics are in [docs/RELEASING.md](docs/RELEASING.md).
+GitHub CI cannot run these NVIDIA qualification gates, so they run on the target hardware.
+A merge runs the cells a change reaches, or the full local battery including served-path
+identity gates. A tag uses the release battery: `kernel-check`, calibrated argmax and
+`run-spec` on two qwen35-class checkpoints, without a serving gate. The gate catalog and
+evidence requirements are in [Testing](docs/TESTING.md).
 
 ## Documentation
 
 | Document | Use it for |
 |---|---|
-| [Installation](docs/INSTALLATION.md) | Prebuilt requirements, source builds, architecture selection |
-| [Model cards](docs/models/) | Best starting path for each supported model |
-| [Hardware cards](docs/rigs/) | Recommended use by GPU target |
-| [Workload cards](docs/workloads/) | Recommended use by request shape |
-| [Cookbook](docs/COOKBOOK.md) | Copy-paste model and card configurations |
-| [Models](docs/MODELS.md) | Supported checkpoints, formats, drafters, and hardware |
-| [Serving](docs/SERVING.md) | HTTP contract, caching, auth, admission, multi-GPU, operations. v0.138.0: the GLM TP pool-split indexer is prime-only and its retained door is renamed (#395, `MEMRA_GLM5_TP_INDEXER_SPLIT_PRIME`, default ON, `=0` restores the replicated prime); decode ignores it and the decode dispatch is deleted, so the door no longer carries a decode cost. The served context window is resolved from the model's own config (#455, `MEMRA_CTX` unset = the checkpoint's declared context, never a literal 8192). Admission can be shaped by memory instead of a worst-case slot proxy (#431, `MEMRA_ADMIT_BY_MEMORY`, default OFF, decide-by 2026-09-23). DSV4F takes the matrix expert program as its default and three doors leave with the flip (#482); the three norm-fusion doors are ported, measured on the served program and deleted (#490); the dense wide-prefill tile width becomes the code (#471). Qwen3.5 defaults `MEMRA_SERVE_DEVPENALTY` ON on sm_120 (#429), gains an opt-in GQA-packed FA2-class prefill (#421, `MEMRA_PRIME_ATTN_FA2`, default OFF, decide-by 2026-09-23) and a carried-prime graph with live state tables (#417). Gemma sampled-spec admission defaults ON (`MEMRA_GEMMA_SPEC_SAMPLED`). Speech lands as a program: the capability plan and its gate set (#440), the served ASR decode contract G7 (docs/SPEECH.md section 5), and an audio surface that sheds honestly (#489, `MEMRA_AUDIO_*`). v0.137.0: GLM host-cache images preserve model-owned and TP-rank planes through demotion and promotion; an opt-in startup arena reserves the full pinned budget before readiness (#325, `MEMRA_GLM5_TP_KV_HOST`, default OFF). Validated DFlash restores also use retained-prefix admission and refuse carrier restoration failures (#377). The owned speculative-prime fairness walker is included (#379, `MEMRA_PRIME_YIELD` OFF; [receipts](research/prefill-fairness-20260908/RESULTS.md)). DSV4 graph split-K defaulted ON (#392, `MEMRA_DSV4_MOE_M1_SPLITK`; [unset/0 engagement](https://github.com/avifenesh/memra/pull/392)); the matrix expert program later left it unreachable on the served path and the flag is deleted (docs/FLAGS.md). GLM TP-2 gains opt-in GPU sampling (#378, merge `ff0937dd09b808cd97dde174de1b6aedff63a0b8`, `MEMRA_GLM5_TP_DEVICE_SAMPLE` default OFF, decide-by 2026-09-22). Five p32k OFF/ON pairs across two windows measured median wall throughput 81.32 -> 91.25 tok/s and server decode 11.89 -> 10.61 ms/token; 160-token greedy/top-k-one twins were byte-identical. Unset/0 with a restart restores host sampling. [Sampler receipts](research/glm5-tp2-gpu-sampler-20260908/RESULTS.md). [Release qualification](research/release-v0.137.0-20260909/GO-QUALIFICATION.md); deployment qualification remains separate. Since v0.136.0 DFlash serving streams cold and resumed prefill taps in 256-row batches (#370), removing the 13.42 GB cold tap transient at 128k and bounding the resumed suffix sink; [qualification](research/dflash-tap-storage-20260908/qualification.json). Since v0.135.0 eligible single-device text prefix restores pay for their suffix workspace, keep the donor leased, and refuse a cold fallback if restoration fails (#350, #362); TP restores retain their existing admission charges; v0.137.0 extends this accounting to validated external DFlash restores (#377). Shared cache qualification rejects invalid HTTP and incomplete stream rows (#360). Since v0.134.0 startup GPU-canary timeouts are retried before latching a fault (#353), and a non-resident MoE MTP head keeps verify capture closed and selects eager verification (#354). The DSV4 small-kernel diet (#339) shipped as a default-OFF experiment; it is now the code on device-decode f32x HC4 hidden-4096 shapes (single-row decode; verify and prefill keep the unfused chain), and `MEMRA_DSV4_SMALL_KERNEL_DIET` is deleted. Since v0.133.0 the dspark (qwen) verify runs its GDN state kernels once per layer over all draft rows instead of once per row (`MEMRA_SPEC_GDN_PACKED`, default ON, `0` rolls back; memra#341): +9% served decode at c=1, byte-identical. Since v0.132.0 the GLM-5.3-Flash TP-2 pair keeps a prefix cache that carries every rank (`MEMRA_GLM5_TP_PREFIX`) and primes with the split grouped prime's host diet (`MEMRA_GLM5_TP_SPLIT_PRIME_HOSTDIET`, 1M prime 310 -> 251 s); since v0.131.0 memra-server serves that walk behind `MEMRA_GLM5_TP` (plain route, `MEMRA_SERVE_SPEC=0`, spec and the batched hc walk refused by name; memra#313), the DSA indexer's prefill scorer can run on bf16 tensor cores (`MEMRA_DSA_SCORE_TC`, default OFF; memra#309) and its query rows split across the TP ranks (`MEMRA_GLM5_TP_INDEXER_SPLIT`, default OFF, byte-identical; memra#314): a 1.03M-token prime on the 2x B200 pair went 782 -> 310 s composed, and `MEMRA_B200_DSA_DECODE` defaults to level 2 on sm_100a (memra#315). Since v0.130.0 a temperature-0 request that carries a penalty (every non-thinking qwen request under the vendor presence_penalty) takes the dspark route, verified by penalised argmax and byte-identical to the host sampler (`MEMRA_DSPARK_GREEDY_PENALTY`, default ON, `0` rolls back; memra#310), and the door-0 decline is receipted (memra#305). Since v0.129.0 the dspark (qwen) draft KV is a live ring (`MEMRA_DFLASH_KV_RING`, default ON, `0` rolls back): 4,120 rows resident for any prompt length instead of the whole context cap, byte-identical to the cold oracle (memra#301). Since v0.128.0 a RESTORED dspark (qwen) session publishes the new turn's render-stable boundary as its own prefix-cache entry (memra#257), so the entry advances one turn per turn instead of freezing at turn 1's cut with a suffix that grew by a whole turn each time (same two doors, no new flag); sm_100a builds default the composed B200 decode doors ON. Since v0.127.0 the dspark (qwen) prefix-cache entry can be cut at the render-stable turn boundary (since 2026-11-07 part of the one restore switch `MEMRA_DSPARK_PREFIX_RESTORE`) so a multi-turn continuation restores instead of re-priming the whole conversation, and that route publishes committed tokens at round cadence like the glm5 one. Since v0.126.1 admission keeps a driver-headroom floor (`MEMRA_ADMIT_DRIVER_HEADROOM_MB`, 2048) in front of every admitted request, trimming only the pool slice a starved driver needs, so a long prime no longer OOMs on the driver side while the pool sits on cached blocks. Since v0.126.0 a streaming request's long prefill stays alive through proxies (SSE comments until `MEMRA_STREAM_TTFT_MS_MAX`, with a bounded pre-header admission budget) and a step-OOM teardown reclaims the parked pools and the prefix cache before its retry. Since v0.125.0 a DFlash2 draft proposal carrying the top-k selector's exhausted-slot sentinel refuses that one request by name instead of panicking the GPU worker, and a BUSY worker is judged on forward progress rather than heartbeat silence |
-| [API surfaces](docs/API-SURFACES.md) | Anthropic Messages and OpenAI Responses compatibility |
-| Embeddings and rerank | `/v1/embeddings` (OpenAI schema) and `/v1/rerank` (Cohere shape): prefill-only capture surfaces; every item of a multi-item request is metered under its own ledger id `<x-request-id>.<index>` (v0.124.1), [Serving](docs/SERVING.md) |
-| [Performance](docs/PERFORMANCE.md) | Measurements, methodology, rigs, and receipts |
-| [Flags](docs/FLAGS.md) | Audited environment-variable reference |
+| [Installation](docs/INSTALLATION.md) | Requirements, prebuilt installs, source builds and troubleshooting |
+| [Cookbook](docs/COOKBOOK.md) | Copy-paste model-and-card configurations |
+| [Models](docs/MODELS.md) and [model cards](docs/models/) | Supported checkpoints, quantization, drafters and recommended paths |
+| [Hardware cards](docs/rigs/) | Recommended use and qualification scope for each GPU target |
+| [Workload cards](docs/workloads/) | Guidance by request shape and serving workload |
+| [Serving](docs/SERVING.md) and [API surfaces](docs/API-SURFACES.md) | HTTP contracts, caching, admission, authentication and multi-GPU operation |
+| [Performance](docs/PERFORMANCE.md) | Measurements, conditions, methods and receipts |
 | [Testing](docs/TESTING.md) | Correctness gates and evidence requirements |
-| [Architecture](ARCHITECTURE.md) | Runtime structure and Blackwell implementation ledger |
-| [Decisions](docs/decisions/) | Adopted and rejected design choices with evidence |
-| [Releases](https://github.com/avifenesh/memra/releases) | Release artifacts; notes for the pre-swap tags in [docs/archive/](docs/archive/RELEASE-NOTES-v0.122.0-v0.123.0.md) |
+| [Flags](docs/FLAGS.md) | Audited runtime configuration reference |
+| [Architecture](ARCHITECTURE.md) and [decisions](docs/decisions/) | Runtime design and the evidence behind adopted or rejected choices |
+| [Releases](https://github.com/avifenesh/memra/releases) | Tagged binaries and release notes; `main` can run ahead of the latest tag |
 
-## Issues and requests
+## Contributing
 
-Issues and requests are welcome:
+Bug reports, hardware results and evidence-backed pull requests are welcome.
 
 - [Report a bug](https://github.com/avifenesh/memra/issues/new?template=bug-report.md)
 - [Request a model or feature](https://github.com/avifenesh/memra/issues/new)
 - [Submit a hardware validation](.github/ISSUE_TEMPLATE/hardware-validation.md)
 - [Report a vulnerability privately](SECURITY.md)
 
-For a model request, include the exact checkpoint, quantization, target GPU, and why the model is
-useful. Requests do not create a bring-up commitment while general development is paused.
-For a performance report, include the command, model artifact, hardware, and raw output.
+For a model request, include the full checkpoint ID, quantization, target GPU and use case. A
+request does not create a support commitment; native support still requires implementation
+and qualification. For a performance report, include the command, model artifact, hardware
+and raw output.
 
-## Contributing
-
-Issues are welcome even without a proposed fix. Pull requests are welcome when they include the
-proof required for the affected path; GPU changes cannot be validated by GitHub's compile-only
-runners. Start with [CONTRIBUTING.md](CONTRIBUTING.md).
+Start with [CONTRIBUTING.md](CONTRIBUTING.md). Pull requests need the proof required for the
+path they change; GitHub's runners cannot validate NVIDIA execution.
 
 ## License
 
-[FSL-1.1-ALv2](LICENSE). Each version becomes available under Apache-2.0 two years after
-it is first made available. Earlier revisions and package releases remain under the license
+[FSL-1.1-ALv2](LICENSE). Each version becomes available under Apache-2.0 two years after it
+is first made available. Earlier revisions and package releases remain under the license
 that accompanied them. Third-party components retain their own terms; see
 [THIRD-PARTY.md](crates/memra-engine/THIRD-PARTY.md).
-
-Built by [Avi Fenesh](https://github.com/avifenesh).
