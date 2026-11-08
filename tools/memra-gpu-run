@@ -1,0 +1,162 @@
+#!/usr/bin/env python3
+"""memra-gpu-run: the physical-card lease wrapper that tools/qualify-release.py capture runs under.
+
+usage: memra-gpu-run --gpus UUID --receipt DIR [--box-lock PATH] [--timeout SECONDS] [--wait SECONDS] -- CMD...
+
+docs/RELEASE-QUALIFICATION.md "Produce a record" runs tools/qualify-release.py capture under it.
+
+It holds an exclusive flock on the canonical per-UUID lock /tmp/memra-gpu-locks/<UUID>.lock (and on the box's
+own per-card lock when --box-lock names one) for the whole child, refuses a card that already runs a compute
+process, sets CUDA_VISIBLE_DEVICES to the UUID and MEMRA_GPU_LEASE_FILE to DIR/lease.json, forks the child,
+writes the lease (wrapper and child pid, locks with their inodes, the observed devices) before the child execs,
+and after the child exits records its exit code, timeout or signal, and any compute process left on the card.
+It never evicts another process and never changes the card. Format: the lease.json of the banked record
+research/release-qualification/candidate-pro-ubuntu-24-04/ (schema_version 1). CPU contract:
+tools/test_memra_gpu_run.py (--lock-dir is its seam; capture accepts only the canonical directory).
+"""
+import argparse
+import csv
+import fcntl
+import io
+import json
+import os
+import signal
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+LOCK_DIR = Path("/tmp/memra-gpu-locks")  # the canonical directory qualify-release.py capture checks
+
+
+def smi(query, *extra):
+    out = subprocess.check_output(["nvidia-smi", *extra, f"--query-{query}", "--format=csv,noheader,nounits"], text=True)
+    return [r for r in csv.reader(io.StringIO(out), skipinitialspace=True) if r]
+
+
+def devices():
+    rows = smi("gpu=index,uuid,name,memory.total,pci.bus_id")
+    return [{"index": int(r[0]), "uuid": r[1], "name": r[2], "memory_mib": int(r[3]), "pci_bus_id": r[4]} for r in rows]
+
+
+def compute_on(uuid):
+    return [{"gpu_uuid": r[0], "pid": int(r[1])} for r in smi("compute-apps=gpu_uuid,pid") if r[0] == uuid]
+
+
+def write(path, value):
+    tmp = path.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(value, indent=2) + "\n")
+    os.replace(tmp, path)
+
+
+def take(path, wait):
+    fd = os.open(path, os.O_RDWR | os.O_CREAT, 0o666)
+    deadline = time.monotonic() + wait
+    while True:
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            return fd
+        except BlockingIOError:
+            if time.monotonic() >= deadline:
+                sys.exit(f"memra-gpu-run: {path} is held; not granted within {wait} s")
+            time.sleep(5)
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--gpus", required=True)
+    ap.add_argument("--receipt", required=True, type=Path)
+    ap.add_argument("--box-lock", type=Path)
+    ap.add_argument("--timeout", type=float, default=7200)
+    ap.add_argument("--wait", type=float, default=600)
+    ap.add_argument("--lock-dir", type=Path, default=LOCK_DIR, help=argparse.SUPPRESS)
+    ap.add_argument("cmd", nargs=argparse.REMAINDER)
+    a = ap.parse_args()
+    cmd = a.cmd[1:] if a.cmd[:1] == ["--"] else a.cmd
+    uuids = a.gpus.split(",")
+    if len(uuids) != 1 or not cmd:
+        sys.exit("memra-gpu-run: one physical card UUID and a command are required")
+    uuid = uuids[0]
+    all_devices = devices()
+    leased = [d for d in all_devices if d["uuid"] == uuid]
+    if not leased:
+        sys.exit(f"memra-gpu-run: no such GPU {uuid}")
+    a.receipt.mkdir(parents=True, exist_ok=True)
+    lease_path = a.receipt / "lease.json"
+    if lease_path.exists():
+        sys.exit("memra-gpu-run: the receipt dir already holds a lease; use a fresh one")
+    a.lock_dir.mkdir(mode=0o1777, exist_ok=True)
+    held = []
+    if a.box_lock:
+        held.append(take(a.box_lock, a.wait))
+    lock = a.lock_dir / f"{uuid}.lock"
+    held.append(take(lock, a.wait))
+    st = os.stat(lock)
+    busy = compute_on(uuid)
+    if busy:
+        sys.exit(f"memra-gpu-run: {uuid} already runs compute {busy}; not disturbing it")
+    lease = {"schema_version": 1, "wrapper_pid": os.getpid(), "child_pid": None,
+             "requested_uuids": [uuid], "lock_order": [uuid], "lock_files": {uuid: str(lock)},
+             "lock_inodes": {uuid: {"inode": st.st_ino, "device_major": os.major(st.st_dev),
+                                    "device_minor": os.minor(st.st_dev)}},
+             "devices": leased, "all_devices": all_devices, "command": cmd,
+             "started_unix": time.time(), "state": "running"}
+    env = dict(os.environ, CUDA_VISIBLE_DEVICES=uuid, MEMRA_GPU_LEASE_FILE=str(lease_path))
+    r, w = os.pipe()
+    pid = os.fork()
+    if pid == 0:
+        os.close(w)
+        os.read(r, 1)  # the lease names this pid before the command starts
+        os.close(r)
+        for fd in held:
+            os.set_inheritable(fd, False)
+        os.execvpe(cmd[0], cmd, env)
+    os.close(r)
+    lease["child_pid"] = pid
+    write(lease_path, lease)
+    os.write(w, b"1")
+    os.close(w)
+    got = {"sig": None}
+
+    def forward(signum, _frame):
+        got["sig"] = signum
+        try:
+            os.kill(pid, signum)
+        except ProcessLookupError:
+            pass
+
+    for s in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
+        signal.signal(s, forward)
+    deadline = time.monotonic() + a.timeout
+    timed_out = False
+    status = None
+    while status is None:
+        done, st_ = os.waitpid(pid, os.WNOHANG)
+        if done:
+            status = st_
+            break
+        if time.monotonic() >= deadline and not timed_out:
+            timed_out = True
+            os.kill(pid, signal.SIGTERM)
+            deadline = time.monotonic() + 60
+        elif timed_out and time.monotonic() >= deadline:
+            os.kill(pid, signal.SIGKILL)
+        time.sleep(1)
+    code = os.waitstatus_to_exitcode(status)
+    lingering = []
+    for _ in range(10):  # a dying CUDA context can take a moment to leave the card
+        lingering = compute_on(uuid)
+        if not lingering:
+            break
+        time.sleep(3)
+    lease.update(state="finished", child_exit_code=code, finished_unix=time.time(), timed_out=timed_out,
+                 interrupted_signal=got["sig"], lingering_compute=lingering,
+                 exit_code=0 if code == 0 and not timed_out and got["sig"] is None and not lingering else 1)
+    write(lease_path, lease)
+    for fd in held:
+        os.close(fd)
+    return lease["exit_code"]
+
+
+if __name__ == "__main__":
+    sys.exit(main())
