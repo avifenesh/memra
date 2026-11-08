@@ -153,9 +153,14 @@ token tail; none of the compared rows changed.
 
 ## Device records on the stack top
 
-`research/release-qualification/cells/`:
-- **sm_120a** (RTX 5090, record `8b41fade8fbd-rtx5090-battery-perf-serving`): battery, serve-smoke and perf pass. The perf A/B ran against `b30d0b92ad`, the commit main `c347e782d2`'s own record tested; its source inputs are identical to `c347e782d2`'s. qwen3.8-27b decode is 43.24 against 41.75 tok/s, and ornith-1.5 209.93 against 209.92: not regressed.
-- **sm_121a** (GB10, record `8b41fade8fbd-gb10-battery-perf-serving`): battery, serve-smoke and perf pass. The perf A/B ran against `c347e782d2`. qwen3.8-27b decode is 13.73 against 13.69 tok/s, and ornith-1.5 81.06 against 81.07: not regressed.
+`research/release-qualification/cells/`, for `1877d4661a` (the code top after the rebase onto main
+`3a7d48a27c`). Both perf A/Bs ran against `f68bf32282`, whose source inputs differ from
+`3a7d48a27c` only in README.md, a docs path no crate reads:
+- **sm_120a** (RTX 5090, record `1877d4661a4f-rtx5090-battery-perf-serving`): battery, serve-smoke and perf pass. qwen3.8-27b decode 45.96 against 45.03 tok/s, ornith-1.5 213.86 against 217.84: not regressed (the tool needs complete separation of the runs plus a minimum drop; this change does not touch decode).
+- **sm_121a** (GB10, record `1877d4661a4f-gb10-battery-perf-serving`): battery, serve-smoke and perf pass. qwen3.8-27b 13.65 against 13.64 tok/s, ornith-1.5 80.55 against 80.64: not regressed.
+
+The records on the earlier tops are not banked, because two README commits on main voided them
+before they landed. They read the same: 5090 q27 +3.6% and -1.4%, GB10 within 0.3%.
 
 ## Not measured here
 
