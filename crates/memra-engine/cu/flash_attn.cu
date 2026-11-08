@@ -5307,7 +5307,14 @@ static __device__ __forceinline__ void fa_prefill_qw_h2p_body(
 
     if (nt > 0) produce(0);
     if (nt > 1) produce(1);
-    if (nt > 0 && warp >= N_WARPS) h2p_bar_sync(1, NT);   // head B starts after head A's first QK
+    // Ping-pong per scheduler pair (head A's warp wq, head B's warp wq + 4): a warp arrives on its
+    // partner's barrier after each QK and waits on its own before each PV, so the MMA blocks
+    // [PV(i - 1), QK(i)] alternate A, B, A, ... and each softmax runs under the partner's block.
+    // Head B's first wait puts it one QK behind head A. Barriers 2 + wq (head A waits) and
+    // 6 + wq (head B waits), 64 threads each; head A arrives once more after its last PV.
+    const bool head_a = warp < N_WARPS;
+    const int go_mine = head_a ? 2 + wq : 6 + wq, go_other = head_a ? 6 + wq : 2 + wq;
+    if (nt > 0 && !head_a) h2p_bar_sync(go_mine, 2 * WARP_SZ);
 
     for (int ti = 0; ti < nt; ++ti) {
         const int b = ti % ST;
@@ -5336,7 +5343,7 @@ static __device__ __forceinline__ void fa_prefill_qw_h2p_body(
             Sc[kg / N_KEYS + 0] = C0;
             Sc[kg / N_KEYS + 1] = C1;
         }
-        if (ti == 0 && warp < N_WARPS) h2p_bar_arrive(1, NT);
+        h2p_bar_arrive(go_other, 2 * WARP_SZ);
 
         // ---- softmax on registers (scale + causal mask + 4-lane reduce) ----
         float s_tile_max_lo = NEG_INF, s_tile_max_hi = NEG_INF;
@@ -5391,6 +5398,7 @@ static __device__ __forceinline__ void fa_prefill_qw_h2p_body(
             Pf[kk / K_STEP].x[2] = __floats2bfloat162_rn(Sc[g + 1].x[0], Sc[g + 1].x[1]);
             Pf[kk / K_STEP].x[3] = __floats2bfloat162_rn(Sc[g + 1].x[2], Sc[g + 1].x[3]);
         }
+        h2p_bar_sync(go_mine, 2 * WARP_SZ);   // the partner's MMA block is done
         #pragma unroll
         for (int c = 0; c < O_NBLK; ++c) {
             O_acc[c].x[0] *= alpha_lo; O_acc[c].x[1] *= alpha_lo;
@@ -5419,6 +5427,7 @@ static __device__ __forceinline__ void fa_prefill_qw_h2p_body(
         if (lane == 0) h2p_mbar_arrive(&empty[b]);   // this warp is done with stage b
         if (ti + 2 < nt) produce(ti + 2);
     }
+    if (nt > 0 && head_a) h2p_bar_arrive(go_other, 2 * WARP_SZ);   // head B's last PV
 
     #pragma unroll
     for (int c = 0; c < O_NBLK; ++c) {
