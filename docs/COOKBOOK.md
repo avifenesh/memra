@@ -102,13 +102,19 @@ greedy instrument numbers (chat 142.9 / agentic 157.2 vs MTP 126.9 / 148.6) rema
 byte-exactness receipts, not the serving verdict. Under load the spec-gate sheds to plain
 batching at c>=4 (aggregate parity).
 
-Multi-turn conversations no longer resume a parked DFlash session (memra#1093): its rows past the
-prompt were written by verify and decode, off the prime grid, and resuming them left the cold
-text. A DFlash retire frees the session (`[worker] dspark-park SKIPPED (grid law)`). With
-`MEMRA_DSPARK_PREFIX_RESTORE` on (the GB10 and Max-Q default), turn N+1 restores DFlash from an
-on-grid prefix entry carrying the draft tail and primes the rest, exactly; with it off, a
-long-decode continuation re-prefills the conversation. The old pool resume measured turn-over-turn
-TTFT −16% → −83% vs cold re-prime on an 8-turn conversation; that speed was not exact.
+Multi-turn conversations no longer resume a parked DFlash session at its end (memra#1093): its
+rows past the prompt were written by verify and decode, off the prime grid, and resuming them left
+the cold text. With `MEMRA_DSPARK_PREFIX_RESTORE` off (the RTX 5090 default) a DFlash retire parks
+the session rewound to its last prime boundary (`[worker] dspark-park REWOUND (grid law)`), and a
+next turn that extends those tokens exactly resumes there and primes the rest
+(`dspark-reuse: ... resumed at the prime boundary`), the same stream a cold prime gives. With the
+switch on (the GB10 and Max-Q default), the retire frees the session and turn N+1 restores DFlash
+from an on-grid prefix entry carrying the draft tail. The old pool resume measured turn-over-turn
+TTFT −16% → −83% vs cold re-prime on an 8-turn conversation; that speed was not exact. The rewind
+is: on the RTX 5090 a three-turn chat's long-decode turn 3 resumes in 0.275 s instead of a 2.46 s
+re-prime, byte-equal to cold (`research/pool-rewind-dspark-20261108/`). It needs the prefix cache
+on and a next turn whose cap fits the parked session; an agent client whose caps grow every turn
+re-primes as before.
 
 ### NVFP4 safetensors trunk + ranks trim
 

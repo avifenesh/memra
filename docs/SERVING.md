@@ -3105,12 +3105,33 @@ the RTX 5090 for the default chat and for `MEMRA_AFFINITY=0`, it is about 0.1 s 
 3k-token turn, because the prefix cache's on-grid seed serves the bulk
 (`research/pool-resume-cost-20261107/`); glm5_next and demoted DFlash sessions are not measured.
 The DSpark pool follows the same law since
-memra#1093: a DFlash session's rows past its prompt were written by verify and decode and it keeps
-no grid checkpoint, so every DFlash target (all are GDN hybrids) frees the session at retire
-instead of parking it, and the probe refuses a recurrent hit as a backstop. At the RTX 5090 default
-(three turns, max_tokens 96 / 1024 / 512) turn 3 had resumed at 3,114 of 3,144 tokens and left the
-cold text (383 vs 371 characters); now a long-decode DFlash continuation primes cold unless
-`MEMRA_DSPARK_PREFIX_RESTORE` restores it from an on-grid entry that carries the draft tail.
+memra#1093: a DFlash session's rows past its prompt were written by verify and decode, off the
+prime grid, and every DFlash target is a GDN hybrid. At the RTX 5090 default (three turns,
+max_tokens 96 / 1024 / 512) turn 3 had resumed at 3,114 of 3,144 tokens and left the cold text (383
+vs 371 characters). With the restore switch off (the device default everywhere except GB10 and
+the Max-Q; `MEMRA_DSPARK_PREFIX_RESTORE=0` or `1` overrides), a retiring session now parks REWOUND
+to the last prime-boundary capture `g` it published itself (`dspark_park_rewind`):
+- trunk KV lengths cut to `g`, the recurrent state copied from the prefix-cache entry that publish
+  inserted (matched by its id);
+- the drafter cut to `g`, its window below `g` held by a soft keep that the ring drops rather than
+  grows for.
+
+That is the state a cold prime of those `g` tokens leaves. A request whose prompt extends them on
+the exact token tier (never the text tier) resumes it as a new stream, with its own sampler, seed,
+Philox counters and cap, and primes the rest from `g`; a resumed prime captures the new prompt's
+grid cut, so the next turn has a target. With no published capture of its own (the prefix cache
+off, a key another request already published, a host-tier publish routed off the tick), the entry
+evicted, the drafter window compacted away or `MEMRA_KV_PAUSE_DEMOTE` on, the session is freed at
+retire (`dspark-park SKIPPED (grid law)`). A parked session holds its trunk cache, drafter and
+snapshot buffers in a pool slot until a resume or an eviction ladder takes it, as every pool entry
+does. With the switch on (GB10, the Max-Q) it is always freed: the
+prefix restore serves the next turn from an on-grid entry that carries the draft tail. The probe
+refuses any other recurrent hit as a backstop. Measured on the RTX 5090 at the device default
+(`research/pool-rewind-dspark-20261108/`): that turn 3 now resumes at 3,072 and primes 72 rows,
+byte-equal to cold in 9 of 9 pair cells (greedy, T=1 and penalized, chat, raw and second-generation
+chains), and its TTFT drops from 2.462 s (a cold re-prime) to 0.275 s; on the agentic workload the
+memory floor, the refused cells and the generated text match main. Turning the restore switch on
+instead wins the same turn (0.277 s) but refuses one concurrency step sooner on this card.
 STILL OPEN (memra#1093): the spec pool resumes an exact extension on its parked stream (no cell
 has reached it at the default: the prefix cache's on-grid spec restore claims those turns first);
 the plain-affinity rewind primes a suffix of 1..15 rows token by token.
