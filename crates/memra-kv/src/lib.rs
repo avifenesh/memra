@@ -3432,6 +3432,130 @@ impl Cache {
         self.pos = snap.pos;
         Ok(())
     }
+
+    /// Rewind to `pos` committed rows with the recurrent state copied from BORROWED planes: the
+    /// conv/ssm a prefix-cache entry captured at `pos` from this same stream's prime. It is
+    /// [`Cache::rollback`] with `accept_len` 0, except that the source planes belong to someone
+    /// else (an entry is shared; cloning it into a `CacheSnapshot` would double its recurrent
+    /// bytes for nothing).
+    ///
+    /// The caller owns the provenance argument: rows `[0, pos)` of every full-attention layer
+    /// must be the ones the entry's prime wrote (append-only, so they still are while the layer
+    /// holds the stream), and the planes must be that prime's state at `pos`. A layer allocated
+    /// but never run (`len == 0` under a nonzero position: an MTP/NextN slot the trunk skips) is
+    /// absent, as the prefix publisher treats it, and stays at 0; every other layer must hold
+    /// exactly `self.pos` rows. Every refusal precedes the first write, so a refusal leaves the
+    /// cache untouched; a failed device copy part-way leaves a cache the caller must drop. SWA
+    /// rings, TP planes and latent layers refuse: their rows below `pos` are not plain
+    /// append-only history.
+    pub fn rewind_recurrent_from(
+        &mut self,
+        e: &impl KvDev,
+        pos: usize,
+        conv: &[Option<CudaSlice<f32>>],
+        ssm: &[Option<CudaSlice<f32>>],
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        self.ensure_usable("cache recurrent rewind")?;
+        if self.has_swa_ring() {
+            return Err(
+                "recurrent rewind: SWA ring layers cannot rewind from a shared entry".into(),
+            );
+        }
+        if self.tp_kv.iter().any(Option::is_some)
+            || self.glm5_tp_recur.iter().any(Option::is_some)
+            || self.latent.iter().any(Option::is_some)
+        {
+            return Err(
+                "recurrent rewind: TP or latent planes are not carried by the entry".into(),
+            );
+        }
+        if pos > self.pos {
+            return Err(format!(
+                "recurrent rewind to {pos} past the cache position {}",
+                self.pos
+            )
+            .into());
+        }
+        let n = self.kv.len();
+        if self.recur.len() != n || conv.len() != n || ssm.len() != n {
+            return Err(format!(
+                "recurrent rewind layer counts kv/recur/conv/ssm={n}/{}/{}/{}",
+                self.recur.len(),
+                conv.len(),
+                ssm.len()
+            )
+            .into());
+        }
+        let cur = self.pos;
+        let absent = move |len: usize| rewind_layer_holds(len, cur) == Some(false);
+        for il in 0..n {
+            if let Some(kvl) = self.kv[il]
+                .as_ref()
+                .filter(|kvl| rewind_layer_holds(kvl.len, cur).is_none())
+            {
+                return Err(format!(
+                    "recurrent rewind: layer {il} holds {} rows, the cache position is {}",
+                    kvl.len, self.pos
+                )
+                .into());
+            }
+            match (&self.recur[il], &conv[il], &ssm[il]) {
+                (Some(rl), Some(c), Some(s)) => {
+                    if c.len() != rl.conv_state.len() || s.len() != rl.ssm_state.len() {
+                        return Err(
+                            format!("recurrent rewind: layer {il} plane shape differs").into()
+                        );
+                    }
+                }
+                (None, None, None) => {}
+                _ => return Err(format!("recurrent rewind: layer {il} kind differs").into()),
+            }
+        }
+        for il in 0..n {
+            if let Some(kvl) = self.kv[il].as_mut().filter(|kvl| !absent(kvl.len)) {
+                kvl.len = pos;
+                // In place, for the same stale-pointer reason as `rollback`.
+                e.set_i32_one(&mut kvl.len_d, pos as i32)?;
+            }
+            if let (Some(rl), Some(c), Some(s)) = (self.recur[il].as_mut(), &conv[il], &ssm[il]) {
+                e.copy_into(&mut rl.conv_state, 0, c, c.len())?;
+                e.copy_into(&mut rl.ssm_state, 0, s, s.len())?;
+            }
+        }
+        self.pos = pos;
+        Ok(())
+    }
+}
+
+/// What a recurrent rewind does with one full-attention layer holding `len` rows when the cache
+/// sits at `cache_pos`: `Some(true)` = it holds the stream and is cut back, `Some(false)` = it was
+/// allocated but never run (an MTP/NextN slot the trunk skips; the prefix publisher's absent
+/// convention) and stays at 0, `None` = it disagrees with the cache and the rewind refuses.
+fn rewind_layer_holds(len: usize, cache_pos: usize) -> Option<bool> {
+    if len == cache_pos {
+        Some(true)
+    } else if len == 0 {
+        Some(false)
+    } else {
+        None
+    }
+}
+
+#[cfg(test)]
+mod rewind_layer_tests {
+    use super::rewind_layer_holds;
+
+    /// memra#1093: a DFlash target with an MTP head carries a NextN KV slot the trunk never runs;
+    /// the rewind leaves it absent instead of refusing (which disabled the rewind on that model)
+    /// or stamping rows nobody wrote into it.
+    #[test]
+    fn a_never_run_layer_is_absent_and_a_disagreeing_one_refuses() {
+        assert_eq!(rewind_layer_holds(3_186, 3_186), Some(true));
+        assert_eq!(rewind_layer_holds(0, 3_186), Some(false));
+        assert_eq!(rewind_layer_holds(0, 0), Some(true));
+        assert_eq!(rewind_layer_holds(3_100, 3_186), None);
+        assert_eq!(rewind_layer_holds(3_200, 3_186), None);
+    }
 }
 
 #[cfg(test)]

@@ -2852,6 +2852,13 @@ pub struct DflashKv {
     /// Lowest logical row that must stay resident: a pending prefix capture's `pos - window`,
     /// so the worker's later `export_tail(pos)` still finds its rows. `None` = no pin.
     pin: Option<usize>,
+    /// SOFT KEEP (memra#1093, the DSpark-pool rewind): the lowest logical row of a published
+    /// boundary's drafter window, `boundary - window_rows`, kept so a parked session can rewind
+    /// to that boundary (`rewind_to`). Unlike `pin` it never allocates: when honoring it would
+    /// force a `Grow`, `ensure_room` drops it and compacts as if it were absent, and the session
+    /// simply cannot rewind (`ring_keep_plan`). A compaction that honors it moves more rows
+    /// through its per-layer scratch and comes sooner. `None` = nothing kept.
+    keep: Option<usize>,
     /// CONTEXT FLOOR (lane/spec-exclusions-20260902): the first ctx row that EXISTS. `0` on
     /// every cold-primed KV and every full-tail import (the pre-lane shape). A COLD-DRAFTER
     /// KV (`new_cold_at`) or a short-tail import (`from_tail` of a tail whose exporter had
@@ -3019,6 +3026,58 @@ pub(crate) fn ring_plan(
     }
 }
 
+/// `ring_plan` with the soft keep (`DflashKv::keep`) folded in. Returns the plan and whether the
+/// keep survives it. The keep lowers `keep_from` like a pin only when that costs no allocation:
+/// if the plan with the keep differs from the plan without it and is a `Grow`, the keep is
+/// dropped and the plan without it runs unchanged. A keep below `base` is already lost (those
+/// rows are gone).
+pub(crate) fn ring_keep_plan(
+    len: usize,
+    base: usize,
+    phys_rows: usize,
+    window_rows: usize,
+    add: usize,
+    pin: Option<usize>,
+    keep: Option<usize>,
+) -> (RingPlan, bool) {
+    let hard = ring_plan(len, base, phys_rows, window_rows, add, pin);
+    let Some(keep) = keep.filter(|&k| k >= base) else {
+        return (hard, false);
+    };
+    let lowest = pin.map_or(keep, |p| p.min(keep));
+    let soft = ring_plan(len, base, phys_rows, window_rows, add, Some(lowest));
+    if soft != hard && matches!(soft, RingPlan::Grow { .. }) {
+        (hard, false)
+    } else {
+        (soft, true)
+    }
+}
+
+/// Why a drafter cannot rewind to `pos` and still equal a cold prime of the first `pos` tokens,
+/// or `None` when it can. A round at any later context reads rows `>= pos - window_rows` and the
+/// suffix prime rewrites everything from `pos` up, so the rows `[pos - window_rows, pos)` the
+/// prime of those tokens wrote are all the cold drafter has that matters. They must still be
+/// resident (`base`), and they must all exist (`floor`: a cold-drafter KV owns no rows below its
+/// floor, where a cold prime has real ones).
+pub(crate) fn dkv_rewind_refusal(
+    pos: usize,
+    len: usize,
+    base: usize,
+    floor: usize,
+    window_rows: usize,
+) -> Option<&'static str> {
+    let lo = pos.saturating_sub(window_rows);
+    if pos > len {
+        Some("the rewind point is past the drafter's length")
+    } else if floor > lo {
+        Some("the drafter has a context floor inside the rewind window")
+    } else if base > lo {
+        Some("the drafter ring compacted past the rewind window")
+    } else {
+        None
+    }
+}
+
 /// Physical rows one DflashKv holds for a request context cap: two windows plus a block
 /// under the ring (so a compaction lands once per window of decode, never on consecutive
 /// rounds; never more than the door-off size for a short cap), the whole cap plus a block
@@ -3088,6 +3147,7 @@ impl DflashKv {
             base: 0,
             phys_rows,
             pin: None,
+            keep: None,
             floor: 0,
         })
     }
@@ -3116,6 +3176,26 @@ impl DflashKv {
         self.pin = pos.map(|p| p.saturating_sub(self.window_rows));
     }
 
+    /// Keep `[pos - window_rows, pos)` while that forces no allocation (the soft keep, see the
+    /// field), so the session can later `rewind_to(pos)`. `None` releases it.
+    pub(crate) fn set_keep(&mut self, pos: Option<usize>) {
+        self.keep = pos.map(|p| p.saturating_sub(self.window_rows));
+    }
+
+    /// Cut the drafter back to `pos` rows, the state a cold prime of the first `pos` tokens
+    /// leaves (`dkv_rewind_refusal` states when that holds). Rows `>= pos` become unreadable
+    /// garbage the next ingest overwrites, exactly as after `len` was last that value.
+    pub(crate) fn rewind_to(&mut self, pos: usize) -> Result<(), &'static str> {
+        if let Some(why) =
+            dkv_rewind_refusal(pos, self.len, self.base, self.floor, self.window_rows)
+        {
+            return Err(why);
+        }
+        self.len = pos;
+        self.keep = None;
+        Ok(())
+    }
+
     /// Make room for `add` rows at logical `len` (memra#249 lever 13). Door off: a no-op,
     /// because `phys_rows == cap + block` and `ingest_ctx` already refuses past `cap`.
     pub(crate) fn ensure_room(
@@ -3127,14 +3207,19 @@ impl DflashKv {
             return Ok(());
         }
         let rowsz = self.row_bytes / std::mem::size_of::<f32>();
-        match ring_plan(
+        let (plan, keep_survives) = ring_keep_plan(
             self.len,
             self.base,
             self.phys_rows,
             self.window_rows,
             add,
             self.pin,
-        ) {
+            self.keep,
+        );
+        if !keep_survives {
+            self.keep = None;
+        }
+        match plan {
             RingPlan::Fits => Ok(()),
             RingPlan::Compact { keep_from } => {
                 let kept = self.len - keep_from;
@@ -4710,6 +4795,22 @@ pub struct DsparkSpecSession {
     /// same events as the cold one (memra#1031 gate: before this, every sampled partial
     /// restore was shifted by one Philox event from its first token).
     restored_boundary_pending: bool,
+    /// THE POOL REWIND TARGET (memra#1093): the position of the last prime-boundary capture the
+    /// worker drained (`take_prefix_capture`). Its prefix entry holds the trunk's recurrent state
+    /// there and the drafter keeps that window softly (`DflashKv::keep`), so a parked session can
+    /// rewind to it (`rewind_to_boundary`) instead of resuming from decode-written rows.
+    boundary: Option<usize>,
+}
+
+/// The verify-width ladder's starting value for a drafter: anchor plus every draft
+/// (`MEMRA_DFLASH_VERIFY_T` pins it, clamped to `2..=n_drafts + 1`).
+fn dspark_vt_cap(draft: &DflashDraft) -> usize {
+    let nd = DsparkHarvest::for_draft(draft).n_drafts(draft.cfg.block_size);
+    std::env::var("MEMRA_DFLASH_VERIFY_T")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(nd + 1)
+        .clamp(2, nd + 1)
 }
 
 fn dspark_commit_limit(
@@ -5019,12 +5120,120 @@ impl DsparkSpecSession {
         // The ring pin outlives the capture until the worker has exported the tail (the
         // export happens in the same publish, right after this take); `release_capture_pin`
         // lets the ring compact past those rows again.
-        take_dspark_prefix_capture(&mut self.prefix_capture)
+        let cap = take_dspark_prefix_capture(&mut self.prefix_capture);
+        if let Some(c) = cap.as_ref() {
+            self.boundary = Some(c.pos);
+        }
+        cap
     }
 
     /// Called by the worker once the published tail is exported (or the publish was refused).
+    /// The hard pin goes; the drafter window below the boundary stays as a soft keep, which
+    /// costs nothing and is what a later `rewind_to_boundary` needs.
     pub fn release_capture_pin(&mut self) {
         self.dkv.set_pin(None);
+        self.dkv.set_keep(self.boundary);
+    }
+
+    /// The position `rewind_to_boundary` would rewind to: the last drained capture.
+    pub fn rewind_boundary(&self) -> Option<usize> {
+        self.boundary
+    }
+
+    /// The context the session's planes are allocated for (trunk cache and drafter). A reseated
+    /// session's round guard (`max_ctx`, `cache_max_ctx`) is its request's cold value, which can
+    /// be smaller; a later request up to this size can still take the session.
+    pub fn alloc_ctx(&self) -> usize {
+        self.cache.max_ctx.min(self.dkv.cap)
+    }
+
+    /// THE DSPARK-POOL REWIND (memra#1093). A DFlash target is a GDN hybrid, and a retired
+    /// session's rows past its prompt were written by verify and decode, off the prime grid, so
+    /// resuming at the parked end would prime the next turn from state no cold prime computes
+    /// (the pool grid law, docs/SERVING.md). This cuts the session back to its last drained
+    /// prime-boundary capture `g`, with `conv`/`ssm` the recurrent planes the prefix entry
+    /// published from that capture holds:
+    /// * trunk: full-attention rows `[0, g)` are the prime's own (append-only), and the
+    ///   recurrent state is the prime's state at `g` (`Cache::rewind_recurrent_from`);
+    /// * drafter: rows `[g - window, g)` are the prime's own and still resident
+    ///   (`dkv_rewind_refusal`), which is every row a later round can read below `g`.
+    ///
+    /// The session is then the one a cold prime of the first `g` tokens leaves, so a resume
+    /// that primes the rest of a prompt from `g` (on the grid) is the cold program for that
+    /// prompt. `g` must be on the prime grid. Every refusal comes before the first write; an
+    /// `Err` from a device copy leaves a session the caller must drop.
+    pub fn rewind_to_boundary(
+        &mut self,
+        e: &Engine,
+        conv: &[Option<CudaSlice<f32>>],
+        ssm: &[Option<CudaSlice<f32>>],
+    ) -> Result<usize, String> {
+        let g = self.boundary.ok_or("no drained prime-boundary capture")?;
+        if self.prefix_capture.is_some() {
+            return Err("a capture is still pending publication".into());
+        }
+        if g < crate::hybrid_forward::PRIME_MIN_T || !g.is_multiple_of(Engine::gdn_chunk_size()) {
+            return Err(format!("boundary {g} is off the prime grid"));
+        }
+        if let Some(why) = dkv_rewind_refusal(
+            g,
+            self.dkv.len,
+            self.dkv.base,
+            self.dkv.floor,
+            self.dkv.window_rows,
+        ) {
+            return Err(why.into());
+        }
+        self.cache
+            .rewind_recurrent_from(e, g, conv, ssm)
+            .map_err(|err| err.to_string())?;
+        self.dkv.rewind_to(g)?;
+        // The entry's planes are borrowed: finish the copies before its owner can free them.
+        e.stream().synchronize().map_err(|err| err.to_string())?;
+        self.ctx_len = g;
+        self.done = false;
+        self.boundary = None;
+        Ok(g)
+    }
+
+    /// Seat a REWOUND session for the request that resumes it, field for field as a cold prime
+    /// seats a new one: that request's sampler (its seed included), fresh Philox counters, the
+    /// penalty window seeded from `prefix` (the `g` resumed tokens), the verify ladder at its
+    /// start, and the round guard `max_ctx` at that request's cold value for `ctx_cap` (the
+    /// parked request's larger cap would let rounds run where the cold run stops at
+    /// ContextFull). The allocation stays (`alloc_ctx`). A rewound session is a new stream, not
+    /// a continuation of the parked one, which is what makes a sampled resume draw the cold
+    /// run's events. `Err` when `ctx_cap` exceeds the allocation.
+    pub fn reseat_for_request(
+        &mut self,
+        draft: &DflashDraft,
+        sampling: Option<crate::spec::SpecSampling>,
+        prefix: &[u32],
+        ctx_cap: usize,
+    ) -> Result<(), String> {
+        let max_ctx = if draft.dflash2.is_some() {
+            ctx_cap
+        } else {
+            ctx_cap.min(draft.cfg.sliding_window)
+        };
+        if max_ctx > self.alloc_ctx() {
+            return Err(format!(
+                "request cap {max_ctx} exceeds the session's {} rows",
+                self.alloc_ctx()
+            ));
+        }
+        self.max_ctx = max_ctx;
+        self.pen_hist = match sampling.as_ref().filter(|s| s.pen_on()) {
+            Some(sp) => crate::spec::pen_window_seed(&[], prefix, sp.penalty_last_n),
+            None => Vec::new(),
+        };
+        self.sampling = sampling;
+        self.sctr = 0;
+        self.uctr = 0;
+        self.restored_boundary_pending = false;
+        self.vt = dspark_vt_cap(draft);
+        self.rounds = 0;
+        Ok(())
     }
 
     /// Ring bookkeeping for a capture at `pos`: keep `[pos - window, pos)` resident.
@@ -5548,7 +5757,6 @@ impl crate::hybrid::HybridModel {
         logits: Vec<f32>,
     ) -> Result<DsparkSpecSession, crate::prime_walker::PrimeError> {
         let tp = prompt.len();
-        let b = draft.cfg.block_size;
         // Boundary token: greedy argmax (byte contract) or the request's own filtered
         // draw through the session Philox stream (the frspec boundary composition) —
         // penalized over the prompt window when the request carries penalties.
@@ -5619,12 +5827,7 @@ impl crate::hybrid::HybridModel {
         // Verify carries [anchor, drafts] = up to n_drafts+1 rows (harvest-dependent;
         // DSPARK-POSTMORTEM-20260820.md; family-keyed for DFlash2, else checkpoint
         // strategy census).
-        let nd = DsparkHarvest::for_draft(draft).n_drafts(b);
-        let vt_cap: usize = std::env::var("MEMRA_DFLASH_VERIFY_T")
-            .ok()
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(nd + 1)
-            .clamp(2, nd + 1);
+        let vt_cap = dspark_vt_cap(draft);
         let mut sess = DsparkSpecSession {
             cache,
             prefix_capture,
@@ -5642,6 +5845,7 @@ impl crate::hybrid::HybridModel {
             uctr: 0,
             pen_hist,
             restored_boundary_pending: false,
+            boundary: None,
         };
         sess.pin_capture();
         Ok(sess)
@@ -5827,12 +6031,7 @@ impl crate::hybrid::HybridModel {
                 None => crate::forward::argmax(boundary_logits) as u32,
             },
         };
-        let nd = DsparkHarvest::for_draft(draft).n_drafts(b);
-        let vt_cap: usize = std::env::var("MEMRA_DFLASH_VERIFY_T")
-            .ok()
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(nd + 1)
-            .clamp(2, nd + 1);
+        let vt_cap = dspark_vt_cap(draft);
         Ok(DsparkSpecSession {
             cache,
             prefix_capture: None,
@@ -5850,6 +6049,7 @@ impl crate::hybrid::HybridModel {
             uctr: 0,
             pen_hist,
             restored_boundary_pending: true,
+            boundary: None,
         })
     }
 
@@ -8852,6 +9052,76 @@ mod dflash_kv_ring_tests {
         for len in [0usize, 1, W, 10_000, cap - 16] {
             assert_eq!(ring_plan(len, 0, cap + 16, W, 16, None), RingPlan::Fits);
         }
+    }
+
+    /// memra#1093: the soft keep a parked session's rewind needs never allocates. It extends a
+    /// compaction like a pin while the kept rows fit the buffer, and is dropped (the plan without
+    /// it runs) the moment keeping it would grow the ring.
+    #[test]
+    fn the_rewind_keep_extends_a_compaction_but_never_grows_the_ring() {
+        use super::ring_keep_plan;
+        // A boundary at 2,944 keeps [880, ..): at len 4,130 that fits (4,130-880+16 <= 4,144).
+        assert_eq!(
+            ring_keep_plan(4130, 0, P, W, 16, None, Some(880)),
+            (RingPlan::Compact { keep_from: 880 }, true)
+        );
+        // No compaction due: the keep survives untouched.
+        assert_eq!(
+            ring_keep_plan(3000, 0, P, W, 16, None, Some(880)),
+            (RingPlan::Fits, true)
+        );
+        // Decode ran on until the kept rows no longer fit: dropped, the plain compaction runs.
+        assert_eq!(
+            ring_keep_plan(5100, 880, P, W, 16, None, Some(880)),
+            (
+                RingPlan::Compact {
+                    keep_from: 5100 - W
+                },
+                false
+            )
+        );
+        // A keep the ring already compacted past is lost.
+        assert_eq!(
+            ring_keep_plan(4130, 1000, P, W, 16, None, Some(880)),
+            (ring_plan(4130, 1000, P, W, 16, None), false)
+        );
+        // A hard pin keeps its own plan, growth included: a keep at the pin costs nothing more
+        // and survives, a keep below it that would grow the ring is dropped.
+        assert_eq!(
+            ring_keep_plan(4130, 0, P, W, 16, Some(0), Some(0)),
+            (ring_plan(4130, 0, P, W, 16, Some(0)), true)
+        );
+        assert_eq!(
+            ring_keep_plan(4130, 0, P, W, 16, Some(20), Some(0)),
+            (RingPlan::Compact { keep_from: 20 }, false)
+        );
+    }
+
+    /// memra#1093: a drafter rewinds to `pos` only when it still holds every row a cold prime of
+    /// the first `pos` tokens would let a later round read.
+    #[test]
+    fn a_drafter_rewinds_only_with_the_whole_window_below_the_point() {
+        use super::dkv_rewind_refusal;
+        assert_eq!(dkv_rewind_refusal(2944, 3200, 880, 0, W), None);
+        assert_eq!(dkv_rewind_refusal(2944, 3200, 0, 0, W), None);
+        // Short streams: the window reaches row 0.
+        assert_eq!(dkv_rewind_refusal(1024, 1500, 0, 0, W), None);
+        assert!(
+            dkv_rewind_refusal(2944, 2900, 0, 0, W).is_some(),
+            "past the length"
+        );
+        assert!(
+            dkv_rewind_refusal(2944, 3200, 881, 0, W).is_some(),
+            "compacted away"
+        );
+        assert!(
+            dkv_rewind_refusal(2944, 3200, 0, 881, W).is_some(),
+            "a cold-drafter floor"
+        );
+        assert!(
+            dkv_rewind_refusal(1024, 1500, 0, 1, W).is_some(),
+            "a floor above row 0"
+        );
     }
 }
 

@@ -2736,10 +2736,14 @@ pub struct Metrics {
     /// caches always, every cache under MEMRA_RESUME_GRID_REWIND=1, none under MEMRA_RESUME_EXACT=1.
     pub continuation_pool_grid_rewinds: u64,
     pub continuation_pool_grid_declines: u64,
-    /// DSpark-pool hits on a recurrent trunk refused by the grid law (memra#1093), a backstop, and
-    /// DFlash retires whose recurrent session was freed instead of parked.
+    /// DSpark-pool hits on a recurrent trunk refused by the grid law (memra#1093), a backstop;
+    /// DFlash retires rewound to their prime boundary and parked; those freed instead (no boundary
+    /// entry or drafter window to rewind to); and resumes of a rewound session (a subset of
+    /// spec_pool_hits).
     pub dspark_pool_grid_declines: u64,
+    pub dspark_pool_grid_park_rewinds: u64,
     pub dspark_pool_grid_park_skips: u64,
+    pub dspark_pool_grid_rewind_resumes: u64,
     pub spec_pool_hits: u64,
     pub spec_pool_misses: u64,
     pub spec_pool_affinity_rewinds: u64,
@@ -2972,12 +2976,20 @@ impl ParkedEntryAge for SpecReuseEntry {
 /// EXACT and TEXT extension tiers with the same sampler predicate as the MTP pool; the
 /// affinity-rewind tier needs a rollback checkpoint the dspark session does not retain
 /// (named residual — a history-rewriting client re-primes cold, today's behavior).
+///
+/// A RECURRENT session (every DFlash target is a GDN hybrid) parks only REWOUND to its prime
+/// boundary (memra#1093, `dspark_park_rewind`): `fed` is then the boundary's tokens, the entry
+/// resumes on the exact token tier only, and the resuming request is seated as a new stream.
 struct DsparkReuseEntry {
     sess: memra_engine::dflash::DsparkSpecSession,
     /// The session's fed token stream (prompt + committed generation) — the exact-tier
     /// match key. The dspark session does not retain its committed ids itself; the
     /// worker's `fed` is the authoritative stream at retire (pos() == fed.len() gate).
+    /// For a rewound entry, the first `g` tokens of that stream.
     fed: Vec<u32>,
+    /// `Some(parked end)` when the session was rewound to its prime boundary at park, `None`
+    /// for a session parked at its end (a non-recurrent trunk).
+    rewound_from: Option<usize>,
     /// detok(fed) minus the leading BOS — text-tier matching, same rationale as the MTP
     /// pool (BPE seams break token-level starts_with on ~50% of chat turn boundaries).
     committed_text: String,
@@ -3202,11 +3214,15 @@ struct ReuseMetrics {
     /// own resume and counts here neither way.
     continuation_grid_rewinds: u64,
     continuation_grid_declines: u64,
-    /// DSpark-pool exact or text hits on a recurrent trunk refused (memra#1093); a backstop now
-    /// that recurrent sessions no longer park (`dspark_grid_park_skips`).
+    /// DSpark-pool exact or text hits on a recurrent trunk that was not rewound, refused
+    /// (memra#1093); a backstop, since a recurrent session parks only rewound.
     dspark_grid_declines: u64,
-    /// DFlash retires whose recurrent session was freed instead of parked (memra#1093).
+    /// DFlash retires whose recurrent session was rewound to its prime boundary and parked, and
+    /// those freed instead because no boundary entry or drafter window was left to rewind to.
+    dspark_grid_park_rewinds: u64,
     dspark_grid_park_skips: u64,
+    /// Resumes of a rewound session (subset of `spec_hits`).
+    dspark_grid_rewind_resumes: u64,
 }
 
 /// Workspace-aware admission for hyper-trunk prefill (lane/glm5-gpf-workspace, 2026-08-30).
@@ -3824,6 +3840,67 @@ fn plain_pool_resume_at(
 /// Does this cache carry recurrent (GDN conv/ssm) state, the state the grid law governs?
 fn cache_carries_recurrent(cache: &Cache) -> bool {
     cache.recur.iter().any(Option::is_some)
+}
+
+/// The boot-wide reasons a DFlash retire never rewinds (`dspark_park_rewind`). With the restore
+/// switch on, the next DFlash turn restores from the prefix cache, which the pool probe yields
+/// to, so a parked session would hold its planes for a resume that never runs. Under
+/// `MEMRA_KV_PAUSE_DEMOTE` a plain park is snapshotted at its fed end, where decode wrote the
+/// state, so an entry under the boundary's key need not hold prime state.
+fn dspark_park_rewind_refusal(
+    restore_switch_on: bool,
+    pause_demote_on: bool,
+) -> Option<&'static str> {
+    if restore_switch_on {
+        Some("the restore switch is on: the next turn restores from the prefix cache")
+    } else if pause_demote_on {
+        Some("MEMRA_KV_PAUSE_DEMOTE entries can hold decode-written state")
+    } else {
+        None
+    }
+}
+
+/// THE DSPARK-POOL REWIND at park (memra#1093). A retiring DFlash session's last drained prime
+/// boundary `g` (`rewind_boundary`, on the grid) was published to the prefix cache, whose entry
+/// for `fed[..g]` holds the trunk's recurrent state there (an entry under that exact key holds
+/// the prime state of those tokens: every default publisher captures a prime, on the grid). The
+/// session rewinds in place to `g` from it (`DsparkSpecSession::rewind_to_boundary`), so it parks
+/// as the state a cold prime of `fed[..g]` leaves and holds nothing it did not already hold.
+/// `Err` names what was missing: no capture, the entry evicted, or the drafter window compacted
+/// away; the caller frees the session. Refused outright under `MEMRA_KV_PAUSE_DEMOTE`, whose
+/// fed-end snapshots break the "prime state under that key" premise, and with the restore switch
+/// on, where the prefix cache serves the next turn and the pool probe never runs for it.
+fn dspark_park_rewind(
+    engine: &Engine,
+    px: &PrefixCache,
+    pool_key: &PoolKey,
+    fed: &[u32],
+    sess: &mut memra_engine::dflash::DsparkSpecSession,
+) -> Result<usize, String> {
+    if let Some(why) = dspark_park_rewind_refusal(dspark_prefix_restore_on(), kv_pause_demote_on())
+    {
+        return Err(why.into());
+    }
+    let g = sess
+        .rewind_boundary()
+        .ok_or("no prime boundary was captured")?;
+    if g > fed.len() {
+        return Err(format!(
+            "the boundary {g} is past the {} fed tokens",
+            fed.len()
+        ));
+    }
+    let entry = px
+        .entries
+        .get(pool_key)
+        .and_then(|pool| pool.iter().find(|e| e.toks[..] == fed[..g]))
+        .ok_or("the boundary's prefix entry is gone")?;
+    if entry.pos != g || !entry.carries_recurrent() {
+        return Err(format!(
+            "the boundary's prefix entry holds no recurrent state at {g}"
+        ));
+    }
+    sess.rewind_to_boundary(engine, &entry.conv, &entry.ssm)
 }
 
 /// The plain pool's grid rewind (DAY41 1.1): restore the entry to its checkpoint in place (the
@@ -4642,6 +4719,27 @@ fn dspark_cold_capture(prompt_len: usize) -> memra_engine::dflash::DsparkCapture
     match seed_capture_boundary(prompt_len, 0) {
         SeedCapture::AtBoundary(b) => memra_engine::dflash::DsparkCapture::Boundary(b),
         _ => memra_engine::dflash::DsparkCapture::PromptEnd,
+    }
+}
+
+/// The cut a RESUMED DFlash prime takes with the restore switch off (memra#1093), where no
+/// render-stable cut is armed and the only DFlash resume is the pool's: the cold capture's grid
+/// cut of the whole new prompt (`grid_align_boundary_within`), so the session publishes this
+/// turn's on-grid entry and parks with a rewind target inside this turn rather than the last one
+/// (`dspark_park_rewind`). With the switch on, a resume keeps its render-stable cut or none. `Off` unless the cut falls strictly inside the
+/// suffix with a prime-floor half on each side (`dspark_resume_split`'s rule) and the entry clears
+/// the cache floor. Never the prompt end: a resume does not capture there (memra#248).
+fn dspark_resume_capture(
+    resume_at: usize,
+    suffix_len: usize,
+) -> memra_engine::dflash::DsparkCapture {
+    let prompt_len = resume_at + suffix_len;
+    let b = grid_align_boundary_within(prompt_len, prompt_len);
+    let min = memra_engine::hybrid_forward::PRIME_MIN_T;
+    if b >= PREFIX_CACHE_MIN_TOKENS && b >= resume_at + min && prompt_len >= b + min {
+        memra_engine::dflash::DsparkCapture::Boundary(b)
+    } else {
+        memra_engine::dflash::DsparkCapture::Off
     }
 }
 
@@ -34730,53 +34828,80 @@ pub fn run(
                     );
                 } else if reuse_pool_per_namespace() > 0
                     && s.fed.len() >= REUSE_MIN_PREFIX
-                    && cache_carries_recurrent(&sess.cache)
-                {
-                    // THE POOL GRID LAW (memra#1093): every DFlash target is a GDN hybrid, and a
-                    // recurrent trunk's parked stream can never resume exactly (the probe declines
-                    // it), so the session is freed here instead of holding its whole cache, draft
-                    // KV and snapshot buffers in a pool slot until an eviction ladder reaches it.
-                    eprintln!(
-                        "[worker] dspark-park SKIPPED (grid law): a recurrent trunk's {} rows \
-                         cannot resume exactly; session freed (model {})",
-                        s.fed.len(),
-                        s.model
-                    );
-                    reuse_metrics.dspark_grid_park_skips += 1;
-                } else if reuse_pool_per_namespace() > 0
-                    && s.fed.len() >= REUSE_MIN_PREFIX
                     && sess.pos() == s.fed.len()
                 {
-                    let toks = &s.fed;
-                    let skip = loaded[&s.model]
-                        .tok
-                        .bos_id()
-                        .map(|b| toks.first() == Some(&b))
-                        .unwrap_or(false) as usize;
-                    let committed_text = loaded[&s.model].tok.decode_special(&toks[skip..], true);
-                    let done = sess.finished();
-                    if prepare_park(
-                        ParkedPool::Dspark,
-                        &pool_key,
-                        &mut reuse,
-                        &mut spec_reuse,
-                        &mut dspark_reuse,
-                        &mut reuse_metrics,
-                        reuse_pool_per_namespace(),
-                        reuse_pool_global_cap(),
-                    ) {
-                        dspark_reuse
-                            .entry(pool_key)
-                            .or_default()
-                            .push(DsparkReuseEntry {
-                                sess,
-                                fed: s.fed,
-                                committed_text,
-                                done,
-                                affinity: s.affinity,
-                                sampler: s.sampler.identity(),
-                                parked_at: Instant::now(),
-                            });
+                    let mut sess = sess;
+                    // THE POOL GRID LAW (memra#1093): every DFlash target is a GDN hybrid, and a
+                    // recurrent trunk's rows past its prompt were written by verify and decode, off
+                    // the prime grid, so its parked end can never resume exactly. It parks REWOUND
+                    // to its last prime-boundary capture instead (`dspark_park_rewind`): the state
+                    // a cold prime of those tokens leaves. With nothing to rewind to the session is
+                    // freed rather than holding its cache, draft KV and snapshot buffers in a slot.
+                    let (fed, rewound_from) = if cache_carries_recurrent(&sess.cache) {
+                        match dspark_park_rewind(&engine, &px, &pool_key, &s.fed, &mut sess) {
+                            Ok(g) => {
+                                eprintln!(
+                                    "[worker] dspark-park REWOUND (grid law): {} rows to the prime \
+                                     boundary {g}; parked (model {})",
+                                    s.fed.len(),
+                                    s.model
+                                );
+                                reuse_metrics.dspark_grid_park_rewinds += 1;
+                                let parked_end = s.fed.len();
+                                let mut fed = s.fed;
+                                fed.truncate(g);
+                                (Some(fed), Some(parked_end))
+                            }
+                            Err(why) => {
+                                eprintln!(
+                                    "[worker] dspark-park SKIPPED (grid law): a recurrent trunk's {} \
+                                     rows cannot resume exactly and it cannot rewind ({why}); \
+                                     session freed (model {})",
+                                    s.fed.len(),
+                                    s.model
+                                );
+                                reuse_metrics.dspark_grid_park_skips += 1;
+                                (None, None)
+                            }
+                        }
+                    } else {
+                        (Some(s.fed), None)
+                    };
+                    if let Some(fed) = fed {
+                        let skip = loaded[&s.model]
+                            .tok
+                            .bos_id()
+                            .map(|b| fed.first() == Some(&b))
+                            .unwrap_or(false) as usize;
+                        let committed_text =
+                            loaded[&s.model].tok.decode_special(&fed[skip..], true);
+                        // A rewound session holds no boundary token to continue from, so like a
+                        // finished stream it resumes only with a non-empty suffix.
+                        let done = rewound_from.is_some() || sess.finished();
+                        if prepare_park(
+                            ParkedPool::Dspark,
+                            &pool_key,
+                            &mut reuse,
+                            &mut spec_reuse,
+                            &mut dspark_reuse,
+                            &mut reuse_metrics,
+                            reuse_pool_per_namespace(),
+                            reuse_pool_global_cap(),
+                        ) {
+                            dspark_reuse
+                                .entry(pool_key)
+                                .or_default()
+                                .push(DsparkReuseEntry {
+                                    sess,
+                                    fed,
+                                    rewound_from,
+                                    committed_text,
+                                    done,
+                                    affinity: s.affinity,
+                                    sampler: s.sampler.identity(),
+                                    parked_at: Instant::now(),
+                                });
+                        }
                     }
                 }
             } else if s.fed.len() >= REUSE_MIN_PREFIX && s.prefill_done && s.vision.is_none() {
@@ -35271,7 +35396,9 @@ pub fn run(
             m.continuation_pool_grid_rewinds = reuse_metrics.continuation_grid_rewinds;
             m.continuation_pool_grid_declines = reuse_metrics.continuation_grid_declines;
             m.dspark_pool_grid_declines = reuse_metrics.dspark_grid_declines;
+            m.dspark_pool_grid_park_rewinds = reuse_metrics.dspark_grid_park_rewinds;
             m.dspark_pool_grid_park_skips = reuse_metrics.dspark_grid_park_skips;
+            m.dspark_pool_grid_rewind_resumes = reuse_metrics.dspark_grid_rewind_resumes;
             m.spec_pool_hits = reuse_metrics.spec_hits;
             m.spec_pool_misses = reuse_metrics.spec_misses;
             m.spec_pool_affinity_rewinds = reuse_metrics.spec_affinity_rewinds;
@@ -39689,8 +39816,9 @@ fn admit(
     // prefix restore (the cold-drafter conversion included) consumed every reuse carrier.
     // DSPARK MULTI-TURN RESUME probe (lane/dflash2-session-reuse, 2026-08-25): the MTP
     // pool's EXACT and TEXT extension tiers, applied to parked dspark sessions. Since memra#1093
-    // no recurrent session parks (every DFlash target is a GDN hybrid), so on shipped targets the
-    // pool stays empty and the probe never runs; its grid arm refuses a recurrent hit as a
+    // a recurrent session (every DFlash target is a GDN hybrid) parks only rewound to its prime
+    // boundary (`dspark_park_rewind`); such an entry resumes on the exact tier alone, seated as a
+    // new stream for this request, and the grid arm refuses any other recurrent hit as a
     // backstop. Runs only
     // when no other carrier took the request (no spec resume, no gemma arm, no prefix
     // restore, no plain-reuse cache) and applies the SAME sampler predicate — a parked
@@ -39736,7 +39864,13 @@ fn admit(
         };
         // EXACT token-extension tier.
         let hit = if let Some(index) = pool.iter().rposition(|e2| {
-            e2.sess.cache_max_ctx() >= ctx_cap
+            // A rewound session is reseated to this request's cap, so its allocation is what
+            // must cover it; a session resumed as parked keeps its own round guard.
+            (if e2.rewound_from.is_some() {
+                e2.sess.alloc_ctx()
+            } else {
+                e2.sess.cache_max_ctx()
+            }) >= ctx_cap
                 && prompt.len() >= e2.fed.len()
                 && prompt.starts_with(&e2.fed)
                 && (prompt.len() > e2.fed.len() || !e2.done)
@@ -39748,9 +39882,12 @@ fn admit(
         } else if !req.prompt_text.is_empty() {
             // TEXT tier: detok/retok BPE merges differ at chat-turn seams, so the
             // string prefix is the honest match; only the remainder is tokenized.
+            // A rewound entry is cut inside the old prompt, where a retokenized remainder can
+            // differ from the cold tokens; it takes the exact tier or nothing.
             pool.iter()
                 .rposition(|e2| {
-                    e2.sess.cache_max_ctx() >= ctx_cap
+                    e2.rewound_from.is_none()
+                        && e2.sess.cache_max_ctx() >= ctx_cap
                         && req.prompt_text.len() > e2.committed_text.len()
                         && req.prompt_text.starts_with(e2.committed_text.as_str())
                         && admits(e2)
@@ -39772,10 +39909,13 @@ fn admit(
             }
             // THE POOL GRID LAW (memra#1093): a DFlash session's rows past its prompt were
             // written by verify and decode, and its parked end sits off the prime grid, so a
-            // recurrent trunk resumed here primes from state a cold prime never computes. The
-            // session keeps no grid checkpoint to rewind to: the request primes cold (exact) and
-            // the entry goes, since its conversation has moved past it.
-            Some((entry, _)) if cache_carries_recurrent(&entry.sess.cache) => {
+            // recurrent trunk resumed there primes from state a cold prime never computes. Only
+            // a session rewound to its prime boundary at park may resume; any other recurrent
+            // entry (none parks today) is a backstop decline: the request primes cold (exact)
+            // and the entry goes.
+            Some((entry, _))
+                if entry.rewound_from.is_none() && cache_carries_recurrent(&entry.sess.cache) =>
+            {
                 eprintln!(
                     "[worker] dspark-reuse DECLINED (grid law): the parked stream's {} rows hold \
                      verify and decode state off the prime grid; serving COLD (model {})",
@@ -39806,27 +39946,64 @@ fn admit(
                 reuse_metrics.spec_misses += 1;
                 pool.push(entry);
             }
-            Some((entry, suffix)) => {
-                eprintln!(
-                    "[worker] dspark-reuse: {} committed tokens resumed \
-                     (suffix {} to prime) [sampler={}] (model {})",
-                    entry.fed.len(),
-                    suffix.len(),
-                    if spec_resume_sampler_predicate_on() {
-                        "equivalent"
-                    } else {
-                        "unchecked"
-                    },
-                    req.model
-                );
-                reuse_metrics.spec_hits += 1;
-                // Replay the sampler's penalty window over the parked stream — the
-                // session's own pen_hist rides inside it; this is the WORKER
-                // sampler's bookkeeping (the plain-resume convention).
-                for &t in &entry.fed {
-                    sampler.accept(t);
+            Some((mut entry, suffix)) => {
+                // A rewound session is the state a cold prime of `fed` leaves; it is seated for
+                // this request as a cold prime seats a new session (its sampler and seed, fresh
+                // Philox counters, its cap's round guard), so the resumed stream is the cold one,
+                // sampled or greedy. A seat that cannot be made serves cold.
+                let seat = match (entry.rewound_from, dspark_draft) {
+                    (None, _) => Ok(None),
+                    (Some(end), Some(draft)) => entry
+                        .sess
+                        .reseat_for_request(
+                            draft,
+                            dspark_spec_sampling_for(&sampler),
+                            &entry.fed,
+                            ctx_cap,
+                        )
+                        .map(|()| Some(end)),
+                    (Some(_), None) => Err("no drafter is attached".to_string()),
+                };
+                match seat {
+                    Err(why) => {
+                        eprintln!(
+                            "[worker] dspark-reuse DECLINED: the rewound session cannot be seated \
+                             ({why}); serving COLD (model {})",
+                            req.model
+                        );
+                        reuse_metrics.dspark_grid_declines += 1;
+                        drop(entry);
+                    }
+                    Ok(rewound) => {
+                        let rewound = match rewound {
+                            Some(end) => {
+                                reuse_metrics.dspark_grid_rewind_resumes += 1;
+                                format!(" at the prime boundary (parked at {end})")
+                            }
+                            None => String::new(),
+                        };
+                        eprintln!(
+                            "[worker] dspark-reuse: {} committed tokens resumed{rewound} \
+                             (suffix {} to prime) [sampler={}] (model {})",
+                            entry.fed.len(),
+                            suffix.len(),
+                            if spec_resume_sampler_predicate_on() {
+                                "equivalent"
+                            } else {
+                                "unchecked"
+                            },
+                            req.model
+                        );
+                        reuse_metrics.spec_hits += 1;
+                        // Replay the sampler's penalty window over the parked stream — the
+                        // session's own pen_hist rides inside it; this is the WORKER
+                        // sampler's bookkeeping (the plain-resume convention).
+                        for &t in &entry.fed {
+                            sampler.accept(t);
+                        }
+                        dspark_resume = Some((entry.sess, entry.fed, suffix));
+                    }
                 }
-                dspark_resume = Some((entry.sess, entry.fed, suffix));
             }
             None => {
                 if let Some(field) = refused {
@@ -44204,6 +44381,9 @@ fn step_dspark_spec(
                 (false, _) => memra_engine::dflash::DsparkCapture::Off,
                 (true, Some(b)) => memra_engine::dflash::DsparkCapture::Boundary(b),
                 (true, None) if s.dspark.is_none() => dspark_cold_capture(tokens.len()),
+                (true, None) if !dspark_prefix_restore_on() => {
+                    dspark_resume_capture(s.dspark.as_ref().map_or(0, |d| d.pos()), tokens.len())
+                }
                 _ => memra_engine::dflash::DsparkCapture::Off,
             };
             s.dspark_prime = Some(match s.dspark.take() {
@@ -44253,6 +44433,9 @@ fn step_dspark_spec(
         // leaving the cache frozen at turn 1's. PromptEnd is deliberately not offered here.
         let resume_capture = match (s.dspark_capture_prefix, s.dspark_capture_at) {
             (true, Some(b)) => memra_engine::dflash::DsparkCapture::Boundary(b),
+            (true, None) if !dspark_prefix_restore_on() => {
+                dspark_resume_capture(sess.pos(), suffix.len())
+            }
             _ => memra_engine::dflash::DsparkCapture::Off,
         };
         if let Err(err) =
@@ -52233,28 +52416,106 @@ mod tests {
     }
 
     /// memra#1093: the DSpark pool never resumes a recurrent trunk on its parked stream (rows the
-    /// verify and decode wrote, off the prime grid); the decline arm precedes the resume arm.
+    /// verify and decode wrote, off the prime grid). A recurrent session parks only rewound to its
+    /// prime boundary, a rewound entry takes the exact tier alone and is seated for the request
+    /// that resumes it, and any other recurrent hit is declined before the resume arm.
     #[test]
-    fn the_dspark_pool_declines_a_recurrent_resume() {
+    fn the_dspark_pool_resumes_a_recurrent_trunk_only_rewound() {
         let src = include_str!("worker.rs");
         let production = &src[..src.find("\nmod tests {").unwrap()];
         let squashed = production.split_whitespace().collect::<Vec<_>>().join(" ");
+        // Park: the recurrent branch rewinds, and only its Ok arm reaches the push.
+        let rewind = squashed
+            .find("match dspark_park_rewind(&engine, &px, &pool_key, &s.fed, &mut sess) {")
+            .expect("the park rewind");
+        let skip = squashed
+            .find("reuse_metrics.dspark_grid_park_skips += 1; (None, None)")
+            .expect("the park skip frees the session");
+        let park = squashed
+            .find("dspark_reuse .entry(pool_key) .or_default() .push(DsparkReuseEntry {")
+            .expect("the park");
+        assert!(rewind < skip && skip < park);
+        assert!(squashed[rewind..park].contains("fed.truncate(g); (Some(fed), Some(parked_end))"));
+        assert!(
+            squashed[rewind..park]
+                .contains("let done = rewound_from.is_some() || sess.finished();")
+        );
+        // Probe: the text tier skips rewound entries, the decline arm spares them and precedes
+        // the resume arm, and the resume arm reseats a rewound session.
+        assert!(squashed.contains(
+            "e2.rewound_from.is_none() && e2.sess.cache_max_ctx() >= ctx_cap && req.prompt_text.len() > e2.committed_text.len()"
+        ));
         let decline = squashed
-            .find("Some((entry, _)) if cache_carries_recurrent(&entry.sess.cache) => {")
+            .find("if entry.rewound_from.is_none() && cache_carries_recurrent(&entry.sess.cache) => {")
             .expect("the grid-law decline arm");
         let resume = squashed
             .find("dspark_resume = Some((entry.sess, entry.fed, suffix));")
             .expect("the resume arm");
         assert!(decline < resume);
         assert!(squashed[decline..resume].contains("reuse_metrics.dspark_grid_declines += 1;"));
-        // ...and a recurrent session never parks there in the first place.
-        let skip = squashed
-            .find("&& cache_carries_recurrent(&sess.cache) {")
-            .expect("the park skip");
-        let park = squashed
-            .find("dspark_reuse .entry(pool_key) .or_default() .push(DsparkReuseEntry {")
-            .expect("the park");
-        assert!(skip < park);
+        // The seat: this request's sampler and cap, and a failed seat declines before resuming.
+        let seat = squashed[decline..resume]
+            .find(".reseat_for_request( draft, dspark_spec_sampling_for(&sampler), &entry.fed, ctx_cap, )")
+            .expect("the rewound seat")
+            + decline;
+        let seat_fail = squashed[seat..resume]
+            .find("Err(why) => {")
+            .expect("a failed seat declines")
+            + seat;
+        assert!(squashed[seat_fail..resume].contains("drop(entry);"));
+        // A rewound entry's cap check is its allocation (it is reseated to this request's cap).
+        assert!(squashed.contains(
+            "(if e2.rewound_from.is_some() { e2.sess.alloc_ctx() } else { e2.sess.cache_max_ctx() }) >= ctx_cap"
+        ));
+        // Both resume primes cut on the grid, and only with the restore switch off.
+        assert_eq!(
+            production.matches("dspark_resume_capture(").count(),
+            3,
+            "definition + the walker resume + the burst-path resume"
+        );
+        assert_eq!(
+            squashed
+                .matches("(true, None) if !dspark_prefix_restore_on() => { dspark_resume_capture(")
+                .count(),
+            2
+        );
+        // The park rewind refuses with the restore switch on and under pause-demote.
+        let park_fn = squashed
+            .find("fn dspark_park_rewind(")
+            .expect("the park rewind fn");
+        assert!(squashed[park_fn..park_fn + 600].contains(
+            "dspark_park_rewind_refusal(dspark_prefix_restore_on(), kv_pause_demote_on())"
+        ));
+        assert!(super::dspark_park_rewind_refusal(true, false).is_some());
+        assert!(super::dspark_park_rewind_refusal(false, true).is_some());
+        assert!(super::dspark_park_rewind_refusal(false, false).is_none());
+    }
+
+    /// memra#1093: a resumed DFlash prime captures the whole new prompt's grid cut, so the session
+    /// parks with this turn's rewind target; only inside the suffix, never at the prompt end.
+    #[test]
+    fn a_resumed_dflash_prime_captures_this_turns_grid_cut() {
+        use memra_engine::dflash::DsparkCapture;
+        assert_eq!(memra_engine::Engine::gdn_chunk_size(), 32);
+        // Rewound to 2,944, the next prompt is 3,144 tokens: the cut is the largest grid point
+        // with at least PRIME_MIN_T rows after it (3,136 leaves 8, so 3,104).
+        assert_eq!(
+            super::dspark_resume_capture(2_944, 200),
+            DsparkCapture::Boundary(3_104)
+        );
+        // A prompt end on the grid is not the cut (the prompt end never captures on a resume).
+        assert_eq!(
+            super::dspark_resume_capture(2_944, 192),
+            DsparkCapture::Boundary(3_104)
+        );
+        // The cut must leave PRIME_MIN_T rows of suffix before it.
+        assert_eq!(super::dspark_resume_capture(3_090, 60), DsparkCapture::Off);
+        assert_eq!(
+            super::dspark_resume_capture(3_088, 60),
+            DsparkCapture::Boundary(3_104)
+        );
+        // Below the cache floor there is no entry to publish.
+        assert_eq!(super::dspark_resume_capture(16, 60), DsparkCapture::Off);
     }
 
     /// memra#1091: the continuation pool obeys the restore grid law, in the default test set. The
