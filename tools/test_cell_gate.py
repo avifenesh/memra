@@ -41,6 +41,7 @@ fn main() {
 '''
 DEVICE = {"name": "NVIDIA GeForce RTX 5090 Laptop GPU", "uuid_sha256": "0" * 64,
           "compute_cap": "12.0", "driver": "CPU fixture"}
+BATCH_LOG = "  SUMMARY flips=0 bad=0\n  SERVED-SUMMARY served=MATCH\n  PASS: CPU fixture calibrated verdict\n"
 
 
 class Repo:
@@ -98,7 +99,8 @@ class Repo:
         return out.getvalue()
 
     def record(self, commit, kinds, *, device_class="rtx5090", device=DEVICE, target="120a", slowdown=0.0,
-               name=None, accept=None, serve_tail="serve-smoke: 0 failed", perf_base=None, models=("model-a", "model-b")):
+               name=None, accept=None, serve_tail="serve-smoke: 0 failed", perf_base=None, models=("model-a", "model-b"),
+               batch_log=BATCH_LOG):
         out = self.root / f"evidence-{len(list(self.root.glob('evidence-*')))}"
         (out / "battery").mkdir(parents=True)
         shutil.copy2(self.repo / "tools/release-roster.tsv", out / "roster.tsv")
@@ -112,8 +114,12 @@ class Repo:
                      + f"ALL GREEN ({len(required)} cells, 0 skipped)\n")]
             spec = "".join(f"[generate_spec K={k}] 32 tok\nself-consistency: PASS (identical to plain target)\n"
                            for k in range(1, 9)) + "=== SELF-CONSISTENCY PASS ===\n"
+            # The cells tools/release-battery.sh writes per roster model, in its order: the eager
+            # argmax gate, the served-batch argmax gate (`--decode batch`), then run-spec.
             for model in ("model-a", "model-b"):
                 logs.append(("argmax", model, "SUMMARY flips=0 bad=0\n  PASS: CPU fixture calibrated verdict\n"))
+                if batch_log is not None:
+                    logs.append(("argmax-batch", model, batch_log))
                 logs.append(("spec", model, spec))
             rows = []
             for seq, (kind, model, text) in enumerate(logs, 1):
@@ -220,6 +226,26 @@ class CellGate(unittest.TestCase):
         with self.assertRaisesRegex(q.GateError, "missing evidence"), contextlib.redirect_stdout(out):
             q.check_push(self.f.repo, [f"refs/heads/x {self.f.head()} refs/heads/main {self.f.base}"], "qualified")
         self.assertIn("evidence changed: battery/2-argmax.log", out.getvalue())
+
+    def test_battery_judges_the_served_batch_argmax_cell(self):
+        # tools/release-battery.sh runs argmax-margin-batch per roster model; a record of that
+        # battery seals, and one without the cell, or with a served program that did not match,
+        # does not (the tag checker's rule in release_qualification.cell_verdicts).
+        self.f.write("crates/memra-engine/cu/qmatvec.cu", "__global__ void k() { int x = 12; }\n")
+        code = self.f.commit("kernel")
+        missing = self.f.record(code, ["battery"], batch_log=None)
+        self.assertEqual(missing["status"], "fail")
+        self.assertIn("battery cells missing: argmax-batch/model-a, argmax-batch/model-b", missing["failures"][0])
+        mismatch = self.f.record(code, ["battery"], batch_log=BATCH_LOG.replace("served=MATCH", "served=MISMATCH"))
+        self.assertEqual(mismatch["status"], "fail")
+        self.assertIn("served-batch argmax cell model-a did not pass its calibrated gate", mismatch["failures"][0])
+        unserved = self.f.record(code, ["battery"], batch_log=BATCH_LOG.replace("  SERVED-SUMMARY served=MATCH\n", ""))
+        self.assertEqual(unserved["status"], "fail")
+        eager = self.f.record(code, ["battery"], name="eager-routed",
+                              batch_log=BATCH_LOG.replace("served=MATCH", "served=EAGER-ROUTED"))
+        self.assertEqual(eager["status"], "pass", eager["failures"])
+        served = self.f.record(code, ["battery"])
+        self.assertEqual(served["status"], "pass", served["failures"])
 
     def test_device_of_another_target_does_not_count(self):
         self.f.write("crates/memra-engine/cu/qmatvec.cu", "__global__ void k() { int x = 6; }\n")

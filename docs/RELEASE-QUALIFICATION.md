@@ -76,7 +76,7 @@ Evidence per target (`tools/cell_evidence.py`):
 
 | cell scope | evidence |
 |---|---|
-| `kernel`, `build`, `numeric`, `defaults` | device battery: `kernel-check`, calibrated `run-gen` argmax and `run-spec` K=1..8 on the device roster |
+| `kernel`, `build`, `numeric`, `defaults` | device battery: `kernel-check`, calibrated `run-gen` argmax (eager and served-batch) and `run-spec` K=1..8 on the device roster |
 | `serving` | the battery plus `tools/serve-smoke.sh` |
 | `perf` | `run-gen` decode A/B against the push base, A B B A A B for every roster model |
 | `gate` | all three: a changed gate has to run |

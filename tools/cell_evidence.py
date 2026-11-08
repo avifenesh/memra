@@ -15,7 +15,8 @@ landings.
 Evidence kinds:
 
     battery   tools/release-battery.sh on the device roster (kernel-check, run-gen argmax,
-              run-spec K=1..8), raw cell logs re-judged here by tools/release-coverage.py
+              the served-batch argmax, run-spec K=1..8), raw cell logs re-judged here by
+              tools/release-coverage.py and the tag checker's argmax rules
     serving   tools/serve-smoke.sh, judged by its own summary line
     perf      run-gen decode tok/s, base vs candidate interleaved A B B A A B per roster
               model; REGRESSED when every candidate run is slower than every base run
@@ -151,7 +152,10 @@ def judge_battery(runs_tsv, read_log, manifests, roster):
     for data in manifests:
         required.update(l.split("#", 1)[0].strip() for l in data.splitlines() if l.split("#", 1)[0].strip())
     require(required, "required-cell census is empty")
-    expected = {("kernel", "kernel")} | {(kind, mid) for _, mid in roster for kind in ("argmax", "spec")}
+    # tools/release-battery.sh runs three cells per roster model: the eager argmax gate, the
+    # served-batch argmax gate (`argmax-margin-gate.sh --decode batch`) and run-spec K=1..8.
+    expected = {("kernel", "kernel")} | {(kind, mid) for _, mid in roster
+                                         for kind in ("argmax", "argmax-batch", "spec")}
     seen, verdicts = set(), []
     for line in runs_tsv.splitlines():
         if not line.strip():
@@ -166,6 +170,18 @@ def judge_battery(runs_tsv, read_log, manifests, roster):
             verdict = coverage.kernel_coverage(lines, required)
         elif kind == "spec":
             verdict = coverage.spec_coverage(lines)
+        elif kind == "argmax-batch":
+            # The tag checker's rule: the calibrated margin verdict plus exactly one
+            # SERVED-SUMMARY line, MATCH (the batched program at B=1 sampled the host argmax of
+            # every row) or EAGER-ROUTED (the scheduler decodes this model eagerly).
+            served = [l for l in lines if l.startswith("SERVED-SUMMARY served=")]
+            require(sum(l.startswith("PASS:") for l in lines) == 1
+                    and any(re.search(r"SUMMARY flips=\d+ bad=0\b", l) for l in lines)
+                    and served in (["SERVED-SUMMARY served=MATCH"], ["SERVED-SUMMARY served=EAGER-ROUTED"])
+                    and not any("SKIP" in l or l.startswith("FAIL") for l in lines),
+                    f"served-batch argmax cell {model} did not pass its calibrated gate")
+            verdict = ("calibrated served-batch argmax PASS" if served == ["SERVED-SUMMARY served=MATCH"]
+                       else "calibrated served-decode argmax PASS (eager-routed: decode_step serves)")
         else:
             require(sum(l.startswith("PASS:") for l in lines) == 1
                     and any(re.search(r"SUMMARY flips=\d+ bad=0\b", l) for l in lines)
