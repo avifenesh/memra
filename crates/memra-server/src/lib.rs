@@ -7681,13 +7681,15 @@ async fn get_metrics(State(st): State<AppState>, headers: HeaderMap) -> Response
             "continuation_pool_grid_rewinds": m.continuation_pool_grid_rewinds,
             "continuation_pool_grid_declines": m.continuation_pool_grid_declines,
             // memra#1093: DSpark-pool hits refused by the grid law (a recurrent trunk not
-            // rewound, a backstop, or a rewound one that could not be seated); DFlash retires
-            // rewound to their prime boundary and parked, and those freed with nothing to rewind
-            // to; resumes of a rewound session.
+            // rewound, a backstop, or a rewound one that could not be grown or seated); DFlash
+            // retires rewound to their prime boundary and parked, and those freed with nothing to
+            // rewind to; resumes of a rewound session, and those that first grew it to the
+            // request's cap.
             "dspark_pool_grid_declines": m.dspark_pool_grid_declines,
             "dspark_pool_grid_park_rewinds": m.dspark_pool_grid_park_rewinds,
             "dspark_pool_grid_park_skips": m.dspark_pool_grid_park_skips,
             "dspark_pool_grid_rewind_resumes": m.dspark_pool_grid_rewind_resumes,
+            "dspark_pool_grid_rewind_grows": m.dspark_pool_grid_rewind_grows,
             "served_dspark": m.served_dspark,
             "served_spec": m.served_spec,
             "served_plain": m.served_plain,

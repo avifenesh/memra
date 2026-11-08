@@ -910,6 +910,13 @@ struct DsparkColdPrefixAdmission {
     /// Scoped to the restore switch so a shut fleet is byte-identical: with the switch OFF this
     /// is false everywhere and the veto keeps its shipped shape.
     hit_restorable: bool,
+    /// The switch-off twin of `hit_restorable` (memra#1093): the DSpark pool holds a session
+    /// rewound to a prime boundary that this prompt extends (`dspark_rewound_resumable`), with
+    /// the request's sampler, at least as deep as the hit or with a decode that repays the
+    /// difference. The pool resume brings the trunk AND the drafter back and primes only the
+    /// suffix, so the veto's trade (take the hit, lose the speculation) is not on the table.
+    /// Only a rewound entry counts, and a session parks rewound only with the switch off.
+    pool_resumable: bool,
 }
 
 /// How long the decode must be before a cold DFlash prime is worth discarding a cache hit,
@@ -1015,6 +1022,7 @@ fn dspark_prefers_cold_over_prefix_with(
         // suffix, so there is no prefill to repay and nothing to trade away.
         && (!a.hit_available
             || a.hit_restorable
+            || a.pool_resumable
             || dspark_cold_prime_repays_prefill(a.prompt_len, a.decode_budget))
         && dspark_load_admits(
             a.greedy,
@@ -1298,6 +1306,9 @@ fn admission_dflash_inputs(
         decode_budget: shape.budget,
         hit_available: true,
         hit_restorable: dspark_partial_restore_on(),
+        // The reclaim's restorable spare reads this only under the restore switch, where no
+        // session parks rewound.
+        pool_resumable: false,
     }
 }
 
@@ -2784,14 +2795,16 @@ pub struct Metrics {
     pub continuation_pool_grid_rewinds: u64,
     pub continuation_pool_grid_declines: u64,
     /// DSpark-pool hits refused by the grid law (memra#1093): a recurrent trunk not rewound (a
-    /// backstop) or a rewound one that could not be seated;
+    /// backstop) or a rewound one that could not be grown or seated;
     /// DFlash retires rewound to their prime boundary and parked; those freed instead (no boundary
-    /// entry or drafter window to rewind to); and resumes of a rewound session (a subset of
-    /// spec_pool_hits).
+    /// entry or drafter window to rewind to); resumes of a rewound session (a subset of
+    /// spec_pool_hits); and the subset of those resumes that first grew the session to the
+    /// request's cap.
     pub dspark_pool_grid_declines: u64,
     pub dspark_pool_grid_park_rewinds: u64,
     pub dspark_pool_grid_park_skips: u64,
     pub dspark_pool_grid_rewind_resumes: u64,
+    pub dspark_pool_grid_rewind_grows: u64,
     pub spec_pool_hits: u64,
     pub spec_pool_misses: u64,
     pub spec_pool_affinity_rewinds: u64,
@@ -3253,14 +3266,16 @@ struct ReuseMetrics {
     continuation_grid_declines: u64,
     /// DSpark-pool exact or text hits refused under the grid law (memra#1093): a recurrent trunk
     /// that was not rewound (a backstop, since a recurrent session parks only rewound) or a rewound
-    /// one that could not be seated for the request.
+    /// one that could not be grown or seated for the request.
     dspark_grid_declines: u64,
     /// DFlash retires whose recurrent session was rewound to its prime boundary and parked, and
     /// those freed instead because no boundary entry or drafter window was left to rewind to.
     dspark_grid_park_rewinds: u64,
     dspark_grid_park_skips: u64,
-    /// Resumes of a rewound session (subset of `spec_hits`).
+    /// Resumes of a rewound session (subset of `spec_hits`), and the subset that first grew the
+    /// session to the request's cap (`HybridModel::dspark_grow_session`).
     dspark_grid_rewind_resumes: u64,
+    dspark_grid_rewind_grows: u64,
 }
 
 /// Workspace-aware admission for hyper-trunk prefill (lane/glm5-gpf-workspace, 2026-08-30).
@@ -3936,6 +3951,65 @@ fn dspark_park_rewind(
     sess.rewind_to_boundary(engine, &entry.conv, &entry.ssm)
 }
 
+/// Why the plain pool's grid rewind (`grid_rewind_plain`) refuses `e` for `prompt`, or `None` when
+/// it rewinds: no checkpoint, a ring that lapped it, or a prompt that diverges before it or extends
+/// it by fewer than the prime floor (`plain_pool_resume_at`). Pure, so the park-compact grow can
+/// ask first and never pay its allocation and copies for an entry the rewind then drops
+/// (memra#1093, the grow-before-rewind order).
+fn grid_rewind_plain_refusal(e: &ReuseEntry, prompt: &[u32]) -> Option<String> {
+    let Some(ckpt) = e.ckpt.as_ref() else {
+        return Some("no checkpoint".into());
+    };
+    if !e.cache.can_rollback(&ckpt.snap, 0) {
+        return Some("ring lapped the checkpoint".into());
+    }
+    let pos = ckpt.pos;
+    if plain_pool_resume_at(e.fed.len(), Some(pos), prompt.len(), true) != Some(pos)
+        || prompt[..pos] != e.fed[..pos]
+    {
+        return Some(format!(
+            "prompt diverges before checkpoint {pos} or extends it by fewer than the prime floor"
+        ));
+    }
+    None
+}
+
+/// Would the DSpark pool's exact tier resume an entry for `prompt` (memra#1093)? A session rewound
+/// to a prime boundary at park (`rewound`), whose `fed` tokens the prompt extends by at least the
+/// prime floor (the probe's short-suffix decline). The cap does not refuse it: the probe grows a
+/// rewound session to the request's cap (`HybridModel::dspark_grow_session`), and the
+/// cache-preferred veto yields to such an entry (`DsparkColdPrefixAdmission::pool_resumable`).
+fn dspark_rewound_resumable(rewound: bool, fed: &[u32], prompt: &[u32]) -> bool {
+    rewound
+        && prompt.len() >= fed.len() + memra_engine::hybrid_forward::PRIME_MIN_T
+        && prompt.starts_with(fed)
+}
+
+/// The DSpark pool's exact token tier (memra#1093): the newest entry whose tokens this prompt
+/// extends and that `admits` (the sampler predicate, asked last so a refusal names its field). A
+/// rewound entry needs `dspark_rewound_resumable` (at least the prime floor to prime, any cap: the
+/// resume grows it); an entry parked at its end (a non-recurrent trunk) must cover the cap with
+/// its own round guard and, when finished, needs a non-empty suffix. The cache-preferred veto
+/// (`pool_resumable`) and the probe both call this, so the veto yields only for the entry the
+/// probe then takes.
+fn dspark_exact_pick(
+    pool: &[DsparkReuseEntry],
+    prompt: &[u32],
+    ctx_cap: usize,
+    mut admits: impl FnMut(&DsparkReuseEntry) -> bool,
+) -> Option<usize> {
+    pool.iter().rposition(|e2| {
+        (if e2.rewound_from.is_some() {
+            dspark_rewound_resumable(true, &e2.fed, prompt)
+        } else {
+            e2.sess.cache_max_ctx() >= ctx_cap
+                && prompt.len() >= e2.fed.len()
+                && prompt.starts_with(&e2.fed)
+                && (prompt.len() > e2.fed.len() || !e2.done)
+        }) && admits(e2)
+    })
+}
+
 /// The plain pool's grid rewind (DAY41 1.1): restore the entry to its checkpoint in place (the
 /// affinity path's restore), truncate `fed` to it and carry the checkpoint's logits. `None` (the
 /// entry dropped, the request primes cold) when there is no checkpoint, the ring lapped it, the
@@ -3948,24 +4022,12 @@ fn grid_rewind_plain(
     model: &str,
 ) -> Option<ReuseEntry> {
     let committed = e.fed.len();
-    let Some(ckpt) = e.ckpt.take() else {
-        eprintln!("[kv-reuse] grid-rewind: plain declined (no checkpoint); cold");
-        return None;
-    };
-    if !e.cache.can_rollback(&ckpt.snap, 0) {
-        eprintln!("[kv-reuse] grid-rewind: plain declined (ring lapped the checkpoint); cold");
+    if let Some(why) = grid_rewind_plain_refusal(&e, prompt) {
+        eprintln!("[kv-reuse] grid-rewind: plain declined ({why}); cold");
         return None;
     }
+    let ckpt = e.ckpt.take()?;
     let pos = ckpt.pos;
-    if plain_pool_resume_at(committed, Some(pos), prompt.len(), true) != Some(pos)
-        || prompt[..pos] != e.fed[..pos]
-    {
-        eprintln!(
-            "[kv-reuse] grid-rewind: plain declined (prompt diverges before checkpoint {pos} or \
-             extends it by fewer than the prime floor); cold"
-        );
-        return None;
-    }
     if let Err(err) = memra_engine::pp::restore_cache_checkpoint(
         engine,
         &lm.model,
@@ -23543,6 +23605,7 @@ pub fn run(
             m.dspark_pool_grid_park_rewinds = reuse_metrics.dspark_grid_park_rewinds;
             m.dspark_pool_grid_park_skips = reuse_metrics.dspark_grid_park_skips;
             m.dspark_pool_grid_rewind_resumes = reuse_metrics.dspark_grid_rewind_resumes;
+            m.dspark_pool_grid_rewind_grows = reuse_metrics.dspark_grid_rewind_grows;
             m.spec_pool_hits = reuse_metrics.spec_hits;
             m.spec_pool_misses = reuse_metrics.spec_misses;
             m.spec_pool_affinity_rewinds = reuse_metrics.spec_affinity_rewinds;
@@ -25418,6 +25481,22 @@ fn admit(
     {
         reused = Some(pool.remove(idx));
     }
+    // DECIDE BEFORE THE GROW (memra#1093, the grow-before-rewind order): a recurrent entry
+    // resumes only through the grid rewind below, so ask it first (`grid_rewind_plain_refusal`).
+    // An entry it refuses is dropped here, before the park-compact grow pays a request-sized
+    // allocation, a snapshot and the row copies for it; the request primes cold either way.
+    if let Some(e) = reused.as_ref()
+        && e.compacted
+        && e.cap < ctx_cap
+        && cache_carries_recurrent(&e.cache)
+        && let Some(why) = grid_rewind_plain_refusal(e, &prompt)
+    {
+        eprintln!(
+            "[kv-reuse] grid-rewind: plain declined ({why}) before the park-compact grow; cold"
+        );
+        reuse_metrics.continuation_grid_declines += 1;
+        reused = None;
+    }
     // PARK-COMPACT GROW (Arc C1, `park_compact_for_device`): a compacted entry parked at
     // fed-length capacity; grow it to THIS request's charged cap before anything primes
     // into it, through the same snapshot + checkpoint-restore extension the
@@ -25904,6 +25983,27 @@ fn admit(
         hit_available: consumable_hit.is_some(),
         // Only under the restore switch: a shut fleet keeps the veto's shipped shape exactly.
         hit_restorable: dspark_restorable_hit && dspark_partial_restore_on(),
+        // The pool probe below takes such an entry (grown to this cap if it must be); only a
+        // rewound entry counts, and only one with this request's sampler. A retained admission
+        // plan decided this request's route already, and the probe does not run under one.
+        pool_resumable: dspark_draft_ready
+            && admission_restore.is_none()
+            && dspark_reuse.get(&pool_key).is_some_and(|pool| {
+                let hit_len = consumable_hit.map_or(0, |i| px.entries[&pool_key][i].toks.len());
+                let identity = sampler.identity();
+                dspark_exact_pick(pool, &prompt, ctx_cap, |e2| {
+                    spec_resume_sampler_verdict(&identity, &e2.sampler).is_none()
+                })
+                .map(|i| &pool[i])
+                .is_some_and(|e2| {
+                    e2.rewound_from.is_some()
+                        && (e2.fed.len() >= hit_len
+                            || dspark_cold_prime_repays_prefill_tokens(
+                                hit_len - e2.fed.len(),
+                                budget,
+                            ))
+                })
+            }),
     };
     // RESTORABLE-HIT PREFERENCE (`dspark_prefer_restorable_hit`): a longer plain hit must not
     // shadow a shorter entry that can re-arm the drafter. Under the restore switch only, and only
@@ -27770,20 +27870,10 @@ fn admit(
                 false
             }
         };
-        // EXACT token-extension tier.
-        let hit = if let Some(index) = pool.iter().rposition(|e2| {
-            // A rewound session is reseated to this request's cap, so its allocation is what
-            // must cover it; a session resumed as parked keeps its own round guard.
-            (if e2.rewound_from.is_some() {
-                e2.sess.alloc_ctx()
-            } else {
-                e2.sess.cache_max_ctx()
-            }) >= ctx_cap
-                && prompt.len() >= e2.fed.len()
-                && prompt.starts_with(&e2.fed)
-                && (prompt.len() > e2.fed.len() || !e2.done)
-                && admits(e2)
-        }) {
+        // EXACT token-extension tier (`dspark_exact_pick`). A rewound session is grown and
+        // reseated to this request's cap (`dspark_grow_session`, `reseat_for_request`), so no cap
+        // refuses it here; a session resumed as parked keeps its own round guard.
+        let hit = if let Some(index) = dspark_exact_pick(pool, &prompt, ctx_cap, &mut admits) {
             let entry = pool.remove(index);
             let suffix = prompt[entry.fed.len()..].to_vec();
             Some((entry, suffix))
@@ -27842,7 +27932,9 @@ fn admit(
             // 502s on box10 before MEMRA_REUSE_POOL=0 stopped the loop. Declining here
             // keeps the entry parked for a longer next turn and serves this one cold,
             // which is exactly the pre-lane behavior; the engine carries its own
-            // refusal as a backstop.
+            // refusal as a backstop. Only an entry parked at its end reaches this arm: the
+            // exact tier never takes a rewound one under the floor (`dspark_exact_pick`), and
+            // the miss arm names that case with the same line.
             Some((entry, suffix)) if suffix.len() < memra_engine::hybrid_forward::PRIME_MIN_T => {
                 eprintln!(
                     "[worker] dspark-reuse DECLINED: suffix {} < prime floor {}; \
@@ -27858,17 +27950,38 @@ fn admit(
                 // A rewound session is the state a cold prime of `fed` leaves; it is seated for
                 // this request as a cold prime seats a new session (its sampler and seed, fresh
                 // Philox counters, its cap's round guard), so the resumed stream is the cold one,
-                // sampled or greedy. A seat that cannot be made serves cold.
+                // sampled or greedy. GROW FIRST, THEN SEAT (memra#1093): a request whose cap
+                // outgrows the session's allocation (an agentic client sends one `max_tokens` on
+                // a prompt that grows every turn) first gets the session reallocated at its own
+                // cold allocation with the state carried over (`dspark_grow_session`); the seat
+                // then decides. Every cheaper refusal (sampler, done, grid backstop, prime floor)
+                // has run above, so a grow is never paid for an entry that is then dropped. A grow
+                // or seat that cannot be made serves cold, and the entry goes: dropping it frees
+                // more than the grow asked for (its whole parked session), and the cold path
+                // allocates the same cap under the admission it already passed.
                 let seat = match (entry.rewound_from, dspark_draft) {
                     (None, _) => Ok(None),
-                    (Some(end), Some(draft)) => entry
-                        .sess
-                        .reseat_for_request(
-                            draft,
-                            dspark_spec_sampling_for(&sampler),
-                            &entry.fed,
-                            ctx_cap,
-                        )
+                    (Some(end), Some(draft)) => lm
+                        .model
+                        .dspark_grow_session(engine, draft, &mut entry.sess, ctx_cap)
+                        .map_err(|why| format!("grow: {why}"))
+                        .and_then(|grew| {
+                            if let Some(from) = grew {
+                                eprintln!(
+                                    "[worker] dspark-reuse: grew the rewound session from {from} \
+                                     to {} rows for the request's cap (model {})",
+                                    entry.sess.alloc_ctx(),
+                                    req.model
+                                );
+                                reuse_metrics.dspark_grid_rewind_grows += 1;
+                            }
+                            entry.sess.reseat_for_request(
+                                draft,
+                                dspark_spec_sampling_for(&sampler),
+                                &entry.fed,
+                                ctx_cap,
+                            )
+                        })
                         .map(|()| Some(end)),
                     (Some(_), None) => Err("no drafter is attached".to_string()),
                 };
@@ -27916,6 +28029,22 @@ fn admit(
                          differs on {field}; serving COLD (model {})",
                         req.model
                     );
+                } else if let Some(e2) = pool.iter().rev().find(|e2| {
+                    e2.rewound_from.is_some()
+                        && prompt.starts_with(&e2.fed)
+                        && prompt.len() < e2.fed.len() + memra_engine::hybrid_forward::PRIME_MIN_T
+                }) {
+                    // A rewound entry this prompt extends by fewer than the prime floor (the
+                    // exact tier skips it): the short-suffix decline below, named as before, and
+                    // the entry stays parked for a longer turn.
+                    eprintln!(
+                        "[worker] dspark-reuse DECLINED: suffix {} < prime floor {}; \
+                         serving COLD and keeping the entry parked (model {})",
+                        prompt.len() - e2.fed.len(),
+                        memra_engine::hybrid_forward::PRIME_MIN_T,
+                        req.model
+                    );
+                    reuse_metrics.spec_misses += 1;
                 } else if !pool.is_empty() {
                     // Named miss (the pool's convention: silence only for the empty
                     // pool). The overlap length against the best entry is the one
@@ -38182,6 +38311,7 @@ mod tests {
             decode_budget: 2_600,
             hit_available: false,
             hit_restorable: false,
+            pool_resumable: false,
         };
         // RED ARM (door shut): the shipped decline, and the penalty is the only reason.
         assert!(!super::dspark_prefers_cold_over_prefix_with(base, false));
@@ -38254,6 +38384,7 @@ mod tests {
             decode_budget: 400,
             hit_available: true,
             hit_restorable: false,
+            pool_resumable: false,
         };
         // RED ARM. Without the restorable bit this is exactly the shipped decline, and the
         // log line it produces is "serving the hit and going plain".
@@ -38332,6 +38463,7 @@ mod tests {
             decode_budget: 8_192,
             hit_available: true,
             hit_restorable: false,
+            pool_resumable: false,
         };
         assert!(
             super::dspark_prefers_cold_over_prefix(long_decode),
@@ -38893,6 +39025,7 @@ mod tests {
             decode_budget: 8_192,
             hit_available: true,
             hit_restorable: false,
+            pool_resumable: false,
         };
         let route = |a| {
             let prefers = super::dspark_prefers_cold_over_prefix(a);
@@ -38968,6 +39101,7 @@ mod tests {
             decode_budget: 8_192,
             hit_available: true,
             hit_restorable: false,
+            pool_resumable: false,
         };
         // Pure half with the greedy-penalty arm SHUT: this test is the pre-lane refusal
         // set (its penalised-greedy row is a refusal only at door 0; the arm's own test is
@@ -40364,10 +40498,31 @@ mod tests {
             .expect("a failed seat declines")
             + seat;
         assert!(squashed[seat_fail..resume].contains("drop(entry);"));
-        // A rewound entry's cap check is its allocation (it is reseated to this request's cap).
+        // The exact tier is `dspark_exact_pick`, the one the veto asks too. No cap refuses a
+        // rewound entry there: its arm is the prime floor and the token prefix alone, and the
+        // sampler is asked last. An entry parked at its end keeps its cap and done rules.
         assert!(squashed.contains(
-            "(if e2.rewound_from.is_some() { e2.sess.alloc_ctx() } else { e2.sess.cache_max_ctx() }) >= ctx_cap"
+            "let hit = if let Some(index) = dspark_exact_pick(pool, &prompt, ctx_cap, &mut admits) {"
         ));
+        assert!(squashed.contains(
+            "pool.iter().rposition(|e2| { (if e2.rewound_from.is_some() { dspark_rewound_resumable(true, &e2.fed, prompt) } else { e2.sess.cache_max_ctx() >= ctx_cap && prompt.len() >= e2.fed.len() && prompt.starts_with(&e2.fed) && (prompt.len() > e2.fed.len() || !e2.done) }) && admits(e2) })"
+        ));
+        // The veto yields only for that same pick, rewound, deep enough or repaid, and never
+        // under a retained admission plan (which decided the route before `admit`).
+        assert!(squashed.contains(
+            "pool_resumable: dspark_draft_ready && admission_restore.is_none() && dspark_reuse.get(&pool_key).is_some_and(|pool| {"
+        ));
+        assert!(squashed.contains(
+            "dspark_exact_pick(pool, &prompt, ctx_cap, |e2| { spec_resume_sampler_verdict(&identity, &e2.sampler).is_none() }) .map(|i| &pool[i]) .is_some_and(|e2| { e2.rewound_from.is_some() && (e2.fed.len() >= hit_len || dspark_cold_prime_repays_prefill_tokens("
+        ));
+        // The resume arm grows a rewound session to this request's cap, then seats it; the grow
+        // counter sits between them.
+        let grow = squashed[decline..resume]
+            .find(".dspark_grow_session(engine, draft, &mut entry.sess, ctx_cap)")
+            .expect("the grow")
+            + decline;
+        assert!(grow < seat);
+        assert!(squashed[grow..seat].contains("reuse_metrics.dspark_grid_rewind_grows += 1;"));
         // Both resume primes cut on the grid, and only with the restore switch off.
         assert_eq!(
             production.matches("dspark_resume_capture(").count(),
@@ -40402,6 +40557,78 @@ mod tests {
         assert!(super::dspark_park_rewind_refusal(true, false).is_some());
         assert!(super::dspark_park_rewind_refusal(false, true).is_some());
         assert!(super::dspark_park_rewind_refusal(false, false).is_none());
+    }
+
+    /// memra#1093, the agentic shape: a rewound DFlash entry is resumable for any prompt that
+    /// extends its tokens by the prime floor, whatever the request's cap; the cache-preferred veto
+    /// yields to it; and the plain pool decides its grid rewind before the park-compact grow.
+    #[test]
+    fn a_rewound_dflash_session_is_grown_and_preferred_for_the_turn_that_extends_it() {
+        let fed: Vec<u32> = (0..2_976).collect();
+        let mut prompt = fed.clone();
+        prompt.extend(10_000..10_015);
+        assert!(
+            !super::dspark_rewound_resumable(true, &fed, &prompt),
+            "15 < the floor"
+        );
+        prompt.push(10_015);
+        assert!(super::dspark_rewound_resumable(true, &fed, &prompt));
+        assert!(
+            !super::dspark_rewound_resumable(false, &fed, &prompt),
+            "parked at its end"
+        );
+        prompt[100] = 7;
+        assert!(
+            !super::dspark_rewound_resumable(true, &fed, &prompt),
+            "diverged"
+        );
+
+        // The veto: a long prompt's plain hit and a short decode go plain, unless the pool holds a
+        // rewound session that brings the drafter back.
+        let vetoed = super::DsparkColdPrefixAdmission {
+            route_ready: true,
+            prime_feasible: true,
+            greedy: false,
+            greedy_penalized: false,
+            sampled: true,
+            constrained: false,
+            vision: false,
+            cold: true,
+            gate_on: true,
+            pin: None,
+            projected_wave: 1,
+            low: 2,
+            n_active: 0,
+            has_live_non_demotable: false,
+            prompt_len: 8_053,
+            decode_budget: 768,
+            hit_available: true,
+            hit_restorable: false,
+            pool_resumable: false,
+        };
+        assert!(!super::dspark_prefers_cold_over_prefix_with(vetoed, true));
+        assert!(super::dspark_prefers_cold_over_prefix_with(
+            super::DsparkColdPrefixAdmission {
+                pool_resumable: true,
+                ..vetoed
+            },
+            true
+        ));
+
+        let src = include_str!("worker.rs");
+        let production = &src[..src.find("\nmod tests {").unwrap()];
+        let squashed = production.split_whitespace().collect::<Vec<_>>().join(" ");
+        // The plain pool: the grid-rewind decision precedes the park-compact grow.
+        let decide = squashed
+            .find("&& let Some(why) = grid_rewind_plain_refusal(e, &prompt)")
+            .expect("the decision before the grow");
+        let grow = squashed
+            .find("let snap = e.cache.snapshot(engine)?; let mut grown_cache = alloc_with_single_reclaim_retry(")
+            .expect("the park-compact grow");
+        let rewind = squashed
+            .find("let rewound = grid_rewind_plain(engine, lm, e, &prompt, &req.model);")
+            .expect("the grid rewind");
+        assert!(decide < grow && grow < rewind);
     }
 
     /// memra#1093: a resumed DFlash prime captures the whole new prompt's grid cut, so the session
@@ -40471,7 +40698,10 @@ mod tests {
             "if let Some(e) = reused.take() { reused = if cache_carries_recurrent(&e.cache) { let rewound = grid_rewind_plain(engine, lm, e, &prompt, &req.model); if rewound.is_some() { reuse_metrics.continuation_grid_rewinds += 1; } else { reuse_metrics.continuation_grid_declines += 1; } rewound } else { Some(e) }; }"
         ));
         assert!(squashed.contains(
-            "if plain_pool_resume_at(committed, Some(pos), prompt.len(), true) != Some(pos) || prompt[..pos] != e.fed[..pos]"
+            "if plain_pool_resume_at(e.fed.len(), Some(pos), prompt.len(), true) != Some(pos) || prompt[..pos] != e.fed[..pos]"
+        ));
+        assert!(squashed.contains(
+            "if let Some(why) = grid_rewind_plain_refusal(&e, prompt) { eprintln!(\"[kv-reuse] grid-rewind: plain declined ({why}); cold\"); return None; }"
         ));
     }
 
@@ -41197,6 +41427,7 @@ mod tests {
             decode_budget: 1024,
             hit_available: true,
             hit_restorable: true,
+            pool_resumable: false,
         };
         assert_eq!(route.with_dflash_admission(admitted), Some(route));
         // MTP may still estimate positive K in these shapes. DFlash must refuse the
@@ -45381,7 +45612,11 @@ mod tests {
             "the grow arm must restore the parked rows through the checkpoint machinery \
              before any suffix primes"
         );
-        assert_eq!(code.matches("e.cap < ctx_cap").count(), 1, "one grow arm");
+        assert_eq!(
+            code.matches("e.cap < ctx_cap").count(),
+            2,
+            "the grid-rewind decision before the grow (memra#1093) and the one grow arm"
+        );
     }
 
     /// The device half of the purge: unpinned entries in the tenant's namespaces drop

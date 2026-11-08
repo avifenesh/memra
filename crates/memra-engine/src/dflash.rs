@@ -3199,6 +3199,48 @@ impl DflashKv {
         Ok(())
     }
 
+    /// Raise the drafter's logical cap to `cap` (memra#1093, the DSpark-pool grow: a parked
+    /// session resumed by a request whose cap is larger than the one it was primed for). The
+    /// physical planes become what `new` allocates for `cap` (`dflash_kv_phys_rows`) when that is
+    /// more than they hold (with the ring on, only for a cap under two windows; a KV the ring
+    /// already grew keeps its larger planes). The resident rows `[base, len)` move to the front of
+    /// the new planes unchanged, so every logical row reads the same bytes and the ring geometry
+    /// (`base`, `window_rows`, `floor`, `pin`, `keep`) carries over. The new planes are all
+    /// allocated and filled before the old ones are replaced: an `Err` leaves the KV as it was.
+    /// A no-op when `cap` is not larger.
+    pub(crate) fn grow_cap(
+        &mut self,
+        e: &Engine,
+        cfg: &DflashCfg,
+        cap: usize,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        if cap <= self.cap {
+            return Ok(());
+        }
+        let rows = dflash_kv_phys_rows(cfg, cap, dflash_kv_ring_on());
+        if rows > self.phys_rows {
+            let rowsz = self.row_bytes / std::mem::size_of::<f32>();
+            let live = (self.len - self.base) * rowsz;
+            let mut k = Vec::with_capacity(self.k.len());
+            let mut v = Vec::with_capacity(self.v.len());
+            for li in 0..self.k.len() {
+                let mut nk = e.uninit(rows * rowsz)?;
+                let mut nv = e.uninit(rows * rowsz)?;
+                if live > 0 {
+                    e.copy_range_into(&mut nk, 0, &self.k[li], 0, live)?;
+                    e.copy_range_into(&mut nv, 0, &self.v[li], 0, live)?;
+                }
+                k.push(nk);
+                v.push(nv);
+            }
+            self.k = k;
+            self.v = v;
+            self.phys_rows = rows;
+        }
+        self.cap = cap;
+        Ok(())
+    }
+
     /// Make room for `add` rows at logical `len` (memra#249 lever 13). Door off: a no-op,
     /// because `phys_rows == cap + block` and `ingest_ctx` already refuses past `cap`.
     pub(crate) fn ensure_room(
@@ -5596,6 +5638,84 @@ impl crate::prime_walker::PrimeWalker for DflashTapWalker<'_> {
     }
 }
 
+/// The trunk half of the DSpark-pool grow (`HybridModel::dspark_grow_session`): a fresh
+/// `Cache::new` at `max_ctx`, the constructor the cold DFlash prime uses, holding `src`'s committed
+/// state row for row: every full-attention layer's `[0, len)` K/V bytes and its length (a layer
+/// allocated but never run, such as an MTP/NextN slot the trunk skips, keeps its 0 rows), the
+/// recurrent conv/ssm planes, and the position. `src` is only read. K/V rows are flat
+/// `[row][token bytes]` planes, so a row's bytes do not depend on the capacity. Refuses the shapes
+/// whose rows below the position are not flat append-only history or whose planes this copy does
+/// not carry (SWA rings, TP mirrors, latent planes), as `Cache::rewind_recurrent_from` does. Those
+/// refusals come before the allocation; a layout found to differ after it drops the new cache. The
+/// source is untouched either way.
+fn grow_trunk_cache(
+    e: &Engine,
+    cfg: &memra_gguf::config::ModelConfig,
+    src: &crate::cache::Cache,
+    max_ctx: usize,
+) -> Result<crate::cache::Cache, Box<dyn std::error::Error>> {
+    src.ensure_usable("dspark grow source")?;
+    if src.has_swa_ring() {
+        return Err("SWA ring layers are not flat history".into());
+    }
+    if src.tp_kv.iter().any(Option::is_some)
+        || src.glm5_tp_recur.iter().any(Option::is_some)
+        || src.glm5_tp_latent_peer.iter().any(Option::is_some)
+        || src.latent.iter().any(Option::is_some)
+    {
+        return Err("TP or latent planes are not carried by the grow".into());
+    }
+    if src.pos > max_ctx {
+        return Err(format!("position {} exceeds the new cap {max_ctx}", src.pos).into());
+    }
+    let mut dst = crate::cache::Cache::new(e, cfg, max_ctx)?;
+    let n = src.kv.len();
+    if dst.kv.len() != n || dst.recur.len() != n || src.recur.len() != n {
+        return Err("grow layer counts differ".into());
+    }
+    for il in 0..n {
+        match (&src.kv[il], dst.kv[il].as_mut()) {
+            (Some(s), Some(d)) => {
+                if s.kv_dim_k != d.kv_dim_k
+                    || s.kv_dim_v != d.kv_dim_v
+                    || s.k_tok_bytes != d.k_tok_bytes
+                    || s.v_tok_bytes != d.v_tok_bytes
+                    || d.ring.is_some()
+                {
+                    return Err(format!("grow KV layout differs at layer {il}").into());
+                }
+                let len = s.len;
+                if len > max_ctx {
+                    return Err(format!("layer {il} holds {len} rows past the new cap").into());
+                }
+                if len > 0 {
+                    e.copy_u8_into(&mut d.k, 0, &s.k, len * s.k_tok_bytes)?;
+                    e.copy_u8_into(&mut d.v, 0, &s.v, len * s.v_tok_bytes)?;
+                }
+                d.len = len;
+                e.set_i32_one(&mut d.len_d, len as i32)?;
+            }
+            (None, None) => {}
+            _ => return Err(format!("grow KV kind differs at layer {il}").into()),
+        }
+        match (&src.recur[il], dst.recur[il].as_mut()) {
+            (Some(s), Some(d)) => {
+                if s.conv_state.len() != d.conv_state.len()
+                    || s.ssm_state.len() != d.ssm_state.len()
+                {
+                    return Err(format!("grow recurrent layout differs at layer {il}").into());
+                }
+                e.copy_into(&mut d.conv_state, 0, &s.conv_state, s.conv_state.len())?;
+                e.copy_into(&mut d.ssm_state, 0, &s.ssm_state, s.ssm_state.len())?;
+            }
+            (None, None) => {}
+            _ => return Err(format!("grow recurrent kind differs at layer {il}").into()),
+        }
+    }
+    dst.pos = src.pos;
+    Ok(dst)
+}
+
 impl crate::hybrid::HybridModel {
     /// Serial serving prime shared by cold requests and restored/parked suffixes.
     /// One chunk sink plus one 256-row carry; the numeric chunk and batch grids
@@ -6086,6 +6206,61 @@ impl crate::hybrid::HybridModel {
             taps,
             mode: DsparkPrimeMode::Resume(sess),
         })
+    }
+
+    /// THE DSPARK-POOL GROW (memra#1093). A rewound parked session (`rewind_to_boundary`) holds
+    /// the state a cold prime of its first `g` tokens leaves, in planes allocated for the cap of
+    /// the request that primed it. A later turn's cap is often larger (an agentic client sends
+    /// the same `max_tokens` on a prompt that grows every turn), and the session could not be
+    /// seated for it. This reallocates the session at that request's cold allocation, the
+    /// `max_ctx` `dspark_prime_start` would give it, and carries the state over unchanged:
+    /// * trunk: a fresh `Cache::new` at `max_ctx` (the cold prime's constructor) holding every
+    ///   full-attention layer's `[0, len)` K/V bytes and the recurrent conv/ssm planes
+    ///   (`grow_trunk_cache`); the old cache is dropped after the copies finish;
+    /// * drafter: its cap raised to `max_ctx`, its planes to the cold size when that is larger
+    ///   (`DflashKv::grow_cap`).
+    ///
+    /// The batched-snapshot tables point at the old recurrent planes, so they are dropped and
+    /// rebuilt at the first round, as on a cold session. Every value a later round reads is the
+    /// one it read before the grow, so the session is still the cold prime's state at `g`, now
+    /// with the allocation a cold prime of the new request has. Returns the previous allocation
+    /// when it grew, `None` when the allocation already covers `ctx_cap`. Refusals and a failed
+    /// trunk allocation or copy leave the session unchanged; a failed drafter grow leaves the
+    /// trunk grown and the session usable at its old drafter cap, which the caller's seat refuses.
+    pub fn dspark_grow_session(
+        &self,
+        e: &Engine,
+        draft: &DflashDraft,
+        sess: &mut DsparkSpecSession,
+        ctx_cap: usize,
+    ) -> Result<Option<usize>, String> {
+        let _numeric = self.enter_numeric();
+        let max_ctx = if draft.dflash2.is_some() {
+            ctx_cap
+        } else {
+            ctx_cap.min(draft.cfg.sliding_window)
+        };
+        let before = sess.alloc_ctx();
+        if before >= max_ctx {
+            return Ok(None);
+        }
+        if sess.prefix_capture.is_some() {
+            return Err("a capture is still pending publication".into());
+        }
+        if sess.cache.max_ctx < max_ctx {
+            let grown = grow_trunk_cache(e, &self.cfg, &sess.cache, max_ctx)
+                .map_err(|err| format!("trunk grow to {max_ctx} rows failed: {err}"))?;
+            // The old planes are the copies' source: finish them before the old cache drops.
+            e.stream().synchronize().map_err(|err| err.to_string())?;
+            sess.cache = grown;
+            sess.snapb = None;
+            sess.snapb_off = false;
+        }
+        sess.dkv
+            .grow_cap(e, &draft.cfg, max_ctx)
+            .map_err(|err| format!("drafter grow to {max_ctx} rows failed: {err}"))?;
+        e.stream().synchronize().map_err(|err| err.to_string())?;
+        Ok(Some(before))
     }
 
     fn validate_dspark_resume(
