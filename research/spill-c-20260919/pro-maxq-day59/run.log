@@ -5,7 +5,7 @@ run-gen-c60: OK
 run-spec-c60: OK
 memra-server-c60: OK
 index, name, pci.bus_id, driver_version, memory.total [MiB], power.limit [W], power.default_limit [W], power.max_limit [W], clocks.max.sm [MHz]
-0, NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition, 00000000:01:00.0, 615.71.09, 97887 MiB, 300.00 W, 300.00 W, 325.00 W, 3090 MHz
+0, NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition, <pci-bus-id>, 615.71.09, 97887 MiB, 300.00 W, 300.00 W, 325.00 W, 3090 MHz
 all cards:
 index, name, power.limit [W], memory.used [MiB], temperature.gpu
 0, NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition, 300.00 W, 2 MiB, 32
@@ -22,7 +22,7 @@ KMD Version                                            : 615.71.09
 CUDA UMD Version                                       : 13.4
 
 Attached GPUs                                          : 4
-GPU 00000000:01:00.0
+GPU <pci-bus-id>
     Performance State                                  : P8
     Clocks Event Reasons
         Idle                                           : Not Active

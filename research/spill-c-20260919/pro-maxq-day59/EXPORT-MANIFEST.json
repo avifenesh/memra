@@ -4,7 +4,8 @@
  "placeholders": [
   "<box>",
   "<local-tz>",
-  "/home/<user>"
+  "/home/<user>",
+  "<pci-bus-id>"
  ],
  "exported": [
   {
@@ -42,6 +43,30 @@
    "original_sha256": "b0caa452a5be09e0a2b3c397acc2c5550244bde2eb5884f464802a1ce2808f5d",
    "export_sha256": "7f4c725f639de02fceb86fe00a50dcc295c2cb32c0986f8991f9ab468356794d",
    "change": "rented-box identifier replaced by its placeholder"
+  },
+  {
+   "path": "provenance.log",
+   "original_sha256": "2a7250b2cbbf688600d952391923f434e8921bcc9939fecec26b038ddb6c7495",
+   "export_sha256": "e5286633cd5c660c819fed417691332715613d2512c7c862b33cc7ebaff9d2ea",
+   "change": "PCI bus ids replaced by <pci-bus-id> (2026-11-08)"
+  },
+  {
+   "path": "run.log",
+   "original_sha256": "4aabf4fac24f32d62c882b0552b016a79415ceef5e3618ff0eba017a7fcdc9c4",
+   "export_sha256": "caf21638765b04fe67c82ab1f649d2f1cb07e31ca5fb825ea5be2762c9aa9c01",
+   "change": "PCI bus ids replaced by <pci-bus-id> (2026-11-08)"
+  },
+  {
+   "path": "runner/moe-prefetch.log",
+   "original_sha256": "d9d5474cd769dc2f78c79a17d7a89ad3b51198402aaad3927046022afded15d4",
+   "export_sha256": "a362bc8ca478ed2af143f4a3702c9f529b9619344b847d774babdf5ad71bd8b1",
+   "change": "PCI bus ids replaced by <pci-bus-id> (2026-11-08)"
+  },
+  {
+   "path": "runner/power-set-moe-prefetch.log",
+   "original_sha256": "c51a1248bd108ef5a766c23cdacb65b13288ce8e5049a3a122267f95b443bbb4",
+   "export_sha256": "183cec8b2ee473cbd31696925cb5b64eebffd33bc81ca2354223576d12bb8f3e",
+   "change": "PCI bus ids replaced by <pci-bus-id> (2026-11-08)"
   }
  ]
 }
