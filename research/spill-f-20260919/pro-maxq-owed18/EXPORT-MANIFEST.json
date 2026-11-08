@@ -4,7 +4,8 @@
  "placeholders": [
   "<box>",
   "<local-tz>",
-  "/home/<user>"
+  "/home/<user>",
+  "<pci-bus-id>"
  ],
  "exported": [
   {
@@ -60,6 +61,24 @@
    "original_sha256": "b792f2ec88f708554a2d62be790fb9e3582c642a8c648c986c703006955f31c8",
    "export_sha256": "8dc1015b140823f8ddba67b3918174e81fedf7ee409a31eb13b862e5583cd39a",
    "change": "rented-box identifier replaced by its placeholder"
+  },
+  {
+   "path": "card.json",
+   "original_sha256": "bfe22bc7a94681654b7ac99721b8a5a47f7b2a33f84b27bdb80d21aea726825e",
+   "export_sha256": "7d17b7381fd728265e9a59464f9284b977b24a8618d15f59fc990aadbd4bd39e",
+   "change": "PCI bus ids replaced by <pci-bus-id> (2026-11-08)"
+  },
+  {
+   "path": "card-q.txt",
+   "original_sha256": "aff08abc8dc16e808a381af7ac3d4d7cc686231f630395d3ac1c96a1f5dda136",
+   "export_sha256": "0f0d329d446d20a6dba061c8c74d0067417f22ae496dc8e53a54c93a06157dbb",
+   "change": "PCI bus ids replaced by <pci-bus-id> (2026-11-08)"
+  },
+  {
+   "path": "runner/power-set-handoff-direct.log",
+   "original_sha256": "f924e621facba5798fa4ca24a0deeeed9fc823ea79c4d6b7f755d8953fd874cb",
+   "export_sha256": "cf34e01e5843376b006976804fb30e3ca95b466430bae593baab213bd7669d4b",
+   "change": "PCI bus ids replaced by <pci-bus-id> (2026-11-08)"
   }
  ]
 }
