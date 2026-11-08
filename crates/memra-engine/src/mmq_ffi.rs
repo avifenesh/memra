@@ -927,7 +927,9 @@ unsafe extern "C" {
     pub fn memra_mmq_nvfp4_f8f4_v2_img_bytes(in_f: i32, out_f: i32) -> usize;
     /// v2 F8F4 GEMM: image pre-pass into `img`, then the pipelined tile over a v2-layout
     /// activation. Bit-identical to `memra_mmq_nvfp4_f8f4_preq` on the same activation values.
-    /// Requires in_f % 256 == 0. Returns 0 / 3000+cudaError / 3998 (shape) / 2905 (stub build).
+    /// Requires in_f % 256 == 0. `v3`: 0 the v2 mainloop, 1 the TMA-fed v3 mainloop (v2 when a
+    /// tensor map cannot be encoded), 2 v3 or 3000+cudaErrorInvalidValue; every arm gives the same
+    /// bits. Returns 0 / 3000+cudaError / 3998 (shape) / 2905 (stub build).
     pub fn memra_mmq_nvfp4_f8f4_v2_preq(
         w_nvfp4_blocks: *const core::ffi::c_void,
         act_scratch: *const core::ffi::c_void,
@@ -943,7 +945,8 @@ unsafe extern "C" {
     ) -> i32;
     /// `memra_mmq_nvfp4_f8f4_v2_preq` with the residual add in the epilogue: `y = res + W x`, the
     /// bytes the plain GEMM then `add_f32(res, y)` write. `res` and `y` are distinct [n_tokens,
-    /// out_f] f32 buffers. Same returns (3998 also for a null or aliased `res`).
+    /// out_f] f32 buffers. `v3` and the returns as for the plain entry (3998 also for a null or
+    /// aliased `res`).
     pub fn memra_mmq_nvfp4_f8f4_v2_preq_resid(
         w_nvfp4_blocks: *const core::ffi::c_void,
         act_scratch: *const core::ffi::c_void,
@@ -961,8 +964,8 @@ unsafe extern "C" {
     /// The dense FFN's gate and up v2 GEMMs and the down GEMM's activation quantize in one launch:
     /// writes silu(gate) * up as the v2 activation of an nf-wide input at `act_out`. Bit-identical
     /// to the two plain v2 GEMMs then `memra_mmq_nvfp4_f8f4_v2_quantize_act_silu`. `img` holds
-    /// `memra_mmq_nvfp4_f8f4_v2_img_bytes(in_f, 2 * nf)` bytes. Returns 0 / 3000+cudaError / 3998
-    /// (shape) / 2905 (stub build).
+    /// `memra_mmq_nvfp4_f8f4_v2_img_bytes(in_f, 2 * nf)` bytes. `v3` as for
+    /// `memra_mmq_nvfp4_f8f4_v2_preq`. Returns 0 / 3000+cudaError / 3998 (shape) / 2905 (stub build).
     pub fn memra_mmq_nvfp4_f8f4_v2_gateup_silu(
         w_gate: *const core::ffi::c_void,
         w_up: *const core::ffi::c_void,
@@ -2294,6 +2297,17 @@ impl Engine {
         })
     }
 
+    /// The `v3` argument of the v2 GEMM entries: 0 runs the v2 mainloop, 1 the v3 mainloop (v2 when
+    /// a tensor map cannot be encoded, same bits), 2 the v3 mainloop or an error. kernel-check's
+    /// forced-on arm passes 2, so a silent fallback cannot make it test v2 twice.
+    fn f8f4_v3_arg(&self) -> i32 {
+        if F8F4_V3_FORCE.load(std::sync::atomic::Ordering::Relaxed) == 2 {
+            2
+        } else {
+            self.f8f4_v3_on() as i32
+        }
+    }
+
     /// kernel-check: force the v3 mainloop on (`Some(true)`), off (`Some(false)`), or back to the
     /// route (`None`) for every following v2 GEMM in this process.
     pub fn set_f8f4_v3_force(&self, force: Option<bool>) {
@@ -2400,7 +2414,7 @@ impl Engine {
                             st,
                             scale,
                             rp as i32,
-                            self.f8f4_v3_on() as i32,
+                            self.f8f4_v3_arg(),
                         )
                     }
                 }
@@ -2462,7 +2476,7 @@ impl Engine {
                     stream.cu_stream() as *mut core::ffi::c_void,
                     scale,
                     rp as i32,
-                    self.f8f4_v3_on() as i32,
+                    self.f8f4_v3_arg(),
                 )
             }
         };
@@ -3012,7 +3026,7 @@ impl Engine {
                     *gs,
                     *us,
                     *grp as i32,
-                    self.f8f4_v3_on() as i32,
+                    self.f8f4_v3_arg(),
                 )
             }
         };
@@ -3074,7 +3088,7 @@ impl Engine {
                         scales.0,
                         scales.1,
                         rp as i32,
-                        self.f8f4_v3_on() as i32,
+                        self.f8f4_v3_arg(),
                     )
                 }
             };

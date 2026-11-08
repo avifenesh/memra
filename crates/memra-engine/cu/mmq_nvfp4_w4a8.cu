@@ -2119,6 +2119,7 @@ static int f8f4v2_preq_run(const void * W_nvfp4_blocks, const void * act_scratch
     // cannot be encoded.
     F8F4V3Maps mp;
     const bool tma = v3 && f8f4v3_maps<256, 128, 64>(&mp, vals, scales, act, act_sc, Mp, in_f, n_tokens, Tp);
+    if (v3 == 2 && !tma) { return 3000 + (int) cudaErrorInvalidValue; }   // v3 required (kernel-check)
     const cudaError_t e = tma
         ? f8f4v3_launch<256, 128, 8, 2, 64, 3, EPI>(mp, y, out_f, in_f, n_tokens, out_scale, /*G=*/4, st, nullptr,
                                                     1.0f, res)
@@ -2135,7 +2136,8 @@ extern "C" {
 // its silu twin, memra_mmq_nvfp4_f8f4_v2_act_bytes) plus an image scratch of
 // memra_mmq_nvfp4_f8f4_v2_img_bytes(in_f, out_f) bytes. Bit-identical to memra_mmq_nvfp4_f8f4_preq
 // on the same activation. Requires in_f % 256 == 0 and Mp * in_f, n_tokens * in_f < 2^32. Returns 0,
-// 3000 + cudaError, or 3998 on an unsupported shape. v3 != 0 runs the TMA-fed v3 mainloop (same bits).
+// 3000 + cudaError, or 3998 on an unsupported shape. v3 = 1 runs the TMA-fed v3 mainloop (same bits),
+// or v2 when a tensor map cannot be encoded; v3 = 2 runs v3 or returns 3000 + cudaErrorInvalidValue.
 int memra_mmq_nvfp4_f8f4_v2_preq(const void * W_nvfp4_blocks, const void * act_scratch, float * y,
                                 int in_f, int out_f, int n_tokens, void * img, void * stream,
                                 float out_scale, int rp, int v3) {
@@ -2198,6 +2200,7 @@ int memra_mmq_nvfp4_f8f4_v2_gateup_silu(const void * W_gate, const void * W_up,
     // v3 (GB10) as in f8f4v2_preq_run; v2 when a tensor map cannot be encoded.
     F8F4V3Maps mp;
     const bool tma = v3 && f8f4v3_maps<256, 128, 64>(&mp, vals, scales, act, act_sc, Mp, in_f, n_tokens, Tp);
+    if (v3 == 2 && !tma) { return 3000 + (int) cudaErrorInvalidValue; }   // v3 required (kernel-check)
     const cudaError_t e = tma
         ? f8f4v3_launch<256, 128, 8, 2, 64, 3, 1>(mp, nullptr, rows, in_f, n_tokens, scale_gate, /*G=*/4, st,
                                                   (uint8_t *) act_out, scale_up, nullptr)

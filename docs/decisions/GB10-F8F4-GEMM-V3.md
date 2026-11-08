@@ -102,14 +102,16 @@ Per launch on unit 1, drivers over the engine entries with the image pass includ
 So the follow-up puts gate/up back on v3. Under CUDA 13.0 its v3 kernel spills 12 / 12 B. The cluster
 form spilled 28 / 32 B, and v2's gate/up kernel spills 12 / 16 B. v2 now calls the same stage
 compute and epilogues, so one copy of the numeric program serves both mainloops. A call whose
-tensor maps cannot be encoded runs v2.
+tensor maps cannot be encoded runs v2. kernel-check's forced v3 arm passes `v3 = 2`, which returns an
+error instead of falling back, so that arm always tests v3.
 
 Exactness on unit 1 ([`gemm-v3-cta-engine-unit1/`](../../research/gb10-prefill-20261106/gemm-v3-cta-engine-unit1/)):
 - kernel-check is ALL GREEN, with GATEUP under both mainloops.
 - pp3855 logits are identical with v3, `V3=0` and `V2=0`, and to #1102's (`f81e969042a7e155`).
 
-- The 16k argmax-margin gate PASSES on unit 2: flips 3, budget 3, every flip margin-explained. Its
-  probe table is byte-identical to #1102's (`a42e74b3f28cbd96`, `gemm-v3-cta-served-unit2/argmax16k-v3/`).
+On unit 2 (`gemm-v3-cta-served-unit2/argmax16k-v3/`), the 16k argmax-margin gate PASSES: flips 3,
+budget 3, every flip margin-explained. Its probe table is byte-identical to #1102's
+(`a42e74b3f28cbd96`).
 
 Served on unit 2, one campaign, cells B L N N L B, one fresh boot per cell
 ([`gemm-v3-cta-served-unit2/`](../../research/gb10-prefill-20261106/gemm-v3-cta-served-unit2/)).
@@ -124,7 +126,7 @@ same server code:
 
 Against the v2 mainloop, N is -5.54 / -4.35 / -3.40%. The answer text is identical in all six
 boots, needles found, no request error. The gains over L (1.01 / 4.16 / 8.25 s) are at least 16 times
-the largest within-arm spread at each length (0.035 / 0.011 / 0.506 s).
+the largest within-arm spread of the L and N arms at each length (0.035 / 0.011 / 0.506 s).
 
 ## Rejected
 
