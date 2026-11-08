@@ -23,6 +23,74 @@ fn nvcc_version(p: &std::path::Path) -> Option<(u32, u32)> {
     Some((maj, min))
 }
 
+/// Zero the nvcc process id that `nvcc -c` leaves in an object's symbol names.
+///
+/// nvcc names its intermediates `tmpxft_<pid:08x>_<seq:08x>-<n>_<source>`, and the host
+/// compiler records that input name as the object's FILE symbol (and names static-initializer
+/// functions after it), so the pid of each nvcc process reached the linked binaries' `.strtab`
+/// and, through it, the linker's `.note.gnu.build-id`. Two builds of the same tree then
+/// differed in exactly those two sections (2026-11-08: GitHub's ubuntu-24.04 controlled build
+/// of 2288c4bf82 against a container build on another box; every other section, `.text`,
+/// `.rodata`, `.nv_fatbin` and `.symtab` included, was byte-identical), and the release
+/// workflow, which requires the rebuilt ELF bytes to equal the qualified build's
+/// (`docs/RELEASE-QUALIFICATION.md`), could never pass. Parallel builds reorder process
+/// creation, so the pid differs even inside the release sandbox's pid namespace.
+///
+/// Only the pid field is rewritten, and only on local symbols (a FILE symbol, a static
+/// function): zeroing it cannot collide across objects. A global symbol carrying the name
+/// fails the build rather than being renamed.
+fn normalize_nvcc_temp_symbols(obj: &Path) {
+    let listed = Command::new("nm")
+        .arg("-a")
+        .arg(obj)
+        .output()
+        .expect("spawn nm (nvcc temp-name normalization)");
+    assert!(
+        listed.status.success(),
+        "nm failed on {}: {}",
+        obj.display(),
+        String::from_utf8_lossy(&listed.stderr)
+    );
+    let mut map = String::new();
+    for line in String::from_utf8_lossy(&listed.stdout).lines() {
+        let fields: Vec<&str> = line.split_whitespace().collect();
+        let (kind, name) = match fields.as_slice() {
+            [_, kind, name] | [kind, name] => (*kind, *name),
+            _ => continue,
+        };
+        let Some(at) = name.find("tmpxft_") else {
+            continue;
+        };
+        let tail = &name.as_bytes()[at + 7..];
+        if tail.len() < 9 || tail[8] != b'_' || !tail[..8].iter().all(u8::is_ascii_hexdigit) {
+            continue;
+        }
+        // nm's local types (absolute, bss, data, small data, debug, unwind, read-only, small bss, text);
+        // lowercase u/v/w/i are GNU unique, weak and indirect-function symbols, which are not local.
+        assert!(
+            kind.len() == 1 && "abdgnprst".contains(kind),
+            "nvcc temp-name symbol {name} in {} is not local (nm type {kind}); refusing to rename it",
+            obj.display()
+        );
+        map.push_str(&format!(
+            "{name} {}tmpxft_00000000{}\n",
+            &name[..at],
+            &name[at + 15..]
+        ));
+    }
+    if map.is_empty() {
+        return;
+    }
+    let map_path = obj.with_extension("tmpxft-syms");
+    std::fs::write(&map_path, map).expect("write the nvcc temp-name symbol map");
+    let status = Command::new("objcopy")
+        .arg(format!("--redefine-syms={}", map_path.display()))
+        .arg(obj)
+        .status()
+        .expect("spawn objcopy (nvcc temp-name normalization)");
+    assert!(status.success(), "objcopy failed on {}", obj.display());
+}
+
 /// Resolve the `nvcc` to build with.
 ///
 /// EXPLICIT INTENT WINS, unvalidated: `MEMRA_NVCC` first, then
@@ -735,6 +803,7 @@ fn main() {
                 status.success(),
                 "nvcc static-lib build failed for {mmq_src}"
             );
+            normalize_nvcc_temp_symbols(&obj);
             objs.push(obj);
         }
         let lib = out.join("libmemra_mmq.a");
@@ -812,6 +881,7 @@ fn main() {
             .status()
             .expect("spawn nvcc (dsv4 dense cutlass)");
         assert!(status.success(), "nvcc build failed for {dense_src}");
+        normalize_nvcc_temp_symbols(&obj);
         let _ = std::fs::remove_file(&lib);
         let status = Command::new("ar")
             .args(["crus", lib.to_str().unwrap(), obj.to_str().unwrap()])
@@ -895,6 +965,7 @@ fn main() {
             status.success(),
             "nvcc static-lib build failed for {cutlass_src}"
         );
+        normalize_nvcc_temp_symbols(&obj);
         let _ = std::fs::remove_file(&lib);
         let status = Command::new("ar")
             .args(["crus", lib.to_str().unwrap(), obj.to_str().unwrap()])
