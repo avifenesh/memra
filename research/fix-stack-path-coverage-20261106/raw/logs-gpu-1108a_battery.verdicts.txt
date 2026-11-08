@@ -1,0 +1,15 @@
+kernel-check           PASS      ALL GREEN (121 cells, 115 executed, 10 required, 6 skipped; budget 11)
+ornith-ai/ornith-1.5-35b-a3b  argmax-margin  PASS  SUMMARY flips=0 bad=0 prime=MATCH
+ornith-ai/ornith-1.5-35b-a3b  argmax-margin-batch  PASS  SUMMARY flips=0 bad=0 served=MATCH
+ornith-ai/ornith-1.5-35b-a3b  run-spec  PASS      K=1..8 self-consistency, identical to plain target (8/8)
+qwen/qwen3.8-27b  argmax-margin  PASS  SUMMARY flips=0 bad=0 prime=MATCH
+qwen/qwen3.8-27b  argmax-margin-batch  PASS  SUMMARY flips=0 bad=0 served=MATCH
+qwen/qwen3.8-27b  run-spec  PASS      K=1..8 self-consistency, identical to plain target (8/8)
+=== RELEASE BATTERY PASS - paste into the tag message ===
+  kernel-check           PASS      ALL GREEN (121 cells, 115 executed, 10 required, 6 skipped; budget 11)
+  ornith-ai/ornith-1.5-35b-a3b  argmax-margin  PASS  SUMMARY flips=0 bad=0 prime=MATCH
+  ornith-ai/ornith-1.5-35b-a3b  argmax-margin-batch  PASS  SUMMARY flips=0 bad=0 served=MATCH
+  ornith-ai/ornith-1.5-35b-a3b  run-spec  PASS      K=1..8 self-consistency, identical to plain target (8/8)
+  qwen/qwen3.8-27b  argmax-margin  PASS  SUMMARY flips=0 bad=0 prime=MATCH
+  qwen/qwen3.8-27b  argmax-margin-batch  PASS  SUMMARY flips=0 bad=0 served=MATCH
+  qwen/qwen3.8-27b  run-spec  PASS      K=1..8 self-consistency, identical to plain target (8/8)

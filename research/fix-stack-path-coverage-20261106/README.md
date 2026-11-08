@@ -116,3 +116,14 @@ The DSpark pair cell on main's own binary (05a8a63503 plus #1085, which touches 
 Both orders, twice each (`raw/parkcompact-status*.txt`). The parked session holds turn 2's prompt and four rows decode wrote; 3113 is off the 32-token prime grid, so the suffix prime runs a second numeric program. The continuation-pool resume checked only the cap (`plain_resume_cap_admits`). Park compaction widens the exposure: #1062 makes it the RTX 5090 default, so #1062 is blocked on the fix.
 
 The fix (memra#1091, PR #1092) rewinds a recurrent session's extension hit to its grid checkpoint. On its binary all four arms equal cold, each rewinding 3113 committed rows to 3072 (`raw/parkcompact-status3.txt`).
+
+## 2026-11-08: the stack on main c347e782d2 (#1092, #1089, #1098), the full RTX 5090 set
+
+`cells/gpu-1108a.sh` (with its resumes `gpu-1108b.sh` and `gpu-1108c.sh`, run around another lane's landing record on the same card; `raw/logs-gpu-1108a.yield.txt`), at 6e6ac431a5. Park compaction is on by default on the RTX 5090 in this stack (#1062).
+
+| Row | What ran | Result |
+|---|---|---|
+| | DSpark pair cell at the RTX 5090 default, turn 2 at `max_tokens` 96 and 256 | warm equals cold on turns 2 and 3 in both: the parked session's 3113 committed rows rewind to its 3072-row grid checkpoint and re-prime 41 rows (`raw/logs-gpu-1108a_pair-default-*`). Fail before: the 2026-11-07 evening table above |
+| | the pair cell under the one restore switch | warm equals cold, two strict-prefix restores |
+| A2, A17 | restorable-hit cell, greedy and sampled | every row passes: the hit site prefers the 2592-token restorable entry over the 3104-token plain one and restores DFlash from it; r3 equals the cache-off reference |
+| | host-spill identity gate, drafter arm; serve-smoke; the release battery | ALL GREEN; 47 ok; PASS (kernel-check 121 cells, 115 executed) |
