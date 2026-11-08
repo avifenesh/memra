@@ -1389,6 +1389,20 @@ pub struct StepWs {
     pub tok: CudaSlice<i32>,        // [1]
 }
 
+/// What one full-token replay forward graph holds, derived from the loaded program by
+/// [`Dsv4Gpu::full_token_forward_census_for_gate`].
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct FullTokenForwardCensus {
+    /// Kernel nodes, the `kernels` column of the replay's variant census.
+    pub kernels: u64,
+    /// `dsv4_rmsnorm_f32acc_kernel` nodes.
+    pub rmsnorm: u64,
+    /// `dsv4_rope_kernel` nodes (the compressors' `dsv4_rope_at_kernel` is another symbol).
+    pub rope: u64,
+    /// `kernels` by launch site, in walk order, for a mismatch report.
+    pub terms: Vec<(&'static str, u64)>,
+}
+
 /// Whole-trunk decode state: one [`LayerCache`] per trunk layer + the stream position.
 /// `pos` = tokens consumed so far (the next decode_step processes position `pos`).
 pub struct DecodeState {
@@ -2817,6 +2831,246 @@ impl Dsv4Gpu {
                     .sum()
             })
             .collect()
+    }
+
+    /// The kernels one full-token replay forward graph holds on `rank`, from the loaded program:
+    /// the `kernels` column of [`Self::full_token_replay_variant_census_for_gate`] and the
+    /// standalone RMSNorm and RoPE nodes the graph-census gates count in its DOT dump.
+    ///
+    /// `slot` is the forward variant (0 ordinary, 2 C4, 3 C4 + C128) of a cadence state, or 0,
+    /// the only forward graph, without cadence. `dense_exact_tail` is the dense selection the
+    /// graph was captured under (gates switch it per arm); the dense-fast and HC split policies
+    /// are read from this thread, so a caller reads the census under the policy it captured.
+    ///
+    /// The count walks `decode_step_tp_ep` and `tp_ep_trunk_walk_rows` for one row: the
+    /// per-step launches, then each layer's attention, attention TP2 joins, FFN, routed-expert
+    /// chain and tail, with the layer's compressors, index list and C4 split read from the loaded
+    /// layer and `state`'s caches. It models the f32x small-kernel-diet program the gates run:
+    /// any branch it does not model (another placement, the fused one-token MoE pair, an unfused
+    /// gate/up) is an error, never a guess.
+    pub fn full_token_forward_census_for_gate(
+        &self,
+        state: &DecodeState,
+        rank: usize,
+        slot: usize,
+        cadence: bool,
+        dense_exact_tail: bool,
+    ) -> Res<FullTokenForwardCensus> {
+        use crate::dsv4_graph::ReplayCadence;
+        unsafe extern "C" {
+            fn memra_dsv4_dense_fast_enabled_for_gate() -> i32;
+        }
+        let variant = match (cadence, slot) {
+            (false, 0) => None,
+            (true, 0) => Some(ReplayCadence::Ordinary),
+            (true, 2) => Some(ReplayCadence::C4),
+            (true, 3) => Some(ReplayCadence::C128),
+            _ => {
+                return Err(format!(
+                    "no forward graph in slot {slot} (cadence {cadence})"
+                ));
+            }
+        };
+        let plan = self
+            .attention_tp
+            .ok_or("the census models the TP/EP walk with attention TP2")?;
+        if !self.topology.is_tp_ep() || rank > 1 {
+            return Err("the census models the two TP/EP ranks".into());
+        }
+        if !(self.small_kernel_diet && self.chains_f32 && self.dots_f32) {
+            return Err("the census models the f32x small-kernel-diet program".into());
+        }
+        let st = &self.stages[rank];
+        if (0..2).any(|kind| self.small_component_pending(st.dev, kind)) {
+            return Err(
+                "a small-kernel component cell adds launches the census does not model".into(),
+            );
+        }
+        // The routed experts run the grouped local chain with the fused gate/up and the M1 down
+        // tail the gates pin. That also rules out the fused one-token MoE pair, which engages
+        // only without the gate/up fusion (`moe_fused_eligible`).
+        if !self.matrix_moe
+            || !self.grouped_route_device
+            || self.grouped_fresh_storage_control
+            || !(crate::moe_f16g_gu_fuse_on() && crate::moe_f16g_tail_on())
+            || !(crate::moe_f16g_m1_tc_on() || crate::moe_f16g_down_m1_half2_on())
+        {
+            return Err("the census models the grouped one-row expert chain with the fused gate/up and the M1 down tail".into());
+        }
+        let caches = if rank == 0 {
+            &state.caches
+        } else {
+            state
+                .tp_ep_caches
+                .as_ref()
+                .ok_or("TP/EP rank-1 caches missing")?
+        };
+        let d = self.model.cfg();
+        let hd = d.head_dim as usize;
+        let rd = d.qk_rope_head_dim as usize;
+        let sink_st = self.sink_attn_st(plan.local_heads, hd);
+        // Two GEMVs of one input are one `*_pair` launch when both take the dense-fast
+        // transport (exact tail and dense fast on, both FP8), else the two ordinary calls.
+        let dense_fast =
+            dense_exact_tail && unsafe { memra_dsv4_dense_fast_enabled_for_gate() } != 0;
+        let gemv_pair = |a_fp8: bool, b_fp8: bool| if dense_fast && a_fp8 && b_fp8 { 1 } else { 2 };
+        let fp8 = |w: &Option<Fp8Dense>| self.dense_fp8 && w.is_some();
+        // HC entry (`hc_pre_norm_batch_dev`): with the HC24 split on, the split partials and
+        // the fused finish, which also runs the entry RMSNorm and the bf16 pack; else the HC
+        // dots, the small HC kernel, the RMSNorm and, where the caller packs, one cvt.
+        let hc_split = unsafe { memra_dsv4_hc_dot_split_slices() } != 0
+            && d.hc_mult == 4
+            && self.model.mc.n_embd == 4096;
+        let hc_entry = |pack: bool| -> (u64, u64) {
+            if hc_split {
+                (2, 0)
+            } else {
+                (3 + u64::from(pack), 1)
+            }
+        };
+        let mut census = FullTokenForwardCensus::default();
+        let mut add = |term: &'static str, n: u64| {
+            match census.terms.iter_mut().find(|(t, _)| *t == term) {
+                Some((_, total)) => *total += n,
+                None => census.terms.push((term, n)),
+            }
+            census.kernels += n;
+        };
+        // decode_step_tp_ep: the replay's token controls, the embedding and the HC repeat.
+        add("step: replay input, embedding, HC repeat", 3);
+        let n_trunk = (self.model.mc.n_layer - self.model.mc.nextn_predict_layers) as usize;
+        if caches.len() != n_trunk {
+            return Err("TP/EP cache count is not the trunk's".into());
+        }
+        let mut rmsnorm = 0;
+        let mut rope = 0;
+        for (il, cache) in caches.iter().enumerate() {
+            let layer = st
+                .layers
+                .iter()
+                .find(|l| l.il == il as u32)
+                .ok_or_else(|| format!("TP/EP rank {rank} missing layer {il}"))?;
+            let ep = layer
+                .ep
+                .as_ref()
+                .ok_or("TP/EP layer without its expert bank")?;
+            if !ep.local_only {
+                return Err("the census models local-only expert banks".into());
+            }
+            // attention_rows_dev
+            let (entry, entry_norm) = hc_entry(true);
+            add("attention HC entry", entry);
+            rmsnorm += entry_norm;
+            add(
+                "wq_a + wkv",
+                gemv_pair(fp8(&layer.wq_a_fp8), fp8(&layer.wkv_fp8)),
+            );
+            // The diet's fused Q norm and bf16 pack.
+            add("q norm pack", 1);
+            // A ratio-4 layer's indexer wq_b shares the q-LoRA rows (the rank's wq_b is packed
+            // FP8 under attention TP2).
+            let indexer = if layer.ratio != 0 {
+                layer.idx.as_ref()
+            } else {
+                None
+            };
+            add(
+                "wq_b",
+                indexer.map_or(1, |ix| gemv_pair(true, fp8(&ix.wq_b_fp8))),
+            );
+            // Per-head RMS with RoPE in one launch, else headrms and rope; the q transpose
+            // only for the three-kernel sink attention.
+            let q_fused = hd <= 512;
+            add(
+                "q head RMS + RoPE",
+                if q_fused { 1 } else { 2 } + u64::from(!sink_st),
+            );
+            rope += u64::from(!q_fused);
+            // The latent row's norm, RoPE and window QAT in one launch, else three.
+            let kv_fused = hd <= 1024 && (hd - rd).is_multiple_of(64);
+            add("kv norm + RoPE + QAT", if kv_fused { 1 } else { 3 });
+            rmsnorm += u64::from(!kv_fused);
+            rope += u64::from(!kv_fused);
+            if let Some(ix) = indexer {
+                // RoPE, Hadamard, FP4 QAT and staging in one launch, else four; then the
+                // weights projection.
+                let q_chain = ix.hd.is_power_of_two() && (64..=1024).contains(&ix.hd);
+                add("indexer q + weights", if q_chain { 1 } else { 4 } + 1);
+                rope += u64::from(!q_chain);
+            }
+            // cmp_decode_batch_dev under replay, per compressor: the pending snapshot (every
+            // TP/EP round keeps it), the kv/gate projections (one pair launch on the dense-fast
+            // transport when both have one storage class), the two row appends, and in a
+            // variant that emits the ratio: pool, RMSNorm, RoPE, the FP4 rotation (Hadamard +
+            // QAT) or the FP8 QAT, the store (the C4 split store or a row copy) and, for an
+            // overlapping compressor, the two shifts of both pending planes.
+            let mut compressors: Vec<&CmpDev> = Vec::new();
+            if layer.ratio != 0 {
+                compressors.extend(indexer.map(|ix| &ix.cmp));
+                compressors.push(
+                    layer
+                        .cmp
+                        .as_ref()
+                        .ok_or("ratio != 0 layer without its compressor")?,
+                );
+            }
+            for cmp in compressors {
+                let projections = if cmp.wkv.flag() == cmp.wgate.flag() && dense_fast {
+                    1
+                } else {
+                    2
+                };
+                add("compressor append", 1 + projections + 2);
+                if variant.is_none_or(|c| c.emits(cmp.ratio)) {
+                    let quant = if cmp.rotate { 2 } else { 1 };
+                    let shifts = if cmp.overlap { 4 } else { 0 };
+                    add("compressor emission", 3 + quant + 1 + shifts);
+                    rmsnorm += 1;
+                }
+            }
+            // The index list: fine indices plus the indexer's score and top-k on a ratio-4
+            // layer, coarse indices on a ratio-128 layer, the window list on a window layer.
+            add("index list", if indexer.is_some() { 3 } else { 1 });
+            // The position-split C4 store gathers the selected rows before the attention.
+            add("C4 split gather", u64::from(cache.split.is_some()));
+            add("sink attention", if sink_st { 2 } else { 3 });
+            add("o inverse RoPE + pack", 1);
+            add(
+                "wo_a",
+                if DSV4_DENSE_WO_A_GROUPED.load(Ordering::Acquire) {
+                    1
+                } else {
+                    plan.local_groups as u64
+                },
+            );
+            // tp_ep_trunk_walk_rows: the wo_a gather, wo_b (bf16 pack + GEMV), the row gather.
+            add("attention TP2 gathers", 2);
+            add("wo_b", 2);
+            // post_attention_moe_verify_dev: the attention hc_post and the FFN HC entry (no pack).
+            add("attention hc_post", 1);
+            let (entry, entry_norm) = hc_entry(false);
+            add("FFN HC entry", entry);
+            rmsnorm += entry_norm;
+            // moe_verify_dev: router dots and route, the EP x QAT; execute_matrix_local's grouped
+            // chain: count, prefix and scatter routes, the input gather, the fused gate/up, the
+            // h QAT, the h gather, the M1 down, its scale and the original-slot scatter.
+            add("router", 2);
+            add("routed experts", 1 + 3 + 1 + 1 + 1 + 1 + 1 + 1 + 1);
+            add("expert reduce", 1);
+            // moe_verify_common_tail with the shared expert on both ranks: combine, cvt, the
+            // gate (w1) and up (w3) pair, SwiGLU, cvt, down, add, then the FFN hc_post.
+            let shared = gemv_pair(fp8(&layer.shared_fp8[0]), fp8(&layer.shared_fp8[2]));
+            add("shared expert + hc_post", 7 + shared);
+        }
+        census.rmsnorm = rmsnorm;
+        census.rope = rope;
+        Ok(census)
+    }
+
+    /// RMSNorm nodes in the full-token commit graph: the head's final norm, on rank 1, and on
+    /// both ranks with the vocab-parallel head ([`Self::vocab_parallel_head_for_gate`]).
+    pub fn full_token_commit_rmsnorm_for_gate(&self, rank: usize) -> u64 {
+        u64::from(rank == 1 || self.vocab_parallel_head())
     }
 
     /// Drain both ranks and read the sticky device-side refusal words. The walk

@@ -17,10 +17,10 @@ use std::{
     time::Instant,
 };
 
-// Total-kernel census mismatches, collected rather than fatal so one run prints every arm's and
-// variant's count: the pins below predate paired GEMV kernels, the fused HC finish and attention
-// TP2's second gather, and a program-derived count needs the control arm's reading too. main
-// fails the gate at the end if any was recorded.
+// Total-kernel census mismatches against the loaded program's count
+// (`Dsv4Gpu::full_token_forward_census_for_gate`), collected rather than fatal so one run prints
+// every arm's and variant's reading with the derivation's terms. main fails the gate at the end
+// if any was recorded.
 static KERNEL_CENSUS_MISSES: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
 
 const PRIME: usize = 256;
@@ -185,24 +185,28 @@ fn captures_once(gpu: &Dsv4Gpu, state: &DecodeState, on: bool) {
         "recapture"
     );
     let ars = gpu.tp_ep_trunk_ar_launches_for_gate();
-    for rank in gpu
+    for (index, rank) in gpu
         .full_token_replay_variant_census_for_gate(state)
         .unwrap()
+        .into_iter()
+        .enumerate()
     {
-        let slots: &[(usize, u64)] = if on {
-            &[(0, 2741), (2, 3140), (3, 3240)]
-        } else {
-            &[(0, 3240)]
-        };
-        for &(slot, kernels) in slots {
+        // The ordinary, C4 and C4+C128 forward variants, or the control's one forward graph,
+        // in which every compressor emits.
+        let slots: &[usize] = if on { &[0, 2, 3] } else { &[0] };
+        for &slot in slots {
+            let derived = gpu
+                .full_token_forward_census_for_gate(state, index, slot, on, on)
+                .expect("program-derived kernel census");
+            let kernels = derived.kernels;
             eprintln!(
                 "census slot={slot} {:?} (want kernels={kernels} AR={ars})",
                 rank[slot]
             );
             if rank[slot][1] != kernels {
                 let miss = format!(
-                    "kernel census on={on} slot={slot}: read {} against the pin {kernels}",
-                    rank[slot][1]
+                    "kernel census on={on} rank={index} slot={slot}: read {} against the program's {kernels}, terms {:?}",
+                    rank[slot][1], derived.terms
                 );
                 eprintln!("KERNEL-CENSUS MISMATCH {miss}");
                 KERNEL_CENSUS_MISSES.lock().unwrap().push(miss);
@@ -268,6 +272,25 @@ fn dense_census(gpu: &Dsv4Gpu, state: &DecodeState, on: bool, dir: &Path) -> Gra
             } else {
                 [0, 0]
             };
+            // The standalone RMSNorm and RoPE nodes the program launches: in the forward
+            // variants the unfused HC entries' norms and each emitting compressor's, in the
+            // commit graph the head's final norm.
+            let (norms, ropes) = if segment == 1 {
+                (gpu.full_token_commit_rmsnorm_for_gate(rank), 0)
+            } else {
+                let derived = gpu
+                    .full_token_forward_census_for_gate(state, rank, segment, on, on)
+                    .expect("program-derived kernel census");
+                (derived.rmsnorm, derived.rope)
+            };
+            assert_eq!(
+                [
+                    count_kernel(&dot, "dsv4_rmsnorm_f32acc_kernel") as u64,
+                    count_kernel(&dot, "dsv4_rope_kernel") as u64
+                ],
+                [norms, ropes],
+                "RMSNorm/RoPE census rank={rank} segment={segment}"
+            );
             let candidate = [
                 count_launches(&dot, FP8_NODES),
                 count_launches(&dot, DOT_NODES),

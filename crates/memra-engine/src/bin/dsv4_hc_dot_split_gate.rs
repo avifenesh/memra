@@ -137,6 +137,11 @@ fn census(gpu: &Dsv4Gpu, state: &DecodeState, dir: &Path) -> [[String; 4]; 2] {
         gpu.full_token_replay_captures_for_gate(state).unwrap(),
         [3, 1]
     );
+    // The cadence program (three forward variants), captured under this thread's dense selection.
+    let dense = memra_engine::dsv4_gpu::dense_exact_tail_enabled_for_gate();
+    let read = gpu
+        .full_token_replay_variant_census_for_gate(state)
+        .unwrap();
     for (rank, rank_hashes) in hashes.iter_mut().enumerate() {
         for (segment, hash) in rank_hashes.iter_mut().enumerate() {
             let dot = std::fs::read_to_string(
@@ -191,16 +196,37 @@ fn census(gpu: &Dsv4Gpu, state: &DecodeState, dir: &Path) -> [[String; 4]; 2] {
                     0
                 }
             );
-            let norms = match segment {
-                0 => 129,
-                2 => 171,
-                3 => 191,
-                _ => usize::from(rank == 1),
+            // The standalone RMSNorm and RoPE nodes and the kernel total the loaded program
+            // launches (`Dsv4Gpu::full_token_forward_census_for_gate`): under the diet the HC
+            // entries' norms run in the fused finish, the q norm in its pack kernel and the
+            // latent norm and RoPE in one launch, so a forward variant keeps only its emitting
+            // compressors' norms; the commit graph holds the head's final norm.
+            let (norms, ropes) = if forward {
+                let derived = gpu
+                    .full_token_forward_census_for_gate(state, rank, segment, true, dense)
+                    .expect("program-derived kernel census");
+                eprintln!(
+                    "HC24 kernel census rank={rank} variant={segment} kernels={} want={} rmsnorm want={} rope want={}",
+                    read[rank][segment][1], derived.kernels, derived.rmsnorm, derived.rope
+                );
+                assert_eq!(
+                    read[rank][segment][1], derived.kernels,
+                    "kernel census rank={rank} variant={segment}, terms {:?}",
+                    derived.terms
+                );
+                (derived.rmsnorm, derived.rope)
+            } else {
+                (gpu.full_token_commit_rmsnorm_for_gate(rank), 0)
             };
-            assert_eq!(count_kernel(&dot, "dsv4_rmsnorm_f32acc_kernel"), norms);
             assert_eq!(
-                count_kernel(&dot, "dsv4_rope_kernel"),
-                if forward { 150 } else { 0 }
+                count_kernel(&dot, "dsv4_rmsnorm_f32acc_kernel") as u64,
+                norms,
+                "RMSNorm census rank={rank} variant={segment}"
+            );
+            assert_eq!(
+                count_kernel(&dot, "dsv4_rope_kernel") as u64,
+                ropes,
+                "RoPE census rank={rank} variant={segment}"
             );
             assert_eq!(count_kernel(&dot, "dsv4_dense_exact_tail_fp8_kernel"), 0);
             assert_eq!(count_kernel(&dot, "dsv4_dense_exact_tail_dots_kernel"), 0);
@@ -485,9 +511,6 @@ fn scored_row(
     arm.rows += 1;
 }
 fn main() {
-    // This bin scores the HC door against a frozen base, and its census hard-codes
-    // the rmsnorm counts that the norm2 fusion removes. Pin that door off before any
-    // model or worker thread exists, independently of its default.
     unsafe {
         // Gate-only AR phase instrument: pinned off here so no other bin can inherit
         // an exported instrument or null collective from the environment.
