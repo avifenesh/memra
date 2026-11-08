@@ -14,7 +14,7 @@ COMPOSE_PROGRAMS before_model_creation=true arms=[Program { cadence: false, dens
 [load] dspark exit-head dots arm: f32x (rung-4c fork; drafts only, never the emitted stream)
 [load] dspark selected-expert dispatch: per-expert reference
 [load] dense arm: fp8 (iteration-5; fp8 = FP8-blk linears as-stored on the device decode/verify paths, bit-identical twins)
-[load] lane-8 peer byte-integrity probe PASS: 1 boundaries, 10 copies, ladder [16384, 65536, 524288, 1048576, 67108864] bytes, 310.7ms
+[load] lane-8 peer byte-integrity probe PASS: 1 boundaries, 10 copies, ladder [16384, 65536, 524288, 1048576, 67108864] bytes, 344.9ms
 [load] lane-8 peer transport enabled (1 boundaries)
 [load] layer 3 -> 2 rank copies done t=17s
 [load] layer 7 -> 2 rank copies done t=34s
@@ -25,8 +25,8 @@ COMPOSE_PROGRAMS before_model_creation=true arms=[Program { cadence: false, dens
 [load] layer 27 -> 2 rank copies done t=119s
 [load] layer 31 -> 2 rank copies done t=136s
 [load] layer 35 -> 2 rank copies done t=153s
-[load] layer 39 -> 2 rank copies done t=170s
-[load] layer 42 -> 2 rank copies done t=183s
+[load] layer 39 -> 2 rank copies done t=169s
+[load] layer 42 -> 2 rank copies done t=182s
 [load] drafter: 3 DSpark block(s) (mtp.0.e_proj absent) — GPU drafter path off (set MEMRA_DSV4_DRAFTER=dspark); trunk-only
 [load] TP/EP push joins: true
 [TP/EP load] local expert banks resident by ID: rank0=0..128, rank1=128..256; peer dispatch disabled
@@ -46,10 +46,10 @@ census slot=0 [3174, 3045, 129, 1, 86, 129, 0] (want kernels=3045 AR=129)
 census slot=0 [3174, 3045, 129, 1, 86, 129, 0] (want kernels=3045 AR=129)
 census slot=0 [3174, 3045, 129, 1, 86, 129, 0] (want kernels=3045 AR=129)
 census slot=0 [3174, 3045, 129, 1, 86, 129, 0] (want kernels=3045 AR=129)
-DENSE_CENSUS on=false rank=0 segment=0 candidate=[0, 0] control=[494, 253] dot_sha256=71db80d6b82d3b1dd7f11fabffa1e7ed9a3b819df1f2c421ba39384a728241d9
-DENSE_CENSUS on=false rank=0 segment=1 candidate=[0, 0] control=[0, 2] dot_sha256=bba48307987e7b5de263361fef837c15c84cdbaf3201b753288425a7fd344dad
-DENSE_CENSUS on=false rank=1 segment=0 candidate=[0, 0] control=[494, 253] dot_sha256=233b7e165e6cee729ccb8cd940e4161f1ebb5e307c02fcffd3c81871011cfed2
-DENSE_CENSUS on=false rank=1 segment=1 candidate=[0, 0] control=[0, 2] dot_sha256=73a5ca6fba7419b16605d1bb28537a19553d76f1a23174a320f4e6d4d3441baf
+DENSE_CENSUS on=false rank=0 segment=0 candidate=[0, 0] control=[494, 253] dot_sha256=5e006c0e1cd9a50694e76ad69464db34fce72985aaee54efd0f88a9815dadb05
+DENSE_CENSUS on=false rank=0 segment=1 candidate=[0, 0] control=[0, 2] dot_sha256=3ab4080e88659d88a88479f88dd46fc87a0889c4e874f15748b5c76c81a9a317
+DENSE_CENSUS on=false rank=1 segment=0 candidate=[0, 0] control=[494, 253] dot_sha256=3d8edf69d25e4afd973843efc3263aa61192691dee33c683ae1005102c205d0d
+DENSE_CENSUS on=false rank=1 segment=1 candidate=[0, 0] control=[0, 2] dot_sha256=5c16c96ba8d76e071478b3bee60ca29dfa3dced4ca16338eaa1acdd9820c6b1e
 census slot=0 [2675, 2546, 129, 1, 86, 129, 0] (want kernels=2546 AR=129)
 census slot=2 [3074, 2945, 129, 1, 86, 129, 0] (want kernels=2945 AR=129)
 census slot=3 [3174, 3045, 129, 1, 86, 129, 0] (want kernels=3045 AR=129)
@@ -62,14 +62,14 @@ census slot=3 [3174, 3045, 129, 1, 86, 129, 0] (want kernels=3045 AR=129)
 census slot=0 [2675, 2546, 129, 1, 86, 129, 0] (want kernels=2546 AR=129)
 census slot=2 [3074, 2945, 129, 1, 86, 129, 0] (want kernels=2945 AR=129)
 census slot=3 [3174, 3045, 129, 1, 86, 129, 0] (want kernels=3045 AR=129)
-DENSE_CENSUS on=true rank=0 segment=0 candidate=[494, 253] control=[0, 0] dot_sha256=31b11e4a4a28e720f82ce9746867009a732656589224719f3b4abbb3ffd67f7c
-DENSE_CENSUS on=true rank=0 segment=1 candidate=[0, 2] control=[0, 0] dot_sha256=4e3557b365fd94582bad06db3bc9adb02154e43db6a3eea388014823d0ac962d
-DENSE_CENSUS on=true rank=0 segment=2 candidate=[494, 253] control=[0, 0] dot_sha256=37ee267a9d5c4ec83a14485146b935a032785cd9f98e63b0a46899fe7e8ea66e
-DENSE_CENSUS on=true rank=0 segment=3 candidate=[494, 253] control=[0, 0] dot_sha256=a742f137b75c0a91bdf9f921cc06db28af8f4268be6cf0da4ecc384ccbdf211f
-DENSE_CENSUS on=true rank=1 segment=0 candidate=[494, 253] control=[0, 0] dot_sha256=89eca8aa6b4bf702bac6df2a17dd57e46245aab68b69b7ef7875b5dc4e5028e3
-DENSE_CENSUS on=true rank=1 segment=1 candidate=[0, 2] control=[0, 0] dot_sha256=e51198dc64277d41fa8aef897a0d7e07127d757b8d224a629cdbf9946f075a6d
-DENSE_CENSUS on=true rank=1 segment=2 candidate=[494, 253] control=[0, 0] dot_sha256=ec1e8812215fe1baf1893b0ddd67c13cd1741df56c2d5dd95742c69220bcb2fd
-DENSE_CENSUS on=true rank=1 segment=3 candidate=[494, 253] control=[0, 0] dot_sha256=7be2abaf9e182c2b0fc2758e3fb3c8375e962db2bfb7f71cbbfc03bccca597fe
+DENSE_CENSUS on=true rank=0 segment=0 candidate=[494, 253] control=[0, 0] dot_sha256=7a96997336e776a48e3ad9712298329fde33761908f84da2ab88291dce47c432
+DENSE_CENSUS on=true rank=0 segment=1 candidate=[0, 2] control=[0, 0] dot_sha256=5e1bc4e4ec25e30a1c0708457dd86512df48bbb2c36a3021f77646e5136f7edf
+DENSE_CENSUS on=true rank=0 segment=2 candidate=[494, 253] control=[0, 0] dot_sha256=0688fc91d19e05b1e2ded7ecb129bbc5461c9fd4390b6df57dbe061858adc0d1
+DENSE_CENSUS on=true rank=0 segment=3 candidate=[494, 253] control=[0, 0] dot_sha256=654e28bf449122a991eff4653a4d7cb172223e0fcfc408b3c6e28a58a9cd48dc
+DENSE_CENSUS on=true rank=1 segment=0 candidate=[494, 253] control=[0, 0] dot_sha256=ae357ee3ca9e4c7a0b62a380280d57d6368a6ad23531cf196f3434663ded1eca
+DENSE_CENSUS on=true rank=1 segment=1 candidate=[0, 2] control=[0, 0] dot_sha256=759f6ea258c0e598bc418d559e066e2558c51d206506fba0aff26b808ed670b8
+DENSE_CENSUS on=true rank=1 segment=2 candidate=[494, 253] control=[0, 0] dot_sha256=ffde398ce5d6d4f9a11b5d19ef03fda7043cefe2516500972c272fb23871d576
+DENSE_CENSUS on=true rank=1 segment=3 candidate=[494, 253] control=[0, 0] dot_sha256=5dad7135a3183b3a24607577227824fabe352cec361fb34e09bfbdb361c67375
 EXACT position=257 next_token=2366 eager_off_graph_off_graph_on_identical=true
 census slot=0 [3174, 3045, 129, 1, 86, 129, 0] (want kernels=3045 AR=129)
 census slot=0 [3174, 3045, 129, 1, 86, 129, 0] (want kernels=3045 AR=129)
@@ -2177,93 +2177,93 @@ census slot=3 [3174, 3045, 129, 1, 86, 129, 0] (want kernels=3045 AR=129)
 EXACT position=512 next_token=361 eager_off_graph_off_graph_on_identical=true
 census slot=0 [3174, 3045, 129, 1, 86, 129, 0] (want kernels=3045 AR=129)
 census slot=0 [3174, 3045, 129, 1, 86, 129, 0] (want kernels=3045 AR=129)
-DENSE_CENSUS on=false rank=0 segment=0 candidate=[0, 0] control=[494, 253] dot_sha256=71db80d6b82d3b1dd7f11fabffa1e7ed9a3b819df1f2c421ba39384a728241d9
-DENSE_CENSUS on=false rank=0 segment=1 candidate=[0, 0] control=[0, 2] dot_sha256=bba48307987e7b5de263361fef837c15c84cdbaf3201b753288425a7fd344dad
-DENSE_CENSUS on=false rank=1 segment=0 candidate=[0, 0] control=[494, 253] dot_sha256=233b7e165e6cee729ccb8cd940e4161f1ebb5e307c02fcffd3c81871011cfed2
-DENSE_CENSUS on=false rank=1 segment=1 candidate=[0, 0] control=[0, 2] dot_sha256=73a5ca6fba7419b16605d1bb28537a19553d76f1a23174a320f4e6d4d3441baf
+DENSE_CENSUS on=false rank=0 segment=0 candidate=[0, 0] control=[494, 253] dot_sha256=5e006c0e1cd9a50694e76ad69464db34fce72985aaee54efd0f88a9815dadb05
+DENSE_CENSUS on=false rank=0 segment=1 candidate=[0, 0] control=[0, 2] dot_sha256=3ab4080e88659d88a88479f88dd46fc87a0889c4e874f15748b5c76c81a9a317
+DENSE_CENSUS on=false rank=1 segment=0 candidate=[0, 0] control=[494, 253] dot_sha256=3d8edf69d25e4afd973843efc3263aa61192691dee33c683ae1005102c205d0d
+DENSE_CENSUS on=false rank=1 segment=1 candidate=[0, 0] control=[0, 2] dot_sha256=5c16c96ba8d76e071478b3bee60ca29dfa3dced4ca16338eaa1acdd9820c6b1e
 census slot=0 [2675, 2546, 129, 1, 86, 129, 0] (want kernels=2546 AR=129)
 census slot=2 [3074, 2945, 129, 1, 86, 129, 0] (want kernels=2945 AR=129)
 census slot=3 [3174, 3045, 129, 1, 86, 129, 0] (want kernels=3045 AR=129)
 census slot=0 [2675, 2546, 129, 1, 86, 129, 0] (want kernels=2546 AR=129)
 census slot=2 [3074, 2945, 129, 1, 86, 129, 0] (want kernels=2945 AR=129)
 census slot=3 [3174, 3045, 129, 1, 86, 129, 0] (want kernels=3045 AR=129)
-DENSE_CENSUS on=true rank=0 segment=0 candidate=[494, 253] control=[0, 0] dot_sha256=31b11e4a4a28e720f82ce9746867009a732656589224719f3b4abbb3ffd67f7c
-DENSE_CENSUS on=true rank=0 segment=1 candidate=[0, 2] control=[0, 0] dot_sha256=4e3557b365fd94582bad06db3bc9adb02154e43db6a3eea388014823d0ac962d
-DENSE_CENSUS on=true rank=0 segment=2 candidate=[494, 253] control=[0, 0] dot_sha256=37ee267a9d5c4ec83a14485146b935a032785cd9f98e63b0a46899fe7e8ea66e
-DENSE_CENSUS on=true rank=0 segment=3 candidate=[494, 253] control=[0, 0] dot_sha256=a742f137b75c0a91bdf9f921cc06db28af8f4268be6cf0da4ecc384ccbdf211f
-DENSE_CENSUS on=true rank=1 segment=0 candidate=[494, 253] control=[0, 0] dot_sha256=89eca8aa6b4bf702bac6df2a17dd57e46245aab68b69b7ef7875b5dc4e5028e3
-DENSE_CENSUS on=true rank=1 segment=1 candidate=[0, 2] control=[0, 0] dot_sha256=e51198dc64277d41fa8aef897a0d7e07127d757b8d224a629cdbf9946f075a6d
-DENSE_CENSUS on=true rank=1 segment=2 candidate=[494, 253] control=[0, 0] dot_sha256=ec1e8812215fe1baf1893b0ddd67c13cd1741df56c2d5dd95742c69220bcb2fd
-DENSE_CENSUS on=true rank=1 segment=3 candidate=[494, 253] control=[0, 0] dot_sha256=7be2abaf9e182c2b0fc2758e3fb3c8375e962db2bfb7f71cbbfc03bccca597fe
+DENSE_CENSUS on=true rank=0 segment=0 candidate=[494, 253] control=[0, 0] dot_sha256=7a96997336e776a48e3ad9712298329fde33761908f84da2ab88291dce47c432
+DENSE_CENSUS on=true rank=0 segment=1 candidate=[0, 2] control=[0, 0] dot_sha256=5e1bc4e4ec25e30a1c0708457dd86512df48bbb2c36a3021f77646e5136f7edf
+DENSE_CENSUS on=true rank=0 segment=2 candidate=[494, 253] control=[0, 0] dot_sha256=0688fc91d19e05b1e2ded7ecb129bbc5461c9fd4390b6df57dbe061858adc0d1
+DENSE_CENSUS on=true rank=0 segment=3 candidate=[494, 253] control=[0, 0] dot_sha256=654e28bf449122a991eff4653a4d7cb172223e0fcfc408b3c6e28a58a9cd48dc
+DENSE_CENSUS on=true rank=1 segment=0 candidate=[494, 253] control=[0, 0] dot_sha256=ae357ee3ca9e4c7a0b62a380280d57d6368a6ad23531cf196f3434663ded1eca
+DENSE_CENSUS on=true rank=1 segment=1 candidate=[0, 2] control=[0, 0] dot_sha256=759f6ea258c0e598bc418d559e066e2558c51d206506fba0aff26b808ed670b8
+DENSE_CENSUS on=true rank=1 segment=2 candidate=[494, 253] control=[0, 0] dot_sha256=ffde398ce5d6d4f9a11b5d19ef03fda7043cefe2516500972c272fb23871d576
+DENSE_CENSUS on=true rank=1 segment=3 candidate=[494, 253] control=[0, 0] dot_sha256=5dad7135a3183b3a24607577227824fabe352cec361fb34e09bfbdb361c67375
 census slot=0 [3174, 3045, 129, 1, 86, 129, 0] (want kernels=3045 AR=129)
 census slot=0 [3174, 3045, 129, 1, 86, 129, 0] (want kernels=3045 AR=129)
-DENSE_CENSUS on=false rank=0 segment=0 candidate=[0, 0] control=[494, 253] dot_sha256=393a41f6bf542bc51b46534f1dc4dab6bb690cc155aa1e3999af121b8ee7e30c
-DENSE_CENSUS on=false rank=0 segment=1 candidate=[0, 0] control=[0, 2] dot_sha256=60896b9832dfd17f99207fab04ece78b02985309fbc543685ffbace64f92431c
-DENSE_CENSUS on=false rank=1 segment=0 candidate=[0, 0] control=[494, 253] dot_sha256=c002a715712340eb44c24015a054923e86148ee636dd9a01711a2e8e22e632ef
-DENSE_CENSUS on=false rank=1 segment=1 candidate=[0, 0] control=[0, 2] dot_sha256=7de9ee507cc65fa00f53947b4d7db53b105cb686c1e4b13e1ae7e4583cca6da9
+DENSE_CENSUS on=false rank=0 segment=0 candidate=[0, 0] control=[494, 253] dot_sha256=2776e80e60ed9d7dffa06b70918644732c9d397d2d5c86b78cbbea18758790a4
+DENSE_CENSUS on=false rank=0 segment=1 candidate=[0, 0] control=[0, 2] dot_sha256=404fa9518a6d1aefcfc7a35ccb0a98c051c514775a2002170a57f7733be0a7ca
+DENSE_CENSUS on=false rank=1 segment=0 candidate=[0, 0] control=[494, 253] dot_sha256=925f2765c051c38c826cff5a90b8099e27e4987d1fb458f4fb22bdb06b94de23
+DENSE_CENSUS on=false rank=1 segment=1 candidate=[0, 0] control=[0, 2] dot_sha256=373107d47e7283f318ec53b8151dcfd11b430c60fc3c7751221e7174b3f49be9
 census slot=0 [3174, 3045, 129, 1, 86, 129, 0] (want kernels=3045 AR=129)
 census slot=0 [3174, 3045, 129, 1, 86, 129, 0] (want kernels=3045 AR=129)
 REFUSAL on=false rank=0 layer=0 position=258 cache_unchanged=true position_unchanged=true no_commit=true retry_quarantined=true
 census slot=0 [3174, 3045, 129, 1, 86, 129, 0] (want kernels=3045 AR=129)
 census slot=0 [3174, 3045, 129, 1, 86, 129, 0] (want kernels=3045 AR=129)
-DENSE_CENSUS on=false rank=0 segment=0 candidate=[0, 0] control=[494, 253] dot_sha256=402b5b272c1f908ee937f837944a90efdb6aa87b6ca0b4e170faa4736f14288f
-DENSE_CENSUS on=false rank=0 segment=1 candidate=[0, 0] control=[0, 2] dot_sha256=6865bc0f06d91304d20f19bb27f64d737e2d16cb9f8397a84f910a9084ded578
-DENSE_CENSUS on=false rank=1 segment=0 candidate=[0, 0] control=[494, 253] dot_sha256=b5b6be448033c36ed3cdf83db4aa3916802f5c84226bb6f9a20cd19bd281ce54
-DENSE_CENSUS on=false rank=1 segment=1 candidate=[0, 0] control=[0, 2] dot_sha256=0de7d65be61850627bfcc866193a5902a2cacc54f211f24c059bbac9dcb0642c
+DENSE_CENSUS on=false rank=0 segment=0 candidate=[0, 0] control=[494, 253] dot_sha256=c4be5733535169aab8c243e3d9835020663eb06cfa773b4965d539c1629141ba
+DENSE_CENSUS on=false rank=0 segment=1 candidate=[0, 0] control=[0, 2] dot_sha256=dc01de109c17174ab761a5085d578ad11a2b0c3ef97aefab99370e033f4e8657
+DENSE_CENSUS on=false rank=1 segment=0 candidate=[0, 0] control=[494, 253] dot_sha256=dd8bd31df3ec1587082d60efc34919b04dd162f4b621bdae67a37c74d4738d55
+DENSE_CENSUS on=false rank=1 segment=1 candidate=[0, 0] control=[0, 2] dot_sha256=9020c8b836d9898b3bb37e584cf5643b20876967efe7cdb49457e2d981ff4e3c
 census slot=0 [3174, 3045, 129, 1, 86, 129, 0] (want kernels=3045 AR=129)
 census slot=0 [3174, 3045, 129, 1, 86, 129, 0] (want kernels=3045 AR=129)
 REFUSAL on=false rank=0 layer=0 position=259 cache_unchanged=true position_unchanged=true no_commit=true retry_quarantined=true
 census slot=0 [3174, 3045, 129, 1, 86, 129, 0] (want kernels=3045 AR=129)
 census slot=0 [3174, 3045, 129, 1, 86, 129, 0] (want kernels=3045 AR=129)
-DENSE_CENSUS on=false rank=0 segment=0 candidate=[0, 0] control=[494, 253] dot_sha256=4b4f92b05915f1512d402553e41863cef0850c02f2451f4c7e646a11789fee26
-DENSE_CENSUS on=false rank=0 segment=1 candidate=[0, 0] control=[0, 2] dot_sha256=7c4725b2e6bd8445acb99be4397e7cf5b8f98d5c443ee3130934f183a5986508
-DENSE_CENSUS on=false rank=1 segment=0 candidate=[0, 0] control=[494, 253] dot_sha256=801368cd21ae9ed84ad7468782aaffd05d9f93de742971e63fdf916b650888e0
-DENSE_CENSUS on=false rank=1 segment=1 candidate=[0, 0] control=[0, 2] dot_sha256=e587d387bc9c6bfe477a28732a5200789a72ad1dfca8befe5bc230c8e6c8d4d9
+DENSE_CENSUS on=false rank=0 segment=0 candidate=[0, 0] control=[494, 253] dot_sha256=e929cc3178fa5abd78ccdcfe58b9a78a7ac2345ece42708eba89743676415ef1
+DENSE_CENSUS on=false rank=0 segment=1 candidate=[0, 0] control=[0, 2] dot_sha256=5d73f7472d537f0757a8cdc8cd9d61f913263ae781217fa09f11d61262d80433
+DENSE_CENSUS on=false rank=1 segment=0 candidate=[0, 0] control=[494, 253] dot_sha256=8681cc7a7f8de7895157a028f1fa54f93dd2501c9c2122b03134c63554f1b6ec
+DENSE_CENSUS on=false rank=1 segment=1 candidate=[0, 0] control=[0, 2] dot_sha256=b66758b0b67c9b82e2911e18dfeaa1ac112c55152574439cbba696582a44b94e
 census slot=0 [3174, 3045, 129, 1, 86, 129, 0] (want kernels=3045 AR=129)
 census slot=0 [3174, 3045, 129, 1, 86, 129, 0] (want kernels=3045 AR=129)
 REFUSAL on=false rank=0 layer=21 position=383 cache_unchanged=true position_unchanged=true no_commit=true retry_quarantined=true
 census slot=0 [3174, 3045, 129, 1, 86, 129, 0] (want kernels=3045 AR=129)
 census slot=0 [3174, 3045, 129, 1, 86, 129, 0] (want kernels=3045 AR=129)
-DENSE_CENSUS on=false rank=0 segment=0 candidate=[0, 0] control=[494, 253] dot_sha256=e31e4add1a3dacf77b613e8b41c0e1fb13d0dcd4cc64fbc51c010b2b50d0dae1
-DENSE_CENSUS on=false rank=0 segment=1 candidate=[0, 0] control=[0, 2] dot_sha256=fb999d2f11f96de758cb01689fc5dbd34dbc7969c810b754384ff4d5f30e9346
-DENSE_CENSUS on=false rank=1 segment=0 candidate=[0, 0] control=[494, 253] dot_sha256=422588ef8a439dfee7bc266569484aa71f6aaf0f7c025c5e44496597bb065c87
-DENSE_CENSUS on=false rank=1 segment=1 candidate=[0, 0] control=[0, 2] dot_sha256=28bd674498e3444057cc90728be94de9dc24862337900650e321b3be091aaf87
+DENSE_CENSUS on=false rank=0 segment=0 candidate=[0, 0] control=[494, 253] dot_sha256=2aa32f8f5eabe9a3d830a8b348fb43176191e3a300dffac862850076793a857e
+DENSE_CENSUS on=false rank=0 segment=1 candidate=[0, 0] control=[0, 2] dot_sha256=f2bdc18e7a3e6e9197fb53d64717d1b3c7a946fa1ec1e0341cb77cd4eb4a8c77
+DENSE_CENSUS on=false rank=1 segment=0 candidate=[0, 0] control=[494, 253] dot_sha256=3f906a90d9a60a1a50135d63f7ffc075f1afea785caeacc6a28cba1ab01ebe53
+DENSE_CENSUS on=false rank=1 segment=1 candidate=[0, 0] control=[0, 2] dot_sha256=574d8928eb87c979374f04dc53ac36d7c6869c971804d03b7d3ca3d650532480
 census slot=0 [3174, 3045, 129, 1, 86, 129, 0] (want kernels=3045 AR=129)
 census slot=0 [3174, 3045, 129, 1, 86, 129, 0] (want kernels=3045 AR=129)
 REFUSAL on=false rank=0 layer=42 position=511 cache_unchanged=true position_unchanged=true no_commit=true retry_quarantined=true
 census slot=0 [3174, 3045, 129, 1, 86, 129, 0] (want kernels=3045 AR=129)
 census slot=0 [3174, 3045, 129, 1, 86, 129, 0] (want kernels=3045 AR=129)
-DENSE_CENSUS on=false rank=0 segment=0 candidate=[0, 0] control=[494, 253] dot_sha256=e9064f54a50f774db7caea6a5bc9caa0ece37b9f3a6aa01dbbc098e7ebd596bc
-DENSE_CENSUS on=false rank=0 segment=1 candidate=[0, 0] control=[0, 2] dot_sha256=bc4d88ad6708be9e0c878d8eae59f78cf3d68760820a340231be03e9c85ed9e4
-DENSE_CENSUS on=false rank=1 segment=0 candidate=[0, 0] control=[494, 253] dot_sha256=cebaf3d8ee4a50e725d63c9f8969fb09e036d2670d0221dedb08cdf7596e7a92
-DENSE_CENSUS on=false rank=1 segment=1 candidate=[0, 0] control=[0, 2] dot_sha256=41db7e9c1973b1885fd40dd6296979fb2409b50e7fcbc442a61fbce35e3fd9ab
+DENSE_CENSUS on=false rank=0 segment=0 candidate=[0, 0] control=[494, 253] dot_sha256=2e80998a038b238592f74810e12e4b496630538dbf63459b02e4d3e11950aad6
+DENSE_CENSUS on=false rank=0 segment=1 candidate=[0, 0] control=[0, 2] dot_sha256=f16c31cfef1e37b710baefb8e572d5f57b5c98364d2aad918f031a720caf9995
+DENSE_CENSUS on=false rank=1 segment=0 candidate=[0, 0] control=[494, 253] dot_sha256=7ff92ff24df12187d2d7518975fb565ce26fa3b8c18f2fb7de37511ddfc7c1e7
+DENSE_CENSUS on=false rank=1 segment=1 candidate=[0, 0] control=[0, 2] dot_sha256=a28592eb799927dea3101c4db44347fcd032e95f547ad2df9bccf9d9c20d764a
 census slot=0 [3174, 3045, 129, 1, 86, 129, 0] (want kernels=3045 AR=129)
 census slot=0 [3174, 3045, 129, 1, 86, 129, 0] (want kernels=3045 AR=129)
 REFUSAL on=false rank=1 layer=0 position=258 cache_unchanged=true position_unchanged=true no_commit=true retry_quarantined=true
 census slot=0 [3174, 3045, 129, 1, 86, 129, 0] (want kernels=3045 AR=129)
 census slot=0 [3174, 3045, 129, 1, 86, 129, 0] (want kernels=3045 AR=129)
-DENSE_CENSUS on=false rank=0 segment=0 candidate=[0, 0] control=[494, 253] dot_sha256=95db3963f9bd59dda68d5b554092837eef8cd28c3740cf5f6a5fda44c9ba7263
-DENSE_CENSUS on=false rank=0 segment=1 candidate=[0, 0] control=[0, 2] dot_sha256=73aa38b703090c3f7d41194ecec51157c3ff278d0aa279c3330182a13981b986
-DENSE_CENSUS on=false rank=1 segment=0 candidate=[0, 0] control=[494, 253] dot_sha256=bdfa95a148a669093d0791cca16e013f06f8f12f9ce32501d42fdd084d59c67b
-DENSE_CENSUS on=false rank=1 segment=1 candidate=[0, 0] control=[0, 2] dot_sha256=5e3db60e4f8aefaebfbf7dc8941be78d3058fd81fecba4f47f7a3cca629da16b
+DENSE_CENSUS on=false rank=0 segment=0 candidate=[0, 0] control=[494, 253] dot_sha256=6d2d355b1c2a9cedc4175e53538fcfe92d887cce4479d3a8625231abbfad16c0
+DENSE_CENSUS on=false rank=0 segment=1 candidate=[0, 0] control=[0, 2] dot_sha256=5f61c128529e71474cf2a6537e486286f30aefb445fd3b9da7dc70cd275c9036
+DENSE_CENSUS on=false rank=1 segment=0 candidate=[0, 0] control=[494, 253] dot_sha256=67a63b4c50cf1ba932d101fef65068c7288c4b748294571f7d938ac788bd6ada
+DENSE_CENSUS on=false rank=1 segment=1 candidate=[0, 0] control=[0, 2] dot_sha256=8c901965ab2f7819ad6ea2bd959dec224c1c05d320c66b99bdacf8a1784d8abe
 census slot=0 [3174, 3045, 129, 1, 86, 129, 0] (want kernels=3045 AR=129)
 census slot=0 [3174, 3045, 129, 1, 86, 129, 0] (want kernels=3045 AR=129)
 REFUSAL on=false rank=1 layer=0 position=259 cache_unchanged=true position_unchanged=true no_commit=true retry_quarantined=true
 census slot=0 [3174, 3045, 129, 1, 86, 129, 0] (want kernels=3045 AR=129)
 census slot=0 [3174, 3045, 129, 1, 86, 129, 0] (want kernels=3045 AR=129)
-DENSE_CENSUS on=false rank=0 segment=0 candidate=[0, 0] control=[494, 253] dot_sha256=7a37d796560acfeeb2611aed25865d39efefdbda505e88efe2afb364fb56cfb8
-DENSE_CENSUS on=false rank=0 segment=1 candidate=[0, 0] control=[0, 2] dot_sha256=b6e2a9b439a9de3e2af69d7ba2379fa1c0f7870d7be697766dc0f6b7feba97b4
-DENSE_CENSUS on=false rank=1 segment=0 candidate=[0, 0] control=[494, 253] dot_sha256=db723ce8070ef28554f2864b00b0039b180b43333eaeb05598521f5a962cc453
-DENSE_CENSUS on=false rank=1 segment=1 candidate=[0, 0] control=[0, 2] dot_sha256=c55548e101d959f12092d304b009a283270e1c520d3e88028354f238343d844c
+DENSE_CENSUS on=false rank=0 segment=0 candidate=[0, 0] control=[494, 253] dot_sha256=02c400d58c8272f95724f4d91bc79c0a6431aeb63d5287dda52d1a49ad26adcf
+DENSE_CENSUS on=false rank=0 segment=1 candidate=[0, 0] control=[0, 2] dot_sha256=7883d3959c05a9aadcc59c35ca5eb94a7c02171f9171eaa79d4b53029dafc1a0
+DENSE_CENSUS on=false rank=1 segment=0 candidate=[0, 0] control=[494, 253] dot_sha256=7c3d2adcb2b67bbcfe3f1926094ba961a7e382b3d95e2f0f1a84c3f3bd6dea69
+DENSE_CENSUS on=false rank=1 segment=1 candidate=[0, 0] control=[0, 2] dot_sha256=ada29ac27a873c24ebfc5d28823835b4f3273ebd9365ff9bc1294b51c7c53c43
 census slot=0 [3174, 3045, 129, 1, 86, 129, 0] (want kernels=3045 AR=129)
 census slot=0 [3174, 3045, 129, 1, 86, 129, 0] (want kernels=3045 AR=129)
 REFUSAL on=false rank=1 layer=21 position=383 cache_unchanged=true position_unchanged=true no_commit=true retry_quarantined=true
 census slot=0 [3174, 3045, 129, 1, 86, 129, 0] (want kernels=3045 AR=129)
 census slot=0 [3174, 3045, 129, 1, 86, 129, 0] (want kernels=3045 AR=129)
-DENSE_CENSUS on=false rank=0 segment=0 candidate=[0, 0] control=[494, 253] dot_sha256=784a669a02b2b3d0f2333735e8afde73167c4160cfd251a7fe773d5fdaad4a10
-DENSE_CENSUS on=false rank=0 segment=1 candidate=[0, 0] control=[0, 2] dot_sha256=af876a56401b99ac41f5b135b78799772cbdddc866ca84b421fe6092c9f93e74
-DENSE_CENSUS on=false rank=1 segment=0 candidate=[0, 0] control=[494, 253] dot_sha256=26cf84312cc9d39055f5cc0b2dd49e743b53944da9ca25b9fbb2bdaab3dad27f
-DENSE_CENSUS on=false rank=1 segment=1 candidate=[0, 0] control=[0, 2] dot_sha256=d641cbbef694dcf28b341f9894325735c57439c92d2ff4362e581811c6213543
+DENSE_CENSUS on=false rank=0 segment=0 candidate=[0, 0] control=[494, 253] dot_sha256=49abe05caeee1bbc25c87398318a4079ebe9c47cdb33754450bea2fd5ff062cd
+DENSE_CENSUS on=false rank=0 segment=1 candidate=[0, 0] control=[0, 2] dot_sha256=210c121486a8647ac8e5ec536ce9b9b59da99f9a1ca1dd94fe4e9d12d331c9f4
+DENSE_CENSUS on=false rank=1 segment=0 candidate=[0, 0] control=[494, 253] dot_sha256=9559977f0f5a233656009de1a90f5dba567bb8320561a8730c3a46434695cf39
+DENSE_CENSUS on=false rank=1 segment=1 candidate=[0, 0] control=[0, 2] dot_sha256=e5e34f75900334d85294a78d26eab41dd9251808e422a5ac8e88487b5c163e5d
 census slot=0 [3174, 3045, 129, 1, 86, 129, 0] (want kernels=3045 AR=129)
 census slot=0 [3174, 3045, 129, 1, 86, 129, 0] (want kernels=3045 AR=129)
 REFUSAL on=false rank=1 layer=42 position=511 cache_unchanged=true position_unchanged=true no_commit=true retry_quarantined=true
@@ -2273,14 +2273,14 @@ census slot=3 [3174, 3045, 129, 1, 86, 129, 0] (want kernels=3045 AR=129)
 census slot=0 [2675, 2546, 129, 1, 86, 129, 0] (want kernels=2546 AR=129)
 census slot=2 [3074, 2945, 129, 1, 86, 129, 0] (want kernels=2945 AR=129)
 census slot=3 [3174, 3045, 129, 1, 86, 129, 0] (want kernels=3045 AR=129)
-DENSE_CENSUS on=true rank=0 segment=0 candidate=[494, 253] control=[0, 0] dot_sha256=2ca43945862c801026e24d4d44a2ee00e8adcf1e3da09c72cf1a410b17fc423e
-DENSE_CENSUS on=true rank=0 segment=1 candidate=[0, 2] control=[0, 0] dot_sha256=a67cc1dc094b0eeaab989b2f3b2658aaa680e1514a2197cd83598086eeda9bc3
-DENSE_CENSUS on=true rank=0 segment=2 candidate=[494, 253] control=[0, 0] dot_sha256=8fa1f750e19b2cc3fe6e605b4031e5dfee7f3d2e381c39e5108af3f000b671ca
-DENSE_CENSUS on=true rank=0 segment=3 candidate=[494, 253] control=[0, 0] dot_sha256=26de33caf31eaf6bf20f1e560600289fb75be89357a7e3c2c28a9cf091d89e3d
-DENSE_CENSUS on=true rank=1 segment=0 candidate=[494, 253] control=[0, 0] dot_sha256=e55990a977f54c51f41724d7a1300893183ff3507bc203afd2f5bc34b5561053
-DENSE_CENSUS on=true rank=1 segment=1 candidate=[0, 2] control=[0, 0] dot_sha256=8fb793ec96d753dce0f10a11b80bdac32f075937f1f3d4ccd7fad76374f04dba
-DENSE_CENSUS on=true rank=1 segment=2 candidate=[494, 253] control=[0, 0] dot_sha256=c95fa766d109adaf352740d5f9a327e631d68eb13f8c07e7c8d730e029149761
-DENSE_CENSUS on=true rank=1 segment=3 candidate=[494, 253] control=[0, 0] dot_sha256=7e6c703371659011f2deeba7ab8f21ba9e4b3b5fa0ffab47548daf6f87f08b92
+DENSE_CENSUS on=true rank=0 segment=0 candidate=[494, 253] control=[0, 0] dot_sha256=8def5e2da11837f15ec26a95bebe942f90d535de099a0e6cebaffc017647da7e
+DENSE_CENSUS on=true rank=0 segment=1 candidate=[0, 2] control=[0, 0] dot_sha256=5508a9f17b7453b752b1c5a3b8dd142b6040d1193769ebd64452c68e321b4df9
+DENSE_CENSUS on=true rank=0 segment=2 candidate=[494, 253] control=[0, 0] dot_sha256=38388867d851869a96c8012d93bb124e56f0f54ecf43878b390fa6113ec796ad
+DENSE_CENSUS on=true rank=0 segment=3 candidate=[494, 253] control=[0, 0] dot_sha256=2f92baac47f45ca871df745a3684bb89eb3146a1b697b2bb5cea798b3d7f8f93
+DENSE_CENSUS on=true rank=1 segment=0 candidate=[494, 253] control=[0, 0] dot_sha256=839d24e5102b2155640195258e4138f7e2da29b0e112f0fc714bf02e2d19205a
+DENSE_CENSUS on=true rank=1 segment=1 candidate=[0, 2] control=[0, 0] dot_sha256=e4c892291a16769d8ff7f92d96b7f8ee8117a4cc228d7a029a56f7821da37dd3
+DENSE_CENSUS on=true rank=1 segment=2 candidate=[494, 253] control=[0, 0] dot_sha256=578d3f19f0f6ddd7673e8c95e03e08e2691a797e53d4865357d7d01b1a669ebb
+DENSE_CENSUS on=true rank=1 segment=3 candidate=[494, 253] control=[0, 0] dot_sha256=0501b232b14d054e1af59697f360e79c8afd1e82e986ec0e2bb6c39041aac8b2
 census slot=0 [2675, 2546, 129, 1, 86, 129, 0] (want kernels=2546 AR=129)
 census slot=2 [3074, 2945, 129, 1, 86, 129, 0] (want kernels=2945 AR=129)
 census slot=3 [3174, 3045, 129, 1, 86, 129, 0] (want kernels=3045 AR=129)
@@ -2294,14 +2294,14 @@ census slot=3 [3174, 3045, 129, 1, 86, 129, 0] (want kernels=3045 AR=129)
 census slot=0 [2675, 2546, 129, 1, 86, 129, 0] (want kernels=2546 AR=129)
 census slot=2 [3074, 2945, 129, 1, 86, 129, 0] (want kernels=2945 AR=129)
 census slot=3 [3174, 3045, 129, 1, 86, 129, 0] (want kernels=3045 AR=129)
-DENSE_CENSUS on=true rank=0 segment=0 candidate=[494, 253] control=[0, 0] dot_sha256=b3171b118019110def1641f2a6bd921c15bf106e5e5f006bf09913a94e1795dc
-DENSE_CENSUS on=true rank=0 segment=1 candidate=[0, 2] control=[0, 0] dot_sha256=ae5dbd8c08d89234c34c49a3ec54ebf9cbeeeccfb6b52f94cf1edd27b16b06c6
-DENSE_CENSUS on=true rank=0 segment=2 candidate=[494, 253] control=[0, 0] dot_sha256=d58b7a3a977e04c3a89e8822889ecd855881d97d808f64d614f01e098e48d0cd
-DENSE_CENSUS on=true rank=0 segment=3 candidate=[494, 253] control=[0, 0] dot_sha256=65a9221983008791d302b4d3aadf43246ed92130bf8f8d854672a3c05344091f
-DENSE_CENSUS on=true rank=1 segment=0 candidate=[494, 253] control=[0, 0] dot_sha256=e258ea494899931c9ad3ccf824109cd19eef7f0f8fd03f3ca28a5f1cb28df119
-DENSE_CENSUS on=true rank=1 segment=1 candidate=[0, 2] control=[0, 0] dot_sha256=636b296aa4e0101b367672c9665711ce645fc3f7a00f95cdce91feb2f44ed731
-DENSE_CENSUS on=true rank=1 segment=2 candidate=[494, 253] control=[0, 0] dot_sha256=e4e947393e68f7d7ac263d437ce4fef37a5d7e217641dfc81e6749e09675d4a0
-DENSE_CENSUS on=true rank=1 segment=3 candidate=[494, 253] control=[0, 0] dot_sha256=45c95f5e976e9bc7edebf2f516c669b94f608ccd7db6a17ddd10ff141b7d00b0
+DENSE_CENSUS on=true rank=0 segment=0 candidate=[494, 253] control=[0, 0] dot_sha256=9b159c9100458d9a976dfc6180c3981b39de1619dd45a42b448c133028417a5c
+DENSE_CENSUS on=true rank=0 segment=1 candidate=[0, 2] control=[0, 0] dot_sha256=7122476d9c41a2fb2e5dd00e35290f67bc41635ada1152c322d4d1223691c4ac
+DENSE_CENSUS on=true rank=0 segment=2 candidate=[494, 253] control=[0, 0] dot_sha256=2a7667d161561e37297a7a513f9fe9a41cc4ab92cf623114fd39d4fe13bb8d89
+DENSE_CENSUS on=true rank=0 segment=3 candidate=[494, 253] control=[0, 0] dot_sha256=50ac500e4e08204ba9af26cd84c878f7d03c1d021b11206eddc6a1f5a42f70a9
+DENSE_CENSUS on=true rank=1 segment=0 candidate=[494, 253] control=[0, 0] dot_sha256=4fa12ca10cd98ef6ca2001467d6712be8927866732338285d751c7ffa029875e
+DENSE_CENSUS on=true rank=1 segment=1 candidate=[0, 2] control=[0, 0] dot_sha256=d4f4a95fde4eaa6c7b255c027c1bfe3ed6cf1daf8adad46b5a95190471d57187
+DENSE_CENSUS on=true rank=1 segment=2 candidate=[494, 253] control=[0, 0] dot_sha256=135295feb4ada79d205e85e59f7e6d1bd718c11ef7411d14c7c9901f9c7245ca
+DENSE_CENSUS on=true rank=1 segment=3 candidate=[494, 253] control=[0, 0] dot_sha256=5f2b4f9d8a4a3a04b24a31124b9546ec6036cd355dad9fc492083aab2c807ea9
 census slot=0 [2675, 2546, 129, 1, 86, 129, 0] (want kernels=2546 AR=129)
 census slot=2 [3074, 2945, 129, 1, 86, 129, 0] (want kernels=2945 AR=129)
 census slot=3 [3174, 3045, 129, 1, 86, 129, 0] (want kernels=3045 AR=129)
@@ -2315,14 +2315,14 @@ census slot=3 [3174, 3045, 129, 1, 86, 129, 0] (want kernels=3045 AR=129)
 census slot=0 [2675, 2546, 129, 1, 86, 129, 0] (want kernels=2546 AR=129)
 census slot=2 [3074, 2945, 129, 1, 86, 129, 0] (want kernels=2945 AR=129)
 census slot=3 [3174, 3045, 129, 1, 86, 129, 0] (want kernels=3045 AR=129)
-DENSE_CENSUS on=true rank=0 segment=0 candidate=[494, 253] control=[0, 0] dot_sha256=b64e5651cdbb39ba5dafbc8406daa6443539c77e21e913c893483c6af6dab915
-DENSE_CENSUS on=true rank=0 segment=1 candidate=[0, 2] control=[0, 0] dot_sha256=bf8ef16b314dfd9346bc48f5caca6fee4513904800b14dd756b2469a435091cc
-DENSE_CENSUS on=true rank=0 segment=2 candidate=[494, 253] control=[0, 0] dot_sha256=13d274d41d9f05a185052785faaf2242c273a8d20faddc85e0ebdfa940d2c8a8
-DENSE_CENSUS on=true rank=0 segment=3 candidate=[494, 253] control=[0, 0] dot_sha256=5715e71cd306368cd200f811d8eb9b984e4ce6c7d4dd436f4f231d209de5480c
-DENSE_CENSUS on=true rank=1 segment=0 candidate=[494, 253] control=[0, 0] dot_sha256=06198289a713d818de4a1d43586d83fb454f78afa08cbb5002aa46e8d4d39e73
-DENSE_CENSUS on=true rank=1 segment=1 candidate=[0, 2] control=[0, 0] dot_sha256=58fdf3c911887ba8d5ea247793d6a6c8c764e4f11d134ae0f1ae8b6dcb33ce28
-DENSE_CENSUS on=true rank=1 segment=2 candidate=[494, 253] control=[0, 0] dot_sha256=e7a672dcf040bb1f3988a2f2b5117ca7ba9634a5770d2fbec5927094209212bb
-DENSE_CENSUS on=true rank=1 segment=3 candidate=[494, 253] control=[0, 0] dot_sha256=2da7510d48837365639270e0712d9711f15558b7dd9e4cfeba310f9e93fffffc
+DENSE_CENSUS on=true rank=0 segment=0 candidate=[494, 253] control=[0, 0] dot_sha256=e72efe473ac30cd0d4b3558af0be491e5bf4f37f2a5dac0979ee151a10f22127
+DENSE_CENSUS on=true rank=0 segment=1 candidate=[0, 2] control=[0, 0] dot_sha256=78a2723ac51ce61e4ef211c09b637f637bd9b70c55be6b9ab8046cfa50aa88f7
+DENSE_CENSUS on=true rank=0 segment=2 candidate=[494, 253] control=[0, 0] dot_sha256=2a016184b32985b01134957b4d97f5475e09b8cd21056d64539dc81d058da175
+DENSE_CENSUS on=true rank=0 segment=3 candidate=[494, 253] control=[0, 0] dot_sha256=216706aa7cef413b96be9d42dc0de91ddb722d85eeb5afb6cac112055e97ca56
+DENSE_CENSUS on=true rank=1 segment=0 candidate=[494, 253] control=[0, 0] dot_sha256=199d6106e2068a2f6799d8463faff18c849224eb666b0a009a48dec4f78e6d7b
+DENSE_CENSUS on=true rank=1 segment=1 candidate=[0, 2] control=[0, 0] dot_sha256=385a1db5229440be26671b7e1f9bba8a79300a84c3c47daa120adf7d75464262
+DENSE_CENSUS on=true rank=1 segment=2 candidate=[494, 253] control=[0, 0] dot_sha256=c46983555e87debe547c7865afe3529a7248c60cee122f5b72436a7471de448a
+DENSE_CENSUS on=true rank=1 segment=3 candidate=[494, 253] control=[0, 0] dot_sha256=e6ee871cc46701e8405d583261dd23b49c4e194e8ca70e60fce97d502c1b0ae6
 census slot=0 [2675, 2546, 129, 1, 86, 129, 0] (want kernels=2546 AR=129)
 census slot=2 [3074, 2945, 129, 1, 86, 129, 0] (want kernels=2945 AR=129)
 census slot=3 [3174, 3045, 129, 1, 86, 129, 0] (want kernels=3045 AR=129)
@@ -2336,14 +2336,14 @@ census slot=3 [3174, 3045, 129, 1, 86, 129, 0] (want kernels=3045 AR=129)
 census slot=0 [2675, 2546, 129, 1, 86, 129, 0] (want kernels=2546 AR=129)
 census slot=2 [3074, 2945, 129, 1, 86, 129, 0] (want kernels=2945 AR=129)
 census slot=3 [3174, 3045, 129, 1, 86, 129, 0] (want kernels=3045 AR=129)
-DENSE_CENSUS on=true rank=0 segment=0 candidate=[494, 253] control=[0, 0] dot_sha256=70547fe95891b41fad05225854ca81ffda818503b35968c9d05d029176f04d2a
-DENSE_CENSUS on=true rank=0 segment=1 candidate=[0, 2] control=[0, 0] dot_sha256=4ced2fe4e21683afb397476468081151062b4aabf26b3bbced6664f607b3446f
-DENSE_CENSUS on=true rank=0 segment=2 candidate=[494, 253] control=[0, 0] dot_sha256=513c00a0d93a2707265dc86e16f1519bf29f6c797eedb15f9b709437b0d5fd61
-DENSE_CENSUS on=true rank=0 segment=3 candidate=[494, 253] control=[0, 0] dot_sha256=5202d4ce74298287873475a104cc48b0ffd765df0e15146415bfde7bd081a79c
-DENSE_CENSUS on=true rank=1 segment=0 candidate=[494, 253] control=[0, 0] dot_sha256=dd57e01068850c0673aa1d2933d10ab43c659971c1edd616531809ebe698f106
-DENSE_CENSUS on=true rank=1 segment=1 candidate=[0, 2] control=[0, 0] dot_sha256=f411e2dbb6918da2375ef42e16dd8f911bb6396552c27eb52fddc36245907f20
-DENSE_CENSUS on=true rank=1 segment=2 candidate=[494, 253] control=[0, 0] dot_sha256=1a6a70c41a7c4c3a9fcd4c96d1d4098a2117c0c7bd30111fd9b890213c021867
-DENSE_CENSUS on=true rank=1 segment=3 candidate=[494, 253] control=[0, 0] dot_sha256=2375624cf54ef850edf51368f5ef4bf784528ee2be4e7ef6f973da5e42b74508
+DENSE_CENSUS on=true rank=0 segment=0 candidate=[494, 253] control=[0, 0] dot_sha256=84c9aa194cfddc6e77559872f7bf39b17319b1eb737ed2c94d621cc535820c3d
+DENSE_CENSUS on=true rank=0 segment=1 candidate=[0, 2] control=[0, 0] dot_sha256=a5a0310ff84b063ab3b5f67d02d9e2d92c43a50de5a7f20961aed3e56601fe8f
+DENSE_CENSUS on=true rank=0 segment=2 candidate=[494, 253] control=[0, 0] dot_sha256=427a409d37d557e54d76108f8a638123343676f9778d4c0ee306feca74902d08
+DENSE_CENSUS on=true rank=0 segment=3 candidate=[494, 253] control=[0, 0] dot_sha256=4dce3eb5fc3d2a966886f952031dc850979aeda4a5e065a0689927b7102f7555
+DENSE_CENSUS on=true rank=1 segment=0 candidate=[494, 253] control=[0, 0] dot_sha256=ef5c220dadf920a9899fc523a43825933a38101baaefa831fb8825f99d1a6c1a
+DENSE_CENSUS on=true rank=1 segment=1 candidate=[0, 2] control=[0, 0] dot_sha256=8d58088cc4d81fa9863516779c41c74f7a8cf585bd958b1ac33000f92f4462fe
+DENSE_CENSUS on=true rank=1 segment=2 candidate=[494, 253] control=[0, 0] dot_sha256=20633a6cf3cef04d63c351a0938d22be94353ae12d708c32dd0ce58ae87ca98e
+DENSE_CENSUS on=true rank=1 segment=3 candidate=[494, 253] control=[0, 0] dot_sha256=d8f535b27ff218dee16f8735a3b4914ba1112f4c4be0eee6ad2dd478fb0fc6c2
 census slot=0 [2675, 2546, 129, 1, 86, 129, 0] (want kernels=2546 AR=129)
 census slot=2 [3074, 2945, 129, 1, 86, 129, 0] (want kernels=2945 AR=129)
 census slot=3 [3174, 3045, 129, 1, 86, 129, 0] (want kernels=3045 AR=129)
@@ -2357,14 +2357,14 @@ census slot=3 [3174, 3045, 129, 1, 86, 129, 0] (want kernels=3045 AR=129)
 census slot=0 [2675, 2546, 129, 1, 86, 129, 0] (want kernels=2546 AR=129)
 census slot=2 [3074, 2945, 129, 1, 86, 129, 0] (want kernels=2945 AR=129)
 census slot=3 [3174, 3045, 129, 1, 86, 129, 0] (want kernels=3045 AR=129)
-DENSE_CENSUS on=true rank=0 segment=0 candidate=[494, 253] control=[0, 0] dot_sha256=83ccbcc71b7e4613ba7a9b002df10f6b95da329a90cf7c1204acd491d8ac7b00
-DENSE_CENSUS on=true rank=0 segment=1 candidate=[0, 2] control=[0, 0] dot_sha256=42739d8e8caf770ff2c7cdcb93f34849177469d52606c6f0355f4f9ebe6e8ebc
-DENSE_CENSUS on=true rank=0 segment=2 candidate=[494, 253] control=[0, 0] dot_sha256=fc41f8b076d9e58a2e048dd7f5f42eae63af251034464d28702b08073e384347
-DENSE_CENSUS on=true rank=0 segment=3 candidate=[494, 253] control=[0, 0] dot_sha256=d49d4ad3cc8181c5053d6ecdd72ce86e9bbefeeb71706d344ca6904f06816380
-DENSE_CENSUS on=true rank=1 segment=0 candidate=[494, 253] control=[0, 0] dot_sha256=bd74094a2e98a7bcc32289b4b5789e4465ef3a992193d094dfea22d595ac73d7
-DENSE_CENSUS on=true rank=1 segment=1 candidate=[0, 2] control=[0, 0] dot_sha256=7797e686195853b5be0928169da2875a2dbd0fa047b8b9574e07c24259f6d9fc
-DENSE_CENSUS on=true rank=1 segment=2 candidate=[494, 253] control=[0, 0] dot_sha256=cdc1fdd9ef4a0126fcfd698e45efea880fd217a26c7a3bb2a65380877cf33a0c
-DENSE_CENSUS on=true rank=1 segment=3 candidate=[494, 253] control=[0, 0] dot_sha256=dfae66886f37cb3e95bc4e31c56fcd504461c1aa412dc4674766eda5fe34dc6c
+DENSE_CENSUS on=true rank=0 segment=0 candidate=[494, 253] control=[0, 0] dot_sha256=94307173eb570ade0a8727f24d59412f04bab5716e8aeeb5f303b7d1d74d34bc
+DENSE_CENSUS on=true rank=0 segment=1 candidate=[0, 2] control=[0, 0] dot_sha256=f2edf0a3b48a60c22352132f4df64e17566f40366b0d6df9d79d064d6323f89b
+DENSE_CENSUS on=true rank=0 segment=2 candidate=[494, 253] control=[0, 0] dot_sha256=fd6546a5026e48e9549d52ba544485f040944597237b4ad299d3c1ceb46a3aa4
+DENSE_CENSUS on=true rank=0 segment=3 candidate=[494, 253] control=[0, 0] dot_sha256=f5f62346eb6acb5dd3091038e805769878b04ca6ac486aa7aa0f685c51cb2cf7
+DENSE_CENSUS on=true rank=1 segment=0 candidate=[494, 253] control=[0, 0] dot_sha256=65415fb1edf98ecdeb6d2ed9c10f3f5fc960e62e2d8fa22e8f8f5aa3c4466f4e
+DENSE_CENSUS on=true rank=1 segment=1 candidate=[0, 2] control=[0, 0] dot_sha256=24cef7a3476697d603c4844296fba1b45b461f9639e56c8a4ff41af9fb83b48c
+DENSE_CENSUS on=true rank=1 segment=2 candidate=[494, 253] control=[0, 0] dot_sha256=b465aa18c67c0375c725ef1036c2c823b0529aedf17c76185890f66585a11e15
+DENSE_CENSUS on=true rank=1 segment=3 candidate=[494, 253] control=[0, 0] dot_sha256=5cfb4b6da00127c3cc6c6d8b5deea3f57c15aef2abf4e18ce9bb9b055330b990
 census slot=0 [2675, 2546, 129, 1, 86, 129, 0] (want kernels=2546 AR=129)
 census slot=2 [3074, 2945, 129, 1, 86, 129, 0] (want kernels=2945 AR=129)
 census slot=3 [3174, 3045, 129, 1, 86, 129, 0] (want kernels=3045 AR=129)
@@ -2378,14 +2378,14 @@ census slot=3 [3174, 3045, 129, 1, 86, 129, 0] (want kernels=3045 AR=129)
 census slot=0 [2675, 2546, 129, 1, 86, 129, 0] (want kernels=2546 AR=129)
 census slot=2 [3074, 2945, 129, 1, 86, 129, 0] (want kernels=2945 AR=129)
 census slot=3 [3174, 3045, 129, 1, 86, 129, 0] (want kernels=3045 AR=129)
-DENSE_CENSUS on=true rank=0 segment=0 candidate=[494, 253] control=[0, 0] dot_sha256=e978019d1a14fe0b097e9d4dfdf3c9985d2d3a4af07820e676478e19d99624f5
-DENSE_CENSUS on=true rank=0 segment=1 candidate=[0, 2] control=[0, 0] dot_sha256=8faea32fd3133b2df7fc1773256526dab2b51ead00874ecbb6d4ad31e1a0e7d7
-DENSE_CENSUS on=true rank=0 segment=2 candidate=[494, 253] control=[0, 0] dot_sha256=6a525b4ed062216c8df52fc395c341df175f519b55ef35709696d002db876759
-DENSE_CENSUS on=true rank=0 segment=3 candidate=[494, 253] control=[0, 0] dot_sha256=6cae91cb51357fee9a7c2a009ed6d9894198aa4dcc8ee7a74fa9e6f69f1af1a8
-DENSE_CENSUS on=true rank=1 segment=0 candidate=[494, 253] control=[0, 0] dot_sha256=a4854f5a1edf957fc52c75a5af0086c1e7c18357a33db5bd9edfc617eaaeea71
-DENSE_CENSUS on=true rank=1 segment=1 candidate=[0, 2] control=[0, 0] dot_sha256=6709ca0f4022ad7f7091eb49ebd135ff1bef5dce00c9cf35644e83b0e8e5d8a3
-DENSE_CENSUS on=true rank=1 segment=2 candidate=[494, 253] control=[0, 0] dot_sha256=1660065c6af0b655c97c9b672ae0e7146d8f2ac2b2541e306ab45747bedefb97
-DENSE_CENSUS on=true rank=1 segment=3 candidate=[494, 253] control=[0, 0] dot_sha256=6c4723ca0ed6df57dc07a659007e683911583cad9ca558de2892de16f25bbcb8
+DENSE_CENSUS on=true rank=0 segment=0 candidate=[494, 253] control=[0, 0] dot_sha256=b0e4e8d7a4b74241dd3225f925048ac6bc6849c2be6479d48db27b0fa40e101a
+DENSE_CENSUS on=true rank=0 segment=1 candidate=[0, 2] control=[0, 0] dot_sha256=cd507d0e345ff9cb5c2887dcea80bbd2ac4c3ccc586004a1108eff4d224455e9
+DENSE_CENSUS on=true rank=0 segment=2 candidate=[494, 253] control=[0, 0] dot_sha256=b7b07fd431056c5a118b9908b759effbd8d5d38452f24219be160570d681c603
+DENSE_CENSUS on=true rank=0 segment=3 candidate=[494, 253] control=[0, 0] dot_sha256=3b4e1b3684cb8a1dc7065b81510ba55b977b645a937146ede368454c1d1b685a
+DENSE_CENSUS on=true rank=1 segment=0 candidate=[494, 253] control=[0, 0] dot_sha256=702a6edce44e37b1efa2bb121b5a12cb8655aff25a0d975a261589409a719bff
+DENSE_CENSUS on=true rank=1 segment=1 candidate=[0, 2] control=[0, 0] dot_sha256=f6da582c292cef4acd584fa5dda1ba0cdc28c6c3296a9635a491ed11fa652e17
+DENSE_CENSUS on=true rank=1 segment=2 candidate=[494, 253] control=[0, 0] dot_sha256=1473488e50f4a249fff6778c55151a08608064221d83b7410dea37ea243b49dc
+DENSE_CENSUS on=true rank=1 segment=3 candidate=[494, 253] control=[0, 0] dot_sha256=a4c308be283b0db0d4c1b160100f1ee3e41398927eb30b9db93cd390f4c82d09
 census slot=0 [2675, 2546, 129, 1, 86, 129, 0] (want kernels=2546 AR=129)
 census slot=2 [3074, 2945, 129, 1, 86, 129, 0] (want kernels=2945 AR=129)
 census slot=3 [3174, 3045, 129, 1, 86, 129, 0] (want kernels=3045 AR=129)
@@ -2399,14 +2399,14 @@ census slot=3 [3174, 3045, 129, 1, 86, 129, 0] (want kernels=3045 AR=129)
 census slot=0 [2675, 2546, 129, 1, 86, 129, 0] (want kernels=2546 AR=129)
 census slot=2 [3074, 2945, 129, 1, 86, 129, 0] (want kernels=2945 AR=129)
 census slot=3 [3174, 3045, 129, 1, 86, 129, 0] (want kernels=3045 AR=129)
-DENSE_CENSUS on=true rank=0 segment=0 candidate=[494, 253] control=[0, 0] dot_sha256=cd72e8bd4bd418911bbe146a79f8b0f30ab9ca538b6ee9f796261e7f1746b898
-DENSE_CENSUS on=true rank=0 segment=1 candidate=[0, 2] control=[0, 0] dot_sha256=609fa7b1673a6d7aa635a11560bad84c2869c44c2b13dadb0b0795c42fc04a51
-DENSE_CENSUS on=true rank=0 segment=2 candidate=[494, 253] control=[0, 0] dot_sha256=2a2d4aabf40e5864cdd8f711cc4570a6620f4b2a5be1c20693e2d672498ddd17
-DENSE_CENSUS on=true rank=0 segment=3 candidate=[494, 253] control=[0, 0] dot_sha256=7aee888b7a674e53db36e5f70e6d1d9ac22b475a9c995ba5f40b496bc6de8419
-DENSE_CENSUS on=true rank=1 segment=0 candidate=[494, 253] control=[0, 0] dot_sha256=aba30e98e3210375ded9c5b9edc535dfd36066ce2c03afd85485856a71331762
-DENSE_CENSUS on=true rank=1 segment=1 candidate=[0, 2] control=[0, 0] dot_sha256=ae111dfa5b7b6962fd17e1a0d4428ef7da7b9961b5a45e27a7dbc3664b3f7b7a
-DENSE_CENSUS on=true rank=1 segment=2 candidate=[494, 253] control=[0, 0] dot_sha256=add535d8f16c9cb928893b8e968d36d0bc016882b583abdeba1c025fbfe2c0f5
-DENSE_CENSUS on=true rank=1 segment=3 candidate=[494, 253] control=[0, 0] dot_sha256=4282ea6e38806df05956eacedcaaf493e13ea0e39a2af906e6b610700ebb6738
+DENSE_CENSUS on=true rank=0 segment=0 candidate=[494, 253] control=[0, 0] dot_sha256=d5192e6182cc37a7658582e523b941d017a816d26bc5021791536d65fe7829e4
+DENSE_CENSUS on=true rank=0 segment=1 candidate=[0, 2] control=[0, 0] dot_sha256=1e2aa35f59968f7f33e4b0fe0e21bd8f206c83b1ade3e79bf26d97ef24896579
+DENSE_CENSUS on=true rank=0 segment=2 candidate=[494, 253] control=[0, 0] dot_sha256=70ea014d086a99a97f37cbef23afc5297e9521fe28627ad6960b72e0e4971e1c
+DENSE_CENSUS on=true rank=0 segment=3 candidate=[494, 253] control=[0, 0] dot_sha256=0fe45c35d168840337115a7766c1970f223d5bf34e55fdafec867b8382427b2f
+DENSE_CENSUS on=true rank=1 segment=0 candidate=[494, 253] control=[0, 0] dot_sha256=2e188200c2c3f99e615689070988c851170869b6261a91a43b84af1935eeb8dd
+DENSE_CENSUS on=true rank=1 segment=1 candidate=[0, 2] control=[0, 0] dot_sha256=a2c286fecc7c9a29909e10fca911e5ad2bfdaa1d73147ff5923d5201a4878f6d
+DENSE_CENSUS on=true rank=1 segment=2 candidate=[494, 253] control=[0, 0] dot_sha256=eca25dce1a8cf031ecf613559466ddc9f455e56d00696f7d27e895be64c78a75
+DENSE_CENSUS on=true rank=1 segment=3 candidate=[494, 253] control=[0, 0] dot_sha256=64857e1838a8fd5795a0f0b2e91a7ffc842552844f7d94e5d46d7f45fc1c46e9
 census slot=0 [2675, 2546, 129, 1, 86, 129, 0] (want kernels=2546 AR=129)
 census slot=2 [3074, 2945, 129, 1, 86, 129, 0] (want kernels=2945 AR=129)
 census slot=3 [3174, 3045, 129, 1, 86, 129, 0] (want kernels=3045 AR=129)
@@ -2420,14 +2420,14 @@ census slot=3 [3174, 3045, 129, 1, 86, 129, 0] (want kernels=3045 AR=129)
 census slot=0 [2675, 2546, 129, 1, 86, 129, 0] (want kernels=2546 AR=129)
 census slot=2 [3074, 2945, 129, 1, 86, 129, 0] (want kernels=2945 AR=129)
 census slot=3 [3174, 3045, 129, 1, 86, 129, 0] (want kernels=3045 AR=129)
-DENSE_CENSUS on=true rank=0 segment=0 candidate=[494, 253] control=[0, 0] dot_sha256=2f1b8ad2e6a4c2c2142624dbfa0723ccc7a67f79c446c3d8f768792166f0e8a8
-DENSE_CENSUS on=true rank=0 segment=1 candidate=[0, 2] control=[0, 0] dot_sha256=090702df8cee23c2acec6e67f5395f50583c9705ec64f18b29e24331e7fef7ac
-DENSE_CENSUS on=true rank=0 segment=2 candidate=[494, 253] control=[0, 0] dot_sha256=22a38761b480db1df0b4240bf5064105d15a58b8fe1f8fd06067ede5198f3073
-DENSE_CENSUS on=true rank=0 segment=3 candidate=[494, 253] control=[0, 0] dot_sha256=162c4e8800be95de65efd34d13d153ed6d55ea26e4b5d2064e89eb850a5073c0
-DENSE_CENSUS on=true rank=1 segment=0 candidate=[494, 253] control=[0, 0] dot_sha256=70bc33f03068bb759edc3f5b17fb2894695b26d095e23a1b1b8d2a4522f6c1b2
-DENSE_CENSUS on=true rank=1 segment=1 candidate=[0, 2] control=[0, 0] dot_sha256=44ed0865dcd9a762d4c5c617ffcd568001bc3eaa614c285c5596e2e7f1a1ca8c
-DENSE_CENSUS on=true rank=1 segment=2 candidate=[494, 253] control=[0, 0] dot_sha256=91f42c1599ea8135f110f17230710bb4db87c693ee57ef03d5ce767ca1ad938e
-DENSE_CENSUS on=true rank=1 segment=3 candidate=[494, 253] control=[0, 0] dot_sha256=bf2c28acd89a1b738b49ff41d4a39972ace512a31dae2365052befc264722de1
+DENSE_CENSUS on=true rank=0 segment=0 candidate=[494, 253] control=[0, 0] dot_sha256=eb739cac5549f78422918c3bcd8b289719e99f2a8051943dfd2804a331c32e14
+DENSE_CENSUS on=true rank=0 segment=1 candidate=[0, 2] control=[0, 0] dot_sha256=dbc9e39873468317bbe8a1f349e9e36195be40aff55d955619797f51fb3d976c
+DENSE_CENSUS on=true rank=0 segment=2 candidate=[494, 253] control=[0, 0] dot_sha256=60d930343724b8f1873c1740243eabedf85c12de03550e8caa50e9d0ad9da8ee
+DENSE_CENSUS on=true rank=0 segment=3 candidate=[494, 253] control=[0, 0] dot_sha256=8ed3411542a322dc37ce96a91923515f3bbae9edea5466e380095cb2454d9b3e
+DENSE_CENSUS on=true rank=1 segment=0 candidate=[494, 253] control=[0, 0] dot_sha256=22426fd99a264d4ff1d50e8ff9653281e3545b315b2e781f262cf893f2a5cb96
+DENSE_CENSUS on=true rank=1 segment=1 candidate=[0, 2] control=[0, 0] dot_sha256=993c72b27b28169bff83a410dcd9697fd8ae35df04512b4dcecd63a698a6e1c5
+DENSE_CENSUS on=true rank=1 segment=2 candidate=[494, 253] control=[0, 0] dot_sha256=944ac3e2f8c9bcecd83e401c0ef02e78ca0d0b797963621d9c1a4e0b57b73944
+DENSE_CENSUS on=true rank=1 segment=3 candidate=[494, 253] control=[0, 0] dot_sha256=45307db369393ff1fdf4114acf8e50a0963cbc94a5456338d33bc7e7b94ff92b
 census slot=0 [2675, 2546, 129, 1, 86, 129, 0] (want kernels=2546 AR=129)
 census slot=2 [3074, 2945, 129, 1, 86, 129, 0] (want kernels=2945 AR=129)
 census slot=3 [3174, 3045, 129, 1, 86, 129, 0] (want kernels=3045 AR=129)
@@ -2441,23 +2441,23 @@ census slot=0 [3174, 3045, 129, 1, 86, 129, 0] (want kernels=3045 AR=129)
 census slot=0 [3174, 3045, 129, 1, 86, 129, 0] (want kernels=3045 AR=129)
 census slot=0 [3174, 3045, 129, 1, 86, 129, 0] (want kernels=3045 AR=129)
 census slot=0 [3174, 3045, 129, 1, 86, 129, 0] (want kernels=3045 AR=129)
-DENSE_CENSUS on=false rank=0 segment=0 candidate=[0, 0] control=[494, 253] dot_sha256=b34e2e2feed71618e392e253e104c45bae225096fbafbf52f2e75f3ca9b6592f
-DENSE_CENSUS on=false rank=0 segment=1 candidate=[0, 0] control=[0, 2] dot_sha256=dc95dd54b2a9dd841c9d8eca233a264733ad9a7c9d217f10119af98a6e3784b3
-DENSE_CENSUS on=false rank=1 segment=0 candidate=[0, 0] control=[494, 253] dot_sha256=e43bfd7f698fee196a2f0234ae7ec23201724c6c1d6b9a4f126da65fd7dba63a
-DENSE_CENSUS on=false rank=1 segment=1 candidate=[0, 0] control=[0, 2] dot_sha256=d88ed0ec40cfb922f8efb7515eeb35539c4ba81086224767d339759f24e17878
-MEASURE {"row":0,"arm_row":0,"arm":"A","cadence_on":false,"dense_on":false,"sampler":"device","generated_tokens":256,"decode_wall_ns":4732700226,"decode_tok_s":54.09174208702565,"first_capture":true,"timing_scope":"sample_plus_forward_envelope","eligible":true,"full_replay":true,"generated_sha256":"bccdff713aeb32e4b50812d8810894020d3e65cb4c70b2718bd723535fc16c42","final_logits_sha256":"cdef4644539715975ddb5d8beb3dfd1e18496bf76fc7f4f698c2eb7776511b35","final_cache_digest":[12121420093445539643, 12121420093445539643],"final_hidden_digest":[17933595804021797383, 17933595804021797383],"device_replays":[[256, 256], [256, 256]],"captures":[1, 1],"variant_device_counts":[[256, 256, 0, 0], [256, 256, 0, 0]],"control_sha256":"97558dfba389820132698cb41dde75839fb6a241853f90ca14393114b9b9071a"}
+DENSE_CENSUS on=false rank=0 segment=0 candidate=[0, 0] control=[494, 253] dot_sha256=d077309ead20faec7d5cd79fb9347ccb8ed7296bcfd029a14e21b2106668bdd4
+DENSE_CENSUS on=false rank=0 segment=1 candidate=[0, 0] control=[0, 2] dot_sha256=efa52f57543ae8ba32619cbc67b12c47392204bce2ffa93d9200fc2d26d0fada
+DENSE_CENSUS on=false rank=1 segment=0 candidate=[0, 0] control=[494, 253] dot_sha256=dae9a03c41ddc6f310724bee7e06e8b1fd634e221317a6e3bf8c1ae872bb7bcf
+DENSE_CENSUS on=false rank=1 segment=1 candidate=[0, 0] control=[0, 2] dot_sha256=46e03e09cdfcbbbaa8128461be0ed3b4cf1f24356e5dc8b5710e2bbbe9977f14
+MEASURE {"row":0,"arm_row":0,"arm":"A","cadence_on":false,"dense_on":false,"sampler":"device","generated_tokens":256,"decode_wall_ns":4700943057,"decode_tok_s":54.457158254405975,"first_capture":true,"timing_scope":"sample_plus_forward_envelope","eligible":true,"full_replay":true,"generated_sha256":"bccdff713aeb32e4b50812d8810894020d3e65cb4c70b2718bd723535fc16c42","final_logits_sha256":"cdef4644539715975ddb5d8beb3dfd1e18496bf76fc7f4f698c2eb7776511b35","final_cache_digest":[12121420093445539643, 12121420093445539643],"final_hidden_digest":[17933595804021797383, 17933595804021797383],"device_replays":[[256, 256], [256, 256]],"captures":[1, 1],"variant_device_counts":[[256, 256, 0, 0], [256, 256, 0, 0]],"control_sha256":"97558dfba389820132698cb41dde75839fb6a241853f90ca14393114b9b9071a"}
 census slot=0 [3174, 3045, 129, 1, 86, 129, 0] (want kernels=3045 AR=129)
 census slot=0 [3174, 3045, 129, 1, 86, 129, 0] (want kernels=3045 AR=129)
-MEASURE {"row":1,"arm_row":1,"arm":"A","cadence_on":false,"dense_on":false,"sampler":"device","generated_tokens":256,"decode_wall_ns":4756666687,"decode_tok_s":53.8192008911723,"first_capture":false,"timing_scope":"sample_plus_forward_envelope","eligible":true,"full_replay":true,"generated_sha256":"bccdff713aeb32e4b50812d8810894020d3e65cb4c70b2718bd723535fc16c42","final_logits_sha256":"cdef4644539715975ddb5d8beb3dfd1e18496bf76fc7f4f698c2eb7776511b35","final_cache_digest":[12121420093445539643, 12121420093445539643],"final_hidden_digest":[17933595804021797383, 17933595804021797383],"device_replays":[[512, 512], [512, 512]],"captures":[1, 1],"variant_device_counts":[[512, 512, 0, 0], [512, 512, 0, 0]],"control_sha256":"97558dfba389820132698cb41dde75839fb6a241853f90ca14393114b9b9071a"}
+MEASURE {"row":1,"arm_row":1,"arm":"A","cadence_on":false,"dense_on":false,"sampler":"device","generated_tokens":256,"decode_wall_ns":4717781287,"decode_tok_s":54.26279524771874,"first_capture":false,"timing_scope":"sample_plus_forward_envelope","eligible":true,"full_replay":true,"generated_sha256":"bccdff713aeb32e4b50812d8810894020d3e65cb4c70b2718bd723535fc16c42","final_logits_sha256":"cdef4644539715975ddb5d8beb3dfd1e18496bf76fc7f4f698c2eb7776511b35","final_cache_digest":[12121420093445539643, 12121420093445539643],"final_hidden_digest":[17933595804021797383, 17933595804021797383],"device_replays":[[512, 512], [512, 512]],"captures":[1, 1],"variant_device_counts":[[512, 512, 0, 0], [512, 512, 0, 0]],"control_sha256":"97558dfba389820132698cb41dde75839fb6a241853f90ca14393114b9b9071a"}
 census slot=0 [3174, 3045, 129, 1, 86, 129, 0] (want kernels=3045 AR=129)
 census slot=0 [3174, 3045, 129, 1, 86, 129, 0] (want kernels=3045 AR=129)
-MEASURE {"row":2,"arm_row":2,"arm":"A","cadence_on":false,"dense_on":false,"sampler":"device","generated_tokens":256,"decode_wall_ns":4765053663,"decode_tok_s":53.72447365867158,"first_capture":false,"timing_scope":"sample_plus_forward_envelope","eligible":true,"full_replay":true,"generated_sha256":"bccdff713aeb32e4b50812d8810894020d3e65cb4c70b2718bd723535fc16c42","final_logits_sha256":"cdef4644539715975ddb5d8beb3dfd1e18496bf76fc7f4f698c2eb7776511b35","final_cache_digest":[12121420093445539643, 12121420093445539643],"final_hidden_digest":[17933595804021797383, 17933595804021797383],"device_replays":[[768, 768], [768, 768]],"captures":[1, 1],"variant_device_counts":[[768, 768, 0, 0], [768, 768, 0, 0]],"control_sha256":"97558dfba389820132698cb41dde75839fb6a241853f90ca14393114b9b9071a"}
+MEASURE {"row":2,"arm_row":2,"arm":"A","cadence_on":false,"dense_on":false,"sampler":"device","generated_tokens":256,"decode_wall_ns":4718116118,"decode_tok_s":54.258944374713245,"first_capture":false,"timing_scope":"sample_plus_forward_envelope","eligible":true,"full_replay":true,"generated_sha256":"bccdff713aeb32e4b50812d8810894020d3e65cb4c70b2718bd723535fc16c42","final_logits_sha256":"cdef4644539715975ddb5d8beb3dfd1e18496bf76fc7f4f698c2eb7776511b35","final_cache_digest":[12121420093445539643, 12121420093445539643],"final_hidden_digest":[17933595804021797383, 17933595804021797383],"device_replays":[[768, 768], [768, 768]],"captures":[1, 1],"variant_device_counts":[[768, 768, 0, 0], [768, 768, 0, 0]],"control_sha256":"97558dfba389820132698cb41dde75839fb6a241853f90ca14393114b9b9071a"}
 census slot=0 [3174, 3045, 129, 1, 86, 129, 0] (want kernels=3045 AR=129)
 census slot=0 [3174, 3045, 129, 1, 86, 129, 0] (want kernels=3045 AR=129)
-MEASURE {"row":3,"arm_row":3,"arm":"A","cadence_on":false,"dense_on":false,"sampler":"device","generated_tokens":256,"decode_wall_ns":4767339839,"decode_tok_s":53.698710107836305,"first_capture":false,"timing_scope":"sample_plus_forward_envelope","eligible":true,"full_replay":true,"generated_sha256":"bccdff713aeb32e4b50812d8810894020d3e65cb4c70b2718bd723535fc16c42","final_logits_sha256":"cdef4644539715975ddb5d8beb3dfd1e18496bf76fc7f4f698c2eb7776511b35","final_cache_digest":[12121420093445539643, 12121420093445539643],"final_hidden_digest":[17933595804021797383, 17933595804021797383],"device_replays":[[1024, 1024], [1024, 1024]],"captures":[1, 1],"variant_device_counts":[[1024, 1024, 0, 0], [1024, 1024, 0, 0]],"control_sha256":"97558dfba389820132698cb41dde75839fb6a241853f90ca14393114b9b9071a"}
+MEASURE {"row":3,"arm_row":3,"arm":"A","cadence_on":false,"dense_on":false,"sampler":"device","generated_tokens":256,"decode_wall_ns":4717239394,"decode_tok_s":54.26902868775627,"first_capture":false,"timing_scope":"sample_plus_forward_envelope","eligible":true,"full_replay":true,"generated_sha256":"bccdff713aeb32e4b50812d8810894020d3e65cb4c70b2718bd723535fc16c42","final_logits_sha256":"cdef4644539715975ddb5d8beb3dfd1e18496bf76fc7f4f698c2eb7776511b35","final_cache_digest":[12121420093445539643, 12121420093445539643],"final_hidden_digest":[17933595804021797383, 17933595804021797383],"device_replays":[[1024, 1024], [1024, 1024]],"captures":[1, 1],"variant_device_counts":[[1024, 1024, 0, 0], [1024, 1024, 0, 0]],"control_sha256":"97558dfba389820132698cb41dde75839fb6a241853f90ca14393114b9b9071a"}
 census slot=0 [3174, 3045, 129, 1, 86, 129, 0] (want kernels=3045 AR=129)
 census slot=0 [3174, 3045, 129, 1, 86, 129, 0] (want kernels=3045 AR=129)
-MEASURE {"row":4,"arm_row":4,"arm":"A","cadence_on":false,"dense_on":false,"sampler":"device","generated_tokens":256,"decode_wall_ns":4769631954,"decode_tok_s":53.67290442301494,"first_capture":false,"timing_scope":"sample_plus_forward_envelope","eligible":true,"full_replay":true,"generated_sha256":"bccdff713aeb32e4b50812d8810894020d3e65cb4c70b2718bd723535fc16c42","final_logits_sha256":"cdef4644539715975ddb5d8beb3dfd1e18496bf76fc7f4f698c2eb7776511b35","final_cache_digest":[12121420093445539643, 12121420093445539643],"final_hidden_digest":[17933595804021797383, 17933595804021797383],"device_replays":[[1280, 1280], [1280, 1280]],"captures":[1, 1],"variant_device_counts":[[1280, 1280, 0, 0], [1280, 1280, 0, 0]],"control_sha256":"97558dfba389820132698cb41dde75839fb6a241853f90ca14393114b9b9071a"}
+MEASURE {"row":4,"arm_row":4,"arm":"A","cadence_on":false,"dense_on":false,"sampler":"device","generated_tokens":256,"decode_wall_ns":4717241247,"decode_tok_s":54.269007370103665,"first_capture":false,"timing_scope":"sample_plus_forward_envelope","eligible":true,"full_replay":true,"generated_sha256":"bccdff713aeb32e4b50812d8810894020d3e65cb4c70b2718bd723535fc16c42","final_logits_sha256":"cdef4644539715975ddb5d8beb3dfd1e18496bf76fc7f4f698c2eb7776511b35","final_cache_digest":[12121420093445539643, 12121420093445539643],"final_hidden_digest":[17933595804021797383, 17933595804021797383],"device_replays":[[1280, 1280], [1280, 1280]],"captures":[1, 1],"variant_device_counts":[[1280, 1280, 0, 0], [1280, 1280, 0, 0]],"control_sha256":"97558dfba389820132698cb41dde75839fb6a241853f90ca14393114b9b9071a"}
 census slot=0 [2675, 2546, 129, 1, 86, 129, 0] (want kernels=2546 AR=129)
 census slot=2 [3074, 2945, 129, 1, 86, 129, 0] (want kernels=2945 AR=129)
 census slot=3 [3174, 3045, 129, 1, 86, 129, 0] (want kernels=3045 AR=129)
@@ -2470,71 +2470,71 @@ census slot=3 [3174, 3045, 129, 1, 86, 129, 0] (want kernels=3045 AR=129)
 census slot=0 [2675, 2546, 129, 1, 86, 129, 0] (want kernels=2546 AR=129)
 census slot=2 [3074, 2945, 129, 1, 86, 129, 0] (want kernels=2945 AR=129)
 census slot=3 [3174, 3045, 129, 1, 86, 129, 0] (want kernels=3045 AR=129)
-DENSE_CENSUS on=true rank=0 segment=0 candidate=[494, 253] control=[0, 0] dot_sha256=8a037b8ec2328d5aa8fa410351eb220e44a4279f52914c861190ad64c98270f8
-DENSE_CENSUS on=true rank=0 segment=1 candidate=[0, 2] control=[0, 0] dot_sha256=1c883f374e6e894ebf91e46f9e4b5fb04147c3165816aad06e3900e0a86528a1
-DENSE_CENSUS on=true rank=0 segment=2 candidate=[494, 253] control=[0, 0] dot_sha256=3d91fdd3f24b23a615aeb19e0a0e41310238e13ea965a175704651e19147a052
-DENSE_CENSUS on=true rank=0 segment=3 candidate=[494, 253] control=[0, 0] dot_sha256=695a96786660559dead592cf92e7551ba102a5757314f1c9a72fff7d91b6754d
-DENSE_CENSUS on=true rank=1 segment=0 candidate=[494, 253] control=[0, 0] dot_sha256=128e76df2668e2eed1b7bb38174520d62a61d148147c45199332c5ec1b90b37b
-DENSE_CENSUS on=true rank=1 segment=1 candidate=[0, 2] control=[0, 0] dot_sha256=5baf926f762364ca1a5d1468b6f5add47ea87b3d80f599d6a7882043597b8729
-DENSE_CENSUS on=true rank=1 segment=2 candidate=[494, 253] control=[0, 0] dot_sha256=5dca0b4d350f284873fd3b99c37ec894dd22b4ea4c6003078681f62a2706d383
-DENSE_CENSUS on=true rank=1 segment=3 candidate=[494, 253] control=[0, 0] dot_sha256=9e4627c0b34da548c19f1a770db09a888360d6ddc3ad62480b9119d1840e710a
-MEASURE {"row":5,"arm_row":0,"arm":"B","cadence_on":true,"dense_on":true,"sampler":"device","generated_tokens":256,"decode_wall_ns":4560169518,"decode_tok_s":56.138263937231116,"first_capture":true,"timing_scope":"sample_plus_forward_envelope","eligible":true,"full_replay":true,"generated_sha256":"bccdff713aeb32e4b50812d8810894020d3e65cb4c70b2718bd723535fc16c42","final_logits_sha256":"cdef4644539715975ddb5d8beb3dfd1e18496bf76fc7f4f698c2eb7776511b35","final_cache_digest":[12121420093445539643, 12121420093445539643],"final_hidden_digest":[17933595804021797383, 17933595804021797383],"device_replays":[[256, 256], [256, 256]],"captures":[3, 1],"variant_device_counts":[[192, 256, 62, 2], [192, 256, 62, 2]],"control_sha256":"97558dfba389820132698cb41dde75839fb6a241853f90ca14393114b9b9071a"}
+DENSE_CENSUS on=true rank=0 segment=0 candidate=[494, 253] control=[0, 0] dot_sha256=9e495a7f4073b3e7dc3b7b99313b59b81dd65bab78d35bfff2b3cf1b0c61837c
+DENSE_CENSUS on=true rank=0 segment=1 candidate=[0, 2] control=[0, 0] dot_sha256=64c4443345096198ae53feacc576c8a741606db32afa5f1fef6b8939a42f946e
+DENSE_CENSUS on=true rank=0 segment=2 candidate=[494, 253] control=[0, 0] dot_sha256=ab854783e5d85eef2013964e681468ae0afd37711708d2c471dc407c23779e29
+DENSE_CENSUS on=true rank=0 segment=3 candidate=[494, 253] control=[0, 0] dot_sha256=8234db2bca94f755361dfab75cee17dd8aaead3614eed924ae54f5cf71f304c8
+DENSE_CENSUS on=true rank=1 segment=0 candidate=[494, 253] control=[0, 0] dot_sha256=1f152c27da1556ee4eae1c25c40342c86ee9adcd0a419c52e6e0ac55d43ce477
+DENSE_CENSUS on=true rank=1 segment=1 candidate=[0, 2] control=[0, 0] dot_sha256=70e8659d8c6a8418858149698903f54c90ac8c945e8d900ab2637721afd78d45
+DENSE_CENSUS on=true rank=1 segment=2 candidate=[494, 253] control=[0, 0] dot_sha256=cf8a2061a96f2375473f946ce2f066c830a5b48e5055784f42e6761a859971c2
+DENSE_CENSUS on=true rank=1 segment=3 candidate=[494, 253] control=[0, 0] dot_sha256=1c3a71381f8b2abf08070c64ab6c2291d485c453a6de7a8cdfb6b32fb58f01d0
+MEASURE {"row":5,"arm_row":0,"arm":"B","cadence_on":true,"dense_on":true,"sampler":"device","generated_tokens":256,"decode_wall_ns":4517671260,"decode_tok_s":56.6663631031887,"first_capture":true,"timing_scope":"sample_plus_forward_envelope","eligible":true,"full_replay":true,"generated_sha256":"bccdff713aeb32e4b50812d8810894020d3e65cb4c70b2718bd723535fc16c42","final_logits_sha256":"cdef4644539715975ddb5d8beb3dfd1e18496bf76fc7f4f698c2eb7776511b35","final_cache_digest":[12121420093445539643, 12121420093445539643],"final_hidden_digest":[17933595804021797383, 17933595804021797383],"device_replays":[[256, 256], [256, 256]],"captures":[3, 1],"variant_device_counts":[[192, 256, 62, 2], [192, 256, 62, 2]],"control_sha256":"97558dfba389820132698cb41dde75839fb6a241853f90ca14393114b9b9071a"}
 census slot=0 [2675, 2546, 129, 1, 86, 129, 0] (want kernels=2546 AR=129)
 census slot=2 [3074, 2945, 129, 1, 86, 129, 0] (want kernels=2945 AR=129)
 census slot=3 [3174, 3045, 129, 1, 86, 129, 0] (want kernels=3045 AR=129)
 census slot=0 [2675, 2546, 129, 1, 86, 129, 0] (want kernels=2546 AR=129)
 census slot=2 [3074, 2945, 129, 1, 86, 129, 0] (want kernels=2945 AR=129)
 census slot=3 [3174, 3045, 129, 1, 86, 129, 0] (want kernels=3045 AR=129)
-MEASURE {"row":6,"arm_row":1,"arm":"B","cadence_on":true,"dense_on":true,"sampler":"device","generated_tokens":256,"decode_wall_ns":4537619789,"decode_tok_s":56.41724337957748,"first_capture":false,"timing_scope":"sample_plus_forward_envelope","eligible":true,"full_replay":true,"generated_sha256":"bccdff713aeb32e4b50812d8810894020d3e65cb4c70b2718bd723535fc16c42","final_logits_sha256":"cdef4644539715975ddb5d8beb3dfd1e18496bf76fc7f4f698c2eb7776511b35","final_cache_digest":[12121420093445539643, 12121420093445539643],"final_hidden_digest":[17933595804021797383, 17933595804021797383],"device_replays":[[512, 512], [512, 512]],"captures":[3, 1],"variant_device_counts":[[384, 512, 124, 4], [384, 512, 124, 4]],"control_sha256":"97558dfba389820132698cb41dde75839fb6a241853f90ca14393114b9b9071a"}
+MEASURE {"row":6,"arm_row":1,"arm":"B","cadence_on":true,"dense_on":true,"sampler":"device","generated_tokens":256,"decode_wall_ns":4498071751,"decode_tok_s":56.913276215099664,"first_capture":false,"timing_scope":"sample_plus_forward_envelope","eligible":true,"full_replay":true,"generated_sha256":"bccdff713aeb32e4b50812d8810894020d3e65cb4c70b2718bd723535fc16c42","final_logits_sha256":"cdef4644539715975ddb5d8beb3dfd1e18496bf76fc7f4f698c2eb7776511b35","final_cache_digest":[12121420093445539643, 12121420093445539643],"final_hidden_digest":[17933595804021797383, 17933595804021797383],"device_replays":[[512, 512], [512, 512]],"captures":[3, 1],"variant_device_counts":[[384, 512, 124, 4], [384, 512, 124, 4]],"control_sha256":"97558dfba389820132698cb41dde75839fb6a241853f90ca14393114b9b9071a"}
 census slot=0 [2675, 2546, 129, 1, 86, 129, 0] (want kernels=2546 AR=129)
 census slot=2 [3074, 2945, 129, 1, 86, 129, 0] (want kernels=2945 AR=129)
 census slot=3 [3174, 3045, 129, 1, 86, 129, 0] (want kernels=3045 AR=129)
 census slot=0 [2675, 2546, 129, 1, 86, 129, 0] (want kernels=2546 AR=129)
 census slot=2 [3074, 2945, 129, 1, 86, 129, 0] (want kernels=2945 AR=129)
 census slot=3 [3174, 3045, 129, 1, 86, 129, 0] (want kernels=3045 AR=129)
-MEASURE {"row":7,"arm_row":2,"arm":"B","cadence_on":true,"dense_on":true,"sampler":"device","generated_tokens":256,"decode_wall_ns":4540837551,"decode_tok_s":56.37726457393807,"first_capture":false,"timing_scope":"sample_plus_forward_envelope","eligible":true,"full_replay":true,"generated_sha256":"bccdff713aeb32e4b50812d8810894020d3e65cb4c70b2718bd723535fc16c42","final_logits_sha256":"cdef4644539715975ddb5d8beb3dfd1e18496bf76fc7f4f698c2eb7776511b35","final_cache_digest":[12121420093445539643, 12121420093445539643],"final_hidden_digest":[17933595804021797383, 17933595804021797383],"device_replays":[[768, 768], [768, 768]],"captures":[3, 1],"variant_device_counts":[[576, 768, 186, 6], [576, 768, 186, 6]],"control_sha256":"97558dfba389820132698cb41dde75839fb6a241853f90ca14393114b9b9071a"}
+MEASURE {"row":7,"arm_row":2,"arm":"B","cadence_on":true,"dense_on":true,"sampler":"device","generated_tokens":256,"decode_wall_ns":4498090770,"decode_tok_s":56.913035572201224,"first_capture":false,"timing_scope":"sample_plus_forward_envelope","eligible":true,"full_replay":true,"generated_sha256":"bccdff713aeb32e4b50812d8810894020d3e65cb4c70b2718bd723535fc16c42","final_logits_sha256":"cdef4644539715975ddb5d8beb3dfd1e18496bf76fc7f4f698c2eb7776511b35","final_cache_digest":[12121420093445539643, 12121420093445539643],"final_hidden_digest":[17933595804021797383, 17933595804021797383],"device_replays":[[768, 768], [768, 768]],"captures":[3, 1],"variant_device_counts":[[576, 768, 186, 6], [576, 768, 186, 6]],"control_sha256":"97558dfba389820132698cb41dde75839fb6a241853f90ca14393114b9b9071a"}
 census slot=0 [2675, 2546, 129, 1, 86, 129, 0] (want kernels=2546 AR=129)
 census slot=2 [3074, 2945, 129, 1, 86, 129, 0] (want kernels=2945 AR=129)
 census slot=3 [3174, 3045, 129, 1, 86, 129, 0] (want kernels=3045 AR=129)
 census slot=0 [2675, 2546, 129, 1, 86, 129, 0] (want kernels=2546 AR=129)
 census slot=2 [3074, 2945, 129, 1, 86, 129, 0] (want kernels=2945 AR=129)
 census slot=3 [3174, 3045, 129, 1, 86, 129, 0] (want kernels=3045 AR=129)
-MEASURE {"row":8,"arm_row":3,"arm":"B","cadence_on":true,"dense_on":true,"sampler":"device","generated_tokens":256,"decode_wall_ns":4540980424,"decode_tok_s":56.375490774412555,"first_capture":false,"timing_scope":"sample_plus_forward_envelope","eligible":true,"full_replay":true,"generated_sha256":"bccdff713aeb32e4b50812d8810894020d3e65cb4c70b2718bd723535fc16c42","final_logits_sha256":"cdef4644539715975ddb5d8beb3dfd1e18496bf76fc7f4f698c2eb7776511b35","final_cache_digest":[12121420093445539643, 12121420093445539643],"final_hidden_digest":[17933595804021797383, 17933595804021797383],"device_replays":[[1024, 1024], [1024, 1024]],"captures":[3, 1],"variant_device_counts":[[768, 1024, 248, 8], [768, 1024, 248, 8]],"control_sha256":"97558dfba389820132698cb41dde75839fb6a241853f90ca14393114b9b9071a"}
+MEASURE {"row":8,"arm_row":3,"arm":"B","cadence_on":true,"dense_on":true,"sampler":"device","generated_tokens":256,"decode_wall_ns":4499605792,"decode_tok_s":56.893872893299005,"first_capture":false,"timing_scope":"sample_plus_forward_envelope","eligible":true,"full_replay":true,"generated_sha256":"bccdff713aeb32e4b50812d8810894020d3e65cb4c70b2718bd723535fc16c42","final_logits_sha256":"cdef4644539715975ddb5d8beb3dfd1e18496bf76fc7f4f698c2eb7776511b35","final_cache_digest":[12121420093445539643, 12121420093445539643],"final_hidden_digest":[17933595804021797383, 17933595804021797383],"device_replays":[[1024, 1024], [1024, 1024]],"captures":[3, 1],"variant_device_counts":[[768, 1024, 248, 8], [768, 1024, 248, 8]],"control_sha256":"97558dfba389820132698cb41dde75839fb6a241853f90ca14393114b9b9071a"}
 census slot=0 [2675, 2546, 129, 1, 86, 129, 0] (want kernels=2546 AR=129)
 census slot=2 [3074, 2945, 129, 1, 86, 129, 0] (want kernels=2945 AR=129)
 census slot=3 [3174, 3045, 129, 1, 86, 129, 0] (want kernels=3045 AR=129)
 census slot=0 [2675, 2546, 129, 1, 86, 129, 0] (want kernels=2546 AR=129)
 census slot=2 [3074, 2945, 129, 1, 86, 129, 0] (want kernels=2945 AR=129)
 census slot=3 [3174, 3045, 129, 1, 86, 129, 0] (want kernels=3045 AR=129)
-MEASURE {"row":9,"arm_row":4,"arm":"B","cadence_on":true,"dense_on":true,"sampler":"device","generated_tokens":256,"decode_wall_ns":4541357290,"decode_tok_s":56.37081243612083,"first_capture":false,"timing_scope":"sample_plus_forward_envelope","eligible":true,"full_replay":true,"generated_sha256":"bccdff713aeb32e4b50812d8810894020d3e65cb4c70b2718bd723535fc16c42","final_logits_sha256":"cdef4644539715975ddb5d8beb3dfd1e18496bf76fc7f4f698c2eb7776511b35","final_cache_digest":[12121420093445539643, 12121420093445539643],"final_hidden_digest":[17933595804021797383, 17933595804021797383],"device_replays":[[1280, 1280], [1280, 1280]],"captures":[3, 1],"variant_device_counts":[[960, 1280, 310, 10], [960, 1280, 310, 10]],"control_sha256":"97558dfba389820132698cb41dde75839fb6a241853f90ca14393114b9b9071a"}
+MEASURE {"row":9,"arm_row":4,"arm":"B","cadence_on":true,"dense_on":true,"sampler":"device","generated_tokens":256,"decode_wall_ns":4501715794,"decode_tok_s":56.86720613087198,"first_capture":false,"timing_scope":"sample_plus_forward_envelope","eligible":true,"full_replay":true,"generated_sha256":"bccdff713aeb32e4b50812d8810894020d3e65cb4c70b2718bd723535fc16c42","final_logits_sha256":"cdef4644539715975ddb5d8beb3dfd1e18496bf76fc7f4f698c2eb7776511b35","final_cache_digest":[12121420093445539643, 12121420093445539643],"final_hidden_digest":[17933595804021797383, 17933595804021797383],"device_replays":[[1280, 1280], [1280, 1280]],"captures":[3, 1],"variant_device_counts":[[960, 1280, 310, 10], [960, 1280, 310, 10]],"control_sha256":"97558dfba389820132698cb41dde75839fb6a241853f90ca14393114b9b9071a"}
 census slot=0 [2675, 2546, 129, 1, 86, 129, 0] (want kernels=2546 AR=129)
 census slot=2 [3074, 2945, 129, 1, 86, 129, 0] (want kernels=2945 AR=129)
 census slot=3 [3174, 3045, 129, 1, 86, 129, 0] (want kernels=3045 AR=129)
 census slot=0 [2675, 2546, 129, 1, 86, 129, 0] (want kernels=2546 AR=129)
 census slot=2 [3074, 2945, 129, 1, 86, 129, 0] (want kernels=2945 AR=129)
 census slot=3 [3174, 3045, 129, 1, 86, 129, 0] (want kernels=3045 AR=129)
-MEASURE {"row":10,"arm_row":5,"arm":"B","cadence_on":true,"dense_on":true,"sampler":"device","generated_tokens":256,"decode_wall_ns":4543918828,"decode_tok_s":56.33903458453241,"first_capture":false,"timing_scope":"sample_plus_forward_envelope","eligible":true,"full_replay":true,"generated_sha256":"bccdff713aeb32e4b50812d8810894020d3e65cb4c70b2718bd723535fc16c42","final_logits_sha256":"cdef4644539715975ddb5d8beb3dfd1e18496bf76fc7f4f698c2eb7776511b35","final_cache_digest":[12121420093445539643, 12121420093445539643],"final_hidden_digest":[17933595804021797383, 17933595804021797383],"device_replays":[[1536, 1536], [1536, 1536]],"captures":[3, 1],"variant_device_counts":[[1152, 1536, 372, 12], [1152, 1536, 372, 12]],"control_sha256":"97558dfba389820132698cb41dde75839fb6a241853f90ca14393114b9b9071a"}
+MEASURE {"row":10,"arm_row":5,"arm":"B","cadence_on":true,"dense_on":true,"sampler":"device","generated_tokens":256,"decode_wall_ns":4503587409,"decode_tok_s":56.84357307874337,"first_capture":false,"timing_scope":"sample_plus_forward_envelope","eligible":true,"full_replay":true,"generated_sha256":"bccdff713aeb32e4b50812d8810894020d3e65cb4c70b2718bd723535fc16c42","final_logits_sha256":"cdef4644539715975ddb5d8beb3dfd1e18496bf76fc7f4f698c2eb7776511b35","final_cache_digest":[12121420093445539643, 12121420093445539643],"final_hidden_digest":[17933595804021797383, 17933595804021797383],"device_replays":[[1536, 1536], [1536, 1536]],"captures":[3, 1],"variant_device_counts":[[1152, 1536, 372, 12], [1152, 1536, 372, 12]],"control_sha256":"97558dfba389820132698cb41dde75839fb6a241853f90ca14393114b9b9071a"}
 census slot=0 [2675, 2546, 129, 1, 86, 129, 0] (want kernels=2546 AR=129)
 census slot=2 [3074, 2945, 129, 1, 86, 129, 0] (want kernels=2945 AR=129)
 census slot=3 [3174, 3045, 129, 1, 86, 129, 0] (want kernels=3045 AR=129)
 census slot=0 [2675, 2546, 129, 1, 86, 129, 0] (want kernels=2546 AR=129)
 census slot=2 [3074, 2945, 129, 1, 86, 129, 0] (want kernels=2945 AR=129)
 census slot=3 [3174, 3045, 129, 1, 86, 129, 0] (want kernels=3045 AR=129)
-MEASURE {"row":11,"arm_row":6,"arm":"B","cadence_on":true,"dense_on":true,"sampler":"device","generated_tokens":256,"decode_wall_ns":4546276310,"decode_tok_s":56.30981984902717,"first_capture":false,"timing_scope":"sample_plus_forward_envelope","eligible":true,"full_replay":true,"generated_sha256":"bccdff713aeb32e4b50812d8810894020d3e65cb4c70b2718bd723535fc16c42","final_logits_sha256":"cdef4644539715975ddb5d8beb3dfd1e18496bf76fc7f4f698c2eb7776511b35","final_cache_digest":[12121420093445539643, 12121420093445539643],"final_hidden_digest":[17933595804021797383, 17933595804021797383],"device_replays":[[1792, 1792], [1792, 1792]],"captures":[3, 1],"variant_device_counts":[[1344, 1792, 434, 14], [1344, 1792, 434, 14]],"control_sha256":"97558dfba389820132698cb41dde75839fb6a241853f90ca14393114b9b9071a"}
+MEASURE {"row":11,"arm_row":6,"arm":"B","cadence_on":true,"dense_on":true,"sampler":"device","generated_tokens":256,"decode_wall_ns":4504782000,"decode_tok_s":56.828499137139154,"first_capture":false,"timing_scope":"sample_plus_forward_envelope","eligible":true,"full_replay":true,"generated_sha256":"bccdff713aeb32e4b50812d8810894020d3e65cb4c70b2718bd723535fc16c42","final_logits_sha256":"cdef4644539715975ddb5d8beb3dfd1e18496bf76fc7f4f698c2eb7776511b35","final_cache_digest":[12121420093445539643, 12121420093445539643],"final_hidden_digest":[17933595804021797383, 17933595804021797383],"device_replays":[[1792, 1792], [1792, 1792]],"captures":[3, 1],"variant_device_counts":[[1344, 1792, 434, 14], [1344, 1792, 434, 14]],"control_sha256":"97558dfba389820132698cb41dde75839fb6a241853f90ca14393114b9b9071a"}
 census slot=0 [2675, 2546, 129, 1, 86, 129, 0] (want kernels=2546 AR=129)
 census slot=2 [3074, 2945, 129, 1, 86, 129, 0] (want kernels=2945 AR=129)
 census slot=3 [3174, 3045, 129, 1, 86, 129, 0] (want kernels=3045 AR=129)
 census slot=0 [2675, 2546, 129, 1, 86, 129, 0] (want kernels=2546 AR=129)
 census slot=2 [3074, 2945, 129, 1, 86, 129, 0] (want kernels=2945 AR=129)
 census slot=3 [3174, 3045, 129, 1, 86, 129, 0] (want kernels=3045 AR=129)
-MEASURE {"row":12,"arm_row":7,"arm":"B","cadence_on":true,"dense_on":true,"sampler":"device","generated_tokens":256,"decode_wall_ns":4546449620,"decode_tok_s":56.307673326862904,"first_capture":false,"timing_scope":"sample_plus_forward_envelope","eligible":true,"full_replay":true,"generated_sha256":"bccdff713aeb32e4b50812d8810894020d3e65cb4c70b2718bd723535fc16c42","final_logits_sha256":"cdef4644539715975ddb5d8beb3dfd1e18496bf76fc7f4f698c2eb7776511b35","final_cache_digest":[12121420093445539643, 12121420093445539643],"final_hidden_digest":[17933595804021797383, 17933595804021797383],"device_replays":[[2048, 2048], [2048, 2048]],"captures":[3, 1],"variant_device_counts":[[1536, 2048, 496, 16], [1536, 2048, 496, 16]],"control_sha256":"97558dfba389820132698cb41dde75839fb6a241853f90ca14393114b9b9071a"}
+MEASURE {"row":12,"arm_row":7,"arm":"B","cadence_on":true,"dense_on":true,"sampler":"device","generated_tokens":256,"decode_wall_ns":4506462830,"decode_tok_s":56.80730312381163,"first_capture":false,"timing_scope":"sample_plus_forward_envelope","eligible":true,"full_replay":true,"generated_sha256":"bccdff713aeb32e4b50812d8810894020d3e65cb4c70b2718bd723535fc16c42","final_logits_sha256":"cdef4644539715975ddb5d8beb3dfd1e18496bf76fc7f4f698c2eb7776511b35","final_cache_digest":[12121420093445539643, 12121420093445539643],"final_hidden_digest":[17933595804021797383, 17933595804021797383],"device_replays":[[2048, 2048], [2048, 2048]],"captures":[3, 1],"variant_device_counts":[[1536, 2048, 496, 16], [1536, 2048, 496, 16]],"control_sha256":"97558dfba389820132698cb41dde75839fb6a241853f90ca14393114b9b9071a"}
 census slot=0 [2675, 2546, 129, 1, 86, 129, 0] (want kernels=2546 AR=129)
 census slot=2 [3074, 2945, 129, 1, 86, 129, 0] (want kernels=2945 AR=129)
 census slot=3 [3174, 3045, 129, 1, 86, 129, 0] (want kernels=3045 AR=129)
 census slot=0 [2675, 2546, 129, 1, 86, 129, 0] (want kernels=2546 AR=129)
 census slot=2 [3074, 2945, 129, 1, 86, 129, 0] (want kernels=2945 AR=129)
 census slot=3 [3174, 3045, 129, 1, 86, 129, 0] (want kernels=3045 AR=129)
-MEASURE {"row":13,"arm_row":8,"arm":"B","cadence_on":true,"dense_on":true,"sampler":"device","generated_tokens":256,"decode_wall_ns":4546928757,"decode_tok_s":56.30173985151798,"first_capture":false,"timing_scope":"sample_plus_forward_envelope","eligible":true,"full_replay":true,"generated_sha256":"bccdff713aeb32e4b50812d8810894020d3e65cb4c70b2718bd723535fc16c42","final_logits_sha256":"cdef4644539715975ddb5d8beb3dfd1e18496bf76fc7f4f698c2eb7776511b35","final_cache_digest":[12121420093445539643, 12121420093445539643],"final_hidden_digest":[17933595804021797383, 17933595804021797383],"device_replays":[[2304, 2304], [2304, 2304]],"captures":[3, 1],"variant_device_counts":[[1728, 2304, 558, 18], [1728, 2304, 558, 18]],"control_sha256":"97558dfba389820132698cb41dde75839fb6a241853f90ca14393114b9b9071a"}
+MEASURE {"row":13,"arm_row":8,"arm":"B","cadence_on":true,"dense_on":true,"sampler":"device","generated_tokens":256,"decode_wall_ns":4506514016,"decode_tok_s":56.806657893683116,"first_capture":false,"timing_scope":"sample_plus_forward_envelope","eligible":true,"full_replay":true,"generated_sha256":"bccdff713aeb32e4b50812d8810894020d3e65cb4c70b2718bd723535fc16c42","final_logits_sha256":"cdef4644539715975ddb5d8beb3dfd1e18496bf76fc7f4f698c2eb7776511b35","final_cache_digest":[12121420093445539643, 12121420093445539643],"final_hidden_digest":[17933595804021797383, 17933595804021797383],"device_replays":[[2304, 2304], [2304, 2304]],"captures":[3, 1],"variant_device_counts":[[1728, 2304, 558, 18], [1728, 2304, 558, 18]],"control_sha256":"97558dfba389820132698cb41dde75839fb6a241853f90ca14393114b9b9071a"}
 census slot=0 [2675, 2546, 129, 1, 86, 129, 0] (want kernels=2546 AR=129)
 census slot=2 [3074, 2945, 129, 1, 86, 129, 0] (want kernels=2945 AR=129)
 census slot=3 [3174, 3045, 129, 1, 86, 129, 0] (want kernels=3045 AR=129)
@@ -2547,34 +2547,34 @@ census slot=3 [3174, 3045, 129, 1, 86, 129, 0] (want kernels=3045 AR=129)
 census slot=0 [2675, 2546, 129, 1, 86, 129, 0] (want kernels=2546 AR=129)
 census slot=2 [3074, 2945, 129, 1, 86, 129, 0] (want kernels=2945 AR=129)
 census slot=3 [3174, 3045, 129, 1, 86, 129, 0] (want kernels=3045 AR=129)
-DENSE_CENSUS on=true rank=0 segment=0 candidate=[494, 253] control=[0, 0] dot_sha256=8a037b8ec2328d5aa8fa410351eb220e44a4279f52914c861190ad64c98270f8
-DENSE_CENSUS on=true rank=0 segment=1 candidate=[0, 2] control=[0, 0] dot_sha256=1c883f374e6e894ebf91e46f9e4b5fb04147c3165816aad06e3900e0a86528a1
-DENSE_CENSUS on=true rank=0 segment=2 candidate=[494, 253] control=[0, 0] dot_sha256=3d91fdd3f24b23a615aeb19e0a0e41310238e13ea965a175704651e19147a052
-DENSE_CENSUS on=true rank=0 segment=3 candidate=[494, 253] control=[0, 0] dot_sha256=695a96786660559dead592cf92e7551ba102a5757314f1c9a72fff7d91b6754d
-DENSE_CENSUS on=true rank=1 segment=0 candidate=[494, 253] control=[0, 0] dot_sha256=128e76df2668e2eed1b7bb38174520d62a61d148147c45199332c5ec1b90b37b
-DENSE_CENSUS on=true rank=1 segment=1 candidate=[0, 2] control=[0, 0] dot_sha256=5baf926f762364ca1a5d1468b6f5add47ea87b3d80f599d6a7882043597b8729
-DENSE_CENSUS on=true rank=1 segment=2 candidate=[494, 253] control=[0, 0] dot_sha256=5dca0b4d350f284873fd3b99c37ec894dd22b4ea4c6003078681f62a2706d383
-DENSE_CENSUS on=true rank=1 segment=3 candidate=[494, 253] control=[0, 0] dot_sha256=9e4627c0b34da548c19f1a770db09a888360d6ddc3ad62480b9119d1840e710a
-MEASURE {"row":14,"arm_row":9,"arm":"B","cadence_on":true,"dense_on":true,"sampler":"device","generated_tokens":256,"decode_wall_ns":4548832521,"decode_tok_s":56.27817661304484,"first_capture":false,"timing_scope":"sample_plus_forward_envelope","eligible":true,"full_replay":true,"generated_sha256":"bccdff713aeb32e4b50812d8810894020d3e65cb4c70b2718bd723535fc16c42","final_logits_sha256":"cdef4644539715975ddb5d8beb3dfd1e18496bf76fc7f4f698c2eb7776511b35","final_cache_digest":[12121420093445539643, 12121420093445539643],"final_hidden_digest":[17933595804021797383, 17933595804021797383],"device_replays":[[2560, 2560], [2560, 2560]],"captures":[3, 1],"variant_device_counts":[[1920, 2560, 620, 20], [1920, 2560, 620, 20]],"control_sha256":"97558dfba389820132698cb41dde75839fb6a241853f90ca14393114b9b9071a"}
+DENSE_CENSUS on=true rank=0 segment=0 candidate=[494, 253] control=[0, 0] dot_sha256=9e495a7f4073b3e7dc3b7b99313b59b81dd65bab78d35bfff2b3cf1b0c61837c
+DENSE_CENSUS on=true rank=0 segment=1 candidate=[0, 2] control=[0, 0] dot_sha256=64c4443345096198ae53feacc576c8a741606db32afa5f1fef6b8939a42f946e
+DENSE_CENSUS on=true rank=0 segment=2 candidate=[494, 253] control=[0, 0] dot_sha256=ab854783e5d85eef2013964e681468ae0afd37711708d2c471dc407c23779e29
+DENSE_CENSUS on=true rank=0 segment=3 candidate=[494, 253] control=[0, 0] dot_sha256=8234db2bca94f755361dfab75cee17dd8aaead3614eed924ae54f5cf71f304c8
+DENSE_CENSUS on=true rank=1 segment=0 candidate=[494, 253] control=[0, 0] dot_sha256=1f152c27da1556ee4eae1c25c40342c86ee9adcd0a419c52e6e0ac55d43ce477
+DENSE_CENSUS on=true rank=1 segment=1 candidate=[0, 2] control=[0, 0] dot_sha256=70e8659d8c6a8418858149698903f54c90ac8c945e8d900ab2637721afd78d45
+DENSE_CENSUS on=true rank=1 segment=2 candidate=[494, 253] control=[0, 0] dot_sha256=cf8a2061a96f2375473f946ce2f066c830a5b48e5055784f42e6761a859971c2
+DENSE_CENSUS on=true rank=1 segment=3 candidate=[494, 253] control=[0, 0] dot_sha256=1c3a71381f8b2abf08070c64ab6c2291d485c453a6de7a8cdfb6b32fb58f01d0
+MEASURE {"row":14,"arm_row":9,"arm":"B","cadence_on":true,"dense_on":true,"sampler":"device","generated_tokens":256,"decode_wall_ns":4508191010,"decode_tok_s":56.785526485489356,"first_capture":false,"timing_scope":"sample_plus_forward_envelope","eligible":true,"full_replay":true,"generated_sha256":"bccdff713aeb32e4b50812d8810894020d3e65cb4c70b2718bd723535fc16c42","final_logits_sha256":"cdef4644539715975ddb5d8beb3dfd1e18496bf76fc7f4f698c2eb7776511b35","final_cache_digest":[12121420093445539643, 12121420093445539643],"final_hidden_digest":[17933595804021797383, 17933595804021797383],"device_replays":[[2560, 2560], [2560, 2560]],"captures":[3, 1],"variant_device_counts":[[1920, 2560, 620, 20], [1920, 2560, 620, 20]],"control_sha256":"97558dfba389820132698cb41dde75839fb6a241853f90ca14393114b9b9071a"}
 census slot=0 [3174, 3045, 129, 1, 86, 129, 0] (want kernels=3045 AR=129)
 census slot=0 [3174, 3045, 129, 1, 86, 129, 0] (want kernels=3045 AR=129)
-MEASURE {"row":15,"arm_row":5,"arm":"A","cadence_on":false,"dense_on":false,"sampler":"device","generated_tokens":256,"decode_wall_ns":4780236443,"decode_tok_s":53.553836311774255,"first_capture":false,"timing_scope":"sample_plus_forward_envelope","eligible":true,"full_replay":true,"generated_sha256":"bccdff713aeb32e4b50812d8810894020d3e65cb4c70b2718bd723535fc16c42","final_logits_sha256":"cdef4644539715975ddb5d8beb3dfd1e18496bf76fc7f4f698c2eb7776511b35","final_cache_digest":[12121420093445539643, 12121420093445539643],"final_hidden_digest":[17933595804021797383, 17933595804021797383],"device_replays":[[1536, 1536], [1536, 1536]],"captures":[1, 1],"variant_device_counts":[[1536, 1536, 0, 0], [1536, 1536, 0, 0]],"control_sha256":"97558dfba389820132698cb41dde75839fb6a241853f90ca14393114b9b9071a"}
+MEASURE {"row":15,"arm_row":5,"arm":"A","cadence_on":false,"dense_on":false,"sampler":"device","generated_tokens":256,"decode_wall_ns":4732422193,"decode_tok_s":54.09492001340549,"first_capture":false,"timing_scope":"sample_plus_forward_envelope","eligible":true,"full_replay":true,"generated_sha256":"bccdff713aeb32e4b50812d8810894020d3e65cb4c70b2718bd723535fc16c42","final_logits_sha256":"cdef4644539715975ddb5d8beb3dfd1e18496bf76fc7f4f698c2eb7776511b35","final_cache_digest":[12121420093445539643, 12121420093445539643],"final_hidden_digest":[17933595804021797383, 17933595804021797383],"device_replays":[[1536, 1536], [1536, 1536]],"captures":[1, 1],"variant_device_counts":[[1536, 1536, 0, 0], [1536, 1536, 0, 0]],"control_sha256":"97558dfba389820132698cb41dde75839fb6a241853f90ca14393114b9b9071a"}
 census slot=0 [3174, 3045, 129, 1, 86, 129, 0] (want kernels=3045 AR=129)
 census slot=0 [3174, 3045, 129, 1, 86, 129, 0] (want kernels=3045 AR=129)
-MEASURE {"row":16,"arm_row":6,"arm":"A","cadence_on":false,"dense_on":false,"sampler":"device","generated_tokens":256,"decode_wall_ns":4782862027,"decode_tok_s":53.52443757625459,"first_capture":false,"timing_scope":"sample_plus_forward_envelope","eligible":true,"full_replay":true,"generated_sha256":"bccdff713aeb32e4b50812d8810894020d3e65cb4c70b2718bd723535fc16c42","final_logits_sha256":"cdef4644539715975ddb5d8beb3dfd1e18496bf76fc7f4f698c2eb7776511b35","final_cache_digest":[12121420093445539643, 12121420093445539643],"final_hidden_digest":[17933595804021797383, 17933595804021797383],"device_replays":[[1792, 1792], [1792, 1792]],"captures":[1, 1],"variant_device_counts":[[1792, 1792, 0, 0], [1792, 1792, 0, 0]],"control_sha256":"97558dfba389820132698cb41dde75839fb6a241853f90ca14393114b9b9071a"}
+MEASURE {"row":16,"arm_row":6,"arm":"A","cadence_on":false,"dense_on":false,"sampler":"device","generated_tokens":256,"decode_wall_ns":4735921788,"decode_tok_s":54.05494673680198,"first_capture":false,"timing_scope":"sample_plus_forward_envelope","eligible":true,"full_replay":true,"generated_sha256":"bccdff713aeb32e4b50812d8810894020d3e65cb4c70b2718bd723535fc16c42","final_logits_sha256":"cdef4644539715975ddb5d8beb3dfd1e18496bf76fc7f4f698c2eb7776511b35","final_cache_digest":[12121420093445539643, 12121420093445539643],"final_hidden_digest":[17933595804021797383, 17933595804021797383],"device_replays":[[1792, 1792], [1792, 1792]],"captures":[1, 1],"variant_device_counts":[[1792, 1792, 0, 0], [1792, 1792, 0, 0]],"control_sha256":"97558dfba389820132698cb41dde75839fb6a241853f90ca14393114b9b9071a"}
 census slot=0 [3174, 3045, 129, 1, 86, 129, 0] (want kernels=3045 AR=129)
 census slot=0 [3174, 3045, 129, 1, 86, 129, 0] (want kernels=3045 AR=129)
-MEASURE {"row":17,"arm_row":7,"arm":"A","cadence_on":false,"dense_on":false,"sampler":"device","generated_tokens":256,"decode_wall_ns":4785131808,"decode_tok_s":53.49904877688167,"first_capture":false,"timing_scope":"sample_plus_forward_envelope","eligible":true,"full_replay":true,"generated_sha256":"bccdff713aeb32e4b50812d8810894020d3e65cb4c70b2718bd723535fc16c42","final_logits_sha256":"cdef4644539715975ddb5d8beb3dfd1e18496bf76fc7f4f698c2eb7776511b35","final_cache_digest":[12121420093445539643, 12121420093445539643],"final_hidden_digest":[17933595804021797383, 17933595804021797383],"device_replays":[[2048, 2048], [2048, 2048]],"captures":[1, 1],"variant_device_counts":[[2048, 2048, 0, 0], [2048, 2048, 0, 0]],"control_sha256":"97558dfba389820132698cb41dde75839fb6a241853f90ca14393114b9b9071a"}
+MEASURE {"row":17,"arm_row":7,"arm":"A","cadence_on":false,"dense_on":false,"sampler":"device","generated_tokens":256,"decode_wall_ns":4737194386,"decode_tok_s":54.04042543758938,"first_capture":false,"timing_scope":"sample_plus_forward_envelope","eligible":true,"full_replay":true,"generated_sha256":"bccdff713aeb32e4b50812d8810894020d3e65cb4c70b2718bd723535fc16c42","final_logits_sha256":"cdef4644539715975ddb5d8beb3dfd1e18496bf76fc7f4f698c2eb7776511b35","final_cache_digest":[12121420093445539643, 12121420093445539643],"final_hidden_digest":[17933595804021797383, 17933595804021797383],"device_replays":[[2048, 2048], [2048, 2048]],"captures":[1, 1],"variant_device_counts":[[2048, 2048, 0, 0], [2048, 2048, 0, 0]],"control_sha256":"97558dfba389820132698cb41dde75839fb6a241853f90ca14393114b9b9071a"}
 census slot=0 [3174, 3045, 129, 1, 86, 129, 0] (want kernels=3045 AR=129)
 census slot=0 [3174, 3045, 129, 1, 86, 129, 0] (want kernels=3045 AR=129)
-MEASURE {"row":18,"arm_row":8,"arm":"A","cadence_on":false,"dense_on":false,"sampler":"device","generated_tokens":256,"decode_wall_ns":4783866582,"decode_tok_s":53.513198081910886,"first_capture":false,"timing_scope":"sample_plus_forward_envelope","eligible":true,"full_replay":true,"generated_sha256":"bccdff713aeb32e4b50812d8810894020d3e65cb4c70b2718bd723535fc16c42","final_logits_sha256":"cdef4644539715975ddb5d8beb3dfd1e18496bf76fc7f4f698c2eb7776511b35","final_cache_digest":[12121420093445539643, 12121420093445539643],"final_hidden_digest":[17933595804021797383, 17933595804021797383],"device_replays":[[2304, 2304], [2304, 2304]],"captures":[1, 1],"variant_device_counts":[[2304, 2304, 0, 0], [2304, 2304, 0, 0]],"control_sha256":"97558dfba389820132698cb41dde75839fb6a241853f90ca14393114b9b9071a"}
+MEASURE {"row":18,"arm_row":8,"arm":"A","cadence_on":false,"dense_on":false,"sampler":"device","generated_tokens":256,"decode_wall_ns":4739855535,"decode_tok_s":54.01008492972983,"first_capture":false,"timing_scope":"sample_plus_forward_envelope","eligible":true,"full_replay":true,"generated_sha256":"bccdff713aeb32e4b50812d8810894020d3e65cb4c70b2718bd723535fc16c42","final_logits_sha256":"cdef4644539715975ddb5d8beb3dfd1e18496bf76fc7f4f698c2eb7776511b35","final_cache_digest":[12121420093445539643, 12121420093445539643],"final_hidden_digest":[17933595804021797383, 17933595804021797383],"device_replays":[[2304, 2304], [2304, 2304]],"captures":[1, 1],"variant_device_counts":[[2304, 2304, 0, 0], [2304, 2304, 0, 0]],"control_sha256":"97558dfba389820132698cb41dde75839fb6a241853f90ca14393114b9b9071a"}
 census slot=0 [3174, 3045, 129, 1, 86, 129, 0] (want kernels=3045 AR=129)
 census slot=0 [3174, 3045, 129, 1, 86, 129, 0] (want kernels=3045 AR=129)
 census slot=0 [3174, 3045, 129, 1, 86, 129, 0] (want kernels=3045 AR=129)
 census slot=0 [3174, 3045, 129, 1, 86, 129, 0] (want kernels=3045 AR=129)
-DENSE_CENSUS on=false rank=0 segment=0 candidate=[0, 0] control=[494, 253] dot_sha256=b34e2e2feed71618e392e253e104c45bae225096fbafbf52f2e75f3ca9b6592f
-DENSE_CENSUS on=false rank=0 segment=1 candidate=[0, 0] control=[0, 2] dot_sha256=dc95dd54b2a9dd841c9d8eca233a264733ad9a7c9d217f10119af98a6e3784b3
-DENSE_CENSUS on=false rank=1 segment=0 candidate=[0, 0] control=[494, 253] dot_sha256=e43bfd7f698fee196a2f0234ae7ec23201724c6c1d6b9a4f126da65fd7dba63a
-DENSE_CENSUS on=false rank=1 segment=1 candidate=[0, 0] control=[0, 2] dot_sha256=d88ed0ec40cfb922f8efb7515eeb35539c4ba81086224767d339759f24e17878
-MEASURE {"row":19,"arm_row":9,"arm":"A","cadence_on":false,"dense_on":false,"sampler":"device","generated_tokens":256,"decode_wall_ns":4787619917,"decode_tok_s":53.47124551198996,"first_capture":false,"timing_scope":"sample_plus_forward_envelope","eligible":true,"full_replay":true,"generated_sha256":"bccdff713aeb32e4b50812d8810894020d3e65cb4c70b2718bd723535fc16c42","final_logits_sha256":"cdef4644539715975ddb5d8beb3dfd1e18496bf76fc7f4f698c2eb7776511b35","final_cache_digest":[12121420093445539643, 12121420093445539643],"final_hidden_digest":[17933595804021797383, 17933595804021797383],"device_replays":[[2560, 2560], [2560, 2560]],"captures":[1, 1],"variant_device_counts":[[2560, 2560, 0, 0], [2560, 2560, 0, 0]],"control_sha256":"97558dfba389820132698cb41dde75839fb6a241853f90ca14393114b9b9071a"}
-SUMMARY {"rows":20,"off_pooled_tok_s":53.656266765171715,"on_pooled_tok_s":56.321455719489116,"off_mean_tok_s":53.65687974265321,"on_mean_tok_s":56.32155193262654,"pooled_delta_pct":4.967153167740279,"mean_delta_pct":4.966133332302425,"first_capture_rows_per_arm":[1,1],"identity":true,"decision":"return to root; no automatic merge or promotion"}
+DENSE_CENSUS on=false rank=0 segment=0 candidate=[0, 0] control=[494, 253] dot_sha256=d077309ead20faec7d5cd79fb9347ccb8ed7296bcfd029a14e21b2106668bdd4
+DENSE_CENSUS on=false rank=0 segment=1 candidate=[0, 0] control=[0, 2] dot_sha256=efa52f57543ae8ba32619cbc67b12c47392204bce2ffa93d9200fc2d26d0fada
+DENSE_CENSUS on=false rank=1 segment=0 candidate=[0, 0] control=[494, 253] dot_sha256=dae9a03c41ddc6f310724bee7e06e8b1fd634e221317a6e3bf8c1ae872bb7bcf
+DENSE_CENSUS on=false rank=1 segment=1 candidate=[0, 0] control=[0, 2] dot_sha256=46e03e09cdfcbbbaa8128461be0ed3b4cf1f24356e5dc8b5710e2bbbe9977f14
+MEASURE {"row":19,"arm_row":9,"arm":"A","cadence_on":false,"dense_on":false,"sampler":"device","generated_tokens":256,"decode_wall_ns":4740955253,"decode_tok_s":53.997556681853794,"first_capture":false,"timing_scope":"sample_plus_forward_envelope","eligible":true,"full_replay":true,"generated_sha256":"bccdff713aeb32e4b50812d8810894020d3e65cb4c70b2718bd723535fc16c42","final_logits_sha256":"cdef4644539715975ddb5d8beb3dfd1e18496bf76fc7f4f698c2eb7776511b35","final_cache_digest":[12121420093445539643, 12121420093445539643],"final_hidden_digest":[17933595804021797383, 17933595804021797383],"device_replays":[[2560, 2560], [2560, 2560]],"captures":[1, 1],"variant_device_counts":[[2560, 2560, 0, 0], [2560, 2560, 0, 0]],"control_sha256":"97558dfba389820132698cb41dde75839fb6a241853f90ca14393114b9b9071a"}
+SUMMARY {"rows":20,"off_pooled_tok_s":54.17110039542483,"on_pooled_tok_s":56.832444632586125,"off_mean_tok_s":54.17148677340784,"on_mean_tok_s":56.83253136335272,"pooled_delta_pct":4.912848765734257,"mean_delta_pct":4.9122605792151885,"first_capture_rows_per_arm":[1,1],"identity":true,"decision":"return to root; no automatic merge or promotion"}

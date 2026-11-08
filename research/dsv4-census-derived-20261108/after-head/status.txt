@@ -1,12 +1,18 @@
-armed 11-08 23:36:35 pid 324433 cells: cc-defaults hc-defaults cc-ab hc-ab
-bins rev 2a0b9d76f1f1b0f6dfe06c4941b0e8152026775a
-locks held 23:36:35
-SIB-7-compose-cadence start 23:36:35
-SIB-7-compose-cadence rc=0 250s :: PASS environment-selected identity steps=256 refusal_cells=8; five sanity rows follow|
-SIB-7-hcdot-defaults start 23:40:45
-SIB-7-hcdot-defaults rc=0 247s :: PASS defaults hc_dot_split=true identity_steps=256 refusals=8 sanity_rows=5 first_capture_rows=1 performance_claim=false|
-compose-cadence-ab start 23:44:52
-compose-cadence-ab rc=0 358s :: PASS composed model correctness, two retained resets, and 16 live refusal cells; timing begins|
-hcdot-abba start 23:50:50
-hcdot-abba rc=0 282s ::
-done 23:55:32
+armed 11-09 00:39:50 pid 352615 cells: cc-defaults hc-defaults cc-ab hc-ab lb spc fix6
+bins rev 5d1dde3ec03b8d61744b15e8a83427efec5c8ef6
+locks held 00:39:50
+SIB-7-compose-cadence start 00:39:50
+SIB-7-compose-cadence rc=0 250s :: [load] lane-8 peer byte-integrity probe PASS: 1 boundaries, 10 copies, ladder [16384, 65536, 524288, 1048576, 67108864] bytes, 317.0ms|PASS environment-selected identity steps=256 refusal_cells=8; five sanity rows follow|
+SIB-7-hcdot-defaults start 00:44:00
+SIB-7-hcdot-defaults rc=0 247s :: [load] lane-8 peer byte-integrity probe PASS: 1 boundaries, 10 copies, ladder [16384, 65536, 524288, 1048576, 67108864] bytes, 346.6ms|PASS defaults hc_dot_split=true identity_steps=256 refusals=8 sanity_rows=5 first_capture_rows=1 performance_claim=false|
+compose-cadence-ab start 00:48:07
+compose-cadence-ab rc=0 356s :: [load] lane-8 peer byte-integrity probe PASS: 1 boundaries, 10 copies, ladder [16384, 65536, 524288, 1048576, 67108864] bytes, 344.9ms|PASS composed model correctness, two retained resets, and 16 live refusal cells; timing begins|
+hcdot-abba start 00:54:03
+hcdot-abba rc=0 280s :: [load] lane-8 peer byte-integrity probe PASS: 1 boundaries, 10 copies, ladder [16384, 65536, 524288, 1048576, 67108864] bytes, 347.1ms|
+launch-boundary start 00:58:43
+launch-boundary rc=0 197s :: [load] lane-8 peer byte-integrity probe PASS: 1 boundaries, 10 copies, ladder [16384, 65536, 524288, 1048576, 67108864] bytes, 344.1ms|BOUNDARY_PASS {"steps":64,"warm_next":14,"identity":true,"census":true,"ar_epochs":true,"tokens_sha256":"0ccd4ee4c0906f737f12f8236007b9d2d7c6e0f8dce4b8d5f9f4340541fb7426","profiled":false,"first_ar_wa|
+full-replay-cadence start 01:02:00
+full-replay-cadence rc=0 317s :: [load] lane-8 peer byte-integrity probe PASS: 1 boundaries, 10 copies, ladder [16384, 65536, 524288, 1048576, 67108864] bytes, 346.2ms|PASS replay correctness and 8 live refusal cells; beginning bounded 20-row comparison cadence=true|
+FIX-6-full-replay start 01:07:17
+FIX-6-full-replay rc=0 316s :: [load] lane-8 peer byte-integrity probe PASS: 1 boundaries, 10 copies, ladder [16384, 65536, 524288, 1048576, 67108864] bytes, 344.7ms|PASS replay correctness and 6 live refusal cells; beginning bounded 20-row comparison cadence=false|
+done 01:12:33

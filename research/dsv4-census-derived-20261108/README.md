@@ -1,12 +1,21 @@
 # DSv4 full-token census: counts derived from the loaded program (2026-11-08)
 
-Verdict: the census pins in `dsv4_compose_cadence_dense_gate` (total kernels 2741/3140/3240,
-2026-09-08) and `dsv4_hc_dot_split_gate` (standalone RMSNorm 129/171/191 and RoPE 150,
-2026-09-09) were stale, not a regression. `Dsv4Gpu::full_token_forward_census_for_gate` now
-counts the full-token replay graph from the loaded program. On a 2x RTX PRO 6000 Blackwell
-Max-Q pair both gates fail on main at the old pins and pass with the derived counts. The
-derivation matches every graph it was checked against: four programs (compose candidate and
-control, HC split on and off), every forward variant, both ranks.
+Verdict: four DSv4 gates checked the full-token replay graphs against 2026-09 constants, and
+the constants were stale, not a regression:
+
+- `dsv4_compose_cadence_dense_gate`: total kernels 2741/3140/3240 (2026-09-08).
+- `dsv4_hc_dot_split_gate`: standalone RMSNorm 129/171/191 and RoPE 150 (2026-09-09).
+- `dsv4_launch_boundary_gate`: kernels 2741/3140/3240 and 86 joins, plus a linker wrapper that
+  wanted 86 `memra_tp_ar_1stage_kernel` nodes and could not read the PDL chain's edges.
+- `dsv4_full_token_replay_gate.rs`, the full-token replay arms of `dsv4_tp_ep_sampled_perf_gate`:
+  cadence kernels 2784/3183/3283, plus 86 with the HC split.
+
+`Dsv4Gpu::full_token_forward_census_for_gate` now counts every forward graph from the loaded
+program, and `tp_ep_trunk_ar_launches_for_gate` its joins. On a 2x RTX PRO 6000 Blackwell Max-Q
+pair every gate fails on main and passes with the derived counts. The derivation matches every
+graph it was checked against: five programs (compose candidate and control, HC split on and
+off, the replay gate's grouped-wo_a control program with and without cadence), every forward
+variant, both ranks.
 
 Scope: DeepSeek-V4-Flash NVFP4, TP/EP placement with exact attention TP2, the f32x
 small-kernel-diet program, sampled full-token replay. Untimed pass/fail cells, one run each. No
@@ -15,30 +24,44 @@ performance claim and no native qualification.
 ## Conditions
 
 - 2x RTX PRO 6000 Blackwell Max-Q, 250 W limit left as found, CUDA 13.4, sm_120a release
-  build, rust 1.97.1. Peak 90 C with fans at most 88 %: no thermal stop.
+  build, rust 1.97.1. No thermal stop.
 - The pair cells' environment: `CUDA_DEVICE_ORDER=PCI_BUS_ID CUDA_VISIBLE_DEVICES=0,1
   MEMRA_DSV4_DECODE_PATH=device MEMRA_DSV4_EXPERT_ARM=native MEMRA_DSV4_DENSE_ARM=fp8
   MEMRA_DSV4_EP=pair MEMRA_DSV4_GROUPED_ROUTE=device MEMRA_DSV4_VERIFY_TOPK=device
-  MEMRA_DSV4_PREFILL_MOE=reference MEMRA_DSV4_DOTS_ARM=f32x MEMRA_DSV4_DRAFTER=off
-  MEMRA_MOE_F16G=2 MEMRA_F16G_SK=32 MEMRA_DSV4_SAMPLER=device`. The gates run as
-  `<gate> <model> <tape> <new-dir> [--defaults]`; without `--defaults` the compose gate runs
-  its A/B (candidate and control arms) and the HC gate its ABBA (split on and off).
-- `before-main/`: main 958ae32fed. `after-head/`: 2a0b9d76f1, this branch's code. Each holds
-  the raw gate logs, the cell status lines, the binaries' sha256 and the 1 s telemetry. A first
-  build of the change (before the clippy and review fixes, same counting) gave the same counts;
-  its logs are in 9c47ca9526.
+  MEMRA_DSV4_PREFILL_MOE=reference`, plus `MEMRA_DSV4_DOTS_ARM=f32x MEMRA_DSV4_DRAFTER=off
+  MEMRA_MOE_F16G=2 MEMRA_F16G_SK=32 MEMRA_DSV4_SAMPLER=device` for the compose, HC and
+  launch-boundary gates (the SIB-7 cells) and `MEMRA_DSV4_SAMPLER=device` alone for the
+  sampled perf gate (the FIX-6 cell).
+- Command lines: `<compose|hc gate> <model> <tape> <new-dir> [--defaults]` (without
+  `--defaults` the compose gate runs its A/B, the HC gate its ABBA);
+  `dsv4_launch_boundary_gate <model> <tape>`, built by `tools/build-dsv4-launch-boundary.sh`;
+  `dsv4_tp_ep_sampled_perf_gate <model> <tape> --placement=tp_ep --full-token-replay-cadence`
+  and `... --full-token-replay` (FIX-6).
+- `before-main/`: main 958ae32fed. `after-head/`: 5d1dde3ec0, this branch's code. Each holds
+  the raw gate logs, the cell status lines, the binaries' sha256 and the 1 s telemetry. The
+  before cells of the compose and HC gates ran on 2026-11-08, those of the two added gates on
+  2026-11-09, each on a build of 958ae32fed (`status-20261109.txt`, `bins-20261109.sha256`,
+  `thermal-20261109.csv` for the latter). Earlier builds of this branch gave the same counts;
+  their logs are in 9c47ca9526 and 046643dca3. Peaks: 90 C before, 86 C after, fans at most
+  88 %. clippy `-D warnings` on memra-engine is clean on 5d1dde3ec0.
 
 ## Runs
 
-| cell | before (main) | after (2a0b9d76f1) |
+| cell | before (main) | after (5d1dde3ec0) |
 |---|---|---|
 | compose cadence `--defaults` | rc 101: 1680 total-kernel mismatches, every other check passed. Read 2546/2945/3045 for slots 0/2/3 against 2741/3140/3240 | rc 0: want 2546/2945/3045 |
 | HC dot split `--defaults` | rc 101 at the RMSNorm pin, rank 0 segment 0: read 0 against 129 | rc 0: kernels 2248/2647/2747, RMSNorm 0/42/62, RoPE 0 |
 | compose cadence A/B | rc 101: 2288 mismatches; the control arm reads 3045 against 3240 | rc 0: candidate 2546/2945/3045, control 3045 |
 | HC dot split ABBA | rc 101 at the RMSNorm pin: read 0 against 129 | rc 0: split on 2248/2647/2747 and RMSNorm 0/42/62; split off 2377/2776/2876 and RMSNorm 86/128/148 |
+| launch boundary | rc 134 at the first capture: `BOUNDARY_FATAL not a complete forward graph` (the wrapper's 86 1stage joins; the graph holds 129 push joins) | rc 0, `BOUNDARY_PASS`: kernels 2546/2945/3045, joins 129, AR epochs per the program |
+| full-token replay, cadence | rc 101: `cadence kernel census slot 0`, read 2417 against 2784 | rc 0: 2417/2816/2916, its full-replay oracle 2916 |
+| FIX-6 full-token replay | (no kernel census on main) | rc 0: 2916 |
 
 The HC gate's RoPE pin (150 per forward variant) was stale too: it is the assert after the
-RMSNorm one, and the graphs hold no `dsv4_rope_kernel` node.
+RMSNorm one, and the graphs hold no `dsv4_rope_kernel` node. On main the launch-boundary gate
+never reached its census: its wrapper aborts first. With the wrapper's join count fixed, the
+next stop was its first-join walk, which read the PDL chain's programmatic edges without edge
+data (CUDA refuses that as a lossy query); with both fixed the census and the epoch check run.
 
 ## Derivation
 
@@ -92,16 +115,24 @@ compressors, four shifts of the two pending planes: 3 + 2 + 1 + 4 = 10 for the i
 The HC gate's split-off arm keeps dense fast on: its pairs are the HC split program's, its HC
 entries the compose program's (4 + 3 launches instead of 2 + 2).
 
+The launch-boundary gate runs the compose program (exact tail on, dense fast and the HC split
+frozen off, per-group wo_a): 2546/2945/3045. The sampled perf gate's replay arms run the dense
+control (exact tail off, so no pair launch either), with the HC split and dense fast frozen off
+and grouped wo_a on: one wo_a launch per layer instead of 4, so 46 / 62 / 51 per window,
+ratio-4 and ratio-128 layer, 3 + 2 x 46 + 21 x 62 + 20 x 51 = 2417, then 2816 and 2916, and
+2916 for the full replay without cadence. Every program holds 129 joins: per layer the expert
+reduce and attention TP2's wo_a and wo_b gathers.
+
 The q RoPE runs in the head-RMS launch, the latent's in the latent norm launch, the indexer q's
 in its chain, the output's inverse with its pack, and the compressors' as
 `dsv4_rope_at_kernel`. The commit graph holds the head's final norm on both ranks (the
 vocab-parallel head), `full_token_commit_rmsnorm_for_gate`.
 
-`census-compose-on.txt`, `census-compose-off.txt`, `census-hcdot-on.txt` and
-`census-hcdot-off.txt` are the per-symbol kernel censuses of the after run's graph dumps
-(`sym_census.py <dump-dir>`): the compose A/B's qualification graphs of each arm, the HC
-gate's qualification graphs and its ABBA row 5 (split off). Each term above was read against
-them.
+The `census-*.txt` files are the per-symbol kernel censuses of the after run's graph dumps
+(`sym_census.py <dump-dir>`), each term above read against them: `compose-on` and
+`compose-off`, the compose A/B's qualification graphs of each arm; `hcdot-on`, the HC gate's
+qualification graphs; `hcdot-off`, its ABBA row 5 (split off); `replay-cadence` and
+`replay-full`, the sampled perf gate's qualification graphs with and without cadence.
 
 ## Why the pins drifted
 
@@ -122,9 +153,8 @@ off and pin the fused gate/up, which rules it out), an unfused gate/up or anothe
 small-kernel diet, a pending small-component cell. A gate that needs one of those adds its
 terms first.
 
-Two more gates hold census pins from the same era and stay out of this change:
-`dsv4_launch_boundary_gate` pins 2741/3140/3240 kernels and 86 joins per variant, where
-attention TP2 launches 129 joins, and the cadence branch of `dsv4_full_token_replay_gate.rs`
-(the `dsv4_tp_ep_sampled_perf_gate` full-token replay) pins 2784/3183/3283 plus 86 with the HC
-split on. Neither ran here: no pair cell runs the first, and the pair cell of the second runs
-it without cadence.
+The launch-boundary wrapper (`tools/dsv4-launch-boundary.cpp`) now takes the program's join
+count from the gate before the first capture (`memra_launch_boundary_expect_joins`), counts the
+four join kernels `memra_dsv4_replay_census` counts, and walks to the first of them reading
+edge data. The first join is now attention TP2's wo_a gather, as it was the attention
+reduction before TP2.

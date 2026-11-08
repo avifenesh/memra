@@ -1,0 +1,8 @@
+armed 11-09 00:14:02 pid 344121 cells: lb spc
+bins rev 958ae32fed4f3f260bdfe871a8f49f5fb2264126
+locks held 00:14:02
+launch-boundary start 00:14:02
+launch-boundary rc=134 194s :: [load] lane-8 peer byte-integrity probe PASS: 1 boundaries, 10 copies, ladder [16384, 65536, 524288, 1048576, 67108864] bytes, 345.9ms|BOUNDARY_FATAL not a complete forward graph|
+full-replay-cadence start 00:17:16
+full-replay-cadence rc=101 189s :: [load] lane-8 peer byte-integrity probe PASS: 1 boundaries, 10 copies, ladder [16384, 65536, 524288, 1048576, 67108864] bytes, 348.9ms|thread 'main' (345246) panicked at crates/memra-engine/src/bin/../dsv4_full_token_replay_gate.rs:122:17:|assertion `left == right` failed: cadence kernel census slot 0|
+done 00:20:25
