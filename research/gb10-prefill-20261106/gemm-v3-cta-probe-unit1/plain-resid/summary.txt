@@ -1,0 +1,27 @@
+    T  shape                       build  n    v2 ms    v3 ms  v3 vs v2  bytes
+ 2048  down 5120x17408             A      4    3.912    3.893    +0.48%  identical
+ 2048  down 5120x17408             B      4    3.905    3.665    +6.55%  identical
+ 2048  down resid 5120x17408       A      4    4.145    4.159    -0.34%  identical
+ 2048  down resid 5120x17408       B      4    4.160    3.915    +6.27%  identical
+ 2048  ssm_out 5120x6144           A      4    1.462    1.425    +2.63%  identical
+ 2048  ssm_out 5120x6144           B      4    1.465    1.365    +7.29%  identical
+ 2048  wqkv 10240x5120             A      4    2.468    2.356    +4.73%  identical
+ 2048  wqkv 10240x5120             B      4    2.474    2.311    +7.05%  identical
+ 4096  down 5120x17408             A      4    7.032    7.001    +0.44%  identical
+ 4096  down 5120x17408             B      4    7.021    6.535    +7.44%  identical
+ 4096  down resid 5120x17408       A      4    7.521    7.368    +2.07%  identical
+ 4096  down resid 5120x17408       B      4    7.482    6.973    +7.30%  identical
+ 4096  ssm_out 5120x6144           A      4    2.646    2.521    +4.98%  identical
+ 4096  ssm_out 5120x6144           B      4    2.632    2.429    +8.36%  identical
+ 4096  wqkv 10240x5120             A      4    4.375    4.083    +7.15%  identical
+ 4096  wqkv 10240x5120             B      4    4.340    4.014    +8.11%  identical
+
+v3 mainloop B against A (median v3 times; v2 is the same SASS in both builds):
+ 2048  down 5120x17408             v3 A   3.893  B   3.665   +6.22%   (v2 A 3.912 B 3.905)
+ 2048  down resid 5120x17408       v3 A   4.159  B   3.915   +6.23%   (v2 A 4.145 B 4.160)
+ 2048  ssm_out 5120x6144           v3 A   1.425  B   1.365   +4.36%   (v2 A 1.462 B 1.465)
+ 2048  wqkv 10240x5120             v3 A   2.356  B   2.311   +1.97%   (v2 A 2.468 B 2.474)
+ 4096  down 5120x17408             v3 A   7.001  B   6.535   +7.13%   (v2 A 7.032 B 7.021)
+ 4096  down resid 5120x17408       v3 A   7.368  B   6.973   +5.68%   (v2 A 7.521 B 7.482)
+ 4096  ssm_out 5120x6144           v3 A   2.521  B   2.429   +3.79%   (v2 A 2.646 B 2.632)
+ 4096  wqkv 10240x5120             v3 A   4.083  B   4.014   +1.73%   (v2 A 4.375 B 4.340)

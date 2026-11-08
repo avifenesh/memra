@@ -1,0 +1,26 @@
+build C rc=0
+== C T=2048 order=01
+gate+up silu 2x17408x5120    v2    8.049 ms  v3    7.143 ms  +12.68%  bytes identical
+cuda: no error
+== C T=2048 order=10
+gate+up silu 2x17408x5120    v2    8.375 ms  v3    7.176 ms  +16.70%  bytes identical
+cuda: no error
+== C T=2048 order=01
+gate+up silu 2x17408x5120    v2    8.057 ms  v3    7.160 ms  +12.53%  bytes identical
+cuda: no error
+== C T=2048 order=10
+gate+up silu 2x17408x5120    v2    8.049 ms  v3    7.143 ms  +12.67%  bytes identical
+cuda: no error
+== C T=4096 order=01
+gate+up silu 2x17408x5120    v2   15.123 ms  v3   13.202 ms  +14.55%  bytes identical
+cuda: no error
+== C T=4096 order=10
+gate+up silu 2x17408x5120    v2   14.784 ms  v3   13.494 ms   +9.56%  bytes identical
+cuda: no error
+== C T=4096 order=01
+gate+up silu 2x17408x5120    v2   15.092 ms  v3   13.459 ms  +12.13%  bytes identical
+cuda: no error
+== C T=4096 order=10
+gate+up silu 2x17408x5120    v2   14.844 ms  v3   13.426 ms  +10.56%  bytes identical
+cuda: no error
+E1-PROBE-DONE

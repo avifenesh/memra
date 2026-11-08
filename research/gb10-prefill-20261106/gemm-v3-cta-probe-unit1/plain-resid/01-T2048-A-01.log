@@ -1,0 +1,6 @@
+T=2048 reps=11 order=v2,v3 (median, image pass included)
+down 5120x17408              v2    3.911 ms  v3    3.891 ms   +0.51%  bytes identical
+down resid 5120x17408        v2    4.128 ms  v3    4.141 ms   -0.32%  bytes identical
+wqkv 10240x5120              v2    2.461 ms  v3    2.355 ms   +4.50%  bytes identical
+ssm_out 5120x6144            v2    1.457 ms  v3    1.422 ms   +2.48%  bytes identical
+cuda: no error
