@@ -1,0 +1,28 @@
+2026-11-08T18:32:18+02:00
+e759f4ac87f1c0fbacd9e0c8778e69d27eac8d1bcab9f102225d1b8f1649fafb  flash_attn.cu
+1b2dda9f67f00c3dc37e0d64fc3de011073ada21e6b1768b0d010f31538a680b  probe_ws.cu
+ptxas info    : Function properties for cand_ws8
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 48 registers, used 0 barriers
+--
+ptxas info    : Function properties for fa_dequant_kv_ws_bf16
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 28 registers, used 0 barriers
+device NVIDIA GB10 sms 48 kv_dim 1024 reps 5
+Tkv   32768 shipped     1.098 ms  177.7 GB/s mismatch 0 (min 1.098 max 1.102)
+Tkv   32768 ws8         0.898 ms  217.2 GB/s mismatch 0 (min 0.896 max 0.899)
+Tkv   32768 shipped     1.099 ms  177.5 GB/s mismatch 0 (min 1.098 max 1.099)
+Tkv   32768 ws8         0.899 ms  216.9 GB/s mismatch 0 (min 0.895 max 0.910)
+Tkv   65536 shipped     2.180 ms  178.9 GB/s mismatch 0 (min 2.180 max 2.187)
+Tkv   65536 ws8         1.793 ms  217.6 GB/s mismatch 0 (min 1.788 max 1.892)
+Tkv   65536 shipped     2.181 ms  178.8 GB/s mismatch 0 (min 2.180 max 2.189)
+Tkv   65536 ws8         1.797 ms  217.1 GB/s mismatch 0 (min 1.776 max 2.028)
+Tkv  131072 shipped     4.346 ms  179.5 GB/s mismatch 0 (min 4.343 max 5.111)
+Tkv  131072 ws8         3.559 ms  219.2 GB/s mismatch 0 (min 3.528 max 3.733)
+Tkv  131072 shipped     4.343 ms  179.6 GB/s mismatch 0 (min 4.340 max 4.876)
+Tkv  131072 ws8         3.701 ms  210.8 GB/s mismatch 0 (min 3.523 max 3.823)
+Tkv  262144 shipped     8.020 ms  194.5 GB/s mismatch 0 (min 8.012 max 8.954)
+Tkv  262144 ws8         7.045 ms  221.5 GB/s mismatch 0 (min 7.032 max 7.476)
+Tkv  262144 shipped     8.457 ms  184.5 GB/s mismatch 0 (min 8.056 max 8.922)
+Tkv  262144 ws8         7.192 ms  216.9 GB/s mismatch 0 (min 7.054 max 7.535)
+probe rc=0
