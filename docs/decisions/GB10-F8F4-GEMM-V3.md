@@ -58,8 +58,9 @@ First campaign, every v2 entry on v3 including gate/up (unit 1, `3146763781` on 
 (-0.53%), identical answers; about a third of what the probe predicted. The kernel split of a served
 cold 32k prefill under nsys, v3 off / on / off
 ([`gemm-v3-engine-nsys-unit1/`](../../research/gb10-prefill-20261106/gemm-v3-engine-nsys-unit1/)),
-found the gap: the fused gate/up launch (4,352-tile grid) went 13.107 / 13.135 -> 13.329 ms per call
-(+1.6%) while the 640-tile GEMMs went 2.869 / 2.853 -> 2.727 ms (-4.7%) and wqkv 4.030 / 4.070 ->
+found the gap: the fused gate/up launch, the largest bucket, went 6.601 / 6.591 -> 6.675 ms per call
+at its 2,176-tile grid (4,480 calls, 29.6 s, +1.2%) and 13.107 / 13.135 -> 13.329 ms at its 4,352-tile
+grid (576 calls, +1.6%), while the 640-tile GEMMs went 2.869 / 2.853 -> 2.727 ms (-4.7%) and wqkv 4.030 / 4.070 ->
 3.780 ms (-6.7%). A driver over the engine's own entries
 ([`gemm-v3-engine-epi-unit1/`](../../research/gb10-prefill-20261106/gemm-v3-engine-epi-unit1/),
 both orders, image pass included) agreed: gate/up silu -1.2 / -0.2%, down +1.0 / +0.9%, down with the
