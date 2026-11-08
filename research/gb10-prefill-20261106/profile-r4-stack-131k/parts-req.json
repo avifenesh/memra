@@ -1,0 +1,44 @@
+{
+ "ttft_s": 119.594,
+ "pre_s": 0.446,
+ "kernel_sum_s": 117.843806847,
+ "parts": {
+  "glue: norms/adds/act": 2.2490279999999947,
+  "gemm: activation e4m3 quantize": 0.01855731199999999,
+  "gemm: F8F4 v2 weight image": 5.949068032000018,
+  "gemm: NVFP4 F8F4 v3 tile": 55.07002956799975,
+  "other": 1.574037312000007,
+  "gemm: other MMQ / matvec": 1.4790679359999985,
+  "gdn: conv/l2/gates": 2.2847991999999846,
+  "gdn: chunk scan kernels": 6.016849247999979,
+  "attention: rope/qk-norm/gate glue": 1.3917597439999994,
+  "attention: KV append/quantize": 0.10498646400000013,
+  "attention: KV dequant workspace": 0.9058830720000003,
+  "attention: FA prime kernel": 40.770667775999975,
+  "gemm: NVFP4 F8F4 MMQ": 0.029073183000000002
+ },
+ "trunk_s": 117.9617944,
+ "tail_kernels_s": 0.135176959,
+ "gaps": {
+  "<1ms": [
+   100,
+   0.076538048
+  ],
+  "<10ms": [
+   32,
+   0.063775584
+  ],
+  "<10us": [
+   45873,
+   0.106173281
+  ],
+  ">=10ms": [
+   1,
+   0.013727584
+  ],
+  "<100us": [
+   173,
+   0.003113504
+  ]
+ }
+}

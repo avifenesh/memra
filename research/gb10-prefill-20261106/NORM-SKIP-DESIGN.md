@@ -39,3 +39,12 @@ Served B N N B B N, 3 boots per arm: 22.691 -> 22.466 s at 32k (-0.99%), 120.730
 (-0.85%), 319.329 -> 317.468 s at 260k (-0.58%), complete separation at every length, identical
 answers. The prime-path logits are byte-identical to the base at 16k and 33k, and no run hit a
 fail-closed refusal. The gain beat the estimate (1.02 s against 0.6-0.8 s at 131k).
+
+## The stack's 131k profile after it (`profile-r4-stack-131k/`)
+
+One cold 131,051-token served prefill of this head (#1108 + #1110 + this) under Nsight Systems,
+unit 1, request window as in round 4's profile: TTFT 119.594 s against main's 122.731 s under nsys
+(-2.6%); trunk 117.96 s; kernels 117.84 s: F8F4 v3 tile 55.07, h2p 40.77, GDN chunk scan 6.02,
+image pass 5.95, conv + L2 2.29, glue 2.25 (3.23 on main), other 1.57, matvec 1.48, q path and gate
+1.39, KV dequant workspace 0.91 (1.37); idle gaps inside the window 0.26 s (the 31 fill gaps are
+gone). Raw report: evidence snapshot `92abcad6`.

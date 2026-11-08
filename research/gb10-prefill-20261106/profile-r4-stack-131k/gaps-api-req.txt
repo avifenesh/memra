@@ -1,0 +1,48 @@
+window 119.594 s; gaps 46179 totalling 0.263 s; >= 1.0 ms: 33 totalling 0.078 s
+
+gap time by (kernel before -> kernel after)
+     0.042 s    22 x  append_quantize_kv_q8_0_q5_1_rows -> fa_dequant_kv_ws_bf16
+     0.014 s     1 x  gdn_glog_f32 -> gdn_chunk_cumgate_f32
+     0.012 s     7 x  qmatvec_q5_K_mmvq_il -> embed_gather_u32_t
+     0.007 s     1 x  quantize_mmq_e4m3_d4_kernel< -> f8f4v2_image_kernel<
+     0.002 s     1 x  qmatvec_nvfp4_dp4a_rp_t4 -> ssm_conv1d_gdn_state_l2_f32
+     0.001 s     1 x  mul_mat_f8f4v3< -> f8f4v2_image_kernel<
+
+CUDA API time overlapping those gaps
+     0.039 s  cuLaunchKernel
+     0.024 s  cuMemAllocAsync
+     0.006 s  cuStreamSynchronize
+     0.002 s  cuMemcpyDtoHAsync_v2
+     0.001 s  cuMemcpyDtoDAsync_v2
+     0.001 s  cuMemsetD8Async
+     0.000 s  cudaLaunchKernel_v7000
+     0.000 s  cuMemGetInfo_v2
+     0.000 s  cuMemcpyHtoDAsync_v2
+     0.000 s  cuMemFreeAsync
+     0.000 s  cuLaunchKernelEx
+     0.000 s  cuKernelGetName
+     0.000 s  cuMemPoolGetAttribute
+     0.000 s  cuTensorMapEncodeTiled
+     0.000 s  cuDeviceGetDefaultMemPool
+
+first 20 large gaps
+  at    0.449 s     6.69 ms  quantize_mmq_e4m3_d4_kernel< -> f8f4v2_image_kernel<  [cuMemAllocAsync 5.48, cuMemAllocAsync 1.19, cuKernelGetName 0.00, cudaLaunchKernel_v7000 0.02]
+  at    0.460 s     1.04 ms  mul_mat_f8f4v3< -> f8f4v2_image_kernel<  [cuMemAllocAsync 1.02, cuMemAllocAsync 0.00, cuKernelGetName 0.00, cudaLaunchKernel_v7000 0.02]
+  at    0.465 s     2.01 ms  qmatvec_nvfp4_dp4a_rp_t4 -> ssm_conv1d_gdn_state_l2_f32  [cuMemAllocAsync 1.98, cuMemAllocAsync 0.00, cuMemAllocAsync 0.00, cuLaunchKernel 0.02]
+  at    0.469 s    13.73 ms  gdn_glog_f32 -> gdn_chunk_cumgate_f32  [cuMemAllocAsync 3.13, cuMemAllocAsync 2.30, cuMemAllocAsync 0.00, cuMemAllocAsync 1.17, cuMemAllocAsync 0.00, cuMemAllocAsync 3.35]
+  at    2.915 s     1.03 ms  qmatvec_q5_K_mmvq_il -> embed_gather_u32_t  [cuMemcpyDtoHAsync_v2 0.04, cuStreamSynchronize 0.01, cuMemFreeAsync 0.00, cuMemFreeAsync 0.00, cuMemFreeAsync 0.00, cuMemFreeAsync 0.00]
+  at    8.043 s     1.01 ms  qmatvec_q5_K_mmvq_il -> embed_gather_u32_t  [cuMemcpyDtoHAsync_v2 0.05, cuStreamSynchronize 0.01, cuMemFreeAsync 0.00, cuMemFreeAsync 0.00, cuMemFreeAsync 0.00, cuMemFreeAsync 0.00]
+  at   13.505 s     1.06 ms  qmatvec_q5_K_mmvq_il -> embed_gather_u32_t  [cuMemcpyDtoHAsync_v2 0.07, cuStreamSynchronize 0.01, cuMemFreeAsync 0.00, cuMemFreeAsync 0.00, cuMemFreeAsync 0.00, cuMemFreeAsync 0.00]
+  at   31.806 s     1.20 ms  qmatvec_q5_K_mmvq_il -> embed_gather_u32_t  [cuMemcpyDtoHAsync_v2 0.10, cuStreamSynchronize 0.01, cuMemFreeAsync 0.00, cuMemFreeAsync 0.00, cuMemFreeAsync 0.00, cuMemFreeAsync 0.00]
+  at   31.935 s     1.00 ms  append_quantize_kv_q8_0_q5_1_rows -> fa_dequant_kv_ws_bf16  [cuLaunchKernel 0.01, cuLaunchKernel 0.00, cuMemAllocAsync 0.00, cuLaunchKernel 0.47, cuMemAllocAsync 0.00, cuLaunchKernel 0.51]
+  at   35.267 s     1.09 ms  append_quantize_kv_q8_0_q5_1_rows -> fa_dequant_kv_ws_bf16  [cuLaunchKernel 0.01, cuLaunchKernel 0.00, cuMemAllocAsync 0.00, cuLaunchKernel 0.52, cuMemAllocAsync 0.00, cuLaunchKernel 0.55]
+  at   38.675 s     1.16 ms  append_quantize_kv_q8_0_q5_1_rows -> fa_dequant_kv_ws_bf16  [cuLaunchKernel 0.01, cuLaunchKernel 0.00, cuMemAllocAsync 0.00, cuLaunchKernel 0.55, cuMemAllocAsync 0.00, cuLaunchKernel 0.59]
+  at   42.162 s     1.25 ms  append_quantize_kv_q8_0_q5_1_rows -> fa_dequant_kv_ws_bf16  [cuLaunchKernel 0.01, cuLaunchKernel 0.00, cuMemAllocAsync 0.00, cuLaunchKernel 0.60, cuMemAllocAsync 0.00, cuLaunchKernel 0.63]
+  at   45.734 s     1.34 ms  append_quantize_kv_q8_0_q5_1_rows -> fa_dequant_kv_ws_bf16  [cuLaunchKernel 0.01, cuLaunchKernel 0.00, cuMemAllocAsync 0.00, cuLaunchKernel 0.64, cuMemAllocAsync 0.00, cuLaunchKernel 0.68]
+  at   49.379 s     1.50 ms  append_quantize_kv_q8_0_q5_1_rows -> fa_dequant_kv_ws_bf16  [cuLaunchKernel 0.01, cuLaunchKernel 0.00, cuMemAllocAsync 0.00, cuLaunchKernel 0.76, cuMemAllocAsync 0.00, cuLaunchKernel 0.73]
+  at   53.109 s     1.51 ms  append_quantize_kv_q8_0_q5_1_rows -> fa_dequant_kv_ws_bf16  [cuLaunchKernel 0.01, cuLaunchKernel 0.00, cuMemAllocAsync 0.00, cuLaunchKernel 0.73, cuMemAllocAsync 0.00, cuLaunchKernel 0.76]
+  at   56.784 s     1.08 ms  qmatvec_q5_K_mmvq_il -> embed_gather_u32_t  [cuMemcpyDtoHAsync_v2 0.09, cuStreamSynchronize 0.01, cuMemFreeAsync 0.00, cuMemFreeAsync 0.00, cuMemFreeAsync 0.00, cuMemFreeAsync 0.00]
+  at   56.914 s     1.60 ms  append_quantize_kv_q8_0_q5_1_rows -> fa_dequant_kv_ws_bf16  [cuLaunchKernel 0.01, cuLaunchKernel 0.00, cuMemAllocAsync 0.00, cuLaunchKernel 0.77, cuMemAllocAsync 0.00, cuLaunchKernel 0.81]
+  at   60.802 s     1.76 ms  append_quantize_kv_q8_0_q5_1_rows -> fa_dequant_kv_ws_bf16  [cuLaunchKernel 0.01, cuLaunchKernel 0.00, cuMemAllocAsync 0.00, cuLaunchKernel 0.82, cuMemAllocAsync 0.00, cuLaunchKernel 0.92]
+  at   64.646 s     1.02 ms  qmatvec_q5_K_mmvq_il -> embed_gather_u32_t  [cuMemcpyDtoHAsync_v2 0.10, cuStreamSynchronize 0.01, cuMemFreeAsync 0.00, cuMemFreeAsync 0.00, cuMemFreeAsync 0.00, cuMemFreeAsync 0.00]
+  at   64.774 s     1.77 ms  append_quantize_kv_q8_0_q5_1_rows -> fa_dequant_kv_ws_bf16  [cuLaunchKernel 0.01, cuLaunchKernel 0.00, cuMemAllocAsync 0.00, cuLaunchKernel 0.86, cuMemAllocAsync 0.00, cuLaunchKernel 0.89]
