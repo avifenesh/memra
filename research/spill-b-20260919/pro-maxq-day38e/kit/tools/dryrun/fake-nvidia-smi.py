@@ -46,7 +46,7 @@ if q:
         print(", ".join(q.split(",")))
     for p in servers():
         vals = {"pid": p, "process_name": "memra-server", "used_memory": "93000" + ("" if nounits else " MiB"),
-                "gpu_bus_id": "00000000:C1:00.0"}
+                "gpu_bus_id": "<pci-bus-id>"}
         print(", ".join(vals.get(f, "x") for f in q.split(",")))
     sys.exit(0)
 q = opt("--query-gpu")
@@ -58,7 +58,7 @@ def value(f):
     used = state.get("memory.used", 93000 if servers() else 3)
     v = {"timestamp": time.strftime("%Y/%m/%d %H:%M:%S.000"), "index": idx,
          "name": "NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition", "memory.used": used,
-         "memory.total": 97887, "uuid": "GPU-fake-0000", "pci.bus_id": "00000000:C1:00.0", "power.limit": "280.00",
+         "memory.total": 97887, "uuid": "GPU-fake-0000", "pci.bus_id": "<pci-bus-id>", "power.limit": "280.00",
          "enforced.power.limit": "280.00", "power.default_limit": "300.00", "power.max_limit": "300.00",
          "driver_version": "615.71.09", "temperature.gpu": state.get("temperature.gpu", 61),
          "fan.speed": state.get("fan.speed", 38), "power.draw": "22.50", "clocks.sm": 180, "clocks.mem": 405,

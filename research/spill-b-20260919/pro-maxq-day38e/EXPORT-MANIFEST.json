@@ -7,7 +7,8 @@
   "<gpu-pdi>",
   "<local-tz>",
   "/home/<user>",
-  "<box>"
+  "<box>",
+  "<pci-bus-id>"
  ],
  "exported": [
   {
@@ -19,14 +20,14 @@
   {
    "path": "card-q.txt",
    "original_sha256": "d267d2c1818f9270e2fa351a22fb93e6fbd28dca294903822591a396c700bb93",
-   "export_sha256": "1dd39367fec682462f76d947fc02308205570ca1dec88f97984415a3757dbce2",
-   "change": "rented-box identifier replaced by its placeholder"
+   "export_sha256": "47628e29eda5499dd8f312eab2d879de470faf975c97772d1a851263dc058ca7",
+   "change": "rented-box identifier replaced by its placeholder; PCI bus ids replaced by <pci-bus-id> (2026-11-08)"
   },
   {
    "path": "card.json",
    "original_sha256": "45b99e95289d38d8e5cb4d36c24f0b7aef8e23c098954bc6031fd803b463d6f3",
-   "export_sha256": "1745c7b54bf0fa076603c4885183cea20bf96dd454265f79398e095d1548b526",
-   "change": "rented-box identifier replaced by its placeholder"
+   "export_sha256": "775807e1feaee058ca45743e5f12df1a1b8da40d3bc8c80e6aff0bb9754f8328",
+   "change": "rented-box identifier replaced by its placeholder; PCI bus ids replaced by <pci-bus-id> (2026-11-08)"
   },
   {
    "path": "kit/DEVIATIONS.md",
@@ -63,6 +64,18 @@
    "original_sha256": "ec3977b808325926556902fd17a30de632db8e37eb707caf8538dcad92894950",
    "export_sha256": "c4e31ca19b96b14b20b6775af62e97ca22796e607ae8f10becf3374776439cea",
    "change": "rented-box identifier replaced by its placeholder"
+  },
+  {
+   "path": "kit/tools/dryrun/fake-nvidia-smi.py",
+   "original_sha256": "9afdb87e16993f87639e22537896cc6f4e8b25bcb06b627ab3c6044672d5c10d",
+   "export_sha256": "f80a97d3354f7f71efa4af5c2476831301e7cdb3948adffc0159abc7399d02ac",
+   "change": "PCI bus ids replaced by <pci-bus-id> (2026-11-08)"
+  },
+  {
+   "path": "runner/power-set-park-compact-part1-try1.log",
+   "original_sha256": "f3831d89304aad0a8b01b483acf1a5d6fac0c45a70aa4b6bcff6f8b4e75cdbcf",
+   "export_sha256": "789e1cb13f3a2d9cfd1c92d78b5b9fcfb5a19891bbb9b3549f273ef6c62ddbb7",
+   "change": "PCI bus ids replaced by <pci-bus-id> (2026-11-08)"
   }
  ]
 }

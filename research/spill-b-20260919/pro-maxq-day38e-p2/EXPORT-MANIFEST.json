@@ -7,7 +7,8 @@
   "<gpu-pdi>",
   "<local-tz>",
   "/home/<user>",
-  "<box>"
+  "<box>",
+  "<pci-bus-id>"
  ],
  "exported": [
   {
@@ -55,26 +56,38 @@
   {
    "path": "out-20261105T164643Z/card-q.txt",
    "original_sha256": "768c95fc802d3fedce91f07c68ea3b4c63d1c88cec2727c142626a866fd0cd3a",
-   "export_sha256": "f4d4995a44976d90c623c10b25ad6ed4c40e06ca7cff384caa884e82da60ed5a",
-   "change": "rented-box identifier replaced by its placeholder"
+   "export_sha256": "7dc550f6d70774e88fae2934061a47e3c31d1cd2af910eb31a31758a171361c6",
+   "change": "rented-box identifier replaced by its placeholder; PCI bus ids replaced by <pci-bus-id> (2026-11-08)"
   },
   {
    "path": "out-20261105T164643Z/card.json",
    "original_sha256": "acde2c8a6597ae81a555499eb645a60d288523ed7dba72b7b36e60bf335fa1c6",
-   "export_sha256": "0be9b50cefcd178982a23793169764e6a81d9e3c6d54e8eb8353761a51028a7c",
-   "change": "rented-box identifier replaced by its placeholder"
+   "export_sha256": "f13369172f306489bb8877bdc04872d50810a51ab2a51170573502cec7a16683",
+   "change": "rented-box identifier replaced by its placeholder; PCI bus ids replaced by <pci-bus-id> (2026-11-08)"
   },
   {
    "path": "out-combined-20261105T164643Z/part1-card.json",
    "original_sha256": "45b99e95289d38d8e5cb4d36c24f0b7aef8e23c098954bc6031fd803b463d6f3",
-   "export_sha256": "1745c7b54bf0fa076603c4885183cea20bf96dd454265f79398e095d1548b526",
-   "change": "rented-box identifier replaced by its placeholder"
+   "export_sha256": "775807e1feaee058ca45743e5f12df1a1b8da40d3bc8c80e6aff0bb9754f8328",
+   "change": "rented-box identifier replaced by its placeholder; PCI bus ids replaced by <pci-bus-id> (2026-11-08)"
   },
   {
    "path": "out-combined-20261105T164643Z/part2-card.json",
    "original_sha256": "acde2c8a6597ae81a555499eb645a60d288523ed7dba72b7b36e60bf335fa1c6",
-   "export_sha256": "0be9b50cefcd178982a23793169764e6a81d9e3c6d54e8eb8353761a51028a7c",
-   "change": "rented-box identifier replaced by its placeholder"
+   "export_sha256": "f13369172f306489bb8877bdc04872d50810a51ab2a51170573502cec7a16683",
+   "change": "rented-box identifier replaced by its placeholder; PCI bus ids replaced by <pci-bus-id> (2026-11-08)"
+  },
+  {
+   "path": "kit/tools/dryrun/fake-nvidia-smi.py",
+   "original_sha256": "9afdb87e16993f87639e22537896cc6f4e8b25bcb06b627ab3c6044672d5c10d",
+   "export_sha256": "f80a97d3354f7f71efa4af5c2476831301e7cdb3948adffc0159abc7399d02ac",
+   "change": "PCI bus ids replaced by <pci-bus-id> (2026-11-08)"
+  },
+  {
+   "path": "runner/power-set-park-compact-part2-try1.log",
+   "original_sha256": "696ac699125f2025f76381088677af36fbbd4024254e89ddd35ae027c955a1cc",
+   "export_sha256": "3f212840905726f88c711621558071b59790634083eed93fa8c7055870745340",
+   "change": "PCI bus ids replaced by <pci-bus-id> (2026-11-08)"
   }
  ]
 }
