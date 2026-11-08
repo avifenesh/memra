@@ -1,0 +1,190 @@
+[server] build: memra-0.138.0-7191d98e0bea (id: source-tree, git: 31467637818d)
+[server] starting; models config = [("q38", "~/models/memra-q38/Qwen3.8-27B-NVFP4-MTP-GGUF/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf", None)]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[worker-affinity] off (MEMRA_WORKER_CPUSET / MEMRA_WORKER_AFFINITY unset or =0)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal after 3 consecutive misses (MEMRA_GPU_PROBE_MISSES), fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2 (K=5 when the loaded MTP head is rank-trimmed)
+[worker] loading model "q38" <- ~/models/memra-q38/Qwen3.8-27B-NVFP4-MTP-GGUF/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf
+[tensor-contract] bound 866 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[mtp-draft] loading external MTP draft: ~/models/memra-q38/Qwen3.8-27B-NVFP4-MTP-GGUF/mtp-Qwen3.8-27B-NVFP4-frspec-sxc32768.gguf
+[mtp-draft] external draft head: blk.64, source=output.weight, head_vocab=32768 (trimmed, d2t map)
+[frspec-trim] per-head trim: 0 extra chain head(s) gathered from their own blocks
+[worker]   loaded "q38": 65 layers, eos=248046, stop=[248046]
+[worker] q38: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false qwen_effort=true gemma_think=false dsv4=false glm5=false ctx=262144 tok="qwen35" instruct=Some("chatml") chat_defaults=None/None
+[route-contract] model="q38" route=hybrid-worker capacity=32 sessions implemented=[capacity,occupancy,progress,fault-ownership,shutdown-ownership,memory-cost,rewrite-qualification,prime-fairness,service-metrics] refused=[]
+[fa-pool] grow #0 dev=0 o_len 0 -> 3244032 ml_len 0 -> 12672 (retired kept, zero=false)
+[fa-pool] grow #1 dev=0 o_len 3244032 -> 6488064 ml_len 12672 -> 25344 (retired kept, zero=false)
+[device-trim] reason=wave-probe {"device":0,"reclaimed_bytes":17112760320,"still_owned_bytes":16658168832,"pool_reserved_bytes":16844324864,"pool_cached_bytes":186156032,"driver_free_bytes":82135592960,"synchronization_errors":[]}
+[wave-probe] 32 sessions at depth 2048: two 16-row waves 263.1 ms, one 32-row wave 266.6 ms (tensor-core tier 231.4 ms) -> wave cap 32, tensor-core b32 on (49.9s; released 16320MB of cached pool to the driver)
+[worker] q38: decode wave cap 32; scheduler tick cap 32 (exact-32 tier)
+[vision] tower loaded from ~/models/Qwen3.8-27B-NVFP4 (27 blocks, out_width 5120, f32-resident)
+[vision] overlay intake: tower dev0 -> intake dev0 (cross_context=false) publish=Auto servable=true
+[prefix-cache] on: budget 50352MB (50351857664 B, derived: 2 x 7941521408 B max entry for model "q38" at served ctx 262144 (from MEMRA_CTX; MEMRA_CTX set), unified memory: the larger of that and 1/2 of allocatable free after the transient reserve, driver headroom 2147483648 B and host tier 0 B, requested 50351857664 B; boot driver free 104461811712 B, post-reserve clamp 100703715328 B), policy plain-LRU (global oldest unleased entry first; leases untouchable), min prefix 64 tokens, immediate partial restore=off (rollback) (transformer-only; hybrid mid-entry + routed-MoE N/A)
+[admission] "q38": plain 29696 B/token, spec 31552 B/token; fixed residual learns from effective-free deltas
+[func] CAPTURE-TIME kernel lookup (not warmed): embed_gather_u32
+[func] CAPTURE-TIME kernel lookup (not warmed): qmatvec_q4_K_mmvq
+[func] CAPTURE-TIME kernel lookup (not warmed): qmatvec_q6_K_mmvq
+[func] CAPTURE-TIME kernel lookup (not warmed): inc_i32
+[func] CAPTURE-TIME kernel lookup (not warmed): fa_decode_vec_q_v4_deep_dc
+[func] CAPTURE-TIME kernel lookup (not warmed): fa_decode_combine_f32
+[spec] draft-session state high-water: 34MB (max of parked delta 34MB and capture-time pool peak 2MB; charged per spec admission and gating future captures)
+[spec-pool] pooled rows draft engaged: 4 members (arms [GraphGreedy, GraphGreedy, GraphGreedy, GraphGreedy])
+[spec-pool] pooled rows draft engaged: 2 members (arms [GraphGreedy, GraphGreedy])
+[device-trim] reason=spec-cost-calibration {"device":0,"reclaimed_bytes":17246978048,"still_owned_bytes":18490472384,"pool_reserved_bytes":18555600896,"pool_cached_bytes":65128512,"driver_free_bytes":79786954752,"synchronization_errors":[]}
+[spec-cost] model="q38" depth=2048 pooled=true plain_cap=32 round_overhead=14.10ms pooled_overhead=Some((4, 6.104284161458338)) verify_ms[1..16]=[77.5 75.0 75.3 76.3 76.8 77.3 79.7 82.1 84.3 86.5 88.7 90.9 92.9 94.8 96.8 98.8] plain_ms[1..]=[76.6 79.0 82.6 86.1 89.8 93.5 97.2 100.9 106.1 111.3 116.4 121.6 126.7 131.9 137.1 142.2 147.8 153.3 158.8 164.3 169.8 175.4 180.9 186.4 191.9 197.5 203.0 208.5 214.0 219.6 225.1 230.6] (72.4s)
+[prime-walk] model="q38" route=mtp supported=true yield_door=true [gdn_dspark_compatible=true mtp_head_loaded=true no_hyper_connections=true no_pipeline_cuts=true]
+[func] CAPTURE-TIME kernel lookup (not warmed): memra_sctr_inc
+[func] CAPTURE-TIME kernel lookup (not warmed): gumbel_perturb_filtered_ctr_f32
+[device-trim] reason=calibration-complete {"device":0,"reclaimed_bytes":1476395008,"still_owned_bytes":19262224320,"pool_reserved_bytes":19394461696,"pool_cached_bytes":132237376,"driver_free_bytes":78878334976,"synchronization_errors":[]}
+[admit-cal] post-probe pool trim: released 1408MB cached back to the driver
+[admit-cal] boot calibration done: model="q38" route=mtp transient floor 1536MB (static was 1536MB; measured 1246MB; probe kv charge 127MB, draft-state 34MB, drafted 78 accepted 38; [dev0 peak-mapped 19904MB rest-mapped 18496MB charged 161MB -> 1246MB]; 5.4s)
+[admit-mem] door=OFF open_output_tokens=8192 defer_budget_ms=8000 (admission charges prompt+output, the reclaim flush demotes to the host tier before dropping, and a memory defer past the budget refuses 429 instead of queueing past the client's deadline)
+[kv-vmm] door=OFF (MEMRA_KV_ALLOCATOR unset or pooled: pooled K/V planes)
+[deadline] unified memory (48 SMs, served ctx 262144): streaming TTFT default/max 997311 ms (derived), SSE prefill commit 60000 ms; non-streaming default/max 3045311 ms (derived: full-context prefill + 8192 open output tokens at 4 tok/s). MEMRA_SSE_PREFILL_COMMIT_MS=0 restores the shipped 90 s windows
+[server] worker ready; serving models: ["q38"]
+[server] listening on http://127.0.0.1:8090
+[meter] admit id=chatcmpl-6473c5644d1148ac577e347a78536e0e tenant=default lane=interactive model="q38"
+[spec-cost] model="q38" n=1 rung=3 -> K=3 (exploring: no acceptance history yet)
+[admission] per-session draft-state charge: model="q38" +36MB (measured capture high-water)
+[admission] request cost: model="q38" ctx=32888 path=spec = 31552 B/token x ctx + 2550MB prefill-workspace + 0MB fixed = 3588MB
+[prefix-cache] stable-boundary capture armed at 32768 of 32784 prompt tokens (model q38)
+[spec-k] model="q38" tenant="" K=3 source=cost-model prompt=32784 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="q38" 389MB (observed 1425MB at ctx 32832 path=spec)
+[prime-yield] count=1 remaining=17 chunks=1 wall_ms=2642.878 max_chunk_ms=2642.878
+[prime-yield] count=2 remaining=16 chunks=1 wall_ms=2670.771 max_chunk_ms=2670.771
+[prime-yield] count=3 remaining=15 chunks=1 wall_ms=2768.428 max_chunk_ms=2768.428
+[prime-yield] count=4 remaining=14 chunks=1 wall_ms=2856.144 max_chunk_ms=2856.144
+[prime-yield] count=5 remaining=13 chunks=1 wall_ms=2948.296 max_chunk_ms=2948.296
+[prime-yield] count=6 remaining=12 chunks=1 wall_ms=2999.222 max_chunk_ms=2999.222
+[prime-yield] count=7 remaining=11 chunks=1 wall_ms=3114.162 max_chunk_ms=3114.162
+[prime-yield] count=8 remaining=10 chunks=1 wall_ms=3190.805 max_chunk_ms=3190.805
+[prime-yield] count=9 remaining=9 chunks=1 wall_ms=258.366 max_chunk_ms=258.366
+[prime-yield] count=10 remaining=8 chunks=1 wall_ms=74.269 max_chunk_ms=74.269
+[prime-yield] count=11 remaining=7 chunks=1 wall_ms=72.223 max_chunk_ms=72.223
+[prime-yield] count=12 remaining=6 chunks=1 wall_ms=74.395 max_chunk_ms=74.395
+[prime-yield] count=13 remaining=5 chunks=1 wall_ms=73.742 max_chunk_ms=73.742
+[prime-yield] count=14 remaining=4 chunks=1 wall_ms=73.869 max_chunk_ms=73.869
+[prime-yield] count=15 remaining=3 chunks=1 wall_ms=72.816 max_chunk_ms=72.816
+[prime-yield] count=16 remaining=2 chunks=1 wall_ms=73.612 max_chunk_ms=73.612
+[prime-yield] count=17 remaining=1 chunks=1 wall_ms=73.963 max_chunk_ms=73.963
+[spec-acc] ctx=32784 burst=22/30 cum=22/30=0.733
+[prefix-cache] insert (spec-boundary): 32768 tokens, 1190.8MB (resident 1190.8MB / 50352MB, model q38)
+[spec-acc] ctx=32817 burst=5/9 cum=27/39=0.692
+Collecting data...
+Generating '~/.cache/memra-f8f4v3/tmp/nsys-report-7bf6.qdstrm'
+
+[1/1] [0%                          ] prof.nsys-rep
+[1/1] [0%                          ] prof.nsys-rep
+[1/1] [=16%                        ] prof.nsys-rep
+[1/1] [=17%                        ] prof.nsys-rep
+[1/1] [14%                         ] prof.nsys-rep
+[1/1] [=15%                        ] prof.nsys-rep
+[1/1] [13%                         ] prof.nsys-rep
+[1/1] [14%                         ] prof.nsys-rep
+[1/1] [13%                         ] prof.nsys-rep
+[1/1] [12%                         ] prof.nsys-rep
+[1/1] [13%                         ] prof.nsys-rep
+[1/1] [12%                         ] prof.nsys-rep
+[1/1] [==20%                       ] prof.nsys-rep
+[1/1] [==18%                       ] prof.nsys-rep
+[1/1] [==19%                       ] prof.nsys-rep
+[1/1] [=17%                        ] prof.nsys-rep
+[1/1] [=16%                        ] prof.nsys-rep
+[1/1] [=15%                        ] prof.nsys-rep
+[1/1] [14%                         ] prof.nsys-rep
+[1/1] [13%                         ] prof.nsys-rep
+[1/1] [12%                         ] prof.nsys-rep
+[1/1] [11%                         ] prof.nsys-rep
+[1/1] [10%                         ] prof.nsys-rep
+[1/1] [9%                          ] prof.nsys-rep
+[1/1] [8%                          ] prof.nsys-rep
+[1/1] [7%                          ] prof.nsys-rep
+[1/1] [6%                          ] prof.nsys-rep
+[1/1] [5%                          ] prof.nsys-rep
+[1/1] [5%                          ] prof.nsys-rep
+[1/1] [6%                          ] prof.nsys-rep
+[1/1] [7%                          ] prof.nsys-rep
+[1/1] [8%                          ] prof.nsys-rep
+[1/1] [9%                          ] prof.nsys-rep
+[1/1] [10%                         ] prof.nsys-rep
+[1/1] [11%                         ] prof.nsys-rep
+[1/1] [12%                         ] prof.nsys-rep
+[1/1] [13%                         ] prof.nsys-rep
+[1/1] [14%                         ] prof.nsys-rep
+[1/1] [=15%                        ] prof.nsys-rep
+[1/1] [=16%                        ] prof.nsys-rep
+[1/1] [=17%                        ] prof.nsys-rep
+[1/1] [==18%                       ] prof.nsys-rep
+[1/1] [==19%                       ] prof.nsys-rep
+[1/1] [==20%                       ] prof.nsys-rep
+[1/1] [==21%                       ] prof.nsys-rep
+[1/1] [===22%                      ] prof.nsys-rep
+[1/1] [===23%                      ] prof.nsys-rep
+[1/1] [===24%                      ] prof.nsys-rep
+[1/1] [====25%                     ] prof.nsys-rep
+[1/1] [====26%                     ] prof.nsys-rep
+[1/1] [====27%                     ] prof.nsys-rep
+[1/1] [====28%                     ] prof.nsys-rep
+[1/1] [=====29%                    ] prof.nsys-rep
+[1/1] [=====30%                    ] prof.nsys-rep
+[1/1] [=====31%                    ] prof.nsys-rep
+[1/1] [=====32%                    ] prof.nsys-rep
+[1/1] [======33%                   ] prof.nsys-rep
+[1/1] [======34%                   ] prof.nsys-rep
+[1/1] [======35%                   ] prof.nsys-rep
+[1/1] [=======36%                  ] prof.nsys-rep
+[1/1] [=======37%                  ] prof.nsys-rep
+[1/1] [=======38%                  ] prof.nsys-rep
+[1/1] [=======39%                  ] prof.nsys-rep
+[1/1] [========40%                 ] prof.nsys-rep
+[1/1] [========41%                 ] prof.nsys-rep
+[1/1] [========42%                 ] prof.nsys-rep
+[1/1] [=========43%                ] prof.nsys-rep
+[1/1] [=========44%                ] prof.nsys-rep
+[1/1] [=========45%                ] prof.nsys-rep
+[1/1] [=========46%                ] prof.nsys-rep
+[1/1] [==========47%               ] prof.nsys-rep
+[1/1] [==========48%               ] prof.nsys-rep
+[1/1] [==========49%               ] prof.nsys-rep
+[1/1] [===========50%              ] prof.nsys-rep
+[1/1] [===========51%              ] prof.nsys-rep
+[1/1] [===========52%              ] prof.nsys-rep
+[1/1] [===========53%              ] prof.nsys-rep
+[1/1] [============54%             ] prof.nsys-rep
+[1/1] [============55%             ] prof.nsys-rep
+[1/1] [============56%             ] prof.nsys-rep
+[1/1] [============57%             ] prof.nsys-rep
+[1/1] [=============58%            ] prof.nsys-rep
+[1/1] [=============59%            ] prof.nsys-rep
+[1/1] [=============60%            ] prof.nsys-rep
+[1/1] [==============61%           ] prof.nsys-rep
+[1/1] [==============62%           ] prof.nsys-rep
+[1/1] [==============63%           ] prof.nsys-rep
+[1/1] [==============64%           ] prof.nsys-rep
+[1/1] [===============65%          ] prof.nsys-rep
+[1/1] [===============66%          ] prof.nsys-rep
+[1/1] [===============67%          ] prof.nsys-rep
+[1/1] [================68%         ] prof.nsys-rep
+[1/1] [================69%         ] prof.nsys-rep
+[1/1] [================70%         ] prof.nsys-rep
+[1/1] [================71%         ] prof.nsys-rep
+[1/1] [=================72%        ] prof.nsys-rep
+[1/1] [=================73%        ] prof.nsys-rep
+[1/1] [=================74%        ] prof.nsys-rep
+[1/1] [==================75%       ] prof.nsys-rep
+[1/1] [==================76%       ] prof.nsys-rep
+[1/1] [==================77%       ] prof.nsys-rep
+[1/1] [==================78%       ] prof.nsys-rep
+[1/1] [===================79%      ] prof.nsys-rep
+[1/1] [===================80%      ] prof.nsys-rep
+[1/1] [===================81%      ] prof.nsys-rep
+[1/1] [===================82%      ] prof.nsys-rep
+[1/1] [====================83%     ] prof.nsys-rep
+[1/1] [====================84%     ] prof.nsys-rep
+[1/1] [====================85%     ] prof.nsys-rep
+[1/1] [========================100%] prof.nsys-rep
+[1/1] [========================100%] prof.nsys-rep
+Generated:
+	~/.cache/memra-f8f4v3/runs/prof-3146763781/2-on/prof.nsys-rep

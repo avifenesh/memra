@@ -1,0 +1,34 @@
+03:40:14 cargo rc=0
+03:44:43 kernel-check rc=0 ALL GREEN (124 cells, 5 skipped)
+MMQ-F8F4-V2 mainloop v2 (cp.async)
+MMQ-F8F4-V2 SUMMARY: 4 shapes, 0 mismatching outputs OK
+MMQ-F8F4-V2 mainloop v3 (TMA, mbarriers)
+MMQ-F8F4-V2 SUMMARY: 4 shapes, 0 mismatching outputs OK
+MMQ-F8F4-V2 mainloop v2 (cp.async)
+MMQ-F8F4-V2 SUMMARY: 8 shapes, 0 mismatching outputs OK
+MMQ-F8F4-V2 mainloop v3 (TMA, mbarriers)
+MMQ-F8F4-V2 SUMMARY: 8 shapes, 0 mismatching outputs OK
+04:27:44 served done
+campaign served-4924aeddf2: 12 requests, arms ['B', 'L']
+
+target 32768
+  B        ttft 24.437, 24.472                           median 24.455  cells ['01-B', '04-B']
+  L        ttft 24.084, 24.085                           median 24.084  cells ['02-L', '03-L']
+  L vs B: -1.51%
+
+target 131072
+  B        ttft 127.771, 127.891                         median 127.831  cells ['01-B', '04-B']
+  L        ttft 126.524, 126.553                         median 126.538  cells ['02-L', '03-L']
+  L vs B: -1.01%
+
+target 260000
+  B        ttft 333.900, 334.377                         median 334.139  cells ['01-B', '04-B']
+  L        ttft 331.138, 331.194                         median 331.166  cells ['02-L', '03-L']
+  L vs B: -0.89%
+
+fingerprints (text sha256 per target/rep across all cells)
+  target 32768 rep 0: 1 distinct IDENTICAL
+  target 131072 rep 0: 1 distinct IDENTICAL
+  target 260000 rep 0: 1 distinct IDENTICAL
+errors/needle misses: 0
+CB33-RUN2-DONE

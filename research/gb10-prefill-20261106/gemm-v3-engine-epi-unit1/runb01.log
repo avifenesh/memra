@@ -1,0 +1,7 @@
+T=4096 reps=11 order=v2,v3 (median, image pass included)
+gate+up silu 2x17408x5120    v2   15.174 ms  v3   15.701 ms   -3.35%  bytes identical
+down 5120x17408              v2    7.025 ms  v3    7.241 ms   -2.97%  bytes identical
+down resid 5120x17408        v2    7.488 ms  v3    7.690 ms   -2.64%  bytes identical
+wqkv 10240x5120              v2    4.348 ms  v3    4.268 ms   +1.87%  bytes identical
+ssm_out 5120x6144            v2    2.622 ms  v3    2.630 ms   -0.28%  bytes identical
+cuda: no error

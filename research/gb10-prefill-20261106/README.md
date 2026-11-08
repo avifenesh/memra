@@ -438,7 +438,10 @@ model's budget of 1 (`tools/argmax-margin-gate.sh`, `tools/test_argmax_margin_ga
   ceiling on the large shapes. (Superseded 2026-11-07: that ceiling, `ceil_probe3.cu`, rewrites its A
   operand with a dependent IADD before every MMA; ledger row 33 measures the exact epilogue at 821
   MAC/clk/SM on register operands, about 173 TFLOPS.)
-- A TMA-fed, warp-specialized tile: measured, not taken to the engine (ledger rows 33-37,
+- In the engine since 2026-11-08 (ledger rows 38-42, `docs/decisions/GB10-F8F4-GEMM-V3.md`): the
+  TMA-fed v3 mainloop for the plain and residual GEMMs (the fused gate/up launch stays on v2), served
+  cold TTFT -1.51% / -1.01% / -0.89% at 32k / 131k / 260k on unit 1, exact. The design lane below:
+- A TMA-fed, warp-specialized tile: measured, first not taken to the engine (ledger rows 33-37,
   `GEMM-V3-DESIGN.md`, `gemm-v3-probe-unit2/`). The exact epilogue's register-operand ceiling is
   821 MAC/clk/SM (880 with the scale products hoisted); the shipped tile runs 508-549 and its loop
   over resident smem without loads or barriers 567-664. TMA operands with full/empty mbarriers and

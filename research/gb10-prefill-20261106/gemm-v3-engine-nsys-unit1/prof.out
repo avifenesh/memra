@@ -1,0 +1,64 @@
+== 1 off
+all kernels: 146.965 s
+   29.572 s    4480 x    6.601 ms  grid 2176x1  mul_mat_f8f4v2
+   23.360 s    8960 x    2.607 ms  grid 320x1  mul_mat_f8f4v2
+   12.944 s    4512 x    2.869 ms  grid 640x1  mul_mat_f8f4v2
+    7.550 s     576 x   13.107 ms  grid 4352x1  mul_mat_f8f4v2
+    7.005 s    5056 x    1.385 ms  grid 3x4352  f8f4v2_image_kernel
+    4.108 s    3360 x    1.223 ms  grid 384x1  mul_mat_f8f4v2
+    3.732 s    1552 x    2.405 ms  grid 768x1  mul_mat_f8f4v2
+    3.441 s    5056 x    0.681 ms  grid 9x640  f8f4v2_image_kernel
+    1.741 s     432 x    4.030 ms  grid 1280x1  mul_mat_f8f4v2
+    1.571 s    3792 x    0.414 ms  grid 3x1280  f8f4v2_image_kernel
+    1.199 s    5056 x    0.237 ms  grid 3x640  f8f4v2_image_kernel
+    0.933 s    3792 x    0.246 ms  grid 3x768  f8f4v2_image_kernel
+    0.702 s    2240 x    0.314 ms  grid 64x1  mul_mat_f8f4v2
+    0.689 s     144 x    4.784 ms  grid 1536x1  mul_mat_f8f4v2
+    0.625 s    1264 x    0.495 ms  grid 3x1536  f8f4v2_image_kernel
+    0.140 s     288 x    0.485 ms  grid 128x1  mul_mat_f8f4v2
+    0.107 s    2528 x    0.043 ms  grid 3x128  f8f4v2_image_kernel
+selected: 99.420 s
+{"tag": "1-off", "target": 32768, "rep": 0, "ttft_s": 24.508, "total_s": 26.011, "prompt_tokens": 32784, "completion_tok
+== 2 on
+all kernels: 145.761 s
+   29.902 s    4480 x    6.675 ms  grid 2176x1  mul_mat_f8f4v3
+   23.091 s    8960 x    2.577 ms  grid 320x1  mul_mat_f8f4v3
+   12.302 s    4512 x    2.727 ms  grid 640x1  mul_mat_f8f4v3
+    7.678 s     576 x   13.329 ms  grid 4352x1  mul_mat_f8f4v3
+    6.968 s    5056 x    1.378 ms  grid 3x4352  f8f4v2_image_kernel
+    3.917 s    3360 x    1.166 ms  grid 384x1  mul_mat_f8f4v3
+    3.536 s    1552 x    2.279 ms  grid 768x1  mul_mat_f8f4v3
+    3.439 s    5056 x    0.680 ms  grid 9x640  f8f4v2_image_kernel
+    1.633 s     432 x    3.780 ms  grid 1280x1  mul_mat_f8f4v3
+    1.571 s    3792 x    0.414 ms  grid 3x1280  f8f4v2_image_kernel
+    1.195 s    5056 x    0.236 ms  grid 3x640  f8f4v2_image_kernel
+    0.927 s    3792 x    0.244 ms  grid 3x768  f8f4v2_image_kernel
+    0.664 s    2240 x    0.297 ms  grid 64x1  mul_mat_f8f4v3
+    0.649 s     144 x    4.505 ms  grid 1536x1  mul_mat_f8f4v3
+    0.625 s    1264 x    0.495 ms  grid 3x1536  f8f4v2_image_kernel
+    0.129 s     288 x    0.448 ms  grid 128x1  mul_mat_f8f4v3
+    0.108 s    2528 x    0.043 ms  grid 3x128  f8f4v2_image_kernel
+selected: 98.334 s
+{"tag": "2-on", "target": 32768, "rep": 0, "ttft_s": 24.177, "total_s": 25.683, "prompt_tokens": 32784, "completion_toke
+== 3 off
+all kernels: 146.692 s
+   29.527 s    4480 x    6.591 ms  grid 2176x1  mul_mat_f8f4v2
+   23.297 s    8960 x    2.600 ms  grid 320x1  mul_mat_f8f4v2
+   12.872 s    4512 x    2.853 ms  grid 640x1  mul_mat_f8f4v2
+    7.566 s     576 x   13.135 ms  grid 4352x1  mul_mat_f8f4v2
+    6.977 s    5056 x    1.380 ms  grid 3x4352  f8f4v2_image_kernel
+    4.098 s    3360 x    1.220 ms  grid 384x1  mul_mat_f8f4v2
+    3.746 s    1552 x    2.414 ms  grid 768x1  mul_mat_f8f4v2
+    3.434 s    5056 x    0.679 ms  grid 9x640  f8f4v2_image_kernel
+    1.758 s     432 x    4.070 ms  grid 1280x1  mul_mat_f8f4v2
+    1.567 s    3792 x    0.413 ms  grid 3x1280  f8f4v2_image_kernel
+    1.197 s    5056 x    0.237 ms  grid 3x640  f8f4v2_image_kernel
+    0.927 s    3792 x    0.245 ms  grid 3x768  f8f4v2_image_kernel
+    0.701 s    2240 x    0.313 ms  grid 64x1  mul_mat_f8f4v2
+    0.696 s     144 x    4.835 ms  grid 1536x1  mul_mat_f8f4v2
+    0.624 s    1264 x    0.493 ms  grid 3x1536  f8f4v2_image_kernel
+    0.140 s     288 x    0.487 ms  grid 128x1  mul_mat_f8f4v2
+    0.108 s    2528 x    0.043 ms  grid 3x128  f8f4v2_image_kernel
+selected: 99.237 s
+{"tag": "3-off", "target": 32768, "rep": 0, "ttft_s": 24.502, "total_s": 26.011, "prompt_tokens": 32784, "completion_tok
+PROF-V3-DONE

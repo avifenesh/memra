@@ -1,0 +1,19 @@
+all kernels: 146.965 s
+   29.572 s    4480 x    6.601 ms  grid 2176x1  mul_mat_f8f4v2
+   23.360 s    8960 x    2.607 ms  grid 320x1  mul_mat_f8f4v2
+   12.944 s    4512 x    2.869 ms  grid 640x1  mul_mat_f8f4v2
+    7.550 s     576 x   13.107 ms  grid 4352x1  mul_mat_f8f4v2
+    7.005 s    5056 x    1.385 ms  grid 3x4352  f8f4v2_image_kernel
+    4.108 s    3360 x    1.223 ms  grid 384x1  mul_mat_f8f4v2
+    3.732 s    1552 x    2.405 ms  grid 768x1  mul_mat_f8f4v2
+    3.441 s    5056 x    0.681 ms  grid 9x640  f8f4v2_image_kernel
+    1.741 s     432 x    4.030 ms  grid 1280x1  mul_mat_f8f4v2
+    1.571 s    3792 x    0.414 ms  grid 3x1280  f8f4v2_image_kernel
+    1.199 s    5056 x    0.237 ms  grid 3x640  f8f4v2_image_kernel
+    0.933 s    3792 x    0.246 ms  grid 3x768  f8f4v2_image_kernel
+    0.702 s    2240 x    0.314 ms  grid 64x1  mul_mat_f8f4v2
+    0.689 s     144 x    4.784 ms  grid 1536x1  mul_mat_f8f4v2
+    0.625 s    1264 x    0.495 ms  grid 3x1536  f8f4v2_image_kernel
+    0.140 s     288 x    0.485 ms  grid 128x1  mul_mat_f8f4v2
+    0.107 s    2528 x    0.043 ms  grid 3x128  f8f4v2_image_kernel
+selected: 99.420 s

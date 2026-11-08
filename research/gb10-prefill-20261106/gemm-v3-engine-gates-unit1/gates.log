@@ -1,0 +1,7 @@
+argmax-16k v3 rc=0   flip budget: 3 (row: Qwen3.8-27B NVFP4 on p4-16k (3/12-window))   SUMMARY flips=3 bad=0   PASS: every prefill/decode argmax flip is explained by a margin the config spread covers
+argmax-16k v2 rc=0   flip budget: 3 (row: Qwen3.8-27B NVFP4 on p4-16k (3/12-window))   SUMMARY flips=3 bad=0   PASS: every prefill/decode argmax flip is explained by a margin the config spread covers
+argmax-16k probe table v3 vs v2: IDENTICAL (a42e74b3f28cbd96 / a42e74b3f28cbd96)
+rollback v3 rc=0 pp-only MEDIAN: 3855 tok in 3.3606s = 1147.1 tok/s (pp3855, 3 reps) f81e969042a7e155
+rollback v3off rc=0 pp-only MEDIAN: 3855 tok in 3.4294s = 1124.1 tok/s (pp3855, 3 reps) f81e969042a7e155
+rollback v2off rc=0 pp-only MEDIAN: 3855 tok in 3.9261s = 981.9 tok/s (pp3855, 3 reps) f81e969042a7e155
+GATES-V3-DONE
