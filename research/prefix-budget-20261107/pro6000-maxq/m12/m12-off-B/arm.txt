@@ -1,0 +1,12 @@
+arm m12-off-B workload=mixed start=2026-11-08T20:16:22+02:00 gpu=<gpu>
+89f905870c598d9e82584827761842c11a11b40a4496d6e22a1adb2118888aa2  <bins>/memra-server-19316c0049
+env: MEMRA_MAX_SESSIONS=12 MEMRA_PREFIX_CACHE_MB=0
+3, NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition, 70, 54 %, 180 MHz, 280.00 W, 2 MiB, 97340 MiB
+box: 0, 0 %, 36532 MiB, 84.93 W, 71;1, 0 %, 36500 MiB, 78.29 W, 60;2, 9 %, 12296 MiB, 101.81 W, 75;3, 0 %, 2 MiB, 25.44 W, 70;
+device_free_min_mib 72456 samples 303
+memavailable_min_gib 954.84
+evict_lines=0
+oom_lines=0
+reclaim_on_defer_lines=0
+{"window_s": 33.14, "batch_rows": 136, "batch_agg_tok_s": 246.25, "repeat_cached": [0, 0, 0, 0, 0, 0], "repeat_hits": 0, "repeat_ttft_ms": [272.1, 283.5, 625.2, 279.5, 270.7, 275.2], "batch_ttft_ms_p50": 411.0734462738037, "metrics_delta": {}, "metrics_end": {}}
+rc=0 end=2026-11-08T20:17:38+02:00

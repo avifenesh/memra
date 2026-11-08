@@ -1,0 +1,13 @@
+arm mdef-4-A workload=mixed start=2026-11-08T20:23:16+02:00 gpu=<gpu>
+ec63804c652a90370e6f6a8daa857344855367386a69d0e9fb32258835ca366d  <bins>/memra-server-2288c4bf82
+env: 
+3, NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition, 72, 58 %, 180 MHz, 280.00 W, 2 MiB, 97340 MiB
+box: 0, 5 %, 87618 MiB, 86.90 W, 71;1, 2 %, 89442 MiB, 81.52 W, 62;2, 0 %, 1782 MiB, 89.23 W, 64;3, 0 %, 2 MiB, 26.60 W, 72;
+device_free_min_mib 64328 samples 447
+memavailable_min_gib 953.52
+[prefix-cache] on: budget 2260MB (2259943424 B, derived: 2 x 1129971712 B max entry for model "gate" at served ctx 32768 (from MEMRA_CTX; MEMRA_CTX set), requested 2259943424 B; boot driver free 84701478912 B, post-reserve clamp 83090866176 B), policy plain-LRU (global oldest unleased entry first; leases untouchable), min prefix 64 tokens, immediate partial restore=off (rollback) (transformer-only; hybrid mid-entry + routed-MoE N/A)
+evict_lines=113
+oom_lines=0
+reclaim_on_defer_lines=0
+{"window_s": 32.9, "batch_rows": 120, "batch_agg_tok_s": 218.82, "repeat_cached": [0, 0, 0, 0, 0, 0], "repeat_hits": 0, "repeat_ttft_ms": [317.5, 308.4, 330.2, 329.2, 324.7, 312.4], "batch_ttft_ms_p50": 607.332706451416, "metrics_delta": {}, "metrics_end": {}}
+rc=0 end=2026-11-08T20:25:08+02:00

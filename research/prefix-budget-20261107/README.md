@@ -3,8 +3,9 @@
 Lane `fix/discrete-prefix-budget` (memra#1090), base main `6f5e03e74a`. Decision record:
 [`docs/decisions/PREFIX-CACHE-DISCRETE.md`](../../docs/decisions/PREFIX-CACHE-DISCRETE.md).
 
-Verdict: the discrete budget leaves the session peak (landed; a no-op on the 24 GB RTX 5090 Laptop, the RTX PRO
-6000 run is owed). Value-per-byte eviction won the mixed shape (6/6 repeats against 3/6) and tied the
+Verdict: the discrete budget leaves the session peak (a no-op on the 24 GB RTX 5090 Laptop; on one RTX PRO
+6000 Max-Q at `MEMRA_MAX_SESSIONS=12` it takes the budget from 2.26 GB to 54.3 GB, repeats hit 30/30 against
+0/30, agentic c1 and c4 cache 99.5% of prompt tokens against 19.8% and 16.8%, no OOM, about 55 GiB still free). Value-per-byte eviction won the mixed shape (6/6 repeats against 3/6) and tied the
 2026-09-21 incident replay 10/10, but lost the agentic c1 cell's shared 256-token head (16 against 24 hits,
 -5.7% cached tokens): rejected. The partial admission reclaim was flat with plain LRU and the live-free insert
 clamp lost the shared entry: both rejected. The rejected levers' code is banked on
@@ -30,7 +31,56 @@ shared prompt, then c8 unique-prompt batch load with six greedy repeats of the s
 The 24 GB RTX 5090 Laptop is memory-bound for this model: boot free 10,053,877,760 B at
 `MEMRA_MAX_SESSIONS=12` (8,342,601,728 B at the default caps), and the session peak of every measured
 configuration exceeds it, so the derived budget is the two-entry floor (2,259,943,424 B) in every 5090
-cell. The budget arm changes nothing on this card; its effect is the PRO 6000's (owed).
+cell. The budget arm changes nothing on this card; its effect is the PRO 6000's (measured below).
+
+## The owed run, measured (one RTX PRO 6000 Max-Q, 2026-11-08): `pro6000-maxq/`
+
+One RTX PRO 6000 Blackwell Max-Q Workstation Edition (96 GB) per comparison, 280 W limit (the card's set limit; no
+raise, so each A/B kept one power regime), no thermal throttle, Qwen3.8-27B NVFP4 + Q5_K with its MTP head,
+`MEMRA_CTX=32768`. A = main `2288c4bf82`, B = this change on it (`19316c0049`; the code diff is byte-identical to
+the landed one). Every cell is a fresh boot; arms interleave A B B A A B on one card. The workloads are the 5090
+lane's: `harness/mixed.py` (the spec-cache-mixed shape) and `harness/agentic.py` (29 turns of 18 coding-agent
+sessions, prime then measure, T=1, 768 new tokens).
+
+| cell | arm | budget (boot line) | result | device free floor | OOM / reclaim-on-defer |
+|---|---|---|---|---|---|
+| mixed, `MEMRA_MAX_SESSIONS=12`, 5 runs per arm | A | 2,259,943,424 B | repeats hit 0/30, 121 evictions per run | 70.8 GiB | 0 / 0 |
+| | B | 54,277,046,272 B (24 sessions x 1,190,789,120 B) | repeats hit 30/30 (480 cached tokens each), 0 evictions | 55.8 GiB | 0 / 0 |
+| mixed, default caps, 3 runs per arm | A, B | 2,259,943,424 B on both (the floor) | 0/18 hits on both, 113-121 evictions | 62.8 GiB | 0 / 0 |
+| agentic c1, `MEMRA_MAX_SESSIONS=12`, 3 runs per arm | A | 2,260 MB | 19.8% cached (36,448 of 184,051 tokens), 53 evictions | 70.8 GiB | 0 / 0 |
+| | B | 54,277 MB | 99.5% cached (183,200), 0 evictions | 64.8 GiB | 0 / 0 |
+| agentic c4, same | A | 2,260 MB | 16.8% cached (30,912), 56 evictions | 69.0 GiB | 0 / 0 |
+| | B | 54,277 MB | 99.5% cached (183,200), 0 evictions | 60.7 GiB | 0 / 0 |
+
+Timing, same cells (single-window medians; see the conditions note below):
+
+| cell | A | B |
+|---|---|---|
+| mixed MS=12, repeat TTFT median over 30 repeats | 327.3 ms (mean 466.4) | 193.1 ms (mean 362.6) |
+| mixed MS=12, batch tok/s (median of runs) | 224.6 | 225.0 |
+| mixed MS=12, batch TTFT p50 (median of runs) | 567.1 ms (runs 489-609) | 596.1 ms (runs 576-600) |
+| agentic c1, TTFT p50 / p95 | 1,103-1,107 / ~6,250 ms | 108-111 / 134-137 ms |
+| agentic c1, aggregate tok/s | 68.4-68.6 | 105.6-106.8 |
+| agentic c4, TTFT p50 / p95 | 1,750-1,763 / ~7,000 ms | 438-677 / 802-853 ms |
+| agentic c4, aggregate tok/s | 91.1-91.7 | 155.6-159.1 |
+
+The mixed shape's repeat TTFT is bimodal on both arms: a repeat that lands behind a c8 batch wave waits 560-900 ms,
+on A and on B and in the default-caps phase where both arms are the same code path, so the tail is queueing, not
+the cache. A hit that is not queued answers in 175-197 ms against 297-380 ms cold.
+
+Exactness: on the mixed shape every compared greedy row (repeats and batch rows) is byte-identical to the
+cache-off run, in every arm and run. Agentic greedy (256 tokens, `MEMRA_MAX_SESSIONS=12`): B with 29/29 hits gives
+29/29 turns byte-identical to a cache-off boot; A 29/29 as well.
+
+**Conditions, stated so these timings are not read as quiet-box numbers.** The box has four cards on one PCIe
+complex, and other work ran on its other cards during these cells: a timed A/B record on another card during the
+first mixed phase and the default-caps phase, a two-card correctness campaign on two other cards during the
+agentic cells, and the agentic c1 and c4 phases ran at the same time on two different cards. Each comparison's arms
+ran interleaved on one card in one window, so A against B stays fair, but the absolute timings carry that load.
+The cache counts, budgets, memory floors and byte identity do not depend on it. A quiet-box re-time of the
+agentic headline cells is owed before any of these timings is published.
+
+Scripts: `pro6000-maxq/campaign/` (`arm.sh` is the 5090 lane's arm pinned to one card by UUID; `phases-1090*.sh` order the arms; `m12_table.py` makes the mixed table). Each run dir keeps `arm.txt` (binary hash, env, boot budget line, device free and MemAvailable floors, eviction, OOM and reclaim counts), `serve.log`, the 250 ms `gpu-tel.csv`, `memavail.txt`, the result and the rows (agentic rows as numbers plus output sha256).
 
 ## Harness (`harness/`)
 
