@@ -19,7 +19,7 @@ fa_prefill_view_ws_w_hd128 window=48 vs f32 floor T=100 Tkv=100: rel=2.45e-3 OK
 fa_prefill_view_ws_w_hd128 window=48 differs from unwindowed FA T=100 Tkv=100: changed=53248/102400 OK
 fa_prefill_view_ws_w_hd128 window=48 db vs single-buffer T=100 Tkv=100: bitdiff=0 OK
 fa_prefill_view_ws_w_hd128 window=64 vs CPU windowed oracle T=37 Tkv=297: rel=9.36e-3 OK
-argmax rc=0   SUMMARY flips=0 bad=0   PASS: every prefill/decode argmax flip is explained by a margin the config spread covers 
+argmax rc=0   SUMMARY flips=0 bad=0   PASS: every prefill/decode argmax flip is explained by a margin the config spread covers
 prime logits 600 B rc=0 pp-only MEDIAN: 16219 tok in 10.3069s = 1573.6 tok/s (pp16219, 1 reps) d1b258408a4030bd
 prime logits 600 C rc=0 pp-only MEDIAN: 16219 tok in 10.3083s = 1573.4 tok/s (pp16219, 1 reps) d1b258408a4030bd
 prime logits 600 B vs C: IDENTICAL
