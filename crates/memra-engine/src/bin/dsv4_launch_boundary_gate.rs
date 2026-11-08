@@ -43,10 +43,32 @@ fn identity(gpu: &Dsv4Gpu, s: &DecodeState) -> (String, [u64; 2], [u64; 2]) {
         gpu.tp_ep_hidden_digest_for_gate(s).unwrap(),
     )
 }
+/// The three cadence variants' kernels and joins against the loaded program: the kernel total
+/// from `Dsv4Gpu::full_token_forward_census_for_gate` (this gate keeps the dense selection it
+/// restored at startup), the joins from `tp_ep_trunk_ar_launches_for_gate` (per layer the
+/// expert reduce and attention TP2's two row gathers).
 fn census(gpu: &Dsv4Gpu, s: &DecodeState) {
     assert_eq!(gpu.full_token_replay_captures_for_gate(s).unwrap(), [3, 1]);
-    for rank in gpu.full_token_replay_variant_census_for_gate(s).unwrap() {
-        for (slot, kernels) in [(0, 2741), (2, 3140), (3, 3240)] {
+    let joins = gpu.tp_ep_trunk_ar_launches_for_gate();
+    for (index, rank) in gpu
+        .full_token_replay_variant_census_for_gate(s)
+        .unwrap()
+        .into_iter()
+        .enumerate()
+    {
+        for slot in [0, 2, 3] {
+            let derived = gpu
+                .full_token_forward_census_for_gate(
+                    s,
+                    index,
+                    slot,
+                    dense_exact_tail_enabled_for_gate(),
+                )
+                .expect("program-derived kernel census");
+            eprintln!(
+                "census rank={index} slot={slot} {:?} (want kernels={} joins={joins})",
+                rank[slot], derived.kernels
+            );
             assert_eq!(
                 [
                     rank[slot][1],
@@ -55,7 +77,9 @@ fn census(gpu: &Dsv4Gpu, s: &DecodeState) {
                     rank[slot][4],
                     rank[slot][6]
                 ],
-                [kernels, 86, 1, 86, 0]
+                [derived.kernels, joins, 1, 86, 0],
+                "census rank={index} slot={slot}, terms {:?}",
+                derived.terms
             );
         }
     }
@@ -80,6 +104,8 @@ fn main() {
         unsafe { std::mem::transmute(symbol(c"memra_launch_boundary_finish")) };
     let cleanup: unsafe extern "C" fn() =
         unsafe { std::mem::transmute(symbol(c"memra_launch_boundary_cleanup")) };
+    let expect_joins: unsafe extern "C" fn(u32) =
+        unsafe { std::mem::transmute(symbol(c"memra_launch_boundary_expect_joins")) };
     let args: Vec<_> = std::env::args().collect();
     assert_eq!(args.len(), 3, "gate <model-dir> <source-tape>");
     for key in [
@@ -164,6 +190,9 @@ fn main() {
     unsafe {
         gpu.arm_full_token_replay(&mut measured, cfg).unwrap();
     }
+    // The wrapper instruments a forward graph only when it holds the program's joins.
+    let joins = u32::try_from(gpu.tp_ep_trunk_ar_launches_for_gate()).unwrap();
+    unsafe { expect_joins(joins) };
     // Capture the default variants and commit graph, outside the 64 steps.
     let warm = gpu.decode_sample_full_token(first, &mut measured).unwrap();
     census(&gpu, &measured);
@@ -194,14 +223,17 @@ fn main() {
             assert_eq!(a[s] - counts[r][s], *n);
         }
     }
+    // Each one-row step ticks every block each of its collectives launches: attention TP2's
+    // wo_a and wo_b gathers and the expert reduce per layer, the vocab-parallel head's gather
+    // once (`tp_ep_ar_epochs_per_step_for_gate`).
     let epochs = gpu.full_token_ar_epochs_for_gate().unwrap();
-    let attention = memra_engine::tp_ar::ar_blocks_for(4096) as usize;
-    let expert = memra_engine::tp_ar::ar_blocks_for(6 * 4096) as usize;
+    let per_step = gpu.tp_ep_ar_epochs_per_step_for_gate();
     for rank in 0..2 {
         for block in 0..72 {
             assert_eq!(
                 epochs[rank][block].wrapping_sub(before[rank][block]),
-                64 * 43 * (u32::from(block < attention) + u32::from(block < expert))
+                64 * per_step[block],
+                "AR epoch rank {rank} block {block}"
             );
         }
     }

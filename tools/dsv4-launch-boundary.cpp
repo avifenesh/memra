@@ -32,6 +32,15 @@ std::array<Rank,2> ranks;
 std::vector<Entry> entries;
 bool active=false;
 int saved_device=0;
+// The program's joins per forward graph, named by the gate before the first capture.
+unsigned expected_joins=0;
+// The collective kernels, the four memra_dsv4_replay_census counts as joins.
+bool is_join(const char* name) {
+    return std::strstr(name,"memra_tp_ar_1stage_kernel") ||
+           std::strstr(name,"memra_tp_ar_gather_rows_f32_kernel") ||
+           std::strstr(name,"memra_tp_ar_push_reduce_kernel") ||
+           std::strstr(name,"memra_tp_ar_push_gather_rows_kernel");
+}
 
 void init_rank(int rank, cudaStream_t stream) {
     auto& r=ranks.at(rank);
@@ -57,10 +66,11 @@ extern "C" int __wrap_memra_dsv4_replay_capture_end(void* graph,void** executabl
         ++kernels; cudaKernelNodeParams params{}; const char* name=nullptr;
         ck(cudaGraphKernelNodeGetParams(node,&params),"kernel params"); ck(cudaFuncGetName(&name,params.func),"kernel name");
         embeds+=std::strstr(name,"dsv4_embed_rows_kernel")!=nullptr;
-        ars+=std::strstr(name,"memra_tp_ar_1stage_kernel")!=nullptr;
+        ars+=is_join(name);
     }
     if(!embeds) return rc; // Commit/head graph is untouched.
-    require(embeds==1 && ars==86,"not a complete forward graph");
+    require(expected_joins>0,"the gate names the program's joins before the first capture");
+    require(embeds==1 && ars==expected_joins,"not a complete forward graph");
     int rank; ck(cudaGetDevice(&rank),"rank"); require(rank==0 || rank==1,"rank outside pair");
     init_rank(rank,(cudaStream_t)raw_stream);
     Entry e{}; e.original=(cudaGraphExec_t)*executable; e.rank=rank;
@@ -76,18 +86,21 @@ extern "C" int __wrap_memra_dsv4_replay_capture_end(void* graph,void** executabl
         if(type==cudaGraphNodeTypeKernel) {
             cudaKernelNodeParams params{};const char* name=nullptr;
             ck(cudaGraphKernelNodeGetParams(first_ar,&params),"first-AR params");ck(cudaFuncGetName(&name,params.func),"first-AR name");
-            if(std::strstr(name,"memra_tp_ar_1stage_kernel")) break;
+            if(is_join(name)) break;
         }
         size_t n=0;ck(cudaGraphNodeGetDependentNodes(first_ar,nullptr,nullptr,&n),"walk first AR");
         require(n==1 && walked+1<count,"first AR not on unambiguous chain");
-        cudaGraphNode_t next;ck(cudaGraphNodeGetDependentNodes(first_ar,&next,nullptr,&n),"next before first AR");first_ar=next;
+        // The PDL chain's programmatic edges carry edge data; reading them without it is lossy.
+        cudaGraphNode_t next;cudaGraphEdgeData edge{};
+        ck(cudaGraphNodeGetDependentNodes(first_ar,&next,&edge,&n),"next before first AR");first_ar=next;
     }
     size_t nd=0,ns=0;
     ck(cudaGraphNodeGetDependencies(first_ar,nullptr,nullptr,&nd),"AR predecessors");
     ck(cudaGraphNodeGetDependentNodes(first_ar,nullptr,nullptr,&ns),"AR successors");
     std::vector<cudaGraphNode_t> deps(nd),succ(ns);
-    ck(cudaGraphNodeGetDependencies(first_ar,deps.data(),nullptr,&nd),"AR dependency list");
-    ck(cudaGraphNodeGetDependentNodes(first_ar,succ.data(),nullptr,&ns),"AR successor list");
+    std::vector<cudaGraphEdgeData> deps_edges(nd),succ_edges(ns);
+    ck(cudaGraphNodeGetDependencies(first_ar,deps.data(),deps_edges.data(),&nd),"AR dependency list");
+    ck(cudaGraphNodeGetDependentNodes(first_ar,succ.data(),succ_edges.data(),&ns),"AR successor list");
     cudaGraphNode_t ar_before,ar_after;
     ck(cudaGraphAddEventRecordNode(&ar_before,e.graph,deps.data(),nd,ranks[rank].ar_before),"AR before event");
     ck(cudaGraphAddDependencies(e.graph,&ar_before,&first_ar,nullptr,1),"AR waits for before event");
@@ -125,6 +138,7 @@ extern "C" int __wrap_memra_dsv4_replay_destroy(void* graph,void* executable,voi
     }
     return __real_memra_dsv4_replay_destroy(graph,executable,stream);
 }
+extern "C" void memra_launch_boundary_expect_joins(unsigned joins) { expected_joins=joins; }
 extern "C" void memra_launch_boundary_prepare() {
     require(entries.size()==6,"expected both ranks' three cadence variants");
     int saved; ck(cudaGetDevice(&saved),"save context");

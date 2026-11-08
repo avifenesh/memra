@@ -54,17 +54,6 @@ fn epochs(gpu: &Dsv4Gpu, before: &[Vec<u32>; 2], steps: u32) {
         }
     }
 }
-fn forward_kernel_census() -> [(usize, u64); 3] {
-    // Two door terms used to subtract from these counts and both left on
-    // 2026-09-11. The graph split-K term (+86 forward nodes per rank) went with
-    // the matrix flip: no entry family it captured exists any more. The norm
-    // terms (43 for the KV norm/RoPE fusion, a net 215 for the activation
-    // packing) went with the three norm doors, which the served ABBA deleted, so
-    // the unfused chains are the only chains and these are their counts.
-    // Exact attention TP (2026-09-23): two row gathers replace one attention reduction, +43.
-    [(0, 2784), (2, 3183), (3, 3283)]
-}
-
 /// With the split-K doors deleted (memra #461 flip, 2026-09-11) the forward
 /// graph has exactly one expert entry family left, and the census says so in
 /// both directions: 43 sktail entries on a forward variant, and ZERO nodes from
@@ -113,22 +102,45 @@ fn capture_once(gpu: &Dsv4Gpu, state: &DecodeState, cadence: bool) {
         assert_eq!(rank[0][6], 0, "unsupported forward node");
         assert_eq!(rank[1][6], 0, "unsupported commit node");
     }
-    if cadence {
-        for rank in gpu
-            .full_token_replay_variant_census_for_gate(state)
-            .unwrap()
-        {
-            for (slot, kernels) in forward_kernel_census() {
-                assert_eq!(
-                    rank[slot][1],
-                    kernels + if hc_slices() != 0 { 86 } else { 0 },
-                    "cadence kernel census slot {slot}"
-                );
-                assert_eq!(
-                    [rank[slot][2], rank[slot][3], rank[slot][4], rank[slot][6]],
-                    [129, 1, 86, 0]
+    // Every forward graph's kernels against the loaded program's count
+    // (`Dsv4Gpu::full_token_forward_census_for_gate`): the ordinary, C4 and C4+C128 variants
+    // of a cadence state, or the full replay's one forward graph, in which every compressor
+    // emits. This gate never switches the dense selection after startup, so the one it reads
+    // now is the one the graphs were captured under.
+    let dense = memra_engine::dsv4_gpu::dense_exact_tail_enabled_for_gate();
+    let ars = gpu.tp_ep_trunk_ar_launches_for_gate();
+    let slots: &[usize] = if cadence { &[0, 2, 3] } else { &[0] };
+    // The first reading of each program goes to the log; the asserts check every step.
+    static SHOWN: [std::sync::atomic::AtomicBool; 2] = [
+        std::sync::atomic::AtomicBool::new(false),
+        std::sync::atomic::AtomicBool::new(false),
+    ];
+    let show = !SHOWN[usize::from(cadence)].swap(true, std::sync::atomic::Ordering::Relaxed);
+    for (index, rank) in gpu
+        .full_token_replay_variant_census_for_gate(state)
+        .unwrap()
+        .into_iter()
+        .enumerate()
+    {
+        for &slot in slots {
+            let derived = gpu
+                .full_token_forward_census_for_gate(state, index, slot, dense)
+                .expect("program-derived kernel census");
+            if show {
+                eprintln!(
+                    "REPLAY_KERNEL_CENSUS cadence={cadence} rank={index} slot={slot} read={:?} want_kernels={} want_joins={ars}",
+                    rank[slot], derived.kernels
                 );
             }
+            assert_eq!(
+                rank[slot][1], derived.kernels,
+                "kernel census rank={index} slot={slot} cadence={cadence}, terms {:?}",
+                derived.terms
+            );
+            assert_eq!(
+                [rank[slot][2], rank[slot][3], rank[slot][4], rank[slot][6]],
+                [ars, 1, 86, 0]
+            );
         }
     }
 }
@@ -695,24 +707,7 @@ pub(super) fn profile(gpu: &Dsv4Gpu, prompt: &[u32], tokenizer: &Tokenizer) {
 
 #[cfg(test)]
 mod profile_census_tests {
-    use super::{check_expert_nodes, forward_kernel_census};
-
-    /// The forward census is now a CONSTANT, and that is the whole claim: both
-    /// door terms that used to subtract from it are deleted, so there is nothing
-    /// left to parameterize. Pinned here rather than only at the call site so a
-    /// future door that changes the launch count has to move this number and say
-    /// why, instead of quietly re-deriving it.
-    ///
-    /// History, because the number is meaningless without it: the base is
-    /// 2741/3140/3240, graph split-K subtracted 86 until the matrix flip
-    /// (2026-09-11), the KV norm/RoPE fusion subtracted 43 and the norm2
-    /// activation pack a net 215 until the served ABBA deleted all three norm
-    /// doors the same day. Exact attention TP (memra #679, 2026-09-23) adds 43: each
-    /// layer's one attention reduction became two row gathers.
-    #[test]
-    fn the_forward_census_is_the_unfused_base_with_no_door_terms_left() {
-        assert_eq!(forward_kernel_census(), [(0, 2784), (2, 3183), (3, 3283)]);
-    }
+    use super::check_expert_nodes;
 
     #[test]
     fn expert_census_requires_active_policy_and_ignores_non_nodes() {
