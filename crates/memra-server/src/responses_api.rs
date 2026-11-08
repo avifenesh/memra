@@ -2211,15 +2211,20 @@ mod tests {
     }
 
     #[test]
-    fn background_true_and_stream_true_together_is_refused_only_with_the_door_open() {
+    fn background_with_stream_is_a_contradiction_only_once_the_door_is_open() {
         // With the door closed, background itself refuses first (stream:true or not); the
-        // contradiction check only matters once background is otherwise acceptable.
+        // contradiction check only answers once background is otherwise acceptable.
         let with_stream = json!({"model": "m", "input": "hi", "background": true, "stream": true});
-        let (msg, _) = translate_with_door(&with_stream, true).unwrap_err();
+        let (open, field) = translate_with_door(&with_stream, true).unwrap_err();
+        assert!(open.contains("contradiction"), "got: {open}");
+        assert_eq!(field.as_deref(), Some("background"));
+        let (closed, field) = translate_with_door(&with_stream, false).unwrap_err();
         assert!(
-            msg.contains("background") || msg.contains("stream"),
-            "got: {msg}"
+            closed.contains("background responses are not supported")
+                && !closed.contains("contradiction"),
+            "got: {closed}"
         );
+        assert_eq!(field.as_deref(), Some("background"));
 
         // background alone (no stream) still translates with the door open.
         let without_stream = json!({"model": "m", "input": "hi", "background": true});

@@ -25384,6 +25384,10 @@ temperature = 0.6
     /// reads the variable) with `background: true` included.
     static BACKGROUND_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
+    /// Every test that takes this lock carries `background` in its name (the one reader that does
+    /// not is `translate_refuses_stateful_features_with_clear_messages`), so the gate filter in
+    /// docs/FLAGS.md's `MEMRA_BACKGROUND_RESPONSES` row selects it; pinned by
+    /// `background_env_lock_takers_are_named_for_the_gate_filter`.
     pub(crate) fn background_env_lock() -> std::sync::MutexGuard<'static, ()> {
         let guard = BACKGROUND_ENV_LOCK.lock().unwrap_or_else(|poisoned| {
             BACKGROUND_ENV_LOCK.clear_poison();
@@ -25391,6 +25395,46 @@ temperature = 0.6
         });
         unsafe { std::env::remove_var(responses_api::BACKGROUND_RESPONSES_ENV) };
         guard
+    }
+
+    /// docs/FLAGS.md's gate for `MEMRA_BACKGROUND_RESPONSES` filters on `background` and
+    /// `translate_refuses_stateful` (libtest matches substrings): every test that takes
+    /// `background_env_lock` must contain one of them, or the gate silently skips a setter or a
+    /// reader.
+    #[test]
+    fn background_env_lock_takers_are_named_for_the_gate_filter() {
+        let mut takers = Vec::new();
+        for src in [include_str!("lib.rs"), include_str!("responses_api.rs")] {
+            // The test a lock call belongs to: the fn after the last test attribute (a helper fn
+            // nested inside a test does not rename it).
+            let (mut name, mut attribute) = ("", false);
+            for line in src.lines() {
+                let code = line.trim_start();
+                if code.starts_with("#[test]") || code.starts_with("#[tokio::test") {
+                    attribute = true;
+                }
+                if let Some(rest) = code
+                    .strip_prefix("async fn ")
+                    .or_else(|| code.strip_prefix("fn "))
+                    && attribute
+                {
+                    name = rest.split('(').next().unwrap_or("");
+                    attribute = false;
+                }
+                if code.contains(concat!("background_env_lock", "()"))
+                    && !code.contains("fn background_env_lock")
+                {
+                    takers.push(name);
+                }
+            }
+        }
+        assert!(takers.len() >= 18, "found {} lock takers", takers.len());
+        for name in takers {
+            assert!(
+                name.contains("background") || name.contains("translate_refuses_stateful"),
+                "{name} takes background_env_lock but the FLAGS.md gate filter does not select it"
+            );
+        }
     }
 
     #[tokio::test]
@@ -25984,7 +26028,7 @@ temperature = 0.6
     /// caller must be able to tell "too late, it already finished" from "cancelled".
     #[tokio::test]
     #[allow(clippy::await_holding_lock)] // allow: background_env_lock serializes tests that flip MEMRA_BACKGROUND_RESPONSES; holding it across awaits is the point
-    async fn cancel_after_completion_is_conflict_not_a_silent_noop() {
+    async fn background_cancel_after_completion_is_conflict_not_a_silent_noop() {
         let _l = drain_lock();
         let _env_lock = background_env_lock();
         unsafe { std::env::set_var(responses_api::BACKGROUND_RESPONSES_ENV, "1") };
@@ -26045,7 +26089,7 @@ temperature = 0.6
     /// text under `status: "cancelled"`.
     #[tokio::test]
     #[allow(clippy::await_holding_lock)] // allow: background_env_lock serializes tests that flip MEMRA_BACKGROUND_RESPONSES; holding it across awaits is the point
-    async fn cancel_mid_run_stops_the_worker_and_writes_one_cancelled_row() {
+    async fn background_cancel_mid_run_stops_the_worker_and_writes_one_cancelled_row() {
         let _l = drain_lock();
         let _env_lock = background_env_lock();
         unsafe { std::env::set_var(responses_api::BACKGROUND_RESPONSES_ENV, "1") };
@@ -26182,7 +26226,7 @@ temperature = 0.6
     /// went the same way. The cancel arm now flushes the parser as the Done arm does.
     #[tokio::test]
     #[allow(clippy::await_holding_lock)] // allow: background_env_lock serializes tests that flip MEMRA_BACKGROUND_RESPONSES; holding it across awaits is the point
-    async fn cancel_mid_run_delivers_the_gemma_opening_the_parser_held() {
+    async fn background_cancel_mid_run_delivers_the_gemma_opening_the_parser_held() {
         let _l = drain_lock();
         let _env_lock = background_env_lock();
         unsafe { std::env::set_var(responses_api::BACKGROUND_RESPONSES_ENV, "1") };
@@ -26314,7 +26358,7 @@ temperature = 0.6
     /// can already recognize by its `code`.
     #[tokio::test]
     #[allow(clippy::await_holding_lock)] // allow: background_env_lock serializes tests that flip MEMRA_BACKGROUND_RESPONSES; holding it across awaits is the point
-    async fn byte_cap_refuses_submission_before_any_worker_time_is_spent() {
+    async fn background_byte_cap_refuses_submission_before_any_worker_time_is_spent() {
         let _env_lock = background_env_lock();
         unsafe { std::env::set_var(responses_api::BACKGROUND_RESPONSES_ENV, "1") };
 
@@ -26366,7 +26410,7 @@ temperature = 0.6
     /// `Completed` when it was never actually billed.
     #[tokio::test]
     #[allow(clippy::await_holding_lock)] // allow: background_env_lock serializes tests that flip MEMRA_BACKGROUND_RESPONSES; holding it across awaits is the point
-    async fn a_complete_ledger_failure_rejects_the_receipt_and_fails_the_job() {
+    async fn background_complete_ledger_failure_rejects_the_receipt_and_fails_the_job() {
         let _l = drain_lock();
         let _env_lock = background_env_lock();
         unsafe { std::env::set_var(responses_api::BACKGROUND_RESPONSES_ENV, "1") };
@@ -26498,7 +26542,7 @@ temperature = 0.6
     /// instead, so the job still reaches a terminal, pollable state.
     #[tokio::test]
     #[allow(clippy::await_holding_lock)] // allow: background_env_lock serializes tests that flip MEMRA_BACKGROUND_RESPONSES; holding it across awaits is the point
-    async fn a_terminal_write_the_byte_cap_refuses_falls_back_to_failed_not_stuck() {
+    async fn background_terminal_write_the_byte_cap_refuses_falls_back_to_failed_not_stuck() {
         let _l = drain_lock();
         let _env_lock = background_env_lock();
         unsafe { std::env::set_var(responses_api::BACKGROUND_RESPONSES_ENV, "1") };
