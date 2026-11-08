@@ -4042,15 +4042,15 @@ These configure release tooling, not model dispatch. CPU development is explicit
 | `MEMRA_SKIP_PERF_CI` | Retired input: `=1` now refuses the push. It cannot skip content-bound qualification. Historical perf data remains research evidence. |
 | `MEMRA_HARDWARE_GATE` | `generic` uses content-bound release qualification. `step-pro` additionally requires the existing Step-specific source/model/topology receipt; development mode cannot claim it. |
 | `MEMRA_STEP_PRO_RECEIPT` | Path to the existing additional Step PRO receipt; never a replacement for the generic full input/build record. |
-| `MEMRA_GPU_LEASE_FILE` | Qualification harness only: unset unless the coordinator's `memra-gpu-run` wrapper supplies the held per-card lease JSON. The [issue 537 runner](../research/modelplan-onboarding-537-20260919/QUALIFICATION.md) and [model-owned memory runner](../research/glm-tp-device-ownership-20260920/QUALIFICATION.md) verify exact physical GPU visibility, wrapper/child ancestry, stable lock order, canonical lock-file mapping and live per-card exclusive FLOCKs. Generic release capture additionally requires CUDA visibility to match the physical NVML GPU0 UUID. Missing or mismatched attestation refuses execution; this is not an engine behavior switch. |
+| `MEMRA_GPU_LEASE_FILE` | Qualification harness only: unset unless the coordinator's `memra-gpu-run` wrapper supplies the held per-card lease JSON. The [issue 537 runner](../research/modelplan-onboarding-537-20260919/QUALIFICATION.md) and [model-owned memory runner](../research/glm-tp-device-ownership-20260920/QUALIFICATION.md) verify exact physical GPU visibility, wrapper/child ancestry, stable lock order, canonical lock-file mapping and live per-card exclusive FLOCKs. Release capture (`tools/qualify-release.py capture`) additionally requires a one-card lease, at any NVML index, on the card the battery resolves; `tools/gpu-ci.py` runs it only on a one-card runner at NVML index 0. Missing or mismatched attestation refuses execution; this is not an engine behavior switch. |
 
 See [Release qualification](RELEASE-QUALIFICATION.md).
 
 ### Per-card qualification context
 
 `tools/qualify-model-device-memory.py` requires and verifies the `MEMRA_GPU_LEASE_FILE`
-context above for its requested physical-card set before native tests. Generic release
-capture has the additional GPU0 restriction described in [Release qualification](RELEASE-QUALIFICATION.md).
+context above for its requested physical-card set before native tests. Release capture has
+the additional one-card restriction described in [Release qualification](RELEASE-QUALIFICATION.md).
 
 ## MiMo modal component GPU parity tests
 

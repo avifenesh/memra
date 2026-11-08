@@ -345,9 +345,37 @@ Use the distribution's bubblewrap package (an owner-local package extraction is 
 Missing or unavailable Linux namespace support refuses the build; there is no unisolated
 fallback. The release workflow uses this same controlled builder before its ELF identity check.
 
-The coordinator supplies the existing non-serving rig and physical-card wrapper. Capture
-requires the live wrapper/child ancestry, canonical exclusive per-UUID FLOCK and exact
-CUDA-visible UUID. It never acquires locks, rents a rig or evicts another process.
+**One record per release OS profile, built where that profile's bytes come from.** `release.yml`
+rebuilds on GitHub's `ubuntu-22.04` and `ubuntu-24.04` runners and refuses packaging unless each
+rebuild's six ELF digests equal a qualified build of the same profile (`build.json` names it from
+`/etc/os-release`). So a tag needs a sealed record for each profile, banked with `--append` for the
+second. A build host on another release builds each profile in a stock image of that Ubuntu with
+the runner's toolchain: `build-essential`, `git`, `python3`, `bubblewrap`, the CUDA 13.1 packages
+from `tools/install-cuda-ci.sh` and the pinned Rust. Run it as root there with `HOME`, `USER` and
+`LOGNAME` set to the runner's values (the sandbox passes those three to the compiler namespace).
+
+Check byte reproducibility before relying on a host: dispatch `gpu-ci.yml` with
+`build_reuse_only=true` on the candidate and compare its `build.json` digests (the
+`build-feedback-diagnostics` artifact) with the host's `ubuntu-24.04` build. On 2026-11-08 the
+first such check found two builds of one tree differing only in `.strtab` and
+`.note.gnu.build-id`: nvcc names its intermediates `tmpxft_<pid>_...` and the object's FILE symbol
+carried the pid. `crates/memra-engine/build.rs` now zeroes that field
+(`normalize_nvcc_temp_symbols`), and two builds of one tree compare equal with `cmp`.
+
+The coordinator supplies the non-serving rig; the physical-card wrapper is
+`tools/memra-gpu-run`. Capture requires the live wrapper/child ancestry, canonical exclusive
+per-UUID FLOCK and exact CUDA-visible UUID. It never acquires locks, rents a rig or evicts another
+process. The wrapper takes the canonical `/tmp/memra-gpu-locks/<UUID>.lock` and, with `--box-lock`,
+the box's campaign lock: on a 2x RTX PRO 6000 box that is `/tmp/memra-gpu.lock` (the AGENTS.md lock
+table), so a capture and a campaign exclude each other; a box with its own per-card lock convention
+names that file instead. It refuses a card that already runs compute and creates the lease
+exclusively before the command starts; the command runs in its own process group and inherits the
+lock descriptors, so the card stays locked while any of its tree runs, even if the wrapper dies. A
+timeout or a forwarded signal stops the whole group, and the lease is finished only when the group
+is empty, with the exit, timeout, signal, any process the group left and any compute left on the
+card. `tools/test_memra_gpu_run.py` runs capture's own `live_lease` check inside the wrapped
+command and judges each finished lease with `validate_lease`, including dirty runs that must be
+refused.
 
 **The generic battery qualifies one leased RTX PRO 6000 Blackwell at any NVML index.**
 `release-battery.sh` resolves CUDA device 0 to its physical UUID
@@ -369,7 +397,7 @@ placement. The placement of every DSv4 gate binary is in
 [TESTING.md](TESTING.md#dsv4-gate-placement).
 
 ```sh
-memra-gpu-run --gpus "$GPU_UUID" --receipt "$LEASE" -- \
+tools/memra-gpu-run --gpus "$GPU_UUID" --receipt "$LEASE" --box-lock /tmp/memra-gpu.lock -- \
   python3 tools/qualify-release.py capture --expected-head "$COMMIT" --build "$BUILD" --out "$RUN" \
   --oracles /data/models/kernel-oracles
 ```

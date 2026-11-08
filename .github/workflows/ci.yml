@@ -185,6 +185,7 @@ jobs:
       - name: Content-bound release qualification controls (CPU-only)
         run: |
           python3 tools/test_release_qualification.py
+          tools/unittest-floor.sh tools test_memra_gpu_run.py 14
           python3 tools/test_change_impact.py
           python3 tools/test_cell_gate.py
           python3 tools/test_daily_regression.py

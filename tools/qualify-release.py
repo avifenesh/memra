@@ -182,7 +182,12 @@ def build(args):
     print("BUILT (not GPU-qualified):", args.out / "build.json")
 
 
-def live_lease():
+CANONICAL_LOCK_DIR = Path("/tmp/memra-gpu-locks")
+
+
+def live_lease(lock_dir=CANONICAL_LOCK_DIR):
+    # lock_dir is tools/test_memra_gpu_run.py's seam (the wrapper's child calls this function against a
+    # temporary lock directory); capture calls it with the canonical directory only.
     q.require(sys.platform == "linux", "native capture requires Linux physical-card leases")
     path = Path(os.environ.get("MEMRA_GPU_LEASE_FILE", ""))
     q.require(path.is_file(), "invoke capture through the coordinator's memra-gpu-run wrapper")
@@ -200,7 +205,7 @@ def live_lease():
               and lease["wrapper_pid"] != lease["child_pid"], "lease owner is not the live process ancestry")
     locks = Path("/proc/locks").read_text().splitlines()
     for uuid in ids:
-        lock = Path(f"/tmp/memra-gpu-locks/{uuid}.lock")
+        lock = lock_dir / f"{uuid}.lock"
         q.require(lease["lock_files"].get(uuid) == str(lock), "noncanonical physical-card lock")
         st = lock.stat()
         found = False

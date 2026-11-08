@@ -435,6 +435,13 @@ TOOL_CONTRACTS = {
         'cpu': ['tools/unittest-floor.sh', 'tools', 'test_resolve_physical_gpu.py', '21'],
         'native': ['Selected physical GPU refusal/ready test when resolver behavior changes'],
     },
+    'gpu-lease-wrapper': {
+        'required': True,
+        'inputs': ['tools/unittest-floor.sh', 'tools/unittest_floor.py', 'tools/memra-gpu-run',
+                   'tools/test_memra_gpu_run.py', 'tools/release_qualification.py', 'tools/qualify-release.py'],
+        'cpu': ['tools/unittest-floor.sh', 'tools', 'test_memra_gpu_run.py', '14'],
+        'native': ['A release capture under the wrapper on one leased RTX PRO 6000 (docs/RELEASE-QUALIFICATION.md)'],
+    },
     'support-records': {
         'required': True,
         'inputs': ['tools/unittest-floor.sh', 'tools/unittest_floor.py',
